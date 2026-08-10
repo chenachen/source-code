@@ -683,6 +683,141 @@ h4 {
   border-left: 1px dashed var(--brand);
 }
 
+/* integration.html：同一计数器的 mount / click 双主线流程图。 */
+.trace-board {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin: 1.35rem 0 1.8rem;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--surface-muted);
+}
+
+.trace-lane {
+  display: grid;
+  align-content: start;
+  gap: 1.05rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: trace-step;
+}
+
+.trace-lane > li {
+  position: relative;
+  min-width: 0;
+  padding: 0.85rem 0.9rem 0.8rem 3.15rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 5px 18px rgba(0, 0, 0, 0.035);
+  counter-increment: trace-step;
+}
+
+.trace-lane > li:not(:last-child)::after {
+  position: absolute;
+  z-index: 2;
+  bottom: -1.02rem;
+  left: 1.45rem;
+  color: var(--brand-strong);
+  content: '↓';
+  font-family: var(--mono);
+  font-weight: 800;
+}
+
+.trace-lane > li::before {
+  position: absolute;
+  top: 0.78rem;
+  left: 0.82rem;
+  display: grid;
+  width: 1.65rem;
+  height: 1.65rem;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--brand-soft);
+  color: var(--brand-strong);
+  content: counter(trace-step, decimal-leading-zero);
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  font-weight: 800;
+}
+
+.trace-lane > li strong,
+.trace-lane > li span,
+.trace-lane > li em {
+  display: block;
+}
+
+.trace-lane > li strong {
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.76rem;
+}
+
+.trace-lane > li span {
+  margin-top: 0.24rem;
+  color: var(--text-soft);
+  font-size: 0.76rem;
+  line-height: 1.55;
+}
+
+.trace-lane > li em {
+  margin-top: 0.5rem;
+  padding-top: 0.4rem;
+  border-top: 1px dashed color-mix(in srgb, var(--danger) 45%, var(--border));
+  color: var(--danger);
+  font-size: 0.68rem;
+  font-style: normal;
+}
+
+.trace-lane > li em::before {
+  content: '退出 ↘ ';
+  font-weight: 800;
+}
+
+.trace-lane > .trace-heading {
+  padding: 0.9rem 1rem;
+  border-color: color-mix(in srgb, var(--brand) 50%, var(--border));
+  background: var(--brand-soft);
+  counter-increment: none;
+}
+
+.trace-lane > .trace-heading::before,
+.trace-lane > .trace-heading::after {
+  content: none;
+}
+
+.trace-lane > .trace-heading strong {
+  color: var(--brand-strong);
+  font-family: var(--serif);
+  font-size: 1rem;
+}
+
+.trace-lane > .trace-final {
+  border-color: color-mix(in srgb, var(--brand) 65%, var(--border));
+  background: color-mix(in srgb, var(--brand-soft) 72%, var(--surface));
+}
+
+.chapter-route {
+  display: grid;
+  gap: 0.5rem;
+  margin: 1.1rem 0;
+}
+
+.test-proof {
+  margin: 1rem 0;
+  padding: 0.35rem 1rem;
+  border-left: 3px solid var(--brand);
+  background: var(--surface-muted);
+}
+
+.test-proof p {
+  margin: 0.65rem 0;
+}
+
 .branch-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1424,6 +1559,11 @@ details ul {
   .support-row,
   .page-nav {
     grid-template-columns: 1fr;
+  }
+
+  .trace-board {
+    grid-template-columns: 1fr;
+    padding: 0.65rem;
   }
 
   .runtime-pipeline {

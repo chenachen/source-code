@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="从页面变化出发讲懂 Vue Runtime：不阅读源码也能理解，想深挖时可继续进入源码映射"
+      content="从完整按钮用例出发，沿 Vue 3.5.41 真实源码讲懂 mount、调度、render、patch 与 DOM 提交"
     />
     <title>Vue Runtime 是怎样让页面动起来的 · 总览</title>
     <link rel="stylesheet" href="assets/styles.css" />
@@ -19,16 +19,17 @@
           <div class="article-kicker">Vue 3.5.41 · From UI to Runtime</div>
           <h1>Vue 是怎样让页面动起来的？</h1>
           <p class="article-lead">
-            从“点击按钮后列表多了一项”开始，逐步理解组件、更新队列、虚拟节点、Diff、DOM
-            和服务端水合。正文不要求阅读源码；每章最后才提供源码深挖入口。
+            从“点击按钮后计数从 0 变成 1”开始，逐步理解组件、更新队列、虚拟节点、Diff、DOM
+            和服务端水合。先用完整按钮计数器建立上下文，再把每个阶段映射到
+            Vue 3.5.41 的真实源码与仓库测试。
           </p>
           <div class="hero-meta">
             <span>普通前端可直接阅读</span><span>12 个专题章节</span
-            ><span>图解与交互演示</span><span>源码选读</span>
+            ><span>端到端流程图</span><span>真实源码与测试</span>
           </div>
           <div class="stat-grid" aria-label="指南覆盖范围">
             <div class="stat">
-              <strong>0</strong><span>入门所需源码行数</span>
+              <strong>1</strong><span>贯穿全程的完整 Demo</span>
             </div>
             <div class="stat">
               <strong>6</strong><span>一次更新的核心阶段</span>
@@ -68,14 +69,14 @@
             </div>
           </div>
           <p class="concept-sentence">
-            每一章都先回答“用户看到了什么”，再回答“Vue
-            为什么这样做”，最后才告诉你“源码在哪里”。
+            主线章先回答“用户看到了什么”，再回答“Vue
+            为什么这样做”，随即用决定性源码和仓库测试证明“Vue 真是这样做”；
+            其他专题页负责展开其中一个阶段。
           </p>
           <div class="reader-lane">
             <div>
-              <strong>完全不看源码也能读完主线。</strong>源码文件、函数名、Flag
-              和 Issue
-              被放在进阶层，用于调试、分享答疑和进一步精读，不再作为理解正文的前提。
+              <strong>源码不是附录。</strong>初学者先看完整用例和流程图，再逐站阅读短小、
+              连续、可核对的源码摘录；函数名、状态变化和测试断言始终服务同一条调用链。
             </div>
           </div>
         </section>
@@ -115,7 +116,7 @@
         </section>
 
         <section class="article-section prose" id="reading-levels">
-          <h2>每章都有三层，不需要一次吃完</h2>
+          <h2>先走“用例 → 机制 → 源码证据”主线，再拆专题</h2>
           <div class="sequence">
             <div class="sequence-item">
               <strong>第一层：现象与故事</strong><br />真实 UI
@@ -123,16 +124,16 @@
             </div>
             <div class="sequence-item">
               <strong>第二层：机制与流程</strong
-              ><br />数据怎样流动、各模块怎样交接、为什么需要特殊规则。无需打开源码。
+              ><br />数据怎样流动、各模块怎样交接、为什么需要特殊规则；流程图先给全景。
             </div>
             <div class="sequence-item">
-              <strong>第三层：源码与测试</strong><br />函数、类型、Flag、Issue
-              和本地中文注释。需要调试或精读时再进入。
+              <strong>第三层：源码与测试作证</strong><br />完整调用链章紧跟决定性函数、
+              状态写入、异常分支与完整测试；专题页从其中一站继续展开。
             </div>
           </div>
           <div class="callout warm">
             如果第一次接触 Runtime，请不要从 Renderer
-            开始。先读“零基础先修课”，十五分钟后再进入架构。
+            开始。先读“零基础先修课”，再用“按钮完整调用链”建立全景，随后拆读各专题。
           </div>
           <p>
             <a class="source-link" href="primer.html">从零基础先修课开始 →</a>
@@ -142,7 +143,8 @@
         <section class="article-section" id="modules">
           <h2>课程目录</h2>
           <p class="section-intro">
-            前八章分别讲模块，完整调用链再把它们组装成一次真实页面更新。
+            推荐顺序：先修课 → 按钮完整调用链 → 架构与各模块专题。先有一条连续主线，
+            再放大其中一站，不会在函数名之间迷路。
           </p>
           <div class="module-directory">
             <a class="module-card" href="primer.html">
@@ -153,6 +155,15 @@
                 DOM、组件、VNode、render、patch、Diff、调度和水合。
               </p>
               <span class="read-more">从这里开始 →</span>
+            </a>
+            <a class="module-card" href="integration.html">
+              <span class="module-number">MAIN PATH · FULL STORY</span>
+              <h3>按钮计数器的完整调用链</h3>
+              <p>
+                先贴完整可运行源码与仓库测试，再把 mount、ref、scheduler、render、
+                patch、DOM、post flush 和 nextTick 串成一张流程图。
+              </p>
+              <span class="read-more">先走完整主线 →</span>
             </a>
             <a class="module-card" href="architecture.html">
               <span class="module-number">01 · ARCHITECTURE</span>
@@ -218,15 +229,6 @@
               </p>
               <span class="read-more">进入 DOM 篇 →</span>
             </a>
-            <a class="module-card" href="integration.html">
-              <span class="module-number">09 · FULL STORY</span>
-              <h3>一次点击的完整旅程</h3>
-              <p>
-                沿一个“添加任务”动作，把状态、调度、组件、Diff 和 DOM
-                串成连续故事。
-              </p>
-              <span class="read-more">进入串联篇 →</span>
-            </a>
             <a class="module-card" href="evolution.html">
               <span class="module-number">10 · EVOLUTION</span>
               <h3>Vue Runtime 为什么持续变化</h3>
@@ -251,25 +253,24 @@
           <div class="card-grid three">
             <article class="card">
               <span class="card-label">I JUST WANT TO UNDERSTAND</span>
-              <h3>完全不看源码</h3>
+              <h3>先建立主线</h3>
               <p>
-                先修课 → Diff 前半章 → 完整调用链。约 50
-                分钟，可以完整讲出页面更新流程。
+                先修课 → 按钮完整调用链。先看 Demo 与流程图，再用最小源码摘录核对，
+                可以完整讲出页面更新流程。
               </p>
             </article>
             <article class="card">
               <span class="card-label">I WANT TO SHARE</span>
               <h3>准备技术分享</h3>
               <p>
-                按章节顺序读到完整调用链，使用每章的场景图和“读完能回答”组织分享。
+                先读按钮完整调用链，再按分享重点展开组件、调度、renderer 或 DOM 专题。
               </p>
             </article>
             <article class="card">
               <span class="card-label">I WANT THE SOURCE</span>
               <h3>开始源码精读</h3>
               <p>
-                完成机制层后，再打开函数、测试和 Git
-                历史；此时参数和分支才有上下文。
+                从完整调用链进入函数、测试和 Git 历史；每个参数与分支都有同一 Demo 上下文。
               </p>
             </article>
           </div>
@@ -296,7 +297,7 @@
 
         <nav class="page-nav" aria-label="章节翻页">
           <a href="primer.html"><span>开始学习</span>零基础先修课 →</a>
-          <a href="architecture.html"><span>已有基础</span>直接进入架构篇 →</a>
+          <a href="integration.html"><span>已有基础</span>直接进入按钮完整调用链 →</a>
         </nav>
       </main>
 

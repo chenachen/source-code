@@ -456,14 +456,20 @@
             scheduler 将 job 入队；这正是下一章 renderer 与调度篇的连接点。
           </p>
           <div class="plain-section">
-            <span class="scene-label">固定版本源码卡 · v3.5.41</span>
-            <pre><code>// renderer.ts:1596–1618
+            <span class="scene-label">固定版本源码删节卡 · v3.5.41</span>
+            <pre><code>// renderer.ts:1596–1620（删节摘录）
+instance.scope.on()
 const effect = (instance.effect = new ReactiveEffect(componentUpdateFn))
+instance.scope.off()
+
 const update = (instance.update = effect.run.bind(effect))
 const job = (instance.job = effect.runIfDirty.bind(effect))
 job.i = instance
 job.id = instance.uid
 effect.scheduler = () =&gt; queueJob(job)
+
+// ... 省略 toggleRecurse 与仅开发环境调试钩子
+
 update()</code></pre>
             <p>
               同一个实例把三件事绑在一起：<code>effect</code> 追踪 render
@@ -483,7 +489,7 @@ update()</code></pre>
               >
               <a
                 class="source-link"
-                href="https://github.com/vuejs/core/blob/v3.5.41/packages/runtime-core/src/renderer.ts#L1596-L1618"
+                href="https://github.com/vuejs/core/blob/v3.5.41/packages/runtime-core/src/renderer.ts#L1596-L1620"
                 >v3.5.41：effect / job 交接</a
               >
             </div>

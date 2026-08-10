@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="不读 Vue 源码也能理解的 Runtime 零基础先修课：DOM、组件、VNode、渲染、Diff 与调度"
+      content="进入 Vue Runtime 源码前的先修课：先建立 DOM、组件、VNode、渲染、Diff 与调度共同词汇"
     />
     <title>零基础先修课 · Vue Runtime 内核解剖</title>
     <link rel="stylesheet" href="assets/styles.css" />
@@ -17,14 +17,14 @@
       <main class="article">
         <div class="article-hero">
           <div class="article-kicker">Chapter 00 · Start Here</div>
-          <h1>先别看源码：一次页面更新到底发生了什么</h1>
+          <h1>读源码前，先把一次页面更新说清楚</h1>
           <p class="article-lead">
             你只需要有 Vue 组件使用经验。这一章不要求知道 Runtime、VNode 或
             Diff，先用一个待办列表把后面会反复出现的概念讲明白。
           </p>
           <div class="hero-meta">
-            <span>建议阅读 15 分钟</span><span>不含源码</span
-            ><span>可交互演示</span>
+            <span>建议阅读 15 分钟</span><span>源码共同词汇</span
+            ><span>下一站：完整按钮调用链</span>
           </div>
         </div>
 
@@ -251,19 +251,19 @@
               安排更新，renderer = 计算并执行页面修改。
             </div>
             <div class="sequence-item">
-              <strong>源码映射是选读层</strong
-              ><br />不看源码也能完整理解；准备调试或精读时再打开本地文件。
+              <strong>最后进入同一用例的源码链</strong
+              ><br />先读完整 Demo 与仓库测试，再按流程图逐站核对源码，不在函数清单间跳跃。
             </div>
           </div>
           <div class="callout">
-            下一章讲架构。你只需要带着一个问题：为什么 Vue
-            要把“决定改什么”和“真正操作浏览器”交给两套不同模块？
+            下一章先用按钮计数器完整走一遍真实源码。读完主线后，再拆开学习架构、
+            组件、调度、renderer 与 DOM 平台层。
           </div>
         </section>
 
         <nav class="page-nav" aria-label="章节翻页">
           <a href="index.html"><span>上一页</span>← 总览与使用方式</a>
-          <a href="architecture.html"><span>下一章</span>架构与设计哲学 →</a>
+          <a href="integration.html"><span>下一章</span>按钮完整调用链 →</a>
         </nav>
       </main>
 

@@ -164,8 +164,8 @@
             patch、move、unmount 和队列语义。
           </div>
           <div class="plain-section">
-            <span class="scene-label">代表性源码路径 · v3.5.41</span>
-            <pre><code>// renderer.ts:459–484
+            <span class="scene-label">接入机制伪代码 · 非 Vue 源码</span>
+            <pre><code>// 解释性伪代码：映射 renderer.ts 的 patch/processComponent/unmount
 if (shapeFlag &amp; ShapeFlags.TELEPORT) {
   TeleportImpl.process(..., internals)
 } else if (shapeFlag &amp; ShapeFlags.SUSPENSE) {
@@ -178,6 +178,8 @@ if (vnodeShouldKeepAlive) return keepAliveContext.deactivate(vnode)
 
 // 普通元素路径也会调用 vnode.transition 的 beforeEnter / enter / leave</code></pre>
             <p>
+              上段用于并列四种协议；<code>vnodeWasKeptAlive</code> 与
+              <code>vnodeShouldKeepAlive</code> 是教学条件名，不是 Vue 3.5.41 符号。
               四条路径的接入方式不同：Teleport/Suspense 作为特殊 VNode 类型接管
               <code>process</code>；KeepAlive 用 ShapeFlag 改写组件挂载和卸载；
               Transition 把 hooks 挂在普通 VNode 上，让 renderer 在

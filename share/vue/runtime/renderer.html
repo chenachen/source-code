@@ -253,8 +253,8 @@
             </div>
           </div>
           <div class="plain-section">
-            <span class="scene-label">固定版本源码卡 · v3.5.41</span>
-            <pre><code>// renderer.ts:827–970，省略参数与各类 prop 分支
+            <span class="scene-label">机制顺序伪代码 · 非 Vue 源码</span>
+            <pre><code>// 解释性伪代码：映射 renderer.ts · patchElement
 toggleRecurse(parentComponent, false)
 invokeBeforeUpdateHooks()
 toggleRecurse(parentComponent, true)
@@ -269,6 +269,11 @@ else if (!optimized &amp;&amp; dynamicChildren == null) patchProps(...)
 
 queuePostRenderEffect(updatedHooks, parentSuspense)</code></pre>
             <p>
+              上段只压缩表达控制顺序，函数名
+              <code>invokeBeforeUpdateHooks</code>、
+              <code>oldInnerHTMLOrTextContentWasRemoved</code>、
+              <code>patchFlagDirectedPropsAndText</code> 与
+              <code>updatedHooks</code> 都是教学占位名，不是 Vue 3.5.41 符号。
               这段次序保护两个边界：<code>toggleRecurse</code>
               控制的是组件任务能否在钩子中再次入队，并非暂停依赖追踪；children
               必须先于普通 props，因为 innerHTML/textContent 会整体替换子节点。

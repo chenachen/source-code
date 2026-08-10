@@ -5,6 +5,7 @@
       items: [
         ['index.html', '总览与使用方式', '建立完整学习地图'],
         ['primer.html', '零基础先修课', '先懂页面如何发生变化'],
+        ['integration.html', '按钮完整调用链', '同一用例贯穿真实源码'],
         ['architecture.html', '为什么要分层', 'core 与浏览器如何分工'],
       ],
     },
@@ -26,7 +27,6 @@
     {
       title: '串联与实践',
       items: [
-        ['integration.html', '一次点击的旅程', '把所有模块串起来'],
         ['evolution.html', '真实问题与演进', '从用户故障理解历史'],
         ['testing.html', '怎样证明更新正确', '结果、身份、顺序、恢复'],
       ],
@@ -58,7 +58,7 @@
           <span class="site-brand-mark">V</span>
           <span class="site-brand-copy">
             <strong>Vue Runtime 内核解剖</strong>
-            <span>零源码可读，源码可深挖 · v3.5.41</span>
+            <span>完整用例贯穿，真实源码逐站核对 · v3.5.41</span>
           </span>
         </a>
         <div class="header-actions">
