@@ -28,6 +28,474 @@
           </div>
         </div>
 
+        <section class="article-section prose" id="renderer-counter-case">
+          <h2>完整用例先行：把 Counter 看成两棵 button VNode</h2>
+          <p>
+            组件更新时，renderer 接到的关键输入只有
+            <code>prevTree = button("0")</code> 与
+            <code>nextTree = button("2")</code
+            >。本页继续使用同一个完整测试，专注
+            <code
+              >patch → processElement → patchElement → patchChildren →
+              hostSetElementText</code
+            >； 响应式怎样通知、任务怎样排队留给调度页。
+          </p>
+          <div class="callout warm">
+            <strong>性质声明：</strong>下面是课程新增、可在 Vue 3.5.41
+            仓库运行的完整 Vitest 教程测试，不是上游原测试。块内包含
+            imports、fixture、动作、断言及卸载清理。
+          </div>
+          <details class="source-layer" open>
+            <summary>完整教程测试：counter-course.spec.ts</summary>
+            <div>
+              <pre><code>import {
+  type TestElement,
+  h,
+  nextTick,
+  nodeOps,
+  ref,
+  render,
+  serializeInner,
+  triggerEvent,
+} from '@vue/runtime-test'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+
+describe('runtime course: Counter', () =&gt; {
+  let root: TestElement
+
+  beforeEach(() =&gt; {
+    root = nodeOps.createElement('div')
+  })
+
+  afterEach(() =&gt; {
+    render(null, root)
+    expect(serializeInner(root)).toBe('')
+  })
+
+  it('keeps DOM stale until nextTick, patches final text, then unmounts', async () =&gt; {
+    const Counter = {
+      setup() {
+        const count = ref(0)
+        const increment = () =&gt; count.value++
+        return () =&gt;
+          h(
+            'button',
+            { id: 'counter', onClick: increment },
+            String(count.value),
+          )
+      },
+    }
+
+    render(h(Counter), root)
+    expect(serializeInner(root)).toBe('&lt;button id="counter"&gt;0&lt;/button&gt;')
+
+    triggerEvent(root.children[0] as TestElement, 'click')
+    triggerEvent(root.children[0] as TestElement, 'click')
+    expect(serializeInner(root)).toBe('&lt;button id="counter"&gt;0&lt;/button&gt;')
+
+    await nextTick()
+    expect(serializeInner(root)).toBe('&lt;button id="counter"&gt;2&lt;/button&gt;')
+  })
+})</code></pre>
+              <p>
+                保存到
+                <code
+                  >vue/packages/runtime-core/__tests__/counter-course.spec.ts</code
+                >；在 <code>vue/</code> 执行
+                <code
+                  >pnpm vitest --project unit
+                  packages/runtime-core/__tests__/counter-course.spec.ts</code
+                >。
+              </p>
+              <p class="test-proof">
+                <strong>本次验收：</strong>Node 24.5.0 定向执行同一测试，1 file
+                / 1 test passed；临时测试文件随后删除。
+              </p>
+            </div>
+          </details>
+          <h3>本页验收合同</h3>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Given</th>
+                  <th>When</th>
+                  <th>Then</th>
+                  <th>Mechanism</th>
+                  <th>Source</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>n1=null</code>、button 0 VNode</td>
+                  <td>首次 patch</td>
+                  <td>创建 button、设置 id/事件/文本并插入</td>
+                  <td>processElement 的 mountElement 分支</td>
+                  <td>
+                    <code>renderer.ts · patch/processElement/mountElement</code>
+                  </td>
+                </tr>
+                <tr>
+                  <td>同 type/key 的 button 0 与 button 2</td>
+                  <td>组件 update 调 patch</td>
+                  <td>复用同一个 el，只更新文本 children</td>
+                  <td>patchElement → patchChildren → hostSetElementText</td>
+                  <td><code>renderer.ts</code></td>
+                </tr>
+                <tr>
+                  <td>已挂载 button VNode</td>
+                  <td>render(null)</td>
+                  <td>
+                    宿主节点脱离 root，组件 effect
+                    与逻辑子树停止；监听器不会在此刻被逐项显式解绑
+                  </td>
+                  <td>
+                    scope.stop →
+                    unmount/remove/hostRemove；监听器随不可达节点等待回收
+                  </td>
+                  <td><code>renderer.ts · unmount/remove</code></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="article-section prose" id="renderer-counter-flow">
+          <h2>同一用例执行图：从旧 button 到新 button</h2>
+          <div
+            class="flow"
+            role="img"
+            aria-label="Counter 更新时 renderer 从新旧 VNode 比较到文本提交的流程"
+          >
+            <div class="flow-step">
+              <span class="flow-index">01</span
+              ><span class="flow-copy"
+                ><strong>prevTree / nextTree</strong
+                ><small
+                  >旧：type=button、children='0'、el=TestElement；新：type=button、children='2'、el=null。</small
+                ></span
+              ><span class="flow-file">componentUpdateFn</span>
+            </div>
+            <div class="flow-join"></div>
+            <div class="flow-step">
+              <span class="flow-index">02</span
+              ><span class="flow-copy"
+                ><strong>patch(n1, n2)</strong
+                ><small
+                  >对象不同，不提前退出；type 与 key 相同，不卸载；shapeFlag
+                  命中 ELEMENT。</small
+                ></span
+              ><span class="flow-file">renderer.ts · patch</span>
+            </div>
+            <div class="flow-join"></div>
+            <div class="flow-step">
+              <span class="flow-index">03</span
+              ><span class="flow-copy"
+                ><strong>processElement → patchElement</strong
+                ><small
+                  >n1 非 null，进入更新；先做
+                  <code>n2.el = n1.el</code>，宿主身份被复用。</small
+                ></span
+              ><span class="flow-file">renderer.ts</span>
+            </div>
+            <div class="flow-join"></div>
+            <div class="flow-step">
+              <span class="flow-index">04</span
+              ><span class="flow-copy"
+                ><strong>patchChildren</strong
+                ><small
+                  >手写 h 没有可靠 dynamicChildren/patchFlag；新旧都是
+                  TEXT_CHILDREN，内容不同。</small
+                ></span
+              ><span class="flow-file">renderer.ts · patchChildren</span>
+            </div>
+            <div class="flow-join"></div>
+            <div class="flow-step">
+              <span class="flow-index">05</span
+              ><span class="flow-copy"
+                ><strong>hostSetElementText(el, '2')</strong
+                ><small
+                  >runtime-test 把旧文本节点从 children 脱开并创建文本 2；DOM
+                  renderer 则写 textContent。</small
+                ></span
+              ><span class="flow-file">injected host op</span>
+            </div>
+            <div class="flow-join"></div>
+            <div class="flow-step">
+              <span class="flow-index">06</span
+              ><span class="flow-copy"
+                ><strong>patchProps 检查 id 与事件</strong
+                ><small
+                  >id 与 setup 中创建的 increment 引用都未变化，因此两个 prop
+                  都被跳过，不调用 hostPatchProp。</small
+                ></span
+              ><span class="flow-file">patchElement/patchProps</span>
+            </div>
+            <div class="flow-join"></div>
+            <div class="flow-step">
+              <span class="flow-index">07</span
+              ><span class="flow-copy"
+                ><strong>nextTree.el 已是原 TestElement</strong
+                ><small
+                  >serializeInner(root) 得到 button 2；创建次数没有增加。</small
+                ></span
+              ><span class="flow-file">commit result</span>
+            </div>
+            <div class="flow-join"></div>
+            <div class="flow-step">
+              <span class="flow-index">08</span
+              ><span class="flow-copy"
+                ><strong>render(null) → unmount → hostRemove</strong
+                ><small>测试清理把 button 从 root.children 移除。</small></span
+              ><span class="flow-file">cleanup</span>
+            </div>
+          </div>
+          <h3>照图复述一遍</h3>
+          <ol>
+            <li>
+              Renderer 的输入不是 ref，而是同一组件两次 render 产生的新旧
+              VNode。
+            </li>
+            <li>
+              patch 先做身份判断：对象相同可返回；type/key
+              不同必须卸载重挂；本例可复用。
+            </li>
+            <li>
+              processElement 只决定 mount 还是 patch；更新时 patchElement 把旧
+              el 转给新 VNode。
+            </li>
+            <li>
+              本例是手写 h，走安全的完整 children/props 比较；文本变化直接调用
+              hostSetElementText。
+            </li>
+            <li>
+              host 层执行真正写操作，因而同一 core 流程既能更新
+              TestElement，也能更新 DOM。
+            </li>
+            <li>清理仍以 VNode 为入口，卸载逻辑资源后调用 hostRemove。</li>
+          </ol>
+        </section>
+
+        <section class="article-section prose" id="renderer-source-proof">
+          <h2>决定性真实源码：patch 如何收窄到一次文本写入</h2>
+          <p>以下为 Vue 3.5.41 连续原文，仅做 HTML 实体转义。</p>
+          <h3>证据 1：patch 先处理身份和 BAIL，再按类型/shapeFlag 分派</h3>
+          <details class="source-layer" open>
+            <summary>renderer.ts · patch（完整连续函数）</summary>
+            <div>
+              <pre
+                data-source-file="vue/packages/runtime-core/src/renderer.ts"
+              ><code>  const patch: PatchFn = (
+    n1,
+    n2,
+    container,
+    anchor = null,
+    parentComponent = null,
+    parentSuspense = null,
+    namespace = undefined,
+    slotScopeIds = null,
+    optimized = __DEV__ &amp;&amp; isHmrUpdating ? false : !!n2.dynamicChildren,
+  ) =&gt; {
+    if (n1 === n2) {
+      return
+    }
+
+    // type 或 key 不同不能就地复用；先记录旧范围后的锚点，再完整卸载旧树并按挂载处理。
+    if (n1 &amp;&amp; !isSameVNodeType(n1, n2)) {
+      anchor = getNextHostNode(n1)
+      unmount(n1, parentComponent, parentSuspense, true)
+      n1 = null
+    }
+
+    if (n2.patchFlag === PatchFlags.BAIL) {
+      // BAIL 表示编译优化元数据不可信（常见于手写/异常插槽），清空 block 快路径。
+      optimized = false
+      n2.dynamicChildren = null
+    }
+
+    const { type, ref, shapeFlag } = n2
+    switch (type) {
+      case Text:
+        processText(n1, n2, container, anchor)
+        break
+      case Comment:
+        processCommentNode(n1, n2, container, anchor)
+        break
+      case Static:
+        if (n1 == null) {
+          mountStaticNode(n2, container, anchor, namespace)
+        } else if (__DEV__) {
+          patchStaticNode(n1, n2, container, namespace)
+        }
+        break
+      case Fragment:
+        processFragment(
+          n1,
+          n2,
+          container,
+          anchor,
+          parentComponent,
+          parentSuspense,
+          namespace,
+          slotScopeIds,
+          optimized,
+        )
+        break
+      default:
+        if (shapeFlag &amp; ShapeFlags.ELEMENT) {
+          processElement(
+            n1,
+            n2,
+            container,
+            anchor,
+            parentComponent,
+            parentSuspense,
+            namespace,
+            slotScopeIds,
+            optimized,
+          )
+        } else if (shapeFlag &amp; ShapeFlags.COMPONENT) {
+          processComponent(
+            n1,
+            n2,
+            container,
+            anchor,
+            parentComponent,
+            parentSuspense,
+            namespace,
+            slotScopeIds,
+            optimized,
+          )
+        } else if (shapeFlag &amp; ShapeFlags.TELEPORT) {
+          ;(type as typeof TeleportImpl).process(
+            n1 as TeleportVNode,
+            n2 as TeleportVNode,
+            container,
+            anchor,
+            parentComponent,
+            parentSuspense,
+            namespace,
+            slotScopeIds,
+            optimized,
+            internals,
+          )
+        } else if (__FEATURE_SUSPENSE__ &amp;&amp; shapeFlag &amp; ShapeFlags.SUSPENSE) {
+          ;(type as typeof SuspenseImpl).process(
+            n1,
+            n2,
+            container,
+            anchor,
+            parentComponent,
+            parentSuspense,
+            namespace,
+            slotScopeIds,
+            optimized,
+            internals,
+          )
+        } else if (__DEV__) {
+          warn('Invalid VNode type:', type, `(${typeof type})`)
+        }
+    }
+
+    // 宿主/组件处理完成后再更新 ref，此时 n2.el/component 已经可用。
+    if (ref != null &amp;&amp; parentComponent) {
+      setRef(ref, n1 &amp;&amp; n1.ref, parentSuspense, n2 || n1, !n2)
+    } else if (ref == null &amp;&amp; n1 &amp;&amp; n1.ref != null) {
+      setRef(n1.ref, null, parentSuspense, n1, true)
+    }
+  }</code></pre>
+            </div>
+          </details>
+          <p>
+            参数 n1/n2 是旧/新 VNode；container/anchor 定义挂载、替换以及
+            Fragment/Teleport 等范围型节点的宿主位置，同类型普通元素就地 patch
+            时通常不消费它们。函数返回 void，结果写到 n2.el/component 与宿主树。
+          </p>
+          <h3>
+            证据 2：同类型元素转到 patchElement，并用 finally 配对自定义元素边界
+          </h3>
+          <pre
+            data-source-file="vue/packages/runtime-core/src/renderer.ts"
+          ><code>    if (n1 == null) {
+      mountElement(
+        n2,
+        container,
+        anchor,
+        parentComponent,
+        parentSuspense,
+        namespace,
+        slotScopeIds,
+        optimized,
+      )
+    } else {
+      const customElement =
+        n1.el &amp;&amp; (n1.el as ComponentCustomElementInterface)._isVueCE
+          ? (n1.el as ComponentCustomElementInterface)
+          : null
+      try {
+        if (customElement) {
+          customElement._beginPatch()
+        }
+        patchElement(
+          n1,
+          n2,
+          parentComponent,
+          parentSuspense,
+          namespace,
+          slotScopeIds,
+          optimized,
+        )
+      } finally {
+        if (customElement) {
+          customElement._endPatch()
+        }
+      }
+    }</code></pre>
+          <h3>证据 3：文本 children 的最终提交条件</h3>
+          <pre
+            data-source-file="vue/packages/runtime-core/src/renderer.ts"
+          ><code>    if (shapeFlag &amp; ShapeFlags.TEXT_CHILDREN) {
+      // 新文本可直接替换容器内容；旧数组先卸载组件/指令等逻辑资源。
+      if (prevShapeFlag &amp; ShapeFlags.ARRAY_CHILDREN) {
+        unmountChildren(c1 as VNode[], parentComponent, parentSuspense)
+      }
+      if (c2 !== c1) {
+        hostSetElementText(container, c2 as string)
+      }
+    } else {</code></pre>
+          <div class="branch-grid">
+            <div class="branch">
+              <strong>正常路径</strong
+              ><span
+                >同 type/key 的 button 复用 el，文本 0≠2，调用一次
+                hostSetElementText。</span
+              >
+            </div>
+            <div class="branch">
+              <strong>提前退出</strong
+              ><span
+                ><code>n1===n2</code> 直接 return；文本相同则
+                c2===c1，不写宿主。</span
+              >
+            </div>
+            <div class="branch">
+              <strong>替换/错误路径</strong
+              ><span
+                >type/key 不同先算 next host anchor、卸载旧树再
+                mount；宿主或钩子异常向 Vue 错误边界/调用方传播，自定义元素的
+                endPatch 由 finally 保证。</span
+              >
+            </div>
+            <div class="branch">
+              <strong>清理路径</strong
+              ><span
+                >render(null) 递归 unmount；元素 remove 最终调用
+                hostRemove，过渡节点按 leave/delayLeave 契约延后。</span
+              >
+            </div>
+          </div>
+        </section>
+
         <section class="article-section prose" id="plain-renderer">
           <h2>Renderer 就像拿着新旧图纸验收现场</h2>
           <p>
@@ -202,20 +670,25 @@
                   hostSetElementText；数组递归 mountChildren。
                 </div>
                 <div class="sequence-item">
-                  <strong>提交 props</strong><br />跳过 reserved props，把每个
-                  key 交给 hostPatchProp。
+                  <strong>指令 created / scopeId</strong><br />先执行指令
+                  created，再把组件与 slot 的 scope id 写到元素。
                 </div>
                 <div class="sequence-item">
-                  <strong>指令与过渡</strong><br />按阶段执行
-                  created/beforeMount 和 transition.beforeEnter。
+                  <strong>提交 props</strong><br />跳过 reserved props，把每个
+                  key 交给 hostPatchProp；value 按源码规则最后提交。
+                </div>
+                <div class="sequence-item">
+                  <strong>插入前钩子</strong><br />依次处理 VNode
+                  beforeMount、指令 beforeMount 与 transition.beforeEnter。
                 </div>
                 <div class="sequence-item">
                   <strong>插入元素</strong><br />hostInsert(el, container,
                   anchor) 真正改变宿主树。
                 </div>
                 <div class="sequence-item">
-                  <strong>post 阶段</strong
-                  ><br />mounted、transition.enter、VNode mounted hook 入队。
+                  <strong>post 阶段</strong><br />VNode mounted
+                  hook、transition.enter、指令 mounted 按源码顺序进入 post
+                  回调。
                 </div>
               </div>
             </div>
@@ -291,7 +764,7 @@ queuePostRenderEffect(updatedHooks, parentSuspense)</code></pre>
               >
               <a
                 class="source-link"
-                href="https://github.com/vuejs/core/blob/v3.5.41/packages/runtime-core/src/renderer.ts#L827-L970"
+                href="https://github.com/vuejs/core/blob/v3.5.41/packages/runtime-core/src/renderer.ts#L827-L972"
                 >v3.5.41：patchElement 精确行</a
               >
             </div>
@@ -468,7 +941,8 @@ queuePostRenderEffect(updatedHooks, parentSuspense)</code></pre>
             newIndexToOldIndexMap
             记录新序列中的节点来自哪个旧索引。递增子序列代表这些节点在旧树中的相对顺序本来就正确；最长递增子序列就是可保持原位的最大集合。其余节点才需要移动。
           </p>
-          <pre><code>旧：a b c d e
+          <pre><code>// 手算记号，不是 Vue 源码
+旧：a b c d e
 新：a c b e d
 
 同步头部后未知区间：
@@ -538,6 +1012,47 @@ Renderer 已知道最终顺序；LIS 只用于决定哪些节点可以不 move�
           </div>
         </section>
 
+        <section class="article-section prose" id="renderer-evidence">
+          <h2>本章证据闭环</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>用例</th>
+                  <th>源码</th>
+                  <th>测试</th>
+                  <th>图</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>
+                    Counter 的 button VNode：首次 mount、0→2 文本更新、卸载
+                  </td>
+                  <td>
+                    <code
+                      >renderer.ts · patch/processElement/patchChildren</code
+                    >
+                    连续原文
+                  </td>
+                  <td>
+                    完整教程 Vitest，含 imports、准备、同步/异步断言与清理
+                  </td>
+                  <td>
+                    <a href="#renderer-counter-flow">8 步 VNode→host 提交流程</a
+                    >，图后逐步复述
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="reader-check">
+            <strong>结论：</strong>正常复用、相同输入提前退出、type/key
+            替换、finally 配对和 unmount
+            清理均已映射；页面原有机制伪代码仍明确标为伪代码。
+          </p>
+        </section>
+
         <nav class="page-nav" aria-label="章节翻页">
           <a href="component.html"><span>上一章</span>← 组件模型</a>
           <a href="diff.html"><span>下一章</span>Diff 算法专题 →</a>
@@ -545,13 +1060,17 @@ Renderer 已知道最终顺序；LIS 只用于决定哪些节点可以不 move�
       </main>
       <aside class="page-toc" aria-label="本页目录">
         <div class="toc-title">本页目录</div>
+        <a href="#renderer-counter-case">完整 Counter 测试</a>
+        <a href="#renderer-counter-flow">同例提交图</a>
+        <a href="#renderer-source-proof">决定性源码</a>
         <a href="#plain-renderer">先理解 Renderer</a>
         <a href="#renderer-factory">Renderer 工厂</a
         ><a href="#patch-dispatch">patch 分派</a><a href="#element">元素路径</a
         ><a href="#component-path">组件路径</a
         ><a href="#children">children 形态</a
         ><a href="#keyed-diff">keyed diff</a><a href="#optimized">优化模式</a
-        ><a href="#move-unmount">move / unmount</a>
+        ><a href="#move-unmount">move / unmount</a
+        ><a href="#renderer-evidence">证据闭环</a>
       </aside>
     </div>
     <footer data-site-footer></footer>

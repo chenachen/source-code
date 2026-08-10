@@ -19,9 +19,11 @@
           <div class="article-kicker">Chapter 08 · Runtime DOM</div>
           <h1>Vue 的更新怎样真正落到浏览器</h1>
           <p class="article-lead">
-            Renderer 已经决定“按钮的文字和事件要更新”。runtime-dom
-            再处理浏览器的具体规则：该写 property 还是
-            attribute，事件怎样换回调，输入框怎样不丢光标。
+            Renderer 已经决定“按钮的文字和 props
+            需要检查”。真正有变化时，runtime-dom 再处理浏览器的具体规则：该写
+            property 还是
+            attribute，事件怎样换回调，输入框怎样不丢光标；本页事件用例会专门把回调
+            A 更新为 B。
           </p>
           <div class="hero-meta">
             <span>建议阅读 40 分钟</span><span>先修：架构 / Renderer</span
@@ -273,8 +275,11 @@ export const createApp = (...args) => {
               <tbody>
                 <tr>
                   <td><strong>form</strong></td>
-                  <td>form 元素的同名子控件可能遮蔽 property</td>
-                  <td>特定场景使用 attribute</td>
+                  <td>
+                    input/button 等表单控件的
+                    <code>.form</code> 是只读关联对象，不是可写的 form id 字符串
+                  </td>
+                  <td>把传入的 form id 写为 attribute</td>
                 </tr>
                 <tr>
                   <td><strong>input list</strong></td>
@@ -312,13 +317,16 @@ export const createApp = (...args) => {
             会丢失。因此元素上保存 transition class 集合，<code
               >patchClass</code
             >
-            把声明式 class 与临时 class 合并后提交。值为空时统一移除 class
-            attribute；值非空时才按 HTML/SVG 选择写入方式。
+            把声明式 class 与临时 class 合并后提交。只有合并后的值仍为空，才移除
+            class attribute；否则再按 HTML/SVG 选择写入方式。
           </p>
           <div class="callout">
-            精确规则：<code>value == null</code> 时，无论 HTML 还是 SVG 都调用
-            <code>removeAttribute('class')</code>；只有非空值才分流——SVG 使用
-            <code>setAttribute</code>，HTML 使用 <code>className</code>。
+            精确规则：先把元素上由 Transition 维护的临时 class 合入
+            <code>value</code>；合并后的值仍为 <code>null</code>，才调用
+            <code>removeAttribute('class')</code>。否则再分流——SVG 使用
+            <code>setAttribute</code>，HTML 使用
+            <code>className</code>。因此传入 <code>null</code> 但仍有 Transition
+            class 时，不会移除 attribute。
           </div>
           <h3>style 是对象级 Diff</h3>
           <ul>
@@ -355,8 +363,17 @@ export const createApp = (...args) => {
           </p>
           <pre><code>// 概念模型
 function invoker(event) {
-  if (event._vts <= invoker.attached) return
-  callWithAsyncErrorHandling(invoker.value, instance, event)
+  if (!event._vts) {
+    event._vts = Date.now()
+  } else if (event._vts &lt;= invoker.attached) {
+    return
+  }
+  callWithAsyncErrorHandling(
+    invoker.value,
+    instance,
+    ErrorCodes.NATIVE_EVENT_HANDLER,
+    [event],
+  )
 }
 
 // 更新只改 value
@@ -377,8 +394,10 @@ existingInvoker.value = nextHandler</code></pre>
               会包装事件，阻止数组中后续回调。
             </li>
             <li>
-              <strong>错误通道：</strong
-              >事件处理器进入组件错误处理链，而不是让异常直接逃出浏览器回调。
+              <strong>错误通道：</strong>事件处理器先进入组件错误处理链；若
+              errorCaptured 或 app.errorHandler
+              未处理，开发态会继续抛出，生产态也可由
+              <code>throwUnhandledErrorInProduction</code> 配置为重抛。
             </li>
           </ul>
         </section>
@@ -551,8 +570,11 @@ existingInvoker.value = nextHandler</code></pre>
             代表调用方声明信任，不等于内容经过安全过滤。
           </div>
           <div class="plain-section">
-            <span class="scene-label">固定版本源码卡 · v3.5.41</span>
-            <pre><code>// nodeOps.ts：Trusted Types 只做类型层转换
+            <span class="scene-label"
+              >跨文件机制选段 · 解释性改写 · 非连续源码</span
+            >
+            <pre><code>// 下面合并 nodeOps.ts 与 modules/class.ts 的机制，不是可复制的连续源码。
+// nodeOps.ts：Trusted Types 只做类型层转换
 const policy = trustedTypes?.createPolicy('vue', {
   createHTML: value =&gt; value,
 })
@@ -560,7 +582,16 @@ const unsafeToTrustedHTML = policy
   ? value =&gt; policy.createHTML(value)
   : value =&gt; value
 
-// class.ts：null 对 HTML / SVG 都是删除 attribute
+// modules/class.ts：先保护 Transition 正在使用的临时 classes
+const transitionClasses = el[vtcKey]
+if (transitionClasses) {
+  value = (value
+    ? [value, ...transitionClasses]
+    : [...transitionClasses]
+  ).join(' ')
+}
+
+// 只有合并后的值仍为 null，HTML / SVG 才都删除 attribute
 if (value == null) el.removeAttribute('class')
 else if (isSVG) el.setAttribute('class', value)
 else el.className = value</code></pre>
@@ -599,6 +630,187 @@ else el.className = value</code></pre>
           </div>
         </section>
 
+        <section class="article-section prose" id="event-proof">
+          <h2>手把手证据链：点击回调 A 怎样换成 B，又怎样彻底解绑</h2>
+          <p>
+            这里用两个仓库用例还原一台完整状态机：更新用例在同一个元素上完成“没有监听器
+            → 绑定 <code>prevFn</code> → 换成
+            <code>nextFn</code>”，解绑用例另建隔离元素证明 “已绑定 → 传入
+            null”。浏览器真正注册的函数是 invoker；更新阶段只改变它的
+            <code>value</code>。
+          </p>
+
+          <h3>1. 完整仓库测试：准备、动作、断言与清理</h3>
+          <p class="source-note">
+            性质：Vue 3.5.41 仓库真实测试。第一段给出真实 import 和等待 helper；
+            第二段证明替换；第三段证明删除监听器。三段均是各自在文件中的连续原文。
+            <code>vi / describe / it / expect</code> 来自仓库 Vitest globals。
+          </p>
+          <pre
+            data-source-file="vue/packages/runtime-dom/__tests__/patchEvents.spec.ts"
+          ><code>import { patchProp } from '../src/patchProp'
+
+/** 等待一个宏任务，使事件时间戳和监听器附加时机跨过同一事件循环边界。 */
+const timeout = () =&gt; new Promise(r =&gt; setTimeout(r))</code></pre>
+          <pre
+            data-source-file="vue/packages/runtime-dom/__tests__/patchEvents.spec.ts"
+          ><code>  // 测试场景：应该更新事件处理程序。
+  it('should update event handler', async () =&gt; {
+    const el = document.createElement('div')
+    const prevFn = vi.fn()
+    const nextFn = vi.fn()
+    patchProp(el, 'onClick', null, prevFn)
+    el.dispatchEvent(new Event('click'))
+    patchProp(el, 'onClick', prevFn, nextFn)
+    await timeout()
+    el.dispatchEvent(new Event('click'))
+    await timeout()
+    el.dispatchEvent(new Event('click'))
+    await timeout()
+    expect(prevFn).toHaveBeenCalledTimes(1)
+    expect(nextFn).toHaveBeenCalledTimes(2)
+  })</code></pre>
+          <pre
+            data-source-file="vue/packages/runtime-dom/__tests__/patchEvents.spec.ts"
+          ><code>  // 测试场景：应该取消分配事件处理程序。
+  it('should unassign event handler', async () =&gt; {
+    const el = document.createElement('div')
+    const fn = vi.fn()
+    patchProp(el, 'onClick', null, fn)
+    patchProp(el, 'onClick', fn, null)
+    el.dispatchEvent(new Event('click'))
+    await timeout()
+    expect(fn).not.toHaveBeenCalled()
+  })</code></pre>
+          <div class="test-proof">
+            <p>
+              <strong>Given：</strong>新建一个尚无 Vue 监听器的
+              div，并准备旧、新两个 spy。
+            </p>
+            <p>
+              <strong>When：</strong>先用
+              <code>patchProp</code> 绑定旧函数并点击一次，再把同一个
+              <code>onClick</code>
+              更新为新函数并点击两次；清理用例最后把值更新为 null。
+            </p>
+            <p>
+              <strong>Then：</strong
+              >旧函数只收到首次点击，新函数收到后两次；解绑后继续派发 click
+              不再调用 handler。
+            </p>
+            <p>
+              <strong>Mechanism：</strong
+              ><code>patchProp</code> 识别事件键后进入
+              <code>patchEvent</code>。缓存命中时只写
+              <code>existingInvoker.value</code>；null 分支以同一 invoker 调用
+              <code>removeEventListener</code> 并清空缓存槽。
+            </p>
+            <p>
+              <strong>Source：</strong
+              ><code>runtime-dom/src/modules/events.ts</code>；局部元素不挂入
+              document，用例结束后可由 jsdom
+              回收，显式解绑路径由第二个测试证明。
+            </p>
+          </div>
+
+          <h3>2. 决定性连续源码：不是概念化骨架</h3>
+          <pre
+            data-source-file="vue/packages/runtime-dom/src/modules/events.ts"
+          ><code>export function patchEvent(
+  el: Element &amp; { [veiKey]?: Record&lt;string, Invoker | undefined&gt; },
+  rawName: string,
+  prevValue: EventValue | null,
+  nextValue: EventValue | unknown,
+  instance: ComponentInternalInstance | null = null,
+): void {
+  // vei = Vue Event Invokers；按原 prop 名缓存，options 变化会表现为不同 key。
+  const invokers = el[veiKey] || (el[veiKey] = {})
+  const existingInvoker = invokers[rawName]
+  if (nextValue &amp;&amp; existingInvoker) {
+    // 监听器已存在：只替换内部函数值。
+    existingInvoker.value = __DEV__
+      ? sanitizeEventValue(nextValue, rawName)
+      : (nextValue as EventValue)
+  } else {
+    const [name, options] = parseName(rawName)
+    if (nextValue) {
+      // 首次绑定：解析事件名/options，创建稳定代理。
+      const invoker = (invokers[rawName] = createInvoker(
+        __DEV__
+          ? sanitizeEventValue(nextValue, rawName)
+          : (nextValue as EventValue),
+        instance,
+      ))
+      addEventListener(el, name, invoker, options)
+    } else if (existingInvoker) {
+      // 新值为空：用同一代理和 options 解除监听。
+      removeEventListener(el, name, existingInvoker, options)
+      invokers[rawName] = undefined
+    }
+  }
+}</code></pre>
+
+          <h3>3. 同一用例的状态图</h3>
+          <div
+            class="diagram"
+            role="img"
+            aria-label="onClick invoker 从首次绑定到替换和解绑的完整状态图"
+          >
+            <div class="diagram-title">ONE ELEMENT · ONE onClick SLOT</div>
+            <div class="layer-flow">
+              <div class="layer-node">
+                <strong>S0 空</strong><small>el._vei[onClick] 不存在</small>
+              </div>
+              <div class="diagram-arrow">→ add</div>
+              <div class="layer-node">
+                <strong>S1 旧值</strong
+                ><small>DOM listener = invoker；value = prevFn</small>
+              </div>
+              <div class="diagram-arrow">→ patch</div>
+              <div class="layer-node emphasis">
+                <strong>S2 新值</strong
+                ><small>listener 身份不变；value = nextFn</small>
+              </div>
+              <div class="diagram-arrow">→ null</div>
+              <div class="layer-node">
+                <strong>S3 清理</strong
+                ><small>removeEventListener；缓存 = undefined</small>
+              </div>
+            </div>
+          </div>
+          <ol>
+            <li>
+              <strong>首次绑定：</strong>解析 <code>onClick</code> 与
+              options，创建 invoker，记录注册时间，再交给浏览器。
+            </li>
+            <li>
+              <strong>首次派发：</strong>invoker 读取当时的
+              <code>value</code>，所以调用 <code>prevFn</code>。
+            </li>
+            <li>
+              <strong>更新：</strong
+              >缓存已命中，不触碰浏览器监听器表；下一次派发才读取
+              <code>nextFn</code>。
+            </li>
+            <li>
+              <strong>清理：</strong>null 分支用注册时同一 listener/options
+              解绑，并删除 Vue 私有缓存引用。
+            </li>
+          </ol>
+          <div class="callout warm">
+            <strong>异常与边界：</strong>handler 抛错或返回 rejected Promise
+            时，invoker 通过
+            <code>callWithAsyncErrorHandling</code>
+            先进入组件错误链；错误是否继续抛出， 取决于
+            errorCaptured、app.errorHandler、开发/生产模式和
+            <code>throwUnhandledErrorInProduction</code>。数组 handler
+            会先复制快照， 并模拟
+            <code>stopImmediatePropagation</code>；冒泡途中刚注册的 listener 由
+            <code>attached / event._vts</code>
+            防止误收同一次事件；更新与解绑仍以稳定 invoker 身份为边界。
+          </div>
+        </section>
+
         <section class="article-section prose" id="reading">
           <h2>推荐源码路线</h2>
           <ol>
@@ -625,6 +837,67 @@ pnpm vitest packages/runtime-dom/__tests__/patchEvents.spec.ts
 pnpm vitest packages/runtime-dom/__tests__/directives/vModel.spec.ts</code></pre>
         </section>
 
+        <section class="article-section prose" id="evidence-matrix">
+          <h2>本页证据表：用例 → 源码 → 测试 → 图</h2>
+          <p class="source-note">
+            本轮实跑：Node v24.5.0，<code>patchEvents.spec.ts</code> 整文件 17
+            tests passed。
+          </p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>用例</th>
+                  <th>决定性源码</th>
+                  <th>仓库测试</th>
+                  <th>同用例图</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>onClick</code> 从 A 更新为 B，再更新为 null</td>
+                  <td>
+                    <code>modules/events.ts</code> · <code>patchEvent</code>
+                  </td>
+                  <td>
+                    <code>patchEvents.spec.ts</code> ·
+                    <code>should update event handler</code> /
+                    <code>should unassign event handler</code>
+                  </td>
+                  <td>
+                    <a href="#event-proof"
+                      >S0 空 → S1 旧值 → S2 新值 → S3 清理</a
+                    >
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    class/style/property/attribute/指令/Trusted Types 平台边界
+                  </td>
+                  <td>
+                    <code>patchProp.ts</code
+                    >、<code>modules/*</code>、<code>directives/*</code>、<code
+                      >nodeOps.ts</code
+                    >
+                  </td>
+                  <td>
+                    <code>patchProps.spec.ts</code
+                    >、<code>patchClass.spec.ts</code>、<code>patchStyle.spec.ts</code>、<code
+                      >vModel.spec.ts</code
+                    >
+                  </td>
+                  <td>
+                    <a href="#patch-prop">patchProp 决策树</a>、<a
+                      href="#directives"
+                      >表单边界</a
+                    >
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
         <nav class="page-nav" aria-label="章节翻页">
           <a href="builtins.html"><span>上一章</span>← 内置组件协议</a>
           <a href="evolution.html"><span>下一章</span>迭代与设计演进 →</a>
@@ -643,7 +916,9 @@ pnpm vitest packages/runtime-dom/__tests__/directives/vModel.spec.ts</code></pre
         <a href="#transition-dom">CSS Transition</a>
         <a href="#custom-elements">Custom Element</a>
         <a href="#security">安全边界</a>
+        <a href="#event-proof">事件证据链</a>
         <a href="#reading">阅读路线</a>
+        <a href="#evidence-matrix">证据表</a>
       </aside>
     </div>
     <footer data-site-footer></footer>

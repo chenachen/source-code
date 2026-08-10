@@ -464,8 +464,9 @@ export default class Tokenizer {
     }
   }
 
-  /** 当前插值开始/结束分隔符的字符码，可由 parser options 覆盖。 */
+  /** 当前插值开始分隔符的字符码，可由 parser options 覆盖。 */
   public delimiterOpen: Uint8Array = defaultDelimitersOpen
+  /** 当前插值结束分隔符的字符码，与 `delimiterOpen` 在每轮解析前成对重置。 */
   public delimiterClose: Uint8Array = defaultDelimitersClose
   /** 已匹配到分隔符的字符索引。 */
   private delimiterIndex = -1

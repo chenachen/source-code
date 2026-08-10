@@ -294,6 +294,7 @@ export function processExpression(
     }
   }
 
+  /** 附加前后缀改写元数据的 Babel 标识符；最终按原始 source offset 回填表达式。 */
   type QualifiedId = Identifier & PrefixMeta
   const ids: QualifiedId[] = []
   const parentStack: Node[] = []

@@ -15,6 +15,7 @@ describe('compiler: integration tests', () => {
 </div>
 `.trim()
 
+  /** source map 断言使用的生成位置或原始位置；行号从 1 开始，列号从 0 开始。 */
   interface Pos {
     /** 生成代码中的行号。 */
     line: number

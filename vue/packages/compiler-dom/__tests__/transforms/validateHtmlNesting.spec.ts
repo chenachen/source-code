@@ -34,7 +34,7 @@ describe('validate html nesting', () => {
 })
 
 /**
- * Copied from https://github.com/MananTank/validate-html-nesting
+ * 用例来源：https://github.com/MananTank/validate-html-nesting
  * 原规则来自 validate-html-nesting，遵循 ISC 许可证。
  */
 // 纯规则矩阵：直接验证标签对，便于区分“非法直接 parent”与“非法任意 ancestor”。

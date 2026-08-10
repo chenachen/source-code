@@ -379,8 +379,11 @@ return next</code></pre>
             anchor，后续兄弟会被重复认领或插错位置。
           </p>
           <div class="plain-section">
-            <span class="scene-label">固定版本源码卡 · v3.5.41</span>
-            <pre><code>// hydration.ts：三类失配不是同一种恢复
+            <span class="scene-label"
+              >跨函数机制选段 · 解释性改写 · 非连续源码</span
+            >
+            <pre><code>// 下面拼接 hydrateElement、propHasMismatch、handleMismatch 的机制，
+// 不是 hydration.ts 中可复制的连续源码。三类失配不是同一种恢复。
 if (textContent !== clientText) {
   el.textContent = vnode.children // 文本会校正
 }
@@ -558,6 +561,237 @@ patch(null, vnode, container, next, ...)</code></pre>
           </div>
         </section>
 
+        <section class="article-section prose" id="hydration-proof">
+          <h2>手把手证据链：文本失配到底怎样被修正</h2>
+          <p>
+            这一节只跟一个输入：服务器交付
+            <code>&lt;div&gt;foo&lt;/div&gt;</code>， 客户端首屏 VNode 却要求
+            <code>&lt;div&gt;bar&lt;/div&gt;</code>。先运行仓库测试，
+            再把每个断言映射回同一条源码分支；不会把多个失配类型拼成一段“伪源码”。
+          </p>
+
+          <h3>1. 完整仓库测试上下文</h3>
+          <p class="source-note">
+            性质：Vue 3.5.41 仓库真实测试。下面四段分别是依赖、测试
+            helper、共享清理和 完整测试体，均为文件中的连续原文；<code
+              >test / expect</code
+            >
+            与 <code>toHaveBeenWarned</code> 由仓库 Vitest 环境提供。
+          </p>
+          <pre
+            data-source-file="vue/packages/runtime-core/__tests__/hydration.spec.ts"
+          ><code>import {
+  type ObjectDirective,
+  Suspense,
+  Teleport,
+  Transition,
+  type VNode,
+  createBlock,
+  createCommentVNode,
+  createElementBlock,
+  createElementVNode,
+  createSSRApp,
+  createStaticVNode,
+  createTextVNode,
+  createVNode,
+  defineAsyncComponent,
+  defineComponent,
+  h,
+  hydrateOnVisible,
+  nextTick,
+  onMounted,
+  onServerPrefetch,
+  openBlock,
+  reactive,
+  ref,
+  registerRuntimeCompiler,
+  renderSlot,
+  useCssVars,
+  vModelCheckbox,
+  vShow,
+  withCtx,
+  withDirectives,
+} from '@vue/runtime-dom'
+import * as runtimeDom from '@vue/runtime-dom'</code></pre>
+          <pre
+            data-source-file="vue/packages/runtime-core/__tests__/hydration.spec.ts"
+          ><code>/**
+ * 用给定的服务端 HTML 和客户端 render 函数完成一次水合挂载。
+ * 返回根 VNode 与容器，方便同时断言节点复用和最终 DOM 内容。
+ */
+function mountWithHydration(html: string, render: () =&gt; any) {
+  const container = document.createElement('div')
+  container.innerHTML = html
+  const app = createSSRApp({
+    render,
+  })
+  return {
+    vnode: app.mount(container).$.subTree as VNode&lt;Node, Element&gt; &amp; {
+      el: Element
+    },
+    container,
+  }
+}</code></pre>
+          <pre
+            data-source-file="vue/packages/runtime-core/__tests__/hydration.spec.ts"
+          ><code>// 测试组：SSR 水合。
+describe('SSR hydration', () =&gt; {
+  beforeEach(() =&gt; {
+    document.body.innerHTML = ''
+  })</code></pre>
+          <pre
+            data-source-file="vue/packages/runtime-core/__tests__/hydration.spec.ts"
+          ><code>    // 测试场景：元素文本内容。
+    test('element text content', () =&gt; {
+      const { container } = mountWithHydration(&#96;&lt;div&gt;foo&lt;/div&gt;&#96;, () =&gt;
+        h('div', 'bar'),
+      )
+      expect(container.innerHTML).toBe('&lt;div&gt;bar&lt;/div&gt;')
+      expect(&#96;Hydration text content mismatch&#96;).toHaveBeenWarned()
+    })</code></pre>
+          <div class="test-proof">
+            <p>
+              <strong>Given：</strong>jsdom 容器先写入服务端 HTML
+              <code>&lt;div&gt;foo&lt;/div&gt;</code>；客户端 render 返回文本为
+              <code>bar</code> 的同类型 div。
+            </p>
+            <p>
+              <strong>When：</strong
+              ><code>createSSRApp().mount(container)</code> 进入
+              hydrate；测试没有调用普通 render 来覆盖容器。
+            </p>
+            <p>
+              <strong>Then：</strong>测试直接断言容器 HTML 变成
+              <code>&lt;div&gt;bar&lt;/div&gt;</code
+              >，并且开发态记录一次文本内容失配警告； 它没有保存旧 div
+              引用，因此不直接断言节点身份。
+            </p>
+            <p>
+              <strong>Mechanism：</strong>源码显示元素类型可认领，所以走
+              <code>hydrateElement</code> 的
+              <code>TEXT_CHILDREN</code> 分支，直接改已认领 div 的
+              <code>textContent</code
+              >，不走结构失配的删除重挂；“节点被保留”是源码结论，
+              不是该测试单独证明的身份断言。
+            </p>
+            <p>
+              <strong>Source：</strong
+              ><code>hydration.ts → hydrateNode → hydrateElement</code
+              >；测试前置通过 <code>beforeEach</code> 清空 body，Vitest/jsdom
+              在用例后回收局部容器。
+            </p>
+          </div>
+
+          <h3>2. 决定性连续源码</h3>
+          <p>
+            下段是
+            <code>packages/runtime-core/src/hydration.ts</code> 连续原文。
+            对本例真正有决定力的是：比较规范化文本、按配置决定是否警告，最后无条件把
+            <code>el.textContent</code> 写成客户端值。注意
+            <code>data-allow-mismatch="text"</code> 只压掉警告，仍会修正文本。
+          </p>
+          <pre
+            data-source-file="vue/packages/runtime-core/src/hydration.ts"
+          ><code>      } else if (shapeFlag &amp; ShapeFlags.TEXT_CHILDREN) {
+        // #11873：HTML 解析器会吞掉 &#96;&lt;pre&gt;&#96;/&#96;&lt;textarea&gt;&#96; 源码开头第一个换行。比较时
+        // 从客户端期望值移除该换行，避免把浏览器规范行为误报成水合不匹配。
+        let clientText = vnode.children as string
+        if (
+          clientText[0] === '\n' &amp;&amp;
+          (el.tagName === 'PRE' || el.tagName === 'TEXTAREA')
+        ) {
+          clientText = clientText.slice(1)
+        }
+        const { textContent } = el
+        if (
+          textContent !== clientText &amp;&amp;
+          // DOM 解析会把 CRLF/CR 统一为 LF，比较时接受这种等价规范化。
+          textContent !== clientText.replace(/\r\n|\r/g, '\n')
+        ) {
+          if (!isMismatchAllowed(el, MismatchTypes.TEXT)) {
+            ;(__DEV__ || __FEATURE_PROD_HYDRATION_MISMATCH_DETAILS__) &amp;&amp;
+              warn(
+                &#96;Hydration text content mismatch on&#96;,
+                el,
+                &#96;\n  - rendered on server: ${textContent}&#96; +
+                  &#96;\n  - expected on client: ${clientText}&#96;,
+              )
+            logMismatchError()
+          }
+          el.textContent = vnode.children as string
+        }
+      }</code></pre>
+
+          <h3>3. 同一用例的完整执行流程</h3>
+          <div
+            class="diagram"
+            role="img"
+            aria-label="元素文本失配从服务端 HTML 到修正完成的流程"
+          >
+            <div class="diagram-title">
+              SAME CASE · &lt;div&gt;foo&lt;/div&gt; →
+              &lt;div&gt;bar&lt;/div&gt;
+            </div>
+            <div class="layer-flow">
+              <div class="layer-node">
+                <strong>准备</strong
+                ><small>container.innerHTML 写入 SSR 节点 foo</small>
+              </div>
+              <div class="diagram-arrow">→</div>
+              <div class="layer-node">
+                <strong>认领</strong
+                ><small>hydrateNode 发现 DOM/VNode 都是 div</small>
+              </div>
+              <div class="diagram-arrow">→</div>
+              <div class="layer-node emphasis">
+                <strong>比较</strong><small>hydrateElement：foo !== bar</small>
+              </div>
+              <div class="diagram-arrow">→</div>
+              <div class="layer-node">
+                <strong>恢复</strong
+                ><small>warn + el.textContent = 'bar'</small>
+              </div>
+              <div class="diagram-arrow">→</div>
+              <div class="layer-node">
+                <strong>断言</strong><small>DOM 为 bar；失配警告存在</small>
+              </div>
+            </div>
+          </div>
+          <ol>
+            <li>
+              <strong>准备阶段：</strong>helper 先创建真实 DOM；这就是 hydrate
+              与 mount 的关键输入差异。
+            </li>
+            <li>
+              <strong>认领阶段：</strong>标签相同，VNode 的
+              <code>el</code> 指向原 div；不会新建 div。
+            </li>
+            <li>
+              <strong>比较阶段：</strong>浏览器会规范化换行，所以源码先接受
+              CRLF/CR 与 LF 的等价形式。
+            </li>
+            <li>
+              <strong>恢复阶段：</strong
+              >未允许该失配时警告；不论警告是否被允许，文本都以客户端 VNode
+              为准。
+            </li>
+            <li>
+              <strong>提交阶段：</strong>mount
+              返回后容器已是可信客户端结构，之后进入普通组件更新链。
+            </li>
+          </ol>
+          <div class="callout warm">
+            <strong>异常、失配与清理边界：</strong>若标签类型不同，<code
+              >handleMismatch</code
+            >
+            会删除错误宿主范围并调用普通 patch 重挂；若服务端 children
+            过多，游标循环
+            <code>remove(cur)</code>；若懒水合组件在触发前卸载，策略注册的
+            observer/事件清理函数
+            必须先撤销。三条路径不能和本例的“保留父元素、只改文本”混为一谈。
+          </div>
+        </section>
+
         <section class="article-section prose" id="debug">
           <h2>阅读与调试路线</h2>
           <ol>
@@ -606,6 +840,68 @@ pnpm vitest packages/vue/__tests__/e2e/hydrationStrategies.spec.ts</code></pre>
           </div>
         </section>
 
+        <section class="article-section prose" id="evidence-matrix">
+          <h2>本页证据表：用例 → 源码 → 测试 → 图</h2>
+          <p class="source-note">
+            本轮实跑：Node v24.5.0，<code>hydration.spec.ts</code> 整文件 122
+            tests passed。
+          </p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>用例</th>
+                  <th>决定性源码</th>
+                  <th>仓库测试</th>
+                  <th>同用例图</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>
+                    <code>&lt;div&gt;foo&lt;/div&gt;</code> 水合为文本
+                    <code>bar</code>
+                  </td>
+                  <td>
+                    <code>hydration.ts</code> ·
+                    <code>hydrateElement / TEXT_CHILDREN</code>
+                  </td>
+                  <td>
+                    <code>hydration.spec.ts</code> ·
+                    <code
+                      >SSR hydration › mismatch handling › element text
+                      content</code
+                    >
+                  </td>
+                  <td>
+                    <a href="#hydration-proof"
+                      >准备 → 认领 → 比较 → 恢复 → 断言</a
+                    >
+                  </td>
+                </tr>
+                <tr>
+                  <td>结构失配 / 多余 children / 懒水合提前卸载</td>
+                  <td>
+                    <code>handleMismatch</code>、<code>remove(cur)</code>、策略
+                    cleanup
+                  </td>
+                  <td>
+                    同文件 <code>complete mismatch</code>、<code
+                      >too many children</code
+                    >
+                    及 hydration strategies tests
+                  </td>
+                  <td>
+                    <a href="#mismatch">失配恢复分支</a>、<a href="#lazy"
+                      >懒水合状态序列</a
+                    >
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
         <nav class="page-nav" aria-label="章节翻页">
           <a href="scheduler.html"><span>上一章</span>← 调度系统</a>
           <a href="builtins.html"><span>下一章</span>内置组件协议 →</a>
@@ -622,7 +918,9 @@ pnpm vitest packages/vue/__tests__/e2e/hydrationStrategies.spec.ts</code></pre>
         <a href="#mismatch">失配恢复</a>
         <a href="#real-world">真实场景</a>
         <a href="#lazy">懒水合</a>
+        <a href="#hydration-proof">文本失配证据链</a>
         <a href="#debug">阅读与调试</a>
+        <a href="#evidence-matrix">证据表</a>
       </aside>
     </div>
     <footer data-site-footer></footer>

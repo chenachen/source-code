@@ -389,7 +389,7 @@ export function createTransformContext(
     identifiers[id]!++
   }
 
-  // 使用计数而非布尔值，支持同名参数在嵌套 v-for / v-slot 中被遮蔽后正确恢复。
+  /** 撤销一层局部标识符；计数允许嵌套 v-for/v-slot 的同名遮蔽逐层恢复。 */
   function removeId(id: string) {
     context.identifiers[id]!--
   }

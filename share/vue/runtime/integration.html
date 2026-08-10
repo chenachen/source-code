@@ -20,8 +20,8 @@
           <h1>一个按钮，从首次出现到点击后变成 1</h1>
           <p class="article-lead">
             不再先讲一堆函数名。先拿到完整可运行用例，再沿同一份
-            <code>count</code>、同一个组件实例、同一对 VNode 和同一个 button DOM，
-            手把手走完 Vue 3.5.41 的真实源码。
+            <code>count</code>、同一个组件实例、同一对 VNode 和同一个 button
+            DOM， 手把手走完 Vue 3.5.41 的真实源码。
           </p>
           <div class="hero-meta">
             <span>先完整用例</span><span>再真实测试</span
@@ -33,32 +33,49 @@
           <h2>先知道这一章怎样读</h2>
           <p>
             全章只研究一个结果：初次挂载得到
-            <code>&lt;button&gt;计数：0&lt;/button&gt;</code>；点击一次后，同一个
-            button 变成“计数：1”，同时 <code>aria-label</code> 从“当前计数 0”
-            变成“当前计数 1”。阅读顺序固定：
+            <code>&lt;button&gt;计数：0&lt;/button&gt;</code
+            >；点击一次后，同一个 button 变成“计数：1”，同时
+            <code>aria-label</code> 从“当前计数 0” 变成“当前计数
+            1”。阅读顺序固定：
           </p>
           <ol class="chapter-route">
             <li><strong>完整教程 Demo：</strong>先看业务输入与可观察输出。</li>
-            <li><strong>仓库真实测试：</strong>先证明“点击 → 批量更新 → DOM 变化”确实成立。</li>
-            <li><strong>对象与流程图：</strong>认清 ref、Dep、effect、job、VNode、DOM 各是谁。</li>
-            <li><strong>逐站源码：</strong>按真实调用顺序解释参数、返回值和状态前后。</li>
-            <li><strong>边界与证据：</strong>相同值、去重、卸载、render 抛错、job 抛错怎样收口。</li>
+            <li>
+              <strong>仓库真实测试：</strong>先证明“点击 → 等待 nextTick →
+              宿主树变化”这个外部闭环确实成立；批处理与 job 去重另由后文源码和
+              scheduler 定向测试证明。
+            </li>
+            <li>
+              <strong>对象与流程图：</strong>认清
+              ref、Dep、effect、job、VNode、DOM 各是谁。
+            </li>
+            <li>
+              <strong>逐站源码：</strong
+              >按真实调用顺序解释参数、返回值和状态前后。
+            </li>
+            <li>
+              <strong>边界与证据：</strong>相同值、去重、卸载、render 抛错、job
+              抛错怎样收口。
+            </li>
           </ol>
           <div class="callout">
             <strong>固定证据基线：</strong>本地 <code>vue/package.json</code> 为
-            <code>3.5.41</code>。下文“连续原码摘录”保证语句连续、执行 token 未改；
-            为展示默认只做 HTML 实体转义、去掉共同左缩进，并不收录源码说明注释。
-            凡跨段或省略执行语句 / 控制分支，都明确写“删节摘录”，并用
-            <code>// ...</code> 标出省略处。
+            <code>3.5.41</code>。只有带
+            <code>data-source-file</code> 的代码块才称 “连续原文”：其 DOM
+            <code>textContent</code> 可在对应本地文件逐字连续匹配。
+            其余源码块统一属于教学摘录：可能去掉说明注释、重排共同左缩进；凡跨段或
+            省略执行语句 / 控制分支，还会明确写“删节摘录”，并用
+            <code>// ...</code> 标出省略处。教学摘录不冒充可逐字复制的连续源码。
           </div>
         </section>
 
         <section class="article-section prose" id="demo">
           <h2>第一步：先把完整计数器跑起来</h2>
           <p>
-            这是<strong>教程自写的最小可运行 Vite 项目</strong>，不是 Vue 仓库测试，也不是
-            Vue 源码。锁定 <code>vue@3.5.41</code>，用手写 render 函数避免模板编译器遮住
-            Runtime 主线。三个文件全部如下，没有隐藏业务代码。
+            这是<strong>教程自写的最小可运行 Vite 项目</strong>，不是 Vue
+            仓库测试，也不是 Vue 源码。锁定 <code>vue@3.5.41</code>，用手写
+            render 函数避免模板编译器遮住 Runtime
+            主线。三个文件全部如下，没有隐藏业务代码。
           </p>
 
           <h3><code>package.json</code></h3>
@@ -150,7 +167,9 @@ const App = {
 
 createApp(App).mount('#app')</code></pre>
 
-          <p>运行 <code>npm install</code>、<code>npm run dev</code>。预期顺序：</p>
+          <p>
+            运行 <code>npm install</code>、<code>npm run dev</code>。预期顺序：
+          </p>
           <pre><code>[mounted] 计数：0
 
 # 点击一次
@@ -159,9 +178,13 @@ createApp(App).mount('#app')</code></pre>
 [updated] 计数：1
 [nextTick] 计数：1</code></pre>
           <p>
-            最关键观察：<code>count.value++</code> 已同步完成，但同一个同步事件处理函数里
-            DOM 仍是 0；<code>onUpdated</code> 先看到新 DOM，随后
-            <code>await nextTick()</code> 才恢复。后面所有源码，只为解释这四行顺序。
+            最关键观察：<code>count.value++</code>
+            已同步完成，但同一个同步事件处理函数里 DOM 仍是 0；<code
+              >onUpdated</code
+            >
+            先看到新 DOM，随后
+            <code>await nextTick()</code>
+            才恢复。后面所有源码，只为解释这四行顺序。
           </p>
         </section>
 
@@ -169,16 +192,23 @@ createApp(App).mount('#app')</code></pre>
           <h2>第二步：先看 Vue 仓库怎样证明这条链</h2>
           <p>
             下方是 Vue 3.5.41 仓库
-            <a href="../../../vue/packages/runtime-core/__tests__/apiOptions.spec.ts"
-              ><code>packages/runtime-core/__tests__/apiOptions.spec.ts</code></a
+            <a
+              href="../../../vue/packages/runtime-core/__tests__/apiOptions.spec.ts"
+              ><code
+                >packages/runtime-core/__tests__/apiOptions.spec.ts</code
+              ></a
             >
-            的<strong>完整 <code>test('data')</code> 测试体</strong>；只统一去掉外层
-            <code>describe</code> 带来的两个空格缩进，代码未改。它不依赖教程 Demo；
-            外层 <code>describe</code> 位于同文件；为避免读者猜依赖，先把文件顶部完整
-            import 上下文一并贴出。<code>test</code>、<code>expect</code> 由该仓库 Vitest
-            globals 提供。
+            的<strong>完整 <code>test('data')</code> 测试逻辑</strong
+            >；下方是缩进规范化的 教学呈现，统一去掉外层
+            <code>describe</code> 带来的两个空格，未删动作或断言，
+            但不标作逐字连续原文。它不依赖教程 Demo； 外层
+            <code>describe</code> 位于同文件；为避免读者猜依赖，先把文件顶部完整
+            import 上下文一并贴出。<code>test</code>、<code>expect</code>
+            由该仓库 Vitest globals 提供。
           </p>
-          <pre><code>/**
+          <pre
+            data-source-file="vue/packages/runtime-core/__tests__/apiOptions.spec.ts"
+          ><code>/**
  * @vitest-environment jsdom
  */
 import type { Mock } from 'vitest'
@@ -225,19 +255,47 @@ import { render as domRender } from 'vue'</code></pre>
   expect(serializeInner(root)).toBe(&#96;&lt;div&gt;2&lt;/div&gt;&#96;)
 })</code></pre>
           <div class="test-proof">
-            <p><strong>Given：</strong><code>data().foo = 1</code>，render 生成带 click 的 div。</p>
-            <p><strong>When：</strong>测试宿主触发 click，处理器执行 <code>this.foo++</code>，随后等待 <code>nextTick()</code>。</p>
-            <p><strong>Then：</strong>宿主树从 <code>&lt;div&gt;1&lt;/div&gt;</code> 变成 <code>&lt;div&gt;2&lt;/div&gt;</code>。</p>
-            <p><strong>Mechanism：</strong>证明事件、响应式组件更新、调度与 patch 形成闭环；它不单独证明每个内部函数。</p>
-            <p><strong>本轮执行证据：</strong>Node 24 环境执行该测试文件：1 file passed，48 tests passed。</p>
+            <p>
+              <strong>Given：</strong><code>data().foo = 1</code>，render 生成带
+              click 的 div。
+            </p>
+            <p>
+              <strong>When：</strong>测试宿主触发 click，处理器执行
+              <code>this.foo++</code>，随后等待 <code>nextTick()</code>。
+            </p>
+            <p>
+              <strong>Then：</strong>宿主树从
+              <code>&lt;div&gt;1&lt;/div&gt;</code> 变成
+              <code>&lt;div&gt;2&lt;/div&gt;</code>。
+            </p>
+            <p>
+              <strong>Mechanism：</strong>这个黑盒测试只证明事件触发后，等待一次
+              <code>nextTick</code>
+              能观察到组件宿主树变化；它不能单独证明中间只排了一个
+              job，也不能区分 reactivity batch 与 runtime-core 微任务队列。
+            </p>
+            <p>
+              <strong>Source：</strong>本节的行为证据来自
+              <code>apiOptions.spec.ts · test('data')</code>；批处理、job 去重和
+              patch
+              的内部结论分别回到第七至第十步的连续/删节源码，以及本章末尾列出的
+              scheduler 定向测试。
+            </p>
+            <p>
+              <strong>本轮执行证据：</strong>Node 24 环境执行该测试文件：1 file
+              passed，48 tests passed。
+            </p>
           </div>
           <div class="callout warm">
             <strong>不要混淆两个状态入口。</strong>教程 Demo 是
-            <code>ref</code>：进入 <code>RefImpl.set value</code>。仓库测试是 Options
-            <code>data</code>：<code>PublicInstanceProxyHandlers.set</code> 先写
-            <code>instance.data</code>，再由 reactive proxy setter 触发依赖。两条链从
-            <code>Dep.notify()</code> 之后汇合：组件 render effect → scheduler → render →
-            patch。所以下文用 Ref 源码解释 Demo，不拿这个 Options 测试冒充 Ref 证据。
+            <code>ref</code>：进入 <code>RefImpl.set value</code>。仓库测试是
+            Options <code>data</code>：<code
+              >PublicInstanceProxyHandlers.set</code
+            >
+            先写 <code>instance.data</code>，再由 reactive proxy setter
+            触发依赖。两条链从 <code>Dep.notify()</code> 之后汇合：组件 render
+            effect → scheduler → render → patch。所以下文用 Ref 源码解释
+            Demo，不拿这个 Options 测试冒充 Ref 证据。
           </div>
         </section>
 
@@ -247,7 +305,12 @@ import { render as domRender } from 'vue'</code></pre>
           <div class="table-wrap">
             <table>
               <thead>
-                <tr><th>对象</th><th>本例具体值</th><th>谁持有</th><th>职责边界</th></tr>
+                <tr>
+                  <th>对象</th>
+                  <th>本例具体值</th>
+                  <th>谁持有</th>
+                  <th>职责边界</th>
+                </tr>
               </thead>
               <tbody>
                 <tr>
@@ -266,11 +329,16 @@ import { render as domRender } from 'vue'</code></pre>
                   <td><strong>ReactiveEffect</strong></td>
                   <td><code>instance.effect</code></td>
                   <td>组件实例 effectScope</td>
-                  <td>运行 <code>componentUpdateFn</code>、收集依赖；scheduler 决定何时重跑。</td>
+                  <td>
+                    运行 <code>componentUpdateFn</code>、收集依赖；scheduler
+                    决定何时重跑。
+                  </td>
                 </tr>
                 <tr>
                   <td><strong>SchedulerJob</strong></td>
-                  <td><code>instance.job = effect.runIfDirty.bind(effect)</code></td>
+                  <td>
+                    <code>instance.job = effect.runIfDirty.bind(effect)</code>
+                  </td>
                   <td>组件实例 / scheduler queue</td>
                   <td>带 uid、flags，可去重、排序、跳过已卸载任务。</td>
                 </tr>
@@ -294,45 +362,167 @@ import { render as domRender } from 'vue'</code></pre>
         <section class="article-section prose" id="flowchart">
           <h2>第四步：同一个 Demo 的完整执行流程图</h2>
           <p>
-            左边解释首次 mount；右边解释一次 click。实线是本例正常控制流，红色“退出”
+            左边解释首次 mount；右边解释一次
+            click。实线是本例正常控制流，红色“退出”
             是源码真实边界。先完整看图，再按图下阶段逐站读源码。
           </p>
-          <div class="trace-board" role="img" aria-label="按钮计数器首次挂载与点击更新的 Vue Runtime 完整流程图">
+          <div
+            class="trace-board"
+            role="img"
+            aria-label="按钮计数器首次挂载与点击更新的 Vue Runtime 完整流程图"
+          >
             <ol class="trace-lane mount-lane">
-              <li class="trace-heading"><strong>A · 首次 mount：同步完成</strong><span>不进入 scheduler 主队列</span></li>
-              <li><strong>createApp(App).mount('#app')</strong><span>runtime-dom 解析容器、清空旧文本</span><em>无容器 → return</em></li>
-              <li><strong>create root VNode → render()</strong><span>container._vnode 为空</span><em>重复 mount → warn / 不再挂载</em></li>
-              <li><strong>patch(null, rootVNode)</strong><span>COMPONENT → processComponent</span></li>
-              <li><strong>mountComponent()</strong><span>创建 instance，执行 setup，建立 render effect</span><em>async setup → Suspense/占位</em></li>
-              <li><strong>setupRenderEffect() → update()</strong><span>首次直接 effect.run；不是 queueJob</span></li>
-              <li><strong>renderComponentRoot(instance)</strong><span>读取 count.value=0；Dep 记录 render effect；返回 button VNode</span><em>render 抛错 → handleError；错误被接管后才降级 Comment VNode，未处理 dev 错误可继续抛出</em></li>
-              <li><strong>patch(null, subTree) → mountElement</strong><span>createElement → text → patchProp(id / aria / onClick) → insert</span></li>
-              <li><strong>queuePostRenderEffect(mounted)</strong><span>根 render 尾部 flushPostFlushCbs</span></li>
-              <li class="trace-final"><strong>mount 返回</strong><span>instance.isMounted=true；subTree=“0”；DOM=“0”</span></li>
+              <li class="trace-heading">
+                <strong>A · 首次 mount：同步完成</strong
+                ><span>不进入 scheduler 主队列</span>
+              </li>
+              <li>
+                <strong>createApp(App).mount('#app')</strong
+                ><span>runtime-dom 解析容器、清空旧文本</span
+                ><em>无容器 → return</em>
+              </li>
+              <li>
+                <strong>create root VNode → render()</strong
+                ><span>container._vnode 为空</span
+                ><em>重复 mount → warn / 不再挂载</em>
+              </li>
+              <li>
+                <strong>patch(null, rootVNode)</strong
+                ><span>COMPONENT → processComponent</span>
+              </li>
+              <li>
+                <strong>mountComponent()</strong
+                ><span>创建 instance，执行 setup，建立 render effect</span
+                ><em>async setup → Suspense/占位</em>
+              </li>
+              <li>
+                <strong>setupRenderEffect() → update()</strong
+                ><span>首次直接 effect.run；不是 queueJob</span>
+              </li>
+              <li>
+                <strong>renderComponentRoot(instance)</strong
+                ><span
+                  >读取 count.value=0；Dep 记录 render effect；返回 button
+                  VNode</span
+                ><em
+                  >render 抛错 → handleError；错误被接管后才降级 Comment
+                  VNode，未处理 dev 错误可继续抛出</em
+                >
+              </li>
+              <li>
+                <strong>patch(null, subTree) → mountElement</strong
+                ><span
+                  >createElement → text → patchProp(id / aria / onClick) →
+                  insert</span
+                >
+              </li>
+              <li>
+                <strong>queuePostRenderEffect(mounted)</strong
+                ><span>根 render 尾部 flushPostFlushCbs</span>
+              </li>
+              <li class="trace-final">
+                <strong>mount 返回</strong
+                ><span>instance.isMounted=true；subTree=“0”；DOM=“0”</span>
+              </li>
             </ol>
 
             <ol class="trace-lane update-lane">
-              <li class="trace-heading"><strong>B · 点击更新：同步触发，微任务提交</strong><span>同一个 ref、instance、button</span></li>
-              <li><strong>DOM click → event invoker → increment</strong><span>callWithAsyncErrorHandling 调业务处理器</span><em>处理器抛错 → 组件错误管道</em></li>
-              <li><strong>count.value++</strong><span>JS 先调 getter 读 0，再调 setter 写 1；handler 中 activeSub 为空，getter 不新增订阅；Dep.version: 0 → 1</span><em>Object.is 相同 → 退出，不通知</em></li>
-              <li><strong>Dep.trigger() / notify()</strong><span>ReactiveEffect.notify → batch；endBatch 再 trigger effect</span></li>
-              <li><strong>effect.scheduler → queueJob(instance.job)</strong><span>设置 QUEUED；Promise.then(flushJobs)</span><em>已 QUEUED → 去重退出</em></li>
-              <li><strong>同步 handler 结束</strong><span>响应式值=1；旧 subTree=0；DOM 仍=0</span></li>
-              <li><strong>微任务 flushJobs()</strong><span>取 job；DISPOSED 则跳过；递归超限则报告并跳过</span><em>job 抛错 → finally 仍清 flags / 刷 post</em></li>
-              <li><strong>job = effect.runIfDirty()</strong><span>isDirty → effect.run → componentUpdateFn</span><em>不脏 → 不 render</em></li>
-              <li><strong>renderComponentRoot(instance)</strong><span>读 count.value=1；返回新 button VNode</span><em>render 抛错 → handleError；只有错误管道未继续抛出时才降级 Comment VNode</em></li>
-              <li><strong>patch(prevTree, nextTree)</strong><span>同 type/key → processElement → patchElement</span><em>不同 type/key → unmount 旧树，再 mount</em></li>
-              <li><strong>patchChildren + patchProps</strong><span>setElementText“1”；patchProp(aria-label)；id/onClick 相同跳过</span></li>
-              <li><strong>queuePostRenderEffect(updated)</strong><span>flushJobs.finally → flushPostFlushCbs → onUpdated 看见 DOM=1</span></li>
-              <li class="trace-final"><strong>currentFlushPromise 完成 → nextTick 恢复</strong><span>回调看见 DOM=1；不代表浏览器已绘制</span></li>
+              <li class="trace-heading">
+                <strong>B · 点击更新：同步触发，微任务提交</strong
+                ><span>同一个 ref、instance、button</span>
+              </li>
+              <li>
+                <strong>DOM click → event invoker → increment</strong
+                ><span>callWithAsyncErrorHandling 调业务处理器</span
+                ><em>处理器抛错 → 组件错误管道</em>
+              </li>
+              <li>
+                <strong>count.value++</strong
+                ><span
+                  >JS 先调 getter 读 0，再调 setter 写 1；handler 中 activeSub
+                  为空，getter 不新增订阅；Dep.version: 0 → 1</span
+                ><em>Object.is 相同 → 退出，不通知</em>
+              </li>
+              <li>
+                <strong>Dep.trigger() / notify()</strong
+                ><span
+                  >ReactiveEffect.notify → batch；endBatch 再 trigger
+                  effect</span
+                >
+              </li>
+              <li>
+                <strong>effect.scheduler → queueJob(instance.job)</strong
+                ><span>设置 QUEUED；Promise.then(flushJobs)</span
+                ><em>已 QUEUED → 去重退出</em>
+              </li>
+              <li>
+                <strong>同步 handler 结束</strong
+                ><span>响应式值=1；旧 subTree=0；DOM 仍=0</span>
+              </li>
+              <li>
+                <strong>微任务 flushJobs()</strong
+                ><span>取 job；DISPOSED 则跳过；递归超限则报告并跳过</span
+                ><em>job 抛错 → finally 仍清 flags / 刷 post</em>
+              </li>
+              <li>
+                <strong>job = effect.runIfDirty()</strong
+                ><span>isDirty → effect.run → componentUpdateFn</span
+                ><em>不脏 → 不 render</em>
+              </li>
+              <li>
+                <strong>renderComponentRoot(instance)</strong
+                ><span>读 count.value=1；返回新 button VNode</span
+                ><em
+                  >render 抛错 → handleError；只有错误管道未继续抛出时才降级
+                  Comment VNode</em
+                >
+              </li>
+              <li>
+                <strong>patch(prevTree, nextTree)</strong
+                ><span>同 type/key → processElement → patchElement</span
+                ><em>不同 type/key → unmount 旧树，再 mount</em>
+              </li>
+              <li>
+                <strong>patchChildren + patchProps</strong
+                ><span
+                  >setElementText“1”；patchProp(aria-label)；id/onClick
+                  相同跳过</span
+                >
+              </li>
+              <li>
+                <strong>queuePostRenderEffect(updated)</strong
+                ><span
+                  >flushJobs.finally → flushPostFlushCbs → onUpdated 看见
+                  DOM=1</span
+                >
+              </li>
+              <li class="trace-final">
+                <strong>currentFlushPromise 完成 → nextTick 恢复</strong
+                ><span>回调看见 DOM=1；不代表浏览器已绘制</span>
+              </li>
             </ol>
           </div>
 
           <h3>图中三条时间边界</h3>
           <ol>
-            <li><strong>首次 mount 是同步：</strong>effect 建好后直接 <code>update()</code>；根 <code>render()</code> 同步冲刷 mounted post callbacks。</li>
-            <li><strong>响应式通知也是同步：</strong><code>RefImpl.set → Dep.notify → reactivity batch/endBatch → effect.scheduler</code> 都发生在 click 调用栈内；这个 batch 不是 DOM 更新队列。</li>
-            <li><strong>组件提交才跨微任务：</strong><code>queueJob</code> 用 Promise 安排 <code>flushJobs</code>；DOM patch、updated post flush 完成后，绑定同一 Promise 的 <code>nextTick</code> 才恢复。</li>
+            <li>
+              <strong>首次 mount 是同步：</strong>effect 建好后直接
+              <code>update()</code>；根 <code>render()</code> 同步冲刷 mounted
+              post callbacks。
+            </li>
+            <li>
+              <strong>响应式通知也是同步：</strong
+              ><code
+                >RefImpl.set → Dep.notify → reactivity batch/endBatch →
+                effect.scheduler</code
+              >
+              都发生在 click 调用栈内；这个 batch 不是 DOM 更新队列。
+            </li>
+            <li>
+              <strong>组件提交才跨微任务：</strong><code>queueJob</code> 用
+              Promise 安排 <code>flushJobs</code>；DOM patch、updated post flush
+              完成后，绑定同一 Promise 的 <code>nextTick</code> 才恢复。
+            </li>
           </ol>
         </section>
 
@@ -341,15 +531,57 @@ import { render as domRender } from 'vue'</code></pre>
           <div class="table-wrap">
             <table>
               <thead>
-                <tr><th>时点</th><th>count / Dep</th><th>job</th><th>instance.subTree</th><th>真实 DOM</th></tr>
+                <tr>
+                  <th>时点</th>
+                  <th>count / Dep</th>
+                  <th>job</th>
+                  <th>instance.subTree</th>
+                  <th>真实 DOM</th>
+                </tr>
               </thead>
               <tbody>
-                <tr><td><strong>setup 后、首 render 前</strong></td><td>0 / version 0，无订阅</td><td>effect/job 已创建，未排队</td><td>无</td><td>容器空</td></tr>
-                <tr><td><strong>首次 mount/patch 完成</strong></td><td>0 / 已连 render effect</td><td>未排队</td><td>button“0”</td><td>button“0”</td></tr>
-                <tr><td><strong>setter 返回</strong></td><td>1 / version 1</td><td>QUEUED</td><td>仍是“0”</td><td>仍是“0”</td></tr>
-                <tr><td><strong>新 render 后、patch 前</strong></td><td>1 / 关系复用</td><td>正在执行</td><td>已换成“1”；prevTree 变量保留“0”</td><td>仍是“0”</td></tr>
-                <tr><td><strong>patch 后</strong></td><td>1 / version 1</td><td>主 job 完成</td><td>button“1”，el 仍指同一 DOM</td><td>文字与 aria 都是“1”</td></tr>
-                <tr><td><strong>post flush / nextTick</strong></td><td>不变</td><td>QUEUED 已清</td><td>不变</td><td>updated 先读到“1”，nextTick 后也读到“1”</td></tr>
+                <tr>
+                  <td><strong>setup 后、首 render 前</strong></td>
+                  <td>0 / version 0，无订阅</td>
+                  <td>effect/job 已创建，未排队</td>
+                  <td>无</td>
+                  <td>容器空</td>
+                </tr>
+                <tr>
+                  <td><strong>首次 mount/patch 完成</strong></td>
+                  <td>0 / 已连 render effect</td>
+                  <td>未排队</td>
+                  <td>button“0”</td>
+                  <td>button“0”</td>
+                </tr>
+                <tr>
+                  <td><strong>setter 返回</strong></td>
+                  <td>1 / version 1</td>
+                  <td>QUEUED</td>
+                  <td>仍是“0”</td>
+                  <td>仍是“0”</td>
+                </tr>
+                <tr>
+                  <td><strong>新 render 后、patch 前</strong></td>
+                  <td>1 / 关系复用</td>
+                  <td>正在执行</td>
+                  <td>已换成“1”；prevTree 变量保留“0”</td>
+                  <td>仍是“0”</td>
+                </tr>
+                <tr>
+                  <td><strong>patch 后</strong></td>
+                  <td>1 / version 1</td>
+                  <td>主 job 完成</td>
+                  <td>button“1”，el 仍指同一 DOM</td>
+                  <td>文字与 aria 都是“1”</td>
+                </tr>
+                <tr>
+                  <td><strong>post flush / nextTick</strong></td>
+                  <td>不变</td>
+                  <td>QUEUED 已清</td>
+                  <td>不变</td>
+                  <td>updated 先读到“1”，nextTick 后也读到“1”</td>
+                </tr>
               </tbody>
             </table>
           </div>
@@ -359,11 +591,12 @@ import { render as domRender } from 'vue'</code></pre>
           <h2>第六步：首次 mount 为什么不排队</h2>
           <h3>6.1 DOM 平台入口把容器交给 runtime-core</h3>
           <p>
-            <strong>输入：</strong><code>'#app'</code>。<strong>输出：</strong>组件公开代理。
-            <strong>状态变化：</strong>容器旧文本被清空，core mount 创建根 VNode 并调用
-            renderer 的 <code>render</code>。下段是
-            <code>packages/runtime-dom/src/index.ts · createApp</code> 的真实源码删节摘录；
-            只省略 in-DOM template、compat 与容器标记分支。
+            <strong>输入：</strong
+            ><code>'#app'</code>。<strong>输出：</strong>组件公开代理。
+            <strong>状态变化：</strong>容器旧文本被清空，core mount 创建根 VNode
+            并调用 renderer 的 <code>render</code>。下段是
+            <code>packages/runtime-dom/src/index.ts · createApp</code>
+            的真实源码删节摘录； 只省略 in-DOM template、compat 与容器标记分支。
           </p>
           <pre><code>const { mount } = app
 app.mount = (containerOrSelector: Element | ShadowRoot | string): any =&gt; {
@@ -381,9 +614,11 @@ app.mount = (containerOrSelector: Element | ShadowRoot | string): any =&gt; {
   return proxy
 }</code></pre>
           <p>
-            随后 <code>packages/runtime-core/src/apiCreateApp.ts · mount</code> 创建根 VNode，
-            注入 appContext，再调用 renderer。下段为真实源码删节摘录；只省略 namespace、
-            HMR、容器标记与 devtools 细节：
+            随后
+            <code>packages/runtime-core/src/apiCreateApp.ts · mount</code>
+            创建根 VNode， 注入 appContext，再调用
+            renderer。下段为真实源码删节摘录；只省略 namespace、 HMR、容器标记与
+            devtools 细节：
           </p>
           <pre><code>const vnode = app._ceVNode || createVNode(rootComponent, rootProps)
 vnode.appContext = context
@@ -405,10 +640,13 @@ return getComponentPublicInstance(vnode.component!)</code></pre>
 
           <h3>6.2 render effect 建立后，第一次直接 <code>update()</code></h3>
           <p>
-            <strong>文件 / 符号：</strong><code>packages/runtime-core/src/renderer.ts · setupRenderEffect</code>。
-            effect 的函数是 <code>componentUpdateFn</code>；组件自身状态变化时 scheduler 才
-            <code>queueJob(job)</code>；最后一行首次直接调用 <code>update()</code>。
-            下段为真实源码删节摘录，只省略开发调试钩子。
+            <strong>文件 / 符号：</strong
+            ><code
+              >packages/runtime-core/src/renderer.ts · setupRenderEffect</code
+            >。 effect 的函数是
+            <code>componentUpdateFn</code>；组件自身状态变化时 scheduler 才
+            <code>queueJob(job)</code>；最后一行首次直接调用
+            <code>update()</code>。 下段为真实源码删节摘录，只省略开发调试钩子。
           </p>
           <pre><code>instance.scope.on()
 const effect = (instance.effect = new ReactiveEffect(componentUpdateFn))
@@ -426,16 +664,21 @@ toggleRecurse(instance, true)
 
 update()</code></pre>
           <p>
-            <code>update()</code> 通常返回 <code>undefined</code>；VNode 不是它的返回值，
-            而是 <code>componentUpdateFn</code> 写入 <code>instance.subTree</code>。
-            <code>job</code> 则不是
-            <code>effect.run</code>，而是 <code>runIfDirty</code>，以后出队时还会复查依赖版本。
+            <code>update()</code> 通常返回 <code>undefined</code>；VNode
+            不是它的返回值， 而是 <code>componentUpdateFn</code> 写入
+            <code>instance.subTree</code>。 <code>job</code> 则不是
+            <code>effect.run</code>，而是
+            <code>runIfDirty</code>，以后出队时还会复查依赖版本。
           </p>
 
-          <h3>6.3 初次 render 得到 VNode，再用 <code>patch(null, subTree)</code> 挂 DOM</h3>
+          <h3>
+            6.3 初次 render 得到 VNode，再用
+            <code>patch(null, subTree)</code> 挂 DOM
+          </h3>
           <p>
-            下段同属 <code>componentUpdateFn</code> 的 mount 分支，为真实连续代码摘录
-            （只移除源码注释，没有重排代码）：
+            下段同属 <code>componentUpdateFn</code> 的 mount
+            分支，是按执行顺序整理的
+            教学摘录；只移除源码注释并统一左缩进，因此不标作逐字连续原文：
           </p>
           <pre><code>const subTree = (instance.subTree = renderComponentRoot(instance))
 if (__DEV__) {
@@ -458,16 +701,19 @@ if (__DEV__) {
 }
 initialVNode.el = subTree.el</code></pre>
           <p>
-            <code>renderComponentRoot(instance)</code> 调教程 render 函数。它读取
-            <code>count.value</code>，此时 <code>activeSub</code> 正是组件 effect，所以
-            <code>count.dep</code> 建立 Link；返回值被规范化为 button VNode。传给
-            <code>patch</code> 的旧节点是 <code>null</code>，因此必走 mount。
+            <code>renderComponentRoot(instance)</code> 调教程 render
+            函数。它读取 <code>count.value</code>，此时
+            <code>activeSub</code> 正是组件 effect，所以
+            <code>count.dep</code> 建立 Link；返回值被规范化为 button
+            VNode。传给 <code>patch</code> 的旧节点是
+            <code>null</code>，因此必走 mount。
           </p>
           <p>
             mount 分支把 <code>onMounted</code> 放入 post 队列后，控制权回到
-            <code>renderer.ts · render</code>。根 render 尾部会同步冲刷 pre/post 队列，
-            因而教程的 mounted 日志出现在 <code>app.mount()</code> 返回前。以下为连续原码
-            摘录（源码说明注释未收录）：
+            <code>renderer.ts · render</code>。根 render 尾部会同步冲刷 pre/post
+            队列， 因而教程的 mounted 日志出现在
+            <code>app.mount()</code> 返回前。以下为执行语句
+            摘录；源码说明注释未收录、共同左缩进已统一，因此不标作逐字连续原文：
           </p>
           <pre><code>container._vnode = vnode
 if (!isFlushing) {
@@ -479,9 +725,9 @@ if (!isFlushing) {
 
           <h3>6.4 runtime-dom 完成首次施工</h3>
           <p>
-            <code>mountElement</code> 先 <code>hostCreateElement</code>，文本 children 走
-            <code>hostSetElementText</code>，props 逐个走 <code>hostPatchProp</code>，最后
-            <code>hostInsert</code>。先看
+            <code>mountElement</code> 先 <code>hostCreateElement</code>，文本
+            children 走 <code>hostSetElementText</code>，props 逐个走
+            <code>hostPatchProp</code>，最后 <code>hostInsert</code>。先看
             <code>packages/runtime-core/src/renderer.ts · mountElement</code>
             的真实源码删节摘录：
           </p>
@@ -535,8 +781,10 @@ hostInsert(el, container, anchor)</code></pre>
   patchAttr(el, key, nextValue, isSVG, parentComponent)
 }</code></pre>
           <p>
-            <code>runtime-dom/src/modules/events.ts · patchEvent</code> 再决定新增、热替换或
-            删除 listener。下段为连续原码摘录（源码说明注释未收录）：
+            <code>runtime-dom/src/modules/events.ts · patchEvent</code>
+            再决定新增、热替换或 删除
+            listener。下段为去掉说明注释并统一左缩进的教学摘录，
+            不标作逐字连续原文：
           </p>
           <pre><code>const invokers = el[veiKey] || (el[veiKey] = {})
 const existingInvoker = invokers[rawName]
@@ -561,11 +809,14 @@ if (nextValue &amp;&amp; existingInvoker) {
 }</code></pre>
           <p>
             结果：HTML button 的 <code>id</code> 命中 <code>key in el</code>，走
-            <code>patchDOMProp</code> 写 <code>el.id</code>；<code>aria-label</code> 才走
-            <code>patchAttr / setAttribute</code>；
-            <code>onClick</code> 由 <code>patchEvent</code> 创建稳定 invoker 并
-            <code>addEventListener</code>；文本由 <code>nodeOps.setElementText</code>
-            写入；insert 使用 <code>parent.insertBefore</code>。
+            <code>patchDOMProp</code> 写 <code>el.id</code>；<code
+              >aria-label</code
+            >
+            才走 <code>patchAttr / setAttribute</code>； <code>onClick</code> 由
+            <code>patchEvent</code> 创建稳定 invoker 并
+            <code>addEventListener</code>；文本由
+            <code>nodeOps.setElementText</code> 写入；insert 使用
+            <code>parent.insertBefore</code>。
           </p>
         </section>
 
@@ -573,17 +824,21 @@ if (nextValue &amp;&amp; existingInvoker) {
           <h2>第七步：点击怎样从 Ref 同步走到 queueJob</h2>
           <h3>7.1 <code>RefImpl.set value</code> 先判断“真的变了吗”</h3>
           <p>
-            先补一个 JavaScript 细节：<code>count.value++</code> 不是“只调用 setter”，而是先
-            调 getter 取 0，计算 1，再调 setter 写回。教程 handler 前面的
-            <code>console.log</code> 也读了一次 getter；但事件处理器运行时
-            <code>activeSub</code> 为空，所以这两次 <code>dep.track()</code> 都会提前返回，
-            不会把 handler 错记成订阅者。真正已有的订阅者来自首次组件 render。
+            先补一个 JavaScript 细节：<code>count.value++</code> 不是“只调用
+            setter”，而是先 调 getter 取 0，计算 1，再调 setter 写回。教程
+            handler 前面的 <code>console.log</code> 也读了一次
+            getter；但事件处理器运行时 <code>activeSub</code> 为空，所以这两次
+            <code>dep.track()</code> 都会提前返回， 不会把 handler
+            错记成订阅者。真正已有的订阅者来自首次组件 render。
           </p>
           <p>
-            <strong>文件 / 符号：</strong><code>packages/reactivity/src/ref.ts · RefImpl.value setter</code>。
-            <strong>输入：</strong>新值 1。<strong>返回：</strong>setter 无返回值。
-            <strong>状态：</strong><code>_rawValue/_value: 0 → 1</code>；相同值则提前结束。
-            以下为 getter 与 setter 两段连续原码摘录（中间只未收录源码说明注释）：
+            <strong>文件 / 符号：</strong
+            ><code>packages/reactivity/src/ref.ts · RefImpl.value setter</code
+            >。 <strong>输入：</strong>新值 1。<strong>返回：</strong>setter
+            无返回值。 <strong>状态：</strong
+            ><code>_rawValue/_value: 0 → 1</code>；相同值则提前结束。 以下把
+            getter 与 setter 两段按原执行顺序并列；中间未收录说明注释，
+            共同左缩进也已统一，因此属于教学摘录而非逐字连续原文：
           </p>
           <pre><code>get value() {
   if (__DEV__) {
@@ -622,8 +877,9 @@ set value(newValue) {
   }
 }</code></pre>
           <p>
-            <code>packages/reactivity/src/dep.ts · Dep.track</code> 的入口守卫正是这个边界；
-            以下为连续原码摘录：
+            <code>packages/reactivity/src/dep.ts · Dep.track</code>
+            的入口守卫正是这个边界；
+            以下为统一左缩进的教学摘录，不标作逐字连续原文：
           </p>
           <pre><code>if (!activeSub || !shouldTrack || activeSub === this.computed) {
   return
@@ -631,9 +887,9 @@ set value(newValue) {
 
           <h3>7.2 Dep 通知的是 effect，不是 DOM</h3>
           <p>
-            <code>packages/reactivity/src/dep.ts · Dep.trigger/notify</code> 中，trigger
-            递增局部与全局版本；notify 在 reactivity 的同步 batch 内遍历订阅 Link。下段为
-            真实源码删节摘录，仅省略开发调试钩子：
+            <code>packages/reactivity/src/dep.ts · Dep.trigger/notify</code>
+            中，trigger 递增局部与全局版本；notify 在 reactivity 的同步 batch
+            内遍历订阅 Link。下段为 真实源码删节摘录，仅省略开发调试钩子：
           </p>
           <pre><code>trigger(debugInfo?: DebuggerEventExtraInfo): void {
   this.version++
@@ -659,10 +915,15 @@ notify(debugInfo?: DebuggerEventExtraInfo): void {
           <p>
             <code>ReactiveEffect.notify()</code> 用 <code>NOTIFIED</code> 去重并
             <code>batch(this)</code>；最外层 <code>endBatch()</code> 调
-            <code>ReactiveEffect.trigger()</code>。本例 effect 有 scheduler，所以
-            <strong>直接调用 scheduler</strong>；这里还没有先跑 <code>isDirty</code>。
-            以下来自 <code>packages/reactivity/src/effect.ts</code>：前两段为连续原码摘录；
-            <code>endBatch</code> 为真实源码删节摘录，只省略 computed 标志清理。
+            <code>ReactiveEffect.trigger()</code>。本例 effect 有
+            scheduler，所以 <strong>直接调用 scheduler</strong>；这里还没有先跑
+            <code>isDirty</code>。 以下来自
+            <code>packages/reactivity/src/effect.ts</code>：<code
+              >notify/batch</code
+            >
+            与 <code>trigger</code> 保留执行语句顺序，但统一了左缩进；
+            <code>endBatch</code> 还是明确的删节摘录，只省略 computed 标志清理。
+            三者均为教学摘录，不标作逐字连续原文。
           </p>
           <pre><code>notify(): void {
   if (
@@ -741,11 +1002,15 @@ export function batch(sub: Subscriber, isComputed = false): void {
         <section class="article-section prose" id="scheduler-source">
           <h2>第八步：queueJob 为什么能合并更新</h2>
           <p>
-            <strong>文件 / 符号：</strong><code>packages/runtime-core/src/scheduler.ts · queueJob/queueFlush</code>。
-            <strong>输入：</strong>带组件 uid 的 <code>instance.job</code>。
+            <strong>文件 / 符号：</strong
+            ><code
+              >packages/runtime-core/src/scheduler.ts ·
+              queueJob/queueFlush</code
+            >。 <strong>输入：</strong>带组件 uid 的 <code>instance.job</code>。
             <strong>状态：</strong>queue 增加任务，job 加
-            <code>QUEUED</code>，<code>currentFlushPromise</code> 从 null 变 Promise。
-            以下为连续原码摘录（源码说明注释未收录）：
+            <code>QUEUED</code>，<code>currentFlushPromise</code> 从 null 变
+            Promise。 以下为去掉说明注释并统一左缩进的教学摘录，
+            不标作逐字连续原文：
           </p>
           <pre><code>export function queueJob(job: SchedulerJob): void {
   if (!(job.flags! &amp; SchedulerJobFlags.QUEUED)) {
@@ -772,9 +1037,11 @@ function queueFlush() {
   }
 }</code></pre>
           <p>
-            同一同步栈里再写两次 count，第一次已把 job 标成 QUEUED；后两次在最外层
-            <code>if</code> 处退出。父组件 uid 通常更小，排序还能让父先更新；若父更新时
-            卸载子组件，子 job 会被标记 DISPOSED，出队时跳过。
+            同一同步栈里再写两次 count，第一次已把 job 标成
+            QUEUED；后两次在最外层
+            <code>if</code> 处退出。父组件 uid
+            通常更小，排序还能让父先更新；若父更新时 卸载子组件，子 job 会被标记
+            DISPOSED，出队时跳过。
           </p>
 
           <h3>微任务到来：job 先 <code>runIfDirty</code></h3>
@@ -782,8 +1049,8 @@ function queueFlush() {
             <code>flushJobs</code> 逐项调用 job；组件 job 正是
             <code>effect.runIfDirty.bind(effect)</code>，所以此时才执行
             <code>isDirty → effect.run → componentUpdateFn</code>。以下是
-            <code>flushJobs</code> 的真实源码删节摘录；只省略开发 check 的初始化，主
-            try/finally 与异常清理完整保留：
+            <code>flushJobs</code> 的真实源码删节摘录；只省略开发 check
+            的初始化，主 try/finally 与异常清理完整保留：
           </p>
           <pre><code>function flushJobs(seen?: CountMap) {
   // ... 省略 __DEV__ seen 与 check 初始化
@@ -828,18 +1095,20 @@ function queueFlush() {
   }
 }</code></pre>
           <p>
-            <code>callWithErrorHandling</code> 把组件更新异常送入组件错误管道；无论是否抛错，
-            <code>finally</code> 都清剩余 QUEUED、清主队列、刷 post 队列。post callback
-            若又入队，函数递归收敛后才让本轮 Promise 完成。
+            <code>callWithErrorHandling</code>
+            把组件更新异常送入组件错误管道；无论是否抛错，
+            <code>finally</code> 都清剩余 QUEUED、清主队列、刷 post 队列。post
+            callback 若又入队，函数递归收敛后才让本轮 Promise 完成。
           </p>
         </section>
 
         <section class="article-section prose" id="render-source">
           <h2>第九步：render 只产生新描述，patch 才提交</h2>
           <p>
-            job 通过脏检查后进入 <code>componentUpdateFn</code> 的 update 分支。下段来自
-            <code>packages/runtime-core/src/renderer.ts</code>，为真实源码删节摘录，仅省略
-            dev measure：
+            job 通过脏检查后进入 <code>componentUpdateFn</code> 的 update
+            分支。下段来自
+            <code>packages/runtime-core/src/renderer.ts</code
+            >，为真实源码删节摘录，仅省略 dev measure：
           </p>
           <pre><code>const nextTree = renderComponentRoot(instance)
 // ... 省略 dev measure
@@ -865,24 +1134,30 @@ if (u) {
   queuePostRenderEffect(u, parentSuspense)
 }</code></pre>
           <p>
-            <strong>调用前：</strong><code>instance.subTree</code> 是 button“0”，DOM 也是 0。
-            <strong>render 返回：</strong><code>nextTree</code> 是 button“1”，DOM 尚未动。
+            <strong>调用前：</strong><code>instance.subTree</code> 是
+            button“0”，DOM 也是 0。 <strong>render 返回：</strong
+            ><code>nextTree</code> 是 button“1”，DOM 尚未动。
             <strong>关键赋值：</strong>先保存 <code>prevTree</code>，再让
-            <code>instance.subTree = nextTree</code>，随后 patch 才有前后两棵树。
-            <strong>调用后：</strong><code>next.el</code> 继续指向原 button DOM。
+            <code>instance.subTree = nextTree</code>，随后 patch
+            才有前后两棵树。 <strong>调用后：</strong
+            ><code>next.el</code> 继续指向原 button DOM。
           </p>
 
           <h3><code>renderComponentRoot</code> 的返回与失败路径</h3>
           <p>
             对状态组件，它用组件代理调用 render，再
-            <code>normalizeVNode</code>。render 读取 count 时，effect 正在 run，于是新一轮
-            依赖被确认；旧动态分支中没再读取的 Dep 会在 run 的 finally 清理。
-            若 render 抛错，源码会清 block stack 并调用 <code>handleError</code>。若
-            <code>errorCaptured</code>、<code>app.config.errorHandler</code> 或生产默认处理
-            使错误管道正常返回，随后才把结果降级为 Comment VNode；开发环境未处理错误可由
+            <code>normalizeVNode</code>。render 读取 count 时，effect 正在
+            run，于是新一轮 依赖被确认；旧动态分支中没再读取的 Dep 会在 run 的
+            finally 清理。 若 render 抛错，源码会清 block stack 并调用
+            <code>handleError</code>。若 <code>errorCaptured</code>、<code
+              >app.config.errorHandler</code
+            >
+            或生产默认处理 使错误管道正常返回，随后才把结果降级为 Comment
+            VNode；开发环境未处理错误可由
             <code>handleError</code> 继续抛出，此时不会执行后面的 Comment 赋值。
-            下段为 <code>componentRenderUtils.ts · renderComponentRoot</code> 的真实源码删节摘录，
-            只省略 dev thisProxy 构造与函数式组件分支。
+            下段为
+            <code>componentRenderUtils.ts · renderComponentRoot</code>
+            的真实源码删节摘录， 只省略 dev thisProxy 构造与函数式组件分支。
           </p>
           <pre><code>try {
   if (vnode.shapeFlag &amp; ShapeFlags.STATEFUL_COMPONENT) {
@@ -915,11 +1190,12 @@ if (u) {
           <h3>10.1 <code>patch</code> 先处理身份，再按类型分派</h3>
           <p>
             <strong>输入：</strong>旧、新 button VNode；容器与锚点。
-            <strong>返回：</strong>void。<strong>本例分支：</strong>两个 VNode 不是同一对象，但
-            type 与 key 相同，因此不卸载；<code>shapeFlag &amp; ELEMENT</code>，进入
-            <code>processElement → patchElement</code>。下段为
-            <code>renderer.ts · patch</code> 的真实源码删节摘录；switch 中未走分支用
-            <code>// ...</code> 标出。
+            <strong>返回：</strong>void。<strong>本例分支：</strong>两个 VNode
+            不是同一对象，但 type 与 key 相同，因此不卸载；<code
+              >shapeFlag &amp; ELEMENT</code
+            >，进入 <code>processElement → patchElement</code>。下段为
+            <code>renderer.ts · patch</code> 的真实源码删节摘录；switch
+            中未走分支用 <code>// ...</code> 标出。
           </p>
           <pre><code>if (n1 === n2) {
   return
@@ -955,8 +1231,9 @@ if (shapeFlag &amp; ShapeFlags.ELEMENT) {
             <code>patchElement</code> 先调用 <code>patchChildren</code>，再调用
             <code>patchProps</code>。文本不同，最终调用
             <code>hostSetElementText(el, '计数：1')</code>；aria 不同，最终调用
-            <code>hostPatchProp</code>。id 与稳定 <code>increment</code> 函数引用没变，跳过。
-            先看 <code>renderer.ts · patchElement</code> 的真实源码删节摘录：
+            <code>hostPatchProp</code>。id 与稳定
+            <code>increment</code> 函数引用没变，跳过。 先看
+            <code>renderer.ts · patchElement</code> 的真实源码删节摘录：
           </p>
           <pre><code>if (dynamicChildren) {
   // ... 省略 block dynamicChildren 快路径
@@ -980,8 +1257,10 @@ if (patchFlag &gt; 0) {
   patchProps(el, oldProps, newProps, parentComponent, namespace)
 }</code></pre>
           <p>
-            接着分别看 <code>patchChildren</code> 的文本分支与 <code>patchProps</code>
-            的新键循环。第一段为真实源码删节摘录；第二段为连续原码摘录：
+            接着分别看 <code>patchChildren</code> 的文本分支与
+            <code>patchProps</code>
+            的新键循环。第一段为真实源码删节摘录；第二段保留执行语句顺序，
+            但去掉说明注释并统一左缩进，同样属于教学摘录：
           </p>
           <pre><code>if (shapeFlag &amp; ShapeFlags.TEXT_CHILDREN) {
   if (prevShapeFlag &amp; ShapeFlags.ARRAY_CHILDREN) {
@@ -1002,15 +1281,19 @@ if (patchFlag &gt; 0) {
   }
 }</code></pre>
           <p>
-            runtime-core 只调用 host 接口；runtime-dom 才执行浏览器 API。本例文字落到
-            <code>nodeOps.setElementText</code> 的 <code>el.textContent = text</code>；
-            <code>aria-label</code> 经 <code>patchProp → patchAttr</code> 落到
-            <code>el.setAttribute</code>。这就是“平台无关决定”与“DOM 平台施工”的边界。
+            runtime-core 只调用 host 接口；runtime-dom 才执行浏览器
+            API。本例文字落到
+            <code>nodeOps.setElementText</code> 的
+            <code>el.textContent = text</code>； <code>aria-label</code> 经
+            <code>patchProp → patchAttr</code> 落到
+            <code>el.setAttribute</code>。这就是“平台无关决定”与“DOM
+            平台施工”的边界。
           </p>
           <p>
             两个最终副作用也可直接核对。下方分别是
             <code>runtime-dom/src/nodeOps.ts · nodeOps.setElementText</code> 与
-            <code>runtime-dom/src/modules/attrs.ts · patchAttr</code> 的连续原码摘录：
+            <code>runtime-dom/src/modules/attrs.ts · patchAttr</code>
+            的教学摘录； 两段均统一了左缩进，不标作逐字连续原文：
           </p>
           <pre><code>setElementText: (el, text) =&gt; {
   el.textContent = text
@@ -1030,19 +1313,33 @@ if (patchFlag &gt; 0) {
           <p>
             patch 完成后，<code>componentUpdateFn</code> 用
             <code>queuePostRenderEffect(u, parentSuspense)</code> 登记
-            <code>onUpdated</code>。随后控制权回到 <code>flushJobs.finally</code>：
+            <code>onUpdated</code>。随后控制权回到
+            <code>flushJobs.finally</code>：
           </p>
           <ol>
             <li>清主队列与 flags；</li>
-            <li><code>flushPostFlushCbs(seen)</code>，所以 onUpdated 此时读到 DOM=1；</li>
+            <li>
+              <code>flushPostFlushCbs(seen)</code>，所以 onUpdated 此时读到
+              DOM=1；
+            </li>
             <li>若 post 又产生主任务，递归清空；</li>
-            <li><code>flushJobs</code> 返回，<code>currentFlushPromise</code> 才兑现；</li>
-            <li><code>await nextTick()</code> 的 continuation 才进入后续 Promise reaction。</li>
+            <li>
+              <code>flushJobs</code> 返回，<code>currentFlushPromise</code>
+              才兑现；
+            </li>
+            <li>
+              <code>await nextTick()</code> 的 continuation 才进入后续 Promise
+              reaction。
+            </li>
           </ol>
           <p>
-            <code>packages/runtime-core/src/scheduler.ts · nextTick</code> 连续原码摘录：
+            带机器可核对路径的
+            <code>packages/runtime-core/src/scheduler.ts · nextTick</code>
+            连续原文：
           </p>
-          <pre><code>export function nextTick&lt;T, R&gt;(
+          <pre
+            data-source-file="vue/packages/runtime-core/src/scheduler.ts"
+          ><code>export function nextTick&lt;T, R&gt;(
   this: T,
   fn?: (this: T) =&gt; R | Promise&lt;R&gt;,
 ): Promise&lt;void | R&gt; {
@@ -1050,8 +1347,9 @@ if (patchFlag &gt; 0) {
   return fn ? p.then(this ? fn.bind(this) : fn) : p
 }</code></pre>
           <div class="callout">
-            <code>nextTick</code> 保证本轮 Vue 主队列与 post 队列已收敛；不保证浏览器已经
-            paint，也不等待 fetch、setTimeout 或任意业务 Promise。
+            <code>nextTick</code> 保证本轮 Vue 主队列与 post
+            队列已收敛；不保证浏览器已经 paint，也不等待 fetch、setTimeout
+            或任意业务 Promise。
           </div>
         </section>
 
@@ -1059,23 +1357,74 @@ if (patchFlag &gt; 0) {
           <h2>第十二步：主线旁边的提前退出与异常</h2>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>触发条件</th><th>决定性源码分支</th><th>状态结果</th><th>本例若发生</th></tr></thead>
+              <thead>
+                <tr>
+                  <th>触发条件</th>
+                  <th>决定性源码分支</th>
+                  <th>状态结果</th>
+                  <th>本例若发生</th>
+                </tr>
+              </thead>
               <tbody>
-                <tr><td><strong>写入相同值</strong></td><td><code>hasChanged</code> 为 false</td><td>Dep.version 不变；无 job</td><td>DOM 保持 0，无 updated</td></tr>
-                <tr><td><strong>同 tick 连续写三次</strong></td><td>job 已有 <code>QUEUED</code></td><td>一个组件 job；render 看最终值</td><td>只 render/patch 一轮</td></tr>
-                <tr><td><strong>组件出队前卸载</strong></td><td><code>job.flags &amp; DISPOSED</code></td><td>flushJobs 跳过 job</td><td>不会对已移除 DOM 更新</td></tr>
-                <tr><td><strong>依赖已不脏</strong></td><td><code>runIfDirty → isDirty</code></td><td>不进入 effect.run</td><td>无新 VNode、无 patch</td></tr>
-                <tr><td><strong>render 抛错</strong></td><td><code>renderComponentRoot catch → handleError</code></td><td>错误被接管后返回 Comment VNode；未处理 dev 错误可继续抛出</td><td>是否继续 patch 取决于错误管道是否返回</td></tr>
-                <tr><td><strong>VNode type/key 改变</strong></td><td><code>!isSameVNodeType</code></td><td>旧树 unmount；新树按 mount</td><td>DOM 身份不再复用</td></tr>
-                <tr><td><strong>scheduler job 抛错</strong></td><td><code>callWithErrorHandling + finally</code></td><td>剩余 QUEUED 清理；post 仍冲刷</td><td>后续更新仍能重新入队</td></tr>
-                <tr><td><strong>单轮递归超过 100</strong></td><td><code>checkRecursiveUpdates</code></td><td>报告并跳过失控任务</td><td>阻止无限自触发</td></tr>
+                <tr>
+                  <td><strong>写入相同值</strong></td>
+                  <td><code>hasChanged</code> 为 false</td>
+                  <td>Dep.version 不变；无 job</td>
+                  <td>DOM 保持 0，无 updated</td>
+                </tr>
+                <tr>
+                  <td><strong>同 tick 连续写三次</strong></td>
+                  <td>job 已有 <code>QUEUED</code></td>
+                  <td>一个组件 job；render 看最终值</td>
+                  <td>只 render/patch 一轮</td>
+                </tr>
+                <tr>
+                  <td><strong>组件出队前卸载</strong></td>
+                  <td><code>job.flags &amp; DISPOSED</code></td>
+                  <td>flushJobs 跳过 job</td>
+                  <td>不会对已移除 DOM 更新</td>
+                </tr>
+                <tr>
+                  <td><strong>依赖已不脏</strong></td>
+                  <td><code>runIfDirty → isDirty</code></td>
+                  <td>不进入 effect.run</td>
+                  <td>无新 VNode、无 patch</td>
+                </tr>
+                <tr>
+                  <td><strong>render 抛错</strong></td>
+                  <td><code>renderComponentRoot catch → handleError</code></td>
+                  <td>
+                    错误被接管后返回 Comment VNode；未处理 dev 错误可继续抛出
+                  </td>
+                  <td>是否继续 patch 取决于错误管道是否返回</td>
+                </tr>
+                <tr>
+                  <td><strong>VNode type/key 改变</strong></td>
+                  <td><code>!isSameVNodeType</code></td>
+                  <td>旧树 unmount；新树按 mount</td>
+                  <td>DOM 身份不再复用</td>
+                </tr>
+                <tr>
+                  <td><strong>scheduler job 抛错</strong></td>
+                  <td><code>callWithErrorHandling + finally</code></td>
+                  <td>剩余 QUEUED 清理；post 仍冲刷</td>
+                  <td>后续更新仍能重新入队</td>
+                </tr>
+                <tr>
+                  <td><strong>单轮递归超过 100</strong></td>
+                  <td><code>checkRecursiveUpdates</code></td>
+                  <td>报告并跳过失控任务</td>
+                  <td>阻止无限自触发</td>
+                </tr>
               </tbody>
             </table>
           </div>
           <p>
             另一个容易混入主线的分支：父组件传入新 VNode 时，
-            <code>updateComponent</code> 会设置 <code>instance.next = n2</code> 并同步
-            <code>instance.update()</code>；本章点击只改组件自身 ref，因此走 scheduler。
+            <code>updateComponent</code> 会设置
+            <code>instance.next = n2</code> 并同步
+            <code>instance.update()</code>；本章点击只改组件自身 ref，因此走
+            scheduler。
           </p>
         </section>
 
@@ -1083,18 +1432,137 @@ if (patchFlag &gt; 0) {
           <h2>源码与测试证据对照</h2>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>阶段</th><th>决定性源码</th><th>本章证据 / 结论</th></tr></thead>
+              <thead>
+                <tr>
+                  <th>阶段</th>
+                  <th>决定性源码</th>
+                  <th>本章证据 / 结论</th>
+                </tr>
+              </thead>
               <tbody>
-                <tr><td><strong>状态入口</strong></td><td><a href="../../../vue/packages/reactivity/src/ref.ts">ref.ts · RefImpl.value</a></td><td>值真的变化才写入并触发 Dep。</td></tr>
-                <tr><td><strong>同步通知</strong></td><td><a href="../../../vue/packages/reactivity/src/dep.ts">dep.ts · Dep.trigger/notify</a>；<a href="../../../vue/packages/reactivity/src/effect.ts">effect.ts · notify/batch/endBatch/trigger</a></td><td>reactivity batch 同步收敛，再调 scheduler。</td></tr>
-                <tr><td><strong>组件排队</strong></td><td><a href="../../../vue/packages/runtime-core/src/scheduler.ts">scheduler.ts · queueJob/flushJobs/nextTick</a></td><td>job 去重、微任务提交、finally 清理、post 先于 nextTick。</td></tr>
-                <tr><td><strong>组件更新</strong></td><td><a href="../../../vue/packages/runtime-core/src/renderer.ts">renderer.ts · setupRenderEffect/componentUpdateFn</a>；<a href="../../../vue/packages/runtime-core/src/componentRenderUtils.ts">componentRenderUtils.ts · renderComponentRoot</a></td><td>mount 直接 update；点击出队后才 render 新子树。</td></tr>
-                <tr><td><strong>VNode 提交</strong></td><td><a href="../../../vue/packages/runtime-core/src/renderer.ts">renderer.ts · patch/patchElement/patchChildren/patchProps</a></td><td>复用同一元素，只提交变化部分。</td></tr>
-                <tr><td><strong>DOM 施工</strong></td><td><a href="../../../vue/packages/runtime-dom/src/patchProp.ts">patchProp.ts · patchProp</a>；<a href="../../../vue/packages/runtime-dom/src/nodeOps.ts">nodeOps.ts · nodeOps</a>；<a href="../../../vue/packages/runtime-dom/src/modules/events.ts">events.ts · patchEvent</a></td><td>事件稳定代理；文字与 attribute 由浏览器 API 落地。</td></tr>
-                <tr><td><strong>应用挂载测试</strong></td><td><a href="../../../vue/packages/runtime-core/__tests__/apiCreateApp.spec.ts">apiCreateApp.spec.ts · test('mount')</a></td><td>证明 mount 创建根组件、写宿主内容，并对同容器重复挂载发出警告。</td></tr>
-                <tr><td><strong>调度测试</strong></td><td><a href="../../../vue/packages/runtime-core/__tests__/scheduler.spec.ts">scheduler.spec.ts · 'basic usage' / 'should dedupe queued jobs'</a></td><td>同步阶段 calls 仍为空；nextTick 后按序执行；重复 queue 同一 job 仍只执行一次。</td></tr>
-                <tr><td><strong>DOM 事件测试</strong></td><td><a href="../../../vue/packages/runtime-dom/__tests__/patchEvents.spec.ts">patchEvents.spec.ts · 'should assign event handler'</a></td><td>真实 document 元素经 patchProp 绑定 onClick，三次 dispatchEvent 调处理器三次，证明 runtime-dom 事件代理。</td></tr>
-                <tr><td><strong>点击更新闭环</strong></td><td><a href="../../../vue/packages/runtime-core/__tests__/apiOptions.spec.ts">apiOptions.spec.ts · test('data')</a></td><td>runtime-test 中点击、等待 nextTick、宿主树从 1 变 2；本轮文件 48 tests passed。它不经过浏览器 patchEvent，DOM invoker 由上一行测试补证。</td></tr>
+                <tr>
+                  <td><strong>状态入口</strong></td>
+                  <td>
+                    <a href="../../../vue/packages/reactivity/src/ref.ts"
+                      >ref.ts · RefImpl.value</a
+                    >
+                  </td>
+                  <td>值真的变化才写入并触发 Dep。</td>
+                </tr>
+                <tr>
+                  <td><strong>同步通知</strong></td>
+                  <td>
+                    <a href="../../../vue/packages/reactivity/src/dep.ts"
+                      >dep.ts · Dep.trigger/notify</a
+                    >；<a href="../../../vue/packages/reactivity/src/effect.ts"
+                      >effect.ts · notify/batch/endBatch/trigger</a
+                    >
+                  </td>
+                  <td>reactivity batch 同步收敛，再调 scheduler。</td>
+                </tr>
+                <tr>
+                  <td><strong>组件排队</strong></td>
+                  <td>
+                    <a
+                      href="../../../vue/packages/runtime-core/src/scheduler.ts"
+                      >scheduler.ts · queueJob/flushJobs/nextTick</a
+                    >
+                  </td>
+                  <td>
+                    job 去重、微任务提交、finally 清理、post 先于 nextTick。
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>组件更新</strong></td>
+                  <td>
+                    <a href="../../../vue/packages/runtime-core/src/renderer.ts"
+                      >renderer.ts · setupRenderEffect/componentUpdateFn</a
+                    >；<a
+                      href="../../../vue/packages/runtime-core/src/componentRenderUtils.ts"
+                      >componentRenderUtils.ts · renderComponentRoot</a
+                    >
+                  </td>
+                  <td>mount 直接 update；点击出队后才 render 新子树。</td>
+                </tr>
+                <tr>
+                  <td><strong>VNode 提交</strong></td>
+                  <td>
+                    <a href="../../../vue/packages/runtime-core/src/renderer.ts"
+                      >renderer.ts ·
+                      patch/patchElement/patchChildren/patchProps</a
+                    >
+                  </td>
+                  <td>复用同一元素，只提交变化部分。</td>
+                </tr>
+                <tr>
+                  <td><strong>DOM 施工</strong></td>
+                  <td>
+                    <a href="../../../vue/packages/runtime-dom/src/patchProp.ts"
+                      >patchProp.ts · patchProp</a
+                    >；<a
+                      href="../../../vue/packages/runtime-dom/src/nodeOps.ts"
+                      >nodeOps.ts · nodeOps</a
+                    >；<a
+                      href="../../../vue/packages/runtime-dom/src/modules/events.ts"
+                      >events.ts · patchEvent</a
+                    >
+                  </td>
+                  <td>事件稳定代理；文字与 attribute 由浏览器 API 落地。</td>
+                </tr>
+                <tr>
+                  <td><strong>应用挂载测试</strong></td>
+                  <td>
+                    <a
+                      href="../../../vue/packages/runtime-core/__tests__/apiCreateApp.spec.ts"
+                      >apiCreateApp.spec.ts · test('mount')</a
+                    >
+                  </td>
+                  <td>
+                    证明 mount
+                    创建根组件、写宿主内容，并对同容器重复挂载发出警告。
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>调度测试</strong></td>
+                  <td>
+                    <a
+                      href="../../../vue/packages/runtime-core/__tests__/scheduler.spec.ts"
+                      >scheduler.spec.ts · 'basic usage' / 'should dedupe queued
+                      jobs'</a
+                    >
+                  </td>
+                  <td>
+                    同步阶段 calls 仍为空；nextTick 后按序执行；重复 queue 同一
+                    job 仍只执行一次。
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>DOM 事件测试</strong></td>
+                  <td>
+                    <a
+                      href="../../../vue/packages/runtime-dom/__tests__/patchEvents.spec.ts"
+                      >patchEvents.spec.ts · 'should assign event handler'</a
+                    >
+                  </td>
+                  <td>
+                    真实 document 元素经 patchProp 绑定 onClick，三次
+                    dispatchEvent 调处理器三次，证明 runtime-dom 事件代理。
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>点击更新闭环</strong></td>
+                  <td>
+                    <a
+                      href="../../../vue/packages/runtime-core/__tests__/apiOptions.spec.ts"
+                      >apiOptions.spec.ts · test('data')</a
+                    >
+                  </td>
+                  <td>
+                    runtime-test 中点击、等待 nextTick、宿主树从 1 变
+                    2；本轮文件 48 tests passed。它不经过浏览器 patchEvent，DOM
+                    invoker 由上一行测试补证。
+                  </td>
+                </tr>
               </tbody>
             </table>
           </div>
@@ -1103,12 +1571,13 @@ if (patchFlag &gt; 0) {
         <section class="article-section prose" id="takeaway">
           <h2>最后，把整条链一口气讲清</h2>
           <div class="quote">
-            初次 mount 创建组件 render effect，并直接运行一次：render 读 ref、建立依赖，
-            patch(null, subTree) 创建 button，runtime-dom 绑定事件并插入 DOM。点击时，
-            RefImpl 先同步改值并通过 Dep 通知 render effect；reactivity batch 结束后，
-            effect.scheduler 把 runIfDirty job 放入 runtime-core 微任务队列。flushJobs
-            出队后重新 render，patch 复用原 button，修改文字和 aria；updated 在 post
-            flush 看见新 DOM，整轮 flush 返回后 nextTick 才恢复。
+            初次 mount 创建组件 render effect，并直接运行一次：render 读
+            ref、建立依赖， patch(null, subTree) 创建 button，runtime-dom
+            绑定事件并插入 DOM。点击时， RefImpl 先同步改值并通过 Dep 通知
+            render effect；reactivity batch 结束后， effect.scheduler 把
+            runIfDirty job 放入 runtime-core 微任务队列。flushJobs 出队后重新
+            render，patch 复用原 button，修改文字和 aria；updated 在 post flush
+            看见新 DOM，整轮 flush 返回后 nextTick 才恢复。
           </div>
           <p>
             继续读时按这条主线拆章：
@@ -1116,8 +1585,75 @@ if (patchFlag &gt; 0) {
             <a href="scheduler.html">scheduler</a> →
             <a href="renderer.html">patch</a> →
             <a href="runtime-dom.html">DOM 平台层</a>。列表增删移动再进入
-            <a href="diff.html">keyed diff</a>；它不是这个文本计数器主线的必经分支。
+            <a href="diff.html">keyed diff</a
+            >；它不是这个文本计数器主线的必经分支。
           </p>
+          <h3 id="final-evidence-matrix">
+            页末证据矩阵：用例 → 源码 → 测试 → 图
+          </h3>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>用例</th>
+                  <th>决定性源码</th>
+                  <th>可执行测试</th>
+                  <th>同例图</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>
+                    完整 Counter 首挂：<code>mount('#app')</code> 后得到 button
+                    0，<code>onMounted</code> 看到已提交 DOM。
+                  </td>
+                  <td>
+                    <a href="#mount-source">第六步</a>：runtime-dom createApp →
+                    core mount → setupRenderEffect 首次直接
+                    <code>update()</code> → <code>patch(null, subTree)</code> →
+                    host 操作。
+                  </td>
+                  <td>
+                    本章 Vite Demo 的首挂输出；<code
+                      >apiCreateApp.spec.ts · test('mount')</code
+                    >
+                    补证根组件与宿主容器挂载契约。
+                  </td>
+                  <td>
+                    <a href="#flowchart">完整流程图 mount 左栏 9 步</a>；<a
+                      href="#ledger"
+                      >六时点状态账本中的首挂阶段</a
+                    >。
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    同一 Counter 点击：状态 0→1；同步 handler 仍见 DOM
+                    0；updated 与 nextTick 见 DOM 1。
+                  </td>
+                  <td>
+                    <a href="#trigger-source">第七步</a>至<a href="#post-source"
+                      >第十一步</a
+                    >：Ref/Dep/reactivity batch → effect.scheduler →
+                    queueJob/flushJobs → render/patch → DOM/post
+                    flush/nextTick。
+                  </td>
+                  <td>
+                    <code>apiOptions.spec.ts · test('data')</code>
+                    证明点击后等待 nextTick 的宿主树闭环；scheduler basic/dedupe
+                    与 patchEvents assign 分别补证队列和 DOM 事件。内部“一次
+                    job”是这些测试与源码的联合结论，不由 data 测试单独推出。
+                  </td>
+                  <td>
+                    <a href="#flowchart">完整流程图 click 右栏 12 步</a>；<a
+                      href="#ledger"
+                      >六时点状态账本中的点击与冲刷阶段</a
+                    >。
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </section>
 
         <nav class="page-nav" aria-label="章节翻页">
@@ -1143,6 +1679,7 @@ if (patchFlag &gt; 0) {
         <a href="#boundaries">异常与退出</a>
         <a href="#evidence">证据对照</a>
         <a href="#takeaway">完整复述</a>
+        <a href="#final-evidence-matrix">页末证据矩阵</a>
       </aside>
     </div>
     <footer data-site-footer></footer>

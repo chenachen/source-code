@@ -30,7 +30,7 @@ share/vue/
     ├── ssr.html
     ├── integration.html
     ├── evolution.html
-    ├── lab.html
+    ├── lab.html         # 手把手首条主线、扩展实验、源码/测试地图与术语
     └── assets/
 ```
 

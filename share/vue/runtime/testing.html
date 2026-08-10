@@ -16,15 +16,15 @@
       <aside data-global-nav></aside>
       <main class="article">
         <div class="article-hero">
-          <div class="article-kicker">Chapter 11 · Testing & Debugging</div>
+          <div class="article-kicker">Chapter 10 · Testing & Debugging</div>
           <h1>页面看起来一样，为什么还可能是错的</h1>
           <p class="article-lead">
             Runtime 测试不只比较最终
             HTML。它还要证明原节点被复用、组件状态没有串位、回调顺序正确，而且一次报错不会让后续更新永远停止。
           </p>
           <div class="hero-meta">
-            <span>61 个测试文件已注释</span
-            ><span>1,396 个 suite / case 场景说明</span><span>Vitest</span>
+            <span>61 个验证文件已注释（60 spec + 1 bench）</span
+            ><span>1,396 个 spec suite / case 场景说明</span><span>Vitest</span>
           </div>
         </div>
 
@@ -258,6 +258,14 @@ expect(root.children[1]).toBe(before)</code></pre>
               编号旁应说明用户场景和错误表现，让未来维护者知道哪些简化不可做。
             </div>
           </div>
+          <p>
+            <strong>代码性质：</strong>下面是教学伪用例，只演示 Given / When /
+            Then 的断言层次；<code>list</code>、<code>root</code> 与 imports
+            被刻意省略，因此不是仓库测试原文，也不能直接运行。完整仓库测试及
+            imports 请先看<a href="integration.html#repo-test"
+              >端到端主章的真实测试</a
+            >。
+          </p>
           <pre><code>it('移动 keyed 节点时复用已有宿主节点，而不是重建', async () => {
   // Given：保存 A/B 的真实节点身份
   render(list(['a', 'b']), root)
@@ -270,6 +278,300 @@ expect(root.children[1]).toBe(before)</code></pre>
   expect(serializeInner(root)).toBe('&lt;li&gt;b&lt;/li&gt;&lt;li&gt;a&lt;/li&gt;')
   expect(root.children[1]).toBe(a)
 })</code></pre>
+        </section>
+
+        <section class="article-section prose" id="keyed-proof">
+          <h2>完整仓库用例：把 key=1 从最前面移到 key=3 后面</h2>
+          <p>
+            现在不再靠上面的教学骨架。下面直接使用 Vue 3.5.41
+            <code>rendererChildren.spec.ts</code> 的真实上下文和完整测试体，跟踪
+            <code>[1, 2, 3, 4] → [2, 3, 1, 4]</code
+            >。这个测试证明最终顺序与节点数；
+            “宿主节点复用而不是重建”则必须结合紧随其后的 renderer
+            源码判断，不能把测试没写的 身份断言说成它已经证明。
+          </p>
+
+          <h3>1. imports、helper、共享准备与完整测试体</h3>
+          <p class="source-note">
+            性质：仓库真实测试，四段都能在同一文件中直接连续定位。
+            <code>test / describe / beforeEach / expect</code> 来自 Vitest
+            globals。
+          </p>
+          <pre
+            data-source-file="vue/packages/runtime-core/__tests__/rendererChildren.spec.ts"
+          ><code>import {
+  type TestElement,
+  TestNodeTypes,
+  h,
+  nodeOps,
+  render,
+  serialize,
+  serializeInner,
+} from '@vue/runtime-test'</code></pre>
+          <pre
+            data-source-file="vue/packages/runtime-core/__tests__/rendererChildren.spec.ts"
+          ><code>/** 把测试数据转成 span VNode；非字符串值同时作为 key，以驱动 keyed diff。 */
+function toSpan(content: any) {
+  if (typeof content === 'string') {
+    return h('span', content.toString())
+  } else {
+    return h('span', { key: content }, content.toString())
+  }
+}
+
+/** 将测试渲染器容器的子树序列化为便于断言的字符串。 */
+const inner = (c: TestElement) =&gt; serializeInner(c)</code></pre>
+          <pre
+            data-source-file="vue/packages/runtime-core/__tests__/rendererChildren.spec.ts"
+          ><code>// 测试组：renderer 的 keyed children diff、移动与复用。
+describe('renderer: keyed children', () =&gt; {
+  let root: TestElement
+  let elm: TestElement
+  const renderChildren = (arr: number[]) =&gt; {
+    render(h('div', arr.map(toSpan)), root)
+    return root.children[0] as TestElement
+  }
+
+  beforeEach(() =&gt; {
+    root = nodeOps.createElement('div')
+    render(h('div', { id: 1 }, 'hello'), root)
+  })</code></pre>
+          <pre
+            data-source-file="vue/packages/runtime-core/__tests__/rendererChildren.spec.ts"
+          ><code>  // 测试场景：推动独生子女前进。
+  test('moving single child forward', () =&gt; {
+    elm = renderChildren([1, 2, 3, 4])
+    expect(elm.children.length).toBe(4)
+
+    elm = renderChildren([2, 3, 1, 4])
+    expect(elm.children.length).toBe(4)
+    expect((elm.children as TestElement[]).map(inner)).toEqual([
+      '2',
+      '3',
+      '1',
+      '4',
+    ])
+  })</code></pre>
+          <div class="test-proof">
+            <p>
+              <strong>Given：</strong><code>beforeEach</code> 创建全新的
+              runtime-test 宿主根；首次 render 生成 key 为 1、2、3、4 的四个
+              span。
+            </p>
+            <p>
+              <strong>When：</strong>第二次 render 只把顺序改为
+              2、3、1、4；同步测试宿主不需要 <code>nextTick</code>。
+            </p>
+            <p>
+              <strong>Then：</strong>children 仍为 4 个，序列化顺序精确等于
+              2、3、1、4。
+            </p>
+            <p>
+              <strong>Mechanism：</strong>尾部 key=4 先同步，中段建立 key
+              map；旧 key=1 的新下标破坏单调性，触发 LIS，只移动不在 LIS 中的
+              key=1。
+            </p>
+            <p>
+              <strong>Source：</strong
+              ><code>runtime-core/src/renderer.ts → patchKeyedChildren</code
+              >。每个用例得到独立 root；需要显式验证卸载时，同文件的
+              <code>remove all children from parent</code> 会把 children 清到
+              0。
+            </p>
+          </div>
+
+          <h3>2. 决定性连续源码：中段映射、patch、LIS 与 move</h3>
+          <p>
+            下段是
+            <code>patchKeyedChildren</code>
+            内部一段连续原文。它完整覆盖本例进入未知中段后
+            如何匹配、何时卸载、怎样发现乱序、何时创建新节点，以及最终怎样只移动必要节点。
+          </p>
+          <pre
+            data-source-file="vue/packages/runtime-core/src/renderer.ts"
+          ><code>      // 5.1 为新中段建立 key → 新下标映射，旧 keyed 节点可 O(1) 找到去向。
+      const keyToNewIndexMap: Map&lt;PropertyKey, number&gt; = new Map()
+      for (i = s2; i &lt;= e2; i++) {
+        const nextChild = (c2[i] = optimized
+          ? cloneIfMounted(c2[i] as VNode)
+          : normalizeVNode(c2[i]))
+        if (nextChild.key != null) {
+          if (__DEV__ &amp;&amp; keyToNewIndexMap.has(nextChild.key)) {
+            warn(
+              &#96;Duplicate keys found during update:&#96;,
+              JSON.stringify(nextChild.key),
+              &#96;Make sure keys are unique.&#96;,
+            )
+          }
+          keyToNewIndexMap.set(nextChild.key, i)
+        }
+      }
+
+      // 5.2 遍历旧中段：找到新位置便 patch；找不到说明已删除，立即卸载。
+      let j
+      let patched = 0
+      const toBePatched = e2 - s2 + 1
+      let moved = false
+      // 新下标不再单调递增即说明至少一个复用节点需要移动。
+      let maxNewIndexSoFar = 0
+      // &#96;newIndexToOldIndexMap&#96; 按新中段位置保存旧下标 + 1。0 专门表示新节点没有旧节点，
+      // 同一数组随后也作为最长递增子序列输入，找出无需移动的最大稳定集合。
+      const newIndexToOldIndexMap = new Array(toBePatched)
+      for (i = 0; i &lt; toBePatched; i++) newIndexToOldIndexMap[i] = 0
+
+      for (i = s1; i &lt;= e1; i++) {
+        const prevChild = c1[i]
+        if (patched &gt;= toBePatched) {
+          // 所有新节点都已匹配，剩余旧节点只能是删除项。
+          unmount(prevChild, parentComponent, parentSuspense, true)
+          continue
+        }
+        let newIndex
+        if (prevChild.key != null) {
+          newIndex = keyToNewIndexMap.get(prevChild.key)
+        } else {
+          // 无 key 节点只能线性寻找尚未占用、type 相同的新节点。
+          for (j = s2; j &lt;= e2; j++) {
+            if (
+              newIndexToOldIndexMap[j - s2] === 0 &amp;&amp;
+              isSameVNodeType(prevChild, c2[j] as VNode)
+            ) {
+              newIndex = j
+              break
+            }
+          }
+        }
+        if (newIndex === undefined) {
+          unmount(prevChild, parentComponent, parentSuspense, true)
+        } else {
+          newIndexToOldIndexMap[newIndex - s2] = i + 1
+          if (newIndex &gt;= maxNewIndexSoFar) {
+            maxNewIndexSoFar = newIndex
+          } else {
+            moved = true
+          }
+          patch(
+            prevChild,
+            c2[newIndex] as VNode,
+            container,
+            null,
+            parentComponent,
+            parentSuspense,
+            namespace,
+            slotScopeIds,
+            optimized,
+          )
+          patched++
+        }
+      }
+
+      // 5.3 挂载全新节点，并移动不属于最长稳定子序列的复用节点。
+      // 只有检测到乱序时才计算 LIS，常见仅内容更新路径省去 O(n log n) 工作。
+      const increasingNewIndexSequence = moved
+        ? getSequence(newIndexToOldIndexMap)
+        : EMPTY_ARR
+      j = increasingNewIndexSequence.length - 1
+      // 从后向前处理，右侧节点已处于最终位置，可直接作为当前节点插入锚点。
+      for (i = toBePatched - 1; i &gt;= 0; i--) {
+        const nextIndex = s2 + i
+        const nextChild = c2[nextIndex] as VNode
+        const anchorVNode = c2[nextIndex + 1] as VNode
+        const anchor =
+          nextIndex + 1 &lt; l2
+            ? // #13559/#14173：未解析异步组件没有 el，沿其包装子树寻找注释 placeholder
+              // 作为锚点，避免新节点被插到异步组件预留位置之后。
+              anchorVNode.el || resolveAsyncComponentPlaceholder(anchorVNode)
+            : parentAnchor
+        if (newIndexToOldIndexMap[i] === 0) {
+          // 映射值 0：新节点没有旧节点，直接在已确定锚点前挂载。
+          patch(
+            null,
+            nextChild,
+            container,
+            anchor,
+            parentComponent,
+            parentSuspense,
+            namespace,
+            slotScopeIds,
+            optimized,
+          )
+        } else if (moved) {
+          // 完全逆序可能没有可保留序列；其他情况仅移动不属于 LIS 的节点。
+          if (j &lt; 0 || i !== increasingNewIndexSequence[j]) {
+            move(nextChild, container, anchor, MoveType.REORDER)
+          } else {
+            j--
+          }
+        }
+      }</code></pre>
+
+          <h3>3. 同一数组的完整执行图</h3>
+          <div
+            class="diagram"
+            role="img"
+            aria-label="keyed children 从 1234 更新为 2314 的执行图"
+          >
+            <div class="diagram-title">[1, 2, 3, 4] → [2, 3, 1, 4]</div>
+            <div class="layer-flow">
+              <div class="layer-node">
+                <strong>头同步</strong><small>1 ≠ 2，立即停</small>
+              </div>
+              <div class="diagram-arrow">→</div>
+              <div class="layer-node">
+                <strong>尾同步</strong><small>4 = 4，patch 并保留</small>
+              </div>
+              <div class="diagram-arrow">→</div>
+              <div class="layer-node emphasis">
+                <strong>中段映射</strong
+                ><small>newIndexToOld = [2, 3, 1]</small>
+              </div>
+              <div class="diagram-arrow">→</div>
+              <div class="layer-node">
+                <strong>LIS</strong><small>索引 [0, 1]：保留 key 2、3</small>
+              </div>
+              <div class="diagram-arrow">→</div>
+              <div class="layer-node">
+                <strong>移动</strong
+                ><small>key 1 插到 key 4 前；得到 2,3,1,4</small>
+              </div>
+            </div>
+          </div>
+          <ol>
+            <li>
+              <strong>头尾收缩：</strong>头部不匹配；尾部 key=4
+              匹配，所以未知区间只剩前三项。
+            </li>
+            <li>
+              <strong>旧项找新位：</strong>依旧序遍历
+              1、2、3，记录到新序中的位置，得到
+              <code>[2, 3, 1]</code>（值是旧下标 + 1）。
+            </li>
+            <li>
+              <strong>发现移动：</strong>位置序列从 2 降到 0 时，<code
+                >moved</code
+              >
+              置 true；所有三项仍会先 patch 复用。
+            </li>
+            <li>
+              <strong>最小移动：</strong>LIS 对应 key 2、3；逆序提交时只把 key 1
+              插到 key 4 前。
+            </li>
+            <li>
+              <strong>断言：</strong
+              >测试只断言数量与顺序；若要证明对象身份，需另加
+              <code>expect(after[2]).toBe(before[0])</code
+              >，这行不是仓库原测试。
+            </li>
+          </ol>
+          <div class="callout warm">
+            <strong>失败、异常与清理：</strong>重复 key
+            会在开发态警告且映射后写覆盖前写， 因而 key 必须唯一；旧 key
+            在新树找不到时立即 <code>unmount</code>；新项的映射值为 0 时走
+            <code>patch(null, ...)</code>；异步组件没有 <code>el</code> 时改用
+            placeholder 作
+            anchor。测试失败时先区分“最终顺序错”“复用身份错”还是“宿主 move
+            次数过多”。
+          </div>
         </section>
 
         <section class="article-section prose" id="scenario-map">
@@ -439,10 +741,11 @@ pnpm build</code></pre>
             </div>
           </div>
           <div class="callout">
-            本次注释工作实际验证过 Runtime 测试：60 个执行文件、1,306
-            个用例通过、1 个跳过；统计中的 61
-            个文件还包含测试辅助/类型场景。注释覆盖审计按 describe/test/it
-            等结构计得 1,396 个 suite/case 说明。
+            本次注释工作实际验证过 Runtime 测试：60 个 spec 执行文件、1,306
+            个用例通过、1 个跳过。第 61 个验证文件是
+            <code>apiWatch.bench.ts</code> benchmark，不是测试辅助或类型场景；
+            1,396 个 suite/case 说明只统计 60 个 spec 中的 describe/test/it
+            结构。
           </div>
         </section>
 
@@ -547,6 +850,58 @@ pnpm build</code></pre>
           </div>
         </section>
 
+        <section class="article-section prose" id="evidence-matrix">
+          <h2>本页证据表：用例 → 源码 → 测试 → 图</h2>
+          <p class="source-note">
+            本轮实跑：Node v24.5.0，<code>rendererChildren.spec.ts</code> 整文件
+            38 tests passed。
+          </p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>用例</th>
+                  <th>决定性源码</th>
+                  <th>仓库测试</th>
+                  <th>同用例图</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>keyed children <code>[1,2,3,4] → [2,3,1,4]</code></td>
+                  <td>
+                    <code>renderer.ts</code> ·
+                    <code>patchKeyedChildren</code> 5.1–5.3
+                  </td>
+                  <td>
+                    <code>rendererChildren.spec.ts</code> ·
+                    <code
+                      >renderer: keyed children › moving single child
+                      forward</code
+                    >
+                  </td>
+                  <td>
+                    <a href="#keyed-proof"
+                      >头同步 → 尾同步 → 映射 → LIS → move</a
+                    >
+                  </td>
+                </tr>
+                <tr>
+                  <td>旧节点删除、重复 key、异步 placeholder anchor</td>
+                  <td>
+                    同一连续源码的 <code>unmount</code>、duplicate
+                    warning、<code>resolveAsyncComponentPlaceholder</code>
+                  </td>
+                  <td>
+                    同文件 remove / duplicate-key / async-component 相邻场景
+                  </td>
+                  <td><a href="#keyed-proof">异常与清理分支</a></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
         <nav class="page-nav" aria-label="章节翻页">
           <a href="evolution.html"><span>上一章</span>← 迭代与设计演进</a>
           <a href="index.html"><span>回到起点</span>总览与分享入口 →</a>
@@ -560,12 +915,14 @@ pnpm build</code></pre>
         <a href="#test-layers">测试分层</a>
         <a href="#runtime-test">runtime-test</a>
         <a href="#spec-anatomy">用例解剖</a>
+        <a href="#keyed-proof">Keyed Diff 真实测试</a>
         <a href="#scenario-map">场景地图</a>
         <a href="#async-clocks">异步时钟</a>
         <a href="#commands">验证命令</a>
         <a href="#debugger">调试配方</a>
         <a href="#comments">使用中文注释</a>
         <a href="#checklist">自测清单</a>
+        <a href="#evidence-matrix">证据表</a>
       </aside>
     </div>
     <footer data-site-footer></footer>

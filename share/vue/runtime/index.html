@@ -19,9 +19,10 @@
           <div class="article-kicker">Vue 3.5.41 · From UI to Runtime</div>
           <h1>Vue 是怎样让页面动起来的？</h1>
           <p class="article-lead">
-            从“点击按钮后计数从 0 变成 1”开始，逐步理解组件、更新队列、虚拟节点、Diff、DOM
-            和服务端水合。先用完整按钮计数器建立上下文，再把每个阶段映射到
-            Vue 3.5.41 的真实源码与仓库测试。
+            从“点击按钮后计数从 0 变成
+            1”开始，逐步理解组件、更新队列、虚拟节点、Diff、DOM
+            和服务端水合。先用完整按钮计数器建立上下文，再把每个阶段映射到 Vue
+            3.5.41 的真实源码与仓库测试。
           </p>
           <div class="hero-meta">
             <span>普通前端可直接阅读</span><span>12 个专题章节</span
@@ -29,16 +30,17 @@
           </div>
           <div class="stat-grid" aria-label="指南覆盖范围">
             <div class="stat">
-              <strong>1</strong><span>贯穿全程的完整 Demo</span>
+              <strong>1</strong><span>一条端到端 Counter 主线</span>
             </div>
             <div class="stat">
-              <strong>6</strong><span>一次更新的核心阶段</span>
+              <strong>5</strong><span>证据闭环的核心专题</span>
             </div>
             <div class="stat">
-              <strong>82</strong><span>可继续深挖的源码文件</span>
+              <strong>2</strong
+              ><span>两个核心主线输入：Counter / keyed list</span>
             </div>
             <div class="stat">
-              <strong>1,396</strong><span>带中文场景说明的测试</span>
+              <strong>3</strong><span>用例、流程、源码层次</span>
             </div>
           </div>
         </div>
@@ -50,35 +52,41 @@
               <div class="scene-titlebar">你已经知道的</div>
               <div class="scene-body">
                 <span class="scene-label">业务代码</span>
-                <pre><code>tasks.value.push({
-  id: 4,
-  title: '学习 Diff'
-})</code></pre>
+                <pre><code>count.value++
+count.value++
+await nextTick()</code></pre>
               </div>
             </div>
             <div class="scene-window">
               <div class="scene-titlebar">这套指南要解释的</div>
               <div class="scene-body">
-                <span class="scene-label">页面为什么只多出一项</span>
+                <span class="scene-label">页面为什么从 0 一次变成 2</span>
                 <ul class="ui-list">
-                  <li class="ui-item">旧任务节点继续复用</li>
-                  <li class="ui-item">多次修改先被合并</li>
-                  <li class="ui-item new">浏览器只插入必要节点</li>
+                  <li class="ui-item">同一组件 job 只入队一次</li>
+                  <li class="ui-item">旧 button 宿主节点继续复用</li>
+                  <li class="ui-item new">最终只提交文本 2</li>
                 </ul>
               </div>
             </div>
           </div>
           <p class="concept-sentence">
             主线章先回答“用户看到了什么”，再回答“Vue
-            为什么这样做”，随即用决定性源码和仓库测试证明“Vue 真是这样做”；
+            为什么这样做”，随即给出可核对的决定性源码和测试证据；
             其他专题页负责展开其中一个阶段。
           </p>
           <div class="reader-lane">
             <div>
-              <strong>源码不是附录。</strong>初学者先看完整用例和流程图，再逐站阅读短小、
+              <strong>源码不是附录。</strong
+              >初学者先看完整用例和流程图，再逐站阅读短小、
               连续、可核对的源码摘录；函数名、状态变化和测试断言始终服务同一条调用链。
             </div>
           </div>
+          <p class="reader-check">
+            <strong>证据边界：</strong
+            >首页只负责声明案例和阅读路线，本身不构成机制证明。请进入
+            integration
+            与五个核心专题，在每页末尾的“用例→源码→测试→图”表核对证据是否齐全。
+          </p>
         </section>
 
         <section class="article-section prose" id="example">
@@ -115,6 +123,74 @@
           </p>
         </section>
 
+        <section class="article-section prose" id="case-map">
+          <h2>统一案例怎样贯穿；哪里必须诚实换输入</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>章节</th>
+                  <th>贯穿输入</th>
+                  <th>这一页回答</th>
+                  <th>证据入口</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>完整调用链</td>
+                  <td>浏览器 Counter：0→click→1</td>
+                  <td>
+                    mount、ref、queue、render、patch、DOM、post/nextTick 全景
+                  </td>
+                  <td>
+                    <a href="integration.html">完整 Demo、仓库测试与总图</a>
+                  </td>
+                </tr>
+                <tr>
+                  <td>架构</td>
+                  <td>runtime-test Counter：0→两次 click→2→卸载</td>
+                  <td>同一 core 怎样接内存 host ops</td>
+                  <td>
+                    <a href="architecture.html#architecture-evidence"
+                      >页尾证据表</a
+                    >
+                  </td>
+                </tr>
+                <tr>
+                  <td>组件</td>
+                  <td>同一个 runtime-test Counter</td>
+                  <td>instance/setup/effect/subTree 的前后状态</td>
+                  <td>
+                    <a href="component.html#component-evidence">页尾证据表</a>
+                  </td>
+                </tr>
+                <tr>
+                  <td>Renderer</td>
+                  <td>同一个 Counter 的 button 0→2 VNode</td>
+                  <td>稳定事件引用不变时，patch 如何收窄成一次文本提交</td>
+                  <td>
+                    <a href="renderer.html#renderer-evidence">页尾证据表</a>
+                  </td>
+                </tr>
+                <tr>
+                  <td>Scheduler</td>
+                  <td>同一个 Counter 的两次 click</td>
+                  <td>QUEUED 去重、flushJobs、post 与 nextTick</td>
+                  <td>
+                    <a href="scheduler.html#scheduler-evidence">页尾证据表</a>
+                  </td>
+                </tr>
+                <tr>
+                  <td>Diff</td>
+                  <td><strong>专用 keyed 输入</strong> [1,2,3,4]→[2,3,1,4]</td>
+                  <td>Counter 不进入 LIS；列表才手算映射、LIS 与 move</td>
+                  <td><a href="diff.html#diff-evidence">页尾证据表</a></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
         <section class="article-section prose" id="reading-levels">
           <h2>先走“用例 → 机制 → 源码证据”主线，再拆专题</h2>
           <div class="sequence">
@@ -127,7 +203,8 @@
               ><br />数据怎样流动、各模块怎样交接、为什么需要特殊规则；流程图先给全景。
             </div>
             <div class="sequence-item">
-              <strong>第三层：源码与测试作证</strong><br />完整调用链章紧跟决定性函数、
+              <strong>第三层：源码与测试证据</strong
+              ><br />完整调用链章紧跟决定性函数、
               状态写入、异常分支与完整测试；专题页从其中一站继续展开。
             </div>
           </div>
@@ -143,8 +220,12 @@
         <section class="article-section" id="modules">
           <h2>课程目录</h2>
           <p class="section-intro">
-            推荐顺序：先修课 → 按钮完整调用链 → 架构与各模块专题。先有一条连续主线，
-            再放大其中一站，不会在函数名之间迷路。
+            核心主线顺序：先修课 → 按钮完整调用链 → 架构 → 组件 → Renderer →
+            Diff →
+            Scheduler。先有一条连续主线，再放大其中一站；注意真实点击执行时
+            scheduler 位于组件重渲染之前，学习顺序是为了先懂 job
+            的内容，再单独研究时间轴。完成主线后， 再按目录继续 06–10 的
+            hydration、内置组件、runtime-dom、演进与测试实践章。
           </p>
           <div class="module-directory">
             <a class="module-card" href="primer.html">
@@ -160,8 +241,9 @@
               <span class="module-number">MAIN PATH · FULL STORY</span>
               <h3>按钮计数器的完整调用链</h3>
               <p>
-                先贴完整可运行源码与仓库测试，再把 mount、ref、scheduler、render、
-                patch、DOM、post flush 和 nextTick 串成一张流程图。
+                先贴完整可运行源码与仓库测试，再把
+                mount、ref、scheduler、render、 patch、DOM、post flush 和
+                nextTick 串成一张流程图。
               </p>
               <span class="read-more">先走完整主线 →</span>
             </a>
@@ -169,8 +251,8 @@
               <span class="module-number">01 · ARCHITECTURE</span>
               <h3>为什么 Vue 要分这么多层</h3>
               <p>
-                用“设计图、项目经理与施工队”理解 runtime-core 和 runtime-dom
-                的边界。
+                用完整 Counter 教程测试追踪 runtime-core 与注入的 runtime-test
+                宿主边界。
               </p>
               <span class="read-more">进入架构篇 →</span>
             </a>
@@ -178,31 +260,32 @@
               <span class="module-number">02 · COMPONENT</span>
               <h3>一个组件怎样活起来</h3>
               <p>
-                从组件声明到拥有 props、state、slots、render
-                和生命周期的运行实例。
+                用同一 Counter 追踪 instance、setup、render effect、subTree
+                与卸载。
               </p>
               <span class="read-more">进入组件篇 →</span>
             </a>
             <a class="module-card" href="renderer.html">
               <span class="module-number">03 · RENDERER</span>
               <h3>Vue 怎样决定改哪里</h3>
-              <p>
-                页面描述如何被安装、更新、移动和卸载，以及为什么需要统一 patch。
-              </p>
+              <p>把同一 Counter 的 button 0/2 VNode 收窄到一次文本提交。</p>
               <span class="read-more">进入渲染篇 →</span>
             </a>
             <a class="module-card" href="diff.html">
               <span class="module-number">04 · DIFF</span>
               <h3>列表变化后怎样少动 DOM</h3>
               <p>
-                先用可操作列表理解 key、复用与移动，再完整推演最长递增子序列。
+                诚实切换到真实 keyed 测试，完整手算 [1,2,3,4]→[2,3,1,4] 与 LIS。
               </p>
               <span class="read-more">进入 Diff 专题 →</span>
             </a>
             <a class="module-card" href="scheduler.html">
               <span class="module-number">05 · SCHEDULER</span>
               <h3>为什么数据变了页面不立刻变</h3>
-              <p>合并重复更新、安排父子顺序，并理解 nextTick 到底在等什么。</p>
+              <p>
+                回到同一 Counter，逐状态解释 QUEUED、flushJobs、post 与
+                nextTick。
+              </p>
               <span class="read-more">进入调度篇 →</span>
             </a>
             <a class="module-card" href="hydration.html">
@@ -230,7 +313,7 @@
               <span class="read-more">进入 DOM 篇 →</span>
             </a>
             <a class="module-card" href="evolution.html">
-              <span class="module-number">10 · EVOLUTION</span>
+              <span class="module-number">09 · EVOLUTION</span>
               <h3>Vue Runtime 为什么持续变化</h3>
               <p>
                 从用户输入丢失、重复请求等真实故障理解版本演进，而不是背提交记录。
@@ -238,7 +321,7 @@
               <span class="read-more">进入演进篇 →</span>
             </a>
             <a class="module-card" href="testing.html">
-              <span class="module-number">11 · PRACTICE</span>
+              <span class="module-number">10 · PRACTICE</span>
               <h3>怎样证明更新真的正确</h3>
               <p>
                 最终 HTML 一样还不够：节点身份、执行顺序和错误恢复都需要测试。
@@ -255,22 +338,25 @@
               <span class="card-label">I JUST WANT TO UNDERSTAND</span>
               <h3>先建立主线</h3>
               <p>
-                先修课 → 按钮完整调用链。先看 Demo 与流程图，再用最小源码摘录核对，
-                可以完整讲出页面更新流程。
+                先修课 → 按钮完整调用链。先看 Demo
+                与流程图，再用连续源码摘录核对，
+                随后按五个核心专题的页尾证据表逐项复盘。
               </p>
             </article>
             <article class="card">
               <span class="card-label">I WANT TO SHARE</span>
               <h3>准备技术分享</h3>
               <p>
-                先读按钮完整调用链，再按分享重点展开组件、调度、renderer 或 DOM 专题。
+                先读按钮完整调用链，再按分享重点展开组件、调度、renderer 或 DOM
+                专题。
               </p>
             </article>
             <article class="card">
               <span class="card-label">I WANT THE SOURCE</span>
               <h3>开始源码精读</h3>
               <p>
-                从完整调用链进入函数、测试和 Git 历史；每个参数与分支都有同一 Demo 上下文。
+                从完整调用链进入函数、测试和 Git 历史；每个参数与分支都有同一
+                Demo 上下文。
               </p>
             </article>
           </div>
@@ -297,7 +383,9 @@
 
         <nav class="page-nav" aria-label="章节翻页">
           <a href="primer.html"><span>开始学习</span>零基础先修课 →</a>
-          <a href="integration.html"><span>已有基础</span>直接进入按钮完整调用链 →</a>
+          <a href="integration.html"
+            ><span>已有基础</span>直接进入按钮完整调用链 →</a
+          >
         </nav>
       </main>
 
@@ -305,6 +393,7 @@
         <div class="toc-title">本页目录</div>
         <a href="#promise">这套指南怎样讲</a>
         <a href="#example">Runtime 的核心问题</a>
+        <a href="#case-map">统一案例与换例边界</a>
         <a href="#reading-levels">三层阅读方式</a>
         <a href="#modules">课程目录</a>
         <a href="#routes">选择路线</a>

@@ -29,6 +29,446 @@
           </div>
         </div>
 
+        <section class="article-section prose" id="scheduler-counter-case">
+          <h2>完整用例先行：两次点击，为什么只刷新一个组件 job</h2>
+          <p>
+            仍是同一个 Counter。第一次 click 把 count 写成 1 并将组件 job
+            入队；第二次 click 写成 2，但 job 已有
+            <code>QUEUED</code> 位，不重复加入。同步断言仍看到 button
+            0；微任务里的 <code>flushJobs</code> 执行
+            <code>effect.runIfDirty</code> 后才渲染 button 2；post 队列清空后
+            <code>nextTick</code> 才恢复。
+          </p>
+          <div class="callout warm">
+            <strong>性质声明：</strong>这是课程新增、已设计为可放入 Vue 3.5.41
+            仓库运行的完整 Vitest
+            教程测试，不是上游原测试。imports、准备、动作、同步/异步断言和卸载清理均在块内。
+          </div>
+          <details class="source-layer" open>
+            <summary>完整教程测试：counter-course.spec.ts</summary>
+            <div>
+              <pre><code>import {
+  type TestElement,
+  h,
+  nextTick,
+  nodeOps,
+  ref,
+  render,
+  serializeInner,
+  triggerEvent,
+} from '@vue/runtime-test'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+
+describe('runtime course: Counter', () =&gt; {
+  let root: TestElement
+
+  beforeEach(() =&gt; {
+    root = nodeOps.createElement('div')
+  })
+
+  afterEach(() =&gt; {
+    render(null, root)
+    expect(serializeInner(root)).toBe('')
+  })
+
+  it('keeps DOM stale until nextTick, patches final text, then unmounts', async () =&gt; {
+    const Counter = {
+      setup() {
+        const count = ref(0)
+        const increment = () =&gt; count.value++
+        return () =&gt;
+          h(
+            'button',
+            { id: 'counter', onClick: increment },
+            String(count.value),
+          )
+      },
+    }
+
+    render(h(Counter), root)
+    expect(serializeInner(root)).toBe('&lt;button id="counter"&gt;0&lt;/button&gt;')
+
+    triggerEvent(root.children[0] as TestElement, 'click')
+    triggerEvent(root.children[0] as TestElement, 'click')
+    expect(serializeInner(root)).toBe('&lt;button id="counter"&gt;0&lt;/button&gt;')
+
+    await nextTick()
+    expect(serializeInner(root)).toBe('&lt;button id="counter"&gt;2&lt;/button&gt;')
+  })
+})</code></pre>
+              <p>
+                保存到
+                <code
+                  >vue/packages/runtime-core/__tests__/counter-course.spec.ts</code
+                >；在 <code>vue/</code> 执行
+                <code
+                  >pnpm vitest --project unit
+                  packages/runtime-core/__tests__/counter-course.spec.ts</code
+                >。
+              </p>
+              <p class="test-proof">
+                <strong>本次验收：</strong>Node 24.5.0 定向执行同一测试，1 file
+                / 1 test passed；临时测试文件随后删除。
+              </p>
+            </div>
+          </details>
+          <p class="reader-check">
+            <strong>测试能证明什么：</strong>教程测试直接证明“await 前宿主仍是
+            0、await 后是最终值 2、卸载后为空”。它没有统计 component render
+            次数；“queue 中只有一个 component job”必须由下面的
+            <code>queueJob</code> 源码、QUEUED 状态推演与仓库
+            <code>should dedupe queued jobs</code> 测试联合证明，不能只凭最终
+            DOM 倒推。
+          </p>
+          <h3>本页验收合同</h3>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Given</th>
+                  <th>When</th>
+                  <th>Then</th>
+                  <th>Mechanism</th>
+                  <th>Source</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>空 queue；组件 job.flags 没有 QUEUED</td>
+                  <td>第一次 click 的 ref 通知调用 scheduler</td>
+                  <td>
+                    queue=[job]，job 标 QUEUED，currentFlushPromise 指向 flush
+                    微任务
+                  </td>
+                  <td>queueJob + queueFlush</td>
+                  <td><code>scheduler.ts</code></td>
+                </tr>
+                <tr>
+                  <td>同一 job 已 QUEUED</td>
+                  <td>第二次 click 再次调用 scheduler</td>
+                  <td>count 已到 2，但 queue 仍只有一个 job</td>
+                  <td>queueJob 外层位判断提前退出</td>
+                  <td><code>scheduler.ts · queueJob</code></td>
+                </tr>
+                <tr>
+                  <td>queue=[job]，宿主文本仍是 0</td>
+                  <td>微任务 flushJobs，随后 await nextTick</td>
+                  <td>
+                    job 执行得到 button 2；post callbacks
+                    完成；queue/flags/promise 复位
+                  </td>
+                  <td>
+                    flushJobs try/finally + nextTick 链接 currentFlushPromise
+                  </td>
+                  <td><code>scheduler.ts</code></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="article-section prose" id="scheduler-counter-flow">
+          <h2>同一用例执行图：同步 batch 与微任务 queue 不要混在一起</h2>
+          <div
+            class="flow"
+            role="img"
+            aria-label="Counter 两次点击进入组件调度队列并在微任务刷新及 nextTick 恢复的完整流程"
+          >
+            <div class="flow-step">
+              <span class="flow-index">01</span
+              ><span class="flow-copy"
+                ><strong>click #1：count 0→1</strong
+                ><small
+                  >reactivity 的同步 batch 结束后调用 effect.trigger；effect 有
+                  scheduler，所以直接 scheduler()。</small
+                ></span
+              ><span class="flow-file">Ref/Dep/ReactiveEffect</span>
+            </div>
+            <div class="flow-join"></div>
+            <div class="flow-step">
+              <span class="flow-index">02</span
+              ><span class="flow-copy"
+                ><strong>queueJob(instance.job)</strong
+                ><small
+                  >按 uid 插入 queue，设置 QUEUED；queueFlush 创建
+                  resolvedPromise.then(flushJobs)。</small
+                ></span
+              ><span class="flow-file">scheduler.ts</span>
+            </div>
+            <div class="flow-join"></div>
+            <div class="flow-step">
+              <span class="flow-index">03</span
+              ><span class="flow-copy"
+                ><strong>click #2：count 1→2</strong
+                ><small
+                  >再次触发同一 scheduler；QUEUED 已存在，queueJob
+                  整体跳过，queue 仍为 [job]。</small
+                ></span
+              ><span class="flow-file">dedupe</span>
+            </div>
+            <div class="flow-join"></div>
+            <div class="flow-step">
+              <span class="flow-index">04</span
+              ><span class="flow-copy"
+                ><strong>同步栈结束</strong
+                ><small
+                  >render job 尚未运行；这就是测试在 await 前仍断言 button 0
+                  的原因。</small
+                ></span
+              ><span class="flow-file">host tree unchanged</span>
+            </div>
+            <div class="flow-join"></div>
+            <div class="flow-step">
+              <span class="flow-index">05</span
+              ><span class="flow-copy"
+                ><strong>微任务：flushJobs</strong
+                ><small
+                  >按 queue 顺序取 job；DISPOSED/递归检查后
+                  callWithErrorHandling(job)。job 才在此处 runIfDirty。</small
+                ></span
+              ><span class="flow-file">scheduler.ts · flushJobs</span>
+            </div>
+            <div class="flow-join"></div>
+            <div class="flow-step">
+              <span class="flow-index">06</span
+              ><span class="flow-copy"
+                ><strong>component job → render/patch</strong
+                ><small
+                  >本例组件 job 带 ALLOW_RECURSE，执行前先清
+                  QUEUED，以允许合法重入；dirty 检查通过后读取最终 count=2
+                  并提交 button 2。普通非递归 job 则在执行后清位。</small
+                ></span
+              ><span class="flow-file">renderer.ts</span>
+            </div>
+            <div class="flow-join"></div>
+            <div class="flow-step">
+              <span class="flow-index">07</span
+              ><span class="flow-copy"
+                ><strong>finally → flushPostFlushCbs</strong
+                ><small
+                  >无论主 job 是否报错，都清剩余
+                  QUEUED、queue、flushIndex；随后执行 updated 等 post
+                  回调。</small
+                ></span
+              ><span class="flow-file">scheduler.ts</span>
+            </div>
+            <div class="flow-join"></div>
+            <div class="flow-step">
+              <span class="flow-index">08</span
+              ><span class="flow-copy"
+                ><strong>currentFlushPromise=null → nextTick 恢复</strong
+                ><small
+                  >若 post 又入队则递归清空；整个 flush Promise resolve
+                  后，测试的 await 才继续。</small
+                ></span
+              ><span class="flow-file">stable boundary</span>
+            </div>
+          </div>
+          <h3>照图复述一遍</h3>
+          <ol>
+            <li>
+              reactivity 的
+              <code>batch/endBatch</code> 是同步依赖通知收口；scheduler 的
+              queue/flush 是另一个微任务批次。
+            </li>
+            <li>
+              组件 effect 的 scheduler 只做
+              <code>queueJob(job)</code>；第一次设置 QUEUED 并预约微任务。
+            </li>
+            <li>
+              第二次写状态仍完成到 count=2，但同一个 job 因 QUEUED
+              位提前退出，所以不会重复渲染。
+            </li>
+            <li>
+              <code>isDirty</code> 不在 click 时检查；job 是
+              <code>runIfDirty</code>，直到 flushJobs 调它才检查。
+            </li>
+            <li>
+              flushJobs 执行组件更新，随后 finally 清主队列并刷新 post
+              callbacks。
+            </li>
+            <li>
+              post callback 如果又产生任务会继续清空；currentFlushPromise 对应的
+              nextTick 最后才恢复。
+            </li>
+          </ol>
+        </section>
+
+        <section class="article-section prose" id="scheduler-source-proof">
+          <h2>决定性真实源码：去重、微任务与 finally 恢复</h2>
+          <p>以下为 Vue 3.5.41 连续原文，仅做 HTML 实体转义。</p>
+          <h3>证据 1：nextTick 等待当前 flush，没有 flush 时也延后到微任务</h3>
+          <pre
+            data-source-file="vue/packages/runtime-core/src/scheduler.ts"
+          ><code>export function nextTick&lt;T, R&gt;(
+  this: T,
+  fn?: (this: T) =&gt; R | Promise&lt;R&gt;,
+): Promise&lt;void | R&gt; {
+  const p = currentFlushPromise || resolvedPromise
+  return fn ? p.then(this ? fn.bind(this) : fn) : p
+}</code></pre>
+          <h3>证据 2：QUEUED 位去重，并只创建一个刷新 Promise</h3>
+          <pre
+            data-source-file="vue/packages/runtime-core/src/scheduler.ts"
+          ><code>export function queueJob(job: SchedulerJob): void {
+  if (!(job.flags! &amp; SchedulerJobFlags.QUEUED)) {
+    const jobId = getId(job)
+    const lastJob = queue[queue.length - 1]
+    if (
+      !lastJob ||
+      // 常见父到子更新的 ID 单调递增，直接追加可避开二分与数组搬移。
+      (!(job.flags! &amp; SchedulerJobFlags.PRE) &amp;&amp; jobId &gt;= getId(lastJob))
+    ) {
+      queue.push(job)
+    } else {
+      queue.splice(findInsertionIndex(jobId), 0, job)
+    }
+
+    job.flags! |= SchedulerJobFlags.QUEUED
+
+    queueFlush()
+  }
+}</code></pre>
+          <pre
+            data-source-file="vue/packages/runtime-core/src/scheduler.ts"
+          ><code>function queueFlush() {
+  if (!currentFlushPromise) {
+    currentFlushPromise = resolvedPromise.then(flushJobs)
+  }
+}</code></pre>
+          <h3>证据 3：flushJobs 的 try/finally 是恢复协议</h3>
+          <details class="source-layer" open>
+            <summary>scheduler.ts · flushJobs（完整连续函数）</summary>
+            <div>
+              <pre
+                data-source-file="vue/packages/runtime-core/src/scheduler.ts"
+              ><code>function flushJobs(seen?: CountMap) {
+  if (__DEV__) {
+    seen = seen || new Map()
+  }
+
+  // 开发分支必须在 try/catch 外决定。Rollup 会保守处理 try/catch 内代码，导致递归
+  // 警告逻辑无法 tree-shaking；terser 也许能二次删除，但 esbuild #1610 等场景不会。
+  // 提前选择 `check` 可让生产构建稳定消除整段开发逻辑。
+  const check = __DEV__
+    ? (job: SchedulerJob) =&gt; checkRecursiveUpdates(seen!, job)
+    : NOOP
+
+  try {
+    for (flushIndex = 0; flushIndex &lt; queue.length; flushIndex++) {
+      const job = queue[flushIndex]
+      if (job &amp;&amp; !(job.flags! &amp; SchedulerJobFlags.DISPOSED)) {
+        if (__DEV__ &amp;&amp; check(job)) {
+          continue
+        }
+        if (job.flags! &amp; SchedulerJobFlags.ALLOW_RECURSE) {
+          job.flags! &amp;= ~SchedulerJobFlags.QUEUED
+        }
+        callWithErrorHandling(
+          job,
+          job.i,
+          job.i ? ErrorCodes.COMPONENT_UPDATE : ErrorCodes.SCHEDULER,
+        )
+        if (!(job.flags! &amp; SchedulerJobFlags.ALLOW_RECURSE)) {
+          job.flags! &amp;= ~SchedulerJobFlags.QUEUED
+        }
+      }
+    }
+  } finally {
+    // 即使中途出错，也清掉尚未执行任务的 QUEUED 位，使它们之后仍可重新入队。
+    for (; flushIndex &lt; queue.length; flushIndex++) {
+      const job = queue[flushIndex]
+      if (job) {
+        job.flags! &amp;= ~SchedulerJobFlags.QUEUED
+      }
+    }
+
+    flushIndex = -1
+    queue.length = 0
+
+    flushPostFlushCbs(seen)
+
+    currentFlushPromise = null
+    // post 回调可能触发新更新；递归清空，保证 `nextTick()` resolve 前系统已稳定。
+    if (queue.length || pendingPostFlushCbs.length) {
+      flushJobs(seen)
+    }
+  }
+}</code></pre>
+            </div>
+          </details>
+          <h3>官方仓库回归测试：同一 job 只执行一次</h3>
+          <p>
+            下块是仓库真实测试体，连续原文；imports 在文件顶部。它不是 Counter
+            测试，但单独锁住 Counter 所依赖的去重不变量。
+          </p>
+          <pre
+            data-source-file="vue/packages/runtime-core/__tests__/scheduler.spec.ts"
+          ><code>import {
+  type SchedulerJob,
+  SchedulerJobFlags,
+  flushPostFlushCbs,
+  flushPreFlushCbs,
+  nextTick,
+  queueJob,
+  queuePostFlushCb,
+} from '../src/scheduler'</code></pre>
+          <pre
+            data-source-file="vue/packages/runtime-core/__tests__/scheduler.spec.ts"
+          ><code>    it('should dedupe queued jobs', async () =&gt; {
+      const calls: string[] = []
+      const job1 = () =&gt; {
+        calls.push('job1')
+      }
+      const job2 = () =&gt; {
+        calls.push('job2')
+      }
+      queueJob(job1)
+      queueJob(job2)
+      queueJob(job1)
+      queueJob(job2)
+      expect(calls).toEqual([])
+      await nextTick()
+      expect(calls).toEqual(['job1', 'job2'])
+    })</code></pre>
+          <p class="test-proof">
+            <strong>本次验收：</strong>Node 24.5.0 定向执行
+            <code>should dedupe queued jobs</code>，1 passed / 38 skipped。
+          </p>
+          <div class="branch-grid">
+            <div class="branch">
+              <strong>正常路径</strong
+              ><span
+                >job 按 id 执行，非递归任务执行后清 QUEUED，post 完成后 nextTick
+                恢复。</span
+              >
+            </div>
+            <div class="branch">
+              <strong>提前退出</strong
+              ><span
+                >已有 QUEUED 时 queueJob 不改队列；DISPOSED job 在 flush
+                循环中跳过；无待刷新任务的 nextTick 使用 resolvedPromise。</span
+              >
+            </div>
+            <div class="branch">
+              <strong>错误路径</strong
+              ><span
+                >job 经 callWithErrorHandling
+                进入错误管线；即使错误继续抛出，finally
+                仍清剩余标志、主队列并尝试 post flush。</span
+              >
+            </div>
+            <div class="branch">
+              <strong>递归/清理</strong
+              ><span
+                >ALLOW_RECURSE 可在执行前清 QUEUED 重新入队，但开发环境单轮超过
+                100 次由 checkRecursiveUpdates 报告并跳过；卸载 job 标
+                DISPOSED。</span
+              >
+            </div>
+          </div>
+        </section>
+
         <section class="article-section prose" id="plain-scheduler">
           <h2>三次修改，为什么通常只更新一次页面</h2>
           <pre><code>count.value++
@@ -90,8 +530,9 @@ count.value++</code></pre>
           <h2>调度器维护的六条不变量</h2>
           <div class="sequence">
             <div class="sequence-item">
-              <strong>同一任务一轮只执行一次</strong><br />多次状态写入通过
-              QUEUED 标志 O(1) 去重。
+              <strong>普通任务尚未出队时只保留一份</strong
+              ><br />多次状态写入通过 QUEUED 标志 O(1) 去重；带 ALLOW_RECURSE
+              的任务是显式例外，可在执行前清标志并于同一轮再次入队。
             </div>
             <div class="sequence-item">
               <strong>父组件先于子组件</strong><br />组件 uid 作为
@@ -159,8 +600,11 @@ count.value++</code></pre>
                 </tr>
                 <tr>
                   <td><strong>QUEUED</strong></td>
-                  <td>已在主队列或 post 队列，防止重复加入</td>
-                  <td>所有调度任务</td>
+                  <td>
+                    单个主队列或 post job 已排队，防止重复加入；生命周期 hook
+                    数组不会逐项设置此位
+                  </td>
+                  <td>组件 render job、watch job、单个 post callback</td>
                 </tr>
                 <tr>
                   <td><strong>PRE</strong></td>
@@ -174,8 +618,8 @@ count.value++</code></pre>
                 </tr>
                 <tr>
                   <td><strong>DISPOSED</strong></td>
-                  <td>effect 或组件已停止，队列中仍存在也要跳过</td>
-                  <td>停止 watcher、卸载组件</td>
+                  <td>任务已被显式作废，队列中仍存在也要跳过</td>
+                  <td>组件卸载；失效的 mount/post/ref/Teleport 回调</td>
                 </tr>
               </tbody>
             </table>
@@ -194,7 +638,8 @@ count.value++</code></pre>
             push；否则通过二分查找插入位置。这样队列大部分时间保持有序，避免每轮
             flush 前完整 sort。
           </p>
-          <pre><code>queueJob(job)
+          <pre><code>// 机制流程图，不是 Vue 源码
+queueJob(job)
   if job.flags & QUEUED:
     return
 
@@ -333,7 +778,8 @@ count.value++</code></pre>
             之后；没有更新时，它只是下一次微任务。它不是“等待浏览器绘制”，也不保证
             requestAnimationFrame 已发生。
           </p>
-          <pre><code>state.value++
+          <pre><code>// 教程调用示例，不是 Vue 源码
+state.value++
 await nextTick()
 // 组件主队列与 post 回调已经完成
 // 但这不等价于浏览器已经完成一次视觉帧绘制</code></pre>
@@ -393,6 +839,48 @@ await nextTick()
           </div>
         </section>
 
+        <section class="article-section prose" id="scheduler-evidence">
+          <h2>本章证据闭环</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>用例</th>
+                  <th>源码</th>
+                  <th>测试</th>
+                  <th>图</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Counter 两次 click：同步 0、一个 job、刷新后 2、卸载</td>
+                  <td>
+                    <code
+                      >scheduler.ts ·
+                      nextTick/queueJob/queueFlush/flushJobs</code
+                    >
+                    连续原文
+                  </td>
+                  <td>
+                    完整教程测试 + 仓库真实
+                    <code>should dedupe queued jobs</code> 测试体
+                  </td>
+                  <td>
+                    <a href="#scheduler-counter-flow"
+                      >8 步 click→flush→post→nextTick 图</a
+                    >，图后逐步复述
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="reader-check">
+            <strong>结论：</strong>同步 batch 与微任务
+            queue、去重提前退出、DISPOSED、递归上限、错误 finally
+            和清理路径均有源码与状态落点。
+          </p>
+        </section>
+
         <nav class="page-nav" aria-label="章节翻页">
           <a href="diff.html"><span>上一章</span>← Diff 算法专题</a>
           <a href="hydration.html"><span>下一章</span>SSR 水合 →</a>
@@ -400,11 +888,15 @@ await nextTick()
       </main>
       <aside class="page-toc" aria-label="本页目录">
         <div class="toc-title">本页目录</div>
+        <a href="#scheduler-counter-case">完整 Counter 测试</a>
+        <a href="#scheduler-counter-flow">同例时间图</a>
+        <a href="#scheduler-source-proof">决定性源码</a>
         <a href="#plain-scheduler">为什么要调度</a>
         <a href="#goals">调度目标</a><a href="#job">SchedulerJob</a
         ><a href="#queue">queueJob</a><a href="#flush">flush 时间线</a
         ><a href="#watchers">Watcher 阶段</a><a href="#next-tick">nextTick</a
-        ><a href="#recursion">递归更新</a><a href="#errors">错误恢复</a>
+        ><a href="#recursion">递归更新</a><a href="#errors">错误恢复</a
+        ><a href="#scheduler-evidence">证据闭环</a>
       </aside>
     </div>
     <footer data-site-footer></footer>

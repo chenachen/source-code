@@ -16,7 +16,7 @@
       <aside data-global-nav></aside>
       <main class="article">
         <div class="article-hero">
-          <div class="article-kicker">Chapter 10 · Evolution</div>
+          <div class="article-kicker">Chapter 09 · Evolution</div>
           <h1>为什么成熟的 Runtime 还在不断修复</h1>
           <p class="article-lead">
             主流程早已稳定，但真实浏览器里仍有慢网速输入、异步结果晚到、资源重复加载和节点移动等边界。版本历史记录了
@@ -24,7 +24,7 @@
           </p>
           <div class="hero-meta">
             <span>跨度：2020—2026</span><span>基线：v3.5.41</span
-            ><span>本地 Git 历史</span>
+            ><span>上游 Git 证据</span>
           </div>
         </div>
 
@@ -124,8 +124,165 @@
             </article>
           </div>
           <div class="callout">
-            本章日期与短哈希来自当前仓库本地 Git
-            历史；它们用于定位学习节点，不声称列出每个版本的所有变化。
+            <strong>证据口径修正：</strong>当前工作区只保存一次 vendor
+            快照，不含 Vue 上游完整 Git 历史。因此版本日期来自本地
+            <code>vue/CHANGELOG.md</code> 或上游 release/tag，短哈希来自上游
+            commit 链接；不能再声称它们来自本仓库
+            <code>git log</code>。架构趋势是基于这些历史事实与 v3.5.41
+            当前源码作出的解释性归纳。
+          </div>
+        </section>
+
+        <section class="article-section prose" id="history-evidence">
+          <h2>演进证据时间线：事实与推断分开写</h2>
+          <p>
+            每条演进结论先看“证据类型”。<strong>本地事实</strong>可由当前快照直接复核；
+            <strong>上游历史</strong>由 release/tag/commit 定位；<strong
+              >解释性推断</strong
+            >
+            是从多个事实归纳出的设计主题，不伪装成某个 commit message 的原话。
+          </p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>节点</th>
+                  <th>可核验证据</th>
+                  <th>结论性质</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>3.0 Runtime 骨架</td>
+                  <td>
+                    <a href="https://github.com/vuejs/core/releases/tag/v3.0.0"
+                      >v3.0.0 release</a
+                    >；当前
+                    <code>renderer.ts / scheduler.ts / runtime-dom</code> 分层
+                  </td>
+                  <td>发布日期是上游事实；“承重墙定型”是跨版本解释性推断。</td>
+                </tr>
+                <tr>
+                  <td>3.2 Custom Element</td>
+                  <td>
+                    <a href="https://github.com/vuejs/core/commit/8610e1c9e"
+                      >8610e1c9e</a
+                    >；当前 <code>apiCustomElement.ts</code> 与
+                    <code>customElement.spec.ts</code>
+                  </td>
+                  <td>
+                    能力引入是 commit 事实；“适配层承接外部协议”是架构推断。
+                  </td>
+                </tr>
+                <tr>
+                  <td>3.3 Suspense suspensible</td>
+                  <td>
+                    <a href="https://github.com/vuejs/core/commit/cb37d0b9f"
+                      >cb37d0b9f</a
+                    >；当前 <code>Suspense.ts</code> 的祖先依赖计数与对应 spec
+                  </td>
+                  <td>选项/提交是历史事实；“隔离或向上聚合”是机制解释。</td>
+                </tr>
+                <tr>
+                  <td>3.4 后续 scheduler flags</td>
+                  <td>
+                    <a href="https://github.com/vuejs/core/commit/55660b0cf"
+                      >55660b0cf</a
+                    >、<a href="https://github.com/vuejs/core/commit/db4040d13"
+                      >db4040d13</a
+                    >；当前 <code>SchedulerJobFlags</code>
+                  </td>
+                  <td>
+                    具体改动由 commits
+                    证明；“表示收敛但语义不变”需结合测试，是推断。
+                  </td>
+                </tr>
+                <tr>
+                  <td>3.5 SSR/应用能力</td>
+                  <td>
+                    <a href="https://github.com/vuejs/core/releases/tag/v3.5.0"
+                      >v3.5.0 release</a
+                    >；本地
+                    <code>useId.spec.ts</code
+                    >、<code>useTemplateRef.spec.ts</code>、<code>hydration.spec.ts</code>、<code
+                      >Teleport.spec.ts</code
+                    >
+                  </td>
+                  <td>
+                    API
+                    存在与测试是事实；“稳定身份/启动时机/跨容器提交”是共同主题推断。
+                  </td>
+                </tr>
+                <tr>
+                  <td>3.5.41 边界修复</td>
+                  <td>
+                    本地 <code>package.json</code> 为 3.5.41；<code
+                      >CHANGELOG.md</code
+                    >
+                    记录 2026-08-05 与 #14411/#15105 等修复
+                  </td>
+                  <td>
+                    版本/修复列表是本地事实；“成熟期更关注边界”是对修复分布的解释性推断。
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3>四条能力线和六种模式如何落证据</h3>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>结论</th>
+                  <th>当前源码/测试锚点</th>
+                  <th>证据等级</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Custom Element 是外部协议适配层</td>
+                  <td>
+                    <code>runtime-dom/src/apiCustomElement.ts</code> +
+                    <code>customElement.spec.ts</code>
+                  </td>
+                  <td>当前机制事实 + 架构推断</td>
+                </tr>
+                <tr>
+                  <td>lazy hydration 把触发时机策略化</td>
+                  <td>
+                    <code>runtime-core/src/apiAsyncComponent.ts</code> +
+                    <code>hydration.spec.ts</code> / e2e hydration strategies
+                  </td>
+                  <td>当前机制事实</td>
+                </tr>
+                <tr>
+                  <td>Suspense 用 pendingId/deps 抗晚到结果</td>
+                  <td>
+                    <code>components/Suspense.ts</code> +
+                    <code>Suspense.spec.ts</code>
+                  </td>
+                  <td>当前机制与测试事实</td>
+                </tr>
+                <tr>
+                  <td>scheduler 位标志保留排序/清理契约</td>
+                  <td>
+                    <code>scheduler.ts</code> + <code>scheduler.spec.ts</code>
+                  </td>
+                  <td>
+                    当前机制事实；“不改变语义”需 commit 前后测试，属受证推断
+                  </td>
+                </tr>
+                <tr>
+                  <td>六种演进模式</td>
+                  <td>
+                    分别由 renderer fallback、pendingId/job flags、runtime-dom
+                    边界、post effects、renderer internals、相邻回归 spec 支撑
+                  </td>
+                  <td>全部是本章综合归纳，不是上游原话</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </section>
 
@@ -385,8 +542,10 @@
             if 分支，很容易错过维护者真正保护的边界。
           </p>
           <div class="plain-section">
-            <span class="scene-label">提交到源码的证据链 · v3.5.41</span>
-            <pre><code>// #15194 / 684a8defd 最终落点：vnode.ts:502–518
+            <span class="scene-label"
+              >机制摘要 · 有删节 · 非连续可复制源码</span
+            >
+            <pre><code>// #5081 / PR #15194 / 684a8defd 机制摘要；省略条件与完整警告文本
 const overwritingProp = props.innerHTML != null
   ? 'innerHTML'
   : props.textContent != null
@@ -397,11 +556,82 @@ if (overwritingProp &amp;&amp; hasContentChildren(vnode.children)) {
   warn('... will override its children ...')
 }</code></pre>
             <p>
-              这不是 namespace 修复。提交在创建元素 VNode 时检查“破坏性内容
-              property + 有效
-              children”，用开发警告把浏览器本会静默发生的数据丢失 暴露出来；相邻
-              <code>vnode.spec.ts</code> 测试文本、数组、空值与组件 slot 边界。
+              上段压缩了条件并省略完整 warn
+              文案，只能帮助先看结构，不能当作源码原文。 上游提交
+              <code>684a8defd</code> 的 diff 中新增段落曾位于 502–519； v3.5.41
+              tag 与本地中文注释快照的实际行号都不同，因此不再把那个 diff 行号
+              当成当前文件行号。下面改用可机器核对的本地连续原文。
             </p>
+            <pre
+              data-source-file="vue/packages/runtime-core/src/vnode.ts"
+            ><code>  // #5081：innerHTML/textContent 会静默覆盖 children。模板编译器已禁止 v-html/v-text
+  // 与 children 并用，但手写 render 没有编译检查，所以在 VNode 创建时补充警告。
+  if (__DEV__ &amp;&amp; props &amp;&amp; vnode.shapeFlag &amp; ShapeFlags.ELEMENT) {
+    const overwritingProp =
+      props.innerHTML != null
+        ? 'innerHTML'
+        : props.textContent != null
+          ? 'textContent'
+          : null
+    if (overwritingProp &amp;&amp; hasContentChildren(vnode.children)) {
+      warn(
+        &#96;The \&#96;${overwritingProp}\&#96; prop on &lt;${vnode.type as string}&gt; will &#96; +
+          &#96;override its children. Remove either the \&#96;${overwritingProp}\&#96; &#96; +
+          &#96;prop or the children.&#96;,
+      )
+    }
+  }</code></pre>
+            <pre
+              data-source-file="vue/packages/runtime-core/__tests__/vnode.spec.ts"
+            ><code>  // 测试组：被 innerHTML / textContent 覆盖的子级。
+  describe('children overridden by innerHTML / textContent', () =&gt; {
+    // 测试场景：innerHTML/textContent 会覆盖文本 children，因此开发模式需要给出警告。
+    test('warn on text children', () =&gt; {
+      createVNode('div', { innerHTML: '&lt;span/&gt;' }, 'hello')
+      expect(
+        &#96;The \&#96;innerHTML\&#96; prop on &lt;div&gt; will override its children&#96;,
+      ).toHaveBeenWarned()
+    })
+
+    // 测试场景：对数组子项发出警告。
+    test('warn on array children', () =&gt; {
+      createVNode('div', { innerHTML: '&lt;span/&gt;' }, [createVNode('span')])
+      expect(
+        &#96;The \&#96;innerHTML\&#96; prop on &lt;div&gt; will override its children&#96;,
+      ).toHaveBeenWarned()
+    })
+
+    // 测试场景：对 textContent 发出警告。
+    test('warn on textContent', () =&gt; {
+      createVNode('div', { textContent: 'text' }, 'hello')
+      expect(
+        &#96;The \&#96;textContent\&#96; prop on &lt;div&gt; will override its children&#96;,
+      ).toHaveBeenWarned()
+    })
+
+    // 测试场景：当props为空时没有警告。
+    test('no warning when the prop is nullish', () =&gt; {
+      createVNode('div', { innerHTML: undefined }, 'hello')
+      createVNode('div', { innerHTML: null }, 'hello')
+      createVNode('div', { textContent: undefined }, 'hello')
+      expect(&#96;will override its children&#96;).not.toHaveBeenWarned()
+    })
+
+    // 测试场景：没有可渲染子项时没有警告。
+    test('no warning without renderable children', () =&gt; {
+      createVNode('div', { innerHTML: '&lt;span/&gt;' })
+      createVNode('div', { innerHTML: '&lt;span/&gt;' }, '')
+      createVNode('div', { innerHTML: '&lt;span/&gt;' }, [])
+      expect(&#96;will override its children&#96;).not.toHaveBeenWarned()
+    })
+
+    // 测试场景：组件 vnode 没有警告。
+    test('no warning for component vnodes', () =&gt; {
+      const Comp = { props: ['innerHTML'], render: () =&gt; null }
+      createVNode(Comp, { innerHTML: '&lt;span/&gt;' }, { default: () =&gt; 'slot' })
+      expect(&#96;will override its children&#96;).not.toHaveBeenWarned()
+    })
+  })</code></pre>
             <div class="source-links">
               <a
                 class="source-link"
@@ -416,17 +646,17 @@ if (overwritingProp &amp;&amp; hasContentChildren(vnode.children)) {
               <a
                 class="source-link"
                 href="../../../vue/packages/runtime-core/src/vnode.ts"
-                >本地：#15194 children 警告</a
+                >本地：#5081 / PR #15194 children 警告</a
               >
               <a
                 class="source-link"
                 href="../../../vue/packages/runtime-core/__tests__/vnode.spec.ts"
-                >本地：#15194 回归测试</a
+                >本地：#5081 / PR #15194 回归测试</a
               >
               <a
                 class="source-link"
-                href="https://github.com/vuejs/core/blob/v3.5.41/packages/runtime-core/src/vnode.ts#L502-L518"
-                >v3.5.41：#15194 精确行</a
+                href="https://github.com/vuejs/core/blob/v3.5.41/packages/runtime-core/src/vnode.ts#L475-L492"
+                >v3.5.41：#5081 / PR #15194 精确行</a
               >
               <a
                 class="source-link"
@@ -471,7 +701,19 @@ if (overwritingProp &amp;&amp; hasContentChildren(vnode.children)) {
 
         <section class="article-section prose" id="git-reading">
           <h2>把 Git 当作第二份源码注释</h2>
-          <pre><code># 看固定版本中 patchKeyedChildren 这段为何演变成今天的形状
+          <div class="callout warm">
+            <strong>运行位置：</strong>当前工作区的 <code>vue/</code> 只是
+            vendor 快照，没有上游完整历史与 tags。下面命令必须在另行克隆的
+            <code>vuejs/core</code>
+            上游仓库中运行；不要在当前外层项目目录直接复制。
+          </div>
+          <pre><code># 一次性准备含上游历史与 tags 的独立仓库
+git clone https://github.com/vuejs/core.git vue-core-history
+cd vue-core-history
+git fetch --tags --force
+git switch --detach v3.5.41
+
+# 看固定版本中 patchKeyedChildren 这段为何演变成今天的形状
 # TypeScript 的 const 箭头函数不能稳定使用 -L :funcname:file 形式
 git log --oneline -L 1804,2033:packages/runtime-core/src/renderer.ts v3.5.41
 
@@ -484,7 +726,9 @@ git diff v3.4.0..v3.5.0 -- packages/runtime-core packages/runtime-dom
 # 从 issue / PR 编号寻找修复提交
 git log --all --grep="#14411" --oneline</code></pre>
           <ol>
-            <li>先在当前版本理解不变量与数据结构。</li>
+            <li>
+              先在上游 clone 中检出目标 tag，理解该版本的不变量与数据结构。
+            </li>
             <li>用 blame 定位“异常分支”引入的 commit。</li>
             <li>同时阅读 commit 前后的测试，不只看实现 diff。</li>
             <li>回到当前版本确认后续重构是否改变了表示，但保留同一契约。</li>
@@ -513,6 +757,95 @@ git log --all --grep="#14411" --oneline</code></pre>
           </div>
         </section>
 
+        <section class="article-section prose" id="evidence-matrix">
+          <h2>本页证据表：用例 → 源码 → 测试 → 图</h2>
+          <p class="source-note">
+            本轮实跑：Node v24.5.0，<code>vnode.spec.ts</code> 整文件 56 tests
+            passed； 当前版本号与发布日期另由本地
+            <code>package.json / CHANGELOG.md</code> 交叉核对。
+          </p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>用例 / 演进结论</th>
+                  <th>当前源码</th>
+                  <th>当前测试</th>
+                  <th>时间线图 / 历史性质</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Vue 3 的分层 Runtime 骨架</td>
+                  <td>
+                    <code>renderer.ts</code>、<code>scheduler.ts</code>、<code
+                      >runtime-dom/src/index.ts</code
+                    >
+                  </td>
+                  <td>renderer/scheduler/runtime-dom specs</td>
+                  <td>
+                    <a href="#timeline">六节点时间线</a>；v3.0.0 release
+                    为事实，“承重墙”是解释性推断
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    Custom Element / lazy hydration / Suspense / flags
+                    四条能力线
+                  </td>
+                  <td>
+                    <code>apiCustomElement.ts</code
+                    >、<code>apiAsyncComponent.ts</code>、<code>Suspense.ts</code>、<code
+                      >scheduler.ts</code
+                    >
+                  </td>
+                  <td>
+                    <code>customElement.spec.ts</code>、hydration
+                    strategies、<code>Suspense.spec.ts</code>、<code
+                      >scheduler.spec.ts</code
+                    >
+                  </td>
+                  <td>
+                    <a href="#history-evidence">证据时间线表</a>
+                  </td>
+                </tr>
+                <tr>
+                  <td>#14411 水合前输入、#15105 资源属性</td>
+                  <td><code>vModel.ts</code>、<code>hydration.ts</code></td>
+                  <td>相邻 v-model/hydration regressions</td>
+                  <td>
+                    <a href="#fix-stories">问题驱动修复线</a>；本地
+                    <code>CHANGELOG.md</code> 给 issue 与完整 commit 链接
+                  </td>
+                </tr>
+                <tr>
+                  <td>#15194 innerHTML/textContent 覆盖 children</td>
+                  <td><code>vnode.ts</code> 连续原文</td>
+                  <td><code>vnode.spec.ts</code> 完整 describe</td>
+                  <td>
+                    <a href="#fix-stories">提交 → 源码 → 测试链</a>；
+                    <a href="https://github.com/vuejs/core/commit/684a8defd"
+                      >684a8defd</a
+                    >；上方摘要明确标删节
+                  </td>
+                </tr>
+                <tr>
+                  <td>六种演进模式</td>
+                  <td>
+                    renderer fallback、身份令牌、平台边界、post
+                    effects、renderer internals
+                  </td>
+                  <td>各机制相邻 spec</td>
+                  <td>
+                    <a href="#evolution-patterns">六模式序列图</a
+                    >；综合推断，不声称为单个提交原话
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
         <nav class="page-nav" aria-label="章节翻页">
           <a href="runtime-dom.html"><span>上一章</span>← DOM 平台层</a>
           <a href="testing.html"><span>下一章</span>测试与调试 →</a>
@@ -523,12 +856,14 @@ git log --all --grep="#14411" --oneline</code></pre>
         <div class="toc-title">本页目录</div>
         <a href="#plain-evolution">四个真实故事</a>
         <a href="#method">阅读方法</a>
+        <a href="#history-evidence">证据时间线</a>
         <a href="#timeline">版本节点</a>
         <a href="#stable-core">稳定骨架</a>
         <a href="#feature-stories">能力演进</a>
         <a href="#fix-stories">问题修复</a>
         <a href="#evolution-patterns">演进模式</a>
         <a href="#git-reading">Git 阅读法</a>
+        <a href="#evidence-matrix">证据表</a>
       </aside>
     </div>
     <footer data-site-footer></footer>

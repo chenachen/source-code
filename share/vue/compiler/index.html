@@ -67,7 +67,7 @@
           </p>
           <div class="hero-meta">
             <span>4 个编译器包</span><span>94 个源码 TS 文件</span
-            ><span>67 个测试规格</span><span>1406 项测试通过</span>
+            ><span>68 个测试规格</span><span>1408 项测试通过</span>
           </div>
           <div class="stats" aria-label="专题范围">
             <div class="stat">
@@ -92,6 +92,14 @@
             真实实现与回归测试，每段源码都配有分支原因、输入/中间结构/输出和
             issue 场景。仓库链接只用于读者继续展开全文。
           </p>
+        </div>
+
+        <div class="callout">
+          <strong>第一次来，先完成一条可运行主线：</strong
+          ><a href="lab.html#lab-first">实验零</a>会带你复制命令、预测 AST、核对
+          transform 账本、手算 PatchFlag、逐段读真实
+          render，并故意触发一次错误。
+          跑通后再回模块页，函数名才会落到具体阶段。
         </div>
 
         <section id="mental-model">
@@ -438,7 +446,9 @@
             </div>
             <div class="step">
               <h3><a href="lab.html">实验与术语</a></h3>
-              <p>提供可复现阅读实验、测试地图、问题清单和关键术语表。</p>
+              <p>
+                从一条手把手可执行主线开始，再提供五组扩展实验、测试地图、问题清单和关键术语表。
+              </p>
             </div>
           </div>
         </section>
@@ -457,6 +467,7 @@
               <h3>第一次读编译器</h3>
               <p>
                 <a href="#mental-model">总览</a> →
+                <a href="lab.html#lab-first">手把手实验零</a> →
                 <a href="core.html#entry">core 总装线</a> →
                 <a href="core.html#ast">AST</a> →
                 <a href="core.html#transform">transform</a> →
@@ -494,7 +505,7 @@
 
         <div class="page-links">
           <a class="page-link" href="lab.html"
-            ><small>快速入口</small><strong>先看实验与术语 ←</strong></a
+            ><small>快速入口</small><strong>先跑手把手实验 ←</strong></a
           >
           <a class="page-link" href="core.html"
             ><small>下一章</small><strong>compiler-core 详解 →</strong></a

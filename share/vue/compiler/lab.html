@@ -43,6 +43,7 @@
         <p class="rail-title">实验与术语</p>
         <nav>
           <a href="#content">使用方式</a><a href="#setup">验证命令</a
+          ><a href="#lab-first">实验零：首条完整主线</a
           ><a href="#lab-parse">实验一：Parse</a
           ><a href="#lab-transform">实验二：Transform</a
           ><a href="#lab-sfc">实验三：SFC</a><a href="#lab-ssr">实验四：SSR</a
@@ -62,7 +63,7 @@
             AST、转换与产物，再用现有测试工具验证。
           </p>
           <div class="hero-meta">
-            <span>5 组实验</span><span>源码导航</span><span>测试矩阵</span
+            <span>6 组实验</span><span>源码导航</span><span>测试矩阵</span
             ><span>核心术语</span>
           </div>
         </div>
@@ -142,10 +143,457 @@ node node_modules/vitest/vitest.mjs run \
           </div>
         </section>
 
+        <section id="lab-first">
+          <div class="section-head">
+            <div>
+              <span class="section-no">02 / Lab 0 · Guided Start</span>
+              <h2>第一遍别跳步：亲手编译一个 button</h2>
+            </div>
+            <p>
+              这一节提供可直接运行的测试、固定输入、逐阶段检查点、真实输出和失败诊断。
+              完成后再进入后面五组自由实验。
+            </p>
+          </div>
+
+          <div class="reading-contract">
+            <strong>完成标准</strong>
+            <p>
+              不要求背 API。你要能回答五个问题：parser 留下了什么；transform
+              改了什么；三个 helper 为什么出现；数字 9 为什么是
+              <code>TEXT | PROPS</code>；非法表达式如何从 parser 交给调用方。
+            </p>
+          </div>
+
+          <h3>第 0 步：确认你站在正确目录</h3>
+          <p>
+            下面命令必须从 Vue 仓库根运行，也就是本专题目录向上三级的
+            <code>vue/</code>。先让测试自己打印当前 3.5.41 的真实 render
+            产物，不手抄预期。
+          </p>
+          <pre><code>cd vue
+
+# Node 必须是 20+；低版本可能在启动 Vitest 前就失败。
+node --version
+
+VUE_COMPILER_TUTORIAL_TRACE=1 \
+node node_modules/vitest/vitest.mjs run \
+  packages/compiler-dom/__tests__/tutorial.spec.ts \
+  --project unit --reporter=verbose</code></pre>
+          <div class="callout">
+            <strong>先核对终点：</strong>应看到
+            <code>Test Files 1 passed</code>、<code>Tests 2 passed</code
+            >，以及一份 <code>export function render</code>。若只看到 0
+            tests，当前目录、文件路径或
+            <code>--project unit</code> 至少有一项不对。
+          </div>
+
+          <h3>第 1 步：只读输入，先写下预测</h3>
+          <figure class="source-block">
+            <figcaption class="source-caption">
+              <span
+                ><strong>可执行 Demo 的聚焦摘录</strong
+                ><code
+                  >packages/compiler-dom/__tests__/tutorial.spec.ts</code
+                ></span
+              >
+              <span class="source-version">Vue 3.5.41</span>
+            </figcaption>
+            <pre><code>const SOURCE =
+  '&lt;button :disabled="busy" @click="count++"&gt;Count: {{ count }}&lt;/button&gt;'
+
+const parsed = parse(SOURCE)
+const result = compile(SOURCE, {
+  mode: 'module',
+  prefixIdentifiers: true,
+  hoistStatic: true,
+  cacheHandlers: true,
+  onError: error =&gt; errors.push(error),
+})</code></pre>
+          </figure>
+          <p class="source-context">
+            同一输入故意执行两次：<code>parse()</code> 保存未经转换的阶段快照；
+            <code>compile()</code> 内部重新 parse，并原地 transform
+            第二棵树。若只保留 <code>result.ast</code>，你看到的表达式已经加了
+            <code>_ctx.</code>，也已经有 <code>codegenNode</code>，不能再冒充
+            Parse AST。
+          </p>
+          <div class="grid-3">
+            <article class="card green">
+              <h3>先预测 props</h3>
+              <p>
+                <code>:disabled</code> 应是
+                Directive(bind)，arg=disabled，exp=busy；
+                <code>@click</code> 应是 Directive(on)，arg=click，exp=count++。
+              </p>
+            </article>
+            <article class="card blue">
+              <h3>先预测 children</h3>
+              <p>
+                button 有 Text(<code>Count: </code>) 和
+                Interpolation(<code>count</code>) 两个 child。parser 此时不决定
+                patchFlag。
+              </p>
+            </article>
+            <article class="card amber">
+              <h3>先预测动态维度</h3>
+              <p>
+                busy 改变会写 DOM prop，count 改变会写文本；click handler 不捕获
+                v-for/v-slot 局部量，可以按组件实例缓存。
+              </p>
+            </article>
+          </div>
+
+          <h3>第 2 步：核对 Parse AST，不看生成代码</h3>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>路径</th>
+                  <th>当前值</th>
+                  <th>为什么现在只能知道这些</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>root.children[0]</td>
+                  <td>Element(button)</td>
+                  <td>parser 识别模板结构，不创建运行时 VNode。</td>
+                </tr>
+                <tr>
+                  <td>button.props[0]</td>
+                  <td>bind / disabled / busy</td>
+                  <td>指令名、参数、表达式都保留源码语义。</td>
+                </tr>
+                <tr>
+                  <td>button.props[1]</td>
+                  <td>on / click / count++</td>
+                  <td>是否缓存要等 transform 检查作用域和选项。</td>
+                </tr>
+                <tr>
+                  <td>button.children</td>
+                  <td>Text + Interpolation</td>
+                  <td>transformText 稍后才会把相邻文本拼成复合表达式。</td>
+                </tr>
+                <tr>
+                  <td>表达式 content</td>
+                  <td>busy / count++ / count</td>
+                  <td>原始 parse 快照尚未执行自由标识符前缀改写。</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="callout warn">
+            <strong>常见误判：</strong>AST 里出现 Directive
+            不代表运行时一定保留指令。 <code>v-bind</code>、<code>v-on</code>
+            都能在编译期降成普通 props；只有 transform 返回
+            <code>needRuntime</code> 或遇到自定义指令时，才需要
+            <code>withDirectives</code>。
+          </div>
+
+          <h3>第 3 步：沿真实总装线走到 transform</h3>
+          <figure class="source-block">
+            <figcaption class="source-caption">
+              <span
+                ><strong>源码摘录</strong
+                ><code>compiler-core/src/compile.ts · baseCompile()</code></span
+              >
+              <span class="source-version">Vue 3.5.41</span>
+            </figcaption>
+            <pre><code>const ast = isString(source) ? baseParse(source, resolvedOptions) : source
+const [nodeTransforms, directiveTransforms] =
+  getBaseTransformPreset(prefixIdentifiers)
+
+transform(
+  ast,
+  extend({}, resolvedOptions, {
+    nodeTransforms: [
+      ...nodeTransforms,
+      ...(options.nodeTransforms || []),
+    ],
+    directiveTransforms: extend(
+      {},
+      directiveTransforms,
+      options.directiveTransforms || {},
+    ),
+  }),
+)
+
+return generate(ast, resolvedOptions)</code></pre>
+          </figure>
+          <div class="code-walkthrough">
+            <article class="code-note">
+              <h3>3.1 先建立转换顺序</h3>
+              <p>
+                core 先放结构、作用域、表达式、元素和文本转换；compiler-dom
+                再把平台转换追加进 options，并用 DOM 版
+                <code>on</code>/<code>model</code> 覆盖同名指令转换。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>3.2 进入阶段先改表达式</h3>
+              <p>
+                <code>transformExpression</code> 把自由名字改成
+                <code>_ctx.busy</code>、<code>_ctx.count</code>。若名字在
+                v-for/v-slot 局部作用域中，identifiers 计数会阻止前缀。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>3.3 退出阶段汇总元素</h3>
+              <p>
+                <code>transformElement</code> 返回 exit callback，等 children
+                已处理完再构造
+                VNodeCall。这样它能同时看到复合文本、props、缓存表达式和
+                patchFlag。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>3.4 Root 固化账本</h3>
+              <p>
+                transform 结束把 context 中 helpers、hoists、cached 写回
+                RootNode。generate 无需再遍历模板判断动态性，只打印账本和
+                codegenNode。
+              </p>
+            </article>
+          </div>
+
+          <div class="diagram" aria-label="button 模板的完整编译流程">
+            <p class="diagram-title">同一份 SOURCE 在四个阶段中的身份</p>
+            <div class="flow">
+              <div class="flow-node">
+                <strong>模板文本</strong
+                ><small>button + bind + on + interpolation</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node">
+                <strong>Parse AST</strong><small>原始名字、节点、loc</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node primary">
+                <strong>Transform</strong
+                ><small>_ctx / helpers / cache / flag</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node">
+                <strong>Generate</strong><small>render(_ctx, _cache)</small>
+              </div>
+            </div>
+          </div>
+
+          <h3>第 4 步：手算三个账本</h3>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>账本</th>
+                  <th>本例结果</th>
+                  <th>逐项来源</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>helpers</td>
+                  <td>3</td>
+                  <td>
+                    Interpolation 登记
+                    <code>toDisplayString</code>；单元素动态根转为 block，登记
+                    <code>openBlock</code> 与 <code>createElementBlock</code>。
+                  </td>
+                </tr>
+                <tr>
+                  <td>cached</td>
+                  <td>1</td>
+                  <td>
+                    click 表达式只引用组件上下文 count，不捕获模板局部量；
+                    <code>cacheHandlers</code> 允许放入 <code>_cache[0]</code>。
+                  </td>
+                </tr>
+                <tr>
+                  <td>hoists</td>
+                  <td>1</td>
+                  <td>
+                    动态 prop 名集合稳定，提升为
+                    <code>const _hoisted_1 = ["disabled"]</code>；busy
+                    的值仍在每次 render 求值。
+                  </td>
+                </tr>
+                <tr>
+                  <td>patchFlag</td>
+                  <td>9</td>
+                  <td>
+                    <code>1 /* TEXT */ | 8 /* PROPS */ = 9</code
+                    >。事件已缓存，不再让 onClick 成为每轮动态 prop。
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3>第 5 步：逐段读真实生成结果</h3>
+          <div class="source-result">
+            <strong>教程测试在 Vue 3.5.41 打印的完整 code</strong>
+            <pre><code>import { toDisplayString as _toDisplayString, openBlock as _openBlock, createElementBlock as _createElementBlock } from "vue"
+
+const _hoisted_1 = ["disabled"]
+
+export function render(_ctx, _cache) {
+  return (_openBlock(), _createElementBlock("button", {
+    disabled: _ctx.busy,
+    onClick: _cache[0] || (_cache[0] = $event =&gt; (_ctx.count++))
+  }, "Count: " + _toDisplayString(_ctx.count), 9 /* TEXT, PROPS */, _hoisted_1))
+}</code></pre>
+          </div>
+          <ol class="invariant-list">
+            <li>
+              <b>1</b>
+              <div>
+                <strong>imports 是 helper 账本的打印结果。</strong>没有调用的
+                runtime 能力不会导入；事件本例被编译成普通函数，不需要额外
+                helper。
+              </div>
+            </li>
+            <li>
+              <b>2</b>
+              <div>
+                <strong>_hoisted_1 只保存动态 prop 名。</strong>runtime
+                用它直接定位 disabled；它不是把整个 button 或动态值提升出
+                render。
+              </div>
+            </li>
+            <li>
+              <b>3</b>
+              <div>
+                <strong>_cache 属于组件实例。</strong>第一次 render 创建
+                handler，之后 render 复用同一函数身份；count 仍在事件触发时从
+                _ctx 读取。
+              </div>
+            </li>
+            <li>
+              <b>4</b>
+              <div>
+                <strong>patchFlag 和 dynamicProps 是运行时协议。</strong
+                >更新时可跳过完整 props/children 比较，只更新文本与 disabled。
+              </div>
+            </li>
+          </ol>
+
+          <h3>第 6 步：故意制造一个错误</h3>
+          <pre><code>const errors = []
+const result = compile('&lt;div :id="user +"&gt;&lt;/div&gt;', {
+  mode: 'module',
+  prefixIdentifiers: true,
+  onError: error =&gt; errors.push(error),
+})
+
+// errors[0].code === ErrorCodes.X_INVALID_EXPRESSION
+// errors[0].loc.start.offset === 10
+// errors[0].loc.source === ''：这里是表达式起点的零长度诊断位置
+// result.code 仍可检查，因为调用方选择了“收集”，没有采用默认抛错处理器。</code></pre>
+          <div class="callout warn">
+            <strong>错误链：</strong><code>prefixIdentifiers</code> 让 parser
+            预解析表达式 → Babel 在 <code>user +</code> 末尾失败 →
+            <code>emitError(X_INVALID_EXPRESSION)</code> 用表达式起点构造零长度
+            loc → 自定义 <code>onError</code> 收集诊断 → transform 看到
+            <code>exp.ast === false</code>，不重复报告。删除
+            <code>onError</code> 后，默认处理器会立刻抛错。
+          </div>
+
+          <h3>第 7 步：一次只改一个变量</h3>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>只做这项修改</th>
+                  <th>运行前预测</th>
+                  <th>重点核对</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>删除 <code>@click="count++"</code></td>
+                  <td>cached 从 1 变 0</td>
+                  <td>
+                    输出不再出现 <code>_cache[0]</code>；9 仍由 TEXT|PROPS
+                    构成。
+                  </td>
+                </tr>
+                <tr>
+                  <td>把 <code>:disabled="busy"</code> 改成静态 disabled</td>
+                  <td>PROPS 消失，只剩 TEXT</td>
+                  <td>patchFlag 变 1；动态 prop 名数组不再需要。</td>
+                </tr>
+                <tr>
+                  <td>把 button 外包一层 <code>v-if="ok"</code></td>
+                  <td>出现条件分支和注释占位</td>
+                  <td>
+                    观察 IfNode、分支 key、createCommentVNode 与根 codegenNode。
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    把 click 放进 <code>v-for="item in items"</code> 并读取 item
+                  </td>
+                  <td>handler 不能跨迭代缓存</td>
+                  <td>
+                    item 不加 _ctx；hasScopeRef 阻止复用捕获不同 item 的闭包。
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <details open>
+            <summary>卡住时按症状定位</summary>
+            <div>
+              <ul>
+                <li>
+                  启动时报 <code>node:util</code> 没有
+                  <code>styleText</code>：Node 版本低于当前工具链要求，先切换
+                  Node 20+。
+                </li>
+                <li>
+                  报找不到测试文件：确认当前目录是 <code>vue/</code>，不是
+                  <code>share/vue/compiler/</code>。
+                </li>
+                <li>
+                  测试数为 0：保留完整文件路径和
+                  <code>--project unit</code>，不要只看退出码。
+                </li>
+                <li>
+                  生成 code 与本页不同：先检查 package.json version 和当前
+                  commit； 其他 Vue 版本应以该版本源码与测试为准。
+                </li>
+              </ul>
+            </div>
+          </details>
+
+          <div class="callout">
+            <strong>过关自测：</strong>合上本页，尝试只凭模板写出 raw
+            Directive/Interpolation、三个 helper、一个 cache、一个 hoist 和数字
+            9 的来源；再打开测试逐项核对。五项都能解释，才进入 Lab 1。
+          </div>
+          <a
+            class="source-link"
+            href="../../../vue/packages/compiler-dom/__tests__/tutorial.spec.ts"
+            >打开完整教程测试</a
+          >
+          ·
+          <a
+            class="source-link"
+            href="../../../vue/packages/compiler-core/src/compile.ts"
+            >打开 baseCompile 源码</a
+          >
+          ·
+          <a
+            class="source-link"
+            href="../../../vue/packages/compiler-core/src/transform.ts"
+            >打开 transform 源码</a
+          >
+        </section>
+
         <section id="lab-parse">
           <div class="section-head">
             <div>
-              <span class="section-no">02 / Lab 1</span>
+              <span class="section-no">03 / Lab 1</span>
               <h2>Parse：手画 AST，再看 location</h2>
             </div>
             <p>
@@ -223,7 +671,7 @@ start.offset 包含起点，end.offset 指向片段后一位；
         <section id="lab-transform">
           <div class="section-head">
             <div>
-              <span class="section-no">03 / Lab 2</span>
+              <span class="section-no">04 / Lab 2</span>
               <h2>Transform：证明顺序为什么不能交换</h2>
             </div>
             <p>选择同时包含 v-for 局部变量、事件闭包与动态文本的模板。</p>
@@ -298,7 +746,7 @@ start.offset 包含起点，end.offset 指向片段后一位；
         <section id="lab-sfc">
           <div class="section-head">
             <div>
-              <span class="section-no">04 / Lab 3</span>
+              <span class="section-no">05 / Lab 3</span>
               <h2>SFC：跟踪一个绑定的身份变化</h2>
             </div>
             <p>
@@ -359,7 +807,7 @@ const { color = 'red' } = defineProps&lt;{
         <section id="lab-ssr">
           <div class="section-head">
             <div>
-              <span class="section-no">05 / Lab 4</span>
+              <span class="section-no">06 / Lab 4</span>
               <h2>SSR：比较产物，不比较实现</h2>
             </div>
             <p>
@@ -425,7 +873,7 @@ const { color = 'red' } = defineProps&lt;{
         <section id="lab-issue">
           <div class="section-head">
             <div>
-              <span class="section-no">06 / Lab 5</span>
+              <span class="section-no">07 / Lab 5</span>
               <h2>Issue：从最小回归倒推不变量</h2>
             </div>
             <p>选择已有 issue 注释，不先看修复代码，按失败类型建立假设。</p>
@@ -488,7 +936,7 @@ const { color = 'red' } = defineProps&lt;{
         <section id="source-map">
           <div class="section-head">
             <div>
-              <span class="section-no">07 / Source Map</span>
+              <span class="section-no">08 / Source Map</span>
               <h2>按问题导航源码</h2>
             </div>
             <p>先找到决策层，再看数据生产者与消费者。</p>
@@ -506,7 +954,8 @@ const { color = 'red' } = defineProps&lt;{
                 <tr>
                   <td>模板如何识别</td>
                   <td>
-                    <a href="../../../vue/packages/compiler-core/src/tokenizer.ts"
+                    <a
+                      href="../../../vue/packages/compiler-core/src/tokenizer.ts"
                       >tokenizer.ts</a
                     >
                   </td>
@@ -515,14 +964,17 @@ const { color = 'red' } = defineProps&lt;{
                 <tr>
                   <td>AST 字段含义</td>
                   <td>
-                    <a href="../../../vue/packages/compiler-core/src/ast.ts">ast.ts</a>
+                    <a href="../../../vue/packages/compiler-core/src/ast.ts"
+                      >ast.ts</a
+                    >
                   </td>
                   <td>对应 create* 工厂与 transform 测试</td>
                 </tr>
                 <tr>
                   <td>插件如何遍历</td>
                   <td>
-                    <a href="../../../vue/packages/compiler-core/src/transform.ts"
+                    <a
+                      href="../../../vue/packages/compiler-core/src/transform.ts"
                       >transform.ts</a
                     >
                   </td>
@@ -560,7 +1012,8 @@ const { color = 'red' } = defineProps&lt;{
                 <tr>
                   <td>script setup 如何生成</td>
                   <td>
-                    <a href="../../../vue/packages/compiler-sfc/src/compileScript.ts"
+                    <a
+                      href="../../../vue/packages/compiler-sfc/src/compileScript.ts"
                       >compileScript.ts</a
                     >
                   </td>
@@ -604,7 +1057,7 @@ const { color = 'red' } = defineProps&lt;{
         <section id="test-map">
           <div class="section-head">
             <div>
-              <span class="section-no">08 / Test Map</span>
+              <span class="section-no">09 / Test Map</span>
               <h2>测试断言类型与适用问题</h2>
             </div>
             <p>选择错误的断言层，会让测试看似通过却未保护真正不变量。</p>
@@ -651,8 +1104,10 @@ const { color = 'red' } = defineProps&lt;{
                 </tr>
                 <tr>
                   <td>compiler-dom</td>
-                  <td>index / parse</td>
-                  <td>stringifyStatic、vModel、vOn、validateHtmlNesting</td>
+                  <td>tutorial / index / parse</td>
+                  <td>
+                    首条完整管线、stringifyStatic、vModel、vOn、validateHtmlNesting
+                  </td>
                 </tr>
                 <tr>
                   <td>compiler-sfc</td>
@@ -677,7 +1132,7 @@ const { color = 'red' } = defineProps&lt;{
         <section id="glossary">
           <div class="section-head">
             <div>
-              <span class="section-no">09 / Glossary</span>
+              <span class="section-no">10 / Glossary</span>
               <h2>核心术语</h2>
             </div>
             <p>这些词在不同文件中反复出现；理解协议含义比翻译名称更重要。</p>
@@ -795,7 +1250,7 @@ const { color = 'red' } = defineProps&lt;{
         <section id="faq">
           <div class="section-head">
             <div>
-              <span class="section-no">10 / FAQ</span>
+              <span class="section-no">11 / FAQ</span>
               <h2>常见理解误区</h2>
             </div>
             <p>把这些边界分清，源码阅读会少绕很多路。</p>

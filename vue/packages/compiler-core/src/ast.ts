@@ -24,7 +24,7 @@ import type { Node as BabelNode } from '@babel/types'
  * 是阅读 compiler-core 三阶段管线的关键。
  */
 
-// Vue 模板在语法层是平台无关的 HTML 超集；平台编译器可以扩展命名空间取值。
+/** Vue 模板的命名空间编号；平台编译器可在三个内置值之外扩展取值。 */
 export type Namespace = number
 
 /** 内置命名空间编号，用于决定标签和属性的解析/生成规则。 */

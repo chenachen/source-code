@@ -1435,7 +1435,7 @@ describe('compiler: element transform', () => {
   })
 
   test('should process node when node has been replaced', () => {
-    // 用 NodeTransform 把 `<div id="foo" />` 替换为 `<span id="foo" />`。
+    /** 用 NodeTransform 替换当前节点，验证后续转换读取的是新节点。 */
     const customNodeTransform: NodeTransform = (node, context) => {
       if (
         node.type === NodeTypes.ELEMENT &&

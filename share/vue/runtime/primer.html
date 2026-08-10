@@ -20,7 +20,7 @@
           <h1>读源码前，先把一次页面更新说清楚</h1>
           <p class="article-lead">
             你只需要有 Vue 组件使用经验。这一章不要求知道 Runtime、VNode 或
-            Diff，先用一个待办列表把后面会反复出现的概念讲明白。
+            Diff，先用课程会反复复用的按钮计数器，把共同词汇和阅读顺序讲明白。
           </p>
           <div class="hero-meta">
             <span>建议阅读 15 分钟</span><span>源码共同词汇</span
@@ -29,33 +29,44 @@
         </div>
 
         <section class="article-section prose" id="visible-result">
-          <h2>我们真正想解释的，只是这个变化</h2>
+          <h2>我们真正想解释的，只是同一个 Counter</h2>
           <p>
-            假设页面上有三个任务。用户点击“添加”，列表多出一项。业务代码只修改了数组，没有调用
-            <code>document.createElement</code>，也没有指定新节点应该插在哪里。
+            页面先显示 0。后续教程测试会在同一个同步调用栈内连续执行两次
+            <code>triggerEvent(button, 'click')</code>；每次处理器都只做
+            <code>count.value++</code>，没有调用
+            <code>document.createElement</code>， 也没有直接写 button 的
+            <code>textContent</code>。
           </p>
+          <div class="callout warm">
+            <strong>同一个组件有两个明确输入变体：</strong>本页、01–03 与 05
+            核心专题使用 <code>@vue/runtime-test</code>，在一个同步调用栈中连续
+            <code>triggerEvent</code> 两次，观察 0 → 2 与 job
+            去重；下一章“完整按钮调用链” 先用浏览器宿主真实单击一次，观察 0 → 1
+            的端到端路径。组件角色与更新机制相同，
+            只有宿主和输入次数不同，后文不会把两组断言混用。04 Diff 章则改用
+            keyed 列表， 专门证明节点复用、移动与 LIS。
+          </div>
           <div class="before-after">
             <div class="scene-window">
               <div class="scene-titlebar">点击前</div>
               <div class="scene-body">
-                <span class="scene-label">TODAY</span>
-                <ul class="ui-list">
-                  <li class="ui-item">买牛奶</li>
-                  <li class="ui-item">回复邮件</li>
-                  <li class="ui-item">学习 Vue</li>
-                </ul>
+                <span class="scene-label">MOUNT 完成</span>
+                <p>
+                  <button class="demo-button" type="button">count = 0</button>
+                </p>
+                <small>组件实例与 button 已存在。</small>
               </div>
             </div>
             <div class="scene-window">
               <div class="scene-titlebar">点击后</div>
               <div class="scene-body">
-                <span class="scene-label">TODAY · 4 ITEMS</span>
-                <ul class="ui-list">
-                  <li class="ui-item">买牛奶</li>
-                  <li class="ui-item">回复邮件</li>
-                  <li class="ui-item">学习 Vue</li>
-                  <li class="ui-item new">跑步</li>
-                </ul>
+                <span class="scene-label">两次 CLICK + FLUSH</span>
+                <p>
+                  <button class="demo-button primary" type="button">
+                    count = 2
+                  </button>
+                </p>
+                <small>仍是同一个组件与 button，只更新了文本。</small>
               </div>
             </div>
           </div>
@@ -72,7 +83,7 @@
               <span class="role-icon">①</span>
               <strong>数据世界</strong>
               <small
-                >任务数组、当前用户、是否展开。它描述应用现在是什么状态。</small
+                >count 从 0 同步写到 1、2。它描述应用现在是什么状态。</small
               >
               <span class="role-source">state / reactive / ref</span>
             </article>
@@ -80,8 +91,8 @@
               <span class="role-icon">②</span>
               <strong>描述世界</strong>
               <small
-                >根据当前数据，Vue
-                算出“页面应该有四个列表项”。这还不是真实页面。</small
+                >根据 count=2，Vue 算出新的 button VNode，文本 children
+                是“2”。这还不是真实页面。</small
               >
               <span class="role-source">render / VNode</span>
             </article>
@@ -89,7 +100,8 @@
               <span class="role-icon">③</span>
               <strong>浏览器世界</strong>
               <small
-                >用户真正看到和点击的 HTML 节点。修改它才会改变页面。</small
+                >用户真正看到和点击的 button。宿主文本从 0 写成 2
+                才会改变页面。</small
               >
               <span class="role-source">DOM</span>
             </article>
@@ -110,44 +122,44 @@
                 <tr>
                   <th>术语</th>
                   <th>先这样理解</th>
-                  <th>待办列表示例</th>
+                  <th>Counter 中的具体值</th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
                   <td><strong>DOM</strong></td>
                   <td>浏览器中的真实页面节点</td>
-                  <td>真正显示出来的 <code>&lt;li&gt;</code></td>
+                  <td>真正显示出来的 <code>&lt;button&gt;</code></td>
                 </tr>
                 <tr>
                   <td><strong>组件</strong></td>
                   <td>拥有输入、状态和界面的一块独立功能</td>
-                  <td>整个 TodoList 或其中一个 TodoItem</td>
+                  <td>拥有 count 与 render 的 Counter</td>
                 </tr>
                 <tr>
                   <td><strong>render</strong></td>
                   <td>根据当前数据，重新计算页面应该长什么样</td>
-                  <td>数组有四项，于是描述四个 li</td>
+                  <td>count=2，于是描述 button 文本 2</td>
                 </tr>
                 <tr>
                   <td><strong>VNode</strong></td>
                   <td>Vue 内部的一张“页面节点说明卡”</td>
-                  <td>类型是 li、文字是跑步、key 是任务 id</td>
+                  <td>type=button、id=counter、children='2'</td>
                 </tr>
                 <tr>
                   <td><strong>patch</strong></td>
                   <td>让旧页面逐步变成新页面的更新过程</td>
-                  <td>保留前三项，只插入第四项</td>
+                  <td>复用 button.el，只提交变化文本</td>
                 </tr>
                 <tr>
                   <td><strong>Diff</strong></td>
                   <td>比较新旧列表，找出复用、新增、删除和移动</td>
-                  <td>判断“学习 Vue”是移动，不是重建</td>
+                  <td>Counter 不进列表 Diff；Diff 页会诚实换 keyed 列表</td>
                 </tr>
                 <tr>
                   <td><strong>Scheduler</strong></td>
                   <td>把短时间内很多变化合并，并安排正确执行顺序</td>
-                  <td>连续 push 三次，页面通常只统一更新一次</td>
+                  <td>连续 click 两次，同一个组件 job 只入队一次</td>
                 </tr>
                 <tr>
                   <td><strong>Hydration</strong></td>
@@ -165,7 +177,10 @@
 
         <section class="article-section prose" id="one-update">
           <h2>亲手走一遍：点击后经过哪六站</h2>
-          <p>每点一次“下一步”，只观察一个角色。无需记函数名。</p>
+          <p>
+            每点一次“下一步”，只观察 Counter
+            的一个阶段。这里是路线演示，不是源码证明。
+          </p>
           <div class="demo-panel" data-runtime-demo>
             <div class="demo-toolbar">
               <button class="demo-button primary" type="button" data-demo-next>
@@ -177,19 +192,19 @@
             </div>
             <div class="runtime-pipeline">
               <div class="pipeline-stage" data-demo-stage>
-                <strong>① 数据变化</strong>数组增加任务
+                <strong>① 数据变化</strong>count 写到 1、2
               </div>
               <div class="pipeline-stage" data-demo-stage>
                 <strong>② 安排更新</strong>合并重复通知
               </div>
               <div class="pipeline-stage" data-demo-stage>
-                <strong>③ 重新描述</strong>生成新界面草图
+                <strong>③ 重新描述</strong>生成 button 2
               </div>
               <div class="pipeline-stage" data-demo-stage>
-                <strong>④ 找出差异</strong>前三项可复用
+                <strong>④ 找出差异</strong>button 可复用
               </div>
               <div class="pipeline-stage" data-demo-stage>
-                <strong>⑤ 修改 DOM</strong>只插入一项
+                <strong>⑤ 修改宿主</strong>只更新文本
               </div>
               <div class="pipeline-stage" data-demo-stage>
                 <strong>⑥ 更新完成</strong>执行后续回调
@@ -197,13 +212,10 @@
             </div>
             <div class="before-after">
               <div>
-                <span class="scene-label">页面中的列表</span>
-                <ul class="ui-list">
-                  <li class="ui-item">买牛奶</li>
-                  <li class="ui-item">回复邮件</li>
-                  <li class="ui-item">学习 Vue</li>
-                  <li class="ui-item" data-demo-output>学习 Diff</li>
-                </ul>
+                <span class="scene-label">页面中的 COUNTER</span>
+                <p class="concept-sentence">
+                  count = <strong data-demo-output>0</strong>
+                </p>
               </div>
               <div class="demo-explanation" data-demo-explanation>
                 点击“下一步”，观察一次更新如何穿过 Vue Runtime。
@@ -211,8 +223,9 @@
             </div>
           </div>
           <p>
-            这六步就是整套指南的主线。后面的组件、调度、Renderer、Diff 和
-            runtime-dom，只是在分别回答其中某一步的细节。
+            这六步就是整套指南的执行主线。先到“按钮完整调用链”读完整
+            Demo、测试和 总流程，再依次读架构、组件、Renderer、Diff、调度；Diff
+            会明确换用真正会进入 keyed diff 的列表输入。
           </p>
         </section>
 
@@ -251,14 +264,22 @@
               安排更新，renderer = 计算并执行页面修改。
             </div>
             <div class="sequence-item">
-              <strong>最后进入同一用例的源码链</strong
-              ><br />先读完整 Demo 与仓库测试，再按流程图逐站核对源码，不在函数清单间跳跃。
+              <strong>最后进入同一用例的源码链</strong><br />先读完整 Demo
+              与仓库测试，再按流程图逐站核对源码，不在函数清单间跳跃。
             </div>
           </div>
           <div class="callout">
-            下一章先用按钮计数器完整走一遍真实源码。读完主线后，再拆开学习架构、
-            组件、调度、renderer 与 DOM 平台层。
+            核心主线顺序：<strong
+              >primer → 按钮完整调用链 → architecture → component → renderer →
+              diff → scheduler</strong
+            >。这是主线的学习顺序；真实点击时 scheduler
+            在组件重渲染前运行，完整调用链章会先把执行顺序画清。主线完成后，再按页尾导航继续
+            06–10 的 hydration、内置组件、runtime-dom、演进与测试实践章。
           </div>
+          <p class="reader-check">
+            <strong>证据边界：</strong>本页只建立共同词汇与路线，不证明 Vue
+            内部实现。机制证据从下一章的完整用例开始，并在后续各专题页以“用例→源码→测试→图”表收口。
+          </p>
         </section>
 
         <nav class="page-nav" aria-label="章节翻页">

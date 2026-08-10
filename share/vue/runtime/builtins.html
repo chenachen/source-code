@@ -179,11 +179,11 @@ if (vnodeShouldKeepAlive) return keepAliveContext.deactivate(vnode)
 // 普通元素路径也会调用 vnode.transition 的 beforeEnter / enter / leave</code></pre>
             <p>
               上段用于并列四种协议；<code>vnodeWasKeptAlive</code> 与
-              <code>vnodeShouldKeepAlive</code> 是教学条件名，不是 Vue 3.5.41 符号。
-              四条路径的接入方式不同：Teleport/Suspense 作为特殊 VNode 类型接管
-              <code>process</code>；KeepAlive 用 ShapeFlag 改写组件挂载和卸载；
-              Transition 把 hooks 挂在普通 VNode 上，让 renderer 在
-              insert/remove 边界调用。它们共享 renderer
+              <code>vnodeShouldKeepAlive</code> 是教学条件名，不是 Vue 3.5.41
+              符号。 四条路径的接入方式不同：Teleport/Suspense 作为特殊 VNode
+              类型接管 <code>process</code>；KeepAlive 用 ShapeFlag
+              改写组件挂载和卸载； Transition 把 hooks 挂在普通 VNode 上，让
+              renderer 在 insert/remove 边界调用。它们共享 renderer
               internals，但没有合并成一种协议。
             </p>
             <div class="source-links">
@@ -557,6 +557,837 @@ if (vnodeShouldKeepAlive) return keepAliveContext.deactivate(vnode)
           </div>
         </section>
 
+        <section class="article-section prose" id="protocol-proof">
+          <h2>四个协议逐个验明：测试、源码与同场景流程</h2>
+          <p>
+            总览只能说明四者会相遇，不能证明任何一个协议。下面每节都固定一个真实仓库用例，
+            紧接决定性连续源码和该用例自己的执行图。Suspense 小节还完整给出
+            imports、 shared
+            setup、动作、断言与清理，是本页可直接定位运行的完整仓库测试上下文。
+          </p>
+
+          <h3 id="teleport-proof">A. Teleport：目标从 A 改为 B</h3>
+          <p class="source-note">
+            性质：<code>Teleport.spec.ts</code> 真实 helper 与完整测试体。外层
+            <code>runSharedTests(false/true)</code> 让同一断言分别覆盖 eager 与
+            defer；
+            <code
+              >originalH / nodeOps / render / ref / nextTick /
+              serializeInner</code
+            >
+            由该文件顶部的 <code>@vue/runtime-test</code> import 提供。
+          </p>
+          <pre
+            data-source-file="vue/packages/runtime-core/__tests__/components/Teleport.spec.ts"
+          ><code>  function runSharedTests(deferMode: boolean) {
+    const h = (deferMode
+      ? (type: any, props: any, ...args: any[]) =&gt; {
+          if (type === Teleport) {
+            props.defer = true
+          }
+          return originalH(type, props, ...args)
+        }
+      : originalH) as unknown as typeof originalH</code></pre>
+          <pre
+            data-source-file="vue/packages/runtime-core/__tests__/components/Teleport.spec.ts"
+          ><code>    // 测试场景：应该更新目标。
+    test('should update target', async () =&gt; {
+      const targetA = nodeOps.createElement('div')
+      const targetB = nodeOps.createElement('div')
+      const target = ref(targetA)
+      const root = nodeOps.createElement('div')
+
+      render(
+        h(() =&gt; [
+          h(Teleport, { to: target.value }, h('div', 'teleported')),
+          h('div', 'root'),
+        ]),
+        root,
+      )
+
+      expect(serializeInner(root)).toBe(
+        &#96;&lt;!--teleport start--&gt;&lt;!--teleport end--&gt;&lt;div&gt;root&lt;/div&gt;&#96;,
+      )
+      expect(serializeInner(targetA)).toBe(&#96;&lt;div&gt;teleported&lt;/div&gt;&#96;)
+      expect(serializeInner(targetB)).toBe(&#96;&#96;)
+
+      target.value = targetB
+      await nextTick()
+
+      expect(serializeInner(root)).toBe(
+        &#96;&lt;!--teleport start--&gt;&lt;!--teleport end--&gt;&lt;div&gt;root&lt;/div&gt;&#96;,
+      )
+      expect(serializeInner(targetA)).toBe(&#96;&#96;)
+      expect(serializeInner(targetB)).toBe(&#96;&lt;div&gt;teleported&lt;/div&gt;&#96;)
+    })</code></pre>
+          <pre
+            data-source-file="vue/packages/runtime-core/src/components/Teleport.ts"
+          ><code>        if ((n2.props &amp;&amp; n2.props.to) !== (n1.props &amp;&amp; n1.props.to)) {
+          const nextTarget = resolveTarget(n2.props, querySelector)
+          if (nextTarget) {
+            n2.target = nextTarget
+            moveTeleport(
+              n2,
+              nextTarget,
+              null,
+              internals,
+              TeleportMoveTypes.TARGET_CHANGE,
+            )
+          } else if (__DEV__) {
+            warn(
+              'Invalid Teleport target on update:',
+              target,
+              &#96;(${typeof target})&#96;,
+            )
+          }
+        } else if (wasDisabled) {
+          // disabled -&gt; enabled：把主视图 children 搬到目标结束锚点之前。
+          moveTeleport(
+            n2,
+            target,
+            targetAnchor,
+            internals,
+            TeleportMoveTypes.TOGGLE,
+          )
+        }
+      }
+      updateCssVars(n2, disabled)
+    }
+  },</code></pre>
+          <div
+            class="diagram"
+            role="img"
+            aria-label="Teleport 从 target A 移到 target B 的局部流程"
+          >
+            <div class="diagram-title">TELEPORT · TARGET CHANGE</div>
+            <div class="layer-flow">
+              <div class="layer-node">
+                <strong>Given</strong><small>主树双锚点；children 在 A</small>
+              </div>
+              <div class="diagram-arrow">→</div>
+              <div class="layer-node">
+                <strong>When</strong><small>to: A → B；nextTick</small>
+              </div>
+              <div class="diagram-arrow">→</div>
+              <div class="layer-node emphasis">
+                <strong>Mechanism</strong
+                ><small>resolveTarget + moveTeleport(TARGET_CHANGE)</small>
+              </div>
+              <div class="diagram-arrow">→</div>
+              <div class="layer-node">
+                <strong>Then</strong
+                ><small>A 空；B 有 children；主锚点不动</small>
+              </div>
+            </div>
+          </div>
+          <div class="test-proof">
+            <p>
+              <strong>Given：</strong>A/B
+              两个目标和一个主容器；<strong>When：</strong>响应式目标从 A 改为
+              B并 flush；<strong>Then：</strong>远端 children 移到
+              B，主树占位不变。
+            </p>
+            <p>
+              <strong>Mechanism：</strong>update 比较新旧
+              <code>to</code>，解析新目标并用
+              <code>TARGET_CHANGE</code> 移动目标锚点和 children；<strong
+                >Source：</strong
+              ><code>Teleport.ts</code> 上方连续段。
+            </p>
+          </div>
+          <div class="callout warm">
+            <strong>失效/清理：</strong>新 target
+            无效时开发态警告且不搬移；卸载会取消 pending defer
+            job、移除目标锚点并 unmount 远端
+            children，避免目标容器残留孤儿节点。
+          </div>
+
+          <h3 id="suspense-proof">
+            B. Suspense：先 fallback，最后一次依赖完成后原子提交
+          </h3>
+          <p class="source-note">
+            性质：下面是同一真实测试文件的完整 import 上下文、共享清理/helper
+            与完整测试体。
+            <code>deps.length = 0</code> 和
+            <code>resetSuspenseId()</code> 是每个测试的清理准备。
+          </p>
+          <pre
+            data-source-file="vue/packages/runtime-core/__tests__/components/Suspense.spec.ts"
+          ><code>import {
+  type ComponentOptions,
+  Fragment,
+  KeepAlive,
+  Suspense,
+  type SuspenseProps,
+  Teleport,
+  createBlock,
+  createCommentVNode,
+  createElementBlock,
+  getCurrentInstance,
+  h,
+  nextTick,
+  nodeOps,
+  onErrorCaptured,
+  onMounted,
+  onUnmounted,
+  onUpdated,
+  openBlock,
+  ref,
+  render,
+  renderList,
+  renderSlot,
+  resolveDynamicComponent,
+  serializeInner,
+  shallowRef,
+  watch,
+  watchEffect,
+  withAsyncContext,
+  withDirectives,
+} from '@vue/runtime-test'
+import {
+  computed,
+  createApp,
+  defineAsyncComponent as defineAsyncComp,
+  defineComponent,
+  effectScope,
+  inject,
+  provide,
+} from 'vue'
+import type { RawSlots } from '../../src/componentSlots'
+import { resetSuspenseId } from '../../src/components/Suspense'
+import { PatchFlags } from '@vue/shared'</code></pre>
+          <pre
+            data-source-file="vue/packages/runtime-core/__tests__/components/Suspense.spec.ts"
+          ><code>// 测试组：Suspense 对异步依赖、fallback、分支切换、水合和嵌套边界的协调。
+describe('Suspense', () =&gt; {
+  const deps: Promise&lt;any&gt;[] = []
+
+  beforeEach(() =&gt; {
+    deps.length = 0
+    resetSuspenseId()
+  })
+
+  // a simple async factory for testing purposes only.
+  function defineAsyncComponent&lt;T extends ComponentOptions&gt;(
+    comp: T,
+    delay: number = 0,
+  ) {
+    return {
+      setup(props: any, { slots }: any) {
+        const p = new Promise(resolve =&gt; {
+          setTimeout(() =&gt; {
+            resolve(() =&gt; h(comp, props, slots))
+          }, delay)
+        })
+        // in Node 12, due to timer/nextTick mechanism change, we have to wait
+        // an extra tick to avoid race conditions
+        deps.push(p.then(() =&gt; Promise.resolve()))
+        return p
+      },
+    }
+  }</code></pre>
+          <pre
+            data-source-file="vue/packages/runtime-core/__tests__/components/Suspense.spec.ts"
+          ><code>  // 测试场景：后备内容。
+  test('fallback content', async () =&gt; {
+    const Async = defineAsyncComponent({
+      render() {
+        return h('div', 'async')
+      },
+    })
+
+    const Comp = {
+      setup() {
+        return () =&gt;
+          h(Suspense, null, {
+            default: h(Async),
+            fallback: h('div', 'fallback'),
+          })
+      },
+    }
+
+    const root = nodeOps.createElement('div')
+    render(h(Comp), root)
+    expect(serializeInner(root)).toBe(&#96;&lt;div&gt;fallback&lt;/div&gt;&#96;)
+
+    await Promise.all(deps)
+    await nextTick()
+    expect(serializeInner(root)).toBe(&#96;&lt;div&gt;async&lt;/div&gt;&#96;)
+  })</code></pre>
+          <pre
+            data-source-file="vue/packages/runtime-core/src/components/Suspense.ts"
+          ><code>    registerDep(instance, setupRenderEffect, optimized) {
+      const isInPendingSuspense = !!suspense.pendingBranch
+      if (isInPendingSuspense) {
+        suspense.deps++
+      }
+      const hydratedEl = instance.vnode.el
+      instance
+        .asyncDep!.catch(err =&gt; {
+          handleError(err, instance, ErrorCodes.SETUP_FUNCTION)
+        })
+        .then(asyncSetupResult =&gt; {
+          // Promise resolve 时重试；组件/边界可能已卸载，或当前 pending 已是新版本。
+          if (
+            instance.isUnmounted ||
+            suspense.isUnmounted ||
+            suspense.pendingId !== instance.suspenseId
+          ) {
+            return
+          }
+          // withAsyncContext 会把 currentInstance 清理延迟到后续微任务；Suspense 此刻
+          // 可能重入另一个组件渲染。先显式清空，避免组合式 API 错绑到旧异步组件。
+          unsetCurrentInstance()
+          // 将 async setup 结果装入实例，然后从该组件恢复首次 render effect。
+          instance.asyncResolved = true
+          const { vnode } = instance
+          if (__DEV__) {
+            pushWarningContext(vnode)
+          }
+          handleSetupResult(instance, asyncSetupResult, false)
+          if (hydratedEl) {
+            // 等待期间组件可能已更新并替换 vnode；把 SSR DOM 引用迁移到最新 vnode。
+            vnode.el = hydratedEl
+          }
+          const placeholder = !hydratedEl &amp;&amp; instance.subTree.el
+          setupRenderEffect(
+            instance,
+            vnode,
+            // 等待期间父分支可能移动。非水合时 subTree 是注释占位符，从其当前 parent
+            // 反查真实容器，不能使用注册依赖时捕获的旧 container。
+            parentNode(hydratedEl || instance.subTree.el!)!,
+            // 水合会复用 hydratedEl，不用 anchor；普通挂载插在占位符的下一个兄弟前。
+            hydratedEl ? null : next(instance.subTree),
+            suspense,
+            namespace,
+            optimized,
+          )
+          if (placeholder) {
+            // 真实子树完成后清除临时注释及 VNode 上的占位引用。
+            vnode.placeholder = null
+            remove(placeholder)
+          }
+          updateHOCHostEl(instance, vnode.el)
+          if (__DEV__) {
+            popWarningContext()
+          }
+          // 只有注册时边界处于 pending 才参与 deps；最后一个依赖完成即提交整条分支。
+          if (isInPendingSuspense &amp;&amp; --suspense.deps === 0) {
+            suspense.resolve()
+          }
+        })
+    },</code></pre>
+          <div
+            class="diagram"
+            role="img"
+            aria-label="Suspense fallback 到 content 的局部流程"
+          >
+            <div class="diagram-title">SUSPENSE · PENDING TRANSACTION</div>
+            <div class="layer-flow">
+              <div class="layer-node">
+                <strong>Given</strong><small>async setup 返回 Promise</small>
+              </div>
+              <div class="diagram-arrow">→ deps++</div>
+              <div class="layer-node">
+                <strong>Fallback</strong
+                ><small>pendingBranch 藏在离屏容器</small>
+              </div>
+              <div class="diagram-arrow">→ resolve</div>
+              <div class="layer-node emphasis">
+                <strong>deps-- = 0</strong
+                ><small>setupRenderEffect + 移除 placeholder</small>
+              </div>
+              <div class="diagram-arrow">→</div>
+              <div class="layer-node">
+                <strong>Then</strong
+                ><small>提交 async content，fallback 离场</small>
+              </div>
+            </div>
+          </div>
+          <div class="test-proof">
+            <p>
+              <strong>Given：</strong
+              >异步组件尚未完成；<strong>When：</strong>先 render，再等待 deps
+              与 nextTick；<strong>Then：</strong>先看到 fallback，后只看到
+              async content。
+            </p>
+            <p>
+              <strong>Mechanism：</strong>每个 pending async setup
+              注册依赖，最后一个完成触发
+              <code>suspense.resolve()</code>；<strong>Source：</strong
+              ><code>Suspense.ts/registerDep</code> 连续段。
+            </p>
+          </div>
+          <div class="callout warm">
+            <strong>异常/清理：</strong>Promise rejection 交给
+            <code>handleError</code>；实例、边界已卸载或
+            <code>pendingId</code> 过期时立即返回；真实子树挂载后删除
+            placeholder；测试每次重置 deps 和 suspense id。
+          </div>
+
+          <h3 id="keepalive-proof">C. KeepAlive：切走再回来仍是 changed</h3>
+          <p class="source-note">
+            性质：<code>KeepAlive.spec.ts</code>
+            的真实共享准备与完整测试体。共享
+            <code>beforeEach</code> 为每个用例重建 root、组件定义和生命周期
+            spies。
+          </p>
+          <pre
+            data-source-file="vue/packages/runtime-core/__tests__/components/KeepAlive.spec.ts"
+          ><code>// 测试组：KeepAlive 的实例缓存、激活/停用、include/exclude 和容量淘汰。
+describe('KeepAlive', () =&gt; {
+  let one: ComponentOptions
+  let two: ComponentOptions
+  let oneTest: ComponentOptions
+  let views: Record&lt;string, ComponentOptions&gt;
+  let root: TestElement
+
+  beforeEach(() =&gt; {
+    root = nodeOps.createElement('div')
+    one = {
+      name: 'one',
+      data: () =&gt; ({ msg: 'one' }),
+      render(this: any) {
+        return h('div', this.msg)
+      },
+      created: vi.fn(),
+      mounted: vi.fn(),
+      activated: vi.fn(),
+      deactivated: vi.fn(),
+      unmounted: vi.fn(),
+    }
+    oneTest = {
+      name: 'oneTest',
+      data: () =&gt; ({ msg: 'oneTest' }),
+      render(this: any) {
+        return h('div', this.msg)
+      },
+      created: vi.fn(),
+      mounted: vi.fn(),
+      activated: vi.fn(),
+      deactivated: vi.fn(),
+      unmounted: vi.fn(),
+    }
+    two = {
+      name: 'two',
+      data: () =&gt; ({ msg: 'two' }),
+      render(this: any) {
+        return h('div', this.msg)
+      },
+      created: vi.fn(),
+      mounted: vi.fn(),
+      activated: vi.fn(),
+      deactivated: vi.fn(),
+      unmounted: vi.fn(),
+    }
+    views = {
+      one,
+      oneTest,
+      two,
+    }
+  })</code></pre>
+          <pre
+            data-source-file="vue/packages/runtime-core/__tests__/components/KeepAlive.spec.ts"
+          ><code>  // 测试场景：应该保留状态。
+  test('should preserve state', async () =&gt; {
+    const viewRef = ref('one')
+    const instanceRef = ref&lt;any&gt;(null)
+    const App = {
+      render() {
+        return h(KeepAlive, null, {
+          default: () =&gt; h(views[viewRef.value], { ref: instanceRef }),
+        })
+      },
+    }
+    render(h(App), root)
+    expect(serializeInner(root)).toBe(&#96;&lt;div&gt;one&lt;/div&gt;&#96;)
+    instanceRef.value.msg = 'changed'
+    await nextTick()
+    expect(serializeInner(root)).toBe(&#96;&lt;div&gt;changed&lt;/div&gt;&#96;)
+    viewRef.value = 'two'
+    await nextTick()
+    expect(serializeInner(root)).toBe(&#96;&lt;div&gt;two&lt;/div&gt;&#96;)
+    viewRef.value = 'one'
+    await nextTick()
+    expect(serializeInner(root)).toBe(&#96;&lt;div&gt;changed&lt;/div&gt;&#96;)
+  })</code></pre>
+          <pre
+            data-source-file="vue/packages/runtime-core/src/components/KeepAlive.ts"
+          ><code>      const key = vnode.key == null ? comp : vnode.key
+      const cachedVNode = cache.get(key)
+
+      // 下方会修改 el/component/shapeFlag。若这个 VNode 已经挂载，先克隆以免污染
+      // 其他位置仍在使用的同一对象；Suspense 还要同步替换其 ssContent 引用。
+      if (vnode.el) {
+        vnode = cloneVNode(vnode)
+        if (rawVNode.shapeFlag &amp; ShapeFlags.SUSPENSE) {
+          rawVNode.ssContent = vnode
+        }
+      }
+      // #1511：attrs 透传或 scopeId 处理可能在后续克隆当前 VNode，因此这里拿到的
+      // 未必是最终挂载对象。只记录 pending key，等 mounted/updated 后缓存规范化的
+      // instance.subTree，才能确保其中 el/component 都是渲染器实际使用的引用。
+      pendingCacheKey = key
+
+      if (cachedVNode) {
+        // 命中缓存：把真实 DOM 与组件实例引用移交给本轮新 VNode。
+        vnode.el = cachedVNode.el
+        vnode.component = cachedVNode.component
+        if (vnode.transition) {
+          // 过渡参数可能已经变化，递归更新缓存组件子树上的钩子。
+          setTransitionHooks(vnode, vnode.transition!)
+        }
+        // 告诉渲染器走 activate，而不是创建一个全新组件实例。
+        vnode.shapeFlag |= ShapeFlags.COMPONENT_KEPT_ALIVE
+        // Set 的插入顺序即 LRU 顺序；删除后重加，把本项移动到最新端。
+        keys.delete(key)
+        keys.add(key)
+      } else {
+        keys.add(key)
+        // 新条目导致超限时，淘汰 Set 迭代顺序中的最旧 key。
+        if (max &amp;&amp; keys.size &gt; parseInt(max as string, 10)) {
+          pruneCacheEntry(keys.values().next().value!)
+        }
+      }
+      // 告诉渲染器离开时走 deactivate，而不是普通 unmount。
+      vnode.shapeFlag |= ShapeFlags.COMPONENT_SHOULD_KEEP_ALIVE
+
+      current = vnode
+      return isSuspense(rawVNode.type) ? rawVNode : vnode</code></pre>
+          <div
+            class="diagram"
+            role="img"
+            aria-label="KeepAlive one two one 状态恢复的局部流程"
+          >
+            <div class="diagram-title">KEEPALIVE · CACHE IDENTITY</div>
+            <div class="layer-flow">
+              <div class="layer-node">
+                <strong>Given</strong><small>one.msg 改为 changed</small>
+              </div>
+              <div class="diagram-arrow">→ 切 two</div>
+              <div class="layer-node">
+                <strong>Deactivate</strong
+                ><small>one 实例/DOM 移入 storage；cache 保留</small>
+              </div>
+              <div class="diagram-arrow">→ 切 one</div>
+              <div class="layer-node emphasis">
+                <strong>Cache hit</strong
+                ><small>复用 component/el；标记 KEPT_ALIVE</small>
+              </div>
+              <div class="diagram-arrow">→</div>
+              <div class="layer-node">
+                <strong>Then</strong><small>重新显示 changed，不是 one</small>
+              </div>
+            </div>
+          </div>
+          <div class="test-proof">
+            <p>
+              <strong>Given：</strong>one 实例状态改为
+              changed；<strong>When：</strong>切到 two 再切回
+              one；<strong>Then：</strong>恢复 changed。
+            </p>
+            <p>
+              <strong>Mechanism：</strong>key 命中 cache 后移交旧
+              <code>el/component</code> 并置
+              <code>COMPONENT_KEPT_ALIVE</code>；<strong>Source：</strong
+              ><code>KeepAlive.ts</code> 连续缓存段。
+            </p>
+          </div>
+          <div class="callout warm">
+            <strong>失效/清理：</strong>include/exclude 不匹配会清掉
+            SHOULD_KEEP_ALIVE，走普通卸载；max 超限调用
+            <code>pruneCacheEntry</code> 淘汰 LRU；KeepAlive
+            自身卸载时缓存实例最终仍要 unmount，不能只停在 storageContainer。
+          </div>
+
+          <h3 id="transition-proof">
+            D. Transition：appear 的 done 决定何时 after
+          </h3>
+          <p class="source-note">
+            性质：<code>BaseTransition.spec.ts</code> 的真实 helpers
+            与完整测试体。helper 保存用户钩子拿到的
+            done，测试显式调用它，所以异步边界与完成时刻都可观察。
+          </p>
+          <pre
+            data-source-file="vue/packages/runtime-core/__tests__/components/BaseTransition.spec.ts"
+          ><code>/**
+ * 挂载最小 BaseTransition 场景，并返回关闭当前分支的方法。
+ * withKeepAlive 用来复用同一套断言覆盖缓存组件路径。
+ */
+function mount(
+  props: BaseTransitionProps&lt;TestElement&gt;,
+  slot: () =&gt; any,
+  withKeepAlive = false,
+) {
+  const root = nodeOps.createElement('div')
+  const show = ref(true)
+  const unmount = () =&gt; (show.value = false)
+  const App = {
+    render() {
+      return show.value
+        ? h(BaseTransition, props, () =&gt; {
+            return withKeepAlive ? h(KeepAlive, null, slot()) : slot()
+          })
+        : null
+    },
+  }
+  render(h(App), root)
+
+  return { root, unmount }
+}</code></pre>
+          <pre
+            data-source-file="vue/packages/runtime-core/__tests__/components/BaseTransition.spec.ts"
+          ><code>/**
+ * 创建一组可观测的过渡钩子，并保存 enter/leave 的完成回调。
+ * 用例可以手动完成动画，从而精确验证取消、切换和卸载时序。
+ */
+function mockProps(
+  extra: BaseTransitionProps&lt;TestElement&gt; = {},
+  withKeepAlive = false,
+) {
+  const cbs: {
+    doneEnter: Record&lt;string, () =&gt; void&gt;
+    doneLeave: Record&lt;string, () =&gt; void&gt;
+  } = {
+    doneEnter: {},
+    doneLeave: {},
+  }
+  const props: BaseTransitionProps&lt;TestElement&gt; = {
+    onBeforeEnter: vi.fn(el =&gt; {
+      if (!extra.persisted &amp;&amp; !withKeepAlive) {
+        expect(el.parentNode).toBeNull()
+      }
+    }),
+    onEnter: vi.fn((el, done) =&gt; {
+      cbs.doneEnter[serialize(el as TestElement)] = done
+    }),
+    onAfterEnter: vi.fn&lt;(el: TestElement) =&gt; void&gt;(),
+    onEnterCancelled: vi.fn&lt;(el: TestElement) =&gt; void&gt;(),
+    onBeforeLeave: vi.fn&lt;(el: TestElement) =&gt; void&gt;(),
+    onLeave: vi.fn((el, done) =&gt; {
+      cbs.doneLeave[serialize(el as TestElement)] = done
+    }),
+    onAfterLeave: vi.fn&lt;(el: TestElement) =&gt; void&gt;(),
+    onLeaveCancelled: vi.fn&lt;(el: TestElement) =&gt; void&gt;(),
+    onBeforeAppear: vi.fn&lt;(el: TestElement) =&gt; void&gt;(),
+    onAppear: vi.fn((el, done) =&gt; {
+      cbs.doneEnter[serialize(el as TestElement)] = done
+    }),
+    onAfterAppear: vi.fn&lt;(el: TestElement) =&gt; void&gt;(),
+    onAppearCancelled: vi.fn&lt;(el: TestElement) =&gt; void&gt;(),
+    ...extra,
+  }
+  return {
+    props,
+    cbs,
+  }
+}</code></pre>
+          <pre
+            data-source-file="vue/packages/runtime-core/__tests__/components/BaseTransition.spec.ts"
+          ><code>// 测试组：BaseTransition 的 enter/leave/appear 钩子、模式切换与取消时序。
+describe('BaseTransition', () =&gt; {
+  // 测试场景：出现：true，带出现钩子。
+  test('appear: true w/ appear hooks', () =&gt; {
+    const { props, cbs } = mockProps({
+      appear: true,
+    })
+    mount(props, () =&gt; h('div'))
+    expect(props.onBeforeAppear).toHaveBeenCalledTimes(1)
+    expect(props.onAppear).toHaveBeenCalledTimes(1)
+    expect(props.onAfterAppear).not.toHaveBeenCalled()
+
+    // enter should not be called
+    expect(props.onBeforeEnter).not.toHaveBeenCalled()
+    expect(props.onEnter).not.toHaveBeenCalled()
+    expect(props.onAfterEnter).not.toHaveBeenCalled()
+
+    cbs.doneEnter[&#96;&lt;div&gt;&lt;/div&gt;&#96;]()
+    expect(props.onAfterAppear).toHaveBeenCalledTimes(1)
+    expect(props.onAfterEnter).not.toHaveBeenCalled()
+  })</code></pre>
+          <pre
+            data-source-file="vue/packages/runtime-core/src/components/BaseTransition.ts"
+          ><code>    enter(el) {
+      // 同一个 VNode 已进入离场缓存时，普通更新不得又启动入场；HMR 替换树是例外，
+      // 因为开发态需要让重载后的节点恢复到正确显示状态。
+      if (!isHmrUpdating &amp;&amp; leavingVNodesCache[key] === vnode) return
+      let hook = onEnter
+      let afterHook = onAfterEnter
+      let cancelHook = onEnterCancelled
+      if (!state.isMounted) {
+        if (appear) {
+          hook = onAppear || onEnter
+          afterHook = onAfterAppear || onAfterEnter
+          cancelHook = onAppearCancelled || onEnterCancelled
+        } else {
+          return
+        }
+      }
+      let called = false
+      // 将幂等完成器挂在元素上，使 leave/v-show 能中断尚未完成的 enter。
+      el[enterCbKey] = (cancelled?) =&gt; {
+        if (called) return
+        called = true
+        if (cancelled) {
+          callHook(cancelHook, [el])
+        } else {
+          callHook(afterHook, [el])
+        }
+        if (hooks.delayedLeave) {
+          // in-out 模式下，新节点入场完成后才允许旧节点开始离场。
+          hooks.delayedLeave()
+        }
+        el[enterCbKey] = undefined
+      }
+      const done = el[enterCbKey]!.bind(null, false)
+      if (hook) {
+        callAsyncHook(hook, [el, done])
+      } else {
+        done()
+      }
+    },</code></pre>
+          <div
+            class="diagram"
+            role="img"
+            aria-label="Transition appear 钩子从挂载到 done 的局部流程"
+          >
+            <div class="diagram-title">BASE TRANSITION · APPEAR</div>
+            <div class="layer-flow">
+              <div class="layer-node">
+                <strong>Given</strong><small>首挂 + appear=true</small>
+              </div>
+              <div class="diagram-arrow">→</div>
+              <div class="layer-node">
+                <strong>Before</strong><small>onBeforeAppear 1 次</small>
+              </div>
+              <div class="diagram-arrow">→</div>
+              <div class="layer-node emphasis">
+                <strong>Enter pending</strong
+                ><small>onAppear 收到 done；after 仍 0</small>
+              </div>
+              <div class="diagram-arrow">→ done()</div>
+              <div class="layer-node">
+                <strong>Then</strong><small>onAfterAppear 1 次；cb 清空</small>
+              </div>
+            </div>
+          </div>
+          <div class="test-proof">
+            <p>
+              <strong>Given：</strong>首挂且
+              <code>appear=true</code>；<strong>When：</strong>用户 appear hook
+              保存 done，测试随后显式完成；<strong>Then：</strong>appear
+              三阶段各按时调用，普通 enter hooks 不调用。
+            </p>
+            <p>
+              <strong>Mechanism：</strong>未 mounted 时把 enter hooks 切换为
+              appear hooks，并用元素上的幂等 callback 控制完成；<strong
+                >Source：</strong
+              ><code>BaseTransition.ts/enter</code>。
+            </p>
+          </div>
+          <div class="callout warm">
+            <strong>异常/清理：</strong>开始 leave 会先以 cancelled=true
+            完成尚未结束的 enter；整树卸载时 leave 直接 remove，不等待动画；done
+            的 <code>called</code> 防止重复完成，并在结束后把元素 callback 置
+            undefined。
+          </div>
+
+          <h3 id="combined-proof">E. 组合场景：弹窗里的异步缓存页正在过渡</h3>
+          <p>
+            这是<strong>教学组合推演</strong>，固定讨论
+            <code
+              >Teleport → Suspense(timeout: 0) → Transition(mode: out-in) →
+              KeepAlive → 当前异步页</code
+            >
+            这一种嵌套；它不是仓库中的单一测试，也不声称所有嵌套顺序都有相同时间线。
+            图中箭头表示阅读时的责任传递，不把四份实现伪装成一个函数调用栈。
+          </p>
+          <div
+            class="diagram"
+            role="img"
+            aria-label="Teleport Suspense KeepAlive Transition 组合场景执行流程"
+          >
+            <div class="diagram-title">COMPOSED CASE · MODAL ROUTE</div>
+            <div class="layer-flow">
+              <div class="layer-node">
+                <strong>Teleport</strong
+                ><small>弹窗 DOM 在 body target；逻辑父级不变</small>
+              </div>
+              <div class="diagram-arrow">→</div>
+              <div class="layer-node">
+                <strong>Suspense</strong
+                ><small>新页 pending；弹窗内先显示 fallback</small>
+              </div>
+              <div class="diagram-arrow">→</div>
+              <div class="layer-node">
+                <strong>KeepAlive</strong
+                ><small>旧页 deactivate，实例进入 cache</small>
+              </div>
+              <div class="diagram-arrow">→</div>
+              <div class="layer-node emphasis">
+                <strong>Transition</strong
+                ><small>按 mode 协调旧页 leave / 新页 enter</small>
+              </div>
+              <div class="diagram-arrow">→</div>
+              <div class="layer-node">
+                <strong>Commit</strong
+                ><small>deps=0 后 content 移入远端 target；hooks flush</small>
+              </div>
+            </div>
+          </div>
+          <ol>
+            <li>
+              先固定三个坐标：逻辑父树、Teleport 目标容器、Suspense hidden
+              container；它们可能同时不同。
+            </li>
+            <li>
+              路由切换时 KeepAlive 决定旧实例是 deactivate 还是
+              unmount；Transition 决定真实节点何时允许移除。
+            </li>
+            <li>
+              异步新页只在当前 <code>pendingId</code> 仍有效且 deps 降为 0
+              时提交；过期结果不能覆盖新导航。
+            </li>
+            <li>
+              最终移动由各协议委托 renderer internals 完成；post effects
+              必须等正确的 Suspense/Transition 边界提交。
+            </li>
+          </ol>
+          <div class="test-proof">
+            <p>
+              <strong>Given：</strong>远端弹窗 target 已存在，页面 A 已进入
+              KeepAlive 缓存，当前导航要显示异步页面 B，并配置立即 fallback。
+            </p>
+            <p>
+              <strong>When：</strong>导航改变使 B 的 async setup 注册到
+              Suspense；旧 active branch、fallback 与隐藏 pending branch
+              开始交接。
+            </p>
+            <p>
+              <strong>Then：</strong>只有仍属于当前 <code>pendingId</code> 的 B
+              能在 deps=0 后提交到 Teleport target；A 可由缓存恢复，过期 B
+              不得覆盖后来导航。
+            </p>
+            <p>
+              <strong>Mechanism：</strong
+              >四个协议分别拥有容器、异步事务身份、实例缓存身份与节点移除时机；renderer
+              internals 是交汇边界。
+            </p>
+            <p>
+              <strong>Source：</strong
+              >证据来自上面四段独立源码与四个独立测试；组合顺序是显式推断，所以不加
+              <code>data-source-file</code>，也不冒充仓库测试。
+            </p>
+          </div>
+          <div class="callout warm">
+            <strong>组合清理审计：</strong>关闭弹窗时逐项确认 pending job/async
+            branch 已失效、transition callback 已完成或取消、缓存实例最终能被
+            prune/unmount、Teleport 远端 children
+            与两套锚点均被移除。具体回调先后取决于嵌套和 mode；这里列的是
+            必须全部成立的清理后置条件，不硬编一个通用顺序。
+          </div>
+        </section>
+
         <section class="article-section prose" id="reading">
           <h2>源码阅读顺序与验证</h2>
           <div class="tabs" data-tabs>
@@ -642,6 +1473,75 @@ if (vnodeShouldKeepAlive) return keepAliveContext.deactivate(vnode)
           </div>
         </section>
 
+        <section class="article-section prose" id="evidence-matrix">
+          <h2>本页证据表：用例 → 源码 → 测试 → 图</h2>
+          <p class="source-note">
+            本轮实跑（Node v24.5.0）：<code>Teleport.spec.ts</code> 56、<code
+              >Suspense.spec.ts</code
+            >
+            58、<code>KeepAlive.spec.ts</code> 32、<code
+              >BaseTransition.spec.ts</code
+            >
+            39 tests passed。
+          </p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>协议用例</th>
+                  <th>决定性源码</th>
+                  <th>仓库测试</th>
+                  <th>同用例图</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Teleport A → B</td>
+                  <td><code>Teleport.ts</code> target-change 分支</td>
+                  <td>
+                    <code>Teleport.spec.ts</code> ·
+                    <code>should update target</code>
+                  </td>
+                  <td><a href="#teleport-proof">目标迁移图</a></td>
+                </tr>
+                <tr>
+                  <td>Suspense fallback → async</td>
+                  <td><code>Suspense.ts</code> · <code>registerDep</code></td>
+                  <td>
+                    <code>Suspense.spec.ts</code> ·
+                    <code>fallback content</code>
+                  </td>
+                  <td><a href="#suspense-proof">依赖提交图</a></td>
+                </tr>
+                <tr>
+                  <td>KeepAlive one → two → one</td>
+                  <td><code>KeepAlive.ts</code> cache-hit/flags</td>
+                  <td>
+                    <code>KeepAlive.spec.ts</code> ·
+                    <code>should preserve state</code>
+                  </td>
+                  <td><a href="#keepalive-proof">缓存恢复图</a></td>
+                </tr>
+                <tr>
+                  <td>Transition 首挂 appear</td>
+                  <td><code>BaseTransition.ts</code> · <code>enter</code></td>
+                  <td>
+                    <code>BaseTransition.spec.ts</code> ·
+                    <code>appear: true w/ appear hooks</code>
+                  </td>
+                  <td><a href="#transition-proof">appear 状态图</a></td>
+                </tr>
+                <tr>
+                  <td>四协议组合弹窗</td>
+                  <td>上述四个边界的 renderer internals 协作</td>
+                  <td>组合推演；证据由四个独立测试组成，不冒充单个仓库测试</td>
+                  <td><a href="#combined-proof">组合提交/清理图</a></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
         <nav class="page-nav" aria-label="章节翻页">
           <a href="hydration.html"><span>上一章</span>← SSR 水合</a>
           <a href="runtime-dom.html"><span>下一章</span>DOM 平台层 →</a>
@@ -657,7 +1557,9 @@ if (vnodeShouldKeepAlive) return keepAliveContext.deactivate(vnode)
         <a href="#keepalive">KeepAlive</a>
         <a href="#transition">Transition</a>
         <a href="#combinations">组合场景</a>
+        <a href="#protocol-proof">四协议逐个取证</a>
         <a href="#reading">阅读顺序</a>
+        <a href="#evidence-matrix">证据表</a>
       </aside>
     </div>
     <footer data-site-footer></footer>

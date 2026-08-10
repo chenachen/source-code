@@ -156,12 +156,12 @@
     const explanation = demo.querySelector('[data-demo-explanation]')
     let step = -1
     const messages = [
-      '用户点击按钮，事件处理函数把列表数据加了一项。',
-      'Vue 先记下“这个组件需要更新”，同一瞬间的多次修改会被合并。',
-      '组件重新计算页面应该长什么样，得到一份新的界面描述。',
-      'Vue 比较新旧描述，发现旧三项都能复用，只需新增“学习 Diff”。',
-      '浏览器真正插入一个新的列表节点，旧节点保持不动。',
-      '页面更新完毕，updated、ref 与 nextTick 等后续工作才执行。',
+      '教程测试在同一同步调用栈内调用 triggerEvent 两次，处理函数把 count 从 0 写到 1，再写到 2。',
+      'Vue 把同一个组件 job 排入队列；第二次通知因 QUEUED 位不会复制任务。',
+      '组件在微任务里读取最终 count=2，生成新的 button VNode。',
+      'Renderer 比较 button 0 与 button 2：type/key 相同，可复用旧宿主节点。',
+      '宿主层只把 button 的文本 children 从 0 更新为 2。',
+      'post flush 完成并清理队列后，等待当前 flush 的 nextTick 才恢复。',
     ]
 
     const renderStep = () => {
@@ -172,7 +172,10 @@
       if (explanation)
         explanation.textContent =
           messages[step] || '点击“下一步”，观察一次更新如何穿过 Vue Runtime。'
-      if (output) output.classList.toggle('new', step >= 4)
+      if (output) {
+        output.textContent = step >= 4 ? '2' : '0'
+        output.classList.toggle('new', step >= 4)
+      }
     }
 
     demo.querySelector('[data-demo-next]')?.addEventListener('click', () => {

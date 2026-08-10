@@ -16,52 +16,76 @@ import { isJS, isTS } from './utils'
  * 所有宏处理器只读写这里，最后由 compileScript 统一生成组件选项和 setup 返回值。
  */
 export class ScriptCompileContext {
-  /** 两个 script block 的整体语言模式。 */
+  /** 两个 script block 是否都采用可按 JavaScript 解析的语言。 */
   isJS: boolean
+  /** 任一 script block 是否使用 TS/TSX；决定 Babel 插件和生成代码的类型处理。 */
   isTS: boolean
   /** 当前 SFC 是否按自定义元素编译。 */
   isCE = false
 
-  /** 普通 script 与 script setup 的 Babel Program；缺少对应 block 时为 null。 */
+  /** 普通 `<script>` 的 Babel Program；缺少该 block 时为 null。 */
   scriptAst: Program | null
+  /** `<script setup>` 的 Babel Program；宏扫描和源码改写都以它为主。 */
   scriptSetupAst: Program | null
 
-  /** 完整 SFC 源码、文件名及基于完整源码执行的 MagicString。 */
+  /** 完整 SFC 源码；所有 Babel 局部坐标最终都映射到这份文本。 */
   source: string = this.descriptor.source
+  /** 诊断、source map 与默认组件名推导使用的 SFC 文件名。 */
   filename: string = this.descriptor.filename
+  /** 覆盖完整 SFC 的可变字符串；各宏共享它，避免分段改写丢失全局坐标。 */
   s: MagicString = new MagicString(this.source)
+  /** `<script setup>` 内容起点在完整 SFC 中的绝对 offset。 */
   startOffset: number | undefined =
     this.descriptor.scriptSetup?.loc.start.offset
+  /** `<script setup>` 内容终点在完整 SFC 中的绝对 offset。 */
   endOffset: number | undefined = this.descriptor.scriptSetup?.loc.end.offset
 
-  // import 与跨文件类型解析状态。
+  /** 当前 SFC 的类型解析作用域；首次解析类型引用时按需创建。 */
   scope?: TypeScope
+  /** 用户配置的全局类型文件作用域；本地作用域找不到类型时再依次查询。 */
   globalScopes?: TypeScope[]
+  /** setup 顶层本地名到 import 来源的索引，供宏识别、绑定分类与生成 import 使用。 */
   userImports: Record<string, ImportBinding> = Object.create(null)
 
-  // 各编译宏是否已出现；用于查重和决定最终组件选项。
+  /** 是否已处理 defineProps；再次出现时报告重复宏调用。 */
   hasDefinePropsCall = false
+  /** 是否已处理 defineEmits；再次出现时报告重复宏调用。 */
   hasDefineEmitCall = false
+  /** 是否已处理 defineExpose；再次出现时报告重复宏调用。 */
   hasDefineExposeCall = false
+  /** 普通 script 默认导出是否显式声明 name；为 true 时不再从文件名注入。 */
   hasDefaultExportName = false
+  /** 普通 script 默认导出是否自带 render；无 template 时据此保留 setup 返回值。 */
   hasDefaultExportRender = false
+  /** 是否已处理 defineOptions；再次出现时报告重复宏调用。 */
   hasDefineOptionsCall = false
+  /** 是否已处理 defineSlots；再次出现时报告重复宏调用。 */
   hasDefineSlotsCall = false
+  /** 是否处理过任意 defineModel；决定是否合并隐式 model props/emits。 */
   hasDefineModelCall = false
 
-  // defineProps 的调用、运行时/类型声明、解构及默认值信息。
+  /** defineProps 调用节点；最终用 `__props` 或 rest proxy 替换整段调用。 */
   propsCall: CallExpression | undefined
+  /** 接收 defineProps 返回值的左值；可为标识符、解构模式或空。 */
   propsDecl: Node | undefined
+  /** defineProps 的运行时对象/数组参数；与 `propsTypeDecl` 互斥。 */
   propsRuntimeDecl: Node | undefined
+  /** defineProps 的类型参数；用于推导 runtime props 与 binding metadata。 */
   propsTypeDecl: Node | undefined
+  /** 响应式 props 解构模式；后续据此重写所有局部读取。 */
   propsDestructureDecl: ObjectPattern | undefined
+  /** 对外 prop 名到解构局部名/默认值的表，连接引用改写与 runtime defaults 生成。 */
   propsDestructuredBindings: PropsDestructureBindings = Object.create(null)
+  /** props rest 解构的局部名；存在时生成 `createPropsRestProxy`。 */
   propsDestructureRestId: string | undefined
+  /** withDefaults 的 defaults 参数；静态值内联，动态值交给 mergeDefaults。 */
   propsRuntimeDefaults: Node | undefined
 
-  // defineEmits 的运行时/类型声明及接收 emit 函数的变量。
+  /** defineEmits 的运行时数组/对象参数；与 `emitsTypeDecl` 互斥。 */
   emitsRuntimeDecl: Node | undefined
+  /** defineEmits 的类型参数；用于提取静态事件名。 */
   emitsTypeDecl: Node | undefined
+  /** 接收 defineEmits 返回函数的左值；最终改写为 setup 上下文的 `emit`。 */
   emitDecl: Node | undefined
 
   // 按 model 名保存 defineModel 声明，支持多个不同名称。
@@ -70,8 +94,9 @@ export class ScriptCompileContext {
   // defineOptions 的运行时对象表达式。
   optionsRuntimeDecl: Node | undefined
 
-  // 代码生成阶段共享的绑定分类和需要从 vue 导入的 helper。
+  /** script 分析交给 template 编译器的名字身份表。 */
   bindingMetadata: BindingMetadata = {}
+  /** 宏转换实际使用的 Vue helper 名；最终去重生成一条 import。 */
   helperImports: Set<string> = new Set()
   /** 登记运行时 helper，并返回 compiler-sfc 约定的下划线局部名。 */
   helper(key: string): string {

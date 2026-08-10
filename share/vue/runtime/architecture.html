@@ -28,26 +28,408 @@
           </div>
         </div>
 
-        <section class="article-section prose" id="plain-architecture">
-          <h2>先看一个按钮更新颜色</h2>
+        <section class="article-section prose" id="counter-lab">
+          <h2>先把贯穿用例完整放在桌面上</h2>
           <p>
-            状态从 <code>primary</code> 变成 <code>danger</code> 后，Vue
-            要完成两次翻译：
+            本章以后只追这一件事：一个 <code>Counter</code> 组件先渲染
+            <code>&lt;button id="counter"&gt;0&lt;/button&gt;</code
+            >；测试代码连续调用两次
+            <code>triggerEvent</code>，在同一同步调用栈中完成两个处理器，
+            <code>nextTick()</code> 后文本变成 2，最后卸载。它使用 Vue
+            仓库自己的
+            <code>@vue/runtime-test</code>
+            内存宿主，因此既能观察组件更新，也能证明
+            <code>runtime-core</code> 并不依赖浏览器 DOM。
+          </p>
+          <div class="callout warm">
+            <strong>性质声明：</strong>下面是课程新增、可放进 Vue 3.5.41
+            仓库运行的完整 Vitest 教程测试，不冒充上游测试。它包含
+            imports、准备、动作、同步与异步断言， 以及
+            <code>afterEach</code> 卸载清理。
+          </div>
+          <details class="source-layer" open>
+            <summary>完整教程测试：counter-course.spec.ts</summary>
+            <div>
+              <pre><code>import {
+  type TestElement,
+  h,
+  nextTick,
+  nodeOps,
+  ref,
+  render,
+  serializeInner,
+  triggerEvent,
+} from '@vue/runtime-test'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+
+describe('runtime course: Counter', () =&gt; {
+  let root: TestElement
+
+  beforeEach(() =&gt; {
+    root = nodeOps.createElement('div')
+  })
+
+  afterEach(() =&gt; {
+    render(null, root)
+    expect(serializeInner(root)).toBe('')
+  })
+
+  it('keeps DOM stale until nextTick, patches final text, then unmounts', async () =&gt; {
+    const Counter = {
+      setup() {
+        const count = ref(0)
+        const increment = () =&gt; count.value++
+        return () =&gt;
+          h(
+            'button',
+            { id: 'counter', onClick: increment },
+            String(count.value),
+          )
+      },
+    }
+
+    render(h(Counter), root)
+    expect(serializeInner(root)).toBe('&lt;button id="counter"&gt;0&lt;/button&gt;')
+
+    triggerEvent(root.children[0] as TestElement, 'click')
+    triggerEvent(root.children[0] as TestElement, 'click')
+    expect(serializeInner(root)).toBe('&lt;button id="counter"&gt;0&lt;/button&gt;')
+
+    await nextTick()
+    expect(serializeInner(root)).toBe('&lt;button id="counter"&gt;2&lt;/button&gt;')
+  })
+})</code></pre>
+              <p>
+                运行位置：保存到
+                <code
+                  >vue/packages/runtime-core/__tests__/counter-course.spec.ts</code
+                >，在 <code>vue/</code> 下执行
+                <code
+                  >pnpm vitest --project unit
+                  packages/runtime-core/__tests__/counter-course.spec.ts</code
+                >。
+              </p>
+              <p class="test-proof">
+                <strong>本次验收：</strong>Node 24.5.0 定向执行同一测试，1 file
+                / 1 test passed；临时测试文件随后删除。
+              </p>
+            </div>
+          </details>
+
+          <h3>先写清楚验收合同：Given / When / Then / Mechanism / Source</h3>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Given</th>
+                  <th>When</th>
+                  <th>Then</th>
+                  <th>Mechanism</th>
+                  <th>Source</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>空的 TestElement 容器、Counter 的组件 VNode</td>
+                  <td><code>render(h(Counter), root)</code></td>
+                  <td>内存树出现 button 0</td>
+                  <td>
+                    core 做 VNode/组件/patch 决策，注入的 host ops
+                    创建和插入节点
+                  </td>
+                  <td>
+                    <code>runtime-test/src/index.ts</code>、<code
+                      >runtime-core/src/renderer.ts</code
+                    >
+                  </td>
+                </tr>
+                <tr>
+                  <td>同一个 Counter 实例及已挂载 button</td>
+                  <td>连续触发两次 click，再 <code>await nextTick()</code></td>
+                  <td>同步仍是 0，刷新后只提交最终文本 2</td>
+                  <td>
+                    组件与 scheduler 决定重渲染时机；renderer 仍只通过 host
+                    接口提交
+                  </td>
+                  <td>后续 component / scheduler / renderer 章节逐站证明</td>
+                </tr>
+                <tr>
+                  <td>容器保存 <code>_vnode</code> 与完整子树</td>
+                  <td><code>render(null, root)</code></td>
+                  <td>树为空，旧组件 effect 与宿主节点被清理</td>
+                  <td>root render 的 null 分支进入 unmount</td>
+                  <td><code>runtime-core/src/renderer.ts · render</code></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="article-section prose" id="counter-architecture-flow">
+          <h2>同一用例的架构执行图：谁决定，谁施工</h2>
+          <div
+            class="flow"
+            role="img"
+            aria-label="Counter 从 VNode 到 runtime-core 决策再到内存宿主树的完整架构流程"
+          >
+            <div class="flow-step">
+              <span class="flow-index">01</span
+              ><span class="flow-copy"
+                ><strong>runtime-test 组装 RendererOptions</strong
+                ><small
+                  ><code>extend({ patchProp }, nodeOps)</code>
+                  提供创建、插入、文本与属性操作。</small
+                ></span
+              ><span class="flow-file">runtime-test/src/index.ts</span>
+            </div>
+            <div class="flow-join"></div>
+            <div class="flow-step">
+              <span class="flow-index">02</span
+              ><span class="flow-copy"
+                ><strong>createRenderer(options)</strong
+                ><small
+                  >把宿主能力交给 <code>baseCreateRenderer</code>；返回
+                  render/createApp，而不是立即渲染。</small
+                ></span
+              ><span class="flow-file">runtime-core/src/renderer.ts</span>
+            </div>
+            <div class="flow-join"></div>
+            <div class="flow-step">
+              <span class="flow-index">03</span
+              ><span class="flow-copy"
+                ><strong>render(h(Counter), root)</strong
+                ><small
+                  >从 <code>root._vnode</code> 取旧树；首次为 null，进入
+                  <code>patch(null, componentVNode)</code>。</small
+                ></span
+              ><span class="flow-file">renderer.ts · render/patch</span>
+            </div>
+            <div class="flow-join"></div>
+            <div class="flow-step">
+              <span class="flow-index">04</span
+              ><span class="flow-copy"
+                ><strong>core 完成语义决策</strong
+                ><small
+                  >组件分支建立实例并得到 button VNode；元素分支决定 mount 或
+                  update。</small
+                ></span
+              ><span class="flow-file">processComponent/processElement</span>
+            </div>
+            <div class="flow-join"></div>
+            <div class="flow-step">
+              <span class="flow-index">05</span
+              ><span class="flow-copy"
+                ><strong>hostCreateElement / hostPatchProp / hostInsert</strong
+                ><small
+                  >闭包别名调用 runtime-test 的 nodeOps/patchProp；core 不读取
+                  TestElement 内部结构。</small
+                ></span
+              ><span class="flow-file">injected host ops</span>
+            </div>
+            <div class="flow-join"></div>
+            <div class="flow-step">
+              <span class="flow-index">06</span
+              ><span class="flow-copy"
+                ><strong>TestElement 树：button 0 → button 2</strong
+                ><small
+                  >点击后的调度与 diff 改变提交内容，但平台边界始终不变。</small
+                ></span
+              ><span class="flow-file">serializeInner(root)</span>
+            </div>
+            <div class="flow-join"></div>
+            <div class="flow-step">
+              <span class="flow-index">07</span
+              ><span class="flow-copy"
+                ><strong>render(null, root) → unmount → hostRemove</strong
+                ><small
+                  >测试清理沿同一抽象边界反向拆树，并把
+                  <code>root._vnode</code> 设为 null。</small
+                ></span
+              ><span class="flow-file">renderer.ts · render/unmount</span>
+            </div>
+          </div>
+          <h3>照图复述一遍</h3>
+          <ol>
+            <li>
+              <strong>组装：</strong>runtime-test 先把自己的 nodeOps 与
+              patchProp 交给 core，这一步定义“施工队会什么”。
+            </li>
+            <li>
+              <strong>闭包：</strong>createRenderer
+              只建立一组捕获宿主操作的函数，返回 render；没有 VNode
+              时不会创建任何节点。
+            </li>
+            <li>
+              <strong>决策：</strong>render/patch 只看 VNode 的
+              type、shapeFlag、key 与前后状态，决定组件或元素路径。
+            </li>
+            <li>
+              <strong>提交：</strong>到了创建、插入、改文本或属性时，core 调
+              host 别名；同一算法因此能跑在 DOM 和内存树上。
+            </li>
+            <li>
+              <strong>更新：</strong>两次点击只改变何时再次得到 button
+              VNode；最终提交仍穿过同一 host 接口。
+            </li>
+            <li>
+              <strong>清理：</strong>render(null) 不创建空
+              VNode，而是卸载容器保存的旧树，并让宿主移除节点。
+            </li>
+          </ol>
+        </section>
+
+        <section class="article-section prose" id="architecture-source-proof">
+          <h2>决定性真实源码：抽象边界是怎样接上的</h2>
+          <p>
+            以下代码来自工作区 Vue <strong>3.5.41</strong>。带
+            <code>data-source-file</code> 的代码块是连续原文；HTML
+            仅做实体转义， DOM 的
+            <code>textContent</code> 可在对应文件连续匹配。
+          </p>
+          <h3>证据 1：runtime-test 用真实 host options 创建 renderer</h3>
+          <pre
+            data-source-file="vue/packages/runtime-test/src/index.ts"
+          ><code>import {
+  type CreateAppFunction,
+  type RootRenderFunction,
+  type VNode,
+  createRenderer,
+} from '@vue/runtime-core'
+import { type TestElement, nodeOps } from './nodeOps'
+import { patchProp } from './patchProp'
+import { serializeInner } from './serialize'
+import { extend } from '@vue/shared'
+
+const { render: baseRender, createApp: baseCreateApp } = createRenderer(
+  extend({ patchProp }, nodeOps),
+)
+
+export const render = baseRender as RootRenderFunction&lt;TestElement&gt;
+export const createApp = baseCreateApp as CreateAppFunction&lt;TestElement&gt;
+
+// convenience for one-off render validations
+export function renderToString(vnode: VNode): string {
+  const root = nodeOps.createElement('div')
+  render(vnode, root)
+  return serializeInner(root)
+}</code></pre>
+          <p>
+            参数是完整的宿主能力对象；返回值的 <code>render</code> 被收窄为
+            TestElement
+            容器函数。状态变化是“尚无渲染器”变成“拥有一组捕获内存宿主操作的闭包”。
+          </p>
+          <h3>证据 2：core 只转交 options，再在闭包里改名为 host*</h3>
+          <pre
+            data-source-file="vue/packages/runtime-core/src/renderer.ts"
+          ><code>export function createRenderer&lt;
+  HostNode = RendererNode,
+  HostElement = RendererElement,
+&gt;(options: RendererOptions&lt;HostNode, HostElement&gt;): Renderer&lt;HostElement&gt; {
+  return baseCreateRenderer&lt;HostNode, HostElement&gt;(options)
+}</code></pre>
+          <pre
+            data-source-file="vue/packages/runtime-core/src/renderer.ts"
+          ><code>  const {
+    insert: hostInsert,
+    remove: hostRemove,
+    patchProp: hostPatchProp,
+    createElement: hostCreateElement,
+    createText: hostCreateText,
+    createComment: hostCreateComment,
+    setText: hostSetText,
+    setElementText: hostSetElementText,
+    parentNode: hostParentNode,
+    nextSibling: hostNextSibling,
+    setScopeId: hostSetScopeId = NOOP,
+    insertStaticContent: hostInsertStaticContent,
+  } = options</code></pre>
+          <p>
+            <code>createRenderer</code> 返回
+            Renderer；解构段没有返回值，它建立热路径闭包别名。 此后
+            <code>patch</code> 看到的是 hostInsert，不知道背后是
+            <code>insertBefore</code> 还是数组 <code>splice</code>。
+          </p>
+          <h3>证据 3：root render 的正常、卸载与刷新出口</h3>
+          <pre
+            data-source-file="vue/packages/runtime-core/src/renderer.ts"
+          ><code>  const render: RootRenderFunction = (vnode, container, namespace) =&gt; {
+    let instance
+    if (vnode == null) {
+      if (container._vnode) {
+        unmount(container._vnode, null, null, true)
+        instance = container._vnode.component
+      }
+    } else {
+      patch(
+        container._vnode || null,
+        vnode,
+        container,
+        null,
+        null,
+        null,
+        namespace,
+      )
+    }
+    container._vnode = vnode
+    if (!isFlushing) {
+      isFlushing = true
+      flushPreFlushCbs(instance)
+      flushPostFlushCbs()
+      isFlushing = false
+    }
+  }</code></pre>
+          <div class="branch-grid">
+            <div class="branch">
+              <strong>正常路径</strong
+              ><span
+                >非 null 根 VNode 进入 patch；Counter 首次 mount
+                走这条根入口。点击后的组件 job 直接执行
+                <code>patch(prevTree, nextTree)</code>，不会再次进入根
+                <code>render</code>。</span
+              >
+            </div>
+            <div class="branch">
+              <strong>提前退出</strong
+              ><span
+                >null VNode 且容器没有 <code>_vnode</code> 时，不调用
+                unmount；相同 VNode 对象进入 patch 后也立即 return。</span
+              >
+            </div>
+            <div class="branch">
+              <strong>错误路径</strong
+              ><span
+                >宿主操作违反 anchor/parent 契约并抛错时，core
+                不提供事务回滚；错误向上传播，宿主实现必须维护原子性。</span
+              >
+            </div>
+            <div class="branch">
+              <strong>清理路径</strong
+              ><span
+                >render(null) 卸载旧树、停止组件 scope、标记 job DISPOSED、调用
+                hostRemove，并把容器 <code>_vnode</code> 置空。</span
+              >
+            </div>
+          </div>
+        </section>
+
+        <section class="article-section prose" id="plain-architecture">
+          <h2>把 Counter 再翻译成两层职责</h2>
+          <p>
+            count 从 <code>0</code> 变成 <code>2</code> 后，Vue 要完成两次翻译：
           </p>
           <div class="before-after">
             <div class="plain-section">
               <span class="scene-label">第一层：决定改什么</span>
               <p>
-                按钮还是原来的按钮；文字没有变化；只有 class 从 primary 变成
-                danger。
+                按钮还是原来的按钮；id 与事件不变；只有文本 children 从 0 变成
+                2。
               </p>
             </div>
             <div class="plain-section">
               <span class="scene-label">第二层：决定怎样改</span>
               <p>
-                在浏览器中写入
-                <code>element.className</code
-                >；如果是其他平台，就调用该平台自己的更新接口。
+                在浏览器中写 <code>textContent</code>；在 runtime-test 中调用
+                <code>setElementText</code> 改内存节点。
               </p>
             </div>
           </div>
@@ -387,6 +769,47 @@ return createElementBlock('div', null, [
           </div>
         </section>
 
+        <section class="article-section prose" id="architecture-evidence">
+          <h2>本章证据闭环</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>用例</th>
+                  <th>源码</th>
+                  <th>测试</th>
+                  <th>图</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Counter 0→两次 click→2→卸载</td>
+                  <td>
+                    <code>runtime-test/src/index.ts</code>；<code
+                      >renderer.ts ·
+                      createRenderer/baseCreateRenderer/render</code
+                    >
+                  </td>
+                  <td>
+                    完整教程 Vitest：imports、beforeEach、动作、断言、afterEach
+                    清理齐全
+                  </td>
+                  <td>
+                    <a href="#counter-architecture-flow"
+                      >7 步 core→host→清理流程图</a
+                    >，图后逐步复述
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="reader-check">
+            <strong>结论：</strong
+            >用例、连续真实源码、可运行测试、图与四类边界均对应同一个
+            Counter；概念模型均明确标注，不冒充 Vue 源码。
+          </p>
+        </section>
+
         <nav class="page-nav" aria-label="章节翻页">
           <a href="integration.html"><span>上一章</span>← 按钮完整调用链</a>
           <a href="component.html"><span>下一章</span>组件模型 →</a>
@@ -395,6 +818,9 @@ return createElementBlock('div', null, [
 
       <aside class="page-toc" aria-label="本页目录">
         <div class="toc-title">本页目录</div>
+        <a href="#counter-lab">完整 Counter 测试</a>
+        <a href="#counter-architecture-flow">同例架构流程图</a>
+        <a href="#architecture-source-proof">决定性源码</a>
         <a href="#plain-architecture">先理解分层</a>
         <a href="#packages">包边界</a>
         <a href="#host-abstraction">宿主抽象</a>
@@ -402,6 +828,7 @@ return createElementBlock('div', null, [
         <a href="#flags">ShapeFlag / PatchFlag</a>
         <a href="#principles">设计原则</a>
         <a href="#tradeoffs">架构代价</a>
+        <a href="#architecture-evidence">证据闭环</a>
       </aside>
     </div>
     <footer data-site-footer></footer>

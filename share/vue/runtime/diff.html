@@ -78,10 +78,757 @@
             要认出“谁还是谁”，保留已有节点，只创建或移动真正变化的部分。
           </p>
           <div class="hero-meta">
-            <span>前半章无需源码</span><span>可交互列表</span
-            ><span>后半章完整推演算法</span>
+            <span>真实测试先行</span><span>完整手算</span
+            ><span>核心源码逐字核对</span>
           </div>
         </div>
+
+        <section class="article-section prose" id="diff-case-contract">
+          <h2>先纠正范围：Counter 不经过 keyed diff，本页必须换真实列表用例</h2>
+          <p>
+            Counter 的 button 只有文本 children，renderer 直接
+            <code>hostSetElementText</code>；若强行拿它讲
+            LIS，就是伪造调用链。Diff 页因此选用 Vue 仓库真实测试
+            <code>moving single child forward</code>：
+            <strong>[1,2,3,4] → [2,3,1,4]</strong>。本页从头到尾只手算这组输入，
+            它恰好需要中段映射、乱序检测、LIS 与一次真实移动。
+          </p>
+          <div class="callout warm">
+            <strong>性质声明：</strong>先给完整可运行教程测试，保证
+            imports、准备、动作、断言与卸载清理齐全；再贴仓库真实 fixture
+            与完整测试体作版本映射。教程测试不是上游原文件，真实块则可在 Vue
+            3.5.41 对应文件连续匹配。
+          </div>
+          <details class="source-layer" open>
+            <summary>完整教程测试：keyed-diff-course.spec.ts</summary>
+            <div>
+              <pre><code>import {
+  type TestElement,
+  h,
+  nodeOps,
+  render,
+  serializeInner,
+} from '@vue/runtime-test'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+
+describe('runtime course: keyed diff', () =&gt; {
+  let root: TestElement
+
+  const list = (keys: number[]) =&gt;
+    h('div', keys.map(key =&gt; h('span', { key }, String(key))))
+
+  const order = () =&gt; {
+    const parent = root.children[0] as TestElement
+    return (parent.children as TestElement[]).map(child =&gt;
+      serializeInner(child),
+    )
+  }
+
+  beforeEach(() =&gt; {
+    root = nodeOps.createElement('div')
+  })
+
+  afterEach(() =&gt; {
+    render(null, root)
+    expect(serializeInner(root)).toBe('')
+  })
+
+  it('reorders keyed nodes and preserves their host identities', () =&gt; {
+    render(list([1, 2, 3, 4]), root)
+    expect(order()).toEqual(['1', '2', '3', '4'])
+    const parent = root.children[0] as TestElement
+    const [old1, old2, old3, old4] = parent.children
+
+    render(list([2, 3, 1, 4]), root)
+    expect(order()).toEqual(['2', '3', '1', '4'])
+    const updatedParent = root.children[0] as TestElement
+    expect(updatedParent).toBe(parent)
+    expect(updatedParent.children[0]).toBe(old2)
+    expect(updatedParent.children[1]).toBe(old3)
+    expect(updatedParent.children[2]).toBe(old1)
+    expect(updatedParent.children[3]).toBe(old4)
+  })
+})</code></pre>
+              <p>
+                保存到
+                <code
+                  >vue/packages/runtime-core/__tests__/keyed-diff-course.spec.ts</code
+                >；在 <code>vue/</code> 执行
+                <code
+                  >pnpm vitest --project unit
+                  packages/runtime-core/__tests__/keyed-diff-course.spec.ts</code
+                >。
+              </p>
+              <p class="test-proof">
+                <strong>本次验收：</strong>Node 24.5.0
+                执行更新后的身份断言测试，1 file / 1 test
+                passed；临时文件随后删除。
+              </p>
+            </div>
+          </details>
+
+          <h3>仓库真实测试：imports、fixture、动作与断言</h3>
+          <p>
+            上游测试把 fixture 放在 describe
+            级别。下面三个代码块依次是同一文件中的完整
+            imports、完整共享准备和完整测试体；每块内部连续，没有把跨位置拼接伪装成一个源码块。
+            官方测试靠 <code>beforeEach</code> 为下一条用例换全新
+            root；本课程测试额外用
+            <code>afterEach render(null)</code> 显式验证清理路径。
+          </p>
+          <pre
+            data-source-file="vue/packages/runtime-core/__tests__/rendererChildren.spec.ts"
+          ><code>import {
+  type TestElement,
+  TestNodeTypes,
+  h,
+  nodeOps,
+  render,
+  serialize,
+  serializeInner,
+} from '@vue/runtime-test'</code></pre>
+          <pre
+            data-source-file="vue/packages/runtime-core/__tests__/rendererChildren.spec.ts"
+          ><code>/** 把测试数据转成 span VNode；非字符串值同时作为 key，以驱动 keyed diff。 */
+function toSpan(content: any) {
+  if (typeof content === 'string') {
+    return h('span', content.toString())
+  } else {
+    return h('span', { key: content }, content.toString())
+  }
+}
+
+/** 将测试渲染器容器的子树序列化为便于断言的字符串。 */
+const inner = (c: TestElement) =&gt; serializeInner(c)</code></pre>
+          <pre
+            data-source-file="vue/packages/runtime-core/__tests__/rendererChildren.spec.ts"
+          ><code>describe('renderer: keyed children', () =&gt; {
+  let root: TestElement
+  let elm: TestElement
+  const renderChildren = (arr: number[]) =&gt; {
+    render(h('div', arr.map(toSpan)), root)
+    return root.children[0] as TestElement
+  }
+
+  beforeEach(() =&gt; {
+    root = nodeOps.createElement('div')
+    render(h('div', { id: 1 }, 'hello'), root)
+  })</code></pre>
+          <pre
+            data-source-file="vue/packages/runtime-core/__tests__/rendererChildren.spec.ts"
+          ><code>  test('moving single child forward', () =&gt; {
+    elm = renderChildren([1, 2, 3, 4])
+    expect(elm.children.length).toBe(4)
+
+    elm = renderChildren([2, 3, 1, 4])
+    expect(elm.children.length).toBe(4)
+    expect((elm.children as TestElement[]).map(inner)).toEqual([
+      '2',
+      '3',
+      '1',
+      '4',
+    ])
+  })</code></pre>
+          <p class="test-proof">
+            <strong>本次验收：</strong>Node 24.5.0 定向执行仓库测试
+            <code>moving single child forward</code>，1 passed / 37 skipped。
+          </p>
+
+          <h3>本页验收合同</h3>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Given</th>
+                  <th>When</th>
+                  <th>Then</th>
+                  <th>Mechanism</th>
+                  <th>Source</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>旧 keyed children [1,2,3,4]</td>
+                  <td>render 新序列 [2,3,1,4]</td>
+                  <td>宿主顺序变成 2,3,1,4，VNode/宿主身份尽量复用</td>
+                  <td>尾同步 4；未知中段建立 key→新下标映射</td>
+                  <td><code>renderer.ts · patchKeyedChildren</code></td>
+                </tr>
+                <tr>
+                  <td>未知中段映射 [2,3,1]</td>
+                  <td>检测到新下标 2→0 下降</td>
+                  <td>moved=true；LIS 返回下标 [0,1]</td>
+                  <td>getSequence 忽略 0，保留最大稳定集合 key 2/3</td>
+                  <td><code>renderer.ts · getSequence</code></td>
+                </tr>
+                <tr>
+                  <td>右侧 key 4 已稳定</td>
+                  <td>倒序遍历新中段</td>
+                  <td>只 move key 1 到 key 4 前；key 3/2 不动</td>
+                  <td>右侧已定位置充当 anchor</td>
+                  <td><code>patchKeyedChildren · 5.3</code></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="article-section prose" id="diff-execution-flow">
+          <h2>同一列表执行图：从身份收缩到一次 move</h2>
+          <div
+            class="flow"
+            role="img"
+            aria-label="keyed children 从旧序列 1 2 3 4 更新到 2 3 1 4 的完整 diff 流程"
+          >
+            <div class="flow-step">
+              <span class="flow-index">01</span
+              ><span class="flow-copy"
+                ><strong>输入旧 [1,2,3,4] / 新 [2,3,1,4]</strong
+                ><small
+                  >每个 span 的 type 相同，数字同时是 key；i=0，e1=e2=3。</small
+                ></span
+              ><span class="flow-file">rendererChildren.spec.ts</span>
+            </div>
+            <div class="flow-join"></div>
+            <div class="flow-step">
+              <span class="flow-index">02</span
+              ><span class="flow-copy"
+                ><strong>头同步立即停止</strong
+                ><small>旧 key1 ≠ 新 key2；i 仍为 0。</small></span
+              ><span class="flow-file">phase 1</span>
+            </div>
+            <div class="flow-join"></div>
+            <div class="flow-step">
+              <span class="flow-index">03</span
+              ><span class="flow-copy"
+                ><strong>尾同步复用 key4</strong
+                ><small
+                  >旧尾 key4 = 新尾 key4，先 patch；e1=e2 由 3 退到 2。</small
+                ></span
+              ><span class="flow-file">phase 2</span>
+            </div>
+            <div class="flow-join"></div>
+            <div class="flow-step">
+              <span class="flow-index">04</span
+              ><span class="flow-copy"
+                ><strong>新中段 key map</strong
+                ><small
+                  >{2→0, 3→1, 1→2}；toBePatched=3，映射初始 [0,0,0]。</small
+                ></span
+              ><span class="flow-file">phase 5.1</span>
+            </div>
+            <div class="flow-join"></div>
+            <div class="flow-step">
+              <span class="flow-index">05</span
+              ><span class="flow-copy"
+                ><strong>扫描旧 key1/key2/key3</strong
+                ><small
+                  >依次写入新位置 2/0/1，保存旧下标+1，得到
+                  [2,3,1]；第二项开始发现下降，moved=true。</small
+                ></span
+              ><span class="flow-file">phase 5.2</span>
+            </div>
+            <div class="flow-join"></div>
+            <div class="flow-step">
+              <span class="flow-index">06</span
+              ><span class="flow-copy"
+                ><strong>getSequence([2,3,1]) → [0,1]</strong
+                ><small
+                  >返回的是数组下标，不是值也不是 key；代表新中段位置 0/1 的
+                  key2/key3 可不移动。</small
+                ></span
+              ><span class="flow-file">LIS</span>
+            </div>
+            <div class="flow-join"></div>
+            <div class="flow-step">
+              <span class="flow-index">07</span
+              ><span class="flow-copy"
+                ><strong>倒序 i=2：move key1</strong
+                ><small
+                  >i=2 不在 LIS；右侧 nextIndex=3 是 key4，以 key4.el 为
+                  anchor，move key1 到它前面。</small
+                ></span
+              ><span class="flow-file">phase 5.3</span>
+            </div>
+            <div class="flow-join"></div>
+            <div class="flow-step">
+              <span class="flow-index">08</span
+              ><span class="flow-copy"
+                ><strong>倒序 i=1/0：保留 key3/key2</strong
+                ><small>依次命中 LIS 尾部，j--，不调用 move。</small></span
+              ><span class="flow-file">stable nodes</span>
+            </div>
+            <div class="flow-join"></div>
+            <div class="flow-step">
+              <span class="flow-index">09</span
+              ><span class="flow-copy"
+                ><strong>最终 [2,3,1,4]</strong
+                ><small
+                  >无新增、无删除；4 个节点都 patch，只有 key1 做一次宿主 insert
+                  移动。</small
+                ></span
+              ><span class="flow-file">assertion</span>
+            </div>
+          </div>
+          <h3>照图复述一遍</h3>
+          <ol>
+            <li>先用 type+key 从两端收缩确定区，本例只锁住共同尾 key4。</li>
+            <li>
+              新未知中段建 key→newIndex 表，让每个旧 keyed VNode O(1) 找到去向。
+            </li>
+            <li>
+              映射存“旧下标+1”，所以 0 可以无歧义表示全新节点；本例没有 0。
+            </li>
+            <li>
+              旧节点的新下标不再单调时，才设置 moved 并计算 LIS；没有乱序就省掉
+              O(n log n)。
+            </li>
+            <li>
+              LIS [0,1] 表示 key2/key3 相对顺序已正确，保留它们能让 move
+              数最少。
+            </li>
+            <li>
+              倒序提交保证右侧 anchor 已经可靠；只需把 key1 插到 key4 前。
+            </li>
+          </ol>
+        </section>
+
+        <section class="article-section prose" id="diff-hand-calculation">
+          <h2>完整手算账本：每一个变量怎样变化</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>阶段</th>
+                  <th>i / e1 / e2</th>
+                  <th>读取</th>
+                  <th>写入/动作</th>
+                  <th>阶段后状态</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>初始化</td>
+                  <td>0 / 3 / 3</td>
+                  <td>c1=[1,2,3,4]；c2=[2,3,1,4]</td>
+                  <td>无</td>
+                  <td>未知区间为全数组</td>
+                </tr>
+                <tr>
+                  <td>头同步</td>
+                  <td>0 / 3 / 3</td>
+                  <td>key1 vs key2</td>
+                  <td>不相同，break</td>
+                  <td>i=0</td>
+                </tr>
+                <tr>
+                  <td>尾同步</td>
+                  <td>0 / 3 / 3</td>
+                  <td>key4 vs key4</td>
+                  <td>patch(4,4)</td>
+                  <td>e1=2，e2=2</td>
+                </tr>
+                <tr>
+                  <td>建新表</td>
+                  <td>s1=s2=0</td>
+                  <td>新 key2,key3,key1</td>
+                  <td>Map {2:0,3:1,1:2}</td>
+                  <td>toBePatched=3；map=[0,0,0]</td>
+                </tr>
+                <tr>
+                  <td>旧 i=0，key1</td>
+                  <td>newIndex=2</td>
+                  <td>旧下标 0</td>
+                  <td>map[2]=0+1=1；patch key1</td>
+                  <td>map=[0,0,1]；max=2；moved=false</td>
+                </tr>
+                <tr>
+                  <td>旧 i=1，key2</td>
+                  <td>newIndex=0</td>
+                  <td>0 &lt; max 2</td>
+                  <td>map[0]=1+1=2；patch key2</td>
+                  <td>map=[2,0,1]；moved=true</td>
+                </tr>
+                <tr>
+                  <td>旧 i=2，key3</td>
+                  <td>newIndex=1</td>
+                  <td>1 &lt; max 2</td>
+                  <td>map[1]=2+1=3；patch key3</td>
+                  <td>map=[2,3,1]；patched=3</td>
+                </tr>
+                <tr>
+                  <td>LIS</td>
+                  <td>输入 [2,3,1]</td>
+                  <td>严格递增候选 2,3</td>
+                  <td>返回原数组下标 [0,1]</td>
+                  <td>key2,key3 不动；j=1</td>
+                </tr>
+                <tr>
+                  <td>倒序 i=2</td>
+                  <td>nextIndex=2</td>
+                  <td>map[2]=1，2≠LIS[1]</td>
+                  <td>move(key1, before key4.el)</td>
+                  <td>宿主变 [2,3,1,4]</td>
+                </tr>
+                <tr>
+                  <td>倒序 i=1</td>
+                  <td>nextIndex=1</td>
+                  <td>1=LIS[1]</td>
+                  <td>j→0；不 move</td>
+                  <td>key3 保持</td>
+                </tr>
+                <tr>
+                  <td>倒序 i=0</td>
+                  <td>nextIndex=0</td>
+                  <td>0=LIS[0]</td>
+                  <td>j→-1；不 move</td>
+                  <td>key2 保持，结束</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="concept-sentence">
+            这组输入的最小宿主变更：0 次创建、0 次删除、1 次移动；patch 4 个复用
+            VNode 仍然需要执行，因为它们的 props/children 也可能变化。
+          </p>
+        </section>
+
+        <section class="article-section prose" id="diff-source-proof">
+          <h2>决定性真实源码：手算的每个变量都能逐字定位</h2>
+          <p>
+            以下是 Vue <strong>3.5.41</strong> 的连续源码段，仅做 HTML
+            实体转义； 每个带 <code>data-source-file</code> 的块都能用 DOM
+            <code>textContent</code>
+            在本地对应文件连续匹配。为避免三百行函数把讲解压扁，
+            这里只按算法阶段拆成连续段，段间省略的位置明确由标题说明，不把拼接内容标成一个源码块。
+          </p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>参数</th>
+                  <th>含义</th>
+                  <th>本例值/作用</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>c1 / c2</code></td>
+                  <td>旧 VNode 数组 / 新 children 数组</td>
+                  <td>[1,2,3,4] / [2,3,1,4]；c2 会被 normalize 后原位写回</td>
+                </tr>
+                <tr>
+                  <td><code>container / parentAnchor</code></td>
+                  <td>宿主父节点 / 整段 children 之后的锚点</td>
+                  <td>span 的父 div；中段最右没有兄弟时使用 parentAnchor</td>
+                </tr>
+                <tr>
+                  <td><code>parentComponent / parentSuspense</code></td>
+                  <td>错误、生命周期与异步边界上下文</td>
+                  <td>透传给 patch/unmount/move</td>
+                </tr>
+                <tr>
+                  <td><code>namespace / slotScopeIds</code></td>
+                  <td>宿主命名空间与样式作用域</td>
+                  <td>透传给新增/更新节点</td>
+                </tr>
+                <tr>
+                  <td><code>optimized</code></td>
+                  <td>是否信任编译器 block 元数据</td>
+                  <td>决定 cloneIfMounted 或 normalizeVNode</td>
+                </tr>
+                <tr>
+                  <td>返回值</td>
+                  <td><code>void</code></td>
+                  <td>
+                    结果写进新 VNode 的 el/component，并通过 host
+                    操作改变宿主顺序
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3>源码阶段 1/2：两端同步，确定未知区间</h3>
+          <pre
+            data-source-file="vue/packages/runtime-core/src/renderer.ts"
+          ><code>    let i = 0
+    const l2 = c2.length
+    let e1 = c1.length - 1 // 旧 children 末端下标。
+    let e2 = l2 - 1 // 新 children 末端下标。
+
+    // 1. 从头同步相同类型节点。
+    // (a b) c
+    // (a b) d e
+    while (i &lt;= e1 &amp;&amp; i &lt;= e2) {
+      const n1 = c1[i]
+      const n2 = (c2[i] = optimized
+        ? cloneIfMounted(c2[i] as VNode)
+        : normalizeVNode(c2[i]))
+      if (isSameVNodeType(n1, n2)) {
+        patch(
+          n1,
+          n2,
+          container,
+          null,
+          parentComponent,
+          parentSuspense,
+          namespace,
+          slotScopeIds,
+          optimized,
+        )
+      } else {
+        break
+      }
+      i++
+    }
+
+    // 2. 从尾同步相同类型节点。
+    // a (b c)
+    // d e (b c)
+    while (i &lt;= e1 &amp;&amp; i &lt;= e2) {
+      const n1 = c1[e1]
+      const n2 = (c2[e2] = optimized
+        ? cloneIfMounted(c2[e2] as VNode)
+        : normalizeVNode(c2[e2]))
+      if (isSameVNodeType(n1, n2)) {
+        patch(
+          n1,
+          n2,
+          container,
+          null,
+          parentComponent,
+          parentSuspense,
+          namespace,
+          slotScopeIds,
+          optimized,
+        )
+      } else {
+        break
+      }
+      e1--
+      e2--
+    }</code></pre>
+          <p>
+            输入 <code>c1/c2</code> 会被 patch/normalize 原地更新；函数返回
+            void。 本例头部立即 break，尾部 patch key4 后把 e1/e2 都减到
+            2，正好对应手算表前两行。
+          </p>
+
+          <h3>源码阶段 5.1/5.2：新 key 表、旧下标映射与 moved 检测</h3>
+          <pre
+            data-source-file="vue/packages/runtime-core/src/renderer.ts"
+          ><code>      const s1 = i // 旧未知中段起点。
+      const s2 = i // 新未知中段起点。
+
+      // 5.1 为新中段建立 key → 新下标映射，旧 keyed 节点可 O(1) 找到去向。
+      const keyToNewIndexMap: Map&lt;PropertyKey, number&gt; = new Map()
+      for (i = s2; i &lt;= e2; i++) {
+        const nextChild = (c2[i] = optimized
+          ? cloneIfMounted(c2[i] as VNode)
+          : normalizeVNode(c2[i]))
+        if (nextChild.key != null) {
+          if (__DEV__ &amp;&amp; keyToNewIndexMap.has(nextChild.key)) {
+            warn(
+              `Duplicate keys found during update:`,
+              JSON.stringify(nextChild.key),
+              `Make sure keys are unique.`,
+            )
+          }
+          keyToNewIndexMap.set(nextChild.key, i)
+        }
+      }
+
+      // 5.2 遍历旧中段：找到新位置便 patch；找不到说明已删除，立即卸载。
+      let j
+      let patched = 0
+      const toBePatched = e2 - s2 + 1
+      let moved = false
+      // 新下标不再单调递增即说明至少一个复用节点需要移动。
+      let maxNewIndexSoFar = 0
+      // `newIndexToOldIndexMap` 按新中段位置保存旧下标 + 1。0 专门表示新节点没有旧节点，
+      // 同一数组随后也作为最长递增子序列输入，找出无需移动的最大稳定集合。
+      const newIndexToOldIndexMap = new Array(toBePatched)
+      for (i = 0; i &lt; toBePatched; i++) newIndexToOldIndexMap[i] = 0
+
+      for (i = s1; i &lt;= e1; i++) {
+        const prevChild = c1[i]
+        if (patched &gt;= toBePatched) {
+          // 所有新节点都已匹配，剩余旧节点只能是删除项。
+          unmount(prevChild, parentComponent, parentSuspense, true)
+          continue
+        }
+        let newIndex
+        if (prevChild.key != null) {
+          newIndex = keyToNewIndexMap.get(prevChild.key)
+        } else {
+          // 无 key 节点只能线性寻找尚未占用、type 相同的新节点。
+          for (j = s2; j &lt;= e2; j++) {
+            if (
+              newIndexToOldIndexMap[j - s2] === 0 &amp;&amp;
+              isSameVNodeType(prevChild, c2[j] as VNode)
+            ) {
+              newIndex = j
+              break
+            }
+          }
+        }
+        if (newIndex === undefined) {
+          unmount(prevChild, parentComponent, parentSuspense, true)
+        } else {
+          newIndexToOldIndexMap[newIndex - s2] = i + 1
+          if (newIndex &gt;= maxNewIndexSoFar) {
+            maxNewIndexSoFar = newIndex
+          } else {
+            moved = true
+          }
+          patch(
+            prevChild,
+            c2[newIndex] as VNode,
+            container,
+            null,
+            parentComponent,
+            parentSuspense,
+            namespace,
+            slotScopeIds,
+            optimized,
+          )
+          patched++
+        }
+      }</code></pre>
+          <p>
+            <code>keyToNewIndexMap</code> 是查找表；
+            <code>newIndexToOldIndexMap</code> 才是 LIS
+            输入。本例按旧节点顺序写成 [2,3,1]；newIndex 从 2 降到 0 时 moved
+            变为 true，之后不会再变回 false。
+          </p>
+
+          <h3>源码阶段 5.3：只移动不在 LIS 的复用节点</h3>
+          <pre
+            data-source-file="vue/packages/runtime-core/src/renderer.ts"
+          ><code>      const increasingNewIndexSequence = moved
+        ? getSequence(newIndexToOldIndexMap)
+        : EMPTY_ARR
+      j = increasingNewIndexSequence.length - 1
+      // 从后向前处理，右侧节点已处于最终位置，可直接作为当前节点插入锚点。
+      for (i = toBePatched - 1; i &gt;= 0; i--) {
+        const nextIndex = s2 + i
+        const nextChild = c2[nextIndex] as VNode
+        const anchorVNode = c2[nextIndex + 1] as VNode
+        const anchor =
+          nextIndex + 1 &lt; l2
+            ? // #13559/#14173：未解析异步组件没有 el，沿其包装子树寻找注释 placeholder
+              // 作为锚点，避免新节点被插到异步组件预留位置之后。
+              anchorVNode.el || resolveAsyncComponentPlaceholder(anchorVNode)
+            : parentAnchor
+        if (newIndexToOldIndexMap[i] === 0) {
+          // 映射值 0：新节点没有旧节点，直接在已确定锚点前挂载。
+          patch(
+            null,
+            nextChild,
+            container,
+            anchor,
+            parentComponent,
+            parentSuspense,
+            namespace,
+            slotScopeIds,
+            optimized,
+          )
+        } else if (moved) {
+          // 完全逆序可能没有可保留序列；其他情况仅移动不属于 LIS 的节点。
+          if (j &lt; 0 || i !== increasingNewIndexSequence[j]) {
+            move(nextChild, container, anchor, MoveType.REORDER)
+          } else {
+            j--
+          }
+        }
+      }</code></pre>
+          <p>
+            映射值为 0 才 mount 新节点；本例全非 0。i=2 不等于 LIS 尾下标
+            1，所以移动 key1；i=1、0 依次命中 LIS，只移动 j 指针，不移动节点。
+          </p>
+
+          <h3>核心算法：getSequence 返回的是下标序列</h3>
+          <pre
+            data-source-file="vue/packages/runtime-core/src/renderer.ts"
+          ><code>function getSequence(arr: number[]): number[] {
+  const p = arr.slice()
+  const result = [0]
+  let i, j, u, v, c
+  const len = arr.length
+  for (i = 0; i &lt; len; i++) {
+    const arrI = arr[i]
+    if (arrI !== 0) {
+      j = result[result.length - 1]
+      if (arr[j] &lt; arrI) {
+        p[i] = j
+        result.push(i)
+        continue
+      }
+      u = 0
+      v = result.length - 1
+      while (u &lt; v) {
+        c = (u + v) &gt;&gt; 1
+        if (arr[result[c]] &lt; arrI) {
+          u = c + 1
+        } else {
+          v = c
+        }
+      }
+      if (arrI &lt; arr[result[u]]) {
+        if (u &gt; 0) {
+          p[i] = result[u - 1]
+        }
+        result[u] = i
+      }
+    }
+  }
+  u = result.length
+  v = result[u - 1]
+  while (u-- &gt; 0) {
+    result[u] = v
+    v = p[v]
+  }
+  return result
+}</code></pre>
+          <p>
+            参数是旧下标+1数组，0 被忽略；返回值是原数组位置。对 [2,3,1]，result
+            先变 [0,1]，读到 1 后只把长度 1 候选尾替换成位置 2，最终回溯仍得到
+            [0,1]。
+          </p>
+          <div class="branch-grid">
+            <div class="branch">
+              <strong>正常复杂路径</strong
+              ><span
+                >两边中段都非空：建表、patch/卸载旧项、按需 LIS、倒序
+                mount/move。</span
+              >
+            </div>
+            <div class="branch">
+              <strong>提前退出路径</strong
+              ><span
+                >头尾同步后旧序列先耗尽，只挂新增；新序列先耗尽，只卸载旧项；moved=false
+                时完全跳过 getSequence。</span
+              >
+            </div>
+            <div class="branch">
+              <strong>错误/退化路径</strong
+              ><span
+                >开发环境重复 key 发出警告，后写 key
+                覆盖前写映射，身份不再可靠；无 key 节点退化为线性寻找，宿主 move
+                抛错则向上传播且无事务回滚。</span
+              >
+            </div>
+            <div class="branch">
+              <strong>清理路径</strong
+              ><span
+                >旧 key 在新表找不到立即
+                unmount；所有新节点已匹配后剩余旧节点也逐个 unmount，组件
+                scope/ref/钩子随递归清理。</span
+              >
+            </div>
+          </div>
+        </section>
 
         <section class="article-section prose" id="see-diff">
           <h2>先操作列表，观察 Vue 要做的决定</h2>
@@ -161,7 +908,8 @@
             </p>
           </div>
           <div class="reader-check">
-            <strong>不看源码也应能回答：</strong>key 用来说明身份；Diff
+            <strong>读完主线用例与源码后应能回答：</strong>key
+            用来说明身份；Diff
             先复用、再删除/新增、最后减少移动；最长递增子序列只是寻找“最多可以不动的人”。
           </div>
         </section>
@@ -206,7 +954,7 @@
         </section>
 
         <div class="level-divider">
-          进入算法与源码层 · 第一次阅读可以到这里暂停
+          下面是第二遍专题拆解 · 主用例与核心源码已在页首完整走通
         </div>
 
         <section class="article-section prose" id="why-diff">
@@ -442,7 +1190,8 @@
               </div>
             </div>
           </div>
-          <pre><code>patchKeyedChildren(c1, c2, container, parentAnchor, ...)
+          <pre><code>// 机制伪代码：只列阶段，不是 Vue 源码
+patchKeyedChildren(c1, c2, container, parentAnchor, ...)
   i = 0
   e1 = c1.length - 1
   e2 = c2.length - 1
@@ -515,7 +1264,8 @@
             <code>key → newIndex</code>。开发模式还会检查重复
             key，因为两个新节点声明同一身份会让复用关系不确定。
           </p>
-          <pre><code>新未知区间 [e, c, h]
+          <pre><code>// 手算记号，不是 Vue 源码
+新未知区间 [e, c, h]
 
 keyToNewIndexMap = {
   e → 2,
@@ -592,7 +1342,7 @@ keyToNewIndexMap = {
               尾部回溯出真实子序列索引。
             </li>
           </ul>
-          <pre><code>// 输入是索引映射，不是 key 本身
+          <pre><code>// 手算记号，不是 Vue 源码；输入是索引映射，不是 key 本身
 newIndexToOldIndexMap = [5, 3, 0]
 
 忽略 0 后，5 → 3 不是递增
@@ -611,14 +1361,15 @@ LIS 长度为 1，算法会保留其中一个节点原位
             新未知区间从右向左处理。当前节点的 anchor 是“新列表中的下一个节点”的
             el；若当前已是整个 children 尾部，则使用 parentAnchor。
           </p>
-          <pre><code>for (i = toBePatched - 1; i >= 0; i--) {
+          <pre><code>// 机制伪代码：省略参数与边界，不是 Vue 源码
+for (i = toBePatched - 1; i >= 0; i--) {
   nextIndex = s2 + i
   nextChild = c2[nextIndex]
-  anchor = nextIndex + 1 < l2 ? c2[nextIndex + 1].el : parentAnchor
+  anchor = nextIndex + 1 &lt; l2 ? c2[nextIndex + 1].el : parentAnchor
 
   if (newIndexToOldIndexMap[i] === 0)
     patch(null, nextChild, container, anchor) // 新增
-  else if (moved && i 不在 LIS)
+  else if (moved &amp;&amp; i 不在 LIS)
     move(nextChild, container, anchor)        // 移动
 }</code></pre>
           <p>
@@ -638,7 +1389,12 @@ LIS 长度为 1，算法会保留其中一个节点原位
         </section>
 
         <section class="article-section prose" id="walkthrough">
-          <h2>完整手算：从 [a,b,c,d,e,f,g] 到 [a,b,e,c,h,f,g]</h2>
+          <h2>迁移练习：把主线方法用于第二组输入</h2>
+          <p class="callout">
+            这一节不是新的主证据链，而是读完 [1,2,3,4]→[2,3,1,4]
+            后的扩展练习：从 [a,b,c,d,e,f,g] 到
+            [a,b,e,c,h,f,g]。先自己填写变量，再与下面过程核对。
+          </p>
           <div class="tabs" data-tabs>
             <div class="tab-list" role="tablist" aria-label="Diff 手算阶段">
               <button
@@ -913,6 +1669,49 @@ unmount</code></pre>
           </div>
         </section>
 
+        <section class="article-section prose" id="diff-evidence">
+          <h2>本章证据闭环</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>用例</th>
+                  <th>源码</th>
+                  <th>测试</th>
+                  <th>图</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>
+                    真实 keyed 输入 [1,2,3,4]→[2,3,1,4]；完整变量账本与一次 move
+                  </td>
+                  <td>
+                    <code
+                      >renderer.ts · patchKeyedChildren
+                      1/2、5.1/5.2、5.3；getSequence</code
+                    >
+                    连续原文
+                  </td>
+                  <td>
+                    完整可清理教程测试 + 仓库真实 imports/fixture/完整
+                    <code>moving single child forward</code> 测试体
+                  </td>
+                  <td>
+                    <a href="#diff-execution-flow">9 步 keyed diff 图</a>，图后
+                    6 步复述
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="reader-check">
+            <strong>结论：</strong>正常复杂路径、旧/新耗尽提前路径、moved=false
+            跳过 LIS、重复 key/无 key 退化、宿主错误与 unmount
+            清理均有明确落点。
+          </p>
+        </section>
+
         <nav class="page-nav" aria-label="章节翻页">
           <a href="renderer.html"><span>上一章</span>← Renderer 与 Patch</a>
           <a href="scheduler.html"><span>下一章</span>调度系统 →</a>
@@ -920,6 +1719,10 @@ unmount</code></pre>
       </main>
       <aside class="page-toc" aria-label="本页目录">
         <div class="toc-title">本页目录</div>
+        <a href="#diff-case-contract">完整测试与合同</a>
+        <a href="#diff-execution-flow">同例流程图</a>
+        <a href="#diff-hand-calculation">完整手算账本</a>
+        <a href="#diff-source-proof">决定性源码</a>
         <a href="#see-diff">交互观察</a>
         <a href="#plain-rules">四条白话规则</a>
         <a href="#plain-walkthrough">小例子</a>
@@ -936,6 +1739,7 @@ unmount</code></pre>
         <a href="#compiler">编译器协作</a>
         <a href="#mistakes">常见误解</a>
         <a href="#tests">测试练习</a>
+        <a href="#diff-evidence">证据闭环</a>
       </aside>
     </div>
     <footer data-site-footer></footer>

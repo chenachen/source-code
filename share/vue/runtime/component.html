@@ -28,6 +28,406 @@
           </div>
         </div>
 
+        <section class="article-section prose" id="component-counter-case">
+          <h2>完整用例先行：这一页只追 Counter 组件实例</h2>
+          <p>
+            架构页已经证明 core 与宿主如何接线。本页不换例子：Counter 的
+            <code>setup()</code> 创建 <code>ref(0)</code> 并返回渲染函数；首次
+            mount 后点击两次，微任务刷新把 <code>instance.subTree</code> 从
+            button 0 更新为 button 2；最后卸载组件。
+          </p>
+          <div class="callout warm">
+            <strong>性质声明：</strong>这是课程新增、可放入 Vue 3.5.41
+            仓库运行的完整 Vitest 教程测试，不是上游原测试。imports、fixture
+            准备、动作、断言和卸载清理全部在块内。
+          </div>
+          <details class="source-layer" open>
+            <summary>完整教程测试：counter-course.spec.ts</summary>
+            <div>
+              <pre><code>import {
+  type TestElement,
+  h,
+  nextTick,
+  nodeOps,
+  ref,
+  render,
+  serializeInner,
+  triggerEvent,
+} from '@vue/runtime-test'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+
+describe('runtime course: Counter', () =&gt; {
+  let root: TestElement
+
+  beforeEach(() =&gt; {
+    root = nodeOps.createElement('div')
+  })
+
+  afterEach(() =&gt; {
+    render(null, root)
+    expect(serializeInner(root)).toBe('')
+  })
+
+  it('keeps DOM stale until nextTick, patches final text, then unmounts', async () =&gt; {
+    const Counter = {
+      setup() {
+        const count = ref(0)
+        const increment = () =&gt; count.value++
+        return () =&gt;
+          h(
+            'button',
+            { id: 'counter', onClick: increment },
+            String(count.value),
+          )
+      },
+    }
+
+    render(h(Counter), root)
+    expect(serializeInner(root)).toBe('&lt;button id="counter"&gt;0&lt;/button&gt;')
+
+    triggerEvent(root.children[0] as TestElement, 'click')
+    triggerEvent(root.children[0] as TestElement, 'click')
+    expect(serializeInner(root)).toBe('&lt;button id="counter"&gt;0&lt;/button&gt;')
+
+    await nextTick()
+    expect(serializeInner(root)).toBe('&lt;button id="counter"&gt;2&lt;/button&gt;')
+  })
+})</code></pre>
+              <p>
+                放到
+                <code
+                  >vue/packages/runtime-core/__tests__/counter-course.spec.ts</code
+                >，在 <code>vue/</code> 执行
+                <code
+                  >pnpm vitest --project unit
+                  packages/runtime-core/__tests__/counter-course.spec.ts</code
+                >。
+              </p>
+              <p class="test-proof">
+                <strong>本次验收：</strong>Node 24.5.0 定向执行同一测试，1 file
+                / 1 test passed；临时测试文件随后删除。
+              </p>
+            </div>
+          </details>
+          <h3>本页验收合同</h3>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Given</th>
+                  <th>When</th>
+                  <th>Then</th>
+                  <th>Mechanism</th>
+                  <th>Source</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Counter 组件 VNode，尚无实例</td>
+                  <td>首次 <code>render</code></td>
+                  <td>
+                    创建 instance，执行 setup，保存 render/subTree，<code
+                      >isMounted=true</code
+                    >
+                  </td>
+                  <td>mountComponent + setupRenderEffect 的首次同步 update</td>
+                  <td><code>renderer.ts</code>、<code>component.ts</code></td>
+                </tr>
+                <tr>
+                  <td>已挂载 instance，count 被 render effect 追踪</td>
+                  <td>两次 click 后刷新 job</td>
+                  <td>
+                    同一 instance 重用；subTree 由 button 0 替换为 button 2 的新
+                    VNode，宿主 el 复用
+                  </td>
+                  <td>runIfDirty → componentUpdateFn 更新分支</td>
+                  <td><code>renderer.ts · setupRenderEffect</code></td>
+                </tr>
+                <tr>
+                  <td>instance 已挂载且 job 可能仍在队列</td>
+                  <td><code>render(null, root)</code></td>
+                  <td>scope 停止、job DISPOSED、subTree 卸载</td>
+                  <td>unmountComponent</td>
+                  <td><code>renderer.ts · unmountComponent</code></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="article-section prose" id="component-counter-flow">
+          <h2>同一用例执行图：组件从出生到更新再到销毁</h2>
+          <div
+            class="flow"
+            role="img"
+            aria-label="Counter 组件实例创建、首次渲染、点击更新和卸载的完整流程"
+          >
+            <div class="flow-step">
+              <span class="flow-index">01</span
+              ><span class="flow-copy"
+                ><strong>patch(null, h(Counter))</strong
+                ><small
+                  >shapeFlag 命中 COMPONENT；旧 VNode 为 null，所以进入
+                  mount。</small
+                ></span
+              ><span class="flow-file">renderer.ts · patch</span>
+            </div>
+            <div class="flow-join"></div>
+            <div class="flow-step">
+              <span class="flow-index">02</span
+              ><span class="flow-copy"
+                ><strong>processComponent → mountComponent</strong
+                ><small
+                  >创建 ComponentInternalInstance，并把它同时写到
+                  initialVNode.component。</small
+                ></span
+              ><span class="flow-file">renderer.ts</span>
+            </div>
+            <div class="flow-join"></div>
+            <div class="flow-step">
+              <span class="flow-index">03</span
+              ><span class="flow-copy"
+                ><strong>setupComponent(instance)</strong
+                ><small
+                  >先 initProps/initSlots，再调用 setup；count 被返回的
+                  render/handler 闭包捕获，setupState 仍为空。</small
+                ></span
+              ><span class="flow-file">component.ts</span>
+            </div>
+            <div class="flow-join"></div>
+            <div class="flow-step">
+              <span class="flow-index">04</span
+              ><span class="flow-copy"
+                ><strong>setupRenderEffect</strong
+                ><small
+                  >创建
+                  ReactiveEffect；update=run，job=runIfDirty，scheduler=queueJob。结尾直接调用
+                  update()。</small
+                ></span
+              ><span class="flow-file">renderer.ts</span>
+            </div>
+            <div class="flow-join"></div>
+            <div class="flow-step">
+              <span class="flow-index">05</span
+              ><span class="flow-copy"
+                ><strong>首次 componentUpdateFn</strong
+                ><small
+                  >renderComponentRoot 得到 button 0，patch(null, subTree)
+                  挂载，再把 initialVNode.el 指向 subTree.el。</small
+                ></span
+              ><span class="flow-file">isMounted=false 分支</span>
+            </div>
+            <div class="flow-join"></div>
+            <div class="flow-step">
+              <span class="flow-index">06</span
+              ><span class="flow-copy"
+                ><strong>两次 click → 一个 component job</strong
+                ><small
+                  >ref 通知 effect；scheduler 去重排入 job。此时
+                  instance.subTree 与宿主文本仍为 0。</small
+                ></span
+              ><span class="flow-file">reactivity + scheduler</span>
+            </div>
+            <div class="flow-join"></div>
+            <div class="flow-step">
+              <span class="flow-index">07</span
+              ><span class="flow-copy"
+                ><strong>runIfDirty → componentUpdateFn</strong
+                ><small
+                  >renderComponentRoot 得到 button 2；prevTree 保存旧
+                  subTree，instance.subTree 先换成 nextTree，再 patch。</small
+                ></span
+              ><span class="flow-file">isMounted=true 分支</span>
+            </div>
+            <div class="flow-join"></div>
+            <div class="flow-step">
+              <span class="flow-index">08</span
+              ><span class="flow-copy"
+                ><strong>unmountComponent</strong
+                ><small
+                  >scope.stop，待执行 job 标 DISPOSED，递归卸载
+                  subTree，unmounted 钩子进入 post 队列。</small
+                ></span
+              ><span class="flow-file">renderer.ts</span>
+            </div>
+          </div>
+          <h3>照图复述一遍</h3>
+          <ol>
+            <li>
+              组件 VNode 只是一份输入；mountComponent 才创建长期存活的
+              instance。
+            </li>
+            <li>
+              setupComponent 先准备 props/slots，再执行
+              setup；本例返回函数，所以函数成为
+              <code>instance.render</code>，count 只存在于闭包。
+            </li>
+            <li>
+              setupRenderEffect 一次性把 render effect、同步 update、调度 job 与
+              instance.uid 绑在实例上。
+            </li>
+            <li>
+              首次 mount 为了立即建立依赖和 DOM，直接
+              <code>update()</code>，不经过 queueJob。
+            </li>
+            <li>
+              点击属于组件自身状态更新：ref 触发 scheduler；flush 时 runIfDirty
+              确认 dirty 后才重跑 render。
+            </li>
+            <li>
+              更新分支保存 prevTree、计算 nextTree、更新 instance.subTree，再交
+              renderer 做增量提交。
+            </li>
+            <li>
+              卸载先停 effect scope，并把已排队 job 标为
+              DISPOSED，防止“死组件”稍后重新渲染。
+            </li>
+          </ol>
+        </section>
+
+        <section class="article-section prose" id="component-source-proof">
+          <h2>决定性真实源码：实例、effect 与 subTree 怎样接起来</h2>
+          <p>以下均为 Vue 3.5.41 连续原文；仅做 HTML 实体转义。</p>
+          <h3>证据 1：mountComponent 完成实例创建、setup 与 effect 交接</h3>
+          <pre
+            data-source-file="vue/packages/runtime-core/src/renderer.ts"
+          ><code>    const instance: ComponentInternalInstance =
+      compatMountInstance ||
+      (initialVNode.component = createComponentInstance(
+        initialVNode,
+        parentComponent,
+        parentSuspense,
+      ))</code></pre>
+          <pre
+            data-source-file="vue/packages/runtime-core/src/renderer.ts"
+          ><code>    if (!(__COMPAT__ &amp;&amp; compatMountInstance)) {
+      if (__DEV__) {
+        startMeasure(instance, `init`)
+      }
+      setupComponent(instance, false, optimized)
+      if (__DEV__) {
+        endMeasure(instance, `init`)
+      }
+    }</code></pre>
+          <p>
+            输入是 initialVNode/父实例/Suspense；输出不靠 return，而是写入
+            <code>initialVNode.component</code> 并持续修改 instance。setup
+            后，Counter 已拥有 render，但还没有 subTree。
+          </p>
+          <h3>证据 2：首次 mount 计算并提交 subTree</h3>
+          <pre
+            data-source-file="vue/packages/runtime-core/src/renderer.ts"
+          ><code>          const subTree = (instance.subTree = renderComponentRoot(instance))
+          if (__DEV__) {
+            endMeasure(instance, `render`)
+          }
+          if (__DEV__) {
+            startMeasure(instance, `patch`)
+          }
+          patch(
+            null,
+            subTree,
+            container,
+            anchor,
+            instance,
+            parentSuspense,
+            namespace,
+          )
+          if (__DEV__) {
+            endMeasure(instance, `patch`)
+          }
+          initialVNode.el = subTree.el</code></pre>
+          <p>
+            <code>renderComponentRoot</code> 返回 button
+            VNode；componentUpdateFn 自身通常返回 undefined。状态从
+            <code>subTree=null</code> 变成 button VNode，并把组件 VNode 的 el
+            对齐到真实根。
+          </p>
+          <h3>证据 3：更新先换 subTree，再 patch 旧/新树</h3>
+          <pre
+            data-source-file="vue/packages/runtime-core/src/renderer.ts"
+          ><code>        const nextTree = renderComponentRoot(instance)
+        if (__DEV__) {
+          endMeasure(instance, `render`)
+        }
+        const prevTree = instance.subTree
+        instance.subTree = nextTree
+
+        if (__DEV__) {
+          startMeasure(instance, `patch`)
+        }
+        patch(
+          prevTree,
+          nextTree,
+          // Teleport 可能改变实际父容器，必须从旧根宿主节点实时查询。
+          hostParentNode(prevTree.el!)!,
+          // Fragment/组件根可能是多节点范围，实时取得范围后的锚点。
+          getNextHostNode(prevTree),
+          instance,
+          parentSuspense,
+          namespace,
+        )</code></pre>
+          <h3>证据 4：effect/job 建立后，首次直接 update</h3>
+          <pre
+            data-source-file="vue/packages/runtime-core/src/renderer.ts"
+          ><code>    instance.scope.on()
+    const effect = (instance.effect = new ReactiveEffect(componentUpdateFn))
+    instance.scope.off()
+
+    const update = (instance.update = effect.run.bind(effect))
+    const job: SchedulerJob = (instance.job = effect.runIfDirty.bind(effect))
+    job.i = instance
+    job.id = instance.uid
+    effect.scheduler = () =&gt; queueJob(job)
+
+    // #1801/#2043：组件更新可能触发子 pre watcher，而 watcher 又修改父渲染依赖；允许
+    // render effect 重新入队以得到最终一致状态，调度器仍有递归上限保护。
+    toggleRecurse(instance, true)
+
+    if (__DEV__) {
+      effect.onTrack = instance.rtc
+        ? e =&gt; invokeArrayFns(instance.rtc!, e)
+        : void 0
+      effect.onTrigger = instance.rtg
+        ? e =&gt; invokeArrayFns(instance.rtg!, e)
+        : void 0
+    }
+
+    update()</code></pre>
+          <div class="branch-grid">
+            <div class="branch">
+              <strong>正常路径</strong
+              ><span
+                >首次同步 update 建依赖与 subTree；组件自身状态变化才由
+                scheduler 排 job。</span
+              >
+            </div>
+            <div class="branch">
+              <strong>提前退出</strong
+              ><span
+                >父传新 VNode 但 <code>shouldUpdateComponent</code> 为 false
+                时，只转移 component/el 并更新 instance.vnode，不重跑
+                render。</span
+              >
+            </div>
+            <div class="branch">
+              <strong>错误/异步路径</strong
+              ><span
+                >setup/render 通过 Vue 错误管线处理；async setup 在 Suspense
+                注册依赖并以 Comment 占位，未 resolve 前没有正常 render
+                effect。</span
+              >
+            </div>
+            <div class="branch">
+              <strong>清理路径</strong
+              ><span
+                >卸载执行 scope.stop；存在 job 时标 DISPOSED 后卸载
+                subTree，排队中的任务会被调度器跳过。</span
+              >
+            </div>
+          </div>
+        </section>
+
         <section class="article-section prose" id="plain-component">
           <h2>组件定义像户型图，实例才是一套真实房子</h2>
           <p>
@@ -548,6 +948,48 @@ update()</code></pre>
           </div>
         </section>
 
+        <section class="article-section prose" id="component-evidence">
+          <h2>本章证据闭环</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>用例</th>
+                  <th>源码</th>
+                  <th>测试</th>
+                  <th>图</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>
+                    同一 Counter：创建 instance、首次 mount、点击更新、卸载
+                  </td>
+                  <td>
+                    <code
+                      >renderer.ts ·
+                      mountComponent/setupRenderEffect/componentUpdateFn</code
+                    >
+                    连续原文
+                  </td>
+                  <td>
+                    完整教程 Vitest，含 imports、准备、同步/异步断言及 afterEach
+                    清理
+                  </td>
+                  <td>
+                    <a href="#component-counter-flow">8 步组件生命线</a>，图后 7
+                    步复述
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="reader-check">
+            <strong>结论：</strong>首次 update、状态自更新 job、subTree
+            前后状态、shouldUpdate 提前退出、async/error 与卸载清理均有落点。
+          </p>
+        </section>
+
         <nav class="page-nav" aria-label="章节翻页">
           <a href="architecture.html"><span>上一章</span>← 架构与设计哲学</a>
           <a href="renderer.html"><span>下一章</span>Renderer 与 Diff →</a>
@@ -555,12 +997,16 @@ update()</code></pre>
       </main>
       <aside class="page-toc" aria-label="本页目录">
         <div class="toc-title">本页目录</div>
+        <a href="#component-counter-case">完整 Counter 测试</a>
+        <a href="#component-counter-flow">实例执行图</a>
+        <a href="#component-source-proof">决定性源码</a>
         <a href="#plain-component">组件如何活起来</a>
         <a href="#instance">内部实例</a><a href="#creation">创建阶段</a
         ><a href="#setup">setup 流程</a><a href="#props-slots">Props / Slots</a
         ><a href="#public-instance">公共 Proxy</a
         ><a href="#render-effect">Render Effect</a
-        ><a href="#lifecycle">生命周期</a>
+        ><a href="#lifecycle">生命周期</a
+        ><a href="#component-evidence">证据闭环</a>
       </aside>
     </div>
     <footer data-site-footer></footer>
