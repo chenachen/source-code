@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="packages/react 19.3.0 源码指南：元素记录、Context、Hooks dispatcher、lazy、memo 与 transition。" />
+  <title>03 · react：描述树与公开协议</title>
+  <link rel="stylesheet" href="assets/guide.css?v=1" />
+</head>
+<body>
+  <header class="topbar"><div class="topbar-inner">
+    <a class="brand" href="index.html">React 六包源码指南</a>
+    <nav class="pager" aria-label="页面导航">
+      <a href="index.html">地图</a><a href="01-shared.html">shared</a><a href="02-scheduler.html">scheduler</a>
+      <a aria-current="page" href="03-react.html">react</a><a href="04-reconciler-render.html">render</a>
+      <a href="05-reconciler-commit.html">commit</a><a href="06-dom-bindings.html">bindings</a>
+      <a href="07-react-dom.html">react-dom</a><a href="08-end-to-end.html">主线</a><a href="09-evidence.html">证据</a>
+    </nav>
+  </div></header>
+
+  <div class="layout">
+    <main>
+      <p class="eyebrow">03 · Public description layer</p>
+      <h1>react：把用户意图压成可协调的描述</h1>
+      <p class="lede">
+        <code>packages/react</code> 创建元素、Context、ref、lazy/memo 包装和 Hooks 门面。
+        它定义“用户写下什么”，却不保存组件实例的 hook 链、不选择 Lane，也不触碰 DOM。
+      </p>
+      <div class="meta">
+        <span class="pill">React 19.3.0</span><span class="pill">83 个目标文件</span>
+        <span class="pill">Flow 963 / 963</span><span class="pill">TypeScript 135 / 135</span>
+        <span class="pill">CoffeeScript 99 / 99</span>
+      </div>
+
+      <section id="boundary">
+        <h2>先分清三种对象</h2>
+        <div class="grid three">
+          <article class="card"><span class="number">ELEMENT</span><h3>一次 render 的描述记录</h3><p><code>type + key + props</code> 表达“想要什么”；它不是 Fiber，也没有调度状态。</p></article>
+          <article class="card"><span class="number">WRAPPER</span><h3>类型级行为标记</h3><p>memo、lazy、forwardRef 用 shared Symbol 包装目标，让 reconciler 在 tag 分派时采取不同策略。</p></article>
+          <article class="card"><span class="number">FACADE</span><h3>Hooks 只做动态转发</h3><p><code>useState</code> 读取当前 dispatcher；真实 mount/update 状态机在 reconciler 的当前 render 中。</p></article>
+        </div>
+        <div class="callout"><p><strong>所有权边界：</strong>React 可以创建一个元素对象，但从它被交给 renderer 起，
+        是否复用旧 Fiber、怎样比较 children、何时执行 effect，都由 renderer/reconciler 决定。</p></div>
+      </section>
+
+      <section id="entry">
+        <h2>入口不是同一份实现的别名</h2>
+        <div class="table-wrap"><table>
+          <thead><tr><th>入口</th><th>主要内容</th><th>运行环境</th><th>关键边界</th></tr></thead>
+          <tbody>
+            <tr><td><a href="../../react/packages/react/index.js">react</a></td><td>客户端公开 API 与 internals</td><td>浏览器、客户端 renderer</td><td>允许 Hooks dispatcher 与 act/transition 槽</td></tr>
+            <tr><td><a href="../../react/packages/react/react.react-server.js">react-server</a></td><td>服务端可用子集与 server internals</td><td>React Server 条件导出</td><td>不暴露客户端 state/effect 语义</td></tr>
+            <tr><td><a href="../../react/packages/react/jsx-runtime.js">jsx-runtime</a></td><td>编译器自动 JSX 工厂</td><td>production/development fork</td><td>不等同于旧式 <code>createElement</code> 参数协议</td></tr>
+            <tr><td><a href="../../react/packages/react/compiler-runtime.js">compiler-runtime</a></td><td>编译器生成代码的运行时契约</td><td>编译优化路径</td><td>不替代普通 React API</td></tr>
+          </tbody>
+        </table></div>
+      </section>
+
+      <section id="element">
+        <h2>元素工厂：身份稳定，开发信息可裁剪</h2>
+        <p>
+          JSX 工厂先抽取保留字段，复制普通 props，处理 children/key，再交给内部 <code>ReactElement</code>。
+          生产记录保留 renderer 所需字段；开发记录额外保存 owner、debug stack/task、key 校验状态并冻结形状。
+          两者都依靠 shared 的 <code>REACT_ELEMENT_TYPE</code> 品牌字段，而不是 <code>instanceof</code>。
+        </p>
+        <figure class="source"><figcaption><span>删节源码 · ReactJSXElement.js · 元素核心形状</span><a href="../../react/packages/react/src/jsx/ReactJSXElement.js">打开文件</a></figcaption><pre><span class="kw">function</span> <span class="fn">ReactElement</span>(type, key, props, owner, debugStack, debugTask) {
+  <span class="kw">const</span> ref = props.ref !== undefined ? props.ref : null;
+  <span class="kw">const</span> element = {
+    $$typeof: REACT_ELEMENT_TYPE,
+    type,
+    key,
+    ref,
+    props,
+  };
+  <span class="kw">return</span> element;
+}</pre></figure>
+        <div class="callout warn"><p><strong>不要把摘录当逐字完整实现：</strong>上面折叠了 DEV 分支。
+        真实源码中 DEV 的 <code>ref</code> 兼容 getter、<code>_owner</code> 与冻结逻辑很重要；链接可直接核验。</p></div>
+        <p>
+          <code>key</code> 只在同一父节点的 children 协调中表达身份；它不会自动成为 props，也不保证跨父节点搬迁时复用。
+          <code>ref</code> 在当前版本以 <code>props.ref</code> 为事实来源，元素上的兼容读取路径正处于迁移边界。
+        </p>
+      </section>
+
+      <section id="children">
+        <h2>Children：扁平遍历同时重写身份路径</h2>
+        <p>
+          <a href="../../react/packages/react/src/ReactChildren.js">ReactChildren.js</a> 处理单元素、数组、iterator、thenable 与 lazy，
+          递归生成稳定的 key path。<code>map</code> 不只是数组 map：回调返回数组时还会继续展开，并把用户 key 与原路径组合，
+          让 reconciler 能在扁平结果中保留身份线索。
+        </p>
+        <div class="table-wrap"><table>
+          <thead><tr><th>输入</th><th>遍历语义</th><th>容易误判之处</th></tr></thead>
+          <tbody>
+            <tr><td>null / boolean</td><td>按空 child 处理，回调位置仍按实现规则计数</td><td>不是可见文本节点</td></tr>
+            <tr><td>string / number / bigint</td><td>作为叶子交给回调</td><td>转换成 DOM 文本发生在 Host renderer</td></tr>
+            <tr><td>ReactElement / Portal</td><td>按一个叶子处理并组合 key</td><td>此处不展开组件返回值</td></tr>
+            <tr><td>Array / Iterable</td><td>递归展开；开发态检查 key</td><td>Map entries 有专门警告，不是通用 children 形状</td></tr>
+            <tr><td>Thenable / Lazy</td><td>按可用状态解包或抛出以挂起</td><td>恢复与 Suspense 重试属于 reconciler</td></tr>
+          </tbody>
+        </table></div>
+      </section>
+
+      <section id="hooks">
+        <h2>Hooks：同一个函数名，mount/update/rerender 三套行为</h2>
+        <p>
+          公共 <code>useState</code> 只读取 <code>ReactSharedInternals.H</code> 并转发。
+          reconciler 在执行函数组件之前安装 mount、update 或 rerender dispatcher，执行后恢复为防误用 dispatcher。
+          因此 Hooks 顺序规则不是语法偏好：位置就是当前 Fiber 单向 hook 链的寻址协议。
+        </p>
+        <figure class="source"><figcaption><span>删节源码 · ReactHooks.js · 公开门面</span><a href="../../react/packages/react/src/ReactHooks.js">打开文件</a></figcaption><pre><span class="kw">function</span> <span class="fn">resolveDispatcher</span>() {
+  <span class="kw">const</span> dispatcher = ReactSharedInternals.H;
+  <span class="kw">return</span> dispatcher;
+}
+
+<span class="kw">export function</span> <span class="fn">useState</span>(initialState) {
+  <span class="kw">const</span> dispatcher = resolveDispatcher();
+  <span class="kw">return</span> dispatcher.useState(initialState);
+}</pre></figure>
+        <div class="chain" aria-label="Hook dispatcher 交接">
+          <div class="node">React.useState<small>公开门面</small></div><span class="arrow">→</span>
+          <div class="node">SharedInternals.H<small>当前槽</small></div><span class="arrow">→</span>
+          <div class="node">HooksDispatcher<small>mount / update</small></div><span class="arrow">→</span>
+          <div class="node">Fiber.memoizedState<small>hook 链</small></div><span class="arrow">→</span>
+          <div class="node">queue + Lane<small>reconciler</small></div>
+        </div>
+      </section>
+
+      <section id="types">
+        <h2>Context、memo 与 lazy：给 reconciler 的分派提示</h2>
+        <div class="grid three">
+          <article class="card"><span class="number">CONTEXT</span><h3>双 renderer 值槽</h3><p><code>createContext</code> 建立带品牌的对象和当前值槽；Provider 入栈/出栈、依赖传播与 Lane 标记由 reconciler 完成。</p></article>
+          <article class="card"><span class="number">MEMO</span><h3>比较策略包装</h3><p><code>memo(type, compare)</code> 保存目标与可选比较器。是否 bailout 还取决于 ref、context、Lane 与内部状态，不是单独一次浅比较。</p></article>
+          <article class="card"><span class="number">LAZY</span><h3>有状态模块 payload</h3><p>initializer 把 Uninitialized → Pending → Resolved/Rejected；挂起时抛出 thenable，失败时重抛原因，重试由 Suspense 管线接管。</p></article>
+        </div>
+      </section>
+
+      <section id="transition">
+        <h2>Transition：标注更新来源，不替它完成调度</h2>
+        <p>
+          <code>startTransition</code> 暂存当前 transition 对象、降低更新优先级边界并调用用户 scope；异步返回值会被纳入完成/错误跟踪。
+          随后真正的 state dispatch 仍需 reconciler 请求 Lane、入队并调度 root。React 包提供上下文，Lane 纠缠、pending 状态和 tracing 则跨入 reconciler。
+        </p>
+      </section>
+
+      <section id="evidence">
+        <h2>测试证据怎样读</h2>
+        <div class="table-wrap"><table>
+          <thead><tr><th>机制</th><th>代表文件</th><th>证明</th><th>不证明</th></tr></thead>
+          <tbody>
+            <tr><td>元素形状与 key/ref 诊断</td><td><a href="../../react/packages/react/src/__tests__/ReactCreateElement-test.js">ReactCreateElement-test.js</a></td><td>开发/生产可见行为与警告边界</td><td>不证明 Fiber 一定复用</td></tr>
+            <tr><td>children 遍历与 key 组合</td><td><a href="../../react/packages/react/src/__tests__/ReactChildren-test.js">ReactChildren-test.js</a></td><td>数组、iterator、映射展开与错误</td><td>不执行 DOM 协调</td></tr>
+            <tr><td>lazy payload 状态与渲染衔接</td><td><a href="../../react/packages/react-reconciler/src/__tests__/ReactLazy-test.internal.js">ReactLazy-test.internal.js</a></td><td>thenable resolve/reject、缓存与 renderer 衔接</td><td>单个场景不覆盖全部 Suspense commit 行为</td></tr>
+            <tr><td>Context 公开形状</td><td><a href="../../react/packages/react/src/__tests__/ReactContextValidator-test.js">ReactContextValidator-test.js</a></td><td>Consumer/Provider 使用与诊断</td><td>传播算法在 reconciler</td></tr>
+          </tbody>
+        </table></div>
+        <p>本包 Flow、TypeScript 声明与 CoffeeScript 兼容测试均做了语言对应的声明覆盖和去注释语义等价检查；运行机制继续在下一页进入 Fiber。</p>
+      </section>
+
+      <section id="deep"><h2>继续深挖：公开 Hook 如何落到 Fiber 状态</h2><div class="grid">
+        <article class="card"><span class="number">HOOKS</span><h3><a href="13-hooks-state-machine.html">13 · Hooks 状态机</a></h3><p>从 dispatcher、Hook 链、环形 queue 到 eager bailout、Lane 跳过与 render-phase 更新，完整推演三次函数式 setState。</p></article>
+        <article class="card"><span class="number">REAL RUN</span><h3><a href="16-end-to-end-source.html">16 · 真实源码主线</a></h3><p>用仓库 Counter 测试验证公开 <code>useState</code> 门面怎样经过 reconciler、commit 与 DOM，最终让 effect 观察 3。</p></article>
+      </div></section>
+
+      <section id="questions"><h2>检查理解</h2><ul class="qa">
+        <li>为什么 ReactElement 的 <code>key</code> 不能代替 Fiber 的 <code>lanes</code> 或 <code>flags</code>？</li>
+        <li>Hooks 公共函数为什么能在不同 renderer 中复用？真实状态保存在哪里？</li>
+        <li>memo 比较返回 true 时，还有哪些条件可能阻止 bailout？</li>
+        <li>lazy initializer 抛 thenable 与抛 Error 分别让后续状态机走向哪里？</li>
+      </ul></section>
+
+      <div class="next-page"><a href="02-scheduler.html">← 上一页：scheduler</a><a href="04-reconciler-render.html">下一页：Fiber render →</a></div>
+      <footer><p>React 公开包止于“描述与转发”；下一页从 Root Update 开始建立可恢复的候选 Fiber 树。</p></footer>
+    </main>
+    <aside class="toc" aria-label="本页目录"><strong>react</strong>
+      <a href="#boundary">对象边界</a><a href="#entry">条件入口</a><a href="#element">元素工厂</a>
+      <a href="#children">Children</a><a href="#hooks">Hooks 门面</a><a href="#types">Context / memo / lazy</a>
+      <a href="#transition">Transition</a><a href="#evidence">测试证据</a><a href="#deep">v2 深挖</a><a href="#questions">检查理解</a>
+    </aside>
+  </div>
+</body>
+</html>

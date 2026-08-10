@@ -1,0 +1,4 @@
+interface:
+  display_name: "源码深度阅读"
+  short_description: "完整深读源码，补齐中文注释，并以调用链、状态与测试证据产出教程"
+  default_prompt: "使用 $read-source-code 完整阅读本项目源码，补齐中文源码与测试注释，并产出由真实调用链和测试支撑的教程。"

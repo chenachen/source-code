@@ -1,0 +1,1924 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="auto">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Vue compiler-sfc 源码详解：SFCDescriptor、script setup、编译宏、类型解析、模板、样式与 source map"
+    />
+    <title>compiler-sfc 详解 · Vue Compiler 指南</title>
+    <link rel="stylesheet" href="assets/styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#content">跳到正文</a>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <a class="brand" href="index.html"
+          ><span class="brand-mark">VC</span><span>Vue Compiler Guide</span></a
+        >
+        <nav class="global-nav" aria-label="全站导航">
+          <a href="index.html">总览</a><a href="core.html">compiler-core</a
+          ><a href="dom.html">compiler-dom</a
+          ><a href="sfc.html" aria-current="page">compiler-sfc</a
+          ><a href="ssr.html">compiler-ssr</a
+          ><a href="integration.html">端到端串联</a
+          ><a href="evolution.html">演进与设计</a
+          ><a href="lab.html">实验与术语</a>
+        </nav>
+        <button
+          class="menu-button"
+          data-menu-toggle
+          type="button"
+          aria-expanded="false"
+        >
+          目录</button
+        ><button class="theme-button" data-theme-toggle type="button">
+          自动
+        </button>
+      </div>
+    </header>
+
+    <div class="page-shell">
+      <aside class="rail" aria-label="本页目录">
+        <p class="rail-title">compiler-sfc</p>
+        <nav>
+          <a href="#content">模块定位</a><a href="#descriptor">SFCDescriptor</a
+          ><a href="#script">compileScript</a><a href="#macros">编译宏</a
+          ><a href="#destructure">响应式解构</a><a href="#types">类型解析</a
+          ><a href="#bindings">绑定与模板协作</a
+          ><a href="#template">compileTemplate</a
+          ><a href="#style">compileStyle</a><a href="#maps">映射、缓存与 HMR</a
+          ><a href="#tests">测试地图</a>
+        </nav>
+        <p class="rail-note">
+          三个主入口<br />compileScript<br />compileTemplate<br />compileStyle
+        </p>
+      </aside>
+
+      <main id="content">
+        <div class="hero compact">
+          <p class="eyebrow">Module 03 · Single File Component Orchestrator</p>
+          <h1>compiler-sfc</h1>
+          <p class="lead">
+            SFC 编译器把一个 .vue
+            文件变成可由构建工具组装的脚本、渲染函数和样式。它既是协调器，也是
+            TypeScript 静态分析器、编译宏实现和多层 source map 管理者。
+          </p>
+          <div class="hero-meta">
+            <span>输入：完整 .vue</span
+            ><span>工具：Babel AST + MagicString + PostCSS</span
+            ><span>输出：script/template/style 三分支</span>
+          </div>
+        </div>
+
+        <div class="reading-contract">
+          <strong>这是完整的 SFC 编译故事</strong>
+          <p>
+            从 <code>.vue</code> 切 block，到宏消除、props 解构、TS
+            类型推导、模板目标选择与 PostCSS
+            管线，每一段都给出当前版本源码和实际产物。不需要先理解 Babel 或
+            MagicString 内部实现。
+          </p>
+        </div>
+
+        <section id="descriptor">
+          <div class="section-head">
+            <div>
+              <span class="section-no">01 / Parse</span>
+              <h2>SFCDescriptor 是第一层协议</h2>
+            </div>
+            <p>
+              <code>parse()</code> 不编译 JavaScript 或 CSS；它只切分顶层
+              block，记录属性、位置、映射与构建元数据。
+            </p>
+          </div>
+          <div class="diagram" aria-label="SFC parse 流程">
+            <p class="diagram-title">parse(source, options)</p>
+            <div class="flow">
+              <div class="flow-node">
+                <strong>缓存键</strong
+                ><small>source + 影响解析的 options</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node">
+                <strong>compiler.parse</strong><small>parseMode: sfc</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node primary">
+                <strong>遍历根级 blocks</strong
+                ><small>template/script/style/custom</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node">
+                <strong>descriptor + errors</strong
+                ><small>尽量恢复，不首错中断</small>
+              </div>
+            </div>
+          </div>
+          <figure class="source-block">
+            <figcaption class="source-caption">
+              <span
+                ><strong>真实源码 · 聚焦摘录</strong
+                ><code>packages/compiler-sfc/src/parse.ts · parse()</code></span
+              >
+              <span class="source-version">Vue 3.5.41</span>
+            </figcaption>
+            <pre><code>export function parse(source: string, options = {}): SFCParseResult {
+  const sourceKey = genCacheKey(source, {
+    ...options,
+    compiler: { parse: options.compiler?.parse },
+  })
+  const cache = parseCache.get(sourceKey)
+  if (cache) return cache
+
+  const descriptor: SFCDescriptor = {
+    filename,
+    source,
+    template: null,
+    script: null,
+    scriptSetup: null,
+    styles: [],
+    customBlocks: [],
+    cssVars: [],
+    slotted: false,
+    shouldForceReload: prevImports =&gt;
+      hmrShouldReload(prevImports, descriptor),
+  }
+
+  const errors: (CompilerError | SyntaxError)[] = []
+  const ast = compiler.parse(source, {
+    parseMode: 'sfc',
+    prefixIdentifiers: true,
+    ...templateParseOptions,
+    onError: e =&gt; errors.push(e),
+  })
+
+  ast.children.forEach(node =&gt; {
+    if (node.type !== NodeTypes.ELEMENT) return
+    if (ignoreEmpty &amp;&amp; node.tag !== 'template' &amp;&amp;
+        isEmpty(node) &amp;&amp; !hasSrc(node)) return
+
+    switch (node.tag) {
+      case 'template':
+        if (!descriptor.template) {
+          const block = descriptor.template =
+            createBlock(node, source, false) as SFCTemplateBlock
+          if (!block.attrs.src) {
+            block.ast = createRoot(node.children, source)
+          }
+        }
+        break
+      // …script/style/custom block 按同样方式归档。
+    }
+  })
+  // …汇总 cssVars/slotted，生成 block maps，写入 parseCache。
+}</code></pre>
+          </figure>
+          <div class="code-walkthrough">
+            <article class="code-note">
+              <h3>缓存键包含 compiler.parse</h3>
+              <p>
+                相同源码使用不同自定义 parser 时可产生不同 AST。若只用 source 作
+                key，第二次编译就会错用第一个工具链的 descriptor。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>SFC mode 保护 script/style 原文</h3>
+              <p>
+                根级非 template block 的内容按原始文本读取，所以 JS 中的
+                <code>&lt;</code> 和 CSS 中的大括号不会被模板 parser
+                误解成标签语法。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>模板 AST 可以复用</h3>
+              <p>
+                无 <code>src</code> 且使用默认模板语法时，parse 把 template
+                children 包成独立 RootNode。compileTemplate 后面可直接传
+                AST，省掉一次 tokenizer 扫描。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>errors 是数组，不是异常终点</h3>
+              <p>
+                IDE 编辑中的 SFC 常处于暂时未闭合状态。可恢复的结构错误被收集，
+                descriptor 仍尽量构造，这样语法高亮和其他 block
+                的诊断不会全部失效。
+              </p>
+            </article>
+          </div>
+          <div class="source-result">
+            <strong>一份 SFC 的第一次降维</strong>
+            <pre><code>App.vue
+├─ descriptor.template      content + attrs + loc + cached AST
+├─ descriptor.scriptSetup   content + lang + loc
+├─ descriptor.styles[0]     scoped/module + content + loc
+├─ descriptor.cssVars       ["theme.color"]
+└─ descriptor.customBlocks  交给 Vite/vue-loader 插件处理</code></pre>
+          </div>
+          <div class="grid-2">
+            <article class="card green">
+              <h3>SFCDescriptor 保存什么</h3>
+              <ul>
+                <li>filename 与完整 source。</li>
+                <li>template、script、scriptSetup。</li>
+                <li>styles[]、customBlocks[]。</li>
+                <li>cssVars、slotted。</li>
+                <li>HMR shouldForceReload 回调。</li>
+              </ul>
+            </article>
+            <article class="card blue">
+              <h3>每个 SFCBlock 保存什么</h3>
+              <ul>
+                <li>block content、lang、src、attrs。</li>
+                <li>在完整文件中的 location。</li>
+                <li>block → SFC source map。</li>
+                <li>template 可缓存 AST。</li>
+                <li>style 的 scoped/module 等标志。</li>
+              </ul>
+            </article>
+          </div>
+          <div class="callout">
+            <strong>为什么 parse 返回 errors 而不直接 throw：</strong>重复
+            block、非法 src/setup 组合与暂时语法错误可能同时存在。IDE
+            需要尽量得到 descriptor，并一次显示多个诊断。
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>block</th>
+                  <th>解析阶段规则</th>
+                  <th>后续处理者</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>template</td>
+                  <td>最多一个；无 src 时缓存 children AST</td>
+                  <td>compileTemplate</td>
+                </tr>
+                <tr>
+                  <td>script</td>
+                  <td>区分普通与 setup；语言必须兼容</td>
+                  <td>compileScript / normalScript</td>
+                </tr>
+                <tr>
+                  <td>style</td>
+                  <td>允许多个；记录 scoped/module/lang</td>
+                  <td>compileStyle</td>
+                </tr>
+                <tr>
+                  <td>custom block</td>
+                  <td>保留 tag、attrs、content</td>
+                  <td>上层构建插件</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <a class="source-link" href="../../../vue/packages/compiler-sfc/src/parse.ts"
+            >packages/compiler-sfc/src/parse.ts</a
+          >
+        </section>
+
+        <section id="script">
+          <div class="section-head">
+            <div>
+              <span class="section-no">02 / Script</span>
+              <h2>compileScript：完整文件上的受控改写</h2>
+            </div>
+            <p>
+              它需要整个 descriptor，因为脚本生成会读取 template import
+              使用情况、CSS vars、scoped 状态与宏类型。
+            </p>
+          </div>
+          <div class="grid-3">
+            <article class="card">
+              <h3>ScriptCompileContext</h3>
+              <p>
+                集中保存 Babel
+                AST、MagicString、宏状态、imports、bindings、parser
+                plugins、错误定位与类型解析上下文。
+              </p>
+            </article>
+            <article class="card">
+              <h3>Babel AST</h3>
+              <p>
+                负责“理解”JS/TS 语法：导入、声明、类型、函数作用域、宏调用和顶层
+                await。
+              </p>
+            </article>
+            <article class="card">
+              <h3>MagicString</h3>
+              <p>
+                负责“修改”完整
+                SFC：move、remove、overwrite、prepend，并保留源位置以生成 map。
+              </p>
+            </article>
+          </div>
+
+          <h3>主流程九个阅读步骤</h3>
+          <p class="prose">
+            这里把职责拆成九步，方便逐项理解；它们不是源码中的九个独立循环。
+            下方真实源码再归并为五个可下断点的观察点，两套编号会明确对应。
+          </p>
+          <div class="steps">
+            <div class="step">
+              <h3>01 · 收集 imports</h3>
+              <p>
+                普通 script 与 setup 分开登记；去重、冲突检查，并标记 type
+                import 与模板使用情况。
+              </p>
+            </div>
+            <div class="step">
+              <h3>02 · 处理两个脚本</h3>
+              <p>
+                提取普通 script 默认导出；遍历 setup 顶层声明并记录 Vue API
+                的用户别名。
+              </p>
+            </div>
+            <div class="step">
+              <h3>03 · 识别与改写宏</h3>
+              <p>
+                defineProps、defineEmits、defineExpose、defineOptions、defineSlots、defineModel、withDefaults。
+              </p>
+            </div>
+            <div class="step">
+              <h3>04 · 转换 props 解构</h3>
+              <p>
+                读取改为 __props，默认值进入运行时 props，rest 创建
+                proxy，同时维护所有嵌套作用域。
+              </p>
+            </div>
+            <div class="step">
+              <h3>05 · 检查提升边界</h3>
+              <p>
+                宏 options 位于 setup 外，不能捕获尚未初始化的 setup
+                局部值；字面量常量除外。
+              </p>
+            </div>
+            <div class="step">
+              <h3>06 · 裁剪非脚本 block</h3>
+              <p>
+                MagicString 一直使用完整 SFC 坐标，完成分析后才删除
+                template/style/custom blocks。
+              </p>
+            </div>
+            <div class="step">
+              <h3>07 · 汇总 binding metadata</h3>
+              <p>
+                合并普通
+                script、setup、imports、props/model，并按读写语义细分绑定类型。
+              </p>
+            </div>
+            <div class="step">
+              <h3>08 · 注入桥接代码</h3>
+              <p>
+                CSS vars、顶层 await async context、setup
+                参数、__props/__emit/rest proxy。
+              </p>
+            </div>
+            <div class="step">
+              <h3>09 · 组装返回与默认导出</h3>
+              <p>
+                非 inline 返回模板绑定；inline 直接嵌入 render；最后合并
+                props/emits/name 等组件选项。
+              </p>
+            </div>
+          </div>
+
+          <div class="callout">
+            <strong>九步 → 五个源码观察点：</strong>A=01 imports；B=02/03/05
+            两份 AST 的顶层遍历、宏处理与提升检查；C=04 props 解构重写；D=06/07
+            删除非脚本区间并汇总 bindings；E=08/09 注入 setup
+            桥接并生成返回/默认导出。
+          </div>
+
+          <figure class="source-block">
+            <figcaption class="source-caption">
+              <span
+                ><strong>真实源码</strong
+                ><code
+                  >packages/compiler-sfc/src/compileScript.ts · 主流程摘录</code
+                ></span
+              >
+              <span class="source-version">Vue 3.5.41</span>
+            </figcaption>
+            <pre><code>const MACROS = [
+  DEFINE_PROPS, DEFINE_EMITS, DEFINE_EXPOSE, DEFINE_OPTIONS,
+  DEFINE_SLOTS, DEFINE_MODEL, WITH_DEFAULTS,
+]
+
+export function compileScript(sfc, options): SFCScriptBlock {
+  const { script, scriptSetup, source, filename } = sfc
+  if (!scriptSetup) {
+    const ctx = new ScriptCompileContext(sfc, options)
+    return processNormalScript(ctx, scopeId)
+  }
+
+  const ctx = new ScriptCompileContext(sfc, options)
+  const scriptBindings = Object.create(null)
+  const setupBindings = Object.create(null)
+
+  // 观察点 A（步骤 01）：setup import 提到模块顶层并去重。
+  for (const node of ctx.scriptSetupAst!.body) {
+    if (node.type === 'ImportDeclaration') {
+      hoistNode(node)
+      // …记录 isType / source / imported / isUsedInTemplate。
+    }
+  }
+
+  // 观察点 B（步骤 02/03/05）：遍历顶层 AST，处理宏、声明与提升边界。
+  for (const node of ctx.scriptSetupAst!.body) {
+    if (node.type === 'ExpressionStatement') {
+      const expr = unwrapTSNode(node.expression)
+      if (processDefineProps(ctx, expr) ||
+          processDefineEmits(ctx, expr) ||
+          processDefineOptions(ctx, expr) ||
+          processDefineSlots(ctx, expr)) {
+        ctx.s.remove(node.start! + startOffset, node.end! + startOffset)
+      } else if (processDefineExpose(ctx, expr)) {
+        ctx.s.overwrite(expr.callee.start! + startOffset,
+                        expr.callee.end! + startOffset, '__expose')
+      } else {
+        processDefineModel(ctx, expr)
+      }
+    }
+    // …处理变量声明中的宏、静态提升与顶层 await。
+  }
+
+  // 观察点 C（步骤 04）：props 解构引用重写。
+  if (ctx.propsDestructureDecl) {
+    transformDestructuredProps(ctx, vueImportAliases)
+  }
+
+  // 观察点 D（步骤 06/07）：裁剪 block 后合并 bindingMetadata。
+  for (const key in scriptBindings) ctx.bindingMetadata[key] = scriptBindings[key]
+  for (const key in setupBindings) ctx.bindingMetadata[key] = setupBindings[key]
+
+  // 观察点 E（步骤 08/09）：生成桥接、setup 返回或内联 render。
+  // …最终合并 __default__、props、emits、setup 与 source map。
+}</code></pre>
+          </figure>
+          <div class="code-walkthrough">
+            <article class="code-note">
+              <h3>宏名列表只用于编译期</h3>
+              <p>
+                从 <code>vue</code> 导入 defineProps 会被警告并删除
+                import，因为产物中不需要这个函数。
+                宏返回的只是一个编译期位置，会被
+                <code>__props/__emit/useModel</code> 等真实运行时协议替换。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>理解用 AST，改代码用 MagicString</h3>
+              <p>
+                Babel 告诉编译器这是 import、TS assertion
+                还是被局部变量遮蔽的名字； MagicString 只在已知 start/end 处
+                move/remove/overwrite，从而保留原始坐标用于 source map。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>分析一直使用完整 SFC 坐标</h3>
+              <p>
+                template/style 不会一开始就被截掉。所有 Babel block 坐标加上
+                startOffset 对齐完整文件，完成交叉分析后才统一删除非脚本 block。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>bindingMetadata 是主要产物之一</h3>
+              <p>
+                它不是 IDE 附加信息，而是会直接传入 compiler-core
+                的模板表达式转换。一个名字是 ref、prop、let 还是 literal
+                const，决定最终打印
+                <code>.value</code>、<code>unref()</code>、<code
+                  >__props.x</code
+                >
+                还是直接常量。
+              </p>
+            </article>
+          </div>
+          <div class="source-result">
+            <strong>最小 script setup 编译前后</strong>
+            <pre><code>&lt;script setup lang="ts"&gt;
+import { ref } from 'vue'
+const props = defineProps&lt;{ title: string }&gt;()
+const count = ref(0)
+&lt;/script&gt;
+
+↓ 核心产物
+
+import { defineComponent as _defineComponent, ref } from 'vue'
+export default _defineComponent({
+  props: { title: { type: String, required: true } },
+  setup(__props) {
+    const props = __props
+    const count = ref(0)
+    return { props, count }
+  }
+})</code></pre>
+          </div>
+
+          <div class="callout warn">
+            <strong>为什么不能把 compileScript 看成文本替换：</strong>宏可以被
+            TS assertion 包裹，变量可能在嵌套函数中遮蔽，var 会提升，import
+            有类型/值双重身份。所有这些都要求真实 AST 与作用域模型。
+          </div>
+          <a
+            class="source-link"
+            href="../../../vue/packages/compiler-sfc/src/compileScript.ts"
+            >src/compileScript.ts</a
+          >
+          ·
+          <a
+            class="source-link"
+            href="../../../vue/packages/compiler-sfc/src/script/context.ts"
+            >script/context.ts</a
+          >
+        </section>
+
+        <section id="macros">
+          <div class="section-head">
+            <div>
+              <span class="section-no">03 / Macros</span>
+              <h2>编译宏不是运行时函数</h2>
+            </div>
+            <p>
+              这些名字无需从 Vue 导入；compiler-sfc
+              在顶层识别并擦除/替换调用，把声明转换为组件 options 与 setup
+              上下文协议。
+            </p>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>宏</th>
+                  <th>编译期输入</th>
+                  <th>输出/改写</th>
+                  <th>关键限制</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>defineProps</td>
+                  <td>运行时对象/数组或 TS 类型</td>
+                  <td>__props 参数、runtime props、binding metadata</td>
+                  <td>类型式与运行时式不能混用；只能调用一次。</td>
+                </tr>
+                <tr>
+                  <td>withDefaults</td>
+                  <td>类型式 defineProps + defaults</td>
+                  <td>mergeDefaults / 解构默认值信息</td>
+                  <td>仅能包裹类型式 props。</td>
+                </tr>
+                <tr>
+                  <td>defineEmits</td>
+                  <td>事件数组/对象或类型签名</td>
+                  <td>runtime emits 与 __emit</td>
+                  <td>提取调用签名/具名 tuple；禁止重复或混用。</td>
+                </tr>
+                <tr>
+                  <td>defineModel</td>
+                  <td>名称、类型与 options</td>
+                  <td>prop + update event + useModel()</td>
+                  <td>模型名冲突、默认值、修饰符与 getter/setter 类型。</td>
+                </tr>
+                <tr>
+                  <td>defineExpose</td>
+                  <td>暴露对象</td>
+                  <td>替换为 setup context 的 expose</td>
+                  <td>只能一次；未调用时生成 expose() 保持默认封闭。</td>
+                </tr>
+                <tr>
+                  <td>defineOptions</td>
+                  <td>静态组件 options</td>
+                  <td>提升并合并默认导出</td>
+                  <td>
+                    不能引用 setup 局部，也不能重复声明 props/emits 等专用项。
+                  </td>
+                </tr>
+                <tr>
+                  <td>defineSlots</td>
+                  <td>仅类型参数</td>
+                  <td>useSlots() 或类型信息</td>
+                  <td>不接受运行时参数。</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <figure class="source-block">
+            <figcaption class="source-caption">
+              <span
+                ><strong>真实源码 · 完整函数</strong
+                ><code>script/defineProps.ts · processDefineProps()</code></span
+              >
+              <span class="source-version">Vue 3.5.41</span>
+            </figcaption>
+            <pre><code>export function processDefineProps(
+  ctx: ScriptCompileContext,
+  node: Node,
+  declId?: LVal,
+  isWithDefaults = false,
+): boolean {
+  if (!isCallOf(node, DEFINE_PROPS)) {
+    return processWithDefaults(ctx, node, declId)
+  }
+
+  if (ctx.hasDefinePropsCall) {
+    ctx.error(`duplicate ${DEFINE_PROPS}() call`, node)
+  }
+  ctx.hasDefinePropsCall = true
+  ctx.propsRuntimeDecl = node.arguments[0]
+
+  if (ctx.propsRuntimeDecl) {
+    for (const key of getObjectOrArrayExpressionKeys(ctx.propsRuntimeDecl)) {
+      if (!(key in ctx.bindingMetadata)) {
+        ctx.bindingMetadata[key] = BindingTypes.PROPS
+      }
+    }
+  }
+
+  if (node.typeParameters) {
+    if (ctx.propsRuntimeDecl) {
+      ctx.error(
+        `${DEFINE_PROPS}() cannot accept both type and non-type arguments ` +
+        `at the same time. Use one or the other.`,
+        node,
+      )
+    }
+    ctx.propsTypeDecl = node.typeParameters.params[0]
+  }
+
+  if (!isWithDefaults &amp;&amp; declId &amp;&amp; declId.type === 'ObjectPattern') {
+    processPropsDestructure(ctx, declId)
+  }
+  ctx.propsCall = node
+  ctx.propsDecl = declId
+  return true
+}</code></pre>
+          </figure>
+          <div class="code-walkthrough">
+            <article class="code-note">
+              <h3>识别失败时继续尝试 withDefaults</h3>
+              <p>
+                AST 顶层可能是 <code>withDefaults(...)</code> 而不是 defineProps
+                CallExpression。包装宏再递归要求第一个参数必须是
+                defineProps，避免把普通函数误当宏。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>运行时声明和类型声明互斥</h3>
+              <p>
+                <code>defineProps&lt;T&gt;({ foo: String })</code>
+                同时给出两份完整事实，它们可能对 required/default/type
+                产生冲突，所以编译器不尝试“智能合并”。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>运行时 key 立即成为 PROPS 绑定</h3>
+              <p>
+                数组或对象里可静态读取的键当场写入 bindingMetadata，
+                模板编译就知道这些名字应读取 props，而不是未知的公开实例属性。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>解构只先记录，后统一改写</h3>
+              <p>
+                此处不立即遍历后续代码，只保存 public key、local alias 和
+                default。等全部顶层声明被了解后，transformDestructuredProps
+                才能用完整作用域信息安全重写。
+              </p>
+            </article>
+          </div>
+
+          <div class="grid-2" style="margin-top: 1.3rem">
+            <article class="card green">
+              <h3>类型式 defineProps</h3>
+              <pre><code>const props = defineProps&lt;{
+  title: string
+  count?: number
+}&gt;()
+
+// 生成概念：
+// props: { title: { type: String, required: true },
+//          count: { type: Number, required: false } }</code></pre>
+            </article>
+            <article class="card violet">
+              <h3>defineModel</h3>
+              <pre><code>const title = defineModel&lt;string&gt;('title')
+
+// 生成概念：
+// prop: title
+// emit: update:title
+// const title = useModel(__props, 'title')</code></pre>
+            </article>
+          </div>
+          <div class="callout">
+            <strong>宏参数为什么不能捕获 setup 局部变量：</strong>runtime
+            props/emits/options 会被提升到模块或组件 options 初始化阶段，而
+            setup 局部值此时尚不存在。编译器遍历宏参数中的
+            Identifier，提前报告这类时间顺序错误。
+          </div>
+          <a
+            class="source-link"
+            href="../../../vue/packages/compiler-sfc/src/script/defineProps.ts"
+            >script/defineProps.ts</a
+          >
+          ·
+          <a
+            class="source-link"
+            href="../../../vue/packages/compiler-sfc/src/script/defineModel.ts"
+            >script/defineModel.ts</a
+          >
+        </section>
+
+        <section id="destructure">
+          <div class="section-head">
+            <div>
+              <span class="section-no">04 / Props Destructure</span>
+              <h2>响应式解构是一场标识符重写</h2>
+            </div>
+            <p>
+              普通 JavaScript 解构会把 prop 复制成局部值。Vue
+              通过编译期把后续读取改回 __props，使简洁语法保持响应性。
+            </p>
+          </div>
+          <div class="grid-2">
+            <article class="card green">
+              <h3>用户源码</h3>
+              <pre><code>const { foo: localFoo = 1, bar, ...rest }
+  = defineProps&lt;Props&gt;()
+
+watchEffect(() =&gt; {
+  console.log(localFoo, bar, rest.baz)
+})</code></pre>
+            </article>
+            <article class="card blue">
+              <h3>概念改写</h3>
+              <pre><code>const __props = ...
+const rest = createPropsRestProxy(__props, ['foo', 'bar'])
+
+watchEffect(() =&gt; {
+  console.log(__props.foo, __props.bar, rest.baz)
+})</code></pre>
+            </article>
+          </div>
+
+          <figure class="source-block">
+            <figcaption class="source-caption">
+              <span
+                ><strong>真实源码 · 两个关键函数</strong
+                ><code
+                  >script/definePropsDestructure.ts · rewriteId() /
+                  checkUsage()</code
+                ></span
+              >
+              <span class="source-version">Vue 3.5.41</span>
+            </figcaption>
+            <pre><code>function rewriteId(id: Identifier, parent: Node, parentStack: Node[]) {
+  if (
+    (parent.type === 'AssignmentExpression' &amp;&amp; id === parent.left) ||
+    parent.type === 'UpdateExpression'
+  ) {
+    ctx.error(`Cannot assign to destructured props as they are readonly.`, id)
+  }
+
+  if (isStaticProperty(parent) &amp;&amp; parent.shorthand) {
+    if (!(parent as any).inPattern ||
+        isInDestructureAssignment(parent, parentStack)) {
+      // { foo } → { foo: __props.foo }
+      ctx.s.appendLeft(
+        id.end! + ctx.startOffset!,
+        `: ${genPropsAccessExp(propsLocalToPublicMap[id.name])}`,
+      )
+    }
+  } else {
+    // 普通读取 foo → __props.foo
+    ctx.s.overwrite(
+      id.start! + ctx.startOffset!,
+      id.end! + ctx.startOffset!,
+      genPropsAccessExp(propsLocalToPublicMap[id.name]),
+    )
+  }
+}
+
+function checkUsage(node: Node, method: string, alias = method) {
+  if (isCallOf(node, alias)) {
+    const arg = unwrapTSNode(node.arguments[0])
+    if (arg.type === 'Identifier' &amp;&amp; currentScope[arg.name]) {
+      ctx.error(
+        `"${arg.name}" is a destructured prop and should not be passed ` +
+          `directly to ${method}(). Pass a getter () =&gt; ${arg.name} instead.`,
+        arg,
+      )
+    }
+  }
+}</code></pre>
+          </figure>
+          <div class="code-walkthrough">
+            <article class="code-note">
+              <h3>为什么读取改成 __props</h3>
+              <p>
+                JavaScript
+                <code>const { foo } = obj</code> 只在声明时取一次值；组件更新
+                props 时局部 foo 不会变。所有读取回到
+                <code>__props.foo</code>，才会每次取当前值。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>对象简写要保留 key</h3>
+              <p>
+                把 <code>{ foo }</code> 整个替换成
+                <code>{ __props.foo }</code> 是非法 JS，
+                也丢失了对象键名。正确结果是
+                <code>{ foo: __props.foo }</code>，因此需要根据父节点语义展开
+                shorthand。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>赋值在编译期失败</h3>
+              <p>
+                如果把 <code>foo++</code> 默默改成
+                <code>__props.foo++</code>，就绕过了 props
+                单向数据流。编译器用原始 id
+                位置直接报只读错误，比运行时警告更精确。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>watch 需要 getter，不是当前值</h3>
+              <p>
+                表达式重写只能把 <code>watch(foo)</code> 变成
+                <code>watch(__props.foo)</code>，
+                但这仍是一次取值。因此编译器单独识别 watch/toRef 并要求
+                <code>watch(() =&gt; foo)</code>，让响应式系统能在 getter
+                内跟踪依赖。
+              </p>
+            </article>
+          </div>
+
+          <h3>真正困难的是作用域边界</h3>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>语法</th>
+                  <th>期望</th>
+                  <th>原因</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>函数参数同名</td>
+                  <td>函数内使用局部参数</td>
+                  <td>参数遮蔽顶层解构 prop。</td>
+                </tr>
+                <tr>
+                  <td>catch (foo)</td>
+                  <td>catch body 使用局部错误变量</td>
+                  <td>catch 建立独立作用域。</td>
+                </tr>
+                <tr>
+                  <td>for (const foo of list)</td>
+                  <td>循环内局部，循环后恢复 prop</td>
+                  <td>进入/离开循环要成对登记。</td>
+                </tr>
+                <tr>
+                  <td>对象 shorthand</td>
+                  <td>key 保留 foo，value 改 __props.foo</td>
+                  <td>同一 Identifier 同时承担两个语义。</td>
+                </tr>
+                <tr>
+                  <td>对解构 prop 赋值</td>
+                  <td>编译错误</td>
+                  <td>prop 只读，不能把重写变成隐式 mutation。</td>
+                </tr>
+                <tr>
+                  <td>默认值是函数</td>
+                  <td>按 runtime type 决定是否工厂调用</td>
+                  <td>函数值 prop 与对象默认值工厂语义冲突。</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="callout warn">
+            <strong>var 提升也必须考虑：</strong>即使 var
+            声明写在后面，它在函数作用域内仍遮蔽 prop。相关 issue
+            修复说明这里执行的是接近 JavaScript
+            绑定语义的静态分析，而非简单按源码顺序替换。
+          </div>
+          <a
+            class="source-link"
+            href="../../../vue/packages/compiler-sfc/src/script/definePropsDestructure.ts"
+            >script/definePropsDestructure.ts</a
+          >
+        </section>
+
+        <section id="types">
+          <div class="section-head">
+            <div>
+              <span class="section-no">05 / Type Resolution</span>
+              <h2>从 TypeScript 类型推导运行时声明</h2>
+            </div>
+            <p>
+              defineProps/defineEmits 的类型在运行时不存在。compiler-sfc
+              必须展开足够多的 TypeScript 语义，生成可用但保守的 runtime
+              props/emits。
+            </p>
+          </div>
+          <div class="diagram" aria-label="类型解析流程">
+            <p class="diagram-title">resolveTypeElements / inferRuntimeType</p>
+            <div class="flow">
+              <div class="flow-node">
+                <strong>宏类型节点</strong
+                ><small>interface / alias / literal</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node">
+                <strong>TypeScope</strong
+                ><small>本地声明 + imports + owner scope</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node primary">
+                <strong>展开类型元素</strong
+                ><small>泛型 / union / intersection / mapped</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node">
+                <strong>runtime type</strong
+                ><small>String / Number / Boolean / Object...</small>
+              </div>
+            </div>
+          </div>
+
+          <figure class="source-block">
+            <figcaption class="source-caption">
+              <span
+                ><strong>真实源码 · 聚焦摘录</strong
+                ><code
+                  >script/resolveType.ts · resolveTypeElements()</code
+                ></span
+              >
+              <span class="source-version">Vue 3.5.41</span>
+            </figcaption>
+            <pre><code>export function resolveTypeElements(
+  ctx: TypeResolveContext,
+  node: Node &amp;
+    MaybeWithScope &amp; {
+      _resolvedElements?: ResolvedElements
+    },
+  scope?: TypeScope,
+  typeParameters?: Record&lt;string, Node&gt;,
+): ResolvedElements {
+  const canCache = !typeParameters
+  if (canCache &amp;&amp; node._resolvedElements) {
+    recordResolvedElementDeps(ctx, node._resolvedElements)
+    return node._resolvedElements
+  }
+  const resolved = innerResolveTypeElements(
+    ctx,
+    node,
+    node._ownerScope || scope || ctxToScope(ctx),
+    typeParameters,
+  )
+  return canCache ? (node._resolvedElements = resolved) : resolved
+}
+
+function innerResolveTypeElements(
+  ctx: TypeResolveContext,
+  node: Node,
+  scope: TypeScope,
+  typeParameters?: Record&lt;string, Node&gt;,
+): ResolvedElements {
+  // ……省略 @vue-ignore 的软失败分支。
+  switch (node.type) {
+    case 'TSTypeLiteral':
+      return typeElementsToMap(ctx, node.members, scope, typeParameters)
+    case 'TSInterfaceDeclaration':
+      return resolveInterfaceMembers(ctx, node, scope, typeParameters)
+    case 'TSTypeAliasDeclaration':
+    case 'TSTypeAnnotation':
+    case 'TSParenthesizedType':
+      return resolveTypeElements(ctx, node.typeAnnotation, scope, typeParameters)
+    case 'TSUnionType':
+    case 'TSIntersectionType':
+      return mergeElements(
+        node.types.map(t =&gt;
+          resolveTypeElements(ctx, t, scope, typeParameters)),
+        node.type,
+      )
+    case 'TSMappedType':
+      return resolveMappedType(ctx, node, scope, typeParameters)
+    case 'TSIndexedAccessType': {
+      const types = resolveIndexType(ctx, node, scope)
+      return mergeElements(
+        types.map(t =&gt; resolveTypeElements(ctx, t, t._ownerScope)),
+        'TSUnionType',
+      )
+    }
+    case 'TSExpressionWithTypeArguments':
+    case 'TSTypeReference': {
+      const typeName = getReferenceName(node)
+      // ……省略 ExtractPropTypes 特殊分支。
+      const resolved = resolveTypeReference(ctx, node, scope)
+      if (resolved) {
+        let typeParams: Record&lt;string, Node&gt; | undefined
+        if (
+          (resolved.type === 'TSTypeAliasDeclaration' ||
+            resolved.type === 'TSInterfaceDeclaration') &amp;&amp;
+          resolved.typeParameters &amp;&amp;
+          node.typeParameters
+        ) {
+          typeParams = Object.create(null)
+          resolved.typeParameters.params.forEach((p, i) =&gt; {
+            let param = typeParameters &amp;&amp; typeParameters[p.name]
+            if (!param) param = node.typeParameters!.params[i]
+            typeParams![p.name] = param
+          })
+        }
+        return resolveTypeElements(
+          ctx,
+          resolved,
+          resolved._ownerScope,
+          typeParams,
+        )
+      }
+      // ……省略泛型形参、内置工具类型和 ReturnType 的回退分支。
+    }
+  }
+  return ctx.error(`Unresolvable type: ${node.type}`, node, scope)
+}</code></pre>
+          </figure>
+          <p class="source-context">
+            这里保留缓存、作用域选择、主要节点分派和泛型实参映射；省略位置均以
+            “……”标明。它们是从同一函数中整段裁掉的分支，不是把源码改写成伪代码。
+          </p>
+          <div class="code-walkthrough">
+            <article class="code-note">
+              <h3>这不是 TypeScript checker</h3>
+              <p>
+                算法只实现生成 props/emits 所需的 AST
+                可见类型展开，不执行完整类型检查、
+                控制流程缩窄或任意条件类型求值。这使 compiler-sfc 不必携带整个
+                TS 编译器。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>ownerScope 决定名字从哪里查</h3>
+              <p>
+                展开外部 <code>BaseProps</code> 后，其成员类型里的别名与 import
+                应在 BaseProps 所在文件解析，而不是在当前 .vue
+                文件。每个属性因此保留 _ownerScope。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>带泛型实参时不可直接缓存</h3>
+              <p>
+                <code>Box&lt;string&gt;</code> 和
+                <code>Box&lt;number&gt;</code> 共用同一个 Box 声明
+                AST，结果却不同。只有不依赖 typeParameters 的展开才能挂到 node
+                上复用。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>读取缓存仍要重放 deps</h3>
+              <p>
+                第二次编译可以复用类型结果，但当前 SFC
+                仍必须记录它依赖了哪些外部
+                <code>.ts</code> 文件，否则这些文件变化时构建工具不会重编译该
+                SFC。
+              </p>
+            </article>
+          </div>
+          <div class="source-result">
+            <strong>类型信息如何变成运行时选项</strong>
+            <pre><code>interface Props extends Base {
+  title: string
+  count?: number
+}
+
+↓ resolveTypeElements + inferRuntimeType
+
+props: {
+  ...Base 中可解析的字段,
+  title: { type: String, required: true },
+  count: { type: Number, required: false }
+}</code></pre>
+          </div>
+
+          <div class="grid-3">
+            <article class="card">
+              <h3>文件与作用域</h3>
+              <p>
+                TypeScope 记录
+                filename、source、AST、types、declares、imports、deps、resolvedImportSources
+                与全局标志。
+              </p>
+            </article>
+            <article class="card">
+              <h3>跨文件解析</h3>
+              <p>
+                通过 fs 接口读取相对导入、tsconfig paths、三斜线
+                references、namespace 与 global types。
+              </p>
+            </article>
+            <article class="card">
+              <h3>缓存与失效</h3>
+              <p>
+                文件 scope、模块解析和 tsconfig
+                结果会缓存；依赖路径返回给构建工具，用于 HMR/监听。
+              </p>
+            </article>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>支持维度</th>
+                  <th>示例</th>
+                  <th>处理策略</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>接口/别名</td>
+                  <td>interface Props extends Base</td>
+                  <td>递归合并 type elements。</td>
+                </tr>
+                <tr>
+                  <td>泛型</td>
+                  <td>Box&lt;string&gt;</td>
+                  <td>建立临时 child scope，把类型参数映射到实参。</td>
+                </tr>
+                <tr>
+                  <td>联合/交叉</td>
+                  <td>A | B、A &amp; B</td>
+                  <td>合并属性与更宽 runtime 类型，保守处理未知分支。</td>
+                </tr>
+                <tr>
+                  <td>映射/索引访问</td>
+                  <td>Pick、Omit、T[K]</td>
+                  <td>解析静态 key 集合并回到源属性。</td>
+                </tr>
+                <tr>
+                  <td>工具类型</td>
+                  <td>Partial、Required、Readonly、Record</td>
+                  <td>内建识别并改变 required/key 语义。</td>
+                </tr>
+                <tr>
+                  <td>跨文件类型</td>
+                  <td>import type { Props }</td>
+                  <td>模块解析 + scope 缓存 + deps 记录。</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="callout">
+            <strong>推导是保守近似：</strong>编译器不等同于完整 TypeScript
+            checker。无法可靠求值的类型会退化为 null/unknown
+            运行时类型，而不是猜测；生产模式还会在不影响 Boolean/Function
+            语义时压缩声明。
+          </div>
+          <a
+            class="source-link"
+            href="../../../vue/packages/compiler-sfc/src/script/resolveType.ts"
+            >script/resolveType.ts</a
+          >
+        </section>
+
+        <section id="bindings">
+          <div class="section-head">
+            <div>
+              <span class="section-no">06 / Binding Metadata</span>
+              <h2>script 与 template 的桥梁</h2>
+            </div>
+            <p>
+              binding metadata 让模板编译器知道每个名字来自哪里、是否可能是
+              ref、读取与赋值该采用哪条路径。
+            </p>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>绑定类型</th>
+                  <th>典型来源</th>
+                  <th>模板读取策略</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>PROPS</td>
+                  <td>defineProps 字段</td>
+                  <td>__props / $props 访问，不允许直接赋值。</td>
+                </tr>
+                <tr>
+                  <td>SETUP_REF</td>
+                  <td>ref()、computed()</td>
+                  <td>读取/写入 .value。</td>
+                </tr>
+                <tr>
+                  <td>SETUP_MAYBE_REF</td>
+                  <td>普通 const 调用结果</td>
+                  <td>读取 unref；赋值先 isRef 判断。</td>
+                </tr>
+                <tr>
+                  <td>SETUP_LET</td>
+                  <td>let 绑定</td>
+                  <td>兼容 ref 与普通值两种情况。</td>
+                </tr>
+                <tr>
+                  <td>LITERAL_CONST</td>
+                  <td>字面量 const</td>
+                  <td>直接使用，可安全提升。</td>
+                </tr>
+                <tr>
+                  <td>SETUP_CONST</td>
+                  <td>函数、稳定对象、import</td>
+                  <td>直接使用，不走实例代理。</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <figure class="source-block">
+            <figcaption class="source-caption">
+              <span
+                ><strong>真实源码 · binding 交接</strong
+                ><code>packages/compiler-sfc/src/compileScript.ts</code></span
+              >
+              <span class="source-version">Vue 3.5.41</span>
+            </figcaption>
+            <pre><code>// 汇总脚本侧身份。
+for (const [key, { isType, imported, source }] of Object.entries(ctx.userImports)) {
+  if (isType) continue
+  ctx.bindingMetadata[key] =
+    imported === '*' ||
+    (imported === 'default' &amp;&amp; source.endsWith('.vue')) ||
+    source === 'vue'
+      ? BindingTypes.SETUP_CONST
+      : BindingTypes.SETUP_MAYBE_REF
+}
+for (const key in scriptBindings) ctx.bindingMetadata[key] = scriptBindings[key]
+for (const key in setupBindings) ctx.bindingMetadata[key] = setupBindings[key]
+
+// inlineTemplate 模式由 compileScript 直接传给模板编译器。
+compileTemplate({
+  // …
+  compilerOptions: {
+    inline: true,
+    isTS: ctx.isTS,
+    bindingMetadata: ctx.bindingMetadata,
+  },
+})
+
+// 非 inline 模式把 bindings 返回给调用方。
+return { /* … */ bindings: ctx.bindingMetadata }</code></pre>
+          </figure>
+          <p class="source-context">
+            自动接线只发生在 <code>inlineTemplate</code> 分支。构建工具分别调用
+            <code>compileScript</code> 与
+            <code>compileTemplate</code> 时，必须把前者返回的
+            <code>bindings</code> 放进后者的
+            <code>compilerOptions.bindingMetadata</code>；compiler-sfc
+            不会跨两次独立 API 调用隐式保存这份状态。
+          </p>
+
+          <div class="grid-3" style="margin-top: 1.3rem">
+            <article class="card">
+              <h3>Import Usage Check</h3>
+              <p>
+                扫描模板标签、指令、表达式、动态参数、ref 与 v-model，判断 TS
+                值导入是否真的需要返回给模板。
+              </p>
+            </article>
+            <article class="card">
+              <h3>Top-level Await</h3>
+              <p>
+                用 withAsyncContext 包裹 await，在挂起/恢复之间恢复 current
+                instance，并保留赋值表达式值。
+              </p>
+            </article>
+            <article class="card">
+              <h3>Inline Template</h3>
+              <p>
+                render 闭包直接捕获 setup 局部变量，不需要把所有绑定放进 setup
+                返回对象，可减少代理和暴露面。
+              </p>
+            </article>
+          </div>
+          <div class="callout warn">
+            <strong>模板扫描不是普通文本搜索：</strong>组件
+            PascalCase/kebab-case、动态参数、对象 key、局部 slot
+            参数、纯类型位置都可能造成误判。importUsageCheck
+            的测试集中覆盖这些边界。
+          </div>
+        </section>
+
+        <section id="template">
+          <div class="section-head">
+            <div>
+              <span class="section-no">07 / Template</span>
+              <h2>compileTemplate：选择目标并串联映射</h2>
+            </div>
+            <p>
+              它处理预处理器、资产 URL、scoped/slotted 与 SSR 选项，然后调用
+              compiler-dom 或 compiler-ssr。
+            </p>
+          </div>
+          <div class="diagram" aria-label="SFC template 编译流程">
+            <p class="diagram-title">compileTemplate(options)</p>
+            <div class="flow">
+              <div class="flow-node">
+                <strong>预处理</strong><small>pug 等；失败返回结构化错误</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node">
+                <strong>选择 AST</strong><small>复用或重新 parse</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node primary">
+                <strong>DOM / SSR compile</strong
+                ><small>module + prefix + hoist</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node">
+                <strong>合并 map</strong><small>code → block → SFC</small>
+              </div>
+            </div>
+          </div>
+          <figure class="source-block">
+            <figcaption class="source-caption">
+              <span
+                ><strong>真实源码</strong
+                ><code
+                  >packages/compiler-sfc/src/compileTemplate.ts ·
+                  doCompileTemplate()</code
+                ></span
+              >
+              <span class="source-version">Vue 3.5.41</span>
+            </figcaption>
+            <pre><code>let nodeTransforms: NodeTransform[] = []
+if (isObject(transformAssetUrls)) {
+  const assetOptions = normalizeOptions(transformAssetUrls)
+  nodeTransforms = [
+    createAssetUrlTransformWithOptions(assetOptions),
+    createSrcsetTransformWithOptions(assetOptions),
+  ]
+} else if (transformAssetUrls !== false) {
+  nodeTransforms = [transformAssetUrl, transformSrcset]
+}
+
+const shortId = id.replace(/^data-v-/, '')
+const longId = `data-v-${shortId}`
+const defaultCompiler = ssr ? CompilerSSR : CompilerDOM
+compiler = compiler || defaultCompiler
+
+if (compiler !== defaultCompiler) {
+  // 自定义 compiler 的 AST 协议可能不同，禁止复用旧 AST。
+  inAST = undefined
+}
+
+inAST = resolveTemplateAST(inAST, {
+  compiler, compilerOptions, ssr,
+  onError: e =&gt; errors.push(e),
+})
+
+let { code, ast, preamble, map } = compiler.compile(inAST || source, {
+  mode: 'module',
+  prefixIdentifiers: true,
+  hoistStatic: true,
+  cacheHandlers: true,
+  scopeId: scoped ? longId : undefined,
+  slotted,
+  sourceMap: true,
+  ...compilerOptions,
+  hmr: !isProd,
+  nodeTransforms: nodeTransforms.concat(compilerOptions.nodeTransforms || []),
+  filename,
+  onError: e =&gt; errors.push(e),
+  onWarn: w =&gt; warnings.push(w),
+})
+
+if (inMap &amp;&amp; !inAST) {
+  if (map) map = mapLines(inMap, map)
+  if (errors.length) patchErrors(errors, source, inMap)
+}</code></pre>
+          </figure>
+          <div class="code-walkthrough">
+            <article class="code-note">
+              <h3>DOM/SSR 只在一行分叉</h3>
+              <p>
+                SFC 自身不重写模板语义；<code>ssr</code> 只决定选 compiler-dom
+                还是 compiler-ssr。资产 URL、scope id、错误与 map
+                的组装在两个目标之间共享。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>资产 URL 是模板转换，不是字符串替换</h3>
+              <p>
+                <code>&lt;img src="./logo.png"&gt;</code> 会转成 import
+                绑定，而外链、data URL、hash 和 <code>:src</code> 要保留。srcset
+                还含多个 URL/密度描述，必须基于已解析的属性节点处理。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>选项展开顺序允许高层调整</h3>
+              <p>
+                SFC 先给出 module/prefix/hoist 等建议，再展开 compilerOptions。
+                但 nodeTransforms
+                最后被显式重建，确保资产转换不会被整个覆盖，用户插件仍可追加。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>source map 是两段函数的复合</h3>
+              <p>
+                模板编译器给出“生成 code → template block”，parse
+                时给出“template block → 完整 .vue”。mapLines
+                把两层串起来，开发工具才能把 render 中的位置指回用户的模板行。
+              </p>
+            </article>
+          </div>
+          <div class="grid-3">
+            <article class="card">
+              <h3>AST 复用条件</h3>
+              <p>
+                默认 compiler、无改变源码的预处理、parser options 兼容。自定义
+                compiler 或预处理后必须重新解析。
+              </p>
+            </article>
+            <article class="card">
+              <h3>资产 URL</h3>
+              <p>
+                相对 src/href/srcset 变为去重 import；外链、data URL、hash
+                与动态绑定原样保留或按 base 处理。
+              </p>
+            </article>
+            <article class="card">
+              <h3>编译选项</h3>
+              <p>
+                module、prefixIdentifiers、hoistStatic、cacheHandlers、scopeId、hmr
+                与用户 transforms 在此集中合并。
+              </p>
+            </article>
+          </div>
+          <div class="callout">
+            <strong>错误位置回补：</strong>如果传入的是 template block
+            字符串而非完整 SFC AST，编译错误 location 先相对
+            block；compileTemplate 会根据 inMap 把它平移回 .vue 文件。
+          </div>
+          <a
+            class="source-link"
+            href="../../../vue/packages/compiler-sfc/src/compileTemplate.ts"
+            >src/compileTemplate.ts</a
+          >
+        </section>
+
+        <section id="style">
+          <div class="section-head">
+            <div>
+              <span class="section-no">08 / Style</span>
+              <h2>compileStyle：一条 PostCSS 插件管线</h2>
+            </div>
+            <p>
+              预处理语言先把源码变成 CSS；随后内置插件与用户插件依次处理 CSS
+              vars、trim、scoped 和 CSS Modules。
+            </p>
+          </div>
+          <div class="diagram" aria-label="SFC style 编译流程">
+            <p class="diagram-title">doCompileStyle(options)</p>
+            <div class="flow nine">
+              <div class="flow-node">
+                <strong>Preprocessor</strong><small>Sass / Less / Stylus</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node">
+                <strong>CSS v-bind</strong
+                ><small>表达式 → var(--id-name)</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node primary">
+                <strong>Scoped</strong><small>selector + data-v-id</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node">
+                <strong>CSS Modules</strong><small>async + class JSON</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node">
+                <strong>code / map / deps</strong><small>返回构建工具</small>
+              </div>
+            </div>
+          </div>
+
+          <figure class="source-block">
+            <figcaption class="source-caption">
+              <span
+                ><strong>真实源码</strong
+                ><code
+                  >packages/compiler-sfc/src/compileStyle.ts ·
+                  doCompileStyle()</code
+                ></span
+              >
+              <span class="source-version">Vue 3.5.41</span>
+            </figcaption>
+            <pre><code>const preprocessor = preprocessLang &amp;&amp; processors[preprocessLang]
+const preProcessedSource = preprocessor &amp;&amp; preprocess(options, preprocessor)
+const source = preProcessedSource ? preProcessedSource.code : options.source
+
+const shortId = id.replace(/^data-v-/, '')
+const longId = `data-v-${shortId}`
+
+const plugins = (postcssPlugins || []).slice()
+plugins.unshift(cssVarsPlugin({ id: shortId, isProd }))
+if (trim) plugins.push(trimPlugin())
+if (scoped) plugins.push(scopedPlugin(longId))
+
+if (modules) {
+  if (!options.isAsync) {
+    throw new Error(
+      '`modules` option can only be used with compileStyleAsync().',
+    )
+  }
+  plugins.push(postcssModules({
+    ...modulesOptions,
+    getJSON: (_file, json) =&gt; { cssModules = json },
+  }))
+}
+
+const dependencies = new Set(
+  preProcessedSource ? preProcessedSource.dependencies : [],
+)
+dependencies.delete(filename)
+
+const result = postcss(plugins).process(source, postCSSOptions)
+if (options.isAsync) {
+  return result.then(result =&gt; ({
+    code: result.css || '',
+    map: result.map &amp;&amp; result.map.toJSON(),
+    errors,
+    modules: cssModules,
+    dependencies: recordPlainCssDependencies(result.messages),
+  }))
+}
+
+// 读取 .css 强制 LazyResult 同步执行。
+const code = result.css</code></pre>
+          </figure>
+          <div class="code-walkthrough">
+            <article class="code-note">
+              <h3>预处理在 PostCSS 之前</h3>
+              <p>
+                Sass/Less/Stylus 先把自己的语法降成 CSS，后续
+                cssVars/scoped/modules 插件只需处理统一 CSS AST。预处理器 map
+                会作为 PostCSS map 的 prev 继续串联。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>cssVars 插件必须最先安装</h3>
+              <p>
+                <code>v-bind(theme.color)</code> 先变成稳定的 CSS custom
+                property，后续 scoped 选择器改写只处理选择器，CSS Modules
+                也不会误解其中的 JS 表达式。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>CSS Modules 为什么强制异步</h3>
+              <p>
+                postcss-modules 可能加载外部文件并通过异步钩子返回类名映射。
+                同步 API 读取 LazyResult.css
+                时无法等待它，所以提前报错而不是产生不完整 modules。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>dependencies 是 HMR 的输出</h3>
+              <p>
+                Sass <code>@use</code> 和 PostCSS dependency message
+                都被汇总。当其中一个外部文件变化时，Vite/vue-loader 依此重编译该
+                style block。输入文件自身被删除，避免一次修改触发两条监听路径。
+              </p>
+            </article>
+          </div>
+          <div class="source-result">
+            <strong>scoped + CSS vars 产物</strong>
+            <pre><code>输入：.card { color: v-bind(theme.color) }
+scope：data-v-a1b2
+
+CSS：.card[data-v-a1b2] { color: var(--a1b2-theme_color) }
+Script：_useCssVars(_ctx =&gt; ({
+  "a1b2-theme_color": _ctx.theme.color
+}))
+
+选择器隔离与动态值注入通过同一 scope id 会合。</code></pre>
+          </div>
+
+          <div class="grid-2">
+            <article class="card green">
+              <h3>Scoped 选择器重写</h3>
+              <ul>
+                <li>普通选择器插入 [data-v-id]。</li>
+                <li>:deep() 改变 scope 属性插入边界。</li>
+                <li>:slotted() 使用 slotted scope id。</li>
+                <li>:global() 退出局部作用域。</li>
+                <li>keyframes 与 animation 名同步加后缀。</li>
+              </ul>
+            </article>
+            <article class="card amber">
+              <h3>CSS v-bind()</h3>
+              <ul>
+                <li>parse 阶段从所有 style 提取表达式。</li>
+                <li>开发名可读，生产名使用稳定 hash。</li>
+                <li>PostCSS 改为 CSS custom property。</li>
+                <li>script 注入 useCssVars 计算值。</li>
+                <li>SSR 通过模板/props 路径注入。</li>
+              </ul>
+            </article>
+          </div>
+          <p class="prose">
+            dependencies 汇总预处理器 import 与 PostCSS dependency
+            messages，构建工具据此监听
+            HMR。当前文件会从依赖集合移除，避免自身重复触发。
+          </p>
+          <a
+            class="source-link"
+            href="../../../vue/packages/compiler-sfc/src/compileStyle.ts"
+            >src/compileStyle.ts</a
+          >
+          ·
+          <a
+            class="source-link"
+            href="../../../vue/packages/compiler-sfc/src/style/pluginScoped.ts"
+            >style/pluginScoped.ts</a
+          >
+        </section>
+
+        <section id="maps">
+          <div class="section-head">
+            <div>
+              <span class="section-no">09 / Build Integration</span>
+              <h2>映射、缓存、依赖与 HMR</h2>
+            </div>
+            <p>
+              compiler-sfc
+              是底层库，不负责启动开发服务器；但它必须把构建器需要的全部增量信息返回。
+            </p>
+          </div>
+          <div class="grid-2">
+            <article class="card">
+              <h3>两层/多层 Source Map</h3>
+              <div class="diagram">
+                <div class="flow five">
+                  <div class="flow-node">
+                    <strong>生成代码</strong><small>setup/render/CSS</small>
+                  </div>
+                  <div class="arrow">→</div>
+                  <div class="flow-node">
+                    <strong>block</strong><small>预处理后源码</small>
+                  </div>
+                  <div class="arrow">→</div>
+                  <div class="flow-node primary">
+                    <strong>完整 .vue</strong><small>用户编辑位置</small>
+                  </div>
+                </div>
+              </div>
+            </article>
+            <article class="card">
+              <h3>缓存键必须包含语义选项</h3>
+              <p>
+                parse cache、type scope、module resolution、tsconfig 与模板 AST
+                都有缓存。若忽略 compiler/parser/fs/tsconfig
+                等选项，就会出现跨编译污染。
+              </p>
+            </article>
+            <article class="card">
+              <h3>shouldForceReload 的窄职责</h3>
+              <p>
+                它只处理一个特殊比较：script 已相同、仅 template 变化时，TS/TSX
+                script setup 中原先未被模板使用的 import 是否变成已使用。其他
+                HMR 失效策略由构建工具判断。
+              </p>
+            </article>
+            <article class="card">
+              <h3>依赖收集</h3>
+              <p>
+                style imports、type imports、global types、tsconfig references
+                都会反馈给构建器，决定哪些外部文件变化应重编译 SFC。
+              </p>
+            </article>
+          </div>
+          <div class="source-result">
+            <strong>SFC block map 的具体坐标</strong>
+            <pre><code>1 | &lt;template&gt;
+2 |   &lt;p&gt;{{ msg }}&lt;/p&gt;
+3 | &lt;/template&gt;
+4 | &lt;script setup&gt;
+5 | const msg = 'ok'
+6 | &lt;/script&gt;
+
+template block (line 2, column 2) → App.vue (line 2, column 2)
+script block   (line 2, column 6) → App.vue (line 5, column 6)
+
+Source Map API：line 从 1 开始，column 从 0 开始。</code></pre>
+          </div>
+          <p class="source-context">
+            上例先展示 parse 生成的 block → 完整 SFC 映射。compileTemplate
+            若再经过预处理器，会把“生成代码 → 预处理后 block”与这层 map 复合；
+            compileScript 的 MagicString map 同样最终回到 <code>App.vue</code>。
+          </p>
+          <figure class="source-block">
+            <figcaption class="source-caption">
+              <span
+                ><strong>真实源码 · HMR 判定边界</strong
+                ><code>packages/compiler-sfc/src/parse.ts</code></span
+              >
+              <span class="source-version">Vue 3.5.41</span>
+            </figcaption>
+            <pre><code>export function hmrShouldReload(prevImports, next: SFCDescriptor): boolean {
+  if (
+    !next.scriptSetup ||
+    (next.scriptSetup.lang !== 'ts' &amp;&amp; next.scriptSetup.lang !== 'tsx')
+  ) {
+    return false
+  }
+
+  for (const key in prevImports) {
+    if (!prevImports[key].isUsedInTemplate &amp;&amp; isImportUsed(key, next)) {
+      return true
+    }
+  }
+  return false
+}</code></pre>
+          </figure>
+          <div class="callout warn">
+            <strong>缓存类 issue 的阅读方法：</strong
+            >记录同一文件先后以什么模式加载、缓存值是否绑定
+            asGlobal/ownerScope/options、第二次编译是否错误复用了第一次上下文。resolveType
+            测试经常刻意模拟开发服务器顺序。
+          </div>
+        </section>
+
+        <section id="tests">
+          <div class="section-head">
+            <div>
+              <span class="section-no">10 / Tests</span>
+              <h2>SFC 测试是一张功能依赖图</h2>
+            </div>
+            <p>
+              单个宏测试只保护局部语义；compileScript、compileTemplate、compileStyle
+              集成测试保护跨模块组装。
+            </p>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>测试组</th>
+                  <th>主要保护内容</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>compileScript.spec.ts</td>
+                  <td>
+                    普通/setup 合并、imports、bindings、TS、await、inline
+                    template、source map 与默认导出。
+                  </td>
+                </tr>
+                <tr>
+                  <td>define*.spec.ts</td>
+                  <td>
+                    宏提取、擦除、runtime
+                    options、类型推导、重复/混用与提升限制。
+                  </td>
+                </tr>
+                <tr>
+                  <td>definePropsDestructure.spec.ts</td>
+                  <td>
+                    读取改写、默认值、rest、函数/catch/for 作用域与非法赋值。
+                  </td>
+                </tr>
+                <tr>
+                  <td>resolveType.spec.ts</td>
+                  <td>
+                    泛型、联合/交叉、工具类型、跨文件、tsconfig
+                    paths、namespace、缓存与依赖。
+                  </td>
+                </tr>
+                <tr>
+                  <td>compileTemplate.spec.ts</td>
+                  <td>
+                    资产、预处理、scoped/slotted、SSR、AST 复用、自定义 compiler
+                    与错误映射。
+                  </td>
+                </tr>
+                <tr>
+                  <td>compileStyle.spec.ts</td>
+                  <td>
+                    scoped/deep/slotted/global、keyframes、Modules、预处理、map、deps
+                    与错误。
+                  </td>
+                </tr>
+                <tr>
+                  <td>parse.spec.ts</td>
+                  <td>
+                    block、attrs、loc、map、cssVars、slotted、重复和非法组合。
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <figure class="source-block">
+            <figcaption class="source-caption">
+              <span
+                ><strong>真实测试</strong
+                ><code>__tests__/compileScript.spec.ts</code></span
+              >
+              <span class="source-version">Issue #11265 相关场景</span>
+            </figcaption>
+            <pre><code>test('demote const reactive binding to let when used in v-model', () =&gt; {
+  warnOnceMock.mockClear()
+  const { content, bindings } = compile(`
+    &lt;script setup&gt;
+    import { reactive } from 'vue'
+    const name = reactive({ first: 'john', last: 'doe' })
+    &lt;/script&gt;
+
+    &lt;template&gt;
+      &lt;MyComponent v-model="name" /&gt;
+    &lt;/template&gt;
+  `)
+
+  expect(content).toMatch(
+    `let name = reactive({ first: 'john', last: 'doe' })`,
+  )
+  expect(bindings!.name).toBe(BindingTypes.SETUP_LET)
+  expect(warnOnceMock).toHaveBeenCalledWith(
+    expect.stringContaining(
+      '`v-model` cannot update a `const` reactive binding',
+    ),
+  )
+  assertCode(content)
+})</code></pre>
+          </figure>
+          <div class="code-walkthrough">
+            <article class="code-note">
+              <h3>为什么 reactive const 仍可能需要重新赋值</h3>
+              <p>
+                <code>reactive()</code> 返回的对象本身可修改属性，但组件 v-model
+                的 update 事件语义是
+                <code>name = $event</code>，即替换整个绑定。const
+                不允许这种赋值。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>修复跨越 script 和 template</h3>
+              <p>
+                单看 script 只能得到 SETUP_REACTIVE_CONST；compileScript
+                还会扫描已缓存的 template AST，发现 name 是 v-model
+                目标后，把声明从 const 改为 let，并把 bindingMetadata 同步降级为
+                SETUP_LET。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>断言同时保护三层结果</h3>
+              <p>
+                content 保护生成 JS 可赋值，bindings
+                保护模板稍后采用可写路径，warning
+                则让用户知道源声明被编译器调整。只比较代码 snapshot
+                会漏掉后两个协议。
+              </p>
+            </article>
+          </div>
+          <div class="callout">
+            <strong>建议追踪一个宏的完整链条：</strong>processDefineProps →
+            resolveTypeElements → genRuntimeProps → bindingMetadata →
+            compileTemplate transformExpression → runtime props
+            校验。只看宏文件会漏掉一半语义。
+          </div>
+          <a
+            class="source-link"
+            href="../../../vue/packages/compiler-sfc/__tests__/compileScript.spec.ts"
+            >compiler-sfc tests</a
+          >
+        </section>
+
+        <div class="page-links">
+          <a class="page-link" href="dom.html"
+            ><small>上一章</small><strong>← compiler-dom</strong></a
+          ><a class="page-link" href="ssr.html"
+            ><small>下一章</small><strong>compiler-ssr 详解 →</strong></a
+          >
+        </div>
+        <footer class="site-footer">
+          <span>Vue Compiler 源码专题指南</span
+          ><span>compiler-sfc · Script / Template / Style</span>
+        </footer>
+      </main>
+    </div>
+    <script src="assets/app.js"></script>
+  </body>
+</html>

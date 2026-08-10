@@ -1,0 +1,866 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="auto">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Vue Compiler 源码实验、测试地图、源码导航、术语表与常见问题"
+    />
+    <title>实验与术语 · Vue Compiler 指南</title>
+    <link rel="stylesheet" href="assets/styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#content">跳到正文</a>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <a class="brand" href="index.html"
+          ><span class="brand-mark">VC</span><span>Vue Compiler Guide</span></a
+        >
+        <nav class="global-nav" aria-label="全站导航">
+          <a href="index.html">总览</a><a href="core.html">compiler-core</a
+          ><a href="dom.html">compiler-dom</a><a href="sfc.html">compiler-sfc</a
+          ><a href="ssr.html">compiler-ssr</a
+          ><a href="integration.html">端到端串联</a
+          ><a href="evolution.html">演进与设计</a
+          ><a href="lab.html" aria-current="page">实验与术语</a>
+        </nav>
+        <button
+          class="menu-button"
+          data-menu-toggle
+          type="button"
+          aria-expanded="false"
+        >
+          目录</button
+        ><button class="theme-button" data-theme-toggle type="button">
+          自动
+        </button>
+      </div>
+    </header>
+
+    <div class="page-shell">
+      <aside class="rail" aria-label="本页目录">
+        <p class="rail-title">实验与术语</p>
+        <nav>
+          <a href="#content">使用方式</a><a href="#setup">验证命令</a
+          ><a href="#lab-parse">实验一：Parse</a
+          ><a href="#lab-transform">实验二：Transform</a
+          ><a href="#lab-sfc">实验三：SFC</a><a href="#lab-ssr">实验四：SSR</a
+          ><a href="#lab-issue">实验五：Issue</a
+          ><a href="#source-map">源码地图</a><a href="#test-map">测试地图</a
+          ><a href="#glossary">术语表</a><a href="#faq">常见问题</a>
+        </nav>
+        <p class="rail-note">建议方式<br />一次只改<br />一个最小输入</p>
+      </aside>
+
+      <main id="content">
+        <div class="hero compact">
+          <p class="eyebrow">Laboratory · Verify before Memorize</p>
+          <h1>用最小实验<br />验证心智模型</h1>
+          <p class="lead">
+            源码阅读最容易停在“好像懂了”。这些实验把一个模板缩小到单个变量：先预测
+            AST、转换与产物，再用现有测试工具验证。
+          </p>
+          <div class="hero-meta">
+            <span>5 组实验</span><span>源码导航</span><span>测试矩阵</span
+            ><span>核心术语</span>
+          </div>
+        </div>
+
+        <section id="setup">
+          <div class="section-head">
+            <div>
+              <span class="section-no">01 / Setup</span>
+              <h2>先学会只跑相关测试</h2>
+            </div>
+            <p>整个 compiler 测试很快，但单文件/单标题更适合反复观察。</p>
+          </div>
+          <div class="callout">
+            <strong>运行前提：</strong>先进入 Vue 仓库根目录（能看到
+            <code>pnpm-workspace.yaml</code>），使用 Node.js 20
+            或更高版本、仓库锁定的 pnpm，并已执行
+            <code>pnpm install</code>。下面路径都从仓库根计算；若在
+            <code>share/vue/compiler</code>
+            目录直接运行，会找不到测试与配置。
+          </div>
+          <pre><code># 在 Vue 仓库根确认环境
+node --version        # 期望 v20+
+pnpm --version
+test -d node_modules  # 失败则先 pnpm install
+
+# 类型检查
+pnpm check
+
+# 四个 compiler 包
+node node_modules/vitest/vitest.mjs run \
+  packages/compiler-core/__tests__ \
+  packages/compiler-dom/__tests__ \
+  packages/compiler-sfc/__tests__ \
+  packages/compiler-ssr/__tests__ \
+  --project unit
+
+# 单个测试文件
+node node_modules/vitest/vitest.mjs run \
+  packages/compiler-core/__tests__/transforms/vFor.spec.ts \
+  --project unit
+
+# 只跑匹配标题
+node node_modules/vitest/vitest.mjs run \
+  packages/compiler-sfc/__tests__/compileScript/defineProps.spec.ts \
+  --project unit --reporter=verbose \
+  -t "w/ type$"</code></pre>
+          <p class="source-context">
+            标题过滤是正则并匹配包含文件/suite
+            前缀的完整测试名，因此只锚定末尾； 本命令在 3.5.41 应显示
+            <code>defineProps &gt; w/ type</code> 且汇总为 1
+            passed。只看退出码不够： 拼错 <code>-t</code> 时，Vitest 可能报告 0
+            tests，却仍未替你验证目标断言。
+          </p>
+          <div class="grid-3">
+            <article class="card">
+              <h3>优先复制现有测试</h3>
+              <p>
+                它已经准备好 compiler options、AST
+                断言与快照规范，减少环境噪音。
+              </p>
+            </article>
+            <article class="card">
+              <h3>同时看三个结果</h3>
+              <p>
+                parse AST、transform/codegenNode、最终
+                code。不要只盯字符串快照。
+              </p>
+            </article>
+            <article class="card">
+              <h3>一次改变一个变量</h3>
+              <p>
+                静态指令参数 <code>:id</code> → 动态参数
+                <code>:[name]</code>、顶层绑定 → 局部绑定、单根 →
+                多根，差异最清晰。
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section id="lab-parse">
+          <div class="section-head">
+            <div>
+              <span class="section-no">02 / Lab 1</span>
+              <h2>Parse：手画 AST，再看 location</h2>
+            </div>
+            <p>
+              目标是区分 tokenizer 边界、parser 组装与平台
+              options，而不是记住所有状态。
+            </p>
+          </div>
+          <pre><code>&lt;svg&gt;
+  &lt;foreignObject&gt;
+    &lt;div :id="key"&gt;{{ value }}&lt;/div&gt;
+  &lt;/foreignObject&gt;
+&lt;/svg&gt;</code></pre>
+          <div class="steps">
+            <div class="step">
+              <h3>先预测节点类型</h3>
+              <p>
+                Root → Element(svg) → Element(foreignObject) → Element(div) →
+                Interpolation。
+              </p>
+            </div>
+            <div class="step">
+              <h3>预测 namespace</h3>
+              <p>
+                svg 与 foreignObject 属于 SVG；foreignObject 的 child div 回到
+                HTML。
+              </p>
+            </div>
+            <div class="step">
+              <h3>拆 Directive</h3>
+              <p>
+                :id 归一化为 Directive(bind)，arg 是静态属性名 id，exp
+                是动态属性值 表达式 key。只有 <code>:[key]="value"</code> 的 arg
+                才是动态参数。
+              </p>
+            </div>
+            <div class="step">
+              <h3>核对 location</h3>
+              <p>
+                检查 div、arg、exp、interpolation 的 source 与 offset
+                是否只覆盖对应片段。
+              </p>
+            </div>
+            <div class="step">
+              <h3>制造残缺输入</h3>
+              <p>
+                删除最后两个结束标签，观察 errors 与恢复 AST；再比较 IDE
+                为什么仍可使用该结构。
+              </p>
+            </div>
+          </div>
+          <div class="callout">
+            <strong>观察点：</strong>namespace 是 parser options
+            的父上下文计算；Directive 的拆分由 tokenizer 状态完成；错误恢复后
+            root.loc 仍覆盖完整输入。
+          </div>
+          <div class="source-result">
+            <strong>用半开区间核对坐标</strong>
+            <pre><code>&lt;div :id="key"&gt;{{ value }}&lt;/div&gt;
+01234567890123456789012345678901
+
+Directive.loc  [5, 14)  → :id="key"
+arg.loc        [6,  8)  → id
+exp.loc        [10, 13) → key
+
+start.offset 包含起点，end.offset 指向片段后一位；
+行/列用于报错展示，offset 用于 MagicString 精确改写。</code></pre>
+          </div>
+          <a
+            class="source-link"
+            href="../../../vue/packages/compiler-dom/__tests__/parse.spec.ts"
+            >从 DOM parse 测试开始</a
+          >
+        </section>
+
+        <section id="lab-transform">
+          <div class="section-head">
+            <div>
+              <span class="section-no">03 / Lab 2</span>
+              <h2>Transform：证明顺序为什么不能交换</h2>
+            </div>
+            <p>选择同时包含 v-for 局部变量、事件闭包与动态文本的模板。</p>
+          </div>
+          <pre><code>&lt;button
+  v-for="(item, index) in items"
+  :key="item.id"
+  @click="select(item, index)"
+&gt;
+  {{ item.label }}
+&lt;/button&gt;</code></pre>
+          <div class="grid-2">
+            <article class="card green">
+              <h3>进入 v-for 后</h3>
+              <ul>
+                <li>原 Element 被 ForNode 包裹。</li>
+                <li>source=items。</li>
+                <li>item/index 加入 identifiers。</li>
+                <li>子元素保留 key 指令等待元素转换。</li>
+              </ul>
+            </article>
+            <article class="card blue">
+              <h3>离开子元素后</h3>
+              <ul>
+                <li>item/index 不加 _ctx。</li>
+                <li>items/select 加上下文访问。</li>
+                <li>handler 捕获循环 scope，不能全局 cache。</li>
+                <li>Fragment 根据 key 选择 KEYED_FRAGMENT。</li>
+              </ul>
+            </article>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>尝试变化</th>
+                  <th>预期变化</th>
+                  <th>对应源码</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>删除 :key</td>
+                  <td>Fragment 从 KEYED 变 UNKEYED</td>
+                  <td>vFor.ts</td>
+                </tr>
+                <tr>
+                  <td>handler 不引用 item/index</td>
+                  <td>在允许条件下更可能 cache</td>
+                  <td>vOn.ts + hasScopeRef</td>
+                </tr>
+                <tr>
+                  <td>把 item.label 换静态文本</td>
+                  <td>子 VNode 不再需要 TEXT flag</td>
+                  <td>transformText / transformElement</td>
+                </tr>
+                <tr>
+                  <td>外套 v-if</td>
+                  <td>结构转换形成 IfNode 与 ForNode 嵌套</td>
+                  <td>vIf.ts + vFor.ts 顺序</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <a
+            class="source-link"
+            href="../../../vue/packages/compiler-core/__tests__/transforms/vFor.spec.ts"
+            >从 v-for 测试开始</a
+          >
+        </section>
+
+        <section id="lab-sfc">
+          <div class="section-head">
+            <div>
+              <span class="section-no">04 / Lab 3</span>
+              <h2>SFC：跟踪一个绑定的身份变化</h2>
+            </div>
+            <p>
+              同一个名字在 script、template、style
+              三条分支里有不同表达，但依赖同一 binding metadata。
+            </p>
+          </div>
+          <pre><code>&lt;script setup lang="ts"&gt;
+const { color = 'red' } = defineProps&lt;{
+  color?: string
+}&gt;()
+&lt;/script&gt;
+
+&lt;template&gt;&lt;div class="box"&gt;{{ color }}&lt;/div&gt;&lt;/template&gt;
+&lt;style scoped&gt;.box { color: v-bind(color); }&lt;/style&gt;</code></pre>
+          <div class="diagram" aria-label="color 绑定跨分支流动">
+            <p class="diagram-title">同一个 color 的三种落点</p>
+            <div class="branch">
+              <div class="flow-node primary">
+                <strong>defineProps color</strong
+                ><small>PROPS + String + default</small>
+              </div>
+              <div class="branch-lines">↗<br />→<br />↘</div>
+              <div class="branch-targets">
+                <div class="branch-target">
+                  <strong>Script</strong>
+                  <p>读取改成 __props.color；默认值进入 runtime props。</p>
+                </div>
+                <div class="branch-target">
+                  <strong>Template</strong>
+                  <p>插值直接访问 props/binding，不经普通实例代理。</p>
+                </div>
+                <div class="branch-target">
+                  <strong>Style</strong>
+                  <p>v-bind(color) → var(--id-color)，useCssVars 提供值。</p>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="callout warn">
+            <strong>实验变化：</strong>把 color 默认值改成函数、对象或 imported
+            value，观察默认值是否需要工厂包装/skip
+            marker，以及宏提升限制何时报告错误。
+          </div>
+          <a
+            class="source-link"
+            href="../../../vue/packages/compiler-sfc/__tests__/compileScript/definePropsDestructure.spec.ts"
+            >props 解构测试</a
+          >
+          ·
+          <a
+            class="source-link"
+            href="../../../vue/packages/compiler-sfc/__tests__/cssVars.spec.ts"
+            >CSS vars 测试</a
+          >
+        </section>
+
+        <section id="lab-ssr">
+          <div class="section-head">
+            <div>
+              <span class="section-no">05 / Lab 4</span>
+              <h2>SSR：比较产物，不比较实现</h2>
+            </div>
+            <p>
+              用同一模板对照 DOM render 与 SSR
+              _push，找出两边共同维护的节点协议。
+            </p>
+          </div>
+          <pre><code>&lt;ul v-if="ok" class="list"&gt;
+  &lt;li v-for="item in items" :key="item.id"&gt;
+    {{ item.name }}
+  &lt;/li&gt;
+&lt;/ul&gt;</code></pre>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>语义</th>
+                  <th>客户端</th>
+                  <th>SSR</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>v-if</td>
+                  <td>条件 VNode block 与分支 key</td>
+                  <td>if statement；无 else 时注释占位</td>
+                </tr>
+                <tr>
+                  <td>v-for</td>
+                  <td>renderList + keyed Fragment</td>
+                  <td>ssrRenderList + Fragment 注释边界</td>
+                </tr>
+                <tr>
+                  <td>静态 class</td>
+                  <td>静态 props，可提升</td>
+                  <td>直接进入开始标签字符串</td>
+                </tr>
+                <tr>
+                  <td>插值</td>
+                  <td>toDisplayString + TEXT flag</td>
+                  <td>ssrInterpolate + HTML 转义</td>
+                </tr>
+                <tr>
+                  <td>key</td>
+                  <td>参与客户端 diff</td>
+                  <td>通常不输出 HTML 属性，但节点顺序仍要一致</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="callout">
+            <strong>核心问题：</strong>哪些差异只是目标不同，哪些差异会破坏
+            hydration？key 不出现在 HTML 中是正常差异；漏掉列表 Fragment
+            边界可能是拓扑错误。
+          </div>
+          <a
+            class="source-link"
+            href="../../../vue/packages/compiler-ssr/__tests__/ssrVFor.spec.ts"
+            >从 SSR v-for 测试开始</a
+          >
+        </section>
+
+        <section id="lab-issue">
+          <div class="section-head">
+            <div>
+              <span class="section-no">06 / Lab 5</span>
+              <h2>Issue：从最小回归倒推不变量</h2>
+            </div>
+            <p>选择已有 issue 注释，不先看修复代码，按失败类型建立假设。</p>
+          </div>
+          <div class="steps">
+            <div class="step">
+              <h3>读测试标题与中文场景注释</h3>
+              <p>提取输入、错误表现、涉及的两个以上特性。</p>
+            </div>
+            <div class="step">
+              <h3>归类失败模式</h3>
+              <p>
+                状态泄漏、作用域误判、结构邻接、平台修正、优化过度、同构错位。
+              </p>
+            </div>
+            <div class="step">
+              <h3>找最早错误阶段</h3>
+              <p>
+                先比较 descriptor/parse AST，再比较
+                codegenNode，最后才看生成代码。
+              </p>
+            </div>
+            <div class="step">
+              <h3>预测修复点</h3>
+              <p>
+                是补 reset/cache key，还是调整 transform enter/exit，或降低
+                ConstantTypes？
+              </p>
+            </div>
+            <div class="step">
+              <h3>再看 git blame/log</h3>
+              <p>确认修复为何位于该层，并检查后续是否有同类回归。</p>
+            </div>
+          </div>
+          <div class="grid-3">
+            <article class="card">
+              <h3>推荐一：表达式作用域</h3>
+              <p>
+                从 transformExpressions、vOn 或 props destructure
+                中选择函数参数/解构 issue。
+              </p>
+            </article>
+            <article class="card">
+              <h3>推荐二：类型缓存</h3>
+              <p>
+                从 resolveType 中选择 global scope、tsconfig 或先后编译顺序
+                issue。
+              </p>
+            </article>
+            <article class="card">
+              <h3>推荐三：Hydration</h3>
+              <p>
+                从 TransitionGroup、HTML nesting、fallthrough attrs 中选择边界
+                issue。
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section id="source-map">
+          <div class="section-head">
+            <div>
+              <span class="section-no">07 / Source Map</span>
+              <h2>按问题导航源码</h2>
+            </div>
+            <p>先找到决策层，再看数据生产者与消费者。</p>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>我想理解</th>
+                  <th>第一站</th>
+                  <th>随后阅读</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>模板如何识别</td>
+                  <td>
+                    <a href="../../../vue/packages/compiler-core/src/tokenizer.ts"
+                      >tokenizer.ts</a
+                    >
+                  </td>
+                  <td>parser.ts、parse.spec.ts</td>
+                </tr>
+                <tr>
+                  <td>AST 字段含义</td>
+                  <td>
+                    <a href="../../../vue/packages/compiler-core/src/ast.ts">ast.ts</a>
+                  </td>
+                  <td>对应 create* 工厂与 transform 测试</td>
+                </tr>
+                <tr>
+                  <td>插件如何遍历</td>
+                  <td>
+                    <a href="../../../vue/packages/compiler-core/src/transform.ts"
+                      >transform.ts</a
+                    >
+                  </td>
+                  <td>compile.ts 的 transform 顺序</td>
+                </tr>
+                <tr>
+                  <td>为什么加 _ctx</td>
+                  <td>
+                    <a
+                      href="../../../vue/packages/compiler-core/src/transforms/transformExpression.ts"
+                      >transformExpression.ts</a
+                    >
+                  </td>
+                  <td>babelUtils.ts、binding metadata</td>
+                </tr>
+                <tr>
+                  <td>PatchFlags 从哪来</td>
+                  <td>
+                    <a
+                      href="../../../vue/packages/compiler-core/src/transforms/transformElement.ts"
+                      >transformElement.ts</a
+                    >
+                  </td>
+                  <td>cacheStatic.ts、runtime renderer</td>
+                </tr>
+                <tr>
+                  <td>DOM 指令差异</td>
+                  <td>
+                    <a href="../../../vue/packages/compiler-dom/src/index.ts"
+                      >compiler-dom/index.ts</a
+                    >
+                  </td>
+                  <td>transforms/vModel.ts、vOn.ts</td>
+                </tr>
+                <tr>
+                  <td>script setup 如何生成</td>
+                  <td>
+                    <a href="../../../vue/packages/compiler-sfc/src/compileScript.ts"
+                      >compileScript.ts</a
+                    >
+                  </td>
+                  <td>context.ts、define*.ts</td>
+                </tr>
+                <tr>
+                  <td>宏类型如何展开</td>
+                  <td>
+                    <a
+                      href="../../../vue/packages/compiler-sfc/src/script/resolveType.ts"
+                      >resolveType.ts</a
+                    >
+                  </td>
+                  <td>defineProps.ts、resolveType.spec.ts</td>
+                </tr>
+                <tr>
+                  <td>scoped CSS</td>
+                  <td>
+                    <a
+                      href="../../../vue/packages/compiler-sfc/src/style/pluginScoped.ts"
+                      >pluginScoped.ts</a
+                    >
+                  </td>
+                  <td>compileStyle.ts、cssVars.ts</td>
+                </tr>
+                <tr>
+                  <td>SSR 为什么多注释</td>
+                  <td>
+                    <a
+                      href="../../../vue/packages/compiler-ssr/src/ssrCodegenTransform.ts"
+                      >ssrCodegenTransform.ts</a
+                    >
+                  </td>
+                  <td>ssrVIf.ts、ssrVFor.ts、TransitionGroup</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="test-map">
+          <div class="section-head">
+            <div>
+              <span class="section-no">08 / Test Map</span>
+              <h2>测试断言类型与适用问题</h2>
+            </div>
+            <p>选择错误的断言层，会让测试看似通过却未保护真正不变量。</p>
+          </div>
+          <div class="grid-3">
+            <article class="card">
+              <h3>AST 结构断言</h3>
+              <p>
+                适合 parser、单个 transform、location 与结构指令。检查
+                type/props/children/codegenNode。
+              </p>
+            </article>
+            <article class="card">
+              <h3>生成代码快照</h3>
+              <p>
+                适合 helper、hoist、PatchFlags、函数模式、SSR _push
+                与跨转换组装。
+              </p>
+            </article>
+            <article class="card">
+              <h3>可执行语义断言</h3>
+              <p>
+                适合生成代码是否可解析、HTML 解码、PostCSS、source map
+                与构建依赖。
+              </p>
+            </article>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>包</th>
+                  <th>优先测试入口</th>
+                  <th>最能说明设计的组</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>compiler-core</td>
+                  <td>compile / parse / transform</td>
+                  <td>
+                    transformExpressions、transformElement、cacheStatic、vIf/vFor/vSlot
+                  </td>
+                </tr>
+                <tr>
+                  <td>compiler-dom</td>
+                  <td>index / parse</td>
+                  <td>stringifyStatic、vModel、vOn、validateHtmlNesting</td>
+                </tr>
+                <tr>
+                  <td>compiler-sfc</td>
+                  <td>parse / compileScript</td>
+                  <td>
+                    definePropsDestructure、resolveType、compileTemplate、compileStyle
+                  </td>
+                </tr>
+                <tr>
+                  <td>compiler-ssr</td>
+                  <td>ssrElement / ssrComponent</td>
+                  <td>
+                    scopeId、fallthrough
+                    attrs、VIf/VFor、Teleport/Suspense/TransitionGroup
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="glossary">
+          <div class="section-head">
+            <div>
+              <span class="section-no">09 / Glossary</span>
+              <h2>核心术语</h2>
+            </div>
+            <p>这些词在不同文件中反复出现；理解协议含义比翻译名称更重要。</p>
+          </div>
+          <div class="grid-2">
+            <article class="card">
+              <h3>Template AST</h3>
+              <p>
+                parser 产出的模板语义树，包含
+                Element/Directive/If/For/Interpolation 与 location。
+              </p>
+            </article>
+            <article class="card">
+              <h3>Codegen Node</h3>
+              <p>
+                transform 挂到模板节点上的输出意图；通常是 VNodeCall 或 JS AST
+                节点。
+              </p>
+            </article>
+            <article class="card">
+              <h3>NodeTransform</h3>
+              <p>
+                在 AST
+                进入阶段执行、可返回退出回调的插件。顺序和退出逆序都具有语义。
+              </p>
+            </article>
+            <article class="card">
+              <h3>DirectiveTransform</h3>
+              <p>
+                按指令名调用，返回 props 和可选 runtime
+                directive；平台可覆盖同名实现。
+              </p>
+            </article>
+            <article class="card">
+              <h3>TransformContext</h3>
+              <p>
+                遍历共享账本：位置、作用域、helpers、components、hoists、cache
+                与树操作。
+              </p>
+            </article>
+            <article class="card">
+              <h3>Runtime Helper</h3>
+              <p>
+                以 symbol 登记的运行时能力，如
+                createElementBlock、renderList、toDisplayString。
+              </p>
+            </article>
+            <article class="card">
+              <h3>PatchFlag</h3>
+              <p>编译器给 runtime 的动态维度位标记，决定精确 patch 分支。</p>
+            </article>
+            <article class="card">
+              <h3>Block</h3>
+              <p>收集动态后代的 VNode 边界；运行时可跳过中间静态树。</p>
+            </article>
+            <article class="card">
+              <h3>ConstantTypes</h3>
+              <p>
+                表达式/节点静态性等级，决定 skip patch、cache、hoist 或
+                stringify。
+              </p>
+            </article>
+            <article class="card">
+              <h3>Binding Metadata</h3>
+              <p>
+                SFC 脚本给模板的变量身份表，区分 props、ref、maybe
+                ref、let、const。
+              </p>
+            </article>
+            <article class="card">
+              <h3>SFCDescriptor</h3>
+              <p>
+                完整 .vue 的结构描述，连接 parse、script/template/style 编译与
+                HMR。
+              </p>
+            </article>
+            <article class="card">
+              <h3>TypeScope</h3>
+              <p>
+                compiler-sfc
+                类型解析作用域，保存声明、imports、owner、文件、依赖与缓存。
+              </p>
+            </article>
+            <article class="card">
+              <h3>ScopeId</h3>
+              <p>
+                scoped CSS 的 data-v-* 标识，需要在 CSS、客户端 VNode、SSR 与
+                slot 中一致传播。
+              </p>
+            </article>
+            <article class="card">
+              <h3>Hydration Boundary</h3>
+              <p>
+                SSR 用注释/元素表示的节点范围，使客户端能把 VNode 树对齐到现有
+                DOM。
+              </p>
+            </article>
+            <article class="card">
+              <h3>Hoist</h3>
+              <p>
+                把值提升出 render。Vue 3.5.41 主要用于稳定 props 与 dynamicProps
+                键名数组；稳定 VNode/children 改用实例
+                <code>_cache</code>，不要把两者混为一谈。
+              </p>
+            </article>
+            <article class="card">
+              <h3>Preamble</h3>
+              <p>
+                render 主体之前的 helper imports、hoists 与 setup inline 序言。
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section id="faq">
+          <div class="section-head">
+            <div>
+              <span class="section-no">10 / FAQ</span>
+              <h2>常见理解误区</h2>
+            </div>
+            <p>把这些边界分清，源码阅读会少绕很多路。</p>
+          </div>
+          <details open>
+            <summary>为什么 codegen 看起来没有太多“智能”？</summary>
+            <div>
+              因为动态性、结构、helper 和 codegenNode 已由 transform
+              决定。codegen 的责任是稳定打印与映射，而不是重新分析模板。
+            </div>
+          </details>
+          <details>
+            <summary>
+              compiler-dom 为什么还要依赖 compiler-core 的 v-model？
+            </summary>
+            <div>
+              core 先处理可赋值表达式、modelValue 与 update handler；DOM
+              再按元素类型选择表单
+              helper。两层分别表达通用组件协议与原生控件语义。
+            </div>
+          </details>
+          <details>
+            <summary>script setup 宏为什么只能在顶层使用？</summary>
+            <div>
+              宏参与组件 options 与 setup
+              签名生成，需要静态、唯一且可提升地分析。嵌套在条件/函数中会让编译期无法建立稳定组件契约。
+            </div>
+          </details>
+          <details>
+            <summary>为什么 SSR 还需要 VNode fallback？</summary>
+            <div>
+              组件 slot 在某些无 _push 的调用路径仍要提供普通 VNode 形式。SSR
+              直接输出和 VNode fallback 共享 slot 语义，但目标不同。
+            </div>
+          </details>
+          <details>
+            <summary>为什么测试里有大量看似非法的模板？</summary>
+            <div>
+              IDE 编辑时模板经常处于临时非法状态；parser 必须尽量恢复稳定 AST 和
+              location。另一些输入用于锁定 HTML 标准容错或安全边界。
+            </div>
+          </details>
+          <details>
+            <summary>阅读时要不要把所有枚举值背下来？</summary>
+            <div>
+              不用。先掌握分类与消费者：NodeTypes 连接 AST 分派，ErrorCodes
+              连接诊断，PatchFlags 连接 runtime，State 连接
+              tokenizer。遇到分支再查具体成员。
+            </div>
+          </details>
+        </section>
+
+        <div class="page-links">
+          <a class="page-link" href="evolution.html"
+            ><small>上一章</small><strong>← 演进与设计</strong></a
+          ><a class="page-link" href="index.html"
+            ><small>回到起点</small><strong>专题总览 →</strong></a
+          >
+        </div>
+        <footer class="site-footer">
+          <span>Vue Compiler 源码专题指南</span
+          ><span>Laboratory · Source Map · Glossary</span>
+        </footer>
+      </main>
+    </div>
+    <script src="assets/app.js"></script>
+  </body>
+</html>

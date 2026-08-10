@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="packages/shared 源码指南：React 身份标记、Flow 契约、内部桥、Feature Flags 与诊断工具。" />
+  <title>01 · shared：身份与跨包契约</title>
+  <link rel="stylesheet" href="assets/guide.css?v=1" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="index.html">React 六包源码指南</a>
+      <nav class="pager" aria-label="页面导航">
+        <a href="index.html">地图</a>
+        <a aria-current="page" href="01-shared.html">shared</a>
+        <a href="02-scheduler.html">scheduler</a>
+        <a href="03-react.html">react</a>
+        <a href="04-reconciler-render.html">render</a>
+        <a href="05-reconciler-commit.html">commit</a>
+        <a href="06-dom-bindings.html">bindings</a>
+        <a href="07-react-dom.html">react-dom</a>
+        <a href="08-end-to-end.html">主线</a>
+        <a href="09-evidence.html">证据</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="layout">
+    <main>
+      <p class="eyebrow">01 · Foundation</p>
+      <h1>shared：让六个包说同一种语言</h1>
+      <p class="lede">
+        <code>packages/shared</code> 不驱动一次 render，却决定元素如何被识别、跨包对象长什么样、
+        哪些实验路径进入构建，以及开发期错误怎样指向真正的调用现场。
+      </p>
+      <div class="meta">
+        <span class="pill">54 个可解析源码文件</span>
+        <span class="pill">815 个结构声明</span>
+        <span class="pill">runtime + Flow contracts</span>
+        <span class="pill">包版本 0.0.0 / React 19.3.0</span>
+      </div>
+
+      <section id="boundary">
+        <h2>结论与边界</h2>
+        <div class="grid three">
+          <article class="card"><span class="number">IDENTITY</span><h3>全局 Symbol 是分派协议</h3><p>JSX、reconciler、DevTools 和 renderer 依赖相同标记判断元素种类；它不是供业务计算的枚举值。</p></article>
+          <article class="card"><span class="number">CONTRACT</span><h3>Flow 类型是设计文档</h3><p><code>ReactTypes.js</code> 描述 element、context、portal、cache 与 transition 等跨包形状，构建后被擦除。</p></article>
+          <article class="card"><span class="number">POLICY</span><h3>flags 是构建策略，不是状态库</h3><p>默认常量和平台 fork 让打包器选择路径并消除死代码；动态 variant 只在特定内部/测试构建保留双态。</p></article>
+        </div>
+        <div class="callout">
+          <p><strong>不负责：</strong>shared 不持有 FiberRoot、不决定 Lane、不安排 host callback，也不执行 DOM mutation。
+          它提供“词汇、约束和小型无状态工具”，生命周期仍由消费方拥有。</p>
+        </div>
+      </section>
+
+      <section id="map">
+        <h2>按职责阅读，而不是按文件名阅读</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>职责区</th><th>决定性源码</th><th>输入 → 输出</th><th>主要消费者</th></tr></thead>
+            <tbody>
+              <tr><td>身份协议</td><td><a href="../../react/packages/shared/ReactSymbols.js">ReactSymbols.js</a></td><td>类型语义 → 稳定 Symbol</td><td>react、reconciler、renderers、DevTools</td></tr>
+              <tr><td>跨包形状</td><td><a href="../../react/packages/shared/ReactTypes.js">ReactTypes.js</a>、<a href="../../react/packages/shared/ReactElementType.js">ReactElementType.js</a></td><td>对象职责 → Flow 契约</td><td>几乎所有核心包</td></tr>
+              <tr><td>私有桥</td><td><a href="../../react/packages/shared/ReactSharedInternals.js">ReactSharedInternals.js</a>、<a href="../../react/packages/shared/ReactInstanceMap.js">ReactInstanceMap.js</a></td><td>公开包/实例 → 私有 dispatcher 或 Fiber</td><td>reconciler、DOM renderer</td></tr>
+              <tr><td>构建策略</td><td><a href="../../react/packages/shared/ReactFeatureFlags.js">ReactFeatureFlags.js</a> 与 forks</td><td>目标环境 → 常量集合</td><td>构建器与条件分支</td></tr>
+              <tr><td>诊断与兼容</td><td><a href="../../react/packages/shared/CheckStringCoercion.js">CheckStringCoercion.js</a>、stack/error/console helpers</td><td>低层失败 → 可定位错误</td><td>react、reconciler、DOM bindings</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="symbols">
+        <h2>身份协议：为什么不是字符串常量</h2>
+        <p>
+          元素记录只是普通 JavaScript 对象。若仅凭字段猜测，用户对象可能被误判；若每份 bundle 创建局部 Symbol，
+          多副本 React 又不能互认。<code>Symbol.for</code> 在同一 realm 的全局注册表中复用身份，字符串名称同时成为
+          renderer 与 DevTools 的跨包约定。
+        </p>
+        <figure class="source">
+          <figcaption><span>删节源码 · ReactSymbols.js</span><a href="../../react/packages/shared/ReactSymbols.js">打开文件</a></figcaption>
+          <pre><span class="kw">export const</span> REACT_ELEMENT_TYPE: symbol = Symbol.for(
+  <span class="str">'react.transitional.element'</span>,
+);
+<span class="kw">export const</span> REACT_PORTAL_TYPE: symbol = Symbol.for(<span class="str">'react.portal'</span>);
+<span class="kw">export const</span> REACT_CONTEXT_TYPE: symbol = Symbol.for(<span class="str">'react.context'</span>);</pre>
+        </figure>
+        <p>
+          这里的“不变量”是<strong>每种语义一个唯一标记</strong>。仓库测试遍历全部导出，以 Symbol 值建立反向 Map；
+          一旦两个名称碰撞就立即抛错。这证明的是分派身份唯一，并不证明每个实验类型在所有构建中都可公开使用。
+        </p>
+        <figure class="source">
+          <figcaption><span>连续测试原码 · ReactSymbols-test.internal.js</span><a href="../../react/packages/shared/__tests__/ReactSymbols-test.internal.js">打开测试</a></figcaption>
+          <pre>  <span class="fn">it</span>(<span class="str">'Symbol values should be unique'</span>, () =&gt; {
+    expectToBeUnique(Object.entries(require(<span class="str">'shared/ReactSymbols'</span>)));
+  });</pre>
+        </figure>
+
+        <h3>iterator 是同一协议层的兼容例子</h3>
+        <p>
+          <code>getIteratorFn</code> 先拒绝 null/primitive，再读取标准 <code>Symbol.iterator</code> 或早期
+          <code>@@iterator</code>。它返回“工厂函数”而非直接开始遍历，所以 children 消费者仍拥有调用时机、异常与迭代器清理。
+        </p>
+      </section>
+
+      <section id="contracts">
+        <h2>核心对象：运行时记录与静态契约要分开</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>对象</th><th>创建者</th><th>持有者 / 生命周期</th><th>shared 的角色</th></tr></thead>
+            <tbody>
+              <tr><td>ReactElement</td><td>react JSX/element 工厂</td><td>用户树、props/children 引用；被协调后可丢弃</td><td>定义形状与 <code>$$typeof</code> 身份</td></tr>
+              <tr><td>ReactPortal</td><td>react-dom portal 入口</td><td>更新树持有到删除</td><td>定义目标容器与实现字段的共享形状</td></tr>
+              <tr><td>ReactContext</td><td><code>createContext</code></td><td>模块/应用通常长生命周期持有</td><td>定义 Provider/Consumer 与 renderer value 槽</td></tr>
+              <tr><td>ReactCache</td><td>reconciler cache 路径</td><td>root/边界 retain-release 管理</td><td>定义 data map、refCount 与 abort controller 契约</td></tr>
+              <tr><td>Transition</td><td>startTransition / reconciler</td><td>一次异步动作组</td><td>定义 name、startTime、types 等跨层元数据</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Flow exact object、variance 与 opaque type 是源码契约的一部分，但浏览器不会执行它们。
+          因此“字段存在于 <code>ReactTypes.js</code>”不能单独证明运行时一定写入；还要回到创建函数与消费函数核验。
+        </p>
+      </section>
+
+      <section id="bridges">
+        <h2>私有桥：减少全局状态，而不是消除耦合</h2>
+        <h3>ReactSharedInternals</h3>
+        <p>
+          shared 从公开 <code>react</code> 包取出刻意命名为不可公开依赖的 internals 对象。hooks facade 读取当前 dispatcher、
+          transition/act 等代码共享当前上下文；对象由 React 客户端包创建，shared 只转交引用。
+        </p>
+        <figure class="source">
+          <figcaption><span>删节源码 · ReactSharedInternals.js</span><a href="../../react/packages/shared/ReactSharedInternals.js">打开文件</a></figcaption>
+          <pre><span class="kw">const</span> ReactSharedInternals =
+  React.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
+
+<span class="kw">export default</span> ReactSharedInternals;</pre>
+        </figure>
+
+        <h3>ReactInstanceMap</h3>
+        <p>
+          class component 的公开实例需要让 <code>setState</code> 等入口回到当前 Fiber。实现没有维护额外 Map，
+          而是在实例的 <code>_reactInternals</code> 字段上直接安装引用：实例自己决定可达性，renderer 在挂载/切换时负责更新。
+        </p>
+        <figure class="source">
+          <figcaption><span>删节源码 · ReactInstanceMap.js</span><a href="../../react/packages/shared/ReactInstanceMap.js">打开文件</a></figcaption>
+          <pre><span class="kw">export function</span> <span class="fn">get</span>(key) {
+  <span class="kw">return</span> key._reactInternals;
+}
+<span class="kw">export function</span> <span class="fn">set</span>(key, value) {
+  key._reactInternals = value;
+}</pre>
+        </figure>
+        <div class="callout warn">
+          <p>这条桥是私有实现细节。它说明当前 class 实例怎样回到 Fiber，不构成第三方代码可稳定读取
+          <code>_reactInternals</code> 的兼容承诺。</p>
+        </div>
+      </section>
+
+      <section id="flags">
+        <h2>Feature Flags：一份语义，多组构建值</h2>
+        <p>
+          默认文件按“可落地/可删除、killswitch、持续实验、下一主版本”等维护阶段组织开关；fork 为 WWW、React Native、
+          test renderer 等目标给出不同常量。静态 export 让条件分支可被编译器折叠，这是 flags 保持简单常量而非运行时配置中心的主要收益。
+        </p>
+        <div class="grid">
+          <article class="card">
+            <span class="number">OPEN SOURCE DEFAULT</span>
+            <h3>明确稳定默认</h3>
+            <p>例如浏览器 API、fragment refs、legacy context 等路径在默认文件中直接取布尔常量或 <code>__EXPERIMENTAL__</code>。</p>
+          </article>
+          <article class="card">
+            <span class="number">INTERNAL VARIANT</span>
+            <h3>同一测试跑两态</h3>
+            <p><code>www-dynamic</code> 用 <code>__VARIANT__</code> 模拟 gatekeeper，测试配置分别以 true/false 执行，暴露只在一态失败的分支。</p>
+          </article>
+        </div>
+        <figure class="source">
+          <figcaption><span>删节源码 · ReactFeatureFlags.www-dynamic.js</span><a href="../../react/packages/shared/forks/ReactFeatureFlags.www-dynamic.js">打开文件</a></figcaption>
+          <pre><span class="kw">export const</span> enableObjectFiber: boolean = __VARIANT__;
+<span class="kw">export const</span> enableRetryLaneExpiration: boolean = __VARIANT__;
+<span class="kw">export const</span> enableViewTransition: boolean = __VARIANT__;
+<span class="kw">export const</span> retryLaneExpirationMs = 5000;</pre>
+        </figure>
+        <p>
+          fork 差异必须与消费点一起解释：<code>enableObjectFiber</code> 改变 Fiber 的创建表示，
+          <code>enableRetryLaneExpiration</code> 改变饥饿恢复策略，<code>enableViewTransition</code> 打开跨 reconciler/DOM 的整条机制。
+          只看 true/false 无法推导用户可观察行为。
+        </p>
+      </section>
+
+      <section id="diagnostics">
+        <h2>诊断路径：先解释，再故意触发同一个错误</h2>
+        <p>
+          生产热路径常用 <code>'' + value</code>；Symbol、Temporal 或自定义 primitive conversion 可能在这里抛错。
+          开发构建先探测 coercion，打印“值被当作 key/attribute/CSS 等”的上下文，再执行同样表达式抛出，
+          于是调用栈仍指向真实 React 入口，而不是被一个替代转换吞掉。
+        </p>
+        <figure class="source">
+          <figcaption><span>删节源码 · CheckStringCoercion.js</span><a href="../../react/packages/shared/CheckStringCoercion.js">打开文件</a></figcaption>
+          <pre><span class="kw">function</span> <span class="fn">willCoercionThrow</span>(value: mixed): boolean {
+  <span class="kw">try</span> {
+    testStringCoercion(value);
+    <span class="kw">return false</span>;
+  } <span class="kw">catch</span> (e) {
+    <span class="kw">return true</span>;
+  }
+}
+
+<span class="kw">function</span> <span class="fn">testStringCoercion</span>(value: mixed) {
+  <span class="kw">return</span> <span class="str">''</span> + (value as any);
+}</pre>
+        </figure>
+        <p>
+          代价是开发环境会做一次额外探测，但生产分支可被 <code>__DEV__</code> 消除。错误字符串本身保持英文，
+          因为它是测试与错误解码链的可观察契约；中文注释解释机制而不改字符串。
+        </p>
+      </section>
+
+      <section id="case">
+        <h2>完整小用例：非法 key 从 JSX 到可定位异常</h2>
+        <ol class="state-list">
+          <li><strong>输入。</strong>JSX 的 <code>key</code> 是 Symbol 或在 primitive conversion 中抛错的对象。</li>
+          <li><strong>开发探测。</strong>React JSX 工厂在真正拼接前调用 shared 的 <code>checkKeyStringCoercion</code>。</li>
+          <li><strong>上下文日志。</strong>helper 输出“不支持的 key 类型”和类型名，说明失败发生在哪个用途。</li>
+          <li><strong>原语义重放。</strong><code>testStringCoercion</code> 执行 <code>'' + value</code>，异常沿 JSX 入口栈传播。</li>
+          <li><strong>生产边界。</strong><code>__DEV__</code> 探测被移除，真正的 <code>'' + value</code> 仍保持相同行为与成本模型。</li>
+        </ol>
+        <figure class="source">
+          <figcaption><span>删节源码（跨包消费点）· ReactJSXElement.js</span><a href="../../react/packages/react/src/jsx/ReactJSXElement.js">打开文件</a></figcaption>
+          <pre><span class="kw">if</span> (__DEV__) {
+  checkKeyStringCoercion(maybeKey);
+}
+key = <span class="str">''</span> + maybeKey;</pre>
+        </figure>
+      </section>
+
+      <section id="evidence">
+        <h2>证据表与适用边界</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>结论</th><th>源码证据</th><th>测试证据</th><th>证明边界</th></tr></thead>
+            <tbody>
+              <tr><td>类型标记必须唯一</td><td>ReactSymbols exports</td><td><a href="../../react/packages/shared/__tests__/ReactSymbols-test.internal.js">ReactSymbols-test</a></td><td>证明当前导出无碰撞，不证明跨 realm 对象共享 Symbol 注册表</td></tr>
+              <tr><td>生产错误用代码与 URL 编码参数</td><td><a href="../../react/packages/shared/formatProdErrorMessage.js">formatProdErrorMessage.js</a></td><td><a href="../../react/packages/shared/__tests__/ReactError-test.internal.js">ReactError-test</a></td><td>gate 只在 production 非 source 构建运行</td></tr>
+              <tr><td>console format 保留/补齐 specifier</td><td><a href="../../react/packages/shared/normalizeConsoleFormat.js">normalizeConsoleFormat.js</a></td><td><a href="../../react/packages/shared/__tests__/normalizeConsoleFormat-test.internal.js">normalizeConsoleFormat-test</a></td><td>覆盖仓库支持的 specifier，不替代浏览器 console 兼容测试</td></tr>
+              <tr><td>公开实例能回到内部 Fiber</td><td>ReactInstanceMap get/set</td><td>由 class component/reconciler 集成测试间接覆盖</td><td>私有字段名不是公共 API</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          shared 中的 DOM/Flight 桥只解释六包实际消费的边界；完整 React Server Components、DevTools 与 Native renderer
+          不在本指南主线。对特性开关的行为结论以其消费点为准，而不是从名称推断。
+        </p>
+      </section>
+
+      <section id="questions">
+        <h2>检查理解</h2>
+        <ul class="qa">
+          <li>为什么 <code>Symbol.for</code> 能解决同 realm 的多包身份问题，却不等于跨 realm 序列化协议？</li>
+          <li>为什么 Flow 字段表不能单独证明运行时字段一定被写入？</li>
+          <li>静态 flags 对死代码消除有什么帮助，动态 <code>__VARIANT__</code> 又为什么只限特定构建？</li>
+          <li>字符串 coercion helper 为什么不能改用 <code>String(value)</code> 后吞掉原异常？</li>
+        </ul>
+      </section>
+
+      <div class="next-page">
+        <a href="index.html">← 返回阅读地图</a>
+        <a href="02-scheduler.html">下一页：scheduler 时间与任务 →</a>
+      </div>
+      <footer><p>源码摘录来自当前仓库快照；测试是仓库证据索引，本次纯注释/文档工作不以“重跑成功”扩大保证。</p></footer>
+    </main>
+
+    <aside class="toc" aria-label="本页目录">
+      <strong>shared</strong>
+      <a href="#boundary">结论与边界</a>
+      <a href="#map">职责地图</a>
+      <a href="#symbols">身份协议</a>
+      <a href="#contracts">核心对象</a>
+      <a href="#bridges">私有桥</a>
+      <a href="#flags">Feature Flags</a>
+      <a href="#diagnostics">诊断路径</a>
+      <a href="#case">完整小用例</a>
+      <a href="#evidence">证据与边界</a>
+      <a href="#questions">检查理解</a>
+    </aside>
+  </div>
+</body>
+</html>

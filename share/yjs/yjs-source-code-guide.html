@@ -1,0 +1,1512 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Yjs 14 源码深读：从一次 insert 到跨副本收敛</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --paper: #f4f7f8;
+      --surface: #fff;
+      --surface-2: #edf3f4;
+      --ink: #172126;
+      --muted: #5d6b72;
+      --line: #d5e0e3;
+      --accent: #087f73;
+      --accent-2: #d97706;
+      --fact: #146c94;
+      --test: #11835d;
+      --history: #7254b3;
+      --infer: #a75b00;
+      --danger: #b42318;
+      --code: #101b22;
+      --code-ink: #dfecef;
+      --shadow: 0 14px 38px rgba(27, 52, 61, .08);
+      --radius: 17px;
+      font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI",
+        "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; scroll-padding-top: 24px; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 5% 0%, rgba(8, 127, 115, .11), transparent 31rem),
+        radial-gradient(circle at 100% 16%, rgba(217, 119, 6, .08), transparent 28rem),
+        var(--paper);
+      font-size: 16px;
+      line-height: 1.72;
+    }
+    a { color: var(--accent); text-underline-offset: .18em; }
+    a:hover { text-decoration-thickness: 2px; }
+    code, pre, kbd { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
+    :not(pre) > code {
+      padding: .13em .38em;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--surface-2);
+      font-size: .9em;
+      overflow-wrap: anywhere;
+    }
+    .skip {
+      position: fixed;
+      z-index: 20;
+      top: 8px;
+      left: 8px;
+      transform: translateY(-150%);
+      padding: 8px 12px;
+      border-radius: 8px;
+      background: var(--ink);
+      color: #fff;
+    }
+    .skip:focus { transform: none; }
+    .hero {
+      padding: 70px max(24px, calc((100vw - 1240px) / 2)) 50px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(255, 255, 255, .64);
+      backdrop-filter: blur(8px);
+    }
+    .eyebrow {
+      margin: 0 0 12px;
+      color: var(--accent);
+      font-size: .78rem;
+      font-weight: 850;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+    }
+    h1, h2, h3, h4 { line-height: 1.24; letter-spacing: -.02em; }
+    h1 { max-width: 980px; margin: 0; font-size: clamp(2.2rem, 5.8vw, 4.8rem); }
+    h2 {
+      margin: 3.7rem 0 1.1rem;
+      padding-top: .25rem;
+      font-size: clamp(1.75rem, 4vw, 2.55rem);
+    }
+    h3 { margin: 2.1rem 0 .8rem; font-size: 1.34rem; }
+    h4 { margin: 1.35rem 0 .45rem; font-size: 1.03rem; }
+    p { margin: .65rem 0 1rem; }
+    .lede {
+      max-width: 900px;
+      margin: 22px 0 0;
+      color: var(--muted);
+      font-size: clamp(1.04rem, 2vw, 1.24rem);
+    }
+    .version-strip { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 28px; }
+    .pill, .evidence, .source {
+      display: inline-flex;
+      align-items: center;
+      gap: .35em;
+      border-radius: 999px;
+      font-size: .76rem;
+      font-weight: 820;
+      vertical-align: .08em;
+    }
+    .pill { padding: 7px 11px; border: 1px solid var(--line); background: var(--surface); }
+    .evidence { margin-right: .38em; padding: 2px 8px; color: #fff; white-space: nowrap; }
+    .fact { background: var(--fact); }
+    .test { background: var(--test); }
+    .history { background: var(--history); }
+    .infer { background: var(--infer); }
+    .source {
+      padding: 2px 8px;
+      border: 1px solid var(--line);
+      color: var(--muted);
+      background: var(--surface);
+      font-weight: 650;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: 252px minmax(0, 1fr);
+      gap: 42px;
+      max-width: 1320px;
+      margin: 0 auto;
+      padding: 34px 24px 84px;
+    }
+    .toc {
+      position: sticky;
+      top: 20px;
+      align-self: start;
+      max-height: calc(100vh - 40px);
+      overflow: auto;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(255, 255, 255, .86);
+      box-shadow: 0 8px 24px rgba(27, 52, 61, .06);
+    }
+    .toc strong { display: block; margin-bottom: 8px; }
+    .toc ol { margin: 0; padding-left: 1.25rem; }
+    .toc li { margin: .28rem 0; color: var(--muted); font-size: .87rem; }
+    .toc a { color: inherit; text-decoration: none; }
+    .toc a:hover { color: var(--accent); }
+    main { min-width: 0; }
+    section { scroll-margin-top: 18px; }
+    .callout, .card, .module {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+      box-shadow: var(--shadow);
+    }
+    .callout { margin: 1.2rem 0; padding: 20px 22px; border-left: 5px solid var(--accent); }
+    .callout.warning { border-left-color: var(--infer); }
+    .callout.danger { border-left-color: var(--danger); }
+    .callout p:last-child, .card p:last-child, .module p:last-child { margin-bottom: 0; }
+    .grid { display: grid; gap: 16px; }
+    .grid > *, .module > * { min-width: 0; }
+    .grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .card { padding: 20px; }
+    .card h3, .card h4 { margin-top: 0; }
+    .conclusion { border-top: 5px solid var(--accent); }
+    .stat { font-size: 1.7rem; font-weight: 850; line-height: 1.05; color: var(--accent); }
+    .muted, small { color: var(--muted); }
+    .clean { margin: .5rem 0; padding-left: 1.2rem; }
+    .clean li { margin: .42rem 0; }
+    .module {
+      display: grid;
+      grid-template-columns: minmax(190px, .72fr) minmax(0, 1.7fr);
+      gap: 22px;
+      margin: 16px 0;
+      padding: 22px;
+    }
+    .module h3 { margin: 0; }
+    .module dl { display: grid; grid-template-columns: 6em 1fr; gap: 6px 12px; margin: 0; }
+    .module dd { min-width: 0; overflow-wrap: anywhere; }
+    dt { color: var(--muted); font-weight: 800; }
+    dd { margin: 0; }
+    .table-wrap {
+      overflow-x: auto;
+      margin: 1rem 0 1.4rem;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--surface);
+    }
+    table { width: 100%; border-collapse: collapse; min-width: 720px; font-size: .9rem; }
+    th, td { padding: 12px 14px; border-bottom: 1px solid var(--line); vertical-align: top; text-align: left; }
+    th { background: var(--surface-2); color: var(--muted); font-size: .77rem; letter-spacing: .04em; }
+    tr:last-child td { border-bottom: 0; }
+    pre {
+      position: relative;
+      overflow: auto;
+      margin: 1rem 0 1.45rem;
+      padding: 20px;
+      border: 1px solid #273842;
+      border-radius: 14px;
+      background: var(--code);
+      color: var(--code-ink);
+      line-height: 1.58;
+      tab-size: 2;
+      font-size: .84rem;
+    }
+    pre code { color: inherit; }
+    .code-label {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin: 1.2rem 0 -.45rem;
+      color: var(--muted);
+      font-size: .78rem;
+      font-weight: 800;
+    }
+    .diagram {
+      overflow-x: auto;
+      margin: 1.2rem 0 1.6rem;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+      box-shadow: var(--shadow);
+    }
+    .diagram svg { display: block; width: 100%; min-width: 800px; height: auto; }
+    .diagram text { font-family: inherit; fill: var(--ink); }
+    .diagram .box { fill: var(--surface-2); stroke: var(--line); stroke-width: 1.4; rx: 12; }
+    .diagram .hot { fill: rgba(8, 127, 115, .10); stroke: var(--accent); }
+    .diagram .event { fill: rgba(17, 131, 93, .10); stroke: var(--test); }
+    .diagram .warn { fill: rgba(217, 119, 6, .10); stroke: var(--accent-2); }
+    .diagram .edge { stroke: var(--muted); stroke-width: 1.7; fill: none; }
+    figcaption { padding: 10px 4px 0; color: var(--muted); font-size: .85rem; }
+    .timeline { position: relative; margin: 1.2rem 0; padding-left: 32px; }
+    .timeline::before { content: ""; position: absolute; left: 10px; top: 8px; bottom: 8px; width: 2px; background: var(--line); }
+    .timeline article { position: relative; margin: 0 0 14px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 13px; background: var(--surface); }
+    .timeline article::before { content: ""; position: absolute; left: -28px; top: 21px; width: 11px; height: 11px; border: 3px solid var(--paper); border-radius: 50%; background: var(--accent); }
+    .timeline h4 { margin: 0 0 5px; }
+    .state-row { display: flex; align-items: stretch; gap: 8px; margin: .8rem 0; overflow-x: auto; }
+    .state {
+      min-width: 138px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      background: var(--surface);
+      text-align: center;
+      font-size: .86rem;
+    }
+    .arrow { display: grid; place-items: center; color: var(--accent); font-weight: 900; }
+    .kbd {
+      display: inline-block;
+      padding: 2px 7px;
+      border: 1px solid var(--line);
+      border-bottom-width: 2px;
+      border-radius: 6px;
+      background: var(--surface);
+      font-size: .8rem;
+    }
+    footer { padding: 28px 24px 48px; border-top: 1px solid var(--line); color: var(--muted); text-align: center; }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        color-scheme: dark;
+        --paper: #0e171b;
+        --surface: #152126;
+        --surface-2: #1c2b31;
+        --ink: #e3ecee;
+        --muted: #a1b1b7;
+        --line: #31444b;
+        --code: #091116;
+        --code-ink: #d8e9ed;
+        --shadow: 0 14px 38px rgba(0, 0, 0, .2);
+      }
+      .hero, .toc { background: rgba(21, 33, 38, .88); }
+    }
+    @media (max-width: 920px) {
+      .layout { grid-template-columns: 1fr; }
+      .toc { position: static; max-height: none; }
+      .grid.three, .grid.two, .module { grid-template-columns: 1fr; }
+      .hero { padding-top: 48px; }
+    }
+    @media (max-width: 600px) {
+      body { font-size: 15px; }
+      .layout { padding-inline: 15px; }
+      .hero { padding-inline: 18px; }
+      .card, .callout, .module { padding: 16px; }
+      pre { margin-inline: -4px; padding: 16px; font-size: .78rem; }
+    }
+    @media print {
+      .toc { display: none; }
+      .layout { display: block; max-width: 900px; }
+      body { background: #fff; }
+      .card, .callout, .module, .diagram { box-shadow: none; break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip" href="#main">跳到正文</a>
+  <header class="hero">
+    <p class="eyebrow">Yjs source walkthrough · 证据版</p>
+    <h1>从一次 <code>insert</code> 到跨副本收敛</h1>
+    <p class="lede">
+      当前 Yjs 14 主线可理解为三层叠加：统一共享类型 <code>YType</code> 接受 Delta，
+      事务把变化变成 <code>Item</code>/<code>IdSet</code>，二进制更新在任意顺序到达时按因果依赖集成。
+      Renderer、快照、相对位置与 Undo 都建立在这条主线上。
+    </p>
+    <div class="version-strip">
+      <span class="pill">仓库 yjs/yjs</span>
+      <span class="pill">main · 567af9b4</span>
+      <span class="pill">v14.0.0-rc.24-5-g567af9b4</span>
+      <span class="pill">包 @y/y 14.0.0-rc.24</span>
+      <span class="pill">2026-08-10 审阅</span>
+    </div>
+  </header>
+
+  <div class="layout">
+    <nav class="toc" aria-label="目录">
+      <strong>阅读路径</strong>
+      <ol>
+        <li><a href="#overview">先看结论</a></li>
+        <li><a href="#scope">范围与证据</a></li>
+        <li><a href="#evolution">问题与演进</a></li>
+        <li><a href="#objects">核心对象</a></li>
+        <li><a href="#modules">模块地图</a></li>
+        <li><a href="#transaction">事务提交</a></li>
+        <li><a href="#integration">Item 集成</a></li>
+        <li><a href="#updates">更新协议</a></li>
+        <li><a href="#rendering">Delta 与 Renderer</a></li>
+        <li><a href="#history-tools">快照、位置、Undo</a></li>
+        <li><a href="#walkthrough">完整执行链</a></li>
+        <li><a href="#algorithm">并发算法推演</a></li>
+        <li><a href="#tests">测试证据</a></li>
+        <li><a href="#boundaries">边界与继续阅读</a></li>
+      </ol>
+    </nav>
+
+    <main id="main">
+      <section id="overview">
+        <h2>1. 先看结论</h2>
+        <div class="grid three">
+          <article class="card conclusion">
+            <div class="stat">确定性</div>
+            <h3>收敛点在 <code>Item.integrate()</code></h3>
+            <p>同一逻辑位置的并发插入不依赖消息到达顺序；<code>origin</code>、<code>rightOrigin</code> 与 <code>(client, clock)</code> 决定唯一链表顺序。</p>
+          </article>
+          <article class="card conclusion">
+            <div class="stat">原子边界</div>
+            <h3>已集成写入都经过事务</h3>
+            <p>挂入 Doc 后的嵌套写入复用当前事务。observer、GC、结构合并、update 事件和子文档清理在最外层事务结束后统一执行。</p>
+          </article>
+          <article class="card conclusion">
+            <div class="stat">状态差</div>
+            <h3>同步不要求中心服务器</h3>
+            <p>状态向量只描述每个 client 已知的下一个 clock；发送方据此编码缺失 struct，接收方缓存尚缺因果前驱的部分。</p>
+          </article>
+        </div>
+        <div class="callout">
+          <p><span class="evidence fact">源码事实</span>
+            一次公开 <code>YType.insert()</code> 先构造 lib0 Delta，再进入 <code>YType.applyDelta()</code>；
+            后者开启事务、创建 <code>Item</code> 并调用 <code>integrate()</code>。所以“数组、文本、属性”是同一套 CRDT 结构的不同视图，不是三套同步算法。
+          </p>
+        </div>
+        <div class="callout warning">
+          <p><strong>版本提醒：</strong>本仓库 <code>main</code> 已是 v14 RC 形态：<code>src/index.js</code> 导出统一的
+            <code>Type</code>，测试也使用 <code>doc.get()</code>、<code>insert()</code>、<code>setAttr()</code>。
+            根目录 README 与 INTERNALS 中仍可见 <code>Y.Array</code>、<code>AbstractType</code> 等旧叙事；本文只把它们用于有源码印证的算法背景。
+          </p>
+        </div>
+      </section>
+
+      <section id="scope">
+        <h2>2. 范围、版本与证据规则</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>项目</th><th>本次固定值</th><th>完成门禁</th></tr></thead>
+            <tbody>
+              <tr><td>模式</td><td>完整学习：模块拆分 → 声明注释 → 测试作证 → 调用链 → 教程</td><td>源码事实、测试证明、提交历史、推断分开标记</td></tr>
+              <tr><td>版本</td><td><code>567af9b4</code>；距 <code>v14.0.0-rc.24</code> 五个 commit</td><td>符号和摘录均来自该 commit 的逻辑</td></tr>
+              <tr><td>纳入</td><td><code>src/**/*.js</code>、<code>tests/**/*.js</code>，共 49 个扫描文件</td><td>1,091 个声明逐项归类；未解决必须为 0</td></tr>
+              <tr><td>排除</td><td><code>node_modules</code>、<code>dist</code>、生成页 <code>test.html</code>、声明入口 <code>global.d.ts</code></td><td>不把依赖、生成物或纯声明文件冒充核心实现</td></tr>
+              <tr><td>允许修改</td><td>上述源码/测试的解释性注释；本目录教程与审计清单</td><td>JavaScript token 序列与 HEAD 一致</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="grid three">
+          <article class="card"><div class="stat">1,091</div><p>命名声明总数</p></article>
+          <article class="card"><div class="stat">132</div><p>编辑前结构缺口</p></article>
+          <article class="card"><div class="stat">0</div><p>目标未分类缺口</p></article>
+        </div>
+        <p class="muted">
+          <span class="evidence fact">源码事实</span>直接读取当前实现。
+          <span class="evidence test">测试证明</span>真实断言覆盖的机制。
+          <span class="evidence history">历史证据</span>仓库文档或 commit。
+          <span class="evidence infer">合理推断</span>从当前结构推得、但没有作者陈述。
+        </p>
+      </section>
+
+      <section id="evolution">
+        <h2>3. 原问题与有证据的演进</h2>
+        <p>
+          协同编辑的难点不是“把最新 JSON 发过去”，而是离线副本都能产生操作、消息可能乱序或重复，
+          最终仍须得到相同结果。Yjs 把可编辑内容压成带稳定 ID 的列表 struct；删除成为单调集合事实，
+          状态向量用于只传对方缺少的 struct。
+        </p>
+        <div class="timeline">
+          <article>
+            <h4>2016 · YATA 背景</h4>
+            <p><span class="evidence history">仓库文档</span><code>INTERNALS.md</code> 指向 YATA 论文，并说明 Yjs 额外保存
+              <code>originRight</code>，用于改善大量并发插入同一位置时的处理。</p>
+          </article>
+          <article>
+            <h4>列表统一数据模型</h4>
+            <p><span class="evidence history">仓库文档</span>数组是任意元素列表，文本是字符/格式标记列表，映射是同 key 条目的列表；
+              连续字符可压在一个跨多个 clock 的 <code>Item</code> 中，必要时再切分。</p>
+          </article>
+          <article>
+            <h4>v14 · 单一共享类型</h4>
+            <p><span class="evidence history">commit 69131b76</span>提交信息明确写出“expose a single Yjs type only using lib0@v1 delta”；
+              随后的 <code>301d3836</code> 继续简化类型系统。当前入口只导出 <code>YType as Type</code>。</p>
+          </article>
+          <article>
+            <h4>v14 · RDT 与 Renderer</h4>
+            <p><span class="evidence history">commit 856d5b29</span>把 <code>YType</code> 接入 lib0 RDT；
+              当前源码维护深层 Delta 缓存，并允许 Renderer 把 tombstone 渲染为带插入/删除归因的可见内容。</p>
+          </article>
+          <article>
+            <h4>当前 HEAD · 资源清理</h4>
+            <p><span class="evidence history">commit ceae18f4 / #797</span><code>UndoManager.destroy()</code> 取消文档
+              <code>destroy</code> 监听，修复销毁后仍保留 handler 的生命周期问题。</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="objects">
+        <h2>4. 核心对象：谁持有谁</h2>
+        <div class="grid two">
+          <article class="card">
+            <h3><code>Doc</code></h3>
+            <p>根状态容器。持有顶层 <code>share</code>、<code>StructStore</code>、当前事务、待清理事务队列与子文档集合。网络 provider 不在核心仓库内。</p>
+          </article>
+          <article class="card">
+            <h3><code>YType</code></h3>
+            <p>统一公开共享类型。列表内容由 <code>_start</code> 链表承载，属性由 <code>_map</code> 指向同 key 当前 Item；嵌套时自身由父 Item 的 <code>ContentType</code> 持有。</p>
+          </article>
+          <article class="card">
+            <h3><code>Transaction</code></h3>
+            <p>一次原子变化的收集器。记录 <code>insertSet</code>、<code>deleteSet</code>、直接变化类型、祖先深层事件、待合并 struct 与子文档变化。</p>
+          </article>
+          <article class="card">
+            <h3><code>StructStore</code></h3>
+            <p>按 client 分组、按 clock 递增保存 <code>Item</code>/<code>GC</code>/<code>Skip</code>；另持有已删除集合及缺因果依赖的 pending 更新。</p>
+          </article>
+          <article class="card">
+            <h3><code>Item</code></h3>
+            <p>CRDT 的可定位结构单元。既处在文档序双向链表，也处在 client-clock 插入序；保存 origin、rightOrigin、parent、内容与状态位。</p>
+          </article>
+          <article class="card">
+            <h3><code>IdSet / IdMap</code></h3>
+            <p><code>IdSet</code> 用区间压缩插入/删除事实；<code>IdMap</code> 在相同 ID 范围上附加归因属性。快照、更新、Renderer、Undo 都复用它们。</p>
+          </article>
+        </div>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 1040 360" role="img" aria-labelledby="object-map-title">
+            <title id="object-map-title">Yjs 核心对象持有关系</title>
+            <defs>
+              <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+                <path d="M0,0 L0,6 L9,3 z" fill="#60747b"></path>
+              </marker>
+            </defs>
+            <rect class="box hot" x="32" y="34" width="170" height="72"></rect>
+            <text x="117" y="63" text-anchor="middle" font-weight="800">Doc</text>
+            <text x="117" y="87" text-anchor="middle" font-size="13">根状态与事务队列</text>
+            <rect class="box" x="284" y="34" width="180" height="72"></rect>
+            <text x="374" y="63" text-anchor="middle" font-weight="800">YType</text>
+            <text x="374" y="87" text-anchor="middle" font-size="13">列表 + 属性 + Delta</text>
+            <rect class="box" x="546" y="34" width="190" height="72"></rect>
+            <text x="641" y="63" text-anchor="middle" font-weight="800">Item</text>
+            <text x="641" y="87" text-anchor="middle" font-size="13">稳定 ID 与文档序</text>
+            <rect class="box" x="818" y="34" width="190" height="72"></rect>
+            <text x="913" y="63" text-anchor="middle" font-weight="800">AbstractContent</text>
+            <text x="913" y="87" text-anchor="middle" font-size="13">文本 / 值 / 子类型</text>
+            <path class="edge" marker-end="url(#arrow)" d="M202 70 H280"></path>
+            <path class="edge" marker-end="url(#arrow)" d="M464 70 H542"></path>
+            <path class="edge" marker-end="url(#arrow)" d="M736 70 H814"></path>
+
+            <rect class="box event" x="32" y="216" width="190" height="78"></rect>
+            <text x="127" y="246" text-anchor="middle" font-weight="800">Transaction</text>
+            <text x="127" y="271" text-anchor="middle" font-size="13">insert/delete/changed</text>
+            <rect class="box" x="304" y="216" width="190" height="78"></rect>
+            <text x="399" y="246" text-anchor="middle" font-weight="800">StructStore</text>
+            <text x="399" y="271" text-anchor="middle" font-size="13">client → clock 序列</text>
+            <rect class="box" x="576" y="216" width="190" height="78"></rect>
+            <text x="671" y="246" text-anchor="middle" font-weight="800">IdSet / IdMap</text>
+            <text x="671" y="271" text-anchor="middle" font-size="13">区间与归因</text>
+            <rect class="box warn" x="838" y="216" width="170" height="78"></rect>
+            <text x="923" y="246" text-anchor="middle" font-weight="800">Binary Update</text>
+            <text x="923" y="271" text-anchor="middle" font-size="13">V1 / V2</text>
+            <path class="edge" marker-end="url(#arrow)" d="M117 106 V212"></path>
+            <path class="edge" marker-end="url(#arrow)" d="M222 255 H300"></path>
+            <path class="edge" marker-end="url(#arrow)" d="M494 255 H572"></path>
+            <path class="edge" marker-end="url(#arrow)" d="M766 255 H834"></path>
+            <path class="edge" marker-end="url(#arrow)" d="M641 106 C641 150 470 170 415 212"></path>
+          </svg>
+          <figcaption>所有权主线：Doc 持有根类型与 store；YType 的每段内容由 Item 定位；事务把 Item 变化归纳成 ID 区间并编码。</figcaption>
+        </figure>
+      </section>
+
+      <section id="modules">
+        <h2>5. 模块地图与推荐阅读顺序</h2>
+        <p>顺序按运行依赖排，不按文件名排。先理解写入主线，再读派生能力；否则 Renderer、Undo、Snapshot 会像互不相关的工具。</p>
+
+        <article class="module">
+          <div>
+            <h3>① 统一类型与 Delta</h3>
+            <p class="source">src/ytype.js</p>
+          </div>
+          <dl>
+            <dt>负责</dt><dd>公开读写 API、列表/属性视图、格式状态、observer、RDT Delta 与 Renderer 接口。</dd>
+            <dt>不负责</dt><dd>不决定远端 struct 的因果可用性，也不实现网络传输。</dd>
+            <dt>上游</dt><dd>应用调用 <code>insert/delete/setAttr/applyDelta</code>。</dd>
+            <dt>下游</dt><dd><code>transact()</code>、<code>Item</code>、<code>YEvent</code>。</dd>
+            <dt>不变量</dt><dd><code>_length</code> 只统计未删除且 countable 的列表内容；属性当前值由同 key 最右 Item 指向。</dd>
+            <dt>代表测试</dt><dd><code>testBasicUpdate</code>、三副本并发插入、search-marker #297。</dd>
+          </dl>
+        </article>
+
+        <article class="module">
+          <div>
+            <h3>② 事务与生命周期</h3>
+            <p class="source">Doc.js · Transaction.js · EventHandler.js · YEvent.js</p>
+          </div>
+          <dl>
+            <dt>负责</dt><dd>聚合变化、排 observer、维护深层事件、GC/merge、update 事件和子文档生命周期。</dd>
+            <dt>不负责</dt><dd>不选择并发 Item 的文档序。</dd>
+            <dt>上游</dt><dd>本地 Delta、远端 <code>readUpdateV2</code>、Undo/快照重放。</dd>
+            <dt>下游</dt><dd>struct store、编码器、observer 与 provider 监听。</dd>
+            <dt>不变量</dt><dd>同一 Doc 同时最多一个活动事务；最外层退出后才进入 cleanup 队列。</dd>
+            <dt>代表测试</dt><dd><code>testAfterTransactionRecursion</code>、事件/归因用例、clientID 冲突用例。</dd>
+          </dl>
+        </article>
+
+        <article class="module">
+          <div>
+            <h3>③ Struct 与存储</h3>
+            <p class="source">structs/* · StructStore.js · ID.js</p>
+          </div>
+          <dl>
+            <dt>负责</dt><dd><code>Item/GC/Skip</code> 状态、确定性集成、切分合并、按 client-clock 查询。</dd>
+            <dt>不负责</dt><dd>不理解文本格式或应用 schema；内容行为委托给 <code>AbstractContent</code> 子类。</dd>
+            <dt>上游</dt><dd>本地插入构造 Item；远端解码构造 struct。</dd>
+            <dt>下游</dt><dd>文档序链表、store 插入序、事务 insert/delete 集。</dd>
+            <dt>不变量</dt><dd>同 client 的 clock 范围不重叠；链表左右指针互相一致；Item ID 不因移动而改变。</dd>
+            <dt>代表测试</dt><dd>并发冲突、迟到同步、Item merge 与内容类型编解码。</dd>
+          </dl>
+        </article>
+
+        <article class="module">
+          <div>
+            <h3>④ ID 区间与更新协议</h3>
+            <p class="source">ids.js · BlockSet.js · encoding*.js · UpdateEncoder/Decoder.js · updates.js</p>
+          </div>
+          <dl>
+            <dt>负责</dt><dd>区间集合/映射代数、V1/V2 编解码、状态向量差分、更新合并与 pending 重试。</dd>
+            <dt>不负责</dt><dd>不保证传输可靠、身份可信或消息大小安全。</dd>
+            <dt>上游</dt><dd>事务变化集、目标 state vector、远端 Uint8Array。</dd>
+            <dt>下游</dt><dd><code>integrateStructs</code>、store.pendingStructs/pendingDs、update 事件。</dd>
+            <dt>不变量</dt><dd>重复已知范围先被排除；缺因果前驱的 struct 不半集成，保留为 V2 pending update。</dd>
+            <dt>代表测试</dt><dd>V1/V2 round-trip、重叠/重复 merge、diffUpdate 与 IdSet/IdMap 运算。</dd>
+          </dl>
+        </article>
+
+        <article class="module">
+          <div>
+            <h3>⑤ 渲染与归因</h3>
+            <p class="source">Renderer.js · renderer-helpers.js · meta.js · delta-helpers.js</p>
+          </div>
+          <dl>
+            <dt>负责</dt><dd>把物理 Item/tombstone 投影为普通视图、快照差异或建议归因；将 ID 范围映射到属性。</dd>
+            <dt>不负责</dt><dd>不改 CRDT 历史；切换 Renderer 不是 Yjs 事务。</dd>
+            <dt>上游</dt><dd><code>YType.toDelta/applyDelta</code>、事务 ID 集、前后文档。</dd>
+            <dt>下游</dt><dd>深层 Delta 缓存、RDT <code>delta</code> 事件、编辑器绑定。</dd>
+            <dt>不变量</dt><dd>同一 Item 可被切成多段 attributed content；可见长度必须按 Renderer 结果计算。</dd>
+            <dt>代表测试</dt><dd>attribution、diff、软删除仍渲染、renderer change 与缓存漂移回归。</dd>
+          </dl>
+        </article>
+
+        <article class="module">
+          <div>
+            <h3>⑥ 历史定位工具</h3>
+            <p class="source">Snapshot.js · RelativePosition.js · UndoManager.js</p>
+          </div>
+          <dl>
+            <dt>负责</dt><dd>历史可见性、稳定光标、按 origin/scope 捕获并反向执行本地变化。</dd>
+            <dt>不负责</dt><dd>Snapshot 不是独立持久化格式；Undo 不是全局“回到旧文档”。</dd>
+            <dt>上游</dt><dd>state vector、删除 ID 集、事务 origin、Item ID。</dd>
+            <dt>下游</dt><dd>历史文档、绝对索引、undo/redo 栈。</dd>
+            <dt>不变量</dt><dd>恢复旧内容通常要求 <code>gc:false</code>；相对位置锚定 Item/根 key 而非裸 index。</dd>
+            <dt>代表测试</dt><dd>snapshot restore、assoc 左右吸附、远端并发下 undo/redo。</dd>
+          </dl>
+        </article>
+      </section>
+
+      <section id="transaction">
+        <h2>6. 事务：原子性真正发生在哪里</h2>
+        <p>
+          <code>Doc.transact()</code> 只是转发。核心函数检查 <code>doc._transaction</code>：
+          没有活动事务才创建 <code>Transaction</code>；内层调用直接拿同一对象。最外层函数无论正常返回还是抛错，
+          都在 <code>finally</code> 中交给 cleanup。observer 在 cleanup 中再次写文档时，新事务进入同一队列，顺序清理而非递归嵌套。
+        </p>
+
+        <div class="code-label">
+          <span>源码摘录 · src/utils/Transaction.js · transact</span>
+          <span>省略类型注释</span>
+        </div>
+        <pre><code>export const transact = (doc, f, origin = null, local = true) =&gt; {
+  const transactionCleanups = doc._transactionCleanups
+  let initialCall = false
+  let result = null
+
+  if (doc._transaction === null) {
+    initialCall = true
+    doc._transaction = new Transaction(doc, origin, local)
+    transactionCleanups.push(doc._transaction)
+    if (transactionCleanups.length === 1) {
+      doc.emit('beforeAllTransactions', [doc])
+    }
+    doc.emit('beforeTransaction', [doc._transaction, doc])
+  }
+
+  try {
+    result = f(doc._transaction)
+  } finally {
+    if (initialCall) {
+      const finishCleanup = doc._transaction === transactionCleanups[0]
+      doc._transaction = null
+      if (finishCleanup) cleanupTransactions(transactionCleanups, 0)
+    }
+  }
+  return result
+}</code></pre>
+
+        <h3>提交不是单点：它是一串有顺序的阶段</h3>
+        <div class="state-row" aria-label="事务状态流">
+          <div class="state"><strong>收集</strong><br>insertSet / deleteSet<br>changed</div>
+          <div class="arrow">→</div>
+          <div class="state"><strong>观察前</strong><br>beforeObserverCalls</div>
+          <div class="arrow">→</div>
+          <div class="state"><strong>通知</strong><br>type / deep / delta<br>afterTransaction</div>
+          <div class="arrow">→</div>
+          <div class="state"><strong>最终清理</strong><br>GC + merge<br>clientID 检查</div>
+          <div class="arrow">→</div>
+          <div class="state"><strong>外部效果</strong><br>update / subdocs<br>afterAll</div>
+        </div>
+
+        <div class="code-label">
+          <span>源码摘录 · src/utils/Transaction.js · cleanupTransactions</span>
+          <span>决定性分支</span>
+        </div>
+        <pre><code>try {
+  doc.emit('beforeObserverCalls', [transaction, doc])
+  transaction.changed.forEach((subs, type) =&gt;
+    fs.push(() =&gt; type._callObserver(transaction, subs))
+  )
+  fs.push(() =&gt; { /* observeDeep + RDT delta */ })
+  fs.push(() =&gt; doc.emit('afterTransaction', [transaction, doc]))
+  callAll(fs, [])
+} finally {
+  if (doc.gc) tryGcDeleteSet(transaction, transaction.deleteSet, doc.gcFilter)
+  tryMerge(transaction.deleteSet, store)
+  // 合并相邻 struct，并处理 clientID 冲突。
+  doc.emit('afterTransactionCleanup', [transaction, doc])
+  if (doc._observers.has('update')) {
+    const encoder = new UpdateEncoderV1()
+    if (writeUpdateMessageFromTransaction(encoder, transaction)) {
+      doc.emit('update', [encoder.toUint8Array(), transaction.origin, doc, transaction])
+    }
+  }
+  // 最后一项清理完成后才发 afterAllTransactions。
+}</code></pre>
+
+        <div class="grid two">
+          <article class="card">
+            <h3>WHY：observer 先于 GC</h3>
+            <p>observer 需要读取变化前后关联的 Item 与内容来计算事件 Delta；物理内容回收必须等通知阶段结束。随后 <code>finally</code> 仍保证异常 observer 不会跳过 GC、merge 与 update 清理。</p>
+          </article>
+          <article class="card">
+            <h3>失败与重入边界</h3>
+            <p>回调异常会向调用方传播，但 cleanup 仍执行。observer 触发的新事务排到 <code>_transactionCleanups</code> 后方；这避免以 JavaScript 调用栈深度表达事务级联。</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="integration">
+        <h2>7. Item：把“到达顺序”变成“文档顺序”</h2>
+        <p>
+          Item 同时属于两套坐标：<strong>文档序</strong>由 <code>left/right</code> 双向链表示；
+          <strong>插入序</strong>由 <code>(client, clock)</code> 在 StructStore 中定位。
+          <code>origin</code> 与 <code>rightOrigin</code> 保存创建时看到的左右锚点。远端重放时先恢复这些依赖，再执行同一套冲突扫描。
+        </p>
+
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>字段</th><th>作用</th><th>关键约束</th></tr></thead>
+            <tbody>
+              <tr><td><code>id</code></td><td><code>(client, clock)</code> 稳定地址；一个 Item 可覆盖连续多个 clock</td><td>同 client 范围单调、不重叠</td></tr>
+              <tr><td><code>origin/rightOrigin</code></td><td>创建时的左右逻辑锚点</td><td>跨副本不因当前链表位置变化</td></tr>
+              <tr><td><code>left/right</code></td><td>当前已集成文档序</td><td>双向指针互相对应</td></tr>
+              <tr><td><code>parent/parentSub</code></td><td>列表父类型或属性 key</td><td>属性 key 的最右存活 Item 是当前值</td></tr>
+              <tr><td><code>info</code></td><td>keep、countable、deleted 位</td><td>删除单调；可见长度只计未删除 countable 内容</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="code-label">
+          <span>源码摘录 · src/structs/Item.js · Item.integrate</span>
+          <span>并发次序核心，删去连接与记账代码</span>
+        </div>
+        <pre><code>let left = this.left
+let o
+if (left !== null) {
+  o = left.right
+} else if (this.parentSub !== null) {
+  o = this.parent._map.get(this.parentSub) || null
+  while (o !== null &amp;&amp; o.left !== null) {
+    o = o.left
+  }
+} else {
+  o = this.parent._start
+}
+
+const conflictingItems = new Set()
+const itemsBeforeOrigin = new Set()
+
+while (o !== null &amp;&amp; o !== this.right) {
+  itemsBeforeOrigin.add(o)
+  conflictingItems.add(o)
+
+  if (compareIDs(this.origin, o.origin)) {
+    if (o.id.client &lt; this.id.client) {
+      left = o
+      conflictingItems.clear()
+    } else if (compareIDs(this.rightOrigin, o.rightOrigin)) {
+      break
+    }
+  } else if (
+    o.origin !== null &amp;&amp;
+    itemsBeforeOrigin.has(transaction.doc.store.getItem(o.origin))
+  ) {
+    if (!conflictingItems.has(transaction.doc.store.getItem(o.origin))) {
+      left = o
+      conflictingItems.clear()
+    }
+  } else {
+    break
+  }
+  o = o.right
+}
+this.left = left</code></pre>
+
+        <p>
+          这段代码的结果只依赖已稳定的 ID 与 origin 图，不依赖消息先后。找到左邻居后，函数重连链表、
+          更新 <code>_start</code> 或属性 map、调整可见长度、写入 transaction.insertSet 与 StructStore，
+          再调用内容对象的 <code>integrate()</code>。
+        </p>
+
+        <div class="grid two">
+          <article class="card">
+            <h3>连续内容为何能压成一个 Item</h3>
+            <p>字符串或普通值数组可让一个 Item 覆盖多个 clock，降低对象数量。删除/插入命中中间位置时，
+              <code>getItemCleanStart/End</code> 调用 <code>split()</code> 切出精确边界，ID 仍沿原 clock 区间连续。</p>
+          </article>
+          <article class="card">
+            <h3>删除为何不是“移出链表”</h3>
+            <p><code>delete()</code> 置 deleted 位、减少父可见长度并写 transaction.deleteSet；tombstone 仍提供因果锚点。
+              cleanup 在允许时把内容换成轻量 <code>ContentDeleted</code> 或 <code>GC</code>，不丢稳定地址。</p>
+          </article>
+        </div>
+
+        <div class="callout warning">
+          <p><span class="evidence fact">异常/退化路径</span>
+            若远端 Item 的 parent 无法定义，<code>integrate()</code> 用同 ID/长度集成 <code>GC</code>；
+            若缺的只是因果前驱，外层 <code>integrateStructs()</code> 不会走这里，而是先把 struct 留在 pending update。
+          </p>
+        </div>
+      </section>
+
+      <section id="updates">
+        <h2>8. 更新协议：乱序、重复与缺依赖如何处理</h2>
+        <p>
+          V1/V2 只是二进制布局不同，语义主线相同：读取 struct block，排除本地已知 ID，
+          按因果依赖集成可用 struct；再读取删除 ID 集。状态向量是 <code>client → nextClock</code>，
+          因而发送方可从每个 client 的 struct 数组直接截出对方缺失部分。
+        </p>
+
+        <div class="code-label">
+          <span>源码摘录 · src/utils/encoding.js · readUpdateV2</span>
+          <span>已知范围排除与 pending</span>
+        </div>
+        <pre><code>const ss = readBlockSet(structDecoder)
+const knownState = createIdSet()
+
+ss.clients.forEach((_, client) =&gt; {
+  const structs = store.clients.get(client)
+  if (structs) {
+    const last = structs[structs.length - 1]
+    knownState.add(client, 0, last.id.clock + last.length)
+    store.skips.clients.get(client)?.getIds().forEach(range =&gt; {
+      knownState.delete(client, range.clock, range.len)
+    })
+  }
+})
+ss.exclude(knownState)
+
+const restStructs = integrateStructs(transaction, store, ss)
+const pending = store.pendingStructs
+if (pending) {
+  if (restStructs) {
+    for (const [client, clock] of restStructs.missing) {
+      const mclock = pending.missing.get(client)
+      if (mclock == null || mclock &gt; clock) {
+        pending.missing.set(client, clock)
+      }
+    }
+    pending.update = mergeUpdatesV2([pending.update, restStructs.update])
+  }
+} else {
+  store.pendingStructs = restStructs
+}</code></pre>
+
+        <div class="code-label">
+          <span>源码摘录 · src/utils/encoding.js · integrateStructs</span>
+          <span>因果栈决定性分支</span>
+        </div>
+        <pre><code>const missing = getMissing(stackHead, transaction, store)
+if (missing !== null) {
+  stack.push(stackHead)
+  const refs = clientsStructRefs.clients.get(missing) || { refs: [], i: 0 }
+
+  if (
+    refs.refs.length === refs.i ||
+    missing === stackHead.id.client ||
+    stack.some(s =&gt; s.id.client === missing)
+  ) {
+    updateMissingSv(missing, store.getClock(missing))
+    addStackToRestSS()
+  } else {
+    stackHead = refs.refs[refs.i++]
+    continue
+  }
+} else {
+  if (offset &lt; 0) {
+    new Skip(createID(stackHead.id.client, localClock), -offset)
+      .integrate(transaction, 0)
+  }
+  stackHead.integrate(transaction, 0)
+}</code></pre>
+
+        <div class="grid three">
+          <article class="card">
+            <h3>重复</h3>
+            <p><code>ss.exclude(knownState)</code> 在集成前去掉本地已有范围；相同 update 重放不会再创建 Item。</p>
+          </article>
+          <article class="card">
+            <h3>乱序</h3>
+            <p>若依赖也在本批 update 中，栈先切换到依赖 client；依赖完成后弹栈继续原 Item。</p>
+          </article>
+          <article class="card">
+            <h3>缺包</h3>
+            <p>若前驱不在本地也不在本批，记录最小缺失 clock，把剩余 struct 重新编码到 <code>pendingStructs.update</code>。</p>
+          </article>
+        </div>
+
+        <h3>发送侧：全量与最小差异其实是同一函数</h3>
+        <div class="code-label">
+          <span>源码摘录 · src/utils/encoding.js · encodeStateAsUpdateV2</span>
+          <span>pending 也不能丢</span>
+        </div>
+        <pre><code>export const encodeStateAsUpdateV2 = (
+  doc,
+  encodedTargetStateVector = new Uint8Array([0]),
+  encoder = new UpdateEncoderV2()
+) =&gt; {
+  const targetStateVector = decodeStateVector(encodedTargetStateVector)
+  writeStateAsUpdate(encoder, doc, targetStateVector)
+  const updates = [encoder.toUint8Array()]
+
+  if (doc.store.pendingDs) updates.push(doc.store.pendingDs)
+  if (doc.store.pendingStructs) {
+    updates.push(diffUpdateV2(
+      doc.store.pendingStructs.update,
+      encodedTargetStateVector
+    ))
+  }
+  return updates.length &gt; 1 ? mergeUpdatesV2(updates) : updates[0]
+}</code></pre>
+
+        <p>
+          空 state vector 等价于“对方什么都不知道”；给出目标 state vector 就只写缺失 struct。
+          本地尚未能集成的 pending 信息仍会被带上，否则中继节点会永久吞掉它暂时看不懂的历史。
+        </p>
+      </section>
+
+      <section id="rendering">
+        <h2>9. Delta、事件与 Renderer：同一历史的不同视图</h2>
+        <p>
+          v14 的公开写接口先统一成 lib0 Delta。列表插入、文本格式、属性设置和嵌套修改最终都由
+          <code>applyDelta()</code> 分派；未集成的 YType 先把 Delta 累积进 <code>_prelim</code>，
+          挂入 Doc 后再重放。已删除且普通视图不可见的子类型拒绝变化；若 Renderer 仍显示该 tombstone，
+          方法返回逆 Delta，让调用方把未真正写入 CRDT 的界面变化撤回。
+        </p>
+
+        <div class="code-label">
+          <span>源码摘录 · src/ytype.js · insert / applyDelta</span>
+          <span>分支删节，保留真实调用方向</span>
+        </div>
+        <pre><code>insert (index, content, format) {
+  this.applyDelta(
+    delta.create()
+      .retain(index)
+      .insert(content, format)
+      .done()
+  )
+}
+
+applyDelta (d, origin = null, { renderer = this._renderer } = {}) {
+  if (d.isEmpty()) return null
+  if (this.doc == null) {
+    (this._prelim || (this._prelim = delta.create())).apply(d)
+    return null
+  }
+  if (this._item !== null &amp;&amp; this._item.deleted) {
+    if (rendererContentLength(renderer, this._item) &gt; 0) {
+      const inv = delta.inverse(d, this.toDeltaDeep({ renderer }))
+      return inv.isEmpty() ? null : inv
+    }
+    return null
+  }
+  return transact(this.doc, transaction =&gt; {
+    const currPos = new ItemTextListPosition(
+      null, this._start, 0, new Map(), renderer
+    )
+    for (const op of d.children) {
+      if (delta.$textOp.check(op)) {
+        insertContent(transaction, this, currPos, new ContentString(op.insert), op.format || {})
+      } else if (delta.$insertOp.check(op)) {
+        insertContentHelper(transaction, this, currPos, op.insert, op.format || {})
+      } else if (delta.$retainOp.check(op)) {
+        currPos.formatText(transaction, this, op.retain, op.format || {})
+      } else if (delta.$deleteOp.check(op)) {
+        deleteText(transaction, currPos, op.delete)
+      }
+      // modify / 属性分支见原函数。
+    }
+  }, origin)
+}</code></pre>
+
+        <h3>事件有两条兼容通道</h3>
+        <div class="grid two">
+          <article class="card">
+            <h3>传统 YEvent</h3>
+            <p><code>transaction.changed</code> 驱动直接类型 observer；<code>callTypeObservers()</code> 同时沿父链把事件加入
+              <code>changedParentTypes</code>，供 <code>observeDeep</code>。远端变化还会清空 search marker 并请求格式清理。</p>
+          </article>
+          <article class="card">
+            <h3>RDT Delta</h3>
+            <p>cleanup 遍历同一 <code>changedParentTypes</code>，计算以各祖先为根的深层 Delta，更新 live cache 并发
+              <code>delta</code> 事件。因而嵌套变化在两套 API 中采用相同冒泡边界。</p>
+          </article>
+        </div>
+
+        <h3>Renderer 不改历史，只改“哪些 tombstone 可见”</h3>
+        <p>
+          普通视图跳过 deleted Item；SnapshotRenderer、DiffRenderer、AttributionsRenderer 可把某些已删除内容投影成
+          带 attribution 的正向 insert/retain。由于一个物理 Item 可能被 Renderer 切成多段，光标推进、格式范围和相对位置
+          都必须调用 <code>rendererContentLength()</code>，不能直接使用 Item.length。
+        </p>
+        <div class="code-label">
+          <span>源码摘录 · src/ytype.js · typeApplyRendererChange</span>
+          <span>Renderer 自身变化路径</span>
+        </div>
+        <pre><code>export const typeApplyRendererChange = (type, changes, origin) =&gt; {
+  const hasDeltaListeners =
+    (type._observers.get('delta')?.size ?? 0) &gt; 0
+
+  if ((type._delta === null &amp;&amp; !hasDeltaListeners) || type.doc == null) {
+    return
+  }
+  const change = type.toDelta({
+    renderer: type._renderer,
+    deep: true,
+    itemsToRender: changes,
+    retainInserts: true,
+    retainDeletes: true
+  })
+  if (!change.isEmpty()) {
+    type._delta?.apply(change)
+    if (hasDeltaListeners) type.emit('delta', [change, origin])
+  }
+}</code></pre>
+        <p>
+          这里没有 Yjs Transaction：接受/拒绝建议可能只改变 attribution overlay。它只修正维护中的 Delta cache 与 RDT 监听者，
+          不触发传统 YEvent，也不创建 CRDT update。
+        </p>
+      </section>
+
+      <section id="history-tools">
+        <h2>10. Snapshot、RelativePosition 与 Undo：三种“回到过去”</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>能力</th><th>锚点</th><th>会否改当前历史</th><th>关键限制</th></tr></thead>
+            <tbody>
+              <tr><td>Snapshot</td><td>state vector + delete IdSet</td><td>读取不改；恢复会构造新 Doc</td><td>原 Doc 必须 <code>gc:false</code></td></tr>
+              <tr><td>RelativePosition</td><td>根 key/嵌套 type ID + item ID + assoc</td><td>不会</td><td>目标 struct 必须已同步；Renderer 会改变可见长度</td></tr>
+              <tr><td>UndoManager</td><td>捕获事务的 insert/delete IdSet</td><td>会，产生新事务</td><td>受 scope、origin、captureTimeout 与并发覆盖约束</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Snapshot：不是复制整棵对象树</h3>
+        <div class="code-label">
+          <span>源码摘录 · src/utils/Snapshot.js · snapshot / createDocFromSnapshot</span>
+          <span>关键边界</span>
+        </div>
+        <pre><code>export const snapshot = doc =&gt; createSnapshot(
+  createDeleteSetFromStructStore(doc.store),
+  getStateVector(doc.store)
+)
+
+export const createDocFromSnapshot = (
+  originDoc, snapshot, newDoc = new Doc()
+) =&gt; {
+  if (originDoc.gc) {
+    throw new Error(
+      'Garbage-collection must be disabled in &#96;originDoc&#96;!'
+    )
+  }
+  // 只编码 state vector 边界前的 struct，再写入快照 delete set。
+  // 最后把这份 V2 update 应用到 newDoc。
+  applyUpdateV2(newDoc, encoder.toUint8Array(), 'snapshot')
+  return newDoc
+}</code></pre>
+        <p>
+          Snapshot 的 state vector 决定“当时已出现哪些插入”，delete set 决定“当时哪些已删除”。
+          GC 一旦丢弃内容，就算 ID 仍在也无法重建旧值，所以恢复函数直接拒绝 <code>gc:true</code> 的原文档。
+        </p>
+
+        <h3>RelativePosition：把裸 index 换成稳定 ID</h3>
+        <div class="code-label">
+          <span>源码摘录 · src/utils/RelativePosition.js · createRelativePositionFromTypeIndex</span>
+          <span>左右吸附</span>
+        </div>
+        <pre><code>export const createRelativePositionFromTypeIndex = (
+  type, index, assoc = 0, renderer = null
+) =&gt; {
+  let item = type._start
+  if (assoc &lt; 0) {
+    if (index === 0) return createRelativePosition(type, null, assoc)
+    index--
+  }
+  while (item !== null) {
+    const len = rendererContentLength(renderer, item)
+    if (len &gt; index) {
+      return createRelativePosition(
+        type,
+        createID(item.id.client, item.id.clock + index),
+        assoc
+      )
+    }
+    index -= len
+    if (item.right === null &amp;&amp; assoc &lt; 0) {
+      return createRelativePosition(type, item.lastId, assoc)
+    }
+    item = item.right
+  }
+  return createRelativePosition(type, null, assoc)
+}</code></pre>
+        <p>
+          <code>assoc &lt; 0</code> 锚向左字符，非负值锚向右字符。并发内容插入在锚点处时，两者会落在新内容两侧；
+          测试 <code>testRelativePositionAssociationDifference</code> 精确断言 index 1 与 2。
+        </p>
+
+        <h3>Undo：删除本次插入，重做本次删除</h3>
+        <div class="code-label">
+          <span>机制骨架 · 根据 src/utils/UndoManager.js 两个函数删节改写</span>
+          <span>不可直接执行</span>
+        </div>
+        <pre><code>// 捕获阶段
+const insertions = transaction.insertSet
+stack.push(new StackItem(insertions, transaction.deleteSet))
+iterateStructsByIdSet(transaction, transaction.deleteSet, item =&gt; {
+  if (item instanceof Item &amp;&amp; inScope(item)) keepItem(item, true)
+})
+
+// 弹栈阶段
+iterateStructsByIdSet(transaction, stackItem.inserts, struct =&gt; {
+  if (struct instanceof Item &amp;&amp; !struct.deleted &amp;&amp; inScope(struct)) {
+    itemsToDelete.push(struct)
+  }
+})
+iterateStructsByIdSet(transaction, stackItem.deletes, struct =&gt; {
+  if (struct instanceof Item &amp;&amp; !stackItem.inserts.hasId(struct.id)) {
+    itemsToRedo.add(struct)
+  }
+})
+itemsToRedo.forEach(struct =&gt; redoItem(transaction, struct, itemsToRedo, ...))
+for (let i = itemsToDelete.length - 1; i &gt;= 0; i--) {
+  itemsToDelete[i].delete(transaction)
+}</code></pre>
+        <p class="muted">
+          上段是从两个真实函数拼接的源码骨架；<code>inScope</code> 与省略号代表原函数中重复的 scope/filter 参数，
+          不可直接执行。关键顺序未改：先重做删除，再从子到父逆序删除插入。
+        </p>
+        <div class="callout">
+          <p><span class="evidence fact">为何 keep tombstone</span>
+            UndoManager 捕获删除后对范围内 Item 调用 <code>keepItem(item, true)</code>，阻止 GC 丢掉待恢复内容；
+            清空栈时再解除 keep。Undo 因此是对 CRDT 历史做补偿操作，不是替换当前快照。
+          </p>
+        </div>
+      </section>
+
+      <section id="walkthrough">
+        <h2>11. 完整执行链：A 写入，B 只收缺失差异</h2>
+        <p>
+          下面是可在仓库根目录直接执行的最小 ESM 示例。它从真实测试
+          <code>tests/y-array.tests.js::testBasicUpdate</code> 扩展出 state vector 差分与重复应用断言；
+          不依赖 provider，直接展示核心库负责的边界。
+        </p>
+
+        <div class="code-label">
+          <span>教程可运行示例 · 在 yjs 仓库根目录执行</span>
+          <span>包含初始化、输入、断言与清理</span>
+        </div>
+        <pre><code>import assert from 'node:assert/strict'
+import * as Y from './src/index.js'
+
+const docA = new Y.Doc()
+const docB = new Y.Doc()
+
+try {
+  const listA = docA.get('items')
+  listA.insert(0, ['A'])
+
+  const stateVectorB = Y.encodeStateVector(docB)
+  const missingForB = Y.encodeStateAsUpdate(docA, stateVectorB)
+
+  Y.applyUpdate(docB, missingForB, 'from-A')
+  assert.deepEqual(docB.get('items').toArray(), ['A'])
+
+  // 同一更新重复到达：已知 ID 范围被排除，结果不变。
+  Y.applyUpdate(docB, missingForB, 'duplicate')
+  assert.deepEqual(docB.get('items').toArray(), ['A'])
+} finally {
+  docA.destroy()
+  docB.destroy()
+}</code></pre>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 1160 540" role="img" aria-labelledby="flow-title">
+            <title id="flow-title">一次 Yjs 插入及远端差分应用的完整流程</title>
+            <defs>
+              <marker id="flow-arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+                <path d="M0,0 L0,6 L9,3 z" fill="#60747b"></path>
+              </marker>
+            </defs>
+            <text x="30" y="30" font-size="14" font-weight="800">Doc A · 本地写</text>
+            <rect class="box hot" x="30" y="50" width="180" height="70"></rect>
+            <text x="120" y="78" text-anchor="middle" font-weight="800">YType.insert</text>
+            <text x="120" y="101" text-anchor="middle" font-size="13">retain(0) + insert A</text>
+            <rect class="box" x="270" y="50" width="180" height="70"></rect>
+            <text x="360" y="78" text-anchor="middle" font-weight="800">applyDelta</text>
+            <text x="360" y="101" text-anchor="middle" font-size="13">op 分派</text>
+            <rect class="box event" x="510" y="50" width="180" height="70"></rect>
+            <text x="600" y="78" text-anchor="middle" font-weight="800">Transaction</text>
+            <text x="600" y="101" text-anchor="middle" font-size="13">收集 insertSet</text>
+            <rect class="box" x="750" y="50" width="180" height="70"></rect>
+            <text x="840" y="78" text-anchor="middle" font-weight="800">Item.integrate</text>
+            <text x="840" y="101" text-anchor="middle" font-size="13">链表 + StructStore</text>
+            <rect class="box event" x="980" y="50" width="150" height="70"></rect>
+            <text x="1055" y="78" text-anchor="middle" font-weight="800">cleanup</text>
+            <text x="1055" y="101" text-anchor="middle" font-size="13">observer / GC / merge</text>
+            <path class="edge" marker-end="url(#flow-arrow)" d="M210 85 H266"></path>
+            <path class="edge" marker-end="url(#flow-arrow)" d="M450 85 H506"></path>
+            <path class="edge" marker-end="url(#flow-arrow)" d="M690 85 H746"></path>
+            <path class="edge" marker-end="url(#flow-arrow)" d="M930 85 H976"></path>
+
+            <rect class="box warn" x="885" y="185" width="245" height="72"></rect>
+            <text x="1008" y="214" text-anchor="middle" font-weight="800">encodeStateAsUpdate</text>
+            <text x="1008" y="237" text-anchor="middle" font-size="13">按 B 的 state vector 截差异</text>
+            <path class="edge" marker-end="url(#flow-arrow)" d="M1055 120 V181"></path>
+
+            <text x="30" y="320" font-size="14" font-weight="800">Doc B · 远端应用</text>
+            <rect class="box warn" x="30" y="340" width="180" height="72"></rect>
+            <text x="120" y="369" text-anchor="middle" font-weight="800">applyUpdate</text>
+            <text x="120" y="392" text-anchor="middle" font-size="13">V1 decoder → readUpdateV2</text>
+            <rect class="box" x="270" y="340" width="180" height="72"></rect>
+            <text x="360" y="369" text-anchor="middle" font-weight="800">排除 known IDs</text>
+            <text x="360" y="392" text-anchor="middle" font-size="13">重复包在这里变空</text>
+            <rect class="box hot" x="510" y="340" width="180" height="72"></rect>
+            <text x="600" y="369" text-anchor="middle" font-weight="800">integrateStructs</text>
+            <text x="600" y="392" text-anchor="middle" font-size="13">检查 origin / parent 依赖</text>
+            <rect class="box event" x="750" y="340" width="180" height="72"></rect>
+            <text x="840" y="369" text-anchor="middle" font-weight="800">远端 Transaction</text>
+            <text x="840" y="392" text-anchor="middle" font-size="13">local = false</text>
+            <rect class="box hot" x="980" y="340" width="150" height="72"></rect>
+            <text x="1055" y="369" text-anchor="middle" font-weight="800">结果 ['A']</text>
+            <text x="1055" y="392" text-anchor="middle" font-size="13">observer 后可见</text>
+            <path class="edge" marker-end="url(#flow-arrow)" d="M210 376 H266"></path>
+            <path class="edge" marker-end="url(#flow-arrow)" d="M450 376 H506"></path>
+            <path class="edge" marker-end="url(#flow-arrow)" d="M690 376 H746"></path>
+            <path class="edge" marker-end="url(#flow-arrow)" d="M930 376 H976"></path>
+            <path class="edge" marker-end="url(#flow-arrow)" d="M885 221 C660 221 225 238 120 336"></path>
+
+            <rect class="box warn" x="505" y="460" width="190" height="58"></rect>
+            <text x="600" y="484" text-anchor="middle" font-weight="800">缺依赖？</text>
+            <text x="600" y="504" text-anchor="middle" font-size="13">编码进 pending，稍后 retry</text>
+            <path class="edge" marker-end="url(#flow-arrow)" d="M600 412 V456"></path>
+            <path class="edge" marker-end="url(#flow-arrow)" d="M695 489 C808 489 840 450 840 416"></path>
+          </svg>
+          <figcaption>同一 Demo 的控制流与数据流。底部回路含义：缺前驱时不暴露半成品；后续 update 满足 missing clock 后重新应用 pending。</figcaption>
+        </figure>
+
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>阶段</th><th>变化前</th><th>触发</th><th>变化后 / 外部效果</th></tr></thead>
+            <tbody>
+              <tr><td>公开写</td><td>A 的 items 为空</td><td><code>insert(0, ['A'])</code></td><td>产生 Delta；尚未编码网络消息</td></tr>
+              <tr><td>CRDT 写</td><td>store 无 A 的 struct</td><td><code>Item.integrate</code></td><td>链表出现 Item；insertSet 记录其 ID 范围</td></tr>
+              <tr><td>事务提交</td><td>observer 尚未调用</td><td>最外层回调退出</td><td>observer → GC/merge → 可选 update 事件</td></tr>
+              <tr><td>差分编码</td><td>B state vector 为空</td><td><code>encodeStateAsUpdate</code></td><td>消息含 A 的 Item 与删除集合</td></tr>
+              <tr><td>远端集成</td><td>B 不认识该 ID</td><td><code>applyUpdate</code></td><td>local=false 事务集成 Item；B 可见 ['A']</td></tr>
+              <tr><td>重复到达</td><td>B 已知该 ID</td><td>再次 <code>applyUpdate</code></td><td>knownState 排除整段；可见状态不变</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="callout warning">
+          <p><strong>异常与清理：</strong>本地越界写会在列表定位阶段抛出 <code>Length exceeded!</code>，
+            但事务 <code>finally</code> 仍走 cleanup；远端缺依赖不是异常，而是 pending 状态。应用层必须自己决定消息大小、
+            重试与断线策略，核心库不提供 transport backpressure。
+          </p>
+        </div>
+      </section>
+
+      <section id="algorithm">
+        <h2>12. 并发插入手算：为什么两种到达顺序相同</h2>
+        <p>
+          为了手算，假设 client 10 与 client 20 都在空列表位置 0 离线插入一个元素。
+          两个 Item 的 <code>origin = null</code>、<code>rightOrigin = null</code>，
+          ID 分别为 <code>(10,0)</code> 与 <code>(20,0)</code>。
+        </p>
+
+        <div class="grid two">
+          <article class="card">
+            <h3>副本 P：先收到 B，再收到 A</h3>
+            <div class="state-row">
+              <div class="state">先集成<br><strong>B (20,0)</strong></div>
+              <div class="arrow">→</div>
+              <div class="state">集成 A 时<br>20 &lt; 10 为假</div>
+              <div class="arrow">→</div>
+              <div class="state">同 rightOrigin<br>立即 break</div>
+            </div>
+            <p>A 的 left 保持 null，所以 A 插到 B 前：<strong>A, B</strong>。</p>
+          </article>
+          <article class="card">
+            <h3>副本 Q：先收到 A，再收到 B</h3>
+            <div class="state-row">
+              <div class="state">先集成<br><strong>A (10,0)</strong></div>
+              <div class="arrow">→</div>
+              <div class="state">集成 B 时<br>10 &lt; 20 为真</div>
+              <div class="arrow">→</div>
+              <div class="state">left = A<br>继续扫描</div>
+            </div>
+            <p>B 插到 A 后：仍是 <strong>A, B</strong>。</p>
+          </article>
+        </div>
+
+        <p>
+          这不是“client 小者永远在左”的全部算法，只是同 origin、同 rightOrigin 的最小冲突分支。
+          若 origin 图不同，<code>itemsBeforeOrigin</code> 与 <code>conflictingItems</code> 会把因果依赖已在前方的 Item
+          作为可越过边界，避免把一个操作插进它未曾看到的依赖组内部。
+        </p>
+
+        <div class="grid three">
+          <article class="card">
+            <h3>时间</h3>
+            <p>单次 Item 集成最坏扫描当前冲突区间 <code>k</code>，为 O(k)；按 client-clock 找 struct 使用二分定位。</p>
+          </article>
+          <article class="card">
+            <h3>空间</h3>
+            <p>tombstone 与稳定 ID 换取离线因果锚点。GC 可丢内容但保留轻量结构；Undo 用 keep 保护待恢复内容，Snapshot 恢复则要求原文档全局 <code>gc:false</code>。</p>
+          </article>
+          <article class="card">
+            <h3>索引优化</h3>
+            <p>裸链表按 index 查找是线性；YType 最多缓存 80 个 search marker，优先从接近目标的位置继续扫描。</p>
+          </article>
+        </div>
+
+        <div class="callout">
+          <p><span class="evidence infer">当前实现推断</span>
+            80 个 marker 是对编辑局部性的经验性优化，不改变任何 CRDT 结果；测试 #297 的长度回归同时断言
+            <code>length === toArray().length</code>，防止缓存位置与真实可见链漂移。
+          </p>
+        </div>
+      </section>
+
+      <section id="tests">
+        <h2>13. 测试怎样证明机制，而不只是“跑过”</h2>
+        <p>
+          代表性并发测试最后调用 <code>tests/testHelper.js::compare(users)</code>。这个 helper 不只比 JSON：
+          它先重连并清空全部消息，再从每个用户累计 update 通过 <code>mergeUpdates</code> 构造额外文档，
+          最后比较可见内容、state vector、delete set、StructStore 与编码后的 Snapshot，并断言 pending 已清空。
+        </p>
+        <div class="code-label">
+          <span>源码摘录 · tests/testHelper.js · compare</span>
+          <span>测试 oracle 骨架</span>
+        </div>
+        <pre><code>users.forEach(user =&gt; user.connect())
+while (users[0].tc.flushAllMessages()) {}
+
+const mergedDocs = users.map(user =&gt; {
+  const doc = new Y.Doc()
+  enc.applyUpdate(doc, enc.mergeUpdates(user.updates))
+  return doc
+})
+users.push(...mergedDocs)
+
+for (const user of users) {
+  t.assert(user.store.pendingDs === null)
+  t.assert(user.store.pendingStructs === null)
+}
+for (let i = 0; i &lt; users.length - 1; i++) {
+  t.compare(userArrayValues[i], userArrayValues[i + 1])
+  t.compare(userMapValues[i], userMapValues[i + 1])
+  t.compare(userTextValues[i], userTextValues[i + 1])
+  t.compare(Y.encodeStateVector(users[i]), Y.encodeStateVector(users[i + 1]))
+  compareStructStores(users[i].store, users[i + 1].store)
+  t.compare(
+    Y.encodeSnapshot(Y.snapshot(users[i])),
+    Y.encodeSnapshot(Y.snapshot(users[i + 1]))
+  )
+}</code></pre>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>测试</th><th>Given</th><th>When</th><th>Then</th><th>证明的机制 / 对应源码</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>testBasicUpdate</code></td>
+                <td>两个空 Doc</td>
+                <td>A 插入 <code>hi</code>，编码后应用到 B</td>
+                <td>B 数组等于 <code>['hi']</code></td>
+                <td>最小 encode/apply 闭环；<code>YType.insert → Item.integrate → applyUpdate</code></td>
+              </tr>
+              <tr>
+                <td><code>testConcurrentInsertWithThreeConflicts</code></td>
+                <td>三个离线副本同位置</td>
+                <td>各自插入 0/1/2 后全量重连</td>
+                <td><code>compare</code> 的内容与结构断言全相同</td>
+                <td>同 origin 冲突的到达序无关；<code>Item.integrate</code></td>
+              </tr>
+              <tr>
+                <td><code>testMergePendingUpdates</code></td>
+                <td>逐字符 update 被多级文档故意乱序、缺段中继</td>
+                <td>每一级只收到部分 update，再编码转发</td>
+                <td>最终文本严格为 <code>nenor</code></td>
+                <td>pending struct 会随 state update 保留并在依赖到达后重试；<code>readUpdateV2</code></td>
+              </tr>
+              <tr>
+                <td><code>checkUpdateCases</code></td>
+                <td>至少四个含重叠、分离与删除的 update</td>
+                <td>按五种组合 merge，包括大量重复</td>
+                <td>文档、state vector 与 diff 内容 ID 一致</td>
+                <td>更新合并的幂等/差分语义；<code>updates.js</code> 与 V1/V2 codec</td>
+              </tr>
+              <tr>
+                <td><code>testLengthIssue</code> (#297)</td>
+                <td>search marker 经多次头部插删与嵌套事务</td>
+                <td>交替 delete/insert</td>
+                <td>每一步 <code>length === toArray().length</code></td>
+                <td>marker 更新不改变可见长度不变量；<code>findMarker/updateMarkerChanges</code></td>
+              </tr>
+              <tr>
+                <td><code>testRdtDeltaCacheMaintenance</code></td>
+                <td>已 materialize 顶层与嵌套类型 Delta cache</td>
+                <td>后续编辑自身和子类型</td>
+                <td>对象引用不变，内容等于 fresh deep render</td>
+                <td>cleanup 的 <code>changedParentTypes</code> 同时维护祖先 RDT cache</td>
+              </tr>
+              <tr>
+                <td><code>testBasic</code>（snapshot）</td>
+                <td><code>gc:false</code> 文档先有 <code>world!</code></td>
+                <td>取快照，再前插 <code>hello </code>，恢复新 Doc</td>
+                <td>新 Doc 只有 <code>world!</code></td>
+                <td>state vector + delete set 重建历史可见性；<code>createDocFromSnapshot</code></td>
+              </tr>
+              <tr>
+                <td><code>testRelativePositionAssociationDifference</code></td>
+                <td>同一 index 建立左右两种 assoc 锚点</td>
+                <td>恰在锚点插入 <code>x</code></td>
+                <td>右锚 index=2，左锚 index=1</td>
+                <td>相对位置的吸附语义；<code>createAbsolutePositionFromRelativePosition</code></td>
+              </tr>
+              <tr>
+                <td><code>testUndoText</code></td>
+                <td>本地文本、远端并发文本、格式标记与多 capture 段</td>
+                <td>交替 undo/redo、同步与远端删除</td>
+                <td>内容及格式 Delta 精确匹配预期</td>
+                <td>按 ID 补偿而非回滚全局状态；<code>popStackItem/redoItem</code></td>
+              </tr>
+              <tr>
+                <td><code>testGcIdSetRespectsKeep</code></td>
+                <td>deleted Item 被设为 <code>keep</code></td>
+                <td>对完整 delete set 执行 <code>gcIdSet</code></td>
+                <td>内容仍是原 ContentAny，不变成 ContentDeleted</td>
+                <td>Undo 等能力能保护待恢复 tombstone；<code>gcIdSet/keepItem</code></td>
+              </tr>
+              <tr>
+                <td><code>testClientIdDuplicateChange</code></td>
+                <td>两个 Doc 人工使用同 clientID</td>
+                <td>一个接收另一个的 update</td>
+                <td>接收方自动换 clientID</td>
+                <td>cleanup 的碰撞防护；不改已写历史，只改变后续本地 ID 前缀</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="callout">
+          <p><span class="evidence test">证据边界</span>
+            这些测试证明列出的输入与断言，不等价于“任意恶意字节都安全”或“任意网络拓扑都活跃”。
+            模糊测试与随机测试扩大覆盖面，但传输可靠性、认证和资源限制仍属于应用/provider。
+          </p>
+        </div>
+      </section>
+
+      <section id="boundaries">
+        <h2>14. 边界、审计结果与继续阅读</h2>
+
+        <div class="grid two">
+          <article class="card">
+            <h3>核心库明确不做</h3>
+            <ul class="clean">
+              <li>网络连接、重连、awareness、持久化与 provider 调度。</li>
+              <li>用户认证、写权限、应用 schema 校验与富文本 XSS 清洗。</li>
+              <li>把不可信 peer 的二进制 update 安全地“筛掉某些字段”。</li>
+              <li>为所有输入自动设置消息大小、CPU 或内存上限。</li>
+            </ul>
+          </article>
+          <article class="card">
+            <h3>使用时必须记住</h3>
+            <ul class="clean">
+              <li>Snapshot 恢复旧值要求原文档保留内容，即 <code>gc:false</code>。</li>
+              <li>Undo 只捕获 scope 与 trackedOrigins 接受的事务，不是全局历史回退。</li>
+              <li>Renderer 展示 tombstone 不等于撤销删除，也不会产生 CRDT update。</li>
+              <li>本教程针对 v14 RC 当前 commit，不能套用到稳定版 v13 的类层次。</li>
+            </ul>
+          </article>
+        </div>
+
+        <div class="callout danger">
+          <p><strong>安全边界：</strong><code>THREAT_MODEL.md</code> 明确把 Yjs 定位为可信写 peer 间的 CRDT。
+            有写权限的恶意 peer 可以永久写入破坏性操作；服务端选择性过滤二进制 update 不是可靠安全边界。
+            建议/不可信用户应在独立文档 fork 工作，由可信方审阅合并。入口处仍应做认证、消息大小限制与畸形输入防护。
+          </p>
+        </div>
+
+        <h3>声明级注释验收</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>分类</th><th>数量</th><th>定义</th></tr></thead>
+            <tbody>
+              <tr><td>已有且充分</td><td>0</td><td>上游解释均按中文机制标准重新复核，未把英文/type-only 注释直接留作充分项</td></tr>
+              <tr><td>已翻译扩写</td><td>959</td><td>编辑前已有结构注释；补中文职责、上下游、不变量或测试机制</td></tr>
+              <tr><td>新补充</td><td>132</td><td>编辑前审计为 missing；新增相邻 TSDoc/声明说明</td></tr>
+              <tr><td>豁免</td><td>0</td><td>未以“简单、私有、薄包装”为由跳过命名声明</td></tr>
+              <tr><td><strong>未分类</strong></td><td><strong>0</strong></td><td>完整清单见 <a href="./yjs-comment-coverage.json">yjs-comment-coverage.json</a></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>源码与测试索引</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>继续读什么</th><th>关键符号</th><th>证明它的测试</th></tr></thead>
+            <tbody>
+              <tr><td><a href="../../yjs/src/ytype.js">src/ytype.js</a></td><td><code>YType.applyDelta/toDelta</code>、<code>ItemTextListPosition</code></td><td>y-array / y-map / y-text / attribution</td></tr>
+              <tr><td><a href="../../yjs/src/utils/Transaction.js">Transaction.js</a></td><td><code>transact</code>、<code>cleanupTransactions</code></td><td>doc、事件、attribution、undo</td></tr>
+              <tr><td><a href="../../yjs/src/structs/Item.js">Item.js</a></td><td><code>Item.integrate/delete/split/mergeWith</code></td><td>三副本冲突、迟到同步、内容 codec</td></tr>
+              <tr><td><a href="../../yjs/src/utils/ids.js">ids.js</a></td><td><code>IdSet</code>、<code>IdMap</code>、区间 merge/diff/intersect</td><td>IdSet.tests.js / IdMap.tests.js</td></tr>
+              <tr><td><a href="../../yjs/src/utils/encoding.js">encoding.js</a></td><td><code>integrateStructs</code>、<code>readUpdateV2</code>、<code>encodeStateAsUpdateV2</code></td><td>updates、encoding、compatibility</td></tr>
+              <tr><td><a href="../../yjs/src/utils/Renderer.js">Renderer.js</a></td><td><code>AttributionsRenderer</code>、<code>DiffRenderer</code>、<code>SnapshotRenderer</code></td><td>attribution、delta</td></tr>
+              <tr><td><a href="../../yjs/src/utils/Snapshot.js">Snapshot.js</a></td><td><code>snapshot</code>、<code>createDocFromSnapshot</code></td><td>snapshot.tests.js</td></tr>
+              <tr><td><a href="../../yjs/src/utils/RelativePosition.js">RelativePosition.js</a></td><td>相对/绝对位置双向转换</td><td>relativePositions.tests.js</td></tr>
+              <tr><td><a href="../../yjs/src/utils/UndoManager.js">UndoManager.js</a></td><td><code>afterTransactionHandler</code>、<code>popStackItem</code></td><td>undo-redo.tests.js</td></tr>
+              <tr><td><a href="../../yjs/tests/testHelper.js">tests/testHelper.js</a></td><td><code>TestConnector</code>、<code>compare</code></td><td>所有多副本随机/确定性用例的共同 oracle</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="callout">
+          <p><strong>一句话复述：</strong>Yjs 把用户 Delta 变成带稳定 ID 与因果锚点的 Item；
+            最外层事务统一发布观察结果和二进制差异；远端先排除已知范围，再按依赖图确定性集成，
+            因而离线、乱序、重复仍能收敛。Snapshot、位置、Undo 和 Renderer 都是在同一 Item 历史上选择不同 ID 范围或可见投影。
+          </p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <footer>
+    Yjs 源码深读 · 基于 commit 567af9b4 · 自包含离线文档
+  </footer>
+</body>
+</html>

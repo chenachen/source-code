@@ -1,0 +1,537 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Vue Runtime 从 3.0 到 3.5.41 的设计演进、代表特性与真实问题修复脉络"
+    />
+    <title>迭代与设计演进 · Vue Runtime 内核解剖</title>
+    <link rel="stylesheet" href="assets/styles.css" />
+  </head>
+  <body data-current="evolution.html">
+    <header data-site-header></header>
+    <div class="docs-shell">
+      <aside data-global-nav></aside>
+      <main class="article">
+        <div class="article-hero">
+          <div class="article-kicker">Chapter 10 · Evolution</div>
+          <h1>为什么成熟的 Runtime 还在不断修复</h1>
+          <p class="article-lead">
+            主流程早已稳定，但真实浏览器里仍有慢网速输入、异步结果晚到、资源重复加载和节点移动等边界。版本历史记录了
+            Vue 怎样把这些用户问题变成可靠规则。
+          </p>
+          <div class="hero-meta">
+            <span>跨度：2020—2026</span><span>基线：v3.5.41</span
+            ><span>本地 Git 历史</span>
+          </div>
+        </div>
+
+        <section class="article-section prose" id="plain-evolution">
+          <h2>先看四个“页面看着简单，实现却会出错”的故事</h2>
+          <div class="card-grid">
+            <article class="card">
+              <span class="card-label">慢网速输入</span>
+              <h3>用户刚输入，文字被水合覆盖</h3>
+              <p>
+                HTML 先显示，JS
+                后接管。用户在间隙输入时，水合不能机械恢复服务器旧值。
+              </p>
+            </article>
+            <article class="card">
+              <span class="card-label">异步晚到</span>
+              <h3>旧页面请求覆盖新页面</h3>
+              <p>
+                用户已经切换路由，旧组件的 Promise 才完成；过期结果不能再提交。
+              </p>
+            </article>
+            <article class="card">
+              <span class="card-label">资源副作用</span>
+              <h3>修正属性导致图片重复请求</h3>
+              <p>
+                某些 src/href 写入不只是改值，还会触发网络，水合校验必须谨慎。
+              </p>
+            </article>
+            <article class="card">
+              <span class="card-label">节点搬家</span>
+              <h3>Custom Element 移动时被误卸载</h3>
+              <p>
+                浏览器移动元素会短暂触发断连再连接，不能把“搬家”当成“销毁”。
+              </p>
+            </article>
+          </div>
+          <p class="concept-sentence">
+            成熟框架的大量代码，不是在实现快乐路径，而是在保护现实世界中的时间差、平台差和组合边界。
+          </p>
+          <h3>读历史真正要找什么</h3>
+          <div class="sequence">
+            <div class="sequence-item">
+              <strong>用户做了什么</strong
+              ><br />慢网速输入、切路由、移动节点，而不是先看 commit 改了哪行。
+            </div>
+            <div class="sequence-item">
+              <strong>哪个假设失效</strong
+              ><br />例如“水合前用户不会操作”“Promise 完成时组件仍存在”。
+            </div>
+            <div class="sequence-item">
+              <strong>新规则保护什么</strong
+              ><br />既修当前故障，也要保证普通挂载、后续更新与错误恢复不退化。
+            </div>
+            <div class="sequence-item">
+              <strong>测试怎样锁住场景</strong
+              ><br />最小复现成为长期行为契约，防止未来重构重新引入问题。
+            </div>
+          </div>
+        </section>
+
+        <div class="level-divider">进入版本时间线、提交与源码层</div>
+
+        <section class="article-section prose" id="method">
+          <h2>怎样读演进，而不把源码读成更新日志</h2>
+          <p>把变更分成四层，会比按日期逐 commit 浏览更有效：</p>
+          <div class="card-grid">
+            <article class="card">
+              <span class="card-label">CAPABILITY</span>
+              <h3>新增能力</h3>
+              <p>
+                Custom Element、Suspense 协议、懒水合、deferred
+                Teleport。问：旧抽象缺了哪个接入点？
+              </p>
+            </article>
+            <article class="card">
+              <span class="card-label">PERFORMANCE</span>
+              <h3>数据结构优化</h3>
+              <p>
+                block tree、patch flags、scheduler bit
+                flags。问：基线正确路径是什么，优化如何安全回退？
+              </p>
+            </article>
+            <article class="card">
+              <span class="card-label">CORRECTNESS</span>
+              <h3>边界修复</h3>
+              <p>
+                过期异步结果、水合用户输入、命名空间、事件时序。问：哪个不变量被现实场景打破？
+              </p>
+            </article>
+            <article class="card">
+              <span class="card-label">ERGONOMICS</span>
+              <h3>开发者接口</h3>
+              <p>
+                useId、useTemplateRef、defineCustomElement 配置。问：Runtime
+                增加了哪些可追踪状态？
+              </p>
+            </article>
+          </div>
+          <div class="callout">
+            本章日期与短哈希来自当前仓库本地 Git
+            历史；它们用于定位学习节点，不声称列出每个版本的所有变化。
+          </div>
+        </section>
+
+        <section class="article-section prose" id="timeline">
+          <h2>六个版本节点</h2>
+          <div class="timeline">
+            <div class="timeline-item">
+              <div class="timeline-meta">2020-09-18 · v3.0.0 · d8c1536ea</div>
+              <h3>新 Runtime 骨架定型</h3>
+              <p>
+                组件实例、VNode/Block、平台无关
+                Renderer、Scheduler、Teleport/Suspense/KeepAlive 和 runtime-dom
+                分层成为 Vue 3 的基础。核心判断从“运行时猜变化”转向“编译器标记 +
+                运行时回退”。
+              </p>
+            </div>
+            <div class="timeline-item">
+              <div class="timeline-meta">2021-08-09 · v3.2.0 · 5a7a43cc3</div>
+              <h3>编译与运行时协同成熟</h3>
+              <p>
+                围绕性能、SSR 和 Web Components
+                的能力继续扩展。<code>defineCustomElement</code>（8610e1c9e）把组件实例生命周期映射到浏览器
+                Custom Element 协议。
+              </p>
+            </div>
+            <div class="timeline-item">
+              <div class="timeline-meta">2023-05-11 · v3.3.0 · 483a4e7e3</div>
+              <h3>异步边界组合能力增强</h3>
+              <p>
+                Suspense 的
+                <code>suspensible</code>
+                支持（cb37d0b9f）让嵌套异步边界能选择是否把依赖交给祖先，体现“边界隔离还是向上聚合”的显式协议。
+              </p>
+            </div>
+            <div class="timeline-item">
+              <div class="timeline-meta">2023-12-29 · v3.4.0 · d702b6648</div>
+              <h3>性能与内部状态继续收敛</h3>
+              <p>
+                Runtime 优化更强调紧凑状态和稳定快路径。随后 scheduler
+                的布尔字段逐步改为 bit flags（55660b0cf / db4040d13），减少 job
+                对象字段与重复状态组合。
+              </p>
+            </div>
+            <div class="timeline-item">
+              <div class="timeline-meta">2024-09-03 · v3.5.0 · 6402b9840</div>
+              <h3>SSR 与应用级能力明显扩张</h3>
+              <p>
+                <code>useTemplateRef</code>、<code>useId</code>、deferred
+                Teleport 与 lazy hydration 进入 Runtime。共同主题是：为 SSR
+                稳定身份、启动时机和跨容器提交提供一等协议。
+              </p>
+            </div>
+            <div class="timeline-item">
+              <div class="timeline-meta">2026-08-05 · v3.5.41 · d2c458be2</div>
+              <h3>成熟期的边界修复</h3>
+              <p>
+                主结构稳定后，提交更集中于浏览器差异、组合场景、类型与回归测试。代码中的许多小分支，往往对应真实用户输入、资源加载或命名空间问题。
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section class="article-section prose" id="stable-core">
+          <h2>什么一直没变：设计的承重墙</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>承重墙</th>
+                  <th>长期价值</th>
+                  <th>新特性如何接入</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>RendererOptions 宿主抽象</strong></td>
+                  <td>core 不知道 DOM，测试和平台实现可替换</td>
+                  <td>新 namespace、静态内容与 scope id 通过宿主接口扩展</td>
+                </tr>
+                <tr>
+                  <td><strong>VNode 作为共享 IR</strong></td>
+                  <td>组件、编译器、renderer 和内置组件交换同一计划</td>
+                  <td>
+                    新增 flag、hydrate strategy、transition/dirs 等字段或协议
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>组件 render effect</strong></td>
+                  <td>状态边界与提交边界统一</td>
+                  <td>新的 ref、id、async setup 仍围绕实例生命周期建立</td>
+                </tr>
+                <tr>
+                  <td><strong>统一 patch/move/unmount</strong></td>
+                  <td>所有 VNode 类型遵守相同 container/anchor 语义</td>
+                  <td>
+                    Teleport/Suspense/KeepAlive 通过 internals 接入而非另起炉灶
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>调度三阶段</strong></td>
+                  <td>父子顺序、批处理与 DOM 后副作用可预测</td>
+                  <td>新的 watcher/lifecycle 只需选择 pre/main/post 时机</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            好架构并不意味着文件不增长，而是新需求可以表达成原有不变量上的局部扩展。Vue
+            Runtime 的历史大体如此：container/anchor、VNode identity、job
+            ordering 这些词反复出现，因为它们是不同能力的共同坐标。
+          </p>
+        </section>
+
+        <section class="article-section prose" id="feature-stories">
+          <h2>四条能力演进线</h2>
+          <div class="tabs" data-tabs>
+            <div class="tab-list" role="tablist">
+              <button
+                class="tab-button"
+                data-tab="feature-ce"
+                aria-selected="true"
+              >
+                Custom Element
+              </button>
+              <button
+                class="tab-button"
+                data-tab="feature-ssr"
+                aria-selected="false"
+              >
+                SSR / Hydration
+              </button>
+              <button
+                class="tab-button"
+                data-tab="feature-async"
+                aria-selected="false"
+              >
+                异步边界
+              </button>
+              <button
+                class="tab-button"
+                data-tab="feature-scheduler"
+                aria-selected="false"
+              >
+                Scheduler
+              </button>
+            </div>
+            <div class="tab-panel" data-tab-panel="feature-ce">
+              <h3>从“可封装组件”到“可嵌入任意页面”</h3>
+              <p>
+                Custom Element 不只是换一个 mount 容器。VueElement 必须桥接
+                property/attribute、DOM event、Shadow DOM、样式、slot
+                和连接生命周期。后续“可配置
+                app”等扩展，说明应用上下文也需要开放但受控的注入点。
+              </p>
+              <p>
+                <strong>设计模式：</strong>外部协议由适配层承接，内部仍复用
+                createApp、组件实例与 renderer。
+              </p>
+            </div>
+            <div class="tab-panel" data-tab-panel="feature-ssr" hidden>
+              <h3>从“尽快水合”到“按业务时机水合”</h3>
+              <p>
+                早期目标是正确认领 SSR DOM；3.5 的 lazy hydration
+                把“何时创建交互能力”变成策略接口。hydrateOnIdle/Visible/MediaQuery/Interaction
+                是标准策略，自定义策略可接业务调度。
+              </p>
+              <p>
+                <strong>设计模式：</strong>把触发时机外置，但保留
+                cleanup、过期检查与 hydrate 实体流程。
+              </p>
+            </div>
+            <div class="tab-panel" data-tab-panel="feature-async" hidden>
+              <h3>从一个 pending branch 到可组合边界</h3>
+              <p>
+                Suspense 要与 Transition、KeepAlive、嵌套 Suspense 和 SSR
+                共存。<code>suspensible</code> 等选项本质是在决定依赖计数和
+                effects 应由哪个边界拥有。
+              </p>
+              <p>
+                <strong>设计模式：</strong>用 pendingId/dep count
+                建立事务身份，让晚到的异步结果可以被安全忽略。
+              </p>
+            </div>
+            <div class="tab-panel" data-tab-panel="feature-scheduler" hidden>
+              <h3>从多个布尔字段到位标志</h3>
+              <p>
+                PRE、QUEUED、ALLOW_RECURSE、DISPOSED
+                等状态组合频繁出现在热路径。bit flags
+                使判断和存储更紧凑，但外部语义仍是父先子后、去重、可递归控制与错误后恢复。
+              </p>
+              <p>
+                <strong>设计模式：</strong
+                >优化表示层，不改变排序与清理不变量；每个 return/throw
+                路径都必须正确清 flag。
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section class="article-section prose" id="fix-stories">
+          <h2>问题驱动的修复：小分支背后的大场景</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>主题</th>
+                  <th>真实场景</th>
+                  <th>被破坏的不变量</th>
+                  <th>修复时必须同时验证</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>
+                    <strong>水合前用户输入</strong><br />#14411 · 246846479
+                  </td>
+                  <td>HTML 已显示，JS 尚未接管；用户先在表单中输入</td>
+                  <td>水合复用不能破坏浏览器中的更新鲜状态</td>
+                  <td>初值一致、已输入、v-model 后续更新、不同表单类型</td>
+                </tr>
+                <tr>
+                  <td><strong>资源属性水合</strong><br />#15105 · a7513a1a3</td>
+                  <td>修正 src 等属性可能再次触发加载</td>
+                  <td>一致性检查不应制造重复副作用</td>
+                  <td>属性失配提示、网络敏感属性、客户端最终值</td>
+                </tr>
+                <tr>
+                  <td>
+                    <strong>VNode children 被覆盖</strong><br />#15194 ·
+                    684a8defd
+                  </td>
+                  <td>
+                    render 函数同时传入 innerHTML/textContent 与
+                    children，浏览器 property 会静默丢弃 children
+                  </td>
+                  <td>同一个元素的内容必须只有一个权威来源</td>
+                  <td>文本、数组、空 children、组件 slot 与 SSR 输出</td>
+                </tr>
+                <tr>
+                  <td><strong>异步/卸载竞态</strong></td>
+                  <td>loader、Suspense 或懒水合完成前节点被替换</td>
+                  <td>过期结果不得提交到新树</td>
+                  <td>实例 isUnmounted、pendingId、清理函数、DOM 范围</td>
+                </tr>
+                <tr>
+                  <td><strong>Custom Element 移动</strong></td>
+                  <td>节点同步 disconnected 后又 connected</td>
+                  <td>DOM move 不等同于组件销毁</td>
+                  <td>微任务后 isConnected、状态保留、observer 清理</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            阅读 issue
+            修复时，应把测试当作修复契约：最小复现描述“以前哪里错”，相邻断言描述“修复不能破坏什么”。只读变更的
+            if 分支，很容易错过维护者真正保护的边界。
+          </p>
+          <div class="plain-section">
+            <span class="scene-label">提交到源码的证据链 · v3.5.41</span>
+            <pre><code>// #15194 / 684a8defd 最终落点：vnode.ts:502–518
+const overwritingProp = props.innerHTML != null
+  ? 'innerHTML'
+  : props.textContent != null
+    ? 'textContent'
+    : null
+
+if (overwritingProp &amp;&amp; hasContentChildren(vnode.children)) {
+  warn('... will override its children ...')
+}</code></pre>
+            <p>
+              这不是 namespace 修复。提交在创建元素 VNode 时检查“破坏性内容
+              property + 有效
+              children”，用开发警告把浏览器本会静默发生的数据丢失 暴露出来；相邻
+              <code>vnode.spec.ts</code> 测试文本、数组、空值与组件 slot 边界。
+            </p>
+            <div class="source-links">
+              <a
+                class="source-link"
+                href="../../../vue/packages/runtime-dom/src/directives/vModel.ts"
+                >本地：#14411 v-model 修复</a
+              >
+              <a
+                class="source-link"
+                href="../../../vue/packages/runtime-core/src/hydration.ts"
+                >本地：#15105 资源属性修复</a
+              >
+              <a
+                class="source-link"
+                href="../../../vue/packages/runtime-core/src/vnode.ts"
+                >本地：#15194 children 警告</a
+              >
+              <a
+                class="source-link"
+                href="../../../vue/packages/runtime-core/__tests__/vnode.spec.ts"
+                >本地：#15194 回归测试</a
+              >
+              <a
+                class="source-link"
+                href="https://github.com/vuejs/core/blob/v3.5.41/packages/runtime-core/src/vnode.ts#L502-L518"
+                >v3.5.41：#15194 精确行</a
+              >
+              <a
+                class="source-link"
+                href="https://github.com/vuejs/core/commit/684a8defd"
+                >提交：684a8defd</a
+              >
+            </div>
+          </div>
+        </section>
+
+        <section class="article-section prose" id="evolution-patterns">
+          <h2>从历史中抽出的六种演进模式</h2>
+          <div class="sequence">
+            <div class="sequence-item">
+              <strong>先建立完整正确路径</strong><br />普通 patch
+              是基线；block、patchFlag、LIS 在有证据时缩小工作，遇到 BAIL
+              可回退。
+            </div>
+            <div class="sequence-item">
+              <strong>用身份令牌解决异步过期</strong><br />pendingId、job
+              flags、VNode key 都在回答“这个结果还属于当前状态吗”。
+            </div>
+            <div class="sequence-item">
+              <strong>把外部差异留在边界层</strong><br />DOM property
+              例外、namespace、Custom Element 生命周期集中在 runtime-dom。
+            </div>
+            <div class="sequence-item">
+              <strong>副作用推迟到状态稳定</strong><br />mounted、ref、Suspense
+              effects、deferred Teleport 都使用调度阶段而非随意 Promise。
+            </div>
+            <div class="sequence-item">
+              <strong>组合能力共享少量原语</strong
+              ><br />patch、move、unmount、container、anchor
+              比为每种组合写专用路径更可维护。
+            </div>
+            <div class="sequence-item">
+              <strong>回归测试与修复同生</strong><br />issue 场景进入 spec
+              后，历史原因才不会在后续重构中消失。
+            </div>
+          </div>
+        </section>
+
+        <section class="article-section prose" id="git-reading">
+          <h2>把 Git 当作第二份源码注释</h2>
+          <pre><code># 看固定版本中 patchKeyedChildren 这段为何演变成今天的形状
+# TypeScript 的 const 箭头函数不能稳定使用 -L :funcname:file 形式
+git log --oneline -L 1804,2033:packages/runtime-core/src/renderer.ts v3.5.41
+
+# 追踪具体行的历史与上下文
+git blame -L 100,180 packages/runtime-core/src/hydration.ts
+
+# 只看两个版本之间 Runtime 结构变化
+git diff v3.4.0..v3.5.0 -- packages/runtime-core packages/runtime-dom
+
+# 从 issue / PR 编号寻找修复提交
+git log --all --grep="#14411" --oneline</code></pre>
+          <ol>
+            <li>先在当前版本理解不变量与数据结构。</li>
+            <li>用 blame 定位“异常分支”引入的 commit。</li>
+            <li>同时阅读 commit 前后的测试，不只看实现 diff。</li>
+            <li>回到当前版本确认后续重构是否改变了表示，但保留同一契约。</li>
+          </ol>
+          <div class="source-links">
+            <a
+              class="source-link"
+              href="https://github.com/vuejs/core/releases/tag/v3.0.0"
+              >v3.0.0</a
+            >
+            <a
+              class="source-link"
+              href="https://github.com/vuejs/core/releases/tag/v3.4.0"
+              >v3.4.0</a
+            >
+            <a
+              class="source-link"
+              href="https://github.com/vuejs/core/releases/tag/v3.5.0"
+              >v3.5.0</a
+            >
+            <a
+              class="source-link"
+              href="https://github.com/vuejs/core/releases/tag/v3.5.41"
+              >v3.5.41</a
+            >
+          </div>
+        </section>
+
+        <nav class="page-nav" aria-label="章节翻页">
+          <a href="integration.html"><span>上一章</span>← 完整调用链</a>
+          <a href="testing.html"><span>下一章</span>测试与调试 →</a>
+        </nav>
+      </main>
+
+      <aside class="page-toc" aria-label="本页目录">
+        <div class="toc-title">本页目录</div>
+        <a href="#plain-evolution">四个真实故事</a>
+        <a href="#method">阅读方法</a>
+        <a href="#timeline">版本节点</a>
+        <a href="#stable-core">稳定骨架</a>
+        <a href="#feature-stories">能力演进</a>
+        <a href="#fix-stories">问题修复</a>
+        <a href="#evolution-patterns">演进模式</a>
+        <a href="#git-reading">Git 阅读法</a>
+      </aside>
+    </div>
+    <footer data-site-footer></footer>
+    <script src="assets/app.js" defer></script>
+  </body>
+</html>

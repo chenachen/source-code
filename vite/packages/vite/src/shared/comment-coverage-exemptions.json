@@ -1,0 +1,18 @@
+{
+  "exemptions": {
+    "packages/vite/bin/openChrome.js#function#run": "已有中文 TSDoc；eslint-disable-next-line 必须紧贴 JXA 约定入口，结构审计只看到工具指令",
+    "packages/vite/src/node/plugins/css.ts#enum#PureCssLang": "该枚举已有紧邻中文 TSDoc；声明前必须保留原 eslint-disable-next-line 指令，审计器按设计把最后一条前导注释归类为 directive。",
+    "packages/vite/src/node/plugins/css.ts#constant#cssImageSetRE": "该常量已有紧邻中文 TSDoc；正则规则要求原 eslint-disable-next-line 紧贴声明，审计器因此无法把更上方 TSDoc 计为声明注释。",
+    "packages/vite/src/node/optimizer/pluginConverter.ts#method#convertEsbuildPluginToRolldownPlugin.setup": "该空 setup 方法已有中文 TSDoc；no-empty-function 指令必须紧贴方法，结构审计因此把最后一条前导注释归类为 directive。",
+    "packages/vite/src/node/server/pluginContainer.ts#getter#BasicMinimalPluginContext.pluginName": "该兼容 getter 已有中文 TSDoc；class-literal-property-style 指令必须紧贴 getter，结构审计因此把最后一条前导注释归类为 directive。",
+    "packages/vite/src/node/__tests_dts__/typeOptions.ts#interface#TypeOptions1": "该空接口已有中文 TSDoc；原 eslint-disable-next-line 必须紧贴空接口声明，结构审计因此把最后一条前导注释归类为 directive。",
+    "packages/vite/src/node/utils.ts#constant#invalidUrlPathCharRE": "已有中文 TSDoc；eslint-disable-next-line 必须紧贴含控制字符的正则声明，结构审计只看到工具指令",
+    "packages/vite/src/shared/hmr.ts#method#HMRContext.decline": "已有中文 TSDoc；eslint-disable-next-line 必须紧贴兼容空方法，结构审计只看到工具指令",
+    "packages/vite/src/shared/moduleRunnerTransport.ts#field#createConnection": "已有字段说明；Node WebSocket 兼容指令必须紧贴字段，结构审计只看到工具指令",
+    "packages/vite/src/shared/utils.ts#constant#AsyncFunction": "已有中文 TSDoc；空函数兼容指令必须紧贴声明，结构审计只看到工具指令",
+    "packages/vite/types/customEvent.d.ts#field#WebSocketConnectionPayload.webSocket": "已有中文 TSDoc；Node WebSocket 兼容指令必须紧贴字段，结构审计只看到工具指令",
+    "packages/vite/types/importGlob.d.ts#interface#Worker": "已有中文 TSDoc；空 Worker 合并声明的 ESLint 指令必须紧贴接口，结构审计只看到工具指令",
+    "packages/vite/types/importMeta.d.ts#interface#ViteTypeOptions": "已有中文 TSDoc；可扩展空接口的 ESLint 指令必须紧贴声明，结构审计只看到工具指令",
+    "packages/vite/types/internal/cssPreprocessorOptions.d.ts#interface#HTMLLinkElement": "已有中文 TSDoc；DOM 兼容空接口的 ESLint 指令必须紧贴声明，结构审计只看到工具指令"
+  }
+}

@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="React 19.3 Fiber 对象模型深挖：FiberRoot、树指针、stateNode、current/work-in-progress 双缓冲、alternate、提交切换与删除清理。" />
+  <title>10 · Fiber 对象模型：两棵树如何成为一个组件世界</title>
+  <link rel="stylesheet" href="assets/guide.css?v=1" />
+</head>
+<body>
+  <header class="topbar"><div class="topbar-inner">
+    <a class="brand" href="index.html">React 六包源码指南</a>
+    <nav class="pager" aria-label="页面导航">
+      <a href="index.html">地图</a><a href="04-reconciler-render.html">render</a><a href="05-reconciler-commit.html">commit</a>
+      <a aria-current="page" href="10-fiber-object-model.html">Fiber 深挖</a><a href="11-update-queues-lanes.html">队列与 Lane</a>
+      <a href="08-end-to-end.html">主线</a><a href="09-evidence.html">证据</a>
+    </nav>
+  </div></header>
+
+  <div class="layout"><main>
+    <p class="eyebrow">10 · reconciler deep dive / object model</p>
+    <h1>Fiber 不是虚拟 DOM 节点，而是一份可恢复的工作记录</h1>
+    <p class="lede">同一个逻辑组件通常有 current 与 work-in-progress 两枚 Fiber。current 是已提交事实，WIP 是可暂停、重启或丢弃的候选；
+      <code>alternate</code> 把两者配对，<code>root.current</code> 则在 commit 中决定哪一面是新的事实。</p>
+    <div class="meta"><span class="pill">react-reconciler 0.34.0</span><span class="pill">React 19.3.0 源码快照</span>
+      <span class="pill">双缓冲</span><span class="pill">单链树</span><span class="pill">连续原码 + 真实测试</span></div>
+
+    <section id="outcome"><h2>读完应能回答什么</h2>
+      <div class="grid three">
+        <article class="card"><span class="number">IDENTITY</span><h3>谁代表组件身份</h3><p><code>key + elementType/type + 父级位置语义</code>决定能否协调复用；<code>alternate</code> 只配对已被认定为同一身份的两版工作记录。</p></article>
+        <article class="card"><span class="number">CONTROL</span><h3>树指针也是调用栈</h3><p><code>child</code> 负责下钻，<code>sibling</code> 负责横移，<code>return</code> 负责回溯；render 不需要为整棵组件树保留 JavaScript 递归栈。</p></article>
+        <article class="card"><span class="number">COMMIT</span><h3>何时候选变为现实</h3><p>mutation 完成后、layout 开始前写入 <code>root.current = finishedWork</code>。它不是复制整棵树，而是切换根的权威指针。</p></article>
+      </div>
+      <div class="callout"><p><strong>本页边界：</strong>聚焦 Fiber/FiberRoot 的对象关系、双缓冲与生命周期。更新怎样获得 Lane、怎样跳过并重放，接下一页
+        <a href="11-update-queues-lanes.html">Update Queue 与 Lane</a>。</p></div>
+    </section>
+
+    <section id="root"><h2>FiberRoot 与 HostRoot Fiber：容器状态和树中工作分开保存</h2>
+      <p><code>FiberRoot</code> 是 renderer 根的长期状态容器：持有 DOM/Noop 容器、根级 Lane 状态、调度 callback、错误回调和缓存。
+        <code>HostRoot Fiber</code> 才是 Fiber 树的顶点，参与 begin/complete/commit。两者通过一组双向指针连接：</p>
+      <div class="chain" aria-label="FiberRoot 与 HostRoot Fiber 双向关系">
+        <div class="node">外部 Root handle<small>ReactDOMRoot._internalRoot</small></div><span class="arrow">→</span>
+        <div class="node">FiberRoot<small>current / pendingLanes / containerInfo</small></div><span class="arrow">→</span>
+        <div class="node">HostRoot Fiber<small>tag = HostRoot</small></div><span class="arrow">→</span>
+        <div class="node">FiberRoot<small>stateNode 回指</small></div>
+      </div>
+
+      <figure class="source"><figcaption><span>连续原码 · ReactFiberRoot.js · createFiberRoot</span><a href="../../react/packages/react-reconciler/src/ReactFiberRoot.js">打开文件</a></figcaption><pre><code>  // 循环构造：root.current 指向 HostRoot Fiber，HostRoot.stateNode 再指回 root；stateNode 为 any，
+  // 因而当前 Flow 类型无法静态证明这组双向不变量。
+  const uninitializedFiber = createHostRootFiber(tag, isStrictMode);
+  root.current = uninitializedFiber;
+  uninitializedFiber.stateNode = root;
+
+  const initialCache = createCache();
+  retainCache(initialCache);
+
+  // pooledCache 在 render 中临时提供给新挂载边界；render 结束时要么在 commit 后释放，
+  // 要么因挂起转移给 Offscreen。它与 memoizedState.cache 生命周期不同，必须单独 retain。
+  root.pooledCache = initialCache;
+  retainCache(initialCache);</code></pre></figure>
+      <p>前三行建立不变量：<code>root.current.stateNode === root</code>。后面的 cache retain 也解释了为什么 FiberRoot 不只是“树指针”：它还拥有跨 render/commit 的根级资源。</p>
+
+      <div class="table-wrap"><table><thead><tr><th>对象</th><th>创建者</th><th>主要持有者</th><th>何时死亡</th><th>不负责什么</th></tr></thead><tbody>
+        <tr><td>FiberRoot</td><td><code>createFiberRoot</code></td><td>renderer 的公开 root handle</td><td><code>unmount</code> 后不再调度，相关资源释放</td><td>不逐节点执行组件 render</td></tr>
+        <tr><td>HostRoot Fiber</td><td><code>createHostRootFiber</code></td><td><code>FiberRoot.current</code> 或其 alternate</td><td>根销毁后随树回收</td><td>不直接等同宿主容器</td></tr>
+        <tr><td>普通 Fiber</td><td>element 协调或 <code>createWorkInProgress</code></td><td>父 Fiber 的 child/sibling 链</td><td>删除提交及 passive 清理后断链</td><td>不是 React element，也不一定有 DOM</td></tr>
+      </tbody></table></div>
+    </section>
+
+    <section id="fields"><h2>一枚 Fiber 同时承载五类信息</h2>
+      <figure class="source"><figcaption><span>连续原码 · ReactFiber.js · FiberNode 核心字段</span><a href="../../react/packages/react-reconciler/src/ReactFiber.js">打开文件</a></figcaption><pre><code>  // 元素/宿主实例身份。
+  this.tag = tag;
+  this.key = key;
+  this.elementType = null;
+  this.type = null;
+  this.stateNode = null;
+
+  // 树结构与协调状态。
+  this.return = null;
+  this.child = null;
+  this.sibling = null;
+  this.index = 0;
+
+  this.ref = null;
+  this.refCleanup = null;
+
+  this.pendingProps = pendingProps;
+  this.memoizedProps = null;
+  this.updateQueue = null;
+  this.memoizedState = null;
+  this.dependencies = null;
+
+  this.mode = mode;
+
+  // 本节点与子树的 commit effects。
+  this.flags = NoFlags;
+  this.subtreeFlags = NoFlags;
+  this.deletions = null;
+
+  this.lanes = NoLanes;
+  this.childLanes = NoLanes;
+
+  this.alternate = null;</code></pre></figure>
+      <div class="table-wrap"><table><thead><tr><th>字段组</th><th>问题</th><th>字段</th><th>关键不变量</th></tr></thead><tbody>
+        <tr><td>身份/分派</td><td>“这是什么工作单元？”</td><td>tag、key、elementType、type</td><td>tag 决定 begin/complete/commit 分支；key 只在同一父级身份域内比较</td></tr>
+        <tr><td>宿主/实例</td><td>“工作最终落到哪里？”</td><td>stateNode、ref、refCleanup</td><td>stateNode 的解释由 tag 决定，不能一概当作 DOM</td></tr>
+        <tr><td>树与控制流</td><td>“下一个工作在哪里？”</td><td>return、child、sibling、index</td><td>child/sibling 构成单链树；return 既是父关系，也是完成后的返回地址</td></tr>
+        <tr><td>render 输入/状态</td><td>“从什么基线算新输出？”</td><td>pendingProps、memoizedProps、updateQueue、memoizedState、dependencies</td><td>pending 是本轮候选输入；current.memoized* 是已提交快照，WIP.memoized* 是本轮已处理但尚未提交的候选</td></tr>
+        <tr><td>工作与副作用</td><td>“哪里还有工作、commit 做什么？”</td><td>lanes、childLanes、flags、subtreeFlags、deletions</td><td>Lane 控制 render 是否深入；flag 控制 commit 是否产生副作用</td></tr>
+        <tr><td>双缓冲</td><td>“同一身份的另一版在哪里？”</td><td>alternate</td><td>一旦建立，通常满足 <code>A.alternate === B &amp;&amp; B.alternate === A</code></td></tr>
+      </tbody></table></div>
+
+      <h3>child / sibling / return：用单链结构编码多叉树</h3>
+      <figure class="source"><figcaption><span>教程伪代码 · 状态图，不是仓库源码</span></figcaption><pre><code>HostRoot
+  child ──▶ App(FunctionComponent)
+             return ──▶ HostRoot
+             child ──▶ Header ──sibling──▶ Main ──sibling──▶ Footer
+                         return ──▶ App      return ──▶ App       return ──▶ App</code></pre></figure>
+      <p>对 <code>App</code> 的三个 child，只在第一个 child 上保存父到子的入口，再用 sibling 串起其余节点。工作循环下钻 child；一个节点完成后，先尝试 sibling，
+        没有 sibling 才沿 return 回溯。它能把“递归遍历组件树”拆成可暂停的逐 Fiber 状态机。</p>
+      <div class="callout warn"><p><strong>return 不是 DOM parent：</strong>函数组件、Fragment、Context、Suspense 都有 Fiber 却没有对应 DOM；Portal 的宿主容器也可跳出普通父 DOM。
+        commit 插入节点时必须另行寻找 HostComponent/HostRoot/HostPortal，而不能直接使用 <code>fiber.return.stateNode</code>。</p></div>
+
+      <h3>stateNode 随 tag 改变含义</h3>
+      <div class="table-wrap"><table><thead><tr><th>Fiber tag</th><th>stateNode 典型值</th><th>为何存在</th></tr></thead><tbody>
+        <tr><td>HostRoot</td><td>FiberRoot</td><td>从树顶回到根级 Lane、容器和调度状态</td></tr>
+        <tr><td>HostComponent / HostText</td><td>DOM renderer 中的 Element / Text</td><td>commit 直接更新、插入或删除宿主实例</td></tr>
+        <tr><td>ClassComponent</td><td>用户 class 实例</td><td>保存实例状态与生命周期调用目标</td></tr>
+        <tr><td>FunctionComponent</td><td>通常为 null</td><td>Hook 状态在 <code>memoizedState</code> 链，不制造函数实例</td></tr>
+        <tr><td>HostPortal</td><td>包含目标 container 的 portal 状态</td><td>改变后代宿主插入边界</td></tr>
+        <tr><td>Offscreen</td><td>可见性/挂起控制实例</td><td>维护隐藏树的宿主与 effect 连接状态</td></tr>
+      </tbody></table></div>
+    </section>
+
+    <section id="double-buffer"><h2>current ↔ WIP：同一逻辑树的已提交面与候选面</h2>
+      <p>第一次更新某节点时，<code>createWorkInProgress</code> 惰性创建 alternate；以后更新复用旧对象，只重置本轮 effect 字段并复制当前基线。
+        这既避免每次 render 为所有复用节点永久分配第三版，也允许未提交候选被安全覆盖。</p>
+      <figure class="source"><figcaption><span>删节源码 · ReactFiber.js · createWorkInProgress（省略注释与 DEV 归因复制）</span><a href="../../react/packages/react-reconciler/src/ReactFiber.js">打开文件</a></figcaption><pre><code>export function createWorkInProgress(current: Fiber, pendingProps: any): Fiber {
+  let workInProgress = current.alternate;
+  if (workInProgress === null) {
+    workInProgress = createFiber(
+      current.tag,
+      pendingProps,
+      current.key,
+      current.mode,
+    );
+    workInProgress.elementType = current.elementType;
+    workInProgress.type = current.type;
+    workInProgress.stateNode = current.stateNode;
+
+    if (__DEV__) {
+      workInProgress._debugOwner = current._debugOwner;
+      workInProgress._debugStack = current._debugStack;
+      workInProgress._debugTask = current._debugTask;
+      workInProgress._debugHookTypes = current._debugHookTypes;
+    }
+
+    workInProgress.alternate = current;
+    current.alternate = workInProgress;
+  } else {
+    workInProgress.pendingProps = pendingProps;
+    workInProgress.type = current.type;
+
+    workInProgress.flags = NoFlags;
+    workInProgress.subtreeFlags = NoFlags;
+    workInProgress.deletions = null;</code></pre></figure>
+      <p>这里是明确标注的<strong>删节源码</strong>：保留创建/复用控制流与关键写入，省去原文件注释、DEV 归因复制和后续 profiler/optimistic-key 分支。</p>
+
+      <figure class="source"><figcaption><span>连续原码 · ReactFiber.js · createWorkInProgress（复制 render 基线）</span><a href="../../react/packages/react-reconciler/src/ReactFiber.js">打开文件</a></figcaption><pre><code>  workInProgress.flags = current.flags &amp; StaticMask;
+  workInProgress.childLanes = current.childLanes;
+  workInProgress.lanes = current.lanes;
+
+  workInProgress.child = current.child;
+  workInProgress.memoizedProps = current.memoizedProps;
+  workInProgress.memoizedState = current.memoizedState;
+  workInProgress.updateQueue = current.updateQueue;</code></pre></figure>
+      <p>第二段揭示一个容易误解的事实：建立 WIP 根时并不会立即深拷贝整棵子树。child 先指向 current child；beginWork 真正进入子树时才克隆相应 Fiber。
+        <code>updateQueue</code> 也可能先共享，再由不同队列实现按需要克隆“视图”或保留共享 pending 环。</p>
+
+      <div class="table-wrap"><table><thead><tr><th>时刻</th><th>root.current</th><th>另一面</th><th>用户可见宿主树</th><th>发生什么</th></tr></thead><tbody>
+        <tr><td>T0 首次提交后</td><td>A</td><td>HostRoot 的 B 已存在；首次挂载的新后代可能仍无 alternate</td><td>A 对应输出</td><td>A 是权威基线；根为首次 render 必先创建 WIP</td></tr>
+        <tr><td>T1 开始更新</td><td>A</td><td><code>B = createWorkInProgress(A)</code></td><td>仍是 A</td><td>B 复制 A 的基线，接收新 props/state</td></tr>
+        <tr><td>T2 render yield / 挂起</td><td>A</td><td>B 仅完成一部分</td><td>仍是 A</td><td>可以保留 B 恢复，也可以覆盖 B 从根重启</td></tr>
+        <tr><td>T3 mutation 完成</td><td>A，尚未切换</td><td>B = finishedWork</td><td>宿主节点正在变成 B</td><td>卸载路径仍以旧 current 解释身份</td></tr>
+        <tr><td>T4 current 切换</td><td>B</td><td>A</td><td>B 对应输出</td><td><code>root.current = finishedWork</code>；layout 读新树</td></tr>
+        <tr><td>T5 下一次更新</td><td>B</td><td>复用 A 作为新 WIP</td><td>仍是 B</td><td>两枚对象角色互换，而非创建“第三棵树”</td></tr>
+      </tbody></table></div>
+    </section>
+
+    <section id="fresh-stack"><h2>从 current 建候选根：中断后可重新开始</h2>
+      <figure class="source"><figcaption><span>连续原码 · ReactFiberWorkLoop.js · prepareFreshStack 核心状态写入</span><a href="../../react/packages/react-reconciler/src/ReactFiberWorkLoop.js">打开文件</a></figcaption><pre><code>  resetWorkInProgressStack();
+  workInProgressRoot = root;
+  const rootWorkInProgress = createWorkInProgress(root.current, null);
+  workInProgress = rootWorkInProgress;
+  workInProgressRootRenderLanes = lanes;
+  workInProgressSuspendedReason = NotSuspended;
+  workInProgressThrownValue = null;
+  workInProgressRootDidSkipSuspendedSiblings = false;
+  workInProgressRootIsPrerendering = checkIfRootIsPrerendering(root, lanes);
+  workInProgressRootDidAttachPingListener = false;
+  workInProgressRootExitStatus = RootInProgress;</code></pre></figure>
+      <ol class="state-list">
+        <li><strong>清旧栈。</strong>取消未提交的 timeout/pending commit 后，重置模块级工作游标；它不会把半成品设为 current。</li>
+        <li><strong>从权威基线起步。</strong><code>createWorkInProgress(root.current, null)</code> 总是以已提交根为输入；旧 WIP 对象可以被复用覆盖。</li>
+        <li><strong>绑定本轮 Lane。</strong><code>workInProgressRootRenderLanes</code> 决定队列中哪些更新有资格在这一遍被处理。</li>
+        <li><strong>逐 Fiber 推进。</strong>beginWork 返回 child 表示下钻；completeWork 完成后走 sibling/return。yield 以 <code>workInProgress</code> 保存下一 Fiber 入口，同时保留 workInProgressRoot、renderLanes、退出/挂起原因以及 Host/Context/Suspense 等显式栈；重启时再沿 return unwind 这些栈。</li>
+        <li><strong>退出分类。</strong>完成得到 finishedWork；挂起等待 ping；更高优先级到来可重新调用 prepareFreshStack 丢弃本次候选进度。</li>
+      </ol>
+      <div class="callout"><p><strong>可中断的真正含义：</strong>不是在任意 JavaScript 指令中间暂停，而是在 Fiber 工作单元边界保存下一节点；用户组件的一次函数调用仍是普通同步调用。</p></div>
+    </section>
+
+    <section id="commit-switch"><h2>commit 的单行切换，改变整棵树的“当前”身份</h2>
+      <figure class="source"><figcaption><span>连续原码 · ReactFiberWorkLoop.js · mutation 后的 current 切换</span><a href="../../react/packages/react-reconciler/src/ReactFiberWorkLoop.js">打开文件</a></figcaption><pre><code>  // WIP 现切为 current。必须晚于 mutation，使 componentWillUnmount 期间旧树仍为 current；
+  // 又必须早于 layout，使 componentDidMount/Update 看到完成树为 current。
+  root.current = finishedWork;
+  pendingEffectsStatus = PENDING_LAYOUT_PHASE;</code></pre></figure>
+      <div class="table-wrap"><table><thead><tr><th>观察窗口</th><th>root.current</th><th>宿主状态</th><th>为什么</th></tr></thead><tbody>
+        <tr><td>render</td><td>旧树</td><td>旧输出</td><td>候选计算不能污染已提交事实</td></tr>
+        <tr><td>before mutation</td><td>旧树</td><td>旧输出</td><td>snapshot 需要读取修改前宿主状态</td></tr>
+        <tr><td>mutation</td><td>旧树</td><td>正在修改</td><td>删除/卸载仍按旧树身份和父链执行</td></tr>
+        <tr><td>layout</td><td>新树</td><td>新输出</td><td>ref attach、didMount/didUpdate、layout effect 必须观察新事实</td></tr>
+        <tr><td>passive</td><td>新树</td><td>新输出通常已可绘制</td><td>旧 passive cleanup 与新 create 由提交的 effect 链驱动</td></tr>
+      </tbody></table></div>
+      <p>因此“双缓冲”不代表两棵树同时对用户生效。只有一个 <code>root.current</code>；alternate 是计算与恢复机制，不是第二套公开 UI。</p>
+    </section>
+
+    <section id="abandon-cleanup"><h2>两种“不要这棵候选树”：放弃 render 与提交删除</h2>
+      <div class="grid"><article class="card"><span class="number">ABORT</span><h3>未提交 WIP 被放弃</h3><p>更高优先级更新可从 current 重新建 WIP。render 不修改<strong>已提交宿主树</strong>，所以旧 current 与旧 DOM 继续有效；completeWork 可能已创建并组装未挂载的宿主实例，但它们仍属可丢弃候选。动态 flags、deletions 会在复用时重置。</p></article>
+        <article class="card"><span class="number">DELETE</span><h3>已提交树中的节点被删除</h3><p>mutation 先断 return，阻止已卸载 Fiber 继续连接祖先；child/sibling/alternate 等要等 passive 清理完成后再断，保证 effect cleanup 仍能遍历。</p></article></div>
+
+      <figure class="source"><figcaption><span>删节源码 · ReactFiberCommitWork.js · detachFiberMutation（省略说明注释）</span><a href="../../react/packages/react-reconciler/src/ReactFiberCommitWork.js">打开文件</a></figcaption><pre><code>function detachFiberMutation(fiber: Fiber) {
+  const alternate = fiber.alternate;
+  if (alternate !== null) {
+    alternate.return = null;
+  }
+  fiber.return = null;
+}</code></pre></figure>
+      <figure class="source"><figcaption><span>删节源码 · ReactFiberCommitWork.js · detachFiberAfterEffects 开头（省略说明注释）</span><a href="../../react/packages/react-reconciler/src/ReactFiberCommitWork.js">打开文件</a></figcaption><pre><code>function detachFiberAfterEffects(fiber: Fiber) {
+  const alternate = fiber.alternate;
+  if (alternate !== null) {
+    fiber.alternate = null;
+    detachFiberAfterEffects(alternate);
+  }
+
+  fiber.child = null;
+  fiber.deletions = null;
+  fiber.sibling = null;</code></pre></figure>
+      <p>这不是重复清理：mutation 阶段需要尽早让节点“不再属于已挂载树”，passive 阶段前又不能破坏 effect 遍历所需关系。后半函数还会清
+        <code>stateNode</code>、dependencies、props/state 与 updateQueue；本页只展示支撑两阶段边界的连续开头。</p>
+    </section>
+
+    <section id="walkthrough"><h2>手工推演：一次更新怎样让 A/B 两面交换角色</h2>
+      <figure class="source"><figcaption><span>教程伪代码 · 状态图，不是仓库源码</span></figcaption><pre><code>首次提交后：root.current = B0 ─child→ B_App(count=0)
+                    B0.alternate = A0；首次挂载的 B_App.alternate 可为 null
+
+setCount(1)
+  1. 为更新选择 Lane L
+  2. A0 = createWorkInProgress(B0)，复用 HostRoot 的另一面
+  3. beginWork(A0) 协调 child，创建 A_App = createWorkInProgress(B_App)
+  4. beginWork(A_App) 调用 renderWithHooks：处理 Hook queue 得 count=1，并登记本轮 Hook/Effect flags
+  5. App 返回 children；后代工作完成后，completeWork 创建或复用宿主候选，并向 A0 冒泡 subtreeFlags/childLanes
+
+若中途 yield：root.current 仍是 B0，已提交宿主输出仍显示 0
+若高优先级重启：A 候选可被覆盖；仍从 B0 的已提交状态出发
+
+commit mutation 完成：root.current = A0
+下一次更新：复用旧 B0/B_App 作为新的 WIP</code></pre></figure>
+      <p>关键不变量是“候选状态只能沿 WIP 链传播，宿主可见状态只在 commit 推进”。下一页会把第 1、4 步展开为 Update 对象、Lane 与 base queue 的确定性重放。</p>
+    </section>
+
+    <section id="test"><h2>真实 GWT：低优先级 Hook 候选被同步更新打断后恢复</h2>
+      <p>测试先在 transition 中计算 <code>Count: 11</code>，但断言宿主仍是 <code>Count: 0</code>；随后同步修改 props 为 <code>Total</code>，最后恢复队列得到
+        <code>Total: 11</code>。它同时证明：未 commit WIP 不可见、同步更新能从 current 重启、仍有效的低优先级队列不会随旧候选一起丢失。</p>
+      <figure class="source"><figcaption><span>删节源码 · ReactHooksWithNoopRenderer-test.js · resumes after an interruption（保留关键操作与断言）</span><a href="../../react/packages/react-reconciler/src/__tests__/ReactHooksWithNoopRenderer-test.js">打开测试</a></figcaption><pre><code>const counter = React.createRef(null);
+ReactNoop.render(&lt;Counter label="Count" ref={counter} /&gt;);
+await waitForAll(['Count: 0']);
+expect(ReactNoop).toMatchRenderedOutput(&lt;span prop="Count: 0" /&gt;);
+
+await act(async () =&gt; {
+  React.startTransition(() =&gt; {
+    counter.current.updateCount(1);
+    counter.current.updateCount(count =&gt; count + 10);
+  });
+
+  await waitFor(['Count: 11']);
+  expect(ReactNoop).toMatchRenderedOutput(&lt;span prop="Count: 0" /&gt;);
+
+  ReactNoop.flushSync(() =&gt; {
+    ReactNoop.render(&lt;Counter label="Total" /&gt;);
+  });
+  assertLog(['Total: 0']);
+
+  await waitForAll(['Total: 11']);
+  expect(ReactNoop).toMatchRenderedOutput(&lt;span prop="Total: 11" /&gt;);
+});</code></pre></figure>
+      <div class="table-wrap"><table><thead><tr><th>GWT</th><th>测试事实</th><th>证明的对象模型机制</th></tr></thead><tbody>
+        <tr><td>Given</td><td>current 已提交 <code>Count: 0</code>，transition 更新产生候选 <code>Count: 11</code></td><td>current 与 WIP 可同时保存不同 props/state 视图</td></tr>
+        <tr><td>When</td><td>候选 yield 后，以 <code>flushSync</code> 把 label 改为 Total</td><td>更高优先工作可放弃/覆盖候选进度，从 current 建新尝试</td></tr>
+        <tr><td>Then</td><td>先提交 <code>Total: 0</code>，随后恢复为 <code>Total: 11</code></td><td>树的候选进度可丢弃；共享/基线更新队列仍能确定性重放</td></tr>
+        <tr><td>Cleanup</td><td><code>act</code> 耗尽这次测试产生的工作；Noop root 由测试框架隔离</td><td>断言不会把未 flush 工作误当成最终提交</td></tr>
+      </tbody></table></div>
+      <div class="callout warn"><p><strong>证据边界：</strong>该测试证明候选可见性与队列恢复，不直接读取 Fiber 私有字段；字段配对和 current 切换由上面的实现源码作证。两类证据互补，不能用测试日志反推所有内部布局。</p></div>
+    </section>
+
+    <section id="invariants"><h2>六条不变量，串起 Fiber 原理</h2>
+      <ol class="state-list">
+        <li><strong>单一事实：</strong>每个根只有 <code>root.current</code> 指向已提交树。</li>
+        <li><strong>最多两面：</strong>同一协调身份通常复用 current/WIP 两枚 Fiber；alternate 双向配对。</li>
+        <li><strong>结构可暂停：</strong>child/sibling/return 把递归树展开为可保存游标的工作链。</li>
+        <li><strong>render 无宿主可见副作用：</strong>WIP props/state/flags 可反复覆盖，直到 commit 才写宿主。</li>
+        <li><strong>切换有观察窗口：</strong>current 在 mutation 后、layout 前切换。</li>
+        <li><strong>清理分阶段：</strong>删除先断挂载身份，再等 passive 工作结束后断开完整对象图。</li>
+      </ol>
+    </section>
+
+    <section id="evidence"><h2>源码与测试索引</h2>
+      <div class="table-wrap"><table><thead><tr><th>结论</th><th>决定性源码</th><th>代表测试</th></tr></thead><tbody>
+        <tr><td>FiberRoot ↔ HostRoot 双向连接</td><td><a href="../../react/packages/react-reconciler/src/ReactFiberRoot.js">ReactFiberRoot.js · createFiberRoot</a></td><td><a href="../../react/packages/react-reconciler/src/__tests__/ReactIncremental-test.js">ReactIncremental-test.js</a></td></tr>
+        <tr><td>alternate 惰性创建并反复复用</td><td><a href="../../react/packages/react-reconciler/src/ReactFiber.js">ReactFiber.js · createWorkInProgress</a></td><td><a href="../../react/packages/react-reconciler/src/__tests__/ReactHooksWithNoopRenderer-test.js">ReactHooksWithNoopRenderer-test.js · interruption</a></td></tr>
+        <tr><td>current 在 mutation/layout 间切换</td><td><a href="../../react/packages/react-reconciler/src/ReactFiberWorkLoop.js">ReactFiberWorkLoop.js · flushMutationEffects</a></td><td><a href="../../react/packages/react-reconciler/src/__tests__/ReactIncrementalSideEffects-test.js">ReactIncrementalSideEffects-test.js</a></td></tr>
+        <tr><td>删除 Fiber 分两阶段断链</td><td><a href="../../react/packages/react-reconciler/src/ReactFiberCommitWork.js">ReactFiberCommitWork.js · detachFiber*</a></td><td><a href="../../react/packages/react-reconciler/src/__tests__/ReactHooksWithNoopRenderer-test.js">ReactHooksWithNoopRenderer-test.js · pending passive unmounts for alternates</a></td></tr>
+      </tbody></table></div>
+      <p class="callout"><strong>版本边界：</strong>以上结论针对当前工作区的 react-reconciler 0.34.0。实验开关会改变 profiler、gesture、Offscreen/ViewTransition 分支，
+        但本页展示的根指针、树指针、alternate 创建与 commit 切换是当前源码中的主干事实。未运行测试；本页只引用并逐段核对仓库现有测试。</p>
+    </section>
+
+    <section id="questions"><h2>检查理解</h2><ul class="qa">
+      <li>为什么 <code>workInProgress.child = current.child</code> 不等于两棵树永远共享所有 child Fiber？</li>
+      <li>为什么 <code>return</code> 不能直接当作 DOM parent？</li>
+      <li>候选树完成一半时，高优先级更新为何能安全重启？哪些数据不能随候选一起丢失？</li>
+      <li><code>root.current</code> 若在 mutation 前切换，卸载观察会错在哪里？若在 layout 后切换又会错在哪里？</li>
+      <li>删除时为什么先只断 return，而不是立即把 child/sibling/alternate 全设为 null？</li>
+    </ul></section>
+
+    <div class="next-page"><a href="04-reconciler-render.html">← 回到 04：render 总览</a><a href="11-update-queues-lanes.html">下一页：Update Queue 与 Lane →</a></div>
+    <footer><p>Fiber 让“树”拥有可恢复的执行状态；Update Queue 与 Lane 决定下一次恢复时究竟消费哪些状态变化。</p></footer>
+  </main>
+  <aside class="toc" aria-label="本页目录"><strong>Fiber 对象模型</strong>
+    <a href="#outcome">学习目标</a><a href="#root">FiberRoot / HostRoot</a><a href="#fields">Fiber 字段与树指针</a>
+    <a href="#double-buffer">current / WIP</a><a href="#fresh-stack">中断与重启</a><a href="#commit-switch">commit 切换</a>
+    <a href="#abandon-cleanup">放弃与清理</a><a href="#walkthrough">手工推演</a><a href="#test">真实 GWT</a>
+    <a href="#invariants">核心不变量</a><a href="#evidence">证据索引</a>
+  </aside></div>
+</body>
+</html>

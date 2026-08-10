@@ -1,0 +1,413 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Vue Scheduler 任务队列、更新顺序、watcher 与 nextTick 源码详解"
+    />
+    <title>调度系统 · Vue Runtime 内核解剖</title>
+    <link rel="stylesheet" href="assets/styles.css" />
+  </head>
+  <body data-current="scheduler.html">
+    <header data-site-header></header>
+    <div class="docs-shell">
+      <aside data-global-nav></aside>
+      <main class="article">
+        <div class="article-hero">
+          <div class="article-kicker">Chapter 05 · Scheduler</div>
+          <h1>为什么数据变了，页面却不是立刻变</h1>
+          <p class="article-lead">
+            Vue
+            会把同一瞬间发生的许多状态修改合并成一轮页面更新，并安排父组件、子组件和回调的正确顺序。Scheduler
+            就是这位时间管理员。
+          </p>
+          <div class="hero-meta">
+            <span>建议阅读 30 分钟</span><span>353 行核心源码</span
+            ><span>关键结构：SchedulerJob</span>
+          </div>
+        </div>
+
+        <section class="article-section prose" id="plain-scheduler">
+          <h2>三次修改，为什么通常只更新一次页面</h2>
+          <pre><code>count.value++
+count.value++
+count.value++</code></pre>
+          <p>
+            每次赋值都会通知组件“数据过期了”，但 Vue
+            不会立刻重画三次。它把同一个组件的更新任务去重，等当前同步代码结束后，用最终值统一更新一次。
+          </p>
+          <div class="before-after">
+            <div class="plain-section">
+              <span class="scene-label">立即执行</span>
+              <p>
+                数据每改一次，就生成 VNode、比较并操作
+                DOM。中间两次结果用户根本看不到。
+              </p>
+            </div>
+            <div class="plain-section">
+              <span class="scene-label">批量调度</span>
+              <p>
+                三次通知合并成一个任务。组件读取最终 count = 3，只提交一次。
+              </p>
+            </div>
+          </div>
+          <h3>为什么还要排序</h3>
+          <p>
+            父组件更新可能让子组件换
+            props，甚至把子组件整个删除。如果子组件先更新，它可能用旧输入白做一次；父组件先执行后，已被删除的子任务可以直接跳过。
+          </p>
+          <div class="sequence">
+            <div class="sequence-item">
+              <strong>更新前</strong><br />pre watcher 适合在组件 DOM
+              更新前响应数据。
+            </div>
+            <div class="sequence-item">
+              <strong>主更新</strong><br />父组件通常先于子组件，组件 job
+              在这里重新生成并提交页面。
+            </div>
+            <div class="sequence-item">
+              <strong>更新后</strong><br />updated、模板 ref、post watcher
+              此时可以读取稳定的新 DOM。
+            </div>
+          </div>
+          <div class="reader-lane">
+            <div>
+              <code>nextTick()</code> 不是“等一毫秒”，而是等待当前这轮 Vue
+              更新队列完成。
+            </div>
+          </div>
+          <div class="reader-check">
+            <strong>核心目标有两个：</strong
+            >少做重复工作；让必须发生的工作按正确顺序发生。异步微任务只是实现这两个目标的工具。
+          </div>
+        </section>
+
+        <div class="level-divider">进入调度器数据结构与源码层</div>
+
+        <section class="article-section prose" id="goals">
+          <h2>调度器维护的六条不变量</h2>
+          <div class="sequence">
+            <div class="sequence-item">
+              <strong>同一任务一轮只执行一次</strong><br />多次状态写入通过
+              QUEUED 标志 O(1) 去重。
+            </div>
+            <div class="sequence-item">
+              <strong>父组件先于子组件</strong><br />组件 uid 作为
+              job.id；父实例先创建，因此 id 更小。
+            </div>
+            <div class="sequence-item">
+              <strong>pre watcher 先于所属组件</strong><br />相同 id 下 PRE
+              任务排在组件 render job 前。
+            </div>
+            <div class="sequence-item">
+              <strong>post 回调看到已提交 DOM</strong
+              ><br />mounted、updated、模板 ref 与 post watcher
+              在主队列结束后执行。
+            </div>
+            <div class="sequence-item">
+              <strong>刷新期间新增任务仍会收敛</strong><br />flush
+              末尾若队列不空，继续刷新而不是丢到未知时机。
+            </div>
+            <div class="sequence-item">
+              <strong>异常不能污染下一轮</strong><br />finally 清除队列与 QUEUED
+              位，错误后 nextTick 和后续更新仍可运行。
+            </div>
+          </div>
+          <div class="source-links">
+            <a
+              class="source-link"
+              href="../../../vue/packages/runtime-core/src/scheduler.ts"
+              >本地：scheduler.ts</a
+            >
+            <a
+              class="source-link"
+              href="../../../vue/packages/runtime-core/__tests__/scheduler.spec.ts"
+              >本地：scheduler.spec.ts</a
+            >
+            <a
+              class="source-link"
+              href="https://github.com/vuejs/core/blob/v3.5.41/packages/runtime-core/src/scheduler.ts#L99-L275"
+              >v3.5.41：queueJob → flushJobs</a
+            >
+          </div>
+        </section>
+
+        <section class="article-section prose" id="job">
+          <h2>SchedulerJob：函数本身就是任务对象</h2>
+          <p>Vue 不额外包装 Task 类，而是在函数上附加轻量元数据：</p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>字段/标志</th>
+                  <th>含义</th>
+                  <th>典型来源</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>id</strong></td>
+                  <td>排序 ID；组件更新使用 instance.uid</td>
+                  <td>组件 render job、pre watcher</td>
+                </tr>
+                <tr>
+                  <td><strong>i</strong></td>
+                  <td>所属组件实例，用于错误分类和递归诊断</td>
+                  <td>组件 job</td>
+                </tr>
+                <tr>
+                  <td><strong>QUEUED</strong></td>
+                  <td>已在主队列或 post 队列，防止重复加入</td>
+                  <td>所有调度任务</td>
+                </tr>
+                <tr>
+                  <td><strong>PRE</strong></td>
+                  <td>组件更新前任务；同 id 时排在 render job 前</td>
+                  <td>默认 flush 的 watcher</td>
+                </tr>
+                <tr>
+                  <td><strong>ALLOW_RECURSE</strong></td>
+                  <td>执行期间允许再次入队</td>
+                  <td>组件更新、watch callback</td>
+                </tr>
+                <tr>
+                  <td><strong>DISPOSED</strong></td>
+                  <td>effect 或组件已停止，队列中仍存在也要跳过</td>
+                  <td>停止 watcher、卸载组件</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            flags 使用位运算而不是多个
+            Boolean，一方面减少对象字段，另一方面让热路径能在一个整数上判断和清理状态。未初始化
+            flags 在位运算中会被视为 0。
+          </p>
+        </section>
+
+        <section class="article-section prose" id="queue">
+          <h2>queueJob：不做全量排序的有序插入</h2>
+          <p>
+            若新 job.id 不小于队尾 id 且不是 PRE，可以直接
+            push；否则通过二分查找插入位置。这样队列大部分时间保持有序，避免每轮
+            flush 前完整 sort。
+          </p>
+          <pre><code>queueJob(job)
+  if job.flags & QUEUED:
+    return
+
+  if 可以追加到队尾:
+    queue.push(job)
+  else:
+    queue.splice(findInsertionIndex(jobId), 0, job)
+
+  job.flags |= QUEUED
+  queueFlush() // 只创建一个微任务</code></pre>
+          <h3>相同 id 下 PRE 为什么排前面</h3>
+          <p>
+            pre watcher 与所属组件 job 共用 uid。二分插入时，遇到相同 id 的 PRE
+            任务继续向后找，而普通 job 停在 PRE 之后，最终形成
+            <code>[parent pre, parent render, child pre, child render]</code>。
+          </p>
+        </section>
+
+        <section class="article-section prose" id="flush">
+          <h2>一次 flush 的完整时间线</h2>
+          <div class="diagram">
+            <div class="diagram-title">MICROTASK FLUSH</div>
+            <div class="flow">
+              <div class="flow-step">
+                <span class="flow-index">01</span>
+                <div class="flow-copy">
+                  <strong>currentFlushPromise 建立</strong
+                  ><small
+                    >Promise.resolve().then(flushJobs)，同一轮只创建一次。</small
+                  >
+                </div>
+                <span class="flow-file">queueFlush</span>
+              </div>
+              <div class="flow-join"></div>
+              <div class="flow-step">
+                <span class="flow-index">02</span>
+                <div class="flow-copy">
+                  <strong>顺序遍历主队列</strong
+                  ><small
+                    >跳过
+                    DISPOSED；开发模式检查递归次数；按错误码调用任务。</small
+                  >
+                </div>
+                <span class="flow-file">flushJobs</span>
+              </div>
+              <div class="flow-join"></div>
+              <div class="flow-step">
+                <span class="flow-index">03</span>
+                <div class="flow-copy">
+                  <strong>清理剩余 QUEUED 标志</strong
+                  ><small
+                    >即使某个 job 抛错，finally
+                    也恢复所有未执行任务状态。</small
+                  >
+                </div>
+                <span class="flow-file">finally</span>
+              </div>
+              <div class="flow-join"></div>
+              <div class="flow-step">
+                <span class="flow-index">04</span>
+                <div class="flow-copy">
+                  <strong>flushPostFlushCbs</strong
+                  ><small
+                    >去重并按 id 排序，处理 mounted/updated/ref/post
+                    watcher。</small
+                  >
+                </div>
+                <span class="flow-file">post queue</span>
+              </div>
+              <div class="flow-join"></div>
+              <div class="flow-step">
+                <span class="flow-index">05</span>
+                <div class="flow-copy">
+                  <strong>检查是否产生新任务</strong
+                  ><small
+                    >若主队列或 post 队列仍有内容，继续 flush 直到稳定。</small
+                  >
+                </div>
+                <span class="flow-file">recursive settle</span>
+              </div>
+            </div>
+          </div>
+          <div class="callout">
+            这里的“递归继续 flush”是队列层面的收敛，不等于允许单个 job
+            无限触发自己。后者由 ALLOW_RECURSE 与递归次数上限单独控制。
+          </div>
+        </section>
+
+        <section class="article-section prose" id="watchers">
+          <h2>Watcher 的 flush 选项怎样映射到时间轴</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>配置</th>
+                  <th>调度方式</th>
+                  <th>能观察到的 DOM</th>
+                  <th>适用场景</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>flush: 'pre'</strong></td>
+                  <td>带 PRE 标志进入主队列</td>
+                  <td>所属组件更新前的 DOM</td>
+                  <td>默认；根据状态派生下一步状态</td>
+                </tr>
+                <tr>
+                  <td><strong>flush: 'post'</strong></td>
+                  <td>queuePostRenderEffect</td>
+                  <td>组件本轮提交后的 DOM</td>
+                  <td>测量布局、依赖模板 ref</td>
+                </tr>
+                <tr>
+                  <td><strong>flush: 'sync'</strong></td>
+                  <td>trigger 时直接执行</td>
+                  <td>尚未批量更新的 DOM</td>
+                  <td>极少数同步桥接；可能重复执行</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            有 Suspense 时，post effect 不一定立即进入全局 post
+            队列。若当前分支仍 pending，它先缓存在 Suspense.effects，等分支
+            resolve 后再统一提交，保证钩子看到的是实际激活分支。
+          </p>
+        </section>
+
+        <section class="article-section prose" id="next-tick">
+          <h2>nextTick 等待的是当前 flush Promise</h2>
+          <p>
+            <code>nextTick(fn?)</code> 使用
+            <code>currentFlushPromise || resolvedPromise</code
+            >。有更新时，它排在本轮 flushJobs
+            之后；没有更新时，它只是下一次微任务。它不是“等待浏览器绘制”，也不保证
+            requestAnimationFrame 已发生。
+          </p>
+          <pre><code>state.value++
+await nextTick()
+// 组件主队列与 post 回调已经完成
+// 但这不等价于浏览器已经完成一次视觉帧绘制</code></pre>
+        </section>
+
+        <section class="article-section prose" id="recursion">
+          <h2>递归更新：允许合法收敛，拒绝无限循环</h2>
+          <p>
+            普通 effect 执行中再次触发自己通常是错误，例如读取数组时又 push。Vue
+            默认不允许自入队，但两类任务有合法需求：
+          </p>
+          <ul>
+            <li>
+              <strong>组件更新：</strong>父更新子 props，子的 pre watcher
+              又修改父 render 依赖，父可能需要再次调度才能收敛。
+            </li>
+            <li>
+              <strong>watch callback：</strong
+              >回调本身不追踪依赖，用户可能有意把 source 分步归一化到稳定值。
+            </li>
+          </ul>
+          <p>
+            ALLOW_RECURSE 只允许再次入队，开发模式的 CountMap 仍会限制同一 job
+            在一轮中的递归次数，并报告具体组件名。
+          </p>
+          <div class="callout warm">
+            2026 年的 #15143 修复了超大 post callback
+            数组导致的栈溢出。它说明调度器的成熟度不仅体现在顺序正确，也体现在任务规模增大时调用栈仍保持有界。
+          </div>
+        </section>
+
+        <section class="article-section prose" id="errors">
+          <h2>错误恢复为何是调度器的一等逻辑</h2>
+          <p>
+            job 通过 callWithErrorHandling 执行，但 flushJobs 自身仍使用
+            try/finally。原因是错误处理器可能选择继续抛出；即使如此，队列也必须重置长度、清
+            QUEUED、刷新已存在的 post callback，并让下一次 nextTick 获得新
+            Promise。
+          </p>
+          <details>
+            <summary>为什么不能在 catch 中简单 queue.length = 0？</summary>
+            <p>
+              当前索引之后的任务虽然不再执行，但它们的 QUEUED
+              位仍为真。若不逐个清理，后续相同任务永远无法再次入队，组件会永久停止更新。
+            </p>
+          </details>
+          <details>
+            <summary>为什么 post 回调也要按 id 排序？</summary>
+            <p>
+              组件生命周期与 ref 需要父子可预测顺序；嵌套 post callback
+              还可能在刷新期间加入新回调，因此必须统一去重和排序。
+            </p>
+          </details>
+          <div class="callout">
+            Scheduler 解决时间顺序，下一章水合将改变 Renderer
+            的空间起点：首次渲染不再创建 DOM，而是从服务端已有节点中认领。
+          </div>
+        </section>
+
+        <nav class="page-nav" aria-label="章节翻页">
+          <a href="diff.html"><span>上一章</span>← Diff 算法专题</a>
+          <a href="hydration.html"><span>下一章</span>SSR 水合 →</a>
+        </nav>
+      </main>
+      <aside class="page-toc" aria-label="本页目录">
+        <div class="toc-title">本页目录</div>
+        <a href="#plain-scheduler">为什么要调度</a>
+        <a href="#goals">调度目标</a><a href="#job">SchedulerJob</a
+        ><a href="#queue">queueJob</a><a href="#flush">flush 时间线</a
+        ><a href="#watchers">Watcher 阶段</a><a href="#next-tick">nextTick</a
+        ><a href="#recursion">递归更新</a><a href="#errors">错误恢复</a>
+      </aside>
+    </div>
+    <footer data-site-footer></footer>
+    <script src="assets/app.js" defer></script>
+  </body>
+</html>

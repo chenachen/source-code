@@ -1,0 +1,329 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="description" content="以 React 仓库真实 Counter 测试为主线，逐段追踪 createRoot、事件、Hook queue、Lane、Fiber render、commit、DOM 更新、passive effect 与 unmount。" />
+<title>16 · 真实源码主线：三次 click 为什么只提交 count=3</title><link rel="stylesheet" href="assets/guide.css?v=1" /></head><body>
+<header class="topbar"><div class="topbar-inner"><a class="brand" href="index.html">React 六包源码指南</a><nav class="pager" aria-label="页面导航">
+<a href="index.html">地图</a><a href="03-react.html">react</a><a href="04-reconciler-render.html">render</a><a href="05-reconciler-commit.html">commit</a>
+<a href="06-dom-bindings.html">bindings</a><a href="07-react-dom.html">react-dom</a><a href="08-end-to-end.html">主线</a><a aria-current="page" href="16-end-to-end-source.html">源码主线</a><a href="09-evidence.html">证据</a></nav></div></header>
+<div class="layout"><main><p class="eyebrow">16 · Verified source walkthrough</p><h1>三次 click，为什么只提交 count=3</h1>
+<p class="lede">本页只追一条可核验链：仓库测试在同一个 <code>act</code> 中连续点击三次，组件从 0 更新到 3，只运行一次本轮 passive effect；随后再点击两次到 5。
+每个阶段都回答四件事：谁持有状态、哪个函数改变它、改变前后是什么、测试断言怎样证明。</p>
+<div class="meta"><span class="pill">真实仓库测试</span><span class="pill">连续原码</span><span class="pill">入口 → DOM</span><span class="pill">异常与清理</span></div>
+
+<section id="source-kinds"><h2>先约定证据标签</h2><div class="grid three">
+<article class="card"><span class="number">EXACT</span><h3>连续原码</h3><p>代码逐字来自链接文件中的连续区间；可以在源码中直接搜索首尾行。</p></article>
+<article class="card"><span class="number">ABRIDGED</span><h3>删节原码</h3><p>保留真实控制路径，但明确省略诊断或无关分支；不能把它当完整函数。</p></article>
+<article class="card"><span class="number">TUTORIAL</span><h3>教程状态表</h3><p>为解释而整理的对象快照，不声称是源码中的单个结构。</p></article></div></section>
+
+<section id="real-test"><h2>证据起点：仓库真实测试</h2>
+<p>来源：<a href="../../react/packages/react-dom/src/__tests__/ReactTestUtilsActUnmockedScheduler-test.js">ReactTestUtilsActUnmockedScheduler-test.js · flushes effects on every call</a>。
+下面是从 <code>test(...)</code> 到最终断言的连续原码；测试文件的 <code>afterEach</code> 还会恢复 act 全局标志并移除 container。</p>
+<figure class="source"><figcaption><span>连续原码 · ReactTestUtilsActUnmockedScheduler-test.js</span><a href="../../react/packages/react-dom/src/__tests__/ReactTestUtilsActUnmockedScheduler-test.js">打开测试</a></figcaption><pre><code>test('flushes effects on every call', async () =&gt; {
+  /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+  function App() {
+    const [ctr, setCtr] = React.useState(0);
+    React.useEffect(() =&gt; {
+      yields.push(ctr);
+    });
+    return (
+      &lt;button id="button" onClick={() =&gt; setCtr(x =&gt; x + 1)}&gt;
+        {ctr}
+      &lt;/button&gt;
+    );
+  }
+
+  const root = ReactDOMClient.createRoot(container);
+  await act(() =&gt; {
+    root.render(&lt;App /&gt;);
+  });
+
+  expect(clearLog()).toEqual([0]);
+
+  const button = container.querySelector('#button');
+  /** `click`：封装当前用例复用的操作、回调或断言步骤。 */
+  function click() {
+    button.dispatchEvent(new MouseEvent('click', {bubbles: true}));
+  }
+
+  act(() =&gt; {
+    click();
+    click();
+    click();
+  });
+  // 合并 3 次更新后，再触发 effect。
+  expect(clearLog()).toEqual([3]);
+  act(click);
+  expect(clearLog()).toEqual([4]);
+  act(click);
+  expect(clearLog()).toEqual([5]);
+  expect(button.innerHTML).toEqual('5');
+});</code></pre></figure>
+<div class="table-wrap"><table><thead><tr><th>GWT</th><th>测试事实</th><th>不能扩大成什么</th></tr></thead><tbody>
+<tr><td>Given</td><td>并发 DOM root；<code>ctr=0</code>；每次 passive effect 把当前值写入 <code>yields</code></td><td>不代表所有外部异步来源自动批处理</td></tr>
+<tr><td>When</td><td>同一 <code>act</code> 内派发 3 个冒泡 click，之后各派发 1 次</td><td><code>act</code> 是测试边界，不是生产 API</td></tr>
+<tr><td>Then</td><td>日志依次为 <code>[0] → [3] → [4] → [5]</code>，DOM 最终为 5</td><td>不证明中间没有构造 Update；只证明本批可见提交与 effect 观察值</td></tr>
+<tr><td>Mechanism</td><td>三个函数 action 依次重放为 1、2、3；一次 render/commit 后运行本轮 effect</td><td>具体 Lane 仍取决于事件与根模式</td></tr>
+</tbody></table></div></section>
+
+<section id="map"><h2>同一 Demo 的完整控制流</h2><div class="chain" aria-label="Counter 真实源码执行流">
+<div class="node">createRoot<small>建 FiberRoot / 根监听</small></div><span class="arrow">→</span><div class="node">root.render<small>updateContainer</small></div><span class="arrow">→</span>
+<div class="node">HostRoot Update<small>payload.element</small></div><span class="arrow">→</span><div class="node">renderWithHooks<small>ctr=0</small></div><span class="arrow">→</span>
+<div class="node">commit<small>button + props cache</small></div><span class="arrow">→</span><div class="node">click wrapper<small>target Fiber</small></div><span class="arrow">→</span>
+<div class="node">dispatchSetState ×3<small>queue + Lane</small></div><span class="arrow">→</span><div class="node">render queue<small>0→1→2→3</small></div><span class="arrow">→</span>
+<div class="node">mutation<small>button text=3</small></div><span class="arrow">→</span><div class="node">passive<small>yields.push(3)</small></div></div>
+<p>箭头表示控制权，不表示包的静态依赖顺序。事件从 bindings 回到 reconciler；reconciler 又在 commit 时调用 bindings。</p></section>
+
+<section id="root"><h2>阶段 1：createRoot 建根，也先装好事件入口</h2>
+<p><code>createRoot</code> 不渲染 <code>App</code>。它创建空 FiberRoot、把 HostRoot Fiber 记到 container，并在真实事件容器上安装根委托监听器。
+这解释了测试为什么无需给 button 单独调用 <code>addEventListener</code>。</p>
+<figure class="source"><figcaption><span>连续原码（函数尾部）· ReactDOMRoot.js · createRoot</span><a href="../../react/packages/react-dom/src/client/ReactDOMRoot.js">打开源码</a></figcaption><pre><code>  const root = createContainer(
+    container,
+    ConcurrentRoot,
+    null,
+    isStrictMode,
+    concurrentUpdatesByDefaultOverride,
+    identifierPrefix,
+    onUncaughtError,
+    onCaughtError,
+    onRecoverableError,
+    onDefaultTransitionIndicator,
+    transitionCallbacks,
+  );
+  markContainerAsRoot(root.current, container);
+
+  // 注释节点兼容模式把 Fiber 根挂在注释上，但事件必须委托到可接收事件的父节点。
+  const rootContainerElement: Document | Element | DocumentFragment =
+    !disableCommentsAsDOMContainers &amp;&amp; container.nodeType === COMMENT_NODE
+      ? (container.parentNode as any)
+      : container;
+  listenToAllSupportedEvents(rootContainerElement);
+
+  // $FlowFixMe[invalid-constructor] Flow no longer supports calling new on functions
+  return new ReactDOMRoot(root);</code></pre></figure>
+<div class="table-wrap"><table><thead><tr><th>时刻</th><th>FiberRoot</th><th>container</th><th>DOM</th></tr></thead><tbody>
+<tr><td>调用前</td><td>不存在</td><td>普通 div</td><td>空</td></tr><tr><td>createContainer 后</td><td><code>current=HostRoot</code>，尚无 App child</td><td>尚未公开返回</td><td>空</td></tr>
+<tr><td>createRoot 返回</td><td>由 ReactDOMRoot._internalRoot 持有</td><td>缓存 HostRoot；装好根监听</td><td>仍为空</td></tr></tbody></table></div></section>
+
+<section id="mount-update"><h2>阶段 2：root.render 被建模为 HostRoot Update</h2>
+<p>公开句柄最终调用 <code>updateContainer(children, root, null, null)</code>。reconciler 先为 HostRoot 请求 Lane，再创建 payload 为 <code>{element}</code> 的 Update；
+因此首次挂载和后续 <code>root.render</code> 都走更新模型，不存在“首次直接递归创建 DOM”的旁路。</p>
+<figure class="source"><figcaption><span>连续原码 · ReactFiberReconciler.js · updateContainer</span><a href="../../react/packages/react-reconciler/src/ReactFiberReconciler.js">打开源码</a></figcaption><pre><code>export function updateContainer(
+  element: ReactNodeList,
+  container: OpaqueRoot,
+  parentComponent: ?component(...props: any),
+  callback: ?Function,
+): Lane {
+  const current = container.current;
+  const lane = requestUpdateLane(current);
+  updateContainerImpl(
+    current,
+    lane,
+    element,
+    container,
+    parentComponent,
+    callback,
+  );
+  return lane;
+}</code></pre></figure>
+<figure class="source"><figcaption><span>连续原码（函数尾部）· ReactFiberReconciler.js · updateContainerImpl</span><a href="../../react/packages/react-reconciler/src/ReactFiberReconciler.js">打开源码</a></figcaption><pre><code>  const update = createUpdate(lane);
+  // 注意：React DevTools 依赖此属性名必须是 "element"。
+  update.payload = {element};
+
+  callback = callback === undefined ? null : callback;
+  if (callback !== null) {
+    if (__DEV__) {
+      if (typeof callback !== 'function') {
+        console.error(
+          'Expected the last optional `callback` argument to be a ' +
+            'function. Instead received: %s.',
+          callback,
+        );
+      }
+    }
+    update.callback = callback;
+  }
+
+  const root = enqueueUpdate(rootFiber, update, lane);
+  if (root !== null) {
+    startUpdateTimerByLane(lane, 'root.render()', null);
+    scheduleUpdateOnFiber(root, rootFiber, lane);
+    entangleTransitions(root, rootFiber, lane);
+  }</code></pre></figure>
+<p class="callout"><strong>状态变化：</strong><code>HostRoot.updateQueue</code> 创建根时已经初始化；本次 element Update 经并发缓冲转移后进入它的 shared pending 环。对应 Lane 合入 <code>root.pendingLanes</code>；
+真正消费 payload 发生在 render，而不是 enqueue 当下。队列与 Lane 的逐位推演见 <a href="11-update-queues-lanes.html">11 · Update Queue 与 Lane</a>。</p></section>
+
+<section id="native-click"><h2>阶段 3：原生 click 先判断 hydration blocker</h2>
+<p>button click 冒泡到 root listener。正常已挂载树中 <code>findInstanceBlockingEvent</code> 返回 null，事件才进入插件系统；若返回 Suspense/container blocker，
+同一函数会改走排队或同步 hydration。正常路径和 hydration 路径共享入口，因此不会出现两套互不相干的 click 语义。</p>
+<figure class="source"><figcaption><span>连续原码（函数开头）· ReactDOMEventListener.js · dispatchEvent</span><a href="../../react/packages/react-dom-bindings/src/events/ReactDOMEventListener.js">打开源码</a></figcaption><pre><code>export function dispatchEvent(
+  domEventName: DOMEventName,
+  eventSystemFlags: EventSystemFlags,
+  targetContainer: EventTarget,
+  nativeEvent: AnyNativeEvent,
+): void {
+  if (!_enabled) {
+    return;
+  }
+
+  let blockedOn = findInstanceBlockingEvent(nativeEvent);
+  if (blockedOn === null) {
+    dispatchEventForPluginEventSystem(
+      domEventName,
+      eventSystemFlags,
+      nativeEvent,
+      return_targetInst,
+      targetContainer,
+    );
+    clearIfContinuousEvent(domEventName, nativeEvent);
+    return;
+  }</code></pre></figure>
+<ol class="state-list"><li><strong>target。</strong>DOM 节点缓存反查 HostComponent Fiber。</li><li><strong>listener。</strong>插件沿 Fiber return 链读取最新 props cache 中的 <code>onClick</code>。</li>
+<li><strong>act 调度边界。</strong>三个 click 各自经过一次原生事件派发与事件批处理；不能把它们叫成“同一事件批”。但测试仍处于同一个同步 <code>act</code> 回调中，root 调度任务被改投并去重到 <code>actQueue</code>，直到回调返回后才统一冲刷，因此三个 action 都先入队，没有在 click 之间形成可见提交。</li></ol>
+<p>完整 capture/bubble、受控恢复和 blocker 重放见 <a href="15-events-hydration.html">15 · 事件与 hydration</a>。</p></section>
+
+<section id="hook-dispatch"><h2>阶段 4：setCtr 不直接改 ctr，而是保存 action</h2>
+<p>mount 时生成的 dispatch 闭包已经绑定 Counter Fiber 与 Hook queue。每次 click 提交的是函数 action <code>x =&gt; x + 1</code>；
+旧 state 仍保持 0，直到下一轮 render 按顺序重放三个 action。</p>
+<figure class="source"><figcaption><span>连续原码 · ReactFiberHooks.js · dispatchSetState</span><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">打开源码</a></figcaption><pre><code>function dispatchSetState&lt;S, A&gt;(
+  fiber: Fiber,
+  queue: UpdateQueue&lt;S, A&gt;,
+  action: A,
+): void {
+  if (__DEV__) {
+    // 引用 arguments 会阻止影响函数 arity 的 GCC 优化，从而保留公开派发函数形状。
+    const args = arguments;
+    if (typeof args[3] === 'function') {
+      console.error(
+        "State updates from the useState() and useReducer() Hooks don't support the " +
+          'second callback argument. To execute a side effect after ' +
+          'rendering, declare it in the component body with useEffect().',
+      );
+    }
+  }
+
+  const lane = requestUpdateLane(fiber);
+  const didScheduleUpdate = dispatchSetStateInternal(
+    fiber,
+    queue,
+    action,
+    lane,
+  );
+  if (didScheduleUpdate) {
+    startUpdateTimerByLane(lane, 'setState()', fiber);
+  }
+  markUpdateInDevTools(fiber, lane, action);
+}</code></pre></figure>
+<div class="table-wrap"><table><thead><tr><th>入队次序</th><th>保存的 action</th><th>render 重放输入</th><th>输出</th></tr></thead><tbody>
+<tr><td>1</td><td><code>x =&gt; x + 1</code></td><td>0</td><td>1</td></tr><tr><td>2</td><td>同一函数形状</td><td>1</td><td>2</td></tr><tr><td>3</td><td>同一函数形状</td><td>2</td><td>3</td></tr>
+</tbody></table></div>
+<div class="callout warn"><p><strong>为什么不能写成“三次都读取 0”：</strong>函数 action 在 queue 重放时接收前一 action 的结果。若三次都是 <code>setCtr(ctr + 1)</code>，
+三个 payload 都可能是 1；那是不同输入，不是批处理丢更新。</p></div>
+<p>Hook 链、baseQueue、eager bailout 和 render-phase 更新见 <a href="13-hooks-state-machine.html">13 · Hooks 状态机</a>。</p></section>
+
+<section id="render"><h2>阶段 5：WIP 树计算到 3，current 与 DOM 仍保持旧值</h2>
+<p>RootScheduler 选择本批 Lane 后，work loop 在 Fiber 单元边界调用 <code>beginWork</code>。Counter 的 update dispatcher 克隆 Hook，重放 queue 得到 3；
+button element 随之变成 children=3。此时只修改 WIP Fiber 的 memoized state、props 与 flags，不修改可见 DOM。</p>
+<figure class="source"><figcaption><span>连续原码（函数尾部）· ReactFiberWorkLoop.js · performUnitOfWork</span><a href="../../react/packages/react-reconciler/src/ReactFiberWorkLoop.js">打开源码</a></figcaption><pre><code>  unitOfWork.memoizedProps = unitOfWork.pendingProps;
+  if (next === null) {
+    // beginWork 未返回新工作时，完成当前 unit。
+    completeUnitOfWork(unitOfWork);
+  } else {
+    workInProgress = next;
+  }
+}</code></pre></figure>
+<div class="table-wrap"><table><thead><tr><th>render 中</th><th>current</th><th>WIP</th><th>DOM</th></tr></thead><tbody>
+<tr><td>重放前</td><td>ctr=0</td><td>从 alternate 克隆</td><td>button 文本 0</td></tr><tr><td>重放后</td><td>仍为 ctr=0</td><td>ctr=3，button 新 props/Update flag</td><td>仍为 0</td></tr>
+<tr><td>complete 后</td><td>仍为旧树</td><td>finishedWork 已汇总 subtreeFlags</td><td>仍为 0</td></tr></tbody></table></div>
+<p>Fiber 形状和双缓冲见 <a href="10-fiber-object-model.html">10 · Fiber 对象模型</a>；key/type 复用与 Placement 见 <a href="12-child-reconciliation.html">12 · children 协调</a>。</p></section>
+
+<section id="commit"><h2>阶段 6：mutation 写 DOM，随后 current 才切换</h2>
+<p>commit 不能像 render 一样任意丢弃。mutation 先把 button 的宿主状态更新到 3；之后 <code>root.current = finishedWork</code>，layout 才能观察新树。
+顺序反过来会让 unmount/layout 在错误的 current 上运行。</p>
+<figure class="source"><figcaption><span>连续原码（函数中段）· ReactFiberWorkLoop.js · flushMutationEffects</span><a href="../../react/packages/react-reconciler/src/ReactFiberWorkLoop.js">打开源码</a></figcaption><pre><code>    try {
+      // 下一阶段 mutation：修改宿主树。
+      commitMutationEffects(root, finishedWork, lanes);
+
+      if (enableCreateEventHandleAPI) {
+        if (shouldFireAfterActiveInstanceBlur) {
+          afterActiveInstanceBlur();
+        }
+      }
+      resetAfterCommit(root.containerInfo);
+    } finally {
+      // 恢复此前非同步优先级。
+      executionContext = prevExecutionContext;
+      setCurrentUpdatePriority(previousPriority);
+      ReactSharedInternals.T = prevTransition;
+    }
+  }
+
+  // WIP 现切为 current。必须晚于 mutation，使 componentWillUnmount 期间旧树仍为 current；
+  // 又必须早于 layout，使 componentDidMount/Update 看到完成树为 current。
+  root.current = finishedWork;
+  pendingEffectsStatus = PENDING_LAYOUT_PHASE;</code></pre></figure>
+<figure class="source"><figcaption><span>连续原码 · ReactFiberConfigDOM.js · commitUpdate</span><a href="../../react/packages/react-dom-bindings/src/client/ReactFiberConfigDOM.js">打开源码</a></figcaption><pre><code>export function commitUpdate(
+  domElement: Instance,
+  type: string,
+  oldProps: Props,
+  newProps: Props,
+  internalInstanceHandle: Object,
+): void {
+  //比较并更新属性。
+  updateProperties(domElement, type, oldProps, newProps);
+
+  //更新 props 句柄，以便我们知道哪些 props 是带有当前事件处理程序的。
+  updateFiberProps(domElement, newProps);
+}</code></pre></figure>
+<p><code>updateProperties</code> 把 button 的文本从 0 写成 3；<code>updateFiberProps</code> 同时把事件系统将来读取的 handler 更新为本轮 props。
+DOM 更新与事件闭包因此在同一次 commit 后一致。flags、Deletion、ref、错误和 effect 顺序见 <a href="14-commit-effects.html">14 · commit/effects/deletion</a>。</p></section>
+
+<section id="passive"><h2>阶段 7：passive effect 观察已提交的 3</h2>
+<p>测试中的 <code>useEffect(() =&gt; yields.push(ctr))</code> 会在 render 中被调用，以登记 Effect 记录、依赖与 Fiber flags；但它传入的 create 回调不会在 render 或 mutation 阶段执行。
+commit 建立新 current 和 DOM 后，<code>act</code> 再冲刷 passive mount；create 闭包来自 ctr=3 的已提交 render，因此日志只增加 3。三个 Update 确实存在，但该测试观察的是一次 act 队列冲刷产生的提交。</p>
+<div class="table-wrap"><table><thead><tr><th>检查点</th><th>Hook state</th><th>DOM</th><th>yields</th><th>测试断言</th></tr></thead><tbody>
+<tr><td>初次 act 后</td><td>0</td><td>0</td><td>[0]</td><td><code>toEqual([0])</code></td></tr>
+<tr><td>三个 click 入队后、render 前</td><td>current 仍 0</td><td>0</td><td>[]</td><td>无中途可见断言</td></tr>
+<tr><td>render 完成、commit 前</td><td>WIP=3</td><td>0</td><td>[]</td><td>不可见候选树</td></tr>
+<tr><td>mutation/current 切换后</td><td>current=3</td><td>3</td><td>[]</td><td>passive 尚待 flush</td></tr>
+<tr><td>act 冲刷 passive 后</td><td>3</td><td>3</td><td>[3]</td><td><code>toEqual([3])</code></td></tr>
+</tbody></table></div></section>
+
+<section id="failure-cleanup"><h2>异常与清理：完整链必须解释出口</h2><div class="grid three">
+<article class="card"><span class="number">UNMOUNTED HANDLE</span><h3>公开句柄先拒绝复用</h3><p><code>root.render</code> 读取到空 <code>_internalRoot</code> 时抛出 <code>Cannot update an unmounted root.</code>，不会再入队。</p></article>
+<article class="card"><span class="number">RENDER ERROR</span><h3>候选树可丢弃或恢复</h3><p>组件/reducer 抛错由 work loop 找边界并重试；未提交 WIP 不会成为 current。fatal error 才交根错误出口。</p></article>
+<article class="card"><span class="number">COMMIT ERROR</span><h3>捕获，但不假装回滚</h3><p>已发生的 DOM mutation 不做数据库式回滚；错误被捕获到最近边界或 root，遍历继续完成必要清理。</p></article></div>
+<p><code>root.unmount()</code> 先把句柄置空，再以同步 <code>element=null</code> Update 进入同一协调/提交管线，最后移除 container root marker。
+因此 ref detach、layout/passive cleanup、portal 与 Fiber/DOM cache 清理不会被直接 <code>innerHTML=''</code> 绕过。</p>
+<figure class="source"><figcaption><span>删节源码（只保留所有权与清理主线）· ReactDOMRoot.js · unmount</span><a href="../../react/packages/react-dom/src/client/ReactDOMRoot.js">打开完整函数</a></figcaption><pre><code>const root = this._internalRoot;
+if (root !== null) {
+  this._internalRoot = null;
+  const container = root.containerInfo;
+  // DEV 中间包含“render 期间同步 unmount”的竞态诊断。
+  updateContainerSync(null, root, null, null);
+  flushSyncWork();
+  unmarkContainerAsRoot(container);
+}</code></pre></figure></section>
+
+<section id="crosswalk"><h2>结论 → 源码 → 测试证据</h2><div class="table-wrap"><table><thead><tr><th>结论</th><th>决定性符号</th><th>状态写入/副作用</th><th>测试断言</th></tr></thead><tbody>
+<tr><td>createRoot 只建根</td><td>ReactDOMRoot.createRoot</td><td>markContainerAsRoot + 根 listener</td><td>首次 <code>root.render</code> 后才出现 button</td></tr>
+<tr><td>root.render 是 Update</td><td>updateContainerImpl</td><td>payload={element}；enqueue；schedule</td><td>初次 act 后 effect 观察 0</td></tr>
+<tr><td>click 使用最新 Fiber/props</td><td>dispatchEvent / plugin system</td><td>DOM target → Fiber → onClick</td><td>原生冒泡 MouseEvent 能触发 setCtr</td></tr>
+<tr><td>三次函数 action 串行重放</td><td>dispatchSetStateInternal / updateReducerImpl</td><td>Hook queue；0→1→2→3</td><td>act 冲刷后只记录 <code>[3]</code></td></tr>
+<tr><td>render 不直接改 DOM</td><td>performUnitOfWork</td><td>WIP props/state/flags</td><td>可见结果只在 act flush 后断言</td></tr>
+<tr><td>commit 同步 DOM 与 handler cache</td><td>flushMutationEffects / commitUpdate</td><td>updateProperties；root.current；updateFiberProps</td><td>最终 button.innerHTML 为 5</td></tr>
+<tr><td>passive 观察已提交值</td><td>flushPassiveEffects / commitHookPassiveMountEffects</td><td>运行本轮 effect create</td><td>日志依次 [3]、[4]、[5]</td></tr>
+</tbody></table></div></section>
+
+<section id="limits"><h2>边界</h2><ul class="qa"><li>测试运行在 DEV + act；这里“三次 click 后只提交一次”依赖 actQueue 的测试调度语义，不能直接扩大为任意三个生产原生事件都会合成一次提交。生产由真实事件、host task/microtask 与根优先级共同决定。</li>
+<li>本例没有 key 移动、Suspense、hydration blocker 或 commit error；对应分支分别在 12、15、14 页展开。</li>
+<li>Lane 具体 bit 由当前事件、transition、render context 与根模式决定；本页只证明控制权和状态所有权。</li>
+<li>源码版本以本仓库 package version 与证据页指纹为准，不从版本号推断缺失的 Git commit。</li></ul></section>
+
+<section id="questions"><h2>读完应能回答</h2><ul class="qa"><li>三个 click 为什么创建三个 Update，却只让 effect 观察一次 3？</li>
+<li>点击时如何从 DOM button 找到 Counter 的 setCtr 闭包？</li><li>WIP 得到 ctr=3 后，为什么 DOM 仍可保持 0？</li>
+<li>为什么 root.current 必须在 mutation 后、layout 前切换？</li><li>直接清空 container 会绕过哪些清理？</li></ul></section>
+
+<div class="next-page"><a href="15-events-hydration.html">← 上一页：事件与 hydration</a><a href="17-suspense-retry.html">下一页：Suspense retry →</a></div>
+<footer><p>同一个真实测试，贯穿入口、状态、调度、宿主副作用、断言与清理；其余算法由 10–15 页逐层展开。</p></footer>
+</main><aside class="toc" aria-label="本页目录"><strong>真实源码主线</strong><a href="#source-kinds">证据标签</a><a href="#real-test">真实测试</a><a href="#map">完整控制流</a>
+<a href="#root">createRoot</a><a href="#mount-update">root.render</a><a href="#native-click">原生 click</a><a href="#hook-dispatch">Hook Update</a><a href="#render">WIP render</a>
+<a href="#commit">commit / DOM</a><a href="#passive">passive effect</a><a href="#failure-cleanup">异常与清理</a><a href="#crosswalk">证据表</a><a href="#limits">边界</a></aside></div></body></html>

@@ -1,0 +1,724 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="auto">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Vue Compiler 演进史与设计驱动力：本地 Git 里程碑、架构取舍和 issue 模式"
+    />
+    <title>演进与设计 · Vue Compiler 指南</title>
+    <link rel="stylesheet" href="assets/styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#content">跳到正文</a>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <a class="brand" href="index.html"
+          ><span class="brand-mark">VC</span><span>Vue Compiler Guide</span></a
+        >
+        <nav class="global-nav" aria-label="全站导航">
+          <a href="index.html">总览</a><a href="core.html">compiler-core</a
+          ><a href="dom.html">compiler-dom</a><a href="sfc.html">compiler-sfc</a
+          ><a href="ssr.html">compiler-ssr</a
+          ><a href="integration.html">端到端串联</a
+          ><a href="evolution.html" aria-current="page">演进与设计</a
+          ><a href="lab.html">实验与术语</a>
+        </nav>
+        <button
+          class="menu-button"
+          data-menu-toggle
+          type="button"
+          aria-expanded="false"
+        >
+          目录</button
+        ><button class="theme-button" data-theme-toggle type="button">
+          自动
+        </button>
+      </div>
+    </header>
+
+    <div class="page-shell">
+      <aside class="rail" aria-label="本页目录">
+        <p class="rail-title">演进与设计</p>
+        <nav>
+          <a href="#content">说明</a><a href="#timeline">时间线</a
+          ><a href="#phase-foundation">架构奠基</a
+          ><a href="#phase-sfc">SFC 与宏</a
+          ><a href="#phase-parser">解析器演进</a
+          ><a href="#phase-hardening">边界加固</a
+          ><a href="#drivers">设计驱动力</a><a href="#issues">Issue 模式</a
+          ><a href="#tradeoffs">关键取舍</a
+          ><a href="#history-reading">如何读历史</a>
+        </nav>
+        <p class="rail-note">证据来源<br />当前仓库<br />本地 Git 历史</p>
+      </aside>
+
+      <main id="content">
+        <div class="hero compact">
+          <p class="eyebrow">
+            Evolution · Architecture under Real-world Pressure
+          </p>
+          <h1>演进不是功能堆叠，<br />而是边界持续收敛</h1>
+          <p class="lead">
+            Vue Compiler 从平台分层和运行时优化起步，随后承担 script
+            setup、类型驱动宏、IDE 容错、跨文件缓存与 SSR
+            hydration。历史最值得看的，是每类问题如何迫使阶段协议变得更明确。
+          </p>
+          <div class="hero-meta">
+            <span>时间范围：2018–2026</span
+            ><span>基线：本地 Vue 3.5.41 Git</span
+            ><span>日期与 commit 可在仓库核对</span>
+          </div>
+        </div>
+
+        <section id="timeline">
+          <div class="section-head">
+            <div>
+              <span class="section-no">01 / Timeline</span>
+              <h2>关键里程碑</h2>
+            </div>
+            <p>这不是完整 changelog，而是与当前源码结构直接相关的演进节点。</p>
+          </div>
+          <div class="timeline">
+            <div class="timeline-item">
+              <div class="timeline-date">2018-09</div>
+              <div class="timeline-copy">
+                <strong>Monorepo 包结构起步</strong>
+                <p>
+                  建立各 package，为后续 compiler/runtime 分层提供工程边界。
+                </p>
+                <span class="commit">d1bc6ee8d · setup all packages</span>
+              </div>
+            </div>
+            <div class="timeline-item">
+              <div class="timeline-date">2019-09</div>
+              <div class="timeline-copy">
+                <strong>新 parser 与 compiler-dom 骨架形成</strong>
+                <p>
+                  parser 移植、DOM 包脚手架、文件重组与平台选项迁移，确立 core +
+                  platform 的方向。
+                </p>
+                <span class="commit">86ae92303 · 1c8f5b612 · 6c14b409c</span>
+              </div>
+            </div>
+            <div class="timeline-item">
+              <div class="timeline-date">2020-07</div>
+              <div class="timeline-copy">
+                <strong>&lt;script setup&gt; 进入实验</strong>
+                <p>
+                  SFC 编译器开始承担模块级语法变换、bindings
+                  与模板组件解析协作。
+                </p>
+                <span class="commit">1ad3f975e · 4c43d4e5b</span>
+              </div>
+            </div>
+            <div class="timeline-item">
+              <div class="timeline-date">2020-09</div>
+              <div class="timeline-copy">
+                <strong>Vue 3.0.0 发布</strong>
+                <p>
+                  三段编译管线、block tree、PatchFlags 与 runtime helper
+                  协议进入稳定主线。
+                </p>
+                <span class="commit">d8c1536ea</span>
+              </div>
+            </div>
+            <div class="timeline-item">
+              <div class="timeline-date">2020-10</div>
+              <div class="timeline-copy">
+                <strong>script setup 新实现</strong>
+                <p>
+                  早期实验快速重写，说明语法便利性必须建立在稳定的编译期作用域与组件封装语义上。
+                </p>
+                <span class="commit">556560fae</span>
+              </div>
+            </div>
+            <div class="timeline-item">
+              <div class="timeline-date">2021-08</div>
+              <div class="timeline-copy">
+                <strong>Vue 3.2.0</strong>
+                <p>
+                  SFC 编译能力成熟，script setup
+                  成为正式开发模型之一，compiler-sfc 的桥接责任显著增加。
+                </p>
+                <span class="commit">5a7a43cc3</span>
+              </div>
+            </div>
+            <div class="timeline-item">
+              <div class="timeline-date">2022-05</div>
+              <div class="timeline-copy">
+                <strong>响应式 props 解构边界持续修复</strong>
+                <p>
+                  对象默认值、作用域与运行时 props 语义开始成为独立复杂领域。
+                </p>
+                <span class="commit">7dfe14609</span>
+              </div>
+            </div>
+            <div class="timeline-item">
+              <div class="timeline-date">2023-04</div>
+              <div class="timeline-copy">
+                <strong>defineModel 宏引入</strong>
+                <p>
+                  v-model 的 prop + emit 协议提升为 SFC 宏，并与 runtime
+                  useModel helper 建立新契约。
+                </p>
+                <span class="commit">14f3d747a</span>
+              </div>
+            </div>
+            <div class="timeline-item">
+              <div class="timeline-date">2023-05</div>
+              <div class="timeline-copy">
+                <strong>Vue 3.3.0</strong>
+                <p>
+                  SFC 类型、泛型与宏能力扩展；同一时期响应式解构与 defineModel
+                  经历实验开关和警告调整。
+                </p>
+                <span class="commit">483a4e7e3 · d40d4a338</span>
+              </div>
+            </div>
+            <div class="timeline-item">
+              <div class="timeline-date">2023-11</div>
+              <div class="timeline-copy">
+                <strong>Tokenizer 开始直接解析指令</strong>
+                <p>
+                  更多指令边界进入有限状态机，降低后续字符串切分，同时提高编辑态容错测试的重要性。
+                </p>
+                <span class="commit">08038a938</span>
+              </div>
+            </div>
+            <div class="timeline-item">
+              <div class="timeline-date">2023-12</div>
+              <div class="timeline-copy">
+                <strong>Vue 3.4.0；defineModel 稳定</strong>
+                <p>
+                  宏加入本地更新、修饰符与 transformer 等能力，类型和 runtime
+                  行为同步收敛。
+                </p>
+                <span class="commit">ef688ba92 · a772031ea · d702b6648</span>
+              </div>
+            </div>
+            <div class="timeline-item">
+              <div class="timeline-date">2024-04</div>
+              <div class="timeline-copy">
+                <strong>响应式 props 解构默认启用</strong>
+                <p>
+                  编译器需要像小型作用域分析器一样处理函数、catch、for、var
+                  提升、默认值和写入限制。
+                </p>
+                <span class="commit">d2dac0e35</span>
+              </div>
+            </div>
+            <div class="timeline-item">
+              <div class="timeline-date">2024-09</div>
+              <div class="timeline-copy">
+                <strong>Vue 3.5.0</strong>
+                <p>
+                  响应式解构等能力正式进入版本，compiler-sfc
+                  的静态语义成为日常开发体验的一部分。
+                </p>
+                <span class="commit">6402b9840</span>
+              </div>
+            </div>
+            <div class="timeline-item">
+              <div class="timeline-date">2025–2026</div>
+              <div class="timeline-copy">
+                <strong>复杂边界与类型推导加固</strong>
+                <p>
+                  持续修复作用域、缓存顺序、defineModel
+                  推导、工厂默认值与跨编译上下文问题。
+                </p>
+                <span class="commit">8e3435779 · 48ad452dd · 0516c4328</span>
+              </div>
+            </div>
+            <div class="timeline-item">
+              <div class="timeline-date">2026-08</div>
+              <div class="timeline-copy">
+                <strong>当前阅读基线：3.5.41</strong>
+                <p>本专题注释、测试与页面均基于当前 checkout。</p>
+                <span class="commit">d2c458be2 · release v3.5.41</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="phase-foundation">
+          <div class="section-head">
+            <div>
+              <span class="section-no">02 / Foundation</span>
+              <h2>第一阶段：先把平台与协议拆开</h2>
+            </div>
+            <p>
+              Vue 3 编译器的关键不是“换一个
+              parser”，而是让编译输出直接参与运行时优化。
+            </p>
+          </div>
+          <div class="grid-3">
+            <article class="card green">
+              <h3>core / platform 分层</h3>
+              <p>
+                通用模板语义进入 compiler-core，HTML/DOM 规则进入
+                compiler-dom，SSR 只复用适用部分。
+              </p>
+            </article>
+            <article class="card blue">
+              <h3>AST 成为共享协议</h3>
+              <p>
+                parser、transform、codegen
+                通过明确节点类型协作，平台扩展无需复制整条管线。
+              </p>
+            </article>
+            <article class="card violet">
+              <h3>编译期指导 runtime</h3>
+              <p>
+                PatchFlags、block tree、hoist 与 helper symbols
+                把动态性直接编码进产物。
+              </p>
+            </article>
+          </div>
+          <div class="callout">
+            <strong>演进结论：</strong>模块化不是为了目录整洁，而是为了让
+            parser、平台语义与运行时优化各自演进，同时依靠稳定中间协议连接。
+          </div>
+        </section>
+
+        <section id="phase-sfc">
+          <div class="section-head">
+            <div>
+              <span class="section-no">03 / SFC Expansion</span>
+              <h2>第二阶段：SFC 从容器变成静态分析中心</h2>
+            </div>
+            <p>
+              script setup 与类型宏让 compiler-sfc 不再只是 block
+              splitter，而要理解 JavaScript/TypeScript 绑定与生命周期。
+            </p>
+          </div>
+          <div class="diagram" aria-label="SFC 编译职责扩展">
+            <p class="diagram-title">职责增长路径</p>
+            <div class="flow">
+              <div class="flow-node">
+                <strong>Block parse</strong><small>template/script/style</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node">
+                <strong>Script rewrite</strong
+                ><small>imports / default export / setup</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node primary">
+                <strong>Type-driven macros</strong
+                ><small>props / emits / model / slots</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node">
+                <strong>Cross-file analysis</strong
+                ><small>tsconfig / cache / deps / HMR</small>
+              </div>
+            </div>
+          </div>
+          <div class="grid-2">
+            <article class="card">
+              <h3>为什么使用 Babel AST + MagicString</h3>
+              <p>
+                AST 负责正确理解作用域与类型语法，MagicString
+                负责尽量保留用户源码和 source map。重新打印整棵 JS AST
+                会改变格式、注释与映射。
+              </p>
+            </article>
+            <article class="card">
+              <h3>为什么不直接调用完整 TypeScript checker</h3>
+              <p>
+                compiler-sfc 需要跨环境、快速、可由构建器注入 fs
+                的有限静态推导。它实现宏所需子集，遇到不确定类型保守退化。
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section id="phase-parser">
+          <div class="section-head">
+            <div>
+              <span class="section-no">04 / Parser Evolution</span>
+              <h2>第三阶段：解析器更快，也更靠近编辑态</h2>
+            </div>
+            <p>
+              指令直接进入 tokenizer 意味着更少二次切分，但 tokenizer
+              状态与错误位置必须覆盖更多边界。
+            </p>
+          </div>
+          <div class="grid-3">
+            <article class="card">
+              <h3>性能压力</h3>
+              <p>
+                单遍状态机、字符码和回调减少 token 对象与字符串分配，适合构建和
+                IDE 高频解析。
+              </p>
+            </article>
+            <article class="card">
+              <h3>语法压力</h3>
+              <p>
+                动态参数、修饰符、简写、实体、RAW/RCDATA 与 SFC mode
+                组合形成大量状态迁移。
+              </p>
+            </article>
+            <article class="card">
+              <h3>IDE 压力</h3>
+              <p>
+                用户输入经常处于未闭合状态；parser
+                要恢复稳定根结构，并把错误定位到准确字符。
+              </p>
+            </article>
+          </div>
+          <div class="callout warn">
+            <strong>重构 parser 的真正风险：</strong>不是合法模板能否生成相同
+            AST，而是非法/半成品模板的恢复树、错误码和 location
+            是否漂移。parse.spec.ts 的大矩阵就是演进护栏。
+          </div>
+        </section>
+
+        <section id="phase-hardening">
+          <div class="section-head">
+            <div>
+              <span class="section-no">05 / Hardening</span>
+              <h2>第四阶段：功能稳定后，问题转向组合边界</h2>
+            </div>
+            <p>
+              近期修复往往不是新增语法，而是某个特性在另一个作用域、缓存顺序、默认值或
+              SSR 拓扑中失效。
+            </p>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>边界类型</th>
+                  <th>典型组合</th>
+                  <th>为什么难</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>作用域</td>
+                  <td>props 解构 + 函数参数/catch/for/var</td>
+                  <td>必须准确模拟 JavaScript 遮蔽与提升。</td>
+                </tr>
+                <tr>
+                  <td>类型与运行时</td>
+                  <td>defineModel default + getter/setter 类型</td>
+                  <td>类型可更宽/更窄，但 runtime prop 与 emit 仍要匹配。</td>
+                </tr>
+                <tr>
+                  <td>缓存上下文</td>
+                  <td>global type 先加载，再作为模块导入</td>
+                  <td>同一文件在不同 owner/asGlobal 语境下语义不同。</td>
+                </tr>
+                <tr>
+                  <td>优化与身份</td>
+                  <td>v-for handler、静态数组、VNode clone</td>
+                  <td>看似可缓存的值可能携带迭代闭包或 DOM 引用。</td>
+                </tr>
+                <tr>
+                  <td>SSR 拓扑</td>
+                  <td>TransitionGroup + comments + hydration</td>
+                  <td>服务器字符串与客户端过滤/展平行为必须同步。</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="drivers">
+          <div class="section-head">
+            <div>
+              <span class="section-no">06 / Design Drivers</span>
+              <h2>推动架构变化的六种力量</h2>
+            </div>
+            <p>理解这些力量，可以解释源码中大量看似“过度谨慎”的分支。</p>
+          </div>
+          <ol class="invariant-list">
+            <li>
+              <b>P</b>
+              <div>
+                <strong>Performance。</strong>减少 parser 分配、render
+                创建、patch 遍历和 SSR helper 调用。
+              </div>
+            </li>
+            <li>
+              <b>D</b>
+              <div>
+                <strong>Developer Experience。</strong>script
+                setup、类型宏、精确错误、IDE 残缺输入和 HMR。
+              </div>
+            </li>
+            <li>
+              <b>C</b>
+              <div>
+                <strong>Correctness。</strong>作用域、引用身份、默认值、浏览器
+                HTML 修正与 hydration。
+              </div>
+            </li>
+            <li>
+              <b>S</b>
+              <div>
+                <strong>Security。</strong>SSR 属性名/值转义、客户端副作用标签与
+                v-html 边界。
+              </div>
+            </li>
+            <li>
+              <b>B</b>
+              <div>
+                <strong>Bundle Size。</strong>构建标志、runtime helper
+                按需导入、浏览器/Node 实现分离。
+              </div>
+            </li>
+            <li>
+              <b>E</b>
+              <div>
+                <strong>Extensibility。</strong>compiler options、custom
+                compiler、预处理器、fs 注入与平台 transforms。
+              </div>
+            </li>
+          </ol>
+        </section>
+
+        <section id="issues">
+          <div class="section-head">
+            <div>
+              <span class="section-no">07 / Issue Taxonomy</span>
+              <h2>Issue 注释背后的重复模式</h2>
+            </div>
+            <p>
+              修复编号本身不是知识；能迁移到下一次排查的，是它属于哪种失效模式。
+            </p>
+          </div>
+          <div class="grid-3">
+            <article class="card">
+              <h3>模式 A：状态泄漏</h3>
+              <p>
+                parser/tokenizer 或缓存把上一次编译状态带入下一次。检查
+                reset、cache key 与 owner context。
+              </p>
+            </article>
+            <article class="card">
+              <h3>模式 B：作用域误判</h3>
+              <p>
+                局部变量被加 _ctx、props 被错误改写、handler
+                错误缓存。检查进入/退出登记是否成对。
+              </p>
+            </article>
+            <article class="card">
+              <h3>模式 C：结构邻接</h3>
+              <p>
+                v-else、slot、注释、空白或节点删除改变兄弟关系。检查游标、过滤规则和分支
+                key。
+              </p>
+            </article>
+            <article class="card">
+              <h3>模式 D：平台修正</h3>
+              <p>
+                浏览器会重排 HTML、表单控件语义不同、SVG/MathML namespace
+                切换。检查 platform options。
+              </p>
+            </article>
+            <article class="card">
+              <h3>模式 E：优化过度</h3>
+              <p>
+                提升/缓存改变引用身份、捕获变量或保留 DOM
+                引用。先降低静态性，再证明可优化。
+              </p>
+            </article>
+            <article class="card">
+              <h3>模式 F：同构错位</h3>
+              <p>
+                SSR 少/多一个注释、属性或 Fragment。比较真实 DOM 与客户端 VNode
+                拓扑。
+              </p>
+            </article>
+          </div>
+          <figure class="source-block">
+            <figcaption class="source-caption">
+              <span
+                ><strong>当前源码中的演进痕迹</strong
+                ><code>三类 issue 的最终防线</code></span
+              >
+              <span class="source-version">Vue 3.5.41</span>
+            </figcaption>
+            <pre><code>// compiler-core/cacheStatic.ts · #6978/#7138/#7114
+// 缓存 children 数组可被 mountChildren 改写，每次取值要浅拷贝。
+function getCacheExpression(value: JSChildNode): CacheExpression {
+  const exp = context.cache(value)
+  exp.needArraySpread = true
+  return exp
+}
+
+// compiler-sfc/compileScript.ts · #11265 / rolldown-vite#432
+// reactive const 作为组件 v-model 目标时需允许整体写回。
+if (setupBindings[id] === BindingTypes.SETUP_REACTIVE_CONST) {
+  toDemote.add(id)
+}
+// 后续把声明 const 改为 let，metadata 改为 SETUP_LET。
+
+// compiler-ssr/ssrTransformComponent.ts · #5352
+// 透明 Transition 作为 slot 根时，空 push 防止全注释输出被误判为空 slot。
+if ((parent as WIPSlotEntry).type === WIP_SLOT) {
+  context.pushStringPart(``)
+}</code></pre>
+          </figure>
+          <div class="code-walkthrough">
+            <article class="code-note">
+              <h3>修复往往是增加一个协议位</h3>
+              <p>
+                needArraySpread、SETUP_LET 和空 push 都不是新功能
+                API，而是把原先隐含的 “读取会被变异”、“模型需写回”、“slot
+                分支已输出”显式写入中间协议。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>最小代码可能保护很长的因果链</h3>
+              <p>
+                <code>needArraySpread = true</code> 只有一行，背后却跨越
+                compiler cache、VNode clone、mountChildren、v-for/HMR 与 DOM
+                引用释放。只看 diff 会低估这一行的设计重量。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>回归测试必须保留原组合</h3>
+              <p>
+                这三类问题都不是单个 API 的基本路径，而是缓存+v-for+HMR、
+                reactive+component v-model、slot+Transition+false branch
+                的交叉。把测试简化成单一特性会丢掉真正不变量。
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section id="tradeoffs">
+          <div class="section-head">
+            <div>
+              <span class="section-no">08 / Trade-offs</span>
+              <h2>当前实现接受了哪些取舍</h2>
+            </div>
+            <p>
+              好的源码解读不仅说“怎么做”，还应说明为什么没有选择看似更简单的方案。
+            </p>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>取舍</th>
+                  <th>获得</th>
+                  <th>代价</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>原地 AST transform</td>
+                  <td>少分配、插件可协作、容易挂 codegenNode</td>
+                  <td>必须谨慎维护遍历游标与 currentNode。</td>
+                </tr>
+                <tr>
+                  <td>模块级 parser 状态</td>
+                  <td>热路径更少对象分配</td>
+                  <td>reset 不完整会造成跨编译泄漏。</td>
+                </tr>
+                <tr>
+                  <td>手写有限类型解析</td>
+                  <td>轻量、跨环境、可注入 fs</td>
+                  <td>只支持宏所需 TypeScript 子集。</td>
+                </tr>
+                <tr>
+                  <td>MagicString 局部改写</td>
+                  <td>保留用户格式、注释与映射</td>
+                  <td>偏移计算和移动区间更复杂。</td>
+                </tr>
+                <tr>
+                  <td>SSR 两遍转换</td>
+                  <td>复用 core 语义并得到线性输出</td>
+                  <td>需要第一遍元数据与第二遍上下文协议。</td>
+                </tr>
+                <tr>
+                  <td>大量编译标记</td>
+                  <td>runtime 极快路径</td>
+                  <td>编译器与 runtime 必须同步维护协议。</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="history-reading">
+          <div class="section-head">
+            <div>
+              <span class="section-no">09 / Practice</span>
+              <h2>如何沿 Git 历史读一个设计</h2>
+            </div>
+            <p>
+              不要只看最终 diff；把引入、稳定、回归与后续修复连成一条小时间线。
+            </p>
+          </div>
+          <div class="steps">
+            <div class="step">
+              <h3>定位当前 symbol</h3>
+              <p>从函数、错误码、helper 或测试标题出发，明确今天的行为。</p>
+            </div>
+            <div class="step">
+              <h3>找首次引入</h3>
+              <p>
+                用 path/symbol/commit message 搜索最早实现，记录当时的最小目标。
+              </p>
+            </div>
+            <div class="step">
+              <h3>找稳定节点</h3>
+              <p>
+                观察实验开关、警告和 release commit
+                何时移除，区分提案与稳定契约。
+              </p>
+            </div>
+            <div class="step">
+              <h3>聚类后续修复</h3>
+              <p>
+                把 issue 按作用域、缓存、类型、平台或 hydration
+                分类，而不是逐条记忆。
+              </p>
+            </div>
+            <div class="step">
+              <h3>回到测试</h3>
+              <p>
+                确认每次修复新增了哪条最小用例；测试通常比 commit 描述更精确。
+              </p>
+            </div>
+          </div>
+          <pre><code># 示例：沿路径看最早提交
+git log --reverse --date=short --format='%h %ad %s' \
+  -- packages/compiler-core
+
+# 示例：追 script setup / defineModel
+git log --all --grep='script setup' -i
+git log --all --grep='defineModel' -i
+
+# 示例：看某行为何存在
+git blame packages/compiler-sfc/src/script/resolveType.ts</code></pre>
+          <div class="callout">
+            <strong>历史证据边界：</strong>本页只使用当前仓库本地 Git
+            可核对的信息。不同分支、backport 与尚未发布提交可能让时间线与其他
+            checkout 不同。
+          </div>
+        </section>
+
+        <div class="page-links">
+          <a class="page-link" href="integration.html"
+            ><small>上一章</small><strong>← 端到端串联</strong></a
+          ><a class="page-link" href="lab.html"
+            ><small>下一章</small><strong>实验与术语 →</strong></a
+          >
+        </div>
+        <footer class="site-footer">
+          <span>Vue Compiler 源码专题指南</span
+          ><span>Evolution · Architecture & Issue Patterns</span>
+        </footer>
+      </main>
+    </div>
+    <script src="assets/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,1014 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>micro-app src 源码全景</title>
+  <style>
+    :root {
+      --ink: #162235;
+      --muted: #5f6d7a;
+      --paper: #fbfaf6;
+      --panel: #ffffff;
+      --line: #dbe1e6;
+      --navy: #10243b;
+      --blue: #246b9f;
+      --cyan: #0f8b8d;
+      --amber: #b86b12;
+      --red: #b33a3a;
+      --green: #287a4a;
+      --code: #101923;
+      --code-ink: #e8edf2;
+      --shadow: 0 12px 34px rgba(16, 36, 59, .08);
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 12% 0%, rgba(15, 139, 141, .09), transparent 28rem),
+        var(--paper);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.72;
+    }
+
+    a { color: var(--blue); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+    code { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
+    .layout { display: grid; grid-template-columns: 18rem minmax(0, 1fr); min-height: 100vh; }
+    nav {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow: auto;
+      padding: 2rem 1.35rem;
+      color: #e8eef5;
+      background: var(--navy);
+    }
+    nav .brand { font-size: 1.14rem; font-weight: 760; letter-spacing: .02em; }
+    nav .scope { margin: .35rem 0 1.4rem; color: #9fb1c4; font-size: .78rem; }
+    nav ol { margin: 0; padding: 0; list-style: none; counter-reset: item; }
+    nav li { counter-increment: item; }
+    nav a {
+      display: block;
+      padding: .39rem .5rem;
+      border-radius: .4rem;
+      color: #c7d4e0;
+      text-decoration: none;
+      font-size: .83rem;
+    }
+    nav a::before { content: counter(item, decimal-leading-zero) "  "; color: #6fa9c7; }
+    nav a:hover, nav a:focus { color: #fff; background: rgba(255,255,255,.08); }
+
+    main { width: min(74rem, 100%); min-width: 0; padding: 4rem clamp(1.25rem, 5vw, 5rem) 7rem; }
+    header { padding-bottom: 2.8rem; border-bottom: 1px solid var(--line); }
+    .eyebrow { color: var(--cyan); font-size: .78rem; font-weight: 760; letter-spacing: .13em; text-transform: uppercase; }
+    h1 { margin: .45rem 0 .9rem; max-width: 18ch; font-size: clamp(2.3rem, 6vw, 4.9rem); line-height: 1.02; letter-spacing: -.045em; }
+    .lead { max-width: 53rem; margin: 0; color: var(--muted); font-size: 1.08rem; }
+    .badges { display: flex; flex-wrap: wrap; gap: .55rem; margin-top: 1.4rem; }
+    .badge { padding: .28rem .62rem; border: 1px solid var(--line); border-radius: 999px; background: rgba(255,255,255,.7); font-size: .76rem; }
+
+    section { padding-top: 4rem; scroll-margin-top: 1rem; }
+    h2 { margin: 0 0 1rem; font-size: clamp(1.55rem, 3vw, 2.3rem); line-height: 1.2; letter-spacing: -.025em; }
+    h3 { margin: 2.2rem 0 .65rem; font-size: 1.15rem; }
+    p { max-width: 68rem; }
+    .kicker { max-width: 58rem; color: var(--muted); font-size: 1rem; }
+    .facts, .cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; margin: 1.4rem 0; }
+    .card { padding: 1.05rem 1.15rem; border: 1px solid var(--line); border-radius: .7rem; background: rgba(255,255,255,.78); box-shadow: var(--shadow); }
+    .card h3 { margin: 0 0 .35rem; font-size: .97rem; }
+    .card p { margin: 0; color: var(--muted); font-size: .88rem; }
+    .label { display: inline-block; margin-bottom: .55rem; padding: .16rem .42rem; border-radius: .3rem; color: #fff; background: var(--blue); font-size: .68rem; font-weight: 760; letter-spacing: .05em; }
+    .label.test { background: var(--green); }
+    .label.infer { background: var(--amber); }
+    .label.boundary { background: var(--red); }
+    .callout { margin: 1.25rem 0; padding: 1rem 1.1rem; border-left: .28rem solid var(--cyan); background: rgba(15,139,141,.075); }
+    .callout.warn { border-color: var(--amber); background: rgba(184,107,18,.075); }
+
+    table { width: 100%; max-width: 100%; table-layout: fixed; border-collapse: collapse; margin: 1.2rem 0; background: rgba(255,255,255,.72); font-size: .86rem; }
+    th, td { overflow-wrap: anywhere; padding: .72rem .75rem; border: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { color: #eef4f8; background: var(--navy); }
+    tbody tr:nth-child(even) { background: rgba(36,107,159,.035); }
+
+    figure { margin: 1.35rem 0; }
+    figcaption { margin-top: .55rem; color: var(--muted); font-size: .78rem; }
+    pre { overflow: auto; margin: 1rem 0; padding: 1.05rem 1.15rem; border-radius: .65rem; color: var(--code-ink); background: var(--code); box-shadow: var(--shadow); font-size: .8rem; line-height: 1.58; tab-size: 2; }
+    .source { margin-top: -.5rem; color: var(--muted); font-size: .75rem; }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(8rem, 1fr));
+      gap: .72rem;
+      align-items: stretch;
+      margin: 1.5rem 0;
+    }
+    .step { position: relative; min-height: 6.3rem; padding: .85rem; border: 1px solid #b9c9d5; border-radius: .65rem; background: #fff; }
+    .step::after { content: "→"; position: absolute; right: -.72rem; top: 40%; color: var(--cyan); font-weight: 800; }
+    .step:nth-child(5n)::after, .step:last-child::after { content: none; }
+    .step b { display: block; color: var(--blue); font-size: .83rem; }
+    .step span { display: block; margin-top: .3rem; color: var(--muted); font-size: .76rem; line-height: 1.45; }
+    .step.branch { border-color: #ddb47d; background: #fffaf1; }
+    .step.cleanup { border-color: #cf9b9b; background: #fff7f7; }
+
+    .state-line { display: flex; flex-wrap: wrap; gap: .45rem; align-items: center; margin: 1.2rem 0; }
+    .state { padding: .42rem .63rem; border: 1px solid var(--line); border-radius: .35rem; background: #fff; font: 700 .76rem "SFMono-Regular", monospace; }
+    .arrow { color: var(--cyan); font-weight: 800; }
+    .split { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(17rem, .9fr); gap: 1.2rem; align-items: start; }
+    ul.tight li, ol.tight li { margin: .35rem 0; }
+    footer { margin-top: 5rem; padding-top: 1.2rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .78rem; }
+
+    @media (max-width: 960px) {
+      .layout { display: block; }
+      nav { position: relative; width: auto; height: auto; padding: 1.25rem; }
+      nav ol { columns: 2; }
+      main { padding-top: 2.3rem; }
+      .facts, .cards { grid-template-columns: 1fr 1fr; }
+      .flow { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .step:nth-child(5n)::after { content: "→"; }
+      .step:nth-child(2n)::after, .step:last-child::after { content: none; }
+      .split { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 590px) {
+      nav ol { columns: 1; }
+      .facts, .cards, .flow { grid-template-columns: 1fr; }
+      .step::after { content: "↓" !important; top: auto; right: 50%; bottom: -.78rem; }
+      .step:last-child::after { content: none !important; }
+      table { display: block; overflow-x: auto; white-space: nowrap; }
+      h1 { font-size: 2.45rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <nav aria-label="章节目录">
+      <div class="brand">micro-app / src</div>
+      <div class="scope">v1.0.0-rc.32 · 机制级源码教程</div>
+      <ol>
+        <li><a href="#summary">结论与范围</a></li>
+        <li><a href="#map">模块地图</a></li>
+        <li><a href="#objects">核心对象</a></li>
+        <li><a href="#entry">启动与 DOM 控制</a></li>
+        <li><a href="#state">实例状态机</a></li>
+        <li><a href="#source">资源系统</a></li>
+        <li><a href="#sandbox">双沙箱</a></li>
+        <li><a href="#router">路由闭环</a></li>
+        <li><a href="#interact">数据通信</a></li>
+        <li><a href="#prefetch">预取与预渲染</a></li>
+        <li><a href="#flows">完整调用链</a></li>
+        <li><a href="#algorithms">算法深挖</a></li>
+        <li><a href="#test">真实用例</a></li>
+        <li><a href="#failures">异常与边界</a></li>
+        <li><a href="#evidence">证据索引</a></li>
+      </ol>
+    </nav>
+
+    <main>
+      <header>
+        <div class="eyebrow">Mechanism first · src evidence only</div>
+        <h1>一个 DOM 元素，如何变成完整微前端运行时</h1>
+        <p class="lead">micro-app 的核心不是“加载一段 HTML”，而是把自定义元素的连接状态，翻译成资源双屏障、应用状态机、两类沙箱、路由同步、数据批处理和可恢复副作用。</p>
+        <div class="badges">
+          <span class="badge">范围：仅 <code>src/**</code></span>
+          <span class="badge">版本：<code>v1.0.0-rc.32</code></span>
+          <span class="badge">commit：<code>dd445c483a7c</code></span>
+          <span class="badge">生产源码：42 TS 文件</span>
+          <span class="badge">测试证据：<code>src/__tests__</code></span>
+        </div>
+      </header>
+
+      <section id="summary">
+        <span class="label">源码事实</span>
+        <h2>结论、范围与证据基线</h2>
+        <p class="kicker">主线可以压缩成一句话：<code>&lt;micro-app&gt;</code> 决定“何时运行”，<code>CreateApp</code> 决定“运行到哪一步”，source 与 sandbox 决定“代码在哪里、以什么全局语义运行”。</p>
+        <div class="facts">
+          <article class="card"><h3>控制面</h3><p><code>MicroAppElement</code> 把连接、断开和 name/url 变化路由到创建、复用、隐藏或卸载。</p></article>
+          <article class="card"><h3>状态面</h3><p><code>CreateApp</code> 持有主状态、keep-alive 状态、资源进度、DOM 容器和 UMD 钩子。</p></article>
+          <article class="card"><h3>执行面</h3><p>source 解析与缓存资源；with/iframe 沙箱隔离全局对象，并记录可恢复副作用。</p></article>
+        </div>
+        <div class="callout"><strong>证据边界：</strong><code>v1.0.0-rc.32 / dd445c483a7c</code> 仅用于固定本次分析快照；正文的机制、摘录、测试和文件链接全部限定在 <code>src/**</code>。不讨论构建、发布、包配置或仓库外实现，也不把当前结构虚构成历史演进。</div>
+        <p><span class="label infer">当前实现推断</span> 项目把 DOM 自定义元素选作控制面，换来与任意主框架较低耦合；代价是连接回调、属性回调、资源异步任务和沙箱 ready 之间存在竞态，源码必须显式维护连接代次与应用状态。</p>
+        <h3>从约束到当前方案</h3>
+        <table>
+          <thead><tr><th>可观察约束</th><th>当前实现</th><th>付出的代价</th></tr></thead>
+          <tbody>
+            <tr><td>框架可能在同一轮快速插入、移除元素</td><td>连接代次 + Promise 微任务确认</td><td>挂载不再与 DOM 插入同步完成</td></tr>
+            <tr><td>CSS 与 JS 下载互不等待</td><td>两条链各结算一次，<code>loadSourceLevel === 2</code> 才挂载</td><td>每条成功/失败出口都必须可靠结算</td></tr>
+            <tr><td>子应用会写全局对象、事件、定时器和路由</td><td>with/iframe 沙箱 + 可恢复副作用快照 + 应用级路由 state</td><td>补丁引用计数、跨 realm 与清理顺序复杂</td></tr>
+            <tr><td>同一浏览器 URL 要承载多个应用位置</td><td>search/state/native/native-scope/pure 五种模式</td><td>不同模式的 origin、事件回流和可组合性不同</td></tr>
+            <tr><td>监听器可能在数据回调中再次派发</td><td>EventCenter 交换队列后按微任务批量提交</td><td>数据通知与 <code>nextStep</code> 都是异步边界</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="map">
+        <span class="label">阅读地图</span>
+        <h2>按依赖读，不按文件名扫</h2>
+        <table>
+          <thead><tr><th>顺序</th><th>职责模块</th><th>输入 → 输出</th><th>不负责</th></tr></thead>
+          <tbody>
+            <tr><td>1</td><td><code>index.ts</code>、<code>micro_app.ts</code>、<code>constants.ts</code></td><td>公开配置/API → 初始化与元素注册</td><td>不直接加载子应用</td></tr>
+            <tr><td>2</td><td><code>micro_app_element.ts</code></td><td>DOM/属性事件 → 实例选择与生命周期动作</td><td>不执行脚本</td></tr>
+            <tr><td>3</td><td><code>create_app.ts</code></td><td>资源完成与宿主动作 → 状态、沙箱、DOM、副作用</td><td>不解析具体 CSS/JS</td></tr>
+            <tr><td>4</td><td><code>source/**</code></td><td>HTML → DOM、资源集合、缓存代码、执行任务</td><td>不拥有应用主状态</td></tr>
+            <tr><td>5</td><td><code>sandbox/with/**</code>、<code>sandbox/iframe/**</code></td><td>应用身份与代码 → 隔离全局、可恢复副作用</td><td>不决定元素是否复用</td></tr>
+            <tr><td>6</td><td><code>sandbox/router/**</code></td><td>子路径/state → location、宿主 URL/history.state、事件</td><td>守卫不能取消导航</td></tr>
+            <tr><td>7</td><td><code>interact/**</code>、<code>prefetch.ts</code></td><td>对象数据/空闲时间 → 批量通知、缓存实例/预渲染</td><td>不替代生命周期状态机</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="objects">
+        <span class="label">源码事实</span>
+        <h2>核心对象与所有权</h2>
+        <div class="cards">
+          <article class="card"><h3><code>microApp</code></h3><p>基座单例门面。持有全局配置、路由和数据中心 API；在受支持浏览器中，<code>start()</code> 的初始化门禁最多进入一次，重复调用报错。</p></article>
+          <article class="card"><h3><code>MicroAppElement</code></h3><p>每个宿主 DOM 节点一个控制器。持有连接代次、元素配置与未命名时的数据缓存。</p></article>
+          <article class="card"><h3><code>CreateApp</code></h3><p>每个应用名一个可复用运行实例。持有状态机、资源、容器、沙箱、UMD 钩子和预渲染队列。</p></article>
+          <article class="card"><h3><code>appInstanceMap</code></h3><p>进程级注册表。预取、隐藏、mounted、未销毁的 unmount 实例都可能继续存在。</p></article>
+          <article class="card"><h3><code>sourceCenter</code></h3><p>按完整 URL 共享原始 CSS/JS；按应用 <code>appSpace</code> 隔离属性、转换代码和函数缓存。</p></article>
+          <article class="card"><h3>Sandbox</h3><p>with 使用 Proxy 作用域；iframe 使用隐藏同源 realm。两者统一提供 ready、start/stop 与副作用快照。</p></article>
+        </div>
+        <div class="callout warn"><strong>关键不变量：</strong>元素不是应用实例。移除元素可能只隐藏应用；销毁才从 <code>appInstanceMap</code> 删除。判断“应用是否存在”与“应用是否活跃”必须分开。</div>
+        <figure>
+          <pre><code>appInstanceMap.set(name, this)
+this.name = name
+this.url = url
+// 省略：隔离、路由、容器与预取字段归一化
+this.source = { html: null, links: new Set(), scripts: new Set() }
+this.loadSourceCode()
+this.createSandbox()</code></pre>
+          <figcaption>函数体删节源码摘录：<code>src/create_app.ts · CreateApp.constructor</code>；省略处已标明。注册表先取得实例所有权，资源加载与沙箱初始化随后并行启动。</figcaption>
+        </figure>
+      </section>
+
+      <section id="entry">
+        <span class="label">源码摘录</span>
+        <h2>启动与 DOM 控制：先建立环境，再允许元素回调</h2>
+        <p><code>MicroApp.start()</code> 捕获原生全局引用、归一化配置、安排预加载，最后注册自定义元素。这个顺序重要：一旦 <code>customElements.define()</code> 完成，页面中已有元素可能立即升级并进入生命周期。</p>
+        <figure>
+          <pre><code>start (options?: OptionsType): void {
+  if (!isBrowser || !window.customElements) {
+    return logError('micro-app is not supported in this environment')
+  }
+  if (this.hasInit) return logError('microApp.start executed repeatedly')
+  this.hasInit = true
+
+  // 省略：tagName 校验
+  initGlobalEnv()
+  if (window.customElements.get(this.tagName)) {
+    return logWarn(`element ${this.tagName} is already defined`)
+  }
+  if (isPlainObject&lt;OptionsType&gt;(options)) {
+    this.options = options
+    options.preFetchApps &amp;&amp; preFetch(options.preFetchApps)
+    options.globalAssets &amp;&amp; getGlobalAssets(options.globalAssets)
+    // 省略：兼容配置与插件应用名归一化
+  }
+
+  defineElement(this.tagName)
+}</code></pre>
+          <figcaption>删节源码摘录：<code>src/micro_app.ts · MicroApp.start</code>；省略处已在代码注释中标明。</figcaption>
+        </figure>
+        <p>元素连接不是直接同步挂载。它先增加连接代次，再进入微任务；断开会把当前代次标为无效。Vue keep-alive 或框架重排造成的“同一轮插入后立刻删除”因此不会留下过期挂载。</p>
+        <figure>
+          <pre><code>const cacheCount = ++this.connectedCount
+this.connectStateMap.set(cacheCount, true)
+const effectiveApp = this.appName &amp;&amp; this.appUrl
+
+defer(() =&gt; {
+  if (this.connectStateMap.get(cacheCount)) {
+    dispatchLifecyclesEvent(this, this.appName, lifeCycles.CREATED)
+    effectiveApp &amp;&amp; this.handleConnected()
+  }
+})</code></pre>
+          <figcaption>源码摘录：<code>src/micro_app_element.ts · connectedCallback</code></figcaption>
+        </figure>
+        <h3>同名实例的四路分派</h3>
+        <ul class="tight">
+          <li>隐藏且 URL 相同：恢复 keep-alive，不创建实例。</li>
+          <li>URL/SSR URL 相同，且旧实例已卸载或是核心配置一致的 prefetch：复用并挂载。</li>
+          <li>旧实例仅 prefetch 或已卸载，但 URL 不同，或同 URL 下核心隔离配置不兼容：销毁旧实例后创建。</li>
+          <li>同名实例仍活跃：记录冲突错误，拒绝覆盖。</li>
+        </ul>
+        <figure>
+          <pre><code>if (oldApp.isHidden() &amp;&amp; oldApp.url === this.appUrl) {
+  this.handleShowKeepAliveApp(oldApp)
+} else if (oldAppUrl === targetUrl &amp;&amp; (
+  oldApp.isUnmounted() || (oldApp.isPrefetch &amp;&amp; this.sameCoreOptions(oldApp))
+)) {
+  this.handleMount(oldApp)
+} else if (oldApp.isPrefetch || oldApp.isUnmounted()) {
+  this.handleCreateApp()
+} else {
+  logError(`app name conflict ...`)
+}</code></pre>
+          <figcaption>删节源码摘录：<code>src/micro_app_element.ts · handleConnected</code>；日志文本缩写为省略号，分支条件保持原样。</figcaption>
+        </figure>
+      </section>
+
+      <section id="state">
+        <span class="label">源码事实</span>
+        <h2><code>CreateApp</code>：贯穿全系统的状态机</h2>
+        <div class="state-line" aria-label="应用主状态迁移">
+          <span class="state">CREATED</span><span class="arrow">→</span>
+          <span class="state">LOADING</span><span class="arrow">→</span>
+          <span class="state">BEFORE_MOUNT</span><span class="arrow">→</span>
+          <span class="state">MOUNTING</span><span class="arrow">→</span>
+          <span class="state">MOUNTED</span><span class="arrow">→</span>
+          <span class="state">UNMOUNT</span>
+        </div>
+        <p><code>LOAD_FAILED</code> 是加载错误分支。keep-alive 的 <code>SHOW/HIDDEN</code> 是独立维度：隐藏应用通常仍保持主状态 <code>MOUNTED</code>，只是 DOM 转存、可恢复副作用暂停。</p>
+        <table>
+          <thead><tr><th>字段</th><th>不变量</th><th>改变它的动作</th></tr></thead>
+          <tbody>
+            <tr><td><code>loadSourceLevel</code></td><td>0 开始；CSS 链、JS 链各经 <code>onLoad()</code> +1；2 才写入 <code>source.html</code></td><td>HTML 链失败时 <code>onLoadError()</code> 直接改为 -1</td></tr>
+            <tr><td><code>container</code></td><td>可能是真实元素、ShadowRoot、预渲染 div、keep-alive 临时 div 或 null</td><td>mount、cloneContainer、hidden/show、clearOptions</td></tr>
+            <tr><td><code>umdMode</code></td><td>只在 mount/unmount 钩子同时为函数时为 true</td><td><code>actionsBeforeExecScripts</code> 回调</td></tr>
+            <tr><td><code>sandBox</code></td><td>禁用沙箱时为空；iframe 默认模式卸载后也会置空</td><td>constructor、createSandbox、clearOptions</td></tr>
+          </tbody>
+        </table>
+        <figure>
+          <pre><code>public onLoad ({
+  html, defaultPage, routerMode, baseroute, disablePatchRequest,
+}: OnLoadParam): void {
+  if (++this.loadSourceLevel === 2) {
+    this.source.html = html
+    if (this.isUnmounted()) return
+    if (!this.isPrefetch) {
+      getRootContainer(this.container!).mount(this)
+    } else if (this.isPrerender) {
+      const container = pureCreateElement('div')
+      container.setAttribute('prerender', 'true')
+      this.mount({
+        container,
+        inline: this.inline,
+        fiber: true,
+        defaultPage: defaultPage || '',
+        disablePatchRequest: disablePatchRequest ?? false,
+        routerMode: routerMode!,
+        baseroute: baseroute || '',
+      })
+    }
+  }
+}</code></pre>
+          <figcaption>源码摘录：<code>src/create_app.ts · CreateApp.onLoad</code>；仅删去不影响分支的说明注释。</figcaption>
+        </figure>
+      </section>
+
+      <section id="source">
+        <span class="label">源码摘录</span>
+        <h2>资源系统：两条异步链，一个完成门禁</h2>
+        <div class="split">
+          <div>
+            <h3>HTML 入口</h3>
+            <p><code>HTMLLoader</code> 先抓取入口，再运行“全局插件 → 应用插件”，最后把原生 <code>head/body</code> 改写为 <code>micro-app-head/body</code>。JS 入口会合成最小 HTML。</p>
+            <h3>资源提取</h3>
+            <p><code>extractSourceDom()</code> 扫描 link/style/script/img。exclude 变注释占位；ignore 保留原生元素；相对 URL 基于应用入口补全。</p>
+          </div>
+          <div class="card"><h3>缓存边界</h3><p>远程 CSS/JS 原码按完整 URL 全局共享。应用相关 attrs、CSS 前缀、插件后代码、Function 缓存放进 <code>appSpace[appName]</code>。销毁只删当前应用内联脚本；远程缓存保留。</p></div>
+        </div>
+        <figure>
+          <pre><code>if (app.source.links.size) {
+  fetchLinksFromHtml(wrapElement, app, microAppHead, fiberStyleResult)
+} else if (fiberStyleResult) {
+  fiberStyleResult.then(() =&gt; app.onLoad({ html: wrapElement }))
+} else {
+  app.onLoad({ html: wrapElement })
+}
+
+if (app.source.scripts.size) {
+  fetchScriptsFromHtml(wrapElement, app)
+} else {
+  app.onLoad({ html: wrapElement })
+}</code></pre>
+          <figcaption>源码摘录：<code>src/source/index.ts · extractSourceDom</code>。样式和脚本链无论是否有资源，都各结算一次。</figcaption>
+        </figure>
+        <h3>脚本执行分派</h3>
+        <ul class="tight">
+          <li>inline / module / iframe 特殊场景：创建真实 <code>script</code> 节点，交给浏览器执行。</li>
+          <li>普通脚本：插件转换后绑定沙箱作用域，缓存 <code>Function</code> 并调用。</li>
+          <li>fiber：等待静态脚本全部下载后，按源顺序串行放入空闲任务。</li>
+          <li>动态远程脚本：优先命中应用/全局缓存；否则抓取后执行，并向原节点模拟 load/error。</li>
+        </ul>
+        <figure>
+          <pre><code>if (!appSpaceData.parsedCode || appSpaceData.sandboxType !== sandboxType) {
+  appSpaceData.parsedCode = bindScope(address, app, scriptInfo.code, scriptInfo)
+  appSpaceData.sandboxType = sandboxType
+  appSpaceData.parsedFunction = null
+}
+
+if (isInlineMode(app, scriptInfo)) {
+  const scriptElement = replaceElement || pureCreateElement('script')
+  runCode2InlineScript(
+    address, appSpaceData.parsedCode, isTypeModule(app, scriptInfo),
+    scriptElement, appSpaceData.attrs, callback,
+  )
+  // 省略：首次静态 inline script 插入目标容器
+} else {
+  runParsedFunction(app, scriptInfo)
+}</code></pre>
+          <figcaption>删节源码摘录：<code>src/source/scripts.ts · runScript</code>；省略处只负责把首次静态内联脚本插入容器。沙箱类别变化会使应用级包装缓存失效。</figcaption>
+        </figure>
+        <div class="callout warn"><strong>失败边界：</strong>单个 CSS/JS 请求失败由各自的 <code>promiseStream</code> 记录，整条链仍在最终回调结算；但 HTML 抓取失败、空 HTML 或缺少隔离 head/body 走另一条错误路径，不能据此声称“所有资源错误都能继续挂载”。</div>
+      </section>
+
+      <section id="sandbox">
+        <span class="label">机制对比</span>
+        <h2>双沙箱：作用域代理与独立 realm</h2>
+        <table>
+          <thead><tr><th>维度</th><th>with 沙箱</th><th>iframe 沙箱</th></tr></thead>
+          <tbody>
+            <tr><td>全局对象</td><td><code>CustomWindow + Proxy + with</code></td><td>隐藏同源 iframe 的真实 Window realm</td></tr>
+            <tr><td>DOM</td><td>document/window 补丁把查询和插入定向到应用容器</td><td>iframe document 代理回宿主容器，Node/Element 也做桥接</td></tr>
+            <tr><td>请求</td><td>代理 fetch/XHR/EventSource，按应用 URL 补全</td><td>优先依赖 iframe <code>&lt;base&gt;</code> 与 realm</td></tr>
+            <tr><td>复用</td><td>UMD 可保留代理窗口与副作用快照</td><td>默认模式卸载后重建 iframe，保证 module script 可再执行</td></tr>
+            <tr><td>代价</td><td>语言作用域与原生 window 兼容分支复杂</td><td>异步 ready、跨 realm instanceof 与 DOM 桥接复杂</td></tr>
+          </tbody>
+        </table>
+        <h3>with：隔离存储，宿主回退</h3>
+        <figure>
+          <pre><code>const proxyWindow = new Proxy(microAppWindow, {
+  get: (target, key) =&gt; {
+    throttleDeferForSetAppName(appName)
+    if (key === 'Worker') return WorkerProxy
+    if (
+      Reflect.has(target, key) ||
+      (isString(key) &amp;&amp; /^__MICRO_APP_/.test(key)) ||
+      includes(sandbox.scopeProperties, key)
+    ) {
+      if (includes(RAW_GLOBAL_TARGET, key)) removeDomScope()
+      return Reflect.get(target, key)
+    }
+    return bindFunctionToRawTarget(Reflect.get(rawWindow, key), rawWindow)
+  },
+  set: (target, key, value) =&gt; {
+    if (includes(sandbox.rawWindowScopeKeyList, key)) {
+      Reflect.set(rawWindow, key, value)
+    } else if (
+      !rawHasOwnProperty.call(target, key) &amp;&amp;
+      rawHasOwnProperty.call(rawWindow, key) &amp;&amp;
+      !includes(sandbox.scopeProperties, key)
+    ) {
+      const descriptor = Object.getOwnPropertyDescriptor(rawWindow, key)
+      const { configurable, enumerable, writable, set } = descriptor!
+      rawDefineProperty(target, key, {
+        value, configurable, enumerable, writable: writable ?? !!set,
+      })
+      sandbox.injectedKeys.add(key)
+    } else {
+      if (!Reflect.has(target, key) || includes(sandbox.scopeProperties, key)) {
+        sandbox.injectedKeys.add(key)
+      }
+      Reflect.set(target, key, value)
+    }
+    // 省略：escapeProperties 命中时镜像 rawWindow，并登记 escapeKeys
+    return true
+  },
+})</code></pre>
+          <figcaption>删节源码摘录：<code>src/sandbox/with/window.ts · createProxyWindow</code>。读取优先应用目标，宿主函数绑定真实接收者；省略参数类型与 set trap 末尾的逃逸镜像条件。</figcaption>
+        </figure>
+        <h3>iframe：等待真实 realm 稳定后再补丁</h3>
+        <figure>
+          <pre><code>this.deleteIframeElement = this.createIframeElement(
+  appName, browserHost + rawLocation.pathname, options,
+)
+this.microAppWindow = this.iframe!.contentWindow
+
+this.patchIframe(this.microAppWindow, (resolve) =&gt; {
+  this.microAppWindow = this.iframe!.contentWindow
+  this.createIframeTemplate(this.microAppWindow)
+  this.proxyLocation = patchRouter(appName, url, this.microAppWindow, browserHost)
+  this.windowEffect = patchWindow(appName, this.microAppWindow, this)
+  this.documentEffect = patchDocument(appName, this.microAppWindow, this)
+  patchElement(appName, url, this.microAppWindow, this)
+  this.initStaticGlobalKeys(appName, url, this.microAppWindow)
+  resolve()
+})</code></pre>
+          <figcaption>删节源码摘录：<code>src/sandbox/iframe/index.ts · IframeSandbox.constructor</code>；省略回调类型与插件属性汇总。<code>patchIframe</code> 以定时器轮询 iframe document 是否重建，故 <code>sandboxReady</code> 是显式异步门禁。</figcaption>
+        </figure>
+        <p>两者共享全局补丁引用计数：第一个活跃沙箱安装 DOM/history 补丁，最后一个停止时释放。这样不会因某个应用先卸载而破坏其他仍活跃应用。</p>
+        <figure>
+          <pre><code>if (++globalEnv.activeSandbox === 1) {
+  patchElementAndDocument()
+  patchHistory()
+}
+
+// stop()
+if (--globalEnv.activeSandbox === 0) {
+  releasePatchElementAndDocument()
+  releasePatchHistory()
+}</code></pre>
+          <figcaption>源码摘录：<code>src/sandbox/with/index.ts · start/stop</code>；iframe 沙箱采用同一全局计数。</figcaption>
+        </figure>
+        <h3>副作用所有权</h3>
+        <p>window/document 事件、定时器和数据监听通过 effect hook 记录、释放并在 UMD、keep-alive、预渲染恢复时重建。Worker 与 EventSource 不是这类快照：with 沙箱按应用登记它们，默认卸载或 destroy 时终止；可恢复的 UMD/keep-alive 阶段则保留。iframe 的同类资源还受 iframe realm 是否删除控制。destroy 才进入删除 iframe、内联脚本应用缓存和实例注册表的不可恢复清理。</p>
+      </section>
+
+      <section id="router">
+        <span class="label">源码事实</span>
+        <h2>路由闭环：内部 location、宿主 URL、history.state</h2>
+        <table>
+          <thead><tr><th>模式</th><th>宿主可见路径</th><th>子应用 location 来源</th></tr></thead>
+          <tbody>
+            <tr><td><code>search</code>（默认）</td><td>编码进 search 或 hash 查询段</td><td>从编码路径恢复</td></tr>
+            <tr><td><code>state</code></td><td>路径不变；写入 <code>history.state.__MICRO_APP_STATE__</code></td><td>从 state 快照恢复</td></tr>
+            <tr><td><code>native</code></td><td>直接使用宿主路径</td><td>origin 也指向宿主</td></tr>
+            <tr><td><code>native-scope</code></td><td>直接使用宿主路径</td><td>origin 映射到子应用</td></tr>
+            <tr><td><code>pure</code></td><td>不更新宿主 URL</td><td>只维护内部位置</td></tr>
+          </tbody>
+        </table>
+        <figure>
+          <pre><code>const additionalState = {
+  __MICRO_APP_STATE__: assign({}, rawState?.__MICRO_APP_STATE__, {
+    [appName]: {
+      fullPath: targetLocation
+        ? targetLocation.pathname + targetLocation.search + targetLocation.hash
+        : null,
+      state: microState ?? null,
+      mode: getRouterMode(appName),
+    }
+  }),
+}
+return assign({}, rawState, additionalState)</code></pre>
+          <figcaption>源码摘录：<code>src/sandbox/router/core.ts · setMicroState</code>；类型标注省略，state 的命名空间、应用键和字段写入保持原样。</figcaption>
+        </figure>
+        <figure>
+          <pre><code>if (isRouterModeSearch(appName)) {
+  let { pathname, search, hash } = rawLocation
+  const queryObject = getQueryObjectFromURL(search, hash)
+  const encodedMicroPath = encodeMicroPath(targetFullPath)
+  if (hash &amp;&amp; !search) {
+    // 省略：置 isAttach2Hash=true，并把应用键写入 hash 查询段
+  } else {
+    if (queryObject.searchQuery) {
+      queryObject.searchQuery[formatQueryAppName(appName)] = encodedMicroPath
+    } else {
+      queryObject.searchQuery = {
+        [formatQueryAppName(appName)]: encodedMicroPath
+      }
+    }
+    search = '?' + stringifyQuery(queryObject.searchQuery)
+  }
+  return { fullPath: pathname + search + hash, isAttach2Hash }
+}
+
+if (isRouterModeState(appName) || isRouterModePure(appName)) {
+  targetFullPath = rawLocation.pathname + rawLocation.search + rawLocation.hash
+}
+return { fullPath: targetFullPath, isAttach2Hash }</code></pre>
+          <figcaption>删节源码摘录：<code>src/sandbox/router/core.ts · setMicroPathToURL</code>；hash 分支内容已标明省略。<code>state/pure</code> 返回当前宿主路径，因此路径差异只留在 state 或内存 location。</figcaption>
+        </figure>
+        <p>子应用 <code>history.pushState</code>、location setter 或公开 <code>router.push()</code> 最终都要更新 microLocation；需要同步宿主时，再构造新 URL/state 并调用原生 history。浏览器回退则反向读取每个活跃应用路径，更新代理 location，派发子应用 popstate/hashchange。</p>
+        <figure>
+          <pre><code>const targetLocation = createURL(to.path, microLocation.href)
+const targetFullPath = targetLocation.pathname +
+  targetLocation.search + targetLocation.hash
+
+if (!isRouterModePure(appName)) {
+  navigateWithRawHistory(appName, methodName, targetLocation, to.state)
+}
+if (!isRouterModeSearch(appName)) {
+  updateMicroLocationWithEvent(appName, targetFullPath)
+}</code></pre>
+          <figcaption>源码摘录（省略同路径判断）：<code>src/sandbox/router/api.ts · handleNavigate</code></figcaption>
+        </figure>
+        <p>宿主 popstate 监听器会过滤隐藏、预渲染和 <code>onlyForBrowser</code> 事件，再按容器的 <code>router-event-delay</code> 进入宏任务。这个异步边界让可能懒加载或卸载页面的基座先响应，之后才更新子应用 location。</p>
+        <figure>
+          <pre><code>function executeNavigationGuard (appName, to, from): void {
+  router.current.set(appName, to)
+  runGuards(appName, to, from, beforeGuards.list())
+
+  requestIdleCallback(() =&gt; {
+    runGuards(appName, to, from, afterGuards.list())
+  })
+}</code></pre>
+          <figcaption>源码摘录（仅省略参数类型）：<code>src/sandbox/router/api.ts · executeNavigationGuard</code></figcaption>
+        </figure>
+        <div class="callout warn"><strong>守卫边界：</strong>URL/location 先更新，再写 <code>router.current</code> 并运行 beforeEach；守卫没有 next/return 协议，不能取消已经发生的导航。afterEach 被放入 idle callback。<code>runGuards</code> 没有 try/catch：前置异常同步向上传播，后置异常发生在空闲回调边界。</div>
+        <p>宿主框架在同 URL 上用新对象调用 <code>replaceState</code> 时，全局 history 补丁会保留已有 <code>__MICRO_APP_STATE__</code>；基座 History 调用完成后，再为仍活动但记录缺失的应用补回路由。补丁不能观察基座直接通过 location 发起的导航。</p>
+      </section>
+
+      <section id="interact">
+        <span class="label">源码摘录</span>
+        <h2>数据通信：微任务批处理，不是同步 EventEmitter</h2>
+        <p>基座→子应用、子应用→基座使用不同内部事件名；全局数据使用 <code>global</code> 通道。同一同步栈连续 dispatch 会合并到 <code>tempData</code>，一个微任务只处理一次该事件，并按调用顺序保存每个 <code>nextStep</code>。只有整批被 force 或浅比较确认变化时，监听器与这些 <code>nextStep</code> 才会执行。</p>
+        <figure>
+          <pre><code>if (eventInfo) {
+  eventInfo.tempData = assign(
+    {}, eventInfo.tempData || eventInfo.data, data
+  )
+  !eventInfo.force &amp;&amp; (eventInfo.force = !!force)
+} else {
+  eventInfo = { data, callbacks: new Set() }
+  eventInfo.force = true
+  this.eventList.set(name, eventInfo)
+}
+this.enqueue(name, nextStep, dispatchDataEvent)</code></pre>
+          <figcaption>源码摘录：<code>src/interact/event_center.ts · EventCenter.dispatch</code></figcaption>
+        </figure>
+        <figure>
+          <pre><code>(!this.queue.includes(name) &amp;&amp; this.queue.push(name) === 1) &amp;&amp;
+  defer(this.process)
+
+private process = (): void =&gt; {
+  let name: string | void
+  const temRecordStep = this.recordStep
+  const queue = this.queue
+  this.recordStep = {}
+  this.queue = []
+  while (name = queue.shift()) {
+    const eventInfo = this.eventList.get(name)!
+    const tempData = eventInfo.tempData
+    const force = eventInfo.force
+    eventInfo.tempData = null
+    eventInfo.force = false
+    let resArr: unknown[]
+    if (force || !this.isEqual(eventInfo.data, tempData)) {
+      eventInfo.data = tempData || eventInfo.data
+      for (const f of eventInfo.callbacks) {
+        const res = f(eventInfo.data)
+        res &amp;&amp; (resArr ??= []).push(res)
+      }
+      temRecordStep[name]!.dispatchDataEvent?.()
+      temRecordStep[name]!.nextStepList.forEach((nextStep) =&gt; nextStep(resArr))
+    }
+  }
+}</code></pre>
+          <figcaption>拼接源码摘录：<code>src/interact/event_center.ts · enqueue/process</code>；只把 <code>enqueue</code> 的微任务调度行与完整提交核心相邻展示，顺序和语句保持原样。</figcaption>
+        </figure>
+        <p>浅比较只比较顶层键数量和值引用。对象内部原地修改不会被检测；需要通知时使用 force API。子应用上行数据提交后，还会在根元素派发 <code>datachange</code>，把非 DOM 数据中心桥接到宿主事件。</p>
+      </section>
+
+      <section id="prefetch">
+        <span class="label">源码事实</span>
+        <h2>预取与预渲染：复用的前提是执行环境一致</h2>
+        <ul class="tight">
+          <li><strong>level 1：</strong>加载 HTML/CSS/JS 原始资源。</li>
+          <li><strong>level 2：</strong>进一步完成脚本插件处理与沙箱绑定准备。</li>
+          <li><strong>level 3：</strong>在临时 <code>&lt;div prerender&gt;</code> 中强制 fiber 预渲染。</li>
+        </ul>
+        <figure>
+          <pre><code>requestIdleCallback(() =&gt; {
+  const delayTime = isNumber(delay) ? delay : microApp.options.prefetchDelay
+  setTimeout(() =&gt; {
+    preFetchInSerial(apps)
+  }, isNumber(delayTime) ? delayTime : 3000)
+})
+
+apps.reduce(
+  (pre, next) =&gt; pre.then(() =&gt; preFetchAction(next)),
+  Promise.resolve(),
+)</code></pre>
+          <figcaption>拼接源码摘录：<code>src/prefetch.ts · preFetch/preFetchInSerial</code>；分别展示空闲延时入口与数组 Promise 链。</figcaption>
+        </figure>
+        <p>预取在 requestIdleCallback 后再等待配置延时，应用按数组顺序调用 <code>preFetchAction</code>。这里的“串行”边界要精确理解：合法应用覆写的 <code>onLoad</code> 在 CSS/JS 任一链首次结算时就 resolve，随后才调用原 <code>onLoad</code>；因此下一应用可以在前一应用尚未达到双屏障 2 时开始，不能把它描述成“逐个等待全部资源完成”。</p>
+        <figure>
+          <pre><code>// CreateApp.constructor
+this.isPrerender = prefetchLevel === 3
+
+// fetchScriptSuccess
+if (app.isPrefetch &amp;&amp; app.prefetchLevel === 2) {
+  const appSpaceData = scriptInfo.appSpace[app.name]
+  if (!appSpaceData.parsedCode) {
+    appSpaceData.parsedCode = bindScope(address, app, code, scriptInfo)
+    appSpaceData.sandboxType = getSandboxType(app, scriptInfo)
+    if (!isInlineMode(app, scriptInfo)) {
+      try {
+        appSpaceData.parsedFunction = getParsedFunction(
+          app, scriptInfo, appSpaceData.parsedCode,
+        )
+      } catch (err) {
+        logError('Something went wrong while handling preloaded resources',
+          app.name, '\n', err)
+      }
+    }
+  }
+}</code></pre>
+          <figcaption>拼接源码摘录：<code>src/create_app.ts · constructor</code> 与 <code>src/source/scripts.ts · fetchScriptSuccess</code>。level 3 进入预渲染身份；只有 level 2 在抓取阶段预建作用域代码/Function。</figcaption>
+        </figure>
+        <p>最终元素挂载时，URL、CSS 隔离、沙箱开关和 iframe 类型一致才复用；不一致就销毁预取实例重建。</p>
+        <p>预渲染不把路由附加到宿主 URL，不向浏览器派发 popstate/hashchange，也不派发可见生命周期。转真实挂载时，先替换容器引用，再恢复副作用快照和积压事件。</p>
+        <div class="callout warn"><strong>测试边界：</strong><code>src/__tests__/prefetch.test.ts</code> 覆盖参数分支和全局资源入缓存，<code>ssr_env.test.ts</code> 覆盖非浏览器错误；当前 <code>src/__tests__</code> 没有直接断言 level 2 预编译、level 3 预渲染或上述“首条资源链即放行下一应用”的时序，这些结论来自生产源码。</div>
+      </section>
+
+      <section id="flows">
+        <span class="label">完整流程图</span>
+        <h2>首次挂载：从元素插入到 mounted</h2>
+        <div class="flow" role="img" aria-label="首次挂载完整执行流程">
+          <div class="step"><b>1 · start</b><span>捕获原生环境，注册自定义元素</span></div>
+          <div class="step"><b>2 · connect</b><span>记录连接代次，微任务验证仍有效</span></div>
+          <div class="step"><b>3 · dispatch</b><span>复用、冲突判断，或 new CreateApp</span></div>
+          <div class="step"><b>4 · LOADING</b><span>HTMLLoader → extractSourceDom</span></div>
+          <div class="step branch"><b>5 · 双资源链</b><span>CSS 与 JS 各结算一次 onLoad</span></div>
+          <div class="step"><b>6 · ready</b><span>loadSourceLevel=2，宿主 mount</span></div>
+          <div class="step"><b>7 · sandbox</b><span>等待 sandboxReady，再写 BEFORE_MOUNT</span></div>
+          <div class="step"><b>8 · DOM</b><span>转移 HTML，启动沙箱与全局补丁</span></div>
+          <div class="step branch"><b>9 · scripts</b><span>默认执行完成，或识别 UMD hooks</span></div>
+          <div class="step"><b>10 · MOUNTED</b><span>window.onmount → 子事件 → 基座事件</span></div>
+        </div>
+        <h3>阶段解释</h3>
+        <ol class="tight">
+          <li>连接代次先消除 DOM 框架造成的瞬时插入/移除。</li>
+          <li>同名注册表决定复用或创建，避免两个活跃实例共享隔离键。</li>
+          <li>资源链允许 CSS 与 JS 并行，但双屏障阻止半完成挂载。</li>
+          <li>iframe ready 是显式异步边界；ready 后再次检查 <code>!isUnmounted()</code>。</li>
+          <li>脚本首次执行可能动态识别 UMD 模式；Promise mount 拒绝只记录错误，仍推进 mounted 收尾。</li>
+        </ol>
+        <figure>
+          <pre><code>// mount：sandbox ready 后仍需确认实例有效
+this.sandBox
+  ? this.sandBox.sandboxReady.then(() =&gt; !this.isUnmounted() &amp;&amp; nextAction())
+  : nextAction()
+
+// actionsAfterMounted：状态与通知顺序
+this.setAppState(appStates.MOUNTED)
+execMicroAppGlobalHook(
+  this.getMicroAppGlobalHook(microGlobalEvent.ONMOUNT),
+  this.name, microGlobalEvent.ONMOUNT, microApp.getData(this.name, true),
+)
+dispatchCustomEventToMicroApp(this, 'statechange', {
+  appState: appStates.MOUNTED
+})
+dispatchCustomEventToMicroApp(this, 'mounted')
+dispatchLifecyclesEvent(this.container, this.name, lifeCycles.MOUNTED)</code></pre>
+          <figcaption>拼接源码摘录：<code>src/create_app.ts · mount/actionsAfterMounted</code>。首次挂载的 ready 防竞态与最终通知顺序均保留。</figcaption>
+        </figure>
+        <table>
+          <thead><tr><th>首次挂载分支</th><th>控制点</th><th>后续结果</th></tr></thead>
+          <tbody>
+            <tr><td>ready 前已卸载</td><td><code>!this.isUnmounted() &amp;&amp; nextAction()</code></td><td>不再搬 DOM、启动沙箱或执行脚本</td></tr>
+            <tr><td>HTML 抓取失败</td><td><code>onLoadError → LOAD_FAILED</code></td><td>error 生命周期；卸载时强制 destroy</td></tr>
+            <tr><td>某个 CSS/JS 请求失败</td><td>对应 promise stream 记录错误并完成本链</td><td>双屏障仍可能开放，应用以缺失资源继续</td></tr>
+            <tr><td>UMD mount Promise 拒绝</td><td><code>catch(logError).then-like nextAction</code></td><td>记录错误后仍进入 mounted 收尾</td></tr>
+          </tbody>
+        </table>
+
+        <h3>普通卸载与销毁：进入唯一清理出口</h3>
+        <div class="flow" role="img" aria-label="普通卸载和销毁流程">
+          <div class="step"><b>disconnect</b><span>元素移除或命令式 unmount</span></div>
+          <div class="step"><b>UNMOUNT</b><span>子状态事件 → unmount → window.onunmount</span></div>
+          <div class="step branch"><b>UMD hook</b><span>Promise 成功/拒绝都进入 nextAction</span></div>
+          <div class="step cleanup"><b>sandbox.stop</b><span>先克隆可复用 DOM，再清路由与副作用</span></div>
+          <div class="step cleanup"><b>base event</b><span>基座 unmount → clearOptions</span></div>
+          <div class="step cleanup"><b>destroy?</b><span>删 iframe、内联缓存和 appInstanceMap</span></div>
+        </div>
+        <figure>
+          <pre><code>const nextAction = () =&gt; this.actionsAfterUnmounted({
+  destroy, clearData, keepRouteState, unmountcb,
+})
+if (isPromise(umdHookUnmountResult)) {
+  removeDomScope()
+  umdHookUnmountResult.then(nextAction).catch((e) =&gt; {
+    logError('An error occurred in window.unmount \n', this.name, e)
+    nextAction()
+  })
+} else {
+  nextAction()
+}
+
+// actionsAfterUnmounted
+if (this.umdMode &amp;&amp; this.container &amp;&amp; !destroy) {
+  this.cloneContainer(this.source.html, this.container as HTMLElement, false)
+}
+const shouldClearData = this.isReloading ? false : (clearData || destroy)
+this.sandBox?.stop({
+  umdMode: this.umdMode,
+  keepRouteState: keepRouteState &amp;&amp; !destroy,
+  destroy,
+  clearData: shouldClearData,
+})
+dispatchLifecyclesEvent(this.container, this.name, lifeCycles.UNMOUNT)
+this.clearOptions(destroy)
+unmountcb?.()</code></pre>
+          <figcaption>拼接源码摘录：<code>src/create_app.ts · handleUnmounted/actionsAfterUnmounted</code>；前半展示异步汇合，后半展示唯一清理出口。</figcaption>
+        </figure>
+
+        <h3>keep-alive：隐藏不是 stop</h3>
+        <div class="flow" role="img" aria-label="keep-alive 隐藏和恢复流程">
+          <div class="step"><b>disconnect</b><span>keep-alive 且非显式 destroy</span></div>
+          <div class="step branch"><b>HIDDEN</b><span>先发子/基座 afterhidden</span></div>
+          <div class="step branch"><b>resources?</b><span>未完成：退化普通 unmount</span></div>
+          <div class="step"><b>park DOM</b><span>已完成：转移到临时 div</span></div>
+          <div class="step cleanup"><b>pause effects</b><span>recordAndReleaseEffect；实例仍在表中</span></div>
+          <div class="step"><b>reconnect</b><span>先换为新宿主容器</span></div>
+          <div class="step"><b>rebuild</b><span>恢复副作用快照</span></div>
+          <div class="step"><b>beforeshow</b><span>子事件 → 基座事件 → SHOW</span></div>
+          <div class="step"><b>restore</b><span>搬回 DOM；search 模式恢复路由</span></div>
+          <div class="step"><b>aftershow</b><span>最后通知子应用与基座</span></div>
+        </div>
+        <figure>
+          <pre><code>if (this.loadSourceLevel !== 2) {
+  getRootContainer(this.container!).unmount()
+} else {
+  this.container = this.cloneContainer(
+    pureCreateElement('div'), this.container, false,
+  )
+  this.sandBox?.recordAndReleaseEffect({ keepAlive: true })
+}
+
+const oldContainer = this.container
+this.container = container
+this.sandBox?.rebuildEffectSnapshot()
+// 省略：beforeshow 两侧事件与 KEEP_ALIVE_SHOW 状态
+this.cloneContainer(this.container, oldContainer, false)
+if (isRouterModeSearch(this.name)) {
+  this.sandBox?.setRouteInfoForKeepAliveApp()
+}
+// 最后派发 aftershow 两侧事件</code></pre>
+          <figcaption>删节源码摘录：<code>src/create_app.ts · hiddenKeepAliveApp/showKeepAliveApp</code>。事件语句以省略注释标出，DOM、快照和路由的真实顺序保留。</figcaption>
+        </figure>
+        <div class="callout"><strong>测试映射：</strong><code>src/__tests__/main.test.ts · main process of micro-app</code> 证明普通 mounted/unmount 与公开活跃查询；<code>micro_app_element.test.ts · normal process of keep-alive</code> 断言基座与子应用都收到 afterhidden、beforeshow、aftershow，但没有直接断言快照中每类副作用的恢复顺序。</div>
+      </section>
+
+      <section id="algorithms">
+        <span class="label">手工推演</span>
+        <h2>三个关键算法</h2>
+        <h3>1. 资源双屏障</h3>
+        <figure>
+          <pre><code>if (++this.loadSourceLevel === 2) {
+  this.source.html = html
+  if (this.isUnmounted()) return
+  if (!this.isPrefetch) {
+    getRootContainer(this.container!).mount(this)
+  } else if (this.isPrerender) {
+    // 省略：创建临时 div，以 fiber=true 调用 this.mount(...)
+  }
+}</code></pre>
+          <figcaption>函数体删节源码摘录：<code>src/create_app.ts · CreateApp.onLoad</code>；只省略预渲染挂载参数，双屏障和普通挂载分支保持原样。</figcaption>
+        </figure>
+        <table>
+          <thead><tr><th>时刻</th><th>动作</th><th><code>loadSourceLevel</code></th><th>结果</th></tr></thead>
+          <tbody>
+            <tr><td>T0</td><td>构造实例</td><td>0</td><td>进入 LOADING</td></tr>
+            <tr><td>T1</td><td>JS 先下载完成，调用 onLoad</td><td>1</td><td>不挂载</td></tr>
+            <tr><td>T2</td><td>CSS 与 fiber style 完成，调用 onLoad</td><td>2</td><td>写 source.html，进入挂载或预渲染</td></tr>
+          </tbody>
+        </table>
+        <p>若顺序相反，结果相同。关键不变量不是“哪个先完成”，而是两条链各且仅结算一次。单个 CSS/JS 下载失败会记录错误，但 promise stream 最终回调仍让该链结算。</p>
+
+        <h3>2. EventCenter 批处理</h3>
+        <p>决定性源码见前文 <a href="#interact"><code>EventCenter.enqueue/process</code> 摘录</a>。输入 <code>dispatch({a:1})</code>、<code>dispatch({b:2})</code>、<code>dispatch({a:3})</code> 位于同一同步栈：第一次创建通道并把 <code>force</code> 置真；队列只有一个事件名，<code>tempData</code> 最终为 <code>{a:3,b:2}</code>。process 先交换队列，再提交快照、通知监听器和三次 nextStep。若是既存通道且整批浅比较无变化、也没有 force，则监听器和 nextStep 都不执行。监听器内重入 dispatch 会进入下一批，不污染当前 tempData。</p>
+
+        <h3>3. Scoped CSS</h3>
+        <p>解析器按 style rule、at-rule、comment 三类消费文本。普通选择器前加 <code>micro-app[name=xxx]</code>；body 改成 <code>micro-app-body</code>；<code>:root/html</code> 受 optionCss 策略控制；相对 <code>url(...)</code> 基于外链 CSS 文件目录补全。<code>scopecss-disable</code> 注释可全局、选择器级或下一行关闭改写。</p>
+        <figure>
+          <pre><code>if (selector &amp;&amp; !(
+  this.scopecssDisableNextLine ||
+  (this.scopecssDisable &amp;&amp; (
+    !this.scopecssDisableSelectors.length ||
+    this.scopecssDisableSelectors.includes(selector)
+  )) ||
+  rootSelectorREG.test(selector)
+)) {
+  if (bodySelectorREG.test(selector)) {
+    selector = selector.replace(
+      bodySelectorREG, this.prefix + ' micro-app-body',
+    )
+  } else {
+    selector = this.prefix + ' ' + selector
+  }
+}
+
+cssValue = cssValue.replace(/url\((["']?)(.*?)\1\)/gm, (all, _, path) =&gt; {
+  if (/^((data|blob):|#|%23)/.test(path) ||
+      /^((https?|file):)?\/\//.test(path)) return all
+  if (/^((\.\.?\/)|[^/])/.test(path) &amp;&amp; this.linkPath) {
+    this.baseURI = getLinkFileDir(this.linkPath)
+  }
+  return `url("${CompletionPath(path, this.baseURI)}")`
+})</code></pre>
+          <figcaption>拼接源码摘录：<code>src/sandbox/scoped_css.ts · formatSelector/matchAllDeclarations</code>；回调参数 <code>$1</code> 在摘录中改名为 <code>path</code> 以便阅读，正则和分支未改。</figcaption>
+        </figure>
+        <table>
+          <thead><tr><th>输入</th><th>逐步状态</th><th>输出</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>body .mask, .card { background:url("../img/a.png") }</code><br><code>prefix=micro-app[name=demo]</code><br><code>linkPath=https://cdn.example/assets/css/main.css</code></td>
+              <td>顶层逗号拆成两个选择器；body 分支替换根；普通 .card 加前缀；URL 基准改为外链 CSS 目录</td>
+              <td><code>micro-app[name=demo] micro-app-body .mask, micro-app[name=demo] .card { background:url("https://cdn.example/assets/img/a.png") }</code></td>
+            </tr>
+          </tbody>
+        </table>
+        <figure>
+          <pre><code>try {
+  result = parser.exec(styleElement.textContent!, prefix, baseURI, linkPath)
+  parser.reset()
+} catch (e) {
+  parser.reset()
+  logError('An error occurred while parsing CSS:\n', appName, e)
+}
+if (result) styleElement.textContent = result</code></pre>
+          <figcaption>源码摘录：<code>src/sandbox/scoped_css.ts · commonAction</code>。成功和异常都重置单例解析器；错误样式保留原文本，资源链继续。</figcaption>
+        </figure>
+        <p>复杂度从当前实现推断为近似线性游标扫描，但每条选择器与声明还会经历多轮正则替换；<code>matchAllDeclarations</code> 使用递归，极长或深嵌套声明还受调用栈限制。解析失败走日志与 reset，不让一个样式阻断应用资源屏障。</p>
+      </section>
+
+      <section id="test">
+        <span class="label test">真实测试</span>
+        <h2>经典完整用例：插入、mounted、移除、unmount</h2>
+        <p>下面是可放回仓库 Jest 环境运行的教程用例：包含 import、服务器/DOM 初始化、唯一操作、事件断言和清理。它同时证明自定义元素、状态机和公开查询的顺序关系。</p>
+        <figure>
+          <pre><code>import {
+  commonStartEffect, releaseAllEffect, ports,
+} from './common/initial'
+import microApp, { getActiveApps, removeDomScope } from '..'
+import { defer } from '../libs/utils'
+
+describe('main process', () =&gt; {
+  let appCon: Element
+
+  beforeAll(() =&gt; {
+    commonStartEffect(ports.main)
+    appCon = document.querySelector('#app-container')!
+    microApp.start()
+  })
+
+  afterAll(() =&gt; releaseAllEffect())
+
+  test('main process of micro-app', async () =&gt; {
+    const element = document.createElement('micro-app')
+    element.setAttribute('name', 'test-app1')
+    element.setAttribute('url',
+      `http://127.0.0.1:${ports.main}/common`)
+    element.setAttribute('inline', 'true')
+    appCon.appendChild(element)
+
+    await new Promise(resolve =&gt; {
+      element.addEventListener('mounted', () =&gt; {
+        expect(getActiveApps().includes('test-app1')).toBeTruthy()
+        resolve(true)
+      })
+    })
+
+    await new Promise(resolve =&gt; {
+      element.addEventListener('unmount', () =&gt; {
+        expect(getActiveApps().includes('test-app1')).toBeFalsy()
+        defer(() =&gt; resolve(true))
+      })
+      appCon.removeChild(element)
+    })
+    removeDomScope()
+  })
+})</code></pre>
+          <figcaption>教程可执行示例，改写自 <code>src/__tests__/main.test.ts · main process of micro-app</code>：保留原操作、事件、断言和延迟清理；只把文件级复杂插件/预取启动配置收窄为本用例所需的 <code>microApp.start()</code>。</figcaption>
+        </figure>
+        <div class="callout"><strong>证明范围：</strong>该测试证明 mounted 时公开活跃查询已更新，unmount 时已移除。keep-alive 的三类可见事件由 <code>micro_app_element.test.ts</code> 直接断言；iframe 的 Proxy/instanceof 与部分副作用由 <code>sandbox/*.test.ts</code> 覆盖。当前 <code>src/__tests__</code> 没有直接验证 level 3 预渲染的完整转挂载时序，不能把普通挂载用例外推为预渲染证明。</div>
+      </section>
+
+      <section id="failures">
+        <span class="label boundary">边界</span>
+        <h2>异常路径与实现限制</h2>
+        <table>
+          <thead><tr><th>触发</th><th>真实路径</th><th>可见结果</th></tr></thead>
+          <tbody>
+            <tr><td>HTML fetch 拒绝</td><td><code>HTMLLoader.catch → onLoadError → LOAD_FAILED</code></td><td>error 生命周期；后续卸载强制 destroy</td></tr>
+            <tr><td>HTML 空字符串</td><td><code>app.onerror + logError</code></td><td>不会调用 <code>onLoadError</code>；状态未同步切到 LOAD_FAILED</td></tr>
+            <tr><td>缺少 micro-app-head/body</td><td><code>extractSourceDom → app.onerror</code></td><td>停止提取；同样未显式写 LOAD_FAILED</td></tr>
+            <tr><td>CSS/JS 单文件失败</td><td>记录错误，promise stream 继续完成</td><td>资源屏障仍可开放，应用可能以缺失资源继续</td></tr>
+            <tr><td>sandbox ready 前卸载</td><td><code>sandboxReady.then → !isUnmounted()</code></td><td>跳过 DOM、脚本和挂载事件；卸载链负责释放已有资源</td></tr>
+            <tr><td>UMD mount Promise reject</td><td>记录错误后调用 mounted 收尾</td><td>应用仍进入 MOUNTED</td></tr>
+            <tr><td>同步 UMD unmount 抛错</td><td>外层 catch 只记录错误</td><td>当前实现不会继续 <code>actionsAfterUnmounted</code>，清理链中断</td></tr>
+            <tr><td>异步 UMD unmount reject</td><td><code>catch → logError → nextAction</code></td><td>仍进入统一 <code>actionsAfterUnmounted</code> 清理出口</td></tr>
+            <tr><td>runScript 运行时异常</td><td>默认重新抛出</td><td>仅 <code>excludeRunScriptFilter</code> 返回 true 时抑制</td></tr>
+            <tr><td>公共 router 导航到未活动应用</td><td><code>createNavigationMethod → Promise.reject</code></td><td>不写 URL/location；错误交给调用方 Promise</td></tr>
+            <tr><td>路由守卫抛错</td><td>无 try/catch；before 同步、after 位于 idle callback</td><td>导航已提交，不回滚；异常沿各自异步边界传播</td></tr>
+            <tr><td>默认卸载或 destroy</td><td>effect release + 按应用终止 Worker/EventSource；iframe 视模式删除 realm</td><td>路由监听、全局补丁引用与资源引用按所有权清理</td></tr>
+          </tbody>
+        </table>
+        <h3>源码审阅发现，未修改</h3>
+        <ul class="tight">
+          <li><code>source/patch.ts</code> 的 <code>includeCrossOrigin</code> 分支读取未在局部声明的 <code>node.crossOrigin</code>，由 <code>@ts-ignore</code> 抑制；需单独诊断才能确认是否应为 <code>this</code>。</li>
+          <li><code>source/scripts.ts · getExistParseResult()</code> 跨应用复用 Function 时只比较 parsedCode，未比较 iframe window 身份；源码自身已有重建 realm 后函数缓存待优化边界。</li>
+          <li><code>prefetch.ts</code> 的额外延时通过未保存句柄的 <code>setTimeout</code> 安排；一旦进入该阶段，当前 <code>src</code> API 没有取消这批预取的路径。</li>
+        </ul>
+      </section>
+
+      <section id="evidence">
+        <span class="label">验收索引</span>
+        <h2>章节 → 源码 → 测试证据</h2>
+        <table>
+          <thead><tr><th>机制</th><th>决定性源码</th><th>代表性测试</th><th>测试证明</th></tr></thead>
+          <tbody>
+            <tr><td>启动/公共 API</td><td><a href="../../micro-app/src/micro_app.ts"><code>micro_app.ts</code></a></td><td><code>micro_app.test.ts</code>、<code>micro_app_element.test.ts</code></td><td>render/reload/unmount 与查询；重复 start 记录错误</td></tr>
+            <tr><td>元素分派与复用</td><td><a href="../../micro-app/src/micro_app_element.ts"><code>micro_app_element.ts</code></a></td><td><code>micro_app_element.test.ts</code></td><td>后置 name/url、名称冲突、预取实例分支和 keep-alive 可见事件；未单独控制连接代次竞态</td></tr>
+            <tr><td>状态机/异步卸载</td><td><a href="../../micro-app/src/create_app.ts"><code>create_app.ts</code></a></td><td><code>create_app.test.ts</code></td><td>加载期间卸载/重挂载、UMD Promise 成功与拒绝、批量卸载</td></tr>
+            <tr><td>资源双屏障</td><td><a href="../../micro-app/src/source/index.ts"><code>source/index.ts</code></a>、<a href="../../micro-app/src/create_app.ts"><code>create_app.ts</code></a></td><td><code>main.test.ts</code>、<code>source/links.test.ts</code>、<code>source/scripts.test.ts</code></td><td>真实 CSS/JS fixture 结算后可 mounted；未用可控延迟直接断言两链先后顺序</td></tr>
+            <tr><td>HTML 与资源提取</td><td><a href="../../micro-app/src/source/index.ts"><code>source/index.ts</code></a></td><td><code>source/index.test.ts</code>、<code>unit/source/loader/html.test.ts</code></td><td>插件、缺失结构、URL 补全、fetch 错误</td></tr>
+            <tr><td>脚本缓存与执行</td><td><a href="../../micro-app/src/source/scripts.ts"><code>source/scripts.ts</code></a></td><td><code>source/scripts.test.ts</code>、<code>source/scripts2.test.ts</code></td><td>全局/应用缓存命中、module/inline、动态与抓取错误；缓存测试未以 fetch 次数证明去重</td></tr>
+            <tr><td>CSS 隔离</td><td><a href="../../micro-app/src/sandbox/scoped_css.ts"><code>scoped_css.ts</code></a></td><td><code>source/scoped_css.test.ts</code></td><td>选择器、规则、禁用注释、错误恢复</td></tr>
+            <tr><td>with/iframe 沙箱</td><td><a href="../../micro-app/src/sandbox/with/index.ts"><code>with/index.ts</code></a>、<a href="../../micro-app/src/sandbox/iframe/index.ts"><code>iframe/index.ts</code></a></td><td><code>sandbox/index.test.ts</code>、<code>sandbox/effect.test.ts</code>、<code>sandbox/effect2.test.ts</code></td><td>with Proxy/绑定、UMD 事件快照及一个 iframe 元素 instanceof 场景；不等于完整跨 realm 保证</td></tr>
+            <tr><td>路由模式与守卫</td><td><a href="../../micro-app/src/sandbox/router/core.ts"><code>router/core.ts</code></a>、<a href="../../micro-app/src/sandbox/router/api.ts"><code>router/api.ts</code></a></td><td>当前 <code>src/__tests__</code> 无独立 router 用例</td><td>五种模式、state 命名空间与守卫顺序均为生产源码结论，不宣称已有直接测试保证</td></tr>
+            <tr><td>数据中心</td><td><a href="../../micro-app/src/interact/event_center.ts"><code>event_center.ts</code></a></td><td><code>unit/event_center.test.ts</code>、<code>interact/index.test.ts</code></td><td>缓存/autoTrigger、微任务批次、浅比较去重、方向隔离与 datachange</td></tr>
+            <tr><td>预取/预渲染</td><td><a href="../../micro-app/src/prefetch.ts"><code>prefetch.ts</code></a>、<a href="../../micro-app/src/source/scripts.ts"><code>source/scripts.ts</code></a></td><td><code>prefetch.test.ts</code>、<code>ssr_env.test.ts</code></td><td>参数分支、全局资源缓存和非浏览器错误；不直接证明 level 2/3 与转挂载时序</td></tr>
+          </tbody>
+        </table>
+        <p><strong>范围说明：</strong>机制结论只取自生产 <code>src</code>，测试证明只取自 <code>src/__tests__</code> 的断言。<code>src/__tests__/demos</code> 是测试服务器加载的 JS/HTML/CSS 输入 fixture；只有被测试断言观察到的结果才计作证据，不能凭 fixture 内容单独扩大结论。</p>
+      </section>
+
+      <footer>
+        生成依据：micro-app <code>v1.0.0-rc.32</code> 当前 <code>src/**</code> 生产实现与其中测试断言。未用仓库外实现细节补全机制；设计动机未有源码或测试证据时均标为“当前实现推断”。
+      </footer>
+    </main>
+  </div>
+</body>
+</html>

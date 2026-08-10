@@ -1,0 +1,1787 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#646cff"><meta name="description" content="每个 DevEnvironment 隔离配置视图、插件容器和模块图；依赖优化器与运行时 transport 只在相应类型和配置下存在。"><title>05. Environment API · Vite 源码解剖</title><style>:root {
+  color-scheme: light;
+  --bg: #f4f6fb;
+  --surface: #ffffff;
+  --surface-soft: #f8f9ff;
+  --surface-code: #171925;
+  --text: #252738;
+  --muted: #686b7d;
+  --faint: #9295a7;
+  --line: #e3e5ef;
+  --line-strong: #d3d6e4;
+  --brand: #646cff;
+  --brand-strong: #4d54dc;
+  --cyan: #14a6c7;
+  --green: #188769;
+  --amber: #b56b16;
+  --red: #c4485a;
+  --shadow: 0 16px 48px rgb(36 39 67 / 9%);
+  --shadow-soft: 0 8px 28px rgb(36 39 67 / 7%);
+  --radius: 18px;
+  --radius-small: 11px;
+  --topbar: 64px;
+  --content: 820px;
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    'PingFang SC',
+    'Hiragino Sans GB',
+    'Microsoft YaHei',
+    sans-serif;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #11121a;
+  --surface: #191b26;
+  --surface-soft: #202331;
+  --surface-code: #0d0f17;
+  --text: #e9eaf2;
+  --muted: #aaadbd;
+  --faint: #818597;
+  --line: #2c2f3d;
+  --line-strong: #3a3e50;
+  --brand: #8e94ff;
+  --brand-strong: #a6abff;
+  --cyan: #56c8e0;
+  --green: #57c7a3;
+  --amber: #e0a252;
+  --red: #f07b8c;
+  --shadow: 0 18px 60px rgb(0 0 0 / 26%);
+  --shadow-soft: 0 8px 30px rgb(0 0 0 / 22%);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: calc(var(--topbar) + 24px);
+}
+
+body {
+  margin: 0;
+  min-width: 280px;
+  background:
+    radial-gradient(circle at 4% 0%, rgb(100 108 255 / 10%), transparent 26rem),
+    radial-gradient(circle at 95% 8%, rgb(20 166 199 / 9%), transparent 28rem),
+    var(--bg);
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1.78;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+a {
+  color: var(--brand-strong);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+}
+
+a:hover {
+  color: var(--cyan);
+}
+
+.skip-link {
+  position: fixed;
+  z-index: 200;
+  top: 8px;
+  left: 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--text);
+  color: var(--surface);
+  transform: translateY(-160%);
+}
+
+.skip-link:focus {
+  transform: translateY(0);
+}
+
+.reading-progress {
+  position: fixed;
+  z-index: 120;
+  inset: 0 0 auto;
+  height: 3px;
+  background: transparent;
+}
+
+.reading-progress > span {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: linear-gradient(90deg, var(--brand), var(--cyan));
+  transition: width 80ms linear;
+}
+
+.topbar {
+  position: sticky;
+  z-index: 100;
+  top: 0;
+  height: var(--topbar);
+  border-bottom: 1px solid rgb(120 124 150 / 16%);
+  background: color-mix(in srgb, var(--bg) 84%, transparent);
+  backdrop-filter: blur(18px) saturate(150%);
+}
+
+.topbar-inner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: min(100%, 1540px);
+  height: 100%;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: max-content;
+  color: var(--text);
+  font-weight: 760;
+  text-decoration: none;
+}
+
+.brand-mark {
+  display: grid;
+  width: 31px;
+  height: 31px;
+  place-items: center;
+  border-radius: 9px;
+  background: linear-gradient(135deg, var(--brand), var(--cyan));
+  box-shadow: 0 7px 18px rgb(100 108 255 / 28%);
+  color: white;
+  font-size: 13px;
+  letter-spacing: -0.04em;
+}
+
+.topbar-path {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.icon-button {
+  display: inline-grid;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.icon-button:hover {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
+.nav-toggle {
+  display: none;
+}
+
+.page-grid {
+  display: grid;
+  grid-template-columns: 250px minmax(0, var(--content)) 225px;
+  gap: 34px;
+  justify-content: center;
+  width: min(100%, 1540px);
+  margin: 0 auto;
+  padding: 34px 24px 72px;
+}
+
+.site-nav,
+.page-toc {
+  position: sticky;
+  top: calc(var(--topbar) + 24px);
+  align-self: start;
+  max-height: calc(100vh - var(--topbar) - 48px);
+  overflow: auto;
+  scrollbar-width: thin;
+}
+
+.site-nav {
+  padding: 5px 10px 18px 0;
+}
+
+.nav-home {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0 0 20px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.nav-home:hover,
+.nav-home[aria-current='page'] {
+  border-color: rgb(100 108 255 / 42%);
+  background: rgb(100 108 255 / 9%);
+  color: var(--brand-strong);
+}
+
+.nav-group + .nav-group {
+  margin-top: 18px;
+}
+
+.nav-group-title {
+  margin: 0 0 6px 11px;
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.nav-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.nav-list a {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 7px;
+  align-items: baseline;
+  padding: 7px 10px;
+  border-radius: 9px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+  text-decoration: none;
+}
+
+.nav-list a:hover {
+  background: var(--surface-soft);
+  color: var(--text);
+}
+
+.nav-list a[aria-current='page'] {
+  background: rgb(100 108 255 / 11%);
+  color: var(--brand-strong);
+  font-weight: 700;
+}
+
+.nav-code {
+  color: var(--faint);
+  font:
+    700 11px/1.4 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+}
+
+.article {
+  min-width: 0;
+}
+
+.article-hero {
+  position: relative;
+  overflow: hidden;
+  margin-bottom: 26px;
+  padding: 36px 38px;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background:
+    linear-gradient(135deg, rgb(100 108 255 / 11%), transparent 58%),
+    linear-gradient(315deg, rgb(20 166 199 / 8%), transparent 45%),
+    var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.article-hero::after {
+  position: absolute;
+  right: -55px;
+  bottom: -70px;
+  width: 220px;
+  height: 220px;
+  border: 35px solid rgb(100 108 255 / 7%);
+  border-radius: 50%;
+  content: '';
+}
+
+.eyebrow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 14px;
+  color: var(--brand-strong);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.eyebrow .pill {
+  padding: 3px 8px;
+  border: 1px solid rgb(100 108 255 / 28%);
+  border-radius: 999px;
+  background: rgb(100 108 255 / 8%);
+}
+
+.article-hero h1 {
+  position: relative;
+  z-index: 1;
+  max-width: 740px;
+  margin: 0;
+  font-size: clamp(2rem, 5vw, 3.35rem);
+  line-height: 1.09;
+  letter-spacing: -0.045em;
+}
+
+.article-hero .lede {
+  position: relative;
+  z-index: 1;
+  max-width: 680px;
+  margin: 18px 0 0;
+  color: var(--muted);
+  font-size: 17px;
+  line-height: 1.72;
+}
+
+.hero-meta {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-top: 23px;
+  color: var(--faint);
+  font-size: 12px;
+}
+
+.hero-meta code {
+  color: var(--muted);
+}
+
+.focus-card,
+.evidence-note,
+.boundary-note {
+  margin: 20px 0 26px;
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--brand);
+  border-radius: var(--radius-small);
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.focus-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr);
+  gap: 20px;
+}
+
+.focus-card h2,
+.focus-card h3,
+.evidence-note h2,
+.evidence-note h3 {
+  margin: 0 0 7px;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.focus-card p,
+.evidence-note p,
+.boundary-note p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.focus-card .boundary {
+  padding-left: 20px;
+  border-left: 1px solid var(--line);
+}
+
+.evidence-note {
+  border-left-color: var(--green);
+}
+
+.boundary-note {
+  border-left-color: var(--amber);
+}
+
+.prose {
+  padding: 12px 4px 30px;
+}
+
+.prose > :first-child {
+  margin-top: 0;
+}
+
+.prose h2,
+.prose h3,
+.prose h4 {
+  position: relative;
+  color: var(--text);
+  line-height: 1.34;
+  letter-spacing: -0.025em;
+}
+
+.prose h2 {
+  margin: 58px 0 20px;
+  padding-top: 6px;
+  font-size: 1.72rem;
+}
+
+.prose h2::before {
+  display: block;
+  width: 42px;
+  height: 4px;
+  margin-bottom: 13px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--brand), var(--cyan));
+  content: '';
+}
+
+.prose h3 {
+  margin: 38px 0 14px;
+  font-size: 1.28rem;
+}
+
+.prose h4 {
+  margin: 30px 0 12px;
+  font-size: 1.08rem;
+}
+
+.heading-anchor {
+  position: absolute;
+  left: -1.1em;
+  color: var(--faint);
+  font-weight: 500;
+  text-decoration: none;
+  opacity: 0;
+}
+
+.prose h2:hover .heading-anchor,
+.prose h3:hover .heading-anchor,
+.prose h4:hover .heading-anchor,
+.heading-anchor:focus {
+  opacity: 1;
+}
+
+.prose p,
+.prose li {
+  color: var(--text);
+}
+
+.prose p {
+  margin: 15px 0;
+}
+
+.prose ul,
+.prose ol {
+  padding-left: 1.45em;
+}
+
+.prose li + li {
+  margin-top: 6px;
+}
+
+.prose strong {
+  color: var(--text);
+}
+
+.prose blockquote {
+  margin: 24px 0;
+  padding: 16px 20px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--cyan);
+  border-radius: 0 var(--radius-small) var(--radius-small) 0;
+  background: var(--surface-soft);
+  color: var(--muted);
+}
+
+.prose blockquote > :first-child {
+  margin-top: 0;
+}
+
+.prose blockquote > :last-child {
+  margin-bottom: 0;
+}
+
+code {
+  border-radius: 5px;
+  background: rgb(100 108 255 / 9%);
+  color: color-mix(in srgb, var(--brand-strong) 78%, var(--text));
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.88em;
+}
+
+:not(pre) > code {
+  padding: 0.15em 0.4em;
+  overflow-wrap: anywhere;
+}
+
+.code-card {
+  position: relative;
+  overflow: hidden;
+  margin: 24px 0 30px;
+  border: 1px solid color-mix(in srgb, var(--surface-code) 85%, white);
+  border-radius: 14px;
+  background: var(--surface-code);
+  box-shadow: 0 12px 34px rgb(9 11 21 / 18%);
+}
+
+.code-card figcaption {
+  display: flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 0 12px 0 16px;
+  border-bottom: 1px solid rgb(255 255 255 / 9%);
+  color: #aeb2c8;
+  font:
+    700 11px/1.4 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.copy-code {
+  margin-left: auto;
+  padding: 5px 8px;
+  border: 1px solid rgb(255 255 255 / 13%);
+  border-radius: 6px;
+  background: rgb(255 255 255 / 5%);
+  color: #c8cbda;
+  font: inherit;
+  cursor: pointer;
+}
+
+.copy-code:hover {
+  border-color: rgb(142 148 255 / 65%);
+  color: white;
+}
+
+.code-card pre,
+.diagram-source pre {
+  max-width: 100%;
+  margin: 0;
+  padding: 20px;
+  overflow: auto;
+  background: transparent;
+  color: #e5e7f1;
+  font:
+    13px/1.68 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    monospace;
+  tab-size: 2;
+}
+
+.code-card pre code,
+.diagram-source pre code {
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  white-space: pre;
+}
+
+.table-scroll {
+  max-width: 100%;
+  margin: 23px 0 30px;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.prose table {
+  width: 100%;
+  min-width: 620px;
+  border-collapse: collapse;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.prose th,
+.prose td {
+  padding: 11px 13px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.prose th {
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.prose tr:last-child td {
+  border-bottom: 0;
+}
+
+.page-toc {
+  padding: 12px 0 20px 18px;
+  border-left: 1px solid var(--line);
+}
+
+.toc-title {
+  margin: 0 0 10px;
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.toc-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.toc-list a {
+  display: block;
+  padding: 4px 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+  text-decoration: none;
+}
+
+.toc-list .depth-3 a {
+  padding-left: 12px;
+  color: var(--faint);
+}
+
+.toc-list a:hover,
+.toc-list a.is-active {
+  color: var(--brand-strong);
+}
+
+.article-pager {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 38px;
+}
+
+.pager-link {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 96px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.pager-link:hover {
+  border-color: rgb(100 108 255 / 42%);
+  color: var(--brand-strong);
+}
+
+.pager-link.next {
+  text-align: right;
+}
+
+.pager-label {
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.pager-title {
+  margin-top: 5px;
+  font-size: 14px;
+  font-weight: 720;
+}
+
+.site-footer {
+  margin-top: 35px;
+  padding: 22px 0;
+  border-top: 1px solid var(--line);
+  color: var(--faint);
+  font-size: 12px;
+}
+
+.flow-figure {
+  margin: 26px 0 32px;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.flow-caption {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  margin-bottom: 18px;
+}
+
+.flow-caption strong {
+  font-size: 15px;
+}
+
+.flow-caption span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.flow-lanes {
+  display: grid;
+  gap: 13px;
+}
+
+.flow-lane {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 10px 14px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+
+.lane-label {
+  grid-row: 1 / span 2;
+  margin: 0;
+  color: var(--brand-strong);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+
+.lane-path {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  align-items: center;
+  min-width: 0;
+}
+
+.lane-step,
+.lane-choice {
+  display: inline-flex;
+  min-height: 34px;
+  padding: 7px 9px;
+  align-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.lane-choice {
+  border-color: rgb(100 108 255 / 42%);
+  background: rgb(100 108 255 / 9%);
+  color: var(--brand-strong);
+}
+
+.lane-arrow {
+  color: var(--brand);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.lane-split {
+  display: grid;
+  grid-column: 2;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.lane-split.three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.lane-split > span {
+  padding: 8px 10px;
+  border-left: 3px solid var(--cyan);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.48;
+}
+
+.lane-split > span:nth-child(even) {
+  border-left-color: var(--green);
+}
+
+.merge-output {
+  display: flex;
+  gap: 8px 18px;
+  align-items: center;
+  justify-content: center;
+  padding: 14px 16px;
+  border: 1px solid rgb(24 135 105 / 38%);
+  border-radius: 11px;
+  background: rgb(24 135 105 / 8%);
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.merge-output b {
+  color: var(--green);
+}
+
+.flow-track {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  gap: 20px;
+  align-items: stretch;
+}
+
+.flow-node {
+  position: relative;
+  display: flex;
+  min-height: 74px;
+  padding: 12px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 11px;
+  background: var(--surface-soft);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 720;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.flow-node:not(:last-child)::after {
+  position: absolute;
+  top: 50%;
+  right: -17px;
+  color: var(--brand);
+  content: '→';
+  transform: translateY(-50%);
+}
+
+.flow-node.brand {
+  border-color: rgb(100 108 255 / 38%);
+  background: rgb(100 108 255 / 9%);
+}
+
+.flow-node.cyan {
+  border-color: rgb(20 166 199 / 38%);
+  background: rgb(20 166 199 / 8%);
+}
+
+.flow-node.green {
+  border-color: rgb(24 135 105 / 38%);
+  background: rgb(24 135 105 / 8%);
+}
+
+.flow-branches {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.flow-branch {
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.flow-branch strong {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--text);
+}
+
+.flow-columns {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.flow-column {
+  padding: 15px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+
+.flow-column h4 {
+  margin: 0 0 10px;
+  color: var(--brand-strong);
+  font-size: 13px;
+}
+
+.flow-column ol {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.flow-column li + li {
+  margin-top: 6px;
+}
+
+.diagram-source {
+  margin-top: 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-code);
+}
+
+.diagram-source summary {
+  padding: 10px 13px;
+  color: #c8cbda;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.index-hero {
+  padding-bottom: 42px;
+}
+
+.index-thesis {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 24px 0 38px;
+}
+
+.thesis-card {
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.thesis-number {
+  color: var(--brand);
+  font:
+    800 12px/1 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+}
+
+.thesis-card h2 {
+  margin: 10px 0 7px;
+  font-size: 17px;
+  line-height: 1.35;
+}
+
+.thesis-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.ownership-flow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  align-items: center;
+  margin: 20px 0 36px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.ownership-flow span {
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-soft);
+  font:
+    700 12px/1.35 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+}
+
+.ownership-flow b {
+  color: var(--brand);
+  font-weight: 800;
+}
+
+.track-grid,
+.module-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.track-card,
+.module-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 150px;
+  padding: 19px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.track-card:hover,
+.module-card:hover {
+  border-color: rgb(100 108 255 / 42%);
+  color: var(--text);
+  transform: translateY(-1px);
+}
+
+.track-card h3,
+.module-card h3 {
+  margin: 8px 0;
+  font-size: 17px;
+  line-height: 1.35;
+}
+
+.track-card p,
+.module-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.track-path {
+  margin-top: auto;
+  padding-top: 14px;
+  color: var(--brand-strong);
+  font:
+    700 11px/1.45 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+}
+
+.module-group-heading {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  margin: 48px 0 16px;
+}
+
+.module-group-heading h2 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.module-group-heading p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.module-card {
+  min-height: 175px;
+}
+
+.module-card .module-code {
+  color: var(--brand);
+  font:
+    800 12px/1 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+}
+
+.module-card .module-arrow {
+  margin-top: auto;
+  padding-top: 14px;
+  color: var(--brand-strong);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+@media (max-width: 1230px) {
+  .page-grid {
+    grid-template-columns: 230px minmax(0, var(--content));
+    gap: 28px;
+  }
+
+  .page-toc {
+    display: none;
+  }
+}
+
+@media (max-width: 820px) {
+  :root {
+    --topbar: 58px;
+  }
+
+  .topbar-inner {
+    padding: 0 14px;
+  }
+
+  .topbar-path {
+    display: none;
+  }
+
+  .nav-toggle {
+    display: inline-grid;
+  }
+
+  .page-grid {
+    display: block;
+    padding: 20px 14px 52px;
+  }
+
+  .site-nav {
+    position: fixed;
+    z-index: 95;
+    top: var(--topbar);
+    bottom: 0;
+    left: 0;
+    width: min(86vw, 310px);
+    max-height: none;
+    padding: 18px;
+    border-right: 1px solid var(--line);
+    background: var(--bg);
+    box-shadow: var(--shadow);
+    transform: translateX(-105%);
+    transition: transform 180ms ease;
+  }
+
+  body.nav-open {
+    overflow: hidden;
+  }
+
+  body.nav-open .site-nav {
+    transform: translateX(0);
+  }
+
+  .article-hero {
+    padding: 27px 22px;
+    border-radius: 18px;
+  }
+
+  .article-hero h1 {
+    font-size: clamp(1.9rem, 9vw, 2.65rem);
+  }
+
+  .article-hero .lede {
+    font-size: 15px;
+  }
+
+  .focus-card {
+    grid-template-columns: 1fr;
+  }
+
+  .focus-card .boundary {
+    padding: 16px 0 0;
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+
+  .prose {
+    padding-inline: 2px;
+  }
+
+  .prose h2 {
+    margin-top: 46px;
+    font-size: 1.47rem;
+  }
+
+  .prose h3 {
+    font-size: 1.18rem;
+  }
+
+  .heading-anchor {
+    display: none;
+  }
+
+  .flow-track {
+    grid-template-columns: 1fr;
+  }
+
+  .flow-lane {
+    grid-template-columns: 1fr;
+  }
+
+  .lane-label,
+  .lane-split {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .lane-split,
+  .lane-split.three {
+    grid-template-columns: 1fr;
+  }
+
+  .merge-output {
+    align-items: flex-start;
+    flex-direction: column;
+    text-align: left;
+  }
+
+  .flow-node:not(:last-child)::after {
+    top: auto;
+    right: 50%;
+    bottom: -19px;
+    content: '↓';
+    transform: translateX(50%);
+  }
+
+  .flow-branches,
+  .flow-columns,
+  .index-thesis,
+  .track-grid,
+  .module-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .article-pager {
+    grid-template-columns: 1fr;
+  }
+
+  .pager-link.next {
+    text-align: left;
+  }
+}
+
+@media (max-width: 440px) {
+  body {
+    font-size: 15px;
+  }
+
+  .brand-text {
+    display: none;
+  }
+
+  .article-hero {
+    padding: 24px 18px;
+  }
+
+  .hero-meta {
+    display: grid;
+  }
+
+  .flow-figure {
+    padding: 16px;
+  }
+
+  .code-card pre,
+  .diagram-source pre {
+    padding: 16px;
+    font-size: 12px;
+  }
+}
+
+@media print {
+  body {
+    background: white;
+  }
+
+  .topbar,
+  .site-nav,
+  .page-toc,
+  .reading-progress,
+  .copy-code,
+  .article-pager {
+    display: none !important;
+  }
+
+  .page-grid {
+    display: block;
+    width: auto;
+    padding: 0;
+  }
+
+  .article-hero,
+  .code-card,
+  .table-scroll,
+  .flow-figure {
+    box-shadow: none;
+  }
+
+  .code-card {
+    break-inside: avoid;
+  }
+}
+</style><script>(function(){try{var t=localStorage.getItem("vite-guide-theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(_){}})();</script></head><body><a class="skip-link" href="#article-start">跳到正文</a><div class="reading-progress" aria-hidden="true"><span data-reading-progress></span></div><header class="topbar"><div class="topbar-inner"><button class="icon-button nav-toggle" type="button" data-nav-toggle aria-expanded="false" aria-label="打开模块导航">☰</button><a class="brand" href="index.html"><span class="brand-mark">V</span><span class="brand-text">Vite 源码解剖</span></a><span class="topbar-path">开发服务器核心 / 05 Environment API</span><div class="topbar-actions"><button class="icon-button" type="button" data-theme-toggle aria-label="切换主题">◐</button></div></div></header><div class="page-grid"><nav class="site-nav" aria-label="模块导航"><a class="nav-home" href="index.html"><span>⌂</span><span>阅读总览</span></a><section class="nav-group"><h2 class="nav-group-title">全景</h2><ul class="nav-list"><li><a href="00-system-map-and-end-to-end.html"><span class="nav-code">00</span><span>系统全景与请求链</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">启动与配置</h2><ul class="nav-list"><li><a href="01-cli-and-startup.html"><span class="nav-code">01</span><span>CLI 与启动</span></a></li><li><a href="02a-env-loading.html"><span class="nav-code">02A</span><span>环境文件加载</span></a></li><li><a href="02b-config-resolution.html"><span class="nav-code">02B</span><span>配置加载与解析</span></a></li><li><a href="02c-define-client-injection-and-json.html"><span class="nav-code">02C</span><span>Define、注入与 JSON</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">开发服务器核心</h2><ul class="nav-list"><li><a href="03-plugin-system.html"><span class="nav-code">03</span><span>插件体系</span></a></li><li><a href="04-dev-server-lifecycle.html"><span class="nav-code">04</span><span>Dev Server 生命周期</span></a></li><li><a href="05-environment-api.html" aria-current="page"><span class="nav-code">05</span><span>Environment API</span></a></li><li><a href="06-middleware-request-pipeline.html"><span class="nav-code">06</span><span>中间件与请求入口</span></a></li><li><a href="07-module-resolution.html"><span class="nav-code">07</span><span>模块解析</span></a></li><li><a href="08-transform-and-module-graph.html"><span class="nav-code">08</span><span>Transform 与模块图</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">转换与增量更新</h2><ul class="nav-list"><li><a href="09-html-transform.html"><span class="nav-code">09</span><span>HTML 转换</span></a></li><li><a href="10-import-analysis.html"><span class="nav-code">10</span><span>Import Analysis</span></a></li><li><a href="11-dependency-pre-bundling.html"><span class="nav-code">11</span><span>依赖预构建</span></a></li><li><a href="12-hmr.html"><span class="nav-code">12</span><span>HMR</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">资源管线</h2><ul class="nav-list"><li><a href="13a-css-pipeline.html"><span class="nav-code">13A</span><span>CSS 管线</span></a></li><li><a href="13b-asset-worker-wasm.html"><span class="nav-code">13B</span><span>Asset、Worker、Wasm</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">生产构建</h2><ul class="nav-list"><li><a href="14a-build-orchestration.html"><span class="nav-code">14A</span><span>生产构建编排</span></a></li><li><a href="14b-build-output-and-preload.html"><span class="nav-code">14B</span><span>Preload 与构建输出</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">SSR 与运行时</h2><ul class="nav-list"><li><a href="15a-ssr-transform-and-loading.html"><span class="nav-code">15A</span><span>SSR 变换与加载</span></a></li><li><a href="15b-module-runner.html"><span class="nav-code">15B</span><span>Module Runner</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">公共边界</h2><ul class="nav-list"><li><a href="16-public-api-diagnostics-and-types.html"><span class="nav-code">16</span><span>公共 API 与类型</span></a></li></ul></section></nav><main class="article" id="article-start"><header class="article-hero"><div class="eyebrow"><span class="pill">05</span><span>开发服务器核心</span></div><h1>05. Environment API</h1><p class="lede">每个 DevEnvironment 隔离配置视图、插件容器和模块图；依赖优化器与运行时 transport 只在相应类型和配置下存在。</p><div class="hero-meta"><span>证据基线：v8.2.1</span><span>commit <code>421615865dad</code></span><span>约 10 分钟</span><a href="../../vite/reading-guides/05-environment-api.md">查看 Markdown 原稿</a></div></header><section class="focus-card" aria-label="阅读重点与边界"><div><h2>本页重点</h2><p>每个 DevEnvironment 隔离配置视图、插件容器和模块图；依赖优化器与运行时 transport 只在相应类型和配置下存在。</p></div><div class="boundary"><h3>推导边界</h3><p>Build、Scan、Unknown 等 Environment 能力不同；类继承层级不等于运行时所有权层级。</p></div></section><aside class="evidence-note"><h3>证据口径</h3><p>正文保留目标版本中的真实源码、状态说明与代表性测试映射。测试源码用于锁定设计契约；本轮没有执行测试命令。</p></aside><article class="prose"><h2 id="阅读边界"><a class="heading-anchor" href="#%E9%98%85%E8%AF%BB%E8%BE%B9%E7%95%8C" aria-label="链接到本节">#</a>阅读边界</h2>
+<p>本节研究 Vite 怎样把“一台开发服务器”拆成多个运行目标，以及每个目标如何拥有独立配置、
+插件、模块图、依赖优化器和运行时通信。模块图的内部数据结构、transform 细节、HMR 传播算法
+留给后续章节；生产构建的 <code>BuildEnvironment</code> 留给生产构建章节。</p>
+<p>读完应能回答：</p>
+<ol>
+<li>Environment API 解决了旧 <code>ssr: boolean</code> 模型的什么限制？</li>
+<li><code>environment.config</code> 为什么既像 <code>ResolvedConfig</code>，又能读到环境覆盖项？</li>
+<li>client、默认 server、自定义远端运行时分别使用哪种 Environment？</li>
+<li><code>init()</code>、<code>listen()</code>、<code>close()</code> 各负责什么，为什么不能合成一个构造函数？</li>
+<li><code>RunnableDevEnvironment</code> 与 <code>FetchableDevEnvironment</code> 的通信能力边界是什么？</li>
+<li>同一插件实例跨多个 Environment 时，怎样避免缓存和状态串线？</li>
+</ol>
+<h2 id="推荐阅读顺序"><a class="heading-anchor" href="#%E6%8E%A8%E8%8D%90%E9%98%85%E8%AF%BB%E9%A1%BA%E5%BA%8F" aria-label="链接到本节">#</a>推荐阅读顺序</h2>
+<ol>
+<li><code>config.ts</code> 的 <code>EnvironmentOptions</code>、<code>resolveEnvironmentOptions()</code>：先理解配置怎样分层。</li>
+<li><code>baseEnvironment.ts</code>：看顶层配置与环境覆盖项如何合成。</li>
+<li><code>environment.ts</code>：看类型总入口和 <code>perEnvironmentState()</code>。</li>
+<li><code>server/environment.ts</code> 构造函数：看每个开发环境拥有的运行状态。</li>
+<li>同文件的 <code>init()</code>、<code>listen()</code>、<code>close()</code>：看生命周期。</li>
+<li><code>runnableEnvironment.ts</code> 与 <code>fetchableEnvironments.ts</code>：比较通信模型。</li>
+<li><code>environment.spec.ts</code>：从 resolve conditions 的开发/构建场景验证隔离性。</li>
+</ol>
+<h2 id="从-ssr-boolean-到-environment"><a class="heading-anchor" href="#%E4%BB%8E-ssr-boolean-%E5%88%B0-environment" aria-label="链接到本节">#</a>从 <code>ssr: boolean</code> 到 Environment</h2>
+<p>旧模型只有两条隐含分支：</p>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">server.transformRequest(url, { ssr: false }) → client
+server.transformRequest(url, { ssr: true })  → ssr
+</code></pre></figure><p>它无法自然表达 <code>client</code>、<code>ssr</code>、<code>worker</code>、<code>edge</code>、<code>rsc</code> 等任意数量的运行目标。模块节点中
+也要同时保存 client/ssr 两套关系和 transform 结果，调用链到处传递 <code>ssr</code> 布尔值。</p>
+<p>Environment API（<a href="https://github.com/vitejs/vite/pull/16471" target="_blank" rel="noreferrer noopener">PR #16471</a>）把运行目标变成
+显式对象：</p>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">server.environments.client.transformRequest(url)
+server.environments.ssr.transformRequest(url)
+server.environments.edge.transformRequest(url)
+</code></pre></figure><p>Environment 本身已经确定上下文，不需要每个 API 再接受 <code>ssr</code> 参数。每个实例持有：</p>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">Environment
+├─ name / mode
+├─ config / logger / plugins
+├─ pluginContainer
+├─ moduleGraph
+├─ depsOptimizer
+├─ hot transport
+└─ transform / fetch / reload / close 等操作
+</code></pre></figure><p><code>server.moduleGraph</code>、<code>server.pluginContainer</code>、<code>server.transformRequest({ ssr })</code> 仍存在，但只是
+client/ssr 的迁移兼容门面。阅读新实现时应直接进入具体 Environment。</p>
+<h2 id="配置的三层结构"><a class="heading-anchor" href="#%E9%85%8D%E7%BD%AE%E7%9A%84%E4%B8%89%E5%B1%82%E7%BB%93%E6%9E%84" aria-label="链接到本节">#</a>配置的三层结构</h2>
+<h3 id="用户输入"><a class="heading-anchor" href="#%E7%94%A8%E6%88%B7%E8%BE%93%E5%85%A5" aria-label="链接到本节">#</a>用户输入</h3>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">export default {
+  resolve: {/* 所有环境默认值 */},
+  environments: {
+    client: { consumer: &#039;client&#039; },
+    ssr: { consumer: &#039;server&#039; },
+    edge: {
+      consumer: &#039;server&#039;,
+      resolve: { conditions: [&#039;workerd&#039;] },
+      dev: {
+        createEnvironment(name, config) {
+          /* ... */
+        },
+      },
+      build: { outDir: &#039;dist/edge&#039; },
+    },
+  },
+}
+</code></pre></figure><p><code>SharedEnvironmentOptions</code> 对开发与构建都有效，包括 input、define、resolve、consumer、
+keepProcessEnv、optimizeDeps、isBundled。<code>dev</code> 和 <code>build</code> 子对象只放阶段专属选项。</p>
+<h3 id="已解析覆盖项"><a class="heading-anchor" href="#%E5%B7%B2%E8%A7%A3%E6%9E%90%E8%A6%86%E7%9B%96%E9%A1%B9" aria-label="链接到本节">#</a>已解析覆盖项</h3>
+<p><code>resolveEnvironmentOptions()</code> 为每个名称分别确定：</p>
+<ul>
+<li><code>consumer</code>：client 名称默认是 <code>client</code>，其他名称默认是 <code>server</code>；</li>
+<li>resolve conditions/mainFields/builtins；</li>
+<li><code>keepProcessEnv</code> 和依赖优化策略；</li>
+<li>默认 Environment 工厂；</li>
+<li>开发态是否 recoverable、是否执行 Module Runner transform；</li>
+<li>构建输出选项和 <code>isBundled</code>；</li>
+<li>最终适用于该 Environment 的插件列表。</li>
+</ul>
+<p>默认 client 创建普通 <code>DevEnvironment</code>，使用共享 WebSocket、禁止服务端 <code>fetchModule</code>；默认
+非 client 创建 <code>RunnableDevEnvironment</code>，供服务端 Module Runner 执行模块。</p>
+<h3 id="environment-config-代理"><a class="heading-anchor" href="#environment-config-%E4%BB%A3%E7%90%86" aria-label="链接到本节">#</a><code>environment.config</code> 代理</h3>
+<p><code>PartialEnvironment</code> 不复制整份配置，而是建立 Proxy：</p>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">读取 prop
+├─ prop === logger → Environment 专属 logger
+├─ prop 在环境覆盖项中 → environment._options[prop]
+└─ 否则 → topLevelConfig[prop]
+</code></pre></figure><p>所以插件可以写 <code>this.environment.config.resolve.conditions</code>，也能读取共享 root、server、mode。
+<code>getTopLevelConfig()</code> 在确实需要未覆盖的全局对象时显式返回原配置。</p>
+<p>日志器也不复制底层输出逻辑，只在 info/warn/error 选项中附加 <code>(environmentName)</code>。名称字符
+哈希产生稳定 info 颜色，warn/error 继续使用黄/红色。Environment 名称只允许字母数字、
+<code>_</code>、<code>$</code>，因为它还会用于目录和 <code>environments.&lt;name&gt;</code> 访问，不应要求额外转义
+（<a href="https://github.com/vitejs/vite/pull/18255" target="_blank" rel="noreferrer noopener">PR #18255</a>）。</p>
+<h2 id="类层级不是运行时层级"><a class="heading-anchor" href="#%E7%B1%BB%E5%B1%82%E7%BA%A7%E4%B8%8D%E6%98%AF%E8%BF%90%E8%A1%8C%E6%97%B6%E5%B1%82%E7%BA%A7" aria-label="链接到本节">#</a>类层级不是运行时层级</h2>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">PartialEnvironment
+  配置代理 + 日志
+  │
+  └─ BaseEnvironment
+       最终插件列表 + _initiated
+       │
+       ├─ DevEnvironment          mode = dev
+       │    ├─ RunnableDevEnvironment
+       │    └─ FetchableDevEnvironment
+       ├─ BuildEnvironment        mode = build
+       ├─ ScanEnvironment         internal
+       └─ UnknownEnvironment      mode = unknown
+</code></pre></figure><p>不要写 <code>environment.mode !== 'build'</code> 来判断开发态：未来可能新增模式。应正向判断
+<code>environment.mode === 'dev'</code>，或使用 <code>isRunnableDevEnvironment()</code> 等能力型 type guard。</p>
+<p><code>UnknownEnvironment</code> 的意义就是阻止“除了 build 都是 dev”的封闭世界假设。</p>
+<h2 id="devenvironment-的独占状态"><a class="heading-anchor" href="#devenvironment-%E7%9A%84%E7%8B%AC%E5%8D%A0%E7%8A%B6%E6%80%81" aria-label="链接到本节">#</a><code>DevEnvironment</code> 的独占状态</h2>
+<p>构造函数依次建立：</p>
+<ol>
+<li>读取 <code>config.environments[name]</code>，再合并工厂传入的单实例 <code>context.options</code>；</li>
+<li>选择普通 transform 或完整打包开发模式；</li>
+<li>创建本 Environment 独占的 <code>EnvironmentModuleGraph</code>；</li>
+<li>创建首轮静态 import 稳定检测器；</li>
+<li>标准化 HotChannel，并注册 fetchModule/getBuiltins/invalidate 消息；</li>
+<li>按配置创建显式或自动发现依赖优化器。</li>
+</ol>
+<p>插件容器没有在构造函数中创建，因为它要异步执行 Environment 插件派生和 <code>options</code> hook。
+这部分由 <code>init()</code> 完成。<code>pluginContainer</code> getter 在 init 前主动报错，把错误生命周期访问暴露在
+最近的位置。</p>
+<p>每个模块图的 resolve 回调绑定自己的插件容器，因此相同 URL 可以在 client、ssr、edge 中
+解析为不同 ID，具有不同 importers、transformResult 和 HMR 边界。</p>
+<h2 id="三阶段生命周期"><a class="heading-anchor" href="#%E4%B8%89%E9%98%B6%E6%AE%B5%E7%94%9F%E5%91%BD%E5%91%A8%E6%9C%9F" aria-label="链接到本节">#</a>三阶段生命周期</h2>
+<h3 id="init-装配-不启动外部工作"><a class="heading-anchor" href="#init-%E8%A3%85%E9%85%8D-%E4%B8%8D%E5%90%AF%E5%8A%A8%E5%A4%96%E9%83%A8%E5%B7%A5%E4%BD%9C" aria-label="链接到本节">#</a><code>init()</code>：装配，不启动外部工作</h3>
+<p><code>init()</code> 幂等创建插件容器，并接收 watcher。重启时还能得到 <code>previousInstance</code>；自定义子类只有
+确认旧实例来自同一类/同一工厂后才应迁移状态。</p>
+<p>入口在插件容器 <code>buildStart</code> 前通过 <code>_registerInputsAsSafeModules()</code> 解析并加入 fs 安全集合。
+解析必须带 <code>scan: true</code>，否则会形成：</p>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">dependency scan 触发首次 buildStart
+→ buildStart 解析 input
+→ 普通 resolve 等待 dependency scan
+→ dependency scan 等待 buildStart
+→ 死锁
+</code></pre></figure><p>默认 <code>index.html</code> 不存在是合法库/中间件场景，可静默忽略；用户显式声明 input 时，解析失败
+必须暴露。<a href="https://github.com/vitejs/vite/pull/23101" target="_blank" rel="noreferrer noopener">PR #23101</a> 让顶层 input 同样经过插件解析。</p>
+<h3 id="listen-启动与预热"><a class="heading-anchor" href="#listen-%E5%90%AF%E5%8A%A8%E4%B8%8E%E9%A2%84%E7%83%AD" aria-label="链接到本节">#</a><code>listen()</code>：启动与预热</h3>
+<p><code>listen()</code> 启动 HotChannel，初始化完整 bundle 或依赖优化器，再按配置 warmup 文件。它不创建
+HTTP Server；顶层 Dev Server 负责网络监听，Environment 只启动自己的运行时能力。</p>
+<p>服务器重启的严格顺序是：</p>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">newEnvironment.init({ previousInstance })
+→ previousEnvironment.close()
+→ newEnvironment.listen(server)
+</code></pre></figure><p>先 init 新实例可在配置/插件创建失败时保留旧服务；先 close 旧实例再 listen 新实例可防止两套
+优化器、通道或运行时同时工作。独立 <code>listen</code> 生命周期来自
+<a href="https://github.com/vitejs/vite/pull/18263" target="_blank" rel="noreferrer noopener">PR #18263</a>。</p>
+<h3 id="close-等待而不是只发出停止信号"><a class="heading-anchor" href="#close-%E7%AD%89%E5%BE%85%E8%80%8C%E4%B8%8D%E6%98%AF%E5%8F%AA%E5%8F%91%E5%87%BA%E5%81%9C%E6%AD%A2%E4%BF%A1%E5%8F%B7" aria-label="链接到本节">#</a><code>close()</code>：等待而不是只发出停止信号</h3>
+<p>关闭时先置 <code>_closing</code>，取消首轮爬取检测，再并行等待：</p>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">bundledDev.close() 或 pluginContainer.close()
+depsOptimizer.close()
+自定义 HotChannel.close()
+全部在途 transform request settle
+</code></pre></figure><p>顶层 <code>WebSocketServer</code> 可能被多个 Environment 共享，不能由单个实例关闭；它由 Dev Server
+统一释放。自定义 HotChannel 是 Environment 独占资源，必须在这里关闭。所有分支使用
+<code>allSettled()</code>，单个插件清理失败不能制造其他资源泄漏。</p>
+<h2 id="transform-warmup-与首轮爬取"><a class="heading-anchor" href="#transform-warmup-%E4%B8%8E%E9%A6%96%E8%BD%AE%E7%88%AC%E5%8F%96" aria-label="链接到本节">#</a>transform、warmup 与首轮爬取</h2>
+<p><code>transformRequest(url)</code> 进入当前 Environment 的 resolve → load → transform 管线并更新其模块
+图。自定义 transport 可以声明远端已经执行 fs 安全校验，Vite 才允许跳过本地检查；普通
+WebSocket 不能借这个字段绕过 <code>/@fs/</code> 边界。该安全修复见
+<a href="https://github.com/vitejs/vite/pull/22159" target="_blank" rel="noreferrer noopener">PR #22159/#22163</a>。</p>
+<p><code>warmupRequest(url)</code> 是投机预转换：</p>
+<ul>
+<li>完整打包开发模式无需逐 URL 预热；</li>
+<li>优化依赖已换代、服务器已关闭属于正常取消；</li>
+<li>其他错误记日志，但不能产生无人等待的 rejection；</li>
+<li>它不改变真实请求遇错时仍应失败的语义。</li>
+</ul>
+<p>首轮静态 import 发现使用 <code>CrawlEndFinder</code>：每个 id 只登记一次；在途集合清空后再等待 50ms
+静默期，吸收刚发现的下一层 import。<code>waitForRequestsIdle(id)</code> 若在插件 hook 内调用，必须传入
+当前 id 把自己排除，否则 hook 等待的正是由自己完成的任务。</p>
+<h2 id="运行时通信的三个级别"><a class="heading-anchor" href="#%E8%BF%90%E8%A1%8C%E6%97%B6%E9%80%9A%E4%BF%A1%E7%9A%84%E4%B8%89%E4%B8%AA%E7%BA%A7%E5%88%AB" aria-label="链接到本节">#</a>运行时通信的三个级别</h2>
+<h3 id="原始-devenvironment"><a class="heading-anchor" href="#%E5%8E%9F%E5%A7%8B-devenvironment" aria-label="链接到本节">#</a>原始 <code>DevEnvironment</code></h3>
+<p>只提供 transform、模块图和 HotChannel 原语。框架/运行时集成者自行定义怎样执行模块、怎样
+把请求和结果跨边界传输，能力最底层也最灵活。</p>
+<h3 id="runnabledevenvironment"><a class="heading-anchor" href="#runnabledevenvironment" aria-label="链接到本节">#</a><code>RunnableDevEnvironment</code></h3>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">Vite Server 进程
+├─ DevEnvironment
+└─ ModuleRunner → 在同一 JS runtime 执行用户模块
+</code></pre></figure><p><code>runner.import()</code> 可以直接返回函数、类实例等活的 JavaScript 值，无序列化成本。但它要求用户
+模块与 Vite Server 运行在同一个 runtime，不能代表独立 Worker/边缘沙箱。</p>
+<p>Runner 惰性创建并缓存：未使用 SSR 执行时不修改进程 Source Map 行为，也不承担模块执行成本。
+关闭时只有已经创建的 Runner 才会被关闭，避免为清理反向创建资源；漏关 Runner 曾导致模块
+缓存/HMR listener 存活（<a href="https://github.com/vitejs/vite/pull/18282" target="_blank" rel="noreferrer noopener">PR #18282</a>）。</p>
+<h3 id="fetchabledevenvironment"><a class="heading-anchor" href="#fetchabledevenvironment" aria-label="链接到本节">#</a><code>FetchableDevEnvironment</code></h3>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">宿主中间件 Request
+→ environment.dispatchFetch(request)
+→ context.handleRequest(request)
+→ 目标运行时
+→ Response
+</code></pre></figure><p>它只承诺标准 Fetch <code>Request</code>/<code>Response</code>，因此可以把处理放到无法与 Vite 共进程的运行时，
+也更接近 Worker/Edge 的生产请求模型。代价是任意函数、类实例不能直接跨边界。</p>
+<p>工厂先检查全局 Request/Response 和 handleRequest；dispatch 时再用 <code>instanceof</code> 检查输入输出，
+尽早发现 polyfill/realm 不一致或错误返回普通对象。该实验接口来自
+<a href="https://github.com/vitejs/vite/pull/19664" target="_blank" rel="noreferrer noopener">PR #19664</a>。</p>
+<h2 id="插件状态怎样按-environment-隔离"><a class="heading-anchor" href="#%E6%8F%92%E4%BB%B6%E7%8A%B6%E6%80%81%E6%80%8E%E6%A0%B7%E6%8C%89-environment-%E9%9A%94%E7%A6%BB" aria-label="链接到本节">#</a>插件状态怎样按 Environment 隔离</h2>
+<p>同一个插件实例会跨 Environment 调用 hook：</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">const getState = perEnvironmentState(() =&gt; ({ transformed: 0 }))
+
+export default {
+  name: &#039;counter&#039;,
+  transform() {
+    getState(this).transformed++
+  },
+}
+</code></pre></figure><p><code>perEnvironmentState(initial)</code> 内部使用 <code>WeakMap&lt;Environment, State&gt;</code>：</p>
+<ul>
+<li>key 是实例，不是名称；同名重启后的新实例拥有新状态；</li>
+<li>值只在该 Environment 第一次调用时创建；</li>
+<li>Environment 不可达后，WeakMap 不阻止回收；</li>
+<li>必须用 <code>stateMap.has(environment)</code> 判断是否初始化。</li>
+</ul>
+<p>最后一点很容易写错。若用 <code>if (!stateMap.get(environment))</code>，合法的 <code>false</code>、<code>0</code>、<code>''</code> 会在
+每次 hook 调用时重新初始化；<a href="https://github.com/vitejs/vite/pull/22715" target="_blank" rel="noreferrer noopener">PR #22715</a> 就修复了
+这个 falsy 状态缓存问题。</p>
+<h2 id="用例怎样证明隔离"><a class="heading-anchor" href="#%E7%94%A8%E4%BE%8B%E6%80%8E%E6%A0%B7%E8%AF%81%E6%98%8E%E9%9A%94%E7%A6%BB" aria-label="链接到本节">#</a>用例怎样证明隔离</h2>
+<p><code>environment.spec.ts</code> 为 <code>ssr</code>、<code>worker</code>、<code>custom1</code>、<code>custom1_2</code> 配置不同/相同 resolve
+conditions，并从四条路径读取同一个条件导出包：</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>经过的解析路径</th>
+<th>证明什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>dev noExternal</td>
+<td>Vite 插件 resolve/transform</td>
+<td>conditions 随 DevEnvironment 隔离</td>
+</tr>
+<tr>
+<td>dev external</td>
+<td>ModuleRunner 原生外部加载</td>
+<td>externalConditions 也随 Environment 隔离</td>
+</tr>
+<tr>
+<td>兼容 SSR + CSS</td>
+<td><code>server.ssrLoadModule()</code></td>
+<td>旧 API 正确代理到默认 SSR Environment</td>
+</tr>
+<tr>
+<td>build</td>
+<td>四个 BuildEnvironment</td>
+<td>同一配置隔离模型跨开发与构建成立</td>
+</tr>
+</tbody>
+</table></div>
+<p><code>custom1</code> 与 <code>custom1_2</code> 故意使用相同条件但不同名称：相同输出不是按名称写死，同时也证明
+配置结果相同不意味着必须共享 Environment 实例或模块图。</p>
+<h2 id="关键源码证据"><a class="heading-anchor" href="#%E5%85%B3%E9%94%AE%E6%BA%90%E7%A0%81%E8%AF%81%E6%8D%AE" aria-label="链接到本节">#</a>关键源码证据</h2>
+<p>目标版本源码摘录，来源：<code>packages/vite/src/node/baseEnvironment.ts</code>，<code>BaseEnvironment</code>
+构造函数：</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">this.config = new Proxy(
+  options as ResolvedConfig &amp; ResolvedEnvironmentOptions,
+  {
+    get: (target, prop: keyof ResolvedConfig) =&gt; {
+      if (prop === &#039;logger&#039;) {
+        return this.logger
+      }
+      if (prop in target) {
+        return this._options[prop as keyof ResolvedEnvironmentOptions]
+      }
+      return this._topLevelConfig[prop]
+    },
+  },
+)
+</code></pre></figure><p>Environment 配置不是深拷贝：环境覆盖项优先，未覆盖字段回退顶层配置，<code>logger</code> 则绑定环境
+包装器。这是“三层配置视图”的真实读路径，也意味着顶层与环境对象仍共享生命周期。</p>
+<h2 id="建议断点"><a class="heading-anchor" href="#%E5%BB%BA%E8%AE%AE%E6%96%AD%E7%82%B9" aria-label="链接到本节">#</a>建议断点</h2>
+<ol>
+<li><code>resolveEnvironmentOptions()</code>：比较 client、ssr、worker 的 consumer 和默认 dev 工厂。</li>
+<li><code>PartialEnvironment</code> Proxy 的 get trap：分别读取环境覆盖字段与顶层字段。</li>
+<li><code>DevEnvironment</code> 构造函数：比较 client WebSocket 和 server HotChannel。</li>
+<li><code>init()</code>：确认 pluginContainer 在构造后、初始化前确实不可访问。</li>
+<li><code>CrawlEndFinder.registerRequestProcessing()</code>：观察多层静态 import 怎样延长静默期。</li>
+<li><code>RunnableDevEnvironment.runner</code>：确认首次读取才创建，之后身份稳定。</li>
+<li><code>perEnvironmentState()</code>：用两个 Environment 调同一个插件 hook，观察 WeakMap 槽位。</li>
+</ol>
+<h2 id="复盘题"><a class="heading-anchor" href="#%E5%A4%8D%E7%9B%98%E9%A2%98" aria-label="链接到本节">#</a>复盘题</h2>
+<ol>
+<li>为什么 Environment 配置用 Proxy 兜底顶层配置，而不是把完整对象深拷贝一份？</li>
+<li>为什么 client 默认禁用 fetchModule，server 默认启用 Module Runner transform？</li>
+<li>如果所有 Environment 共享 moduleGraph，resolve conditions 不同时会出现什么缓存错误？</li>
+<li>为什么 WebSocketServer 由顶层 Server 关闭，自定义 HotChannel 却由 Environment 关闭？</li>
+<li>Runnable 能传递任意值却不适合边缘运行时，Fetchable 能跨运行时却失去了什么？</li>
+<li>为什么 <code>WeakMap.get()</code> 的真值判断不能表示“状态是否已初始化”？</li>
+</ol>
+</article><nav class="article-pager" aria-label="前后篇"><a class="pager-link previous" href="04-dev-server-lifecycle.html"><span class="pager-label">上一篇 · 04</span><span class="pager-title">Dev Server 生命周期</span></a><a class="pager-link next" href="06-middleware-request-pipeline.html"><span class="pager-label">下一篇 · 06</span><span class="pager-title">中间件与请求入口</span></a></nav><footer class="site-footer">Vite v8.2.1 源码阅读站 · 所有机制结论限定于 commit 421615865dad3ed39137d17281814fc78a41246c。</footer></main><aside class="page-toc" aria-label="页内目录"><h2 class="toc-title">本页目录</h2><ol class="toc-list"><li class="depth-2"><a href="#%E9%98%85%E8%AF%BB%E8%BE%B9%E7%95%8C">阅读边界</a></li><li class="depth-2"><a href="#%E6%8E%A8%E8%8D%90%E9%98%85%E8%AF%BB%E9%A1%BA%E5%BA%8F">推荐阅读顺序</a></li><li class="depth-2"><a href="#%E4%BB%8E-ssr-boolean-%E5%88%B0-environment">从 ssr: boolean 到 Environment</a></li><li class="depth-2"><a href="#%E9%85%8D%E7%BD%AE%E7%9A%84%E4%B8%89%E5%B1%82%E7%BB%93%E6%9E%84">配置的三层结构</a></li><li class="depth-3"><a href="#%E7%94%A8%E6%88%B7%E8%BE%93%E5%85%A5">用户输入</a></li><li class="depth-3"><a href="#%E5%B7%B2%E8%A7%A3%E6%9E%90%E8%A6%86%E7%9B%96%E9%A1%B9">已解析覆盖项</a></li><li class="depth-3"><a href="#environment-config-%E4%BB%A3%E7%90%86">environment.config 代理</a></li><li class="depth-2"><a href="#%E7%B1%BB%E5%B1%82%E7%BA%A7%E4%B8%8D%E6%98%AF%E8%BF%90%E8%A1%8C%E6%97%B6%E5%B1%82%E7%BA%A7">类层级不是运行时层级</a></li><li class="depth-2"><a href="#devenvironment-%E7%9A%84%E7%8B%AC%E5%8D%A0%E7%8A%B6%E6%80%81">DevEnvironment 的独占状态</a></li><li class="depth-2"><a href="#%E4%B8%89%E9%98%B6%E6%AE%B5%E7%94%9F%E5%91%BD%E5%91%A8%E6%9C%9F">三阶段生命周期</a></li><li class="depth-3"><a href="#init-%E8%A3%85%E9%85%8D-%E4%B8%8D%E5%90%AF%E5%8A%A8%E5%A4%96%E9%83%A8%E5%B7%A5%E4%BD%9C">init()：装配，不启动外部工作</a></li><li class="depth-3"><a href="#listen-%E5%90%AF%E5%8A%A8%E4%B8%8E%E9%A2%84%E7%83%AD">listen()：启动与预热</a></li><li class="depth-3"><a href="#close-%E7%AD%89%E5%BE%85%E8%80%8C%E4%B8%8D%E6%98%AF%E5%8F%AA%E5%8F%91%E5%87%BA%E5%81%9C%E6%AD%A2%E4%BF%A1%E5%8F%B7">close()：等待而不是只发出停止信号</a></li><li class="depth-2"><a href="#transform-warmup-%E4%B8%8E%E9%A6%96%E8%BD%AE%E7%88%AC%E5%8F%96">transform、warmup 与首轮爬取</a></li><li class="depth-2"><a href="#%E8%BF%90%E8%A1%8C%E6%97%B6%E9%80%9A%E4%BF%A1%E7%9A%84%E4%B8%89%E4%B8%AA%E7%BA%A7%E5%88%AB">运行时通信的三个级别</a></li><li class="depth-3"><a href="#%E5%8E%9F%E5%A7%8B-devenvironment">原始 DevEnvironment</a></li><li class="depth-3"><a href="#runnabledevenvironment">RunnableDevEnvironment</a></li><li class="depth-3"><a href="#fetchabledevenvironment">FetchableDevEnvironment</a></li><li class="depth-2"><a href="#%E6%8F%92%E4%BB%B6%E7%8A%B6%E6%80%81%E6%80%8E%E6%A0%B7%E6%8C%89-environment-%E9%9A%94%E7%A6%BB">插件状态怎样按 Environment 隔离</a></li><li class="depth-2"><a href="#%E7%94%A8%E4%BE%8B%E6%80%8E%E6%A0%B7%E8%AF%81%E6%98%8E%E9%9A%94%E7%A6%BB">用例怎样证明隔离</a></li><li class="depth-2"><a href="#%E5%85%B3%E9%94%AE%E6%BA%90%E7%A0%81%E8%AF%81%E6%8D%AE">关键源码证据</a></li><li class="depth-2"><a href="#%E5%BB%BA%E8%AE%AE%E6%96%AD%E7%82%B9">建议断点</a></li><li class="depth-2"><a href="#%E5%A4%8D%E7%9B%98%E9%A2%98">复盘题</a></li></ol></aside></div><script>;(function () {
+  'use strict'
+
+  var root = document.documentElement
+  var body = document.body
+  var themeButton = document.querySelector('[data-theme-toggle]')
+  var navButton = document.querySelector('[data-nav-toggle]')
+  var progress = document.querySelector('[data-reading-progress]')
+
+  function setTheme(theme) {
+    root.setAttribute('data-theme', theme)
+    if (themeButton) {
+      themeButton.setAttribute(
+        'aria-label',
+        theme === 'dark' ? '切换到浅色模式' : '切换到深色模式',
+      )
+      themeButton.textContent = theme === 'dark' ? '☀' : '◐'
+    }
+  }
+
+  var savedTheme
+  try {
+    savedTheme = localStorage.getItem('vite-guide-theme')
+  } catch (_) {
+    savedTheme = null
+  }
+  setTheme(
+    savedTheme ||
+      (window.matchMedia('(prefers-color-scheme: dark)').matches
+        ? 'dark'
+        : 'light'),
+  )
+
+  if (themeButton) {
+    themeButton.addEventListener('click', function () {
+      var next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark'
+      setTheme(next)
+      try {
+        localStorage.setItem('vite-guide-theme', next)
+      } catch (_) {
+        // file:// 或隐私模式下 localStorage 可能不可用；主题仍对当前页面生效。
+      }
+    })
+  }
+
+  function closeNavigation() {
+    body.classList.remove('nav-open')
+    if (navButton) navButton.setAttribute('aria-expanded', 'false')
+  }
+
+  if (navButton) {
+    navButton.addEventListener('click', function () {
+      var open = body.classList.toggle('nav-open')
+      navButton.setAttribute('aria-expanded', String(open))
+    })
+  }
+
+  document.addEventListener('keydown', function (event) {
+    if (event.key === 'Escape') closeNavigation()
+  })
+
+  document.querySelectorAll('.site-nav a').forEach(function (link) {
+    link.addEventListener('click', closeNavigation)
+  })
+
+  function updateProgress() {
+    if (!progress) return
+    var scrollable = document.documentElement.scrollHeight - window.innerHeight
+    var ratio = scrollable > 0 ? window.scrollY / scrollable : 0
+    progress.style.width = Math.min(100, Math.max(0, ratio * 100)) + '%'
+  }
+
+  updateProgress()
+  window.addEventListener('scroll', updateProgress, { passive: true })
+  window.addEventListener('resize', updateProgress)
+
+  document.querySelectorAll('.copy-code').forEach(function (button) {
+    button.addEventListener('click', async function () {
+      var code = button.closest('.code-card').querySelector('code')
+      var value = code ? code.textContent : ''
+      var copied = false
+
+      if (navigator.clipboard && window.isSecureContext) {
+        try {
+          await navigator.clipboard.writeText(value)
+          copied = true
+        } catch (_) {
+          copied = false
+        }
+      }
+
+      if (!copied) {
+        var input = document.createElement('textarea')
+        input.value = value
+        input.setAttribute('readonly', '')
+        input.style.position = 'fixed'
+        input.style.opacity = '0'
+        document.body.appendChild(input)
+        input.select()
+        copied = document.execCommand('copy')
+        input.remove()
+      }
+
+      var previous = button.textContent
+      button.textContent = copied ? '已复制' : '复制失败'
+      window.setTimeout(function () {
+        button.textContent = previous
+      }, 1200)
+    })
+  })
+
+  var tocLinks = Array.from(document.querySelectorAll('.toc-list a'))
+  var tocById = new Map(
+    tocLinks.map(function (link) {
+      return [decodeURIComponent(link.hash.slice(1)), link]
+    }),
+  )
+  var headings = Array.from(
+    document.querySelectorAll('.prose h2[id], .prose h3[id]'),
+  )
+
+  if ('IntersectionObserver' in window && headings.length > 0) {
+    var observer = new IntersectionObserver(
+      function (entries) {
+        entries.forEach(function (entry) {
+          if (!entry.isIntersecting) return
+          tocLinks.forEach(function (link) {
+            link.classList.remove('is-active')
+          })
+          var active = tocById.get(entry.target.id)
+          if (active) active.classList.add('is-active')
+        })
+      },
+      { rootMargin: '-18% 0px -72% 0px' },
+    )
+    headings.forEach(function (heading) {
+      observer.observe(heading)
+    })
+  }
+})()
+</script></body></html>

@@ -1,0 +1,1402 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="auto">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Vue compiler-ssr 源码详解：两遍转换、字符串输出、组件插槽、属性安全与 hydration 边界"
+    />
+    <title>compiler-ssr 详解 · Vue Compiler 指南</title>
+    <link rel="stylesheet" href="assets/styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#content">跳到正文</a>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <a class="brand" href="index.html"
+          ><span class="brand-mark">VC</span><span>Vue Compiler Guide</span></a
+        >
+        <nav class="global-nav" aria-label="全站导航">
+          <a href="index.html">总览</a><a href="core.html">compiler-core</a
+          ><a href="dom.html">compiler-dom</a><a href="sfc.html">compiler-sfc</a
+          ><a href="ssr.html" aria-current="page">compiler-ssr</a
+          ><a href="integration.html">端到端串联</a
+          ><a href="evolution.html">演进与设计</a
+          ><a href="lab.html">实验与术语</a>
+        </nav>
+        <button
+          class="menu-button"
+          data-menu-toggle
+          type="button"
+          aria-expanded="false"
+        >
+          目录</button
+        ><button class="theme-button" data-theme-toggle type="button">
+          自动
+        </button>
+      </div>
+    </header>
+
+    <div class="page-shell">
+      <aside class="rail" aria-label="本页目录">
+        <p class="rail-title">compiler-ssr</p>
+        <nav>
+          <a href="#content">模块定位</a><a href="#entry">入口与选项</a
+          ><a href="#two-pass">两遍转换</a><a href="#buffer">字符串缓冲</a
+          ><a href="#elements">元素与属性</a><a href="#components">组件与插槽</a
+          ><a href="#control">控制流</a><a href="#injection">属性注入</a
+          ><a href="#builtins">内置组件</a
+          ><a href="#hydration">Hydration 契约</a><a href="#tests">测试地图</a>
+        </nav>
+        <p class="rail-note">核心入口<br />src/index.ts<br />compile()</p>
+      </aside>
+
+      <main id="content">
+        <div class="hero compact">
+          <p class="eyebrow">Module 04 · Server Rendering Target</p>
+          <h1>compiler-ssr</h1>
+          <p class="lead">
+            服务端不需要创建可持续 patch 的 VNode 树，而要高效、安全地输出 HTML
+            字符串。但它仍必须与客户端保持组件、slot、scopeId 和 hydration
+            节点边界一致。
+          </p>
+          <div class="hero-meta">
+            <span>入口：compile()</span><span>目标：ssrRender + _push</span
+            ><span>关键结构：两遍转换</span>
+          </div>
+        </div>
+
+        <div class="reading-contract">
+          <strong>从“创建 VNode”切换到“生成 HTML 程序”</strong>
+          <p>
+            本页嵌入 SSR 入口、两遍转换、字符串缓冲、安全属性、组件插槽与
+            v-if/v-for 的真实源码。每个 hydration
+            注释都会说明它在客户端对齐了什么，不将它们当成普通输出细节；范围只到
+            “编译器生成何种边界”，客户端如何接管与处理 mismatch 属于
+            runtime-core。
+          </p>
+        </div>
+
+        <section id="entry">
+          <div class="section-head">
+            <div>
+              <span class="section-no">01 / Entry</span>
+              <h2>SSR 先重设编译目标</h2>
+            </div>
+            <p>
+              compile() 复用 DOM parserOptions，但强制设置
+              ssr/inSSR、prefixIdentifiers，并关闭客户端专属优化。
+            </p>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>选项</th>
+                  <th>SSR 设置</th>
+                  <th>原因</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>ssr / inSSR</td>
+                  <td>true</td>
+                  <td>让共享转换知道当前目标，选择 SSR helper 与语义。</td>
+                </tr>
+                <tr>
+                  <td>prefixIdentifiers</td>
+                  <td>true</td>
+                  <td>服务端函数不使用 with，所有上下文访问必须明确。</td>
+                </tr>
+                <tr>
+                  <td>cacheHandlers</td>
+                  <td>false</td>
+                  <td>每次 SSR 只生成一次字符串，客户端实例缓存没有收益。</td>
+                </tr>
+                <tr>
+                  <td>hoistStatic</td>
+                  <td>false</td>
+                  <td>客户端 VNode 提升不适用于服务端字符串流。</td>
+                </tr>
+                <tr>
+                  <td>scopeId</td>
+                  <td>function mode 下置空</td>
+                  <td>scopeId 注入依赖 module 产物与上层协作。</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <figure class="source-block">
+            <figcaption class="source-caption">
+              <span
+                ><strong>真实源码</strong
+                ><code
+                  >packages/compiler-ssr/src/index.ts · compile()</code
+                ></span
+              >
+              <span class="source-version">Vue 3.5.41</span>
+            </figcaption>
+            <pre><code>export function compile(source, options: CompilerOptions = {}): CodegenResult {
+  options = {
+    ...options,
+    ...parserOptions,
+    ssr: true,
+    inSSR: true,
+    scopeId: options.mode === 'function' ? null : options.scopeId,
+    prefixIdentifiers: true,
+    cacheHandlers: false,
+    hoistStatic: false,
+  }
+
+  const ast = typeof source === 'string'
+    ? baseParse(source, options)
+    : source
+  rawOptionsMap.set(ast, options)
+
+  transform(ast, {
+    ...options,
+    nodeTransforms: [
+      transformVBindShorthand,
+      ssrTransformIf,
+      ssrTransformFor,
+      trackVForSlotScopes,
+      transformExpression,
+      ssrTransformSlotOutlet,
+      ssrInjectFallthroughAttrs,
+      ssrInjectCssVars,
+      ssrTransformElement,
+      ssrTransformComponent,
+      trackSlotScopes,
+      transformStyle,
+      ...(options.nodeTransforms || []),
+    ],
+    directiveTransforms: {
+      bind: transformBind,
+      on: transformOn,
+      model: ssrTransformModel,
+      show: ssrTransformShow,
+      cloak: noopDirectiveTransform,
+      once: noopDirectiveTransform,
+      memo: noopDirectiveTransform,
+      ...(options.directiveTransforms || {}),
+    },
+  })
+
+  ssrCodegenTransform(ast, options)
+  return generate(ast, options)
+}</code></pre>
+          </figure>
+          <div class="code-walkthrough">
+            <article class="code-note">
+              <h3>parserOptions 仍来自 DOM 平台</h3>
+              <p>
+                服务端也必须按浏览器的 HTML/SVG/MathML 规则建树，否则生成 HTML
+                被浏览器重新解析后的 DOM 形状会与客户端 AST 不同，hydration
+                必然失配。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>共享表达式和作用域，替换输出转换</h3>
+              <p>
+                v-for/v-slot 局部变量追踪与 <code>_ctx.</code> 前缀仍复用 core；
+                element/component/model/show 则改为 SSR 专用实现，因为目标是
+                HTML 片段而非可 patch VNode。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>v-on 仍要经过通用 props 构造</h3>
+              <p>
+                原生 DOM 事件在服务端不会注册，但组件的 <code>onXxx</code>
+                可能是 emits listener，必须作为 props
+                传给子组件。后续元素/组件转换再分别取舍。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>rawOptionsMap 服务插槽 fallback</h3>
+              <p>
+                SSR slot 有时被普通 render function 消费，没有
+                <code>_push</code>，必须返回 VNode。WeakMap
+                保存原编译选项，方便对该 slot 子树重建一条 core+DOM
+                客户端转换管线。
+              </p>
+            </article>
+          </div>
+          <div class="callout">
+            <strong>复用的边界：</strong>HTML/SVG/MathML parser、v-bind/v-on
+            props 构造、表达式前缀和作用域追踪可以共享；VNode patch 优化、DOM
+            事件和客户端 block tree 不能照搬。
+          </div>
+          <a class="source-link" href="../../../vue/packages/compiler-ssr/src/index.ts"
+            >packages/compiler-ssr/src/index.ts</a
+          >
+        </section>
+
+        <section id="two-pass">
+          <div class="section-head">
+            <div>
+              <span class="section-no">02 / Architecture</span>
+              <h2>为什么 SSR 需要两遍转换</h2>
+            </div>
+            <p>
+              第一遍收集完整模板语义和 SSR 元数据；第二遍才把树变成线性 JS
+              控制流与字符串输出。
+            </p>
+          </div>
+          <div class="diagram" aria-label="SSR 两遍编译流程">
+            <p class="diagram-title">compiler-ssr compile()</p>
+            <div class="flow">
+              <div class="flow-node">
+                <strong>baseParse</strong><small>DOM parserOptions</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node blue">
+                <strong>第一遍 transform</strong
+                ><small>if/for/scope/element/component</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node primary">
+                <strong>ssrCodegenTransform</strong
+                ><small>模板 AST → SSR JS AST</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node">
+                <strong>generate</strong><small>打印 ssrRender</small>
+              </div>
+            </div>
+          </div>
+          <figure class="source-block">
+            <figcaption class="source-caption">
+              <span
+                ><strong>真实源码</strong
+                ><code
+                  >src/ssrCodegenTransform.ts · ssrCodegenTransform()</code
+                ></span
+              >
+              <span class="source-version">Vue 3.5.41</span>
+            </figcaption>
+            <pre><code>export function ssrCodegenTransform(ast: RootNode, options): void {
+  const context = createSSRTransformContext(ast, options)
+
+  if (options.ssrCssVars) {
+    const cssContext = createTransformContext(createRoot([]), options)
+    const varsExp = processExpression(
+      createSimpleExpression(options.ssrCssVars, false),
+      cssContext,
+    )
+    context.body.push(
+      createCompoundExpression([`const _cssVars = { style: `, varsExp, `}`]),
+    )
+    Array.from(cssContext.helpers.keys()).forEach(helper =&gt; {
+      ast.helpers.add(helper)
+    })
+  }
+
+  const isFragment =
+    ast.children.length &gt; 1 &amp;&amp; ast.children.some(c =&gt; !isText(c))
+  processChildren(ast, context, isFragment)
+  ast.codegenNode = createBlockStatement(context.body)
+
+  ast.ssrHelpers = Array.from(new Set([
+    ...Array.from(ast.helpers).filter(h =&gt; h in ssrHelpers),
+    ...context.helpers,
+  ]))
+  ast.helpers = new Set(
+    Array.from(ast.helpers).filter(h =&gt; !(h in ssrHelpers)),
+  )
+}</code></pre>
+          </figure>
+          <div class="code-walkthrough">
+            <article class="code-note">
+              <h3>第一遍不会设置最终根 codegenNode</h3>
+              <p>
+                core transform 完成结构归一、作用域和 SSR 元数据；第二遍新建
+                BlockStatement 并一次替换 root.codegenNode。因此 core generate
+                只需新增打印这些 JS 语句节点的能力。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>CSS vars 每次 SSR 只求值一次</h3>
+              <p>
+                先建立
+                <code>const _cssVars = { style: ... }</code
+                >，各个可注入根和条件分支都复用。
+                这既减少重复响应式读取，也防止同次 render
+                中不同分支读到不一致值。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>多根只在真正需要时加 Fragment</h3>
+              <p>
+                多个纯文本 child 可以直接合并成字符串，没有节点范围歧义。
+                只有多根且含非文本节点时，才需要
+                <code>&lt;!--[--&gt;</code>/<code>&lt;!--]--&gt;</code> 边界。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>SSR helper 与 Vue helper 分开导入</h3>
+              <p>
+                <code>ssrInterpolate/ssrRenderAttrs</code> 来自
+                <code>@vue/server-renderer</code>，
+                <code>resolveComponent/mergeProps</code> 等仍来自 Vue。转换后按
+                helper symbol 分流，代码生成器才能打印两个正确序言。
+              </p>
+            </article>
+          </div>
+          <div class="grid-2">
+            <article class="card blue">
+              <h3>第一遍：分析与登记</h3>
+              <ul>
+                <li>结构指令建立 IfNode/ForNode。</li>
+                <li>表达式添加显式上下文前缀。</li>
+                <li>元素转换准备开标签与 props 元数据。</li>
+                <li>组件转换准备 props、slots 与 fallback。</li>
+                <li>
+                  attrs/CSS vars 找到目标根；scopeId 登记到元素与 slot 输出。
+                </li>
+              </ul>
+            </article>
+            <article class="card violet">
+              <h3>第二遍：形成输出程序</h3>
+              <ul>
+                <li>连续文本合并成 TemplateLiteral。</li>
+                <li>元素调用 ssrProcessElement。</li>
+                <li>If/For 变成 JS IfStatement / renderList。</li>
+                <li>内置组件生成专用 SSR helper。</li>
+                <li>最终替换 RootNode.codegenNode。</li>
+              </ul>
+            </article>
+          </div>
+          <div class="callout warn">
+            <strong>分成两遍的价值：</strong
+            >如果第一遍边遍历边输出，父元素还不知道后代 slot/fragment
+            情况，attrs 注入和 hydration 边界也难统一；若完全另写
+            parser/作用域，又会复制 core 的复杂语义。
+          </div>
+          <a
+            class="source-link"
+            href="../../../vue/packages/compiler-ssr/src/ssrCodegenTransform.ts"
+            >src/ssrCodegenTransform.ts</a
+          >
+        </section>
+
+        <section id="buffer">
+          <div class="section-head">
+            <div>
+              <span class="section-no">03 / Output Buffer</span>
+              <h2>连续字符串尽量一次 _push</h2>
+            </div>
+            <p>
+              SSRTransformContext 维护 body 和当前 string
+              buffer。静态文本、标签片段与动态表达式可共同组成 TemplateLiteral。
+            </p>
+          </div>
+          <div class="grid-2">
+            <article class="card green">
+              <h3>可合并片段</h3>
+              <pre><code>&lt;div class="box"&gt;hello {{ name }}&lt;/div&gt;
+
+_push(&#96;&lt;div class="box"&gt;hello &#36;{
+  ssrInterpolate(_ctx.name)
+}&lt;/div&gt;&#96;)</code></pre>
+              <p>示意：静态片段与已安全处理的动态表达式进入同一模板字面量。</p>
+            </article>
+            <article class="card">
+              <h3>必须断开缓冲</h3>
+              <ul>
+                <li>if/for 等 JS statement。</li>
+                <li>组件 render 调用。</li>
+                <li>Teleport/Suspense 的独立内容函数。</li>
+                <li>slot fallback 函数。</li>
+                <li>需要单独控制 _push 的分支。</li>
+              </ul>
+            </article>
+          </div>
+          <figure class="source-block">
+            <figcaption class="source-caption">
+              <span
+                ><strong>真实源码</strong
+                ><code
+                  >ssrCodegenTransform.ts · createSSRTransformContext()</code
+                ></span
+              >
+              <span class="source-version">Vue 3.5.41</span>
+            </figcaption>
+            <pre><code>function createSSRTransformContext(root, options, helpers = new Set()) {
+  const body: BlockStatement['body'] = []
+  let currentString: TemplateLiteral | null = null
+
+  return {
+    root, options, body, helpers,
+    helper(name) {
+      helpers.add(name)
+      return name
+    },
+    pushStringPart(part) {
+      if (!currentString) {
+        const currentCall = createCallExpression(`_push`)
+        body.push(currentCall)
+        currentString = createTemplateLiteral([])
+        currentCall.arguments.push(currentString)
+      }
+      const elements = currentString.elements
+      const lastItem = elements[elements.length - 1]
+      if (isString(part) &amp;&amp; isString(lastItem)) {
+        elements[elements.length - 1] += part
+      } else {
+        elements.push(part)
+      }
+    },
+    pushStatement(statement) {
+      currentString = null
+      body.push(statement)
+    },
+  }
+}</code></pre>
+          </figure>
+          <div class="code-walkthrough">
+            <article class="code-note">
+              <h3>第一个字符串片段才创建 _push</h3>
+              <p>
+                空分支或只含组件调用的子树不会生成空模板字面量。延迟创建让 body
+                中每个 _push 都有真实内容。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>相邻静态字符串原地合并</h3>
+              <p>
+                开标签、静态文本、关标签可来自三个 transform
+                调用，但最终只占一个 TemplateLiteral
+                字符串元素。动态表达式只作为中间的 expression 插槽。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>控制流不能嵌入字符串</h3>
+              <p>
+                IfStatement、ssrRenderComponent 等是独立 JS 语句。pushStatement
+                清空 currentString，下一个文本片段会开启新
+                _push，保证语句顺序与模板顺序一致。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>子上下文共享 helper，不共享 body</h3>
+              <p>
+                v-if 分支和 slot 函数需自己的 BlockStatement，但里面用到的 SSR
+                helpers 必须在根统一导入。createChildContext 因此重建
+                buffer/body，却传入同一个 helpers Set。
+              </p>
+            </article>
+          </div>
+          <p class="prose">
+            <code>pushStringPart()</code> 向当前 buffer
+            追加字符串或表达式；<code>pushStatement()</code> 在写控制流前先结算
+            buffer。各 transform 因而不必自行处理字符串拼接边界。
+          </p>
+        </section>
+
+        <section id="elements">
+          <div class="section-head">
+            <div>
+              <span class="section-no">04 / Elements</span>
+              <h2>原生元素：安全输出属性与内容</h2>
+            </div>
+            <p>
+              ssrTransformElement 第一遍准备标签与 props，ssrProcessElement
+              第二遍输出开始标签、children 与结束标签。
+            </p>
+          </div>
+          <div class="diagram" aria-label="SSR 元素处理">
+            <p class="diagram-title">ssrTransformElement → ssrProcessElement</p>
+            <div class="flow">
+              <div class="flow-node">
+                <strong>静态标签</strong><small>直接写 &lt;div</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node">
+                <strong>buildSSRProps</strong
+                ><small>class/style/boolean/dynamic</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node primary">
+                <strong>process children</strong
+                ><small>文本 / 插值 / 结构</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node">
+                <strong>结束标签</strong><small>void tag 例外</small>
+              </div>
+            </div>
+          </div>
+          <figure class="source-block">
+            <figcaption class="source-caption">
+              <span
+                ><strong>真实源码 · 两段聚焦摘录</strong
+                ><code
+                  >transforms/ssrTransformElement.ts · 开标签构造</code
+                ></span
+              >
+              <span class="source-version">Vue 3.5.41</span>
+            </figcaption>
+            <pre><code>// 摘录 A：决定逐项输出，还是先合并全部 props。
+export const ssrTransformElement: NodeTransform = (node, context) =&gt; {
+  if (
+    node.type !== NodeTypes.ELEMENT ||
+    node.tagType !== ElementTypes.ELEMENT
+  ) {
+    return
+  }
+
+  return function ssrPostTransformElement() {
+    const openTag: TemplateLiteral['elements'] = [`&lt;${node.tag}`]
+    const needTagForRuntime =
+      node.tag === 'textarea' || node.tag.indexOf('-') &gt; 0
+    const hasDynamicVBind = hasDynamicKeyVBind(node)
+    const hasCustomDir = node.props.some(
+      p =&gt; p.type === NodeTypes.DIRECTIVE &amp;&amp; !isBuiltInDirective(p.name),
+    )
+
+    const vShowPropIndex = node.props.findIndex(
+      i =&gt; i.type === NodeTypes.DIRECTIVE &amp;&amp; i.name === 'show',
+    )
+    if (vShowPropIndex !== -1) {
+      const vShowProp = node.props[vShowPropIndex]
+      node.props.splice(vShowPropIndex, 1)
+      node.props.push(vShowProp)
+    }
+
+    const needMergeProps = hasDynamicVBind || hasCustomDir
+    if (needMergeProps) {
+      const { props, directives } = buildProps(
+        node,
+        context,
+        node.props,
+        false /* isComponent */,
+        false /* isDynamicComponent */,
+        true /* ssr */,
+      )
+      if (props || directives.length) {
+        const mergedProps = buildSSRProps(props, directives, context)
+        const propsExp = createCallExpression(
+          context.helper(SSR_RENDER_ATTRS),
+          [mergedProps],
+        )
+        // ……省略 textarea/input/自定义指令的内容覆盖处理。
+        if (needTagForRuntime) {
+          propsExp.arguments.push(`"${node.tag}"`)
+        }
+        openTag.push(propsExp)
+      }
+    }
+
+    // ……省略 class/style/boolean 属性分支。
+    // 摘录 B：位于 directive transform 返回 props 的循环中。
+    if (isSSRSafeAttrName(attrName)) {
+      openTag.push(
+        createCallExpression(context.helper(SSR_RENDER_ATTR), [
+          key,
+          value,
+        ]),
+      )
+    } else {
+      context.onError(
+        createSSRCompilerError(
+            SSRErrorCodes.X_SSR_UNSAFE_ATTR_NAME,
+            key.loc,
+          ),
+        )
+    }
+
+    // ……其余属性处理结束后：
+    node.ssrCodegenNode = createTemplateLiteral(openTag)
+  }
+}</code></pre>
+          </figure>
+          <p class="source-context">
+            两段可执行语句均保持当前源码原样；“……”只裁掉与当前主题无关的完整分支。
+            摘录 B 在真实函数中位于指令转换结果的循环内，因此
+            <code>attrName</code>、<code>key</code>、<code>value</code>
+            已由上文建立，并不是凭空出现的变量。
+          </p>
+          <div class="code-walkthrough">
+            <article class="code-note">
+              <h3>为什么无参 v-bind 必须整体合并</h3>
+              <p>
+                <code>&lt;div id="a" v-bind="obj"&gt;</code> 中 obj.id
+                按源码顺序应覆盖静态 id。如果开标签已提前写出
+                <code>id="a"</code>，后面再追加会产生重复属性。回退 mergeProps
+                才能保留覆盖规则。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>自定义指令也可以贡献 props</h3>
+              <p>
+                指令的 <code>getSSRProps</code> 可返回 class/style/textContent
+                等任意属性。这些值与用户显式 props
+                的优先级只能在合并对象后统一确定。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>属性名与属性值是两道安全门</h3>
+              <p>
+                SSR_RENDER_ATTR 负责转义值；在调用它之前，isSSRSafeAttrName
+                先防止名称携带空格、引号或
+                <code>&gt;</code> 突破开标签结构。只做值转义不能防动态键注入。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>Boolean 属性不能输出 false</h3>
+              <p>
+                <code>disabled="false"</code> 在 HTML 中仍表示 disabled
+                存在。因此它们使用
+                ssrIncludeBooleanAttr：值为真时输出空格加属性名，值为假时什么都不输出。
+              </p>
+            </article>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>属性类型</th>
+                  <th>输出策略</th>
+                  <th>安全/正确性原因</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>静态普通属性</td>
+                  <td>编译期转义后直接拼入字符串</td>
+                  <td>零运行时 helper，且固定输出。</td>
+                </tr>
+                <tr>
+                  <td>动态普通属性</td>
+                  <td>ssrRenderAttr / ssrRenderDynamicAttr</td>
+                  <td>值转义，动态名称还要校验安全。</td>
+                </tr>
+                <tr>
+                  <td>Boolean 属性</td>
+                  <td>includeBooleanAttr 决定是否输出名称</td>
+                  <td>不能简单输出 true/false 字符串。</td>
+                </tr>
+                <tr>
+                  <td>class / style</td>
+                  <td>ssrRenderClass / ssrRenderStyle</td>
+                  <td>支持数组、对象和规范化语义。</td>
+                </tr>
+                <tr>
+                  <td>无参数 v-bind</td>
+                  <td>mergeProps + ssrRenderAttrs</td>
+                  <td>可能覆盖静态属性，必须保留合并顺序。</td>
+                </tr>
+                <tr>
+                  <td>自定义指令</td>
+                  <td>ssrGetDirectiveProps 后合并</td>
+                  <td>指令可能贡献任意 SSR props。</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="callout warn">
+            <strong>动态属性名是安全边界：</strong>SSR 直接生成
+            HTML，恶意名称可能突破标签结构。编译器/运行时必须拒绝不安全名称；这与客户端
+            setAttribute 的风险模型不同。
+          </div>
+          <div class="grid-3">
+            <article class="card">
+              <h3>v-html / innerHTML</h3>
+              <p>
+                内容被视为已准备的 HTML并覆盖 children；调用者承担内容可信责任。
+              </p>
+            </article>
+            <article class="card">
+              <h3>v-text / textContent</h3>
+              <p>动态文本必须 HTML 转义，避免字符被解释成标签。</p>
+            </article>
+            <article class="card">
+              <h3>textarea / pre</h3>
+              <p>初始换行与文本解析特殊，输出必须匹配 hydration 后的 DOM。</p>
+            </article>
+          </div>
+          <a
+            class="source-link"
+            href="../../../vue/packages/compiler-ssr/src/transforms/ssrTransformElement.ts"
+            >transforms/ssrTransformElement.ts</a
+          >
+        </section>
+
+        <section id="components">
+          <div class="section-head">
+            <div>
+              <span class="section-no">05 / Components</span>
+              <h2>组件与 slot 有两条输出路径</h2>
+            </div>
+            <p>
+              SSR slot 直接向 _push 写 HTML；某些调用场景没有
+              _push，需要回退为普通 VNode slot。
+            </p>
+          </div>
+          <div class="branch">
+            <div class="flow-node primary">
+              <strong>组件 children</strong><small>同一份模板 slot 语义</small>
+            </div>
+            <div class="branch-lines">↗<br />↘</div>
+            <div class="branch-targets">
+              <div class="branch-target">
+                <strong>SSR slot</strong>
+                <p>函数接收 _push、_parent、scopeId，直接输出字符串。</p>
+              </div>
+              <div class="branch-target">
+                <strong>VNode fallback</strong>
+                <p>复用 core + DOM transforms 生成普通 slot VNode。</p>
+              </div>
+            </div>
+          </div>
+          <figure class="source-block">
+            <figcaption class="source-caption">
+              <span
+                ><strong>真实源码</strong
+                ><code
+                  >transforms/ssrTransformComponent.ts · slot 双分支</code
+                ></span
+              >
+              <span class="source-version">Vue 3.5.41</span>
+            </figcaption>
+            <pre><code>const wipMap = new WeakMap&lt;ComponentNode, WIPSlotEntry[]&gt;()
+
+// 第一遍：创建 slot 函数外壳，实际 body 稍后填充。
+const buildSSRSlotFn: SlotFnBuilder = (props, _vForExp, children, loc) =&gt; {
+  const param0 = (props &amp;&amp; stringifyExpression(props)) || `_`
+  const fn = createFunctionExpression(
+    [param0, `_push`, `_parent`, `_scopeId`],
+    undefined,
+    true,
+    true,
+    loc,
+  )
+  wipEntries.push({
+    type: WIP_SLOT,
+    fn,
+    children,
+    vnodeBranch: vnodeBranches[wipEntries.length],
+  })
+  return fn
+}
+
+// 第二遍：同一个 slot 同时服务 SSR 和普通 VNode 消费方。
+const wipEntries = wipMap.get(node) || []
+for (let i = 0; i &lt; wipEntries.length; i++) {
+  const { fn, vnodeBranch } = wipEntries[i]
+  fn.body = createIfStatement(
+    createSimpleExpression(`_push`, false),
+    processChildrenAsStatement(
+      wipEntries[i],
+      context,
+      false,
+      true /* withSlotScopeId */,
+    ),
+    vnodeBranch,
+  )
+}</code></pre>
+          </figure>
+          <p class="source-context">
+            上方将原函数的两个相隔阶段并列展示：第一遍保存
+            WIPSlotEntry，第二遍在 <code>ssrProcessComponent()</code> 中补
+            body。
+          </p>
+          <div class="code-walkthrough">
+            <article class="code-note">
+              <h3>为什么 slot 第一遍不能完成</h3>
+              <p>
+                buildSlots 必须在 core context 还持有 v-for/v-slot
+                作用域时识别插槽； 但 SSR body
+                需要第二遍的字符串缓冲与控制流上下文。WIP 结构是两遍之间的桥。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>_push 是调用协议的判别位</h3>
+              <p>
+                server-renderer 调 slot 时传入 _push，函数直接输出 HTML； 普通
+                render function 调 slot 时不传该参数，就走 alternate 并返回
+                VNode 数组。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>VNode fallback 不能复用 SSR 已改写子树</h3>
+              <p>
+                第一遍会 clone slot children，再用 core+DOM transforms 建立
+                fallback。否则 SSR
+                元素转换已在原树上挂载专用元数据，同一节点再经客户端转换会互相污染。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>WeakMap 不延长 AST 生命周期</h3>
+              <p>
+                中间信息以 ComponentNode 为 key。一次编译完成后若 AST
+                不再被引用，wip 条目也可被回收，不会因模块级表而累积每个 SFC
+                的插槽树。
+              </p>
+            </article>
+          </div>
+          <div class="callout warn">
+            <strong>#5352 的具体场景：</strong>当 slot 根是透明
+            Transition，且内部 v-if 当前为 false 时，slot 的有效输出可能只剩
+            hydration 注释。<code>ssrRenderSlot</code> 曾将这判为“空 slot”而误走
+            fallback。当前实现会先 <code>_push(``)</code>：不改变
+            HTML，但明确标记 SSR 分支已执行，保留正确的 slot/Fragment 边界。
+          </div>
+          <div class="grid-3" style="margin-top: 1.3rem">
+            <article class="card">
+              <h3>静态组件</h3>
+              <p>
+                resolveComponent 后调用 ssrRenderComponent，传入 props、slots 与
+                parent。
+              </p>
+            </article>
+            <article class="card">
+              <h3>动态组件</h3>
+              <p>运行时可能得到字符串标签或组件，输出路径需要分派。</p>
+            </article>
+            <article class="card">
+              <h3>rawOptionsMap</h3>
+              <p>
+                保存 RootNode 原始选项，构造 slot VNode fallback
+                时复用同一平台配置。
+              </p>
+            </article>
+          </div>
+          <a
+            class="source-link"
+            href="../../../vue/packages/compiler-ssr/src/transforms/ssrTransformComponent.ts"
+            >transforms/ssrTransformComponent.ts</a
+          >
+        </section>
+
+        <section id="control">
+          <div class="section-head">
+            <div>
+              <span class="section-no">06 / Control Flow</span>
+              <h2>v-if 与 v-for 生成真实 JS 控制流</h2>
+            </div>
+            <p>
+              客户端生成条件 VNode/Fragment；SSR 直接生成 if statement 与
+              ssrRenderList 回调。
+            </p>
+          </div>
+          <div class="grid-2">
+            <article class="card blue">
+              <h3>v-if</h3>
+              <pre><code>if (_ctx.ok) {
+  _push(&#96;&lt;div&gt;yes&lt;/div&gt;&#96;)
+} else {
+  _push(&#96;&lt;!----&gt;&#96;)
+}</code></pre>
+              <p>无 else 的空注释是 hydration 占位；特殊父上下文可禁用。</p>
+            </article>
+            <article class="card violet">
+              <h3>v-for</h3>
+              <pre><code>_push(&#96;&lt;!--[--&gt;&#96;)
+_ssrRenderList(_ctx.items, (item, key, index) =&gt; {
+  _push(&#96;&lt;li&gt;...&lt;/li&gt;&#96;)
+})
+_push(&#96;&lt;!--]--&gt;&#96;)</code></pre>
+              <p>多节点循环需要 Fragment 边界，帮助客户端对齐列表范围。</p>
+            </article>
+          </div>
+          <figure class="source-block">
+            <figcaption class="source-caption">
+              <span
+                ><strong>真实源码 · 两个完整主流程</strong
+                ><code>transforms/ssrVIf.ts + ssrVFor.ts</code></span
+              >
+              <span class="source-version">Vue 3.5.41</span>
+            </figcaption>
+            <pre><code>export function ssrProcessIf(
+  node: IfNode,
+  context: SSRTransformContext,
+  disableNestedFragments = false,
+  disableComment = false,
+): void {
+  const [rootBranch] = node.branches
+  const ifStatement = createIfStatement(
+    rootBranch.condition!,
+    processIfBranch(rootBranch, context, disableNestedFragments),
+  )
+  context.pushStatement(ifStatement)
+
+  let currentIf = ifStatement
+  for (let i = 1; i &lt; node.branches.length; i++) {
+    const branch = node.branches[i]
+    const branchBlockStatement = processIfBranch(
+      branch,
+      context,
+      disableNestedFragments,
+    )
+    if (branch.condition) {
+      currentIf = currentIf.alternate = createIfStatement(
+        branch.condition,
+        branchBlockStatement,
+      )
+    } else {
+      currentIf.alternate = branchBlockStatement
+    }
+  }
+
+  if (!currentIf.alternate &amp;&amp; !disableComment) {
+    currentIf.alternate = createBlockStatement([
+      createCallExpression(`_push`, ['`&lt;!----&gt;`']),
+    ])
+  }
+}
+
+export function ssrProcessFor(
+  node: ForNode,
+  context: SSRTransformContext,
+  disableNestedFragments = false,
+): void {
+  const needFragmentWrapper =
+    !disableNestedFragments &amp;&amp;
+    (node.children.length !== 1 || node.children[0].type !== NodeTypes.ELEMENT)
+  const renderLoop = createFunctionExpression(
+    createForLoopParams(node.parseResult),
+  )
+  renderLoop.body = processChildrenAsStatement(
+    node,
+    context,
+    needFragmentWrapper,
+  )
+
+  if (!disableNestedFragments) {
+    context.pushStringPart(`&lt;!--[--&gt;`)
+  }
+  context.pushStatement(
+    createCallExpression(context.helper(SSR_RENDER_LIST), [
+      node.source,
+      renderLoop,
+    ]),
+  )
+  if (!disableNestedFragments) {
+    context.pushStringPart(`&lt;!--]--&gt;`)
+  }
+}</code></pre>
+          </figure>
+          <div class="code-walkthrough">
+            <article class="code-note">
+              <h3>else-if 是 alternate 中的 IfStatement</h3>
+              <p>
+                AST 中 branches 是扁平数组，生成 JS 时重建为
+                <code>if ... else if ... else</code>
+                链。currentIf 始终指向链尾，后续分支才能接到正确 alternate。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>没有 else 也要占一个节点</h3>
+              <p>
+                客户端条件 block 在 false 时使用注释 VNode 保留位置。SSR
+                输出空注释，hydration
+                游标才会与客户端对“该分支位置存在一个占位节点”的预期一致。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>v-for 边界标记的是整个列表</h3>
+              <p>
+                项数只在运行时知道，父 children 不能靠数量推断列表结束位置。
+                成对 fragment comments 让 hydration
+                和后续节点移动都能精确定位列表范围。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>嵌套边界可被关闭</h3>
+              <p>
+                若父结构已经为该子树提供 fragment 范围，disableNestedFragments
+                可阻止里面重复输出一层 comments。这是减少 HTML
+                噪声，但前提是不破坏节点归属。
+              </p>
+            </article>
+          </div>
+          <div class="callout warn">
+            <strong>注释不是装饰：</strong>Fragment
+            锚点与空注释承担节点边界协议。删错、重复或在 TransitionGroup
+            中错误保留，都会让 hydration 游标错位。
+          </div>
+        </section>
+
+        <section id="injection">
+          <div class="section-head">
+            <div>
+              <span class="section-no">07 / Injection</span>
+              <h2>找出可透传的根</h2>
+            </div>
+            <p>
+              fallthrough attrs、CSS vars 和 scopeId
+              都会增加属性，但目标规则不同：_attrs 只透传到单根，_cssVars
+              可覆盖多个合格根，scopeId 则标记组件拥有的元素。
+            </p>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>注入内容</th>
+                  <th>目标</th>
+                  <th>不能注入的场景</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>_attrs</td>
+                  <td>单根原生元素或组件；结构分支中的等价根</td>
+                  <td>多根、文本根、无可透传根。</td>
+                </tr>
+                <tr>
+                  <td>_cssVars</td>
+                  <td>每个合格根元素/组件；多根与各个 v-if 分支也会分别注入</td>
+                  <td>
+                    文本/注释；v-for 载体本身；Suspense 改为注入 slot children。
+                  </td>
+                </tr>
+                <tr>
+                  <td>scopeId</td>
+                  <td>当前组件拥有的元素；组件/slot 通过各自 scope 通道传播</td>
+                  <td>
+                    不能当作 fallthrough attrs 只找单根，也不能泄漏到他人后代。
+                  </td>
+                </tr>
+                <tr>
+                  <td>slotted scopeId</td>
+                  <td>父组件提供的 slot 内容</td>
+                  <td>传播方向与普通 scopeId 不同。</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <figure class="source-block">
+            <figcaption class="source-caption">
+              <span
+                ><strong>真实源码 · 三条注入路径</strong
+                ><code
+                  >ssrInjectFallthroughAttrs.ts + ssrInjectCssVars.ts +
+                  ssrTransformElement.ts</code
+                ></span
+              >
+              <span class="source-version">Vue 3.5.41</span>
+            </figcaption>
+            <pre><code>// _attrs：仅根的单一有效 child（省略多根 v-if 的排除 guard）。
+if (node.type === NodeTypes.IF_BRANCH &amp;&amp; hasSingleChild(node)) {
+  injectFallthroughAttrs(node.children[0])
+} else if (hasSingleChild(parent)) {
+  injectFallthroughAttrs(node)
+}
+
+// _cssVars：逐个检查根 child；v-if 分支内也逐个注入。
+if (node.type === NodeTypes.IF_BRANCH) {
+  for (const child of node.children) injectCssVars(child)
+} else {
+  injectCssVars(node)
+}
+
+// scopeId 不复用上面两种 root 搜索；元素开标签生成时直接写入。
+if (context.scopeId) {
+  openTag.push(` ${context.scopeId}`)
+}</code></pre>
+          </figure>
+          <div class="callout">
+            <strong>为什么在第一遍注入：</strong>_attrs/_cssVars
+            需要观察根结构和分支，并修改元素/组件 props 元数据；scopeId
+            则由元素、组件和 slot 转换分别携带。变成线性 _push
+            后再判断归属会困难很多。
+          </div>
+        </section>
+
+        <section id="builtins">
+          <div class="section-head">
+            <div>
+              <span class="section-no">08 / Built-ins</span>
+              <h2>内置组件改变输出拓扑</h2>
+            </div>
+            <p>
+              它们不是普通组件调用：服务端有专用 transform/输出路径，hydration
+              与缓冲边界也各不相同。
+            </p>
+          </div>
+          <div class="grid-2">
+            <article class="card">
+              <h3>Teleport</h3>
+              <p>
+                children 进入独立内容函数和目标缓冲；to 必填，disabled
+                决定当前位置/目标输出。
+              </p>
+            </article>
+            <article class="card">
+              <h3>Suspense</h3>
+              <p>
+                default/fallback slots 各自编译为函数，不能落入父级当前字符串
+                buffer。
+              </p>
+            </article>
+            <article class="card">
+              <h3>Transition</h3>
+              <p>
+                服务端不输出外壳，只透明输出唯一有效 child；DOM
+                转换负责开发期校验。
+              </p>
+            </article>
+            <article class="card">
+              <h3>TransitionGroup</h3>
+              <p>
+                无 tag 时展平 children；运行时还会过滤注释，SSR
+                必须同步禁用对应嵌套边界。
+              </p>
+            </article>
+          </div>
+          <figure class="source-block">
+            <figcaption class="source-caption">
+              <span
+                ><strong>真实源码 · 两遍分派</strong
+                ><code>transforms/ssrTransformComponent.ts</code></span
+              >
+              <span class="source-version">Vue 3.5.41</span>
+            </figcaption>
+            <pre><code>// 第一遍：需要 slot/props 元数据的内置组件先登记。
+if (isSymbol(component)) {
+  if (component === SUSPENSE) return ssrTransformSuspense(node, context)
+  if (component === TRANSITION_GROUP) {
+    return ssrTransformTransitionGroup(node, context)
+  }
+  if (component === TRANSITION) return ssrTransformTransition(node, context)
+  return
+}
+
+// 第二遍：按内置类型形成专用 SSR 输出拓扑。
+if (!node.ssrCodegenNode) {
+  if (component === TELEPORT) return ssrProcessTeleport(node, context)
+  if (component === SUSPENSE) return ssrProcessSuspense(node, context)
+  if (component === TRANSITION_GROUP) {
+    return ssrProcessTransitionGroup(node, context)
+  }
+  if (component === TRANSITION) return ssrProcessTransition(node, context)
+  processChildren(node, context) // KeepAlive 等透明输出 children
+}</code></pre>
+          </figure>
+          <p class="source-context">
+            “专用”不代表四者都调用同一种 helper：Teleport/Suspense
+            形成专用调用，Transition 透明处理有效 child，TransitionGroup 根据
+            tag 选择元素或 Fragment 拓扑。共同点是都不能落入普通
+            <code>ssrRenderComponent</code> 路径。
+          </p>
+        </section>
+
+        <section id="hydration">
+          <div class="section-head">
+            <div>
+              <span class="section-no">09 / Hydration</span>
+              <h2>HTML 必须匹配客户端节点模型</h2>
+            </div>
+            <p>
+              SSR 正确不仅是字符串合法，还意味着客户端 renderer
+              能按同样的节点边界接管。
+            </p>
+          </div>
+          <ol class="invariant-list">
+            <li>
+              <b>1</b>
+              <div>
+                <strong>DOM 树形一致。</strong>非法 nesting 会被浏览器重排，因此
+                DOM 开发校验也是 SSR 安全网。
+              </div>
+            </li>
+            <li>
+              <b>2</b>
+              <div>
+                <strong>Fragment 边界一致。</strong>多根、列表、条件分支和 slot
+                使用约定注释标记。
+              </div>
+            </li>
+            <li>
+              <b>3</b>
+              <div>
+                <strong>文本转义一致。</strong>插值、属性、textarea
+                与注释遵循各自 HTML 上下文。
+              </div>
+            </li>
+            <li>
+              <b>4</b>
+              <div>
+                <strong>scope/attrs 归属一致。</strong>服务端注入位置与客户端
+                VNode 相同。
+              </div>
+            </li>
+            <li>
+              <b>5</b>
+              <div>
+                <strong>内置组件拓扑一致。</strong
+                >Teleport、Suspense、TransitionGroup 不能多出或少掉边界。
+              </div>
+            </li>
+          </ol>
+          <figure class="source-block">
+            <figcaption class="source-caption">
+              <span
+                ><strong>真实源码 · 编译器生成的游标边界</strong
+                ><code
+                  >ssrCodegenTransform.ts + transforms/ssrVIf.ts</code
+                ></span
+              >
+              <span class="source-version">Vue 3.5.41</span>
+            </figcaption>
+            <pre><code>export function processChildren(parent, context, asFragment = false) {
+  if (asFragment) context.pushStringPart(`&lt;!--[--&gt;`)
+  // …按节点类型输出元素、文本、组件、if/for。
+  if (asFragment) context.pushStringPart(`&lt;!--]--&gt;`)
+}
+
+// v-if 没有 else 时仍保留一个 DOM 节点位置。
+if (!currentIf.alternate &amp;&amp; !disableComment) {
+  currentIf.alternate = createBlockStatement([
+    createCallExpression(`_push`, ['`&lt;!----&gt;`']),
+  ])
+}</code></pre>
+          </figure>
+          <p class="source-context">
+            成对注释标记一个可含多个 DOM 节点的 Fragment 范围；空注释让条件分支
+            即使未命中也占据一个可对齐位置。这里证明的是 SSR
+            输出协议；浏览器修正 HTML 后的实际 DOM 遍历、节点复用和 mismatch
+            警告仍由 runtime-core hydration 实现。
+          </p>
+          <div class="callout warn">
+            <strong>排查 hydration issue：</strong>比较浏览器实际解析后的 DOM
+            与客户端 VNode 预期，而非只比较服务器 HTML。浏览器纠正
+            HTML、注释过滤和 Fragment 错位都是高频根因。
+          </div>
+        </section>
+
+        <section id="tests">
+          <div class="section-head">
+            <div>
+              <span class="section-no">10 / Tests</span>
+              <h2>SSR 测试按输出拓扑分组</h2>
+            </div>
+            <p>
+              快照同时保护 helper 调用与最终 _push 片段，回归测试特别关注
+              hydration、slot scope 和属性合并。
+            </p>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>测试文件</th>
+                  <th>核心场景</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>ssrElement.spec.ts</td>
+                  <td>
+                    标签、属性安全、boolean/class/style、innerHTML/textContent、void
+                    元素。
+                  </td>
+                </tr>
+                <tr>
+                  <td>ssrComponent.spec.ts</td>
+                  <td>组件解析、props、slots 双分支、attrs 与自定义指令。</td>
+                </tr>
+                <tr>
+                  <td>ssrVIf / ssrVFor</td>
+                  <td>JS 控制流、空注释、多根 Fragment 与迭代参数。</td>
+                </tr>
+                <tr>
+                  <td>FallthroughAttrs / InjectCssVars</td>
+                  <td>穿过结构根寻找单根并保持 merge 顺序。</td>
+                </tr>
+                <tr>
+                  <td>ScopeId / SlotOutlet</td>
+                  <td>普通/slotted scope、slot 参数、fallback 与分支 key。</td>
+                </tr>
+                <tr>
+                  <td>Portal / Suspense / TransitionGroup</td>
+                  <td>独立缓冲、slot body、展平与注释过滤。</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <figure class="source-block">
+            <figcaption class="source-caption">
+              <span
+                ><strong>真实测试</strong
+                ><code>__tests__/ssrComponent.spec.ts</code></span
+              >
+              <span class="source-version">Issue #5352</span>
+            </figcaption>
+            <pre><code>test('should push marker string if is slot root', () =&gt; {
+  expect(
+    compile(
+      `&lt;foo&gt;&lt;transition&gt;&lt;div v-if="false"/&gt;&lt;/transition&gt;&lt;/foo&gt;`,
+    ).code,
+  ).toMatchInlineSnapshot(`
+    // 长快照中与 #5352 直接相关的 slot 函数片段：
+    default: _withCtx((_, _push, _parent, _scopeId) =&gt; {
+      if (_push) {
+        _push(\`\`)
+        if (false) {
+          _push(\`&lt;div\${_scopeId}&gt;&lt;/div&gt;\`)
+        } else {
+          _push(\`&lt;!----&gt;\`)
+        }
+      } else {
+        return [/* Transition VNode fallback */]
+      }
+    })
+  `)
+})</code></pre>
+          </figure>
+          <p class="source-context">
+            真实用例使用
+            <code>toMatchInlineSnapshot</code>；页面只摘出了长快照中与 #5352
+            直接相关的 slot 函数，省略 helper 导入和外层 ssrRender 声明。
+          </p>
+          <div class="code-walkthrough">
+            <article class="code-note">
+              <h3>输入同时命中三个边界</h3>
+              <p>
+                foo 提供 slot，Transition 在 SSR 中透明，v-if=false
+                只输出占位注释。单独测任何一个功能都不会复现
+                bug，回归用例必须保留这个组合。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>快照保护 SSR/VNode 两个分支</h3>
+              <p>
+                有 _push 时必须含空 marker 与注释；无 _push 时仍必须保留
+                Transition 的客户端 VNode fallback。如果修复只让 SSR 不误走
+                fallback，却删了 alternate，普通 render-function
+                消费方仍会回归。
+              </p>
+            </article>
+          </div>
+          <div class="callout">
+            <strong>最有效的对照：</strong>同一模板同时运行 compiler-dom 与
+            compiler-ssr。客户端输出说明预期节点模型，SSR
+            输出说明如何构造可被该模型接管的 HTML。
+          </div>
+          <a
+            class="source-link"
+            href="../../../vue/packages/compiler-ssr/__tests__/ssrElement.spec.ts"
+            >compiler-ssr tests</a
+          >
+        </section>
+
+        <div class="page-links">
+          <a class="page-link" href="sfc.html"
+            ><small>上一章</small><strong>← compiler-sfc</strong></a
+          ><a class="page-link" href="integration.html"
+            ><small>下一章</small><strong>端到端串联 →</strong></a
+          >
+        </div>
+        <footer class="site-footer">
+          <span>Vue Compiler 源码专题指南</span
+          ><span>compiler-ssr · Server Rendering Target</span>
+        </footer>
+      </main>
+    </div>
+    <script src="assets/app.js"></script>
+  </body>
+</html>

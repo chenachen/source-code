@@ -1,0 +1,148 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="description" content="React 六包源码注释终态证据：版本、范围、声明覆盖、排除项、Hermes/TypeScript/CoffeeScript 解析、去注释语义门禁与教程证据索引。" />
+<title>09 · 证据：覆盖、语义与边界</title><link rel="stylesheet" href="assets/guide.css?v=1" /></head><body>
+<header class="topbar"><div class="topbar-inner"><a class="brand" href="index.html">React 六包源码指南</a><nav class="pager" aria-label="页面导航">
+<a href="index.html">地图</a><a href="01-shared.html">shared</a><a href="02-scheduler.html">scheduler</a><a href="03-react.html">react</a>
+<a href="04-reconciler-render.html">render</a><a href="05-reconciler-commit.html">commit</a><a href="06-dom-bindings.html">bindings</a>
+<a href="07-react-dom.html">react-dom</a><a href="08-end-to-end.html">主线</a><a aria-current="page" href="09-evidence.html">证据</a></nav></div></header>
+<div class="layout"><main><p class="eyebrow">09 · Audit &amp; reproducibility</p><h1>证据：每个数字怎样得到，哪些结论不能扩大</h1>
+<p class="lede">本页是注释与教程的验收账本。覆盖数字来自能解析 React Flow 的 Hermes 审计器；
+语义门禁比较编辑前后去注释 AST 与 token；测试文件作为机制证据阅读，不把“已有测试内容”写成“本次已重跑”。</p>
+<div class="meta"><span class="pill">650 个纳入源码文件</span><span class="pill">15,563 / 15,563 声明</span><span class="pill">0 未解决</span><span class="pill">0 豁免</span><span class="pill">纯注释 + 文档</span></div>
+
+<section id="identity"><h2>版本与快照身份</h2><div class="table-wrap"><table><thead><tr><th>包</th><th>仓库内版本</th><th>版本证据</th></tr></thead><tbody>
+<tr><td>react</td><td>19.3.0</td><td><a href="../../react/packages/react/package.json">package.json</a> / shared ReactVersion</td></tr>
+<tr><td>react-dom</td><td>19.3.0</td><td><a href="../../react/packages/react-dom/package.json">package.json</a></td></tr>
+<tr><td>react-dom-bindings</td><td>19.3.0</td><td><a href="../../react/packages/react-dom-bindings/package.json">package.json</a></td></tr>
+<tr><td>react-reconciler</td><td>0.34.0</td><td><a href="../../react/packages/react-reconciler/package.json">package.json</a></td></tr>
+<tr><td>scheduler</td><td>0.28.0</td><td><a href="../../react/packages/scheduler/package.json">package.json</a></td></tr>
+<tr><td>shared</td><td>0.0.0（内部包）；运行时 React 19.3.0</td><td><a href="../../react/packages/shared/package.json">package.json</a> / <a href="../../react/packages/shared/ReactVersion.js">ReactVersion.js</a></td></tr>
+</tbody></table></div>
+<p>六包初始物理文件集合为 666 个文件，组合 SHA-256 为
+<code>c2a539918749f7336c0ea9ee6ca941bb8a35a2dac518314d3c640aeb5bb223dd</code>。
+当前源码快照自身没有 <code>.git</code>，无法核验上游 tag/commit；本指南不从版本号反推缺失的 Git 身份。</p></section>
+
+<section id="scope"><h2>纳入与排除：先固定分母</h2><div class="grid"><article class="card"><span class="number">INCLUDED</span><h3>所有手写语言与路由层</h3>
+<p>六包的 JS/Flow 实现、入口、fork、npm shim、测试/手写 fixture；React 的 1 个 TS 测试、5 个 d.ts 测试桩和 1 个 CoffeeScript 测试。</p></article>
+<article class="card"><span class="number">EXCLUDED</span><h3>生成物与非声明资料</h3><p>scheduler legacy UMD 3 文件、Jest snapshot、生成的 Fizz inline-code 字符串、README/package.json/license 正文及不存在的 build/dist/cjs。</p></article></div>
+<div class="callout"><p><strong>入口 shim 没有因“薄”而跳过：</strong>它们决定 NODE_ENV、server/client 与 Browser/Node/Edge/Bun 路由，是公开包行为的一部分。
+排除的唯一 JS 类别必须有明确生成/预构建证据。</p></div>
+<p>完整任务边界、初始统计与完成定义保存在 <a href="00-task-baseline.md">00-task-baseline.md</a>。</p></section>
+
+<section id="coverage"><h2>终态声明覆盖</h2><div class="table-wrap"><table><thead><tr><th>包 / 语言</th><th>文件</th><th>声明</th><th>已记录</th><th>未解决</th><th>豁免</th></tr></thead><tbody>
+<tr><td>shared · Flow JS</td><td>54</td><td>815</td><td>815</td><td>0</td><td>0</td></tr>
+<tr><td>scheduler · Flow JS</td><td>25</td><td>245</td><td>245</td><td>0</td><td>0</td></tr>
+<tr><td>react · Flow JS</td><td>76</td><td>963</td><td>963</td><td>0</td><td>0</td></tr>
+<tr><td>react · TS / d.ts</td><td>6</td><td>135</td><td>135</td><td>0</td><td>0</td></tr>
+<tr><td>react · CoffeeScript</td><td>1</td><td>99</td><td>99</td><td>0</td><td>0</td></tr>
+<tr><td>react-reconciler · production / entry</td><td>94</td><td>2,624</td><td>2,624</td><td>0</td><td>0</td></tr>
+<tr><td>react-reconciler · tests / mock</td><td>78</td><td>2,918</td><td>2,918</td><td>0</td><td>0</td></tr>
+<tr><td>react-dom-bindings · hand-written JS</td><td>92</td><td>1,737</td><td>1,737</td><td>0</td><td>0</td></tr>
+<tr><td>react-dom · JS / fixtures</td><td>224</td><td>6,027</td><td>6,027</td><td>0</td><td>0</td></tr>
+<tr><th>总计</th><th>650</th><th>15,563</th><th>15,563</th><th>0</th><th>0</th></tr>
+</tbody></table></div>
+<p>“声明”包含命名函数、函数变量、方法/构造器、类型/interface、结构字段、常量与可识别函数属性；普通行注释翻译另做全文扫描，
+不靠声明数字掩盖未翻译的机制说明。</p></section>
+
+<section id="method"><h2>为什么改用 Hermes 审计</h2><p>React 源码使用 Flow exact object、variance、opaque type、component syntax 等语法。
+全局 TypeScript 解析会产生大量诊断，若忽略诊断继续统计，分母本身就是错的。本任务新增
+<a href="../../react/scripts/source-code-analysis/audit-flow-comment-coverage.mjs">audit-flow-comment-coverage.mjs</a>，
+用 <code>hermes-parser@0.36.1</code> 解析 JS/JSX，并坚持“有解析诊断即失败”。</p>
+<figure class="source"><figcaption><span>教程命令 · 可复现的 Flow 门禁形状</span><a href="../../react/scripts/source-code-analysis/audit-flow-comment-coverage.mjs">打开审计器</a></figcaption><pre>node scripts/source-code-analysis/audit-flow-comment-coverage.mjs \
+  --root . \
+  --path packages/react-reconciler \
+  --exclude __tests__ --exclude __mocks__ --exclude __snapshots__ \
+  --hermes-parser /path/to/node_modules/hermes-parser \
+  --strict-exemptions --fail-on-missing</pre></figure>
+<p>聚合表使用无原型对象，避免声明类别 <code>constructor</code> 命中 <code>Object.prototype.constructor</code> 并污染计数。
+React 的 TS/d.ts 最终门禁在独立验证环境中固定使用 TypeScript 5.9.3 Compiler API；它不同于 <code>package.json</code> 的 <code>^5.4.3</code> 声明下限和
+<code>yarn.lock</code> 的 5.7.3，复现终验时应显式安装 5.9.3。CoffeeScript 用 coffee-script 1.12.7 编译后再交 Hermes 解析，并人工逐类/方法核对。</p></section>
+
+<section id="quality"><h2>“有注释”之外的质量门禁</h2><ol class="state-list">
+<li><strong>职责。</strong>每个命名声明说明输入、输出、所有权或生命周期；薄包装说明它跨越的环境/包边界。</li>
+<li><strong>机制。</strong>关键状态机写明 true/false、进入/退出、异常/清理；Feature Flags 逐项说明两态与 fork 差异。</li>
+<li><strong>测试。</strong>每个 <code>it/test</code> 有邻近中文场景；关键用例写 Given、When、Then、验证机制与对应源码。</li>
+<li><strong>英文残留。</strong>普通解释性英文翻译为中文；仅保留 license、Flow/eslint/prettier/gate 指令、URL、协议字面量与注释代码。</li>
+<li><strong>解析。</strong>Hermes/TypeScript/CoffeeScript 对应输入无诊断；不把无法解析的文件从分母静默移除。</li>
+<li><strong>语义。</strong>逐文件比较编辑前后去注释 AST 与 token；TypeScript 比较 removeComments printer；CoffeeScript 比较编译后的去注释 AST。</li>
+</ol></section>
+
+<section id="semantic"><h2>语义等价意味着什么</h2><div class="grid"><article class="card"><span class="number">PROVES</span><h3>代码结构与 token 未变</h3>
+<p>对 JS/Flow，去除注释后 AST 哈希相同，非注释 token 序列相同；能捕获字符串、标识符、操作符、字面量或语句结构的意外修改。</p></article>
+<article class="card"><span class="number">DOES NOT PROVE</span><h3>不替代所有运行环境测试</h3><p>它不验证浏览器/Node 行为、时序、构建器或未解析资源；本次只改注释，因此把解析与语义等价作为更直接门禁，而不声称重跑了全量 Jest。</p></article></div>
+<p>最终分片均在编辑前冻结基线，编辑后逐文件复核；门禁还会规范化比较 <code>@gate</code>、Flow/ESLint/TypeScript、覆盖率、webpack 与 pure/noinline 等工具指令签名，
+避免“业务 token 没变、但工具语义注释被误删”的漏报。可用
+<a href="../../react/scripts/source-code-analysis/audit-comment-only-semantics.mjs">audit-comment-only-semantics.mjs</a> 对当前树与只读基线重跑相同门禁。reconciler tests 78/78 共 298,676 个非注释 token；
+ dom-bindings 的 client/events/server/shared 四分区和 react-dom 224 文件也按同一规则终验。任何不等价文件都必须定位并修复后才能计入上表。</p>
+<div class="table-wrap"><table><thead><tr><th>JS / Flow 分区</th><th>文件</th><th>非注释 token</th><th>AST 等价</th><th>token 等价</th><th>工具指令签名</th><th>指令等价</th></tr></thead><tbody>
+<tr><td>shared</td><td>54</td><td>15,813</td><td>54/54</td><td>54/54</td><td>87</td><td>54/54</td></tr>
+<tr><td>scheduler</td><td>25</td><td>18,368</td><td>25/25</td><td>25/25</td><td>95</td><td>25/25</td></tr>
+<tr><td>react</td><td>76</td><td>71,499</td><td>76/76</td><td>76/76</td><td>125</td><td>76/76</td></tr>
+<tr><td>react-reconciler</td><td>172</td><td>477,659</td><td>172/172</td><td>172/172</td><td>883</td><td>172/172</td></tr>
+<tr><td>react-dom-bindings</td><td>92</td><td>114,071</td><td>92/92</td><td>92/92</td><td>311</td><td>92/92</td></tr>
+<tr><td>react-dom</td><td>224</td><td>620,284</td><td>224/224</td><td>224/224</td><td>717</td><td>224/224</td></tr>
+<tr><th>JS / Flow 总计</th><th>643</th><th>1,317,694</th><th>643/643</th><th>643/643</th><th>2,218</th><th>643/643</th></tr>
+</tbody></table></div>
+<p>非 JS 补充门禁：React 的 6 个 TS/d.ts 文件由 TypeScript 5.9.3 解析，remove-comments printer 与 3,678 个语义叶节点均为 6/6 等价，5 个工具指令签名保持；
+CoffeeScript 文件的 2,900 个原始 lexer token（排除 HERECOMMENT）相同，1.12.7 编译成功且编译后 Hermes AST 等价。</p></section>
+
+<section id="tests"><h2>测试说明覆盖与运行边界</h2><div class="table-wrap"><table><thead><tr><th>包</th><th>已识别测试场景</th><th>说明门禁</th><th>本次是否运行</th></tr></thead><tbody>
+<tr><td>scheduler</td><td>73（含 skip）</td><td>73/73 邻近中文；36 个关键 GWT</td><td>否，纯注释</td></tr>
+<tr><td>react-reconciler</td><td>1,058（含 skip）</td><td>1,058/1,058 邻近中文；大多数复杂场景显式 GWT</td><td>否，纯注释</td></tr>
+<tr><td>react-dom</td><td>2,581（150 个测试/fixture 文件）</td><td>2,581/2,581 邻近中文；148/148 个有可执行测试入口的文件含代表 GWT，其中动态 itRenders 14/14；另 2 个为纯 mock</td><td>否，纯注释</td></tr>
+<tr><td>react</td><td>JS、TS 与 CoffeeScript 测试</td><td>每个测试文件至少 1 个代表 GWT；所有命名声明覆盖</td><td>否；CoffeeScript 做编译门禁</td></tr>
+</tbody></table></div>
+<div class="callout warn"><p><strong>证据措辞：</strong>教程中的“测试证明”指仓库测试的输入与断言表达了该机制，
+不是本轮测试执行结果。由于没有业务 token 变化，未机械运行大型 Jest 套件；若后续修改实现，应重新运行对应测试。</p></div></section>
+
+<section id="crosswalk"><h2>教程章节到源码与测试的交叉索引</h2><div class="table-wrap"><table><thead><tr><th>主题页</th><th>决定性源码</th><th>代表测试证据</th><th>异常/清理出口</th></tr></thead><tbody>
+<tr><td><a href="01-shared.html">shared</a></td><td>ReactSymbols、ReactTypes、FeatureFlags、CheckStringCoercion</td><td>ReactSymbols / coercion tests</td><td>身份碰撞、类型 coercion 原错误</td></tr>
+<tr><td><a href="02-scheduler.html">scheduler</a></td><td>Scheduler.js、SchedulerMinHeap.js</td><td>Scheduler / SchedulerMock / Profiling</td><td>取消、throw 后续发、host fallback</td></tr>
+<tr><td><a href="03-react.html">react</a></td><td>ReactJSXElement、ReactChildren、ReactHooks、ReactLazy</td><td>CreateElement、Children、Context、reconciler Lazy</td><td>非法 child、dispatcher 误用、lazy reject</td></tr>
+<tr><td><a href="04-reconciler-render.html">reconciler render</a></td><td>Reconciler、RootScheduler、WorkLoop、BeginWork、ChildFiber、Hooks</td><td>Incremental、Hooks、Suspense、Context</td><td>yield、ping、同步恢复、fatal root</td></tr>
+<tr><td><a href="05-reconciler-commit.html">reconciler commit</a></td><td>WorkLoop、CommitWork、CommitEffects</td><td>Refs、ErrorHandling、EffectsSemantics</td><td>删除、effect cleanup、commit error capture</td></tr>
+<tr><td><a href="06-dom-bindings.html">DOM bindings</a></td><td>ReactFiberConfigDOM、ReactDOMComponent、DOMPluginEventSystem、FizzConfigDOM</td><td>react-dom event/form/hydration/Fizz suites</td><td>hydration mismatch、事件重放、stream format error</td></tr>
+<tr><td><a href="07-react-dom.html">react-dom</a></td><td>ReactDOMRoot、ReactDOMFlushSync、Fizz Server/Static adapters</td><td>Root、PartialHydration、FizzServer、Float</td><td>unmount、recoverable error、abort/backpressure</td></tr>
+<tr><td><a href="08-end-to-end.html">端到端</a></td><td>上述入口的连续调用链</td><td>跨包组合证据</td><td>hydration/Suspense/unmount 分叉</td></tr>
+<tr><td><a href="10-fiber-object-model.html">Fiber 对象模型</a></td><td>ReactFiberRoot、ReactFiber、WorkLoop</td><td>HooksWithNoopRenderer / Incremental interruption</td><td>放弃候选树、两阶段 deletion detach</td></tr>
+<tr><td><a href="11-update-queues-lanes.html">Queue / Lane</a></td><td>Hooks、ConcurrentUpdates、Lane、RootScheduler</td><td>IncrementalUpdates / SchedulerIntegration / Transition</td><td>跳过后 rebase、suspended/pinged 根</td></tr>
+<tr><td><a href="12-child-reconciliation.html">keyed children</a></td><td>ReactChildFiber 的 slot、Map、placeChild、deleteChild</td><td>StrictEffectsMode / ReactIdentity</td><td>重复 key、同 key 异 type、删除与 state 失效</td></tr>
+<tr><td><a href="13-hooks-state-machine.html">Hooks 状态机</a></td><td>renderWithHooks、Hook queue、dispatcher、Effect ring</td><td>ReactHooks / HooksWithNoopRenderer</td><td>多/少 Hook、render-phase 上限、cleanup</td></tr>
+<tr><td><a href="14-commit-effects.html">commit 深挖</a></td><td>CompleteWork、WorkLoop、CommitWork、CommitEffects</td><td>FiberRefs / SuspenseEffectsSemantics</td><td>ref detach、effect destroy、deletion、commit error</td></tr>
+<tr><td><a href="15-events-hydration.html">事件 / hydration</a></td><td>EventListener、PluginEventSystem、EventReplaying、UpdateBatching</td><td>EventPropagation / Input / SelectiveHydration</td><td>blocked event、replay、controlled restore、listener error</td></tr>
+<tr><td><a href="16-end-to-end-source.html">真实更新主线</a></td><td>ReactDOMRoot → Reconciler → Hooks → WorkLoop → ConfigDOM</td><td>ReactTestUtilsActUnmockedScheduler</td><td>unmounted handle、render/commit error、root cleanup</td></tr>
+<tr><td><a href="17-suspense-retry.html">Suspense retry</a></td><td>FiberThrow、UnwindWork、BeginWork、Lane、WorkLoop</td><td>SuspenseWithNoopRenderer</td><td>thenable reject、过期 ping、边界/根错误出口</td></tr>
+</tbody></table></div></section>
+
+<section id="guide-evidence"><h2>教程代码框也有证据身份门禁</h2><p>教程不能只“长得像源码”。每个深色代码框必须明确属于以下一种身份：</p>
+<div class="table-wrap"><table><thead><tr><th>标签</th><th>门禁</th><th>可以得出的结论</th></tr></thead><tbody>
+<tr><td>连续原码 / 连续测试原码</td><td>HTML 解码、去展示标签后，必须是链接文件的连续子串</td><td>可按首尾行在当前源码逐字复核</td></tr>
+<tr><td>删节源码</td><td>本地证据文件必须存在；正文必须说明删掉了什么</td><td>只表达被保留的控制路径，不冒充完整函数</td></tr>
+<tr><td>教程代码 / 教程伪代码 / 教程命令</td><td>明确声明不属于仓库连续源码</td><td>只用于手算状态或复现实验</td></tr>
+</tbody></table></div>
+<p>本任务新增两个无网络依赖的门禁：<a href="../../react/scripts/source-code-analysis/audit-guide-source-snippets.mjs">源码摘录证据审计</a>检查标签和连续匹配；
+<a href="../../react/scripts/source-code-analysis/audit-guide-html.mjs">HTML 完整性审计</a>检查标签闭合、唯一结构、链接、fragment 与从首页可达性。</p>
+<figure class="source"><figcaption><span>教程命令 · 分享文档双门禁</span><a href="../../react/scripts/source-code-analysis/audit-guide-source-snippets.mjs">打开审计器</a></figcaption><pre>node scripts/source-code-analysis/audit-guide-source-snippets.mjs \
+  --guide ../share/react
+node scripts/source-code-analysis/audit-guide-html.mjs \
+  --guide ../share/react</pre></figure></section>
+
+<section id="docs"><h2>分享文档门禁</h2><p>终态教程正文（排除 <code>pre</code> 源码块）超过 3.6 万汉字，含 240 个主题 section、94 张状态/对照表、22 条流程链与 157 个源码框。
+其中 47/47 个生产连续原码、11/11 个连续测试原码逐字匹配；86 个删节源码和 13 个教程代码/命令均明确标出证据身份。</p><ul class="qa"><li>18 个 HTML 页面（首页 + 17 个主题页）共享本地 CSS，不依赖 CDN 或网络字体。</li>
+<li>页面间上一页/下一页、顶栏、本页锚点和源码链接均按本地相对路径解析。</li>
+<li>桌面为正文 + sticky 目录；900px 以下目录回到文流；620px 以下单列卡片、隐藏长顶栏，并保留页尾导航。</li>
+<li>代码中的 <code>&lt;</code>、<code>&gt;</code>、<code>&amp;</code> 已转义；HTML 使用 UTF-8；无教程自身的未完成标记、填充文本或外部资源；逐字源码摘录中的上游 TODO/FlowFixMe 原样保留。</li>
+<li>最终以 HTML5 解析器、全链接/锚点遍历和浏览器桌面/窄屏截图复核。</li></ul></section>
+
+<section id="limits"><h2>明确限制</h2><ul class="qa"><li>不覆盖 <code>packages/react-server</code> 的完整 Fizz request/task/segment 算法；只标出 ReactDOM 与 DOM server config 的边界。</li>
+<li>不声明源码对应某个不可验证的 Git commit/tag；只声明仓库内版本与初始内容指纹。</li><li>不把内部 Feature Flag 的当前值解释为未来稳定公开承诺。</li>
+<li>不把测试文件位置当机制所有权；react-dom 内的事件测试可以为 bindings 提供证据。</li><li>不自动提交或推送；所有修改留在当前工作区供审阅。</li></ul></section>
+
+<section id="questions"><h2>最终自检</h2><ul class="qa"><li>任取一个声明，是否能从覆盖表回到文件中的中文职责说明？</li>
+<li>任取一个教程结论，是否同时有实现入口、状态变化和测试断言，而非只引用 API 文档？</li><li>任取一个异常路径，是否说明谁清理、谁重试、谁拥有剩余状态？</li>
+<li>删去全部新增注释后，源码 AST/token 是否回到编辑前基线？</li></ul></section>
+<div class="next-page"><a href="17-suspense-retry.html">← 上一页：Suspense retry</a><a href="index.html">回到六包阅读地图 →</a></div>
+<footer><p>覆盖是可核验分母，不是理解的替代品；建议从首页按链阅读，再用本页反查证据边界。</p></footer>
+</main><aside class="toc" aria-label="本页目录"><strong>覆盖与证据</strong><a href="#identity">版本身份</a><a href="#scope">范围与排除</a><a href="#coverage">终态覆盖</a>
+<a href="#method">审计方法</a><a href="#quality">质量门禁</a><a href="#semantic">语义等价</a><a href="#tests">测试说明</a>
+<a href="#crosswalk">章节交叉索引</a><a href="#guide-evidence">代码框证据</a><a href="#docs">文档门禁</a><a href="#limits">限制</a></aside></div></body></html>

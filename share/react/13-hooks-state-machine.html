@@ -1,0 +1,861 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="React 19.3 Hooks 源码状态机深挖：dispatcher、位置链、state queue、eager bailout、baseQueue Lane rebase、render-phase update 与 Effect 清理。" />
+  <title>13 · Hooks：位置链、更新队列与 Effect 生命周期</title>
+  <link rel="stylesheet" href="assets/guide.css?v=1" />
+</head>
+<body>
+  <header class="topbar"><div class="topbar-inner">
+    <a class="brand" href="index.html">React 六包源码指南</a>
+    <nav class="pager" aria-label="页面导航">
+      <a href="index.html">地图</a><a href="03-react.html">react</a><a href="04-reconciler-render.html">render</a>
+      <a href="12-child-reconciliation.html">keyed diff</a><a aria-current="page" href="13-hooks-state-machine.html">Hooks</a>
+      <a href="05-reconciler-commit.html">commit</a><a href="08-end-to-end.html">主线</a><a href="09-evidence.html">证据</a>
+    </nav>
+  </div></header>
+
+  <div class="layout">
+    <main>
+      <p class="eyebrow">13 · State machine lab / ReactFiberHooks</p>
+      <h1>Hooks 不是数组魔法，而是三套 dispatcher 驱动的位置状态机</h1>
+      <p class="lede">公开 <code>useState</code> 只转发到当前 dispatcher。reconciler 在函数组件求值前安装 mount、update 或 rerender 实现；每次 Hook 调用推进同一条位置链。state 更新进入带 Lane 的环形队列，低优先级项被保留并在未来 rebase；Effect 则进入另一条提交队列，render 只登记，commit 才 create 或 cleanup。</p>
+      <div class="meta"><span class="pill">react-reconciler 0.34.0</span><span class="pill">React 19.3.0</span><span class="pill">dispatcher 三态</span><span class="pill">Lane rebase</span><span class="pill">Effect commit/cleanup</span></div>
+
+      <section id="contract"><h2>证据边界</h2>
+        <div class="grid three">
+          <article class="card"><span class="number">REAL · CONTIGUOUS</span><h3>当前版本连续原码</h3><p>每个源码块都链接当前文件。截取函数局部时明确写“连续节选”，不把删节内容伪装成完整函数。</p></article>
+          <article class="card"><span class="number">REAL · GWT</span><h3>仓库测试断言</h3><p>测试证明 eager 空日志、Lane 重放结果、render-phase 收敛、删除 cleanup；没执行这些测试，不把静态阅读称为本次测试通过。</p></article>
+          <article class="card"><span class="number">TEACHING TRACE</span><h3>手工状态推演</h3><p>对象图、队列表和伪代码由真实源码分支推得，但不是仓库原码，也不是可运行 Demo。</p></article>
+        </div>
+      </section>
+
+      <section id="exact-anchors"><h2>逐字连续原码核验锚点</h2>
+        <p>下面片段逐字取自当前仓库，区间内不删除注释、Flow 标注或控制分支。后文较长的“删节源码”用于讲机制；这里负责把关键状态写入钉回真实实现。</p>
+        <figure class="source"><figcaption><span>连续原码 · renderWithHooks 选择 mount / update dispatcher</span><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">ReactFiberHooks.js</a></figcaption><pre>  // 只有至少使用一个有状态 Hook 时，memoizedState 才能区分挂载与更新。
+  // context 等无状态 Hook 不进入 memoizedState，因此挂载和更新时它都可能为 null。
+  if (__DEV__) {
+    if (current !== null &amp;&amp; current.memoizedState !== null) {
+      ReactSharedInternals.H = HooksDispatcherOnUpdateInDEV;
+    } else if (hookTypesDev !== null) {
+      // 处理“组件正在更新但未使用有状态 Hook”的边界：行为与生产环境的 Mount dispatcher 一致，
+      // 同时额外执行 DEV Hook 顺序验证。
+      ReactSharedInternals.H = HooksDispatcherOnMountWithHookTypesInDEV;
+    } else {
+      ReactSharedInternals.H = HooksDispatcherOnMountInDEV;
+    }
+  } else {
+    ReactSharedInternals.H =
+      current === null || current.memoizedState === null
+        ? HooksDispatcherOnMount
+        : HooksDispatcherOnUpdate;
+  }</pre></figure>
+        <figure class="source"><figcaption><span>连续原码 · mount Hook 追加到 Fiber.memoizedState 链</span><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">ReactFiberHooks.js</a></figcaption><pre>  if (workInProgressHook === null) {
+    // 首个 Hook 同时成为 Fiber.memoizedState 与 workInProgressHook。
+    currentlyRenderingFiber.memoizedState = workInProgressHook = hook;
+  } else {
+    // 追加到 Hook 链表尾部。
+    workInProgressHook = workInProgressHook.next = hook;
+  }
+  return workInProgressHook;</pre></figure>
+        <figure class="source"><figcaption><span>连续原码 · mountState 初始化 state 与共享 UpdateQueue</span><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">ReactFiberHooks.js</a></figcaption><pre>  hook.memoizedState = hook.baseState = initialState;
+  const queue: UpdateQueue&lt;S, BasicStateAction&lt;S&gt;&gt; = {
+    pending: null,
+    lanes: NoLanes,
+    dispatch: null,
+    lastRenderedReducer: basicStateReducer,
+    lastRenderedState: initialState as any,
+  };
+  hook.queue = queue;
+  return hook;</pre></figure>
+        <figure class="source"><figcaption><span>连续原码 · dispatchSetState eager 相等快路径</span><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">ReactFiberHooks.js</a></figcaption><pre>          const currentState: S = queue.lastRenderedState as any;
+          const eagerState = lastRenderedReducer(currentState, action);
+          // 把 eager 状态及其计算事实存入更新；进入渲染时若 reducer 未变，可直接使用而无需再次调用。
+          update.hasEagerState = true;
+          update.eagerState = eagerState;
+          if (is(eagerState, currentState)) {
+            // 快路径：无需安排 React 重渲染即可退出。若组件随后因其他原因重渲染且 reducer 已变化，
+            // 仍可能需要 rebase 此更新。
+            // TODO：此情况下是否仍需纠缠 transition？
+            enqueueConcurrentHookUpdateAndEagerlyBailout(fiber, queue, update);
+            return false;
+          }</pre></figure>
+        <figure class="source"><figcaption><span>连续原码 · updateReducerImpl 克隆被 Lane 跳过的 Update</span><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">ReactFiberHooks.js</a></figcaption><pre>      if (shouldSkipUpdate) {
+        // 优先级不足，跳过此更新。若它是首个被跳过项，之前所得状态成为新的 baseState。
+        const clone: Update&lt;S, A&gt; = {
+          lane: updateLane,
+          revertLane: update.revertLane,
+          gesture: update.gesture,
+          action: update.action,
+          hasEagerState: update.hasEagerState,
+          eagerState: update.eagerState,
+          next: null as any,
+        };
+        if (newBaseQueueLast === null) {
+          newBaseQueueFirst = newBaseQueueLast = clone;
+          newBaseState = newState;
+        } else {
+          newBaseQueueLast = newBaseQueueLast.next = clone;
+        }
+        // 记录队列剩余优先级。
+        // TODO：无需累积；可从原 lanes 中移除 renderLanes。
+        currentlyRenderingFiber.lanes = mergeLanes(
+          currentlyRenderingFiber.lanes,
+          updateLane,
+        );
+        markSkippedUpdateLanes(updateLane);</pre></figure>
+        <figure class="source"><figcaption><span>连续原码 · render-phase Update 环与重渲染标志</span><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">ReactFiberHooks.js</a></figcaption><pre>  // 渲染阶段更新暂存在 queue 对应的循环链表；当前 pass 结束后从头开始，
+  // 在 work-in-progress Hook 状态之上应用它们。
+  didScheduleRenderPhaseUpdateDuringThisPass =
+    didScheduleRenderPhaseUpdate = true;
+  const pending = queue.pending;
+  if (pending === null) {
+    // 首个更新自指，创建循环链表。
+    update.next = update;
+  } else {
+    update.next = pending.next;
+    pending.next = update;
+  }
+  queue.pending = update;
+}</pre></figure>
+        <figure class="source"><figcaption><span>连续原码 · Effect 以 O(1) 追加到循环链</span><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">ReactFiberHooks.js</a></figcaption><pre>  const lastEffect = componentUpdateQueue.lastEffect;
+  if (lastEffect === null) {
+    componentUpdateQueue.lastEffect = effect.next = effect;
+  } else {
+    const firstEffect = lastEffect.next;
+    lastEffect.next = effect;
+    effect.next = firstEffect;
+    componentUpdateQueue.lastEffect = effect;
+  }
+  return effect;</pre></figure>
+        <figure class="source"><figcaption><span>连续原码 · deps 相等不加 HookHasEffect，变化则写 flags</span><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">ReactFiberHooks.js</a></figcaption><pre>  // 初次挂载因渲染阶段更新或 Strict Mode 进入重渲染时，currentHook 可能为 null。
+  if (currentHook !== null) {
+    if (nextDeps !== null) {
+      const prevEffect: Effect = currentHook.memoizedState;
+      const prevDeps = prevEffect.deps;
+      // $FlowFixMe[incompatible-type] (@poteto)
+      if (areHookInputsEqual(nextDeps, prevDeps)) {
+        hook.memoizedState = pushSimpleEffect(
+          hookFlags,
+          inst,
+          create,
+          nextDeps,
+        );
+        return;
+      }
+    }
+  }
+
+  currentlyRenderingFiber.flags |= fiberFlags;
+
+  hook.memoizedState = pushSimpleEffect(
+    HookHasEffect | hookFlags,
+    inst,
+    create,
+    nextDeps,
+  );
+}</pre></figure>
+        <figure class="source"><figcaption><span>连续原码 · commit cleanup 先清槽再安全调用 destroy</span><a href="../../react/packages/react-reconciler/src/ReactFiberCommitEffects.js">ReactFiberCommitEffects.js</a></figcaption><pre>          // 卸载 effect。
+          const inst = effect.inst;
+          const destroy = inst.destroy;
+          if (destroy !== undefined) {
+            inst.destroy = undefined;
+            if (enableSchedulingProfiler) {
+              if ((flags &amp; HookPassive) !== NoHookEffect) {
+                markComponentPassiveEffectUnmountStarted(finishedWork);
+              } else if ((flags &amp; HookLayout) !== NoHookEffect) {
+                markComponentLayoutEffectUnmountStarted(finishedWork);
+              }
+            }
+
+            if (__DEV__) {
+              if ((flags &amp; HookInsertion) !== NoHookEffect) {
+                setIsRunningInsertionEffect(true);
+              }
+            }
+            safelyCallDestroy(finishedWork, nearestMountedAncestor, destroy);
+            if (__DEV__) {</pre></figure>
+      </section>
+
+      <section id="objects"><h2>先分清四条“链”</h2>
+        <div class="table-wrap"><table><thead><tr><th>容器</th><th>挂在哪里</th><th>节点</th><th>职责</th><th>是否跨 current/WIP 共享</th></tr></thead><tbody>
+          <tr><td>Hook 位置链</td><td><code>FunctionComponent Fiber.memoizedState</code></td><td><code>Hook.next</code></td><td>第 1、2、3…次位置型 Hook 调用的状态槽</td><td>节点会克隆；字段以 current 为基线</td></tr>
+          <tr><td>state pending 环</td><td><code>Hook.queue.pending</code></td><td><code>Update.next</code></td><td>全局并发缓冲已转移、尚未并入基线的更新</td><td><strong>queue 对象共享</strong>；普通 dispatch 先暂存，render 前再接入该环</td></tr>
+          <tr><td>state base 环</td><td><code>Hook.baseQueue</code></td><td><code>Update.next</code></td><td>因 Lane 跳过、未来必须按原顺序重放的更新</td><td>作为 Hook 快照字段克隆到 WIP</td></tr>
+          <tr><td>Effect 环</td><td><code>Fiber.updateQueue.lastEffect</code></td><td><code>Effect.next</code></td><td>本函数组件 layout/passive/insertion Effect 的提交工作</td><td>每次 render 为 WIP 重建；EffectInstance 可跨版本共享 cleanup</td></tr>
+        </tbody></table></div>
+        <div class="callout"><p><strong>两个容易混淆的字段：</strong>函数组件 Fiber 的 <code>memoizedState</code> 是 Hook 链表头，不是某个 useState 的值；Fiber 的 <code>updateQueue</code> 主要装 Effect 等组件级提交数据，而每个 state Hook 自己还有 <code>hook.queue</code>。</p></div>
+        <figure class="source"><figcaption><span>删节源码 · ReactFiberHooks.js · Hook 数据形状（省略字段注释）</span><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">打开完整文件</a></figcaption><pre><span class="kw">export type</span> Hook = {
+  memoizedState: any,
+  baseState: any,
+  baseQueue: Update&lt;any, any&gt; | null,
+  queue: any,
+  next: Hook | null,
+};</pre></figure>
+        <p><span class="pill">TEACHING TRACE</span> 组件 <code>Counter</code> 依次调用 <code>useState → useRef → useEffect</code> 时，Fiber 上是 <code>Hook#1(state) → Hook#2(ref) → Hook#3(effect)</code>。源码没有靠变量名 <code>count</code> 寻址；第几次调用就是地址。</p>
+      </section>
+
+      <section id="dispatcher"><h2>dispatcher：同一个 useState，三种阶段实现</h2>
+        <p><a href="03-react.html#hooks">react 包页面</a>已经说明公开 API 从 <code>ReactSharedInternals.H</code> 取 dispatcher。本页从 reconciler 接手：<code>renderWithHooks</code> 先清空 WIP 的旧链与组件级更新队列，再根据 current 形状安装 mount/update dispatcher。</p>
+        <figure class="source"><figcaption><span>删节源码 · renderWithHooks 的 dispatcher 选择（省略入口准备注释）</span><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">打开完整函数</a></figcaption><pre>workInProgress.memoizedState = null;
+workInProgress.updateQueue = null;
+workInProgress.lanes = NoLanes;
+
+if (__DEV__) {
+  if (current !== null &amp;&amp; current.memoizedState !== null) {
+    ReactSharedInternals.H = HooksDispatcherOnUpdateInDEV;
+  } else if (hookTypesDev !== null) {
+    ReactSharedInternals.H = HooksDispatcherOnMountWithHookTypesInDEV;
+  } else {
+    ReactSharedInternals.H = HooksDispatcherOnMountInDEV;
+  }
+} else {
+  ReactSharedInternals.H =
+    current === null || current.memoizedState === null
+      ? HooksDispatcherOnMount
+      : HooksDispatcherOnUpdate;
+}</pre></figure>
+        <figure class="source"><figcaption><span>删节源码 · 三个 dispatcher 中 state/reducer/ref 的相邻映射</span><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">打开完整对象</a></figcaption><pre><span class="cm">// HooksDispatcherOnMount</span>
+useReducer: mountReducer,
+useRef: mountRef,
+useState: mountState,
+
+<span class="cm">// HooksDispatcherOnUpdate</span>
+useReducer: updateReducer,
+useRef: updateRef,
+useState: updateState,
+
+<span class="cm">// HooksDispatcherOnRerender</span>
+useReducer: rerenderReducer,
+useRef: updateRef,
+useState: rerenderState,</pre></figure>
+        <div class="callout warn"><p><strong>上块由三处各自连续的相邻条目并列展示，不是一个连续文件区间。</strong>每组条目本身逐字来自当前三个 dispatcher 对象；完整对象还映射 Context、Effect、Memo、Transition、Id、ActionState 等 Hook。</p></div>
+        <div class="table-wrap"><table><thead><tr><th>dispatcher</th><th>进入条件</th><th>state 行为</th><th>Effect 行为</th><th>退出</th></tr></thead><tbody>
+          <tr><td>Mount</td><td>没有可更新的 current Hook 链</td><td>创建 Hook、初始 state、queue 与绑定 dispatch</td><td>创建 Effect，标 HookHasEffect 与 Fiber flags</td><td>组件返回；finish 恢复 ContextOnlyDispatcher</td></tr>
+          <tr><td>Update</td><td>current 有有状态 Hook 链</td><td>按位置克隆 current Hook，合并 pending/baseQueue，按 renderLanes 重放</td><td>比较 deps；相等则不加 HookHasEffect</td><td>保存 WIP 链，检查少调用 Hook</td></tr>
+          <tr><td>Rerender</td><td>同一次函数求值中发生 render-phase update，或 DEV Strict 额外 pass</td><td>复用刚建的 WIP Hook，消费 render-phase pending 环，不再检查 Lane</td><td>沿 WIP 链重新登记</td><td>直到没有新 render-phase update，最多 25 次</td></tr>
+        </tbody></table></div>
+        <p>生产选择依赖 <code>current.memoizedState</code>，所以只用不分配状态节点的 Hook 时存在形状边界；DEV 额外用 <code>_debugHookTypes</code> 区分并校验。这里的“mount/update”是 Hook 实现阶段，不等于组件是否拥有一个 current Fiber 的唯一判断。</p>
+      </section>
+
+      <section id="position"><h2>位置不变量：两个游标必须同步前进</h2>
+        <figure class="source"><figcaption><span>删节源码 · mountWorkInProgressHook（仅省略注释）</span><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">打开完整文件</a></figcaption><pre><span class="kw">function</span> <span class="fn">mountWorkInProgressHook</span>(): Hook {
+  const hook: Hook = {
+    memoizedState: null,
+    baseState: null,
+    baseQueue: null,
+    queue: null,
+    next: null,
+  };
+
+  if (workInProgressHook === null) {
+    currentlyRenderingFiber.memoizedState = workInProgressHook = hook;
+  } else {
+    workInProgressHook = workInProgressHook.next = hook;
+  }
+  return workInProgressHook;
+}</pre></figure>
+        <figure class="source"><figcaption><span>删节源码 · updateWorkInProgressHook 的复用、克隆与多 Hook 错误</span><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">打开完整函数</a></figcaption><pre>if (nextWorkInProgressHook !== null) {
+  workInProgressHook = nextWorkInProgressHook;
+  nextWorkInProgressHook = workInProgressHook.next;
+  currentHook = nextCurrentHook;
+} else {
+  if (nextCurrentHook === null) {
+    const currentFiber = currentlyRenderingFiber.alternate;
+    if (currentFiber === null) {
+      throw new Error(
+        <span class="str">'Update hook called on initial render. This is likely a bug in React. Please file an issue.'</span>,
+      );
+    } else {
+      throw new Error(<span class="str">'Rendered more hooks than during the previous render.'</span>);
+    }
+  }
+
+  currentHook = nextCurrentHook;
+  const newHook: Hook = {
+    memoizedState: currentHook.memoizedState,
+    baseState: currentHook.baseState,
+    baseQueue: currentHook.baseQueue,
+    queue: currentHook.queue,
+    next: null,
+  };
+
+  if (workInProgressHook === null) {
+    currentlyRenderingFiber.memoizedState = workInProgressHook = newHook;
+  } else {
+    workInProgressHook = workInProgressHook.next = newHook;
+  }
+}</pre></figure>
+        <p><span class="pill">TEACHING TRACE</span> 上一轮是 <code>#1 useState(count) → #2 useRef(node) → #3 useEffect</code>。若本轮条件分支跳过 #1，第一次位置调用会拿到 old #1，却按 useRef 解释；后续 queue/type 形状错位。React 不是读取变量名纠正，而是用 DEV hook type 序列报警、在更多/更少 Hook 时抛错。</p>
+        <div class="table-wrap"><table><thead><tr><th>违规</th><th>源码检测点</th><th>结果</th></tr></thead><tbody>
+          <tr><td>更新时多调用一个位置型 Hook</td><td><code>nextCurrentHook === null</code></td><td>抛 <code>Rendered more hooks...</code></td></tr>
+          <tr><td>更新时提前 return，少调用 Hook</td><td><code>finishRenderingHooks</code> 发现 <code>currentHook.next !== null</code></td><td>抛 <code>Rendered fewer hooks...</code></td></tr>
+          <tr><td>数量相同但种类/顺序变化</td><td>DEV <code>hookTypesDev</code> 逐项比较</td><td>打印 Hook 顺序差异；运行结果不受保证</td></tr>
+          <tr><td>组件函数外调用普通 Hook</td><td><code>ContextOnlyDispatcher</code> 将方法映射到 <code>throwInvalidHookError</code></td><td>invalid hook call</td></tr>
+          <tr><td>Hook 回调内嵌套调用 Hook</td><td>DEV InvalidNestedHooksDispatcher</td><td>规则警告</td></tr>
+        </tbody></table></div>
+        <div class="callout"><p><strong><code>use</code> 是边界例外。</strong>本页的位置链规则针对 useState/useReducer/useRef/useEffect 等普通位置型 Hook；当前 React 的 <code>use</code> 有独立 thenable/context 路径，不应把这里的 Hook 节点模型机械套到它允许的条件调用场景。</p></div>
+      </section>
+
+      <section id="mount-state"><h2>mount：一次 useState 建立 Hook、共享 queue 与稳定 dispatch</h2>
+        <figure class="source"><figcaption><span>删节源码 · mountStateImpl / mountState（Flow 标注与注释简化）</span><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">打开完整文件</a></figcaption><pre><span class="kw">function</span> <span class="fn">mountStateImpl</span>&lt;S&gt;(initialState: (() =&gt; S) | S): Hook {
+  const hook = mountWorkInProgressHook();
+  if (typeof initialState === <span class="str">'function'</span>) {
+    const initialStateInitializer = initialState;
+    initialState = initialStateInitializer();
+    if (shouldDoubleInvokeUserFnsInHooksDEV) {
+      setIsStrictModeForDevtools(true);
+      try {
+        initialStateInitializer();
+      } finally {
+        setIsStrictModeForDevtools(false);
+      }
+    }
+  }
+  hook.memoizedState = hook.baseState = initialState;
+  const queue: UpdateQueue&lt;S, BasicStateAction&lt;S&gt;&gt; = {
+    pending: null,
+    lanes: NoLanes,
+    dispatch: null,
+    lastRenderedReducer: basicStateReducer,
+    lastRenderedState: initialState,
+  };
+  hook.queue = queue;
+  return hook;
+}
+
+<span class="kw">function</span> <span class="fn">mountState</span>&lt;S&gt;(
+  initialState: (() =&gt; S) | S,
+): [S, Dispatch&lt;BasicStateAction&lt;S&gt;&gt;] {
+  const hook = mountStateImpl(initialState);
+  const queue = hook.queue;
+  const dispatch = dispatchSetState.bind(
+    null,
+    currentlyRenderingFiber,
+    queue,
+  );
+  queue.dispatch = dispatch;
+  return [hook.memoizedState, dispatch];
+}</pre></figure>
+        <p>dispatch 闭包绑定 Fiber 与共享 queue，所以事件回调不需要知道当前 render pass 的 Hook 游标。<code>updateState</code> 后续直接复用 <code>basicStateReducer</code> 的 reducer 队列实现；值 action 返回该值，函数 action 接收前一 state。</p>
+      </section>
+
+      <section id="dispatch"><h2>dispatch：先选 Lane，再尝试 eager 快路径</h2>
+        <p>普通事件 dispatch 不会立刻改写 <code>queue.pending</code>。<code>enqueueConcurrentHookUpdate</code> 先把 Fiber、queue、Update、Lane 四元组暂存到模块级
+        <code>concurrentQueues</code>；进入 render 前，<code>finishQueueingConcurrentUpdates</code> 才把它接入各 Hook 的 pending 环，并把 Lane 沿 return 路径传播到 root。
+        这样 render 中途收到的更新不会立即改动当前正在遍历的父链。只有“组件渲染自己时又 setState”的 render-phase 分支会直接写本组件 <code>queue.pending</code>。</p>
+        <figure class="source"><figcaption><span>连续原码 · ReactFiberConcurrentUpdates.js · 缓冲转移到 Hook pending 环</span><a href="../../react/packages/react-reconciler/src/ReactFiberConcurrentUpdates.js">打开完整函数</a></figcaption><pre>    // $FlowFixMe[invalid-compare]
+    if (queue !== null &amp;&amp; update !== null) {
+      const pending = queue.pending;
+      if (pending === null) {
+        // 首条更新自环，创建循环链表。
+        update.next = update;
+      } else {
+        update.next = pending.next;
+        pending.next = update;
+      }
+      queue.pending = update;
+    }
+
+    if (lane !== NoLane) {
+      markUpdateLaneFromFiberToRoot(fiber, update, lane);
+    }</pre></figure>
+        <figure class="source"><figcaption><span>删节源码 · dispatchSetStateInternal 主路径（DEV dispatcher 保护简化）</span><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">打开完整函数</a></figcaption><pre>const update: Update&lt;S, A&gt; = {
+  lane,
+  revertLane: NoLane,
+  gesture: null,
+  action,
+  hasEagerState: false,
+  eagerState: null,
+  next: null,
+};
+
+if (isRenderPhaseUpdate(fiber)) {
+  enqueueRenderPhaseUpdate(queue, update);
+} else {
+  const alternate = fiber.alternate;
+  if (
+    fiber.lanes === NoLanes &amp;&amp;
+    (alternate === null || alternate.lanes === NoLanes)
+  ) {
+    const lastRenderedReducer = queue.lastRenderedReducer;
+    if (lastRenderedReducer !== null) {
+      try {
+        const currentState: S = queue.lastRenderedState;
+        const eagerState = lastRenderedReducer(currentState, action);
+        update.hasEagerState = true;
+        update.eagerState = eagerState;
+        if (is(eagerState, currentState)) {
+          enqueueConcurrentHookUpdateAndEagerlyBailout(fiber, queue, update);
+          return false;
+        }
+      } catch (error) {
+        <span class="cm">// 渲染阶段会再次运行 reducer 并抛错。</span>
+      }
+    }
+  }
+
+  const root = enqueueConcurrentHookUpdate(fiber, queue, update, lane);
+  if (root !== null) {
+    scheduleUpdateOnFiber(root, fiber, lane);
+    entangleTransitionUpdate(root, queue, lane);
+    return true;
+  }
+}
+return false;</pre></figure>
+        <div class="callout warn"><p><strong>eager bailout 不是丢弃 update。</strong><code>enqueueConcurrentHookUpdateAndEagerlyBailout</code> 仍保存更新，以便组件因别的原因 render、reducer 已变化时 rebase。它只是在当前 Fiber 与 alternate 都没有待处理 Lane、eager 结果按 <code>Object.is</code> 相同时不安排本次 render。</p></div>
+        <div class="table-wrap"><table><thead><tr><th>派发输入</th><th>eager 结果</th><th>当次调度</th><th>update 去向</th></tr></thead><tbody>
+          <tr><td><code>setCount(1)</code>，当前 1，队列可 eager</td><td>1，与当前相同</td><td>不调度；函数组件可完全不进入 render</td><td>仍入并发队列，保留 rebase 语义</td></tr>
+          <tr><td><code>setCount(2)</code>，当前 1，队列可 eager</td><td>2，不同</td><td>按 Lane 调度 root</td><td>先入全局并发缓冲；转移后携 <code>hasEagerState/eagerState</code> 进入 pending，render 可免算 reducer</td></tr>
+          <tr><td>Fiber 任一版本已有 Lane</td><td>不走 eager</td><td>正常入队调度</td><td>先暂存再转移到 pending；render 按完整顺序求值，避免脱离队列上下文</td></tr>
+          <tr><td>当前函数组件 render 内派发自己</td><td>不走普通并发队列</td><td>标记额外 render pass</td><td>进入 render-phase pending 环</td></tr>
+        </tbody></table></div>
+      </section>
+
+      <section id="base-queue"><h2>baseQueue：低优先级可以跳过，但不能从历史中消失</h2>
+        <p><code>updateReducerImpl</code> 先用 O(1) 指针交换把 <code>queue.pending</code> 环并入 <code>baseQueue</code>，再从 <code>baseState</code> 顺序重放。某项 Lane 不在本轮 <code>renderLanes</code> 中就克隆保留；它之后已经执行的普通高优先更新，也必须以 <code>NoLane</code> 克隆到新 baseQueue，未来重放才能保持原始顺序。</p>
+        <figure class="source"><figcaption><span>删节源码 · pending 合并与普通 Lane 跳过（高级分支删除）</span><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">打开完整 updateReducerImpl</a></figcaption><pre>let baseQueue = hook.baseQueue;
+const pendingQueue = queue.pending;
+if (pendingQueue !== null) {
+  if (baseQueue !== null) {
+    const baseFirst = baseQueue.next;
+    const pendingFirst = pendingQueue.next;
+    baseQueue.next = pendingFirst;
+    pendingQueue.next = baseFirst;
+  }
+  current.baseQueue = baseQueue = pendingQueue;
+  queue.pending = null;
+}
+
+const baseState = hook.baseState;
+const first = baseQueue.next;
+let newState = baseState;
+let newBaseState = null;
+let newBaseQueueFirst = null;
+let newBaseQueueLast = null;
+let update = first;
+do {
+  const updateLane = removeLanes(update.lane, OffscreenLane);
+  const shouldSkipUpdate =
+    !isSubsetOfLanes(renderLanes, updateLane);
+
+  if (shouldSkipUpdate) {
+    const clone = {
+      lane: updateLane,
+      revertLane: update.revertLane,
+      gesture: update.gesture,
+      action: update.action,
+      hasEagerState: update.hasEagerState,
+      eagerState: update.eagerState,
+      next: null,
+    };
+    if (newBaseQueueLast === null) {
+      newBaseQueueFirst = newBaseQueueLast = clone;
+      newBaseState = newState;
+    } else {
+      newBaseQueueLast = newBaseQueueLast.next = clone;
+    }
+    currentlyRenderingFiber.lanes = mergeLanes(
+      currentlyRenderingFiber.lanes,
+      updateLane,
+    );
+    markSkippedUpdateLanes(updateLane);
+  }</pre></figure>
+        <div class="callout warn"><p><strong>上块是机制聚焦型删节，不是逐字连续原码。</strong>真实函数在 Lane 判断中还处理 Offscreen 隐藏更新、GestureLane、乐观 <code>revertLane</code> 与 async action 纠缠；这里保留普通 state 主线并删除了这些条件分支。完整实现必须点链接核验。</p></div>
+        <figure class="source"><figcaption><span>删节源码 · 已有跳过项时克隆后续普通更新（两段机制拼接）</span><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">打开完整 updateReducerImpl</a></figcaption><pre>if (revertLane === NoLane) {
+  if (newBaseQueueLast !== null) {
+    const clone: Update&lt;S, A&gt; = {
+      lane: NoLane,
+      revertLane: NoLane,
+      gesture: null,
+      action: update.action,
+      hasEagerState: update.hasEagerState,
+      eagerState: update.eagerState,
+      next: null,
+    };
+    newBaseQueueLast = newBaseQueueLast.next = clone;
+  }
+}
+
+const action = update.action;
+if (update.hasEagerState) {
+  newState = update.eagerState;
+} else {
+  newState = reducer(newState, action);
+}</pre></figure>
+        <div class="callout warn"><p><strong>第二块同样是两段真实原码的机制拼接。</strong>真实代码在两段之间处理乐观更新与 DEV reducer 双调用；正文不声称该块可直接替换完整函数。</p></div>
+      </section>
+
+      <section id="lane-trace"><h2>真实输入手推：1，先 ×100，再同步 +5</h2>
+        <p><span class="pill">TEACHING TRACE</span> 输入来自仓库测试：初始 state 1；Transition 更新 T：<code>n =&gt; n * 100</code>；冲刷前插入 Sync 更新 S：<code>n =&gt; n + 5</code>。</p>
+        <div class="table-wrap"><table><thead><tr><th>阶段</th><th>renderLanes</th><th>读取顺序</th><th>newState</th><th>新 baseState / baseQueue</th><th>可见提交</th></tr></thead><tbody>
+          <tr><td>挂载后</td><td>—</td><td>无更新</td><td>1</td><td><code>baseState=1</code>；空</td><td>1</td></tr>
+          <tr><td>两次 dispatch 且并发缓冲已转移</td><td>尚未 render</td><td>pending 环：T(Transition) → S(Sync)</td><td>仍 1</td><td>等待并入</td><td>1</td></tr>
+          <tr><td>Sync render：遇 T</td><td>Sync</td><td>T Lane 不包含于本轮，跳过并克隆</td><td>1</td><td><code>newBaseState=1</code>；[T]</td><td>尚未 commit</td></tr>
+          <tr><td>Sync render：遇 S</td><td>Sync</td><td>S 可执行：1+5=6；因前面有跳过项，再克隆 S 为 NoLane</td><td>6</td><td><code>baseState=1</code>；[T, S(NoLane)]</td><td><strong>6</strong></td></tr>
+          <tr><td>Transition render：重放 T</td><td>Transition</td><td>从 baseState 1 开始；T 得 100（可复用 eagerState）</td><td>100</td><td>正在消费旧 baseQueue</td><td>仍显示 6</td></tr>
+          <tr><td>Transition render：重放 S</td><td>Transition</td><td>NoLane 是所有 Lane 集合的子集；100+5</td><td>105</td><td>无跳过项：baseQueue 清空，baseState=105</td><td><strong>105</strong></td></tr>
+        </tbody></table></div>
+        <div class="callout"><p><strong>为什么必须复制 S？</strong>如果只保留被跳过的 T，未来从 1 应用 T 会得到 100，已经提交过的 +5 将丢失。把 S 以 NoLane 放在 T 后，未来任何 rebase 都按原事件顺序得到 105。</p></div>
+
+        <figure class="source"><figcaption><span>删节源码（真实测试）· ReactHooks-test.internal.js · 调度与断言</span><a href="../../react/packages/react-reconciler/src/__tests__/ReactHooks-test.internal.js">打开完整测试</a></figcaption><pre>React.startTransition(() =&gt; update(n =&gt; n * 100));
+assertLog([<span class="str">'Compute state (1 -&gt; 100)'</span>]);
+
+root.unstable_flushSync(() =&gt; {
+  update(n =&gt; n + 5);
+});
+assertLog([
+  <span class="str">'Compute state (1 -&gt; 6)'</span>,
+  <span class="str">'Parent: 6'</span>,
+  <span class="str">'Child: 6'</span>,
+]);
+expect(root).toMatchRenderedOutput(<span class="str">'6'</span>);
+
+await waitForAll([
+  <span class="str">'Compute state (100 -&gt; 105)'</span>,
+  <span class="str">'Parent: 105'</span>,
+  <span class="str">'Child: 105'</span>,
+]);
+expect(root).toMatchRenderedOutput(<span class="str">'105'</span>);</pre></figure>
+        <div class="table-wrap"><table><thead><tr><th>GWT</th><th>测试事实</th><th>机制映射</th></tr></thead><tbody>
+          <tr><td>Given</td><td>并发 root 已提交 state 1，测试持有 setCounter</td><td>queue.lastRenderedState = 1</td></tr>
+          <tr><td>When</td><td>Transition ×100 尚未冲刷，Sync +5 抢先</td><td>本轮 renderLanes 跳过 T、执行 S</td></tr>
+          <tr><td>Then 1</td><td>宿主先显示 6</td><td>高优先级可独立提交</td></tr>
+          <tr><td>Then 2</td><td>低优先级完成后显示 105</td><td>baseQueue 重放 T 后再重放 NoLane 的 S</td></tr>
+        </tbody></table></div>
+        <figure class="source"><figcaption><span>连续测试原码 · Transition 被 Sync 打断后按序 rebase</span><a href="../../react/packages/react-reconciler/src/__tests__/ReactHooks-test.internal.js">ReactHooks-test.internal.js</a></figcaption><pre>    // 以 transition 优先级安排更新。
+    React.startTransition(() =&gt; update(n =&gt; n * 100));
+    // 急切计算得到新 state。
+    assertLog(['Compute state (1 -&gt; 100)']);
+
+    // 但在冲刷前被更高优先级更新打断。
+    root.unstable_flushSync(() =&gt; {
+      update(n =&gt; n + 5);
+    });
+    assertLog([
+      // 急切计算的 state 在本轮被完全跳过。
+      'Compute state (1 -&gt; 6)',
+      'Parent: 6',
+      'Child: 6',
+    ]);
+    expect(root).toMatchRenderedOutput('6');
+
+    // 完成第一个更新时，第二个更新会在其结果上 rebase；尽管第一个更新曾在上一轮被跳过，也无需重新计算。
+    await waitForAll([
+      'Compute state (100 -&gt; 105)',
+      'Parent: 105',
+      'Child: 105',
+    ]);
+    expect(root).toMatchRenderedOutput('105');</pre></figure>
+      </section>
+
+      <section id="render-phase"><h2>render-phase update：不调另一个 root task，而是重跑当前组件</h2>
+        <figure class="source"><figcaption><span>删节源码 · enqueueRenderPhaseUpdate（仅省略注释）</span><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">打开完整文件</a></figcaption><pre><span class="kw">function</span> <span class="fn">enqueueRenderPhaseUpdate</span>&lt;S, A&gt;(
+  queue: UpdateQueue&lt;S, A&gt;,
+  update: Update&lt;S, A&gt;,
+): void {
+  didScheduleRenderPhaseUpdateDuringThisPass =
+    didScheduleRenderPhaseUpdate = true;
+  const pending = queue.pending;
+  if (pending === null) {
+    update.next = update;
+  } else {
+    update.next = pending.next;
+    pending.next = update;
+  }
+  queue.pending = update;
+}</pre></figure>
+        <figure class="source"><figcaption><span>删节源码 · renderWithHooksAgain 主循环（thenable/DEV 细节删除）</span><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">打开完整函数</a></figcaption><pre>let numberOfReRenders: number = 0;
+let children;
+do {
+  didScheduleRenderPhaseUpdateDuringThisPass = false;
+
+  if (numberOfReRenders &gt;= RE_RENDER_LIMIT) {
+    throw new Error(
+      <span class="str">'Too many re-renders. React limits the number of renders to prevent an infinite loop.'</span>,
+    );
+  }
+  numberOfReRenders += 1;
+
+  currentHook = null;
+  workInProgressHook = null;
+  if (workInProgress.updateQueue != null) {
+    resetFunctionComponentUpdateQueue(workInProgress.updateQueue);
+  }
+
+  ReactSharedInternals.H = __DEV__
+    ? HooksDispatcherOnRerenderInDEV
+    : HooksDispatcherOnRerender;
+
+  children = Component(props, secondArg);
+} while (didScheduleRenderPhaseUpdateDuringThisPass);
+return children;</pre></figure>
+        <div class="callout warn"><p><strong>上块是连续主循环的删节版。</strong>真实连续实现还重置 thenable 计数、DEV Hook 类型索引，并通过 <code>callComponentInDEV</code> 调用组件；控制流与 25 次上限保持一致，完整细节见链接。</p></div>
+        <p><code>rerenderReducer</code> 直接从 queue.pending 环取本 pass 更新，按顺序应用到 WIP Hook 的 memoizedState；这些更新与当前 render 同优先级，所以不做 Lane 筛选。若 render 抛错并 unwind，<code>resetHooksOnUnwind</code> 清空本轮 render-phase pending，防止泄漏到下一次尝试。</p>
+        <figure class="source"><figcaption><span>删节源码（真实测试）· ReactHooksWithNoopRenderer-test.js · 收敛与断言</span><a href="../../react/packages/react-reconciler/src/__tests__/ReactHooksWithNoopRenderer-test.js">打开完整测试</a></figcaption><pre>it(<span class="str">'keeps restarting until there are no more new updates'</span>, async () =&gt; {
+  <span class="kw">function</span> <span class="fn">Counter</span>() {
+    const [count, setCount] = useState(0);
+    if (count &lt; 3) {
+      setCount(count + 1);
+    }
+    Scheduler.log(<span class="str">'Render: '</span> + count);
+    return &lt;Text text={count} /&gt;;
+  }
+
+  ReactNoop.render(&lt;Counter /&gt;);
+  await waitForAll([
+    <span class="str">'Render: 0'</span>, <span class="str">'Render: 1'</span>,
+    <span class="str">'Render: 2'</span>, <span class="str">'Render: 3'</span>, 3,
+  ]);
+  expect(ReactNoop).toMatchRenderedOutput(&lt;span prop={3} /&gt;);
+});</pre></figure>
+        <div class="table-wrap"><table><thead><tr><th>GWT</th><th>事实</th><th>结论</th></tr></thead><tbody>
+          <tr><td>Given</td><td>count 初始 0，render 中 count&lt;3 就 setCount</td><td>每个 pass 都可能新增 render-phase update</td></tr>
+          <tr><td>When</td><td>首次执行函数组件</td><td>Rerender dispatcher 从链头重复求值</td></tr>
+          <tr><td>Then</td><td>日志严格为 0、1、2、3，最终宿主输出 3</td><td>队列逐 pass 应用并在不再派发时收敛</td></tr>
+          <tr><td>失败边界</td><td>若每次无条件 setState，另一个真实测试断言 Too many re-renders</td><td>RE_RENDER_LIMIT = 25 防止无限循环</td></tr>
+        </tbody></table></div>
+        <figure class="source"><figcaption><span>连续测试原码 · render-phase 更新重复到状态收敛</span><a href="../../react/packages/react-reconciler/src/__tests__/ReactHooksWithNoopRenderer-test.js">ReactHooksWithNoopRenderer-test.js</a></figcaption><pre>    it('keeps restarting until there are no more new updates', async () =&gt; {
+      /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“渲染期间安排 Hook 更新，确认重渲染合并、收敛上限及跨组件诊断”场景。 */
+      function Counter({row: newRow}) {
+        const [count, setCount] = useState(0);
+        if (count &lt; 3) {
+          setCount(count + 1);
+        }
+        Scheduler.log('Render: ' + count);
+        return &lt;Text text={count} /&gt;;
+      }
+
+      ReactNoop.render(&lt;Counter /&gt;);
+      await waitForAll(['Render: 0', 'Render: 1', 'Render: 2', 'Render: 3', 3]);
+      expect(ReactNoop).toMatchRenderedOutput(&lt;span prop={3} /&gt;);
+    });</pre></figure>
+      </section>
+
+      <section id="effects"><h2>Effect：render 建环，commit 才 create / destroy</h2>
+        <p>Effect Hook 节点的 <code>memoizedState</code> 指向 Effect；所有 Effect 还被 O(1) 追加到 <code>FunctionComponentUpdateQueue.lastEffect</code> 环。mount 总是带 <code>HookHasEffect</code>；update 的 deps 按 <code>Object.is</code> 逐项相等时仍登记 Effect 节点，但不带 HookHasEffect，因此本次 commit 不运行。</p>
+        <figure class="source"><figcaption><span>删节源码 · pushEffectImpl（Flow 标注与注释简化）</span><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">打开完整文件</a></figcaption><pre><span class="kw">function</span> <span class="fn">pushEffectImpl</span>(effect: Effect): Effect {
+  let componentUpdateQueue = currentlyRenderingFiber.updateQueue;
+  if (componentUpdateQueue === null) {
+    componentUpdateQueue = createFunctionComponentUpdateQueue();
+    currentlyRenderingFiber.updateQueue = componentUpdateQueue;
+  }
+  const lastEffect = componentUpdateQueue.lastEffect;
+  if (lastEffect === null) {
+    componentUpdateQueue.lastEffect = effect.next = effect;
+  } else {
+    const firstEffect = lastEffect.next;
+    lastEffect.next = effect;
+    effect.next = firstEffect;
+    componentUpdateQueue.lastEffect = effect;
+  }
+  return effect;
+}</pre></figure>
+        <figure class="source"><figcaption><span>删节源码 · updateEffectImpl 的 deps 分支（Flow 注释省略）</span><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">打开完整函数</a></figcaption><pre>const hook = updateWorkInProgressHook();
+const nextDeps = deps === undefined ? null : deps;
+const effect: Effect = hook.memoizedState;
+const inst = effect.inst;
+
+if (currentHook !== null) {
+  if (nextDeps !== null) {
+    const prevEffect: Effect = currentHook.memoizedState;
+    const prevDeps = prevEffect.deps;
+    if (areHookInputsEqual(nextDeps, prevDeps)) {
+      hook.memoizedState = pushSimpleEffect(
+        hookFlags,
+        inst,
+        create,
+        nextDeps,
+      );
+      return;
+    }
+  }
+}
+
+currentlyRenderingFiber.flags |= fiberFlags;
+hook.memoizedState = pushSimpleEffect(
+  HookHasEffect | hookFlags,
+  inst,
+  create,
+  nextDeps,
+);</pre></figure>
+        <figure class="source"><figcaption><span>删节源码 · ReactFiberCommitEffects.js · 保存与清空 cleanup（两段拼接）</span><a href="../../react/packages/react-reconciler/src/ReactFiberCommitEffects.js">打开完整文件</a></figcaption><pre><span class="cm">// commitHookEffectListMount 的生产分支</span>
+const create = effect.create;
+const inst = effect.inst;
+destroy = create();
+inst.destroy = destroy;
+
+<span class="cm">// commitHookEffectListUnmount 的匹配分支</span>
+const inst = effect.inst;
+const destroy = inst.destroy;
+if (destroy !== undefined) {
+  inst.destroy = undefined;
+  safelyCallDestroy(finishedWork, nearestMountedAncestor, destroy);
+}</pre></figure>
+        <div class="callout warn"><p><strong>最后一块并列两个真实连续局部，不是同一连续文件区间。</strong>完整 commit 函数遍历环、按 Hook flags 过滤、处理 DEV 返回值诊断、Profiler 与 commit-phase 错误捕获。关键所有权事实是：create 的返回值存到稳定 <code>EffectInstance.destroy</code>，调用 cleanup 前先清空槽，避免重复调用同一函数。</p></div>
+
+        <p><span class="pill">TEACHING TRACE</span> 对 <code>useEffect(() =&gt; subscribe(id), [id])</code>：</p>
+        <div class="table-wrap"><table><thead><tr><th>render 输入</th><th>render 产物</th><th>commit 行为</th><th>cleanup 槽</th></tr></thead><tbody>
+          <tr><td>首次 id=1</td><td>Effect: HookPassive + HookHasEffect；Fiber Passive flags</td><td>passive mount 调 create(1)</td><td>保存 destroy(1)</td></tr>
+          <tr><td>再次 id=1</td><td>deps 相等；Effect 仅 HookPassive</td><td>本次不 destroy、不 create</td><td>仍是 destroy(1)</td></tr>
+          <tr><td>更新 id=2</td><td>deps 不同；再次 HookHasEffect</td><td>对应 passive unmount 先调 destroy(1)，随后 passive mount 调 create(2)</td><td>替换为 destroy(2)</td></tr>
+          <tr><td>删除组件</td><td>child reconciliation 把 Fiber 放入 deletions</td><td>删除路径遍历 Effect 环，调用 destroy(2)</td><td>先置 undefined，再安全调用</td></tr>
+        </tbody></table></div>
+      </section>
+
+      <section id="effect-test"><h2>真实 GWT：删 A，只清 A；删 B，再清 B</h2>
+        <figure class="source"><figcaption><span>删节源码（真实测试）· ReactHooksWithNoopRenderer-test.js</span><a href="../../react/packages/react-reconciler/src/__tests__/ReactHooksWithNoopRenderer-test.js">打开完整测试</a></figcaption><pre><span class="kw">function</span> <span class="fn">Child</span>({label}) {
+  useLayoutEffect(() =&gt; {
+    Scheduler.log(<span class="str">'Mount layout '</span> + label);
+    return () =&gt; Scheduler.log(<span class="str">'Unmount layout '</span> + label);
+  }, [label]);
+  useEffect(() =&gt; {
+    Scheduler.log(<span class="str">'Mount passive '</span> + label);
+    return () =&gt; Scheduler.log(<span class="str">'Unmount passive '</span> + label);
+  }, [label]);
+  return label;
+}
+
+await act(() =&gt; {
+  root.render(&lt;&gt;&lt;Child key="A" label="A" /&gt;&lt;Child key="B" label="B" /&gt;&lt;/&gt;);
+});
+assertLog([
+  <span class="str">'Mount layout A'</span>, <span class="str">'Mount layout B'</span>,
+  <span class="str">'Mount passive A'</span>, <span class="str">'Mount passive B'</span>,
+]);
+
+await act(() =&gt; { root.render(&lt;&gt;&lt;Child key="B" label="B" /&gt;&lt;/&gt;); });
+assertLog([<span class="str">'Unmount layout A'</span>, <span class="str">'Unmount passive A'</span>]);
+
+await act(() =&gt; { root.render(null); });
+assertLog([<span class="str">'Unmount layout B'</span>, <span class="str">'Unmount passive B'</span>]);</pre></figure>
+        <div class="table-wrap"><table><thead><tr><th>GWT</th><th>测试事实</th><th>证明</th></tr></thead><tbody>
+          <tr><td>Given</td><td>A/B 都已挂载 layout 与 passive Effect</td><td>两条 Effect 环均持有对应 destroy</td></tr>
+          <tr><td>When 1</td><td>同父 keyed children 删除 A，保留 B</td><td>reconciler 只把 A 放入 deletion</td></tr>
+          <tr><td>Then 1</td><td>严格只出现 A 的两条 Unmount</td><td>删除遍历不会误清 sibling B</td></tr>
+          <tr><td>When / Then 2</td><td>root.render(null) 后才出现 B 的两条 Unmount</td><td>B 的 Effect 生命周期延续到自身删除</td></tr>
+        </tbody></table></div>
+        <figure class="source"><figcaption><span>连续测试原码 · 删除 A 与删除 B 的 cleanup 断言</span><a href="../../react/packages/react-reconciler/src/__tests__/ReactHooksWithNoopRenderer-test.js">ReactHooksWithNoopRenderer-test.js</a></figcaption><pre>    // 删除 A 时只应卸载 A 的 Effect；原回归中 B 的 Effect 也会被错误卸载。
+    await act(() =&gt; {
+      root.render(
+        &lt;&gt;
+          &lt;Child key="B" label="B" /&gt;
+        &lt;/&gt;,
+      );
+    });
+    assertLog(['Unmount layout A', 'Unmount passive A']);
+
+    // 现在删除并卸载 B。
+    await act(() =&gt; {
+      root.render(null);
+    });
+    assertLog(['Unmount layout B', 'Unmount passive B']);</pre></figure>
+      </section>
+
+      <section id="full-flow"><h2>把一次 setCount 串成完整链</h2>
+        <div class="chain" aria-label="useState 更新端到端链">
+          <div class="node">事件回调<small>dispatch(action)</small></div><span class="arrow">→</span>
+          <div class="node">dispatchSetState<small>requestUpdateLane</small></div><span class="arrow">→</span>
+          <div class="node">concurrent staging<small>转移后进 queue.pending</small></div><span class="arrow">→</span>
+          <div class="node">root 调度<small>scheduleUpdateOnFiber</small></div><span class="arrow">→</span>
+          <div class="node">renderWithHooks<small>Update dispatcher</small></div><span class="arrow">→</span>
+          <div class="node">updateReducerImpl<small>Lane 筛选 + rebase</small></div><span class="arrow">→</span>
+          <div class="node">Effect 登记（可选）<small>仅组件调用 Effect Hook</small></div><span class="arrow">→</span>
+          <div class="node">返回 children / complete<small>协调并汇总 flags</small></div><span class="arrow">→</span>
+          <div class="node">commit<small>DOM / 可选 cleanup / create</small></div>
+        </div>
+        <ol class="state-list">
+          <li><strong>同步入口。</strong>稳定 dispatch 绑定 Fiber 与 queue；派发选择 Lane，创建 Update。若满足 eager 相等条件，更新保留但不调度。</li>
+          <li><strong>并发暂存。</strong>正常路径先把 Update 四元组放入全局并发缓冲并安排 root；render 前批量转移到各 Hook pending 环、传播 Lane。何时执行由 <a href="02-scheduler.html">Scheduler</a> 与 <a href="04-reconciler-render.html#root-scheduler">RootScheduler</a> 决定。</li>
+          <li><strong>render 路由。</strong>函数组件进入 <code>renderWithHooks</code>，安装 Update dispatcher；每次 Hook 调用同步推进 current/WIP 两个位置游标。</li>
+          <li><strong>状态计算。</strong>pending 合并到 baseQueue；本轮 Lane 可处理的 action 更新 memoizedState，跳过项和其后的已执行项构成新 rebase 基线。</li>
+          <li><strong>组件输出。</strong>组件继续同步执行并返回 children，reconciler 再协调 child Fiber、complete 并汇总 flags。只有本轮实际调用了 Effect Hook 才会登记 Effect 环/flags；state queue 与 Effect queue 并不互相依赖。</li>
+          <li><strong>同轮重渲染分支。</strong>组件 render 内更新自己时，不离开当前组件；Rerender dispatcher 从链头重跑，直至稳定或达到 25 次上限。</li>
+          <li><strong>提交。</strong>state 本身没有独立“提交回调”。组件输出产生 Fiber/DOM flags；Effect create/cleanup 由 commit 各阶段遍历组件 Effect 环执行，错误走 commit-phase 捕获。</li>
+          <li><strong>清理。</strong>组件删除时，child deletion 找到其子树；对应 EffectInstance 的 destroy 被清槽后安全调用。render 被放弃时则清掉仅本轮有效的 render-phase update，不执行尚未提交的 Effect create。</li>
+        </ol>
+      </section>
+
+      <section id="boundaries"><h2>边界与常见误解</h2>
+        <div class="table-wrap"><table><thead><tr><th>误解</th><th>当前实现事实</th><th>诊断抓手</th></tr></thead><tbody>
+          <tr><td>useState 按变量名保存</td><td>按 Fiber Hook 链位置保存</td><td>看 <code>currentHook/workInProgressHook</code></td></tr>
+          <tr><td>setState 相同值就完全没入队</td><td>eager 相同时可不调度，但 update 仍保留供未来 rebase</td><td>看 eager bailout helper</td></tr>
+          <tr><td>高优先更新可越过低优先更新后永久丢掉历史</td><td>低优先项及其后的已执行普通更新进入新 baseQueue</td><td>看 NoLane clone 与 1→6→105 测试</td></tr>
+          <tr><td>render 中 setState 总是立刻递归调用组件</td><td>先入 render-phase 环，当前 pass 结束后由 Rerender dispatcher 重跑</td><td>看 <code>didScheduleRenderPhaseUpdateDuringThisPass</code></td></tr>
+          <tr><td>useEffect 在 render 里执行</td><td>render 只比较 deps、建 Effect 环、写 Fiber flags；commit 执行</td><td>看 pushEffect 与 commitHookEffectList*</td></tr>
+          <tr><td>deps 相等就没有 Effect 节点</td><td>仍 push 节点，但不带 HookHasEffect，保留实例与 cleanup</td><td>看 updateEffectImpl 相等分支</td></tr>
+          <tr><td>cleanup 只在组件删除时运行</td><td>deps 改变时也在下一 create 前执行旧 destroy；删除时执行最终 destroy</td><td>看 commit unmount/mount 两阶段</td></tr>
+          <tr><td>本页覆盖所有 Hook</td><td>重点是 state/reducer/effect；use、external store、optimistic/action state、gesture 与 async action 有额外状态机</td><td>回完整 ReactFiberHooks.js 分支</td></tr>
+        </tbody></table></div>
+      </section>
+
+      <section id="pseudocode"><h2>只用于复述的伪代码</h2>
+        <figure class="source"><figcaption><span>教程代码/教程伪代码 · 不属于仓库源码</span><span>省略高级 Hook 分支</span></figcaption><pre>render function component:
+  choose Mount or Update dispatcher
+  for each hook call at position i:
+    mount: append Hook(i)
+    update: clone current Hook(i), then process its queue
+
+dispatch state action:
+  choose lane
+  if rendering same component: queue for rerender pass
+  else if eager state is equal: enqueue but do not schedule
+  else: enqueue and schedule root
+
+process state queue(renderLanes):
+  merge pending ring into base ring
+  skip updates whose lanes are absent
+  after first skip, clone every later applied update as NoLane
+  save new baseState/baseQueue for future rebase
+
+effect hook during render:
+  deps equal   → push without HookHasEffect
+  deps changed → push with HookHasEffect and Fiber flags
+commit:
+  cleanup old matching effect, then create new matching effect</pre></figure>
+      </section>
+
+      <section id="evidence"><h2>结论—源码—测试证据表</h2>
+        <div class="table-wrap"><table><thead><tr><th>机制</th><th>决定性源码</th><th>真实测试</th><th>证明边界</th></tr></thead><tbody>
+          <tr><td>Mount/Update/Rerender 分派</td><td><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">renderWithHooks / dispatcher objects</a></td><td><a href="../../react/packages/react-reconciler/src/__tests__/ReactHooksWithNoopRenderer-test.js">render-phase Counter</a></td><td>测试直接观察 rerender 序列，不读取 dispatcher 槽</td></tr>
+          <tr><td>位置链与规则错误</td><td><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">mount/updateWorkInProgressHook / finishRenderingHooks</a></td><td><a href="../../react/packages/react-reconciler/src/__tests__/ReactHooks-test.internal.js">Hook order/fewer hooks cases</a></td><td>DEV 顺序警告与生产数量错误路径不同</td></tr>
+          <tr><td>eager 相等可跳过调度</td><td><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">dispatchSetStateInternal</a></td><td><a href="../../react/packages/react-reconciler/src/__tests__/ReactHooks-test.internal.js">can bail out without calling render phase</a></td><td>只在 Fiber 与 alternate 均无待处理 Lane 等守卫满足时</td></tr>
+          <tr><td>Lane 跳过后按序 rebase</td><td><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">updateReducerImpl</a></td><td><a href="../../react/packages/react-reconciler/src/__tests__/ReactHooks-test.internal.js">can rebase on top of a previously skipped update</a></td><td>主测试覆盖普通 state 的 Transition/Sync 组合</td></tr>
+          <tr><td>Effect 登记与 cleanup</td><td><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">pushEffectImpl / updateEffectImpl</a>；<a href="../../react/packages/react-reconciler/src/ReactFiberCommitEffects.js">commitHookEffectList*</a></td><td><a href="../../react/packages/react-reconciler/src/__tests__/ReactHooksWithNoopRenderer-test.js">deleted sibling effect regression</a></td><td>测试覆盖 layout/passive 删除清理；未穷举 Offscreen/Suspense 重连</td></tr>
+        </tbody></table></div>
+        <p>本页为静态源码与测试证据教程，未在本轮执行 Jest。逻辑源码未修改；测试片段描述“仓库断言内容”，不是“本轮已跑通过”。</p>
+      </section>
+
+      <section id="questions"><h2>读完应能回答</h2><ul class="qa">
+        <li>为什么条件调用 Hook 会让状态错位，而不是让 React 按变量名重新匹配？</li>
+        <li>eager bailout 为什么仍要保存 update？</li>
+        <li>同步 +5 抢先提交后，为什么 Transition ×100 最终得到 105，而不是 100？</li>
+        <li>render-phase update 与普通事件 dispatch 的队列和调度边界有何不同？</li>
+        <li>deps 相等时 Effect 环里还有什么，commit 为什么不执行它？</li>
+        <li>组件删除时，child deletion 怎样最终触发 EffectInstance.destroy？</li>
+      </ul></section>
+
+      <section id="continue"><h2>回到主线阅读</h2>
+        <div class="grid three">
+          <article class="card"><span class="number">PUBLIC FACADE</span><h3><a href="03-react.html#hooks">03 · React Hooks 门面</a></h3><p>回看公开 <code>useState</code> 怎样通过 SharedInternals.H 跨 renderer 转发。</p></article>
+          <article class="card"><span class="number">RENDER ENGINE</span><h3><a href="04-reconciler-render.html#hooks">04 · FunctionComponent render</a></h3><p>把 Hook 状态机重新放回 beginWork、Lane 与可中断 render。</p></article>
+          <article class="card"><span class="number">COMMIT</span><h3><a href="05-reconciler-commit.html">05 · commit 阶段</a></h3><p>继续追 layout/passive Effect、mutation、ref 与错误捕获的阶段顺序。</p></article>
+        </div>
+      </section>
+
+      <div class="next-page"><a href="12-child-reconciliation.html">← 上一页：keyed children</a><a href="14-commit-effects.html">下一页：commit、ref 与 effect →</a></div>
+      <footer><p>一句话复述：dispatcher 决定“本轮怎样读 Hook”，位置链决定“读哪一个 Hook”，Lane 队列决定“本轮应用哪些 action”，Effect flags 决定“commit 执行哪些 create/cleanup”。</p></footer>
+    </main>
+
+    <aside class="toc" aria-label="本页目录"><strong>Hooks 状态机</strong>
+      <a href="#contract">证据边界</a><a href="#exact-anchors">连续原码</a><a href="#objects">四条链</a><a href="#dispatcher">dispatcher</a>
+      <a href="#position">位置不变量</a><a href="#mount-state">mount state</a><a href="#dispatch">dispatch / eager</a>
+      <a href="#base-queue">baseQueue</a><a href="#lane-trace">Lane 手推 + GWT</a><a href="#render-phase">render-phase</a>
+      <a href="#effects">Effect 环</a><a href="#effect-test">cleanup GWT</a><a href="#full-flow">完整链</a>
+      <a href="#boundaries">边界</a><a href="#pseudocode">伪代码</a><a href="#evidence">证据表</a><a href="#continue">继续阅读</a>
+    </aside>
+  </div>
+</body>
+</html>

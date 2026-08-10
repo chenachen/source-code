@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="packages/scheduler 0.28.0 源码指南：双最小堆、优先级超时、continuation、host loop 与错误恢复。" />
+  <title>02 · scheduler：时间、任务与让步</title>
+  <link rel="stylesheet" href="assets/guide.css?v=1" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="index.html">React 六包源码指南</a>
+      <nav class="pager" aria-label="页面导航">
+        <a href="index.html">地图</a>
+        <a href="01-shared.html">shared</a>
+        <a aria-current="page" href="02-scheduler.html">scheduler</a>
+        <a href="03-react.html">react</a>
+        <a href="04-reconciler-render.html">render</a>
+        <a href="05-reconciler-commit.html">commit</a>
+        <a href="06-dom-bindings.html">bindings</a>
+        <a href="07-react-dom.html">react-dom</a>
+        <a href="08-end-to-end.html">主线</a>
+        <a href="09-evidence.html">证据</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="layout">
+    <main>
+      <p class="eyebrow">02 · Host scheduling</p>
+      <h1>scheduler：把工作切成 host 可接受的片段</h1>
+      <p class="lede">
+        Scheduler 接收“带优先级、可延迟、可 continuation”的回调，用两个最小堆排序，
+        再通过环境可用的 host API 分批执行。它调度的是函数，不知道 Fiber、Lane 或 DOM。
+      </p>
+      <div class="meta">
+        <span class="pill">scheduler 0.28.0</span>
+        <span class="pill">25 个手写 JS 目标</span>
+        <span class="pill">245 / 245 声明已记录</span>
+        <span class="pill">默认时间片 5ms</span>
+        <span class="pill">73 个测试场景</span>
+      </div>
+
+      <section id="contract">
+        <h2>先纠正三个常见误解</h2>
+        <div class="grid three">
+          <article class="card"><span class="number">NOT FIBER</span><h3>它不选择 React 更新</h3><p>reconciler 先把根级工作归约成回调与 Scheduler Priority；Scheduler 只决定哪个 callback 先获得 CPU。</p></article>
+          <article class="card"><span class="number">NOT PREEMPTION</span><h3>它不能强行中断 JavaScript</h3><p>只有 callback 主动返回，或 React 在工作单元边界检查 <code>shouldYield</code>，控制权才回到 host。</p></article>
+          <article class="card"><span class="number">NOT DEADLINE ABORT</span><h3>“过期”不是取消</h3><p>过期任务会绕过时间片让步并尽快执行；取消则把 callback 置空，之后由堆顶路径惰性清理。</p></article>
+        </div>
+      </section>
+
+      <section id="entry">
+        <h2>入口与环境 fork</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>入口</th><th>实现</th><th>用途</th><th>host 边界</th></tr></thead>
+            <tbody>
+              <tr><td><a href="../../react/packages/scheduler/index.js">scheduler</a></td><td><a href="../../react/packages/scheduler/src/forks/Scheduler.js">Scheduler.js</a></td><td>DOM/Node 默认调度器</td><td>setImmediate → MessageChannel → setTimeout</td></tr>
+              <tr><td><a href="../../react/packages/scheduler/index.native.js">scheduler native</a></td><td><a href="../../react/packages/scheduler/src/forks/SchedulerNative.js">SchedulerNative.js</a></td><td>React Native</td><td>原生 RuntimeScheduler；不可用时回退默认实现</td></tr>
+              <tr><td><a href="../../react/packages/scheduler/unstable_post_task.js">unstable_post_task</a></td><td><a href="../../react/packages/scheduler/src/forks/SchedulerPostTask.js">SchedulerPostTask.js</a></td><td>浏览器 postTask 实验</td><td>scheduler.postTask / TaskController</td></tr>
+              <tr><td><a href="../../react/packages/scheduler/unstable_mock.js">unstable_mock</a></td><td><a href="../../react/packages/scheduler/src/forks/SchedulerMock.js">SchedulerMock.js</a></td><td>确定性测试</td><td>虚拟时间与显式 flush</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          根入口和 npm shim 只做环境/构建路由，核心默认实现位于 fork 文件。
+          <code>npm/umd</code> 中三个 legacy 预构建产物不在当前发布清单，也不作为手写声明审计对象。
+        </p>
+      </section>
+
+      <section id="task">
+        <h2>核心对象：一个 Task 在两个堆之间迁移</h2>
+        <figure class="source">
+          <figcaption><span>删节源码 · Scheduler.js / Task</span><a href="../../react/packages/scheduler/src/forks/Scheduler.js">打开文件</a></figcaption>
+          <pre><span class="kw">export opaque type</span> Task = {
+  id: number,
+  callback: Callback | null,
+  priorityLevel: PriorityLevel,
+  startTime: number,
+  expirationTime: number,
+  sortIndex: number,
+  isQueued?: boolean,
+};
+
+<span class="kw">var</span> taskQueue: Array&lt;Task&gt; = [];
+<span class="kw">var</span> timerQueue: Array&lt;Task&gt; = [];</pre>
+        </figure>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>状态</th><th>所在结构</th><th><code>sortIndex</code></th><th>离开条件</th></tr></thead>
+            <tbody>
+              <tr><td>延迟等待</td><td>timerQueue</td><td>startTime</td><td>当前时间到达 startTime，迁入 ready 堆</td></tr>
+              <tr><td>可运行</td><td>taskQueue</td><td>expirationTime</td><td>完成、被消费，或取消节点到达堆顶</td></tr>
+              <tr><td>执行中</td><td>仍是 taskQueue 堆顶</td><td>expirationTime 不变</td><td>callback 返回值决定完成或 continuation</td></tr>
+              <tr><td>continuation</td><td>同一个 Task 留在 taskQueue</td><td>原 expirationTime</td><td>新 host task 再次竞争堆顶</td></tr>
+              <tr><td>已取消</td><td>暂留原堆</td><td>不变</td><td>堆顶扫描看到 callback=null 后弹出</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          同一 Task 在任一时刻最多属于一个堆。迁移时才把排序键从 startTime 改成 expirationTime；
+          这让延迟任务不会因“最终很高优先级”而在可运行之前挡住 ready work。
+        </p>
+      </section>
+
+      <section id="heap">
+        <h2>算法一：稳定的数组最小堆</h2>
+        <p>
+          push 把节点放到数组末尾并向上修复，pop 用末尾节点替换根再向下修复，均为 O(log n)；peek 为 O(1)。
+          比较器先看当前队列的主排序键，再用单调递增 id 保持同键 FIFO。
+        </p>
+        <figure class="source">
+          <figcaption><span>删节源码 · SchedulerMinHeap.js / compare</span><a href="../../react/packages/scheduler/src/SchedulerMinHeap.js">打开文件</a></figcaption>
+          <pre><span class="kw">function</span> <span class="fn">compare</span>(a: Node, b: Node) {
+  <span class="kw">const</span> diff = a.sortIndex - b.sortIndex;
+  <span class="kw">return</span> diff !== 0 ? diff : a.id - b.id;
+}</pre>
+        </figure>
+        <div class="callout">
+          <p><strong>为什么取消不在任意下标删除？</strong>当前 Task 没有维护 heap index；查找并修复任意节点会增加状态与热路径成本。
+          把 <code>callback</code> 置 null 是 O(1)，代价是取消节点会占内存到它接近堆顶。</p>
+        </div>
+      </section>
+
+      <section id="schedule">
+        <h2>算法二：delay 与 priority 共同决定队列</h2>
+        <p>
+          schedule 先得到 startTime，再按优先级加超时预算：Immediate 为 −1ms、UserBlocking 250ms、Normal 5000ms、
+          Low 10000ms、Idle 用最大 31 位整数。未知优先级按 Normal 预算计算，但 Task 仍保留调用方原值。
+        </p>
+        <figure class="source">
+          <figcaption><span>删节源码 · Scheduler.js / schedule 分流</span><a href="../../react/packages/scheduler/src/forks/Scheduler.js">打开文件</a></figcaption>
+          <pre><span class="kw">if</span> (startTime &gt; currentTime) {
+  newTask.sortIndex = startTime;
+  push(timerQueue, newTask);
+  <span class="cm">// 只有新的最早 timer 需要重设 host timeout</span>
+} <span class="kw">else</span> {
+  newTask.sortIndex = expirationTime;
+  push(taskQueue, newTask);
+  <span class="cm">// 只在未调度且未执行 work loop 时唤醒 host</span>
+}</pre>
+        </figure>
+        <figure class="source">
+          <figcaption><span>删节源码 · Scheduler.js / advanceTimers</span><a href="../../react/packages/scheduler/src/forks/Scheduler.js">打开文件</a></figcaption>
+          <pre><span class="kw">if</span> (timer.callback === null) {
+  pop(timerQueue);
+} <span class="kw">else if</span> (timer.startTime &lt;= currentTime) {
+  pop(timerQueue);
+  timer.sortIndex = timer.expirationTime;
+  push(taskQueue, timer);
+} <span class="kw">else</span> {
+  <span class="kw">return</span>;
+}</pre>
+        </figure>
+      </section>
+
+      <section id="workloop">
+        <h2>work loop：让步、continuation 与重新竞争</h2>
+        <p>
+          workLoop 总是查看 ready 堆顶。未过期任务在 host 要求让步时停止；过期任务继续执行。
+          执行前先把 callback 置 null，防止错误或重入把同一函数重复消费。返回函数时把它写回同一 Task，
+          但立即结束本轮 slice，让 continuation 在新的 host task 中重新与更高优先级工作竞争。
+        </p>
+        <figure class="source">
+          <figcaption><span>删节源码 · Scheduler.js / continuation 分支</span><a href="../../react/packages/scheduler/src/forks/Scheduler.js">打开文件</a></figcaption>
+          <pre><span class="kw">const</span> continuationCallback = callback(didUserCallbackTimeout);
+currentTime = getCurrentTime();
+<span class="kw">if</span> (typeof continuationCallback === <span class="str">'function'</span>) {
+  currentTask.callback = continuationCallback;
+  advanceTimers(currentTime);
+  <span class="kw">return true</span>;
+} <span class="kw">else</span> {
+  <span class="kw">if</span> (currentTask === peek(taskQueue)) pop(taskQueue);
+  advanceTimers(currentTime);
+}</pre>
+        </figure>
+        <p>
+          <code>shouldYieldToHost</code> 先考虑 renderer 的 paint 请求，再比较本轮已占用时间与 frameInterval。
+          默认 5ms，WWW fork 为 10ms；这只是 Scheduler slice，不承诺与显示器帧边界对齐。
+        </p>
+      </section>
+
+      <section id="host">
+        <h2>host loop：只保留一次唤醒，错误后仍不饿死队列</h2>
+        <div class="chain" aria-label="Scheduler host loop">
+          <div class="node">scheduleCallback<small>push heap</small></div><span class="arrow">→</span>
+          <div class="node">requestHostCallback<small>去重唤醒</small></div><span class="arrow">→</span>
+          <div class="node">host message<small>新 task 边界</small></div><span class="arrow">→</span>
+          <div class="node">flushWork<small>保存/恢复 priority</small></div><span class="arrow">→</span>
+          <div class="node">workLoop<small>完成或 yield</small></div>
+        </div>
+        <p>
+          模块初始化时捕获原生 setImmediate/setTimeout 引用，避免之后的 polyfill 或 fake timer 偷换调度语义。
+          默认优先 setImmediate，其次 MessageChannel，最后才用 setTimeout，后者可能受到嵌套 timer clamp。
+        </p>
+        <figure class="source">
+          <figcaption><span>删节源码 · Scheduler.js / 错误恢复</span><a href="../../react/packages/scheduler/src/forks/Scheduler.js">打开文件</a></figcaption>
+          <pre><span class="kw">let</span> hasMoreWork = true;
+<span class="kw">try</span> {
+  hasMoreWork = flushWork(currentTime);
+} <span class="kw">finally</span> {
+  <span class="kw">if</span> (hasMoreWork) {
+    schedulePerformWorkUntilDeadline();
+  } <span class="kw">else</span> {
+    isMessageLoopRunning = false;
+  }
+}</pre>
+        </figure>
+        <p>
+          这里故意不 catch 并吞掉用户错误。初始 <code>hasMoreWork=true</code> 意味着 flush 抛错时 finally 仍发送下一条 host message，
+          原错误照常离开当前 task，后续队列也不会永久滞留。
+        </p>
+      </section>
+
+      <section id="walkthrough">
+        <h2>手工推演：高优先级工作如何插入 continuation</h2>
+        <p>假设默认超时，虚拟时间从 0 开始，Normal 工作 A/B/C/D 每段都在 yield 边界返回同一个 continuation：</p>
+        <ol class="state-list">
+          <li><strong>t=0。</strong>Normal Task N 入 ready 堆，expiration=5000，id=1；host message 被登记一次。</li>
+          <li><strong>第一轮。</strong>N 输出 A 后返回 continuation；callback 写回 N，expiration 与 id 均不变，本轮返回 <code>true</code> 并登记新 host message。</li>
+          <li><strong>插队。</strong>新的 UserBlocking Task H 入 ready 堆，expiration=当前时间+250；其排序键小于 N 的 5000，成为堆顶。</li>
+          <li><strong>第二轮。</strong>workLoop 重新 peek，先执行 H；完成并 pop 后才再次看到 N。</li>
+          <li><strong>恢复。</strong>N 继续输出 B/C/D。continuation 保留原到期时间，但没有不可中断特权。</li>
+        </ol>
+        <figure class="source">
+          <figcaption><span>连续测试原码 · SchedulerMock-test.js</span><a href="../../react/packages/scheduler/src/__tests__/SchedulerMock-test.js">打开测试</a></figcaption>
+          <pre>    scheduleCallback(NormalPriority, work);
+    <span class="kw">await</span> waitFor([<span class="str">'A'</span>]);
+
+    scheduleCallback(UserBlockingPriority, () =&gt; {
+      Scheduler.unstable_advanceTime(100);
+      Scheduler.log(<span class="str">'High pri'</span>);
+    });
+
+    <span class="kw">await</span> waitForAll([<span class="str">'High pri'</span>, <span class="str">'B'</span>, <span class="str">'C'</span>, <span class="str">'D'</span>]);</pre>
+        </figure>
+      </section>
+
+      <section id="full-flow">
+        <h2>完整流程图：一次 callback 的所有出口</h2>
+        <ol class="state-list">
+          <li><strong>创建：</strong>根据 delay 计算 startTime，根据 priority 计算 expirationTime。</li>
+          <li><strong>分流：</strong>未来任务进 timerQueue；立即任务进 taskQueue；只为最早 timer 或首批 ready work 唤醒 host。</li>
+          <li><strong>迁移：</strong>timeout 到点调用 advanceTimers；取消节点被丢弃，到期节点改排序键后进 ready 堆。</li>
+          <li><strong>执行：</strong>未过期且应 yield → 保留堆；callback 抛错 → 原样传播；返回函数 → 保存 continuation；否则完成并 pop。</li>
+          <li><strong>续发：</strong>仍有 ready work → 新 host task；只有未来 timer → 设最早 timeout；两堆皆空 → 关闭 message loop。</li>
+          <li><strong>外部取消：</strong>任何时刻 cancel 只清 callback；真正释放发生在堆顶扫描，profiling 记录则即时更新 queued 状态。</li>
+        </ol>
+      </section>
+
+      <section id="evidence">
+        <h2>测试证据与保证边界</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>机制</th><th>代表测试</th><th>关键断言</th><th>不能扩大成</th></tr></thead>
+            <tbody>
+              <tr><td>continuation 跨 host task</td><td><a href="../../react/packages/scheduler/src/__tests__/Scheduler-test.js">task with continuation</a></td><td>首轮再次 Post Message，第二轮才输出 Continuation</td><td>不能保证任意用户函数自动可中断</td></tr>
+              <tr><td>惰性取消</td><td>Scheduler-test / cancels tasks</td><td>host event 仍触发，但取消 callback 无日志</td><td>不能保证节点立即从堆数组释放</td></tr>
+              <tr><td>错误后继续</td><td>throws…then continues in a new event</td><td>原错误抛出，同时新事件执行后续 Yay</td><td>不能保证错误 callback 自身恢复</td></tr>
+              <tr><td>优先级抢占 continuation</td><td><a href="../../react/packages/scheduler/src/__tests__/SchedulerMock-test.js">continuations are interrupted…</a></td><td>High pri 严格早于 B/C/D</td><td>不是执行中途的线程级抢占</td></tr>
+              <tr><td>环境 fallback</td><td>SetImmediate / SetTimeout / PostTask tests</td><td>API 缺失、覆盖与错误路径保持队列前进</td><td>不等于所有浏览器 task 排序完全相同</td></tr>
+              <tr><td>profiling</td><td><a href="../../react/packages/scheduler/src/__tests__/SchedulerProfiling-test.js">SchedulerProfiling-test</a></td><td>start/run/yield/error/cancel 事件序列</td><td>默认构建未开启 profiling</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          本次编辑只增加/翻译注释：25 个目标文件的 245 个结构声明全部有记录，Hermes 解析无诊断；
+          六个测试文件共 73 个场景均有中文邻近说明，其中 36 个关键场景使用 Given–When–Then。
+          去注释 AST 哈希与编辑前一致，因此未机械重跑 Jest；这里引用的是仓库已有测试所表达的机制证据。
+        </p>
+      </section>
+
+      <section id="questions">
+        <h2>检查理解</h2>
+        <ul class="qa">
+          <li>timerQueue 与 taskQueue 为什么必须使用不同的 <code>sortIndex</code>？</li>
+          <li>callback 返回 continuation 后，为什么立即结束本轮而不是直接递归调用？</li>
+          <li>过期、取消、yield 三者分别改变了什么状态？</li>
+          <li>flush 抛错时，<code>hasMoreWork</code> 的默认值为什么必须是 true？</li>
+          <li>reconciler 的 Lane 在哪里结束，Scheduler Priority 又从哪里开始？</li>
+        </ul>
+      </section>
+
+      <div class="next-page">
+        <a href="01-shared.html">← 上一页：shared</a>
+        <a href="03-react.html">下一页：React 描述层 →</a>
+      </div>
+      <footer><p>下一层将由 react 的公开描述对象进入 reconciler；Scheduler 只在根级回调边界重新出现。</p></footer>
+    </main>
+
+    <aside class="toc" aria-label="本页目录">
+      <strong>scheduler</strong>
+      <a href="#contract">契约与误解</a>
+      <a href="#entry">入口与 forks</a>
+      <a href="#task">Task 状态</a>
+      <a href="#heap">最小堆</a>
+      <a href="#schedule">delay / priority</a>
+      <a href="#workloop">work loop</a>
+      <a href="#host">host loop</a>
+      <a href="#walkthrough">手工推演</a>
+      <a href="#full-flow">完整流程</a>
+      <a href="#evidence">测试证据</a>
+      <a href="#questions">检查理解</a>
+    </aside>
+  </div>
+</body>
+</html>

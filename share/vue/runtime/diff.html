@@ -1,0 +1,944 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Vue 3 Diff 算法专题：patchChildren、keyed diff、最长递增子序列与节点移动详解"
+    />
+    <title>Diff 算法专题 · Vue Runtime 内核解剖</title>
+    <link rel="stylesheet" href="assets/styles.css" />
+    <style>
+      .array-view {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.45rem;
+        margin: 0.65rem 0;
+      }
+
+      .array-item {
+        display: grid;
+        min-width: 42px;
+        min-height: 42px;
+        place-items: center;
+        border: 1px solid var(--border);
+        border-radius: 9px;
+        background: var(--surface-muted);
+        font-family: var(--mono);
+        font-size: 0.78rem;
+      }
+
+      .array-item.stable {
+        border-color: var(--brand);
+        background: var(--brand-soft);
+      }
+
+      .array-item.move {
+        border-color: var(--warm);
+        background: var(--warm-soft);
+      }
+
+      .array-item.remove {
+        border-color: var(--danger);
+        background: var(--danger-soft);
+        text-decoration: line-through;
+      }
+
+      .array-item.new {
+        border-style: dashed;
+        border-color: var(--brand);
+      }
+
+      .trace-row {
+        padding: 0.85rem 0;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .trace-row:last-child {
+        border-bottom: 0;
+      }
+
+      .trace-row strong {
+        display: block;
+        margin-bottom: 0.25rem;
+      }
+    </style>
+  </head>
+  <body data-current="diff.html">
+    <header data-site-header></header>
+    <div class="docs-shell">
+      <aside data-global-nav></aside>
+      <main class="article">
+        <div class="article-hero">
+          <div class="article-kicker">Chapter 04 · Diff Algorithm</div>
+          <h1>Vue Diff：列表变化后，怎样少动 DOM</h1>
+          <p class="article-lead">
+            先不谈算法。拖动一条任务、在中间插入一项、删除旧项时，Vue
+            要认出“谁还是谁”，保留已有节点，只创建或移动真正变化的部分。
+          </p>
+          <div class="hero-meta">
+            <span>前半章无需源码</span><span>可交互列表</span
+            ><span>后半章完整推演算法</span>
+          </div>
+        </div>
+
+        <section class="article-section prose" id="see-diff">
+          <h2>先操作列表，观察 Vue 要做的决定</h2>
+          <p>
+            下面每个任务都有一个稳定 id，也就是模板中的
+            <code>key</code
+            >。点击不同变化，注意“复用、移动、新建、删除”不是一回事。每项显示的
+            DOM 编号来自真实 <code>li</code> 对象；编号不变就表示节点没有重建。
+          </p>
+          <div class="demo-panel" data-diff-demo>
+            <div class="demo-toolbar">
+              <button
+                class="demo-button"
+                type="button"
+                data-diff-case="initial"
+              >
+                原始列表
+              </button>
+              <button class="demo-button" type="button" data-diff-case="append">
+                末尾新增
+              </button>
+              <button
+                class="demo-button"
+                type="button"
+                data-diff-case="reorder"
+              >
+                调整顺序
+              </button>
+              <button
+                class="demo-button"
+                type="button"
+                data-diff-case="replace"
+              >
+                删除并插入
+              </button>
+            </div>
+            <div class="scene-window">
+              <div class="scene-titlebar">任务列表</div>
+              <div class="scene-body">
+                <ul class="ui-list" data-diff-demo-list></ul>
+              </div>
+            </div>
+            <div class="demo-explanation" data-diff-explanation></div>
+          </div>
+          <p class="concept-sentence">
+            Diff
+            不是重新画列表，而是给每个旧节点安排去向：留下、更新、移动或离开。
+          </p>
+        </section>
+
+        <section class="article-section prose" id="plain-rules">
+          <h2>不用算法术语，也能先理解四条规则</h2>
+          <div class="sequence">
+            <div class="sequence-item">
+              <strong>先确认身份</strong><br />同一种节点且 key
+              相同，才可能是原来的任务；文字相同不代表身份相同。
+            </div>
+            <div class="sequence-item">
+              <strong>两边没变的先跳过</strong
+              ><br />列表开头和结尾经常保持不变，先处理它们，真正困难的范围会迅速缩小。
+            </div>
+            <div class="sequence-item">
+              <strong>中间按 key 找旧朋友</strong><br />新列表给出 key
+              的新位置；扫描旧列表就能知道谁消失、谁留下、谁换了位置。
+            </div>
+            <div class="sequence-item">
+              <strong>能不移动的尽量不移动</strong
+              ><br />留下的节点中，总有一批相对顺序已经正确。Vue
+              保持这批节点，移动其余节点。
+            </div>
+          </div>
+          <div class="plain-section">
+            <span class="scene-label">把列表想成重新排座位</span>
+            <p>
+              学生胸牌是
+              key。老师先确认门口和窗边没换的人；再给中间学生查新座位；找到一条已经按新顺序坐好的最长队伍，让他们不动；最后把新同学和位置不对的人从后往前安排到已有同学前面。
+            </p>
+          </div>
+          <div class="reader-check">
+            <strong>不看源码也应能回答：</strong>key 用来说明身份；Diff
+            先复用、再删除/新增、最后减少移动；最长递增子序列只是寻找“最多可以不动的人”。
+          </div>
+        </section>
+
+        <section class="article-section prose" id="plain-walkthrough">
+          <h2>一个小例子先走通结果</h2>
+          <div class="before-after">
+            <div class="scene-window">
+              <div class="scene-titlebar">旧顺序</div>
+              <div class="scene-body">
+                <ul class="ui-list">
+                  <li class="ui-item">A</li>
+                  <li class="ui-item">B</li>
+                  <li class="ui-item">C</li>
+                  <li class="ui-item">D</li>
+                </ul>
+              </div>
+            </div>
+            <div class="scene-window">
+              <div class="scene-titlebar">新顺序</div>
+              <div class="scene-body">
+                <ul class="ui-list">
+                  <li class="ui-item">A</li>
+                  <li class="ui-item moved">C</li>
+                  <li class="ui-item">B</li>
+                  <li class="ui-item">D</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+          <ol>
+            <li>A 在两边开头相同，直接复用。</li>
+            <li>D 在两边结尾相同，直接复用。</li>
+            <li>中间只剩旧 [B, C] 与新 [C, B]。</li>
+            <li>B、C 的 key 都存在，因此不删除也不重建。</li>
+            <li>只需移动其中一个节点，就能得到新顺序。</li>
+          </ol>
+          <p>
+            后半章要解决的，就是怎样把这五句话变成对任意长列表都可靠、且接近最少
+            DOM 移动的算法。
+          </p>
+        </section>
+
+        <div class="level-divider">
+          进入算法与源码层 · 第一次阅读可以到这里暂停
+        </div>
+
+        <section class="article-section prose" id="why-diff">
+          <h2>为什么 Renderer 需要专门的 Diff</h2>
+          <p>
+            每次 render 都会生成一棵新的 VNode 树。如果直接删除旧 DOM、重建新
+            DOM，界面结果可能正确，但会丢失大量运行时状态：输入框选区、滚动位置、原生元素状态、组件实例、KeepAlive
+            缓存、Transition 阶段，以及用户持有的节点引用。
+          </p>
+          <p>
+            因此 Diff 的目标不是单纯追求最少编辑距离，而是同时满足四个约束：
+          </p>
+          <div class="card-grid">
+            <article class="card">
+              <span class="card-label">IDENTITY</span>
+              <h3>身份正确</h3>
+              <p>
+                type + key 相同的 VNode 才能代表同一逻辑节点，组件实例和 DOM
+                才允许复用。
+              </p>
+            </article>
+            <article class="card">
+              <span class="card-label">ORDER</span>
+              <h3>最终顺序正确</h3>
+              <p>
+                新 children 的逻辑顺序必须映射到真实宿主顺序，包括 Fragment
+                锚点范围。
+              </p>
+            </article>
+            <article class="card">
+              <span class="card-label">MINIMAL HOST WORK</span>
+              <h3>减少宿主操作</h3>
+              <p>
+                VNode 比较很便宜，真实 DOM
+                创建、删除和移动更昂贵，应尽量复用并少 move。
+              </p>
+            </article>
+            <article class="card">
+              <span class="card-label">LIFECYCLE</span>
+              <h3>生命周期正确</h3>
+              <p>新增才 mount，消失才 unmount，移动不能触发组件重新创建。</p>
+            </article>
+          </div>
+          <div class="callout">
+            <strong>Vue 的 Diff 是带业务语义的树协调算法。</strong
+            >它比较的不只是标签字符串，还要维护组件、指令、ref、Transition、Teleport
+            和 Suspense 的运行时协议。
+          </div>
+          <div class="source-links">
+            <a
+              class="source-link"
+              href="../../../vue/packages/runtime-core/src/renderer.ts"
+              >本地：renderer.ts</a
+            >
+            <a
+              class="source-link"
+              href="../../../vue/packages/runtime-core/__tests__/rendererChildren.spec.ts"
+              >本地：rendererChildren.spec.ts</a
+            >
+            <a
+              class="source-link"
+              href="https://github.com/vuejs/core/blob/v3.5.41/packages/runtime-core/src/renderer.ts#L1804-L2033"
+              >GitHub：patchKeyedChildren</a
+            >
+          </div>
+        </section>
+
+        <section class="article-section prose" id="identity">
+          <h2>第一原则：key 参与定义节点身份</h2>
+          <p>
+            <code>isSameVNodeType(n1, n2)</code> 的核心判断是
+            <code>n1.type === n2.type && n1.key === n2.key</code>。type 相同但
+            key 不同，仍被视为两个节点；key 相同但 type 不同，也不能复用。
+          </p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>旧 VNode</th>
+                  <th>新 VNode</th>
+                  <th>是否复用</th>
+                  <th>原因</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>&lt;li key="a"&gt;</code></td>
+                  <td><code>&lt;li key="a"&gt;</code></td>
+                  <td><strong>是</strong></td>
+                  <td>type 与 key 都相同</td>
+                </tr>
+                <tr>
+                  <td><code>&lt;li key="a"&gt;</code></td>
+                  <td><code>&lt;li key="b"&gt;</code></td>
+                  <td><strong>否</strong></td>
+                  <td>逻辑身份不同</td>
+                </tr>
+                <tr>
+                  <td><code>&lt;Foo key="a"&gt;</code></td>
+                  <td><code>&lt;Bar key="a"&gt;</code></td>
+                  <td><strong>否</strong></td>
+                  <td>组件类型不同</td>
+                </tr>
+                <tr>
+                  <td><code>&lt;Foo&gt;</code></td>
+                  <td><code>&lt;Foo&gt;</code></td>
+                  <td><strong>通常是</strong></td>
+                  <td>无 key 时按位置和 type 猜测身份</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <h3>为什么数组索引通常不是好 key</h3>
+          <p>
+            当列表插入、删除或排序后，同一索引对应的数据已经变了，但 key
+            仍相同。Renderer 会复用错误的组件实例或 DOM 状态。key
+            应表示数据的稳定业务身份，而不是它本轮所在的位置。
+          </p>
+          <div class="callout warm">
+            key 的主要作用不是“让 Map 查找更快”，而是向 Runtime
+            声明身份。查找优化只是这个声明带来的副产品。
+          </div>
+        </section>
+
+        <section class="article-section prose" id="children-shapes">
+          <h2>进入 keyed diff 前，先排除简单形态</h2>
+          <p>
+            <code>patchChildren</code> 先根据 shapeFlag 区分文本、数组与空
+            children。只有“旧数组 → 新数组”才需要列表 Diff。
+          </p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>旧 children</th>
+                  <th>新 children</th>
+                  <th>处理</th>
+                  <th>是否进入 keyed diff</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>文本</td>
+                  <td>文本</td>
+                  <td>比较字符串，必要时 setElementText</td>
+                  <td>否</td>
+                </tr>
+                <tr>
+                  <td>数组</td>
+                  <td>文本</td>
+                  <td>unmountChildren，再设置文本</td>
+                  <td>否</td>
+                </tr>
+                <tr>
+                  <td>文本/空</td>
+                  <td>数组</td>
+                  <td>清空文本，mountChildren</td>
+                  <td>否</td>
+                </tr>
+                <tr>
+                  <td>数组</td>
+                  <td>空</td>
+                  <td>unmountChildren</td>
+                  <td>否</td>
+                </tr>
+                <tr>
+                  <td>数组</td>
+                  <td>数组</td>
+                  <td>按 patchFlag 选择 keyed、unkeyed 或保守 Diff</td>
+                  <td>是/可能</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <h3>keyed 与 unkeyed 的根本区别</h3>
+          <div class="card-grid">
+            <article class="card">
+              <span class="card-label">UNKEYED</span>
+              <h3>位置就是临时身份</h3>
+              <p>
+                按相同索引 patch
+                公共长度，再新增或删除尾部。适合节点只按位置更新、不会重排的列表。
+              </p>
+            </article>
+            <article class="card">
+              <span class="card-label">KEYED</span>
+              <h3>key 是稳定身份</h3>
+              <p>
+                节点可跨索引复用，算法需要查找新位置、识别移动，并维护真实 DOM
+                顺序。
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section class="article-section prose" id="overview">
+          <h2>Vue 3 keyed diff 的整体思路</h2>
+          <p>
+            Vue 3 并不是简单沿用 Vue 2
+            的“四指针交叉比较”。它先同步稳定的头尾，再对中间未知区间使用 key Map
+            和最长递增子序列。
+          </p>
+          <div class="diagram">
+            <div class="diagram-title">PATCH KEYED CHILDREN · 8 PHASES</div>
+            <div class="sequence">
+              <div class="sequence-item">
+                <strong>同步头部</strong><br />从左向右 patch 连续相同节点。
+              </div>
+              <div class="sequence-item">
+                <strong>同步尾部</strong><br />从右向左 patch 连续相同节点。
+              </div>
+              <div class="sequence-item">
+                <strong>旧序列耗尽</strong><br />剩余新节点全部 mount。
+              </div>
+              <div class="sequence-item">
+                <strong>新序列耗尽</strong><br />剩余旧节点全部 unmount。
+              </div>
+              <div class="sequence-item">
+                <strong>建立 key Map</strong><br />记录未知新区间 key →
+                newIndex。
+              </div>
+              <div class="sequence-item">
+                <strong>扫描未知旧区间</strong
+                ><br />复用可匹配节点，删除不存在节点。
+              </div>
+              <div class="sequence-item">
+                <strong>计算 LIS</strong><br />只在确实 moved
+                时寻找可保持原位的最大集合。
+              </div>
+              <div class="sequence-item">
+                <strong>倒序提交</strong><br />新增缺失节点，移动不在 LIS
+                中的节点。
+              </div>
+            </div>
+          </div>
+          <pre><code>patchKeyedChildren(c1, c2, container, parentAnchor, ...)
+  i = 0
+  e1 = c1.length - 1
+  e2 = c2.length - 1
+
+  sync from start
+  sync from end
+
+  if old exhausted: mount remaining new
+  else if new exhausted: unmount remaining old
+  else:
+    build keyToNewIndexMap
+    scan old unknown range
+    build newIndexToOldIndexMap
+    if moved: increasingNewIndexSequence = getSequence(map)
+    walk new unknown range backwards
+      mount missing nodes
+      move reused nodes not in LIS</code></pre>
+        </section>
+
+        <section class="article-section prose" id="sync-ends">
+          <h2>阶段一、二：同步头尾不是双端乱猜</h2>
+          <p>
+            很多真实更新只改变列表局部。例如尾部追加、头部插入、中间替换。连续同步头尾能用
+            O(k) 成本排除大量稳定区域，并直接 patch 它们。
+          </p>
+          <div class="diagram">
+            <div class="diagram-title">EXAMPLE · STABLE EDGES</div>
+            <strong>旧 children</strong>
+            <div class="array-view">
+              <span class="array-item stable">a</span
+              ><span class="array-item stable">b</span
+              ><span class="array-item">c</span><span class="array-item">d</span
+              ><span class="array-item">e</span
+              ><span class="array-item stable">f</span
+              ><span class="array-item stable">g</span>
+            </div>
+            <strong>新 children</strong>
+            <div class="array-view">
+              <span class="array-item stable">a</span
+              ><span class="array-item stable">b</span
+              ><span class="array-item">e</span><span class="array-item">c</span
+              ><span class="array-item new">h</span
+              ><span class="array-item stable">f</span
+              ><span class="array-item stable">g</span>
+            </div>
+          </div>
+          <p>
+            a、b 从头部同步，g、f 从尾部同步。未知区间被缩小为旧
+            <code>[c,d,e]</code> 与新 <code>[e,c,h]</code>。注意：Vue 3
+            的尾部同步只比较“旧尾与新尾”，不会像 Vue 2
+            那样在这一阶段尝试旧头与新尾交叉匹配。
+          </p>
+          <h3>提前结束的两个快路径</h3>
+          <ul>
+            <li>
+              若头尾同步后
+              <code>i &gt; e1</code>，旧区间耗尽：把剩余新节点插到已知 anchor
+              前。
+            </li>
+            <li>若 <code>i &gt; e2</code>，新区间耗尽：卸载剩余旧节点。</li>
+          </ul>
+          <p>只有两边都还有未知节点，才进入最复杂的中间区间处理。</p>
+        </section>
+
+        <section class="article-section prose" id="unknown-range">
+          <h2>阶段五、六：把未知区间转成索引问题</h2>
+          <h3>1. 建立 keyToNewIndexMap</h3>
+          <p>
+            Vue 先遍历新未知区间，把有 key 节点记录为
+            <code>key → newIndex</code>。开发模式还会检查重复
+            key，因为两个新节点声明同一身份会让复用关系不确定。
+          </p>
+          <pre><code>新未知区间 [e, c, h]
+
+keyToNewIndexMap = {
+  e → 2,
+  c → 3,
+  h → 4
+}</code></pre>
+          <h3>2. 创建 newIndexToOldIndexMap</h3>
+          <p>
+            数组长度等于待 patch 新节点数量，初始全为
+            0。值记录“该新节点对应的旧索引 + 1”。加 1 是因为旧索引 0
+            是合法值，而 0 需要保留为“没有旧节点”的哨兵。
+          </p>
+          <h3>3. 扫描旧未知区间</h3>
+          <p>
+            有 key 的旧节点通过 Map O(1) 找新索引；无 key
+            的旧节点只能在新未知区间寻找尚未匹配且 type
+            相同的节点。找不到新位置的旧节点立即 unmount；找到则
+            patch，并把旧索引写入映射。
+          </p>
+          <div class="diagram">
+            <div class="diagram-title">SCAN RESULT</div>
+            <div class="trace-row">
+              <strong>旧 c → 新索引 3</strong
+              ><span>可复用，patch(c, c)；记录到映射第二格。</span>
+            </div>
+            <div class="trace-row">
+              <strong>旧 d → 找不到</strong
+              ><span>新列表已不存在 d，立即 unmount。</span>
+            </div>
+            <div class="trace-row">
+              <strong>旧 e → 新索引 2</strong
+              ><span
+                >可复用，patch(e, e)；但新索引从 3 回退到
+                2，说明发生移动。</span
+              >
+            </div>
+            <div class="trace-row">
+              <strong>新 h → 没有旧来源</strong
+              ><span>映射保持 0，最后一阶段再 mount。</span>
+            </div>
+            <p><code>newIndexToOldIndexMap = [5, 3, 0]</code></p>
+          </div>
+          <h3>moved 如何被快速发现</h3>
+          <p>
+            扫描旧节点时记录目前见过的最大
+            newIndex。若下一个匹配节点的新索引小于最大值，说明旧节点顺序映射到新列表后不再单调递增，至少有节点要移动。没有回退则无需计算
+            LIS。
+          </p>
+        </section>
+
+        <section class="article-section prose" id="lis">
+          <h2>阶段七：最长递增子序列到底解决什么</h2>
+          <p>
+            此时算法已经知道每个旧节点的新位置，<strong
+              >Diff 的正确性已经确定</strong
+            >。LIS 只用于减少 DOM move：从 newIndexToOldIndexMap
+            找到值递增的最长子序列，这些节点在旧树中的相对顺序与新树一致，可以保持原位。
+          </p>
+          <div class="callout">
+            LIS 不是 Vue Diff
+            的全部，也不负责找新增和删除。它只在未知中间区间、确认发生移动之后，用来选择“最大的不移动集合”。
+          </div>
+          <h3>为什么忽略 0</h3>
+          <p>0 代表新节点没有旧来源，必然需要 mount，不属于可复用节点序列。</p>
+          <h3>getSequence 的 O(n log n) 思路</h3>
+          <ul>
+            <li><code>result</code> 保存不同长度递增子序列的最小尾值索引。</li>
+            <li>当前值大于 result 尾值时直接追加。</li>
+            <li>
+              否则二分查找第一个不小于当前值的位置并替换，使未来更容易延长。
+            </li>
+            <li>
+              <code>p</code> 保存前驱索引，最后从 result
+              尾部回溯出真实子序列索引。
+            </li>
+          </ul>
+          <pre><code>// 输入是索引映射，不是 key 本身
+newIndexToOldIndexMap = [5, 3, 0]
+
+忽略 0 后，5 → 3 不是递增
+LIS 长度为 1，算法会保留其中一个节点原位
+其余已复用节点通过 hostInsert 移动</code></pre>
+          <p>
+            即使 LIS
+            有多个同长度答案，选择任意一个都能得到最少移动次数；具体保留哪个节点由
+            getSequence 的更新策略决定。
+          </p>
+        </section>
+
+        <section class="article-section prose" id="reverse-pass">
+          <h2>阶段八：为什么必须倒序插入和移动</h2>
+          <p>
+            新未知区间从右向左处理。当前节点的 anchor 是“新列表中的下一个节点”的
+            el；若当前已是整个 children 尾部，则使用 parentAnchor。
+          </p>
+          <pre><code>for (i = toBePatched - 1; i >= 0; i--) {
+  nextIndex = s2 + i
+  nextChild = c2[nextIndex]
+  anchor = nextIndex + 1 < l2 ? c2[nextIndex + 1].el : parentAnchor
+
+  if (newIndexToOldIndexMap[i] === 0)
+    patch(null, nextChild, container, anchor) // 新增
+  else if (moved && i 不在 LIS)
+    move(nextChild, container, anchor)        // 移动
+}</code></pre>
+          <p>
+            倒序的关键是：处理当前节点时，它右侧的新节点已经处于正确位置，因此
+            anchor
+            一定可靠。若从左向右，当前节点的“下一个新兄弟”可能尚未移动或挂载。
+          </p>
+          <h3>DOM move 为什么可以复用 insertBefore</h3>
+          <p>
+            对已经在 DOM 中的节点再次调用
+            <code>insertBefore(node, anchor)</code
+            >，浏览器会移动节点，而不是复制。Renderer 的
+            <code>move</code> 再根据 VNode 类型扩展这条语义：组件移动
+            subTree，Fragment 移动整个锚点范围，Teleport 与 Suspense
+            走自己的协议。
+          </p>
+        </section>
+
+        <section class="article-section prose" id="walkthrough">
+          <h2>完整手算：从 [a,b,c,d,e,f,g] 到 [a,b,e,c,h,f,g]</h2>
+          <div class="tabs" data-tabs>
+            <div class="tab-list" role="tablist" aria-label="Diff 手算阶段">
+              <button
+                class="tab-button"
+                type="button"
+                role="tab"
+                aria-selected="true"
+                data-tab="w1"
+              >
+                1. 缩小区间
+              </button>
+              <button
+                class="tab-button"
+                type="button"
+                role="tab"
+                aria-selected="false"
+                data-tab="w2"
+              >
+                2. 建立映射
+              </button>
+              <button
+                class="tab-button"
+                type="button"
+                role="tab"
+                aria-selected="false"
+                data-tab="w3"
+              >
+                3. 删除与 patch
+              </button>
+              <button
+                class="tab-button"
+                type="button"
+                role="tab"
+                aria-selected="false"
+                data-tab="w4"
+              >
+                4. 倒序提交
+              </button>
+            </div>
+            <div class="tab-panel" data-tab-panel="w1">
+              <h3>同步头尾</h3>
+              <p>
+                a、b 从头部复用；g、f 从尾部复用。剩余旧 [c,d,e] 与新 [e,c,h]。
+              </p>
+              <div class="array-view">
+                <span class="array-item stable">a</span
+                ><span class="array-item stable">b</span
+                ><span class="array-item">c</span
+                ><span class="array-item">d</span
+                ><span class="array-item">e</span
+                ><span class="array-item stable">f</span
+                ><span class="array-item stable">g</span>
+              </div>
+            </div>
+            <div class="tab-panel" data-tab-panel="w2" hidden>
+              <h3>新 key Map 与索引表</h3>
+              <p>
+                keyToNewIndexMap = {e→2, c→3, h→4}；newIndexToOldIndexMap 初始
+                [0,0,0]。
+              </p>
+              <div class="array-view">
+                <span class="array-item">e:0</span
+                ><span class="array-item">c:0</span
+                ><span class="array-item new">h:0</span>
+              </div>
+            </div>
+            <div class="tab-panel" data-tab-panel="w3" hidden>
+              <h3>扫描旧未知区间</h3>
+              <p>
+                c 匹配并 patch；d 无匹配，unmount；e 匹配并 patch。索引表变为
+                [5,3,0]，且 newIndex 发生回退，所以 moved = true。
+              </p>
+              <div class="array-view">
+                <span class="array-item move">e:5</span
+                ><span class="array-item stable">c:3</span
+                ><span class="array-item new">h:0</span
+                ><span class="array-item remove">d</span>
+              </div>
+            </div>
+            <div class="tab-panel" data-tab-panel="w4" hidden>
+              <h3>从右向左提交</h3>
+              <ol>
+                <li>h 没有旧来源：在 f 前 mount h。</li>
+                <li>c 位于 LIS：保持不动。</li>
+                <li>e 不在 LIS：移动到 c 前。</li>
+              </ol>
+              <div class="array-view">
+                <span class="array-item stable">a</span
+                ><span class="array-item stable">b</span
+                ><span class="array-item move">e</span
+                ><span class="array-item stable">c</span
+                ><span class="array-item new">h</span
+                ><span class="array-item stable">f</span
+                ><span class="array-item stable">g</span>
+              </div>
+            </div>
+          </div>
+          <div class="callout warm">
+            整个过程中 a、b、c、e、f、g 的 VNode 都执行 patch 并复用原节点；d
+            才真正卸载，h 才真正创建，e
+            只执行移动。这就是身份与最少宿主操作同时成立的结果。
+          </div>
+        </section>
+
+        <section class="article-section prose" id="complexity">
+          <h2>复杂度与性能边界</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>阶段</th>
+                  <th>时间复杂度</th>
+                  <th>额外空间</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>同步头尾</td>
+                  <td>O(n)</td>
+                  <td>O(1)</td>
+                </tr>
+                <tr>
+                  <td>建立新 key Map</td>
+                  <td>O(m)</td>
+                  <td>O(m)</td>
+                </tr>
+                <tr>
+                  <td>扫描旧未知区间</td>
+                  <td>有 key 通常 O(n)；无 key 可能退化</td>
+                  <td>O(m)</td>
+                </tr>
+                <tr>
+                  <td>最长递增子序列</td>
+                  <td>O(m log m)</td>
+                  <td>O(m)</td>
+                </tr>
+                <tr>
+                  <td>倒序提交</td>
+                  <td>O(m)</td>
+                  <td>O(1) 额外</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            对稳定唯一 key 的常见列表，整体可视为 O(n log n)，且 LIS 只在 moved
+            为真时计算。无 key 节点混入 keyed 列表时，为寻找相同 type
+            的未匹配节点可能出现嵌套扫描，因此稳定 key
+            同时提升语义可靠性和性能可预测性。
+          </p>
+        </section>
+
+        <section class="article-section prose" id="compiler">
+          <h2>编译器怎样帮 Diff 跳过不必要判断</h2>
+          <div class="card-grid">
+            <article class="card">
+              <span class="card-label">KEYED_FRAGMENT</span>
+              <h3>明确存在 key</h3>
+              <p>
+                Renderer 直接调用 patchKeyedChildren，不再猜测 children 类型。
+              </p>
+            </article>
+            <article class="card">
+              <span class="card-label">UNKEYED_FRAGMENT</span>
+              <h3>明确按位置更新</h3>
+              <p>
+                使用 patchUnkeyedChildren，只 patch 公共长度和处理尾部差异。
+              </p>
+            </article>
+            <article class="card">
+              <span class="card-label">STABLE_FRAGMENT</span>
+              <h3>结构稳定</h3>
+              <p>
+                结合 dynamicChildren 执行
+                patchBlockChildren，不完整遍历静态后代。
+              </p>
+            </article>
+            <article class="card">
+              <span class="card-label">BAIL</span>
+              <h3>优化前提失效</h3>
+              <p>
+                回退完整 Diff，确保手写 render、动态 slot 或异常边界仍保持正确。
+              </p>
+            </article>
+          </div>
+          <p>
+            编译器优化没有创造另一套 Diff
+            语义，而是提前证明某些分支不可能发生。Runtime
+            仍保留完整算法作为正确性基线。
+          </p>
+        </section>
+
+        <section class="article-section prose" id="mistakes">
+          <h2>七个常见误解</h2>
+          <details open>
+            <summary>1. “Vue 使用双端 Diff，所以会比较旧头和新尾”</summary>
+            <p>
+              这是常见的 Vue 2 描述。Vue 3 先同步同向头尾，再对未知区间使用 Map
+              + LIS，不依赖四种头尾交叉启发式。
+            </p>
+          </details>
+          <details>
+            <summary>2. “key 只是性能提示”</summary>
+            <p>
+              key 是身份声明。错误 key 会复用错误状态，即使最终 DOM
+              文本看起来正确，也可能污染组件实例、输入状态和过渡。
+            </p>
+          </details>
+          <details>
+            <summary>3. “LIS 就是 Vue Diff”</summary>
+            <p>
+              LIS 只负责减少已复用节点的移动。身份匹配、新增、删除、patch 与
+              anchor 都由其他阶段完成。
+            </p>
+          </details>
+          <details>
+            <summary>4. “没有 key 就会全部重建”</summary>
+            <p>
+              无 key 列表按索引 patch 公共长度，仍会复用同位置同 type
+              节点；问题是数据重排时身份无法可靠保持。
+            </p>
+          </details>
+          <details>
+            <summary>5. “移动节点等于删除再创建”</summary>
+            <p>
+              DOM insertBefore 可以移动已有节点；组件 move 的是
+              subTree，不会重新 setup 或触发 mount/unmount。
+            </p>
+          </details>
+          <details>
+            <summary>6. “Diff 只比较 DOM 元素”</summary>
+            <p>
+              VNode 还可能是组件、Fragment、Teleport 或 Suspense。move/unmount
+              会继续分派到各自运行时协议。
+            </p>
+          </details>
+          <details>
+            <summary>7. “算法追求理论最小编辑距离”</summary>
+            <p>
+              Vue 选择线性扫描、Map 与 LIS 的工程折中，重点是稳定 O(n log n)
+              行为、最少 DOM move 和可维护的组件语义。
+            </p>
+          </details>
+        </section>
+
+        <section class="article-section prose" id="tests">
+          <h2>怎样用测试真正吃透 Diff</h2>
+          <p>
+            打开 <code>rendererChildren.spec.ts</code>，按下面顺序运行和画图：
+          </p>
+          <ol>
+            <li>尾部追加、头部追加：观察旧序列耗尽的 mount 快路径。</li>
+            <li>尾部删除、头部删除：观察新序列耗尽的 unmount 快路径。</li>
+            <li>交换相邻节点：观察 moved 与 LIS。</li>
+            <li>随机 shuffle：验证复杂重排和节点引用复用。</li>
+            <li>混合 key 与无 key：观察无 key 节点的 type 搜索。</li>
+            <li>Fragment 与组件列表：观察 move 如何递归处理逻辑节点。</li>
+          </ol>
+          <pre><code># 只运行 children Diff 测试
+pnpm test-unit --run packages/runtime-core/__tests__/rendererChildren.spec.ts
+
+# 建议断点
+patchChildren
+patchKeyedChildren
+getSequence
+move
+unmount</code></pre>
+          <div class="callout">
+            Diff 决定“本轮有哪些工作”。下一章 Scheduler
+            决定“这些工作什么时候、按什么顺序执行”。二者共同构成 Vue
+            增量更新的空间轴与时间轴。
+          </div>
+        </section>
+
+        <nav class="page-nav" aria-label="章节翻页">
+          <a href="renderer.html"><span>上一章</span>← Renderer 与 Patch</a>
+          <a href="scheduler.html"><span>下一章</span>调度系统 →</a>
+        </nav>
+      </main>
+      <aside class="page-toc" aria-label="本页目录">
+        <div class="toc-title">本页目录</div>
+        <a href="#see-diff">交互观察</a>
+        <a href="#plain-rules">四条白话规则</a>
+        <a href="#plain-walkthrough">小例子</a>
+        <a href="#why-diff">为什么需要 Diff</a>
+        <a href="#identity">节点身份与 key</a>
+        <a href="#children-shapes">children 形态</a>
+        <a href="#overview">算法总览</a>
+        <a href="#sync-ends">同步头尾</a>
+        <a href="#unknown-range">未知区间</a>
+        <a href="#lis">最长递增子序列</a>
+        <a href="#reverse-pass">倒序提交</a>
+        <a href="#walkthrough">完整手算</a>
+        <a href="#complexity">复杂度</a>
+        <a href="#compiler">编译器协作</a>
+        <a href="#mistakes">常见误解</a>
+        <a href="#tests">测试练习</a>
+      </aside>
+    </div>
+    <footer data-site-footer></footer>
+    <script src="assets/app.js" defer></script>
+  </body>
+</html>

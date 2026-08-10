@@ -1,0 +1,574 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Vue Runtime 测试体系、runtime-test、Vitest 场景阅读与源码调试方法"
+    />
+    <title>测试与调试 · Vue Runtime 内核解剖</title>
+    <link rel="stylesheet" href="assets/styles.css" />
+  </head>
+  <body data-current="testing.html">
+    <header data-site-header></header>
+    <div class="docs-shell">
+      <aside data-global-nav></aside>
+      <main class="article">
+        <div class="article-hero">
+          <div class="article-kicker">Chapter 11 · Testing & Debugging</div>
+          <h1>页面看起来一样，为什么还可能是错的</h1>
+          <p class="article-lead">
+            Runtime 测试不只比较最终
+            HTML。它还要证明原节点被复用、组件状态没有串位、回调顺序正确，而且一次报错不会让后续更新永远停止。
+          </p>
+          <div class="hero-meta">
+            <span>61 个测试文件已注释</span
+            ><span>1,396 个 suite / case 场景说明</span><span>Vitest</span>
+          </div>
+        </div>
+
+        <section class="article-section prose" id="plain-testing">
+          <h2>两个页面截图相同，内部可能完全不同</h2>
+          <div class="before-after">
+            <div class="plain-section">
+              <span class="scene-label">正确更新</span>
+              <p>
+                旧输入框节点被移动到新位置。焦点、选区、用户正在输入的内容都保留。
+              </p>
+            </div>
+            <div class="plain-section">
+              <span class="scene-label">错误更新</span>
+              <p>
+                删除旧输入框，再创建一个看起来相同的新节点。截图一样，但光标和输入状态丢了。
+              </p>
+            </div>
+          </div>
+          <p>因此 Runtime 至少要测试四类结果：</p>
+          <div class="role-grid">
+            <article class="role-card">
+              <span class="role-icon">画</span><strong>页面结果</strong
+              ><small>文字、属性和 children 是否正确。</small
+              ><span class="role-source">result</span>
+            </article>
+            <article class="role-card">
+              <span class="role-icon">人</span><strong>节点身份</strong
+              ><small>应该复用的 DOM 和组件实例是否还是同一个对象。</small
+              ><span class="role-source">identity</span>
+            </article>
+            <article class="role-card">
+              <span class="role-icon">序</span><strong>执行顺序</strong
+              ><small>父子更新、生命周期和 watcher 是否按承诺运行。</small
+              ><span class="role-source">order</span>
+            </article>
+          </div>
+          <div class="plain-section">
+            <span class="scene-label">还有第四类：失败后恢复</span>
+            <p>
+              一次 render
+              或事件处理器抛错后，队列标志要被清理，当前组件上下文要恢复，下一次正常状态变化仍然可以更新页面。
+            </p>
+          </div>
+          <h3>测试用例就是一句完整的产品规则</h3>
+          <p>
+            <strong>给定：</strong>一个有焦点的 keyed
+            输入框；<strong>当：</strong>列表顺序变化；<strong>那么：</strong>输入框移动到新位置，但仍是原节点并保持焦点。
+          </p>
+          <div class="reader-check">
+            <strong>这比“Diff 应该工作”更有价值。</strong
+            >它说明用户场景、动作、最终结果和必须保留的隐藏状态。
+          </div>
+        </section>
+
+        <div class="level-divider">进入测试分层、命令与调试层</div>
+
+        <section class="article-section prose" id="why-tests">
+          <h2>源码回答“怎么做”，测试回答“为什么必须这样做”</h2>
+          <p>
+            一段生产代码可能同时保护六个场景，函数名看不出优先级。测试会把输入、动作、输出和回归背景拆开：这正是阅读那些“看起来多余”的
+            condition、flag 清理和 anchor 修正的证据。
+          </p>
+          <div class="card-grid">
+            <article class="card">
+              <span class="card-label">RESULT</span>
+              <h3>结果正确</h3>
+              <p>文本、属性、children 与组件输出符合预期，是最表层契约。</p>
+            </article>
+            <article class="card">
+              <span class="card-label">IDENTITY</span>
+              <h3>身份正确</h3>
+              <p>
+                同 key DOM/组件是否复用，ref
+                与实例状态是否保持，错误节点是否被销毁。
+              </p>
+            </article>
+            <article class="card">
+              <span class="card-label">ORDER</span>
+              <h3>时序正确</h3>
+              <p>
+                父子更新、watch flush、生命周期、Transition 和 Suspense effects
+                的先后。
+              </p>
+            </article>
+            <article class="card">
+              <span class="card-label">RECOVERY</span>
+              <h3>失败后可恢复</h3>
+              <p>
+                render/handler/async setup
+                抛错后，flags、currentInstance、队列和 DOM 仍处于可信状态。
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section class="article-section prose" id="test-layers">
+          <h2>测试分层：先选最小的可观察平台</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>层</th>
+                  <th>典型位置</th>
+                  <th>观察对象</th>
+                  <th>适合验证</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>纯函数/协议</strong></td>
+                  <td>runtime-core 单文件 spec</td>
+                  <td>返回值、flags、调用数组</td>
+                  <td>normalize、props、slots、scheduler 排序</td>
+                </tr>
+                <tr>
+                  <td><strong>runtime-test renderer</strong></td>
+                  <td><code>packages/runtime-test</code></td>
+                  <td>内存节点树与操作记录</td>
+                  <td>Renderer、Diff、组件、Teleport、Suspense、KeepAlive</td>
+                </tr>
+                <tr>
+                  <td><strong>jsdom DOM</strong></td>
+                  <td>runtime-dom tests</td>
+                  <td>真实 DOM API 的模拟</td>
+                  <td>attribute/property、事件、指令、Transition、hydration</td>
+                </tr>
+                <tr>
+                  <td><strong>SSR + hydration</strong></td>
+                  <td>server-renderer / hydration specs</td>
+                  <td>HTML 字符串 + 客户端 DOM</td>
+                  <td>标记协议、mismatch、懒水合与同构状态</td>
+                </tr>
+                <tr>
+                  <td><strong>类型测试</strong></td>
+                  <td>dts-test / typeTest</td>
+                  <td>编译成功与预期错误</td>
+                  <td>公共泛型、props/emit/CE 类型推断</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            测 Diff 时优先
+            runtime-test，因为可以判断节点对象身份和操作序列，避免 jsdom
+            的字符串结果掩盖“DOM 被删掉又重建”。只有要验证浏览器
+            property、事件或 namespace 时，才进入 runtime-dom。
+          </p>
+        </section>
+
+        <section class="article-section prose" id="runtime-test">
+          <h2>runtime-test：把宿主平台变成可观察内存树</h2>
+          <p>
+            runtime-test 实现与 DOM 等价的 RendererOptions，但节点只是
+            JavaScript 对象：Element 保存 tag、props 与 children，Text 保存
+            text，insert/remove 修改数组关系。这样 core 算法可在 Node
+            环境中测试，也能精确观察操作。
+          </p>
+          <pre><code>// 概念化的测试宿主节点
+interface TestElement {
+  type: 'element'
+  tag: string
+  props: Record&lt;string, unknown&gt;
+  children: TestNode[]
+  parentNode: TestElement | null
+}
+
+// 同一个 key 是否复用，直接比较对象身份
+const before = root.children[0]
+render(nextVNode, root)
+expect(root.children[1]).toBe(before)</code></pre>
+          <h3>它比 snapshot 更有价值的地方</h3>
+          <ul>
+            <li>
+              可断言 <strong>身份</strong>：<code>toBe</code>
+              判断复用，而非只比较相同字符串。
+            </li>
+            <li>
+              可记录 <strong>操作</strong>：insert 表示 mount 还是 move、remove
+              调用了几次。
+            </li>
+            <li>
+              可构造 <strong>非 DOM 平台</strong>：证明 core 不意外依赖
+              window/document。
+            </li>
+            <li>
+              结果格式简洁：序列化树用于快速理解最终结构，失败 diff 更聚焦。
+            </li>
+          </ul>
+          <div class="source-links">
+            <a
+              class="source-link"
+              href="../../../vue/packages/runtime-test/src/index.ts"
+              >本地：runtime-test</a
+            >
+            <a
+              class="source-link"
+              href="../../../vue/packages/runtime-core/__tests__/rendererElement.spec.ts"
+              >元素 Renderer 测试</a
+            >
+            <a
+              class="source-link"
+              href="../../../vue/packages/runtime-core/__tests__/rendererChildren.spec.ts"
+              >Children / Diff 测试</a
+            >
+          </div>
+        </section>
+
+        <section class="article-section prose" id="spec-anatomy">
+          <h2>一个高价值测试的解剖方式</h2>
+          <div class="sequence">
+            <div class="sequence-item">
+              <strong>Given：建立最小旧状态</strong><br />首次
+              render、保存节点/实例引用、准备 spy 或 deferred Promise。
+            </div>
+            <div class="sequence-item">
+              <strong>When：只做一个关键变化</strong><br />替换 children
+              顺序、修改 reactive value、resolve Promise、触发事件。
+            </div>
+            <div class="sequence-item">
+              <strong>Flush：推进正确时钟</strong><br />同步 renderer
+              无需等待；组件 job 用 nextTick；Transition 用 fake
+              timers/nextFrame；async setup 要 await。
+            </div>
+            <div class="sequence-item">
+              <strong>Then：分层断言</strong><br />先最终结构，再节点身份，再
+              hooks/操作顺序，最后确认没有额外副作用。
+            </div>
+            <div class="sequence-item">
+              <strong>Regression：写清旧故障</strong><br />issue
+              编号旁应说明用户场景和错误表现，让未来维护者知道哪些简化不可做。
+            </div>
+          </div>
+          <pre><code>it('移动 keyed 节点时复用已有宿主节点，而不是重建', async () => {
+  // Given：保存 A/B 的真实节点身份
+  render(list(['a', 'b']), root)
+  const a = root.children[0]
+
+  // When：只调整顺序
+  render(list(['b', 'a']), root)
+
+  // Then：结构正确，A 的对象身份仍相同
+  expect(serializeInner(root)).toBe('&lt;li&gt;b&lt;/li&gt;&lt;li&gt;a&lt;/li&gt;')
+  expect(root.children[1]).toBe(a)
+})</code></pre>
+        </section>
+
+        <section class="article-section prose" id="scenario-map">
+          <h2>核心模块该测试什么场景</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>模块</th>
+                  <th>基础行为</th>
+                  <th>边界/回归</th>
+                  <th>不能只断言什么</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>VNode / block</strong></td>
+                  <td>normalize、clone、shape/patch flag</td>
+                  <td>已 mount VNode 复用、dynamicChildren 回退</td>
+                  <td>只看 type/children</td>
+                </tr>
+                <tr>
+                  <td><strong>Component</strong></td>
+                  <td>props/slots/setup/render/lifecycle</td>
+                  <td>setup error、fallthrough attrs、recursive update</td>
+                  <td>只看最终 HTML</td>
+                </tr>
+                <tr>
+                  <td><strong>Keyed Diff</strong></td>
+                  <td>append/remove/reorder</td>
+                  <td>空节点、重复 key、Fragment/组件 move、LIS</td>
+                  <td>只看顺序；还要看身份和操作数</td>
+                </tr>
+                <tr>
+                  <td><strong>Scheduler</strong></td>
+                  <td>去重、uid 排序、pre/post</td>
+                  <td>插队、dispose、recursive、throw 后 flags 清理</td>
+                  <td>只看某 job 被调用</td>
+                </tr>
+                <tr>
+                  <td><strong>Hydration</strong></td>
+                  <td>认领 Text/Element/Component</td>
+                  <td>mismatch、用户输入、资源属性、namespace</td>
+                  <td>只看警告；还要看恢复后的 DOM/更新</td>
+                </tr>
+                <tr>
+                  <td><strong>Teleport</strong></td>
+                  <td>target mount、disabled、target change</td>
+                  <td>共享 target、defer、hydrate、Transition</td>
+                  <td>只看 target innerHTML</td>
+                </tr>
+                <tr>
+                  <td><strong>Suspense</strong></td>
+                  <td>fallback/resolve/effects</td>
+                  <td>旧 Promise 晚到、嵌套、timeout、unmount</td>
+                  <td>只 await 最终内容</td>
+                </tr>
+                <tr>
+                  <td><strong>runtime-dom</strong></td>
+                  <td>class/style/event/attr/prop</td>
+                  <td>IME、事件冒泡时新增监听、SVG/MathML、CE</td>
+                  <td>只看 attribute 字符串</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="article-section prose" id="async-clocks">
+          <h2>四种“等待”不是一回事</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>等待工具</th>
+                  <th>推进什么</th>
+                  <th>典型用途</th>
+                  <th>常见错误</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>nextTick()</strong></td>
+                  <td>当前 scheduler flush promise</td>
+                  <td>组件更新、post watcher、updated</td>
+                  <td>以为它会自动完成任意网络 Promise</td>
+                </tr>
+                <tr>
+                  <td><strong>Promise.resolve()</strong></td>
+                  <td>微任务队列</td>
+                  <td>CE 断连确认、简单 async continuation</td>
+                  <td>与 Vue job 时机混为一谈</td>
+                </tr>
+                <tr>
+                  <td><strong>vi.runAllTimers()</strong></td>
+                  <td>fake timeout/interval</td>
+                  <td>Transition duration、Suspense timeout</td>
+                  <td>没启用 fake timers 或漏掉 rAF</td>
+                </tr>
+                <tr>
+                  <td><strong>nextFrame / rAF</strong></td>
+                  <td>浏览器渲染帧语义</td>
+                  <td>CSS class 从 from 切换到 to</td>
+                  <td>只 flush 微任务，动画状态仍未推进</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            不稳定测试常常不是实现有竞态，而是测试推进了错误的时钟。读失败用例时先标注副作用属于同步栈、Vue
+            flush、Promise 微任务、timer 还是 animation frame。
+          </p>
+        </section>
+
+        <section class="article-section prose" id="commands">
+          <h2>从单用例到 Runtime 全量验证</h2>
+          <div class="tabs" data-tabs>
+            <div class="tab-list" role="tablist">
+              <button
+                class="tab-button"
+                data-tab="cmd-focus"
+                aria-selected="true"
+              >
+                聚焦开发
+              </button>
+              <button
+                class="tab-button"
+                data-tab="cmd-module"
+                aria-selected="false"
+              >
+                模块验证
+              </button>
+              <button
+                class="tab-button"
+                data-tab="cmd-full"
+                aria-selected="false"
+              >
+                交付前
+              </button>
+            </div>
+            <div class="tab-panel" data-tab-panel="cmd-focus">
+              <pre><code># 单文件
+pnpm vitest packages/runtime-core/__tests__/scheduler.spec.ts
+
+# 按用例名称聚焦
+pnpm vitest packages/runtime-core/__tests__/rendererChildren.spec.ts -t "keyed"</code></pre>
+              <p>先让最小复现快速红/绿；不要在调试阶段每次跑全部仓库。</p>
+            </div>
+            <div class="tab-panel" data-tab-panel="cmd-module" hidden>
+              <pre><code>pnpm vitest packages/runtime-core/__tests__
+pnpm vitest packages/runtime-dom/__tests__</code></pre>
+              <p>
+                检查修复是否破坏相邻协议，特别是 renderer 与内置组件、DOM prop
+                与 hydration 的交叉。
+              </p>
+            </div>
+            <div class="tab-panel" data-tab-panel="cmd-full" hidden>
+              <pre><code>pnpm test
+pnpm test-dts
+pnpm lint
+pnpm format-check
+pnpm build</code></pre>
+              <p>
+                具体命令以仓库 package scripts
+                为准；源码注释任务至少应保证格式、类型、运行时测试和编译输出不变。
+              </p>
+            </div>
+          </div>
+          <div class="callout">
+            本次注释工作实际验证过 Runtime 测试：60 个执行文件、1,306
+            个用例通过、1 个跳过；统计中的 61
+            个文件还包含测试辅助/类型场景。注释覆盖审计按 describe/test/it
+            等结构计得 1,396 个 suite/case 说明。
+          </div>
+        </section>
+
+        <section class="article-section prose" id="debugger">
+          <h2>调试配方：少下断点，多观察不变量</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>问题</th>
+                  <th>断点</th>
+                  <th>Watch 表达式</th>
+                  <th>判断标准</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>列表移动错误</strong></td>
+                  <td>patchKeyedChildren / move</td>
+                  <td>n1.key、n2.key、i、e1/e2、anchor</td>
+                  <td>同 key 被 patch 一次；倒序提交 anchor 已存在</td>
+                </tr>
+                <tr>
+                  <td><strong>生命周期乱序</strong></td>
+                  <td>queueJob / queuePostFlushCb</td>
+                  <td>job.id、flags、queue index</td>
+                  <td>父 uid 优先；post 在 DOM 后；跳过 disposed</td>
+                </tr>
+                <tr>
+                  <td><strong>水合错位</strong></td>
+                  <td>hydrateNode / handleMismatch</td>
+                  <td>node.nodeType、vnode.type、nextSibling</td>
+                  <td>每个分支返回第一个未消费节点</td>
+                </tr>
+                <tr>
+                  <td><strong>事件调用旧 handler</strong></td>
+                  <td>patchEvent / invoker</td>
+                  <td>vei[rawName]、invoker.value、event._vts</td>
+                  <td>更新 value 未重复注册；时间戳过滤正确</td>
+                </tr>
+                <tr>
+                  <td><strong>Suspense 旧结果覆盖</strong></td>
+                  <td>registerDep continuation</td>
+                  <td>suspense.pendingId、instance.suspenseId、isUnmounted</td>
+                  <td>只有当前 pending 分支可提交</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <h3>建议记录模板</h3>
+          <pre><code>时刻 / flush phase:
+当前 VNode: type + key + shapeFlag + patchFlag
+旧 VNode:   type + key + el/component
+位置:       container + anchor + parentSuspense
+动作:       patch / move / mount / unmount
+提交后:     DOM 顺序 + vnode.el + job.flags</code></pre>
+        </section>
+
+        <section class="article-section prose" id="comments">
+          <h2>如何使用这份中文注释源码</h2>
+          <ol>
+            <li>
+              <strong>先读本指南建立模型：</strong
+              >知道当前文件在系统中的输入、输出与不变量。
+            </li>
+            <li>
+              <strong>再读函数头：</strong>中文 TSDoc
+              说明调用时机、参数语义、返回值和关键场景。
+            </li>
+            <li>
+              <strong>进入长代码块：</strong
+              >块注释解释阶段目标，不要求逐行翻译语法。
+            </li>
+            <li>
+              <strong>遇到 issue 注释：</strong
+              >先打开相邻测试理解复现，再看修复分支如何维护更大契约。
+            </li>
+            <li>
+              <strong>自己改一个小实验：</strong
+              >让用例失败，观察断言保护了身份、时序还是恢复；随后撤销实验。
+            </li>
+          </ol>
+          <p>
+            注释不是源码的替代物。最理想的阅读循环是：指南给地图，函数注释给路标，测试给行为证据，调试器给实时状态，Git
+            历史解释路为什么这样修。
+          </p>
+        </section>
+
+        <section class="article-section prose" id="checklist">
+          <h2>完成一个 Runtime 主题的自测清单</h2>
+          <ul>
+            <li>能用一句话说出该模块不负责什么。</li>
+            <li>能画出关键状态对象，以及谁写入、谁读取。</li>
+            <li>能解释至少一个 fast path 的前提和 fallback。</li>
+            <li>能举出一个异步/卸载/移动导致的边界场景。</li>
+            <li>能找到对应 spec，并说明它在断言结果、身份、顺序还是恢复。</li>
+            <li>能从用户动作一路跟到 host operation，再跟到 post effect。</li>
+          </ul>
+          <div class="callout warm">
+            如果六项都能回答，你已经不是“看过这个文件”，而是拥有了可迁移的
+            Runtime 心智模型。
+          </div>
+        </section>
+
+        <nav class="page-nav" aria-label="章节翻页">
+          <a href="evolution.html"><span>上一章</span>← 迭代与设计演进</a>
+          <a href="index.html"><span>回到起点</span>总览与分享入口 →</a>
+        </nav>
+      </main>
+
+      <aside class="page-toc" aria-label="本页目录">
+        <div class="toc-title">本页目录</div>
+        <a href="#plain-testing">为什么截图不够</a>
+        <a href="#why-tests">测试的价值</a>
+        <a href="#test-layers">测试分层</a>
+        <a href="#runtime-test">runtime-test</a>
+        <a href="#spec-anatomy">用例解剖</a>
+        <a href="#scenario-map">场景地图</a>
+        <a href="#async-clocks">异步时钟</a>
+        <a href="#commands">验证命令</a>
+        <a href="#debugger">调试配方</a>
+        <a href="#comments">使用中文注释</a>
+        <a href="#checklist">自测清单</a>
+      </aside>
+    </div>
+    <footer data-site-footer></footer>
+    <script src="assets/app.js" defer></script>
+  </body>
+</html>

@@ -1,0 +1,649 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="从 React 19.3.0 真实源码与测试理解 Suspense：thenable 挂起、边界捕获、fallback 二次渲染、ping 去重、RetryLane、Offscreen 可见性、effect 重连与错误出口。" />
+  <title>17 · Suspense：挂起、ping 与 retry 状态机</title>
+  <link rel="stylesheet" href="assets/guide.css?v=1" />
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="index.html">React 六包源码指南</a>
+    <nav class="pager" aria-label="页面导航">
+      <a href="index.html">地图</a>
+      <a href="04-reconciler-render.html">render</a>
+      <a href="05-reconciler-commit.html">commit</a>
+      <a href="11-update-queues-lanes.html">lanes</a>
+      <a href="14-commit-effects.html">effects</a>
+      <a href="16-end-to-end-source.html">源码主线</a>
+      <a aria-current="page" href="17-suspense-retry.html">Suspense</a>
+      <a href="09-evidence.html">证据</a>
+    </nav>
+  </div>
+</header>
+
+<div class="layout">
+<main>
+  <p class="eyebrow">17 · React 19.3.0 / Suspense state machine</p>
+  <h1>Suspense：一次 throw，为什么会经历两次 render</h1>
+  <p class="lede">Suspense 不是“捕获 Promise 后直接把 DOM 换成 loading”。组件在 render 中抛出 thenable；reconciler 标记最近边界并退栈；同一个边界第二遍 render 才构造隐藏的 primary Offscreen 与可见 fallback。thenable 就绪后，ping 让根或已提交边界重新调度，下一遍 render 再决定能否提交主内容。</p>
+  <div class="meta">
+    <span class="pill">真实版本 19.3.0</span>
+    <span class="pill">连续源码 + 连续测试</span>
+    <span class="pill">Lane 所有权</span>
+    <span class="pill">Offscreen / effects</span>
+    <span class="pill">错误与卸载出口</span>
+  </div>
+
+  <section id="one-sentence">
+    <h2>先用一句话建立正确模型</h2>
+    <div class="callout"><p><strong>Suspense 是 render 控制流 + 调度协议：</strong>“抛 thenable”中止当前 Fiber 完成；“边界捕获”选择替代子树；“ping/retry”只声明可能可运行；最终显示什么仍由下一次 render 计算，再由 commit 改宿主树。
+    本页的 <strong>wakeable</strong> 是 React 内部对“可订阅 thenable”的称呼：它是带 <code>then</code> 方法、可在 settle 时通知回调的对象；在本页流程中，wakeable 与组件抛出的 thenable 指同一个对象。</p></div>
+    <div class="grid three">
+      <article class="card"><span class="number">NOT DATA FETCHING</span><h3>React 不拥有请求</h3><p>资源层拥有 pending/resolved/rejected 记录和 thenable。React 只读取抛出的对象、订阅它，并在回调触发时重试。</p></article>
+      <article class="card"><span class="number">NOT TRY / CATCH UI</span><h3>fallback 不是 catch 里的 DOM</h3><p><code>throwException</code> 不创建 fallback DOM；它设置捕获标志。退栈返回边界后，<code>beginWork</code> 第二遍才协调 fallback。</p></article>
+      <article class="card"><span class="number">NOT A PROMISE LANE</span><h3>Lane 属于工作，不属于 Promise</h3><p>同一 wakeable 可被多个根、边界或 Lane 读取。<code>pingCache</code> 以 root + wakeable + lanes 去重，而非给 Promise 永久绑定优先级。</p></article>
+    </div>
+  </section>
+
+  <section id="full-chain">
+    <h2>完整链：pending → fallback → ping → primary</h2>
+    <div class="chain" aria-label="Suspense 挂起到恢复的完整控制流">
+      <div class="node">resource.read<small>pending，throw wakeable</small></div><span class="arrow">→</span>
+      <div class="node">throwException<small>最近 handler / retryQueue</small></div><span class="arrow">→</span>
+      <div class="node">unwindWork<small>ShouldCapture → DidCapture</small></div><span class="arrow">→</span>
+      <div class="node">第二次 beginWork<small>showFallback=true</small></div><span class="arrow">→</span>
+      <div class="node">commit fallback<small>primary Offscreen hidden</small></div><span class="arrow">→</span>
+      <div class="node">wakeable settles<small>root ping + boundary retry</small></div><span class="arrow">→</span>
+      <div class="node">retry render<small>重新 read resource</small></div><span class="arrow">→</span>
+      <div class="node">commit primary<small>unhide / delete fallback / effect update 或 reconnect</small></div>
+    </div>
+    <ol class="state-list">
+      <li><strong>第一次 render primary。</strong>函数组件执行资源读取；pending 记录抛出 thenable，source Fiber 加 <code>Incomplete</code>。</li>
+      <li><strong>选择捕获者。</strong>Suspense handler 栈给出最近边界；边界记 <code>ShouldCapture</code>，wakeable 同时写入边界 retry queue，并给根安装 ping listener。</li>
+      <li><strong>退栈并返回边界。</strong><code>unwindWork</code> 恢复 context，把 <code>ShouldCapture</code> 换成 <code>DidCapture</code>，返回该 Fiber，工作循环从边界重来。</li>
+      <li><strong>第二次 render fallback。</strong><code>updateSuspenseComponent</code> 看到 <code>DidCapture</code>，构造 hidden primary Offscreen + fallback Fragment。到这里仍只是 WIP Fiber。</li>
+      <li><strong>commit fallback。</strong>mutation 隐藏或保留 primary 宿主节点并放入 fallback；commit 还会给边界 retry queue 中的 wakeable 安装 retry listener。</li>
+      <li><strong>resolve/reject 只发“可能就绪”信号。</strong>回调清理 cache、标 Lane、确保根进入调度链；它不读取组件，也不直接改 DOM。</li>
+      <li><strong>retry 再执行 primary。</strong>resolved 时资源返回值，Suspense 产出 visible primary，删除 fallback；rejected 时资源抛普通 Error，转交错误边界或 HostRoot。</li>
+    </ol>
+  </section>
+
+  <section id="ownership">
+    <h2>谁持有什么：先分清五种所有权</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>所有者</th><th>关键字段</th><th>何时写</th><th>解决什么问题</th></tr></thead>
+      <tbody>
+        <tr><td>资源/cache</td><td><code>record.status/value</code>、thenable 回调</td><td>读取、resolve、reject</td><td>数据是否就绪；React 不替它保存业务结果</td></tr>
+        <tr><td>Suspense Fiber</td><td><code>flags</code>、<code>memoizedState</code>、render 期 <code>updateQueue</code>、commit 后 retry cache</td><td>捕获、第二遍 render、commit</td><td>本边界显示 primary 还是 fallback；哪些 wakeable 能重试它</td></tr>
+        <tr><td>primary Offscreen Fiber/instance</td><td><code>memoizedState</code>、<code>mode</code>、<code>_visibility</code></td><td>fallback render 与 visibility commit</td><td>主内容保留但隐藏、重新显示、layout/passive effect 连接状态</td></tr>
+        <tr><td>FiberRoot</td><td><code>pendingLanes</code>、<code>suspendedLanes</code>、<code>pingedLanes</code>、<code>pingCache</code></td><td>调度、render 退出、wakeable 回调</td><td>哪些工作未完成、哪些在等数据、哪些刚可能解锁；root+lanes 监听去重</td></tr>
+        <tr><td>RootScheduler</td><td>root 链表、callback priority/node</td><td><code>ensureRootIsScheduled</code> 后的 microtask</td><td>重新选择当前可运行 Lane；没有可运行 Lane 时不创建渲染任务</td></tr>
+      </tbody>
+    </table></div>
+    <p class="callout warn"><strong>两个 cache 不要混：</strong><code>root.pingCache</code> 去重“当前 root 的原 render lanes”监听；边界/Offscreen 的 retry cache 去重“fallback 已提交后重试这个边界”监听。一个 wakeable 常会同时经过二者。</p>
+  </section>
+
+  <section id="resource">
+    <h2>阶段 1：用户组件读取 pending resource，并抛出 thenable</h2>
+    <p>仓库测试没有把网络实现藏进 mock。<code>readText</code> 明确展示三态协议：resolved 返回 cache 版本；rejected 抛 Error；pending 抛 thenable。首次读取则原子创建 pending record，再抛同一个 thenable。真实组件 <code>AsyncText</code> 调用它时，这个 throw 会穿过组件调用栈进入 reconciler 的 render 异常入口。</p>
+    <figure class="source"><figcaption><span>连续测试原码 · ReactSuspenseWithNoopRenderer-test.js · readText</span><a href="../../react/packages/react-reconciler/src/__tests__/ReactSuspenseWithNoopRenderer-test.js">打开测试</a></figcaption><pre><code>  /** readText 读取三态资源：resolved 返回，pending 抛 thenable，rejected 抛错误；首次读取原子创建 pending 记录。 */
+  function readText(text) {
+    const textCache = getCacheForType(createTextCache);
+    const record = textCache.data.get(text);
+    if (record !== undefined) {
+      /** 状态机边界：`pending` 抛 thenable 交给 Suspense，`rejected` 抛业务错误，`resolved` 返回已缓存值；未知状态不得静默降级。 */
+      switch (record.status) {
+        case 'pending':
+          Scheduler.log(`Suspend! [${text}]`);
+          throw record.value;
+        case 'rejected':
+          Scheduler.log(`Error! [${text}]`);
+          throw record.value;
+        case 'resolved':
+          return textCache.version;
+      }
+    } else {
+      Scheduler.log(`Suspend! [${text}]`);
+
+      const thenable = {
+        pings: [],
+        /** readText.then 实现 thenable 订阅：pending 时登记 ping，已结束时用微任务通知；同一监听器不得同步重复执行。 */
+        then(resolve) {
+          if (newRecord.status === 'pending') {
+            thenable.pings.push(resolve);
+          } else {
+            Promise.resolve().then(() =&gt; resolve(newRecord.value));
+          }
+        },
+      };
+
+      const newRecord = {
+        status: 'pending',
+        value: thenable,
+      };
+      textCache.data.set(text, newRecord);
+
+      throw thenable;
+    }
+  }</code></pre></figure>
+    <div class="table-wrap"><table><thead><tr><th>资源状态</th><th><code>readText</code> 行为</th><th>reconciler 分类</th><th>下一步</th></tr></thead><tbody>
+      <tr><td>pending</td><td>抛带 <code>then</code> 的对象</td><td>Wakeable / Suspense</td><td>捕获边界、监听、可能 fallback</td></tr>
+      <tr><td>resolved</td><td>返回值</td><td>普通 render</td><td>primary 可以完成</td></tr>
+      <tr><td>rejected</td><td>抛 Error</td><td>普通错误</td><td>Class Error Boundary 或 HostRoot capture update</td></tr>
+    </tbody></table></div>
+    <p><strong>一个容易错的说法：</strong>不是“Promise resolve 后 React 从 Promise 里取数据”。ping 回调不消费 resolved value；retry 时组件再次执行 <code>readText</code>，由资源层返回值。</p>
+  </section>
+
+  <section id="capture">
+    <h2>阶段 2：throwException 先区分 thenable，再找最近边界</h2>
+    <p><code>throwException</code> 先把 source Fiber 标成未完成。只有非 null object 且 <code>then</code> 是函数，才进入 Wakeable 路径；否则落到普通错误路径。最近边界不是沿 DOM 找，也不是运行时 <code>try/catch</code> 猜出来，而是 beginWork 进入 Suspense/Offscreen 时维护的 handler 栈由 <code>getSuspenseHandler()</code> 给出。</p>
+    <figure class="source"><figcaption><span>连续原码 · ReactFiberThrow.js · thenable 判定</span><a href="../../react/packages/react-reconciler/src/ReactFiberThrow.js">打开源码</a></figcaption><pre><code>  if (value !== null &amp;&amp; typeof value === 'object') {
+    if (typeof value.then === 'function') {
+      // 这是 Wakeable，组件进入挂起状态。
+      const wakeable: Wakeable = value as any;
+      resetSuspendedComponent(sourceFiber, rootRenderLanes);</code></pre></figure>
+    <p>找到 Suspense/Activity/SuspenseList 后，函数做三件互不替代的事：</p>
+    <ol class="state-list">
+      <li><strong>捕获控制流。</strong><code>markSuspenseBoundaryShouldCapture</code> 给边界加 <code>ShouldCapture</code>，使退栈停在这里。</li>
+      <li><strong>保存边界重试证据。</strong>把 wakeable 放入边界 Fiber 的 <code>updateQueue</code> Set；fallback commit 时将它转成真实 retry listener。</li>
+      <li><strong>保存提交前唤醒机会。</strong>并发模式立即调用 <code>attachPingListener(root, wakeable, rootRenderLanes)</code>。如果资源赶在 fallback 提交前就绪，原 render lanes 可以重启。</li>
+    </ol>
+    <figure class="source"><figcaption><span>删节源码 · ReactFiberThrow.js · 最近边界、retryQueue 与 ping</span><a href="../../react/packages/react-reconciler/src/ReactFiberThrow.js">打开源码</a></figcaption><pre><code>const suspenseBoundary = getSuspenseHandler();
+if (suspenseBoundary !== null) {
+  markSuspenseBoundaryShouldCapture(/* boundary, source, root, lanes */);
+
+  // render 期：边界拥有等待集合；commit 会为集合安装 boundary retry listener。
+  const retryQueue = suspenseBoundary.updateQueue;
+  retryQueue === null
+    ? (suspenseBoundary.updateQueue = new Set([wakeable]))
+    : retryQueue.add(wakeable);
+
+  // commit 前的 root-level 唤醒窗口，按原 rootRenderLanes 去重。
+  attachPingListener(root, wakeable, rootRenderLanes);
+  return false;
+}</code></pre></figure>
+    <p><code>ShouldCapture</code> 表示“退栈时应由这个边界接住”；它还不是“已经选择 fallback”。并发路径同时把 <code>boundary.lanes</code> 记为本轮 <code>rootRenderLanes</code>，防止边界在第二遍过早 bailout。</p>
+  </section>
+
+  <section id="second-pass">
+    <h2>阶段 3：ShouldCapture → DidCapture → 第二次 render fallback</h2>
+    <p>工作循环沿 return 路径 unwind。到 Suspense Fiber 时，<code>unwindWork</code> 恢复 handler/hydration 栈，把“应该捕获”换成“本轮已经捕获”，然后<strong>返回边界 Fiber 本身</strong>。这个返回值让它再次成为工作单元，而不是继续退到根。</p>
+    <figure class="source"><figcaption><span>连续原码 · ReactFiberUnwindWork.js · Suspense 退栈捕获</span><a href="../../react/packages/react-reconciler/src/ReactFiberUnwindWork.js">打开源码</a></figcaption><pre><code>    case SuspenseComponent: {
+      popSuspenseHandler(workInProgress);
+      const suspenseState: null | SuspenseState = workInProgress.memoizedState;
+      if (suspenseState !== null &amp;&amp; suspenseState.dehydrated !== null) {
+        if (workInProgress.alternate === null) {
+          throw new Error(
+            'Threw in newly mounted dehydrated component. This is likely a bug in ' +
+              'React. Please file an issue.',
+          );
+        }
+
+        resetHydrationState();
+      }
+
+      const flags = workInProgress.flags;
+      if (flags &amp; ShouldCapture) {
+        workInProgress.flags = (flags &amp; ~ShouldCapture) | DidCapture;
+        // 捕获到 Suspense 效应，重新渲染该边界。
+        if (
+          enableProfilerTimer &amp;&amp;
+          (workInProgress.mode &amp; ProfileMode) !== NoMode
+        ) {
+          transferActualDuration(workInProgress);
+        }
+        return workInProgress;
+      }
+      return null;
+    }</code></pre></figure>
+    <p>第二遍 <code>beginWork</code> 再进入 <code>updateSuspenseComponent</code>。此时才把 <code>DidCapture</code> 解释成 <code>showFallback=true</code>，并清掉标志，避免无限重复进入 fallback pass。</p>
+    <figure class="source"><figcaption><span>连续原码 · ReactFiberBeginWork.js · fallback 选择</span><a href="../../react/packages/react-reconciler/src/ReactFiberBeginWork.js">打开源码</a></figcaption><pre><code>  let showFallback = false;
+  const didSuspend = (workInProgress.flags &amp; DidCapture) !== NoFlags;
+  if (
+    didSuspend ||
+    shouldRemainOnFallback(current, workInProgress, renderLanes)
+  ) {
+    // 边界子树已有内容挂起，切换为渲染 fallback children。
+    showFallback = true;
+    workInProgress.flags &amp;= ~DidCapture;
+  }</code></pre></figure>
+    <div class="table-wrap"><table><thead><tr><th>检查点</th><th>边界 flags</th><th>WIP child 形状</th><th>宿主 UI</th></tr></thead><tbody>
+      <tr><td>primary 子项 throw 前</td><td>无捕获标志</td><td>正在构造 primary</td><td>仍是上次已提交 UI</td></tr>
+      <tr><td><code>throwException</code> 后</td><td><code>ShouldCapture</code></td><td>source Fiber <code>Incomplete</code></td><td>未改变</td></tr>
+      <tr><td><code>unwindWork</code> 返回边界</td><td><code>DidCapture</code></td><td>失败 primary 将被第二遍重建/复用</td><td>未改变</td></tr>
+      <tr><td>第二次 beginWork</td><td><code>DidCapture</code> 被消费</td><td>hidden primary Offscreen → fallback sibling</td><td>仍未改变</td></tr>
+      <tr><td>fallback commit</td><td><code>memoizedState</code> 为 suspended marker</td><td>该 WIP 成为 current</td><td>此时才显示 fallback</td></tr>
+    </tbody></table></div>
+    <div class="callout warn"><p><strong>关键结论：</strong><code>throwException</code> 返回时，fallback DOM 还不存在。它甚至不负责创建 fallback Fiber；<code>mountSuspenseFallbackChildren</code>/<code>updateSuspenseFallbackChildren</code> 在第二遍 render 才构造分支，commit 才写宿主。</p></div>
+  </section>
+
+  <section id="fallback-tree">
+    <h2>fallback Fiber 不是替换 primary：它与 hidden Offscreen 并存</h2>
+    <p>首次 fallback pass 的 Fiber 形状是：Suspense 的 child 为 <code>mode:'hidden'</code> 的 primary Offscreen；Offscreen 的 sibling 是 fallback Fragment。保留 primary 让 React 能保存状态、继续预热和在恢复时复用；fallback 则是本次可见输出。</p>
+    <figure class="source"><figcaption><span>连续原码 · ReactFiberBeginWork.js · fallback 子树收口</span><a href="../../react/packages/react-reconciler/src/ReactFiberBeginWork.js">打开源码</a></figcaption><pre><code>  primaryChildFragment.return = workInProgress;
+  fallbackChildFragment.return = workInProgress;
+  primaryChildFragment.sibling = fallbackChildFragment;
+  workInProgress.child = primaryChildFragment;
+  return fallbackChildFragment;</code></pre></figure>
+    <div class="chain" aria-label="Suspense fallback Fiber 结构">
+      <div class="node">Suspense<small>memoizedState = SUSPENDED_MARKER</small></div><span class="arrow">child →</span>
+      <div class="node">Offscreen primary<small>mode=hidden / 保存主树</small></div><span class="arrow">sibling →</span>
+      <div class="node">Fallback Fragment<small>本轮继续 beginWork</small></div><span class="arrow">→</span>
+      <div class="node">Host fallback<small>commit 后才可见</small></div>
+    </div>
+    <p>首次挂起与“已有内容退回 fallback”观察语义不同：首次可以直接挂载 hidden Offscreen；更新时会复用 current primary，是否立刻显示 fallback还受 Transition、shell、节流和 SuspenseList context 影响。因此本页讲状态机，不承诺所有更新都立即闪 loading。</p>
+  </section>
+
+  <section id="lanes">
+    <h2>阶段 4：pending / suspended / pinged 三个位集怎样变化</h2>
+    <p>设触发首次 render 的 Lane 为 <code>L</code>；首次普通 render 因挂起跳过 sibling 时，React 为后台预热派生 RetryLane <code>P</code>；wakeable settle 后，已提交边界还可选择 RetryLane <code>R</code>。
+    这三者是不同来源，不能都叫“Promise 的 Lane”。真实值是位集，表中用符号避免把具体 bit 当 API。</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>时刻</th><th><code>pendingLanes</code></th><th><code>suspendedLanes</code></th><th><code>pingedLanes</code></th><th><code>warmLanes</code></th><th><code>pingCache</code></th><th>含义</th></tr></thead>
+      <tbody>
+        <tr><td>更新刚入根</td><td>L</td><td>∅</td><td>∅</td><td>∅</td><td>null</td><td>L 尚未完成，可被调度</td></tr>
+        <tr><td>primary 抛 wakeable</td><td>L</td><td>通常尚待 render 出口收口</td><td>∅</td><td>∅</td><td>wakeable → {L}</td><td>立即订阅，保留 fallback commit 前的唤醒窗口</td></tr>
+        <tr><td>fallback 前 settle</td><td>L</td><td>L</td><td>L</td><td>清 L</td><td>删除 wakeable</td><td>root ping 使原 L 再次可选，可能跳过 fallback</td></tr>
+        <tr><td>fallback 提交完成 L</td><td>P</td><td>P</td><td>∅</td><td>∅</td><td>wakeable → {L}</td><td>ScheduleRetry 派生 P；它虽 suspended，但尚未 warm，因此可被调度为 prewarm</td></tr>
+        <tr><td>P 预热仍遇到 A/B pending</td><td>P</td><td>P</td><td>∅</td><td>P</td><td>wakeable → {L, P}</td><td>已探索 siblings；fallback 继续可见，测试的第二组 Suspend A/B 对应此遍</td></tr>
+        <tr><td>fallback 后 settle</td><td>P 的 ping 和/或 R</td><td>随 listener/选择收口</td><td>可含 P</td><td>清被 ping lanes</td><td>对应 root 条目删除</td><td>root listener 可 ping 当前 P；boundary listener 常另排 R，调度器再选实际 retry 集</td></tr>
+        <tr><td>primary retry 提交</td><td>∅（无其他工作时）</td><td>∅</td><td>∅</td><td>按完成清理</td><td>无对应条目</td><td>所选 retry 完成；fallback 删除，primary 可见</td></tr>
+      </tbody>
+    </table></div>
+    <figure class="source"><figcaption><span>连续原码 · ReactFiberCompleteWork.js · ScheduleRetry 派生 prewarm Lane</span><a href="../../react/packages/react-reconciler/src/ReactFiberCompleteWork.js">打开源码</a></figcaption><pre><code>  if (workInProgress.flags &amp; ScheduleRetry) {
+    const retryLane =
+      // TODO：把判断移入 claimNextRetryLane，并进一步合并 Offscreen/Retry 车道策略。
+      workInProgress.tag !== OffscreenComponent
+        ? claimNextRetryLane()
+        : OffscreenLane;
+    workInProgress.lanes = mergeLanes(workInProgress.lanes, retryLane);
+
+    // 记录即时 retry 车道，Root 提交时可将它们标为 suspended。
+    markSpawnedRetryLane(retryLane);
+  }</code></pre></figure>
+    <p><code>markRootSuspended</code> 把本次尝试并入 suspended，并从 pinged 移走同 Lane；这一步避免旧 ping 永久污染下一次挂起。<code>markRootPinged</code> 又只取 <code>root.suspendedLanes &amp; pingedLanes</code> 的交集：已完成或不再挂起的旧 Lane 不会凭过期回调复活。</p>
+    <figure class="source"><figcaption><span>连续原码 · ReactFiberLane.js · suspended 与 pinged 收口</span><a href="../../react/packages/react-reconciler/src/ReactFiberLane.js">打开源码</a></figcaption><pre><code>export function markRootSuspended(
+  root: FiberRoot,
+  suspendedLanes: Lanes,
+  spawnedLane: Lane,
+  didAttemptEntireTree: boolean,
+) {
+  // TODO：区分“render 尝试结束”与“进行中挂起”两种调用语义，拆为独立函数。
+  root.suspendedLanes |= suspendedLanes;
+  root.pingedLanes &amp;= ~suspendedLanes;
+
+  if (didAttemptEntireTree) {
+    // 全树已尝试，标为 warm 表示没有未探索 sibling。
+    root.warmLanes |= suspendedLanes;
+  } else {
+    // 尚有 sibling 未尝试，不标 warm，使调度器安排 prewarm render。
+  }
+
+  // 等待外部数据的 Lanes 不再是 CPU-bound，清除饥饿期限。
+  const expirationTimes = root.expirationTimes;
+  let lanes = suspendedLanes;
+  while (lanes &gt; 0) {
+    const index = pickArbitraryLaneIndex(lanes);
+    const lane = 1 &lt;&lt; index;
+
+    expirationTimes[index] = NoTimestamp;
+
+    lanes &amp;= ~lane;
+  }
+
+  if (spawnedLane !== NoLane) {
+    markSpawnedDeferredLane(root, spawnedLane, suspendedLanes);
+  }
+}
+
+/** 只把当前确实 suspended 的已解决 Lanes 标为 pinged，并使其可再次 prewarm。 */
+export function markRootPinged(root: FiberRoot, pingedLanes: Lanes) {
+  root.pingedLanes |= root.suspendedLanes &amp; pingedLanes;
+  // 新数据可能解锁更多 children，清除 warm 后允许再次探索。
+  root.warmLanes &amp;= ~pingedLanes;
+}</code></pre></figure>
+  </section>
+
+  <section id="ping">
+    <h2>阶段 5：attachPingListener 用 root + wakeable + lanes 去重</h2>
+    <p><code>pingCache</code> 由 FiberRoot 持有。外层 key 是 wakeable，值是已订阅的 Lane 集合（源码称 thread IDs）。因此：</p>
+    <ul class="qa">
+      <li>同一 root、同一 wakeable、同一 lanes：只调用一次 <code>then</code>；</li>
+      <li>同一 wakeable 被不同 Lane 读取：每组 lanes 仍可各有回调；</li>
+      <li>同一 wakeable 被不同 root 读取：各 root 独立拥有 cache 和调度状态；</li>
+      <li>resolve 与 reject 都绑定同一个 ping：settle 只表示“再读一次可能得到不同结果”。</li>
+    </ul>
+    <figure class="source"><figcaption><span>连续原码 · ReactFiberWorkLoop.js · attachPingListener</span><a href="../../react/packages/react-reconciler/src/ReactFiberWorkLoop.js">打开源码</a></figcaption><pre><code>export function attachPingListener(
+  root: FiberRoot,
+  wakeable: Wakeable,
+  lanes: Lanes,
+) {
+  // 安装 ping listener。数据可能在 fallback commit 前 resolve，refresh 甚至不会提交 fallback；
+  // 因此现在订阅，ping 后再决定是否重渲染。仅当当前 lanes（此处相当于 thread ID）尚无监听
+  // 时安装；只需并发模式，Legacy Suspense 同步提交 fallback，不存在 ping 窗口。
+  let pingCache = root.pingCache;
+  let threadIDs;
+  if (pingCache === null) {
+    pingCache = root.pingCache = new PossiblyWeakMap();
+    threadIDs = new Set&lt;mixed&gt;();
+    pingCache.set(wakeable, threadIDs);
+  } else {
+    threadIDs = pingCache.get(wakeable);
+    if (threadIDs === undefined) {
+      threadIDs = new Set();
+      pingCache.set(wakeable, threadIDs);
+    }
+  }
+  if (!threadIDs.has(lanes)) {
+    workInProgressRootDidAttachPingListener = true;
+
+    // 以 thread ID（lanes）记忆，避免重复 listener。
+    threadIDs.add(lanes);
+    const ping = pingSuspendedRoot.bind(null, root, wakeable, lanes);
+    if (enableUpdaterTracking) {
+      if (isDevToolsPresent) {
+        // 若仍有 pending work，恢复原 updater 集合。
+        restorePendingUpdaters(root, lanes);
+      }
+    }
+    wakeable.then(ping, ping);
+  }
+}</code></pre></figure>
+    <p><code>pingSuspendedRoot</code> 首先删掉该 wakeable 的 root cache，再标记当前仍 suspended 的交集。若相同 root 正在相同 lanes 上 render，启发式规则可准备 fresh stack 或记录 WIP ping；最后一律调用 <code>ensureRootIsScheduled</code>，让 microtask 重新基于最新字段选 Lane。</p>
+    <figure class="source"><figcaption><span>连续原码 · ReactFiberWorkLoop.js · ping 回调开头</span><a href="../../react/packages/react-reconciler/src/ReactFiberWorkLoop.js">打开源码</a></figcaption><pre><code>function pingSuspendedRoot(
+  root: FiberRoot,
+  wakeable: Wakeable,
+  pingedLanes: Lanes,
+) {
+  const pingCache = root.pingCache;
+  if (pingCache !== null) {
+    // wakeable 已 resolve，不会再被抛出，无需继续记忆。
+    pingCache.delete(wakeable);
+  }
+
+  markRootPinged(root, pingedLanes);
+
+  if (enableProfilerTimer &amp;&amp; enableComponentPerformanceTrack) {
+    startPingTimerByLanes(pingedLanes);
+  }
+
+  warnIfSuspenseResolutionNotWrappedWithActDEV(root);</code></pre></figure>
+  </section>
+
+  <section id="retry">
+    <h2>阶段 6：fallback 提交后，边界 retry 不保证复用原 Lane</h2>
+    <p>render 期存在边界 <code>updateQueue</code> 的 wakeable 集合。commit 的 <code>attachSuspenseRetryListeners</code> 为每个 wakeable 安装以边界 Fiber 为目标的回调，并在边界 retry cache 去重。settle 后 <code>resolveRetryWakeable</code> 删除 cache，再调用 <code>retryTimedOutBoundary</code>：</p>
+    <div class="grid three">
+      <article class="card"><span class="number">EARLY ROOT PING</span><h3>通常复用原 render lanes</h3><p><code>attachPingListener</code> 闭包捕获 <code>rootRenderLanes</code>；fallback 提交前 resolve 时，原 L 可从 suspended 变 pinged。</p></article>
+      <article class="card"><span class="number">PREWARM P</span><h3>fallback 提交时派生</h3><p>首遍挂起跳过 siblings 会写 <code>ScheduleRetry</code>；completeWork 申请 P，commit 后保留为 pending+suspended，并因尚未 warm 立即预热未探索 siblings。</p></article>
+      <article class="card"><span class="number">COMMITTED BOUNDARY RETRY</span><h3>常见是新 RetryLane</h3><p>边界 state 中若没有保存 <code>retryLane</code>，<code>requestRetryLane(boundaryFiber)</code> 选择 R。dehydrated Suspense 等路径可复用已经保存的 retryLane。</p></article>
+    </div>
+    <figure class="source"><figcaption><span>连续原码 · ReactFiberWorkLoop.js · retryTimedOutBoundary</span><a href="../../react/packages/react-reconciler/src/ReactFiberWorkLoop.js">打开源码</a></figcaption><pre><code>function retryTimedOutBoundary(boundaryFiber: Fiber, retryLane: Lane) {
+  // Suspense/SuspenseList 边界此前显示 fallback；其一个 Promise 已 resolve，树至少部分解除
+  // 阻塞，使用新 Lane 重试 render。
+  if (retryLane === NoLane) {
+    // TODO：是否写入 suspenseState.retryLane，以避免不必要 entanglement？
+    retryLane = requestRetryLane(boundaryFiber);
+  }
+  // TODO：是否为 idle 优先级设特例？
+  const root = enqueueConcurrentRenderForLane(boundaryFiber, retryLane);
+  if (root !== null) {
+    markRootUpdated(root, retryLane);
+    ensureRootIsScheduled(root);
+  }
+}</code></pre></figure>
+    <p><strong>为什么 resolve 不等于成功：</strong>回调只知道 thenable settled，不知道资源记录是 resolved 还是 rejected，也不知道其他 primary 子项是否仍 pending。retry 必须重新执行组件；只有整棵候选 primary 完成，才能提交它。</p>
+  </section>
+
+  <section id="reveal">
+    <h2>阶段 7：retry 成功后，显示 primary、删除 fallback，按连接状态更新或重连 effects</h2>
+    <p>retry render 再次读取资源。若不再抛出，<code>updateSuspenseComponent</code> 走 primary 分支，把 Offscreen props 改为 <code>mode:'visible'</code>，把 fallback sibling 加入父边界 deletions，并清空 sibling。注意：这些仍是 render 期 Fiber 变更。</p>
+    <figure class="source"><figcaption><span>连续原码 · ReactFiberBeginWork.js · fallback 转 primary</span><a href="../../react/packages/react-reconciler/src/ReactFiberBeginWork.js">打开源码</a></figcaption><pre><code>function updateSuspensePrimaryChildren(
+  current: Fiber,
+  workInProgress: Fiber,
+  primaryChildren: $FlowFixMe,
+  renderLanes: Lanes,
+) {
+  const currentPrimaryChildFragment: Fiber = current.child as any;
+  const currentFallbackChildFragment: Fiber | null =
+    currentPrimaryChildFragment.sibling;
+
+  const primaryChildFragment = updateWorkInProgressOffscreenFiber(
+    currentPrimaryChildFragment,
+    {
+      mode: 'visible',
+      children: primaryChildren,
+    },
+  );
+  if (!disableLegacyMode &amp;&amp; (workInProgress.mode &amp; ConcurrentMode) === NoMode) {
+    primaryChildFragment.lanes = renderLanes;
+  }
+  primaryChildFragment.return = workInProgress;
+  primaryChildFragment.sibling = null;
+  if (currentFallbackChildFragment !== null) {
+    // 删除旧 fallback child fragment。
+    const deletions = workInProgress.deletions;
+    if (deletions === null) {
+      workInProgress.deletions = [currentFallbackChildFragment];
+      workInProgress.flags |= ChildDeletion;
+    } else {
+      deletions.push(currentFallbackChildFragment);
+    }
+  }
+
+  workInProgress.child = primaryChildFragment;
+  return primaryChildFragment;
+}</code></pre></figure>
+    <div class="table-wrap"><table><thead><tr><th>commit 工作</th><th>fallback 提交时</th><th>primary reveal 时</th></tr></thead><tbody>
+      <tr><td>宿主可见性</td><td>Offscreen mutation 调用 hide 路径；fallback Placement/Update</td><td>Offscreen mutation 调用 unhide 路径；fallback ChildDeletion</td></tr>
+      <tr><td>Fiber 身份</td><td>primary Offscreen 仍在 Suspense child 位；fallback 是 sibling</td><td>复用 primary alternate；fallback sibling 断开并删除</td></tr>
+      <tr><td>layout effects</td><td>从可见转隐藏时执行 disappear 语义；初次 hidden 子树不当作可见挂载</td><td>从隐藏转可见时执行 reappear 语义</td></tr>
+      <tr><td>passive effects</td><td>初次 hidden mount 通常未连接普通 passive；但从已可见内容退回 fallback 时，直接位于 Suspense 下的 Offscreen 为兼容语义可能仍保持 connected</td><td>若已断开则设置 connected 并 <code>reconnectPassiveEffects</code>；若仍连接则走普通 passive update，不重复 reconnect</td></tr>
+      <tr><td>用户可见结果</td><td>fallback</td><td>primary；只有 commit 后才成立</td></tr>
+    </tbody></table></div>
+    <figure class="source"><figcaption><span>连续原码 · ReactFiberCommitWork.js · hidden 转 visible 的 passive 重连</span><a href="../../react/packages/react-reconciler/src/ReactFiberCommitWork.js">打开源码</a></figcaption><pre><code>        } else {
+          // 副作用当前已断开；重新连接，并触发新挂载树内的副作用。首次渲染也适用。
+          instance._visibility |= OffscreenPassiveEffectsConnected;
+
+          const includeWorkInProgressEffects =
+            (finishedWork.subtreeFlags &amp; PassiveMask) !== NoFlags ||
+            (enableProfilerTimer &amp;&amp;
+              enableComponentPerformanceTrack &amp;&amp;
+              finishedWork.actualDuration !== 0 &amp;&amp;
+              (finishedWork.alternate === null ||
+                finishedWork.alternate.child !== finishedWork.child));
+          recursivelyTraverseReconnectPassiveEffects(
+            finishedRoot,
+            finishedWork,
+            committedLanes,
+            committedTransitions,
+            includeWorkInProgressEffects,
+            endTime,
+          );</code></pre></figure>
+    <p>上面连续源码只展示<strong>当前未连接</strong>的分支，不代表每次 reveal 都会 reconnect。“保留 hidden primary”也不等于 effects 永远保持活跃：layout 有 disappear/reappear；passive 先看 connected 位，决定普通 update 还是 reconnect；缓存引用计数等 atomic effect 又可能在隐藏预渲染中执行。具体分支受模式和特性开关影响，不能用一句“Suspense 不卸载组件”替代。</p>
+  </section>
+
+  <section id="real-test">
+    <h2>真实测试：两个 pending child 先提交 fallback，再一起恢复</h2>
+    <p>来源：<a href="../../react/packages/react-reconciler/src/__tests__/ReactSuspenseWithNoopRenderer-test.js">ReactSuspenseWithNoopRenderer-test.js · a Suspense component correctly handles more than one suspended child</a>。这个用例比只断言日志更强：它先断言真实 Noop 宿主输出是 Loading，再 resolve 两个资源，最后断言 A/B 主内容。</p>
+    <div class="table-wrap"><table><thead><tr><th>GWT</th><th>精确事实</th><th>证明的机制</th></tr></thead><tbody>
+      <tr><td>Given</td><td>一个 Suspense 边界内有 <code>AsyncText A</code> 与 <code>B</code>；两个资源都从 pending 开始</td><td>测试建立多资源场景；retryQueue 用 Set 保存 wakeable 是源码事实，不由此行断言单独证明</td></tr>
+      <tr><td>When 1</td><td>初次 render 并 flush 全部工作</td><td>A 挂起使边界第二遍 render Loading；预热又遇到 A/B</td></tr>
+      <tr><td>Then 1</td><td><code>toMatchRenderedOutput(&lt;span prop="Loading..." /&gt;)</code></td><td>fallback 已真正 commit，不只是 render 日志</td></tr>
+      <tr><td>When 2</td><td>同一 act 内 resolve A 与 B</td><td>两个资源记录先改 resolved；至少一个 retry 信号即可让下一遍读到二者</td></tr>
+      <tr><td>Then 2</td><td>日志为 A、B；宿主输出同时含 A、B</td><td>直接证明两资源都 ready 后 primary 能提交；不能单独证明两个 listener 都存在或 ping 去重</td></tr>
+    </tbody></table></div>
+    <figure class="source"><figcaption><span>连续测试原码 · ReactSuspenseWithNoopRenderer-test.js · fallback 到 primary</span><a href="../../react/packages/react-reconciler/src/__tests__/ReactSuspenseWithNoopRenderer-test.js">打开测试</a></figcaption><pre><code>    ReactNoop.render(
+      &lt;Suspense fallback={&lt;Text text="Loading..." /&gt;}&gt;
+        &lt;AsyncText text="A" /&gt;
+        &lt;AsyncText text="B" /&gt;
+      &lt;/Suspense&gt;,
+    );
+    await waitForAll([
+      'Suspend! [A]',
+      'Loading...',
+      // 执行预热渲染，不把该遍结果作为最终提交。
+      'Suspend! [A]',
+      'Suspend! [B]',
+    ]);
+    expect(ReactNoop).toMatchRenderedOutput(&lt;span prop="Loading..." /&gt;);
+
+    await act(() =&gt; {
+      resolveText('A');
+      resolveText('B');
+    });
+    assertLog(['A', 'B']);
+    expect(ReactNoop).toMatchRenderedOutput(
+      &lt;&gt;
+        &lt;span prop="A" /&gt;
+        &lt;span prop="B" /&gt;
+      &lt;/&gt;,
+    );</code></pre></figure>
+    <div class="callout warn"><p><strong>测试证据边界：</strong>该用例一次同时 resolve A/B；即使只由其中一个回调触发 retry，下一遍也能读到两个 resolved 记录。
+    所以它证明 fallback/prewarm 的可观察顺序与最终 reveal，不直接证明 retryQueue 的 Set 完整性或 pingCache 去重；后两项由数据结构与订阅源码证明。</p></div>
+    <p class="callout"><strong>测试没有声称：</strong>每次挂起都必须先画 fallback；Transition 可能保留旧 UI，shell/节流可能延迟提交，资源若在 commit 前 ping 也可能直接完成 primary。这个用例只锁定“fallback 已提交后，多 wakeable 全部解决能恢复主内容”。</p>
+  </section>
+
+  <section id="rejection">
+    <h2>reject：同一个 ping 入口，下一遍转成普通 Error</h2>
+    <p><code>wakeable.then(ping, ping)</code> 对 resolve/reject 使用同一回调，因为调度层只负责再次尝试。测试资源的 <code>rejectText</code> 先把 record 变成 rejected，再广播 pings；retry 时 <code>readText</code> 命中 rejected 分支，抛出的已不是 thenable。<code>throwException</code> 随后落入普通错误路径，沿 return 找 Class Error Boundary；没有类边界时 HostRoot 建 root error update。</p>
+    <figure class="source"><figcaption><span>连续原码 · ReactFiberThrow.js · 普通错误边界选择</span><a href="../../react/packages/react-reconciler/src/ReactFiberThrow.js">打开源码</a></figcaption><pre><code>      case ClassComponent:
+        // 捕获并重试。
+        const ctor = workInProgress.type;
+        const instance = workInProgress.stateNode;
+        if (
+          (workInProgress.flags &amp; DidCapture) === NoFlags &amp;&amp;
+          (typeof ctor.getDerivedStateFromError === 'function' ||
+            (instance !== null &amp;&amp;
+              typeof instance.componentDidCatch === 'function' &amp;&amp;
+              !isAlreadyFailedLegacyErrorBoundary(instance)))
+        ) {
+          workInProgress.flags |= ShouldCapture;
+          const lane = pickArbitraryLane(rootRenderLanes);
+          workInProgress.lanes = mergeLanes(workInProgress.lanes, lane);
+          // 安排 Error Boundary 使用更新后的状态重新渲染。
+          const update = createClassErrorUpdate(lane);
+          initializeClassErrorUpdate(update, root, workInProgress, errorInfo);
+          enqueueCapturedUpdate(workInProgress, update);
+          return false;
+        }
+        break;</code></pre></figure>
+    <figure class="source"><figcaption><span>连续测试原码 · ReactSuspenseWithNoopRenderer-test.js · rejection 断言</span><a href="../../react/packages/react-reconciler/src/__tests__/ReactSuspenseWithNoopRenderer-test.js">打开测试</a></figcaption><pre><code>    await act(() =&gt; rejectText('Result', new Error('Failed to load: Result')));
+    assertLog([
+      'Error! [Result]',
+
+      // 推进或等待指定时间窗口，观察 Suspense 的节流、超时与恢复时机。
+      'Error! [Result]',
+
+      // 让资源或渲染路径进入错误状态，确认错误传播与边界恢复行为。
+      'Caught error: Failed to load: Result',
+    ]);
+    expect(ReactNoop).toMatchRenderedOutput(
+      &lt;span prop="Caught error: Failed to load: Result" /&gt;,
+    );</code></pre></figure>
+    <div class="callout warn"><p><strong>没有错误边界时：</strong>并发 render 的错误最终由 HostRoot capture update 与根的 <code>onUncaughtError</code> 路径处理；不是继续永久显示 Suspense fallback。Suspense 处理“仍在等待”，Error Boundary 处理“读取已经失败”。</p></div>
+  </section>
+
+  <section id="cleanup">
+    <h2>过期 ping、边界卸载与无边界挂起的安全出口</h2>
+    <div class="grid three">
+      <article class="card"><span class="number">STALE ROOT PING</span><h3>只唤醒仍 suspended 的交集</h3><p><code>markRootPinged</code> 不把回调携带的 Lane 全量写入，只写 <code>root.suspendedLanes &amp; pingedLanes</code>。Lane 已完成时，旧 ping 不制造新工作；scheduler 复查为 NoLanes。</p></article>
+      <article class="card"><span class="number">DETACHED BOUNDARY</span><h3>找不到 HostRoot 就停止</h3><p>边界删除时 return 指针被断开。稍后 retry 调用 <code>enqueueConcurrentRenderForLane</code>，向上找不到 HostRoot 会得到 null，于是不会 <code>markRootUpdated</code> 或调度。</p></article>
+      <article class="card"><span class="number">NO SUSPENSE BOUNDARY</span><h3>并发根等待；legacy 同步报错</h3><p>并发根仍可安装 root ping 并保持挂起，不提交半成品；legacy 同步输入缺少边界会转成明确错误，要求用 Suspense/Transition 建立恢复语义。</p></article>
+    </div>
+    <figure class="source"><figcaption><span>连续原码 · ReactFiberCommitWork.js · 删除时断开 return</span><a href="../../react/packages/react-reconciler/src/ReactFiberCommitWork.js">打开源码</a></figcaption><pre><code>function detachFiberMutation(fiber: Fiber) {
+  // 切断 return 指针，使 Fiber 与树断开。这样既能检测并警告卸载组件上的状态更新，
+  // 也能阻止事件从已断开的组件内部继续冒泡。
+  //
+  // 理想情况下还应清除父级 alternate 的 child 指针以便回收，但无法确定哪个父级是 current，
+  // 因此这里只让该子节点的子树可被回收；父级下次更新时，这个子节点本身也会被回收。
+  //
+  // 此时还不能清除 child 或 sibling 指针，因为被动副作用和 findDOMNode 仍需要它们。
+  // 这些字段及其他清理会延后到被动阶段执行，参见 detachFiberAfterEffects。
+  //
+  // alternate 也暂不能重置，被动阶段仍要借它断开 alternate 的字段。
+  // 对 findDOMNode 语义而言，清除 return 指针已经足够。
+  const alternate = fiber.alternate;
+  if (alternate !== null) {
+    alternate.return = null;
+  }
+  fiber.return = null;
+}</code></pre></figure>
+    <p>这里的“安全”是“不把已脱离工作重新接回树、不凭旧 ping 复活已完成 Lane”。React 无法取消用户资源本身；请求取消、订阅释放、cache 淘汰仍由资源层负责。自定义 thenable 也应遵守只 settle 一次的 Promise 约定。</p>
+  </section>
+
+  <section id="crosswalk">
+    <h2>源码 → 状态变化 → 测试证据 crosswalk</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>问题</th><th>源码落点</th><th>状态前 → 后</th><th>测试观察</th></tr></thead>
+      <tbody>
+        <tr><td>pending 怎样进入 React</td><td><a href="../../react/packages/react-reconciler/src/__tests__/ReactSuspenseWithNoopRenderer-test.js"><code>readText</code></a></td><td>record 不存在 → pending + throw thenable</td><td><code>Suspend! [A]</code></td></tr>
+        <tr><td>谁捕获</td><td><a href="../../react/packages/react-reconciler/src/ReactFiberThrow.js"><code>throwException</code></a></td><td>source 完整 → Incomplete；boundary → ShouldCapture；retryQueue 加 wakeable</td><td>边界外 sibling 仍可继续；fallback 被选择</td></tr>
+        <tr><td>为什么是第二遍</td><td><a href="../../react/packages/react-reconciler/src/ReactFiberUnwindWork.js"><code>unwindWork</code></a> → <a href="../../react/packages/react-reconciler/src/ReactFiberBeginWork.js"><code>updateSuspenseComponent</code></a></td><td>ShouldCapture → DidCapture → showFallback</td><td>日志先 Suspend，后 Loading；commit 前宿主仍旧</td></tr>
+        <tr><td>根怎样等待/醒来</td><td><a href="../../react/packages/react-reconciler/src/ReactFiberLane.js"><code>markRootSuspended/Pinged</code></a></td><td>L: pending → suspended；settle 后仍挂起的 L → pinged</td><td>资源解决后发生 retry，而非忙循环</td></tr>
+        <tr><td>怎样避免重复订阅</td><td><a href="../../react/packages/react-reconciler/src/ReactFiberWorkLoop.js"><code>attachPingListener</code></a></td><td>pingCache 无 key → wakeable:{lanes}</td><td>去重由源码结构证明；A/B 用例只证明两资源 ready 后可恢复</td></tr>
+        <tr><td>为什么 fallback 后还有预热</td><td><a href="../../react/packages/react-reconciler/src/ReactFiberCompleteWork.js"><code>scheduleRetryEffect</code></a></td><td>ScheduleRetry → P；L 完成后 P 仍 pending+suspended，随后 warm</td><td>Loading 后再次出现 Suspend A、Suspend B</td></tr>
+        <tr><td>fallback 后怎样重试</td><td><a href="../../react/packages/react-reconciler/src/ReactFiberWorkLoop.js"><code>retryTimedOutBoundary</code></a></td><td>NoLane → requestRetryLane；root.pending 加 R</td><td>resolve A/B 后日志 A、B，宿主切主内容</td></tr>
+        <tr><td>主内容怎样显现</td><td><a href="../../react/packages/react-reconciler/src/ReactFiberBeginWork.js"><code>updateSuspensePrimaryChildren</code></a> + <a href="../../react/packages/react-reconciler/src/ReactFiberCommitWork.js">Offscreen commit</a></td><td>hidden → visible；fallback sibling → deletion；passive 按 connected 位 update 或 reconnect</td><td>最终输出 A/B，不含 Loading</td></tr>
+        <tr><td>reject 怎样转错误</td><td><a href="../../react/packages/react-reconciler/src/ReactFiberThrow.js">普通错误 capture 分支</a></td><td>resource rejected → throw Error → Class/HostRoot capture update</td><td><code>Caught error: Failed to load: Result</code></td></tr>
+        <tr><td>卸载后 ping 怎样退出</td><td><a href="../../react/packages/react-reconciler/src/ReactFiberCommitWork.js"><code>detachFiberMutation</code></a> + <a href="../../react/packages/react-reconciler/src/ReactFiberConcurrentUpdates.js"><code>enqueueConcurrentRenderForLane</code></a></td><td>boundary.return → null；向上找 root → null</td><td>不会重挂已删除边界</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section id="boundaries">
+    <h2>边界说明：读完后仍不要过度外推</h2>
+    <ul class="qa">
+      <li><strong>版本边界：</strong>本页对应仓库 <code>packages/react/package.json</code> 的 19.3.0；<code>Activity</code>、CPU Suspense、View Transition、特性开关会增加分支。</li>
+      <li><strong>renderer 边界：</strong>测试使用 ReactNoop 锁定 reconciler 语义；DOM renderer 的 hide/unhide 最终由 HostConfig 实现，具体节点样式/属性不在该测试中证明。</li>
+      <li><strong>调度边界：</strong>表中的 L/R 是符号。Lane 选择受事件、Transition、hydration、entanglement、retry lane 池和根模式影响，不是公开稳定常量。</li>
+      <li><strong>可见性边界：</strong>fallback 何时提交由 shell、Transition、JND/节流、SuspenseList、prewarm 等规则决定；状态机不等于固定时间表。</li>
+      <li><strong>资源边界：</strong>React 的 wakeable 协议不定义网络缓存、去重、取消和一致性。测试 cache 是证据 fixture，不是生产数据层建议。</li>
+      <li><strong>hydration 边界：</strong>dehydrated Suspense 还包含 selective hydration、ForceClientRender 和 replay；请结合 <a href="15-events-hydration.html">15 · 事件与 hydration</a> 阅读。</li>
+    </ul>
+  </section>
+
+  <section id="check">
+    <h2>检查自己是否真正理解</h2>
+    <ul class="qa">
+      <li>为什么 <code>throwException</code> 不能直接调用 HostConfig 显示 fallback？</li>
+      <li><code>ShouldCapture</code> 与 <code>DidCapture</code> 分别属于哪一个控制流时刻？</li>
+      <li>为什么同一 wakeable 既可能有 root ping listener，也可能有 boundary retry listener？</li>
+      <li>fallback 已提交后，为什么 retry 常用新 RetryLane，而不是强行复用原 L？</li>
+      <li>thenable reject 后，为什么最终应由 Error Boundary/HostRoot，而不是 Suspense fallback 永久处理？</li>
+      <li>隐藏 primary 的 DOM、layout effect、passive effect 是否拥有完全相同的“保留”语义？</li>
+    </ul>
+  </section>
+
+  <div class="next-page">
+    <a href="16-end-to-end-source.html">← 上一页：真实源码主线</a>
+    <a href="09-evidence.html">下一页：证据与门禁 →</a>
+  </div>
+  <footer><p>阅读口诀：throw 只中止，capture 只选路，第二遍才产 fallback，ping 只唤醒，retry render 才验证，commit 才改变现实。</p></footer>
+</main>
+
+<aside class="toc" aria-label="本页目录">
+  <strong>Suspense · ping / retry</strong>
+  <a href="#one-sentence">正确模型</a>
+  <a href="#full-chain">完整链</a>
+  <a href="#ownership">所有权</a>
+  <a href="#resource">资源三态</a>
+  <a href="#capture">throwException</a>
+  <a href="#second-pass">二次 render</a>
+  <a href="#fallback-tree">fallback 树形</a>
+  <a href="#lanes">Lane 状态</a>
+  <a href="#ping">ping 去重</a>
+  <a href="#retry">边界 retry</a>
+  <a href="#reveal">Offscreen / effects</a>
+  <a href="#real-test">真实测试</a>
+  <a href="#rejection">reject / error</a>
+  <a href="#cleanup">清理出口</a>
+  <a href="#crosswalk">证据表</a>
+  <a href="#boundaries">边界说明</a>
+</aside>
+</div>
+</body>
+</html>

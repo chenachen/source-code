@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="React 19.3.0 六包源码阅读地图：从 shared、scheduler 到 ReactDOM 的完整客户端主线。" />
+  <title>React 六包源码指南 · 阅读地图</title>
+  <link rel="stylesheet" href="assets/guide.css?v=1" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="index.html">React 六包源码指南</a>
+      <nav class="pager" aria-label="页面导航">
+        <a aria-current="page" href="index.html">地图</a>
+        <a href="01-shared.html">shared</a>
+        <a href="02-scheduler.html">scheduler</a>
+        <a href="03-react.html">react</a>
+        <a href="04-reconciler-render.html">render</a>
+        <a href="05-reconciler-commit.html">commit</a>
+        <a href="06-dom-bindings.html">bindings</a>
+        <a href="07-react-dom.html">react-dom</a>
+        <a href="08-end-to-end.html">主线</a>
+        <a href="09-evidence.html">证据</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="layout">
+    <main>
+      <p class="eyebrow">Source-guided · Offline edition</p>
+      <h1>从元素描述到 DOM 提交</h1>
+      <p class="lede">
+        这不是按文件名排列的 API 清单，而是一张可核验的运行地图：先建立身份与类型契约，
+        再解释时间切片、Fiber 状态机、DOM 宿主操作，最后用同一个客户端更新串起六个包。
+      </p>
+      <div class="meta">
+        <span class="pill">React / ReactDOM 19.3.0</span>
+        <span class="pill">react-reconciler 0.34.0</span>
+        <span class="pill">scheduler 0.28.0</span>
+        <span class="pill">源码快照指纹 c2a539…23dd</span>
+        <span class="pill">离线多页面</span>
+      </div>
+
+      <section id="conclusion">
+        <h2>先拿走三个结论</h2>
+        <div class="grid three">
+          <article class="card">
+            <span class="number">01 / CONTRACT</span>
+            <h3>React 先描述，不直接改 DOM</h3>
+            <p><code>react</code> 产生带类型标记的元素与上下文描述；是否创建、复用或删除宿主节点，由 reconciler 在后续阶段决定。</p>
+          </article>
+          <article class="card">
+            <span class="number">02 / STATE MACHINE</span>
+            <h3>Fiber 把计算与副作用分开</h3>
+            <p>render 阶段计算候选树和 flags；commit 阶段才把确定的变更写入宿主环境。中断 render 不应泄漏半成品 DOM。</p>
+          </article>
+          <article class="card">
+            <span class="number">03 / HOST BOUNDARY</span>
+            <h3>DOM 细节集中在 bindings</h3>
+            <p>reconciler 只调用 HostConfig 契约；属性、表单、事件、hydration 等浏览器语义由 <code>react-dom-bindings</code> 落地。</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="scope">
+        <h2>范围与证据边界</h2>
+        <p>
+          本指南覆盖仓库中的 <code>packages/shared</code>、<code>scheduler</code>、<code>react</code>、
+          <code>react-reconciler</code>、<code>react-dom-bindings</code> 与 <code>react-dom</code>。
+          版本来自各包 <code>package.json</code> 和 <code>ReactVersion.js</code>；当前快照没有可验证的内层 Git
+          tag/commit，因此不推断上游身份。
+        </p>
+        <div class="callout warn">
+          <p><strong>SSR 边界：</strong>ReactDOM 的流式与静态入口会进入 <code>packages/react-server</code> 的 Fizz 状态机，
+          但该包不在本次六包范围内。服务端页面只解释 ReactDOM 环境适配层，不把它误称为完整 Fizz 内核。</p>
+        </div>
+        <p>
+          源码注释门禁覆盖手写入口、实现、fork、发布 shim、Flow/TypeScript 类型和测试。
+          明确排除生成快照、生成的 Fizz inline-code 字符串与 scheduler legacy UMD 预构建产物。
+          精确基线、排除理由和完成条件见
+          <a href="00-task-baseline.md">任务基线</a>。
+        </p>
+      </section>
+
+      <section id="map">
+        <h2>六层模块地图</h2>
+        <div class="chain" aria-label="六包阅读顺序">
+          <div class="node"><strong>shared</strong><small>身份、类型、flags</small></div>
+          <span class="arrow">→</span>
+          <div class="node"><strong>scheduler</strong><small>host 时间片</small></div>
+          <span class="arrow">→</span>
+          <div class="node"><strong>react</strong><small>公开描述 API</small></div>
+          <span class="arrow">→</span>
+          <div class="node"><strong>reconciler</strong><small>Fiber 状态机</small></div>
+          <span class="arrow">→</span>
+          <div class="node"><strong>DOM bindings</strong><small>宿主契约实现</small></div>
+          <span class="arrow">→</span>
+          <div class="node"><strong>react-dom</strong><small>公开宿主入口</small></div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>层</th><th>负责</th><th>刻意不负责</th><th>先记住的对象</th></tr></thead>
+            <tbody>
+              <tr><td><a href="01-shared.html">shared</a></td><td>跨包身份、Flow 契约、特性开关、诊断工具</td><td>不拥有 renderer 生命周期</td><td>React symbols、ReactElement/Node 类型</td></tr>
+              <tr><td><a href="02-scheduler.html">scheduler</a></td><td>带优先级的回调队列、时间片、host 唤醒</td><td>不知道 Fiber、Lane 或 DOM</td><td>Task、taskQueue、timerQueue</td></tr>
+              <tr><td><a href="03-react.html">react</a></td><td>元素、Children、hooks facade、Context、lazy/memo</td><td>不选择 Lane，不执行 DOM mutation</td><td>ReactElement、dispatcher、transition</td></tr>
+              <tr><td><a href="04-reconciler-render.html">react-reconciler</a></td><td>Fiber、Lane、update queue、render/commit</td><td>不硬编码浏览器属性和事件</td><td>FiberNode、FiberRoot、Update、Lane</td></tr>
+              <tr><td><a href="06-dom-bindings.html">react-dom-bindings</a></td><td>DOM HostConfig、属性、表单、事件、hydration</td><td>不公开管理 root 生命周期</td><td>DOM instance、event queue、hydration target</td></tr>
+              <tr><td><a href="07-react-dom.html">react-dom</a></td><td>createRoot/hydrateRoot、portal、flush、SSR 环境入口</td><td>不重新实现 reconciler</td><td>ReactDOMRoot、container、portal</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="client-chain">
+        <h2>客户端主线：控制权怎样移动</h2>
+        <ol class="state-list">
+          <li><strong>描述。</strong>JSX 运行时调用 ReactElement 工厂，使用 shared symbol 标记一个不可与普通对象混淆的元素记录。</li>
+          <li><strong>入根。</strong><code>react-dom/client</code> 校验 container，创建 <code>ReactDOMRoot</code>，并让 reconciler 创建 FiberRoot。</li>
+          <li><strong>入队。</strong><code>root.render(element)</code> 进入 <code>updateContainer</code>，选择 Lane，把 Update 挂到 HostRoot 的 update queue。</li>
+          <li><strong>调度。</strong>RootScheduler 汇总根的最高优先级；并发工作通过 scheduler 注册 host callback，离散同步工作走同步队列。</li>
+          <li><strong>render。</strong>beginWork 消费 props/update queue 并协调 children；completeWork 创建或复用脱离文档的 DOM 实例并汇总 flags。</li>
+          <li><strong>commit。</strong>before-mutation → mutation → current 指针切换 → layout；DOM bindings 在 mutation 子阶段执行属性和树结构写入。</li>
+          <li><strong>收尾。</strong>passive effects 在后续边界 flush；unmount 用同一更新管线提交删除并断开 Fiber/DOM 关联。</li>
+        </ol>
+        <div class="callout">
+          <p><strong>两个“优先级”不要混为一谈：</strong>Lane 是 reconciler 的更新集合与根级调度状态；Scheduler Priority 是 host callback 的时间预算。
+          reconciler 在边界处做映射，但 scheduler 从不读取 Fiber。</p>
+        </div>
+      </section>
+
+      <section id="event-chain">
+        <h2>事件主线：DOM 输入怎样回到更新</h2>
+        <div class="chain" aria-label="事件到更新的调用链">
+          <div class="node">root 原生监听器<small>DOM bindings</small></div><span class="arrow">→</span>
+          <div class="node">事件优先级包装<small>离散 / 连续 / 默认</small></div><span class="arrow">→</span>
+          <div class="node">插件提取与派发<small>合成事件队列</small></div><span class="arrow">→</span>
+          <div class="node">用户 handler<small>setState / dispatch</small></div><span class="arrow">→</span>
+          <div class="node">Lane + root 调度<small>reconciler</small></div>
+        </div>
+        <p>
+          Hydration 会在“事件派发”之前增加阻塞目标检查：若目标 Fiber 尚未 hydrated，事件可能被排队或尝试同步 hydration；
+          因此事件页必须和 hydration 页交叉阅读，不能把所有原生事件都描述成即时派发。
+        </p>
+      </section>
+
+      <section id="reading">
+        <h2>推荐阅读路线</h2>
+        <div class="grid">
+          <article class="card">
+            <span class="number">FOUNDATION → ENGINE</span>
+            <h3>第一次完整阅读</h3>
+            <p>按 shared → scheduler → react → reconciler render → reconciler commit → DOM bindings → react-dom → 端到端主线。术语只定义一次，后页直接沿用。</p>
+          </article>
+          <article class="card">
+            <span class="number">SYMPTOM → OWNER</span>
+            <h3>按问题定位</h3>
+            <p>“为什么重渲染”从 Lane/update queue 查；“为什么属性或事件异常”从 DOM bindings 查；“为什么入口报错”先查 react-dom，再沿 HostConfig 进入引擎。</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="deep-dives">
+        <h2>v2 原理深挖路线</h2>
+        <p>01–08 负责建立模块地图；10–17 把核心对象、算法和真实执行链逐步算清，最后回到 09 核对证据账本。第一次接触 Fiber，建议按这条顺序连续阅读。</p>
+        <div class="table-wrap"><table><thead><tr><th>页</th><th>解决的理解断点</th><th>读完应能推导</th></tr></thead><tbody>
+          <tr><td><a href="10-fiber-object-model.html">10 · Fiber 对象模型</a></td><td>FiberRoot、树字段、stateNode、current/WIP/alternate</td><td>候选树如何复用对象，以及 commit 后谁成为现实</td></tr>
+          <tr><td><a href="11-update-queues-lanes.html">11 · Update Queue 与 Lane</a></td><td>Update 入队、Lane 传播、跳过/重放、根调度</td><td>高低优先级更新为什么不会丢</td></tr>
+          <tr><td><a href="12-child-reconciliation.html">12 · keyed children 协调</a></td><td>复用、移动、插入、删除与 state 身份</td><td><code>[A,B,C] → [B,A,D]</code> 的每个 flag</td></tr>
+          <tr><td><a href="13-hooks-state-machine.html">13 · Hooks 状态机</a></td><td>dispatcher、Hook 链、环形 queue、eager bailout</td><td>三次函数式 setState 如何得到 3</td></tr>
+          <tr><td><a href="14-commit-effects.html">14 · commit/effects/deletion</a></td><td>flags 遍历、DOM mutation、ref、effect、错误与清理</td><td>为什么 current 在 mutation 后、layout 前切换</td></tr>
+          <tr><td><a href="15-events-hydration.html">15 · 事件与 hydration</a></td><td>根委托、插件、优先级、blocker 与事件重放</td><td>未 hydration 的 click 怎样等待又保持因果</td></tr>
+          <tr><td><a href="16-end-to-end-source.html">16 · 真实源码主线</a></td><td>跨包知识无法接成一次真实运行</td><td>同一 act 的三次 click 为何只提交 count=3；随后两次独立 click 才到 DOM 5</td></tr>
+          <tr><td><a href="17-suspense-retry.html">17 · Suspense retry</a></td><td>“抛 Promise”如何变成 fallback 与可重试根状态</td><td>thenable settle 后为何重新 render，而非续跑旧栈</td></tr>
+        </tbody></table></div>
+      </section>
+
+      <section id="questions">
+        <h2>读完应能回答</h2>
+        <ul class="qa">
+          <li>ReactElement、Fiber 与 DOM node 分别是谁创建、谁持有、何时失效？</li>
+          <li>为什么 scheduleCallback 的 priority 不能直接等同于 Lane？</li>
+          <li>render 可以中断，commit 为什么必须保持宿主树一致？</li>
+          <li>一个 click 如何经过事件插件、批处理和 Lane，再触发 DOM mutation？</li>
+          <li>hydration 被阻塞、render 抛错或 root unmount 时，哪条清理路径接管？</li>
+        </ul>
+      </section>
+
+      <div class="next-page">
+        <span>从共同语言开始</span>
+        <a href="01-shared.html">下一页：shared 身份与契约 →</a>
+      </div>
+      <footer><p>本页是源码快照导览；结论以各模块页的源码摘录与测试证据为准。</p></footer>
+    </main>
+
+    <aside class="toc" aria-label="本页目录">
+      <strong>本页目录</strong>
+      <a href="#conclusion">三个结论</a>
+      <a href="#scope">范围与边界</a>
+      <a href="#map">六层地图</a>
+      <a href="#client-chain">客户端主线</a>
+      <a href="#event-chain">事件主线</a>
+      <a href="#reading">阅读路线</a>
+      <a href="#deep-dives">v2 原理深挖</a>
+      <a href="#questions">自测问题</a>
+    </aside>
+  </div>
+</body>
+</html>

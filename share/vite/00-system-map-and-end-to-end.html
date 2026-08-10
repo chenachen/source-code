@@ -1,0 +1,2035 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#646cff"><meta name="description" content="Vite Dev Server 是长期存活的增量模块系统；pending、ModuleGraph 与 PluginContainer 各自承担不同状态。"><title>00. 系统全景与一条开发请求的完整链路 · Vite 源码解剖</title><style>:root {
+  color-scheme: light;
+  --bg: #f4f6fb;
+  --surface: #ffffff;
+  --surface-soft: #f8f9ff;
+  --surface-code: #171925;
+  --text: #252738;
+  --muted: #686b7d;
+  --faint: #9295a7;
+  --line: #e3e5ef;
+  --line-strong: #d3d6e4;
+  --brand: #646cff;
+  --brand-strong: #4d54dc;
+  --cyan: #14a6c7;
+  --green: #188769;
+  --amber: #b56b16;
+  --red: #c4485a;
+  --shadow: 0 16px 48px rgb(36 39 67 / 9%);
+  --shadow-soft: 0 8px 28px rgb(36 39 67 / 7%);
+  --radius: 18px;
+  --radius-small: 11px;
+  --topbar: 64px;
+  --content: 820px;
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    'PingFang SC',
+    'Hiragino Sans GB',
+    'Microsoft YaHei',
+    sans-serif;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #11121a;
+  --surface: #191b26;
+  --surface-soft: #202331;
+  --surface-code: #0d0f17;
+  --text: #e9eaf2;
+  --muted: #aaadbd;
+  --faint: #818597;
+  --line: #2c2f3d;
+  --line-strong: #3a3e50;
+  --brand: #8e94ff;
+  --brand-strong: #a6abff;
+  --cyan: #56c8e0;
+  --green: #57c7a3;
+  --amber: #e0a252;
+  --red: #f07b8c;
+  --shadow: 0 18px 60px rgb(0 0 0 / 26%);
+  --shadow-soft: 0 8px 30px rgb(0 0 0 / 22%);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: calc(var(--topbar) + 24px);
+}
+
+body {
+  margin: 0;
+  min-width: 280px;
+  background:
+    radial-gradient(circle at 4% 0%, rgb(100 108 255 / 10%), transparent 26rem),
+    radial-gradient(circle at 95% 8%, rgb(20 166 199 / 9%), transparent 28rem),
+    var(--bg);
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1.78;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+a {
+  color: var(--brand-strong);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+}
+
+a:hover {
+  color: var(--cyan);
+}
+
+.skip-link {
+  position: fixed;
+  z-index: 200;
+  top: 8px;
+  left: 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--text);
+  color: var(--surface);
+  transform: translateY(-160%);
+}
+
+.skip-link:focus {
+  transform: translateY(0);
+}
+
+.reading-progress {
+  position: fixed;
+  z-index: 120;
+  inset: 0 0 auto;
+  height: 3px;
+  background: transparent;
+}
+
+.reading-progress > span {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: linear-gradient(90deg, var(--brand), var(--cyan));
+  transition: width 80ms linear;
+}
+
+.topbar {
+  position: sticky;
+  z-index: 100;
+  top: 0;
+  height: var(--topbar);
+  border-bottom: 1px solid rgb(120 124 150 / 16%);
+  background: color-mix(in srgb, var(--bg) 84%, transparent);
+  backdrop-filter: blur(18px) saturate(150%);
+}
+
+.topbar-inner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: min(100%, 1540px);
+  height: 100%;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: max-content;
+  color: var(--text);
+  font-weight: 760;
+  text-decoration: none;
+}
+
+.brand-mark {
+  display: grid;
+  width: 31px;
+  height: 31px;
+  place-items: center;
+  border-radius: 9px;
+  background: linear-gradient(135deg, var(--brand), var(--cyan));
+  box-shadow: 0 7px 18px rgb(100 108 255 / 28%);
+  color: white;
+  font-size: 13px;
+  letter-spacing: -0.04em;
+}
+
+.topbar-path {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.icon-button {
+  display: inline-grid;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.icon-button:hover {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
+.nav-toggle {
+  display: none;
+}
+
+.page-grid {
+  display: grid;
+  grid-template-columns: 250px minmax(0, var(--content)) 225px;
+  gap: 34px;
+  justify-content: center;
+  width: min(100%, 1540px);
+  margin: 0 auto;
+  padding: 34px 24px 72px;
+}
+
+.site-nav,
+.page-toc {
+  position: sticky;
+  top: calc(var(--topbar) + 24px);
+  align-self: start;
+  max-height: calc(100vh - var(--topbar) - 48px);
+  overflow: auto;
+  scrollbar-width: thin;
+}
+
+.site-nav {
+  padding: 5px 10px 18px 0;
+}
+
+.nav-home {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0 0 20px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.nav-home:hover,
+.nav-home[aria-current='page'] {
+  border-color: rgb(100 108 255 / 42%);
+  background: rgb(100 108 255 / 9%);
+  color: var(--brand-strong);
+}
+
+.nav-group + .nav-group {
+  margin-top: 18px;
+}
+
+.nav-group-title {
+  margin: 0 0 6px 11px;
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.nav-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.nav-list a {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 7px;
+  align-items: baseline;
+  padding: 7px 10px;
+  border-radius: 9px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+  text-decoration: none;
+}
+
+.nav-list a:hover {
+  background: var(--surface-soft);
+  color: var(--text);
+}
+
+.nav-list a[aria-current='page'] {
+  background: rgb(100 108 255 / 11%);
+  color: var(--brand-strong);
+  font-weight: 700;
+}
+
+.nav-code {
+  color: var(--faint);
+  font:
+    700 11px/1.4 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+}
+
+.article {
+  min-width: 0;
+}
+
+.article-hero {
+  position: relative;
+  overflow: hidden;
+  margin-bottom: 26px;
+  padding: 36px 38px;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background:
+    linear-gradient(135deg, rgb(100 108 255 / 11%), transparent 58%),
+    linear-gradient(315deg, rgb(20 166 199 / 8%), transparent 45%),
+    var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.article-hero::after {
+  position: absolute;
+  right: -55px;
+  bottom: -70px;
+  width: 220px;
+  height: 220px;
+  border: 35px solid rgb(100 108 255 / 7%);
+  border-radius: 50%;
+  content: '';
+}
+
+.eyebrow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 14px;
+  color: var(--brand-strong);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.eyebrow .pill {
+  padding: 3px 8px;
+  border: 1px solid rgb(100 108 255 / 28%);
+  border-radius: 999px;
+  background: rgb(100 108 255 / 8%);
+}
+
+.article-hero h1 {
+  position: relative;
+  z-index: 1;
+  max-width: 740px;
+  margin: 0;
+  font-size: clamp(2rem, 5vw, 3.35rem);
+  line-height: 1.09;
+  letter-spacing: -0.045em;
+}
+
+.article-hero .lede {
+  position: relative;
+  z-index: 1;
+  max-width: 680px;
+  margin: 18px 0 0;
+  color: var(--muted);
+  font-size: 17px;
+  line-height: 1.72;
+}
+
+.hero-meta {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-top: 23px;
+  color: var(--faint);
+  font-size: 12px;
+}
+
+.hero-meta code {
+  color: var(--muted);
+}
+
+.focus-card,
+.evidence-note,
+.boundary-note {
+  margin: 20px 0 26px;
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--brand);
+  border-radius: var(--radius-small);
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.focus-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr);
+  gap: 20px;
+}
+
+.focus-card h2,
+.focus-card h3,
+.evidence-note h2,
+.evidence-note h3 {
+  margin: 0 0 7px;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.focus-card p,
+.evidence-note p,
+.boundary-note p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.focus-card .boundary {
+  padding-left: 20px;
+  border-left: 1px solid var(--line);
+}
+
+.evidence-note {
+  border-left-color: var(--green);
+}
+
+.boundary-note {
+  border-left-color: var(--amber);
+}
+
+.prose {
+  padding: 12px 4px 30px;
+}
+
+.prose > :first-child {
+  margin-top: 0;
+}
+
+.prose h2,
+.prose h3,
+.prose h4 {
+  position: relative;
+  color: var(--text);
+  line-height: 1.34;
+  letter-spacing: -0.025em;
+}
+
+.prose h2 {
+  margin: 58px 0 20px;
+  padding-top: 6px;
+  font-size: 1.72rem;
+}
+
+.prose h2::before {
+  display: block;
+  width: 42px;
+  height: 4px;
+  margin-bottom: 13px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--brand), var(--cyan));
+  content: '';
+}
+
+.prose h3 {
+  margin: 38px 0 14px;
+  font-size: 1.28rem;
+}
+
+.prose h4 {
+  margin: 30px 0 12px;
+  font-size: 1.08rem;
+}
+
+.heading-anchor {
+  position: absolute;
+  left: -1.1em;
+  color: var(--faint);
+  font-weight: 500;
+  text-decoration: none;
+  opacity: 0;
+}
+
+.prose h2:hover .heading-anchor,
+.prose h3:hover .heading-anchor,
+.prose h4:hover .heading-anchor,
+.heading-anchor:focus {
+  opacity: 1;
+}
+
+.prose p,
+.prose li {
+  color: var(--text);
+}
+
+.prose p {
+  margin: 15px 0;
+}
+
+.prose ul,
+.prose ol {
+  padding-left: 1.45em;
+}
+
+.prose li + li {
+  margin-top: 6px;
+}
+
+.prose strong {
+  color: var(--text);
+}
+
+.prose blockquote {
+  margin: 24px 0;
+  padding: 16px 20px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--cyan);
+  border-radius: 0 var(--radius-small) var(--radius-small) 0;
+  background: var(--surface-soft);
+  color: var(--muted);
+}
+
+.prose blockquote > :first-child {
+  margin-top: 0;
+}
+
+.prose blockquote > :last-child {
+  margin-bottom: 0;
+}
+
+code {
+  border-radius: 5px;
+  background: rgb(100 108 255 / 9%);
+  color: color-mix(in srgb, var(--brand-strong) 78%, var(--text));
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.88em;
+}
+
+:not(pre) > code {
+  padding: 0.15em 0.4em;
+  overflow-wrap: anywhere;
+}
+
+.code-card {
+  position: relative;
+  overflow: hidden;
+  margin: 24px 0 30px;
+  border: 1px solid color-mix(in srgb, var(--surface-code) 85%, white);
+  border-radius: 14px;
+  background: var(--surface-code);
+  box-shadow: 0 12px 34px rgb(9 11 21 / 18%);
+}
+
+.code-card figcaption {
+  display: flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 0 12px 0 16px;
+  border-bottom: 1px solid rgb(255 255 255 / 9%);
+  color: #aeb2c8;
+  font:
+    700 11px/1.4 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.copy-code {
+  margin-left: auto;
+  padding: 5px 8px;
+  border: 1px solid rgb(255 255 255 / 13%);
+  border-radius: 6px;
+  background: rgb(255 255 255 / 5%);
+  color: #c8cbda;
+  font: inherit;
+  cursor: pointer;
+}
+
+.copy-code:hover {
+  border-color: rgb(142 148 255 / 65%);
+  color: white;
+}
+
+.code-card pre,
+.diagram-source pre {
+  max-width: 100%;
+  margin: 0;
+  padding: 20px;
+  overflow: auto;
+  background: transparent;
+  color: #e5e7f1;
+  font:
+    13px/1.68 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    monospace;
+  tab-size: 2;
+}
+
+.code-card pre code,
+.diagram-source pre code {
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  white-space: pre;
+}
+
+.table-scroll {
+  max-width: 100%;
+  margin: 23px 0 30px;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.prose table {
+  width: 100%;
+  min-width: 620px;
+  border-collapse: collapse;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.prose th,
+.prose td {
+  padding: 11px 13px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.prose th {
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.prose tr:last-child td {
+  border-bottom: 0;
+}
+
+.page-toc {
+  padding: 12px 0 20px 18px;
+  border-left: 1px solid var(--line);
+}
+
+.toc-title {
+  margin: 0 0 10px;
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.toc-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.toc-list a {
+  display: block;
+  padding: 4px 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+  text-decoration: none;
+}
+
+.toc-list .depth-3 a {
+  padding-left: 12px;
+  color: var(--faint);
+}
+
+.toc-list a:hover,
+.toc-list a.is-active {
+  color: var(--brand-strong);
+}
+
+.article-pager {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 38px;
+}
+
+.pager-link {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 96px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.pager-link:hover {
+  border-color: rgb(100 108 255 / 42%);
+  color: var(--brand-strong);
+}
+
+.pager-link.next {
+  text-align: right;
+}
+
+.pager-label {
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.pager-title {
+  margin-top: 5px;
+  font-size: 14px;
+  font-weight: 720;
+}
+
+.site-footer {
+  margin-top: 35px;
+  padding: 22px 0;
+  border-top: 1px solid var(--line);
+  color: var(--faint);
+  font-size: 12px;
+}
+
+.flow-figure {
+  margin: 26px 0 32px;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.flow-caption {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  margin-bottom: 18px;
+}
+
+.flow-caption strong {
+  font-size: 15px;
+}
+
+.flow-caption span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.flow-lanes {
+  display: grid;
+  gap: 13px;
+}
+
+.flow-lane {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 10px 14px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+
+.lane-label {
+  grid-row: 1 / span 2;
+  margin: 0;
+  color: var(--brand-strong);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+
+.lane-path {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  align-items: center;
+  min-width: 0;
+}
+
+.lane-step,
+.lane-choice {
+  display: inline-flex;
+  min-height: 34px;
+  padding: 7px 9px;
+  align-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.lane-choice {
+  border-color: rgb(100 108 255 / 42%);
+  background: rgb(100 108 255 / 9%);
+  color: var(--brand-strong);
+}
+
+.lane-arrow {
+  color: var(--brand);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.lane-split {
+  display: grid;
+  grid-column: 2;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.lane-split.three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.lane-split > span {
+  padding: 8px 10px;
+  border-left: 3px solid var(--cyan);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.48;
+}
+
+.lane-split > span:nth-child(even) {
+  border-left-color: var(--green);
+}
+
+.merge-output {
+  display: flex;
+  gap: 8px 18px;
+  align-items: center;
+  justify-content: center;
+  padding: 14px 16px;
+  border: 1px solid rgb(24 135 105 / 38%);
+  border-radius: 11px;
+  background: rgb(24 135 105 / 8%);
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.merge-output b {
+  color: var(--green);
+}
+
+.flow-track {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  gap: 20px;
+  align-items: stretch;
+}
+
+.flow-node {
+  position: relative;
+  display: flex;
+  min-height: 74px;
+  padding: 12px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 11px;
+  background: var(--surface-soft);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 720;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.flow-node:not(:last-child)::after {
+  position: absolute;
+  top: 50%;
+  right: -17px;
+  color: var(--brand);
+  content: '→';
+  transform: translateY(-50%);
+}
+
+.flow-node.brand {
+  border-color: rgb(100 108 255 / 38%);
+  background: rgb(100 108 255 / 9%);
+}
+
+.flow-node.cyan {
+  border-color: rgb(20 166 199 / 38%);
+  background: rgb(20 166 199 / 8%);
+}
+
+.flow-node.green {
+  border-color: rgb(24 135 105 / 38%);
+  background: rgb(24 135 105 / 8%);
+}
+
+.flow-branches {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.flow-branch {
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.flow-branch strong {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--text);
+}
+
+.flow-columns {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.flow-column {
+  padding: 15px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+
+.flow-column h4 {
+  margin: 0 0 10px;
+  color: var(--brand-strong);
+  font-size: 13px;
+}
+
+.flow-column ol {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.flow-column li + li {
+  margin-top: 6px;
+}
+
+.diagram-source {
+  margin-top: 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-code);
+}
+
+.diagram-source summary {
+  padding: 10px 13px;
+  color: #c8cbda;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.index-hero {
+  padding-bottom: 42px;
+}
+
+.index-thesis {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 24px 0 38px;
+}
+
+.thesis-card {
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.thesis-number {
+  color: var(--brand);
+  font:
+    800 12px/1 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+}
+
+.thesis-card h2 {
+  margin: 10px 0 7px;
+  font-size: 17px;
+  line-height: 1.35;
+}
+
+.thesis-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.ownership-flow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  align-items: center;
+  margin: 20px 0 36px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.ownership-flow span {
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-soft);
+  font:
+    700 12px/1.35 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+}
+
+.ownership-flow b {
+  color: var(--brand);
+  font-weight: 800;
+}
+
+.track-grid,
+.module-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.track-card,
+.module-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 150px;
+  padding: 19px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.track-card:hover,
+.module-card:hover {
+  border-color: rgb(100 108 255 / 42%);
+  color: var(--text);
+  transform: translateY(-1px);
+}
+
+.track-card h3,
+.module-card h3 {
+  margin: 8px 0;
+  font-size: 17px;
+  line-height: 1.35;
+}
+
+.track-card p,
+.module-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.track-path {
+  margin-top: auto;
+  padding-top: 14px;
+  color: var(--brand-strong);
+  font:
+    700 11px/1.45 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+}
+
+.module-group-heading {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  margin: 48px 0 16px;
+}
+
+.module-group-heading h2 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.module-group-heading p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.module-card {
+  min-height: 175px;
+}
+
+.module-card .module-code {
+  color: var(--brand);
+  font:
+    800 12px/1 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+}
+
+.module-card .module-arrow {
+  margin-top: auto;
+  padding-top: 14px;
+  color: var(--brand-strong);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+@media (max-width: 1230px) {
+  .page-grid {
+    grid-template-columns: 230px minmax(0, var(--content));
+    gap: 28px;
+  }
+
+  .page-toc {
+    display: none;
+  }
+}
+
+@media (max-width: 820px) {
+  :root {
+    --topbar: 58px;
+  }
+
+  .topbar-inner {
+    padding: 0 14px;
+  }
+
+  .topbar-path {
+    display: none;
+  }
+
+  .nav-toggle {
+    display: inline-grid;
+  }
+
+  .page-grid {
+    display: block;
+    padding: 20px 14px 52px;
+  }
+
+  .site-nav {
+    position: fixed;
+    z-index: 95;
+    top: var(--topbar);
+    bottom: 0;
+    left: 0;
+    width: min(86vw, 310px);
+    max-height: none;
+    padding: 18px;
+    border-right: 1px solid var(--line);
+    background: var(--bg);
+    box-shadow: var(--shadow);
+    transform: translateX(-105%);
+    transition: transform 180ms ease;
+  }
+
+  body.nav-open {
+    overflow: hidden;
+  }
+
+  body.nav-open .site-nav {
+    transform: translateX(0);
+  }
+
+  .article-hero {
+    padding: 27px 22px;
+    border-radius: 18px;
+  }
+
+  .article-hero h1 {
+    font-size: clamp(1.9rem, 9vw, 2.65rem);
+  }
+
+  .article-hero .lede {
+    font-size: 15px;
+  }
+
+  .focus-card {
+    grid-template-columns: 1fr;
+  }
+
+  .focus-card .boundary {
+    padding: 16px 0 0;
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+
+  .prose {
+    padding-inline: 2px;
+  }
+
+  .prose h2 {
+    margin-top: 46px;
+    font-size: 1.47rem;
+  }
+
+  .prose h3 {
+    font-size: 1.18rem;
+  }
+
+  .heading-anchor {
+    display: none;
+  }
+
+  .flow-track {
+    grid-template-columns: 1fr;
+  }
+
+  .flow-lane {
+    grid-template-columns: 1fr;
+  }
+
+  .lane-label,
+  .lane-split {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .lane-split,
+  .lane-split.three {
+    grid-template-columns: 1fr;
+  }
+
+  .merge-output {
+    align-items: flex-start;
+    flex-direction: column;
+    text-align: left;
+  }
+
+  .flow-node:not(:last-child)::after {
+    top: auto;
+    right: 50%;
+    bottom: -19px;
+    content: '↓';
+    transform: translateX(50%);
+  }
+
+  .flow-branches,
+  .flow-columns,
+  .index-thesis,
+  .track-grid,
+  .module-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .article-pager {
+    grid-template-columns: 1fr;
+  }
+
+  .pager-link.next {
+    text-align: left;
+  }
+}
+
+@media (max-width: 440px) {
+  body {
+    font-size: 15px;
+  }
+
+  .brand-text {
+    display: none;
+  }
+
+  .article-hero {
+    padding: 24px 18px;
+  }
+
+  .hero-meta {
+    display: grid;
+  }
+
+  .flow-figure {
+    padding: 16px;
+  }
+
+  .code-card pre,
+  .diagram-source pre {
+    padding: 16px;
+    font-size: 12px;
+  }
+}
+
+@media print {
+  body {
+    background: white;
+  }
+
+  .topbar,
+  .site-nav,
+  .page-toc,
+  .reading-progress,
+  .copy-code,
+  .article-pager {
+    display: none !important;
+  }
+
+  .page-grid {
+    display: block;
+    width: auto;
+    padding: 0;
+  }
+
+  .article-hero,
+  .code-card,
+  .table-scroll,
+  .flow-figure {
+    box-shadow: none;
+  }
+
+  .code-card {
+    break-inside: avoid;
+  }
+}
+</style><script>(function(){try{var t=localStorage.getItem("vite-guide-theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(_){}})();</script></head><body><a class="skip-link" href="#article-start">跳到正文</a><div class="reading-progress" aria-hidden="true"><span data-reading-progress></span></div><header class="topbar"><div class="topbar-inner"><button class="icon-button nav-toggle" type="button" data-nav-toggle aria-expanded="false" aria-label="打开模块导航">☰</button><a class="brand" href="index.html"><span class="brand-mark">V</span><span class="brand-text">Vite 源码解剖</span></a><span class="topbar-path">全景 / 00 系统全景与请求链</span><div class="topbar-actions"><button class="icon-button" type="button" data-theme-toggle aria-label="切换主题">◐</button></div></div></header><div class="page-grid"><nav class="site-nav" aria-label="模块导航"><a class="nav-home" href="index.html"><span>⌂</span><span>阅读总览</span></a><section class="nav-group"><h2 class="nav-group-title">全景</h2><ul class="nav-list"><li><a href="00-system-map-and-end-to-end.html" aria-current="page"><span class="nav-code">00</span><span>系统全景与请求链</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">启动与配置</h2><ul class="nav-list"><li><a href="01-cli-and-startup.html"><span class="nav-code">01</span><span>CLI 与启动</span></a></li><li><a href="02a-env-loading.html"><span class="nav-code">02A</span><span>环境文件加载</span></a></li><li><a href="02b-config-resolution.html"><span class="nav-code">02B</span><span>配置加载与解析</span></a></li><li><a href="02c-define-client-injection-and-json.html"><span class="nav-code">02C</span><span>Define、注入与 JSON</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">开发服务器核心</h2><ul class="nav-list"><li><a href="03-plugin-system.html"><span class="nav-code">03</span><span>插件体系</span></a></li><li><a href="04-dev-server-lifecycle.html"><span class="nav-code">04</span><span>Dev Server 生命周期</span></a></li><li><a href="05-environment-api.html"><span class="nav-code">05</span><span>Environment API</span></a></li><li><a href="06-middleware-request-pipeline.html"><span class="nav-code">06</span><span>中间件与请求入口</span></a></li><li><a href="07-module-resolution.html"><span class="nav-code">07</span><span>模块解析</span></a></li><li><a href="08-transform-and-module-graph.html"><span class="nav-code">08</span><span>Transform 与模块图</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">转换与增量更新</h2><ul class="nav-list"><li><a href="09-html-transform.html"><span class="nav-code">09</span><span>HTML 转换</span></a></li><li><a href="10-import-analysis.html"><span class="nav-code">10</span><span>Import Analysis</span></a></li><li><a href="11-dependency-pre-bundling.html"><span class="nav-code">11</span><span>依赖预构建</span></a></li><li><a href="12-hmr.html"><span class="nav-code">12</span><span>HMR</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">资源管线</h2><ul class="nav-list"><li><a href="13a-css-pipeline.html"><span class="nav-code">13A</span><span>CSS 管线</span></a></li><li><a href="13b-asset-worker-wasm.html"><span class="nav-code">13B</span><span>Asset、Worker、Wasm</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">生产构建</h2><ul class="nav-list"><li><a href="14a-build-orchestration.html"><span class="nav-code">14A</span><span>生产构建编排</span></a></li><li><a href="14b-build-output-and-preload.html"><span class="nav-code">14B</span><span>Preload 与构建输出</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">SSR 与运行时</h2><ul class="nav-list"><li><a href="15a-ssr-transform-and-loading.html"><span class="nav-code">15A</span><span>SSR 变换与加载</span></a></li><li><a href="15b-module-runner.html"><span class="nav-code">15B</span><span>Module Runner</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">公共边界</h2><ul class="nav-list"><li><a href="16-public-api-diagnostics-and-types.html"><span class="nav-code">16</span><span>公共 API 与类型</span></a></li></ul></section></nav><main class="article" id="article-start"><header class="article-hero"><div class="eyebrow"><span class="pill">00</span><span>全景</span></div><h1>00. 系统全景与一条开发请求的完整链路</h1><p class="lede">Vite Dev Server 是长期存活的增量模块系统；pending、ModuleGraph 与 PluginContainer 各自承担不同状态。</p><div class="hero-meta"><span>证据基线：v8.2.1</span><span>commit <code>421615865dad</code></span><span>约 13 分钟</span><a href="../../vite/reading-guides/00-system-map-and-end-to-end.md">查看 Markdown 原稿</a></div></header><section class="focus-card" aria-label="阅读重点与边界"><div><h2>本页重点</h2><p>Vite Dev Server 是长期存活的增量模块系统；pending、ModuleGraph 与 PluginContainer 各自承担不同状态。</p></div><div class="boundary"><h3>推导边界</h3><p>主线限定普通开发态 JavaScript 请求；HTML、CSS、optimizer、SSR 与生产构建在后续页面展开。</p></div></section><aside class="evidence-note"><h3>证据口径</h3><p>正文保留目标版本中的真实源码、状态说明与代表性测试映射。测试源码用于锁定设计契约；本轮没有执行测试命令。</p></aside><article class="prose"><h2 id="结论与边界"><a class="heading-anchor" href="#%E7%BB%93%E8%AE%BA%E4%B8%8E%E8%BE%B9%E7%95%8C" aria-label="链接到本节">#</a>结论与边界</h2>
+<p>Vite 开发服务器不是“收到 URL 后调用一次编译器”，而是一个长期存活的增量模块系统：</p>
+<ol>
+<li>CLI 只把参数转换成 <code>InlineConfig</code>；</li>
+<li><code>createServer()</code> 解析配置并创建 HTTP、文件监听、WebSocket 和多个 Environment；</li>
+<li>中间件把浏览器 URL 路由到对应 Environment；</li>
+<li><code>transformRequest()</code> 用 pending Promise 合并并发请求，再查询 ModuleGraph 缓存；</li>
+<li>未命中时，PluginContainer 依次执行 <code>resolveId → load → transform</code>；</li>
+<li>转换结果及依赖关系写回 ModuleGraph，随后作为 HTTP 响应发送；</li>
+<li>文件变化使图节点失效，HMR 从变更节点向 importer 传播；关闭时释放 watcher、WS、Environment 和插件资源。</li>
+</ol>
+<p>本章只完整串联常规开发态 JavaScript 模块请求。HTML 入口、CSS、依赖预构建、SSR、生产构建和 bundled dev 的特有分支由后续章节展开；它们不能直接套用本文所有细节。</p>
+<h2 id="核心对象地图"><a class="heading-anchor" href="#%E6%A0%B8%E5%BF%83%E5%AF%B9%E8%B1%A1%E5%9C%B0%E5%9B%BE" aria-label="链接到本节">#</a>核心对象地图</h2>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>对象</th>
+<th>创建者</th>
+<th>持有者</th>
+<th>生命周期</th>
+<th>关键职责</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ResolvedConfig</code></td>
+<td><code>resolveConfig()</code></td>
+<td>Dev Server 与各 Environment</td>
+<td>创建或重启时生成</td>
+<td>固定本轮插件、路径、server 与环境配置</td>
+</tr>
+<tr>
+<td><code>ViteDevServer</code></td>
+<td><code>_createServer()</code></td>
+<td>CLI 或 Node API 调用者</td>
+<td><code>createServer()</code> 至 <code>close()</code></td>
+<td>聚合 HTTP、WS、watcher、middlewares 和 environments</td>
+</tr>
+<tr>
+<td><code>DevEnvironment</code></td>
+<td><code>_createServer()</code></td>
+<td><code>server.environments</code></td>
+<td>server 初始化至关闭/重启迁移</td>
+<td>隔离 client/SSR 的配置、模块图、插件容器与依赖优化器</td>
+</tr>
+<tr>
+<td><code>PluginContainer</code></td>
+<td>Environment 初始化</td>
+<td>对应 Environment</td>
+<td>Environment 生命周期</td>
+<td>排序并调用插件钩子，维护 hook context 与错误信息</td>
+</tr>
+<tr>
+<td><code>EnvironmentModuleGraph</code></td>
+<td>Environment 初始化</td>
+<td>对应 Environment</td>
+<td>Environment 生命周期</td>
+<td>维护 URL、规范 ID、importer、依赖、失效和 transform 缓存</td>
+</tr>
+<tr>
+<td><code>ModuleNode</code></td>
+<td>ModuleGraph 按需创建</td>
+<td>ModuleGraph</td>
+<td>首次解析至失效/关闭</td>
+<td>保存模块身份、依赖边、HMR 接受边界和转换结果</td>
+</tr>
+</tbody>
+</table></div>
+<p>关键所有权不变量：模块节点、插件上下文和转换缓存都属于某个 Environment。兼容层可以转发调用，但不能把 client 与 SSR 的状态重新混成一个全局容器。</p>
+<h2 id="阅读地图"><a class="heading-anchor" href="#%E9%98%85%E8%AF%BB%E5%9C%B0%E5%9B%BE" aria-label="链接到本节">#</a>阅读地图</h2>
+<p>先阅读本章形成全局坐标，再按实际请求顺序进入：</p>
+<ol>
+<li><a href="01-cli-and-startup.html">CLI 与启动</a></li>
+<li><a href="02b-config-resolution.html">配置解析</a></li>
+<li><a href="03-plugin-system.html">插件体系</a></li>
+<li><a href="04-dev-server-lifecycle.html">Dev Server 生命周期</a></li>
+<li><a href="05-environment-api.html">Environment API</a></li>
+<li><a href="06-middleware-request-pipeline.html">中间件请求入口</a></li>
+<li><a href="07-module-resolution.html">模块解析</a></li>
+<li><a href="08-transform-and-module-graph.html">Transform 与 ModuleGraph</a></li>
+<li><a href="10-import-analysis.html">Import Analysis</a></li>
+<li><a href="12-hmr.html">HMR</a></li>
+</ol>
+<h2 id="阶段一-cli-只建立配置输入"><a class="heading-anchor" href="#%E9%98%B6%E6%AE%B5%E4%B8%80-cli-%E5%8F%AA%E5%BB%BA%E7%AB%8B%E9%85%8D%E7%BD%AE%E8%BE%93%E5%85%A5" aria-label="链接到本节">#</a>阶段一：CLI 只建立配置输入</h2>
+<p>下面是目标版本连续源码摘录，截到 <code>listen()</code>；后续日志、catch 与 profiler 收尾不在此展开。</p>
+<p>来源：<code>packages/vite/src/node/cli.ts</code>，默认 <code>serve</code> command action。</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">// output structure is preserved even after bundling so require()
+// is ok here
+const { createServer } = await import(&#039;./server&#039;)
+try {
+  const server = await createServer({
+    root,
+    base: options.base,
+    mode: options.mode,
+    configFile: options.config,
+    configLoader: options.configLoader,
+    logLevel: options.logLevel,
+    clearScreen: options.clearScreen,
+    server: cleanGlobalCLIOptions(options),
+    forceOptimizeDeps: options.force,
+    experimental: {
+      bundledDev: options.experimentalBundle,
+    },
+  })
+
+  if (!server.httpServer) {
+    throw new Error(&#039;HTTP server not available&#039;)
+  }
+
+  await server.listen()
+</code></pre></figure><p>这里有两个边界：</p>
+<ul>
+<li><code>createServer()</code> 完成对象与中间件初始化，不等于端口已监听；外部副作用发生在 <code>listen()</code>。</li>
+<li><code>httpServer</code> 为空是 middleware mode 的合法能力，但 CLI 不能在该模式下独立服务，所以明确失败。</li>
+</ul>
+<h2 id="阶段二-server-构造并确定-environment-所有权"><a class="heading-anchor" href="#%E9%98%B6%E6%AE%B5%E4%BA%8C-server-%E6%9E%84%E9%80%A0%E5%B9%B6%E7%A1%AE%E5%AE%9A-environment-%E6%89%80%E6%9C%89%E6%9D%83" aria-label="链接到本节">#</a>阶段二：Server 构造并确定 Environment 所有权</h2>
+<p>来源：<code>packages/vite/src/node/server/index.ts</code>，<code>createServer()</code> 与 <code>_createServer()</code>；以下为从入口到
+配置归属登记的连续源码摘录，后续组件创建省略。</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">export function createServer(
+  inlineConfig: InlineConfig | ResolvedConfig = {},
+): Promise&lt;ViteDevServer&gt; {
+  return _createServer(inlineConfig, { listen: true })
+}
+
+export async function _createServer(
+  inlineConfig: ResolvedConfig | InlineConfig | undefined = {},
+  options: {
+    listen: boolean
+    previousEnvironments?: Record&lt;string, DevEnvironment&gt;
+    previousShortcutsState?: ShortcutsState&lt;ViteDevServer&gt;
+    previousRestartPromise?: Promise&lt;void&gt; | null
+    previousForceOptimizeOnRestart?: boolean
+  },
+): Promise&lt;ViteDevServer&gt; {
+  // The dev server is a long-running, interactive process whose outputs
+  // (network responses, HMR updates) cannot be replayed from a cache.
+  disableCache()
+
+  const config = isResolvedConfig(inlineConfig)
+    ? inlineConfig
+    : await resolveConfig(inlineConfig, &#039;serve&#039;)
+
+  if (usedConfigs.has(config)) {
+    throw new Error(`There is already a server associated with the config.`)
+  }
+
+  if (config.command !== &#039;serve&#039;) {
+    throw new Error(
+      `Config was resolved for a &quot;build&quot;, expected a &quot;serve&quot; command.`,
+    )
+  }
+
+  usedConfigs.add(config)
+</code></pre></figure><p><code>usedConfigs</code> 防止同一个已解析配置同时归属两个活动 server。否则插件、logger 和缓存对象会被两个生命周期共享，关闭或重启其中一个实例时无法确定资源所有权。</p>
+<p>状态变化：</p>
+<p><code>InlineConfig → resolveConfig() → ResolvedConfig → usedConfigs 登记 → Environment/组件创建 → server.listen()</code>。</p>
+<h2 id="阶段三-http-中间件进入转换入口"><a class="heading-anchor" href="#%E9%98%B6%E6%AE%B5%E4%B8%89-http-%E4%B8%AD%E9%97%B4%E4%BB%B6%E8%BF%9B%E5%85%A5%E8%BD%AC%E6%8D%A2%E5%85%A5%E5%8F%A3" aria-label="链接到本节">#</a>阶段三：HTTP 中间件进入转换入口</h2>
+<p>来源：<code>packages/vite/src/node/server/middlewares/transform.ts</code>，<code>transformMiddleware()</code>；以下连续摘录从
+CSS direct 身份规范化开始，到转换响应结束。</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">if (isCSSRequest(url)) {
+  if (
+    req.headers.accept?.includes(&#039;text/css&#039;) &amp;&amp;
+    !isDirectRequest(url)
+  ) {
+    url = injectQuery(url, &#039;direct&#039;)
+  }
+
+  // check if we can return 304 early for CSS requests. These aren&#039;t handled
+  // by the cachedTransformMiddleware due to the browser possibly mixing the
+  // etags of direct and imported CSS
+  const ifNoneMatch = req.headers[&#039;if-none-match&#039;]
+  if (
+    ifNoneMatch &amp;&amp;
+    (await environment.moduleGraph.getModuleByUrl(url))?.transformResult
+      ?.etag === ifNoneMatch
+  ) {
+    debugCache?.(`[304] ${prettifyUrl(url, server.config.root)}`)
+    res.statusCode = 304
+    return res.end()
+  }
+}
+
+// resolve, load and transform using the plugin container
+const result = await environment.transformRequest(url)
+if (result) {
+  const depsOptimizer = environment.depsOptimizer
+  const type = isDirectCSSRequest(url) ? &#039;css&#039; : &#039;js&#039;
+  const isDep =
+    DEP_VERSION_RE.test(url) || depsOptimizer?.isOptimizedDepUrl(url)
+  return send(req, res, result.code, type, {
+    etag: result.etag,
+    // allow browser to cache npm deps!
+    cacheControl: isDep ? &#039;max-age=31536000,immutable&#039; : &#039;no-cache&#039;,
+    headers: server.config.server.headers,
+    map: result.map,
+  })
+}
+</code></pre></figure><p>此处有三种提前结束：静态资源或其他中间件已处理、ETag 命中返回 304、转换返回空结果交给后续中间件。只有真正需要模块代码时才进入 Environment。</p>
+<p>依赖预构建产物的 URL 含版本 hash，内容可视为不可变；项目源码没有内容地址，因此只能 <code>no-cache</code> 并用 ETag 再验证。</p>
+<h2 id="阶段四-pending-modulegraph-与插件管线"><a class="heading-anchor" href="#%E9%98%B6%E6%AE%B5%E5%9B%9B-pending-modulegraph-%E4%B8%8E%E6%8F%92%E4%BB%B6%E7%AE%A1%E7%BA%BF" aria-label="链接到本节">#</a>阶段四：pending、ModuleGraph 与插件管线</h2>
+<p><code>transformRequest()</code> 首先把同一 URL 的进行中请求记录到 <code>environment._pendingRequests</code>。第二个并发请求复用同一个 Promise；完成或失败后 <code>finally</code> 删除 pending 项，长期结果只保存在 <code>ModuleNode.transformResult</code>。</p>
+<p>来源：<code>packages/vite/src/node/server/transformRequest.ts</code>，<code>doTransform()</code>；源码摘录：</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">let module = await environment.moduleGraph.getModuleByUrl(url)
+if (module) {
+  // try use cache from url
+  const cached = await getCachedTransformResult(
+    environment,
+    url,
+    module,
+    timestamp,
+  )
+  if (cached) return cached
+}
+
+const resolved = module
+  ? undefined
+  : ((await pluginContainer.resolveId(url, undefined)) ?? undefined)
+
+// resolve
+const id = module?.id ?? resolved?.id ?? url
+
+module ??= environment.moduleGraph.getModuleById(id)
+if (module) {
+  // if a different url maps to an existing loaded id,  make sure we relate this url to the id
+  await environment.moduleGraph._ensureEntryFromUrl(url, undefined, resolved)
+  // try use cache from id
+  const cached = await getCachedTransformResult(
+    environment,
+    url,
+    module,
+    timestamp,
+  )
+  if (cached) return cached
+}
+
+const result = loadAndTransform(
+  environment,
+  id,
+  url,
+  options,
+  timestamp,
+  module,
+  resolved,
+)
+
+const { depsOptimizer } = environment
+if (!depsOptimizer?.isOptimizedDepFile(id)) {
+  environment._registerRequestProcessing(id, () =&gt; result)
+}
+
+return result
+</code></pre></figure><p>URL 和规范 ID 必须分两级查图：<code>/@id/...</code>、别名 URL 或带 query 的请求可能指向同一个模块。如果只按 URL 缓存，同一源码会被重复转换并形成重复 HMR 身份。</p>
+<p>未命中后，PluginContainer 执行：</p>
+<ul>
+<li><code>resolveId</code>：按 hook 顺序返回第一个非空解析结果；</li>
+<li><code>load</code>：返回第一个非空源码，并把 <code>meta</code>/watch file 写入模块信息；</li>
+<li><code>transform</code>：让全部匹配插件依次消费前一插件的代码与 module type。</li>
+</ul>
+<p>复杂度：单次冷请求的 hook 调度上界约为 <code>O(R + L + T)</code>，分别对应三个阶段中实际检查的插件数；URL/ID 图查找和 pending 查找平均为 <code>O(1)</code>。HMR 传播复杂度取决于受影响 importer 子图，而不是整个仓库；循环检测需要额外保存访问路径。</p>
+<p>替代方案是每次请求都直接从磁盘加载并执行全插件链，结构更简单，但会丢失并发合并、模块身份、依赖图、缓存和精确 HMR，因此不满足开发服务器的增量要求。</p>
+<h2 id="清理路径-资源并行收口"><a class="heading-anchor" href="#%E6%B8%85%E7%90%86%E8%B7%AF%E5%BE%84-%E8%B5%84%E6%BA%90%E5%B9%B6%E8%A1%8C%E6%94%B6%E5%8F%A3" aria-label="链接到本节">#</a>清理路径：资源并行收口</h2>
+<p>来源：<code>packages/vite/src/node/server/index.ts</code>，<code>_createServer()</code> 内部的 <code>closeServer()</code>；目标版本
+连续源码摘录：</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">const closeServer = async () =&gt; {
+  if (!middlewareMode) {
+    teardownSIGTERMListener(closeServerAndExit)
+  }
+
+  await Promise.allSettled([
+    watcher.close(),
+    ws.close(),
+    Promise.allSettled(
+      Object.values(server.environments).map((environment) =&gt;
+        environment.close(),
+      ),
+    ),
+    closeHttpServer(),
+    server._ssrCompatModuleRunner?.close(),
+  ])
+  server.resolvedUrls = null
+  server._ssrCompatModuleRunner = undefined
+}
+</code></pre></figure><p>watcher、WebSocket、各 Environment、HTTP server 与兼容 runner 并行关闭；<code>allSettled()</code> 保证一个
+disposer 失败不会阻止其余资源释放。外部 URL 与兼容 runner 引用最后清空，关闭后的 server 不再
+暴露可用监听状态。</p>
+<h2 id="同一请求的状态表"><a class="heading-anchor" href="#%E5%90%8C%E4%B8%80%E8%AF%B7%E6%B1%82%E7%9A%84%E7%8A%B6%E6%80%81%E8%A1%A8" aria-label="链接到本节">#</a>同一请求的状态表</h2>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>变化前</th>
+<th>触发动作</th>
+<th>变化后</th>
+<th>失败/清理</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>没有 server</td>
+<td><code>createServer()</code></td>
+<td>已解析配置并创建组件</td>
+<td>配置命令不匹配则抛错；已创建资源由构造失败路径关闭</td>
+</tr>
+<tr>
+<td>server 未监听</td>
+<td><code>server.listen()</code></td>
+<td>HTTP 接受请求、Environment 开始工作</td>
+<td>端口冲突按 <code>strictPort</code> 失败或换端口</td>
+</tr>
+<tr>
+<td>URL 无 pending</td>
+<td><code>transformRequest(url)</code></td>
+<td><code>_pendingRequests[url] = Promise</code></td>
+<td><code>finally</code> 删除 pending，避免失败 Promise 永久缓存</td>
+</tr>
+<tr>
+<td>ModuleGraph 无 URL 节点</td>
+<td><code>resolveId()</code></td>
+<td>URL 映射到规范 ID/ModuleNode</td>
+<td>无插件解析时回退原 URL，后续 load 仍可能失败</td>
+</tr>
+<tr>
+<td>节点无结果</td>
+<td><code>load → transform</code></td>
+<td><code>transformResult</code>、依赖边与 meta 写回节点</td>
+<td>插件错误补充 plugin/id/代码帧后抛给中间件</td>
+</tr>
+<tr>
+<td>HTTP 尚未结束</td>
+<td><code>send()</code></td>
+<td>code、ETag、map 与缓存头写入响应</td>
+<td>优化器换代/处理中映射为 504；访问拒绝映射为 403</td>
+</tr>
+<tr>
+<td>文件未变化</td>
+<td>watcher event</td>
+<td>节点失效并向 importer 传播</td>
+<td>无 HMR 接受边界时 full reload</td>
+</tr>
+<tr>
+<td>server 活动</td>
+<td><code>server.close()</code></td>
+<td>watcher、WS、Environment、插件资源释放</td>
+<td>close 设计为可重复等待，避免并发关闭遗漏资源</td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="完整执行流程图"><a class="heading-anchor" href="#%E5%AE%8C%E6%95%B4%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E5%9B%BE" aria-label="链接到本节">#</a>完整执行流程图</h2>
+<figure class="flow-figure" aria-label="离线流程图"><figcaption class="flow-caption"><strong>执行流程图</strong><span>教程图依据目标版本源码与测试绘制；折叠区保留原始 Mermaid</span></figcaption><div class="flow-lanes request-topology"><section class="flow-lane"><h4 class="lane-label">启动</h4><div class="lane-path"><span class="lane-step">CLI</span><span class="lane-arrow">→</span><span class="lane-step">createServer</span><span class="lane-arrow">→</span><span class="lane-choice">配置可用于 serve？</span></div><div class="lane-split"><span><b>否</b> → 抛错并清理</span><span><b>是</b> → HTTP / WS / watcher / Environments → listen</span></div></section><section class="flow-lane"><h4 class="lane-label">请求</h4><div class="lane-path"><span class="lane-step">浏览器模块请求</span><span class="lane-arrow">→</span><span class="lane-step">transformMiddleware</span><span class="lane-arrow">→</span><span class="lane-choice">ETag 命中？</span></div><div class="lane-split"><span><b>是</b> → 304 + end</span><span><b>否</b> → environment.transformRequest</span></div></section><section class="flow-lane"><h4 class="lane-label">并发与缓存</h4><div class="lane-path"><span class="lane-choice">pending 存在？</span><span class="lane-arrow">→</span><span class="lane-choice">ModuleGraph 缓存有效？</span></div><div class="lane-split"><span><b>pending 是</b> → 复用 Promise；<b>否</b> → 登记 Promise</span><span><b>cache 是</b> → 返回结果；<b>否</b> → 进入插件链</span></div></section><section class="flow-lane"><h4 class="lane-label">核心转换</h4><div class="lane-path"><span class="lane-step">resolveId</span><span class="lane-arrow">→</span><span class="lane-step">load</span><span class="lane-arrow">→</span><span class="lane-step">transform</span><span class="lane-arrow">→</span><span class="lane-step">写回 ModuleNode / meta / 依赖边</span><span class="lane-arrow">→</span><span class="lane-step">finally 删除 pending</span><span class="lane-arrow">→</span><span class="lane-step">send code + ETag + map</span></div></section><section class="flow-lane"><h4 class="lane-label">错误</h4><div class="lane-path"><span class="lane-step">resolve / load / transform 失败</span><span class="lane-arrow">→</span><span class="lane-choice">错误分类</span></div><div class="lane-split three"><span>optimizer 处理中 / 过期 → 504</span><span>访问拒绝 → 403</span><span>其他 → error middleware / 500</span></div></section><section class="flow-lane"><h4 class="lane-label">失效与 HMR</h4><div class="lane-path"><span class="lane-choice">文件变化？</span><span class="lane-arrow">→</span><span class="lane-step">失效节点并向 importer 传播</span><span class="lane-arrow">→</span><span class="lane-choice">找到接受边界？</span></div><div class="lane-split"><span><b>是</b> → update payload</span><span><b>否</b> → full-reload；无变化则缓存等待</span></div></section><section class="flow-lane"><h4 class="lane-label">关闭</h4><div class="lane-path"><span class="lane-step">server.close()</span><span class="lane-arrow">→</span><span class="lane-step">allSettled：watcher / WS / Environments / HTTP / Runner</span><span class="lane-arrow">→</span><span class="lane-step">清空 resolvedUrls 与兼容 Runner 引用</span></div></section></div><details class="diagram-source"><summary>查看原始 Mermaid 源码</summary><pre><code>flowchart TD
+  A[&quot;CLI: vite root&quot;] --&gt; B[&quot;createServer(InlineConfig)&quot;]
+  B --&gt; C{&quot;配置可用于 serve?&quot;}
+  C -- &quot;否&quot; --&gt; C1[&quot;抛错并清理已创建资源&quot;]
+  C -- &quot;是&quot; --&gt; D[&quot;创建 HTTP / WS / watcher / Environments&quot;]
+  D --&gt; E[&quot;server.listen()&quot;]
+  E --&gt; F[&quot;浏览器请求 /src/main.ts&quot;]
+  F --&gt; G[&quot;transformMiddleware&quot;]
+  G --&gt; H{&quot;ETag 命中?&quot;}
+  H -- &quot;是&quot; --&gt; H1[&quot;304 + res.end()&quot;]
+  H -- &quot;否&quot; --&gt; I[&quot;environment.transformRequest(url)&quot;]
+  I --&gt; J{&quot;pending Promise 存在?&quot;}
+  J -- &quot;是&quot; --&gt; J1[&quot;复用并发请求&quot;]
+  J -- &quot;否&quot; --&gt; K[&quot;登记 pending Promise&quot;]
+  K --&gt; L{&quot;ModuleGraph 缓存有效?&quot;}
+  L -- &quot;是&quot; --&gt; Q[&quot;返回 transformResult&quot;]
+  L -- &quot;否&quot; --&gt; M[&quot;PluginContainer.resolveId&quot;]
+  M --&gt; N[&quot;PluginContainer.load&quot;]
+  N --&gt; O[&quot;PluginContainer.transform&quot;]
+  O --&gt; P[&quot;写回 ModuleNode 结果、meta 与依赖边&quot;]
+  P --&gt; Q
+  Q --&gt; R[&quot;finally 删除 pending&quot;]
+  R --&gt; S[&quot;send code + ETag + map&quot;]
+  M -. &quot;插件错误&quot; .-&gt; X[&quot;补 plugin/id/代码帧后抛出&quot;]
+  N -. &quot;加载失败&quot; .-&gt; X
+  O -. &quot;转换失败&quot; .-&gt; X
+  X --&gt; Y{&quot;错误类型&quot;}
+  Y -- &quot;优化器处理中/过期&quot; --&gt; Y1[&quot;504，等待 reload 新请求&quot;]
+  Y -- &quot;访问拒绝&quot; --&gt; Y2[&quot;403&quot;]
+  Y -- &quot;其他&quot; --&gt; Y3[&quot;error middleware / 500&quot;]
+  S --&gt; T{&quot;文件随后变化?&quot;}
+  T -- &quot;否&quot; --&gt; U[&quot;缓存等待下一请求&quot;]
+  T -- &quot;是&quot; --&gt; V[&quot;失效节点并传播 HMR&quot;]
+  V --&gt; W{&quot;找到接受边界?&quot;}
+  W -- &quot;是&quot; --&gt; W1[&quot;发送 update payload&quot;]
+  W -- &quot;否&quot; --&gt; W2[&quot;发送 full-reload&quot;]
+  U --&gt; Z[&quot;server.close() 时释放全部资源&quot;]
+  W1 --&gt; Z
+  W2 --&gt; Z
+</code></pre></details></figure><p>图中的实线是常规控制流，虚线是异常分支。pending 是短期并发状态，ModuleGraph 是长期增量状态；二者不能合并，否则一次失败会被当成稳定转换结果长期复用。</p>
+<h2 id="真实测试闭环-meta-如何跨钩子推进"><a class="heading-anchor" href="#%E7%9C%9F%E5%AE%9E%E6%B5%8B%E8%AF%95%E9%97%AD%E7%8E%AF-meta-%E5%A6%82%E4%BD%95%E8%B7%A8%E9%92%A9%E5%AD%90%E6%8E%A8%E8%BF%9B" aria-label="链接到本节">#</a>真实测试闭环：meta 如何跨钩子推进</h2>
+<p>选择仓库测试 <code>packages/vite/src/node/server/__tests__/pluginContainer.spec.ts</code> 的 <code>can pass metadata between hooks</code>。它不启动真实端口，而是隔离请求链中最关键的 <code>resolve → load → transform → close</code>，因此失败时能直接定位 PluginContainer 或 ModuleGraph，而不是受浏览器和网络噪声影响。</p>
+<p>下面由目标版本三个逐字源码片段重排而成：文件 import、文件末尾夹具、测试本体。只移动夹具位置并
+省略无关测试；测试逻辑、输入和断言未改写。</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">import { stripVTControlCharacters } from &#039;node:util&#039;
+import MagicString from &#039;magic-string&#039;
+import { describe, expect, it, vi } from &#039;vitest&#039;
+import type { UserConfig } from &#039;../../config&#039;
+import { resolveConfig } from &#039;../../config&#039;
+import type { Plugin } from &#039;../../plugin&#039;
+import { DevEnvironment } from &#039;../environment&#039;
+import { createLogger } from &#039;../../logger&#039;
+
+async function getDevEnvironment(
+  inlineConfig?: UserConfig,
+): Promise&lt;DevEnvironment&gt; {
+  const config = await resolveConfig(
+    { configFile: false, ...inlineConfig },
+    &#039;serve&#039;,
+  )
+
+  // @ts-expect-error This plugin requires a ViteDevServer instance.
+  config.plugins = config.plugins.filter((p) =&gt; !p.name.includes(&#039;pre-alias&#039;))
+
+  const environment = new DevEnvironment(&#039;client&#039;, config, { hot: true })
+  await environment.init()
+
+  return environment
+}
+
+it(&#039;can pass metadata between hooks&#039;, async () =&gt; {
+  const entryUrl = &#039;/x.js&#039;
+
+  const metaArray: any[] = []
+  const plugin: Plugin = {
+    name: &#039;p1&#039;,
+    resolveId(id) {
+      if (id === entryUrl) {
+        // The module hasn&#039;t been resolved yet, so its info is null.
+        const moduleInfo = this.getModuleInfo(entryUrl)
+        expect(moduleInfo).toEqual(null)
+
+        return { id, meta: { x: 1 } }
+      }
+    },
+    load(id) {
+      if (id === entryUrl) {
+        const { meta } = this.getModuleInfo(entryUrl) ?? {}
+        metaArray.push(meta)
+
+        return { code: &#039;export {}&#039;, meta: { x: 2 } }
+      }
+    },
+    transform(_code, id) {
+      if (id === entryUrl) {
+        const { meta } = this.getModuleInfo(entryUrl) ?? {}
+        metaArray.push(meta)
+
+        return { meta: { x: 3 } }
+      }
+    },
+    buildEnd() {
+      const { meta } = this.getModuleInfo(entryUrl) ?? {}
+      metaArray.push(meta)
+    },
+  }
+
+  const environment = await getDevEnvironment({
+    plugins: [plugin],
+  })
+
+  const entryModule = await environment.moduleGraph.ensureEntryFromUrl(
+    entryUrl,
+    false,
+  )
+  expect(entryModule.meta).toEqual({ x: 1 })
+
+  const loadResult: any = await environment.pluginContainer.load(entryUrl)
+  expect(loadResult?.meta).toEqual({ x: 2 })
+
+  await environment.pluginContainer.transform(loadResult.code, entryUrl)
+  await environment.pluginContainer.close()
+
+  expect(metaArray).toEqual([{ x: 1 }, { x: 2 }, { x: 3 }])
+})
+</code></pre></figure><p>Given：一个 client <code>DevEnvironment</code> 和单插件，目标模块尚未进入图。</p>
+<p>When：先 <code>ensureEntryFromUrl()</code> 触发解析，再显式执行 <code>load()</code>、<code>transform()</code>，最后关闭容器。</p>
+<p>Then：解析、加载、转换三个对象结果中的 <code>meta</code> 依次浅合并为 <code>{x:1} → {x:2} → {x:3}</code>，后续 hook 总能读到前一阶段状态。</p>
+<p>Mechanism：断言既检查 <code>ModuleNode.meta</code>，也检查插件各阶段读取到的快照；这排除了“返回值正确但 ModuleGraph 未更新”的假阳性。最后显式 <code>close()</code> 覆盖资源清理边界。</p>
+<p>Source：<code>EnvironmentModuleGraph._ensureEntryFromUrl()</code>、<code>PluginContainer.resolveId()</code>、<code>load()</code> 中的 <code>_updateModuleInfo()</code>、<code>transform()</code> 和 <code>close()</code>。</p>
+<h2 id="章节-源码-测试证据表"><a class="heading-anchor" href="#%E7%AB%A0%E8%8A%82-%E6%BA%90%E7%A0%81-%E6%B5%8B%E8%AF%95%E8%AF%81%E6%8D%AE%E8%A1%A8" aria-label="链接到本节">#</a>章节—源码—测试证据表</h2>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>机制</th>
+<th>决定性源码</th>
+<th>代表性测试</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CLI/Server 启动</td>
+<td><code>cli.ts</code> action、<code>server/index.ts::_createServer</code></td>
+<td><code>node/__tests__/dev.spec.ts</code></td>
+</tr>
+<tr>
+<td>配置与 Environment</td>
+<td><code>config.ts::resolveConfig</code>、<code>server/index.ts</code></td>
+<td><code>node/__tests__/config.spec.ts</code>、Environment 测试</td>
+</tr>
+<tr>
+<td>中间件路由</td>
+<td><code>middlewares/transform.ts::transformMiddleware</code></td>
+<td>middleware 与 playground 请求测试</td>
+</tr>
+<tr>
+<td>resolve/load/transform</td>
+<td><code>server/pluginContainer.ts::PluginContainer</code></td>
+<td><code>server/__tests__/pluginContainer.spec.ts</code></td>
+</tr>
+<tr>
+<td>pending 与转换缓存</td>
+<td><code>server/transformRequest.ts</code></td>
+<td><code>server/__tests__/transformRequest.spec.ts</code>、ModuleGraph 测试</td>
+</tr>
+<tr>
+<td>HMR 传播</td>
+<td><code>server/hmr.ts::updateModules</code></td>
+<td><code>server/__tests__/hmr.spec.ts</code>、HMR playground</td>
+</tr>
+<tr>
+<td>关闭与重启</td>
+<td><code>server/index.ts::close/restart</code></td>
+<td>watcher、restart 与资源 teardown 测试</td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="结论-边界与继续阅读"><a class="heading-anchor" href="#%E7%BB%93%E8%AE%BA-%E8%BE%B9%E7%95%8C%E4%B8%8E%E7%BB%A7%E7%BB%AD%E9%98%85%E8%AF%BB" aria-label="链接到本节">#</a>结论、边界与继续阅读</h2>
+<p>这条链路的核心不是某个转译器，而是三层状态协作：pending Promise 合并当前并发，ModuleGraph 保存跨请求增量状态，Environment 隔离不同运行目标。PluginContainer 是状态与用户插件之间的调度边界；中间件负责把其结果翻译成 HTTP 语义。</p>
+<p>本文未完整展开 HTML hook、CSS 预处理、依赖扫描/原子发布、SSR Module Runner、生产构建和 bundled dev。继续阅读时应分别跟随 README 中对应章节，不能把开发态缓存规则直接推导为生产构建保证。</p>
+<h2 id="复盘题"><a class="heading-anchor" href="#%E5%A4%8D%E7%9B%98%E9%A2%98" aria-label="链接到本节">#</a>复盘题</h2>
+<ol>
+<li>为什么 pending Promise 完成后必须删除，而 transformResult 可以继续保留？</li>
+<li>为什么同一个模块需要同时维护 URL 和规范 ID 两种索引？</li>
+<li><code>resolveId</code> 返回 meta 后，哪一步把它变成后续 load/transform 可见的模块状态？</li>
+<li>ETag 304、优化依赖 immutable cache 与 HMR 失效分别解决什么问题？</li>
+<li>Environment 隔离消失后，client 与 SSR 的插件状态会产生哪些所有权冲突？</li>
+</ol>
+</article><nav class="article-pager" aria-label="前后篇"><a class="pager-link previous" href="index.html"><span class="pager-label">返回</span><span class="pager-title">阅读总览</span></a><a class="pager-link next" href="01-cli-and-startup.html"><span class="pager-label">下一篇 · 01</span><span class="pager-title">CLI 与启动</span></a></nav><footer class="site-footer">Vite v8.2.1 源码阅读站 · 所有机制结论限定于 commit 421615865dad3ed39137d17281814fc78a41246c。</footer></main><aside class="page-toc" aria-label="页内目录"><h2 class="toc-title">本页目录</h2><ol class="toc-list"><li class="depth-2"><a href="#%E7%BB%93%E8%AE%BA%E4%B8%8E%E8%BE%B9%E7%95%8C">结论与边界</a></li><li class="depth-2"><a href="#%E6%A0%B8%E5%BF%83%E5%AF%B9%E8%B1%A1%E5%9C%B0%E5%9B%BE">核心对象地图</a></li><li class="depth-2"><a href="#%E9%98%85%E8%AF%BB%E5%9C%B0%E5%9B%BE">阅读地图</a></li><li class="depth-2"><a href="#%E9%98%B6%E6%AE%B5%E4%B8%80-cli-%E5%8F%AA%E5%BB%BA%E7%AB%8B%E9%85%8D%E7%BD%AE%E8%BE%93%E5%85%A5">阶段一：CLI 只建立配置输入</a></li><li class="depth-2"><a href="#%E9%98%B6%E6%AE%B5%E4%BA%8C-server-%E6%9E%84%E9%80%A0%E5%B9%B6%E7%A1%AE%E5%AE%9A-environment-%E6%89%80%E6%9C%89%E6%9D%83">阶段二：Server 构造并确定 Environment 所有权</a></li><li class="depth-2"><a href="#%E9%98%B6%E6%AE%B5%E4%B8%89-http-%E4%B8%AD%E9%97%B4%E4%BB%B6%E8%BF%9B%E5%85%A5%E8%BD%AC%E6%8D%A2%E5%85%A5%E5%8F%A3">阶段三：HTTP 中间件进入转换入口</a></li><li class="depth-2"><a href="#%E9%98%B6%E6%AE%B5%E5%9B%9B-pending-modulegraph-%E4%B8%8E%E6%8F%92%E4%BB%B6%E7%AE%A1%E7%BA%BF">阶段四：pending、ModuleGraph 与插件管线</a></li><li class="depth-2"><a href="#%E6%B8%85%E7%90%86%E8%B7%AF%E5%BE%84-%E8%B5%84%E6%BA%90%E5%B9%B6%E8%A1%8C%E6%94%B6%E5%8F%A3">清理路径：资源并行收口</a></li><li class="depth-2"><a href="#%E5%90%8C%E4%B8%80%E8%AF%B7%E6%B1%82%E7%9A%84%E7%8A%B6%E6%80%81%E8%A1%A8">同一请求的状态表</a></li><li class="depth-2"><a href="#%E5%AE%8C%E6%95%B4%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E5%9B%BE">完整执行流程图</a></li><li class="depth-2"><a href="#%E7%9C%9F%E5%AE%9E%E6%B5%8B%E8%AF%95%E9%97%AD%E7%8E%AF-meta-%E5%A6%82%E4%BD%95%E8%B7%A8%E9%92%A9%E5%AD%90%E6%8E%A8%E8%BF%9B">真实测试闭环：meta 如何跨钩子推进</a></li><li class="depth-2"><a href="#%E7%AB%A0%E8%8A%82-%E6%BA%90%E7%A0%81-%E6%B5%8B%E8%AF%95%E8%AF%81%E6%8D%AE%E8%A1%A8">章节—源码—测试证据表</a></li><li class="depth-2"><a href="#%E7%BB%93%E8%AE%BA-%E8%BE%B9%E7%95%8C%E4%B8%8E%E7%BB%A7%E7%BB%AD%E9%98%85%E8%AF%BB">结论、边界与继续阅读</a></li><li class="depth-2"><a href="#%E5%A4%8D%E7%9B%98%E9%A2%98">复盘题</a></li></ol></aside></div><script>;(function () {
+  'use strict'
+
+  var root = document.documentElement
+  var body = document.body
+  var themeButton = document.querySelector('[data-theme-toggle]')
+  var navButton = document.querySelector('[data-nav-toggle]')
+  var progress = document.querySelector('[data-reading-progress]')
+
+  function setTheme(theme) {
+    root.setAttribute('data-theme', theme)
+    if (themeButton) {
+      themeButton.setAttribute(
+        'aria-label',
+        theme === 'dark' ? '切换到浅色模式' : '切换到深色模式',
+      )
+      themeButton.textContent = theme === 'dark' ? '☀' : '◐'
+    }
+  }
+
+  var savedTheme
+  try {
+    savedTheme = localStorage.getItem('vite-guide-theme')
+  } catch (_) {
+    savedTheme = null
+  }
+  setTheme(
+    savedTheme ||
+      (window.matchMedia('(prefers-color-scheme: dark)').matches
+        ? 'dark'
+        : 'light'),
+  )
+
+  if (themeButton) {
+    themeButton.addEventListener('click', function () {
+      var next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark'
+      setTheme(next)
+      try {
+        localStorage.setItem('vite-guide-theme', next)
+      } catch (_) {
+        // file:// 或隐私模式下 localStorage 可能不可用；主题仍对当前页面生效。
+      }
+    })
+  }
+
+  function closeNavigation() {
+    body.classList.remove('nav-open')
+    if (navButton) navButton.setAttribute('aria-expanded', 'false')
+  }
+
+  if (navButton) {
+    navButton.addEventListener('click', function () {
+      var open = body.classList.toggle('nav-open')
+      navButton.setAttribute('aria-expanded', String(open))
+    })
+  }
+
+  document.addEventListener('keydown', function (event) {
+    if (event.key === 'Escape') closeNavigation()
+  })
+
+  document.querySelectorAll('.site-nav a').forEach(function (link) {
+    link.addEventListener('click', closeNavigation)
+  })
+
+  function updateProgress() {
+    if (!progress) return
+    var scrollable = document.documentElement.scrollHeight - window.innerHeight
+    var ratio = scrollable > 0 ? window.scrollY / scrollable : 0
+    progress.style.width = Math.min(100, Math.max(0, ratio * 100)) + '%'
+  }
+
+  updateProgress()
+  window.addEventListener('scroll', updateProgress, { passive: true })
+  window.addEventListener('resize', updateProgress)
+
+  document.querySelectorAll('.copy-code').forEach(function (button) {
+    button.addEventListener('click', async function () {
+      var code = button.closest('.code-card').querySelector('code')
+      var value = code ? code.textContent : ''
+      var copied = false
+
+      if (navigator.clipboard && window.isSecureContext) {
+        try {
+          await navigator.clipboard.writeText(value)
+          copied = true
+        } catch (_) {
+          copied = false
+        }
+      }
+
+      if (!copied) {
+        var input = document.createElement('textarea')
+        input.value = value
+        input.setAttribute('readonly', '')
+        input.style.position = 'fixed'
+        input.style.opacity = '0'
+        document.body.appendChild(input)
+        input.select()
+        copied = document.execCommand('copy')
+        input.remove()
+      }
+
+      var previous = button.textContent
+      button.textContent = copied ? '已复制' : '复制失败'
+      window.setTimeout(function () {
+        button.textContent = previous
+      }, 1200)
+    })
+  })
+
+  var tocLinks = Array.from(document.querySelectorAll('.toc-list a'))
+  var tocById = new Map(
+    tocLinks.map(function (link) {
+      return [decodeURIComponent(link.hash.slice(1)), link]
+    }),
+  )
+  var headings = Array.from(
+    document.querySelectorAll('.prose h2[id], .prose h3[id]'),
+  )
+
+  if ('IntersectionObserver' in window && headings.length > 0) {
+    var observer = new IntersectionObserver(
+      function (entries) {
+        entries.forEach(function (entry) {
+          if (!entry.isIntersecting) return
+          tocLinks.forEach(function (link) {
+            link.classList.remove('is-active')
+          })
+          var active = tocById.get(entry.target.id)
+          if (active) active.classList.add('is-active')
+        })
+      },
+      { rootMargin: '-18% 0px -72% 0px' },
+    )
+    headings.forEach(function (heading) {
+      observer.observe(heading)
+    })
+  }
+})()
+</script></body></html>

@@ -1,0 +1,631 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Vue Runtime SSR 水合原理、失配恢复、懒水合与内置组件水合详解"
+    />
+    <title>SSR 水合 · Vue Runtime 内核解剖</title>
+    <link rel="stylesheet" href="assets/styles.css" />
+  </head>
+  <body data-current="hydration.html">
+    <header data-site-header></header>
+    <div class="docs-shell">
+      <aside data-global-nav></aside>
+      <main class="article">
+        <div class="article-hero">
+          <div class="article-kicker">Chapter 06 · Hydration</div>
+          <h1>页面已经显示了，Vue 怎样把交互接上去</h1>
+          <p class="article-lead">
+            SSR 页面常常在 JavaScript
+            下载完成前就已经可见。水合不是重新创建页面，而是让客户端组件认领这些现有
+            HTML，补上状态、事件和后续更新能力。
+          </p>
+          <div class="hero-meta">
+            <span>建议阅读 35 分钟</span><span>先修：Renderer</span
+            ><span>核心文件：hydration.ts</span>
+          </div>
+        </div>
+
+        <section class="article-section prose" id="plain-hydration">
+          <h2>先看用户经历的三个时刻</h2>
+          <div class="sequence">
+            <div class="sequence-item">
+              <strong>服务器先发来 HTML</strong
+              ><br />标题、文章和按钮已经显示。即使 JS
+              较慢，用户也不会只看到白屏。
+            </div>
+            <div class="sequence-item">
+              <strong>浏览器下载并运行 Vue</strong
+              ><br />客户端用同样的初始数据计算页面应该长什么样。
+            </div>
+            <div class="sequence-item">
+              <strong>Vue 认领现有节点</strong><br />按钮被接上
+              click，组件实例和 DOM 建立关联；以后状态变化就能正常 patch。
+            </div>
+          </div>
+          <div class="before-after">
+            <div class="scene-window">
+              <div class="scene-titlebar">HTML 已到，JS 未到</div>
+              <div class="scene-body">
+                <span class="scene-label">可见但还未接管</span
+                ><button class="demo-button" type="button">加入购物车</button>
+                <p>内容可读，按钮可能尚不能响应。</p>
+              </div>
+            </div>
+            <div class="scene-window">
+              <div class="scene-titlebar">水合完成</div>
+              <div class="scene-body">
+                <span class="scene-label">组件已接管</span
+                ><button class="demo-button primary" type="button">
+                  加入购物车
+                </button>
+                <p>事件、ref、状态与后续更新全部就绪。</p>
+              </div>
+            </div>
+          </div>
+          <p class="concept-sentence">
+            水合就像给一座已经盖好的房子接通水电，而不是把房子推倒重建。
+          </p>
+          <h3>如果服务器和客户端算出的页面不一样</h3>
+          <p>
+            比如服务器显示“早上好”，客户端按本地时间算出“晚上好”。Vue
+            会报告失配：文字不同可以直接修正；标签结构不同则不能安全认领，需要局部删除并由客户端重新创建。
+          </p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>差异</th>
+                  <th>处理</th>
+                  <th>例子</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>文本 / children 不同</strong></td>
+                  <td>保留父节点，修正文案并增删缺失或多余的子节点</td>
+                  <td>本地时间、条件分支数量</td>
+                </tr>
+                <tr>
+                  <td><strong>class / style / 普通 attribute 不同</strong></td>
+                  <td>
+                    失配检查负责诊断，不因检查本身自动校正；应修复服务端与客户端输入
+                  </td>
+                  <td>主题 class、静态 aria-*、内联样式</td>
+                </tr>
+                <tr>
+                  <td><strong>身份不同</strong></td>
+                  <td>放弃错误节点，局部重建</td>
+                  <td>服务器是 div，客户端是 button</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="reader-check">
+            <strong>水合完成的标准：</strong>不是“HTML
+            看起来没变”，而是组件实例、VNode、事件和现有 DOM
+            已建立与普通首次挂载相同的运行关系。
+          </div>
+        </section>
+
+        <div class="level-divider">进入水合游标、失配恢复与源码层</div>
+
+        <section class="article-section prose" id="mental-model">
+          <h2>先分清 mount、patch 与 hydrate</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>入口</th>
+                  <th>已有输入</th>
+                  <th>核心问题</th>
+                  <th>结果</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>mount</strong></td>
+                  <td>VNode，没有宿主节点</td>
+                  <td>该创建哪些节点、按什么次序插入？</td>
+                  <td>创建完整 DOM，并写回 vnode.el</td>
+                </tr>
+                <tr>
+                  <td><strong>patch</strong></td>
+                  <td>旧 VNode、新 VNode、已有 DOM</td>
+                  <td>两次声明之间有什么差异？</td>
+                  <td>最少修改已有 DOM</td>
+                </tr>
+                <tr>
+                  <td><strong>hydrate</strong></td>
+                  <td>新 VNode、服务端 DOM，没有旧 VNode</td>
+                  <td>DOM 是否可被当前 VNode 认领？</td>
+                  <td>复用 DOM，建立运行时关联</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            水合没有一棵可供比较的旧 VNode 树，因此它不能执行普通 Diff。它沿 DOM
+            的 <code>nextSibling</code> 向前扫描，同时递归消费
+            VNode；函数返回值通常是“当前 VNode 消费完后，下一个尚未认领的 DOM
+            节点”。这条游标协议是理解 Fragment、Teleport 和组件水合的钥匙。
+          </p>
+          <div class="diagram" role="img" aria-label="服务端渲染到客户端水合">
+            <div class="diagram-title">SERVER → NETWORK → CLIENT</div>
+            <div class="layer-flow">
+              <div class="layer-node">
+                <strong>SSR render</strong
+                ><small>VNode → HTML；输出锚点与必要标记。</small>
+              </div>
+              <div class="diagram-arrow">→</div>
+              <div class="layer-node emphasis">
+                <strong>hydrateNode</strong
+                ><small>逐个认领 DOM，恢复 vnode.el 与组件 effect。</small>
+              </div>
+              <div class="diagram-arrow">→</div>
+              <div class="layer-node">
+                <strong>interactive</strong
+                ><small>事件、ref、生命周期和后续 patch 已就绪。</small>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="article-section prose" id="entry">
+          <h2>入口与游标：hydrate 如何走完整棵树</h2>
+          <div class="sequence">
+            <div class="sequence-item">
+              <strong>检查容器</strong><br />容器为空说明没有可复用的 SSR
+              输出，开发模式报警后退回普通 patch。
+            </div>
+            <div class="sequence-item">
+              <strong>从 firstChild 开始</strong><br /><code
+                >hydrateNode(container.firstChild, vnode)</code
+              >
+              让根 VNode 认领第一个 DOM 节点。
+            </div>
+            <div class="sequence-item">
+              <strong>按 VNode 类型分派</strong
+              ><br />Text、Comment、Static、Fragment、Element、Component、Teleport、Suspense
+              各有自己的消费规则。
+            </div>
+            <div class="sequence-item">
+              <strong>清理多余节点</strong><br />根 VNode
+              消费后仍有兄弟节点，说明服务端输出更多；除非允许 children
+              mismatch，否则移除并警告。
+            </div>
+            <div class="sequence-item">
+              <strong>提交水合副作用</strong><br />执行 post-flush 生命周期与
+              ref，容器记录 <code>_vnode</code>，以后进入普通更新流程。
+            </div>
+          </div>
+          <pre><code>// 不是源码逐字复制，而是水合游标的概念骨架
+function hydrateNode(node, vnode): Node | null {
+  vnode.el = node
+  switch (vnode.type) {
+    case Text: return hydrateText(node, vnode)
+    case Fragment: return hydrateFragment(node, vnode)
+    default:
+      if (isElement(vnode)) return hydrateElement(node, vnode)
+      if (isComponent(vnode)) return hydrateComponent(node, vnode)
+  }
+  return nextSibling(node)
+}</code></pre>
+          <p>
+            <strong>返回下一个节点而不是返回当前节点</strong
+            >，使父层无需知道子树包含多少真实
+            DOM。组件可能渲染一个元素，也可能是 Fragment；Suspense 可能当前展示
+            fallback；调用方只需接住统一游标。
+          </p>
+        </section>
+
+        <section class="article-section prose" id="node-matrix">
+          <h2>节点类型矩阵：每一种 VNode 如何被认领</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>VNode</th>
+                  <th>匹配依据</th>
+                  <th>水合动作</th>
+                  <th>常见失配</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>Text</strong></td>
+                  <td>DOM nodeType === TEXT</td>
+                  <td>写回 el；文本不同则修正 node.data</td>
+                  <td>空文本在 SSR 中由注释占位</td>
+                </tr>
+                <tr>
+                  <td><strong>Comment</strong></td>
+                  <td>COMMENT，且不是 Fragment 起点</td>
+                  <td>直接认领</td>
+                  <td>SSR 控制标记被误当普通注释</td>
+                </tr>
+                <tr>
+                  <td><strong>Static</strong></td>
+                  <td>由静态节点数量决定范围</td>
+                  <td>在缺少客户端静态字符串时，从 DOM 回收内容</td>
+                  <td>静态范围被外部脚本改写</td>
+                </tr>
+                <tr>
+                  <td><strong>Fragment</strong></td>
+                  <td>
+                    <code>&lt;!--[--&gt;</code> 到 <code>&lt;!--]--&gt;</code>
+                  </td>
+                  <td>逐个水合 children，并维护结束 anchor</td>
+                  <td>锚点丢失、children 数量不同</td>
+                </tr>
+                <tr>
+                  <td><strong>Element</strong></td>
+                  <td>tagName 与 namespace</td>
+                  <td>补事件/动态属性；递归水合 children</td>
+                  <td>tag、文本、class/style/attr 不同</td>
+                </tr>
+                <tr>
+                  <td><strong>Component</strong></td>
+                  <td>由其 subTree 决定节点范围</td>
+                  <td>创建实例、运行 setup/render、用 DOM 水合 subTree</td>
+                  <td>服务端与客户端分支不同</td>
+                </tr>
+                <tr>
+                  <td><strong>Teleport</strong></td>
+                  <td>主树锚点 + target 内标记</td>
+                  <td>分别恢复逻辑位置与真实目标位置</td>
+                  <td>目标不存在、多个 Teleport 顺序不一致</td>
+                </tr>
+                <tr>
+                  <td><strong>Suspense</strong></td>
+                  <td>当前已解析分支的 DOM</td>
+                  <td>创建边界，水合 activeBranch，继续跟踪异步依赖</td>
+                  <td>客户端依赖状态与服务端不同</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="article-section prose" id="element-component">
+          <h2>元素与组件：水合不是“什么都不做”</h2>
+          <h3>元素水合要补齐客户端行为</h3>
+          <p>
+            SSR HTML 能表达标签和属性，却不能携带 JavaScript
+            事件监听器。元素水合会根据 patchFlag、事件 key、指令与 vnode hook
+            决定需要执行哪些
+            <code>hostPatchProp</code
+            >。静态属性通常不必重设；事件、需要属性语义的值以及可能发生失配检查的字段必须处理。
+          </p>
+          <ul>
+            <li>
+              <strong>children 是文本：</strong>比较
+              <code>textContent</code>，失配时以客户端值修正。
+            </li>
+            <li>
+              <strong>children 是数组：</strong>从
+              <code>firstChild</code> 开始逐个水合；DOM 少了就 mount
+              缺失子树，多了则移除剩余节点。
+            </li>
+            <li>
+              <strong>指令与 vnode hooks：</strong
+              ><code>beforeMount</code> 在认领阶段执行，<code>mounted</code>
+              排入 post-render 队列。
+            </li>
+            <li>
+              <strong>ref：</strong>等提交完成再设置，避免用户在 ref
+              回调中看到半水合树。
+            </li>
+          </ul>
+          <h3>组件水合仍会创建完整实例</h3>
+          <p>
+            组件不是从 SSR 中“反序列化”出来的。客户端依然创建实例、解析
+            props/slots、执行 <code>setup()</code>、调用 render 得到
+            subTree；区别只是第一次组件 effect 调用
+            <code>hydrateNode</code>，而非
+            <code>patch(null, subTree)</code>。完成后组件拥有与 CSR
+            相同的更新能力。
+          </p>
+          <div class="callout warm">
+            因为 setup 会重新执行，SSR 代码必须满足同构约束：不要在 render
+            中依赖随机数、当前时间或只在客户端存在的环境状态；需要时把服务端结果序列化成稳定输入。
+          </div>
+        </section>
+
+        <section class="article-section prose" id="mismatch">
+          <h2>失配恢复：警告只是表象，关键是重新获得可信 DOM</h2>
+          <p>
+            失配可分为“内容仍可复用”和“节点身份不可复用”两类，恢复策略并不相同：
+          </p>
+          <div class="card-grid">
+            <article class="card">
+              <span class="card-label">RECONCILABLE CONTENT</span>
+              <h3>文本与 children：保留父节点并修正</h3>
+              <p>
+                文本不同时写入客户端文本；children 少了就 mount，children
+                多了就移除。父元素身份仍可复用。
+              </p>
+            </article>
+            <article class="card">
+              <span class="card-label">CHECK-ONLY PROPS</span>
+              <h3>class / style / attribute：报告来源问题</h3>
+              <p>
+                <code>propHasMismatch</code>
+                比较归一化结果并发出警告，但检查本身不校正 DOM。只有事件、动态
+                prop、表单值等原本就必须水合的字段，才会因各自规则另走
+                <code>patchProp</code>。
+              </p>
+            </article>
+            <article class="card">
+              <span class="card-label">STRUCTURAL MISMATCH</span>
+              <h3>移除节点，客户端重挂载</h3>
+              <p>
+                tag、节点类型、Fragment 边界等不一致。Vue先确定旧 DOM
+                范围和下一游标，再以普通 patch 创建正确子树。
+              </p>
+            </article>
+          </div>
+          <pre><code>// 结构失配的概念流程
+next = locateNextAfterMismatchedRange(node)
+removeMismatchedDom(node)
+patch(null, vnode, container, next)
+return next</code></pre>
+          <p>
+            这里最容易出 bug 的是 <strong>next 必须在删除前确定</strong>，且
+            Fragment/组件可能占据多个 DOM 节点。若只删除起点或计算错
+            anchor，后续兄弟会被重复认领或插错位置。
+          </p>
+          <div class="plain-section">
+            <span class="scene-label">固定版本源码卡 · v3.5.41</span>
+            <pre><code>// hydration.ts：三类失配不是同一种恢复
+if (textContent !== clientText) {
+  el.textContent = vnode.children // 文本会校正
+}
+
+if (propHasMismatch(el, key, props[key], vnode, parentComponent)) {
+  logMismatchError() // class/style/attribute 检查本身只诊断
+}
+
+// handleMismatch：节点身份不可信，先保存游标，再重挂载
+const next = nextSibling(node)
+remove(node)
+patch(null, vnode, container, next, ...)</code></pre>
+            <p>
+              <code>propHasMismatch</code> 的警告原文明确说明这是
+              check-only；<code>handleMismatch</code> 则先算
+              <code>next</code>，再删除错误范围并以该游标作 anchor。Fragment
+              会先定位结束锚点，避免只删起始注释。
+            </p>
+            <div class="source-links">
+              <a
+                class="source-link"
+                href="../../../vue/packages/runtime-core/src/hydration.ts"
+                >本地：hydrateElement / handleMismatch</a
+              >
+              <a
+                class="source-link"
+                href="https://github.com/vuejs/core/blob/v3.5.41/packages/runtime-core/src/hydration.ts#L431-L533"
+                >v3.5.41：文本、children 与 props</a
+              >
+              <a
+                class="source-link"
+                href="https://github.com/vuejs/core/blob/v3.5.41/packages/runtime-core/src/hydration.ts#L694-L753"
+                >v3.5.41：handleMismatch</a
+              >
+              <a
+                class="source-link"
+                href="https://github.com/vuejs/core/blob/v3.5.41/packages/runtime-core/src/hydration.ts#L830-L932"
+                >v3.5.41：propHasMismatch</a
+              >
+            </div>
+          </div>
+          <h3><code>data-allow-mismatch</code>：声明“差异是设计的一部分”</h3>
+          <p>
+            某些页面故意让服务端与客户端不同，例如用户时区格式、本地化相对时间、浏览器扩展注入
+            class。Vue 允许在元素上按类型抑制
+            mismatch：text、children、class、style、attribute。它主要抑制对应类型的
+            mismatch 警告，不会跳过认领流程；文本仍会改成客户端值，多余 children
+            仍会被清理。它也不是修复不确定性的手段。
+          </p>
+          <div class="callout">
+            调试失配时先找第一个警告，而不是最后一个。父层结构错位会让游标偏移，随后产生一串看似无关的子节点警告。
+          </div>
+        </section>
+
+        <section class="article-section prose" id="real-world">
+          <h2>真实场景：为什么水合修复常常很细</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>场景</th>
+                  <th>错误做法</th>
+                  <th>正确边界</th>
+                  <th>用户可见后果</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>用户在水合前输入表单</strong></td>
+                  <td>无条件用 VNode value 覆盖 DOM</td>
+                  <td>区分 SSR 初值与浏览器中已变化的实时值，避免丢失交互</td>
+                  <td>慢网速下刚输入的内容突然消失</td>
+                </tr>
+                <tr>
+                  <td><strong>资源元素属性</strong></td>
+                  <td>为校验而重复设置 src/href</td>
+                  <td>对可能触发网络请求的属性谨慎比对与提交</td>
+                  <td>图片、脚本或 iframe 重复请求</td>
+                </tr>
+                <tr>
+                  <td><strong>SVG/MathML</strong></td>
+                  <td>只按 HTML tagName 判断</td>
+                  <td>把 namespace 作为身份与 children 上下文的一部分</td>
+                  <td>节点被错误替换，属性语义失真</td>
+                </tr>
+                <tr>
+                  <td><strong>自定义元素</strong></td>
+                  <td>假设属性与 property 完全等价</td>
+                  <td>延续 runtime-dom 的 prop/attr 决策，并尊重升级时机</td>
+                  <td>setter 未执行或值被字符串化</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            这些修复通常不是“加一个 if”这么简单。水合处在 HTML
+            解析器、浏览器实时状态、Vue VNode
+            和应用副作用的交界处；修复必须同时保证首次认领正确、后续 patch
+            正确，以及不会引入重复网络或交互丢失。
+          </p>
+        </section>
+
+        <section class="article-section prose" id="lazy">
+          <h2>懒水合：推迟的是组件认领，不是服务端可见内容</h2>
+          <p>
+            Vue 3.5 的异步组件可配置 hydration strategy。HTML
+            仍由服务端输出，页面也能展示；客户端只在条件满足时创建并水合对应组件，从而把启动成本挪出首屏关键路径。
+          </p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>策略</th>
+                  <th>触发条件</th>
+                  <th>适合</th>
+                  <th>风险</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>hydrateOnIdle</strong></td>
+                  <td>requestIdleCallback / timeout</td>
+                  <td>首屏以下的非关键组件</td>
+                  <td>设备长期繁忙时交互能力延后</td>
+                </tr>
+                <tr>
+                  <td><strong>hydrateOnVisible</strong></td>
+                  <td>IntersectionObserver</td>
+                  <td>滚动进入视口的卡片、图表</td>
+                  <td>需合理 rootMargin，避免看见后才卡顿</td>
+                </tr>
+                <tr>
+                  <td><strong>hydrateOnMediaQuery</strong></td>
+                  <td>matchMedia 命中</td>
+                  <td>仅特定布局需要的交互</td>
+                  <td>媒体条件变化时要正确清理监听</td>
+                </tr>
+                <tr>
+                  <td><strong>hydrateOnInteraction</strong></td>
+                  <td>click、focus 等事件</td>
+                  <td>低频但必须“点即响应”的控件</td>
+                  <td>触发事件需在水合后重放，不能被吞掉</td>
+                </tr>
+                <tr>
+                  <td><strong>自定义策略</strong></td>
+                  <td>用户定义调度器</td>
+                  <td>业务优先级、实验性加载策略</td>
+                  <td>必须返回清理函数并处理组件已卸载</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="sequence">
+            <div class="sequence-item">
+              <strong>定位待水合 DOM 范围</strong><br />异步组件 VNode
+              保存起点；策略可遍历此范围观察元素或绑定事件。
+            </div>
+            <div class="sequence-item">
+              <strong>注册触发器并返回清理函数</strong
+              ><br />组件可能在触发前被父树卸载，Observer、媒体监听和事件必须撤销。
+            </div>
+            <div class="sequence-item">
+              <strong>加载组件</strong><br />异步 loader
+              完成后，还要确认当前实例仍存活、占位 DOM 没被其他更新替换。
+            </div>
+            <div class="sequence-item">
+              <strong>执行 hydrate</strong
+              ><br />认领服务端节点；交互策略随后重放原事件，让用户第一次操作仍生效。
+            </div>
+          </div>
+          <div class="callout warm">
+            关键竞态：等待水合期间父组件可能更新
+            props、移动节点或直接卸载。实现必须以“触发时的最新 vnode 与真实
+            DOM”继续，而不能闭包捕获旧输入。
+          </div>
+        </section>
+
+        <section class="article-section prose" id="debug">
+          <h2>阅读与调试路线</h2>
+          <ol>
+            <li>
+              从 <code>createHydrationFunctions</code> 看它从 renderer internals
+              获得哪些能力。
+            </li>
+            <li>
+              只跟 Text → Element → Component 三条基础分支，先掌握游标返回约定。
+            </li>
+            <li>
+              再读 <code>handleMismatch</code>，画出删除范围、container、anchor
+              三者关系。
+            </li>
+            <li>
+              最后进入 Fragment、Teleport、Suspense
+              和异步组件懒水合，因为它们都依赖前面的范围模型。
+            </li>
+          </ol>
+          <pre><code># 聚焦运行时水合测试
+pnpm vitest packages/runtime-core/__tests__/hydration.spec.ts
+
+# 懒水合策略的浏览器端场景
+pnpm vitest packages/vue/__tests__/e2e/hydrationStrategies.spec.ts</code></pre>
+          <div class="source-links">
+            <a
+              class="source-link"
+              href="../../../vue/packages/runtime-core/src/hydration.ts"
+              >本地：hydration.ts</a
+            >
+            <a
+              class="source-link"
+              href="../../../vue/packages/runtime-core/src/apiAsyncComponent.ts"
+              >本地：apiAsyncComponent.ts</a
+            >
+            <a
+              class="source-link"
+              href="../../../vue/packages/runtime-core/__tests__/hydration.spec.ts"
+              >本地：hydration tests</a
+            >
+            <a
+              class="source-link"
+              href="https://github.com/vuejs/core/blob/v3.5.41/packages/runtime-core/__tests__/hydration.spec.ts"
+              >v3.5.41：水合行为测试</a
+            >
+          </div>
+        </section>
+
+        <nav class="page-nav" aria-label="章节翻页">
+          <a href="scheduler.html"><span>上一章</span>← 调度系统</a>
+          <a href="builtins.html"><span>下一章</span>内置组件协议 →</a>
+        </nav>
+      </main>
+
+      <aside class="page-toc" aria-label="本页目录">
+        <div class="toc-title">本页目录</div>
+        <a href="#plain-hydration">先理解水合</a>
+        <a href="#mental-model">三种操作</a>
+        <a href="#entry">入口与游标</a>
+        <a href="#node-matrix">节点类型矩阵</a>
+        <a href="#element-component">元素与组件</a>
+        <a href="#mismatch">失配恢复</a>
+        <a href="#real-world">真实场景</a>
+        <a href="#lazy">懒水合</a>
+        <a href="#debug">阅读与调试</a>
+      </aside>
+    </div>
+    <footer data-site-footer></footer>
+    <script src="assets/app.js" defer></script>
+  </body>
+</html>

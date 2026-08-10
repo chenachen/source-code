@@ -1,0 +1,681 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="不看源码也能理解的 Vue 完整更新流程：从一次点击、状态变化到 Diff 与 DOM 更新"
+    />
+    <title>一次点击的完整旅程 · Vue Runtime 内核解剖</title>
+    <link rel="stylesheet" href="assets/styles.css" />
+  </head>
+  <body data-current="integration.html">
+    <header data-site-header></header>
+    <div class="docs-shell">
+      <aside data-global-nav></aside>
+      <main class="article">
+        <div class="article-hero">
+          <div class="article-kicker">Chapter 09 · The Full Story</div>
+          <h1>一次点击，怎样变成屏幕上的新内容</h1>
+          <p class="article-lead">
+            用户点击“添加任务”，业务代码只改了数组；几十毫秒后，页面多出一个列表项。我们放慢这段过程，像看分镜一样跟完
+            Vue Runtime 的每一次交接。
+          </p>
+          <div class="hero-meta">
+            <span>无需阅读源码</span><span>一个案例贯穿全章</span
+            ><span>最后附源码地图</span>
+          </div>
+        </div>
+
+        <section class="article-section prose" id="scene">
+          <h2>故事开始：用户只做了一件事</h2>
+          <div class="before-after">
+            <div class="scene-window">
+              <div class="scene-titlebar">上午 10:30 · 点击前</div>
+              <div class="scene-body">
+                <span class="scene-label">我的任务 · 3</span>
+                <ul class="ui-list">
+                  <li class="ui-item">买牛奶</li>
+                  <li class="ui-item">回复邮件</li>
+                  <li class="ui-item">学习 Vue</li>
+                </ul>
+              </div>
+            </div>
+            <div class="scene-window">
+              <div class="scene-titlebar">上午 10:30 · 点击后</div>
+              <div class="scene-body">
+                <span class="scene-label">我的任务 · 4</span>
+                <ul class="ui-list">
+                  <li class="ui-item">买牛奶</li>
+                  <li class="ui-item">回复邮件</li>
+                  <li class="ui-item">学习 Vue</li>
+                  <li class="ui-item new">学习 Diff</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+          <p>组件里的代码可能只有一行：</p>
+          <pre><code>tasks.value.push({ id: 4, title: '学习 Diff' })</code></pre>
+          <p class="concept-sentence">
+            业务代码表达“状态变了”；Runtime
+            负责推导“页面哪里要变”，并安全地完成这次修改。
+          </p>
+        </section>
+
+        <section class="article-section prose" id="roles">
+          <h2>先认识这次旅程中的六个角色</h2>
+          <p>暂时不用记英文名，把它们当成一个配合工作的团队。</p>
+          <div class="role-grid">
+            <article class="role-card">
+              <span class="role-icon">📒</span>
+              <strong>状态记录员</strong>
+              <small
+                >知道哪些组件读过任务数组。数组变化时，它通知相关组件。</small
+              >
+              <span class="role-source">Reactivity</span>
+            </article>
+            <article class="role-card">
+              <span class="role-icon">🗓</span>
+              <strong>任务调度员</strong>
+              <small
+                >不让每一次小修改都立刻重画页面；它合并工作、安排先后。</small
+              >
+              <span class="role-source">Scheduler</span>
+            </article>
+            <article class="role-card">
+              <span class="role-icon">✎</span>
+              <strong>界面设计员</strong>
+              <small
+                >组件用最新数据重新计算，得到“现在应该有四项”的页面描述。</small
+              >
+              <span class="role-source">Component render</span>
+            </article>
+            <article class="role-card">
+              <span class="role-icon">⌕</span>
+              <strong>变化检查员</strong>
+              <small>比较前后描述，认出前三项没变，只有第四项需要新增。</small>
+              <span class="role-source">Renderer + Diff</span>
+            </article>
+            <article class="role-card">
+              <span class="role-icon">🔧</span>
+              <strong>浏览器施工员</strong>
+              <small>把“新增一项”翻译成真实 DOM 操作、属性和事件处理。</small>
+              <span class="role-source">runtime-dom</span>
+            </article>
+            <article class="role-card">
+              <span class="role-icon">✓</span>
+              <strong>收尾协调员</strong>
+              <small
+                >DOM 提交后处理模板 ref、updated 与 post watcher；整轮 flush（含
+                post 队列）结束后，nextTick 才继续。</small
+              >
+              <span class="role-source">Post flush</span>
+            </article>
+          </div>
+          <div class="reader-lane">
+            <div>
+              这些角色不会同时乱跑。每一站只接收上游结果，完成自己的决定，再把控制权交给下一站。
+            </div>
+          </div>
+        </section>
+
+        <section class="article-section prose" id="play">
+          <h2>按一下按钮，亲手走完六站</h2>
+          <div class="demo-panel" data-runtime-demo>
+            <div class="demo-toolbar">
+              <button class="demo-button primary" type="button" data-demo-next>
+                下一步
+              </button>
+              <button class="demo-button" type="button" data-demo-reset>
+                重新开始
+              </button>
+            </div>
+            <div class="runtime-pipeline">
+              <div class="pipeline-stage" data-demo-stage>
+                <strong>① 数据变化</strong>任务数组 +1
+              </div>
+              <div class="pipeline-stage" data-demo-stage>
+                <strong>② 安排更新</strong>进入本轮队列
+              </div>
+              <div class="pipeline-stage" data-demo-stage>
+                <strong>③ 生成描述</strong>现在应有四项
+              </div>
+              <div class="pipeline-stage" data-demo-stage>
+                <strong>④ 比较差异</strong>只缺第四项
+              </div>
+              <div class="pipeline-stage" data-demo-stage>
+                <strong>⑤ 修改页面</strong>插入一个 li
+              </div>
+              <div class="pipeline-stage" data-demo-stage>
+                <strong>⑥ 完成收尾</strong>回调看到新 DOM
+              </div>
+            </div>
+            <div class="before-after">
+              <div>
+                <span class="scene-label">真实页面</span>
+                <ul class="ui-list">
+                  <li class="ui-item">买牛奶</li>
+                  <li class="ui-item">回复邮件</li>
+                  <li class="ui-item">学习 Vue</li>
+                  <li class="ui-item" data-demo-output>学习 Diff</li>
+                </ul>
+              </div>
+              <div class="demo-explanation" data-demo-explanation>
+                点击“下一步”，观察一次更新如何穿过 Vue Runtime。
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="article-section prose" id="stage-one">
+          <h2>第一站：Vue 怎么知道该更新哪个组件</h2>
+          <p>
+            TodoList 上次生成界面时读取过 <code>tasks.value</code>。Vue
+            记下“这个组件依赖任务数组”。现在数组增加一项，Vue
+            不需要扫描所有组件，只通知曾经读取它的组件。
+          </p>
+          <div class="plain-section">
+            <strong>可以把它想成订阅：</strong>
+            <p>
+              组件阅读数据时自动订阅；数据修改时通知订阅者。通知的含义只是“你需要重新计算”，不是“立刻修改
+              DOM”。
+            </p>
+          </div>
+          <div class="reader-check">
+            <strong>读完能回答：</strong
+            >为什么修改一个局部状态，不会让整个应用的所有组件都重新渲染？因为
+            Vue 保存了数据与使用者之间的依赖关系。
+          </div>
+          <details class="source-layer">
+            <summary>源码层：这一站叫什么？</summary>
+            <div>
+              响应式系统通过 dep 记录订阅关系，数据 trigger 后通知组件的 render
+              effect。effect 的 scheduler 再把组件更新任务交给
+              <code>queueJob</code>，而不是直接执行组件更新。
+            </div>
+          </details>
+        </section>
+
+        <section class="article-section prose" id="stage-two">
+          <h2>第二站：为什么不马上更新页面</h2>
+          <p>一段业务代码常常连续修改多个值：</p>
+          <pre><code>tasks.value.push(newTask)
+total.value++
+message.value = '添加成功'</code></pre>
+          <p>
+            如果每改一次就重新生成页面并操作
+            DOM，三行代码可能产生三轮重复工作。Vue 先把“TodoList
+            需要更新”放进队列；当前同步代码运行完后，再统一刷新。相同组件在一轮里通常只更新一次。
+          </p>
+          <div class="before-after">
+            <div class="plain-section">
+              <span class="scene-label">没有调度</span>
+              改 tasks → 更新页面<br />改 total → 再更新页面<br />改 message →
+              再更新页面
+            </div>
+            <div class="plain-section">
+              <span class="scene-label">Vue 的方式</span>
+              改三个值 → 记录一次 TodoList 更新<br />同步代码结束 →
+              统一生成和提交
+            </div>
+          </div>
+          <p>
+            <code>nextTick()</code>
+            等待的就是这次“统一刷新”完成。它不是固定延迟，也不保证任意网络请求完成。
+          </p>
+          <details class="source-layer">
+            <summary>源码层：队列还保证什么？</summary>
+            <div>
+              Scheduler 还按组件 uid
+              保证父组件通常先于子组件，区分更新前、主队列和更新后三个阶段，并在任务抛错后清理排队标志，使后续更新仍可继续。
+            </div>
+          </details>
+        </section>
+
+        <section class="article-section prose" id="stage-three">
+          <h2>第三站：组件重新回答“页面应该长什么样”</h2>
+          <p>
+            队列轮到 TodoList
+            后，组件重新运行自己的界面计算。旧数组三项，旧描述里有三个列表项；新数组四项，新描述里有四个列表项。
+          </p>
+          <div class="before-after">
+            <div class="scene-window">
+              <div class="scene-titlebar">旧的页面描述</div>
+              <div class="scene-body">
+                <ul class="ui-list">
+                  <li class="ui-item">li · key 1 · 买牛奶</li>
+                  <li class="ui-item">li · key 2 · 回复邮件</li>
+                  <li class="ui-item">li · key 3 · 学习 Vue</li>
+                </ul>
+              </div>
+            </div>
+            <div class="scene-window">
+              <div class="scene-titlebar">新的页面描述</div>
+              <div class="scene-body">
+                <ul class="ui-list">
+                  <li class="ui-item">li · key 1 · 买牛奶</li>
+                  <li class="ui-item">li · key 2 · 回复邮件</li>
+                  <li class="ui-item">li · key 3 · 学习 Vue</li>
+                  <li class="ui-item new">li · key 4 · 学习 Diff</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+          <p>
+            这些“说明卡”就是
+            VNode。它们很轻，只说明节点类型、属性、文字、children
+            和身份；此时浏览器页面尚未改变。
+          </p>
+          <div class="reader-lane">
+            <div>
+              <strong>render 不是渲染到屏幕。</strong>它只计算新的 VNode
+              描述；真正修改屏幕发生在后面的提交阶段。
+            </div>
+          </div>
+          <details class="source-layer">
+            <summary>源码层：组件保存了什么旧状态？</summary>
+            <div>
+              组件实例把上次生成的 VNode 子树保存在
+              <code>instance.subTree</code>。本轮得到
+              <code>nextTree</code> 后，Renderer 执行
+              <code>patch(prevTree, nextTree)</code>。
+            </div>
+          </details>
+        </section>
+
+        <section class="article-section prose" id="stage-four">
+          <h2>第四站：Vue 比较的是“身份”，不只是文字</h2>
+          <p>
+            新旧描述放在一起后，Vue 看见 key 为 1、2、3
+            的任务仍然存在，于是继续使用原来的 DOM 节点和组件实例；key 为 4
+            是全新身份，需要创建。
+          </p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>任务</th>
+                  <th>旧描述</th>
+                  <th>新描述</th>
+                  <th>决定</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>买牛奶 · key 1</strong></td>
+                  <td>有</td>
+                  <td>有</td>
+                  <td>复用原节点</td>
+                </tr>
+                <tr>
+                  <td><strong>回复邮件 · key 2</strong></td>
+                  <td>有</td>
+                  <td>有</td>
+                  <td>复用原节点</td>
+                </tr>
+                <tr>
+                  <td><strong>学习 Vue · key 3</strong></td>
+                  <td>有</td>
+                  <td>有</td>
+                  <td>复用原节点</td>
+                </tr>
+                <tr>
+                  <td><strong>学习 Diff · key 4</strong></td>
+                  <td>无</td>
+                  <td>有</td>
+                  <td>创建新节点</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            如果列表重新排序，key 仍能告诉
+            Vue“它只是换了位置”。这能保留输入框状态、组件内部状态和 DOM
+            引用。复杂列表怎样减少移动，在独立的
+            <a href="diff.html">Diff 算法专题</a> 中完整推演。
+          </p>
+          <details class="source-layer">
+            <summary>源码层：这一站的两个词</summary>
+            <div>
+              <code>patch</code> 是让旧节点变成新节点的总过程；<code
+                >patchKeyedChildren</code
+              >
+              是数组 children 的一条分支。Diff
+              先保证身份与最终顺序正确，再用最长递增子序列减少不必要移动。
+            </div>
+          </details>
+        </section>
+
+        <section class="article-section prose" id="stage-five">
+          <h2>第五站：决定完成后，浏览器才真正改变</h2>
+          <p>变化检查员给出一条很小的施工单：</p>
+          <div class="plain-section">
+            <span class="scene-label">本轮 DOM 施工单</span>
+            <p><strong>保留：</strong>前三个 li，不删除、不重建。</p>
+            <p><strong>创建：</strong>一个文本为“学习 Diff”的 li。</p>
+            <p><strong>插入：</strong>放到列表末尾。</p>
+            <p><strong>事件：</strong>给新项补上复选框或删除按钮的监听器。</p>
+          </div>
+          <p>
+            runtime-core
+            不直接依赖浏览器，它只说“创建、插入、设置属性”。runtime-dom
+            再把这些命令翻译成
+            <code>createElement</code>、<code>insertBefore</code>、DOM
+            property、attribute 和 <code>addEventListener</code>。
+          </p>
+          <div class="reader-check">
+            <strong>为什么要分两层：</strong>“该改什么”是 Vue
+            通用规则；“怎样改浏览器”是 DOM
+            平台规则。分开后，同一套组件系统也能驱动测试内存树或自定义渲染平台。
+          </div>
+        </section>
+
+        <section class="article-section prose" id="stage-six">
+          <h2>第六站：DOM 之后仍有两道时间边界</h2>
+          <p>
+            “watch、ref、updated、nextTick 都在一起”并不准确。默认 watch（<code
+              >flush: 'pre'</code
+            >）在所属组件更新前进入主队列；组件 job 随后 render、patch DOM。DOM
+            提交后，模板 ref、updated 与 <code>flush: 'post'</code> watcher
+            才进入 post-flush 阶段。
+          </p>
+          <div class="sequence">
+            <div class="sequence-item">
+              <strong>默认 watch：主队列 PRE</strong><br />与组件共享
+              uid，排在该组件 render job 前，因此读到的是更新前 DOM。
+            </div>
+            <div class="sequence-item">
+              <strong>组件 job：render + patch</strong
+              ><br />这一段真正创建、移动或更新 DOM，并在执行中登记后置任务。
+            </div>
+            <div class="sequence-item">
+              <strong>post-flush：ref / updated / post watch</strong
+              ><br />非空字符串或 Ref 型模板 ref 使用
+              <code>id = -1</code>，会先于普通 post callback； updated 与 post
+              watcher 都在此阶段，不应依赖二者的笼统固定先后。
+            </div>
+            <div class="sequence-item">
+              <strong>nextTick：flush Promise 之后</strong><br />
+              <code>flushJobs</code> 连同 post callbacks
+              与刷新中新增任务全部收敛后，
+              <code>await nextTick()</code> 才恢复。
+            </div>
+          </div>
+          <p>
+            上面的“模板 ref”特指常见的字符串或 Ref 型非空赋值；函数 ref 会在
+            patch 调用 <code>setRef</code> 时同步执行，卸载时的 null
+            清理也同步完成。
+          </p>
+          <pre><code>tasks.value.push(newTask)
+
+await nextTick()
+// 组件 DOM、模板 ref、updated 与本轮 post watcher 均已处理
+// 但不代表浏览器已经完成绘制，也不等待业务 Promise</code></pre>
+          <p>
+            到这里，一次普通更新结束。以后每次状态变化都会重复“通知 → 排队 →
+            描述 → 比较 → 提交 → 收尾”的循环。
+          </p>
+        </section>
+
+        <section class="article-section prose" id="variations">
+          <h2>四种特殊情况，只是改变了旅程中的某一站</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>场景</th>
+                  <th>普通流程哪里不同</th>
+                  <th>用户看到什么</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>首次打开页面</strong></td>
+                  <td>没有旧页面描述，无需比较，直接创建整棵页面</td>
+                  <td>应用第一次出现</td>
+                </tr>
+                <tr>
+                  <td><strong>Suspense 异步组件</strong></td>
+                  <td>新内容先在隐藏位置准备，完成后再整体切换</td>
+                  <td>先看骨架屏，随后看到真实内容</td>
+                </tr>
+                <tr>
+                  <td><strong>Teleport 弹窗</strong></td>
+                  <td>组件关系不变，但 DOM 被提交到 body 等目标容器</td>
+                  <td>弹窗不受父容器 overflow 影响</td>
+                </tr>
+                <tr>
+                  <td><strong>SSR 水合</strong></td>
+                  <td>
+                    浏览器已有服务端 HTML，首次工作从“创建”变成“认领并接上交互”
+                  </td>
+                  <td>内容先显示，稍后可点击</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <div class="level-divider">进入源码映射层 · 以下内容可选读</div>
+
+        <section class="article-section prose" id="source-map">
+          <h2>把六站映射到源码文件</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>旅程</th>
+                  <th>核心入口</th>
+                  <th>关键交接</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>数据变化</strong></td>
+                  <td>
+                    <a href="../../../vue/packages/reactivity/src/dep.ts">dep.ts</a>
+                  </td>
+                  <td>trigger → component render effect scheduler</td>
+                </tr>
+                <tr>
+                  <td><strong>安排更新</strong></td>
+                  <td>
+                    <a href="../../../vue/packages/runtime-core/src/scheduler.ts"
+                      >scheduler.ts</a
+                    >
+                  </td>
+                  <td>queueJob → flushJobs</td>
+                </tr>
+                <tr>
+                  <td><strong>生成描述</strong></td>
+                  <td>
+                    <a
+                      href="../../../vue/packages/runtime-core/src/componentRenderUtils.ts"
+                      >componentRenderUtils.ts</a
+                    >
+                  </td>
+                  <td>renderComponentRoot → nextTree</td>
+                </tr>
+                <tr>
+                  <td><strong>比较变化</strong></td>
+                  <td>
+                    <a href="../../../vue/packages/runtime-core/src/renderer.ts"
+                      >renderer.ts</a
+                    >
+                  </td>
+                  <td>patch → patchChildren → patchKeyedChildren</td>
+                </tr>
+                <tr>
+                  <td><strong>修改浏览器</strong></td>
+                  <td>
+                    <a href="../../../vue/packages/runtime-dom/src/patchProp.ts"
+                      >patchProp.ts</a
+                    >
+                    +
+                    <a href="../../../vue/packages/runtime-dom/src/nodeOps.ts"
+                      >nodeOps.ts</a
+                    >
+                  </td>
+                  <td>nodeOps + patchProp</td>
+                </tr>
+                <tr>
+                  <td><strong>执行收尾</strong></td>
+                  <td>
+                    <a href="../../../vue/packages/runtime-core/src/scheduler.ts"
+                      >scheduler.ts</a
+                    >
+                    +
+                    <a
+                      href="../../../vue/packages/runtime-core/src/rendererTemplateRef.ts"
+                      >rendererTemplateRef.ts</a
+                    >
+                  </td>
+                  <td>flushPostFlushCbs</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <pre><code>reactive trigger
+  → queueJob(instance.job)
+  → flushJobs()
+  → componentUpdateFn()
+  → renderComponentRoot(instance)
+  → patch(prevTree, nextTree)
+  → patchKeyedChildren(...)
+  → hostInsert / hostPatchProp
+  → flushPostFlushCbs()</code></pre>
+          <div class="plain-section">
+            <span class="scene-label"
+              >固定版本源码卡 · flushJobs（v3.5.41）</span
+            >
+            <pre><code>// scheduler.ts:221–273，保留决定时序的骨架
+try {
+  for (; flushIndex &lt; queue.length; flushIndex++) runMainJob()
+} finally {
+  clearRemainingQueuedFlags()
+  queue.length = 0
+  flushPostFlushCbs(seen)
+  currentFlushPromise = null
+  if (queue.length || pendingPostFlushCbs.length) flushJobs(seen)
+}</code></pre>
+            <p>
+              <code>nextTick</code> 绑定的是
+              <code>currentFlushPromise</code>；Promise 只有在上面整个
+              <code>flushJobs</code> 返回后才解决。因此 post 回调不是与 nextTick
+              并列执行，而是 nextTick 的前置阶段。模板 ref 的
+              <code>id = -1</code> 则解释了为何 post watcher 能读到已更新 ref。
+            </p>
+            <div class="source-links">
+              <a
+                class="source-link"
+                href="../../../vue/packages/runtime-core/__tests__/scheduler.spec.ts"
+                >本地：scheduler 测试</a
+              >
+              <a
+                class="source-link"
+                href="../../../vue/packages/runtime-core/__tests__/apiWatch.spec.ts"
+                >本地：watch/ref 时序测试</a
+              >
+              <a
+                class="source-link"
+                href="https://github.com/vuejs/core/blob/v3.5.41/packages/runtime-core/src/scheduler.ts#L56-L67"
+                >v3.5.41：nextTick</a
+              >
+              <a
+                class="source-link"
+                href="https://github.com/vuejs/core/blob/v3.5.41/packages/runtime-core/src/scheduler.ts#L178-L275"
+                >v3.5.41：post queue / flushJobs</a
+              >
+              <a
+                class="source-link"
+                href="https://github.com/vuejs/core/blob/v3.5.41/packages/runtime-core/src/rendererTemplateRef.ts#L188-L201"
+                >v3.5.41：template ref job</a
+              >
+            </div>
+          </div>
+        </section>
+
+        <section class="article-section prose" id="debug-map">
+          <h2>出现问题时，先判断旅程卡在哪一站</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>现象</th>
+                  <th>先检查</th>
+                  <th>源码入口</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>数据变了，组件完全不更新</strong></td>
+                  <td>组件有没有真正读取该响应式值</td>
+                  <td>trigger / effect scheduler</td>
+                </tr>
+                <tr>
+                  <td><strong>组件更新次数过多</strong></td>
+                  <td>任务是否去重、是否产生递归修改</td>
+                  <td>queueJob / job.flags</td>
+                </tr>
+                <tr>
+                  <td><strong>列表输入状态串位</strong></td>
+                  <td>key 是否代表稳定业务身份</td>
+                  <td>isSameVNodeType / patchKeyedChildren</td>
+                </tr>
+                <tr>
+                  <td><strong>页面正确但事件仍是旧逻辑</strong></td>
+                  <td>invoker.value 是否更新</td>
+                  <td>patchEvent</td>
+                </tr>
+                <tr>
+                  <td><strong>nextTick 后仍不是预期</strong></td>
+                  <td>等待的是 Vue 更新还是业务 Promise</td>
+                  <td>currentFlushPromise</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="article-section prose" id="takeaway">
+          <h2>现在你应该能讲出的完整答案</h2>
+          <div class="quote">
+            数据变化时，Vue
+            根据依赖关系找到需要更新的组件；调度器把重复工作合并；组件用最新状态生成新的
+            VNode 描述；Renderer 比较新旧描述并用 key 维护身份；runtime-dom
+            只执行必要的浏览器操作；DOM 提交后处理 ref、生命周期与 post
+            watcher，整轮 flush 结束后 nextTick 再继续。
+          </div>
+          <p>
+            不需要记住函数名，只要能顺着这六站讲清控制权怎样传递，就已经建立了完整
+            Runtime 心智模型。
+          </p>
+        </section>
+
+        <nav class="page-nav" aria-label="章节翻页">
+          <a href="runtime-dom.html"><span>上一章</span>← DOM 平台层</a>
+          <a href="evolution.html"><span>下一章</span>迭代与设计演进 →</a>
+        </nav>
+      </main>
+
+      <aside class="page-toc" aria-label="本页目录">
+        <div class="toc-title">本页目录</div>
+        <a href="#scene">故事场景</a>
+        <a href="#roles">六个角色</a>
+        <a href="#play">交互演示</a>
+        <a href="#stage-one">找到组件</a>
+        <a href="#stage-two">合并更新</a>
+        <a href="#stage-three">生成描述</a>
+        <a href="#stage-four">比较身份</a>
+        <a href="#stage-five">修改 DOM</a>
+        <a href="#stage-six">完成收尾</a>
+        <a href="#variations">特殊流程</a>
+        <a href="#source-map">源码地图</a>
+        <a href="#takeaway">完整答案</a>
+      </aside>
+    </div>
+    <footer data-site-footer></footer>
+    <script src="assets/app.js" defer></script>
+  </body>
+</html>

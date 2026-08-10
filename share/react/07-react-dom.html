@@ -1,0 +1,99 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="description" content="packages/react-dom 19.3.0 源码指南：createRoot、hydrateRoot、portal、flushSync、表单 API 和多环境服务端入口。" />
+<title>07 · react-dom：公开宿主入口</title><link rel="stylesheet" href="assets/guide.css?v=1" /></head><body>
+<header class="topbar"><div class="topbar-inner"><a class="brand" href="index.html">React 六包源码指南</a><nav class="pager" aria-label="页面导航">
+<a href="index.html">地图</a><a href="01-shared.html">shared</a><a href="02-scheduler.html">scheduler</a><a href="03-react.html">react</a>
+<a href="04-reconciler-render.html">render</a><a href="05-reconciler-commit.html">commit</a><a href="06-dom-bindings.html">bindings</a>
+<a aria-current="page" href="07-react-dom.html">react-dom</a><a href="08-end-to-end.html">主线</a><a href="09-evidence.html">证据</a></nav></div></header>
+<div class="layout"><main><p class="eyebrow">07 · Public DOM adapter</p><h1>react-dom：选择环境、创建根、交出控制权</h1>
+<p class="lede"><code>packages/react-dom</code> 的公开职责很窄但边界很多：校验容器并创建/水合 root，提供 portal、flush、form/resource API，
+以及把 Node、Web Streams、Edge、Bun 的 I/O 接到服务端引擎。</p>
+<div class="meta"><span class="pill">ReactDOM 19.3.0</span><span class="pill">224 个 JS 目标</span><span class="pill">74 个入口/生产文件</span><span class="pill">150 个 tests/fixtures</span><span class="pill">2,581 个测试场景</span></div>
+
+<section id="exports"><h2>先从条件导出看边界</h2><div class="table-wrap"><table><thead><tr><th>用户入口</th><th>仓库路由</th><th>公开能力</th><th>依赖方向</th></tr></thead><tbody>
+<tr><td>react-dom/client</td><td><a href="../../react/packages/react-dom/src/client/ReactDOMClient.js">ReactDOMClient.js</a></td><td>createRoot、hydrateRoot、version</td><td>reconciler + DOM bindings</td></tr>
+<tr><td>react-dom</td><td><a href="../../react/packages/react-dom/src/shared/ReactDOM.js">shared/ReactDOM.js</a></td><td>portal、flushSync、preconnect/preload、form hooks</td><td>薄 facade 与 internals</td></tr>
+<tr><td>react-dom/server</td><td>browser/node/edge/bun 条件文件</td><td>renderToReadableStream / PipeableStream、resume</td><td>react-server Fizz + bindings server config</td></tr>
+<tr><td>react-dom/static</td><td>static browser/node/edge 条件文件</td><td>prerender、resumeAndPrerender</td><td>react-server prerender + I/O adapter</td></tr>
+<tr><td>react-dom/test-utils</td><td><a href="../../react/packages/react-dom/src/test-utils/ReactTestUtils.js">ReactTestUtils.js</a></td><td>兼容 act 出口与弃用诊断</td><td>测试环境</td></tr>
+</tbody></table></div><p>根目录与 npm 下许多文件只负责条件路由或发布格式；它们仍是公开契约的一部分，不能因“代码短”就跳过注释。</p></section>
+
+<section id="create-root"><h2>createRoot：创建 FiberRoot，但不渲染首棵树</h2><ol class="state-list">
+<li><strong>校验。</strong>只接受 Element、Document、DocumentFragment，以及特性开关允许时的注释容器。</li>
+<li><strong>归一化。</strong>读取 strict mode、identifierPrefix、错误回调、transition callbacks 等 options。</li>
+<li><strong>建根。</strong><code>createContainer</code> 创建 ConcurrentRoot 的 FiberRoot 与 HostRoot Fiber。</li>
+<li><strong>关联。</strong><code>markContainerAsRoot</code> 在容器上缓存 HostRoot，供事件/DOM 查询反向定位。</li>
+<li><strong>监听。</strong>在实际事件容器调用 <code>listenToAllSupportedEvents</code>，一次安装委托监听器。</li>
+<li><strong>返回。</strong>公开 <code>ReactDOMRoot</code> 只保存 <code>_internalRoot</code>；首次工作等 <code>root.render</code>。</li></ol>
+<figure class="source"><figcaption><span>删节源码 · ReactDOMRoot.js · 建根边界</span><a href="../../react/packages/react-dom/src/client/ReactDOMRoot.js">打开文件</a></figcaption><pre><span class="kw">const</span> root = createContainer(container, ConcurrentRoot, <span class="cm">/* options */</span>);
+markContainerAsRoot(root.current, container);
+listenToAllSupportedEvents(rootContainerElement);
+<span class="kw">return new</span> ReactDOMRoot(root);</pre></figure></section>
+
+<section id="render"><h2>root.render 与 unmount 都只是 Root Update</h2><p><code>root.render(children)</code> 检查句柄未释放后调用 <code>updateContainer</code>。
+<code>root.unmount()</code> 则先把句柄置 null，提交 element=null 的 SyncLane 更新，flush 同步工作，再移除 container 的 root 标记。</p>
+<div class="callout"><p><strong>为什么 unmount 先清句柄：</strong>提交删除会运行用户 cleanup/lifecycle；其中若重入调用同一 root，必须立刻看到“已释放”，
+不能把正在销毁的根重新投入使用。</p></div></section>
+
+<section id="hydrate"><h2>hydrateRoot：创建时就携带初始子树</h2><p>普通 createRoot 把容器视作待管理边界；hydrateRoot 则把 <code>initialChildren</code> 传给 <code>createHydrationContainer</code>，
+初始 hydration Lane 在建根时已经入队。它还可接收 server formState、hydration callbacks，并暴露 <code>unstable_scheduleHydration</code> 提高指定目标的恢复优先级。</p>
+<div class="table-wrap"><table><thead><tr><th></th><th>createRoot</th><th>hydrateRoot</th></tr></thead><tbody>
+<tr><td>初始 DOM</td><td>由第一次 render 创建/替换受管内容</td><td>尝试认领现有 server DOM</td></tr><tr><td>初始 children</td><td>稍后传给 root.render</td><td>建根参数，立即安排 hydration</td></tr>
+<tr><td>事件</td><td>根监听后正常派发</td><td>根监听后可能被 hydration blocker 排队</td></tr><tr><td>失败</td><td>普通 render 错误恢复</td><td>边界不匹配可切 client render，并报告 recoverable error</td></tr>
+</tbody></table></div></section>
+
+<section id="portal"><h2>Portal：改变宿主父级，不改变 React 父级</h2><p><code>createPortal(children, container, key)</code> 校验目标后创建带 <code>REACT_PORTAL_TYPE</code> 的 portal 记录。
+reconciler 生成 HostPortal Fiber，commit 时把宿主 descendants 插入目标 container；context、错误边界和事件冒泡仍沿原 Fiber return 链。
+因此 Portal 不是第二个 root，也不会拥有独立 root.render/unmount 生命周期。</p></section>
+
+<section id="flush"><h2>flushSync：临时建立离散优先级边界</h2><p><code>flushSync(fn)</code> 保存 transition 与当前 update priority，把 priority 设为 DiscreteEventPriority，执行回调，最后恢复上下文并 flush sync work。
+若在 render/commit 生命周期内部调用，不能安全地同步重入，DEV 会警告。</p>
+<div class="callout warn"><p><strong>它不是“让所有异步变同步”：</strong>flushSync 只确保边界内及为满足一致性而连带的同步工作在返回前提交；
+Suspense、数据 promise、passive effect 与其他根可能带来额外 flush 或 fallback。</p></div></section>
+
+<section id="forms"><h2>form/resource API：公开 facade，实际 DOM 行为在 bindings</h2><div class="grid">
+<article class="card"><span class="number">FORM</span><h3>useFormStatus / useFormState / requestFormReset</h3><p>公开函数经 dispatcher 或 DOM internals 进入 action 状态与表单 reset；submit 提取、FormData、受控恢复由 event/client bindings 执行。</p></article>
+<article class="card"><span class="number">RESOURCE</span><h3>preconnect / prefetchDNS / preload / preinit</h3><p>公开 API 校验参数后调用当前 DOM dispatcher；服务端收集资源，客户端创建/复用 resource 节点，避免 React 包依赖浏览器。</p></article></div></section>
+
+<section id="server"><h2>服务端入口：环境适配器围住范围外 Fizz</h2><div class="chain" aria-label="ReactDOM 服务端边界">
+<div class="node">公开 server API<small>Node / Web / Edge / Bun</small></div><span class="arrow">→</span><div class="node">ReactDOM adapter<small>options + destination</small></div>
+<span class="arrow">→</span><div class="node">react-server Fizz<small>request / task（范围外）</small></div><span class="arrow">→</span><div class="node">bindings config<small>HTML / instruction</small></div>
+<span class="arrow">→</span><div class="node">stream destination<small>backpressure / abort</small></div></div>
+<p>Node 的 <code>renderToPipeableStream</code> 创建 request 后启动工作；<code>pipe</code> 只允许绑定一次 Writable，drain 恢复流动，error/提前 close 中止 request。
+Browser/Edge 用 ReadableStream controller；Bun 有独立 destination 适配。static 入口返回 prelude 与 postponed state，resume 路径重新构造 request。</p>
+<figure class="source"><figcaption><span>删节源码 · ReactDOMFizzServerNode.js · PipeableStream 所有权</span><a href="../../react/packages/react-dom/src/server/ReactDOMFizzServerNode.js">打开文件</a></figcaption><pre><span class="kw">const</span> request = createRequestImpl(children, options);
+startWork(request);
+<span class="kw">return</span> {
+  pipe(destination) {
+    startFlowing(request, destination);
+    destination.on(<span class="str">'drain'</span>, createDrainHandler(destination, request));
+    destination.on(<span class="str">'error'</span>, createCancelHandler(request, <span class="str">'destination errored'</span>));
+  },
+  abort(reason) { abort(request, reason); },
+};</pre></figure></section>
+
+<section id="legacy"><h2>Legacy 与现代入口并存，但语义不要混写</h2><p><code>render/hydrate/unmountComponentAtNode/findDOMNode</code> 等 legacy API 由特性开关和构建 fork 管理。
+现代 client root 使用 ConcurrentRoot 与显式 root 句柄；legacy root 保留同步批处理、callback 和容器复用兼容。阅读测试时要先确认入口与 feature flags，
+否则会把 legacy 时序误套给 createRoot。</p></section>
+
+<section id="evidence"><h2>测试与 fixture 证据地图</h2><div class="table-wrap"><table><thead><tr><th>主题</th><th>代表证据</th><th>机制</th></tr></thead><tbody>
+<tr><td>createRoot/hydrateRoot</td><td><a href="../../react/packages/react-dom/src/__tests__/ReactDOMRoot-test.js">ReactDOMRoot-test.js</a></td><td>句柄、容器、错误与卸载</td></tr>
+<tr><td>事件与表单</td><td><a href="../../react/packages/react-dom/src/events/__tests__/DOMPluginEventSystem-test.internal.js">DOMPluginEventSystem-test.internal.js</a></td><td>root/portal、capture/bubble 与 batch</td></tr>
+<tr><td>hydration</td><td><a href="../../react/packages/react-dom/src/__tests__/ReactDOMServerPartialHydration-test.internal.js">ReactDOMServerPartialHydration-test.internal.js</a></td><td>阻塞、重放、恢复与 mismatch</td></tr>
+<tr><td>Fizz Node</td><td><a href="../../react/packages/react-dom/src/__tests__/ReactDOMFizzServer-test.js">ReactDOMFizzServer-test.js</a></td><td>stream、Suspense、abort、错误</td></tr>
+<tr><td>资源 Float</td><td><a href="../../react/packages/react-dom/src/__tests__/ReactDOMFloat-test.js">ReactDOMFloat-test.js</a></td><td>preload/preinit、去重与顺序</td></tr>
+</tbody></table></div><p>150 个 tests/fixtures 文件中识别的 2,581 个测试场景均有中文邻近说明；每个文件至少一个代表场景补了 Given–When–Then 与对应源码入口。</p></section>
+
+<section id="deep"><h2>继续深挖：公开入口怎样走完整源码链</h2><div class="grid">
+<article class="card"><span class="number">REAL COUNTER</span><h3><a href="16-end-to-end-source.html">16 · 真实源码主线</a></h3><p>仓库测试贯穿 createRoot、root.render、click、setState、render、commit、DOM、passive effect 与 unmount。</p></article>
+<article class="card"><span class="number">BLOCKED CLICK</span><h3><a href="15-events-hydration.html">15 · 事件与 hydration</a></h3><p>hydrateRoot 的 initial children 与根 listener 如何让被阻塞事件保持优先级和因果顺序。</p></article>
+</div></section>
+
+<section id="questions"><h2>检查理解</h2><ul class="qa"><li>createRoot 为什么不把初始 children 作为参数，而 hydrateRoot 必须带？</li>
+<li>Portal 改了 DOM parent 后，Context 与合成事件为何仍沿原组件树？</li><li>flushSync 为什么不能在 lifecycle 内可靠重入？</li>
+<li>ReactDOM server adapter、Fizz engine、DOM server config 分别拥有哪一段状态？</li></ul></section>
+<div class="next-page"><a href="06-dom-bindings.html">← 上一页：DOM bindings</a><a href="08-end-to-end.html">下一页：端到端推演 →</a></div>
+<footer><p>六个包的局部职责已齐；下一页用一次 click 更新与一次 hydration 事件把控制权完整串起来。</p></footer>
+</main><aside class="toc" aria-label="本页目录"><strong>react-dom</strong><a href="#exports">条件入口</a><a href="#create-root">createRoot</a><a href="#render">render / unmount</a>
+<a href="#hydrate">hydrateRoot</a><a href="#portal">Portal</a><a href="#flush">flushSync</a><a href="#forms">Form / Resource</a><a href="#server">服务端适配</a>
+<a href="#legacy">Legacy 边界</a><a href="#evidence">测试证据</a><a href="#deep">v2 深挖</a></aside></div></body></html>

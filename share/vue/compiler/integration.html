@@ -1,0 +1,971 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="auto">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Vue Compiler 端到端串联：一份 SFC 如何经过 script、template、style 与 SSR 编译并组装"
+    />
+    <title>端到端串联 · Vue Compiler 指南</title>
+    <link rel="stylesheet" href="assets/styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#content">跳到正文</a>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <a class="brand" href="index.html"
+          ><span class="brand-mark">VC</span><span>Vue Compiler Guide</span></a
+        >
+        <nav class="global-nav" aria-label="全站导航">
+          <a href="index.html">总览</a><a href="core.html">compiler-core</a
+          ><a href="dom.html">compiler-dom</a><a href="sfc.html">compiler-sfc</a
+          ><a href="ssr.html">compiler-ssr</a
+          ><a href="integration.html" aria-current="page">端到端串联</a
+          ><a href="evolution.html">演进与设计</a
+          ><a href="lab.html">实验与术语</a>
+        </nav>
+        <button
+          class="menu-button"
+          data-menu-toggle
+          type="button"
+          aria-expanded="false"
+        >
+          目录</button
+        ><button class="theme-button" data-theme-toggle type="button">
+          自动
+        </button>
+      </div>
+    </header>
+
+    <div class="page-shell">
+      <aside class="rail" aria-label="本页目录">
+        <p class="rail-title">端到端串联</p>
+        <nav>
+          <a href="#content">案例目标</a><a href="#source">示例 SFC</a
+          ><a href="#parse">阶段一：切分</a><a href="#script">阶段二：脚本</a
+          ><a href="#template">阶段三：模板</a><a href="#style">阶段四：样式</a
+          ><a href="#assemble">阶段五：组装</a><a href="#ssr">SSR 分支</a
+          ><a href="#hmr">增量编译</a><a href="#trace">问题追踪法</a
+          ><a href="#cases">三个缩小案例</a>
+        </nav>
+        <p class="rail-note">本页目标<br />把四个模块<br />放回同一条链</p>
+      </aside>
+
+      <main id="content">
+        <div class="hero compact">
+          <p class="eyebrow">End-to-end · From .vue to Runtime Contracts</p>
+          <h1>把四个模块<br />重新串起来</h1>
+          <p class="lead">
+            前四章分别解释模块内部；这一章用一份完整 SFC 跟踪
+            descriptor、binding metadata、Template AST、PatchFlags、CSS
+            vars、source map 与 SSR 输出如何在模块间传递。
+          </p>
+          <div class="hero-meta">
+            <span>案例：props + model + list + component + scoped CSS</span
+            ><span>客户端与 SSR 双目标</span>
+          </div>
+        </div>
+
+        <div class="reading-contract">
+          <strong>这一章负责“接线”</strong>
+          <p>
+            每个模块章已经解释各自机制；这里再直接贴出四个入口的真实交接代码，
+            然后用同一份 SFC 说明数据怎样从 descriptor 流到
+            script/template/style，最后分叉成客户端与 SSR 协议。
+          </p>
+        </div>
+
+        <figure class="source-block">
+          <figcaption class="source-caption">
+            <span
+              ><strong>真实调用链 · 四个入口的聚焦摘录</strong
+              ><code
+                >compiler-sfc → compiler-dom / compiler-ssr →
+                compiler-core</code
+              ></span
+            >
+            <span class="source-version">Vue 3.5.41</span>
+          </figcaption>
+          <pre><code>// compiler-sfc/src/parse.ts：先把完整 .vue 变成 descriptor。
+const ast = compiler.parse(source, {
+  parseMode: 'sfc',
+  prefixIdentifiers: true,
+  ...templateParseOptions,
+})
+
+// compiler-sfc/src/compileScript.ts：脚本分支产出 bindingMetadata。
+if (ctx.propsDestructureDecl) {
+  transformDestructuredProps(ctx, vueImportAliases)
+}
+for (const key in setupBindings) {
+  ctx.bindingMetadata[key] = setupBindings[key]
+}
+
+// compiler-sfc/src/compileTemplate.ts：模板目标只在这里分叉。
+const defaultCompiler = ssr ? CompilerSSR : CompilerDOM
+compiler = compiler || defaultCompiler
+let { code, ast, preamble, map } = compiler.compile(inAST || source, {
+  mode: 'module',
+  prefixIdentifiers: true,
+  hoistStatic: true,
+  cacheHandlers: true,
+  ssrCssVars:
+    ssr &amp;&amp; ssrCssVars &amp;&amp; ssrCssVars.length
+      ? genCssVarsFromList(ssrCssVars, shortId, isProd, true)
+      : '',
+  scopeId: scoped ? longId : undefined,
+  slotted,
+  sourceMap: true,
+  ...compilerOptions,
+  hmr: !isProd,
+  nodeTransforms: nodeTransforms.concat(compilerOptions.nodeTransforms || []),
+  filename,
+  onError: e =&gt; errors.push(e),
+  onWarn: w =&gt; warnings.push(w),
+})
+
+// compiler-dom/src/index.ts：客户端在 core 管线上追加 DOM 规则。
+return baseCompile(
+  src,
+  extend({}, parserOptions, options, {
+    nodeTransforms: [
+      ignoreSideEffectTags,
+      ...DOMNodeTransforms,
+      ...(options.nodeTransforms || []),
+    ],
+    directiveTransforms: extend(
+      {},
+      DOMDirectiveTransforms,
+      options.directiveTransforms || {},
+    ),
+    transformHoist: __BROWSER__ ? null : stringifyStatic,
+  }),
+)
+
+// compiler-ssr/src/index.ts：服务端先做通用 transform，再做第二遍输出转换。
+const ast = typeof source === 'string' ? baseParse(source, options) : source
+rawOptionsMap.set(ast, options)
+transform(ast, {
+  ...options,
+  hoistStatic: false,
+  nodeTransforms: [
+    transformVBindShorthand,
+    ssrTransformIf,
+    ssrTransformFor,
+    trackVForSlotScopes,
+    transformExpression,
+    // ……省略其余 SSR 节点转换；完整列表见 SSR 模块页。
+    ...(options.nodeTransforms || []),
+  ],
+  directiveTransforms: {
+    bind: transformBind,
+    on: transformOn,
+    model: ssrTransformModel,
+    show: ssrTransformShow,
+    // ……省略 cloak / once / memo 及用户覆盖项。
+  },
+})
+ssrCodegenTransform(ast, options)
+return generate(ast, options)</code></pre>
+        </figure>
+        <p class="source-context">
+          可执行语句来自四个当前文件；“……”只表示从原数组或对象中裁掉的连续条目。
+          这里的目的不是伪造一个能独立运行的新函数，而是把模块之间真正传递的数据并排展示；
+          各入口的完整上下文已在对应模块页展开。
+        </p>
+        <div class="code-walkthrough">
+          <article class="code-note">
+            <h3>descriptor 是所有分支的共同输入</h3>
+            <p>
+              script/template/style 不是各自重新从文本里猜 block；它们读同一个
+              descriptor 的 content、loc、AST、cssVars 与 scoped
+              标志，因此可以共享 scope id 和 source map 坐标。
+            </p>
+          </article>
+          <article class="code-note">
+            <h3>script 先把“名字的身份”传给 template</h3>
+            <p>
+              模板里的 <code>selected</code> 只是 Identifier，本身看不出它是
+              ref。compileScript 产出 bindingMetadata，compileTemplate
+              再把它放入 compilerOptions，core 才能选择正确读写代码。
+            </p>
+          </article>
+          <article class="code-note">
+            <h3>DOM 和 SSR 共享语言前半段</h3>
+            <p>
+              两者都使用 DOM
+              parserOptions、结构指令与表达式作用域。差异从“如何表示输出”开始：
+              客户端建 VNodeCall/patchFlag，SSR 建
+              _push/IfStatement/TemplateLiteral。
+            </p>
+          </article>
+          <article class="code-note">
+            <h3>构建工具是调度者，不是语义实现者</h3>
+            <p>
+              Vite/vue-loader 决定何时调
+              parse/compileScript/compileTemplate/compileStyle，
+              并组装返回片段；宏、作用域、patch 协议和 hydration 边界仍由
+              compiler-* 保持一致。
+            </p>
+          </article>
+        </div>
+
+        <section id="source">
+          <div class="section-head">
+            <div>
+              <span class="section-no">01 / Source</span>
+              <h2>示例组件</h2>
+            </div>
+            <p>它故意组合多个特性，但每个特性都能映射到明确的编译阶段。</p>
+          </div>
+          <pre><code>&lt;script setup lang="ts"&gt;
+import { computed } from 'vue'
+import UserCard from './UserCard.vue'
+
+const { users, accent = '#42b883' } = defineProps&lt;{
+  users: Array&lt;{ id: number; name: string; active: boolean }&gt;
+  accent?: string
+}&gt;()
+const selected = defineModel&lt;number | null&gt;('selected')
+const activeUsers = computed(() =&gt; users.filter(user =&gt; user.active))
+&lt;/script&gt;
+
+&lt;template&gt;
+  &lt;section class="people"&gt;
+    &lt;UserCard
+      v-for="user in activeUsers"
+      :key="user.id"
+      :user="user"
+      :class="{ selected: user.id === selected }"
+      @click="selected = user.id"
+    /&gt;
+    &lt;p v-if="!activeUsers.length"&gt;暂无用户&lt;/p&gt;
+  &lt;/section&gt;
+&lt;/template&gt;
+
+&lt;style scoped&gt;
+.people { color: v-bind(accent); }
+.selected { font-weight: 700; }
+&lt;/style&gt;</code></pre>
+          <div class="callout">
+            <strong>阅读约定：</strong>后面的生成代码为突出协议而适度简化；实际
+            helper 别名、props 细节和开发标记以当前源码快照为准。
+          </div>
+        </section>
+
+        <section id="parse">
+          <div class="section-head">
+            <div>
+              <span class="section-no">02 / SFC Parse</span>
+              <h2>第一阶段：先切分，不编译</h2>
+            </div>
+            <p>
+              compiler-sfc.parse 使用 compiler-dom parser 的 SFC mode 建立
+              descriptor，并缓存 template AST。
+            </p>
+          </div>
+          <div class="diagram" aria-label="SFC 切分结果">
+            <p class="diagram-title">App.vue → SFCDescriptor</p>
+            <div class="branch">
+              <div class="flow-node primary">
+                <strong>SFCDescriptor</strong
+                ><small>filename / source / cssVars / slotted</small>
+              </div>
+              <div class="branch-lines">↗<br />→<br />↘</div>
+              <div class="branch-targets">
+                <div class="branch-target">
+                  <strong>scriptSetup</strong>
+                  <p>lang=ts，content + Babel 解析位置。</p>
+                </div>
+                <div class="branch-target">
+                  <strong>template</strong>
+                  <p>content + RootNode AST + block source map。</p>
+                </div>
+                <div class="branch-target">
+                  <strong>styles[0]</strong>
+                  <p>scoped=true；提取到 CSS var 表达式 accent。</p>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="grid-3">
+            <article class="card">
+              <h3>此时已知</h3>
+              <p>
+                有哪些 blocks、属性、源码位置、CSS vars、是否 slotted、template
+                AST。
+              </p>
+            </article>
+            <article class="card">
+              <h3>此时未知</h3>
+              <p>
+                props runtime 类型、setup bindings、PatchFlags、最终 CSS
+                选择器和 SSR 输出。
+              </p>
+            </article>
+            <article class="card">
+              <h3>错误策略</h3>
+              <p>
+                重复 block、非法 src/setup 等被收集到 errors；能恢复时
+                descriptor 仍返回。
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section id="script">
+          <div class="section-head">
+            <div>
+              <span class="section-no">03 / Script Branch</span>
+              <h2>第二阶段：宏、类型与绑定分类</h2>
+            </div>
+            <p>
+              compileScript 解析 TS，改写
+              defineProps/defineModel，并把结果反馈给模板编译。
+            </p>
+          </div>
+
+          <div class="steps">
+            <div class="step">
+              <h3>登记 imports</h3>
+              <p>
+                computed 识别为 Vue API；UserCard 是 setup const，并在 template
+                中作为组件使用。
+              </p>
+            </div>
+            <div class="step">
+              <h3>处理 defineProps</h3>
+              <p>
+                resolveTypeElements 展开对象类型；users 推导 Array 且
+                required，accent 推导 String 且 optional/default。
+              </p>
+            </div>
+            <div class="step">
+              <h3>处理 props 解构</h3>
+              <p>
+                后续 users/accent 读取改向 __props；accent 默认值进入 props
+                默认值生成逻辑。
+              </p>
+            </div>
+            <div class="step">
+              <h3>处理 defineModel</h3>
+              <p>
+                生成 selected prop、update:selected emit 和 useModel(__props,
+                'selected') 绑定。
+              </p>
+            </div>
+            <div class="step">
+              <h3>分析 activeUsers</h3>
+              <p>
+                computed 调用结果分类为 SETUP_REF；其闭包中的 users 改为
+                __props.users。
+              </p>
+            </div>
+            <div class="step">
+              <h3>生成 metadata</h3>
+              <p>
+                UserCard=SETUP_CONST，users/accent=PROPS，selected=SETUP_REF，activeUsers=SETUP_REF。
+              </p>
+            </div>
+          </div>
+
+          <div class="grid-2" style="margin-top: 1.3rem">
+            <article class="card green">
+              <h3>概念化 script 结果</h3>
+              <pre><code>const __default__ = {
+  props: {
+    users: { type: Array, required: true },
+    accent: { type: String, default: '#42b883' },
+    selected: { type: [Number, null] }
+  },
+  emits: ['update:selected']
+}
+
+setup(__props, { emit: __emit }) {
+  const selected = useModel(__props, 'selected')
+  const activeUsers = computed(
+    () =&gt; __props.users.filter(user =&gt; user.active)
+  )
+  // ...
+}</code></pre>
+            </article>
+            <article class="card blue">
+              <h3>传给模板的关键 metadata</h3>
+              <pre><code>{
+  UserCard: SETUP_CONST,
+  users: PROPS,
+  accent: PROPS,
+  selected: SETUP_REF,
+  activeUsers: SETUP_REF
+}</code></pre>
+              <p>
+                模板因此可直接访问 setup 参数，不必全部经 <code>_ctx</code>；ref
+                读写也能选择正确代码路径。
+              </p>
+            </article>
+          </div>
+          <div class="callout warn">
+            <strong>跨模块关键点：</strong>如果 script binding 分类错误，模板
+            AST 仍可能正确，但生成的读取/赋值代码会错。例如把 selected 当普通
+            const，就无法正确生成 model ref 写入。
+          </div>
+        </section>
+
+        <section id="template">
+          <div class="section-head">
+            <div>
+              <span class="section-no">04 / Template Branch</span>
+              <h2>第三阶段：从模板结构到客户端更新协议</h2>
+            </div>
+            <p>
+              compileTemplate 复用 descriptor AST，注入 asset transforms 与
+              binding metadata，再调用 compiler-dom/baseCompile。
+            </p>
+          </div>
+
+          <h3>Parse AST：描述源码结构</h3>
+          <div class="grid-2">
+            <article class="card">
+              <ul class="ast-tree">
+                <li>
+                  <span class="ast-type">Root</span>
+                  <ul>
+                    <li>
+                      <span class="ast-type">Element(section)</span>
+                      <ul>
+                        <li>
+                          <span class="ast-type">Element(UserCard)</span>
+                          <span class="ast-meta"
+                            >v-for / key / user / class / on</span
+                          >
+                        </li>
+                        <li>
+                          <span class="ast-type">Element(p)</span>
+                          <span class="ast-meta">v-if</span>
+                        </li>
+                      </ul>
+                    </li>
+                  </ul>
+                </li>
+              </ul>
+            </article>
+            <article class="card">
+              <h3>结构转换之后</h3>
+              <ul class="ast-tree">
+                <li>
+                  <span class="ast-type">Element(section)</span>
+                  <ul>
+                    <li>
+                      <span class="ast-type">ForNode</span>
+                      <ul>
+                        <li>
+                          <span class="ast-type">Component(UserCard)</span>
+                        </li>
+                      </ul>
+                    </li>
+                    <li>
+                      <span class="ast-type">IfNode</span>
+                      <ul>
+                        <li><span class="ast-type">IfBranch(p)</span></li>
+                      </ul>
+                    </li>
+                  </ul>
+                </li>
+              </ul>
+            </article>
+          </div>
+
+          <h3 style="margin-top: 1.5rem">转换顺序中的关键决策</h3>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>转换</th>
+                  <th>本例发生什么</th>
+                  <th>留下的协议</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>v-for</td>
+                  <td>activeUsers 读取为 setup ref；user 登记为局部变量</td>
+                  <td>renderList + keyed Fragment。</td>
+                </tr>
+                <tr>
+                  <td>transformExpression</td>
+                  <td>user 不加上下文前缀；selected 按 setup ref 读取</td>
+                  <td>正确的局部/绑定访问。</td>
+                </tr>
+                <tr>
+                  <td>transformElement</td>
+                  <td>UserCard 解析为 setup 组件；props/事件/class 汇总</td>
+                  <td>Component VNodeCall + CLASS/PROPS 信息。</td>
+                </tr>
+                <tr>
+                  <td>v-on</td>
+                  <td>selected 写入按 ref 赋值；handler 捕获循环 user</td>
+                  <td>不能错误提升到循环外。</td>
+                </tr>
+                <tr>
+                  <td>v-if</td>
+                  <td>建立空态分支并注入分支 key</td>
+                  <td>条件 block。</td>
+                </tr>
+                <tr>
+                  <td>cacheStatic</td>
+                  <td>
+                    section 的稳定 props 可提升为 _hoisted_1；section VNode
+                    与循环组件不提升
+                  </td>
+                  <td>props hoist、实例 cache 与运行时 patch 边界。</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="diagram" aria-label="客户端代码生成概念">
+            <p class="diagram-title">生成的客户端执行形态（概念化）</p>
+            <div class="flow">
+              <div class="flow-node">
+                <strong>resolve/直接组件</strong
+                ><small>UserCard 来自 setup</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node">
+                <strong>renderList</strong
+                ><small>遍历 unref(activeUsers)</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node primary">
+                <strong>VNode blocks</strong
+                ><small>key + dynamic class + click</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node">
+                <strong>PatchFlags</strong><small>runtime 精确更新</small>
+              </div>
+            </div>
+          </div>
+
+          <div class="source-result">
+            <strong>同一案例的 client render（3.5.41，省略 imports）</strong>
+            <pre><code>const _hoisted_1 = { class: "people" }
+const _hoisted_2 = { key: 0 }
+
+export function render(_ctx, _cache, $props, $setup, $data, $options) {
+  return (_openBlock(), _createElementBlock("section", _hoisted_1, [
+    (_openBlock(true), _createElementBlock(
+      _Fragment,
+      null,
+      _renderList($setup.activeUsers, user =&gt;
+        (_openBlock(), _createBlock($setup["UserCard"], {
+          key: user.id,
+          user,
+          class: _normalizeClass({ selected: user.id === $setup.selected }),
+          onClick: $event =&gt; ($setup.selected = user.id)
+        }, null, 8 /* PROPS */, ["user", "class", "onClick"]))
+      ),
+      128 /* KEYED_FRAGMENT */
+    )),
+    (!$setup.activeUsers.length)
+      ? (_openBlock(), _createElementBlock("p", _hoisted_2, "暂无用户"))
+      : _createCommentVNode("v-if", true)
+  ]))
+}</code></pre>
+          </div>
+          <p class="source-context">
+            这是用本页 template、binding metadata、<code
+              >scopeId=data-v-demo</code
+            >
+            直接编译后规范化的短产物；仅省略 helper imports。可见稳定 class/key
+            props 被提升，列表仍是 keyed Fragment，循环 handler
+            保留在循环闭包中。
+          </p>
+
+          <div class="callout">
+            <strong>为什么循环中的 click handler通常不能全局缓存：</strong
+            >它捕获 user。若错误缓存，后续迭代会复用第一个 user
+            的闭包。作用域追踪与 hasScopeRef 共同阻止这种优化。
+          </div>
+        </section>
+
+        <section id="style">
+          <div class="section-head">
+            <div>
+              <span class="section-no">05 / Style Branch</span>
+              <h2>第四阶段：scoped 与 CSS vars 会合</h2>
+            </div>
+            <p>
+              compileStyle 改写选择器与 v-bind；compileScript/Template
+              则负责把同一个 scopeId 和变量值带到运行时。
+            </p>
+          </div>
+          <div class="diagram" aria-label="样式编译与运行时注入">
+            <p class="diagram-title">同一个 id 串联 CSS 与 DOM</p>
+            <div class="flow">
+              <div class="flow-node amber">
+                <strong>CSS source</strong
+                ><small>.people / .selected / v-bind</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node">
+                <strong>PostCSS plugins</strong><small>cssVars + scoped</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node primary">
+                <strong>生成 CSS</strong
+                ><small>[data-v-id] + var(--id-accent)</small>
+              </div>
+              <div class="arrow">↔</div>
+              <div class="flow-node">
+                <strong>render/setup</strong><small>scopeId + useCssVars</small>
+              </div>
+            </div>
+          </div>
+          <div class="grid-2">
+            <article class="card amber">
+              <h3>概念化 CSS 输出</h3>
+              <pre><code>.people[data-v-abcd] {
+  color: var(--abcd-accent);
+}
+.selected[data-v-abcd] {
+  font-weight: 700;
+}</code></pre>
+            </article>
+            <article class="card green">
+              <h3>概念化变量注入</h3>
+              <pre><code>useCssVars(_ctx =&gt; ({
+  "abcd-accent": __props.accent
+}))</code></pre>
+              <p>
+                同一 shortId 保证 CSS custom property 名和运行时写入键一致。
+              </p>
+            </article>
+          </div>
+          <div class="callout warn">
+            <strong>scopeId 不是 CSS 编译器单方面决定：</strong
+            >样式选择器、客户端 VNode、SSR 元素、slot/slotted
+            内容必须使用同一传播规则，否则 CSS 看似生成正确却匹配不到实际 DOM。
+          </div>
+        </section>
+
+        <section id="assemble">
+          <div class="section-head">
+            <div>
+              <span class="section-no">06 / Assembly</span>
+              <h2>第五阶段：构建工具组装模块</h2>
+            </div>
+            <p>
+              compiler-sfc 返回编译片段，不直接创建最终应用
+              bundle。Vite/vue-loader 等调用各 API，并把结果组装成组件模块。
+            </p>
+          </div>
+          <div class="diagram" aria-label="SFC 最终模块组装">
+            <p class="diagram-title">构建工具的概念组装</p>
+            <div class="flow">
+              <div class="flow-node">
+                <strong>compiled script</strong
+                ><small>组件 options + setup</small>
+              </div>
+              <div class="arrow">+</div>
+              <div class="flow-node">
+                <strong>render</strong><small>客户端模板产物</small>
+              </div>
+              <div class="arrow">+</div>
+              <div class="flow-node">
+                <strong>scopeId / HMR</strong><small>构建期附加元数据</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node primary">
+                <strong>组件模块</strong><small>交给 bundler 打包</small>
+              </div>
+            </div>
+          </div>
+          <div class="grid-3">
+            <article class="card">
+              <h3>脚本提供</h3>
+              <p>默认组件对象、setup、props/emits、bindings 和依赖。</p>
+            </article>
+            <article class="card">
+              <h3>模板提供</h3>
+              <p>
+                render/ssrRender、helper imports、hoists、map 与 errors/tips。
+              </p>
+            </article>
+            <article class="card">
+              <h3>样式提供</h3>
+              <p>CSS、map、dependencies、CSS Modules 映射与错误。</p>
+            </article>
+          </div>
+          <div class="callout">
+            <strong>API 边界的价值：</strong>同一 compiler-sfc 可被不同 bundler
+            使用；预处理器加载、文件读取、缓存策略和 HMR
+            调度由上层提供，而语言语义保持在 compiler 包内。
+          </div>
+        </section>
+
+        <section id="ssr">
+          <div class="section-head">
+            <div>
+              <span class="section-no">07 / SSR Branch</span>
+              <h2>同一 descriptor，模板目标改变</h2>
+            </div>
+            <p>
+              compileScript 可按 SSR/inline 选项调整；compileTemplate 选择
+              compiler-ssr，CSS vars 也改走服务端 props/style 注入。
+            </p>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>维度</th>
+                  <th>客户端</th>
+                  <th>SSR</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>模板函数</td>
+                  <td>render(_ctx, _cache)</td>
+                  <td>ssrRender(_ctx, _push, _parent, _attrs)</td>
+                </tr>
+                <tr>
+                  <td>列表</td>
+                  <td>renderList + Fragment VNode block</td>
+                  <td>ssrRenderList + HTML/注释边界</td>
+                </tr>
+                <tr>
+                  <td>动态 class</td>
+                  <td>normalizeClass + CLASS patch flag</td>
+                  <td>ssrRenderClass 后直接写 class 属性</td>
+                </tr>
+                <tr>
+                  <td>点击事件</td>
+                  <td>生成 onClick handler</td>
+                  <td>
+                    原生 HTML 不序列化监听器；组件事件 prop 仍可传给子组件
+                  </td>
+                </tr>
+                <tr>
+                  <td>空态 v-if</td>
+                  <td>条件 VNode block</td>
+                  <td>if statement + 必要注释占位</td>
+                </tr>
+                <tr>
+                  <td>CSS vars</td>
+                  <td>useCssVars 写 DOM style</td>
+                  <td>_cssVars 合并到可透传根 props</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="source-result">
+            <strong>同一案例的 ssrRender（3.5.41，省略 imports）</strong>
+            <pre><code>export function ssrRender(
+  _ctx, _push, _parent, _attrs, $props, $setup, $data, $options
+) {
+  _push(`&lt;section${_ssrRenderAttrs(
+    _mergeProps({ class: "people" }, _attrs)
+  )} data-v-demo&gt;&lt;!--[--&gt;`)
+  _ssrRenderList($setup.activeUsers, user =&gt; {
+    _push(_ssrRenderComponent($setup["UserCard"], {
+      key: user.id,
+      user,
+      class: { selected: user.id === $setup.selected },
+      onClick: $event =&gt; ($setup.selected = user.id)
+    }, null, _parent))
+  })
+  _push(`&lt;!--]--&gt;`)
+  if (!$setup.activeUsers.length) {
+    _push(`&lt;p data-v-demo&gt;暂无用户&lt;/p&gt;`)
+  } else {
+    _push(`&lt;!----&gt;`)
+  }
+  _push(`&lt;/section&gt;`)
+}</code></pre>
+          </div>
+          <p class="source-context">
+            SSR 产物来自同一 template 与 binding metadata。它把父级
+            <code>_attrs</code> 合并到 section、为当前元素写入
+            scopeId，并用成对注释标记列表范围；无浏览器事件被写入
+            HTML，但组件调用仍接收 onClick prop。
+          </p>
+          <div class="callout warn">
+            <strong>同构不是两边代码相同：</strong
+            >真正要求是客户端预期的节点拓扑、属性与 scope 归属，和服务端实际
+            HTML 一致。两套产物可以完全不同，但协议结果必须一致。
+          </div>
+        </section>
+
+        <section id="hmr">
+          <div class="section-head">
+            <div>
+              <span class="section-no">08 / Incremental Build</span>
+              <h2>改一处源码，哪些分支需要重跑</h2>
+            </div>
+            <p>
+              SFCDescriptor、依赖与 import 使用分析帮助构建工具缩小失效范围。
+            </p>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>变化</th>
+                  <th>通常重编译</th>
+                  <th>可能升级为整模块重载的条件</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>仅 template</td>
+                  <td>compileTemplate</td>
+                  <td>
+                    TS setup import 从未使用变为模板使用，影响脚本返回/裁剪。
+                  </td>
+                </tr>
+                <tr>
+                  <td>仅 style</td>
+                  <td>compileStyle</td>
+                  <td>
+                    scoped/slotted/CSS vars 集合变化可能牵动 script/template
+                    元数据。
+                  </td>
+                </tr>
+                <tr>
+                  <td>script setup</td>
+                  <td>compileScript + 通常 template</td>
+                  <td>bindings、组件 imports、宏声明或类型依赖变化。</td>
+                </tr>
+                <tr>
+                  <td>外部类型文件</td>
+                  <td>依赖它的 compileScript</td>
+                  <td>runtime props/emits 推导改变。</td>
+                </tr>
+                <tr>
+                  <td>预处理器依赖</td>
+                  <td>对应 template/style 分支</td>
+                  <td>输出结构、source map 或 scoped 选择器变化。</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="trace">
+          <div class="section-head">
+            <div>
+              <span class="section-no">09 / Debugging</span>
+              <h2>端到端问题追踪法</h2>
+            </div>
+            <p>
+              先判断错误发生在哪一份中间协议，再进入对应模块；不要从最终 bundle
+              盲目搜索。
+            </p>
+          </div>
+          <ol class="invariant-list">
+            <li>
+              <b>1</b>
+              <div>
+                <strong>Descriptor 对吗？</strong>block、attrs、loc、template
+                AST 与 cssVars 是否正确。
+              </div>
+            </li>
+            <li>
+              <b>2</b>
+              <div>
+                <strong>Binding metadata 对吗？</strong
+                >宏是否识别，类型是否展开，ref/props/let 分类是否准确。
+              </div>
+            </li>
+            <li>
+              <b>3</b>
+              <div>
+                <strong>Template AST 对吗？</strong>parser
+                是否已经误解标签、指令或 namespace。
+              </div>
+            </li>
+            <li>
+              <b>4</b>
+              <div>
+                <strong>codegenNode 对吗？</strong
+                >结构转换、props、PatchFlags、helper 与 scope 是否正确。
+              </div>
+            </li>
+            <li>
+              <b>5</b>
+              <div>
+                <strong>平台产物对吗？</strong>DOM helper/SSR attr 与 runtime
+                消费者是否匹配。
+              </div>
+            </li>
+            <li>
+              <b>6</b>
+              <div>
+                <strong>映射与缓存对吗？</strong>是否复用了不兼容
+                AST/scope，location 是否叠加正确。
+              </div>
+            </li>
+          </ol>
+        </section>
+
+        <section id="cases">
+          <div class="section-head">
+            <div>
+              <span class="section-no">10 / Smaller Cases</span>
+              <h2>三个适合亲手跟踪的缩小案例</h2>
+            </div>
+            <p>复杂案例用于建立全局图；真正读源码时，应缩小到能手算的输入。</p>
+          </div>
+          <div class="grid-3">
+            <article class="card">
+              <h3>案例 A：动态文本</h3>
+              <pre><code>&lt;div :class="tone"&gt;{{ msg }}&lt;/div&gt;</code></pre>
+              <p>
+                追踪：Directive/Interpolation AST → expression prefix →
+                CLASS|TEXT → runtime patch。
+              </p>
+            </article>
+            <article class="card">
+              <h3>案例 B：循环作用域</h3>
+              <pre><code>&lt;li v-for="item in list"
+  @click="pick(item)"&gt;
+  {{ item.name }}
+&lt;/li&gt;</code></pre>
+              <p>
+                追踪：ForNode → item scope → handler 缓存限制 → keyed/unkeyed
+                Fragment。
+              </p>
+            </article>
+            <article class="card">
+              <h3>案例 C：宏与样式</h3>
+              <pre><code>const { color = 'red' }
+  = defineProps&lt;Props&gt;()
+
+.box { color: v-bind(color) }</code></pre>
+              <p>
+                追踪：类型/default → props 解构 → binding → CSS var name →
+                useCssVars/SSR 注入。
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <div class="page-links">
+          <a class="page-link" href="ssr.html"
+            ><small>上一章</small><strong>← compiler-ssr</strong></a
+          ><a class="page-link" href="evolution.html"
+            ><small>下一章</small><strong>演进与设计 →</strong></a
+          >
+        </div>
+        <footer class="site-footer">
+          <span>Vue Compiler 源码专题指南</span
+          ><span>End-to-end · SFC to Client & SSR</span>
+        </footer>
+      </main>
+    </div>
+    <script src="assets/app.js"></script>
+  </body>
+</html>

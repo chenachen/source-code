@@ -1,0 +1,598 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="React DOM 19.3 事件与 hydration 深挖：根委托、优先级、target Fiber、插件、capture/bubble、批处理、受控恢复与阻塞事件重放。" />
+  <title>15 · 事件与 hydration：从原生输入到可重放因果链</title>
+  <link rel="stylesheet" href="assets/guide.css?v=1" />
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+  <a class="brand" href="index.html">React 六包源码指南</a>
+  <nav class="pager" aria-label="页面导航">
+    <a href="index.html">地图</a><a href="05-reconciler-commit.html">commit 总览</a>
+    <a href="06-dom-bindings.html">DOM bindings</a><a href="14-commit-effects.html">commit 深挖</a>
+    <a aria-current="page" href="15-events-hydration.html">事件与 hydration</a><a href="09-evidence.html">证据</a>
+  </nav>
+</div></header>
+
+<div class="layout"><main>
+<p class="eyebrow">15 · Deep dive / events and hydration</p>
+<h1>DOM 事件怎样找到 Fiber，又怎样等到它可交互</h1>
+<p class="lede">React 不给每个 JSX handler 都安装一个 DOM listener。根容器接住原生事件，按事件类别设置更新优先级，
+从 DOM 缓存反查 target Fiber，经插件生成 SyntheticEvent 与 listener 队列，在批次内按 capture/bubble 派发，最后恢复受控表单。
+若 target 仍在 dehydrated 边界内，同一入口改走同步 hydration 或连续事件排队/重放。</p>
+<div class="meta"><span class="pill">react-dom-bindings 19.3.0</span><span class="pill">根事件委托</span>
+<span class="pill">Fiber 路径传播</span><span class="pill">controlled restore</span><span class="pill">selective hydration</span>
+<span class="pill">真实浏览器事件测试</span></div>
+
+<section id="map"><h2>一条正常链，两条 hydration 分支</h2>
+<div class="chain" aria-label="普通事件主链">
+  <div class="node">root listener<small>原生 capture / bubble</small></div><span class="arrow">→</span>
+  <div class="node">priority wrapper<small>discrete / continuous / default</small></div><span class="arrow">→</span>
+  <div class="node">target Fiber<small>DOM → closest mounted</small></div><span class="arrow">→</span>
+  <div class="node">plugin extract<small>dispatchQueue</small></div><span class="arrow">→</span>
+  <div class="node">capture / bubble<small>SyntheticEvent</small></div><span class="arrow">→</span>
+  <div class="node">batch finally<small>flush + restore</small></div>
+</div>
+<div class="grid three">
+  <article class="card"><span class="number">READY</span><h3>target 已 mounted</h3><p>直接进入插件事件系统；handler 更新共享当前事件优先级并在事件批次边界收口。</p></article>
+  <article class="card"><span class="number">DISCRETE BLOCKED</span><h3>click 等离散事件</h3><p>capture listener 循环尝试同步 hydration；成功就立即派发同一个原生事件，仍阻塞则停止传播。</p></article>
+  <article class="card"><span class="number">CONTINUOUS BLOCKED</span><h3>mouseover 等连续事件</h3><p>按事件种类/指针 ID 合并保存，提升 hydration 优先级；边界提交后克隆原生事件重放。</p></article>
+</div>
+<div class="callout warn"><p><strong>React 19.3 当前实现没有“所有阻塞事件统一 FIFO 重放”。</strong>离散事件优先同步 hydration；
+连续事件只有 focus/drag/mouse/pointer 的指定进入类事件进入 replay 槽，后来的同类事件可覆盖旧槽，退出类事件会清槽。form action 与可选 hydration change event 另有专用队列。</p></div>
+<p><strong>两个“连续”不要混为一谈：</strong><code>ContinuousEventPriority</code> 是 handler 更新优先级；
+<code>queueIfContinuousEvent</code> 是可合并 replay 类别。比如 <code>focusin</code> 的更新优先级属于 Discrete，阻塞时仍使用 focus replay 单槽。</p>
+</section>
+
+<section id="install"><h2>第 1 步 · 根委托：一次安装覆盖整棵动态子树</h2>
+<p><code>createRoot/hydrateRoot</code> 建根时最终调用 <code>listenToAllSupportedEvents</code>。随机 marker 写在容器上防止重复安装；
+大部分事件各装 capture 与 bubble listener，<code>selectionchange</code> 特殊绑定 document，不冒泡事件在具体节点走 non-delegated 路径。</p>
+<figure class="source"><figcaption><span>删节源码 · DOMPluginEventSystem.js / listenToAllSupportedEvents（仅省略解释注释与 Flow 指令）</span>
+<a href="../../react/packages/react-dom-bindings/src/events/DOMPluginEventSystem.js">打开文件</a></figcaption><pre>export function listenToAllSupportedEvents(rootContainerElement: EventTarget) {
+  if (!(rootContainerElement as any)[listeningMarker]) {
+    (rootContainerElement as any)[listeningMarker] = true;
+    allNativeEvents.forEach(domEventName =&gt; {
+      if (domEventName !== 'selectionchange') {
+        if (!nonDelegatedEvents.has(domEventName)) {
+          listenToNativeEvent(domEventName, false, rootContainerElement);
+        }
+        listenToNativeEvent(domEventName, true, rootContainerElement);
+      }
+    });
+    const ownerDocument =
+      (rootContainerElement as any).nodeType === DOCUMENT_NODE
+        ? rootContainerElement
+        : (rootContainerElement as any).ownerDocument;
+    if (ownerDocument !== null) {
+      if (!(ownerDocument as any)[listeningMarker]) {
+        (ownerDocument as any)[listeningMarker] = true;
+        listenToNativeEvent('selectionchange', false, ownerDocument);
+      }
+    }
+  }
+}</pre></figure>
+<p><strong>设计收益：</strong>新增、移动、删除 HostComponent 时不用同步维护成千上万个浏览器 listener。
+<strong>代价：</strong>React 必须自己恢复 target Fiber、Root/Portal 所属边界、传播次序与 controlled input 收尾。</p>
+</section>
+
+<section id="priority"><h2>第 2 步 · priority wrapper：事件类别变成更新上下文</h2>
+<figure class="source"><figcaption><span>连续原码 · ReactDOMEventListener.js / wrapper 选择</span>
+<a href="../../react/packages/react-dom-bindings/src/events/ReactDOMEventListener.js">打开文件</a></figcaption><pre>export function createEventListenerWrapperWithPriority(
+  targetContainer: EventTarget,
+  domEventName: DOMEventName,
+  eventSystemFlags: EventSystemFlags,
+): Function {
+  const eventPriority = getEventPriority(domEventName);
+  let listenerWrapper;
+  switch (eventPriority) {
+    case DiscreteEventPriority:
+      listenerWrapper = dispatchDiscreteEvent;
+      break;
+    case ContinuousEventPriority:
+      listenerWrapper = dispatchContinuousEvent;
+      break;
+    case DefaultEventPriority:
+    default:
+      listenerWrapper = dispatchEvent;
+      break;
+  }
+  return listenerWrapper.bind(
+    null,
+    domEventName,
+    eventSystemFlags,
+    targetContainer,
+  );
+}</pre></figure>
+<div class="table-wrap"><table><thead><tr><th>类别</th><th>当前源码中的代表事件</th><th>进入 dispatch 时</th><th>对 handler 更新的影响</th></tr></thead><tbody>
+<tr><td>Discrete</td><td>click、input、change、keydown、focusin、submit</td><td><code>setCurrentUpdatePriority(DiscreteEventPriority)</code></td><td>setState 请求 lane 时能读取离散事件上下文；通常要求更快完成</td></tr>
+<tr><td>Continuous</td><td>mouseover、mousemove、pointermove、scroll、wheel</td><td>设置 ContinuousEventPriority</td><td>允许连续输入合并，优先级低于离散输入</td></tr>
+<tr><td>Default</td><td>未落入专门 case 的事件</td><td>直接 dispatchEvent</td><td>按默认事件优先级选 lane</td></tr>
+</tbody></table></div>
+<p>优先级 wrapper 在 <code>finally</code> 恢复先前 priority 与 Transition 上下文。它不直接调用组件，也不保证每次
+<code>setState</code> 立刻单独 render；它只是给随后 requestUpdateLane 提供事件上下文，真正调度仍归 reconciler。</p>
+</section>
+
+<section id="example"><h2>贯穿正常路径的例子：受控 input 被浏览器改成 giraffe</h2>
+<figure class="source"><figcaption><span>教程代码（不可独立执行；省略 root 创建）</span></figcaption><pre>&lt;div onChangeCapture={parentCapture} onChange={parentBubble}&gt;
+  &lt;input
+    value="lion"
+    onChangeCapture={inputCapture}
+    onChange={inputChange}
+  /&gt;
+&lt;/div&gt;
+
+// 浏览器先把 input.value 改为 "giraffe"，再派发原生 input 事件。
+// 假设 inputChange 没有提交新的 value；事件结束后 DOM 应恢复为 "lion"。</pre></figure>
+<div class="table-wrap"><table><thead><tr><th>检查点</th><th>事件/队列状态</th><th>DOM value</th><th>更新状态</th></tr></thead><tbody>
+<tr><td>浏览器派发前</td><td>无 SyntheticEvent</td><td>giraffe</td><td>committed props 仍是 lion</td></tr>
+<tr><td>priority wrapper</td><td>DiscreteEventPriority</td><td>giraffe</td><td>尚无组件更新</td></tr>
+<tr><td>target 查找</td><td>targetInst = input HostComponent Fiber</td><td>giraffe</td><td>确认 mounted、无 blocker</td></tr>
+<tr><td>Change 插件</td><td>dispatchQueue 含 onChange + 4 listeners；restoreTarget=input</td><td>giraffe</td><td>尚未恢复</td></tr>
+<tr><td>capture/bubble</td><td>parentCapture → inputCapture → inputChange → parentBubble</td><td>handler 可读 giraffe</td><td>handler 更新在同一 batch</td></tr>
+<tr><td>batch finally</td><td>flushSyncWork → restoreStateIfNeeded</td><td>lion</td><td>DOM 与最终 committed props 对齐</td></tr>
+</tbody></table></div>
+</section>
+
+<section id="target"><h2>第 3 步 · DOM target → 最近 mounted Fiber</h2>
+<p>创建宿主节点时，renderer 用 <code>precacheFiberNode</code> 在 DOM 节点上缓存 Host Fiber identity；Host Fiber 的 <code>stateNode</code> 反向指回 DOM。
+每次 commitUpdate 又用 <code>updateFiberProps</code> 更新<strong>同一 DOM 节点上的独立 latest-props cache</strong>。<code>getListener</code> 由 <code>inst.stateNode</code> 找 DOM，
+再调用 <code>getFiberCurrentPropsFromNode</code> 读取该 cache，而不是读 <code>fiber.memoizedProps</code>。所以 mutation 可以先更新 handler cache，之后 WorkLoop 才切 <code>root.current</code>。</p>
+<div class="table-wrap"><table><thead><tr><th>边</th><th>写入/读取</th><th>用途</th></tr></thead><tbody>
+<tr><td>DOM → Host Fiber identity</td><td><code>precacheFiberNode</code> / <code>getClosestInstanceFromNode</code></td><td>定位 React 所有权与 hydration blocker</td></tr>
+<tr><td>Host Fiber → DOM</td><td><code>fiber.stateNode</code></td><td>取得 currentTarget、宿主实例与 props cache 所在节点</td></tr>
+<tr><td>DOM → latest props/listeners</td><td><code>updateFiberProps</code> / <code>getFiberCurrentPropsFromNode</code></td><td>派发时读取最新 handler，不被挂载时闭包冻结</td></tr>
+</tbody></table></div>
+<figure class="source"><figcaption><span>删节源码 · ReactDOMEventListener.js / findInstanceBlockingTarget 核心（省略解释注释）</span>
+<a href="../../react/packages/react-dom-bindings/src/events/ReactDOMEventListener.js">打开文件</a></figcaption><pre>let targetInst = getClosestInstanceFromNode(targetNode);
+
+if (targetInst !== null) {
+  const nearestMounted = getNearestMountedFiber(targetInst);
+  if (nearestMounted === null) {
+    targetInst = null;
+  } else {
+    const tag = nearestMounted.tag;
+    if (tag === SuspenseComponent) {
+      const instance = getSuspenseInstanceFromFiber(nearestMounted);
+      if (instance !== null) {
+        return instance;
+      }
+      targetInst = null;
+    } else if (tag === ActivityComponent) {
+      const instance = getActivityInstanceFromFiber(nearestMounted);
+      if (instance !== null) {
+        return instance;
+      }
+      targetInst = null;
+    } else if (tag === HostRoot) {
+      const root: FiberRoot = nearestMounted.stateNode;
+      if (isRootDehydrated(root)) {
+        return getContainerFromFiber(nearestMounted);
+      }
+      targetInst = null;
+    } else if (nearestMounted !== targetInst) {
+      targetInst = null;
+    }
+  }
+}
+return_targetInst = targetInst;
+return null;</pre></figure>
+<p>返回值分成两部分：模块字段 <code>return_targetInst</code> 保存可派发 target Fiber；函数返回的非 null 值表示阻塞对象
+（Container、SuspenseInstance 或 ActivityInstance）。若最近 Fiber 已卸载或尚未完成 mount，target 被置 null，避免向陈旧组件 handler 派发。</p>
+<div class="callout"><p><strong>Root/Portal 边界：</strong><code>dispatchEventForPluginEventSystem</code> 还会沿
+<code>return</code> 找与当前 <code>targetContainer</code> 匹配的 HostRoot/HostPortal。Portal 容器自有 listener；祖先 root
+遇到已由 portal 路径负责的事件会返回，避免同一 React 路径重复冒泡。</p></div>
+</section>
+
+<section id="plugins"><h2>第 4 步 · 插件 extraction：一个原生事件可产生不同 React 语义</h2>
+<p><code>dispatchEventsForPlugins</code> 创建空 <code>dispatchQueue</code>，让插件按固定顺序提取，再统一处理队列。
+SimpleEventPlugin 覆盖基础映射；Change、EnterLeave、BeforeInput、Select、FormAction 等把多种浏览器输入归一为 React 事件。</p>
+<figure class="source"><figcaption><span>删节源码 · ChangeEventPlugin.js / 合成 onChange 并登记恢复（仅省略解释注释）</span>
+<a href="../../react/packages/react-dom-bindings/src/events/plugins/ChangeEventPlugin.js">打开文件</a></figcaption><pre>function createAndAccumulateChangeEvent(
+  dispatchQueue: DispatchQueue,
+  inst: null | Fiber,
+  nativeEvent: AnyNativeEvent,
+  target: null | EventTarget,
+) {
+  enqueueStateRestore(target as any as Node);
+  const listeners = accumulateTwoPhaseListeners(inst, 'onChange');
+  if (listeners.length &gt; 0) {
+    const event: ReactSyntheticEvent = new SyntheticEvent(
+      'onChange',
+      'change',
+      null,
+      nativeEvent,
+      target,
+    );
+    dispatchQueue.push({event, listeners});
+  }
+}</pre></figure>
+<p>本例原生类型是 <code>input</code>，SyntheticEvent 的 React 名称/公开类型是 <code>onChange/change</code>。
+登记 restore 发生在 listener 执行前，所以 handler 不更新 state、bailout、嵌套触发另一控件事件等情况都不会漏掉受控恢复。</p>
+<div class="table-wrap"><table><thead><tr><th>插件</th><th>决定性输入</th><th>可能输出</th><th>关键状态</th></tr></thead><tbody>
+<tr><td>SimpleEventPlugin</td><td>原生 event name</td><td>对应 SyntheticMouse/Keyboard/Pointer 等</td><td>按原生 capture/bubble listener 分阶段累积</td></tr>
+<tr><td>ChangeEventPlugin</td><td>节点类型、input/change/click、value tracker</td><td>onChange</td><td>activeElement、受控 restore 队列</td></tr>
+<tr><td>EnterLeaveEventPlugin</td><td>over/out 的 from/to Fiber</td><td>enter + leave</td><td>relatedTarget 与共同祖先</td></tr>
+<tr><td>BeforeInputEventPlugin</td><td>composition/textInput/keypress</td><td>composition、beforeInput</td><td>fallback composition 状态</td></tr>
+<tr><td>FormActionEventPlugin</td><td>submit、action、FormData</td><td>action/transition 状态</td><td>dehydrated form replay queue</td></tr>
+</tbody></table></div>
+</section>
+
+<section id="dispatch"><h2>第 5 步 · capture/bubble：沿 Fiber 路径，不是重新依赖 DOM 冒泡</h2>
+<p><code>accumulateTwoPhaseListeners</code> 从 target Fiber 沿 <code>return</code> 到 HostRoot；每到 HostComponent，都通过其 stateNode 上的 latest-props cache 收集
+<code>onChangeCapture/onChange</code>。捕获是 root → target，冒泡是 target → root；SyntheticEvent 的
+<code>target</code> 保持原生 target，<code>currentTarget</code> 每次调用前设为当前宿主节点，调用后清空。</p>
+<figure class="source"><figcaption><span>删节源码 · DOMPluginEventSystem.js / 顺序、stopPropagation 与异常清理（DEV wrapper 折叠）</span>
+<a href="../../react/packages/react-dom-bindings/src/events/DOMPluginEventSystem.js">打开文件</a></figcaption><pre>function executeDispatch(
+  event: ReactSyntheticEvent,
+  listener: Function,
+  currentTarget: EventTarget,
+): void {
+  event.currentTarget = currentTarget;
+  try {
+    listener(event);
+  } catch (error) {
+    reportGlobalError(error);
+  }
+  event.currentTarget = null;
+}
+
+function processDispatchQueueItemsInOrder(
+  event: ReactSyntheticEvent,
+  dispatchListeners: Array&lt;DispatchListener&gt;,
+  inCapturePhase: boolean,
+): void {
+  let previousInstance;
+  if (inCapturePhase) {
+    for (let i = dispatchListeners.length - 1; i &gt;= 0; i--) {
+      const {instance, currentTarget, listener} = dispatchListeners[i];
+      if (instance !== previousInstance &amp;&amp; event.isPropagationStopped()) {
+        return;
+      }
+      executeDispatch(event, listener, currentTarget);
+      previousInstance = instance;
+    }
+  } else {
+    for (let i = 0; i &lt; dispatchListeners.length; i++) {
+      const {instance, currentTarget, listener} = dispatchListeners[i];
+      if (instance !== previousInstance &amp;&amp; event.isPropagationStopped()) {
+        return;
+      }
+      executeDispatch(event, listener, currentTarget);
+      previousInstance = instance;
+    }
+  }
+}</pre></figure>
+<p><strong>异常语义：</strong>一个 handler 抛错会交给全局错误报告，不会把 SyntheticEvent 交给 React error boundary；
+事件边界不是 render/commit 错误边界。<code>currentTarget</code> 随后被清空，队列仍可继续。外层 batching 的
+<code>finally</code> 仍执行受控恢复。</p>
+<p><strong>停止传播的细节：</strong>代码在准备跨到“另一个 Fiber instance”前检查 stop 状态；同一 instance 上的内部 listener
+槽不被错误当成一条新的祖先边。普通使用可理解为停止后续 Fiber 路径传播。</p>
+</section>
+
+<section id="batch"><h2>第 6 步 · batched dispatch：最后才能恢复 controlled DOM</h2>
+<figure class="source"><figcaption><span>删节源码 · ReactDOMUpdateBatching.js / 事件批次 finally（省略解释注释）</span>
+<a href="../../react/packages/react-dom-bindings/src/events/ReactDOMUpdateBatching.js">打开文件</a></figcaption><pre>function finishEventHandler() {
+  const controlledComponentsHavePendingUpdates = needsStateRestore();
+  if (controlledComponentsHavePendingUpdates) {
+    flushSyncWork();
+    restoreStateIfNeeded();
+  }
+}
+
+export function batchedUpdates(fn, a, b) {
+  if (isInsideEventHandler) {
+    return fn(a, b);
+  }
+  isInsideEventHandler = true;
+  try {
+    return batchedUpdatesImpl(fn, a, b);
+  } finally {
+    isInsideEventHandler = false;
+    finishEventHandler();
+  }
+}</pre></figure>
+<ol class="state-list">
+  <li><strong>全部 handler 共享事件 batch。</strong>嵌套原生事件看到 <code>isInsideEventHandler=true</code>，不会中途恢复一半控件。</li>
+  <li><strong>先 flush 更新。</strong>handler 若把 value 提交成 <code>tiger</code>，restore 应读取最终 props=tiger，而不是旧 lion。</li>
+  <li><strong>再 restore。</strong>若没有更新，浏览器临时写入的 giraffe 被 committed props=lion 覆盖；checkbox/radio 也恢复 checked 与组状态。</li>
+  <li><strong>最后清队列。</strong><code>restoreTarget/restoreQueue</code> 先转存并清空，再逐节点恢复；恢复过程触发异常也不会让旧目标在下一事件重复消费。</li>
+</ol>
+</section>
+
+<section id="hydrate-block"><h2>Hydration 第 1 步 · target Fiber 存在，但它只代表 dehydrated 边界</h2>
+<p>服务端 DOM 已可见不等于对应组件已可交互。<code>getClosestInstanceFromNode</code> 向上遇到 Suspense 注释边界时可返回
+Suspense Fiber；<code>getNearestMountedFiber</code> 与 <code>getSuspenseInstanceFromFiber</code> 发现边界仍 dehydrated，
+于是 <code>findInstanceBlockingEvent</code> 返回那枚真实 DOM 注释节点作为 <code>blockedOn</code>，而不把事件交给尚未连接的 handler。</p>
+
+<figure class="source"><figcaption><span>教程伪代码（不可执行）· B 边界被事件击中</span></figcaption><pre>DOM:   &lt;!--$--&gt; &lt;span id="B"&gt;B&lt;/span&gt; &lt;!--/$--&gt;   已可见
+Fiber: Suspense(B).memoizedState.dehydrated = startComment      尚未完成 hydration
+event: native click / mouseover target = #B
+
+findInstanceBlockingEvent(nativeEvent)
+  → closest targetInst = B 的 dehydrated Suspense Fiber
+  → blockedOn = startComment
+  → return_targetInst 本轮保持 null
+  → 不得调用 Child B 的事件 handler</pre></figure>
+</section>
+
+<section id="hydrate-branch"><h2>Hydration 第 2 步 · 同一个 dispatchEvent 分出排队与同步水合</h2>
+<figure class="source"><figcaption><span>删节源码 · ReactDOMEventListener.js / blocked 分支（仅省略解释注释）</span>
+<a href="../../react/packages/react-dom-bindings/src/events/ReactDOMEventListener.js">打开文件</a></figcaption><pre>let blockedOn = findInstanceBlockingEvent(nativeEvent);
+if (blockedOn === null) {
+  dispatchEventForPluginEventSystem(
+    domEventName,
+    eventSystemFlags,
+    nativeEvent,
+    return_targetInst,
+    targetContainer,
+  );
+  clearIfContinuousEvent(domEventName, nativeEvent);
+  return;
+}
+
+if (
+  queueIfContinuousEvent(
+    blockedOn,
+    domEventName,
+    eventSystemFlags,
+    targetContainer,
+    nativeEvent,
+  )
+) {
+  nativeEvent.stopPropagation();
+  return;
+}
+clearIfContinuousEvent(domEventName, nativeEvent);
+
+if (
+  eventSystemFlags &amp; IS_CAPTURE_PHASE &amp;&amp;
+  isDiscreteEventThatRequiresHydration(domEventName)
+) {
+  while (blockedOn !== null) {
+    const fiber = getInstanceFromNode(blockedOn);
+    if (fiber !== null) {
+      attemptSynchronousHydration(fiber);
+    }
+    const nextBlockedOn = findInstanceBlockingEvent(nativeEvent);
+    if (nextBlockedOn === null) {
+      dispatchEventForPluginEventSystem(
+        domEventName,
+        eventSystemFlags,
+        nativeEvent,
+        return_targetInst,
+        targetContainer,
+      );
+    }
+    if (nextBlockedOn === blockedOn) {
+      break;
+    }
+    blockedOn = nextBlockedOn;
+  }
+  if (blockedOn !== null) {
+    nativeEvent.stopPropagation();
+  }
+  return;
+}</pre></figure>
+
+<div class="table-wrap"><table><thead><tr><th>输入</th><th>立即动作</th><th>成功条件</th><th>失败/清理</th></tr></thead><tbody>
+<tr><td>mouseover / focusin / dragenter / pointerover</td><td>写对应 replay 槽，提升 continuous hydration，stopPropagation</td><td>边界提交后 retry 解锁，再 clone+dispatch</td><td>后续 mouseout/focusout 等清槽；同类新事件可替换旧槽</td></tr>
+<tr><td>click / input / keydown 等离散 capture</td><td>attemptSynchronousHydration，重新查询 blocker</td><td>本次调用栈内 blocker 变 null，立即派发原事件</td><td>blocker 不变则 break + stopPropagation；不进入通用连续 replay 槽</td></tr>
+<tr><td>不可重放且不可同步的阻塞事件</td><td>以 targetInst=null 进入插件系统</td><td>只执行不依赖该 target 的追踪/边界逻辑</td><td>组件 handler 不应获得陈旧 target</td></tr>
+</tbody></table></div>
+</section>
+
+<section id="retry"><h2>Hydration 第 3 步 · commit 发出 retryIfBlockedOn 解锁通知</h2>
+<p>事件模块不知道边界何时真正提交；DOM HostConfig 在 hydration commit 或边界被清除时回调它。这是 commit 页与事件页的连接点：</p>
+<figure class="source"><figcaption><span>删节源码 · ReactFiberConfigDOM.js / commitHydratedSuspenseInstance（仅省略解释注释）</span>
+<a href="../../react/packages/react-dom-bindings/src/client/ReactFiberConfigDOM.js">打开文件</a></figcaption><pre>export function commitHydratedSuspenseInstance(
+  suspenseInstance: SuspenseInstance,
+): void {
+  retryIfBlockedOn(suspenseInstance);
+}</pre></figure>
+<p><code>retryIfBlockedOn(unblocked)</code> 只把 <code>queuedEvent.blockedOn === unblocked</code> 的槽置 null；其他边界的事件不被误放行。
+首次解锁会安排一个 NormalPriority replay callback（相关 feature flag 开启时可由显式 flush 路径处理）。显式 hydration target 也按 priority 队列重新尝试。</p>
+</section>
+
+<section id="replay"><h2>Hydration 第 4 步 · 重放不是直接调用旧 handler，而是重新走原生管线</h2>
+<figure class="source"><figcaption><span>删节源码 · ReactDOMEventReplaying.js / attemptReplayContinuousQueuedEvent（省略解释注释）</span>
+<a href="../../react/packages/react-dom-bindings/src/events/ReactDOMEventReplaying.js">打开文件</a></figcaption><pre>function attemptReplayContinuousQueuedEvent(
+  queuedEvent: QueuedReplayableEvent,
+): boolean {
+  if (queuedEvent.blockedOn !== null) {
+    return false;
+  }
+  const targetContainers = queuedEvent.targetContainers;
+  while (targetContainers.length &gt; 0) {
+    const nextBlockedOn = findInstanceBlockingEvent(queuedEvent.nativeEvent);
+    if (nextBlockedOn === null) {
+      const nativeEvent = queuedEvent.nativeEvent;
+      const nativeEventClone = new nativeEvent.constructor(
+        nativeEvent.type,
+        nativeEvent as any,
+      );
+      setReplayingEvent(nativeEventClone);
+      nativeEvent.target.dispatchEvent(nativeEventClone);
+      resetReplayingEvent();
+    } else {
+      const fiber = getInstanceFromNode(nextBlockedOn);
+      if (fiber !== null) {
+        attemptContinuousHydration(fiber);
+      }
+      queuedEvent.blockedOn = nextBlockedOn;
+      return false;
+    }
+    targetContainers.shift();
+  }
+  return true;
+}</pre></figure>
+<ol class="state-list">
+  <li><strong>重新验证。</strong>解锁旧边界后，target 可能又受更内层 dehydrated 边界阻塞；因此先重新执行 blocking lookup。</li>
+  <li><strong>克隆事件。</strong>不直接复用已经传播过的 Event 对象；新 Event 重新进入浏览器 capture/bubble listener。</li>
+  <li><strong>打 replay marker。</strong>避免 legacy click defer 等分支把重放再当首次事件；结束后重置模块状态。</li>
+  <li><strong>处理多容器。</strong>同一 native event 可能被多个 root/portal listener 累积；每成功处理一个 container 就 shift。</li>
+  <li><strong>再次阻塞。</strong>保存新的 <code>blockedOn</code>，提升对应 hydration，等待下一次 commit retry；不丢失剩余容器。</li>
+</ol>
+</section>
+
+<section id="drop"><h2>什么时候会“丢弃”而不是重放</h2>
+<div class="table-wrap"><table><thead><tr><th>场景</th><th>当前实现</th><th>为什么不是事件丢失 bug</th></tr></thead><tbody>
+<tr><td>mouseover 排队后先发生 mouseout</td><td><code>clearIfContinuousEvent('mouseout')</code> 清 <code>queuedMouse</code></td><td>指针已离开，补发旧“进入”会制造错误当前状态</td></tr>
+<tr><td>同类连续事件再次到达</td><td>槽更新为新 queued event；相同 native event 的多容器则合并 flags/containers</td><td>连续状态看最新值，不承诺逐个重放历史采样</td></tr>
+<tr><td>离散 click 同步 hydration 仍挂起</td><td>停止传播，不放进连续 replay 槽</td><td>当前版本选择交互优先的同步尝试，不把所有离散事件延后复制</td></tr>
+<tr><td>重放前 target Fiber 已卸载</td><td>blocking lookup 得到 targetInst=null；不会调用旧组件 listener</td><td>已卸载组件不再拥有事件；保留原生事件不等于保留陈旧 Fiber 所有权</td></tr>
+<tr><td>clear/dehydrate 边界改走 client render</td><td>清边界代码也调用 <code>retryIfBlockedOn</code></td><td>解除 blocker 后重新 lookup，按新 client Fiber 决定派发或忽略</td></tr>
+</tbody></table></div>
+<div class="callout"><p><strong>“重放保持因果”有边界：</strong>React 保留必要交互状态，不承诺逐字节复刻事件发生时 DOM。
+handler 最终读取的是 hydration 后已提交 props/Fiber；连续事件采用合并语义，正是为避免把过期鼠标/焦点状态强行施加到新树。</p></div>
+</section>
+
+<section id="test-order"><h2>真实测试 1 · 根到 target 捕获，再从 target 冒泡</h2>
+<p><strong>类型：当前仓库连续测试摘录。</strong>辅助函数被 click、input 等多个原生冒泡事件用例调用。</p>
+<figure class="source"><figcaption><span>连续测试原码 · ReactDOMEventPropagation-test.js / testNativeBubblingEventWithTargetListener</span>
+<a href="../../react/packages/react-dom/src/__tests__/ReactDOMEventPropagation-test.js">打开测试</a></figcaption><pre>    expect(log.length).toBe(0);
+    eventConfig.dispatch(targetRef.current);
+    // 应记录所有监听器。
+    expect(log).toEqual(unindent`
+      - outer parent capture
+      -- outer capture
+      --- inner parent capture
+      ---- inner capture
+      ---- inner
+      --- inner parent
+      -- outer
+      - outer parent
+    `);</pre></figure>
+<p><strong>Given：</strong>四层 HostComponent 均注册 capture/bubble。<strong>When：</strong>target 派发真实原生事件。
+<strong>Then：</strong>八条日志严格形成 root→target→root。该测试直接证明可观察的 capture/bubble 顺序；它本身不能排除“每个 DOM 节点各装 listener”等替代实现。
+listener 实际沿 Fiber return 链累积、由根委托统一派发，需结合本页 DOMPluginEventSystem/ReactDOMComponentTree 源码证明。</p>
+</section>
+
+<section id="test-control"><h2>真实测试 2 · 重入事件也必须在最外批次末恢复两个控件</h2>
+<p>测试中，text input 的 onChange 内调用 checkbox.click()；浏览器先把 text 改成 giraffe、checkbox 改成 false，
+两者 committed props 分别仍是 lion/true。</p>
+<figure class="source"><figcaption><span>删节源码 · ReactDOMInput-test.js / 合并夹具方法与操作断言</span>
+<a href="../../react/packages/react-dom/src/__tests__/ReactDOMInput-test.js">打开测试</a></figcaption><pre>change(newValue) {
+  this.b.click();
+}
+
+setUntrackedValue.call(instance.a, 'giraffe');
+await act(() =&gt; {
+  dispatchEventOnNode(instance.a, 'input');
+});
+
+expect(instance.a.value).toBe('lion');
+expect(instance.b.checked).toBe(true);</pre></figure>
+<p><strong>Given：</strong>两个 controlled input，外层 text change 重入 checkbox click。<strong>When：</strong>派发真实 input。
+<strong>Then：</strong>两个 DOM 状态都恢复。它同时证明 restore 支持单 target + queue，且嵌套 <code>batchedUpdates</code> 不会过早结束最外事件边界。</p>
+</section>
+
+<section id="test-sync"><h2>真实测试 3 · click 只同步 hydration 命中的 B 边界</h2>
+<figure class="source"><figcaption><span>删节源码 · ReactDOMServerSelectiveHydration-test.internal.js / 同步 hydration 操作与断言</span>
+<a href="../../react/packages/react-dom/src/__tests__/ReactDOMServerSelectiveHydration-test.internal.js">打开测试</a></figcaption><pre>const span = container.getElementsByTagName('span')[1];
+
+ReactDOMClient.hydrateRoot(container, &lt;App /&gt;);
+
+assertLog([]);
+
+const result = dispatchClickEvent(span);
+
+expect(result).toBe(false);
+
+assertLog(['App', 'B', 'Clicked B']);
+
+await waitForAll(['A']);</pre></figure>
+<div class="table-wrap"><table><thead><tr><th>GWT</th><th>观察</th><th>排除的错误理解</th></tr></thead><tbody>
+<tr><td>Given</td><td>SSR 含 A/B 两个 Suspense，hydrateRoot 后日志为空</td><td>可见 server DOM 不等于已经全树 hydration</td></tr>
+<tr><td>When</td><td>点击 B 的 span，handler 调 preventDefault</td><td>事件不会先无条件派发到未连接 handler</td></tr>
+<tr><td>Then</td><td>同步日志只有 App、B、Clicked B，返回 false；A 后续才 hydrate</td><td>选择性同步 hydration 命中目标边界，不要求先 hydrate A</td></tr>
+</tbody></table></div>
+</section>
+
+<section id="test-replay"><h2>真实测试 4 · 连续事件取最新有效状态；click 挂起时不补发</h2>
+<p>同一测试让 A/D hydration 挂起：先 hover+click D，再依次 hover B、C，随后解除资源。下段是连续测试的操作与断言区。</p>
+<figure class="source"><figcaption><span>删节源码 · ReactDOMServerSelectiveHydration-test.internal.js / 连续事件操作与断言</span>
+<a href="../../react/packages/react-dom/src/__tests__/ReactDOMServerSelectiveHydration-test.internal.js">打开测试</a></figcaption><pre>await act(async () =&gt; {
+  dispatchMouseHoverEvent(spanD, null);
+  dispatchClickEvent(spanD);
+  dispatchMouseHoverEvent(spanB, spanD);
+  dispatchMouseHoverEvent(spanC, spanB);
+
+  assertLog(['App']);
+
+  suspend = false;
+  resolve();
+});
+
+assertLog([
+  'D',
+  'B',
+  'C',
+  'Mouse Over Capture Parent',
+  'Mouse Over Capture C',
+  'A',
+]);</pre></figure>
+<p><strong>Given：</strong>D 的 click/hover 最初都受 blocker；鼠标后来移动到 B，再到 C。
+<strong>When：</strong>解除 hydration。<strong>Then：</strong>没有 <code>Clicked D</code>，也不重放过期 mouseout；只重放仍代表当前指针状态的 C mouseover，
+并遵守 capture 的 stopPropagation。它把“离散同步失败不通用重放”与“连续槽合并/清理”同时固定为测试事实。</p>
+</section>
+
+<section id="full-chain"><h2>两条完整调用链，逐步复述</h2>
+<h3>普通受控 input</h3>
+<ol class="state-list">
+  <li>根 bubble listener 接到原生 input；priority wrapper 设置 DiscreteEventPriority。</li>
+  <li><code>getClosestInstanceFromNode</code> 找 input Host Fiber，mounted 检查通过，blockedOn=null。</li>
+  <li>Root/Portal 匹配选出 ancestorInst；<code>batchedUpdates</code> 包住插件分发。</li>
+  <li>ChangeEventPlugin 比较 value tracker，登记 restore target，合成 onChange 并累积两阶段 listeners。</li>
+  <li>capture root→target、bubble target→root；每次设置/清空 currentTarget，错误报全局，stopPropagation 截断后续 Fiber。</li>
+  <li>handler 更新在 batch 内调度；finally 先 flushSyncWork，再按最终 props 恢复 DOM；清空 restore 队列。</li>
+</ol>
+<h3>dehydrated Suspense 中的 mouseover</h3>
+<ol class="state-list">
+  <li>continuous wrapper 设置 ContinuousEventPriority；DOM 查找返回 Suspense blocker。</li>
+  <li><code>queueIfContinuousEvent</code> 写 queuedMouse，尝试 continuous hydration，停止本轮原生传播。</li>
+  <li>若随后 mouseout，立即清槽；若另一 mouseover 到来，槽代表更新后的目标/容器。</li>
+  <li>hydration commit 调 <code>commitHydratedSuspenseInstance → retryIfBlockedOn</code>，仅解锁匹配 blocker。</li>
+  <li>replay callback 再查 blocker；仍阻塞则换 blocker并提升 hydration，已解锁则 clone 原生事件重新 dispatch。</li>
+  <li>重放事件重新经过 root listener、priority、target、plugin、batch 与 cleanup；不是直接调用缓存 handler。</li>
+</ol>
+</section>
+
+<section id="boundaries"><h2>边界、异常与清理清单</h2>
+<ul class="qa">
+  <li><strong>handler 错误：</strong><code>reportGlobalError</code>，不由 React error boundary 捕获；<code>currentTarget</code> 清空，事件 batch finally 仍运行。</li>
+  <li><strong>DOM 删除：</strong>mutation 先断 deleted Fiber 的 <code>return</code>，因此 mounted 检查立即拒绝它；DOM→Fiber/latest-props cache 不必在这一刻全部消失，删除树的 passive cleanup 后才由 <code>detachFiberAfterEffects → detachDeletedInstance</code> 清除。节点本地 non-delegated listener 记账按节点生命周期另行维护。</li>
+  <li><strong>Portal：</strong>每个 Portal container 有 listener，但 Fiber Root/Portal 匹配避免同一路径重复派发；SyntheticEvent 传播仍按 React 所有权。</li>
+  <li><strong>hydration mismatch/client render：</strong>清除旧边界也发 retry；重放时重新定位新 Fiber，不能保留旧 targetInst。</li>
+  <li><strong>event priority ≠ Scheduler priority 常量：</strong>二者会映射，但属于不同抽象层；本页不把 click 直接称为某个固定 Scheduler task。</li>
+  <li><strong>源码/示例界线：</strong>“连续原码/连续测试原码”可在链接文件逐字连续匹配；“删节源码”写明裁剪；状态模型标为“教程伪代码”。</li>
+  <li><strong>未展开：</strong>createEventHandle、legacy FB click defer、FormAction server replay、多 React 实例交错、Activity 边界与 enableHydrationChangeEvent 分支。</li>
+</ul>
+</section>
+
+<section id="questions"><h2>读完应能回答</h2><ul class="qa">
+  <li>根只装一个事件体系时，React 怎样拿到更新后的 handler，而不是 mount 时闭包？</li>
+  <li>为什么 ChangeEventPlugin 必须在调用 onChange 前 enqueueStateRestore？</li>
+  <li>为什么 controlled restore 要等最外层事件 batch 结束，并且先 flush 更新？</li>
+  <li>为什么 click blocker 走同步 hydration，而 mouseover 进入合并 replay 槽？</li>
+  <li><code>retryIfBlockedOn</code> 为什么只清 blocker，不直接调用 SyntheticEvent handler？</li>
+  <li>mouseout 清掉 queued mouseover 为什么是正确因果语义？</li>
+</ul></section>
+
+<div class="next-page"><a href="14-commit-effects.html">← 上一页：commit、ref 与 effect</a>
+<a href="16-end-to-end-source.html">下一页：源码级端到端主线 →</a></div>
+<footer><p>本页证据边界：React / react-dom-bindings 19.3.0；事件与 hydration 行为以当前源码开关和仓库测试为准。</p></footer>
+</main>
+
+<aside class="toc" aria-label="本页目录"><strong>事件与 hydration</strong>
+  <a href="#map">三条路径</a><a href="#install">根委托</a><a href="#priority">事件优先级</a>
+  <a href="#example">受控 input 示例</a><a href="#target">target Fiber</a><a href="#plugins">插件提取</a>
+  <a href="#dispatch">capture / bubble</a><a href="#batch">batch / restore</a>
+  <a href="#hydrate-block">hydration blocker</a><a href="#hydrate-branch">排队 / 同步水合</a>
+  <a href="#retry">retryIfBlockedOn</a><a href="#replay">重放</a><a href="#drop">丢弃</a>
+  <a href="#test-order">传播测试</a><a href="#test-control">受控测试</a><a href="#test-sync">同步水合测试</a>
+  <a href="#test-replay">重放测试</a><a href="#full-chain">完整调用链</a><a href="#boundaries">边界</a>
+</aside></div>
+</body></html>

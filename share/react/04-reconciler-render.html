@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="react-reconciler 0.34.0 render 阶段指南：Fiber、Root、Lane、update queue、beginWork、completeWork 与 Suspense。" />
+  <title>04 · reconciler：render 候选树</title><link rel="stylesheet" href="assets/guide.css?v=1" />
+</head>
+<body>
+  <header class="topbar"><div class="topbar-inner"><a class="brand" href="index.html">React 六包源码指南</a><nav class="pager" aria-label="页面导航">
+    <a href="index.html">地图</a><a href="01-shared.html">shared</a><a href="02-scheduler.html">scheduler</a><a href="03-react.html">react</a>
+    <a aria-current="page" href="04-reconciler-render.html">render</a><a href="05-reconciler-commit.html">commit</a><a href="06-dom-bindings.html">bindings</a>
+    <a href="07-react-dom.html">react-dom</a><a href="08-end-to-end.html">主线</a><a href="09-evidence.html">证据</a>
+  </nav></div></header>
+  <div class="layout"><main>
+    <p class="eyebrow">04 · Fiber engine / render</p><h1>reconciler：构造一棵可丢弃的候选树</h1>
+    <p class="lede">render 阶段把 root 上的更新与当前 Fiber 树合并，生成 work-in-progress 树和 effect flags。
+    它可以暂停、重启或放弃；真正可见的宿主变更必须等 commit。</p>
+    <div class="meta"><span class="pill">react-reconciler 0.34.0</span><span class="pill">双缓冲 Fiber</span><span class="pill">Lane 集合</span><span class="pill">可中断 render</span></div>
+
+    <section id="model"><h2>四个核心对象各自回答一个问题</h2>
+      <div class="table-wrap"><table><thead><tr><th>对象</th><th>回答</th><th>关键字段</th><th>生命周期</th></tr></thead><tbody>
+        <tr><td>FiberRoot</td><td>哪一个 renderer 根还有工作？</td><td>current、pendingLanes、callbackNode、containerInfo</td><td>createRoot 到 unmount</td></tr>
+        <tr><td>Fiber</td><td>树中这个工作单元是什么？</td><td>tag、type、return/child/sibling、alternate、lanes、flags</td><td>在 current/WIP 间复用或删除</td></tr>
+        <tr><td>Update / queue</td><td>状态变化按什么顺序重放？</td><td>lane、payload/action、callback、next</td><td>创建到被匹配 render 消费</td></tr>
+        <tr><td>Lane / Lanes</td><td>哪些更新必须一起处理？</td><td>位集合、entanglement、expiration</td><td>从请求到 root 标记完成</td></tr>
+      </tbody></table></div>
+      <div class="callout"><p><strong>双缓冲不等于两棵独立业务树：</strong><code>alternate</code> 把 current 与 work-in-progress 对应节点配对。
+      render 可反复覆盖 WIP；只有 commit 切换 <code>root.current</code> 后，它才成为下一轮基线。</p></div>
+    </section>
+
+    <section id="update"><h2>Root Update：描述第一次获得 Lane</h2>
+      <p><code>ReactDOMRoot.render</code> 调用 <code>updateContainer</code>。后者读取 HostRoot current，按执行上下文请求 Lane，
+      构造 payload 为 <code>{element}</code> 的 Update，挂进 root fiber 队列，再调用 <code>scheduleUpdateOnFiber</code>。</p>
+      <figure class="source"><figcaption><span>删节源码 · ReactFiberReconciler.js · root 更新入口</span><a href="../../react/packages/react-reconciler/src/ReactFiberReconciler.js">打开文件</a></figcaption><pre><span class="kw">export function</span> <span class="fn">updateContainer</span>(element, container, parent, callback) {
+  <span class="kw">const</span> current = container.current;
+  <span class="kw">const</span> lane = requestUpdateLane(current);
+  updateContainerImpl(current, lane, element, container, parent, callback);
+  <span class="kw">return</span> lane;
+}</pre></figure>
+      <ol class="state-list"><li><strong>选择。</strong>离散输入、transition、render-phase 或默认更新得到不同 Lane 来源。</li>
+        <li><strong>入队。</strong>并发队列先暂存更新，统一收口时把环形 pending 链并入目标 queue。</li>
+        <li><strong>向上。</strong>从 source Fiber 沿 return 标记 childLanes，定位 FiberRoot。</li>
+        <li><strong>标根。</strong><code>markRootUpdated</code> 合并 pendingLanes，并清理与本次更新冲突的 suspended/pinged 状态。</li>
+        <li><strong>调度。</strong>root 进入全局 scheduled-root 链；同步 Lane 请求微任务，其他 Lane 映射为 Scheduler callback。</li></ol>
+    </section>
+
+    <section id="lanes"><h2>Lane 是集合代数，不是单个数字优先级</h2>
+      <p>Lane 用位表示更新组，Lanes 是位集合。选择下一批工作时还要综合 suspended、pinged、warm、expired、entangled 与正在 render 的 lanes。
+      Scheduler Priority 只在最终 host callback 边界出现；两者不能一一替换。</p>
+      <div class="grid"><article class="card"><span class="number">ROOT VIEW</span><h3>pending → suspended / pinged</h3><p>root 记录哪些 Lane 待处理、哪些因数据挂起、哪些已被 thenable ping 唤醒，以及哪些为防饥饿已过期。</p></article>
+      <article class="card"><span class="number">FIBER VIEW</span><h3>lanes + childLanes</h3><p>节点自身 Lane 与子树 Lane 共同决定 beginWork 能否 bailout；只比较 props 会漏掉后代或 context 更新。</p></article></div>
+    </section>
+
+    <section id="root-scheduler"><h2>RootScheduler：把很多根压成很少的 host callback</h2>
+      <div class="chain" aria-label="root 调度链"><div class="node">scheduleUpdateOnFiber<small>mark root/lane</small></div><span class="arrow">→</span>
+        <div class="node">ensureRootIsScheduled<small>scheduled roots 链</small></div><span class="arrow">→</span>
+        <div class="node">microtask<small>统一检查所有根</small></div><span class="arrow">→</span>
+        <div class="node">scheduleTaskForRoot<small>复用/取消 callback</small></div><span class="arrow">→</span>
+        <div class="node">Scheduler<small>performWorkOnRoot</small></div></div>
+      <p>callbackPriority 保存的是代表本次回调的 Lane。若最高优先 Lane 未变，可复用 callback；若变化，取消旧 Scheduler task 并登记新任务。
+      同步工作不等待普通 Scheduler callback，而是在微任务末尾统一 flush，避免同一事件中重复提交。</p>
+    </section>
+
+    <section id="loop"><h2>工作循环：下钻 beginWork，回溯 completeWork</h2>
+      <figure class="source"><figcaption><span>删节源码 · ReactFiberWorkLoop.js · 单个工作单元</span><a href="../../react/packages/react-reconciler/src/ReactFiberWorkLoop.js">打开文件</a></figcaption><pre><span class="kw">function</span> <span class="fn">performUnitOfWork</span>(unitOfWork) {
+  <span class="kw">const</span> current = unitOfWork.alternate;
+  <span class="kw">const</span> next = beginWork(current, unitOfWork, renderLanes);
+  unitOfWork.memoizedProps = unitOfWork.pendingProps;
+  <span class="kw">if</span> (next === null) completeUnitOfWork(unitOfWork);
+  <span class="kw">else</span> workInProgress = next;
+}</pre></figure>
+      <p><code>beginWork</code> 按 Fiber tag 分派：HostRoot 处理根队列、FunctionComponent 执行 Hooks、ClassComponent 管实例与生命周期、
+      HostComponent 协调 children、Suspense 决定 primary/fallback。返回 child 表示下钻；返回 null 才开始 complete 回溯。</p>
+      <p><code>completeWork</code> 对宿主节点创建/复用 instance、设置初始属性或标记更新，并向父级冒泡 subtreeFlags、lanes 与 profiler 时长。
+      新建 DOM 此时通常仍在脱离文档的树中；插入真实容器要等 mutation。</p>
+    </section>
+
+    <section id="reconcile"><h2>children 协调：复用由 type + key + 位置语义共同决定</h2>
+      <div class="table-wrap"><table><thead><tr><th>情况</th><th>主要动作</th><th>flags / 结果</th></tr></thead><tbody>
+        <tr><td>同 key、兼容 type</td><td>复用 alternate，更新 pendingProps</td><td>保留 state，后续按 Lane 决定是否深入</td></tr>
+        <tr><td>同 key、不同 type</td><td>删除旧 Fiber，创建新 Fiber</td><td>旧子树 Deletion；新节点 Placement</td></tr>
+        <tr><td>无 key 顺序列表</td><td>先按位置快速匹配，失配后建 Map</td><td>插入/移动可能改变局部 state 所属</td></tr>
+        <tr><td>显式稳定 key 列表</td><td>Map 以 key 查旧 Fiber，并比较旧 index</td><td>能识别移动，但跨父节点仍不是同一身份域</td></tr>
+        <tr><td>剩余旧 child</td><td>加入父 Fiber deletions</td><td>commit 前仍未改真实宿主树</td></tr>
+      </tbody></table></div>
+      <p>源码核心位于 <a href="../../react/packages/react-reconciler/src/ReactChildFiber.js">ReactChildFiber.js</a>。
+      “没有 DOM diff 对象”是一个重要事实：协调直接构造 Fiber 关系与 flags，HostConfig 在 complete/commit 边界接收具体节点操作。</p>
+    </section>
+
+    <section id="hooks"><h2>函数组件 render：dispatcher、hook 链与 render-phase 更新</h2>
+      <p><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">ReactFiberHooks.js</a> 根据 current hook 是否存在安装 mount/update dispatcher。
+      每次 hook 调用沿 current 链克隆或创建 WIP hook；state queue 保存 pending 更新、base queue 与最后一次 reducer/state。
+      dispatch 闭包绑定 Fiber 与 queue，调用时请求 Lane；若在当前 render 内更新，会进入 render-phase 队列并有限次重渲染函数组件。</p>
+      <div class="callout warn"><p><strong>eager bailout 不是“完全没有更新”：</strong>当队列空且 reducer 可立即算出相同 state 时，更新可走快速路径；
+      但它仍必须保留足够信息，应对稍后高优先级工作或队列重放。</p></div>
+    </section>
+
+    <section id="suspense"><h2>挂起：抛出的 thenable 被转换成根状态</h2>
+      <ol class="state-list"><li><strong>捕获。</strong>组件读取未就绪资源并抛 thenable；work loop 找到可捕获 Suspense 边界。</li>
+        <li><strong>标记。</strong>边界切换 fallback 或保留旧内容，根记录 suspended lanes；wakeable 被放进 ping cache。</li>
+        <li><strong>退出。</strong>当前 render 可能完成 fallback、延迟提交、继续 prerender，或返回 RootSuspended/InProgress。</li>
+        <li><strong>唤醒。</strong>thenable settle 调用 ping listener，把对应 Lane 标为 pinged 并重新安排 root。</li>
+        <li><strong>重试。</strong>新的 render 从 current 基线建立 WIP；被放弃的半成品不会写进宿主容器。</li></ol>
+    </section>
+
+    <section id="exit"><h2>render 的出口不只有“成功/失败”</h2>
+      <div class="table-wrap"><table><thead><tr><th>退出状态</th><th>含义</th><th>下一步</th></tr></thead><tbody>
+        <tr><td>RootInProgress</td><td>时间片用尽或并发循环 yield</td><td>保留 WIP，下个 callback 恢复</td></tr>
+        <tr><td>RootCompleted</td><td>候选树完成</td><td>检查外部 store 一致性、准备 commit</td></tr>
+        <tr><td>RootSuspended / WithDelay</td><td>等待资源且提交策略可能延迟</td><td>标根挂起、等 ping 或 timeout</td></tr>
+        <tr><td>RootErrored</td><td>并发尝试失败但可同步恢复</td><td>选择恢复 Lane，重新 render</td></tr>
+        <tr><td>RootFatalErrored</td><td>根级不可恢复错误</td><td>清理 WIP，交给根错误路径</td></tr>
+      </tbody></table></div>
+    </section>
+
+    <section id="evidence"><h2>测试证据索引</h2><p>reconciler 测试范围共 77 个测试文件和 1 个 mock，识别出 1,058 个 <code>it/test</code> 场景；每个场景均有邻近中文说明。
+      render 相关代表证据：</p><ul class="qa">
+        <li><a href="../../react/packages/react-reconciler/src/__tests__/ReactIncremental-test.js">ReactIncremental-test.js</a>：yield 后继续、优先级插入与树一致性。</li>
+        <li><a href="../../react/packages/react-reconciler/src/__tests__/ReactIncrementalSideEffects-test.js">ReactIncrementalSideEffects-test.js</a>：Placement/Deletion 与重排 flags。</li>
+        <li><a href="../../react/packages/react-reconciler/src/__tests__/ReactHooks-test.internal.js">ReactHooks-test.internal.js</a>：hook 队列、render-phase 更新与错误。</li>
+        <li><a href="../../react/packages/react-reconciler/src/__tests__/ReactSuspense-test.internal.js">ReactSuspense-test.internal.js</a>：fallback、ping、重试与优先级。</li>
+      </ul></section>
+
+    <section id="deep"><h2>把 render 黑箱拆成五个可手推机制</h2><div class="table-wrap"><table><thead><tr><th>深挖页</th><th>补足本页哪一层</th><th>核心推演</th></tr></thead><tbody>
+      <tr><td><a href="10-fiber-object-model.html">10 · Fiber 对象模型</a></td><td>FiberRoot、树指针、current/WIP/alternate</td><td>候选树创建与 commit 身份切换</td></tr>
+      <tr><td><a href="11-update-queues-lanes.html">11 · Queue 与 Lane</a></td><td>根状态、优先级与调度</td><td>低优先更新跳过后如何保留并重放</td></tr>
+      <tr><td><a href="12-child-reconciliation.html">12 · children 协调</a></td><td>复用、移动、插入、删除</td><td><code>[A,B,C] → [B,A,D]</code></td></tr>
+      <tr><td><a href="13-hooks-state-machine.html">13 · Hooks 状态机</a></td><td>Hook 链与 state queue</td><td>三个 action 如何重放为 3</td></tr>
+      <tr><td><a href="17-suspense-retry.html">17 · Suspense retry</a></td><td>thenable 捕获、根 Lane 与 ping cache</td><td>pending → fallback → ping → retry → primary</td></tr>
+    </tbody></table></div></section>
+
+    <section id="questions"><h2>检查理解</h2><ul class="qa"><li>为什么 root 的 callbackPriority 保存 Lane 而不是 Scheduler Priority？</li>
+      <li>一个 Fiber props 相同，为什么仍可能不能 bailout？</li><li>completeWork 创建 DOM 后，为什么用户仍看不到它？</li>
+      <li>thenable resolve 之后为什么必须重新调度，而不是继续原 JavaScript 调用栈？</li></ul></section>
+    <div class="next-page"><a href="03-react.html">← 上一页：react</a><a href="05-reconciler-commit.html">下一页：Fiber commit →</a></div>
+    <footer><p>render 的输出是 finishedWork 与 effect flags；下一页只讨论如何原子地把它变成宿主可见状态。</p></footer>
+  </main><aside class="toc" aria-label="本页目录"><strong>reconciler · render</strong><a href="#model">核心对象</a><a href="#update">Root Update</a>
+    <a href="#lanes">Lane</a><a href="#root-scheduler">RootScheduler</a><a href="#loop">工作循环</a><a href="#reconcile">children 协调</a>
+    <a href="#hooks">Hooks 状态机</a><a href="#suspense">Suspense</a><a href="#exit">退出状态</a><a href="#evidence">测试证据</a><a href="#deep">v2 深挖</a></aside>
+  </div>
+</body></html>

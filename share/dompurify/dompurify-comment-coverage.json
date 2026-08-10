@@ -1,0 +1,2856 @@
+{
+  "schemaVersion": 1,
+  "repository": "cure53/DOMPurify",
+  "commit": "8cc5ae1388587f7a08cc099ff2a5e985f85d77c5",
+  "packageVersion": "3.4.13",
+  "scanPaths": [
+    "src",
+    "test/test-suite.js",
+    "test/bootstrap-test-suite.js",
+    "test/fuzz/sanitize.fast-check.js",
+    "test/jsdom-node.js",
+    "test/config/setup.js"
+  ],
+  "generatedBy": ".agents/skills/read-source-code/scripts/audit-comment-coverage.mjs",
+  "notes": [
+    "byKind.constructor 已规范化为数值 1；审计脚本当前用普通对象累加该键，原始摘要会与继承的 Object.prototype.constructor 碰撞。逐声明 records 不受影响。"
+  ],
+  "baseline": {
+    "files": 12,
+    "declarations": 309,
+    "unresolved": 195,
+    "byStatus": {
+      "documented": 114,
+      "exempt": 0,
+      "missing": 190,
+      "needs-tsdoc": 5
+    },
+    "byKind": {
+      "constant": 74,
+      "interface": 8,
+      "field": 76,
+      "function-variable": 51,
+      "method": 44,
+      "function": 18,
+      "call-signature": 1,
+      "method-signature": 20,
+      "type": 14,
+      "class": 2,
+      "constructor": 1
+    }
+  },
+  "final": {
+    "files": 12,
+    "declarations": 309,
+    "unresolved": 0,
+    "byStatus": {
+      "documented": 309,
+      "exempt": 0,
+      "missing": 0,
+      "needs-tsdoc": 0
+    },
+    "byKind": {
+      "constant": 74,
+      "interface": 8,
+      "field": 76,
+      "function-variable": 51,
+      "method": 44,
+      "function": 18,
+      "call-signature": 1,
+      "method-signature": 20,
+      "type": 14,
+      "class": 2,
+      "constructor": 1
+    }
+  },
+  "classification": {
+    "已有且充分": 0,
+    "已翻译扩写": 119,
+    "新补充": 190,
+    "明确豁免": 0,
+    "未分类": 0
+  },
+  "records": [
+    {
+      "id": "src/attrs.ts#constant#html",
+      "file": "src/attrs.ts",
+      "line": 11,
+      "kind": "constant",
+      "symbol": "html",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/attrs.ts#constant#svg",
+      "file": "src/attrs.ts",
+      "line": 140,
+      "kind": "constant",
+      "symbol": "svg",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/attrs.ts#constant#mathMl",
+      "file": "src/attrs.ts",
+      "line": 343,
+      "kind": "constant",
+      "symbol": "mathMl",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/attrs.ts#constant#xml",
+      "file": "src/attrs.ts",
+      "line": 407,
+      "kind": "constant",
+      "symbol": "xml",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/config.ts#interface#Config",
+      "file": "src/config.ts",
+      "line": 11,
+      "kind": "interface",
+      "symbol": "Config",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/config.ts#field#Config.ADD_ATTR",
+      "file": "src/config.ts",
+      "line": 17,
+      "kind": "field",
+      "symbol": "Config.ADD_ATTR",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/config.ts#field#Config.ADD_DATA_URI_TAGS",
+      "file": "src/config.ts",
+      "line": 27,
+      "kind": "field",
+      "symbol": "Config.ADD_DATA_URI_TAGS",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/config.ts#field#Config.ADD_TAGS",
+      "file": "src/config.ts",
+      "line": 34,
+      "kind": "field",
+      "symbol": "Config.ADD_TAGS",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/config.ts#field#Config.ADD_URI_SAFE_ATTR",
+      "file": "src/config.ts",
+      "line": 41,
+      "kind": "field",
+      "symbol": "Config.ADD_URI_SAFE_ATTR",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/config.ts#field#Config.ALLOW_ARIA_ATTR",
+      "file": "src/config.ts",
+      "line": 48,
+      "kind": "field",
+      "symbol": "Config.ALLOW_ARIA_ATTR",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/config.ts#field#Config.ALLOW_DATA_ATTR",
+      "file": "src/config.ts",
+      "line": 55,
+      "kind": "field",
+      "symbol": "Config.ALLOW_DATA_ATTR",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/config.ts#field#Config.ALLOW_UNKNOWN_PROTOCOLS",
+      "file": "src/config.ts",
+      "line": 64,
+      "kind": "field",
+      "symbol": "Config.ALLOW_UNKNOWN_PROTOCOLS",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/config.ts#field#Config.ALLOW_SELF_CLOSE_IN_ATTR",
+      "file": "src/config.ts",
+      "line": 71,
+      "kind": "field",
+      "symbol": "Config.ALLOW_SELF_CLOSE_IN_ATTR",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/config.ts#field#Config.ALLOWED_ATTR",
+      "file": "src/config.ts",
+      "line": 78,
+      "kind": "field",
+      "symbol": "Config.ALLOWED_ATTR",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/config.ts#field#Config.ALLOWED_TAGS",
+      "file": "src/config.ts",
+      "line": 85,
+      "kind": "field",
+      "symbol": "Config.ALLOWED_TAGS",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/config.ts#field#Config.ALLOWED_NAMESPACES",
+      "file": "src/config.ts",
+      "line": 95,
+      "kind": "field",
+      "symbol": "Config.ALLOWED_NAMESPACES",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/config.ts#field#Config.ALLOWED_URI_REGEXP",
+      "file": "src/config.ts",
+      "line": 106,
+      "kind": "field",
+      "symbol": "Config.ALLOWED_URI_REGEXP",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/config.ts#field#Config.CUSTOM_ELEMENT_HANDLING",
+      "file": "src/config.ts",
+      "line": 113,
+      "kind": "field",
+      "symbol": "Config.CUSTOM_ELEMENT_HANDLING",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/config.ts#field#Config.tagNameCheck",
+      "file": "src/config.ts",
+      "line": 119,
+      "kind": "field",
+      "symbol": "Config.tagNameCheck",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/config.ts#field#Config.attributeNameCheck",
+      "file": "src/config.ts",
+      "line": 126,
+      "kind": "field",
+      "symbol": "Config.attributeNameCheck",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/config.ts#field#Config.allowCustomizedBuiltInElements",
+      "file": "src/config.ts",
+      "line": 135,
+      "kind": "field",
+      "symbol": "Config.allowCustomizedBuiltInElements",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/config.ts#field#Config.FORBID_ATTR",
+      "file": "src/config.ts",
+      "line": 143,
+      "kind": "field",
+      "symbol": "Config.FORBID_ATTR",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/config.ts#field#Config.FORBID_CONTENTS",
+      "file": "src/config.ts",
+      "line": 150,
+      "kind": "field",
+      "symbol": "Config.FORBID_CONTENTS",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/config.ts#field#Config.ADD_FORBID_CONTENTS",
+      "file": "src/config.ts",
+      "line": 155,
+      "kind": "field",
+      "symbol": "Config.ADD_FORBID_CONTENTS",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/config.ts#field#Config.FORBID_TAGS",
+      "file": "src/config.ts",
+      "line": 162,
+      "kind": "field",
+      "symbol": "Config.FORBID_TAGS",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/config.ts#field#Config.FORCE_BODY",
+      "file": "src/config.ts",
+      "line": 169,
+      "kind": "field",
+      "symbol": "Config.FORCE_BODY",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/config.ts#field#Config.HTML_INTEGRATION_POINTS",
+      "file": "src/config.ts",
+      "line": 180,
+      "kind": "field",
+      "symbol": "Config.HTML_INTEGRATION_POINTS",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/config.ts#field#Config.IN_PLACE",
+      "file": "src/config.ts",
+      "line": 187,
+      "kind": "field",
+      "symbol": "Config.IN_PLACE",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/config.ts#field#Config.KEEP_CONTENT",
+      "file": "src/config.ts",
+      "line": 194,
+      "kind": "field",
+      "symbol": "Config.KEEP_CONTENT",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/config.ts#field#Config.MATHML_TEXT_INTEGRATION_POINTS",
+      "file": "src/config.ts",
+      "line": 205,
+      "kind": "field",
+      "symbol": "Config.MATHML_TEXT_INTEGRATION_POINTS",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/config.ts#field#Config.NAMESPACE",
+      "file": "src/config.ts",
+      "line": 212,
+      "kind": "field",
+      "symbol": "Config.NAMESPACE",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/config.ts#field#Config.PARSER_MEDIA_TYPE",
+      "file": "src/config.ts",
+      "line": 219,
+      "kind": "field",
+      "symbol": "Config.PARSER_MEDIA_TYPE",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/config.ts#field#Config.RETURN_DOM_FRAGMENT",
+      "file": "src/config.ts",
+      "line": 226,
+      "kind": "field",
+      "symbol": "Config.RETURN_DOM_FRAGMENT",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/config.ts#field#Config.RETURN_DOM",
+      "file": "src/config.ts",
+      "line": 233,
+      "kind": "field",
+      "symbol": "Config.RETURN_DOM",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/config.ts#field#Config.RETURN_TRUSTED_TYPE",
+      "file": "src/config.ts",
+      "line": 240,
+      "kind": "field",
+      "symbol": "Config.RETURN_TRUSTED_TYPE",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/config.ts#field#Config.SAFE_FOR_TEMPLATES",
+      "file": "src/config.ts",
+      "line": 249,
+      "kind": "field",
+      "symbol": "Config.SAFE_FOR_TEMPLATES",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/config.ts#field#Config.SAFE_FOR_XML",
+      "file": "src/config.ts",
+      "line": 258,
+      "kind": "field",
+      "symbol": "Config.SAFE_FOR_XML",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/config.ts#field#Config.SANITIZE_DOM",
+      "file": "src/config.ts",
+      "line": 265,
+      "kind": "field",
+      "symbol": "Config.SANITIZE_DOM",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/config.ts#field#Config.SANITIZE_NAMED_PROPS",
+      "file": "src/config.ts",
+      "line": 272,
+      "kind": "field",
+      "symbol": "Config.SANITIZE_NAMED_PROPS",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/config.ts#field#Config.TRUSTED_TYPES_POLICY",
+      "file": "src/config.ts",
+      "line": 279,
+      "kind": "field",
+      "symbol": "Config.TRUSTED_TYPES_POLICY",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/config.ts#field#Config.USE_PROFILES",
+      "file": "src/config.ts",
+      "line": 289,
+      "kind": "field",
+      "symbol": "Config.USE_PROFILES",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/config.ts#field#Config.WHOLE_DOCUMENT",
+      "file": "src/config.ts",
+      "line": 296,
+      "kind": "field",
+      "symbol": "Config.WHOLE_DOCUMENT",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/config.ts#interface#UseProfilesConfig",
+      "file": "src/config.ts",
+      "line": 304,
+      "kind": "interface",
+      "symbol": "UseProfilesConfig",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/config.ts#field#UseProfilesConfig.mathMl",
+      "file": "src/config.ts",
+      "line": 308,
+      "kind": "field",
+      "symbol": "UseProfilesConfig.mathMl",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/config.ts#field#UseProfilesConfig.svg",
+      "file": "src/config.ts",
+      "line": 313,
+      "kind": "field",
+      "symbol": "UseProfilesConfig.svg",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/config.ts#field#UseProfilesConfig.svgFilters",
+      "file": "src/config.ts",
+      "line": 318,
+      "kind": "field",
+      "symbol": "UseProfilesConfig.svgFilters",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/config.ts#field#UseProfilesConfig.html",
+      "file": "src/config.ts",
+      "line": 323,
+      "kind": "field",
+      "symbol": "UseProfilesConfig.html",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/purify.ts#constant#VERSION",
+      "file": "src/purify.ts",
+      "line": 51,
+      "kind": "constant",
+      "symbol": "VERSION",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/purify.ts#constant#NODE_TYPE",
+      "file": "src/purify.ts",
+      "line": 58,
+      "kind": "constant",
+      "symbol": "NODE_TYPE",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/purify.ts#function-variable#getGlobal",
+      "file": "src/purify.ts",
+      "line": 74,
+      "kind": "function-variable",
+      "symbol": "getGlobal",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/purify.ts#function-variable#_createTrustedTypesPolicy",
+      "file": "src/purify.ts",
+      "line": 90,
+      "kind": "function-variable",
+      "symbol": "_createTrustedTypesPolicy",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/purify.ts#method#_createTrustedTypesPolicy.createHTML",
+      "file": "src/purify.ts",
+      "line": 113,
+      "kind": "method",
+      "symbol": "_createTrustedTypesPolicy.createHTML",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/purify.ts#method#_createTrustedTypesPolicy.createScriptURL",
+      "file": "src/purify.ts",
+      "line": 117,
+      "kind": "method",
+      "symbol": "_createTrustedTypesPolicy.createScriptURL",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/purify.ts#function-variable#_createHooksMap",
+      "file": "src/purify.ts",
+      "line": 131,
+      "kind": "function-variable",
+      "symbol": "_createHooksMap",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/purify.ts#function-variable#_resolveSetOption",
+      "file": "src/purify.ts",
+      "line": 157,
+      "kind": "function-variable",
+      "symbol": "_resolveSetOption",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/purify.ts#field#_resolveSetOption.transform",
+      "file": "src/purify.ts",
+      "line": 163,
+      "kind": "field",
+      "symbol": "_resolveSetOption.transform",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/purify.ts#field#_resolveSetOption.base",
+      "file": "src/purify.ts",
+      "line": 165,
+      "kind": "field",
+      "symbol": "_resolveSetOption.base",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/purify.ts#function#createDOMPurify",
+      "file": "src/purify.ts",
+      "line": 187,
+      "kind": "function",
+      "symbol": "createDOMPurify",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/purify.ts#function-variable#createDOMPurify.DOMPurify",
+      "file": "src/purify.ts",
+      "line": 189,
+      "kind": "function-variable",
+      "symbol": "createDOMPurify.DOMPurify",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/purify.ts#function-variable#createDOMPurify._assertNotInTrustedTypesPolicy",
+      "file": "src/purify.ts",
+      "line": 272,
+      "kind": "function-variable",
+      "symbol": "createDOMPurify._assertNotInTrustedTypesPolicy",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/purify.ts#function-variable#createDOMPurify._createTrustedHTML",
+      "file": "src/purify.ts",
+      "line": 290,
+      "kind": "function-variable",
+      "symbol": "createDOMPurify._createTrustedHTML",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/purify.ts#function-variable#createDOMPurify._createTrustedScriptURL",
+      "file": "src/purify.ts",
+      "line": 307,
+      "kind": "function-variable",
+      "symbol": "createDOMPurify._createTrustedScriptURL",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/purify.ts#function-variable#createDOMPurify._getDefaultTrustedTypesPolicy",
+      "file": "src/purify.ts",
+      "line": 324,
+      "kind": "function-variable",
+      "symbol": "createDOMPurify._getDefaultTrustedTypesPolicy",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/purify.ts#function-variable#createDOMPurify.isRegexOrFunction",
+      "file": "src/purify.ts",
+      "line": 658,
+      "kind": "function-variable",
+      "symbol": "createDOMPurify.isRegexOrFunction",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/purify.ts#function-variable#createDOMPurify._parseConfig",
+      "file": "src/purify.ts",
+      "line": 674,
+      "kind": "function-variable",
+      "symbol": "createDOMPurify._parseConfig",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/purify.ts#function-variable#createDOMPurify._checkSvgNamespace",
+      "file": "src/purify.ts",
+      "line": 1013,
+      "kind": "function-variable",
+      "symbol": "createDOMPurify._checkSvgNamespace",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/purify.ts#field#createDOMPurify._checkSvgNamespace.namespaceURI",
+      "file": "src/purify.ts",
+      "line": 1018,
+      "kind": "field",
+      "symbol": "createDOMPurify._checkSvgNamespace.namespaceURI",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/purify.ts#function-variable#createDOMPurify._checkMathMlNamespace",
+      "file": "src/purify.ts",
+      "line": 1051,
+      "kind": "function-variable",
+      "symbol": "createDOMPurify._checkMathMlNamespace",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/purify.ts#field#createDOMPurify._checkMathMlNamespace.namespaceURI",
+      "file": "src/purify.ts",
+      "line": 1056,
+      "kind": "field",
+      "symbol": "createDOMPurify._checkMathMlNamespace.namespaceURI",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/purify.ts#function-variable#createDOMPurify._checkHtmlNamespace",
+      "file": "src/purify.ts",
+      "line": 1085,
+      "kind": "function-variable",
+      "symbol": "createDOMPurify._checkHtmlNamespace",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/purify.ts#field#createDOMPurify._checkHtmlNamespace.namespaceURI",
+      "file": "src/purify.ts",
+      "line": 1090,
+      "kind": "field",
+      "symbol": "createDOMPurify._checkHtmlNamespace.namespaceURI",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/purify.ts#function-variable#createDOMPurify._checkValidNamespace",
+      "file": "src/purify.ts",
+      "line": 1127,
+      "kind": "function-variable",
+      "symbol": "createDOMPurify._checkValidNamespace",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/purify.ts#function-variable#createDOMPurify._forceRemove",
+      "file": "src/purify.ts",
+      "line": 1177,
+      "kind": "function-variable",
+      "symbol": "createDOMPurify._forceRemove",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/purify.ts#function-variable#createDOMPurify._neutralizeRoot",
+      "file": "src/purify.ts",
+      "line": 1218,
+      "kind": "function-variable",
+      "symbol": "createDOMPurify._neutralizeRoot",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/purify.ts#function-variable#createDOMPurify._removeAttribute",
+      "file": "src/purify.ts",
+      "line": 1266,
+      "kind": "function-variable",
+      "symbol": "createDOMPurify._removeAttribute",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/purify.ts#function-variable#createDOMPurify._stripDisallowedAttributes",
+      "file": "src/purify.ts",
+      "line": 1304,
+      "kind": "function-variable",
+      "symbol": "createDOMPurify._stripDisallowedAttributes",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/purify.ts#function-variable#createDOMPurify._neutralizeSubtree",
+      "file": "src/purify.ts",
+      "line": 1337,
+      "kind": "function-variable",
+      "symbol": "createDOMPurify._neutralizeSubtree",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/purify.ts#function-variable#createDOMPurify._neutralizePatchLinkage",
+      "file": "src/purify.ts",
+      "line": 1381,
+      "kind": "function-variable",
+      "symbol": "createDOMPurify._neutralizePatchLinkage",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/purify.ts#function-variable#createDOMPurify._initDocument",
+      "file": "src/purify.ts",
+      "line": 1449,
+      "kind": "function-variable",
+      "symbol": "createDOMPurify._initDocument",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/purify.ts#function-variable#createDOMPurify._createNodeIterator",
+      "file": "src/purify.ts",
+      "line": 1523,
+      "kind": "function-variable",
+      "symbol": "createDOMPurify._createNodeIterator",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/purify.ts#function-variable#createDOMPurify._stripTemplateExpressions",
+      "file": "src/purify.ts",
+      "line": 1553,
+      "kind": "function-variable",
+      "symbol": "createDOMPurify._stripTemplateExpressions",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/purify.ts#function-variable#createDOMPurify._scrubTemplateExpressions",
+      "file": "src/purify.ts",
+      "line": 1572,
+      "kind": "function-variable",
+      "symbol": "createDOMPurify._scrubTemplateExpressions",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/purify.ts#function-variable#createDOMPurify._isClobbered",
+      "file": "src/purify.ts",
+      "line": 1615,
+      "kind": "function-variable",
+      "symbol": "createDOMPurify._isClobbered",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/purify.ts#function-variable#createDOMPurify._isDocumentFragment",
+      "file": "src/purify.ts",
+      "line": 1657,
+      "kind": "function-variable",
+      "symbol": "createDOMPurify._isDocumentFragment",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/purify.ts#function-variable#createDOMPurify._isNode",
+      "file": "src/purify.ts",
+      "line": 1679,
+      "kind": "function-variable",
+      "symbol": "createDOMPurify._isNode",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/purify.ts#function#createDOMPurify._executeHooks",
+      "file": "src/purify.ts",
+      "line": 1701,
+      "kind": "function",
+      "symbol": "createDOMPurify._executeHooks",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/purify.ts#function-variable#createDOMPurify._isUnsafeNode",
+      "file": "src/purify.ts",
+      "line": 1725,
+      "kind": "function-variable",
+      "symbol": "createDOMPurify._isUnsafeNode",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/purify.ts#function-variable#createDOMPurify._sanitizeDisallowedNode",
+      "file": "src/purify.ts",
+      "line": 1777,
+      "kind": "function-variable",
+      "symbol": "createDOMPurify._sanitizeDisallowedNode",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/purify.ts#function-variable#createDOMPurify._forkSharedAllowlist",
+      "file": "src/purify.ts",
+      "line": 1851,
+      "kind": "function-variable",
+      "symbol": "createDOMPurify._forkSharedAllowlist",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/purify.ts#function-variable#createDOMPurify._sanitizeElements",
+      "file": "src/purify.ts",
+      "line": 1880,
+      "kind": "function-variable",
+      "symbol": "createDOMPurify._sanitizeElements",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/purify.ts#function-variable#createDOMPurify._isValidAttribute",
+      "file": "src/purify.ts",
+      "line": 2020,
+      "kind": "function-variable",
+      "symbol": "createDOMPurify._isValidAttribute",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/purify.ts#function-variable#createDOMPurify._isBasicCustomElement",
+      "file": "src/purify.ts",
+      "line": 2162,
+      "kind": "function-variable",
+      "symbol": "createDOMPurify._isBasicCustomElement",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/purify.ts#function-variable#createDOMPurify._applyTrustedTypesToAttribute",
+      "file": "src/purify.ts",
+      "line": 2182,
+      "kind": "function-variable",
+      "symbol": "createDOMPurify._applyTrustedTypesToAttribute",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/purify.ts#function-variable#createDOMPurify._setAttributeValue",
+      "file": "src/purify.ts",
+      "line": 2225,
+      "kind": "function-variable",
+      "symbol": "createDOMPurify._setAttributeValue",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/purify.ts#function-variable#createDOMPurify._sanitizeAttributes",
+      "file": "src/purify.ts",
+      "line": 2264,
+      "kind": "function-variable",
+      "symbol": "createDOMPurify._sanitizeAttributes",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/purify.ts#function-variable#createDOMPurify._sanitizeShadowDOM",
+      "file": "src/purify.ts",
+      "line": 2394,
+      "kind": "function-variable",
+      "symbol": "createDOMPurify._sanitizeShadowDOM",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/purify.ts#function-variable#createDOMPurify._sanitizeAttachedShadowRoots",
+      "file": "src/purify.ts",
+      "line": 2450,
+      "kind": "function-variable",
+      "symbol": "createDOMPurify._sanitizeAttachedShadowRoots",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/purify.ts#field#createDOMPurify._sanitizeAttachedShadowRoots.node",
+      "file": "src/purify.ts",
+      "line": 2463,
+      "kind": "field",
+      "symbol": "createDOMPurify._sanitizeAttachedShadowRoots.node",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/purify.ts#field#createDOMPurify._sanitizeAttachedShadowRoots.shadow",
+      "file": "src/purify.ts",
+      "line": 2466,
+      "kind": "field",
+      "symbol": "createDOMPurify._sanitizeAttachedShadowRoots.shadow",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/regexp.ts#constant#MUSTACHE_EXPR",
+      "file": "src/regexp.ts",
+      "line": 4,
+      "kind": "constant",
+      "symbol": "MUSTACHE_EXPR",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/regexp.ts#constant#ERB_EXPR",
+      "file": "src/regexp.ts",
+      "line": 6,
+      "kind": "constant",
+      "symbol": "ERB_EXPR",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/regexp.ts#constant#TMPLIT_EXPR",
+      "file": "src/regexp.ts",
+      "line": 8,
+      "kind": "constant",
+      "symbol": "TMPLIT_EXPR",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/regexp.ts#constant#DATA_ATTR",
+      "file": "src/regexp.ts",
+      "line": 10,
+      "kind": "constant",
+      "symbol": "DATA_ATTR",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/regexp.ts#constant#ARIA_ATTR",
+      "file": "src/regexp.ts",
+      "line": 12,
+      "kind": "constant",
+      "symbol": "ARIA_ATTR",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/regexp.ts#constant#IS_ALLOWED_URI",
+      "file": "src/regexp.ts",
+      "line": 19,
+      "kind": "constant",
+      "symbol": "IS_ALLOWED_URI",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/regexp.ts#constant#IS_SCRIPT_OR_DATA",
+      "file": "src/regexp.ts",
+      "line": 23,
+      "kind": "constant",
+      "symbol": "IS_SCRIPT_OR_DATA",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/regexp.ts#constant#ATTR_WHITESPACE",
+      "file": "src/regexp.ts",
+      "line": 25,
+      "kind": "constant",
+      "symbol": "ATTR_WHITESPACE",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/regexp.ts#constant#DOCTYPE_NAME",
+      "file": "src/regexp.ts",
+      "line": 29,
+      "kind": "constant",
+      "symbol": "DOCTYPE_NAME",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/regexp.ts#constant#CUSTOM_ELEMENT",
+      "file": "src/regexp.ts",
+      "line": 31,
+      "kind": "constant",
+      "symbol": "CUSTOM_ELEMENT",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/regexp.ts#constant#ELEMENT_MARKUP_PROBE",
+      "file": "src/regexp.ts",
+      "line": 38,
+      "kind": "constant",
+      "symbol": "ELEMENT_MARKUP_PROBE",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/regexp.ts#constant#COMMENT_MARKUP_PROBE",
+      "file": "src/regexp.ts",
+      "line": 44,
+      "kind": "constant",
+      "symbol": "COMMENT_MARKUP_PROBE",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/regexp.ts#constant#FALLBACK_TAG_CLOSE",
+      "file": "src/regexp.ts",
+      "line": 46,
+      "kind": "constant",
+      "symbol": "FALLBACK_TAG_CLOSE",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/regexp.ts#constant#SELF_CLOSING_TAG",
+      "file": "src/regexp.ts",
+      "line": 48,
+      "kind": "constant",
+      "symbol": "SELF_CLOSING_TAG",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/tags.ts#constant#html",
+      "file": "src/tags.ts",
+      "line": 11,
+      "kind": "constant",
+      "symbol": "html",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/tags.ts#constant#svg",
+      "file": "src/tags.ts",
+      "line": 141,
+      "kind": "constant",
+      "symbol": "svg",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/tags.ts#constant#svgFilters",
+      "file": "src/tags.ts",
+      "line": 198,
+      "kind": "constant",
+      "symbol": "svgFilters",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/tags.ts#constant#svgDisallowed",
+      "file": "src/tags.ts",
+      "line": 234,
+      "kind": "constant",
+      "symbol": "svgDisallowed",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/tags.ts#constant#mathMl",
+      "file": "src/tags.ts",
+      "line": 266,
+      "kind": "constant",
+      "symbol": "mathMl",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/tags.ts#constant#mathMlDisallowed",
+      "file": "src/tags.ts",
+      "line": 307,
+      "kind": "constant",
+      "symbol": "mathMlDisallowed",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/tags.ts#constant#text",
+      "file": "src/tags.ts",
+      "line": 332,
+      "kind": "constant",
+      "symbol": "text",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#interface#DOMPurify",
+      "file": "src/types.ts",
+      "line": 14,
+      "kind": "interface",
+      "symbol": "DOMPurify",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#call-signature#DOMPurify.<call>",
+      "file": "src/types.ts",
+      "line": 21,
+      "kind": "call-signature",
+      "symbol": "DOMPurify.<call>",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#field#DOMPurify.version",
+      "file": "src/types.ts",
+      "line": 26,
+      "kind": "field",
+      "symbol": "DOMPurify.version",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#field#DOMPurify.removed",
+      "file": "src/types.ts",
+      "line": 33,
+      "kind": "field",
+      "symbol": "DOMPurify.removed",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#field#DOMPurify.isSupported",
+      "file": "src/types.ts",
+      "line": 40,
+      "kind": "field",
+      "symbol": "DOMPurify.isSupported",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#method-signature#DOMPurify.setConfig",
+      "file": "src/types.ts",
+      "line": 47,
+      "kind": "method-signature",
+      "symbol": "DOMPurify.setConfig",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#method-signature#DOMPurify.clearConfig",
+      "file": "src/types.ts",
+      "line": 54,
+      "kind": "method-signature",
+      "symbol": "DOMPurify.clearConfig",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#method-signature#DOMPurify.sanitize",
+      "file": "src/types.ts",
+      "line": 63,
+      "kind": "method-signature",
+      "symbol": "DOMPurify.sanitize",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#field#DOMPurify.RETURN_TRUSTED_TYPE",
+      "file": "src/types.ts",
+      "line": 68,
+      "kind": "field",
+      "symbol": "DOMPurify.RETURN_TRUSTED_TYPE",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#method-signature#DOMPurify.sanitize@2",
+      "file": "src/types.ts",
+      "line": 79,
+      "kind": "method-signature",
+      "symbol": "DOMPurify.sanitize",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#field#DOMPurify.IN_PLACE",
+      "file": "src/types.ts",
+      "line": 84,
+      "kind": "field",
+      "symbol": "DOMPurify.IN_PLACE",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#method-signature#DOMPurify.sanitize@3",
+      "file": "src/types.ts",
+      "line": 95,
+      "kind": "method-signature",
+      "symbol": "DOMPurify.sanitize",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#field#DOMPurify.RETURN_DOM",
+      "file": "src/types.ts",
+      "line": 100,
+      "kind": "field",
+      "symbol": "DOMPurify.RETURN_DOM",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#method-signature#DOMPurify.sanitize@4",
+      "file": "src/types.ts",
+      "line": 111,
+      "kind": "method-signature",
+      "symbol": "DOMPurify.sanitize",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#field#DOMPurify.RETURN_DOM_FRAGMENT",
+      "file": "src/types.ts",
+      "line": 116,
+      "kind": "field",
+      "symbol": "DOMPurify.RETURN_DOM_FRAGMENT",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#method-signature#DOMPurify.sanitize@5",
+      "file": "src/types.ts",
+      "line": 127,
+      "kind": "method-signature",
+      "symbol": "DOMPurify.sanitize",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#method-signature#DOMPurify.isValidAttribute",
+      "file": "src/types.ts",
+      "line": 138,
+      "kind": "method-signature",
+      "symbol": "DOMPurify.isValidAttribute",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#method-signature#DOMPurify.addHook",
+      "file": "src/types.ts",
+      "line": 146,
+      "kind": "method-signature",
+      "symbol": "DOMPurify.addHook",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#method-signature#DOMPurify.addHook@2",
+      "file": "src/types.ts",
+      "line": 154,
+      "kind": "method-signature",
+      "symbol": "DOMPurify.addHook",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#method-signature#DOMPurify.addHook@3",
+      "file": "src/types.ts",
+      "line": 162,
+      "kind": "method-signature",
+      "symbol": "DOMPurify.addHook",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#method-signature#DOMPurify.addHook@4",
+      "file": "src/types.ts",
+      "line": 173,
+      "kind": "method-signature",
+      "symbol": "DOMPurify.addHook",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#method-signature#DOMPurify.addHook@5",
+      "file": "src/types.ts",
+      "line": 184,
+      "kind": "method-signature",
+      "symbol": "DOMPurify.addHook",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#method-signature#DOMPurify.removeHook",
+      "file": "src/types.ts",
+      "line": 196,
+      "kind": "method-signature",
+      "symbol": "DOMPurify.removeHook",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#method-signature#DOMPurify.removeHook@2",
+      "file": "src/types.ts",
+      "line": 208,
+      "kind": "method-signature",
+      "symbol": "DOMPurify.removeHook",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#method-signature#DOMPurify.removeHook@3",
+      "file": "src/types.ts",
+      "line": 220,
+      "kind": "method-signature",
+      "symbol": "DOMPurify.removeHook",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#method-signature#DOMPurify.removeHook@4",
+      "file": "src/types.ts",
+      "line": 232,
+      "kind": "method-signature",
+      "symbol": "DOMPurify.removeHook",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#method-signature#DOMPurify.removeHook@5",
+      "file": "src/types.ts",
+      "line": 244,
+      "kind": "method-signature",
+      "symbol": "DOMPurify.removeHook",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#method-signature#DOMPurify.removeHooks",
+      "file": "src/types.ts",
+      "line": 254,
+      "kind": "method-signature",
+      "symbol": "DOMPurify.removeHooks",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#method-signature#DOMPurify.removeAllHooks",
+      "file": "src/types.ts",
+      "line": 259,
+      "kind": "method-signature",
+      "symbol": "DOMPurify.removeAllHooks",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#interface#RemovedElement",
+      "file": "src/types.ts",
+      "line": 265,
+      "kind": "interface",
+      "symbol": "RemovedElement",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#field#RemovedElement.element",
+      "file": "src/types.ts",
+      "line": 269,
+      "kind": "field",
+      "symbol": "RemovedElement.element",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#interface#RemovedAttribute",
+      "file": "src/types.ts",
+      "line": 275,
+      "kind": "interface",
+      "symbol": "RemovedAttribute",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#field#RemovedAttribute.attribute",
+      "file": "src/types.ts",
+      "line": 279,
+      "kind": "field",
+      "symbol": "RemovedAttribute.attribute",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#field#RemovedAttribute.from",
+      "file": "src/types.ts",
+      "line": 284,
+      "kind": "field",
+      "symbol": "RemovedAttribute.from",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#type#BasicHookName",
+      "file": "src/types.ts",
+      "line": 288,
+      "kind": "type",
+      "symbol": "BasicHookName",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#type#ElementHookName",
+      "file": "src/types.ts",
+      "line": 293,
+      "kind": "type",
+      "symbol": "ElementHookName",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#type#DocumentFragmentHookName",
+      "file": "src/types.ts",
+      "line": 295,
+      "kind": "type",
+      "symbol": "DocumentFragmentHookName",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#type#UponSanitizeElementHookName",
+      "file": "src/types.ts",
+      "line": 299,
+      "kind": "type",
+      "symbol": "UponSanitizeElementHookName",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#type#UponSanitizeAttributeHookName",
+      "file": "src/types.ts",
+      "line": 301,
+      "kind": "type",
+      "symbol": "UponSanitizeAttributeHookName",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#interface#HooksMap",
+      "file": "src/types.ts",
+      "line": 310,
+      "kind": "interface",
+      "symbol": "HooksMap",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#field#HooksMap.beforeSanitizeElements",
+      "file": "src/types.ts",
+      "line": 312,
+      "kind": "field",
+      "symbol": "HooksMap.beforeSanitizeElements",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#field#HooksMap.afterSanitizeElements",
+      "file": "src/types.ts",
+      "line": 314,
+      "kind": "field",
+      "symbol": "HooksMap.afterSanitizeElements",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#field#HooksMap.beforeSanitizeShadowDOM",
+      "file": "src/types.ts",
+      "line": 316,
+      "kind": "field",
+      "symbol": "HooksMap.beforeSanitizeShadowDOM",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#field#HooksMap.uponSanitizeShadowNode",
+      "file": "src/types.ts",
+      "line": 318,
+      "kind": "field",
+      "symbol": "HooksMap.uponSanitizeShadowNode",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#field#HooksMap.afterSanitizeShadowDOM",
+      "file": "src/types.ts",
+      "line": 320,
+      "kind": "field",
+      "symbol": "HooksMap.afterSanitizeShadowDOM",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#field#HooksMap.beforeSanitizeAttributes",
+      "file": "src/types.ts",
+      "line": 322,
+      "kind": "field",
+      "symbol": "HooksMap.beforeSanitizeAttributes",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#field#HooksMap.afterSanitizeAttributes",
+      "file": "src/types.ts",
+      "line": 324,
+      "kind": "field",
+      "symbol": "HooksMap.afterSanitizeAttributes",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#field#HooksMap.uponSanitizeElement",
+      "file": "src/types.ts",
+      "line": 326,
+      "kind": "field",
+      "symbol": "HooksMap.uponSanitizeElement",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#field#HooksMap.uponSanitizeAttribute",
+      "file": "src/types.ts",
+      "line": 328,
+      "kind": "field",
+      "symbol": "HooksMap.uponSanitizeAttribute",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#type#ArrayElement",
+      "file": "src/types.ts",
+      "line": 332,
+      "kind": "type",
+      "symbol": "ArrayElement",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#type#HookFunction",
+      "file": "src/types.ts",
+      "line": 335,
+      "kind": "type",
+      "symbol": "HookFunction",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#type#HookName",
+      "file": "src/types.ts",
+      "line": 338,
+      "kind": "type",
+      "symbol": "HookName",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#type#NodeHook",
+      "file": "src/types.ts",
+      "line": 352,
+      "kind": "type",
+      "symbol": "NodeHook",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#type#ElementHook",
+      "file": "src/types.ts",
+      "line": 366,
+      "kind": "type",
+      "symbol": "ElementHook",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#type#DocumentFragmentHook",
+      "file": "src/types.ts",
+      "line": 380,
+      "kind": "type",
+      "symbol": "DocumentFragmentHook",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#type#UponSanitizeElementHook",
+      "file": "src/types.ts",
+      "line": 394,
+      "kind": "type",
+      "symbol": "UponSanitizeElementHook",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#type#UponSanitizeAttributeHook",
+      "file": "src/types.ts",
+      "line": 408,
+      "kind": "type",
+      "symbol": "UponSanitizeAttributeHook",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#interface#UponSanitizeElementHookEvent",
+      "file": "src/types.ts",
+      "line": 416,
+      "kind": "interface",
+      "symbol": "UponSanitizeElementHookEvent",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#field#UponSanitizeElementHookEvent.tagName",
+      "file": "src/types.ts",
+      "line": 418,
+      "kind": "field",
+      "symbol": "UponSanitizeElementHookEvent.tagName",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#field#UponSanitizeElementHookEvent.allowedTags",
+      "file": "src/types.ts",
+      "line": 420,
+      "kind": "field",
+      "symbol": "UponSanitizeElementHookEvent.allowedTags",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#interface#UponSanitizeAttributeHookEvent",
+      "file": "src/types.ts",
+      "line": 424,
+      "kind": "interface",
+      "symbol": "UponSanitizeAttributeHookEvent",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#field#UponSanitizeAttributeHookEvent.attrName",
+      "file": "src/types.ts",
+      "line": 426,
+      "kind": "field",
+      "symbol": "UponSanitizeAttributeHookEvent.attrName",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#field#UponSanitizeAttributeHookEvent.attrValue",
+      "file": "src/types.ts",
+      "line": 428,
+      "kind": "field",
+      "symbol": "UponSanitizeAttributeHookEvent.attrValue",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#field#UponSanitizeAttributeHookEvent.keepAttr",
+      "file": "src/types.ts",
+      "line": 430,
+      "kind": "field",
+      "symbol": "UponSanitizeAttributeHookEvent.keepAttr",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#field#UponSanitizeAttributeHookEvent.allowedAttributes",
+      "file": "src/types.ts",
+      "line": 432,
+      "kind": "field",
+      "symbol": "UponSanitizeAttributeHookEvent.allowedAttributes",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#field#UponSanitizeAttributeHookEvent.forceKeepAttr",
+      "file": "src/types.ts",
+      "line": 434,
+      "kind": "field",
+      "symbol": "UponSanitizeAttributeHookEvent.forceKeepAttr",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#type#WindowLike",
+      "file": "src/types.ts",
+      "line": 444,
+      "kind": "type",
+      "symbol": "WindowLike",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#field#WindowLike.document",
+      "file": "src/types.ts",
+      "line": 456,
+      "kind": "field",
+      "symbol": "WindowLike.document",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/types.ts#field#WindowLike.MozNamedAttrMap",
+      "file": "src/types.ts",
+      "line": 458,
+      "kind": "field",
+      "symbol": "WindowLike.MozNamedAttrMap",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/utils.ts#constant#{\n  entries,\n  setPrototypeOf,\n  isFrozen,\n  getPrototypeOf,\n  getOwnPropertyDescriptor,\n}",
+      "file": "src/utils.ts",
+      "line": 9,
+      "kind": "constant",
+      "symbol": "{\n  entries,\n  setPrototypeOf,\n  isFrozen,\n  getPrototypeOf,\n  getOwnPropertyDescriptor,\n}",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/utils.ts#constant#arrayForEach",
+      "file": "src/utils.ts",
+      "line": 64,
+      "kind": "constant",
+      "symbol": "arrayForEach",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/utils.ts#constant#arrayIndexOf",
+      "file": "src/utils.ts",
+      "line": 66,
+      "kind": "constant",
+      "symbol": "arrayIndexOf",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/utils.ts#constant#arrayLastIndexOf",
+      "file": "src/utils.ts",
+      "line": 68,
+      "kind": "constant",
+      "symbol": "arrayLastIndexOf",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/utils.ts#constant#arrayPop",
+      "file": "src/utils.ts",
+      "line": 70,
+      "kind": "constant",
+      "symbol": "arrayPop",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/utils.ts#constant#arrayPush",
+      "file": "src/utils.ts",
+      "line": 72,
+      "kind": "constant",
+      "symbol": "arrayPush",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/utils.ts#constant#arraySlice",
+      "file": "src/utils.ts",
+      "line": 74,
+      "kind": "constant",
+      "symbol": "arraySlice",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/utils.ts#constant#arraySplice",
+      "file": "src/utils.ts",
+      "line": 76,
+      "kind": "constant",
+      "symbol": "arraySplice",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/utils.ts#constant#arrayIsArray",
+      "file": "src/utils.ts",
+      "line": 78,
+      "kind": "constant",
+      "symbol": "arrayIsArray",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/utils.ts#constant#stringToLowerCase",
+      "file": "src/utils.ts",
+      "line": 81,
+      "kind": "constant",
+      "symbol": "stringToLowerCase",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/utils.ts#constant#stringToString",
+      "file": "src/utils.ts",
+      "line": 83,
+      "kind": "constant",
+      "symbol": "stringToString",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/utils.ts#constant#stringMatch",
+      "file": "src/utils.ts",
+      "line": 85,
+      "kind": "constant",
+      "symbol": "stringMatch",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/utils.ts#constant#stringReplace",
+      "file": "src/utils.ts",
+      "line": 87,
+      "kind": "constant",
+      "symbol": "stringReplace",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/utils.ts#constant#stringIndexOf",
+      "file": "src/utils.ts",
+      "line": 89,
+      "kind": "constant",
+      "symbol": "stringIndexOf",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/utils.ts#constant#stringTrim",
+      "file": "src/utils.ts",
+      "line": 91,
+      "kind": "constant",
+      "symbol": "stringTrim",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/utils.ts#constant#numberToString",
+      "file": "src/utils.ts",
+      "line": 94,
+      "kind": "constant",
+      "symbol": "numberToString",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/utils.ts#constant#booleanToString",
+      "file": "src/utils.ts",
+      "line": 96,
+      "kind": "constant",
+      "symbol": "booleanToString",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/utils.ts#constant#bigintToString",
+      "file": "src/utils.ts",
+      "line": 98,
+      "kind": "constant",
+      "symbol": "bigintToString",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/utils.ts#constant#symbolToString",
+      "file": "src/utils.ts",
+      "line": 101,
+      "kind": "constant",
+      "symbol": "symbolToString",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/utils.ts#constant#objectHasOwnProperty",
+      "file": "src/utils.ts",
+      "line": 105,
+      "kind": "constant",
+      "symbol": "objectHasOwnProperty",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/utils.ts#constant#objectToString",
+      "file": "src/utils.ts",
+      "line": 107,
+      "kind": "constant",
+      "symbol": "objectToString",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/utils.ts#constant#regExpTest",
+      "file": "src/utils.ts",
+      "line": 110,
+      "kind": "constant",
+      "symbol": "regExpTest",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/utils.ts#constant#typeErrorCreate",
+      "file": "src/utils.ts",
+      "line": 113,
+      "kind": "constant",
+      "symbol": "typeErrorCreate",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/utils.ts#function#unapply",
+      "file": "src/utils.ts",
+      "line": 125,
+      "kind": "function",
+      "symbol": "unapply",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/utils.ts#function#unconstruct",
+      "file": "src/utils.ts",
+      "line": 144,
+      "kind": "function",
+      "symbol": "unconstruct",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/utils.ts#function#addToSet",
+      "file": "src/utils.ts",
+      "line": 163,
+      "kind": "function",
+      "symbol": "addToSet",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/utils.ts#function#cleanArray",
+      "file": "src/utils.ts",
+      "line": 211,
+      "kind": "function",
+      "symbol": "cleanArray",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/utils.ts#function#clone",
+      "file": "src/utils.ts",
+      "line": 234,
+      "kind": "function",
+      "symbol": "clone",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/utils.ts#function#stringifyValue",
+      "file": "src/utils.ts",
+      "line": 269,
+      "kind": "function",
+      "symbol": "stringifyValue",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/utils.ts#function#lookupGetter",
+      "file": "src/utils.ts",
+      "line": 333,
+      "kind": "function",
+      "symbol": "lookupGetter",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/utils.ts#function#lookupGetter.fallbackValue",
+      "file": "src/utils.ts",
+      "line": 354,
+      "kind": "function",
+      "symbol": "lookupGetter.fallbackValue",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "src/utils.ts#function#isRegex",
+      "file": "src/utils.ts",
+      "line": 366,
+      "kind": "function",
+      "symbol": "isRegex",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/bootstrap-test-suite.js#constant#fs",
+      "file": "test/bootstrap-test-suite.js",
+      "line": 2,
+      "kind": "constant",
+      "symbol": "fs",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/bootstrap-test-suite.js#class#StringWrapper",
+      "file": "test/bootstrap-test-suite.js",
+      "line": 13,
+      "kind": "class",
+      "symbol": "StringWrapper",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/bootstrap-test-suite.js#constructor#StringWrapper.constructor",
+      "file": "test/bootstrap-test-suite.js",
+      "line": 15,
+      "kind": "constructor",
+      "symbol": "StringWrapper.constructor",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/bootstrap-test-suite.js#method#StringWrapper.toString",
+      "file": "test/bootstrap-test-suite.js",
+      "line": 20,
+      "kind": "method",
+      "symbol": "StringWrapper.toString",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/bootstrap-test-suite.js#function#loadDOMPurify",
+      "file": "test/bootstrap-test-suite.js",
+      "line": 37,
+      "kind": "function",
+      "symbol": "loadDOMPurify",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/bootstrap-test-suite.js#function#loadDOMPurifyWithSanityCheck",
+      "file": "test/bootstrap-test-suite.js",
+      "line": 78,
+      "kind": "function",
+      "symbol": "loadDOMPurifyWithSanityCheck",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/bootstrap-test-suite.js#function-variable#loadDOMPurifyWithSanityCheck.beforeOnLoadSanityCheck",
+      "file": "test/bootstrap-test-suite.js",
+      "line": 85,
+      "kind": "function-variable",
+      "symbol": "loadDOMPurifyWithSanityCheck.beforeOnLoadSanityCheck",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/bootstrap-test-suite.js#method#setup.createPolicy",
+      "file": "test/bootstrap-test-suite.js",
+      "line": 149,
+      "kind": "method",
+      "symbol": "setup.createPolicy",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/bootstrap-test-suite.js#method#setup.createPolicy.createHTML",
+      "file": "test/bootstrap-test-suite.js",
+      "line": 153,
+      "kind": "method",
+      "symbol": "setup.createPolicy.createHTML",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/bootstrap-test-suite.js#method#setup.createPolicy@2",
+      "file": "test/bootstrap-test-suite.js",
+      "line": 186,
+      "kind": "method",
+      "symbol": "setup.createPolicy",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/bootstrap-test-suite.js#method#onload.createScript",
+      "file": "test/bootstrap-test-suite.js",
+      "line": 216,
+      "kind": "method",
+      "symbol": "onload.createScript",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/bootstrap-test-suite.js#method#onload.createHTML",
+      "file": "test/bootstrap-test-suite.js",
+      "line": 233,
+      "kind": "method",
+      "symbol": "onload.createHTML",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/bootstrap-test-suite.js#method#onload.createHTML@2",
+      "file": "test/bootstrap-test-suite.js",
+      "line": 250,
+      "kind": "method",
+      "symbol": "onload.createHTML",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/bootstrap-test-suite.js#method#onload.createScriptURL",
+      "file": "test/bootstrap-test-suite.js",
+      "line": 255,
+      "kind": "method",
+      "symbol": "onload.createScriptURL",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/bootstrap-test-suite.js#method#onload.createHTML@3",
+      "file": "test/bootstrap-test-suite.js",
+      "line": 282,
+      "kind": "method",
+      "symbol": "onload.createHTML",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/bootstrap-test-suite.js#method#onload.createScriptURL@2",
+      "file": "test/bootstrap-test-suite.js",
+      "line": 287,
+      "kind": "method",
+      "symbol": "onload.createScriptURL",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/bootstrap-test-suite.js#method#setup.createPolicy@3",
+      "file": "test/bootstrap-test-suite.js",
+      "line": 319,
+      "kind": "method",
+      "symbol": "setup.createPolicy",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/bootstrap-test-suite.js#method#setup.createPolicy.createHTML@2",
+      "file": "test/bootstrap-test-suite.js",
+      "line": 323,
+      "kind": "method",
+      "symbol": "setup.createPolicy.createHTML",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/bootstrap-test-suite.js#method#setup.createPolicy.createScriptURL",
+      "file": "test/bootstrap-test-suite.js",
+      "line": 327,
+      "kind": "method",
+      "symbol": "setup.createPolicy.createScriptURL",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/bootstrap-test-suite.js#method#onload.createHTML@4",
+      "file": "test/bootstrap-test-suite.js",
+      "line": 340,
+      "kind": "method",
+      "symbol": "onload.createHTML",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/bootstrap-test-suite.js#method#onload.createScriptURL@3",
+      "file": "test/bootstrap-test-suite.js",
+      "line": 344,
+      "kind": "method",
+      "symbol": "onload.createScriptURL",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/bootstrap-test-suite.js#method#setup.createPolicy@4",
+      "file": "test/bootstrap-test-suite.js",
+      "line": 381,
+      "kind": "method",
+      "symbol": "setup.createPolicy",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/bootstrap-test-suite.js#method#setup.createPolicy.createHTML@3",
+      "file": "test/bootstrap-test-suite.js",
+      "line": 385,
+      "kind": "method",
+      "symbol": "setup.createPolicy.createHTML",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/bootstrap-test-suite.js#method#setup.createPolicy.createScriptURL@2",
+      "file": "test/bootstrap-test-suite.js",
+      "line": 389,
+      "kind": "method",
+      "symbol": "setup.createPolicy.createScriptURL",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/bootstrap-test-suite.js#method#setup.createPolicy@5",
+      "file": "test/bootstrap-test-suite.js",
+      "line": 435,
+      "kind": "method",
+      "symbol": "setup.createPolicy",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/bootstrap-test-suite.js#method#setup.createPolicy.createHTML@4",
+      "file": "test/bootstrap-test-suite.js",
+      "line": 438,
+      "kind": "method",
+      "symbol": "setup.createPolicy.createHTML",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/bootstrap-test-suite.js#method#setup.createPolicy.createScriptURL@3",
+      "file": "test/bootstrap-test-suite.js",
+      "line": 442,
+      "kind": "method",
+      "symbol": "setup.createPolicy.createScriptURL",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/bootstrap-test-suite.js#method#onload.createHTML@5",
+      "file": "test/bootstrap-test-suite.js",
+      "line": 457,
+      "kind": "method",
+      "symbol": "onload.createHTML",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/bootstrap-test-suite.js#method#onload.createScriptURL@4",
+      "file": "test/bootstrap-test-suite.js",
+      "line": 461,
+      "kind": "method",
+      "symbol": "onload.createScriptURL",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/bootstrap-test-suite.js#function#withCountingTrustedTypes",
+      "file": "test/bootstrap-test-suite.js",
+      "line": 492,
+      "kind": "function",
+      "symbol": "withCountingTrustedTypes",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/bootstrap-test-suite.js#method#withCountingTrustedTypes.setup.createPolicy",
+      "file": "test/bootstrap-test-suite.js",
+      "line": 497,
+      "kind": "method",
+      "symbol": "withCountingTrustedTypes.setup.createPolicy",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/bootstrap-test-suite.js#method#withCountingTrustedTypes.setup.createPolicy.createHTML",
+      "file": "test/bootstrap-test-suite.js",
+      "line": 501,
+      "kind": "method",
+      "symbol": "withCountingTrustedTypes.setup.createPolicy.createHTML",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/bootstrap-test-suite.js#method#withCountingTrustedTypes.setup.createPolicy.createScriptURL",
+      "file": "test/bootstrap-test-suite.js",
+      "line": 505,
+      "kind": "method",
+      "symbol": "withCountingTrustedTypes.setup.createPolicy.createScriptURL",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/bootstrap-test-suite.js#function#unsafeCallerPolicy",
+      "file": "test/bootstrap-test-suite.js",
+      "line": 519,
+      "kind": "function",
+      "symbol": "unsafeCallerPolicy",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/bootstrap-test-suite.js#method#unsafeCallerPolicy.createHTML",
+      "file": "test/bootstrap-test-suite.js",
+      "line": 522,
+      "kind": "method",
+      "symbol": "unsafeCallerPolicy.createHTML",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/bootstrap-test-suite.js#method#unsafeCallerPolicy.createScriptURL",
+      "file": "test/bootstrap-test-suite.js",
+      "line": 526,
+      "kind": "method",
+      "symbol": "unsafeCallerPolicy.createScriptURL",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/bootstrap-test-suite.js#method#setup.createPolicy@6",
+      "file": "test/bootstrap-test-suite.js",
+      "line": 703,
+      "kind": "method",
+      "symbol": "setup.createPolicy",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/bootstrap-test-suite.js#method#setup.createPolicy.createHTML@5",
+      "file": "test/bootstrap-test-suite.js",
+      "line": 706,
+      "kind": "method",
+      "symbol": "setup.createPolicy.createHTML",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/bootstrap-test-suite.js#method#setup.createPolicy.createScriptURL@4",
+      "file": "test/bootstrap-test-suite.js",
+      "line": 710,
+      "kind": "method",
+      "symbol": "setup.createPolicy.createScriptURL",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/bootstrap-test-suite.js#method#setup.getAttributeType",
+      "file": "test/bootstrap-test-suite.js",
+      "line": 716,
+      "kind": "method",
+      "symbol": "setup.getAttributeType",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/bootstrap-test-suite.js#method#onload.createHTML@6",
+      "file": "test/bootstrap-test-suite.js",
+      "line": 734,
+      "kind": "method",
+      "symbol": "onload.createHTML",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/bootstrap-test-suite.js#method#onload.createScriptURL@5",
+      "file": "test/bootstrap-test-suite.js",
+      "line": 738,
+      "kind": "method",
+      "symbol": "onload.createScriptURL",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/fuzz/sanitize.fast-check.js#constant#assert",
+      "file": "test/fuzz/sanitize.fast-check.js",
+      "line": 4,
+      "kind": "constant",
+      "symbol": "assert",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/fuzz/sanitize.fast-check.js#constant#fc",
+      "file": "test/fuzz/sanitize.fast-check.js",
+      "line": 6,
+      "kind": "constant",
+      "symbol": "fc",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/fuzz/sanitize.fast-check.js#constant#{ JSDOM }",
+      "file": "test/fuzz/sanitize.fast-check.js",
+      "line": 8,
+      "kind": "constant",
+      "symbol": "{ JSDOM }",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/fuzz/sanitize.fast-check.js#constant#createDOMPurify",
+      "file": "test/fuzz/sanitize.fast-check.js",
+      "line": 10,
+      "kind": "constant",
+      "symbol": "createDOMPurify",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/fuzz/sanitize.fast-check.js#constant#FUZZ_RUNS",
+      "file": "test/fuzz/sanitize.fast-check.js",
+      "line": 13,
+      "kind": "constant",
+      "symbol": "FUZZ_RUNS",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/fuzz/sanitize.fast-check.js#function#withDOMPurify",
+      "file": "test/fuzz/sanitize.fast-check.js",
+      "line": 21,
+      "kind": "function",
+      "symbol": "withDOMPurify",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/fuzz/sanitize.fast-check.js#constant#seedPayloads",
+      "file": "test/fuzz/sanitize.fast-check.js",
+      "line": 36,
+      "kind": "constant",
+      "symbol": "seedPayloads",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/fuzz/sanitize.fast-check.js#constant#primitiveDirtyArb",
+      "file": "test/fuzz/sanitize.fast-check.js",
+      "line": 73,
+      "kind": "constant",
+      "symbol": "primitiveDirtyArb",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/fuzz/sanitize.fast-check.js#constant#objectDirtyArb",
+      "file": "test/fuzz/sanitize.fast-check.js",
+      "line": 83,
+      "kind": "constant",
+      "symbol": "objectDirtyArb",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/fuzz/sanitize.fast-check.js#constant#dirtyArb",
+      "file": "test/fuzz/sanitize.fast-check.js",
+      "line": 100,
+      "kind": "constant",
+      "symbol": "dirtyArb",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/fuzz/sanitize.fast-check.js#constant#dirtyForInvariantArb",
+      "file": "test/fuzz/sanitize.fast-check.js",
+      "line": 107,
+      "kind": "constant",
+      "symbol": "dirtyForInvariantArb",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/fuzz/sanitize.fast-check.js#constant#configObjectArb",
+      "file": "test/fuzz/sanitize.fast-check.js",
+      "line": 117,
+      "kind": "constant",
+      "symbol": "configObjectArb",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/fuzz/sanitize.fast-check.js#constant#idempotentConfigArb",
+      "file": "test/fuzz/sanitize.fast-check.js",
+      "line": 151,
+      "kind": "constant",
+      "symbol": "idempotentConfigArb",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/fuzz/sanitize.fast-check.js#constant#weirdValueArb",
+      "file": "test/fuzz/sanitize.fast-check.js",
+      "line": 175,
+      "kind": "constant",
+      "symbol": "weirdValueArb",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/fuzz/sanitize.fast-check.js#constant#weirdTypedConfigArb",
+      "file": "test/fuzz/sanitize.fast-check.js",
+      "line": 204,
+      "kind": "constant",
+      "symbol": "weirdTypedConfigArb",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/fuzz/sanitize.fast-check.js#constant#configArb",
+      "file": "test/fuzz/sanitize.fast-check.js",
+      "line": 234,
+      "kind": "constant",
+      "symbol": "configArb",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/fuzz/sanitize.fast-check.js#constant#XSS_INVARIANTS",
+      "file": "test/fuzz/sanitize.fast-check.js",
+      "line": 357,
+      "kind": "constant",
+      "symbol": "XSS_INVARIANTS",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/fuzz/sanitize.fast-check.js#function#assertXssInvariants",
+      "file": "test/fuzz/sanitize.fast-check.js",
+      "line": 372,
+      "kind": "function",
+      "symbol": "assertXssInvariants",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/jsdom-node.js#constant#createDOMPurify",
+      "file": "test/jsdom-node.js",
+      "line": 6,
+      "kind": "constant",
+      "symbol": "createDOMPurify",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/jsdom-node.js#constant#jsdom",
+      "file": "test/jsdom-node.js",
+      "line": 10,
+      "kind": "constant",
+      "symbol": "jsdom",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/jsdom-node.js#constant#{ JSDOM, VirtualConsole }",
+      "file": "test/jsdom-node.js",
+      "line": 12,
+      "kind": "constant",
+      "symbol": "{ JSDOM, VirtualConsole }",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/jsdom-node.js#constant#virtualConsole",
+      "file": "test/jsdom-node.js",
+      "line": 14,
+      "kind": "constant",
+      "symbol": "virtualConsole",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/jsdom-node.js#constant#{ window }",
+      "file": "test/jsdom-node.js",
+      "line": 18,
+      "kind": "constant",
+      "symbol": "{ window }",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/jsdom-node.js#constant#sanitizeTestSuite",
+      "file": "test/jsdom-node.js",
+      "line": 25,
+      "kind": "constant",
+      "symbol": "sanitizeTestSuite",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/jsdom-node.js#constant#bootstrapTestSuite",
+      "file": "test/jsdom-node.js",
+      "line": 27,
+      "kind": "constant",
+      "symbol": "bootstrapTestSuite",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/jsdom-node.js#function#startQUnit",
+      "file": "test/jsdom-node.js",
+      "line": 34,
+      "kind": "function",
+      "symbol": "startQUnit",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/test-suite.js#method#testSuite.get",
+      "file": "test/test-suite.js",
+      "line": 1611,
+      "kind": "method",
+      "symbol": "testSuite.get",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/test-suite.js#method#testSuite.disconnectedCallback",
+      "file": "test/test-suite.js",
+      "line": 1695,
+      "kind": "method",
+      "symbol": "testSuite.disconnectedCallback",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/test-suite.js#function-variable#testSuite.firstHook",
+      "file": "test/test-suite.js",
+      "line": 3761,
+      "kind": "function-variable",
+      "symbol": "testSuite.firstHook",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/test-suite.js#function-variable#testSuite.secondHook",
+      "file": "test/test-suite.js",
+      "line": 3763,
+      "kind": "function-variable",
+      "symbol": "testSuite.secondHook",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/test-suite.js#function-variable#testSuite.thirdHook",
+      "file": "test/test-suite.js",
+      "line": 3765,
+      "kind": "function-variable",
+      "symbol": "testSuite.thirdHook",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/test-suite.js#function-variable#testSuite.clobberHasSink",
+      "file": "test/test-suite.js",
+      "line": 5714,
+      "kind": "function-variable",
+      "symbol": "testSuite.clobberHasSink",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/test-suite.js#function-variable#testSuite.clobberReparseSink",
+      "file": "test/test-suite.js",
+      "line": 5716,
+      "kind": "function-variable",
+      "symbol": "testSuite.clobberReparseSink",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/test-suite.js#function-variable#testSuite.clobberPayloads",
+      "file": "test/test-suite.js",
+      "line": 5726,
+      "kind": "function-variable",
+      "symbol": "testSuite.clobberPayloads",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/test-suite.js#class#testSuite.XSurgeonC3",
+      "file": "test/test-suite.js",
+      "line": 6048,
+      "kind": "class",
+      "symbol": "testSuite.XSurgeonC3",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/test-suite.js#method#testSuite.XSurgeonC3.disconnectedCallback",
+      "file": "test/test-suite.js",
+      "line": 6054,
+      "kind": "method",
+      "symbol": "testSuite.XSurgeonC3.disconnectedCallback",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/test-suite.js#method#testSuite.toString",
+      "file": "test/test-suite.js",
+      "line": 6166,
+      "kind": "method",
+      "symbol": "testSuite.toString",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/test-suite.js#method#testSuite.toString@2",
+      "file": "test/test-suite.js",
+      "line": 6184,
+      "kind": "method",
+      "symbol": "testSuite.toString",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/test-suite.js#method#testSuite.beforeEach",
+      "file": "test/test-suite.js",
+      "line": 6250,
+      "kind": "method",
+      "symbol": "testSuite.beforeEach",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/test-suite.js#method#testSuite.afterEach",
+      "file": "test/test-suite.js",
+      "line": 6258,
+      "kind": "method",
+      "symbol": "testSuite.afterEach",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/test-suite.js#method#testSuite.createHTML",
+      "file": "test/test-suite.js",
+      "line": 6400,
+      "kind": "method",
+      "symbol": "testSuite.createHTML",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/test-suite.js#function-variable#testSuite._executableFindings",
+      "file": "test/test-suite.js",
+      "line": 6497,
+      "kind": "function-variable",
+      "symbol": "testSuite._executableFindings",
+      "category": "已翻译扩写",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/test-suite.js#function-variable#testSuite._executableFindings.visit",
+      "file": "test/test-suite.js",
+      "line": 6505,
+      "kind": "function-variable",
+      "symbol": "testSuite._executableFindings.visit",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/test-suite.js#function-variable#testSuite._findingsFromHTML",
+      "file": "test/test-suite.js",
+      "line": 6533,
+      "kind": "function-variable",
+      "symbol": "testSuite._findingsFromHTML",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/test-suite.js#function-variable#testSuite.link",
+      "file": "test/test-suite.js",
+      "line": 6556,
+      "kind": "function-variable",
+      "symbol": "testSuite.link",
+      "category": "新补充",
+      "finalStatus": "documented"
+    },
+    {
+      "id": "test/test-suite.js#function-variable#testSuite.chain",
+      "file": "test/test-suite.js",
+      "line": 6601,
+      "kind": "function-variable",
+      "symbol": "testSuite.chain",
+      "category": "新补充",
+      "finalStatus": "documented"
+    }
+  ]
+}

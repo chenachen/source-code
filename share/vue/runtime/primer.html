@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="不读 Vue 源码也能理解的 Runtime 零基础先修课：DOM、组件、VNode、渲染、Diff 与调度"
+    />
+    <title>零基础先修课 · Vue Runtime 内核解剖</title>
+    <link rel="stylesheet" href="assets/styles.css" />
+  </head>
+  <body data-current="primer.html">
+    <header data-site-header></header>
+    <div class="docs-shell">
+      <aside data-global-nav></aside>
+      <main class="article">
+        <div class="article-hero">
+          <div class="article-kicker">Chapter 00 · Start Here</div>
+          <h1>先别看源码：一次页面更新到底发生了什么</h1>
+          <p class="article-lead">
+            你只需要有 Vue 组件使用经验。这一章不要求知道 Runtime、VNode 或
+            Diff，先用一个待办列表把后面会反复出现的概念讲明白。
+          </p>
+          <div class="hero-meta">
+            <span>建议阅读 15 分钟</span><span>不含源码</span
+            ><span>可交互演示</span>
+          </div>
+        </div>
+
+        <section class="article-section prose" id="visible-result">
+          <h2>我们真正想解释的，只是这个变化</h2>
+          <p>
+            假设页面上有三个任务。用户点击“添加”，列表多出一项。业务代码只修改了数组，没有调用
+            <code>document.createElement</code>，也没有指定新节点应该插在哪里。
+          </p>
+          <div class="before-after">
+            <div class="scene-window">
+              <div class="scene-titlebar">点击前</div>
+              <div class="scene-body">
+                <span class="scene-label">TODAY</span>
+                <ul class="ui-list">
+                  <li class="ui-item">买牛奶</li>
+                  <li class="ui-item">回复邮件</li>
+                  <li class="ui-item">学习 Vue</li>
+                </ul>
+              </div>
+            </div>
+            <div class="scene-window">
+              <div class="scene-titlebar">点击后</div>
+              <div class="scene-body">
+                <span class="scene-label">TODAY · 4 ITEMS</span>
+                <ul class="ui-list">
+                  <li class="ui-item">买牛奶</li>
+                  <li class="ui-item">回复邮件</li>
+                  <li class="ui-item">学习 Vue</li>
+                  <li class="ui-item new">跑步</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+          <p class="concept-sentence">
+            Vue
+            Runtime，就是负责把“数据变了”可靠地翻译成“页面也跟着变”的那套系统。
+          </p>
+        </section>
+
+        <section class="article-section prose" id="three-worlds">
+          <h2>先区分三个世界</h2>
+          <div class="role-grid">
+            <article class="role-card">
+              <span class="role-icon">①</span>
+              <strong>数据世界</strong>
+              <small
+                >任务数组、当前用户、是否展开。它描述应用现在是什么状态。</small
+              >
+              <span class="role-source">state / reactive / ref</span>
+            </article>
+            <article class="role-card">
+              <span class="role-icon">②</span>
+              <strong>描述世界</strong>
+              <small
+                >根据当前数据，Vue
+                算出“页面应该有四个列表项”。这还不是真实页面。</small
+              >
+              <span class="role-source">render / VNode</span>
+            </article>
+            <article class="role-card">
+              <span class="role-icon">③</span>
+              <strong>浏览器世界</strong>
+              <small
+                >用户真正看到和点击的 HTML 节点。修改它才会改变页面。</small
+              >
+              <span class="role-source">DOM</span>
+            </article>
+          </div>
+          <div class="reader-lane">
+            <div>
+              Vue
+              不会让业务数据直接操作浏览器。它先生成一份新的页面描述，再拿新旧描述比较，最后只把必要变化交给浏览器。
+            </div>
+          </div>
+        </section>
+
+        <section class="article-section prose" id="terms">
+          <h2>后面最常见的八个词</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>术语</th>
+                  <th>先这样理解</th>
+                  <th>待办列表示例</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>DOM</strong></td>
+                  <td>浏览器中的真实页面节点</td>
+                  <td>真正显示出来的 <code>&lt;li&gt;</code></td>
+                </tr>
+                <tr>
+                  <td><strong>组件</strong></td>
+                  <td>拥有输入、状态和界面的一块独立功能</td>
+                  <td>整个 TodoList 或其中一个 TodoItem</td>
+                </tr>
+                <tr>
+                  <td><strong>render</strong></td>
+                  <td>根据当前数据，重新计算页面应该长什么样</td>
+                  <td>数组有四项，于是描述四个 li</td>
+                </tr>
+                <tr>
+                  <td><strong>VNode</strong></td>
+                  <td>Vue 内部的一张“页面节点说明卡”</td>
+                  <td>类型是 li、文字是跑步、key 是任务 id</td>
+                </tr>
+                <tr>
+                  <td><strong>patch</strong></td>
+                  <td>让旧页面逐步变成新页面的更新过程</td>
+                  <td>保留前三项，只插入第四项</td>
+                </tr>
+                <tr>
+                  <td><strong>Diff</strong></td>
+                  <td>比较新旧列表，找出复用、新增、删除和移动</td>
+                  <td>判断“学习 Vue”是移动，不是重建</td>
+                </tr>
+                <tr>
+                  <td><strong>Scheduler</strong></td>
+                  <td>把短时间内很多变化合并，并安排正确执行顺序</td>
+                  <td>连续 push 三次，页面通常只统一更新一次</td>
+                </tr>
+                <tr>
+                  <td><strong>Hydration</strong></td>
+                  <td>接管服务端已经生成的 HTML，让它可以交互</td>
+                  <td>页面先可见，JS 到达后绑定点击与组件状态</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="reader-check">
+            <strong>读到这里应该能回答：</strong>VNode 不是真实 DOM；render
+            负责描述结果；Diff 负责找变化；patch 负责执行更新计划。
+          </div>
+        </section>
+
+        <section class="article-section prose" id="one-update">
+          <h2>亲手走一遍：点击后经过哪六站</h2>
+          <p>每点一次“下一步”，只观察一个角色。无需记函数名。</p>
+          <div class="demo-panel" data-runtime-demo>
+            <div class="demo-toolbar">
+              <button class="demo-button primary" type="button" data-demo-next>
+                下一步
+              </button>
+              <button class="demo-button" type="button" data-demo-reset>
+                重新开始
+              </button>
+            </div>
+            <div class="runtime-pipeline">
+              <div class="pipeline-stage" data-demo-stage>
+                <strong>① 数据变化</strong>数组增加任务
+              </div>
+              <div class="pipeline-stage" data-demo-stage>
+                <strong>② 安排更新</strong>合并重复通知
+              </div>
+              <div class="pipeline-stage" data-demo-stage>
+                <strong>③ 重新描述</strong>生成新界面草图
+              </div>
+              <div class="pipeline-stage" data-demo-stage>
+                <strong>④ 找出差异</strong>前三项可复用
+              </div>
+              <div class="pipeline-stage" data-demo-stage>
+                <strong>⑤ 修改 DOM</strong>只插入一项
+              </div>
+              <div class="pipeline-stage" data-demo-stage>
+                <strong>⑥ 更新完成</strong>执行后续回调
+              </div>
+            </div>
+            <div class="before-after">
+              <div>
+                <span class="scene-label">页面中的列表</span>
+                <ul class="ui-list">
+                  <li class="ui-item">买牛奶</li>
+                  <li class="ui-item">回复邮件</li>
+                  <li class="ui-item">学习 Vue</li>
+                  <li class="ui-item" data-demo-output>学习 Diff</li>
+                </ul>
+              </div>
+              <div class="demo-explanation" data-demo-explanation>
+                点击“下一步”，观察一次更新如何穿过 Vue Runtime。
+              </div>
+            </div>
+          </div>
+          <p>
+            这六步就是整套指南的主线。后面的组件、调度、Renderer、Diff 和
+            runtime-dom，只是在分别回答其中某一步的细节。
+          </p>
+        </section>
+
+        <section class="article-section prose" id="why-not-rebuild">
+          <h2>为什么不把整个页面删掉重建</h2>
+          <p>
+            因为“看起来一样”不等于“还是原来的节点”。重建会丢掉许多用户正在使用的状态：
+          </p>
+          <ul>
+            <li>输入框里的光标和正在输入的拼音；</li>
+            <li>视频播放位置、元素滚动位置；</li>
+            <li>组件内部状态和第三方 DOM 插件状态；</li>
+            <li>正在执行的进入/离开动画；</li>
+            <li>用户代码保存的 DOM 或组件引用。</li>
+          </ul>
+          <p>
+            所以 Vue 的核心目标不是“重新生成
+            HTML”，而是<strong>认出哪些东西还是原来的，只改变真正变动的部分</strong>。这正是
+            key、Diff 和 patch 存在的原因。
+          </p>
+        </section>
+
+        <section class="article-section prose" id="reading-route">
+          <h2>现在应该怎样读后续章节</h2>
+          <div class="sequence">
+            <div class="sequence-item">
+              <strong>先读每章的“先说人话”</strong
+              ><br />只建立场景、输入和结果，不要求记源码名。
+            </div>
+            <div class="sequence-item">
+              <strong>再看图和演示</strong
+              ><br />能用自己的话复述流程后，再进入机制解释。
+            </div>
+            <div class="sequence-item">
+              <strong>遇到源码词时做翻译</strong><br />例如 scheduler =
+              安排更新，renderer = 计算并执行页面修改。
+            </div>
+            <div class="sequence-item">
+              <strong>源码映射是选读层</strong
+              ><br />不看源码也能完整理解；准备调试或精读时再打开本地文件。
+            </div>
+          </div>
+          <div class="callout">
+            下一章讲架构。你只需要带着一个问题：为什么 Vue
+            要把“决定改什么”和“真正操作浏览器”交给两套不同模块？
+          </div>
+        </section>
+
+        <nav class="page-nav" aria-label="章节翻页">
+          <a href="index.html"><span>上一页</span>← 总览与使用方式</a>
+          <a href="architecture.html"><span>下一章</span>架构与设计哲学 →</a>
+        </nav>
+      </main>
+
+      <aside class="page-toc" aria-label="本页目录">
+        <div class="toc-title">本页目录</div>
+        <a href="#visible-result">从页面变化开始</a>
+        <a href="#three-worlds">三个世界</a>
+        <a href="#terms">八个术语</a>
+        <a href="#one-update">六步更新演示</a>
+        <a href="#why-not-rebuild">为什么不重建</a>
+        <a href="#reading-route">后续阅读方式</a>
+      </aside>
+    </div>
+    <footer data-site-footer></footer>
+    <script src="assets/app.js" defer></script>
+  </body>
+</html>

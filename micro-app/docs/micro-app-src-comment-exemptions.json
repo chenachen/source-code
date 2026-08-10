@@ -1,0 +1,30 @@
+{
+  "exemptions": {
+    "src/__tests__/demos/common/script1.js#constant#root": "测试服务器会按原字节加载该 demo 脚本；插入或翻译注释会改变被测输入及运行时行列信息，因此作为 fixture 保留。",
+    "src/__tests__/demos/common/script1.js#constant#dynamicLink": "测试服务器会按原字节加载该 demo 脚本；插入或翻译注释会改变被测输入及运行时行列信息，因此作为 fixture 保留。",
+    "src/__tests__/demos/common/script1.js#constant#dynamicScript": "测试服务器会按原字节加载该 demo 脚本；插入或翻译注释会改变被测输入及运行时行列信息，因此作为 fixture 保留。",
+    "src/__tests__/demos/common/script1.js#function#onClickOfApp1": "测试服务器会按原字节加载该 demo 脚本；插入或翻译注释会改变被测输入及运行时行列信息，因此作为 fixture 保留。",
+    "src/__tests__/demos/common/script1.js#function#handleDocClick": "测试服务器会按原字节加载该 demo 脚本；插入或翻译注释会改变被测输入及运行时行列信息，因此作为 fixture 保留。",
+    "src/__tests__/demos/common/script1.js#function#handleDocClick2": "测试服务器会按原字节加载该 demo 脚本；插入或翻译注释会改变被测输入及运行时行列信息，因此作为 fixture 保留。",
+    "src/__tests__/demos/common/script1.js#function#handleWinEvent": "测试服务器会按原字节加载该 demo 脚本；插入或翻译注释会改变被测输入及运行时行列信息，因此作为 fixture 保留。",
+    "src/__tests__/demos/common/script1.js#function#handleWinEvent2": "测试服务器会按原字节加载该 demo 脚本；插入或翻译注释会改变被测输入及运行时行列信息，因此作为 fixture 保留。",
+    "src/__tests__/demos/common/script1.js#constant#newImg": "测试服务器会按原字节加载该 demo 脚本；插入或翻译注释会改变被测输入及运行时行列信息，因此作为 fixture 保留。",
+    "src/__tests__/demos/common/script2.js#constant#pdom": "测试服务器会按原字节加载该 demo 脚本；插入或翻译注释会改变被测输入及运行时行列信息，因此作为 fixture 保留。",
+    "src/__tests__/demos/common/script2.js#constant#dynamicIgnoreScript": "测试服务器会按原字节加载该 demo 脚本；插入或翻译注释会改变被测输入及运行时行列信息，因此作为 fixture 保留。",
+    "src/__tests__/demos/ssr-render/script1.js#constant#root": "测试服务器会按原字节加载该 demo 脚本；插入或翻译注释会改变被测输入及运行时行列信息，因此作为 fixture 保留。",
+    "src/__tests__/demos/ssr-render/script1.js#constant#dynamicLink": "测试服务器会按原字节加载该 demo 脚本；插入或翻译注释会改变被测输入及运行时行列信息，因此作为 fixture 保留。",
+    "src/__tests__/demos/ssr-render/script1.js#constant#dynamicScript": "测试服务器会按原字节加载该 demo 脚本；插入或翻译注释会改变被测输入及运行时行列信息，因此作为 fixture 保留。",
+    "src/__tests__/demos/ssr-render/script1.js#function#handleDocClick": "测试服务器会按原字节加载该 demo 脚本；插入或翻译注释会改变被测输入及运行时行列信息，因此作为 fixture 保留。",
+    "src/__tests__/demos/ssr-render/script1.js#function#handleWinEvent": "测试服务器会按原字节加载该 demo 脚本；插入或翻译注释会改变被测输入及运行时行列信息，因此作为 fixture 保留。",
+    "src/__tests__/demos/ssr-render/script2.js#constant#pdom": "测试服务器会按原字节加载该 demo 脚本；插入或翻译注释会改变被测输入及运行时行列信息，因此作为 fixture 保留。",
+    "src/__tests__/demos/umd1/index.js#constant#dynamicStyle1": "测试服务器会按原字节加载该 demo 脚本；插入或翻译注释会改变被测输入及运行时行列信息，因此作为 fixture 保留。",
+    "src/__tests__/demos/umd1/index.js#constant#dynamicStyle2": "测试服务器会按原字节加载该 demo 脚本；插入或翻译注释会改变被测输入及运行时行列信息，因此作为 fixture 保留。",
+    "src/__tests__/demos/umd1/index.js#constant#dynamicStyle3": "测试服务器会按原字节加载该 demo 脚本；插入或翻译注释会改变被测输入及运行时行列信息，因此作为 fixture 保留。",
+    "src/__tests__/demos/umd1/index.js#function#handleDocumentLoad": "测试服务器会按原字节加载该 demo 脚本；插入或翻译注释会改变被测输入及运行时行列信息，因此作为 fixture 保留。",
+    "src/__tests__/demos/umd2/index.js#function#handleWindowLoad": "测试服务器会按原字节加载该 demo 脚本；插入或翻译注释会改变被测输入及运行时行列信息，因此作为 fixture 保留。",
+    "src/__tests__/demos/umd2/index.js#function#mount": "测试服务器会按原字节加载该 demo 脚本；插入或翻译注释会改变被测输入及运行时行列信息，因此作为 fixture 保留。",
+    "src/__tests__/demos/umd2/index.js#function#unmount": "测试服务器会按原字节加载该 demo 脚本；插入或翻译注释会改变被测输入及运行时行列信息，因此作为 fixture 保留。",
+    "src/__tests__/demos/umd4/index.js#function#mount": "测试服务器会按原字节加载该 demo 脚本；插入或翻译注释会改变被测输入及运行时行列信息，因此作为 fixture 保留。",
+    "src/__tests__/demos/umd4/index.js#function#unmount": "测试服务器会按原字节加载该 demo 脚本；插入或翻译注释会改变被测输入及运行时行列信息，因此作为 fixture 保留。"
+  }
+}

@@ -1,0 +1,5 @@
+# Dependencies installed inside source snapshots
+node_modules/
+
+# macOS metadata
+.DS_Store

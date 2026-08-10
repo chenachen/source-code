@@ -1,0 +1,2117 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#646cff"><meta name="description" content="HMR 从 watcher 经插件与图传播生成 update 或 reload，再由客户端执行 dispose、import、accept。"><title>12. HMR · Vite 源码解剖</title><style>:root {
+  color-scheme: light;
+  --bg: #f4f6fb;
+  --surface: #ffffff;
+  --surface-soft: #f8f9ff;
+  --surface-code: #171925;
+  --text: #252738;
+  --muted: #686b7d;
+  --faint: #9295a7;
+  --line: #e3e5ef;
+  --line-strong: #d3d6e4;
+  --brand: #646cff;
+  --brand-strong: #4d54dc;
+  --cyan: #14a6c7;
+  --green: #188769;
+  --amber: #b56b16;
+  --red: #c4485a;
+  --shadow: 0 16px 48px rgb(36 39 67 / 9%);
+  --shadow-soft: 0 8px 28px rgb(36 39 67 / 7%);
+  --radius: 18px;
+  --radius-small: 11px;
+  --topbar: 64px;
+  --content: 820px;
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    'PingFang SC',
+    'Hiragino Sans GB',
+    'Microsoft YaHei',
+    sans-serif;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #11121a;
+  --surface: #191b26;
+  --surface-soft: #202331;
+  --surface-code: #0d0f17;
+  --text: #e9eaf2;
+  --muted: #aaadbd;
+  --faint: #818597;
+  --line: #2c2f3d;
+  --line-strong: #3a3e50;
+  --brand: #8e94ff;
+  --brand-strong: #a6abff;
+  --cyan: #56c8e0;
+  --green: #57c7a3;
+  --amber: #e0a252;
+  --red: #f07b8c;
+  --shadow: 0 18px 60px rgb(0 0 0 / 26%);
+  --shadow-soft: 0 8px 30px rgb(0 0 0 / 22%);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: calc(var(--topbar) + 24px);
+}
+
+body {
+  margin: 0;
+  min-width: 280px;
+  background:
+    radial-gradient(circle at 4% 0%, rgb(100 108 255 / 10%), transparent 26rem),
+    radial-gradient(circle at 95% 8%, rgb(20 166 199 / 9%), transparent 28rem),
+    var(--bg);
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1.78;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+a {
+  color: var(--brand-strong);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+}
+
+a:hover {
+  color: var(--cyan);
+}
+
+.skip-link {
+  position: fixed;
+  z-index: 200;
+  top: 8px;
+  left: 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--text);
+  color: var(--surface);
+  transform: translateY(-160%);
+}
+
+.skip-link:focus {
+  transform: translateY(0);
+}
+
+.reading-progress {
+  position: fixed;
+  z-index: 120;
+  inset: 0 0 auto;
+  height: 3px;
+  background: transparent;
+}
+
+.reading-progress > span {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: linear-gradient(90deg, var(--brand), var(--cyan));
+  transition: width 80ms linear;
+}
+
+.topbar {
+  position: sticky;
+  z-index: 100;
+  top: 0;
+  height: var(--topbar);
+  border-bottom: 1px solid rgb(120 124 150 / 16%);
+  background: color-mix(in srgb, var(--bg) 84%, transparent);
+  backdrop-filter: blur(18px) saturate(150%);
+}
+
+.topbar-inner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: min(100%, 1540px);
+  height: 100%;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: max-content;
+  color: var(--text);
+  font-weight: 760;
+  text-decoration: none;
+}
+
+.brand-mark {
+  display: grid;
+  width: 31px;
+  height: 31px;
+  place-items: center;
+  border-radius: 9px;
+  background: linear-gradient(135deg, var(--brand), var(--cyan));
+  box-shadow: 0 7px 18px rgb(100 108 255 / 28%);
+  color: white;
+  font-size: 13px;
+  letter-spacing: -0.04em;
+}
+
+.topbar-path {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.icon-button {
+  display: inline-grid;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.icon-button:hover {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
+.nav-toggle {
+  display: none;
+}
+
+.page-grid {
+  display: grid;
+  grid-template-columns: 250px minmax(0, var(--content)) 225px;
+  gap: 34px;
+  justify-content: center;
+  width: min(100%, 1540px);
+  margin: 0 auto;
+  padding: 34px 24px 72px;
+}
+
+.site-nav,
+.page-toc {
+  position: sticky;
+  top: calc(var(--topbar) + 24px);
+  align-self: start;
+  max-height: calc(100vh - var(--topbar) - 48px);
+  overflow: auto;
+  scrollbar-width: thin;
+}
+
+.site-nav {
+  padding: 5px 10px 18px 0;
+}
+
+.nav-home {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0 0 20px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.nav-home:hover,
+.nav-home[aria-current='page'] {
+  border-color: rgb(100 108 255 / 42%);
+  background: rgb(100 108 255 / 9%);
+  color: var(--brand-strong);
+}
+
+.nav-group + .nav-group {
+  margin-top: 18px;
+}
+
+.nav-group-title {
+  margin: 0 0 6px 11px;
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.nav-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.nav-list a {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 7px;
+  align-items: baseline;
+  padding: 7px 10px;
+  border-radius: 9px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+  text-decoration: none;
+}
+
+.nav-list a:hover {
+  background: var(--surface-soft);
+  color: var(--text);
+}
+
+.nav-list a[aria-current='page'] {
+  background: rgb(100 108 255 / 11%);
+  color: var(--brand-strong);
+  font-weight: 700;
+}
+
+.nav-code {
+  color: var(--faint);
+  font:
+    700 11px/1.4 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+}
+
+.article {
+  min-width: 0;
+}
+
+.article-hero {
+  position: relative;
+  overflow: hidden;
+  margin-bottom: 26px;
+  padding: 36px 38px;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background:
+    linear-gradient(135deg, rgb(100 108 255 / 11%), transparent 58%),
+    linear-gradient(315deg, rgb(20 166 199 / 8%), transparent 45%),
+    var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.article-hero::after {
+  position: absolute;
+  right: -55px;
+  bottom: -70px;
+  width: 220px;
+  height: 220px;
+  border: 35px solid rgb(100 108 255 / 7%);
+  border-radius: 50%;
+  content: '';
+}
+
+.eyebrow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 14px;
+  color: var(--brand-strong);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.eyebrow .pill {
+  padding: 3px 8px;
+  border: 1px solid rgb(100 108 255 / 28%);
+  border-radius: 999px;
+  background: rgb(100 108 255 / 8%);
+}
+
+.article-hero h1 {
+  position: relative;
+  z-index: 1;
+  max-width: 740px;
+  margin: 0;
+  font-size: clamp(2rem, 5vw, 3.35rem);
+  line-height: 1.09;
+  letter-spacing: -0.045em;
+}
+
+.article-hero .lede {
+  position: relative;
+  z-index: 1;
+  max-width: 680px;
+  margin: 18px 0 0;
+  color: var(--muted);
+  font-size: 17px;
+  line-height: 1.72;
+}
+
+.hero-meta {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-top: 23px;
+  color: var(--faint);
+  font-size: 12px;
+}
+
+.hero-meta code {
+  color: var(--muted);
+}
+
+.focus-card,
+.evidence-note,
+.boundary-note {
+  margin: 20px 0 26px;
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--brand);
+  border-radius: var(--radius-small);
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.focus-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr);
+  gap: 20px;
+}
+
+.focus-card h2,
+.focus-card h3,
+.evidence-note h2,
+.evidence-note h3 {
+  margin: 0 0 7px;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.focus-card p,
+.evidence-note p,
+.boundary-note p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.focus-card .boundary {
+  padding-left: 20px;
+  border-left: 1px solid var(--line);
+}
+
+.evidence-note {
+  border-left-color: var(--green);
+}
+
+.boundary-note {
+  border-left-color: var(--amber);
+}
+
+.prose {
+  padding: 12px 4px 30px;
+}
+
+.prose > :first-child {
+  margin-top: 0;
+}
+
+.prose h2,
+.prose h3,
+.prose h4 {
+  position: relative;
+  color: var(--text);
+  line-height: 1.34;
+  letter-spacing: -0.025em;
+}
+
+.prose h2 {
+  margin: 58px 0 20px;
+  padding-top: 6px;
+  font-size: 1.72rem;
+}
+
+.prose h2::before {
+  display: block;
+  width: 42px;
+  height: 4px;
+  margin-bottom: 13px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--brand), var(--cyan));
+  content: '';
+}
+
+.prose h3 {
+  margin: 38px 0 14px;
+  font-size: 1.28rem;
+}
+
+.prose h4 {
+  margin: 30px 0 12px;
+  font-size: 1.08rem;
+}
+
+.heading-anchor {
+  position: absolute;
+  left: -1.1em;
+  color: var(--faint);
+  font-weight: 500;
+  text-decoration: none;
+  opacity: 0;
+}
+
+.prose h2:hover .heading-anchor,
+.prose h3:hover .heading-anchor,
+.prose h4:hover .heading-anchor,
+.heading-anchor:focus {
+  opacity: 1;
+}
+
+.prose p,
+.prose li {
+  color: var(--text);
+}
+
+.prose p {
+  margin: 15px 0;
+}
+
+.prose ul,
+.prose ol {
+  padding-left: 1.45em;
+}
+
+.prose li + li {
+  margin-top: 6px;
+}
+
+.prose strong {
+  color: var(--text);
+}
+
+.prose blockquote {
+  margin: 24px 0;
+  padding: 16px 20px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--cyan);
+  border-radius: 0 var(--radius-small) var(--radius-small) 0;
+  background: var(--surface-soft);
+  color: var(--muted);
+}
+
+.prose blockquote > :first-child {
+  margin-top: 0;
+}
+
+.prose blockquote > :last-child {
+  margin-bottom: 0;
+}
+
+code {
+  border-radius: 5px;
+  background: rgb(100 108 255 / 9%);
+  color: color-mix(in srgb, var(--brand-strong) 78%, var(--text));
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.88em;
+}
+
+:not(pre) > code {
+  padding: 0.15em 0.4em;
+  overflow-wrap: anywhere;
+}
+
+.code-card {
+  position: relative;
+  overflow: hidden;
+  margin: 24px 0 30px;
+  border: 1px solid color-mix(in srgb, var(--surface-code) 85%, white);
+  border-radius: 14px;
+  background: var(--surface-code);
+  box-shadow: 0 12px 34px rgb(9 11 21 / 18%);
+}
+
+.code-card figcaption {
+  display: flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 0 12px 0 16px;
+  border-bottom: 1px solid rgb(255 255 255 / 9%);
+  color: #aeb2c8;
+  font:
+    700 11px/1.4 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.copy-code {
+  margin-left: auto;
+  padding: 5px 8px;
+  border: 1px solid rgb(255 255 255 / 13%);
+  border-radius: 6px;
+  background: rgb(255 255 255 / 5%);
+  color: #c8cbda;
+  font: inherit;
+  cursor: pointer;
+}
+
+.copy-code:hover {
+  border-color: rgb(142 148 255 / 65%);
+  color: white;
+}
+
+.code-card pre,
+.diagram-source pre {
+  max-width: 100%;
+  margin: 0;
+  padding: 20px;
+  overflow: auto;
+  background: transparent;
+  color: #e5e7f1;
+  font:
+    13px/1.68 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    monospace;
+  tab-size: 2;
+}
+
+.code-card pre code,
+.diagram-source pre code {
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  white-space: pre;
+}
+
+.table-scroll {
+  max-width: 100%;
+  margin: 23px 0 30px;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.prose table {
+  width: 100%;
+  min-width: 620px;
+  border-collapse: collapse;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.prose th,
+.prose td {
+  padding: 11px 13px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.prose th {
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.prose tr:last-child td {
+  border-bottom: 0;
+}
+
+.page-toc {
+  padding: 12px 0 20px 18px;
+  border-left: 1px solid var(--line);
+}
+
+.toc-title {
+  margin: 0 0 10px;
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.toc-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.toc-list a {
+  display: block;
+  padding: 4px 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+  text-decoration: none;
+}
+
+.toc-list .depth-3 a {
+  padding-left: 12px;
+  color: var(--faint);
+}
+
+.toc-list a:hover,
+.toc-list a.is-active {
+  color: var(--brand-strong);
+}
+
+.article-pager {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 38px;
+}
+
+.pager-link {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 96px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.pager-link:hover {
+  border-color: rgb(100 108 255 / 42%);
+  color: var(--brand-strong);
+}
+
+.pager-link.next {
+  text-align: right;
+}
+
+.pager-label {
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.pager-title {
+  margin-top: 5px;
+  font-size: 14px;
+  font-weight: 720;
+}
+
+.site-footer {
+  margin-top: 35px;
+  padding: 22px 0;
+  border-top: 1px solid var(--line);
+  color: var(--faint);
+  font-size: 12px;
+}
+
+.flow-figure {
+  margin: 26px 0 32px;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.flow-caption {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  margin-bottom: 18px;
+}
+
+.flow-caption strong {
+  font-size: 15px;
+}
+
+.flow-caption span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.flow-lanes {
+  display: grid;
+  gap: 13px;
+}
+
+.flow-lane {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 10px 14px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+
+.lane-label {
+  grid-row: 1 / span 2;
+  margin: 0;
+  color: var(--brand-strong);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+
+.lane-path {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  align-items: center;
+  min-width: 0;
+}
+
+.lane-step,
+.lane-choice {
+  display: inline-flex;
+  min-height: 34px;
+  padding: 7px 9px;
+  align-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.lane-choice {
+  border-color: rgb(100 108 255 / 42%);
+  background: rgb(100 108 255 / 9%);
+  color: var(--brand-strong);
+}
+
+.lane-arrow {
+  color: var(--brand);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.lane-split {
+  display: grid;
+  grid-column: 2;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.lane-split.three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.lane-split > span {
+  padding: 8px 10px;
+  border-left: 3px solid var(--cyan);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.48;
+}
+
+.lane-split > span:nth-child(even) {
+  border-left-color: var(--green);
+}
+
+.merge-output {
+  display: flex;
+  gap: 8px 18px;
+  align-items: center;
+  justify-content: center;
+  padding: 14px 16px;
+  border: 1px solid rgb(24 135 105 / 38%);
+  border-radius: 11px;
+  background: rgb(24 135 105 / 8%);
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.merge-output b {
+  color: var(--green);
+}
+
+.flow-track {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  gap: 20px;
+  align-items: stretch;
+}
+
+.flow-node {
+  position: relative;
+  display: flex;
+  min-height: 74px;
+  padding: 12px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 11px;
+  background: var(--surface-soft);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 720;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.flow-node:not(:last-child)::after {
+  position: absolute;
+  top: 50%;
+  right: -17px;
+  color: var(--brand);
+  content: '→';
+  transform: translateY(-50%);
+}
+
+.flow-node.brand {
+  border-color: rgb(100 108 255 / 38%);
+  background: rgb(100 108 255 / 9%);
+}
+
+.flow-node.cyan {
+  border-color: rgb(20 166 199 / 38%);
+  background: rgb(20 166 199 / 8%);
+}
+
+.flow-node.green {
+  border-color: rgb(24 135 105 / 38%);
+  background: rgb(24 135 105 / 8%);
+}
+
+.flow-branches {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.flow-branch {
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.flow-branch strong {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--text);
+}
+
+.flow-columns {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.flow-column {
+  padding: 15px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+
+.flow-column h4 {
+  margin: 0 0 10px;
+  color: var(--brand-strong);
+  font-size: 13px;
+}
+
+.flow-column ol {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.flow-column li + li {
+  margin-top: 6px;
+}
+
+.diagram-source {
+  margin-top: 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-code);
+}
+
+.diagram-source summary {
+  padding: 10px 13px;
+  color: #c8cbda;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.index-hero {
+  padding-bottom: 42px;
+}
+
+.index-thesis {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 24px 0 38px;
+}
+
+.thesis-card {
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.thesis-number {
+  color: var(--brand);
+  font:
+    800 12px/1 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+}
+
+.thesis-card h2 {
+  margin: 10px 0 7px;
+  font-size: 17px;
+  line-height: 1.35;
+}
+
+.thesis-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.ownership-flow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  align-items: center;
+  margin: 20px 0 36px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.ownership-flow span {
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-soft);
+  font:
+    700 12px/1.35 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+}
+
+.ownership-flow b {
+  color: var(--brand);
+  font-weight: 800;
+}
+
+.track-grid,
+.module-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.track-card,
+.module-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 150px;
+  padding: 19px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.track-card:hover,
+.module-card:hover {
+  border-color: rgb(100 108 255 / 42%);
+  color: var(--text);
+  transform: translateY(-1px);
+}
+
+.track-card h3,
+.module-card h3 {
+  margin: 8px 0;
+  font-size: 17px;
+  line-height: 1.35;
+}
+
+.track-card p,
+.module-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.track-path {
+  margin-top: auto;
+  padding-top: 14px;
+  color: var(--brand-strong);
+  font:
+    700 11px/1.45 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+}
+
+.module-group-heading {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  margin: 48px 0 16px;
+}
+
+.module-group-heading h2 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.module-group-heading p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.module-card {
+  min-height: 175px;
+}
+
+.module-card .module-code {
+  color: var(--brand);
+  font:
+    800 12px/1 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+}
+
+.module-card .module-arrow {
+  margin-top: auto;
+  padding-top: 14px;
+  color: var(--brand-strong);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+@media (max-width: 1230px) {
+  .page-grid {
+    grid-template-columns: 230px minmax(0, var(--content));
+    gap: 28px;
+  }
+
+  .page-toc {
+    display: none;
+  }
+}
+
+@media (max-width: 820px) {
+  :root {
+    --topbar: 58px;
+  }
+
+  .topbar-inner {
+    padding: 0 14px;
+  }
+
+  .topbar-path {
+    display: none;
+  }
+
+  .nav-toggle {
+    display: inline-grid;
+  }
+
+  .page-grid {
+    display: block;
+    padding: 20px 14px 52px;
+  }
+
+  .site-nav {
+    position: fixed;
+    z-index: 95;
+    top: var(--topbar);
+    bottom: 0;
+    left: 0;
+    width: min(86vw, 310px);
+    max-height: none;
+    padding: 18px;
+    border-right: 1px solid var(--line);
+    background: var(--bg);
+    box-shadow: var(--shadow);
+    transform: translateX(-105%);
+    transition: transform 180ms ease;
+  }
+
+  body.nav-open {
+    overflow: hidden;
+  }
+
+  body.nav-open .site-nav {
+    transform: translateX(0);
+  }
+
+  .article-hero {
+    padding: 27px 22px;
+    border-radius: 18px;
+  }
+
+  .article-hero h1 {
+    font-size: clamp(1.9rem, 9vw, 2.65rem);
+  }
+
+  .article-hero .lede {
+    font-size: 15px;
+  }
+
+  .focus-card {
+    grid-template-columns: 1fr;
+  }
+
+  .focus-card .boundary {
+    padding: 16px 0 0;
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+
+  .prose {
+    padding-inline: 2px;
+  }
+
+  .prose h2 {
+    margin-top: 46px;
+    font-size: 1.47rem;
+  }
+
+  .prose h3 {
+    font-size: 1.18rem;
+  }
+
+  .heading-anchor {
+    display: none;
+  }
+
+  .flow-track {
+    grid-template-columns: 1fr;
+  }
+
+  .flow-lane {
+    grid-template-columns: 1fr;
+  }
+
+  .lane-label,
+  .lane-split {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .lane-split,
+  .lane-split.three {
+    grid-template-columns: 1fr;
+  }
+
+  .merge-output {
+    align-items: flex-start;
+    flex-direction: column;
+    text-align: left;
+  }
+
+  .flow-node:not(:last-child)::after {
+    top: auto;
+    right: 50%;
+    bottom: -19px;
+    content: '↓';
+    transform: translateX(50%);
+  }
+
+  .flow-branches,
+  .flow-columns,
+  .index-thesis,
+  .track-grid,
+  .module-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .article-pager {
+    grid-template-columns: 1fr;
+  }
+
+  .pager-link.next {
+    text-align: left;
+  }
+}
+
+@media (max-width: 440px) {
+  body {
+    font-size: 15px;
+  }
+
+  .brand-text {
+    display: none;
+  }
+
+  .article-hero {
+    padding: 24px 18px;
+  }
+
+  .hero-meta {
+    display: grid;
+  }
+
+  .flow-figure {
+    padding: 16px;
+  }
+
+  .code-card pre,
+  .diagram-source pre {
+    padding: 16px;
+    font-size: 12px;
+  }
+}
+
+@media print {
+  body {
+    background: white;
+  }
+
+  .topbar,
+  .site-nav,
+  .page-toc,
+  .reading-progress,
+  .copy-code,
+  .article-pager {
+    display: none !important;
+  }
+
+  .page-grid {
+    display: block;
+    width: auto;
+    padding: 0;
+  }
+
+  .article-hero,
+  .code-card,
+  .table-scroll,
+  .flow-figure {
+    box-shadow: none;
+  }
+
+  .code-card {
+    break-inside: avoid;
+  }
+}
+</style><script>(function(){try{var t=localStorage.getItem("vite-guide-theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(_){}})();</script></head><body><a class="skip-link" href="#article-start">跳到正文</a><div class="reading-progress" aria-hidden="true"><span data-reading-progress></span></div><header class="topbar"><div class="topbar-inner"><button class="icon-button nav-toggle" type="button" data-nav-toggle aria-expanded="false" aria-label="打开模块导航">☰</button><a class="brand" href="index.html"><span class="brand-mark">V</span><span class="brand-text">Vite 源码解剖</span></a><span class="topbar-path">转换与增量更新 / 12 HMR</span><div class="topbar-actions"><button class="icon-button" type="button" data-theme-toggle aria-label="切换主题">◐</button></div></div></header><div class="page-grid"><nav class="site-nav" aria-label="模块导航"><a class="nav-home" href="index.html"><span>⌂</span><span>阅读总览</span></a><section class="nav-group"><h2 class="nav-group-title">全景</h2><ul class="nav-list"><li><a href="00-system-map-and-end-to-end.html"><span class="nav-code">00</span><span>系统全景与请求链</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">启动与配置</h2><ul class="nav-list"><li><a href="01-cli-and-startup.html"><span class="nav-code">01</span><span>CLI 与启动</span></a></li><li><a href="02a-env-loading.html"><span class="nav-code">02A</span><span>环境文件加载</span></a></li><li><a href="02b-config-resolution.html"><span class="nav-code">02B</span><span>配置加载与解析</span></a></li><li><a href="02c-define-client-injection-and-json.html"><span class="nav-code">02C</span><span>Define、注入与 JSON</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">开发服务器核心</h2><ul class="nav-list"><li><a href="03-plugin-system.html"><span class="nav-code">03</span><span>插件体系</span></a></li><li><a href="04-dev-server-lifecycle.html"><span class="nav-code">04</span><span>Dev Server 生命周期</span></a></li><li><a href="05-environment-api.html"><span class="nav-code">05</span><span>Environment API</span></a></li><li><a href="06-middleware-request-pipeline.html"><span class="nav-code">06</span><span>中间件与请求入口</span></a></li><li><a href="07-module-resolution.html"><span class="nav-code">07</span><span>模块解析</span></a></li><li><a href="08-transform-and-module-graph.html"><span class="nav-code">08</span><span>Transform 与模块图</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">转换与增量更新</h2><ul class="nav-list"><li><a href="09-html-transform.html"><span class="nav-code">09</span><span>HTML 转换</span></a></li><li><a href="10-import-analysis.html"><span class="nav-code">10</span><span>Import Analysis</span></a></li><li><a href="11-dependency-pre-bundling.html"><span class="nav-code">11</span><span>依赖预构建</span></a></li><li><a href="12-hmr.html" aria-current="page"><span class="nav-code">12</span><span>HMR</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">资源管线</h2><ul class="nav-list"><li><a href="13a-css-pipeline.html"><span class="nav-code">13A</span><span>CSS 管线</span></a></li><li><a href="13b-asset-worker-wasm.html"><span class="nav-code">13B</span><span>Asset、Worker、Wasm</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">生产构建</h2><ul class="nav-list"><li><a href="14a-build-orchestration.html"><span class="nav-code">14A</span><span>生产构建编排</span></a></li><li><a href="14b-build-output-and-preload.html"><span class="nav-code">14B</span><span>Preload 与构建输出</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">SSR 与运行时</h2><ul class="nav-list"><li><a href="15a-ssr-transform-and-loading.html"><span class="nav-code">15A</span><span>SSR 变换与加载</span></a></li><li><a href="15b-module-runner.html"><span class="nav-code">15B</span><span>Module Runner</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">公共边界</h2><ul class="nav-list"><li><a href="16-public-api-diagnostics-and-types.html"><span class="nav-code">16</span><span>公共 API 与类型</span></a></li></ul></section></nav><main class="article" id="article-start"><header class="article-hero"><div class="eyebrow"><span class="pill">12</span><span>转换与增量更新</span></div><h1>12. HMR</h1><p class="lede">HMR 从 watcher 经插件与图传播生成 update 或 reload，再由客户端执行 dispose、import、accept。</p><div class="hero-meta"><span>证据基线：v8.2.1</span><span>commit <code>421615865dad</code></span><span>约 22 分钟</span><a href="../../vite/reading-guides/12-hmr.md">查看 Markdown 原稿</a></div></header><section class="focus-card" aria-label="阅读重点与边界"><div><h2>本页重点</h2><p>HMR 从 watcher 经插件与图传播生成 update 或 reload，再由客户端执行 dispose、import、accept。</p></div><div class="boundary"><h3>推导边界</h3><p>WebSocket 只是 transport；找到接受边界也不保证循环、死端或执行错误绝不 reload。</p></div></section><aside class="evidence-note"><h3>证据口径</h3><p>正文保留目标版本中的真实源码、状态说明与代表性测试映射。测试源码用于锁定设计契约；本轮没有执行测试命令。</p></aside><article class="prose"><h2 id="阅读边界"><a class="heading-anchor" href="#%E9%98%85%E8%AF%BB%E8%BE%B9%E7%95%8C" aria-label="链接到本节">#</a>阅读边界</h2>
+<p>本章研究普通 unbundled 开发模式下，一次文件变化怎样从 watcher 事件变成浏览器中的局部模块替换：</p>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">watcher create/update/delete
+→ handleHMRUpdate
+→ plugin hotUpdate / handleHotUpdate
+→ 模块图反向传播，寻找 accept 边界
+→ update / full-reload / prune payload
+→ HotChannel / WebSocket
+→ HMRClient 重新导入、dispose、accept callback
+</code></pre></figure><p>模块图节点和失效状态见第 08 章，Import Analysis 怎样写入 <code>acceptedHmrDeps</code>、
+<code>acceptedHmrExports</code>、<code>importedBindings</code> 见第 10 章。本章从这些图数据出发，解释传播与运行时生命周期。</p>
+<p>实验性的 bundledDev 会让客户端根据 <code>changedIds</code> 自行计算边界，走
+<code>bundledDevHmrClient.ts</code>/<code>server/bundledDev.ts</code> 的另一套协议；本章先完成普通按模块 URL 更新主线，
+再单列一节对照 bundled-dev，避免混读。Module Runner 的服务端 HMR 执行器留到第 15 章。</p>
+<p>读完应能回答：</p>
+<ol>
+<li>self accept、dependency accept、acceptExports 各在哪个节点停止传播？</li>
+<li>为什么文件变化后要先使模块图失效，再让客户端重新 import？</li>
+<li>一个没有 importer 的模块为何通常是 full reload 死端，但 acceptExports 模块可以例外？</li>
+<li><code>path</code> 与 <code>acceptedPath</code> 在 update payload 中分别代表谁？</li>
+<li>为什么循环 import 内找到了 accept 边界，客户端仍可能需要 reload？</li>
+<li><code>import.meta.hot.invalidate()</code> 为什么会产生第二轮服务端传播？</li>
+<li>dispose、prune、hot.data 的生命周期有何区别？</li>
+<li>同一文件变化产生的多个 update 为什么并行 fetch、串行执行 callback？</li>
+<li>HMR WebSocket 为什么同时校验 allowedHosts、Origin token，却允许 vite-ping 无 token？</li>
+<li>HTML、<code>&lt;link&gt;</code> CSS、JS import CSS 分别怎样更新？</li>
+<li>bundled-dev 为什么改由浏览器按实际执行图寻找 boundary？</li>
+<li>ErrorOverlay 如何避免 CSP、应用 CSS、恶意错误文本和非 DOM realm 的影响？</li>
+</ol>
+<h2 id="推荐阅读顺序"><a class="heading-anchor" href="#%E6%8E%A8%E8%8D%90%E9%98%85%E8%AF%BB%E9%A1%BA%E5%BA%8F" aria-label="链接到本节">#</a>推荐阅读顺序</h2>
+<ol>
+<li><code>types/hot.d.ts</code>：先建立用户 API 的 accept/dispose/prune/data/invalidate 语义。</li>
+<li><code>types/hmrPayload.d.ts</code>：看服务端与运行端之间的消息协议。</li>
+<li><code>shared/hmr.ts</code> 的 <code>HMRContext</code>：看模块执行时怎样登记 API。</li>
+<li>同文件 <code>HMRClient.fetchUpdate()</code>：理解运行端的“重新导入 → callback”两阶段。</li>
+<li><code>server/hmr.ts</code> 的 <code>updateModules()</code> 与 <code>propagateUpdate()</code>。</li>
+<li><code>isNodeWithinCircularImports()</code>：主传播清楚后再读循环判定。</li>
+<li>回到 <code>handleHMRUpdate()</code>：串起 watcher、插件 hooks 与多 Environment 调度。</li>
+<li><code>server/ws.ts</code> 和 <code>normalizeHotChannel()</code>：理解 transport，而非把 WebSocket 当 HMR 算法本体。</li>
+<li><code>client/client.ts</code> 的 <code>handleMessage()</code>、断线重连和 CSS link 更新。</li>
+<li><code>client/overlay.ts</code> 的构造、文本分段和 close 生命周期。</li>
+<li>主线掌握后，对照 <code>client/bundledDevHmrClient.ts</code> 的 <code>computeHmrUpdate()</code>。</li>
+<li>server HMR 单元测试、<code>playground/hmr</code> 与 <code>playground/hmr-full-bundle-mode</code>。</li>
+</ol>
+<h2 id="三层协议不要混读"><a class="heading-anchor" href="#%E4%B8%89%E5%B1%82%E5%8D%8F%E8%AE%AE%E4%B8%8D%E8%A6%81%E6%B7%B7%E8%AF%BB" aria-label="链接到本节">#</a>三层协议不要混读</h2>
+<p>HMR 可以拆成三个相对独立的层次：</p>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">图算法层
+  输入：变更 ModuleNode + import/accept 边
+  输出：传播边界或 full reload
+
+消息层
+  HotPayload 经 HotChannel/WebSocket/进程内 transport 发送
+
+执行层
+  HMRClient 维护 callback/data/dispose，重新导入并执行边界
+</code></pre></figure><p><code>server/hmr.ts</code> 不执行用户模块；<code>shared/hmr.ts</code> 不推导模块图边界；<code>ws.ts</code> 更不理解 accept 语义。按这
+三层阅读，可以避免把网络重连、传播算法和模块生命周期搅在一起。</p>
+<h2 id="import-analysis-给-hmr-留下什么数据"><a class="heading-anchor" href="#import-analysis-%E7%BB%99-hmr-%E7%95%99%E4%B8%8B%E4%BB%80%E4%B9%88%E6%95%B0%E6%8D%AE" aria-label="链接到本节">#</a>Import Analysis 给 HMR 留下什么数据</h2>
+<p>每次模块转换后，Import Analysis 把以下信息写进 EnvironmentModuleNode：</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>字段</th>
+<th>来源</th>
+<th>传播用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>isSelfAccepting</code></td>
+<td><code>hot.accept()</code>/CSS</td>
+<td>当前节点直接成为边界</td>
+</tr>
+<tr>
+<td><code>acceptedHmrDeps</code></td>
+<td><code>hot.accept('./dep', cb)</code></td>
+<td>importer 接受特定直接依赖</td>
+</tr>
+<tr>
+<td><code>acceptedHmrExports</code></td>
+<td><code>hot.acceptExports(['foo'])</code></td>
+<td>判断部分导出能否停止传播</td>
+</tr>
+<tr>
+<td><code>importedBindings</code></td>
+<td>importer 实际导入的 named bindings</td>
+<td>与 accepted exports 做集合比较</td>
+</tr>
+<tr>
+<td><code>importers</code></td>
+<td>普通 import 反向边</td>
+<td>从变更模块向上遍历</td>
+</tr>
+<tr>
+<td><code>lastHMRTimestamp</code></td>
+<td>模块图 invalidate/prune</td>
+<td>给重新获取的 URL 加 <code>?t=</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><code>isSelfAccepting === undefined</code> 很重要：它表示该模块还没经过 Import Analysis，通常也没在浏览器加载。
+传播此时停止且不 reload，不能把“未分析”当成“明确不接受”。这个边界来自
+<a href="https://github.com/vitejs/vite/issues/7561" target="_blank" rel="noreferrer noopener">Issue #7561</a>。</p>
+<h2 id="文件事件总入口"><a class="heading-anchor" href="#%E6%96%87%E4%BB%B6%E4%BA%8B%E4%BB%B6%E6%80%BB%E5%85%A5%E5%8F%A3" aria-label="链接到本节">#</a>文件事件总入口</h2>
+<p><code>handleHMRUpdate(type, file, server)</code> 先处理几类全局特例：</p>
+<ul>
+<li>Vite 配置、配置依赖或当前 mode 的 env 文件：重启 server；</li>
+<li><code>@vite/client</code> 自身：所有 Environment full reload；</li>
+<li>普通 HTML 但模块图无节点：client 定向页面 reload；</li>
+<li>其他 watcher 文件：按每个 Environment 查 <code>getModulesByFile(file)</code>。</li>
+</ul>
+<p>create 事件会额外把 <code>_hasResolveFailedErrorModules</code> 加入候选。新文件可能正好修复此前失败的 import；若
+只按“新文件当前对应的节点”查询，失败模块根本不会重新 transform。</p>
+<p>函数进入时保存 <code>server.environments</code> 快照。任一插件 hook 都可能调用 <code>server.restart()</code>，await 返回后
+若快照已被替换，本次事务立即停止，不向新 Environment 发送旧模块图结果。这个竞态修复见
+<a href="https://github.com/vitejs/vite/pull/22992" target="_blank" rel="noreferrer noopener">PR #22992</a>。</p>
+<h2 id="插件怎样参与更新"><a class="heading-anchor" href="#%E6%8F%92%E4%BB%B6%E6%80%8E%E6%A0%B7%E5%8F%82%E4%B8%8E%E6%9B%B4%E6%96%B0" aria-label="链接到本节">#</a>插件怎样参与更新</h2>
+<p>新 API <code>plugin.hotUpdate(options)</code> 在每个 Environment 独立运行：</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">type HotUpdateOptions = {
+  type: &#039;create&#039; | &#039;update&#039; | &#039;delete&#039;
+  file: string
+  timestamp: number
+  modules: EnvironmentModuleNode[]
+  read(): string | Promise&lt;string&gt;
+  server: ViteDevServer
+}
+</code></pre></figure><p>hook 返回模块数组时，会替换后续传播起点。插件可以：</p>
+<ul>
+<li>过滤普通模块；</li>
+<li>把一个真实 watch file 映射到虚拟模块；</li>
+<li>返回额外受影响模块；</li>
+<li>自行发送 custom/full-reload 后返回空数组。</li>
+</ul>
+<p>旧 <code>handleHotUpdate</code> 只在 update 事件执行，并通过 mixed module graph 同时表达 client/SSR 节点。兼容
+期间 client 新 hook 的过滤结果会同步回 mixed context，再把旧 hook 结果映射回各 Environment；这段
+复杂桥接是迁移代码，不是新 API 推荐的数据模型。<code>hotUpdate</code> 支持可从提交
+<a href="https://github.com/vitejs/vite/commit/ba77cee60" target="_blank" rel="noreferrer noopener"><code>ba77cee60</code></a> 和
+<a href="https://github.com/vitejs/vite/commit/fc1d72654" target="_blank" rel="noreferrer noopener"><code>fc1d72654</code></a> 继续追踪。</p>
+<p>默认所有 Environment 的传播并行运行；<code>server.hotUpdateEnvironments</code> 可接管环境选择与调度顺序。</p>
+<h2 id="反向传播算法"><a class="heading-anchor" href="#%E5%8F%8D%E5%90%91%E4%BC%A0%E6%92%AD%E7%AE%97%E6%B3%95" aria-label="链接到本节">#</a>反向传播算法</h2>
+<p><code>updateModules()</code> 对每个变更节点调用 <code>propagateUpdate()</code>。箭头表示 import：</p>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">entry → parent → changed
+</code></pre></figure><p>传播从 <code>changed</code> 沿 <code>importers</code> 反向走向 <code>parent</code>、<code>entry</code>，直到找到接受边界或死端。</p>
+<h3 id="1-self-accept"><a class="heading-anchor" href="#1-self-accept" aria-label="链接到本节">#</a>1. self accept</h3>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">changed.isSelfAccepting === true
+→ boundary = changed
+→ acceptedVia = changed
+→ 停止该分支
+</code></pre></figure><p>CSS JS 模块通常自接受。服务端发送：</p>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">path         = changed URL
+acceptedPath = changed URL
+</code></pre></figure><p>客户端重新导入自身，再执行自身 accept callback。</p>
+<h3 id="2-dependency-accept"><a class="heading-anchor" href="#2-dependency-accept" aria-label="链接到本节">#</a>2. dependency accept</h3>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">parent.acceptedHmrDeps.has(changed)
+→ boundary = parent
+→ acceptedVia = changed
+→ 停止该分支
+</code></pre></figure><p>payload 中：</p>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">path         = parent URL       // 去哪里找 callback
+acceptedPath = changed URL      // 重新 import 哪个模块
+</code></pre></figure><p>这两个字段不能互换。HMRClient 从 <code>hotModulesMap.get(path)</code> 找 parent callbacks，只把重新导入的
+acceptedPath namespace 放进匹配依赖的参数槽位。</p>
+<h3 id="3-acceptexports"><a class="heading-anchor" href="#3-acceptexports" aria-label="链接到本节">#</a>3. acceptExports</h3>
+<p>acceptExports 是“有条件的自接受”。模块先成为自身边界，但每个 importer 仍要检查：</p>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">importer.importedBindings.get(node.id)
+⊆ node.acceptedHmrExports
+</code></pre></figure><p>若实际使用的 bindings 全被接受，该 importer 分支停止；只要使用一个未接受导出，就继续向上传播。
+side-effect import 的 binding 集为空，因此自然满足子集关系。namespace import 与动态 import 无法安全
+证明只使用部分导出，通常按使用全集处理。</p>
+<p>acceptExports 最初以 partial accept 实验能力进入，见
+<a href="https://github.com/vitejs/vite/pull/7324" target="_blank" rel="noreferrer noopener">PR #7324</a>。它不是 tree-shaking：判断依据是开发态导入语法和
+模块图记录，不分析任意运行时代码对 namespace 的属性访问。</p>
+<h3 id="4-死端"><a class="heading-anchor" href="#4-%E6%AD%BB%E7%AB%AF" aria-label="链接到本节">#</a>4. 死端</h3>
+<p>以下任一分支会要求 full reload：</p>
+<ul>
+<li>未接受模块没有 importer，已到图根；</li>
+<li>HTML 是顶层页面模板；</li>
+<li><code>hot.invalidate()</code> 在同一轮闭合回 firstInvalidatedBy；</li>
+<li>任一 importer 链递归返回死端。</li>
+</ul>
+<p>多个变更模块合并处理时，只要一条路径需要 reload，最终就发送 full-reload；已收集的精确 updates 不再
+单独发送，避免页面先局部替换又立刻刷新。</p>
+<h3 id="遍历去重与路径状态"><a class="heading-anchor" href="#%E9%81%8D%E5%8E%86%E5%8E%BB%E9%87%8D%E4%B8%8E%E8%B7%AF%E5%BE%84%E7%8A%B6%E6%80%81" aria-label="链接到本节">#</a>遍历去重与路径状态</h3>
+<p><code>traversedModules</code> 是整轮共享集合，避免菱形图重复遍历；<code>currentChain</code> 是当前 DFS 路径，用来避免递归
+环并诊断循环 import。边界列表保留 <code>boundary + acceptedVia</code>，同一边界接受不同依赖时仍可生成不同
+update。</p>
+<h2 id="循环-import-为什么特殊"><a class="heading-anchor" href="#%E5%BE%AA%E7%8E%AF-import-%E4%B8%BA%E4%BB%80%E4%B9%88%E7%89%B9%E6%AE%8A" aria-label="链接到本节">#</a>循环 import 为什么特殊</h2>
+<p>ESM 循环依赖的值和副作用依赖首次求值顺序。普通 dynamic import 带时间戳只能重新执行局部模块，无法
+可靠重建整条循环的初始顺序。</p>
+<p>找到 accept 边界后，<code>isNodeWithinCircularImports()</code> 从边界继续沿 importers 搜索；若重新遇到从原
+变更节点走到边界的 <code>nodeChain</code> 中节点，就标记 <code>isWithinCircularImport</code>。例如：</p>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">A → B → C → ACCEPTED → D → E → CHANGED
+    ↑______________________________|
+</code></pre></figure><p>服务端仍发送精确 update，让简单循环有机会成功；浏览器重新 import 若失败，<code>importUpdatedModule()</code> 的
+catch 会解释原因并 reload，恢复执行顺序。循环检测改进见
+<a href="https://github.com/vitejs/vite/pull/14867" target="_blank" rel="noreferrer noopener">PR #14867</a>。</p>
+<p>这不同于 invalidate 循环。后者会持续发起下一轮 HMR，必须在服务端识别并直接 full reload；无限循环
+修复见 <a href="https://github.com/vitejs/vite/pull/19870" target="_blank" rel="noreferrer noopener">PR #19870</a>。</p>
+<h2 id="模块图失效与时间戳"><a class="heading-anchor" href="#%E6%A8%A1%E5%9D%97%E5%9B%BE%E5%A4%B1%E6%95%88%E4%B8%8E%E6%97%B6%E9%97%B4%E6%88%B3" aria-label="链接到本节">#</a>模块图失效与时间戳</h2>
+<p>传播边界计算后，<code>environment.moduleGraph.invalidateModule()</code> 会：</p>
+<ul>
+<li>写入单调 HMR timestamp；</li>
+<li>清 transformResult 或标记软失效；</li>
+<li>递归处理受影响 importer；</li>
+<li>用 invalidatedModules 集合避免重复。</li>
+</ul>
+<p>客户端重新导入使用：</p>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">acceptedPath?t=&lt;timestamp&gt;
+</code></pre></figure><p>Import Analysis 也会给本轮依赖 URL 附加时间戳。二者共同绕开浏览器原生 ESM 的永久模块缓存，让新实例
+真正执行，而不是再次得到旧 namespace。</p>
+<p>这里使用 <code>monotonicDateNow()</code>，防止系统时钟回拨产生较小 timestamp，导致 URL 版本顺序失真；修复见
+<a href="https://github.com/vitejs/vite/pull/20158" target="_blank" rel="noreferrer noopener">PR #20158</a>。</p>
+<h2 id="invalidate-是第二轮传播"><a class="heading-anchor" href="#invalidate-%E6%98%AF%E7%AC%AC%E4%BA%8C%E8%BD%AE%E4%BC%A0%E6%92%AD" aria-label="链接到本节">#</a><code>invalidate()</code> 是第二轮传播</h2>
+<p>模块在 accept callback 或执行阶段发现自己无法安全接管更新时调用：</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">import.meta.hot.invalidate(&#039;reason&#039;)
+</code></pre></figure><p>HMRContext 向本地事件监听器和服务端都发送 <code>vite:invalidate</code>，payload 记录：</p>
+<ul>
+<li><code>path</code>：当前模块；</li>
+<li><code>message</code>：诊断原因；</li>
+<li><code>firstInvalidatedBy</code>：整条 invalidate 链的最初模块。</li>
+</ul>
+<p>服务端重新以该模块为起点调用 <code>updateModules()</code>，从 importer 继续寻找更高边界。firstInvalidatedBy 在
+回调执行期间由 HMRClient 暂存，后续 invalidate 才能继承同一根；事务结束后必须清空。</p>
+<p>多标签页会同时对同一个更新发送 invalidate，服务端按同一轮身份去重，否则 parent 会更新两次。</p>
+<h2 id="客户端为什么分-获取-和-执行-两阶段"><a class="heading-anchor" href="#%E5%AE%A2%E6%88%B7%E7%AB%AF%E4%B8%BA%E4%BB%80%E4%B9%88%E5%88%86-%E8%8E%B7%E5%8F%96-%E5%92%8C-%E6%89%A7%E8%A1%8C-%E4%B8%A4%E9%98%B6%E6%AE%B5" aria-label="链接到本节">#</a>客户端为什么分“获取”和“执行”两阶段</h2>
+<p><code>HMRClient.queueUpdate()</code> 把同一 microtask 内收到的 updates 先全部交给 <code>fetchUpdate()</code>：</p>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">每个 update：
+  固定当前合格 callbacks
+  → await disposer
+  → import acceptedPath?t=timestamp
+  → 返回一个尚未执行的 callback closure
+
+Promise.all(全部 fetch)
+→ 按 payload 原顺序执行 closures
+</code></pre></figure><p>重新获取可以并行，减少网络等待；accept callbacks 必须保持服务端顺序，否则 HTTP 往返快慢会改变模块
+副作用顺序。更外层 <code>createHMRHandler()</code> 又把完整 HotPayload 串行化，因为一次 invalidate 可能在当前
+payload 处理过程中触发下一轮更新。这个竞态修复见
+<a href="https://github.com/vitejs/vite/pull/19793" target="_blank" rel="noreferrer noopener">PR #19793</a>。</p>
+<p>合格 callback 必须在重新 import 前固定：新模块执行会创建新 HMRContext，清空旧 callbacks 并登记
+新一代回调；若 import 后才筛选，就会错误调用新代码的 callback 处理旧更新。</p>
+<p>代码分割分支可能在服务端模块图存在，但当前页面尚未加载，hotModulesMap 找不到 path 时静默跳过；见
+<a href="https://github.com/vitejs/vite/issues/721" target="_blank" rel="noreferrer noopener">Issue #721</a>。</p>
+<h2 id="hmrcontext-生命周期"><a class="heading-anchor" href="#hmrcontext-%E7%94%9F%E5%91%BD%E5%91%A8%E6%9C%9F" aria-label="链接到本节">#</a>HMRContext 生命周期</h2>
+<p>每次模块执行都会调用 <code>createHotContext(ownerPath)</code> 创建新 context：</p>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">首次执行
+  dataMap[ownerPath] = {}
+  登记 accept/dispose/prune/on
+
+更新前
+  dispose(data)
+  重新 import 新 URL
+
+新一代执行
+  保留同一个 data 对象
+  清旧 accept callbacks
+  从全局 custom listener 表移除旧 context listeners
+  登记新 callbacks/listeners
+
+模块脱离图
+  dispose(data) → prune(data) → 删除 data
+</code></pre></figure><ul>
+<li>dispose 是“当前实例即将被替换或移除”；可写 data 交给下一代。</li>
+<li>prune 是“模块已没有 importer，不再属于当前运行图”；用于最终撤销样式、事件等副作用。</li>
+<li>data 在普通更新中保留，在 prune 后必须删除；否则未来重新导入会继承已结束生命周期的状态。修复见
+<a href="https://github.com/vitejs/vite/pull/23002" target="_blank" rel="noreferrer noopener">PR #23002</a>。</li>
+</ul>
+<p>prune callbacks 需要全部 await 完成，下一轮 HMR 才可开始，否则旧副作用清理会与新模块执行交错；见
+<a href="https://github.com/vitejs/vite/pull/20698" target="_blank" rel="noreferrer noopener">PR #20698</a>。即使模块本身不是 self-accepting，删除其 import
+边也要触发 prune；相关修复见 <a href="https://github.com/vitejs/vite/pull/20768" target="_blank" rel="noreferrer noopener">PR #20768</a> 和
+<a href="https://github.com/vitejs/vite/pull/21093" target="_blank" rel="noreferrer noopener">PR #21093</a>。</p>
+<h2 id="accept-参数为什么用轻量-lexer"><a class="heading-anchor" href="#accept-%E5%8F%82%E6%95%B0%E4%B8%BA%E4%BB%80%E4%B9%88%E7%94%A8%E8%BD%BB%E9%87%8F-lexer" aria-label="链接到本节">#</a>accept 参数为什么用轻量 lexer</h2>
+<p>服务端只需要从以下受限语法中提取字面量：</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">hot.accept()
+hot.accept(callback)
+hot.accept(&#039;./dep&#039;, callback)
+hot.accept([&#039;./a&#039;, &#039;./b&#039;], callback)
+hot.acceptExports([&#039;foo&#039;, &#039;default&#039;])
+</code></pre></figure><p><code>lexAcceptedHmrDeps()</code> 从调用左括号后开始，用 call/array/string/template 几个状态扫描。依赖参数只允许
+字符串或字符串数组，所以没必要为整个模块再跑一次重型 AST parser。无参数或首参是 callback 返回
+selfAccepts=true；模板含 <code>${}</code> 直接报错，因为依赖路径必须静态确定。</p>
+<p>lexer 同时记录每个字符串的源码 start/end，Import Analysis 随后 resolve 并改写 URL。acceptExports
+复用同一个 lexer，只把字符串收集为 export name。</p>
+<h2 id="hotpayload-协议"><a class="heading-anchor" href="#hotpayload-%E5%8D%8F%E8%AE%AE" aria-label="链接到本节">#</a>HotPayload 协议</h2>
+<p>普通开发模式的重要 payload：</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>type</th>
+<th>服务端含义</th>
+<th>客户端动作</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>connected</code></td>
+<td>WS 握手成功</td>
+<td>标记连接完成</td>
+</tr>
+<tr>
+<td><code>update</code></td>
+<td>一个或多个 JS/CSS 传播边界</td>
+<td>queueUpdate 或替换 link</td>
+</tr>
+<tr>
+<td><code>full-reload</code></td>
+<td>无安全边界、HTML/config 等全局变化</td>
+<td>定向或整页 reload</td>
+</tr>
+<tr>
+<td><code>prune</code></td>
+<td>路径已脱离图</td>
+<td>dispose → prune → 删除 data</td>
+</tr>
+<tr>
+<td><code>error</code></td>
+<td>transform/plugin 错误</td>
+<td>overlay 或 console</td>
+</tr>
+<tr>
+<td><code>custom</code></td>
+<td>用户事件、invalidate、invoke、生命周期</td>
+<td>分发自定义 listener</td>
+</tr>
+<tr>
+<td><code>ping</code></td>
+<td>transport 保活</td>
+<td>无业务动作</td>
+</tr>
+</tbody>
+</table></div>
+<p>实验 bundledDev 的 <code>bundled-dev-update</code> 不携带普通 boundaries，而是发送 <code>changedIds</code>、客户端专属 patch URL
+和序号；不要用普通 <code>Update.path/acceptedPath</code> 心智解释它。</p>
+<h2 id="hotchannel-算法与传输的隔离层"><a class="heading-anchor" href="#hotchannel-%E7%AE%97%E6%B3%95%E4%B8%8E%E4%BC%A0%E8%BE%93%E7%9A%84%E9%9A%94%E7%A6%BB%E5%B1%82" aria-label="链接到本节">#</a>HotChannel：算法与传输的隔离层</h2>
+<p><code>HotChannel</code> 允许 HMR 运行在：</p>
+<ul>
+<li>默认 WebSocket；</li>
+<li>用户自定义 channel；</li>
+<li>Environment/Module Runner 的进程内 EventEmitter transport。</li>
+</ul>
+<p><code>normalizeHotChannel()</code> 统一：</p>
+<ul>
+<li><code>send(payload)</code> 与 <code>send(event, data)</code> 两种调用；</li>
+<li>单客户端 send 包装；</li>
+<li>on/off listener 身份映射；</li>
+<li><code>vite:invoke</code> 请求/响应 RPC；</li>
+<li>HMR 禁用时仍允许 connected/ping/custom/error 通过。</li>
+</ul>
+<p>进程内 <code>createServerHotChannel()</code> 设置 <code>skipFsCheck=true</code>，因为 transport 不暴露到网络；网络 channel 不得
+随意开启，否则远程客户端可借 fetchModule 读取受限文件。</p>
+<h2 id="websocket-安全与生命周期"><a class="heading-anchor" href="#websocket-%E5%AE%89%E5%85%A8%E4%B8%8E%E7%94%9F%E5%91%BD%E5%91%A8%E6%9C%9F" aria-label="链接到本节">#</a>WebSocket 安全与生命周期</h2>
+<p>默认 WS 可以复用 Vite 主 HTTP server、挂到 <code>server.ws.server</code>，或在 middleware 模式创建独立
+HTTP(S) server。</p>
+<p>浏览器连接需依次满足：</p>
+<ol>
+<li>protocol/path 是 <code>vite-hmr</code> 对应地址；</li>
+<li>Host 通过 <code>server.allowedHosts</code>；</li>
+<li>带 Origin 的浏览器请求提供本进程生成的 token；</li>
+<li>token 用 <code>timingSafeEqual</code> 比较，并且必须在 <code>handleUpgrade()</code> 前校验。</li>
+</ol>
+<p>这防止恶意网页连接本机开发服务器实施 Cross-site WebSocket hijacking。token 校验相关安全修复可从
+提交 <a href="https://github.com/vitejs/vite/commit/029dcd6d7" target="_blank" rel="noreferrer noopener"><code>029dcd6d7</code></a> 追溯。</p>
+<p>无 Origin 的 CLI/本地工具为兼容可无 token 连接；它们不受浏览器同源策略限制，本来就能发普通 HTTP
+请求。</p>
+<p><code>vite-ping</code> 是特殊探测协议：允许任意来源，握手后立即正常关闭，不进入 clients，也不收发有意义
+payload。客户端断线后先用 ping 确认 server 已重新可用，再 reload 获取新 <code>@vite/client</code>。这个策略
+避免盲目 HTTP 轮询，见 <a href="https://github.com/vitejs/vite/pull/17891" target="_blank" rel="noreferrer noopener">PR #17891</a>。SharedWorker 会合并同源
+多窗口的探测，并在页面全部隐藏时暂停轮询；见
+<a href="https://github.com/vitejs/vite/pull/19057" target="_blank" rel="noreferrer noopener">PR #19057</a>。</p>
+<p>重启时若旧 WS upgrade listener 不从用户 server 移除，它会继续吞掉新连接。close 因而不仅 terminate
+clients，还要解绑 listener，并关闭独立 HTTP server。</p>
+<h2 id="浏览器消息处理细节"><a class="heading-anchor" href="#%E6%B5%8F%E8%A7%88%E5%99%A8%E6%B6%88%E6%81%AF%E5%A4%84%E7%90%86%E7%BB%86%E8%8A%82" aria-label="链接到本节">#</a>浏览器消息处理细节</h2>
+<h3 id="error-overlay-的首次更新"><a class="heading-anchor" href="#error-overlay-%E7%9A%84%E9%A6%96%E6%AC%A1%E6%9B%B4%E6%96%B0" aria-label="链接到本节">#</a>error overlay 的首次更新</h3>
+<p>页面打开时若嵌套模块 transform 返回 500，入口模块根本没执行，页面虽有 overlay，却没有任何 accept
+回调。第一次 update 到来时普通 HMR 不可能修复这条未建立的执行图，所以 client 先 full reload；新页面
+重新加载整个入口。</p>
+<h3 id="css"><a class="heading-anchor" href="#css" aria-label="链接到本节">#</a><code>&lt;link&gt;</code> CSS</h3>
+<p>只有 HTML <code>&lt;link&gt;</code> 直接引用的 CSS 收到 <code>css-update</code>。client 根据规范化 URL 找旧 link，克隆并附加
+<code>?t=</code>，等新 link load/error 后才移除旧节点，避免样式空窗导致 FOUC。由 JS import 的 CSS 会生成自接受
+JS 模块，走普通 js-update 和 <code>updateStyle()</code>。</p>
+<p>SSR 已注入的 <code>style[data-vite-dev-id]</code>/<code>link[data-vite-dev-id]</code> 在 client 启动时收集复用，防止第一次
+HMR 插入重复样式。相关修复见 <a href="https://github.com/vitejs/vite/pull/20767" target="_blank" rel="noreferrer noopener">PR #20767</a>。</p>
+<h3 id="html-定向-reload"><a class="heading-anchor" href="#html-%E5%AE%9A%E5%90%91-reload" aria-label="链接到本节">#</a>HTML 定向 reload</h3>
+<p>服务端对单个 HTML 变化发送其 root 相对 path。客户端只有当前 location 正好对应该 HTML、根
+<code>index.html</code> 或目录形式 index 时才 reload，避免多页面应用所有标签页一起刷新。middlewareMode 无法
+可靠推断页面路由时，服务端使用 <code>*</code>。</p>
+<h3 id="无客户端时缓冲"><a class="heading-anchor" href="#%E6%97%A0%E5%AE%A2%E6%88%B7%E7%AB%AF%E6%97%B6%E7%BC%93%E5%86%B2" aria-label="链接到本节">#</a>无客户端时缓冲</h3>
+<p>页面 reload 期间 transform 可能立刻失败，error payload 早于新 WS 建立；优化器也可能在连接前要求
+reload。WS server 因此在 clients 为空时缓冲最后一个 error/full-reload，新连接收到 connected 后立即
+补发。普通 update 不缓冲，因为新页面会重新构建模块图状态。</p>
+<h2 id="erroroverlay-的隔离与安全边界"><a class="heading-anchor" href="#erroroverlay-%E7%9A%84%E9%9A%94%E7%A6%BB%E4%B8%8E%E5%AE%89%E5%85%A8%E8%BE%B9%E7%95%8C" aria-label="链接到本节">#</a>ErrorOverlay 的隔离与安全边界</h2>
+<p><code>overlay.ts</code> 没有把服务端错误拼成 innerHTML，而是用 <code>document.createElement()</code> 与 TextNode 构造
+Shadow DOM。这样同时解决：</p>
+<ul>
+<li>用户源码、插件名或堆栈中的 HTML 只能显示为文本，不能注入 DOM；</li>
+<li>Shadow DOM 隔离应用 CSS，避免浮层被全局 reset 隐藏，见
+<a href="https://github.com/vitejs/vite/pull/9971" target="_blank" rel="noreferrer noopener">PR #9971</a>；</li>
+<li>style 继承 <code>meta[property=csp-nonce]</code>，通过严格 CSP，见
+<a href="https://github.com/vitejs/vite/pull/20791" target="_blank" rel="noreferrer noopener">PR #20791</a>；</li>
+<li>module 在 Worker/SSR realm 求值时，缺少 document、HTMLElement、customElements 也不抛错，相关修复见
+<a href="https://github.com/vitejs/vite/pull/16318" target="_blank" rel="noreferrer noopener">PR #16318</a> 与
+<a href="https://github.com/vitejs/vite/pull/4856" target="_blank" rel="noreferrer noopener">PR #4856</a>。</li>
+</ul>
+<p>构造时把 message 中的 code frame 拆到独立区域；全局正则每次必须重置 <code>lastIndex</code>，否则第二个错误会
+漏判，见 <a href="https://github.com/vitejs/vite/pull/11132" target="_blank" rel="noreferrer noopener">PR #11132</a>。stack 中匹配到的 POSIX、Windows 或
+file URL 位置才转成 <code>&lt;a&gt;</code>；点击后请求 <code>${base}__open-in-editor?file=...</code>。base、自定义后端与 file URL
+兼容分别见 <a href="https://github.com/vitejs/vite/pull/11337" target="_blank" rel="noreferrer noopener">PR #11337</a>、
+<a href="https://github.com/vitejs/vite/pull/14879" target="_blank" rel="noreferrer noopener">PR #14879</a> 和
+<a href="https://github.com/vitejs/vite/pull/20040" target="_blank" rel="noreferrer noopener">PR #20040</a>。</p>
+<p>点击 window 内部会停止冒泡；点击 backdrop 或按 Escape 调用 <code>close()</code>。close 不只移除元素，还注销
+document keydown listener，避免多轮 transform error 累积全局监听。</p>
+<h2 id="forward-console-复用-hmr-transport-的诊断通道"><a class="heading-anchor" href="#forward-console-%E5%A4%8D%E7%94%A8-hmr-transport-%E7%9A%84%E8%AF%8A%E6%96%AD%E9%80%9A%E9%81%93" aria-label="链接到本节">#</a>Forward Console：复用 HMR transport 的诊断通道</h2>
+<p><code>server.forwardConsole</code> 启用后，客户端 <code>setupForwardConsoleHandler()</code> 包装指定 console 方法，并可监听
+window error/unhandledrejection：</p>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">浏览器 console/error
+→ formatConsoleArgs / Error 数据归一化
+→ transport.send(custom: vite:forward-console)
+→ forwardConsolePlugin
+→ parseErrorStacktrace + ModuleGraph sourcemap
+→ 当前 Environment logger
+</code></pre></figure><p>原 console 方法总是先同步执行，再异步发送；开发服务器断开不能吞掉浏览器本地日志。包装前保存原始
+console.error，发送失败时用它回落，防止报告错误又递归进入 forward handler。client 早于 transport.connect
+产生 <code>SendBeforeConnectError</code> 是正常启动竞态，静默忽略；其他发送错误必须显示。发送失败处理见
+<a href="https://github.com/vitejs/vite/pull/22450" target="_blank" rel="noreferrer noopener">PR #22450</a>，功能最初见
+<a href="https://github.com/vitejs/vite/pull/20916" target="_blank" rel="noreferrer noopener">PR #20916</a>。</p>
+<p>formatter 支持 <code>%s/%d/%i/%f/%j/%o/%O/%c/%%</code>，并为 BigInt、Symbol、函数、Error、嵌套 Error 与循环对象
+提供稳定文本。<code>%j</code> 遇到循环返回 <code>[Circular]</code>，不能让一次 console.log 破坏整个 HMR 消息链。</p>
+<p>服务端必须使用消息所属 Environment 的 moduleGraph、root 与 logger。堆栈 id 查询依次尝试：</p>
+<ol>
+<li>原 id；</li>
+<li>相对 root 还原的磁盘路径；</li>
+<li>浏览器（尤其 Safari）丢失 query 时，该 file 对应的第一个模块 id。</li>
+</ol>
+<p>transformResult 没有内联 map 时，再从预构建依赖产物末尾读取外置 sourcemap。映射后展示完整帧列表，但
+只给“第一个属于 Vite 图、已 transform 且磁盘存在”的帧展开 code frame；这样依赖调用链仍可见，终端
+又不会被每一帧的源码淹没。</p>
+<p><code>playground/forward-console</code> 验证普通 error、Promise rejection、console 格式符与依赖外置 map。依赖报错
+应保留 node_modules 帧，但 code frame 选择最近的项目源码调用点。</p>
+<h2 id="bundled-dev-边界算法移到浏览器"><a class="heading-anchor" href="#bundled-dev-%E8%BE%B9%E7%95%8C%E7%AE%97%E6%B3%95%E7%A7%BB%E5%88%B0%E6%B5%8F%E8%A7%88%E5%99%A8" aria-label="链接到本节">#</a>Bundled-dev：边界算法移到浏览器</h2>
+<p>普通 HMR 的服务端 ModuleGraph 知道每个 URL 的 importer 和 accept；bundled-dev 真正执行的是 Rolldown
+runtime 中的模块 factory，浏览器才知道哪些模块已执行。因此服务端只推送：</p>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">changedIds + patch URL + 单调 seq
+</code></pre></figure><p><code>BundledDevHMRClient.computeHmrUpdate()</code> 在 runtime 图中从 changed id 向已执行 importer 冒泡：</p>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">未执行模块       → noop
+self accept       → [id, id] boundary
+parent accept dep → [parent, id] boundary
+无 importer 根    → full reload
+无边界 import 环  → full reload
+回到 invalidate 发起者 → full reload
+</code></pre></figure><p>每轮同时收集 <code>updateSet</code>：从 changed module 到 boundary 之间的全部模块都要清缓存。应用顺序不能交换：</p>
+<ol>
+<li>确认 updateSet 的新 factory 全部存在；</li>
+<li>在删缓存前冻结 accept callbacks；</li>
+<li>清除 updateSet 缓存，runtime hook 同步执行 dispose；</li>
+<li>初始化 acceptedVia 并读取新 exports；</li>
+<li>调用 boundary callback，最后发送 afterUpdate。</li>
+</ol>
+<p>push 与模块主动 <code>hot.invalidate()</code> 共用 <code>applyQueue</code> 串行执行。push 先校验 seq，缺号说明某个 patch 已
+丢失，只能 reload；invalidate 没有服务端 rebuild，因此从当前 importers 开始，用 runtime 已有 factory
+重新计算边界。</p>
+<p>客户端决定需要 full reload 时不直接调用 <code>location.reload()</code>，只发
+<code>vite:bundled-dev:reload-needed</code>。服务端等新完整 bundle 可服务后再发 full-reload，页面因此不会先加载
+fallback 再二次导航；见 <a href="https://github.com/vitejs/vite/pull/23106" target="_blank" rel="noreferrer noopener">PR #23106</a>。浏览器侧 HMR 主体由
+<a href="https://github.com/vitejs/vite/pull/22961" target="_blank" rel="noreferrer noopener">PR #22961</a> 引入。</p>
+<p>服务端 <code>BundledDev</code> 同时维护四类状态：</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>状态</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>memoryFiles</code></td>
+<td>当前完整输出、HMR patch、sourcemap 与客户端 runtime</td>
+</tr>
+<tr>
+<td><code>pendingPayloadFilenames</code></td>
+<td>已生成但 HTTP 响应尚未确认送达的 payload</td>
+</tr>
+<tr>
+<td><code>fullReloadPending</code></td>
+<td>所有客户端等待最新完整输出后 reload</td>
+</tr>
+<tr>
+<td><code>reloadNeededClientIds</code></td>
+<td>只有计算出死端的特定客户端等待 reload</td>
+</tr>
+</tbody>
+</table></div>
+<p>Rolldown 回调的时序是关键：<code>onHmrUpdates</code> 决定 patch 或刷新意图，<code>onOutput</code> 才表示新完整 bundle 已经写入
+内存。刷新必须后置到 <code>onOutput</code>；若 HMR 生成阶段失败，下一次页面访问会强制 full build，提供自愈通道。
+新连接客户端会立即收到缓存的最后一次构建错误，否则它可能只看到空白页面。</p>
+<p><code>MemoryFiles</code> 支持惰性值：构建回调先保存读取函数，浏览器首次请求时才提取 code/source 并计算 ETag。
+增量构建不能清空整个 Map，因为未变化文件会被 Rolldown 复用。内存文件中间件处理 304、MIME 与自定义
+header；响应 <code>finish</code> 后才调用 <code>markPayloadDelivered()</code>，服务端只有确认 payload 送达，才允许后续 chunk
+依据 per-client ship map 省略其中模块。</p>
+<p>HMR patch 末尾强制追加 <code>export {}</code>，让响应只能作为 ESM 执行，不能被恶意跨源页面当 classic script
+读取。这是 full-bundle 本地服务器安全边界的一部分，不是无意义的空导出。</p>
+<p><code>playground/hmr-full-bundle-mode</code> 用页面全局标记区分“patch 原地更新”和“整页刷新”，并覆盖新增 asset、
+<code>?worker</code>、<code>new URL</code> worker、nested worker、hot.data 与 invalidate。patch 必须包含 ESM 语法，避免被
+跨源页面当普通 script 标签读取响应内容。</p>
+<h2 id="测试怎样映射源码机制"><a class="heading-anchor" href="#%E6%B5%8B%E8%AF%95%E6%80%8E%E6%A0%B7%E6%98%A0%E5%B0%84%E6%BA%90%E7%A0%81%E6%9C%BA%E5%88%B6" aria-label="链接到本节">#</a>测试怎样映射源码机制</h2>
+<h3 id="server-单元测试"><a class="heading-anchor" href="#server-%E5%8D%95%E5%85%83%E6%B5%8B%E8%AF%95" aria-label="链接到本节">#</a>server 单元测试</h3>
+<p><code>server/__tests__/hmr.spec.ts</code> 构造 hotUpdate hook 内重启 server 的竞态，验证 environments 快照变化后：</p>
+<ul>
+<li>hook 后续异常不作为 HMR error 发送；</li>
+<li>默认环境调度不再执行；</li>
+<li>自定义 hotUpdateEnvironments 也收不到 stale hmr 闭包。</li>
+</ul>
+<h3 id="playground-hmr"><a class="heading-anchor" href="#playground-hmr" aria-label="链接到本节">#</a><code>playground/hmr</code></h3>
+<p>建议按机制分组读，不要从 1200 行头读到尾：</p>
+<ol>
+<li>self accept、hot.data、accept dep、nested propagation：基本边界和客户端顺序。</li>
+<li>invalidate/soft invalidate/多标签/循环：二次传播和去重。</li>
+<li>acceptExports 整组：binding 子集算法、side-effect、namespace、dynamic import。</li>
+<li>CSS/HTML/virtual module：非普通磁盘 JS 边界。</li>
+<li>missing import/file create-delete-restore：失败节点恢复、dispose/prune 和图根变化。</li>
+<li>circular self accept：服务端精确 update 与客户端失败 reload 的分工。</li>
+<li>SSR link/CSS watch file/assets：副作用型模块的清理与复用。</li>
+</ol>
+<p>测试日志顺序就是运行时协议断言。例如 self accept 的正确顺序是：</p>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">vite:beforeUpdate
+dispose 旧实例
+新模块执行
+accept callback
+hot updated 日志
+vite:afterUpdate
+</code></pre></figure><p>只验证最终 DOM 会漏掉重复执行、旧 callback 残留或生命周期交错；因此用例同时断言日志序列。</p>
+<h3 id="playground-hmr-full-bundle-mode"><a class="heading-anchor" href="#playground-hmr-full-bundle-mode" aria-label="链接到本节">#</a><code>playground/hmr-full-bundle-mode</code></h3>
+<p>按状态机读顶部场景注释：先验证 INITIAL/BUNDLING/BUNDLED，再看完整 bundle 重建与局部 patch 的分界，
+最后看 worker、hot.data、invalidate 和 full reload。尤其关注两个“负证据”：</p>
+<ul>
+<li>页面全局标记仍存在，证明发生的是 patch 而非 reload；</li>
+<li>document 只加载一次且从未出现 fallback，证明 reload 由服务端在 bundle 就绪后发出。</li>
+</ul>
+<h2 id="历史演进线索"><a class="heading-anchor" href="#%E5%8E%86%E5%8F%B2%E6%BC%94%E8%BF%9B%E7%BA%BF%E7%B4%A2" aria-label="链接到本节">#</a>历史演进线索</h2>
+<ol>
+<li>未加载动态分支不能误触发 reload：<a href="https://github.com/vitejs/vite/issues/7561" target="_blank" rel="noreferrer noopener">Issue #7561</a>。</li>
+<li>partial accept/acceptExports 引入 binding 级传播：<a href="https://github.com/vitejs/vite/pull/7324" target="_blank" rel="noreferrer noopener">PR #7324</a>。</li>
+<li>循环 import 边界需要额外执行顺序保护：<a href="https://github.com/vitejs/vite/pull/14867" target="_blank" rel="noreferrer noopener">PR #14867</a>。</li>
+<li>完整 HMR handler 必须串行，避免嵌套 invalidate 交错：<a href="https://github.com/vitejs/vite/pull/19793" target="_blank" rel="noreferrer noopener">PR #19793</a>。</li>
+<li>invalidate 循环必须退化为 reload：<a href="https://github.com/vitejs/vite/pull/19870" target="_blank" rel="noreferrer noopener">PR #19870</a>。</li>
+<li>prune 从“模块自身接受”扩展到所有删除的 import 边，并等待异步清理：
+<a href="https://github.com/vitejs/vite/pull/20698" target="_blank" rel="noreferrer noopener">PR #20698</a>、
+<a href="https://github.com/vitejs/vite/pull/20768" target="_blank" rel="noreferrer noopener">PR #20768</a>、
+<a href="https://github.com/vitejs/vite/pull/21093" target="_blank" rel="noreferrer noopener">PR #21093</a>。</li>
+<li>断线后用 WS ping + SharedWorker 合并多窗口重连：
+<a href="https://github.com/vitejs/vite/pull/17891" target="_blank" rel="noreferrer noopener">PR #17891</a>、
+<a href="https://github.com/vitejs/vite/pull/19057" target="_blank" rel="noreferrer noopener">PR #19057</a>。</li>
+<li>Environment API 让传播与 transport 不再绑定浏览器 WebSocket。</li>
+<li>server 重启和 prune data 的近期修复继续收紧事务所有权：
+<a href="https://github.com/vitejs/vite/pull/22992" target="_blank" rel="noreferrer noopener">PR #22992</a>、
+<a href="https://github.com/vitejs/vite/pull/23002" target="_blank" rel="noreferrer noopener">PR #23002</a>。</li>
+</ol>
+<h2 id="建议断点"><a class="heading-anchor" href="#%E5%BB%BA%E8%AE%AE%E6%96%AD%E7%82%B9" aria-label="链接到本节">#</a>建议断点</h2>
+<p>第一次调试只放：</p>
+<ol>
+<li><code>handleHMRUpdate()</code>：记录 type/file 和每个 Environment 初始 modules。</li>
+<li><code>propagateUpdate()</code>：观察 node、currentChain、三类 accept 字段。</li>
+<li><code>updateModules()</code> 生成 payload 处：比较 path/acceptedPath。</li>
+<li><code>HMRClient.fetchUpdate()</code>：看 qualifiedCallbacks 在 import 前固定。</li>
+<li><code>HMRContext</code> constructor：看旧 callbacks/listeners 清理和 data 保留。</li>
+<li><code>handleMessage()</code>：看 update/full-reload/prune 分流。</li>
+</ol>
+<p>建议观察：</p>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">node.url / node.importers
+node.isSelfAccepting
+node.acceptedHmrDeps
+node.acceptedHmrExports
+importer.importedBindings
+boundaries
+needFullReload
+hotModulesMap / dataMap / disposeMap / pruneMap
+</code></pre></figure><p>第二轮再打开 <code>DEBUG=vite:hmr</code>，对照传播停止原因和循环链。不要把断点放在所有 WebSocket message 上，
+自定义事件与保活消息会干扰图算法主线。</p>
+<h2 id="关键源码证据"><a class="heading-anchor" href="#%E5%85%B3%E9%94%AE%E6%BA%90%E7%A0%81%E8%AF%81%E6%8D%AE" aria-label="链接到本节">#</a>关键源码证据</h2>
+<p>目标版本源码摘录，来源：<code>packages/vite/src/node/server/hmr.ts</code>，<code>updateModules()</code>：</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">// Modules could be empty if a root module is invalidated via import.meta.hot.invalidate()
+let needFullReload: HasDeadEnd = modules.length === 0
+
+for (const mod of modules) {
+  const boundaries: PropagationBoundary[] = []
+  const hasDeadEnd = propagateUpdate(mod, traversedModules, boundaries)
+
+  environment.moduleGraph.invalidateModule(
+    mod,
+    invalidatedModules,
+    timestamp,
+    true,
+  )
+
+  if (needFullReload) {
+    continue
+  }
+
+  if (hasDeadEnd) {
+    needFullReload = hasDeadEnd
+    continue
+  }
+</code></pre></figure><p>每个起点先做反向传播、再进入模块图失效；没有起点或传播遇到死端都会把事务升级为 full reload。
+<code>boundaries</code> 只有在无死端时才用于生成细粒度 update，避免把过期模块误报为可热替换。</p>
+<h2 id="复盘题"><a class="heading-anchor" href="#%E5%A4%8D%E7%9B%98%E9%A2%98" aria-label="链接到本节">#</a>复盘题</h2>
+<ol>
+<li>dependency accept 的 payload 为什么必须是 <code>path=importer</code>、<code>acceptedPath=dep</code>？</li>
+<li>acceptExports 声明 <code>['foo']</code>，而 importer 只做 side-effect import 时为什么可以停止传播？</li>
+<li><code>isSelfAccepting === undefined</code> 和 <code>false</code> 为什么必须区别处理？</li>
+<li>为什么循环 import 不是一律服务端 full reload，而是先发送带标记的 update？</li>
+<li>qualified callbacks 若在重新 import 后才计算，会调用哪一代代码的回调？</li>
+<li>dispose 可保留 data，prune 后为什么必须删除 data？</li>
+<li>create 文件事件为何要重新检查曾 resolve 失败的模块？</li>
+<li>为什么无客户端时只缓冲 error/full-reload，不缓冲普通 update？</li>
+<li>vite-ping 无 token 为什么仍不会形成跨站 HMR 攻击面？</li>
+<li>hotUpdate hook 内重启 server 后，单靠捕获异常为什么仍不足以保证安全？</li>
+</ol>
+<p>能从任意变更节点手画 importer 图，找出 boundaries、写出 update payload，再推演客户端 dispose/import/
+callback 顺序，才算真正理解 Vite HMR。</p>
+</article><nav class="article-pager" aria-label="前后篇"><a class="pager-link previous" href="11-dependency-pre-bundling.html"><span class="pager-label">上一篇 · 11</span><span class="pager-title">依赖预构建</span></a><a class="pager-link next" href="13a-css-pipeline.html"><span class="pager-label">下一篇 · 13A</span><span class="pager-title">CSS 管线</span></a></nav><footer class="site-footer">Vite v8.2.1 源码阅读站 · 所有机制结论限定于 commit 421615865dad3ed39137d17281814fc78a41246c。</footer></main><aside class="page-toc" aria-label="页内目录"><h2 class="toc-title">本页目录</h2><ol class="toc-list"><li class="depth-2"><a href="#%E9%98%85%E8%AF%BB%E8%BE%B9%E7%95%8C">阅读边界</a></li><li class="depth-2"><a href="#%E6%8E%A8%E8%8D%90%E9%98%85%E8%AF%BB%E9%A1%BA%E5%BA%8F">推荐阅读顺序</a></li><li class="depth-2"><a href="#%E4%B8%89%E5%B1%82%E5%8D%8F%E8%AE%AE%E4%B8%8D%E8%A6%81%E6%B7%B7%E8%AF%BB">三层协议不要混读</a></li><li class="depth-2"><a href="#import-analysis-%E7%BB%99-hmr-%E7%95%99%E4%B8%8B%E4%BB%80%E4%B9%88%E6%95%B0%E6%8D%AE">Import Analysis 给 HMR 留下什么数据</a></li><li class="depth-2"><a href="#%E6%96%87%E4%BB%B6%E4%BA%8B%E4%BB%B6%E6%80%BB%E5%85%A5%E5%8F%A3">文件事件总入口</a></li><li class="depth-2"><a href="#%E6%8F%92%E4%BB%B6%E6%80%8E%E6%A0%B7%E5%8F%82%E4%B8%8E%E6%9B%B4%E6%96%B0">插件怎样参与更新</a></li><li class="depth-2"><a href="#%E5%8F%8D%E5%90%91%E4%BC%A0%E6%92%AD%E7%AE%97%E6%B3%95">反向传播算法</a></li><li class="depth-3"><a href="#1-self-accept">1. self accept</a></li><li class="depth-3"><a href="#2-dependency-accept">2. dependency accept</a></li><li class="depth-3"><a href="#3-acceptexports">3. acceptExports</a></li><li class="depth-3"><a href="#4-%E6%AD%BB%E7%AB%AF">4. 死端</a></li><li class="depth-3"><a href="#%E9%81%8D%E5%8E%86%E5%8E%BB%E9%87%8D%E4%B8%8E%E8%B7%AF%E5%BE%84%E7%8A%B6%E6%80%81">遍历去重与路径状态</a></li><li class="depth-2"><a href="#%E5%BE%AA%E7%8E%AF-import-%E4%B8%BA%E4%BB%80%E4%B9%88%E7%89%B9%E6%AE%8A">循环 import 为什么特殊</a></li><li class="depth-2"><a href="#%E6%A8%A1%E5%9D%97%E5%9B%BE%E5%A4%B1%E6%95%88%E4%B8%8E%E6%97%B6%E9%97%B4%E6%88%B3">模块图失效与时间戳</a></li><li class="depth-2"><a href="#invalidate-%E6%98%AF%E7%AC%AC%E4%BA%8C%E8%BD%AE%E4%BC%A0%E6%92%AD">invalidate() 是第二轮传播</a></li><li class="depth-2"><a href="#%E5%AE%A2%E6%88%B7%E7%AB%AF%E4%B8%BA%E4%BB%80%E4%B9%88%E5%88%86-%E8%8E%B7%E5%8F%96-%E5%92%8C-%E6%89%A7%E8%A1%8C-%E4%B8%A4%E9%98%B6%E6%AE%B5">客户端为什么分“获取”和“执行”两阶段</a></li><li class="depth-2"><a href="#hmrcontext-%E7%94%9F%E5%91%BD%E5%91%A8%E6%9C%9F">HMRContext 生命周期</a></li><li class="depth-2"><a href="#accept-%E5%8F%82%E6%95%B0%E4%B8%BA%E4%BB%80%E4%B9%88%E7%94%A8%E8%BD%BB%E9%87%8F-lexer">accept 参数为什么用轻量 lexer</a></li><li class="depth-2"><a href="#hotpayload-%E5%8D%8F%E8%AE%AE">HotPayload 协议</a></li><li class="depth-2"><a href="#hotchannel-%E7%AE%97%E6%B3%95%E4%B8%8E%E4%BC%A0%E8%BE%93%E7%9A%84%E9%9A%94%E7%A6%BB%E5%B1%82">HotChannel：算法与传输的隔离层</a></li><li class="depth-2"><a href="#websocket-%E5%AE%89%E5%85%A8%E4%B8%8E%E7%94%9F%E5%91%BD%E5%91%A8%E6%9C%9F">WebSocket 安全与生命周期</a></li><li class="depth-2"><a href="#%E6%B5%8F%E8%A7%88%E5%99%A8%E6%B6%88%E6%81%AF%E5%A4%84%E7%90%86%E7%BB%86%E8%8A%82">浏览器消息处理细节</a></li><li class="depth-3"><a href="#error-overlay-%E7%9A%84%E9%A6%96%E6%AC%A1%E6%9B%B4%E6%96%B0">error overlay 的首次更新</a></li><li class="depth-3"><a href="#css">&lt;link&gt; CSS</a></li><li class="depth-3"><a href="#html-%E5%AE%9A%E5%90%91-reload">HTML 定向 reload</a></li><li class="depth-3"><a href="#%E6%97%A0%E5%AE%A2%E6%88%B7%E7%AB%AF%E6%97%B6%E7%BC%93%E5%86%B2">无客户端时缓冲</a></li><li class="depth-2"><a href="#erroroverlay-%E7%9A%84%E9%9A%94%E7%A6%BB%E4%B8%8E%E5%AE%89%E5%85%A8%E8%BE%B9%E7%95%8C">ErrorOverlay 的隔离与安全边界</a></li><li class="depth-2"><a href="#forward-console-%E5%A4%8D%E7%94%A8-hmr-transport-%E7%9A%84%E8%AF%8A%E6%96%AD%E9%80%9A%E9%81%93">Forward Console：复用 HMR transport 的诊断通道</a></li><li class="depth-2"><a href="#bundled-dev-%E8%BE%B9%E7%95%8C%E7%AE%97%E6%B3%95%E7%A7%BB%E5%88%B0%E6%B5%8F%E8%A7%88%E5%99%A8">Bundled-dev：边界算法移到浏览器</a></li><li class="depth-2"><a href="#%E6%B5%8B%E8%AF%95%E6%80%8E%E6%A0%B7%E6%98%A0%E5%B0%84%E6%BA%90%E7%A0%81%E6%9C%BA%E5%88%B6">测试怎样映射源码机制</a></li><li class="depth-3"><a href="#server-%E5%8D%95%E5%85%83%E6%B5%8B%E8%AF%95">server 单元测试</a></li><li class="depth-3"><a href="#playground-hmr">playground/hmr</a></li><li class="depth-3"><a href="#playground-hmr-full-bundle-mode">playground/hmr-full-bundle-mode</a></li><li class="depth-2"><a href="#%E5%8E%86%E5%8F%B2%E6%BC%94%E8%BF%9B%E7%BA%BF%E7%B4%A2">历史演进线索</a></li><li class="depth-2"><a href="#%E5%BB%BA%E8%AE%AE%E6%96%AD%E7%82%B9">建议断点</a></li><li class="depth-2"><a href="#%E5%85%B3%E9%94%AE%E6%BA%90%E7%A0%81%E8%AF%81%E6%8D%AE">关键源码证据</a></li><li class="depth-2"><a href="#%E5%A4%8D%E7%9B%98%E9%A2%98">复盘题</a></li></ol></aside></div><script>;(function () {
+  'use strict'
+
+  var root = document.documentElement
+  var body = document.body
+  var themeButton = document.querySelector('[data-theme-toggle]')
+  var navButton = document.querySelector('[data-nav-toggle]')
+  var progress = document.querySelector('[data-reading-progress]')
+
+  function setTheme(theme) {
+    root.setAttribute('data-theme', theme)
+    if (themeButton) {
+      themeButton.setAttribute(
+        'aria-label',
+        theme === 'dark' ? '切换到浅色模式' : '切换到深色模式',
+      )
+      themeButton.textContent = theme === 'dark' ? '☀' : '◐'
+    }
+  }
+
+  var savedTheme
+  try {
+    savedTheme = localStorage.getItem('vite-guide-theme')
+  } catch (_) {
+    savedTheme = null
+  }
+  setTheme(
+    savedTheme ||
+      (window.matchMedia('(prefers-color-scheme: dark)').matches
+        ? 'dark'
+        : 'light'),
+  )
+
+  if (themeButton) {
+    themeButton.addEventListener('click', function () {
+      var next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark'
+      setTheme(next)
+      try {
+        localStorage.setItem('vite-guide-theme', next)
+      } catch (_) {
+        // file:// 或隐私模式下 localStorage 可能不可用；主题仍对当前页面生效。
+      }
+    })
+  }
+
+  function closeNavigation() {
+    body.classList.remove('nav-open')
+    if (navButton) navButton.setAttribute('aria-expanded', 'false')
+  }
+
+  if (navButton) {
+    navButton.addEventListener('click', function () {
+      var open = body.classList.toggle('nav-open')
+      navButton.setAttribute('aria-expanded', String(open))
+    })
+  }
+
+  document.addEventListener('keydown', function (event) {
+    if (event.key === 'Escape') closeNavigation()
+  })
+
+  document.querySelectorAll('.site-nav a').forEach(function (link) {
+    link.addEventListener('click', closeNavigation)
+  })
+
+  function updateProgress() {
+    if (!progress) return
+    var scrollable = document.documentElement.scrollHeight - window.innerHeight
+    var ratio = scrollable > 0 ? window.scrollY / scrollable : 0
+    progress.style.width = Math.min(100, Math.max(0, ratio * 100)) + '%'
+  }
+
+  updateProgress()
+  window.addEventListener('scroll', updateProgress, { passive: true })
+  window.addEventListener('resize', updateProgress)
+
+  document.querySelectorAll('.copy-code').forEach(function (button) {
+    button.addEventListener('click', async function () {
+      var code = button.closest('.code-card').querySelector('code')
+      var value = code ? code.textContent : ''
+      var copied = false
+
+      if (navigator.clipboard && window.isSecureContext) {
+        try {
+          await navigator.clipboard.writeText(value)
+          copied = true
+        } catch (_) {
+          copied = false
+        }
+      }
+
+      if (!copied) {
+        var input = document.createElement('textarea')
+        input.value = value
+        input.setAttribute('readonly', '')
+        input.style.position = 'fixed'
+        input.style.opacity = '0'
+        document.body.appendChild(input)
+        input.select()
+        copied = document.execCommand('copy')
+        input.remove()
+      }
+
+      var previous = button.textContent
+      button.textContent = copied ? '已复制' : '复制失败'
+      window.setTimeout(function () {
+        button.textContent = previous
+      }, 1200)
+    })
+  })
+
+  var tocLinks = Array.from(document.querySelectorAll('.toc-list a'))
+  var tocById = new Map(
+    tocLinks.map(function (link) {
+      return [decodeURIComponent(link.hash.slice(1)), link]
+    }),
+  )
+  var headings = Array.from(
+    document.querySelectorAll('.prose h2[id], .prose h3[id]'),
+  )
+
+  if ('IntersectionObserver' in window && headings.length > 0) {
+    var observer = new IntersectionObserver(
+      function (entries) {
+        entries.forEach(function (entry) {
+          if (!entry.isIntersecting) return
+          tocLinks.forEach(function (link) {
+            link.classList.remove('is-active')
+          })
+          var active = tocById.get(entry.target.id)
+          if (active) active.classList.add('is-active')
+        })
+      },
+      { rootMargin: '-18% 0px -72% 0px' },
+    )
+    headings.forEach(function (heading) {
+      observer.observe(heading)
+    })
+  }
+})()
+</script></body></html>

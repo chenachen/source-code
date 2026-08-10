@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Vue Runtime 架构、包边界、VNode 与宿主抽象详解"
+    />
+    <title>架构与设计哲学 · Vue Runtime 内核解剖</title>
+    <link rel="stylesheet" href="assets/styles.css" />
+  </head>
+  <body data-current="architecture.html">
+    <header data-site-header></header>
+    <div class="docs-shell">
+      <aside data-global-nav></aside>
+      <main class="article">
+        <div class="article-hero">
+          <div class="article-kicker">Chapter 01 · Architecture</div>
+          <h1>为什么 Vue 要把更新拆成不同层</h1>
+          <p class="article-lead">
+            页面更新包含两类完全不同的问题：应该改什么，以及在当前平台上怎样改。Vue
+            把它们分开，让组件和 Diff 不必知道浏览器细节。
+          </p>
+          <div class="hero-meta">
+            <span>建议阅读 25 分钟</span><span>先修：无</span
+            ><span>核心文件 6 个</span>
+          </div>
+        </div>
+
+        <section class="article-section prose" id="plain-architecture">
+          <h2>先看一个按钮更新颜色</h2>
+          <p>
+            状态从 <code>primary</code> 变成 <code>danger</code> 后，Vue
+            要完成两次翻译：
+          </p>
+          <div class="before-after">
+            <div class="plain-section">
+              <span class="scene-label">第一层：决定改什么</span>
+              <p>
+                按钮还是原来的按钮；文字没有变化；只有 class 从 primary 变成
+                danger。
+              </p>
+            </div>
+            <div class="plain-section">
+              <span class="scene-label">第二层：决定怎样改</span>
+              <p>
+                在浏览器中写入
+                <code>element.className</code
+                >；如果是其他平台，就调用该平台自己的更新接口。
+              </p>
+            </div>
+          </div>
+          <p class="concept-sentence">
+            runtime-core 像项目经理，决定做什么；runtime-dom
+            像浏览器施工队，决定具体怎么做。
+          </p>
+          <div class="role-grid">
+            <article class="role-card">
+              <span class="role-icon">图</span><strong>页面描述</strong
+              ><small>组件交出一份“现在应该长什么样”的轻量设计图。</small
+              ><span class="role-source">VNode</span>
+            </article>
+            <article class="role-card">
+              <span class="role-icon">判</span><strong>通用决策</strong
+              ><small>比较设计图，决定创建、更新、移动还是删除。</small
+              ><span class="role-source">runtime-core / Renderer</span>
+            </article>
+            <article class="role-card">
+              <span class="role-icon">做</span><strong>平台施工</strong
+              ><small>把决定落实成 DOM、Canvas 或测试内存树操作。</small
+              ><span class="role-source">runtime-dom / custom host</span>
+            </article>
+          </div>
+          <div class="reader-check">
+            <strong>这样分层的直接收益：</strong>Vue 的组件、生命周期和 Diff
+            只写一次；浏览器差异集中在
+            runtime-dom；核心算法还能在不启动浏览器的环境中测试。
+          </div>
+          <p>
+            后面看到 <code>hostInsert</code>、<code>hostRemove</code>
+            时，只要翻译成“请当前平台插入或删除节点”即可。
+          </p>
+        </section>
+
+        <div class="level-divider">进入架构与源码层</div>
+
+        <section class="article-section prose" id="packages">
+          <h2>包边界不是目录整理，而是职责约束</h2>
+          <p>Vue 3 将运行时拆成两个公开包，背后对应两种稳定性不同的知识：</p>
+          <div class="card-grid">
+            <article class="card">
+              <span class="card-label">@vue/runtime-core</span>
+              <h3>与宿主平台无关的语义</h3>
+              <p>
+                组件实例、VNode、Renderer、调度、水合协议、指令生命周期、Teleport、Suspense、KeepAlive、BaseTransition。
+              </p>
+            </article>
+            <article class="card">
+              <span class="card-label">@vue/runtime-dom</span>
+              <h3>浏览器平台的具体实现</h3>
+              <p>
+                DOM nodeOps、patchProp、事件、v-model、v-show、CSS
+                Transition、Custom Element，以及 HTML/SVG/MathML 类型。
+              </p>
+            </article>
+          </div>
+          <p>
+            core 不导入浏览器 DOM API。它只保存一组
+            <code>RendererOptions</code>，需要创建节点时调用
+            <code>hostCreateElement</code>，需要插入时调用
+            <code>hostInsert</code>，需要更新属性时调用
+            <code>hostPatchProp</code>。runtime-dom 则负责把这些接口实现成真实
+            DOM 操作。
+          </p>
+          <div class="diagram" role="img" aria-label="Vue Runtime 包分层">
+            <div class="diagram-title">PACKAGE TOPOLOGY</div>
+            <div class="layer-flow">
+              <div class="layer-node">
+                <strong>Compiler</strong
+                ><small>模板静态分析，生成 render、block、patchFlag。</small>
+              </div>
+              <div class="diagram-arrow">→</div>
+              <div class="layer-node emphasis">
+                <strong>runtime-core</strong
+                ><small>解释 VNode 与组件语义，决定增量提交步骤。</small>
+              </div>
+              <div class="diagram-arrow">→</div>
+              <div class="layer-node">
+                <strong>runtime-dom</strong
+                ><small>把宿主指令翻译为浏览器 DOM 操作。</small>
+              </div>
+            </div>
+            <div class="support-row">
+              <div>
+                <strong>Reactivity</strong> 从左下方驱动组件 render effect。
+              </div>
+              <div>
+                <strong>Server Renderer</strong> 生成可被 hydration renderer
+                认领的 HTML。
+              </div>
+            </div>
+          </div>
+          <div class="source-links">
+            <a
+              class="source-link"
+              href="../../../vue/packages/runtime-core/src/renderer.ts"
+              >本地：renderer.ts</a
+            >
+            <a
+              class="source-link"
+              href="../../../vue/packages/runtime-dom/src/index.ts"
+              >本地：runtime-dom/index.ts</a
+            >
+            <a
+              class="source-link"
+              href="https://github.com/vuejs/core/blob/v3.5.41/packages/runtime-core/src/renderer.ts"
+              >GitHub v3.5.41</a
+            >
+          </div>
+        </section>
+
+        <section class="article-section prose" id="host-abstraction">
+          <h2>RendererOptions：整个架构的铰链</h2>
+          <p>
+            <code>createRenderer(options)</code> 不知道 Element、Text、Comment
+            是什么。它只知道“宿主节点”与“宿主元素”两个泛型，以及一组最小操作。典型接口可分成四类：
+          </p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>类别</th>
+                  <th>代表接口</th>
+                  <th>core 依赖的语义</th>
+                  <th>DOM 实现</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>树结构</strong></td>
+                  <td>insert、remove、parentNode、nextSibling</td>
+                  <td>
+                    插入到 anchor 前、移动已存在节点、寻找逻辑片段之后的位置
+                  </td>
+                  <td>insertBefore、removeChild</td>
+                </tr>
+                <tr>
+                  <td><strong>节点创建</strong></td>
+                  <td>createElement、createText、createComment</td>
+                  <td>按 VNode 类型得到可提交宿主节点</td>
+                  <td>document.createElement/NS</td>
+                </tr>
+                <tr>
+                  <td><strong>内容更新</strong></td>
+                  <td>setText、setElementText</td>
+                  <td>文本节点和元素文本 children 的快速更新</td>
+                  <td>nodeValue、textContent</td>
+                </tr>
+                <tr>
+                  <td><strong>属性提交</strong></td>
+                  <td>patchProp</td>
+                  <td>只表达 key、prev、next 和 namespace，不理解 DOM 细节</td>
+                  <td>class/style/event/prop/attr 分派</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            这个抽象的收益不仅是“能做 Canvas Renderer”。更重要的是，<strong
+              >core 的测试可以使用内存树验证算法</strong
+            >，无需依赖浏览器；而 DOM 的复杂兼容逻辑也不会污染组件与 Diff
+            主流程。
+          </p>
+          <div class="callout warm">
+            抽象并非越多越好。RendererOptions 只抽离真正由平台决定的操作；VNode
+            身份、组件生命周期、children Diff 和任务顺序仍由 core
+            统一定义，否则跨平台组件语义会分裂。
+          </div>
+        </section>
+
+        <section class="article-section prose" id="vnode">
+          <h2>VNode：模块之间共享的中间表示</h2>
+          <p>
+            VNode 不是“DOM
+            的轻量副本”。它同时承载声明式输入、运行时状态、编译器优化提示和跨模块协议。可以把字段分成四组：
+          </p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>角色</th>
+                  <th>字段</th>
+                  <th>谁写入</th>
+                  <th>谁消费</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>身份</strong></td>
+                  <td>type、key、shapeFlag</td>
+                  <td>createVNode / normalizeVNode</td>
+                  <td>patch 分派、isSameVNodeType</td>
+                </tr>
+                <tr>
+                  <td><strong>声明输入</strong></td>
+                  <td>props、children、ref、dirs、transition</td>
+                  <td>render 函数与 helper</td>
+                  <td>组件初始化、元素修补、指令与过渡</td>
+                </tr>
+                <tr>
+                  <td><strong>提交结果</strong></td>
+                  <td>el、anchor、component、target</td>
+                  <td>renderer / 内置组件</td>
+                  <td>下一轮更新、move、unmount、水合</td>
+                </tr>
+                <tr>
+                  <td><strong>优化信息</strong></td>
+                  <td>patchFlag、dynamicProps、dynamicChildren</td>
+                  <td>编译器与 block helper</td>
+                  <td>patchElement、patchBlockChildren</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            这解释了为什么 VNode 不能被随意复用：挂载后它已经携带
+            <code>el</code>、<code>component</code>
+            等可变状态。Vue 遇到已挂载或 hoisted VNode
+            时会克隆，以避免两处逻辑节点竞争同一份提交结果。
+          </p>
+          <div class="source-links">
+            <a
+              class="source-link"
+              href="../../../vue/packages/runtime-core/src/vnode.ts"
+              >本地：vnode.ts</a
+            >
+            <a
+              class="source-link"
+              href="https://github.com/vuejs/core/blob/v3.5.41/packages/runtime-core/src/vnode.ts"
+              >GitHub：vnode.ts</a
+            >
+          </div>
+        </section>
+
+        <section class="article-section prose" id="flags">
+          <h2>两套 Flag：一个描述结构，一个描述变化</h2>
+          <div class="card-grid">
+            <article class="card">
+              <span class="card-label">SHAPE FLAG · RUNTIME</span>
+              <h3>“这个 VNode 是什么？”</h3>
+              <p>
+                元素、状态组件、函数组件、数组 children、slot
+                children、Teleport、Suspense。创建 VNode
+                时由运行时推断，主要服务分派。
+              </p>
+            </article>
+            <article class="card">
+              <span class="card-label">PATCH FLAG · COMPILER</span>
+              <h3>“它的哪里可能变化？”</h3>
+              <p>
+                TEXT、CLASS、STYLE、PROPS、FULL_PROPS、STABLE_FRAGMENT
+                等。来自模板静态分析，主要服务更新快路径。
+              </p>
+            </article>
+          </div>
+          <p>
+            两者解决不同问题。一个元素 VNode 的 shapeFlag
+            永远说明它是元素；patchFlag 则可能说明本轮只需检查
+            class。把它们混为一谈，会很难理解
+            <code>patch</code> 为什么先按类型分派，再在
+            <code>patchElement</code> 内选择优化路径。
+          </p>
+          <h3>Block tree 为什么不是另一棵树</h3>
+          <p>
+            Block 是对原 VNode 树的动态节点索引。<code>openBlock</code>
+            开始收集，<code>createElementBlock</code> 把本层动态节点保存在
+            <code>dynamicChildren</code>。更新时，renderer
+            可以直接遍历动态数组，而不是重新走静态后代。
+          </p>
+          <pre><code>// 概念模型：真实编译产物会包含更多 helper
+openBlock()
+return createElementBlock('div', null, [
+  createElementVNode('span', null, 'static'),
+  createElementVNode('p', null, ctx.msg, PatchFlags.TEXT)
+])
+
+// block.dynamicChildren 只需要记录动态的 p</code></pre>
+        </section>
+
+        <section class="article-section prose" id="principles">
+          <h2>贯穿后续章节的设计原则</h2>
+          <div class="sequence">
+            <div class="sequence-item">
+              <strong>平台无关核心</strong
+              ><br />宿主接口由注入得到，核心算法只维护抽象树与组件语义。
+            </div>
+            <div class="sequence-item">
+              <strong>先保持正确，再逐层缩小工作</strong><br />完整 patch
+              是基线，patchFlag、block、LIS 都是可回退优化。
+            </div>
+            <div class="sequence-item">
+              <strong>状态与提交分离</strong
+              ><br />响应式只通知“需要更新”，scheduler 决定时机，renderer
+              决定差异，host 决定操作。
+            </div>
+            <div class="sequence-item">
+              <strong>树结构依赖稳定锚点</strong
+              ><br />Fragment、Teleport、Suspense
+              的复杂性很大程度来自跨轮次维护插入位置。
+            </div>
+            <div class="sequence-item">
+              <strong>特殊能力通过协议接入</strong><br />内置组件扩展
+              process/move/activate，而不是在 patch 中无限堆业务条件。
+            </div>
+            <div class="sequence-item">
+              <strong>错误路径也必须可恢复</strong><br />异步 reject、render
+              throw、水合 mismatch
+              后，队列标志和当前实例都要恢复到可继续运行的状态。
+            </div>
+          </div>
+        </section>
+
+        <section class="article-section prose" id="tradeoffs">
+          <h2>这套架构付出了什么代价</h2>
+          <ul>
+            <li>
+              <strong>参数很多：</strong>patch 需要
+              container、anchor、parentComponent、parentSuspense、namespace、slotScopeIds、optimized，因为它必须保持无全局上下文且可重入。
+            </li>
+            <li>
+              <strong>VNode 是可变对象：</strong>提交结果直接写回
+              VNode，更新速度快，但要求克隆与复用规则非常谨慎。
+            </li>
+            <li>
+              <strong>内置组件交叉复杂：</strong
+              >每个协议独立清晰，组合后却要共同维护锚点、生命周期和异步时序。
+            </li>
+            <li>
+              <strong>编译器与运行时耦合：</strong>patchFlag
+              能显著降本，但错误的优化提示必须允许 BAIL 回退，否则会牺牲正确性。
+            </li>
+          </ul>
+          <div class="callout">
+            至此可以进入组件模型：VNode 已经表达“要渲染一个组件”，下一章关注
+            Runtime 如何把这个声明变成拥有状态、上下文和 render effect 的实例。
+          </div>
+        </section>
+
+        <nav class="page-nav" aria-label="章节翻页">
+          <a href="primer.html"><span>上一章</span>← 零基础先修课</a>
+          <a href="component.html"><span>下一章</span>组件模型 →</a>
+        </nav>
+      </main>
+
+      <aside class="page-toc" aria-label="本页目录">
+        <div class="toc-title">本页目录</div>
+        <a href="#plain-architecture">先理解分层</a>
+        <a href="#packages">包边界</a>
+        <a href="#host-abstraction">宿主抽象</a>
+        <a href="#vnode">VNode 中间表示</a>
+        <a href="#flags">ShapeFlag / PatchFlag</a>
+        <a href="#principles">设计原则</a>
+        <a href="#tradeoffs">架构代价</a>
+      </aside>
+    </div>
+    <footer data-site-footer></footer>
+    <script src="assets/app.js" defer></script>
+  </body>
+</html>

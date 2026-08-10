@@ -1,0 +1,563 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Vue runtime-core 组件实例、setup、props、slots 与生命周期源码详解"
+    />
+    <title>组件模型 · Vue Runtime 内核解剖</title>
+    <link rel="stylesheet" href="assets/styles.css" />
+  </head>
+  <body data-current="component.html">
+    <header data-site-header></header>
+    <div class="docs-shell">
+      <aside data-global-nav></aside>
+      <main class="article">
+        <div class="article-hero">
+          <div class="article-kicker">Chapter 02 · Component Model</div>
+          <h1>一个组件怎样真正“活起来”</h1>
+          <p class="article-lead">
+            组件文件只是一份定义。真正显示到页面时，Vue
+            会为每个使用位置创建独立实例：它记住自己的输入、状态、子内容、渲染结果和生命周期。
+          </p>
+          <div class="hero-meta">
+            <span>建议阅读 35 分钟</span><span>核心文件 component.ts</span
+            ><span>前置：架构篇</span>
+          </div>
+        </div>
+
+        <section class="article-section prose" id="plain-component">
+          <h2>组件定义像户型图，实例才是一套真实房子</h2>
+          <p>
+            同一个
+            <code>UserCard</code>
+            可以在页面上出现十次。它们共用一份组件定义，但每张卡片有不同用户、不同展开状态和不同
+            DOM，因此必须拥有十个独立实例。
+          </p>
+          <div class="before-after">
+            <div class="scene-window">
+              <div class="scene-titlebar">同一个组件定义</div>
+              <div class="scene-body">
+                <span class="scene-label">USER CARD</span>
+                <p>接收 user，保存 expanded，输出头像、姓名和详情。</p>
+              </div>
+            </div>
+            <div class="scene-window">
+              <div class="scene-titlebar">两个独立实例</div>
+              <div class="scene-body">
+                <ul class="ui-list">
+                  <li class="ui-item">小林 · 已展开</li>
+                  <li class="ui-item">小周 · 未展开</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>组件需要记住</th>
+                  <th>白话解释</th>
+                  <th>常见名字</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>父级给的输入</strong></td>
+                  <td>当前卡片显示哪位用户</td>
+                  <td>props</td>
+                </tr>
+                <tr>
+                  <td><strong>自己的记忆</strong></td>
+                  <td>详情是否展开、请求是否完成</td>
+                  <td>setup state / data</td>
+                </tr>
+                <tr>
+                  <td><strong>父级塞入的内容</strong></td>
+                  <td>头像后面是否有自定义徽章</td>
+                  <td>slots</td>
+                </tr>
+                <tr>
+                  <td><strong>上次页面描述</strong></td>
+                  <td>下次更新时用来比较</td>
+                  <td>subTree</td>
+                </tr>
+                <tr>
+                  <td><strong>开始与结束时机</strong></td>
+                  <td>挂载后请求、卸载时清理</td>
+                  <td>lifecycle</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <h3>组件的一生</h3>
+          <div class="sequence">
+            <div class="sequence-item">
+              <strong>出生</strong><br />读取 props 和 slots，运行
+              setup，准备自己的状态和 render。
+            </div>
+            <div class="sequence-item">
+              <strong>第一次显示</strong><br />生成页面描述，交给 Renderer
+              创建真实节点，然后执行 mounted。
+            </div>
+            <div class="sequence-item">
+              <strong>不断更新</strong
+              ><br />输入或依赖变化时重新生成描述，与上一次 subTree 比较。
+            </div>
+            <div class="sequence-item">
+              <strong>离开</strong
+              ><br />停止响应式订阅、清理副作用和节点，然后执行 unmounted。
+            </div>
+          </div>
+          <div class="reader-check">
+            <strong>关键区别：</strong>VNode 只说“这里要一个
+            UserCard”；组件实例则是这张卡片长期存活的运行档案。
+          </div>
+        </section>
+
+        <div class="level-divider">进入组件内部与源码层</div>
+
+        <section class="article-section prose" id="instance">
+          <h2>ComponentInternalInstance 是运行时控制块</h2>
+          <p>
+            VNode
+            描述“希望有一个组件”，实例记录“这个组件当前运行到哪里”。它不是用户通过
+            ref 看到的公共实例，而是 renderer 与各子系统共享的内部控制块。
+          </p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>字段组</th>
+                  <th>代表字段</th>
+                  <th>职责</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>树关系</strong></td>
+                  <td>uid、parent、root、appContext</td>
+                  <td>建立父子顺序、依赖注入链和应用级配置边界</td>
+                </tr>
+                <tr>
+                  <td><strong>声明与结果</strong></td>
+                  <td>vnode、next、subTree、type</td>
+                  <td>保存当前输入、待更新输入和 render 生成的子树</td>
+                </tr>
+                <tr>
+                  <td><strong>组件状态</strong></td>
+                  <td>props、attrs、slots、refs、setupState、data、ctx</td>
+                  <td>支撑 setup、Options API、模板与公共代理的属性查找</td>
+                </tr>
+                <tr>
+                  <td><strong>更新系统</strong></td>
+                  <td>effect、update、job、render、renderCache</td>
+                  <td>把响应式渲染、调度任务和缓存绑定到同一实例</td>
+                </tr>
+                <tr>
+                  <td><strong>生命周期</strong></td>
+                  <td>bm/m/bu/u/bum/um、scope、isMounted、isUnmounted</td>
+                  <td>登记钩子、停止组件级副作用并保护失效任务</td>
+                </tr>
+                <tr>
+                  <td><strong>异步边界</strong></td>
+                  <td>suspense、asyncDep、asyncResolved</td>
+                  <td>让 async setup 向最近 Suspense 登记依赖</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="callout">
+            实例字段很多，是因为它要避免通过全局表查找状态。绝大多数热路径都能从当前
+            instance
+            直接拿到下一步数据，这是一种以对象体积换运行时局部性的选择。
+          </div>
+          <div class="source-links">
+            <a
+              class="source-link"
+              href="../../../vue/packages/runtime-core/src/component.ts"
+              >本地：component.ts</a
+            >
+            <a
+              class="source-link"
+              href="https://github.com/vuejs/core/blob/v3.5.41/packages/runtime-core/src/component.ts"
+              >GitHub：component.ts</a
+            >
+          </div>
+        </section>
+
+        <section class="article-section prose" id="creation">
+          <h2>创建阶段：只搭骨架，不执行 render</h2>
+          <p>
+            <code>createComponentInstance(vnode, parent, suspense)</code>
+            主要完成三件事：
+          </p>
+          <ol>
+            <li>
+              从 parent 或根 VNode 继承 appContext，建立 root、provides、scope
+              等上下文。
+            </li>
+            <li>
+              创建 propsOptions、emitsOptions、accessCache、ctx
+              等空状态，并准备公共实例代理 target。
+            </li>
+            <li>
+              把 emit 绑定到实例，但暂不初始化 props、slots，也不执行 setup。
+            </li>
+          </ol>
+          <p>
+            “创建”与“setup”分开非常关键。Renderer
+            需要先拿到一个可引用实例，Suspense、HMR、Devtools
+            和错误处理才能在后续用户代码执行时拥有明确归属。
+          </p>
+          <div class="diagram">
+            <div class="diagram-title">INSTANCE BOOTSTRAP</div>
+            <div class="flow">
+              <div class="flow-step">
+                <span class="flow-index">01</span>
+                <div class="flow-copy">
+                  <strong>mountComponent</strong
+                  ><small>为组件 VNode 创建内部实例。</small>
+                </div>
+                <span class="flow-file">renderer.ts</span>
+              </div>
+              <div class="flow-join"></div>
+              <div class="flow-step">
+                <span class="flow-index">02</span>
+                <div class="flow-copy">
+                  <strong>createComponentInstance</strong
+                  ><small
+                    >建立父子、应用、effect scope、缓存与生命周期槽位。</small
+                  >
+                </div>
+                <span class="flow-file">component.ts</span>
+              </div>
+              <div class="flow-join"></div>
+              <div class="flow-step">
+                <span class="flow-index">03</span>
+                <div class="flow-copy">
+                  <strong>setupComponent</strong
+                  ><small>初始化 props/slots，区分状态组件与函数组件。</small>
+                </div>
+                <span class="flow-file">component.ts</span>
+              </div>
+              <div class="flow-join"></div>
+              <div class="flow-step">
+                <span class="flow-index">04</span>
+                <div class="flow-copy">
+                  <strong>setupRenderEffect</strong
+                  ><small
+                    >Renderer 创建 effect 和 job，首次执行组件更新函数。</small
+                  >
+                </div>
+                <span class="flow-file">renderer.ts</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="article-section prose" id="setup">
+          <h2>setupComponent：把 VNode 输入转换为可执行组件</h2>
+          <p>初始化顺序不是偶然：</p>
+          <div class="sequence">
+            <div class="sequence-item">
+              <strong>initProps</strong><br />先把 rawProps 拆成已声明 props 与
+              fallthrough attrs，并完成 default/Boolean 转换。
+            </div>
+            <div class="sequence-item">
+              <strong>initSlots</strong><br />再依据 shapeFlag 和编译器 slot
+              flag 规范化 children，使 setup 能读取 slots。
+            </div>
+            <div class="sequence-item">
+              <strong>setupStatefulComponent</strong><br />创建公共 Proxy，设置
+              currentInstance，暂停依赖追踪后调用用户 setup。
+            </div>
+            <div class="sequence-item">
+              <strong>handleSetupResult</strong><br />函数结果成为
+              render；对象结果通过 proxyRefs 成为 setupState。
+            </div>
+            <div class="sequence-item">
+              <strong>finishComponentSetup</strong><br />若仍无 render，使用组件
+              render 或运行时编译 template；随后应用 Options API。
+            </div>
+            <div class="sequence-item">
+              <strong>恢复上下文</strong><br />重置 currentInstance、tracking 与
+              scope，确保错误或异步路径不泄漏到兄弟组件。
+            </div>
+          </div>
+
+          <h3>为什么 setup 调用前要暂停依赖追踪</h3>
+          <p>
+            setup 创建响应式对象和 computed，并不等于组件 render
+            读取了它们。如果 setup 自身被当前外层 effect
+            追踪，会把初始化读取错误归属给别的 effect。Vue 在调用用户 setup
+            前暂停 tracking，同时把当前实例的 effect scope 设为 active。
+          </p>
+
+          <h3>setup 返回 Promise 时发生什么</h3>
+          <p>
+            SSR 会等待 async setup；客户端若存在 Suspense，则把 Promise 作为
+            asyncDep 登记到边界，在隐藏容器中保留占位并等待 resolve。没有
+            Suspense 时开发环境会提示，因为组件无法同步完成首次 render。
+          </p>
+          <div class="callout warm">
+            async setup 最难的不是等待
+            Promise，而是等待期间组件可能被卸载、分支可能切换、HMR 可能
+            reload。resolve 时必须核对实例和 Suspense 的
+            pendingId，避免把过期结果提交到新分支。
+          </div>
+        </section>
+
+        <section class="article-section prose" id="props-slots">
+          <h2>Props 与 Slots：组件更新的两类输入</h2>
+          <div class="card-grid">
+            <article class="card">
+              <span class="card-label">PROPS / ATTRS</span>
+              <h3>声明决定归属</h3>
+              <p>
+                命中 propsOptions 的 key 进入 props；其余进入 attrs。emit
+                listener 不属于普通 attrs。更新时编译器 dynamicProps
+                可走快速路径，否则完整比较。
+              </p>
+            </article>
+            <article class="card">
+              <span class="card-label">SLOTS</span>
+              <h3>函数决定执行上下文</h3>
+              <p>
+                slot 是延迟执行的 render 函数。withCtx
+                恢复父组件渲染上下文，并控制 block
+                tracking，避免动态节点被错误收集到调用方。
+              </p>
+            </article>
+          </div>
+          <p>
+            props 是值输入，slots 是可执行输入。<code
+              >shouldUpdateComponent</code
+            >
+            必须同时判断 props 变化和 slot 稳定性：稳定编译 slot
+            通常不要求子组件因父更新重渲染；手写或动态 slot 则需要保守更新。
+          </p>
+          <div class="source-links">
+            <a
+              class="source-link"
+              href="../../../vue/packages/runtime-core/src/componentProps.ts"
+              >本地：componentProps.ts</a
+            >
+            <a
+              class="source-link"
+              href="../../../vue/packages/runtime-core/src/componentSlots.ts"
+              >本地：componentSlots.ts</a
+            >
+            <a
+              class="source-link"
+              href="../../../vue/packages/runtime-core/src/componentRenderUtils.ts"
+              >本地：componentRenderUtils.ts</a
+            >
+          </div>
+        </section>
+
+        <section class="article-section prose" id="public-instance">
+          <h2>公共实例 Proxy：为何需要访问缓存</h2>
+          <p>
+            模板 render 中的 <code>_ctx.foo</code> 可能来自
+            setupState、data、props、ctx 或 globalProperties。每次都按顺序执行
+            hasOwn 会让高频属性访问付出重复成本，因此
+            PublicInstanceProxyHandlers 使用 accessCache 记录 key 的来源。
+          </p>
+          <div class="branch-grid">
+            <div class="branch">
+              <strong>SETUP</strong
+              ><span
+                >优先读取 setupState；script setup binding 不通过 Options API
+                this 暴露。</span
+              >
+            </div>
+            <div class="branch">
+              <strong>DATA</strong><span>读取 data() 返回的响应式对象。</span>
+            </div>
+            <div class="branch">
+              <strong>PROPS</strong
+              ><span>读取声明 props；set 时拒绝写入并发出警告。</span>
+            </div>
+            <div class="branch">
+              <strong>CONTEXT</strong
+              ><span>methods、computed、inject 和内部 ctx 字段。</span>
+            </div>
+            <div class="branch">
+              <strong>PUBLIC $xxx</strong
+              ><span>$el、$attrs、$slots、$emit 等公共实例映射。</span>
+            </div>
+            <div class="branch">
+              <strong>GLOBAL</strong
+              ><span>app.config.globalProperties 作为最终扩展来源。</span>
+            </div>
+          </div>
+          <p>
+            Options 初始化期间会暂时关闭缓存，因为
+            inject、methods、data、computed 正在依次写入 ctx。若过早把一个 key
+            缓存为 OTHER，后面新增的同名字段将永远无法被找到。
+          </p>
+        </section>
+
+        <section class="article-section prose" id="render-effect">
+          <h2>Render Effect：组件模型与 Renderer 的交接点</h2>
+          <p>
+            组件准备好 render 后，控制权回到 renderer。<code
+              >setupRenderEffect</code
+            >
+            创建 ReactiveEffect，把 <code>componentUpdateFn</code> 作为 effect
+            主体，把 <code>queueJob(job)</code> 作为 scheduler。
+          </p>
+          <div class="tabs" data-tabs>
+            <div
+              class="tab-list"
+              role="tablist"
+              aria-label="组件 effect 两个阶段"
+            >
+              <button
+                class="tab-button"
+                type="button"
+                role="tab"
+                aria-selected="true"
+                data-tab="mount"
+              >
+                首次执行
+              </button>
+              <button
+                class="tab-button"
+                type="button"
+                role="tab"
+                aria-selected="false"
+                data-tab="update"
+              >
+                后续执行
+              </button>
+            </div>
+            <div class="tab-panel" data-tab-panel="mount">
+              <div class="callout">
+                <strong>首次执行：</strong>调用 renderComponentRoot 得到
+                subTree，执行 patch(null, subTree)，把 subTree.el 写回组件
+                vnode.el，最后把 mounted 钩子排入 post 队列。
+              </div>
+            </div>
+            <div class="tab-panel" data-tab-panel="update" hidden>
+              <div class="callout">
+                <strong>后续执行：</strong>若 instance.next 存在，先用新 VNode
+                更新 props/slots；调用 render 得到 nextTree，再 patch(prevTree,
+                nextTree)，最后更新 vnode.el 与 queued hooks。
+              </div>
+            </div>
+          </div>
+          <p>
+            effect 首次运行同时追踪 render
+            读取的响应式依赖。依赖变化时，reactivity 不直接调用 update，而是调用
+            scheduler 将 job 入队；这正是下一章 renderer 与调度篇的连接点。
+          </p>
+          <div class="plain-section">
+            <span class="scene-label">固定版本源码卡 · v3.5.41</span>
+            <pre><code>// renderer.ts:1596–1618
+const effect = (instance.effect = new ReactiveEffect(componentUpdateFn))
+const update = (instance.update = effect.run.bind(effect))
+const job = (instance.job = effect.runIfDirty.bind(effect))
+job.i = instance
+job.id = instance.uid
+effect.scheduler = () =&gt; queueJob(job)
+update()</code></pre>
+            <p>
+              同一个实例把三件事绑在一起：<code>effect</code> 追踪 render
+              依赖，<code>job.id</code> 提供父子排序依据，scheduler 只排队；首次
+              <code>update()</code> 同步建立 subTree，后续依赖触发才走队列。
+            </p>
+            <div class="source-links">
+              <a
+                class="source-link"
+                href="../../../vue/packages/runtime-core/src/renderer.ts"
+                >本地：setupRenderEffect</a
+              >
+              <a
+                class="source-link"
+                href="../../../vue/packages/runtime-core/__tests__/rendererComponent.spec.ts"
+                >本地：组件 Renderer 测试</a
+              >
+              <a
+                class="source-link"
+                href="https://github.com/vuejs/core/blob/v3.5.41/packages/runtime-core/src/renderer.ts#L1596-L1618"
+                >v3.5.41：effect / job 交接</a
+              >
+            </div>
+          </div>
+        </section>
+
+        <section class="article-section prose" id="lifecycle">
+          <h2>生命周期是提交阶段的观察窗口</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>钩子</th>
+                  <th>执行时机</th>
+                  <th>为什么在这里</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>beforeMount</strong></td>
+                  <td>首次 subTree patch 前</td>
+                  <td>宿主节点尚未插入，可观察挂载前状态</td>
+                </tr>
+                <tr>
+                  <td><strong>mounted</strong></td>
+                  <td>subTree 提交后的 post 队列</td>
+                  <td>保证 DOM、子组件与模板 ref 已基本就绪</td>
+                </tr>
+                <tr>
+                  <td><strong>beforeUpdate</strong></td>
+                  <td>新 render 与 patch 前</td>
+                  <td>仍能读取更新前 DOM</td>
+                </tr>
+                <tr>
+                  <td><strong>updated</strong></td>
+                  <td>更新提交后的 post 队列</td>
+                  <td>观察当前组件 DOM 的最终状态</td>
+                </tr>
+                <tr>
+                  <td><strong>beforeUnmount</strong></td>
+                  <td>停止 effect、卸载 subTree 前</td>
+                  <td>实例仍完整可用</td>
+                </tr>
+                <tr>
+                  <td><strong>unmounted</strong></td>
+                  <td>子树和副作用清理后的 post 队列</td>
+                  <td>保证不会再发生组件更新</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="callout">
+            组件章节的最终产物不是 DOM，而是一个可被 scheduler 反复触发的 render
+            effect。下一章从 effect 产生的 VNode 出发，进入 renderer
+            的增量提交算法。
+          </div>
+        </section>
+
+        <nav class="page-nav" aria-label="章节翻页">
+          <a href="architecture.html"><span>上一章</span>← 架构与设计哲学</a>
+          <a href="renderer.html"><span>下一章</span>Renderer 与 Diff →</a>
+        </nav>
+      </main>
+      <aside class="page-toc" aria-label="本页目录">
+        <div class="toc-title">本页目录</div>
+        <a href="#plain-component">组件如何活起来</a>
+        <a href="#instance">内部实例</a><a href="#creation">创建阶段</a
+        ><a href="#setup">setup 流程</a><a href="#props-slots">Props / Slots</a
+        ><a href="#public-instance">公共 Proxy</a
+        ><a href="#render-effect">Render Effect</a
+        ><a href="#lifecycle">生命周期</a>
+      </aside>
+    </div>
+    <footer data-site-footer></footer>
+    <script src="assets/app.js" defer></script>
+  </body>
+</html>

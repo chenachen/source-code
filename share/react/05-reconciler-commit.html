@@ -1,0 +1,97 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="description" content="react-reconciler commit 阶段指南：before mutation、mutation、current 切换、layout、passive、错误隔离与删除清理。" />
+<title>05 · reconciler：commit 副作用</title><link rel="stylesheet" href="assets/guide.css?v=1" /></head><body>
+<header class="topbar"><div class="topbar-inner"><a class="brand" href="index.html">React 六包源码指南</a><nav class="pager" aria-label="页面导航">
+<a href="index.html">地图</a><a href="01-shared.html">shared</a><a href="02-scheduler.html">scheduler</a><a href="03-react.html">react</a>
+<a href="04-reconciler-render.html">render</a><a aria-current="page" href="05-reconciler-commit.html">commit</a><a href="06-dom-bindings.html">bindings</a>
+<a href="07-react-dom.html">react-dom</a><a href="08-end-to-end.html">主线</a><a href="09-evidence.html">证据</a></nav></div></header>
+<div class="layout"><main><p class="eyebrow">05 · Fiber engine / commit</p><h1>reconciler：把 finishedWork 变成唯一现实</h1>
+<p class="lede">commit 不再决定组件“应该渲染什么”。它按 flags 遍历 finishedWork，先保存修改前快照，再执行宿主 mutation，
+切换 current，最后运行能观察新宿主树的 layout 与后续 passive effects。</p>
+<div class="meta"><span class="pill">同步关键区</span><span class="pill">flags 驱动遍历</span><span class="pill">HostConfig 边界</span><span class="pill">passive 延后</span></div>
+
+<section id="contract"><h2>为什么 commit 不能像 render 一样任意中断</h2><div class="grid three">
+<article class="card"><span class="number">CONSISTENCY</span><h3>用户只能看到旧树或新树</h3><p>mutation 中途长时间让出会暴露一半更新的 DOM、ref 与生命周期状态。</p></article>
+<article class="card"><span class="number">ORDER</span><h3>每类 effect 有固定观察窗口</h3><p>snapshot 读旧宿主树；layout 读新宿主树；passive 不阻塞当前可见提交。</p></article>
+<article class="card"><span class="number">OWNERSHIP</span><h3>current 切换是逻辑提交点</h3><p>它晚于 mutation、早于 layout，使卸载读旧 current，挂载/更新读新 current。</p></article></div>
+<div class="callout warn"><p><strong>“原子”是框架观察语义，不是数据库事务：</strong>DOM API、用户生命周期或 ref 回调仍可能抛错。
+React 捕获并调度最近错误边界或根错误处理，但不会回滚已经完成的浏览器 mutation。</p></div></section>
+
+<section id="pipeline"><h2>阶段状态机</h2><div class="chain" aria-label="commit 阶段">
+<div class="node">before mutation<small>snapshot / blur</small></div><span class="arrow">→</span><div class="node">mutation<small>DOM / detach ref</small></div>
+<span class="arrow">→</span><div class="node">root.current<small>切换树身份</small></div><span class="arrow">→</span><div class="node">layout<small>lifecycle / ref</small></div>
+<span class="arrow">→</span><div class="node">paint opportunity<small>requestPaint</small></div><span class="arrow">→</span><div class="node">passive<small>useEffect</small></div></div>
+<div class="table-wrap"><table><thead><tr><th>阶段</th><th>典型工作</th><th>读到的 current / DOM</th><th>主要 flags</th></tr></thead><tbody>
+<tr><td>before mutation</td><td>getSnapshotBeforeUpdate、失焦前处理</td><td>旧 current，DOM 尚未修改</td><td>Snapshot、BeforeMutationMask</td></tr>
+<tr><td>mutation</td><td>Placement、Deletion、属性/文本更新、可见性、insertion effect</td><td>旧 current，DOM 正变成新树</td><td>Placement、Update、ChildDeletion、MutationMask</td></tr>
+<tr><td>current 切换</td><td><code>root.current = finishedWork</code></td><td>新 current，DOM 已 mutation</td><td>不是 Fiber flag</td></tr>
+<tr><td>layout</td><td>layout effect、class didMount/didUpdate、ref attach、host mount</td><td>新 current 与新 DOM</td><td>Layout、Ref、LayoutMask</td></tr>
+<tr><td>passive</td><td>先 passive unmount，再 passive mount；缓存释放与 nested update</td><td>通常已给过 paint 机会</td><td>Passive、PassiveMask</td></tr>
+</tbody></table></div></section>
+
+<section id="entry"><h2>commitRoot 先把根状态收口</h2><p><code>commitRoot</code> 计算 remaining lanes，合并 render 期间并发进入的更新，调用 <code>markRootFinished</code>，
+清理 callback 状态，并在真正 effect 前安排可能存在的 passive flush。然后才进入 before-mutation 与 pending-effects 状态机。</p>
+<figure class="source"><figcaption><span>删节源码 · ReactFiberWorkLoop.js · mutation 与 current 切换</span><a href="../../react/packages/react-reconciler/src/ReactFiberWorkLoop.js">打开文件</a></figcaption><pre><span class="kw">function</span> <span class="fn">flushMutationEffects</span>() {
+  commitMutationEffects(root, finishedWork, lanes);
+  resetAfterCommit(root.containerInfo);
+
+  <span class="cm">// 卸载期间读旧树；layout 期间读新树。</span>
+  root.current = finishedWork;
+  pendingEffectsStatus = PENDING_LAYOUT_PHASE;
+}</pre></figure>
+<p>View Transition 启用时，mutation/layout/after-mutation 可能由宿主 transition callback 驱动；未启用时同步连续 flush。
+无论哪条分支，<code>pendingEffectsStatus</code> 都防止阶段重复或乱序进入。</p></section>
+
+<section id="mutation"><h2>mutation：flags 决定动作，HostConfig 决定怎样写宿主</h2>
+<p><a href="../../react/packages/react-reconciler/src/ReactFiberCommitWork.js">ReactFiberCommitWork.js</a> 遍历带 MutationMask 的子树。
+父 Fiber 的 deletions 先处理，再递归 child mutation，最后处理当前 Fiber 的 Placement/Update/Ref/Visibility 等。</p>
+<div class="table-wrap"><table><thead><tr><th>Fiber 动作</th><th>reconciler 做什么</th><th>DOM renderer 最终调用</th></tr></thead><tbody>
+<tr><td>Placement</td><td>找 host parent 与稳定 host sibling，递归插入新 host descendants</td><td>insertBefore / appendChild 对应 HostConfig</td></tr>
+<tr><td>HostComponent Update</td><td>取得 old/new props，调用 <code>commitHostUpdate</code></td><td><code>commitUpdate</code> → updateProperties</td></tr>
+<tr><td>HostText Update</td><td>比较文本并提交</td><td><code>commitTextUpdate</code> 写 nodeValue</td></tr>
+<tr><td>Deletion</td><td>先卸载 effect/ref/生命周期，定位最近 host parent 并删除顶层 host 子树</td><td>removeChild / removeChildFromContainer</td></tr>
+<tr><td>Offscreen visibility</td><td>递归隐藏/显示宿主 descendants，维护 effect reconnect 语义</td><td>hideInstance / unhideInstance 等</td></tr>
+</tbody></table></div>
+<div class="callout"><p><strong>为什么删除不是简单 <code>parent.removeChild</code>：</strong>删除子树中可能有 portal、class、hook effect、ref、cache 与隐藏边界。
+reconciler 必须先按 Fiber 语义清理，再让 HostConfig 移除正确宿主根。</p></div></section>
+
+<section id="effects"><h2>effect 顺序：先清旧，再装新</h2>
+<p>每个 effect 节点持有环形 effect list。layout 更新通常先执行上一次 destroy，再执行本次 create；passive 也分 unmount 与 mount 遍历，
+确保同一提交的旧订阅先解除。Deletion 的 passive 清理可能等到后续 passive 阶段，但 Fiber/DOM 关联会在安全窗口断开以便 GC 与事件查询不再误认。</p>
+<div class="grid"><article class="card"><span class="number">LAYOUT</span><h3>同步观察新布局</h3><p><code>useLayoutEffect</code>、class didMount/didUpdate 与 ref attach 在 paint 前执行；其中同步更新可能让 passive 被提前冲刷。</p></article>
+<article class="card"><span class="number">PASSIVE</span><h3>默认不阻塞当前提交</h3><p><code>useEffect</code> 由 Normal Scheduler callback 或后续强制 flush 运行；它可以产生新更新，因此有 nested passive update 保护。</p></article></div></section>
+
+<section id="refs"><h2>ref：detach 与 attach 分属不同观察窗口</h2><p>更新 ref 时，旧 ref 在 mutation 路径 detach，新的 ref 在 layout attach。
+对象 ref 写入 <code>current</code>；函数 ref 返回的 cleanup 会被保存，下一次 detach 优先调用 cleanup，否则以 null 调用 ref。
+这样新 ref 回调看到的 host tree 已完成 mutation，且 <code>root.current</code> 已是新树。</p></section>
+
+<section id="errors"><h2>错误隔离：继续遍历，但不假装回滚</h2><ol class="state-list">
+<li><strong>捕获。</strong>生命周期、effect、ref 或 HostConfig 调用抛错时，safe wrapper 记录 source Fiber。</li>
+<li><strong>定位。</strong>沿 return 寻找 class error boundary 或 HostRoot。</li>
+<li><strong>排队。</strong>构造 capture update，选择 SyncLane 并重新调度根。</li>
+<li><strong>继续。</strong>当前 commit 尽量完成其余必要清理，避免宿主树永久卡在半阶段状态。</li>
+<li><strong>恢复。</strong>下一轮 render 产生 fallback 或根级空树；已发生的 mutation 不被事务式撤销。</li></ol></section>
+
+<section id="passive"><h2>passive 结束后，根才真正释放本轮缓存</h2><p><code>flushPassiveEffects</code> 降到不高于 DefaultEventPriority，清空 pending root 指针，再执行 passive unmount/mount。
+组件在 effect 中已有机会 retain 所需 cache 后，root pooled cache 才按 remaining lanes 释放。若 effect 调度同步工作，循环会继续 flush，直到没有待处理 passive/sync work。</p></section>
+
+<section id="evidence"><h2>测试证据索引</h2><div class="table-wrap"><table><thead><tr><th>机制</th><th>代表测试</th><th>观察点</th></tr></thead><tbody>
+<tr><td>mutation/layout/passive 顺序</td><td><a href="../../react/packages/react-reconciler/src/__tests__/ReactHooksWithNoopRenderer-test.js">ReactHooksWithNoopRenderer-test.js</a></td><td>create/destroy 日志与 flush 边界</td></tr>
+<tr><td>删除与 ref 清理</td><td><a href="../../react/packages/react-reconciler/src/__tests__/ReactFiberRefs-test.js">ReactFiberRefs-test.js</a></td><td>callback cleanup、对象 ref 与重挂载</td></tr>
+<tr><td>提交期错误恢复</td><td><a href="../../react/packages/react-reconciler/src/__tests__/ReactIncrementalErrorHandling-test.internal.js">ReactIncrementalErrorHandling-test.internal.js</a></td><td>生命周期/effect 错误进入边界</td></tr>
+<tr><td>Suspense effect 连接</td><td><a href="../../react/packages/react-reconciler/src/__tests__/ReactSuspenseEffectsSemantics-test.js">ReactSuspenseEffectsSemantics-test.js</a></td><td>隐藏、重现、删除时 effect 顺序</td></tr>
+</tbody></table></div></section>
+
+<section id="deep"><h2>继续深挖：用一棵 flags 树走完整提交</h2><div class="grid">
+<article class="card"><span class="number">FLAGS → EFFECT</span><h3><a href="14-commit-effects.html">14 · commit/effects/deletion</a></h3><p>从 <code>subtreeFlags</code> 遍历到 Placement、Update、ChildDeletion、ref、layout/passive destroy/create，并覆盖 commit 错误与不回滚边界。</p></article>
+<article class="card"><span class="number">OBSERVABLE RESULT</span><h3><a href="16-end-to-end-source.html">16 · 真实源码主线</a></h3><p>真实 Counter 测试展示 mutation、current 切换、DOM props cache 与 passive effect 在同一更新中的观察顺序。</p></article>
+</div></section>
+
+<section id="questions"><h2>检查理解</h2><ul class="qa"><li><code>root.current</code> 为什么必须位于 mutation 之后、layout 之前？</li>
+<li>Placement 为什么需要寻找 host sibling，而不是总 append？</li><li>passive effect 为什么有时仍会在浏览器 paint 前执行？</li>
+<li>commit 中捕获错误后，为什么不能承诺恢复到旧 DOM？</li></ul></section>
+<div class="next-page"><a href="04-reconciler-render.html">← 上一页：render</a><a href="06-dom-bindings.html">下一页：DOM HostConfig →</a></div>
+<footer><p>reconciler 只表达“插入、更新、删除、隐藏”；浏览器节点、属性和事件的具体语义由下一包实现。</p></footer>
+</main><aside class="toc" aria-label="本页目录"><strong>reconciler · commit</strong><a href="#contract">一致性契约</a><a href="#pipeline">阶段状态机</a>
+<a href="#entry">commitRoot</a><a href="#mutation">宿主 mutation</a><a href="#effects">effect 顺序</a><a href="#refs">ref</a><a href="#errors">错误隔离</a>
+<a href="#passive">passive 收尾</a><a href="#evidence">测试证据</a><a href="#deep">v2 深挖</a></aside></div></body></html>

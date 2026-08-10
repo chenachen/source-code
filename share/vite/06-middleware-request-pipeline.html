@@ -1,0 +1,1837 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#646cff"><meta name="description" content="Connect 注册顺序就是请求语义：校验、代理、public、transform、static、HTML 与 error。"><title>06. 中间件与请求入口 · Vite 源码解剖</title><style>:root {
+  color-scheme: light;
+  --bg: #f4f6fb;
+  --surface: #ffffff;
+  --surface-soft: #f8f9ff;
+  --surface-code: #171925;
+  --text: #252738;
+  --muted: #686b7d;
+  --faint: #9295a7;
+  --line: #e3e5ef;
+  --line-strong: #d3d6e4;
+  --brand: #646cff;
+  --brand-strong: #4d54dc;
+  --cyan: #14a6c7;
+  --green: #188769;
+  --amber: #b56b16;
+  --red: #c4485a;
+  --shadow: 0 16px 48px rgb(36 39 67 / 9%);
+  --shadow-soft: 0 8px 28px rgb(36 39 67 / 7%);
+  --radius: 18px;
+  --radius-small: 11px;
+  --topbar: 64px;
+  --content: 820px;
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    'PingFang SC',
+    'Hiragino Sans GB',
+    'Microsoft YaHei',
+    sans-serif;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #11121a;
+  --surface: #191b26;
+  --surface-soft: #202331;
+  --surface-code: #0d0f17;
+  --text: #e9eaf2;
+  --muted: #aaadbd;
+  --faint: #818597;
+  --line: #2c2f3d;
+  --line-strong: #3a3e50;
+  --brand: #8e94ff;
+  --brand-strong: #a6abff;
+  --cyan: #56c8e0;
+  --green: #57c7a3;
+  --amber: #e0a252;
+  --red: #f07b8c;
+  --shadow: 0 18px 60px rgb(0 0 0 / 26%);
+  --shadow-soft: 0 8px 30px rgb(0 0 0 / 22%);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: calc(var(--topbar) + 24px);
+}
+
+body {
+  margin: 0;
+  min-width: 280px;
+  background:
+    radial-gradient(circle at 4% 0%, rgb(100 108 255 / 10%), transparent 26rem),
+    radial-gradient(circle at 95% 8%, rgb(20 166 199 / 9%), transparent 28rem),
+    var(--bg);
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1.78;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+a {
+  color: var(--brand-strong);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+}
+
+a:hover {
+  color: var(--cyan);
+}
+
+.skip-link {
+  position: fixed;
+  z-index: 200;
+  top: 8px;
+  left: 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--text);
+  color: var(--surface);
+  transform: translateY(-160%);
+}
+
+.skip-link:focus {
+  transform: translateY(0);
+}
+
+.reading-progress {
+  position: fixed;
+  z-index: 120;
+  inset: 0 0 auto;
+  height: 3px;
+  background: transparent;
+}
+
+.reading-progress > span {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: linear-gradient(90deg, var(--brand), var(--cyan));
+  transition: width 80ms linear;
+}
+
+.topbar {
+  position: sticky;
+  z-index: 100;
+  top: 0;
+  height: var(--topbar);
+  border-bottom: 1px solid rgb(120 124 150 / 16%);
+  background: color-mix(in srgb, var(--bg) 84%, transparent);
+  backdrop-filter: blur(18px) saturate(150%);
+}
+
+.topbar-inner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: min(100%, 1540px);
+  height: 100%;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: max-content;
+  color: var(--text);
+  font-weight: 760;
+  text-decoration: none;
+}
+
+.brand-mark {
+  display: grid;
+  width: 31px;
+  height: 31px;
+  place-items: center;
+  border-radius: 9px;
+  background: linear-gradient(135deg, var(--brand), var(--cyan));
+  box-shadow: 0 7px 18px rgb(100 108 255 / 28%);
+  color: white;
+  font-size: 13px;
+  letter-spacing: -0.04em;
+}
+
+.topbar-path {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.icon-button {
+  display: inline-grid;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.icon-button:hover {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
+.nav-toggle {
+  display: none;
+}
+
+.page-grid {
+  display: grid;
+  grid-template-columns: 250px minmax(0, var(--content)) 225px;
+  gap: 34px;
+  justify-content: center;
+  width: min(100%, 1540px);
+  margin: 0 auto;
+  padding: 34px 24px 72px;
+}
+
+.site-nav,
+.page-toc {
+  position: sticky;
+  top: calc(var(--topbar) + 24px);
+  align-self: start;
+  max-height: calc(100vh - var(--topbar) - 48px);
+  overflow: auto;
+  scrollbar-width: thin;
+}
+
+.site-nav {
+  padding: 5px 10px 18px 0;
+}
+
+.nav-home {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0 0 20px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.nav-home:hover,
+.nav-home[aria-current='page'] {
+  border-color: rgb(100 108 255 / 42%);
+  background: rgb(100 108 255 / 9%);
+  color: var(--brand-strong);
+}
+
+.nav-group + .nav-group {
+  margin-top: 18px;
+}
+
+.nav-group-title {
+  margin: 0 0 6px 11px;
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.nav-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.nav-list a {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 7px;
+  align-items: baseline;
+  padding: 7px 10px;
+  border-radius: 9px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+  text-decoration: none;
+}
+
+.nav-list a:hover {
+  background: var(--surface-soft);
+  color: var(--text);
+}
+
+.nav-list a[aria-current='page'] {
+  background: rgb(100 108 255 / 11%);
+  color: var(--brand-strong);
+  font-weight: 700;
+}
+
+.nav-code {
+  color: var(--faint);
+  font:
+    700 11px/1.4 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+}
+
+.article {
+  min-width: 0;
+}
+
+.article-hero {
+  position: relative;
+  overflow: hidden;
+  margin-bottom: 26px;
+  padding: 36px 38px;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background:
+    linear-gradient(135deg, rgb(100 108 255 / 11%), transparent 58%),
+    linear-gradient(315deg, rgb(20 166 199 / 8%), transparent 45%),
+    var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.article-hero::after {
+  position: absolute;
+  right: -55px;
+  bottom: -70px;
+  width: 220px;
+  height: 220px;
+  border: 35px solid rgb(100 108 255 / 7%);
+  border-radius: 50%;
+  content: '';
+}
+
+.eyebrow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 14px;
+  color: var(--brand-strong);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.eyebrow .pill {
+  padding: 3px 8px;
+  border: 1px solid rgb(100 108 255 / 28%);
+  border-radius: 999px;
+  background: rgb(100 108 255 / 8%);
+}
+
+.article-hero h1 {
+  position: relative;
+  z-index: 1;
+  max-width: 740px;
+  margin: 0;
+  font-size: clamp(2rem, 5vw, 3.35rem);
+  line-height: 1.09;
+  letter-spacing: -0.045em;
+}
+
+.article-hero .lede {
+  position: relative;
+  z-index: 1;
+  max-width: 680px;
+  margin: 18px 0 0;
+  color: var(--muted);
+  font-size: 17px;
+  line-height: 1.72;
+}
+
+.hero-meta {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-top: 23px;
+  color: var(--faint);
+  font-size: 12px;
+}
+
+.hero-meta code {
+  color: var(--muted);
+}
+
+.focus-card,
+.evidence-note,
+.boundary-note {
+  margin: 20px 0 26px;
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--brand);
+  border-radius: var(--radius-small);
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.focus-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr);
+  gap: 20px;
+}
+
+.focus-card h2,
+.focus-card h3,
+.evidence-note h2,
+.evidence-note h3 {
+  margin: 0 0 7px;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.focus-card p,
+.evidence-note p,
+.boundary-note p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.focus-card .boundary {
+  padding-left: 20px;
+  border-left: 1px solid var(--line);
+}
+
+.evidence-note {
+  border-left-color: var(--green);
+}
+
+.boundary-note {
+  border-left-color: var(--amber);
+}
+
+.prose {
+  padding: 12px 4px 30px;
+}
+
+.prose > :first-child {
+  margin-top: 0;
+}
+
+.prose h2,
+.prose h3,
+.prose h4 {
+  position: relative;
+  color: var(--text);
+  line-height: 1.34;
+  letter-spacing: -0.025em;
+}
+
+.prose h2 {
+  margin: 58px 0 20px;
+  padding-top: 6px;
+  font-size: 1.72rem;
+}
+
+.prose h2::before {
+  display: block;
+  width: 42px;
+  height: 4px;
+  margin-bottom: 13px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--brand), var(--cyan));
+  content: '';
+}
+
+.prose h3 {
+  margin: 38px 0 14px;
+  font-size: 1.28rem;
+}
+
+.prose h4 {
+  margin: 30px 0 12px;
+  font-size: 1.08rem;
+}
+
+.heading-anchor {
+  position: absolute;
+  left: -1.1em;
+  color: var(--faint);
+  font-weight: 500;
+  text-decoration: none;
+  opacity: 0;
+}
+
+.prose h2:hover .heading-anchor,
+.prose h3:hover .heading-anchor,
+.prose h4:hover .heading-anchor,
+.heading-anchor:focus {
+  opacity: 1;
+}
+
+.prose p,
+.prose li {
+  color: var(--text);
+}
+
+.prose p {
+  margin: 15px 0;
+}
+
+.prose ul,
+.prose ol {
+  padding-left: 1.45em;
+}
+
+.prose li + li {
+  margin-top: 6px;
+}
+
+.prose strong {
+  color: var(--text);
+}
+
+.prose blockquote {
+  margin: 24px 0;
+  padding: 16px 20px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--cyan);
+  border-radius: 0 var(--radius-small) var(--radius-small) 0;
+  background: var(--surface-soft);
+  color: var(--muted);
+}
+
+.prose blockquote > :first-child {
+  margin-top: 0;
+}
+
+.prose blockquote > :last-child {
+  margin-bottom: 0;
+}
+
+code {
+  border-radius: 5px;
+  background: rgb(100 108 255 / 9%);
+  color: color-mix(in srgb, var(--brand-strong) 78%, var(--text));
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.88em;
+}
+
+:not(pre) > code {
+  padding: 0.15em 0.4em;
+  overflow-wrap: anywhere;
+}
+
+.code-card {
+  position: relative;
+  overflow: hidden;
+  margin: 24px 0 30px;
+  border: 1px solid color-mix(in srgb, var(--surface-code) 85%, white);
+  border-radius: 14px;
+  background: var(--surface-code);
+  box-shadow: 0 12px 34px rgb(9 11 21 / 18%);
+}
+
+.code-card figcaption {
+  display: flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 0 12px 0 16px;
+  border-bottom: 1px solid rgb(255 255 255 / 9%);
+  color: #aeb2c8;
+  font:
+    700 11px/1.4 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.copy-code {
+  margin-left: auto;
+  padding: 5px 8px;
+  border: 1px solid rgb(255 255 255 / 13%);
+  border-radius: 6px;
+  background: rgb(255 255 255 / 5%);
+  color: #c8cbda;
+  font: inherit;
+  cursor: pointer;
+}
+
+.copy-code:hover {
+  border-color: rgb(142 148 255 / 65%);
+  color: white;
+}
+
+.code-card pre,
+.diagram-source pre {
+  max-width: 100%;
+  margin: 0;
+  padding: 20px;
+  overflow: auto;
+  background: transparent;
+  color: #e5e7f1;
+  font:
+    13px/1.68 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    monospace;
+  tab-size: 2;
+}
+
+.code-card pre code,
+.diagram-source pre code {
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  white-space: pre;
+}
+
+.table-scroll {
+  max-width: 100%;
+  margin: 23px 0 30px;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.prose table {
+  width: 100%;
+  min-width: 620px;
+  border-collapse: collapse;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.prose th,
+.prose td {
+  padding: 11px 13px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.prose th {
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.prose tr:last-child td {
+  border-bottom: 0;
+}
+
+.page-toc {
+  padding: 12px 0 20px 18px;
+  border-left: 1px solid var(--line);
+}
+
+.toc-title {
+  margin: 0 0 10px;
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.toc-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.toc-list a {
+  display: block;
+  padding: 4px 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+  text-decoration: none;
+}
+
+.toc-list .depth-3 a {
+  padding-left: 12px;
+  color: var(--faint);
+}
+
+.toc-list a:hover,
+.toc-list a.is-active {
+  color: var(--brand-strong);
+}
+
+.article-pager {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 38px;
+}
+
+.pager-link {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 96px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.pager-link:hover {
+  border-color: rgb(100 108 255 / 42%);
+  color: var(--brand-strong);
+}
+
+.pager-link.next {
+  text-align: right;
+}
+
+.pager-label {
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.pager-title {
+  margin-top: 5px;
+  font-size: 14px;
+  font-weight: 720;
+}
+
+.site-footer {
+  margin-top: 35px;
+  padding: 22px 0;
+  border-top: 1px solid var(--line);
+  color: var(--faint);
+  font-size: 12px;
+}
+
+.flow-figure {
+  margin: 26px 0 32px;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.flow-caption {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  margin-bottom: 18px;
+}
+
+.flow-caption strong {
+  font-size: 15px;
+}
+
+.flow-caption span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.flow-lanes {
+  display: grid;
+  gap: 13px;
+}
+
+.flow-lane {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 10px 14px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+
+.lane-label {
+  grid-row: 1 / span 2;
+  margin: 0;
+  color: var(--brand-strong);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+
+.lane-path {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  align-items: center;
+  min-width: 0;
+}
+
+.lane-step,
+.lane-choice {
+  display: inline-flex;
+  min-height: 34px;
+  padding: 7px 9px;
+  align-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.lane-choice {
+  border-color: rgb(100 108 255 / 42%);
+  background: rgb(100 108 255 / 9%);
+  color: var(--brand-strong);
+}
+
+.lane-arrow {
+  color: var(--brand);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.lane-split {
+  display: grid;
+  grid-column: 2;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.lane-split.three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.lane-split > span {
+  padding: 8px 10px;
+  border-left: 3px solid var(--cyan);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.48;
+}
+
+.lane-split > span:nth-child(even) {
+  border-left-color: var(--green);
+}
+
+.merge-output {
+  display: flex;
+  gap: 8px 18px;
+  align-items: center;
+  justify-content: center;
+  padding: 14px 16px;
+  border: 1px solid rgb(24 135 105 / 38%);
+  border-radius: 11px;
+  background: rgb(24 135 105 / 8%);
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.merge-output b {
+  color: var(--green);
+}
+
+.flow-track {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  gap: 20px;
+  align-items: stretch;
+}
+
+.flow-node {
+  position: relative;
+  display: flex;
+  min-height: 74px;
+  padding: 12px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 11px;
+  background: var(--surface-soft);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 720;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.flow-node:not(:last-child)::after {
+  position: absolute;
+  top: 50%;
+  right: -17px;
+  color: var(--brand);
+  content: '→';
+  transform: translateY(-50%);
+}
+
+.flow-node.brand {
+  border-color: rgb(100 108 255 / 38%);
+  background: rgb(100 108 255 / 9%);
+}
+
+.flow-node.cyan {
+  border-color: rgb(20 166 199 / 38%);
+  background: rgb(20 166 199 / 8%);
+}
+
+.flow-node.green {
+  border-color: rgb(24 135 105 / 38%);
+  background: rgb(24 135 105 / 8%);
+}
+
+.flow-branches {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.flow-branch {
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.flow-branch strong {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--text);
+}
+
+.flow-columns {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.flow-column {
+  padding: 15px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+
+.flow-column h4 {
+  margin: 0 0 10px;
+  color: var(--brand-strong);
+  font-size: 13px;
+}
+
+.flow-column ol {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.flow-column li + li {
+  margin-top: 6px;
+}
+
+.diagram-source {
+  margin-top: 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-code);
+}
+
+.diagram-source summary {
+  padding: 10px 13px;
+  color: #c8cbda;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.index-hero {
+  padding-bottom: 42px;
+}
+
+.index-thesis {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 24px 0 38px;
+}
+
+.thesis-card {
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.thesis-number {
+  color: var(--brand);
+  font:
+    800 12px/1 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+}
+
+.thesis-card h2 {
+  margin: 10px 0 7px;
+  font-size: 17px;
+  line-height: 1.35;
+}
+
+.thesis-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.ownership-flow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  align-items: center;
+  margin: 20px 0 36px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.ownership-flow span {
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-soft);
+  font:
+    700 12px/1.35 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+}
+
+.ownership-flow b {
+  color: var(--brand);
+  font-weight: 800;
+}
+
+.track-grid,
+.module-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.track-card,
+.module-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 150px;
+  padding: 19px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.track-card:hover,
+.module-card:hover {
+  border-color: rgb(100 108 255 / 42%);
+  color: var(--text);
+  transform: translateY(-1px);
+}
+
+.track-card h3,
+.module-card h3 {
+  margin: 8px 0;
+  font-size: 17px;
+  line-height: 1.35;
+}
+
+.track-card p,
+.module-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.track-path {
+  margin-top: auto;
+  padding-top: 14px;
+  color: var(--brand-strong);
+  font:
+    700 11px/1.45 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+}
+
+.module-group-heading {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  margin: 48px 0 16px;
+}
+
+.module-group-heading h2 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.module-group-heading p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.module-card {
+  min-height: 175px;
+}
+
+.module-card .module-code {
+  color: var(--brand);
+  font:
+    800 12px/1 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+}
+
+.module-card .module-arrow {
+  margin-top: auto;
+  padding-top: 14px;
+  color: var(--brand-strong);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+@media (max-width: 1230px) {
+  .page-grid {
+    grid-template-columns: 230px minmax(0, var(--content));
+    gap: 28px;
+  }
+
+  .page-toc {
+    display: none;
+  }
+}
+
+@media (max-width: 820px) {
+  :root {
+    --topbar: 58px;
+  }
+
+  .topbar-inner {
+    padding: 0 14px;
+  }
+
+  .topbar-path {
+    display: none;
+  }
+
+  .nav-toggle {
+    display: inline-grid;
+  }
+
+  .page-grid {
+    display: block;
+    padding: 20px 14px 52px;
+  }
+
+  .site-nav {
+    position: fixed;
+    z-index: 95;
+    top: var(--topbar);
+    bottom: 0;
+    left: 0;
+    width: min(86vw, 310px);
+    max-height: none;
+    padding: 18px;
+    border-right: 1px solid var(--line);
+    background: var(--bg);
+    box-shadow: var(--shadow);
+    transform: translateX(-105%);
+    transition: transform 180ms ease;
+  }
+
+  body.nav-open {
+    overflow: hidden;
+  }
+
+  body.nav-open .site-nav {
+    transform: translateX(0);
+  }
+
+  .article-hero {
+    padding: 27px 22px;
+    border-radius: 18px;
+  }
+
+  .article-hero h1 {
+    font-size: clamp(1.9rem, 9vw, 2.65rem);
+  }
+
+  .article-hero .lede {
+    font-size: 15px;
+  }
+
+  .focus-card {
+    grid-template-columns: 1fr;
+  }
+
+  .focus-card .boundary {
+    padding: 16px 0 0;
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+
+  .prose {
+    padding-inline: 2px;
+  }
+
+  .prose h2 {
+    margin-top: 46px;
+    font-size: 1.47rem;
+  }
+
+  .prose h3 {
+    font-size: 1.18rem;
+  }
+
+  .heading-anchor {
+    display: none;
+  }
+
+  .flow-track {
+    grid-template-columns: 1fr;
+  }
+
+  .flow-lane {
+    grid-template-columns: 1fr;
+  }
+
+  .lane-label,
+  .lane-split {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .lane-split,
+  .lane-split.three {
+    grid-template-columns: 1fr;
+  }
+
+  .merge-output {
+    align-items: flex-start;
+    flex-direction: column;
+    text-align: left;
+  }
+
+  .flow-node:not(:last-child)::after {
+    top: auto;
+    right: 50%;
+    bottom: -19px;
+    content: '↓';
+    transform: translateX(50%);
+  }
+
+  .flow-branches,
+  .flow-columns,
+  .index-thesis,
+  .track-grid,
+  .module-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .article-pager {
+    grid-template-columns: 1fr;
+  }
+
+  .pager-link.next {
+    text-align: left;
+  }
+}
+
+@media (max-width: 440px) {
+  body {
+    font-size: 15px;
+  }
+
+  .brand-text {
+    display: none;
+  }
+
+  .article-hero {
+    padding: 24px 18px;
+  }
+
+  .hero-meta {
+    display: grid;
+  }
+
+  .flow-figure {
+    padding: 16px;
+  }
+
+  .code-card pre,
+  .diagram-source pre {
+    padding: 16px;
+    font-size: 12px;
+  }
+}
+
+@media print {
+  body {
+    background: white;
+  }
+
+  .topbar,
+  .site-nav,
+  .page-toc,
+  .reading-progress,
+  .copy-code,
+  .article-pager {
+    display: none !important;
+  }
+
+  .page-grid {
+    display: block;
+    width: auto;
+    padding: 0;
+  }
+
+  .article-hero,
+  .code-card,
+  .table-scroll,
+  .flow-figure {
+    box-shadow: none;
+  }
+
+  .code-card {
+    break-inside: avoid;
+  }
+}
+</style><script>(function(){try{var t=localStorage.getItem("vite-guide-theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(_){}})();</script></head><body><a class="skip-link" href="#article-start">跳到正文</a><div class="reading-progress" aria-hidden="true"><span data-reading-progress></span></div><header class="topbar"><div class="topbar-inner"><button class="icon-button nav-toggle" type="button" data-nav-toggle aria-expanded="false" aria-label="打开模块导航">☰</button><a class="brand" href="index.html"><span class="brand-mark">V</span><span class="brand-text">Vite 源码解剖</span></a><span class="topbar-path">开发服务器核心 / 06 中间件与请求入口</span><div class="topbar-actions"><button class="icon-button" type="button" data-theme-toggle aria-label="切换主题">◐</button></div></div></header><div class="page-grid"><nav class="site-nav" aria-label="模块导航"><a class="nav-home" href="index.html"><span>⌂</span><span>阅读总览</span></a><section class="nav-group"><h2 class="nav-group-title">全景</h2><ul class="nav-list"><li><a href="00-system-map-and-end-to-end.html"><span class="nav-code">00</span><span>系统全景与请求链</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">启动与配置</h2><ul class="nav-list"><li><a href="01-cli-and-startup.html"><span class="nav-code">01</span><span>CLI 与启动</span></a></li><li><a href="02a-env-loading.html"><span class="nav-code">02A</span><span>环境文件加载</span></a></li><li><a href="02b-config-resolution.html"><span class="nav-code">02B</span><span>配置加载与解析</span></a></li><li><a href="02c-define-client-injection-and-json.html"><span class="nav-code">02C</span><span>Define、注入与 JSON</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">开发服务器核心</h2><ul class="nav-list"><li><a href="03-plugin-system.html"><span class="nav-code">03</span><span>插件体系</span></a></li><li><a href="04-dev-server-lifecycle.html"><span class="nav-code">04</span><span>Dev Server 生命周期</span></a></li><li><a href="05-environment-api.html"><span class="nav-code">05</span><span>Environment API</span></a></li><li><a href="06-middleware-request-pipeline.html" aria-current="page"><span class="nav-code">06</span><span>中间件与请求入口</span></a></li><li><a href="07-module-resolution.html"><span class="nav-code">07</span><span>模块解析</span></a></li><li><a href="08-transform-and-module-graph.html"><span class="nav-code">08</span><span>Transform 与模块图</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">转换与增量更新</h2><ul class="nav-list"><li><a href="09-html-transform.html"><span class="nav-code">09</span><span>HTML 转换</span></a></li><li><a href="10-import-analysis.html"><span class="nav-code">10</span><span>Import Analysis</span></a></li><li><a href="11-dependency-pre-bundling.html"><span class="nav-code">11</span><span>依赖预构建</span></a></li><li><a href="12-hmr.html"><span class="nav-code">12</span><span>HMR</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">资源管线</h2><ul class="nav-list"><li><a href="13a-css-pipeline.html"><span class="nav-code">13A</span><span>CSS 管线</span></a></li><li><a href="13b-asset-worker-wasm.html"><span class="nav-code">13B</span><span>Asset、Worker、Wasm</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">生产构建</h2><ul class="nav-list"><li><a href="14a-build-orchestration.html"><span class="nav-code">14A</span><span>生产构建编排</span></a></li><li><a href="14b-build-output-and-preload.html"><span class="nav-code">14B</span><span>Preload 与构建输出</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">SSR 与运行时</h2><ul class="nav-list"><li><a href="15a-ssr-transform-and-loading.html"><span class="nav-code">15A</span><span>SSR 变换与加载</span></a></li><li><a href="15b-module-runner.html"><span class="nav-code">15B</span><span>Module Runner</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">公共边界</h2><ul class="nav-list"><li><a href="16-public-api-diagnostics-and-types.html"><span class="nav-code">16</span><span>公共 API 与类型</span></a></li></ul></section></nav><main class="article" id="article-start"><header class="article-hero"><div class="eyebrow"><span class="pill">06</span><span>开发服务器核心</span></div><h1>06. 中间件与请求入口</h1><p class="lede">Connect 注册顺序就是请求语义：校验、代理、public、transform、static、HTML 与 error。</p><div class="hero-meta"><span>证据基线：v8.2.1</span><span>commit <code>421615865dad</code></span><span>约 13 分钟</span><a href="../../vite/reading-guides/06-middleware-request-pipeline.md">查看 Markdown 原稿</a></div></header><section class="focus-card" aria-label="阅读重点与边界"><div><h2>本页重点</h2><p>Connect 注册顺序就是请求语义：校验、代理、public、transform、static、HTML 与 error。</p></div><div class="boundary"><h3>推导边界</h3><p>Host、CORS、server.fs 和 WebSocket token 是不同安全边界，不能压成一个开关。</p></div></section><aside class="evidence-note"><h3>证据口径</h3><p>正文保留目标版本中的真实源码、状态说明与代表性测试映射。测试源码用于锁定设计契约；本轮没有执行测试命令。</p></aside><article class="prose"><h2 id="阅读边界"><a class="heading-anchor" href="#%E9%98%85%E8%AF%BB%E8%BE%B9%E7%95%8C" aria-label="链接到本节">#</a>阅读边界</h2>
+<p>本节研究一个 HTTP 请求怎样被分流到代理、静态文件、HTML 或模块转换，以及安全检查为何必须
+位于特定顺序。<code>transformMiddleware</code> 只看到交接边界，内部 resolve/load/transform 留到第 08
+章；<code>indexHtmlMiddleware</code> 的标签转换留到第 09 章。</p>
+<p>读完应能回答：</p>
+<ol>
+<li>Connect 中间件的注册顺序为什么就是请求语义？</li>
+<li>为什么非法 request-target 和 Host 校验必须早于文件系统访问？</li>
+<li>proxy 的 bypass 返回 string、false、undefined 分别意味着什么？</li>
+<li>public、root 静态文件与 <code>/@fs/</code> 为什么需要三条入口？</li>
+<li><code>server.fs.deny</code>、safeModulePaths、<code>server.fs.allow</code> 的优先级是什么？</li>
+<li>为什么“路径不允许”还要区分 denied 与 fallback？</li>
+<li>HTML fallback 为什么只改写 URL，不直接读取 index.html？</li>
+</ol>
+<h2 id="推荐阅读顺序"><a class="heading-anchor" href="#%E6%8E%A8%E8%8D%90%E9%98%85%E8%AF%BB%E9%A1%BA%E5%BA%8F" aria-label="链接到本节">#</a>推荐阅读顺序</h2>
+<ol>
+<li><code>server/index.ts</code> 中连续的 <code>middlewares.use()</code>：先记住总顺序。</li>
+<li><code>rejectInvalidRequest.ts</code>、<code>hostCheck.ts</code>：看进入业务前的安全边界。</li>
+<li><code>proxy.ts</code>、<code>base.ts</code>：看请求何时离开 Vite、何时规范化成内部 URL。</li>
+<li><code>static.ts</code>：看 public、root、<code>/@fs/</code> 和文件访问控制。</li>
+<li><code>htmlFallback.ts</code>：看页面导航怎样改写。</li>
+<li><code>send.ts</code>、<code>error.ts</code>、<code>notFound.ts</code>：看正常/错误响应怎样结束。</li>
+<li>host/static 单元用例与 proxy/base/fs-serve playground：用场景复盘顺序约束。</li>
+</ol>
+<h2 id="中间件总顺序"><a class="heading-anchor" href="#%E4%B8%AD%E9%97%B4%E4%BB%B6%E6%80%BB%E9%A1%BA%E5%BA%8F" aria-label="链接到本节">#</a>中间件总顺序</h2>
+<p>开发服务器在 <code>initServer()</code> 期间按下列顺序装配 Connect：</p>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">request
+│
+├─ time（仅 DEBUG）
+├─ reject invalid request-target
+├─ CORS
+├─ Host validation（HTTP）
+├─ 用户 configureServer 前置中间件
+├─ cached transform 快路径
+├─ proxy
+├─ base 剥离/重定向
+├─ open-in-editor
+├─ HMR ping
+├─ publicDir 原样文件
+├─ bundledDev lazy/memory files
+├─ transform
+├─ /@fs/ 静态文件
+├─ root 静态文件
+├─ HTML fallback
+├─ configureServer 后置中间件（逆序）
+├─ index.html transform
+├─ 404（仅独立模式）
+└─ error middleware
+</code></pre></figure><p>Connect 是线性责任链：中间件若写完响应就停止，否则调用 <code>next()</code>；带错误参数的
+<code>next(err)</code> 会跳到四参数错误中间件。因此这里的顺序不是组织偏好，而是安全和路由契约。</p>
+<p>几个容易忽略的顺序原因：</p>
+<ul>
+<li>proxy 在 base 前：代理 context 匹配用户看到的原始 URL；</li>
+<li>public 在 transform 前：public 文件必须原样提供；</li>
+<li>transform 在 root static 前：JS/TS/CSS 请求先获得插件转换机会；</li>
+<li><code>/@fs/</code> 在 root static 前且独立处理：其根是文件系统 <code>/</code>，不是项目 root；</li>
+<li>HTML fallback 在静态/transform 后：只有前面都未命中的页面导航才应改写；</li>
+<li>configureServer 后置钩子在 index.html 前：插件仍能提供自定义 HTML；</li>
+<li>error 最后：任意前置层都能通过 <code>next(err)</code> 汇聚到同一响应。</li>
+</ul>
+<h2 id="第一层-拒绝不可信请求形状"><a class="heading-anchor" href="#%E7%AC%AC%E4%B8%80%E5%B1%82-%E6%8B%92%E7%BB%9D%E4%B8%8D%E5%8F%AF%E4%BF%A1%E8%AF%B7%E6%B1%82%E5%BD%A2%E7%8A%B6" aria-label="链接到本节">#</a>第一层：拒绝不可信请求形状</h2>
+<h3 id="request-target-中的"><a class="heading-anchor" href="#request-target-%E4%B8%AD%E7%9A%84" aria-label="链接到本节">#</a>request-target 中的 <code>#</code></h3>
+<p>HTTP fragment 不会发送给服务器，HTTP/1.1 和 HTTP/2 的 request-target 都不允许 <code>#</code>。但
+Node 会接收手写 TCP 请求中的 <code>#</code>，而 Vite 的 URL 清洗、路径拼接和 <code>fs.deny</code> 默认它不存在。</p>
+<p>攻击形态例如：</p>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">GET /src/safe.txt#/../../.env HTTP/1.1
+</code></pre></figure><p>若某层把 <code>#</code> 后视为 fragment、另一层却把它视为路径，就会产生校验对象和读取对象不一致。
+<code>rejectInvalidRequestMiddleware()</code> 因此位于最前面，直接返回 RFC 建议的 400。该修复见
+<a href="https://github.com/vitejs/vite/pull/19830" target="_blank" rel="noreferrer noopener">PR #19830</a>。</p>
+<h3 id="host-与-dns-rebinding"><a class="heading-anchor" href="#host-%E4%B8%8E-dns-rebinding" aria-label="链接到本节">#</a>Host 与 DNS rebinding</h3>
+<p>浏览器同源策略信任域名，但攻击者可以让自己控制的域名先指向公网服务，再把 DNS 响应改为
+<code>127.0.0.1</code>。若开发服务器接受任意 Host，恶意网页就可能在“同一域名”下读取本地源码。</p>
+<p>Host validation 根据 <code>server.allowedHosts</code> 拒绝未知 Host，并把以下显式地址自动加入允许项：</p>
+<ul>
+<li><code>server.host</code>；</li>
+<li><code>server.ws.host</code>；</li>
+<li><code>preview.host</code>；</li>
+<li>可解析的 <code>server.origin</code> hostname。</li>
+</ul>
+<p>这些配置已经表示用户期望 Vite 响应该主机，无需重复声明。origin 可能是框架占位字符串，URL
+解析失败只跳过自动加入，不阻止启动（<a href="https://github.com/vitejs/vite/pull/19241" target="_blank" rel="noreferrer noopener">#19241</a>）。</p>
+<p>底层 Host 校验器收到冻结的 allowedHosts 副本，可缓存结果且不受调用方后续改数组影响。该安全
+边界由 Vite 的 DNS rebinding 修复引入；HTTPS 已用证书绑定可信主机，所以顶层装配不会重复
+添加同类 Host 中间件。</p>
+<h3 id="cors-与-host-不是同一件事"><a class="heading-anchor" href="#cors-%E4%B8%8E-host-%E4%B8%8D%E6%98%AF%E5%90%8C%E4%B8%80%E4%BB%B6%E4%BA%8B" aria-label="链接到本节">#</a>CORS 与 Host 不是同一件事</h3>
+<p>CORS 决定浏览器脚本能否读取跨 origin HTTP 响应；Host validation 决定服务器是否接受请求
+目标主机。非浏览器客户端不受 CORS 约束，所以不能用 CORS 代替 Host 校验。HMR WebSocket
+还要结合 Host、Origin 和一次性 token，形成独立握手边界。</p>
+<p>fs-serve 的 cross-origin 场景分别从浏览器和 Node 发请求，就是为了覆盖这些机制而不是把它们
+误当成一个开关。</p>
+<h2 id="proxy-请求离开-vite-的分流点"><a class="heading-anchor" href="#proxy-%E8%AF%B7%E6%B1%82%E7%A6%BB%E5%BC%80-vite-%E7%9A%84%E5%88%86%E6%B5%81%E7%82%B9" aria-label="链接到本节">#</a>proxy：请求离开 Vite 的分流点</h2>
+<p>每个 proxy context 创建一个 <code>ProxyServer</code>：context 以 <code>^</code> 开头时作为正则，其余按 URL 前缀
+匹配。对象枚举顺序决定首个命中项。</p>
+<p>字符串简写：</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">&#039;/api&#039;: &#039;http://localhost:3000&#039;
+</code></pre></figure><p>会规范化为 <code>{ target, changeOrigin: true }</code>。底层 http-proxy 会修改选项，所以 Vite 保存浅拷贝，
+让后续 bypass/rewrite 看到稳定用户配置。</p>
+<h3 id="http-bypass-状态机"><a class="heading-anchor" href="#http-bypass-%E7%8A%B6%E6%80%81%E6%9C%BA" aria-label="链接到本节">#</a>HTTP bypass 状态机</h3>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">bypass(req, res, options)
+├─ string
+│  ├─ req.url = result
+│  ├─ res 已结束 → return
+│  └─ next()，交回 Vite 管线
+├─ false
+│  └─ Vite 直接返回 404
+├─ null/undefined/true
+│  └─ 继续 proxy.web()
+└─ throw/reject
+   └─ next(error)
+</code></pre></figure><p>async bypass 由 <a href="https://github.com/vitejs/vite/pull/18940" target="_blank" rel="noreferrer noopener">PR #18940</a> 支持；bypass 自己结束响应
+后不能继续 next，否则会二次写响应（<a href="https://github.com/vitejs/vite/pull/19318" target="_blank" rel="noreferrer noopener">PR #19318</a>）。
+false 直接 404 的契约见 <a href="https://github.com/vitejs/vite/pull/14579" target="_blank" rel="noreferrer noopener">PR #14579</a>。</p>
+<h3 id="websocket-bypass"><a class="heading-anchor" href="#websocket-bypass" aria-label="链接到本节">#</a>WebSocket bypass</h3>
+<p>WebSocket upgrade 不经过 Connect 普通请求链，proxy 直接监听底层 HTTP Server 的 <code>upgrade</code>。
+它没有 <code>ServerResponse</code>，所以 bypass 的 res 是 undefined：</p>
+<ul>
+<li>string：改写 <code>req.url</code>，停止当前代理处理；</li>
+<li>false：向 socket 写最小 404 后关闭；</li>
+<li>空值：可选 rewrite 后调用 <code>proxy.ws()</code>。</li>
+</ul>
+<p>WS 上游常检查 Origin。<code>rewriteWsOrigin</code> 可把它改为 target origin，但这会削弱上游 CSRF 防护，
+必须由用户显式开启（<a href="https://github.com/vitejs/vite/pull/16558" target="_blank" rel="noreferrer noopener">PR #16558</a>）。</p>
+<p>代理目标失败时，HTTP 返回 502 Bad Gateway，而不是暗示 Vite 自身异常的 500
+（<a href="https://github.com/vitejs/vite/pull/21652" target="_blank" rel="noreferrer noopener">PR #21652</a>）；WS 则记录错误并结束 socket。</p>
+<h2 id="base-公开-url-与内部-url-的边界"><a class="heading-anchor" href="#base-%E5%85%AC%E5%BC%80-url-%E4%B8%8E%E5%86%85%E9%83%A8-url-%E7%9A%84%E8%BE%B9%E7%95%8C" aria-label="链接到本节">#</a>base：公开 URL 与内部 URL 的边界</h2>
+<p><code>baseMiddleware()</code> 只在 <code>base !== '/'</code> 时注册：</p>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">公开请求 /docs/src/main.ts
+→ 验证 pathname 以 /docs/ 开头
+→ req.url 改为 /src/main.ts
+→ 后续中间件统一按无 base URL 工作
+</code></pre></figure><p>它不会修改响应代码中的公开 import URL；生成 URL 的插件仍读取 config.base。base-conflict 用例
+正是防止“入口剥离 base”误演化成“输出也丢 base”。</p>
+<p>独立服务器访问 <code>/</code> 或 <code>/index.html</code> 时 302 到 base，并保留查询部分。访问 base 外路径时：</p>
+<ul>
+<li>Accept 包含 HTML：404 HTML，提供可点击的建议地址；</li>
+<li>资源请求：404 text/plain，避免浏览器把错误页当资源；</li>
+<li>middleware mode：直接 next，由宿主路由决定重定向或 404（<a href="https://github.com/vitejs/vite/issues/4057" target="_blank" rel="noreferrer noopener">#4057</a>）。</li>
+</ul>
+<p>proxy 在 base 前，所以 <code>/docs/api</code> 是否代理取决于用户配置的原始 context，而不是剥离后的
+<code>/api</code>。这是阅读路由问题时应首先检查的顺序。</p>
+<h2 id="三条静态文件入口"><a class="heading-anchor" href="#%E4%B8%89%E6%9D%A1%E9%9D%99%E6%80%81%E6%96%87%E4%BB%B6%E5%85%A5%E5%8F%A3" aria-label="链接到本节">#</a>三条静态文件入口</h2>
+<h3 id="publicdir"><a class="heading-anchor" href="#publicdir" aria-label="链接到本节">#</a>publicDir</h3>
+<p>public 文件不经过 transform，URL 直接相对公开根提供。为避免每次请求 <code>existsSync</code>，服务器
+启动时建立文件 Set，watcher 和 restart 负责更新。</p>
+<p>以下请求必须跳过 public 原样响应：</p>
+<ul>
+<li><code>?import</code> 模块请求；</li>
+<li><code>/@fs/</code>、Vite client 等内部 URL；</li>
+<li><code>?url</code>、<code>?raw</code> 等需要插件转换的资源查询。</li>
+</ul>
+<p>例如 <code>/public-file.js?url</code> 应得到“URL 字符串模块”，而不是文件 JS 原文。这个边界见
+<a href="https://github.com/vitejs/vite/pull/17915" target="_blank" rel="noreferrer noopener">PR #17915</a>。</p>
+<h3 id="项目-root"><a class="heading-anchor" href="#%E9%A1%B9%E7%9B%AE-root" aria-label="链接到本节">#</a>项目 root</h3>
+<p>普通静态层从 config.root 提供文件，但主动跳过：</p>
+<ul>
+<li>尾斜杠与 <code>.html</code>：交给 HTML fallback/transform；</li>
+<li>内部 URL：交给专用协议；</li>
+<li><code>//host/path</code>：避免 URL 构造器将其解释为 scheme-relative 地址
+（<a href="https://github.com/vitejs/vite/pull/19059" target="_blank" rel="noreferrer noopener">PR #19059</a>）。</li>
+</ul>
+<p>直接静态请求也应用 resolve.alias，使资源路径和模块解析尽量一致。alias 替换后位于 root 内的
+绝对路径会重新改写为请求相对路径，再交给 sirv。</p>
+<h3 id="fs"><a class="heading-anchor" href="#fs" aria-label="链接到本节">#</a><code>/@fs/</code></h3>
+<p>monorepo 链接包可能位于 root 外，又引用其旁边的资源。Vite 把绝对文件 ID 编码为
+<code>/@fs/absolute/path</code>，此中间件以文件系统 <code>/</code> 为 sirv root 读取。Windows 还要移除 URL 形式
+中多余的盘符前导处理。</p>
+<p><code>/@fs/</code> 只解决“怎样表达绝对路径”，绝不表示“允许读取任意路径”。它和 root 静态入口最终
+都进入相同 <code>server.fs</code> 安全判定。</p>
+<h2 id="server-fs-文件访问算法"><a class="heading-anchor" href="#server-fs-%E6%96%87%E4%BB%B6%E8%AE%BF%E9%97%AE%E7%AE%97%E6%B3%95" aria-label="链接到本节">#</a><code>server.fs</code> 文件访问算法</h2>
+<h3 id="为什么检查放在-sirv-内"><a class="heading-anchor" href="#%E4%B8%BA%E4%BB%80%E4%B9%88%E6%A3%80%E6%9F%A5%E6%94%BE%E5%9C%A8-sirv-%E5%86%85" aria-label="链接到本节">#</a>为什么检查放在 sirv 内</h3>
+<p>请求 URL 不是最终磁盘文件：目录可能映射到 index、符号链接可能指向别处、编码/alias 会改变
+路径。安全检查如果只发生在请求进入 sirv 前，校验路径可能不是最终读取路径。</p>
+<p><code>sirvOptions.shouldServe(filePath)</code> 收到 sirv 已解析出的真实候选文件，再调用
+<code>checkLoadingAccess()</code>。这条修复见 <a href="https://github.com/vitejs/vite/pull/19965" target="_blank" rel="noreferrer noopener">PR #19965</a>。</p>
+<h3 id="判定优先级"><a class="heading-anchor" href="#%E5%88%A4%E5%AE%9A%E4%BC%98%E5%85%88%E7%BA%A7" aria-label="链接到本节">#</a>判定优先级</h3>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">server.fs.strict === false
+  → allowed
+
+Windows 路径含 ~ 或盘符之外的 :
+  → denied
+
+fsDenyGlob(filePath 去尾斜杠) 命中
+  → denied
+
+safeModulePaths 命中
+  → allowed
+
+任一 fs.allow 是同路径或真实父目录
+  → allowed
+
+否则
+  → denied
+</code></pre></figure><p><code>deny</code> 早于 safeModulePaths/allow，所以扩大 allow 不能意外开放 <code>.env</code>、证书或版本控制文件。</p>
+<p><code>isFileInTargetPath()</code> 使用规范化路径的“相同文件/父目录”判断，不能用字符串 startsWith；否则
+<code>/parenta</code> 会被误认为 <code>/parent</code> 的子目录（<a href="https://github.com/vitejs/vite/pull/14241" target="_blank" rel="noreferrer noopener">PR #14241</a>）。</p>
+<h3 id="windows-特殊路径"><a class="heading-anchor" href="#windows-%E7%89%B9%E6%AE%8A%E8%B7%AF%E5%BE%84" aria-label="链接到本节">#</a>Windows 特殊路径</h3>
+<p>NTFS/Windows 有两类普通 POSIX 思维看不到的别名：</p>
+<ul>
+<li>8.3 短文件名：<code>.env</code> 可能通过 <code>ENV~1</code> 访问；</li>
+<li>Alternate Data Stream：<code>.env::$DATA</code> 可指向同一默认数据流。</li>
+</ul>
+<p>strict 模式因此拒绝包含 <code>~</code> 的路径，以及盘符之外仍含 <code>:</code> 的路径。修复背景见
+<a href="https://github.com/vitejs/vite/pull/22572" target="_blank" rel="noreferrer noopener">PR #22572</a>。这是略偏保守的策略：牺牲少量合法文件名，
+换取 deny 无法被文件系统别名绕过。</p>
+<p>Node 读取 <code>/foo.png/</code> 可能仍落到 <code>/foo.png</code>，所以 deny 匹配前还要移除尾斜杠
+（<a href="https://github.com/vitejs/vite/pull/20968" target="_blank" rel="noreferrer noopener">PR #20968</a>）。</p>
+<h3 id="denied-与-fallback"><a class="heading-anchor" href="#denied-%E4%B8%8E-fallback" aria-label="链接到本节">#</a>denied 与 fallback</h3>
+<p>不在 allow list 的路径不能一律返回 403：<code>/api/users</code> 很可能根本不是文件，而是后续用户
+中间件处理的 API。</p>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">isFileLoadingAllowed(path) → allowed
+否则 isFileReadable(path) → denied（存在但无权读取）
+否则 → fallback（不存在，继续 next）
+</code></pre></figure><p>这条三态判定防止 Vite 过度拒绝未知路由（<a href="https://github.com/vitejs/vite/pull/20410" target="_blank" rel="noreferrer noopener">PR #20410</a>）。
+真实 denied 返回转义后的 403 HTML，并在终端一次性打印 allow 配置提示；fallback 最终可能由
+API、HTML fallback 或 404 接管。</p>
+<h2 id="html-fallback-只负责改写"><a class="heading-anchor" href="#html-fallback-%E5%8F%AA%E8%B4%9F%E8%B4%A3%E6%94%B9%E5%86%99" aria-label="链接到本节">#</a>HTML fallback 只负责改写</h2>
+<p><code>htmlFallbackMiddleware()</code> 只处理 GET/HEAD，排除 favicon，并要求 Accept 是 HTML、<code>*/*</code> 或
+等价的缺省/空值。按顺序尝试：</p>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">/page.html  → 文件存在则保持 /page.html
+/docs/      → /docs/index.html 存在则改写
+/about      → /about.html 存在则改写
+SPA mode    → 最终改写 /index.html
+</code></pre></figure><p>完整打包开发模式从 memoryFiles 判断存在性，普通模式查磁盘。decodeURIComponent 遇到畸形 URI
+只 next，不能把导航请求升级为 500。</p>
+<p>它不直接读取文件，因为后续 <code>indexHtmlMiddleware</code> 还要做 fs.strict 校验、插件 HTML hook、
+模块脚本代理和 HMR client 注入。将“选择哪个 HTML”与“怎样转换 HTML”分开，也让用户的
+configureServer 后置中间件能在 index.html 前提供自定义响应。</p>
+<h2 id="正常响应-404-与错误响应"><a class="heading-anchor" href="#%E6%AD%A3%E5%B8%B8%E5%93%8D%E5%BA%94-404-%E4%B8%8E%E9%94%99%E8%AF%AF%E5%93%8D%E5%BA%94" aria-label="链接到本节">#</a>正常响应、404 与错误响应</h2>
+<h3 id="send"><a class="heading-anchor" href="#send" aria-label="链接到本节">#</a><code>send()</code></h3>
+<p>transform 得到内容后，<code>send()</code> 统一处理：</p>
+<ol>
+<li>已结束的响应不再写入；</li>
+<li>默认生成弱 ETag，If-None-Match 相等则返回 304；</li>
+<li>写入 MIME、<code>Cache-Control: no-cache</code>、ETag 与用户 headers；</li>
+<li>对 JS/CSS 注入真实 Source Map；</li>
+<li>JS 没有 map 时生成 identity fallback map；已有内联 map 或明确空 mappings 时跳过；</li>
+<li>HEAD 返回与 GET 一致的状态/headers，但不发送 body。</li>
+</ol>
+<p>fallback map 修复了浏览器断点无法对齐的问题
+（<a href="https://github.com/vitejs/vite/pull/13514" target="_blank" rel="noreferrer noopener">PR #13514</a>），已有内联 map 不能重复注入
+（<a href="https://github.com/vitejs/vite/pull/14370" target="_blank" rel="noreferrer noopener">PR #14370</a>）。HEAD 的响应头/状态契约由
+<a href="https://github.com/vitejs/vite/pull/20421" target="_blank" rel="noreferrer noopener">PR #20421</a> 固化。</p>
+<h3 id="404-与-error"><a class="heading-anchor" href="#404-%E4%B8%8E-error" aria-label="链接到本节">#</a>404 与 Error</h3>
+<p>独立模式的 <code>notFoundMiddleware()</code> 在所有普通中间件都 next 后返回空 404。middleware mode 不
+安装它，宿主应用还有机会处理路由。</p>
+<p><code>errorMiddleware()</code> 必须保留四个形参；Connect 用函数 arity 判断它是错误中间件。错误会：</p>
+<ul>
+<li>过滤/格式化后写入终端；</li>
+<li>通过 client HotChannel 推给已打开页面的 ErrorOverlay；</li>
+<li>独立模式返回能动态加载 Overlay 的 500 HTML；若 Overlay 自身加载失败，退回纯 DOM 错误页；</li>
+<li>middleware mode 可 <code>next()</code> 给宿主错误处理器。</li>
+</ul>
+<p><code>prepareError()</code> 只复制 message、stack、id、frame、plugin、loc 等必要字段，避免 PostCSS 等插件
+挂载的完整对象导致序列化过大或失败，并移除终端控制字符。</p>
+<h2 id="用例怎样映射源码"><a class="heading-anchor" href="#%E7%94%A8%E4%BE%8B%E6%80%8E%E6%A0%B7%E6%98%A0%E5%B0%84%E6%BA%90%E7%A0%81" aria-label="链接到本节">#</a>用例怎样映射源码</h2>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>用例</th>
+<th>锁定的机制</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>hostCheck.spec.ts</code></td>
+<td>四类显式 host/origin 自动加入允许列表</td>
+</tr>
+<tr>
+<td><code>static.spec.ts</code></td>
+<td>父目录判断不能被相似字符串前缀绕过</td>
+</tr>
+<tr>
+<td><code>proxy-bypass</code></td>
+<td>false、async、throw、上游失败的四条代理分支</td>
+</tr>
+<tr>
+<td><code>base-conflict</code></td>
+<td>请求入口剥离 base 不应删除输出 import 的 base</td>
+</tr>
+<tr>
+<td><code>fs-serve</code> matrix</td>
+<td>root 与 <code>/@fs/</code> 在 allow/deny/query/特殊路径下行为一致</td>
+</tr>
+<tr>
+<td><code>fs-serve</code> raw request</td>
+<td><code>#</code>、点段、反斜杠和 Source Map 穿越在 URL 规范化前被覆盖</td>
+</tr>
+<tr>
+<td><code>fs-serve</code> cross origin</td>
+<td>CORS、Host、WS Origin/token 是不同安全层</td>
+</tr>
+</tbody>
+</table></div>
+<p>fs-serve 矩阵同时检查正常 JSON/虚拟模块可用。安全测试若只断言“危险请求被拒绝”，很容易把
+“全部请求都坏了”误认为成功；放行场景是必要的反证。</p>
+<h2 id="关键源码证据"><a class="heading-anchor" href="#%E5%85%B3%E9%94%AE%E6%BA%90%E7%A0%81%E8%AF%81%E6%8D%AE" aria-label="链接到本节">#</a>关键源码证据</h2>
+<p>目标版本源码摘录，来源：<code>packages/vite/src/node/server/index.ts</code>，<code>_createServer()</code> 的中间件装配：</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">// serve static files under /public
+// this applies before the transform middleware so that these files are served
+// as-is without transforms.
+if (publicDir) {
+  middlewares.use(servePublicMiddleware(server, publicFiles))
+}
+
+if (config.experimental.bundledDev) {
+  middlewares.use(triggerLazyBundlingMiddleware(server))
+  middlewares.use(memoryFilesMiddleware(server))
+} else {
+  // main transform middleware
+  middlewares.use(transformMiddleware(server))
+
+  // serve static files
+  middlewares.use(serveRawFsMiddleware(server))
+  middlewares.use(serveStaticMiddleware(server))
+}
+</code></pre></figure><p>Connect 的注册顺序就是请求控制流：public 资源先原样返回；bundled-dev 改走内存文件；普通开发
+模式先尝试模块转换，只有未处理请求才回退到 <code>/@fs/</code> 与 root 静态文件。</p>
+<h2 id="建议断点"><a class="heading-anchor" href="#%E5%BB%BA%E8%AE%AE%E6%96%AD%E7%82%B9" aria-label="链接到本节">#</a>建议断点</h2>
+<ol>
+<li><code>server/index.ts</code> 第一个 <code>middlewares.use()</code>：单步观察 Connect 怎样寻找下一个 handler。</li>
+<li><code>rejectInvalidRequestMiddleware()</code>：用原始 TCP 请求传入含 <code>#</code> 的 target。</li>
+<li>proxy 的 HTTP/WS 两个 bypass 分支：比较 res 是否存在及 string 返回后的控制流。</li>
+<li><code>sirvOptions.shouldServe()</code>：比较请求 URL、sirv 最终 filePath 和 allow/deny 结果。</li>
+<li><code>isFileLoadingAllowed()</code>：按 deny、safeModulePaths、allow 三个入口观察优先级。</li>
+<li><code>htmlFallbackMiddleware()</code>：分别请求 <code>/about</code>、<code>/docs/</code>、未知 SPA 路径。</li>
+<li><code>send()</code>：用相同 ETag 重发请求，再比较 GET 与 HEAD。</li>
+</ol>
+<h2 id="复盘题"><a class="heading-anchor" href="#%E5%A4%8D%E7%9B%98%E9%A2%98" aria-label="链接到本节">#</a>复盘题</h2>
+<ol>
+<li>如果 baseMiddleware 放在 proxy 前，用户应按公开 URL 还是内部 URL 配 proxy context？</li>
+<li>为什么 public 文件在 transform 前，而 root 静态文件在 transform 后？</li>
+<li>CORS 已拒绝跨源浏览器请求时，为什么仍必须校验 Host？</li>
+<li>为什么 <code>/@fs/</code> 是路径编码协议，不是访问授权？</li>
+<li>safeModulePaths 为什么不能覆盖 fs.deny？</li>
+<li>不存在且不允许的路径若直接返回 403，会破坏哪些宿主 API/SPA 场景？</li>
+<li>Error middleware 少写一个未使用形参，为什么会导致 Connect 不再把错误交给它？</li>
+</ol>
+</article><nav class="article-pager" aria-label="前后篇"><a class="pager-link previous" href="05-environment-api.html"><span class="pager-label">上一篇 · 05</span><span class="pager-title">Environment API</span></a><a class="pager-link next" href="07-module-resolution.html"><span class="pager-label">下一篇 · 07</span><span class="pager-title">模块解析</span></a></nav><footer class="site-footer">Vite v8.2.1 源码阅读站 · 所有机制结论限定于 commit 421615865dad3ed39137d17281814fc78a41246c。</footer></main><aside class="page-toc" aria-label="页内目录"><h2 class="toc-title">本页目录</h2><ol class="toc-list"><li class="depth-2"><a href="#%E9%98%85%E8%AF%BB%E8%BE%B9%E7%95%8C">阅读边界</a></li><li class="depth-2"><a href="#%E6%8E%A8%E8%8D%90%E9%98%85%E8%AF%BB%E9%A1%BA%E5%BA%8F">推荐阅读顺序</a></li><li class="depth-2"><a href="#%E4%B8%AD%E9%97%B4%E4%BB%B6%E6%80%BB%E9%A1%BA%E5%BA%8F">中间件总顺序</a></li><li class="depth-2"><a href="#%E7%AC%AC%E4%B8%80%E5%B1%82-%E6%8B%92%E7%BB%9D%E4%B8%8D%E5%8F%AF%E4%BF%A1%E8%AF%B7%E6%B1%82%E5%BD%A2%E7%8A%B6">第一层：拒绝不可信请求形状</a></li><li class="depth-3"><a href="#request-target-%E4%B8%AD%E7%9A%84">request-target 中的 #</a></li><li class="depth-3"><a href="#host-%E4%B8%8E-dns-rebinding">Host 与 DNS rebinding</a></li><li class="depth-3"><a href="#cors-%E4%B8%8E-host-%E4%B8%8D%E6%98%AF%E5%90%8C%E4%B8%80%E4%BB%B6%E4%BA%8B">CORS 与 Host 不是同一件事</a></li><li class="depth-2"><a href="#proxy-%E8%AF%B7%E6%B1%82%E7%A6%BB%E5%BC%80-vite-%E7%9A%84%E5%88%86%E6%B5%81%E7%82%B9">proxy：请求离开 Vite 的分流点</a></li><li class="depth-3"><a href="#http-bypass-%E7%8A%B6%E6%80%81%E6%9C%BA">HTTP bypass 状态机</a></li><li class="depth-3"><a href="#websocket-bypass">WebSocket bypass</a></li><li class="depth-2"><a href="#base-%E5%85%AC%E5%BC%80-url-%E4%B8%8E%E5%86%85%E9%83%A8-url-%E7%9A%84%E8%BE%B9%E7%95%8C">base：公开 URL 与内部 URL 的边界</a></li><li class="depth-2"><a href="#%E4%B8%89%E6%9D%A1%E9%9D%99%E6%80%81%E6%96%87%E4%BB%B6%E5%85%A5%E5%8F%A3">三条静态文件入口</a></li><li class="depth-3"><a href="#publicdir">publicDir</a></li><li class="depth-3"><a href="#%E9%A1%B9%E7%9B%AE-root">项目 root</a></li><li class="depth-3"><a href="#fs">/@fs/</a></li><li class="depth-2"><a href="#server-fs-%E6%96%87%E4%BB%B6%E8%AE%BF%E9%97%AE%E7%AE%97%E6%B3%95">server.fs 文件访问算法</a></li><li class="depth-3"><a href="#%E4%B8%BA%E4%BB%80%E4%B9%88%E6%A3%80%E6%9F%A5%E6%94%BE%E5%9C%A8-sirv-%E5%86%85">为什么检查放在 sirv 内</a></li><li class="depth-3"><a href="#%E5%88%A4%E5%AE%9A%E4%BC%98%E5%85%88%E7%BA%A7">判定优先级</a></li><li class="depth-3"><a href="#windows-%E7%89%B9%E6%AE%8A%E8%B7%AF%E5%BE%84">Windows 特殊路径</a></li><li class="depth-3"><a href="#denied-%E4%B8%8E-fallback">denied 与 fallback</a></li><li class="depth-2"><a href="#html-fallback-%E5%8F%AA%E8%B4%9F%E8%B4%A3%E6%94%B9%E5%86%99">HTML fallback 只负责改写</a></li><li class="depth-2"><a href="#%E6%AD%A3%E5%B8%B8%E5%93%8D%E5%BA%94-404-%E4%B8%8E%E9%94%99%E8%AF%AF%E5%93%8D%E5%BA%94">正常响应、404 与错误响应</a></li><li class="depth-3"><a href="#send">send()</a></li><li class="depth-3"><a href="#404-%E4%B8%8E-error">404 与 Error</a></li><li class="depth-2"><a href="#%E7%94%A8%E4%BE%8B%E6%80%8E%E6%A0%B7%E6%98%A0%E5%B0%84%E6%BA%90%E7%A0%81">用例怎样映射源码</a></li><li class="depth-2"><a href="#%E5%85%B3%E9%94%AE%E6%BA%90%E7%A0%81%E8%AF%81%E6%8D%AE">关键源码证据</a></li><li class="depth-2"><a href="#%E5%BB%BA%E8%AE%AE%E6%96%AD%E7%82%B9">建议断点</a></li><li class="depth-2"><a href="#%E5%A4%8D%E7%9B%98%E9%A2%98">复盘题</a></li></ol></aside></div><script>;(function () {
+  'use strict'
+
+  var root = document.documentElement
+  var body = document.body
+  var themeButton = document.querySelector('[data-theme-toggle]')
+  var navButton = document.querySelector('[data-nav-toggle]')
+  var progress = document.querySelector('[data-reading-progress]')
+
+  function setTheme(theme) {
+    root.setAttribute('data-theme', theme)
+    if (themeButton) {
+      themeButton.setAttribute(
+        'aria-label',
+        theme === 'dark' ? '切换到浅色模式' : '切换到深色模式',
+      )
+      themeButton.textContent = theme === 'dark' ? '☀' : '◐'
+    }
+  }
+
+  var savedTheme
+  try {
+    savedTheme = localStorage.getItem('vite-guide-theme')
+  } catch (_) {
+    savedTheme = null
+  }
+  setTheme(
+    savedTheme ||
+      (window.matchMedia('(prefers-color-scheme: dark)').matches
+        ? 'dark'
+        : 'light'),
+  )
+
+  if (themeButton) {
+    themeButton.addEventListener('click', function () {
+      var next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark'
+      setTheme(next)
+      try {
+        localStorage.setItem('vite-guide-theme', next)
+      } catch (_) {
+        // file:// 或隐私模式下 localStorage 可能不可用；主题仍对当前页面生效。
+      }
+    })
+  }
+
+  function closeNavigation() {
+    body.classList.remove('nav-open')
+    if (navButton) navButton.setAttribute('aria-expanded', 'false')
+  }
+
+  if (navButton) {
+    navButton.addEventListener('click', function () {
+      var open = body.classList.toggle('nav-open')
+      navButton.setAttribute('aria-expanded', String(open))
+    })
+  }
+
+  document.addEventListener('keydown', function (event) {
+    if (event.key === 'Escape') closeNavigation()
+  })
+
+  document.querySelectorAll('.site-nav a').forEach(function (link) {
+    link.addEventListener('click', closeNavigation)
+  })
+
+  function updateProgress() {
+    if (!progress) return
+    var scrollable = document.documentElement.scrollHeight - window.innerHeight
+    var ratio = scrollable > 0 ? window.scrollY / scrollable : 0
+    progress.style.width = Math.min(100, Math.max(0, ratio * 100)) + '%'
+  }
+
+  updateProgress()
+  window.addEventListener('scroll', updateProgress, { passive: true })
+  window.addEventListener('resize', updateProgress)
+
+  document.querySelectorAll('.copy-code').forEach(function (button) {
+    button.addEventListener('click', async function () {
+      var code = button.closest('.code-card').querySelector('code')
+      var value = code ? code.textContent : ''
+      var copied = false
+
+      if (navigator.clipboard && window.isSecureContext) {
+        try {
+          await navigator.clipboard.writeText(value)
+          copied = true
+        } catch (_) {
+          copied = false
+        }
+      }
+
+      if (!copied) {
+        var input = document.createElement('textarea')
+        input.value = value
+        input.setAttribute('readonly', '')
+        input.style.position = 'fixed'
+        input.style.opacity = '0'
+        document.body.appendChild(input)
+        input.select()
+        copied = document.execCommand('copy')
+        input.remove()
+      }
+
+      var previous = button.textContent
+      button.textContent = copied ? '已复制' : '复制失败'
+      window.setTimeout(function () {
+        button.textContent = previous
+      }, 1200)
+    })
+  })
+
+  var tocLinks = Array.from(document.querySelectorAll('.toc-list a'))
+  var tocById = new Map(
+    tocLinks.map(function (link) {
+      return [decodeURIComponent(link.hash.slice(1)), link]
+    }),
+  )
+  var headings = Array.from(
+    document.querySelectorAll('.prose h2[id], .prose h3[id]'),
+  )
+
+  if ('IntersectionObserver' in window && headings.length > 0) {
+    var observer = new IntersectionObserver(
+      function (entries) {
+        entries.forEach(function (entry) {
+          if (!entry.isIntersecting) return
+          tocLinks.forEach(function (link) {
+            link.classList.remove('is-active')
+          })
+          var active = tocById.get(entry.target.id)
+          if (active) active.classList.add('is-active')
+        })
+      },
+      { rootMargin: '-18% 0px -72% 0px' },
+    )
+    headings.forEach(function (heading) {
+      observer.observe(heading)
+    })
+  }
+})()
+</script></body></html>

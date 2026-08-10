@@ -1,0 +1,1579 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>micro-app rc.32 源码主线：从 start 到清理</title>
+  <style>
+    :root {
+      --paper: #f7f5ef;
+      --panel: #fffdf8;
+      --ink: #20231f;
+      --muted: #62685f;
+      --line: #d8d6ca;
+      --brand: #165b4b;
+      --brand-soft: #e2f0ea;
+      --accent: #a34520;
+      --accent-soft: #f8e9df;
+      --code: #17211e;
+      --code-ink: #e7f2ed;
+      --warn: #7a4b00;
+      --warn-soft: #fff0c9;
+      --bad: #8b2f2f;
+      --bad-soft: #f9e5e2;
+      --shadow: 0 14px 36px rgba(34, 43, 37, .08);
+      --radius: 14px;
+      --measure: 78rem;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 8% 0%, rgba(22, 91, 75, .08), transparent 25rem),
+        var(--paper);
+      font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+        "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      line-height: 1.72;
+    }
+    a { color: var(--brand); text-decoration-thickness: .08em; text-underline-offset: .18em; }
+    a:hover { color: var(--accent); }
+    code, kbd {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: .92em;
+    }
+    :not(pre) > code {
+      padding: .12em .38em;
+      color: #174b40;
+      background: #e8eee9;
+      border-radius: 5px;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+    .skip-link {
+      position: fixed;
+      top: .5rem;
+      left: .5rem;
+      z-index: 20;
+      padding: .55rem .8rem;
+      color: #fff;
+      background: var(--brand);
+      transform: translateY(-150%);
+    }
+    .skip-link:focus { transform: translateY(0); }
+    header.hero {
+      padding: 5.5rem max(1.25rem, calc((100vw - var(--measure)) / 2)) 3.5rem;
+      color: #f7fff9;
+      background: linear-gradient(135deg, #103a31, #176451 62%, #29745e);
+    }
+    .eyebrow {
+      margin: 0 0 .8rem;
+      color: #bfe2d5;
+      font-size: .78rem;
+      font-weight: 800;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+    }
+    h1 {
+      max-width: 18ch;
+      margin: 0;
+      font-size: clamp(2.2rem, 6vw, 4.8rem);
+      line-height: 1.05;
+      letter-spacing: -.045em;
+    }
+    .hero .lead {
+      max-width: 52rem;
+      margin: 1.35rem 0 0;
+      color: #dcece6;
+      font-size: clamp(1rem, 2.2vw, 1.24rem);
+    }
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .55rem;
+      margin-top: 1.5rem;
+    }
+    .pill {
+      padding: .33rem .68rem;
+      border: 1px solid rgba(255,255,255,.3);
+      border-radius: 999px;
+      color: #f2fff7;
+      font-size: .82rem;
+      background: rgba(255,255,255,.07);
+      overflow-wrap: anywhere;
+    }
+    .shell {
+      display: grid;
+      grid-template-columns: minmax(13rem, 18rem) minmax(0, 1fr);
+      gap: 2.2rem;
+      max-width: calc(var(--measure) + 20rem);
+      margin: 0 auto;
+      padding: 2.2rem 1.25rem 5rem;
+    }
+    nav.toc {
+      position: sticky;
+      top: 1rem;
+      align-self: start;
+      max-height: calc(100vh - 2rem);
+      overflow: auto;
+      padding: 1rem;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(255, 253, 248, .92);
+      box-shadow: var(--shadow);
+    }
+    .toc strong {
+      display: block;
+      margin-bottom: .45rem;
+      color: var(--brand);
+      font-size: .8rem;
+      letter-spacing: .09em;
+    }
+    .toc ol { margin: 0; padding-left: 1.18rem; }
+    .toc li { margin: .28rem 0; color: var(--muted); font-size: .86rem; }
+    .toc a { color: inherit; text-decoration: none; }
+    .toc a:hover { color: var(--brand); text-decoration: underline; }
+    main { min-width: 0; }
+    section {
+      min-width: 0;
+      overflow-x: hidden;
+      scroll-margin-top: 1rem;
+      margin-bottom: 2rem;
+      padding: clamp(1.25rem, 3vw, 2.35rem);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+    h2 {
+      margin: 0 0 1.2rem;
+      color: var(--brand);
+      font-size: clamp(1.55rem, 3vw, 2.2rem);
+      line-height: 1.2;
+      letter-spacing: -.025em;
+    }
+    h3 {
+      margin: 1.8rem 0 .7rem;
+      color: #263c35;
+      font-size: 1.22rem;
+      line-height: 1.3;
+    }
+    h4 { margin: 1.35rem 0 .45rem; font-size: 1rem; }
+    p { margin: .72rem 0; }
+    ul, ol { padding-left: 1.35rem; }
+    li + li { margin-top: .32rem; }
+    .lede { color: #39443f; font-size: 1.08rem; }
+    .source {
+      display: block;
+      margin-top: .45rem;
+      color: var(--muted);
+      font-size: .82rem;
+    }
+    .source::before { content: "证据  "; color: var(--accent); font-weight: 800; }
+    .callout {
+      margin: 1rem 0;
+      padding: .9rem 1rem;
+      border-left: 4px solid var(--brand);
+      border-radius: 0 9px 9px 0;
+      background: var(--brand-soft);
+    }
+    .callout.warn { border-color: #c68418; background: var(--warn-soft); }
+    .callout.bad { border-color: var(--bad); background: var(--bad-soft); }
+    .callout strong { color: inherit; }
+    .grid-2, .grid-3 {
+      display: grid;
+      gap: 1rem;
+      margin: 1rem 0;
+    }
+    .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .card {
+      padding: 1rem;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fff;
+    }
+    .card h3, .card h4 { margin-top: 0; }
+    .card p:last-child { margin-bottom: 0; }
+    .label {
+      display: inline-block;
+      margin-bottom: .5rem;
+      padding: .18rem .48rem;
+      color: var(--brand);
+      border-radius: 999px;
+      background: var(--brand-soft);
+      font-size: .74rem;
+      font-weight: 800;
+      letter-spacing: .05em;
+    }
+    .label.infer { color: var(--warn); background: var(--warn-soft); }
+    pre {
+      margin: 1rem 0;
+      padding: 1rem 1.1rem;
+      overflow: auto;
+      color: var(--code-ink);
+      background: var(--code);
+      border-radius: 10px;
+      line-height: 1.55;
+      tab-size: 2;
+    }
+    pre code { font-size: .82rem; }
+    .code-title {
+      margin: 1rem 0 -.6rem;
+      padding: .45rem .75rem .75rem;
+      color: #b6d2c8;
+      background: #22302c;
+      border-radius: 10px 10px 0 0;
+      font-size: .76rem;
+      font-weight: 700;
+    }
+    .code-title + pre { margin-top: 0; border-radius: 0 0 10px 10px; }
+    .table-wrap { max-width: 100%; margin: 1rem 0; overflow-x: auto; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: .88rem;
+      line-height: 1.5;
+    }
+    th, td {
+      padding: .68rem .72rem;
+      border: 1px solid var(--line);
+      vertical-align: top;
+      text-align: left;
+    }
+    th { color: #fff; background: var(--brand); }
+    tbody tr:nth-child(even) { background: #f4f5f0; }
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(7rem, 1fr));
+      gap: .65rem;
+      margin: 1.1rem 0;
+      padding: 0;
+      list-style: none;
+      counter-reset: flow;
+    }
+    .flow li {
+      position: relative;
+      min-height: 7.2rem;
+      padding: .85rem;
+      border: 1px solid #b8c9c1;
+      border-radius: 10px;
+      background: #f3faf6;
+      counter-increment: flow;
+    }
+    .flow li::before {
+      content: counter(flow);
+      display: grid;
+      width: 1.6rem;
+      height: 1.6rem;
+      margin-bottom: .45rem;
+      place-items: center;
+      color: #fff;
+      border-radius: 50%;
+      background: var(--brand);
+      font-size: .72rem;
+      font-weight: 800;
+    }
+    .flow li::after {
+      content: "→";
+      position: absolute;
+      top: 50%;
+      right: -.55rem;
+      z-index: 2;
+      color: var(--accent);
+      font-weight: 900;
+      transform: translate(50%, -50%);
+    }
+    .flow li:nth-child(5n)::after, .flow li:last-child::after { display: none; }
+    .flow b { display: block; margin-bottom: .2rem; color: var(--brand); }
+    .branch {
+      display: grid;
+      grid-template-columns: minmax(10rem, 1fr) repeat(3, minmax(10rem, 1fr));
+      gap: .7rem;
+      margin: 1rem 0;
+    }
+    .branch > div {
+      padding: .85rem;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: #fff;
+    }
+    .branch .root { color: #fff; background: var(--brand); }
+    .branch .keep { background: var(--brand-soft); }
+    .branch .destroy { background: var(--bad-soft); }
+    .branch .umd { background: var(--accent-soft); }
+    .state-line {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: .35rem;
+      margin: .7rem 0;
+    }
+    .state-line span {
+      padding: .25rem .55rem;
+      border: 1px solid #bfd0c8;
+      border-radius: 999px;
+      background: #f0f7f3;
+      font-size: .8rem;
+    }
+    .state-line i { color: var(--accent); font-style: normal; font-weight: 800; }
+    .trace {
+      margin: 1rem 0;
+      padding-left: 0;
+      list-style: none;
+      counter-reset: trace;
+    }
+    .trace li {
+      position: relative;
+      margin: 0 0 .65rem;
+      padding: .75rem .85rem .75rem 3.2rem;
+      border-left: 2px solid #a7c4b7;
+      background: #f7faf7;
+      counter-increment: trace;
+    }
+    .trace li::before {
+      content: counter(trace);
+      position: absolute;
+      left: .72rem;
+      top: .68rem;
+      display: grid;
+      width: 1.55rem;
+      height: 1.55rem;
+      place-items: center;
+      color: #fff;
+      border-radius: 50%;
+      background: var(--brand);
+      font-size: .72rem;
+      font-weight: 800;
+    }
+    .trace b { color: #174b40; }
+    .legend { color: var(--muted); font-size: .82rem; }
+    .checklist {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: .55rem 1rem;
+      padding: 0;
+      list-style: none;
+    }
+    .checklist li::before { content: "✓"; margin-right: .48rem; color: var(--brand); font-weight: 900; }
+    footer {
+      max-width: var(--measure);
+      margin: 0 auto;
+      padding: 0 1.25rem 3rem;
+      color: var(--muted);
+      font-size: .82rem;
+    }
+    @media (max-width: 1020px) {
+      .shell { grid-template-columns: 1fr; }
+      nav.toc { position: static; max-height: none; }
+      .toc ol { columns: 2; }
+      .flow { grid-template-columns: repeat(3, minmax(7rem, 1fr)); }
+      .flow li:nth-child(5n)::after { display: block; }
+      .flow li:nth-child(3n)::after, .flow li:last-child::after { display: none; }
+      .branch { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 680px) {
+      header.hero { padding-top: 3.5rem; }
+      .shell { padding-inline: .72rem; }
+      section { padding: 1.05rem; border-radius: 10px; }
+      .grid-2, .grid-3, .checklist { grid-template-columns: 1fr; }
+      .toc ol { columns: 1; }
+      .flow { grid-template-columns: 1fr; }
+      .flow li { min-height: 0; }
+      .flow li::after {
+        content: "↓";
+        top: auto;
+        right: 50%;
+        bottom: -.58rem;
+        transform: translate(50%, 50%);
+      }
+      .flow li:nth-child(3n)::after { display: block; }
+      .flow li:last-child::after { display: none; }
+      .branch { grid-template-columns: 1fr; }
+      th, td { min-width: 8.5rem; }
+    }
+    @media print {
+      body { background: #fff; }
+      header.hero { color: #000; background: #fff; border-bottom: 2px solid #000; }
+      .hero .lead, .eyebrow, .pill { color: #000; }
+      .shell { display: block; max-width: none; padding: 0; }
+      nav.toc { position: static; box-shadow: none; break-after: page; }
+      section { box-shadow: none; break-inside: avoid-page; }
+      a { color: #000; text-decoration: none; }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#content">跳到正文</a>
+  <header class="hero">
+    <p class="eyebrow">Source-guided architecture tutorial</p>
+    <h1>micro-app：从 start 到清理</h1>
+    <p class="lead">
+      围绕一个普通 <code>&lt;micro-app&gt;</code> 首次渲染，串起资源屏障、CSS/JS 处理、
+      默认 With 沙箱、动态 DOM、挂载、双向通信与三类卸载分叉。
+    </p>
+    <div class="meta" aria-label="证据基线">
+      <span class="pill">@micro-zoe/micro-app 1.0.0-rc.32</span>
+      <span class="pill">任务指定 commit dd445c483a7c7b29b1aa37245874e2617a385882</span>
+      <span class="pill">静态源码与测试阅读</span>
+      <span class="pill">离线单文件</span>
+    </div>
+  </header>
+
+  <div class="shell">
+    <nav class="toc" aria-label="目录">
+      <strong>阅读路径</strong>
+      <ol>
+        <li><a href="#conclusion">结论、范围与证据等级</a></li>
+        <li><a href="#map">阅读地图与核心对象</a></li>
+        <li><a href="#start">公开入口与启动</a></li>
+        <li><a href="#element">Custom Element 与实例</a></li>
+        <li><a href="#loading">资源加载屏障</a></li>
+        <li><a href="#assets">HTML、CSS 与 JS</a></li>
+        <li><a href="#css">CSSParser 手工推演</a></li>
+        <li><a href="#sandbox">With 沙箱与动态 DOM</a></li>
+        <li><a href="#mount">mount 与执行完成</a></li>
+        <li><a href="#communication">通信</a></li>
+        <li><a href="#unmount">卸载、复用与清理</a></li>
+        <li><a href="#chains">四条真实调用链</a></li>
+        <li><a href="#demo">同一 Demo 完整用例</a></li>
+        <li><a href="#tests">测试证据索引</a></li>
+        <li><a href="#tradeoffs">权衡、失败路径与边界</a></li>
+        <li><a href="#reading">继续阅读索引</a></li>
+      </ol>
+    </nav>
+
+    <main id="content">
+      <section id="conclusion">
+        <h2>1. 结论、范围与证据等级</h2>
+        <p class="lede">
+          核心结论：micro-app 把“应用”落成一个 Custom Element，把“运行实例”落成
+          <code>CreateApp</code>，先把 HTML 转成惰性模板并等待 CSS/JS 两条准备通道，再在挂载时
+          克隆 DOM、启动沙箱、执行脚本。隔离不是另起浏览器进程，而是 Proxy、节点归属标记、
+          全局原型补丁和副作用账本的组合。
+        </p>
+        <div class="grid-3">
+          <div class="card">
+            <span class="label">控制平面</span>
+            <h3>Custom Element</h3>
+            <p>DOM 连接、属性变化、断开，决定创建、复用、隐藏还是卸载实例。</p>
+          </div>
+          <div class="card">
+            <span class="label">状态与所有权</span>
+            <h3>CreateApp</h3>
+            <p>持有状态、模板、资源地址集合、沙箱、UMD hooks、容器与清理策略。</p>
+          </div>
+          <div class="card">
+            <span class="label">共享基础设施</span>
+            <h3>sourceCenter + globalEnv</h3>
+            <p>前者按绝对地址共享外链代码；后者保存原生 API 快照并管理全局补丁引用计数。</p>
+          </div>
+        </div>
+        <span class="source">src/micro_app_element.ts · defineElement/MicroAppElement；src/create_app.ts · CreateApp/appInstanceMap；src/source/source_center.ts · createSourceCenter；src/libs/global_env.ts · initGlobalEnv</span>
+
+        <h3>证据基线</h3>
+        <ul>
+          <li><strong>包版本：</strong><code>package.json</code> 的 <code>name</code> 与 <code>version</code> 为 <code>@micro-zoe/micro-app</code>、<code>1.0.0-rc.32</code>；当前 changelog 也有 rc.32 条目。</li>
+          <li><strong>commit：</strong><code>dd445c483a7c7b29b1aa37245874e2617a385882</code> 来自任务指定。当前 <code>micro-app</code> 目录没有独立 <code>.git</code>，父仓库尚无提交，故无法从本地对象库独立复核 commit。</li>
+          <li><strong>验证方式：</strong>只读源码、类型、README、仓库 Demo 与指定测试；没有联网、安装依赖或运行测试。</li>
+          <li><strong>证据等级：</strong>“源码事实”优先；测试仅作静态场景证据；当前实现无法直接证明设计历史时标记“从当前实现推断”。</li>
+        </ul>
+        <div class="callout warn">
+          <strong>测试完整性限制。</strong>
+          指定测试中存在与当前实现不一致的旧 API：<code>source/links.test.ts</code>、<code>source/scripts.test.ts</code>
+          引用当前源码未导出的 <code>globalLinks/globalScripts</code>，并把当前 <code>Set</code> 型
+          <code>app.source.links/scripts</code> 当作旧 Map；<code>sandbox/index.test.ts</code> 引用不存在的
+          <code>src/sandbox</code> 入口并使用旧调用签名。因此这些文件能证明测试作者关注的场景，不能写成
+          “rc.32 测试已通过”。后文把此类证据标为“意图证据”。
+        </div>
+
+        <h3>范围</h3>
+        <p>
+          主线只分析普通 <code>&lt;micro-app name url&gt;</code> 首次渲染，再扩展动态资源、通信和卸载。
+          prefetch/prerender 只说明如何复用 <code>CreateApp/sourceCenter</code>；router 只说明 mount/unmount
+          状态交接；IframeSandbox 只说明共同接口、独立 realm、初始化与销毁。
+        </p>
+      </section>
+
+      <section id="map">
+        <h2>2. 阅读地图与核心对象</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>顺序</th><th>模块</th><th>负责</th><th>不负责</th></tr></thead>
+            <tbody>
+              <tr><td>1</td><td><code>micro_app.ts</code></td><td>公开单例、启动、手工 render/unmount API</td><td>单个应用资源与沙箱细节</td></tr>
+              <tr><td>2</td><td><code>micro_app_element.ts</code></td><td>DOM 生命周期、属性校验、实例选择</td><td>下载和执行资产</td></tr>
+              <tr><td>3</td><td><code>create_app.ts</code></td><td>应用状态机、加载屏障、mount/unmount 编排</td><td>具体 CSS 语法和 Proxy trap</td></tr>
+              <tr><td>4</td><td><code>source/*</code></td><td>HTML 格式化、资源抽取、共享缓存、脚本调度</td><td>应用生命周期选择</td></tr>
+              <tr><td>5</td><td><code>sandbox/*</code></td><td>全局/DOM/请求/路由隔离与副作用回收</td><td>HTML 首次获取</td></tr>
+              <tr><td>6</td><td><code>interact/*</code></td><td>双向数据缓存、合并、监听与生命周期事件</td><td>跨进程通信</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>对象关系</h3>
+        <div class="branch" role="img" aria-label="micro-app 核心对象关系">
+          <div class="root"><strong>microApp 默认单例</strong><br>start / base data / router</div>
+          <div><strong>MicroAppElement</strong><br>每个宿主 DOM；选择实例与容器</div>
+          <div><strong>appInstanceMap[name]</strong><br>跨元素复用入口</div>
+          <div><strong>CreateApp</strong><br>状态、资源、沙箱、容器、hooks</div>
+          <div><strong>sourceCenter</strong><br>全局 link/script Map</div>
+          <div><strong>WithSandBox</strong><br>proxyWindow/document + effect</div>
+          <div><strong>EventCenter</strong><br>方向化事件名与数据缓存</div>
+          <div><strong>globalEnv</strong><br>原生 API 快照 + activeSandbox</div>
+        </div>
+        <p>
+          所有权要点：元素创建或选择 <code>CreateApp</code>；模块级 <code>appInstanceMap</code> 长期持有实例；
+          实例持有 <code>source</code>、<code>sandBox</code>、<code>container</code> 与状态；模块级
+          <code>sourceCenter</code> 再跨实例持有外链资源及各 app 的解析元数据。
+        </p>
+        <span class="source">src/create_app.ts · appInstanceMap/CreateApp.constructor；src/source/source_center.ts · linkList/scriptList；src/interact/index.ts · eventCenter</span>
+
+        <h3>贯穿全文的 Demo</h3>
+        <p>
+          后文统一使用应用名 <code>catalog</code>、入口 <code>https://child.example/app/</code>。
+          基座先发送 <code>{ currency: 'CNY' }</code>；子应用加载 CSS/JS、动态插入一个 link 和 script，
+          再回传 <code>{ ready: true }</code>；最后移除元素。示例代码见第 13 节。
+        </p>
+      </section>
+
+      <section id="start">
+        <h2>3. 公开入口与启动</h2>
+        <h3>3.1 默认单例，不是无法绕过的进程级单例</h3>
+        <p>
+          <code>src/index.ts</code> 重导出 <code>micro_app.ts</code> 的 default；模块末尾只创建一次
+          <code>new MicroApp()</code>。但 <code>MicroApp</code> 类也公开导出，因此严格说默认导入是单例，
+          API 并未禁止调用方手工 <code>new MicroApp()</code>。重复启动约束由每个实例自己的
+          <code>hasInit</code> 承担。
+        </p>
+        <div class="code-title">仓库源码摘录 · src/micro_app.ts · MicroApp.start / default export</div>
+        <pre><code>export class MicroApp extends EventCenterForBaseApp {
+  tagName = 'micro-app'
+  hasInit = false
+
+  start (options) {
+    if (this.hasInit) return logError('microApp.start executed repeatedly')
+    this.hasInit = true
+    initGlobalEnv()
+    if (window.customElements.get(this.tagName)) return logWarn(...)
+    defineElement(this.tagName)
+  }
+}
+
+const microApp = new MicroApp()
+export default microApp</code></pre>
+        <span class="source">src/index.ts · default/MicroApp 重导出；src/micro_app.ts · MicroApp、microApp</span>
+
+        <h3>3.2 start 的真实顺序</h3>
+        <ol class="trace">
+          <li><b>能力检查。</b>必须是浏览器且有 <code>window.customElements</code>，否则只报错并返回。</li>
+          <li><b>重复检查。</b><code>hasInit</code> 为真直接报错；随后立即把它设为真。</li>
+          <li><b>tagName 校验。</b>只接受 <code>micro-app</code> 或 <code>micro-app-*</code> 形态。</li>
+          <li><b>initGlobalEnv。</b>保存原生 window/document、DOM 原型方法、timer、event、history 等快照，并注入全局微应用样式。</li>
+          <li><b>已有元素检查。</b>若 tag 已注册，只告警返回。</li>
+          <li><b>规范化 options。</b>兼容 disable 配置名，安排 prefetch/globalAssets，格式化插件模块名。</li>
+          <li><b>defineElement。</b>闭包内定义 <code>MicroAppElement</code>，调用 <code>customElements.define</code>。</li>
+        </ol>
+        <div class="callout warn">
+          <strong>边界：</strong><code>hasInit = true</code> 早于 tagName 合法性判断。一次非法 tagName 会消耗该实例的启动机会；
+          再调用将命中“executed repeatedly”。已有自定义元素检查也发生在 <code>initGlobalEnv</code> 之后。
+        </div>
+        <span class="source">src/micro_app.ts · MicroApp.start；src/libs/global_env.ts · initGlobalEnv；src/source/patch.ts · rejectMicroAppStyle</span>
+
+        <h3>3.3 原生 API 快照为何先做</h3>
+        <p>
+          <code>globalEnv</code> 保存 <code>Node.prototype.appendChild</code>、<code>Document.prototype.createElement</code>、
+          <code>window.setTimeout</code>、<code>EventTarget.prototype.addEventListener</code> 等原始引用。
+          后续全局补丁必须能绕回原生实现并在最后一个沙箱停止时恢复。注释明确警告同一基座不能反复执行
+          <code>initGlobalEnv</code>，否则“原始方法”可能实际指向已补丁方法，形成递归。
+        </p>
+        <span class="source">src/libs/global_env.ts · initGlobalEnv；src/micro_app.ts · MicroApp.start 内注释</span>
+      </section>
+
+      <section id="element">
+        <h2>4. Custom Element 与应用实例</h2>
+        <h3>4.1 只观察 name 和 url</h3>
+        <p>
+          <code>observedAttributes</code> 只有 <code>name</code>、<code>url</code>。sandbox、inline、fiber、
+          keep-alive 等配置不会触发属性变更回调；它们在创建或 mount 时按当前属性读取。
+        </p>
+        <span class="source">src/micro_app_element.ts · MicroAppElement.observedAttributes/getDisposeResult/mount</span>
+
+        <h3>4.2 连接、属性与断开的异步边界</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>入口</th><th>同步动作</th><th>微任务动作</th><th>目的</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><code>connectedCallback</code></td>
+                <td>递增 <code>connectedCount</code>，把本次连接记为 true</td>
+                <td>若本次仍有效，发 base <code>created</code>；连接瞬间已有 name/url 才调用 <code>handleConnected</code></td>
+                <td>抑制框架瞬时插入/删除造成的重复渲染</td>
+              </tr>
+              <tr>
+                <td><code>attributeChangedCallback</code></td>
+                <td>初始 name/url 立即格式化保存；运行中变化只设 <code>isWaiting</code></td>
+                <td>同一轮多次变化合并到一次 <code>handleAttributeUpdate</code></td>
+                <td>让 name 与 url 成对校验、避免中间态重建</td>
+              </tr>
+              <tr>
+                <td><code>disconnectedCallback</code></td>
+                <td>把当前连接记为 false，立即分派隐藏或 unmount</td>
+                <td>无额外 defer</td>
+                <td>取消尚未执行的旧连接任务，同时及时启动清理</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p><code>defer</code> 是 <code>Promise.resolve().then(...)</code>，这里的“异步”是微任务，不是 timer。</p>
+        <span class="source">src/micro_app_element.ts · connectedCallback/attributeChangedCallback/disconnectedCallback；src/libs/utils.ts · defer</span>
+
+        <h3>4.3 name/url 校验与冲突决策</h3>
+        <ul>
+          <li><code>formatAppName</code> 删除开头数字及非字母数字、下划线、连字符字符；空结果非法。</li>
+          <li><code>formatAppURL</code> 以基座地址补全，只接受 http/https/file，去掉 hash，保留 pathname/search。</li>
+          <li>同名运行中实例不能被替换；即使 keep-alive 已隐藏，它仍被视为 active。</li>
+          <li>同名同 URL 且旧实例已 unmount，直接复用；同 URL 的兼容 prefetch 也复用。</li>
+          <li>旧实例已 unmount/prefetch 但 URL 或核心配置不适配，彻底销毁旧实例后新建。</li>
+        </ul>
+        <span class="source">src/libs/utils.ts · formatAppName/formatAppURL；src/micro_app_element.ts · handleConnected/sameCoreOptions/handleCreateApp</span>
+
+        <h3>4.4 CreateApp 的创建者、持有者与不变量</h3>
+        <p>
+          <code>handleCreateApp</code> 收集宿主元素所有 <code>data-*</code> 属性，然后把 name、url、容器、
+          scopecss、sandbox、inline、iframe、routerMode 交给构造器。构造器第一条关键动作是
+          <code>appInstanceMap.set(name, this)</code>，随后初始化状态和资源集合，立即开始 HTML 加载并创建沙箱。
+        </p>
+        <div class="grid-2">
+          <div class="card">
+            <h3>实例私有状态</h3>
+            <p><code>state</code>、<code>keepAliveState</code>、<code>loadSourceLevel</code>、UMD hooks。</p>
+          </div>
+          <div class="card">
+            <h3>实例公开持有</h3>
+            <p><code>source</code>、<code>sandBox</code>、name/url、container、配置、prefetch/fiber/router 标志。</p>
+          </div>
+        </div>
+        <p>
+          <code>appInstanceMap</code> 是实例的长期持有者。普通 unmount 不删除 Map 项；只有
+          <code>actionsForCompletelyDestroy</code> 删除。因此“元素不存在”不等于“实例不存在”。
+        </p>
+        <span class="source">src/micro_app_element.ts · handleCreateApp；src/create_app.ts · CreateApp.constructor/actionsForCompletelyDestroy/appInstanceMap</span>
+      </section>
+
+      <section id="loading">
+        <h2>5. 资源加载屏障</h2>
+        <h3>5.1 主链</h3>
+        <div class="state-line" aria-label="资源加载调用链">
+          <span>HTMLLoader.run</span><i>→</i><span>fetchSource</span><i>→</i><span>formatHTML</span><i>→</i>
+          <span>extractSourceDom</span><i>→</i><span>CSS lane</span><i>+</i><span>JS lane</span><i>→</i><span>CreateApp.onLoad × 2</span>
+        </div>
+        <p>
+          <code>CreateApp.loadSourceCode</code> 先设 <code>LOADING</code>，再调用单例
+          <code>HTMLLoader.run(this, extractSourceDom)</code>。HTMLLoader 选择 <code>ssrUrl || url</code>；
+          若入口本身是 JS，合成含一个 script 的最小 head/body；否则以
+          <code>{ cache: 'no-cache' }</code> 获取文本。
+        </p>
+        <span class="source">src/create_app.ts · loadSourceCode；src/source/loader/html.ts · HTMLLoader.getInstance/run</span>
+
+        <h3>5.2 formatHTML 与抽取</h3>
+        <p>
+          HTML 插件先按 global、module 顺序执行 <code>processHtml</code>，然后用正则把完整
+          <code>&lt;head&gt;...&lt;/head&gt;</code> 与 <code>&lt;body&gt;...&lt;/body&gt;</code>
+          改为 <code>micro-app-head/body</code>。<code>extractSourceDom</code> 经实例所属 realm 的
+          DOMParser 得到惰性 DOM，要求两者都存在，再递归扫描 link/style/script/img。
+        </p>
+        <span class="source">src/source/loader/html.ts · formatHTML/processHtml；src/source/index.ts · extractSourceDom/flatBodyChildren；src/create_app.ts · parseHtmlString</span>
+
+        <h3>5.3 loadSourceLevel 是两方屏障，不是百分比</h3>
+        <div class="code-title">仓库源码摘录 · src/create_app.ts · CreateApp.onLoad</div>
+        <pre><code>private loadSourceLevel: -1 | 0 | 1 | 2 = 0
+
+public onLoad ({ html, ...prerenderOptions }): void {
+  if (++this.loadSourceLevel === 2) {
+    this.source.html = html
+    if (this.isUnmounted()) return
+    if (!this.isPrefetch) {
+      getRootContainer(this.container).mount(this)
+    }
+  }
+}</code></pre>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>值</th><th>含义</th><th>触发者</th></tr></thead>
+            <tbody>
+              <tr><td>0</td><td>HTML 尚未成功分出两条资源通道</td><td>构造初值</td></tr>
+              <tr><td>1</td><td>CSS lane 或 JS lane 任一完成；先后不固定</td><td>第一次 <code>app.onLoad</code></td></tr>
+              <tr><td>2</td><td>两条通道都完成；保存模板并允许 mount</td><td>第二次 <code>app.onLoad</code></td></tr>
+              <tr><td>-1</td><td>HTML fetch Promise reject</td><td><code>onLoadError</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          CSS 无外链时立即完成；JS 无登记脚本时立即完成。CSS 有外链时所有请求 settle 后完成，
+          即便某个失败；JS lane 在首次阶段只等待普通非 defer/non-async 脚本的预取，
+          defer、async、module 的实际下载/执行留到 mount。故“level 2”不等于所有脚本已执行。
+        </p>
+        <span class="source">src/source/index.ts · extractSourceDom；src/source/links.ts · fetchLinksFromHtml；src/source/scripts.ts · fetchScriptsFromHtml</span>
+
+        <h3>5.4 sourceCenter 的共享边界</h3>
+        <p>
+          <code>sourceCenter</code> 内部是 link Map 与 script Map，key 是补全后的绝对地址。
+          外链代码全局共享；每项的 <code>appSpace[appName]</code> 再保存该 app 的属性、CSS 解析结果或
+          JS 解析函数。当前实现没有基于 <code>global</code> 属性才共享的分支：外链默认都共享。
+        </p>
+        <p>
+          HTML 本身不进入 sourceCenter；动态 inline script 也不进入。静态 inline script 用随机
+          <code>inline-*</code> key 登记，destroy 时只删除这些 inline 项。外链 CSS/JS 没有 destroy 删除调用。
+        </p>
+        <span class="source">src/source/source_center.ts · createSourceCenter/deleteInlineInfo；src/source/links.ts · extractLinkFromHtml；src/source/scripts.ts · extractScriptElement；src/create_app.ts · actionsForCompletelyDestroy</span>
+
+        <h3>5.5 加载失败的实际语义</h3>
+        <ul>
+          <li>HTML fetch reject：<code>loadSourceLevel = -1</code>，发 error，状态设 <code>LOAD_FAILED</code>。</li>
+          <li>HTML 空字符串：发 error 并返回，但不调用 <code>onLoadError</code>；状态仍为 <code>LOADING</code>、level 仍为 0。</li>
+          <li>缺 head/body：同样发 error 后返回，不把 level 设为 -1。</li>
+          <li>静态 CSS/JS 外链 reject：记录错误，但对应 lane 最终仍完成，应用可缺资源继续 mount。</li>
+          <li><code>fetchSource</code> 直接调用 <code>res.text()</code>，没有显式检查 <code>res.ok</code>；HTTP 错误是否变成失败取决于自定义 fetch 或返回正文的后续解析。</li>
+        </ul>
+        <div class="callout bad">
+          <strong>关键区别：</strong>只有 HTML Promise reject 进入 <code>LOAD_FAILED/-1</code>。空 HTML 与结构缺失是
+          “已报告但停在 LOADING”的路径；不能笼统称为统一加载失败状态。
+        </div>
+        <span class="source">src/source/loader/html.ts · HTMLLoader.run；src/source/index.ts · extractSourceDom；src/source/fetch.ts · fetchSource；src/create_app.ts · onLoadError</span>
+      </section>
+
+      <section id="assets">
+        <h2>6. HTML、CSS 与 JS 处理</h2>
+        <h3>6.1 静态 DOM 的替换规则</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>元素</th><th>静态 HTML</th><th>动态插入</th></tr></thead>
+            <tbody>
+              <tr><td><code>link[rel=stylesheet]</code></td><td>绝对化 href、登记缓存、原位换注释；获取后转为 style</td><td>直接返回替代 style；有缓存则 defer 填充，否则 fetch；向原 link 发 load/error</td></tr>
+              <tr><td><code>style</code></td><td>scopecss 开启且无 ignore 时解析</td><td>插入前解析；空内容由 MutationObserver 等待</td></tr>
+              <tr><td><code>script</code></td><td>登记并用注释占位；惰性模板中的 ignore script 保留但不会因 DOMParser 移入而执行</td><td>框架主动 fetch/执行并以 script 或注释替代；动态 ignore 保留浏览器原生行为</td></tr>
+              <tr><td><code>img</code></td><td>补全 src</td><td>img/script src/srcset、link/image/a href 在插入前补全</td></tr>
+              <tr><td>preload/prefetch/prerender/modulepreload/icon link</td><td>移除</td><td>换注释</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <span class="source">src/source/index.ts · flatBodyChildren；src/source/links.ts · extractLinkFromHtml/formatDynamicLink；src/source/scripts.ts · extractScriptElement/runDynamic*；src/source/patch.ts · completePathDynamic/handleNewNode</span>
+
+        <h3>6.2 相对 URL 的基准</h3>
+        <ul>
+          <li>HTML 与动态 DOM 的 src/href：以 <code>app.url</code> 的有效目录为基准。</li>
+          <li>外链 CSS 内相对 <code>url(...)</code>：以 CSS 文件自身目录 <code>linkPath</code> 为基准。</li>
+          <li>inline style 的 <code>url(...)</code>：以 <code>app.url</code> 为基准。</li>
+          <li>data/blob/hash、绝对 http/https/file、协议相对地址保持不变。</li>
+        </ul>
+        <span class="source">src/libs/utils.ts · getEffectivePath/CompletionPath/getLinkFileDir；src/sandbox/scoped_css.ts · CSSParser.matchAllDeclarations</span>
+
+        <h3>6.3 脚本类型与执行顺序</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>脚本</th><th>准备</th><th>执行</th><th>mounted 边界</th></tr></thead>
+            <tbody>
+              <tr><td>普通外链 classic</td><td>HTML 阶段并行获取</td><td>按 source Set 的 DOM 插入顺序同步执行</td><td>执行完继续；fiber 时逐个 idle 串行</td></tr>
+              <tr><td>普通 inline classic</td><td>静态代码登记为唯一 inline key</td><td>按 DOM 顺序执行</td><td>同上</td></tr>
+              <tr><td><code>defer</code> 外链</td><td>mount 阶段批量获取</td><td>全部 settle 后按 DOM 顺序执行</td><td>非 module 执行完计入完成</td></tr>
+              <tr><td><code>async</code> 外链</td><td>与 defer 同组批量获取</td><td>当前实现仍在全部 settle 后按 DOM 顺序执行</td><td>不是浏览器原生“谁先下载谁先执行”</td></tr>
+              <tr><td>module + 默认 With 沙箱</td><td>被视作 defer，但 <code>isTypeModule</code> 为 false</td><td>代码经 with 包装后按函数路径执行</td><td>按非原生 module 路径完成</td></tr>
+              <tr><td>module + iframe 或关闭沙箱</td><td>保留真实 module 语义</td><td>插入 <code>type=module</code> script；外链使用 src</td><td>外链等 onload；inline module 用 defer 模拟 onload</td></tr>
+              <tr><td>exclude / noModule 不适配 / 不支持 module</td><td>换注释</td><td>不执行</td><td>不阻塞</td></tr>
+              <tr><td>空静态 script</td><td>换注释</td><td>不执行</td><td>不阻塞</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          <code>execScripts</code> 先把 defer/async 收集起来，普通脚本立即按顺序调用 <code>runScript</code>；
+          待 defer 组全部 settle 后再遍历执行。fiber 只把这些动作包进 <code>requestIdleCallback</code> Promise
+          并串行，不改变设计上的 source 顺序，但源码注释明确承认动态脚本与 fiber 交错仍可能有顺序问题。
+        </p>
+        <span class="source">src/source/scripts.ts · fetchScriptsFromHtml/execScripts/isTypeModule/isInlineMode/runCode2InlineScript；src/libs/utils.ts · injectFiberTask/serialExecFiberTasks</span>
+
+        <h3>6.4 插件处理边界</h3>
+        <ul>
+          <li>HTML：global <code>processHtml</code> 后 module <code>processHtml</code>，发生在 head/body 替换前。</li>
+          <li>CSS/JS URL：global 与 module 插件的 <code>excludeChecker/ignoreChecker</code> 决定抽取。</li>
+          <li>JS code：global loader 后 module loader，再包进 sandbox scope；解析代码按 app/sandboxType 缓存。</li>
+          <li>CSS 没有通用 loader；其转换入口是 scopedCSS。插件并不介入任意 DOM 或生命周期。</li>
+        </ul>
+        <span class="source">src/source/loader/html.ts · processHtml；src/source/scripts.ts · getAssetsPlugins/checkExcludeUrl/checkIgnoreUrl/usePlugins/bindScope；src/source/links.ts · extractLinkFromHtml</span>
+      </section>
+
+      <section id="css">
+        <h2>7. CSSParser / scopedCSS：算法与手工推演</h2>
+        <h3>7.1 目标与算法</h3>
+        <p>
+          输入是一段 CSS、应用前缀、app URL 与可选 CSS 文件地址；输出是保留声明和 at-rule 结构、
+          改写普通选择器与相对 URL 的 CSS 字符串。解析器重复识别三类 token：style rule、at-rule、comment。
+          它不是浏览器 CSSOM，而是顺序消费字符串的专用 parser。
+        </p>
+        <ol class="trace">
+          <li><b>matchRules。</b>跳过空白和注释，循环尝试 at-rule，否则尝试 style rule。</li>
+          <li><b>formatSelector。</b>保护属性选择器中的逗号/值，再拆顶层逗号，为每个选择器决定前缀。</li>
+          <li><b>body 特例。</b><code>body</code> 或 <code>html body</code> 被换为“应用前缀 + micro-app-body”。</li>
+          <li><b>root 特例。</b>默认 <code>html/:root</code> 不加前缀；<code>optionCss: ['isolation-root']</code> 时只放过 html，:root 会被前缀化。</li>
+          <li><b>声明与 URL。</b>递归消费大括号；相对 URL 通过 CSS 文件目录或 app URL 补全。</li>
+          <li><b>at-rule。</b>media/supports/container/layer 等递归处理子规则；font-face/page/keyframes 只处理其声明，不给关键帧 selector 加应用前缀。</li>
+          <li><b>注释开关。</b>支持 disable-next-line、disable、按 selector disable、enable。</li>
+        </ol>
+        <span class="source">src/sandbox/scoped_css.ts · CSSParser.exec/matchRules/formatSelector/matchAllDeclarations/matchAtRule/matchComment</span>
+
+        <h3>7.2 MutationObserver</h3>
+        <p>
+          有初始文本的 style 会立即解析，并观察一次后续 child/text 变化；若新文本没有前缀，清除 scoped 标志后重跑。
+          空 style 先观察 childList，首次有文本时处理；带 <code>data-styled</code> 的空 style 后续填充被跳过。
+          <code>__MICRO_APP_HAS_SCOPED__</code> 防止同一内容重复处理。
+        </p>
+        <span class="source">src/sandbox/scoped_css.ts · scopedCSS/commonAction</span>
+
+        <h3>7.3 手工走一遍</h3>
+        <p>设 <code>app.name = catalog</code>，<code>app.url = https://child.example/app/</code>，外链 CSS 地址为 <code>https://child.example/app/css/main.css</code>。</p>
+        <div class="code-title">教程输入 · 小型真实 CSS</div>
+        <pre><code>body, .card[data-kind="a,b"] {
+  background: url("../img/card.png");
+}
+@media (max-width: 640px) {
+  .card:hover { color: red; }
+}
+@font-face {
+  font-family: Shop;
+  src: url("./shop.woff2");
+}
+/* scopecss-disable-next-line */
+.dialog-root { position: fixed; }</code></pre>
+
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>阶段</th><th>输入片段</th><th>变换</th><th>理由</th></tr></thead>
+            <tbody>
+              <tr><td>前缀</td><td><code>body</code></td><td><code>micro-app[name=catalog] micro-app-body</code></td><td>bodySelectorREG 特例</td></tr>
+              <tr><td>属性保护</td><td><code>.card[data-kind="a,b"]</code></td><td>逗号不被当作 selector 分隔，再加应用前缀</td><td>临时 mock 属性值后恢复</td></tr>
+              <tr><td>link URL</td><td><code>../img/card.png</code></td><td><code>https://child.example/app/img/card.png</code></td><td>基准改为 main.css 所在目录</td></tr>
+              <tr><td>子规则</td><td><code>@media {...}</code></td><td>保留 at-rule，递归给内部 <code>.card:hover</code> 加前缀</td><td>child-rule matcher</td></tr>
+              <tr><td>自含规则</td><td><code>@font-face</code></td><td>不加 selector 前缀，但改写 font URL</td><td>commonHandlerForAtRuleWithSelfRule</td></tr>
+              <tr><td>注释</td><td><code>.dialog-root</code></td><td>本规则不加前缀</td><td>disable-next-line 用后复位</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="code-title">教程推演结果 · 空白经 parser 归一化</div>
+        <pre><code>micro-app[name=catalog] micro-app-body,
+micro-app[name=catalog] .card[data-kind="a,b"]{
+  background: url("https://child.example/app/img/card.png");
+}
+@media (max-width: 640px) {
+  micro-app[name=catalog] .card:hover{ color: red; }
+}
+@font-face {
+  font-family: Shop;
+  src: url("https://child.example/app/css/shop.woff2");
+}
+/* scopecss-disable-next-line */
+.dialog-root{ position: fixed; }</code></pre>
+        <div class="callout">
+          <strong>边界：</strong>默认 <code>html</code> 与 <code>:root</code> 被放过，并非全部根样式都强隔离；
+          CSS 解析异常只记录错误，保留原 style 文本，且 scoped 标志已写入。未知 at-rule 若不被 matcher 识别，
+          可能落入普通 selector 路径；这不是完整 CSS 标准解析器。
+        </div>
+        <span class="source">src/sandbox/scoped_css.ts · bodySelectorREG/CSSParser.formatSelector/commonAction/createPrefix；src/__tests__/source/scoped_css.test.ts · 动态 style、at-rule、配置注释场景（静态证据）</span>
+      </section>
+
+      <section id="sandbox">
+        <h2>8. 默认 With 沙箱与动态 DOM</h2>
+        <h3>8.1 proxyWindow：隔离写入，兼容读取</h3>
+        <p>
+          <code>WithSandBox</code> 以空的 <code>CustomWindow</code> 作为 target，再创建 Proxy。
+          get 优先读取 target、微应用内置键与 scopeProperties；缺失值回落到原生 window，并把函数绑定到原生 window。
+          set 通常写入 target 并记入 <code>injectedKeys</code>；location 写原生 window；明确的 escapeProperties
+          还会写到原生 window 并记入 <code>escapeKeys</code>，供停止时删除。
+        </p>
+        <p>
+          这是一层运行时命名空间，不是安全边界：未 scope 的原生全局本来就可读取，部分配置还允许逃逸。
+          <code>with(proxyWindow.__MICRO_APP_WINDOW__)</code> 和缓存全局参数共同让裸变量优先落入子应用域。
+        </p>
+        <div class="code-title">仓库源码摘录 · src/source/scripts.ts · bindScope（With 分支的结构化等价）</div>
+        <pre><code>(function (proxyWindow) {
+  with (proxyWindow.__MICRO_APP_WINDOW__) {
+    (function (window, self, globalThis, document, /* cached globals */) {
+      // child code
+    }).call(proxyWindow, window, self, globalThis, document /* ... */)
+  }
+})(window.__MICRO_APP_PROXY_WINDOW__)</code></pre>
+        <span class="source">src/sandbox/with/window.ts · createProxyWindow；src/sandbox/adapter.ts · BaseSandbox；src/source/scripts.ts · bindScope/GLOBAL_CACHED_KEY</span>
+
+        <h3>8.2 proxyDocument 与节点归属</h3>
+        <p>
+          proxyDocument 仍代理原生 document，但重写 <code>createElement/createElementNS</code>，
+          给节点定义可配置的 <code>__MICRO_APP_NAME__</code>。它也记录 document 事件和 onclick。
+          全局 Document 原型补丁覆盖从真实 document 创建节点的路径；静态模板在执行脚本前由
+          <code>patchElementTree</code> 递归补标。
+        </p>
+        <p>
+          当前 app 名不是永久线程变量：访问 proxyWindow/proxyDocument 时
+          <code>throttleDeferForSetAppName</code> 设置 <code>currentAppName</code>，下一微任务清空。
+          动态插入优先用节点自身标记，缺失时才用当前 app 名。
+        </p>
+        <span class="source">src/sandbox/with/document.ts · patchDocument/createProxyDocument；src/sandbox/adapter.ts · updateElementInfo/patchElementTree；src/libs/utils.ts · throttleDeferForSetAppName/getCurrentAppName</span>
+
+        <h3>8.3 动态插入真实调用链</h3>
+        <ol class="trace">
+          <li><b>document.createElement。</b>proxyDocument 或全局补丁创建原生节点，并调用 <code>updateElementInfo</code> 写 app 名。</li>
+          <li><b>appendChild/insertBefore。</b><code>patchElementAndDocument</code> 把 Node 原型方法换成 <code>commonElementHandler</code>。</li>
+          <li><b>解析归属。</b>从 <code>newChild.__MICRO_APP_NAME__ || currentAppName</code> 找 <code>appInstanceMap</code>。</li>
+          <li><b>补路径。</b><code>completePathDynamic</code> 处理 img/script/link/image/a 地址。</li>
+          <li><b>资源分派。</b><code>handleNewNode</code> 对 style 调 scopedCSS；link 调 extract + formatDynamicLink；script 调 extract + runDynamicRemote/InlineScript。</li>
+          <li><b>父节点重定向。</b>对 <code>document.head/body</code> 的插入改到该 app 的 <code>micro-app-head/body</code>；iframe script 改到 iframe head/body。</li>
+          <li><b>保留 DOM API 关系。</b>WeakMap 记录原节点到替代 style/script/comment，remove/replace 时映射到真实节点。</li>
+        </ol>
+        <span class="source">src/source/patch.ts · patchDocument/patchElementAndDocument/commonElementHandler/handleNewNode/getHijackParent/dynamicElementInMicroAppMap；src/sandbox/adapter.ts · updateElementInfo</span>
+
+        <h3>8.4 window/document 事件、timer 与恢复</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>副作用</th><th>记录</th><th>release</th><th>rebuild</th></tr></thead>
+            <tbody>
+              <tr><td>window event</td><td>type → listener Set；特殊事件绑定宿主元素，其余绑定 rawWindow</td><td>全部解绑</td><td>UMD/keep-alive 快照重新绑定</td></tr>
+              <tr><td>document event/onclick</td><td>listener Set 与 onclick</td><td>全部解绑并清 onclick</td><td>从快照恢复</td></tr>
+              <tr><td>setInterval/setTimeout</td><td>id → handler/timeout/args</td><td>默认卸载或 destroy 清除；UMD/keep-alive 不清</td><td>timer 不重建，因为保留的原生 timer 一直存在</td></tr>
+              <tr><td>data listener</td><td>EventCenter snapshot</td><td>每次隐藏/停止都解绑</td><td>UMD/keep-alive 重绑</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <span class="source">src/sandbox/with/window.ts · patchWindowEffect；src/sandbox/with/document.ts · createProxyDocument；src/sandbox/with/index.ts · recordAndReleaseEffect/releaseGlobalEffect</span>
+
+        <h3>8.5 全局补丁引用计数</h3>
+        <p>
+          每个沙箱从 inactive 变 active 时递增 <code>globalEnv.activeSandbox</code>；从 0 到 1 才补丁 DOM/history。
+          stop 时递减；从 1 到 0 才恢复原生方法。keep-alive 隐藏不调用 stop，计数不变。
+        </p>
+        <div class="state-line"><span>0：原生 API</span><i>→ start</i><span>1：安装补丁</span><i>→ 更多 start/stop</i><span>N：共享补丁</span><i>→ 最后 stop</i><span>0：恢复原生</span></div>
+        <span class="source">src/sandbox/with/index.ts · start/stop；src/sandbox/iframe/index.ts · start/stop；src/source/patch.ts · patchElementAndDocument/releasePatchElementAndDocument</span>
+
+        <h3>8.6 IframeSandbox 的共同接口</h3>
+        <p>
+          IframeSandbox 构造隐藏 iframe，使用 <code>iframe.contentWindow</code> 与其 document，等待浏览器重建初始
+          document 后生成新的 html/head/body，再补 window/document/element/router，最后 resolve
+          <code>sandboxReady</code>。它向 CreateApp 暴露与 With 沙箱一致的 start/stop、effect snapshot、
+          actionsBeforeExecScripts、microAppWindow/proxyWindow。默认非 UMD unmount 或 destroy 会 defer 删除 iframe；
+          再 mount 新建 realm。这里不展开其逐文件代理实现。
+        </p>
+        <span class="source">src/sandbox/iframe/index.ts · IframeSandbox.constructor/createIframeElement/patchIframe/createIframeTemplate/start/stop；src/create_app.ts · createSandbox/clearOptions</span>
+      </section>
+
+      <section id="mount">
+        <h2>9. mount 与执行完成</h2>
+        <div class="callout warn">
+          <strong>源码顺序校正：</strong>真实顺序是 <code>sandboxReady → nextAction → cloneContainer → sandbox.start</code>，
+          不是先 start 再 clone。随后才是 <code>actionsBeforeExecScripts → execScripts</code>。
+        </div>
+        <ol class="trace">
+          <li><b>MicroAppElement.mount。</b>把当前 container、inline、routerMode、base/default route、request patch 与 fiber 传给实例。</li>
+          <li><b>未加载完提前 mount。</b>只保存 container、取消 prerender、发 child LOADING statechange，状态保持 LOADING；level 2 时由 onLoad 再触发。</li>
+          <li><b>等待 sandboxReady。</b>With 构造时同步完成初始化但 Promise 回调仍在微任务；iframe 通过 0ms 轮询等待独立 document。</li>
+          <li><b>BEFORE_MOUNT。</b>进入 nextAction 后先设状态；非 prerender 路径发 base beforemount。</li>
+          <li><b>MOUNTING 与模板。</b>设 MOUNTING、发 child statechange；从 <code>source.html</code> 深克隆到宿主（UMD remount 则转移活 DOM）。</li>
+          <li><b>sandbox.start。</b>初始化路由状态、请求代理与全局 DOM/history 补丁，active 变 true。</li>
+          <li><b>执行前。</b><code>patchElementTree</code> 标记静态 DOM；劫持 <code>window.mount/unmount</code> 和 <code>window['micro-app-'+name]</code> 识别 UMD hooks。</li>
+          <li><b>execScripts/runScript。</b>按上一节的同步/defer/module/fiber边界执行，脚本先设置 active proxyWindow，再经插件与 bindScope。</li>
+          <li><b>UMD 判定。</b>同时取得函数型 mount 与 unmount 时，<code>umdMode = true</code>，调用 mount(data)；之后 remount 不再重跑初始化脚本。</li>
+          <li><b>handleMounted。</b>UMD mount Promise resolve/reject 后都进入 actionsAfterMounted；普通路径在脚本完成回调进入。</li>
+          <li><b>MOUNTED。</b>先设状态，再调用 child <code>window.onmount</code>，发 child statechange/mounted，最后发 base mounted。</li>
+        </ol>
+        <span class="source">src/micro_app_element.ts · mount；src/create_app.ts · mount/handleMounted/actionsAfterMounted/cloneContainer；src/sandbox/with/index.ts · actionsBeforeExecScripts/hijackUmdHooks；src/source/scripts.ts · execScripts/runScript</span>
+
+        <h3>9.1 核心状态表</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>状态</th><th>进入动作</th><th>离开条件</th><th>可见事件</th></tr></thead>
+            <tbody>
+              <tr><td>CREATED</td><td>字段初值</td><td>构造器立即 <code>loadSourceCode</code></td><td>注意：base created 是元素连接事件，不等于此状态停留</td></tr>
+              <tr><td>LOADING</td><td>开始 HTML/资源通道；提前 mount 也重设</td><td>level 2 后 mount，或 HTML reject</td><td>提前 mount 向 child 发 LOADING statechange</td></tr>
+              <tr><td>LOAD_FAILED</td><td>HTML Promise reject</td><td>unmount 强制 destroy</td><td>base error、child LOAD_FAILED statechange</td></tr>
+              <tr><td>BEFORE_MOUNT</td><td>复用实例在 defer 前，或 mount nextAction 开头</td><td>同次 nextAction 继续</td><td>base beforemount 紧随其后</td></tr>
+              <tr><td>MOUNTING</td><td>发 beforemount 后</td><td>普通脚本完成或 UMD mount 完成</td><td>child MOUNTING statechange</td></tr>
+              <tr><td>MOUNTED</td><td>actionsAfterMounted</td><td>普通 unmount；keep-alive 隐藏不改变此状态</td><td>child onmount/statechange/mounted；base mounted</td></tr>
+              <tr><td>UNMOUNT</td><td>CreateApp.unmount 开头</td><td>同实例复用时转 BEFORE_MOUNT；destroy 则 Map 删除</td><td>child statechange/unmount/onunmount；base unmount</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="state-line"><span>CREATED</span><i>→</i><span>LOADING</span><i>→</i><span>BEFORE_MOUNT</span><i>→</i><span>MOUNTING</span><i>→</i><span>MOUNTED</span><i>→</i><span>UNMOUNT</span></div>
+        <div class="state-line"><span>LOADING</span><i>→ HTML reject</i><span>LOAD_FAILED</span><i>→ unmount</i><span>destroy + Map 删除</span></div>
+        <span class="source">src/constants.ts · appStates；src/create_app.ts · setAppState/loadSourceCode/onLoadError/mount/unmount</span>
+
+        <h3>9.2 其余正交状态</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>状态轴</th><th>迁移</th><th>不变量</th></tr></thead>
+            <tbody>
+              <tr><td><code>loadSourceLevel</code></td><td>0 → 1 → 2；HTML reject → -1</td><td>两次 onLoad 都可携带同一模板，第二次才保存</td></tr>
+              <tr><td><code>keepAliveState</code></td><td>null → HIDDEN → SHOW；普通 unmount → null</td><td>隐藏时 appStates 通常仍是 MOUNTED</td></tr>
+              <tr><td><code>umdMode</code></td><td>false → 识别成对 hooks → true</td><td>同一实例不回退；destroy 删除实例</td></tr>
+              <tr><td><code>sandbox.active</code></td><td>false → start → true → stop → false</td><td>keep-alive 隐藏只 release effect，不 stop</td></tr>
+              <tr><td><code>globalEnv.activeSandbox</code></td><td>0 ↔ N</td><td>只在 0/1 边界安装或恢复全局补丁</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>9.3 生命周期：基座侧与子应用侧</h3>
+        <div class="grid-2">
+          <div class="card">
+            <h3>基座侧</h3>
+            <p>宿主元素事件：created、beforemount、mounted、unmount、error；keep-alive 另有 beforeshow、aftershow、afterhidden。全局 lifecycle option 先调用，随后 element.dispatchEvent。</p>
+          </div>
+          <div class="card">
+            <h3>子应用侧</h3>
+            <p><code>window.onmount/onunmount</code>；window 事件 statechange、mounted、unmount、appstate-change。mounted/unmount 在 With 沙箱内部被格式化为带 appName 的事件名，避免与基座元素同名事件冲突。</p>
+          </div>
+        </div>
+        <span class="source">src/interact/lifecycles_event.ts · dispatchLifecyclesEvent/dispatchCustomEventToMicroApp；src/libs/utils.ts · formatEventType；src/constants.ts · lifeCycles/microGlobalEvent</span>
+      </section>
+
+      <section id="communication">
+        <h2>10. 通信：一个 EventCenter，两条定向通道</h2>
+        <h3>10.1 事件命名</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>方向</th><th>公开 API</th><th>内部事件名</th></tr></thead>
+            <tbody>
+              <tr><td>基座 → catalog</td><td><code>microApp.setData('catalog', data)</code><br><code>child.microApp.addDataListener(cb)</code></td><td><code>__catalog_from_base_app__</code></td></tr>
+              <tr><td>catalog → 基座</td><td><code>child.microApp.dispatch(data)</code><br><code>microApp.addDataListener('catalog', cb)</code></td><td><code>__catalog_from_micro_app__</code></td></tr>
+              <tr><td>全局</td><td>两侧 set/addGlobalDataListener</td><td><code>global</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <span class="source">src/interact/index.ts · createEventName/EventCenterForBaseApp/EventCenterForMicroApp/EventCenterForGlobal</span>
+
+        <h3>10.2 同一微任务内合并与浅去重</h3>
+        <div class="code-title">仓库源码摘录 · src/interact/event_center.ts · dispatch/process 核心</div>
+        <pre><code>eventInfo.tempData = assign(
+  {},
+  eventInfo.tempData || eventInfo.data,
+  data,
+)
+enqueue(name, nextStep, dispatchDataEvent)
+
+// 下一微任务
+if (force || !isEqual(eventInfo.data, tempData)) {
+  eventInfo.data = tempData || eventInfo.data
+  callbacks.forEach(cb =&gt; cb(eventInfo.data))
+  dispatchDataEvent?.()
+}</code></pre>
+        <ol>
+          <li>数据必须是 plain object；多次 partial object 合并到 <code>tempData</code>。</li>
+          <li>全局 queue 第一次入队时用 <code>defer</code> 安排一次 process；同 name 只占一个队列位置。</li>
+          <li>process 比较旧 data 与合并结果：key 数量相同且每个顶层值严格相等才判定相同。</li>
+          <li>相同数据不调用 listener、<code>nextStep</code> 或 datachange；force 绕过浅比较。</li>
+          <li>新监听可用 autoTrigger 立即取得已缓存数据。</li>
+        </ol>
+        <p>
+          这是顶层浅比较：嵌套对象只比引用。合并也是顶层覆盖，不做 deep merge。
+        </p>
+        <span class="source">src/interact/event_center.ts · enqueue/process/isEqual/on/dispatch</span>
+
+        <h3>10.3 datachange 与卸载语义</h3>
+        <p>
+          子应用 dispatch 成功处理后，若实例仍有 container，框架在宿主
+          <code>&lt;micro-app&gt;</code> 上发送 <code>datachange</code>，detail.data 是合并后的缓存。
+          <code>off/clearDataListener</code> 只删 listener，不删 data；普通 unmount 会清子应用方向和全局 listener，
+          但默认保留两侧每 app 数据。<code>clear-data</code> 或 destroy 才清基座→子应用和子应用→基座两份缓存。
+          全局 data 本身不因单 app 卸载而清空。
+        </p>
+        <span class="source">src/interact/index.ts · EventCenterForMicroApp.dispatch/clearDataListener；src/interact/event_center.ts · off/clearData；src/sandbox/with/index.ts · releaseGlobalEffect</span>
+      </section>
+
+      <section id="unmount">
+        <h2>11. 卸载、复用与精确清理</h2>
+        <h3>11.1 普通卸载主链</h3>
+        <div class="state-line">
+          <span>remove &lt;micro-app&gt;</span><i>→</i><span>disconnectedCallback</span><i>→</i>
+          <span>handleDisconnected</span><i>→</i><span>CreateApp.unmount</span><i>→</i>
+          <span>child hooks/events</span><i>→</i><span>sandbox.stop</span><i>→</i>
+          <span>base UNMOUNT</span><i>→</i><span>clearOptions</span>
+        </div>
+        <p>
+          unmount 先把 app state 设为 UNMOUNT，再调用 UMD unmount hook（若有），发 child statechange/unmount/onunmount；
+          Promise hook settle 后进入 <code>actionsAfterUnmounted</code>。随后停止沙箱、处理 route/data/effect，
+          向基座发 unmount，清容器。destroy 时最后进入 <code>actionsForCompletelyDestroy</code>。
+        </p>
+        <span class="source">src/micro_app_element.ts · disconnectedCallback/handleDisconnected/unmount；src/create_app.ts · unmount/handleUnmounted/actionsAfterUnmounted/clearOptions</span>
+
+        <h3>11.2 三条分叉</h3>
+        <div class="branch" role="img" aria-label="普通卸载、UMD、keep-alive 与 destroy 分叉">
+          <div class="root"><strong>元素断开</strong><br>handleDisconnected</div>
+          <div><strong>默认模式</strong><br>unmount → 清 DOM/事件/timer；实例与模板保留</div>
+          <div class="keep"><strong>keep-alive</strong><br>hidden → DOM 移到临时 div；沙箱仍 active</div>
+          <div class="destroy"><strong>destroy</strong><br>完整 stop → 删除 inline cache 与 appInstanceMap</div>
+          <div class="umd"><strong>UMD remount</strong><br>活 DOM 移回 source.html；事件快照；timer 保留</div>
+          <div class="keep"><strong>show</strong><br>恢复 listener/data snapshot；活 DOM 移回新容器</div>
+          <div><strong>default remount</strong><br>深克隆模板；重跑初始化脚本</div>
+          <div class="destroy"><strong>不可由 Map 复用</strong><br>下一次重新 CreateApp + fetch/共享 cache</div>
+        </div>
+
+        <h3>11.3 清理矩阵</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>对象/副作用</th><th>默认 unmount</th><th>UMD unmount/remount</th><th>keep-alive hidden/show</th><th>destroy</th></tr></thead>
+            <tbody>
+              <tr><td>app state</td><td>UNMOUNT</td><td>UNMOUNT → remount</td><td>通常仍 MOUNTED；keepAliveState HIDDEN → SHOW</td><td>先 UNMOUNT，随后实例失去 Map 持有</td></tr>
+              <tr><td>宿主 DOM</td><td>清空；source.html 模板保留</td><td>活节点移入 source.html，remount 原节点移回</td><td>活节点移入临时 div，show 原节点移回</td><td>清空；实例可回收</td></tr>
+              <tr><td>初始化脚本</td><td>remount 重跑</td><td>不重跑；调用 UMD mount</td><td>不重跑，也不调用普通 mount 链</td><td>下次新实例重新跑</td></tr>
+              <tr><td>appInstanceMap</td><td>保留</td><td>保留</td><td>保留</td><td>删除</td></tr>
+              <tr><td>With sandbox 对象</td><td>保留但 inactive</td><td>保留但 inactive</td><td>保持 active</td><td>实例删除；全局补丁按计数恢复</td></tr>
+              <tr><td>window/document listener</td><td>移除，不留快照</td><td>移除并记录，remount 重绑</td><td>移除并记录，show 重绑</td><td>移除，快照清空</td></tr>
+              <tr><td>timer</td><td>清除</td><td>保留并继续运行</td><td>保留并继续运行</td><td>清除</td></tr>
+              <tr><td>per-app data listener</td><td>清除；脚本重跑时重建</td><td>清除并快照，remount 重建</td><td>清除并快照，show 重建</td><td>清除</td></tr>
+              <tr><td>per-app data</td><td>默认保留；clear-data 才清</td><td>默认保留；clear-data 才清</td><td>保留</td><td>两方向清除</td></tr>
+              <tr><td>route</td><td>默认清；keep-route-state 可保留</td><td>同左</td><td>search 模式隐藏时移除，show 时恢复</td><td>清除</td></tr>
+              <tr><td>iframe</td><td>非 UMD 删除，sandbox 置空；remount 新建</td><td>保留</td><td>保留</td><td>defer 删除</td></tr>
+              <tr><td>静态 inline script cache</td><td>保留</td><td>保留</td><td>保留</td><td>删除本实例 Set 中 inline key</td></tr>
+              <tr><td>动态 inline script cache</td><td colspan="4">从未进入 sourceCenter；每次动态创建都重新执行</td></tr>
+              <tr><td>外链 JS/CSS cache</td><td>保留</td><td>保留</td><td>保留</td><td>仍保留，包括 appSpace 解析元数据</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="callout">
+          <strong>不要写“destroy 清空全部缓存”。</strong>
+          destroy 只显式删除本实例静态 inline script 项和 <code>appInstanceMap</code>；外链 link/script
+          的全局 Map 没有在 destroy 路径调用 <code>deleteInfo</code>。
+        </div>
+        <span class="source">src/create_app.ts · actionsAfterUnmounted/clearOptions/actionsForCompletelyDestroy/hiddenKeepAliveApp/showKeepAliveApp；src/sandbox/with/index.ts · stop/releaseGlobalEffect；src/sandbox/with/window.ts · release；src/source/source_center.ts · deleteInlineInfo</span>
+
+        <h3>11.4 UMD 与 keep-alive 的差异</h3>
+        <p>
+          两者都保留 DOM、timer 并快照 listener，但 UMD 已执行完整 unmount，sandbox 变 inactive、
+          global 引用计数递减，remount 会调用 UMD mount hook；keep-alive 只是隐藏，sandbox 仍 active、
+          app state 不进入 UNMOUNT，show 只恢复 DOM 与副作用，不走 mount hook。
+        </p>
+        <span class="source">src/create_app.ts · actionsAfterUnmounted/hiddenKeepAliveApp/showKeepAliveApp；src/sandbox/with/index.ts · start/stop/recordAndReleaseEffect</span>
+      </section>
+
+      <section id="chains">
+        <h2>12. 四条真实调用链</h2>
+        <h3>链 1：microApp.start 到首次 mounted</h3>
+        <ol class="trace">
+          <li><b>公开入口：</b><code>src/index.ts default → micro_app.ts microApp.start</code>。</li>
+          <li><b>全局初始化：</b><code>initGlobalEnv → rejectMicroAppStyle → defineElement</code>。</li>
+          <li><b>DOM 连接：</b><code>connectedCallback → defer → handleConnected → handleCreateApp</code>。</li>
+          <li><b>实例与 I/O：</b><code>new CreateApp → appInstanceMap.set → loadSourceCode → HTMLLoader.run → fetchSource</code>。</li>
+          <li><b>资源屏障：</b><code>formatHTML → extractSourceDom → CSS lane + JS lane → onLoad × 2</code>。</li>
+          <li><b>挂载：</b><code>MicroAppElement.mount → CreateApp.mount → sandboxReady → cloneContainer → sandbox.start</code>。</li>
+          <li><b>执行：</b><code>actionsBeforeExecScripts → execScripts → runScript → bindScope</code>。</li>
+          <li><b>完成：</b><code>handleMounted → actionsAfterMounted → MOUNTED → child hooks/events → base mounted</code>。</li>
+        </ol>
+
+        <h3>链 2：动态 style/link/script 到副作用</h3>
+        <ol class="trace">
+          <li><b>归属：</b><code>proxyDocument.createElement → updateElementInfo(__MICRO_APP_NAME__)</code>。</li>
+          <li><b>插入拦截：</b><code>patched appendChild/insertBefore → commonElementHandler → appInstanceMap.get</code>。</li>
+          <li><b>style：</b><code>handleNewNode → scopedCSS → CSSParser / MutationObserver → 插入 micro-app-head</code>。</li>
+          <li><b>link：</b><code>extractLinkFromHtml → sourceCenter.link → formatDynamicLink → fetch/cache → style → 原 link load/error</code>。</li>
+          <li><b>script：</b><code>extractScriptElement → runDynamicRemote/InlineScript → runScript → plugin → bindScope → Function/inline module</code>。</li>
+          <li><b>最终副作用：</b>DOM 被限制到 app head/body；window/document event 与 timer 进入沙箱账本；全局写入进入 proxy target 或显式 escape 集合。</li>
+        </ol>
+
+        <h3>链 3：基座与子应用双向数据</h3>
+        <ol class="trace">
+          <li><b>基座发：</b><code>microApp.setData → EventCenterForBaseApp.setData → __catalog_from_base_app__</code>。</li>
+          <li><b>合并：</b><code>EventCenter.dispatch → tempData 浅合并 → defer(process) → isEqual</code>。</li>
+          <li><b>子应用收：</b><code>EventCenterForMicroApp.addDataListener</code> 的 callbacks 被调用；autoTrigger 可读已有缓存。</li>
+          <li><b>子应用回：</b><code>window.microApp.dispatch → __catalog_from_micro_app__ → base addDataListener</code>。</li>
+          <li><b>宿主事件：</b>同次有效 dispatch 后向 <code>&lt;micro-app&gt;</code> 发 <code>datachange</code>，detail 为合并数据。</li>
+          <li><b>卸载：</b>listener 清理与 data 清理由不同 API 控制；默认保留缓存，clear-data/destroy 清 per-app 双向数据。</li>
+        </ol>
+
+        <h3>链 4：普通卸载、keep-alive、destroy</h3>
+        <ol class="trace">
+          <li><b>公共入口：</b><code>remove element → disconnectedCallback → handleDisconnected</code>。</li>
+          <li><b>普通：</b><code>unmount → child hooks → sandbox.stop(default) → 清 event/timer → base unmount → clearOptions</code>。</li>
+          <li><b>keep-alive：</b><code>hiddenKeepAliveApp → HIDDEN → afterhidden → DOM 移到 div → effect snapshot/release</code>；show 反向恢复。</li>
+          <li><b>destroy：</b><code>unmount(destroy) → sandbox.stop(destroy) → clearData → clearOptions → actionsForCompletelyDestroy</code>。</li>
+          <li><b>结果：</b>普通与 UMD 可由同一 Map 实例复用；keep-alive 从未真正 unmount；destroy 迫使下一次新建实例，但外链缓存仍可复用。</li>
+        </ol>
+      </section>
+
+      <section id="demo">
+        <h2>13. 同一 Demo：端到端流程图与完整用例</h2>
+        <h3>13.1 端到端流程图</h3>
+        <ol class="flow" aria-label="catalog Demo 端到端执行流程">
+          <li><b>基座 start</b>保存原生 API，注册 micro-app</li>
+          <li><b>插入 catalog</b>连接微任务选择/创建实例</li>
+          <li><b>取 HTML</b>head/body 改为 micro 容器</li>
+          <li><b>CSS/JS 屏障</b>level 0 → 1 → 2</li>
+          <li><b>准备 mount</b>BEFORE_MOUNT → MOUNTING</li>
+          <li><b>克隆 + 沙箱</b>DOM 入宿主，With sandbox active</li>
+          <li><b>执行 JS</b>静态顺序、动态 link/script</li>
+          <li><b>双向数据</b>CNY 入子应用，ready 回基座</li>
+          <li><b>MOUNTED</b>先 child，后 base lifecycle</li>
+          <li><b>移除元素</b>UNMOUNT、stop、清副作用</li>
+        </ol>
+        <p class="legend">
+          异常支路：HTML reject → LOAD_FAILED；静态 CSS/JS reject → 记录错误但屏障继续；
+          keep-alive → 第 10 步改为 hidden；destroy → 追加 Map 与 inline cache 删除。
+        </p>
+
+        <h3>13.2 逐阶段解释</h3>
+        <ol>
+          <li><strong>阶段 1–2：</strong>README 的最小 API 触发 Custom Element 控制面；name/url 在连接前后设置都可，最终以一次微任务处理。</li>
+          <li><strong>阶段 3–4：</strong>HTML 变惰性模板；link 转 style，script 转注释；CSS/JS 准备通道独立完成。</li>
+          <li><strong>阶段 5–6：</strong>沙箱 ready 后克隆 DOM，再 start；全局补丁只在首个 active sandbox 安装。</li>
+          <li><strong>阶段 7：</strong>脚本在 proxyWindow 域执行；创建的动态节点带 catalog 标记，最终落入该应用 head/body。</li>
+          <li><strong>阶段 8–9：</strong>基座预先缓存的数据由 child autoTrigger 取得；child dispatch 合并后同时通知 base listener 与宿主 datachange；脚本完成后进入 MOUNTED。</li>
+          <li><strong>阶段 10：</strong>默认卸载清 DOM、事件、timer、worker/EventSource 和路由状态；实例、模板、外链缓存及默认 data 留待复用。</li>
+        </ol>
+
+        <h3>13.3 基座入口</h3>
+        <div class="code-title">教程示例 · base/main.js</div>
+        <pre><code>import microApp from '@micro-zoe/micro-app'
+
+const host = document.querySelector('#micro-host')
+
+microApp.addDataListener('catalog', (data) =&gt; {
+  console.log('child → base', data)
+})
+
+microApp.start({
+  lifeCycles: {
+    mounted (event, appName) {
+      if (appName === 'catalog') {
+        console.log('base mounted', event.detail.container)
+      }
+    },
+    unmount (_event, appName) {
+      console.log('base unmount', appName)
+    },
+  },
+})
+
+const element = document.createElement('micro-app')
+element.setAttribute('name', 'catalog')
+element.setAttribute('url', 'https://child.example/app/')
+element.addEventListener('datachange', (event) =&gt; {
+  console.log('host datachange', event.detail.data)
+})
+host.appendChild(element)
+
+// 可早于子应用绑定；EventCenter 缓存，child 使用 autoTrigger 取得。
+microApp.setData('catalog', { currency: 'CNY' })
+
+export function disposeCatalog () {
+  element.remove() // 默认卸载；不等于 destroy
+}</code></pre>
+
+        <div class="code-title">教程示例 · base/index.html</div>
+        <pre><code>&lt;main&gt;
+  &lt;h1&gt;商品基座&lt;/h1&gt;
+  &lt;div id="micro-host"&gt;&lt;/div&gt;
+&lt;/main&gt;
+&lt;script type="module" src="./main.js"&gt;&lt;/script&gt;</code></pre>
+
+        <h3>13.4 子应用 HTML / CSS / JS</h3>
+        <div class="code-title">教程示例 · child/app/index.html</div>
+        <pre><code>&lt;!doctype html&gt;
+&lt;html&gt;
+  &lt;head&gt;
+    &lt;link rel="stylesheet" href="./css/main.css"&gt;
+    &lt;script src="./bootstrap.js"&gt;&lt;/script&gt;
+  &lt;/head&gt;
+  &lt;body&gt;
+    &lt;section id="catalog-root"&gt;loading&lt;/section&gt;
+  &lt;/body&gt;
+&lt;/html&gt;</code></pre>
+
+        <div class="code-title">教程示例 · child/app/css/main.css</div>
+        <pre><code>body { margin: 0; background: url("../img/paper.png"); }
+.catalog-card { padding: 12px; color: #173f35; }
+@media (max-width: 640px) {
+  .catalog-card { padding: 8px; }
+}</code></pre>
+
+        <div class="code-title">教程示例 · child/app/bootstrap.js</div>
+        <pre><code>const root = document.querySelector('#catalog-root')
+let heartbeat = null
+
+function render (data) {
+  root.innerHTML =
+    '&lt;article class="catalog-card"&gt;currency: ' +
+    String(data.currency || 'unknown') +
+    '&lt;/article&gt;'
+}
+
+if (window.microApp) {
+  window.microApp.addDataListener(render, true)
+  window.microApp.dispatch({ ready: true })
+}
+
+// 动态 link：被转成 style；相对地址按 app.url 补全并走 sourceCenter。
+const theme = document.createElement('link')
+theme.rel = 'stylesheet'
+theme.href = './css/theme.css'
+theme.onload = () =&gt; console.log('theme ready')
+document.head.appendChild(theme)
+
+// 动态 script：框架主动获取并在 catalog 的沙箱域执行。
+const feature = document.createElement('script')
+feature.src = './feature.js'
+document.body.appendChild(feature)
+
+heartbeat = window.setInterval(() =&gt; {
+  window.microApp &amp;&amp; window.microApp.dispatch({ aliveAt: Date.now() })
+}, 30000)
+
+window.onmount = (baseData) =&gt; {
+  console.log('child onmount', baseData)
+}
+
+window.onunmount = () =&gt; {
+  // 默认 With sandbox 也会清 timer；显式清理让示例在关闭沙箱时仍完整。
+  window.clearInterval(heartbeat)
+  window.microApp &amp;&amp; window.microApp.clearDataListener()
+}</code></pre>
+
+        <div class="code-title">教程示例 · child/app/feature.js</div>
+        <pre><code>const badge = document.createElement('small')
+badge.textContent = 'feature loaded'
+document.querySelector('#catalog-root').appendChild(badge)</code></pre>
+
+        <h3>13.5 示例与仓库证据的边界</h3>
+        <ul>
+          <li><strong>仓库源码摘录：</strong>本教程标有“仓库源码摘录”的短片段来自当前源码，个别类型与省略项为便于阅读做结构化删节。</li>
+          <li><strong>教程示例：</strong>catalog 代码是基于 README 最小 start/element、<code>src/__tests__/demos/common/</code> 动态资源与通信场景组合出的完整示例；不是仓库原文件。</li>
+          <li><strong>解释性伪代码：</strong>With bindScope 片段明确标为结构化等价，不是可复制替换的原始字符串模板。</li>
+          <li><strong>清理：</strong>示例显式 clear timer/listener；框架默认 With sandbox 仍会在普通 unmount 兜底清 timer 与 listener。</li>
+        </ul>
+        <span class="source">README.zh-cn.md · “如何使用”；src/__tests__/demos/common/index.html；src/__tests__/demos/common/script1.js；src/__tests__/main.test.ts · main process；src/interact/index.ts · 通信 API</span>
+      </section>
+
+      <section id="tests">
+        <h2>14. 测试证据索引</h2>
+        <p>
+          下表均为静态阅读结果，不代表本环境执行通过。“当前断言”指 API 与当前实现形态相符；
+          “意图证据”指场景有价值，但文件含旧 API，不能作为可执行证明。
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>测试文件 / 等级</th><th>Given</th><th>When</th><th>Then</th><th>Mechanism / Source</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><code>main.test.ts</code><br>当前断言</td>
+                <td>start 后创建普通 app，监听 mounted/unmount</td>
+                <td>append 后 remove</td>
+                <td>activeApps 先包含、后不包含 app；另覆盖 HTML fetch error 与 UMD remount</td>
+                <td>元素连接/断开驱动 CreateApp；<code>MicroAppElement.handleConnected/handleDisconnected</code></td>
+              </tr>
+              <tr>
+                <td><code>micro_app_element.test.ts</code><br>当前断言</td>
+                <td>普通、同名冲突、prefetch、keep-alive 元素</td>
+                <td>append、改 name/url、remove/reappend</td>
+                <td>CreateApp 入 Map；冲突报错；prefetch 复用；afterhidden/beforeshow/aftershow 发出</td>
+                <td><code>handleConnected/actionsForAttributeChange/hiddenKeepAliveApp/showKeepAliveApp</code></td>
+              </tr>
+              <tr>
+                <td><code>create_app.test.ts</code><br>当前断言</td>
+                <td>加载未完、UMD Promise、各 unmountApp option</td>
+                <td>提前 remove、remount、clearAliveState/destroy</td>
+                <td>LOADING/UNMOUNT/BEFORE_MOUNT 状态；普通卸载留 Map，destroy 删除；hidden 可转真正 UNMOUNT</td>
+                <td><code>CreateApp.mount/unmount</code>；<code>micro_app.unmountApp</code></td>
+              </tr>
+              <tr>
+                <td><code>source/index.test.ts</code><br>当前断言</td>
+                <td>exclude、缺 head/body、空 HTML、相对 img、processHtml</td>
+                <td>加载不同入口</td>
+                <td>资源集合过滤；结构错误发 error；img 补全；插件替换 DOM</td>
+                <td><code>HTMLLoader.formatHTML</code>；<code>extractSourceDom/flatBodyChildren</code></td>
+              </tr>
+              <tr>
+                <td><code>source/links.test.ts</code><br>意图证据</td>
+                <td>动态坏 link、特殊 rel、静态 CSS 失败、重复地址</td>
+                <td>append link 或加载 HTML</td>
+                <td>动态 error；preload 消失；静态 CSS 失败仍 mounted；地址期望复用</td>
+                <td>机制与 <code>extractLinkFromHtml/formatDynamicLink</code> 一致；但 <code>globalLinks</code> 与旧签名不匹配当前源码</td>
+              </tr>
+              <tr>
+                <td><code>source/scripts.test.ts</code><br>意图证据</td>
+                <td>动态 inline/remote、module/noModule、失败脚本、remount</td>
+                <td>append script 或加载特殊 HTML</td>
+                <td>动态执行与 load/error；静态资源失败仍可 mounted；disable sandbox 无 sandbox</td>
+                <td>机制与 <code>extractScriptElement/execScripts/runDynamic*</code> 一致；但 <code>globalScripts</code>、Map 式 source 断言过时</td>
+              </tr>
+              <tr>
+                <td><code>source/scoped_css.test.ts</code><br>当前/部分 skip</td>
+                <td>空 style 后赋值、at-rule、配置注释、大 CSS、nesting</td>
+                <td>动态插入 style</td>
+                <td>selector/body 前缀、注释开关、MutationObserver 与期望 CSS；若干 URL/失败用例被 skip</td>
+                <td><code>CSSParser</code> 与 <code>scopedCSS</code>；skip 项不作执行证明</td>
+              </tr>
+              <tr>
+                <td><code>sandbox/index.test.ts</code><br>意图证据</td>
+                <td>scope/escape 属性、Proxy traps、active 开关</td>
+                <td>读写/delete/descriptor/start/stop</td>
+                <td>子域隔离、显式逃逸与停止删除</td>
+                <td>机制与 <code>with/window.createProxyWindow</code> 一致；但测试入口 <code>../../sandbox</code> 在当前树不存在，调用签名也旧</td>
+              </tr>
+              <tr>
+                <td><code>sandbox/effect.test.ts</code><br>当前断言</td>
+                <td>普通 app、UMD app、iframe app</td>
+                <td>事件绑定、remove/remount</td>
+                <td>UMD 可 remount；iframe DOM 元素满足其 realm 的 Element 判断</td>
+                <td><code>record/rebuildEffectSnapshot</code>；iframe <code>updateElementInfo</code></td>
+              </tr>
+              <tr>
+                <td><code>interact/index.test.ts</code><br>当前断言</td>
+                <td>基座与两个 child listener、已有缓存、global data</td>
+                <td>重复 dispatch、autoTrigger、remove/clear listener</td>
+                <td>同数据仅一次；datachange；listener 清除但 data 保留；全局 listener 按 app 清</td>
+                <td><code>EventCenter.enqueue/process/isEqual</code>；<code>EventCenterForBaseApp/MicroApp</code></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="callout warn">
+          <strong>证据使用原则：</strong>测试名不单独证明机制；以上 Then 均同时回查测试断言与对应源码。
+          旧 API 文件只支持“项目曾为该场景准备测试”的陈述，不支持“当前测试可编译或已通过”。
+        </div>
+      </section>
+
+      <section id="tradeoffs">
+        <h2>15. 设计权衡、失败路径与未展开边界</h2>
+        <h3>15.1 从当前实现推断的设计权衡</h3>
+        <div class="grid-2">
+          <div class="card">
+            <span class="label infer">从当前实现推断</span>
+            <h3>Custom Element 降低接入成本</h3>
+            <p>DOM 插拔天然映射生命周期；代价是框架渲染器的瞬时连接/断开需要微任务去抖和冲突仲裁。</p>
+          </div>
+          <div class="card">
+            <span class="label infer">从当前实现推断</span>
+            <h3>共享资源换取复用</h3>
+            <p>绝对地址全局缓存减少请求/解析；代价是 destroy 不清外链缓存，长期元数据和同 URL 内容新鲜度需由外部策略承担。</p>
+          </div>
+          <div class="card">
+            <span class="label infer">从当前实现推断</span>
+            <h3>Proxy 兼容优先于强安全</h3>
+            <p>缺失值回落 rawWindow 支持旧库；代价是隔离为工程命名空间，不是恶意代码安全容器。</p>
+          </div>
+          <div class="card">
+            <span class="label infer">从当前实现推断</span>
+            <h3>确定性脚本顺序优先</h3>
+            <p>async 与 defer 聚合后按 DOM 顺序执行，减少框架内竞态；代价是与浏览器原生 async 语义不同。</p>
+          </div>
+          <div class="card">
+            <span class="label infer">从当前实现推断</span>
+            <h3>UMD/keep-alive 以常驻换速度</h3>
+            <p>保留 DOM、timer 和副作用快照提升二次展示；代价是隐藏或卸载后仍可能有 timer/EventSource 等持续工作。</p>
+          </div>
+          <div class="card">
+            <span class="label infer">从当前实现推断</span>
+            <h3>通信批处理降低噪声</h3>
+            <p>同微任务合并与浅去重减少重复 render；代价是嵌套对象按引用判断，且 nextStep 在相同数据时也不执行。</p>
+          </div>
+        </div>
+
+        <h3>15.2 失败路径速查</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>触发</th><th>状态/副作用</th><th>是否继续</th></tr></thead>
+            <tbody>
+              <tr><td>非浏览器/无 customElements</td><td>start 报错</td><td>不注册元素</td></tr>
+              <tr><td>非法 tagName</td><td>hasInit 已为 true</td><td>本实例不能再次正常 start</td></tr>
+              <tr><td>非法 name/url 或运行中同名</td><td>元素记录错误</td><td>不创建/替换实例</td></tr>
+              <tr><td>HTML Promise reject</td><td>level -1，LOAD_FAILED，base error</td><td>停止渲染；unmount 强制 destroy</td></tr>
+              <tr><td>HTML 空或缺 head/body</td><td>error，但仍 LOADING/level 0</td><td>挂载停滞</td></tr>
+              <tr><td>静态 CSS fetch reject</td><td>错误日志；该 style 缺失</td><td>CSS lane 完成，允许 mount</td></tr>
+              <tr><td>普通静态 JS fetch reject</td><td>错误日志；缓存 code 仍可能为空串</td><td>JS lane 完成，空代码路径不阻塞</td></tr>
+              <tr><td>defer/async fetch reject</td><td>errorCount 增加</td><td>settle 后继续；module 完成条件另计</td></tr>
+              <tr><td>CSS parse throw</td><td>记录错误，保留原文本，scoped 标志已置</td><td>资源通道继续</td></tr>
+              <tr><td>脚本执行 throw</td><td>console warning 后默认重抛；filter 返回 true 可吞掉</td><td>没有统一转为 lifecycle error，当前调用链可能中断</td></tr>
+              <tr><td>UMD mount 同步 throw</td><td>记录错误</td><td>不会进入 handleMounted，可能停在 MOUNTING</td></tr>
+              <tr><td>UMD mount Promise reject</td><td>记录错误</td><td>仍调用 actionsAfterMounted</td></tr>
+              <tr><td>UMD unmount 同步 throw</td><td>state 已 UNMOUNT，但 catch 后无后续清理</td><td>可能留下 active sandbox/容器副作用</td></tr>
+              <tr><td>UMD unmount Promise reject</td><td>记录错误</td><td>仍执行 actionsAfterUnmounted</td></tr>
+              <tr><td>sandbox ready 前已 unmount</td><td><code>!isUnmounted()</code> 守卫失败</td><td>跳过 nextAction</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <span class="source">src/micro_app.ts · start；src/micro_app_element.ts · legalAttribute/handleConnected；src/source/loader/html.ts · run；src/source/index.ts · extractSourceDom；src/source/links.ts · fetchLinksFromHtml；src/source/scripts.ts · execScripts/runScript；src/create_app.ts · mount/handleMounted/unmount</span>
+
+        <h3>15.3 prefetch/prerender 与首次 mount 的接点</h3>
+        <p>
+          prefetch 在 idle + 默认 3 秒后串行处理配置，若 Map 中无同名 app，仍直接
+          <code>new CreateApp({ isPrefetch: true, prefetchLevel })</code>，所以复用同一 HTML/sourceCenter 管线。
+          level 2 可预解析 JS；level 3 prerender 会在临时 div 以强制 fiber 挂载。真实元素出现时，
+          <code>handleConnected</code> 检查 URL 与 scopecss/sandbox/iframe 核心配置，兼容则把
+          <code>isPrefetch</code> 置 false 并进入普通 mount；不兼容则销毁后新建。
+        </p>
+        <span class="source">src/prefetch.ts · preFetch/preFetchAction；src/micro_app_element.ts · handleConnected/handleMount；src/create_app.ts · onLoad/mount</span>
+
+        <h3>15.4 router 只在生命周期交接中的角色</h3>
+        <p>
+          sandbox.start 以 defaultPage 初始化 microLocation、注册 history listener，并在自定义模式设置 base route；
+          sandbox.stop 按 keepRouteState 清或保留 URL 状态并移除 listener。keep-alive 的 search 模式在隐藏/展示时
+          移除/恢复 route 信息。完整路由编码、history state 与导航算法不在本教程范围。
+        </p>
+        <span class="source">src/sandbox/with/index.ts · initRouteState/clearRouteState/setRouteInfoForKeepAliveApp/removeRouteInfoForKeepAliveApp</span>
+
+        <h3>15.5 明确未展开</h3>
+        <p>
+          SSR、嵌套应用、native mode、0.x、polyfill、DevTools、框架适配、全部插件配置、完整 router 算法、
+          IframeSandbox 的逐文件 window/document patch、Worker 代理内部实现。没有 React 内部实现，也没有跨库或跨版本比较。
+        </p>
+      </section>
+
+      <section id="reading">
+        <h2>16. 继续阅读索引与复述清单</h2>
+        <h3>关键源码索引</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>想继续回答的问题</th><th>文件</th><th>符号</th></tr></thead>
+            <tbody>
+              <tr><td>公开 API 与启动如何进入元素</td><td><code>src/index.ts</code><br><code>src/micro_app.ts</code></td><td>default exports、MicroApp.start</td></tr>
+              <tr><td>元素如何选择复用/冲突/keep-alive</td><td><code>src/micro_app_element.ts</code></td><td>defineElement、handleConnected、handleAttributeUpdate</td></tr>
+              <tr><td>状态和清理的总编排</td><td><code>src/create_app.ts</code></td><td>CreateApp、mount、unmount、hidden/show、actionsForCompletelyDestroy</td></tr>
+              <tr><td>HTML 与双通道屏障</td><td><code>src/source/loader/html.ts</code><br><code>src/source/index.ts</code></td><td>HTMLLoader.run/formatHTML、extractSourceDom</td></tr>
+              <tr><td>link/script 缓存和调度</td><td><code>src/source/links.ts</code><br><code>src/source/scripts.ts</code><br><code>src/source/source_center.ts</code></td><td>extract/fetch/format/exec/run、createSourceCenter</td></tr>
+              <tr><td>CSS 算法</td><td><code>src/sandbox/scoped_css.ts</code></td><td>CSSParser、scopedCSS、createPrefix</td></tr>
+              <tr><td>With window/document 与 effect</td><td><code>src/sandbox/with/index.ts</code><br><code>src/sandbox/with/window.ts</code><br><code>src/sandbox/with/document.ts</code></td><td>start/stop、createProxyWindow、patchWindowEffect、createProxyDocument</td></tr>
+              <tr><td>动态 DOM</td><td><code>src/source/patch.ts</code><br><code>src/sandbox/adapter.ts</code></td><td>patchElementAndDocument、commonElementHandler、handleNewNode、updateElementInfo</td></tr>
+              <tr><td>双向数据与生命周期</td><td><code>src/interact/event_center.ts</code><br><code>src/interact/index.ts</code><br><code>src/interact/lifecycles_event.ts</code></td><td>EventCenter、EventCenterForBaseApp/MicroApp、dispatchLifecyclesEvent</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>陌生读者应能复述</h3>
+        <ul class="checklist">
+          <li>start 先保存原生 API，再注册元素，重复由 hasInit 限制。</li>
+          <li>元素只观察 name/url，通过 Map 复用 CreateApp。</li>
+          <li>HTML 变惰性 micro head/body；CSS 与 JS 各完成一次 onLoad。</li>
+          <li>level 2 只代表准备屏障，不代表 defer/module 已执行。</li>
+          <li>外链代码按绝对地址全局共享，destroy 也不清。</li>
+          <li>CSS parser 同时处理 selector、body、URL、at-rule 与控制注释。</li>
+          <li>With 沙箱是 Proxy + DOM 标记/补丁 + effect 账本，不是安全容器。</li>
+          <li>真实 mount 顺序中 cloneContainer 早于 sandbox.start。</li>
+          <li>通信在微任务内合并，只做浅比较与顶层对象合并。</li>
+          <li>普通、UMD、keep-alive、destroy 对 DOM/timer/data/cache 的保留不同。</li>
+        </ul>
+
+        <h3>本文档的静态 QA 清单</h3>
+        <ul class="checklist">
+          <li>单个 HTML，样式完全内联，无 CDN、外部字体、图片或脚本依赖。</li>
+          <li>目录只使用内部锚点；代码中的 HTML 字符已转义。</li>
+          <li>提供 1020px 与 680px 两级窄屏布局及 print 布局。</li>
+          <li>流程图、状态表、清理矩阵与同一 catalog Demo 使用统一术语。</li>
+          <li>未把静态测试写成已通过；旧 API 测试单列限制。</li>
+          <li>commit 的本地不可验证性、未运行测试及排除范围已明确。</li>
+        </ul>
+      </section>
+    </main>
+  </div>
+
+  <footer>
+    <p>
+      证据基线：@micro-zoe/micro-app 1.0.0-rc.32；任务指定 commit
+      dd445c483a7c7b29b1aa37245874e2617a385882。本文只依赖当前仓库静态内容，离线打开不请求网络资源。
+    </p>
+  </footer>
+</body>
+</html>

@@ -1,0 +1,555 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Vue runtime-core Renderer、patch 分派、元素与组件提交、block 优化源码详解"
+    />
+    <title>Renderer 与 Patch · Vue Runtime 内核解剖</title>
+    <link rel="stylesheet" href="assets/styles.css" />
+  </head>
+  <body data-current="renderer.html">
+    <header data-site-header></header>
+    <div class="docs-shell">
+      <aside data-global-nav></aside>
+      <main class="article">
+        <div class="article-hero">
+          <div class="article-kicker">Chapter 03 · Renderer</div>
+          <h1>Vue 怎样决定页面该改哪里</h1>
+          <p class="article-lead">
+            组件会交出新的页面描述，但它不修改浏览器。Renderer
+            接过新旧两份描述，判断哪些节点继续使用、哪些要创建、更新、移动或离开。
+          </p>
+          <div class="hero-meta">
+            <span>建议阅读 40 分钟</span><span>核心文件 renderer.ts</span
+            ><span>重点：patch / move / unmount</span>
+          </div>
+        </div>
+
+        <section class="article-section prose" id="plain-renderer">
+          <h2>Renderer 就像拿着新旧图纸验收现场</h2>
+          <p>
+            它始终面对三个东西：上一次的页面描述、这一次的页面描述、当前真实页面。
+          </p>
+          <div class="role-grid">
+            <article class="role-card">
+              <span class="role-icon">＋</span><strong>创建</strong
+              ><small>新描述有、旧描述没有：创建节点并插入。</small
+              ><span class="role-source">mount</span>
+            </article>
+            <article class="role-card">
+              <span class="role-icon">≈</span><strong>更新</strong
+              ><small>新旧是同一身份：复用节点，只修补变动部分。</small
+              ><span class="role-source">patch</span>
+            </article>
+            <article class="role-card">
+              <span class="role-icon">−</span><strong>离开</strong
+              ><small>旧描述有、新描述没有：执行清理并移除。</small
+              ><span class="role-source">unmount</span>
+            </article>
+          </div>
+          <p>
+            例如按钮文字从“保存”变成“已保存”：按钮类型和 key
+            没变，所以不重建按钮，只改文字。若 <code>button</code> 变成
+            <code>a</code>，节点类型不同，旧按钮就不能原位复用。
+          </p>
+          <div class="before-after">
+            <div class="plain-section">
+              <span class="scene-label">相同身份</span
+              ><strong>button → button</strong>
+              <p>沿用原 DOM，更新文字、class 或事件。</p>
+            </div>
+            <div class="plain-section">
+              <span class="scene-label">不同身份</span
+              ><strong>button → a</strong>
+              <p>卸载旧按钮，在正确位置创建链接。</p>
+            </div>
+          </div>
+          <h3>为什么统一叫 patch</h3>
+          <p>
+            patch
+            的意思是“让旧状态变成新状态”。它先看节点是什么：文本就改文字，元素就改属性和
+            children，组件就更新组件，Teleport/Suspense
+            则交给各自协议。它不是只指 Diff，也不是浏览器 API。
+          </p>
+          <div class="reader-check">
+            <strong>Renderer 的输出不是新 VNode。</strong>新 VNode
+            是它的输入；它的输出是一组真实平台操作，以及与新 VNode
+            建好的节点或组件关联。
+          </div>
+        </section>
+
+        <div class="level-divider">进入 Renderer 内部与源码层</div>
+
+        <section class="article-section prose" id="renderer-factory">
+          <h2>baseCreateRenderer 为什么是巨型闭包</h2>
+          <p>
+            <code>createRenderer</code> 把 RendererOptions 交给
+            <code>baseCreateRenderer</code>。后者解构为
+            hostInsert、hostRemove、hostPatchProp 等局部变量，并在同一闭包中定义
+            patch、mountElement、processComponent、unmount、move 等函数。
+          </p>
+          <p>这种组织方式带来三个收益：</p>
+          <ul>
+            <li>所有递归处理器共享同一套宿主实现，无需层层对象查找。</li>
+            <li>
+              patch 与内置组件可以通过 RendererInternals
+              相互调用，但不暴露为公共 API。
+            </li>
+            <li>
+              普通 renderer 与 hydration renderer 复用大部分逻辑，只额外注入
+              hydrateNode 等能力。
+            </li>
+          </ul>
+          <div class="source-links">
+            <a
+              class="source-link"
+              href="../../../vue/packages/runtime-core/src/renderer.ts"
+              >本地：renderer.ts</a
+            >
+            <a
+              class="source-link"
+              href="../../../vue/packages/runtime-core/__tests__/rendererOptimizedMode.spec.ts"
+              >本地：优化模式测试</a
+            >
+            <a
+              class="source-link"
+              href="https://github.com/vuejs/core/blob/v3.5.41/packages/runtime-core/src/renderer.ts"
+              >GitHub：renderer.ts</a
+            >
+          </div>
+        </section>
+
+        <section class="article-section prose" id="patch-dispatch">
+          <h2>patch：先判断身份，再讨论差异</h2>
+          <p>
+            patch 的第一步是 <code>isSameVNodeType(n1, n2)</code>。type 或 key
+            不同，旧节点无法原位更新：先找到旧树之后的 anchor，卸载 n1，再把 n2
+            当首次挂载。类型相同才进入分派。
+          </p>
+          <div class="diagram">
+            <div class="diagram-title">PATCH DISPATCH</div>
+            <div class="branch-grid">
+              <div class="branch">
+                <strong>Text / Comment</strong
+                ><span>更新 nodeValue，或创建/复用注释节点。</span>
+              </div>
+              <div class="branch">
+                <strong>Static</strong
+                ><span>挂载编译器提升的连续静态节点；更新通常复用。</span>
+              </div>
+              <div class="branch">
+                <strong>Fragment</strong
+                ><span>维护开始和结束锚点，更新锚点之间的 children。</span>
+              </div>
+              <div class="branch">
+                <strong>Element</strong
+                ><span>processElement → mountElement / patchElement。</span>
+              </div>
+              <div class="branch">
+                <strong>Component</strong
+                ><span
+                  >processComponent → mountComponent / updateComponent。</span
+                >
+              </div>
+              <div class="branch">
+                <strong>Teleport / Suspense</strong
+                ><span>调用类型对象的 process，并传入 RendererInternals。</span>
+              </div>
+            </div>
+          </div>
+          <p>
+            patch 参数看似很多，是因为递归调用不能依赖隐式全局状态：container
+            决定物理宿主，anchor 决定插入位置，parentComponent
+            决定上下文，parentSuspense 决定异步 effect 去向，namespace 决定 DOM
+            节点类型，optimized 决定能否信任编译器提示。
+          </p>
+        </section>
+
+        <section class="article-section prose" id="element">
+          <h2>元素路径：结构、属性、children 三类提交</h2>
+          <div class="tabs" data-tabs>
+            <div class="tab-list" role="tablist" aria-label="元素挂载和更新">
+              <button
+                class="tab-button"
+                type="button"
+                role="tab"
+                aria-selected="true"
+                data-tab="mount"
+              >
+                mountElement
+              </button>
+              <button
+                class="tab-button"
+                type="button"
+                role="tab"
+                aria-selected="false"
+                data-tab="update"
+              >
+                patchElement
+              </button>
+            </div>
+            <div class="tab-panel" data-tab-panel="mount">
+              <div class="sequence">
+                <div class="sequence-item">
+                  <strong>创建宿主元素</strong><br />依据 type、namespace、is 与
+                  props 调用 hostCreateElement。
+                </div>
+                <div class="sequence-item">
+                  <strong>挂载 children</strong><br />文本走
+                  hostSetElementText；数组递归 mountChildren。
+                </div>
+                <div class="sequence-item">
+                  <strong>提交 props</strong><br />跳过 reserved props，把每个
+                  key 交给 hostPatchProp。
+                </div>
+                <div class="sequence-item">
+                  <strong>指令与过渡</strong><br />按阶段执行
+                  created/beforeMount 和 transition.beforeEnter。
+                </div>
+                <div class="sequence-item">
+                  <strong>插入元素</strong><br />hostInsert(el, container,
+                  anchor) 真正改变宿主树。
+                </div>
+                <div class="sequence-item">
+                  <strong>post 阶段</strong
+                  ><br />mounted、transition.enter、VNode mounted hook 入队。
+                </div>
+              </div>
+            </div>
+            <div class="tab-panel" data-tab-panel="update" hidden>
+              <div class="sequence">
+                <div class="sequence-item">
+                  <strong>复用 el</strong><br />n2.el =
+                  n1.el，真实节点身份保持不变。
+                </div>
+                <div class="sequence-item">
+                  <strong>beforeUpdate</strong><br />用
+                  <code>toggleRecurse(false)</code> 暂时禁止当前组件 effect
+                  递归调度，执行 VNode/指令钩子后立即恢复。
+                </div>
+                <div class="sequence-item">
+                  <strong>先处理破坏性 property</strong><br />旧
+                  innerHTML/textContent 被移除时先清空元素，避免随后挂载的新
+                  children 被残留内容覆盖。
+                </div>
+                <div class="sequence-item">
+                  <strong>先修补 children</strong><br />有 dynamicChildren 走
+                  block 快路径，否则先执行 patchChildren；这一步发生在普通 props
+                  diff 之前。
+                </div>
+                <div class="sequence-item">
+                  <strong>再修补 props / 文本</strong><br />按 patchFlag 处理
+                  class、style、dynamicProps 与 TEXT；无优化信息时执行完整 props
+                  diff。
+                </div>
+                <div class="sequence-item">
+                  <strong>post 阶段</strong><br />updated 与指令 updated 等待
+                  DOM 提交完成。
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="plain-section">
+            <span class="scene-label">固定版本源码卡 · v3.5.41</span>
+            <pre><code>// renderer.ts:827–970，省略参数与各类 prop 分支
+toggleRecurse(parentComponent, false)
+invokeBeforeUpdateHooks()
+toggleRecurse(parentComponent, true)
+
+if (oldInnerHTMLOrTextContentWasRemoved) hostSetElementText(el, '')
+
+if (dynamicChildren) patchBlockChildren(...)
+else if (!optimized) patchChildren(...)
+
+if (patchFlag &gt; 0) patchFlagDirectedPropsAndText()
+else if (!optimized &amp;&amp; dynamicChildren == null) patchProps(...)
+
+queuePostRenderEffect(updatedHooks, parentSuspense)</code></pre>
+            <p>
+              这段次序保护两个边界：<code>toggleRecurse</code>
+              控制的是组件任务能否在钩子中再次入队，并非暂停依赖追踪；children
+              必须先于普通 props，因为 innerHTML/textContent 会整体替换子节点。
+            </p>
+            <div class="source-links">
+              <a
+                class="source-link"
+                href="../../../vue/packages/runtime-core/src/renderer.ts"
+                >本地：patchElement（renderer.ts）</a
+              >
+              <a
+                class="source-link"
+                href="../../../vue/packages/runtime-core/__tests__/rendererElement.spec.ts"
+                >本地：元素更新测试</a
+              >
+              <a
+                class="source-link"
+                href="https://github.com/vuejs/core/blob/v3.5.41/packages/runtime-core/src/renderer.ts#L827-L970"
+                >v3.5.41：patchElement 精确行</a
+              >
+            </div>
+          </div>
+          <div class="callout warm">
+            innerHTML/textContent 属于 property，却会摧毁 children 对应
+            DOM。新版 Runtime 在两者与 VNode children
+            同时出现时给出警告，因为后续 Diff 已无法假定 children 仍存在。
+          </div>
+        </section>
+
+        <section class="article-section prose" id="component-path">
+          <h2>组件路径：Renderer 管“何时”，Component 管“如何准备”</h2>
+          <p>
+            mountComponent 创建并 setup 实例，再通过 setupRenderEffect 回到
+            renderer；updateComponent 则先用 shouldUpdateComponent
+            判断是否需要重新执行 render。
+          </p>
+          <div class="flow">
+            <div class="flow-step">
+              <span class="flow-index">01</span>
+              <div class="flow-copy">
+                <strong>processComponent</strong
+                ><small>n1 为空进入 mount，否则进入 update。</small>
+              </div>
+              <span class="flow-file">renderer.ts</span>
+            </div>
+            <div class="flow-join"></div>
+            <div class="flow-step">
+              <span class="flow-index">02</span>
+              <div class="flow-copy">
+                <strong>mountComponent</strong
+                ><small
+                  >创建实例，执行 setupComponent；async setup 向 Suspense
+                  登记。</small
+                >
+              </div>
+              <span class="flow-file">component.ts</span>
+            </div>
+            <div class="flow-join"></div>
+            <div class="flow-step">
+              <span class="flow-index">03</span>
+              <div class="flow-copy">
+                <strong>setupRenderEffect</strong
+                ><small>render → subTree → patch(null, subTree)。</small>
+              </div>
+              <span class="flow-file">renderer.ts</span>
+            </div>
+            <div class="flow-join"></div>
+            <div class="flow-step">
+              <span class="flow-index">04</span>
+              <div class="flow-copy">
+                <strong>updateComponent</strong
+                ><small
+                  >把新 VNode 放入 instance.next，并触发
+                  instance.update。</small
+                >
+              </div>
+              <span class="flow-file">renderer.ts</span>
+            </div>
+            <div class="flow-join"></div>
+            <div class="flow-step">
+              <span class="flow-index">05</span>
+              <div class="flow-copy">
+                <strong>componentUpdateFn</strong
+                ><small
+                  >更新 props/slots，生成 nextTree，patch(prevTree,
+                  nextTree)。</small
+                >
+              </div>
+              <span class="flow-file">renderer.ts</span>
+            </div>
+          </div>
+          <p>
+            若 shouldUpdateComponent 判断无需更新，renderer 只把旧 vnode.el
+            复制给新 VNode，并更新 instance.vnode。这是组件级别的
+            bail-out，比进入子树 Diff 更早。
+          </p>
+        </section>
+
+        <section class="article-section prose" id="children">
+          <h2>patchChildren：先判断 children 形态</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>旧 children</th>
+                  <th>新 children</th>
+                  <th>动作</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>数组</td>
+                  <td>文本</td>
+                  <td>unmountChildren，再 setElementText</td>
+                </tr>
+                <tr>
+                  <td>文本</td>
+                  <td>数组</td>
+                  <td>清空文本，再 mountChildren</td>
+                </tr>
+                <tr>
+                  <td>无</td>
+                  <td>数组/文本</td>
+                  <td>直接挂载</td>
+                </tr>
+                <tr>
+                  <td>数组</td>
+                  <td>无</td>
+                  <td>批量卸载</td>
+                </tr>
+                <tr>
+                  <td>数组</td>
+                  <td>数组</td>
+                  <td>依据 fragment patchFlag 选择 keyed/unkeyed/full diff</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            编译器生成的 KEYED_FRAGMENT 和 UNKEYED_FRAGMENT 能直接选算法；手写
+            render 缺少保证时，patchChildren 使用保守 keyed diff，它同时兼容有
+            key 和无 key 节点。
+          </p>
+        </section>
+
+        <section class="article-section prose" id="keyed-diff">
+          <h2>Keyed Diff 概览：Renderer 如何取得列表提交计划</h2>
+          <div class="sequence">
+            <div class="sequence-item">
+              <strong>同步头部</strong><br />从左向右 patch 连续同类型同 key
+              节点，缩小未知区间。
+            </div>
+            <div class="sequence-item">
+              <strong>同步尾部</strong
+              ><br />从右向左跳过稳定尾部，同时天然获得尾端 anchor。
+            </div>
+            <div class="sequence-item">
+              <strong>处理纯新增</strong
+              ><br />旧区间先耗尽，按新节点下一个位置为 anchor 批量 mount。
+            </div>
+            <div class="sequence-item">
+              <strong>处理纯删除</strong><br />新区间先耗尽，剩余旧节点全部
+              unmount。
+            </div>
+            <div class="sequence-item">
+              <strong>构造 keyToNewIndexMap</strong><br />为未知新区间建立 key
+              到索引映射，并在开发期诊断重复 key。
+            </div>
+            <div class="sequence-item">
+              <strong>扫描旧区间</strong
+              ><br />定位每个旧节点的新位置；找不到就卸载，找到就 patch，并生成
+              newIndexToOldIndexMap。
+            </div>
+            <div class="sequence-item">
+              <strong>判断是否移动</strong
+              ><br />若匹配到的新索引不再单调递增，说明相对顺序变化，需要计算
+              LIS。
+            </div>
+            <div class="sequence-item">
+              <strong>倒序提交</strong><br />从右向左 mount
+              新节点；不在最长递增子序列中的复用节点才执行 move。
+            </div>
+          </div>
+          <h3>为什么倒序遍历</h3>
+          <p>
+            insertBefore 需要一个已经存在的
+            anchor。倒序处理时，当前节点右侧的新节点已经在正确位置，因此可以把它作为稳定
+            anchor；从左到右则无法保证“下一个新节点”已经提交。
+          </p>
+          <h3>为什么 LIS 能减少 DOM move</h3>
+          <p>
+            newIndexToOldIndexMap
+            记录新序列中的节点来自哪个旧索引。递增子序列代表这些节点在旧树中的相对顺序本来就正确；最长递增子序列就是可保持原位的最大集合。其余节点才需要移动。
+          </p>
+          <pre><code>旧：a b c d e
+新：a c b e d
+
+同步头部后未知区间：
+旧索引序列映射到新位置 ≈ [c→2, b→1, e→4, d→3]
+
+Renderer 已知道最终顺序；LIS 只用于决定哪些节点可以不 move。</code></pre>
+        </section>
+
+        <section class="article-section prose" id="optimized">
+          <h2>优化模式：编译器替 Runtime 排除不可能</h2>
+          <div class="card-grid">
+            <article class="card">
+              <span class="card-label">PATCH FLAGS</span>
+              <h3>缩小单节点比较范围</h3>
+              <p>
+                TEXT、CLASS、STYLE、PROPS 等让 patchElement 跳过未变化类别。
+              </p>
+            </article>
+            <article class="card">
+              <span class="card-label">DYNAMIC CHILDREN</span>
+              <h3>缩小子树遍历范围</h3>
+              <p>
+                patchBlockChildren
+                只对齐编译器收集的动态节点，静态后代无需访问。
+              </p>
+            </article>
+            <article class="card">
+              <span class="card-label">HOISTED</span>
+              <h3>跳过稳定对象创建</h3>
+              <p>
+                静态 VNode 可提升到 render 外；复用前根据挂载状态克隆，避免共享
+                el。
+              </p>
+            </article>
+            <article class="card">
+              <span class="card-label">BAIL</span>
+              <h3>证明失效时回退</h3>
+              <p>
+                手写 slot、错误边界或非同构 block 使优化前提不成立时，清空
+                dynamicChildren 并完整 Diff。
+              </p>
+            </article>
+          </div>
+          <p>
+            优化设计的重要特征是<strong>不改变语义</strong>。任何快路径都必须存在等价慢路径，这也是测试中会大量比较
+            optimized 与 non-optimized 行为的原因。
+          </p>
+        </section>
+
+        <section class="article-section prose" id="move-unmount">
+          <h2>move 与 unmount：不是简单 removeChild</h2>
+          <p>
+            move 必须按 VNode 类型处理：组件移动其 subTree，Fragment
+            移动锚点范围，Static 移动连续节点，Teleport
+            决定只移动主视图占位还是远端 children，Suspense 移动
+            activeBranch。Transition 还会把 ENTER/LEAVE 变成异步流程。
+          </p>
+          <p>
+            unmount 同样先维护逻辑状态：清 ref、执行 VNode/指令钩子、停止组件
+            scope、处理 KeepAlive 缓存标志，再删除宿主节点。若只看最终
+            hostRemove，会错过绝大多数 Runtime 语义。
+          </p>
+          <div class="callout">
+            Renderer 的完整语义已经建立。下一章把最重要也最容易被一句“用了
+            LIS”带过的列表 Diff 单独拆开：从 key
+            身份、区间收缩、中段映射一直推演到倒序提交。
+          </div>
+        </section>
+
+        <nav class="page-nav" aria-label="章节翻页">
+          <a href="component.html"><span>上一章</span>← 组件模型</a>
+          <a href="diff.html"><span>下一章</span>Diff 算法专题 →</a>
+        </nav>
+      </main>
+      <aside class="page-toc" aria-label="本页目录">
+        <div class="toc-title">本页目录</div>
+        <a href="#plain-renderer">先理解 Renderer</a>
+        <a href="#renderer-factory">Renderer 工厂</a
+        ><a href="#patch-dispatch">patch 分派</a><a href="#element">元素路径</a
+        ><a href="#component-path">组件路径</a
+        ><a href="#children">children 形态</a
+        ><a href="#keyed-diff">keyed diff</a><a href="#optimized">优化模式</a
+        ><a href="#move-unmount">move / unmount</a>
+      </aside>
+    </div>
+    <footer data-site-footer></footer>
+    <script src="assets/app.js" defer></script>
+  </body>
+</html>

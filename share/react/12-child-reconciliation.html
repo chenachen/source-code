@@ -1,0 +1,524 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="React 19.3 keyed children 协调算法深挖：以 [A,B,C] 到 [B,A,D] 手推 updateSlot、Map 慢路径、placeChild、Deletion、状态保留与真实测试。" />
+  <title>12 · keyed children：一次重排怎样变成 Fiber flags</title>
+  <link rel="stylesheet" href="assets/guide.css?v=1" />
+</head>
+<body>
+  <header class="topbar"><div class="topbar-inner">
+    <a class="brand" href="index.html">React 六包源码指南</a>
+    <nav class="pager" aria-label="页面导航">
+      <a href="index.html">地图</a><a href="03-react.html">react</a><a href="04-reconciler-render.html">render</a>
+      <a aria-current="page" href="12-child-reconciliation.html">keyed diff</a><a href="13-hooks-state-machine.html">Hooks</a>
+      <a href="05-reconciler-commit.html">commit</a><a href="08-end-to-end.html">主线</a><a href="09-evidence.html">证据</a>
+    </nav>
+  </div></header>
+
+  <div class="layout">
+    <main>
+      <p class="eyebrow">12 · Algorithm lab / child reconciliation</p>
+      <h1>一次重排，怎样变成可提交的 Fiber flags</h1>
+      <p class="lede"><code>[A, B, C] → [B, A, D]</code> 看似一次数组比较，实际要同时回答三件事：谁仍是同一个组件、谁需要移动或插入、谁必须在 commit 清理。React 先顺序试配；首个 key 失配后才建立 Map，并用单调的 <code>lastPlacedIndex</code> 生成副作用。</p>
+      <div class="meta"><span class="pill">react-reconciler 0.34.0</span><span class="pill">React 19.3.0</span><span class="pill">真实源码 + 手工推演</span><span class="pill">真实 GWT 测试</span></div>
+
+      <section id="reading-contract"><h2>先约定证据标签</h2>
+        <div class="grid three">
+          <article class="card"><span class="number">REAL · CONTIGUOUS</span><h3>当前仓库连续原码</h3><p>代码块内部不重排、不改写；若只截取函数的一段，标题明确写出边界，并链接完整文件。</p></article>
+          <article class="card"><span class="number">REAL · TEST</span><h3>仓库真实测试</h3><p>Given、When、Then 来自断言本身；正文只解释该断言能证明的机制，不扩大成未覆盖保证。</p></article>
+          <article class="card"><span class="number">TEACHING TRACE</span><h3>教学推演</h3><p>状态表与简化 Fiber 名称由真实分支逐步推得，不是仓库可执行代码，也不冒充源码。</p></article>
+        </div>
+      </section>
+
+      <section id="goal"><h2>算法输入与输出：它不直接改 DOM</h2>
+        <div class="callout warn"><p><strong>教学页序不等于函数组件运行序。</strong>本指南先讲通用 child identity 算法，再讲 Hooks，便于单独手算 key；但一次函数组件更新的真实顺序是
+        <a href="11-update-queues-lanes.html">11 · 调度/选 Lane</a> → <a href="13-hooks-state-machine.html">13 · renderWithHooks 计算 state 并返回新 children</a> → 本页 <code>reconcileChildren</code> 把新 children 变成 child WIP/flags。
+        类组件或 HostRoot 产生 children 的方式不同，进入 ReactChildFiber 后的 key 算法相同。</p></div>
+        <div class="table-wrap"><table><thead><tr><th>角色</th><th>本例内容</th><th>算法关心的字段</th><th>输出去向</th></tr></thead><tbody>
+          <tr><td>current child 链</td><td><code>A(0) → B(1) → C(2)</code></td><td><code>key</code>、<code>elementType</code>、<code>index</code>、<code>sibling</code></td><td>作为可复用身份与旧位置基线</td></tr>
+          <tr><td>new children</td><td><code>[B, A, D]</code></td><td>每个 ReactElement 的 <code>key + type + props</code></td><td>形成新 WIP sibling 链</td></tr>
+          <tr><td>return Fiber</td><td>共同父 Fiber</td><td><code>flags</code>、<code>deletions</code></td><td>记录 <code>ChildDeletion</code> 与待删 child</td></tr>
+          <tr><td>WIP children</td><td><code>B(0) → A(1) → D(2)</code></td><td><code>alternate</code>、新 <code>index</code>、<code>Placement</code></td><td>commit 阶段才转成宿主移动、插入、删除</td></tr>
+        </tbody></table></div>
+        <div class="callout"><p><strong>身份判定不是只看 key。</strong>同一父 Fiber 下，key 先找到候选 current Fiber；<code>updateElement</code> 还要确认 <code>elementType</code> 兼容。兼容才创建带 <code>alternate</code> 的 WIP，组件 state 随 Fiber 身份保留；同 key 不同 type 仍会重建。</p></div>
+      </section>
+
+      <section id="overview"><h2>真实控制流：快路径失配，才付 Map 成本</h2>
+        <div class="chain" aria-label="数组 child 协调控制流">
+          <div class="node">updateSlot<small>同位置、同 key 试配</small></div><span class="arrow">→</span>
+          <div class="node">提前出口<small>新数组结束 / 旧链结束</small></div><span class="arrow">→</span>
+          <div class="node">mapRemainingChildren<small>首个 miss 后建表</small></div><span class="arrow">→</span>
+          <div class="node">updateFromMap<small>按 key / index 找身份</small></div><span class="arrow">→</span>
+          <div class="node">placeChild<small>原位 / 移动 / 插入</small></div><span class="arrow">→</span>
+          <div class="node">delete leftovers<small>未消费旧 Fiber</small></div>
+        </div>
+        <p><code>reconcileChildrenArray</code> 不先构造“DOM diff”。它边生成 WIP sibling 链，边给 child 写 <code>Placement</code>，并把未复用 current child 收集到父 Fiber 的 <code>deletions</code>。这使 render 仍可被丢弃：真实宿主树尚未变化。</p>
+      </section>
+
+      <section id="exact-anchors"><h2>逐字连续原码核验锚点</h2>
+        <p>下面六块逐字取自当前仓库，只截连续区间，不删除区间内注释或语句。它们为后续“删节源码”提供可机械回查的控制流锚点；完整函数仍以文件链接为准。</p>
+        <figure class="source"><figcaption><span>连续原码 · deleteRemainingChildren 的 sibling 删除循环</span><a href="../../react/packages/react-reconciler/src/ReactChildFiber.js">ReactChildFiber.js</a></figcaption><pre>    let childToDelete = currentFirstChild;
+    while (childToDelete !== null) {
+      deleteChild(returnFiber, childToDelete);
+      childToDelete = childToDelete.sibling;
+    }
+    return null;</pre></figure>
+        <figure class="source"><figcaption><span>连续原码 · mapRemainingChildren 的显式 key / index 入口</span><a href="../../react/packages/react-reconciler/src/ReactChildFiber.js">ReactChildFiber.js</a></figcaption><pre>    let existingChild: null | Fiber = currentFirstChild;
+    while (existingChild !== null) {
+      if (existingChild.key === null) {
+        existingChildren.set(existingChild.index, existingChild);</pre></figure>
+        <figure class="source"><figcaption><span>连续原码 · updateSlot 的 Element key 决策</span><a href="../../react/packages/react-reconciler/src/ReactChildFiber.js">ReactChildFiber.js</a></figcaption><pre>    if (typeof newChild === 'object' &amp;&amp; newChild !== null) {
+      switch (newChild.$$typeof) {
+        case REACT_ELEMENT_TYPE: {
+          if (
+            // 这里只接受真实 key 相等；optimistic 槽不在顺序快路径抢占身份，交给 Map 慢
+            // 路径，确保列表其他位置的真实 key 匹配优先。
+            newChild.key === key
+          ) {
+            const prevDebugInfo = pushDebugInfo(newChild._debugInfo);
+            const updated = updateElement(
+              returnFiber,
+              oldFiber,
+              newChild,
+              lanes,
+            );
+            currentDebugInfo = prevDebugInfo;
+            return updated;
+          } else {
+            return null;
+          }</pre></figure>
+        <figure class="source"><figcaption><span>连续原码 · updateFromMap 的 Element 查找与复用</span><a href="../../react/packages/react-reconciler/src/ReactChildFiber.js">ReactChildFiber.js</a></figcaption><pre>    if (typeof newChild === 'object' &amp;&amp; newChild !== null) {
+      switch (newChild.$$typeof) {
+        case REACT_ELEMENT_TYPE: {
+          const matchedFiber =
+            existingChildren.get(
+              newChild.key === null ? newIdx : newChild.key,
+            ) ||
+            (enableOptimisticKey &amp;&amp;
+              // 既有 child 使用 optimistic key 时，仍可退回按 index 匹配。
+              existingChildren.get(-newIdx - 1)) ||
+            null;
+          const prevDebugInfo = pushDebugInfo(newChild._debugInfo);
+          const updated = updateElement(
+            returnFiber,
+            matchedFiber,
+            newChild,
+            lanes,
+          );
+          currentDebugInfo = prevDebugInfo;
+          return updated;</pre></figure>
+        <figure class="source"><figcaption><span>连续原码 · placeChild 的原位、移动与插入</span><a href="../../react/packages/react-reconciler/src/ReactChildFiber.js">ReactChildFiber.js</a></figcaption><pre>    const current = newFiber.alternate;
+    if (current !== null) {
+      const oldIndex = current.index;
+      if (oldIndex &lt; lastPlacedIndex) {
+        // 旧 index 落后表示移动。Fiber 已存在，不设置 PlacementDEV，避免 StrictMode 把
+        // 子树当作重新挂载而重复运行 effect。
+        newFiber.flags |= Placement;
+        return lastPlacedIndex;
+      } else {
+        // 旧 index 仍在单调序列中，可原位保留。
+        return oldIndex;
+      }
+    } else {
+      // 没有 alternate，属于新插入。
+      newFiber.flags |= Placement | PlacementDEV;
+      return lastPlacedIndex;
+    }</pre></figure>
+        <figure class="source"><figcaption><span>连续原码 · reconcileChildrenArray 首次 miss 后建立 Map</span><a href="../../react/packages/react-reconciler/src/ReactChildFiber.js">ReactChildFiber.js</a></figcaption><pre>    // 首次顺序 miss 后，把剩余旧 child 建成 key/index Map。
+    const existingChildren = mapRemainingChildren(oldFiber);
+
+    // 继续扫描新数组；从 Map 取回的旧项按位置判断为原位或移动。
+    for (; newIdx &lt; newChildren.length; newIdx++) {
+      const newFiber = updateFromMap(
+        existingChildren,
+        returnFiber,
+        newIdx,
+        newChildren[newIdx],
+        lanes,
+      );</pre></figure>
+      </section>
+
+      <section id="source-delete-map"><h2>源码 1：删除链与剩余项 Map</h2>
+        <p><code>deleteRemainingChildren</code> 服务于“新数组先结束”的快出口；本例进入 Map 慢路径，最后通过相同的 <code>deleteChild</code> 删除 Map 剩余项。两条路径最终写入同一父 Fiber。</p>
+        <figure class="source"><figcaption><span>删节源码 · ReactChildFiber.js · deleteChild / deleteRemainingChildren（仅省略注释）</span><a href="../../react/packages/react-reconciler/src/ReactChildFiber.js">打开完整文件</a></figcaption><pre><span class="kw">function</span> <span class="fn">deleteChild</span>(returnFiber: Fiber, childToDelete: Fiber): void {
+  if (!shouldTrackSideEffects) {
+    return;
+  }
+  const deletions = returnFiber.deletions;
+  if (deletions === null) {
+    returnFiber.deletions = [childToDelete];
+    returnFiber.flags |= ChildDeletion;
+  } else {
+    deletions.push(childToDelete);
+  }
+}
+
+<span class="kw">function</span> <span class="fn">deleteRemainingChildren</span>(
+  returnFiber: Fiber,
+  currentFirstChild: Fiber | null,
+): null {
+  if (!shouldTrackSideEffects) {
+    return null;
+  }
+
+  let childToDelete = currentFirstChild;
+  while (childToDelete !== null) {
+    deleteChild(returnFiber, childToDelete);
+    childToDelete = childToDelete.sibling;
+  }
+  return null;
+}</pre></figure>
+        <figure class="source"><figcaption><span>删节源码 · ReactChildFiber.js · mapRemainingChildren（仅省略注释）</span><a href="../../react/packages/react-reconciler/src/ReactChildFiber.js">打开完整文件</a></figcaption><pre><span class="kw">function</span> <span class="fn">mapRemainingChildren</span>(
+  currentFirstChild: Fiber,
+): Map&lt;string | number | ReactOptimisticKey, Fiber&gt; {
+  const existingChildren: Map&lt;
+    | string
+    | number
+    | ReactOptimisticKey,
+    Fiber,
+  &gt; = new Map();
+
+  let existingChild: null | Fiber = currentFirstChild;
+  while (existingChild !== null) {
+    if (existingChild.key === null) {
+      existingChildren.set(existingChild.index, existingChild);
+    } else if (
+      enableOptimisticKey &amp;&amp;
+      existingChild.key === REACT_OPTIMISTIC_KEY
+    ) {
+      existingChildren.set(-existingChild.index - 1, existingChild);
+    } else {
+      existingChildren.set(existingChild.key, existingChild);
+    }
+    existingChild = existingChild.sibling;
+  }
+  return existingChildren;
+}</pre></figure>
+        <p>显式 key 使用 key；无 key child 退化为旧 <code>index</code>。因此“没写 key”不是没有身份规则，而是把易变化的位置当身份。<code>REACT_OPTIMISTIC_KEY</code> 是当前版本受 feature flag 控制的额外分支，本页主例不走它。</p>
+      </section>
+
+      <section id="source-slot"><h2>源码 2：updateSlot 只负责同槽试配</h2>
+        <p>顺序快路径拿当前 <code>oldFiber</code> 与同一 <code>newIdx</code> 的新 child 试配。元素 key 不同就返回 <code>null</code>；这个 <code>null</code> 不是“删除 B”，而是通知外层停止顺序扫描、保留当前 old 链并转入 Map。</p>
+        <figure class="source"><figcaption><span>删节源码 · updateSlot 的文本与 Element 主分支</span><a href="../../react/packages/react-reconciler/src/ReactChildFiber.js">打开完整函数</a></figcaption><pre><span class="kw">function</span> <span class="fn">updateSlot</span>(
+  returnFiber: Fiber,
+  oldFiber: Fiber | null,
+  newChild: any,
+  lanes: Lanes,
+): Fiber | null {
+  const key = oldFiber !== null ? oldFiber.key : null;
+
+  if (
+    (typeof newChild === <span class="str">'string'</span> &amp;&amp; newChild !== <span class="str">''</span>) ||
+    typeof newChild === <span class="str">'number'</span> ||
+    typeof newChild === <span class="str">'bigint'</span>
+  ) {
+    if (key !== null) {
+      return null;
+    }
+    return updateTextNode(returnFiber, oldFiber, <span class="str">''</span> + newChild, lanes);
+  }
+
+  if (typeof newChild === <span class="str">'object'</span> &amp;&amp; newChild !== null) {
+    switch (newChild.$$typeof) {
+      case REACT_ELEMENT_TYPE: {
+        if (newChild.key === key) {
+          const prevDebugInfo = pushDebugInfo(newChild._debugInfo);
+          const updated = updateElement(
+            returnFiber,
+            oldFiber,
+            newChild,
+            lanes,
+          );
+          currentDebugInfo = prevDebugInfo;
+          return updated;
+        } else {
+          return null;
+        }
+      }
+    }
+  }</pre></figure>
+        <div class="callout warn"><p><strong>节选边界：</strong>代码块是当前文件中的连续片段，但在 Element 分支后停止；完整函数随后还处理 Portal、Lazy、Fragment、thenable、Context 与非法类型。这里没有用省略号伪装成完整函数。</p></div>
+      </section>
+
+      <section id="source-map-place"><h2>源码 3：Map 找身份，lastPlacedIndex 判断位置</h2>
+        <p><code>updateFromMap</code> 先按显式 key（或无 key 的 <code>newIdx</code>）取候选 Fiber，再交给 <code>updateElement</code> 比 type。<code>placeChild</code> 不决定身份，只读取复用结果的 <code>alternate.index</code> 决定位置副作用。</p>
+        <figure class="source"><figcaption><span>删节源码 · updateFromMap 的 Element 分支</span><a href="../../react/packages/react-reconciler/src/ReactChildFiber.js">打开完整函数</a></figcaption><pre>case REACT_ELEMENT_TYPE: {
+  const matchedFiber =
+    existingChildren.get(
+      newChild.key === null ? newIdx : newChild.key,
+    ) ||
+    (enableOptimisticKey &amp;&amp;
+      existingChildren.get(-newIdx - 1)) ||
+    null;
+  const prevDebugInfo = pushDebugInfo(newChild._debugInfo);
+  const updated = updateElement(
+    returnFiber,
+    matchedFiber,
+    newChild,
+    lanes,
+  );
+  currentDebugInfo = prevDebugInfo;
+  return updated;
+}</pre></figure>
+        <figure class="source"><figcaption><span>删节源码 · ReactChildFiber.js · placeChild（仅省略注释）</span><a href="../../react/packages/react-reconciler/src/ReactChildFiber.js">打开完整文件</a></figcaption><pre><span class="kw">function</span> <span class="fn">placeChild</span>(
+  newFiber: Fiber,
+  lastPlacedIndex: number,
+  newIndex: number,
+): number {
+  newFiber.index = newIndex;
+  if (!shouldTrackSideEffects) {
+    newFiber.flags |= Forked;
+    return lastPlacedIndex;
+  }
+  const current = newFiber.alternate;
+  if (current !== null) {
+    const oldIndex = current.index;
+    if (oldIndex &lt; lastPlacedIndex) {
+      newFiber.flags |= Placement;
+      return lastPlacedIndex;
+    } else {
+      return oldIndex;
+    }
+  } else {
+    newFiber.flags |= Placement | PlacementDEV;
+    return lastPlacedIndex;
+  }
+}</pre></figure>
+        <div class="table-wrap"><table><thead><tr><th>alternate</th><th><code>oldIndex</code> 比较</th><th>判断</th><th>相关 flags</th></tr></thead><tbody>
+          <tr><td>存在</td><td><code>oldIndex ≥ lastPlacedIndex</code></td><td>仍在已确认的单调旧序列中，可留位</td><td>不加 Placement；返回 oldIndex</td></tr>
+          <tr><td>存在</td><td><code>oldIndex &lt; lastPlacedIndex</code></td><td>旧位置落在已放置节点之前，需要移到其后</td><td><code>Placement</code>；不加 PlacementDEV</td></tr>
+          <tr><td>不存在</td><td>没有旧 index</td><td>新挂载插入</td><td><code>Placement | PlacementDEV</code></td></tr>
+        </tbody></table></div>
+      </section>
+
+      <section id="source-loop"><h2>源码 4：慢路径消费 Map，最后删除剩余项</h2>
+        <figure class="source"><figcaption><span>删节源码 · reconcileChildrenArray 的 Map 慢路径（仅省略注释）</span><a href="../../react/packages/react-reconciler/src/ReactChildFiber.js">打开完整函数</a></figcaption><pre>const existingChildren = mapRemainingChildren(oldFiber);
+
+for (; newIdx &lt; newChildren.length; newIdx++) {
+  const newFiber = updateFromMap(
+    existingChildren,
+    returnFiber,
+    newIdx,
+    newChildren[newIdx],
+    lanes,
+  );
+  if (newFiber !== null) {
+    if (__DEV__) {
+      knownKeys = warnOnInvalidKey(
+        returnFiber,
+        newFiber,
+        newChildren[newIdx],
+        knownKeys,
+      );
+    }
+    if (shouldTrackSideEffects) {
+      const currentFiber = newFiber.alternate;
+      if (currentFiber !== null) {
+        if (
+          enableOptimisticKey &amp;&amp;
+          currentFiber.key === REACT_OPTIMISTIC_KEY
+        ) {
+          existingChildren.delete(-newIdx - 1);
+        } else {
+          existingChildren.delete(
+            currentFiber.key === null ? newIdx : currentFiber.key,
+          );
+        }
+      }
+    }
+    lastPlacedIndex = placeChild(newFiber, lastPlacedIndex, newIdx);
+    if (previousNewFiber === null) {
+      resultingFirstChild = newFiber;
+    } else {
+      previousNewFiber.sibling = newFiber;
+    }
+    previousNewFiber = newFiber;
+  }
+}
+
+if (shouldTrackSideEffects) {
+  existingChildren.forEach(child =&gt; deleteChild(returnFiber, child));
+}</pre></figure>
+        <p>只有真的复用了 current（<code>newFiber.alternate !== null</code>）才从 Map 删除。若 key 找到了但 type 不兼容，<code>updateElement</code> 创建无 alternate 的 Fiber：旧项仍留在 Map，末尾进入 deletion；新项由 <code>placeChild</code> 标为插入。</p>
+      </section>
+
+      <section id="trace"><h2>完整手推：[A,B,C] → [B,A,D]</h2>
+        <p><span class="pill">TEACHING TRACE</span> 假设 A/B/C/D 都是同一组件 type，key 分别为字母；这是对上面真实分支的逐步求值。<code>lastPlacedIndex</code> 是“已确认可不移动节点的最大旧 index”，不是当前 DOM 下标。</p>
+        <div class="table-wrap"><table><thead><tr><th>步</th><th>输入 / 调用</th><th>匹配与位置计算</th><th>Map 余项</th><th>输出链与 flags</th><th>state</th></tr></thead><tbody>
+          <tr><td>0</td><td>current：A₀ → B₁ → C₂<br />new：B₀,A₁,D₂</td><td><code>lastPlacedIndex = 0</code></td><td>尚未创建</td><td>空</td><td>A/B/C 旧状态可候选</td></tr>
+          <tr><td>1</td><td><code>updateSlot(A, B)</code></td><td>key A ≠ B，返回 null；顺序快路径停止</td><td>尚未创建</td><td>空；未删除任何节点</td><td>未决定</td></tr>
+          <tr><td>2</td><td><code>mapRemainingChildren(A)</code></td><td>遍历完整剩余 sibling 链</td><td><code>{A→A₀, B→B₁, C→C₂}</code></td><td>空</td><td>未决定</td></tr>
+          <tr><td>3</td><td><code>updateFromMap(..., 0, B)</code></td><td>取 B₁；type 同，WIP B 有 alternate。<code>1 ≥ 0</code>，留位；last：0→1</td><td><code>{A,C}</code></td><td>B₀；无 Placement</td><td><strong>B 保留</strong></td></tr>
+          <tr><td>4</td><td><code>updateFromMap(..., 1, A)</code></td><td>取 A₀；type 同。<code>0 &lt; 1</code>，标移动；last 仍 1</td><td><code>{C}</code></td><td>B₀ → A₁；A: Placement</td><td><strong>A 保留</strong></td></tr>
+          <tr><td>5</td><td><code>updateFromMap(..., 2, D)</code></td><td>无匹配，创建 D；无 alternate，标插入</td><td><code>{C}</code></td><td>B₀ → A₁ → D₂；D: Placement + PlacementDEV</td><td><strong>D 新建</strong></td></tr>
+          <tr><td>6</td><td>遍历 Map leftovers</td><td><code>deleteChild(parent, C)</code></td><td>空</td><td>parent: ChildDeletion；deletions=[C]</td><td><strong>C 等待清理</strong></td></tr>
+          <tr><td>7</td><td>render 返回 WIP child 链</td><td>此时真实宿主顺序仍是 A,B,C</td><td>—</td><td>commit 消费 A/D/C 的副作用后才呈现 B,A,D</td><td>A/B state 延续；C cleanup；D mount</td></tr>
+        </tbody></table></div>
+
+        <div class="chain" aria-label="本例 Fiber 结果">
+          <div class="node">B<small>old 1 → new 0<br />state 保留<br />无 Placement</small></div><span class="arrow">→</span>
+          <div class="node">A<small>old 0 → new 1<br />state 保留<br />Placement</small></div><span class="arrow">→</span>
+          <div class="node">D<small>new 2<br />新 state<br />Placement + DEV</small></div><span class="arrow">｜</span>
+          <div class="node">parent<small>ChildDeletion<br />deletions=[C]</small></div>
+        </div>
+        <div class="callout"><p><strong>为什么移动 A，不移动 B？</strong>处理 B 后，算法选择旧 index 1 作为单调基线。之后 A 的旧 index 0 落后于它，所以移动 A 到 B 后即可得到 B,A。flags 描述一种正确提交方案，不承诺“直觉上被拿到前面的节点一定带移动标志”。</p></div>
+      </section>
+
+      <section id="state"><h2>state 为什么跟 key 走，而不是跟屏幕位置走</h2>
+        <p><span class="pill">TEACHING TRACE</span> 假设提交前 A、B、C 各自 Hook state 为 17、42、9。Map 只负责找到 candidate；真正保留发生在 <code>updateElement → useFiber → createWorkInProgress</code> 建立 alternate 时。</p>
+        <div class="table-wrap"><table><thead><tr><th>新位置</th><th>key / type</th><th>candidate</th><th>alternate</th><th>渲染后 state</th><th>原因</th></tr></thead><tbody>
+          <tr><td>0</td><td>B / Row</td><td>old B / Row</td><td>有</td><td>42</td><td>同父、同 key、兼容 type</td></tr>
+          <tr><td>1</td><td>A / Row</td><td>old A / Row</td><td>有</td><td>17</td><td>位置变化不破坏已找到的身份</td></tr>
+          <tr><td>2</td><td>D / Row</td><td>无</td><td>无</td><td>初始值</td><td>新 Fiber mount</td></tr>
+          <tr><td>—</td><td>C / Row</td><td>未消费 old C</td><td>不进入 WIP 链</td><td>不再可见</td><td>commit 删除时执行 ref/effect/宿主清理</td></tr>
+        </tbody></table></div>
+        <p>换成 <code>&lt;Other key="A" /&gt;</code> 时，Map 仍能找到 old A，但 type 不兼容；结果是 old A 删除、new Other 插入，原 state 不保留。把 A 移到另一个父节点也一样：每个父 Fiber 的 child 协调是独立身份域，没有跨父 Map。</p>
+      </section>
+
+      <section id="tests"><h2>真实 GWT：重排复用身份，也不重跑 Effect</h2>
+        <figure class="source"><figcaption><span>删节源码（真实测试）· StrictEffectsMode-test.js · fixture</span><a href="../../react/packages/react-reconciler/src/__tests__/StrictEffectsMode-test.js">打开完整测试</a></figcaption><pre>it(<span class="str">'reordering keyed children does not re-run effects'</span>, async () =&gt; {
+  const log = [];
+  <span class="kw">function</span> <span class="fn">Child</span>({label}) {
+    React.useEffect(() =&gt; {
+      log.push(`${label} useEffect mount`);
+      return () =&gt; log.push(`${label} useEffect unmount`);
+    }, []);
+    React.useLayoutEffect(() =&gt; {
+      log.push(`${label} useLayoutEffect mount`);
+      return () =&gt; log.push(`${label} useLayoutEffect unmount`);
+    }, []);
+    return null;
+  }
+
+  <span class="kw">function</span> <span class="fn">App</span>({keys}) {
+    return keys.map(key =&gt; &lt;Child key={key} label={key} /&gt;);
+  }</pre></figure>
+        <figure class="source"><figcaption><span>删节源码（真实测试）· 同一用例的重排与断言</span><a href="../../react/packages/react-reconciler/src/__tests__/StrictEffectsMode-test.js">打开完整测试</a></figcaption><pre>log.length = 0;
+await act(() =&gt; {
+  ReactNoop.render(
+    &lt;React.StrictMode&gt;
+      &lt;App keys={[<span class="str">'b'</span>, <span class="str">'a'</span>]} /&gt;
+    &lt;/React.StrictMode&gt;,
+  );
+});
+
+expect(log).toEqual([]);</pre></figure>
+        <div class="table-wrap"><table><thead><tr><th>GWT</th><th>测试事实</th><th>能证明什么</th></tr></thead><tbody>
+          <tr><td>Given</td><td>key a/b 的 Child 已挂载，layout/passive Effect 均有 mount 与 cleanup 日志</td><td>日志能观察 remount/unmount</td></tr>
+          <tr><td>When</td><td>同一父级把 keys 从 a,b 更新为 b,a</td><td>触发 keyed reorder</td></tr>
+          <tr><td>Then</td><td>清空旧日志后，重排结果严格为 <code>[]</code></td><td>已有 keyed child 没被卸载或重挂；移动不带 PlacementDEV，依赖也未变</td></tr>
+          <tr><td>不证明</td><td>没有覆盖跨父移动、type 改变、重复 key</td><td>这些边界必须回到源码分支单独判断</td></tr>
+        </tbody></table></div>
+
+        <figure class="source"><figcaption><span>删节源码（真实测试）· ReactIdentity-test.js · DOM 引用交换</span><a href="../../react/packages/react-dom/src/__tests__/ReactIdentity-test.js">打开完整测试</a></figcaption><pre>it(<span class="str">'should allow key property to express identity'</span>, async () =&gt; {
+  let node;
+  const Component = props =&gt; (
+    &lt;div ref={c =&gt; (node = c)}&gt;
+      &lt;div key={props.swap ? <span class="str">'banana'</span> : <span class="str">'apple'</span>} /&gt;
+      &lt;div key={props.swap ? <span class="str">'apple'</span> : <span class="str">'banana'</span>} /&gt;
+    &lt;/div&gt;
+  );
+
+  const container = document.createElement(<span class="str">'div'</span>);
+  const root = ReactDOMClient.createRoot(container);
+  await act(async () =&gt; { root.render(&lt;Component /&gt;); });
+  const origChildren = Array.from(node.childNodes);
+  await act(async () =&gt; { root.render(&lt;Component swap={true} /&gt;); });
+  const newChildren = Array.from(node.childNodes);
+  expect(origChildren[0]).toBe(newChildren[1]);
+  expect(origChildren[1]).toBe(newChildren[0]);
+});</pre></figure>
+        <p>第二个测试把“身份保留”落实到真实 DOM 引用：交换后仍是原来的两个节点，只是位置对调。它不直接观察 Fiber flags；flags 到 DOM 操作的桥接由 commit/HostConfig 负责。</p>
+        <figure class="source"><figcaption><span>连续测试原码 · keyed reorder 后 Effect 日志为空</span><a href="../../react/packages/react-reconciler/src/__tests__/StrictEffectsMode-test.js">StrictEffectsMode-test.js</a></figcaption><pre>    // 重排既有子节点不得重新执行 Effect：组件既未卸载也未重新挂载，依赖也没有变化。
+    log.length = 0;
+    await act(() =&gt; {
+      ReactNoop.render(
+        &lt;React.StrictMode&gt;
+          &lt;App keys={['b', 'a']} /&gt;
+        &lt;/React.StrictMode&gt;,
+      );
+    });
+
+    expect(log).toEqual([]);</pre></figure>
+        <figure class="source"><figcaption><span>连续测试原码 · DOM 节点引用随 key 换位</span><a href="../../react/packages/react-dom/src/__tests__/ReactIdentity-test.js">ReactIdentity-test.js</a></figcaption><pre>    const origChildren = Array.from(node.childNodes);
+    await act(async () =&gt; {
+      root.render(&lt;Component swap={true} /&gt;);
+    });
+    const newChildren = Array.from(node.childNodes);
+    expect(origChildren[0]).toBe(newChildren[1]);
+    expect(origChildren[1]).toBe(newChildren[0]);</pre></figure>
+      </section>
+
+      <section id="complexity"><h2>复杂度与权衡</h2>
+        <div class="table-wrap"><table><thead><tr><th>阶段</th><th>时间</th><th>额外空间</th><th>为何这样做</th></tr></thead><tbody>
+          <tr><td>共同前缀顺序扫描</td><td><code>O(k)</code></td><td><code>O(1)</code></td><td>常见的 props 更新或尾部追加不建 Map</td></tr>
+          <tr><td>剩余 current 建 Map</td><td><code>O(n-k)</code></td><td><code>O(n-k)</code></td><td>首个 miss 后按 key/index 查找，避免嵌套线性搜索</td></tr>
+          <tr><td>剩余 new 扫描</td><td><code>O(m-k)</code>（Map 常数时间模型）</td><td>WIP 本来就要创建/复用</td><td>每个新 child 最多一次查找、一次链接</td></tr>
+          <tr><td>总计</td><td>期望 <code>O(n+m)</code></td><td>最坏 <code>O(n)</code></td><td>偏向少变化列表；不做最长递增子序列</td></tr>
+        </tbody></table></div>
+        <p>源码注释明确当前 Fiber 没有 child 的 backpointer，因此没有双端搜索；Iterable 若要双端处理还需先复制全集。<code>lastPlacedIndex</code> 是贪心单调扫描，目标是在线性流程中得到正确宿主顺序，不承诺全局最少移动数。</p>
+      </section>
+
+      <section id="boundaries"><h2>失败边界：key 不是万能身份证</h2>
+        <div class="table-wrap"><table><thead><tr><th>输入边界</th><th>真实行为</th><th>可见风险</th><th>对应分支</th></tr></thead><tbody>
+          <tr><td>无 key 列表前插</td><td>Map 按 index 匹配</td><td>相同 type 的 state 可能跟位置而非业务项绑定</td><td><code>key === null ? newIdx : key</code></td></tr>
+          <tr><td>重复 key</td><td>DEV 警告；Map 的单值槽不能表达两个稳定身份</td><td>child 可能重复或遗漏，行为不受保证</td><td><code>warnOnInvalidKey</code></td></tr>
+          <tr><td>同 key、不同 type</td><td>候选命中但 <code>updateElement</code> 新建 Fiber</td><td>旧 state/effect 清理，新组件 mount</td><td><code>alternate === null</code>，旧项留 Map</td></tr>
+          <tr><td>跨父节点移动</td><td>两个父级各自协调</td><td>旧父删除，新父插入；state 不保留</td><td>Map 仅含当前 <code>returnFiber</code> children</td></tr>
+          <tr><td>null/boolean/undefined 空槽</td><td>当前快路径无法区分 miss 与空结果，可能提前进 Map</td><td>主要是性能边界，不等于错误删除</td><td>源码中的 TODO</td></tr>
+          <tr><td>新数组先结束</td><td>调用 <code>deleteRemainingChildren</code></td><td>剩余所有 sibling 等待 commit 清理</td><td>数组快出口</td></tr>
+          <tr><td>旧链先结束</td><td>剩余新 child 直接创建</td><td>全部标插入；无需 Map</td><td>批量插入快路径</td></tr>
+          <tr><td>首次 mount / hydration</td><td><code>shouldTrackSideEffects</code> 为 false 时不记删除/Placement；列表节点可标 Forked</td><td>不能拿 update flags 套用到首挂载</td><td><code>placeChild</code> 早退</td></tr>
+        </tbody></table></div>
+      </section>
+
+      <section id="pseudocode"><h2>只用于记忆的伪代码</h2>
+        <figure class="source"><figcaption><span>教程代码/教程伪代码 · 不属于仓库源码</span><span>只保留主算法</span></figcaption><pre>scan matching slots with updateSlot
+if new list ended: deleteRemainingChildren(old)
+if old list ended: insert every remaining new child
+
+existing = mapRemainingChildren(old)
+for each remaining new child:
+  candidate = existing[key ?? newIndex]
+  newFiber = reuse only when key and type are compatible
+  if reused: existing.delete(identity)
+  lastPlacedIndex = placeChild(newFiber, lastPlacedIndex, newIndex)
+  append newFiber to WIP sibling list
+
+delete every old Fiber still in existing</pre></figure>
+        <p>伪代码刻意省略 Portal、Fragment、Lazy、thenable、Context、异步 Iterable、optimistic key、DEV key 校验与 hydration tree-fork。需要诊断这些分支时，以链接的真实函数为准。</p>
+      </section>
+
+      <section id="evidence"><h2>结论—源码—测试证据表</h2>
+        <div class="table-wrap"><table><thead><tr><th>结论</th><th>决定性源码</th><th>代表性测试</th><th>证据边界</th></tr></thead><tbody>
+          <tr><td>key 失配从顺序快路径转 Map</td><td><a href="../../react/packages/react-reconciler/src/ReactChildFiber.js">updateSlot / reconcileChildrenArray</a></td><td>算法输入由源码分支直接证明</td><td>测试不暴露内部 Map</td></tr>
+          <tr><td>复用节点用旧 index 判断移动</td><td><a href="../../react/packages/react-reconciler/src/ReactChildFiber.js">placeChild</a></td><td><a href="../../react/packages/react-dom/src/__tests__/ReactIdentity-test.js">ReactIdentity-test.js</a></td><td>DOM 引用断言证明复用与换位，不直接读取 flags</td></tr>
+          <tr><td>keyed reorder 不等于 remount</td><td><a href="../../react/packages/react-reconciler/src/ReactChildFiber.js">updateElement / placeChild</a></td><td><a href="../../react/packages/react-reconciler/src/__tests__/StrictEffectsMode-test.js">StrictEffectsMode-test.js</a></td><td>仅覆盖同父、同 key、兼容 type</td></tr>
+          <tr><td>未消费旧 Fiber 进入 deletion</td><td><a href="../../react/packages/react-reconciler/src/ReactChildFiber.js">deleteChild / Map leftovers</a></td><td><a href="../../react/packages/react-reconciler/src/__tests__/ReactHooksWithNoopRenderer-test.js">effect deletion regression</a></td><td>真实清理发生在 commit，详见下一页 Effect 段</td></tr>
+        </tbody></table></div>
+      </section>
+
+      <section id="questions"><h2>读完应能回答</h2><ul class="qa">
+        <li>为什么本例 B 没有 Placement，而 A 有？</li>
+        <li>Map 找到相同 key 后，什么条件才让 state 真正保留？</li>
+        <li><code>deleteRemainingChildren</code> 与 Map leftovers 删除分别在什么出口发生？</li>
+        <li>为什么无 key 前插会造成 state 与业务项错位，而不一定报错？</li>
+        <li>render 已算出 flags 后，为什么真实 DOM 仍未变化？</li>
+      </ul></section>
+
+      <div class="next-page"><a href="11-update-queues-lanes.html">← 上一页：Update Queue 与 Lane</a><a href="13-hooks-state-machine.html">下一页：Hooks 状态机 →</a></div>
+      <footer><p>本页止于 child Fiber 链与 flags。下一页沿函数组件 Fiber 内部继续追：位置型 Hook 链如何保存 state、按 Lane 跳过并重放更新，以及 Effect 怎样进入提交与清理。</p></footer>
+    </main>
+
+    <aside class="toc" aria-label="本页目录"><strong>keyed children 深挖</strong>
+      <a href="#reading-contract">证据标签</a><a href="#goal">输入与输出</a><a href="#overview">控制流</a><a href="#exact-anchors">连续原码</a>
+      <a href="#source-delete-map">删除与 Map</a><a href="#source-slot">updateSlot</a><a href="#source-map-place">updateFromMap / placeChild</a>
+      <a href="#source-loop">慢路径</a><a href="#trace">完整手推</a><a href="#state">state 保留</a>
+      <a href="#tests">真实 GWT</a><a href="#complexity">复杂度</a><a href="#boundaries">失败边界</a>
+      <a href="#pseudocode">伪代码</a><a href="#evidence">证据表</a>
+    </aside>
+  </div>
+</body>
+</html>

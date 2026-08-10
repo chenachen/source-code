@@ -1,0 +1,1827 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#646cff"><meta name="description" content="pending 合并当前并发，ModuleNode 保存长期结果；URL、ID、file 三种索引共同维持增量状态。"><title>08. Transform 与模块图 · Vite 源码解剖</title><style>:root {
+  color-scheme: light;
+  --bg: #f4f6fb;
+  --surface: #ffffff;
+  --surface-soft: #f8f9ff;
+  --surface-code: #171925;
+  --text: #252738;
+  --muted: #686b7d;
+  --faint: #9295a7;
+  --line: #e3e5ef;
+  --line-strong: #d3d6e4;
+  --brand: #646cff;
+  --brand-strong: #4d54dc;
+  --cyan: #14a6c7;
+  --green: #188769;
+  --amber: #b56b16;
+  --red: #c4485a;
+  --shadow: 0 16px 48px rgb(36 39 67 / 9%);
+  --shadow-soft: 0 8px 28px rgb(36 39 67 / 7%);
+  --radius: 18px;
+  --radius-small: 11px;
+  --topbar: 64px;
+  --content: 820px;
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    'PingFang SC',
+    'Hiragino Sans GB',
+    'Microsoft YaHei',
+    sans-serif;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #11121a;
+  --surface: #191b26;
+  --surface-soft: #202331;
+  --surface-code: #0d0f17;
+  --text: #e9eaf2;
+  --muted: #aaadbd;
+  --faint: #818597;
+  --line: #2c2f3d;
+  --line-strong: #3a3e50;
+  --brand: #8e94ff;
+  --brand-strong: #a6abff;
+  --cyan: #56c8e0;
+  --green: #57c7a3;
+  --amber: #e0a252;
+  --red: #f07b8c;
+  --shadow: 0 18px 60px rgb(0 0 0 / 26%);
+  --shadow-soft: 0 8px 30px rgb(0 0 0 / 22%);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: calc(var(--topbar) + 24px);
+}
+
+body {
+  margin: 0;
+  min-width: 280px;
+  background:
+    radial-gradient(circle at 4% 0%, rgb(100 108 255 / 10%), transparent 26rem),
+    radial-gradient(circle at 95% 8%, rgb(20 166 199 / 9%), transparent 28rem),
+    var(--bg);
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1.78;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+a {
+  color: var(--brand-strong);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+}
+
+a:hover {
+  color: var(--cyan);
+}
+
+.skip-link {
+  position: fixed;
+  z-index: 200;
+  top: 8px;
+  left: 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--text);
+  color: var(--surface);
+  transform: translateY(-160%);
+}
+
+.skip-link:focus {
+  transform: translateY(0);
+}
+
+.reading-progress {
+  position: fixed;
+  z-index: 120;
+  inset: 0 0 auto;
+  height: 3px;
+  background: transparent;
+}
+
+.reading-progress > span {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: linear-gradient(90deg, var(--brand), var(--cyan));
+  transition: width 80ms linear;
+}
+
+.topbar {
+  position: sticky;
+  z-index: 100;
+  top: 0;
+  height: var(--topbar);
+  border-bottom: 1px solid rgb(120 124 150 / 16%);
+  background: color-mix(in srgb, var(--bg) 84%, transparent);
+  backdrop-filter: blur(18px) saturate(150%);
+}
+
+.topbar-inner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: min(100%, 1540px);
+  height: 100%;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: max-content;
+  color: var(--text);
+  font-weight: 760;
+  text-decoration: none;
+}
+
+.brand-mark {
+  display: grid;
+  width: 31px;
+  height: 31px;
+  place-items: center;
+  border-radius: 9px;
+  background: linear-gradient(135deg, var(--brand), var(--cyan));
+  box-shadow: 0 7px 18px rgb(100 108 255 / 28%);
+  color: white;
+  font-size: 13px;
+  letter-spacing: -0.04em;
+}
+
+.topbar-path {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.icon-button {
+  display: inline-grid;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.icon-button:hover {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
+.nav-toggle {
+  display: none;
+}
+
+.page-grid {
+  display: grid;
+  grid-template-columns: 250px minmax(0, var(--content)) 225px;
+  gap: 34px;
+  justify-content: center;
+  width: min(100%, 1540px);
+  margin: 0 auto;
+  padding: 34px 24px 72px;
+}
+
+.site-nav,
+.page-toc {
+  position: sticky;
+  top: calc(var(--topbar) + 24px);
+  align-self: start;
+  max-height: calc(100vh - var(--topbar) - 48px);
+  overflow: auto;
+  scrollbar-width: thin;
+}
+
+.site-nav {
+  padding: 5px 10px 18px 0;
+}
+
+.nav-home {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0 0 20px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.nav-home:hover,
+.nav-home[aria-current='page'] {
+  border-color: rgb(100 108 255 / 42%);
+  background: rgb(100 108 255 / 9%);
+  color: var(--brand-strong);
+}
+
+.nav-group + .nav-group {
+  margin-top: 18px;
+}
+
+.nav-group-title {
+  margin: 0 0 6px 11px;
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.nav-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.nav-list a {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 7px;
+  align-items: baseline;
+  padding: 7px 10px;
+  border-radius: 9px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+  text-decoration: none;
+}
+
+.nav-list a:hover {
+  background: var(--surface-soft);
+  color: var(--text);
+}
+
+.nav-list a[aria-current='page'] {
+  background: rgb(100 108 255 / 11%);
+  color: var(--brand-strong);
+  font-weight: 700;
+}
+
+.nav-code {
+  color: var(--faint);
+  font:
+    700 11px/1.4 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+}
+
+.article {
+  min-width: 0;
+}
+
+.article-hero {
+  position: relative;
+  overflow: hidden;
+  margin-bottom: 26px;
+  padding: 36px 38px;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background:
+    linear-gradient(135deg, rgb(100 108 255 / 11%), transparent 58%),
+    linear-gradient(315deg, rgb(20 166 199 / 8%), transparent 45%),
+    var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.article-hero::after {
+  position: absolute;
+  right: -55px;
+  bottom: -70px;
+  width: 220px;
+  height: 220px;
+  border: 35px solid rgb(100 108 255 / 7%);
+  border-radius: 50%;
+  content: '';
+}
+
+.eyebrow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 14px;
+  color: var(--brand-strong);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.eyebrow .pill {
+  padding: 3px 8px;
+  border: 1px solid rgb(100 108 255 / 28%);
+  border-radius: 999px;
+  background: rgb(100 108 255 / 8%);
+}
+
+.article-hero h1 {
+  position: relative;
+  z-index: 1;
+  max-width: 740px;
+  margin: 0;
+  font-size: clamp(2rem, 5vw, 3.35rem);
+  line-height: 1.09;
+  letter-spacing: -0.045em;
+}
+
+.article-hero .lede {
+  position: relative;
+  z-index: 1;
+  max-width: 680px;
+  margin: 18px 0 0;
+  color: var(--muted);
+  font-size: 17px;
+  line-height: 1.72;
+}
+
+.hero-meta {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-top: 23px;
+  color: var(--faint);
+  font-size: 12px;
+}
+
+.hero-meta code {
+  color: var(--muted);
+}
+
+.focus-card,
+.evidence-note,
+.boundary-note {
+  margin: 20px 0 26px;
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--brand);
+  border-radius: var(--radius-small);
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.focus-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr);
+  gap: 20px;
+}
+
+.focus-card h2,
+.focus-card h3,
+.evidence-note h2,
+.evidence-note h3 {
+  margin: 0 0 7px;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.focus-card p,
+.evidence-note p,
+.boundary-note p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.focus-card .boundary {
+  padding-left: 20px;
+  border-left: 1px solid var(--line);
+}
+
+.evidence-note {
+  border-left-color: var(--green);
+}
+
+.boundary-note {
+  border-left-color: var(--amber);
+}
+
+.prose {
+  padding: 12px 4px 30px;
+}
+
+.prose > :first-child {
+  margin-top: 0;
+}
+
+.prose h2,
+.prose h3,
+.prose h4 {
+  position: relative;
+  color: var(--text);
+  line-height: 1.34;
+  letter-spacing: -0.025em;
+}
+
+.prose h2 {
+  margin: 58px 0 20px;
+  padding-top: 6px;
+  font-size: 1.72rem;
+}
+
+.prose h2::before {
+  display: block;
+  width: 42px;
+  height: 4px;
+  margin-bottom: 13px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--brand), var(--cyan));
+  content: '';
+}
+
+.prose h3 {
+  margin: 38px 0 14px;
+  font-size: 1.28rem;
+}
+
+.prose h4 {
+  margin: 30px 0 12px;
+  font-size: 1.08rem;
+}
+
+.heading-anchor {
+  position: absolute;
+  left: -1.1em;
+  color: var(--faint);
+  font-weight: 500;
+  text-decoration: none;
+  opacity: 0;
+}
+
+.prose h2:hover .heading-anchor,
+.prose h3:hover .heading-anchor,
+.prose h4:hover .heading-anchor,
+.heading-anchor:focus {
+  opacity: 1;
+}
+
+.prose p,
+.prose li {
+  color: var(--text);
+}
+
+.prose p {
+  margin: 15px 0;
+}
+
+.prose ul,
+.prose ol {
+  padding-left: 1.45em;
+}
+
+.prose li + li {
+  margin-top: 6px;
+}
+
+.prose strong {
+  color: var(--text);
+}
+
+.prose blockquote {
+  margin: 24px 0;
+  padding: 16px 20px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--cyan);
+  border-radius: 0 var(--radius-small) var(--radius-small) 0;
+  background: var(--surface-soft);
+  color: var(--muted);
+}
+
+.prose blockquote > :first-child {
+  margin-top: 0;
+}
+
+.prose blockquote > :last-child {
+  margin-bottom: 0;
+}
+
+code {
+  border-radius: 5px;
+  background: rgb(100 108 255 / 9%);
+  color: color-mix(in srgb, var(--brand-strong) 78%, var(--text));
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.88em;
+}
+
+:not(pre) > code {
+  padding: 0.15em 0.4em;
+  overflow-wrap: anywhere;
+}
+
+.code-card {
+  position: relative;
+  overflow: hidden;
+  margin: 24px 0 30px;
+  border: 1px solid color-mix(in srgb, var(--surface-code) 85%, white);
+  border-radius: 14px;
+  background: var(--surface-code);
+  box-shadow: 0 12px 34px rgb(9 11 21 / 18%);
+}
+
+.code-card figcaption {
+  display: flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 0 12px 0 16px;
+  border-bottom: 1px solid rgb(255 255 255 / 9%);
+  color: #aeb2c8;
+  font:
+    700 11px/1.4 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.copy-code {
+  margin-left: auto;
+  padding: 5px 8px;
+  border: 1px solid rgb(255 255 255 / 13%);
+  border-radius: 6px;
+  background: rgb(255 255 255 / 5%);
+  color: #c8cbda;
+  font: inherit;
+  cursor: pointer;
+}
+
+.copy-code:hover {
+  border-color: rgb(142 148 255 / 65%);
+  color: white;
+}
+
+.code-card pre,
+.diagram-source pre {
+  max-width: 100%;
+  margin: 0;
+  padding: 20px;
+  overflow: auto;
+  background: transparent;
+  color: #e5e7f1;
+  font:
+    13px/1.68 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    monospace;
+  tab-size: 2;
+}
+
+.code-card pre code,
+.diagram-source pre code {
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  white-space: pre;
+}
+
+.table-scroll {
+  max-width: 100%;
+  margin: 23px 0 30px;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.prose table {
+  width: 100%;
+  min-width: 620px;
+  border-collapse: collapse;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.prose th,
+.prose td {
+  padding: 11px 13px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.prose th {
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.prose tr:last-child td {
+  border-bottom: 0;
+}
+
+.page-toc {
+  padding: 12px 0 20px 18px;
+  border-left: 1px solid var(--line);
+}
+
+.toc-title {
+  margin: 0 0 10px;
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.toc-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.toc-list a {
+  display: block;
+  padding: 4px 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+  text-decoration: none;
+}
+
+.toc-list .depth-3 a {
+  padding-left: 12px;
+  color: var(--faint);
+}
+
+.toc-list a:hover,
+.toc-list a.is-active {
+  color: var(--brand-strong);
+}
+
+.article-pager {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 38px;
+}
+
+.pager-link {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 96px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.pager-link:hover {
+  border-color: rgb(100 108 255 / 42%);
+  color: var(--brand-strong);
+}
+
+.pager-link.next {
+  text-align: right;
+}
+
+.pager-label {
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.pager-title {
+  margin-top: 5px;
+  font-size: 14px;
+  font-weight: 720;
+}
+
+.site-footer {
+  margin-top: 35px;
+  padding: 22px 0;
+  border-top: 1px solid var(--line);
+  color: var(--faint);
+  font-size: 12px;
+}
+
+.flow-figure {
+  margin: 26px 0 32px;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.flow-caption {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  margin-bottom: 18px;
+}
+
+.flow-caption strong {
+  font-size: 15px;
+}
+
+.flow-caption span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.flow-lanes {
+  display: grid;
+  gap: 13px;
+}
+
+.flow-lane {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 10px 14px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+
+.lane-label {
+  grid-row: 1 / span 2;
+  margin: 0;
+  color: var(--brand-strong);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+
+.lane-path {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  align-items: center;
+  min-width: 0;
+}
+
+.lane-step,
+.lane-choice {
+  display: inline-flex;
+  min-height: 34px;
+  padding: 7px 9px;
+  align-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.lane-choice {
+  border-color: rgb(100 108 255 / 42%);
+  background: rgb(100 108 255 / 9%);
+  color: var(--brand-strong);
+}
+
+.lane-arrow {
+  color: var(--brand);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.lane-split {
+  display: grid;
+  grid-column: 2;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.lane-split.three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.lane-split > span {
+  padding: 8px 10px;
+  border-left: 3px solid var(--cyan);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.48;
+}
+
+.lane-split > span:nth-child(even) {
+  border-left-color: var(--green);
+}
+
+.merge-output {
+  display: flex;
+  gap: 8px 18px;
+  align-items: center;
+  justify-content: center;
+  padding: 14px 16px;
+  border: 1px solid rgb(24 135 105 / 38%);
+  border-radius: 11px;
+  background: rgb(24 135 105 / 8%);
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.merge-output b {
+  color: var(--green);
+}
+
+.flow-track {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  gap: 20px;
+  align-items: stretch;
+}
+
+.flow-node {
+  position: relative;
+  display: flex;
+  min-height: 74px;
+  padding: 12px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 11px;
+  background: var(--surface-soft);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 720;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.flow-node:not(:last-child)::after {
+  position: absolute;
+  top: 50%;
+  right: -17px;
+  color: var(--brand);
+  content: '→';
+  transform: translateY(-50%);
+}
+
+.flow-node.brand {
+  border-color: rgb(100 108 255 / 38%);
+  background: rgb(100 108 255 / 9%);
+}
+
+.flow-node.cyan {
+  border-color: rgb(20 166 199 / 38%);
+  background: rgb(20 166 199 / 8%);
+}
+
+.flow-node.green {
+  border-color: rgb(24 135 105 / 38%);
+  background: rgb(24 135 105 / 8%);
+}
+
+.flow-branches {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.flow-branch {
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.flow-branch strong {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--text);
+}
+
+.flow-columns {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.flow-column {
+  padding: 15px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+
+.flow-column h4 {
+  margin: 0 0 10px;
+  color: var(--brand-strong);
+  font-size: 13px;
+}
+
+.flow-column ol {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.flow-column li + li {
+  margin-top: 6px;
+}
+
+.diagram-source {
+  margin-top: 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-code);
+}
+
+.diagram-source summary {
+  padding: 10px 13px;
+  color: #c8cbda;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.index-hero {
+  padding-bottom: 42px;
+}
+
+.index-thesis {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 24px 0 38px;
+}
+
+.thesis-card {
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.thesis-number {
+  color: var(--brand);
+  font:
+    800 12px/1 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+}
+
+.thesis-card h2 {
+  margin: 10px 0 7px;
+  font-size: 17px;
+  line-height: 1.35;
+}
+
+.thesis-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.ownership-flow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  align-items: center;
+  margin: 20px 0 36px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.ownership-flow span {
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-soft);
+  font:
+    700 12px/1.35 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+}
+
+.ownership-flow b {
+  color: var(--brand);
+  font-weight: 800;
+}
+
+.track-grid,
+.module-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.track-card,
+.module-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 150px;
+  padding: 19px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.track-card:hover,
+.module-card:hover {
+  border-color: rgb(100 108 255 / 42%);
+  color: var(--text);
+  transform: translateY(-1px);
+}
+
+.track-card h3,
+.module-card h3 {
+  margin: 8px 0;
+  font-size: 17px;
+  line-height: 1.35;
+}
+
+.track-card p,
+.module-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.track-path {
+  margin-top: auto;
+  padding-top: 14px;
+  color: var(--brand-strong);
+  font:
+    700 11px/1.45 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+}
+
+.module-group-heading {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  margin: 48px 0 16px;
+}
+
+.module-group-heading h2 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.module-group-heading p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.module-card {
+  min-height: 175px;
+}
+
+.module-card .module-code {
+  color: var(--brand);
+  font:
+    800 12px/1 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+}
+
+.module-card .module-arrow {
+  margin-top: auto;
+  padding-top: 14px;
+  color: var(--brand-strong);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+@media (max-width: 1230px) {
+  .page-grid {
+    grid-template-columns: 230px minmax(0, var(--content));
+    gap: 28px;
+  }
+
+  .page-toc {
+    display: none;
+  }
+}
+
+@media (max-width: 820px) {
+  :root {
+    --topbar: 58px;
+  }
+
+  .topbar-inner {
+    padding: 0 14px;
+  }
+
+  .topbar-path {
+    display: none;
+  }
+
+  .nav-toggle {
+    display: inline-grid;
+  }
+
+  .page-grid {
+    display: block;
+    padding: 20px 14px 52px;
+  }
+
+  .site-nav {
+    position: fixed;
+    z-index: 95;
+    top: var(--topbar);
+    bottom: 0;
+    left: 0;
+    width: min(86vw, 310px);
+    max-height: none;
+    padding: 18px;
+    border-right: 1px solid var(--line);
+    background: var(--bg);
+    box-shadow: var(--shadow);
+    transform: translateX(-105%);
+    transition: transform 180ms ease;
+  }
+
+  body.nav-open {
+    overflow: hidden;
+  }
+
+  body.nav-open .site-nav {
+    transform: translateX(0);
+  }
+
+  .article-hero {
+    padding: 27px 22px;
+    border-radius: 18px;
+  }
+
+  .article-hero h1 {
+    font-size: clamp(1.9rem, 9vw, 2.65rem);
+  }
+
+  .article-hero .lede {
+    font-size: 15px;
+  }
+
+  .focus-card {
+    grid-template-columns: 1fr;
+  }
+
+  .focus-card .boundary {
+    padding: 16px 0 0;
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+
+  .prose {
+    padding-inline: 2px;
+  }
+
+  .prose h2 {
+    margin-top: 46px;
+    font-size: 1.47rem;
+  }
+
+  .prose h3 {
+    font-size: 1.18rem;
+  }
+
+  .heading-anchor {
+    display: none;
+  }
+
+  .flow-track {
+    grid-template-columns: 1fr;
+  }
+
+  .flow-lane {
+    grid-template-columns: 1fr;
+  }
+
+  .lane-label,
+  .lane-split {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .lane-split,
+  .lane-split.three {
+    grid-template-columns: 1fr;
+  }
+
+  .merge-output {
+    align-items: flex-start;
+    flex-direction: column;
+    text-align: left;
+  }
+
+  .flow-node:not(:last-child)::after {
+    top: auto;
+    right: 50%;
+    bottom: -19px;
+    content: '↓';
+    transform: translateX(50%);
+  }
+
+  .flow-branches,
+  .flow-columns,
+  .index-thesis,
+  .track-grid,
+  .module-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .article-pager {
+    grid-template-columns: 1fr;
+  }
+
+  .pager-link.next {
+    text-align: left;
+  }
+}
+
+@media (max-width: 440px) {
+  body {
+    font-size: 15px;
+  }
+
+  .brand-text {
+    display: none;
+  }
+
+  .article-hero {
+    padding: 24px 18px;
+  }
+
+  .hero-meta {
+    display: grid;
+  }
+
+  .flow-figure {
+    padding: 16px;
+  }
+
+  .code-card pre,
+  .diagram-source pre {
+    padding: 16px;
+    font-size: 12px;
+  }
+}
+
+@media print {
+  body {
+    background: white;
+  }
+
+  .topbar,
+  .site-nav,
+  .page-toc,
+  .reading-progress,
+  .copy-code,
+  .article-pager {
+    display: none !important;
+  }
+
+  .page-grid {
+    display: block;
+    width: auto;
+    padding: 0;
+  }
+
+  .article-hero,
+  .code-card,
+  .table-scroll,
+  .flow-figure {
+    box-shadow: none;
+  }
+
+  .code-card {
+    break-inside: avoid;
+  }
+}
+</style><script>(function(){try{var t=localStorage.getItem("vite-guide-theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(_){}})();</script></head><body><a class="skip-link" href="#article-start">跳到正文</a><div class="reading-progress" aria-hidden="true"><span data-reading-progress></span></div><header class="topbar"><div class="topbar-inner"><button class="icon-button nav-toggle" type="button" data-nav-toggle aria-expanded="false" aria-label="打开模块导航">☰</button><a class="brand" href="index.html"><span class="brand-mark">V</span><span class="brand-text">Vite 源码解剖</span></a><span class="topbar-path">开发服务器核心 / 08 Transform 与模块图</span><div class="topbar-actions"><button class="icon-button" type="button" data-theme-toggle aria-label="切换主题">◐</button></div></div></header><div class="page-grid"><nav class="site-nav" aria-label="模块导航"><a class="nav-home" href="index.html"><span>⌂</span><span>阅读总览</span></a><section class="nav-group"><h2 class="nav-group-title">全景</h2><ul class="nav-list"><li><a href="00-system-map-and-end-to-end.html"><span class="nav-code">00</span><span>系统全景与请求链</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">启动与配置</h2><ul class="nav-list"><li><a href="01-cli-and-startup.html"><span class="nav-code">01</span><span>CLI 与启动</span></a></li><li><a href="02a-env-loading.html"><span class="nav-code">02A</span><span>环境文件加载</span></a></li><li><a href="02b-config-resolution.html"><span class="nav-code">02B</span><span>配置加载与解析</span></a></li><li><a href="02c-define-client-injection-and-json.html"><span class="nav-code">02C</span><span>Define、注入与 JSON</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">开发服务器核心</h2><ul class="nav-list"><li><a href="03-plugin-system.html"><span class="nav-code">03</span><span>插件体系</span></a></li><li><a href="04-dev-server-lifecycle.html"><span class="nav-code">04</span><span>Dev Server 生命周期</span></a></li><li><a href="05-environment-api.html"><span class="nav-code">05</span><span>Environment API</span></a></li><li><a href="06-middleware-request-pipeline.html"><span class="nav-code">06</span><span>中间件与请求入口</span></a></li><li><a href="07-module-resolution.html"><span class="nav-code">07</span><span>模块解析</span></a></li><li><a href="08-transform-and-module-graph.html" aria-current="page"><span class="nav-code">08</span><span>Transform 与模块图</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">转换与增量更新</h2><ul class="nav-list"><li><a href="09-html-transform.html"><span class="nav-code">09</span><span>HTML 转换</span></a></li><li><a href="10-import-analysis.html"><span class="nav-code">10</span><span>Import Analysis</span></a></li><li><a href="11-dependency-pre-bundling.html"><span class="nav-code">11</span><span>依赖预构建</span></a></li><li><a href="12-hmr.html"><span class="nav-code">12</span><span>HMR</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">资源管线</h2><ul class="nav-list"><li><a href="13a-css-pipeline.html"><span class="nav-code">13A</span><span>CSS 管线</span></a></li><li><a href="13b-asset-worker-wasm.html"><span class="nav-code">13B</span><span>Asset、Worker、Wasm</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">生产构建</h2><ul class="nav-list"><li><a href="14a-build-orchestration.html"><span class="nav-code">14A</span><span>生产构建编排</span></a></li><li><a href="14b-build-output-and-preload.html"><span class="nav-code">14B</span><span>Preload 与构建输出</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">SSR 与运行时</h2><ul class="nav-list"><li><a href="15a-ssr-transform-and-loading.html"><span class="nav-code">15A</span><span>SSR 变换与加载</span></a></li><li><a href="15b-module-runner.html"><span class="nav-code">15B</span><span>Module Runner</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">公共边界</h2><ul class="nav-list"><li><a href="16-public-api-diagnostics-and-types.html"><span class="nav-code">16</span><span>公共 API 与类型</span></a></li></ul></section></nav><main class="article" id="article-start"><header class="article-hero"><div class="eyebrow"><span class="pill">08</span><span>开发服务器核心</span></div><h1>08. Transform 与模块图</h1><p class="lede">pending 合并当前并发，ModuleNode 保存长期结果；URL、ID、file 三种索引共同维持增量状态。</p><div class="hero-meta"><span>证据基线：v8.2.1</span><span>commit <code>421615865dad</code></span><span>约 12 分钟</span><a href="../../vite/reading-guides/08-transform-and-module-graph.md">查看 Markdown 原稿</a></div></header><section class="focus-card" aria-label="阅读重点与边界"><div><h2>本页重点</h2><p>pending 合并当前并发，ModuleNode 保存长期结果；URL、ID、file 三种索引共同维持增量状态。</p></div><div class="boundary"><h3>推导边界</h3><p>短期 Promise 不是长期缓存；缓存是否可用还要结合失效时间和软硬失效。</p></div></section><aside class="evidence-note"><h3>证据口径</h3><p>正文保留目标版本中的真实源码、状态说明与代表性测试映射。测试源码用于锁定设计契约；本轮没有执行测试命令。</p></aside><article class="prose"><h2 id="阅读边界"><a class="heading-anchor" href="#%E9%98%85%E8%AF%BB%E8%BE%B9%E7%95%8C" aria-label="链接到本节">#</a>阅读边界</h2>
+<p>本节研究开发服务器收到模块请求后，怎样把 URL 解析、加载、转换并缓存，以及 ModuleGraph
+怎样记录模块身份、依赖边和失效状态。插件 hook 的调度规则已在第 03 章说明，文件 ID 如何得到已在
+第 07 章说明；本章聚焦两者进入请求热路径后的协作。</p>
+<p>读完应能回答：</p>
+<ol>
+<li>URL、resolved ID 和 file 为什么是三种身份，分别在哪些索引中使用？</li>
+<li>两个相同 URL 的并发请求怎样共享 Promise，失效穿插其中时为何必须开新请求？</li>
+<li>为什么 load 成功后才创建模块图节点，而 resolve 成功不能立即入图？</li>
+<li>transformResult、ETag、pending request 和 HTTP 304 分别是哪一层缓存？</li>
+<li>硬失效与软失效保存、清除哪些状态，失效为什么需要向 importer 传播？</li>
+<li>client 软失效为什么只改 import 时间戳，SSR 又为什么连代码都不用改？</li>
+<li>Source Map 补源码为什么存在 package 安全边界？</li>
+<li>client/ssr 分图后，旧 ModuleGraph API 怎样仍表现为一张图？</li>
+</ol>
+<h2 id="推荐阅读顺序"><a class="heading-anchor" href="#%E6%8E%A8%E8%8D%90%E9%98%85%E8%AF%BB%E9%A1%BA%E5%BA%8F" aria-label="链接到本节">#</a>推荐阅读顺序</h2>
+<ol>
+<li><code>middlewares/transform.ts</code>：从 HTTP 请求类型、URL 规范化和 304 进入主链。</li>
+<li><code>transformRequest.ts</code> 的 <code>transformRequest()</code> 与 <code>doTransform()</code>：理解并发和两级缓存。</li>
+<li>同文件的 <code>loadAndTransform()</code>：串起 access check、load、入图、transform 和结果缓存。</li>
+<li><code>moduleGraph.ts</code> 的三张索引表、<code>_ensureEntryFromUrl()</code> 和 <code>updateModuleInfo()</code>。</li>
+<li><code>invalidateModule()</code> 与 <code>handleModuleSoftInvalidation()</code>：理解 HMR 快路径。</li>
+<li><code>sourcemap.ts</code>：理解转换产物如何补源码、标记 ignoreList 和防止越界读取。</li>
+<li><code>mixedModuleGraph.ts</code>：最后看 Environment API 迁移期的旧接口兼容，不要先被代理代码打断主线。</li>
+<li>三份测试：用最小场景复盘扩展名推断、resolved ID 去重、双图兼容和包根边界。</li>
+</ol>
+<h2 id="一次-http-模块请求"><a class="heading-anchor" href="#%E4%B8%80%E6%AC%A1-http-%E6%A8%A1%E5%9D%97%E8%AF%B7%E6%B1%82" aria-label="链接到本节">#</a>一次 HTTP 模块请求</h2>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">GET /src/main.ts?t=...
+→ cachedTransformMiddleware
+   └─ 非 CSS 且 URL+ETag 精确命中 → 304
+→ transformMiddleware
+   ├─ 跳过 document、非 GET/HEAD、/、favicon
+   ├─ decode URL，移除 HMR timestamp
+   ├─ 处理 .map 请求
+   ├─ 识别 JS / ?import / CSS / HTML proxy
+   ├─ 移除 ?import，解开 /@id/ 虚拟 ID
+   ├─ CSS 按 direct/import 分离身份
+   └─ environment.transformRequest(url)
+      → transformRequest
+      → doTransform
+      → loadAndTransform
+→ send(code, etag, cache-control, sourcemap)
+</code></pre></figure><p><code>Sec-Fetch-Dest: document</code> 的请求必须继续交给 HTML/static fallback。若把导航请求误当 JS，服务器
+会返回转换后的模块代码而不是页面。响应追加 <code>Vary: Sec-Fetch-Dest</code>，保证代理缓存不会把文档与
+模块响应混为一份。</p>
+<h3 id="css-为什么有两个-url-身份"><a class="heading-anchor" href="#css-%E4%B8%BA%E4%BB%80%E4%B9%88%E6%9C%89%E4%B8%A4%E4%B8%AA-url-%E8%BA%AB%E4%BB%BD" aria-label="链接到本节">#</a>CSS 为什么有两个 URL 身份</h3>
+<p>同一 <code>style.css</code> 有两种消费者：</p>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">import &#039;./style.css&#039;       → JS 模块，运行时注入样式
+&lt;link href=&quot;/style.css&quot;&gt;  → ?direct，直接返回 text/css
+</code></pre></figure><p>二者源码文件相同，转换代码和 ETag 却不同。通用缓存中间件发现 CSS 时不立即 304；主 transform
+中间件先根据 Accept 规范化为 direct/import URL，再查对应节点的 ETag。否则浏览器可能把 JS
+包装结果的 ETag 用于 <code>&lt;link&gt;</code> 请求。</p>
+<h3 id="http-错误不是一律-500"><a class="heading-anchor" href="#http-%E9%94%99%E8%AF%AF%E4%B8%8D%E6%98%AF%E4%B8%80%E5%BE%8B-500" aria-label="链接到本节">#</a>HTTP 错误不是一律 500</h3>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">依赖优化仍在处理 / 旧优化产物    → 504，等待页面用新版本重试
+普通模块不存在                  → 交给下游，最终通常 404
+资源 ID 被 server.fs 拒绝       → 403
+可恢复服务器已经关闭            → 504，客户端连接新实例
+真正的插件/转换异常              → next(error)，由错误中间件格式化
+</code></pre></figure><p>版本 hash 对应的优化依赖可使用一年 immutable 缓存；项目源码仍是 <code>no-cache + ETag</code>。两者的
+可变性不同，不能共用 cache-control。</p>
+<h2 id="模块的三种身份"><a class="heading-anchor" href="#%E6%A8%A1%E5%9D%97%E7%9A%84%E4%B8%89%E7%A7%8D%E8%BA%AB%E4%BB%BD" aria-label="链接到本节">#</a>模块的三种身份</h2>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">URL       浏览器/Runner 请求身份，例如 /src/data.ts?raw
+id        resolveId 后的插件身份，例如 /abs/app/src/data.ts?raw
+file      去 query 的磁盘关联，例如 /abs/app/src/data.ts
+</code></pre></figure><p>EnvironmentModuleGraph 因此维护不同索引：</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>索引</th>
+<th>用途</th>
+<th>关键约束</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>urlToModuleMap</code></td>
+<td>从请求回到节点</td>
+<td>query 不同通常是不同模块身份</td>
+</tr>
+<tr>
+<td><code>idToModuleMap</code></td>
+<td>从规范 ID 去重节点</td>
+<td>多个 URL 可解析到同一节点</td>
+</tr>
+<tr>
+<td><code>fileToModulesMap</code></td>
+<td>文件变化找到所有派生模块</td>
+<td>一个文件可有 raw、url、worker 等多个节点</td>
+</tr>
+<tr>
+<td><code>etagToModuleMap</code></td>
+<td>HTTP 条件请求快速查节点</td>
+<td>只供 client 图使用，更新结果时维护</td>
+</tr>
+</tbody>
+</table></div>
+<p><code>ensureEntryFromUrl()</code> 先 resolve URL，再按 resolved ID 查已有节点。<code>/x.js</code> 与 <code>/xx.js</code> 若都解析到
+<code>/x.js</code>，第二个 URL 只登记到同一节点，而不是复制 meta、importers 和失效状态。这一竞态/去重
+边界的历史修复见 <a href="https://github.com/vitejs/vite/pull/9759" target="_blank" rel="noreferrer noopener">PR #9759</a>。</p>
+<p>未解析 URL 的查找本身也是异步操作。图用 <code>unresolvedUrlToModuleMap</code> 暂存 Promise，让并发调用
+共享一次 resolve；Promise 完成后移除临时项。它与 transform 的 pending request 类似，但前者
+只合并“URL 对应哪个节点”，后者合并完整加载和转换。</p>
+<h2 id="四层缓存不能混为一谈"><a class="heading-anchor" href="#%E5%9B%9B%E5%B1%82%E7%BC%93%E5%AD%98%E4%B8%8D%E8%83%BD%E6%B7%B7%E4%B8%BA%E4%B8%80%E8%B0%88" aria-label="链接到本节">#</a>四层缓存不能混为一谈</h2>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">HTTP ETag                         浏览器已有内容，可能直接 304
+environment._pendingRequests      同一时刻合并 transform Promise
+ModuleNode.transformResult        服务端长期内存转换结果
+deps optimizer immutable output   带内容版本的磁盘/HTTP 产物
+</code></pre></figure><p><code>doTransform()</code> 先按 URL 找节点；未命中才 resolve，再按规范 ID 找节点。第二次查询解决“URL 尚未
+登记，但相同 ID 已转换”的情况。命中节点后又分两条：有软失效状态则快速修补；有普通
+transformResult 则直接返回。</p>
+<p>不要把 pending Promise 当结果缓存。它只活到请求 settle，<code>finally</code> 会清掉槽位；长期复用由
+ModuleNode 保存。这样失败 Promise 不会永久污染后续请求。</p>
+<h2 id="并发请求与失效竞态"><a class="heading-anchor" href="#%E5%B9%B6%E5%8F%91%E8%AF%B7%E6%B1%82%E4%B8%8E%E5%A4%B1%E6%95%88%E7%AB%9E%E6%80%81" aria-label="链接到本节">#</a>并发请求与失效竞态</h2>
+<p><code>transformRequest()</code> 给每次真实处理记录单调时间，并把 <code>{ request, timestamp, abort }</code> 放进
+<code>_pendingRequests</code>。同 URL 再来时：</p>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">已有请求开始时间 &gt; 模块最近失效时间
+  → 在途结果仍新鲜，共享 Promise
+
+已有请求开始时间 &lt;= 模块最近失效时间
+  → 时序是“请求 1 → 失效 → 请求 2”
+  → 清掉旧 pending 所有权，请求 2 建立新 transform
+</code></pre></figure><p>这里的 abort 只是不再共享旧 Promise，不强行取消插件 hook。插件可能有不可取消的异步副作用，
+旧调用者仍可收到旧结果；关键是旧结果不能覆盖新缓存。<code>loadAndTransform()</code> 完成时再次比较开始
+时间与 <code>lastInvalidationTimestamp</code>，只有较新的请求能写 transformResult。</p>
+<p>这套双重保护分别覆盖历史上的模块图竞态、过期结果写缓存、失效后继续复用 pending request：
+<a href="https://github.com/vitejs/vite/pull/5470" target="_blank" rel="noreferrer noopener">PR #5470</a>、
+<a href="https://github.com/vitejs/vite/pull/7254" target="_blank" rel="noreferrer noopener">PR #7254</a>、
+<a href="https://github.com/vitejs/vite/pull/7283" target="_blank" rel="noreferrer noopener">PR #7283</a>。访问被拒绝的并发请求也必须正常 settle，不能
+留下永久 pending 槽位，见 <a href="https://github.com/vitejs/vite/pull/20503" target="_blank" rel="noreferrer noopener">PR #20503</a>。</p>
+<h2 id="loadandtransform-的阶段边界"><a class="heading-anchor" href="#loadandtransform-%E7%9A%84%E9%98%B6%E6%AE%B5%E8%BE%B9%E7%95%8C" aria-label="链接到本节">#</a>loadAndTransform 的阶段边界</h2>
+<h3 id="1-访问控制"><a class="heading-anchor" href="#1-%E8%AE%BF%E9%97%AE%E6%8E%A7%E5%88%B6" aria-label="链接到本节">#</a>1. 访问控制</h3>
+<p>会读取真实文件的 <code>?raw</code>、<code>?url</code>、<code>?inline</code>、SVG 查询先同时检查 clean path 与完整 ID，防止
+恶意 query 绕过 server.fs。普通 ID 在最终文件确定后由 load 回退检查。虚拟模块以 <code>\0</code> 开头，
+不应当按宿主文件路径检查。</p>
+<h3 id="2-插件-load-优先-磁盘只是回退"><a class="heading-anchor" href="#2-%E6%8F%92%E4%BB%B6-load-%E4%BC%98%E5%85%88-%E7%A3%81%E7%9B%98%E5%8F%AA%E6%98%AF%E5%9B%9E%E9%80%80" aria-label="链接到本节">#</a>2. 插件 load 优先，磁盘只是回退</h3>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">pluginContainer.load(id)
+├─ 返回 string/object → 使用插件的 code、map、moduleType
+└─ 返回 null
+   ├─ server.fs 允许 → UTF-8 读取文件并加入 watcher
+   └─ 仍无 code → 区分 publicDir import 与普通不存在，抛专用错误
+</code></pre></figure><p>二进制、虚拟模块和特殊 query 应由插件拥有；文件系统回退只负责普通文本。publicDir 文件构建时
+原样复制，不经过插件转换，因此源码 import 它不是“路径碰巧找不到”，而是违反资源模型。</p>
+<h3 id="3-load-成功后才入图"><a class="heading-anchor" href="#3-load-%E6%88%90%E5%8A%9F%E5%90%8E%E6%89%8D%E5%85%A5%E5%9B%BE" aria-label="链接到本节">#</a>3. load 成功后才入图</h3>
+<p>resolve 只说明“它可能对应这个 ID”，不证明插件能 load。若在 load 前建节点，API 路由、缺失
+文件和被下游中间件处理的 URL 都会污染图。入图后再执行 transform，import analysis 等插件才能
+把依赖边写回已存在节点。</p>
+<h3 id="4-transform-与-source-map-规范化"><a class="heading-anchor" href="#4-transform-%E4%B8%8E-source-map-%E8%A7%84%E8%8C%83%E5%8C%96" aria-label="链接到本节">#</a>4. transform 与 Source Map 规范化</h3>
+<p>插件 transform 串行传递 code、map 和 moduleType。插件未声明类型时，Vite 从已知扩展名推断
+非 JS 类型；无扩展名继续留空。字符串 map 解析成对象，缺失 map 保留 null，空 mappings 则是
+显式“无需 fallback”的结果。</p>
+<p>client 结果生成弱 ETag；启用 <code>moduleRunnerTransform</code> 的 server Environment 还要通过
+<code>ssrTransform()</code> 改写成 Module Runner 协议。最后只有未在处理中失效的结果才写图缓存。</p>
+<h2 id="模块图怎样维护依赖边"><a class="heading-anchor" href="#%E6%A8%A1%E5%9D%97%E5%9B%BE%E6%80%8E%E6%A0%B7%E7%BB%B4%E6%8A%A4%E4%BE%9D%E8%B5%96%E8%BE%B9" aria-label="链接到本节">#</a>模块图怎样维护依赖边</h2>
+<p><code>updateModuleInfo()</code> 接收 import analysis 解析出的依赖，完成双向更新：</p>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">当前模块 importedModules = 新集合
+每个新依赖.importers += 当前模块
+每个已移除依赖.importers -= 当前模块
+当前模块.acceptedHmrDeps / acceptedHmrExports / isSelfAccepting = 新 HMR 元数据
+返回不再被任何模块引用的依赖集合
+</code></pre></figure><p>只维护 <code>A.importedModules</code> 而不维护 <code>B.importers</code>，文件变化时就无法向上寻找受影响边界。删除文件
+时还要清理它作为 importer 留在依赖节点中的反向引用，避免悬挂边。</p>
+<p>CSS 分析过程中可能只有文件依赖、尚无浏览器 URL，<code>createFileOnlyEntry()</code> 会创建 asset 节点。
+后续真实 URL 到来时仍可按 file 找到它；这类节点不能被错误当成可直接请求的 JS/CSS 模块。</p>
+<h2 id="硬失效与软失效"><a class="heading-anchor" href="#%E7%A1%AC%E5%A4%B1%E6%95%88%E4%B8%8E%E8%BD%AF%E5%A4%B1%E6%95%88" aria-label="链接到本节">#</a>硬失效与软失效</h2>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>状态</th>
+<th>保存什么</th>
+<th>下次请求</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>未失效</td>
+<td><code>transformResult</code></td>
+<td>直接内存命中</td>
+</tr>
+<tr>
+<td>硬失效</td>
+<td>标记 <code>HARD_INVALIDATED</code>，清结果/ETag/错误</td>
+<td>完整 load + transform</td>
+</tr>
+<tr>
+<td>软失效</td>
+<td>把旧 <code>transformResult</code> 移入 <code>invalidationState</code></td>
+<td>复用旧代码并修补 import 时间戳</td>
+</tr>
+</tbody>
+</table></div>
+<p>失效时先清 <code>transformResult</code>、SSR 执行错误和 ETag 反向索引，再更新单调时间。传播到 importer 时：</p>
+<ul>
+<li>显式失效的根模块必须硬失效；</li>
+<li>importer 若只是依赖版本变化，可软失效；</li>
+<li>同一轮传播中，硬失效可以把先前的软失效升级；</li>
+<li><code>seen</code> 防止循环依赖无限递归，但升级判断必须发生在提前返回之前；</li>
+<li>直接 CSS 请求不能按 JS import 语法重写，需走硬失效边界
+（<a href="https://github.com/vitejs/vite/pull/18252" target="_blank" rel="noreferrer noopener">PR #18252</a>）。</li>
+</ul>
+<p>软失效是 HMR 性能优化（<a href="https://github.com/vitejs/vite/pull/14654" target="_blank" rel="noreferrer noopener">PR #14654</a>）：模块本身源码没变，
+无需重跑整条插件管线。client 用 <code>es-module-lexer</code> 扫描旧转换结果，对已更新依赖写入新的 <code>?t=</code>；
+静态直接 import 还可触发预热。替换只改变 URL 字符，不改变行结构，因此旧 Source Map 可沿用，
+但 code 对应的 ETag 必须重算。</p>
+<p>SSR 不靠浏览器 query 破缓存，Module Runner 管理执行缓存，所以直接复用旧 transformResult。无论
+client 还是 SSR，修补结束都再次做时间戳新鲜度检查，防止修补过程中发生第二次失效。</p>
+<h2 id="source-map-可调试性与安全边界"><a class="heading-anchor" href="#source-map-%E5%8F%AF%E8%B0%83%E8%AF%95%E6%80%A7%E4%B8%8E%E5%AE%89%E5%85%A8%E8%BE%B9%E7%95%8C" aria-label="链接到本节">#</a>Source Map：可调试性与安全边界</h2>
+<p>Source Map 处理分四类：</p>
+<ol>
+<li>从源码尾部读取 inline/external map，并用等长空白移除引用，保持行列稳定；</li>
+<li>对缺失的 <code>sourcesContent</code> 并行读取原源码；</li>
+<li>根据 <code>server.sourcemapIgnoreList</code> 合并 <code>x_google_ignoreList</code>；</li>
+<li>响应 <code>.map</code> 请求或把 map 以内联 data URL 附加到 JS/CSS。</li>
+</ol>
+<p>第三方 map 不能被当作可信文件读取清单。若转换文件在 node_modules，Vite 先找最近的普通包或
+<code>@scope/pkg</code> 根；外部 map 文件和每个 source 都必须仍位于该包内。否则恶意依赖可用
+<code>../../.env</code> 一类路径把宿主文件读进 <code>sourcesContent</code> 并发送给浏览器。这个边界见
+<a href="https://github.com/vitejs/vite/pull/22158" target="_blank" rel="noreferrer noopener">PR #22158</a>。嵌套 node_modules 必须取最后一段，才能
+限制到真正产出 map 的内层包。</p>
+<p>找不到普通 source 只告警，不让模块转换失败；虚拟 source 则根本不尝试磁盘读取。可调试性是
+附加能力，不能改变应用能否运行。</p>
+<h2 id="mixed-modulegraph-兼容层"><a class="heading-anchor" href="#mixed-modulegraph-%E5%85%BC%E5%AE%B9%E5%B1%82" aria-label="链接到本节">#</a>Mixed ModuleGraph 兼容层</h2>
+<p>Environment API 把 client 与 ssr 状态拆成独立 EnvironmentModuleGraph，但旧插件仍期待：</p>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">server.moduleGraph.getModuleById(id) → 一个 ModuleNode
+module.importers / importedModules   → 一个 Set
+idToModuleMap / fileToModulesMap     → 一张 Map
+</code></pre></figure><p><code>mixedModuleGraph.ts</code> 用包装对象提供“合并视图”：</p>
+<ul>
+<li>ModuleNode 同时持有可选 <code>_clientModule</code> 与 <code>_ssrModule</code>；</li>
+<li>相同 URL/ID 的双环境节点合成一个包装实例；</li>
+<li>Set/Map 代理遍历两边并按逻辑模块去重；</li>
+<li>旧 <code>ssr?: boolean</code> 参数把调用路由到对应环境图；</li>
+<li><code>DualWeakMap</code> 以一对底层节点缓存包装对象，保证同一输入始终返回同一实例。</li>
+</ul>
+<p>稳定实例很重要：插件可能用节点作 Set/Map key 或比较引用。只保证字段相等仍会破坏插件，相关
+修复见 <a href="https://github.com/vitejs/vite/pull/18455" target="_blank" rel="noreferrer noopener">PR #18455</a>。阅读这里时把它当迁移适配器，不要
+反向理解为 client/ssr 又共享了缓存；真实状态仍在两张 Environment 图中。</p>
+<h2 id="用例怎样映射源码"><a class="heading-anchor" href="#%E7%94%A8%E4%BE%8B%E6%80%8E%E6%A0%B7%E6%98%A0%E5%B0%84%E6%BA%90%E7%A0%81" aria-label="链接到本节">#</a>用例怎样映射源码</h2>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>用例</th>
+<th>固定的契约</th>
+<th>对应源码</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>getModuleTypeFromId</code> 表驱动</td>
+<td>复合文件名取已知末尾类型，无扩展名不猜</td>
+<td><code>defaultModuleTypes</code></td>
+</tr>
+<tr>
+<td>失效清除 SSR error</td>
+<td>重试不能继续抛旧执行错误</td>
+<td><code>invalidateModule()</code></td>
+</tr>
+<tr>
+<td>两 URL 解析到同一 ID</td>
+<td>复用同节点及 meta</td>
+<td><code>_ensureEntryFromUrl()</code></td>
+</tr>
+<tr>
+<td>backward compatibility</td>
+<td>双图节点、Set 遍历和失效保持旧 API</td>
+<td><code>mixedModuleGraph.ts</code></td>
+</tr>
+<tr>
+<td>node_modules 包根表驱动</td>
+<td>普通/scope/嵌套/Windows 安全边界</td>
+<td><code>getNodeModulesPackageRoot()</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>这些用例不是主链的端到端演示，而是锁定最容易在重构时破坏的身份与边界条件。主链应从源码
+状态机阅读，用例用于反证自己的理解。</p>
+<h2 id="关键源码证据"><a class="heading-anchor" href="#%E5%85%B3%E9%94%AE%E6%BA%90%E7%A0%81%E8%AF%81%E6%8D%AE" aria-label="链接到本节">#</a>关键源码证据</h2>
+<p>目标版本源码摘录，来源：<code>packages/vite/src/node/server/transformRequest.ts</code>，
+<code>transformRequest()</code>：</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">const timestamp = monotonicDateNow()
+
+url = removeTimestampQuery(url)
+
+const pending = environment._pendingRequests.get(url)
+if (pending) {
+  return environment.moduleGraph.getModuleByUrl(url).then((module) =&gt; {
+    if (!module || pending.timestamp &gt; module.lastInvalidationTimestamp) {
+      // The pending request is still valid, we can safely reuse its result
+      return pending.request
+    } else {
+      // Request 1 for module A     (pending.timestamp)
+      // Invalidate module A        (module.lastInvalidationTimestamp)
+      // Request 2 for module A     (timestamp)
+
+      // First request has been invalidated, abort it to clear the cache,
+      // then perform a new doTransform.
+      pending.abort()
+      return transformRequest(environment, url, options)
+    }
+  })
+}
+</code></pre></figure><p>同 URL 的请求通常复用 pending Promise；若模块在该请求开始后已失效，则中止旧工作并递归重跑。
+因此并发去重不能只按 URL 缓存，还必须和模块图的失效时间比较。</p>
+<h2 id="建议断点"><a class="heading-anchor" href="#%E5%BB%BA%E8%AE%AE%E6%96%AD%E7%82%B9" aria-label="链接到本节">#</a>建议断点</h2>
+<p>用一个含 TS、CSS 和动态 import 的最小页面，按顺序观察：</p>
+<ol>
+<li><code>viteTransformMiddleware</code>：记录原始 URL、规范化 URL、Accept 与 Sec-Fetch-Dest。</li>
+<li><code>transformRequest</code>：观察 <code>_pendingRequests</code> 是否合并两个相同请求。</li>
+<li><code>doTransform</code>：分别观察 URL 命中、resolved ID 命中和全未命中。</li>
+<li><code>loadAndTransform</code>：记录插件 load 是否接管、节点何时入图、transform 前后 code/map。</li>
+<li><code>updateModuleInfo</code>：观察 importedModules 与目标节点 importers 的双向变化。</li>
+<li><code>invalidateModule</code>：修改深层依赖，观察软/硬状态怎样传播到 importer。</li>
+<li><code>handleModuleSoftInvalidation</code>：观察依赖 URL 的 <code>?t=</code> 与 ETag 更新。</li>
+</ol>
+<p>并发竞态可在 load hook 中手工挂起 Promise：发请求 A，修改文件触发失效，再发请求 B。正确结果
+是 B 不复用 A，且 A 即使最后完成也不能写回模块缓存。这个实验用来验证思路即可；纯注释修改
+本身不需要重复执行测试套件。</p>
+<h2 id="复盘题"><a class="heading-anchor" href="#%E5%A4%8D%E7%9B%98%E9%A2%98" aria-label="链接到本节">#</a>复盘题</h2>
+<ol>
+<li>为什么清掉 pending request 还不够，写 transformResult 前仍要比较时间戳？</li>
+<li>如果只用 URL 作为唯一索引，alias 或虚拟 URL 会制造什么重复状态？</li>
+<li>为什么直接 CSS 的 ETag 判断晚于普通模块的快速 304？</li>
+<li>load 失败的 URL 若提前入图，会怎样影响 HMR、404 与后续中间件？</li>
+<li>软失效为什么能保留 Source Map，却不能保留旧 ETag？</li>
+<li>环形依赖中，<code>seen</code> 判断放在软→硬升级之前会发生什么？</li>
+<li>为什么 sourcemap 的 source 读取边界是 package root，而不只是 node_modules root？</li>
+<li>Mixed ModuleGraph 若每次访问都创建新包装节点，会破坏哪些插件代码？</li>
+</ol>
+</article><nav class="article-pager" aria-label="前后篇"><a class="pager-link previous" href="07-module-resolution.html"><span class="pager-label">上一篇 · 07</span><span class="pager-title">模块解析</span></a><a class="pager-link next" href="09-html-transform.html"><span class="pager-label">下一篇 · 09</span><span class="pager-title">HTML 转换</span></a></nav><footer class="site-footer">Vite v8.2.1 源码阅读站 · 所有机制结论限定于 commit 421615865dad3ed39137d17281814fc78a41246c。</footer></main><aside class="page-toc" aria-label="页内目录"><h2 class="toc-title">本页目录</h2><ol class="toc-list"><li class="depth-2"><a href="#%E9%98%85%E8%AF%BB%E8%BE%B9%E7%95%8C">阅读边界</a></li><li class="depth-2"><a href="#%E6%8E%A8%E8%8D%90%E9%98%85%E8%AF%BB%E9%A1%BA%E5%BA%8F">推荐阅读顺序</a></li><li class="depth-2"><a href="#%E4%B8%80%E6%AC%A1-http-%E6%A8%A1%E5%9D%97%E8%AF%B7%E6%B1%82">一次 HTTP 模块请求</a></li><li class="depth-3"><a href="#css-%E4%B8%BA%E4%BB%80%E4%B9%88%E6%9C%89%E4%B8%A4%E4%B8%AA-url-%E8%BA%AB%E4%BB%BD">CSS 为什么有两个 URL 身份</a></li><li class="depth-3"><a href="#http-%E9%94%99%E8%AF%AF%E4%B8%8D%E6%98%AF%E4%B8%80%E5%BE%8B-500">HTTP 错误不是一律 500</a></li><li class="depth-2"><a href="#%E6%A8%A1%E5%9D%97%E7%9A%84%E4%B8%89%E7%A7%8D%E8%BA%AB%E4%BB%BD">模块的三种身份</a></li><li class="depth-2"><a href="#%E5%9B%9B%E5%B1%82%E7%BC%93%E5%AD%98%E4%B8%8D%E8%83%BD%E6%B7%B7%E4%B8%BA%E4%B8%80%E8%B0%88">四层缓存不能混为一谈</a></li><li class="depth-2"><a href="#%E5%B9%B6%E5%8F%91%E8%AF%B7%E6%B1%82%E4%B8%8E%E5%A4%B1%E6%95%88%E7%AB%9E%E6%80%81">并发请求与失效竞态</a></li><li class="depth-2"><a href="#loadandtransform-%E7%9A%84%E9%98%B6%E6%AE%B5%E8%BE%B9%E7%95%8C">loadAndTransform 的阶段边界</a></li><li class="depth-3"><a href="#1-%E8%AE%BF%E9%97%AE%E6%8E%A7%E5%88%B6">1. 访问控制</a></li><li class="depth-3"><a href="#2-%E6%8F%92%E4%BB%B6-load-%E4%BC%98%E5%85%88-%E7%A3%81%E7%9B%98%E5%8F%AA%E6%98%AF%E5%9B%9E%E9%80%80">2. 插件 load 优先，磁盘只是回退</a></li><li class="depth-3"><a href="#3-load-%E6%88%90%E5%8A%9F%E5%90%8E%E6%89%8D%E5%85%A5%E5%9B%BE">3. load 成功后才入图</a></li><li class="depth-3"><a href="#4-transform-%E4%B8%8E-source-map-%E8%A7%84%E8%8C%83%E5%8C%96">4. transform 与 Source Map 规范化</a></li><li class="depth-2"><a href="#%E6%A8%A1%E5%9D%97%E5%9B%BE%E6%80%8E%E6%A0%B7%E7%BB%B4%E6%8A%A4%E4%BE%9D%E8%B5%96%E8%BE%B9">模块图怎样维护依赖边</a></li><li class="depth-2"><a href="#%E7%A1%AC%E5%A4%B1%E6%95%88%E4%B8%8E%E8%BD%AF%E5%A4%B1%E6%95%88">硬失效与软失效</a></li><li class="depth-2"><a href="#source-map-%E5%8F%AF%E8%B0%83%E8%AF%95%E6%80%A7%E4%B8%8E%E5%AE%89%E5%85%A8%E8%BE%B9%E7%95%8C">Source Map：可调试性与安全边界</a></li><li class="depth-2"><a href="#mixed-modulegraph-%E5%85%BC%E5%AE%B9%E5%B1%82">Mixed ModuleGraph 兼容层</a></li><li class="depth-2"><a href="#%E7%94%A8%E4%BE%8B%E6%80%8E%E6%A0%B7%E6%98%A0%E5%B0%84%E6%BA%90%E7%A0%81">用例怎样映射源码</a></li><li class="depth-2"><a href="#%E5%85%B3%E9%94%AE%E6%BA%90%E7%A0%81%E8%AF%81%E6%8D%AE">关键源码证据</a></li><li class="depth-2"><a href="#%E5%BB%BA%E8%AE%AE%E6%96%AD%E7%82%B9">建议断点</a></li><li class="depth-2"><a href="#%E5%A4%8D%E7%9B%98%E9%A2%98">复盘题</a></li></ol></aside></div><script>;(function () {
+  'use strict'
+
+  var root = document.documentElement
+  var body = document.body
+  var themeButton = document.querySelector('[data-theme-toggle]')
+  var navButton = document.querySelector('[data-nav-toggle]')
+  var progress = document.querySelector('[data-reading-progress]')
+
+  function setTheme(theme) {
+    root.setAttribute('data-theme', theme)
+    if (themeButton) {
+      themeButton.setAttribute(
+        'aria-label',
+        theme === 'dark' ? '切换到浅色模式' : '切换到深色模式',
+      )
+      themeButton.textContent = theme === 'dark' ? '☀' : '◐'
+    }
+  }
+
+  var savedTheme
+  try {
+    savedTheme = localStorage.getItem('vite-guide-theme')
+  } catch (_) {
+    savedTheme = null
+  }
+  setTheme(
+    savedTheme ||
+      (window.matchMedia('(prefers-color-scheme: dark)').matches
+        ? 'dark'
+        : 'light'),
+  )
+
+  if (themeButton) {
+    themeButton.addEventListener('click', function () {
+      var next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark'
+      setTheme(next)
+      try {
+        localStorage.setItem('vite-guide-theme', next)
+      } catch (_) {
+        // file:// 或隐私模式下 localStorage 可能不可用；主题仍对当前页面生效。
+      }
+    })
+  }
+
+  function closeNavigation() {
+    body.classList.remove('nav-open')
+    if (navButton) navButton.setAttribute('aria-expanded', 'false')
+  }
+
+  if (navButton) {
+    navButton.addEventListener('click', function () {
+      var open = body.classList.toggle('nav-open')
+      navButton.setAttribute('aria-expanded', String(open))
+    })
+  }
+
+  document.addEventListener('keydown', function (event) {
+    if (event.key === 'Escape') closeNavigation()
+  })
+
+  document.querySelectorAll('.site-nav a').forEach(function (link) {
+    link.addEventListener('click', closeNavigation)
+  })
+
+  function updateProgress() {
+    if (!progress) return
+    var scrollable = document.documentElement.scrollHeight - window.innerHeight
+    var ratio = scrollable > 0 ? window.scrollY / scrollable : 0
+    progress.style.width = Math.min(100, Math.max(0, ratio * 100)) + '%'
+  }
+
+  updateProgress()
+  window.addEventListener('scroll', updateProgress, { passive: true })
+  window.addEventListener('resize', updateProgress)
+
+  document.querySelectorAll('.copy-code').forEach(function (button) {
+    button.addEventListener('click', async function () {
+      var code = button.closest('.code-card').querySelector('code')
+      var value = code ? code.textContent : ''
+      var copied = false
+
+      if (navigator.clipboard && window.isSecureContext) {
+        try {
+          await navigator.clipboard.writeText(value)
+          copied = true
+        } catch (_) {
+          copied = false
+        }
+      }
+
+      if (!copied) {
+        var input = document.createElement('textarea')
+        input.value = value
+        input.setAttribute('readonly', '')
+        input.style.position = 'fixed'
+        input.style.opacity = '0'
+        document.body.appendChild(input)
+        input.select()
+        copied = document.execCommand('copy')
+        input.remove()
+      }
+
+      var previous = button.textContent
+      button.textContent = copied ? '已复制' : '复制失败'
+      window.setTimeout(function () {
+        button.textContent = previous
+      }, 1200)
+    })
+  })
+
+  var tocLinks = Array.from(document.querySelectorAll('.toc-list a'))
+  var tocById = new Map(
+    tocLinks.map(function (link) {
+      return [decodeURIComponent(link.hash.slice(1)), link]
+    }),
+  )
+  var headings = Array.from(
+    document.querySelectorAll('.prose h2[id], .prose h3[id]'),
+  )
+
+  if ('IntersectionObserver' in window && headings.length > 0) {
+    var observer = new IntersectionObserver(
+      function (entries) {
+        entries.forEach(function (entry) {
+          if (!entry.isIntersecting) return
+          tocLinks.forEach(function (link) {
+            link.classList.remove('is-active')
+          })
+          var active = tocById.get(entry.target.id)
+          if (active) active.classList.add('is-active')
+        })
+      },
+      { rootMargin: '-18% 0px -72% 0px' },
+    )
+    headings.forEach(function (heading) {
+      observer.observe(heading)
+    })
+  }
+})()
+</script></body></html>

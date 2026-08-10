@@ -1,0 +1,652 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Vue runtime-dom 的 nodeOps、patchProp、事件、指令、Transition 与 Custom Element 详解"
+    />
+    <title>DOM 平台层 · Vue Runtime 内核解剖</title>
+    <link rel="stylesheet" href="assets/styles.css" />
+  </head>
+  <body data-current="runtime-dom.html">
+    <header data-site-header></header>
+    <div class="docs-shell">
+      <aside data-global-nav></aside>
+      <main class="article">
+        <div class="article-hero">
+          <div class="article-kicker">Chapter 08 · Runtime DOM</div>
+          <h1>Vue 的更新怎样真正落到浏览器</h1>
+          <p class="article-lead">
+            Renderer 已经决定“按钮的文字和事件要更新”。runtime-dom
+            再处理浏览器的具体规则：该写 property 还是
+            attribute，事件怎样换回调，输入框怎样不丢光标。
+          </p>
+          <div class="hero-meta">
+            <span>建议阅读 40 分钟</span><span>先修：架构 / Renderer</span
+            ><span>浏览器边界</span>
+          </div>
+        </div>
+
+        <section class="article-section prose" id="plain-dom">
+          <h2>为什么不能所有属性都用 setAttribute</h2>
+          <p>
+            HTML 看起来统一，浏览器对象的行为却不同。下面四种更新需要四套规则：
+          </p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>业务想做什么</th>
+                  <th>浏览器层真正要考虑</th>
+                  <th>负责模块</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>修改 class</strong></td>
+                  <td>普通 class 还要与 Transition 临时动画 class 合并</td>
+                  <td>patchClass</td>
+                </tr>
+                <tr>
+                  <td><strong>修改 style</strong></td>
+                  <td>
+                    对象中消失的旧样式要清除，CSS 变量与 important 有特殊写法
+                  </td>
+                  <td>patchStyle</td>
+                </tr>
+                <tr>
+                  <td><strong>更换点击回调</strong></td>
+                  <td>尽量复用已注册监听器，只替换它内部调用的新函数</td>
+                  <td>patchEvent</td>
+                </tr>
+                <tr>
+                  <td><strong>更新输入框</strong></td>
+                  <td>
+                    不能打断拼音输入、移动光标或覆盖水合前用户已输入的内容
+                  </td>
+                  <td>v-model / DOM prop</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="before-after">
+            <div class="plain-section">
+              <span class="scene-label">runtime-core 的语言</span>
+              <p>
+                “把这个元素的 value 从 A 更新成 B。”它不假设目标一定是浏览器。
+              </p>
+            </div>
+            <div class="plain-section">
+              <span class="scene-label">runtime-dom 的判断</span>
+              <p>
+                元素是什么？用户是否正在输入？value 应写 property 还是
+                attribute？写入会不会触发副作用？
+              </p>
+            </div>
+          </div>
+          <h3>事件更新为什么不反复解绑</h3>
+          <p>
+            Vue 第一次添加 click 时注册一个稳定的“转接器”；回调从 A 变成
+            B，只更新转接器指向的函数。这样少做浏览器注册工作，也能统一处理错误、数组回调和事件传播中的时间问题。
+          </p>
+          <div class="reader-check">
+            <strong>runtime-dom 的价值：</strong>Renderer
+            保持通用和干净，所有浏览器兼容、交互连续性与安全写入规则集中在平台边界。
+          </div>
+        </section>
+
+        <div class="level-divider">进入 DOM 接口、属性分派与源码层</div>
+
+        <section class="article-section prose" id="composition">
+          <h2>包入口：组装 Renderer，而不是另写一套 Renderer</h2>
+          <p>
+            runtime-dom 把 <code>nodeOps</code> 与 <code>patchProp</code> 合并成
+            <code>rendererOptions</code>，传给 core 的
+            <code>createRenderer</code> /
+            <code>createHydrationRenderer</code
+            >。创建结果会缓存，因为同一页面不需要多份相同 DOM renderer。
+          </p>
+          <pre><code>// 概念模型
+const rendererOptions = extend({ patchProp }, nodeOps)
+
+function ensureRenderer() {
+  return renderer ||= createRenderer(rendererOptions)
+}
+
+export const render = (...args) => ensureRenderer().render(...args)
+export const createApp = (...args) => {
+  const app = ensureRenderer().createApp(...args)
+  // DOM 专属：规范化容器、处理模板、清空容器、标记 data-v-app
+  return app
+}</code></pre>
+          <p>
+            <code>createApp</code> 的包装很重要：如果根组件没有
+            render/template，它可读取挂载容器的
+            <code>innerHTML</code> 作为模板；挂载前清空旧内容；挂载后移除
+            <code>v-cloak</code>、增加
+            <code>data-v-app</code>。这些都属于浏览器入口体验，不应进入 core。
+          </p>
+          <div class="source-links">
+            <a
+              class="source-link"
+              href="../../../vue/packages/runtime-dom/src/index.ts"
+              >本地：index.ts</a
+            >
+            <a
+              class="source-link"
+              href="../../../vue/packages/runtime-dom/src/nodeOps.ts"
+              >本地：nodeOps.ts</a
+            >
+            <a
+              class="source-link"
+              href="../../../vue/packages/runtime-dom/src/patchProp.ts"
+              >本地：patchProp.ts</a
+            >
+          </div>
+        </section>
+
+        <section class="article-section prose" id="nodeops">
+          <h2>nodeOps：小接口承接复杂平台语义</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>接口</th>
+                  <th>DOM 实现</th>
+                  <th>容易忽略的语义</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>insert</strong></td>
+                  <td>parent.insertBefore(child, anchor)</td>
+                  <td>
+                    anchor 为 null 等价 append；已存在 child 会被移动而非复制
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>remove</strong></td>
+                  <td>parent.removeChild(child)</td>
+                  <td>先读 parentNode，允许节点已被用户代码移除</td>
+                </tr>
+                <tr>
+                  <td><strong>createElement</strong></td>
+                  <td>createElement / createElementNS</td>
+                  <td>
+                    HTML、SVG、MathML namespace；<code>is</code> 与 select
+                    multiple 初始化
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>createText / Comment</strong></td>
+                  <td>document.createTextNode / createComment</td>
+                  <td>Fragment、Teleport 和空文本依赖注释占位</td>
+                </tr>
+                <tr>
+                  <td><strong>setElementText</strong></td>
+                  <td>element.textContent = text</td>
+                  <td>会一次清除所有旧 children，是文本快路径</td>
+                </tr>
+                <tr>
+                  <td><strong>insertStaticContent</strong></td>
+                  <td>template / Range 解析并克隆</td>
+                  <td>
+                    按 namespace 创建；返回静态片段首尾节点以便 move/unmount
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>querySelector</strong></td>
+                  <td>document.querySelector</td>
+                  <td>
+                    主要供 Teleport 字符串 target 使用，可由自定义 renderer 替换
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <h3>静态内容为什么单独有接口</h3>
+          <p>
+            编译器可把连续静态节点提升成 HTML 字符串。逐个 VNode
+            创建会浪费解析与对象成本，<code>insertStaticContent</code>
+            让浏览器一次解析整段；同时返回起止节点，保证这段无单一根节点的内容仍能整体复制、移动和删除。
+          </p>
+        </section>
+
+        <section class="article-section prose" id="patch-prop">
+          <h2>patchProp 决策树：同一个 key，不一定是同一种操作</h2>
+          <div class="diagram" role="img" aria-label="patchProp 属性分派">
+            <div class="diagram-title">PATCH PROP DISPATCH</div>
+            <div class="flow-list">
+              <div class="flow-step">
+                <span>01</span><strong>class</strong
+                ><small
+                  >patchClass：SVG 用 attribute，HTML 用 className；合并
+                  transition 临时 class。</small
+                >
+              </div>
+              <div class="flow-step">
+                <span>02</span><strong>style</strong
+                ><small
+                  >patchStyle：字符串 cssText 或对象逐项 Diff；处理 CSS
+                  变量、前缀、important。</small
+                >
+              </div>
+              <div class="flow-step">
+                <span>03</span><strong>onXxx</strong
+                ><small>patchEvent：缓存 invoker，更新回调而非反复解绑。</small>
+              </div>
+              <div class="flow-step">
+                <span>04</span><strong>force attr/prop</strong
+                ><small
+                  ><code>^key</code> 强制 attribute，<code>.key</code> 强制 DOM
+                  property。</small
+                >
+              </div>
+              <div class="flow-step">
+                <span>05</span><strong>shouldSetAsProp</strong
+                ><small
+                  >结合 tag、namespace 与特殊 key 判断 property
+                  是否安全。</small
+                >
+              </div>
+              <div class="flow-step">
+                <span>06</span><strong>fallback attr</strong
+                ><small
+                  >patchAttr：处理布尔属性、xlink、null 删除与 Symbol
+                  字符串化；Trusted Types 不在这条分支。</small
+                >
+              </div>
+            </div>
+          </div>
+          <h3>为什么不能简单写成 <code>el[key] = value</code></h3>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>例子</th>
+                  <th>为什么例外</th>
+                  <th>策略</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>form</strong></td>
+                  <td>form 元素的同名子控件可能遮蔽 property</td>
+                  <td>特定场景使用 attribute</td>
+                </tr>
+                <tr>
+                  <td><strong>input list</strong></td>
+                  <td>property 只读或语义与 attribute 不一致</td>
+                  <td>使用 attribute</td>
+                </tr>
+                <tr>
+                  <td><strong>textarea type</strong></td>
+                  <td>DOM 上不存在有意义的可写 property</td>
+                  <td>使用 attribute</td>
+                </tr>
+                <tr>
+                  <td><strong>native onXxx 字符串</strong></td>
+                  <td>
+                    attribute 可表示内联监听器，但函数应走 addEventListener
+                  </td>
+                  <td>按值类型分派</td>
+                </tr>
+                <tr>
+                  <td><strong>自定义元素</strong></td>
+                  <td>升级后的实例可能定义任意 property setter</td>
+                  <td>存在 property 时优先 prop，显式修饰符可覆盖</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="article-section prose" id="class-style">
+          <h2>class 与 style：看似简单，实则要保护其他子系统</h2>
+          <h3>class 要与 Transition 共存</h3>
+          <p>
+            Transition 在动画期间临时添加 enter/leave
+            class。如果组件更新直接覆盖 <code>className</code>，动画 class
+            会丢失。因此元素上保存 transition class 集合，<code
+              >patchClass</code
+            >
+            把声明式 class 与临时 class 合并后提交。值为空时统一移除 class
+            attribute；值非空时才按 HTML/SVG 选择写入方式。
+          </p>
+          <div class="callout">
+            精确规则：<code>value == null</code> 时，无论 HTML 还是 SVG 都调用
+            <code>removeAttribute('class')</code>；只有非空值才分流——SVG 使用
+            <code>setAttribute</code>，HTML 使用 <code>className</code>。
+          </div>
+          <h3>style 是对象级 Diff</h3>
+          <ul>
+            <li>
+              新值是字符串：写入 <code>cssText</code>，但保留由
+              <code>v-show</code> 管理的 display。
+            </li>
+            <li>
+              新值是对象：删除旧对象中已消失的属性，再设置新属性；数组值用于多候选前缀。
+            </li>
+            <li>
+              属性名以 <code>--</code> 开头：用 <code>setProperty</code> 处理
+              CSS 自定义属性。
+            </li>
+            <li>
+              值包含 <code>!important</code>：拆分后使用第三参数设置 priority。
+            </li>
+            <li>普通属性：缓存自动前缀结果，兼容浏览器实现名。</li>
+          </ul>
+          <p>
+            这里的“删除旧属性”说明为什么不能只遍历 nextValue：DOM style
+            是有状态目标，未显式清理的旧字段会永久残留。
+          </p>
+        </section>
+
+        <section class="article-section prose" id="events">
+          <h2>事件系统：Invoker 让监听器更新变成 O(1) 赋值</h2>
+          <p>
+            元素用内部 map 缓存 invoker。首次出现 <code>onClick</code> 时才
+            <code>addEventListener</code>；回调从 A 更新为 B 时只替换
+            <code>invoker.value</code>；彻底移除时才
+            <code>removeEventListener</code>。这避免频繁解绑，也保持 options
+            解析统一。
+          </p>
+          <pre><code>// 概念模型
+function invoker(event) {
+  if (event._vts <= invoker.attached) return
+  callWithAsyncErrorHandling(invoker.value, instance, event)
+}
+
+// 更新只改 value
+existingInvoker.value = nextHandler</code></pre>
+          <h3>时间戳保护解决什么场景</h3>
+          <p>
+            一个事件冒泡过程中，父组件更新可能在父节点上新注册同类监听器。如果新监听器立即收到正在传播的“旧事件”，就违反了浏览器直觉。invoker
+            记录安装时刻，事件也带时间戳；比安装更早的事件不会触发新监听器。
+          </p>
+          <h3>更多边界</h3>
+          <ul>
+            <li>
+              <strong>事件名解析：</strong><code>onClickOnceCapture</code> 拆出
+              once/capture/passive options，并把剩余名称 hyphenate。
+            </li>
+            <li>
+              <strong>处理器数组：</strong>逐个调用；stopImmediatePropagation
+              会包装事件，阻止数组中后续回调。
+            </li>
+            <li>
+              <strong>错误通道：</strong
+              >事件处理器进入组件错误处理链，而不是让异常直接逃出浏览器回调。
+            </li>
+          </ul>
+        </section>
+
+        <section class="article-section prose" id="directives">
+          <h2>DOM 指令：把表单与显示语义封装在平台层</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>指令</th>
+                  <th>核心状态</th>
+                  <th>为什么不能只编译成普通属性</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>vModelText</strong></td>
+                  <td>assigner、composing、事件监听</td>
+                  <td>IME composition、lazy/trim/number 修饰符与光标状态</td>
+                </tr>
+                <tr>
+                  <td><strong>vModelCheckbox</strong></td>
+                  <td>checked、数组/Set/value</td>
+                  <td>单布尔值和多选集合有不同写回规则</td>
+                </tr>
+                <tr>
+                  <td><strong>vModelRadio</strong></td>
+                  <td>checked 与 looseEqual</td>
+                  <td>DOM value 字符串化不能代表所有 JS 值</td>
+                </tr>
+                <tr>
+                  <td><strong>vModelSelect</strong></td>
+                  <td>selected options、_assigning</td>
+                  <td>multiple、Set/Array、更新时避免 change 回流</td>
+                </tr>
+                <tr>
+                  <td><strong>vShow</strong></td>
+                  <td>原始 display、hidden 标记</td>
+                  <td>要与 style patch、Transition hooks 共同维护 display</td>
+                </tr>
+                <tr>
+                  <td><strong>vOn</strong></td>
+                  <td>withModifiers / withKeys wrapper</td>
+                  <td>stop/prevent/self 和键盘别名是运行时事件语义</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <h3>表单更新为何要避免无条件赋值</h3>
+          <p>
+            用户正在输入时，无条件执行
+            <code>el.value = newValue</code>
+            可能移动光标、打断拼音输入或覆盖尚未同步到状态的文本。v-model 在
+            <code>beforeUpdate</code> 比较真实 DOM、修饰后的值和
+            activeElement，再决定是否赋值。运行时在这里保护的是交互连续性，不只是数据一致性。
+          </p>
+        </section>
+
+        <section class="article-section prose" id="transition-dom">
+          <h2>DOM Transition：从抽象 hook 到 CSS 帧</h2>
+          <div class="sequence">
+            <div class="sequence-item">
+              <strong>beforeEnter</strong><br />添加
+              <code>*-enter-from</code> 和 <code>*-enter-active</code>。
+            </div>
+            <div class="sequence-item">
+              <strong>nextFrame</strong><br />双 requestAnimationFrame 后移除
+              from，添加 to，让浏览器先提交初态再产生过渡。
+            </div>
+            <div class="sequence-item">
+              <strong>whenTransitionEnds</strong><br />读取 computed style，计算
+              transition/animation 的最大 delay + duration，并监听结束事件。
+            </div>
+            <div class="sequence-item">
+              <strong>finish</strong><br />清除 class，调用 core 传入的
+              done，使插入/删除状态机继续。
+            </div>
+          </div>
+          <p>
+            显式 duration 是兜底与控制手段；若 CSS
+            中多个属性时长不同，实现取最大 timeout，并校验 end
+            事件数量。用户过早取消、节点被卸载或 enter/leave
+            相互打断时，回调必须保证只结束一次。
+          </p>
+        </section>
+
+        <section class="article-section prose" id="custom-elements">
+          <h2>Custom Element：让 Vue 组件进入浏览器组件协议</h2>
+          <p>
+            <code>defineCustomElement</code> 生成 HTMLElement
+            子类。它要处理浏览器升级、attribute/property
+            同步、connected/disconnected、ShadowRoot、slot、事件派发和样式注入；内部仍使用
+            Vue app 与 renderer 挂载组件。
+          </p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>阶段</th>
+                  <th>VueElement 动作</th>
+                  <th>关键竞态</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>constructor</strong></td>
+                  <td>
+                    保存初始 props，决定 shadowRoot，处理声明式 Shadow DOM
+                  </td>
+                  <td>元素可能在定义前已拥有自有 property</td>
+                </tr>
+                <tr>
+                  <td><strong>connectedCallback</strong></td>
+                  <td>解析定义、观察 attribute、创建组件实例并 render</td>
+                  <td>连接后定义仍可能是异步组件</td>
+                </tr>
+                <tr>
+                  <td><strong>attributeChanged</strong></td>
+                  <td>类型转换后写入 props 并触发更新</td>
+                  <td>反射 property 时避免循环写回</td>
+                </tr>
+                <tr>
+                  <td><strong>disconnectedCallback</strong></td>
+                  <td>微任务后确认仍断开再 unmount</td>
+                  <td>DOM move 会先断开再连接，不应误销毁</td>
+                </tr>
+                <tr>
+                  <td><strong>emit</strong></td>
+                  <td>转换为 CustomEvent，通过 DOM dispatchEvent</td>
+                  <td>组件事件名大小写与 DOM 监听习惯</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            “微任务后再判断
+            isConnected”是典型平台修复：节点从一个父容器移动到另一个父容器时，浏览器同步触发
+            disconnected/connected。若断开时立刻卸载，普通移动就会丢失组件状态。
+          </p>
+        </section>
+
+        <section class="article-section prose" id="security">
+          <h2>安全与可信类型：平台层必须知道写入的危险性</h2>
+          <ul>
+            <li>
+              <strong>innerHTML / textContent：</strong>用户通过 v-html 或
+              render prop 显式传入时走 DOM prop 路径；只有 innerHTML 经
+              <code>unsafeToTrustedHTML</code> 转成 TrustedHTML
+              类型，textContent 直接赋值。
+            </li>
+            <li>
+              <strong>静态内容：</strong><code>insertStaticContent</code> 写
+              template.innerHTML 前使用同一转换函数。策略的 createHTML
+              是恒等转换，只满足 Trusted Types sink 的类型要求，不做清洗。
+            </li>
+            <li>
+              <strong>事件属性：</strong>函数走 addEventListener；字符串形式的
+              on* 赋值具有脚本语义，必须严格分派。
+            </li>
+            <li>
+              <strong>URL 属性：</strong>runtime 提交不等同于 URL
+              安全过滤，应用仍应避免把不可信输入直接传给危险协议。
+            </li>
+          </ul>
+          <div class="callout warm">
+            Vue 的转义默认保护模板插值，但 <code>v-html</code>、直接 DOM
+            prop、第三方指令与自定义 renderer 会扩大信任边界。阅读 runtime-dom
+            时应把“这个值最终进了哪个浏览器 sink”作为固定问题。TrustedHTML
+            代表调用方声明信任，不等于内容经过安全过滤。
+          </div>
+          <div class="plain-section">
+            <span class="scene-label">固定版本源码卡 · v3.5.41</span>
+            <pre><code>// nodeOps.ts：Trusted Types 只做类型层转换
+const policy = trustedTypes?.createPolicy('vue', {
+  createHTML: value =&gt; value,
+})
+const unsafeToTrustedHTML = policy
+  ? value =&gt; policy.createHTML(value)
+  : value =&gt; value
+
+// class.ts：null 对 HTML / SVG 都是删除 attribute
+if (value == null) el.removeAttribute('class')
+else if (isSVG) el.setAttribute('class', value)
+else el.className = value</code></pre>
+            <div class="source-links">
+              <a
+                class="source-link"
+                href="../../../vue/packages/runtime-dom/src/nodeOps.ts"
+                >本地：Trusted Types / 静态内容</a
+              >
+              <a
+                class="source-link"
+                href="../../../vue/packages/runtime-dom/src/modules/props.ts"
+                >本地：innerHTML DOM prop</a
+              >
+              <a
+                class="source-link"
+                href="../../../vue/packages/runtime-dom/src/modules/class.ts"
+                >本地：patchClass</a
+              >
+              <a
+                class="source-link"
+                href="../../../vue/packages/runtime-dom/__tests__/patchClass.spec.ts"
+                >本地：class 测试</a
+              >
+              <a
+                class="source-link"
+                href="https://github.com/vuejs/core/blob/v3.5.41/packages/runtime-dom/src/nodeOps.ts#L9-L35"
+                >v3.5.41：Trusted Types 策略</a
+              >
+              <a
+                class="source-link"
+                href="https://github.com/vuejs/core/blob/v3.5.41/packages/runtime-dom/src/modules/class.ts#L5-L25"
+                >v3.5.41：patchClass</a
+              >
+            </div>
+          </div>
+        </section>
+
+        <section class="article-section prose" id="reading">
+          <h2>推荐源码路线</h2>
+          <ol>
+            <li><code>index.ts</code>：确认 DOM renderer 怎样被组装和包装。</li>
+            <li>
+              <code>nodeOps.ts</code>：把 core 中的 host* 别名映射回真实 DOM
+              API。
+            </li>
+            <li>
+              <code>patchProp.ts</code>：先画分派决策树，再分别进入 modules
+              目录。
+            </li>
+            <li>
+              <code>modules/events.ts</code> 与
+              <code>directives/vModel.ts</code>：理解交互时序。
+            </li>
+            <li>
+              <code>components/Transition.ts</code> 与
+              <code>apiCustomElement.ts</code>：最后处理浏览器协议。
+            </li>
+          </ol>
+          <pre><code>pnpm vitest packages/runtime-dom/__tests__/patchProps.spec.ts
+pnpm vitest packages/runtime-dom/__tests__/patchEvents.spec.ts
+pnpm vitest packages/runtime-dom/__tests__/directives/vModel.spec.ts</code></pre>
+        </section>
+
+        <nav class="page-nav" aria-label="章节翻页">
+          <a href="builtins.html"><span>上一章</span>← 内置组件协议</a>
+          <a href="integration.html"><span>下一章</span>完整调用链 →</a>
+        </nav>
+      </main>
+
+      <aside class="page-toc" aria-label="本页目录">
+        <div class="toc-title">本页目录</div>
+        <a href="#plain-dom">先理解浏览器边界</a>
+        <a href="#composition">入口组装</a>
+        <a href="#nodeops">nodeOps</a>
+        <a href="#patch-prop">patchProp</a>
+        <a href="#class-style">class / style</a>
+        <a href="#events">事件系统</a>
+        <a href="#directives">DOM 指令</a>
+        <a href="#transition-dom">CSS Transition</a>
+        <a href="#custom-elements">Custom Element</a>
+        <a href="#security">安全边界</a>
+        <a href="#reading">阅读路线</a>
+      </aside>
+    </div>
+    <footer data-site-footer></footer>
+    <script src="assets/app.js" defer></script>
+  </body>
+</html>

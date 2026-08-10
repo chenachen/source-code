@@ -1,0 +1,664 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Vue Teleport、Suspense、KeepAlive 与 Transition 内置组件实现协议详解"
+    />
+    <title>内置组件协议 · Vue Runtime 内核解剖</title>
+    <link rel="stylesheet" href="assets/styles.css" />
+  </head>
+  <body data-current="builtins.html">
+    <header data-site-header></header>
+    <div class="docs-shell">
+      <aside data-global-nav></aside>
+      <main class="article">
+        <div class="article-hero">
+          <div class="article-kicker">Chapter 07 · Built-in Protocols</div>
+          <h1>弹窗、骨架屏、页面缓存和动画改变了什么</h1>
+          <p class="article-lead">
+            四个内置组件分别改变节点放在哪里、何时显示、离开后是否销毁，以及删除要等多久。先从产品场景理解，再进入它们与
+            Renderer 的特殊协议。
+          </p>
+          <div class="hero-meta">
+            <span>建议阅读 45 分钟</span><span>先修：Renderer / Scheduler</span
+            ><span>四套协议</span>
+          </div>
+        </div>
+
+        <section class="article-section prose" id="plain-builtins">
+          <h2>普通组件做不到的四类产品需求</h2>
+          <div class="card-grid">
+            <article class="card">
+              <span class="card-label">TELEPORT · 位置</span>
+              <h3>弹窗放进 body</h3>
+              <p>
+                弹窗逻辑上属于当前组件，真实 DOM 却要离开被 overflow
+                裁剪的父容器。
+              </p>
+            </article>
+            <article class="card">
+              <span class="card-label">SUSPENSE · 等待</span>
+              <h3>先显示骨架屏</h3>
+              <p>
+                真实内容要等异步数据或组件；准备好之前展示
+                fallback，完成后整体切换。
+              </p>
+            </article>
+            <article class="card">
+              <span class="card-label">KEEPALIVE · 记忆</span>
+              <h3>切走页面但别丢状态</h3>
+              <p>
+                返回列表页时，希望筛选条件和滚动状态还在，所以组件离开时暂存而非销毁。
+              </p>
+            </article>
+            <article class="card">
+              <span class="card-label">TRANSITION · 时间</span>
+              <h3>离开前先播完动画</h3>
+              <p>
+                逻辑上节点已经消失，物理 DOM 还要保留到 leave
+                动画完成后才能删除。
+              </p>
+            </article>
+          </div>
+          <h3>它们改变的是 Renderer 的默认规则</h3>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>默认规则</th>
+                  <th>被谁改变</th>
+                  <th>新规则</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>子节点放在父节点内部</td>
+                  <td><strong>Teleport</strong></td>
+                  <td>逻辑关系不变，DOM 可去另一个容器</td>
+                </tr>
+                <tr>
+                  <td>组件挂载可以同步完成</td>
+                  <td><strong>Suspense</strong></td>
+                  <td>先准备隐藏分支，依赖完成后提交</td>
+                </tr>
+                <tr>
+                  <td>离开组件树就卸载</td>
+                  <td><strong>KeepAlive</strong></td>
+                  <td>移到缓存容器，保留实例和 DOM</td>
+                </tr>
+                <tr>
+                  <td>删除决定后立即 remove</td>
+                  <td><strong>Transition</strong></td>
+                  <td>动画回调完成后才真正删除</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="reader-lane">
+            <div>
+              这四个能力之所以属于
+              Runtime，不是因为它们“常用”，而是因为它们必须介入创建、移动和删除节点的过程。
+            </div>
+          </div>
+          <div class="reader-check">
+            <strong>组合时的统一问题：</strong
+            >节点现在属于哪个组件、真实放在哪个容器、何时可见、离开时是缓存还是销毁。
+          </div>
+        </section>
+
+        <div class="level-divider">进入四套内置组件协议与源码层</div>
+
+        <section class="article-section prose" id="why-protocol">
+          <h2>为什么不能只用 setup + render 实现</h2>
+          <p>
+            普通组件最终只返回一棵 subTree，由 renderer 决定 mount、move 与
+            unmount。四个内置能力恰好要影响这些动作本身：Teleport 要把 children
+            插到另一容器；KeepAlive 要“停用而非销毁”；Transition
+            要把删除推迟到动画结束；Suspense
+            要先在隐藏容器试装异步分支。因此它们必须拥有受控的内部接口。
+          </p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>能力</th>
+                  <th>改写的默认假设</th>
+                  <th>接入点</th>
+                  <th>核心状态</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>Teleport</strong></td>
+                  <td>逻辑父子与物理 DOM 父子相同</td>
+                  <td>type.process / move / remove / hydrate</td>
+                  <td>target、targetStart、targetAnchor</td>
+                </tr>
+                <tr>
+                  <td><strong>Suspense</strong></td>
+                  <td>组件 mount 可同步完成</td>
+                  <td>type.process / boundary.registerDep</td>
+                  <td>pendingBranch、activeBranch、deps、pendingId</td>
+                </tr>
+                <tr>
+                  <td><strong>KeepAlive</strong></td>
+                  <td>移出当前树就应 unmount</td>
+                  <td>renderer 注入 activate / deactivate</td>
+                  <td>cache、keys、storageContainer</td>
+                </tr>
+                <tr>
+                  <td><strong>Transition</strong></td>
+                  <td>insert/remove 立即完成</td>
+                  <td>VNode transition hooks / move type</td>
+                  <td>enter/leave callbacks、leavingVNodes</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="callout">
+            设计边界是“内置能力拿到恰好够用的 renderer
+            internals”，而不是直接复制 renderer。这样所有特殊分支仍共享同一套
+            patch、move、unmount 和队列语义。
+          </div>
+          <div class="plain-section">
+            <span class="scene-label">代表性源码路径 · v3.5.41</span>
+            <pre><code>// renderer.ts:459–484
+if (shapeFlag &amp; ShapeFlags.TELEPORT) {
+  TeleportImpl.process(..., internals)
+} else if (shapeFlag &amp; ShapeFlags.SUSPENSE) {
+  SuspenseImpl.process(..., internals)
+}
+
+// renderer.ts:1178–1186 / 2177–2179
+if (vnodeWasKeptAlive) keepAliveContext.activate(...)
+if (vnodeShouldKeepAlive) return keepAliveContext.deactivate(vnode)
+
+// 普通元素路径也会调用 vnode.transition 的 beforeEnter / enter / leave</code></pre>
+            <p>
+              四条路径的接入方式不同：Teleport/Suspense 作为特殊 VNode 类型接管
+              <code>process</code>；KeepAlive 用 ShapeFlag 改写组件挂载和卸载；
+              Transition 把 hooks 挂在普通 VNode 上，让 renderer 在
+              insert/remove 边界调用。它们共享 renderer
+              internals，但没有合并成一种协议。
+            </p>
+            <div class="source-links">
+              <a
+                class="source-link"
+                href="../../../vue/packages/runtime-core/src/renderer.ts"
+                >本地：Renderer 接入点</a
+              >
+              <a
+                class="source-link"
+                href="../../../vue/packages/runtime-core/__tests__/components/Teleport.spec.ts"
+                >本地：Teleport 测试</a
+              >
+              <a
+                class="source-link"
+                href="../../../vue/packages/runtime-core/__tests__/components/Suspense.spec.ts"
+                >本地：Suspense 测试</a
+              >
+              <a
+                class="source-link"
+                href="../../../vue/packages/runtime-core/__tests__/components/KeepAlive.spec.ts"
+                >本地：KeepAlive 测试</a
+              >
+              <a
+                class="source-link"
+                href="../../../vue/packages/runtime-core/__tests__/components/BaseTransition.spec.ts"
+                >本地：BaseTransition 测试</a
+              >
+              <a
+                class="source-link"
+                href="https://github.com/vuejs/core/blob/v3.5.41/packages/runtime-core/src/renderer.ts#L459-L484"
+                >v3.5.41：Teleport / Suspense 分派</a
+              >
+            </div>
+          </div>
+        </section>
+
+        <section class="article-section prose" id="teleport">
+          <h2>Teleport：一棵逻辑树，两套物理锚点</h2>
+          <p>
+            Teleport 的 children 在组件/VNode 关系上仍属于原父级，所以
+            provide/inject、事件组件链、卸载范围都不变；真实 DOM 却位于
+            <code>to</code> 指向的
+            target。为同时维护两套位置，主容器和目标容器都需要锚点。
+          </p>
+          <div class="diagram" role="img" aria-label="Teleport 双容器结构">
+            <div class="diagram-title">LOGICAL TREE / PHYSICAL DOM</div>
+            <div class="branch-grid">
+              <div class="layer-node">
+                <strong>主容器</strong
+                ><small
+                  >teleport start … teleport end<br />保留逻辑位置与兄弟顺序。</small
+                >
+              </div>
+              <div class="layer-node emphasis">
+                <strong>目标容器</strong
+                ><small
+                  >targetStart … children … targetAnchor<br />隔离多个 Teleport
+                  的区间。</small
+                >
+              </div>
+            </div>
+          </div>
+          <h3>首次挂载</h3>
+          <div class="sequence">
+            <div class="sequence-item">
+              <strong>在主容器创建 start/end</strong
+              ><br />即使内容传送出去，原位置仍有稳定范围。
+            </div>
+            <div class="sequence-item">
+              <strong>解析 to</strong><br />字符串通过
+              <code>querySelector</code> 找
+              target，也可直接传宿主元素；找不到会给出开发警告。
+            </div>
+            <div class="sequence-item">
+              <strong>在 target 建立锚点</strong><br />多个 Teleport 指向同一
+              target 时，每个实例必须拥有独立区间。
+            </div>
+            <div class="sequence-item">
+              <strong>按 disabled 决定容器</strong><br />启用时挂到
+              target；disabled 时挂在主容器的结束锚点前。
+            </div>
+          </div>
+          <h3>更新时不是只有“patch children”</h3>
+          <p>
+            <code>to</code> 或
+            <code>disabled</code> 变化都可能触发整体移动：disabled false → true
+            把 children 拉回主树；target
+            改变则移到新目标；普通内容更新才在当前真实容器中 patch。<code
+              >defer</code
+            >
+            还允许目标在同一次更新周期稍后出现，解析动作进入 post-render
+            时机，但必须核对 Teleport 没在等待期间被卸载。
+          </p>
+          <div class="callout warm">
+            高频误区：Teleport
+            不会改变组件父子链，也不新建应用上下文。它移动的是宿主节点，不是
+            VNode 所属关系。
+          </div>
+
+          <h3>水合为何更难</h3>
+          <p>
+            水合主树时只能先认领 Teleport 占位符，再去 target 寻找对应锚点。多个
+            Teleport 共享 target 时要按 SSR
+            输出顺序推进目标游标；否则第二个实例可能误认领第一个实例的
+            children。
+          </p>
+        </section>
+
+        <section class="article-section prose" id="suspense">
+          <h2>Suspense：异步依赖计数器 + 双分支提交事务</h2>
+          <p>
+            Suspense 同时维护 <code>pendingBranch</code> 与
+            <code>activeBranch</code>。新内容先挂到离屏
+            hiddenContainer：如果同步完成就一次性显示；若发现异步 setup
+            依赖，则继续展示旧分支或 fallback，等依赖数归零再 resolve。
+          </p>
+          <div class="sequence">
+            <div class="sequence-item">
+              <strong>normalize 两个 slot</strong><br /><code>default</code> 是
+              content，<code>fallback</code> 是等待界面，每个都归一化为单根
+              VNode。
+            </div>
+            <div class="sequence-item">
+              <strong>离屏 patch content</strong><br />子组件遇到 async setup
+              后向最近的 pending suspense 注册依赖，<code>deps++</code>。
+            </div>
+            <div class="sequence-item">
+              <strong>决定是否显示 fallback</strong><br />首次挂载存在依赖时展示
+              fallback；更新时可由 timeout 控制何时切换。
+            </div>
+            <div class="sequence-item">
+              <strong>每个依赖完成</strong><br />确认实例未卸载且
+              <code>pendingId</code> 仍匹配，完成组件 setup 和 subTree mount，再
+              <code>deps--</code>。
+            </div>
+            <div class="sequence-item">
+              <strong>resolve</strong><br />移除/过渡旧 activeBranch，把
+              pendingBranch 从隐藏容器移动到真实容器，统一冲刷延后的 effects。
+            </div>
+          </div>
+          <p>
+            <code>pendingId</code>
+            是关键的竞态令牌。若一次等待尚未完成，父组件已触发第二个 pending
+            branch，第一批 Promise 即使随后 resolve 也不得提交旧结果。
+          </p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>状态</th>
+                  <th>activeBranch</th>
+                  <th>pendingBranch</th>
+                  <th>用户看到</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>同步完成</strong></td>
+                  <td>content</td>
+                  <td>null</td>
+                  <td>直接看到内容</td>
+                </tr>
+                <tr>
+                  <td><strong>首次等待</strong></td>
+                  <td>fallback</td>
+                  <td>hidden content</td>
+                  <td>fallback</td>
+                </tr>
+                <tr>
+                  <td><strong>更新等待</strong></td>
+                  <td>旧 content 或 fallback</td>
+                  <td>新 hidden content</td>
+                  <td>由 timeout 决定</td>
+                </tr>
+                <tr>
+                  <td><strong>已 resolve</strong></td>
+                  <td>新 content</td>
+                  <td>null</td>
+                  <td>内容原子切换</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <h3>effects 为什么要延后</h3>
+          <p>
+            pendingBranch 虽已在 hiddenContainer mount，但还不可见。如果此时运行
+            mounted、指令或 ref，用户代码会误以为节点已提交到页面。Suspense
+            暂存这些 post-render effects，在 resolve 后交回正常调度队列；嵌套
+            Suspense 还要向未完成的祖先边界继续汇入。
+          </p>
+        </section>
+
+        <section class="article-section prose" id="keepalive">
+          <h2>KeepAlive：把“卸载”重定义为“停用”</h2>
+          <p>
+            KeepAlive 自身是组件，但它需要 renderer 配合。setup
+            时通过共享上下文拿到
+            <code>move</code>、<code>patch</code>、<code>unmount</code>，并向
+            renderer 暴露 <code>activate</code> /
+            <code>deactivate</code>。renderer 看到相应 ShapeFlag 后不走普通
+            mount/unmount。
+          </p>
+          <div class="branch-grid">
+            <div class="layer-node">
+              <strong>deactivate</strong
+              ><small
+                >把子树 move 到 storageContainer；排入 deactivated
+                hook；组件实例与 DOM 都保留。</small
+              >
+            </div>
+            <div class="layer-node emphasis">
+              <strong>activate</strong
+              ><small
+                >把缓存子树 move 回真实容器；用最新 VNode patch 旧缓存；排入
+                activated hook。</small
+              >
+            </div>
+          </div>
+          <h3>缓存身份</h3>
+          <p>
+            默认 key 是组件类型；显式 key
+            可让同一组件类型拥有多个缓存实例。命中缓存时，新 VNode 继承旧 VNode
+            的 <code>el</code> 和 <code>component</code>，并打上
+            <code>COMPONENT_KEPT_ALIVE</code>。首次缓存则在 render 后将 subTree
+            写入 Map。
+          </p>
+          <h3>include / exclude / max</h3>
+          <ul>
+            <li>
+              <strong>include/exclude：</strong>匹配组件 name；条件变化后在
+              post-flush 清理不再合格的缓存。
+            </li>
+            <li>
+              <strong>max：</strong>使用 keys Set 维护近似
+              LRU。缓存命中时删除再追加 key；超过上限时淘汰最旧 key。
+            </li>
+            <li>
+              <strong>清缓存：</strong>不能简单 Map.delete。非当前分支要真正
+              unmount；当前分支则先清除 keep-alive flag，等正常生命周期接管。
+            </li>
+          </ul>
+          <div class="callout warm">
+            KeepAlive 保留组件状态，也保留响应式
+            effect。停用组件仍可能被依赖触发更新；“不在页面中”不等于“完全暂停执行”。业务若需暂停订阅，应在
+            activated/deactivated 生命周期显式管理。
+          </div>
+        </section>
+
+        <section class="article-section prose" id="transition">
+          <h2>Transition：把时间维度注入 Renderer</h2>
+          <p>
+            runtime-core 的 <code>BaseTransition</code> 不知道
+            CSS，只负责状态机与 hook 协议；runtime-dom 的
+            <code>Transition</code> 把 CSS class、transitionend/animationend
+            和显式 duration 实现成 hooks。
+          </p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>阶段</th>
+                  <th>Renderer 时机</th>
+                  <th>典型动作</th>
+                  <th>完成信号</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>beforeEnter</strong></td>
+                  <td>hostInsert 之前</td>
+                  <td>设置初始 class；取消同节点进行中的 leave</td>
+                  <td>同步</td>
+                </tr>
+                <tr>
+                  <td><strong>enter</strong></td>
+                  <td>插入之后 post-render</td>
+                  <td>下一帧切换 active/to class，等待过渡结束</td>
+                  <td>done callback</td>
+                </tr>
+                <tr>
+                  <td><strong>leave</strong></td>
+                  <td>真正 hostRemove 之前</td>
+                  <td>保留节点，运行动画</td>
+                  <td>done 后调用 remove</td>
+                </tr>
+                <tr>
+                  <td><strong>move</strong></td>
+                  <td>Keyed Diff 移动节点时</td>
+                  <td>TransitionGroup 记录位置，使用 FLIP 动画</td>
+                  <td>transitionend</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            leave 的难点是“逻辑上已离开，物理上暂时还在”。Renderer 不能立即删除
+            DOM，但下一轮又可能插入同 key 节点。<code>leavingVNodes</code> 以
+            type/key 记录回调，新 enter 可以主动结束旧
+            leave，避免重复节点与错误动画。
+          </p>
+          <h3>out-in 与 in-out</h3>
+          <ul>
+            <li>
+              <strong>out-in：</strong
+              >旧分支先离开，完成后触发组件重新更新，再进入新分支。
+            </li>
+            <li>
+              <strong>in-out：</strong>新分支先进入，旧分支的 leave 被延迟到
+              enter 完成。
+            </li>
+          </ul>
+          <p>
+            模式说明 Transition 并非纯 CSS
+            包装：它能影响组件更新时机和节点删除时机，因此必须和 VNode
+            clone、KeepAlive、Suspense 分支切换协作。
+          </p>
+        </section>
+
+        <section class="article-section prose" id="combinations">
+          <h2>组合场景：真正的复杂度来自协议相遇</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>组合</th>
+                  <th>需要回答的问题</th>
+                  <th>源码中的共同语言</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>Teleport × Transition</strong></td>
+                  <td>
+                    leave 时节点在哪个容器？target 改变时是 reorder 还是
+                    enter/leave？
+                  </td>
+                  <td>moveType、anchor、transition hooks</td>
+                </tr>
+                <tr>
+                  <td><strong>Suspense × Transition</strong></td>
+                  <td>
+                    pending resolve 时先移除 fallback 还是先进入 content？
+                  </td>
+                  <td>activeBranch、afterLeave、effects</td>
+                </tr>
+                <tr>
+                  <td><strong>KeepAlive × Transition</strong></td>
+                  <td>
+                    离开是 deactivate 还是 unmount？再次进入是否复用 DOM？
+                  </td>
+                  <td>ShapeFlag、persisted、activate/deactivate</td>
+                </tr>
+                <tr>
+                  <td><strong>KeepAlive × Suspense</strong></td>
+                  <td>缓存的是 Suspense 外壳还是已解析 content？</td>
+                  <td>getInnerChild、subTree、pendingBranch</td>
+                </tr>
+                <tr>
+                  <td><strong>Teleport × SSR</strong></td>
+                  <td>主树与 target 的锚点怎样一一对应？</td>
+                  <td>hydrate、targetStart、targetAnchor</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="callout">
+            阅读组合 bug 时不要从某个组件名出发猜。先画三样东西：当前 active
+            VNode、真实 DOM 所在 container、下一次操作使用的
+            anchor；大多数问题会落在这三者不同步。
+          </div>
+        </section>
+
+        <section class="article-section prose" id="reading">
+          <h2>源码阅读顺序与验证</h2>
+          <div class="tabs" data-tabs>
+            <div class="tab-list" role="tablist">
+              <button
+                class="tab-button"
+                data-tab="teleport-code"
+                aria-selected="true"
+              >
+                Teleport
+              </button>
+              <button
+                class="tab-button"
+                data-tab="suspense-code"
+                aria-selected="false"
+              >
+                Suspense
+              </button>
+              <button
+                class="tab-button"
+                data-tab="keep-code"
+                aria-selected="false"
+              >
+                KeepAlive
+              </button>
+              <button
+                class="tab-button"
+                data-tab="transition-code"
+                aria-selected="false"
+              >
+                Transition
+              </button>
+            </div>
+            <div data-tab-panel="teleport-code">
+              <p>
+                先读 <code>TeleportImpl.process</code> 的 mount/update
+                两支，再读 <code>moveTeleport</code>，最后读
+                hydrate。始终记录主锚点与目标锚点。
+              </p>
+            </div>
+            <div data-tab-panel="suspense-code" hidden>
+              <p>
+                先读 <code>createSuspenseBoundary</code> 的字段，再跟
+                <code>registerDep → deps-- → resolve</code>，最后读
+                timeout、嵌套边界和错误路径。
+              </p>
+            </div>
+            <div data-tab-panel="keep-code" hidden>
+              <p>
+                从 setup 返回的 render 函数看缓存命中，再回看注入 renderer
+                internals 的 activate/deactivate；最后看 pruneCacheEntry。
+              </p>
+            </div>
+            <div data-tab-panel="transition-code" hidden>
+              <p>
+                先读 core 的 resolveTransitionHooks，再读 DOM 的
+                resolveTransitionProps。前者解释时序，后者解释 CSS 如何完成
+                hook。
+              </p>
+            </div>
+          </div>
+          <div class="source-links">
+            <a
+              class="source-link"
+              href="../../../vue/packages/runtime-core/src/components/Teleport.ts"
+              >Teleport.ts</a
+            >
+            <a
+              class="source-link"
+              href="../../../vue/packages/runtime-core/src/components/Suspense.ts"
+              >Suspense.ts</a
+            >
+            <a
+              class="source-link"
+              href="../../../vue/packages/runtime-core/src/components/KeepAlive.ts"
+              >KeepAlive.ts</a
+            >
+            <a
+              class="source-link"
+              href="../../../vue/packages/runtime-core/src/components/BaseTransition.ts"
+              >BaseTransition.ts</a
+            >
+          </div>
+        </section>
+
+        <nav class="page-nav" aria-label="章节翻页">
+          <a href="hydration.html"><span>上一章</span>← SSR 水合</a>
+          <a href="runtime-dom.html"><span>下一章</span>DOM 平台层 →</a>
+        </nav>
+      </main>
+
+      <aside class="page-toc" aria-label="本页目录">
+        <div class="toc-title">本页目录</div>
+        <a href="#plain-builtins">四个产品场景</a>
+        <a href="#why-protocol">为什么需要协议</a>
+        <a href="#teleport">Teleport</a>
+        <a href="#suspense">Suspense</a>
+        <a href="#keepalive">KeepAlive</a>
+        <a href="#transition">Transition</a>
+        <a href="#combinations">组合场景</a>
+        <a href="#reading">阅读顺序</a>
+      </aside>
+    </div>
+    <footer data-site-footer></footer>
+    <script src="assets/app.js" defer></script>
+  </body>
+</html>
