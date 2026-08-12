@@ -578,14 +578,15 @@ h4 {
 }
 
 .layer-flow {
-  display: grid;
-  grid-template-columns: 1fr auto 1.2fr auto 1fr;
+  display: flex;
   align-items: stretch;
   gap: 0.6rem;
 }
 
 .layer-node {
   display: flex;
+  flex: 1 1 0;
+  min-width: 0;
   min-height: 100px;
   flex-direction: column;
   justify-content: center;
@@ -612,8 +613,41 @@ h4 {
 
 .diagram-arrow {
   display: grid;
+  flex: 0 0 auto;
   place-items: center;
   color: var(--brand);
+  white-space: nowrap;
+}
+
+/* integration.html：长期所有权与只在调度期间存在的临时引用。 */
+.ownership-branches {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.6rem;
+  margin-top: 0.6rem;
+}
+
+.ownership-branches > div {
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-muted);
+  color: var(--text-soft);
+  font-size: 0.78rem;
+  line-height: 1.6;
+}
+
+.ownership-branches strong {
+  color: var(--text);
+}
+
+.teardown-lane {
+  max-width: 760px;
+  margin-inline: auto;
+}
+
+.teardown-boundaries {
+  margin-top: 1rem;
 }
 
 .support-row {
@@ -818,6 +852,11 @@ h4 {
   margin: 0.65rem 0;
 }
 
+.test-proof code {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 .branch-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1009,7 +1048,7 @@ details ul {
   font-size: 0.86rem;
 }
 
-/* 面向不阅读源码的读者：先用场景、可见结果和逐步演示建立心智模型。 */
+/* 用场景、可见结果和逐步演示建立心智模型。 */
 .reader-lane {
   display: flex;
   align-items: flex-start;
@@ -1030,7 +1069,7 @@ details ul {
   border-radius: 999px;
   background: var(--brand);
   color: #082319;
-  content: '先说人话';
+  content: '阅读提示';
   font-size: 0.66rem;
   font-weight: 800;
   letter-spacing: 0.03em;
@@ -1556,6 +1595,7 @@ details ul {
   .role-grid,
   .story-grid,
   .sequence,
+  .ownership-branches,
   .support-row,
   .page-nav {
     grid-template-columns: 1fr;
@@ -1580,11 +1620,19 @@ details ul {
   }
 
   .layer-flow {
-    grid-template-columns: 1fr;
+    overflow-x: auto;
+    padding-bottom: 0.45rem;
+    scroll-snap-type: x proximity;
+    overscroll-behavior-inline: contain;
+  }
+
+  .layer-node {
+    flex: 0 0 min(74vw, 240px);
+    scroll-snap-align: start;
   }
 
   .diagram-arrow {
-    transform: rotate(90deg);
+    transform: none;
   }
 
   .flow-step {

@@ -16,12 +16,12 @@
       <aside data-global-nav></aside>
       <main class="article">
         <div class="article-hero">
-          <div class="article-kicker">Main Path · End-to-end source trace</div>
+          <div class="article-kicker">Chapter 09 · Integration</div>
           <h1>一个按钮，从首次出现到点击后变成 1</h1>
           <p class="article-lead">
-            不再先讲一堆函数名。先拿到完整可运行用例，再沿同一份
-            <code>count</code>、同一个组件实例、同一对 VNode 和同一个 button
-            DOM， 手把手走完 Vue 3.5.41 的真实源码。
+            从完整可运行用例出发，沿同一份 <code>count</code>、同一个组件实例、
+            同一对 VNode 和同一个 button DOM，走完 Vue 3.5.41
+            的挂载、点击更新与卸载清理。
           </p>
           <div class="hero-meta">
             <span>先完整用例</span><span>再真实测试</span
@@ -54,18 +54,15 @@
               >按真实调用顺序解释参数、返回值和状态前后。
             </li>
             <li>
-              <strong>边界与证据：</strong>相同值、去重、卸载、render 抛错、job
-              抛错怎样收口。
+              <strong>边界与证据：</strong>相同值、去重、render 抛错、job
+              抛错和完整卸载怎样收口。
             </li>
           </ol>
           <div class="callout">
-            <strong>固定证据基线：</strong>本地 <code>vue/package.json</code> 为
-            <code>3.5.41</code>。只有带
-            <code>data-source-file</code> 的代码块才称 “连续原文”：其 DOM
-            <code>textContent</code> 可在对应本地文件逐字连续匹配。
-            其余源码块统一属于教学摘录：可能去掉说明注释、重排共同左缩进；凡跨段或
-            省略执行语句 / 控制分支，还会明确写“删节摘录”，并用
-            <code>// ...</code> 标出省略处。教学摘录不冒充可逐字复制的连续源码。
+            <strong>版本与摘录规则：</strong>本地 <code>vue/package.json</code> 为
+            <code>3.5.41</code>。带 <code>data-source-file</code>
+            的代码块可在对应文件中逐字连续匹配；其余代码块是删节摘录，省略位置用
+            <code>// ...</code> 标出。
           </div>
         </section>
 
@@ -112,7 +109,9 @@
   createApp,
   h,
   nextTick,
+  onBeforeUnmount,
   onMounted,
+  onUnmounted,
   onUpdated,
   ref,
 } from 'vue'
@@ -152,6 +151,17 @@ const App = {
       )
     })
 
+    onBeforeUnmount(() =&gt; {
+      console.log(
+        '[beforeUnmount]',
+        document.querySelector('#counter').textContent,
+      )
+    })
+
+    onUnmounted(() =&gt; {
+      console.log('[unmounted]', document.querySelector('#counter'))
+    })
+
     return () =&gt;
       h(
         'button',
@@ -165,7 +175,9 @@ const App = {
   },
 }
 
-createApp(App).mount('#app')</code></pre>
+const app = createApp(App)
+app.mount('#app')
+window.unmountCounter = () =&gt; app.unmount()</code></pre>
 
           <p>
             运行 <code>npm install</code>、<code>npm run dev</code>。预期顺序：
@@ -176,20 +188,25 @@ createApp(App).mount('#app')</code></pre>
 [handler:before] 0
 [handler:sync-dom] 计数：0
 [updated] 计数：1
-[nextTick] 计数：1</code></pre>
+[nextTick] 计数：1
+
+# 点击一次并等待日志结束后，在控制台执行 unmountCounter()
+[beforeUnmount] 计数：1
+[unmounted] null</code></pre>
           <p>
             最关键观察：<code>count.value++</code>
             已同步完成，但同一个同步事件处理函数里 DOM 仍是 0；<code
               >onUpdated</code
             >
-            先看到新 DOM，随后
-            <code>await nextTick()</code>
-            才恢复。后面所有源码，只为解释这四行顺序。
+            先看到新 DOM，随后 <code>await nextTick()</code> 才恢复。调用
+            <code>unmountCounter()</code> 时，<code>beforeUnmount</code>
+            仍能读到 button；<code>unmounted</code> 执行时它已经离开 DOM。
+            下面分别解释这些状态变化。
           </p>
         </section>
 
         <section class="article-section prose" id="repo-test">
-          <h2>第二步：先看 Vue 仓库怎样证明这条链</h2>
+          <h2>第二步：看仓库里的 Counter 测试</h2>
           <p>
             下方是 Vue 3.5.41 仓库
             <a
@@ -198,13 +215,11 @@ createApp(App).mount('#app')</code></pre>
                 >packages/runtime-core/__tests__/apiOptions.spec.ts</code
               ></a
             >
-            的<strong>完整 <code>test('data')</code> 测试逻辑</strong
-            >；下方是缩进规范化的 教学呈现，统一去掉外层
-            <code>describe</code> 带来的两个空格，未删动作或断言，
-            但不标作逐字连续原文。它不依赖教程 Demo； 外层
-            <code>describe</code> 位于同文件；为避免读者猜依赖，先把文件顶部完整
-            import 上下文一并贴出。<code>test</code>、<code>expect</code>
-            由该仓库 Vitest globals 提供。
+            的 <code>test('data')</code>。它使用 runtime-test
+            宿主，不经过浏览器事件系统，但能直接证明“事件修改组件状态，等待
+            <code>nextTick</code> 后宿主树更新”。文件顶部的 import
+            一并列出，便于确认依赖；<code>test</code>、<code>expect</code>
+            由仓库的 Vitest globals 提供。
           </p>
           <pre
             data-source-file="vue/packages/runtime-core/__tests__/apiOptions.spec.ts"
@@ -282,7 +297,7 @@ import { render as domRender } from 'vue'</code></pre>
               scheduler 定向测试。
             </p>
             <p>
-              <strong>本轮执行证据：</strong>Node 24 环境执行该测试文件：1 file
+              <strong>固定版本执行：</strong>Node 24 环境执行该测试文件：1 file
               passed，48 tests passed。
             </p>
           </div>
@@ -300,7 +315,7 @@ import { render as domRender } from 'vue'</code></pre>
         </section>
 
         <section class="article-section prose" id="objects">
-          <h2>第三步：把六个对象摆在桌面上</h2>
+          <h2>第三步：一次更新涉及哪六个对象</h2>
           <p>后面不会突然换主角。一次更新只是在这六个对象之间传递控制权：</p>
           <div class="table-wrap">
             <table>
@@ -313,6 +328,19 @@ import { render as domRender } from 'vue'</code></pre>
                 </tr>
               </thead>
               <tbody>
+                <tr>
+                  <td><strong>跨包组装</strong></td>
+                  <td>
+                    <a href="../../../vue/packages/runtime-dom/src/index.ts"
+                      >runtime-dom/index.ts · rendererOptions/ensureRenderer</a
+                    >；<a href="../../../vue/packages/runtime-core/src/renderer.ts"
+                      >renderer.ts · createRenderer/baseCreateRenderer</a
+                    >；<a href="../../../vue/packages/runtime-core/src/apiCreateApp.ts"
+                      >apiCreateApp.ts · createAppAPI</a
+                    >
+                  </td>
+                  <td>模块复用 renderer；每次 createApp 仍创建独立应用状态。</td>
+                </tr>
                 <tr>
                   <td><strong>RefImpl</strong></td>
                   <td><code>count</code>，<code>_rawValue: 0 → 1</code></td>
@@ -360,7 +388,7 @@ import { render as domRender } from 'vue'</code></pre>
         </section>
 
         <section class="article-section prose" id="flowchart">
-          <h2>第四步：同一个 Demo 的完整执行流程图</h2>
+          <h2>第四步：同一个 Demo 的挂载与点击流程</h2>
           <p>
             左边解释首次 mount；右边解释一次
             click。实线是本例正常控制流，红色“退出”
@@ -588,36 +616,386 @@ import { render as domRender } from 'vue'</code></pre>
         </section>
 
         <section class="article-section prose" id="mount-source">
-          <h2>第六步：首次 mount 为什么不排队</h2>
-          <h3>6.1 DOM 平台入口把容器交给 runtime-core</h3>
+          <h2>第六步：createApp 怎样组装 DOM Renderer 并首次挂载</h2>
+          <p>
+            Demo 执行 <code>createApp(App)</code> 时，runtime-dom
+            先取得一个注入了浏览器操作的 renderer，再调用这个 renderer
+            提供的应用工厂。renderer 在模块内复用，app、组件实例和 VNode
+            则按每次调用重新创建；这是两种不同的生命周期。
+          </p>
+
+          <h3>6.1 runtime-dom 合并宿主操作，并按需创建 renderer</h3>
+          <p>
+            <code>nodeOps</code> 提供创建、插入、删除和文本写入，
+            <code>patchProp</code> 负责属性与事件分派。两者合成
+            <code>rendererOptions</code>。普通客户端入口调用
+            <code>ensureRenderer()</code>；SSR 水合入口调用
+            <code>ensureHydrationRenderer()</code>。
+          </p>
+          <pre
+            data-source-file="vue/packages/runtime-dom/src/index.ts"
+          ><code>/** core renderer 所需的完整 DOM 宿主选项。 */
+const rendererOptions = /*@__PURE__*/ extend({ patchProp }, nodeOps)
+
+// 惰性创建：若用户只从 Vue 导入响应式 API，core renderer 与全部 DOM 操作可被摇掉。
+let renderer: Renderer&lt;Element | ShadowRoot&gt; | HydrationRenderer
+
+/** 当前缓存 renderer 是否已升级为带 hydration 能力的版本。 */
+let enabledHydration = false
+
+/** 获取普通 DOM renderer，首次真正 render/createApp 时才创建。 */
+function ensureRenderer() {
+  return (
+    renderer ||
+    (renderer = createRenderer&lt;Node, Element | ShadowRoot&gt;(rendererOptions))
+  )
+}
+
+/**
+ * 获取水合 renderer。普通 renderer 已创建时会替换为 hydration 版本；两者宿主选项相同。
+ */
+function ensureHydrationRenderer() {
+  renderer = enabledHydration
+    ? renderer
+    : createHydrationRenderer(rendererOptions)
+  enabledHydration = true
+  return renderer as HydrationRenderer
+}</code></pre>
+
+          <div
+            class="diagram"
+            role="img"
+            aria-label="runtime-dom renderer 缓存从未创建到普通 renderer 再到水合 renderer 的状态变化"
+          >
+            <div class="diagram-title">RENDERER CACHE · THREE VALID PATHS</div>
+            <div class="branch-grid">
+              <div class="branch">
+                <strong>普通客户端首次使用</strong
+                ><span
+                  ><code>S0: renderer = undefined</code><br />→
+                  <code>ensureRenderer()</code><br />→
+                  <code>S1: 普通 renderer</code></span
+                >
+              </div>
+              <div class="branch">
+                <strong>首次就是 SSR 水合</strong
+                ><span
+                  ><code>S0: undefined / false</code><br />→
+                  <code>ensureHydrationRenderer()</code><br />→
+                  <code>S2: 水合 renderer / true</code></span
+                >
+              </div>
+              <div class="branch">
+                <strong>普通 renderer 后来升级</strong
+                ><span
+                  ><code>S1: 普通 renderer / false</code><br />→
+                  水合入口替换缓存<br />→
+                  <code>S2: 水合 renderer / true</code></span
+                >
+              </div>
+              <div class="branch">
+                <strong>升级之后再次客户端渲染</strong
+                ><span
+                  ><code>ensureRenderer()</code> 直接返回现有的 S2；不会降级，
+                  也不会再造 renderer。</span
+                >
+              </div>
+            </div>
+          </div>
+          <p>
+            这里缓存的是<strong>包含算法与宿主操作的 renderer</strong>，不是
+            app。Demo 的 <code>createApp(App)</code> 每调用一次，后面的
+            <code>createAppAPI</code> 仍会创建新的 app context、插件集合和根实例。
+          </p>
+
+          <h3>6.2 runtime-core 把宿主操作关进 renderer 闭包</h3>
+          <p>
+            普通与水合入口最终都进入 <code>baseCreateRenderer</code>。区别只在于
+            是否传入 <code>createHydrationFunctions</code>；patch、组件处理、移动和
+            卸载仍共享同一套闭包。
+          </p>
+          <pre
+            data-source-file="vue/packages/runtime-core/src/renderer.ts"
+          ><code>export function createRenderer&lt;
+  HostNode = RendererNode,
+  HostElement = RendererElement,
+&gt;(options: RendererOptions&lt;HostNode, HostElement&gt;): Renderer&lt;HostElement&gt; {
+  return baseCreateRenderer&lt;HostNode, HostElement&gt;(options)
+}
+
+/**
+ * 创建带 SSR 水合能力的 DOM 渲染器。
+ * 单独入口使只做客户端渲染的构建不会引用 hydration 模块，可被 tree-shaking 删除。
+ */
+export function createHydrationRenderer(
+  options: RendererOptions&lt;Node, Element&gt;,
+): HydrationRenderer {
+  return baseCreateRenderer(options, createHydrationFunctions)
+}</code></pre>
+          <pre
+            data-source-file="vue/packages/runtime-core/src/renderer.ts"
+          ><code>function baseCreateRenderer(
+  options: RendererOptions,
+  createHydrationFns?: typeof createHydrationFunctions,
+): any {
+  // 推迟到实际创建渲染器时初始化特性开关，保持“只导入 runtime-core”无副作用。
+  if (__ESM_BUNDLER__ &amp;&amp; !__TEST__) {
+    initFeatureFlags()
+  }
+
+  const target = getGlobalThis()
+  target.__VUE__ = true
+  if (__DEV__ || __FEATURE_PROD_DEVTOOLS__) {
+    setDevtoolsHook(target.__VUE_DEVTOOLS_GLOBAL_HOOK__, target)
+  }
+
+  const {
+    insert: hostInsert,
+    remove: hostRemove,
+    patchProp: hostPatchProp,
+    createElement: hostCreateElement,
+    createText: hostCreateText,
+    createComment: hostCreateComment,
+    setText: hostSetText,
+    setElementText: hostSetElementText,
+    parentNode: hostParentNode,
+    nextSibling: hostNextSibling,
+    setScopeId: hostSetScopeId = NOOP,
+    insertStaticContent: hostInsertStaticContent,
+  } = options</code></pre>
+          <p>
+            这些 <code>host*</code> 局部变量会被后面定义的
+            <code>render</code>、<code>patch</code>、
+            <code>processComponent</code>、<code>setupRenderEffect</code>、
+            <code>move</code> 和 <code>unmount</code> 共同捕获。函数返回时，
+            core 再把闭包里的 <code>render</code> 交给应用工厂：
+          </p>
+          <pre
+            data-source-file="vue/packages/runtime-core/src/renderer.ts"
+          ><code>  // 只有 hydration renderer 才执行工厂并把 hydrateNode 提供给组件首次 render effect。
+  let hydrate: ReturnType&lt;typeof createHydrationFunctions&gt;[0] | undefined
+  let hydrateNode: ReturnType&lt;typeof createHydrationFunctions&gt;[1] | undefined
+  if (createHydrationFns) {
+    ;[hydrate, hydrateNode] = createHydrationFns(
+      internals as RendererInternals&lt;Node, Element&gt;,
+    )
+  }
+
+  return {
+    render,
+    hydrate,
+    createApp: createAppAPI(render, hydrate),
+  }
+}</code></pre>
+          <pre
+            data-source-file="vue/packages/runtime-core/src/apiCreateApp.ts"
+          ><code>export function createAppAPI&lt;HostElement&gt;(
+  render: RootRenderFunction&lt;HostElement&gt;,
+  hydrate?: RootHydrateFunction,
+): CreateAppFunction&lt;HostElement&gt; {
+  return function createApp(rootComponent, rootProps = null) {</code></pre>
+          <p>
+            因而 Demo 的真实入口不是“runtime-dom 写了另一套应用系统”，而是
+            <code>runtime-dom.createApp → ensureRenderer().createApp →
+            createAppAPI(render, hydrate)</code>。runtime-dom 只补浏览器入口行为，
+            app 状态和根 VNode 提交仍由 runtime-core 管理。
+          </p>
+
+          <h3>6.3 同一个 Counter 怎样跨过两个包</h3>
+          <div
+            class="diagram"
+            role="img"
+            aria-label="Counter 从 runtime-dom createApp 到 runtime-core renderer，再回到 DOM 宿主操作的跨包调用顺序"
+          >
+            <div class="diagram-title">CROSS-PACKAGE SEQUENCE · CREATE → MOUNT → COMMIT</div>
+            <div class="flow">
+              <div class="flow-step">
+                <span class="flow-index">1</span>
+                <span class="flow-copy"
+                  ><strong>createApp(App)</strong
+                  ><small>DOM 入口先调用 ensureRenderer()</small></span
+                ><span class="flow-file">runtime-dom/index.ts</span>
+              </div>
+              <div class="flow-join"></div>
+              <div class="flow-step">
+                <span class="flow-index">2</span>
+                <span class="flow-copy"
+                  ><strong>首次缓存未命中</strong
+                  ><small>rendererOptions 进入 createRenderer</small></span
+                ><span class="flow-file">runtime-dom → runtime-core</span>
+              </div>
+              <div class="flow-join"></div>
+              <div class="flow-step">
+                <span class="flow-index">3</span>
+                <span class="flow-copy"
+                  ><strong>baseCreateRenderer(options)</strong
+                  ><small>捕获 host*，建立 patch / component / unmount 闭包</small></span
+                ><span class="flow-file">runtime-core/renderer.ts</span>
+              </div>
+              <div class="flow-join"></div>
+              <div class="flow-step">
+                <span class="flow-index">4</span>
+                <span class="flow-copy"
+                  ><strong>createAppAPI(render, hydrate)</strong
+                  ><small>返回新的 app；renderer 本身留在模块缓存</small></span
+                ><span class="flow-file">runtime-core/apiCreateApp.ts</span>
+              </div>
+              <div class="flow-join"></div>
+              <div class="flow-step">
+                <span class="flow-index">5</span>
+                <span class="flow-copy"
+                  ><strong>app.mount('#app')</strong
+                  ><small>DOM 包装解析并清空容器，再调用 core mount</small></span
+                ><span class="flow-file">runtime-dom/index.ts</span>
+              </div>
+              <div class="flow-join"></div>
+              <div class="flow-step">
+                <span class="flow-index">6</span>
+                <span class="flow-copy"
+                  ><strong>根 VNode → render → patch</strong
+                  ><small>processComponent 创建实例，setupRenderEffect 首次直接 update</small></span
+                ><span class="flow-file">runtime-core</span>
+              </div>
+              <div class="flow-join"></div>
+              <div class="flow-step">
+                <span class="flow-index">7</span>
+                <span class="flow-copy"
+                  ><strong>hostCreateElement / hostPatchProp / hostInsert</strong
+                  ><small>闭包回调 runtime-dom 注入的浏览器操作</small></span
+                ><span class="flow-file">runtime-core → runtime-dom</span>
+              </div>
+              <div class="flow-join"></div>
+              <div class="flow-step">
+                <span class="flow-index">8</span>
+                <span class="flow-copy"
+                  ><strong>button 进入 #app</strong
+                  ><small>根 render 冲刷 mounted，app.mount 返回组件代理</small></span
+                ><span class="flow-file">DOM + post flush</span>
+              </div>
+            </div>
+          </div>
+
+          <h3>6.4 同一个 Counter 中，谁长期持有谁</h3>
+          <div
+            class="diagram ownership-diagram"
+            role="img"
+            aria-label="Counter 从 runtime-dom 模块缓存到 renderer 闭包、app、组件实例、VNode 和 DOM 的对象所有权与临时引用"
+          >
+            <div class="diagram-title">OWNERSHIP · LONG-LIVED VS TEMPORARY</div>
+            <div class="layer-flow">
+              <div class="layer-node">
+                <strong>runtime-dom 模块</strong
+                ><small>长期缓存 renderer 与 enabledHydration</small>
+              </div>
+              <div class="diagram-arrow">→ 缓存</div>
+              <div class="layer-node">
+                <strong>renderer 闭包</strong
+                ><small>长期捕获 host*，保存 render/patch/unmount 算法</small>
+              </div>
+              <div class="diagram-arrow">→ 创建</div>
+              <div class="layer-node emphasis">
+                <strong>app + 根容器</strong
+                ><small>app 持有 context；容器记录 __vue_app__ 与 _vnode</small>
+              </div>
+              <div class="diagram-arrow">→ mount</div>
+              <div class="layer-node">
+                <strong>组件实例</strong
+                ><small>持有 scope、effect、job、subTree 与 setupState</small>
+              </div>
+              <div class="diagram-arrow">→ 提交</div>
+              <div class="layer-node">
+                <strong>VNode + button</strong
+                ><small>VNode.el 指向 DOM；元素保存事件 invoker</small>
+              </div>
+            </div>
+            <div class="ownership-branches">
+              <div>
+                <strong>响应式长期边</strong><br /><code>Ref.dep ↔ Link ↔ effect</code
+                >；重新 render 时复用并校验版本。
+              </div>
+              <div>
+                <strong>调度器临时引用</strong><br />队列只在等待 flush
+                时持有同一个 <code>instance.job</code>，执行后清
+                <code>QUEUED</code>。
+              </div>
+              <div>
+                <strong>DOM 私有槽</strong><br />button 的 <code>_vei</code>
+                保存稳定 invoker；节点删除且引用释放后才可回收。
+              </div>
+            </div>
+          </div>
+          <p>
+            点击期间不会新建 app、renderer、组件实例或 button。变化的是
+            Ref 的值、Dep 版本、job 队列状态和 <code>instance.subTree</code>。
+            卸载时则反向停止 effect、使 job 失效，并清掉容器到应用与根 VNode
+            的引用。
+          </p>
+
+          <h3>6.5 DOM 平台入口把容器交给 runtime-core</h3>
           <p>
             <strong>输入：</strong
             ><code>'#app'</code>。<strong>输出：</strong>组件公开代理。
             <strong>状态变化：</strong>容器旧文本被清空，core mount 创建根 VNode
-            并调用 renderer 的 <code>render</code>。下段是
-            <code>packages/runtime-dom/src/index.ts · createApp</code>
-            的真实源码删节摘录； 只省略 in-DOM template、compat 与容器标记分支。
+            并调用 renderer 的 <code>render</code>。runtime-dom 的完整包装如下：
           </p>
-          <pre><code>const { mount } = app
-app.mount = (containerOrSelector: Element | ShadowRoot | string): any =&gt; {
-  const container = normalizeContainer(containerOrSelector)
-  if (!container) return
+          <pre
+            data-source-file="vue/packages/runtime-dom/src/index.ts"
+          ><code>/**
+ * 创建客户端 DOM 应用，并扩展 mount：解析选择器、必要时读取 in-DOM template、清空
+ * 容器、推导根命名空间，以及维护 v-cloak/data-v-app 标记。
+ */
+export const createApp = ((...args) =&gt; {
+  const app = ensureRenderer().createApp(...args)
 
-  // ... 省略 in-DOM template 与 compat 检查
-
-  if (container.nodeType === 1) {
-    container.textContent = ''
+  if (__DEV__) {
+    injectNativeTagCheck(app)
+    injectCompilerOptionsCheck(app)
   }
-  const proxy = mount(container, false, resolveRootNamespace(container))
 
-  // ... 省略 v-cloak / data-v-app 标记
-  return proxy
-}</code></pre>
+  const { mount } = app
+  app.mount = (containerOrSelector: Element | ShadowRoot | string): any =&gt; {
+    const container = normalizeContainer(containerOrSelector)
+    if (!container) return
+
+    const component = app._component
+    if (!isFunction(component) &amp;&amp; !component.render &amp;&amp; !component.template) {
+      // __UNSAFE__：in-DOM template 会被编译并执行其中 JS 表达式。容器 HTML 必须可信；
+      // 若来自服务端，不能把未经转义的用户内容拼入模板。
+      component.template = container.innerHTML
+      // Vue 2 允许在 mount 容器自身声明模板指令；compat 检测并提示迁移。
+      if (__COMPAT__ &amp;&amp; __DEV__ &amp;&amp; container.nodeType === 1) {
+        for (let i = 0; i &lt; (container as Element).attributes.length; i++) {
+          const attr = (container as Element).attributes[i]
+          if (attr.name !== 'v-cloak' &amp;&amp; /^(?:v-|:|@)/.test(attr.name)) {
+            compatUtils.warnDeprecation(
+              DeprecationTypes.GLOBAL_MOUNT_CONTAINER,
+              null,
+            )
+            break
+          }
+        }
+      }
+    }
+
+    // 客户端 mount 不复用旧内容，先清空；ShadowRoot 无 textContent 特判需要。
+    if (container.nodeType === 1) {
+      container.textContent = ''
+    }
+    const proxy = mount(container, false, resolveRootNamespace(container))
+    if (container instanceof Element) {
+      container.removeAttribute('v-cloak')
+      container.setAttribute('data-v-app', '')
+    }
+    return proxy
+  }
+
+  return app
+}) as CreateAppFunction&lt;Element&gt;</code></pre>
           <p>
             随后
             <code>packages/runtime-core/src/apiCreateApp.ts · mount</code>
-            创建根 VNode， 注入 appContext，再调用
-            renderer。下段为真实源码删节摘录；只省略 namespace、 HMR、容器标记与
+            创建根 VNode、注入 appContext，再调用
+            renderer。下面只省略 namespace、HMR、容器标记与
             devtools 细节：
           </p>
           <pre><code>const vnode = app._ceVNode || createVNode(rootComponent, rootProps)
@@ -638,7 +1016,7 @@ app._container = rootContainer
 
 return getComponentPublicInstance(vnode.component!)</code></pre>
 
-          <h3>6.2 render effect 建立后，第一次直接 <code>update()</code></h3>
+          <h3>6.6 render effect 建立后，第一次直接 <code>update()</code></h3>
           <p>
             <strong>文件 / 符号：</strong
             ><code
@@ -646,7 +1024,7 @@ return getComponentPublicInstance(vnode.component!)</code></pre>
             >。 effect 的函数是
             <code>componentUpdateFn</code>；组件自身状态变化时 scheduler 才
             <code>queueJob(job)</code>；最后一行首次直接调用
-            <code>update()</code>。 下段为真实源码删节摘录，只省略开发调试钩子。
+            <code>update()</code>。下面只省略开发调试钩子。
           </p>
           <pre><code>instance.scope.on()
 const effect = (instance.effect = new ReactiveEffect(componentUpdateFn))
@@ -665,20 +1043,19 @@ toggleRecurse(instance, true)
 update()</code></pre>
           <p>
             <code>update()</code> 通常返回 <code>undefined</code>；VNode
-            不是它的返回值， 而是 <code>componentUpdateFn</code> 写入
+            不是它的返回值，而是 <code>componentUpdateFn</code> 写入
             <code>instance.subTree</code>。 <code>job</code> 则不是
             <code>effect.run</code>，而是
             <code>runIfDirty</code>，以后出队时还会复查依赖版本。
           </p>
 
           <h3>
-            6.3 初次 render 得到 VNode，再用
+            6.7 初次 render 得到 VNode，再用
             <code>patch(null, subTree)</code> 挂 DOM
           </h3>
           <p>
-            下段同属 <code>componentUpdateFn</code> 的 mount
-            分支，是按执行顺序整理的
-            教学摘录；只移除源码注释并统一左缩进，因此不标作逐字连续原文：
+            <code>componentUpdateFn</code> 的 mount 分支按下面的顺序写入
+            <code>instance.subTree</code>，再进入 patch：
           </p>
           <pre><code>const subTree = (instance.subTree = renderComponentRoot(instance))
 if (__DEV__) {
@@ -711,9 +1088,8 @@ initialVNode.el = subTree.el</code></pre>
           <p>
             mount 分支把 <code>onMounted</code> 放入 post 队列后，控制权回到
             <code>renderer.ts · render</code>。根 render 尾部会同步冲刷 pre/post
-            队列， 因而教程的 mounted 日志出现在
-            <code>app.mount()</code> 返回前。以下为执行语句
-            摘录；源码说明注释未收录、共同左缩进已统一，因此不标作逐字连续原文：
+            队列，因而教程的 mounted 日志出现在
+            <code>app.mount()</code> 返回前。根 render 尾部执行：
           </p>
           <pre><code>container._vnode = vnode
 if (!isFlushing) {
@@ -723,13 +1099,12 @@ if (!isFlushing) {
   isFlushing = false
 }</code></pre>
 
-          <h3>6.4 runtime-dom 完成首次施工</h3>
+          <h3>6.8 runtime-dom 完成首次施工</h3>
           <p>
             <code>mountElement</code> 先 <code>hostCreateElement</code>，文本
             children 走 <code>hostSetElementText</code>，props 逐个走
-            <code>hostPatchProp</code>，最后 <code>hostInsert</code>。先看
-            <code>packages/runtime-core/src/renderer.ts · mountElement</code>
-            的真实源码删节摘录：
+            <code>hostPatchProp</code>，最后 <code>hostInsert</code>。下面对应
+            <code>packages/runtime-core/src/renderer.ts · mountElement</code>：
           </p>
           <pre><code>el = vnode.el = hostCreateElement(
   vnode.type as string,
@@ -761,7 +1136,7 @@ hostInsert(el, container, anchor)</code></pre>
           <p>
             本例的 <code>onClick</code> 在
             <code>runtime-dom/src/patchProp.ts · patchProp</code> 命中事件分支。
-            下段为真实源码删节摘录，property/attribute 判定条件与兼容特判用
+            下面保留事件分支，property/attribute 判定条件与兼容特判用
             <code>// ...</code> 标出：
           </p>
           <pre><code>if (key === 'class') {
@@ -782,9 +1157,7 @@ hostInsert(el, container, anchor)</code></pre>
 }</code></pre>
           <p>
             <code>runtime-dom/src/modules/events.ts · patchEvent</code>
-            再决定新增、热替换或 删除
-            listener。下段为去掉说明注释并统一左缩进的教学摘录，
-            不标作逐字连续原文：
+            再决定新增、热替换或删除 listener。关键分支如下：
           </p>
           <pre><code>const invokers = el[veiKey] || (el[veiKey] = {})
 const existingInvoker = invokers[rawName]
@@ -825,20 +1198,19 @@ if (nextValue &amp;&amp; existingInvoker) {
           <h3>7.1 <code>RefImpl.set value</code> 先判断“真的变了吗”</h3>
           <p>
             先补一个 JavaScript 细节：<code>count.value++</code> 不是“只调用
-            setter”，而是先 调 getter 取 0，计算 1，再调 setter 写回。教程
+            setter”，而是先调 getter 取 0，计算 1，再调 setter 写回。教程
             handler 前面的 <code>console.log</code> 也读了一次
             getter；但事件处理器运行时 <code>activeSub</code> 为空，所以这两次
-            <code>dep.track()</code> 都会提前返回， 不会把 handler
+            <code>dep.track()</code> 都会提前返回，不会把 handler
             错记成订阅者。真正已有的订阅者来自首次组件 render。
           </p>
           <p>
             <strong>文件 / 符号：</strong
             ><code>packages/reactivity/src/ref.ts · RefImpl.value setter</code
-            >。 <strong>输入：</strong>新值 1。<strong>返回：</strong>setter
-            无返回值。 <strong>状态：</strong
-            ><code>_rawValue/_value: 0 → 1</code>；相同值则提前结束。 以下把
-            getter 与 setter 两段按原执行顺序并列；中间未收录说明注释，
-            共同左缩进也已统一，因此属于教学摘录而非逐字连续原文：
+            >。<strong>输入：</strong>新值 1。<strong>返回：</strong>setter
+            无返回值。<strong>状态：</strong
+            ><code>_rawValue/_value: 0 → 1</code>；相同值则提前结束。getter
+            与 setter 的关键执行段如下：
           </p>
           <pre><code>get value() {
   if (__DEV__) {
@@ -878,8 +1250,7 @@ set value(newValue) {
 }</code></pre>
           <p>
             <code>packages/reactivity/src/dep.ts · Dep.track</code>
-            的入口守卫正是这个边界；
-            以下为统一左缩进的教学摘录，不标作逐字连续原文：
+            的入口守卫正是这个边界：
           </p>
           <pre><code>if (!activeSub || !shouldTrack || activeSub === this.computed) {
   return
@@ -889,7 +1260,7 @@ set value(newValue) {
           <p>
             <code>packages/reactivity/src/dep.ts · Dep.trigger/notify</code>
             中，trigger 递增局部与全局版本；notify 在 reactivity 的同步 batch
-            内遍历订阅 Link。下段为 真实源码删节摘录，仅省略开发调试钩子：
+            内遍历订阅 Link。下面只省略开发调试钩子：
           </p>
           <pre><code>trigger(debugInfo?: DebuggerEventExtraInfo): void {
   this.version++
@@ -917,13 +1288,12 @@ notify(debugInfo?: DebuggerEventExtraInfo): void {
             <code>batch(this)</code>；最外层 <code>endBatch()</code> 调
             <code>ReactiveEffect.trigger()</code>。本例 effect 有
             scheduler，所以 <strong>直接调用 scheduler</strong>；这里还没有先跑
-            <code>isDirty</code>。 以下来自
+            <code>isDirty</code>。以下来自
             <code>packages/reactivity/src/effect.ts</code>：<code
               >notify/batch</code
             >
-            与 <code>trigger</code> 保留执行语句顺序，但统一了左缩进；
-            <code>endBatch</code> 还是明确的删节摘录，只省略 computed 标志清理。
-            三者均为教学摘录，不标作逐字连续原文。
+            与 <code>trigger</code> 按执行顺序排列；<code>endBatch</code>
+            只省略 computed 标志清理。
           </p>
           <pre><code>notify(): void {
   if (
@@ -1009,8 +1379,7 @@ export function batch(sub: Subscriber, isComputed = false): void {
             >。 <strong>输入：</strong>带组件 uid 的 <code>instance.job</code>。
             <strong>状态：</strong>queue 增加任务，job 加
             <code>QUEUED</code>，<code>currentFlushPromise</code> 从 null 变
-            Promise。 以下为去掉说明注释并统一左缩进的教学摘录，
-            不标作逐字连续原文：
+            Promise。关键代码如下：
           </p>
           <pre><code>export function queueJob(job: SchedulerJob): void {
   if (!(job.flags! &amp; SchedulerJobFlags.QUEUED)) {
@@ -1040,7 +1409,7 @@ function queueFlush() {
             同一同步栈里再写两次 count，第一次已把 job 标成
             QUEUED；后两次在最外层
             <code>if</code> 处退出。父组件 uid
-            通常更小，排序还能让父先更新；若父更新时 卸载子组件，子 job 会被标记
+            通常更小，排序还能让父先更新；若父更新时卸载子组件，子 job 会被标记
             DISPOSED，出队时跳过。
           </p>
 
@@ -1048,8 +1417,7 @@ function queueFlush() {
           <p>
             <code>flushJobs</code> 逐项调用 job；组件 job 正是
             <code>effect.runIfDirty.bind(effect)</code>，所以此时才执行
-            <code>isDirty → effect.run → componentUpdateFn</code>。以下是
-            <code>flushJobs</code> 的真实源码删节摘录；只省略开发 check
+            <code>isDirty → effect.run → componentUpdateFn</code>。下面只省略开发 check
             的初始化，主 try/finally 与异常清理完整保留：
           </p>
           <pre><code>function flushJobs(seen?: CountMap) {
@@ -1106,9 +1474,8 @@ function queueFlush() {
           <h2>第九步：render 只产生新描述，patch 才提交</h2>
           <p>
             job 通过脏检查后进入 <code>componentUpdateFn</code> 的 update
-            分支。下段来自
-            <code>packages/runtime-core/src/renderer.ts</code
-            >，为真实源码删节摘录，仅省略 dev measure：
+            分支。下面来自 <code>packages/runtime-core/src/renderer.ts</code>，
+            只省略 dev measure：
           </p>
           <pre><code>const nextTree = renderComponentRoot(instance)
 // ... 省略 dev measure
@@ -1147,17 +1514,16 @@ if (u) {
           <p>
             对状态组件，它用组件代理调用 render，再
             <code>normalizeVNode</code>。render 读取 count 时，effect 正在
-            run，于是新一轮 依赖被确认；旧动态分支中没再读取的 Dep 会在 run 的
-            finally 清理。 若 render 抛错，源码会清 block stack 并调用
+            run，于是新一轮依赖被确认；旧动态分支中没再读取的 Dep 会在 run 的
+            finally 清理。若 render 抛错，源码会清 block stack 并调用
             <code>handleError</code>。若 <code>errorCaptured</code>、<code
               >app.config.errorHandler</code
             >
-            或生产默认处理 使错误管道正常返回，随后才把结果降级为 Comment
+            或生产默认处理使错误管道正常返回，随后才把结果降级为 Comment
             VNode；开发环境未处理错误可由
             <code>handleError</code> 继续抛出，此时不会执行后面的 Comment 赋值。
-            下段为
-            <code>componentRenderUtils.ts · renderComponentRoot</code>
-            的真实源码删节摘录， 只省略 dev thisProxy 构造与函数式组件分支。
+            下面对应 <code>componentRenderUtils.ts · renderComponentRoot</code>，
+            只省略 dev thisProxy 构造与函数式组件分支。
           </p>
           <pre><code>try {
   if (vnode.shapeFlag &amp; ShapeFlags.STATEFUL_COMPONENT) {
@@ -1193,8 +1559,8 @@ if (u) {
             <strong>返回：</strong>void。<strong>本例分支：</strong>两个 VNode
             不是同一对象，但 type 与 key 相同，因此不卸载；<code
               >shapeFlag &amp; ELEMENT</code
-            >，进入 <code>processElement → patchElement</code>。下段为
-            <code>renderer.ts · patch</code> 的真实源码删节摘录；switch
+            >，进入 <code>processElement → patchElement</code>。下面对应
+            <code>renderer.ts · patch</code>；switch
             中未走分支用 <code>// ...</code> 标出。
           </p>
           <pre><code>if (n1 === n2) {
@@ -1232,8 +1598,8 @@ if (shapeFlag &amp; ShapeFlags.ELEMENT) {
             <code>patchProps</code>。文本不同，最终调用
             <code>hostSetElementText(el, '计数：1')</code>；aria 不同，最终调用
             <code>hostPatchProp</code>。id 与稳定
-            <code>increment</code> 函数引用没变，跳过。 先看
-            <code>renderer.ts · patchElement</code> 的真实源码删节摘录：
+            <code>increment</code> 函数引用没变，跳过。先看
+            <code>renderer.ts · patchElement</code>：
           </p>
           <pre><code>if (dynamicChildren) {
   // ... 省略 block dynamicChildren 快路径
@@ -1259,8 +1625,7 @@ if (patchFlag &gt; 0) {
           <p>
             接着分别看 <code>patchChildren</code> 的文本分支与
             <code>patchProps</code>
-            的新键循环。第一段为真实源码删节摘录；第二段保留执行语句顺序，
-            但去掉说明注释并统一左缩进，同样属于教学摘录：
+            的新键循环。两段都保留本例会走的执行顺序：
           </p>
           <pre><code>if (shapeFlag &amp; ShapeFlags.TEXT_CHILDREN) {
   if (prevShapeFlag &amp; ShapeFlags.ARRAY_CHILDREN) {
@@ -1284,7 +1649,7 @@ if (patchFlag &gt; 0) {
             runtime-core 只调用 host 接口；runtime-dom 才执行浏览器
             API。本例文字落到
             <code>nodeOps.setElementText</code> 的
-            <code>el.textContent = text</code>； <code>aria-label</code> 经
+            <code>el.textContent = text</code>；<code>aria-label</code> 经
             <code>patchProp → patchAttr</code> 落到
             <code>el.setAttribute</code>。这就是“平台无关决定”与“DOM
             平台施工”的边界。
@@ -1293,7 +1658,7 @@ if (patchFlag &gt; 0) {
             两个最终副作用也可直接核对。下方分别是
             <code>runtime-dom/src/nodeOps.ts · nodeOps.setElementText</code> 与
             <code>runtime-dom/src/modules/attrs.ts · patchAttr</code>
-            的教学摘录； 两段均统一了左缩进，不标作逐字连续原文：
+            的关键执行段：
           </p>
           <pre><code>setElementText: (el, text) =&gt; {
   el.textContent = text
@@ -1333,9 +1698,8 @@ if (patchFlag &gt; 0) {
             </li>
           </ol>
           <p>
-            带机器可核对路径的
             <code>packages/runtime-core/src/scheduler.ts · nextTick</code>
-            连续原文：
+            如下：
           </p>
           <pre
             data-source-file="vue/packages/runtime-core/src/scheduler.ts"
@@ -1353,14 +1717,346 @@ if (patchFlag &gt; 0) {
           </div>
         </section>
 
+        <section class="article-section prose" id="unmount-source">
+          <h2>第十二步：app.unmount 怎样沿原路回收</h2>
+          <p>
+            Demo 在控制台执行 <code>unmountCounter()</code>，调用的是同一个
+            <code>app</code>。卸载不是简单执行
+            <code>container.innerHTML = ''</code>：Vue 要先让组件的响应式工作停下来，
+            使已排队 job 失效，递归清理 VNode 与内置组件协议，最后才删除宿主节点和
+            容器标记。
+          </p>
+
+          <h3>12.1 app 先清应用级资源，再把 null 交给根 render</h3>
+          <pre
+            data-source-file="vue/packages/runtime-core/src/apiCreateApp.ts"
+          ><code>      unmount() {
+        if (isMounted) {
+          // 插件资源应先清理，再卸载组件树；错误走统一处理，单个清理失败不阻止后续项。
+          callWithAsyncErrorHandling(
+            pluginCleanupFns,
+            app._instance,
+            ErrorCodes.APP_UNMOUNT_CLEANUP,
+          )
+          render(null, app._container)
+          if (__DEV__ || __FEATURE_PROD_DEVTOOLS__) {
+            app._instance = null
+            devtoolsUnmountApp(app)
+          }
+          delete app._container.__vue_app__
+        } else if (__DEV__) {
+          warn(`Cannot unmount an app that is not mounted.`)
+        }
+      },</code></pre>
+          <p>
+            <code>pluginCleanupFns</code> 先执行。随后
+            <code>render(null, app._container)</code> 复用创建 renderer
+            时闭包里的根 render；平台层不需要另一套卸载入口。
+          </p>
+
+          <h3>12.2 根 render 用容器中的旧 VNode 启动递归卸载</h3>
+          <pre
+            data-source-file="vue/packages/runtime-core/src/renderer.ts"
+          ><code>  const render: RootRenderFunction = (vnode, container, namespace) =&gt; {
+    let instance
+    if (vnode == null) {
+      if (container._vnode) {
+        unmount(container._vnode, null, null, true)
+        instance = container._vnode.component
+      }
+    } else {
+      patch(
+        container._vnode || null,
+        vnode,
+        container,
+        null,
+        null,
+        null,
+        namespace,
+      )
+    }
+    container._vnode = vnode
+    if (!isFlushing) {
+      isFlushing = true
+      flushPreFlushCbs(instance)
+      flushPostFlushCbs()
+      isFlushing = false
+    }
+  }</code></pre>
+          <p>
+            传入的 <code>vnode</code> 是 null，旧树则来自
+            <code>container._vnode</code>。递归卸载返回后，根 render
+            把 <code>container._vnode</code> 设为 null，并同步冲刷本次卸载登记的
+            post hooks。
+          </p>
+
+          <h3>12.3 组件先停止 effect，再卸载 subTree</h3>
+          <pre
+            data-source-file="vue/packages/runtime-core/src/renderer.ts"
+          ><code>  const unmountComponent = (
+    instance: ComponentInternalInstance,
+    parentSuspense: SuspenseBoundary | null,
+    doRemove?: boolean,
+  ) =&gt; {
+    if (__DEV__ &amp;&amp; instance.type.__hmrId) {
+      unregisterHMR(instance)
+    }
+
+    const { bum, scope, job, subTree, um, m, a } = instance
+    invalidateMount(m)
+    invalidateMount(a)
+
+    // beforeUnmount 在 effect 仍有效、子树仍存在时同步执行。
+    if (bum) {
+      invokeArrayFns(bum)
+    }
+
+    if (
+      __COMPAT__ &amp;&amp;
+      isCompatEnabled(DeprecationTypes.INSTANCE_EVENT_HOOKS, instance)
+    ) {
+      instance.emit('hook:beforeDestroy')
+    }
+
+    // 停止 setup/render/watch 等归属于组件 scope 的全部响应式 effect。
+    scope.stop()
+
+    // async setup resolve 前组件可能已卸载，此时 render job 尚未创建，也没有 subTree
+    // 需要递归卸载。
+    if (job) {
+      // 即使任务已经入队，DISPOSED 也让调度器跳过。
+      job.flags! |= SchedulerJobFlags.DISPOSED
+      unmount(subTree, instance, parentSuspense, doRemove)
+    }
+    // unmounted 在子树宿主移除和本轮提交完成后执行。
+    if (um) {
+      queuePostRenderEffect(um, parentSuspense)
+    }
+    if (
+      __COMPAT__ &amp;&amp;
+      isCompatEnabled(DeprecationTypes.INSTANCE_EVENT_HOOKS, instance)
+    ) {
+      queuePostRenderEffect(
+        () =&gt; instance.emit('hook:destroyed'),
+        parentSuspense,
+      )
+    }
+    queuePostRenderEffect(() =&gt; {
+      instance.isUnmounted = true
+    }, parentSuspense)
+
+    if (__DEV__ || __FEATURE_PROD_DEVTOOLS__) {
+      devtoolsComponentRemoved(instance)
+    }
+  }</code></pre>
+          <p>
+            顺序决定了 Demo 的日志：<code>beforeUnmount</code> 在
+            <code>scope.stop()</code> 和子树删除前同步执行，所以还能读到 button；
+            <code>unmounted</code> 被放进 post 队列，在宿主节点删除后才执行。
+            <code>DISPOSED</code> 则挡住“组件已死、旧 job 稍后又出队”的情况。
+          </p>
+
+          <h3>12.4 普通元素立即 hostRemove，Transition 可以推迟</h3>
+          <pre
+            data-source-file="vue/packages/runtime-core/src/renderer.ts"
+          ><code>    const performRemove = () =&gt; {
+      hostRemove(el!)
+      if (transition &amp;&amp; !transition.persisted &amp;&amp; transition.afterLeave) {
+        transition.afterLeave()
+      }
+    }
+
+    if (
+      vnode.shapeFlag &amp; ShapeFlags.ELEMENT &amp;&amp;
+      transition &amp;&amp;
+      !transition.persisted
+    ) {
+      const { leave, delayLeave } = transition
+      const performLeave = () =&gt; leave(el!, performRemove)
+      if (delayLeave) {
+        delayLeave(vnode.el!, performRemove, performLeave)
+      } else {
+        performLeave()
+      }
+    } else {
+      performRemove()
+    }
+  }</code></pre>
+          <p>
+            Counter 的 button 没有 transition，直接调用 runtime-dom
+            注入的 <code>nodeOps.remove</code>。若元素带非 persisted Transition，
+            <code>leave</code> 或 <code>delayLeave</code> 可以把真正的
+            <code>hostRemove</code> 推迟到动画完成。
+          </p>
+
+          <div
+            class="diagram teardown-diagram"
+            role="img"
+            aria-label="Counter 从 app.unmount 到组件 effect 停止、DOM 删除、post hooks 和容器标记清理的反向流程"
+          >
+            <div class="diagram-title">TEARDOWN · REVERSE THE MOUNT PATH</div>
+            <ol class="trace-lane teardown-lane">
+              <li>
+                <strong>app.unmount()</strong
+                ><span>先执行 pluginCleanupFns，再调用 render(null, container)</span>
+              </li>
+              <li>
+                <strong>root render 取 container._vnode</strong
+                ><span>以 doRemove=true 进入 unmount(root VNode)</span>
+              </li>
+              <li>
+                <strong>unmountComponent(instance)</strong
+                ><span>beforeUnmount → scope.stop → job DISPOSED</span>
+              </li>
+              <li>
+                <strong>unmount(instance.subTree)</strong
+                ><span>递归清 ref、指令、子组件与宿主范围</span>
+              </li>
+              <li>
+                <strong>remove(button) → hostRemove</strong
+                ><span>本例同步删除同一个 DOM button</span>
+              </li>
+              <li>
+                <strong>根 render 收尾</strong
+                ><span>container._vnode = null；flushPostFlushCbs 执行 unmounted</span>
+              </li>
+              <li class="trace-final">
+                <strong>回到 app.unmount</strong
+                ><span>删除 container.__vue_app__；Demo 查询 #counter 得到 null</span>
+              </li>
+            </ol>
+            <div class="branch-grid teardown-boundaries">
+              <div class="branch">
+                <strong>KeepAlive</strong
+                ><span
+                  ><code>COMPONENT_SHOULD_KEEP_ALIVE</code> 先交给
+                  <code>deactivate</code> 并返回；切页不等于真正销毁缓存实例。</span
+                >
+              </div>
+              <div class="branch">
+                <strong>Suspense</strong
+                ><span
+                  >边界调用 <code>vnode.suspense.unmount</code>，统一处理 active、pending
+                  与 fallback 分支。</span
+                >
+              </div>
+              <div class="branch">
+                <strong>Teleport</strong
+                ><span
+                  >调用 <code>TeleportImpl.remove</code>，同时照顾主树锚点与远端
+                  target 中的 children。</span
+                >
+              </div>
+              <div class="branch">
+                <strong>Transition</strong
+                ><span
+                  >逻辑卸载先发生；非 persisted leave 可以延迟宿主节点的最终删除。</span
+                >
+              </div>
+            </div>
+          </div>
+
+          <h3>12.5 测试分别锁定应用清理与生命周期时点</h3>
+          <p>
+            runtime-core 的应用测试先验证未挂载时会警告，再挂载、卸载，并断言宿主容器
+            已空：
+          </p>
+          <pre
+            data-source-file="vue/packages/runtime-core/__tests__/apiCreateApp.spec.ts"
+          ><code>  // 测试场景：app.unmount 清理根组件、容器引用和应用级副作用。
+  test('unmount', () =&gt; {
+    const Comp = defineComponent({
+      props: {
+        count: {
+          default: 0,
+        },
+      },
+      setup(props) {
+        return () =&gt; props.count
+      },
+    })
+
+    const root = nodeOps.createElement('div')
+    const app = createApp(Comp)
+
+    // warning
+    app.unmount()
+    expect(`that is not mounted`).toHaveBeenWarned()
+
+    app.mount(root)
+
+    app.unmount()
+    expect(serializeInner(root)).toBe(``)
+  })</code></pre>
+          <div class="test-proof">
+            <p>
+              <strong>同一 Counter：</strong>教程 Demo 的
+              <code>beforeUnmount</code> 先读到“计数：1”，
+              <code>unmounted</code> 随后读到 null。
+            </p>
+            <p>
+              <strong>应用契约：</strong><code>apiCreateApp.spec.ts ·
+              test('unmount')</code> 证明 app 卸载后宿主容器为空。
+            </p>
+            <p>
+              <strong>生命周期时点：</strong><code>apiLifecycle.spec.ts ·
+              onBeforeUnmount / onUnmounted / lifecycle call order</code>
+              分别断言删除前可见、删除后可见，以及父子组件钩子顺序。
+            </p>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>引用或状态</th>
+                  <th>卸载前</th>
+                  <th>卸载后</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>instance.scope</code></td>
+                  <td>active</td>
+                  <td>stopped</td>
+                </tr>
+                <tr>
+                  <td><code>instance.job.flags</code></td>
+                  <td>可排队/执行</td>
+                  <td>包含 <code>DISPOSED</code></td>
+                </tr>
+                <tr>
+                  <td><code>container._vnode</code></td>
+                  <td>根 VNode</td>
+                  <td>null</td>
+                </tr>
+                <tr>
+                  <td><code>container.__vue_app__</code></td>
+                  <td>当前 app</td>
+                  <td>属性已删除</td>
+                </tr>
+                <tr>
+                  <td><code>app._container</code></td>
+                  <td>根容器</td>
+                  <td>当前源码仍保留该引用，并未设为 null</td>
+                </tr>
+                <tr>
+                  <td>button DOM</td>
+                  <td>在容器内，保存事件 invoker</td>
+                  <td>本例已删除；Transition 分支可能延迟物理删除</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
         <section class="article-section prose" id="boundaries">
-          <h2>第十二步：主线旁边的提前退出与异常</h2>
+          <h2>第十三步：主线旁边的提前退出与异常</h2>
           <div class="table-wrap">
             <table>
               <thead>
                 <tr>
                   <th>触发条件</th>
-                  <th>决定性源码分支</th>
+                  <th>对应源码分支</th>
                   <th>状态结果</th>
                   <th>本例若发生</th>
                 </tr>
@@ -1429,13 +2125,13 @@ if (patchFlag &gt; 0) {
         </section>
 
         <section class="article-section prose" id="evidence">
-          <h2>源码与测试证据对照</h2>
+          <h2>每一段调用链去哪里核对</h2>
           <div class="table-wrap">
             <table>
               <thead>
                 <tr>
                   <th>阶段</th>
-                  <th>决定性源码</th>
+                  <th>对应源码</th>
                   <th>本章证据 / 结论</th>
                 </tr>
               </thead>
@@ -1559,8 +2255,25 @@ if (patchFlag &gt; 0) {
                   </td>
                   <td>
                     runtime-test 中点击、等待 nextTick、宿主树从 1 变
-                    2；本轮文件 48 tests passed。它不经过浏览器 patchEvent，DOM
+                    2；该文件 48 tests passed。它不经过浏览器 patchEvent，DOM
                     invoker 由上一行测试补证。
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>卸载与回收</strong></td>
+                  <td>
+                    <a href="../../../vue/packages/runtime-core/src/apiCreateApp.ts"
+                      >apiCreateApp.ts · app.unmount</a
+                    >；<a href="../../../vue/packages/runtime-core/src/renderer.ts"
+                      >renderer.ts · render/unmountComponent/remove</a
+                    >；<a
+                      href="../../../vue/packages/runtime-core/__tests__/apiCreateApp.spec.ts"
+                      >apiCreateApp.spec.ts · test('unmount')</a
+                    >
+                  </td>
+                  <td>
+                    scope 停止、job 失效、subTree 删除、post hooks 执行，最后清
+                    container._vnode 与 __vue_app__。
                   </td>
                 </tr>
               </tbody>
@@ -1569,15 +2282,19 @@ if (patchFlag &gt; 0) {
         </section>
 
         <section class="article-section prose" id="takeaway">
-          <h2>最后，把整条链一口气讲清</h2>
+          <h2>把挂载、更新与卸载连起来</h2>
           <div class="quote">
-            初次 mount 创建组件 render effect，并直接运行一次：render 读
-            ref、建立依赖， patch(null, subTree) 创建 button，runtime-dom
-            绑定事件并插入 DOM。点击时， RefImpl 先同步改值并通过 Dep 通知
-            render effect；reactivity batch 结束后， effect.scheduler 把
+            runtime-dom 先把 nodeOps 与 patchProp 注入 runtime-core renderer；
+            renderer 被模块缓存，createAppAPI 则为 Counter 创建独立 app。初次
+            mount 建立 render effect 并直接运行：render 读 ref、建立依赖，
+            patch(null, subTree) 创建 button，runtime-dom 绑定事件并插入 DOM。
+            点击时，RefImpl 同步改值并通过 Dep 通知 render effect；reactivity
+            batch 结束后，effect.scheduler 把
             runIfDirty job 放入 runtime-core 微任务队列。flushJobs 出队后重新
             render，patch 复用原 button，修改文字和 aria；updated 在 post flush
-            看见新 DOM，整轮 flush 返回后 nextTick 才恢复。
+            看见新 DOM，整轮 flush 返回后 nextTick 才恢复。app.unmount 再沿闭包
+            反向进入 render(null)：停止 scope、把 job 标为 DISPOSED、卸载 subTree
+            并删除 button，最后执行 unmounted 并清理容器标记。
           </div>
           <p>
             继续读时按这条主线拆章：
@@ -1596,7 +2313,7 @@ if (patchFlag &gt; 0) {
               <thead>
                 <tr>
                   <th>用例</th>
-                  <th>决定性源码</th>
+                  <th>对应源码</th>
                   <th>可执行测试</th>
                   <th>同例图</th>
                 </tr>
@@ -1651,14 +2368,32 @@ if (patchFlag &gt; 0) {
                     >。
                   </td>
                 </tr>
+                <tr>
+                  <td>
+                    同一 Counter 卸载：beforeUnmount 仍见 button 1，unmounted
+                    查询结果为 null。
+                  </td>
+                  <td>
+                    <a href="#unmount-source">第十二步</a>：app.unmount →
+                    render(null) → unmountComponent → remove/hostRemove → post
+                    hooks → 容器清理。
+                  </td>
+                  <td>
+                    <code>apiCreateApp.spec.ts · test('unmount')</code> 与
+                    <code>apiLifecycle.spec.ts</code> 的 before/unmounted/order 测试。
+                  </td>
+                  <td>
+                    <a href="#unmount-source">卸载反向流程与四类边界图</a>。
+                  </td>
+                </tr>
               </tbody>
             </table>
           </div>
         </section>
 
         <nav class="page-nav" aria-label="章节翻页">
-          <a href="primer.html"><span>上一章</span>← 零基础先修课</a>
-          <a href="architecture.html"><span>下一章</span>架构与设计哲学 →</a>
+          <a href="runtime-dom.html"><span>上一章</span>← 浏览器怎样执行</a>
+          <a href="evolution.html"><span>下一章</span>真实问题与演进 →</a>
         </nav>
       </main>
 
@@ -1676,9 +2411,10 @@ if (patchFlag &gt; 0) {
         <a href="#render-source">render</a>
         <a href="#patch-source">patch + DOM</a>
         <a href="#post-source">post + nextTick</a>
+        <a href="#unmount-source">app.unmount</a>
         <a href="#boundaries">异常与退出</a>
         <a href="#evidence">证据对照</a>
-        <a href="#takeaway">完整复述</a>
+        <a href="#takeaway">挂载、更新与卸载</a>
         <a href="#final-evidence-matrix">页末证据矩阵</a>
       </aside>
     </div>

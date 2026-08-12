@@ -152,7 +152,7 @@
                 <tr>
                   <td><strong>Transition</strong></td>
                   <td>insert/remove 立即完成</td>
-                  <td>VNode transition hooks / move type</td>
+                  <td>VNode transition hooks；TransitionGroup 另有 FLIP 流程</td>
                   <td>enter/leave callbacks、leavingVNodes</td>
                 </tr>
               </tbody>
@@ -247,6 +247,12 @@ if (vnodeShouldKeepAlive) return keepAliveContext.deactivate(vnode)
               </div>
             </div>
           </div>
+          <p>
+            这张图描述<strong>首次挂载后的完整区间</strong>。但当
+            <code>to</code> 从 A 改成 B 时，当前实现不会把这三个远端节点当作不可分割的一段：
+            <code>targetAnchor</code> 与 children 会去 B，<code>targetStart</code>
+            留在 A。卸载时再按 VNode 保存的两个引用分别清理，因此两个目标都不能只靠“删除当前 target 的整段内容”处理。
+          </p>
           <h3>首次挂载</h3>
           <div class="sequence">
             <div class="sequence-item">
@@ -472,8 +478,8 @@ if (vnodeShouldKeepAlive) return keepAliveContext.deactivate(vnode)
                 </tr>
                 <tr>
                   <td><strong>move</strong></td>
-                  <td>Keyed Diff 移动节点时</td>
-                  <td>TransitionGroup 记录位置，使用 FLIP 动画</td>
+                  <td>TransitionGroup 的 beforeUpdate / updated</td>
+                  <td>自行记录更新前后位置，使用 FLIP 动画</td>
                   <td>transitionend</td>
                 </tr>
               </tbody>
@@ -485,6 +491,11 @@ if (vnodeShouldKeepAlive) return keepAliveContext.deactivate(vnode)
             type/key 记录回调，新 enter 可以主动结束旧
             leave，避免重复节点与错误动画。
           </p>
+          <div class="callout">
+            普通 keyed diff 的 <code>MoveType.REORDER</code> 只是把已有宿主节点插到新位置，renderer
+            不会把这次重排当成一次 leave + enter。列表移动动画由 runtime-dom 的
+            <code>TransitionGroup</code> 在更新前后测量位置并单独执行 FLIP，不能与 BaseTransition 的节点移除协议混成一条 hook 链。
+          </div>
           <h3>out-in 与 in-out</h3>
           <ul>
             <li>
@@ -561,7 +572,7 @@ if (vnodeShouldKeepAlive) return keepAliveContext.deactivate(vnode)
           <h2>四个协议逐个验明：测试、源码与同场景流程</h2>
           <p>
             总览只能说明四者会相遇，不能证明任何一个协议。下面每节都固定一个真实仓库用例，
-            紧接决定性连续源码和该用例自己的执行图。Suspense 小节还完整给出
+            紧接完整源码和该用例自己的执行图。Suspense 小节还完整给出
             imports、 shared
             setup、动作、断言与清理，是本页可直接定位运行的完整仓库测试上下文。
           </p>
@@ -590,8 +601,7 @@ if (vnodeShouldKeepAlive) return keepAliveContext.deactivate(vnode)
       : originalH) as unknown as typeof originalH</code></pre>
           <pre
             data-source-file="vue/packages/runtime-core/__tests__/components/Teleport.spec.ts"
-          ><code>    // 测试场景：应该更新目标。
-    test('should update target', async () =&gt; {
+          ><code>    test('should update target', async () =&gt; {
       const targetA = nodeOps.createElement('div')
       const targetB = nodeOps.createElement('div')
       const target = ref(targetA)
@@ -654,29 +664,67 @@ if (vnodeShouldKeepAlive) return keepAliveContext.deactivate(vnode)
       updateCssVars(n2, disabled)
     }
   },</code></pre>
+          <pre
+            data-source-file="vue/packages/runtime-core/src/components/Teleport.ts"
+          ><code>function moveTeleport(
+  vnode: VNode,
+  container: RendererElement,
+  parentAnchor: RendererNode | null,
+  { o: { insert }, m: move }: RendererInternals,
+  moveType: TeleportMoveTypes = TeleportMoveTypes.REORDER,
+): void {
+  // 目标变化先把结束锚点插入新容器，children 随后都移动到它之前。
+  if (moveType === TeleportMoveTypes.TARGET_CHANGE) {
+    insert(vnode.targetAnchor!, container, parentAnchor)
+  }
+  const { el, anchor, shapeFlag, children, props } = vnode
+  const isReorder = moveType === TeleportMoveTypes.REORDER
+  // 主视图重排需要先插入开始锚点，再移动可能存在的 children，最后插入结束锚点。
+  if (isReorder) {
+    insert(el!, container, parentAnchor)
+  }
+  // 启用 Teleport 的主视图重排不应影响远端 children。只有非重排或 disabled 时才搬
+  // children。#14701：pendingMount 表示 children 尚不存在，提前 move 会访问空 el，
+  // 并可能打乱延迟任务最终选择的容器，因此必须跳过。
+  if (!pendingMounts.has(vnode) &amp;&amp; (!isReorder || isTeleportDisabled(props))) {
+    // Teleport 只可能有数组 children 或无 children。
+    if (shapeFlag &amp; ShapeFlags.ARRAY_CHILDREN) {
+      for (let i = 0; i &lt; (children as VNode[]).length; i++) {
+        move(
+          (children as VNode[])[i],
+          container,
+          parentAnchor,
+          MoveType.REORDER,
+        )
+      }
+    }
+  }
+  // 最后移动主视图结束锚点，维持完整逻辑范围。
+  if (isReorder) {
+    insert(anchor!, container, parentAnchor)
+  }
+}</code></pre>
           <div
             class="diagram"
             role="img"
-            aria-label="Teleport 从 target A 移到 target B 的局部流程"
+            aria-label="Teleport 从 target A 移到 target B 前后，targetStart 留在 A，children 和 targetAnchor 去 B"
           >
             <div class="diagram-title">TELEPORT · TARGET CHANGE</div>
-            <div class="layer-flow">
+            <div class="branch-grid">
               <div class="layer-node">
-                <strong>Given</strong><small>主树双锚点；children 在 A</small>
+                <strong>更新前 · target A</strong
+                ><small>targetStart(A) · children · targetAnchor</small>
               </div>
-              <div class="diagram-arrow">→</div>
               <div class="layer-node">
-                <strong>When</strong><small>to: A → B；nextTick</small>
+                <strong>更新前 · target B</strong><small>空</small>
               </div>
-              <div class="diagram-arrow">→</div>
+              <div class="layer-node">
+                <strong>更新后 · target A</strong
+                ><small>targetStart(A) 留下；空文本锚点不会出现在 serializeInner 中</small>
+              </div>
               <div class="layer-node emphasis">
-                <strong>Mechanism</strong
-                ><small>resolveTarget + moveTeleport(TARGET_CHANGE)</small>
-              </div>
-              <div class="diagram-arrow">→</div>
-              <div class="layer-node">
-                <strong>Then</strong
-                ><small>A 空；B 有 children；主锚点不动</small>
+                <strong>更新后 · target B</strong
+                ><small>children · targetAnchor；主树 start/end 始终不动</small>
               </div>
             </div>
           </div>
@@ -690,23 +738,24 @@ if (vnodeShouldKeepAlive) return keepAliveContext.deactivate(vnode)
             <p>
               <strong>Mechanism：</strong>update 比较新旧
               <code>to</code>，解析新目标并用
-              <code>TARGET_CHANGE</code> 移动目标锚点和 children；<strong
+              <code>TARGET_CHANGE</code> 移动 <code>targetAnchor</code> 和 children；
+              <code>targetStart</code> 保留在旧目标；<strong
                 >Source：</strong
-              ><code>Teleport.ts</code> 上方连续段。
+              ><code>Teleport.ts · moveTeleport</code> 连续段。
             </p>
           </div>
           <div class="callout warm">
             <strong>失效/清理：</strong>新 target
             无效时开发态警告且不搬移；卸载会取消 pending defer
-            job、移除目标锚点并 unmount 远端
-            children，避免目标容器残留孤儿节点。
+            job、分别移除可能位于不同容器的 <code>targetStart</code> 与
+            <code>targetAnchor</code>，并 unmount 远端 children，避免旧目标残留锚点。
           </div>
 
           <h3 id="suspense-proof">
             B. Suspense：先 fallback，最后一次依赖完成后原子提交
           </h3>
           <p class="source-note">
-            性质：下面是同一真实测试文件的完整 import 上下文、共享清理/helper
+            下面依次给出同一真实测试文件的 import 上下文、共享清理/helper
             与完整测试体。
             <code>deps.length = 0</code> 和
             <code>resetSuspenseId()</code> 是每个测试的清理准备。
@@ -788,8 +837,7 @@ describe('Suspense', () =&gt; {
   }</code></pre>
           <pre
             data-source-file="vue/packages/runtime-core/__tests__/components/Suspense.spec.ts"
-          ><code>  // 测试场景：后备内容。
-  test('fallback content', async () =&gt; {
+          ><code>  test('fallback content', async () =&gt; {
     const Async = defineAsyncComponent({
       render() {
         return h('div', 'async')
@@ -988,8 +1036,7 @@ describe('KeepAlive', () =&gt; {
   })</code></pre>
           <pre
             data-source-file="vue/packages/runtime-core/__tests__/components/KeepAlive.spec.ts"
-          ><code>  // 测试场景：应该保留状态。
-  test('should preserve state', async () =&gt; {
+          ><code>  test('should preserve state', async () =&gt; {
     const viewRef = ref('one')
     const instanceRef = ref&lt;any&gt;(null)
     const App = {
@@ -1184,10 +1231,7 @@ function mockProps(
 }</code></pre>
           <pre
             data-source-file="vue/packages/runtime-core/__tests__/components/BaseTransition.spec.ts"
-          ><code>// 测试组：BaseTransition 的 enter/leave/appear 钩子、模式切换与取消时序。
-describe('BaseTransition', () =&gt; {
-  // 测试场景：出现：true，带出现钩子。
-  test('appear: true w/ appear hooks', () =&gt; {
+          ><code>  test('appear: true w/ appear hooks', () =&gt; {
     const { props, cbs } = mockProps({
       appear: true,
     })
@@ -1292,99 +1336,62 @@ describe('BaseTransition', () =&gt; {
             undefined。
           </div>
 
-          <h3 id="combined-proof">E. 组合场景：弹窗里的异步缓存页正在过渡</h3>
+          <h3 id="combined-proof">E. 组合场景：先列风险，不虚构一条通用时序</h3>
           <p>
-            这是<strong>教学组合推演</strong>，固定讨论
-            <code
-              >Teleport → Suspense(timeout: 0) → Transition(mode: out-in) →
-              KeepAlive → 当前异步页</code
-            >
-            这一种嵌套；它不是仓库中的单一测试，也不声称所有嵌套顺序都有相同时间线。
-            图中箭头表示阅读时的责任传递，不把四份实现伪装成一个函数调用栈。
+            当前页面只有 Teleport、Suspense、KeepAlive、BaseTransition
+            的四个独立测试，<strong>没有一个同时嵌套四者的回归测试</strong>。因此这一节只列组合时必须核对的状态，不再给出“先 fallback、再 deactivate、再 leave、最后 commit”之类确定顺序。嵌套顺序、Transition mode、Suspense timeout
+            任一变化，都可能改变实际回调先后。
           </p>
           <div
             class="diagram"
             role="img"
-            aria-label="Teleport Suspense KeepAlive Transition 组合场景执行流程"
+            aria-label="Teleport Suspense KeepAlive Transition 组合场景的四类独立风险与共同 renderer 边界"
           >
-            <div class="diagram-title">COMPOSED CASE · MODAL ROUTE</div>
-            <div class="layer-flow">
+            <div class="diagram-title">COMPOSED CASE · RISK MAP, NOT A TIMELINE</div>
+            <div class="branch-grid">
               <div class="layer-node">
                 <strong>Teleport</strong
-                ><small>弹窗 DOM 在 body target；逻辑父级不变</small>
+                ><small>主树锚点、旧/新 target、children 当前物理容器</small>
               </div>
-              <div class="diagram-arrow">→</div>
               <div class="layer-node">
                 <strong>Suspense</strong
-                ><small>新页 pending；弹窗内先显示 fallback</small>
+                ><small>active/pending branch、deps、pendingId、hiddenContainer</small>
               </div>
-              <div class="diagram-arrow">→</div>
               <div class="layer-node">
                 <strong>KeepAlive</strong
-                ><small>旧页 deactivate，实例进入 cache</small>
+                ><small>cache key、active/deactivated、storageContainer、最终 prune</small>
               </div>
-              <div class="diagram-arrow">→</div>
               <div class="layer-node emphasis">
                 <strong>Transition</strong
-                ><small>按 mode 协调旧页 leave / 新页 enter</small>
-              </div>
-              <div class="diagram-arrow">→</div>
-              <div class="layer-node">
-                <strong>Commit</strong
-                ><small>deps=0 后 content 移入远端 target；hooks flush</small>
+                ><small>enter/leave callback、mode、取消与真正 remove 时点</small>
               </div>
             </div>
+            <p class="concept-sentence">
+              四者只在 renderer internals、VNode 状态、container/anchor 与 post effects
+              上相遇；上面四格没有执行先后含义。
+            </p>
           </div>
-          <ol>
-            <li>
-              先固定三个坐标：逻辑父树、Teleport 目标容器、Suspense hidden
-              container；它们可能同时不同。
-            </li>
-            <li>
-              路由切换时 KeepAlive 决定旧实例是 deactivate 还是
-              unmount；Transition 决定真实节点何时允许移除。
-            </li>
-            <li>
-              异步新页只在当前 <code>pendingId</code> 仍有效且 deps 降为 0
-              时提交；过期结果不能覆盖新导航。
-            </li>
-            <li>
-              最终移动由各协议委托 renderer internals 完成；post effects
-              必须等正确的 Suspense/Transition 边界提交。
-            </li>
-          </ol>
-          <div class="test-proof">
-            <p>
-              <strong>Given：</strong>远端弹窗 target 已存在，页面 A 已进入
-              KeepAlive 缓存，当前导航要显示异步页面 B，并配置立即 fallback。
-            </p>
-            <p>
-              <strong>When：</strong>导航改变使 B 的 async setup 注册到
-              Suspense；旧 active branch、fallback 与隐藏 pending branch
-              开始交接。
-            </p>
-            <p>
-              <strong>Then：</strong>只有仍属于当前 <code>pendingId</code> 的 B
-              能在 deps=0 后提交到 Teleport target；A 可由缓存恢复，过期 B
-              不得覆盖后来导航。
-            </p>
-            <p>
-              <strong>Mechanism：</strong
-              >四个协议分别拥有容器、异步事务身份、实例缓存身份与节点移除时机；renderer
-              internals 是交汇边界。
-            </p>
-            <p>
-              <strong>Source：</strong
-              >证据来自上面四段独立源码与四个独立测试；组合顺序是显式推断，所以不加
-              <code>data-source-file</code>，也不冒充仓库测试。
-            </p>
+          <div class="branch-grid">
+            <div class="branch">
+              <strong>先画容器</strong
+              ><span>逻辑父树、Teleport target、Suspense hiddenContainer、KeepAlive storageContainer 当前分别是谁？</span>
+            </div>
+            <div class="branch">
+              <strong>再标身份</strong
+              ><span>当前 active VNode、pendingId、cache key 与 transition key 是否仍属于这次导航？</span>
+            </div>
+            <div class="branch">
+              <strong>最后标时机</strong
+              ><span>节点是在 move、deactivate、延迟 leave，还是最终 unmount？post effects 挂在哪个边界？</span>
+            </div>
+            <div class="branch">
+              <strong>验证清理</strong
+              ><span>过期 async 分支、transition callback、缓存实例、远端 children 与两套 target anchors 是否全部有退出路径？</span>
+            </div>
           </div>
           <div class="callout warm">
-            <strong>组合清理审计：</strong>关闭弹窗时逐项确认 pending job/async
-            branch 已失效、transition callback 已完成或取消、缓存实例最终能被
-            prune/unmount、Teleport 远端 children
-            与两套锚点均被移除。具体回调先后取决于嵌套和 mode；这里列的是
-            必须全部成立的清理后置条件，不硬编一个通用顺序。
+            <strong>证据边界：</strong>上面是根据四套独立协议整理的审查清单，不是已验证行为。
+            要写某一种嵌套的精确事件顺序，必须先补同一棵 VNode 树、同一组操作与清理断言的组合测试。
           </div>
         </section>
 
@@ -1474,9 +1481,9 @@ describe('BaseTransition', () =&gt; {
         </section>
 
         <section class="article-section prose" id="evidence-matrix">
-          <h2>本页证据表：用例 → 源码 → 测试 → 图</h2>
+          <h2>四个协议分别去哪里核对</h2>
           <p class="source-note">
-            本轮实跑（Node v24.5.0）：<code>Teleport.spec.ts</code> 56、<code
+            固定版本实跑（Node v24.5.0）：<code>Teleport.spec.ts</code> 56、<code
               >Suspense.spec.ts</code
             >
             58、<code>KeepAlive.spec.ts</code> 32、<code
@@ -1489,7 +1496,7 @@ describe('BaseTransition', () =&gt; {
               <thead>
                 <tr>
                   <th>协议用例</th>
-                  <th>决定性源码</th>
+                  <th>对应源码</th>
                   <th>仓库测试</th>
                   <th>同用例图</th>
                 </tr>
@@ -1530,12 +1537,6 @@ describe('BaseTransition', () =&gt; {
                     <code>appear: true w/ appear hooks</code>
                   </td>
                   <td><a href="#transition-proof">appear 状态图</a></td>
-                </tr>
-                <tr>
-                  <td>四协议组合弹窗</td>
-                  <td>上述四个边界的 renderer internals 协作</td>
-                  <td>组合推演；证据由四个独立测试组成，不冒充单个仓库测试</td>
-                  <td><a href="#combined-proof">组合提交/清理图</a></td>
                 </tr>
               </tbody>
             </table>

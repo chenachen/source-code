@@ -5,7 +5,7 @@
 ## 入口
 
 - [DOMPurify 源码机制指南](./dompurify/dompurify-source-guide.html)
-- micro-app：[源码全景](./micro-app/micro-app-src-guide.html) / [从 start 到清理](./micro-app/micro-app-source-code-guide.html)
+- micro-app：[源码全景（主入口）](./micro-app/micro-app-src-guide.html) / [从 start 到清理（端到端附录）](./micro-app/micro-app-source-code-guide.html)
 - React：[六包源码指南](./react/index.html) / [19.3.0 客户端渲染主线](./react/client-rendering-19.3.0/index.html)
 - [Vite 源码解剖](./vite/index.html)
 - [Vue 技术总结](./vue/index.html)

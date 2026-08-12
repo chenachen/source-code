@@ -325,6 +325,42 @@ watch 模式每轮第一次 renderChunk 重置该 chunk metadata，防止旧 CSS
 4. 检查 publicDir/outDir 是否重叠；
 5. 把 publicDir 复制到每个输出目录。
 
+决定“首次”的不是进入过 `renderStart`，而是已经执行过一次写盘准备。源码中的 `rendered` 只在
+`write=true` 时登记 Environment：
+
+来源：`packages/vite/src/node/build.ts`，`prepareOutDirPlugin()`。
+
+```ts
+renderStart: {
+  order: 'pre',
+  handler() {
+    if (rendered.has(this.environment)) return
+
+    const { config } = this.environment
+    if (config.build.write) {
+      rendered.add(this.environment)
+      const { root, build: options } = config
+      const resolvedOutDirs = getResolvedOutDirs(
+        root,
+        options.outDir,
+        options.rolldownOptions.output,
+      )
+      const emptyOutDir = resolveEmptyOutDir(
+        options.emptyOutDir,
+        root,
+        resolvedOutDirs,
+        this.environment.logger,
+      )
+      prepareOutDir(resolvedOutDirs, emptyOutDir, this.environment)
+    }
+  },
+},
+```
+
+所以第一次 `write=false` 只生成内存产物，不会消费“已准备”机会；同一 Environment 下一次改为
+`write=true`，仍会清理安全目录并复制 publicDir。多个 output dir 存在父子关系时，`prepareOutDir()`
+把嵌套 output 加入 `skipDirs`，避免清父目录时删掉同轮其他输出。
+
 worker 子构建不运行它，避免嵌套构建清空主输出，修复见
 [PR #20556](https://github.com/vitejs/vite/pull/20556)。
 
@@ -367,35 +403,229 @@ bundle；开发态才长期并发服务多个 Environment。
 [PR #18142](https://github.com/vitejs/vite/pull/18142)，插件名前缀见
 [PR #205](https://github.com/vitejs/vite/pull/205)。
 
-## 测试地图
+## 贯穿案例：先固定一张真实模块图
 
-`build.spec.ts` 主要分五组：
+14A 与 14B 共用仓库现成 fixture：
+`packages/vite/src/node/__tests__/fixtures/shared-plugins/chunk-import-map/`。
+它很小，却同时包含动态 import 与 CSS side effect：
 
-1. build 集成：CSS 改动传播 hash、顶层/虚拟 input、manifest 资产归属；
-2. resolveBuildOutputs：lib formats、UMD/IIFE 约束、入口优先级；
-3. resolveLibFilename：函数/字符串/package name/package type/多入口；
-4. Builder：shared config/plugins、per-environment minify、emitAssets、chunkImportMap；
-5. 日志、manifest 重建与 publicDir 二次构建。
+下列合并展示三个文件；`// 文件名` 是教程边界标注，不属于 fixture 原文。
 
-阅读时优先看注释标出的配置算法和状态回归，不必逐个记忆文件名快照。
+```js
+// entry.js
+import('./lazy.js')
 
-## 关键源码证据
+// lazy.js
+import './lazy.css'
+export const lazy = true
 
-目标版本源码摘录，来源：`packages/vite/src/node/build.ts`，`build()`：
-
-```ts
-export async function build(
-  inlineConfig: InlineConfig = {},
-): Promise<RolldownOutput | RolldownOutput[] | RolldownWatcher> {
-  const builder = await createBuilder(inlineConfig, true)
-  const environment = Object.values(builder.environments)[0]
-  if (!environment) throw new Error('No environment found')
-  return builder.build(environment)
+// lazy.css
+.lazy {
+  color: red;
 }
 ```
 
-传统 `build()` 已是 Builder 的单 Environment 兼容层：创建 legacy builder、选择首个环境、再委托
-真实构建。多 Environment 编排应从 `createBuilder()` 阅读，不能从这个返回值反推完整状态。
+本章只追踪**控制平面**：谁解析配置、谁拥有插件、谁调用 Rolldown、何时写盘、失败时谁清理。
+14B 接着追踪同一模块图的**数据平面**：lazy chunk、CSS、preload marker、import map 与 manifest
+怎样成为可交付产物。这样避免把 `createBuilder()` 与 `generateBundle()` 讲成两条互不相干的函数清单。
+
+仓库测试使用两个命名 Environment：client 开启 `chunkImportMap`，SSR 关闭；二者复用插件实例，
+但构建配置必须隔离。为了观察交付阶段，可在同一模块图上再开启 `manifest`、`write` 与 output 数组。
+后者是基于公开配置协议的讲解扩展，不冒充仓库测试已执行的场景。
+
+### 所有权地图
+
+| 对象/状态 | 创建者 | 持有者 | 生命周期 | 不应误解为 |
+| --- | --- | --- | --- | --- |
+| 顶层 `ResolvedConfig` | 首次 `resolveConfigToBuild()` | `ViteBuilder.config` | Builder 生命周期 | 每个 Environment 的最终 build 配置 |
+| 环境 `ResolvedConfig` | 默认逐环境重新解析；可共享 | `BuildEnvironment` | Environment 生命周期 | 必然与顶层对象同一引用 |
+| 原插件实例 | 每次配置解析；共享策略可替换 | 环境配置的 plugin 列表 | 配置生命周期 | 直接交给 Rolldown 的对象 |
+| hook wrapper | `resolveRolldownOptions()` | 本次 `RolldownOptions.plugins` | 单次 build 调用 | 新的业务插件实例 |
+
+`sharedPlugins: true` 共享的是原插件实例，不是 wrapper；插件若闭包捕获首次 config，wrapper 也无法修复。
+
+## 控制平面源码闭环
+
+下面四段分别锁定所有权、动态分派、metadata 同步和资源释放。
+
+### 证据 A1：Environment 默认独立解析，随后并行初始化
+
+来源：`packages/vite/src/node/build.ts`，`createBuilder()`。
+
+```ts
+for (const environmentName of Object.keys(config.environments)) {
+  let environmentConfig = config
+  if (!configBuilder.sharedConfigBuild) {
+    const patchConfig = (resolved: ResolvedConfig) => {
+      ;(resolved.build as ResolvedBuildOptions) = {
+        ...resolved.environments[environmentName].build,
+      }
+    }
+    const patchPlugins = (resolvedPlugins: Plugin[]) => {
+      let j = 0
+      for (let i = 0; i < resolvedPlugins.length; i++) {
+        const environmentPlugin = resolvedPlugins[i]
+        if (
+          configBuilder.sharedPlugins ||
+          environmentPlugin.sharedDuringBuild
+        ) {
+          for (let k = j; k < config.plugins.length; k++) {
+            if (environmentPlugin.name === config.plugins[k].name) {
+              resolvedPlugins[i] = config.plugins[k]
+              j = k + 1
+              break
+            }
+          }
+        }
+      }
+    }
+    environmentConfig = await resolveConfigToBuild(
+      inlineConfig,
+      patchConfig,
+      patchPlugins,
+    )
+  }
+  environmentConfigs.push([environmentName, environmentConfig])
+}
+await Promise.all(
+  environmentConfigs.map(
+    async ([environmentName, environmentConfig]) =>
+      await setupEnvironment(environmentName, environmentConfig),
+  ),
+)
+```
+
+控制关系不是“复制一个配置对象再改 name”。默认每个环境重新跑配置解析，`patchConfig` 把对应的
+environment build 选项镜像到旧插件仍会读取的顶层 `config.build`；`patchPlugins` 再选择性把新解析出的
+插件替换为首次解析实例。最后才并行执行 `createEnvironment → init → environments[name] = environment`。
+因此配置解析是所有权决策，Environment 初始化是登记阶段。
+
+### 证据 A2：当前 Environment 在 Rolldown 边界变成 hook wrapper
+
+来源：`packages/vite/src/node/build.ts`，`resolveRolldownOptions()`。
+
+```ts
+const plugins = environment.plugins.map((p) =>
+  injectEnvironmentToHooks(environment, chunkMetadataMap, p),
+)
+```
+
+入口优先级已在前文完整列出；这里的新增事实是 Rolldown 收到的不是裸插件，而是绑定当前 Environment 与
+本轮 metadata map 的 wrapper；随后同名变量写入 `rolldownOptions.plugins`。
+
+### 证据 A3：输出 hook 调用前恢复共享 metadata
+
+来源：`packages/vite/src/node/build.ts`，`wrapEnvironmentHook()`。
+
+```ts
+const handler: Plugin[HookName] = function (
+  this: PluginContext,
+  ...args: any[]
+) {
+  if (hookName === 'renderChunk') {
+    injectChunkMetadata(chunkMetadataMap, args[1], true)
+  }
+  if (hookName === 'augmentChunkHash') {
+    injectChunkMetadata(chunkMetadataMap, args[0])
+  }
+  if (hookName === 'generateBundle' || hookName === 'writeBundle') {
+    const bundle = args[1] as OutputBundle
+    for (const chunk of Object.values(bundle)) {
+      injectChunkMetadata(chunkMetadataMap, chunk)
+    }
+  }
+  return fn.call(injectEnvironmentInContext(this, environment), ...args)
+}
+```
+
+这段是 14A 到 14B 的桥。`renderChunk` 先为新轮次重置该 chunk 的 metadata；
+`augmentChunkHash`、`generateBundle`、`writeBundle` 再把同一份集合挂到阶段性输出对象，最后才调用业务 hook。
+于是 CSS 插件在前一 hook 写入的 `importedCss`，manifest/preload 插件能在后一 hook 读取。
+顺序反过来会让插件看到未注入或上一轮的 metadata。
+
+### 证据 A4：一个 bundle 串行处理全部 output，失败也关闭
+
+来源：`packages/vite/src/node/build.ts`，`buildEnvironment()` 一次性分支。
+
+```ts
+const { rolldown } = await import('rolldown')
+startTime = Date.now()
+bundle = await rolldown(rolldownOptions)
+
+const res: RolldownOutput[] = []
+for (const output of arraify(rolldownOptions.output!)) {
+  res.push(await bundle[options.write ? 'write' : 'generate'](output))
+}
+for (const output of res) {
+  for (const chunk of output.output) {
+    injectChunkMetadata(chunkMetadataMap, chunk)
+  }
+}
+return Array.isArray(rolldownOptions.output) ? res : res[0]
+```
+
+同一函数的清理尾部（与上段之间省略日志和 catch 增强逻辑）：
+
+```ts
+} finally {
+  if (bundle) await bundle.close()
+}
+```
+
+多 output 不是多次解析模块图：一个 `RolldownBuild` 按数组顺序执行多个 `write()`/`generate()`。
+任何 output 抛错，后续 output 不再执行，catch 增强原错，finally 关闭 bundle；此实现没有“删除已写入前序
+output”的事务回滚。调用方应把失败理解为“构建资源已释放”，不能理解为“磁盘恢复到构建前”。
+
+`write=false` 只把输出副作用改为内存 `generate()`，不会跳过 render/generate hooks，所以 preload、manifest
+仍可被测试读取。反之，watch 分支返回长期 watcher，不进入这里的 `bundle.close()`；关闭 watcher 是调用方责任。
+
+## 编排状态表：同一案例从配置到释放
+
+| 时点 | 触发动作 | 关键状态变化 | 可见副作用 | 失败/退出语义 |
+| --- | --- | --- | --- | --- |
+| S0 配置 | `createBuilder(inlineConfig)` | 顶层 config、共享策略确定 | config hooks 可产生日志 | 解析失败时 Builder 不返回 |
+| S1 环境 | 重解析并 `setupEnvironment()` | 插件独立或共享；登记环境，`isBuilt=false` | 无产物 | 初始化失败的环境不登记 |
+| S2 翻译 | `resolveRolldownOptions()` | 新 metadata map、wrappers、outputs | 无产物 | input/output 校验失败时尚无 bundle |
+| S3 建图 | `rolldown(options)` | 创建一个 `RolldownBuild` | build hooks 执行 | 若已创建 bundle，错误路径最终关闭 |
+| S4 输出 | 逐 output generate/write | metadata 跨 hook 同步 | 内存结果或部分磁盘文件 | 后序失败不回滚前序磁盘输出 |
+| S5 释放 | `finally bundle.close()` | 一次性 bundle 先关闭 | 无新增产物 | close 失败会使本次构建拒绝 |
+| S6 返回 | 回到 `builder.build()` | 此时才置 `isBuilt=true` | 返回 output；watch 返回 watcher | 失败或 close 失败均不置位 |
+
+其中 S6 的 chunk/CSS/asset/preload/manifest 状态变化由 14B 展开。这个边界很重要：14A 证明**何时**各 hook
+得到正确 Environment 和 metadata，14B 证明这些 hook **写了什么**。
+
+```mermaid
+flowchart TD
+  A["createBuilder：解析顶层 config 与共享策略"] --> B["分别解析 client / SSR Environment"]
+  B --> C["选择独立或共享插件实例"]
+  C --> D["setupEnvironment 并登记 isBuilt=false"]
+  D --> E["buildApp → builder.build(environment)"]
+  E --> F["resolveRolldownOptions：绑定 Environment wrapper"]
+  F --> G["rolldown：创建单个 RolldownBuild"]
+  G --> H{"watch?"}
+  H -- "是" --> I["返回 watcher；调用方负责关闭"]
+  H -- "否" --> J["按顺序 generate / write 每个 output"]
+  J --> K["统一回填 ChunkMetadataMap"]
+  J -- "任一 output 失败" --> L["停止后序 output；不回滚已写文件"]
+  K --> M["finally bundle.close"]
+  L --> M
+  M --> N{"close 与构建均成功?"}
+  N -- "是" --> O["返回结果；builder 再置 isBuilt=true"]
+  N -- "否" --> P["拒绝；isBuilt 保持 false"]
+```
+
+图中 client/SSR 是下方共享插件测试的两个真实 Environment；多 output 与失败分支由源码锁定，测试未直接
+触发。一次性构建的资源提交点不是写完某个 output，而是 `bundle.close()` 成功后调用方取得结果。
+
+## 源码—测试证据
+
+| 机制 | 决定性源码 | 代表测试 | 证据边界 |
+| --- | --- | --- | --- |
+| Environment 所有权 | `createBuilder()` | 14B 完整 chunkImportMap 测试 | 动态证明共享插件下 client/SSR 配置隔离 |
+| hook wrapper / metadata | `resolveRolldownOptions()`、`wrapEnvironmentHook()` | 同上、CSS hash 回归 | 源码证明注入顺序；测试证明 CSS specifier 最终进入 client 产物 |
+| output 与关闭 | `buildEnvironment()` | `write:false` 构建测试 | 测试只覆盖 generate 成功；失败停止与 finally close 来自源码 |
+| 输出目录 | `prepareOutDirPlugin()` | write=false 后再 write=true 复制 publicDir | 动态证明首轮内存构建不消费后续写盘准备 |
+| 格式与入口 | `resolveBuildOutputs()`、input 解析 | lib formats、虚拟/顶层 input 测试 | 覆盖约束与优先级，不证明磁盘事务回滚 |
 
 ## 建议断点
 

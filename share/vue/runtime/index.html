@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="从完整按钮用例出发，沿 Vue 3.5.41 真实源码讲懂 mount、调度、render、patch 与 DOM 提交"
+      content="按 runtime-core、runtime-dom、跨包完整调用链的顺序，沿 Vue 3.5.41 源码讲懂 mount、调度、render、patch 与 DOM 提交"
     />
     <title>Vue Runtime 是怎样让页面动起来的 · 总览</title>
     <link rel="stylesheet" href="assets/styles.css" />
@@ -20,9 +20,9 @@
           <h1>Vue 是怎样让页面动起来的？</h1>
           <p class="article-lead">
             从“点击按钮后计数从 0 变成
-            1”开始，逐步理解组件、更新队列、虚拟节点、Diff、DOM
-            和服务端水合。先用完整按钮计数器建立上下文，再把每个阶段映射到 Vue
-            3.5.41 的真实源码与仓库测试。
+            1”开始，先读懂 runtime-core 怎样管理组件、VNode、调度和
+            patch，再看 runtime-dom 怎样把宿主操作落实成浏览器 DOM。最后回到同一个
+            Counter，把两层真正接成一条调用链。
           </p>
           <div class="hero-meta">
             <span>普通前端可直接阅读</span><span>12 个专题章节</span
@@ -33,20 +33,19 @@
               <strong>1</strong><span>一条端到端 Counter 主线</span>
             </div>
             <div class="stat">
-              <strong>5</strong><span>证据闭环的核心专题</span>
+              <strong>7</strong><span>runtime-core 专题</span>
             </div>
             <div class="stat">
-              <strong>2</strong
-              ><span>两个核心主线输入：Counter / keyed list</span>
+              <strong>1</strong><span>runtime-dom 平台专题</span>
             </div>
             <div class="stat">
-              <strong>3</strong><span>用例、流程、源码层次</span>
+              <strong>3</strong><span>core → DOM → 跨包串联</span>
             </div>
           </div>
         </div>
 
         <section class="article-section prose" id="promise">
-          <h2>这不是源码翻译，而是一套从现象到原理的课程</h2>
+          <h2>每一章都从页面上能看到的变化开始</h2>
           <div class="before-after">
             <div class="scene-window">
               <div class="scene-titlebar">你已经知道的</div>
@@ -70,9 +69,8 @@ await nextTick()</code></pre>
             </div>
           </div>
           <p class="concept-sentence">
-            主线章先回答“用户看到了什么”，再回答“Vue
-            为什么这样做”，随即给出可核对的决定性源码和测试证据；
-            其他专题页负责展开其中一个阶段。
+            先看用户做了什么、页面哪里变了；再追对象和状态怎样交接；最后回到源码与测试，
+            看这个结论究竟由哪条分支保证。
           </p>
           <div class="reader-lane">
             <div>
@@ -82,15 +80,14 @@ await nextTick()</code></pre>
             </div>
           </div>
           <p class="reader-check">
-            <strong>证据边界：</strong
-            >首页只负责声明案例和阅读路线，本身不构成机制证明。请进入
-            integration
-            与五个核心专题，在每页末尾的“用例→源码→测试→图”表核对证据是否齐全。
+            <strong>本页只给地图：</strong
+            >实现细节从架构篇开始。专题页会把同一个结论对应到源码、测试和状态图，
+            不要求你凭首页的一句概括接受它。
           </p>
         </section>
 
         <section class="article-section prose" id="example">
-          <h2>整套 Runtime 只围绕一个问题展开</h2>
+          <h2>先抓住最常走的一条更新主线</h2>
           <p>
             状态变化后，Vue 要用尽可能少的工作，让浏览器页面与最新状态一致。
           </p>
@@ -119,12 +116,18 @@ await nextTick()</code></pre>
           <p>
             调度系统决定这些工作什么时候做；Teleport、Suspense、KeepAlive 和
             Transition 改变某些特殊时机；Hydration 则让 Vue
-            接管服务端已经生成的页面。
+            接管服务端已经生成的页面。组件生命周期、错误处理和卸载还要解决创建、
+            恢复与资源回收，它们会在各自章节单独展开。
           </p>
         </section>
 
         <section class="article-section prose" id="case-map">
-          <h2>统一案例怎样贯穿；哪里必须诚实换输入</h2>
+          <h2>Counter 贯穿主线；列表 Diff 单独换一个输入</h2>
+          <p>
+            Counter 足以讲清组件、调度、元素 patch 和 DOM 提交，却不会进入 keyed
+            children 的最长递增子序列分支。到了 Diff 章，我们会明确改用带 key
+            的列表，不拿一个没走到该分支的例子硬讲算法。
+          </p>
           <div class="table-wrap">
             <table>
               <thead>
@@ -137,54 +140,40 @@ await nextTick()</code></pre>
               </thead>
               <tbody>
                 <tr>
-                  <td>完整调用链</td>
-                  <td>浏览器 Counter：0→click→1</td>
-                  <td>
-                    mount、ref、queue、render、patch、DOM、post/nextTick 全景
-                  </td>
-                  <td>
-                    <a href="integration.html">完整 Demo、仓库测试与总图</a>
-                  </td>
-                </tr>
-                <tr>
-                  <td>架构</td>
+                  <td>架构与组件</td>
                   <td>runtime-test Counter：0→两次 click→2→卸载</td>
-                  <td>同一 core 怎样接内存 host ops</td>
+                  <td>VNode、instance、effect、subTree 和宿主接口各由谁持有</td>
                   <td>
-                    <a href="architecture.html#architecture-evidence"
-                      >页尾证据表</a
-                    >
+                    <a href="architecture.html">架构</a> ·
+                    <a href="component.html">组件</a>
                   </td>
                 </tr>
                 <tr>
-                  <td>组件</td>
+                  <td>Renderer 与 Scheduler</td>
                   <td>同一个 runtime-test Counter</td>
-                  <td>instance/setup/effect/subTree 的前后状态</td>
+                  <td>新旧 VNode 怎样比较；两次同步写入为什么只刷新一次</td>
                   <td>
-                    <a href="component.html#component-evidence">页尾证据表</a>
-                  </td>
-                </tr>
-                <tr>
-                  <td>Renderer</td>
-                  <td>同一个 Counter 的 button 0→2 VNode</td>
-                  <td>稳定事件引用不变时，patch 如何收窄成一次文本提交</td>
-                  <td>
-                    <a href="renderer.html#renderer-evidence">页尾证据表</a>
-                  </td>
-                </tr>
-                <tr>
-                  <td>Scheduler</td>
-                  <td>同一个 Counter 的两次 click</td>
-                  <td>QUEUED 去重、flushJobs、post 与 nextTick</td>
-                  <td>
-                    <a href="scheduler.html#scheduler-evidence">页尾证据表</a>
+                    <a href="renderer.html">Renderer</a> ·
+                    <a href="scheduler.html">Scheduler</a>
                   </td>
                 </tr>
                 <tr>
                   <td>Diff</td>
-                  <td><strong>专用 keyed 输入</strong> [1,2,3,4]→[2,3,1,4]</td>
-                  <td>Counter 不进入 LIS；列表才手算映射、LIS 与 move</td>
-                  <td><a href="diff.html#diff-evidence">页尾证据表</a></td>
+                  <td>keyed 列表 [1,2,3,4]→[2,3,1,4]</td>
+                  <td>手算新旧映射、LIS、节点复用与 move</td>
+                  <td><a href="diff.html">列表 Diff 专题</a></td>
+                </tr>
+                <tr>
+                  <td>runtime-dom</td>
+                  <td>浏览器元素、属性、事件和表单输入</td>
+                  <td>core 的 host 操作怎样落到 property、attribute、listener 与 DOM</td>
+                  <td><a href="runtime-dom.html">浏览器平台层</a></td>
+                </tr>
+                <tr>
+                  <td>两层结合</td>
+                  <td>浏览器 Counter：0→click→1→unmount</td>
+                  <td>renderer 构造、mount、更新、DOM 提交与资源回收的整条链</td>
+                  <td><a href="integration.html">完整调用链</a></td>
                 </tr>
               </tbody>
             </table>
@@ -192,7 +181,7 @@ await nextTick()</code></pre>
         </section>
 
         <section class="article-section prose" id="reading-levels">
-          <h2>先走“用例 → 机制 → 源码证据”主线，再拆专题</h2>
+          <h2>每一站都按“现象 → 状态 → 源码”往下走</h2>
           <div class="sequence">
             <div class="sequence-item">
               <strong>第一层：现象与故事</strong><br />真实 UI
@@ -204,13 +193,13 @@ await nextTick()</code></pre>
             </div>
             <div class="sequence-item">
               <strong>第三层：源码与测试证据</strong
-              ><br />完整调用链章紧跟决定性函数、
-              状态写入、异常分支与完整测试；专题页从其中一站继续展开。
+              ><br />回到决定分支的函数、状态写入与仓库测试，确认前面的流程不是只靠类比。
             </div>
           </div>
           <div class="callout warm">
             如果第一次接触 Runtime，请不要从 Renderer
-            开始。先读“零基础先修课”，再用“按钮完整调用链”建立全景，随后拆读各专题。
+            中段切入。先读“零基础先修课”，再按 runtime-core、runtime-dom
+            的包边界逐层深入；完整调用链放在两者之后，用来检查这些知识能不能接起来。
           </div>
           <p>
             <a class="source-link" href="primer.html">从零基础先修课开始 →</a>
@@ -220,12 +209,10 @@ await nextTick()</code></pre>
         <section class="article-section" id="modules">
           <h2>课程目录</h2>
           <p class="section-intro">
-            核心主线顺序：先修课 → 按钮完整调用链 → 架构 → 组件 → Renderer →
-            Diff →
-            Scheduler。先有一条连续主线，再放大其中一站；注意真实点击执行时
-            scheduler 位于组件重渲染之前，学习顺序是为了先懂 job
-            的内容，再单独研究时间轴。完成主线后， 再按目录继续 06–10 的
-            hydration、内置组件、runtime-dom、演进与测试实践章。
+            主路线分三段：先沿 runtime-core 建立通用运行时模型；再进入
+            runtime-dom，看同一批宿主接口怎样变成浏览器操作；最后用完整 Counter
+            把构造、挂载、更新和卸载串起来。Diff 需要真正的 keyed children，
+            因此会暂时换用列表，其余核心章节继续沿用 Counter。
           </p>
           <div class="module-directory">
             <a class="module-card" href="primer.html">
@@ -237,22 +224,12 @@ await nextTick()</code></pre>
               </p>
               <span class="read-more">从这里开始 →</span>
             </a>
-            <a class="module-card" href="integration.html">
-              <span class="module-number">MAIN PATH · FULL STORY</span>
-              <h3>按钮计数器的完整调用链</h3>
-              <p>
-                先贴完整可运行源码与仓库测试，再把
-                mount、ref、scheduler、render、 patch、DOM、post flush 和
-                nextTick 串成一张流程图。
-              </p>
-              <span class="read-more">先走完整主线 →</span>
-            </a>
             <a class="module-card" href="architecture.html">
               <span class="module-number">01 · ARCHITECTURE</span>
               <h3>为什么 Vue 要分这么多层</h3>
               <p>
-                用完整 Counter 教程测试追踪 runtime-core 与注入的 runtime-test
-                宿主边界。
+                先画 runtime-core 文件地图，再从 <code>h → createVNode → patch</code>
+                追到注入的宿主操作，并说明 DOM hydration 这个刻意保留的例外。
               </p>
               <span class="read-more">进入架构篇 →</span>
             </a>
@@ -275,7 +252,8 @@ await nextTick()</code></pre>
               <span class="module-number">04 · DIFF</span>
               <h3>列表变化后怎样少动 DOM</h3>
               <p>
-                诚实切换到真实 keyed 测试，完整手算 [1,2,3,4]→[2,3,1,4] 与 LIS。
+                Counter 不会进入 keyed diff；这里改用列表，完整手算
+                [1,2,3,4]→[2,3,1,4] 与 LIS。
               </p>
               <span class="read-more">进入 Diff 专题 →</span>
             </a>
@@ -312,8 +290,17 @@ await nextTick()</code></pre>
               </p>
               <span class="read-more">进入 DOM 篇 →</span>
             </a>
+            <a class="module-card" href="integration.html">
+              <span class="module-number">09 · INTEGRATION</span>
+              <h3>runtime-core 与 runtime-dom 怎样接起来</h3>
+              <p>
+                回到浏览器 Counter，串起 renderer 的懒创建、mount、ref、scheduler、
+                patch、DOM 提交、post flush、nextTick 与 unmount。
+              </p>
+              <span class="read-more">走完整调用链 →</span>
+            </a>
             <a class="module-card" href="evolution.html">
-              <span class="module-number">09 · EVOLUTION</span>
+              <span class="module-number">10 · EVOLUTION</span>
               <h3>Vue Runtime 为什么持续变化</h3>
               <p>
                 从用户输入丢失、重复请求等真实故障理解版本演进，而不是背提交记录。
@@ -321,7 +308,7 @@ await nextTick()</code></pre>
               <span class="read-more">进入演进篇 →</span>
             </a>
             <a class="module-card" href="testing.html">
-              <span class="module-number">10 · PRACTICE</span>
+              <span class="module-number">11 · PRACTICE</span>
               <h3>怎样证明更新真的正确</h3>
               <p>
                 最终 HTML 一样还不够：节点身份、执行顺序和错误恢复都需要测试。
@@ -338,25 +325,24 @@ await nextTick()</code></pre>
               <span class="card-label">I JUST WANT TO UNDERSTAND</span>
               <h3>先建立主线</h3>
               <p>
-                先修课 → 按钮完整调用链。先看 Demo
-                与流程图，再用连续源码摘录核对，
-                随后按五个核心专题的页尾证据表逐项复盘。
+                先修课 → 架构 → 组件 → Renderer → Scheduler → runtime-dom →
+                完整调用链。Diff、水合和内置组件可在主线之后按需展开。
               </p>
             </article>
             <article class="card">
               <span class="card-label">I WANT TO SHARE</span>
               <h3>准备技术分享</h3>
               <p>
-                先读按钮完整调用链，再按分享重点展开组件、调度、renderer 或 DOM
-                专题。
+                先用完整调用链展示全景，再回到架构、组件、调度、Renderer 或 DOM
+                专题解释其中一段；图中的每个箭头都能回到具体源码与测试。
               </p>
             </article>
             <article class="card">
               <span class="card-label">I WANT THE SOURCE</span>
               <h3>开始源码精读</h3>
               <p>
-                从完整调用链进入函数、测试和 Git 历史；每个参数与分支都有同一
-                Demo 上下文。
+                按包边界从入口和 RendererOptions 开始，再沿调用链进入函数、测试和
+                Git 历史；遇到跨包跳转时不会失去上下文。
               </p>
             </article>
           </div>
@@ -367,8 +353,14 @@ await nextTick()</code></pre>
           <ul>
             <li><strong>讲解基线：</strong>当前仓库 Vue 3.5.41。</li>
             <li>
-              <strong>主要范围：</strong>runtime-core 与
-              runtime-dom；响应式、编译器和 SSR 在需要时补充。
+              <strong>深入范围：</strong>runtime-core 的组件、VNode、renderer、
+              scheduler、水合和内置协议；runtime-dom 的组装、节点、属性、事件、
+              表单指令、过渡与自定义元素。
+            </li>
+            <li>
+              <strong>相邻边界：</strong>响应式只追到组件 effect 的触发；编译器只追
+              VNode、patchFlag 与 v-model 的交接；SSR 只追水合入口，不展开编译和
+              服务端字符串生成。
             </li>
             <li>
               <strong>离线分享：</strong>无
@@ -383,8 +375,8 @@ await nextTick()</code></pre>
 
         <nav class="page-nav" aria-label="章节翻页">
           <a href="primer.html"><span>开始学习</span>零基础先修课 →</a>
-          <a href="integration.html"
-            ><span>已有基础</span>直接进入按钮完整调用链 →</a
+          <a href="architecture.html"
+            ><span>熟悉基础术语</span>直接进入 runtime-core 架构 →</a
           >
         </nav>
       </main>

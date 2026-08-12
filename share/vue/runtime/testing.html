@@ -16,15 +16,15 @@
       <aside data-global-nav></aside>
       <main class="article">
         <div class="article-hero">
-          <div class="article-kicker">Chapter 10 · Testing & Debugging</div>
+          <div class="article-kicker">Chapter 11 · Testing & Debugging</div>
           <h1>页面看起来一样，为什么还可能是错的</h1>
           <p class="article-lead">
             Runtime 测试不只比较最终
             HTML。它还要证明原节点被复用、组件状态没有串位、回调顺序正确，而且一次报错不会让后续更新永远停止。
           </p>
           <div class="hero-meta">
-            <span>61 个验证文件已注释（60 spec + 1 bench）</span
-            ><span>1,396 个 spec suite / case 场景说明</span><span>Vitest</span>
+            <span>结果、身份、顺序、恢复</span
+            ><span>runtime-test + jsdom</span><span>Vitest</span>
           </div>
         </div>
 
@@ -83,7 +83,7 @@
         <div class="level-divider">进入测试分层、命令与调试层</div>
 
         <section class="article-section prose" id="why-tests">
-          <h2>源码回答“怎么做”，测试回答“为什么必须这样做”</h2>
+          <h2>源码展示实现路径，测试锁住不能退化的外部行为</h2>
           <p>
             一段生产代码可能同时保护六个场景，函数名看不出优先级。测试会把输入、动作、输出和回归背景拆开：这正是阅读那些“看起来多余”的
             condition、flag 清理和 anchor 修正的证据。
@@ -203,8 +203,9 @@ expect(root.children[1]).toBe(before)</code></pre>
               判断复用，而非只比较相同字符串。
             </li>
             <li>
-              可记录 <strong>操作</strong>：insert 表示 mount 还是 move、remove
-              调用了几次。
+              可通过 spy 或自定义 host instrumentation 记录<strong>操作</strong>：
+              区分 insert 是 mount 还是 move，并统计 remove 次数；runtime-test
+              默认公开的是内存树，不是通用操作录像器。
             </li>
             <li>
               可构造 <strong>非 DOM 平台</strong>：证明 core 不意外依赖
@@ -338,8 +339,7 @@ describe('renderer: keyed children', () =&gt; {
   })</code></pre>
           <pre
             data-source-file="vue/packages/runtime-core/__tests__/rendererChildren.spec.ts"
-          ><code>  // 测试场景：推动独生子女前进。
-  test('moving single child forward', () =&gt; {
+          ><code>  test('moving single child forward', () =&gt; {
     elm = renderChildren([1, 2, 3, 4])
     expect(elm.children.length).toBe(4)
 
@@ -380,7 +380,7 @@ describe('renderer: keyed children', () =&gt; {
             </p>
           </div>
 
-          <h3>2. 决定性连续源码：中段映射、patch、LIS 与 move</h3>
+          <h3>2. 中段映射、patch、LIS 与 move 的完整实现</h3>
           <p>
             下段是
             <code>patchKeyedChildren</code>
@@ -741,11 +741,9 @@ pnpm build</code></pre>
             </div>
           </div>
           <div class="callout">
-            本次注释工作实际验证过 Runtime 测试：60 个 spec 执行文件、1,306
-            个用例通过、1 个跳过。第 61 个验证文件是
-            <code>apiWatch.bench.ts</code> benchmark，不是测试辅助或类型场景；
-            1,396 个 suite/case 说明只统计 60 个 spec 中的 describe/test/it
-            结构。
+            文件数和用例数会随提交变化，不把它们当成质量指标。固定在 Vue 3.5.41
+            复核时，请记录实际命令、Node 版本、通过/跳过数量和失败日志；本页更关心每条
+            测试是否明确观察结果、节点身份、回调顺序或错误后的恢复。
           </div>
         </section>
 
@@ -851,9 +849,9 @@ pnpm build</code></pre>
         </section>
 
         <section class="article-section prose" id="evidence-matrix">
-          <h2>本页证据表：用例 → 源码 → 测试 → 图</h2>
+          <h2>每条测试结论去哪里核对</h2>
           <p class="source-note">
-            本轮实跑：Node v24.5.0，<code>rendererChildren.spec.ts</code> 整文件
+            固定版本实跑：Node v24.5.0，<code>rendererChildren.spec.ts</code> 整文件
             38 tests passed。
           </p>
           <div class="table-wrap">
@@ -861,7 +859,7 @@ pnpm build</code></pre>
               <thead>
                 <tr>
                   <th>用例</th>
-                  <th>决定性源码</th>
+                  <th>对应源码</th>
                   <th>仓库测试</th>
                   <th>同用例图</th>
                 </tr>
@@ -896,6 +894,21 @@ pnpm build</code></pre>
                     同文件 remove / duplicate-key / async-component 相邻场景
                   </td>
                   <td><a href="#keyed-proof">异常与清理分支</a></td>
+                </tr>
+                <tr>
+                  <td>主队列 job 抛错后仍能再次入队；nextTick 收到 flush 错误</td>
+                  <td><code>scheduler.ts · flushJobs</code> 的主队列 <code>try/finally</code></td>
+                  <td>
+                    <code>scheduler.spec.ts · jobs can be re-queued after an error</code>；
+                    <code>nextTick should capture scheduler flush errors</code>
+                  </td>
+                  <td><a href="scheduler.html#scheduler-source-proof">主队列恢复与边界</a></td>
+                </tr>
+                <tr>
+                  <td>水合前用户已在文本框输入</td>
+                  <td><code>runtime-dom/directives/vModel.ts · vModelText</code> 的 created/mounted 保护</td>
+                  <td><code>hydration.spec.ts · preserves text entered before v-model hydration</code></td>
+                  <td><a href="runtime-dom.html#v-model-flow">DOM → model → VNode → DOM</a></td>
                 </tr>
               </tbody>
             </table>

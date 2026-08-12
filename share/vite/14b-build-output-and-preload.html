@@ -389,6 +389,12 @@ a:hover {
   color: var(--muted);
 }
 
+.hero-meta > *,
+.boundary-note p {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .focus-card,
 .evidence-note,
 .boundary-note {
@@ -1357,7 +1363,7 @@ code {
     break-inside: avoid;
   }
 }
-</style><script>(function(){try{var t=localStorage.getItem("vite-guide-theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(_){}})();</script></head><body><a class="skip-link" href="#article-start">跳到正文</a><div class="reading-progress" aria-hidden="true"><span data-reading-progress></span></div><header class="topbar"><div class="topbar-inner"><button class="icon-button nav-toggle" type="button" data-nav-toggle aria-expanded="false" aria-label="打开模块导航">☰</button><a class="brand" href="index.html"><span class="brand-mark">V</span><span class="brand-text">Vite 源码解剖</span></a><span class="topbar-path">生产构建 / 14B Preload 与构建输出</span><div class="topbar-actions"><button class="icon-button" type="button" data-theme-toggle aria-label="切换主题">◐</button></div></div></header><div class="page-grid"><nav class="site-nav" aria-label="模块导航"><a class="nav-home" href="index.html"><span>⌂</span><span>阅读总览</span></a><section class="nav-group"><h2 class="nav-group-title">全景</h2><ul class="nav-list"><li><a href="00-system-map-and-end-to-end.html"><span class="nav-code">00</span><span>系统全景与请求链</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">启动与配置</h2><ul class="nav-list"><li><a href="01-cli-and-startup.html"><span class="nav-code">01</span><span>CLI 与启动</span></a></li><li><a href="02a-env-loading.html"><span class="nav-code">02A</span><span>环境文件加载</span></a></li><li><a href="02b-config-resolution.html"><span class="nav-code">02B</span><span>配置加载与解析</span></a></li><li><a href="02c-define-client-injection-and-json.html"><span class="nav-code">02C</span><span>Define、注入与 JSON</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">开发服务器核心</h2><ul class="nav-list"><li><a href="03-plugin-system.html"><span class="nav-code">03</span><span>插件体系</span></a></li><li><a href="04-dev-server-lifecycle.html"><span class="nav-code">04</span><span>Dev Server 生命周期</span></a></li><li><a href="05-environment-api.html"><span class="nav-code">05</span><span>Environment API</span></a></li><li><a href="06-middleware-request-pipeline.html"><span class="nav-code">06</span><span>中间件与请求入口</span></a></li><li><a href="07-module-resolution.html"><span class="nav-code">07</span><span>模块解析</span></a></li><li><a href="08-transform-and-module-graph.html"><span class="nav-code">08</span><span>Transform 与模块图</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">转换与增量更新</h2><ul class="nav-list"><li><a href="09-html-transform.html"><span class="nav-code">09</span><span>HTML 转换</span></a></li><li><a href="10-import-analysis.html"><span class="nav-code">10</span><span>Import Analysis</span></a></li><li><a href="11-dependency-pre-bundling.html"><span class="nav-code">11</span><span>依赖预构建</span></a></li><li><a href="12-hmr.html"><span class="nav-code">12</span><span>HMR</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">资源管线</h2><ul class="nav-list"><li><a href="13a-css-pipeline.html"><span class="nav-code">13A</span><span>CSS 管线</span></a></li><li><a href="13b-asset-worker-wasm.html"><span class="nav-code">13B</span><span>Asset、Worker、Wasm</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">生产构建</h2><ul class="nav-list"><li><a href="14a-build-orchestration.html"><span class="nav-code">14A</span><span>生产构建编排</span></a></li><li><a href="14b-build-output-and-preload.html" aria-current="page"><span class="nav-code">14B</span><span>Preload 与构建输出</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">SSR 与运行时</h2><ul class="nav-list"><li><a href="15a-ssr-transform-and-loading.html"><span class="nav-code">15A</span><span>SSR 变换与加载</span></a></li><li><a href="15b-module-runner.html"><span class="nav-code">15B</span><span>Module Runner</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">公共边界</h2><ul class="nav-list"><li><a href="16-public-api-diagnostics-and-types.html"><span class="nav-code">16</span><span>公共 API 与类型</span></a></li></ul></section></nav><main class="article" id="article-start"><header class="article-hero"><div class="eyebrow"><span class="pill">14B</span><span>生产构建</span></div><h1>14B. 动态导入预加载、压缩与构建清单</h1><p class="lede">Preload 先留 marker，generateBundle 再读取最终图，runtime helper 最后装载；清单也在产物阶段生成。</p><div class="hero-meta"><span>证据基线：v8.2.1</span><span>commit <code>421615865dad</code></span><span>约 13 分钟</span><a href="../../vite/reading-guides/14b-build-output-and-preload.md">查看 Markdown 原稿</a></div></header><section class="focus-card" aria-label="阅读重点与边界"><div><h2>本页重点</h2><p>Preload 先留 marker，generateBundle 再读取最终图，runtime helper 最后装载；清单也在产物阶段生成。</p></div><div class="boundary"><h3>推导边界</h3><p>Transform 阶段尚不知道最终文件名，因此 asset 与 preload 必须使用占位协议。</p></div></section><aside class="evidence-note"><h3>证据口径</h3><p>正文保留目标版本中的真实源码、状态说明与代表性测试映射。测试源码用于锁定设计契约；本轮没有执行测试命令。</p></aside><article class="prose"><h2 id="阅读边界"><a class="heading-anchor" href="#%E9%98%85%E8%AF%BB%E8%BE%B9%E7%95%8C" aria-label="链接到本节">#</a>阅读边界</h2>
+</style><script>(function(){try{var t=localStorage.getItem("vite-guide-theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(_){}})();</script></head><body><a class="skip-link" href="#article-start">跳到正文</a><div class="reading-progress" aria-hidden="true"><span data-reading-progress></span></div><header class="topbar"><div class="topbar-inner"><button class="icon-button nav-toggle" type="button" data-nav-toggle aria-expanded="false" aria-label="打开模块导航">☰</button><a class="brand" href="index.html"><span class="brand-mark">V</span><span class="brand-text">Vite 源码解剖</span></a><span class="topbar-path">生产构建 / 14B Preload 与构建输出</span><div class="topbar-actions"><button class="icon-button" type="button" data-theme-toggle aria-label="切换主题">◐</button></div></div></header><div class="page-grid"><nav class="site-nav" aria-label="模块导航"><a class="nav-home" href="index.html"><span>⌂</span><span>阅读总览</span></a><section class="nav-group"><h2 class="nav-group-title">全景</h2><ul class="nav-list"><li><a href="00-system-map-and-end-to-end.html"><span class="nav-code">00</span><span>系统全景与请求链</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">启动与配置</h2><ul class="nav-list"><li><a href="01-cli-and-startup.html"><span class="nav-code">01</span><span>CLI 与启动</span></a></li><li><a href="02a-env-loading.html"><span class="nav-code">02A</span><span>环境文件加载</span></a></li><li><a href="02b-config-resolution.html"><span class="nav-code">02B</span><span>配置加载与解析</span></a></li><li><a href="02c-define-client-injection-and-json.html"><span class="nav-code">02C</span><span>Define、注入与 JSON</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">开发服务器核心</h2><ul class="nav-list"><li><a href="03-plugin-system.html"><span class="nav-code">03</span><span>插件体系</span></a></li><li><a href="04-dev-server-lifecycle.html"><span class="nav-code">04</span><span>Dev Server 生命周期</span></a></li><li><a href="05-environment-api.html"><span class="nav-code">05</span><span>Environment API</span></a></li><li><a href="06-middleware-request-pipeline.html"><span class="nav-code">06</span><span>中间件与请求入口</span></a></li><li><a href="07-module-resolution.html"><span class="nav-code">07</span><span>模块解析</span></a></li><li><a href="08-transform-and-module-graph.html"><span class="nav-code">08</span><span>Transform 与模块图</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">转换与增量更新</h2><ul class="nav-list"><li><a href="09-html-transform.html"><span class="nav-code">09</span><span>HTML 转换</span></a></li><li><a href="10-import-analysis.html"><span class="nav-code">10</span><span>Import Analysis</span></a></li><li><a href="11-dependency-pre-bundling.html"><span class="nav-code">11</span><span>依赖预构建</span></a></li><li><a href="12-hmr.html"><span class="nav-code">12</span><span>HMR</span></a></li><li><a href="12b-bundled-dev.html"><span class="nav-code">12B</span><span>Bundled Dev</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">资源管线</h2><ul class="nav-list"><li><a href="13a-css-pipeline.html"><span class="nav-code">13A</span><span>CSS 管线</span></a></li><li><a href="13b-asset-worker-wasm.html"><span class="nav-code">13B</span><span>Asset、Worker、Wasm</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">生产构建</h2><ul class="nav-list"><li><a href="14a-build-orchestration.html"><span class="nav-code">14A</span><span>生产构建编排</span></a></li><li><a href="14b-build-output-and-preload.html" aria-current="page"><span class="nav-code">14B</span><span>Preload 与构建输出</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">SSR 与运行时</h2><ul class="nav-list"><li><a href="15a-ssr-transform-and-loading.html"><span class="nav-code">15A</span><span>SSR 变换与加载</span></a></li><li><a href="15b-module-runner.html"><span class="nav-code">15B</span><span>Module Runner</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">公共边界</h2><ul class="nav-list"><li><a href="16-public-api-diagnostics-and-types.html"><span class="nav-code">16</span><span>公共 API 与类型</span></a></li></ul></section></nav><main class="article" id="article-start"><header class="article-hero"><div class="eyebrow"><span class="pill">14B</span><span>生产构建</span></div><h1>14B. 动态导入预加载、压缩与构建清单</h1><p class="lede">Preload 先留 marker，generateBundle 再读取最终图，runtime helper 最后装载；清单也在产物阶段生成。</p><div class="hero-meta"><span>证据基线：v8.2.1</span><span>commit <code>421615865dad</code></span><span>约 21 分钟</span><a href="../../vite/reading-guides/14b-build-output-and-preload.md">查看 Markdown 原稿</a></div></header><section class="focus-card" aria-label="阅读重点与边界"><div><h2>本页重点</h2><p>Preload 先留 marker，generateBundle 再读取最终图，runtime helper 最后装载；清单也在产物阶段生成。</p></div><div class="boundary"><h3>推导边界</h3><p>Transform 阶段尚不知道最终文件名，因此 asset 与 preload 必须使用占位协议。</p></div></section><aside class="evidence-note"><h3>证据口径</h3><p>正文保留目标版本中的真实源码、状态说明与代表性测试映射。测试源码用于锁定设计契约；本轮没有执行测试命令。</p></aside><article class="prose"><h2 id="阅读边界"><a class="heading-anchor" href="#%E9%98%85%E8%AF%BB%E8%BE%B9%E7%95%8C" aria-label="链接到本节">#</a>阅读边界</h2>
 <p>14A 已把配置变成 Rolldown output。本章研究 output 生成期间，Vite怎样补齐浏览器装载语义和交付产物：</p>
 <figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">动态 import
 → transform 注入 __vitePreload(factory, __VITE_PRELOAD__)
@@ -1419,7 +1425,21 @@ output 阶段之间的延迟协议，与 13B 的 asset/worker 占位符思路相
 <li>ES output：true，保留 preload 逻辑；</li>
 <li>CJS/legacy：false，让压缩器删除 DOM/preload 分支。</li>
 </ul>
-<p>等长填充减少位置偏移，且 plugin-legacy 可继续协同处理现代/旧输出。</p>
+<p>决定性源码位于 <code>buildImportAnalysisPlugin()</code>：</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">renderChunk(code, _, { format }) {
+  if (code.includes(isModernFlag)) {
+    const re = new RegExp(isModernFlag, &#039;g&#039;)
+    const isModern = String(format === &#039;es&#039;)
+    const isModernWithPadding =
+      isModern + &#039; &#039;.repeat(isModernFlag.length - isModern.length)
+    return {
+      code: code.replace(re, isModernWithPadding),
+      map: null,
+    }
+  }
+  return null
+},
+</code></pre></figure><p>等长填充减少位置偏移，且 plugin-legacy 可继续协同处理现代/旧输出。</p>
 <h2 id="import-与-marker-配对"><a class="heading-anchor" href="#import-%E4%B8%8E-marker-%E9%85%8D%E5%AF%B9" aria-label="链接到本节">#</a>import 与 marker 配对</h2>
 <p>简单输出可以按“import 后的下一个 marker”配对；嵌套时不成立：</p>
 <figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">import(&#039;a&#039;).then(() =&gt; import(&#039;b&#039;))
@@ -1469,15 +1489,9 @@ modulePreload=false → 只保留 CSS
 实现先拆成 cssDeps/otherDeps，只把 otherDeps 交给用户，最后重新附加 cssDeps。</p>
 <p>传给用户的是输出 URL，而非 import map specifier；hostId/hostType 告诉框架该列表属于哪个 JS chunk。</p>
 <h2 id="压缩依赖表"><a class="heading-anchor" href="#%E5%8E%8B%E7%BC%A9%E4%BE%9D%E8%B5%96%E8%A1%A8" aria-label="链接到本节">#</a>压缩依赖表</h2>
-<p>直接为每个 import 重复写字符串数组会放大 bundle。插件为当前 chunk 建立唯一 <code>fileDeps</code>：</p>
-<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">const __vite__mapDeps = (
-  i,
-  m = __vite__mapDeps,
-  d = (m.f ||= [&#039;assets/a.js&#039;, &#039;assets/a.css&#039;]),
-) =&gt; i.map((i) =&gt; d[i])
-</code></pre></figure><p>marker 只写索引：</p>
-<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">__vite__mapDeps([0, 1])
-</code></pre></figure><p>依赖表惰性挂到函数属性，只有动态 import 真正执行时才求值；优化见
+<p>直接为每个 import 重复写字符串数组会放大 bundle。插件为当前 chunk 建立唯一 <code>fileDeps</code>，marker 只写
+<code>__vite__mapDeps([0, 1])</code> 一类索引；真实生成源码见后文证据 B3。</p>
+<p>依赖表惰性挂到函数属性，只有动态 import 真正执行时才求值；优化见
 <a href="https://github.com/vitejs/vite/pull/17602" target="_blank" rel="noreferrer noopener">PR #17602</a>。没有任何依赖时不注入映射器，见
 <a href="https://github.com/vitejs/vite/pull/16271" target="_blank" rel="noreferrer noopener">PR #16271</a>。</p>
 <p>文件有 hashbang 时，额外代码必须插到第一行之后。对不常见换行符的修复见
@@ -1606,9 +1620,10 @@ keepNames 破坏 tree-shaking 的背景见代码中的 #9164。</p>
 </ul>
 <p>manifest key 优先使用相对 root 的 facadeModuleId；虚拟 null byte 被移除。无原始输入名时使用
 <code>_&lt;basename&gt;</code>，避免与真实入口 key 混淆。</p>
-<p>多个 output（例如 ES+UMD lib）会各自触发 generateBundle。<code>perEnvironmentState</code> 累计 manifest 与
-outputCount：中间 output 删除 manifest asset，最后一个才输出合并 JSON，然后 reset。watch/再次构建也
-不能残留旧 key。</p>
+<p>当用户显式把 <code>build.rolldownOptions.output</code> 配成数组时，每个 output 都会触发 generateBundle。
+<code>perEnvironmentState</code> 累计 manifest 与 outputCount：中间 output 删除 manifest asset；当兼容 manifest 的
+<code>generateBundle</code> hook 计数达到配置长度时，才输出合并 JSON 并 reset。默认 library formats 自动展开的
+ES+UMD 不会被这里的原始 <code>output</code> 长度识别为 2，不能拿它作为本分支的例子。失败边界见证据 B4。</p>
 <p>standalone CSS assets 字段见
 <a href="https://github.com/vitejs/vite/pull/21015" target="_blank" rel="noreferrer noopener">PR #21015</a>，同 basename CSS entry 隔离见
 <a href="https://github.com/vitejs/vite/pull/22039" target="_blank" rel="noreferrer noopener">PR #22039</a>。</p>
@@ -1641,38 +1656,341 @@ outputCount：中间 output 删除 manifest asset，最后一个才输出合并 
 模板或许可证全文。</p>
 <p>Reporter 使用原生插件显示产物与可选压缩体积。大 chunk 警告只针对已压缩的客户端应用构建：库消费者会
 再次 tree-shake，SSR chunk 也不直接对应浏览器下载，使用同一阈值会误导。</p>
-<h2 id="测试地图"><a class="heading-anchor" href="#%E6%B5%8B%E8%AF%95%E5%9C%B0%E5%9B%BE" aria-label="链接到本节">#</a>测试地图</h2>
-<p><code>importAnalysisBuild.spec.ts</code> 专测 marker 栈算法：空、单个、并列交错、嵌套和 #3051 兼容形态。</p>
-<p><code>modulePreloadPolyfill.spec.ts</code> 对照 ES/CJS 输出：ES 加载 polyfill，CJS 中现代分支必须被删除。</p>
-<p><code>terser.spec.ts</code> 覆盖基础 worker 压缩、nth_identifier 回调和 nameCache 主线程回退。</p>
-<p><code>build.spec.ts</code> 与本章相关部分：</p>
-<ul>
-<li>CSS metadata 改动传播到 chunk hash；</li>
-<li>manifest 不串联同 basename CSS entry；</li>
-<li>per-environment minify 与 sharedPlugins；</li>
-<li>chunkImportMap 在 client/SSR/emitAssets=false 下的产物；</li>
-<li>manifest 连续构建清除旧 key；</li>
-<li>write=false 后 write=true 仍准备 publicDir。</li>
-</ul>
-<h2 id="关键源码证据"><a class="heading-anchor" href="#%E5%85%B3%E9%94%AE%E6%BA%90%E7%A0%81%E8%AF%81%E6%8D%AE" aria-label="链接到本节">#</a>关键源码证据</h2>
-<p>目标版本源码摘录，来源：<code>packages/vite/src/node/plugins/importAnalysisBuild.ts</code>，
-<code>buildImportAnalysisPlugin()</code> 的 <code>renderChunk</code>：</p>
-<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">renderChunk(code, _, { format }) {
-  // make sure we only perform the preload logic in modern builds.
-  if (code.includes(isModernFlag)) {
-    const re = new RegExp(isModernFlag, &#039;g&#039;)
-    const isModern = String(format === &#039;es&#039;)
-    const isModernWithPadding =
-      isModern + &#039; &#039;.repeat(isModernFlag.length - isModern.length)
-    return {
-      code: code.replace(re, isModernWithPadding),
-      map: null,
+<h2 id="接续-14a-同一-fixture-的产物闭环"><a class="heading-anchor" href="#%E6%8E%A5%E7%BB%AD-14a-%E5%90%8C%E4%B8%80-fixture-%E7%9A%84%E4%BA%A7%E7%89%A9%E9%97%AD%E7%8E%AF" aria-label="链接到本节">#</a>接续 14A：同一 fixture 的产物闭环</h2>
+<p>继续使用 <code>fixtures/shared-plugins/chunk-import-map</code>：<code>entry.js</code> 动态导入 <code>lazy.js</code>，后者静态导入
+<code>lazy.css</code>。14A 已把 client/SSR Environment、plugin wrapper、RolldownBuild 与 output 循环建立起来；
+本节只回答一件事：这张三节点源码图怎样变成浏览器和部署系统能消费的产物协议。</p>
+<p>仓库真实测试选择 <code>write=false</code>，因此能直接断言 <code>RolldownOutput</code>。讲解多 output、manifest 与 publicDir 时，
+沿用同一模块图，但把它视为“交付模式扩展”：<code>write=true</code>、<code>manifest=true</code>，output 可为数组。
+源码静态证明这些分支；本轮没有运行扩展配置，不能把它描述成已通过测试。</p>
+<h3 id="产物与状态账本"><a class="heading-anchor" href="#%E4%BA%A7%E7%89%A9%E4%B8%8E%E7%8A%B6%E6%80%81%E8%B4%A6%E6%9C%AC" aria-label="链接到本节">#</a>产物与状态账本</h3>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>产物/状态</th>
+<th>首次出现阶段</th>
+<th>生产者</th>
+<th>消费者</th>
+<th>本案例作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>entry</code> / <code>lazy</code> chunks</td>
+<td>Rolldown chunk graph</td>
+<td>Rolldown</td>
+<td>import analysis、manifest、浏览器</td>
+<td>保存动态 import 与静态 JS 边</td>
+</tr>
+<tr>
+<td><code>lazy-*.css</code> asset</td>
+<td>CSS <code>renderChunk</code></td>
+<td><code>vite:css-post</code></td>
+<td>metadata、preload、manifest</td>
+<td>lazy 模块执行前必须装载</td>
+</tr>
+<tr>
+<td><code>chunk.viteMetadata.importedCss</code></td>
+<td>CSS 输出</td>
+<td>CSS 插件写，wrapper 注入</td>
+<td>preload/manifest/HTML</td>
+<td>把不可见 CSS 边连接回 JS chunk</td>
+</tr>
+<tr>
+<td>marker → <code>__vite__mapDeps</code></td>
+<td>transform → <code>generateBundle</code></td>
+<td>原生/Vite import analysis</td>
+<td>浏览器 preload helper</td>
+<td>延迟确定依赖，再用索引复用字符串</td>
+</tr>
+<tr>
+<td><code>importmap.json</code></td>
+<td>output 生成</td>
+<td>chunk import map 插件</td>
+<td>HTML/运行时 resolve</td>
+<td>把 chunk/CSS 文件映射为 specifier</td>
+</tr>
+<tr>
+<td><code>.vite/manifest.json</code></td>
+<td><code>generateBundle</code></td>
+<td>manifest 插件组</td>
+<td>后端/部署工具</td>
+<td><code>manifest: true</code> 时的默认交付索引；字符串配置可改路径</td>
+</tr>
+</tbody>
+</table></div>
+<p>这里有两种不同“边”：Rolldown 原生 <code>chunk.imports/dynamicImports</code> 表示 JS chunk 关系；
+Vite <code>viteMetadata.importedCss/importedAssets</code> 表示打包器原生图之外的交付关系。preload 与 manifest 必须合并
+两者，单看 <code>chunk.imports</code> 会漏掉 lazy CSS。</p>
+<h2 id="数据平面源码闭环"><a class="heading-anchor" href="#%E6%95%B0%E6%8D%AE%E5%B9%B3%E9%9D%A2%E6%BA%90%E7%A0%81%E9%97%AD%E7%8E%AF" aria-label="链接到本节">#</a>数据平面源码闭环</h2>
+<p>下面四段锁定 CSS 交付边、依赖递归、marker 压缩和 manifest 聚合。</p>
+<h3 id="证据-b1-css-发射后立刻登记到所属-chunk"><a class="heading-anchor" href="#%E8%AF%81%E6%8D%AE-b1-css-%E5%8F%91%E5%B0%84%E5%90%8E%E7%AB%8B%E5%88%BB%E7%99%BB%E8%AE%B0%E5%88%B0%E6%89%80%E5%B1%9E-chunk" aria-label="链接到本节">#</a>证据 B1：CSS 发射后立刻登记到所属 chunk</h3>
+<p>来源：<code>packages/vite/src/node/plugins/css.ts</code>，CSS post plugin 的 <code>renderChunk</code>。</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">const referenceId = this.emitFile({
+  type: &#039;asset&#039;,
+  name: cssAssetName,
+  originalFileName,
+  source: chunkCSS,
+})
+chunkCssReferences.set(chunk.fileName, referenceId)
+if (isEntry) {
+  cssEntriesMap
+    .get(this.environment)!
+    .set(chunk.fileName, { referenceId, name: chunk.name })
+}
+chunk.viteMetadata!.importedCss.add(
+  this.getFileName(referenceId),
+)
+</code></pre></figure><p><code>lazy.css</code> 不只是 <code>emitFile()</code> 后出现在 bundle 里；插件还把最终文件名写入 lazy chunk 的
+<code>importedCss</code>。14A 的 hook wrapper 保证这里拿到的 metadata 与稍后 <code>generateBundle</code> 读取的是同一集合。
+若 CSS 是被删除的纯 CSS proxy，插件会把 metadata 转移给 importer 或放入 <code>removedPureCssFilesCache</code>，
+因此“删空 JS chunk”不等于“删交付边”。</p>
+<h3 id="证据-b2-从动态入口递归合并-js-图与-css-边"><a class="heading-anchor" href="#%E8%AF%81%E6%8D%AE-b2-%E4%BB%8E%E5%8A%A8%E6%80%81%E5%85%A5%E5%8F%A3%E9%80%92%E5%BD%92%E5%90%88%E5%B9%B6-js-%E5%9B%BE%E4%B8%8E-css-%E8%BE%B9" aria-label="链接到本节">#</a>证据 B2：从动态入口递归合并 JS 图与 CSS 边</h3>
+<p>来源：<code>packages/vite/src/node/plugins/importAnalysisBuild.ts</code>，<code>generateBundle()</code> 内部 <code>addDeps()</code>。</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">const analyzed: Set&lt;string&gt; = new Set&lt;string&gt;()
+const addDeps = (rawFilename: string) =&gt; {
+  const filename = importMapMapping?.[rawFilename] ?? rawFilename
+  if (filename === ownerFilename) return
+  if (analyzed.has(filename)) return
+  analyzed.add(filename)
+  const chunk = bundle[filename]
+  if (chunk) {
+    deps.add(chunk.fileName)
+    if (chunk.type === &#039;chunk&#039;) {
+      chunk.imports.forEach(addDeps)
+      chunk.viteMetadata!.importedCss.forEach((file) =&gt; {
+        deps.add(file)
+      })
+    }
+  } else {
+    const removedPureCssFiles = removedPureCssFilesCache.get(config)!
+    const chunk = removedPureCssFiles.get(filename)
+    if (chunk) {
+      if (chunk.viteMetadata!.importedCss.size) {
+        chunk.viteMetadata!.importedCss.forEach((file) =&gt; {
+          deps.add(file)
+        })
+        hasRemovedPureCssChunk = true
+      }
+      s.update(expStart, expEnd, &#039;Promise.resolve({})&#039;)
     }
   }
-  return null
-},
-</code></pre></figure><p>构建前一阶段写入固定长度的 <code>isModernFlag</code>；render 时用等长字符串覆写，保持源码位置和
-sourcemap 偏移稳定。ES output 得到 <code>true</code>，其他格式得到补空格的 <code>false</code>。</p>
+}
+addDeps(normalizedFile)
+</code></pre></figure><p>本案例从 lazy chunk 递归静态 JS 边后追加 <code>lazy-*.css</code>；若目标是已删纯 CSS chunk，则保留 CSS，并把
+失效 import 改成 <code>Promise.resolve({})</code>。算法模型已在“递归收集依赖”和“纯 CSS 动态入口”说明。</p>
+<h3 id="证据-b3-marker-变索引-文件表只注入一次"><a class="heading-anchor" href="#%E8%AF%81%E6%8D%AE-b3-marker-%E5%8F%98%E7%B4%A2%E5%BC%95-%E6%96%87%E4%BB%B6%E8%A1%A8%E5%8F%AA%E6%B3%A8%E5%85%A5%E4%B8%80%E6%AC%A1" aria-label="链接到本节">#</a>证据 B3：marker 变索引，文件表只注入一次</h3>
+<p>来源：<code>packages/vite/src/node/plugins/importAnalysisBuild.ts</code>，marker 重写与依赖表注入。</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">s.update(
+  markerStartPos,
+  markerStartPos + preloadMarker.length,
+  renderedDeps.length &gt; 0
+    ? `__vite__mapDeps([${renderedDeps.join(&#039;,&#039;)}])`
+    : `[]`,
+)
+rewroteMarkerStartPos.add(markerStartPos)
+</code></pre></figure><p>同一 <code>generateBundle</code> 处理完当前 chunk 的全部 marker 后，再注入共享文件表：</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">if (fileDeps.length &gt; 0) {
+  const fileDepsCode = `[${fileDeps
+    .map((fileDep) =&gt;
+      fileDep.runtime ? fileDep.url : JSON.stringify(fileDep.url),
+    )
+    .join(&#039;,&#039;)}]`
+
+  const mapDepsCode = `const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=${fileDepsCode})))=&gt;i.map(i=&gt;d[i]);\n`
+
+  if (code.startsWith(&#039;#!&#039;)) {
+    s.prependLeft(getFileStartIndex(code), mapDepsCode)
+  } else {
+    s.prepend(mapDepsCode)
+  }
+}
+</code></pre></figure><p>最终 entry 不重复内联 <code>['lazy.js', 'lazy.css']</code>；marker 变成索引数组，文件表在 chunk 顶部惰性初始化一次。
+开启 chunkImportMap 后，依赖文件名先经 reverse mapping 变 specifier；仓库测试正是从 <code>importmap.json</code> 找到
+CSS specifier，再断言 entry 代码含该 specifier，直接卡住这条数据链。</p>
+<h3 id="证据-b4-多-output-manifest-延迟到最后一次发射"><a class="heading-anchor" href="#%E8%AF%81%E6%8D%AE-b4-%E5%A4%9A-output-manifest-%E5%BB%B6%E8%BF%9F%E5%88%B0%E6%9C%80%E5%90%8E%E4%B8%80%E6%AC%A1%E5%8F%91%E5%B0%84" aria-label="链接到本节">#</a>证据 B4：多 output manifest 延迟到最后一次发射</h3>
+<p>来源：<code>packages/vite/src/node/plugins/manifest.ts</code>，<code>native:manifest-compatible.generateBundle()</code>。</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">const output = this.environment.config.build.rolldownOptions.output
+const outputLength = Array.isArray(output) ? output.length : 1
+if (manifest &amp;&amp; outputLength === 1) {
+  asset.source = JSON.stringify(manifest, undefined, 2)
+  return
+}
+
+const state = getState(this)
+state.outputCount++
+state.manifest = Object.assign(
+  state.manifest,
+  manifest ?? JSON.parse(asset.source.toString()),
+)
+if (state.outputCount &gt;= outputLength) {
+  asset.source = JSON.stringify(state.manifest, undefined, 2)
+  state.reset()
+} else {
+  delete bundle[outPath]
+}
+</code></pre></figure><p>同一个 <code>RolldownBuild</code> 对用户显式配置的 output 数组逐项 generate/write，每项都会运行 <code>generateBundle</code>。中间 output 若都
+发同名 manifest，会得到互相覆盖或不完整文件；实现把 manifest 累计到 Environment 隔离状态，删除中间资产，
+最后一次才发合并结果并 reset。这里的“最后”按配置 output 数量计数，不按文件系统扫描推断。</p>
+<p>边界：若后序 output 在兼容 manifest hook 达到配置计数前失败，前序 output 可能已写盘，合并 manifest
+尚未发射，插件状态也可能残留；复用同一 Builder/Environment 可能继承旧计数或条目。若最终一次该 hook
+已经执行并 reset，随后其他 hook 或写盘再失败，则不会残留这份计数。两种情况都没有磁盘事务回滚；稳妥的
+失败恢复是新建 Builder，并在部署层使用临时目录与原子切换，而不是把 <code>bundle.close()</code> 当事务提交。</p>
+<h2 id="同一-demo-的数据平面"><a class="heading-anchor" href="#%E5%90%8C%E4%B8%80-demo-%E7%9A%84%E6%95%B0%E6%8D%AE%E5%B9%B3%E9%9D%A2" aria-label="链接到本节">#</a>同一 Demo 的数据平面</h2>
+<figure class="flow-figure" aria-label="离线流程图"><figcaption class="flow-caption"><strong>执行流程图</strong><span>教程图依据目标版本源码与测试绘制；折叠区保留原始 Mermaid</span></figcaption><div class="flow-lanes request-topology build-topology"><section class="flow-lane"><h4 class="lane-label">同一模块图</h4><div class="lane-path"><span class="lane-step">entry.js</span><span class="lane-arrow">→</span><span class="lane-step">dynamic import lazy.js</span><span class="lane-arrow">→</span><span class="lane-step">lazy.css side effect</span><span class="lane-arrow">→</span><span class="lane-step">transform 写 preload marker</span></div></section><section class="flow-lane"><h4 class="lane-label">CSS 交付边</h4><div class="lane-path"><span class="lane-step">CSS renderChunk 发射 lazy.css</span><span class="lane-arrow">→</span><span class="lane-step">lazy chunk.viteMetadata.importedCss</span><span class="lane-arrow">→</span><span class="lane-step">后续 generateBundle 可读取同一集合</span></div></section><section class="flow-lane"><h4 class="lane-label">依赖递归与纯 CSS 分支</h4><div class="lane-path"><span class="lane-step">匹配 dynamic import 与 marker</span><span class="lane-arrow">→</span><span class="lane-step">addDeps 合并 JS imports 与 importedCss</span></div><div class="lane-split"><span><b>普通 lazy chunk</b> → JS + CSS deps</span><span><b>已删纯 CSS chunk</b> → 保留 CSS；import 改 Promise.resolve({})</span></div></section><section class="flow-lane"><h4 class="lane-label">产物协议</h4><div class="lane-path"><span class="lane-step">URL / import-map specifier 转换</span><span class="lane-arrow">→</span><span class="lane-step">marker → mapDeps 索引 + 单份文件表</span><span class="lane-arrow">→</span><span class="lane-step">可选 importmap.json</span><span class="lane-arrow">／</span><span class="lane-step">可选 manifest 合并原生图与 viteMetadata</span></div></section><section class="flow-lane"><h4 class="lane-label">运行、失败与控制面边界</h4><div class="lane-path"><span class="lane-step">浏览器 preload CSS/JS</span><span class="lane-arrow">→</span><span class="lane-step">执行 dynamic import</span></div><div class="lane-split three"><span>preload 失败 → 派发可取消 vite:preloadError</span><span>manifest 在达到显式 output 计数时 reset；更早失败可能残留状态</span><span>output 失败、bundle.close 与 isBuilt 顺序见 14A，不在数据平面重复</span></div></section></div><details class="diagram-source"><summary>查看原始 Mermaid 源码</summary><pre><code>flowchart TD
+  A[&quot;entry → lazy → lazy.css&quot;] --&gt; B[&quot;transform：动态 import + preload marker&quot;]
+  B --&gt; C[&quot;Rolldown：entry / lazy output chunks&quot;]
+  C --&gt; D[&quot;CSS renderChunk：发射 lazy.css&quot;]
+  D --&gt; E[&quot;viteMetadata：登记 importedCss&quot;]
+  C --&gt; F[&quot;generateBundle：匹配 import 与 marker&quot;]
+  E --&gt; G[&quot;addDeps：合并 JS 图与 CSS 边；纯 CSS 时改 Promise.resolve&quot;]
+  F --&gt; G
+  G --&gt; H[&quot;URL / import-map specifier 转换&quot;]
+  H --&gt; I[&quot;marker → mapDeps 索引与共享文件表&quot;]
+  H --&gt; J[&quot;可选 importmap.json&quot;]
+  C --&gt; K[&quot;可选 manifest：合并原生图与 viteMetadata&quot;]
+  E --&gt; K
+  I --&gt; L[&quot;浏览器 helper：预载依赖，再执行 import；失败派发 vite:preloadError&quot;]
+  J --&gt; L
+</code></pre></details></figure><p>图中只保留 14B 的数据变化。Builder 所有权、逐 output、关闭与 <code>isBuilt</code> 状态见 14A，不在这里重复。</p>
+<h2 id="完整真实测试-environment-隔离一直证明到-css-specifier"><a class="heading-anchor" href="#%E5%AE%8C%E6%95%B4%E7%9C%9F%E5%AE%9E%E6%B5%8B%E8%AF%95-environment-%E9%9A%94%E7%A6%BB%E4%B8%80%E7%9B%B4%E8%AF%81%E6%98%8E%E5%88%B0-css-specifier" aria-label="链接到本节">#</a>完整真实测试：Environment 隔离一直证明到 CSS specifier</h2>
+<p>来源：<code>packages/vite/src/node/__tests__/build.spec.ts</code>。下列只保留该用例实际使用的 imports、文件级 fixture
+定位常量与完整 test body；本轮只阅读，没有执行。</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">import { resolve } from &#039;node:path&#039;
+import { expect, test } from &#039;vitest&#039;
+import type { OutputChunk, RolldownOutput } from &#039;rolldown&#039;
+import { createBuilder } from &#039;../build&#039;
+
+const dirname = import.meta.dirname
+
+test(&#039;chunkImportMap per environment with shared plugins&#039;, async () =&gt; {
+  const root = resolve(dirname, &#039;fixtures/shared-plugins/chunk-import-map&#039;)
+  let client: RolldownOutput | undefined
+  let ssr: RolldownOutput | undefined
+  const builder = await createBuilder({
+    root,
+    logLevel: &#039;warn&#039;,
+    environments: {
+      client: {
+        build: {
+          chunkImportMap: true,
+          write: false,
+          rolldownOptions: {
+            input: &#039;/entry.js&#039;,
+          },
+        },
+      },
+      ssr: {
+        build: {
+          chunkImportMap: false,
+          ssr: true,
+          write: false,
+          rolldownOptions: {
+            input: &#039;/entry.js&#039;,
+          },
+        },
+      },
+    },
+    builder: {
+      sharedPlugins: true,
+      /** 在同一共享插件 builder 中依次捕获 client 与 SSR 产物，检查环境配置隔离。 */
+      async buildApp(builder) {
+        client = (await builder.build(
+          builder.environments.client,
+        )) as RolldownOutput
+        ssr = (await builder.build(builder.environments.ssr)) as RolldownOutput
+      },
+    },
+  })
+
+  await builder.buildApp()
+
+  const entry = client!.output.find(
+    (output): output is OutputChunk =&gt;
+      output.type === &#039;chunk&#039; &amp;&amp; output.isEntry,
+  )!
+  const css = client!.output.find(
+    (output) =&gt; output.type === &#039;asset&#039; &amp;&amp; output.fileName.endsWith(&#039;.css&#039;),
+  )!
+  const importMapAsset = client!.output.find(
+    (output) =&gt; output.type === &#039;asset&#039; &amp;&amp; output.fileName === &#039;importmap.json&#039;,
+  )!
+  expect(
+    ssr!.output.some(
+      (output) =&gt;
+        output.type === &#039;asset&#039; &amp;&amp; output.fileName === &#039;importmap.json&#039;,
+    ),
+  ).toBe(false)
+  const importMap = JSON.parse(importMapAsset.source.toString())
+    .imports as Record&lt;string, string&gt;
+  const cssSpecifier = Object.entries(importMap).find(
+    ([, fileName]) =&gt; fileName === `/${css.fileName}`,
+  )![0]
+  expect(entry.code).toContain(JSON.stringify(cssSpecifier.slice(1)))
+})
+</code></pre></figure><h3 id="gwtms-拆解"><a class="heading-anchor" href="#gwtms-%E6%8B%86%E8%A7%A3" aria-label="链接到本节">#</a>GWTMS 拆解</h3>
+<ul>
+<li><strong>Given</strong>：真实 <code>entry → lazy → lazy.css</code> 图；client 开 chunkImportMap，SSR 关；两环境
+<code>sharedPlugins=true</code>，均使用内存输出。</li>
+<li><strong>When</strong>：<code>createBuilder()</code> 建立两 Environment；自定义 <code>buildApp()</code> 依次调用
+<code>builder.build(client)</code> 与 <code>builder.build(ssr)</code>。</li>
+<li><strong>Then</strong>：client 同时有 entry、CSS、<code>importmap.json</code>；SSR 不得有 import map；client entry 代码必须含
+映射到该 CSS 文件的 specifier。</li>
+<li><strong>Mechanism</strong>：Environment wrapper 让共享插件从 <code>this.environment.config</code> 读取各自开关；CSS 插件发资产并
+写 metadata；import analysis 经 import-map reverse mapping 把 CSS specifier 写进 entry 依赖表。</li>
+<li><strong>Source</strong>：14A 的 <code>createBuilder()</code>、<code>resolveRolldownOptions()</code>、<code>wrapEnvironmentHook()</code>；14B 的 CSS
+<code>renderChunk()</code> 与 import analysis <code>generateBundle()</code>。</li>
+<li><strong>Cleanup</strong>：<code>write=false</code> 不创建交付目录；每次 <code>builder.build()</code> 进入一次性 <code>buildEnvironment()</code>，其
+<code>finally</code> 关闭内部 <code>RolldownBuild</code>。测试没有额外长期 watcher 需要关闭。</li>
+</ul>
+<p>证明边界同样重要：此测试没有写磁盘，不证明 <code>prepareOutDir</code>、public 复制、多 output manifest 合并或浏览器
+真的创建 <code>&lt;link&gt;</code>。这些分别由 <code>copies public directory after building same environment with write false first</code>、
+manifest/marker 单测与运行时 helper 源码作证，不能从一个断言扩大成整条链均已动态验证。</p>
+<h2 id="源码-测试证据矩阵"><a class="heading-anchor" href="#%E6%BA%90%E7%A0%81-%E6%B5%8B%E8%AF%95%E8%AF%81%E6%8D%AE%E7%9F%A9%E9%98%B5" aria-label="链接到本节">#</a>源码—测试证据矩阵</h2>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>机制</th>
+<th>决定性源码</th>
+<th>代表测试</th>
+<th>证据边界</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CSS 交付边</td>
+<td><code>css.ts</code> CSS post <code>renderChunk</code></td>
+<td>本章完整 chunkImportMap 测试</td>
+<td>CSS asset 到 entry specifier 的集成闭环</td>
+</tr>
+<tr>
+<td>marker/deps</td>
+<td><code>importAnalysisBuild.ts::generateBundle()</code></td>
+<td><code>importAnalysisBuild.spec.ts</code> 的嵌套 #22700</td>
+<td>单测证明配对；完整测试证明 CSS specifier 进入 entry</td>
+</tr>
+<tr>
+<td>import map 隔离</td>
+<td>import analysis + import-map helpers</td>
+<td>本章完整测试</td>
+<td>client 有、SSR 无；不证明浏览器支持 <code>import.meta.resolve</code></td>
+</tr>
+<tr>
+<td>manifest 合并</td>
+<td><code>manifest.ts::generateBundle()</code></td>
+<td>watch manifest、同 basename CSS entry 测试</td>
+<td>累计/reset 来自源码；测试不证明失败回滚</td>
+</tr>
+<tr>
+<td>preload runtime</td>
+<td><code>importAnalysisBuild.ts::preload()</code></td>
+<td>modulepreload/构建集成测试</td>
+<td>源码证明去重、CSS 等待与错误事件；本案例未启动浏览器</td>
+</tr>
+</tbody>
+</table></div>
+<p>补充专项测试：<code>modulePreloadPolyfill.spec.ts</code> 对照 ES/CJS 输出；<code>terser.spec.ts</code> 覆盖 worker 压缩与
+主线程回退；<code>build.spec.ts</code> 还覆盖 CSS metadata 对 hash 的传播、manifest 重建和 <code>emitAssets=false</code>。</p>
 <h2 id="建议断点"><a class="heading-anchor" href="#%E5%BB%BA%E8%AE%AE%E6%96%AD%E7%82%B9" aria-label="链接到本节">#</a>建议断点</h2>
 <ol>
 <li>原生 plugin 注入 marker 后，查看 transform 结果。</li>
@@ -1700,7 +2018,7 @@ sourcemap 偏移稳定。ES output 得到 <code>true</code>，其他格式得到
 <li>Terser nameCache 为什么不能复制到 worker 后各自修改？</li>
 <li>多 output manifest 为什么不能每轮直接各写一个同名文件？</li>
 </ol>
-</article><nav class="article-pager" aria-label="前后篇"><a class="pager-link previous" href="14a-build-orchestration.html"><span class="pager-label">上一篇 · 14A</span><span class="pager-title">生产构建编排</span></a><a class="pager-link next" href="15a-ssr-transform-and-loading.html"><span class="pager-label">下一篇 · 15A</span><span class="pager-title">SSR 变换与加载</span></a></nav><footer class="site-footer">Vite v8.2.1 源码阅读站 · 所有机制结论限定于 commit 421615865dad3ed39137d17281814fc78a41246c。</footer></main><aside class="page-toc" aria-label="页内目录"><h2 class="toc-title">本页目录</h2><ol class="toc-list"><li class="depth-2"><a href="#%E9%98%85%E8%AF%BB%E8%BE%B9%E7%95%8C">阅读边界</a></li><li class="depth-2"><a href="#%E6%8E%A8%E8%8D%90%E9%98%85%E8%AF%BB%E9%A1%BA%E5%BA%8F">推荐阅读顺序</a></li><li class="depth-2"><a href="#%E4%B8%BA%E4%BB%80%E4%B9%88%E8%A6%81%E4%B8%A4%E9%98%B6%E6%AE%B5%E7%94%9F%E6%88%90-preload">为什么要两阶段生成 preload</a></li><li class="depth-2"><a href="#%E7%8E%B0%E4%BB%A3%E6%A0%BC%E5%BC%8F%E6%A0%87%E8%AE%B0">现代格式标记</a></li><li class="depth-2"><a href="#import-%E4%B8%8E-marker-%E9%85%8D%E5%AF%B9">import 与 marker 配对</a></li><li class="depth-2"><a href="#%E9%80%92%E5%BD%92%E6%94%B6%E9%9B%86%E4%BE%9D%E8%B5%96">递归收集依赖</a></li><li class="depth-2"><a href="#%E7%BA%AF-css-%E5%8A%A8%E6%80%81%E5%85%A5%E5%8F%A3">纯 CSS 动态入口</a></li><li class="depth-2"><a href="#modulepreload-false-%E4%BB%8D%E9%9C%80%E5%8A%A0%E8%BD%BD-css">modulePreload=false 仍需加载 CSS</a></li><li class="depth-2"><a href="#%E5%8E%8B%E7%BC%A9%E4%BE%9D%E8%B5%96%E8%A1%A8">压缩依赖表</a></li><li class="depth-2"><a href="#%E7%9B%B8%E5%AF%B9-base-renderbuilturl-%E4%B8%8E-import-map">相对 Base、renderBuiltUrl 与 Import Map</a></li><li class="depth-3"><a href="#%E6%99%AE%E9%80%9A%E7%BB%9D%E5%AF%B9-base">普通绝对 base</a></li><li class="depth-3"><a href="#%E7%9B%B8%E5%AF%B9-base">相对 base</a></li><li class="depth-3"><a href="#renderbuilturl">renderBuiltUrl</a></li><li class="depth-3"><a href="#chunkimportmap">chunkImportMap</a></li><li class="depth-2"><a href="#%E6%B5%8F%E8%A7%88%E5%99%A8-preload-helper">浏览器 Preload Helper</a></li><li class="depth-2"><a href="#modulepreload-polyfill-%E8%99%9A%E6%8B%9F%E5%85%A5%E5%8F%A3">Modulepreload Polyfill 虚拟入口</a></li><li class="depth-2"><a href="#sourcemap-%E7%BB%B4%E6%8A%A4">Sourcemap 维护</a></li><li class="depth-2"><a href="#esbuild-%E7%9A%84%E4%B8%A4%E4%B8%AA%E9%98%B6%E6%AE%B5">Esbuild 的两个阶段</a></li><li class="depth-3"><a href="#%E5%8D%95%E6%A8%A1%E5%9D%97%E8%BD%AC%E8%AF%91-esbuildplugin">单模块转译 esbuildPlugin</a></li><li class="depth-3"><a href="#%E6%9C%80%E7%BB%88-chunk-buildesbuildplugin">最终 chunk buildEsbuildPlugin</a></li><li class="depth-2"><a href="#umd-iife-helper-%E6%B3%A8%E5%85%A5">UMD/IIFE Helper 注入</a></li><li class="depth-2"><a href="#terser-worker">Terser Worker</a></li><li class="depth-2"><a href="#manifest">Manifest</a></li><li class="depth-3"><a href="#ssr-manifest">SSR Manifest</a></li><li class="depth-2"><a href="#license-%E4%B8%8E-reporter">License 与 Reporter</a></li><li class="depth-2"><a href="#%E6%B5%8B%E8%AF%95%E5%9C%B0%E5%9B%BE">测试地图</a></li><li class="depth-2"><a href="#%E5%85%B3%E9%94%AE%E6%BA%90%E7%A0%81%E8%AF%81%E6%8D%AE">关键源码证据</a></li><li class="depth-2"><a href="#%E5%BB%BA%E8%AE%AE%E6%96%AD%E7%82%B9">建议断点</a></li><li class="depth-2"><a href="#%E5%A4%8D%E7%9B%98%E9%A2%98">复盘题</a></li></ol></aside></div><script>;(function () {
+</article><nav class="article-pager" aria-label="前后篇"><a class="pager-link previous" href="14a-build-orchestration.html"><span class="pager-label">上一篇 · 14A</span><span class="pager-title">生产构建编排</span></a><a class="pager-link next" href="15a-ssr-transform-and-loading.html"><span class="pager-label">下一篇 · 15A</span><span class="pager-title">SSR 变换与加载</span></a></nav><footer class="site-footer">Vite v8.2.1 源码阅读站 · 所有机制结论限定于 commit 421615865dad3ed39137d17281814fc78a41246c。</footer></main><aside class="page-toc" aria-label="页内目录"><h2 class="toc-title">本页目录</h2><ol class="toc-list"><li class="depth-2"><a href="#%E9%98%85%E8%AF%BB%E8%BE%B9%E7%95%8C">阅读边界</a></li><li class="depth-2"><a href="#%E6%8E%A8%E8%8D%90%E9%98%85%E8%AF%BB%E9%A1%BA%E5%BA%8F">推荐阅读顺序</a></li><li class="depth-2"><a href="#%E4%B8%BA%E4%BB%80%E4%B9%88%E8%A6%81%E4%B8%A4%E9%98%B6%E6%AE%B5%E7%94%9F%E6%88%90-preload">为什么要两阶段生成 preload</a></li><li class="depth-2"><a href="#%E7%8E%B0%E4%BB%A3%E6%A0%BC%E5%BC%8F%E6%A0%87%E8%AE%B0">现代格式标记</a></li><li class="depth-2"><a href="#import-%E4%B8%8E-marker-%E9%85%8D%E5%AF%B9">import 与 marker 配对</a></li><li class="depth-2"><a href="#%E9%80%92%E5%BD%92%E6%94%B6%E9%9B%86%E4%BE%9D%E8%B5%96">递归收集依赖</a></li><li class="depth-2"><a href="#%E7%BA%AF-css-%E5%8A%A8%E6%80%81%E5%85%A5%E5%8F%A3">纯 CSS 动态入口</a></li><li class="depth-2"><a href="#modulepreload-false-%E4%BB%8D%E9%9C%80%E5%8A%A0%E8%BD%BD-css">modulePreload=false 仍需加载 CSS</a></li><li class="depth-2"><a href="#%E5%8E%8B%E7%BC%A9%E4%BE%9D%E8%B5%96%E8%A1%A8">压缩依赖表</a></li><li class="depth-2"><a href="#%E7%9B%B8%E5%AF%B9-base-renderbuilturl-%E4%B8%8E-import-map">相对 Base、renderBuiltUrl 与 Import Map</a></li><li class="depth-3"><a href="#%E6%99%AE%E9%80%9A%E7%BB%9D%E5%AF%B9-base">普通绝对 base</a></li><li class="depth-3"><a href="#%E7%9B%B8%E5%AF%B9-base">相对 base</a></li><li class="depth-3"><a href="#renderbuilturl">renderBuiltUrl</a></li><li class="depth-3"><a href="#chunkimportmap">chunkImportMap</a></li><li class="depth-2"><a href="#%E6%B5%8F%E8%A7%88%E5%99%A8-preload-helper">浏览器 Preload Helper</a></li><li class="depth-2"><a href="#modulepreload-polyfill-%E8%99%9A%E6%8B%9F%E5%85%A5%E5%8F%A3">Modulepreload Polyfill 虚拟入口</a></li><li class="depth-2"><a href="#sourcemap-%E7%BB%B4%E6%8A%A4">Sourcemap 维护</a></li><li class="depth-2"><a href="#esbuild-%E7%9A%84%E4%B8%A4%E4%B8%AA%E9%98%B6%E6%AE%B5">Esbuild 的两个阶段</a></li><li class="depth-3"><a href="#%E5%8D%95%E6%A8%A1%E5%9D%97%E8%BD%AC%E8%AF%91-esbuildplugin">单模块转译 esbuildPlugin</a></li><li class="depth-3"><a href="#%E6%9C%80%E7%BB%88-chunk-buildesbuildplugin">最终 chunk buildEsbuildPlugin</a></li><li class="depth-2"><a href="#umd-iife-helper-%E6%B3%A8%E5%85%A5">UMD/IIFE Helper 注入</a></li><li class="depth-2"><a href="#terser-worker">Terser Worker</a></li><li class="depth-2"><a href="#manifest">Manifest</a></li><li class="depth-3"><a href="#ssr-manifest">SSR Manifest</a></li><li class="depth-2"><a href="#license-%E4%B8%8E-reporter">License 与 Reporter</a></li><li class="depth-2"><a href="#%E6%8E%A5%E7%BB%AD-14a-%E5%90%8C%E4%B8%80-fixture-%E7%9A%84%E4%BA%A7%E7%89%A9%E9%97%AD%E7%8E%AF">接续 14A：同一 fixture 的产物闭环</a></li><li class="depth-3"><a href="#%E4%BA%A7%E7%89%A9%E4%B8%8E%E7%8A%B6%E6%80%81%E8%B4%A6%E6%9C%AC">产物与状态账本</a></li><li class="depth-2"><a href="#%E6%95%B0%E6%8D%AE%E5%B9%B3%E9%9D%A2%E6%BA%90%E7%A0%81%E9%97%AD%E7%8E%AF">数据平面源码闭环</a></li><li class="depth-3"><a href="#%E8%AF%81%E6%8D%AE-b1-css-%E5%8F%91%E5%B0%84%E5%90%8E%E7%AB%8B%E5%88%BB%E7%99%BB%E8%AE%B0%E5%88%B0%E6%89%80%E5%B1%9E-chunk">证据 B1：CSS 发射后立刻登记到所属 chunk</a></li><li class="depth-3"><a href="#%E8%AF%81%E6%8D%AE-b2-%E4%BB%8E%E5%8A%A8%E6%80%81%E5%85%A5%E5%8F%A3%E9%80%92%E5%BD%92%E5%90%88%E5%B9%B6-js-%E5%9B%BE%E4%B8%8E-css-%E8%BE%B9">证据 B2：从动态入口递归合并 JS 图与 CSS 边</a></li><li class="depth-3"><a href="#%E8%AF%81%E6%8D%AE-b3-marker-%E5%8F%98%E7%B4%A2%E5%BC%95-%E6%96%87%E4%BB%B6%E8%A1%A8%E5%8F%AA%E6%B3%A8%E5%85%A5%E4%B8%80%E6%AC%A1">证据 B3：marker 变索引，文件表只注入一次</a></li><li class="depth-3"><a href="#%E8%AF%81%E6%8D%AE-b4-%E5%A4%9A-output-manifest-%E5%BB%B6%E8%BF%9F%E5%88%B0%E6%9C%80%E5%90%8E%E4%B8%80%E6%AC%A1%E5%8F%91%E5%B0%84">证据 B4：多 output manifest 延迟到最后一次发射</a></li><li class="depth-2"><a href="#%E5%90%8C%E4%B8%80-demo-%E7%9A%84%E6%95%B0%E6%8D%AE%E5%B9%B3%E9%9D%A2">同一 Demo 的数据平面</a></li><li class="depth-2"><a href="#%E5%AE%8C%E6%95%B4%E7%9C%9F%E5%AE%9E%E6%B5%8B%E8%AF%95-environment-%E9%9A%94%E7%A6%BB%E4%B8%80%E7%9B%B4%E8%AF%81%E6%98%8E%E5%88%B0-css-specifier">完整真实测试：Environment 隔离一直证明到 CSS specifier</a></li><li class="depth-3"><a href="#gwtms-%E6%8B%86%E8%A7%A3">GWTMS 拆解</a></li><li class="depth-2"><a href="#%E6%BA%90%E7%A0%81-%E6%B5%8B%E8%AF%95%E8%AF%81%E6%8D%AE%E7%9F%A9%E9%98%B5">源码—测试证据矩阵</a></li><li class="depth-2"><a href="#%E5%BB%BA%E8%AE%AE%E6%96%AD%E7%82%B9">建议断点</a></li><li class="depth-2"><a href="#%E5%A4%8D%E7%9B%98%E9%A2%98">复盘题</a></li></ol></aside></div><script>;(function () {
   'use strict'
 
   var root = document.documentElement
@@ -1818,7 +2136,9 @@ sourcemap 偏移稳定。ES output 得到 <code>true</code>，其他格式得到
     }),
   )
   var headings = Array.from(
-    document.querySelectorAll('.prose h2[id], .prose h3[id]'),
+    document.querySelectorAll(
+      '.prose h2[id], .prose h3[id], .prose section[id]',
+    ),
   )
 
   if ('IntersectionObserver' in window && headings.length > 0) {

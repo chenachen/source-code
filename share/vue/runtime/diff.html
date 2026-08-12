@@ -84,17 +84,17 @@
         </div>
 
         <section class="article-section prose" id="diff-case-contract">
-          <h2>先纠正范围：Counter 不经过 keyed diff，本页必须换真实列表用例</h2>
+          <h2>Counter 不会进入 keyed diff，所以这里改用列表</h2>
           <p>
             Counter 的 button 只有文本 children，renderer 直接
             <code>hostSetElementText</code>；若强行拿它讲
-            LIS，就是伪造调用链。Diff 页因此选用 Vue 仓库真实测试
+            LIS，就看不到算法真正处理的输入。Diff 页因此选用 Vue 仓库真实测试
             <code>moving single child forward</code>：
             <strong>[1,2,3,4] → [2,3,1,4]</strong>。本页从头到尾只手算这组输入，
             它恰好需要中段映射、乱序检测、LIS 与一次真实移动。
           </p>
           <div class="callout warm">
-            <strong>性质声明：</strong>先给完整可运行教程测试，保证
+            <strong>两组测试各自做什么：</strong>先给完整可运行教程测试，保证
             imports、准备、动作、断言与卸载清理齐全；再贴仓库真实 fixture
             与完整测试体作版本映射。教程测试不是上游原文件，真实块则可在 Vue
             3.5.41 对应文件连续匹配。
@@ -160,7 +160,7 @@ describe('runtime course: keyed diff', () =&gt; {
                 >。
               </p>
               <p class="test-proof">
-                <strong>本次验收：</strong>Node 24.5.0
+                <strong>运行结果：</strong>Node 24.5.0
                 执行更新后的身份断言测试，1 file / 1 test
                 passed；临时文件随后删除。
               </p>
@@ -230,11 +230,11 @@ const inner = (c: TestElement) =&gt; serializeInner(c)</code></pre>
     ])
   })</code></pre>
           <p class="test-proof">
-            <strong>本次验收：</strong>Node 24.5.0 定向执行仓库测试
+                <strong>运行结果：</strong>Node 24.5.0 定向执行仓库测试
             <code>moving single child forward</code>，1 passed / 37 skipped。
           </p>
 
-          <h3>本页验收合同</h3>
+          <h3>这组列表要验证什么</h3>
           <div class="table-wrap">
             <table>
               <thead>
@@ -370,7 +370,7 @@ const inner = (c: TestElement) =&gt; serializeInner(c)</code></pre>
               ><span class="flow-file">assertion</span>
             </div>
           </div>
-          <h3>照图复述一遍</h3>
+          <h3>按数组变化再走一遍</h3>
           <ol>
             <li>先用 type+key 从两端收缩确定区，本例只锁住共同尾 key4。</li>
             <li>
@@ -494,7 +494,7 @@ const inner = (c: TestElement) =&gt; serializeInner(c)</code></pre>
         </section>
 
         <section class="article-section prose" id="diff-source-proof">
-          <h2>决定性真实源码：手算的每个变量都能逐字定位</h2>
+          <h2>把手算变量逐个对回源码</h2>
           <p>
             以下是 Vue <strong>3.5.41</strong> 的连续源码段，仅做 HTML
             实体转义； 每个带 <code>data-source-file</code> 的块都能用 DOM
@@ -830,13 +830,21 @@ const inner = (c: TestElement) =&gt; serializeInner(c)</code></pre>
           </div>
         </section>
 
+        <div class="level-divider">主例到此结束 · 以下是可选练习与第二种输入</div>
+
         <section class="article-section prose" id="see-diff">
-          <h2>先操作列表，观察 Vue 要做的决定</h2>
+          <h2>可选练习：操作列表，分清四种 DOM 动作</h2>
+          <p>
+            如果你已经能手算上面的 <code>[1,2,3,4] → [2,3,1,4]</code>，
+            第一次阅读可以直接跳到页末测试清单。下面不再证明主例，而是换几种输入，
+            帮你检查“复用、移动、新建、删除”是否真的分清。
+          </p>
           <p>
             下面每个任务都有一个稳定 id，也就是模板中的
             <code>key</code
-            >。点击不同变化，注意“复用、移动、新建、删除”不是一回事。每项显示的
-            DOM 编号来自真实 <code>li</code> 对象；编号不变就表示节点没有重建。
+            >。这段交互由页面里的 <code>Map + insertBefore</code> 教学模拟驱动，
+            不是在调用 Vue Renderer；它只帮你看清“复用、移动、新建、删除”分别意味着什么。
+            每项显示的 DOM 编号来自真实 <code>li</code> 对象；编号不变就表示节点没有重建。
           </p>
           <div class="demo-panel" data-diff-demo>
             <div class="demo-toolbar">
@@ -1641,7 +1649,7 @@ for (i = toBePatched - 1; i >= 0; i--) {
         </section>
 
         <section class="article-section prose" id="tests">
-          <h2>怎样用测试真正吃透 Diff</h2>
+          <h2>怎样用测试检查自己是否读懂 Diff</h2>
           <p>
             打开 <code>rendererChildren.spec.ts</code>，按下面顺序运行和画图：
           </p>
@@ -1670,7 +1678,7 @@ unmount</code></pre>
         </section>
 
         <section class="article-section prose" id="diff-evidence">
-          <h2>本章证据闭环</h2>
+          <h2>本章用到的源码与测试</h2>
           <div class="table-wrap">
             <table>
               <thead>
@@ -1722,8 +1730,8 @@ unmount</code></pre>
         <a href="#diff-case-contract">完整测试与合同</a>
         <a href="#diff-execution-flow">同例流程图</a>
         <a href="#diff-hand-calculation">完整手算账本</a>
-        <a href="#diff-source-proof">决定性源码</a>
-        <a href="#see-diff">交互观察</a>
+        <a href="#diff-source-proof">关键源码</a>
+        <a href="#see-diff">可选交互练习</a>
         <a href="#plain-rules">四条白话规则</a>
         <a href="#plain-walkthrough">小例子</a>
         <a href="#why-diff">为什么需要 Diff</a>
@@ -1739,7 +1747,7 @@ unmount</code></pre>
         <a href="#compiler">编译器协作</a>
         <a href="#mistakes">常见误解</a>
         <a href="#tests">测试练习</a>
-        <a href="#diff-evidence">证据闭环</a>
+        <a href="#diff-evidence">源码与测试</a>
       </aside>
     </div>
     <footer data-site-footer></footer>

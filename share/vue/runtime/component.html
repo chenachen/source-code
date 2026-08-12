@@ -37,8 +37,8 @@
             button 0 更新为 button 2；最后卸载组件。
           </p>
           <div class="callout warm">
-            <strong>性质声明：</strong>这是课程新增、可放入 Vue 3.5.41
-            仓库运行的完整 Vitest 教程测试，不是上游原测试。imports、fixture
+            <strong>这段测试从哪来：</strong>这是教程新增、可放入 Vue 3.5.41
+            仓库运行的 Vitest 用例，不是上游自带测试。imports、fixture
             准备、动作、断言和卸载清理全部在块内。
           </div>
           <details class="source-layer" open>
@@ -104,12 +104,12 @@ describe('runtime course: Counter', () =&gt; {
                 >。
               </p>
               <p class="test-proof">
-                <strong>本次验收：</strong>Node 24.5.0 定向执行同一测试，1 file
+                <strong>运行结果：</strong>Node 24.5.0 定向执行同一测试，1 file
                 / 1 test passed；临时测试文件随后删除。
               </p>
             </div>
           </details>
-          <h3>本页验收合同</h3>
+          <h3>这个用例要验证什么</h3>
           <div class="table-wrap">
             <table>
               <thead>
@@ -251,7 +251,7 @@ describe('runtime course: Counter', () =&gt; {
               ><span class="flow-file">renderer.ts</span>
             </div>
           </div>
-          <h3>照图复述一遍</h3>
+          <h3>按执行顺序再走一遍</h3>
           <ol>
             <li>
               组件 VNode 只是一份输入；mountComponent 才创建长期存活的
@@ -286,9 +286,9 @@ describe('runtime course: Counter', () =&gt; {
         </section>
 
         <section class="article-section prose" id="component-source-proof">
-          <h2>决定性真实源码：实例、effect 与 subTree 怎样接起来</h2>
+          <h2>沿源码看 instance、effect 与 subTree 怎样接起来</h2>
           <p>以下均为 Vue 3.5.41 连续原文；仅做 HTML 实体转义。</p>
-          <h3>证据 1：mountComponent 完成实例创建、setup 与 effect 交接</h3>
+          <h3>mountComponent：创建实例并交给 setup 与 render effect</h3>
           <pre
             data-source-file="vue/packages/runtime-core/src/renderer.ts"
           ><code>    const instance: ComponentInternalInstance =
@@ -314,7 +314,7 @@ describe('runtime course: Counter', () =&gt; {
             <code>initialVNode.component</code> 并持续修改 instance。setup
             后，Counter 已拥有 render，但还没有 subTree。
           </p>
-          <h3>证据 2：首次 mount 计算并提交 subTree</h3>
+          <h3>首次 mount：计算并提交 subTree</h3>
           <pre
             data-source-file="vue/packages/runtime-core/src/renderer.ts"
           ><code>          const subTree = (instance.subTree = renderComponentRoot(instance))
@@ -343,7 +343,7 @@ describe('runtime course: Counter', () =&gt; {
             <code>subTree=null</code> 变成 button VNode，并把组件 VNode 的 el
             对齐到真实根。
           </p>
-          <h3>证据 3：更新先换 subTree，再 patch 旧/新树</h3>
+          <h3>组件更新：保存旧 subTree，再 patch 新旧树</h3>
           <pre
             data-source-file="vue/packages/runtime-core/src/renderer.ts"
           ><code>        const nextTree = renderComponentRoot(instance)
@@ -367,7 +367,7 @@ describe('runtime course: Counter', () =&gt; {
           parentSuspense,
           namespace,
         )</code></pre>
-          <h3>证据 4：effect/job 建立后，首次直接 update</h3>
+          <h3>effect 与 job 建立后，首次挂载直接 update</h3>
           <pre
             data-source-file="vue/packages/runtime-core/src/renderer.ts"
           ><code>    instance.scope.on()
@@ -426,6 +426,109 @@ describe('runtime course: Counter', () =&gt; {
               >
             </div>
           </div>
+
+          <h3>卸载不是一句 scope.stop：它有明确的同步与 post 阶段</h3>
+          <div
+            class="sequence"
+            role="img"
+            aria-label="组件实例从创建、setup、挂载、更新到卸载完成的状态图"
+          >
+            <div class="sequence-item"><strong>created</strong><br /><code>subTree=null</code>，props/slots 尚待 setup。</div>
+            <div class="sequence-item"><strong>setup pending / ready</strong><br />同步结果直接继续；async setup 等 Suspense，期间可能提前卸载。</div>
+            <div class="sequence-item"><strong>mounted</strong><br /><code>isMounted=true</code>，effect/job/subTree 可用于更新。</div>
+            <div class="sequence-item"><strong>updating</strong><br /><code>next</code> 暂存父输入；job 可去重、重排或被标记失效。</div>
+            <div class="sequence-item"><strong>unmounting</strong><br />beforeUnmount → scope.stop → job DISPOSED → unmount(subTree)。</div>
+            <div class="sequence-item"><strong>unmounted</strong><br />post 队列执行 unmounted，并把 <code>isUnmounted=true</code>。</div>
+          </div>
+          <details class="source-layer">
+            <summary>renderer.ts · unmountComponent（连续源码）</summary>
+            <div>
+              <pre data-source-file="vue/packages/runtime-core/src/renderer.ts"><code>  const unmountComponent = (
+    instance: ComponentInternalInstance,
+    parentSuspense: SuspenseBoundary | null,
+    doRemove?: boolean,
+  ) =&gt; {
+    if (__DEV__ &amp;&amp; instance.type.__hmrId) {
+      unregisterHMR(instance)
+    }
+
+    const { bum, scope, job, subTree, um, m, a } = instance
+    invalidateMount(m)
+    invalidateMount(a)
+
+    // beforeUnmount 在 effect 仍有效、子树仍存在时同步执行。
+    if (bum) {
+      invokeArrayFns(bum)
+    }
+
+    if (
+      __COMPAT__ &amp;&amp;
+      isCompatEnabled(DeprecationTypes.INSTANCE_EVENT_HOOKS, instance)
+    ) {
+      instance.emit('hook:beforeDestroy')
+    }
+
+    // 停止 setup/render/watch 等归属于组件 scope 的全部响应式 effect。
+    scope.stop()
+
+    // async setup resolve 前组件可能已卸载，此时 render job 尚未创建，也没有 subTree
+    // 需要递归卸载。
+    if (job) {
+      // 即使任务已经入队，DISPOSED 也让调度器跳过。
+      job.flags! |= SchedulerJobFlags.DISPOSED
+      unmount(subTree, instance, parentSuspense, doRemove)
+    }
+    // unmounted 在子树宿主移除和本轮提交完成后执行。
+    if (um) {
+      queuePostRenderEffect(um, parentSuspense)
+    }
+    if (
+      __COMPAT__ &amp;&amp;
+      isCompatEnabled(DeprecationTypes.INSTANCE_EVENT_HOOKS, instance)
+    ) {
+      queuePostRenderEffect(
+        () =&gt; instance.emit('hook:destroyed'),
+        parentSuspense,
+      )
+    }
+    queuePostRenderEffect(() =&gt; {
+      instance.isUnmounted = true
+    }, parentSuspense)</code></pre>
+            </div>
+          </details>
+          <details class="source-layer">
+            <summary>apiLifecycle.spec.ts · onUnmounted 在子树移除后执行</summary>
+            <div>
+              <pre data-source-file="vue/packages/runtime-core/__tests__/apiLifecycle.spec.ts"><code>  // 测试场景：onUnmounted 在组件子树与副作用完成清理后调用。
+  it('onUnmounted', async () =&gt; {
+    const toggle = ref(true)
+    const root = nodeOps.createElement('div')
+    const fn = vi.fn(() =&gt; {
+      // should be called after inner div is removed
+      expect(serializeInner(root)).toBe(`&lt;!----&gt;`)
+    })
+
+    const Comp = {
+      setup() {
+        return () =&gt; (toggle.value ? h(Child) : null)
+      },
+    }
+
+    const Child = {
+      setup() {
+        onUnmounted(fn)
+        return () =&gt; h('div')
+      },
+    }
+
+    render(h(Comp), root)
+
+    toggle.value = false
+    await nextTick()
+    expect(fn).toHaveBeenCalledTimes(1)
+  })</code></pre>
+            </div>
+          </details>
         </section>
 
         <section class="article-section prose" id="plain-component">
@@ -739,6 +842,13 @@ describe('runtime course: Counter', () =&gt; {
             必须同时判断 props 变化和 slot 稳定性：稳定编译 slot
             通常不要求子组件因父更新重渲染；手写或动态 slot 则需要保守更新。
           </p>
+          <div class="callout">
+            <strong>这里收窄到可验证的行为：</strong><code>componentProps.spec.ts · component props</code>
+            覆盖声明 props 的新增、更新与删除；<code>componentSlots.spec.ts · initSlots: instance.slots should be set correctly</code>
+            覆盖 slots 写入实例；<code>components/Suspense.spec.ts</code> 的
+            <code>async component should receive updated props/slots when resolved</code>
+            覆盖 async setup 等待期间父输入更新。更细的 Boolean/default 转换与 slot flag 快路径应回到对应文件和测试逐项核对，本页不把它们都算作 Counter 已证明的结论。
+          </div>
           <div class="source-links">
             <a
               class="source-link"
@@ -949,7 +1059,7 @@ update()</code></pre>
         </section>
 
         <section class="article-section prose" id="component-evidence">
-          <h2>本章证据闭环</h2>
+          <h2>本章用到的源码与测试</h2>
           <div class="table-wrap">
             <table>
               <thead>
@@ -981,12 +1091,19 @@ update()</code></pre>
                     步复述
                   </td>
                 </tr>
+                <tr>
+                  <td>组件卸载与生命周期时点</td>
+                  <td><code>renderer.ts · unmountComponent</code> 连续原文</td>
+                  <td><code>apiLifecycle.spec.ts · onUnmounted</code></td>
+                  <td><a href="#component-source-proof">实例六状态图</a></td>
+                </tr>
               </tbody>
             </table>
           </div>
           <p class="reader-check">
             <strong>结论：</strong>首次 update、状态自更新 job、subTree
-            前后状态、shouldUpdate 提前退出、async/error 与卸载清理均有落点。
+            前后状态、shouldUpdate 提前退出与卸载清理已有直接证据；props/slots/async
+            的细分规则由相邻测试定位，不把 Counter 的最终 DOM 断言扩大成全覆盖。
           </p>
         </section>
 
@@ -999,14 +1116,14 @@ update()</code></pre>
         <div class="toc-title">本页目录</div>
         <a href="#component-counter-case">完整 Counter 测试</a>
         <a href="#component-counter-flow">实例执行图</a>
-        <a href="#component-source-proof">决定性源码</a>
+        <a href="#component-source-proof">关键源码</a>
         <a href="#plain-component">组件如何活起来</a>
         <a href="#instance">内部实例</a><a href="#creation">创建阶段</a
         ><a href="#setup">setup 流程</a><a href="#props-slots">Props / Slots</a
         ><a href="#public-instance">公共 Proxy</a
         ><a href="#render-effect">Render Effect</a
         ><a href="#lifecycle">生命周期</a
-        ><a href="#component-evidence">证据闭环</a>
+              ><a href="#component-evidence">源码与测试</a>
       </aside>
     </div>
     <footer data-site-footer></footer>

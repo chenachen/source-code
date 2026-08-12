@@ -44,9 +44,9 @@
       <aside class="rail" aria-label="本页目录">
         <p class="rail-title">compiler-core</p>
         <nav>
-          <a href="#content">模块定位</a><a href="#entry">总装线</a
-          ><a href="#parser">Tokenizer 与 Parser</a><a href="#ast">AST 协议</a
-          ><a href="#transform">Transform 框架</a
+          <a href="#content">模块定位</a><a href="#terms">先把词说清</a
+          ><a href="#entry">总装线</a><a href="#parser">Tokenizer 与 Parser</a
+          ><a href="#ast">AST 协议</a><a href="#transform">Transform 框架</a
           ><a href="#scope">表达式与作用域</a
           ><a href="#structure">结构与元素转换</a
           ><a href="#optimize">静态优化</a><a href="#codegen">代码生成</a
@@ -61,24 +61,134 @@
           <h1>compiler-core</h1>
           <p class="lead">
             模板编译的共享内核。它定义语言结构、AST 协议、转换插件模型和
-            JavaScript 生成器，却刻意把 DOM/SSR 平台知识留给上层。
+            JavaScript 生成器，并把大部分 DOM 与 SSR
+            平台规则留给上层；compiler-core 内仍保留少量 block/namespace
+            交界逻辑和 SSR codegen 节点协议。
           </p>
           <div class="hero-meta">
             <span>入口：baseCompile()</span
             ><span>Parse / Transform / Generate</span
-            ><span>核心约束：平台无关</span>
+            ><span>核心定位：共享语义</span>
           </div>
         </div>
 
         <div class="reading-contract">
           <strong>本页可独立阅读</strong>
           <p>
-            每个核心机制都直接嵌入当前仓库的 Vue 3.5.41
-            源码，并给出输入、中间结构、输出与分支原因。代码中的
+            本页核对的是 Vue 3.5.41、commit
+            <code>11cd09cf54a878ec70d3dcca14520b4c4ec267b9</code> 的
+            <code>packages/compiler-core/src</code> 与对应
+            <code>__tests__</code
+            >。每个核心机制都给出输入、中间结构、输出与分支原因。代码中的
             <code>// …</code>
-            表示只省略了与当前机制无关的细节；页末源码链接仅用于继续深挖。
+            表示删掉了与当前结论无关的分支，不表示仓库中真的有这行注释。本页讲客户端主链；DOM
+            平台规则、SFC 文件拆块和 SSR 专用转换分别留给后续章节。
           </p>
         </div>
+
+        <section id="terms">
+          <div class="section-head">
+            <div>
+              <span class="section-no">00 / Vocabulary</span>
+              <h2>先把几个容易混的词说清</h2>
+            </div>
+            <p>
+              后面会反复出现 AST、helper、block 和
+              cache。先约定它们在本页具体指什么，免得同一个词在不同阶段来回变义。
+            </p>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>词</th>
+                  <th>在 compiler-core 里的意思</th>
+                  <th>谁创建，谁消费</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>模板 AST</td>
+                  <td>
+                    <code>RootNode / ElementNode / DirectiveNode</code>
+                    等节点，记录模板结构、表达式和源码位置。它还不是运行时
+                    VNode。
+                  </td>
+                  <td>Parser 创建；transform 读取并原地修改。</td>
+                </tr>
+                <tr>
+                  <td>codegen AST</td>
+                  <td>
+                    <code>VNodeCall / JSCallExpression / CacheExpression</code>
+                    等“该怎样输出 JavaScript”的结构化描述。
+                  </td>
+                  <td>transform 创建；generate 打印。</td>
+                </tr>
+                <tr>
+                  <td><code>codegenNode</code></td>
+                  <td>
+                    挂在模板节点上的桥。它把“用户写了什么”连到“最终该打印什么”。
+                  </td>
+                  <td>
+                    通常在转换插件的退出阶段写入；<code>genNode()</code>
+                    递归跟进。
+                  </td>
+                </tr>
+                <tr>
+                  <td><code>TransformContext</code></td>
+                  <td>
+                    一次 transform 的可变工作台：遍历游标、局部作用域、helper
+                    引用计数、hoist/cache 槽位都放在这里。
+                  </td>
+                  <td>
+                    <code>transform()</code> 创建；阶段结束后把 helper、组件、指令、
+                    hoist 和 cache 等结果写回 RootNode。
+                  </td>
+                </tr>
+                <tr>
+                  <td>helper</td>
+                  <td>
+                    生成代码要调用的 Vue runtime 函数，以 Symbol 登记，例如
+                    <code>OPEN_BLOCK</code>、<code>TO_DISPLAY_STRING</code>。
+                  </td>
+                  <td>
+                    transform 按引用次数登记；generate 只导入最终仍被引用的
+                    helper。
+                  </td>
+                </tr>
+                <tr>
+                  <td>block / patchFlag</td>
+                  <td>
+                    block 决定动态后代的收集边界；patchFlag 和
+                    <code>dynamicProps</code> 告诉 renderer
+                    下次更新该看哪些部分。
+                  </td>
+                  <td>
+                    transform 决定；renderer 消费，codegen
+                    只负责把协议打印出来。
+                  </td>
+                </tr>
+                <tr>
+                  <td>hoist / cache</td>
+                  <td>
+                    hoist 生成 <code>_hoisted_n</code> 声明；cache
+                    生成当前组件实例的
+                    <code>_cache[n]</code>
+                    槽。两者生命周期不同，不能混称“静态提升”。
+                  </td>
+                  <td>transform 分配；generate 输出；运行时使用 cache 槽。</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="callout">
+            <strong>职责边界：</strong><code>compiler-core</code>
+            提供通用模板语法、AST、插件遍历和 JS 打印器；它通过 options
+            留出平台接口。哪些 HTML 标签是 void、SVG/MathML 命名空间怎样切换、
+            <code>v-show</code> 怎样落到 DOM、SFC 的 script/style
+            怎样拆开，都不是这一层独自决定的。
+          </div>
+        </section>
 
         <section id="entry">
           <div class="section-head">
@@ -101,7 +211,7 @@
               <div class="arrow">→</div>
               <div class="flow-node">
                 <strong>baseParse</strong
-                ><small>字符串解析，RootNode 复用</small>
+                ><small>字符串建树；传入 RootNode 时跳过</small>
               </div>
               <div class="arrow">→</div>
               <div class="flow-node primary">
@@ -116,7 +226,7 @@
           <figure class="source-block">
             <figcaption class="source-caption">
               <span
-                ><strong>真实源码 · 聚焦摘录</strong
+                ><strong>真实源码 · 删节</strong
                 ><code>packages/compiler-core/src/compile.ts</code></span
               >
               <span class="source-version">Vue 3.5.41</span>
@@ -158,7 +268,8 @@
           </figure>
           <p class="source-context">
             为聚焦主线，上方只省略了 browser/module、cacheHandlers 与 scopeId
-            的组合校验；三阶段调用保持原样。
+            的组合校验，以及 <code>isTS</code> 对 expression plugin
+            的补充；三阶段调用保持原样。代码中的三条编号注释是教程批注，不是源码原注释。
           </p>
           <div class="code-walkthrough">
             <article class="code-note">
@@ -170,11 +281,12 @@
               </p>
             </article>
             <article class="code-note">
-              <h3>转换是唯一的语义中心</h3>
+              <h3>运行时语义主要在 transform 定稿</h3>
               <p>
-                Parser 只记录“用户写了什么”；transform 把指令、作用域、
-                patchFlag 和 codegenNode 全部决定好，因此 generate
-                无需再理解模板。
+                Parser 会做语法归一化、元素分类和表达式预解析，但不决定 VNode
+                调用。transform 再把指令结果、作用域、patchFlag 和 codegenNode
+                定稿，因此 generate 不必重新解释 <code>v-if</code> 或
+                <code>v-for</code>。
               </p>
             </article>
             <article class="code-note">
@@ -193,68 +305,115 @@
             </article>
           </div>
           <div class="source-result">
-            <strong>用一个最小输入心算</strong>
-            <pre><code>输入：&lt;div :id="uid"&gt;{{ msg }}&lt;/div&gt;
-Parse：Element(div) + Directive(bind:id=uid) + Interpolation(msg)
-Transform：uid/msg → _ctx.uid/_ctx.msg，元素获得 PROPS | TEXT
-Generate：_createElementBlock("div", { id: _ctx.uid }, _toDisplayString(_ctx.msg), 9, ["id"])</code></pre>
+            <strong>本页主 Demo：直接取自 compile.spec.ts</strong>
+            <pre><code>&lt;div id="foo" :class="bar.baz"&gt;
+  {{ world.burn() }}
+  &lt;div v-if="ok"&gt;yes&lt;/div&gt;
+  &lt;template v-else&gt;no&lt;/template&gt;
+  &lt;div v-for="(value, index) in list"&gt;
+    &lt;span&gt;{{ value + index }}&lt;/span&gt;
+  &lt;/div&gt;
+&lt;/div&gt;
+
+后文的主流程图、状态表和完整管线测试都追踪这份输入。
+Parser 错误恢复等机制另用更小的反例，避免把异常分支硬塞进主线。</code></pre>
           </div>
-          <div class="grid-3">
-            <article class="card">
-              <h3>为什么接收 RootNode</h3>
-              <p>
-                SFC parse
-                已经解析过完整文件。模板未预处理且编译器兼容时，可直接复用
-                template AST，避免重复解析。
-              </p>
-            </article>
-            <article class="card">
-              <h3>为什么先处理 prefixIdentifiers</h3>
-              <p>
-                module 模式需要显式上下文访问；浏览器运行时编译依赖
-                <code>with (_ctx)</code>，两者支持的优化组合不同。
-              </p>
-            </article>
-            <article class="card">
-              <h3>为什么用户转换放在后面</h3>
-              <p>
-                用户插件通常希望读取归一化结构；同名 directive transform
-                又允许覆盖基础语义，供平台层定制。
-              </p>
-            </article>
+          <h3>同一份数据到底怎么走</h3>
+          <div class="diagram" aria-label="compiler-core 端到端控制流与数据流">
+            <p class="diagram-title">主 Demo：源码字符串到 render 函数</p>
+            <div class="flow nine" style="gap: 0.35rem">
+              <div class="flow-node">
+                <strong>模板 source</strong
+                ><small>class + interpolation + if + for</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node">
+                <strong>Tokenizer 回调</strong
+                ><small>标签、属性、插值的 offset 区间</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node">
+                <strong>模板 AST</strong><small>Element + If/For 前的指令节点</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node primary">
+                <strong>原地 Transform</strong
+                ><small>IfNode / ForNode + _ctx 前缀 + VNodeCall</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node">
+                <strong>render 代码</strong
+                ><small>CLASS=2；条件 block；循环 flag=256</small>
+              </div>
+            </div>
           </div>
           <div class="table-wrap">
             <table>
               <thead>
                 <tr>
-                  <th>阶段</th>
-                  <th>输入</th>
-                  <th>主要副作用/输出</th>
-                  <th>代表文件</th>
+                  <th>时刻</th>
+                  <th>主要数据</th>
+                  <th>发生了什么</th>
+                  <th>下一站能依赖什么</th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
-                  <td>Parse</td>
-                  <td>模板字符串</td>
-                  <td>创建带 location 的模板 AST</td>
-                  <td><code>tokenizer.ts</code>、<code>parser.ts</code></td>
+                  <td><code>baseParse()</code> 前</td>
+                  <td>source、parser options</td>
+                  <td>重置复用的 tokenizer 与 parser 临时状态。</td>
+                  <td>每个回调的 offset 都指向本轮 source。</td>
                 </tr>
                 <tr>
-                  <td>Transform</td>
-                  <td>RootNode</td>
-                  <td>原地改树、挂 codegenNode、收集 helpers/hoists</td>
-                  <td><code>transform.ts</code>、<code>transforms/*</code></td>
+                  <td><code>baseParse()</code> 后</td>
+                  <td>RootNode、Element、Directive、Interpolation</td>
+                  <td>
+                    <code>v-if/v-else/v-for</code> 仍是指令；<code>bar.baz</code>
+                    等表达式保留源码位置；尚无 VNodeCall。
+                  </td>
+                  <td>转换器可按模板结构和精确位置工作。</td>
                 </tr>
                 <tr>
-                  <td>Generate</td>
-                  <td>已转换 RootNode</td>
-                  <td>输出 render 代码、preamble、source map</td>
-                  <td><code>codegen.ts</code></td>
+                  <td><code>transform()</code> 中</td>
+                  <td>同一个 RootNode + TransformContext</td>
+                  <td>
+                    if/else 合为 IfNode；for 变成 ForNode；<code>list</code>
+                    改为 <code>_ctx.list</code>，value/index 保持循环局部名。
+                  </td>
+                  <td>父节点退出时可读取已经完成的分支、循环体和 VNodeCall。</td>
+                </tr>
+                <tr>
+                  <td><code>transform()</code> 后</td>
+                  <td>codegenNode + RootNode 资源集合</td>
+                  <td>
+                    根 VNodeCall 带 CLASS；IfNode 的两个分支 VNode 带不同 key；ForNode
+                    带 UNKEYED_FRAGMENT，并登记所需 helper。
+                  </td>
+                  <td>generate 只读这份已定稿 AST。</td>
+                </tr>
+                <tr>
+                  <td><code>generate()</code> 中</td>
+                  <td>CodegenContext 的 code/line/column/offset</td>
+                  <td>
+                    输出 helper 序言，再打印 <code>_ctx.bar/_ctx.world/_ctx.ok/_ctx.list</code>
+                    与保持局部的 <code>value/index</code>。
+                  </td>
+                  <td>得到 render 代码、source map 和同一 RootNode。</td>
                 </tr>
               </tbody>
             </table>
           </div>
+          <div class="callout warn">
+            <strong>错误支线：</strong>默认
+            <code>onError</code> 会立刻抛异常，主链到此停止；IDE
+            等调用方可传入只收集错误的处理器，让 Parser 在可恢复位置继续建 AST。
+            “能够恢复”不等于“默认静默吞错”。
+          </div>
+          <p class="prose">
+            <code>baseCompile()</code> 也接受 RootNode。compiler-sfc
+            在模板未预处理、编译器选项兼容且 AST 尚未转换时可复用解析结果；module
+            模式会启用标识符前缀，而同名 directive transform 允许平台层覆盖基础实现。
+          </p>
           <a
             class="source-link"
             href="../../../vue/packages/compiler-core/src/compile.ts"
@@ -340,6 +499,8 @@ Generate：_createElementBlock("div", { id: _ctx.uid }, _toDisplayString(_ctx.ms
     }
     this.state = State.BeforeTagName
     this.sectionStart = this.index
+  } else if (!__BROWSER__ &amp;&amp; c === CharCodes.Amp) {
+    this.startEntity()
   } else if (!this.inVPre &amp;&amp; c === this.delimiterOpen[0]) {
     this.state = State.InterpolationOpen
     this.delimiterIndex = 0
@@ -348,35 +509,177 @@ Generate：_createElementBlock("div", { id: _ctx.uid }, _toDisplayString(_ctx.ms
 }
 
 private stateBeforeTagName(c: number): void {
-  if (isTagStartChar(c)) {
+  if (c === CharCodes.ExclamationMark) {
+    this.state = State.BeforeDeclaration
+    this.sectionStart = this.index + 1
+  } else if (c === CharCodes.Questionmark) {
+    this.state = State.InProcessingInstruction
+    this.sectionStart = this.index + 1
+  } else if (isTagStartChar(c)) {
     this.sectionStart = this.index
-    this.state = State.InTagName // 省略 HTML/SFC 特殊标签分流
+    if (this.mode === ParseMode.BASE) {
+      this.state = State.InTagName
+    } else if (this.inSFCRoot) {
+      this.state = State.InSFCRootTagName
+    } else if (!this.inXML) {
+      if (c === 116 /* t */) {
+        this.state = State.BeforeSpecialT
+      } else {
+        this.state =
+          c === 115 /* s */ ? State.BeforeSpecialS : State.InTagName
+      }
+    } else {
+      this.state = State.InTagName
+    }
   } else if (c === CharCodes.Slash) {
     this.state = State.BeforeClosingTagName
   } else {
     this.state = State.Text
-    this.stateText(c) // 当前字符按新状态重处理
+    this.stateText(c)
   }
 }
 
 private stateInTagName(c: number): void {
   if (isEndOfTagSection(c)) {
-    this.cbs.onopentagname(this.sectionStart, this.index)
-    this.state = State.BeforeAttrName
-    this.stateBeforeAttrName(c)
+    this.handleTagName(c)
   }
+}
+
+private handleTagName(c: number) {
+  this.cbs.onopentagname(this.sectionStart, this.index)
+  this.sectionStart = -1
+  this.state = State.BeforeAttrName
+  this.stateBeforeAttrName(c)
 }</code></pre>
           </figure>
           <p class="source-context">
             输入 <code>x&lt;div&gt;</code> 时，<code>&lt;</code> 先触发
             <code>ontext(0, 1)</code>，状态转到 BeforeTagName；扫描到
-            <code>&gt;</code> 才用起止 offset 触发 <code>onopentagname</code>。
-            回调收到的是原字符串切片边界，不是另建的 token 对象。
+            <code>&gt;</code> 才用起止 offset 触发
+            <code>onopentagname</code>。回调收到的是原字符串切片边界，不是另建的
+            token 对象。
+          </p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>当前状态</th>
+                  <th>看到什么</th>
+                  <th>动作</th>
+                  <th>为什么这样处理</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Text</td>
+                  <td><code>&lt;</code></td>
+                  <td>先提交前方文本，再转 BeforeTagName。</td>
+                  <td>文本节点不会把标签起始符吞进去。</td>
+                </tr>
+                <tr>
+                  <td>BeforeTagName</td>
+                  <td>合法首字母 / <code>/</code> / 其他</td>
+                  <td>
+                    分别进入开标签、闭标签；否则退回 Text，并重处理当前字符。
+                  </td>
+                  <td><code>a &lt; b</code> 这类中间态仍能保留成连续文本。</td>
+                </tr>
+                <tr>
+                  <td>InTagName</td>
+                  <td>空白、<code>/</code> 或 <code>&gt;</code></td>
+                  <td>
+                    触发
+                    <code>onopentagname</code>，终止字符交给属性状态重处理。
+                  </td>
+                  <td>
+                    同一个终止字符既结束标签名，也决定后面是属性还是标签结束。
+                  </td>
+                </tr>
+                <tr>
+                  <td>InterpolationOpen</td>
+                  <td>开始分隔符只匹配一半</td>
+                  <td>退回 Text/RCDATA，并重处理当前字符。</td>
+                  <td>自定义多字符分隔符失败时不丢字。</td>
+                </tr>
+                <tr>
+                  <td>InDirDynamicArg</td>
+                  <td>先遇到 <code>=</code> 或标签边界</td>
+                  <td>提交已有参数，同时报告缺少 <code>]</code>。</td>
+                  <td>诊断保留，后续属性和值仍可继续组装。</td>
+                </tr>
+                <tr>
+                  <td>任一未完成标签状态</td>
+                  <td>EOF</td>
+                  <td>
+                    不发送半成品开/闭标签回调；Parser 报
+                    <code>EOF_IN_TAG</code>。
+                  </td>
+                  <td>
+                    编辑器中输入到一半的标签不会变成一个假的完整 ElementNode。
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <figure class="source-block">
+            <figcaption class="source-caption">
+              <span
+                ><strong>真实源码 · Parser 写入 AST 的交接点（聚焦摘录）</strong
+                ><code>packages/compiler-core/src/parser.ts · callbacks / endOpenTag()</code></span
+              >
+              <span class="source-version">Vue 3.5.41</span>
+            </figcaption>
+            <pre><code>oninterpolation(start, end) {
+  if (inVPre) return onText(getSlice(start, end), start, end)
+  // …裁掉分隔符和两侧空白，并按当前选项解码实体。
+  addNode({
+    type: NodeTypes.INTERPOLATION,
+    content: createExp(exp, false, getLoc(innerStart, innerEnd)),
+    loc: getLoc(start, end),
+  })
+},
+
+onopentagname(start, end) {
+  const name = getSlice(start, end)
+  currentOpenTag = {
+    type: NodeTypes.ELEMENT,
+    tag: name,
+    ns: currentOptions.getNamespace(name, stack[0], currentOptions.ns),
+    tagType: ElementTypes.ELEMENT,
+    props: [],
+    children: [],
+    loc: getLoc(start - 1, end),
+    codegenNode: undefined,
+  }
+},
+
+function endOpenTag(end: number) {
+  addNode(currentOpenTag!)
+  const { tag, ns } = currentOpenTag!
+  if (currentOptions.isVoidTag(tag)) {
+    onCloseTag(currentOpenTag!, end)
+  } else {
+    stack.unshift(currentOpenTag!)
+    if (ns === Namespaces.SVG || ns === Namespaces.MATH_ML) tokenizer.inXML = true
+  }
+  currentOpenTag = null
+}
+
+function addNode(node: TemplateChildNode) {
+  ;(stack[0] || currentRoot).children.push(node)
+}</code></pre>
+          </figure>
+          <p class="source-context">
+            Tokenizer 只交付源码区间。Parser 才创建节点：开标签先写入
+            <code>currentOpenTag</code>，遇到 <code>&gt;</code> 后把它追加到最近父节点并压栈；
+            插值直接追加到当前父节点。主 Demo 的最外层 div 因此先进入
+            <code>root.children</code>，后续节点再进入它的 <code>children</code>。
+            摘录省略了插值裁剪/实体解码和 SFC 根块 <code>innerLoc</code> 初始化。
           </p>
           <figure class="source-block">
             <figcaption class="source-caption">
               <span
-                ><strong>真实源码</strong
+                ><strong>真实源码 · 删节</strong
                 ><code
                   >packages/compiler-core/src/parser.ts · baseParse()</code
                 ></span
@@ -398,6 +701,7 @@ private stateInTagName(c: number): void {
     }
   }
 
+  // …删去开发构建对 decodeEntities 配置的告警/校验。
   tokenizer.mode =
     currentOptions.parseMode === 'html'
       ? ParseMode.HTML
@@ -428,8 +732,10 @@ private stateInTagName(c: number): void {
               <h3>先 reset，再解析</h3>
               <p>
                 Parser 为了热路径性能复用了模块级 tokenizer、栈和当前属性。
-                reset
-                是编译任务的隔离墙，否则上一个模板的未闭合状态会污染下一个。
+                <code>reset()</code> 会清 tokenizer、标签栈和属性缓冲；测试直接保证了
+                RCDATA 状态不会串到下一轮。但默认错误处理若在 EOF 清理开放元素前
+                抛出，<code>inPre/inVPre</code> 等 parser 状态不在 reset 清单中，不能把
+                它扩大成“所有异常路径都完全隔离”。
               </p>
             </article>
             <article class="code-note">
@@ -437,14 +743,6 @@ private stateInTagName(c: number): void {
               <p>
                 core 不硬编码“img 是空标签”或“svg 需命名空间”。compiler-dom 通过
                 options 注入这些知识，SFC 则选择 sfc 解析模式。
-              </p>
-            </article>
-            <article class="code-note">
-              <h3>没有完整 token 数组</h3>
-              <p>
-                <code>tokenizer.parse()</code> 边扫描边触发
-                ontext/onopentagname/onattribname 等回调，Parser
-                当场组装节点。这比“先分词、再遍历 token”少一份中间内存。
               </p>
             </article>
             <article class="code-note">
@@ -457,13 +755,106 @@ private stateInTagName(c: number): void {
             </article>
           </div>
           <div class="source-result">
-            <strong>事件式解析的实际交接</strong>
-            <pre><code>&lt;button :disabled="busy"&gt;Save {{ count }}&lt;/button&gt;
+            <strong>主 Demo 开头的实际交接</strong>
+            <pre><code>&lt;div id="foo" :class="bar.baz"&gt;{{ world.burn() }}…&lt;/div&gt;
 
-Tokenizer 事件：open(button) → directive(bind, disabled, busy)
-                 → text("Save ") → interpolation(count) → close(button)
-Parser 组装： ElementNode.props[DirectiveNode]
-                 ElementNode.children[TextNode, InterpolationNode]</code></pre>
+Tokenizer：open(div) → attr(id, foo) → directive(bind, class, bar.baz)
+           → interpolation(world.burn()) → … → close(div)
+Parser：   ElementNode.props[AttributeNode, DirectiveNode]
+           ElementNode.children[InterpolationNode, …]
+注意：这里的省略号只代表主 Demo 后续 children，不是模板源码。</code></pre>
+          </div>
+          <h3>闭标签不匹配时，Parser 怎样收拾现场</h3>
+          <figure class="source-block">
+            <figcaption class="source-caption">
+              <span
+                ><strong>真实源码 · 删节</strong
+                ><code
+                  >packages/compiler-core/src/parser.ts · onclosetag /
+                  onend</code
+                ></span
+              >
+              <span class="source-version">Vue 3.5.41</span>
+            </figcaption>
+            <pre><code>onclosetag(start, end) {
+  const name = getSlice(start, end)
+  if (!currentOptions.isVoidTag(name)) {
+    let found = false
+    for (let i = 0; i &lt; stack.length; i++) {
+      const e = stack[i]
+      if (e.tag.toLowerCase() === name.toLowerCase()) {
+        found = true
+        if (i &gt; 0) {
+          emitError(ErrorCodes.X_MISSING_END_TAG, stack[0].loc.start.offset)
+        }
+        for (let j = 0; j &lt;= i; j++) {
+          const el = stack.shift()!
+          onCloseTag(el, end, j &lt; i)
+        }
+        break
+      }
+    }
+    if (!found) {
+      emitError(ErrorCodes.X_INVALID_END_TAG, backTrack(start, CharCodes.Lt))
+    }
+  }
+},
+
+onend() {
+  const end = currentInput.length
+  if ((__DEV__ || !__BROWSER__) &amp;&amp; tokenizer.state !== State.Text) {
+    switch (tokenizer.state) {
+      // 插值、注释、CDATA 与标签状态分别映射到精确 EOF 错误。
+      // …删去各 case，分支本身见 errors.ts 与本文件原码。
+    }
+  }
+  for (let index = 0; index &lt; stack.length; index++) {
+    onCloseTag(stack[index], end - 1)
+    emitError(ErrorCodes.X_MISSING_END_TAG, stack[index].loc.start.offset)
+  }
+}</code></pre>
+          </figure>
+          <div class="code-walkthrough">
+            <article class="code-note">
+              <h3>向栈里找，不只看栈顶</h3>
+              <p>
+                对 <code>&lt;div&gt;&lt;span&gt;&lt;/div&gt;</code>，栈顶 span
+                对不上，但下一层 div 能对上。Parser 先把 span
+                隐式闭合并报缺失结束标签，再正常闭合 div。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>找不到就是无效闭标签</h3>
+              <p>
+                后面再出现 <code>&lt;/span&gt;</code> 时，开放栈里已经没有
+                span，因而报告
+                <code>X_INVALID_END_TAG</code>，不会凭空创建节点。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>EOF 也会给开放元素补 loc</h3>
+              <p>
+                <code>onend()</code> 先按 tokenizer 状态报告具体 EOF
+                错误，再调用
+                <code>onCloseTag()</code> 收口仍开放的元素并补报缺失结束标签。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>默认仍是失败即停</h3>
+              <p>
+                <code>defaultOnError</code> 直接 throw。上面多错误和恢复后的
+                AST，只有在测试、IDE 或调用方传入不抛异常的
+                <code>onError</code> 时才能拿到。
+              </p>
+            </article>
+          </div>
+          <div class="source-result">
+            <strong>错误恢复的状态变化</strong>
+            <pre><code>输入：&lt;div&gt;\n&lt;span&gt;\n&lt;/div&gt;\n&lt;/span&gt;
+开放栈：[] → [div] → [span, div]
+遇到 &lt;/div&gt;：报告 span 缺结束标签 → 隐式闭合 span → 闭合 div → []
+遇到 &lt;/span&gt;：栈中找不到 → 报无效结束标签；已有 AST 保留
+前提：onError 只收集错误而不抛出</code></pre>
           </div>
           <h3>三种 ParseMode</h3>
           <div class="table-wrap">
@@ -484,7 +875,10 @@ Parser 组装： ElementNode.props[DirectiveNode]
                 <tr>
                   <td>HTML</td>
                   <td>compiler-dom</td>
-                  <td>支持 RAWTEXT、RCDATA 和 HTML/SVG/MathML namespace。</td>
+                  <td>
+                    Tokenizer 识别 RAWTEXT/RCDATA；HTML/SVG/MathML namespace
+                    仍由 parser options 的 <code>getNamespace</code> 注入。
+                  </td>
                 </tr>
                 <tr>
                   <td>SFC</td>
@@ -498,17 +892,25 @@ Parser 组装： ElementNode.props[DirectiveNode]
             </table>
           </div>
           <div class="callout">
-            <strong>模块级可变状态的取舍：</strong>编译是同步单次任务，复用
-            tokenizer 与临时对象可减少热路径分配。<code>baseParse()</code>
-            开始时 reset，结束后清理
-            currentRoot，测试则专门覆盖状态不能泄漏到下一次解析。
+            <strong>模块级状态有明确前提：</strong><code>baseParse()</code>
+            本身同步执行；从当前模块级可变状态实现可以推断，它不适合重入。每轮开始会重置
+            tokenizer 的扫描状态与分隔符，以及标签栈和属性缓冲；正常结束后清理
+            <code>currentRoot</code>。测试
+            <code>should reset inRCDATA state</code> 专门先解析残缺
+            SFC，再解析普通片段，防止 RAWTEXT/RCDATA
+            状态串到下一轮。它没有证明默认 <code>onError</code> 在元素清理前抛出时，
+            <code>inPre/inVPre/currentVPreBoundary</code> 也一定复位。这里的“不适合重入”
+            及异常边界均来自当前实现；源码和测试没有承诺在一次回调里递归调用
+            <code>baseParse()</code> 或在捕获任意解析异常后复用模块状态都安全。
           </div>
           <div class="grid-3">
             <article class="card">
               <h3>实体解码</h3>
               <p>
-                Node 构建使用 entities；浏览器构建可借助原生 HTML
-                元素，构建标志保证不需要的实现被 tree-shake。
+                Node.js 构建由 tokenizer 内的 <code>EntityDecoder</code> 流式解码；
+                browser 构建改用平台传入的
+                <code>decodeEntities</code>。compiler-core
+                只保持文本、属性两种解码上下文和源码范围。
               </p>
             </article>
             <article class="card">
@@ -521,7 +923,7 @@ Parser 组装： ElementNode.props[DirectiveNode]
             <article class="card">
               <h3>表达式预解析</h3>
               <p>
-                Node 构建可用 Babel
+                Node.js 构建可用 Babel
                 解析表达式、参数或多语句并缓存失败状态；浏览器生产构建保持轻量。
               </p>
             </article>
@@ -543,7 +945,7 @@ Parser 组装： ElementNode.props[DirectiveNode]
           <div class="section-head">
             <div>
               <span class="section-no">03 / AST</span>
-              <h2>一份文件里有两类 AST</h2>
+              <h2>同一条编译管线会先后使用两类 AST</h2>
             </div>
             <p>
               模板 AST 表达用户写了什么；JS/codegen AST 表达应该生成怎样的
@@ -600,7 +1002,7 @@ Parser 组装： ElementNode.props[DirectiveNode]
           <figure class="source-block">
             <figcaption class="source-caption">
               <span
-                ><strong>真实源码</strong
+                ><strong>真实源码 · 省略字段注释</strong
                 ><code
                   >packages/compiler-core/src/ast.ts · VNodeCall</code
                 ></span
@@ -654,8 +1056,16 @@ export function createVNodeCall(
 
   return {
     type: NodeTypes.VNODE_CALL,
-    tag, props, children, patchFlag, dynamicProps, directives,
-    isBlock, disableTracking, isComponent, loc,
+    tag,
+    props,
+    children,
+    patchFlag,
+    dynamicProps,
+    directives,
+    isBlock,
+    disableTracking,
+    isComponent,
+    loc,
   }
 }</code></pre>
           </figure>
@@ -668,18 +1078,19 @@ export function createVNodeCall(
               </p>
             </article>
             <article class="code-note">
-              <h3>字段就是编译期/运行时协议</h3>
+              <h3>这些字段由 renderer 直接消费</h3>
               <p>
                 patchFlag 告诉 renderer 哪些部分会变，dynamicProps
                 给出精确键名，isBlock
-                决定是否收集动态后代。运行时的快，来自编译期先做了分类。
+                决定是否收集动态后代。renderer 因而可以进入对应更新分支，
+                不必在每次渲染时重新扫描全部 props 和 children。
               </p>
             </article>
             <article class="code-note">
               <h3>helper 按需登记</h3>
               <p>
                 createVNodeCall 不拼字符串，却会登记
-                openBlock/createElementBlock/ withDirectives 等 helper。generate
+                openBlock/createElementBlock/withDirectives 等 helper。generate
                 最后只导入真正用到的函数。
               </p>
             </article>
@@ -730,7 +1141,7 @@ export function createVNodeCall(
             </table>
           </div>
           <div class="callout">
-            <strong>最关键字段是 <code>codegenNode</code>：</strong>parser
+            <strong>连接两类 AST 的字段是 <code>codegenNode</code>：</strong>parser
             不填它；transform
             在退出阶段根据完整子树生成。于是模板结构和输出结构可以并存，codegen
             无需反推模板语义。
@@ -755,7 +1166,9 @@ export function createVNodeCall(
               </p>
             </article>
           </div>
-          <a class="source-link" href="../../../vue/packages/compiler-core/src/ast.ts"
+          <a
+            class="source-link"
+            href="../../../vue/packages/compiler-core/src/ast.ts"
             >src/ast.ts</a
           >
         </section>
@@ -795,7 +1208,7 @@ export function createVNodeCall(
           <figure class="source-block">
             <figcaption class="source-caption">
               <span
-                ><strong>真实源码</strong
+                ><strong>真实源码 · 删节</strong
                 ><code
                   >packages/compiler-core/src/transform.ts ·
                   traverseNode()</code
@@ -825,6 +1238,7 @@ export function createVNodeCall(
     }
   }
 
+  // …删去 COMMENT / INTERPOLATION 的 helper 登记。
   // 根、元素、v-for 和 v-if 分支都会继续向下遍历。
   switch (node.type) {
     case NodeTypes.IF:
@@ -863,7 +1277,7 @@ export function createVNodeCall(
               </p>
             </article>
             <article class="code-note">
-              <h3>替换/删除是一等能力</h3>
+              <h3>插件可以替换，也可以删除</h3>
               <p>
                 <code>v-if</code> 会把 ElementNode 换成 IfNode；忽略副作用的
                 <code>&lt;script&gt;</code> 转换则可删节点。currentNode
@@ -873,46 +1287,137 @@ export function createVNodeCall(
             <article class="code-note">
               <h3>为什么 exit 逆序</h3>
               <p>
-                先注册的高层转换最后退出，可以看到后续转换已经增补的结果。
-                这与递归 visitor 的 leave 阶段相同，也是插件顺序成为语义的原因。
+                先注册的高层转换最后退出，因此退出时能读取后续转换补出的结果。这与递归
+                visitor 的 leave 阶段相同，也是插件顺序成为语义的原因。
               </p>
             </article>
           </div>
-          <div class="grid-3">
-            <article class="card">
-              <h3>遍历位置</h3>
-              <p>
-                currentNode、parent、grandParent、childIndex 和节点删除回调。
-              </p>
-            </article>
-            <article class="card">
-              <h3>作用域</h3>
-              <p>identifiers 计数，v-for/v-slot 深度，v-once 状态。</p>
-            </article>
-            <article class="card">
-              <h3>资源账本</h3>
-              <p>helpers、components、directives、imports、filters。</p>
-            </article>
-            <article class="card">
-              <h3>优化槽位</h3>
-              <p>hoists、cached、temps、constantCache。</p>
-            </article>
-            <article class="card">
-              <h3>树操作</h3>
-              <p>replaceNode、removeNode、hoist、cache。</p>
-            </article>
-            <article class="card">
-              <h3>扩展与诊断</h3>
-              <p>
-                onError、onWarn、node/directive transforms、transformHoist。
-              </p>
-            </article>
+          <figure class="source-block">
+            <figcaption class="source-caption">
+              <span
+                ><strong>真实源码 · 阶段收口（删节 compat 分支）</strong
+                ><code
+                  >packages/compiler-core/src/transform.ts · transform()</code
+                ></span
+              >
+              <span class="source-version">Vue 3.5.41</span>
+            </figcaption>
+            <pre><code>export function transform(root: RootNode, options: TransformOptions): void {
+  const context = createTransformContext(root, options)
+  traverseNode(root, context)
+  if (options.hoistStatic) {
+    cacheStatic(root, context)
+  }
+  if (!options.ssr) {
+    createRootCodegen(root, context)
+  }
+
+  root.helpers = new Set([...context.helpers.keys()])
+  root.components = [...context.components]
+  root.directives = [...context.directives]
+  root.imports = context.imports
+  root.hoists = context.hoists
+  root.temps = context.temps
+  root.cached = context.cached
+  root.transformed = true
+}</code></pre>
+          </figure>
+          <p class="source-context">
+            <code>TransformContext</code> 只活在这一阶段。generate 拿到的是
+            RootNode 快照，不会继续碰遍历游标或作用域计数。SSR 跳过客户端的
+            <code>createRootCodegen()</code>，由 SSR 转换另建根输出。
+          </p>
+          <figure class="source-block">
+            <figcaption class="source-caption">
+              <span
+                ><strong>真实源码 · 删节</strong
+                ><code>transform.ts · helper / hoist / cache</code></span
+              >
+              <span class="source-version">Vue 3.5.41</span>
+            </figcaption>
+            <pre><code>helper(name) {
+  const count = context.helpers.get(name) || 0
+  context.helpers.set(name, count + 1)
+  return name
+},
+removeHelper(name) {
+  const count = context.helpers.get(name)
+  if (count) {
+    const currentCount = count - 1
+    if (!currentCount) context.helpers.delete(name)
+    else context.helpers.set(name, currentCount)
+  }
+},
+hoist(exp) {
+  if (isString(exp)) exp = createSimpleExpression(exp)
+  context.hoists.push(exp)
+  const identifier = createSimpleExpression(
+    `_hoisted_${context.hoists.length}`,
+    false,
+    exp.loc,
+    ConstantTypes.CAN_CACHE,
+  )
+  identifier.hoisted = exp
+  return identifier
+},
+cache(exp, isVNode = false, inVOnce = false) {
+  const cacheExp = createCacheExpression(
+    context.cached.length, exp, isVNode, inVOnce,
+  )
+  context.cached.push(cacheExp)
+  return cacheExp
+}</code></pre>
+          </figure>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Context 字段</th>
+                  <th>转换时怎样变</th>
+                  <th>离开 transform 后去哪</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>helpers: Map&lt;symbol, number&gt;</code></td>
+                  <td>
+                    创建调用时加引用，VNode 普通调用/block 互换时可减引用。
+                  </td>
+                  <td>
+                    只把仍有引用的 key 快照成 <code>root.helpers: Set</code>。
+                  </td>
+                </tr>
+                <tr>
+                  <td><code>components / directives: Set</code></td>
+                  <td>解析到资产时去重登记。</td>
+                  <td>转成 RootNode 数组，供 generate 输出 resolve 声明。</td>
+                </tr>
+                <tr>
+                  <td><code>hoists / cached</code></td>
+                  <td>按数组长度分配稳定下标。</td>
+                  <td>
+                    原数组挂到 RootNode，分别输出 <code>_hoisted_n</code> 与
+                    <code>_cache[n]</code>。
+                  </td>
+                </tr>
+                <tr>
+                  <td><code>identifiers / scopes</code></td>
+                  <td>进入 v-for/v-slot 时增加，退出时成对减少。</td>
+                  <td>不快照；它们只服务本次深度优先遍历。</td>
+                </tr>
+                <tr>
+                  <td><code>currentNode / parent / childIndex</code></td>
+                  <td>随遍历、替换和删除移动。</td>
+                  <td>不快照；最终树已经反映修改结果。</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
           <div class="table-wrap">
             <table>
               <thead>
                 <tr>
-                  <th>基础顺序</th>
+                  <th>相对顺序</th>
                   <th>转换</th>
                   <th>顺序原因</th>
                 </tr>
@@ -926,25 +1431,30 @@ export function createVNodeCall(
                 <tr>
                   <td>2–5</td>
                   <td>v-once、v-if、v-memo、v-for</td>
-                  <td>结构指令会替换原节点，必须先改树。</td>
+                  <td>
+                    先处理缓存包装和会改树的结构指令，让后续插件看到正确节点形态。
+                  </td>
                 </tr>
                 <tr>
-                  <td>6</td>
-                  <td>trackVForSlotScopes</td>
-                  <td>先登记局部变量。</td>
+                  <td>可选</td>
+                  <td>transformFilter</td>
+                  <td>仅 Vue 2 compat 构建插入。</td>
                 </tr>
                 <tr>
-                  <td>7</td>
-                  <td>transformExpression</td>
-                  <td>有作用域信息后才能安全添加 <code>_ctx.</code>。</td>
+                  <td>其后</td>
+                  <td>trackVForSlotScopes → transformExpression</td>
+                  <td>
+                    Node 且开启前缀模式时出现；普通 v-for 作用域由 transformFor
+                    自己登记，这个 tracker 处理带 v-for 的 slot template。
+                  </td>
                 </tr>
                 <tr>
-                  <td>8–9</td>
+                  <td>其后</td>
                   <td>slotOutlet、element</td>
                   <td>建立输出节点与 props/children。</td>
                 </tr>
                 <tr>
-                  <td>10–11</td>
+                  <td>最后</td>
                   <td>trackSlotScopes、transformText</td>
                   <td>维护 slot 深度，最后合并文本。</td>
                 </tr>
@@ -952,10 +1462,59 @@ export function createVNodeCall(
             </table>
           </div>
           <div class="callout warn">
-            <strong>插件顺序就是语义：</strong>表达式转换若早于 v-for
-            作用域登记，会把 item 错改成 <code>_ctx.item</code>；元素转换若不等
-            children 完成，就无法正确判断 slots、动态文本和 block 身份。
+            <strong>这张顺序表不是所有构建的固定编号：</strong>compat、browser
+            和
+            <code>prefixIdentifiers</code>
+            会增删插件，但相对约束不变。表达式转换若早于 v-for 作用域登记，会把
+            item 错改成 <code>_ctx.item</code>；元素转换若不等 children
+            完成，就无法正确判断 slots、动态文本和 block 身份。
           </div>
+          <figure class="source-block">
+            <figcaption class="source-caption">
+              <span
+                ><strong>真实源码 · 结构指令包装器</strong
+                ><code
+                  >transform.ts · createStructuralDirectiveTransform()</code
+                ></span
+              >
+              <span class="source-version">Vue 3.5.41</span>
+            </figcaption>
+            <pre><code>export function createStructuralDirectiveTransform(
+  name: string | RegExp,
+  fn: StructuralDirectiveTransform,
+): NodeTransform {
+  const matches = isString(name)
+    ? (n: string) =&gt; n === name
+    : (n: string) =&gt; name.test(n)
+
+  return (node, context) =&gt; {
+    if (node.type === NodeTypes.ELEMENT) {
+      const { props } = node
+      if (node.tagType === ElementTypes.TEMPLATE &amp;&amp; props.some(isVSlot)) {
+        return
+      }
+      const exitFns = []
+      for (let i = 0; i &lt; props.length; i++) {
+        const prop = props[i]
+        if (prop.type === NodeTypes.DIRECTIVE &amp;&amp; matches(prop.name)) {
+          props.splice(i, 1)
+          i--
+          const onExit = fn(node, prop, context)
+          if (onExit) exitFns.push(onExit)
+        }
+      }
+      return exitFns
+    }
+  }
+}</code></pre>
+          </figure>
+          <p class="source-context">
+            先从 props 删掉
+            <code>v-if</code
+            >/<code>v-for</code>，再移动并重遍历原元素。如果不先删，原元素再次进入同一个结构转换器，会不停套新的结构节点。<code
+              >&lt;template v-slot&gt;</code
+            >则交给 slot 转换统一管理，避免两套逻辑争抢同一层结构。
+          </p>
           <a
             class="source-link"
             href="../../../vue/packages/compiler-core/src/transform.ts"
@@ -967,11 +1526,11 @@ export function createVNodeCall(
           <div class="section-head">
             <div>
               <span class="section-no">05 / Expressions</span>
-              <h2>表达式改写本质是作用域分析</h2>
+              <h2>改表达式之前，先认清每个名字属于谁</h2>
             </div>
             <p>
-              难点不是字符串加前缀，而是判断 Identifier 在 Babel AST
-              的当前位置是否构成外部值引用。
+              给名字补前缀并不难；真正要判断的是 Identifier 在 Babel AST
+              的当前位置是否属于外部值引用。
             </p>
           </div>
           <div class="grid-2">
@@ -989,6 +1548,35 @@ _ctx.count + _ctx.format(_ctx.total)</code></pre>
 _ctx.items.map(item =&gt; item.id)</code></pre>
               <p>函数参数、静态属性 key、声明与类型位置不是上下文变量。</p>
             </article>
+          </div>
+          <div class="diagram" aria-label="表达式处理的数据流">
+            <p class="diagram-title">表达式从模板源码到可打印节点</p>
+            <div class="flow nine">
+              <div class="flow-node">
+                <strong>createExp</strong><small>保存 content / loc；可预解析 exp.ast</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node">
+                <strong>模板作用域</strong><small>v-for / v-slot 写入 identifiers</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node primary">
+                <strong>processExpression</strong><small>简单名快路径或 walkIdentifiers</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node">
+                <strong>绑定分流</strong><small>局部名 / _ctx / $setup / ref.value</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node">
+                <strong>ExpressionNode</strong><small>原节点或 CompoundExpression + 精确 loc</small>
+              </div>
+            </div>
+          </div>
+          <div class="callout">
+            <strong><code>exp.ast</code> 的三种状态：</strong><code>null</code>
+            表示简单标识符，可直接改写；Babel AST 表示复合表达式，可复用预解析结果；
+            <code>false</code> 表示 Parser 已报告语法错误，Transform 直接返回，避免重复诊断。
           </div>
           <figure class="source-block">
             <figcaption class="source-caption">
@@ -1123,9 +1711,8 @@ _ctx.items.map(item =&gt; item.id)</code></pre>
 }</code></pre>
           </figure>
           <p class="source-context">
-            每一条可执行语句均取自当前源码；“……”只标记被裁掉的完整分支。
-            摘录保留了绑定分流、简单标识符快路径，以及 Babel AST
-            标识符遍历，省略了 setup let 的完整写回协议和 source-map 位置拼接。
+            摘录保留绑定分流、简单标识符快路径和 Babel AST 标识符遍历；
+            setup let 的完整写回协议与 source-map 位置拼接不影响这里的作用域判断，故省略。
           </p>
           <div class="code-walkthrough">
             <article class="code-note">
@@ -1141,8 +1728,9 @@ _ctx.items.map(item =&gt; item.id)</code></pre>
               <p>
                 已知 ref 读 <code>.value</code>，maybe-ref 读
                 <code>unref()</code>，prop 读
-                <code>__props</code>，未知名字才回退到 <code>_ctx</code>。这是
-                compileScript 的绑定分类真正换来的代码优化。
+                <code>__props</code>，未知名字才回退到
+                <code>_ctx</code>。compileScript
+                提供绑定分类后，模板编译器才有这些直达访问路径。
               </p>
             </article>
             <article class="code-note">
@@ -1236,7 +1824,7 @@ _ctx.items.map(item =&gt; item.id)</code></pre>
               props；它们替换原元素，建立专用结构节点并生成控制流。
             </p>
           </div>
-          <div class="grid-3">
+          <div class="grid-2">
             <article class="card">
               <h3>v-if</h3>
               <p>
@@ -1251,13 +1839,234 @@ _ctx.items.map(item =&gt; item.id)</code></pre>
                 renderList 与不同稳定性的 Fragment。
               </p>
             </article>
-            <article class="card">
-              <h3>v-slot</h3>
+          </div>
+          <p class="prose">
+            本节只追 v-if 与 v-for。v-slot 的动态插槽、forwarded 标志和
+            <code>createSlots()</code> 分支不在本页展开，避免用一张概述卡替代源码证据。
+          </p>
+          <figure class="source-block">
+            <figcaption class="source-caption">
+              <span
+                ><strong>真实源码 · 删节</strong
+                ><code>transforms/vIf.ts · processIf()</code></span
+              >
+              <span class="source-version">Vue 3.5.41</span>
+            </figcaption>
+            <pre><code>if (dir.name === 'if') {
+  const branch = createIfBranch(node, dir)
+  const ifNode: IfNode = {
+    type: NodeTypes.IF,
+    loc: cloneLoc(node.loc),
+    branches: [branch],
+  }
+  context.replaceNode(ifNode)
+  if (processCodegen) {
+    return processCodegen(ifNode, branch, true)
+  }
+} else {
+  const siblings = context.parent!.children
+  const comments = []
+  let i = siblings.indexOf(node)
+  while (i-- &gt;= -1) {
+    const sibling = siblings[i]
+    if (sibling &amp;&amp; isCommentOrWhitespace(sibling)) {
+      context.removeNode(sibling)
+      if (__DEV__ &amp;&amp; sibling.type === NodeTypes.COMMENT) {
+        comments.unshift(sibling)
+      }
+      continue
+    }
+
+    if (sibling &amp;&amp; sibling.type === NodeTypes.IF) {
+      // …删去重复 key、无条件分支之后再接分支等诊断。
+      context.removeNode()
+      const branch = createIfBranch(node, dir)
+      sibling.branches.push(branch)
+      const onExit = processCodegen &amp;&amp; processCodegen(sibling, branch, false)
+      traverseNode(branch, context)
+      if (onExit) onExit()
+      context.currentNode = null
+    } else {
+      context.onError(
+        createCompilerError(ErrorCodes.X_V_ELSE_NO_ADJACENT_IF, node.loc),
+      )
+    }
+    break
+  }
+}</code></pre>
+          </figure>
+          <div class="code-walkthrough">
+            <article class="code-note">
+              <h3><code>v-if</code> 先占住原位置</h3>
               <p>
-                收集静态/动态 slot、作用域参数和 forwarded 标志；条件/循环 slot
-                进入 createSlots 动态描述。
+                第一条分支把 ElementNode 换成 IfNode。后续兄弟看到的已不是原
+                div，而是可以继续追加 <code>branches</code> 的结构容器。
               </p>
             </article>
+            <article class="code-note">
+              <h3><code>v-else</code> 会离开兄弟数组</h3>
+              <p>
+                它从原 children 删除后并入前一个
+                IfNode。因为父级循环以后不会再访问它，代码必须当场
+                <code>traverseNode(branch)</code>，再手动执行该分支的退出函数。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>空白和注释不一定断链</h3>
+              <p>
+                向前找 IfNode 时会移除纯空白和注释；开发版通常把注释塞回新分支，
+                Transition 的单有效子节点场景除外。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>输出在退出阶段接起来</h3>
+              <p>
+                根分支先建 ConditionalExpression，后续分支挂到最深的
+                alternate。有条件却无匹配分支时，用 block comment
+                占位；每个真实分支注入不同 key。
+              </p>
+            </article>
+          </div>
+          <figure class="source-block">
+            <figcaption class="source-caption">
+              <span
+                ><strong>真实源码 · v-for 作用域成对收口</strong
+                ><code>transforms/vFor.ts · processFor()</code></span
+              >
+              <span class="source-version">Vue 3.5.41</span>
+            </figcaption>
+            <pre><code>if (!dir.exp) {
+  context.onError(createCompilerError(ErrorCodes.X_V_FOR_NO_EXPRESSION, dir.loc))
+  return
+}
+const parseResult = dir.forParseResult
+if (!parseResult) {
+  context.onError(
+    createCompilerError(ErrorCodes.X_V_FOR_MALFORMED_EXPRESSION, dir.loc),
+  )
+  return
+}
+
+finalizeForParseResult(parseResult, context)
+
+const { addIdentifiers, removeIdentifiers, scopes } = context
+const { source, value, key, index } = parseResult
+const forNode: ForNode = {
+  type: NodeTypes.FOR,
+  loc: dir.loc,
+  source,
+  valueAlias: value,
+  keyAlias: key,
+  objectIndexAlias: index,
+  parseResult,
+  children: isTemplateNode(node) ? node.children : [node],
+}
+
+context.replaceNode(forNode)
+scopes.vFor++
+if (!__BROWSER__ &amp;&amp; context.prefixIdentifiers) {
+  value &amp;&amp; addIdentifiers(value)
+  key &amp;&amp; addIdentifiers(key)
+  index &amp;&amp; addIdentifiers(index)
+}
+
+const onExit = processCodegen &amp;&amp; processCodegen(forNode)
+return (): void =&gt; {
+  scopes.vFor--
+  if (!__BROWSER__ &amp;&amp; context.prefixIdentifiers) {
+    value &amp;&amp; removeIdentifiers(value)
+    key &amp;&amp; removeIdentifiers(key)
+    index &amp;&amp; removeIdentifiers(index)
+  }
+  if (onExit) onExit()
+}</code></pre>
+          </figure>
+          <p class="source-context">
+            对 <code>v-for="(item, i) in list"</code>，<code>list</code>
+            先按外部表达式处理；item/i 随后进入局部标识符计数。子树中的 item/i
+            保持局部名，退出后计数撤销，后方兄弟再写 item 时仍会得到
+            <code>_ctx.item</code>。缺少或无法拆分表达式时，转换会先报告错误并返回，
+            不会创建一个字段不完整的 ForNode。
+          </p>
+          <figure class="source-block">
+            <figcaption class="source-caption">
+              <span
+                ><strong>真实源码 · v-for 列表 Fragment 的决定分支</strong
+                ><code>transforms/vFor.ts · transformFor()</code></span
+              >
+              <span class="source-version">Vue 3.5.41</span>
+            </figcaption>
+            <pre><code>const isStableFragment =
+  forNode.source.type === NodeTypes.SIMPLE_EXPRESSION &amp;&amp;
+  forNode.source.constType &gt; ConstantTypes.NOT_CONSTANT
+const fragmentFlag = isStableFragment
+  ? PatchFlags.STABLE_FRAGMENT
+  : keyProp
+    ? PatchFlags.KEYED_FRAGMENT
+    : PatchFlags.UNKEYED_FRAGMENT
+
+forNode.codegenNode = createVNodeCall(
+  context,
+  helper(FRAGMENT),
+  undefined,
+  renderExp,
+  fragmentFlag,
+  undefined,
+  undefined,
+  true /* isBlock */,
+  !isStableFragment /* disableTracking */,
+  false /* isComponent */,
+  node.loc,
+)</code></pre>
+          </figure>
+          <p class="source-context">
+            主 Demo 的 source 是 <code>_ctx.list</code>，不是编译期常量，也没有 key，
+            所以外层列表得到 <code>UNKEYED_FRAGMENT</code>，并以
+            <code>openBlock(true)</code> 禁止外层收集每一项内部的动态节点。若提供 key，
+            同一位置改用 KEYED_FRAGMENT；只有编译期稳定 source 才用 STABLE_FRAGMENT。
+          </p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>v-for 条件</th>
+                  <th>列表 Fragment</th>
+                  <th>每项输出</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>source 为编译期常量</td>
+                  <td><code>STABLE_FRAGMENT</code>，不禁用 tracking。</td>
+                  <td>
+                    单元素在允许时可保留普通 VNode；多根仍包稳定 Fragment。
+                  </td>
+                </tr>
+                <tr>
+                  <td>动态 source + key</td>
+                  <td>
+                    <code>KEYED_FRAGMENT</code>，<code>openBlock(true)</code>。
+                  </td>
+                  <td>key 注入单项 VNode、Fragment 或 slot props。</td>
+                </tr>
+                <tr>
+                  <td>动态 source + 无 key</td>
+                  <td>
+                    <code>UNKEYED_FRAGMENT</code
+                    >，<code>openBlock(true)</code>。
+                  </td>
+                  <td>单元素通常升级为 block，保证每轮动态后代正确收集。</td>
+                </tr>
+                <tr>
+                  <td><code>&lt;slot v-for&gt;</code></td>
+                  <td>外层仍是列表 Fragment。</td>
+                  <td>
+                    复用 <code>renderSlot()</code>，避免再包一层无意义
+                    Fragment。
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
           <div class="diagram" aria-label="Element 转换汇总过程">
             <p class="diagram-title">transformElement 的退出阶段</p>
@@ -1284,7 +2093,7 @@ _ctx.items.map(item =&gt; item.id)</code></pre>
           <figure class="source-block">
             <figcaption class="source-caption">
               <span
-                ><strong>真实源码</strong
+                ><strong>真实源码 · 删节</strong
                 ><code
                   >transforms/transformElement.ts · postTransformElement()</code
                 ></span
@@ -1307,8 +2116,12 @@ _ctx.items.map(item =&gt; item.id)</code></pre>
     const isDynamicComponent =
       isObject(vnodeTag) &amp;&amp; vnodeTag.callee === RESOLVE_DYNAMIC_COMPONENT
 
+    let vnodeProps: VNodeCall['props']
+    let vnodeChildren: VNodeCall['children']
     let patchFlag: VNodeCall['patchFlag'] | 0 = 0
+    let vnodeDynamicProps: VNodeCall['dynamicProps']
     let dynamicPropNames: string[] | undefined
+    let vnodeDirectives: VNodeCall['directives']
     let shouldUseBlock =
       isDynamicComponent || vnodeTag === TELEPORT || vnodeTag === SUSPENSE ||
       (!isComponent &amp;&amp;
@@ -1363,7 +2176,7 @@ _ctx.items.map(item =&gt; item.id)</code></pre>
               </p>
             </article>
             <article class="code-note">
-              <h3>#639/#643 的具体场景</h3>
+              <h3>SVG/MathML 边界为什么强制成为 block</h3>
               <p>
                 SVG/MathML 内的 class、属性和子节点需使用对应命名空间的 patch
                 路径。如果边界没有成为
@@ -1455,18 +2268,24 @@ dynamicProps    = ["disabled", "onClick"]
                 </tr>
                 <tr>
                   <td>CAN_SKIP_PATCH</td>
-                  <td>本次无需 patch，但不一定能提升</td>
-                  <td>运行时跳过局部更新。</td>
+                  <td>值稳定到可跳过 patch，但未必适合跨 render 保存</td>
+                  <td>
+                    编译器可据此减少该表达式对应的更新工作；这个编译期等级不会原样传给
+                    runtime，也不足以直接生成缓存槽。
+                  </td>
                 </tr>
                 <tr>
                   <td>CAN_CACHE</td>
-                  <td>可写入实例缓存槽</td>
-                  <td>生成 <code>_cache[n]</code>。</td>
+                  <td>可提升或缓存</td>
+                  <td>
+                    按节点种类进入 <code>_hoisted_n</code> 或
+                    <code>_cache[n]</code>。
+                  </td>
                 </tr>
                 <tr>
                   <td>CAN_STRINGIFY</td>
                   <td>可稳定序列化为 HTML</td>
-                  <td>DOM 平台合并为 StaticVNode。</td>
+                  <td>具备前述能力，DOM 平台还可合并为 StaticVNode。</td>
                 </tr>
               </tbody>
             </table>
@@ -1474,7 +2293,7 @@ dynamicProps    = ["disabled", "onClick"]
           <figure class="source-block">
             <figcaption class="source-caption">
               <span
-                ><strong>真实源码</strong
+                ><strong>真实源码 · 跨文件删节</strong
                 ><code>ast.ts + transforms/cacheStatic.ts</code></span
               >
               <span class="source-version">Vue 3.5.41</span>
@@ -1496,11 +2315,20 @@ export function cacheStatic(root: RootNode, context: TransformContext): void {
   )
 }
 
-// walk() 找到整组可缓存 children 时，优先写入实例缓存数组。
+// walk() 找到整组可缓存的原生元素 children 时，优先缓存整个数组。
 if (toCache.length === children.length &amp;&amp; node.type === NodeTypes.ELEMENT) {
-  node.codegenNode.children = getCacheExpression(
-    createArrayExpression(node.codegenNode.children),
-  )
+  if (
+    node.tagType === ElementTypes.ELEMENT &amp;&amp;
+    node.codegenNode &amp;&amp;
+    node.codegenNode.type === NodeTypes.VNODE_CALL &amp;&amp;
+    isArray(node.codegenNode.children)
+  ) {
+    node.codegenNode.children = getCacheExpression(
+      createArrayExpression(node.codegenNode.children),
+    )
+    cachedAsArray = true
+  }
+  // …组件默认插槽与 template 具名插槽有对应的数组缓存分支。
 }
 
 function getCacheExpression(value: JSChildNode): CacheExpression {
@@ -1541,8 +2369,8 @@ function getCacheExpression(value: JSChildNode): CacheExpression {
               <h3>优化也要防引用泄漏</h3>
               <p>
                 runtime 挂载 children 时会克隆 VNode
-                并写回数组。每次取缓存都展开一份新数组，
-                才能避免列表项互相污染，也不让长寿命缓存持有 DOM
+                并写回数组。每次取缓存都展开一份新数组，才能避免列表项互相污染，也不让长寿命缓存持有
+                DOM
                 <code>el</code>。
               </p>
             </article>
@@ -1586,9 +2414,10 @@ _createElementBlock("div", null, [
           </div>
           <div class="callout warn">
             <strong>优化限制：</strong
-            >组件、自定义指令、HMR、scopeId、局部作用域引用、动态指令参数、ref
-            与 hydration
-            事件都会降低静态级别。复杂分支是在证明优化不会改变引用身份或挂载行为。
+            >组件、结构分支、自定义指令、局部作用域引用、动态指令参数，以及产生
+            patchFlag 的动态 props、ref 或 hydration 事件会阻止整节点进入静态缓存。
+            <code>scopeId</code> 不会降低 <code>ConstantTypes</code>；DOM 字符串化会把它
+            写进静态 HTML。当前 3.5.41 的 <code>hmr</code> 选项也不参与这段常量分析。
           </div>
           <a
             class="source-link"
@@ -1601,11 +2430,12 @@ _createElementBlock("div", null, [
           <div class="section-head">
             <div>
               <span class="section-no">08 / Codegen</span>
-              <h2>代码生成器是一台可靠打印机</h2>
+              <h2>Codegen 只打印已经定稿的 JS 结构</h2>
             </div>
             <p>
-              generate 按 mode、ssr、inline、sourceMap 建立上下文，再根据
-              RootNode 账本生成序言与函数体。
+              <code>generate()</code> 按 mode、ssr、inline、sourceMap
+              建立上下文，再根据 RootNode 保存的 helper、hoist、组件和指令集合生成
+              序言、资源声明和函数体。
             </p>
           </div>
           <div class="diagram" aria-label="代码生成组成">
@@ -1631,21 +2461,29 @@ _createElementBlock("div", null, [
           <figure class="source-block">
             <figcaption class="source-caption">
               <span
-                ><strong>真实源码</strong
+                ><strong>真实源码 · 删节</strong
                 ><code
                   >packages/compiler-core/src/codegen.ts · generate()</code
                 ></span
               >
               <span class="source-version">Vue 3.5.41</span>
             </figcaption>
-            <pre><code>export function generate(ast: RootNode, options = {}): CodegenResult {
+            <pre><code>export function generate(
+  ast: RootNode,
+  options: CodegenOptions &amp; {
+    onContextCreated?: (context: CodegenContext) =&gt; void
+  } = {},
+): CodegenResult {
   const context = createCodegenContext(ast, options)
-  const { mode, push, prefixIdentifiers, indent, deindent, newline, ssr } =
-    context
+  if (options.onContextCreated) options.onContextCreated(context)
+  const {
+    mode, push, prefixIdentifiers, indent, deindent, newline, scopeId, ssr,
+  } = context
 
   const helpers = Array.from(ast.helpers)
   const hasHelpers = helpers.length &gt; 0
   const useWithBlock = !prefixIdentifiers &amp;&amp; mode !== 'module'
+  const genScopeId = !__BROWSER__ &amp;&amp; scopeId != null &amp;&amp; mode === 'module'
   const isSetupInlined = !__BROWSER__ &amp;&amp; !!options.inline
 
   const preambleContext = isSetupInlined
@@ -1658,55 +2496,86 @@ _createElementBlock("div", null, [
   }
 
   const functionName = ssr ? `ssrRender` : `render`
-  const args = ssr
-    ? ['_ctx', '_push', '_parent', '_attrs']
-    : ['_ctx', '_cache']
+  const args = ssr ? ['_ctx', '_push', '_parent', '_attrs'] : ['_ctx', '_cache']
+  if (!__BROWSER__ &amp;&amp; options.bindingMetadata &amp;&amp; !options.inline) {
+    args.push('$props', '$setup', '$data', '$options')
+  }
+  const signature =
+    !__BROWSER__ &amp;&amp; options.isTS
+      ? args.map(arg =&gt; `${arg}: any`).join(',')
+      : args.join(', ')
 
-  push(isSetupInlined
-    ? `(${args.join(', ')}) =&gt; {`
-    : `function ${functionName}(${args.join(', ')}) {`)
+  if (isSetupInlined) push(`(${signature}) =&gt; {`)
+  else push(`function ${functionName}(${signature}) {`)
   indent()
 
   if (useWithBlock) {
     push(`with (_ctx) {`)
     indent()
     if (hasHelpers) {
-      push(`const { ${helpers.map(aliasHelper).join(', ')} } = _Vue\n`)
+      push(
+        `const { ${helpers.map(aliasHelper).join(', ')} } = _Vue\n`,
+        NewlineType.End,
+      )
       newline()
     }
   }
 
-  // 客户端返回 VNode；SSR codegenNode 自身已包含 _push 语句。
+  // …删去 components/directives、compat filters 与 temps 的输出。
   if (!ssr) push(`return `)
   if (ast.codegenNode) genNode(ast.codegenNode, context)
   else push(`null`)
 
-  // …闭合 with/函数，并返回 code、preamble、ast 与 map。
+  if (useWithBlock) {
+    deindent()
+    push(`}`)
+  }
+  deindent()
+  push(`}`)
+
+  return {
+    ast,
+    code: context.code,
+    preamble: isSetupInlined ? preambleContext.code : ``,
+    map: context.map ? context.map.toJSON() : undefined,
+  }
 }</code></pre>
           </figure>
+          <p class="source-context">
+            摘录只删掉了组件/指令解析、compat filter
+            与临时变量输出；它们位于序言之后、根 <code>genNode()</code>
+            之前。默认客户端签名是
+            <code>(_ctx, _cache)</code>；非 inline 且带 binding metadata
+            时还会追加 <code>$props/$setup/$data/$options</code>。
+          </p>
           <div class="code-walkthrough">
             <article class="code-note">
               <h3>先生成序言</h3>
               <p>
                 module 模式打印 ESM imports，function 模式从全局
                 <code>Vue</code>
-                解构 helper。helpers 来自 transform 的 Set，因此没用到的 helper
-                不会出现。
+                解构 helper。helpers 来自 transform 写回 RootNode 的
+                Set，因此没用到的 helper 不会出现。
               </p>
             </article>
             <article class="code-note">
-              <h3>签名揭示两种目标</h3>
+              <h3>签名先看默认，再看附加分支</h3>
               <p>
-                客户端 render 接收 <code>_ctx/_cache</code> 并返回 VNode；SSR
-                ssrRender 多了 <code>_push/_parent/_attrs</code>，通过副作用输出
-                HTML。
+                默认客户端 render 接收 <code>_ctx/_cache</code> 并返回
+                VNode；SSR ssrRender 改为
+                <code>_ctx/_push/_parent/_attrs</code>，通过
+                <code>_push</code> 输出 HTML。SFC 非 inline 模式还可能加四个
+                binding 参数。
               </p>
             </article>
             <article class="code-note">
-              <h3>with 只服务浏览器运行时编译</h3>
+              <h3><code>with</code> 属于“无前缀 function 模式”</h3>
               <p>
-                构建时可把自由变量改为 <code>_ctx.x</code>；浏览器版不携带 Babel
-                分析成本，只能把模板表达式放进 <code>with (_ctx)</code> 中求值。
+                条件是
+                <code>!prefixIdentifiers &amp;&amp; mode !== 'module'</code
+                >。浏览器运行时编译最常走这条路，但 Node 端直接使用默认 function
+                模式也会走；开启前缀或 module 模式才靠 <code>_ctx.x</code> 避开
+                <code>with</code>。
               </p>
             </article>
             <article class="code-note">
@@ -1719,29 +2588,192 @@ _createElementBlock("div", null, [
               </p>
             </article>
           </div>
-          <div class="grid-2">
-            <article class="card">
-              <h3>module 模式</h3>
-              <pre><code>import { openBlock as _openBlock,
-  createElementBlock as _createElementBlock
-} from "vue"
-
-export function render(_ctx, _cache) { ... }</code></pre>
-            </article>
-            <article class="card">
-              <h3>function / runtime 模式</h3>
-              <pre><code>const _Vue = Vue
-return function render(_ctx, _cache) {
-  with (_ctx) {
-    const { ... } = _Vue
-    return ...
+          <figure class="source-block">
+            <figcaption class="source-caption">
+              <span
+                ><strong>真实源码 · 统一分派器（删节）</strong
+                ><code>codegen.ts · genNode()</code></span
+              >
+              <span class="source-version">Vue 3.5.41</span>
+            </figcaption>
+            <pre><code>function genNode(node: CodegenNode | symbol | string, context: CodegenContext) {
+  if (isString(node)) {
+    context.push(node, NewlineType.Unknown)
+    return
+  }
+  if (isSymbol(node)) {
+    context.push(context.helper(node))
+    return
+  }
+  switch (node.type) {
+    case NodeTypes.ELEMENT:
+    case NodeTypes.IF:
+    case NodeTypes.FOR:
+      __DEV__ &amp;&amp; assert(node.codegenNode != null,
+        `Codegen node is missing for element/if/for node. ` +
+        `Apply appropriate transforms first.`)
+      genNode(node.codegenNode!, context)
+      break
+    case NodeTypes.TEXT:
+      genText(node, context)
+      break
+    case NodeTypes.INTERPOLATION:
+      genInterpolation(node, context)
+      break
+    case NodeTypes.VNODE_CALL:
+      genVNodeCall(node, context)
+      break
+    case NodeTypes.JS_CONDITIONAL_EXPRESSION:
+      genConditionalExpression(node, context)
+      break
+    case NodeTypes.JS_CACHE_EXPRESSION:
+      genCacheExpression(node, context)
+      break
+    // …其余 JS/SSR 节点各交给对应打印器。
   }
 }</code></pre>
+          </figure>
+          <p class="source-context">
+            Element/If/For 在这里不会重新跑模板规则，只会转到 transform 已挂好的
+            <code>codegenNode</code
+            >。开发版若缺少它会直接断言，能很快暴露“忘了安装某个转换”这类插件错误。
+          </p>
+          <div class="callout warn">
+            <strong>主链怎样提前结束：</strong>Parser 默认 <code>onError</code>
+            会抛出并终止编译；Transform 插件若删除当前节点，<code>traverseNode()</code>
+            立即返回，不再递归 children，也不执行该节点已收集的 exitFns；非法 v-for
+            在报告错误后不创建 ForNode。Generate 面对空 Root 会输出
+            <code>null</code>；Element/If/For 已存在却缺少 <code>codegenNode</code>
+            时，开发版断言提示转换器没有装齐。
+          </div>
+          <figure class="source-block">
+            <figcaption class="source-caption">
+              <span
+                ><strong>真实源码 · VNodeCall 参数协议（删节）</strong
+                ><code
+                  >codegen.ts · genVNodeCall() / genNullableArgs()</code
+                ></span
+              >
+              <span class="source-version">Vue 3.5.41</span>
+            </figcaption>
+            <pre><code>if (directives) {
+  push(helper(WITH_DIRECTIVES) + `(`)
+}
+if (isBlock) {
+  push(`(${helper(OPEN_BLOCK)}(${disableTracking ? `true` : ``}), `)
+}
+const callHelper: symbol = isBlock
+  ? getVNodeBlockHelper(context.inSSR, isComponent)
+  : getVNodeHelper(context.inSSR, isComponent)
+push(helper(callHelper) + `(`, NewlineType.None, node)
+genNodeList(
+  genNullableArgs([tag, props, children, patchFlagString, dynamicProps]),
+  context,
+)
+push(`)`)
+if (isBlock) push(`)`)
+if (directives) {
+  push(`, `)
+  genNode(directives, context)
+  push(`)`)
+}
+
+function genNullableArgs(args: any[]): CallExpression['arguments'] {
+  let i = args.length
+  while (i--) {
+    if (args[i] != null) break
+  }
+  return args.slice(0, i + 1).map(arg =&gt; arg || `null`)
+}</code></pre>
+          </figure>
+          <div class="code-walkthrough">
+            <article class="code-note">
+              <h3>普通 VNode 与 block 用不同 helper</h3>
+              <p>
+                <code>isBlock</code> 决定是否先打印
+                <code>openBlock()</code>，以及调用 createVNode 还是
+                createBlock；组件与原生元素又各有一套 helper。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3><code>openBlock(true)</code> 不是随手多传一个参数</h3>
+              <p>
+                <code>disableTracking</code> 为真时打印 true，典型场景是动态
+                v-for Fragment：列表项自己管理动态节点，外层不应把它们全收进同一
+                block。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>中间空参数必须补 null</h3>
+              <p>
+                有 patchFlag 却没有 props/children
+                时，调用仍需保留参数位置；只有末尾连续空值能删。测试直接锁定了
+                <code>createElementVNode("div", null, null, 1)</code>。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>指令包在最外层</h3>
+              <p>
+                有运行时指令时最终形状是
+                <code>withDirectives(vnode, dirs)</code>；若 vnode 本身是
+                block，openBlock/createBlock 的配对仍完整留在内层。
+              </p>
             </article>
           </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>生成分支</th>
+                  <th>序言</th>
+                  <th>函数形状</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>module</td>
+                  <td>从 runtime module 生成 ESM imports，再输出 hoists。</td>
+                  <td>
+                    <code>export function render(...)</code
+                    >；默认启用标识符前缀。
+                  </td>
+                </tr>
+                <tr>
+                  <td>function + 无前缀</td>
+                  <td>
+                    保存 <code>const _Vue = Vue</code>；helper 在 with 内解构。
+                  </td>
+                  <td>
+                    <code>return function render</code> +
+                    <code>with (_ctx)</code>。
+                  </td>
+                </tr>
+                <tr>
+                  <td>function + 前缀</td>
+                  <td>helper 直接在顶层从 runtime global 解构。</td>
+                  <td>没有 with，表达式已是 <code>_ctx.x</code>。</td>
+                </tr>
+                <tr>
+                  <td>setup inline</td>
+                  <td>
+                    独立 CodegenContext 生成并返回 <code>preamble</code>。
+                  </td>
+                  <td>主体是可嵌入 setup 作用域的箭头函数。</td>
+                </tr>
+                <tr>
+                  <td>SSR</td>
+                  <td>客户端 helper 与 server-renderer helper 分开处理。</td>
+                  <td>
+                    <code>ssrRender</code> 不加 return，由 codegenNode 里的
+                    <code>_push</code> 产生副作用。
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
           <p class="prose">
-            CodegenContext 的 <code>push()</code> 同时维护 generated
-            line/column/offset，并按 AST location 写 source map。setup inline
+            开启 source map 时，CodegenContext 的 <code>push()</code> 会同步维护
+            generated line/column/offset，并按 AST location 写映射。setup inline
             模式还把 helper/hoist 序言单独放进 preamble，让 render 闭包能嵌回
             setup 作用域。
           </p>
@@ -1756,36 +2788,43 @@ return function render(_ctx, _cache) {
           <div class="section-head">
             <div>
               <span class="section-no">09 / Reliability</span>
-              <h2>错误码与测试构成行为边界</h2>
+              <h2>哪些行为真的有测试兜底</h2>
             </div>
             <p>
-              测试保护的不只是能否编译，还包括位置、helper 计数、block
-              身份与优化不变量。
+              不能只看测试名猜机制。下面把代表用例拆成输入、动作、断言和它能证明的范围。
             </p>
           </div>
-          <div class="grid-3">
-            <article class="card">
-              <h3>Parser 错误</h3>
-              <p>
-                HTML 标准错误、结束标签、插值/属性/指令边界和 EOF
-                恢复，通常断言精确 location。
-              </p>
-            </article>
-            <article class="card">
-              <h3>Transform 错误</h3>
-              <p>
-                结构指令、v-model、v-slot 的语义限制，以及重复
-                key、不可写表达式和作用域约束。
-              </p>
-            </article>
-            <article class="card">
-              <h3>编译模式错误</h3>
-              <p>
-                浏览器构建不支持 module/prefixIdentifiers，scopeId 与
-                cacheHandlers 也有前置条件。
-              </p>
-            </article>
-          </div>
+          <figure class="source-block">
+            <figcaption class="source-caption">
+              <span
+                ><strong>真实测试 · 错误恢复（删节）</strong
+                ><code>__tests__/parse.spec.ts · invalid html</code></span
+              >
+              <span class="source-version">Vitest</span>
+            </figcaption>
+            <pre><code>test('invalid html', () =&gt; {
+  expect(() =&gt; {
+    baseParse(`&lt;div&gt;\n&lt;span&gt;\n&lt;/div&gt;\n&lt;/span&gt;`)
+  }).toThrow('Element is missing end tag.')
+
+  const spy = vi.fn()
+  const ast = baseParse(`&lt;div&gt;\n&lt;span&gt;\n&lt;/div&gt;\n&lt;/span&gt;`, {
+    onError: spy,
+  })
+
+  expect(spy.mock.calls).toMatchObject([
+    [{ code: ErrorCodes.X_MISSING_END_TAG,
+       loc: { start: { offset: 6, line: 2, column: 1 } } }],
+    [{ code: ErrorCodes.X_INVALID_END_TAG,
+       loc: { start: { offset: 20, line: 4, column: 1 } } }],
+  ])
+  expect(ast).toMatchSnapshot()
+})</code></pre>
+          </figure>
+          <p class="source-context">
+            同一测试同时锁住两条路径：默认处理器确实抛错；换成收集型处理器后，Parser
+            按开放栈恢复并返回 AST，而且两次诊断的位置不同、含义也不同。
+          </p>
           <figure class="source-block">
             <figcaption class="source-caption">
               <span
@@ -1829,62 +2868,328 @@ return function render(_ctx, _cache) {
               <h3>为什么要保留节点引用</h3>
               <p>
                 <code>toBe(c1)</code>
-                检查对象身份，可以防止实现“看似结构相同”却意外克隆未变兄弟。
-                这会影响后续插件保存在节点上的信息。
+                检查对象身份，可以防止实现“看似结构相同”却意外克隆未变兄弟。这会影响后续插件保存在节点上的信息。
               </p>
             </article>
           </div>
+          <figure class="source-block">
+            <figcaption class="source-caption">
+              <span
+                ><strong>真实测试 · 完整表达式作用域用例（合并必要 imports）</strong
+                ><code>__tests__/transforms/transformExpressions.spec.ts</code></span
+              >
+              <span class="source-version">Vitest</span>
+            </figcaption>
+            <pre><code>import {
+  type CompilerOptions,
+  type InterpolationNode,
+  NodeTypes,
+  baseParse as parse,
+  transform,
+} from '../../src'
+import { transformIf } from '../../src/transforms/vIf'
+import { transformExpression } from '../../src/transforms/transformExpression'
+
+function parseWithExpressionTransform(
+  template: string,
+  options: CompilerOptions = {},
+) {
+  const ast = parse(template, options)
+  transform(ast, {
+    prefixIdentifiers: true,
+    nodeTransforms: [transformIf, transformExpression],
+    ...options,
+  })
+  return ast.children[0]
+}
+
+test('should not prefix params of a function expression', () =&gt; {
+  const node = parseWithExpressionTransform(
+    `{{ foo =&gt; foo + bar }}`,
+  ) as InterpolationNode
+  expect(node.content).toMatchObject({
+    type: NodeTypes.COMPOUND_EXPRESSION,
+    children: [
+      { content: `foo` },
+      ` =&gt; `,
+      { content: `foo` },
+      ` + `,
+      { content: `_ctx.bar` },
+    ],
+  })
+})</code></pre>
+          </figure>
+          <p class="source-context">
+            测试主体、helper、输入和断言保持原样；这里只把原文件分散导入的必要名字合并展示。
+            Given 是同时包含箭头函数参数和外部变量的插值；When 是开启前缀模式执行
+            parse + transform；Then 两个 foo 都保持局部名，只有 bar 变成
+            <code>_ctx.bar</code>。它直接证明 Babel 局部作用域与模板
+            <code>identifiers</code> 之外的自由引用才会被前缀化。对应源码是
+            <code>processExpression() → walkIdentifiers()</code> 的
+            <code>needPrefix &amp;&amp; !isLocal</code> 分支。
+          </p>
+          <figure class="source-block">
+            <figcaption class="source-caption">
+              <span
+                ><strong>真实测试 · 主 Demo 的完整管线断言摘录</strong
+                ><code
+                  >__tests__/compile.spec.ts · function mode w/
+                  prefixIdentifiers: true</code
+                ></span
+              >
+              <span class="source-version">Vitest</span>
+            </figcaption>
+            <pre><code>const { code, map } = compile(source, {
+  sourceMap: true,
+  filename: `foo.vue`,
+  prefixIdentifiers: true,
+})
+
+expect(code).toMatchSnapshot()
+expect(map!.sources).toEqual([`foo.vue`])
+expect(map!.sourcesContent).toEqual([source])
+
+const consumer = new SourceMapConsumer(map as RawSourceMap)
+expect(
+  consumer.originalPositionFor(getPositionInCode(code, `_ctx.ok`, `ok`)),
+).toMatchObject(getPositionInCode(source, `ok`, true))
+expect(
+  consumer.originalPositionFor(getPositionInCode(code, `_ctx.list`, `list`)),
+).toMatchObject(getPositionInCode(source, `list`, true))</code></pre>
+          </figure>
+          <p class="source-context">
+            这里的 <code>source</code> 在测试文件顶部定义，包含动态
+            class、插值、v-if/v-else 和 v-for。快照验证最终 JS；source map
+            断言又把生成的 <code>_ctx.ok/_ctx.list</code> 映回模板原标识符，因此
+            Parse 的 loc、Transform 的前缀改写和 Codegen 的 push/mapping
+            三段必须同时正确。
+          </p>
+          <h3>代表测试的证据映射</h3>
           <div class="table-wrap">
             <table>
               <thead>
                 <tr>
-                  <th>测试文件</th>
-                  <th>保护的设计</th>
+                  <th>真实测试</th>
+                  <th>Given</th>
+                  <th>When</th>
+                  <th>Then</th>
+                  <th>Mechanism / Source：证明范围与决定分支</th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
-                  <td>parse.spec.ts</td>
-                  <td>AST、location、EOF/HTML 容错、空白与实体。</td>
-                </tr>
-                <tr>
-                  <td>transform.spec.ts</td>
                   <td>
-                    进入/退出顺序、替换/删除游标、helper 引用计数、根节点选择。
+                    <code>compile.spec.ts</code><br />function mode w/
+                    prefixIdentifiers: true
+                  </td>
+                  <td>同一模板含 class、插值、if/else、for。</td>
+                  <td><code>baseCompile()</code> 开前缀与 source map。</td>
+                  <td>代码匹配快照；生成标识符能映回原模板位置。</td>
+                  <td>
+                    主链真的串通 Parse → Transform →
+                    Generate，不是三个孤立单测拼出来的结论。<br />
+                    <small>Source：compile.ts · baseCompile()</small>
                   </td>
                 </tr>
                 <tr>
-                  <td>transformExpressions.spec.ts</td>
+                  <td><code>parse.spec.ts</code><br />invalid html</td>
                   <td>
-                    自由标识符、局部作用域、Babel/TS 语法、binding metadata。
+                    <code>&lt;div&gt;&lt;span&gt;&lt;/div&gt;&lt;/span&gt;</code
+                    >。
+                  </td>
+                  <td>先用默认 onError，再用 spy 收集错误。</td>
+                  <td>
+                    前者 throw；后者得到缺失标签 + 无效闭标签和恢复后的 AST。
+                  </td>
+                  <td>
+                    开放栈可恢复，但是否继续由 onError 策略决定。<br />
+                    <small>Source：parser.ts · onclosetag() / emitError()</small>
                   </td>
                 </tr>
                 <tr>
-                  <td>transformElement.spec.ts</td>
                   <td>
-                    VNode、props 合并、patchFlag、block、动态组件与运行时指令。
+                    <code>parse.spec.ts</code><br />should reset inRCDATA state
+                  </td>
+                  <td>先解析残缺的 SFC 根块 <code>&lt;Foo&gt;</code>。</td>
+                  <td>紧接着再解析普通 <code>{ foo }</code>。</td>
+                  <td>第二轮不抛错。</td>
+                  <td>
+                    <code>tokenizer.reset()</code> 确实阻止 RCDATA
+                    状态跨任务泄漏。<br />
+                    <small>Source：parser.ts · reset() / baseParse()</small>
                   </td>
                 </tr>
                 <tr>
-                  <td>cacheStatic.spec.ts</td>
-                  <td>提升边界与 HMR、组件、作用域等限制。</td>
+                  <td>
+                    <code>transform.spec.ts</code><br />context.removeNode
+                  </td>
+                  <td>span、含 text 的 div、span 三个兄弟。</td>
+                  <td>插件在进入 div 时调用 <code>removeNode()</code>。</td>
+                  <td>
+                    两个 span 身份不变；div 的 text 不遍历；后一个 span
+                    没被跳过。
+                  </td>
+                  <td>
+                    删除会终止当前子树，并通过回退游标补偿数组左移。<br />
+                    <small>Source：transform.ts · removeNode() / traverseChildren()</small>
+                  </td>
                 </tr>
                 <tr>
-                  <td>codegen.spec.ts</td>
-                  <td>helper 序言、生成模式、source map 与 JS AST 打印。</td>
+                  <td><code>vIf.spec.ts</code><br />codegen / basic v-if</td>
+                  <td><code>&lt;div v-if="ok"/&gt;</code>。</td>
+                  <td>运行 if、element 等转换并 generate。</td>
+                  <td>
+                    真分支带 key 0；假分支是
+                    <code>CREATE_COMMENT</code>；代码匹配快照。
+                  </td>
+                  <td>
+                    结构替换与退出阶段汇总共同生成完整条件表达式。<br />
+                    <small>Source：transforms/vIf.ts · processIf()</small>
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <code>vFor.spec.ts</code><br />should prefix id outside of
+                    v-for
+                  </td>
+                  <td>
+                    内层声明 <code>i</code>，循环之后兄弟插值也写
+                    <code>i</code>。
+                  </td>
+                  <td>开启 <code>prefixIdentifiers</code> 转换。</td>
+                  <td>循环外的 i 变成 <code>_ctx.i</code>。</td>
+                  <td>
+                    v-for exit 确实撤销 identifier
+                    计数，局部变量没有泄漏给兄弟。<br />
+                    <small>Source：transforms/vFor.ts · processFor() exit</small>
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <code>transformExpressions.spec.ts</code><br />should not
+                    prefix params of a function expression
+                  </td>
+                  <td><code>{{ foo =&gt; foo + bar }}</code>。</td>
+                  <td>开启 prefixIdentifiers 执行 parse + transform。</td>
+                  <td>参数及局部引用 foo 不变；自由引用 bar 变为 _ctx.bar。</td>
+                  <td>
+                    JS 内层局部作用域不会被误认成组件上下文。<br />
+                    <small>Source：transformExpression.ts · processExpression() / walkIdentifiers()</small>
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <code>transformElement.spec.ts</code><br />CLASS + STYLE +
+                    PROPS
+                  </td>
+                  <td>动态 class、style、foo、baz 同处一个 div。</td>
+                  <td><code>buildProps()</code> 分析属性。</td>
+                  <td>
+                    flag 为 CLASS | STYLE | PROPS；dynamicProps 只有 foo/baz。
+                  </td>
+                  <td>
+                    class/style 走专用位，普通动态键才进入精确 props 名单。
+                    <br /><small>Source：transformElement.ts · buildProps() / analyzePatchFlag()</small>
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <code>cacheStatic.spec.ts</code><br />should NOT cache root node
+                  </td>
+                  <td>单个静态根 <code>&lt;div/&gt;</code>。</td>
+                  <td>开启 <code>hoistStatic</code> 运行 cacheStatic。</td>
+                  <td>根保持 VNodeCall，cached 长度为 0。</td>
+                  <td>
+                    组件根可能接收 attrs，不能固定为实例缓存。<br />
+                    <small>Source：cacheStatic.ts · cacheStatic() / getSingleElementRoot()</small>
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <code>cacheStatic.spec.ts</code><br />cache single children array
+                  </td>
+                  <td>单元素根 div（根本身不缓存）下只有一个静态 span。</td>
+                  <td>开启 <code>hoistStatic</code> 运行 cacheStatic。</td>
+                  <td>整组 children 只占一个 cache 槽，生成结果读取时展开数组。</td>
+                  <td>
+                    整组缓存减少槽位；浅拷贝隔离 runtime 对 VNode 数组的写入。<br />
+                    <small>Source：cacheStatic.ts · walk() / getCacheExpression()</small>
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <code>codegen.spec.ts</code><br />VNodeCall / as block
+                  </td>
+                  <td>
+                    带 props/children 且 <code>isBlock=true</code> 的
+                    VNodeCall。
+                  </td>
+                  <td><code>generate()</code> 打印该根。</td>
+                  <td>
+                    快照是
+                    <code>(_openBlock(), _createElementBlock(...))</code>。
+                  </td>
+                  <td>
+                    <code>genVNodeCall()</code> 保持 openBlock 与 block helper
+                    成对输出。<br />
+                    <small>Source：codegen.ts · genVNodeCall()</small>
+                  </td>
                 </tr>
               </tbody>
             </table>
           </div>
           <div class="callout">
             <strong>建议调试顺序：</strong>先看 parse AST，再看 transform 后的
-            codegenNode 和 RootNode 账本，最后看 code
+            codegenNode 和 RootNode 资源集合，最后看 code
             字符串。多数“为什么这样生成”的答案在 transform，不在 codegen。
+          </div>
+          <div class="callout warn">
+            <strong>未覆盖范围：</strong>本页未逐项展开 WHATWG
+            错误矩阵、v-slot/v-model/v-on/v-memo/v-once 的所有组合、compat
+            分支、每一种 JS/SSR codegen 节点和 source-map 边角。DOM 的
+            namespace/stringifyStatic、SFC 预处理与 binding 来源、SSR transform
+            也不属于本页主线；后续模块页接着讲。
+          </div>
+          <h3>主线回看</h3>
+          <div class="callout">
+            <ol>
+              <li>
+                Parser 不是“先产 token 数组再建树”，而是 tokenizer 用 offset
+                回调驱动组装；标签栈负责闭合与恢复，默认错误处理仍会直接 throw。
+              </li>
+              <li>
+                Transform 的关键是 enter 建环境、children 先完成、exit 再汇总；
+                <code>v-if/v-for</code> 会改树，不能当成普通 props。
+              </li>
+              <li>
+                TransformContext 保存本轮转换状态，结束时把
+                helper、资产、hoist、cache 和 codegenNode 固化到
+                RootNode；generate 只读取这份已经定稿的结果。
+              </li>
+              <li>
+                Codegen
+                按节点类型打印，不重新理解模板。module/function/inline/SSR
+                改变序言和函数外壳，VNodeCall 自身已经带齐 block、flag、动态
+                props 与指令协议。
+              </li>
+            </ol>
           </div>
           <a
             class="source-link"
             href="../../../vue/packages/compiler-core/__tests__/parse.spec.ts"
             >compiler-core tests</a
+          >
+          ·
+          <a
+            class="source-link"
+            href="../../../vue/packages/compiler-core/__tests__/compile.spec.ts"
+            >compile.spec.ts</a
+          >
+          ·
+          <a
+            class="source-link"
+            href="../../../vue/packages/compiler-core/__tests__/codegen.spec.ts"
+            >codegen.spec.ts</a
           >
         </section>
 

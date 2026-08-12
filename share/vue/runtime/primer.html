@@ -24,7 +24,7 @@
           </p>
           <div class="hero-meta">
             <span>建议阅读 15 分钟</span><span>源码共同词汇</span
-            ><span>下一站：完整按钮调用链</span>
+            ><span>下一站：runtime-core 架构</span>
           </div>
         </div>
 
@@ -41,10 +41,9 @@
             <strong>同一个组件有两个明确输入变体：</strong>本页、01–03 与 05
             核心专题使用 <code>@vue/runtime-test</code>，在一个同步调用栈中连续
             <code>triggerEvent</code> 两次，观察 0 → 2 与 job
-            去重；下一章“完整按钮调用链” 先用浏览器宿主真实单击一次，观察 0 → 1
-            的端到端路径。组件角色与更新机制相同，
-            只有宿主和输入次数不同，后文不会把两组断言混用。04 Diff 章则改用
-            keyed 列表， 专门证明节点复用、移动与 LIS。
+            去重；跨包完整调用链改用浏览器宿主真实单击一次，观察 0 → 1。
+            组件角色与更新机制相同，只有宿主和输入次数不同。04 Diff 章改用 keyed
+            列表，因为 Counter 本身不会触发节点移动与 LIS。
           </div>
           <div class="before-after">
             <div class="scene-window">
@@ -154,7 +153,7 @@
                 <tr>
                   <td><strong>Diff</strong></td>
                   <td>比较新旧列表，找出复用、新增、删除和移动</td>
-                  <td>Counter 不进列表 Diff；Diff 页会诚实换 keyed 列表</td>
+                  <td>Counter 不进列表 Diff；Diff 页改用 keyed 列表</td>
                 </tr>
                 <tr>
                   <td><strong>Scheduler</strong></td>
@@ -223,9 +222,9 @@
             </div>
           </div>
           <p>
-            这六步就是整套指南的执行主线。先到“按钮完整调用链”读完整
-            Demo、测试和 总流程，再依次读架构、组件、Renderer、Diff、调度；Diff
-            会明确换用真正会进入 keyed diff 的列表输入。
+            这六步是后续章节共同的更新主线。接下来先在 runtime-core 中拆开组件、
+            Renderer、Diff 与调度，再到 runtime-dom 看“修改宿主”具体怎样落到浏览器；
+            最后的完整调用链会把六站重新接成一个 Counter。
           </p>
         </section>
 
@@ -252,8 +251,8 @@
           <h2>现在应该怎样读后续章节</h2>
           <div class="sequence">
             <div class="sequence-item">
-              <strong>先读每章的“先说人话”</strong
-              ><br />只建立场景、输入和结果，不要求记源码名。
+              <strong>先确认场景、输入和结果</strong
+              ><br />先知道页面哪里变了，不急着记函数名。
             </div>
             <div class="sequence-item">
               <strong>再看图和演示</strong
@@ -264,27 +263,26 @@
               安排更新，renderer = 计算并执行页面修改。
             </div>
             <div class="sequence-item">
-              <strong>最后进入同一用例的源码链</strong><br />先读完整 Demo
-              与仓库测试，再按流程图逐站核对源码，不在函数清单间跳跃。
+              <strong>最后沿同一用例进入源码</strong><br />按流程图追函数、状态变化和
+              仓库测试，不在互不相干的函数清单间跳跃。
             </div>
           </div>
           <div class="callout">
             核心主线顺序：<strong
-              >primer → 按钮完整调用链 → architecture → component → renderer →
-              diff → scheduler</strong
-            >。这是主线的学习顺序；真实点击时 scheduler
-            在组件重渲染前运行，完整调用链章会先把执行顺序画清。主线完成后，再按页尾导航继续
-            06–10 的 hydration、内置组件、runtime-dom、演进与测试实践章。
+              >primer → runtime-core（architecture → component → renderer → diff →
+              scheduler → hydration → builtins）→ runtime-dom → 完整调用链</strong
+            >。章节顺序负责逐层建立概念；完整调用链中的时序图会还原真实执行顺序，
+            其中 scheduler 发生在组件重渲染之前。
           </div>
           <p class="reader-check">
-            <strong>证据边界：</strong>本页只建立共同词汇与路线，不证明 Vue
-            内部实现。机制证据从下一章的完整用例开始，并在后续各专题页以“用例→源码→测试→图”表收口。
+            本页只建立共同词汇和路线。下一章开始进入源码；每个关键结论都会落到
+            具体函数、状态变化和仓库测试。
           </p>
         </section>
 
         <nav class="page-nav" aria-label="章节翻页">
           <a href="index.html"><span>上一页</span>← 总览与使用方式</a>
-          <a href="integration.html"><span>下一章</span>按钮完整调用链 →</a>
+          <a href="architecture.html"><span>下一章</span>runtime-core 架构 →</a>
         </nav>
       </main>
 

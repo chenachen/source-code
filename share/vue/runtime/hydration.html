@@ -193,9 +193,8 @@
               各有自己的消费规则。
             </div>
             <div class="sequence-item">
-              <strong>清理多余节点</strong><br />根 VNode
-              消费后仍有兄弟节点，说明服务端输出更多；除非允许 children
-              mismatch，否则移除并警告。
+              <strong>子树各自推进游标</strong><br />Element children、Fragment
+              等分支会接住 <code>hydrateNode</code> 返回的下一个兄弟并处理各自范围内的多余节点；根入口本身不做通用尾节点扫描。
             </div>
             <div class="sequence-item">
               <strong>提交水合副作用</strong><br />执行 post-flush 生命周期与
@@ -220,6 +219,28 @@ function hydrateNode(node, vnode): Node | null {
             DOM。组件可能渲染一个元素，也可能是 Fragment；Suspense 可能当前展示
             fallback；调用方只需接住统一游标。
           </p>
+          <div class="callout warm">
+            <strong>根入口的边界：</strong><code>hydrate()</code> 调用
+            <code>hydrateNode(container.firstChild, vnode)</code> 后没有接住返回值，因此不能据此推出“根 VNode 后的额外 sibling 会被统一删除”。
+            多余节点清理是 <code>hydrateElement</code>、Fragment 等具体范围的职责；根容器额外兄弟是另一条边界，不能套用 element children 的保证。
+          </div>
+          <pre data-source-file="vue/packages/runtime-core/src/hydration.ts"><code>  const hydrate: RootHydrateFunction = (vnode, container) =&gt; {
+    if (!container.hasChildNodes()) {
+      ;(__DEV__ || __FEATURE_PROD_HYDRATION_MISMATCH_DETAILS__) &amp;&amp;
+        warn(
+          `Attempting to hydrate existing markup but container is empty. ` +
+            `Performing full mount instead.`,
+        )
+      patch(null, vnode, container)
+      flushPostFlushCbs()
+      container._vnode = vnode
+      return
+    }
+
+    hydrateNode(container.firstChild!, vnode, null, null, null)
+    flushPostFlushCbs()
+    container._vnode = vnode
+  }</code></pre>
         </section>
 
         <section class="article-section prose" id="node-matrix">
@@ -263,8 +284,8 @@ function hydrateNode(node, vnode): Node | null {
                 </tr>
                 <tr>
                   <td><strong>Element</strong></td>
-                  <td>tagName 与 namespace</td>
-                  <td>补事件/动态属性；递归水合 children</td>
+                  <td>DOM nodeType 与 tagName</td>
+                  <td>推导 namespace 上下文，补事件/动态属性；递归水合 children</td>
                   <td>tag、文本、class/style/attr 不同</td>
                 </tr>
                 <tr>
@@ -466,7 +487,7 @@ patch(null, vnode, container, next, ...)</code></pre>
                 <tr>
                   <td><strong>SVG/MathML</strong></td>
                   <td>只按 HTML tagName 判断</td>
-                  <td>把 namespace 作为身份与 children 上下文的一部分</td>
+                  <td>tagName 负责当前 Element 的匹配；namespace 继续约束属性与 children 的宿主语义</td>
                   <td>节点被错误替换，属性语义失真</td>
                 </tr>
                 <tr>
@@ -490,7 +511,7 @@ patch(null, vnode, container, next, ...)</code></pre>
           <h2>懒水合：推迟的是组件认领，不是服务端可见内容</h2>
           <p>
             Vue 3.5 的异步组件可配置 hydration strategy。HTML
-            仍由服务端输出，页面也能展示；客户端只在条件满足时创建并水合对应组件，从而把启动成本挪出首屏关键路径。
+            仍由服务端输出，页面也能展示。客户端会先创建异步 wrapper；若组件尚未解析，还会先执行 loader。loader resolve 后才注册 hydration strategy，条件触发时再认领内部组件的 SSR DOM。它推迟的是内部组件水合，不是 wrapper 创建，也不是异步模块下载。
           </p>
           <div class="table-wrap">
             <table>
@@ -536,22 +557,55 @@ patch(null, vnode, container, next, ...)</code></pre>
               </tbody>
             </table>
           </div>
-          <div class="sequence">
-            <div class="sequence-item">
-              <strong>定位待水合 DOM 范围</strong><br />异步组件 VNode
-              保存起点；策略可遍历此范围观察元素或绑定事件。
+          <div
+            class="flow"
+            role="img"
+            aria-label="异步组件从 wrapper 创建、loader 解析、注册水合策略、触发到水合的状态图，并包含已更新和已卸载旁路"
+          >
+            <div class="flow-step">
+              <span class="flow-index">01</span
+              ><span class="flow-copy"><strong>AsyncComponentWrapper 已创建</strong
+                ><small>组件实例和外层 render effect 已存在，SSR DOM 仍未由内部组件认领。</small></span
+              ><span class="flow-file">__asyncHydrate(el, instance, hydrate)</span>
             </div>
-            <div class="sequence-item">
-              <strong>注册触发器并返回清理函数</strong
-              ><br />组件可能在触发前被父树卸载，Observer、媒体监听和事件必须撤销。
+            <div class="flow-join"></div>
+            <div class="flow-step">
+              <span class="flow-index">02</span
+              ><span class="flow-copy"><strong>resolvedComp ? 直接继续 : load()</strong
+                ><small>未解析时先启动 loader；resolve 后还要检查 instance 未卸载。</small></span
+              ><span class="flow-file">load().then(...doHydrate)</span>
             </div>
-            <div class="sequence-item">
-              <strong>加载组件</strong><br />异步 loader
-              完成后，还要确认当前实例仍存活、占位 DOM 没被其他更新替换。
+            <div class="flow-join"></div>
+            <div class="flow-step">
+              <span class="flow-index">03</span
+              ><span class="flow-copy"><strong>注册 hydration strategy</strong
+                ><small>策略拿到 performHydrate 和 DOM 范围遍历器；teardown 挂到 beforeUnmount。</small></span
+              ><span class="flow-file">idle / visible / media / interaction</span>
             </div>
-            <div class="sequence-item">
-              <strong>执行 hydrate</strong
-              ><br />认领服务端节点；交互策略随后重放原事件，让用户第一次操作仍生效。
+            <div class="flow-join"></div>
+            <div class="flow-step">
+              <span class="flow-index">04</span
+              ><span class="flow-copy"><strong>条件触发 → performHydrate</strong
+                ><small>仍连在 DOM、且等待期间没有被父更新接管，才执行 hydrate。</small></span
+              ><span class="flow-file">hydrate()</span>
+            </div>
+          </div>
+          <div class="branch-grid">
+            <div class="branch">
+              <strong>父树先更新</strong
+              ><span><code>beforeUpdate</code> 把 <code>patched</code> 置 true；后续策略触发只警告并跳过过期水合，客户端 patch 已接管。</span>
+            </div>
+            <div class="branch">
+              <strong>loader 期间卸载</strong
+              ><span><code>instance.isUnmounted</code> 阻止策略注册；若策略已经注册，<code>beforeUnmount</code> 执行 teardown。</span>
+            </div>
+            <div class="branch">
+              <strong>节点已断开</strong
+              ><span>起点原本连接但触发时不再 <code>isConnected</code>，或已无 parentNode，直接退出。</span>
+            </div>
+            <div class="branch">
+              <strong>正常触发</strong
+              ><span>认领服务端节点；interaction 策略还会重放最初事件，避免用户第一次点击被吞掉。</span>
             </div>
           </div>
           <div class="callout warm">
@@ -559,10 +613,116 @@ patch(null, vnode, container, next, ...)</code></pre>
             props、移动节点或直接卸载。实现必须以“触发时的最新 vnode 与真实
             DOM”继续，而不能闭包捕获旧输入。
           </div>
+
+          <details class="source-layer">
+            <summary>连续源码：loader → strategy → trigger，以及 patched/unmounted/disconnected 旁路</summary>
+            <div>
+              <pre data-source-file="vue/packages/runtime-core/src/apiAsyncComponent.ts"><code>    __asyncHydrate(el, instance, hydrate) {
+      // 延迟水合等待期间组件可能已被父级 patch 或节点已被移除。两种情况下都不能再
+      // 用旧 SSR DOM 执行 hydrate，否则会覆盖新状态或操作脱离文档的节点。
+      const wasConnected = el.isConnected
+      let patched = false
+      ;(instance.bu || (instance.bu = [])).push(() =&gt; (patched = true))
+      const performHydrate = () =&gt; {
+        // 组件已在延迟期间更新，说明客户端渲染已接管，跳过过期水合。
+        if (patched) {
+          if (__DEV__) {
+            warn(
+              `Skipping lazy hydration for component '${getComponentName(resolvedComp!) || resolvedComp!.__file}': ` +
+                `it was updated before lazy hydration performed.`,
+            )
+          }
+          return
+        }
+        if (!el.parentNode || (wasConnected &amp;&amp; !el.isConnected)) return
+        hydrate()
+      }
+      const doHydrate = hydrateStrategy
+        ? () =&gt; {
+            // 策略返回的 teardown（如事件监听器/IntersectionObserver）挂到
+            // beforeUnmount，组件未等到激活便卸载时也能释放外部资源。
+            const teardown = hydrateStrategy(performHydrate, cb =&gt;
+              forEachElement(el, cb),
+            )
+            if (teardown) {
+              ;(instance.bum || (instance.bum = [])).push(teardown)
+            }
+          }
+        : performHydrate
+      if (resolvedComp) {
+        doHydrate()
+      } else {
+        load().then(() =&gt; !instance.isUnmounted &amp;&amp; doHydrate())
+      }</code></pre>
+            </div>
+          </details>
+
+          <h3>浏览器测试把三条时序分别锁住</h3>
+          <p>
+            idle case 明确先手动 resolve loader，再等待 idle hydration；media case
+            证明触发前发生 patch 时会跳过旧水合；custom teardown 则证明未触发便卸载时会释放策略资源。
+          </p>
+          <details class="source-layer">
+            <summary>e2e · loader 顺序、patched 旁路与 teardown</summary>
+            <div>
+              <pre data-source-file="vue/packages/vue/__tests__/e2e/hydrationStrategies.spec.ts"><code>  test('idle', async () =&gt; {
+    const messages: string[] = []
+    page().on('console', e =&gt; messages.push(e.text()))
+
+    await goToCase('idle')
+    // not hydrated yet
+    expect(await page().evaluate(() =&gt; window.isHydrated)).toBe(false)
+    // trigger loader
+    await page().evaluate(() =&gt; window.resolveLoader())
+    // wait for hydration
+    await page().waitForFunction(() =&gt; window.isHydrated)
+    // assert message order: hydration should happen after already queued main thread work
+    expect(messages.slice(1)).toMatchObject(['resolve', 'busy', 'hydrated'])
+    await assertHydrationSuccess()
+  })</code></pre>
+              <pre data-source-file="vue/packages/vue/__tests__/e2e/hydrationStrategies.spec.ts"><code>  test('media query (patched before hydration)', async () =&gt; {
+    const spy = vi.fn()
+    const currentPage = page()
+    currentPage.on('pageerror', spy)
+
+    const warn: any[] = []
+    currentPage.on('console', e =&gt; warn.push(e.text()))
+
+    await goToCase('media')
+    await page().waitForFunction(() =&gt; window.isRootMounted)
+    expect(await page().evaluate(() =&gt; window.isHydrated)).toBe(false)
+
+    // patch
+    await page().evaluate(() =&gt; (window.show.value = false))
+    await click('button')
+    expect(await text('button')).toBe('1')
+
+    // resize
+    await page().setViewport({ width: 400, height: 600 })
+    await page().waitForFunction(() =&gt; window.isHydrated)
+    await assertHydrationSuccess('2')
+
+    expect(spy).toBeCalledTimes(0)
+    currentPage.off('pageerror', spy)
+    expect(
+      warn.some(w =&gt; w.includes('Skipping lazy hydration for component')),
+    ).toBe(true)
+  })</code></pre>
+              <pre data-source-file="vue/packages/vue/__tests__/e2e/hydrationStrategies.spec.ts"><code>  test('custom teardown', async () =&gt; {
+    await goToCase('custom')
+    await page().waitForFunction(() =&gt; window.isRootMounted)
+    expect(await page().evaluate(() =&gt; window.isHydrated)).toBe(false)
+    await page().evaluate(() =&gt; (window.show.value = false))
+    expect(await text('#app')).toBe('off')
+    expect(await page().evaluate(() =&gt; window.isHydrated)).toBe(false)
+    expect(await page().evaluate(() =&gt; window.teardownCalled)).toBe(true)
+  })</code></pre>
+            </div>
+          </details>
         </section>
 
         <section class="article-section prose" id="hydration-proof">
-          <h2>手把手证据链：文本失配到底怎样被修正</h2>
+          <h2>沿测试和源码看文本失配怎样被修正</h2>
           <p>
             这一节只跟一个输入：服务器交付
             <code>&lt;div&gt;foo&lt;/div&gt;</code>， 客户端首屏 VNode 却要求
@@ -682,7 +842,7 @@ describe('SSR hydration', () =&gt; {
             </p>
           </div>
 
-          <h3>2. 决定性连续源码</h3>
+          <h3>2. 对应的完整源码片段</h3>
           <p>
             下段是
             <code>packages/runtime-core/src/hydration.ts</code> 连续原文。
@@ -841,9 +1001,9 @@ pnpm vitest packages/vue/__tests__/e2e/hydrationStrategies.spec.ts</code></pre>
         </section>
 
         <section class="article-section prose" id="evidence-matrix">
-          <h2>本页证据表：用例 → 源码 → 测试 → 图</h2>
+          <h2>每种水合情况去哪里核对</h2>
           <p class="source-note">
-            本轮实跑：Node v24.5.0，<code>hydration.spec.ts</code> 整文件 122
+            固定版本实跑：Node v24.5.0，<code>hydration.spec.ts</code> 整文件 122
             tests passed。
           </p>
           <div class="table-wrap">
@@ -851,7 +1011,7 @@ pnpm vitest packages/vue/__tests__/e2e/hydrationStrategies.spec.ts</code></pre>
               <thead>
                 <tr>
                   <th>用例</th>
-                  <th>决定性源码</th>
+                  <th>对应源码</th>
                   <th>仓库测试</th>
                   <th>同用例图</th>
                 </tr>
@@ -880,16 +1040,15 @@ pnpm vitest packages/vue/__tests__/e2e/hydrationStrategies.spec.ts</code></pre>
                   </td>
                 </tr>
                 <tr>
-                  <td>结构失配 / 多余 children / 懒水合提前卸载</td>
+                  <td>结构失配 / element 多余 children / 懒水合竞态</td>
                   <td>
-                    <code>handleMismatch</code>、<code>remove(cur)</code>、策略
-                    cleanup
+                    <code>handleMismatch</code>、<code>remove(cur)</code>、<code>__asyncHydrate</code>
                   </td>
                   <td>
                     同文件 <code>complete mismatch</code>、<code
                       >too many children</code
-                    >
-                    及 hydration strategies tests
+                    >；<code>vue/__tests__/e2e/hydrationStrategies.spec.ts</code>
+                    的 idle、patched-before-hydration、custom teardown
                   </td>
                   <td>
                     <a href="#mismatch">失配恢复分支</a>、<a href="#lazy"

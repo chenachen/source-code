@@ -5,13 +5,12 @@
       items: [
         ['index.html', '总览与使用方式', '建立完整学习地图'],
         ['primer.html', '零基础先修课', '先懂页面如何发生变化'],
-        ['integration.html', '按钮完整调用链', '同一用例贯穿真实源码'],
-        ['architecture.html', '为什么要分层', 'core 与浏览器如何分工'],
       ],
     },
     {
       title: 'runtime-core',
       items: [
+        ['architecture.html', '为什么要分层', '先认清 core 与宿主边界'],
         ['component.html', '组件怎样活起来', '定义、实例与生命周期'],
         ['renderer.html', '页面该改哪里', '创建、更新、移动、离开'],
         ['diff.html', '列表怎样少动 DOM', 'key、复用、LIS、移动'],
@@ -25,7 +24,13 @@
       items: [['runtime-dom.html', '浏览器怎样执行', '属性、事件、输入与动画']],
     },
     {
-      title: '串联与实践',
+      title: '两层如何接起来',
+      items: [
+        ['integration.html', '按钮完整调用链', '从 renderer 构造走到 DOM 提交'],
+      ],
+    },
+    {
+      title: '演进与实践',
       items: [
         ['evolution.html', '真实问题与演进', '从用户故障理解历史'],
         ['testing.html', '怎样证明更新正确', '结果、身份、顺序、恢复'],
@@ -58,7 +63,7 @@
           <span class="site-brand-mark">V</span>
           <span class="site-brand-copy">
             <strong>Vue Runtime 内核解剖</strong>
-            <span>完整用例贯穿，真实源码逐站核对 · v3.5.41</span>
+            <span>从 runtime-core 到 runtime-dom，再用一个 Counter 串起来 · v3.5.41</span>
           </span>
         </a>
         <div class="header-actions">
@@ -199,7 +204,7 @@
           ['b', '回复邮件', ''],
           ['c', '学习 Vue', ''],
         ],
-        text: '目标是基准三项。每个 li 后面的 DOM 编号代表真实节点身份。',
+        text: '目标顺序是 a、b、c。每个 li 后面的 DOM 编号代表节点身份。',
       },
       append: {
         items: [
@@ -208,7 +213,7 @@
           ['c', '学习 Vue', ''],
           ['d', '跑步', 'new'],
         ],
-        text: '从基准列表切到这里时，只需在末尾创建 key=d。',
+        text: '目标顺序是 a、b、c、d。',
       },
       reorder: {
         items: [
@@ -216,7 +221,7 @@
           ['a', '买牛奶', ''],
           ['b', '回复邮件', ''],
         ],
-        text: '从基准列表切到这里时，key=c 的原节点会移动到最前。',
+        text: '目标顺序是 c、a、b。',
       },
       replace: {
         items: [
@@ -224,7 +229,7 @@
           ['d', '跑步', 'new'],
           ['c', '学习 Vue', ''],
         ],
-        text: '从基准列表切到这里时，删除 key=b、创建 key=d，其余节点复用。',
+        text: '目标顺序是 a、d、c。',
       },
     }
 
@@ -297,7 +302,7 @@
       if (explanation) {
         const summarize = (label, values) =>
           `${label} ${values.length}${values.length ? `：${values.join('、')}` : ''}`
-        explanation.textContent = `${current.text} 本次真实 DOM 操作：${[
+        explanation.textContent = `${current.text} 这段教学模拟本次执行的 DOM 操作：${[
           summarize('复用', operations.reuse),
           summarize('创建', operations.create),
           summarize('移动', operations.move),
@@ -325,7 +330,8 @@
     button.className = 'copy-code'
     button.textContent = '复制'
     button.addEventListener('click', async () => {
-      const text = block.innerText.replace(/^复制\s*/, '')
+      const code = block.querySelector('code')
+      const text = code?.innerText || ''
       try {
         await navigator.clipboard.writeText(text)
         button.textContent = '已复制'

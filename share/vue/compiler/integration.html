@@ -43,11 +43,12 @@
         <p class="rail-title">端到端串联</p>
         <nav>
           <a href="#content">案例目标</a><a href="#source">示例 SFC</a
-          ><a href="#parse">阶段一：切分</a><a href="#script">阶段二：脚本</a
-          ><a href="#template">阶段三：模板</a><a href="#style">阶段四：样式</a
-          ><a href="#assemble">阶段五：组装</a><a href="#ssr">SSR 分支</a
-          ><a href="#hmr">增量编译</a><a href="#trace">问题追踪法</a
-          ><a href="#cases">三个缩小案例</a>
+          ><a href="#handoff">总数据流</a><a href="#parse">阶段一：切分</a
+          ><a href="#script">阶段二：脚本</a><a href="#template">阶段三：模板</a
+          ><a href="#style">阶段四：样式</a><a href="#assemble">阶段五：组装</a
+          ><a href="#ssr">SSR 分支</a><a href="#hmr">增量编译</a
+          ><a href="#trace">问题追踪法</a><a href="#cases">三个缩小案例</a
+          ><a href="#evidence">证据闭环</a>
         </nav>
         <p class="rail-note">本页目标<br />把四个模块<br />放回同一条链</p>
       </aside>
@@ -68,11 +69,14 @@
         </div>
 
         <div class="reading-contract">
-          <strong>这一章负责“接线”</strong>
+          <strong>本章说明四个入口怎样传递数据</strong>
           <p>
-            每个模块章已经解释各自机制；这里再直接贴出四个入口的真实交接代码，
-            然后用同一份 SFC 说明数据怎样从 descriptor 流到
-            script/template/style，最后分叉成客户端与 SSR 协议。
+            每个模块章已经解释各自机制；这里把四个入口放回同一条链。先说清一个容易误会的边界：<code
+              >parse()</code
+            >
+            不会自动接着编译三个 block。构建工具从 descriptor
+            取出内容和元数据，再分别调用 script/template/style
+            API，最后组装它们的返回值。
           </p>
         </div>
 
@@ -101,8 +105,20 @@ if (ctx.propsDestructureDecl) {
 for (const key in setupBindings) {
   ctx.bindingMetadata[key] = setupBindings[key]
 }
+// 返回给调用方；非 inline 模式下，调用方负责把 bindings 交给模板编译。
+return {
+  ...scriptSetup,
+  bindings: ctx.bindingMetadata,
+  imports: ctx.userImports,
+  content,
+  map,
+  scriptAst: scriptAst?.body,
+  scriptSetupAst: scriptSetupAst?.body,
+  deps: ctx.deps ? [...ctx.deps] : undefined,
+}
 
-// compiler-sfc/src/compileTemplate.ts：模板目标只在这里分叉。
+// compiler-sfc/src/compileTemplate.ts：接收调用方准备好的 compilerOptions，
+// 模板目标在这里分叉。
 const defaultCompiler = ssr ? CompilerSSR : CompilerDOM
 compiler = compiler || defaultCompiler
 let { code, ast, preamble, map } = compiler.compile(inAST || source, {
@@ -170,43 +186,45 @@ ssrCodegenTransform(ast, options)
 return generate(ast, options)</code></pre>
         </figure>
         <p class="source-context">
-          可执行语句来自四个当前文件；“……”只表示从原数组或对象中裁掉的连续条目。
-          这里的目的不是伪造一个能独立运行的新函数，而是把模块之间真正传递的数据并排展示；
-          各入口的完整上下文已在对应模块页展开。
+          可执行语句来自四个当前文件；“……”表示从原数组或对象中裁掉的连续条目。这里把模块之间传递的数据并排展示，各入口的上下文在对应模块页展开。
         </p>
         <div class="code-walkthrough">
           <article class="code-note">
-            <h3>descriptor 是所有分支的共同输入</h3>
+            <h3>descriptor 是三条分支的数据源</h3>
             <p>
-              script/template/style 不是各自重新从文本里猜 block；它们读同一个
-              descriptor 的 content、loc、AST、cssVars 与 scoped
-              标志，因此可以共享 scope id 和 source map 坐标。
+              <code>compileScript()</code> 直接接收 descriptor。调用方把
+              template 的 content/AST/map、bindings、scoped/slotted，以及 SSR 所需的
+              cssVars 传给 <code>compileTemplate()</code>；每个 style block 的
+              content/map/scoped 与同一 id 则传给 <code>compileStyle()</code>。
+              后两个 API 都不直接接收 descriptor，<code>compileStyle()</code> 也不消费
+              <code>descriptor.cssVars</code>。
             </p>
           </article>
           <article class="code-note">
-            <h3>script 先把“名字的身份”传给 template</h3>
+            <h3>名字的身份要由调用方接过去</h3>
             <p>
               模板里的 <code>selected</code> 只是 Identifier，本身看不出它是
-              ref。compileScript 产出 bindingMetadata，compileTemplate
-              再把它放入 compilerOptions，core 才能选择正确读写代码。
+              ref。compileScript 产出
+              bindingMetadata；分离编译时，构建工具把它放进
+              <code>compilerOptions.bindingMetadata</code> 再调用
+              compileTemplate。只有 compileScript 的 inlineTemplate
+              分支会在包内自动完成这次交接。
             </p>
           </article>
           <article class="code-note">
             <h3>DOM 和 SSR 共享语言前半段</h3>
             <p>
               两者都使用 DOM
-              parserOptions、结构指令与表达式作用域。差异从“如何表示输出”开始：
-              客户端建 VNodeCall/patchFlag，SSR 建
-              _push/IfStatement/TemplateLiteral。
+              parserOptions、结构指令与表达式作用域。差异从“如何表示输出”开始：客户端建
+              VNodeCall/patchFlag，SSR 建 _push/IfStatement/TemplateLiteral。
             </p>
           </article>
           <article class="code-note">
-            <h3>构建工具是调度者，不是语义实现者</h3>
+            <h3>构建工具负责调度，compiler-* 负责语言语义</h3>
             <p>
               Vite/vue-loader 决定何时调
-              parse/compileScript/compileTemplate/compileStyle，
-              并组装返回片段；宏、作用域、patch 协议和 hydration 边界仍由
-              compiler-* 保持一致。
+              parse/compileScript/compileTemplate/compileStyle，并组装返回片段；宏、作用域、
+              patch 规则和 hydration 边界仍由 compiler-* 保持一致。
             </p>
           </article>
         </div>
@@ -249,15 +267,189 @@ const activeUsers = computed(() =&gt; users.filter(user =&gt; user.active))
 .selected { font-weight: 700; }
 &lt;/style&gt;</code></pre>
           <div class="callout">
-            <strong>阅读约定：</strong>后面的生成代码为突出协议而适度简化；实际
+            <strong>阅读约定：</strong>后面的生成代码为突出关键参数而适度简化；实际
             helper 别名、props 细节和开发标记以当前源码快照为准。
+          </div>
+        </section>
+
+        <section id="handoff">
+          <div class="section-head">
+            <div>
+              <span class="section-no">02 / Data Flow</span>
+              <h2>先看清谁把数据交给谁</h2>
+            </div>
+            <p>
+              这不是一个从头跑到底的单函数，而是构建工具围绕四个公开 API
+              做的一次编排。
+            </p>
+          </div>
+
+          <div class="diagram" aria-label="SFC 编译端到端数据流">
+            <p class="diagram-title">
+              执行顺序：先切分，再分叉，最后由构建工具会合
+            </p>
+            <div class="flow">
+              <div class="flow-node amber">
+                <strong>.vue source</strong><small>完整文件 + filename</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node primary">
+                <strong>parse()</strong><small>descriptor + errors</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node blue">
+                <strong>调用方编排</strong
+                ><small>生成 id；拆出 block/options</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node">
+                <strong>三条编译分支</strong
+                ><small>script / template / style</small>
+              </div>
+            </div>
+            <div class="branch" style="margin-top: 1rem">
+              <div class="flow-node blue">
+                <strong>descriptor + id</strong
+                ><small>同一份结构事实；同一个组件 id</small>
+              </div>
+              <div class="branch-lines" aria-hidden="true">↗<br />→<br />↘</div>
+              <div class="branch-targets">
+                <div class="branch-target">
+                  <strong>compileScript</strong>
+                  <p>
+                    输入 descriptor；返回
+                    content、bindings、imports、map、deps。
+                  </p>
+                </div>
+                <div class="branch-target">
+                  <strong>compileTemplate</strong>
+                  <p>
+                    输入 template content/AST/map、bindings、scope 信息；返回
+                    render、AST、map、errors/tips。
+                  </p>
+                </div>
+                <div class="branch-target">
+                  <strong>compileStyle</strong>
+                  <p>
+                    输入 style content/map、id、scoped；返回
+                    CSS、map、dependencies、errors。
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <figure class="source-block">
+            <figcaption class="source-caption">
+              <span
+                ><strong>解释性伪代码 · 分离编译时的调用方职责：</strong
+                ><code>非 compiler-sfc 内部现成函数</code></span
+              >
+              <span class="source-version">· 调用契约</span>
+            </figcaption>
+            <pre><code>const { descriptor, errors: parseErrors } = parse(source, { filename })
+const id = componentId // 生成算法由构建工具决定；三个分支必须一致
+const ssr = buildTarget === 'ssr'
+
+const script = compileScript(descriptor, { id })
+
+const template = compileTemplate({
+  filename,
+  id,
+  source: descriptor.template.content,
+  ast: descriptor.template.ast,
+  inMap: descriptor.template.map,
+  scoped: descriptor.styles.some(style =&gt; style.scoped),
+  slotted: descriptor.slotted,
+  ssr,
+  ssrCssVars: ssr ? descriptor.cssVars : undefined,
+  compilerOptions: { bindingMetadata: script.bindings },
+})
+
+const styles = descriptor.styles.map(style =&gt; compileStyle({
+  filename,
+  id,
+  source: style.content,
+  inMap: style.map,
+  scoped: style.scoped,
+}))
+
+// 调用方处理各 API 的错误，再把 script.content、template.code、styles.code
+// 组装成组件模块与 CSS 资源。</code></pre>
+          </figure>
+          <p class="source-context">
+            这段代码只表达真实参数交接，省略空 block、预处理器、异步 CSS
+            Modules、客户端/SSR 双产物和构建缓存。它刻意不冒充仓库源码：Vue
+            仓库只定义编译 API，具体调度在 Vite 插件、vue-loader 或其他调用方。
+          </p>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>跨阶段数据</th>
+                  <th>谁产生</th>
+                  <th>谁消费</th>
+                  <th>传错时会看到什么</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>descriptor / block loc</td>
+                  <td>parse</td>
+                  <td>调用方、compileScript；template/style 接收拆出的字段</td>
+                  <td>block 选错，或诊断映射到错误行列。</td>
+                </tr>
+                <tr>
+                  <td>bindingMetadata</td>
+                  <td>compileScript</td>
+                  <td>compiler-core 的表达式与元素转换</td>
+                  <td>
+                    ref/props/局部变量访问方式错误，甚至生成不可写的赋值。
+                  </td>
+                </tr>
+                <tr>
+                  <td>id / scoped / slotted / cssVars</td>
+                  <td>调用方生成 id；descriptor 保存其余样式事实</td>
+                  <td>script、template、style、SSR</td>
+                  <td>
+                    CSS 已生成，却匹配不到 DOM；slot 或 SSR 的 scope 也会错位。
+                  </td>
+                </tr>
+                <tr>
+                  <td>block source map</td>
+                  <td>parse</td>
+                  <td>未预处理的 template、style 与最终 bundler map</td>
+                  <td>
+                    报错和调试位置停在 block
+                    或生成代码；模板预处理器只返回文本，本身没有可继续复合的
+                    map。
+                  </td>
+                </tr>
+                <tr>
+                  <td>deps / dependencies</td>
+                  <td>script 类型解析、style 预处理器与 PostCSS</td>
+                  <td>构建工具文件监听</td>
+                  <td>
+                    外部类型或样式依赖变化后，缓存没有失效；compileTemplate
+                    不返回模板预处理依赖。
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="callout warn">
+            <strong>顺序不是“一律串行”：</strong>parse 必须最先；模板若要利用
+            bindings，就要等 script 分析完成；style 通常可以并行。CSS Modules
+            或异步 PostCSS 插件必须走 compileStyleAsync，普通同步 style
+            不需要等待 Promise。
           </div>
         </section>
 
         <section id="parse">
           <div class="section-head">
             <div>
-              <span class="section-no">02 / SFC Parse</span>
+              <span class="section-no">03 / SFC Parse</span>
               <h2>第一阶段：先切分，不编译</h2>
             </div>
             <p>
@@ -317,7 +509,7 @@ const activeUsers = computed(() =&gt; users.filter(user =&gt; user.active))
         <section id="script">
           <div class="section-head">
             <div>
-              <span class="section-no">03 / Script Branch</span>
+              <span class="section-no">04 / Script Branch</span>
               <h2>第二阶段：宏、类型与绑定分类</h2>
             </div>
             <p>
@@ -351,8 +543,8 @@ const activeUsers = computed(() =&gt; users.filter(user =&gt; user.active))
             <div class="step">
               <h3>处理 defineModel</h3>
               <p>
-                生成 selected prop、update:selected emit 和 useModel(__props,
-                'selected') 绑定。
+                生成 selected、selectedModifiers 两个 prop，登记 update:selected
+                emit，并把宏调用改成 useModel(__props, 'selected')。
               </p>
             </div>
             <div class="step">
@@ -372,27 +564,37 @@ const activeUsers = computed(() =&gt; users.filter(user =&gt; user.active))
 
           <div class="grid-2" style="margin-top: 1.3rem">
             <article class="card green">
-              <h3>概念化 script 结果</h3>
-              <pre><code>const __default__ = {
-  props: {
+              <h3>实际 script 关键产物</h3>
+              <pre><code>export default _defineComponent({
+  props: _mergeModels({
     users: { type: Array, required: true },
-    accent: { type: String, default: '#42b883' },
-    selected: { type: [Number, null] }
-  },
-  emits: ['update:selected']
-}
+    accent: { type: String, required: false, default: '#42b883' }
+  }, {
+    selected: { type: [Number, null] },
+    selectedModifiers: {}
+  }),
+  emits: ['update:selected'],
 
-setup(__props, { emit: __emit }) {
-  const selected = useModel(__props, 'selected')
-  const activeUsers = computed(
-    () =&gt; __props.users.filter(user =&gt; user.active)
-  )
-  // ...
-}</code></pre>
+  setup(__props, { expose: __expose }) {
+    useCssVars(_ctx =&gt; ({
+      "demo-accent": _ctx.accent
+    }))
+    const selected = useModel(__props, 'selected')
+    const activeUsers = computed(
+      () =&gt; __props.users.filter(user =&gt; user.active)
+    )
+    return { selected, activeUsers, UserCard }
+  }
+})</code></pre>
+              <p>
+                取自本页 SFC 的实际编译结果，只去掉 helper 别名、
+                <code>__name</code>、类型标注和 <code>__expose()</code> 样板。
+              </p>
             </article>
             <article class="card blue">
               <h3>传给模板的关键 metadata</h3>
               <pre><code>{
+  computed: SETUP_CONST,
   UserCard: SETUP_CONST,
   users: PROPS,
   accent: PROPS,
@@ -415,12 +617,12 @@ setup(__props, { emit: __emit }) {
         <section id="template">
           <div class="section-head">
             <div>
-              <span class="section-no">04 / Template Branch</span>
-              <h2>第三阶段：从模板结构到客户端更新协议</h2>
+              <span class="section-no">05 / Template Branch</span>
+              <h2>第三阶段：把模板结构编成客户端 render</h2>
             </div>
             <p>
-              compileTemplate 复用 descriptor AST，注入 asset transforms 与
-              binding metadata，再调用 compiler-dom/baseCompile。
+              调用方把兼容的 descriptor AST、block map 与 binding metadata 交给
+              compileTemplate；它追加资产转换，再调用 compiler-dom/baseCompile。
             </p>
           </div>
 
@@ -483,7 +685,7 @@ setup(__props, { emit: __emit }) {
                 <tr>
                   <th>转换</th>
                   <th>本例发生什么</th>
-                  <th>留下的协议</th>
+                  <th>生成结果</th>
                 </tr>
               </thead>
               <tbody>
@@ -575,12 +777,11 @@ export function render(_ctx, _cache, $props, $setup, $data, $options) {
 }</code></pre>
           </div>
           <p class="source-context">
-            这是用本页 template、binding metadata、<code
-              >scopeId=data-v-demo</code
-            >
-            直接编译后规范化的短产物；仅省略 helper imports。可见稳定 class/key
-            props 被提升，列表仍是 keyed Fragment，循环 handler
-            保留在循环闭包中。
+            这是把本页 template、descriptor AST/map、binding metadata 和
+            <code>scopeId=data-v-demo</code> 一起交给 compileTemplate
+            后得到的实际 3.5.41 产物；这里只省略 helper
+            imports，并把对象属性简写做了等价整理。稳定 class/key props
+            被提升，列表仍是 keyed Fragment，循环 handler 留在每次迭代的闭包里。
           </p>
 
           <div class="callout">
@@ -593,12 +794,13 @@ export function render(_ctx, _cache, $props, $setup, $data, $options) {
         <section id="style">
           <div class="section-head">
             <div>
-              <span class="section-no">05 / Style Branch</span>
+              <span class="section-no">06 / Style Branch</span>
               <h2>第四阶段：scoped 与 CSS vars 会合</h2>
             </div>
             <p>
-              compileStyle 改写选择器与 v-bind；compileScript/Template
-              则负责把同一个 scopeId 和变量值带到运行时。
+              compileStyle 改写选择器与 v-bind；compileScript 用同一 shortId
+              生成 CSS 变量写入；compileTemplate 接收 longId；构建工具再把
+              <code>__scopeId</code> 挂到组件模块上。
             </p>
           </div>
           <div class="diagram" aria-label="样式编译与运行时注入">
@@ -619,24 +821,25 @@ export function render(_ctx, _cache, $props, $setup, $data, $options) {
               </div>
               <div class="arrow">↔</div>
               <div class="flow-node">
-                <strong>render/setup</strong><small>scopeId + useCssVars</small>
+                <strong>组件模块/setup</strong
+                ><small>__scopeId + useCssVars</small>
               </div>
             </div>
           </div>
           <div class="grid-2">
             <article class="card amber">
               <h3>概念化 CSS 输出</h3>
-              <pre><code>.people[data-v-abcd] {
-  color: var(--abcd-accent);
+              <pre><code>.people[data-v-demo] {
+  color: var(--demo-accent);
 }
-.selected[data-v-abcd] {
+.selected[data-v-demo] {
   font-weight: 700;
 }</code></pre>
             </article>
             <article class="card green">
               <h3>概念化变量注入</h3>
               <pre><code>useCssVars(_ctx =&gt; ({
-  "abcd-accent": __props.accent
+  "demo-accent": _ctx.accent
 }))</code></pre>
               <p>
                 同一 shortId 保证 CSS custom property 名和运行时写入键一致。
@@ -653,7 +856,7 @@ export function render(_ctx, _cache, $props, $setup, $data, $options) {
         <section id="assemble">
           <div class="section-head">
             <div>
-              <span class="section-no">06 / Assembly</span>
+              <span class="section-no">07 / Assembly</span>
               <h2>第五阶段：构建工具组装模块</h2>
             </div>
             <p>
@@ -699,7 +902,7 @@ export function render(_ctx, _cache, $props, $setup, $data, $options) {
             </article>
           </div>
           <div class="callout">
-            <strong>API 边界的价值：</strong>同一 compiler-sfc 可被不同 bundler
+            <strong>职责边界：</strong>同一 compiler-sfc 可被不同 bundler
             使用；预处理器加载、文件读取、缓存策略和 HMR
             调度由上层提供，而语言语义保持在 compiler 包内。
           </div>
@@ -708,7 +911,7 @@ export function render(_ctx, _cache, $props, $setup, $data, $options) {
         <section id="ssr">
           <div class="section-head">
             <div>
-              <span class="section-no">07 / SSR Branch</span>
+              <span class="section-no">08 / SSR Branch</span>
               <h2>同一 descriptor，模板目标改变</h2>
             </div>
             <p>
@@ -766,8 +969,11 @@ export function render(_ctx, _cache, $props, $setup, $data, $options) {
             <pre><code>export function ssrRender(
   _ctx, _push, _parent, _attrs, $props, $setup, $data, $options
 ) {
+  const _cssVars = { style: {
+    ":--demo-accent": ($props.accent)
+  }}
   _push(`&lt;section${_ssrRenderAttrs(
-    _mergeProps({ class: "people" }, _attrs)
+    _mergeProps({ class: "people" }, _attrs, _cssVars)
   )} data-v-demo&gt;&lt;!--[--&gt;`)
   _ssrRenderList($setup.activeUsers, user =&gt; {
     _push(_ssrRenderComponent($setup["UserCard"], {
@@ -788,26 +994,43 @@ export function render(_ctx, _cache, $props, $setup, $data, $options) {
           </div>
           <p class="source-context">
             SSR 产物来自同一 template 与 binding metadata。它把父级
-            <code>_attrs</code> 合并到 section、为当前元素写入
-            scopeId，并用成对注释标记列表范围；无浏览器事件被写入
-            HTML，但组件调用仍接收 onClick prop。
+            <code>_attrs</code> 和 <code>_cssVars</code> 合并到
+            section。当前元素获得 scopeId，列表范围用成对注释标记。<code
+              >:--demo-accent</code
+            >
+            前面的冒号是 SSR 内部标记；server-renderer 的
+            <a
+              href="../../../vue/packages/server-renderer/src/helpers/ssrRenderAttrs.ts"
+              ><code>ssrResetCssVars()</code></a
+            >
+            在序列化 style 时会去掉它并规范化变量值。原生 HTML
+            不写浏览器监听器；组件调用仍接收 onClick prop。
           </p>
           <div class="callout warn">
-            <strong>同构不是两边代码相同：</strong
-            >真正要求是客户端预期的节点拓扑、属性与 scope 归属，和服务端实际
-            HTML 一致。两套产物可以完全不同，但协议结果必须一致。
+            <strong>客户端与服务端不需要生成相同代码：</strong
+            >客户端预期的节点拓扑、属性与 scope 归属必须和服务端实际
+            HTML 一致。两套产物可以完全不同，但 hydration 所需结果必须一致。
           </div>
         </section>
 
         <section id="hmr">
           <div class="section-head">
             <div>
-              <span class="section-no">08 / Incremental Build</span>
+              <span class="section-no">09 / Incremental Build</span>
               <h2>改一处源码，哪些分支需要重跑</h2>
             </div>
             <p>
               SFCDescriptor、依赖与 import 使用分析帮助构建工具缩小失效范围。
             </p>
+          </div>
+          <div class="callout">
+            <strong
+              >这张表描述调用方常见调度，不是 compiler-sfc
+              的统一调度器：</strong
+            >包内能直接确认的 HMR 判定只有
+            <code>descriptor.shouldForceReload(prevImports)</code>
+            等窄接口；是否重编译 CSS、替换 render
+            或整模块重载，仍由构建工具决定。
           </div>
           <div class="table-wrap">
             <table>
@@ -815,7 +1038,7 @@ export function render(_ctx, _cache, $props, $setup, $data, $options) {
                 <tr>
                   <th>变化</th>
                   <th>通常重编译</th>
-                  <th>可能升级为整模块重载的条件</th>
+                  <th>额外失效范围或升级条件</th>
                 </tr>
               </thead>
               <tbody>
@@ -830,8 +1053,9 @@ export function render(_ctx, _cache, $props, $setup, $data, $options) {
                   <td>仅 style</td>
                   <td>compileStyle</td>
                   <td>
-                    scoped/slotted/CSS vars 集合变化可能牵动 script/template
-                    元数据。
+                    若 scoped、descriptor.slotted 或 descriptor.cssVars
+                    集合改变，调用方还要重编 template、client script 或 SSR
+                    template；是否整模块重载由调用方决定。
                   </td>
                 </tr>
                 <tr>
@@ -845,24 +1069,54 @@ export function render(_ctx, _cache, $props, $setup, $data, $options) {
                   <td>runtime props/emits 推导改变。</td>
                 </tr>
                 <tr>
-                  <td>预处理器依赖</td>
-                  <td>对应 template/style 分支</td>
-                  <td>输出结构、source map 或 scoped 选择器变化。</td>
+                  <td>style 预处理器或 PostCSS dependency</td>
+                  <td>对应 compileStyle 分支</td>
+                  <td>输出 CSS、source map 或 scoped 选择器变化。</td>
                 </tr>
               </tbody>
             </table>
           </div>
+          <figure class="source-block">
+            <figcaption class="source-caption">
+              <span
+                ><strong>真实源码 · 模板变化触发整模块重载的窄条件</strong
+                ><code>compiler-sfc/src/parse.ts · hmrShouldReload</code></span
+              >
+              <span class="source-version">Vue 3.5.41</span>
+            </figcaption>
+            <pre><code>export function hmrShouldReload(prevImports, next) {
+  if (
+    !next.scriptSetup ||
+    (next.scriptSetup.lang !== 'ts' &amp;&amp; next.scriptSetup.lang !== 'tsx')
+  ) {
+    return false
+  }
+
+  for (const key in prevImports) {
+    if (!prevImports[key].isUsedInTemplate &amp;&amp; isImportUsed(key, next)) {
+      return true
+    }
+  }
+  return false
+}</code></pre>
+          </figure>
+          <p class="source-context">
+            它只处理一个方向：旧脚本产物曾裁掉某个 TS setup
+            import，而新模板开始使用它。只替换 render 无法把这个名字补回 setup
+            返回对象，所以必须重编脚本。反方向与非 TS setup 在这里直接返回
+            false；这不等于整个 HMR 系统什么都不做。
+          </p>
         </section>
 
         <section id="trace">
           <div class="section-head">
             <div>
-              <span class="section-no">09 / Debugging</span>
+              <span class="section-no">10 / Debugging</span>
               <h2>端到端问题追踪法</h2>
             </div>
             <p>
-              先判断错误发生在哪一份中间协议，再进入对应模块；不要从最终 bundle
-              盲目搜索。
+              先判断哪一份中间结果出错，再进入对应模块；从最终 bundle
+              反向搜索通常会混入压缩、拼接和运行时辅助代码。
             </p>
           </div>
           <ol class="invariant-list">
@@ -914,10 +1168,10 @@ export function render(_ctx, _cache, $props, $setup, $data, $options) {
         <section id="cases">
           <div class="section-head">
             <div>
-              <span class="section-no">10 / Smaller Cases</span>
+              <span class="section-no">11 / Smaller Cases</span>
               <h2>三个适合亲手跟踪的缩小案例</h2>
             </div>
-            <p>复杂案例用于建立全局图；真正读源码时，应缩小到能手算的输入。</p>
+            <p>复杂案例用于建立全局图；定位具体机制时，再缩小到能手算的输入。</p>
           </div>
           <div class="grid-3">
             <article class="card">
@@ -950,6 +1204,148 @@ export function render(_ctx, _cache, $props, $setup, $data, $options) {
                 useCssVars/SSR 注入。
               </p>
             </article>
+          </div>
+        </section>
+
+        <section id="evidence">
+          <div class="section-head">
+            <div>
+              <span class="section-no">12 / Evidence</span>
+              <h2>这条主线由哪些测试兜底</h2>
+            </div>
+            <p>
+              下面把输入、动作、断言、对应机制和决定性源码分开列出。
+            </p>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>真实测试</th>
+                  <th>Given</th>
+                  <th>When / Then</th>
+                  <th>Mechanism</th>
+                  <th>Source</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>
+                    <a
+                      href="../../../vue/packages/compiler-sfc/__tests__/compileTemplate.spec.ts"
+                      ><code>should work w/ AST from descriptor</code></a
+                    >
+                  </td>
+                  <td>
+                    带 template 的完整 SFC。
+                  </td>
+                  <td>
+                    parse 后把 block content、AST 交给 compileTemplate；产物等于
+                    重新解析，source map 仍落到完整 SFC 中的 foobar。
+                  </td>
+                  <td>
+                    descriptor AST 可以复用，但位置所有权仍属于完整 .vue。
+                  </td>
+                  <td>
+                    <code>parse()</code> / <code>resolveTemplateAST()</code> /
+                    <code>doCompileTemplate()</code>
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <a
+                      href="../../../vue/packages/compiler-sfc/__tests__/compileScript.spec.ts"
+                      ><code
+                        >demote const reactive binding to let when used in
+                        v-model</code
+                      ></a
+                    >
+                  </td>
+                  <td>
+                    setup 中 <code>const name = reactive(...)</code>，模板用组件
+                    v-model 写它。
+                  </td>
+                  <td>
+                    compileScript 后声明改成 let，binding 变为 SETUP_LET，并发出
+                    一次警告。
+                  </td>
+                  <td>
+                    脚本分析会读取模板写入需求；binding metadata 不是装饰信息。
+                  </td>
+                  <td><code>compileScript()</code> 的模板写入检查与 binding 降级分支</td>
+                </tr>
+                <tr>
+                  <td>
+                    <a
+                      href="../../../vue/packages/compiler-sfc/__tests__/cssVars.spec.ts"
+                      ><code>w/ &lt;script setup&gt; binding analysis</code></a
+                    >
+                  </td>
+                  <td>
+                    style 同时引用 setup const、ref 与 prop。
+                  </td>
+                  <td>
+                    编译脚本后，useCssVars 分别生成局部读取、<code>.value</code>
+                    与 <code>__props.foo</code>。
+                  </td>
+                  <td>
+                    CSS 表达式沿用 script binding 分类，变量名再与 compileStyle
+                    输出对齐。
+                  </td>
+                  <td><code>compileScript()</code> / <code>genCssVarsCode()</code></td>
+                </tr>
+                <tr>
+                  <td>
+                    <a
+                      href="../../../vue/packages/compiler-ssr/__tests__/ssrInjectCssVars.spec.ts"
+                      ><code>basic / passing on to components</code></a
+                    >
+                  </td>
+                  <td>
+                    SSR CSS vars 与元素或组件根。
+                  </td>
+                  <td>
+                    compiler-ssr 转换后，<code>_cssVars</code> 合并到根 attrs
+                    或组件 props，并保留 Fragment 边界。
+                  </td>
+                  <td>
+                    服务端不调用 useCssVars，而是在生成 HTML 时传播同一份变量值。
+                  </td>
+                  <td>
+                    <code>ssrCodegenTransform()</code> /
+                    <code>ssrInjectCssVars()</code>
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <a
+                      href="../../../vue/packages/server-renderer/__tests__/ssrRenderAttrs.spec.ts"
+                      ><code>useCssVars handling</code></a
+                    >
+                  </td>
+                  <td>
+                    带 <code>:--v*</code> 内部键、普通自定义属性和值边界的 style
+                    对象。
+                  </td>
+                  <td>
+                    ssrRenderStyle 后内部键去掉冒号，nullish 变 initial，空字符串
+                    与数值按 CSS 规则输出。
+                  </td>
+                  <td>
+                    compiler-sfc 生成的 SSR 变量标记确实由 server-renderer
+                    消费。
+                  </td>
+                  <td><code>ssrRenderStyle()</code> / <code>ssrResetCssVars()</code></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="callout warn">
+            <strong>证据边界：</strong>仓库里没有一个测试逐字使用本页整份
+            App.vue。本页产物已用 3.5.41
+            实际编译核对；长期回归保障来自上面这些更小、失败原因更
+            单一的测试。它们共同覆盖主交接点，不代表预处理器、外部 src、CSS
+            Modules 和所有 SSR 根形态也被本例覆盖。
           </div>
         </section>
 

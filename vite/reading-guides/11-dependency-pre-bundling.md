@@ -15,7 +15,7 @@
 → 建立 discovered 元数据与 processing Promise
 → Rolldown 在唯一临时目录预构建
 → 比较 hash、fileHash、needsInterop
-→ 原子提交，或丢弃结果后合并重跑
+→ 目录换代提交，或丢弃结果后合并重跑
 → 必要时使模块图失效并 full reload
 ```
 
@@ -48,6 +48,27 @@
 
 不要从 `runOptimizer()` 的所有分支开始硬读。先建立元数据状态和请求等待协议，再看调度分支，复杂度会
 明显下降。
+
+## 模块边界与对象所有权
+
+依赖优化器不是全局单例。每个未禁用依赖优化、且未进入 Bundled Dev 的 `DevEnvironment` 各持有一份
+`DepsOptimizer`。创建发生在 `DevEnvironment` 构造期，但冷缓存读取、scanner 与首轮优化延迟到
+`environment.listen()`；关闭则由同一个 Environment 负责。这解释了一个看似反常的合法场景：
+`createServer()` 后、`listen()` 前可以先 `transformRequest()`，此时优化器对象已经存在，`init()` 却还没
+执行。
+
+| 模块 | 负责 | 不负责 | 上游 → 下游 |
+| --- | --- | --- | --- |
+| `server/environment.ts` | 创建、启动、关闭 Environment 私有优化器 | 依赖发现和打包决策 | Server 生命周期 → `DepsOptimizer.init/close` |
+| `optimizer/scan.ts` | 从入口快速预测裸依赖集合 | 生成正式产物、决定 reload | entries/config/plugins → `id → src` |
+| `optimizer/optimizer.ts` | 协调 scanner、真实 crawl、批次 Promise、重跑和 reload | 具体 bundle 输出、HTTP 响应 | 发现结果/运行时 missing → `runOptimizeDeps`/metadata/HMR |
+| `optimizer/index.ts` | 元数据/hash、Rolldown 构建、临时目录与目录换代 | 决定哪轮候选应发布 | 完整依赖快照 → `DepOptimizationResult` |
+| `plugins/preAlias.ts` / `plugins/resolve.ts` | 把裸包解析到 optimized/discovered URL | 读取优化文件 | import specifier → `registerMissingImport/getOptimizedDepId` |
+| `plugins/optimizedDeps.ts` | 等待批次、校验版本、读取 code/map | 触发新一轮优化 | 优化 URL → code/map 或稳定错误码 |
+| `middlewares/transform.ts` | 把优化器错误码映射为 HTTP 504/404 | 判断优化结果新旧 | plugin error → HTTP response |
+
+`DepsOptimizer` 闭包同时持有调度标志、scanner/构建取消句柄与 discovered 批次 Promise；这些状态都不跨
+Environment 共享。
 
 ## 为什么需要预构建
 
@@ -114,6 +135,43 @@ side-effect import。它允许少量假阴性，因为真实 crawl 会补齐；�
 模块 URL 后再整页刷新。
 
 这套冷启动 scanner 最初见 [PR #8869](https://github.com/vitejs/vite/pull/8869)。
+更早的非阻塞发布与 URL 版本协议可沿
+[PR #6758](https://github.com/vitejs/vite/pull/6758)、
+[PR #7379](https://github.com/vitejs/vite/pull/7379) 和
+[PR #7568](https://github.com/vitejs/vite/pull/7568) 追溯；后文只讨论目标版本的最终实现。
+
+### 决定性源码 1：scanner 在裸包边界登记后停止 crawl
+
+来源：`packages/vite/src/node/optimizer/scan.ts`，`rolldownScanPlugin()` 的
+`vite:dep-scan:resolve`。以下删节摘录给出 scanner 的核心分类不变量：普通 `node_modules` 裸包成为
+预构建入口，linked 包继续当源码遍历。
+
+```ts
+if (/^[\w@][^:]/.test(id)) {
+  const resolved = await resolve(id, importer)
+  if (resolved) {
+    if (shouldExternalizeDep(resolved, id)) {
+      return externalUnlessEntry({ path: id })
+    }
+    if (isInNodeModules(resolved) || include?.includes(id)) {
+      if (isOptimizable(resolved, optimizeDepsOptions)) {
+        depImports[id] = resolved
+      }
+      return externalUnlessEntry({ path: id })
+    } else if (isScannable(resolved, optimizeDepsOptions.extensions)) {
+      return path.resolve(resolved)
+    } else {
+      return externalUnlessEntry({ path: id })
+    }
+  } else {
+    missing[id] = normalizePath(importer!)
+  }
+}
+```
+
+关键不是 `external` 等于“浏览器 external”。这里只是告诉 **Rolldown scanner** 不再沿该包内部展开；
+登记的 `depImports[id]` 随后才成为正式预构建输入。linked 包没有停在边界，因为其源码变化应继续由 Vite
+开发管线处理；scanner 只收集它沿途遇到的第三方包。
 
 ## scanner 怎样处理 HTML、SFC、JSX 与 glob
 
@@ -208,6 +266,68 @@ Import Analysis，但 `optimizedDepsPlugin.load()` 在读文件前等待 `proces
 下一批 Promise。只有某次真正包含这些依赖的结果提交后，队列才统一 resolve；被丢弃的中间结果不能
 提前放行等待请求。
 
+### 决定性源码 2：missing 先获得稳定 URL，再等待内容
+
+来源：`packages/vite/src/node/optimizer/optimizer.ts`，`registerMissingImport()` 与
+`addMissingDep()`。这是“路径先确定、文件后落盘”的真正写入点。
+
+```ts
+function registerMissingImport(
+  id: string,
+  resolved: string,
+): OptimizedDepInfo {
+  let missing = metadata.discovered[id]
+  if (missing) {
+    return missing
+  }
+
+  missing = addMissingDep(id, resolved)
+
+  if (initState === 'initialized' && !waitingForCrawlEnd) {
+    debouncedProcessing()
+  }
+  return missing
+}
+
+function addMissingDep(id: string, resolved: string) {
+  newDepsDiscovered = true
+
+  return addOptimizedDepInfo(metadata, 'discovered', {
+    id,
+    file: getOptimizedDepPath(environment, id),
+    src: resolved,
+    browserHash: getDiscoveredBrowserHash(
+      metadata.hash,
+      depsFromOptimizedDepInfo(metadata.optimized),
+      depsFromOptimizedDepInfo(metadata.discovered),
+    ),
+    processing: depOptimizationProcessing.promise,
+    exportsData: extractExportsData(environment, resolved),
+  })
+}
+```
+
+`registerMissingImport()` 的返回不是“已经可读的文件”，而是一张未来文件的凭证。`resolve.ts` 马上把它
+变成 `${file}?v=${browserHash}`；真正的 `load()` 必须尊重 `processing`。初始化前只登记、不 debounce
+的分支也在这里，不是 `listen()` 禁止转换。
+
+### 协调状态表
+
+| 阶段 | `initState` | `waitingForCrawlEnd` | `currentlyProcessing` | metadata 主变化 | 请求命运 |
+| --- | --- | ---: | ---: | --- | --- |
+| 构造完成、未 listen | `idle` | `false` | `false` | missing 可进 `discovered` | 得到 URL；不得抢跑 bundle |
+| 冷缓存 init | `initializing` | `true` | `true` | 重建 metadata，include 先登记 | 静态 crawl 继续收集 |
+| scanner 运行 | `initializing/initialized` | `true` | `true` | scan 结果补入 `discovered` | 候选可后台构建，默认不发布 |
+| crawl 结束、候选完整 | `initialized` | `false` | `true` | 候选交给 `runOptimizer` | 等候 commit |
+| crawl 发现漏项 | `initialized` | `false` | `true` | 候选 cancel；两边并集进入新批次 | 原批次 Promise 不提前放行 |
+| 无 reload 提交 | `initialized` | `false` | `true → false` | `discovered → optimized`；旧 hash 保留 | processing resolve，读新文件 |
+| 需 reload 且无新漏项 | `initialized` | `false` | `true → false` | 新 metadata 发布 | 模块图失效、full reload |
+| 需 reload 且又有漏项 | `initialized` | `false` | `true → false → 下一轮 true` | 当前结果 cancel，metadata 仍旧 | 接续 `registerMissingImport()` 已安排的 debounce/rerun，避免双 reload |
+| close | 任意 | 任意 | 任意 | 正式 cache 不因 close 删除 | scanner/build 取消；Environment 等待在途请求 |
+
+表里的 `currentlyProcessing` 是调度互斥，不代表 CPU 一直在打包；首轮等待 crawl 时也为 `true`，用于阻止
+普通 debounce 越过首轮协调点。
+
 ## 三种 hash 各管一层一致性
 
 ```text
@@ -229,33 +349,82 @@ fileHash     = hash + 入口输出路径 + 该 chunk 的 imports 列表
 配置 hash 只序列化会影响优化结果的字段。函数/正则转字符串，插件只记录名称，避免不可序列化对象让
 缓存随机失效。lockfile 搜索优先检查常见包管理器以缩短路径遍历；同时兼容多个新旧 lockfile 格式。
 
-## 初始化与首轮时间线
-
-```text
-createDepsOptimizer()
-  └─ metadata 先带 session browserHash
-
-init()
-  ├─ 尝试复用磁盘 metadata
-  ├─ 冷缓存：登记 include
-  ├─ waitForRequestsIdle().then(onCrawlEnd)
-  └─ scanner → discovered → 后台 runOptimizeDeps 候选
-
-真实请求 transform
-  └─ registerMissingImport()
-      ├─ 立即建立 file/hash/processing
-      └─ 初始化完成且 crawl 已结束后，100ms 去抖重跑
-
-onCrawlEnd()
-  ├─ scanner 完整：采用候选
-  ├─ scanner 漏项/interop 不符：取消候选，取并集重跑
-  └─ 无 scanner：直接优化 crawl/include 结果
-```
+## 初始化、首轮候选与验收
 
 `initState` 有 `idle → initializing → initialized` 三态。`createServer()` 与 `listen()` 之间也允许用户
 主动发起 transform，此时可能早于 `init()` 发现依赖。若立即启动打包，`init()` 随后重置 metadata，
 提交阶段就会拿到错配状态。现在 pre-init 只登记 missing，等待 initialized 后再调度；修复见
 [PR #22852](https://github.com/vitejs/vite/pull/22852)。
+
+### 决定性源码 3：init 同时启动真实 crawl 闸门与 scanner 候选
+
+来源：`packages/vite/src/node/optimizer/optimizer.ts`，`init()`。这是源码删节摘录；仅用教程注释标出
+日志与错误处理的省略，保留三条并行线的原始语句。
+
+```ts
+if (!cachedMetadata) {
+  waitingForCrawlEnd = true
+  currentlyProcessing = true
+
+  environment.waitForRequestsIdle().then(onCrawlEnd)
+
+  if (noDiscovery) {
+    runOptimizer()
+  } else {
+    // 教程删节：scanner Promise、日志与错误收尾；deps 是扫描结果。
+    for (const id of Object.keys(deps)) {
+      if (!metadata.discovered[id]) {
+        addMissingDep(id, deps[id])
+      }
+    }
+    const knownDeps = prepareKnownDeps()
+    startNextDiscoveredBatch()
+    optimizationResult = runOptimizeDeps(environment, knownDeps)
+    // 教程删节：holdUntilCrawlEnd=false 的提前发布分支。
+  }
+}
+```
+
+这里的 `waitForRequestsIdle()` 是 Environment 的首轮 eager request crawl 闸门，不是等待整个浏览器
+生命周期。scanner 候选使用 `prepareKnownDeps()` 快照；之后新增的 `discovered` 只能由验收或重跑明确吸收。
+
+### 决定性源码 4：crawl 结束后验收候选，而非盲目提交
+
+来源：同文件 `onCrawlEnd()`。以下为源码删节摘录，省略零依赖与日志分支；保留“采用预测”或“取消后
+取并集”的原始决定语句。
+
+```ts
+const result = await afterScanResult
+currentlyProcessing = false
+
+const crawlDeps = Object.keys(metadata.discovered)
+const scanDeps = Object.keys(result.metadata.optimized)
+
+const needsInteropMismatch = findInteropMismatches(
+  metadata.discovered,
+  result.metadata.optimized,
+)
+const scannerMissedDeps = crawlDeps.some((dep) => !scanDeps.includes(dep))
+const outdatedResult =
+  needsInteropMismatch.length > 0 || scannerMissedDeps
+
+if (outdatedResult) {
+  result.cancel()
+  for (const dep of scanDeps) {
+    if (!crawlDeps.includes(dep)) {
+      addMissingDep(dep, result.metadata.optimized[dep].src!)
+    }
+  }
+  debouncedProcessing(0)
+} else {
+  startNextDiscoveredBatch()
+  runOptimizer(result)
+}
+```
+
+`crawlDeps` 当前包含 include、scanner 已登记项与真实请求漏项，所以 `scannerMissedDeps` 只需问“crawl
+集合中有没有 scan 输出没有的项”。反向差集不能丢：循环把 scanner 独有项补回 `discovered`，保证重跑
+输入是并集。`needsInteropMismatch` 同样会使候选过期，因为 Import Analysis 的导入改写取决于它。
 
 ### `holdUntilCrawlEnd`
 
@@ -294,15 +463,60 @@ needsInterop 变化
 
 - 无需 reload：提交目录，但保留浏览器已经使用的旧 browserHash；新依赖可无感加入。
 - 需要 reload，且打包期间没有再发现依赖：提交新版本、清模块图、广播 full reload。
-- 需要 reload，但打包期间又发现依赖：取消当前结果，立即打包更完整全集，避免连续两次 reload。
+- 需要 reload，但打包期间又发现依赖：取消当前结果，接续 missing 登记时已经安排的 debounce/rerun，再打包
+  更完整快照，避免连续两次 reload；这条分支不执行 `onCrawlEnd()` 的 scan∪crawl 合并代码，也不保证立即开始。
 
 最后一种分支最容易漏读：已经花时间打好的结果仍不能发布，因为它一发布就知道还要再次换代。批次
 Promise 继续等待，直到真正包含依赖的后续结果提交。
 
-## 原子缓存提交
+### 决定性源码 5：reload 判定、无感合并与丢弃重批
 
-构建始终写唯一临时目录，失败或取消只删除该目录，不触碰当前正式缓存。成功后先写 `_metadata.json`，
-再执行：
+来源：`packages/vite/src/node/optimizer/optimizer.ts`，`runOptimizer()`。源码删节摘录用教程注释标出
+原位补全与日志省略；决定分支保持原样。
+
+```ts
+const needsReload =
+  needsInteropMismatch.length > 0 ||
+  metadata.hash !== newData.hash ||
+  Object.keys(metadata.optimized).some((dep) => {
+    return metadata.optimized[dep].fileHash !== newData.optimized[dep].fileHash
+  })
+
+const commitProcessing = async () => {
+  await processingResult.commit()
+
+  if (!needsReload) {
+    newData.browserHash = metadata.browserHash
+    for (const dep in newData.optimized) {
+      newData.optimized[dep].browserHash = (
+        metadata.optimized[dep] || metadata.discovered[dep]
+      ).browserHash
+    }
+  }
+  // 教程删节：更新 chunks/discovered 引用，替换 metadata，resolve 批次 Promise。
+}
+
+if (!needsReload) {
+  await commitProcessing()
+} else {
+  if (newDepsDiscovered) {
+    processingResult.cancel()
+  } else {
+    await commitProcessing()
+    fullReload()
+  }
+}
+```
+
+无 reload 分支保留旧 `browserHash` 不是性能小优化，而是模块身份协议：浏览器已执行的 `react?v=old` 与
+新依赖一起打包后，若旧入口 import 图未变，就必须仍叫 `react?v=old`，避免同一逻辑包出现第二实例。
+反之，`fileHash` 变化说明旧入口引用的共享 chunk 图变了，仅替换磁盘而不 reload 会让现有模块图与新
+目录错配。
+
+## 缓存目录换代：双 rename 的保证与缺口
+
+构建始终写唯一临时目录；Rolldown build 失败或 commit 开始前取消时，只删除该目录，不触碰当前正式缓存。
+commit 成功路径先写 `_metadata.json`，再执行：
 
 ```text
 正式 deps 目录  → 唯一 backup 目录
@@ -315,6 +529,49 @@ POSIX 使用同步 rename；Windows 的杀毒软件可能短暂锁目录，所�
 并验证目标是否已经落地。临时目录换代方案见
 [PR #12622](https://github.com/vitejs/vite/pull/12622)。异常退出残留超过 24 小时的临时目录在下次启动
 异步清理，不阻塞当前冷启动。
+
+这不是跨两次 rename 的事务：若旧正式目录已移到 backup，而 processing→正式目录这一步仍失败，源码没有
+回滚，旧内容可能只留在 backup、正式路径暂时缺失。因此“保留旧 cache”的保证只适用于 build 失败和 commit
+前取消，不能扩大到 commit 中途 I/O 失败。
+
+### 决定性源码 6：正式目录只接收完整候选
+
+来源：`packages/vite/src/node/optimizer/index.ts`，`runOptimizeDeps()` 返回结果的 `commit()`。
+
+```ts
+commit: async () => {
+  if (cleaned) {
+    throw new Error('Can not commit a Deps Optimization run as it was cancelled')
+  }
+  committed = true
+
+  // 教程删节：先把完整 metadata 写入 processing 目录。
+  const dataPath = path.join(processingCacheDir, METADATA_FILENAME)
+  fs.writeFileSync(dataPath, stringifyDepsOptimizerMetadata(metadata, depsCacheDir))
+
+  const temporaryPath = depsCacheDir + getTempSuffix()
+  const depsCacheDirPresent = fs.existsSync(depsCacheDir)
+  if (isWindows) {
+    if (depsCacheDirPresent) {
+      await safeRename(depsCacheDir, temporaryPath)
+    }
+    await safeRename(processingCacheDir, depsCacheDir)
+  } else {
+    if (depsCacheDirPresent) {
+      fs.renameSync(depsCacheDir, temporaryPath)
+    }
+    fs.renameSync(processingCacheDir, depsCacheDir)
+  }
+
+  if (depsCacheDirPresent) {
+    fsp.rm(temporaryPath, { recursive: true, force: true })
+  }
+},
+```
+
+这里的“提交”不是把两个 rename 合成一次不可分割事务；旧目录移到 backup 与新目录移到正式名
+之间仍有很短窗口。保证是正式路径不会指向**半写目录**；“旧 cache 不受影响”只适用于 build 失败或
+commit 前取消。Windows 的 `safeRename()` 还会对 EACCES/EPERM 最多退避 5 秒。
 
 ## Rolldown 依赖插件的边界
 
@@ -354,137 +611,217 @@ Rolldown 上。
 
 ### `optimizedDepsPlugin`
 
-resolve/load 请求进入优化缓存后按以下顺序检查：
+`load()` 先校验 URL 版本，再等待 discovered 所属批次，等待后重新读取 metadata，最后才读正式 cache。
+默认不容忍旧 URL，因为同一逻辑模块的两个优化版本可能产生重复实例；具体错误条件见下表。
 
-1. URL 的 browserHash 是否仍属于当前元数据；
-2. 入口是否仍在 `optimized/discovered/chunks`；
-3. 若有 `processing`，等待对应批次提交；
-4. 提交后直接读取 cache 文件及可选 sourcemap。
+### 决定性源码 7：请求等待、二次验版本、再读正式目录
 
-它会区分三类失败：
-
-- 优化过程异常：504，让旧请求停止等待；
-- browserHash 已换代：504，浏览器 reload 后请求新 URL；
-- 当前优化目录内确实缺文件：404，并提示用户把问题依赖加入 exclude。
-
-默认不容忍旧 URL，因为同一逻辑模块同时出现两种优化版本会产生重复实例。只有显式
-`ignoreOutdatedRequests` 才跳过旧 hash 检查。
-
-## 测试怎样映射源码机制
-
-### `scan.spec.ts`
-
-- script 正则组：验证 HTML 注释、组件名中的 `script`、普通 script、TS import 与注释剥离。
-- JSX runtime：扫描必须提前发现转换器隐式注入的 runtime，首次 JSX 请求不能触发重跑。
-- glob + JSX 配置：依赖优化专用 Rolldown transform 选项优先于环境默认值。
-- input：顶层入口、插件虚拟入口、相对 root 的 build input 都进入同一入口解析链。
-- mid-scan close：关闭错误被当作取消，不产生未处理 rejection。
-- package imports glob：包内展开结果不能误记为待预构建裸依赖。
-
-### optimizer 单元测试
-
-- `discoverBeforeListen.spec.ts`：listen 前 transform 只登记依赖，不得抢跑优化器；对应 #22852。
-- `resolve.spec.ts`：exports 中 `null` 私有子路径不被 glob include 暴露；对应 #22611。
-- `rolldownDepPlugin.spec.ts`：只重写安全的相对静态 `new URL`，协议 URL、动态模板和
-  `@vite-ignore` 保持原样。
-- `pluginConverter.spec.ts`：esbuild `onEnd` 收到兼容层承诺的 BuildResult 字段。
-
-阅读测试时不要只看最终 `expect`。先写出“输入处于哪个发现阶段、预期触发哪条状态分支”，再回源码找
-状态变化，测试才会成为调用链索引。
-
-## 历史演进线索
-
-按问题演进阅读，比按提交日期更容易理解当前复杂度：
-
-1. 非阻塞预构建与运行期发现建立了 `processing/browserHash` 协议：
-   [PR #6758](https://github.com/vitejs/vite/pull/6758)、
-   [PR #7379](https://github.com/vitejs/vite/pull/7379)、
-   [PR #7568](https://github.com/vitejs/vite/pull/7568)。
-2. scanner 改善冷启动，但引入“预测结果 vs 真实 crawl”的协调：
-   [PR #8869](https://github.com/vitejs/vite/pull/8869)。
-3. 临时目录原子换代解决并发请求读取半成品的问题：
-   [PR #12622](https://github.com/vitejs/vite/pull/12622)。
-4. `holdUntilCrawlEnd` 把速度/首屏稳定性变成显式策略：
-   [PR #15244](https://github.com/vitejs/vite/pull/15244)。
-5. Rolldown 迁移后，入口解析、CJS facade、JSX 和资源 URL 继续补齐与旧优化器等价的边界语义。
-6. 最近的 pre-init 与关闭竞态说明：优化器最难的部分已不是“打包依赖”，而是异步生命周期所有权：
-   [PR #22784](https://github.com/vitejs/vite/pull/22784)、
-   [PR #22852](https://github.com/vitejs/vite/pull/22852)。
-
-## 建议断点
-
-第一次只放以下断点：
-
-1. `createDepsOptimizer()` 内 `init()`：看 cache hit 与 cold start 分叉。
-2. `scanImports()`：记录 computed entries 和最终 deps。
-3. `registerMissingImport()`：观察 scanner 漏项怎样进入 discovered。
-4. `onCrawlEnd()`：比较 `crawlDeps` 与 `scanDeps`。
-5. `runOptimizer()` 的 `needsReload`：观察 hash/fileHash/interop 判定。
-6. `runOptimizeDeps()` 的 `commit()`：看 processing 目录如何换成正式缓存。
-7. `optimizedDepsPlugin.load()`：验证请求在哪里等待 processing。
-
-推荐观察变量：
-
-```text
-initState
-waitingForCrawlEnd
-currentlyProcessing
-newDepsDiscovered
-metadata.optimized / discovered / chunks
-depOptimizationProcessingQueue
-optimizationResult
-needsReload
-```
-
-第二轮再打开 `DEBUG=vite:deps` 对照日志。不要一开始在每个 resolve hook 停住，否则 node_modules 的
-高频解析会淹没状态机主线。
-
-## 关键源码证据
-
-目标版本源码摘录，来源：`packages/vite/src/node/optimizer/optimizer.ts`，
-`createDepsOptimizer()`：
+来源：`packages/vite/src/node/plugins/optimizedDeps.ts`，`optimizedDepsPlugin().load()`。源码删节摘录省略
+debug 与外围 ID 判定，等待、二次校验、读文件和错误分支保持原样。
 
 ```ts
-let closed = false
+const info = optimizedDepInfoFromFile(metadata, file)
+if (info) {
+  if (
+    browserHash &&
+    info.browserHash !== browserHash &&
+    !environment.config.optimizeDeps.ignoreOutdatedRequests
+  ) {
+    throwOutdatedRequest(id)
+  }
+  try {
+    await info.processing
+  } catch {
+    throwProcessingError(id)
+  }
+  const newMetadata = depsOptimizer.metadata
+  if (metadata !== newMetadata) {
+    const currentInfo = optimizedDepInfoFromFile(newMetadata!, file)
+    if (
+      info.browserHash !== currentInfo?.browserHash &&
+      !environment.config.optimizeDeps.ignoreOutdatedRequests
+    ) {
+      throwOutdatedRequest(id)
+    }
+  }
+}
 
-const options = environment.config.optimizeDeps
-
-const { noDiscovery, holdUntilCrawlEnd } = options
-
-let metadata: DepOptimizationMetadata = initDepsOptimizerMetadata(
-  environment,
-  sessionTimestamp,
-)
-
-const depsOptimizer: DepsOptimizer = {
-  init,
-  metadata,
-  registerMissingImport,
-  run: () => debouncedProcessing(0),
-  isOptimizedDepFile: createIsOptimizedDepFile(environment),
-  isOptimizedDepUrl: createIsOptimizedDepUrl(environment),
-  getOptimizedDepId: (depInfo: OptimizedDepInfo) =>
-    `${depInfo.file}?v=${depInfo.browserHash}`,
-  close,
-  options,
+try {
+  const [code, map] = await Promise.all([
+    fsp.readFile(file, 'utf-8'),
+    fsp.readFile(`${file}.map`, 'utf-8')
+      .then((map) => JSON.parse(map))
+      .catch(() => null),
+  ])
+  return map ? { code, map } : code
+} catch {
+  if (browserHash && !environment.config.optimizeDeps.ignoreOutdatedRequests) {
+    throwOutdatedRequest(id)
+  }
+  throwFileNotFoundInOptimizedDep(id)
 }
 ```
 
-优化器把 metadata、发现入口、调度、ID 版本化与关闭状态封装为同一个 Environment 私有状态机；
-`browserHash` 直接进入浏览器 URL，说明元数据更新会改变客户端缓存身份。
+等待后必须再次比较 metadata 引用。原因：等待期间 `commitProcessing()` 可能整体替换快照；只做等待前
+校验存在 TOCTOU 窗口。错误分支也要按源码精确区分：
 
-## 复盘题
+| 触发条件 | 稳定错误码 | HTTP | 含义 |
+| --- | --- | ---: | --- |
+| 请求 hash 与 `info.browserHash` 不同 | `ERR_OUTDATED_OPTIMIZED_DEP` | 504 | 旧页面请求；reload 后换 URL |
+| `info.processing` 自身 reject | `ERR_OPTIMIZE_DEPS_PROCESSING_ERROR` | 504 | 优化等待异常 |
+| 等待期间 metadata 换代且 hash 改变 | `ERR_OUTDATED_OPTIMIZED_DEP` | 504 | 等候者已落后于新快照 |
+| `readFile` 失败且 URL 带 hash、未忽略过期 | `ERR_OUTDATED_OPTIMIZED_DEP` | 504 | 优先按换代处理，不武断判文件永久缺失 |
+| `readFile` 失败且无 hash，或显式忽略过期 | `ERR_FILE_NOT_FOUND_IN_OPTIMIZED_DEP_DIR` | 404 | 真正走缺文件提示，建议检查 `exclude` |
 
-1. scanner 漏掉依赖时，为什么不一定需要 full reload？
-2. 若新一轮加入依赖，但所有旧入口 `fileHash` 都没变，为什么应保留旧 browserHash？
-3. `processing` 为什么放在 `OptimizedDepInfo` 上，而不是让整个 Dev Server 等一个全局 Promise？
-4. 如果候选结果需要 reload，打包期间又发现新依赖，立即提交会造成什么用户可见行为？
-5. 为什么 cache hit 只比较 lockfile/config，而运行期提交还要比较 fileHash/interop？
-6. package exports 的 null 子路径若被 include glob 绕过，会破坏什么封装保证？
-7. linked package 为什么继续扫描源码，而普通 node_modules 包在裸导入处停止？
-8. alias replacement 在 SSR 中为什么比 client 更保守？
-9. 双 rename 的哪个瞬间仍可能无正式目录，为什么它比 delete+copy 更安全？
-10. 若关闭 `holdUntilCrawlEnd`，你会从哪些日志/hash 变化判断首屏 reload 是 scanner 漏项导致的？
+当前 `createDepsOptimizer()` 协调代码只显式 `resolve()` 批次 Promise，没有找到主动 `reject()`；因此
+processing-error 504 是插件协议的防御分支，不能把它写成“每次 Rolldown 构建失败都会走 504”。构建
+失败在 `runOptimizer()` 自己的 catch 中记录并清 `discovered`，实际 HTTP 结果还取决于 URL/hash 与文件
+读取分支。
 
-能不看源码画出“scanner 候选、真实 crawl、processing 批次、原子提交、reload 判定”五者关系，才算
-真正读懂依赖预构建，而不只是知道 Vite 使用 Rolldown 打包 node_modules。
+## 真实完整测试：JSX runtime 扫描后的模块复用结果
+
+来源：`packages/vite/src/node/__tests__/scan.spec.ts`。下方只删去同文件其他测试所需 import；本测试体、
+准备、操作、断言与 `onTestFinished` 清理语句保持目标版本原样；原测试内解释性注释为篇幅省略。
+
+```ts
+import path from 'node:path'
+import { expect, test } from 'vitest'
+import { createServer, createServerModuleRunner } from '..'
+
+test('scan jsx-runtime', async (ctx) => {
+  const server = await createServer({
+    configFile: false,
+    logLevel: 'error',
+    root: path.join(import.meta.dirname, 'fixtures', 'scan-jsx-runtime'),
+    environments: {
+      client: {
+        optimizeDeps: {
+          noDiscovery: true,
+        },
+      },
+      ssr: {
+        resolve: {
+          noExternal: true,
+        },
+        optimizeDeps: {
+          force: true,
+          noDiscovery: false,
+          entries: ['./entry-jsx.tsx', './entry-no-jsx.js'],
+        },
+      },
+    },
+  })
+  ctx.onTestFinished(() => server.close())
+
+  await server.listen()
+
+  const runner = createServerModuleRunner(server.environments.ssr, {
+    hmr: { logger: false },
+  })
+
+  await server.environments.ssr.depsOptimizer?.scanProcessing
+  await runner.import('./entry-no-jsx.js')
+
+  const mod1 = await runner.import('./entry-jsx.js')
+  const mod2 = await runner.import('./entry-jsx.js')
+  expect((globalThis as any).__test_scan_jsx_runtime).toBe(1)
+  expect(mod1).toBe(mod2)
+})
+```
+
+### GWTMS 证据拆解
+
+- **Given**：SSR Environment 强制冷缓存，scanner 从 JSX 与非 JSX 两个入口开始；client 自动发现关闭，
+  测试结束时关闭 server。
+- **When**：`listen()` 初始化优化器；测试等 scanner 结束，先 import 非 JSX 入口，再连续两次 import JSX
+  入口。`scanProcessing` 只证明 scanner settle，不单独证明候选已经 commit。
+- **Then**：fixture 的全局执行计数为 `1`，两次 import 返回同一模块对象。
+- **Mechanism / Source**：`prepareRolldownScanner()` 传播 JSX transform，`init()` 建候选，`onCrawlEnd()`
+  验收，`runOptimizer()` 发布。测试直接证明模块复用结果；“没有因 JSX runtime 再跑 optimizer”是结合这条
+  源码链得到的回归意图，测试没有直接计数 `runOptimizeDeps()`。
+
+## 同一 Demo 的端到端流程与时间线
+
+```mermaid
+flowchart TD
+  A["test: createServer，SSR force + 两个 entries"] --> B["server.listen → depsOptimizer.init"]
+  B --> C["scanner 使用 JSX 配置 → discovered → processing 候选"]
+  B --> D["注册 waitForRequestsIdle → onCrawlEnd"]
+  C --> E{"scanDeps 覆盖 crawlDeps 且 interop 一致？"}
+  D --> E
+  E -- "是" --> F["runOptimizer 接管候选"]
+  E -- "否：源码退化分支" --> G["取消 scanner 候选；scan ∪ crawl；debounce 0 重建"]
+  G --> F
+  F --> H{"需要 reload？"}
+  H -- "否" --> I["commit；保留旧 browserHash；放行 processing"]
+  H -- "是，且又有 missing" --> G2["取消本轮；接续 missing 已安排的 debounce / rerun"]
+  G2 --> F
+  H -- "是，无新 missing" --> J["commit → invalidateAll → full-reload"]
+  B --> K["测试等待 scanner；import 非 JSX，再 import JSX 两次"]
+  K --> L["optimizedDeps.load：校验 hash → 等 processing → 再验 metadata → 读 cache"]
+  I --> L
+  J --> L
+  L -- "成功" --> M["断言 counter=1 且 mod1===mod2"]
+  L -- "旧版本 / processing 异常" --> X["504"]
+  L -- "符合缺文件条件" --> Y["404"]
+  M --> Z["onTestFinished → server.close → optimizer.close"]
+  X --> Z
+  Y --> Z
+```
+
+同步边界在 `registerMissingImport()`：它同步建立未来 URL；异步边界依次是 exports 分析、scanner、
+Rolldown build、processing 等待和磁盘读取。提交点之前候选只在唯一临时目录，提交点之后请求才可从正式
+目录读取。图中的 scan miss、reload、504/404 是源码规定的关键分支；本测试只直接断言成功路径末端的模块
+执行次数和对象身份。
+
+## 关闭、错误与清理边界
+
+### 决定性源码 8：关闭只取消本实例拥有的后台工作
+
+来源：`packages/vite/src/node/optimizer/optimizer.ts`，`close()`。
+
+```ts
+async function close() {
+  closed = true
+  await Promise.allSettled([
+    discover?.cancel(),
+    depsOptimizer.scanProcessing,
+    optimizationResult?.cancel(),
+  ])
+}
+```
+
+`allSettled` 保证某项取消失败不跳过其他收尾。这里没有删除已提交正式 cache，也没有发送 reload；
+Environment 的 `close()` 还会并行关闭插件/HotChannel，并等待 `_pendingRequests` settle。
+
+| 失败/取消点 | 保留什么 | 清理/后续 |
+| --- | --- | --- |
+| scanner 错误或关闭 | 当前正式 cache | 普通错误跳过本候选；`ERR_CLOSED_SERVER` 当取消处理 |
+| Rolldown build 失败，或 reload 候选又遇 missing | 当前正式 cache / metadata | 删除或取消 processing 候选；rebatch 时不提前放行旧批次 |
+| commit 已开始后异常或迟到 cancel | 正在换代的目录 | `committed` 阻止清理任务删除在途目录；中途 I/O 失败没有回滚保证 |
+| Environment close | 已提交正式 cache | 并行取消 scanner/build，关闭插件与 HotChannel，并等待在途请求 settle |
+
+## 章节—源码—测试证据表
+
+| 机制章节 | 决定性源码 | 代表性测试/fixture | 证据边界 |
+| --- | --- | --- | --- |
+| scanner 分类与入口 | `scan.ts::rolldownScanPlugin` | `scan.spec.ts` script/input/glob 组 | 证明发现集合，不证明最终提交 |
+| JSX 隐式 runtime | `scan.ts::prepareRolldownScanner` | `scan jsx-runtime` | 完整测试见上；不直接计数 optimizer run |
+| include / exports | `optimizer/resolve.ts::expandGlobIds` | `resolve.spec.ts` 的 null exports 用例 | 证明私有子路径不会被 include glob 暴露 |
+| init/crawl 协调 | `optimizer.ts::init/onCrawlEnd` | `scan jsx-runtime` | 源码证明候选验收分支 |
+| listen 前发现 | `optimizer.ts::registerMissingImport` | `discoverBeforeListen.spec.ts` | 证明 initialized 前不启动 bundle 且无错误 |
+| reload/rebatch | `optimizer.ts::runOptimizer` | optimizer/playground 组合回归 | 当前没有单测直接覆盖每个布尔组合，结论主要来自源码 |
+| Rolldown 产物与插件边界 | `index.ts::runOptimizeDeps`、`rolldownDepPlugin.ts` | `playground/optimize-deps`、`rolldownDepPlugin.spec.ts`、`pluginConverter.spec.ts` | 证明 CJS/ESM/静态资源和兼容层结果，不证明 rename 瞬时序列 |
+| 目录换代 | `index.ts::commit` | 缓存复用与 playground 间接覆盖 | 双 rename 结论来自决定性源码；不提供中途失败回滚 |
+| URL 等待/错误 | `optimizedDeps.ts::load` + transform middleware | optimize-missing-deps playground | 504/404 条件来自源码；不能由成功测试外推 |
+| close | `optimizer.ts::close`、`environment.ts::close` | `scan ignores ... mid-scan` | 证明 closed-server 扫描取消；不证明所有 OS 清理失败 |
+
+## 结论与证据边界
+
+依赖预构建的核心不是“用 Rolldown 打一次包”，而是让预测扫描、真实 crawl、请求等待与候选发布共享一套
+版本化状态机。`processing` 让单个请求等待自己的批次；`fileHash` 与 interop 决定能否无感发布；双 rename
+只保证不暴露半写目录，不构成可回滚事务。
+
+本章的完整测试直接证明 JSX 场景的执行次数与模块对象复用。optimizer 是否重跑、每个 reload/rebatch
+布尔组合、rename 中途失败以及 504/404 的所有条件，主要由决定性源码与专项测试共同限定，不能从这一条
+成功测试外推。

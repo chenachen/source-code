@@ -249,8 +249,9 @@ sass-embedded worker，`server.close()` 返回时 worker 必须已经退出。�
 
 ```text
 resolveConfig(serve, production, isPreview=true)
+→ CORS / host check
 → configurePreviewServer 前置钩子
-→ CORS / host check / proxy / compression / base
+→ proxy / compression / base
 → sirv(distDir)
 → SPA/MPA html fallback
 → configurePreviewServer 后置钩子

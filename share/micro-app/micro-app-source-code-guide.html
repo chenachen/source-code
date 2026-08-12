@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
-  <title>micro-app rc.32 源码主线：从 start 到清理</title>
+  <title>micro-app rc.32 端到端附录：从 start 到清理</title>
   <style>
     :root {
       --paper: #f7f5ef;
@@ -408,18 +408,19 @@
 <body>
   <a class="skip-link" href="#content">跳到正文</a>
   <header class="hero">
-    <p class="eyebrow">Source-guided architecture tutorial</p>
+    <p class="eyebrow">End-to-end companion · source evidence</p>
     <h1>micro-app：从 start 到清理</h1>
     <p class="lead">
-      围绕一个普通 <code>&lt;micro-app&gt;</code> 首次渲染，串起资源屏障、CSS/JS 处理、
-      默认 With 沙箱、动态 DOM、挂载、双向通信与三类卸载分叉。
+      配套“源码全景”的端到端附录。围绕一个普通 <code>&lt;micro-app&gt;</code> 首次渲染，串起资源屏障、
+      CSS/JS 处理、默认 With 沙箱、动态 DOM、挂载、双向通信与三类卸载分叉。
     </p>
     <div class="meta" aria-label="证据基线">
       <span class="pill">@micro-zoe/micro-app 1.0.0-rc.32</span>
-      <span class="pill">任务指定 commit dd445c483a7c7b29b1aa37245874e2617a385882</span>
+      <span class="pill">上游 v1.0.0-rc.32 → dd445c483a7c7b29b1aa37245874e2617a385882</span>
       <span class="pill">静态源码与测试阅读</span>
       <span class="pill">离线单文件</span>
     </div>
+    <p class="lead"><a href="./micro-app-src-guide.html" style="color:#f2fff7">返回权威主入口：micro-app src 源码全景</a></p>
   </header>
 
   <div class="shell">
@@ -476,24 +477,25 @@
         <h3>证据基线</h3>
         <ul>
           <li><strong>包版本：</strong><code>package.json</code> 的 <code>name</code> 与 <code>version</code> 为 <code>@micro-zoe/micro-app</code>、<code>1.0.0-rc.32</code>；当前 changelog 也有 rc.32 条目。</li>
-          <li><strong>commit：</strong><code>dd445c483a7c7b29b1aa37245874e2617a385882</code> 来自任务指定。当前 <code>micro-app</code> 目录没有独立 <code>.git</code>，父仓库尚无提交，故无法从本地对象库独立复核 commit。</li>
-          <li><strong>验证方式：</strong>只读源码、类型、README、仓库 Demo 与指定测试；没有联网、安装依赖或运行测试。</li>
+          <li><strong>commit：</strong>已通过上游远端 tag 独立复核 <code>v1.0.0-rc.32^{}</code> 指向 <code>dd445c483a7c7b29b1aa37245874e2617a385882</code>。本地 <code>micro-app</code> 是父仓库子目录，不用父仓库 HEAD 冒充上游版本。</li>
+          <li><strong>验证方式：</strong>只读生产源码、类型、README、仓库 Demo 与测试；联网只用于核对 tag；没有安装依赖或运行 Jest。</li>
           <li><strong>证据等级：</strong>“源码事实”优先；测试仅作静态场景证据；当前实现无法直接证明设计历史时标记“从当前实现推断”。</li>
         </ul>
         <div class="callout warn">
           <strong>测试完整性限制。</strong>
-          指定测试中存在与当前实现不一致的旧 API：<code>source/links.test.ts</code>、<code>source/scripts.test.ts</code>
+          测试中存在与当前实现不一致的旧 API：<code>source/links.test.ts</code>、<code>source/scripts.test.ts</code>、<code>prefetch.test.ts</code>
           引用当前源码未导出的 <code>globalLinks/globalScripts</code>，并把当前 <code>Set</code> 型
           <code>app.source.links/scripts</code> 当作旧 Map；<code>sandbox/index.test.ts</code> 引用不存在的
-          <code>src/sandbox</code> 入口并使用旧调用签名。因此这些文件能证明测试作者关注的场景，不能写成
-          “rc.32 测试已通过”。后文把此类证据标为“意图证据”。
+          <code>src/sandbox</code> 入口并使用旧调用签名。默认 Jest 配置也只选中 7 个测试文件。因此“文件存在”、
+          “默认会执行”和“当前可编译”必须分开；后文把失效文件标为“失效意图”。
         </div>
 
         <h3>范围</h3>
         <p>
           主线只分析普通 <code>&lt;micro-app name url&gt;</code> 首次渲染，再扩展动态资源、通信和卸载。
           prefetch/prerender 只说明如何复用 <code>CreateApp/sourceCenter</code>；router 只说明 mount/unmount
-          状态交接；IframeSandbox 只说明共同接口、独立 realm、初始化与销毁。
+          状态交接；IframeSandbox 只说明共同接口、独立 realm、初始化与销毁。命令式 API、五种路由、
+          request/effect 与嵌套应用的完整机制见<a href="./micro-app-src-guide.html">源码全景主稿</a>。
         </p>
       </section>
 
@@ -635,9 +637,11 @@ export default microApp</code></pre>
           <li><code>formatAppName</code> 删除开头数字及非字母数字、下划线、连字符字符；空结果非法。</li>
           <li><code>formatAppURL</code> 以基座地址补全，只接受 http/https/file，去掉 hash，保留 pathname/search。</li>
           <li>同名运行中实例不能被替换；即使 keep-alive 已隐藏，它仍被视为 active。</li>
-          <li>同名同 URL 且旧实例已 unmount，直接复用；同 URL 的兼容 prefetch 也复用。</li>
-          <li>旧实例已 unmount/prefetch 但 URL 或核心配置不适配，彻底销毁旧实例后新建。</li>
+          <li>目标 URL/SSR URL 相同且旧实例已 unmount 时直接复用；此分支<strong>不检查</strong> scopecss/sandbox/iframe 是否变化。</li>
+          <li>目标 URL 相同的 prefetch 只有 scopecss/sandbox/iframe 三项核心配置一致才复用；否则替换。</li>
+          <li>URL 不同的 unmount/prefetch 实例会被销毁后新建。核心配置变化本身不会迫使同 URL 的 unmount 实例重建，源码在属性迁移处仍留有对应 TODO。</li>
         </ul>
+        <div class="callout warn"><strong>复用边界：</strong>“核心配置一致才复用”只适用于 prefetch，不能泛化到已卸载实例。若要切换同 URL 应用的沙箱类型或 CSS 隔离，需显式 destroy，不能依赖普通 unmount 后重新插入。</div>
         <span class="source">src/libs/utils.ts · formatAppName/formatAppURL；src/micro_app_element.ts · handleConnected/sameCoreOptions/handleCreateApp</span>
 
         <h3>4.4 CreateApp 的创建者、持有者与不变量</h3>
@@ -728,19 +732,24 @@ public onLoad ({ html, ...prerenderOptions }): void {
           HTML 本身不进入 sourceCenter；动态 inline script 也不进入。静态 inline script 用随机
           <code>inline-*</code> key 登记，destroy 时只删除这些 inline 项。外链 CSS/JS 没有 destroy 删除调用。
         </p>
+        <ul>
+          <li><strong>不缓存请求中 Promise：</strong>并发应用看到同 URL 项的 <code>code === ''</code> 时会各自 fetch；缓存只复用已经完成的文本。</li>
+          <li><strong>Set 会折叠重复静态地址：</strong>同一应用重复远程 src/href 只调度一次；远程 script 不按重复标签多次执行。静态 inline nonce 与动态 script 不受此折叠。</li>
+          <li><strong>destroy 留下 appSpace：</strong>同名同 URL 新实例会沿用第一次登记的 attrs、async/defer/module/inline/pure 及 parsed metadata；当前实现用 <code>appSpace[name] ||= newData</code>，没有应用级失效。</li>
+        </ul>
         <span class="source">src/source/source_center.ts · createSourceCenter/deleteInlineInfo；src/source/links.ts · extractLinkFromHtml；src/source/scripts.ts · extractScriptElement；src/create_app.ts · actionsForCompletelyDestroy</span>
 
         <h3>5.5 加载失败的实际语义</h3>
         <ul>
           <li>HTML fetch reject：<code>loadSourceLevel = -1</code>，发 error，状态设 <code>LOAD_FAILED</code>。</li>
-          <li>HTML 空字符串：发 error 并返回，但不调用 <code>onLoadError</code>；状态仍为 <code>LOADING</code>、level 仍为 0。</li>
-          <li>缺 head/body：同样发 error 后返回，不把 level 设为 -1。</li>
-          <li>静态 CSS/JS 外链 reject：记录错误，但对应 lane 最终仍完成，应用可缺资源继续 mount。</li>
+          <li>HTML 空字符串：发 error 并返回，但不调用 <code>onLoadError</code>；内部状态仍为 <code>LOADING</code>、level 仍为 0，子应用却先收到 detail=LOAD_FAILED 的 statechange。</li>
+          <li>缺 head/body：同样出现“对外 LOAD_FAILED、内部 LOADING/0”的分裂。</li>
+          <li>静态 CSS 或由框架 <code>fetchSource</code> 管理的 JS reject：记录错误，但对应 lane/批次仍完成，应用可缺资源继续 mount；原生外链 module 例外见 6.3。</li>
           <li><code>fetchSource</code> 直接调用 <code>res.text()</code>，没有显式检查 <code>res.ok</code>；HTTP 错误是否变成失败取决于自定义 fetch 或返回正文的后续解析。</li>
         </ul>
         <div class="callout bad">
           <strong>关键区别：</strong>只有 HTML Promise reject 进入 <code>LOAD_FAILED/-1</code>。空 HTML 与结构缺失是
-          “已报告但停在 LOADING”的路径；不能笼统称为统一加载失败状态。
+          “已报告但内部停在 LOADING”的路径；不能笼统称为统一加载失败状态。
         </div>
         <span class="source">src/source/loader/html.ts · HTMLLoader.run；src/source/index.ts · extractSourceDom；src/source/fetch.ts · fetchSource；src/create_app.ts · onLoadError</span>
       </section>
@@ -787,11 +796,13 @@ public onLoad ({ html, ...prerenderOptions }): void {
             </tbody>
           </table>
         </div>
+        <div class="callout warn"><strong>原生外链 module 失败边界：</strong>iframe/关闭沙箱下，框架不预抓取外链 module；真实 script 只绑定 <code>onload</code>，没有 <code>onerror</code>。网络失败可能让 <code>moduleCount</code> 无法归零，挂载收尾停滞，不能套用“promiseStream 失败后仍结算”的 classic JS 结论。</div>
         <p>
           <code>execScripts</code> 先把 defer/async 收集起来，普通脚本立即按顺序调用 <code>runScript</code>；
           待 defer 组全部 settle 后再遍历执行。fiber 只把这些动作包进 <code>requestIdleCallback</code> Promise
           并串行，不改变设计上的 source 顺序，但源码注释明确承认动态脚本与 fiber 交错仍可能有顺序问题。
         </p>
+        <div class="callout warn"><strong>默认 With 的 module 边界：</strong>它只借用 defer 调度，不使用浏览器 module 解析器；代码仍进入 Function。若源码保留原生 <code>import/export</code>，必须由插件 loader 先转译，否则 Function 编译会失败。iframe 或关闭沙箱才保留原生 <code>type=module</code>。</div>
         <span class="source">src/source/scripts.ts · fetchScriptsFromHtml/execScripts/isTypeModule/isInlineMode/runCode2InlineScript；src/libs/utils.ts · injectFiberTask/serialExecFiberTasks</span>
 
         <h3>6.4 插件处理边界</h3>
@@ -936,8 +947,8 @@ micro-app[name=catalog] .card[data-kind="a,b"]{
           <table>
             <thead><tr><th>副作用</th><th>记录</th><th>release</th><th>rebuild</th></tr></thead>
             <tbody>
-              <tr><td>window event</td><td>type → listener Set；特殊事件绑定宿主元素，其余绑定 rawWindow</td><td>全部解绑</td><td>UMD/keep-alive 快照重新绑定</td></tr>
-              <tr><td>document event/onclick</td><td>listener Set 与 onclick</td><td>全部解绑并清 onclick</td><td>从快照恢复</td></tr>
+              <tr><td>window event</td><td>type → listener Set；特殊事件绑定宿主元素，其余绑定 rawWindow</td><td>逐条调用 remove；未带原 capture option，capture=true 可能漏解绑</td><td>UMD/keep-alive 快照重新绑定默认 listener；漏解绑项不再受账本管理</td></tr>
+              <tr><td>document event/onclick</td><td>listener Set 与 onclick</td><td>同样存在 capture 限制；onclick 按模式清理</td><td>从快照恢复受管 listener</td></tr>
               <tr><td>setInterval/setTimeout</td><td>id → handler/timeout/args</td><td>默认卸载或 destroy 清除；UMD/keep-alive 不清</td><td>timer 不重建，因为保留的原生 timer 一直存在</td></tr>
               <tr><td>data listener</td><td>EventCenter snapshot</td><td>每次隐藏/停止都解绑</td><td>UMD/keep-alive 重绑</td></tr>
             </tbody>
@@ -958,8 +969,8 @@ micro-app[name=catalog] .card[data-kind="a,b"]{
           IframeSandbox 构造隐藏 iframe，使用 <code>iframe.contentWindow</code> 与其 document，等待浏览器重建初始
           document 后生成新的 html/head/body，再补 window/document/element/router，最后 resolve
           <code>sandboxReady</code>。它向 CreateApp 暴露与 With 沙箱一致的 start/stop、effect snapshot、
-          actionsBeforeExecScripts、microAppWindow/proxyWindow。默认非 UMD unmount 或 destroy 会 defer 删除 iframe；
-          再 mount 新建 realm。这里不展开其逐文件代理实现。
+          actionsBeforeExecScripts、microAppWindow/proxyWindow。沙箱已经 start 的常规默认非 UMD unmount 或 destroy 会 defer 删除 iframe，
+          再 mount 新建 realm；ready 前卸载则可能因 stop 尚未 active、container 非空而错过补删，0ms 轮询也没有取消路径。这里不展开其逐文件代理实现。
         </p>
         <span class="source">src/sandbox/iframe/index.ts · IframeSandbox.constructor/createIframeElement/patchIframe/createIframeTemplate/start/stop；src/create_app.ts · createSandbox/clearOptions</span>
       </section>
@@ -1079,7 +1090,7 @@ if (force || !isEqual(eventInfo.data, tempData)) {
           子应用 dispatch 成功处理后，若实例仍有 container，框架在宿主
           <code>&lt;micro-app&gt;</code> 上发送 <code>datachange</code>，detail.data 是合并后的缓存。
           <code>off/clearDataListener</code> 只删 listener，不删 data；普通 unmount 会清子应用方向和全局 listener，
-          但默认保留两侧每 app 数据。<code>clear-data</code> 或 destroy 才清基座→子应用和子应用→基座两份缓存。
+          但默认保留两侧每 app 数据。在已 start 的真实 unmount 中，<code>clear-data</code> 或 destroy 会把 clearData 传给 active sandbox，清基座→子应用和子应用→基座两份缓存；非 prerender 的 prefetch/已卸载直结分支与 hidden no-op 分支会忽略该选项。
           全局 data 本身不因单 app 卸载而清空。
         </p>
         <span class="source">src/interact/index.ts · EventCenterForMicroApp.dispatch/clearDataListener；src/interact/event_center.ts · off/clearData；src/sandbox/with/index.ts · releaseGlobalEffect</span>
@@ -1104,31 +1115,32 @@ if (force || !isEqual(eventInfo.data, tempData)) {
         <h3>11.2 三条分叉</h3>
         <div class="branch" role="img" aria-label="普通卸载、UMD、keep-alive 与 destroy 分叉">
           <div class="root"><strong>元素断开</strong><br>handleDisconnected</div>
-          <div><strong>默认模式</strong><br>unmount → 清 DOM/事件/timer；实例与模板保留</div>
-          <div class="keep"><strong>keep-alive</strong><br>hidden → DOM 移到临时 div；沙箱仍 active</div>
+          <div><strong>默认模式</strong><br>unmount → 清 DOM/timer，并尝试释放受管事件；实例与模板保留</div>
+          <div class="keep"><strong>keep-alive（资源已完成）</strong><br>hidden → DOM 移到临时 div；沙箱仍 active</div>
           <div class="destroy"><strong>destroy</strong><br>完整 stop → 删除 inline cache 与 appInstanceMap</div>
           <div class="umd"><strong>UMD remount</strong><br>活 DOM 移回 source.html；事件快照；timer 保留</div>
           <div class="keep"><strong>show</strong><br>恢复 listener/data snapshot；活 DOM 移回新容器</div>
           <div><strong>default remount</strong><br>深克隆模板；重跑初始化脚本</div>
           <div class="destroy"><strong>不可由 Map 复用</strong><br>下一次重新 CreateApp + fetch/共享 cache</div>
         </div>
+        <div class="callout warn"><strong>加载期例外：</strong><code>hiddenKeepAliveApp</code> 总是先发 afterhidden；但 <code>loadSourceLevel !== 2</code> 时无法保存完整 DOM/effect，随后调用普通 unmount，主状态最终为 UNMOUNT、keepAliveState 被清空。只有资源完成后才是真正“隐藏而不 stop”。</div>
 
         <h3>11.3 清理矩阵</h3>
         <div class="table-wrap">
           <table>
             <thead><tr><th>对象/副作用</th><th>默认 unmount</th><th>UMD unmount/remount</th><th>keep-alive hidden/show</th><th>destroy</th></tr></thead>
             <tbody>
-              <tr><td>app state</td><td>UNMOUNT</td><td>UNMOUNT → remount</td><td>通常仍 MOUNTED；keepAliveState HIDDEN → SHOW</td><td>先 UNMOUNT，随后实例失去 Map 持有</td></tr>
+              <tr><td>app state</td><td>UNMOUNT</td><td>UNMOUNT → remount</td><td>level 2 时通常仍 MOUNTED、HIDDEN → SHOW；未完成时退化 UNMOUNT</td><td>先 UNMOUNT，随后实例失去 Map 持有</td></tr>
               <tr><td>宿主 DOM</td><td>清空；source.html 模板保留</td><td>活节点移入 source.html，remount 原节点移回</td><td>活节点移入临时 div，show 原节点移回</td><td>清空；实例可回收</td></tr>
               <tr><td>初始化脚本</td><td>remount 重跑</td><td>不重跑；调用 UMD mount</td><td>不重跑，也不调用普通 mount 链</td><td>下次新实例重新跑</td></tr>
               <tr><td>appInstanceMap</td><td>保留</td><td>保留</td><td>保留</td><td>删除</td></tr>
               <tr><td>With sandbox 对象</td><td>保留但 inactive</td><td>保留但 inactive</td><td>保持 active</td><td>实例删除；全局补丁按计数恢复</td></tr>
-              <tr><td>window/document listener</td><td>移除，不留快照</td><td>移除并记录，remount 重绑</td><td>移除并记录，show 重绑</td><td>移除，快照清空</td></tr>
-              <tr><td>timer</td><td>清除</td><td>保留并继续运行</td><td>保留并继续运行</td><td>清除</td></tr>
+              <tr><td>window/document listener</td><td>尝试移除，不留快照</td><td>记录后尝试移除，remount 重绑</td><td>记录后尝试移除，show 重绑</td><td>尝试移除，快照清空；四种情形均有 capture=true 漏解绑边界</td></tr>
+              <tr><td>timer</td><td>启用沙箱且已 start 时清除</td><td>保留并继续运行</td><td>保留并继续运行</td><td>With 显式清；iframe 已 start 常规路径删除 realm</td></tr>
               <tr><td>per-app data listener</td><td>清除；脚本重跑时重建</td><td>清除并快照，remount 重建</td><td>清除并快照，show 重建</td><td>清除</td></tr>
               <tr><td>per-app data</td><td>默认保留；clear-data 才清</td><td>默认保留；clear-data 才清</td><td>保留</td><td>两方向清除</td></tr>
-              <tr><td>route</td><td>默认清；keep-route-state 可保留</td><td>同左</td><td>search 模式隐藏时移除，show 时恢复</td><td>清除</td></tr>
-              <tr><td>iframe</td><td>非 UMD 删除，sandbox 置空；remount 新建</td><td>保留</td><td>保留</td><td>defer 删除</td></tr>
+              <tr><td>route</td><td>浏览器记录始终移除（pure 除外）；<code>keep-router-state</code> 只控制非 custom 的内部 microLocation，native/native-scope 总不在此重置</td><td>同左</td><td>search 模式隐藏时移除，show 时恢复</td><td>同一清理规则</td></tr>
+              <tr><td>iframe</td><td>已 start 常规非 UMD 路径删除，sandbox 置空；remount 新建</td><td>保留；每次 start 还会追加新 base</td><td>保留</td><td>已 start 常规路径 <code>defer</code> 微任务删除；ready 前竞态可能残留</td></tr>
               <tr><td>静态 inline script cache</td><td>保留</td><td>保留</td><td>保留</td><td>删除本实例 Set 中 inline key</td></tr>
               <tr><td>动态 inline script cache</td><td colspan="4">从未进入 sourceCenter；每次动态创建都重新执行</td></tr>
               <tr><td>外链 JS/CSS cache</td><td>保留</td><td>保留</td><td>保留</td><td>仍保留，包括 appSpace 解析元数据</td></tr>
@@ -1140,11 +1152,12 @@ if (force || !isEqual(eventInfo.data, tempData)) {
           destroy 只显式删除本实例静态 inline script 项和 <code>appInstanceMap</code>；外链 link/script
           的全局 Map 没有在 destroy 路径调用 <code>deleteInfo</code>。
         </div>
+        <div class="callout warn"><strong>清理保证的前提：</strong>上表描述启用沙箱且正常走到 start/stop 的主路径。禁用沙箱时框架不兜底清业务 timer/listener；带 <code>capture:true</code> 的受管 listener 可能因 release 未回传 capture 而漏解绑；iframe ready 前卸载还可能遗留 iframe 与轮询。</div>
         <span class="source">src/create_app.ts · actionsAfterUnmounted/clearOptions/actionsForCompletelyDestroy/hiddenKeepAliveApp/showKeepAliveApp；src/sandbox/with/index.ts · stop/releaseGlobalEffect；src/sandbox/with/window.ts · release；src/source/source_center.ts · deleteInlineInfo</span>
 
         <h3>11.4 UMD 与 keep-alive 的差异</h3>
         <p>
-          两者都保留 DOM、timer 并快照 listener，但 UMD 已执行完整 unmount，sandbox 变 inactive、
+          资源完成后的两者都保留 DOM、timer 并快照 listener，但 UMD 已执行完整 unmount，sandbox 变 inactive、
           global 引用计数递减，remount 会调用 UMD mount hook；keep-alive 只是隐藏，sandbox 仍 active、
           app state 不进入 UNMOUNT，show 只恢复 DOM 与副作用，不走 mount hook。
         </p>
@@ -1182,16 +1195,16 @@ if (force || !isEqual(eventInfo.data, tempData)) {
           <li><b>子应用收：</b><code>EventCenterForMicroApp.addDataListener</code> 的 callbacks 被调用；autoTrigger 可读已有缓存。</li>
           <li><b>子应用回：</b><code>window.microApp.dispatch → __catalog_from_micro_app__ → base addDataListener</code>。</li>
           <li><b>宿主事件：</b>同次有效 dispatch 后向 <code>&lt;micro-app&gt;</code> 发 <code>datachange</code>，detail 为合并数据。</li>
-          <li><b>卸载：</b>listener 清理与 data 清理由不同 API 控制；默认保留缓存，clear-data/destroy 清 per-app 双向数据。</li>
+          <li><b>卸载：</b>listener 清理与 data 清理由不同 API 控制；默认保留缓存。只有真实 unmount 到达 active sandbox 时，clear-data/destroy 才清 per-app 双向数据；直接结算/no-op 分支可忽略它。</li>
         </ol>
 
         <h3>链 4：普通卸载、keep-alive、destroy</h3>
         <ol class="trace">
           <li><b>公共入口：</b><code>remove element → disconnectedCallback → handleDisconnected</code>。</li>
           <li><b>普通：</b><code>unmount → child hooks → sandbox.stop(default) → 清 event/timer → base unmount → clearOptions</code>。</li>
-          <li><b>keep-alive：</b><code>hiddenKeepAliveApp → HIDDEN → afterhidden → DOM 移到 div → effect snapshot/release</code>；show 反向恢复。</li>
+          <li><b>keep-alive：</b><code>hiddenKeepAliveApp → HIDDEN → afterhidden</code>；level 2 时 DOM 移到 div 并 snapshot/release，未完成时退化普通 unmount；show 只适用于前者。</li>
           <li><b>destroy：</b><code>unmount(destroy) → sandbox.stop(destroy) → clearData → clearOptions → actionsForCompletelyDestroy</code>。</li>
-          <li><b>结果：</b>普通与 UMD 可由同一 Map 实例复用；keep-alive 从未真正 unmount；destroy 迫使下一次新建实例，但外链缓存仍可复用。</li>
+          <li><b>结果：</b>普通与 UMD 可由同一 Map 实例复用；完成加载的 keep-alive 不真正 unmount；destroy 迫使下一次新建实例，但外链缓存及旧 appSpace 仍可复用。</li>
         </ol>
       </section>
 
@@ -1222,7 +1235,7 @@ if (force || !isEqual(eventInfo.data, tempData)) {
           <li><strong>阶段 5–6：</strong>沙箱 ready 后克隆 DOM，再 start；全局补丁只在首个 active sandbox 安装。</li>
           <li><strong>阶段 7：</strong>脚本在 proxyWindow 域执行；创建的动态节点带 catalog 标记，最终落入该应用 head/body。</li>
           <li><strong>阶段 8–9：</strong>基座预先缓存的数据由 child autoTrigger 取得；child dispatch 合并后同时通知 base listener 与宿主 datachange；脚本完成后进入 MOUNTED。</li>
-          <li><strong>阶段 10：</strong>默认卸载清 DOM、事件、timer、worker/EventSource 和路由状态；实例、模板、外链缓存及默认 data 留待复用。</li>
+          <li><strong>阶段 10：</strong>启用沙箱且已 start 的默认卸载清 DOM/timer、已登记 Worker/With EventSource、路由，并尝试释放受管事件；capture listener、未登记资源与 iframe ready 竞态是边界。实例、模板、外链缓存及默认 data 留待复用。</li>
         </ol>
 
         <h3>13.3 基座入口</h3>
@@ -1342,7 +1355,7 @@ document.querySelector('#catalog-root').appendChild(badge)</code></pre>
           <li><strong>仓库源码摘录：</strong>本教程标有“仓库源码摘录”的短片段来自当前源码，个别类型与省略项为便于阅读做结构化删节。</li>
           <li><strong>教程示例：</strong>catalog 代码是基于 README 最小 start/element、<code>src/__tests__/demos/common/</code> 动态资源与通信场景组合出的完整示例；不是仓库原文件。</li>
           <li><strong>解释性伪代码：</strong>With bindScope 片段明确标为结构化等价，不是可复制替换的原始字符串模板。</li>
-          <li><strong>清理：</strong>示例显式 clear timer/listener；框架默认 With sandbox 仍会在普通 unmount 兜底清 timer 与 listener。</li>
+          <li><strong>清理：</strong>示例显式 clear timer/listener；框架默认 With sandbox 会在普通 unmount 清受管 timer，并尝试释放 listener，但 capture=true 存在漏解绑边界，业务仍应自行成对清理。</li>
         </ul>
         <span class="source">README.zh-cn.md · “如何使用”；src/__tests__/demos/common/index.html；src/__tests__/demos/common/script1.js；src/__tests__/main.test.ts · main process；src/interact/index.ts · 通信 API</span>
       </section>
@@ -1350,89 +1363,125 @@ document.querySelector('#catalog-root').appendChild(badge)</code></pre>
       <section id="tests">
         <h2>14. 测试证据索引</h2>
         <p>
-          下表均为静态阅读结果，不代表本环境执行通过。“当前断言”指 API 与当前实现形态相符；
-          “意图证据”指场景有价值，但文件含旧 API，不能作为可执行证明。
+          下表均为静态阅读结果，不代表本环境执行通过。证据分四级：“默认套件”指当前 <code>jest.config.js</code>
+          选中的 7 文件；“非默认静态”指文件不由默认命令执行；“失效意图”指场景有价值，但旧 API 或时序使文件不可作当前证明；
+          “源码”表示没有可用直接测试，只以生产实现作证。
         </p>
         <div class="table-wrap">
           <table>
             <thead><tr><th>测试文件 / 等级</th><th>Given</th><th>When</th><th>Then</th><th>Mechanism / Source</th></tr></thead>
             <tbody>
               <tr>
-                <td><code>main.test.ts</code><br>当前断言</td>
+                <td><code>main.test.ts</code><br>默认套件</td>
                 <td>start 后创建普通 app，监听 mounted/unmount</td>
                 <td>append 后 remove</td>
                 <td>activeApps 先包含、后不包含 app；另覆盖 HTML fetch error 与 UMD remount</td>
                 <td>元素连接/断开驱动 CreateApp；<code>MicroAppElement.handleConnected/handleDisconnected</code></td>
               </tr>
               <tr>
-                <td><code>micro_app_element.test.ts</code><br>当前断言</td>
+                <td><code>micro_app_element.test.ts</code><br>默认套件</td>
                 <td>普通、同名冲突、prefetch、keep-alive 元素</td>
                 <td>append、改 name/url、remove/reappend</td>
                 <td>CreateApp 入 Map；冲突报错；prefetch 复用；afterhidden/beforeshow/aftershow 发出</td>
                 <td><code>handleConnected/actionsForAttributeChange/hiddenKeepAliveApp/showKeepAliveApp</code></td>
               </tr>
               <tr>
-                <td><code>create_app.test.ts</code><br>当前断言</td>
+                <td><code>create_app.test.ts</code><br>默认套件</td>
                 <td>加载未完、UMD Promise、各 unmountApp option</td>
                 <td>提前 remove、remount、clearAliveState/destroy</td>
                 <td>LOADING/UNMOUNT/BEFORE_MOUNT 状态；普通卸载留 Map，destroy 删除；hidden 可转真正 UNMOUNT</td>
                 <td><code>CreateApp.mount/unmount</code>；<code>micro_app.unmountApp</code></td>
               </tr>
               <tr>
-                <td><code>source/index.test.ts</code><br>当前断言</td>
+                <td><code>micro_app.test.ts</code><br>默认套件 / 异步断言较浅</td>
+                <td>start、renderApp、查询、reload、unmount API</td>
+                <td>命令式创建、重载与批量卸载</td>
+                <td>renderApp 被 await；reload/unmount 的 <code>.then</code> 未 await/return，不能保证回调断言在用例结束前执行</td>
+                <td><code>MicroApp.start</code>；<code>renderApp/reload/unmountApp/unmountAllApps</code></td>
+              </tr>
+              <tr>
+                <td><code>unit/utils.test.ts</code><br>默认套件</td>
+                <td>日志、URL、路径、微任务、promiseStream、idle 回退与 DOM scope</td>
+                <td>调用各基础工具并观察同步/异步结果</td>
+                <td>覆盖工具契约；<code>defer</code> 用例自身未 return/await 内层 Promise，异步断言强度有限</td>
+                <td><code>libs/utils.ts</code>；不直接证明上层应用生命周期</td>
+              </tr>
+              <tr>
+                <td><code>source/index.test.ts</code><br>非默认静态</td>
                 <td>exclude、缺 head/body、空 HTML、相对 img、processHtml</td>
                 <td>加载不同入口</td>
                 <td>资源集合过滤；结构错误发 error；img 补全；插件替换 DOM</td>
                 <td><code>HTMLLoader.formatHTML</code>；<code>extractSourceDom/flatBodyChildren</code></td>
               </tr>
               <tr>
-                <td><code>source/links.test.ts</code><br>意图证据</td>
+                <td><code>source/links.test.ts</code><br>失效意图</td>
                 <td>动态坏 link、特殊 rel、静态 CSS 失败、重复地址</td>
                 <td>append link 或加载 HTML</td>
                 <td>动态 error；preload 消失；静态 CSS 失败仍 mounted；地址期望复用</td>
                 <td>机制与 <code>extractLinkFromHtml/formatDynamicLink</code> 一致；但 <code>globalLinks</code> 与旧签名不匹配当前源码</td>
               </tr>
               <tr>
-                <td><code>source/scripts.test.ts</code><br>意图证据</td>
+                <td><code>source/scripts.test.ts</code><br>失效意图</td>
                 <td>动态 inline/remote、module/noModule、失败脚本、remount</td>
                 <td>append script 或加载特殊 HTML</td>
                 <td>动态执行与 load/error；静态资源失败仍可 mounted；disable sandbox 无 sandbox</td>
                 <td>机制与 <code>extractScriptElement/execScripts/runDynamic*</code> 一致；但 <code>globalScripts</code>、Map 式 source 断言过时</td>
               </tr>
               <tr>
-                <td><code>source/scoped_css.test.ts</code><br>当前/部分 skip</td>
+                <td><code>source/scoped_css.test.ts</code><br>默认套件 / 部分 skip</td>
                 <td>空 style 后赋值、at-rule、配置注释、大 CSS、nesting</td>
                 <td>动态插入 style</td>
                 <td>selector/body 前缀、注释开关、MutationObserver 与期望 CSS；若干 URL/失败用例被 skip</td>
                 <td><code>CSSParser</code> 与 <code>scopedCSS</code>；skip 项不作执行证明</td>
               </tr>
               <tr>
-                <td><code>sandbox/index.test.ts</code><br>意图证据</td>
+                <td><code>unit/source/loader/html.test.ts</code><br>非默认 / 部分失效</td>
+                <td>HTML 成功、空响应、网络错误、component mode 与 processHtml</td>
+                <td>直接调用 HTMLLoader.run</td>
+                <td>前半仍表达 loader 场景；插件段使用旧 <code>microApp.plugins</code> 与旧参数期望，不能整体视为当前可执行测试</td>
+                <td><code>source/loader/html.ts</code>；生产实现仍是最终证据</td>
+              </tr>
+              <tr>
+                <td><code>sandbox/index.test.ts</code><br>失效意图</td>
                 <td>scope/escape 属性、Proxy traps、active 开关</td>
                 <td>读写/delete/descriptor/start/stop</td>
                 <td>子域隔离、显式逃逸与停止删除</td>
                 <td>机制与 <code>with/window.createProxyWindow</code> 一致；但测试入口 <code>../../sandbox</code> 在当前树不存在，调用签名也旧</td>
               </tr>
               <tr>
-                <td><code>sandbox/effect.test.ts</code><br>当前断言</td>
+                <td><code>sandbox/effect.test.ts</code><br>非默认弱证据</td>
                 <td>普通 app、UMD app、iframe app</td>
                 <td>事件绑定、remove/remount</td>
                 <td>UMD 可 remount；iframe DOM 元素满足其 realm 的 Element 判断</td>
                 <td><code>record/rebuildEffectSnapshot</code>；iframe <code>updateElementInfo</code></td>
               </tr>
               <tr>
-                <td><code>interact/index.test.ts</code><br>当前断言</td>
+                <td><code>interact/index.test.ts</code><br>默认套件</td>
                 <td>基座与两个 child listener、已有缓存、global data</td>
                 <td>重复 dispatch、autoTrigger、remove/clear listener</td>
                 <td>同数据仅一次；datachange；listener 清除但 data 保留；全局 listener 按 app 清</td>
                 <td><code>EventCenter.enqueue/process/isEqual</code>；<code>EventCenterForBaseApp/MicroApp</code></td>
+              </tr>
+              <tr>
+                <td><code>prefetch.test.ts</code><br>失效意图</td>
+                <td>预取参数、全局 JS/CSS、重复地址</td>
+                <td>调用 preFetch/start(globalAssets)</td>
+                <td>旧测试期望资源进入全局缓存</td>
+                <td>导入当前源码不存在的 <code>globalLinks/globalScripts</code>，且不在默认套件；不证明 level 1/2/3、完整屏障或取消语义</td>
+              </tr>
+              <tr>
+                <td><code>unit/event_center.test.ts</code><br>失效意图</td>
+                <td>EventCenter 监听、dispatch、autoTrigger</td>
+                <td>dispatch 后同步断言</td>
+                <td>期望回调立即触发</td>
+                <td>当前实现经 Promise 微任务 process；同步断言时序已失效，应以默认 <code>interact/index.test.ts</code> 为准</td>
               </tr>
             </tbody>
           </table>
         </div>
         <div class="callout warn">
           <strong>证据使用原则：</strong>测试名不单独证明机制；以上 Then 均同时回查测试断言与对应源码。
-          旧 API 文件只支持“项目曾为该场景准备测试”的陈述，不支持“当前测试可编译或已通过”。
+          旧 API 文件只支持“项目曾为该场景准备测试”的陈述，不支持“当前测试可编译或已通过”；非默认文件也不能描述成默认 <code>npm test</code> 覆盖。
         </div>
       </section>
 
@@ -1481,9 +1530,10 @@ document.querySelector('#catalog-root').appendChild(badge)</code></pre>
               <tr><td>非法 tagName</td><td>hasInit 已为 true</td><td>本实例不能再次正常 start</td></tr>
               <tr><td>非法 name/url 或运行中同名</td><td>元素记录错误</td><td>不创建/替换实例</td></tr>
               <tr><td>HTML Promise reject</td><td>level -1，LOAD_FAILED，base error</td><td>停止渲染；unmount 强制 destroy</td></tr>
-              <tr><td>HTML 空或缺 head/body</td><td>error，但仍 LOADING/level 0</td><td>挂载停滞</td></tr>
+              <tr><td>HTML 空或缺 head/body</td><td>子应用收到 detail=LOAD_FAILED；内部仍 LOADING/level 0</td><td>不走 onLoadError，挂载停滞</td></tr>
               <tr><td>静态 CSS fetch reject</td><td>错误日志；该 style 缺失</td><td>CSS lane 完成，允许 mount</td></tr>
-              <tr><td>普通静态 JS fetch reject</td><td>错误日志；缓存 code 仍可能为空串</td><td>JS lane 完成，空代码路径不阻塞</td></tr>
+              <tr><td>普通静态 JS fetch reject</td><td>错误日志；缓存 code 仍可能为空串</td><td>框架抓取链完成，空代码路径不阻塞</td></tr>
+              <tr><td>原生外链 module 加载失败</td><td>真实 script 只有 onload、没有 onerror</td><td>moduleCount 可能不归零，挂载停滞</td></tr>
               <tr><td>defer/async fetch reject</td><td>errorCount 增加</td><td>settle 后继续；module 完成条件另计</td></tr>
               <tr><td>CSS parse throw</td><td>记录错误，保留原文本，scoped 标志已置</td><td>资源通道继续</td></tr>
               <tr><td>脚本执行 throw</td><td>console warning 后默认重抛；filter 返回 true 可吞掉</td><td>没有统一转为 lifecycle error，当前调用链可能中断</td></tr>
@@ -1491,7 +1541,10 @@ document.querySelector('#catalog-root').appendChild(badge)</code></pre>
               <tr><td>UMD mount Promise reject</td><td>记录错误</td><td>仍调用 actionsAfterMounted</td></tr>
               <tr><td>UMD unmount 同步 throw</td><td>state 已 UNMOUNT，但 catch 后无后续清理</td><td>可能留下 active sandbox/容器副作用</td></tr>
               <tr><td>UMD unmount Promise reject</td><td>记录错误</td><td>仍执行 actionsAfterUnmounted</td></tr>
-              <tr><td>sandbox ready 前已 unmount</td><td><code>!isUnmounted()</code> 守卫失败</td><td>跳过 nextAction</td></tr>
+              <tr><td>全局 beforemount hook throw</td><td>配置函数在 BEFORE_MOUNT 同步直调，无 try/catch</td><td>挂载可在克隆 DOM、启动沙箱前中断</td></tr>
+              <tr><td>全局 unmount hook throw</td><td>sandbox.stop 已执行；clearOptions/unmountcb 尚未执行</td><td>字段可能残留，命令式 Promise 可能不结算</td></tr>
+              <tr><td>renderApp 参数/name/url 非法且没有 error 事件</td><td>日志后提前 return</td><td>返回 Promise 可能永久 pending</td></tr>
+              <tr><td>sandbox ready 前已 unmount</td><td><code>!isUnmounted()</code> 守卫失败</td><td>跳过 nextAction；fetch 继续，iframe 可能错过删除且轮询无取消</td></tr>
             </tbody>
           </table>
         </div>
@@ -1501,6 +1554,8 @@ document.querySelector('#catalog-root').appendChild(badge)</code></pre>
         <p>
           prefetch 在 idle + 默认 3 秒后串行处理配置，若 Map 中无同名 app，仍直接
           <code>new CreateApp({ isPrefetch: true, prefetchLevel })</code>，所以复用同一 HTML/sourceCenter 管线。
+          “串行”只等前一应用的 CSS/JS 任一 lane 第一次调用包装后的 onLoad；它可能在 level 1 就放行下一应用，
+          并非逐应用等待完整双屏障。<code>preFetch</code> 返回 void，延时 timer 没有公开取消句柄。
           level 2 可预解析 JS；level 3 prerender 会在临时 div 以强制 fiber 挂载。真实元素出现时，
           <code>handleConnected</code> 检查 URL 与 scopecss/sandbox/iframe 核心配置，兼容则把
           <code>isPrefetch</code> 置 false 并进入普通 mount；不兼容则销毁后新建。
@@ -1510,7 +1565,8 @@ document.querySelector('#catalog-root').appendChild(badge)</code></pre>
         <h3>15.4 router 只在生命周期交接中的角色</h3>
         <p>
           sandbox.start 以 defaultPage 初始化 microLocation、注册 history listener，并在自定义模式设置 base route；
-          sandbox.stop 按 keepRouteState 清或保留 URL 状态并移除 listener。keep-alive 的 search 模式在隐藏/展示时
+          已 start 的 sandbox.stop 会移除 history listener；<code>keepRouteState</code> 只控制非 custom 模式是否重置内部 microLocation，
+          native/native-scope 无论该值为何都不在此重置。非 pure 模式仍从浏览器 URL/history.state 删除该应用记录。keep-alive 的 search 模式在隐藏/展示时
           移除/恢复 route 信息。完整路由编码、history state 与导航算法不在本教程范围。
         </p>
         <span class="source">src/sandbox/with/index.ts · initRouteState/clearRouteState/setRouteInfoForKeepAliveApp/removeRouteInfoForKeepAliveApp</span>
@@ -1518,7 +1574,8 @@ document.querySelector('#catalog-root').appendChild(badge)</code></pre>
         <h3>15.5 明确未展开</h3>
         <p>
           SSR、嵌套应用、native mode、0.x、polyfill、DevTools、框架适配、全部插件配置、完整 router 算法、
-          IframeSandbox 的逐文件 window/document patch、Worker 代理内部实现。没有 React 内部实现，也没有跨库或跨版本比较。
+          IframeSandbox 的逐文件 window/document patch、Worker 代理内部实现。上述 request/effect/router/nested 细节已放入
+          <a href="./micro-app-src-guide.html">源码全景主稿</a>；本附录不重复。没有 React 内部实现，也没有跨库或跨版本比较。
         </p>
       </section>
 
@@ -1563,7 +1620,7 @@ document.querySelector('#catalog-root').appendChild(badge)</code></pre>
           <li>提供 1020px 与 680px 两级窄屏布局及 print 布局。</li>
           <li>流程图、状态表、清理矩阵与同一 catalog Demo 使用统一术语。</li>
           <li>未把静态测试写成已通过；旧 API 测试单列限制。</li>
-          <li>commit 的本地不可验证性、未运行测试及排除范围已明确。</li>
+          <li>版本标签的远端核验、未运行测试及排除范围已明确。</li>
         </ul>
       </section>
     </main>
@@ -1571,8 +1628,8 @@ document.querySelector('#catalog-root').appendChild(badge)</code></pre>
 
   <footer>
     <p>
-      证据基线：@micro-zoe/micro-app 1.0.0-rc.32；任务指定 commit
-      dd445c483a7c7b29b1aa37245874e2617a385882。本文只依赖当前仓库静态内容，离线打开不请求网络资源。
+      证据基线：@micro-zoe/micro-app 1.0.0-rc.32；远端标签 <code>v1.0.0-rc.32</code>
+      已核验指向 commit <code>dd445c483a7c7b29b1aa37245874e2617a385882</code>。机制分析只依赖本地静态源码；版本身份另经远端 tag 核验。页面离线打开不请求网络资源。
     </p>
   </footer>
 </body>

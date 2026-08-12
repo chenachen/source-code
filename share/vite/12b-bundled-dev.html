@@ -1,0 +1,2879 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#646cff"><meta name="description" content="实验性 bundled dev 用 Rolldown 维护增量整包与内存输出，再由浏览器真实执行图决定 HMR 边界。"><title>12B. Bundled Dev：Rolldown 增量整包、内存文件与浏览器 HMR 图 · Vite 源码解剖</title><style>:root {
+  color-scheme: light;
+  --bg: #f4f6fb;
+  --surface: #ffffff;
+  --surface-soft: #f8f9ff;
+  --surface-code: #171925;
+  --text: #252738;
+  --muted: #686b7d;
+  --faint: #9295a7;
+  --line: #e3e5ef;
+  --line-strong: #d3d6e4;
+  --brand: #646cff;
+  --brand-strong: #4d54dc;
+  --cyan: #14a6c7;
+  --green: #188769;
+  --amber: #b56b16;
+  --red: #c4485a;
+  --shadow: 0 16px 48px rgb(36 39 67 / 9%);
+  --shadow-soft: 0 8px 28px rgb(36 39 67 / 7%);
+  --radius: 18px;
+  --radius-small: 11px;
+  --topbar: 64px;
+  --content: 820px;
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    'PingFang SC',
+    'Hiragino Sans GB',
+    'Microsoft YaHei',
+    sans-serif;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #11121a;
+  --surface: #191b26;
+  --surface-soft: #202331;
+  --surface-code: #0d0f17;
+  --text: #e9eaf2;
+  --muted: #aaadbd;
+  --faint: #818597;
+  --line: #2c2f3d;
+  --line-strong: #3a3e50;
+  --brand: #8e94ff;
+  --brand-strong: #a6abff;
+  --cyan: #56c8e0;
+  --green: #57c7a3;
+  --amber: #e0a252;
+  --red: #f07b8c;
+  --shadow: 0 18px 60px rgb(0 0 0 / 26%);
+  --shadow-soft: 0 8px 30px rgb(0 0 0 / 22%);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: calc(var(--topbar) + 24px);
+}
+
+body {
+  margin: 0;
+  min-width: 280px;
+  background:
+    radial-gradient(circle at 4% 0%, rgb(100 108 255 / 10%), transparent 26rem),
+    radial-gradient(circle at 95% 8%, rgb(20 166 199 / 9%), transparent 28rem),
+    var(--bg);
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1.78;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+a {
+  color: var(--brand-strong);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+}
+
+a:hover {
+  color: var(--cyan);
+}
+
+.skip-link {
+  position: fixed;
+  z-index: 200;
+  top: 8px;
+  left: 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--text);
+  color: var(--surface);
+  transform: translateY(-160%);
+}
+
+.skip-link:focus {
+  transform: translateY(0);
+}
+
+.reading-progress {
+  position: fixed;
+  z-index: 120;
+  inset: 0 0 auto;
+  height: 3px;
+  background: transparent;
+}
+
+.reading-progress > span {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: linear-gradient(90deg, var(--brand), var(--cyan));
+  transition: width 80ms linear;
+}
+
+.topbar {
+  position: sticky;
+  z-index: 100;
+  top: 0;
+  height: var(--topbar);
+  border-bottom: 1px solid rgb(120 124 150 / 16%);
+  background: color-mix(in srgb, var(--bg) 84%, transparent);
+  backdrop-filter: blur(18px) saturate(150%);
+}
+
+.topbar-inner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: min(100%, 1540px);
+  height: 100%;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: max-content;
+  color: var(--text);
+  font-weight: 760;
+  text-decoration: none;
+}
+
+.brand-mark {
+  display: grid;
+  width: 31px;
+  height: 31px;
+  place-items: center;
+  border-radius: 9px;
+  background: linear-gradient(135deg, var(--brand), var(--cyan));
+  box-shadow: 0 7px 18px rgb(100 108 255 / 28%);
+  color: white;
+  font-size: 13px;
+  letter-spacing: -0.04em;
+}
+
+.topbar-path {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.icon-button {
+  display: inline-grid;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.icon-button:hover {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
+.nav-toggle {
+  display: none;
+}
+
+.page-grid {
+  display: grid;
+  grid-template-columns: 250px minmax(0, var(--content)) 225px;
+  gap: 34px;
+  justify-content: center;
+  width: min(100%, 1540px);
+  margin: 0 auto;
+  padding: 34px 24px 72px;
+}
+
+.site-nav,
+.page-toc {
+  position: sticky;
+  top: calc(var(--topbar) + 24px);
+  align-self: start;
+  max-height: calc(100vh - var(--topbar) - 48px);
+  overflow: auto;
+  scrollbar-width: thin;
+}
+
+.site-nav {
+  padding: 5px 10px 18px 0;
+}
+
+.nav-home {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0 0 20px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.nav-home:hover,
+.nav-home[aria-current='page'] {
+  border-color: rgb(100 108 255 / 42%);
+  background: rgb(100 108 255 / 9%);
+  color: var(--brand-strong);
+}
+
+.nav-group + .nav-group {
+  margin-top: 18px;
+}
+
+.nav-group-title {
+  margin: 0 0 6px 11px;
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.nav-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.nav-list a {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 7px;
+  align-items: baseline;
+  padding: 7px 10px;
+  border-radius: 9px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+  text-decoration: none;
+}
+
+.nav-list a:hover {
+  background: var(--surface-soft);
+  color: var(--text);
+}
+
+.nav-list a[aria-current='page'] {
+  background: rgb(100 108 255 / 11%);
+  color: var(--brand-strong);
+  font-weight: 700;
+}
+
+.nav-code {
+  color: var(--faint);
+  font:
+    700 11px/1.4 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+}
+
+.article {
+  min-width: 0;
+}
+
+.article-hero {
+  position: relative;
+  overflow: hidden;
+  margin-bottom: 26px;
+  padding: 36px 38px;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background:
+    linear-gradient(135deg, rgb(100 108 255 / 11%), transparent 58%),
+    linear-gradient(315deg, rgb(20 166 199 / 8%), transparent 45%),
+    var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.article-hero::after {
+  position: absolute;
+  right: -55px;
+  bottom: -70px;
+  width: 220px;
+  height: 220px;
+  border: 35px solid rgb(100 108 255 / 7%);
+  border-radius: 50%;
+  content: '';
+}
+
+.eyebrow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 14px;
+  color: var(--brand-strong);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.eyebrow .pill {
+  padding: 3px 8px;
+  border: 1px solid rgb(100 108 255 / 28%);
+  border-radius: 999px;
+  background: rgb(100 108 255 / 8%);
+}
+
+.article-hero h1 {
+  position: relative;
+  z-index: 1;
+  max-width: 740px;
+  margin: 0;
+  font-size: clamp(2rem, 5vw, 3.35rem);
+  line-height: 1.09;
+  letter-spacing: -0.045em;
+}
+
+.article-hero .lede {
+  position: relative;
+  z-index: 1;
+  max-width: 680px;
+  margin: 18px 0 0;
+  color: var(--muted);
+  font-size: 17px;
+  line-height: 1.72;
+}
+
+.hero-meta {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-top: 23px;
+  color: var(--faint);
+  font-size: 12px;
+}
+
+.hero-meta code {
+  color: var(--muted);
+}
+
+.hero-meta > *,
+.boundary-note p {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.focus-card,
+.evidence-note,
+.boundary-note {
+  margin: 20px 0 26px;
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--brand);
+  border-radius: var(--radius-small);
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.focus-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr);
+  gap: 20px;
+}
+
+.focus-card h2,
+.focus-card h3,
+.evidence-note h2,
+.evidence-note h3 {
+  margin: 0 0 7px;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.focus-card p,
+.evidence-note p,
+.boundary-note p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.focus-card .boundary {
+  padding-left: 20px;
+  border-left: 1px solid var(--line);
+}
+
+.evidence-note {
+  border-left-color: var(--green);
+}
+
+.boundary-note {
+  border-left-color: var(--amber);
+}
+
+.prose {
+  padding: 12px 4px 30px;
+}
+
+.prose > :first-child {
+  margin-top: 0;
+}
+
+.prose h2,
+.prose h3,
+.prose h4 {
+  position: relative;
+  color: var(--text);
+  line-height: 1.34;
+  letter-spacing: -0.025em;
+}
+
+.prose h2 {
+  margin: 58px 0 20px;
+  padding-top: 6px;
+  font-size: 1.72rem;
+}
+
+.prose h2::before {
+  display: block;
+  width: 42px;
+  height: 4px;
+  margin-bottom: 13px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--brand), var(--cyan));
+  content: '';
+}
+
+.prose h3 {
+  margin: 38px 0 14px;
+  font-size: 1.28rem;
+}
+
+.prose h4 {
+  margin: 30px 0 12px;
+  font-size: 1.08rem;
+}
+
+.heading-anchor {
+  position: absolute;
+  left: -1.1em;
+  color: var(--faint);
+  font-weight: 500;
+  text-decoration: none;
+  opacity: 0;
+}
+
+.prose h2:hover .heading-anchor,
+.prose h3:hover .heading-anchor,
+.prose h4:hover .heading-anchor,
+.heading-anchor:focus {
+  opacity: 1;
+}
+
+.prose p,
+.prose li {
+  color: var(--text);
+}
+
+.prose p {
+  margin: 15px 0;
+}
+
+.prose ul,
+.prose ol {
+  padding-left: 1.45em;
+}
+
+.prose li + li {
+  margin-top: 6px;
+}
+
+.prose strong {
+  color: var(--text);
+}
+
+.prose blockquote {
+  margin: 24px 0;
+  padding: 16px 20px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--cyan);
+  border-radius: 0 var(--radius-small) var(--radius-small) 0;
+  background: var(--surface-soft);
+  color: var(--muted);
+}
+
+.prose blockquote > :first-child {
+  margin-top: 0;
+}
+
+.prose blockquote > :last-child {
+  margin-bottom: 0;
+}
+
+code {
+  border-radius: 5px;
+  background: rgb(100 108 255 / 9%);
+  color: color-mix(in srgb, var(--brand-strong) 78%, var(--text));
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.88em;
+}
+
+:not(pre) > code {
+  padding: 0.15em 0.4em;
+  overflow-wrap: anywhere;
+}
+
+.code-card {
+  position: relative;
+  overflow: hidden;
+  margin: 24px 0 30px;
+  border: 1px solid color-mix(in srgb, var(--surface-code) 85%, white);
+  border-radius: 14px;
+  background: var(--surface-code);
+  box-shadow: 0 12px 34px rgb(9 11 21 / 18%);
+}
+
+.code-card figcaption {
+  display: flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 0 12px 0 16px;
+  border-bottom: 1px solid rgb(255 255 255 / 9%);
+  color: #aeb2c8;
+  font:
+    700 11px/1.4 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.copy-code {
+  margin-left: auto;
+  padding: 5px 8px;
+  border: 1px solid rgb(255 255 255 / 13%);
+  border-radius: 6px;
+  background: rgb(255 255 255 / 5%);
+  color: #c8cbda;
+  font: inherit;
+  cursor: pointer;
+}
+
+.copy-code:hover {
+  border-color: rgb(142 148 255 / 65%);
+  color: white;
+}
+
+.code-card pre,
+.diagram-source pre {
+  max-width: 100%;
+  margin: 0;
+  padding: 20px;
+  overflow: auto;
+  background: transparent;
+  color: #e5e7f1;
+  font:
+    13px/1.68 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    monospace;
+  tab-size: 2;
+}
+
+.code-card pre code,
+.diagram-source pre code {
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  white-space: pre;
+}
+
+.table-scroll {
+  max-width: 100%;
+  margin: 23px 0 30px;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.prose table {
+  width: 100%;
+  min-width: 620px;
+  border-collapse: collapse;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.prose th,
+.prose td {
+  padding: 11px 13px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.prose th {
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.prose tr:last-child td {
+  border-bottom: 0;
+}
+
+.page-toc {
+  padding: 12px 0 20px 18px;
+  border-left: 1px solid var(--line);
+}
+
+.toc-title {
+  margin: 0 0 10px;
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.toc-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.toc-list a {
+  display: block;
+  padding: 4px 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+  text-decoration: none;
+}
+
+.toc-list .depth-3 a {
+  padding-left: 12px;
+  color: var(--faint);
+}
+
+.toc-list a:hover,
+.toc-list a.is-active {
+  color: var(--brand-strong);
+}
+
+.article-pager {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 38px;
+}
+
+.pager-link {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 96px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.pager-link:hover {
+  border-color: rgb(100 108 255 / 42%);
+  color: var(--brand-strong);
+}
+
+.pager-link.next {
+  text-align: right;
+}
+
+.pager-label {
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.pager-title {
+  margin-top: 5px;
+  font-size: 14px;
+  font-weight: 720;
+}
+
+.site-footer {
+  margin-top: 35px;
+  padding: 22px 0;
+  border-top: 1px solid var(--line);
+  color: var(--faint);
+  font-size: 12px;
+}
+
+.flow-figure {
+  margin: 26px 0 32px;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.flow-caption {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  margin-bottom: 18px;
+}
+
+.flow-caption strong {
+  font-size: 15px;
+}
+
+.flow-caption span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.flow-lanes {
+  display: grid;
+  gap: 13px;
+}
+
+.flow-lane {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 10px 14px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+
+.lane-label {
+  grid-row: 1 / span 2;
+  margin: 0;
+  color: var(--brand-strong);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+
+.lane-path {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  align-items: center;
+  min-width: 0;
+}
+
+.lane-step,
+.lane-choice {
+  display: inline-flex;
+  min-height: 34px;
+  padding: 7px 9px;
+  align-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.lane-choice {
+  border-color: rgb(100 108 255 / 42%);
+  background: rgb(100 108 255 / 9%);
+  color: var(--brand-strong);
+}
+
+.lane-arrow {
+  color: var(--brand);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.lane-split {
+  display: grid;
+  grid-column: 2;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.lane-split.three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.lane-split > span {
+  padding: 8px 10px;
+  border-left: 3px solid var(--cyan);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.48;
+}
+
+.lane-split > span:nth-child(even) {
+  border-left-color: var(--green);
+}
+
+.merge-output {
+  display: flex;
+  gap: 8px 18px;
+  align-items: center;
+  justify-content: center;
+  padding: 14px 16px;
+  border: 1px solid rgb(24 135 105 / 38%);
+  border-radius: 11px;
+  background: rgb(24 135 105 / 8%);
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.merge-output b {
+  color: var(--green);
+}
+
+.flow-track {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  gap: 20px;
+  align-items: stretch;
+}
+
+.flow-node {
+  position: relative;
+  display: flex;
+  min-height: 74px;
+  padding: 12px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 11px;
+  background: var(--surface-soft);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 720;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.flow-node:not(:last-child)::after {
+  position: absolute;
+  top: 50%;
+  right: -17px;
+  color: var(--brand);
+  content: '→';
+  transform: translateY(-50%);
+}
+
+.flow-node.brand {
+  border-color: rgb(100 108 255 / 38%);
+  background: rgb(100 108 255 / 9%);
+}
+
+.flow-node.cyan {
+  border-color: rgb(20 166 199 / 38%);
+  background: rgb(20 166 199 / 8%);
+}
+
+.flow-node.green {
+  border-color: rgb(24 135 105 / 38%);
+  background: rgb(24 135 105 / 8%);
+}
+
+.flow-branches {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.flow-branch {
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.flow-branch strong {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--text);
+}
+
+.flow-columns {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.flow-column {
+  padding: 15px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+
+.flow-column h4 {
+  margin: 0 0 10px;
+  color: var(--brand-strong);
+  font-size: 13px;
+}
+
+.flow-column ol {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.flow-column li + li {
+  margin-top: 6px;
+}
+
+.diagram-source {
+  margin-top: 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-code);
+}
+
+.diagram-source summary {
+  padding: 10px 13px;
+  color: #c8cbda;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.index-hero {
+  padding-bottom: 42px;
+}
+
+.index-thesis {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 24px 0 38px;
+}
+
+.thesis-card {
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.thesis-number {
+  color: var(--brand);
+  font:
+    800 12px/1 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+}
+
+.thesis-card h2 {
+  margin: 10px 0 7px;
+  font-size: 17px;
+  line-height: 1.35;
+}
+
+.thesis-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.ownership-flow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  align-items: center;
+  margin: 20px 0 36px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.ownership-flow span {
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-soft);
+  font:
+    700 12px/1.35 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+}
+
+.ownership-flow b {
+  color: var(--brand);
+  font-weight: 800;
+}
+
+.track-grid,
+.module-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.track-card,
+.module-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 150px;
+  padding: 19px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.track-card:hover,
+.module-card:hover {
+  border-color: rgb(100 108 255 / 42%);
+  color: var(--text);
+  transform: translateY(-1px);
+}
+
+.track-card h3,
+.module-card h3 {
+  margin: 8px 0;
+  font-size: 17px;
+  line-height: 1.35;
+}
+
+.track-card p,
+.module-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.track-path {
+  margin-top: auto;
+  padding-top: 14px;
+  color: var(--brand-strong);
+  font:
+    700 11px/1.45 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+}
+
+.module-group-heading {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  margin: 48px 0 16px;
+}
+
+.module-group-heading h2 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.module-group-heading p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.module-card {
+  min-height: 175px;
+}
+
+.module-card .module-code {
+  color: var(--brand);
+  font:
+    800 12px/1 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+}
+
+.module-card .module-arrow {
+  margin-top: auto;
+  padding-top: 14px;
+  color: var(--brand-strong);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+@media (max-width: 1230px) {
+  .page-grid {
+    grid-template-columns: 230px minmax(0, var(--content));
+    gap: 28px;
+  }
+
+  .page-toc {
+    display: none;
+  }
+}
+
+@media (max-width: 820px) {
+  :root {
+    --topbar: 58px;
+  }
+
+  .topbar-inner {
+    padding: 0 14px;
+  }
+
+  .topbar-path {
+    display: none;
+  }
+
+  .nav-toggle {
+    display: inline-grid;
+  }
+
+  .page-grid {
+    display: block;
+    padding: 20px 14px 52px;
+  }
+
+  .site-nav {
+    position: fixed;
+    z-index: 95;
+    top: var(--topbar);
+    bottom: 0;
+    left: 0;
+    width: min(86vw, 310px);
+    max-height: none;
+    padding: 18px;
+    border-right: 1px solid var(--line);
+    background: var(--bg);
+    box-shadow: var(--shadow);
+    transform: translateX(-105%);
+    transition: transform 180ms ease;
+  }
+
+  body.nav-open {
+    overflow: hidden;
+  }
+
+  body.nav-open .site-nav {
+    transform: translateX(0);
+  }
+
+  .article-hero {
+    padding: 27px 22px;
+    border-radius: 18px;
+  }
+
+  .article-hero h1 {
+    font-size: clamp(1.9rem, 9vw, 2.65rem);
+  }
+
+  .article-hero .lede {
+    font-size: 15px;
+  }
+
+  .focus-card {
+    grid-template-columns: 1fr;
+  }
+
+  .focus-card .boundary {
+    padding: 16px 0 0;
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+
+  .prose {
+    padding-inline: 2px;
+  }
+
+  .prose h2 {
+    margin-top: 46px;
+    font-size: 1.47rem;
+  }
+
+  .prose h3 {
+    font-size: 1.18rem;
+  }
+
+  .heading-anchor {
+    display: none;
+  }
+
+  .flow-track {
+    grid-template-columns: 1fr;
+  }
+
+  .flow-lane {
+    grid-template-columns: 1fr;
+  }
+
+  .lane-label,
+  .lane-split {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .lane-split,
+  .lane-split.three {
+    grid-template-columns: 1fr;
+  }
+
+  .merge-output {
+    align-items: flex-start;
+    flex-direction: column;
+    text-align: left;
+  }
+
+  .flow-node:not(:last-child)::after {
+    top: auto;
+    right: 50%;
+    bottom: -19px;
+    content: '↓';
+    transform: translateX(50%);
+  }
+
+  .flow-branches,
+  .flow-columns,
+  .index-thesis,
+  .track-grid,
+  .module-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .article-pager {
+    grid-template-columns: 1fr;
+  }
+
+  .pager-link.next {
+    text-align: left;
+  }
+}
+
+@media (max-width: 440px) {
+  body {
+    font-size: 15px;
+  }
+
+  .brand-text {
+    display: none;
+  }
+
+  .article-hero {
+    padding: 24px 18px;
+  }
+
+  .hero-meta {
+    display: grid;
+  }
+
+  .flow-figure {
+    padding: 16px;
+  }
+
+  .code-card pre,
+  .diagram-source pre {
+    padding: 16px;
+    font-size: 12px;
+  }
+}
+
+@media print {
+  body {
+    background: white;
+  }
+
+  .topbar,
+  .site-nav,
+  .page-toc,
+  .reading-progress,
+  .copy-code,
+  .article-pager {
+    display: none !important;
+  }
+
+  .page-grid {
+    display: block;
+    width: auto;
+    padding: 0;
+  }
+
+  .article-hero,
+  .code-card,
+  .table-scroll,
+  .flow-figure {
+    box-shadow: none;
+  }
+
+  .code-card {
+    break-inside: avoid;
+  }
+}
+</style><script>(function(){try{var t=localStorage.getItem("vite-guide-theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(_){}})();</script></head><body><a class="skip-link" href="#article-start">跳到正文</a><div class="reading-progress" aria-hidden="true"><span data-reading-progress></span></div><header class="topbar"><div class="topbar-inner"><button class="icon-button nav-toggle" type="button" data-nav-toggle aria-expanded="false" aria-label="打开模块导航">☰</button><a class="brand" href="index.html"><span class="brand-mark">V</span><span class="brand-text">Vite 源码解剖</span></a><span class="topbar-path">转换与增量更新 / 12B Bundled Dev</span><div class="topbar-actions"><button class="icon-button" type="button" data-theme-toggle aria-label="切换主题">◐</button></div></div></header><div class="page-grid"><nav class="site-nav" aria-label="模块导航"><a class="nav-home" href="index.html"><span>⌂</span><span>阅读总览</span></a><section class="nav-group"><h2 class="nav-group-title">全景</h2><ul class="nav-list"><li><a href="00-system-map-and-end-to-end.html"><span class="nav-code">00</span><span>系统全景与请求链</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">启动与配置</h2><ul class="nav-list"><li><a href="01-cli-and-startup.html"><span class="nav-code">01</span><span>CLI 与启动</span></a></li><li><a href="02a-env-loading.html"><span class="nav-code">02A</span><span>环境文件加载</span></a></li><li><a href="02b-config-resolution.html"><span class="nav-code">02B</span><span>配置加载与解析</span></a></li><li><a href="02c-define-client-injection-and-json.html"><span class="nav-code">02C</span><span>Define、注入与 JSON</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">开发服务器核心</h2><ul class="nav-list"><li><a href="03-plugin-system.html"><span class="nav-code">03</span><span>插件体系</span></a></li><li><a href="04-dev-server-lifecycle.html"><span class="nav-code">04</span><span>Dev Server 生命周期</span></a></li><li><a href="05-environment-api.html"><span class="nav-code">05</span><span>Environment API</span></a></li><li><a href="06-middleware-request-pipeline.html"><span class="nav-code">06</span><span>中间件与请求入口</span></a></li><li><a href="07-module-resolution.html"><span class="nav-code">07</span><span>模块解析</span></a></li><li><a href="08-transform-and-module-graph.html"><span class="nav-code">08</span><span>Transform 与模块图</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">转换与增量更新</h2><ul class="nav-list"><li><a href="09-html-transform.html"><span class="nav-code">09</span><span>HTML 转换</span></a></li><li><a href="10-import-analysis.html"><span class="nav-code">10</span><span>Import Analysis</span></a></li><li><a href="11-dependency-pre-bundling.html"><span class="nav-code">11</span><span>依赖预构建</span></a></li><li><a href="12-hmr.html"><span class="nav-code">12</span><span>HMR</span></a></li><li><a href="12b-bundled-dev.html" aria-current="page"><span class="nav-code">12B</span><span>Bundled Dev</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">资源管线</h2><ul class="nav-list"><li><a href="13a-css-pipeline.html"><span class="nav-code">13A</span><span>CSS 管线</span></a></li><li><a href="13b-asset-worker-wasm.html"><span class="nav-code">13B</span><span>Asset、Worker、Wasm</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">生产构建</h2><ul class="nav-list"><li><a href="14a-build-orchestration.html"><span class="nav-code">14A</span><span>生产构建编排</span></a></li><li><a href="14b-build-output-and-preload.html"><span class="nav-code">14B</span><span>Preload 与构建输出</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">SSR 与运行时</h2><ul class="nav-list"><li><a href="15a-ssr-transform-and-loading.html"><span class="nav-code">15A</span><span>SSR 变换与加载</span></a></li><li><a href="15b-module-runner.html"><span class="nav-code">15B</span><span>Module Runner</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">公共边界</h2><ul class="nav-list"><li><a href="16-public-api-diagnostics-and-types.html"><span class="nav-code">16</span><span>公共 API 与类型</span></a></li></ul></section></nav><main class="article" id="article-start"><header class="article-hero"><div class="eyebrow"><span class="pill">12B</span><span>转换与增量更新</span></div><h1>12B. Bundled Dev：Rolldown 增量整包、内存文件与浏览器 HMR 图</h1><p class="lede">实验性 bundled dev 用 Rolldown 维护增量整包与内存输出，再由浏览器真实执行图决定 HMR 边界。</p><div class="hero-meta"><span>证据基线：v8.2.1</span><span>commit <code>421615865dad</code></span><span>约 30 分钟</span><a href="../../vite/reading-guides/12b-bundled-dev.md">查看 Markdown 原稿</a></div></header><section class="focus-card" aria-label="阅读重点与边界"><div><h2>本页重点</h2><p>实验性 bundled dev 用 Rolldown 维护增量整包与内存输出，再由浏览器真实执行图决定 HMR 边界。</p></div><div class="boundary"><h3>推导边界</h3><p>它不是普通 transformRequest 的缓存优化；依赖优化、模块身份、HMR 边界与 reload 时序都采用另一套状态协议。</p></div></section><aside class="evidence-note"><h3>证据口径</h3><p>正文保留目标版本中的真实源码、状态说明与代表性测试映射。测试源码用于锁定设计契约；本轮没有执行测试命令。</p></aside><article class="prose"><blockquote>
+<p>代码结论均限定于该版本；本工作树已在对应源码和测试上补充中文解释性注释，涉及注释原文时会另行标明。</p>
+</blockquote>
+<h2 id="先给结论"><a class="heading-anchor" href="#%E5%85%88%E7%BB%99%E7%BB%93%E8%AE%BA" aria-label="链接到本节">#</a>先给结论</h2>
+<p>普通 Vite 开发模式把浏览器请求当作模块转换入口；Bundled Dev 则让 Rolldown 长期维护一份可增量更新的
+完整 bundle，再由 Vite 把输出存在内存、按 HTTP 请求交付，并把 HMR 边界计算移动到浏览器中的真实执行图。</p>
+<p>两者最重要的差别不是“有没有 bundle”，而是<strong>谁拥有运行时事实</strong>：</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>问题</th>
+<th>普通 unbundled dev</th>
+<th>Bundled Dev</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>模块何时转换</td>
+<td>浏览器请求 URL 时</td>
+<td>Rolldown DevEngine 构建/增量构建时</td>
+</tr>
+<tr>
+<td>长期图状态</td>
+<td>服务端 <code>EnvironmentModuleGraph</code></td>
+<td>Rolldown 构建图 + 浏览器 <code>DevRuntime</code> 执行图</td>
+</tr>
+<tr>
+<td>HMR 边界由谁算</td>
+<td>服务端 <code>server/hmr.ts</code></td>
+<td>浏览器 <code>BundledDevHMRClient</code></td>
+</tr>
+<tr>
+<td>未执行分支的 accept</td>
+<td>静态分析后可能进入服务端图</td>
+<td>不形成边界；浏览器知道它没有执行</td>
+</tr>
+<tr>
+<td>动态入口</td>
+<td>浏览器请求源码模块</td>
+<td><code>/@vite/lazy</code> 触发按客户端编译入口</td>
+</tr>
+<tr>
+<td>输出落点</td>
+<td><code>transformResult</code> + HTTP 响应</td>
+<td><code>MemoryFiles</code></td>
+</tr>
+<tr>
+<td>full reload 时机</td>
+<td>服务端直接发 payload</td>
+<td>必须等最新完整输出已进入内存</td>
+</tr>
+<tr>
+<td>依赖预构建</td>
+<td>独立 optimizer</td>
+<td>禁用；完整 bundle 自己处理依赖</td>
+</tr>
+</tbody>
+</table></div>
+<p>因此，不能把第 08、11、12 章的 pending、optimizer、服务端 HMR 边界直接套到本章。Bundled Dev 仍复用
+Vite 配置、插件、HTTP、HotChannel、ErrorOverlay 与客户端 HMR 生命周期，但重新分配了状态所有权。</p>
+<h2 id="阅读边界"><a class="heading-anchor" href="#%E9%98%85%E8%AF%BB%E8%BE%B9%E7%95%8C" aria-label="链接到本节">#</a>阅读边界</h2>
+<p>本章只解释 <code>experimental.bundledDev</code> 的 client Environment：</p>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">启用配置
+→ 创建 BundledDev / Rolldown DevEngine
+→ 首轮输出尚未完成时返回 fallback 页
+→ 输出进入 MemoryFiles
+→ 动态入口经 /@vite/lazy 按需交付
+→ 文件变化生成 client-specific patch
+→ 浏览器按已执行 importer 图寻找边界
+→ 局部 patch 或等待最新 bundle 后 full reload
+→ server.close() 收口 DevEngine 与内存状态
+</code></pre></figure><p>不展开 Rolldown <code>dev()</code>、<code>compileEntry()</code>、<code>notifyPayloadDelivered()</code> 的内部算法；它们来自
+<code>rolldown/experimental</code>。本文能由 Vite 仓库直接证明的是：Vite 怎样配置并调用这些接口、怎样维护自身
+状态，以及真实 playground 最终观察到什么。</p>
+<p>读完应能回答：</p>
+<ol>
+<li>为什么开启 Bundled Dev 后必须禁用依赖优化器？</li>
+<li><code>BundledDev.listen()</code> 为什么不等待首轮 bundle 完成？</li>
+<li>首次文档请求为何先得到 fallback，而不是挂起 HTTP 请求？</li>
+<li><code>MemoryFiles</code> 为什么保存惰性函数，增量输出时又不能整表 <code>clear()</code>？</li>
+<li>payload “已生成”与“已送达”为什么是两个状态？</li>
+<li>为什么 HMR payload 只传 <code>changedIds + url + seq</code>？</li>
+<li>未执行模块、self accept、dependency accept、无 importer 根分别怎样传播？</li>
+<li>删除缓存前为什么必须冻结 accept callbacks？</li>
+<li>客户端判定 full reload 后为何不直接调用 <code>location.reload()</code>？</li>
+<li>初始构建错误、HMR patch 错误、序列缺口分别怎样恢复？</li>
+<li>Bundled Dev 关闭时为什么不能再独立关闭同一个 PluginContainer？</li>
+<li>当前实现有哪些明确不支持的能力？</li>
+</ol>
+<h2 id="推荐阅读顺序"><a class="heading-anchor" href="#%E6%8E%A8%E8%8D%90%E9%98%85%E8%AF%BB%E9%A1%BA%E5%BA%8F" aria-label="链接到本节">#</a>推荐阅读顺序</h2>
+<ol>
+<li><code>config.ts</code> 的 <code>ExperimentalOptions.bundledDev</code> 与 <code>resolveEnvironmentOptions()</code>。</li>
+<li><code>server/environment.ts</code> 的 constructor、<code>listen()</code>、<code>warmupRequest()</code>、<code>invalidateModule()</code>、<code>close()</code>。</li>
+<li><code>server/bundledDev.ts</code> 的字段、<code>listen()</code>、<code>storeOutputFiles()</code>。</li>
+<li><code>middlewares/indexHtml.ts</code> 的 fullBundle 分支与 <code>generateFallbackHtml()</code>。</li>
+<li><code>middlewares/memoryFiles.ts</code> 与 <code>triggerLazyBundling.ts</code>。</li>
+<li>回到 <code>BundledDev.handleHmrOutput()</code> 与 reload-needed 事件处理。</li>
+<li><code>client/bundledDevClient.ts</code>，看 Rolldown runtime 怎样接入 Vite HMR。</li>
+<li><code>client/bundledDevHmrClient.ts</code>：<code>computeHmrUpdate()</code> → <code>applyPush()</code> → <code>applyUpdate()</code>。</li>
+<li>最后读 <code>playground/hmr-full-bundle-mode</code>；按 INITIAL、lazy、patch、reload、close 五组状态复盘。</li>
+</ol>
+<h2 id="配置入口与对象所有权"><a class="heading-anchor" href="#%E9%85%8D%E7%BD%AE%E5%85%A5%E5%8F%A3%E4%B8%8E%E5%AF%B9%E8%B1%A1%E6%89%80%E6%9C%89%E6%9D%83" aria-label="链接到本节">#</a>配置入口与对象所有权</h2>
+<p>CLI 的 <code>--experimentalBundle</code> 最终写入 <code>InlineConfig.experimental.bundledDev</code>。在当前实现里，只有这个
+<strong>全局实验开关</strong>会同时切换 watcher、中间件、server 初始化与 HMR 分流；它是本章所述完整 Bundled Dev
+链路唯一可用的启用入口。配置解析据此只让 client Environment 的 <code>isBundled</code> 默认成 <code>true</code>；其他
+Environment 仍默认 <code>false</code>。</p>
+<p>目标版本源码摘录，来源：<code>packages/vite/src/node/config.ts</code>，<code>resolveEnvironmentOptions()</code>：</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">const isBundled =
+  options.isBundled ?? (isBuild || (isClientEnvironment &amp;&amp; isBundledDev))
+</code></pre></figure><p><code>DevEnvironment</code> 构造时把“完整打包”和“依赖预构建”设为互斥所有者。</p>
+<p>目标版本源码摘录，来源：<code>packages/vite/src/node/server/environment.ts</code>，<code>DevEnvironment.constructor()</code>：</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">if (
+  options.isBundled ||
+  (name === &#039;client&#039; &amp;&amp; config.experimental.bundledDev)
+) {
+  context.disableDepsOptimizer = true
+  this.bundledDev = new BundledDev(this)
+}
+</code></pre></figure><p><code>BundledDev</code> constructor 又明确只接受名为 <code>client</code> 的 Environment；如果用户给其他 Environment 显式设置
+<code>isBundled: true</code>，这里会直接报错，而不是悄悄退回普通模式。</p>
+<p>这里必须区分“解析后的能力标记”和“完整 server 模式开关”：单独配置
+<code>environments.client.isBundled: true</code> 虽会在 constructor 中创建 <code>BundledDev</code>，但
+<code>server/index.ts</code> 的 watcher、中间件与初始化分支，以及 <code>server/hmr.ts::handleHMRUpdate()</code>，仍只检查
+<code>config.experimental.bundledDev</code>。结果会把 bundled 对象与普通 serve 管线拼在一起，当前源码和测试均未把
+它证明为受支持的启用方式。因此下文一律假设 <code>experimental.bundledDev === true</code>，不把显式 <code>isBundled</code>
+当作等价入口。</p>
+<p>对象所有权如下：</p>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">ViteDevServer
+└─ environments.client: DevEnvironment
+   ├─ hot: NormalizedHotChannel
+   ├─ pluginContainer / moduleGraph（兼容公共 Environment 形状）
+   └─ bundledDev: BundledDev
+      ├─ DevEngine（Rolldown）
+      ├─ MemoryFiles
+      ├─ Clients 双向索引
+      ├─ pendingPayloadFilenames
+      ├─ reload 状态
+      └─ lastBuildError
+
+浏览器页面
+├─ ViteDevRuntime（页面级 singleton）
+│  ├─ module factories / module cache
+│  └─ hooks → 当前 BundledDevHMRClient
+└─ BundledDevHMRClient（客户端入口每执行一次便重建）
+   ├─ runtime → 上面的 ViteDevRuntime
+   ├─ hotModulesMap / dataMap / disposeMap
+   ├─ applyQueue
+   ├─ lastSeq
+   └─ reloadPending
+</code></pre></figure><p>服务端 <code>moduleGraph</code> 仍存在，因为 Environment 公共 API 和部分横切能力仍需要统一对象形状；但 bundled
+HMR 不再用它计算 accept 边界。<code>server/hmr.ts::handleHMRUpdate()</code> 在 bundled 模式直接返回，文件变化由
+Rolldown DevEngine 自己监听和分类。</p>
+<h2 id="核心状态与不变量"><a class="heading-anchor" href="#%E6%A0%B8%E5%BF%83%E7%8A%B6%E6%80%81%E4%B8%8E%E4%B8%8D%E5%8F%98%E9%87%8F" aria-label="链接到本节">#</a>核心状态与不变量</h2>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>状态</th>
+<th>所有者</th>
+<th>写入点</th>
+<th>不变量</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>_devEngine</code></td>
+<td><code>BundledDev</code></td>
+<td><code>listen()</code> 调用 <code>dev()</code></td>
+<td>初始化前访问必须抛错，不能伪装成普通 undefined</td>
+</tr>
+<tr>
+<td><code>initialBuildCompleted</code></td>
+<td><code>BundledDev</code></td>
+<td>首轮等待完成 / <code>close()</code></td>
+<td>stale 重构建只在首轮稳定后启用</td>
+</tr>
+<tr>
+<td><code>memoryFiles</code></td>
+<td><code>BundledDev</code></td>
+<td><code>storeOutputFiles()</code>、<code>handleHmrOutput()</code></td>
+<td>增量输出不能整表清空，未变化文件可能被复用</td>
+</tr>
+<tr>
+<td><code>pendingPayloadFilenames</code></td>
+<td><code>BundledDev</code></td>
+<td>lazy/HMR payload 生成时</td>
+<td>只有 HTTP <code>finish</code> 后才通知 DevEngine 已交付</td>
+</tr>
+<tr>
+<td><code>clients</code></td>
+<td><code>BundledDev</code></td>
+<td>HotChannel connect/disconnect</td>
+<td>connection 与 clientId 必须双向一致</td>
+</tr>
+<tr>
+<td><code>lastBuildError</code></td>
+<td><code>BundledDev</code></td>
+<td><code>onOutput</code></td>
+<td>新连接客户端也必须看到最近一次完整输出错误</td>
+</tr>
+<tr>
+<td><code>fullReloadPending</code></td>
+<td><code>BundledDev</code></td>
+<td>服务端判定 FullReload</td>
+<td><code>onOutput</code> 成功前不能兑现 reload</td>
+</tr>
+<tr>
+<td><code>reloadNeededClientIds</code></td>
+<td><code>BundledDev</code></td>
+<td>浏览器发 reload-needed</td>
+<td>只刷新实际遇到死端的页面</td>
+</tr>
+<tr>
+<td><code>applyQueue</code></td>
+<td>浏览器 HMR client</td>
+<td>push/invalidate</td>
+<td>patch 与 invalidate 不能交叉删同一 runtime 缓存</td>
+</tr>
+<tr>
+<td><code>lastSeq</code></td>
+<td>浏览器 HMR client</td>
+<td><code>applyPush()</code></td>
+<td>服务端 patch 必须严格连续</td>
+</tr>
+<tr>
+<td><code>reloadPending</code></td>
+<td>浏览器 HMR client</td>
+<td><code>requestFullReload()</code></td>
+<td>发出 reload-needed 后忽略后续 patch</td>
+</tr>
+</tbody>
+</table></div>
+<p>三类“完成”必须分开：</p>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">构建完成     = Rolldown onOutput 给出最新完整产物
+payload 生成 = compileEntry / HMR 产生一个可请求文件
+payload 送达 = 对应 HTTP response 发出 finish
+</code></pre></figure><p>把它们合并会产生三种错误：刷新后仍读旧 bundle、后续 chunk 省略客户端没收到的模块、连接中断却被当成
+成功交付。</p>
+<h2 id="启动-listen-只完成装配-不等待首轮-bundle"><a class="heading-anchor" href="#%E5%90%AF%E5%8A%A8-listen-%E5%8F%AA%E5%AE%8C%E6%88%90%E8%A3%85%E9%85%8D-%E4%B8%8D%E7%AD%89%E5%BE%85%E9%A6%96%E8%BD%AE-bundle" aria-label="链接到本节">#</a>启动：listen 只完成装配，不等待首轮 bundle</h2>
+<p><code>server/index.ts::initServer()</code> 在 HTTP server 真正 listen 前调用所有 Environment 的 <code>listen()</code>。
+Bundled client 同时启动 HotChannel 和 <code>BundledDev</code>；optimizer 因 constructor 中的互斥标记不会创建。</p>
+<p>目标版本源码摘录，来源：<code>packages/vite/src/node/server/environment.ts</code>，<code>DevEnvironment.listen()</code>：</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">async listen(server: ViteDevServer): Promise&lt;void&gt; {
+  this.hot.listen()
+  await Promise.all([this.bundledDev?.listen(), this.depsOptimizer?.init()])
+  warmupFiles(server, this)
+}
+</code></pre></figure><p><code>BundledDev.listen()</code> 做五件事：</p>
+<ol>
+<li>从普通 build 配置派生 DevEngine 配置；</li>
+<li>注册 client connect/disconnect、reload-needed 等 HotChannel 事件；</li>
+<li>创建 <code>DevEngine</code>，安装 <code>onHmrUpdates/onOutput/onAdditionalAssets</code>；</li>
+<li>调用 <code>devEngine.run()</code>，但不 await 整个长期任务；</li>
+<li>载入 bundled 版 HMR runtime，后台等待首轮输出。</li>
+</ol>
+<p>派生配置固定：</p>
+<ul>
+<li><code>experimental.devMode.lazy = true</code>；</li>
+<li><code>skipCommonRuntimeInjection = true</code>，由 Vite 自己注入客户端 runtime；</li>
+<li><code>optimization.inlineConst = false</code>，规避当前已知正确性问题；</li>
+<li>固定 entry/chunk/asset 文件名模板；</li>
+<li>关闭 minify，开启 sourcemap；</li>
+<li>watcher <code>skipWrite = true</code>，输出只进内存。</li>
+</ul>
+<p><code>listen()</code> 返回时 DevEngine 已可工作，但 <code>memoryFiles</code> 可能仍只有客户端 runtime。这样 HTTP server 能尽快
+响应，首轮等待通过专用 fallback 页表达，不把一个长构建绑死在 server listen Promise 上。</p>
+<h2 id="首次文档请求-fallback-是一个可恢复运行态"><a class="heading-anchor" href="#%E9%A6%96%E6%AC%A1%E6%96%87%E6%A1%A3%E8%AF%B7%E6%B1%82-fallback-%E6%98%AF%E4%B8%80%E4%B8%AA%E5%8F%AF%E6%81%A2%E5%A4%8D%E8%BF%90%E8%A1%8C%E6%80%81" aria-label="链接到本节">#</a>首次文档请求：fallback 是一个可恢复运行态</h2>
+<p>Bundled Dev 不走普通 <code>transformIndexHtml()</code> 读磁盘分支。<code>indexHtmlMiddleware()</code> 先按输出文件名查
+<code>memoryFiles</code>；文档请求若没有结果或检测到 stale 输出，则返回内嵌 HMR runtime 的等待页。</p>
+<p>目标版本源码摘录（删节：只保留 bundled document 分支），来源：
+<code>packages/vite/src/node/server/middlewares/indexHtml.ts</code>，<code>indexHtmlMiddleware()</code>：</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">let file = fullBundle.memoryFiles.get(filePath)
+if (!file &amp;&amp; fullBundle.hasBuildOutput) {
+  return next()
+}
+const secFetchDest = req.headers[&#039;sec-fetch-dest&#039;]
+const isDocumentRequest = [
+  &#039;document&#039;,
+  &#039;iframe&#039;,
+  &#039;frame&#039;,
+  &#039;fencedframe&#039;,
+  &#039;&#039;,
+  undefined,
+].includes(secFetchDest)
+if (
+  isDocumentRequest &amp;&amp;
+  ((await fullBundle.triggerBundleRegenerationIfStale()) ||
+    file === undefined)
+) {
+  file = { source: await generateFallbackHtml(server as ViteDevServer) }
+}
+</code></pre></figure><p>等待页设置 <code>globalThis.__vite_is_fallback_page__ = true</code>，并内嵌
+<code>getHmrImplementation(server.config)</code> 的结果。首轮构建完成后，<code>waitForInitialBuildFinish()</code> 发送：</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">this.environment.hot.send({
+  type: &#039;full-reload&#039;,
+  path: &#039;*&#039;,
+  ifFallback: true,
+})
+</code></pre></figure><p><code>ifFallback</code> 让正常页面不因晚到的首轮消息误刷新；只有仍处于等待页的客户端重新导航。真实测试不只断言
+最后能渲染，还先观察 “Bundling in progress”，再等待一次 load 事件，证明 fallback 与正式输出是两个
+有序状态。</p>
+<p><code>triggerBundleRegenerationIfStale()</code> 还承担访问时自愈：</p>
+<ul>
+<li>首轮已完成、输出 stale、当前无错误：请求 <code>ensureLatestBuildOutput()</code>，完成后 reload；</li>
+<li>最近失败阶段是 HMR：触发 <code>triggerFullBuild()</code>，绕过可能已损坏的 patch 路径；</li>
+<li>首轮尚未稳定或完整构建仍报错：不制造重复重构建。</li>
+</ul>
+<h2 id="memoryfiles-构建输出不是普通静态目录"><a class="heading-anchor" href="#memoryfiles-%E6%9E%84%E5%BB%BA%E8%BE%93%E5%87%BA%E4%B8%8D%E6%98%AF%E6%99%AE%E9%80%9A%E9%9D%99%E6%80%81%E7%9B%AE%E5%BD%95" aria-label="链接到本节">#</a>MemoryFiles：构建输出不是普通静态目录</h2>
+<p><code>MemoryFiles</code> 的 value 可以是已经物化的内容，也可以是一次性生成函数。第一次 <code>get()</code> 才提取 Rolldown
+chunk/asset 的 source、计算 ETag，并用结果覆盖生成函数。</p>
+<p>目标版本源码摘录，来源：<code>packages/vite/src/node/server/bundledDev.ts</code>，<code>MemoryFiles.get()</code>：</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">get(file: string): MemoryFile | undefined {
+  const result = this.files.get(file)
+  if (result === undefined) {
+    return undefined
+  }
+  if (typeof result === &#039;function&#039;) {
+    const content = result()
+    this.files.set(file, content)
+    return content
+  }
+  return result
+}
+</code></pre></figure><p>目标版本源码摘录，来源：同文件 <code>BundledDev.storeOutputFiles()</code>：</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">for (const outputFile of output) {
+  this.memoryFiles.set(outputFile.fileName, () =&gt; {
+    const source =
+      outputFile.type === &#039;chunk&#039; ? outputFile.code : outputFile.source
+    return {
+      source,
+      etag: getEtag(Buffer.from(source), { weak: true }),
+    }
+  })
+}
+</code></pre></figure><p><code>storeOutputFiles()</code> 故意不先 <code>clear()</code>。Rolldown 增量输出只报告本轮新增或变化的部分，未变化文件仍由旧
+Map 项提供；整表清空会让 HTML 引用的稳定 chunk 突然 404。同名新输出则直接覆盖旧值。</p>
+<p>客户端 runtime 与普通构建文件略有不同：</p>
+<ul>
+<li><code>bundledDevClient.mjs</code> 在 Vite 读取时已经是字符串，立即算弱 ETag；</li>
+<li>chunk/asset 延迟物化，避免生成后从未被浏览器请求的输出浪费转换与哈希成本；</li>
+<li>HMR patch 是短生命 payload，<code>handleHmrOutput()</code> 直接放入字符串；</li>
+<li><code>onAdditionalAssets</code> 把 HMR 期间新发射的图片、Worker 等补进同一表。</li>
+</ul>
+<h2 id="内存文件-http-边界"><a class="heading-anchor" href="#%E5%86%85%E5%AD%98%E6%96%87%E4%BB%B6-http-%E8%BE%B9%E7%95%8C" aria-label="链接到本节">#</a>内存文件 HTTP 边界</h2>
+<p><code>server/index.ts::_createServer()</code> 在 bundled 模式不安装普通 transform 与 root 静态中间件，而是安装：</p>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">public 原样文件
+→ triggerLazyBundlingMiddleware
+→ memoryFilesMiddleware
+→ HTML fallback
+→ indexHtmlMiddleware
+→ 404 / error
+</code></pre></figure><p><code>memoryFilesMiddleware()</code> 排除 <code>.html</code>，因为 HTML 还需要 fallback/stale 协调；其他路径安全解码后去掉首个
+<code>/</code>，直接以 Rolldown fileName 查 Map。</p>
+<p>目标版本源码摘录（删节：保留命中响应），来源：
+<code>packages/vite/src/node/server/middlewares/memoryFiles.ts</code>，<code>memoryFilesMiddleware()</code>：</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">const file = memoryFiles.get(filePath)
+if (file) {
+  if (file.etag) {
+    if (req.headers[&#039;if-none-match&#039;] === file.etag) {
+      res.statusCode = 304
+      res.end()
+      return
+    }
+    res.setHeader(&#039;Etag&#039;, file.etag)
+  }
+
+  const mime = mrmime.lookup(filePath)
+  if (mime) {
+    res.setHeader(&#039;Content-Type&#039;, mime)
+  }
+
+  for (const name in headers) {
+    res.setHeader(name, headers[name]!)
+  }
+
+  res.on(&#039;finish&#039;, () =&gt; bundledDev.markPayloadDelivered(filePath))
+  return res.end(file.source)
+}
+</code></pre></figure><p>中间件同时复制 <code>server.headers</code>；畸形百分号编码只 <code>next()</code>，由统一后续链决定 404/错误。目标版本中，
+带 ETag 的普通 build 输出不在 <code>pendingPayloadFilenames</code>；lazy code 由专用中间件直接响应，HMR patch
+写入内存时也没有 ETag。因此 304 提前返回不会跳过一个尚待提交的 payload ack。</p>
+<p>这里使用 <code>finish</code> 而非调用 <code>res.end()</code> 后立即确认。<code>end()</code> 只表示应用停止写入，底层响应仍可能因连接
+中断而未完成；<code>finish</code> 才是 Vite 可以提交“已交付”状态的边界。</p>
+<h2 id="lazy-bundle-动态入口按客户端生成"><a class="heading-anchor" href="#lazy-bundle-%E5%8A%A8%E6%80%81%E5%85%A5%E5%8F%A3%E6%8C%89%E5%AE%A2%E6%88%B7%E7%AB%AF%E7%94%9F%E6%88%90" aria-label="链接到本节">#</a>Lazy bundle：动态入口按客户端生成</h2>
+<p>完整 bundle 并不表示启动时必须生成所有动态分支。Rolldown dev runtime 在首次执行动态入口时请求：</p>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">GET /@vite/lazy?id=&lt;moduleId&gt;&amp;clientId=&lt;clientId&gt;
+</code></pre></figure><p>生成这条 URL 的实现属于 Rolldown experimental runtime，不在 Vite 仓库；Vite 从 HTTP 入口开始接管。
+<code>triggerLazyBundlingMiddleware()</code> 只拦截精确前缀，解析失败、缺少参数或 DevEngine 没有结果时继续 Connect
+链，不把畸形请求冒充成有效模块。</p>
+<p>目标版本源码摘录，来源：
+<code>packages/vite/src/node/server/middlewares/triggerLazyBundling.ts</code>，
+<code>triggerLazyBundlingMiddleware()</code>：</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">const moduleId = params.get(&#039;id&#039;)
+const clientId = params.get(&#039;clientId&#039;)
+const result = await bundledDev.triggerLazyBundling(moduleId, clientId)
+if (result == null) {
+  return next()
+}
+
+res!.setHeader(&#039;Content-Type&#039;, &#039;application/javascript&#039;)
+res!.on(&#039;finish&#039;, () =&gt; bundledDev.markPayloadDelivered(result.filename))
+return res!.end(result.code)
+</code></pre></figure><p>服务端把 moduleId 与稳定 clientId 一起交给 DevEngine。不同页面可能执行不同动态分支，clientId 使
+Rolldown 能为各自维护已经 ship 的模块集合。</p>
+<p>目标版本源码摘录，来源：<code>packages/vite/src/node/server/bundledDev.ts</code>，
+<code>BundledDev.triggerLazyBundling()</code>：</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">const result = await this.devEngine.compileEntry(moduleId, clientId)
+this.pendingPayloadFilenames.add(result.filename)
+return result
+</code></pre></figure><p><code>pendingPayloadFilenames</code> 不是内容缓存，而是一个提交日志。响应完成后：</p>
+<p>目标版本源码摘录，来源：同文件 <code>BundledDev.markPayloadDelivered()</code>：</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">markPayloadDelivered(filename: string): void {
+  if (this.pendingPayloadFilenames.delete(filename)) {
+    this.devEngine.notifyPayloadDelivered(filename)
+  }
+}
+</code></pre></figure><p><code>delete()</code> 同时完成“是否仍 pending”的原子判断。重复 finish、普通静态文件名或已处理 payload 不会重复通知
+DevEngine。源码注释还明确 payload 文件名在所有客户端之间全局唯一，所以这里无需再用 clientId 组成 key。</p>
+<p>真实 playground 的 <code>main.js</code> 只有点击按钮才执行 <code>import('./dynamic.js')</code>。对应测试先点击
+<code>#load-dynamic</code>，再等待 <code>.dynamic === 'loaded'</code>；它证明 lazy 请求最终可执行，但没有单独断言 URL 或 delivery
+ack。因此“点击后模块可用”是测试证明，“ship map 只在 finish 后推进”来自上述源码，不应把两类证据混写。</p>
+<h2 id="客户端身份-一个页面对应一个-runtime-client"><a class="heading-anchor" href="#%E5%AE%A2%E6%88%B7%E7%AB%AF%E8%BA%AB%E4%BB%BD-%E4%B8%80%E4%B8%AA%E9%A1%B5%E9%9D%A2%E5%AF%B9%E5%BA%94%E4%B8%80%E4%B8%AA-runtime-client" aria-label="链接到本节">#</a>客户端身份：一个页面对应一个 runtime client</h2>
+<p>Bundled 客户端入口不是普通 <code>client.ts</code> 的另一份完整复制，而是：</p>
+<ol>
+<li>继续复用 transport、overlay、CSS helper 和公共 <code>createHotContext</code>；</li>
+<li>创建稳定 <code>clientId</code> 并告诉服务端；</li>
+<li>每个页面保存一个全局 <code>ViteDevRuntime</code>；</li>
+<li>用 <code>BundledDevHMRClient</code> 接管 bundled payload；</li>
+<li>把 runtime 缓存删除与 HMR dispose 连接起来。</li>
+</ol>
+<p>目标版本源码摘录（删节：省略 logger 配置），来源：
+<code>packages/vite/src/client/bundledDevClient.ts</code>，模块初始化：</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">const clientId = nanoid()
+
+transport.send({
+  type: &#039;custom&#039;,
+  event: &#039;vite:client-connected&#039;,
+  data: { clientId },
+})
+
+const runtime = ((globalThis as any).__rolldown_runtime__ ??=
+  new ViteDevRuntime(clientId))
+
+const bundledDevHmrClient = new BundledDevHMRClient(
+  {
+    error: (err) =&gt; console.error(&#039;[vite]&#039;, err),
+    debug: (...msg) =&gt; console.debug(&#039;[vite]&#039;, ...msg),
+  },
+  transport,
+  runtime,
+  {
+    base,
+    beforeApply: clearOverlayOrReloadOnFirstUpdate,
+  },
+)
+registerBundledDevClient(bundledDevHmrClient)
+
+runtime.hooks = {
+  createModuleHotContext: (id: string) =&gt; runtime.createModuleHotContext(id),
+  onModuleCacheRemoval: (id: string) =&gt;
+    bundledDevHmrClient.handleModuleCacheRemoval(id),
+}
+</code></pre></figure><p><code>??=</code> 只复用 Rolldown runtime 的 factory 与模块缓存，<strong>不复用</strong> <code>BundledDevHMRClient</code>。客户端入口每执行
+一次，仍会生成新 clientId、新 HMR client 与新的 accept/data/dispose maps，并覆盖全局注册和 runtime
+hooks。因此当前源码不能支持“重复载入入口不会丢全部 HMR 状态”这个结论；它只证明 runtime cache 被保留。
+正常情况下每个页面加载一次入口并得到独立 clientId；服务端 <code>Clients</code> 使用 connection→id 和
+id→connection 两张 Map 路由 patch。一个连接若后来宣告不同 ID，<code>setupIfNeeded()</code> 抛出
+“client ID conflict detected”，避免两个执行图串线。</p>
+<p>普通 <code>client.ts::handleMessage()</code> 仍是消息分派入口，但 <code>bundled-dev-update</code> 会直接交给注册后的客户端：</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">case &#039;bundled-dev-update&#039;:
+  bundledDevClient!.handlePush(payload)
+  break
+</code></pre></figure><p>所以 HotChannel/WebSocket 仍只负责传输；边界算法不在 transport 中。</p>
+<h2 id="服务端文件变化-先由-devengine-分类"><a class="heading-anchor" href="#%E6%9C%8D%E5%8A%A1%E7%AB%AF%E6%96%87%E4%BB%B6%E5%8F%98%E5%8C%96-%E5%85%88%E7%94%B1-devengine-%E5%88%86%E7%B1%BB" aria-label="链接到本节">#</a>服务端文件变化：先由 DevEngine 分类</h2>
+<p>普通模式从 Vite watcher 进入 <code>handleHMRUpdate()</code>。Bundled Dev 在该函数中提前返回，TODO 还明确记录
+<code>handleHotUpdate/hotUpdate</code> hooks 尚未接入；真正的文件监听与增量分类由 DevEngine 完成。</p>
+<p><code>BundledDev.listen()</code> 的 <code>onHmrUpdates</code> 把结果分成四类：</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>DevEngine 结果</th>
+<th>Vite 动作</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Error</code></td>
+<td>记录 build error，向现有客户端广播 overlay</td>
+</tr>
+<tr>
+<td><code>changedFiles.length === 0</code></td>
+<td>无用户可见变化，返回</td>
+</tr>
+<tr>
+<td>所有 update 都是 <code>Noop</code></td>
+<td>只写 debug 日志</td>
+</tr>
+<tr>
+<td><code>FullReload</code></td>
+<td>设置等待标志，不立即刷新</td>
+</tr>
+<tr>
+<td>HMR patch</td>
+<td>写入内存、发送指定 client</td>
+</tr>
+</tbody>
+</table></div>
+<p>同一轮可以含多个 clientId；Vite 逐项查 <code>Clients</code>，断开的页面不再接收结果。</p>
+<p>目标版本源码摘录，来源：<code>packages/vite/src/node/server/bundledDev.ts</code>，
+<code>BundledDev.handleHmrOutput()</code>：</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">if (hmrOutput.type === &#039;FullReload&#039;) {
+  const reason = hmrOutput.reason
+    ? colors.dim(` (${hmrOutput.reason})`)
+    : &#039;&#039;
+  this.environment.logger.info(
+    colors.green(`trigger page reload `) + colors.dim(shortFile) + reason,
+    { clear: true, timestamp: true },
+  )
+  this.fullReloadPending = true
+  return
+}
+
+this.pendingPayloadFilenames.add(hmrOutput.filename)
+this.memoryFiles.set(hmrOutput.filename, {
+  source: hmrOutput.code + &#039;\n; export {}&#039;,
+})
+client.send({
+  type: &#039;bundled-dev-update&#039;,
+  changedIds: hmrOutput.changedIds,
+  url: hmrOutput.filename,
+  seq: hmrOutput.seq,
+})
+</code></pre></figure><p>上面模板字符串中的 <code>reason</code> 行为来自原码；摘录只省略 debug、sourcemap 和日志尾部。</p>
+<p>patch 末尾强制追加 <code>export {}</code> 有实际安全语义：浏览器必须把响应当 ESM 导入，恶意跨源页面不能用 classic
+<code>&lt;script&gt;</code> 直接读取/执行本地开发响应。这是响应内容侧的 XSSI 缓解，不替代 Host、Origin/token 等网络
+校验。</p>
+<p>若 patch 另外携带 sourcemap，服务端把它作为单独内存文件登记。若 HMR 新增 asset/Worker 输出，
+<code>onAdditionalAssets</code> 调用 <code>storeOutputFiles()</code>；不能只等下一次完整 <code>onOutput</code>，否则 patch 已执行而新 URL
+仍会 404。</p>
+<h2 id="为什么-hmr-边界必须移到浏览器"><a class="heading-anchor" href="#%E4%B8%BA%E4%BB%80%E4%B9%88-hmr-%E8%BE%B9%E7%95%8C%E5%BF%85%E9%A1%BB%E7%A7%BB%E5%88%B0%E6%B5%8F%E8%A7%88%E5%99%A8" aria-label="链接到本节">#</a>为什么 HMR 边界必须移到浏览器</h2>
+<p>静态 bundle 图知道“可能 import 谁”，却不知道某个分支在当前页面是否执行。真实 fixture
+<code>dead-accept.js</code>：</p>
+<figure class="code-card"><figcaption><span>js</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-js">if (globalThis.__NEVER_TRUE__) {
+  import.meta.hot?.accept(() =&gt; {})
+}
+</code></pre></figure><p>静态分析能看到 accept，当前页面却从未登记 callback。若服务端只凭源码把它当边界，就会发送一个没有运行时
+接收者的 patch。Bundled Dev 让 <code>BundledDevHMRClient</code> 查询 <code>runtime.isExecuted(id)</code> 与实际
+<code>hotModulesMap</code>，消除这类假边界。</p>
+<p>服务端只发送三个必要事实：</p>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">changedIds：哪些 runtime factory 变化
+url：下载并注册新 factory 的 ESM patch
+seq：客户端是否漏过中间 patch
+</code></pre></figure><h2 id="浏览器图算法-computehmrupdate"><a class="heading-anchor" href="#%E6%B5%8F%E8%A7%88%E5%99%A8%E5%9B%BE%E7%AE%97%E6%B3%95-computehmrupdate" aria-label="链接到本节">#</a>浏览器图算法：computeHmrUpdate</h2>
+<p><code>computeHmrUpdate()</code> 对每个已执行 changed id 向 importer 冒泡，同时收集：</p>
+<ul>
+<li><code>boundaries</code>：<code>[接受边界, 被接受模块]</code>；</li>
+<li><code>updateSet</code>：从 changed module 到边界之间必须清缓存的全部模块；</li>
+<li><code>traversedModules</code>：跨多条路径去重；</li>
+<li>单条 <code>stack</code>：识别当前 import 环。</li>
+</ul>
+<p>目标版本源码摘录，来源：
+<code>packages/vite/src/client/bundledDevHmrClient.ts</code>，
+<code>BundledDevHMRClient.computeHmrUpdate()</code>：</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">for (const changed of changedIds) {
+  if (!this.runtime.isExecuted(changed)) {
+    continue
+  }
+  const fullReload = this.bubble(
+    changed,
+    [changed],
+    updateSet,
+    boundaries,
+    opts?.firstInvalidatedBy,
+    traversedModules,
+  )
+  if (fullReload) return fullReload
+}
+return boundaries.length
+  ? { type: &#039;boundaries&#039;, boundaries, updateSet: [...updateSet] }
+  : { type: &#039;noop&#039; }
+</code></pre></figure><p><code>bubble()</code> 的决定顺序：</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>当前状态</th>
+<th>结果</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>已跨路径遍历</td>
+<td>返回</td>
+<td>同一祖先不重复处理</td>
+</tr>
+<tr>
+<td>回到 <code>firstInvalidatedBy</code></td>
+<td>full reload</td>
+<td>invalidate 传播已绕回发起者</td>
+</tr>
+<tr>
+<td>当前模块 self accept</td>
+<td><code>[id, id]</code> boundary</td>
+<td>当前模块能重建自己</td>
+</tr>
+<tr>
+<td>没有已执行 importer</td>
+<td>full reload</td>
+<td>到达运行时根仍无边界</td>
+</tr>
+<tr>
+<td>parent 接受当前 id</td>
+<td><code>[parent, id]</code> boundary</td>
+<td>callback 属于 parent</td>
+</tr>
+<tr>
+<td>单条路径回到已有 parent</td>
+<td>full reload</td>
+<td>无明确边界的 import 环执行顺序不安全</td>
+</tr>
+<tr>
+<td>其他</td>
+<td>递归 parent</td>
+<td>继续寻找边界</td>
+</tr>
+</tbody>
+</table></div>
+<p>目标版本源码摘录，来源：同文件 <code>BundledDevHMRClient.bubble()</code>：</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">updateSet.add(id)
+if (firstInvalidatedBy !== undefined &amp;&amp; id === firstInvalidatedBy) {
+  return {
+    type: &#039;full-reload&#039;,
+    reason: `update propagated back to ${firstInvalidatedBy}, which already called \`import.meta.hot.invalidate()\``,
+  }
+}
+if (this.isSelfAccepted(id)) {
+  boundaries.push([id, id])
+  return
+}
+const parents = this.runtime
+  .getImporters(id)
+  .filter((p) =&gt; this.runtime.isExecuted(p))
+if (!parents.length) {
+  return {
+    type: &#039;full-reload&#039;,
+    reason: `no hmr boundary found for module \`${id}\``,
+  }
+}
+</code></pre></figure><h3 id="用真实-hmr-js-手工走一遍"><a class="heading-anchor" href="#%E7%94%A8%E7%9C%9F%E5%AE%9E-hmr-js-%E6%89%8B%E5%B7%A5%E8%B5%B0%E4%B8%80%E9%81%8D" aria-label="链接到本节">#</a>用真实 <code>hmr.js</code> 手工走一遍</h3>
+<p>playground 首屏执行 <code>main.js → hmr.js</code>，而 <code>hmr.js</code> 执行：</p>
+<figure class="code-card"><figcaption><span>js</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-js">import.meta.hot?.accept((mod) =&gt; {
+  if (mod) {
+    text(&#039;.hmr&#039;, mod.foo)
+    text(&#039;.asset&#039;, mod.assetUrl)
+  }
+})
+</code></pre></figure><p>编辑 <code>hmr.js</code> 后：</p>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">changedIds = [hmr.js]
+runtime.isExecuted(hmr.js) = true
+updateSet.add(hmr.js)
+isSelfAccepted(hmr.js) = true
+boundaries = [[hmr.js, hmr.js]]
+→ 下载 patch
+→ 清 hmr.js 缓存
+→ 用新 factory 初始化 hmr.js
+→ callback 收到新 exports
+→ DOM 从 hello 变成 hello1
+</code></pre></figure><p>编辑 <code>dead-accept.js</code> 时，条件内 callback 从未登记，传播继续到 <code>main.js</code>；根节点没有 importer，也没有接受
+该依赖的 callback，结果是 full reload。这正是“静态可见”与“运行时已执行”必须分开的经典场景。</p>
+<h2 id="patch-事务-先冻结-再统一删缓存"><a class="heading-anchor" href="#patch-%E4%BA%8B%E5%8A%A1-%E5%85%88%E5%86%BB%E7%BB%93-%E5%86%8D%E7%BB%9F%E4%B8%80%E5%88%A0%E7%BC%93%E5%AD%98" aria-label="链接到本节">#</a>Patch 事务：先冻结，再统一删缓存</h2>
+<p><code>handlePush()</code> 与本地 invalidate 共用一个 <code>applyQueue</code>。队列不是性能优化，而是事务边界：两个 patch 若并行
+删除相同模块缓存，dispose、factory 注册与 callback 会跨版本交错。</p>
+<p><code>applyPush()</code> 固定顺序：</p>
+<ol>
+<li><code>reloadPending</code> 时忽略；</li>
+<li>校验 <code>seq === lastSeq + 1</code>；</li>
+<li>计算边界；</li>
+<li>通知 <code>vite:beforeUpdate</code> 并清 overlay；</li>
+<li>动态 import patch，注册新 factory；</li>
+<li><code>applyUpdate()</code> 分阶段应用；</li>
+<li>通知 <code>vite:afterUpdate</code>。</li>
+</ol>
+<p>patch import 失败不能继续使用一半更新的 factory 图，直接请求 full reload。</p>
+<p><code>applyUpdate()</code> 的顺序更加严格。</p>
+<p>目标版本源码摘录，来源：
+<code>packages/vite/src/client/bundledDevHmrClient.ts</code>，
+<code>BundledDevHMRClient.applyUpdate()</code>：</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">for (const id of update.updateSet) {
+  if (!this.runtime.hasFactory(id)) {
+    this.requestFullReload(`no factory for module \`${id}\``)
+    return
+  }
+}
+
+const applies = update.boundaries.map(([boundary, acceptedVia]) =&gt; ({
+  boundary,
+  acceptedVia,
+  callbacks:
+    this.hotModulesMap
+      .get(boundary)
+      ?.callbacks.filter((c) =&gt; c.deps.includes(acceptedVia)) ?? [],
+}))
+
+for (const id of update.updateSet) {
+  this.runtime.removeModuleCache(id)
+}
+
+for (const { boundary, acceptedVia, callbacks } of applies) {
+  this.runtime.initModule(acceptedVia)
+  const fresh = this.runtime.loadExports(acceptedVia)
+  try {
+    this.currentFirstInvalidatedBy = firstInvalidatedBy
+    for (const { deps, fn } of callbacks) {
+      fn(
+        deps.map((dep) =&gt;
+          dep === acceptedVia ? (fresh as any) : undefined,
+        ),
+      )
+    }
+  } finally {
+    this.currentFirstInvalidatedBy = undefined
+  }
+}
+</code></pre></figure><p>先校验全部 factory，防止删完旧缓存才发现 patch 不完整。删除缓存会通过 runtime hook 同步执行 dispose，
+dispose 又可能改变 hot context；所以 callback 必须在删除前冻结。<code>acceptedVia</code> 初始化完成后再读取 exports，
+callback 才拿到新 namespace。<code>finally</code> 则保证用户 callback 抛错也不会把 invalidate 发起者泄漏到下一轮。</p>
+<h2 id="hot-data-与本地-invalidate"><a class="heading-anchor" href="#hot-data-%E4%B8%8E%E6%9C%AC%E5%9C%B0-invalidate" aria-label="链接到本节">#</a><code>hot.data</code> 与本地 invalidate</h2>
+<p><code>runtime.removeModuleCache(id)</code> 调用 <code>handleModuleCacheRemoval()</code>，后者把当前 <code>dataMap.get(id)</code> 交给 disposer。
+随后重新执行模块时，同一个 data 对象继续可见。playground 连续编辑 <code>data.js</code> 两次，断言：</p>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">count:    1 → 2 → 3
+disposed: 0 → 1 → 2
+</code></pre></figure><p>它证明每轮旧实例只 dispose 一次，而且不是给 disposer 新建空对象。</p>
+<p>Bundled 版 <code>hot.invalidate()</code> 不回服务端模块图。<code>BundledDevHMRContext.invalidate()</code> 把模块加入同一个客户端
+队列，<code>applyInvalidate()</code> 从它的<strong>已执行 importers</strong> 开始重新计算边界，不下载新 patch，使用 runtime
+现有 factory。<code>firstInvalidatedBy</code> 沿嵌套 callback 传播；若图最终绕回发起者，升级为 full reload，防止无限
+自触发。</p>
+<p>真实 fixture <code>invalidation-child.js</code> self accept 后立即 invalidate，<code>invalidation-parent.js</code> self accept。
+测试修改 child 后看到 parent DOM 更新，并检查浏览器日志包含 invalidate；这证明第二轮传播在客户端完成。</p>
+<h2 id="两类-full-reload-共用-输出就绪-门禁"><a class="heading-anchor" href="#%E4%B8%A4%E7%B1%BB-full-reload-%E5%85%B1%E7%94%A8-%E8%BE%93%E5%87%BA%E5%B0%B1%E7%BB%AA-%E9%97%A8%E7%A6%81" aria-label="链接到本节">#</a>两类 full reload，共用“输出就绪”门禁</h2>
+<p>Bundled Dev 有两个 reload 来源：</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>来源</th>
+<th>服务端状态</th>
+<th>影响范围</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>DevEngine 直接返回 <code>FullReload</code></td>
+<td><code>fullReloadPending = true</code></td>
+<td>当前实现通过 HotChannel 广播全部客户端</td>
+</tr>
+<tr>
+<td>浏览器运行时图发现死端</td>
+<td><code>reloadNeededClientIds.add(clientId)</code></td>
+<td>只刷新该执行图对应页面</td>
+</tr>
+</tbody>
+</table></div>
+<p>浏览器发现死端时不直接导航，只发送自定义事件。</p>
+<p>目标版本源码摘录，来源：
+<code>packages/vite/src/client/bundledDevHmrClient.ts</code>，
+<code>BundledDevHMRClient.requestFullReload()</code>：</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">private requestFullReload(reason: string): void {
+  if (this.reloadPending) return
+  this.reloadPending = true
+  this.logger.debug(`full reload needed: ${reason}`)
+  this.send({
+    type: &#039;custom&#039;,
+    event: &#039;vite:bundled-dev:reload-needed&#039;,
+    data: { reason },
+  })
+}
+</code></pre></figure><p>服务端收到事件后记录 clientId，并调用 <code>ensureLatestBuildOutput()</code>。只有 <code>onOutput</code> 成功把最新产物写入
+<code>memoryFiles</code>，才兑现两类 reload：</p>
+<p>目标版本源码摘录（删节：保留成功提交），来源：
+<code>packages/vite/src/node/server/bundledDev.ts</code>，<code>BundledDev.listen()</code> 的 <code>onOutput</code>：</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">this.lastBuildError = null
+
+this.storeOutputFiles(result.output)
+
+if (this.fullReloadPending) {
+  this.fullReloadPending = false
+  this.debouncedFullReload()
+}
+if (this.reloadNeededClientIds.size) {
+  this.debouncedReloadNeededFlush()
+}
+</code></pre></figure><p>顺序不能交换。若先发 reload，新的 document 请求可能仍读旧 bundle，或再次进入 fallback 后二次导航。
+20ms trailing-edge debounce 只合并同一波通知；正确性门禁来自 <code>onOutput</code>，不是 debounce。</p>
+<h2 id="错误路径与自愈"><a class="heading-anchor" href="#%E9%94%99%E8%AF%AF%E8%B7%AF%E5%BE%84%E4%B8%8E%E8%87%AA%E6%84%88" aria-label="链接到本节">#</a>错误路径与自愈</h2>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>触发条件</th>
+<th>状态变化</th>
+<th>用户可见结果</th>
+<th>恢复</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>非 client Environment 构造 <code>BundledDev</code></td>
+<td>无实例</td>
+<td>明确抛错</td>
+<td>改回 client 或 unbundled</td>
+</tr>
+<tr>
+<td>output options 多于一组</td>
+<td>DevEngine 不创建</td>
+<td><code>listen()</code> 抛错</td>
+<td>使用单 output</td>
+</tr>
+<tr>
+<td><code>onHmrUpdates(Error)</code></td>
+<td>不提交 patch</td>
+<td>现有客户端 overlay</td>
+<td>修复文件，下一轮 HMR</td>
+</tr>
+<tr>
+<td><code>onOutput(Error)</code></td>
+<td><code>lastBuildError = error</code>，清 <code>fullReloadPending</code></td>
+<td>广播 overlay，新连接也重放</td>
+<td>后续成功 <code>onOutput</code> 清错误</td>
+</tr>
+<tr>
+<td>HMR stage 失败后访问 document</td>
+<td>bundle state 标记失败</td>
+<td>fallback/旧页面等待</td>
+<td><code>triggerFullBuild()</code> 强制完整输出</td>
+</tr>
+<tr>
+<td>patch <code>seq</code> 缺号</td>
+<td><code>reloadPending = true</code></td>
+<td>请求 full reload</td>
+<td>最新 bundle 就绪后导航</td>
+</tr>
+<tr>
+<td>patch 动态 import 失败</td>
+<td>不删旧缓存</td>
+<td>请求 full reload</td>
+<td>同上</td>
+</tr>
+<tr>
+<td><code>updateSet</code> 缺 factory</td>
+<td>不进入缓存删除</td>
+<td>请求 full reload</td>
+<td>同上</td>
+</tr>
+<tr>
+<td>无 importer 根/无边界环</td>
+<td>不做局部更新</td>
+<td>请求 full reload</td>
+<td>同上</td>
+</tr>
+<tr>
+<td>clientId 冲突</td>
+<td>双向索引不改成冲突值</td>
+<td>抛“restart dev server”错误</td>
+<td>重启连接/server</td>
+</tr>
+</tbody>
+</table></div>
+<p><code>onOutput(Error)</code> 保存 <code>lastBuildError</code> 很重要：错误可能发生在页面建立 HotChannel 连接之前。新页面连接时，
+服务端重放同一 prepared error；否则用户只看到空白 fallback，却不知道构建为什么无法完成。</p>
+<p><code>ensureOutputAndFlushReloadNeeded()</code> 的失败回调故意不发 reload。构建失败时留在当前页面和 overlay，比刷新到
+不可用输出更安全；修复后下一轮成功 HMR 会再次检查 <code>reloadNeededClientIds</code> 并补做输出。</p>
+<p>错误类型也不能混为一个标志：</p>
+<ul>
+<li>HMR patch 生成错误来自 <code>onHmrUpdates</code>；</li>
+<li>最新完整输出错误来自 <code>onOutput</code>，写 <code>lastBuildError</code>；</li>
+<li>DevEngine 的 <code>getBundleState()</code> 另带 <code>lastErrorStage</code>，用于访问时判断是否强制 full build。</li>
+</ul>
+<h2 id="关闭-devengine-是插件构建生命周期的唯一收口者"><a class="heading-anchor" href="#%E5%85%B3%E9%97%AD-devengine-%E6%98%AF%E6%8F%92%E4%BB%B6%E6%9E%84%E5%BB%BA%E7%94%9F%E5%91%BD%E5%91%A8%E6%9C%9F%E7%9A%84%E5%94%AF%E4%B8%80%E6%94%B6%E5%8F%A3%E8%80%85" aria-label="链接到本节">#</a>关闭：DevEngine 是插件构建生命周期的唯一收口者</h2>
+<p><code>DevEnvironment.close()</code> 在 bundled 模式关闭 <code>BundledDev</code>，否则才关闭普通 <code>PluginContainer</code>。两者不能一起
+执行：DevEngine 已经驱动插件 <code>buildStart/buildEnd</code>，再关一次容器会重复结束同一插件生命周期。</p>
+<p>目标版本源码摘录，来源：
+<code>packages/vite/src/node/server/environment.ts</code>，<code>DevEnvironment.close()</code>：</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">await Promise.allSettled([
+  this.bundledDev ? this.bundledDev.close() : this.pluginContainer.close(),
+  this.depsOptimizer?.close(),
+  isWebSocketServer in this.hot ? Promise.resolve() : this.hot.close(),
+  (async () =&gt; {
+    while (this._pendingRequests.size &gt; 0) {
+      await Promise.allSettled(
+        [...this._pendingRequests.values()].map(
+          (pending) =&gt; pending.request,
+        ),
+      )
+    }
+  })(),
+])
+</code></pre></figure><p>目标版本源码摘录，来源：<code>packages/vite/src/node/server/bundledDev.ts</code>，<code>BundledDev.close()</code>：</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">async close(): Promise&lt;void&gt; {
+  this._closed = true
+  this.memoryFiles.clear()
+  await this._devEngine?.close()
+  this.initialBuildCompleted = false
+}
+</code></pre></figure><p><code>_closed</code> 让首轮异步等待在每个 await 后提前退出，避免 server 已关闭却迟到发送 fallback reload。
+<code>memoryFiles.clear()</code> 释放 chunk、asset、map 与 runtime 引用；<code>devEngine.close()</code> 停止 Rolldown watcher 和插件
+构建生命周期；首轮标记复位，不把旧输出状态带到潜在的新实例。</p>
+<p><code>Promise.allSettled()</code> 保证 bundled engine、HotChannel 与在途 transform 中任一清理失败，都不跳过其他项。
+虽然 bundled 模式不走普通 transform 主线，Environment 仍保持统一的关闭契约。</p>
+<p>真实测试 <code>build-hooks.spec.ts</code> 创建计数插件，启动 bundled server 后等待 <code>buildEndCount === 1</code>，再
+<code>server.close()</code>，最后断言 <code>buildStartCount</code> 和 <code>buildEndCount</code> 仍都等于 1。它直接证明“关闭不重复触发
+build hooks”这条资源所有权约束。</p>
+<h2 id="明确能力边界"><a class="heading-anchor" href="#%E6%98%8E%E7%A1%AE%E8%83%BD%E5%8A%9B%E8%BE%B9%E7%95%8C" aria-label="链接到本节">#</a>明确能力边界</h2>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>边界</th>
+<th>目标版本事实</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>稳定性</td>
+<td><code>experimental.bundledDev</code>，高度实验性</td>
+</tr>
+<tr>
+<td>Environment</td>
+<td><code>BundledDev</code> 仅接受 client</td>
+</tr>
+<tr>
+<td>多 output</td>
+<td><code>listen()</code> 明确拒绝多组 output</td>
+</tr>
+<tr>
+<td>optimizeDeps</td>
+<td>constructor 禁用</td>
+</tr>
+<tr>
+<td><code>renderBuiltUrl</code></td>
+<td>serve + bundled 时配置解析主动清空</td>
+</tr>
+<tr>
+<td>warmup</td>
+<td><code>DevEnvironment.warmupRequest()</code> 直接返回</td>
+</tr>
+<tr>
+<td>Vite HMR plugin hooks</td>
+<td><code>server/hmr.ts</code> 留 TODO 后直接返回</td>
+</tr>
+<tr>
+<td>常规 transform middleware</td>
+<td>不安装，改用 lazy/memory 中间件</td>
+</tr>
+<tr>
+<td>invalidate</td>
+<td>完全在客户端 runtime 图处理</td>
+</tr>
+<tr>
+<td>未执行 accept</td>
+<td>不构成边界</td>
+</tr>
+<tr>
+<td>循环 invalidate</td>
+<td>playground 有因 Rolldown #10340 跳过的用例，不能宣称全部解决</td>
+</tr>
+</tbody>
+</table></div>
+<p>这些是版本边界，不应改写成 Bundled Dev 的永久设计承诺。尤其不能因为普通 HMR 支持
+<code>hotUpdate/handleHotUpdate</code>，便推断 bundled 模式也执行相同插件钩子。</p>
+<h2 id="状态转换总表"><a class="heading-anchor" href="#%E7%8A%B6%E6%80%81%E8%BD%AC%E6%8D%A2%E6%80%BB%E8%A1%A8" aria-label="链接到本节">#</a>状态转换总表</h2>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>变化前</th>
+<th>触发动作</th>
+<th>变化后</th>
+<th>异常/清理</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>client Environment 未创建</td>
+<td><code>experimental.bundledDev=true</code></td>
+<td>client 默认 <code>isBundled=true</code>，创建 <code>BundledDev</code>，禁用 optimizer</td>
+<td>单独显式 <code>isBundled</code> 不会切换完整 server 管线；非 client bundled 直接抛错</td>
+</tr>
+<tr>
+<td>DevEngine 未初始化</td>
+<td><code>BundledDev.listen()</code></td>
+<td>HotChannel handlers、DevEngine、runtime 已装配</td>
+<td>多 output 抛错，不暴露半初始化 engine</td>
+</tr>
+<tr>
+<td>首轮输出未完成</td>
+<td>浏览器请求 HTML</td>
+<td>返回带 HMR runtime 的 fallback</td>
+<td>构建错误发 overlay，不盲目 reload</td>
+</tr>
+<tr>
+<td><code>MemoryFiles</code> 无应用输出</td>
+<td><code>onOutput(success)</code></td>
+<td>惰性写入 HTML/chunk/asset/map</td>
+<td>同名覆盖，未变化旧项保留</td>
+</tr>
+<tr>
+<td>浏览器仍在 fallback</td>
+<td>首轮等待完成</td>
+<td>收到 <code>full-reload(ifFallback)</code></td>
+<td><code>_closed</code> 时不发送迟到消息</td>
+</tr>
+<tr>
+<td>动态入口未 ship</td>
+<td><code>/@vite/lazy</code></td>
+<td><code>compileEntry</code> 生成 code，filename 进入 pending</td>
+<td>参数缺失/URL 畸形继续中间件链</td>
+</tr>
+<tr>
+<td>payload pending</td>
+<td>HTTP <code>finish</code></td>
+<td>pending 删除，DevEngine 收到 delivered</td>
+<td>连接未 finish 不提交</td>
+</tr>
+<tr>
+<td>文件稳定</td>
+<td>DevEngine 文件事件</td>
+<td>Error、Noop、FullReload 或 client patch</td>
+<td>Error 只进 overlay，不提交输出</td>
+</tr>
+<tr>
+<td>patch 已生成</td>
+<td><code>handleHmrOutput()</code></td>
+<td>内存保存 patch，client 收到 changedIds/url/seq</td>
+<td>patch 强制含 ESM 语法</td>
+</tr>
+<tr>
+<td>client 无在途事务</td>
+<td><code>handlePush()</code></td>
+<td>push 加入 <code>applyQueue</code></td>
+<td>seq 缺口转 full reload</td>
+</tr>
+<tr>
+<td>已找到 boundaries</td>
+<td>patch import 成功</td>
+<td>factory 注册，缓存统一删除，callback 执行</td>
+<td>缺 factory/import 失败不删旧缓存，转 reload</td>
+</tr>
+<tr>
+<td>client 图有死端</td>
+<td><code>requestFullReload()</code></td>
+<td><code>reloadPending=true</code>，服务端记录 clientId</td>
+<td>后续 patch 忽略</td>
+</tr>
+<tr>
+<td>reload 等最新输出</td>
+<td><code>onOutput(success)</code></td>
+<td>先更新 MemoryFiles，再发送 full-reload</td>
+<td><code>onOutput(Error)</code> 保留页面并显示 overlay</td>
+</tr>
+<tr>
+<td>server 活动</td>
+<td><code>server.close()</code></td>
+<td>内存清空、DevEngine/HotChannel 等并行关闭</td>
+<td><code>allSettled</code> 防止单项失败跳过其他清理</td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="同一-demo-的完整执行流程图"><a class="heading-anchor" href="#%E5%90%8C%E4%B8%80-demo-%E7%9A%84%E5%AE%8C%E6%95%B4%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E5%9B%BE" aria-label="链接到本节">#</a>同一 Demo 的完整执行流程图</h2>
+<figure class="flow-figure" aria-label="离线流程图"><figcaption class="flow-caption"><strong>执行流程图</strong><span>教程图依据目标版本源码与测试绘制；折叠区保留原始 Mermaid</span></figcaption><div class="flow-lanes request-topology bundled-dev-topology"><section class="flow-lane"><h4 class="lane-label">启动与首轮输出</h4><div class="lane-path"><span class="lane-step">--experimentalBundle</span><span class="lane-arrow">→</span><span class="lane-step">禁用 optimizer；创建 BundledDev</span><span class="lane-arrow">→</span><span class="lane-step">Rolldown DevEngine 后台 run</span><span class="lane-arrow">→</span><span class="lane-choice">内存 HTML 已就绪？</span></div><div class="lane-split"><span><b>否</b> → fallback 等待页</span><span><b>成功</b> → 先写 MemoryFiles，再只让 fallback 页面 reload</span></div></section><section class="flow-lane"><h4 class="lane-label">测试编辑 dead-accept.js</h4><div class="lane-path"><span class="lane-step">DevEngine 生成 per-client patch</span><span class="lane-arrow">→</span><span class="lane-step">changedIds + URL + seq</span><span class="lane-arrow">→</span><span class="lane-step">浏览器校验 seq 并查询已执行 importer 图</span><span class="lane-arrow">→</span><span class="lane-choice">运行时 accept boundary？</span></div><div class="lane-split"><span><b>有</b> → import patch；校验 factory；分阶段应用</span><span><b>无：本测试路径</b> → requestFullReload</span></div></section><section class="flow-lane"><h4 class="lane-label">为什么静态 accept 不够</h4><div class="lane-path"><span class="lane-step">dead accept 位于永不执行条件</span><span class="lane-arrow">→</span><span class="lane-step">runtime 没有登记 callback</span><span class="lane-arrow">→</span><span class="lane-step">冒泡到 main 根仍无边界</span><span class="lane-arrow">→</span><span class="lane-step">发送 reload-needed，而非立即导航</span></div></section><section class="flow-lane"><h4 class="lane-label">最新输出门闩</h4><div class="lane-path"><span class="lane-step">服务端记录 clientId</span><span class="lane-arrow">→</span><span class="lane-step">ensureLatestBuildOutput</span><span class="lane-arrow">→</span><span class="lane-choice">onOutput？</span></div><div class="lane-split"><span><b>成功</b> → 先更新 MemoryFiles，再定向 full-reload；一次导航命中新 bundle</span><span><b>失败</b> → 保留当前页面与 overlay，不导航</span></div></section><section class="flow-lane"><h4 class="lane-label">测试断言与关闭</h4><div class="lane-path"><span class="lane-step">documentLoads = 1；未经过 fallback</span><span class="lane-arrow">→</span><span class="lane-step">onTestFinished 恢复 fixture</span></div><div class="lane-path"><span class="lane-step">server.close()</span><span class="lane-arrow">→</span><span class="lane-step">DevEnvironment.close()</span><span class="lane-arrow">→</span><span class="lane-step">BundledDev.close()</span><span class="lane-arrow">→</span><span class="lane-step">清 memoryFiles + 关闭 DevEngine</span></div></section></div><details class="diagram-source"><summary>查看原始 Mermaid 源码</summary><pre><code>flowchart TD
+  A[&quot;experimental.bundledDev=true&quot;] --&gt; B[&quot;DevEnvironment：禁用 optimizer，创建 BundledDev&quot;]
+  B --&gt; C[&quot;listen：注册 HotChannel / DevEngine callbacks，后台首轮构建&quot;]
+  C --&gt; D[&quot;首次 document 请求&quot;]
+  D --&gt; E{&quot;MemoryFiles 已有 HTML?&quot;}
+  E -- &quot;否&quot; --&gt; F[&quot;返回 fallback + HMR runtime&quot;]
+  C --&gt; G{&quot;首次 onOutput&quot;}
+  F -. &quot;等待构建回调&quot; .-&gt; G
+  G -- &quot;Error&quot; --&gt; G1[&quot;保存错误并显示 overlay；修复后重试&quot;]
+  G1 --&gt; G
+  G -- &quot;Success&quot; --&gt; H[&quot;完整输出写入 MemoryFiles&quot;]
+  H --&gt; I[&quot;只让 fallback 页面 reload&quot;]
+  E -- &quot;是&quot; --&gt; J[&quot;加载正式页面，创建 clientId 与 runtime 执行图&quot;]
+  I --&gt; J
+
+  J --&gt; K[&quot;测试编辑 dead-accept.js&quot;]
+  K --&gt; L[&quot;DevEngine 生成 changedIds / patch URL / seq&quot;]
+  L --&gt; M[&quot;client.handlePush：校验 seq，查询已执行 importer 图&quot;]
+  M --&gt; N{&quot;找到运行时 accept 边界?&quot;}
+  N -- &quot;是&quot; --&gt; O[&quot;import patch → 校验 factory → 清缓存/dispose → callback&quot;]
+  N -- &quot;否：本测试路径&quot; --&gt; P[&quot;requestFullReload：发送 reload-needed&quot;]
+  M -- &quot;seq 缺口 / patch 失败&quot; --&gt; P
+  P --&gt; Q[&quot;服务端记录 clientId，并等待最新完整输出&quot;]
+  Q --&gt; R{&quot;onOutput&quot;}
+  R -- &quot;Error&quot; --&gt; R1[&quot;保留当前页面与 overlay，不导航&quot;]
+  R -- &quot;Success&quot; --&gt; S[&quot;先更新 MemoryFiles，再定向 full-reload&quot;]
+  S --&gt; T[&quot;唯一 document 请求命中新 bundle；不经过 fallback&quot;]
+
+  O --&gt; U[&quot;server.close&quot;]
+  T --&gt; U
+  R1 -. &quot;用户关闭 server&quot; .-&gt; U
+  U --&gt; V[&quot;allSettled：清 MemoryFiles，关闭 DevEngine 与 HotChannel&quot;]
+</code></pre></details></figure><p>主线与下方 <code>dead-accept.js</code> 测试一致；<code>seq</code>/patch 失败和 <code>onOutput(Error)</code> 是同一链上的源码失败分支，
+测试没有逐项触发。Lazy bundle 不属于这个 Demo，因此不塞进图中；它的独立提交点是 HTTP <code>finish</code>。</p>
+<h2 id="真实完整用例-死-accept-如何只导航一次"><a class="heading-anchor" href="#%E7%9C%9F%E5%AE%9E%E5%AE%8C%E6%95%B4%E7%94%A8%E4%BE%8B-%E6%AD%BB-accept-%E5%A6%82%E4%BD%95%E5%8F%AA%E5%AF%BC%E8%88%AA%E4%B8%80%E6%AC%A1" aria-label="链接到本节">#</a>真实完整用例：死 accept 如何只导航一次</h2>
+<p>选择
+<code>playground/hmr-full-bundle-mode/__tests__/hmr-full-bundle-mode.spec.ts</code> 的
+<code>a full reload navigates once, onto the rebuilt bundle</code>。fixture <code>dead-accept.js</code> 含静态可见但运行时永不执行的
+accept；这是最能区分普通静态图和 bundled 执行图的场景。</p>
+<p>下面只保留该用例实际使用的 import，并摘录当前中文注释工作树中的完整 test body；仅省略 <code>isBuild</code> 外层、
+同文件其他测试并去掉一层缩进，可执行逻辑、输入、断言和 <code>onTestFinished</code> 清理均未改写。需要区分版本层次：这些中文注释
+属于本仓库在 Vite v8.2.1 基线之上补充的解释层；上游 commit 中对应注释为英文且少一条解释性 TSDoc，
+但测试的可执行 token 相同。</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">import { setTimeout } from &#039;node:timers/promises&#039;
+import type { Response } from &#039;playwright-chromium&#039;
+import { expect, test, onTestFinished } from &#039;vitest&#039;
+import {
+  addFile,
+  editFile,
+  page,
+  readFile,
+  serverLogs,
+} from &#039;~utils&#039;
+
+test(&#039;a full reload navigates once, onto the rebuilt bundle&#039;, async () =&gt; {
+  const original = readFile(&#039;dead-accept.js&#039;)
+
+  // 客户端不能自行导航：先发 reload-needed，服务端等新 bundle 可访问后才回 full-reload。
+  // 因此页面不会经过 bundling fallback，document 也只加载一次（#23106）。
+  let documentLoads = 0
+  let sawFallbackPage = false
+  /** 统计 document 响应，并侦测 reload 是否短暂经过 bundled-dev fallback 页面。 */
+  const onResponse = async (response: Response) =&gt; {
+    if (response.request().resourceType() !== &#039;document&#039;) return
+    documentLoads++
+    if ((await response.text()).includes(&#039;__vite_is_fallback_page__&#039;)) {
+      sawFallbackPage = true
+    }
+  }
+  page.on(&#039;response&#039;, onResponse)
+  onTestFinished(async () =&gt; {
+    page.off(&#039;response&#039;, onResponse)
+    addFile(&#039;dead-accept.js&#039;, original)
+    await expect
+      .poll(() =&gt; page.textContent(&#039;.dead-accept&#039;))
+      .toBe(&#039;dead-accept&#039;)
+  })
+
+  const serverLogIndex = serverLogs.length
+  editFile(&#039;dead-accept.js&#039;, (code) =&gt;
+    code.replace(&quot;&#039;dead-accept&#039;&quot;, &quot;&#039;dead-accept-reloaded&#039;&quot;),
+  )
+  await expect
+    .poll(() =&gt; page.textContent(&#039;.dead-accept&#039;))
+    .toBe(&#039;dead-accept-reloaded&#039;)
+
+  await expect
+    .poll(() =&gt;
+      serverLogs
+        .slice(serverLogIndex)
+        .some((l) =&gt; l.includes(&#039;bundling for page reload&#039;)),
+    )
+    .toBe(true)
+
+  // 留出潜在第二次导航发生的时间，再断言确实只有一次 document load。
+  await setTimeout(300)
+  expect(documentLoads).toBe(1)
+  expect(sawFallbackPage).toBe(false)
+})
+</code></pre></figure><h3 id="given"><a class="heading-anchor" href="#given" aria-label="链接到本节">#</a>Given</h3>
+<ul>
+<li>首屏已经执行 <code>main.js</code> 和 <code>dead-accept.js</code>；</li>
+<li><code>dead-accept.js</code> 的 accept 位于 <code>if (globalThis.__NEVER_TRUE__)</code>，所以运行时没有 callback；</li>
+<li>test 保存原文件，并注册恢复文件、移除 response listener 的清理；</li>
+<li>response listener 只统计 document，并检查正文是否含 fallback marker。</li>
+</ul>
+<h3 id="when"><a class="heading-anchor" href="#when" aria-label="链接到本节">#</a>When</h3>
+<p>唯一关键动作是把 <code>'dead-accept'</code> 改成 <code>'dead-accept-reloaded'</code>。DevEngine 产生变化，浏览器收到 patch 信息后
+在实际执行图中寻找边界。</p>
+<h3 id="then"><a class="heading-anchor" href="#then" aria-label="链接到本节">#</a>Then</h3>
+<ol>
+<li>DOM 最终显示 <code>dead-accept-reloaded</code>，证明新完整输出已被页面加载；</li>
+<li>server 日志含 <code>bundling for page reload</code>，证明服务端处理了某个客户端发来的 reload-needed；测试没有断言
+日志里的具体 reason，死 accept 是触发原因还需结合 fixture 与 <code>bubble()</code> 源码判断；</li>
+<li>额外等待 300ms 后 <code>documentLoads === 1</code>；</li>
+<li><code>sawFallbackPage === false</code>，证明唯一导航直接落在重建后的 bundle；</li>
+<li><code>onTestFinished</code> 恢复 fixture，避免后续测试继承变更。</li>
+</ol>
+<h3 id="mechanism-fixture-源码推导"><a class="heading-anchor" href="#mechanism-fixture-%E6%BA%90%E7%A0%81%E6%8E%A8%E5%AF%BC" aria-label="链接到本节">#</a>Mechanism（fixture + 源码推导）</h3>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">edit dead-accept.js
+→ DevEngine 生成 client update
+→ BundledDev 发送 changedIds/url/seq
+→ runtime 确认 dead-accept 已执行，但条件内 accept 未执行
+→ bubble 到 main.js 根仍无边界
+→ requestFullReload()
+→ vite:bundled-dev:reload-needed
+→ ensureLatestBuildOutput()
+→ onOutput success
+→ storeOutputFiles()
+→ 定向 full-reload
+→ 唯一 document 请求直接命中新 HTML
+</code></pre></figure><h3 id="source"><a class="heading-anchor" href="#source" aria-label="链接到本节">#</a>Source</h3>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>决定性源码</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>patch 服务端出口</td>
+<td><code>server/bundledDev.ts::handleHmrOutput()</code></td>
+</tr>
+<tr>
+<td>消息分派</td>
+<td><code>client/client.ts::handleMessage()</code></td>
+</tr>
+<tr>
+<td>真实执行图传播</td>
+<td><code>client/bundledDevHmrClient.ts::computeHmrUpdate()/bubble()</code></td>
+</tr>
+<tr>
+<td>请求 reload</td>
+<td>同文件 <code>requestFullReload()</code></td>
+</tr>
+<tr>
+<td>等待输出</td>
+<td><code>server/bundledDev.ts</code> 的 reload-needed handler</td>
+</tr>
+<tr>
+<td>输出提交</td>
+<td>同文件 <code>onOutput/storeOutputFiles()</code></td>
+</tr>
+<tr>
+<td>新 document 响应</td>
+<td><code>middlewares/indexHtml.ts::indexHtmlMiddleware()</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>这条测试直接证明的是“该 fixture 最终发生一次客户端请求的 reload，且没有经过 fallback”。它没有直接断言
+<code>pendingPayloadFilenames</code> 或 reload reason；payload ack 的精确提交时点只由中间件 <code>finish</code> 分支锁定，
+lazy/HMR 成功用例只能提供端到端结果，不能识别 ack 是否发生。</p>
+<h2 id="章节-源码-测试证据表"><a class="heading-anchor" href="#%E7%AB%A0%E8%8A%82-%E6%BA%90%E7%A0%81-%E6%B5%8B%E8%AF%95%E8%AF%81%E6%8D%AE%E8%A1%A8" aria-label="链接到本节">#</a>章节—源码—测试证据表</h2>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>章节机制</th>
+<th>关键源码</th>
+<th>代表性测试</th>
+<th>证据结论</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>配置与所有权</td>
+<td><code>config.ts::resolveEnvironmentOptions</code>、<code>server/environment.ts::constructor</code></td>
+<td><code>build-hooks.spec.ts</code></td>
+<td>bundled client 拥有 DevEngine，optimizer 不并行</td>
+</tr>
+<tr>
+<td>首轮启动</td>
+<td><code>BundledDev.listen()/waitForInitialBuildFinish</code></td>
+<td><code>show bundling in progress</code></td>
+<td>server 可先响应，正式输出后仅 fallback reload</td>
+</tr>
+<tr>
+<td>HTML fallback</td>
+<td><code>indexHtmlMiddleware()/generateFallbackHtml</code></td>
+<td>同上、单次 reload test</td>
+<td>fallback 含 runtime，重建后不必二次经过</td>
+</tr>
+<tr>
+<td>内存输出</td>
+<td><code>MemoryFiles</code>、<code>storeOutputFiles</code>、<code>memoryFilesMiddleware</code></td>
+<td>新 asset/worker tests</td>
+<td>源码证明惰性物化与增量保留；测试只证明新产物可经 HTTP 读取</td>
+</tr>
+<tr>
+<td>Lazy payload</td>
+<td><code>triggerLazyBundlingMiddleware</code>、<code>triggerLazyBundling</code>、<code>markPayloadDelivered</code></td>
+<td><code>lazy bundling</code></td>
+<td>测试证明动态入口最终执行；源码证明按 client 生成并在 finish 后确认交付</td>
+</tr>
+<tr>
+<td>服务端 patch</td>
+<td><code>onHmrUpdates/handleHmrOutput</code></td>
+<td><code>generate hmr patch</code></td>
+<td>patch 按 client 路由并强制 ESM</td>
+</tr>
+<tr>
+<td>浏览器边界</td>
+<td><code>computeHmrUpdate/bubble</code></td>
+<td>self accept、dead accept tests</td>
+<td>边界取决于实际执行图</td>
+</tr>
+<tr>
+<td>Patch 应用</td>
+<td><code>applyPush/applyUpdate</code></td>
+<td>continuous patch、hot.data</td>
+<td>seq、队列、callback 冻结、dispose 顺序</td>
+</tr>
+<tr>
+<td>invalidate</td>
+<td><code>BundledDevHMRContext.invalidate/applyInvalidate</code></td>
+<td><code>invalidate</code></td>
+<td>无服务端 rebuild 的客户端二次传播</td>
+</tr>
+<tr>
+<td>reload 门闩</td>
+<td><code>requestFullReload</code>、服务端 reload-needed、<code>onOutput</code></td>
+<td>单次 reload test</td>
+<td>输出写入后才导航</td>
+</tr>
+<tr>
+<td>错误恢复</td>
+<td><code>onHmrUpdates</code>、<code>onOutput</code>、<code>triggerBundleRegenerationIfStale</code></td>
+<td>两个 error tests</td>
+<td>测试证明 overlay 与修复后恢复；错误重放、访问时 full build 由源码分支证明</td>
+</tr>
+<tr>
+<td>清理</td>
+<td><code>DevEnvironment.close/BundledDev.close</code></td>
+<td><code>build-hooks.spec.ts</code></td>
+<td>DevEngine 只结束一次插件生命周期</td>
+</tr>
+</tbody>
+</table></div>
+<p>每个关键机制至少有真实源码摘录；上表没有把一个测试扩大成全部系统保证。比如 lazy 测试只证明动态入口
+最终执行，delivery ack 的精确提交时点仍由 <code>finish</code> 分支源码锁定。</p>
+<p>同一 playground 另有 bundle/HMR error、新 asset、Worker 与连续 patch 用例；这里只把它们放在对应机制行，
+不再用第二张测试清单重复索引。Worker 构建本体见第 13B 章。</p>
+<h2 id="建议断点与观察值"><a class="heading-anchor" href="#%E5%BB%BA%E8%AE%AE%E6%96%AD%E7%82%B9%E4%B8%8E%E8%A7%82%E5%AF%9F%E5%80%BC" aria-label="链接到本节">#</a>建议断点与观察值</h2>
+<p>用 <code>playground/hmr-full-bundle-mode</code>，分四轮调试：</p>
+<ol>
+<li>首轮：<code>BundledDev.listen()</code>、<code>waitForInitialBuildFinish()</code>、<code>indexHtmlMiddleware()</code>。</li>
+<li>动态 import：<code>triggerLazyBundling()</code>、<code>markPayloadDelivered()</code>。</li>
+<li>self accept：<code>handleHmrOutput()</code>、<code>computeHmrUpdate()</code>、<code>applyUpdate()</code>。</li>
+<li>dead accept：<code>bubble()</code> 根分支、<code>requestFullReload()</code>、服务端 <code>onOutput</code>。</li>
+</ol>
+<p>观察：</p>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">服务端
+  initialBuildCompleted
+  memoryFiles.size
+  pendingPayloadFilenames
+  fullReloadPending
+  reloadNeededClientIds
+  lastBuildError
+  Clients: connection ↔ clientId
+
+浏览器
+  runtime.isExecuted(id)
+  runtime.getImporters(id)
+  hotModulesMap
+  dataMap / disposeMap
+  boundaries / updateSet
+  lastSeq
+  reloadPending
+</code></pre></figure><p>不要只在 WebSocket message 上断点；那只能看到 transport payload，看不到 DevEngine 何时提交输出，也看不到
+runtime 清缓存与 callback 的顺序。</p>
+<h2 id="结论与继续阅读"><a class="heading-anchor" href="#%E7%BB%93%E8%AE%BA%E4%B8%8E%E7%BB%A7%E7%BB%AD%E9%98%85%E8%AF%BB" aria-label="链接到本节">#</a>结论与继续阅读</h2>
+<p>Bundled Dev 把状态所有权分给 Rolldown DevEngine、Vite server 与浏览器 runtime。判断一条链是否正确，只需
+核对五个提交条件：</p>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">没有最新完整输出 → 不 reload
+没有 HTTP finish     → 不确认 payload delivered
+没有实际执行 callback → 不构成 HMR boundary
+没有完整 factory 集  → 不删除旧模块缓存
+没有全部资源清理     → close 不算完成
+</code></pre></figure><p>继续阅读：</p>
+<ul>
+<li>第 06 章：中间件总顺序、Host/CORS 与错误响应；</li>
+<li>第 09 章：普通 HTML transform 与 bundled fallback 的分界；</li>
+<li>第 12 章：普通服务端 ModuleGraph HMR，对照状态所有权；</li>
+<li>第 13B 章：Worker/asset 如何补进 bundled patch；</li>
+<li>第 14A 章：Bundled Dev 复用的 build 配置与 Rolldown options；</li>
+<li>Rolldown experimental 源码：若要继续追 <code>compileEntry</code> 与 per-client ship map 内部实现，必须固定对应
+Rolldown 版本，不能由 Vite 调用点反推未检查的细节。</li>
+</ul>
+</article><nav class="article-pager" aria-label="前后篇"><a class="pager-link previous" href="12-hmr.html"><span class="pager-label">上一篇 · 12</span><span class="pager-title">HMR</span></a><a class="pager-link next" href="13a-css-pipeline.html"><span class="pager-label">下一篇 · 13A</span><span class="pager-title">CSS 管线</span></a></nav><footer class="site-footer">Vite v8.2.1 源码阅读站 · 所有机制结论限定于 commit 421615865dad3ed39137d17281814fc78a41246c。</footer></main><aside class="page-toc" aria-label="页内目录"><h2 class="toc-title">本页目录</h2><ol class="toc-list"><li class="depth-2"><a href="#%E5%85%88%E7%BB%99%E7%BB%93%E8%AE%BA">先给结论</a></li><li class="depth-2"><a href="#%E9%98%85%E8%AF%BB%E8%BE%B9%E7%95%8C">阅读边界</a></li><li class="depth-2"><a href="#%E6%8E%A8%E8%8D%90%E9%98%85%E8%AF%BB%E9%A1%BA%E5%BA%8F">推荐阅读顺序</a></li><li class="depth-2"><a href="#%E9%85%8D%E7%BD%AE%E5%85%A5%E5%8F%A3%E4%B8%8E%E5%AF%B9%E8%B1%A1%E6%89%80%E6%9C%89%E6%9D%83">配置入口与对象所有权</a></li><li class="depth-2"><a href="#%E6%A0%B8%E5%BF%83%E7%8A%B6%E6%80%81%E4%B8%8E%E4%B8%8D%E5%8F%98%E9%87%8F">核心状态与不变量</a></li><li class="depth-2"><a href="#%E5%90%AF%E5%8A%A8-listen-%E5%8F%AA%E5%AE%8C%E6%88%90%E8%A3%85%E9%85%8D-%E4%B8%8D%E7%AD%89%E5%BE%85%E9%A6%96%E8%BD%AE-bundle">启动：listen 只完成装配，不等待首轮 bundle</a></li><li class="depth-2"><a href="#%E9%A6%96%E6%AC%A1%E6%96%87%E6%A1%A3%E8%AF%B7%E6%B1%82-fallback-%E6%98%AF%E4%B8%80%E4%B8%AA%E5%8F%AF%E6%81%A2%E5%A4%8D%E8%BF%90%E8%A1%8C%E6%80%81">首次文档请求：fallback 是一个可恢复运行态</a></li><li class="depth-2"><a href="#memoryfiles-%E6%9E%84%E5%BB%BA%E8%BE%93%E5%87%BA%E4%B8%8D%E6%98%AF%E6%99%AE%E9%80%9A%E9%9D%99%E6%80%81%E7%9B%AE%E5%BD%95">MemoryFiles：构建输出不是普通静态目录</a></li><li class="depth-2"><a href="#%E5%86%85%E5%AD%98%E6%96%87%E4%BB%B6-http-%E8%BE%B9%E7%95%8C">内存文件 HTTP 边界</a></li><li class="depth-2"><a href="#lazy-bundle-%E5%8A%A8%E6%80%81%E5%85%A5%E5%8F%A3%E6%8C%89%E5%AE%A2%E6%88%B7%E7%AB%AF%E7%94%9F%E6%88%90">Lazy bundle：动态入口按客户端生成</a></li><li class="depth-2"><a href="#%E5%AE%A2%E6%88%B7%E7%AB%AF%E8%BA%AB%E4%BB%BD-%E4%B8%80%E4%B8%AA%E9%A1%B5%E9%9D%A2%E5%AF%B9%E5%BA%94%E4%B8%80%E4%B8%AA-runtime-client">客户端身份：一个页面对应一个 runtime client</a></li><li class="depth-2"><a href="#%E6%9C%8D%E5%8A%A1%E7%AB%AF%E6%96%87%E4%BB%B6%E5%8F%98%E5%8C%96-%E5%85%88%E7%94%B1-devengine-%E5%88%86%E7%B1%BB">服务端文件变化：先由 DevEngine 分类</a></li><li class="depth-2"><a href="#%E4%B8%BA%E4%BB%80%E4%B9%88-hmr-%E8%BE%B9%E7%95%8C%E5%BF%85%E9%A1%BB%E7%A7%BB%E5%88%B0%E6%B5%8F%E8%A7%88%E5%99%A8">为什么 HMR 边界必须移到浏览器</a></li><li class="depth-2"><a href="#%E6%B5%8F%E8%A7%88%E5%99%A8%E5%9B%BE%E7%AE%97%E6%B3%95-computehmrupdate">浏览器图算法：computeHmrUpdate</a></li><li class="depth-3"><a href="#%E7%94%A8%E7%9C%9F%E5%AE%9E-hmr-js-%E6%89%8B%E5%B7%A5%E8%B5%B0%E4%B8%80%E9%81%8D">用真实 hmr.js 手工走一遍</a></li><li class="depth-2"><a href="#patch-%E4%BA%8B%E5%8A%A1-%E5%85%88%E5%86%BB%E7%BB%93-%E5%86%8D%E7%BB%9F%E4%B8%80%E5%88%A0%E7%BC%93%E5%AD%98">Patch 事务：先冻结，再统一删缓存</a></li><li class="depth-2"><a href="#hot-data-%E4%B8%8E%E6%9C%AC%E5%9C%B0-invalidate">hot.data 与本地 invalidate</a></li><li class="depth-2"><a href="#%E4%B8%A4%E7%B1%BB-full-reload-%E5%85%B1%E7%94%A8-%E8%BE%93%E5%87%BA%E5%B0%B1%E7%BB%AA-%E9%97%A8%E7%A6%81">两类 full reload，共用“输出就绪”门禁</a></li><li class="depth-2"><a href="#%E9%94%99%E8%AF%AF%E8%B7%AF%E5%BE%84%E4%B8%8E%E8%87%AA%E6%84%88">错误路径与自愈</a></li><li class="depth-2"><a href="#%E5%85%B3%E9%97%AD-devengine-%E6%98%AF%E6%8F%92%E4%BB%B6%E6%9E%84%E5%BB%BA%E7%94%9F%E5%91%BD%E5%91%A8%E6%9C%9F%E7%9A%84%E5%94%AF%E4%B8%80%E6%94%B6%E5%8F%A3%E8%80%85">关闭：DevEngine 是插件构建生命周期的唯一收口者</a></li><li class="depth-2"><a href="#%E6%98%8E%E7%A1%AE%E8%83%BD%E5%8A%9B%E8%BE%B9%E7%95%8C">明确能力边界</a></li><li class="depth-2"><a href="#%E7%8A%B6%E6%80%81%E8%BD%AC%E6%8D%A2%E6%80%BB%E8%A1%A8">状态转换总表</a></li><li class="depth-2"><a href="#%E5%90%8C%E4%B8%80-demo-%E7%9A%84%E5%AE%8C%E6%95%B4%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E5%9B%BE">同一 Demo 的完整执行流程图</a></li><li class="depth-2"><a href="#%E7%9C%9F%E5%AE%9E%E5%AE%8C%E6%95%B4%E7%94%A8%E4%BE%8B-%E6%AD%BB-accept-%E5%A6%82%E4%BD%95%E5%8F%AA%E5%AF%BC%E8%88%AA%E4%B8%80%E6%AC%A1">真实完整用例：死 accept 如何只导航一次</a></li><li class="depth-3"><a href="#given">Given</a></li><li class="depth-3"><a href="#when">When</a></li><li class="depth-3"><a href="#then">Then</a></li><li class="depth-3"><a href="#mechanism-fixture-%E6%BA%90%E7%A0%81%E6%8E%A8%E5%AF%BC">Mechanism（fixture + 源码推导）</a></li><li class="depth-3"><a href="#source">Source</a></li><li class="depth-2"><a href="#%E7%AB%A0%E8%8A%82-%E6%BA%90%E7%A0%81-%E6%B5%8B%E8%AF%95%E8%AF%81%E6%8D%AE%E8%A1%A8">章节—源码—测试证据表</a></li><li class="depth-2"><a href="#%E5%BB%BA%E8%AE%AE%E6%96%AD%E7%82%B9%E4%B8%8E%E8%A7%82%E5%AF%9F%E5%80%BC">建议断点与观察值</a></li><li class="depth-2"><a href="#%E7%BB%93%E8%AE%BA%E4%B8%8E%E7%BB%A7%E7%BB%AD%E9%98%85%E8%AF%BB">结论与继续阅读</a></li></ol></aside></div><script>;(function () {
+  'use strict'
+
+  var root = document.documentElement
+  var body = document.body
+  var themeButton = document.querySelector('[data-theme-toggle]')
+  var navButton = document.querySelector('[data-nav-toggle]')
+  var progress = document.querySelector('[data-reading-progress]')
+
+  function setTheme(theme) {
+    root.setAttribute('data-theme', theme)
+    if (themeButton) {
+      themeButton.setAttribute(
+        'aria-label',
+        theme === 'dark' ? '切换到浅色模式' : '切换到深色模式',
+      )
+      themeButton.textContent = theme === 'dark' ? '☀' : '◐'
+    }
+  }
+
+  var savedTheme
+  try {
+    savedTheme = localStorage.getItem('vite-guide-theme')
+  } catch (_) {
+    savedTheme = null
+  }
+  setTheme(
+    savedTheme ||
+      (window.matchMedia('(prefers-color-scheme: dark)').matches
+        ? 'dark'
+        : 'light'),
+  )
+
+  if (themeButton) {
+    themeButton.addEventListener('click', function () {
+      var next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark'
+      setTheme(next)
+      try {
+        localStorage.setItem('vite-guide-theme', next)
+      } catch (_) {
+        // file:// 或隐私模式下 localStorage 可能不可用；主题仍对当前页面生效。
+      }
+    })
+  }
+
+  function closeNavigation() {
+    body.classList.remove('nav-open')
+    if (navButton) navButton.setAttribute('aria-expanded', 'false')
+  }
+
+  if (navButton) {
+    navButton.addEventListener('click', function () {
+      var open = body.classList.toggle('nav-open')
+      navButton.setAttribute('aria-expanded', String(open))
+    })
+  }
+
+  document.addEventListener('keydown', function (event) {
+    if (event.key === 'Escape') closeNavigation()
+  })
+
+  document.querySelectorAll('.site-nav a').forEach(function (link) {
+    link.addEventListener('click', closeNavigation)
+  })
+
+  function updateProgress() {
+    if (!progress) return
+    var scrollable = document.documentElement.scrollHeight - window.innerHeight
+    var ratio = scrollable > 0 ? window.scrollY / scrollable : 0
+    progress.style.width = Math.min(100, Math.max(0, ratio * 100)) + '%'
+  }
+
+  updateProgress()
+  window.addEventListener('scroll', updateProgress, { passive: true })
+  window.addEventListener('resize', updateProgress)
+
+  document.querySelectorAll('.copy-code').forEach(function (button) {
+    button.addEventListener('click', async function () {
+      var code = button.closest('.code-card').querySelector('code')
+      var value = code ? code.textContent : ''
+      var copied = false
+
+      if (navigator.clipboard && window.isSecureContext) {
+        try {
+          await navigator.clipboard.writeText(value)
+          copied = true
+        } catch (_) {
+          copied = false
+        }
+      }
+
+      if (!copied) {
+        var input = document.createElement('textarea')
+        input.value = value
+        input.setAttribute('readonly', '')
+        input.style.position = 'fixed'
+        input.style.opacity = '0'
+        document.body.appendChild(input)
+        input.select()
+        copied = document.execCommand('copy')
+        input.remove()
+      }
+
+      var previous = button.textContent
+      button.textContent = copied ? '已复制' : '复制失败'
+      window.setTimeout(function () {
+        button.textContent = previous
+      }, 1200)
+    })
+  })
+
+  var tocLinks = Array.from(document.querySelectorAll('.toc-list a'))
+  var tocById = new Map(
+    tocLinks.map(function (link) {
+      return [decodeURIComponent(link.hash.slice(1)), link]
+    }),
+  )
+  var headings = Array.from(
+    document.querySelectorAll(
+      '.prose h2[id], .prose h3[id], .prose section[id]',
+    ),
+  )
+
+  if ('IntersectionObserver' in window && headings.length > 0) {
+    var observer = new IntersectionObserver(
+      function (entries) {
+        entries.forEach(function (entry) {
+          if (!entry.isIntersecting) return
+          tocLinks.forEach(function (link) {
+            link.classList.remove('is-active')
+          })
+          var active = tocById.get(entry.target.id)
+          if (active) active.classList.add('is-active')
+        })
+      },
+      { rootMargin: '-18% 0px -72% 0px' },
+    )
+    headings.forEach(function (heading) {
+      observer.observe(heading)
+    })
+  }
+})()
+</script></body></html>

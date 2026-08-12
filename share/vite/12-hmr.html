@@ -389,6 +389,12 @@ a:hover {
   color: var(--muted);
 }
 
+.hero-meta > *,
+.boundary-note p {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .focus-card,
 .evidence-note,
 .boundary-note {
@@ -1357,7 +1363,7 @@ code {
     break-inside: avoid;
   }
 }
-</style><script>(function(){try{var t=localStorage.getItem("vite-guide-theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(_){}})();</script></head><body><a class="skip-link" href="#article-start">跳到正文</a><div class="reading-progress" aria-hidden="true"><span data-reading-progress></span></div><header class="topbar"><div class="topbar-inner"><button class="icon-button nav-toggle" type="button" data-nav-toggle aria-expanded="false" aria-label="打开模块导航">☰</button><a class="brand" href="index.html"><span class="brand-mark">V</span><span class="brand-text">Vite 源码解剖</span></a><span class="topbar-path">转换与增量更新 / 12 HMR</span><div class="topbar-actions"><button class="icon-button" type="button" data-theme-toggle aria-label="切换主题">◐</button></div></div></header><div class="page-grid"><nav class="site-nav" aria-label="模块导航"><a class="nav-home" href="index.html"><span>⌂</span><span>阅读总览</span></a><section class="nav-group"><h2 class="nav-group-title">全景</h2><ul class="nav-list"><li><a href="00-system-map-and-end-to-end.html"><span class="nav-code">00</span><span>系统全景与请求链</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">启动与配置</h2><ul class="nav-list"><li><a href="01-cli-and-startup.html"><span class="nav-code">01</span><span>CLI 与启动</span></a></li><li><a href="02a-env-loading.html"><span class="nav-code">02A</span><span>环境文件加载</span></a></li><li><a href="02b-config-resolution.html"><span class="nav-code">02B</span><span>配置加载与解析</span></a></li><li><a href="02c-define-client-injection-and-json.html"><span class="nav-code">02C</span><span>Define、注入与 JSON</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">开发服务器核心</h2><ul class="nav-list"><li><a href="03-plugin-system.html"><span class="nav-code">03</span><span>插件体系</span></a></li><li><a href="04-dev-server-lifecycle.html"><span class="nav-code">04</span><span>Dev Server 生命周期</span></a></li><li><a href="05-environment-api.html"><span class="nav-code">05</span><span>Environment API</span></a></li><li><a href="06-middleware-request-pipeline.html"><span class="nav-code">06</span><span>中间件与请求入口</span></a></li><li><a href="07-module-resolution.html"><span class="nav-code">07</span><span>模块解析</span></a></li><li><a href="08-transform-and-module-graph.html"><span class="nav-code">08</span><span>Transform 与模块图</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">转换与增量更新</h2><ul class="nav-list"><li><a href="09-html-transform.html"><span class="nav-code">09</span><span>HTML 转换</span></a></li><li><a href="10-import-analysis.html"><span class="nav-code">10</span><span>Import Analysis</span></a></li><li><a href="11-dependency-pre-bundling.html"><span class="nav-code">11</span><span>依赖预构建</span></a></li><li><a href="12-hmr.html" aria-current="page"><span class="nav-code">12</span><span>HMR</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">资源管线</h2><ul class="nav-list"><li><a href="13a-css-pipeline.html"><span class="nav-code">13A</span><span>CSS 管线</span></a></li><li><a href="13b-asset-worker-wasm.html"><span class="nav-code">13B</span><span>Asset、Worker、Wasm</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">生产构建</h2><ul class="nav-list"><li><a href="14a-build-orchestration.html"><span class="nav-code">14A</span><span>生产构建编排</span></a></li><li><a href="14b-build-output-and-preload.html"><span class="nav-code">14B</span><span>Preload 与构建输出</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">SSR 与运行时</h2><ul class="nav-list"><li><a href="15a-ssr-transform-and-loading.html"><span class="nav-code">15A</span><span>SSR 变换与加载</span></a></li><li><a href="15b-module-runner.html"><span class="nav-code">15B</span><span>Module Runner</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">公共边界</h2><ul class="nav-list"><li><a href="16-public-api-diagnostics-and-types.html"><span class="nav-code">16</span><span>公共 API 与类型</span></a></li></ul></section></nav><main class="article" id="article-start"><header class="article-hero"><div class="eyebrow"><span class="pill">12</span><span>转换与增量更新</span></div><h1>12. HMR</h1><p class="lede">HMR 从 watcher 经插件与图传播生成 update 或 reload，再由客户端执行 dispose、import、accept。</p><div class="hero-meta"><span>证据基线：v8.2.1</span><span>commit <code>421615865dad</code></span><span>约 22 分钟</span><a href="../../vite/reading-guides/12-hmr.md">查看 Markdown 原稿</a></div></header><section class="focus-card" aria-label="阅读重点与边界"><div><h2>本页重点</h2><p>HMR 从 watcher 经插件与图传播生成 update 或 reload，再由客户端执行 dispose、import、accept。</p></div><div class="boundary"><h3>推导边界</h3><p>WebSocket 只是 transport；找到接受边界也不保证循环、死端或执行错误绝不 reload。</p></div></section><aside class="evidence-note"><h3>证据口径</h3><p>正文保留目标版本中的真实源码、状态说明与代表性测试映射。测试源码用于锁定设计契约；本轮没有执行测试命令。</p></aside><article class="prose"><h2 id="阅读边界"><a class="heading-anchor" href="#%E9%98%85%E8%AF%BB%E8%BE%B9%E7%95%8C" aria-label="链接到本节">#</a>阅读边界</h2>
+</style><script>(function(){try{var t=localStorage.getItem("vite-guide-theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(_){}})();</script></head><body><a class="skip-link" href="#article-start">跳到正文</a><div class="reading-progress" aria-hidden="true"><span data-reading-progress></span></div><header class="topbar"><div class="topbar-inner"><button class="icon-button nav-toggle" type="button" data-nav-toggle aria-expanded="false" aria-label="打开模块导航">☰</button><a class="brand" href="index.html"><span class="brand-mark">V</span><span class="brand-text">Vite 源码解剖</span></a><span class="topbar-path">转换与增量更新 / 12 HMR</span><div class="topbar-actions"><button class="icon-button" type="button" data-theme-toggle aria-label="切换主题">◐</button></div></div></header><div class="page-grid"><nav class="site-nav" aria-label="模块导航"><a class="nav-home" href="index.html"><span>⌂</span><span>阅读总览</span></a><section class="nav-group"><h2 class="nav-group-title">全景</h2><ul class="nav-list"><li><a href="00-system-map-and-end-to-end.html"><span class="nav-code">00</span><span>系统全景与请求链</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">启动与配置</h2><ul class="nav-list"><li><a href="01-cli-and-startup.html"><span class="nav-code">01</span><span>CLI 与启动</span></a></li><li><a href="02a-env-loading.html"><span class="nav-code">02A</span><span>环境文件加载</span></a></li><li><a href="02b-config-resolution.html"><span class="nav-code">02B</span><span>配置加载与解析</span></a></li><li><a href="02c-define-client-injection-and-json.html"><span class="nav-code">02C</span><span>Define、注入与 JSON</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">开发服务器核心</h2><ul class="nav-list"><li><a href="03-plugin-system.html"><span class="nav-code">03</span><span>插件体系</span></a></li><li><a href="04-dev-server-lifecycle.html"><span class="nav-code">04</span><span>Dev Server 生命周期</span></a></li><li><a href="05-environment-api.html"><span class="nav-code">05</span><span>Environment API</span></a></li><li><a href="06-middleware-request-pipeline.html"><span class="nav-code">06</span><span>中间件与请求入口</span></a></li><li><a href="07-module-resolution.html"><span class="nav-code">07</span><span>模块解析</span></a></li><li><a href="08-transform-and-module-graph.html"><span class="nav-code">08</span><span>Transform 与模块图</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">转换与增量更新</h2><ul class="nav-list"><li><a href="09-html-transform.html"><span class="nav-code">09</span><span>HTML 转换</span></a></li><li><a href="10-import-analysis.html"><span class="nav-code">10</span><span>Import Analysis</span></a></li><li><a href="11-dependency-pre-bundling.html"><span class="nav-code">11</span><span>依赖预构建</span></a></li><li><a href="12-hmr.html" aria-current="page"><span class="nav-code">12</span><span>HMR</span></a></li><li><a href="12b-bundled-dev.html"><span class="nav-code">12B</span><span>Bundled Dev</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">资源管线</h2><ul class="nav-list"><li><a href="13a-css-pipeline.html"><span class="nav-code">13A</span><span>CSS 管线</span></a></li><li><a href="13b-asset-worker-wasm.html"><span class="nav-code">13B</span><span>Asset、Worker、Wasm</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">生产构建</h2><ul class="nav-list"><li><a href="14a-build-orchestration.html"><span class="nav-code">14A</span><span>生产构建编排</span></a></li><li><a href="14b-build-output-and-preload.html"><span class="nav-code">14B</span><span>Preload 与构建输出</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">SSR 与运行时</h2><ul class="nav-list"><li><a href="15a-ssr-transform-and-loading.html"><span class="nav-code">15A</span><span>SSR 变换与加载</span></a></li><li><a href="15b-module-runner.html"><span class="nav-code">15B</span><span>Module Runner</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">公共边界</h2><ul class="nav-list"><li><a href="16-public-api-diagnostics-and-types.html"><span class="nav-code">16</span><span>公共 API 与类型</span></a></li></ul></section></nav><main class="article" id="article-start"><header class="article-hero"><div class="eyebrow"><span class="pill">12</span><span>转换与增量更新</span></div><h1>12. HMR</h1><p class="lede">HMR 从 watcher 经插件与图传播生成 update 或 reload，再由客户端执行 dispose、import、accept。</p><div class="hero-meta"><span>证据基线：v8.2.1</span><span>commit <code>421615865dad</code></span><span>约 30 分钟</span><a href="../../vite/reading-guides/12-hmr.md">查看 Markdown 原稿</a></div></header><section class="focus-card" aria-label="阅读重点与边界"><div><h2>本页重点</h2><p>HMR 从 watcher 经插件与图传播生成 update 或 reload，再由客户端执行 dispose、import、accept。</p></div><div class="boundary"><h3>推导边界</h3><p>WebSocket 只是 transport；找到接受边界也不保证循环、死端或执行错误绝不 reload。</p></div></section><aside class="evidence-note"><h3>证据口径</h3><p>正文保留目标版本中的真实源码、状态说明与代表性测试映射。测试源码用于锁定设计契约；本轮没有执行测试命令。</p></aside><article class="prose"><h2 id="阅读边界"><a class="heading-anchor" href="#%E9%98%85%E8%AF%BB%E8%BE%B9%E7%95%8C" aria-label="链接到本节">#</a>阅读边界</h2>
 <p>本章研究普通 unbundled 开发模式下，一次文件变化怎样从 watcher 事件变成浏览器中的局部模块替换：</p>
 <figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">watcher create/update/delete
 → handleHMRUpdate
@@ -1627,6 +1633,312 @@ payload 处理过程中触发下一轮更新。这个竞态修复见
 <a href="https://github.com/vitejs/vite/pull/20698" target="_blank" rel="noreferrer noopener">PR #20698</a>。即使模块本身不是 self-accepting，删除其 import
 边也要触发 prune；相关修复见 <a href="https://github.com/vitejs/vite/pull/20768" target="_blank" rel="noreferrer noopener">PR #20768</a> 和
 <a href="https://github.com/vitejs/vite/pull/21093" target="_blank" rel="noreferrer noopener">PR #21093</a>。</p>
+<h2 id="深挖-一次-invalidate-怎样跨两轮-hmr-完成事务"><a class="heading-anchor" href="#%E6%B7%B1%E6%8C%96-%E4%B8%80%E6%AC%A1-invalidate-%E6%80%8E%E6%A0%B7%E8%B7%A8%E4%B8%A4%E8%BD%AE-hmr-%E5%AE%8C%E6%88%90%E4%BA%8B%E5%8A%A1" aria-label="链接到本节">#</a>深挖：一次 <code>invalidate</code> 怎样跨两轮 HMR 完成事务</h2>
+<p>前文已经分别解释图算法、payload 与运行时。这里不再重述所有分支，只追踪官方 playground 中的一条
+<code>child self-accept → child 主动 invalidate → parent self-accept</code> 链，并用真实测试约束结论边界。</p>
+<h3 id="demo-服务端图与浏览器-callback-表通过-url-对齐"><a class="heading-anchor" href="#demo-%E6%9C%8D%E5%8A%A1%E7%AB%AF%E5%9B%BE%E4%B8%8E%E6%B5%8F%E8%A7%88%E5%99%A8-callback-%E8%A1%A8%E9%80%9A%E8%BF%87-url-%E5%AF%B9%E9%BD%90" aria-label="链接到本节">#</a>Demo：服务端图与浏览器 callback 表通过 URL 对齐</h3>
+<p>fixture 来自 <code>playground/hmr/invalidation/child.js</code> 与 <code>parent.js</code>：</p>
+<figure class="code-card"><figcaption><span>js</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-js">// child.js
+if (import.meta.hot) {
+  // Need to accept, to register a callback for HMR
+  import.meta.hot.accept(() =&gt; {
+    // Trigger HMR in importers
+    import.meta.hot.invalidate()
+  })
+}
+
+export const value = &#039;child&#039;
+</code></pre></figure><figure class="code-card"><figcaption><span>js</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-js">// parent.js
+import { value } from &#039;./child&#039;
+
+if (import.meta.hot) {
+  import.meta.hot.accept()
+}
+
+console.log(&#039;(invalidation) parent is executing&#039;)
+
+document.querySelector(&#039;.invalidation-parent&#039;).innerHTML = value
+</code></pre></figure><p>首次加载后，服务端 ModuleGraph 记录 <code>parent → child</code>，两者都是 self-accept；浏览器
+<code>hotModulesMap</code> 则分别保存两个已执行模块当前一代的 callback。前者回答“更新向哪里传播”，后者回答
+“哪个实例登记了什么 callback”。它们通过规范 URL 对齐，不共享 ModuleNode 或 HMRContext 对象。</p>
+<h3 id="两轮传播的决定性源码"><a class="heading-anchor" href="#%E4%B8%A4%E8%BD%AE%E4%BC%A0%E6%92%AD%E7%9A%84%E5%86%B3%E5%AE%9A%E6%80%A7%E6%BA%90%E7%A0%81" aria-label="链接到本节">#</a>两轮传播的决定性源码</h3>
+<h4 id="入口与第一轮-静态声明先把-child-选成边界"><a class="heading-anchor" href="#%E5%85%A5%E5%8F%A3%E4%B8%8E%E7%AC%AC%E4%B8%80%E8%BD%AE-%E9%9D%99%E6%80%81%E5%A3%B0%E6%98%8E%E5%85%88%E6%8A%8A-child-%E9%80%89%E6%88%90%E8%BE%B9%E7%95%8C" aria-label="链接到本节">#</a>入口与第一轮：静态声明先把 child 选成边界</h4>
+<p>watcher 收到本次 change 后，<code>server/index.ts::onFileChange()</code> 的当前实现顺序是：等待所有 Environment
+的 <code>pluginContainer.watchChange</code>，调用各自 <code>moduleGraph.onFileChange(file)</code> 清旧转换结果，再进入
+<code>onHMRUpdate</code>。这说明本版本实际采用的顺序，不单独证明任何其他排列必然错误。图失效清
+transform/ETag/SSR 结果，但保留 ModuleNode、importer 边和最近一次成功分析留下的 accept 状态。</p>
+<p><code>server/hmr.ts::propagateUpdate()</code> 首先命中 child 的 self-accept 分支：</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">if (node.isSelfAccepting) {
+  const boundary = node as EnvironmentModuleNode &amp; {
+    type: &#039;js&#039; | &#039;css&#039;
+  }
+  boundaries.push({
+    boundary,
+    acceptedVia: boundary,
+    isWithinCircularImport: isNodeWithinCircularImports(node, currentChain),
+  })
+  return false
+}
+</code></pre></figure><p>因此第一轮 <code>boundary === acceptedVia === child</code>，<code>updateModules()</code> 生成
+<code>path=acceptedPath=/invalidation/child.js</code> 的 <code>js-update</code>，并用本轮 timestamp 失效 child 及受影响
+importer。服务端此时只读取静态 accept 声明，不执行 callback，也不知道它随后会调用 <code>invalidate()</code>。</p>
+<p>客户端处理第一轮时，<code>HMRClient.fetchUpdate()</code> 先冻结 child 的旧 callback，执行 dispose，再 import
+带 timestamp 的新 child。新模块执行会创建新 HMRContext、登记下一代 callback；提交 closure 执行的仍是
+import 前冻结的旧 callback。</p>
+<h4 id="浏览器回传-把-child-提升为第二轮的起点信息"><a class="heading-anchor" href="#%E6%B5%8F%E8%A7%88%E5%99%A8%E5%9B%9E%E4%BC%A0-%E6%8A%8A-child-%E6%8F%90%E5%8D%87%E4%B8%BA%E7%AC%AC%E4%BA%8C%E8%BD%AE%E7%9A%84%E8%B5%B7%E7%82%B9%E4%BF%A1%E6%81%AF" aria-label="链接到本节">#</a>浏览器回传：把 child 提升为第二轮的起点信息</h4>
+<p>旧 callback 调用 <code>HMRContext.invalidate()</code>。来源：<code>packages/vite/src/shared/hmr.ts</code>：</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">invalidate(message: string): void {
+  const firstInvalidatedBy =
+    this.hmrClient.currentFirstInvalidatedBy ?? this.ownerPath
+  this.hmrClient.notifyListeners(&#039;vite:invalidate&#039;, {
+    path: this.ownerPath,
+    message,
+    firstInvalidatedBy,
+  })
+  this.send(&#039;vite:invalidate&#039;, {
+    path: this.ownerPath,
+    message,
+    firstInvalidatedBy,
+  })
+}
+</code></pre></figure><p>第一轮 payload 没有 <code>firstInvalidatedBy</code>，所以 child 用自己的 <code>ownerPath</code> 建立根来源。callback closure
+用 <code>try/finally</code> 临时设置并清除 <code>currentFirstInvalidatedBy</code>，避免后续无关 invalidate 继承本轮状态。</p>
+<h4 id="第二轮-服务端去重-并从-child-的-importers-继续"><a class="heading-anchor" href="#%E7%AC%AC%E4%BA%8C%E8%BD%AE-%E6%9C%8D%E5%8A%A1%E7%AB%AF%E5%8E%BB%E9%87%8D-%E5%B9%B6%E4%BB%8E-child-%E7%9A%84-importers-%E7%BB%A7%E7%BB%AD" aria-label="链接到本节">#</a>第二轮：服务端去重，并从 child 的 importers 继续</h4>
+<p><code>DevEnvironment.invalidateModule()</code> 不把 child 再当边界，而是把它的 importers 交给
+<code>updateModules()</code>。来源：<code>packages/vite/src/node/server/environment.ts</code>：</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">const mod = this.moduleGraph.urlToModuleMap.get(m.path)
+if (
+  mod &amp;&amp;
+  mod.isSelfAccepting &amp;&amp;
+  mod.lastHMRTimestamp &gt; 0 &amp;&amp;
+  !mod.lastHMRInvalidationReceived
+) {
+  mod.lastHMRInvalidationReceived = true
+  const file = getShortName(mod.file!, this.config.root)
+  updateModules(
+    this,
+    file,
+    [...mod.importers].filter((imp) =&gt; imp !== mod),
+    mod.lastHMRTimestamp,
+    m.firstInvalidatedBy,
+  )
+}
+</code></pre></figure><p>本例的新起点是 <code>child.importers = { parent }</code>。parent self-accept，于是第二个 payload 为
+<code>path=acceptedPath=/invalidation/parent.js</code>，沿用 child 的 <code>lastHMRTimestamp</code>，并携带
+<code>firstInvalidatedBy=/invalidation/child.js</code>。<code>lastHMRInvalidationReceived</code> 只允许第一个客户端上报启动
+这轮传播；下一次真实 HMR 失效会把它重置为 <code>false</code>。</p>
+<p>若 child 已是图根，importers 为空，<code>updateModules()</code> 会 full reload；若新边界又闭合到
+<code>firstInvalidatedBy</code>，也会以 <code>circular import invalidate</code> 退回刷新。这些是同一入口的保护分支，不是本
+fixture 的实际结果。</p>
+<h2 id="同一-demo-的端到端执行图"><a class="heading-anchor" href="#%E5%90%8C%E4%B8%80-demo-%E7%9A%84%E7%AB%AF%E5%88%B0%E7%AB%AF%E6%89%A7%E8%A1%8C%E5%9B%BE" aria-label="链接到本节">#</a>同一 Demo 的端到端执行图</h2>
+<figure class="flow-figure" aria-label="离线流程图"><figcaption class="flow-caption"><strong>执行流程图</strong><span>教程图依据目标版本源码与测试绘制；折叠区保留原始 Mermaid</span></figcaption><div class="flow-lanes request-topology hmr-topology"><section class="flow-lane"><h4 class="lane-label">同一 fixture 与文件事件</h4><div class="lane-path"><span class="lane-step">parent → child；两者 self-accept</span><span class="lane-arrow">→</span><span class="lane-step">测试编辑 child.js</span><span class="lane-arrow">→</span><span class="lane-step">watcher 清 transform / ETag，保留节点与 importer 边</span><span class="lane-arrow">→</span><span class="lane-step">plugin hooks + propagateUpdate(child)</span></div></section><section class="flow-lane"><h4 class="lane-label">payload #1：child 边界</h4><div class="lane-path"><span class="lane-step">self-accept → update(child → child)</span><span class="lane-arrow">→</span><span class="lane-step">payload 进入串行 handler</span><span class="lane-arrow">→</span><span class="lane-step">冻结旧 callback + dispose + import 新 child</span><span class="lane-arrow">→</span><span class="lane-step">旧 callback 发送 vite:invalidate</span></div><div class="lane-split"><span><b>成功</b> → 新一代 callback 已登记</span><span><b>import 失败</b> → warnFailedUpdate；没有通用回滚</span></div></section><section class="flow-lane"><h4 class="lane-label">第二轮：从 importer 继续</h4><div class="lane-path"><span class="lane-step">lastHMRInvalidationReceived 去重</span><span class="lane-arrow">→</span><span class="lane-step">child.importers = { parent }</span><span class="lane-arrow">→</span><span class="lane-step">update(parent → parent, firstInvalidatedBy=child)</span></div><div class="lane-split"><span><b>parent 边界</b> → payload #2</span><span><b>空 importer / 回到根来源</b> → full reload</span></div></section><section class="flow-lane"><h4 class="lane-label">payload #2：客户端提交</h4><div class="lane-path"><span class="lane-step">服务端可在 #1 收尾前发回 #2</span><span class="lane-arrow">→</span><span class="lane-step">客户端必须等 #1 handler 结束</span><span class="lane-arrow">→</span><span class="lane-step">import parent → 读取新 child → 更新 DOM</span></div></section><section class="flow-lane"><h4 class="lane-label">测试证据与清理</h4><div class="lane-split three"><span>主页面日志证明两轮先后；串行保证来自源码</span><span>第二页构造多标签场景，但测试不单独断言 WS 握手时刻</span><span>page2 创建成功后 finally 关闭；fixture 由全局 teardown 回收</span></div></section></div><details class="diagram-source"><summary>查看原始 Mermaid 源码</summary><pre><code>sequenceDiagram
+    autonumber
+    participant E as &quot;编辑器&quot;
+    participant W as &quot;chokidar watcher&quot;
+    participant G as &quot;EnvironmentModuleGraph&quot;
+    participant S as &quot;HMR server&quot;
+    participant T as &quot;HotChannel / WebSocket&quot;
+    participant C as &quot;client serial handler&quot;
+    participant H as &quot;HMRClient / HMRContext&quot;
+    participant B as &quot;浏览器 ESM&quot;
+
+    E-&gt;&gt;W: child.js: child → child updated
+    W-&gt;&gt;G: onFileChange 清转换结果，保留节点与边
+    W-&gt;&gt;S: onHMRUpdate(update, child.file)
+    S-&gt;&gt;S: plugin hooks → propagateUpdate(child)
+    S-&gt;&gt;G: invalidateModule(child, timestamp, isHmr=true)
+    S-&gt;&gt;T: HotPayload #1：update(child → child)
+    T-&gt;&gt;C: payload #1 进入串行 handler
+    C-&gt;&gt;H: beforeUpdate → queueUpdate
+    H-&gt;&gt;H: 冻结旧 callback；dispose(data)
+    H-&gt;&gt;B: import child.js?t=timestamp
+    Note over H,B: import 失败时记录 warnFailedUpdate；本测试未触发
+    B--&gt;&gt;H: 新 namespace；新 context/callback 已登记
+    H-&gt;&gt;H: 执行旧 child callback
+    H-&gt;&gt;T: vite:invalidate(child, firstInvalidatedBy=child)
+
+    par 服务端可在 #1 客户端收尾期间处理 invalidate
+        T-&gt;&gt;S: 收到自定义 invalidate
+        S-&gt;&gt;S: 去重；从 child.importers={parent} 传播
+        S-&gt;&gt;G: invalidateModule(parent, same timestamp, isHmr=true)
+        S-&gt;&gt;T: HotPayload #2：update(parent → parent)
+        T--&gt;&gt;C: payload #2 到达并排队
+    and 客户端完成 payload #1
+        H--&gt;&gt;C: child callback 返回
+        C-&gt;&gt;C: afterUpdate #1
+    end
+
+    Note over C,H: #2 要等 #1 handler 结束才开始执行
+    C-&gt;&gt;H: 开始 #2：beforeUpdate → queueUpdate
+    H-&gt;&gt;B: import parent.js?t=timestamp
+    B-&gt;&gt;B: 读取新 child namespace；写入 DOM
+    H-&gt;&gt;H: 执行 parent accept callback
+    H--&gt;&gt;C: afterUpdate #2
+    Note over E,B: 测试 finally 关闭第二页；fixture 由全局 teardown 回收
+</code></pre></details></figure><p><code>vite:invalidate</code> 的网络接收与 <code>afterUpdate #1</code> 没有固定先后；服务端可能已生成甚至发回 #2。可依赖的
+保证是 <code>client.ts</code> 用 <code>createHMRHandler(handleMessage)</code> 包装 transport handler：即使 #2 已到达，也要
+等 #1 的 dispose/import/callback/afterUpdate 全部结束后才开始处理。</p>
+<h2 id="关键状态变化"><a class="heading-anchor" href="#%E5%85%B3%E9%94%AE%E7%8A%B6%E6%80%81%E5%8F%98%E5%8C%96" aria-label="链接到本节">#</a>关键状态变化</h2>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>状态/所有者</th>
+<th>初次执行后</th>
+<th>child 文件变化</th>
+<th>payload #1</th>
+<th>invalidate 回到服务端</th>
+<th>payload #2 后</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>lastHMRTimestamp</code> / server</td>
+<td><code>0</code></td>
+<td>写入本轮 timestamp</td>
+<td>保持</td>
+<td>第二轮复用</td>
+<td>等待下次变化</td>
+</tr>
+<tr>
+<td><code>lastHMRInvalidationReceived</code> / server</td>
+<td><code>false</code></td>
+<td>重置 <code>false</code></td>
+<td><code>false</code></td>
+<td>首个上报置 <code>true</code>，其他标签忽略</td>
+<td>下次真实失效再重置</td>
+</tr>
+<tr>
+<td>child callbacks / browser</td>
+<td>旧一代</td>
+<td>仍是旧一代</td>
+<td>先冻结；新 import 登记下一代</td>
+<td>旧 callback 已提交</td>
+<td>新一代等待下次更新</td>
+</tr>
+<tr>
+<td><code>currentFirstInvalidatedBy</code> / browser</td>
+<td><code>undefined</code></td>
+<td><code>undefined</code></td>
+<td>首轮无根值，invalidate 回退到 child URL</td>
+<td>#1 的 <code>finally</code> 已清空；根来源随 #2 返回</td>
+<td>parent callback 期间为 child URL，<code>finally</code> 后清空</td>
+</tr>
+<tr>
+<td>DOM <code>.invalidation-parent</code></td>
+<td><code>child</code></td>
+<td><code>child</code></td>
+<td><code>child</code></td>
+<td>等待 parent 执行</td>
+<td><code>child updated</code></td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="真实完整测试-多标签-invalidate-只产生一轮上游更新"><a class="heading-anchor" href="#%E7%9C%9F%E5%AE%9E%E5%AE%8C%E6%95%B4%E6%B5%8B%E8%AF%95-%E5%A4%9A%E6%A0%87%E7%AD%BE-invalidate-%E5%8F%AA%E4%BA%A7%E7%94%9F%E4%B8%80%E8%BD%AE%E4%B8%8A%E6%B8%B8%E6%9B%B4%E6%96%B0" aria-label="链接到本节">#</a>真实完整测试：多标签 invalidate 只产生一轮上游更新</h2>
+<p>来源：<code>playground/hmr/__tests__/hmr.spec.ts</code>，<code>invalidate works with multiple tabs</code>。下面只列该用例实际
+使用的 import，test body 保持原样；原文件 import 区还服务同文件大量其他用例。</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">import type { Page } from &#039;playwright-chromium&#039;
+import { expect, test } from &#039;vitest&#039;
+import {
+  browser,
+  editFile,
+  page,
+  untilBrowserLogAfter,
+  viteTestUrl,
+} from &#039;~utils&#039;
+
+test(&#039;invalidate works with multiple tabs&#039;, async () =&gt; {
+  let page2: Page
+  try {
+    page2 = await browser.newPage()
+    await page2.goto(viteTestUrl)
+
+    const el = await page.$(&#039;.invalidation-parent&#039;)
+    await untilBrowserLogAfter(
+      () =&gt;
+        editFile(&#039;invalidation/child.js&#039;, (code) =&gt;
+          code.replace(&#039;child&#039;, &#039;child updated&#039;),
+        ),
+      [
+        &#039;&gt;&gt;&gt; vite:beforeUpdate -- update&#039;,
+        &#039;&gt;&gt;&gt; vite:invalidate -- /invalidation/child.js&#039;,
+        &#039;[vite] invalidate /invalidation/child.js&#039;,
+        &#039;[vite] hot updated: /invalidation/child.js&#039;,
+        &#039;&gt;&gt;&gt; vite:afterUpdate -- update&#039;,
+        // invalidate 若未正确去重，下面这次 beforeUpdate 会出现两次。
+        &#039;&gt;&gt;&gt; vite:beforeUpdate -- update&#039;,
+        &#039;(invalidation) parent is executing&#039;,
+        &#039;[vite] hot updated: /invalidation/parent.js&#039;,
+        &#039;&gt;&gt;&gt; vite:afterUpdate -- update&#039;,
+      ],
+      true,
+    )
+    await expect.poll(() =&gt; el.textContent()).toMatch(&#039;child updated&#039;)
+  } finally {
+    await page2.close()
+  }
+})
+</code></pre></figure><h3 id="gwtms-与证据边界"><a class="heading-anchor" href="#gwtms-%E4%B8%8E%E8%AF%81%E6%8D%AE%E8%BE%B9%E7%95%8C" aria-label="链接到本节">#</a>GWTMS 与证据边界</h3>
+<ul>
+<li><strong>Given</strong>：主页面已加载 fixture；测试再创建第二页面并导航到同一 URL，构造多标签场景。body 没有单独
+断言第二页 WebSocket 已握手，因此不能只凭 <code>goto()</code> 把“两个 HMR client 均已连接”写成直接测试事实。</li>
+<li><strong>When</strong>：唯一外部触发是把 <code>invalidation/child.js</code> 中首个 <code>child</code> 改为 <code>child updated</code>。</li>
+<li><strong>Then</strong>：<code>untilBrowserLogAfter(..., true)</code> 在主页面要求列出的日志严格按序出现；额外的第二次 parent
+<code>beforeUpdate</code> 会使匹配失败。DOM 最终为 <code>child updated</code>。测试没有记录 dispose 或 dynamic import，不能
+把它们列为日志断言。</li>
+<li><strong>Mechanism / Source</strong>：fixture 与日志证明 child 更新后触发 invalidate、parent 重执行并产生可见结果；
+<code>HMRContext.invalidate</code> 与 <code>DevEnvironment.invalidateModule</code> 源码解释回传、从 importers 继续和
+<code>lastHMRInvalidationReceived</code> 去重。跨 payload 串行由 <code>createHMRHandler()</code> 源码保证，不由这组日志单独
+推导。</li>
+<li><strong>Cleanup</strong>：若第二页创建成功，<code>finally</code> 会关闭它；测试对 <code>playground-temp</code> 隔离副本的文件修改由全局
+teardown 回收。test body 不直接证明 server teardown。</li>
+</ul>
+<p>这组组合证据不直接断言 watcher 回调次数、WS JSON、全部 <code>dataMap</code> 内容或第二页握手时刻。本文的“完整链”
+限定为 watcher 已收到事件后的普通 JS self-accept → invalidate → parent self-accept → DOM；不覆盖 CSS
+<code>&lt;link&gt;</code>、acceptExports、HTML 定向 reload、循环 import、插件改写模块集合或 Module Runner。磁盘 write
+到 chokidar 事件仍可能合并；这里描述的是单个已收到 change 事件在当前实现中的处理。</p>
+<h2 id="本链源码-测试证据"><a class="heading-anchor" href="#%E6%9C%AC%E9%93%BE%E6%BA%90%E7%A0%81-%E6%B5%8B%E8%AF%95%E8%AF%81%E6%8D%AE" aria-label="链接到本节">#</a>本链源码—测试证据</h2>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>决定性源码</th>
+<th>测试观察</th>
+<th>证据边界</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>第一轮边界</td>
+<td><code>server/hmr.ts::propagateUpdate()</code></td>
+<td>child 的 before/invalidate/hot-updated 日志</td>
+<td>源码证明 self-accept 映射；日志不展示 ModuleNode</td>
+</tr>
+<tr>
+<td>浏览器提交</td>
+<td><code>shared/hmr.ts::fetchUpdate()</code></td>
+<td>child 日志先于 parent 日志</td>
+<td>callback 冻结、dispose/import 来自源码，不是日志断言</td>
+</tr>
+<tr>
+<td>第二轮传播</td>
+<td><code>HMRContext.invalidate()</code>、<code>DevEnvironment.invalidateModule()</code></td>
+<td>parent 重执行且 DOM 更新</td>
+<td>证明结果；跨 payload 串行另由 <code>createHMRHandler()</code> 锁定</td>
+</tr>
+<tr>
+<td>多标签去重</td>
+<td><code>lastHMRInvalidationReceived</code> 分支</td>
+<td>parent 的第二个 beforeUpdate 不得重复</td>
+<td>测试构造第二页，但不单独断言其 WS 握手时刻</td>
+</tr>
+<tr>
+<td>清理</td>
+<td>test <code>finally</code>、全局 playground teardown</td>
+<td>第二页在创建成功后关闭</td>
+<td>fixture/server 全局清理不由本 test body 单独证明</td>
+</tr>
+</tbody>
+</table></div>
 <h2 id="accept-参数为什么用轻量-lexer"><a class="heading-anchor" href="#accept-%E5%8F%82%E6%95%B0%E4%B8%BA%E4%BB%80%E4%B9%88%E7%94%A8%E8%BD%BB%E9%87%8F-lexer" aria-label="链接到本节">#</a>accept 参数为什么用轻量 lexer</h2>
 <p>服务端只需要从以下受限语法中提取字面量：</p>
 <figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">hot.accept()
@@ -1795,6 +2107,9 @@ console.error，发送失败时用它回落，防止报告错误又递归进入 
 <p><code>playground/forward-console</code> 验证普通 error、Promise rejection、console 格式符与依赖外置 map。依赖报错
 应保留 node_modules 帧，但 code frame 选择最近的项目源码调用点。</p>
 <h2 id="bundled-dev-边界算法移到浏览器"><a class="heading-anchor" href="#bundled-dev-%E8%BE%B9%E7%95%8C%E7%AE%97%E6%B3%95%E7%A7%BB%E5%88%B0%E6%B5%8F%E8%A7%88%E5%99%A8" aria-label="链接到本节">#</a>Bundled-dev：边界算法移到浏览器</h2>
+<p>本节只建立普通 HMR 与 bundled-dev 的对照坐标。Rolldown 后台整包、首屏 fallback、内存文件、lazy
+payload 交付确认、浏览器执行图、单次 reload 门闩与关闭链，见独立章节
+<a href="12b-bundled-dev.html">12B：Bundled Dev</a>。</p>
 <p>普通 HMR 的服务端 ModuleGraph 知道每个 URL 的 importer 和 accept；bundled-dev 真正执行的是 Rolldown
 runtime 中的模块 factory，浏览器才知道哪些模块已执行。因此服务端只推送：</p>
 <figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">changedIds + patch URL + 单调 seq
@@ -1974,7 +2289,7 @@ for (const mod of modules) {
 </ol>
 <p>能从任意变更节点手画 importer 图，找出 boundaries、写出 update payload，再推演客户端 dispose/import/
 callback 顺序，才算真正理解 Vite HMR。</p>
-</article><nav class="article-pager" aria-label="前后篇"><a class="pager-link previous" href="11-dependency-pre-bundling.html"><span class="pager-label">上一篇 · 11</span><span class="pager-title">依赖预构建</span></a><a class="pager-link next" href="13a-css-pipeline.html"><span class="pager-label">下一篇 · 13A</span><span class="pager-title">CSS 管线</span></a></nav><footer class="site-footer">Vite v8.2.1 源码阅读站 · 所有机制结论限定于 commit 421615865dad3ed39137d17281814fc78a41246c。</footer></main><aside class="page-toc" aria-label="页内目录"><h2 class="toc-title">本页目录</h2><ol class="toc-list"><li class="depth-2"><a href="#%E9%98%85%E8%AF%BB%E8%BE%B9%E7%95%8C">阅读边界</a></li><li class="depth-2"><a href="#%E6%8E%A8%E8%8D%90%E9%98%85%E8%AF%BB%E9%A1%BA%E5%BA%8F">推荐阅读顺序</a></li><li class="depth-2"><a href="#%E4%B8%89%E5%B1%82%E5%8D%8F%E8%AE%AE%E4%B8%8D%E8%A6%81%E6%B7%B7%E8%AF%BB">三层协议不要混读</a></li><li class="depth-2"><a href="#import-analysis-%E7%BB%99-hmr-%E7%95%99%E4%B8%8B%E4%BB%80%E4%B9%88%E6%95%B0%E6%8D%AE">Import Analysis 给 HMR 留下什么数据</a></li><li class="depth-2"><a href="#%E6%96%87%E4%BB%B6%E4%BA%8B%E4%BB%B6%E6%80%BB%E5%85%A5%E5%8F%A3">文件事件总入口</a></li><li class="depth-2"><a href="#%E6%8F%92%E4%BB%B6%E6%80%8E%E6%A0%B7%E5%8F%82%E4%B8%8E%E6%9B%B4%E6%96%B0">插件怎样参与更新</a></li><li class="depth-2"><a href="#%E5%8F%8D%E5%90%91%E4%BC%A0%E6%92%AD%E7%AE%97%E6%B3%95">反向传播算法</a></li><li class="depth-3"><a href="#1-self-accept">1. self accept</a></li><li class="depth-3"><a href="#2-dependency-accept">2. dependency accept</a></li><li class="depth-3"><a href="#3-acceptexports">3. acceptExports</a></li><li class="depth-3"><a href="#4-%E6%AD%BB%E7%AB%AF">4. 死端</a></li><li class="depth-3"><a href="#%E9%81%8D%E5%8E%86%E5%8E%BB%E9%87%8D%E4%B8%8E%E8%B7%AF%E5%BE%84%E7%8A%B6%E6%80%81">遍历去重与路径状态</a></li><li class="depth-2"><a href="#%E5%BE%AA%E7%8E%AF-import-%E4%B8%BA%E4%BB%80%E4%B9%88%E7%89%B9%E6%AE%8A">循环 import 为什么特殊</a></li><li class="depth-2"><a href="#%E6%A8%A1%E5%9D%97%E5%9B%BE%E5%A4%B1%E6%95%88%E4%B8%8E%E6%97%B6%E9%97%B4%E6%88%B3">模块图失效与时间戳</a></li><li class="depth-2"><a href="#invalidate-%E6%98%AF%E7%AC%AC%E4%BA%8C%E8%BD%AE%E4%BC%A0%E6%92%AD">invalidate() 是第二轮传播</a></li><li class="depth-2"><a href="#%E5%AE%A2%E6%88%B7%E7%AB%AF%E4%B8%BA%E4%BB%80%E4%B9%88%E5%88%86-%E8%8E%B7%E5%8F%96-%E5%92%8C-%E6%89%A7%E8%A1%8C-%E4%B8%A4%E9%98%B6%E6%AE%B5">客户端为什么分“获取”和“执行”两阶段</a></li><li class="depth-2"><a href="#hmrcontext-%E7%94%9F%E5%91%BD%E5%91%A8%E6%9C%9F">HMRContext 生命周期</a></li><li class="depth-2"><a href="#accept-%E5%8F%82%E6%95%B0%E4%B8%BA%E4%BB%80%E4%B9%88%E7%94%A8%E8%BD%BB%E9%87%8F-lexer">accept 参数为什么用轻量 lexer</a></li><li class="depth-2"><a href="#hotpayload-%E5%8D%8F%E8%AE%AE">HotPayload 协议</a></li><li class="depth-2"><a href="#hotchannel-%E7%AE%97%E6%B3%95%E4%B8%8E%E4%BC%A0%E8%BE%93%E7%9A%84%E9%9A%94%E7%A6%BB%E5%B1%82">HotChannel：算法与传输的隔离层</a></li><li class="depth-2"><a href="#websocket-%E5%AE%89%E5%85%A8%E4%B8%8E%E7%94%9F%E5%91%BD%E5%91%A8%E6%9C%9F">WebSocket 安全与生命周期</a></li><li class="depth-2"><a href="#%E6%B5%8F%E8%A7%88%E5%99%A8%E6%B6%88%E6%81%AF%E5%A4%84%E7%90%86%E7%BB%86%E8%8A%82">浏览器消息处理细节</a></li><li class="depth-3"><a href="#error-overlay-%E7%9A%84%E9%A6%96%E6%AC%A1%E6%9B%B4%E6%96%B0">error overlay 的首次更新</a></li><li class="depth-3"><a href="#css">&lt;link&gt; CSS</a></li><li class="depth-3"><a href="#html-%E5%AE%9A%E5%90%91-reload">HTML 定向 reload</a></li><li class="depth-3"><a href="#%E6%97%A0%E5%AE%A2%E6%88%B7%E7%AB%AF%E6%97%B6%E7%BC%93%E5%86%B2">无客户端时缓冲</a></li><li class="depth-2"><a href="#erroroverlay-%E7%9A%84%E9%9A%94%E7%A6%BB%E4%B8%8E%E5%AE%89%E5%85%A8%E8%BE%B9%E7%95%8C">ErrorOverlay 的隔离与安全边界</a></li><li class="depth-2"><a href="#forward-console-%E5%A4%8D%E7%94%A8-hmr-transport-%E7%9A%84%E8%AF%8A%E6%96%AD%E9%80%9A%E9%81%93">Forward Console：复用 HMR transport 的诊断通道</a></li><li class="depth-2"><a href="#bundled-dev-%E8%BE%B9%E7%95%8C%E7%AE%97%E6%B3%95%E7%A7%BB%E5%88%B0%E6%B5%8F%E8%A7%88%E5%99%A8">Bundled-dev：边界算法移到浏览器</a></li><li class="depth-2"><a href="#%E6%B5%8B%E8%AF%95%E6%80%8E%E6%A0%B7%E6%98%A0%E5%B0%84%E6%BA%90%E7%A0%81%E6%9C%BA%E5%88%B6">测试怎样映射源码机制</a></li><li class="depth-3"><a href="#server-%E5%8D%95%E5%85%83%E6%B5%8B%E8%AF%95">server 单元测试</a></li><li class="depth-3"><a href="#playground-hmr">playground/hmr</a></li><li class="depth-3"><a href="#playground-hmr-full-bundle-mode">playground/hmr-full-bundle-mode</a></li><li class="depth-2"><a href="#%E5%8E%86%E5%8F%B2%E6%BC%94%E8%BF%9B%E7%BA%BF%E7%B4%A2">历史演进线索</a></li><li class="depth-2"><a href="#%E5%BB%BA%E8%AE%AE%E6%96%AD%E7%82%B9">建议断点</a></li><li class="depth-2"><a href="#%E5%85%B3%E9%94%AE%E6%BA%90%E7%A0%81%E8%AF%81%E6%8D%AE">关键源码证据</a></li><li class="depth-2"><a href="#%E5%A4%8D%E7%9B%98%E9%A2%98">复盘题</a></li></ol></aside></div><script>;(function () {
+</article><nav class="article-pager" aria-label="前后篇"><a class="pager-link previous" href="11-dependency-pre-bundling.html"><span class="pager-label">上一篇 · 11</span><span class="pager-title">依赖预构建</span></a><a class="pager-link next" href="12b-bundled-dev.html"><span class="pager-label">下一篇 · 12B</span><span class="pager-title">Bundled Dev</span></a></nav><footer class="site-footer">Vite v8.2.1 源码阅读站 · 所有机制结论限定于 commit 421615865dad3ed39137d17281814fc78a41246c。</footer></main><aside class="page-toc" aria-label="页内目录"><h2 class="toc-title">本页目录</h2><ol class="toc-list"><li class="depth-2"><a href="#%E9%98%85%E8%AF%BB%E8%BE%B9%E7%95%8C">阅读边界</a></li><li class="depth-2"><a href="#%E6%8E%A8%E8%8D%90%E9%98%85%E8%AF%BB%E9%A1%BA%E5%BA%8F">推荐阅读顺序</a></li><li class="depth-2"><a href="#%E4%B8%89%E5%B1%82%E5%8D%8F%E8%AE%AE%E4%B8%8D%E8%A6%81%E6%B7%B7%E8%AF%BB">三层协议不要混读</a></li><li class="depth-2"><a href="#import-analysis-%E7%BB%99-hmr-%E7%95%99%E4%B8%8B%E4%BB%80%E4%B9%88%E6%95%B0%E6%8D%AE">Import Analysis 给 HMR 留下什么数据</a></li><li class="depth-2"><a href="#%E6%96%87%E4%BB%B6%E4%BA%8B%E4%BB%B6%E6%80%BB%E5%85%A5%E5%8F%A3">文件事件总入口</a></li><li class="depth-2"><a href="#%E6%8F%92%E4%BB%B6%E6%80%8E%E6%A0%B7%E5%8F%82%E4%B8%8E%E6%9B%B4%E6%96%B0">插件怎样参与更新</a></li><li class="depth-2"><a href="#%E5%8F%8D%E5%90%91%E4%BC%A0%E6%92%AD%E7%AE%97%E6%B3%95">反向传播算法</a></li><li class="depth-3"><a href="#1-self-accept">1. self accept</a></li><li class="depth-3"><a href="#2-dependency-accept">2. dependency accept</a></li><li class="depth-3"><a href="#3-acceptexports">3. acceptExports</a></li><li class="depth-3"><a href="#4-%E6%AD%BB%E7%AB%AF">4. 死端</a></li><li class="depth-3"><a href="#%E9%81%8D%E5%8E%86%E5%8E%BB%E9%87%8D%E4%B8%8E%E8%B7%AF%E5%BE%84%E7%8A%B6%E6%80%81">遍历去重与路径状态</a></li><li class="depth-2"><a href="#%E5%BE%AA%E7%8E%AF-import-%E4%B8%BA%E4%BB%80%E4%B9%88%E7%89%B9%E6%AE%8A">循环 import 为什么特殊</a></li><li class="depth-2"><a href="#%E6%A8%A1%E5%9D%97%E5%9B%BE%E5%A4%B1%E6%95%88%E4%B8%8E%E6%97%B6%E9%97%B4%E6%88%B3">模块图失效与时间戳</a></li><li class="depth-2"><a href="#invalidate-%E6%98%AF%E7%AC%AC%E4%BA%8C%E8%BD%AE%E4%BC%A0%E6%92%AD">invalidate() 是第二轮传播</a></li><li class="depth-2"><a href="#%E5%AE%A2%E6%88%B7%E7%AB%AF%E4%B8%BA%E4%BB%80%E4%B9%88%E5%88%86-%E8%8E%B7%E5%8F%96-%E5%92%8C-%E6%89%A7%E8%A1%8C-%E4%B8%A4%E9%98%B6%E6%AE%B5">客户端为什么分“获取”和“执行”两阶段</a></li><li class="depth-2"><a href="#hmrcontext-%E7%94%9F%E5%91%BD%E5%91%A8%E6%9C%9F">HMRContext 生命周期</a></li><li class="depth-2"><a href="#%E6%B7%B1%E6%8C%96-%E4%B8%80%E6%AC%A1-invalidate-%E6%80%8E%E6%A0%B7%E8%B7%A8%E4%B8%A4%E8%BD%AE-hmr-%E5%AE%8C%E6%88%90%E4%BA%8B%E5%8A%A1">深挖：一次 invalidate 怎样跨两轮 HMR 完成事务</a></li><li class="depth-3"><a href="#demo-%E6%9C%8D%E5%8A%A1%E7%AB%AF%E5%9B%BE%E4%B8%8E%E6%B5%8F%E8%A7%88%E5%99%A8-callback-%E8%A1%A8%E9%80%9A%E8%BF%87-url-%E5%AF%B9%E9%BD%90">Demo：服务端图与浏览器 callback 表通过 URL 对齐</a></li><li class="depth-3"><a href="#%E4%B8%A4%E8%BD%AE%E4%BC%A0%E6%92%AD%E7%9A%84%E5%86%B3%E5%AE%9A%E6%80%A7%E6%BA%90%E7%A0%81">两轮传播的决定性源码</a></li><li class="depth-2"><a href="#%E5%90%8C%E4%B8%80-demo-%E7%9A%84%E7%AB%AF%E5%88%B0%E7%AB%AF%E6%89%A7%E8%A1%8C%E5%9B%BE">同一 Demo 的端到端执行图</a></li><li class="depth-2"><a href="#%E5%85%B3%E9%94%AE%E7%8A%B6%E6%80%81%E5%8F%98%E5%8C%96">关键状态变化</a></li><li class="depth-2"><a href="#%E7%9C%9F%E5%AE%9E%E5%AE%8C%E6%95%B4%E6%B5%8B%E8%AF%95-%E5%A4%9A%E6%A0%87%E7%AD%BE-invalidate-%E5%8F%AA%E4%BA%A7%E7%94%9F%E4%B8%80%E8%BD%AE%E4%B8%8A%E6%B8%B8%E6%9B%B4%E6%96%B0">真实完整测试：多标签 invalidate 只产生一轮上游更新</a></li><li class="depth-3"><a href="#gwtms-%E4%B8%8E%E8%AF%81%E6%8D%AE%E8%BE%B9%E7%95%8C">GWTMS 与证据边界</a></li><li class="depth-2"><a href="#%E6%9C%AC%E9%93%BE%E6%BA%90%E7%A0%81-%E6%B5%8B%E8%AF%95%E8%AF%81%E6%8D%AE">本链源码—测试证据</a></li><li class="depth-2"><a href="#accept-%E5%8F%82%E6%95%B0%E4%B8%BA%E4%BB%80%E4%B9%88%E7%94%A8%E8%BD%BB%E9%87%8F-lexer">accept 参数为什么用轻量 lexer</a></li><li class="depth-2"><a href="#hotpayload-%E5%8D%8F%E8%AE%AE">HotPayload 协议</a></li><li class="depth-2"><a href="#hotchannel-%E7%AE%97%E6%B3%95%E4%B8%8E%E4%BC%A0%E8%BE%93%E7%9A%84%E9%9A%94%E7%A6%BB%E5%B1%82">HotChannel：算法与传输的隔离层</a></li><li class="depth-2"><a href="#websocket-%E5%AE%89%E5%85%A8%E4%B8%8E%E7%94%9F%E5%91%BD%E5%91%A8%E6%9C%9F">WebSocket 安全与生命周期</a></li><li class="depth-2"><a href="#%E6%B5%8F%E8%A7%88%E5%99%A8%E6%B6%88%E6%81%AF%E5%A4%84%E7%90%86%E7%BB%86%E8%8A%82">浏览器消息处理细节</a></li><li class="depth-3"><a href="#error-overlay-%E7%9A%84%E9%A6%96%E6%AC%A1%E6%9B%B4%E6%96%B0">error overlay 的首次更新</a></li><li class="depth-3"><a href="#css">&lt;link&gt; CSS</a></li><li class="depth-3"><a href="#html-%E5%AE%9A%E5%90%91-reload">HTML 定向 reload</a></li><li class="depth-3"><a href="#%E6%97%A0%E5%AE%A2%E6%88%B7%E7%AB%AF%E6%97%B6%E7%BC%93%E5%86%B2">无客户端时缓冲</a></li><li class="depth-2"><a href="#erroroverlay-%E7%9A%84%E9%9A%94%E7%A6%BB%E4%B8%8E%E5%AE%89%E5%85%A8%E8%BE%B9%E7%95%8C">ErrorOverlay 的隔离与安全边界</a></li><li class="depth-2"><a href="#forward-console-%E5%A4%8D%E7%94%A8-hmr-transport-%E7%9A%84%E8%AF%8A%E6%96%AD%E9%80%9A%E9%81%93">Forward Console：复用 HMR transport 的诊断通道</a></li><li class="depth-2"><a href="#bundled-dev-%E8%BE%B9%E7%95%8C%E7%AE%97%E6%B3%95%E7%A7%BB%E5%88%B0%E6%B5%8F%E8%A7%88%E5%99%A8">Bundled-dev：边界算法移到浏览器</a></li><li class="depth-2"><a href="#%E6%B5%8B%E8%AF%95%E6%80%8E%E6%A0%B7%E6%98%A0%E5%B0%84%E6%BA%90%E7%A0%81%E6%9C%BA%E5%88%B6">测试怎样映射源码机制</a></li><li class="depth-3"><a href="#server-%E5%8D%95%E5%85%83%E6%B5%8B%E8%AF%95">server 单元测试</a></li><li class="depth-3"><a href="#playground-hmr">playground/hmr</a></li><li class="depth-3"><a href="#playground-hmr-full-bundle-mode">playground/hmr-full-bundle-mode</a></li><li class="depth-2"><a href="#%E5%8E%86%E5%8F%B2%E6%BC%94%E8%BF%9B%E7%BA%BF%E7%B4%A2">历史演进线索</a></li><li class="depth-2"><a href="#%E5%BB%BA%E8%AE%AE%E6%96%AD%E7%82%B9">建议断点</a></li><li class="depth-2"><a href="#%E5%85%B3%E9%94%AE%E6%BA%90%E7%A0%81%E8%AF%81%E6%8D%AE">关键源码证据</a></li><li class="depth-2"><a href="#%E5%A4%8D%E7%9B%98%E9%A2%98">复盘题</a></li></ol></aside></div><script>;(function () {
   'use strict'
 
   var root = document.documentElement
@@ -2092,7 +2407,9 @@ callback 顺序，才算真正理解 Vite HMR。</p>
     }),
   )
   var headings = Array.from(
-    document.querySelectorAll('.prose h2[id], .prose h3[id]'),
+    document.querySelectorAll(
+      '.prose h2[id], .prose h3[id], .prose section[id]',
+    ),
   )
 
   if ('IntersectionObserver' in window && headings.length > 0) {

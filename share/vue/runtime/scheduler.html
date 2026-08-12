@@ -40,9 +40,9 @@
             <code>nextTick</code> 才恢复。
           </p>
           <div class="callout warm">
-            <strong>性质声明：</strong>这是课程新增、已设计为可放入 Vue 3.5.41
-            仓库运行的完整 Vitest
-            教程测试，不是上游原测试。imports、准备、动作、同步/异步断言和卸载清理均在块内。
+            <strong>这段测试从哪来：</strong>这是教程新增、可放入 Vue 3.5.41
+            仓库运行的 Vitest 用例，不是上游自带测试。imports、准备、动作、
+            同步/异步断言和卸载清理均在块内。
           </div>
           <details class="source-layer" open>
             <summary>完整教程测试：counter-course.spec.ts</summary>
@@ -107,7 +107,7 @@ describe('runtime course: Counter', () =&gt; {
                 >。
               </p>
               <p class="test-proof">
-                <strong>本次验收：</strong>Node 24.5.0 定向执行同一测试，1 file
+                <strong>运行结果：</strong>Node 24.5.0 定向执行同一测试，1 file
                 / 1 test passed；临时测试文件随后删除。
               </p>
             </div>
@@ -120,7 +120,7 @@ describe('runtime course: Counter', () =&gt; {
             <code>should dedupe queued jobs</code> 测试联合证明，不能只凭最终
             DOM 倒推。
           </p>
-          <h3>本页验收合同</h3>
+          <h3>这个用例要验证什么</h3>
           <div class="table-wrap">
             <table>
               <thead>
@@ -264,7 +264,7 @@ describe('runtime course: Counter', () =&gt; {
               ><span class="flow-file">stable boundary</span>
             </div>
           </div>
-          <h3>照图复述一遍</h3>
+          <h3>按时间顺序再走一遍</h3>
           <ol>
             <li>
               reactivity 的
@@ -295,9 +295,9 @@ describe('runtime course: Counter', () =&gt; {
         </section>
 
         <section class="article-section prose" id="scheduler-source-proof">
-          <h2>决定性真实源码：去重、微任务与 finally 恢复</h2>
+          <h2>沿源码看去重、微任务与 finally 恢复</h2>
           <p>以下为 Vue 3.5.41 连续原文，仅做 HTML 实体转义。</p>
-          <h3>证据 1：nextTick 等待当前 flush，没有 flush 时也延后到微任务</h3>
+          <h3>nextTick 等待当前 flush；没有 flush 时也让到微任务</h3>
           <pre
             data-source-file="vue/packages/runtime-core/src/scheduler.ts"
           ><code>export function nextTick&lt;T, R&gt;(
@@ -307,7 +307,7 @@ describe('runtime course: Counter', () =&gt; {
   const p = currentFlushPromise || resolvedPromise
   return fn ? p.then(this ? fn.bind(this) : fn) : p
 }</code></pre>
-          <h3>证据 2：QUEUED 位去重，并只创建一个刷新 Promise</h3>
+          <h3>QUEUED 位去重，并只创建一个刷新 Promise</h3>
           <pre
             data-source-file="vue/packages/runtime-core/src/scheduler.ts"
           ><code>export function queueJob(job: SchedulerJob): void {
@@ -336,7 +336,7 @@ describe('runtime course: Counter', () =&gt; {
     currentFlushPromise = resolvedPromise.then(flushJobs)
   }
 }</code></pre>
-          <h3>证据 3：flushJobs 的 try/finally 是恢复协议</h3>
+          <h3>flushJobs 用 try/finally 恢复主队列状态</h3>
           <details class="source-layer" open>
             <summary>scheduler.ts · flushJobs（完整连续函数）</summary>
             <div>
@@ -432,7 +432,7 @@ describe('runtime course: Counter', () =&gt; {
       expect(calls).toEqual(['job1', 'job2'])
     })</code></pre>
           <p class="test-proof">
-            <strong>本次验收：</strong>Node 24.5.0 定向执行
+              <strong>运行结果：</strong>Node 24.5.0 定向执行
             <code>should dedupe queued jobs</code>，1 passed / 38 skipped。
           </p>
           <div class="branch-grid">
@@ -453,9 +453,9 @@ describe('runtime course: Counter', () =&gt; {
             <div class="branch">
               <strong>错误路径</strong
               ><span
-                >job 经 callWithErrorHandling
-                进入错误管线；即使错误继续抛出，finally
-                仍清剩余标志、主队列并尝试 post flush。</span
+                >主队列 job 经 callWithErrorHandling
+                进入错误管线；若错误继续抛出，flushJobs 的 finally
+                清剩余主任务标志与主队列，并调用 post flush。这里不把“post callback 自己继续抛错”扩大成同一保证。</span
               >
             </div>
             <div class="branch">
@@ -467,6 +467,71 @@ describe('runtime course: Counter', () =&gt; {
               >
             </div>
           </div>
+          <details class="source-layer">
+            <summary>scheduler.spec.ts · nextTick 接住主队列 flush 错误</summary>
+            <div>
+              <pre data-source-file="vue/packages/runtime-core/__tests__/scheduler.spec.ts"><code>  test('nextTick should capture scheduler flush errors', async () =&gt; {
+    const err = new Error('test')
+    queueJob(() =&gt; {
+      throw err
+    })
+    try {
+      await nextTick()
+    } catch (e: any) {
+      expect(e).toBe(err)
+    }
+    expect(
+      `Unhandled error during execution of scheduler flush`,
+    ).toHaveBeenWarned()
+
+    // this one should no longer error
+    await nextTick()
+  })</code></pre>
+            </div>
+          </details>
+          <details class="source-layer">
+            <summary>scheduler.spec.ts · 主队列报错后任务可再次入队</summary>
+            <div>
+              <pre data-source-file="vue/packages/runtime-core/__tests__/scheduler.spec.ts"><code>  test('jobs can be re-queued after an error', async () =&gt; {
+    const err = new Error('test')
+    let shouldThrow = true
+
+    const job1: SchedulerJob = vi.fn(() =&gt; {
+      if (shouldThrow) {
+        shouldThrow = false
+        throw err
+      }
+    })
+    job1.id = 1
+
+    const job2: SchedulerJob = vi.fn()
+    job2.id = 2
+
+    queueJob(job1)
+    queueJob(job2)
+
+    try {
+      await nextTick()
+    } catch (e: any) {
+      expect(e).toBe(err)
+    }
+    expect(
+      `Unhandled error during execution of scheduler flush`,
+    ).toHaveBeenWarned()
+
+    expect(job1).toHaveBeenCalledTimes(1)
+    expect(job2).toHaveBeenCalledTimes(0)
+
+    queueJob(job1)
+    queueJob(job2)
+
+    await nextTick()
+
+    expect(job1).toHaveBeenCalledTimes(2)
+    expect(job2).toHaveBeenCalledTimes(1)
+  })</code></pre>
+            </div>
+          </details>
         </section>
 
         <section class="article-section prose" id="plain-scheduler">
@@ -629,6 +694,25 @@ count.value++</code></pre>
             Boolean，一方面减少对象字段，另一方面让热路径能在一个整数上判断和清理状态。未初始化
             flags 在位运算中会被视为 0。
           </p>
+          <div
+            class="diagram"
+            role="img"
+            aria-label="SchedulerJob 从空闲、排队、执行、重新排队到失效的 flags 状态图"
+          >
+            <div class="diagram-title">SCHEDULER JOB FLAGS</div>
+            <div class="layer-flow">
+              <div class="layer-node"><strong>idle</strong><small>QUEUED=0，可入队</small></div>
+              <div class="diagram-arrow">queueJob</div>
+              <div class="layer-node"><strong>queued</strong><small>QUEUED=1，重复 queue 提前返回</small></div>
+              <div class="diagram-arrow">flush</div>
+              <div class="layer-node emphasis"><strong>executing</strong><small>ALLOW_RECURSE：执行前清 QUEUED；普通 job：执行后清</small></div>
+              <div class="diagram-arrow">完成 / finally</div>
+              <div class="layer-node"><strong>idle again</strong><small>可进入下一轮；错误后的剩余主任务也被清标志</small></div>
+            </div>
+            <p class="concept-sentence">
+              任意时点若置 <code>DISPOSED</code>，flush 会跳过任务；这不是暂停状态，也不会自动恢复。
+            </p>
+          </div>
         </section>
 
         <section class="article-section prose" id="queue">
@@ -816,8 +900,9 @@ await nextTick()
           <p>
             job 通过 callWithErrorHandling 执行，但 flushJobs 自身仍使用
             try/finally。原因是错误处理器可能选择继续抛出；即使如此，队列也必须重置长度、清
-            QUEUED、刷新已存在的 post callback，并让下一次 nextTick 获得新
-            Promise。
+            QUEUED，并进入 post flush。仓库测试直接证明的是<strong>主队列 job
+            抛错</strong>后，下一次 nextTick 不再沿用该错误，相关 job 也可重新入队；
+            它没有证明任意 post callback 再次抛出时仍能完成所有剩余 post 回调。
           </p>
           <details>
             <summary>为什么不能在 catch 中简单 queue.length = 0？</summary>
@@ -840,7 +925,7 @@ await nextTick()
         </section>
 
         <section class="article-section prose" id="scheduler-evidence">
-          <h2>本章证据闭环</h2>
+          <h2>本章用到的源码与测试</h2>
           <div class="table-wrap">
             <table>
               <thead>
@@ -871,13 +956,19 @@ await nextTick()
                     >，图后逐步复述
                   </td>
                 </tr>
+                <tr>
+                  <td>主队列 job 抛错后重新入队；nextTick 捕获 flush 错误</td>
+                  <td><code>scheduler.ts · flushJobs try/finally</code></td>
+                  <td><code>jobs can be re-queued after an error</code>；<code>nextTick should capture scheduler flush errors</code></td>
+                  <td><a href="#job">SchedulerJob flags 状态图</a></td>
+                </tr>
               </tbody>
             </table>
           </div>
           <p class="reader-check">
             <strong>结论：</strong>同步 batch 与微任务
             queue、去重提前退出、DISPOSED、递归上限、错误 finally
-            和清理路径均有源码与状态落点。
+            和主队列错误清理均有源码、状态与真实测试落点；post callback 自身继续抛错不在本页恢复保证内。
           </p>
         </section>
 
@@ -890,13 +981,13 @@ await nextTick()
         <div class="toc-title">本页目录</div>
         <a href="#scheduler-counter-case">完整 Counter 测试</a>
         <a href="#scheduler-counter-flow">同例时间图</a>
-        <a href="#scheduler-source-proof">决定性源码</a>
+        <a href="#scheduler-source-proof">关键源码</a>
         <a href="#plain-scheduler">为什么要调度</a>
         <a href="#goals">调度目标</a><a href="#job">SchedulerJob</a
         ><a href="#queue">queueJob</a><a href="#flush">flush 时间线</a
         ><a href="#watchers">Watcher 阶段</a><a href="#next-tick">nextTick</a
         ><a href="#recursion">递归更新</a><a href="#errors">错误恢复</a
-        ><a href="#scheduler-evidence">证据闭环</a>
+              ><a href="#scheduler-evidence">源码与测试</a>
       </aside>
     </div>
     <footer data-site-footer></footer>

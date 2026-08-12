@@ -25,7 +25,7 @@ Vite 开发服务器不是“收到 URL 后调用一次编译器”，而是一�
 | `DevEnvironment` | `_createServer()` | `server.environments` | server 初始化至关闭/重启迁移 | 隔离 client/SSR 的配置、模块图、插件容器与依赖优化器 |
 | `PluginContainer` | Environment 初始化 | 对应 Environment | Environment 生命周期 | 排序并调用插件钩子，维护 hook context 与错误信息 |
 | `EnvironmentModuleGraph` | Environment 初始化 | 对应 Environment | Environment 生命周期 | 维护 URL、规范 ID、importer、依赖、失效和 transform 缓存 |
-| `ModuleNode` | ModuleGraph 按需创建 | ModuleGraph | 首次解析至失效/关闭 | 保存模块身份、依赖边、HMR 接受边界和转换结果 |
+| `ModuleNode` | ModuleGraph 按需创建 | ModuleGraph | 首次创建至 Environment 关闭；失效不会删除节点 | 保存模块身份、依赖边、HMR 接受边界和转换结果；失效时清除可重算结果 |
 
 关键所有权不变量：模块节点、插件上下文和转换缓存都属于某个 Environment。兼容层可以转发调用，但不能把 client 与 SSR 的状态重新混成一个全局容器。
 
@@ -286,7 +286,7 @@ disposer 失败不会阻止其余资源释放。外部 URL 与兼容 runner 引�
 
 | 变化前 | 触发动作 | 变化后 | 失败/清理 |
 |---|---|---|---|
-| 没有 server | `createServer()` | 已解析配置并创建组件 | 配置命令不匹配则抛错；已创建资源由构造失败路径关闭 |
+| 没有 server | `createServer()` | 已解析配置并创建组件 | 配置命令不匹配等前置校验在长生命周期资源创建前抛错；后续构造失败不能概括为统一自动清理 |
 | server 未监听 | `server.listen()` | HTTP 接受请求、Environment 开始工作 | 端口冲突按 `strictPort` 失败或换端口 |
 | URL 无 pending | `transformRequest(url)` | `_pendingRequests[url] = Promise` | `finally` 删除 pending，避免失败 Promise 永久缓存 |
 | ModuleGraph 无 URL 节点 | `resolveId()` | URL 映射到规范 ID/ModuleNode | 无插件解析时回退原 URL，后续 load 仍可能失败 |
@@ -301,17 +301,20 @@ disposer 失败不会阻止其余资源释放。外部 URL 与兼容 runner 引�
 flowchart TD
   A["CLI: vite root"] --> B["createServer(InlineConfig)"]
   B --> C{"配置可用于 serve?"}
-  C -- "否" --> C1["抛错并清理已创建资源"]
+  C -- "否" --> C1["在长生命周期资源创建前抛错"]
   C -- "是" --> D["创建 HTTP / WS / watcher / Environments"]
   D --> E["server.listen()"]
   E --> F["浏览器请求 /src/main.ts"]
-  F --> G["transformMiddleware"]
-  G --> H{"ETag 命中?"}
-  H -- "是" --> H1["304 + res.end()"]
+  F --> F1{"cachedTransformMiddleware：非 CSS ETag 命中?"}
+  F1 -- "是" --> H1["304 + res.end()"]
+  F1 -- "否" --> G["transformMiddleware"]
+  G --> H{"CSS direct ETag 命中?"}
+  H -- "是" --> H1
   H -- "否" --> I["environment.transformRequest(url)"]
   I --> J{"pending Promise 存在?"}
-  J -- "是" --> J1["复用并发请求"]
+  J -- "是" --> J1["等待并复用同一 Promise"]
   J -- "否" --> K["登记 pending Promise"]
+  J1 --> Q
   K --> L{"ModuleGraph 缓存有效?"}
   L -- "是" --> Q["返回 transformResult"]
   L -- "否" --> M["PluginContainer.resolveId"]
@@ -325,8 +328,10 @@ flowchart TD
   N -. "加载失败" .-> X
   O -. "转换失败" .-> X
   X --> Y{"错误类型"}
-  Y -- "优化器处理中/过期" --> Y1["504，等待 reload 新请求"]
+  Y -- "优化器处理中/过期或 server 已关闭" --> Y1["504，等待 reload 新请求"]
+  Y -- "优化产物缺失" --> Y4["404"]
   Y -- "访问拒绝" --> Y2["403"]
+  Y -- "无法加载 URL / fs fallback" --> Y5["next()，交给后续中间件"]
   Y -- "其他" --> Y3["error middleware / 500"]
   S --> T{"文件随后变化?"}
   T -- "否" --> U["缓存等待下一请求"]
@@ -343,7 +348,7 @@ flowchart TD
 
 ## 真实测试闭环：meta 如何跨钩子推进
 
-选择仓库测试 `packages/vite/src/node/server/__tests__/pluginContainer.spec.ts` 的 `can pass metadata between hooks`。它不启动真实端口，而是隔离请求链中最关键的 `resolve → load → transform → close`，因此失败时能直接定位 PluginContainer 或 ModuleGraph，而不是受浏览器和网络噪声影响。
+选择仓库测试 `packages/vite/src/node/server/__tests__/pluginContainer.spec.ts` 的 `can pass metadata between hooks`。它不启动真实端口，而是隔离请求链中最关键的 `resolve → load → transform → PluginContainer close hooks`，因此失败时能直接定位 PluginContainer 或 ModuleGraph，而不是受浏览器和网络噪声影响。它不证明 HTTP、watcher、HotChannel、optimizer 或整个 Environment 的资源释放。
 
 下面由目标版本三个逐字源码片段重排而成：文件 import、文件末尾夹具、测试本体。只移动夹具位置并
 省略无关测试；测试逻辑、输入和断言未改写。
@@ -436,9 +441,9 @@ Given：一个 client `DevEnvironment` 和单插件，目标模块尚未进入�
 
 When：先 `ensureEntryFromUrl()` 触发解析，再显式执行 `load()`、`transform()`，最后关闭容器。
 
-Then：解析、加载、转换三个对象结果中的 `meta` 依次浅合并为 `{x:1} → {x:2} → {x:3}`，后续 hook 总能读到前一阶段状态。
+Then：解析、加载、转换三个对象结果中的 `meta` 依次浅合并为 `{x:1} → {x:2} → {x:3}`，后续 hook 总能读到前一阶段状态；容器关闭时执行插件关闭钩子。
 
-Mechanism：断言既检查 `ModuleNode.meta`，也检查插件各阶段读取到的快照；这排除了“返回值正确但 ModuleGraph 未更新”的假阳性。最后显式 `close()` 覆盖资源清理边界。
+Mechanism：断言既检查 `ModuleNode.meta`，也检查插件各阶段读取到的快照；这排除了“返回值正确但 ModuleGraph 未更新”的假阳性。最后显式 `close()` 只覆盖 PluginContainer 等待在途 hook、执行 `buildEnd`/`closeBundle` 的边界，不代表整个 Server 资源清理。
 
 Source：`EnvironmentModuleGraph._ensureEntryFromUrl()`、`PluginContainer.resolveId()`、`load()` 中的 `_updateModuleInfo()`、`transform()` 和 `close()`。
 
@@ -458,7 +463,7 @@ Source：`EnvironmentModuleGraph._ensureEntryFromUrl()`、`PluginContainer.resol
 
 这条链路的核心不是某个转译器，而是三层状态协作：pending Promise 合并当前并发，ModuleGraph 保存跨请求增量状态，Environment 隔离不同运行目标。PluginContainer 是状态与用户插件之间的调度边界；中间件负责把其结果翻译成 HTTP 语义。
 
-本文未完整展开 HTML hook、CSS 预处理、依赖扫描/原子发布、SSR Module Runner、生产构建和 bundled dev。继续阅读时应分别跟随 README 中对应章节，不能把开发态缓存规则直接推导为生产构建保证。
+本文未完整展开 HTML hook、CSS 预处理、依赖扫描/目录换代、SSR Module Runner、生产构建和 bundled dev。继续阅读时应分别跟随 README 中对应章节，不能把开发态缓存规则直接推导为生产构建保证。
 
 ## 复盘题
 

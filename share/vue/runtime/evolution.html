@@ -16,7 +16,7 @@
       <aside data-global-nav></aside>
       <main class="article">
         <div class="article-hero">
-          <div class="article-kicker">Chapter 09 · Evolution</div>
+          <div class="article-kicker">Chapter 10 · Evolution</div>
           <h1>为什么成熟的 Runtime 还在不断修复</h1>
           <p class="article-lead">
             主流程早已稳定，但真实浏览器里仍有慢网速输入、异步结果晚到、资源重复加载和节点移动等边界。版本历史记录了
@@ -134,7 +134,7 @@
         </section>
 
         <section class="article-section prose" id="history-evidence">
-          <h2>演进证据时间线：事实与推断分开写</h2>
+          <h2>这些实现为什么会一步步变成今天这样</h2>
           <p>
             每条演进结论先看“证据类型”。<strong>本地事实</strong>可由当前快照直接复核；
             <strong>上游历史</strong>由 release/tag/commit 定位；<strong
@@ -229,7 +229,7 @@
             </table>
           </div>
 
-          <h3>四条能力线和六种模式如何落证据</h3>
+          <h3>四条能力线怎样对应到源码变化</h3>
           <div class="table-wrap">
             <table>
               <thead>
@@ -758,9 +758,9 @@ git log --all --grep="#14411" --oneline</code></pre>
         </section>
 
         <section class="article-section prose" id="evidence-matrix">
-          <h2>本页证据表：用例 → 源码 → 测试 → 图</h2>
+          <h2>每条演进结论去哪里核对</h2>
           <p class="source-note">
-            本轮实跑：Node v24.5.0，<code>vnode.spec.ts</code> 整文件 56 tests
+            固定版本实跑：Node v24.5.0，<code>vnode.spec.ts</code> 整文件 56 tests
             passed； 当前版本号与发布日期另由本地
             <code>package.json / CHANGELOG.md</code> 交叉核对。
           </p>
@@ -847,7 +847,7 @@ git log --all --grep="#14411" --oneline</code></pre>
         </section>
 
         <nav class="page-nav" aria-label="章节翻页">
-          <a href="runtime-dom.html"><span>上一章</span>← DOM 平台层</a>
+          <a href="integration.html"><span>上一章</span>← 两层完整调用链</a>
           <a href="testing.html"><span>下一章</span>测试与调试 →</a>
         </nav>
       </main>

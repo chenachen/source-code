@@ -116,7 +116,9 @@
     }),
   )
   var headings = Array.from(
-    document.querySelectorAll('.prose h2[id], .prose h3[id]'),
+    document.querySelectorAll(
+      '.prose h2[id], .prose h3[id], .prose section[id]',
+    ),
   )
 
   if ('IntersectionObserver' in window && headings.length > 0) {

@@ -2,11 +2,24 @@
 
 > **证据基线**：Vite `v8.2.1`，commit `421615865dad3ed39137d17281814fc78a41246c`。本文所有源码、测试与行为结论均限定于该版本。
 
-[多页面分享版 HTML](../../share/vite/index.html) 提供总览与 22 个重点模块页；每页均可离线阅读，
+[多页面分享版 HTML](../../share/vite/index.html) 提供总览与 23 个重点模块页；每页均可离线阅读，
 并保留源码、测试证据、推导边界及前后篇导航。
 
 本目录按“源码注释 → 测试场景注释 → 静态审计 → 原理总结”组织。源码目录结构只用于
 定位文件，学习模块按运行链路划分，避免读完单个目录却无法串起完整流程。
+
+## 深挖进展
+
+以下四条事务已经提升到同一证据口径：多段决定性源码摘录、一个真实完整测试、
+Given–When–Then–Mechanism–Source、端到端图、状态/清理表和章节证据矩阵。
+
+1. [依赖优化器：scanner、真实 crawl、批次 Promise、目录换代与 504/404](./11-dependency-pre-bundling.md)
+2. [普通 HMR：watcher、模块图传播、浏览器提交与 invalidate 第二轮](./12-hmr.md)
+3. [Bundled Dev：Rolldown 增量整包、内存输出、执行图与 reload 门闩](./12b-bundled-dev.md)
+4. [生产构建控制面](./14a-build-orchestration.md) → [产物与 preload 数据面](./14b-build-output-and-preload.md)
+
+其余章节仍是机制级深入阅读，不据此宣称 Vite 全仓库已经逐条闭环；后续优先补 HTML 管线与
+SSR/Module Runner 的同等级真实用例。
 
 ## 注释约定
 
@@ -42,6 +55,7 @@
 10. [Import Analysis](./10-import-analysis.md)
 11. [依赖预构建](./11-dependency-pre-bundling.md)
 12. [HMR](./12-hmr.md)
+    - [12B：Bundled Dev 的整包、内存文件与浏览器 HMR 图](./12b-bundled-dev.md)
 13. CSS、Asset 与 Worker
     - [13A：CSS 编译、HMR 与构建产物](./13a-css-pipeline.md)
     - [13B：Asset、Worker 与 Wasm](./13b-asset-worker-wasm.md)
@@ -75,6 +89,7 @@ PluginContainer 测试闭环。后续章节再分别展开各子系统，不把�
 | 10 | `plugins/importAnalysis.ts`、`importMetaGlob.ts` | import/importGlob tests、dynamic-import playground |
 | 11 | `optimizer/index.ts`、`scan.ts`、`rolldownDepPlugin.ts` | optimizer tests、scan tests |
 | 12 | `server/hmr.ts`、`client/client.ts`、`shared/hmr.ts` | server HMR tests、HMR playground |
+| 12B | `server/bundledDev.ts`、`client/bundledDevHmrClient.ts`、内存/lazy 中间件 | `hmr-full-bundle-mode` playground、build hook 回归测试 |
 | 13A | `plugins/css.ts` | CSS plugin tests 与 CSS playground |
 | 13B | `plugins/asset.ts`、`worker.ts`、`wasm.ts` | 对应 plugin tests 与 asset/worker playground |
 | 14A | `node/build.ts::createBuilder/buildEnvironment` | `node/__tests__/build.spec.ts` |

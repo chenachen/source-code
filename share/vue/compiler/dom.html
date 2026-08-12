@@ -47,7 +47,8 @@
           ><a href="#node-transforms">节点转换</a
           ><a href="#directives">DOM 指令</a><a href="#model">v-model</a
           ><a href="#events">v-on</a><a href="#static">静态字符串化</a
-          ><a href="#contract">运行时协议</a><a href="#tests">测试地图</a>
+          ><a href="#contract">端到端流程</a><a href="#tests">测试证据</a
+          ><a href="#boundaries">边界</a>
         </nav>
         <p class="rail-note">核心入口<br />src/index.ts<br />compile()</p>
       </aside>
@@ -57,56 +58,82 @@
           <p class="eyebrow">Module 02 · Client Platform Layer</p>
           <h1>compiler-dom</h1>
           <p class="lead">
-            它不是另一套模板编译器，而是 compiler-core 的客户端平台配置：告诉
-            parser 什么是 HTML/SVG/MathML，并把 DOM 属性、事件、表单和静态 HTML
-            语义注入 transform。
+            compiler-dom 没有另起一套编译管线。它做的事更具体：给 compiler-core
+            补上浏览器平台知识，再把同一棵 AST 交回 core 完成转换和代码生成。
           </p>
           <div class="hero-meta">
             <span>入口：compile()</span><span>目标：client render</span
-            ><span>核心增量：parserOptions + DOM transforms</span>
+            ><span>版本：Vue 3.5.41 · 11cd09cf</span>
           </div>
         </div>
 
         <div class="reading-contract">
-          <strong>本页不需要对照仓库</strong>
+          <strong>证据基线与阅读边界</strong>
           <p>
-            下文直接嵌入 DOM 入口、命名空间、v-model、v-on
-            和静态字符串化的真实源码。阅读重点是“平台层给 core
-            增加了哪些事实”，而不是记住函数名。
+            本页逐项核对 commit
+            <code>11cd09cf54a878ec70d3dcca14520b4c4ec267b9</code> 中
+            <code>packages/compiler-dom/src</code> 与对应
+            <code>__tests__</code>。本文覆盖客户端模板的
+            parse、transform、generate；SFC block 切分、SSR 产物和 runtime-dom
+            指令内部实现只在接口交界处说明。
           </p>
+        </div>
+
+        <div class="grid-3">
+          <article class="card green">
+            <h3>它负责</h3>
+            <p>
+              HTML 模式所需的平台判断、DOM 节点转换、原生指令分派、DOM runtime
+              helper 注册和静态 HTML 序列化。
+            </p>
+          </article>
+          <article class="card blue">
+            <h3>它复用</h3>
+            <p>
+              compiler-core 的 AST、结构指令、表达式处理、作用域追踪、静态提升、
+              patch flag 计算与代码生成。
+            </p>
+          </article>
+          <article class="card">
+            <h3>它不负责</h3>
+            <p>
+              不切分 <code>.vue</code> 文件，不生成 SSR 字符串，也不实现
+              <code>vModelText</code>、<code>withKeys</code> 等运行时 helper。
+            </p>
+          </article>
         </div>
 
         <section id="entry">
           <div class="section-head">
             <div>
               <span class="section-no">01 / Assembly</span>
-              <h2>compile() 只做平台装配</h2>
+              <h2>compile() 与 parse()：一份平台默认值，两条入口</h2>
             </div>
             <p>
-              compiler-dom 调用 baseCompile，但会按明确优先级合并 parser
-              options、节点转换、指令转换和静态提升回调。
+              <code>parse()</code> 只产出 DOM 语义 AST；<code>compile()</code>
+              则装好平台插件后调用 <code>baseCompile()</code>，继续走 core 的
+              parse → transform → generate。
             </p>
           </div>
-          <div class="diagram" aria-label="DOM compile 装配流程">
-            <p class="diagram-title">compiler-dom compile()</p>
+          <div
+            class="diagram"
+            aria-label="compiler-dom 与 compiler-core 双层装配流程"
+          >
+            <p class="diagram-title">两层装配，不是两套编译器</p>
             <div class="flow">
               <div class="flow-node blue">
-                <strong>parserOptions</strong
-                ><small>namespace / tag / entity</small>
+                <strong>DOM compile</strong
+                ><small>平台默认值 → 用户 options → 强制字段</small>
               </div>
-              <div class="arrow">+</div>
-              <div class="flow-node">
-                <strong>DOM transforms</strong
-                ><small>style / Transition / nesting</small>
-              </div>
-              <div class="arrow">+</div>
+              <div class="arrow">→</div>
               <div class="flow-node primary">
-                <strong>DOM directives</strong
-                ><small>html / text / model / on / show</small>
+                <strong>core baseCompile</strong
+                ><small>core 预设 → DOM/用户插件</small>
               </div>
               <div class="arrow">→</div>
               <div class="flow-node">
-                <strong>baseCompile</strong><small>共享三段管线</small>
+                <strong>CodegenResult</strong
+                ><small>ast / code / preamble / map</small>
               </div>
             </div>
           </div>
@@ -149,63 +176,157 @@ export function compile(src, options: CompilerOptions = {}): CodegenResult {
       transformHoist: __BROWSER__ ? null : stringifyStatic,
     }),
   )
+}
+
+export function parse(template: string, options: ParserOptions = {}): RootNode {
+  return baseParse(template, extend({}, parserOptions, options))
 }</code></pre>
           </figure>
           <div class="code-walkthrough">
             <article class="code-note">
-              <h3>这个入口没有重写编译器</h3>
+              <h3>字符串与 RootNode 走法不同</h3>
               <p>
-                真正的 parse/transform/generate 仍由 baseCompile 完成。DOM
-                只提供 parserOptions 与插件，这使 compiler-ssr 可以复用同一份
-                AST 和通用指令语义。
+                <code>compile(string)</code> 会把合并后的选项交给 core
+                parser；若 <code>src</code> 已是 <code>RootNode</code>，<code
+                  >baseCompile</code
+                >
+                直接跳过 parse。后一条路让上层工具复用已解析 AST。
               </p>
             </article>
             <article class="code-note">
-              <h3>开发校验不进生产包</h3>
+              <h3>parse() 不做转换</h3>
               <p>
-                Transition 子节点与 HTML nesting 的转换只在 <code>__DEV__</code>
-                中装入。它们只产生警告，不应让生产渲染函数增加体积。
+                <code>parse(template, options)</code> 只合并 parserOptions
+                并调用 <code>baseParse</code>。返回节点没有
+                <code>codegenNode</code>；也不会执行 style、v-model 或 v-on
+                转换。
               </p>
             </article>
             <article class="code-note">
-              <h3>用户还能继续扩展</h3>
+              <h3>DEV 转换按构建常量装入</h3>
               <p>
-                数组最后追加 options.nodeTransforms，指令表最后合并用户键。
-                因此平台默认值完整保留，同名指令又可被高层定制覆盖。
+                Transition children 校验与 HTML nesting 校验只在
+                <code>__DEV__</code> 时进入数组；生产构建没有这两次遍历检查。
+                <code>ignoreSideEffectTags</code>
+                则开发、生产都执行，只是生产不报诊断。
               </p>
             </article>
             <article class="code-note">
-              <h3>浏览器版不做静态 HTML 序列化</h3>
+              <h3>浏览器版关闭 stringifyStatic</h3>
               <p>
-                stringifyStatic 依赖编译期求值与更重的序列化逻辑，只装入 Node
-                构建。运行时编译优先保持包体积与启动速度。
+                最后一层对象字面量把
+                <code>transformHoist</code> 固定为：浏览器构建
+                <code>null</code>，Node 构建
+                <code>stringifyStatic</code
+                >。同名选项的最终值来自入口最后一层，调用方设置会被覆盖；这里不是可扩展槽。
               </p>
             </article>
           </div>
-          <div class="grid-3">
-            <article class="card">
-              <h3>ignoreSideEffectTags 单独前置</h3>
-              <p>
-                客户端模板里的 script/style 会被诊断并删除。它不放进共享
-                DOMNodeTransforms，因为 SSR 在组件 VNode fallback 中会复用后者。
-              </p>
-            </article>
-            <article class="card">
-              <h3>DOM 指令覆盖 core</h3>
-              <p>
-                core 的 v-model/v-on 只建立通用 props；DOM
-                同名转换继续补充元素类型、修饰符和运行时 helper。
-              </p>
-            </article>
-            <article class="card">
-              <h3>transformHoist</h3>
-              <p>
-                Node 构建可传入
-                <code>stringifyStatic</code>，把满足收益阈值的连续静态树压成
-                StaticVNode。
-              </p>
-            </article>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>选项组</th>
+                  <th>最终顺序 / 胜者</th>
+                  <th>调用方能否覆盖</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>普通 parser/codegen 选项</td>
+                  <td><code>parserOptions → options</code></td>
+                  <td>
+                    能；例如
+                    <code>isCustomElement</code>、<code>ns</code>、错误回调。
+                  </td>
+                </tr>
+                <tr>
+                  <td><code>nodeTransforms</code></td>
+                  <td>
+                    core 预设 → ignoreSideEffectTags → DOMNodeTransforms →
+                    用户数组
+                  </td>
+                  <td>只能追加，不能用同名覆盖或删掉平台转换。</td>
+                </tr>
+                <tr>
+                  <td><code>directiveTransforms</code></td>
+                  <td>core 表 → DOM 表 → 用户表</td>
+                  <td>
+                    能；用户同名键最后覆盖，包括
+                    <code>model</code>/<code>on</code>。
+                  </td>
+                </tr>
+                <tr>
+                  <td><code>transformHoist</code></td>
+                  <td>
+                    浏览器 <code>null</code>；Node <code>stringifyStatic</code>
+                  </td>
+                  <td>不能；DOM 入口最后写入。</td>
+                </tr>
+                <tr>
+                  <td><code>prefixIdentifiers</code></td>
+                  <td>
+                    进入 core 后重新计算：非浏览器且显式开启，或
+                    <code>mode: 'module'</code>
+                  </td>
+                  <td>
+                    不能靠传 false 关闭 module mode
+                    的前缀；浏览器构建也会拒绝不支持的组合。
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
+          <div class="callout warn">
+            <strong>容易看漏的第二次合并：</strong><code>compile()</code> 先组装
+            DOM 选项，<code>baseCompile()</code> 又把 core
+            预设放到节点数组前面、放到指令表底层。因此“DOMNodeTransforms 数组从
+            style 开始”不等于整个遍历从 style 开始。
+          </div>
+          <figure class="source-block">
+            <figcaption class="source-caption">
+              <span
+                ><strong>真实源码 · core 的第二次合并</strong
+                ><code
+                  >packages/compiler-core/src/compile.ts · baseCompile</code
+                ></span
+              >
+              <span class="source-version">与 DOM 入口共同决定最终顺序</span>
+            </figcaption>
+            <pre><code>const prefixIdentifiers =
+  !__BROWSER__ &amp;&amp; (options.prefixIdentifiers === true || isModuleMode)
+
+const resolvedOptions = extend({}, options, {
+  prefixIdentifiers,
+})
+
+const ast = isString(source) ? baseParse(source, resolvedOptions) : source
+const [nodeTransforms, directiveTransforms] =
+  getBaseTransformPreset(prefixIdentifiers)
+
+transform(
+  ast,
+  extend({}, resolvedOptions, {
+    nodeTransforms: [
+      ...nodeTransforms,
+      ...(options.nodeTransforms || []),
+    ],
+    directiveTransforms: extend(
+      {},
+      directiveTransforms,
+      options.directiveTransforms || {},
+    ),
+  }),
+)
+
+return generate(ast, resolvedOptions)</code></pre>
+          </figure>
+          <p class="prose">
+            <code>ignoreSideEffectTags</code> 刻意不放进导出的
+            <code>DOMNodeTransforms</code>。源码注释给出的理由是 compiler-ssr
+            会复用该数组生成组件 VNode
+            fallback；副作用标签删除只应由客户端入口单独前置。
+          </p>
           <a
             class="source-link"
             href="../../../vue/packages/compiler-dom/src/index.ts"
@@ -220,54 +341,112 @@ export function compile(src, options: CompilerOptions = {}): CodegenResult {
               <h2>HTML 不是“普通 XML”</h2>
             </div>
             <p>
-              parserOptions 把浏览器解析规则集中在平台层，core 只在需要时询问。
+              core 实现 tokenizer 状态机；compiler-dom 选择 HTML 模式，并提供
+              namespace、标签分类与浏览器实体解码等平台判断。
             </p>
           </div>
           <div class="grid-2">
             <article class="card green">
-              <h3>标签分类</h3>
+              <h3>平台直接提供的标签判断</h3>
               <ul>
                 <li><code>isVoidTag</code>：img、input 等无需结束标签。</li>
                 <li><code>isPreTag</code>：pre 保留空白。</li>
+                <li>
+                  <code>isIgnoreNewlineTag</code>：pre/textarea
+                  丢掉开标签后的一个换行。
+                </li>
                 <li><code>isNativeTag</code>：HTML/SVG/MathML 元素。</li>
                 <li>
                   <code>isBuiltInComponent</code>：Transition、TransitionGroup。
                 </li>
-                <li><code>isCustomElement</code>：由用户选项扩展。</li>
               </ul>
             </article>
             <article class="card blue">
-              <h3>文本模式</h3>
+              <h3>调用方补入的判断</h3>
               <ul>
-                <li>script/style 使用 RAWTEXT。</li>
-                <li>textarea/title 使用 RCDATA，仍解码实体。</li>
-                <li>SFC 根级非 template block 由 SFC mode 处理。</li>
-                <li>浏览器构建通过 decodeHtmlBrowser 解码实体。</li>
+                <li>
+                  <code>isCustomElement</code> 不在 DOM 默认对象里，由用户
+                  options 提供；命中后标签保持原生元素路径。
+                </li>
+                <li><code>ns</code> 可把整次解析的根上下文设为 SVG/MathML。</li>
+                <li>
+                  <code>onError</code>/<code>onWarn</code>
+                  决定诊断是抛出还是收集。
+                </li>
+                <li>
+                  这些键因 <code>options</code> 后合并，可覆盖平台默认值。
+                </li>
               </ul>
             </article>
           </div>
 
-          <h3>Namespace 切换是上下文计算</h3>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>所在上下文</th>
+                  <th>内容模式</th>
+                  <th><code>&amp;amp;</code> / <code>{{ x }}</code></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>普通 HTML 元素</td>
+                  <td>DATA：继续识别标签、实体与插值</td>
+                  <td>实体解码；插值建 <code>INTERPOLATION</code></td>
+                </tr>
+                <tr>
+                  <td>HTML <code>textarea/title</code></td>
+                  <td>RCDATA：内部标签只是文本</td>
+                  <td>实体解码；Vue 仍识别插值</td>
+                </tr>
+                <tr>
+                  <td>HTML <code>script/style</code></td>
+                  <td>RAWTEXT：只寻找严格匹配的闭标签</td>
+                  <td>实体不解码；插值不展开</td>
+                </tr>
+                <tr>
+                  <td>SVG/MathML XML 上下文</td>
+                  <td>不套用 HTML 特殊标签模式</td>
+                  <td>例如 SVG 根下的 script 后代仍按元素解析</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="callout">
+            <strong
+              ><code>&lt;pre&gt;</code> 与
+              <code>v-pre</code> 不是一回事：</strong
+            >
+            前者由平台的
+            <code>isPreTag</code> 控制空白整理，仍会编译插值与指令；后者是 core
+            parser 的 Vue
+            语法开关，会把整棵子树的指令和插值按普通属性、文本处理。
+          </div>
+
+          <h3>Namespace 切换是父子分支，不是固定路线</h3>
           <div class="diagram" aria-label="HTML SVG MathML namespace 切换">
             <p class="diagram-title">
               getNamespace(tag, parent, rootNamespace)
             </p>
-            <div class="flow">
-              <div class="flow-node">
-                <strong>HTML</strong><small>遇到 svg / math</small>
-              </div>
-              <div class="arrow">→</div>
-              <div class="flow-node blue">
-                <strong>SVG / MathML</strong><small>继承父 namespace</small>
-              </div>
-              <div class="arrow">→</div>
+            <div class="branch">
               <div class="flow-node primary">
-                <strong>Integration Point</strong
-                ><small>foreignObject / annotation-xml</small>
+                <strong>父节点 namespace</strong><small>HTML / SVG / MathML</small>
               </div>
-              <div class="arrow">→</div>
-              <div class="flow-node">
-                <strong>返回 HTML</strong><small>后代按 HTML 规则解析</small>
+              <div class="branch-lines">↗<br />→<br />↘</div>
+              <div class="branch-targets">
+                <div class="branch-target">
+                  <strong>HTML</strong>
+                  <p>子标签是 svg/math 才进入对应 namespace，其余继续 HTML。</p>
+                </div>
+                <div class="branch-target">
+                  <strong>SVG</strong>
+                  <p>通常继承 SVG；foreignObject、desc、title 的后代回到 HTML。</p>
+                </div>
+                <div class="branch-target">
+                  <strong>MathML</strong>
+                  <p>annotation-xml 和文本集成点按 encoding、子标签决定 HTML/SVG。</p>
+                </div>
               </div>
             </div>
           </div>
@@ -287,6 +466,14 @@ export function compile(src, options: CompilerOptions = {}): CodegenResult {
   isPreTag: tag =&gt; tag === 'pre',
   isIgnoreNewlineTag: tag =&gt; tag === 'pre' || tag === 'textarea',
   decodeEntities: __BROWSER__ ? decodeHtmlBrowser : undefined,
+
+  isBuiltInComponent: tag =&gt; {
+    if (tag === 'Transition' || tag === 'transition') {
+      return TRANSITION
+    } else if (tag === 'TransitionGroup' || tag === 'transition-group') {
+      return TRANSITION_GROUP
+    }
+  },
 
   getNamespace(tag, parent, rootNamespace) {
     let ns = parent ? parent.ns : rootNamespace
@@ -320,6 +507,64 @@ export function compile(src, options: CompilerOptions = {}): CodegenResult {
   },
 }</code></pre>
           </figure>
+          <figure class="source-block">
+            <figcaption class="source-caption">
+              <span
+                ><strong>平台判断在 core 中怎样被消费</strong
+                ><code>packages/compiler-core/src/parser.ts</code></span
+              >
+              <span class="source-version">onopentagname · endOpenTag · onCloseTag</span>
+            </figcaption>
+            <pre><code>// 创建元素时，平台函数决定并写入当前节点的 namespace。
+ns: currentOptions.getNamespace(name, stack[0], currentOptions.ns)
+
+// 开标签完成后，namespace 决定 pre 与 XML tokenizer 状态。
+if (ns === Namespaces.HTML &amp;&amp; currentOptions.isPreTag(tag)) inPre++
+if (ns === Namespaces.SVG || ns === Namespaces.MATH_ML) {
+  tokenizer.inXML = true
+}
+
+// 元素关闭时应用 HTML 首换行规则，并在返回 HTML 父级后退出 XML。
+if (ns === Namespaces.HTML &amp;&amp; currentOptions.isIgnoreNewlineTag(tag)) {
+  const first = children[0]
+  if (first &amp;&amp; first.type === NodeTypes.TEXT) {
+    first.content = first.content.replace(/^\r?\n/, '')
+  }
+}
+if (tokenizer.inXML &amp;&amp;
+    (stack[0] ? stack[0].ns : currentOptions.ns) === Namespaces.HTML) {
+  tokenizer.inXML = false
+}</code></pre>
+          </figure>
+          <div class="callout">
+            <strong>职责要分清：</strong>RCDATA/RAWTEXT 的状态机在
+            compiler-core tokenizer 中；<code>parseMode: 'html'</code> 和
+            <code>inXML</code> 决定是否启用它。compiler-dom 没有重写 tokenizer，
+            它提供的是让同一状态机按浏览器规则运行所需的平台上下文。
+          </div>
+          <figure class="source-block">
+            <figcaption class="source-caption">
+              <span
+                ><strong>真实源码 · 浏览器实体解码</strong
+                ><code>src/decodeHtmlBrowser.ts</code></span
+              >
+              <span class="source-version">完整函数</span>
+            </figcaption>
+            <pre><code>let decoder: HTMLDivElement
+
+export function decodeHtmlBrowser(raw: string, asAttr = false): string {
+  if (!decoder) {
+    decoder = document.createElement('div')
+  }
+  if (asAttr) {
+    decoder.innerHTML = `&lt;div foo="${raw.replace(/"/g, '&amp;quot;')}"&gt;`
+    return decoder.children[0].getAttribute('foo')!
+  } else {
+    decoder.innerHTML = raw
+    return decoder.textContent!
+  }
+}</code></pre>
+          </figure>
           <div class="code-walkthrough">
             <article class="code-note">
               <h3>命名空间由父子关系决定</h3>
@@ -346,23 +591,37 @@ export function compile(src, options: CompilerOptions = {}): CodegenResult {
               </p>
             </article>
             <article class="code-note">
-              <h3>decodeEntities 根据构建分流</h3>
+              <h3>实体解码按构建分流</h3>
               <p>
-                浏览器构建可利用原生 HTML 解码能力；Node 构建由 core tokenizer
-                所用的 entities 实现处理。条件常量让另一套实现可被 tree-shake。
+                浏览器构建中，parser 收到 tokenizer 的原始片段后调用
+                <code>decodeHtmlBrowser</code>；这个函数复用一个临时
+                div，并区分文本与属性模式。 Node 构建中该选项是
+                <code>undefined</code>，core tokenizer 使用
+                <code>entities</code>
+                解码器。两条路都保留文本与属性的不同实体规则。
               </p>
             </article>
           </div>
-          <p class="prose">
-            不能仅凭当前 tag 判断 namespace：SVG 的
-            <code>foreignObject</code> 允许 HTML 内容，MathML
-            的文本集成点也会改变后代规则。parser 因而把 parent
-            传给平台函数，避免在 core 内硬编码这些标准细节。
-          </p>
-          <div class="callout warn">
-            <strong>为什么测试 namespace 很重要：</strong
-            >命名空间错误不一定立刻报错，但会改变浏览器创建节点的
-            API、属性大小写和 hydration 后 DOM 形态。
+          <div class="grid-2">
+            <article class="card">
+              <h3>pre 的两条规则</h3>
+              <p>
+                进入 HTML pre 时
+                <code>inPre++</code
+                >，关闭时才恢复；因此嵌套元素文本也不折叠。关闭 pre
+                时另删掉它直接首文本节点的一个 <code>\n</code>，嵌套 div
+                的首换行不删。
+              </p>
+            </article>
+            <article class="card">
+              <h3>namespace 是逐子节点计算</h3>
+              <p>
+                parser 创建每个元素时调用
+                <code>getNamespace(tag, parent, rootNamespace)</code>。结果写入
+                <code>ElementNode.ns</code>，同时控制 tokenizer 是否处于 XML
+                上下文。
+              </p>
+            </article>
           </div>
           <a
             class="source-link"
@@ -382,23 +641,56 @@ export function compile(src, options: CompilerOptions = {}): CodegenResult {
               行为直接相关的逻辑才放在这里。
             </p>
           </div>
+          <div class="diagram" aria-label="节点转换进入与退出阶段">
+            <p class="diagram-title">同一节点的两阶段遍历</p>
+            <div class="flow">
+              <div class="flow-node blue">
+                <strong>core enter</strong
+                ><small>结构转换；transformElement 登记 exit</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node primary">
+                <strong>DOM enter</strong
+                ><small>删除节点 / 改写 style / 登记校验 exit</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node">
+                <strong>children</strong><small>深度优先完成后代转换</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node">
+                <strong>reverse exit</strong
+                ><small>用户 → DOM → core codegen</small>
+              </div>
+            </div>
+          </div>
+          <p class="prose">
+            这解释了一个表面矛盾：完整数组里 <code>transformElement</code> 排在
+            <code>transformStyle</code> 前面，但 style 仍来得及改写 props。
+            <code>transformElement</code> 真正构造 VNode props 的工作放在
+            exit；等它执行时， DOM enter 已改完节点。Transition 也把检查放进
+            exit，所以看到的是 v-if/v-for 已形成的结构，而不是原始标签文本。
+          </p>
           <div class="grid-2">
             <article class="card">
               <h3>transformStyle</h3>
               <p>
-                把静态 <code>style="color:red"</code> 解析为对象表达式，统一进入
-                runtime style patch 路径；动态 :style 保持表达式。
+                把静态 <code>style="color:red"</code> 原位改成常量级
+                <code>v-bind:style</code> 对象。初次挂载仍交给 DOM style
+                设置；因值静态，更新期不会带 <code>STYLE</code> patch flag。动态
+                <code>:style</code> 不改写。
               </p>
               <div class="tags">
                 <span class="tag">parseStringStyle</span
-                ><span class="tag">CSS variables</span>
+                ><span class="tag">CAN_STRINGIFY</span>
               </div>
             </article>
             <article class="card">
               <h3>Transition 校验</h3>
               <p>
-                忽略注释与空白后只允许一个可过渡 child；还要理解
-                v-if/v-for、slot、KeepAlive 等转换后结构，避免错误警告。
+                exit 阶段过滤注释与可折叠空白，再要求恰好一个目标；单个 v-for
+                仍可能产生多节点，v-if 则递归检查每个 branch。首个元素带 v-show
+                时，还会给 Transition 注入 <code>persisted</code>。
               </p>
               <div class="tags">
                 <span class="tag">DEV only</span
@@ -408,8 +700,10 @@ export function compile(src, options: CompilerOptions = {}): CodegenResult {
             <article class="card">
               <h3>validateHtmlNesting</h3>
               <p>
-                警告浏览器会隐式闭合或重排的父子/祖先组合。这不仅是规范提示，更能提前避免
-                SSR hydration 树不一致。
+                仅检查原生元素的直接 parent/child 组合；命中规则矩阵时走
+                <code>onWarn</code>，不改
+                AST。目标是提前指出浏览器可能隐式闭合或重排、进而造成 hydration
+                树不一致的写法。
               </p>
               <div class="tags">
                 <span class="tag">DEV only</span
@@ -419,14 +713,180 @@ export function compile(src, options: CompilerOptions = {}): CodegenResult {
             <article class="card">
               <h3>ignoreSideEffectTags</h3>
               <p>
-                删除组件模板中的
-                script/style，防止挂载模板执行脚本或注入全局样式；删除节点后还必须维护遍历游标。
+                客户端模板里的原生 script/style 会从 AST 删除；DEV 先报
+                <code>X_IGNORED_SIDE_EFFECT_TAG</code
+                >，生产静默删除。它是组件模板边界，不是 HTML
+                消毒器，也不会替代对 v-html 内容的可信性检查。
               </p>
               <div class="tags">
-                <span class="tag">security boundary</span
+                <span class="tag">template boundary</span
                 ><span class="tag">AST removal</span>
               </div>
             </article>
+          </div>
+          <figure class="source-block">
+            <figcaption class="source-caption">
+              <span
+                ><strong>真实源码 · style 原位改写</strong
+                ><code>transforms/transformStyle.ts</code></span
+              >
+              <span class="source-version">完整函数</span>
+            </figcaption>
+            <pre><code>export const transformStyle: NodeTransform = node =&gt; {
+  if (node.type === NodeTypes.ELEMENT) {
+    node.props.forEach((p, i) =&gt; {
+      if (p.type === NodeTypes.ATTRIBUTE &amp;&amp; p.name === 'style' &amp;&amp; p.value) {
+        node.props[i] = {
+          type: NodeTypes.DIRECTIVE,
+          name: `bind`,
+          arg: createSimpleExpression(`style`, true, p.loc),
+          exp: parseInlineCSS(p.value.content, p.loc),
+          modifiers: [],
+          loc: p.loc,
+        }
+      }
+    })
+  }
+}
+
+const parseInlineCSS = (
+  cssText: string,
+  loc: SourceLocation,
+): SimpleExpressionNode =&gt; {
+  const normalized = parseStringStyle(cssText)
+  return createSimpleExpression(
+    JSON.stringify(normalized),
+    false,
+    loc,
+    ConstantTypes.CAN_STRINGIFY,
+  )
+}</code></pre>
+          </figure>
+          <figure class="source-block">
+            <figcaption class="source-caption">
+              <span
+                ><strong>真实源码 · 删除、校验与 Transition exit</strong
+                ><code>transforms/*.ts</code></span
+              >
+              <span class="source-version"
+                >决定性分支；各函数其余类型标注已删节</span
+              >
+            </figcaption>
+            <pre><code>// ignoreSideEffectTags.ts
+export const ignoreSideEffectTags: NodeTransform = (node, context) =&gt; {
+  if (
+    node.type === NodeTypes.ELEMENT &amp;&amp;
+    node.tagType === ElementTypes.ELEMENT &amp;&amp;
+    (node.tag === 'script' || node.tag === 'style')
+  ) {
+    __DEV__ &amp;&amp; context.onError(
+      createDOMCompilerError(DOMErrorCodes.X_IGNORED_SIDE_EFFECT_TAG, node.loc),
+    )
+    context.removeNode()
+  }
+}
+
+// validateHtmlNesting.ts
+export const validateHtmlNesting: NodeTransform = (node, context) =&gt; {
+  if (
+    node.type === NodeTypes.ELEMENT &amp;&amp;
+    node.tagType === ElementTypes.ELEMENT &amp;&amp;
+    context.parent &amp;&amp;
+    context.parent.type === NodeTypes.ELEMENT &amp;&amp;
+    context.parent.tagType === ElementTypes.ELEMENT &amp;&amp;
+    !isValidHTMLNesting(context.parent.tag, node.tag)
+  ) {
+    const error = new SyntaxError(
+      `&lt;${node.tag}&gt; cannot be child of &lt;${context.parent.tag}&gt;, ` +
+        'according to HTML specifications. ' +
+        'This can cause hydration errors or potentially disrupt future functionality.',
+    ) as CompilerError
+    error.loc = node.loc
+    context.onWarn(error)
+  }
+}
+
+// Transition.ts（主体分支）
+if (component === TRANSITION) {
+  return () =&gt; {
+    if (!node.children.length) {
+      return
+    }
+    if (hasMultipleChildren(node)) {
+      context.onError(
+        createDOMCompilerError(
+          DOMErrorCodes.X_TRANSITION_INVALID_CHILDREN,
+          {
+            start: node.children[0].loc.start,
+            end: node.children[node.children.length - 1].loc.end,
+            source: '',
+          },
+        ),
+      )
+    }
+    const child = node.children[0]
+    if (child.type === NodeTypes.ELEMENT) {
+      for (const p of child.props) {
+        if (p.type === NodeTypes.DIRECTIVE &amp;&amp; p.name === 'show') {
+          node.props.push({
+            type: NodeTypes.ATTRIBUTE,
+            name: 'persisted',
+            nameLoc: node.loc,
+            value: undefined,
+            loc: node.loc,
+          })
+        }
+      }
+    }
+  }
+}
+
+function hasMultipleChildren(node: ComponentNode | IfBranchNode): boolean {
+  const children = (node.children = node.children.filter(
+    c =&gt; !isCommentOrWhitespace(c),
+  ))
+  const child = children[0]
+  return (
+    children.length !== 1 ||
+    child.type === NodeTypes.FOR ||
+    (child.type === NodeTypes.IF &amp;&amp; child.branches.some(hasMultipleChildren))
+  )
+}</code></pre>
+          </figure>
+          <figure class="source-block">
+            <figcaption class="source-caption">
+              <span
+                ><strong>HTML 嵌套规则的决定顺序</strong
+                ><code>src/htmlNesting.ts · isValidHTMLNesting</code></span
+              >
+              <span class="source-version">规则集合内容省略</span>
+            </figcaption>
+            <pre><code>if (parent === 'template') return true
+
+if (parent in onlyValidChildren) {
+  return onlyValidChildren[parent].has(child)
+}
+if (child in onlyValidParents) {
+  return onlyValidParents[child].has(parent)
+}
+if (parent in knownInvalidChildren &amp;&amp;
+    knownInvalidChildren[parent].has(child)) return false
+if (child in knownInvalidParents &amp;&amp;
+    knownInvalidParents[child].has(parent)) return false
+
+return true</code></pre>
+          </figure>
+          <p class="prose">
+            这是“严格白名单优先、已知黑名单兜底”的规则判断，不是完整 HTML
+            parser。对应测试分别覆盖 <code>p &gt; div</code>、表格层级、同类标签嵌套，
+            以及 SVG <code>foreignObject</code> 中重新进入 HTML 的组合。
+          </p>
+          <div class="callout warn">
+            <strong>删节点后的控制流：</strong
+            ><code>context.removeNode()</code> 会令
+            <code>currentNode</code> 变空，core 立即停止该节点的后代遍历和
+            exit；父级 <code>traverseChildren</code> 同时回退索引，保证
+            script/style 后面的兄弟节点不会被跳过。
           </div>
         </section>
 
@@ -492,6 +952,139 @@ export function compile(src, options: CompilerOptions = {}): CodegenResult {
             在编译时被消掉；v-show 必须留给 runtime；v-model
             则根据元素在编译期选择专用 helper。
           </div>
+          <div class="diagram" aria-label="DOM 指令转换返回值的数据流">
+            <p class="diagram-title">props 与 needRuntime 是两个独立字段</p>
+            <div class="branch">
+              <div class="flow-node primary">
+                <strong>DirectiveTransform</strong
+                ><small>dir + element + context</small>
+              </div>
+              <div class="branch-lines">↗<br />↘</div>
+              <div class="branch-targets">
+                <div class="branch-target">
+                  <strong>props</strong>
+                  <p>
+                    交给 core 生成 VNode props。v-html/v-text 只返回这个字段；
+                    v-model 还会保留 onUpdate 写回函数。
+                  </p>
+                </div>
+                <div class="branch-target">
+                  <strong>needRuntime</strong>
+                  <p>
+                    登记 helper symbol，codegen 生成 withDirectives。它可与 props
+                    同时存在；v-show 只有该字段，v-model 两者都有。
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+          <p class="prose">
+            <code>v-cloak</code> 是第三种实际结果：noop transform 返回空
+            <code>props</code>，也不提供 <code>needRuntime</code>，因此只在编译期被消费。
+          </p>
+          <figure class="source-block">
+            <figcaption class="source-caption">
+              <span
+                ><strong>真实源码 · 覆盖 children 的两个转换</strong
+                ><code>transforms/vHtml.ts · vText.ts</code></span
+              >
+              <span class="source-version">决定性分支</span>
+            </figcaption>
+            <pre><code>export const transformVHtml: DirectiveTransform = (dir, node, context) =&gt; {
+  const { exp, loc } = dir
+  if (!exp) {
+    context.onError(
+      createDOMCompilerError(DOMErrorCodes.X_V_HTML_NO_EXPRESSION, loc),
+    )
+  }
+  if (node.children.length) {
+    context.onError(
+      createDOMCompilerError(DOMErrorCodes.X_V_HTML_WITH_CHILDREN, loc),
+    )
+    node.children.length = 0
+  }
+  return {
+    props: [
+      createObjectProperty(
+        createSimpleExpression(`innerHTML`, true, loc),
+        exp || createSimpleExpression('', true),
+      ),
+    ],
+  }
+}
+
+// vText.ts 中与 v-html 不同的 value 分支
+exp
+  ? getConstantType(exp, context) &gt; 0
+    ? exp
+    : createCallExpression(
+        context.helperString(TO_DISPLAY_STRING),
+        [exp],
+        loc,
+      )
+  : createSimpleExpression('', true)</code></pre>
+          </figure>
+          <div class="grid-2">
+            <article class="card">
+              <h3>先诊断，再给可检查产物</h3>
+              <p>
+                缺表达式时两者调用 <code>onError</code>，随后用空字符串占位；与
+                children 冲突时也先诊断，再把 children 数组清空。默认 onError
+                会抛出并中止流程；改用收集回调后，后续占位代码才会继续生成。
+              </p>
+            </article>
+            <article class="card">
+              <h3>v-text 为何多一层 toDisplayString</h3>
+              <p>
+                <code>textContent</code>
+                接收展示文本。不能证明为编译期常量的表达式要经
+                <code>toDisplayString</code> 统一处理
+                null、对象等值；常量表达式则直接保留。
+                <code>v-html</code> 刻意不转义，内容可信性由调用方负责。
+              </p>
+            </article>
+          </div>
+          <figure class="source-block">
+            <figcaption class="source-caption">
+              <span
+                ><strong>v-show 与 helper 名称注册</strong
+                ><code>transforms/vShow.ts · runtimeHelpers.ts</code></span
+              >
+              <span class="source-version">完整 v-show + helper 注册节选</span>
+            </figcaption>
+            <pre><code>export const transformShow: DirectiveTransform = (dir, node, context) =&gt; {
+  const { exp, loc } = dir
+  if (!exp) {
+    context.onError(
+      createDOMCompilerError(DOMErrorCodes.X_V_SHOW_NO_EXPRESSION, loc),
+    )
+  }
+
+  return {
+    props: [],
+    needRuntime: context.helper(V_SHOW),
+  }
+}
+
+registerRuntimeHelpers({
+  [V_MODEL_RADIO]: `vModelRadio`,
+  [V_MODEL_CHECKBOX]: `vModelCheckbox`,
+  [V_MODEL_TEXT]: `vModelText`,
+  [V_MODEL_SELECT]: `vModelSelect`,
+  [V_MODEL_DYNAMIC]: `vModelDynamic`,
+  [V_ON_WITH_MODIFIERS]: `withModifiers`,
+  [V_ON_WITH_KEYS]: `withKeys`,
+  [V_SHOW]: `vShow`,
+  [TRANSITION]: `Transition`,
+  [TRANSITION_GROUP]: `TransitionGroup`,
+})</code></pre>
+          </figure>
+          <p class="prose">
+            transform 返回的是 helper <em>symbol</em>，不是字符串
+            import。注册表把 symbol 映射成公开运行时名字；transform context
+            把用到的 symbol 记进 <code>RootNode.helpers</code>，generate 再按实际使用量生成
+            import 或浏览器版解构。没被选中的 helper 不出现在产物中。
+          </p>
         </section>
 
         <section id="model">
@@ -504,29 +1097,6 @@ export function compile(src, options: CompilerOptions = {}): CodegenResult {
               core 先生成 modelValue 与 update handler；DOM 再根据原生元素和
               type 选择正确的运行时 helper。
             </p>
-          </div>
-          <div class="diagram" aria-label="DOM v-model helper 选择">
-            <p class="diagram-title">input/select/textarea 的分派</p>
-            <div class="branch">
-              <div class="flow-node primary">
-                <strong>v-model</strong><small>node.tag + type + arg</small>
-              </div>
-              <div class="branch-lines">↗<br />→<br />↘</div>
-              <div class="branch-targets">
-                <div class="branch-target">
-                  <strong>vModelText</strong>
-                  <p>text/textarea；支持 lazy、trim、number。</p>
-                </div>
-                <div class="branch-target">
-                  <strong>Radio / Checkbox</strong>
-                  <p>checked 语义、数组/Set、多值与 looseEqual。</p>
-                </div>
-                <div class="branch-target">
-                  <strong>Select / Dynamic</strong>
-                  <p>option selected 或运行时依据动态 type 决定。</p>
-                </div>
-              </div>
-            </div>
           </div>
           <figure class="source-block">
             <figcaption class="source-caption">
@@ -633,9 +1203,33 @@ export function compile(src, options: CompilerOptions = {}): CodegenResult {
   return baseResult
 }</code></pre>
           </figure>
+          <div class="diagram" aria-label="v-model 编译期数据变化">
+            <p class="diagram-title">baseTransform 返回值怎样被 DOM 层改写</p>
+            <div class="flow">
+              <div class="flow-node blue">
+                <strong>core baseTransform</strong
+                ><small>modelValue + onUpdate:modelValue</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node primary">
+                <strong>DOM 分派</strong
+                ><small>tag / type / dynamic v-bind</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node">
+                <strong>过滤 modelValue</strong
+                ><small>原生元素不重复设值</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node">
+                <strong>needRuntime</strong
+                ><small>helper + value + modifiers</small>
+              </div>
+            </div>
+          </div>
           <div class="code-walkthrough">
             <article class="code-note">
-              <h3>先让 core 生成写回协议</h3>
+              <h3>先让 core 生成写回函数</h3>
               <p>
                 baseTransform 检查表达式可写性，并生成
                 <code>onUpdate:modelValue: $event =&gt; x = $event</code>。DOM
@@ -646,8 +1240,10 @@ export function compile(src, options: CompilerOptions = {}): CodegenResult {
               <h3>组件 v-model 不进入 DOM 分派</h3>
               <p>
                 <code>&lt;MyInput v-model="x"&gt;</code> 只需 modelValue prop 和
-                update event，这是组件协议。只有原生元素才需处理
-                checked、selected、compositionend 等 DOM 细节。
+                update event。只有原生元素才需处理
+                checked、selected、compositionend 等 DOM 细节。被
+                <code>isCustomElement</code> 命中的 Web Component 仍是 DOM
+                元素，会进入平台 helper 分派，不走组件路径。
               </p>
             </article>
             <article class="code-note">
@@ -655,15 +1251,17 @@ export function compile(src, options: CompilerOptions = {}): CodegenResult {
               <p>
                 <code>&lt;input :type="kind" v-model="x"&gt;</code> 可在
                 text/checkbox/radio 之间变化，编译期只能选
-                V_MODEL_DYNAMIC，让运行时根据真实 type 分派。
+                V_MODEL_DYNAMIC，让运行时根据真实 type 分派。无参数
+                <code>v-bind="obj"</code> 和动态参数 <code>v-bind:[key]</code>
+                也可能带来 type，同样走动态 helper。
               </p>
             </article>
             <article class="code-note">
               <h3>file input 不是“尚未支持”</h3>
               <p>
                 浏览器禁止程序为 file input
-                写入文件路径，所以它无法实现双向值协议。
-                编译器直接报错，避免用户得到一个看似有效却永远无法回填的模板。
+                写入文件路径，所以它无法实现 v-model 的双向绑定。编译器直接报错，
+                避免用户得到一个看似有效却永远无法回填的模板。
               </p>
             </article>
           </div>
@@ -673,21 +1271,32 @@ export function compile(src, options: CompilerOptions = {}): CodegenResult {
 &lt;input type="checkbox" v-model="tags"&gt; → [[_vModelCheckbox, tags]]
 &lt;input :type="kind" v-model="value"&gt;    → [[_vModelDynamic, value]]
 
-三者都保留 onUpdate:modelValue，运行时 directive 负责“DOM → $event”。</code></pre>
+三者都保留 onUpdate:modelValue。运行时 directive 从 vnode.props 取出
+assigner，监听真实 DOM 事件后调用它，最终执行“$event → 表达式写回”。</code></pre>
           </div>
           <div class="grid-3">
             <article class="card">
               <h3>编译期可确定</h3>
-              <p>静态 type、元素 tag、修饰符和冲突的 value 属性。</p>
+              <p>
+                静态 type、元素 tag、动态键是否存在，以及动态
+                <code>:value</code> 是否会与模型争夺写入；最后一项只在 DEV
+                构建执行检查。
+              </p>
             </article>
             <article class="card">
               <h3>必须留给运行时</h3>
-              <p>动态 type、实际 DOM value、checkbox 集合与输入法组合状态。</p>
+              <p>
+                动态 type、实际 DOM value、checkbox 集合与输入法组合状态；
+                lazy/trim/number 修饰符随 runtime directive 参数一起生成。
+              </p>
             </article>
             <article class="card">
-              <h3>必须诊断</h3>
+              <h3>错误回调后的边界</h3>
               <p>
-                file input、非法元素、原生元素参数、不可写表达式与 value 冲突。
+                file input、非法元素、原生元素参数与 core 的不可写表达式会诊断；
+                DEV 构建还会检查动态 value 冲突。若 onError
+                只收集不抛出，转换仍可能返回降级产物；不能把“有
+                code”误当成模板有效。
               </p>
             </article>
           </div>
@@ -708,6 +1317,30 @@ export function compile(src, options: CompilerOptions = {}): CodegenResult {
               修饰符不是统一拼接；编译器先按语义分类，再决定事件名重写与 helper
               包装顺序。
             </p>
+          </div>
+          <div class="diagram" aria-label="v-on 修饰符决策顺序">
+            <p class="diagram-title">先分类，再改事件名，最后包装 handler</p>
+            <div class="flow">
+              <div class="flow-node blue">
+                <strong>core transformOn</strong
+                ><small>事件 key + handler + 缓存语义</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node primary">
+                <strong>resolveModifiers</strong
+                ><small>option / non-key / key</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node">
+                <strong>right / middle</strong
+                ><small>click → contextmenu / mouseup</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node">
+                <strong>生成结果</strong
+                ><small>withModifiers → withKeys；option 后缀</small>
+              </div>
+            </div>
           </div>
           <div class="grid-3">
             <article class="card">
@@ -785,7 +1418,59 @@ export function compile(src, options: CompilerOptions = {}): CodegenResult {
   })
 }</code></pre>
           </figure>
+          <figure class="source-block">
+            <figcaption class="source-caption">
+              <span
+                ><strong>真实源码 · left/right 分类与动态 click 重写</strong
+                ><code
+                  >transforms/vOn.ts · resolveModifiers / transformClick</code
+                ></span
+              >
+              <span class="source-version">决定歧义分支</span>
+            </figcaption>
+            <pre><code>if (isEventOptionModifier(modifier)) {
+  eventOptionModifiers.push(modifier)
+} else if (maybeKeyModifier(modifier)) {
+  if (isStaticExp(key)) {
+    if (isKeyboardEvent(key.content.toLowerCase())) {
+      keyModifiers.push(modifier)
+    } else {
+      nonKeyModifiers.push(modifier)
+    }
+  } else {
+    keyModifiers.push(modifier)
+    nonKeyModifiers.push(modifier)
+  }
+} else {
+  if (isNonKeyModifier(modifier)) {
+    nonKeyModifiers.push(modifier)
+  } else {
+    keyModifiers.push(modifier)
+  }
+}
+
+const transformClick = (key: ExpressionNode, event: string) =&gt; {
+  const isStaticClick =
+    isStaticExp(key) &amp;&amp; key.content.toLowerCase() === 'onclick'
+  return isStaticClick
+    ? createSimpleExpression(event, true)
+    : key.type !== NodeTypes.SIMPLE_EXPRESSION
+      ? createCompoundExpression([
+          `(`, key, `) === "onClick" ? "${event}" : (`, key, `)`,
+        ])
+      : key
+}</code></pre>
+          </figure>
           <div class="code-walkthrough">
+            <article class="code-note">
+              <h3>DOM 层接着 core 的结果做</h3>
+              <p>
+                <code>baseTransform</code> 先把 <code>@keyup</code> 规范成事件
+                prop，检查 handler 表达式，并处理
+                <code>cacheHandlers</code>。DOM augmentor
+                只在这份结果上解释修饰符；没有修饰符时原样返回。
+              </p>
+            </article>
             <article class="code-note">
               <h3>包装顺序是可见语义</h3>
               <p>
@@ -834,6 +1519,12 @@ handler → _withKeys(
             handler，还可能把事件名改为 contextmenu /
             mouseup。动态事件名无法静态确定时，需要生成条件表达式安全重写。
           </div>
+          <p class="prose">
+            compiler-dom 的 v-on 转换本身没有新增 DOMErrorCodes。空表达式、非法
+            JS 等诊断沿用 core；DOM
+            层的失败模式主要是“分类错就选错事件或守卫”，所以测试直接断言 helper
+            嵌套、事件 key 和 patch flag，而不只看有没有生成函数。
+          </p>
           <a
             class="source-link"
             href="../../../vue/packages/compiler-dom/src/transforms/vOn.ts"
@@ -881,7 +1572,7 @@ handler → _withKeys(
           <figure class="source-block">
             <figcaption class="source-caption">
               <span
-                ><strong>真实源码</strong
+                ><strong>真实源码 · 完整扫描函数</strong
                 ><code>transforms/stringifyStatic.ts</code></span
               >
               <span class="source-version">Vue 3.5.41</span>
@@ -892,15 +1583,27 @@ handler → _withKeys(
 }
 
 export const stringifyStatic: HoistTransform = (children, context, parent) =&gt; {
-  if (context.scopes.vSlot &gt; 0) return
+  if (context.scopes.vSlot &gt; 0) {
+    return
+  }
 
-  let nc = 0 // 当前 chunk 的 DOM 节点数
-  let ec = 0 // 带属性/绑定的元素数
+  const isParentCached =
+    parent.type === NodeTypes.ELEMENT &amp;&amp;
+    parent.codegenNode &amp;&amp;
+    parent.codegenNode.type === NodeTypes.VNODE_CALL &amp;&amp;
+    parent.codegenNode.children &amp;&amp;
+    !isArray(parent.codegenNode.children) &amp;&amp;
+    parent.codegenNode.children.type === NodeTypes.JS_CACHE_EXPRESSION
+
+  let nc = 0
+  let ec = 0
   const currentChunk: StringifiableNode[] = []
 
   const stringifyCurrentChunk = (currentIndex: number): number =&gt; {
-    if (nc &gt;= StringifyThresholds.NODE_COUNT ||
-        ec &gt;= StringifyThresholds.ELEMENT_WITH_BINDING_COUNT) {
+    if (
+      nc &gt;= StringifyThresholds.NODE_COUNT ||
+      ec &gt;= StringifyThresholds.ELEMENT_WITH_BINDING_COUNT
+    ) {
       const staticCall = createCallExpression(context.helper(CREATE_STATIC), [
         JSON.stringify(
           currentChunk.map(node =&gt; stringifyNode(node, context)).join(''),
@@ -909,20 +1612,145 @@ export const stringifyStatic: HoistTransform = (children, context, parent) =&gt;
       ])
 
       const deleteCount = currentChunk.length - 1
-      ;(currentChunk[0].codegenNode as CacheExpression).value = staticCall
-      if (currentChunk.length &gt; 1) {
-        children.splice(currentIndex - currentChunk.length + 1, deleteCount)
-        // …删除已合并的 cache 槽，并校正后续 index。
+
+      if (isParentCached) {
+        children.splice(
+          currentIndex - currentChunk.length,
+          currentChunk.length,
+          // @ts-expect-error
+          staticCall,
+        )
+      } else {
+        ;(currentChunk[0].codegenNode as CacheExpression).value = staticCall
+        if (currentChunk.length &gt; 1) {
+          children.splice(currentIndex - currentChunk.length + 1, deleteCount)
+          const cacheIndex = context.cached.indexOf(
+            currentChunk[currentChunk.length - 1]
+              .codegenNode as CacheExpression,
+          )
+          if (cacheIndex &gt; -1) {
+            for (let i = cacheIndex; i &lt; context.cached.length; i++) {
+              const c = context.cached[i]
+              if (c) c.index -= deleteCount
+            }
+            context.cached.splice(cacheIndex - deleteCount + 1, deleteCount)
+          }
+        }
       }
       return deleteCount
     }
     return 0
   }
 
-  // 扫描最大连续可字符串化区间；遇动态/不安全节点就结算。
-  // …
+  let i = 0
+  for (; i &lt; children.length; i++) {
+    const child = children[i]
+    const isCached = isParentCached || getCachedNode(child)
+    if (isCached) {
+      const result = analyzeNode(child as StringifiableNode)
+      if (result) {
+        nc += result[0]
+        ec += result[1]
+        currentChunk.push(child as StringifiableNode)
+        continue
+      }
+    }
+    i -= stringifyCurrentChunk(i)
+    nc = 0
+    ec = 0
+    currentChunk.length = 0
+  }
+  stringifyCurrentChunk(i)
 }</code></pre>
           </figure>
+          <figure class="source-block">
+            <figcaption class="source-caption">
+              <span
+                ><strong>放弃字符串化的条件</strong
+                ><code>analyzeNode()</code></span
+              >
+              <span class="source-version">只摘决定退出的分支</span>
+            </figcaption>
+            <pre><code>if (node.type === NodeTypes.ELEMENT &amp;&amp; isNonStringifiable(node.tag)) {
+  return false
+}
+
+if (node.type === NodeTypes.ELEMENT &amp;&amp; findDir(node, 'once', true)) {
+  return false
+}
+
+// walk(node) 内：未知属性、动态参数、常量级别不足都退出。
+if (
+  p.type === NodeTypes.ATTRIBUTE &amp;&amp;
+  !isStringifiableAttr(p.name, node.ns)
+) {
+  return bail()
+}
+if (p.type === NodeTypes.DIRECTIVE &amp;&amp; p.name === 'bind') {
+  if (
+    p.arg &amp;&amp;
+    (p.arg.type === NodeTypes.COMPOUND_EXPRESSION ||
+      (p.arg.isStatic &amp;&amp; !isStringifiableAttr(p.arg.content, node.ns)))
+  ) {
+    return bail()
+  }
+  if (
+    p.exp &amp;&amp;
+    (p.exp.type === NodeTypes.COMPOUND_EXPRESSION ||
+      p.exp.constType &lt; ConstantTypes.CAN_STRINGIFY)
+  ) {
+    return bail()
+  }
+}</code></pre>
+          </figure>
+          <figure class="source-block">
+            <figcaption class="source-caption">
+              <span
+                ><strong>候选节点怎样变成 HTML</strong
+                ><code>stringifyStatic.ts · stringifyElement</code></span
+              >
+              <span class="source-version">源码删节；布尔属性与导入变量分支另述</span>
+            </figcaption>
+            <pre><code>function stringifyElement(node: ElementNode, context: TransformContext): string {
+  let res = `&lt;${node.tag}`
+  let innerHTML = ''
+  for (let i = 0; i &lt; node.props.length; i++) {
+    const p = node.props[i]
+    if (p.type === NodeTypes.ATTRIBUTE) {
+      res += ` ${p.name}`
+      if (p.value) res += `="${escapeHtml(p.value.content)}"`
+    } else if (p.type === NodeTypes.DIRECTIVE) {
+      if (p.name === 'bind') {
+        // 省略内部导入变量与 false 布尔属性的提前退出分支。
+        let evaluated = evaluateConstant(p.exp as SimpleExpressionNode)
+        if (evaluated != null) {
+          const arg = p.arg &amp;&amp; (p.arg as SimpleExpressionNode).content
+          if (arg === 'class') evaluated = normalizeClass(evaluated)
+          else if (arg === 'style') evaluated = stringifyStyle(normalizeStyle(evaluated))
+          res += ` ${(p.arg as SimpleExpressionNode).content}="${escapeHtml(evaluated)}"`
+        }
+      } else if (p.name === 'html') {
+        innerHTML = evaluateConstant(p.exp as SimpleExpressionNode)
+      } else if (p.name === 'text') {
+        innerHTML = escapeHtml(toDisplayString(evaluateConstant(p.exp as SimpleExpressionNode)))
+      }
+    }
+  }
+  if (context.scopeId) res += ` ${context.scopeId}`
+  res += `&gt;`
+  if (innerHTML) res += innerHTML
+  else for (const child of node.children) res += stringifyNode(child, context)
+  if (!isVoidTag(node.tag)) res += `&lt;/${node.tag}&gt;`
+  return res
+}</code></pre>
+          </figure>
+          <div class="callout">
+            <strong>这里省略了两类已单独测试的保护分支：</strong>布尔属性为
+            <code>false</code> 时不输出；<code>&lt;option :value="1"&gt;</code>
+            因 number property 与字符串 attribute 语义不同而在
+            <code>analyzeNode()</code> 阶段退出。测试还分别断言 v-html 保留原始
+            HTML、v-text 转义、以及 SVG/MathML 属性序列化。
+          </div>
           <div class="code-walkthrough">
             <article class="code-note">
               <h3>“能字符串化”还不够</h3>
@@ -951,45 +1779,40 @@ export const stringifyStatic: HoistTransform = (children, context, parent) =&gt;
             <article class="code-note">
               <h3>slot 内容保守退出</h3>
               <p>
-                slot 在消费方的渲染上下文中执行，还可能携带 scopeId。
-                声明方把它提前压成 DOM 字符串，会跳过必要的作用域附加过程。
+                slot 在消费方的渲染上下文中执行，还可能携带
+                scopeId。声明方把它提前压成 DOM
+                字符串，会跳过必要的作用域附加过程。
               </p>
             </article>
           </div>
           <div class="source-result">
-            <strong>优化前后</strong>
-            <pre><code>优化前：5+ 个带属性的稳定 VNode 调用 + children 数组
-优化后：return _createElementBlock("div", null, [
-  ...(_cache[0] || (_cache[0] = [
-    _createStaticVNode(
-      "&lt;span class=\"foo\"&gt;&lt;/span&gt;...共 5 个 span...",
-      5
-    )
-  ]))
-])
+            <strong>手走测试中的最小达标 chunk</strong>
+            <pre><code>Given：父 div 下连续 5 个 &lt;span class="foo"/&gt;
 
-createStaticVNode 仍位于组件实例 _cache 中；首次挂载由 innerHTML
-批量创建，后续 render 复用缓存，更新阶段整段跳过。</code></pre>
+每个 span：analyzeNode → [nc=1, ec=1]
+累加完成：nc=5, ec=5, currentChunk.length=5
+阈值判断：nc &lt; 20，但 ec &gt;= 5 → 进入 stringifyCurrentChunk
+
+结果：
+_createStaticVNode(
+  "&lt;span class=\"foo\"&gt;&lt;/span&gt;...共 5 个 span...",
+  5 // 顶层 DOM 节点数，不是递归节点总数
+)
+
+父 div 的 children 已由 core 整体放入一个缓存数组；DOM 转换直接把数组里的
+5 个候选替换成一个 staticCall。本例没有 5 个独立 cache 项，也不需要调整
+后续 CacheExpression.index。</code></pre>
           </div>
-          <div class="grid-2">
-            <article class="card green">
-              <h3>适合字符串化</h3>
-              <ul>
-                <li>原生稳定元素。</li>
-                <li>静态属性、class、style。</li>
-                <li>可字符串化常量插值。</li>
-                <li>连续多个可缓存静态节点。</li>
-              </ul>
-            </article>
-            <article class="card red">
-              <h3>必须放弃</h3>
-              <ul>
-                <li>组件、slot、运行时指令。</li>
-                <li>可能改变 DOM 解析形态的内容。</li>
-                <li>动态指令参数/运行时属性名与不可安全转义值。</li>
-                <li>收益不足的微小片段。</li>
-              </ul>
-            </article>
+          <div class="callout warn">
+            <strong>源码自己留下了未完项：</strong><code>analyzeNode()</code> 的
+            TODO 明确写着还要继续覆盖“innerHTML
+            与逐节点创建结果不同”的结构，例子就是 <code>&lt;p&gt;</code> 内放非
+            phrasing content。<code>stringifyStatic()</code>
+            真正会检查的是已知表格标签黑名单、属性与常量类型、
+            <code>v-once</code>、<code>slot</code> 等退出条件。
+            <code>validateHtmlNesting</code> 只是独立的开发期警告：它只调用
+            <code>onWarn()</code>，不会阻止节点被字符串化，生产构建也不会注册这项
+            transform。因此，这个 TODO 仍是当前实现没有完全覆盖的边界。
           </div>
           <p class="prose">
             父级未整体缓存时，合并项中只有第一个 CacheExpression 的 value
@@ -1008,115 +1831,414 @@ createStaticVNode 仍位于组件实例 _cache 中；首次挂载由 innerHTML
         <section id="contract">
           <div class="section-head">
             <div>
-              <span class="section-no">08 / Runtime Contract</span>
-              <h2>客户端产物如何指导 patch</h2>
+              <span class="section-no">08 / End-to-end</span>
+              <h2>把这条 input 编译到 render 函数</h2>
             </div>
             <p>
-              compiler-dom 的最终价值不只是生成 VNode，而是把动态性压缩成
-              runtime-core 可直接消费的快路径。
+              用同一条 input 模板同时穿过 parserOptions、style、v-model、v-on、
+              core props 分析和 generate；每一步只看数据发生了什么变化。
+            </p>
+          </div>
+          <div class="source-result">
+            <strong>贯穿本节的输入</strong>
+            <pre><code>const result = compile(
+  `&lt;input style="color:red"
+          :type="kind"
+          v-model.trim="name"
+          @keyup.enter.stop.once="submit"&gt;`,
+  { mode: 'module', prefixIdentifiers: true },
+)</code></pre>
+          </div>
+          <div class="diagram" aria-label="compiler-dom 端到端执行与数据流">
+            <p class="diagram-title">同一输入的控制流与状态变化</p>
+            <div class="flow">
+              <div class="flow-node blue">
+                <strong>baseParse</strong
+                ><small>HTML input → Element(ns=HTML) + 4 props</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node">
+                <strong>node enter</strong
+                ><small>style Attribute → bind:style 常量</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node primary">
+                <strong>transformElement exit</strong
+                ><small>v-modelDynamic + withModifiers/withKeys</small>
+              </div>
+              <div class="arrow">→</div>
+              <div class="flow-node">
+                <strong>generate</strong
+                ><small>helpers + props + patchFlag 40 + directives</small>
+              </div>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>阶段</th>
+                  <th>变化前</th>
+                  <th>触发动作</th>
+                  <th>变化后</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Parse</td>
+                  <td>模板字符串</td>
+                  <td>HTML mode + void/native 判定</td>
+                  <td>
+                    input 不入栈；style 是 Attribute，其余为 bind/model/on
+                    Directive
+                  </td>
+                </tr>
+                <tr>
+                  <td>Node transform</td>
+                  <td><code>style="color:red"</code></td>
+                  <td><code>transformStyle</code></td>
+                  <td>
+                    <code>:style='{"color":"red"}'</code>，常量级 CAN_STRINGIFY
+                  </td>
+                </tr>
+                <tr>
+                  <td>v-model</td>
+                  <td>core 产出 modelValue + onUpdate</td>
+                  <td>发现 <code>:type</code></td>
+                  <td>
+                    删 modelValue；登记 vModelDynamic；保留 onUpdate 与 trim
+                  </td>
+                </tr>
+                <tr>
+                  <td>v-on</td>
+                  <td><code>onKeyup + submit</code></td>
+                  <td>stop / enter / once 分类</td>
+                  <td>
+                    <code>onKeyupOnce + withKeys(withModifiers(...))</code>
+                  </td>
+                </tr>
+                <tr>
+                  <td>Codegen</td>
+                  <td>VNodeCall + <code>RootNode.helpers</code></td>
+                  <td><code>generate</code></td>
+                  <td>
+                    module render；PROPS | NEED_HYDRATION；dynamicProps 三个键
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <figure class="source-block">
+            <figcaption class="source-caption">
+              <span
+                ><strong>固定版本生成结果</strong
+                ><code>compile(mainlineTemplate, options).code</code></span
+              >
+              <span class="source-version">由 11cd09cf 源码生成；不是测试快照</span>
+            </figcaption>
+            <pre><code>import {
+  vModelDynamic as _vModelDynamic,
+  withModifiers as _withModifiers,
+  withKeys as _withKeys,
+  withDirectives as _withDirectives,
+  openBlock as _openBlock,
+  createElementBlock as _createElementBlock
+} from "vue"
+
+export function render(_ctx, _cache) {
+  return _withDirectives((_openBlock(), _createElementBlock("input", {
+    style: {"color":"red"},
+    type: _ctx.kind,
+    "onUpdate:modelValue": $event =&gt; ((_ctx.name) = $event),
+    onKeyupOnce: _withKeys(
+      _withModifiers(_ctx.submit, ["stop"]),
+      ["enter"]
+    )
+  }, null, 40 /* PROPS, NEED_HYDRATION */, [
+    "type", "onUpdate:modelValue", "onKeyupOnce"
+  ])), [
+    [_vModelDynamic, _ctx.name, void 0, { trim: true }]
+  ])
+}</code></pre>
+          </figure>
+          <div class="callout warn">
+            <strong>证据边界：</strong>仓库没有一条测试使用上面完全相同的 input。
+            <code>transformStyle.spec.ts</code>、<code>vModel.spec.ts</code> 与
+            <code>vOn.spec.ts</code> 分别证明三个转换分支；这里的完整 code 是固定版本
+            编译结果，不能据此宣称“同一 Demo 已有集成回归测试”。
+          </div>
+          <div class="code-walkthrough">
+            <article class="code-note">
+              <h3>40 不是魔法数字</h3>
+              <p>
+                动态 type/onUpdate/onKeyup 需要
+                <code>PROPS</code>（8）；原生事件在挂载和 hydration
+                阶段要处理，另带 <code>NEED_HYDRATION</code>（32）。按位或得到
+                40。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>编译器生成的是 helper 与 props</h3>
+              <p>
+                code 里没有输入法、checkbox 或 addEventListener
+                的实现。编译器只选择 helper、排列参数并压缩动态键；runtime-dom
+                再根据这些字段操作真实元素。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>这个例子不会触发 stringifyStatic</h3>
+              <p>
+                单个根 input 不满足静态提升与收益阈值，且含动态
+                type、model、event。静态字符串化只处理已由 core
+                判定可缓存的连续候选，不能跳过前置分析。
+              </p>
+            </article>
+          </div>
+
+          <h3>错误和警告从哪里返回</h3>
+          <p class="prose">
+            回调是否抛出决定控制流。默认
+            <code>onError</code> 立即抛错。改成收集模式时，
+            <code>v-html</code>/<code>v-text</code> 会用空值继续，side-effect
+            tag 已被删除，部分 <code>v-model</code> 错误也会留下可生成
+            AST。这样的 code 只便于诊断或编辑器继续分析，不代表语义有效。
+          </p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>诊断</th>
+                  <th>构建条件</th>
+                  <th>诊断后 AST 怎么办</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>v-html/v-text/v-show 缺表达式；前两者与 children 冲突</td>
+                  <td>转换存在于所有构建</td>
+                  <td>
+                    空表达式用空串；v-html/v-text 清空 children；v-show 仍登记
+                    runtime
+                  </td>
+                </tr>
+                <tr>
+                  <td>v-model 非法元素、原生参数、file input</td>
+                  <td>所有构建</td>
+                  <td>
+                    继续过滤原生 <code>modelValue</code>；file 不登记 runtime
+                    helper
+                  </td>
+                </tr>
+                <tr>
+                  <td>v-model 与动态 <code>:value</code> 冲突</td>
+                  <td>仅 <code>__DEV__</code></td>
+                  <td>仍选择对应 v-model helper</td>
+                </tr>
+                <tr>
+                  <td>Transition 多目标</td>
+                  <td>整个 transform 仅 <code>__DEV__</code></td>
+                  <td>
+                    先过滤注释和可折叠空白；多目标元素本身保留，再报告 error
+                  </td>
+                </tr>
+                <tr>
+                  <td>script/style 副作用标签</td>
+                  <td>删除总执行；error 仅 <code>__DEV__</code></td>
+                  <td>节点已从 AST 删除，生产构建静默</td>
+                </tr>
+                <tr>
+                  <td>非法 HTML nesting</td>
+                  <td>整个 transform 仅 <code>__DEV__</code></td>
+                  <td>走 <code>onWarn</code>，AST 不变</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <p class="prose">
+            本 Demo 的 <code>PROPS</code> 让 renderer 只检查列出的三个动态键，
+            <code>NEED_HYDRATION</code> 则确保原生事件在挂载或 hydration 时处理。
+            具体 DOM 写入属于 runtime-dom 的 <code>patchProp.ts</code>，不在本页展开。
+          </p>
+        </section>
+
+        <section id="tests">
+          <div class="section-head">
+            <div>
+              <span class="section-no">09 / Evidence</span>
+              <h2>测试到底证明了什么</h2>
+            </div>
+            <p>
+              每条证据都写清 Given / When / Then /
+              Mechanism。快照只证明这份固定输入的产物形状，不把未断言分支扩大成全局保证。
             </p>
           </div>
           <div class="table-wrap">
             <table>
               <thead>
                 <tr>
-                  <th>编译信息</th>
-                  <th>示例</th>
-                  <th>runtime 行为</th>
+                  <th>机制</th>
+                  <th>Given / When / Then</th>
+                  <th>Mechanism · Source</th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
-                  <td>PatchFlags.TEXT</td>
-                  <td>只有插值文本变化</td>
-                  <td>直接比较并更新 textContent。</td>
-                </tr>
-                <tr>
-                  <td>CLASS / STYLE</td>
-                  <td>动态 class/style</td>
-                  <td>只调用对应模块 patch。</td>
-                </tr>
-                <tr>
-                  <td>PROPS + dynamicProps</td>
-                  <td>已知动态 id/title</td>
-                  <td>仅遍历明确键。</td>
-                </tr>
-                <tr>
-                  <td>FULL_PROPS</td>
-                  <td>无参数 v-bind 或动态指令参数</td>
-                  <td>执行完整 props diff。</td>
-                </tr>
-                <tr>
-                  <td>Block dynamicChildren</td>
-                  <td>稳定树里的少量动态节点</td>
-                  <td>跳过中间静态层级。</td>
-                </tr>
-                <tr>
-                  <td>NEED_HYDRATION</td>
-                  <td>事件等仅在挂载/hydration 生效</td>
-                  <td>进入相应挂载路径。</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <div class="callout">
-            <strong>理解 compiler-dom 的最佳方式：</strong>同时打开 runtime-dom
-            的 <code>patchProp.ts</code> 与 runtime-core renderer。每个 patch
-            flag、helper、props 形态都应在运行时找到对应消费者。
-          </div>
-        </section>
-
-        <section id="tests">
-          <div class="section-head">
-            <div>
-              <span class="section-no">09 / Tests</span>
-              <h2>平台测试保护浏览器真实行为</h2>
-            </div>
-            <p>DOM 测试常常围绕浏览器解析会怎样改变节点，而非只比较字符串。</p>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>测试文件</th>
-                  <th>核心场景</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>tutorial.spec.ts</td>
+                  <td>入口装配</td>
                   <td>
-                    同一最小模板的 Parse AST、Transform 账本、render
-                    产物与错误收集完整闭环。
+                    <strong>Given</strong> 同一模板含
+                    v-text、v-html、v-cloak、静态 style 与动态 style<br /><strong
+                      >When</strong
+                    >
+                    调用公开 <code>compile()</code><br />
+                    <strong>Then</strong> 快照同时出现
+                    textContent、innerHTML、被消费的 cloak、静态 style
+                    对象与动态 normalizeStyle。
+                  </td>
+                  <td>
+                    DOM 节点/指令预设确实进入 core 三段管线。<br />
+                    <code>index.spec.ts</code> · “should contain standard
+                    transforms”
                   </td>
                 </tr>
                 <tr>
-                  <td>parse.spec.ts</td>
-                  <td>实体、void/pre、原生/组件判定与 namespace 进出。</td>
-                </tr>
-                <tr>
-                  <td>validateHtmlNesting.spec.ts</td>
-                  <td>浏览器隐式闭合/重排导致的 hydration 风险。</td>
-                </tr>
-                <tr>
-                  <td>stringifyStatic.spec.ts</td>
+                  <td>公开 parse / compile 与错误收集</td>
                   <td>
-                    收益阈值、HTML 转义、属性/样式、namespace 与放弃边界。
+                    <strong>Given</strong> button 同时有动态
+                    prop、事件与插值；另给一个
+                    <code>:id="user +"</code> 非法表达式。<br /><strong
+                      >When</strong
+                    >
+                    分别调用公开 parse/compile，并用 onError 收集。<br /><strong
+                      >Then</strong
+                    >
+                    Parse AST 保留 bind/on 与原表达式；完整编译得到
+                    helper/cache/hoist 与
+                    TEXT|PROPS；坏表达式保留定位诊断且返回可检查 code。
+                  </td>
+                  <td>
+                    两条入口边界和“收集错误不等于吞错”。<br />
+                    <code>tutorial.spec.ts</code> · 两个 guided tour 测试
                   </td>
                 </tr>
                 <tr>
-                  <td>vModel.spec.ts</td>
+                  <td>RCDATA / RAWTEXT</td>
                   <td>
-                    text/radio/checkbox/select/dynamic helper 与非法组合。
+                    <strong>Given</strong> textarea 内含 div、comment、<code
+                      >&amp;amp;</code
+                    >
+                    与插值；style 内含标签和实体。<br /><strong>When</strong> 用
+                    parserOptions 解析。<br /><strong>Then</strong> textarea
+                    的标签是文本、实体解码且插值成节点；style
+                    整段是文本且实体保持原样。
+                  </td>
+                  <td>
+                    tokenizer 的 RCDATA/RAWTEXT 分支不同。<br /><code
+                      >parse.spec.ts</code
+                    >
+                    · “textarea handles…” / “style doesn't handle character
+                    references”
                   </td>
                 </tr>
                 <tr>
-                  <td>vOn.spec.ts</td>
-                  <td>键/非键修饰符、事件选项、right/middle 重写。</td>
+                  <td>namespace 退出</td>
+                  <td>
+                    <strong>Given</strong>
+                    <code>&lt;svg&gt;&lt;foreignObject&gt;&lt;test/&gt;</code
+                    ><br />
+                    <strong>When</strong> 逐子节点调用 getNamespace。<br /><strong
+                      >Then</strong
+                    >
+                    svg 是 SVG，test 回到 HTML。
+                  </td>
+                  <td>
+                    namespace 依赖 parent.ns 与 integration point。<br />
+                    <code>parse.spec.ts</code> · “foreignObject tag in SVG
+                    namespace”
+                  </td>
                 </tr>
                 <tr>
-                  <td>Transition.spec.ts</td>
-                  <td>转换后 child 结构，而非仅源码标签数量。</td>
+                  <td>v-model 分派</td>
+                  <td>
+                    <strong>Given</strong>
+                    text/radio/checkbox/select、<code>:type</code>、
+                    <code>:type</code> 简写与动态 v-bind。<br /><strong
+                      >When</strong
+                    >
+                    运行 DOM transformModel。<br /><strong>Then</strong> helpers
+                    分别命中
+                    TEXT/RADIO/CHECKBOX/SELECT/DYNAMIC；file、非法元素报错，DEV
+                    下动态 value 冲突也报错。
+                  </td>
+                  <td>
+                    core 生成写回函数，DOM 再选择控件 helper。<br /><code
+                      >vModel.spec.ts</code
+                    >
+                  </td>
+                </tr>
+                <tr>
+                  <td>v-on 分类</td>
+                  <td>
+                    <strong>Given</strong>
+                    stop/capture/ctrl/a、left/right、动态事件与 click.middle<br /><strong
+                      >When</strong
+                    >
+                    resolveModifiers 并包装<br />
+                    <strong>Then</strong> 按 AST 精确断言 helper
+                    嵌套、事件后缀、contextmenu/mouseup 条件重写和
+                    NEED_HYDRATION。
+                  </td>
+                  <td>
+                    handler guard 与监听选项分层。<br /><code>vOn.spec.ts</code>
+                  </td>
+                </tr>
+                <tr>
+                  <td>Transition</td>
+                  <td>
+                    <strong>Given</strong> 多 child、v-for、v-if
+                    branches、注释/空白，以及带 v-show 的单 child<br /><strong
+                      >When</strong
+                    >
+                    exit 校验最终 children<br />
+                    <strong>Then</strong> 只对可能多目标的结构报错；v-show
+                    产物含 <code>persisted: ""</code>。
+                  </td>
+                  <td>
+                    反序 exit 看到结构指令结果。<br /><code
+                      >Transition.spec.ts</code
+                    >
+                  </td>
+                </tr>
+                <tr>
+                  <td>删除与 nesting</td>
+                  <td>
+                    <strong>Given</strong> 原生 script/style，或
+                    <code>p &gt; div</code><br />
+                    <strong>When</strong> 完整 compile。<br /><strong
+                      >Then</strong
+                    >
+                    副作用标签从 code 消失并报告 error；非法嵌套只报告 warning。
+                  </td>
+                  <td>
+                    removeNode 与 onWarn 是两条不同控制流。<br />
+                    <code>ignoreSideEffectTags.spec.ts</code> /
+                    <code>validateHtmlNesting.spec.ts</code>
+                  </td>
+                </tr>
+                <tr>
+                  <td>静态字符串化</td>
+                  <td>
+                    <strong>Given</strong> 5 个带 class 的连续
+                    span；另测小树、table、slot、
+                    v-once、未知属性、SVG/MathML。<br /><strong>When</strong>
+                    compileWithStringify。<br /><strong>Then</strong> 达阈值变
+                    StaticVNode；不安全或不划算的候选保持 cache array。
+                  </td>
+                  <td>
+                    收益阈值与安全条件缺一不可。<br /><code
+                      >stringifyStatic.spec.ts</code
+                    >
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -1177,6 +2299,71 @@ test('should NOT error on static value binding alongside v-model', () =&gt; {
             href="../../../vue/packages/compiler-dom/__tests__/parse.spec.ts"
             >compiler-dom tests</a
           >
+        </section>
+
+        <section id="boundaries">
+          <div class="section-head">
+            <div>
+              <span class="section-no">10 / Boundaries</span>
+              <h2>已覆盖与未覆盖</h2>
+            </div>
+            <p>
+              本页覆盖 compiler-dom 的客户端主路径和主要分支；同一 input Demo
+              尚无单条集成测试，相邻包和未测试组合也不算已证明。
+            </p>
+          </div>
+          <div class="grid-2">
+            <article class="card green">
+              <h3>源码与测试能直接支持</h3>
+              <ul>
+                <li>DOM 入口如何分两层合并 core、平台与用户转换。</li>
+                <li>
+                  HTML/SVG/MathML、文本模式、实体、pre 与自定义元素的解析边界。
+                </li>
+                <li>
+                  style、Transition、nesting、副作用标签及全部 DOM 指令预设。
+                </li>
+                <li>
+                  v-model/v-on 的分派、helper
+                  生成结果、主要错误路径与静态字符串化条件。
+                </li>
+                <li>固定输入由目标版本生成的 render code；它不是测试快照。</li>
+              </ul>
+            </article>
+            <article class="card red">
+              <h3>不要从本页外推</h3>
+              <ul>
+                <li>
+                  用户覆盖 directive transform、追加 node transform
+                  的任意组合没有专门的 compiler-dom 回归矩阵；合并顺序来自入口与
+                  core 源码。
+                </li>
+                <li>
+                  DEV/生产差异来自条件编译分支；现有单测主要在 DEV
+                  语义下断言诊断。
+                </li>
+                <li>
+                  stringifyStatic 对浏览器所有树修正规则并非穷尽，源码仍有明确
+                  TODO。
+                </li>
+                <li>
+                  vModelText、vShow、withKeys、patchEvent 的 DOM 操作属于
+                  runtime-dom，本页只追到编译产物与消费接口。
+                </li>
+                <li>
+                  SFC block 解析、资产 URL/scoped CSS 注入与 SSR
+                  是其他编译器层。
+                </li>
+              </ul>
+            </article>
+          </div>
+          <div class="callout">
+            <strong>两层职责：</strong>compiler-core 决定“怎样把模板编成 VNode
+            程序”，compiler-dom
+            决定“浏览器平台里这段模板是什么、应生成哪些 helper 与 props”；两者通过
+            ParserOptions、NodeTransform、DirectiveTransform 和 helper symbol
+            接起来。
+          </div>
         </section>
 
         <div class="page-links">

@@ -41,8 +41,8 @@
             >； 响应式怎样通知、任务怎样排队留给调度页。
           </p>
           <div class="callout warm">
-            <strong>性质声明：</strong>下面是课程新增、可在 Vue 3.5.41
-            仓库运行的完整 Vitest 教程测试，不是上游原测试。块内包含
+            <strong>这段测试从哪来：</strong>下面是教程新增、可在 Vue 3.5.41
+            仓库运行的 Vitest 用例，不是上游自带测试。块内包含
             imports、fixture、动作、断言及卸载清理。
           </div>
           <details class="source-layer" open>
@@ -108,12 +108,12 @@ describe('runtime course: Counter', () =&gt; {
                 >。
               </p>
               <p class="test-proof">
-                <strong>本次验收：</strong>Node 24.5.0 定向执行同一测试，1 file
+                <strong>运行结果：</strong>Node 24.5.0 定向执行同一测试，1 file
                 / 1 test passed；临时测试文件随后删除。
               </p>
             </div>
           </details>
-          <h3>本页验收合同</h3>
+          <h3>这个用例要验证什么</h3>
           <div class="table-wrap">
             <table>
               <thead>
@@ -250,7 +250,7 @@ describe('runtime course: Counter', () =&gt; {
               ><span class="flow-file">cleanup</span>
             </div>
           </div>
-          <h3>照图复述一遍</h3>
+          <h3>按执行顺序再走一遍</h3>
           <ol>
             <li>
               Renderer 的输入不是 ref，而是同一组件两次 render 产生的新旧
@@ -277,9 +277,9 @@ describe('runtime course: Counter', () =&gt; {
         </section>
 
         <section class="article-section prose" id="renderer-source-proof">
-          <h2>决定性真实源码：patch 如何收窄到一次文本写入</h2>
+          <h2>沿源码看 patch 怎样收窄成一次文本写入</h2>
           <p>以下为 Vue 3.5.41 连续原文，仅做 HTML 实体转义。</p>
-          <h3>证据 1：patch 先处理身份和 BAIL，再按类型/shapeFlag 分派</h3>
+          <h3>patch：先核对身份与 BAIL，再按类型和 shapeFlag 分派</h3>
           <details class="source-layer" open>
             <summary>renderer.ts · patch（完整连续函数）</summary>
             <div>
@@ -451,7 +451,7 @@ describe('runtime course: Counter', () =&gt; {
         }
       }
     }</code></pre>
-          <h3>证据 3：文本 children 的最终提交条件</h3>
+          <h3>文本 children 在什么条件下写入宿主节点</h3>
           <pre
             data-source-file="vue/packages/runtime-core/src/renderer.ts"
           ><code>    if (shapeFlag &amp; ShapeFlags.TEXT_CHILDREN) {
@@ -482,7 +482,8 @@ describe('runtime course: Counter', () =&gt; {
               <strong>替换/错误路径</strong
               ><span
                 >type/key 不同先算 next host anchor、卸载旧树再
-                mount；宿主或钩子异常向 Vue 错误边界/调用方传播，自定义元素的
+            mount；经 Vue 包装的用户 hook 进入应用错误处理流程，未被包装的 host
+            operation 抛错则交给 renderer 调用方，自定义元素的
                 endPatch 由 finally 保证。</span
               >
             </div>
@@ -979,10 +980,10 @@ Renderer 已知道最终顺序；LIS 只用于决定哪些节点可以不 move�
             </article>
             <article class="card">
               <span class="card-label">BAIL</span>
-              <h3>证明失效时回退</h3>
+              <h3>优化提示不可信时回退</h3>
               <p>
-                手写 slot、错误边界或非同构 block 使优化前提不成立时，清空
-                dynamicChildren 并完整 Diff。
+                复用已有 VNode、非稳定 slot、多 keyed Fragment 展平等情况使 block
+                元数据不再可信时，清空 dynamicChildren 并完整 Diff。
               </p>
             </article>
           </div>
@@ -1005,6 +1006,205 @@ Renderer 已知道最终顺序；LIS 只用于决定哪些节点可以不 move�
             scope、处理 KeepAlive 缓存标志，再删除宿主节点。若只看最终
             hostRemove，会错过绝大多数 Runtime 语义。
           </p>
+          <div
+            class="diagram"
+            role="img"
+            aria-label="VNode move 与 unmount 在组件、Fragment、Teleport、宿主容器和锚点之间的递归与反向清理关系"
+          >
+            <div class="diagram-title">VNODE RANGE → CONTAINER / ANCHOR → REVERSE CLEANUP</div>
+            <div class="branch-grid">
+              <div class="layer-node"><strong>Component</strong><small>move/unmount 递归到 instance.subTree；组件 VNode 自身没有另一份 DOM。</small></div>
+              <div class="layer-node"><strong>Fragment</strong><small>el(start) → children → anchor(end) 作为完整范围移动；删除时反向清掉整段。</small></div>
+              <div class="layer-node"><strong>Teleport / Suspense</strong><small>委托协议自身处理多容器或 activeBranch，普通 renderer 不猜目标。</small></div>
+              <div class="layer-node emphasis"><strong>Element / Static</strong><small>REORDER 用 hostInsert 复用节点；unmount 完成逻辑清理后才由 remove 处理宿主范围。</small></div>
+            </div>
+          </div>
+          <details class="source-layer">
+            <summary>renderer.ts · move 按 VNode 范围分派（连续源码）</summary>
+            <div>
+              <pre data-source-file="vue/packages/runtime-core/src/renderer.ts"><code>  const move: MoveFn = (
+    vnode,
+    container,
+    anchor,
+    moveType,
+    parentSuspense = null,
+  ) =&gt; {
+    const { el, type, transition, children, shapeFlag } = vnode
+    if (shapeFlag &amp; ShapeFlags.COMPONENT) {
+      move(vnode.component!.subTree, container, anchor, moveType)
+      return
+    }
+
+    if (__FEATURE_SUSPENSE__ &amp;&amp; shapeFlag &amp; ShapeFlags.SUSPENSE) {
+      vnode.suspense!.move(container, anchor, moveType)
+      return
+    }
+
+    if (shapeFlag &amp; ShapeFlags.TELEPORT) {
+      ;(type as typeof TeleportImpl).move(vnode, container, anchor, internals)
+      return
+    }
+
+    if (type === Fragment) {
+      hostInsert(el!, container, anchor)
+      for (let i = 0; i &lt; (children as VNode[]).length; i++) {
+        move((children as VNode[])[i], container, anchor, moveType)
+      }
+      hostInsert(vnode.anchor!, container, anchor)
+      return
+    }
+
+    if (type === Static) {
+      moveStaticNode(vnode, container, anchor)
+      return</code></pre>
+            </div>
+          </details>
+          <details class="source-layer">
+            <summary>renderer.ts · unmount 先分流协议与逻辑资源，再决定是否 remove</summary>
+            <div>
+              <pre data-source-file="vue/packages/runtime-core/src/renderer.ts"><code>    if (shapeFlag &amp; ShapeFlags.COMPONENT_SHOULD_KEEP_ALIVE) {
+      ;(parentComponent!.ctx as KeepAliveContext).deactivate(vnode)
+      return
+    }
+
+    const shouldInvokeDirs = shapeFlag &amp; ShapeFlags.ELEMENT &amp;&amp; dirs
+    const shouldInvokeVnodeHook = !isAsyncWrapper(vnode)
+
+    let vnodeHook: VNodeHook | undefined | null
+    if (
+      shouldInvokeVnodeHook &amp;&amp;
+      (vnodeHook = props &amp;&amp; props.onVnodeBeforeUnmount)
+    ) {
+      invokeVNodeHook(vnodeHook, parentComponent, vnode)
+    }
+
+    if (shapeFlag &amp; ShapeFlags.COMPONENT) {
+      unmountComponent(vnode.component!, parentSuspense, doRemove)
+    } else {
+      if (__FEATURE_SUSPENSE__ &amp;&amp; shapeFlag &amp; ShapeFlags.SUSPENSE) {
+        vnode.suspense!.unmount(parentSuspense, doRemove)
+        return
+      }
+
+      if (shouldInvokeDirs) {
+        invokeDirectiveHook(vnode, null, parentComponent, 'beforeUnmount')
+      }
+
+      if (shapeFlag &amp; ShapeFlags.TELEPORT) {
+        ;(vnode.type as typeof TeleportImpl).remove(
+          vnode,
+          parentComponent,
+          parentSuspense,
+          internals,
+          doRemove,
+        )
+      } else if (
+        dynamicChildren &amp;&amp;
+        // #5154：block 内 v-once 创建时会给 dynamicChildren 标记 hasOnce。此时不能只
+        // 卸载动态数组，否则未被收集的 v-once 内嵌组件永远收不到卸载与 scope.stop。
+        !dynamicChildren.hasOnce &amp;&amp;
+        // #1153：非稳定 v-for Fragment 的 children 顺序/数量可变，不能只看动态数组。
+        (type !== Fragment ||
+          (patchFlag &gt; 0 &amp;&amp; patchFlag &amp; PatchFlags.STABLE_FRAGMENT))
+      ) {
+        // 稳定 block 中静态原生节点没有需清理逻辑，只递归卸载动态后代。
+        unmountChildren(
+          dynamicChildren,
+          parentComponent,
+          parentSuspense,
+          false,
+          true,
+        )
+      } else if (
+        (type === Fragment &amp;&amp;
+          patchFlag &amp;
+            (PatchFlags.KEYED_FRAGMENT | PatchFlags.UNKEYED_FRAGMENT)) ||
+        (!optimized &amp;&amp; shapeFlag &amp; ShapeFlags.ARRAY_CHILDREN)
+      ) {
+        unmountChildren(children as VNode[], parentComponent, parentSuspense)
+      }
+
+      if (doRemove) {
+        remove(vnode)
+      }
+    }</code></pre>
+            </div>
+          </details>
+          <details class="source-layer">
+            <summary>renderer.ts · remove 处理 Fragment/Static/Transition 的物理删除</summary>
+            <div>
+              <pre data-source-file="vue/packages/runtime-core/src/renderer.ts"><code>  const remove: RemoveFn = vnode =&gt; {
+    const { type, el, anchor, transition } = vnode
+    if (type === Fragment) {
+      if (
+        __DEV__ &amp;&amp;
+        vnode.patchFlag &gt; 0 &amp;&amp;
+        vnode.patchFlag &amp; PatchFlags.DEV_ROOT_FRAGMENT &amp;&amp;
+        transition &amp;&amp;
+        !transition.persisted
+      ) {
+        ;(vnode.children as VNode[]).forEach(child =&gt; {
+          if (child.type === Comment) {
+            hostRemove(child.el!)
+          } else {
+            remove(child)
+          }
+        })
+      } else {
+        removeFragment(el!, anchor!)
+      }
+      return
+    }
+
+    if (type === Static) {
+      removeStaticNode(vnode)
+      return
+    }
+
+    const performRemove = () =&gt; {
+      hostRemove(el!)
+      if (transition &amp;&amp; !transition.persisted &amp;&amp; transition.afterLeave) {
+        transition.afterLeave()
+      }
+    }
+
+    if (
+      vnode.shapeFlag &amp; ShapeFlags.ELEMENT &amp;&amp;
+      transition &amp;&amp;
+      !transition.persisted
+    ) {
+      const { leave, delayLeave } = transition
+      const performLeave = () =&gt; leave(el!, performRemove)
+      if (delayLeave) {
+        delayLeave(vnode.el!, performRemove, performLeave)
+      } else {
+        performLeave()
+      }
+    } else {
+      performRemove()
+    }
+  }</code></pre>
+            </div>
+          </details>
+          <details class="source-layer">
+            <summary>rendererChildren.spec.ts · 删除父节点的全部 children</summary>
+            <div>
+              <pre data-source-file="vue/packages/runtime-core/__tests__/rendererChildren.spec.ts"><code>  test('remove all children from parent', () =&gt; {
+    elm = renderChildren([1, 2, 3, 4, 5])
+    expect(elm.children.length).toBe(5)
+    expect((elm.children as TestElement[]).map(inner)).toEqual([
+      '1',
+      '2',
+      '3',
+      '4',
+      '5',
+    ])
+
+    render(h('div'), root)
+    expect(elm.children.length).toBe(0)
+  })</code></pre>
+            </div>
+          </details>
           <div class="callout">
             Renderer 的完整语义已经建立。下一章把最重要也最容易被一句“用了
             LIS”带过的列表 Diff 单独拆开：从 key
@@ -1013,7 +1213,7 @@ Renderer 已知道最终顺序；LIS 只用于决定哪些节点可以不 move�
         </section>
 
         <section class="article-section prose" id="renderer-evidence">
-          <h2>本章证据闭环</h2>
+          <h2>本章用到的源码与测试</h2>
           <div class="table-wrap">
             <table>
               <thead>
@@ -1043,6 +1243,12 @@ Renderer 已知道最终顺序；LIS 只用于决定哪些节点可以不 move�
                     >，图后逐步复述
                   </td>
                 </tr>
+                <tr>
+                  <td>VNode range 移动与反向卸载</td>
+                  <td><code>renderer.ts · move/unmount/remove</code> 连续原文</td>
+                  <td><code>rendererChildren.spec.ts · moving single child forward / remove all children from parent</code></td>
+                  <td><a href="#move-unmount">VNode/container/anchor 反向图</a></td>
+                </tr>
               </tbody>
             </table>
           </div>
@@ -1062,7 +1268,7 @@ Renderer 已知道最终顺序；LIS 只用于决定哪些节点可以不 move�
         <div class="toc-title">本页目录</div>
         <a href="#renderer-counter-case">完整 Counter 测试</a>
         <a href="#renderer-counter-flow">同例提交图</a>
-        <a href="#renderer-source-proof">决定性源码</a>
+        <a href="#renderer-source-proof">关键源码</a>
         <a href="#plain-renderer">先理解 Renderer</a>
         <a href="#renderer-factory">Renderer 工厂</a
         ><a href="#patch-dispatch">patch 分派</a><a href="#element">元素路径</a
@@ -1070,7 +1276,7 @@ Renderer 已知道最终顺序；LIS 只用于决定哪些节点可以不 move�
         ><a href="#children">children 形态</a
         ><a href="#keyed-diff">keyed diff</a><a href="#optimized">优化模式</a
         ><a href="#move-unmount">move / unmount</a
-        ><a href="#renderer-evidence">证据闭环</a>
+              ><a href="#renderer-evidence">源码与测试</a>
       </aside>
     </div>
     <footer data-site-footer></footer>

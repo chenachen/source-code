@@ -39,11 +39,12 @@
             仓库自己的
             <code>@vue/runtime-test</code>
             内存宿主，因此既能观察组件更新，也能证明
-            <code>runtime-core</code> 并不依赖浏览器 DOM。
+            <code>runtime-core</code> 的 renderer、组件与 Diff 主线不依赖浏览器 DOM。
+            包内刻意保留的 hydration 例外会在后文单独说明。
           </p>
           <div class="callout warm">
-            <strong>性质声明：</strong>下面是课程新增、可放进 Vue 3.5.41
-            仓库运行的完整 Vitest 教程测试，不冒充上游测试。它包含
+            <strong>这段测试从哪来：</strong>下面的用例由本教程新增，可放进 Vue 3.5.41
+            仓库直接运行，不是上游自带测试。它包含
             imports、准备、动作、同步与异步断言， 以及
             <code>afterEach</code> 卸载清理。
           </div>
@@ -110,13 +111,13 @@ describe('runtime course: Counter', () =&gt; {
                 >。
               </p>
               <p class="test-proof">
-                <strong>本次验收：</strong>Node 24.5.0 定向执行同一测试，1 file
+                <strong>运行结果：</strong>Node 24.5.0 定向执行同一测试，1 file
                 / 1 test passed；临时测试文件随后删除。
               </p>
             </div>
           </details>
 
-          <h3>先写清楚验收合同：Given / When / Then / Mechanism / Source</h3>
+          <h3>这个用例要验证什么</h3>
           <div class="table-wrap">
             <table>
               <thead>
@@ -248,7 +249,7 @@ describe('runtime course: Counter', () =&gt; {
               ><span class="flow-file">renderer.ts · render/unmount</span>
             </div>
           </div>
-          <h3>照图复述一遍</h3>
+          <h3>按执行顺序再走一遍</h3>
           <ol>
             <li>
               <strong>组装：</strong>runtime-test 先把自己的 nodeOps 与
@@ -279,14 +280,14 @@ describe('runtime course: Counter', () =&gt; {
         </section>
 
         <section class="article-section prose" id="architecture-source-proof">
-          <h2>决定性真实源码：抽象边界是怎样接上的</h2>
+          <h2>沿源码看 core 与宿主怎样接线</h2>
           <p>
             以下代码来自工作区 Vue <strong>3.5.41</strong>。带
             <code>data-source-file</code> 的代码块是连续原文；HTML
             仅做实体转义， DOM 的
             <code>textContent</code> 可在对应文件连续匹配。
           </p>
-          <h3>证据 1：runtime-test 用真实 host options 创建 renderer</h3>
+          <h3>第一处交接：runtime-test 把 host options 交给 renderer</h3>
           <pre
             data-source-file="vue/packages/runtime-test/src/index.ts"
           ><code>import {
@@ -318,7 +319,7 @@ export function renderToString(vnode: VNode): string {
             TestElement
             容器函数。状态变化是“尚无渲染器”变成“拥有一组捕获内存宿主操作的闭包”。
           </p>
-          <h3>证据 2：core 只转交 options，再在闭包里改名为 host*</h3>
+          <h3>第二处交接：core 在闭包里捕获并重命名 host 操作</h3>
           <pre
             data-source-file="vue/packages/runtime-core/src/renderer.ts"
           ><code>export function createRenderer&lt;
@@ -349,7 +350,7 @@ export function renderToString(vnode: VNode): string {
             <code>patch</code> 看到的是 hostInsert，不知道背后是
             <code>insertBefore</code> 还是数组 <code>splice</code>。
           </p>
-          <h3>证据 3：root render 的正常、卸载与刷新出口</h3>
+          <h3>第三处交接：root render 的挂载、更新与卸载出口</h3>
           <pre
             data-source-file="vue/packages/runtime-core/src/renderer.ts"
           ><code>  const render: RootRenderFunction = (vnode, container, namespace) =&gt; {
@@ -473,9 +474,10 @@ export function renderToString(vnode: VNode): string {
           <div class="card-grid">
             <article class="card">
               <span class="card-label">@vue/runtime-core</span>
-              <h3>与宿主平台无关的语义</h3>
+              <h3>以宿主无关语义为主</h3>
               <p>
-                组件实例、VNode、Renderer、调度、水合协议、指令生命周期、Teleport、Suspense、KeepAlive、BaseTransition。
+                组件实例、VNode、Renderer、调度、指令生命周期、Teleport、Suspense、KeepAlive、BaseTransition；另有一个与 renderer
+                强耦合的 DOM hydration 例外。
               </p>
             </article>
             <article class="card">
@@ -488,15 +490,24 @@ export function renderToString(vnode: VNode): string {
             </article>
           </div>
           <p>
-            core 不导入浏览器 DOM API。它只保存一组
+            renderer、组件与 Diff 主线不直接操作浏览器 DOM。它们保存一组
             <code>RendererOptions</code>，需要创建节点时调用
             <code>hostCreateElement</code>，需要插入时调用
             <code>hostInsert</code>，需要更新属性时调用
             <code>hostPatchProp</code>。runtime-dom 则负责把这些接口实现成真实
             DOM 操作。
           </p>
+          <div class="callout warm">
+            <strong>这里有一个刻意保留的例外：</strong
+            ><code>runtime-core/src/hydration.ts</code> 会读取
+            <code>Node</code>、<code>Element</code>、<code>nodeType</code>、<code>tagName</code>
+            等 DOM 能力。源码说明它本应是 DOM 专属逻辑，但因与 renderer
+            内部函数紧密相连而留在 runtime-core；普通
+            <code>createRenderer</code> 不安装它，只有
+            <code>createHydrationRenderer</code> 才传入这组函数，未使用水合时仍可被 tree-shake。
+          </div>
           <div class="diagram" role="img" aria-label="Vue Runtime 包分层">
-            <div class="diagram-title">PACKAGE TOPOLOGY</div>
+            <div class="diagram-title">PACKAGE DEPENDENCY ≠ RUNTIME CALLBACK</div>
             <div class="layer-flow">
               <div class="layer-node">
                 <strong>Compiler</strong
@@ -507,21 +518,82 @@ export function renderToString(vnode: VNode): string {
                 <strong>runtime-core</strong
                 ><small>解释 VNode 与组件语义，决定增量提交步骤。</small>
               </div>
-              <div class="diagram-arrow">→</div>
+              <div class="diagram-arrow">← import / 组装</div>
               <div class="layer-node">
                 <strong>runtime-dom</strong
-                ><small>把宿主指令翻译为浏览器 DOM 操作。</small>
+                ><small>导入 core，注入 nodeOps 与 patchProp，创建 DOM renderer。</small>
               </div>
             </div>
             <div class="support-row">
               <div>
-                <strong>Reactivity</strong> 从左下方驱动组件 render effect。
+                <strong>运行时回调方向：</strong>core 的 patch → 注入的 hostCreateElement / hostInsert / hostPatchProp → DOM。
               </div>
               <div>
-                <strong>Server Renderer</strong> 生成可被 hydration renderer
-                认领的 HTML。
+                <strong>DOM hydration 例外：</strong>hydration.ts 留在 core，但只由 hydration renderer 按需接入。
               </div>
             </div>
+          </div>
+          <p>
+            因而要分清两支箭头：<strong>包依赖</strong>是 runtime-dom 导入并组装
+            runtime-core；renderer 闭包建好后，<strong>调用方向</strong>才是 core
+            回调 runtime-dom 注入的 host 操作。把两者都画成“core → dom”，会误以为 core 在源码层依赖 runtime-dom。
+          </p>
+          <h3>先用这张地图定位 runtime-core 文件</h3>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>区域</th>
+                  <th>代表文件</th>
+                  <th>这一组负责什么</th>
+                  <th>本教程怎样处理</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>应用入口</td>
+                  <td><code>apiCreateApp.ts</code></td>
+                  <td>app context、mount、unmount、插件与容器关联</td>
+                  <td>在 Integration 沿完整 Counter 深追</td>
+                </tr>
+                <tr>
+                  <td>VNode 与渲染结果</td>
+                  <td><code>h.ts</code>、<code>vnode.ts</code>、<code>componentRenderUtils.ts</code></td>
+                  <td>把 render 输出标准化成 patch 可消费的中间表示</td>
+                  <td>本章先走生成链；Renderer 章继续消费</td>
+                </tr>
+                <tr>
+                  <td>组件输入与实例</td>
+                  <td><code>component*.ts</code>、<code>componentProps.ts</code>、<code>componentSlots.ts</code></td>
+                  <td>实例、setup、props、slots、emits、公共代理和生命周期</td>
+                  <td>组件章深追 mount/update/unmount，其他 API 按边界索引</td>
+                </tr>
+                <tr>
+                  <td>增量提交</td>
+                  <td><code>renderer.ts</code></td>
+                  <td>patch、children diff、move、unmount 与 host 回调</td>
+                  <td>Renderer 与 Diff 两章展开</td>
+                </tr>
+                <tr>
+                  <td>时间与错误</td>
+                  <td><code>scheduler.ts</code>、<code>errorHandling.ts</code></td>
+                  <td>job 顺序、pre/post、nextTick 与用户回调错误通道</td>
+                  <td>Scheduler 章展开主队列状态和恢复边界</td>
+                </tr>
+                <tr>
+                  <td>特殊协议</td>
+                  <td><code>hydration.ts</code>、<code>components/*</code></td>
+                  <td>SSR DOM 认领，以及 Teleport/Suspense/KeepAlive/Transition</td>
+                  <td>Hydration 与 Built-ins 两章分别展开</td>
+                </tr>
+                <tr>
+                  <td>辅助与兼容</td>
+                  <td><code>helpers/*</code>、HMR、devtools、compat</td>
+                  <td>编译产物 helper、开发工具与兼容层</td>
+                  <td>只在主链触及时解释，不伪装成完整 API 目录</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
           <div class="source-links">
             <a
@@ -648,9 +720,329 @@ export function renderToString(vnode: VNode): string {
           <p>
             这解释了为什么 VNode 不能被随意复用：挂载后它已经携带
             <code>el</code>、<code>component</code>
-            等可变状态。Vue 遇到已挂载或 hoisted VNode
-            时会克隆，以避免两处逻辑节点竞争同一份提交结果。
+            等可变状态。<code>cloneIfMounted</code> 会在普通 VNode 已有
+            <code>el</code>，或节点带 <code>PatchFlags.CACHED</code> 时克隆；
+            <code>memo</code> 管理的节点是例外。这样两处逻辑节点不会竞争同一份提交结果。
           </p>
+
+          <h3>从 h('button') 到 patch：中间没有凭空出现的 VNode</h3>
+          <p>
+            Counter 的手写 render 调用 <code>h</code>。<code>h</code>
+            只负责宽松参数重载，真正的创建入口仍是
+            <code>createVNode</code>；开发构建允许测试工具变换参数，随后进入
+            <code>_createVNode</code>。后者推断节点大类，再由
+            <code>createBaseVNode</code> 分配对象并调用
+            <code>normalizeChildren</code>。此时 <code>el</code>、<code>component</code>
+            等提交字段仍为空，直到 renderer 的 <code>patch</code> 挂载或复用节点后才回填。
+          </p>
+          <div
+            class="flow"
+            role="img"
+            aria-label="VNode 从 h 参数到创建、children 标准化、patch 与提交字段回填的数据流"
+          >
+            <div class="flow-step">
+              <span class="flow-index">01</span
+              ><span class="flow-copy"><strong>h(type, props?, children?)</strong
+                ><small>消除二参/三参重载歧义，不创建宿主节点。</small></span
+              ><span class="flow-file">h.ts · h</span>
+            </div>
+            <div class="flow-join"></div>
+            <div class="flow-step">
+              <span class="flow-index">02</span
+              ><span class="flow-copy"><strong>createVNode → _createVNode</strong
+                ><small>保护 props，推断 ELEMENT / COMPONENT / TELEPORT / SUSPENSE。</small></span
+              ><span class="flow-file">vnode.ts · _createVNode</span>
+            </div>
+            <div class="flow-join"></div>
+            <div class="flow-step">
+              <span class="flow-index">03</span
+              ><span class="flow-copy"><strong>createBaseVNode</strong
+                ><small>写入 type、props、key、shapeFlag；提交字段先置 null。</small></span
+              ><span class="flow-file">el/component/anchor = null</span>
+            </div>
+            <div class="flow-join"></div>
+            <div class="flow-step">
+              <span class="flow-index">04</span
+              ><span class="flow-copy"><strong>normalizeChildren</strong
+                ><small>把 text / array / slots 编进 children 与 shapeFlag。</small></span
+              ><span class="flow-file">vnode.ts · normalizeChildren</span>
+            </div>
+            <div class="flow-join"></div>
+            <div class="flow-step">
+              <span class="flow-index">05</span
+              ><span class="flow-copy"><strong>render / component effect → patch</strong
+                ><small>按 type 与 shapeFlag 分派；首次 mount 创建宿主节点，更新时接过旧 el。</small></span
+              ><span class="flow-file">renderer.ts · patch</span>
+            </div>
+            <div class="flow-join"></div>
+            <div class="flow-step">
+              <span class="flow-index">06</span
+              ><span class="flow-copy"><strong>回填运行时状态</strong
+                ><small>元素写 el；组件写 component，并把组件 VNode.el 对齐到 subTree.el。</small></span
+              ><span class="flow-file">下一轮 move / patch / unmount 复用</span>
+            </div>
+          </div>
+
+          <details class="source-layer">
+            <summary>连续源码 1：h 统一参数后调用 createVNode</summary>
+            <div>
+              <pre data-source-file="vue/packages/runtime-core/src/h.ts"><code>export function h(type: any, propsOrChildren?: any, children?: any): VNode {
+  try {
+    // #6913：`h()` 的灵活参数标准化会把已创建 VNode 重新作为 children 传入。若此时
+    // 仍启用 block tracking，同一动态节点可能被当前 block 重复收集。调用期间暂停，
+    // 最终 VNode 的正常创建流程仍会维护必要关系。
+    setBlockTracking(-1)
+    const l = arguments.length
+    if (l === 2) {
+      if (isObject(propsOrChildren) &amp;&amp; !isArray(propsOrChildren)) {
+        // 单 VNode 是 children，不是 props；统一包成数组便于后续 children 标准化。
+        if (isVNode(propsOrChildren)) {
+          return createVNode(type, null, [propsOrChildren])
+        }
+        // 普通非数组对象按 props 处理。
+        return createVNode(type, propsOrChildren)
+      } else {
+        // 数组或原始值表示省略 props，直接作为 children。
+        return createVNode(type, null, propsOrChildren)
+      }
+    } else {
+      if (l &gt; 3) {
+        children = Array.prototype.slice.call(arguments, 2)
+      } else if (l === 3 &amp;&amp; isVNode(children)) {
+        children = [children]
+      }
+      return createVNode(type, propsOrChildren, children)
+    }
+  } finally {
+    setBlockTracking(1)
+  }
+}</code></pre>
+            </div>
+          </details>
+
+          <details class="source-layer">
+            <summary>连续源码 2：createVNode 入口与 _createVNode 的 shapeFlag 分派</summary>
+            <div>
+              <pre data-source-file="vue/packages/runtime-core/src/vnode.ts"><code>/**
+ * 公开 VNode 创建入口。开发构建允许 test-utils 变换参数，生产构建直接指向热路径实现。
+ */
+export const createVNode = (
+  __DEV__ ? createVNodeWithArgsTransform : _createVNode
+) as typeof _createVNode
+
+/** 标准化类型、props、class/style 后创建任意类型 VNode 的内部实现。 */
+function _createVNode(
+  type: VNodeTypes | ClassComponent | typeof NULL_DYNAMIC_COMPONENT,
+  props: (Data &amp; VNodeProps) | null = null,
+  children: unknown = null,
+  patchFlag: number = 0,
+  dynamicProps: string[] | null = null,
+  isBlockNode = false,
+): VNode {</code></pre>
+              <pre data-source-file="vue/packages/runtime-core/src/vnode.ts"><code>  // 将类型大类编码进 shapeFlag，patch 时用位运算快速分派。
+  const shapeFlag = isString(type)
+    ? ShapeFlags.ELEMENT
+    : __FEATURE_SUSPENSE__ &amp;&amp; isSuspense(type)
+      ? ShapeFlags.SUSPENSE
+      : isTeleport(type)
+        ? ShapeFlags.TELEPORT
+        : isObject(type)
+          ? ShapeFlags.STATEFUL_COMPONENT
+          : isFunction(type)
+            ? ShapeFlags.FUNCTIONAL_COMPONENT
+            : 0
+
+  if (__DEV__ &amp;&amp; shapeFlag &amp; ShapeFlags.STATEFUL_COMPONENT &amp;&amp; isProxy(type)) {
+    type = toRaw(type)
+    warn(
+      `Vue received a Component that was made a reactive object. This can ` +
+        `lead to unnecessary performance overhead and should be avoided by ` +
+        `marking the component with \`markRaw\` or using \`shallowRef\` ` +
+        `instead of \`ref\`.`,
+      `\nComponent that was made reactive: `,
+      type,
+    )
+  }
+
+  return createBaseVNode(
+    type,
+    props,
+    children,
+    patchFlag,
+    dynamicProps,
+    shapeFlag,
+    isBlockNode,
+    true,
+  )
+}</code></pre>
+            </div>
+          </details>
+
+          <details class="source-layer">
+            <summary>连续源码 3：createBaseVNode 先留空提交字段，再标准化 children</summary>
+            <div>
+              <pre data-source-file="vue/packages/runtime-core/src/vnode.ts"><code>function createBaseVNode(
+  type: VNodeTypes | ClassComponent | typeof NULL_DYNAMIC_COMPONENT,
+  props: (Data &amp; VNodeProps) | null = null,
+  children: unknown = null,
+  patchFlag = 0,
+  dynamicProps: string[] | null = null,
+  shapeFlag: number = type === Fragment ? 0 : ShapeFlags.ELEMENT,
+  isBlockNode = false,
+  needFullChildrenNormalization = false,
+): VNode {
+  const vnode = {
+    __v_isVNode: true,
+    __v_skip: true,
+    type,
+    props,
+    key: props &amp;&amp; normalizeKey(props),
+    ref: props &amp;&amp; normalizeRef(props),
+    scopeId: currentScopeId,
+    slotScopeIds: null,
+    children,
+    component: null,
+    suspense: null,
+    ssContent: null,
+    ssFallback: null,
+    dirs: null,
+    transition: null,
+    el: null,
+    anchor: null,
+    target: null,
+    targetStart: null,
+    targetAnchor: null,
+    staticCount: 0,
+    shapeFlag,
+    patchFlag,
+    dynamicProps,
+    dynamicChildren: null,
+    appContext: null,
+    ctx: currentRenderingInstance,
+  } as VNode
+
+  if (needFullChildrenNormalization) {
+    normalizeChildren(vnode, children)
+    // Suspense 还需把 default/fallback slots 分别标准化为 ssContent/ssFallback。
+    if (__FEATURE_SUSPENSE__ &amp;&amp; shapeFlag &amp; ShapeFlags.SUSPENSE) {
+      ;(type as typeof SuspenseImpl).normalize(vnode)
+    }
+  } else if (children) {
+    // 编译器已保证原生元素 children 只可能是字符串或数组，可直接设置 shapeFlag。
+    vnode.shapeFlag |= isString(children)
+      ? ShapeFlags.TEXT_CHILDREN
+      : ShapeFlags.ARRAY_CHILDREN
+  }</code></pre>
+              <pre data-source-file="vue/packages/runtime-core/src/vnode.ts"><code>export function normalizeChildren(vnode: VNode, children: unknown): void {
+  let type = 0
+  const { shapeFlag } = vnode
+  if (children == null) {
+    children = null
+  } else if (isArray(children)) {
+    type = ShapeFlags.ARRAY_CHILDREN
+  } else if (typeof children === 'object') {
+    if (shapeFlag &amp; (ShapeFlags.ELEMENT | ShapeFlags.TELEPORT)) {
+      // 原生元素和 Teleport 不持有 slots 对象，执行 default slot 得到普通 children。
+      const slot = (children as any).default
+      if (slot) {
+        // `_c` 表示编译插槽；由 renderSlot 控制的调用可临时开启 block tracking。
+        slot._c &amp;&amp; (slot._d = false)
+        normalizeChildren(vnode, slot())
+        slot._c &amp;&amp; (slot._d = true)
+      }
+      return
+    } else {
+      type = ShapeFlags.SLOTS_CHILDREN
+      const slotFlag = (children as RawSlots)._
+      if (!slotFlag &amp;&amp; !isInternalObject(children)) {
+        // 未标准化用户 slots 需记录声明上下文；编译/内部 slots 已经携带，无需覆盖。
+        ;(children as RawSlots)._ctx = currentRenderingInstance
+      } else if (slotFlag === SlotFlags.FORWARDED &amp;&amp; currentRenderingInstance) {
+        // 转发插槽自身稳定性取决于父组件收到的插槽：父级稳定则仍稳定，否则标成动态，
+        // 并给当前组件加 patchFlag，不能因 props 未变跳过更新。
+        if (
+          (currentRenderingInstance.slots as RawSlots)._ === SlotFlags.STABLE
+        ) {
+          ;(children as RawSlots)._ = SlotFlags.STABLE
+        } else {
+          ;(children as RawSlots)._ = SlotFlags.DYNAMIC
+          vnode.patchFlag |= PatchFlags.DYNAMIC_SLOTS
+        }
+      }
+    }
+  } else if (isFunction(children)) {
+    if (shapeFlag &amp; (ShapeFlags.ELEMENT | ShapeFlags.TELEPORT)) {
+      normalizeChildren(vnode, { default: children })
+      return
+    }
+    children = { default: children, _ctx: currentRenderingInstance }
+    type = ShapeFlags.SLOTS_CHILDREN
+  } else {
+    children = String(children)
+    // Teleport 的 children 需要逐节点搬移，纯文本也转成单元素 VNode 数组。
+    if (shapeFlag &amp; ShapeFlags.TELEPORT) {
+      type = ShapeFlags.ARRAY_CHILDREN
+      children = [createTextVNode(children as string)]
+    } else {
+      type = ShapeFlags.TEXT_CHILDREN
+    }
+  }
+  vnode.children = children as VNodeNormalizedChildren
+  vnode.shapeFlag |= type
+}</code></pre>
+            </div>
+          </details>
+
+          <h3>真实测试锁住归一化、克隆与类型推断</h3>
+          <p>
+            这不是只看实现猜行为。上游测试同时覆盖空值、数组、原始值、已挂载 VNode
+            的克隆，以及元素/组件的 <code>shapeFlag</code> 推断。
+          </p>
+          <details class="source-layer">
+            <summary>vnode.spec.ts · normalizeVNode / type shapeFlag inference</summary>
+            <div>
+              <pre data-source-file="vue/packages/runtime-core/__tests__/vnode.spec.ts"><code>  // 测试场景：normalizeVNode 将 null、布尔值、数组、对象和原始值归一化为对应 VNode。
+  test('normalizeVNode', () =&gt; {
+    // null / undefined -&gt; Comment
+    expect(normalizeVNode(null)).toMatchObject({ type: Comment })
+    expect(normalizeVNode(undefined)).toMatchObject({ type: Comment })
+
+    // boolean -&gt; Comment
+    // this is for usage like `someBoolean &amp;&amp; h('div')` and behavior consistency
+    // with 2.x (#574)
+    expect(normalizeVNode(true)).toMatchObject({ type: Comment })
+    expect(normalizeVNode(false)).toMatchObject({ type: Comment })
+
+    // array -&gt; Fragment
+    expect(normalizeVNode(['foo'])).toMatchObject({ type: Fragment })
+
+    // VNode -&gt; VNode
+    const vnode = createVNode('div')
+    expect(normalizeVNode(vnode)).toBe(vnode)
+
+    // mounted VNode -&gt; cloned VNode
+    const mounted = createVNode('div')
+    mounted.el = {}
+    const normalized = normalizeVNode(mounted)
+    expect(normalized).not.toBe(mounted)
+    expect(normalized).toEqual(mounted)
+
+    // primitive types
+    expect(normalizeVNode('foo')).toMatchObject({ type: Text, children: `foo` })
+    expect(normalizeVNode(1)).toMatchObject({ type: Text, children: `1` })
+  })
+
+  // 测试场景：类型 shapeFlag 推理。
+  test('type shapeFlag inference', () =&gt; {
+    expect(createVNode('div').shapeFlag).toBe(ShapeFlags.ELEMENT)
+    expect(createVNode({}).shapeFlag).toBe(ShapeFlags.STATEFUL_COMPONENT)
+    expect(createVNode(() =&gt; {}).shapeFlag).toBe(
+      ShapeFlags.FUNCTIONAL_COMPONENT,
+    )
+    expect(createVNode(Text).shapeFlag).toBe(0)
+  })</code></pre>
+            </div>
+          </details>
           <div class="source-links">
             <a
               class="source-link"
@@ -714,8 +1106,8 @@ return createElementBlock('div', null, [
           <h2>贯穿后续章节的设计原则</h2>
           <div class="sequence">
             <div class="sequence-item">
-              <strong>平台无关核心</strong
-              ><br />宿主接口由注入得到，核心算法只维护抽象树与组件语义。
+              <strong>Renderer 主线通过宿主接口解耦</strong
+              ><br />组件、patch 与 Diff 从注入的 host 操作提交；DOM hydration 是前文说明的包内例外。
             </div>
             <div class="sequence-item">
               <strong>先保持正确，再逐层缩小工作</strong><br />完整 patch
@@ -770,7 +1162,7 @@ return createElementBlock('div', null, [
         </section>
 
         <section class="article-section prose" id="architecture-evidence">
-          <h2>本章证据闭环</h2>
+          <h2>本章用到的源码与测试</h2>
           <div class="table-wrap">
             <table>
               <thead>
@@ -800,18 +1192,29 @@ return createElementBlock('div', null, [
                     >，图后逐步复述
                   </td>
                 </tr>
+                <tr>
+                  <td>VNode 创建、children 归一化与挂载状态回填</td>
+                  <td>
+                    <code>h.ts · h</code>；<code>vnode.ts ·
+                    _createVNode/createBaseVNode/normalizeChildren</code>；<code>renderer.ts · patch</code>
+                  </td>
+                  <td>
+                    <code>vnode.spec.ts · normalizeVNode</code>、<code>type shapeFlag inference</code>
+                  </td>
+                  <td><a href="#vnode">6 步 VNode 数据流与回填图</a></td>
+                </tr>
               </tbody>
             </table>
           </div>
           <p class="reader-check">
             <strong>结论：</strong
-            >用例、连续真实源码、可运行测试、图与四类边界均对应同一个
-            Counter；概念模型均明确标注，不冒充 Vue 源码。
+            >用例、连续源码、可运行测试和流程图都对应同一个 Counter；
+            概念示意与 Vue 原始源码已分别标注。
           </p>
         </section>
 
         <nav class="page-nav" aria-label="章节翻页">
-          <a href="integration.html"><span>上一章</span>← 按钮完整调用链</a>
+          <a href="primer.html"><span>上一章</span>← 零基础先修课</a>
           <a href="component.html"><span>下一章</span>组件模型 →</a>
         </nav>
       </main>
@@ -820,7 +1223,7 @@ return createElementBlock('div', null, [
         <div class="toc-title">本页目录</div>
         <a href="#counter-lab">完整 Counter 测试</a>
         <a href="#counter-architecture-flow">同例架构流程图</a>
-        <a href="#architecture-source-proof">决定性源码</a>
+        <a href="#architecture-source-proof">关键源码</a>
         <a href="#plain-architecture">先理解分层</a>
         <a href="#packages">包边界</a>
         <a href="#host-abstraction">宿主抽象</a>
@@ -828,7 +1231,7 @@ return createElementBlock('div', null, [
         <a href="#flags">ShapeFlag / PatchFlag</a>
         <a href="#principles">设计原则</a>
         <a href="#tradeoffs">架构代价</a>
-        <a href="#architecture-evidence">证据闭环</a>
+        <a href="#architecture-evidence">源码与测试</a>
       </aside>
     </div>
     <footer data-site-footer></footer>

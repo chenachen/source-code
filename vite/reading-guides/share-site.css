@@ -389,6 +389,12 @@ a:hover {
   color: var(--muted);
 }
 
+.hero-meta > *,
+.boundary-note p {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .focus-card,
 .evidence-note,
 .boundary-note {
