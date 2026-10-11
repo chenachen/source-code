@@ -19,6 +19,7 @@ import ts from 'typescript'
 registerTS(() => ts)
 
 describe('resolveType', () => {
+  // 类型字面量含属性、方法、字符串/模板/数字键和两条调用签名；分别推导五项构造器并保留两条 calls。
   test('type literal', () => {
     const { props, calls } = resolve(`defineProps<{
       foo: number // property
@@ -39,6 +40,7 @@ describe('resolveType', () => {
     expect(calls?.length).toBe(2)
   })
 
+  // 本地 Aliased 对象别名用作宏类型；沿类型表展开 foo，推导 Number。
   test('reference type', () => {
     expect(
       resolve(`
@@ -50,6 +52,7 @@ describe('resolveType', () => {
     })
   })
 
+  // 导出的 Aliased 对象别名；导出包装不阻断本地引用展开。
   test('reference exported type', () => {
     expect(
       resolve(`
@@ -61,6 +64,7 @@ describe('resolveType', () => {
     })
   })
 
+  // 本地 interface Aliased 含 foo:number；解析成员表并推导 Number。
   test('reference interface', () => {
     expect(
       resolve(`
@@ -72,6 +76,7 @@ describe('resolveType', () => {
     })
   })
 
+  // 导出 interface 用作宏类型；按本地符号表定位，结果与非导出形式相同。
   test('reference exported interface', () => {
     expect(
       resolve(`
@@ -83,6 +88,7 @@ describe('resolveType', () => {
     })
   })
 
+  // interface 多级且多继承，包含方法和原始类型属性；合并所有父级与本地成员，分别推导 Function/Boolean/String/Number。
   test('reference interface extends', () => {
     expect(
       resolve(`
@@ -100,6 +106,7 @@ describe('resolveType', () => {
     })
   })
 
+  // class Foo 作为字段类型；运行时类实例近似为 Object，无需展开类成员作为 props。
   test('reference class', () => {
     expect(
       resolve(`
@@ -111,6 +118,7 @@ describe('resolveType', () => {
     })
   })
 
+  // 宏类型直接是函数签名；结果 props 为空且 calls 保留一条，供 emits 类型消费。
   test('function type', () => {
     expect(
       resolve(`
@@ -119,6 +127,7 @@ describe('resolveType', () => {
     ).toBe(1)
   })
 
+  // Fn 别名指向函数签名；沿引用仍返回一条 calls。
   test('reference function type', () => {
     expect(
       resolve(`
@@ -128,6 +137,7 @@ describe('resolveType', () => {
     ).toBe(1)
   })
 
+  // 交叉 self/Foo/Bar/Baz 且 bar 重名；合并成员并去重构造器，bar 保留 String/Boolean，未知 self 为 Unknown。
   test('intersection type', () => {
     expect(
       resolve(`
@@ -145,6 +155,7 @@ describe('resolveType', () => {
     })
   })
 
+  // 交叉类型后项 Bar 标 @vue-ignore；忽略该节点，只提取前项 Foo。
   test('intersection type with ignore', () => {
     expect(
       resolve(`
@@ -157,6 +168,7 @@ describe('resolveType', () => {
     })
   })
 
+  // 交叉首项 Foo 标 @vue-ignore；仍继续解析后项 Bar，不把整个交叉清空。
   test('leading intersection type with ignore', () => {
     expect(
       resolve(`
@@ -169,6 +181,7 @@ describe('resolveType', () => {
     })
   })
 
+  // 联合首项 Foo 标 @vue-ignore；跳过该项但保留 Bar 的 boolean 字段。
   test('leading union type with ignore', () => {
     expect(
       resolve(`
@@ -181,6 +194,7 @@ describe('resolveType', () => {
     })
   })
 
+  // 字段的类型引用标 @vue-ignore；字段仍存在，运行时类型退为 Unknown。
   test('TSPropertySignature with ignore', () => {
     expect(
       resolve(`
@@ -192,7 +206,8 @@ describe('resolveType', () => {
     })
   })
 
-  // #7553：联合对象类型要合并可见 props，并正确处理各分支 required 状态。
+  // #7553：联合对象类型合并可见 prop 名，并合并同名 prop 的运行时类型。
+  // CommonProps 交叉条件对象联合；收集合并可见字段，同名 color 去重为 String/Number，非共享 note 也保留。
   test('union type', () => {
     expect(
       resolve(`
@@ -221,6 +236,7 @@ describe('resolveType', () => {
     })
   })
 
+  // mapped key 是两个有限联合的模板字面量；笛卡尔积生成四个公开键，每项值类型为 String。
   test('template string type', () => {
     expect(
       resolve(`
@@ -238,6 +254,7 @@ describe('resolveType', () => {
     })
   })
 
+  // 映射键混合可选字段、Capitalize、Uppercase/Extract 与模板前缀；有限字符串展开得到全部预期键和值构造器。
   test('mapped types w/ string manipulation', () => {
     expect(
       resolve(`
@@ -264,6 +281,7 @@ describe('resolveType', () => {
     })
   })
 
+  // Partial 包住必填 foo/bar；复制签名后 optional 均为 true，避免污染原声明缓存。
   test('utility type: Partial', () => {
     expect(
       resolve(`
@@ -280,6 +298,7 @@ describe('resolveType', () => {
     })
   })
 
+  // Required 包住可选 foo/bar；复制签名后 optional 均为 false。
   test('utility type: Required', () => {
     expect(
       resolve(`
@@ -296,6 +315,7 @@ describe('resolveType', () => {
     })
   })
 
+  // Pick 的键来自别名联合 foo|bar；只保留指定成员，排除 baz。
   test('utility type: Pick', () => {
     expect(
       resolve(`
@@ -309,6 +329,7 @@ describe('resolveType', () => {
     })
   })
 
+  // Omit 删除键别名中的 foo/bar；结果只剩 baz:Boolean。
   test('utility type: Omit', () => {
     expect(
       resolve(`
@@ -321,6 +342,7 @@ describe('resolveType', () => {
     })
   })
 
+  // 泛型 Optional 组合 Omit、Partial 与 Pick；替换实参后两项 String 字段均保留，工具类型可嵌套展开。
   test('utility type: mapped type with Omit and Pick', () => {
     expect(
       resolve(`
@@ -338,6 +360,7 @@ describe('resolveType', () => {
     })
   })
 
+  // 字段类型是 ReadonlyArray<string>；只映射运行时容器 Array，不逐元素校验。
   test('utility type: ReadonlyArray', () => {
     expect(
       resolve(`
@@ -348,6 +371,7 @@ describe('resolveType', () => {
     })
   })
 
+  // ReadonlyMap 与 ReadonlySet 字段；按工具类型名称分别映射 Map/Set。
   test('utility type: ReadonlyMap & Readonly Set', () => {
     expect(
       resolve(`
@@ -359,6 +383,7 @@ describe('resolveType', () => {
     })
   })
 
+  // 嵌套属性经 T['bar'] 与 S['nested'] 两级索引；选择成员类型后推导 foo:Number。
   test('indexed access type (literal)', () => {
     expect(
       resolve(`
@@ -371,6 +396,7 @@ describe('resolveType', () => {
     })
   })
 
+  // 索引键为 foo|bar，内部又用 T[string]；外层合并选中对象，string 索引近似所有已知字段类型。
   test('indexed access type (advanced)', () => {
     expect(
       resolve(`
@@ -385,6 +411,7 @@ describe('resolveType', () => {
     })
   })
 
+  // 数组、Array 泛型、普通元组与具名元组使用 [number]；展开元素并去重，保留各元素构造器顺序。
   test('indexed access type (number)', () => {
     expect(
       resolve(`
@@ -402,6 +429,7 @@ describe('resolveType', () => {
     })
   })
 
+  // namespace Foo 局部 X 遮蔽文件级 X，内部导出 Bar.A 引用它；ownerScope 决定 foo 为 Number。
   test('namespace', () => {
     expect(
       resolve(`
@@ -421,6 +449,7 @@ describe('resolveType', () => {
     })
   })
 
+  // 同名 interface 分两次声明 a/b，再通过索引读取；声明合并后两个属性均可解析。
   test('interface merging', () => {
     expect(
       resolve(`
@@ -441,6 +470,7 @@ describe('resolveType', () => {
     })
   })
 
+  // 同名 namespace 分别导出 A/B；模块 body 合并后两项具名类型都可访问。
   test('namespace merging', () => {
     expect(
       resolve(`
@@ -461,6 +491,7 @@ describe('resolveType', () => {
     })
   })
 
+  // namespace Foo 与 interface Foo 同名；namespace 附着到实体声明，既能访问 Foo.A 也能索引 Foo['b']。
   test('namespace merging with other types', () => {
     expect(
       resolve(`
@@ -481,6 +512,7 @@ describe('resolveType', () => {
     })
   })
 
+  // 同名 enum 两次声明数字/字符串成员；合并 members 后运行时类型为 Number/String。
   test('enum merging', () => {
     expect(
       resolve(`
@@ -499,6 +531,7 @@ describe('resolveType', () => {
     })
   })
 
+  // declare const a:string 用作 typeof a；从 declares 表取注解，推导 String。
   test('typeof', () => {
     expect(
       resolve(`
@@ -510,6 +543,7 @@ describe('resolveType', () => {
     })
   })
 
+  // readonly unknown[] 字段；operator 透传内部类型，容器仍为 Array。
   test('readonly', () => {
     expect(
       resolve(`
@@ -520,6 +554,7 @@ describe('resolveType', () => {
     })
   })
 
+  // keyof 作用于导入对象、interface、typeof 对象/Set/Array；按键类别近似 String/Number，容器键走内建规则。
   test('keyof', () => {
     const files = {
       '/foo.ts': `export type IMP = { ${1}: 1 };`,
@@ -556,6 +591,7 @@ describe('resolveType', () => {
     })
   })
 
+  // index signature 的键为 symbol/string/typeof number 与泛型 number；收集并去重键构造器，不能把索引值类型当键类型。
   test('keyof: index signature', () => {
     const { props } = resolve(
       `
@@ -586,6 +622,7 @@ describe('resolveType', () => {
   })
 
   // #11129：`keyof (A & B)` 应取得交叉后双方 key，不能只读取第一个成员。
+  // keyof 交叉对象和数字索引对象；运行时键范围合并为 String/Number。
   test('keyof: intersection type', () => {
     const { props } = resolve(`
     type A = { name: string }
@@ -598,6 +635,7 @@ describe('resolveType', () => {
     })
   })
 
+  // keyof 联合对象与数字索引对象；实现按各分支键类别合并，结果为 String/Number 的近似。
   test('keyof: union type', () => {
     const { props } = resolve(`
     type A = { name: string }
@@ -610,6 +648,7 @@ describe('resolveType', () => {
     })
   })
 
+  // keyof 包住 Record、keyof any、Partial/Required/Readonly、Pick/Extract；按各工具参数位置推导 Symbol/String/Number。
   test('keyof: utility type', () => {
     const { props } = resolve(
       `
@@ -641,6 +680,7 @@ describe('resolveType', () => {
     })
   })
 
+  // keyof 空 interface 继承链；没有可识别键，退化为 Unknown。
   test('keyof: fallback to Unknown', () => {
     const { props } = resolve(
       `
@@ -656,6 +696,7 @@ describe('resolveType', () => {
     })
   })
 
+  // keyof Type['deep'] 的唯一键是数字1；先解析索引再推导 Number 键类别。
   test('keyof: nested object with number', () => {
     const { props } = resolve(
       `
@@ -675,6 +716,7 @@ describe('resolveType', () => {
     })
   })
 
+  // keyof Type['deep'] 的唯一键是 foo；索引成员的键类别为 String。
   test('keyof: nested object with string', () => {
     const { props } = resolve(
       `
@@ -694,6 +736,7 @@ describe('resolveType', () => {
     })
   })
 
+  // 索引结果先赋给别名 Foo 再 keyof；沿中间别名仍推导 String。
   test('keyof: nested object with intermediate', () => {
     const { props } = resolve(
       `
@@ -715,6 +758,7 @@ describe('resolveType', () => {
     })
   })
 
+  // Element Plus 风格运行时 props 类型包含构造器与泛型包装、required:true；ExtractPropTypes 反向得到 String/Boolean，bar 必填。
   test('ExtractPropTypes (element-plus)', () => {
     const { props, raw } = resolve(
       `
@@ -737,6 +781,7 @@ describe('resolveType', () => {
     expect(raw.props.bar.optional).toBe(false)
   })
 
+  // Ant Design 风格函数返回 props，结合 ReturnType、动态 import ExtractPropTypes 和 Partial；反向构造器/PropType 后得到两项原始类型。
   test('ExtractPropTypes (antd)', () => {
     const { props } = resolve(
       `
@@ -755,6 +800,7 @@ describe('resolveType', () => {
   })
 
   // #11266：`declare function` 的返回类型标注可作为宏类型来源，需沿声明节点正确提取。
+  // declare function 泛型返回 props 对象；ReturnType 沿声明返回注解展开，PropType<数组> 反推 Array。
   test('correctly parse type annotation for declared function', () => {
     const { props } = resolve(`
     import { ExtractPropTypes } from 'vue'
@@ -774,6 +820,7 @@ describe('resolveType', () => {
     })
   })
 
+  // 泛型 Prettify 映射 T[K] 与空对象交叉，实参为字符串/模板联合；运行时近似包含 String 和 Object。
   test('TSMappedType with indexed access', () => {
     const { props } = resolve(
       `
@@ -790,9 +837,10 @@ describe('resolveType', () => {
     })
   })
 
-  // 类型别名：展开字面量、联合/交叉、工具类型以及循环引用保护。
+  // 类型别名：推导函数别名、联合/交叉和 Vue Ref 包装中的运行时类型。
   describe('type alias declaration', () => {
     // #13240：函数类型别名用于 prop 时应推导 Function，而非因没有对象 properties 报错。
+    // 泛型函数别名与二级别名用于 prop；识别函数形状，两项均为 Function，不按对象 props 展开。
     test('function type', () => {
       expect(
         resolve(`
@@ -809,6 +857,7 @@ describe('resolveType', () => {
       })
     })
 
+    // 泛型 Brand<T> 为 T & {}；替换 string 后保留 String/Object 的运行时交叉近似。
     test('with intersection type', () => {
       expect(
         resolve(`
@@ -822,6 +871,7 @@ describe('resolveType', () => {
       })
     })
 
+    // 泛型 Wrapped<T> 为 T|symbol|number；替换 boolean 后按顺序生成三个构造器。
     test('with union type', () => {
       expect(
         resolve(`
@@ -834,6 +884,7 @@ describe('resolveType', () => {
     })
 
     // #14729：原始复现是 interface 继承链中的 `MaybeRef<T[]>`，应穿透包装推导 Array。
+    // 外部 MaybeRef 来源不可解析，别名再经 interface 继承；名称兜底仍保留数组、Promise、Function，避免丢掉已知包装信息。
     test('MaybeRef wrapped array type in interface inheritance chain', () => {
       expect(
         resolve(`
@@ -858,6 +909,7 @@ describe('resolveType', () => {
     })
 
     // #14729：即使 Vue ref 包装类型的来源模块不可解析，联合中的已知 wrapper 仍可尽力推导。
+    // 六种 Vue Ref 包装从未知模块导入；引用解析失败后按名称兜底，Ref 为 Object，MaybeRef/OrGetter 加实参及 Function。
     test('Vue ref wrapper types in union are inferred when source is unresolvable', () => {
       expect(
         resolve(`
@@ -889,8 +941,9 @@ describe('resolveType', () => {
     })
   })
 
-  // 泛型：用实参建立临时作用域，验证默认参数、嵌套替换且不污染共享 AST 缓存。
+  // 泛型：验证实参在类型字面量、交叉、别名、接口和外部文件中的替换。
   describe('generics', () => {
+    // 泛型 Props<T>=T，传对象字面量；在实例化作用域替换 T，展开 foo:String。
     test('generic with type literal', () => {
       expect(
         resolve(`
@@ -902,6 +955,7 @@ describe('resolveType', () => {
       })
     })
 
+    // 泛型 Props<T,U> 交叉两实参与本地字段；替换后合并 foo/bar/baz 三项。
     test('generic used in intersection', () => {
       expect(
         resolve(`
@@ -917,6 +971,7 @@ describe('resolveType', () => {
       })
     })
 
+    // 多层泛型别名套 Readonly/Partial；逐层传递实参，最终展开原 Foo 的 String 字段。
     test('generic type /w generic type alias', () => {
       expect(
         resolve(`
@@ -930,6 +985,7 @@ describe('resolveType', () => {
       })
     })
 
+    // 泛型对象别名字段 foo:T；string 实参进入字段 ownerScope，运行时推导正确。
     test('generic type /w aliased type literal', () => {
       expect(
         resolve(`
@@ -941,6 +997,7 @@ describe('resolveType', () => {
       })
     })
 
+    // interface Props<T> 引用类型别名 Foo；先解析实际参数再替换成员 T，得到 String。
     test('generic type /w interface', () => {
       expect(
         resolve(`
@@ -955,6 +1012,7 @@ describe('resolveType', () => {
       })
     })
 
+    // 从虚拟外部 foo.ts 导入 P<T>；实参 string 在外部声明作用域实例化，foo 仍为 String。
     test('generic from external-file', () => {
       const files = {
         '/foo.ts': 'export type P<T> = { foo: T }',
@@ -974,6 +1032,7 @@ describe('resolveType', () => {
 
   // 外部类型：模块解析、re-export、namespace、tsconfig paths/references 与 HMR 依赖登记。
   describe('external type imports', () => {
+    // 相对导入 TS 与 d.ts 具名再导出，声明文件含仅声明语法；正确解析两项 props，deps 记录两个类型文件。
     test('relative ts', () => {
       const files = {
         '/foo.ts': 'export type P = { foo: number }',
@@ -998,6 +1057,7 @@ describe('resolveType', () => {
     })
 
     // #10635：省略扩展名的相对导入必须尝试 `.tsx`，不能只查 `.ts`。
+    // 省略扩展名导入 .tsx 文件与目录 index.tsx；扩展探测找到两者，props 与 deps 顺序正确。
     test('relative tsx', () => {
       const files = {
         '/foo.tsx': 'export type P = { foo: number }',
@@ -1018,6 +1078,7 @@ describe('resolveType', () => {
       expect(deps && [...deps]).toStrictEqual(Object.keys(files))
     })
 
+    // 仅 Windows 执行：盘符/反斜杠路径含同目录和父目录导入；props 合并三项、deps 经 normalize 比较，验证路径解析和依赖收集。
     test.runIf(process.platform === 'win32')('relative ts on Windows', () => {
       const files = {
         'C:\\Test\\FolderA\\foo.ts': 'export type P = { foo: number }',
@@ -1048,7 +1109,8 @@ describe('resolveType', () => {
       )
     })
 
-    // #8244：外部文件中的 Pick/Omit 等工具类型要在其声明作用域解析目标类型。
+    // #8244：外部文件中的 Required<A> 在声明文件作用域中解析 A。
+    // 外部 B=Required<A> 且 A 未导出；B 的 ownerScope 能读取文件本地 A，得到 Number。
     test('utility type in external file', () => {
       const files = {
         '/foo.ts': 'type A = { n?: number }; export type B = Required<A>',
@@ -1065,6 +1127,7 @@ describe('resolveType', () => {
       })
     })
 
+    // 分别导入普通 TS script 与 TSX setup 的 Vue 文件；提取各脚本类型并记录两个 .vue 依赖。
     test('relative vue', () => {
       const files = {
         '/foo.vue':
@@ -1087,6 +1150,7 @@ describe('resolveType', () => {
       expect(deps && [...deps]).toStrictEqual(Object.keys(files))
     })
 
+    // foo.ts 导入嵌套 Vue 类型并交叉本地字段；递归跨文件解析，deps 收集两级路径。
     test('relative (chained)', () => {
       const files = {
         '/foo.ts': `import type { P as PP } from './nested/bar.vue'
@@ -1108,6 +1172,7 @@ describe('resolveType', () => {
       expect(deps && [...deps]).toStrictEqual(Object.keys(files))
     })
 
+    // foo.ts 把 bar.P 再导出为 PP，SFC 又别名为 P；沿再导出映射找到 String 并登记两级依赖。
     test('relative (chained, re-export)', () => {
       const files = {
         '/foo.ts': `export { P as PP } from './bar'`,
@@ -1126,6 +1191,7 @@ describe('resolveType', () => {
       expect(deps && [...deps]).toStrictEqual(Object.keys(files))
     })
 
+    // foo.ts export * from bar；合并导出类型表后 P 可见，两文件均进入 deps。
     test('relative (chained, export *)', () => {
       const files = {
         '/foo.ts': `export * from './bar'`,
@@ -1144,6 +1210,7 @@ describe('resolveType', () => {
       expect(deps && [...deps]).toStrictEqual(Object.keys(files))
     })
 
+    // 分别默认导出 interface 与别名标识符；default 类型映射解析两种形状并合并字段。
     test('relative (default export)', () => {
       const files = {
         '/foo.ts': `export default interface P { foo: string }`,
@@ -1164,6 +1231,7 @@ describe('resolveType', () => {
       expect(deps && [...deps]).toStrictEqual(Object.keys(files))
     })
 
+    // 分别再导出原 default 与具名 PP as default；两个默认导入沿源模块解析，deps 去重共享 foo。
     test('relative (default re-export)', () => {
       const files = {
         '/bar.ts': `export { default } from './foo'`,
@@ -1185,6 +1253,7 @@ describe('resolveType', () => {
       expect(deps && [...deps]).toStrictEqual(Object.keys(files))
     })
 
+    // baz 从两个文件以 default as X/XX 再导出；内部导入键避免同名 default 冲突，字段与三项 deps 正确。
     test('relative (re-export /w same source type name)', () => {
       const files = {
         '/foo.ts': `export default interface P { foo: string }`,
@@ -1204,6 +1273,7 @@ describe('resolveType', () => {
       expect(deps && [...deps]).toStrictEqual(['/baz.ts', '/foo.ts', '/bar.ts'])
     })
 
+    // 顶层及字段类型使用 import('./file').Type；动态类型导入沿相对模块解析并登记 foo/bar 两级依赖。
     test('relative (dynamic import)', () => {
       const files = {
         '/foo.ts': `export type P = { foo: string, bar: import('./bar').N }`,
@@ -1222,6 +1292,7 @@ describe('resolveType', () => {
       expect(deps && [...deps]).toStrictEqual(Object.keys(files))
     })
 
+    // 导入 interface 后索引可选 required；联合保留 Boolean/String/Unknown，未定义值不能误窄化。
     test('relative import with indexed access type', () => {
       const files = {
         '/foo.ts': `
@@ -1247,6 +1318,7 @@ describe('resolveType', () => {
       expect(deps && [...deps]).toStrictEqual(Object.keys(files))
     })
 
+    // 索引字段所在 interface 继承无法展开的条件映射类型；字段运行时推导启用 extends 软失败，仍得到本地 required 的已知联合。
     test('relative import with indexed access type with unresolvable extends', () => {
       const files = {
         '/foo.ts': `
@@ -1281,6 +1353,7 @@ describe('resolveType', () => {
     })
 
     // #8339：类型导入写成 `.js` 扩展名时，TS 规则应回查对应 `.ts`/`.d.ts` 源文件。
+    // d.ts 内类型导入用 .js 扩展名；扩展探测回查 bar.d.ts，得到字面量联合的 String 构造器。
     test('relative, .js import', () => {
       const files = {
         '/foo.d.ts':
@@ -1300,6 +1373,7 @@ describe('resolveType', () => {
       expect(deps && [...deps]).toStrictEqual(Object.keys(files))
     })
 
+    // 虚拟 package.json types 与 tsconfig paths 分别解析 foo/bar；使用 TS resolver，只将实际类型文件加入 deps。
     test('ts module resolve', () => {
       const files = {
         '/node_modules/foo/package.json': JSON.stringify({
@@ -1335,6 +1409,7 @@ describe('resolveType', () => {
       ])
     })
 
+    // 根 tsconfig 引用 app、app extends web；子配置的 paths 生效，User 解析到 user.ts 并登记依赖。
     test('ts module resolve w/ project reference & extends', () => {
       const files = {
         '/tsconfig.json': JSON.stringify({
@@ -1374,6 +1449,7 @@ describe('resolveType', () => {
     })
 
     // #13484：project references、extends 与 `${configDir}` 组合时要选择正确 tsconfig 解析模块。
+    // project reference、数组 extends 与 ${configDir} 同时出现；按最终项目目录展开 paths/include，定位 src/types.ts。
     test('ts module resolve w/ project reference & extends & ${configDir}', () => {
       const files = {
         '/tsconfig.json': JSON.stringify({
@@ -1412,6 +1488,7 @@ describe('resolveType', () => {
       expect(deps && [...deps]).toStrictEqual(['/src/types.ts'])
     })
 
+    // references 指向 web、empty 和不存在目录；读取存在的项目配置并选择能解析 bar 的 web paths，忽略缺失引用。
     test('ts module resolve w/ project reference folder', () => {
       const files = {
         '/tsconfig.json': JSON.stringify({
@@ -1436,7 +1513,7 @@ describe('resolveType', () => {
             },
           },
         }),
-        // tsconfig 未声明 include 或 paths 时，不应凭空匹配任何外部类型文件。
+        // 此引用项目不提供 bar 的 paths 映射；当前用例应选中前面的 web 配置。
         '/empty/tsconfig.json': JSON.stringify({
           compilerOptions: {
             composite: true,
@@ -1460,6 +1537,7 @@ describe('resolveType', () => {
     })
 
     // #11382：循环 project references 必须通过 visited/cache 终止，且仍能找到已导出的类型。
+    // 两份 tsconfig 互相 references；visited 终止循环，仍能用 web 的 paths 找到 User。
     test('ts module resolve circular project reference', () => {
       const files = {
         '/tsconfig.json': JSON.stringify({
@@ -1502,6 +1580,7 @@ describe('resolveType', () => {
       expect(deps && [...deps]).toStrictEqual(['/user.ts'])
     })
 
+    // tsconfig paths alias 指向 Foo.vue；文件系统适配 Vue 路径并解析其中 TS 类型，deps 保存真实 .vue。
     test('ts module resolve w/ path aliased vue file', () => {
       const files = {
         '/tsconfig.json': JSON.stringify({
@@ -1530,6 +1609,7 @@ describe('resolveType', () => {
       expect(deps && [...deps]).toStrictEqual(['/src/Foo.vue'])
     })
 
+    // globalTypeFiles 同时加载 ambient namespace 与带 export 的模块；后者只取 declare global 中的 PP，避免模块私有声明覆盖全局。
     test('global types', () => {
       const files = {
         // 普通环境声明位于文件自身的声明作用域中。
@@ -1556,6 +1636,7 @@ describe('resolveType', () => {
       expect(deps && [...deps]).toStrictEqual(Object.keys(files))
     })
 
+    // declare global 内显式 export interface/type；两次解析各自名称，导出包装不妨碍登记全局类型。
     test('global types with named exports', () => {
       const files = {
         '/global.d.ts': `
@@ -1583,6 +1664,7 @@ describe('resolveType', () => {
       })
     })
 
+    // declare global 分别具名再导出 Foo/Bar 与 export * Baz；每次只登记实际使用的源类型 deps，保留全局声明文件。
     test('global types with re-exports', () => {
       const files = {
         '/foo.ts': `export interface Foo { foo: number }`,
@@ -1628,6 +1710,7 @@ describe('resolveType', () => {
       ])
     })
 
+    // 全局 Foo 来自外部模块并引用该模块的 import Name；保留 ownerScope，不在 global 文件错误查找 Name。
     test('global types with re-exports preserve source-module scope', () => {
       const files = {
         '/types.ts': `export type Name = string`,
@@ -1652,6 +1735,7 @@ describe('resolveType', () => {
       })
     })
 
+    // 全局再导出使用包目录相对路径，package.json types 指向 dist；解析目录声明入口并记录实际 index.d.ts。
     test('global types with re-exports from package directory', () => {
       const files = {
         '/node_modules/pkg/package.json': `{ "types": "dist/index.d.ts" }`,
@@ -1679,6 +1763,7 @@ describe('resolveType', () => {
       ])
     })
 
+    // 第一次解析全局 Foo 后第二次保留缓存，Foo extends Base 且字段引用 Name；两次 deps 均含 global/foo/base/types，缓存命中补登记 ownerScope。
     test('global types with re-exports track source deps after cache reuse', () => {
       const files = {
         '/base.ts': `export interface Base { age: number }`,
@@ -1716,9 +1801,10 @@ describe('resolveType', () => {
       expect(deps && [...deps]).toStrictEqual(expectedDeps)
     })
 
+    // ambient App.Data 与 App.Data.Listings 分别声明类型且相互引用；合并嵌套 namespace，字段推导 String/Object。
     test('global types with ambient references', () => {
       const files = {
-        // 同时覆盖通过三斜线 references 引入全局类型的情况。
+        // globalTypeFiles 加载 ambient namespace，并解析嵌套 namespace 中的类型引用。
         '/backend.d.ts': `
           declare namespace App.Data {
             export type AircraftData = {
@@ -1744,6 +1830,7 @@ describe('resolveType', () => {
       })
     })
 
+    // declare global 的 Options 对象再索引 code；全局符号解析后展开 selected:Boolean。
     test('declare global with indexed access type', () => {
       const files = {
         '/global.d.ts': `
@@ -1764,6 +1851,7 @@ describe('resolveType', () => {
       })
     })
 
+    // 同一 d.ts 列为 globalTypeFiles 且含顶层模块导出 Foo；显式模块 import 仍可读取 Foo，模块与全局 scope 缓存隔离。
     test('global type file with top-level exports is also importable', () => {
       const files = {
         '/globalTypes.d.ts': `export interface Foo { bar: string }`,
@@ -1782,6 +1870,7 @@ describe('resolveType', () => {
       expect(deps && [...deps]).toContain('/globalTypes.d.ts')
     })
 
+    // 先以未知全局类型触发全局 scope 缓存，再保留缓存从同一文件显式导入 Foo；第一次错误只用于预热，第二次应得到 String，验证全局与模块缓存隔离。
     test(
       'global type file with top-level exports is importable ' +
         'after global-scope load',
@@ -1810,7 +1899,7 @@ describe('resolveType', () => {
           files,
           { globalTypeFiles: ['/globalTypes.d.ts'] },
           '/Importer.vue',
-          false /* do not invalidate cache */,
+          false /* 保留前次全局作用域缓存 */,
         )
         expect(props).toStrictEqual({
           bar: ['String'],
@@ -1820,6 +1909,7 @@ describe('resolveType', () => {
     )
 
     // #9871：同一泛型声明以不同实参使用时不能复用首个展开缓存，否则 prop 类型会串线。
+    // 同一外部 Foo<T> 先用 string 后保留缓存用 number；泛型展开不能复用首个实参结果，value 两次分别为 String/Number。
     test('shared generics with different args', () => {
       const files = {
         '/foo.ts': `export interface Foo<T> { value: T }`,
@@ -1840,7 +1930,7 @@ describe('resolveType', () => {
         files,
         undefined,
         `/Two.vue`,
-        false /* do not invalidate cache */,
+        false /* 保留外部泛型声明缓存 */,
       )
       expect(props2).toStrictEqual({
         value: ['Number'],
@@ -1850,30 +1940,35 @@ describe('resolveType', () => {
 
   // 失败诊断：不支持的语法、无法解析的模块/类型和 extends 软失败边界。
   describe('errors', () => {
+    // 宏顶层引用不存在 X；结构展开必须得到属性集合，故抛 Unresolvable type reference。
     test('failed type reference', () => {
       expect(() => resolve(`defineProps<X>()`)).toThrow(
         `Unresolvable type reference`,
       )
     })
 
+    // 类型字面量采用动态 [Foo] 键；无法生成固定 prop 名，抛 unsupported computed key。
     test('unsupported computed keys', () => {
       expect(() => resolve(`defineProps<{ [Foo]: string }>()`)).toThrow(
         `Unsupported computed key in type referenced by a macro`,
       )
     })
 
+    // 宏类型是无法解析的 X[K]；索引对象/键无法有限展开，抛 unsupported index type。
     test('unsupported index type', () => {
       expect(() => resolve(`defineProps<X[K]>()`)).toThrow(
         `Unsupported type when resolving index type`,
       )
     })
 
+    // 相对导入 ./foo 不存在而作为宏顶层类型；文件解析失败给出具体 source 诊断。
     test('failed import source resolve', () => {
       expect(() =>
         resolve(`import { X } from './foo'; defineProps<X>()`),
       ).toThrow(`Failed to resolve import source "./foo"`)
     })
 
+    // 字段类型分别为未知 T、T['bar'] 和未知模块 P；运行时构造器推导是软失败路径，三个分支均不阻断结构展开。
     test('should not error on unresolved type when inferring runtime type', () => {
       expect(() => resolve(`defineProps<{ foo: T }>()`)).not.toThrow()
       expect(() => resolve(`defineProps<{ foo: T['bar'] }>()`)).not.toThrow()
@@ -1885,6 +1980,7 @@ describe('resolveType', () => {
       ).not.toThrow()
     })
 
+    // interface 顶层 extends 未知 Base；结构解析拒绝缺失父级并提示 @vue-ignore。
     test('error against failed extends', () => {
       expect(() =>
         resolve(`
@@ -1895,6 +1991,7 @@ describe('resolveType', () => {
       ).toThrow(`@vue-ignore`)
     })
 
+    // 未知 Base 的 extends 标 @vue-ignore；跳过父级且保留本地 foo:String，不再抛 extends 错误。
     test('allow ignoring failed extends', () => {
       let res: any
 
@@ -1915,8 +2012,9 @@ describe('resolveType', () => {
     })
   })
 
-  // 模板字面量类型：尽力推导为 String，并处理联合插值而不枚举无限组合。
+  // 模板字面量作为 mapped key 时，展开有限插值集合并生成属性名。
   describe('template literals', () => {
+    // mapped key 用 a|b 并 as 模板后缀；实例化每个 K，得到 a_foo/b_foo 两个 String 字段。
     test('mapped types with string type', () => {
       expect(
         resolve(`
@@ -1930,6 +2028,7 @@ describe('resolveType', () => {
     })
 
     // #10962：映射类型的 key/value 依赖泛型参数时，应在实例化作用域完成替换后再展开属性。
+    // 泛型 BreakpointFactory 的前缀与值类型都来自实参；Capitalize 作用于每个断点，生成 colsSm/Md/Lg:Number。
     test('mapped types with generic parameters', () => {
       const { props } = resolve(`
       type Breakpoints = 'sm' | 'md' | 'lg'
@@ -1946,6 +2045,7 @@ describe('resolveType', () => {
       })
     })
 
+    // Vue/CSS 资源旁有 .d.vue.ts/.d.css.ts 声明；优先使用任意扩展声明文件，得到 Number/String。
     test('allowArbitraryExtensions', () => {
       const files = {
         '/foo.d.vue.ts': 'export type Foo = number;',
@@ -1970,6 +2070,7 @@ describe('resolveType', () => {
     })
 
     // https://github.com/vuejs/router/issues/2611
+    // mjs/jsx/cjs 模块旁提供 d.mts/d.ts/d.cts；按扩展映射找声明而非解析运行时 JS，四项 props 构造器正确。
     test('modular js extension', () => {
       const files = {
         '/mts.mjs': 'export {}',
@@ -2004,6 +2105,7 @@ describe('resolveType', () => {
       })
     })
 
+    // .mjs 同时有 .ts 和 .mts 候选；模块类别专用 .mts 优先，value 为 String。
     test('prefer .mts over .ts for .mjs import', () => {
       const files = {
         '/foo.mjs': 'export {}',
@@ -2024,6 +2126,7 @@ describe('resolveType', () => {
       })
     })
 
+    //  .mjs 同时有 .d.ts 与 .d.mts；优先 .d.mts，value 为 String。
     test('prefer .d.mts over .d.ts for .mjs import', () => {
       const files = {
         '/foo.mjs': 'export {}',
@@ -2044,6 +2147,7 @@ describe('resolveType', () => {
       })
     })
 
+    //  .cjs 同时有 .d.ts 与 .d.cts；优先 .d.cts，value 为 Boolean。
     test('prefer .d.cts over .d.ts for .cjs import', () => {
       const files = {
         '/foo.cjs': 'module.exports = {}',

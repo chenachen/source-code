@@ -40,7 +40,7 @@ describe('SchedulerNoDOM', () => {
   /**
    * Given：三个同优先级回调已入队，但 fake timers 尚未推进。
    * When：`jest.runAllTimers()` 触发 Scheduler 的 `setTimeout` host callback。
-   * Then：三个回调按入队顺序一次执行完毕。
+   * Then：三个回调按入队顺序全部执行；always-yield 构建可能分成多次 timer，runAllTimers 会继续排空。
    *
    * 验证机制：执行 timer 前后分别断言日志为空和 `A → B → C`，证明入队本身不执行工作，
    * host timer 才驱动 `flushWork()`，且同一 `expirationTime` 的任务由 id 保持 FIFO。

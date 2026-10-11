@@ -19,8 +19,7 @@ let LowerLevelComposite;
 let MyCompositeComponent;
 
 /**
- * 集成测试，保留英文。 测试 JSX 与我们抽象单元的组合。 ``ReactCompositeComponent`
- * ` 从不添加多余的 `DOM` 节点。
+ * 用 JSX 组合函数组件与 DOM，检查插值文本和复合组件不会引入额外包装节点。
  */
 describe('ReactCompositeComponentDOMMinimalism', () => {
   beforeEach(() => {
@@ -28,29 +27,26 @@ describe('ReactCompositeComponentDOMMinimalism', () => {
     ReactDOMClient = require('react-dom/client');
     act = require('internal-test-utils').act;
 
+    /** 最内层类 fixture 仅创建一个 div，所有期望中的根元素都来自这一层。 */
     LowerLevelComposite = class extends React.Component {
-      /** `render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 在唯一显式 div 内原样放入 children，覆盖纯文本、字符串插值与 ul 子节点三种输入。 */
       render() {
         return <div>{this.props.children}</div>;
       }
     };
 
+    /** 外层类 fixture 只转交 children 给另一复合组件，测试其本身不创建 DOM 包装。 */
     MyCompositeComponent = class extends React.Component {
-      /** `render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 只渲染 LowerLevelComposite 并透传 children，让元素计数能识别复合组件额外包装。 */
       render() {
         return <LowerLevelComposite>{this.props.children}</LowerLevelComposite>;
       }
     };
   });
 
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「should not render extra nodes for non-interpolated text」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言连接 ReactDOM 公开入口、ReactDOMRoot 根生命周期及 DOM 提交结果。
-   */
+  /** 两层复合组件包裹直接字符串 children；提交后根仅有一个 DIV 且其元素 children 为 0，验证复合层级与纯文本都不添加包装元素。 */
   it('should not render extra nodes for non-interpolated text', async () => {
     const container = document.createElement('div');
     const root = ReactDOMClient.createRoot(container);
@@ -63,7 +59,7 @@ describe('ReactCompositeComponentDOMMinimalism', () => {
     expect(instance.children.length).toBe(0);
   });
 
-  /** 测试场景：验证「should not render extra nodes for interpolated text」描述的渲染、交互或错误处理结果。 */
+  /** 两层复合组件包裹 JSX 字符串插值；提交后仍是一个 DIV 且无元素子节点，验证插值文本也不引入额外元素。 */
   it('should not render extra nodes for interpolated text', async () => {
     const container = document.createElement('div');
     const root = ReactDOMClient.createRoot(container);
@@ -80,7 +76,7 @@ describe('ReactCompositeComponentDOMMinimalism', () => {
     expect(instance.children.length).toBe(0);
   });
 
-  /** 测试场景：验证「should not render extra nodes for interpolated text children」描述的渲染、交互或错误处理结果。 */
+  /** 两层复合组件包裹带文本的 ul；提交后 DIV 仅有一个 UL，UL 自身没有元素子节点，验证仅显式 JSX 元素影响元素树结构。 */
   it('should not render extra nodes for interpolated text children', async () => {
     const container = document.createElement('div');
     const root = ReactDOMClient.createRoot(container);

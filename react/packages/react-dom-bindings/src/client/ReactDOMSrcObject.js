@@ -7,16 +7,14 @@
  * @flow
  */
 
-/** `setSrcObject` 更新对应关联或宿主状态，并保持后续读取看到一致快照；用于以赋值或属性回退方式同步媒体 srcObject。 */
+/** 用 createObjectURL 生成临时 src；img load 或媒体 loadstart/error 后撤销 URL 并移除清理监听。 */
 export function setSrcObject(domElement: Element, tag: string, value: any) {
-  //我们乐观地创建 URL，而不考虑对象类型。这让我们
-  //支持跨域以及浏览器支持的任何类型，比如新类型。
+  // 交给浏览器 createObjectURL 判断支持的对象类型，也接受其他 realm 的对象。
   const url = URL.createObjectURL(value as any);
   const loadEvent = tag === 'img' ? 'load' : 'loadstart';
-  /** `setSrcObject.cleanUp` 执行该模块的单一职责，并把副作用限制在当前 DOM/Fiber 边界；用于以赋值或属性回退方式同步媒体 srcObject。 */
+  /** 撤销本次创建的 object URL，并移除 load/loadstart 与 error 两个监听。 */
   const cleanUp = () => {
-    //一旦对象开始加载，那么它已经被...收集了
-    //浏览器将不会再通过 URL 引用它，所以我们现在可以撤销它。
+    // load/loadstart 或 error 到达后释放本次临时 URL，并移除配对监听。
     URL.revokeObjectURL(url);
     domElement.removeEventListener(loadEvent, cleanUp);
     domElement.removeEventListener('error', cleanUp);

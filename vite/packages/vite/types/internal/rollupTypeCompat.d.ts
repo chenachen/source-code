@@ -1,7 +1,7 @@
 import type * as Rolldown from 'rolldown'
 
 // Vite 转向 Rolldown 后保留的 Rollup 命名兼容层；所有别名都指向 Rolldown 当前
-// 类型，新代码应采用新名称，以免未来移除兼容层时产生迁移成本。
+// 类型；这些别名描述当前 Rolldown API，新代码可直接使用 Rolldown 名称。
 export * from 'rolldown'
 
 /** @deprecated 请改用 RolldownBuild。 */

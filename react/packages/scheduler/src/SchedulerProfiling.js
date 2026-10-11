@@ -12,12 +12,12 @@ import {enableProfiling} from './SchedulerFeatureFlags';
 
 // 每次任务真正开始/继续执行时递增，用于把多段 continuation 区分为不同运行片段。
 let runIdCounter: number = 0;
-// Scheduler 每次从运行转为挂起时递增，用于配对主线程 resume/suspend 事件。
+// 每次 suspend 时递增；该 suspend 和随后 resume 共享编号，标识两次 flush 之间的间隔。
 let mainThreadIdCounter: number = 0;
 
-// 初始日志容量按 Int32 元素计数；每个元素 4 字节，初始缓冲区为 512 KiB。
+/** 初始日志容量按 Int32 元素计数；每个元素 4 字节，初始缓冲区为 512 KiB。 */
 const INITIAL_EVENT_LOG_SIZE = 131072;
-// 最大日志容量按 Int32 元素计数，对应 2 MiB；超过后自动停止，避免无限占用内存。
+/** 逻辑日志上限为 524288 个 Int32（2 MiB 数据）；扩容分支实际分配四倍元素，最大底层缓冲区为 8 MiB。 */
 const MAX_EVENT_LOG_SIZE = 524288;
 
 // 下列状态共同描述一次 profiling 会话；`eventLog === null` 表示当前未记录。
@@ -26,28 +26,32 @@ let eventLogBuffer = null;
 let eventLog = null;
 let eventLogIndex = 0;
 
-// 任务进入 ready queue 的事件编码。
+/** 任务进入 ready queue 的事件编码。 */
 const TaskStartEvent = 1;
-// 任务 callback 正常结束且无 continuation 的事件编码。
+/** 任务 callback 正常结束且无 continuation 的事件编码。 */
 const TaskCompleteEvent = 2;
-// 任务 callback 抛出错误的事件编码。
+/** 任务 callback 抛出错误的事件编码。 */
 const TaskErrorEvent = 3;
-// ready task 被取消的事件编码。
+/** ready task 被取消的事件编码。 */
 const TaskCancelEvent = 4;
-// 任务 callback 开始一次运行片段的事件编码。
+/** 任务 callback 开始一次运行片段的事件编码。 */
 const TaskRunEvent = 5;
-// callback 返回 continuation、当前运行片段主动让出的事件编码。
+/** callback 返回 continuation、当前运行片段结束的事件编码；mock 中不一定同时结束 flush。 */
 const TaskYieldEvent = 6;
-// Scheduler 暂无可在当前 host task 中继续执行的工作的事件编码。
+/** Scheduler 退出一次 flush 的事件编码，队列清空、yield 或抛错都会产生。 */
 const SchedulerSuspendEvent = 7;
-// Scheduler 恢复执行 ready task 的事件编码。
+/** Scheduler 恢复执行 ready task 的事件编码。 */
 const SchedulerResumeEvent = 8;
 
 /**
- * 把一条定长数字事件追加到当前 profiling 缓冲区。
+ * 把一条数字事件追加到当前 profiling 缓冲区；各事件编码决定其字段数。
  *
- * 状态：空间不足时缓冲区倍增并复制旧数据；超过 2 MiB 上限时停止本次会话。
+ * 索引越过逻辑容量时将容量阈值倍增并复制旧数据；阈值超过 524288 个 Int32 时停止会话。
+ * 扩容使用 `new Int32Array(eventLogSize * 4)`，实际数组长度是阈值的四倍，不能把阈值当作已分配字节数。
  * 边界：未启动 profiling 时静默忽略，调用方无需重复判断会话状态。
+ * @param entries - 一条事件的整数协议字段；Int32Array 写入会截断浮点并按有符号 32 位保存。
+ * @remarks 各 mark 函数传入的 ms 是 Scheduler 当前时钟的毫秒值，乘 1000 后记录微秒；
+ * 没有 wall-clock epoch 或每次会话相对时间换算，读取方必须使用同一时钟协议。
  */
 function logEvent(entries: Array<number | PriorityLevel>) {
   if (eventLog !== null) {
@@ -74,7 +78,11 @@ function logEvent(entries: Array<number | PriorityLevel>) {
   }
 }
 
-/** 初始化空 profiling 缓冲区，并丢弃此前会话的索引状态。 */
+/**
+ * 初始化空 profiling 缓冲区，替换旧会话存储并把写入索引归零。
+ * @remarks runIdCounter 和 mainThreadIdCounter 没有重置；分段编号跨日志会话继续递增。
+ * 此入口本身不检查 enableProfiling；事件写入仍受每个 mark 函数的构建开关控制。
+ */
 export function startLoggingProfilingEvents(): void {
   eventLogSize = INITIAL_EVENT_LOG_SIZE;
   eventLogBuffer = new ArrayBuffer(eventLogSize * 4);
@@ -99,9 +107,9 @@ export function stopLoggingProfilingEvents(): ArrayBuffer | null {
 /** 记录任务首次进入 ready queue；延迟任务只有到期搬入 task queue 时才记录。 */
 export function markTaskStart(
   task: {
-    // 与 Scheduler Task 共用的单调任务编号。
+    /** 与 Scheduler Task 共用的单调任务编号。 */
     id: number,
-    // 创建任务时确定的 Scheduler 优先级。
+    /** 创建任务时确定的 Scheduler 优先级。 */
     priorityLevel: PriorityLevel,
     ...
   },
@@ -119,9 +127,9 @@ export function markTaskStart(
 /** 记录任务 callback 正常完成且不再返回 continuation。 */
 export function markTaskCompleted(
   task: {
-    // 完成任务的单调编号。
+    /** 完成任务的单调编号。 */
     id: number,
-    // 保留字段形状与其他任务事件一致；本事件编码不写入该值。
+    /** 保留字段形状与其他任务事件一致；本事件编码不写入该值。 */
     priorityLevel: PriorityLevel,
     ...
   },
@@ -138,9 +146,9 @@ export function markTaskCompleted(
 /** 记录仍位于 ready queue 的任务被取消。 */
 export function markTaskCanceled(
   task: {
-    // 被取消任务的单调编号。
+    /** 被取消任务的单调编号。 */
     id: number,
-    // 保留字段形状与 Scheduler Task 一致；本事件编码不写入该值。
+    /** 保留字段形状与 Scheduler Task 一致；本事件编码不写入该值。 */
     priorityLevel: PriorityLevel,
     ...
   },
@@ -157,9 +165,9 @@ export function markTaskCanceled(
 /** 记录当前 callback 抛错；错误本身由 Scheduler 原样继续抛给 host。 */
 export function markTaskErrored(
   task: {
-    // 抛错任务的单调编号。
+    /** 抛错任务的单调编号。 */
     id: number,
-    // 保留字段形状与 Scheduler Task 一致；本事件编码不写入该值。
+    /** 保留字段形状与 Scheduler Task 一致；本事件编码不写入该值。 */
     priorityLevel: PriorityLevel,
     ...
   },
@@ -176,9 +184,9 @@ export function markTaskErrored(
 /** 记录任务开始或恢复一次 callback 运行片段，并分配新的 run id。 */
 export function markTaskRun(
   task: {
-    // 当前运行任务的单调编号。
+    /** 当前运行任务的单调编号。 */
     id: number,
-    // 当前运行任务的 Scheduler 优先级。
+    /** 当前运行任务的 Scheduler 优先级。 */
     priorityLevel: PriorityLevel,
     ...
   },
@@ -197,7 +205,7 @@ export function markTaskRun(
 /** 记录 callback 返回 continuation 后结束当前运行片段。 */
 export function markTaskYield(
   task: {
-    // 主动让出任务的单调编号。
+    /** 主动让出任务的单调编号。 */
     id: number,
     ...
   },
@@ -211,7 +219,7 @@ export function markTaskYield(
   }
 }
 
-/** 记录 Scheduler 完成本轮 flush 并把执行权归还 host。 */
+/** 记录 Scheduler 退出本轮 flush；生产实现随后归还 host，mock 外层 helper 也可能继续 flush。 */
 export function markSchedulerSuspended(ms: number) {
   // $FlowFixMe[constant-condition]
   if (enableProfiling) {

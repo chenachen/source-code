@@ -121,7 +121,7 @@ export type EmitFn<
 /**
  * 从组件实例向父 VNode props 分发自定义事件。
  *
- * 开发环境校验声明和参数；v-model update 先应用 trim/number；处理大小写与 kebab 兼容
+ * 开发环境校验声明和参数；v-model update 按修饰符映射参数；处理大小写与 kebab 兼容
  * 查找、once 去重、异步错误边界和 Vue 2 compat。组件已卸载时直接忽略迟到异步事件。
  */
 export function emit(
@@ -179,6 +179,7 @@ export function emit(
     if (modifiers.trim) {
       args = rawArgs.map(a => (isString(a) ? a.trim() : a))
     }
+    // number 重新映射 rawArgs，覆盖 trim 的中间结果；不是把 args 再传入数值转换。
     if (modifiers.number) {
       args = rawArgs.map(looseToNumber)
     }
@@ -268,6 +269,9 @@ export function normalizeEmitsOptions(
   // 合并顺序与 Options API 一致，组件自身声明最后覆盖继承校验器。
   let hasExtends = false
   if (__FEATURE_OPTIONS_API__ && !isFunction(comp)) {
+    /**
+     * 以 asMixin 模式递归规范化一个继承来源，跳过应用全局 mixin 的重复合并；有结果时标记 hasExtends 并覆盖到当前映射。
+     */
     const extendEmits = (raw: ComponentOptions) => {
       const normalizedFromExtend = normalizeEmitsOptions(raw, appContext, true)
       if (normalizedFromExtend) {
@@ -307,7 +311,8 @@ export function normalizeEmitsOptions(
 
 /**
  * 判断输入 prop 是否为已声明事件监听器，因此应由 emit 消费而非落入 `$attrs`。
- * 例如 `emits: { click: null }` 同时匹配 `onClick` 与 `onclick`。
+ * 例如 `emits: { click: null }` 匹配 `onClick` 与 `onClickOnce`；`onclick` 不满足
+ * Vue 的监听器 key 格式，仍可作为普通输入进入 `$attrs`。
  */
 export function isEmitListener(
   options: ObjectEmitsOptions | null,

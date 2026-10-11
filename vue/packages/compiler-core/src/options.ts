@@ -83,7 +83,7 @@ export interface ParserOptions
 }
 
 /**
- * 静态提升完成后的平台扩展钩子。
+ * 静态缓存分析收集到可缓存子节点后的平台扩展钩子。
  * compiler-dom 用它把连续静态元素进一步串成 HTML 字符串。
  */
 export type HoistTransform = (
@@ -181,7 +181,7 @@ export interface TransformOptions
   /** 指令名到转换器的映射；处理元素上每个对应指令属性。 */
   directiveTransforms?: Record<string, DirectiveTransform | undefined>
   /**
-   * 静态节点提升后的可选平台钩子。compiler-dom 用它将提升节点串成静态 HTML VNode。
+   * 静态缓存分析中的可选平台钩子。compiler-dom 用它将连续静态节点串成静态 HTML VNode。
    * @default null
    */
   transformHoist?: HoistTransform | null
@@ -196,15 +196,24 @@ export interface TransformOptions
    * @default mode === 'module'
    */
   prefixIdentifiers?: boolean
-  /** 把静态 VNode 和 props 对象提升到 `_hoisted_x` 常量。 @default false */
+  /**
+   * 启用静态优化：稳定 VNode/children 写入实例 `_cache`，可复用的 props 对象与
+   * dynamicProps 名单提升为 `_hoisted_n`。
+   * @default false
+   */
   hoistStatic?: boolean
   /**
    * 缓存 `v-on` 处理器，避免每次渲染新建内联函数，也让运行时无需反复 patch 监听器。
-   * 例如 `@click="foo"` 默认生成 `{ onClick: foo }`，开启后生成：
+   * 例如原生元素的 `@click="foo"` 在前缀模式下生成 `{ onClick: _ctx.foo }`，开启后生成：
    * ```js
-   * { onClick: _cache[0] || (_cache[0] = e => _ctx.foo(e)) }
+   * {
+   *   onClick: _cache[0] ||
+   *     (_cache[0] = (...args) => (_ctx.foo && _ctx.foo(...args)))
+   * }
    * ```
-   * 依赖 `prefixIdentifiers` 的作用域分析，只有确定处理器不捕获局部变量时才可缓存。
+   * 包装器在事件发生时读取最新 foo，并透传全部参数。缓存依赖 `prefixIdentifiers`
+   * 的作用域分析，捕获模板局部变量的处理器不能缓存；组件成员处理器保留原函数，
+   * 避免包装器改变其 `.length`，也不走这项缓存。
    * @default false
    */
   cacheHandlers?: boolean
@@ -234,7 +243,7 @@ export interface TransformOptions
 /** 控制渲染函数包装方式、helper 来源及 source map 的代码生成选项。 */
 export interface CodegenOptions extends SharedTransformCodegenOptions {
   /**
-   * - `module`：为 helper 生成 ESM import，并默认导出渲染函数；
+   * - `module`：为 helper 生成 ESM import，并具名导出渲染函数；
    * - `function`：从全局 `Vue` 解构 helper 并返回函数，供 `new Function(code)()` 运行时编译。
    * @default 'function'
    */

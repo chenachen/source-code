@@ -29,17 +29,10 @@ describe('ReactDOMEventListener', () => {
   });
 
   describe('Propagation', () => {
-    /**
-     * 代表场景（Given–When–Then）：
-     * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-     * When 执行「should propagate events one level down」描述的渲染或交互；
-     * Then 通过本用例的 DOM、日志或调度断言确认行为。
-     *
-     * 验证机制：事件断言连接 DOMPluginEventSystem 的委托、合成与传播路径。
-     */
+    /** 两个独立根提交后把 child 容器插入 parent DOM，再从 child 发送冒泡 mouseout；断言 currentTarget 依次为 child、parent 共两次，验证事件跨嵌套根容器分别分发；finally 移除外层容器。 */
     it('should propagate events one level down', async () => {
       const mouseOut = jest.fn();
-      /** `onMouseOut`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 把合成事件的 currentTarget 传给 mouseOut mock，区分嵌套两个根当前执行的宿主节点。 */
       const onMouseOut = event => mouseOut(event.currentTarget);
 
       const childContainer = document.createElement('div');
@@ -71,10 +64,10 @@ describe('ReactDOMEventListener', () => {
       }
     });
 
-    /** 测试场景：验证「should propagate events two levels down」描述的渲染、交互或错误处理结果。 */
+    /** 三个根按 DOM 嵌套，child 发送冒泡 mouseout；断言 currentTarget 为 child→parent→grandparent 共三次，验证根边界间的原生传播与合成处理顺序。 */
     it('should propagate events two levels down', async () => {
       const mouseOut = jest.fn();
-      /** `onMouseOut`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 记录 currentTarget 到共享 mock，供三个嵌套根的分发顺序断言。 */
       const onMouseOut = event => mouseOut(event.currentTarget);
 
       const childContainer = document.createElement('div');
@@ -114,21 +107,21 @@ describe('ReactDOMEventListener', () => {
     });
 
     // 针对 https://github.com/facebook/react/issues/1105 的回归测试。
-    /** 测试场景：验证「should not get confused by disappearing elements」描述的渲染、交互或错误处理结果。 */
+    /** MyComponent 初始输出可点击 button，click 更新 clicked 后替换为 span；mount/update 回调均断言 findDOMNode 为容器当前首节点，最终文本 clicked，验证事件使原目标删除后宿主实例查找仍对应提交树。 */
     it('should not get confused by disappearing elements', async () => {
       const container = document.createElement('div');
       document.body.appendChild(container);
 
       try {
-        /** `MyComponent`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+        /** clicked 初始false输出button，click后输出span，并在两个提交回调检查 findDOMNode，构造事件目标被删除场景。 */
         class MyComponent extends React.Component {
-          /** `MyComponent.state`：记录测试夹具在当前场景中的状态。 */
+          /** clicked=false 保留初始 button；handleClick 将它变true以替换根宿主类型。 */
           state = {clicked: false};
-          /** `MyComponent.handleClick`：封装当前用例复用的操作、回调或断言步骤。 */
+          /** click 时 setState(clicked=true)，让下一次提交删除原按钮并创建 span。 */
           handleClick = () => {
             this.setState({clicked: true});
           };
-          /** `MyComponent.componentDidMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+          /** 挂载完成后断言类实例对应 container.firstChild，建立宿主查找基线。 */
           componentDidMount() {
             expect(
               ReactDOM.__DOM_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE.findDOMNode(
@@ -136,7 +129,7 @@ describe('ReactDOMEventListener', () => {
               ),
             ).toBe(container.firstChild);
           }
-          /** `MyComponent.componentDidUpdate`：实现测试夹具的生命周期、渲染或交互步骤。 */
+          /** 更新完成后再次断言 findDOMNode 对应新的首节点，验证按钮替换后的关联。 */
           componentDidUpdate() {
             expect(
               ReactDOM.__DOM_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE.findDOMNode(
@@ -144,7 +137,7 @@ describe('ReactDOMEventListener', () => {
               ),
             ).toBe(container.firstChild);
           }
-          /** `MyComponent.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+          /** 依据 clicked 返回 span 或带 handleClick 的 button，不复用相同宿主类型。 */
           render() {
             if (this.state.clicked) {
               return <span>clicked!</span>;
@@ -172,7 +165,7 @@ describe('ReactDOMEventListener', () => {
       }
     });
 
-    /** 测试场景：验证「should batch between handlers from different roots (discrete)」描述的渲染、交互或错误处理结果。 */
+    /** 嵌套两个根的 Child/Parent click 分别给 Child 设1/2并立即读取 DOM；simulateEventDispatch 后两回调分别看到 Child、1，最终2，验证本离散事件中两个根监听边界间的冲刷时序。 */
     it('should batch between handlers from different roots (discrete)', async () => {
       const mock = jest.fn();
 
@@ -183,11 +176,11 @@ describe('ReactDOMEventListener', () => {
       const parentRoot = ReactDOMClient.createRoot(parentContainer);
       let childSetState;
 
-      /** `Parent`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 外根输出 Parent section，并在 click 时更新内根 Child；state仅维持固定父文本，供两个根监听边界观测。 */
       function Parent() {
         // eslint-disable-next-line no-unused-vars
         const [state, _] = React.useState('Parent');
-        /** `Parent.handleClick`：封装当前用例复用的操作、回调或断言步骤。 */
+        /** 给内根 Child 提交值2，随后立即读取其 textContent 传给 mock，观察前一个根的离散更新何时可见。 */
         const handleClick = () => {
           childSetState(2);
           mock(childContainer.firstChild.textContent);
@@ -195,11 +188,11 @@ describe('ReactDOMEventListener', () => {
         return <section onClick={handleClick}>{state}</section>;
       }
 
-      /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 内根输出 state span，暴露 setter 给 Parent；本地 click 先安排值1再读取当前DOM。 */
       function Child() {
         const [state, setState] = React.useState('Child');
         childSetState = setState;
-        /** `Child.handleClick`：封装当前用例复用的操作、回调或断言步骤。 */
+        /** 提交 Child 值1并立即记录旧 DOM textContent，供离散事件批处理起点断言。 */
         const handleClick = () => {
           setState(1);
           mock(childContainer.firstChild.textContent);
@@ -242,7 +235,7 @@ describe('ReactDOMEventListener', () => {
       }
     });
 
-    /** 测试场景：验证「should batch between handlers from different roots (continuous)」描述的渲染、交互或错误处理结果。 */
+    /** 同样嵌套两根，但以 mouseout 连续事件设 Child=1/2；两个处理器均读取旧 Child，act 结束后为2，验证连续事件更新在该分发完成后合并提交。 */
     it('should batch between handlers from different roots (continuous)', async () => {
       const mock = jest.fn();
 
@@ -253,11 +246,11 @@ describe('ReactDOMEventListener', () => {
       const parentRoot = ReactDOMClient.createRoot(parentContainer);
       let childSetState;
 
-      /** `Parent`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 外根 Parent section 通过 mouseout 更新内根；使用固定 Parent 文本构造连续事件的跨根分发。 */
       function Parent() {
         // eslint-disable-next-line no-unused-vars
         const [state, _] = React.useState('Parent');
-        /** `Parent.handleMouseOut`：封装当前用例复用的操作、回调或断言步骤。 */
+        /** 连续事件回调提交 Child 值2，再同步读取内根 DOM，供更新尚未提交的断言。 */
         const handleMouseOut = () => {
           childSetState(2);
           mock(childContainer.firstChild.textContent);
@@ -265,11 +258,11 @@ describe('ReactDOMEventListener', () => {
         return <section onMouseOut={handleMouseOut}>{state}</section>;
       }
 
-      /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 内根 Child span 暴露 setter，本地 mouseout 提交值1并观察同步DOM，与外根处理器对照。 */
       function Child() {
         const [state, setState] = React.useState('Child');
         childSetState = setState;
-        /** `Child.handleMouseOut`：封装当前用例复用的操作、回调或断言步骤。 */
+        /** 提交 Child=1后立即记录 textContent；连续事件用例此时仍读取 Child。 */
         const handleMouseOut = () => {
           setState(1);
           mock(childContainer.firstChild.textContent);
@@ -309,16 +302,16 @@ describe('ReactDOMEventListener', () => {
     });
   });
 
-  /** 测试场景：验证「should not fire duplicate events for a React DOM tree」描述的渲染、交互或错误处理结果。 */
+  /** 同一 React 树 outer 监听 mouseout、内层无监听器；内层分发冒泡事件后 mock 收到真实 target=innerRef，验证祖先回调保持原事件目标；该断言没有检查调用次数。 */
   it('should not fire duplicate events for a React DOM tree', async () => {
     const mouseOut = jest.fn();
-    /** `onMouseOut`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 把原生目标对应的合成 event.target 交给 mock，验证祖先回调不把target改为currentTarget。 */
     const onMouseOut = event => mouseOut(event.target);
 
     const innerRef = React.createRef();
-    /** `Wrapper`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 输出带 outer mouseout handler 与 innerRef 的三层 div，构造单根祖先事件回调 fixture。 */
     class Wrapper extends React.Component {
-      /** `Wrapper.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 返回固定 outer/inner DOM，内层只有ref、没有自己的mouseout handler。 */
       render() {
         return (
           <div>
@@ -352,7 +345,7 @@ describe('ReactDOMEventListener', () => {
   });
 
   // 针对 https://github.com/facebook/react/pull/12877 的回归测试。
-  /** 测试场景：验证「should not fire form events twice」描述的渲染、交互或错误处理结果。 */
+  /** form/input 分别监听 reset/submit/invalid；手动分发非冒泡 invalid 与冒泡 reset/submit，各首次一次，再次 submit 后累计两次，验证表单事件不因监听路径重复分发。 */
   it('should not fire form events twice', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -416,9 +409,8 @@ describe('ReactDOMEventListener', () => {
     document.body.removeChild(container);
   });
 
-  // 此测试验证一项实现细节：React 在 document 层监听 submit/reset 事件，这是事件重放正常工作的前提。
-  // 这两种事件在所有现代浏览器中都会冒泡。
-  /** 测试场景：验证「should not receive submit events if native, interim DOM handler prevents it」描述的渲染、交互或错误处理结果。 */
+  // submit/reset 的冒泡阶段由根容器监听；中间 DOM 节点停止原生冒泡后，React 的 onSubmit/onReset 不应触发。
+  /** form 的中间 div 通过原生 onsubmit/onreset stopPropagation；分发表单冒泡事件后 React mock 均不调用，验证未到达根冒泡监听器时不会合成 submit/reset。 */
   it('should not receive submit events if native, interim DOM handler prevents it', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -438,8 +430,10 @@ describe('ReactDOMEventListener', () => {
         );
       });
 
+      /** 中间DOM的原生submit回调 stopPropagation，阻断事件到达React根的冒泡监听器。 */
       interimRef.current.onsubmit = nativeEvent =>
         nativeEvent.stopPropagation();
+      /** 中间DOM的原生reset回调 stopPropagation，让React根无法接收该原生冒泡事件。 */
       interimRef.current.onreset = nativeEvent => nativeEvent.stopPropagation();
 
       await act(() => {
@@ -465,7 +459,7 @@ describe('ReactDOMEventListener', () => {
     }
   });
 
-  /** 测试场景：验证「should dispatch loadstart only for media elements」描述的渲染、交互或错误处理结果。 */
+  /** img/video 均传 onLoadStart，分别手动分发非冒泡 ProgressEvent；img零次、video一次，验证媒体专用目标监听，而非真实图片或视频加载过程。 */
   it('should dispatch loadstart only for media elements', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -487,7 +481,7 @@ describe('ReactDOMEventListener', () => {
       });
 
       await act(() => {
-        // 调试提示：Chrome 当前不会触发 loadstart。
+        // 历史 Chrome loadstart 问题见下方链接；本例以手动 ProgressEvent 检查 React 监听路径。
         // https://bugs.chromium.org/p/chromium/issues/detail?id=458851
         imgRef.current.dispatchEvent(
           new ProgressEvent('loadstart', {
@@ -510,7 +504,7 @@ describe('ReactDOMEventListener', () => {
     }
   });
 
-  /** 测试场景：验证「should not attempt to listen to unnecessary events on the top level」描述的渲染、交互或错误处理结果。 */
+  /** 以 addEventListener 替身禁止 document 除 selectionchange 外注册、禁止根的媒体冒泡注册但允许捕获；挂载 video/audio/source 后非冒泡 play 使 video 与父 onPlay 各一次，验证目标监听与 Fiber 合成冒泡；finally 恢复替身。 */
   it('should not attempt to listen to unnecessary events on the top level', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -520,58 +514,59 @@ describe('ReactDOMEventListener', () => {
     const handleVideoPlay = jest.fn();
     const handleVideoPlayDelegated = jest.fn();
     const mediaEvents = {
-      /** `onAbort`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** onAbort 媒体处理器为空操作，仅为挂载 fixture 提供该事件 prop；此用例只分发并断言 play，不观测该回调行为。 */
       onAbort() {},
-      /** `onCanPlay`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** onCanPlay 媒体处理器为空操作，仅为挂载 fixture 提供该事件 prop；此用例只分发并断言 play，不观测该回调行为。 */
       onCanPlay() {},
-      /** `onCanPlayThrough`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** onCanPlayThrough 媒体处理器为空操作，仅为挂载 fixture 提供该事件 prop；此用例只分发并断言 play，不观测该回调行为。 */
       onCanPlayThrough() {},
-      /** `onDurationChange`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** onDurationChange 媒体处理器为空操作，仅为挂载 fixture 提供该事件 prop；此用例只分发并断言 play，不观测该回调行为。 */
       onDurationChange() {},
-      /** `onEmptied`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** onEmptied 媒体处理器为空操作，仅为挂载 fixture 提供该事件 prop；此用例只分发并断言 play，不观测该回调行为。 */
       onEmptied() {},
-      /** `onEncrypted`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** onEncrypted 媒体处理器为空操作，仅为挂载 fixture 提供该事件 prop；此用例只分发并断言 play，不观测该回调行为。 */
       onEncrypted() {},
-      /** `onEnded`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** onEnded 媒体处理器为空操作，仅为挂载 fixture 提供该事件 prop；此用例只分发并断言 play，不观测该回调行为。 */
       onEnded() {},
-      /** `onError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** onError 媒体处理器为空操作，仅为挂载 fixture 提供该事件 prop；此用例只分发并断言 play，不观测该回调行为。 */
       onError() {},
-      /** `onLoadedData`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** onLoadedData 媒体处理器为空操作，仅为挂载 fixture 提供该事件 prop；此用例只分发并断言 play，不观测该回调行为。 */
       onLoadedData() {},
-      /** `onLoadedMetadata`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** onLoadedMetadata 媒体处理器为空操作，仅为挂载 fixture 提供该事件 prop；此用例只分发并断言 play，不观测该回调行为。 */
       onLoadedMetadata() {},
-      /** `onLoadStart`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** onLoadStart 媒体处理器为空操作，仅为挂载 fixture 提供该事件 prop；此用例只分发并断言 play，不观测该回调行为。 */
       onLoadStart() {},
-      /** `onPause`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** onPause 媒体处理器为空操作，仅为挂载 fixture 提供该事件 prop；此用例只分发并断言 play，不观测该回调行为。 */
       onPause() {},
-      /** `onPlay`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** onPlay 媒体处理器为空操作，仅为挂载 fixture 提供该事件 prop；此用例只分发并断言 play，不观测该回调行为。 */
       onPlay() {},
-      /** `onPlaying`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** onPlaying 媒体处理器为空操作，仅为挂载 fixture 提供该事件 prop；此用例只分发并断言 play，不观测该回调行为。 */
       onPlaying() {},
-      /** `onProgress`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** onProgress 媒体处理器为空操作，仅为挂载 fixture 提供该事件 prop；此用例只分发并断言 play，不观测该回调行为。 */
       onProgress() {},
-      /** `onRateChange`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** onRateChange 媒体处理器为空操作，仅为挂载 fixture 提供该事件 prop；此用例只分发并断言 play，不观测该回调行为。 */
       onRateChange() {},
-      /** `onResize`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** onResize 媒体处理器为空操作，仅为挂载 fixture 提供该事件 prop；此用例只分发并断言 play，不观测该回调行为。 */
       onResize() {},
-      /** `onSeeked`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** onSeeked 媒体处理器为空操作，仅为挂载 fixture 提供该事件 prop；此用例只分发并断言 play，不观测该回调行为。 */
       onSeeked() {},
-      /** `onSeeking`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** onSeeking 媒体处理器为空操作，仅为挂载 fixture 提供该事件 prop；此用例只分发并断言 play，不观测该回调行为。 */
       onSeeking() {},
-      /** `onStalled`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** onStalled 媒体处理器为空操作，仅为挂载 fixture 提供该事件 prop；此用例只分发并断言 play，不观测该回调行为。 */
       onStalled() {},
-      /** `onSuspend`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** onSuspend 媒体处理器为空操作，仅为挂载 fixture 提供该事件 prop；此用例只分发并断言 play，不观测该回调行为。 */
       onSuspend() {},
-      /** `onTimeUpdate`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** onTimeUpdate 媒体处理器为空操作，仅为挂载 fixture 提供该事件 prop；此用例只分发并断言 play，不观测该回调行为。 */
       onTimeUpdate() {},
-      /** `onVolumeChange`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** onVolumeChange 媒体处理器为空操作，仅为挂载 fixture 提供该事件 prop；此用例只分发并断言 play，不观测该回调行为。 */
       onVolumeChange() {},
-      /** `onWaiting`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** onWaiting 媒体处理器为空操作，仅为挂载 fixture 提供该事件 prop；此用例只分发并断言 play，不观测该回调行为。 */
       onWaiting() {},
     };
 
     const originalDocAddEventListener = document.addEventListener;
     const originalRootAddEventListener = container.addEventListener;
+    /** document注册替身只允许selectionchange，其他type抛错误；不转发实际注册，finally恢复原方法。 */
     document.addEventListener = function (type) {
       switch (type) {
         case 'selectionchange':
@@ -582,6 +577,7 @@ describe('ReactDOMEventListener', () => {
           );
       }
     };
+    /** 根注册替身接收type/fn/options：捕获直接允许，媒体事件冒泡抛错，其余允许；固定验证注册位置而非浏览器传播实现。 */
     container.addEventListener = function (type, fn, options) {
       if (options && (options === true || options.capture)) {
         return;
@@ -620,7 +616,7 @@ describe('ReactDOMEventListener', () => {
     };
 
     try {
-      // 我们期望挂载此树时不会为任何顶级事件附加处理器。
+      // 允许根容器的捕获监听与普通事件监听；禁止把非冒泡媒体事件的冒泡监听挂到根容器。
       const root = ReactDOMClient.createRoot(container);
       await act(() => {
         root.render(
@@ -641,7 +637,7 @@ describe('ReactDOMEventListener', () => {
         );
       });
       expect(handleVideoPlay).toHaveBeenCalledTimes(1);
-      // 与浏览器不同，React 会委托媒体事件；虽然这样意义不大，但停止委托会造成破坏性变更。
+      // 媒体事件的冒泡监听挂在目标元素上，React 再沿 Fiber 路径收集祖先处理器，因此原生不冒泡的 play 仍会触发父级 onPlay。
       expect(handleVideoPlayDelegated).toHaveBeenCalledTimes(1);
     } finally {
       document.addEventListener = originalDocAddEventListener;
@@ -650,7 +646,7 @@ describe('ReactDOMEventListener', () => {
     }
   });
 
-  /** 测试场景：验证「should dispatch load for embed elements」描述的渲染、交互或错误处理结果。 */
+  /** embed 传 onLoad，目标分发非冒泡 load ProgressEvent；mock 一次，验证 embed 宿主的目标级 load 监听。 */
   it('should dispatch load for embed elements', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -680,8 +676,8 @@ describe('ReactDOMEventListener', () => {
     }
   });
 
-  // 与浏览器不同，React 会委托媒体事件；虽然这样意义不大，但停止委托会造成破坏性变更。
-  /** 测试场景：验证「should delegate media events even without a direct listener」描述的渲染、交互或错误处理结果。 */
+  // 媒体事件的冒泡监听挂在目标元素上，React 再沿 Fiber 路径收集祖先处理器，因此原生不冒泡的 play 仍会触发父级 onPlay。
+  /** video 不传自己的 onPlay，父 div 有 onPlay；手动非冒泡 play 后父回调一次，验证宿主默认安装媒体监听并按 Fiber 收集父回调。 */
   it('should delegate media events even without a direct listener', async () => {
     const container = document.createElement('div');
     const ref = React.createRef();
@@ -705,14 +701,14 @@ describe('ReactDOMEventListener', () => {
           }),
         );
       });
-      // 退回测试:确保即使实际的 DOM元素没有处理器,也确保React树委托仍然有效.
+      // 回归测试:确保即使实际的 DOM元素没有处理器,也确保React树委托仍然有效.
       expect(handleVideoPlayDelegated).toHaveBeenCalledTimes(1);
     } finally {
       document.body.removeChild(container);
     }
   });
 
-  /** 测试场景：验证「should delegate dialog events even without a direct listener」描述的渲染、交互或错误处理结果。 */
+  /** dialog 不传 close/cancel handler、父 div 两者都有；目标非冒泡 close/cancel 后父回调各一次，验证 dialog 目标监听仍支持合成父路径。 */
   it('should delegate dialog events even without a direct listener', async () => {
     const container = document.createElement('div');
     const ref = React.createRef();
@@ -741,7 +737,7 @@ describe('ReactDOMEventListener', () => {
           }),
         );
       });
-      // 退回测试:确保即使实际的 DOM元素没有处理器,也确保React树委托仍然有效.
+      // 回归测试:确保即使实际的 DOM元素没有处理器,也确保React树委托仍然有效.
       expect(onCancel).toHaveBeenCalledTimes(1);
       expect(onClose).toHaveBeenCalledTimes(1);
     } finally {
@@ -749,7 +745,7 @@ describe('ReactDOMEventListener', () => {
     }
   });
 
-  /** 测试场景：验证「should bubble non-native bubbling toggle events」描述的渲染、交互或错误处理结果。 */
+  /** details 与父 div 共享 onToggle，发送非冒泡 toggle；累计两次，验证 React 为 toggle 收集合成冒泡处理器。 */
   it('should bubble non-native bubbling toggle events', async () => {
     const container = document.createElement('div');
     const ref = React.createRef();
@@ -777,7 +773,7 @@ describe('ReactDOMEventListener', () => {
     }
   });
 
-  /** 测试场景：验证「should bubble non-native bubbling cancel/close events」描述的渲染、交互或错误处理结果。 */
+  /** dialog 与父共享 onCancel/onClose，分别发送非冒泡事件；两类 mock 各两次，验证目标与父均进入合成冒泡队列。 */
   it('should bubble non-native bubbling cancel/close events', async () => {
     const container = document.createElement('div');
     const ref = React.createRef();
@@ -812,7 +808,7 @@ describe('ReactDOMEventListener', () => {
     }
   });
 
-  /** 测试场景：验证「should bubble non-native bubbling media events events」描述的渲染、交互或错误处理结果。 */
+  /** video 与父 div 共享 onPlay，发送非冒泡 play 后两次，验证媒体目标监听提取事件后沿 React 祖先执行。 */
   it('should bubble non-native bubbling media events events', async () => {
     const container = document.createElement('div');
     const ref = React.createRef();
@@ -840,7 +836,7 @@ describe('ReactDOMEventListener', () => {
     }
   });
 
-  /** 测试场景：验证「should bubble non-native bubbling invalid events」描述的渲染、交互或错误处理结果。 */
+  /** input/form 共享 onInvalid，目标分发非冒泡 invalid 后两次，验证校验事件仍由 React 合成冒泡。 */
   it('should bubble non-native bubbling invalid events', async () => {
     const container = document.createElement('div');
     const ref = React.createRef();
@@ -869,7 +865,7 @@ describe('ReactDOMEventListener', () => {
     }
   });
 
-  /** 测试场景：验证「should handle non-bubbling capture events correctly」描述的渲染、交互或错误处理结果。 */
+  /** 三层 div 均有 onPlayCapture；内层分发非冒泡 play 得外→中→内三次，再向外层分发只追加外一次，验证捕获路径由真实目标决定。 */
   it('should handle non-bubbling capture events correctly', async () => {
     const container = document.createElement('div');
     const innerRef = React.createRef();
@@ -920,9 +916,8 @@ describe('ReactDOMEventListener', () => {
     }
   });
 
-  // 我们正朝着更接近浏览器的方向靠拢。 目前我们模拟了所有非泡事件,除了卷轴. 我们可能会在未来扩展
-  // 这个列表。 完全移除模拟的冒泡。
-  /** 测试场景：验证「should not emulate bubbling of scroll events」描述的渲染、交互或错误处理结果。 */
+  // scroll/scrollend 的合成冒泡阶段只收集目标自身的监听器；捕获阶段仍经过祖先。
+  /** 三层各有 scroll/scrollend 两阶段处理器，最内目标发送非冒泡事件；每类日志为grand→parent→child捕获及仅child冒泡，验证不模拟祖先 scroll 冒泡。 */
   it('should not emulate bubbling of scroll events', async () => {
     const container = document.createElement('div');
     const ref = React.createRef();
@@ -996,9 +991,8 @@ describe('ReactDOMEventListener', () => {
     }
   });
 
-  // 我们正朝着更接近浏览器的方向靠拢。 目前我们模拟了所有非泡事件,除了卷轴. 我们可能会在未来扩展
-  // 这个列表。 完全移除模拟的冒泡。
-  /** 测试场景：验证「should not emulate bubbling of scroll events (no own handler)」描述的渲染、交互或错误处理结果。 */
+  // scroll/scrollend 的合成冒泡阶段只收集目标自身的监听器；捕获阶段仍经过祖先。
+  /** 最内 div 无 scroll/scrollend handler，祖先仍有两阶段监听；发送后只有grand/parent捕获日志、无冒泡日志，验证 scroll 不从祖先补取目标 handler。 */
   it('should not emulate bubbling of scroll events (no own handler)', async () => {
     const container = document.createElement('div');
     const ref = React.createRef();
@@ -1061,7 +1055,7 @@ describe('ReactDOMEventListener', () => {
     }
   });
 
-  /** 测试场景：验证「should subscribe to scroll during updates」描述的渲染、交互或错误处理结果。 */
+  /** 初始三层无监听，更新加入 scroll/scrollend 两阶段回调，再换新内联回调、最后移除全部；两次事件输出同样一次路径、移除后空日志，验证更新安装及去重和最新 props 查询；不直接断言原生监听器移除。 */
   it('should subscribe to scroll during updates', async () => {
     const container = document.createElement('div');
     const ref = React.createRef();
@@ -1194,7 +1188,7 @@ describe('ReactDOMEventListener', () => {
         ['onScrollEnd', 'bubble', 'child'],
       ]);
 
-      // 更新以解除绑定。
+      // 更新移除React处理器；后续分发不应找到回调。
       log.length = 0;
       await act(() => {
         root.render(
@@ -1224,7 +1218,7 @@ describe('ReactDOMEventListener', () => {
   });
 
   // 回归测试。
-  /** 测试场景：验证「should subscribe to scroll during hydration」描述的渲染、交互或错误处理结果。 */
+  /** 服务端序列化三层 scroll tree 后 hydrateRoot；事件捕获经过三层、冒泡只目标，移除 React handler 后再次分发无日志，验证 hydration 安装目标监听及后续 props 更新。 */
   it('should subscribe to scroll during hydration', async () => {
     const container = document.createElement('div');
     const ref = React.createRef();
@@ -1324,11 +1318,12 @@ describe('ReactDOMEventListener', () => {
     }
   });
 
-  /** 测试场景：验证「should not subscribe to selectionchange twice」描述的渲染、交互或错误处理结果。 */
+  /** 用 document.addEventListener 替身记录 selectionchange 的 options 并拒绝其他事件，创建两个根并提交 input；最终仅[false]，验证同一 document 的非捕获监听去重；finally 恢复原方法。 */
   it('should not subscribe to selectionchange twice', async () => {
     const log = [];
 
     const originalDocAddEventListener = document.addEventListener;
+    /** document监听替身只记录selectionchange options，其他type抛错；两根共用document验证去重，finally恢复原方法。 */
     document.addEventListener = function (type, fn, options) {
       switch (type) {
         case 'selectionchange':

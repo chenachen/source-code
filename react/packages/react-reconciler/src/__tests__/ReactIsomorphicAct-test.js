@@ -111,7 +111,7 @@ describe('isomorphic act()', () => {
     expect(returnValue).toEqual('hi');
   });
 
-  /** Given–When–Then：Given异步 scope 等待 Promise.resolve 后返回 hi；When await act；Then异步返回值透传且队列已耗尽。 */
+  /** Given–When–Then：Given异步 scope 等待 Promise.resolve 后返回 hi；When await act；Then得到 hi，验证异步 scope 返回值透传。此用例没有安排 React 更新，结果断言不单独证明工作队列冲刷行为。 */
   // @gate __DEV__
   it('return value – async callback', async () => {
     const returnValue = await act(async () => {
@@ -120,7 +120,7 @@ describe('isomorphic act()', () => {
     expect(returnValue).toEqual('hi');
   });
 
-  /** Given–When–Then：Given异步 act 内再等待异步 act；When等待外层；Then嵌套异步返回值 hi 正确传播，且只在最外层完成后退出。 */
+  /** Given–When–Then：Given异步 act 内再等待返回 hi 的异步 act；When等待外层；Then结果为 hi，验证两层 thenable 的返回值传播。这里没有更新或中间检查点来断言嵌套队列的冲刷顺序。 */
   // @gate __DEV__
   it('return value – async callback, nested', async () => {
     const returnValue = await act(async () => {
@@ -236,7 +236,7 @@ describe('isomorphic act()', () => {
   it('unwraps promises by yielding to microtasks (async act scope)', async () => {
     const promise = Promise.resolve('Async');
 
-    /** 若被渲染就抛错；已解决 promise 应由 act 在提交 fallback 前解包。 */
+    /** 若被渲染就抛错，用于检测 act 是否展开 fallback。 */
     function Fallback() {
       throw new Error('Fallback should never be rendered');
     }
@@ -264,7 +264,7 @@ describe('isomorphic act()', () => {
   it('unwraps promises by yielding to microtasks (non-async act scope)', async () => {
     const promise = Promise.resolve('Async');
 
-    /** 若被渲染就抛错；已解决 promise 应由 act 在提交 fallback 前解包。 */
+    /** 若被渲染就抛错，用于检测 act 是否展开 fallback。 */
     function Fallback() {
       throw new Error('Fallback should never be rendered');
     }
@@ -294,7 +294,7 @@ describe('isomorphic act()', () => {
   it('warns if a promise is used in a non-awaited `act` scope', async () => {
     const promise = new Promise(() => {});
 
-    /** 若被渲染就抛错；已解决 promise 应由 act 在提交 fallback 前解包。 */
+    /** 若被渲染就抛错，用于检测 act 是否展开 fallback。 */
     function Fallback() {
       throw new Error('Fallback should never be rendered');
     }
@@ -338,6 +338,7 @@ describe('isomorphic act()', () => {
     let didResolve = false;
     let resolvePromise;
     const promise = new Promise(r => {
+      /** 先切换资源读取条件，再解决 promise，使重试直接返回 Async 而不再次抛出该 promise。 */
       resolvePromise = () => {
         didResolve = true;
         r();

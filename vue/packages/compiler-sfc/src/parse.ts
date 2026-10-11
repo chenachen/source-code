@@ -63,7 +63,7 @@ export interface SFCBlock {
 export interface SFCTemplateBlock extends SFCBlock {
   /** 将联合类型收窄为 template block。 */
   type: 'template'
-  /** 使用默认 HTML 模板语法时在 parse 阶段预解析并缓存的 AST。 */
+  /** 无 src 时由 template children 包成的初始 AST；预处理语言会在后续编译放弃它。 */
   ast?: RootNode
 }
 
@@ -83,7 +83,7 @@ export interface SFCScriptBlock extends SFCBlock {
   scriptSetupAst?: import('@babel/types').Statement[]
   /** 脚本编译过程中收集的非致命警告。 */
   warnings?: string[]
-  /** 宏类型解析实际读取的完整依赖路径（统一 `/`），供 Vite/vue-loader HMR 失效缓存。 */
+  /** 类型解析记录的依赖路径（统一 `/`）；缓存命中仅补 ownerScope，可能漏掉中间转导出。 */
   deps?: string[]
 }
 
@@ -115,7 +115,7 @@ export interface SFCDescriptor {
   customBlocks: SFCBlock[]
   /** 所有 style 中去重后的 CSS `v-bind()` 表达式。 */
   cssVars: string[]
-  /** 是否使用 `:slotted()`，供模板编译器决定是否生成插槽 scopeId 处理。 */
+  /** scoped style 原文是否匹配 :slotted()；预处理新增的语法不会回写此提示。 */
   slotted: boolean
 
   /**
@@ -145,6 +145,12 @@ export const parseCache:
  * 该阶段只切分顶层 block、记录属性和位置、生成 block source map，并提取 CSS v-bind；
  * script/template/style 的具体语言编译由各自 compile API 完成。可恢复的结构问题统一返回
  * 在 `errors` 中，方便 IDE 一次展示多个诊断。
+ * 缓存以源码和序列化选项键控，命中返回原 result 对象；函数只按 toString 文本进入键，
+ * 不区分相同文本闭包捕获的值。自定义 parser 自行抛出的异常不会在这里统一捕获。
+ *
+ * @param source - 完整 SFC 文本；所有 block 的 loc 坐标都以它为基准。
+ * @param options - block 保留、padding、source map 和模板 parser 的调用方配置。
+ * @returns 描述对象与累积诊断；非法 src/setup 组合可能使对应 script 字段被清空。
  */
 export function parse(
   source: string,
@@ -304,7 +310,7 @@ export function parse(
   }
 
   if (sourceMap) {
-    /** 为无外部 src 的 block 生成到完整 SFC 的映射，并应用行列 padding 修正。 */
+    /** 为传入的无 src block 建映射；此处未调用 scriptSetup，其映射由 compileScript 生成。 */
     const genMap = (block: SFCBlock | null, columnOffset = 0) => {
       if (block && !block.src) {
         block.map = generateSourceMap(

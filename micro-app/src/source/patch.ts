@@ -68,7 +68,7 @@ function getMappingNode(node: Node): Node {
 /**
  * 处理即将插入子应用的动态节点，并转换需接管的 style/link/script。
  *
- * 已转换节点直接复用映射，保证重复 DOM 操作幂等。style 执行 CSS 隔离；stylesheet link
+ * 已转换节点直接复用映射，重复插入同一原节点不会再次发起框架下载或脚本求值。style 执行 CSS 隔离；stylesheet link
  * 转为异步填充的 style；脚本按 inline/Function 策略执行并返回真实 script 或注释。exclude
  * 资源用注释占位，ignore 与基座过滤器命中的资源保留原生行为。
  *
@@ -179,7 +179,8 @@ function invokePrototypeMethod(
     /**
      * 非 iframe 沙箱把 `<micro-app-body>` 内节点的 `parentNode` 对外映射为基座 body，兼容
      * element-ui@2 `vue-popper.js` 对 `document.body` 的身份判断。异步通过 parentNode 操作
-     * 子节点时应用可能已经卸载；节点脱离文档后 getter 必须返回真实值，不能继续伪装。
+     * 子节点时应用可能已经卸载；真实父节点不再是 micro-app-body 或 app.container 为空时，
+     * getter 返回原生值，不再伪装为宿主 body。
      * 证据：https://github.com/jd-opensource/micro-app/issues/739
      */
     if (
@@ -204,6 +205,7 @@ function invokePrototypeMethod(
           },
           __MICRO_APP_HAS_DPN__: {
             configurable: true,
+            /** 标记已安装兼容 parentNode getter，避免后续插入重复定义描述符。 */
             get: () => true,
           }
         })
@@ -249,8 +251,9 @@ function invokePrototypeMethod(
 /**
  * 计算全局父节点在当前应用中的真实插入容器。
  *
- * document.head/body 映射到 micro-app-head/body；iframe 脚本必须插入 iframe 自身的 head/body
- * 才能由浏览器执行。普通应用内部父节点返回 `null`，由调用方直接使用原父节点。
+ * document.head 映射到 micro-app-head，document.body 及其 parentNode 映射到 micro-app-body。
+ * iframe 真实 script 在 head 操作时进入 iframe head，其他父节点的操作一律进入 iframe body，
+ * 因而调用方即使指定应用内部元素也不会把该 script 放在那里。其余内部父节点返回 `null`。
  */
 function getHijackParent(
   parent: Node,
@@ -324,6 +327,7 @@ function isPendMethod(method: CallableFunction) {
  *
  * 只处理会由浏览器发起请求的常见标签；锚点纯 hash 地址保持不变，自定义 `aHrefResolver`
  * 优先于默认 URL 补全。使用保存的原始 setAttribute 避免再次进入全局补丁。
+ * srcset 当前整段交给 CompletionPath，不解析逗号分隔的候选图及尺寸描述；iframe 不在此表内。
  *
  * @param app - 提供入口基址和锚点解析器上下文的应用。
  * @param newChild - 待插入节点。
@@ -404,8 +408,9 @@ function commonElementHandler(
  * 安装 Element、Node、DocumentFragment 与 Document 的全局 DOM 补丁。
  *
  * 补丁把子应用创建的节点标记归属，并将全局 head/body 操作重定向到应用隔离容器；动态
- * 资源也在这里进入 CSS/脚本处理链。所有原生引用均来自 `globalEnv` 快照，卸载最后一个
- * 沙箱时可由配对 release 函数完整恢复。
+ * 资源也在这里进入 CSS/脚本处理链。原生引用来自 `globalEnv` 快照；最后一个沙箱停止时
+ * 调用配对 release 函数恢复其中列出的补丁。Document.createComment、Fragment 的
+ * append/prepend 和 Element.insertAdjacentElement 未出现在释放清单中，仍保留这里安装的实现。
  */
 export function patchElementAndDocument(): void {
   patchDocument()
@@ -494,6 +499,8 @@ export function patchElementAndDocument(): void {
    * 劫持 `insertAdjacentElement`，把有应用归属的资源元素转换后插入真实隔离父节点。
    * 第二个参数按平台契约必须仍是 Element；若转换得到注释节点，则保留原元素返回，避免
    * 把不兼容类型传给原生方法。
+   * 资源转换先于类型检查，Function 型动态内联脚本可能已经同步执行，再因注释替代节点
+   * 而返回原元素且不插入；这个返回值不能表示原 script 已进入 DOM。
    */
   rawRootElement.prototype.insertAdjacentElement = function (where: InsertPosition, element: Element): Element | null {
     if (element?.__MICRO_APP_NAME__ && isElement(element)) {
@@ -590,10 +597,12 @@ export function patchElementAndDocument(): void {
   }
 
   /**
-   * 劫持 setAttribute，为子应用资源属性补全地址，并按配置尝试处理媒体资源跨域标记。
+   * 劫持 setAttribute，为子应用资源属性补全地址，并执行媒体资源跨域配置检查。
    *
    * micro-app 自定义元素的 data 属性必须转回其自定义 setter；其他元素只在能确定应用归属
-   * 且属性会触发资源解析时补址。纯 hash 锚点保持原值。
+   * 且属性会触发资源解析时补址。纯 hash 锚点保持原值。媒体分支中 includeCrossOrigin 返回
+   * true 时，当前代码写的是未声明的 `node.crossOrigin` 而非 this；没有同名全局变量时，会在
+   * 属性已写入后抛出 ReferenceError。
    */
   rawRootElement.prototype.setAttribute = function setAttribute(key: string, value: any): void {
     if (
@@ -690,9 +699,8 @@ export function patchElementAndDocument(): void {
       // 必须先处理 html.parentNode 特例，再读取原生描述符结果。
       const result = globalEnv.rawParentNodeDesc.get.call(this)
       /**
-       * 曾尝试把 micro-app-body 映射为基座 body 以兼容 vue-popper，但会使
-       * `target.parentNode.remove(target)` 操作错误父级；Vue 2 UMD 重渲染还会因应用根节点
-       * 被删除而报错。该方案已在 v1.0.0-beta.0 前弃用，保留代码仅记录边界。
+       * 这里不统一把 micro-app-body 映射为基座 body，以免清理代码通过错误父级删除节点。
+       * 兼容 vue-popper 的映射仅在 invokePrototypeMethod 中定义到实际插入的节点上。
        */
       // if (isMicroAppBody(result) && appInstanceMap.get(this.__MICRO_APP_NAME__)?.container) {
       //   return document.body
@@ -743,7 +751,8 @@ function markElement<T extends Node>(element: T): T {
  * 安装 Document 创建与查询方法补丁。
  *
  * proxyDocument 的创建操作绑定回真实 document，并给新节点写入应用归属；查询操作在可安全
- * 转成选择器时限制到当前应用容器，唯一全局元素和非法选择器继续走原生 Document API。
+ * 转成选择器时限制到当前应用容器。body/head/html/title/:root 等唯一元素走原生查询；
+ * getElement(s) 方法的非法键或转换后选择器异常回退原生方法，querySelector 本身不做该捕获。
  */
 function patchDocument() {
   const rawDocument = globalEnv.rawDocument
@@ -794,7 +803,7 @@ function patchDocument() {
 
   // 节点查询方法。
   /**
-   * 在当前应用容器中执行单元素查询；无应用上下文、唯一元素或非法选择器走原生 Document。
+   * 在当前应用容器中执行单元素查询；无应用上下文、空选择器、唯一元素或其他 Document 走原生方法。
    */
   function querySelector(this: Document, selectors: string): any {
     const _this = getBindTarget(this)
@@ -832,7 +841,7 @@ function patchDocument() {
   rawRootDocument.prototype.querySelectorAll = querySelectorAll
 
   /**
-   * 优先把合法 id 转成应用容器内的 `#id` 查询；转义失败时回退原生 getElementById。
+   * 优先把合法 id 拼成应用容器内的 `#id` 查询；该选择器抛错时回退原生 getElementById。
    */
   rawRootDocument.prototype.getElementById = function getElementById(this: Document, key: string): HTMLElement | null {
     const _this = getBindTarget(this)
@@ -898,7 +907,7 @@ function patchDocument() {
   }
 }
 
-/** 恢复 Document 原型上由 `patchDocument()` 替换的全部创建和查询方法。 */
+/** 恢复下列 Document 创建和查询方法；createComment 未在此恢复。 */
 function releasePatchDocument(): void {
   const rawRootDocument = globalEnv.rawRootDocument
   rawRootDocument.prototype.createElement = globalEnv.rawCreateElement
@@ -915,8 +924,9 @@ function releasePatchDocument(): void {
 /**
  * 释放全局 DOM 补丁并恢复初始化时保存的原型方法与属性描述符。
  *
- * 先清除当前应用 DOM 作用域，避免恢复过程仍被识别为子应用操作；随后同时恢复 Document、
- * Node、Element 与 DocumentFragment。调用方必须只在没有活跃沙箱依赖补丁时执行。
+ * 先清除当前应用 DOM 作用域，再恢复下列 Document、Node 与 Element 方法及属性描述符。
+ * Document.createComment、DocumentFragment.append/prepend 与 Element.insertAdjacentElement 不在此释放。调用方只在没有
+ * 活跃沙箱依赖补丁时执行。
  */
 export function releasePatchElementAndDocument(): void {
   removeDomScope()

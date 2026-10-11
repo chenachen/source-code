@@ -53,7 +53,7 @@ export type CreateRootOptions = {
     errorInfo: {
       /** 错误发生位置对应的组件栈。 */
       +componentStack?: ?string,
-      /** 实际捕获错误的边界组件类型。 */
+      /** 实际捕获错误的边界组件实例。 */
       +errorBoundary?: ?component(...props: any),
     },
   ) => void,
@@ -95,7 +95,7 @@ export type HydrateRootOptions = {
     errorInfo: {
       /** 错误发生位置对应的组件栈。 */
       +componentStack?: ?string,
-      /** 实际捕获错误的边界组件类型。 */
+      /** 实际捕获错误的边界组件实例。 */
       +errorBoundary?: ?component(...props: any),
     },
   ) => void,
@@ -181,8 +181,8 @@ ReactDOMHydrationRoot.prototype.render = ReactDOMRoot.prototype.render =
 ReactDOMHydrationRoot.prototype.unmount = ReactDOMRoot.prototype.unmount =
   // $FlowFixMe[missing-this-annot]
   /**
-   * 同步提交空子树、冲刷待处理工作并释放容器根标记。
-   * 先清空句柄再进入 reconciler，避免重入路径把已开始销毁的根当成可用状态。
+   * 以同步优先级安排空子树，尝试冲刷后解除容器根标记；重复卸载空句柄直接退出。先清空句柄再进入 reconciler，避免重入路径把已开始销毁的根当成可用状态。
+   * 若当前正在 render/commit，flushSyncWork 无法立即完成卸载，DEV 会提示这条重入路径；因此“同步卸载”并不保证在生命周期内部调用时 DOM 已在返回前清空。
    */
   function (): void {
     if (__DEV__) {
@@ -320,7 +320,7 @@ export function createRoot(
 function ReactDOMHydrationRoot(internalRoot: FiberRoot) {
   this._internalRoot = internalRoot;
 }
-/** 把指定 DOM 节点登记为显式 hydration 目标，以提高其事件重放优先级。 */
+/** 把指定 DOM 节点登记为显式 hydration 目标，按当前更新优先级安排该目标的 hydration。 */
 function scheduleHydration(target: Node) {
   if (target) {
     queueExplicitHydrationTarget(target);
@@ -415,7 +415,7 @@ export function hydrateRoot(
     formState,
   );
   markContainerAsRoot(root.current, container);
-  // hydration 本就不支持注释节点容器，因此事件可以直接委托到传入容器。
+  // 此入口直接向传入容器安装监听；没有 createRoot 的注释容器→父节点兼容转换。
   listenToAllSupportedEvents(container);
 
   // $FlowFixMe[invalid-constructor] Flow no longer supports calling new on functions
@@ -424,7 +424,7 @@ export function hydrateRoot(
 
 /**
  * 在开发环境诊断同一容器混用 legacy root 或重复创建并发根。
- * 生产环境依靠容器标记维持行为，不承担额外警告成本。
+ * 生产环境不执行该重复建根诊断；容器标记由创建与卸载路径写入、清除。
  */
 function warnIfReactDOMContainerInDEV(container: any) {
   if (__DEV__) {

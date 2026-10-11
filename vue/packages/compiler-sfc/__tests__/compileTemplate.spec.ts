@@ -1,6 +1,6 @@
 /**
- * SFC 模板编译场景：组合资产 URL、预处理器、scoped/slotted、SSR、source map、缓存 AST 与
- * 自定义 compiler，验证错误位置能从预处理/局部 template 正确映射回 `.vue` 文件。
+ * SFC 模板编译场景：覆盖资产配置、Pug 预处理及诊断、SSR、source map、descriptor AST
+ * 复用与自定义 compiler；字符串模板和 descriptor AST 分别使用各自的源码坐标。
  */
 import { type RawSourceMap, SourceMapConsumer } from 'source-map-js'
 import { parse as babelParse } from '@babel/parser'
@@ -20,6 +20,7 @@ function compile(opts: Omit<SFCTemplateCompileOptions, 'id'>) {
   })
 }
 
+// 编译含 render 插值的普通 DOM 模板；errors 为空、source 保持原值，生成可挂载的导出 render 函数。
 test('should work', () => {
   const source = `<div><p>{{ render }}</p></div>`
 
@@ -32,6 +33,7 @@ test('should work', () => {
 })
 
 // #6807：style 注释出现在模板附近时，SFC/template tokenizer 不能把其内容误当模板语法。
+// style 属性含块注释与行内注释；静态样式解析忽略注释并输出 width/height 对象，无模板错误。
 test('should work with style comment', () => {
   const source = `
   <div style="
@@ -47,6 +49,7 @@ test('should work with style comment', () => {
   expect(result.code).toMatch(`{"width":"300px","height":"100px"}`)
 })
 
+// 从 Pug SFC 取出内容与 lang 后编译；预处理为 HTML 并正常通过模板编译。
 test('preprocess pug', () => {
   const template = parse(
     `
@@ -69,6 +72,7 @@ body
   expect(result.errors.length).toBe(0)
 })
 
+// Pug 内容含公共缩进、空行及不同嵌套层级；去缩进后 HTML 层级与 result.source 精确符合预期。
 test('preprocess pug with indents and blank lines', () => {
   const template = parse(
     `
@@ -96,6 +100,7 @@ test('preprocess pug with indents and blank lines', () => {
   )
 })
 
+// template 使用不存在的 unknownLang 预处理器；compileTemplate 返回一条 errors，不将缺包继续当 HTML 编译。
 test('warn missing preprocessor', () => {
   const template = parse(`<template lang="unknownLang">hi</template>\n`, {
     filename: 'example.vue',
@@ -111,9 +116,10 @@ test('warn missing preprocessor', () => {
   expect(result.errors.length).toBe(1)
 })
 
+// 同一 foo.bar 资产分别使用 tags 包装、旧映射对象与 false；前两种生成 baz import，关闭选项不生成资源导入。
 test('transform asset url options', () => {
   const input = { source: `<foo bar="~baz"/>`, filename: 'example.vue' }
-  // 对象形式：仅指定的标签会按自定义元素处理。
+  // 对象配置把 foo.bar 加入资产 URL 转换，生成 baz import。
   const { code: code1 } = compile({
     ...input,
     transformAssetUrls: {
@@ -131,7 +137,7 @@ test('transform asset url options', () => {
   })
   expect(code2).toMatch(`import _imports_0 from 'baz'\n`)
 
-  // false 表示显式关闭自定义元素识别。
+  // false 关闭资产 URL 转换，foo.bar 不再生成 baz import。
   const { code: code3 } = compile({
     ...input,
     transformAssetUrls: false,
@@ -139,6 +145,7 @@ test('transform asset url options', () => {
   expect(code3).not.toMatch(`import _imports_0 from 'baz'\n`)
 })
 
+// 独立模板字符串含 foobar；map 保存块内容并把生成 foobar 位置回指同一模板的行列。
 test('source map', () => {
   const template = parse(
     `
@@ -163,6 +170,7 @@ test('source map', () => {
   ).toMatchObject(getPositionInCode(template.content, `foobar`))
 })
 
+// v-if 的备用分支生成注释 vnode；该合成节点没有原模板位置，source map 查询的行/列/source 均为空。
 test('source map: v-if generated comment should not have original position', () => {
   const template = parse(
     `
@@ -192,6 +200,7 @@ test('source map: v-if generated comment should not have original position', () 
   expect(originalPosition.source).toBeNull()
 })
 
+// parse 的初始 descriptor AST 与字符串模板分别编译；代码相同，复用 AST 的 map 指向完整 SFC 而非仅块内容。
 test('should work w/ AST from descriptor', () => {
   const source = `
   <template>
@@ -212,8 +221,7 @@ test('should work w/ AST from descriptor', () => {
   })
 
   expect(map!.sources).toEqual([`example.vue`])
-  // 复用 SFC 解析阶段的 AST 编译模板时，节点位置信息仍基于整个 SFC，
-  // 因而 source map 必须正确扣除 template 块在文件中的偏移。
+  // 复用 descriptor AST 后，map 保留完整 SFC 的 source 与节点坐标。
   expect(map!.sourcesContent).toEqual([source])
 
   const consumer = new SourceMapConsumer(map as RawSourceMap)
@@ -229,6 +237,7 @@ test('should work w/ AST from descriptor', () => {
   )
 })
 
+// SSR 编译传空 source 和 descriptor AST；仍生成与字符串输入相同的代码，foobar map 使用完整 SFC，证明实际消费 AST。
 test('should work w/ AST from descriptor in SSR mode', () => {
   const source = `
   <template>
@@ -244,14 +253,13 @@ test('should work w/ AST from descriptor in SSR mode', () => {
 
   const { code, map } = compile({
     filename: 'example.vue',
-    source: '', // make sure it's actually using the AST instead of source
+    source: '', // 空字符串迫使此用例实际消费 AST。
     ast: template.ast,
     ssr: true,
   })
 
   expect(map!.sources).toEqual([`example.vue`])
-  // 复用 SFC 解析得到的 AST 时，source 指向完整 SFC；这里验证带预处理器时
-  // 仍能把生成代码映射到 template 块中的正确位置。
+  // SSR 编译复用 descriptor AST，映射仍指向完整 SFC 中的 foobar。
   expect(map!.sourcesContent).toEqual([source])
 
   const consumer = new SourceMapConsumer(map as RawSourceMap)
@@ -268,6 +276,7 @@ test('should work w/ AST from descriptor in SSR mode', () => {
   )
 })
 
+// 传 descriptor AST 及回传 input 的自定义 compiler；自定义入口收到模板字符串，不复用默认 compiler 的 AST。
 test('should not reuse AST if using custom compiler', () => {
   const source = `
   <template>
@@ -295,6 +304,7 @@ test('should not reuse AST if using custom compiler', () => {
   expect(code).toBe(template.content)
 })
 
+// 清空 AST children 并标 transformed；compileTemplate 从 ast.source 重解析，输出恢复为正常字符串编译结果。
 test('should force re-parse on already transformed AST', () => {
   const source = `
   <template>
@@ -324,6 +334,7 @@ test('should force re-parse on already transformed AST', () => {
   )
 })
 
+// SSR 模式清空已转换 AST；使用 SSR compiler 重解析原 source，不能复用损坏的客户端转换状态。
 test('should force re-parse with correct compiler in SSR mode', () => {
   const source = `
   <template>
@@ -355,6 +366,7 @@ test('should force re-parse with correct compiler in SSR mode', () => {
   )
 })
 
+// 模板含残缺 a[ 表达式与 v-model；errors 快照记录表达式编译诊断及其位置。
 test('template errors', () => {
   const result = compile({
     filename: 'example.vue',
@@ -364,6 +376,7 @@ test('template errors', () => {
   expect(result.errors).toMatchSnapshot()
 })
 
+// Pug 属性字符串未闭合；预处理异常进入 errors，消息带 example.vue 的行号和具体缺括号原因。
 test('preprocessor errors', () => {
   const template = parse(
     `
@@ -389,6 +402,7 @@ test('preprocessor errors', () => {
 })
 
 // #3447：同一资产被多个属性引用时，生成的 import 表达式应去重且索引稳定。
+// SSR 模板内两张不同资产，其中 bar 在组件插槽；同一 bar import 索引供 SSR 与 vnode 分支共享，防止索引错配。
 test('should generate the correct imports expression', () => {
   const { code } = compile({
     filename: 'example.vue',
@@ -405,6 +419,7 @@ test('should generate the correct imports expression', () => {
 })
 
 // #3874：SSR 模式不能把 srcset URL 静态提升为客户端资产表达式，否则服务端导入形状错误。
+// SSR picture/source srcset 与 img 引用资产，另有 router-link 插槽；快照核对服务端资源表达式和客户端备用分支，不做错误的 srcset 静态提升。
 test('should not hoist srcset URLs in SSR mode', () => {
   const { code } = compile({
     filename: 'example.vue',
@@ -426,6 +441,7 @@ test('should not hoist srcset URLs in SSR mode', () => {
 })
 
 // #6742：静态与动态事件名同时存在时必须通过 mergeProps 合并，不能让后一项覆盖前一项。
+// input 同时含静态 blur 与动态事件名；快照检查事件对象合并，动态属性不会覆盖另一组监听。
 test('dynamic v-on + static v-on should merged', () => {
   const source = `<input @blur="onBlur" @[validateEvent]="onValidateEvent">`
 
@@ -438,6 +454,7 @@ test('dynamic v-on + static v-on should merged', () => {
 // 随后 compileTemplate 复用同一 AST 再遍历；局部作用域元数据必须可重复进入/退出，
 // 否则函数参数 `t` 会在第二次遍历中被误加 `_ctx.`。复现条件：TS script setup、存在 import、
 // 非 inlineTemplate，并复用 parse 阶段缓存的 AST。
+// TS setup 的 import 使用分析先遍历 AST，再编译含 map 回调的模板；参数 t 仍是局部，不被重复遍历加 _ctx 前缀。
 test('prefixing edge case for reused AST', () => {
   const src = `
   <script setup lang="ts">
@@ -459,6 +476,7 @@ test('prefixing edge case for reused AST', () => {
   expect(code).not.toMatch(`_ctx.t`)
 })
 
+// TS setup 先做 import 分析，再 SSR 编译含解构 slot 参数的 AST；重复进入/退出作用域不应导致异常。
 test('prefixing edge case for reused AST ssr mode', () => {
   const src = `
   <script setup lang="ts">
@@ -485,6 +503,7 @@ test('prefixing edge case for reused AST ssr mode', () => {
 })
 
 // #10852：兼容 filter 语法左侧可以是非标识符表达式，重写时不能假设存在简单名称。
+// 兼容模式模板用 new Date() 作为 filter 左侧；转换结果经 Babel 解析应合法，filter 重写不要求简单 Identifier。
 test('non-identifier expression in legacy filter syntax', () => {
   const src = `
   <template>
@@ -514,6 +533,7 @@ test('non-identifier expression in legacy filter syntax', () => {
   }).not.toThrow()
 })
 
+// 内联模板把类型式 prop Foo 用作 Foo.Bar 组件；组件根访问由 __props 读取，保留成员 Bar 并核对快照。
 test('prefixing props edge case in inline mode', () => {
   const src = `
   <script setup lang="ts">

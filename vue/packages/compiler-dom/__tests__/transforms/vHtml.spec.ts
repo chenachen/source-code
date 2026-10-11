@@ -28,6 +28,9 @@ function transformWithVHtml(template: string, options: CompilerOptions = {}) {
 }
 
 describe('compiler: v-html transform', () => {
+  /**
+   * 场景：无 children 的 div 使用 v-html=test，经指令与元素转换生成 innerHTML prop；断言 PROPS 标志及 dynamicProps=[innerHTML]，验证整元素内容由该动态属性控制。
+   */
   it('should convert v-html to innerHTML', () => {
     const ast = transformWithVHtml(`<div v-html="test"/>`)
     expect((ast.children[0] as PlainElementNode).codegenNode).toMatchObject({
@@ -41,6 +44,9 @@ describe('compiler: v-html transform', () => {
     })
   })
 
+  /**
+   * 场景：div 同时有 v-html=test 与 hello 子文本，收集错误后断言 WITH_CHILDREN 诊断和无 children 的 codegen，验证继续转换时无效子树被清空。
+   */
   it('should raise error and ignore children when v-html is present', () => {
     const onError = vi.fn()
     const ast = transformWithVHtml(`<div v-html="test">hello</div>`, {
@@ -54,12 +60,15 @@ describe('compiler: v-html transform', () => {
       props: createObjectMatcher({
         innerHTML: `[test]`,
       }),
-      children: undefined, // <-- children should have been removed
+      children: undefined, // v-html 已清空原有子节点
       patchFlag: PatchFlags.PROPS,
       dynamicProps: `["innerHTML"]`,
     })
   })
 
+  /**
+   * 场景：div 上的 v-html 没有表达式，使用收集型 onError 转换并断言 NO_EXPRESSION 错误码，验证诊断分支。
+   */
   it('should raise error if has no expression', () => {
     const onError = vi.fn()
     transformWithVHtml(`<div v-html></div>`, {

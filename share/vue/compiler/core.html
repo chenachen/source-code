@@ -9,6 +9,7 @@
     />
     <title>compiler-core 详解 · Vue Compiler 指南</title>
     <link rel="stylesheet" href="assets/styles.css" />
+    <link rel="stylesheet" href="assets/diagrams.css" />
   </head>
   <body>
     <a class="skip-link" href="#content">跳到正文</a>
@@ -141,8 +142,8 @@
                     引用计数、hoist/cache 槽位都放在这里。
                   </td>
                   <td>
-                    <code>transform()</code> 创建；阶段结束后把 helper、组件、指令、
-                    hoist 和 cache 等结果写回 RootNode。
+                    <code>transform()</code> 创建；阶段结束后把
+                    helper、组件、指令、 hoist 和 cache 等结果写回 RootNode。
                   </td>
                 </tr>
                 <tr>
@@ -333,7 +334,8 @@ Parser 错误恢复等机制另用更小的反例，避免把异常分支硬塞�
               </div>
               <div class="arrow">→</div>
               <div class="flow-node">
-                <strong>模板 AST</strong><small>Element + If/For 前的指令节点</small>
+                <strong>模板 AST</strong
+                ><small>Element + If/For 前的指令节点</small>
               </div>
               <div class="arrow">→</div>
               <div class="flow-node primary">
@@ -368,7 +370,9 @@ Parser 错误恢复等机制另用更小的反例，避免把异常分支硬塞�
                   <td><code>baseParse()</code> 后</td>
                   <td>RootNode、Element、Directive、Interpolation</td>
                   <td>
-                    <code>v-if/v-else/v-for</code> 仍是指令；<code>bar.baz</code>
+                    <code>v-if/v-else/v-for</code> 仍是指令；<code
+                      >bar.baz</code
+                    >
                     等表达式保留源码位置；尚无 VNodeCall。
                   </td>
                   <td>转换器可按模板结构和精确位置工作。</td>
@@ -380,14 +384,16 @@ Parser 错误恢复等机制另用更小的反例，避免把异常分支硬塞�
                     if/else 合为 IfNode；for 变成 ForNode；<code>list</code>
                     改为 <code>_ctx.list</code>，value/index 保持循环局部名。
                   </td>
-                  <td>父节点退出时可读取已经完成的分支、循环体和 VNodeCall。</td>
+                  <td>
+                    父节点退出时可读取已经完成的分支、循环体和 VNodeCall。
+                  </td>
                 </tr>
                 <tr>
                   <td><code>transform()</code> 后</td>
                   <td>codegenNode + RootNode 资源集合</td>
                   <td>
-                    根 VNodeCall 带 CLASS；IfNode 的两个分支 VNode 带不同 key；ForNode
-                    带 UNKEYED_FRAGMENT，并登记所需 helper。
+                    根 VNodeCall 带 CLASS；IfNode 的两个分支 VNode 带不同
+                    key；ForNode 带 UNKEYED_FRAGMENT，并登记所需 helper。
                   </td>
                   <td>generate 只读这份已定稿 AST。</td>
                 </tr>
@@ -395,7 +401,8 @@ Parser 错误恢复等机制另用更小的反例，避免把异常分支硬塞�
                   <td><code>generate()</code> 中</td>
                   <td>CodegenContext 的 code/line/column/offset</td>
                   <td>
-                    输出 helper 序言，再打印 <code>_ctx.bar/_ctx.world/_ctx.ok/_ctx.list</code>
+                    输出 helper 序言，再打印
+                    <code>_ctx.bar/_ctx.world/_ctx.ok/_ctx.list</code>
                     与保持局部的 <code>value/index</code>。
                   </td>
                   <td>得到 render 代码、source map 和同一 RootNode。</td>
@@ -411,8 +418,9 @@ Parser 错误恢复等机制另用更小的反例，避免把异常分支硬塞�
           </div>
           <p class="prose">
             <code>baseCompile()</code> 也接受 RootNode。compiler-sfc
-            在模板未预处理、编译器选项兼容且 AST 尚未转换时可复用解析结果；module
-            模式会启用标识符前缀，而同名 directive transform 允许平台层覆盖基础实现。
+            在模板未预处理、编译器选项兼容且 AST
+            尚未转换时可复用解析结果；module 模式会启用标识符前缀，而同名
+            directive transform 允许平台层覆盖基础实现。
           </p>
           <a
             class="source-link"
@@ -625,7 +633,10 @@ private handleTagName(c: number) {
             <figcaption class="source-caption">
               <span
                 ><strong>真实源码 · Parser 写入 AST 的交接点（聚焦摘录）</strong
-                ><code>packages/compiler-core/src/parser.ts · callbacks / endOpenTag()</code></span
+                ><code
+                  >packages/compiler-core/src/parser.ts · callbacks /
+                  endOpenTag()</code
+                ></span
               >
               <span class="source-version">Vue 3.5.41</span>
             </figcaption>
@@ -671,10 +682,12 @@ function addNode(node: TemplateChildNode) {
           </figure>
           <p class="source-context">
             Tokenizer 只交付源码区间。Parser 才创建节点：开标签先写入
-            <code>currentOpenTag</code>，遇到 <code>&gt;</code> 后把它追加到最近父节点并压栈；
+            <code>currentOpenTag</code>，遇到
+            <code>&gt;</code> 后把它追加到最近父节点并压栈；
             插值直接追加到当前父节点。主 Demo 的最外层 div 因此先进入
-            <code>root.children</code>，后续节点再进入它的 <code>children</code>。
-            摘录省略了插值裁剪/实体解码和 SFC 根块 <code>innerLoc</code> 初始化。
+            <code>root.children</code>，后续节点再进入它的
+            <code>children</code>。 摘录省略了插值裁剪/实体解码和 SFC 根块
+            <code>innerLoc</code> 初始化。
           </p>
           <figure class="source-block">
             <figcaption class="source-caption">
@@ -732,10 +745,10 @@ function addNode(node: TemplateChildNode) {
               <h3>先 reset，再解析</h3>
               <p>
                 Parser 为了热路径性能复用了模块级 tokenizer、栈和当前属性。
-                <code>reset()</code> 会清 tokenizer、标签栈和属性缓冲；测试直接保证了
-                RCDATA 状态不会串到下一轮。但默认错误处理若在 EOF 清理开放元素前
-                抛出，<code>inPre/inVPre</code> 等 parser 状态不在 reset 清单中，不能把
-                它扩大成“所有异常路径都完全隔离”。
+                <code>reset()</code> 会清
+                tokenizer、标签栈和属性缓冲；测试直接保证了 RCDATA
+                扫描状态不会串到下一轮。正常闭合元素时，Parser 还会退出相应的
+                <code>pre/v-pre</code> 区域。
               </p>
             </article>
             <article class="code-note">
@@ -746,11 +759,14 @@ function addNode(node: TemplateChildNode) {
               </p>
             </article>
             <article class="code-note">
-              <h3>空白在最后统一收口</h3>
+              <h3>闭合元素时整理 children 空白</h3>
               <p>
-                标签栈、<code>&lt;pre&gt;</code>、相邻元素和 whitespace
-                选项都会影响空白。先完整建树，再
-                condenseWhitespace，才能用上下文作出一致判断。
+                <code>onCloseTag()</code> 逐个整理已闭合元素的 children，按
+                <code>&lt;pre&gt;</code>、相邻节点和 whitespace
+                选项决定保留、折叠或删除空白。扫描结束后，<code
+                  >baseParse()</code
+                >
+                再单独整理 root.children。
               </p>
             </article>
           </div>
@@ -892,23 +908,22 @@ onend() {
             </table>
           </div>
           <div class="callout">
-            <strong>模块级状态有明确前提：</strong><code>baseParse()</code>
-            本身同步执行；从当前模块级可变状态实现可以推断，它不适合重入。每轮开始会重置
-            tokenizer 的扫描状态与分隔符，以及标签栈和属性缓冲；正常结束后清理
-            <code>currentRoot</code>。测试
-            <code>should reset inRCDATA state</code> 专门先解析残缺
-            SFC，再解析普通片段，防止 RAWTEXT/RCDATA
-            状态串到下一轮。它没有证明默认 <code>onError</code> 在元素清理前抛出时，
-            <code>inPre/inVPre/currentVPreBoundary</code> 也一定复位。这里的“不适合重入”
-            及异常边界均来自当前实现；源码和测试没有承诺在一次回调里递归调用
-            <code>baseParse()</code> 或在捕获任意解析异常后复用模块状态都安全。
+            <strong>默认错误处理可能留下 v-pre 状态：</strong>先解析
+            <code>&lt;div v-pre&gt;&lt;span&gt;</code>，默认
+            <code>onError</code>
+            会在 EOF 清理开放元素前抛出；捕获异常后再解析
+            <code>{{ msg }}</code>，得到的是 Text，而非 Interpolation。原因是
+            <code>inVPre/currentVPreBoundary</code> 尚未退出，且不在
+            <code>reset()</code> 的清理清单中。诊断回调也不能重入
+            <code>baseParse()</code>：内层解析会覆盖外层正在使用的
+            tokenizer、输入、选项和节点状态。
           </div>
           <div class="grid-3">
             <article class="card">
               <h3>实体解码</h3>
               <p>
-                Node.js 构建由 tokenizer 内的 <code>EntityDecoder</code> 流式解码；
-                browser 构建改用平台传入的
+                Node.js 构建由 tokenizer 内的
+                <code>EntityDecoder</code> 流式解码； browser 构建改用平台传入的
                 <code>decodeEntities</code>。compiler-core
                 只保持文本、属性两种解码上下文和源码范围。
               </p>
@@ -916,8 +931,8 @@ onend() {
             <article class="card">
               <h3>空白整理</h3>
               <p>
-                节点先完整建立，最后按 preserve/condense、pre
-                与相邻元素上下文统一处理。
+                闭合元素时按 preserve/condense、pre 与相邻节点上下文整理其
+                children；扫描结束后再整理根级 children。
               </p>
             </article>
             <article class="card">
@@ -952,6 +967,587 @@ onend() {
               JavaScript。
             </p>
           </div>
+          <figure class="engineering-diagram" id="core-demo-tree">
+            <div
+              class="engineering-scroll"
+              tabindex="0"
+              aria-label="主 Demo AST 三阶段快照，可横向滚动"
+            >
+              <svg
+                id="core-demo-tree-svg"
+                viewBox="0 0 1000 1200"
+                role="img"
+                aria-labelledby="core-demo-tree-title core-demo-tree-desc"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <title id="core-demo-tree-title">
+                  主 Demo：Parse 树、结构转换后的树与 codegenNode 对照
+                </title>
+                <desc id="core-demo-tree-desc">
+                  Parse 的 div 有插值、空格 Text、if 元素、else template 和 for
+                  元素。Transform 合并插值与空格为 TEXT_CALL，将 if 与 else
+                  合成两个分支的 IfNode，将循环替换为 ForNode。右侧显示根
+                  VNodeCall、条件表达式的两个不同 key 分支，以及 renderList
+                  和循环 Fragment 的输出结构。
+                </desc>
+                <defs>
+                  <marker
+                    id="core-demo-tree-arrow"
+                    viewBox="0 0 8 8"
+                    refX="7"
+                    refY="4"
+                    markerWidth="7"
+                    markerHeight="7"
+                    orient="auto"
+                  >
+                    <path d="M 0 0 L 8 4 L 0 8 Z" />
+                  </marker>
+                </defs>
+                <rect
+                  class="eng-lane"
+                  x="20"
+                  y="18"
+                  width="310"
+                  height="1158"
+                  rx="12"
+                />
+                <rect
+                  class="eng-lane"
+                  x="350"
+                  y="18"
+                  width="310"
+                  height="1158"
+                  rx="12"
+                />
+                <rect
+                  class="eng-lane"
+                  x="680"
+                  y="18"
+                  width="300"
+                  height="1158"
+                  rx="12"
+                />
+                <text class="eng-lane-title" x="40" y="49">Parse AST</text>
+                <text class="eng-lane-title" x="370" y="49">
+                  Transform 后的模板树
+                </text>
+                <text class="eng-lane-title" x="700" y="49">
+                  codegenNode / JS AST
+                </text>
+                <text class="eng-small" x="40" y="72">
+                  结构指令仍在 Element.props 中
+                </text>
+                <text class="eng-small" x="370" y="72">
+                  同一 Root 原地修改，局部名已处理
+                </text>
+                <text class="eng-small" x="700" y="72">
+                  genNode 继续分派这些输出节点
+                </text>
+                <path
+                  class="eng-edge"
+                  d="M 180 150 V 184"
+                  marker-end="url(#core-demo-tree-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M 510 150 V 184"
+                  marker-end="url(#core-demo-tree-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M 830 150 V 184"
+                  marker-end="url(#core-demo-tree-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M 180 276 H 40 V 365 H 55"
+                  marker-end="url(#core-demo-tree-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M 40 365 V 442 H 55"
+                  marker-end="url(#core-demo-tree-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M 40 442 V 565 H 55"
+                  marker-end="url(#core-demo-tree-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M 40 565 V 705 H 55"
+                  marker-end="url(#core-demo-tree-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M 40 705 V 895 H 55"
+                  marker-end="url(#core-demo-tree-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M 180 940 V 966 H 68 V 1018 H 82"
+                  marker-end="url(#core-demo-tree-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M 510 276 H 365 V 390 H 385"
+                  marker-end="url(#core-demo-tree-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M 365 390 V 560 H 385"
+                  marker-end="url(#core-demo-tree-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M 365 560 V 895 H 385"
+                  marker-end="url(#core-demo-tree-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M 515 595 H 375 V 657 H 400"
+                  marker-end="url(#core-demo-tree-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M 375 657 V 767 H 400"
+                  marker-end="url(#core-demo-tree-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M 515 960 V 977 H 385 V 1027 H 400"
+                  marker-end="url(#core-demo-tree-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M 830 276 H 695 V 390 H 710"
+                  marker-end="url(#core-demo-tree-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M 695 390 V 560 H 710"
+                  marker-end="url(#core-demo-tree-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M 695 560 V 895 H 710"
+                  marker-end="url(#core-demo-tree-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M 840 595 H 705 V 672 H 730"
+                  marker-end="url(#core-demo-tree-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M 705 672 V 792 H 730"
+                  marker-end="url(#core-demo-tree-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M 840 960 V 978 H 705 V 1037 H 730"
+                  marker-end="url(#core-demo-tree-arrow)"
+                />
+                <path
+                  class="eng-edge eng-dashed blue"
+                  d="M 300 357 H 385"
+                  marker-end="url(#core-demo-tree-arrow)"
+                />
+                <path
+                  class="eng-edge eng-dashed blue"
+                  d="M 300 442 H 345 V 423 H 385"
+                  marker-end="url(#core-demo-tree-arrow)"
+                />
+                <path
+                  class="eng-edge eng-dashed blue"
+                  d="M 300 565 H 385"
+                  marker-end="url(#core-demo-tree-arrow)"
+                />
+                <path
+                  class="eng-edge eng-dashed blue"
+                  d="M 300 705 H 345 V 579 H 385"
+                  marker-end="url(#core-demo-tree-arrow)"
+                />
+                <path
+                  class="eng-edge eng-dashed blue"
+                  d="M 300 895 H 385"
+                  marker-end="url(#core-demo-tree-arrow)"
+                />
+                <path
+                  class="eng-edge eng-dashed blue"
+                  d="M 645 390 H 710"
+                  marker-end="url(#core-demo-tree-arrow)"
+                />
+                <path
+                  class="eng-edge eng-dashed blue"
+                  d="M 645 560 H 710"
+                  marker-end="url(#core-demo-tree-arrow)"
+                />
+                <path
+                  class="eng-edge eng-dashed blue"
+                  d="M 645 895 H 710"
+                  marker-end="url(#core-demo-tree-arrow)"
+                />
+                <rect
+                  class="eng-node"
+                  x="55"
+                  y="105"
+                  width="245"
+                  height="45"
+                  rx="9"
+                />
+                <text class="eng-label" x="69" y="132">RootNode</text>
+
+                <rect
+                  class="eng-node primary"
+                  x="55"
+                  y="184"
+                  width="245"
+                  height="92"
+                  rx="9"
+                />
+                <text class="eng-label" x="69" y="211">Element div</text>
+                <text class="eng-code" x="69" y="235">id="foo"</text>
+                <text class="eng-code" x="69" y="256">bind class: bar.baz</text>
+                <rect
+                  class="eng-node"
+                  x="55"
+                  y="320"
+                  width="245"
+                  height="75"
+                  rx="9"
+                />
+                <text class="eng-label" x="69" y="347">Interpolation</text>
+                <text class="eng-code" x="69" y="371">world.burn()</text>
+                <rect
+                  class="eng-node"
+                  x="55"
+                  y="417"
+                  width="245"
+                  height="50"
+                  rx="9"
+                />
+                <text class="eng-label" x="69" y="444">Text(" ")</text>
+
+                <rect
+                  class="eng-node amber"
+                  x="55"
+                  y="525"
+                  width="245"
+                  height="80"
+                  rx="9"
+                />
+                <text class="eng-label" x="69" y="552">Element div</text>
+                <text class="eng-code" x="69" y="576">if: ok</text>
+                <text class="eng-code" x="69" y="597">
+                  children: Text("yes")
+                </text>
+                <rect
+                  class="eng-node amber"
+                  x="55"
+                  y="665"
+                  width="245"
+                  height="80"
+                  rx="9"
+                />
+                <text class="eng-label" x="69" y="692">Element template</text>
+                <text class="eng-code" x="69" y="716">else</text>
+                <text class="eng-code" x="69" y="737">
+                  children: Text("no")
+                </text>
+                <rect
+                  class="eng-node violet"
+                  x="55"
+                  y="850"
+                  width="245"
+                  height="90"
+                  rx="9"
+                />
+                <text class="eng-label" x="69" y="877">Element div</text>
+                <text class="eng-code" x="69" y="901">
+                  for: (value,index) in list
+                </text>
+                <text class="eng-code" x="69" y="922">
+                  forParseResult 已预解析
+                </text>
+                <rect
+                  class="eng-node"
+                  x="82"
+                  y="985"
+                  width="218"
+                  height="80"
+                  rx="9"
+                />
+                <text class="eng-label" x="96" y="1012">Element span</text>
+                <text class="eng-code" x="96" y="1036">Interpolation(</text>
+                <text class="eng-code" x="96" y="1057">value + index)</text>
+                <rect
+                  class="eng-node"
+                  x="385"
+                  y="105"
+                  width="260"
+                  height="45"
+                  rx="9"
+                />
+                <text class="eng-label" x="399" y="132">RootNode</text>
+
+                <rect
+                  class="eng-node primary"
+                  x="385"
+                  y="184"
+                  width="260"
+                  height="92"
+                  rx="9"
+                />
+                <text class="eng-label" x="399" y="211">Element div</text>
+                <text class="eng-code" x="399" y="235">
+                  children.length = 3
+                </text>
+                <text class="eng-code" x="399" y="256">
+                  bind class: _ctx.bar.baz
+                </text>
+                <rect
+                  class="eng-node blue"
+                  x="385"
+                  y="320"
+                  width="260"
+                  height="150"
+                  rx="9"
+                />
+                <text class="eng-label" x="399" y="347">TEXT_CALL</text>
+                <text class="eng-code" x="399" y="371">
+                  content: CompoundExpression
+                </text>
+                <text class="eng-code" x="399" y="392">
+                  Interpolation + Text(" ")
+                </text>
+                <text class="eng-code" x="399" y="413">world → _ctx.world</text>
+                <text class="eng-code" x="399" y="434">
+                  codegenNode → createTextVNode
+                </text>
+                <rect
+                  class="eng-node amber"
+                  x="385"
+                  y="525"
+                  width="260"
+                  height="70"
+                  rx="9"
+                />
+                <text class="eng-label" x="399" y="552">IfNode</text>
+                <text class="eng-code" x="399" y="576">
+                  branches.length = 2
+                </text>
+                <rect
+                  class="eng-node amber"
+                  x="400"
+                  y="625"
+                  width="245"
+                  height="88"
+                  rx="9"
+                />
+                <text class="eng-label" x="414" y="652">
+                  IfBranch · condition
+                </text>
+                <text class="eng-code" x="414" y="676">_ctx.ok</text>
+                <text class="eng-code" x="414" y="697">
+                  Element div → Text("yes")
+                </text>
+                <rect
+                  class="eng-node amber"
+                  x="400"
+                  y="730"
+                  width="245"
+                  height="88"
+                  rx="9"
+                />
+                <text class="eng-label" x="414" y="757">IfBranch · else</text>
+                <text class="eng-code" x="414" y="781">
+                  condition: undefined
+                </text>
+                <text class="eng-code" x="414" y="802">
+                  children: TEXT_CALL("no")
+                </text>
+                <rect
+                  class="eng-node violet"
+                  x="385"
+                  y="850"
+                  width="260"
+                  height="110"
+                  rx="9"
+                />
+                <text class="eng-label" x="399" y="877">ForNode</text>
+                <text class="eng-code" x="399" y="901">source: _ctx.list</text>
+                <text class="eng-code" x="399" y="922">valueAlias: value</text>
+                <text class="eng-code" x="399" y="943">keyAlias: index</text>
+                <rect
+                  class="eng-node"
+                  x="400"
+                  y="990"
+                  width="245"
+                  height="100"
+                  rx="9"
+                />
+                <text class="eng-label" x="414" y="1017">Element div</text>
+                <text class="eng-code" x="414" y="1041">
+                  children → Element span
+                </text>
+                <text class="eng-code" x="414" y="1062">
+                  Interpolation(value+index)
+                </text>
+                <text class="eng-code" x="414" y="1083">
+                  value/index 不加 _ctx
+                </text>
+                <rect
+                  class="eng-node"
+                  x="710"
+                  y="105"
+                  width="260"
+                  height="45"
+                  rx="9"
+                />
+                <text class="eng-label" x="724" y="132">root.codegenNode</text>
+
+                <rect
+                  class="eng-node primary"
+                  x="710"
+                  y="184"
+                  width="260"
+                  height="92"
+                  rx="9"
+                />
+                <text class="eng-label" x="724" y="211">VNodeCall("div")</text>
+                <text class="eng-code" x="724" y="235">
+                  CLASS=2 · isBlock=true
+                </text>
+                <text class="eng-code" x="724" y="256">
+                  class: normalizeClass(...)
+                </text>
+                <rect
+                  class="eng-node blue"
+                  x="710"
+                  y="320"
+                  width="260"
+                  height="150"
+                  rx="9"
+                />
+                <text class="eng-label" x="724" y="347">
+                  JSCall: createTextVNode
+                </text>
+                <text class="eng-code" x="724" y="371">toDisplayString(</text>
+                <text class="eng-code" x="724" y="392">
+                  _ctx.world.burn()) + " "
+                </text>
+                <text class="eng-code" x="724" y="413">TEXT=1</text>
+                <text class="eng-code" x="724" y="434">
+                  对应左侧合并后的 TEXT_CALL
+                </text>
+                <rect
+                  class="eng-node amber"
+                  x="710"
+                  y="525"
+                  width="260"
+                  height="70"
+                  rx="9"
+                />
+                <text class="eng-label" x="724" y="552">
+                  JSConditionalExpression
+                </text>
+                <text class="eng-code" x="724" y="576">test: _ctx.ok</text>
+                <rect
+                  class="eng-node amber"
+                  x="730"
+                  y="625"
+                  width="240"
+                  height="95"
+                  rx="9"
+                />
+                <text class="eng-label" x="744" y="652">div block · key=0</text>
+                <text class="eng-code" x="744" y="676">consequent</text>
+                <text class="eng-code" x="744" y="697">children: "yes"</text>
+                <rect
+                  class="eng-node amber"
+                  x="730"
+                  y="745"
+                  width="240"
+                  height="95"
+                  rx="9"
+                />
+                <text class="eng-label" x="744" y="772">
+                  Fragment block · key=1
+                </text>
+                <text class="eng-code" x="744" y="796">
+                  alternate · STABLE=64
+                </text>
+                <text class="eng-code" x="744" y="817">
+                  child: createTextVNode("no")
+                </text>
+                <rect
+                  class="eng-node violet"
+                  x="710"
+                  y="850"
+                  width="260"
+                  height="110"
+                  rx="9"
+                />
+                <text class="eng-label" x="724" y="877">
+                  VNodeCall(Fragment)
+                </text>
+                <text class="eng-code" x="724" y="901">
+                  UNKEYED_FRAGMENT=256
+                </text>
+                <text class="eng-code" x="724" y="922">isBlock=true</text>
+                <text class="eng-code" x="724" y="943">
+                  disableTracking=true
+                </text>
+                <rect
+                  class="eng-node violet"
+                  x="730"
+                  y="990"
+                  width="240"
+                  height="135"
+                  rx="9"
+                />
+                <text class="eng-label" x="744" y="1017">
+                  JSCall: renderList
+                </text>
+                <text class="eng-code" x="744" y="1041">source: _ctx.list</text>
+                <text class="eng-code" x="744" y="1062">
+                  (value,index) → div block
+                </text>
+                <text class="eng-code" x="744" y="1083">
+                  span: createElementVNode
+                </text>
+                <text class="eng-code" x="744" y="1104">TEXT=1</text>
+                <text class="eng-note" x="40" y="1156">
+                  实线：children / branches /
+                  输出子结构；蓝色虚线：同一内容的转换对应。
+                </text>
+              </svg>
+            </div>
+            <figcaption>
+              <strong>同一模板的对象快照。</strong>使用本页主 Demo，开启
+              <code>prefixIdentifiers</code>；省略
+              loc、资源集合和与这条主线无关的字段。最初的插值与后方空格在父节点
+              exit 时合并；<code>template v-else</code>
+              的文本移入第二个分支，因此父 div 最后只有三个
+              children。右侧是这些节点的输出描述，helper
+              名省略导入别名前缀；<code>genVNodeCall()</code> 再按 isBlock 与
+              disableTracking 打印对应调用。依据：<a
+                href="../../../vue/packages/compiler-core/src/transforms/transformText.ts"
+                >transformText</a
+              >、<a
+                href="../../../vue/packages/compiler-core/src/transforms/vIf.ts"
+                >processIf</a
+              >、<a
+                href="../../../vue/packages/compiler-core/src/transforms/vFor.ts"
+                >processFor</a
+              >，以及
+              <a
+                href="../../../vue/packages/compiler-core/__tests__/__snapshots__/compile.spec.ts.snap"
+                >主 Demo 编译快照</a
+              >。
+            </figcaption>
+          </figure>
           <div class="grid-2">
             <article class="card">
               <h3>Template AST</h3>
@@ -1078,12 +1674,12 @@ export function createVNodeCall(
               </p>
             </article>
             <article class="code-note">
-              <h3>这些字段由 renderer 直接消费</h3>
+              <h3>从编译字段到运行时更新信息</h3>
               <p>
-                patchFlag 告诉 renderer 哪些部分会变，dynamicProps
-                给出精确键名，isBlock
-                决定是否收集动态后代。renderer 因而可以进入对应更新分支，
-                不必在每次渲染时重新扫描全部 props 和 children。
+                patchFlag 与 dynamicProps 会传入运行时 VNode；isBlock 由 codegen
+                转成 openBlock 与 createBlock/createElementBlock
+                调用，使运行时建立动态后代列表。renderer
+                再使用这些信息选择更新路径，跳过稳定的 props 和 children。
               </p>
             </article>
             <article class="code-note">
@@ -1141,8 +1737,8 @@ export function createVNodeCall(
             </table>
           </div>
           <div class="callout">
-            <strong>连接两类 AST 的字段是 <code>codegenNode</code>：</strong>parser
-            不填它；transform
+            <strong>连接两类 AST 的字段是 <code>codegenNode</code>：</strong
+            >parser 不填它；transform
             在退出阶段根据完整子树生成。于是模板结构和输出结构可以并存，codegen
             无需反推模板语义。
           </div>
@@ -1184,27 +1780,439 @@ export function createVNodeCall(
               共享作用域、资源与优化信息。
             </p>
           </div>
-          <div class="diagram" aria-label="Transform 深度优先遍历">
-            <p class="diagram-title">单个节点的生命周期</p>
-            <div class="flow">
-              <div class="flow-node">
-                <strong>按顺序 enter</strong><small>NodeTransform 1 → N</small>
-              </div>
-              <div class="arrow">→</div>
-              <div class="flow-node">
-                <strong>替换 / 删除</strong
-                ><small>修正 currentNode 与游标</small>
-              </div>
-              <div class="arrow">→</div>
-              <div class="flow-node primary">
-                <strong>递归 children</strong><small>子树先完成转换</small>
-              </div>
-              <div class="arrow">→</div>
-              <div class="flow-node">
-                <strong>逆序 exit</strong><small>N → NodeTransform 1</small>
-              </div>
+          <figure class="engineering-diagram" id="core-traverse-control">
+            <div
+              class="engineering-scroll"
+              tabindex="0"
+              aria-label="Transform 遍历的回路、删除支线和退出，可横向滚动"
+            >
+              <svg
+                id="core-traverse-control-svg"
+                viewBox="0 0 1000 1100"
+                role="img"
+                aria-labelledby="core-traverse-control-title core-traverse-control-desc"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <title id="core-traverse-control-title">
+                  traverseNode 的 enter 回路、递归回路与逆序退出
+                </title>
+                <desc id="core-traverse-control-desc">
+                  enter
+                  按插件注册顺序运行并收集退出函数。替换当前节点后继续剩余插件；删除当前节点则提前返回，跳过递归和全部退出函数。容器逐
+                  children 或 branches 递归，完成后逆序运行 exit。右侧显示
+                  replace/remove 对节点和游标的即时改变，以及主 Demo 循环别名和
+                  vFor 深度的成对增减。
+                </desc>
+                <defs>
+                  <marker
+                    id="core-traverse-arrow"
+                    viewBox="0 0 8 8"
+                    refX="7"
+                    refY="4"
+                    markerWidth="7"
+                    markerHeight="7"
+                    orient="auto"
+                  >
+                    <path d="M 0 0 L 8 4 L 0 8 Z" />
+                  </marker>
+                </defs>
+                <rect
+                  class="eng-lane"
+                  x="665"
+                  y="90"
+                  width="320"
+                  height="985"
+                  rx="12"
+                />
+                <text class="eng-stage" x="28" y="35">
+                  traverseNode：enter 改树，递归完成后再逆序 exit
+                </text>
+                <path
+                  class="eng-edge"
+                  d="M 315 105 V 120"
+                  marker-end="url(#core-traverse-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M 315 190 V 250"
+                  marker-end="url(#core-traverse-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M 315 335 V 385"
+                  marker-end="url(#core-traverse-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M 210 425 H 60 V 470"
+                  marker-end="url(#core-traverse-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M 315 465 V 500"
+                  marker-end="url(#core-traverse-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M 450 527 H 525 V 112 H 315 V 120"
+                  marker-end="url(#core-traverse-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M 415 155 H 605 V 594 H 465"
+                  marker-end="url(#core-traverse-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M 315 684 V 705"
+                  marker-end="url(#core-traverse-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M 215 740 H 135 V 810"
+                  marker-end="url(#core-traverse-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M 135 945 V 962 H 640 V 740 H 415"
+                  marker-end="url(#core-traverse-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M 315 775 V 852 H 340"
+                  marker-end="url(#core-traverse-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M 615 875 H 650 V 1042 H 460"
+                  marker-end="url(#core-traverse-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M 115 570 V 607 H 10 V 1042 H 180"
+                  marker-end="url(#core-traverse-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M 835 645 V 662"
+                  marker-end="url(#core-traverse-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M 835 752 V 760"
+                  marker-end="url(#core-traverse-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M 835 865 V 895"
+                  marker-end="url(#core-traverse-arrow)"
+                />
+                <rect
+                  class="eng-node"
+                  x="180"
+                  y="45"
+                  width="270"
+                  height="60"
+                  rx="9"
+                />
+                <text class="eng-label" x="194" y="72">进入 traverseNode</text>
+                <text class="eng-code" x="194" y="96">
+                  currentNode=node; exitFns=[]
+                </text>
+                <polygon
+                  class="eng-decision"
+                  points="315,120 415,155 315,190 215,155"
+                />
+                <text class="eng-label" x="315" y="160" text-anchor="middle">
+                  还有 enter 插件？
+                </text>
+                <text class="eng-small" x="325" y="215">是</text>
+                <text class="eng-small" x="553" y="184">否：进入递归阶段</text>
+                <rect
+                  class="eng-node primary"
+                  x="165"
+                  y="250"
+                  width="300"
+                  height="85"
+                  rx="9"
+                />
+                <text class="eng-label" x="179" y="277">
+                  执行 nodeTransforms[i]
+                </text>
+                <text class="eng-code" x="179" y="301">按注册顺序调用</text>
+                <text class="eng-code" x="179" y="322">
+                  返回的退出函数 / 数组压入 exitFns
+                </text>
+                <polygon
+                  class="eng-decision"
+                  points="315,385 420,425 315,465 210,425"
+                />
+                <text class="eng-code" x="315" y="430" text-anchor="middle">
+                  currentNode === null?
+                </text>
+                <text class="eng-small" x="110" y="416">是：已删当前节点</text>
+                <text class="eng-small" x="326" y="488">否</text>
+                <rect
+                  class="eng-node amber"
+                  x="20"
+                  y="470"
+                  width="190"
+                  height="100"
+                  rx="9"
+                />
+                <text class="eng-label" x="34" y="497">提前 return</text>
+                <text class="eng-code" x="34" y="521">跳过剩余 enter</text>
+                <text class="eng-code" x="34" y="542">不递归 children</text>
+                <text class="eng-code" x="34" y="563">不执行已收集的 exit</text>
+                <rect
+                  class="eng-node"
+                  x="240"
+                  y="500"
+                  width="230"
+                  height="55"
+                  rx="9"
+                />
+                <text class="eng-label" x="254" y="527">接收新节点，i++</text>
+                <text class="eng-code" x="254" y="551">node = currentNode</text>
+                <text class="eng-small" x="530" y="365">继续下个 enter</text>
+                <rect
+                  class="eng-node blue"
+                  x="165"
+                  y="579"
+                  width="300"
+                  height="105"
+                  rx="9"
+                />
+                <text class="eng-label" x="179" y="606">
+                  按最终 node.type 分派
+                </text>
+                <text class="eng-code" x="179" y="630">IF → branches[]</text>
+                <text class="eng-code" x="179" y="651">
+                  ROOT/ELEMENT/FOR/IF_BRANCH
+                </text>
+                <text class="eng-code" x="179" y="672">
+                  → children；其他节点不递归
+                </text>
+                <polygon
+                  class="eng-decision"
+                  points="315,705 415,740 315,775 215,740"
+                />
+                <text class="eng-label" x="315" y="745" text-anchor="middle">
+                  还有子节点？
+                </text>
+                <text class="eng-small" x="155" y="767">是</text>
+                <text class="eng-small" x="325" y="797">无 / 已遍历完</text>
+                <rect
+                  class="eng-node blue"
+                  x="20"
+                  y="810"
+                  width="230"
+                  height="135"
+                  rx="9"
+                />
+                <text class="eng-label" x="34" y="837">
+                  递归 traverseNode(child)
+                </text>
+                <text class="eng-code" x="34" y="861">
+                  children 循环设置 parent
+                </text>
+                <text class="eng-code" x="34" y="882">
+                  childIndex=i / 删除钩子
+                </text>
+                <text class="eng-code" x="34" y="903">
+                  子节点 enter → 递归 → exit
+                </text>
+                <text class="eng-code" x="34" y="924">删除钩子使循环 i--</text>
+                <text class="eng-small" x="302" y="984">
+                  返回后继续下个 child / branch
+                </text>
+                <rect
+                  class="eng-node primary"
+                  x="340"
+                  y="811"
+                  width="275"
+                  height="126"
+                  rx="9"
+                />
+                <text class="eng-label" x="354" y="838">
+                  执行当前节点的 exit
+                </text>
+                <text class="eng-code" x="354" y="862">
+                  先恢复 currentNode=node
+                </text>
+                <text class="eng-code" x="354" y="883">
+                  按 exitFns 逆序调用
+                </text>
+                <text class="eng-code" x="354" y="904">EN → ... → E1 → E0</text>
+                <text class="eng-code" x="354" y="925">退出后返回父层</text>
+                <rect
+                  class="eng-node"
+                  x="180"
+                  y="1012"
+                  width="280"
+                  height="60"
+                  rx="9"
+                />
+                <text class="eng-label" x="194" y="1039">返回调用者</text>
+                <text class="eng-code" x="194" y="1063">
+                  父层继续遍历其兄弟节点
+                </text>
+                <text class="eng-lane-title" x="683" y="119">
+                  插件修改的即时结果
+                </text>
+                <rect
+                  class="eng-node"
+                  x="685"
+                  y="140"
+                  width="280"
+                  height="122"
+                  rx="9"
+                />
+                <text class="eng-label" x="699" y="167">
+                  replaceNode(newNode)
+                </text>
+                <text class="eng-code" x="699" y="191">
+                  parent.children[childIndex]
+                </text>
+                <text class="eng-code" x="699" y="212">
+                  = currentNode = newNode
+                </text>
+                <text class="eng-code" x="699" y="233">
+                  不重启已执行的 enter
+                </text>
+                <text class="eng-code" x="699" y="254">
+                  剩余插件使用替换后的节点
+                </text>
+                <rect
+                  class="eng-node amber"
+                  x="685"
+                  y="289"
+                  width="280"
+                  height="172"
+                  rx="9"
+                />
+                <text class="eng-label" x="699" y="316">removeNode(node?)</text>
+                <text class="eng-code" x="699" y="340">
+                  当前节点: currentNode=null
+                </text>
+                <text class="eng-code" x="699" y="361">
+                  父循环 i--；childIndex 不减
+                </text>
+                <text class="eng-code" x="699" y="382">
+                  前方兄弟: childIndex--, i--
+                </text>
+                <text class="eng-code" x="699" y="403">
+                  后方兄弟: 两个索引都不变
+                </text>
+                <text class="eng-code" x="699" y="424">
+                  splice 后，循环会再执行 i++
+                </text>
+                <text class="eng-code" x="699" y="445">
+                  故当前位置的后继不会被跳过
+                </text>
+                <text class="eng-lane-title" x="683" y="536">
+                  同一流程中的 v-for 作用域
+                </text>
+                <rect
+                  class="eng-node violet"
+                  x="685"
+                  y="565"
+                  width="280"
+                  height="80"
+                  rx="9"
+                />
+                <text class="eng-label" x="699" y="592">
+                  主 Demo 的 ForNode
+                </text>
+                <text class="eng-code" x="699" y="616">
+                  先处理 source → _ctx.list
+                </text>
+                <text class="eng-code" x="699" y="637">
+                  再替换节点、登记别名
+                </text>
+                <rect
+                  class="eng-node violet"
+                  x="685"
+                  y="662"
+                  width="280"
+                  height="90"
+                  rx="9"
+                />
+                <text class="eng-label" x="699" y="689">processFor enter</text>
+                <text class="eng-code" x="699" y="713">scopes.vFor: 0 → 1</text>
+                <text class="eng-code" x="699" y="734">
+                  value/index 活动声明数: 0 → 1
+                </text>
+                <rect
+                  class="eng-node blue"
+                  x="685"
+                  y="760"
+                  width="280"
+                  height="105"
+                  rx="9"
+                />
+                <text class="eng-label" x="699" y="787">递归原 div → span</text>
+                <text class="eng-code" x="699" y="811">
+                  原元素从第 0 个插件再进入
+                </text>
+                <text class="eng-code" x="699" y="832">
+                  value + index 保持局部名
+                </text>
+                <text class="eng-code" x="699" y="853">
+                  v-for 指令已移除，不再包 For
+                </text>
+                <rect
+                  class="eng-node violet"
+                  x="685"
+                  y="895"
+                  width="280"
+                  height="132"
+                  rx="9"
+                />
+                <text class="eng-label" x="699" y="922">processFor exit</text>
+                <text class="eng-code" x="699" y="946">scopes.vFor: 1 → 0</text>
+                <text class="eng-code" x="699" y="967">
+                  value/index 活动声明数: 1 → 0
+                </text>
+                <text class="eng-code" x="699" y="988">
+                  补 renderList 回调与 childBlock
+                </text>
+                <text class="eng-code" x="699" y="1009">
+                  外层后续表达式恢复自由引用
+                </text>
+                <text class="eng-note" x="685" y="1048">
+                  别名登记：Node 构建且启用前缀模式
+                </text>
+                <text class="eng-note" x="685" y="1069">
+                  首次键值：undefined → 1 → 0（保留键）
+                </text>
+              </svg>
             </div>
-          </div>
+            <figcaption>
+              <strong>两重循环与递归的控制权。</strong>每个 child
+              又完整进入左侧流程；子节点返回后，父层继续读取最新的
+              children。删除钩子的 <code>i--</code> 与循环自身的
+              <code>i++</code> 配合，避免跳过移动到当前位置的后继。exit
+              按实际收集函数的逆序执行，插件返回数组也先展开入栈。右侧 v-for
+              的原元素通过通用 children 递归再次进入，而新 ForNode
+              不重跑已经执行的插件。<code>v-else</code> 合并另有一条主动遍历新
+              branch 的路径，见下节
+              <a href="#structure">processIf 摘录</a>。依据：<a
+                href="../../../vue/packages/compiler-core/src/transform.ts"
+                >traverseNode / traverseChildren / replaceNode / removeNode</a
+              >、<a
+                href="../../../vue/packages/compiler-core/src/transforms/vFor.ts"
+                >processFor</a
+              >；<a
+                href="../../../vue/packages/compiler-core/__tests__/transform.spec.ts"
+                >节点修改测试</a
+              >与
+              <a
+                href="../../../vue/packages/compiler-core/__tests__/transforms/vFor.spec.ts"
+                >作用域测试</a
+              >验证后继遍历和别名隔离。
+            </figcaption>
+          </figure>
           <figure class="source-block">
             <figcaption class="source-caption">
               <span
@@ -1553,30 +2561,37 @@ _ctx.items.map(item =&gt; item.id)</code></pre>
             <p class="diagram-title">表达式从模板源码到可打印节点</p>
             <div class="flow nine">
               <div class="flow-node">
-                <strong>createExp</strong><small>保存 content / loc；可预解析 exp.ast</small>
+                <strong>createExp</strong
+                ><small>保存 content / loc；可预解析 exp.ast</small>
               </div>
               <div class="arrow">→</div>
               <div class="flow-node">
-                <strong>模板作用域</strong><small>v-for / v-slot 写入 identifiers</small>
+                <strong>模板作用域</strong
+                ><small>v-for / v-slot 写入 identifiers</small>
               </div>
               <div class="arrow">→</div>
               <div class="flow-node primary">
-                <strong>processExpression</strong><small>简单名快路径或 walkIdentifiers</small>
+                <strong>processExpression</strong
+                ><small>简单名快路径或 walkIdentifiers</small>
               </div>
               <div class="arrow">→</div>
               <div class="flow-node">
-                <strong>绑定分流</strong><small>局部名 / _ctx / $setup / ref.value</small>
+                <strong>绑定分流</strong
+                ><small>局部名 / _ctx / $setup / ref.value</small>
               </div>
               <div class="arrow">→</div>
               <div class="flow-node">
-                <strong>ExpressionNode</strong><small>原节点或 CompoundExpression + 精确 loc</small>
+                <strong>ExpressionNode</strong
+                ><small>原节点或 CompoundExpression + 精确 loc</small>
               </div>
             </div>
           </div>
           <div class="callout">
             <strong><code>exp.ast</code> 的三种状态：</strong><code>null</code>
-            表示简单标识符，可直接改写；Babel AST 表示复合表达式，可复用预解析结果；
-            <code>false</code> 表示 Parser 已报告语法错误，Transform 直接返回，避免重复诊断。
+            表示简单标识符，可直接改写；Babel AST
+            表示复合表达式，可复用预解析结果；
+            <code>false</code> 表示 Parser 已报告语法错误，Transform
+            直接返回，避免重复诊断。
           </div>
           <figure class="source-block">
             <figcaption class="source-caption">
@@ -1711,8 +2726,9 @@ _ctx.items.map(item =&gt; item.id)</code></pre>
 }</code></pre>
           </figure>
           <p class="source-context">
-            摘录保留绑定分流、简单标识符快路径和 Babel AST 标识符遍历；
-            setup let 的完整写回协议与 source-map 位置拼接不影响这里的作用域判断，故省略。
+            摘录保留绑定分流、简单标识符快路径和 Babel AST 标识符遍历； setup
+            let 的完整写回协议与 source-map
+            位置拼接不影响这里的作用域判断，故省略。
           </p>
           <div class="code-walkthrough">
             <article class="code-note">
@@ -1726,11 +2742,13 @@ _ctx.items.map(item =&gt; item.id)</code></pre>
             <article class="code-note">
               <h3>SFC 元数据决定读法</h3>
               <p>
-                已知 ref 读 <code>.value</code>，maybe-ref 读
-                <code>unref()</code>，prop 读
-                <code>__props</code>，未知名字才回退到
+                inline 模式直接读取 setup 作用域：ref 用
+                <code>.value</code>，maybe-ref 用 <code>unref()</code>，prop 用
+                <code>__props</code>；非 inline 模式分别通过
+                <code>$setup</code>、<code>$props</code>
+                等渲染参数访问。未知绑定才回退到
                 <code>_ctx</code>。compileScript
-                提供绑定分类后，模板编译器才有这些直达访问路径。
+                提供绑定分类后，模板编译器才有这些访问路径。
               </p>
             </article>
             <article class="code-note">
@@ -1841,8 +2859,8 @@ _ctx.items.map(item =&gt; item.id)</code></pre>
             </article>
           </div>
           <p class="prose">
-            本节只追 v-if 与 v-for。v-slot 的动态插槽、forwarded 标志和
-            <code>createSlots()</code> 分支不在本页展开，避免用一张概述卡替代源码证据。
+            本节展开 v-if 与 v-for。v-slot 的动态插槽、forwarded 标志和
+            <code>createSlots()</code> 分支见插槽相关源码注释。
           </p>
           <figure class="source-block">
             <figcaption class="source-caption">
@@ -1985,7 +3003,8 @@ return (): void =&gt; {
             对 <code>v-for="(item, i) in list"</code>，<code>list</code>
             先按外部表达式处理；item/i 随后进入局部标识符计数。子树中的 item/i
             保持局部名，退出后计数撤销，后方兄弟再写 item 时仍会得到
-            <code>_ctx.item</code>。缺少或无法拆分表达式时，转换会先报告错误并返回，
+            <code>_ctx.item</code
+            >。缺少或无法拆分表达式时，转换会先报告错误并返回，
             不会创建一个字段不完整的 ForNode。
           </p>
           <figure class="source-block">
@@ -2020,10 +3039,11 @@ forNode.codegenNode = createVNodeCall(
 )</code></pre>
           </figure>
           <p class="source-context">
-            主 Demo 的 source 是 <code>_ctx.list</code>，不是编译期常量，也没有 key，
-            所以外层列表得到 <code>UNKEYED_FRAGMENT</code>，并以
-            <code>openBlock(true)</code> 禁止外层收集每一项内部的动态节点。若提供 key，
-            同一位置改用 KEYED_FRAGMENT；只有编译期稳定 source 才用 STABLE_FRAGMENT。
+            主 Demo 的 source 是 <code>_ctx.list</code>，不是编译期常量，也没有
+            key， 所以外层列表得到 <code>UNKEYED_FRAGMENT</code>，并以
+            <code>openBlock(true)</code>
+            禁止外层收集每一项内部的动态节点。若提供 key， 同一位置改用
+            KEYED_FRAGMENT；只有编译期稳定 source 才用 STABLE_FRAGMENT。
           </p>
           <div class="table-wrap">
             <table>
@@ -2136,9 +3156,15 @@ forNode.codegenNode = createVNodeCall(
       patchFlag = propsBuildResult.patchFlag
       dynamicPropNames = propsBuildResult.dynamicPropNames
       // …运行时指令与 needsPatch 状态同步省略。
+      if (propsBuildResult.shouldUseBlock) {
+        shouldUseBlock = true
+      }
     }
 
     // …根据原生元素/组件构造文本 children 或 slots。
+    if (dynamicPropNames &amp;&amp; dynamicPropNames.length) {
+      vnodeDynamicProps = stringifyDynamicPropNames(dynamicPropNames)
+    }
     const vnodeCall = (node.codegenNode = createVNodeCall(
       context,
       vnodeTag,
@@ -2167,12 +3193,11 @@ forNode.codegenNode = createVNodeCall(
             <article class="code-note">
               <h3>tag 不总是字符串</h3>
               <p>
-                原生 <code>div</code> 直接是
-                <code>"div"</code>；普通组件可能生成
-                <code>resolveComponent()</code>；<code
-                  >&lt;component :is&gt;</code
-                >
-                则生成 resolveDynamicComponent。后两者需要更保守的 block 边界。
+                原生 <code>div</code> 的 tag 是字符串；普通组件通常在 render
+                顶部解析为组件变量，再用 <code>createVNode()</code> 创建。动态
+                <code>&lt;component :is&gt;</code> 会生成
+                resolveDynamicComponent，并独立成为 block。普通组件是否成为
+                block，还取决于它是否位于模板根、条件分支等位置。
               </p>
             </article>
             <article class="code-note">
@@ -2310,7 +3335,7 @@ export function cacheStatic(root: RootNode, context: TransformContext): void {
     root,
     undefined,
     context,
-    // 单元素根可能接收父组件透传 attrs，只禁止缓存根本身。
+    // 单元素根保留为 block 更新边界，仍继续缓存其静态后代。
     !!getSingleElementRoot(root),
   )
 }
@@ -2351,18 +3376,20 @@ function getCacheExpression(value: JSChildNode): CacheExpression {
             <article class="code-note">
               <h3>根元素是特例</h3>
               <p>
-                即使
-                <code>&lt;div class="box"&gt;</code>
-                全静态，它作为组件根时仍可能合并父组件
-                attrs。整体缓存会固定上一次的 class/id，所以只继续优化它的后代。
+                单元素根保持 VNodeCall，随后由 createRootCodegen 转为
+                block。即使后代全部静态，renderer 仍可通过这个更新边界跳过静态
+                children；cacheStatic 继续缓存它的静态后代。父组件传入的 attrs
+                在 renderComponentRoot 中另行合并到根 VNode。
               </p>
             </article>
             <article class="code-note">
               <h3>数组缓存比逐个 VNode 更省</h3>
               <p>
                 一整组静态 children 共用一个
-                <code>_cache[n]</code>，可减少缓存槽、条件表达式和每次 render
-                的数组分配。
+                <code>_cache[n]</code
+                >，减少缓存槽和缓存判断。读取时仍会浅拷贝数组，让 runtime
+                修改本次 children 时不会写回缓存；缓存主要省去静态 VNode
+                的重复创建。
               </p>
             </article>
             <article class="code-note">
@@ -2415,9 +3442,10 @@ _createElementBlock("div", null, [
           <div class="callout warn">
             <strong>优化限制：</strong
             >组件、结构分支、自定义指令、局部作用域引用、动态指令参数，以及产生
-            patchFlag 的动态 props、ref 或 hydration 事件会阻止整节点进入静态缓存。
-            <code>scopeId</code> 不会降低 <code>ConstantTypes</code>；DOM 字符串化会把它
-            写进静态 HTML。当前 3.5.41 的 <code>hmr</code> 选项也不参与这段常量分析。
+            patchFlag 的动态 props、ref 或 hydration
+            事件会阻止整节点进入静态缓存。<code>scopeId</code> 不会降低
+            <code>ConstantTypes</code>；DOM 字符串化会把它写进静态 HTML。当前
+            3.5.41 的 <code>hmr</code> 选项也不参与这段常量分析。
           </div>
           <a
             class="source-link"
@@ -2434,8 +3462,8 @@ _createElementBlock("div", null, [
             </div>
             <p>
               <code>generate()</code> 按 mode、ssr、inline、sourceMap
-              建立上下文，再根据 RootNode 保存的 helper、hoist、组件和指令集合生成
-              序言、资源声明和函数体。
+              建立上下文，再根据 RootNode 保存的
+              helper、hoist、组件和指令集合生成 序言、资源声明和函数体。
             </p>
           </div>
           <div class="diagram" aria-label="代码生成组成">
@@ -2639,11 +3667,13 @@ _createElementBlock("div", null, [
             >。开发版若缺少它会直接断言，能很快暴露“忘了安装某个转换”这类插件错误。
           </p>
           <div class="callout warn">
-            <strong>主链怎样提前结束：</strong>Parser 默认 <code>onError</code>
-            会抛出并终止编译；Transform 插件若删除当前节点，<code>traverseNode()</code>
-            立即返回，不再递归 children，也不执行该节点已收集的 exitFns；非法 v-for
-            在报告错误后不创建 ForNode。Generate 面对空 Root 会输出
-            <code>null</code>；Element/If/For 已存在却缺少 <code>codegenNode</code>
+            <strong>主链怎样提前结束：</strong>Parser 默认
+            <code>onError</code> 会抛出并终止编译；Transform
+            插件若删除当前节点，<code>traverseNode()</code>
+            立即返回，不再递归 children，也不执行该节点已收集的 exitFns；非法
+            v-for 在报告错误后不创建 ForNode。Generate 面对空 Root 会输出
+            <code>null</code>；Element/If/For 已存在却缺少
+            <code>codegenNode</code>
             时，开发版断言提示转换器没有装齐。
           </div>
           <figure class="source-block">
@@ -2875,8 +3905,11 @@ function genNullableArgs(args: any[]): CallExpression['arguments'] {
           <figure class="source-block">
             <figcaption class="source-caption">
               <span
-                ><strong>真实测试 · 完整表达式作用域用例（合并必要 imports）</strong
-                ><code>__tests__/transforms/transformExpressions.spec.ts</code></span
+                ><strong
+                  >真实测试 · 完整表达式作用域用例（合并必要 imports）</strong
+                ><code
+                  >__tests__/transforms/transformExpressions.spec.ts</code
+                ></span
               >
               <span class="source-version">Vitest</span>
             </figcaption>
@@ -2920,12 +3953,9 @@ test('should not prefix params of a function expression', () =&gt; {
 })</code></pre>
           </figure>
           <p class="source-context">
-            测试主体、helper、输入和断言保持原样；这里只把原文件分散导入的必要名字合并展示。
-            Given 是同时包含箭头函数参数和外部变量的插值；When 是开启前缀模式执行
-            parse + transform；Then 两个 foo 都保持局部名，只有 bar 变成
-            <code>_ctx.bar</code>。它直接证明 Babel 局部作用域与模板
-            <code>identifiers</code> 之外的自由引用才会被前缀化。对应源码是
-            <code>processExpression() → walkIdentifiers()</code> 的
+            开启前缀模式后，两个 foo 保持函数局部名，bar 改为
+            <code>_ctx.bar</code>；对应
+            <code>processExpression() → walkIdentifiers()</code> 中的
             <code>needPrefix &amp;&amp; !isLocal</code> 分支。
           </p>
           <figure class="source-block">
@@ -3003,7 +4033,9 @@ expect(
                   </td>
                   <td>
                     开放栈可恢复，但是否继续由 onError 策略决定。<br />
-                    <small>Source：parser.ts · onclosetag() / emitError()</small>
+                    <small
+                      >Source：parser.ts · onclosetag() / emitError()</small
+                    >
                   </td>
                 </tr>
                 <tr>
@@ -3031,7 +4063,10 @@ expect(
                   </td>
                   <td>
                     删除会终止当前子树，并通过回退游标补偿数组左移。<br />
-                    <small>Source：transform.ts · removeNode() / traverseChildren()</small>
+                    <small
+                      >Source：transform.ts · removeNode() /
+                      traverseChildren()</small
+                    >
                   </td>
                 </tr>
                 <tr>
@@ -3061,7 +4096,9 @@ expect(
                   <td>
                     v-for exit 确实撤销 identifier
                     计数，局部变量没有泄漏给兄弟。<br />
-                    <small>Source：transforms/vFor.ts · processFor() exit</small>
+                    <small
+                      >Source：transforms/vFor.ts · processFor() exit</small
+                    >
                   </td>
                 </tr>
                 <tr>
@@ -3074,7 +4111,10 @@ expect(
                   <td>参数及局部引用 foo 不变；自由引用 bar 变为 _ctx.bar。</td>
                   <td>
                     JS 内层局部作用域不会被误认成组件上下文。<br />
-                    <small>Source：transformExpression.ts · processExpression() / walkIdentifiers()</small>
+                    <small
+                      >Source：transformExpression.ts · processExpression() /
+                      walkIdentifiers()</small
+                    >
                   </td>
                 </tr>
                 <tr>
@@ -3089,31 +4129,46 @@ expect(
                   </td>
                   <td>
                     class/style 走专用位，普通动态键才进入精确 props 名单。
-                    <br /><small>Source：transformElement.ts · buildProps() / analyzePatchFlag()</small>
+                    <br /><small
+                      >Source：transformElement.ts · buildProps() /
+                      analyzePatchFlag()</small
+                    >
                   </td>
                 </tr>
                 <tr>
                   <td>
-                    <code>cacheStatic.spec.ts</code><br />should NOT cache root node
+                    <code>cacheStatic.spec.ts</code><br />should NOT cache root
+                    node
                   </td>
                   <td>单个静态根 <code>&lt;div/&gt;</code>。</td>
                   <td>开启 <code>hoistStatic</code> 运行 cacheStatic。</td>
                   <td>根保持 VNodeCall，cached 长度为 0。</td>
                   <td>
-                    组件根可能接收 attrs，不能固定为实例缓存。<br />
-                    <small>Source：cacheStatic.ts · cacheStatic() / getSingleElementRoot()</small>
+                    单元素根保留为 block 更新边界，静态后代仍可缓存。<br />
+                    <small
+                      >Source：cacheStatic.ts · cacheStatic() /
+                      getSingleElementRoot()；transform.ts ·
+                      createRootCodegen()</small
+                    >
                   </td>
                 </tr>
                 <tr>
                   <td>
-                    <code>cacheStatic.spec.ts</code><br />cache single children array
+                    <code>cacheStatic.spec.ts</code><br />cache single children
+                    array
                   </td>
                   <td>单元素根 div（根本身不缓存）下只有一个静态 span。</td>
                   <td>开启 <code>hoistStatic</code> 运行 cacheStatic。</td>
-                  <td>整组 children 只占一个 cache 槽，生成结果读取时展开数组。</td>
                   <td>
-                    整组缓存减少槽位；浅拷贝隔离 runtime 对 VNode 数组的写入。<br />
-                    <small>Source：cacheStatic.ts · walk() / getCacheExpression()</small>
+                    整组 children 只占一个 cache 槽，生成结果读取时展开数组。
+                  </td>
+                  <td>
+                    整组缓存减少槽位；浅拷贝隔离 runtime 对 VNode
+                    数组的写入。<br />
+                    <small
+                      >Source：cacheStatic.ts · walk() /
+                      getCacheExpression()</small
+                    >
                   </td>
                 </tr>
                 <tr>

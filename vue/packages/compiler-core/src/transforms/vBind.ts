@@ -14,6 +14,8 @@ import { CAMELIZE } from '../runtimeHelpers'
  *
  * 无参数 `v-bind="obj"` 会影响整个 props 合并顺序，由 transformElement.ts 直接处理；
  * 此处只处理 `:foo="bar"`，并实现 `.camel`、`.prop`、`.attr` 修饰符。
+ * 同名简写须先由 transformVBindShorthand 补出 exp；此处原地调整参数节点，返回属性列表。
+ * 动态 key 的 props 规范化由 buildProps 统一补上；SSR 不编码强制 DOM property/attribute 前缀。
  */
 export const transformBind: DirectiveTransform = (dir, _node, context) => {
   const { modifiers, loc } = dir

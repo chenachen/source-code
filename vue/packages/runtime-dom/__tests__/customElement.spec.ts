@@ -1,7 +1,3 @@
-/**
- * 测试阅读说明：本文件验证 `runtime-dom/customElement` 的运行时行为。
- * “测试组”概括共享前置条件，“测试场景”说明当前输入、边界或历史回归目标；具体预期以断言为准。
- */
 import type { MockedFunction } from 'vitest'
 import {
   type HMRRuntime,
@@ -27,7 +23,7 @@ import {
 /** 开发环境全局 HMR 运行时，用于验证 Vue 自定义元素的热更新行为。 */
 declare var __VUE_HMR_RUNTIME__: HMRRuntime
 
-// 测试组：defineCustomElement 的定义、连接、更新、销毁和宿主交互。
+// 测试组：向浏览器注册不同名字的VueElement类，通过innerHTML、新建实例及连接/移除驱动生命周期；检查shadow DOM、props/attributes、CustomEvent、插槽、注入和样式。
 describe('defineCustomElement', () => {
   const container = document.createElement('div')
   document.body.appendChild(container)
@@ -45,13 +41,14 @@ describe('defineCustomElement', () => {
           default: 'hello',
         },
       },
+      /** 渲染'div'节点（this.msg）。 */
       render() {
         return h('div', this.msg)
       },
     })
     customElements.define('my-element', E)
 
-    // 测试场景：应该可以。
+    /** 测试场景：通过HTML插入已注册my-element，msg默认hello；宿主是E实例、内部组件已创建，ShadowRoot渲染hello div，验证连接挂载。 */
     test('should work', () => {
       container.innerHTML = `<my-element></my-element>`
       const e = container.childNodes[0] as VueElement
@@ -60,18 +57,18 @@ describe('defineCustomElement', () => {
       expect(e.shadowRoot!.innerHTML).toBe(`<div>hello</div>`)
     })
 
-    // 测试场景：应该通过手动实例化工作。
+    /** 测试场景：new E传msg=inline时_instance仍null；append连接后才创建组件并渲染inline div，验证构造与连接的分工。 */
     test('should work w/ manual instantiation', () => {
       const e = new E({ msg: 'inline' })
-      // should lazy init
+      // 构造时不创建组件实例。
       expect(e._instance).toBe(null)
-      // should initialize on connect
+      // 连接到文档后才创建组件实例。
       container.appendChild(e)
       expect(e._instance).toBeTruthy()
       expect(e.shadowRoot!.innerHTML).toBe(`<div>inline</div>`)
     })
 
-    // 测试场景：应该在删除时卸载。
+    /** 测试场景：已连接元素从容器移除并等待nextTick；_instance变null、ShadowRoot清空，验证延后确认断连后的真实卸载。 */
     test('should unmount on remove', async () => {
       container.innerHTML = `<my-element></my-element>`
       const e = container.childNodes[0] as VueElement
@@ -82,16 +79,18 @@ describe('defineCustomElement', () => {
     })
 
     // #10610
-    // 测试场景：自定义元素只是移动位置时，不能过早断开用于监听 attributes 的 MutationObserver。
+    /** 测试场景：带value=12的输入自定义元素移到另一父div；移动后移除value attribute，内部input变空，确认移动未断开MutationObserver。 */
     test('When elements move, avoid prematurely disconnecting MutationObserver', async () => {
       const CustomInput = defineCustomElement({
         props: ['value'],
         emits: ['update'],
+        /** setup返回渲染函数：'input'节点（属性{type: 'number'，value: props.value，onInput回调}）。 */
         setup(props, { emit }) {
           return () =>
             h('input', {
               type: 'number',
               value: props.value,
+              /** 执行emit('update', Number.isNaN(num)决定null或num)。无返回值。 */
               onInput: (e: InputEvent) => {
                 const num = (e.target! as HTMLInputElement).valueAsNumber
                 emit('update', Number.isNaN(num) ? null : num)
@@ -102,11 +101,13 @@ describe('defineCustomElement', () => {
       customElements.define('my-el-input', CustomInput)
       const num = ref('12')
       const containerComp = defineComponent({
+        /** setup返回渲染函数：'div'节点（根数组['my-el-input'节点（属性{value: num.value，onUpdate回调}）、'div'节点（属性{id: 'move'}）]）。 */
         setup() {
           return () => {
             return h('div', [
               h('my-el-input', {
                 value: num.value,
+                /** 执行num.value=$event.detail[0]。无返回值。 */
                 onUpdate: ($event: CustomEvent) => {
                   num.value = $event.detail[0]
                 },
@@ -132,21 +133,21 @@ describe('defineCustomElement', () => {
       expect(inputEl.value).toBe('')
     })
 
-    // 测试场景：移动时不应卸载。
+    /** 测试场景：同一元素从嵌套div同步移到容器；下一tick内部_instance保持同对象且hello DOM保留，验证断连后重新连接不会卸载。 */
     test('should not unmount on move', async () => {
       container.innerHTML = `<div><my-element></my-element></div>`
       const e = container.childNodes[0].childNodes[0] as VueElement
       const i = e._instance
-      // moving from one parent to another - this will trigger both disconnect
-      // and connected callbacks synchronously
+      // 元素从一父节点同步搬到另一父节点，先触发断连，
+      // 随后同轮触发连接回调。
       container.appendChild(e)
       await nextTick()
-      // should be the same instance
+      // 再次连接后保留同一组件实例。
       expect(e._instance).toBe(i)
       expect(e.shadowRoot!.innerHTML).toBe('<div>hello</div>')
     })
 
-    // 测试场景：删除然后再次插入。
+    /** 测试场景：移除元素并等tick后_instance=null、ShadowRoot空，再重新插入；重建组件并显示hello，验证真正卸载后的再连接。 */
     test('remove then insert again', async () => {
       container.innerHTML = `<my-element></my-element>`
       const e = container.childNodes[0] as VueElement
@@ -169,6 +170,7 @@ describe('defineCustomElement', () => {
         bazQux: null,
         value: null,
       },
+      /** 渲染根数组['div'节点（null；this.foo || ''）、'div'节点（null；this.bazQux || (this.bar && this.bar.x)）]。 */
       render() {
         return [
           h('div', null, this.foo || ''),
@@ -178,21 +180,21 @@ describe('defineCustomElement', () => {
     })
     customElements.define('my-el-props', E)
 
-    // 测试场景：渲染带有正确对象属性值的自定义元素。
+    /** 测试场景：Vue render向声明value的自定义元素传{x:1}；宿主property仍为对象，验证对象走property通道。 */
     test('renders custom element w/ correct object prop value', () => {
       render(h('my-el-props', { value: { x: 1 } }), container)
       const el = container.children[0]
       expect((el as any).value).toEqual({ x: 1 })
     })
 
-    // 测试场景：props 通过属性。
+    /** 测试场景：HTML attributes foo=hello/baz-qux=bye初始化双div；分别setAttribute后对应文本更新，确认连字符映射和observer同步。 */
     test('props via attribute', async () => {
-      // bazQux should map to `baz-qux` attribute
+      // bazQux 声明映射到 baz-qux attribute。
       container.innerHTML = `<my-el-props foo="hello" baz-qux="bye"></my-el-props>`
       const e = container.childNodes[0] as VueElement
       expect(e.shadowRoot!.innerHTML).toBe('<div>hello</div><div>bye</div>')
 
-      // change attr
+      // 修改宿主 attribute。
       e.setAttribute('foo', 'changed')
       await nextTick()
       expect(e.shadowRoot!.innerHTML).toBe('<div>changed</div><div>bye</div>')
@@ -204,7 +206,7 @@ describe('defineCustomElement', () => {
       )
     })
 
-    // 测试场景：props 通过属性。
+    /** 测试场景：连接前设foo字符串/bar对象，字符串反射foo attribute而对象不反射；后续字符串/null/undefined及bazQux更新同步DOM与attribute移除/连字符反射。 */
     test('props via properties', async () => {
       const e = new E()
       e.foo = 'one'
@@ -212,10 +214,10 @@ describe('defineCustomElement', () => {
       container.appendChild(e)
       expect(e.shadowRoot!.innerHTML).toBe('<div>one</div><div>two</div>')
 
-      // reflect
-      // should reflect primitive value
+      // 检查 property 到 attribute 的反射。
+      // 字符串原始值反射为 attribute。
       expect(e.getAttribute('foo')).toBe('one')
-      // should not reflect rich data
+      // 对象值保留在 property，不写为 attribute。
       expect(e.hasAttribute('bar')).toBe(false)
 
       e.foo = 'three'
@@ -240,7 +242,7 @@ describe('defineCustomElement', () => {
       expect(e.getAttribute('baz-qux')).toBe('four')
     })
 
-    // 测试场景：props 通过属性和属性一起改变。
+    /** 测试场景：声明foo/bar初始由property写入，再交替更新foo attribute与bar对象property；两次DOM均同时显示新值，foo property跟attribute同步而bar无attribute。 */
     test('props via attributes and properties changed together', async () => {
       const e = new E()
       e.foo = 'foo1'
@@ -249,7 +251,7 @@ describe('defineCustomElement', () => {
       await nextTick()
       expect(e.shadowRoot!.innerHTML).toBe('<div>foo1</div><div>bar1</div>')
 
-      // change attr then property
+      // 修改宿主 attribute。 then property
       e.setAttribute('foo', 'foo2')
       e.bar = { x: 'bar2' }
       await nextTick()
@@ -258,7 +260,7 @@ describe('defineCustomElement', () => {
       expect(e.foo).toBe('foo2')
       expect(e.hasAttribute('bar')).toBe(false)
 
-      // change prop then attr
+      // 先更新对象 property，再更新 attribute。
       e.bar = { x: 'bar3' }
       e.setAttribute('foo', 'foo3')
       await nextTick()
@@ -267,12 +269,13 @@ describe('defineCustomElement', () => {
       expect(e.hasAttribute('bar')).toBe(false)
     })
 
-    // 测试场景：props 通过连字符属性。
+    /** 测试场景：声明Boolean fooBar，Vue render传foo-bar=true；宿主输出foo-bar空attribute，验证连字符键映射与布尔反射。 */
     test('props via hyphen property', async () => {
       const Comp = defineCustomElement({
         props: {
           fooBar: Boolean,
         },
+        /** 渲染'Comp'。 */
         render() {
           return 'Comp'
         },
@@ -283,14 +286,15 @@ describe('defineCustomElement', () => {
       expect((el as any).outerHTML).toBe('<my-el-comp foo-bar=""></my-el-comp>')
     })
 
-    // 测试场景：attribute 同步为 props 时按照声明执行类型转换。
+    /** 测试场景：fooBar:Number/bar:Boolean/baz:String；初始foo-bar=1转数字、缺bar为false，空bar转true、2e1转20而String baz仍2e1，确认声明转换。 */
     test('attribute -> prop type casting', async () => {
       const E = defineCustomElement({
         props: {
-          fooBar: Number, // test casting of camelCase prop names
+          fooBar: Number, // 检查驼峰命名 prop 的数值转换
           bar: Boolean,
           baz: String,
         },
+        /** 渲染[ this.fooBar, typeof this.fooBar, this.bar, typeof this.bar, this.baz, typeof this.baz, ].join(' ')。 */
         render() {
           return [
             this.fooBar,
@@ -325,12 +329,13 @@ describe('defineCustomElement', () => {
     })
 
     // #4772
-    // 测试场景：通过 JavaScript 创建自定义元素时，attribute 仍按声明转换类型。
+    /** 测试场景：document.createElement后setAttribute foo=123再连接，foo声明Number；渲染报告number，验证程序创建元素的挂载转换。 */
     test('attr casting w/ programmatic creation', () => {
       const E = defineCustomElement({
         props: {
           foo: Number,
         },
+        /** 渲染`foo type: ${typeof this.foo}`。 */
         render() {
           return `foo type: ${typeof this.foo}`
         },
@@ -342,17 +347,19 @@ describe('defineCustomElement', () => {
       expect(el.shadowRoot.innerHTML).toBe(`foo type: number`)
     })
 
-    // 测试场景：处理升级前设置的属性。
+    /** 测试场景：未注册元素先设foo、dataset.age和未声明notProp，再连接后注册升级；setup收到hello和数字5，DOM正确且notProp不反射attribute，验证预升级收集。 */
     test('handling properties set before upgrading', () => {
       const E = defineCustomElement({
         props: {
           foo: String,
           dataAge: Number,
         },
+        /** setup不返回渲染或公开状态。 在此fixture入口检查props.foo、props.dataAge，失败直接由expect抛出。 */
         setup(props) {
           expect(props.foo).toBe('hello')
           expect(props.dataAge).toBe(5)
         },
+        /** 渲染'div'节点（`foo: ${this.foo}`）。 */
         render() {
           return h('div', `foo: ${this.foo}`)
         },
@@ -364,11 +371,11 @@ describe('defineCustomElement', () => {
       container.appendChild(el)
       customElements.define('my-el-upgrade', E)
       expect(el.shadowRoot.firstChild.innerHTML).toBe(`foo: hello`)
-      // should not reflect if not declared as a prop
+      // 未声明为 prop 的 property 不反射为 attribute。
       expect(el.hasAttribute('not-prop')).toBe(false)
     })
 
-    // 测试场景：连接前设置的句柄属性。
+    /** 测试场景：已注册但未连接元素先设foo=hello与post对象；连接时setup保留字符串及对象同引用，DOM输出对象JSON，验证预连接property保存。 */
     test('handle properties set before connecting', () => {
       const obj = { a: 1 }
       const E = defineCustomElement({
@@ -376,10 +383,12 @@ describe('defineCustomElement', () => {
           foo: String,
           post: Object,
         },
+        /** setup不返回渲染或公开状态。 在此fixture入口检查props.foo、props.post，失败直接由expect抛出。 */
         setup(props) {
           expect(props.foo).toBe('hello')
           expect(props.post).toBe(obj)
         },
+        /** 渲染JSON.stringify(this.post)。 */
         render() {
           return JSON.stringify(this.post)
         },
@@ -394,9 +403,10 @@ describe('defineCustomElement', () => {
     })
 
     // https://github.com/vuejs/core/issues/6163
-    // 测试场景：无props处理组件。
+    /** 测试场景：未声明props的自定义元素插入后显示foo div，验证无props定义的挂载路径。 */
     test('handle components with no props', async () => {
       const E = defineCustomElement({
+        /** 渲染'div'节点（'foo'）。 */
         render() {
           return h('div', 'foo')
         },
@@ -409,12 +419,13 @@ describe('defineCustomElement', () => {
     })
 
     // #5793
-    // 测试场景：在 dom 属性中设置数值。
+    /** 测试场景：声明连字符max-age:Number，连接后写maxAge=50；property与渲染均保持number50，确认数值property不因attribute反射变字符串。 */
     test('set number value in dom property', () => {
       const E = defineCustomElement({
         props: {
           'max-age': Number,
         },
+        /** 渲染`max age: ${this.maxAge}/type: ${typeof this.maxAge}`。 */
         render() {
           // @ts-expect-error
           return `max age: ${this.maxAge}/type: ${typeof this.maxAge}`
@@ -429,7 +440,7 @@ describe('defineCustomElement', () => {
     })
 
     // #9006
-    // 测试场景：应该反映默认值。
+    /** 测试场景：value:String默认hi，HTML未传值；宿主e.value为hi，验证解析组件默认值后同步宿主property。 */
     test('should reflect default value', () => {
       const E = defineCustomElement({
         props: {
@@ -438,6 +449,7 @@ describe('defineCustomElement', () => {
             default: 'hi',
           },
         },
+        /** 渲染this.value。 */
         render() {
           return this.value
         },
@@ -449,7 +461,7 @@ describe('defineCustomElement', () => {
     })
 
     // #12214
-    // 测试场景：Boolean 属性默认为 true。
+    /** 测试场景：Boolean foo默认true；未传和设undefined都true，设false/null分别保留false/null，设空串转true，验证默认值与布尔转换顺序。 */
     test('Boolean prop with default true', async () => {
       const E = defineCustomElement({
         props: {
@@ -458,13 +470,17 @@ describe('defineCustomElement', () => {
             default: true,
           },
         },
+        /** 渲染String(this.foo)。 */
         render() {
           return String(this.foo)
         },
       })
       customElements.define('my-el-default-true', E)
       container.innerHTML = `<my-el-default-true></my-el-default-true>`
-      const e = container.childNodes[0] as HTMLElement & { foo: any },
+      const e = container.childNodes[0] as HTMLElement & {
+          /** Boolean宿主property的测试扩展类型，可赋undefined/false/null/空串以核对转换。 */
+          foo: any
+        },
         shadowRoot = e.shadowRoot as ShadowRoot
       expect(shadowRoot.innerHTML).toBe('true')
       e.foo = undefined
@@ -481,7 +497,7 @@ describe('defineCustomElement', () => {
       expect(shadowRoot.innerHTML).toBe('true')
     })
 
-    // 测试场景：支持带有额外选项的直接 setup 函数语法。
+    /** 测试场景：defineCustomElement直接接收setup函数并在extraOptions声明text；HTML text=hello后渲染hello，验证函数语法合并选项。 */
     test('support direct setup function syntax with extra options', () => {
       const E = defineCustomElement(
         props => {
@@ -499,7 +515,7 @@ describe('defineCustomElement', () => {
       expect(e.shadowRoot!.innerHTML).toBe('hello')
     })
 
-    // 测试场景：props类型验证。
+    /** 测试场景：num声明Number/String并传数字1、bool声明Boolean并传true；property和DOM类型分别number/boolean，确认Vue render传值保持类型。 */
     test('prop types validation', async () => {
       const E = defineCustomElement({
         props: {
@@ -510,6 +526,7 @@ describe('defineCustomElement', () => {
             type: Boolean,
           },
         },
+        /** 渲染'div'节点（根数组['span'节点（根数组[`${this.num} is ${typeof this.num}`]）、'span'节点（根数组[`${this.bool} is ${typeof this.bool}`]）]）。 */
         render() {
           return h('div', [
             h('span', [`${this.num} is ${typeof this.num}`]),
@@ -530,7 +547,7 @@ describe('defineCustomElement', () => {
       )
     })
 
-    // 测试场景：应该将所有 props 修补在一起。
+    /** 测试场景：两个props各watch另一个并写data，首次都默认；一次render同时改两props后watch各一次且读取完整新值，等值再render不触发，仅改prop1只触发其watch。 */
     test('should patch all props together', async () => {
       let prop1Calls = 0
       let prop2Calls = 0
@@ -545,6 +562,7 @@ describe('defineCustomElement', () => {
             default: 'default2',
           },
         },
+        /** 初始化组件状态为{data1: 'defaultData1'，data2: 'defaultData2'}，供本例渲染和事件更新读取。 */
         data() {
           return {
             data1: 'defaultData1',
@@ -552,15 +570,18 @@ describe('defineCustomElement', () => {
           }
         },
         watch: {
+          /** prop1 watcher累加调用计数，并读取当前prop2写入data2；验证同时patch时另一prop已经更新。 */
           prop1(_) {
             prop1Calls++
             this.data2 = this.prop2
           },
+          /** prop2 watcher累加调用计数，并读取当前prop1写入data1；验证同时patch时另一prop已经更新。 */
           prop2(_) {
             prop2Calls++
             this.data1 = this.prop1
           },
         },
+        /** 渲染'div'节点（根数组['h1'节点（this.prop1）、'h1'节点（this.prop2）、'h2'节点（this.data1）、'h2'节点（this.data2）]）。 */
         render() {
           return h('div', [
             h('h1', this.prop1),
@@ -582,7 +603,7 @@ describe('defineCustomElement', () => {
       expect(prop1Calls).toBe(0)
       expect(prop2Calls).toBe(0)
 
-      // patch props
+      // 一次 render 同时修补两个 props。
       render(
         h('my-watch-element', { prop1: 'newValue1', prop2: 'newValue2' }),
         container,
@@ -594,7 +615,7 @@ describe('defineCustomElement', () => {
       expect(prop1Calls).toBe(1)
       expect(prop2Calls).toBe(1)
 
-      // same prop values
+      // 再次 render 相同 props，不重复触发 watcher。
       render(
         h('my-watch-element', { prop1: 'newValue1', prop2: 'newValue2' }),
         container,
@@ -606,7 +627,7 @@ describe('defineCustomElement', () => {
       expect(prop1Calls).toBe(1)
       expect(prop2Calls).toBe(1)
 
-      // update only prop1
+      // 只改变 prop1，prop2 watcher 不触发。
       render(
         h('my-watch-element', { prop1: 'newValue3', prop2: 'newValue2' }),
         container,
@@ -619,7 +640,7 @@ describe('defineCustomElement', () => {
       expect(prop2Calls).toBe(1)
     })
 
-    // 测试场景：应该将所有 props 修补在一起（异步）。
+    /** 测试场景：异步定义解析后复用双props交叉watch场景；同时更新时两watch均读到新props，等值不重复、单项改只触发对应watch，确认异步定义也批量patch。 */
     test('should patch all props together (async)', async () => {
       let prop1Calls = 0
       let prop2Calls = 0
@@ -637,6 +658,7 @@ describe('defineCustomElement', () => {
                   default: 'default2',
                 },
               },
+              /** 初始化组件状态为{data1: 'defaultData1'，data2: 'defaultData2'}，供本例渲染和事件更新读取。 */
               data() {
                 return {
                   data1: 'defaultData1',
@@ -644,15 +666,18 @@ describe('defineCustomElement', () => {
                 }
               },
               watch: {
+                /** prop1 watcher累加调用计数，并读取当前prop2写入data2；验证同时patch时另一prop已经更新。 */
                 prop1(_) {
                   prop1Calls++
                   this.data2 = this.prop2
                 },
+                /** prop2 watcher累加调用计数，并读取当前prop1写入data1；验证同时patch时另一prop已经更新。 */
                 prop2(_) {
                   prop2Calls++
                   this.data1 = this.prop1
                 },
               },
+              /** 渲染'div'节点（根数组['h1'节点（this.prop1）、'h1'节点（this.prop2）、'h2'节点（this.data1）、'h2'节点（this.data2）]）。 */
               render() {
                 return h('div', [
                   h('h1', this.prop1),
@@ -679,7 +704,7 @@ describe('defineCustomElement', () => {
       expect(prop1Calls).toBe(0)
       expect(prop2Calls).toBe(0)
 
-      // patch props
+      // 一次 render 同时修补两个 props。
       render(
         h('my-async-watch-element', { prop1: 'newValue1', prop2: 'newValue2' }),
         container,
@@ -691,7 +716,7 @@ describe('defineCustomElement', () => {
       expect(prop1Calls).toBe(1)
       expect(prop2Calls).toBe(1)
 
-      // same prop values
+      // 再次 render 相同 props，不重复触发 watcher。
       render(
         h('my-async-watch-element', { prop1: 'newValue1', prop2: 'newValue2' }),
         container,
@@ -703,7 +728,7 @@ describe('defineCustomElement', () => {
       expect(prop1Calls).toBe(1)
       expect(prop2Calls).toBe(1)
 
-      // update only prop1
+      // 只改变 prop1，prop2 watcher 不触发。
       render(
         h('my-async-watch-element', { prop1: 'newValue3', prop2: 'newValue2' }),
         container,
@@ -720,13 +745,14 @@ describe('defineCustomElement', () => {
   // 测试组：未声明 attributes 作为 attrs 传入组件并响应后续变化。
   describe('attrs', () => {
     const E = defineCustomElement({
+      /** 渲染根数组['div'节点（null；this.$attrs.foo）]。 */
       render() {
         return [h('div', null, this.$attrs.foo as string)]
       },
     })
     customElements.define('my-el-attrs', E)
 
-    // 测试场景：attrs 通过属性。
+    /** 测试场景：未声明foo的元素从HTML attribute收到hello，经$attrs渲染；setAttribute改changed后DOM更新，验证未声明attribute进入attrs。 */
     test('attrs via attribute', async () => {
       container.innerHTML = `<my-el-attrs foo="hello"></my-el-attrs>`
       const e = container.childNodes[0] as VueElement
@@ -737,7 +763,7 @@ describe('defineCustomElement', () => {
       expect(e.shadowRoot!.innerHTML).toBe('<div>changed</div>')
     })
 
-    // 测试场景：非声明属性不应出现在 $attrs 中。
+    /** 测试场景：未声明foo的元素仅写property=123再连接；$attrs.foo未收到该property，内部div为空，确认非attribute写入不自动成为attrs。 */
     test('non-declared properties should not show up in $attrs', () => {
       const e = new E()
       // @ts-expect-error
@@ -747,7 +773,7 @@ describe('defineCustomElement', () => {
     })
 
     // #12408
-    // 测试场景：应将数字 tabindex 设置为属性。
+    /** 测试场景：Vue render未声明tabindex=1/data-test=true；宿主attributes分别1/true，验证原生及data属性走attribute。 */
     test('should set number tabindex as attribute', () => {
       render(h('my-el-attrs', { tabindex: 1, 'data-test': true }), container)
       const el = container.children[0] as HTMLElement
@@ -755,7 +781,7 @@ describe('defineCustomElement', () => {
       expect(el.getAttribute('data-test')).toBe('true')
     })
 
-    // 测试场景：应将未声明的本机 attrs 保留为 attrs。
+    /** 测试场景：Vue render未声明translate=no；attribute保持no、原生translate布尔property为false，验证不能直接赋字符串给原生property。 */
     test('should keep undeclared native attrs as attrs', () => {
       const root = document.createElement('div')
       document.body.appendChild(root)
@@ -770,13 +796,14 @@ describe('defineCustomElement', () => {
     })
 
     // https://github.com/vuejs/core/issues/12964
-    // Disabled because of missing support for `delegatesFocus` in jsdom
+    // jsdom 缺少 delegatesFocus 支持，当前用例跳过执行。
     // https://github.com/jsdom/jsdom/issues/3418
     // eslint-disable-next-line vitest/no-disabled-tests
-    // 测试场景：shadowRoot 应该用 delegatesFocus 初始化。
+    /** 测试场景：跳过用例：配置shadowRootOptions.delegatesFocus=true，预期ShadowRoot同值；因jsdom缺支持未执行，不能据此认定运行行为已验证。 */
     test.skip('shadowRoot should be initialized with delegatesFocus', () => {
       const E = defineCustomElement(
         {
+          /** 渲染根数组['input'节点（属性{tabindex: 1}）]。 */
           render() {
             return [h('input', { tabindex: 1 })]
           },
@@ -794,16 +821,20 @@ describe('defineCustomElement', () => {
   // 测试组：组件 emits 转换成宿主可监听的 CustomEvent。
   describe('emits', () => {
     const CompDef = defineComponent({
+      /** 执行emit('created')。setup返回渲染函数：'div'节点（属性{onClick回调，onMousedown回调，onWheel回调}）。 */
       setup(_, { emit }) {
         emit('created')
         return () =>
           h('div', {
+            /** 执行emit('my-click', 1)。无返回值。 */
             onClick: () => {
               emit('my-click', 1)
             },
+            /** 执行emit('myEvent', 1)。无返回值。 */
             onMousedown: () => {
-              emit('myEvent', 1) // validate hyphenation
+              emit('myEvent', 1) // 核对同时派发连字符事件名。
             },
+            /** 执行emit('my-wheel', {bubbles: true}, 1)。无返回值。 */
             onWheel: () => {
               emit('my-wheel', { bubbles: true }, 1)
             },
@@ -813,7 +844,7 @@ describe('defineCustomElement', () => {
     const E = defineCustomElement(CompDef)
     customElements.define('my-el-emits', E)
 
-    // 测试场景：自定义元素已连接 DOM 后，组件 emit 能派发宿主 CustomEvent。
+    /** 测试场景：连接前监听created，setup同步emit created；append连接后监听器收到事件，验证首次setup的emit派发宿主。 */
     test('emit on connect', () => {
       const e = new E()
       const spy = vi.fn()
@@ -822,7 +853,7 @@ describe('defineCustomElement', () => {
       expect(spy).toHaveBeenCalled()
     })
 
-    // 测试场景：组件 emit 的事件可跨自定义元素边界参与宿主交互。
+    /** 测试场景：ShadowRoot内div点击触发emit my-click(1)；宿主监听器一次且CustomEvent.detail=[1]，验证参数数组桥接。 */
     test('emit on interaction', () => {
       container.innerHTML = `<my-el-emits></my-el-emits>`
       const e = container.childNodes[0] as VueElement
@@ -836,22 +867,22 @@ describe('defineCustomElement', () => {
     })
 
     // #5373
-    // 测试场景：camelCase 事件的大小写转换。
+    /** 测试场景：ShadowRoot内mousedown触发emit myEvent；宿主监听myEvent和my-event均一次，验证同时派发原名及连字符事件名。 */
     test('case transform for camelCase event', () => {
       container.innerHTML = `<my-el-emits></my-el-emits>`
       const e = container.childNodes[0] as VueElement
       const spy1 = vi.fn()
       e.addEventListener('myEvent', spy1)
       const spy2 = vi.fn()
-      // emitting myEvent, but listening for my-event. This happens when
-      // using the custom element in a Vue template
+      // emit 使用 myEvent，同时监听 my-event；
+      // Vue 模板使用自定义元素时会采用这种连字符监听名。
       e.addEventListener('my-event', spy2)
       e.shadowRoot!.childNodes[0].dispatchEvent(new CustomEvent('mousedown'))
       expect(spy1).toHaveBeenCalledTimes(1)
       expect(spy2).toHaveBeenCalledTimes(1)
     })
 
-    // 测试场景：emit 来自异步组件包装器。
+    /** 测试场景：异步wrapper解析CompDef后点击内部div；宿主收到my-click且detail=[1]，确认异步实际实例安装emit桥接。 */
     test('emit from within async component wrapper', async () => {
       const p = new Promise<typeof CompDef>(res => res(CompDef as any))
       const E = defineCustomElement(defineAsyncComponent(() => p))
@@ -860,7 +891,7 @@ describe('defineCustomElement', () => {
       const e = container.childNodes[0] as VueElement
       const spy = vi.fn()
       e.addEventListener('my-click', spy)
-      // this feels brittle but seems necessary to reach the node in the DOM.
+      // 等待异步定义与连续更新完成后再访问内部 DOM。
       await customElements.whenDefined('my-async-el-emits')
       await nextTick()
       await nextTick()
@@ -872,7 +903,7 @@ describe('defineCustomElement', () => {
     })
 
     // #7293
-    // 测试场景：emit 在具有绑定属性的异步组件包装器中。
+    /** 测试场景：异步wrapper宿主带id attribute，解析后点击内部div；仍收到my-click和detail=[1]，验证绑定属性不破坏异步emit桥接。 */
     test('emit in an async component wrapper with properties bound', async () => {
       const E = defineCustomElement(
         defineAsyncComponent(
@@ -894,7 +925,7 @@ describe('defineCustomElement', () => {
       })
     })
 
-    // 测试场景：emits 对象声明和校验函数不影响 CustomEvent 派发。
+    /** 测试场景：内部wheel触发emit my-wheel({bubbles:true},1)；宿主事件一次且bubbles=true，detail仍为完整两项参数数组，验证首参事件选项合并。 */
     test('emit with options', async () => {
       container.innerHTML = `<my-el-emits></my-el-emits>`
       const e = container.childNodes[0] as VueElement
@@ -909,9 +940,10 @@ describe('defineCustomElement', () => {
     })
   })
 
-  // 测试组：自定义元素的原生 children、命名 slot 与作用域 slot 渲染。
+  // 测试组：自定义元素通过原生 slot 分发 children，并把 renderSlot 的 props 写成 slot 元素 attributes。
   describe('slots', () => {
     const E = defineCustomElement({
+      /** 渲染根数组['div'节点（null；根数组[renderSlot(this.$slots, 'default', undefined, () => [ h('div', 'fallback'), ])]）、'div'节点（null；renderSlot(this.$slots, 'named')）]。 */
       render() {
         return [
           h('div', null, [
@@ -925,21 +957,22 @@ describe('defineCustomElement', () => {
     })
     customElements.define('my-el-slots', E)
 
-    // 测试场景：正确渲染slots。
+    /** 测试场景：宿主有默认span内容，组件renderSlot输出默认/命名slot；ShadowRoot含原生slot及默认fallback div，验证原生投影结构而非复制宿主span。 */
     test('render slots correctly', () => {
       container.innerHTML = `<my-el-slots><span>hi</span></my-el-slots>`
       const e = container.childNodes[0] as VueElement
-      // native slots allocation does not affect innerHTML, so we just
-      // verify that we've rendered the correct native slots here...
+      // 原生 slot 投影不改变 ShadowRoot.innerHTML；
+      // 这里检查原生 slot 与 fallback 结构。
       expect(e.shadowRoot!.innerHTML).toBe(
         `<div><slot><div>fallback</div></slot></div><div><slot name="named"></slot></div>`,
       )
     })
 
-    // 测试场景：自定义元素将 slot attribute 解析为命名 slot props 并正确渲染。
+    /** 测试场景：renderSlot默认slot附响应式class，foo改bar；ShadowRoot原生slot.class同步更新，验证slot props成为原生元素attributes。 */
     test('render slot props', async () => {
       const foo = ref('foo')
       const E = defineCustomElement({
+        /** 渲染根数组['div'节点（null；renderSlot(this.$slots, 'default', { class: foo.value })）]。 */
         render() {
           return [
             h(
@@ -968,6 +1001,7 @@ describe('defineCustomElement', () => {
   // 测试组：提供/注入。
   describe('provide/inject', () => {
     const Consumer = defineCustomElement({
+      /** 执行inject('foo')。setup返回渲染函数：'div'节点（foo.value）。 */
       setup() {
         const foo = inject<Ref>('foo')!
         return () => h('div', foo.value)
@@ -975,13 +1009,14 @@ describe('defineCustomElement', () => {
     })
     customElements.define('my-consumer', Consumer)
 
-    // 测试场景：过度嵌套使用。
+    /** 测试场景：Provider ShadowRoot内创建Consumer并provide响应式foo；Consumer显示injected后随foo更新changed，验证嵌套自定义元素provide父链。 */
     test('over nested usage', async () => {
       const foo = ref('injected!')
       const Provider = defineCustomElement({
         provide: {
           foo,
         },
+        /** 渲染'my-consumer'节点。 */
         render() {
           return h('my-consumer')
         },
@@ -998,13 +1033,14 @@ describe('defineCustomElement', () => {
       expect(consumer.shadowRoot!.innerHTML).toBe(`<div>changed!</div>`)
     })
 
-    // 测试场景：多个命名 slot 与默认 slot 组合时保持正确的分发顺序。
+    /** 测试场景：Consumer作为Provider的轻DOM默认slot内容；inject foo初始injected并更新changed，验证slot投影后的自定义元素父链。 */
     test('over slot composition', async () => {
       const foo = ref('injected!')
       const Provider = defineCustomElement({
         provide: {
           foo,
         },
+        /** 渲染renderSlot(this.$slots, 'default')。 */
         render() {
           return renderSlot(this.$slots, 'default')
         },
@@ -1021,7 +1057,7 @@ describe('defineCustomElement', () => {
       expect(consumer.shadowRoot!.innerHTML).toBe(`<div>changed!</div>`)
     })
 
-    // 测试场景：嵌套自定义元素继承外层应用上下文中的 provide 与配置。
+    /** 测试场景：两层Provider各提供fooA/fooB，Consumer显示两个值并响应共同更新；验证继承祖先provides链，此例无config断言。 */
     test('inherited from ancestors', async () => {
       const fooA = ref('FooA!')
       const fooB = ref('FooB!')
@@ -1029,6 +1065,7 @@ describe('defineCustomElement', () => {
         provide: {
           fooA,
         },
+        /** 渲染'provider-b'节点。 */
         render() {
           return h('provider-b')
         },
@@ -1037,12 +1074,14 @@ describe('defineCustomElement', () => {
         provide: {
           fooB,
         },
+        /** 渲染'my-multi-consumer'节点。 */
         render() {
           return h('my-multi-consumer')
         },
       })
 
       const Consumer = defineCustomElement({
+        /** 执行inject('fooA')；inject('fooB')。setup返回渲染函数：'div'节点（`${fooA.value} ${fooB.value}`）。 */
         setup() {
           const fooA = inject<Ref>('fooA')!
           const fooB = inject<Ref>('fooB')!
@@ -1068,12 +1107,13 @@ describe('defineCustomElement', () => {
       )
     })
 
-    // 测试场景：当元素插入阴影 DOM 时应解析正确的父级。
+    /** 测试场景：GrandParent渲染Parent并经slot投影Consumer，二者都provide foo；Consumer读Parent而非GrandParent，验证assignedSlot/ShadowRoot宿主父级解析。 */
     test('should resolve correct parent when element is slotted in shadow DOM', async () => {
       const GrandParent = defineCustomElement({
         provide: {
           foo: ref('GrandParent'),
         },
+        /** 渲染'my-parent-in-shadow'节点（'slot'节点）。 */
         render() {
           return h('my-parent-in-shadow', h('slot'))
         },
@@ -1082,6 +1122,7 @@ describe('defineCustomElement', () => {
         provide: {
           foo: ref('Parent'),
         },
+        /** 渲染'slot'节点。 */
         render() {
           return h('slot')
         },
@@ -1095,7 +1136,7 @@ describe('defineCustomElement', () => {
     })
 
     // #13212
-    // 测试场景：嵌套自定义元素能够继承外层应用上下文中的配置和依赖。
+    /** 测试场景：Outer configureApp提供shared/outer，Inner configureApp覆盖outer并提供inner，Inner.setup再provide inner-child；三层inject分别匹配各上下文并出现一次缺失/覆盖警告，确认继承及局部遮蔽。 */
     test('inherited from app context within nested elements', async () => {
       const outerValues: (string | undefined)[] = []
       const innerValues: (string | undefined)[] = []
@@ -1103,6 +1144,7 @@ describe('defineCustomElement', () => {
 
       const Outer = defineCustomElement(
         {
+          /** 执行outerValues.push(inject<string>('shared'), inject<string>('outer'), inject<string>('inner'))；inject('shared')；inject('outer')；inject('inner')。setup不返回渲染或公开状态。 */
           setup() {
             outerValues.push(
               inject<string>('shared'),
@@ -1110,11 +1152,13 @@ describe('defineCustomElement', () => {
               inject<string>('inner'),
             )
           },
+          /** 渲染'div'节点（根数组[renderSlot(this.$slots, 'default')]）。 */
           render() {
             return h('div', [renderSlot(this.$slots, 'default')])
           },
         },
         {
+          /** 在自定义元素新建app时配置注入：'shared', 'shared'；'outer', 'outer'。 */
           configureApp(app) {
             app.provide('shared', 'shared')
             app.provide('outer', 'outer')
@@ -1124,8 +1168,9 @@ describe('defineCustomElement', () => {
 
       const Inner = defineCustomElement(
         {
+          /** 执行provide('inner', 'inner-child')；innerValues.push(inject<string>('shared'), inject<string>('outer'), inject<string>('inner'))；inject('shared')；inject('outer')；inject('inner')。setup不返回渲染或公开状态。 */
           setup() {
-            // ensure values are not self-injected
+            // 本组件的 provide 不作为本组件 inject 的来源，注入从父上下文开始。
             provide('inner', 'inner-child')
 
             innerValues.push(
@@ -1134,11 +1179,13 @@ describe('defineCustomElement', () => {
               inject<string>('inner'),
             )
           },
+          /** 渲染'div'节点（根数组[renderSlot(this.$slots, 'default')]）。 */
           render() {
             return h('div', [renderSlot(this.$slots, 'default')])
           },
         },
         {
+          /** 在自定义元素新建app时配置注入：'outer', 'override-outer'；'inner', 'inner'。 */
           configureApp(app) {
             app.provide('outer', 'override-outer')
             app.provide('inner', 'inner')
@@ -1147,6 +1194,7 @@ describe('defineCustomElement', () => {
       )
 
       const InnerChild = defineCustomElement({
+        /** 执行innerChildValues.push(inject<string>('shared'), inject<string>('outer'), inject<string>('inner'))；inject('shared')；inject('outer')；inject('inner')。setup不返回渲染或公开状态。 */
         setup() {
           innerChildValues.push(
             inject<string>('shared'),
@@ -1154,6 +1202,7 @@ describe('defineCustomElement', () => {
             inject<string>('inner'),
           )
         },
+        /** 渲染'div'节点。 */
         render() {
           return h('div')
         },
@@ -1193,19 +1242,21 @@ describe('defineCustomElement', () => {
 
   // 测试组：自定义元素的组件样式注入、继承与更新。
   describe('styles', () => {
+    /** 按ShadowRoot中style节点的DOM顺序读取textContent，与完整CSS数组比较；同时检查注入顺序、去重和HMR旧样式移除。 */
     function assertStyles(el: VueElement, css: string[]) {
       const styles = el.shadowRoot?.querySelectorAll('style')!
-      expect(styles.length).toBe(css.length) // should not duplicate multiple copies from Bar
+      expect(styles.length).toBe(css.length) // 同一个 Bar 类型只注入一份样式，即使挂载两份实例。
       for (let i = 0; i < css.length; i++) {
         expect(styles[i].textContent).toBe(css[i])
       }
     }
 
-    // 测试场景：应该将样式附加到阴影dom。
+    /** 测试场景：根定义styles=red，插入ShadowRoot后检查style文本；HMR改blue/yellow后assertStyles检查两条新样式且旧style移除。 */
     test('should attach styles to shadow dom', async () => {
       const def = defineComponent({
         __hmrId: 'foo',
         styles: [`div { color: red; }`],
+        /** 渲染'div'节点（'hello'）。 */
         render() {
           return h('div', 'hello')
         },
@@ -1217,7 +1268,7 @@ describe('defineCustomElement', () => {
       const style = el.shadowRoot?.querySelector('style')!
       expect(style.textContent).toBe(`div { color: red; }`)
 
-      // hmr
+      // HMR 重载定义后刷新组件与 style。
       __VUE_HMR_RUNTIME__.reload('foo', {
         ...def,
         styles: [`div { color: blue; }`, `div { color: yellow; }`],
@@ -1227,18 +1278,21 @@ describe('defineCustomElement', () => {
       assertStyles(el, [`div { color: blue; }`, `div { color: yellow; }`])
     })
 
-    // 测试场景：子组件应该将样式注入根元素的影子根。
+    /** 测试场景：根渲染同一Bar子组件两次且经过无样式Baz；初始子green/blue样式只注入一组、位于根red前，HMR两次替换子styles后顺序和去重仍正确。 */
     test("child components should inject styles to root element's shadow root", async () => {
+      /** 返回Bar节点。 */
       const Baz = () => h(Bar)
       const Bar = defineComponent({
         __hmrId: 'bar',
         styles: [`div { color: green; }`, `div { color: blue; }`],
+        /** 渲染'bar'。 */
         render() {
           return 'bar'
         },
       })
       const Foo = defineCustomElement({
         styles: [`div { color: red; }`],
+        /** 渲染根数组[Baz节点、Baz节点]。 */
         render() {
           return [h(Baz), h(Baz)]
         },
@@ -1247,14 +1301,14 @@ describe('defineCustomElement', () => {
       container.innerHTML = `<my-el-with-child-styles></my-el-with-child-styles>`
       const el = container.childNodes[0] as VueElement
 
-      // inject order should be child -> parent
+      // style 按子组件到父组件的顺序注入。
       assertStyles(el, [
         `div { color: green; }`,
         `div { color: blue; }`,
         `div { color: red; }`,
       ])
 
-      // hmr
+      // HMR 重载定义后刷新组件与 style。
       __VUE_HMR_RUNTIME__.reload(Bar.__hmrId!, {
         ...Bar,
         styles: [`div { color: red; }`, `div { color: yellow; }`],
@@ -1275,10 +1329,11 @@ describe('defineCustomElement', () => {
       assertStyles(el, [`div { color: blue; }`, `div { color: red; }`])
     })
 
-    // 测试场景：根自定义元素 HMR 应保留子优先样式顺序。
+    /** 测试场景：根带red样式、Child带green；根HMR改blue/yellow后仍保持Child green在根两条样式前，验证根重建的样式排序。 */
     test('root custom element HMR should preserve child-first style order', async () => {
       const Child = defineComponent({
         styles: [`div { color: green; }`],
+        /** 渲染'child'。 */
         render() {
           return 'child'
         },
@@ -1286,6 +1341,7 @@ describe('defineCustomElement', () => {
       const def = defineComponent({
         __hmrId: 'root-child-style-order',
         styles: [`div { color: red; }`],
+        /** 渲染Child节点。 */
         render() {
           return h(Child)
         },
@@ -1310,24 +1366,29 @@ describe('defineCustomElement', () => {
       ])
     })
 
-    // 测试场景：在父样式之前注入子组件样式。
+    /** 测试场景：同一Bar经直接Baz及WrapperBar两条路径渲染；样式按Bar green→Wrapper blue→根red排列，重复Bar不重复注入，验证子优先去重。 */
     test('inject child component styles before parent styles', async () => {
+      /** 返回Bar节点。 */
       const Baz = () => h(Bar)
       const Bar = defineComponent({
         styles: [`div { color: green; }`],
+        /** 渲染'bar'。 */
         render() {
           return 'bar'
         },
       })
       const WrapperBar = defineComponent({
         styles: [`div { color: blue; }`],
+        /** 渲染Baz节点。 */
         render() {
           return h(Baz)
         },
       })
+      /** 返回WrapperBar节点。 */
       const WBaz = () => h(WrapperBar)
       const Foo = defineCustomElement({
         styles: [`div { color: red; }`],
+        /** 渲染根数组[Baz节点、WBaz节点]。 */
         render() {
           return [h(Baz), h(WBaz)]
         },
@@ -1336,7 +1397,7 @@ describe('defineCustomElement', () => {
       container.innerHTML = `<my-el-with-wrapper-child-styles></my-el-with-wrapper-child-styles>`
       const el = container.childNodes[0] as VueElement
 
-      // inject order should be child -> parent
+      // style 按子组件到父组件的顺序注入。
       assertStyles(el, [
         `div { color: green; }`,
         `div { color: blue; }`,
@@ -1344,11 +1405,12 @@ describe('defineCustomElement', () => {
       ])
     })
 
-    // 测试场景：HMR 删除父样式后注入嵌套子组件样式。
+    /** 测试场景：Bar green、Wrapper blue、根red，HMR删除Wrapper styles后只留green/red；再把Bar改yellow，保持yellow/red，验证丢失父style锚点后的插入位置。 */
     test('inject nested child component styles after HMR removes parent styles', async () => {
       const Bar = defineComponent({
         __hmrId: 'nested-child-style-hmr-bar',
         styles: [`div { color: green; }`],
+        /** 渲染'bar'。 */
         render() {
           return 'bar'
         },
@@ -1356,12 +1418,14 @@ describe('defineCustomElement', () => {
       const WrapperBar = defineComponent({
         __hmrId: 'nested-child-style-hmr-wrapper',
         styles: [`div { color: blue; }`],
+        /** 渲染Bar节点。 */
         render() {
           return h(Bar)
         },
       })
       const Foo = defineCustomElement({
         styles: [`div { color: red; }`],
+        /** 渲染WrapperBar节点。 */
         render() {
           return h(WrapperBar)
         },
@@ -1391,24 +1455,29 @@ describe('defineCustomElement', () => {
       assertStyles(el, [`div { color: yellow; }`, `div { color: red; }`])
     })
 
-    // 测试场景：当父组件没有样式时注入子组件样式。
+    /** 测试场景：根无styles，子Bar green和Wrapper blue；挂载后仅两条style按子优先排列，验证没有根style锚点时的注入。 */
     test('inject child component styles when parent has no styles', async () => {
+      /** 返回Bar节点。 */
       const Baz = () => h(Bar)
       const Bar = defineComponent({
         styles: [`div { color: green; }`],
+        /** 渲染'bar'。 */
         render() {
           return 'bar'
         },
       })
       const WrapperBar = defineComponent({
         styles: [`div { color: blue; }`],
+        /** 渲染Baz节点。 */
         render() {
           return h(Baz)
         },
       })
+      /** 返回WrapperBar节点。 */
       const WBaz = () => h(WrapperBar)
-      // without styles
+      // 根自定义元素未提供 styles。
       const Foo = defineCustomElement({
+        /** 渲染根数组[Baz节点、WBaz节点]。 */
         render() {
           return [h(Baz), h(WBaz)]
         },
@@ -1420,34 +1489,39 @@ describe('defineCustomElement', () => {
       assertStyles(el, [`div { color: green; }`, `div { color: blue; }`])
     })
 
-    // 测试场景：注入嵌套子组件样式。
+    /** 测试场景：多层Baz/Bar/Wrapper/WBaz含不同styles且共享Bar；assertStyles顺序green/yellow/blue/black/red，验证深层子优先及组件去重。 */
     test('inject nested child component styles', async () => {
       const Baz = defineComponent({
         styles: [`div { color: yellow; }`],
+        /** 渲染Bar节点。 */
         render() {
           return h(Bar)
         },
       })
       const Bar = defineComponent({
         styles: [`div { color: green; }`],
+        /** 渲染'bar'。 */
         render() {
           return 'bar'
         },
       })
       const WrapperBar = defineComponent({
         styles: [`div { color: blue; }`],
+        /** 渲染Baz节点。 */
         render() {
           return h(Baz)
         },
       })
       const WBaz = defineComponent({
         styles: [`div { color: black; }`],
+        /** 渲染WrapperBar节点。 */
         render() {
           return h(WrapperBar)
         },
       })
       const Foo = defineCustomElement({
         styles: [`div { color: red; }`],
+        /** 渲染根数组[Baz节点、WBaz节点]。 */
         render() {
           return [h(Baz), h(WBaz)]
         },
@@ -1464,17 +1538,20 @@ describe('defineCustomElement', () => {
       ])
     })
 
-    // 测试场景：子组件不应将样式注入到根元素的影子根 w/ shadowRoot false。
+    /** 测试场景：shadowRoot=false的根包带styles子组件；el.shadowRoot?.querySelector结果undefined，仅检查没有影子样式节点。 */
     test("child components should not inject styles to root element's shadow root w/ shadowRoot false", async () => {
       const Bar = defineComponent({
         styles: [`div { color: green; }`],
+        /** 渲染'bar'。 */
         render() {
           return 'bar'
         },
       })
+      /** 返回Bar节点。 */
       const Baz = () => h(Bar)
       const Foo = defineCustomElement(
         {
+          /** 渲染根数组[Baz节点]。 */
           render() {
             return [h(Baz)]
           },
@@ -1489,11 +1566,12 @@ describe('defineCustomElement', () => {
       expect(style).toBeUndefined()
     })
 
-    // 测试场景：带有随机数。
+    /** 测试场景：根样式注入配置nonce=xxx；ShadowRoot style带nonce=xxx，验证style节点属性。 */
     test('with nonce', () => {
       const Foo = defineCustomElement(
         {
           styles: [`div { color: red; }`],
+          /** 渲染'div'节点（'hello'）。 */
           render() {
             return h('div', 'hello')
           },
@@ -1510,7 +1588,7 @@ describe('defineCustomElement', () => {
 
   // 测试组：异步自定义元素定义解析前后的 props、slots、连接与错误处理。
   describe('async', () => {
-    // 测试场景：应该可以。
+    /** 测试场景：同一异步定义创建两个元素，loader只调用一次，各自styles+msg正确；e1 attribute再property更新同步到内部DOM和宿主attribute，验证共享加载与实例独立props。 */
     test('should work', async () => {
       const loaderSpy = vi.fn()
       const E = defineCustomElement(
@@ -1519,6 +1597,7 @@ describe('defineCustomElement', () => {
           return Promise.resolve({
             props: ['msg'],
             styles: [`div { color: red }`],
+            /** 渲染'div'节点（null；this.msg）。 */
             render(this: any) {
               return h('div', null, this.msg)
             },
@@ -1532,13 +1611,13 @@ describe('defineCustomElement', () => {
 
       await new Promise(r => setTimeout(r))
 
-      // loader should be called only once
+      // 多个元素共享同一定义，loader 只调用一次。
       expect(loaderSpy).toHaveBeenCalledTimes(1)
 
       const e1 = container.childNodes[0] as VueElement
       const e2 = container.childNodes[1] as VueElement
 
-      // should inject styles
+      // 解析定义后分别向各宿主 ShadowRoot 注入样式。
       expect(e1.shadowRoot!.innerHTML).toBe(
         `<style>div { color: red }</style><div>hello</div>`,
       )
@@ -1546,7 +1625,7 @@ describe('defineCustomElement', () => {
         `<style>div { color: red }</style><div>world</div>`,
       )
 
-      // attr
+      // 通过 attribute 更新 msg。
       e1.setAttribute('msg', 'attr')
       await nextTick()
       expect((e1 as any).msg).toBe('attr')
@@ -1554,7 +1633,7 @@ describe('defineCustomElement', () => {
         `<style>div { color: red }</style><div>attr</div>`,
       )
 
-      // props
+      // 通过 property 更新 msg。
       expect(`msg` in e1).toBe(true)
       ;(e1 as any).msg = 'prop'
       expect(e1.getAttribute('msg')).toBe('prop')
@@ -1563,15 +1642,17 @@ describe('defineCustomElement', () => {
       )
     })
 
-    // 测试场景：解析前设置 DOM 属性。
+    /** 测试场景：异步定义声明msg，e1连接前写hello、e2连接后解析前写world；解析后均保留且后续property立即更新DOM，验证尚无accessor时的属性收集。 */
     test('set DOM property before resolve', async () => {
       const E = defineCustomElement(
         defineAsyncComponent(() => {
           return Promise.resolve({
             props: ['msg'],
+            /** setup不返回渲染或公开状态。 在此fixture入口检查typeof props.msg，失败直接由expect抛出。 */
             setup(props) {
               expect(typeof props.msg).toBe('string')
             },
+            /** 渲染'div'节点（this.msg）。 */
             render(this: any) {
               return h('div', this.msg)
             },
@@ -1582,7 +1663,7 @@ describe('defineCustomElement', () => {
 
       const e1 = new E()
 
-      // set property before connect
+      // 连接前写入 property。
       e1.msg = 'hello'
 
       const e2 = new E()
@@ -1590,7 +1671,7 @@ describe('defineCustomElement', () => {
       container.appendChild(e1)
       container.appendChild(e2)
 
-      // set property after connect but before resolve
+      // 已连接但定义未解析时写入 property。
       e2.msg = 'world'
 
       await new Promise(r => setTimeout(r))
@@ -1605,10 +1686,11 @@ describe('defineCustomElement', () => {
       expect(e2.shadowRoot!.innerHTML).toBe(`<div>hello</div>`)
     })
 
-    // 测试场景：解析前渲染对象props。
+    /** 测试场景：异步定义未解析时Vue render传value对象；解析前后property同引用且无value attribute，完成后显示x=1，验证延迟props定义不丢对象。 */
     test('render object prop before resolve', async () => {
       const AsyncComp = defineComponent({
         props: { value: Object },
+        /** 渲染'div'节点（this.value.x）。 */
         render(this: any) {
           return h('div', this.value.x)
         },
@@ -1626,7 +1708,10 @@ describe('defineCustomElement', () => {
 
       render(h('my-el-async-object-prop', { value }), root)
 
-      const el = root.children[0] as VueElement & { value: typeof value }
+      const el = root.children[0] as VueElement & {
+        /** 异步组件解析前已写入元素property的对象输入{x:1}；用例在解析前后检查同一引用且不生成value attribute。 */
+        value: typeof value
+      }
       expect(el.value).toBe(value)
       expect(el.getAttribute('value')).toBe(null)
 
@@ -1642,15 +1727,17 @@ describe('defineCustomElement', () => {
       root.remove()
     })
 
-    // 测试场景：异步组件解析前收到的 props，在类型声明可用后补做 Number 转换。
+    /** 测试场景：异步定义尚未知Number声明时HTML n=2e1；解析后setup收到20且DOM报告number，验证补做数值attribute转换。 */
     test('Number prop casting before resolve', async () => {
       const E = defineCustomElement(
         defineAsyncComponent(() => {
           return Promise.resolve({
             props: { n: Number },
+            /** setup不返回渲染或公开状态。 在此fixture入口检查props.n，失败直接由expect抛出。 */
             setup(props) {
               expect(props.n).toBe(20)
             },
+            /** 渲染'div'节点（this.n + ',' + typeof this.n）。 */
             render(this: any) {
               return h('div', this.n + ',' + typeof this.n)
             },
@@ -1666,11 +1753,12 @@ describe('defineCustomElement', () => {
       expect(e.shadowRoot!.innerHTML).toBe(`<div>20,number</div>`)
     })
 
-    // 测试场景：异步组件解析后，解析前保留的 slots 能正确渲染。
+    /** 测试场景：异步定义宿主预置默认span，解析后ShadowRoot输出原生default/named slot及fallback；验证异步根的slot结构。 */
     test('with slots', async () => {
       const E = defineCustomElement(
         defineAsyncComponent(() => {
           return Promise.resolve({
+            /** 渲染根数组['div'节点（null；根数组[renderSlot(this.$slots, 'default', undefined, () => [ h('div', 'fallback'), ])]）、'div'节点（null；renderSlot(this.$slots, 'named')）]。 */
             render(this: any) {
               return [
                 h('div', null, [
@@ -1706,14 +1794,16 @@ describe('defineCustomElement', () => {
           default: 'hello',
         },
       },
+      /** 渲染'div'节点（this.msg）。 */
       render() {
         return h('div', this.msg)
       },
     })
     customElements.define('my-el-shadowroot-false', E)
 
-    // 测试场景：应该可以。
+    /** 测试场景：shadowRoot=false的同步定义插入后等requestAnimationFrame；_instance已创建、内容在宿主innerHTML且shadowRoot=null，验证轻DOM挂载。 */
     test('should work', async () => {
+      /** 返回下一次requestAnimationFrame完成的Promise，供轻DOM挂载场景等待浏览器帧回调。 */
       function raf() {
         return new Promise(resolve => {
           requestAnimationFrame(resolve)
@@ -1732,6 +1822,7 @@ describe('defineCustomElement', () => {
     const toggle = ref(true)
     const ES = defineCustomElement(
       {
+        /** 渲染根数组[renderSlot(this.$slots, 'default')、toggle.value决定renderSlot(this.$slots, 'named')或null、renderSlot(this.$slots, 'omitted', {}, () => [ h('div', 'fallback'), ])]。 */
         render() {
           return [
             renderSlot(this.$slots, 'default'),
@@ -1746,7 +1837,7 @@ describe('defineCustomElement', () => {
     )
     customElements.define('my-el-shadowroot-false-slots', ES)
 
-    // 测试场景：应该渲染 slots。
+    /** 测试场景：shadowRoot=false组件包含default/named/empty slot；宿主默认span和Text被投放、空slot输出fallback，关闭named分支后只删命名内容并留注释。 */
     test('should render slots', async () => {
       container.innerHTML =
         `<my-el-shadowroot-false-slots>` +
@@ -1754,8 +1845,8 @@ describe('defineCustomElement', () => {
         `<div slot="named">named</div>` +
         `</my-el-shadowroot-false-slots>`
       const e = container.childNodes[0] as VueElement
-      // native slots allocation does not affect innerHTML, so we just
-      // verify that we've rendered the correct native slots here...
+      // 原生 slot 投影不改变 ShadowRoot.innerHTML；
+      // 这里检查原生 slot 与 fallback 结构。
       expect(e.innerHTML).toBe(
         `<span>default</span>text` +
           `<div slot="named">named</div>` +
@@ -1769,18 +1860,20 @@ describe('defineCustomElement', () => {
       )
     })
 
-    // 测试场景：渲染嵌套 customElement 和 shadowRoot false。
+    /** 测试场景：轻DOM父子自定义元素嵌套投放span插槽；刷新后实际child含default span，记录顺序parent rendering/mounted再child rendering/mounted，验证父先处理slots。 */
     test('render nested customElement w/ shadowRoot false', async () => {
       const calls: string[] = []
 
       const Child = defineCustomElement(
         {
+          /** 执行calls.push('child rendering')；注册onMounted回调写入calls.push('child mounted')。setup不返回渲染或公开状态。 */
           setup() {
             calls.push('child rendering')
             onMounted(() => {
               calls.push('child mounted')
             })
           },
+          /** 渲染renderSlot(this.$slots, 'default')。 */
           render() {
             return renderSlot(this.$slots, 'default')
           },
@@ -1791,12 +1884,14 @@ describe('defineCustomElement', () => {
 
       const Parent = defineCustomElement(
         {
+          /** 执行calls.push('parent rendering')；注册onMounted回调写入calls.push('parent mounted')。setup不返回渲染或公开状态。 */
           setup() {
             calls.push('parent rendering')
             onMounted(() => {
               calls.push('parent mounted')
             })
           },
+          /** 渲染renderSlot(this.$slots, 'default')。 */
           render() {
             return renderSlot(this.$slots, 'default')
           },
@@ -1806,10 +1901,13 @@ describe('defineCustomElement', () => {
       customElements.define('my-parent', Parent)
 
       const App = {
+        /** 渲染'my-parent'节点（null；插槽{default回调}）。 */
         render() {
           return h('my-parent', null, {
+            /** 提供default插槽：根数组['my-child'节点（null；插槽{default回调}）]。 */
             default: () => [
               h('my-child', null, {
+                /** 提供default插槽：根数组['span'节点（null；'default'）]。 */
                 default: () => [h('span', null, 'default')],
               }),
             ],
@@ -1832,16 +1930,18 @@ describe('defineCustomElement', () => {
       app.unmount()
     })
 
-    // 测试场景：关闭 shadowRoot 时，嵌套 Teleport 仍能渲染到正确目标。
+    /** 测试场景：轻DOM父子嵌套且Child根为Teleport；刷新后target显示投放的default span，验证替换slot节点跨远端容器。 */
     test('render nested Teleport w/ shadowRoot false', async () => {
       const target = document.createElement('div')
       const Child = defineCustomElement(
         {
+          /** 渲染Teleport节点（属性{to: target}；插槽{default回调}）。 */
           render() {
             return h(
               Teleport,
               { to: target },
               {
+                /** 提供default插槽：根数组[renderSlot(this.$slots, 'default')]。 */
                 default: () => [renderSlot(this.$slots, 'default')],
               },
             )
@@ -1852,6 +1952,7 @@ describe('defineCustomElement', () => {
       customElements.define('my-el-teleport-child', Child)
       const Parent = defineCustomElement(
         {
+          /** 渲染renderSlot(this.$slots, 'default')。 */
           render() {
             return renderSlot(this.$slots, 'default')
           },
@@ -1861,10 +1962,13 @@ describe('defineCustomElement', () => {
       customElements.define('my-el-teleport-parent', Parent)
 
       const App = {
+        /** 渲染'my-el-teleport-parent'节点（null；插槽{default回调}）。 */
         render() {
           return h('my-el-teleport-parent', null, {
+            /** 提供default插槽：根数组['my-el-teleport-child'节点（null；插槽{default回调}）]。 */
             default: () => [
               h('my-el-teleport-child', null, {
+                /** 提供default插槽：根数组['span'节点（null；'default'）]。 */
                 default: () => [h('span', null, 'default')],
               }),
             ],
@@ -1878,12 +1982,13 @@ describe('defineCustomElement', () => {
       app.unmount()
     })
 
-    // 测试场景：渲染两个 Teleports w/ shadowRoot false。
+    /** 测试场景：轻DOMChild有两个Teleport分别使用header/body slot；各target收到对应原轻DOM元素，验证独立远端投放。 */
     test('render two Teleports w/ shadowRoot false', async () => {
       const target1 = document.createElement('div')
       const target2 = document.createElement('span')
       const Child = defineCustomElement(
         {
+          /** 渲染根数组[Teleport节点（属性{to: target1}；根数组[renderSlot(this.$slots, 'header')]）、Teleport节点（属性{to: target2}；根数组[renderSlot(this.$slots, 'body')]）]。 */
           render() {
             return [
               h(Teleport, { to: target1 }, [renderSlot(this.$slots, 'header')]),
@@ -1896,8 +2001,10 @@ describe('defineCustomElement', () => {
       customElements.define('my-el-two-teleport-child', Child)
 
       const App = {
+        /** 渲染'my-el-two-teleport-child'节点（null；插槽{default回调}）。 */
         render() {
           return h('my-el-two-teleport-child', null, {
+            /** 提供default插槽：根数组['div'节点（属性{slot: 'header'}；'header'）、'span'节点（属性{slot: 'body'}；'body'）]。 */
             default: () => [
               h('div', { slot: 'header' }, 'header'),
               h('span', { slot: 'body' }, 'body'),
@@ -1917,15 +2024,16 @@ describe('defineCustomElement', () => {
       app.unmount()
     })
 
-    // 测试场景：渲染两个 Teleports w/ shadowRoot false（禁用）。
+    /** 测试场景：两个轻DOMTeleport中header禁用、body启用；header target为空、body target含body，确认本地投放不误进入禁用目标。 */
     test('render two Teleports w/ shadowRoot false (with disabled)', async () => {
       const target1 = document.createElement('div')
       const target2 = document.createElement('span')
       const Child = defineCustomElement(
         {
+          /** 渲染根数组[Teleport节点（属性{to: target1，disabled: true}；根数组[renderSlot(this.$slots, 'header')]）、Teleport节点（属性{to: target2}；根数组[renderSlot(this.$slots, 'body')]）]。 */
           render() {
             return [
-              // with disabled: true
+              // 第一个 Teleport 禁用，内容留在轻 DOM 宿主。
               h(Teleport, { to: target1, disabled: true }, [
                 renderSlot(this.$slots, 'header'),
               ]),
@@ -1938,8 +2046,10 @@ describe('defineCustomElement', () => {
       customElements.define('my-el-two-teleport-child-0', Child)
 
       const App = {
+        /** 渲染'my-el-two-teleport-child-0'节点（null；插槽{default回调}）。 */
         render() {
           return h('my-el-two-teleport-child-0', null, {
+            /** 提供default插槽：根数组['div'节点（属性{slot: 'header'}；'header'）、'span'节点（属性{slot: 'body'}；'body'）]。 */
             default: () => [
               h('div', { slot: 'header' }, 'header'),
               h('span', { slot: 'body' }, 'body'),
@@ -1957,10 +2067,11 @@ describe('defineCustomElement', () => {
       app.unmount()
     })
 
-    // 测试场景：teleport 目标是自定义元素宿主的祖先。
+    /** 测试场景：轻DOMChild Teleport指向包裹自身的#t1祖先；slot header移到祖先末尾，宿主内只留双锚点，验证目标为祖先时的slot区间遍历。 */
     test('teleport target is ancestor of custom element host', async () => {
       const Child = defineCustomElement(
         {
+          /** 渲染根数组[Teleport节点（属性{to: '#t1'}；根数组[renderSlot(this.$slots, 'header')]）]。 */
           render() {
             return [
               h(Teleport, { to: '#t1' }, [renderSlot(this.$slots, 'header')]),
@@ -1972,9 +2083,11 @@ describe('defineCustomElement', () => {
       customElements.define('my-el-teleport-child-target', Child)
 
       const App = {
+        /** 渲染'div'节点（属性{id: 't1'}；根数组['my-el-teleport-child-target'节点（null；插槽{default回调}）]）。 */
         render() {
           return h('div', { id: 't1' }, [
             h('my-el-teleport-child-target', null, {
+              /** 提供default插槽：根数组['div'节点（属性{slot: 'header'}；'header'）]。 */
               default: () => [h('div', { slot: 'header' }, 'header')],
             }),
           ])
@@ -1996,12 +2109,13 @@ describe('defineCustomElement', () => {
       app.unmount()
     })
 
-    // 测试场景：使用 shadowRoot 切换嵌套自定义元素： false。
+    /** 测试场景：轻DOM父自定义元素以isShown条件包裹slot，内含子元素；true→false→true后插槽child隐藏并恢复，宿主布尔attribute与内容均正确。 */
     test('toggle nested custom element with shadowRoot: false', async () => {
       customElements.define(
         'my-el-child-shadow-false',
         defineCustomElement(
           {
+            /** 渲染'div'节点（null；根数组[renderSlot(ctx.$slots, 'default')]）。 */
             render(ctx: any) {
               return h('div', null, [renderSlot(ctx.$slots, 'default')])
             },
@@ -2010,6 +2124,7 @@ describe('defineCustomElement', () => {
         ),
       )
       const ChildWrapper = {
+        /** 渲染'my-el-child-shadow-false'节点（null；'child'）。 */
         render() {
           return h('my-el-child-shadow-false', null, 'child')
         },
@@ -2022,6 +2137,7 @@ describe('defineCustomElement', () => {
             props: {
               isShown: { type: Boolean, required: true },
             },
+            /** 渲染$props.isShown决定'div'节点（属性{key: 0}；根数组[renderSlot(ctx.$slots, 'default')]）或null。 */
             render(ctx: any, _: any, $props: any) {
               return $props.isShown
                 ? h('div', { key: 0 }, [renderSlot(ctx.$slots, 'default')])
@@ -2035,6 +2151,7 @@ describe('defineCustomElement', () => {
         props: {
           isShown: { type: Boolean, required: true },
         },
+        /** 渲染'my-el-parent-shadow-false'节点（属性{isShown: $props.isShown}；根数组[renderSlot(ctx.$slots, 'default')]）。 */
         render(ctx: any, _: any, $props: any) {
           return h('my-el-parent-shadow-false', { isShown: $props.isShown }, [
             renderSlot(ctx.$slots, 'default'),
@@ -2044,8 +2161,10 @@ describe('defineCustomElement', () => {
 
       const isShown = ref(true)
       const App = {
+        /** 渲染ParentWrapper节点（{isShown: isShown.value}；插槽{default回调}）。 */
         render() {
           return h(ParentWrapper, { isShown: isShown.value } as any, {
+            /** 提供default插槽：根数组[ChildWrapper节点]。 */
             default: () => [h(ChildWrapper)],
           })
         },
@@ -2086,9 +2205,10 @@ describe('defineCustomElement', () => {
 
   // 测试组：useHost 与 useShadowRoot 等自定义元素上下文辅助 API。
   describe('helpers', () => {
-    // 测试场景：useHost 在自定义元素 setup 中返回当前 VueElement 宿主。
+    /** 测试场景：setup调用useHost并设置id=host；插入后实际自定义元素宿主id为host，验证当前宿主访问。 */
     test('useHost', () => {
       const Foo = defineCustomElement({
+        /** 执行useHost()。setup返回渲染函数：'div'节点（'hello'）。 */
         setup() {
           const host = useHost()!
           host.setAttribute('id', 'host')
@@ -2101,9 +2221,10 @@ describe('defineCustomElement', () => {
       expect(el.id).toBe('host')
     })
 
-    // 测试场景：useShadowRoot 用于样式注入。
+    /** 测试场景：setup用useShadowRoot手动append style；插入后ShadowRoot内查询到原样CSS文本，验证当前影子根访问。 */
     test('useShadowRoot for style injection', () => {
       const Foo = defineCustomElement({
+        /** 执行useShadowRoot()；style.innerHTML=`div { color: red; }`。setup返回渲染函数：'div'节点（'hello'）。 */
         setup() {
           const root = useShadowRoot()!
           const style = document.createElement('style')
@@ -2122,20 +2243,23 @@ describe('defineCustomElement', () => {
 
   // 测试组：setup expose 和 Options API expose 映射为自定义元素实例方法。
   describe('expose', () => {
-    // 测试场景：使用选项 api 公开。
+    /** 测试场景：Options API expose仅foo方法，foo递增data.value；宿主e.foo可调用，内部div由0更新1，验证方法暴露。 */
     test('expose w/ options api', async () => {
       const E = defineCustomElement({
+        /** 初始化组件状态为{value: 0}，供本例渲染和事件更新读取。 */
         data() {
           return {
             value: 0,
           }
         },
         methods: {
+          /** 递增组件内部value状态；宿主通过expose公开的foo调用此方法，下一轮div文本由0变1。 */
           foo() {
             ;(this as any).value++
           },
         },
         expose: ['foo'],
+        /** 渲染'div'节点（null；_ctx.value）。 */
         render(_ctx: any) {
           return h('div', null, _ctx.value)
         },
@@ -2144,6 +2268,7 @@ describe('defineCustomElement', () => {
 
       container.innerHTML = `<my-el-expose-options-api></my-el-expose-options-api>`
       const e = container.childNodes[0] as VueElement & {
+        /** Options API expose=[foo]公开到元素宿主的可调用方法；用例调用后组件内部value递增。 */
         foo: () => void
       }
       expect(e.shadowRoot!.innerHTML).toBe(`<div>0</div>`)
@@ -2151,13 +2276,14 @@ describe('defineCustomElement', () => {
       await nextTick()
       expect(e.shadowRoot!.innerHTML).toBe(`<div>1</div>`)
     })
-    // 测试场景：暴露属性和回调。
+    /** 测试场景：setup expose ref value和spy setValue；宿主getter读hello、函数与spy同对象，调用后立即读world并刷新DOM，验证ref自动解包及函数身份。 */
     test('expose attributes and callback', async () => {
       /** 自定义元素通过 expose 暴露给宿主调用的测试方法签名。 */
       type SetValue = (value: string) => void
       let fn: MockedFunction<SetValue>
 
       const E = defineCustomElement({
+        /** 建立value=hello及可写value的spy函数setValue，通过expose公开二者；返回读取value的div渲染函数，供宿主调用公开方法后检查DOM更新。 */
         setup(_, { expose }) {
           const value = ref('hello')
 
@@ -2177,7 +2303,9 @@ describe('defineCustomElement', () => {
 
       container.innerHTML = `<my-el-expose></my-el-expose>`
       const e = container.childNodes[0] as VueElement & {
+        /** setup经expose公开的value ref在宿主getter上自动解包为字符串；setValue修改后读取到world。 */
         value: string
+        /** setup暴露的spy写入函数，接收新字符串并修改组件value ref。 */
         setValue: MockedFunction<SetValue>
       }
       expect(e.shadowRoot!.innerHTML).toBe(`<div>hello</div>`)
@@ -2189,12 +2317,13 @@ describe('defineCustomElement', () => {
       expect(e.shadowRoot!.innerHTML).toBe(`<div>world</div>`)
     })
 
-    // 测试场景：暴露现有属性时发出警告。
+    /** 测试场景：声明value prop又expose同名value；连接时报告exposed property already exists警告，验证避免覆盖既有property。 */
     test('warning when exposing an existing property', () => {
       const E = defineCustomElement({
         props: {
           value: String,
         },
+        /** 执行expose({value: 'hello'})。setup返回渲染函数：'div'节点（null；根数组[props.value]）。 */
         setup(props, { expose }) {
           expose({
             value: 'hello',
@@ -2213,15 +2342,17 @@ describe('defineCustomElement', () => {
     })
   })
 
-  // 测试场景：异步和嵌套自定义元素。
+  /** 测试场景：异步父provide foo，轻DOM包装div内有同步Consumer；父解析后slot结构正确且Consumer注入foo，验证子定义等待父ready。 */
   test('async & nested custom elements', async () => {
     let fooVal: string | undefined = ''
     const E = defineCustomElement(
       defineAsyncComponent(() => {
         return Promise.resolve({
+          /** 执行provide('foo', 'foo')。setup不返回渲染或公开状态。 */
           setup(props) {
             provide('foo', 'foo')
           },
+          /** 渲染'div'节点（null；根数组[renderSlot(this.$slots, 'default')]）。 */
           render(this: any) {
             return h('div', null, [renderSlot(this.$slots, 'default')])
           },
@@ -2230,9 +2361,11 @@ describe('defineCustomElement', () => {
     )
 
     const EChild = defineCustomElement({
+      /** 执行fooVal=inject('foo')；inject('foo')。setup不返回渲染或公开状态。 */
       setup(props) {
         fooVal = inject('foo')
       },
+      /** 渲染'div'节点（null；'child'）。 */
       render(this: any) {
         return h('div', null, 'child')
       },
@@ -2247,16 +2380,18 @@ describe('defineCustomElement', () => {
     expect(fooVal).toBe('foo')
   })
 
-  // 测试场景：异步和多层嵌套自定义元素。
+  /** 测试场景：异步祖先provide foo、中层provide bar、最深子注入二者；父解析后两值可用，验证多层等待与provide继承。 */
   test('async & multiple levels of nested custom elements', async () => {
     let fooVal: string | undefined = ''
     let barVal: string | undefined = ''
     const E = defineCustomElement(
       defineAsyncComponent(() => {
         return Promise.resolve({
+          /** 执行provide('foo', 'foo')。setup不返回渲染或公开状态。 */
           setup(props) {
             provide('foo', 'foo')
           },
+          /** 渲染'div'节点（null；根数组[renderSlot(this.$slots, 'default')]）。 */
           render(this: any) {
             return h('div', null, [renderSlot(this.$slots, 'default')])
           },
@@ -2265,19 +2400,23 @@ describe('defineCustomElement', () => {
     )
 
     const EChild = defineCustomElement({
+      /** 执行provide('bar', 'bar')。setup不返回渲染或公开状态。 */
       setup(props) {
         provide('bar', 'bar')
       },
+      /** 渲染'div'节点（null；根数组[renderSlot(this.$slots, 'default')]）。 */
       render(this: any) {
         return h('div', null, [renderSlot(this.$slots, 'default')])
       },
     })
 
     const EChild2 = defineCustomElement({
+      /** 执行fooVal=inject('foo')；inject('foo')；barVal=inject('bar')；inject('bar')。setup不返回渲染或公开状态。 */
       setup(props) {
         fooVal = inject('foo')
         barVal = inject('bar')
       },
+      /** 渲染'div'节点（null；'child'）。 */
       render(this: any) {
         return h('div', null, 'child')
       },
@@ -2299,37 +2438,45 @@ describe('defineCustomElement', () => {
     expect(barVal).toBe('bar')
   })
 
-  // 测试场景：嵌套异步自定义元素应先挂载祖先。
+  /** 测试场景：三层定义都异步，先resolve Inner与Outer、最后Middle；mounted顺序outer/middle/inner且最深显示foo/bar，验证解析次序不改变祖先先挂载。 */
   test('nested async custom elements should mount ancestor-first', async () => {
     const mounted: string[] = []
     const OuterComp = defineComponent({
+      /** 执行provide('foo', 'foo')。setup不返回渲染或公开状态。 */
       setup() {
         provide('foo', 'foo')
       },
+      /** 组件挂载时向mounted数组加入'outer'，核对嵌套自定义元素挂载先后。 */
       mounted() {
         mounted.push('outer')
       },
+      /** 渲染'slot'节点。 */
       render() {
         return h('slot')
       },
     })
     const MiddleComp = defineComponent({
+      /** 执行provide('bar', 'bar')。setup不返回渲染或公开状态。 */
       setup() {
         provide('bar', 'bar')
       },
+      /** 组件挂载时向mounted数组加入'middle'，核对嵌套自定义元素挂载先后。 */
       mounted() {
         mounted.push('middle')
       },
+      /** 渲染'slot'节点。 */
       render() {
         return h('slot')
       },
     })
     const InnerComp = defineComponent({
+      /** 执行inject('foo')；inject('bar')。setup返回渲染函数：'div'节点（`${foo}/${bar}`）。 */
       setup() {
         const foo = inject('foo')
         const bar = inject('bar')
         return () => h('div', `${foo}/${bar}`)
       },
+      /** 组件挂载时向mounted数组加入'inner'，核对嵌套自定义元素挂载先后。 */
       mounted() {
         mounted.push('inner')
       },
@@ -2372,10 +2519,11 @@ describe('defineCustomElement', () => {
     expect(inner.shadowRoot!.innerHTML).toBe('<div>foo/bar</div>')
   })
 
-  // 测试场景：断开连接后不应解析嵌套的自定义元素。
+  /** 测试场景：Child等待异步Parent时先移除Child，Parent解析后Child仍不mounted且ShadowRoot空；重新插入才mounted一次显示child，验证ready恢复检查连接状态。 */
   test('should not resolve nested custom element after disconnect', async () => {
     const mounted = vi.fn()
     const ParentComp = defineComponent({
+      /** 渲染'slot'节点。 */
       render() {
         return h('slot')
       },
@@ -2387,6 +2535,7 @@ describe('defineCustomElement', () => {
     const Parent = defineCustomElement(defineAsyncComponent(() => parentReady))
     const Child = defineCustomElement({
       mounted,
+      /** 渲染'div'节点（'child'）。 */
       render() {
         return h('div', 'child')
       },
@@ -2415,7 +2564,7 @@ describe('defineCustomElement', () => {
 
   // 测试组：configureApp 在自定义元素应用创建时安装插件和全局配置。
   describe('configureApp', () => {
-    // 测试场景：应该可以。
+    /** 测试场景：直接setup函数inject msg，configureApp预先provide app-injected；内部div显示该值，验证挂载前应用配置。 */
     test('should work', () => {
       const E = defineCustomElement(
         () => {
@@ -2423,6 +2572,7 @@ describe('defineCustomElement', () => {
           return () => h('div', msg!)
         },
         {
+          /** 在自定义元素新建app时配置注入：'msg', 'app-injected'。 */
           configureApp(app) {
             app.provide('msg', 'app-injected')
           },
@@ -2437,10 +2587,11 @@ describe('defineCustomElement', () => {
     })
 
     // #12448
-    // 测试场景：使用异步组件。
+    /** 测试场景：异步组件render inject msg，configureApp提供app-injected；等待解析后显示该值，确认异步定义保留configureApp。 */
     test('work with async component', async () => {
       const AsyncComp = defineAsyncComponent(() => {
         return Promise.resolve({
+          /** 渲染'div'节点（属性{}；msg）。 */
           render() {
             const msg: string | undefined = inject('msg')
             return h('div', {}, msg)
@@ -2448,6 +2599,7 @@ describe('defineCustomElement', () => {
         } as any)
       })
       const E = defineCustomElement(AsyncComp, {
+        /** 在自定义元素新建app时配置注入：'msg', 'app-injected'。 */
         configureApp(app) {
           app.provide('msg', 'app-injected')
         },
@@ -2460,20 +2612,23 @@ describe('defineCustomElement', () => {
       expect(e.shadowRoot?.innerHTML).toBe('<div>app-injected</div>')
     })
 
-    // 测试场景：HMR reload 后重建自定义元素内部组件并保留宿主连接。
+    /** 测试场景：configureApp提供msg并设置globalProperties.$foo，根HMR reload同定义；更新前后DOM都显示注入值和全局属性，验证重建应用重新应用配置。 */
     test('with hmr reload', async () => {
       const __hmrId = '__hmrWithApp'
       const def = defineComponent({
         __hmrId,
+        /** 执行inject('msg')。setup返回{msg}。 */
         setup() {
           const msg = inject('msg')
           return { msg }
         },
+        /** 渲染'div'节点（根数组['span'节点（this.msg）、'span'节点（this.$foo）]）。 */
         render(this: any) {
           return h('div', [h('span', this.msg), h('span', this.$foo)])
         },
       })
       const E = defineCustomElement(def, {
+        /** 在自定义元素新建app时配置注入：'msg', 'app-injected'；并将globalProperties.$foo设为foo。 */
         configureApp(app) {
           app.provide('msg', 'app-injected')
           app.config.globalProperties.$foo = 'foo'
@@ -2487,7 +2642,7 @@ describe('defineCustomElement', () => {
         `<div><span>app-injected</span><span>foo</span></div>`,
       )
 
-      // hmr
+      // HMR 重载定义后刷新组件与 style。
       __VUE_HMR_RUNTIME__.reload(__hmrId, def as any)
 
       await nextTick()
@@ -2498,7 +2653,7 @@ describe('defineCustomElement', () => {
   })
 
   // #9885
-  // 测试场景：在挂载后立即设置 prop 时避免双重挂载。
+  /** 测试场景：宿主onVnodeMounted立即写声明value property；ShadowRoot恰为单个hello文本，此例检查渲染结果不重复，没有mount计数spy。 */
   test('avoid double mount when prop is set immediately after mount', () => {
     customElements.define(
       'my-input-dupe',
@@ -2506,6 +2661,7 @@ describe('defineCustomElement', () => {
         props: {
           value: String,
         },
+        /** 渲染'hello'。 */
         render() {
           return 'hello'
         },
@@ -2514,9 +2670,11 @@ describe('defineCustomElement', () => {
     const container = document.createElement('div')
     document.body.appendChild(container)
     createApp({
+      /** 渲染'div'节点（根数组['my-input-dupe'节点（属性{onVnodeMounted(vnode) { vnode.el!.value = 'fesfes' }}）]）。 */
       render() {
         return h('div', [
           h('my-input-dupe', {
+            /** 执行vnode.el!.value='fesfes'。无返回值。 */
             onVnodeMounted(vnode) {
               vnode.el!.value = 'fesfes'
             },
@@ -2530,12 +2688,13 @@ describe('defineCustomElement', () => {
   })
 
   // #11081
-  // 测试场景：组件渲染函数挂载自定义元素时，声明的 props 仍会执行类型转换。
+  /** 测试场景：Vue父render用camelCase fooValue向异步自定义元素传字符串；解析后setup收到fooValue并DOM同值，验证早期props收集，此例无Number转换断言。 */
   test('Props can be casted when mounting custom elements in component rendering functions', async () => {
     const E = defineCustomElement(
       defineAsyncComponent(() =>
         Promise.resolve({
           props: ['fooValue'],
+          /** setup返回渲染函数：'div'节点（props.fooValue）。 在此fixture入口检查props.fooValue，失败直接由expect抛出。 */
           setup(props) {
             expect(props.fooValue).toBe('fooValue')
             return () => h('div', props.fooValue)
@@ -2545,6 +2704,7 @@ describe('defineCustomElement', () => {
     )
     customElements.define('my-el-async-4', E)
     const R = defineComponent({
+      /** 建立fooValue=ref('fooValue')。setup返回渲染函数：'div'节点（null；根数组['my-el-async-4'节点（属性{fooValue: fooValue.value}）]）。 */
       setup() {
         const fooValue = ref('fooValue')
         return () => {
@@ -2566,7 +2726,7 @@ describe('defineCustomElement', () => {
   })
 
   // #11276
-  // 测试场景：删除 attr 上的 prop 删除。
+  /** 测试场景：Boolean boo初始空attribute得到true；removeAttribute后内部显示false,boolean，验证删除props键后重新执行布尔缺省。 */
   test('delete prop on attr removal', async () => {
     const E = defineCustomElement({
       props: {
@@ -2574,6 +2734,7 @@ describe('defineCustomElement', () => {
           type: Boolean,
         },
       },
+      /** 渲染this.boo + ',' + typeof this.boo。 */
       render() {
         return this.boo + ',' + typeof this.boo
       },
@@ -2587,7 +2748,7 @@ describe('defineCustomElement', () => {
     expect(e.shadowRoot!.innerHTML).toBe(`false,boolean`)
   })
 
-  // 测试场景：属性名称与本机属性冲突。
+  /** 测试场景：声明tagName与原生property冲突，attribute初始化foo；渲染/property均foo并警告覆盖，验证冲突诊断与声明值生效。 */
   test('prop name conflicts with native property', () => {
     const E = defineCustomElement({
       props: {
@@ -2595,6 +2756,7 @@ describe('defineCustomElement', () => {
           type: String,
         },
       },
+      /** 渲染this.tagName。 */
       render() {
         return this.tagName
       },
@@ -2609,12 +2771,13 @@ describe('defineCustomElement', () => {
     ).toHaveBeenWarned()
   })
 
-  // 测试场景：属性名称与反映的本机属性冲突。
+  /** 测试场景：声明id与反射原生property冲突，attribute初始foo再改bar；内部DOM和e.id均bar并有覆盖警告，验证使用原生attribute方法避免反射递归。 */
   test('prop name conflicts with reflected native property', async () => {
     const E = defineCustomElement({
       props: {
         id: String,
       },
+      /** 渲染this.id。 */
       render() {
         return this.id
       },
@@ -2632,13 +2795,14 @@ describe('defineCustomElement', () => {
     ).toHaveBeenWarned()
   })
 
-  // 测试场景：Vue 渲染时本机方法冲突。
+  /** 测试场景：声明hasAttribute:Object覆盖原生方法，Vue render以连字符键传对象；DOM显示foo、property同对象且警告覆盖，验证内部原生方法借用不被同名prop破坏。 */
   test('native method conflict when rendered by Vue', () => {
     const value = { text: 'foo' }
     const E = defineCustomElement({
       props: {
         hasAttribute: Object,
       },
+      /** 渲染this.hasAttribute!.text。 */
       render() {
         return this.hasAttribute!.text
       },
@@ -2660,7 +2824,7 @@ describe('defineCustomElement', () => {
     ).toHaveBeenWarned()
   })
 
-  // 测试场景：删除连字符属性。
+  /** 测试场景：fooBar:Boolean由Vue render传foo-bar空串，toggle=false后传null；宿主attribute删除且outerHTML准确，验证连字符布尔反射移除。 */
   test('hyphenated attr removal', async () => {
     const E = defineCustomElement({
       props: {
@@ -2668,6 +2832,7 @@ describe('defineCustomElement', () => {
           type: Boolean,
         },
       },
+      /** 渲染this.fooBar。 */
       render() {
         return this.fooBar
       },
@@ -2675,6 +2840,7 @@ describe('defineCustomElement', () => {
     customElements.define('el-hyphenated-attr-removal', E)
     const toggle = ref(true)
     const Comp = {
+      /** 渲染'el-hyphenated-attr-removal'节点（属性{'foo-bar': toggle.value ? '' : null}）。 */
       render() {
         return h('el-hyphenated-attr-removal', {
           'foo-bar': toggle.value ? '' : null,
@@ -2696,7 +2862,7 @@ describe('defineCustomElement', () => {
     )
   })
 
-  // 测试场景：第一个参数没有意外突变。
+  /** 测试场景：向defineCustomElement传原始Foo选项并配置shadowRoot=false；调用后Foo仍只含name字段，验证不修改首参对象。 */
   test('no unexpected mutation of the 1st argument', () => {
     const Foo = {
       name: 'Foo',

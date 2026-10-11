@@ -90,7 +90,7 @@ export function preAliasPlugin(config: ResolvedConfig): Plugin {
   }
 }
 
-/** SSR 只有显式 include 才优化 alias replacement，避免仅凭文件路径误判 package/CJS 默认。 */
+/** SSR 只有 include 明确包含解析后的 replacement 文件路径，才自动登记该别名依赖。 */
 function optimizeAliasReplacementForSSR(
   id: string,
   optimizeDeps: DepOptimizationOptions,
@@ -99,7 +99,7 @@ function optimizeAliasReplacementForSSR(
     return true
   }
   // 普通 SSR 解析可按 package/CJS 判断默认优化；此处只有 replacement 文件路径，缺 package 身份。
-  // 当前保守不优化，要求用户显式加入 ssr optimizeDeps.include。
+  // 此处不根据路径猜测默认优化资格；include 需包含传入的 replacement 路径。
   return false
 }
 

@@ -24,6 +24,7 @@ export interface FetchModuleOptions {
 /**
  * 在 DevEnvironment 中解析、externalize 或变换一个 Module Runner 请求。
  * 返回 external 元信息、cache 确认，或带稳定 id/url/file 的可执行代码。
+ * cached 在变换前取值；服务端尚无 transformResult 时，返回代码并标记 invalidate。
  * @experimental
  */
 export async function fetchModule(
@@ -128,6 +129,7 @@ const OTHER_SOURCE_MAP_REGEXP = new RegExp(
 /**
  * 移除其他内联 map，只附加 Module Runner 使用的 sourceURL 与 Vite map；可按
  * evaluator wrapper 行数前置空 mappings，减少传输并保证栈位置。
+ * 原地更新 result.code；已有 Runner 标记时直接复用，不重复追加 map 或重新调整偏移。
  */
 function inlineSourceMap(
   mod: EnvironmentModuleNode,

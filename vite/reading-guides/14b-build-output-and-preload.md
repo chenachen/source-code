@@ -59,15 +59,15 @@ import('./feature')
 
 - feature 最终 chunk 文件名；
 - 它的静态 imports；
-- 每个 chunk 抽取了哪些 CSS/assets；
+- 每个 chunk 抽取了哪些 CSS；
 - 某动态入口是否被内联；
 - 纯 CSS JS 代理是否会被删除；
 - import map 是否把文件名换成 specifier。
 
-因此原生 build import analysis 先注入：
+因此原生 build import analysis 先注入包装与 marker。下面只展示该阶段的协议，文件名仍由后续分包决定：
 
 ```ts
-__vitePreload(() => import('./feature-hash.js'), __VITE_PRELOAD__)
+__vitePreload(() => import('./feature'), __VITE_PRELOAD__)
 ```
 
 `generateBundle` 拿到最终 bundle 图与 viteMetadata 后，再把 marker 填成真实依赖列表。marker 是 transform 与
@@ -78,7 +78,7 @@ output 阶段之间的延迟协议，与 13B 的 asset/worker 占位符思路相
 helper 内部使用 `__VITE_IS_MODERN__`。`renderChunk` 按 output format 把它等长替换为 true/false：
 
 - ES output：true，保留 preload 逻辑；
-- CJS/legacy：false，让压缩器删除 DOM/preload 分支。
+- 非 ES output：false，让后续 dead-code elimination 删除 DOM/preload 分支。
 
 决定性源码位于 `buildImportAnalysisPlugin()`：
 
@@ -156,7 +156,8 @@ CSS 插件会删除没有运行时代码的 JS proxy chunk，详情见 13A。此
 3. 仍把 CSS 传给 preload helper；
 4. 尽量用等长空格保持 sourcemap 位置。
 
-关闭 preload 的库/worker/服务端路径也必须做这一步，否则输出会 import 一个不存在的纯 CSS JS 文件。
+未插入 preload helper 的库、worker、server ES 输出仍会把失效 import 改成 Promise.resolve({})，
+但不会在此加载 CSS。带 preload helper 的客户端应用输出才把被删除目标的 CSS 交给 helper 等待。
 相关修复见
 [PR #17601](https://github.com/vitejs/vite/pull/17601)、
 [PR #17371](https://github.com/vitejs/vite/pull/17371)；chunkImportMap 开启时的组合回归见
@@ -167,14 +168,14 @@ CSS 插件会删除没有运行时代码的 JS proxy chunk，详情见 13A。此
 module preload 是性能优化；动态 chunk 对应 CSS 是正确性依赖。两者复用同一个 helper，但语义不同：
 
 ```text
-modulePreload=true  → JS 直接依赖 + CSS
+modulePreload=true  → 动态目标 + 递归静态 JS 依赖 + CSS
 modulePreload=false → 只保留 CSS
 ```
 
 同理，`modulePreload.resolveDependencies(filename, deps, context)` 可以修改/删除 JS preload，却不能删除 CSS。
 实现先拆成 cssDeps/otherDeps，只把 otherDeps 交给用户，最后重新附加 cssDeps。
 
-传给用户的是输出 URL，而非 import map specifier；hostId/hostType 告诉框架该列表属于哪个 JS chunk。
+传给用户的是相对 outDir 的输出文件路径，尚未转成公开 URL 或 import map specifier；hostId/hostType 告诉框架该列表属于哪个 JS chunk。
 
 ## 压缩依赖表
 
@@ -233,8 +234,9 @@ client、SSR、自定义 Environment 可独立开关。sharedPlugins 时不能�
 3. 把 dep 转绝对 URL；
 4. 用全局 seen 去重；
 5. 再扫描现有 `<link>`，避免与 SSR markup 重复；
-6. CSS 创建 stylesheet link；JS 创建 modulepreload，浏览器不支持时退成 preload as=script；
-7. 等待全部 CSS load/error；
+6. CSS 创建 stylesheet link；JS 使用 scriptRel：启用 polyfill 时固定 modulepreload，否则探测原生支持，
+   不支持时使用 preload as=script；
+7. 等待本次新建的 CSS link 的 load/error；已见 URL 或 SSR 已有 stylesheet 会直接跳过；
 8. 执行真正动态 import factory。
 
 CSP nonce 支持见 [PR #16052](https://github.com/vitejs/vite/pull/16052)，CSS link crossorigin 修复见
@@ -252,6 +254,8 @@ window.addEventListener('vite:preloadError', (event) => {
 })
 ```
 
+事件的 `payload` 保存原始错误。CSS 失败未取消时，helper 抛错且不调用 import factory；取消后仍会继续调用它。
+动态 import 自身失败被取消后，catch 返回 undefined，helper Promise 因而成功兑现为 undefined，并不自动重试。
 未 preventDefault 时重新抛错；可取消机制见
 [PR #18046](https://github.com/vitejs/vite/pull/18046)，module 本身错误也进入同一事件见
 [PR #18098](https://github.com/vitejs/vite/pull/18098)。
@@ -319,7 +323,7 @@ esbuild 可能生成：
 (function () { "use strict"; <actual content> })()
 ```
 
-helper 位于 wrapper 外会污染全局，且短变量可能碰撞。`injectEsbuildHelpers()` 用 indexOf/slice 找 wrapper，
+helper 位于 wrapper 外会污染全局，且短变量可能碰撞。`injectEsbuildHelpers()` 用固定头部匹配或 indexOf 定位 wrapper，再用 slice 移动代码，
 把 helper 移到 `"use strict"` 后。不用复杂正则，是为避免历史回溯性能问题。
 
 原问题见 [PR #7188](https://github.com/vitejs/vite/pull/7188)，新版 esbuild 与 `$` 变量边界修复见
@@ -330,7 +334,7 @@ helper 位于 wrapper 外会污染全局，且短变量可能碰撞。`injectEsb
 
 Terser 是可选依赖，首次真正需要压缩时才解析和创建 worker pool；项目安装版本优先于 Vite自身位置。
 
-以下选项不能安全结构化克隆，worker helper 自动回退主线程：
+以下选项让 worker helper 回退主线程：函数不能结构化克隆，nameCache 则需要保留调用方原对象的修改。
 
 - `mangle.nth_identifier.get` 函数；
 - properties nth_identifier；
@@ -376,7 +380,7 @@ root-relative module id
 → [非入口 chunk URL, imported CSS, imported assets]
 ```
 
-entry chunk 的 script/link 已写入静态 HTML，manifest 不重复记录其 JS/CSS；非 entry chunk 才需要 SSR
+实现假定 entry chunk 的 script/link 由入口 HTML 或框架负责输出，manifest 不重复记录其 JS/CSS；非 entry chunk 才需要 SSR
 在命中异步组件时追加 preload。asset 无论 entry 与否都从 `viteMetadata.importedAssets` 收集。
 
 含 `__vitePreload` helper 的 chunk 还要解析最终代码中的字面量动态 import：
@@ -408,8 +412,7 @@ module id
 ```
 
 许可证构建功能见
-[PR #18546](https://github.com/vitejs/vite/pull/18546)。输出正文属于交付物，源码注释不应翻译其中的英文
-模板或许可证全文。
+[PR #18546](https://github.com/vitejs/vite/pull/18546)。文件名以 `.json` 结尾时输出条目数组，其他后缀生成 Markdown。
 
 Reporter 使用原生插件显示产物与可选压缩体积。大 chunk 警告只针对已压缩的客户端应用构建：库消费者会
 再次 tree-shake，SSR chunk 也不直接对应浏览器下载，使用同一阈值会误导。
@@ -422,18 +425,18 @@ Reporter 使用原生插件显示产物与可选压缩体积。大 chunk 警告�
 
 仓库真实测试选择 `write=false`，因此能直接断言 `RolldownOutput`。讲解多 output、manifest 与 publicDir 时，
 沿用同一模块图，但把它视为“交付模式扩展”：`write=true`、`manifest=true`，output 可为数组。
-源码静态证明这些分支；本轮没有运行扩展配置，不能把它描述成已通过测试。
+这些交付选项分别进入 14A 的目录准备与本章的 manifest 聚合路径。
 
 ### 产物与状态账本
 
-| 产物/状态 | 首次出现阶段 | 生产者 | 消费者 | 本案例作用 |
-| --- | --- | --- | --- | --- |
-| `entry` / `lazy` chunks | Rolldown chunk graph | Rolldown | import analysis、manifest、浏览器 | 保存动态 import 与静态 JS 边 |
-| `lazy-*.css` asset | CSS `renderChunk` | `vite:css-post` | metadata、preload、manifest | lazy 模块执行前必须装载 |
-| `chunk.viteMetadata.importedCss` | CSS 输出 | CSS 插件写，wrapper 注入 | preload/manifest/HTML | 把不可见 CSS 边连接回 JS chunk |
-| marker → `__vite__mapDeps` | transform → `generateBundle` | 原生/Vite import analysis | 浏览器 preload helper | 延迟确定依赖，再用索引复用字符串 |
-| `importmap.json` | output 生成 | chunk import map 插件 | HTML/运行时 resolve | 把 chunk/CSS 文件映射为 specifier |
-| `.vite/manifest.json` | `generateBundle` | manifest 插件组 | 后端/部署工具 | `manifest: true` 时的默认交付索引；字符串配置可改路径 |
+| 产物/状态                        | 首次出现阶段                 | 生产者                    | 消费者                            | 本案例作用                                            |
+| -------------------------------- | ---------------------------- | ------------------------- | --------------------------------- | ----------------------------------------------------- |
+| `entry` / `lazy` chunks          | Rolldown chunk graph         | Rolldown                  | import analysis、manifest、浏览器 | 保存动态 import 与静态 JS 边                          |
+| `lazy-*.css` asset               | CSS `renderChunk`            | `vite:css-post`           | metadata、preload、manifest       | lazy 模块执行前必须装载                               |
+| `chunk.viteMetadata.importedCss` | CSS 输出                     | CSS 插件写，wrapper 注入  | preload/manifest/HTML             | 把不可见 CSS 边连接回 JS chunk                        |
+| marker → `__vite__mapDeps`       | transform → `generateBundle` | 原生/Vite import analysis | 浏览器 preload helper             | 延迟确定依赖，再用索引复用字符串                      |
+| `importmap.json`                 | output 生成                  | chunk import map 插件     | HTML/运行时 resolve               | 把 chunk/CSS 文件映射为 specifier                     |
+| `.vite/manifest.json`            | `generateBundle`             | manifest 插件组           | 后端/部署工具                     | `manifest: true` 时的默认交付索引；字符串配置可改路径 |
 
 这里有两种不同“边”：Rolldown 原生 `chunk.imports/dynamicImports` 表示 JS chunk 关系；
 Vite `viteMetadata.importedCss/importedAssets` 表示打包器原生图之外的交付关系。preload 与 manifest 必须合并
@@ -460,9 +463,7 @@ if (isEntry) {
     .get(this.environment)!
     .set(chunk.fileName, { referenceId, name: chunk.name })
 }
-chunk.viteMetadata!.importedCss.add(
-  this.getFileName(referenceId),
-)
+chunk.viteMetadata!.importedCss.add(this.getFileName(referenceId))
 ```
 
 `lazy.css` 不只是 `emitFile()` 后出现在 bundle 里；插件还把最终文件名写入 lazy chunk 的
@@ -581,8 +582,7 @@ if (state.outputCount >= outputLength) {
 
 边界：若后序 output 在兼容 manifest hook 达到配置计数前失败，前序 output 可能已写盘，合并 manifest
 尚未发射，插件状态也可能残留；复用同一 Builder/Environment 可能继承旧计数或条目。若最终一次该 hook
-已经执行并 reset，随后其他 hook 或写盘再失败，则不会残留这份计数。两种情况都没有磁盘事务回滚；稳妥的
-失败恢复是新建 Builder，并在部署层使用临时目录与原子切换，而不是把 `bundle.close()` 当事务提交。
+已经执行并 reset，随后其他 hook 或写盘再失败，则不会残留这份计数。`bundle.close()` 只释放构建资源，已写入文件不会回滚；复用环境前需要考虑上述累计状态。
 
 ## 同一 Demo 的数据平面
 
@@ -609,7 +609,7 @@ flowchart TD
 ## 完整真实测试：Environment 隔离一直证明到 CSS specifier
 
 来源：`packages/vite/src/node/__tests__/build.spec.ts`。下列只保留该用例实际使用的 imports、文件级 fixture
-定位常量与完整 test body；本轮只阅读，没有执行。
+定位常量与完整 test body。
 
 ```ts
 import { resolve } from 'node:path'
@@ -701,19 +701,19 @@ test('chunkImportMap per environment with shared plugins', async () => {
 - **Cleanup**：`write=false` 不创建交付目录；每次 `builder.build()` 进入一次性 `buildEnvironment()`，其
   `finally` 关闭内部 `RolldownBuild`。测试没有额外长期 watcher 需要关闭。
 
-证明边界同样重要：此测试没有写磁盘，不证明 `prepareOutDir`、public 复制、多 output manifest 合并或浏览器
-真的创建 `<link>`。这些分别由 `copies public directory after building same environment with write false first`、
-manifest/marker 单测与运行时 helper 源码作证，不能从一个断言扩大成整条链均已动态验证。
+写盘与浏览器加载使用另外两条路径：`copies public directory after building same environment with write false first`
+覆盖目录准备和 public 复制；上文 manifest 聚合源码与 preload helper 分别说明多 output 的合并时机、
+CSS 等待及错误处理。
 
 ## 源码—测试证据矩阵
 
-| 机制 | 决定性源码 | 代表测试 | 证据边界 |
-| --- | --- | --- | --- |
-| CSS 交付边 | `css.ts` CSS post `renderChunk` | 本章完整 chunkImportMap 测试 | CSS asset 到 entry specifier 的集成闭环 |
-| marker/deps | `importAnalysisBuild.ts::generateBundle()` | `importAnalysisBuild.spec.ts` 的嵌套 #22700 | 单测证明配对；完整测试证明 CSS specifier 进入 entry |
-| import map 隔离 | import analysis + import-map helpers | 本章完整测试 | client 有、SSR 无；不证明浏览器支持 `import.meta.resolve` |
-| manifest 合并 | `manifest.ts::generateBundle()` | watch manifest、同 basename CSS entry 测试 | 累计/reset 来自源码；测试不证明失败回滚 |
-| preload runtime | `importAnalysisBuild.ts::preload()` | modulepreload/构建集成测试 | 源码证明去重、CSS 等待与错误事件；本案例未启动浏览器 |
+| 机制            | 决定性源码                                 | 代表测试                                    | 证据边界                                             |
+| --------------- | ------------------------------------------ | ------------------------------------------- | ---------------------------------------------------- |
+| CSS 交付边      | `css.ts` CSS post `renderChunk`            | 本章完整 chunkImportMap 测试                | CSS asset 到 entry specifier 的集成闭环              |
+| marker/deps     | `importAnalysisBuild.ts::generateBundle()` | `importAnalysisBuild.spec.ts` 的嵌套 #22700 | 单测证明配对；完整测试证明 CSS specifier 进入 entry  |
+| import map 隔离 | import analysis + import-map helpers       | 本章完整测试                                | 共享插件下 client 发射 import map、SSR 不发射        |
+| manifest 合并   | `manifest.ts::generateBundle()`            | watch manifest、同 basename CSS entry 测试  | 源码显示计数/reset 时机；测试检查重建清单与 CSS 键   |
+| preload runtime | `importAnalysisBuild.ts::preload()`        | modulepreload/构建集成测试                  | 源码证明去重、CSS 等待与错误事件；本案例未启动浏览器 |
 
 补充专项测试：`modulePreloadPolyfill.spec.ts` 对照 ES/CJS 输出；`terser.spec.ts` 覆盖 worker 压缩与
 主线程回退；`build.spec.ts` 还覆盖 CSS metadata 对 hash 的传播、manifest 重建和 `emitAssets=false`。

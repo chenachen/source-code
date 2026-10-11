@@ -16,7 +16,7 @@ import { isJS, isTS } from './utils'
  * 所有宏处理器只读写这里，最后由 compileScript 统一生成组件选项和 setup 返回值。
  */
 export class ScriptCompileContext {
-  /** 两个 script block 是否都采用可按 JavaScript 解析的语言。 */
+  /** 任一 block 显式使用 js/jsx；未写 lang 不会使这个布尔值变为 true。 */
   isJS: boolean
   /** 任一 script block 是否使用 TS/TSX；决定 Babel 插件和生成代码的类型处理。 */
   isTS: boolean
@@ -88,10 +88,10 @@ export class ScriptCompileContext {
   /** 接收 defineEmits 返回函数的左值；最终改写为 setup 上下文的 `emit`。 */
   emitDecl: Node | undefined
 
-  // 按 model 名保存 defineModel 声明，支持多个不同名称。
+  /** 按 model 名保存 defineModel 声明，支持多个不同名称，供 props/emits 生成共用。 */
   modelDecls: Record<string, ModelDecl> = Object.create(null)
 
-  // defineOptions 的运行时对象表达式。
+  /** defineOptions 的运行时选项表达式，稍后提升并合并默认组件导出。 */
   optionsRuntimeDecl: Node | undefined
 
   /** script 分析交给 template 编译器的名字身份表。 */
@@ -105,7 +105,7 @@ export class ScriptCompileContext {
   }
 
   /**
-   * 类型宏实际读取的依赖，暴露给编译结果供 HMR 精确失效缓存。
+   * 类型解析记录的文件依赖，暴露给上层监听；缓存命中可能漏掉中间转导出路径。
    */
   deps?: Set<string>
 
@@ -207,7 +207,7 @@ function generateError(
 }
 
 /**
- * 根据 script lang 和用户配置生成去冲突的 Babel parser 插件列表。
+ * 根据 script lang 和用户配置补入所需的 Babel parser 插件列表。
  * TS/TSX 自动启用 TypeScript、资源管理与 legacy decorators；非 JSX 语言会主动移除用户
  * 传入的 jsx，避免 Babel 把 TypeScript 泛型等语法按 JSX 误解析。
  */

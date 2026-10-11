@@ -26,14 +26,7 @@ describe('ReactDOMShorthandCSSPropertyCollision', () => {
       require('internal-test-utils').assertConsoleErrorDev;
   });
 
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「should warn for conflicting CSS shorthand updates」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言连接 ReactDOM 公开入口、ReactDOMRoot 根生命周期及 DOM 提交结果。
-   */
+  /** 同一 div 依次更新 font/fontStyle、background/backgroundPosition 与交叠的 borderStyle/borderLeft；仅改变或删除一方而保留另一方时应出现更新/移除冲突诊断，同轮一起更新则无警告，验证把简写展开到长属性后判断实际覆盖冲突，而非只看名称是否相同。 */
   it('should warn for conflicting CSS shorthand updates', async () => {
     const container = document.createElement('div');
     const root = ReactDOMClient.createRoot(container);
@@ -83,7 +76,7 @@ describe('ReactDOMShorthandCSSPropertyCollision', () => {
         '\n    in div (at **)',
     ]);
 
-    // 这是一个特殊情况：backgroundPosition 并不是长手（它扩展为 backgroundPosition{X,Y}，但
+    // 这是一个特殊情况：backgroundPosition 并不是独立长属性（它扩展为 backgroundPosition{X,Y}，但
     // background 也一样）。
     await act(() => {
       root.render(

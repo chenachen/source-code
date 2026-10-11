@@ -31,10 +31,10 @@ if (__DEV__) {
   Object.freeze(emptyContextObject);
 }
 
-// 栈上当前合并后 Context 对象的游标。
+/** 保存当前祖先链合并后的遗留 Context；provider 出栈时恢复父值。 */
 const contextStackCursor: StackCursor<Object> =
   createCursor(emptyContextObject);
-// 表示 Context 是否变化的布尔栈游标。
+/** 与遗留 Context 栈配对，记录当前 provider 链是否有更新，以供类组件 bailout 判断。 */
 const didPerformWorkStackCursor: StackCursor<boolean> = createCursor(false);
 // 保存入栈前的父 Context；即使已经压入下一个 provider，仍能取父值做合并。
 let previousContext: Object = emptyContextObject;

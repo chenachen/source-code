@@ -123,7 +123,7 @@ function processWithDefaults(
       ctx,
       node.arguments[0],
       declId,
-      true /* isWithDefaults */,
+      true /* 来自 withDefaults 包装 */,
     )
   ) {
     ctx.error(
@@ -370,7 +370,7 @@ function genDestructuredDefaultValue(
   | {
       /** 默认值表达式对应的生成代码。 */
       valueString: string
-      /** 是否禁止把对象/数组默认值自动包装为工厂函数。 */
+      /** 是否需生成 skipFactory，阻止运行时把函数值当默认值工厂调用。 */
       needSkipFactory: boolean
     }
   | undefined {

@@ -114,6 +114,7 @@ describe('ReactSuspenseEffectsSemanticsDOM', () => {
     function App() {
       const [value, setValue] = React.useState(true);
 
+      /** 取反当前 value，同时改变镜像 prop 与兄弟的挂起条件；lane 由调用上下文决定。 */
       scheduleSuspendingUpdate = () => setValue(!value);
 
       return (
@@ -164,7 +165,7 @@ describe('ReactSuspenseEffectsSemanticsDOM', () => {
   });
 
   /**
-   * 场景（Given–When–Then）：给定 A 的回调 ref 已挂载，紧急切换到未加载 B 会隐藏并删除 A；
+   * 场景（Given–When–Then）：给定 A 的回调 ref 已挂载，紧急切换到未加载 B 先隐藏 A，B 完成后再删除 A；
    * 当 B 完成；那么 A 的 ref cleanup 只执行一次，B 只挂载一次。
    * 对应机制：隐藏 Offscreen 子树删除时的 ref detach 去重。
    */

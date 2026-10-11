@@ -39,8 +39,10 @@ function onError() {
  * 用 Fizz 核心请求同步收集 HTML，再适配成旧版字符串返回值。
  *
  * 该文件只组装 DOM legacy 配置与 `react-server` 的完整 Fizz 引擎：启动请求后立即
- * abort 尚未完成的 Suspense 边界，使输出从一开始就是客户端渲染边界；destination
+ * abort 尚未完成的 Suspense 边界，使这些未完成边界从首次输出就标为客户端恢复；已完成内容仍输出。destination
  * 同步拼接 chunk，并把 fatal 与“预期 abort 原因”区分后再返回字符串。
+ * generateStaticMarkup选择静态DOM编码，identifierPrefix供同构id；abortReason为legacy入口
+ * 的悬挂说明。didFatal单独记录异常是否发生，确保null/undefined等抛值也能向调用方传播。
  */
 function renderToStringImpl(
   children: ReactNodeList,

@@ -109,7 +109,7 @@ describe('ReactClassComponentPropResolution', () => {
       default: 'yo',
     };
 
-    // `ref` 绝不能作为普通 prop 出现；`default` 则必须始终由 defaultProps 补入。
+    // 类组件的 `ref` 会从传给实例的 props 中剔除；`default` 则必须始终由 defaultProps 补入。
 
     // 挂载阶段。
     const ref = React.createRef();

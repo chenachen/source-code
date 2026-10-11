@@ -137,7 +137,9 @@ export interface CSSOptions {
    */
   transformer?: 'postcss' | 'lightningcss'
   /**
-   * https://github.com/css-modules/postcss-modules
+   * PostCSS 模式的 CSS Modules 配置，false 禁用 `.module.*` 转换。
+   * Lightning CSS 模式改用 `lightningcss.cssModules`。
+   * @see https://github.com/css-modules/postcss-modules
    */
   modules?: CSSModulesOptions | false
   /**
@@ -148,9 +150,9 @@ export interface CSSOptions {
   preprocessorOptions?: {
     /** SCSS 预处理配置。 */
     scss?: SassPreprocessorOptions
-    /** Sass/SCSS `@import` 使用的解析器。 */
+    /** Sass 预处理配置。 */
     sass?: SassPreprocessorOptions
-    /** Less `@import` 使用的解析器。 */
+    /** Less 预处理配置。 */
     less?: LessPreprocessorOptions
     /** Stylus 预处理配置。 */
     styl?: StylusPreprocessorOptions
@@ -179,6 +181,7 @@ export interface CSSOptions {
   devSourcemap?: boolean
 
   /**
+   * Lightning CSS 的语法、Modules、visitor 与恢复选项；也用于其 CSS 压缩路径。
    * @experimental
    */
   lightningcss?: LightningCSSOptions
@@ -186,7 +189,7 @@ export interface CSSOptions {
 
 /** 定义 CSS Modules 的作用域、类名生成和导出回调配置。 */
 export interface CSSModulesOptions {
-  /** 接收 CSS Modules 生成的类名映射，并保存到当前模块的转换结果。 */
+  /** 接收 CSS Modules 生成的类名映射供用户观察或保存；Vite 另行保存当前模块的映射。 */
   getJSON?: (
     cssFileName: string,
     json: Record<string, string>,
@@ -205,6 +208,7 @@ export interface CSSModulesOptions {
   /** 参与 CSS Modules 类名哈希的额外前缀。 */
   hashPrefix?: string
   /**
+   * 调整导出的映射键，可保留原键或追加/仅保留 camelCase 等转换后的键。
    * 默认 undefined，保留原 class 名格式。
    */
   localsConvention?:
@@ -283,26 +287,26 @@ const defaultCssBundleName = 'style.css'
 
 /** 列出需要独立预处理器编译的样式语言后缀。 */
 const enum PreprocessLang {
-  /** 表示 less 语言分支，值与文件扩展名或解析器标识保持一致。 */
+  /** `.less` 交给 Less render 与 Vite FileManager 解析导入。 */
   less = 'less',
-  /** 表示 sass 语言分支，值与文件扩展名或解析器标识保持一致。 */
+  /** `.sass` 复用 Sass 处理器，并显式选择 indented 缩进语法。 */
   sass = 'sass',
-  /** 表示 scss 语言分支，值与文件扩展名或解析器标识保持一致。 */
+  /** `.scss` 使用 Sass compiler 的 SCSS 语法。 */
   scss = 'scss',
-  /** 表示 styl 语言分支，值与文件扩展名或解析器标识保持一致。 */
+  /** `.styl` 使用 Stylus 处理器，与 stylus 键共用同一实例。 */
   styl = 'styl',
-  /** 表示 stylus 语言分支，值与文件扩展名或解析器标识保持一致。 */
+  /** `.stylus` 是 Stylus 处理器的另一扩展名入口。 */
   stylus = 'stylus',
 }
 /** 列出纯 CSS 语言分支，供统一的 CssLang 类型包含 `.css` 后缀。 */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- bug in typescript-eslint
 const enum PureCssLang {
-  /** 表示 css 语言分支，值与文件扩展名或解析器标识保持一致。 */
+  /** 纯 `.css` 不走语言预处理，直接进入 PostCSS 或 Lightning CSS。 */
   css = 'css',
 }
 /** 列出由 PostCSS 语法插件解析的 CSS 方言后缀。 */
 const enum PostCssDialectLang {
-  /** 表示 sss 语言分支，值与文件扩展名或解析器标识保持一致。 */
+  /** `.sss` 使用 SugarSS parser；Lightning CSS 模式也先将它转为标准 CSS。 */
   sss = 'sugarss',
 }
 /** 汇总 Vite CSS 管线能够识别的全部样式语言后缀。 */
@@ -323,7 +327,7 @@ export const isDirectCSSRequest = (request: string): boolean =>
 export const isDirectRequest = (request: string): boolean =>
   directRequestRE.test(request)
 
-/** 按环境缓存 CSS Modules 类名映射，供 SSR 与依赖分析复用。 */
+/** 按 ResolvedConfig 缓存 CSS Modules 类名映射，供 css-post 导出与 CSS HMR 分析读取。 */
 const cssModulesCache = new WeakMap<
   ResolvedConfig,
   Map<string, Record<string, string>>
@@ -335,7 +339,7 @@ export const removedPureCssFilesCache: WeakMap<
   Map<string, RenderedChunk>
 > = new WeakMap()
 
-// 只用于关闭 CSS code split、全构建生成单个样式文件时稳定 bundle 名称。
+/** 缓存关闭 CSS code split 时的单一样式逻辑名，供 CSS 发射与 HTML 注入使用。 */
 export const cssBundleNameCache: WeakMap<ResolvedConfig, string> = new WeakMap()
 
 /** 按解析配置缓存 PostCSS 配置 Promise，避免每个 CSS 文件重复查找配置。 */
@@ -395,7 +399,7 @@ export function cssPlugin(config: ResolvedConfig): Plugin {
       )
     },
 
-    /** 关闭本轮构建的预处理器 worker 控制器，等待在途任务结束。 */
+    /** 关闭本轮预处理器控制器，释放 Sass compiler 与 Less/Stylus worker。 */
     async buildEnd() {
       await preprocessorWorkerController?.close()
     },
@@ -439,11 +443,11 @@ export function cssPlugin(config: ResolvedConfig): Plugin {
       /** 编译 CSS/预处理器源码，解析 URL 与依赖，并记录 CSS Modules 映射。 */
       async handler(raw, id) {
         const { environment } = this
-        /** 先按 CSS 导入语义解析资源 URL，再回退为当前文件的相对路径解析。 */
+        /** 通过 preferRelative 的 Vite resolver 解析本地 CSS 资源 URL。 */
         const resolveUrl = (url: string, importer?: string) =>
           idResolver(environment, url, importer)
 
-        /** 先按 CSS 导入语义解析 URL，再回退公共目录与静态资源解析路径。 */
+        /** 先识别 public URL，再解析本地资源并调用 fileToUrl；未解析 URL 保留原值。 */
         const urlResolver: CssUrlResolver = async (url, importer) => {
           const decodedUrl = decodeURI(url)
           if (checkPublicFile(decodedUrl, config)) {
@@ -526,7 +530,7 @@ export function cssPlugin(config: ResolvedConfig): Plugin {
 }
 
 /**
- * 用户插件之后运行的 CSS 消费/产物插件：开发态把 CSS 变成自接受的 JS 注入模块；构建态按 chunk 聚合、
+ * 用户插件之后运行的 CSS 消费/产物插件：开发态生成 JS 注入模块，普通 CSS 自接受；构建态按 chunk 聚合、
  * 排序、压缩并发射 CSS asset，同时删除只承载 CSS 的空 JS chunk。
  */
 export function cssPostPlugin(config: ResolvedConfig): Plugin {
@@ -538,7 +542,7 @@ export function cssPostPlugin(config: ResolvedConfig): Plugin {
   let pureCssChunks: Set<RenderedChunk>
   let chunkCssReferences: Map<string, string>
 
-  // 多个 Rolldown output 共享同一份抽取 CSS；JS 输出格式不会改变 CSS，所以只发射一次。
+  // 记录本轮 output 的单 CSS bundle 是否已发射；renderStart 为下一轮 output 重置。
   let hasEmitted = false
   let chunkCSSMap: Map<string, string>
 
@@ -572,7 +576,7 @@ export function cssPostPlugin(config: ResolvedConfig): Plugin {
     }
   }
 
-  /** 依据 Rollup assetFileNames 计算单 CSS 包的最终名称。 */
+  /** 选择单 CSS bundle 的逻辑名称：库模式使用 cssFileName/fileName/包名，否则为 style.css。 */
   function getCssBundleName() {
     const cached = cssBundleNameCache.get(config)
     if (cached) return cached
@@ -591,7 +595,7 @@ export function cssPostPlugin(config: ResolvedConfig): Plugin {
   return {
     name: 'vite:css-post',
 
-    /** 为每次 render 重建纯 CSS chunk、引用、CSS 内容与串行发射队列状态。 */
+    /** 每轮 output 重建纯 CSS chunk、引用和聚合缓存，并重置 code-split 发射队列；styles 保留。 */
     renderStart() {
       // 每个 render，包括 watch 重构建，都重新建立输出级缓存。
       pureCssChunks = new Set<RenderedChunk>()
@@ -726,7 +730,7 @@ export function cssPostPlugin(config: ResolvedConfig): Plugin {
             const renderedModules = new Proxy(
               {} as Record<string, RenderedModule | undefined>,
               {
-                /** 为 chunk 模块表提供按需 CSS 元数据，供渲染阶段按模块访问样式结果。 */
+                /** 按需跨输出 chunk 查找 importer 的 RenderedModule，用 renderedExports 判断 cssScopeTo 是否保留。 */
                 get(_target, p) {
                   for (const name in meta.chunks) {
                     const modules = meta.chunks[name].modules
@@ -840,7 +844,7 @@ export function cssPostPlugin(config: ResolvedConfig): Plugin {
               return chunkCSS
             }
 
-            /** 仅在产物名缺少扩展名时补上目标扩展名，保留已有后缀。 */
+            /** 将逻辑产物名的扩展名统一替换为目标扩展名，并规范路径分隔符。 */
             function ensureFileExt(name: string, ext: string) {
               return normalizePath(
                 path.format({ ...path.parse(name), base: undefined, ext }),
@@ -950,7 +954,7 @@ export function cssPostPlugin(config: ResolvedConfig): Plugin {
                 isPureCssChunk &&
                 (opts.format === 'es' || opts.format === 'cjs')
               ) {
-                // 这是无 JS exports 的共享纯 CSS chunk，之后删除空 JS 占位文件。
+                // 这是无 JS exports 的纯 CSS chunk，之后删除空 JS 占位文件。
                 pureCssChunks.add(chunk)
               }
 
@@ -1030,7 +1034,7 @@ export function cssPostPlugin(config: ResolvedConfig): Plugin {
                   injectInlinedCSS(s, this, code, opts.format, injectCode)
                 }
               } else {
-                // 不 code split 时先按最终单一 bundle 位置解析 URL；public URL 使用绝对输出语义。
+                // 不 code split 时按单一 CSS bundle 所在目录和 base 解析 asset/public URL。
                 chunkCSS = resolveAssetUrlsInCss(
                   chunkCSS,
                   getCssBundleName(),
@@ -1055,7 +1059,7 @@ export function cssPostPlugin(config: ResolvedConfig): Plugin {
             return null
           },
 
-          /** 把关联 CSS 内容加入 chunk 哈希，确保样式变化会使引用它的产物失效。 */
+          /** 把 importedCss 文件名加入 JS chunk 哈希；CSS 内容变化先改变 CSS 文件名，再传递到 JS hash。 */
           augmentChunkHash(chunk) {
             if (chunk.viteMetadata?.importedCss.size) {
               let hash = ''
@@ -1068,7 +1072,7 @@ export function cssPostPlugin(config: ResolvedConfig): Plugin {
         }
       : {}),
 
-    /** 等待 CSS 发射队列完成，移除纯 CSS chunk，并为非拆分模式发射合并样式。 */
+    /** 移除已收集的纯 CSS chunk，并为非拆分模式发射合并样式。 */
     async generateBundle(opts, bundle) {
       // modern/legacy 双输出共享 CSS，legacy output 不重复发射。
       if (this.environment.config.isOutputOptionsForLegacyChunks?.(opts)) {
@@ -1106,7 +1110,7 @@ export function cssPostPlugin(config: ResolvedConfig): Plugin {
           extractedCss += chunkCSSMap.get(chunk.preliminaryFileName) ?? ''
         }
 
-        // Rolldown 保证 bundle 枚举确定性；若这里漂移属于打包器 bug，可据此稳定 CSS 顺序。
+        // 按当前 bundle 的条目顺序访问入口；每个入口先收同步依赖，动态依赖留到最后。
         for (const chunk of Object.values(bundle)) {
           if (chunk.type === 'chunk' && chunk.isEntry) {
             collect(chunk)
@@ -1359,7 +1363,7 @@ export function cssAnalysisPlugin(config: ResolvedConfig): Plugin {
   }
 }
 
-/** 判断 CSS 模块是否会进入当前渲染 chunk，避免重复拼接无关样式。 */
+/** 检查关联 importer 是否被渲染，以及绑定的 export 是否保留；查询范围由 renderedModules 提供。 */
 function isCssScopeToRendered(
   cssScopeTo: Exclude<CustomPluginOptionsVite['cssScopeTo'], undefined>,
   renderedModules: Record<string, RenderedModule | undefined>,
@@ -1486,7 +1490,7 @@ export function createCSSResolvers(
   }
 }
 
-/** 按当前 CSS 语言返回允许参与 `@import` 解析的解析器顺序。 */
+/** 按对象键的声明顺序返回 css、sass、less，供 PostCSS Modules composes 依次尝试。 */
 function getCssResolversKeys(
   resolvers: CSSAtImportResolvers,
 ): Array<keyof CSSAtImportResolvers> {
@@ -1505,7 +1509,7 @@ async function compileCSSPreprocessors(
   code: string
   /** 与预处理结果对应的 sourcemap；空 mappings 表示有意终止上游映射链。 */
   map?:
-    ExistingRawSourceMap
+    | ExistingRawSourceMap
     | {
         /** 用空字符串标记不再存在可追溯的源码映射。 */
         mappings: ''
@@ -1586,7 +1590,7 @@ async function compileCSS(
   code: string
   /** 与转换后代码对应的 sourcemap。 */
   map?: SourceMapInput
-  /** CSS Modules 的原类名到导出名映射。 */
+  /** CSS Modules 的导出键到实际 scoped class 字符串映射，composes 可在值中拼入多个类名。 */
   modules?: Record<string, string>
   /** 转换过程中解析出的文件依赖集合。 */
   deps?: Set<string>
@@ -1598,7 +1602,7 @@ async function compileCSS(
   // 第一阶段先执行 Sass/Less/Stylus 等语法预处理。
   // 保存第一阶段预处理映射，稍后与 PostCSS 或 Lightning CSS 的映射合并。
   let preprocessorMap:
-    ExistingRawSourceMap
+    | ExistingRawSourceMap
     | {
         /** 用空字符串标记不再存在可追溯的源码映射。 */
         mappings: ''
@@ -1678,7 +1682,7 @@ async function compilePostCSS(
       code: string
       /** 与转换后代码对应的 sourcemap。 */
       map?: Exclude<SourceMapInput, string>
-      /** CSS Modules 的原类名到导出名映射。 */
+      /** CSS Modules 的导出键到实际 scoped class 字符串映射，composes 可在值中拼入多个类名。 */
       modules?: Record<string, string>
     }
   | undefined
@@ -1764,7 +1768,7 @@ async function compilePostCSS(
           }
           return code
         },
-        /** 为 CSS Modules 的 cascade layer 生成稳定且不冲突的名称。 */
+        /** 为 postcss-import 展开的匿名 cascade layer 生成带文件 hash 与序号的名称。 */
         nameLayer(index) {
           return `vite--anon-layer-${getHash(id)}-${index}`
         },
@@ -1794,7 +1798,7 @@ async function compilePostCSS(
       (await importPostcssModules()).default({
         ...modulesOptions,
         localsConvention: modulesOptions?.localsConvention,
-        /** 接收 CSS Modules 生成的类名映射，并保存到当前模块的转换结果。 */
+        /** 接收 CSS Modules 生成的类名映射供用户观察或保存；Vite 另行保存当前模块的映射。 */
         getJSON(
           cssFileName: string,
           _modules: Record<string, string>,
@@ -1866,7 +1870,7 @@ async function transformSugarSS(
   return result
 }
 
-/** 运行 PostCSS 插件链，统一收集消息中的依赖、模块映射和 sourcemap。 */
+/** 运行 PostCSS 插件链，收集依赖/警告消息并格式化 sourcemap；Modules 映射由外层 getJSON 捕获。 */
 async function runPostCSS(
   id: string,
   code: string,
@@ -1881,7 +1885,7 @@ async function runPostCSS(
     const source = removeDirectQuery(id)
     const postcss = await importPostcss()
 
-    // PostCSS 是未打进 Vite bundle 的可选依赖，首次实际需要时再惰性加载。
+    // PostCSS 作为 Vite 的运行时依赖保留外部加载，首次实际处理 CSS 时才导入。
     postcssResult = await postcss.default(plugins).process(code, {
       ...options,
       to: source,
@@ -2001,7 +2005,7 @@ export interface PreprocessCSSResult {
   code: string
   /** 与转换后代码对应的 sourcemap。 */
   map?: SourceMapInput
-  /** CSS Modules 的原类名到导出名映射。 */
+  /** CSS Modules 的导出键到实际 scoped class 字符串映射，composes 可在值中拼入多个类名。 */
   modules?: Record<string, string>
   /** 转换过程中解析出的文件依赖集合。 */
   deps?: Set<string>
@@ -2016,15 +2020,14 @@ export async function preprocessCSS(
   let workerController = preprocessorWorkerControllerCache.get(config)
 
   if (!workerController) {
-    // 脱离插件生命周期调用 preprocessCSS 时没有 workerController；复用永远在主线程执行的 fake
-    // controller，因为它不像真实 worker pool 那样要求调用 close。
+    // 脱离插件生命周期时复用全局控制器，maxWorkers=0 让 Less/Stylus 在本线程执行。
+    // Sass 不使用这个并发上限，仍可复用 AsyncCompiler；此入口不返回关闭控制器的方法。
     alwaysFakeWorkerWorkerControllerCache ||=
       createPreprocessorWorkerController(0)
     workerController = alwaysFakeWorkerWorkerControllerCache
   }
 
-  // preprocessCSS 固定使用 client Environment。CSS 通常只供 client 消费，server build 还需与 client
-  // asset chunk 名一致才能去重 link；若未来出现依 Environment 编译 CSS 的需求，应重新审视此约束。
+  // 此公开 API 不接受 Environment 参数，固定用 client 的局部配置执行编译。
   const environment: PartialEnvironment = new PartialEnvironment(
     'client',
     config,
@@ -2062,25 +2065,28 @@ export async function formatPostcssSourceMap(
   }
 }
 
-/** 仅在映射存在时合并预处理器与后续转换的 sourcemap，并保留空映射语义。 */
+/**
+ * 合并后续转换 map1 与预处理 map2；缺任一项时原样返回 map1，而不是单独返回 map2。
+ * 任一映射明确为空时截断追溯链，两项均非空才交给 combineSourcemaps 组合。
+ */
 function combineSourcemapsIfExists(
   filename: string,
   map1:
-    ExistingRawSourceMap
+    | ExistingRawSourceMap
     | {
         /** 用空字符串标记第一段转换已主动截断映射链。 */
         mappings: ''
       }
     | undefined,
   map2:
-    ExistingRawSourceMap
+    | ExistingRawSourceMap
     | {
         /** 用空字符串标记第二段转换已主动截断映射链。 */
         mappings: ''
       }
     | undefined,
 ):
-  ExistingRawSourceMap
+  | ExistingRawSourceMap
   | {
       /** 合并结果以空字符串表示没有可继续追溯的源码位置。 */
       mappings: ''
@@ -2099,12 +2105,12 @@ function combineSourcemapsIfExists(
   ]) as ExistingRawSourceMap
 }
 
-/** 开发态 CSS 哈希占位标记，客户端据此识别内容版本。 */
+/** 构建期加入 CSS source 的临时注释，用于改变资源 hash，generateBundle 再删去。 */
 const viteHashUpdateMarker = '/*$vite$:1*/'
-/** 匹配已有 CSS 哈希标记，以便热更新时替换而非重复追加。 */
+/** 匹配临时 CSS hash 标记，在文件名确定后从最终 asset source 中移除。 */
 const viteHashUpdateMarkerRE = /\/\*\$vite\$:\d+\*\//
 
-/** 执行 CSS 压缩或格式整理，并按配置补齐最终 sourcemap。 */
+/** 提升 @import/@charset、按配置压缩 CSS，再追加参与资源 hash 的临时标记。 */
 async function finalizeCss(css: string, config: ResolvedConfig) {
   // 按 CSS 规范把外部 @import/@charset 提升到聚合 chunk 顶部（#1845/#6333）。
   if (css.includes('@import') || css.includes('@charset')) {
@@ -2114,7 +2120,7 @@ async function finalizeCss(css: string, config: ResolvedConfig) {
     css = await minifyCSS(css, config, false)
   }
   // Vite 5.4.3 给 CSS link 增加 crossorigin 后，Chromium 可能因旧缓存条目缺少该请求属性而
-  // 阻止相同内容 hash 的 CSS。追加内部 marker 强制跨版本生成新 hash；generateBundle 发射前再移除，
+  // 阻止相同内容 hash 的 CSS。追加内部 marker 强制跨版本生成新 hash；generateBundle 在文件名已确定后从 asset source 移除，
   // 不污染最终 CSS 内容。
   // 回归：https://github.com/vitejs/vite/issues/18038
   // 浏览器背景：https://www.hacksoft.io/blog/handle-images-cors-error-in-chrome
@@ -2199,7 +2205,10 @@ type CssUrlReplacer = (
   unquotedUrl: string,
   rawUrl: string,
 ) => string | false | Promise<string | false>
-// https://drafts.csswg.org/css-syntax-3/#identifier-code-point
+/**
+ * 匹配 CSS 声明里的 url() 参数，排除标识符内嵌片段与 @import url，支持引号和 CSS 转义。
+ * @see https://drafts.csswg.org/css-syntax-3/#identifier-code-point
+ */
 export const cssUrlRE: RegExp =
   /(?<!@import\s+)(?<=^|[^\w\-\u0080-\uffff])url\((\s*('[^']+'|"[^"]+")\s*|(?:\\.|[^'")\\])+)\)/
 /** 匹配 CSS 中的 `data-uri()` 扩展调用并提取参数。 */
@@ -2209,13 +2218,13 @@ export const cssDataUriRE: RegExp =
 export const importCssRE: RegExp =
   /@import\s+(?:url\()?('[^']+\.css'|"[^"]+\.css"|[^'"\s)]+\.css)/
 // 假设 CSS 函数名不会超过 256 个字符，限制前瞻范围以避免灾难性回溯。
-/** 提取 `image-set()` 参数区域，长度上限避免恶意输入触发过量回溯。 */
+/** 提取 image-set 参数及其中的单层函数；嵌套函数名匹配限制为 256 字符。 */
 // eslint-disable-next-line regexp/no-unused-capturing-group -- doesn't detect asyncReplace usage
 const cssImageSetRE = /(?<=image-set\()((?:[\w-]{1,256}\([^)]*\)|[^)])*)(?=\))/
 
-/** 创建 PostCSS URL 重写插件，在树遍历结束时统一处理声明与导入规则。 */
+/** 创建 PostCSS URL 重写插件，在树遍历结束时处理声明里的 url()/image-set() 并登记资源依赖。 */
 const UrlRewritePostcssPlugin: PostCSS.PluginCreator<{
-  /** 解析变量动态导入中的模块 ID，并将裸导入规范化为可展开的相对路径。 */
+  /** 把 CSS URL 解析为替换地址与可登记的本地文件 ID。 */
   resolver: CssUrlResolver
   /** 转换过程中解析出的文件依赖集合。 */
   deps: Set<string>
@@ -2228,7 +2237,7 @@ const UrlRewritePostcssPlugin: PostCSS.PluginCreator<{
 
   return {
     postcssPlugin: 'vite-url-rewrite',
-    /** 在 PostCSS 完成遍历后并行重写 URL、导入与 image-set 引用。 */
+    /** 在 PostCSS 完成遍历后并行重写声明中的 url() 与 image-set()，并登记本地资源依赖。 */
     OnceExit(root) {
       const promises: Promise<void>[] = []
       root.walkDecls((declaration) => {
@@ -2244,7 +2253,7 @@ const UrlRewritePostcssPlugin: PostCSS.PluginCreator<{
         const isCssUrl = cssUrlRE.test(declaration.value)
         const isCssImageSet = cssImageSetRE.test(declaration.value)
         if (isCssUrl || isCssImageSet) {
-          /** 根据声明属性选择 URL、data-uri 或 image-set 重写器，并保留原始格式。 */
+          /** 调用资源 resolver 取得替换 URL，并把返回的本地文件 ID 加入 deps。 */
           const replacerForDeclaration = async (rawUrl: string) => {
             const [newUrl, resolvedId] = await opts.resolver(rawUrl, importer)
             if (resolvedId) {
@@ -2282,7 +2291,7 @@ const UrlRewritePostcssPlugin: PostCSS.PluginCreator<{
 }
 UrlRewritePostcssPlugin.postcss = true
 
-/** 重写普通 `url()` 中的资源地址，并保留引号与空白格式。 */
+/** 重写 url() 中的资源地址；替换值需要时调整引号，未替换的调用保持原样。 */
 function rewriteCssUrls(
   css: string,
   replacer: CssUrlReplacer,
@@ -2293,7 +2302,7 @@ function rewriteCssUrls(
   })
 }
 
-/** 解析并重写 `data-uri()` 引用，使文件内容可内联进 CSS。 */
+/** 重定位 Less data-uri() 的文件参数，保留函数调用供 Less 执行实际内联。 */
 function rewriteCssDataUris(
   css: string,
   replacer: CssUrlReplacer,
@@ -2304,7 +2313,7 @@ function rewriteCssDataUris(
   })
 }
 
-/** 重写 `@import` 的 CSS 文件地址，并记录解析到的依赖。 */
+/** 通过传入 replacer 改写保留为 CSS 的 @import 路径，不在此登记依赖。 */
 function rewriteImportCss(
   css: string,
   replacer: CssUrlReplacer,
@@ -2315,9 +2324,12 @@ function rewriteImportCss(
   })
 }
 
-// TODO：image()/cross-fade() 内也可能包含需处理的 URL。
-// https://drafts.csswg.org/css-images-4/#image-notation
-// https://drafts.csswg.org/css-images-4/#cross-fade-function
+/**
+ * image-set 候选中暂不展开的函数，直接保留其表达式。
+ * TODO：image()/cross-fade() 内也可能包含需处理的 URL。
+ * @see https://drafts.csswg.org/css-images-4/#image-notation
+ * @see https://drafts.csswg.org/css-images-4/#cross-fade-function
+ */
 const cssNotProcessedRE = /(?:gradient|element|cross-fade|image)\(/
 
 /** 逐项重写 `image-set()` 候选 URL，同时保留分辨率描述符。 */
@@ -2340,7 +2352,7 @@ async function rewriteCssImageSet(
     return url
   })
 }
-/** 判断 URL 是否应保持原样，例如外部协议、数据 URL 或 CSS 变量。 */
+/** 判断 URL 是否应保持原样，例如外部协议、数据 URL、片段或 var() 等函数调用。 */
 function skipUrlReplacer(unquotedUrl: string) {
   return (
     isExternalUrl(unquotedUrl) ||
@@ -2352,7 +2364,7 @@ function skipUrlReplacer(unquotedUrl: string) {
     unquotedUrl.startsWith('__VITE_PUBLIC_ASSET__')
   )
 }
-/** 解析单个 CSS 资源 URL；无法解析时记录警告并保留原值。 */
+/** 去引号与 CSS 转义后调用 replacer；false 保留原调用，替换值按需补引号和转义。 */
 async function doUrlReplace(
   rawUrl: string,
   matched: string,
@@ -2393,7 +2405,7 @@ async function doUrlReplace(
   return `${funcName}(${wrap}${newUrl}${wrap})`
 }
 
-/** 解析 CSS 导入并登记依赖；外部或无法解析的地址保持不变。 */
+/** 调用 replacer 改写 CSS @import；外部 URL 或 replacer 返回 false 时保持原匹配。 */
 async function doImportCSSReplace(
   rawUrl: string,
   matched: string,
@@ -2500,7 +2512,7 @@ async function minifyCSS(
   }
 }
 
-/** 把 CSS 压缩配置归一化为 esbuild 可接受的目标与字符集选项。 */
+/** 提取 esbuild CSS 压缩使用的字符集、日志与法律注释配置，并补齐三个 minify 子开关。 */
 function resolveMinifyCssEsbuildOptions(
   options: ESBuildOptions,
 ): EsbuildTransformOptions {
@@ -2570,7 +2582,7 @@ type PreprocessorAdditionalDataResult =
   | string
   | {
       /** 注入附加数据后的完整样式源码。 */
-      content: string;
+      content: string
       /** 附加数据回调为新源码提供的映射。 */
       map?: ExistingRawSourceMap
     }
@@ -2635,7 +2647,7 @@ type StylePreprocessor<Options extends StylePreprocessorInternalOptions> = {
     options: Options,
     resolvers: CSSAtImportResolvers,
   ) => StylePreprocessorResults | Promise<StylePreprocessorResults>
-  /** 释放该预处理器持有的 worker 与模块资源。 */
+  /** 释放该预处理器持有的 worker 或 Sass compiler 资源。 */
   close: () => void | Promise<void>
 }
 
@@ -2653,7 +2665,7 @@ export interface StylePreprocessorResults {
   deps: string[]
 }
 
-/** 缓存已解析的预处理器包路径，避免对同一根目录重复查找。 */
+/** 按包名缓存首次解析出的预处理器路径；该进程级缓存不以项目 root 区分。 */
 const loadedPreprocessorPath: Partial<
   Record<PreprocessLang | PostCssDialectLang | 'sass-embedded', string>
 > = {}
@@ -2724,11 +2736,11 @@ async function loadSss(root: string): Promise<PostCSS.Syntax> {
   return cachedSss
 }
 
-/** 声明 worker 包装代码引用的浏览器 `window` 全局，实际值由运行环境提供。 */
+/** 为 Sass 错误 URL 兼容检查声明可能由宿主提供的 window 全局。 */
 declare const window: unknown
-/** 声明 worker 包装代码引用的浏览器 `location` 全局，实际值由运行环境提供。 */
+/** 为 Sass 错误 URL 兼容检查声明可能由宿主提供的 location 全局。 */
 declare const location:
-  {
+  | {
       /** 当前文档的绝对 URL，旧版 Sass 可能把它附加到错误路径。 */
       href: string
     }
@@ -2752,7 +2764,7 @@ function cleanScssBugUrl(url: string) {
 }
 
 // #region Sass（.scss/.sass 处理器）
-/** 创建 Sass worker 调度器，并在真实 worker 与当前线程执行之间切换。 */
+/** 以 run/stop 接口封装 Sass AsyncCompiler；不创建 WorkerWithFallback，maxWorkers 不参与调度。 */
 const makeScssWorker = (
   environment: PartialEnvironment,
   resolvers: CSSAtImportResolvers,
@@ -2858,7 +2870,7 @@ const makeScssWorker = (
         },
       } satisfies ScssWorkerResult
     },
-    /** 停止 Sass worker 调度器并释放线程资源。 */
+    /** 等待并 dispose 已初始化的 Sass AsyncCompiler，再清空 compiler Promise。 */
     async stop() {
       const compiler = await compilerPromise
       await compiler?.dispose()
@@ -2985,7 +2997,7 @@ async function rebaseUrls(
   ignoreUrl?: (unquotedUrl: string, rawUrl: string) => boolean,
 ): Promise<{
   /** 解析并规范化后的导入文件路径。 */
-  file: string;
+  file: string
   /** URL 重定位后需交给预处理器的替换内容；未变化时省略。 */
   contents?: string
 }> {
@@ -3051,7 +3063,7 @@ const makeLessWorker = (
     return unquotedUrl[0] === '@'
   }
 
-  /** 按 Less 导入语义解析文件，并补试 `.less` 与目录入口。 */
+  /** 用 Less/style 条件及扩展名解析导入，样式文件再把 URL 重定位到根文件；JS 插件仅返回路径。 */
   const viteLessResolve = async (
     filename: string,
     dir: string,
@@ -3100,10 +3112,12 @@ const makeLessWorker = (
         rootFile: string,
       ): Less.Plugin => {
         const { FileManager } = less
-        ViteLessManager ??= class ViteManager extends FileManager {
+        ViteLessManager ??=
+          /** Less FileManager 子类：远程 URL 留给 Less，本地导入优先使用 Vite resolver 和 URL rebase。 */
+          class ViteManager extends FileManager {
           /** 触发 Less 导入解析的根入口文件。 */
           rootFile
-          /** function Object() { [native code] } */
+          /** 保存导入根文件，供 Less resolver 判断当前解析入口。 */
           constructor(rootFile: string) {
             super()
             this.rootFile = rootFile
@@ -3204,7 +3218,7 @@ const lessProcessor = (
   let worker: ReturnType<typeof makeLessWorker> | undefined
 
   return {
-    /** 停止 Less worker，释放线程池。 */
+    /** 发起 Less worker stop；本包装不返回或等待 stop 的结果。 */
     close() {
       worker?.stop()
     },
@@ -3330,7 +3344,7 @@ const stylProcessor = (
   let worker: ReturnType<typeof makeStylWorker> | undefined
 
   return {
-    /** 停止 Stylus worker，释放线程池。 */
+    /** 发起 Stylus worker stop；本包装不返回或等待 stop 的结果。 */
     close() {
       worker?.stop()
     },
@@ -3379,7 +3393,7 @@ const stylProcessor = (
   }
 }
 
-/** 把 Stylus 生成的路径和 sourceRoot 归一化为 Vite 可合并的 sourcemap。 */
+/** 克隆 Stylus sourcemap，将 file/sources 按项目 root 还原为规范绝对路径；保留其他字段。 */
 function formatStylusSourceMap(
   mapBefore: ExistingRawSourceMap | undefined,
   root: string,
@@ -3387,7 +3401,7 @@ function formatStylusSourceMap(
   if (!mapBefore) return undefined
   const map = { ...mapBefore }
 
-  /** 把 Stylus sourcemap 中相对 sourceRoot 的路径还原为绝对文件路径。 */
+  /** 将 Stylus 的 file/source 路径按传入的项目 root 解析并统一路径分隔符。 */
   const resolveFromRoot = (p: string | null) =>
     normalizePath(path.resolve(root, p!))
 
@@ -3401,7 +3415,7 @@ function formatStylusSourceMap(
 }
 // #endregion Stylus
 
-/** 读取 sourcemap 引用的源文件，并递归合并其上游映射。 */
+/** 应用 additionalData：函数完全决定新内容与映射；字符串前置到源码，按需生成 MagicString map。 */
 async function getSource(
   source: string,
   filename: string,
@@ -3410,8 +3424,8 @@ async function getSource(
   sep: string = '',
 ): Promise<{
   /** 追加用户 additionalData 后的完整源码。 */
-  content: string;
-  /** additionalData 回调提供或合并后的源码映射。 */
+  content: string
+  /** additionalData 回调提供，或为前置字符串生成的映射；此处不合并编译映射。 */
   map?: ExistingRawSourceMap
 }> {
   if (!additionalData) return { content: source }
@@ -3456,7 +3470,7 @@ const createPreprocessorWorkerController = (maxWorkers: number | undefined) => {
       return scss.process(environment, source, root, opts, resolvers)
     }
 
-  /** 并行关闭 Sass、Less 与 Stylus 处理器持有的 worker。 */
+  /** 调用三类处理器 close；等待 Sass dispose，Less/Stylus 包装只发起 stop。 */
   const close = async () => {
     await Promise.all([less.close(), scss.close(), styl.close()])
   }
@@ -3471,7 +3485,7 @@ const createPreprocessorWorkerController = (maxWorkers: number | undefined) => {
   } as const satisfies Record<PreprocessLang | 'close', unknown>
 }
 
-/** 把布尔或数字 worker 配置换算为实际并发数，并保留主线程容量。 */
+/** undefined 转为主线程上限 0，true 转为 helper 自动选择上限，数字原样传递。 */
 const normalizeMaxWorkers = (maxWorker: number | true | undefined) => {
   if (maxWorker === undefined) return 0
   if (maxWorker === true) return undefined
@@ -3518,7 +3532,7 @@ async function compileLightningCSS(
   code: string
   /** 与转换后代码对应的 sourcemap。 */
   map?: string | undefined
-  /** CSS Modules 的原类名到导出名映射。 */
+  /** CSS Modules 的导出键到实际 scoped class 字符串映射，composes 可在值中拼入多个类名。 */
   modules?: Record<string, string>
 }> {
   const { config } = environment
@@ -3542,7 +3556,7 @@ async function compileLightningCSS(
           // CSS Modules 生成 scoped name 时需要稳定 projectRoot，避免 cwd 改变 hash。
           projectRoot: config.root,
           resolver: {
-            /** 读取 Lightning CSS 请求的依赖文件，并把访问记录到构建依赖集合。 */
+            /** 读取依赖并按语言预处理，合并预处理器的新增依赖；文件本身在 resolve/依赖结果阶段登记。 */
             async read(filePath) {
               if (filePath === filename) {
                 return src
@@ -3770,7 +3784,7 @@ function getLightningCssErrorMessageForIeSyntaxes(
 // https://esbuild.github.io/api/#target
 // https://github.com/parcel-bundler/lightningcss/blob/master/node/targets.d.ts
 
-/** 把 browserslist 浏览器名称映射为 Lightning CSS 使用的目标键。 */
+/** 把 esbuild target 中的运行时名称映射为 Lightning CSS 浏览器键，忽略无 CSS 目标的运行时。 */
 const map: Record<
   string,
   keyof NonNullable<LightningCSSOptions['targets']> | false | undefined
@@ -3839,7 +3853,7 @@ const esRE = /es(6|\d{4})/
 /** 判断目标名称是否含显式版本号，辅助浏览器目标转换。 */
 const versionRE = /\d/
 
-/** 缓存 browserslist 到 Lightning CSS targets 的转换结果。 */
+/** 缓存 esbuild target 到 Lightning CSS targets 的转换结果；数组输入按引用作为键。 */
 const convertTargetsCache = new Map<
   string | string[],
   LightningCSSOptions['targets']

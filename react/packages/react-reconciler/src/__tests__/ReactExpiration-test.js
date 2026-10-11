@@ -71,7 +71,7 @@ describe('ReactExpiration', () => {
       }
     };
 
-    /** 将资源原子转为 resolved、唤醒等待者并清理 timer/promise；未读取过的文本直接写入已解决记录。 */
+    /** 先 resolve 原生 Promise，再写入 resolved 并清理 timer/promise；Promise 回调在微任务中读取已更新记录。未读取过的文本直接写入已解决记录。 */
     resolveText = text => {
       const record = textCache.get(text);
       if (record !== undefined) {
@@ -148,7 +148,7 @@ describe('ReactExpiration', () => {
     expect(ReactNoop).toMatchRenderedOutput('Step 2');
   });
 
-  /** Given–When–Then：Given同优先级 A 在一个事件中开始但被中断，随后安排 B；When分别模拟跨事件与没有中间工作两种路径；Then调度器将同事件窗口内的更新批为一次并只提交 B。通过 render/commit 日志验证事件时间缓存。 */
+  /** Given–When–Then：Given 第一轮先以 transition 渲染 A 并被另一根的同步工作打断，再普通更新为 B；第二轮连续普通更新 A/B；When 冲刷两轮；Then 都只提交 B，第一轮已有 A 的 render 日志，第二轮没有。 */
   it('two updates of like priority in the same event always flush within the same batch', async () => {
     /** 以 render/commit 双日志标记更新是否只是计算、还是已经提交到宿主根。 */
     class TextClass extends React.Component {
@@ -167,7 +167,7 @@ describe('ReactExpiration', () => {
       }
     }
 
-    /** 在独立 root 执行空 flushSync，用同步工作中断当前异步 render 而不改变被测根。 */
+    /** 在独立的 other-root 同步渲染 null，中断被测根的并发 render；同步写入发生在另一根。 */
     function interrupt() {
       ReactNoop.flushSync(() => {
         ReactNoop.renderToRootWithID(null, 'other-root');
@@ -189,7 +189,7 @@ describe('ReactExpiration', () => {
     assertLog([]);
     expect(ReactNoop).toMatchRenderedOutput(null);
 
-    // 安排第二条同优先级更新。
+    // 安排普通 B 更新；第二轮的 A/B 都采用普通更新入口。
     ReactNoop.render(<TextClass text="B" />);
     // 两条更新被同一批次处理。
     await waitForAll(['B [render]', 'B [commit]']);
@@ -201,14 +201,14 @@ describe('ReactExpiration', () => {
     Scheduler.unstable_advanceTime(2000);
     assertLog([]);
     expect(ReactNoop).toMatchRenderedOutput(<span prop="B" />);
-    // 安排第二条同优先级更新。
+    // 安排普通 B 更新；第二轮的 A/B 都采用普通更新入口。
     ReactNoop.render(<TextClass text="B" />);
     // 从调度器视角，两条更新可能发生在同一事件中，
     // 因此必须在同一批次冲刷。
     await waitForAll(['B [render]', 'B [commit]']);
   });
 
-  /** Given–When–Then：Given同优先级 A/B 之间额外执行另一个 root 的 flushSync；When不让出当前事件再安排 B；Then同步工作不会重置事件时间，A/B 仍属于同一批次。通过仅出现 B render/commit 验证 currentEventTime 边界。 */
+  /** Given–When–Then：Given 第一轮 transition A 已 render，第二轮普通 A 尚未 render；When 两轮都插入 other-root 的同步 null 更新后普通更新为 B；Then 两轮都只提交 B，验证另一根的同步更新不会迫使被测根先提交 A。 */
   it(
     'two updates of like priority in the same event always flush within the ' +
       "same batch, even if there's a sync update in between",
@@ -230,7 +230,7 @@ describe('ReactExpiration', () => {
         }
       }
 
-    /** 在独立 root 执行空 flushSync，用同步工作中断当前异步 render 而不改变被测根。 */
+    /** 在独立的 other-root 同步渲染 null，中断被测根的并发 render；同步写入发生在另一根。 */
       function interrupt() {
         ReactNoop.flushSync(() => {
           ReactNoop.renderToRootWithID(null, 'other-root');
@@ -253,7 +253,7 @@ describe('ReactExpiration', () => {
       assertLog([]);
       expect(ReactNoop).toMatchRenderedOutput(null);
 
-      // 安排第二条同优先级更新。
+      // 安排普通 B 更新；第二轮的 A/B 都采用普通更新入口。
       ReactNoop.render(<TextClass text="B" />);
       // 两条更新仍归入同一批次。
       await waitForAll(['B [render]', 'B [commit]']);
@@ -270,7 +270,7 @@ describe('ReactExpiration', () => {
       // 当前处于同一事件。
       interrupt();
 
-      // 安排第二条同优先级更新。
+      // 安排普通 B 更新；第二轮的 A/B 都采用普通更新入口。
       ReactNoop.render(<TextClass text="B" />);
       // 从调度器视角，两条更新可能来自同一事件，
       // 因此仍应同批冲刷。
@@ -278,7 +278,7 @@ describe('ReactExpiration', () => {
     },
   );
 
-  /** Given–When–Then：Given四个 Connected 的 text=1 transition 只渲染 A/B；When未推进时间又安排 text=2；Then新更新获得不同 lane，当前轮 C/D 继续使用 1。通过分片日志验证正在渲染的 expiration time 不会被新更新复用。 */
+  /** Given–When–Then：Given四个 Connected 的 text=1 transition 只渲染 A/B；When未推进时间又安排 text=2；Then新更新获得不同 lane，当前轮 C/D 继续使用 1。通过分片日志验证后到的 transition 更新不会改变正在进行的渲染所使用的状态。 */
   it('cannot update at the same expiration time that is already rendering', async () => {
     const store = {text: 'initial'};
     const subscribers = [];
@@ -338,7 +338,7 @@ describe('ReactExpiration', () => {
     await waitFor(['1 [A] [render]', '1 [B] [render]']);
 
     // 第一轮尚未完成就再次更新。即使时间没有推进，
-    // 新更新也必须取得不同于当前 render 的 expiration time；
+    // 本例后到更新位于另一 transition lane，并暂存到并发队列；
     // 因此 C/D 继续渲染 1，而不是吸收 2。
     React.startTransition(() => {
       subscribers.forEach(s => s.setState({text: '2'}));
@@ -407,10 +407,9 @@ describe('ReactExpiration', () => {
     expect(root).toMatchRenderedOutput('ABCDE');
   });
 
-  /** Given–When–Then：Given在导入 renderer 前把 Scheduler 时间推进到超过 31 位位运算范围；When模块初始化后安排 Step 2 并继续推进 10 秒；Then初始大时间不导致溢出式立即过期，后续相对时间仍正确。通过两次 expired 检查验证时间原点归一化。 */
+  /** Given–When–Then：Given在导入 renderer 前把 Scheduler 时间推进到超过 31 位位运算范围；When模块初始化后安排 Step 2 并继续推进 10 秒；Then初始大时间不导致溢出式立即过期，后续相对时间仍正确。通过两次 expired 检查验证大时间戳下仍保留正常的过期窗口。 */
   it('should measure expiration times relative to module initialization', async () => {
-    // 覆盖 expiration time 通过
-    // 位运算计算的实现细节。
+    // 保留旧 expiration time 位运算溢出的回归输入；当前 lane 过期表保存数值时间戳。
 
     jest.resetModules();
     Scheduler = require('scheduler');
@@ -425,8 +424,7 @@ describe('ReactExpiration', () => {
     const maxSigned31BitInt = 1073741823;
     Scheduler.unstable_advanceTime(maxSigned31BitInt * 100);
 
-    // 此后导入 renderer；模块初始化会读取
-    // 当前时间作为相对原点。
+    // 在大时间戳下导入 renderer，再安排更新，检查它不会立即过期。
     ReactNoop = require('react-noop-renderer');
     React = require('react');
 
@@ -478,11 +476,13 @@ describe('ReactExpiration', () => {
     function App() {
       const [highPri, setHighPri] = useState(0);
       const [normalPri, setNormalPri] = useState(0);
+      /** 以 flushSync 增加高优先级计数，抢占正在进行的 normal transition。 */
       updateSyncPri = () => {
         ReactNoop.flushSync(() => {
           setHighPri(n => n + 1);
         });
       };
+      /** 增加 normal 计数；调用者用 startTransition 为这一更新选择 transition lane。 */
       updateNormalPri = () => setNormalPri(n => n + 1);
       return (
         <>
@@ -553,7 +553,9 @@ describe('ReactExpiration', () => {
     function App() {
       const [syncPri, setSyncPri] = useState(0);
       const [highPri, setIdlePri] = useState(0);
+      /** 同步增加计数，打断尚未完成的 idle render。 */
       updateSyncPri = () => ReactNoop.flushSync(() => setSyncPri(n => n + 1));
+      /** 在 idleUpdates 上下文中增加计数，观察长时间等待仍不转为 expired。 */
       updateIdlePri = () =>
         ReactNoop.idleUpdates(() => {
           setIdlePri(n => n + 1);
@@ -667,7 +669,7 @@ describe('ReactExpiration', () => {
     });
   });
 
-  /** Given–When–Then：Given transition 的 A1 因 thenable 挂起并等待 10 秒；When promise 解决后先恢复到 A1，再让 CPU 工作继续等待 10 秒；Then IO 等待不计入过期，恢复后的 CPU 饥饿才使 B/C 无让出完成。通过 Suspense 日志验证 ping 后重置过期基准。 */
+  /** Given–When–Then：Given transition 的 A1 因 thenable 挂起并等待 10 秒；When promise 解决后先恢复到 A1，再让 CPU 工作继续等待 10 秒；Then IO 等待不计入过期，恢复后的 CPU 饥饿才使 B/C 无让出完成。通过 Suspense 日志验证挂起等待期间不按 CPU 饥饿冲刷；恢复后的工作仍可按新过期窗口完成。 */
   it('updates do not expire while they are IO-bound', async () => {
     const {Suspense} = React;
 

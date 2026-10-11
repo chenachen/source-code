@@ -3,7 +3,7 @@ import { getModuleTypeFromId } from '../transformRequest'
 
 describe('getModuleTypeFromId', () => {
   /**
-   * 场景：变换管线只拿到模块 ID，需要从最后一个扩展名推断交给 Module Runner 的模块类型。
+   * 场景：变换管线只拿到模块 ID，需要按已知扩展名推断交给插件 transform 的 moduleType。
    * 目标：普通、复合文件名均返回末尾扩展名；无扩展名时不凭空猜测类型。
    * 机制：用表驱动用例固定输入/输出契约，避免新增模块类型时破坏基础回退行为。
    */

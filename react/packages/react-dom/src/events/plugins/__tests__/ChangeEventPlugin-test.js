@@ -18,19 +18,19 @@ let waitForAll;
 let waitForDiscrete;
 let assertLog;
 
-/** `setUntrackedChecked`：保存当前测试场景复用的夹具、状态或回调。 */
+/** 保存checkbox/radio原生checked setter，用测试绕过React自己的tracker赋值封装。 */
 const setUntrackedChecked = Object.getOwnPropertyDescriptor(
   HTMLInputElement.prototype,
   'checked',
 ).set;
 
-/** `setUntrackedValue`：保存当前测试场景复用的夹具、状态或回调。 */
+/** 保存input原生value setter，模拟DOM值变但tracker仍旧的用户输入。 */
 const setUntrackedValue = Object.getOwnPropertyDescriptor(
   HTMLInputElement.prototype,
   'value',
 ).set;
 
-/** `setUntrackedTextareaValue`：保存当前测试场景复用的夹具、状态或回调。 */
+/** 保存textarea原生value setter，覆盖独立原型的值追踪。 */
 const setUntrackedTextareaValue = Object.getOwnPropertyDescriptor(
   HTMLTextAreaElement.prototype,
   'value',
@@ -46,6 +46,7 @@ describe('ChangeEventPlugin', () => {
     // - 调用 `window.postMessage` 时，应实际触发 `message` 事件处理程序。
     const originalAddEventListener = global.addEventListener;
     let postMessageCallback;
+    /** 测试调度器替身截获message监听回调，其余事件转给旧addEventListener；本文件afterEach只移容器，未恢复这两个全局函数。 */
     global.addEventListener = function (eventName, callback, useCapture) {
       if (eventName === 'message') {
         postMessageCallback = callback;
@@ -53,6 +54,7 @@ describe('ChangeEventPlugin', () => {
         originalAddEventListener(eventName, callback, useCapture);
       }
     };
+    /** 用source/data构造简化postMessage事件并同步执行记录的message回调，targetOrigin未参与校验。 */
     global.postMessage = function (messageKey, targetOrigin) {
       const postMessageEvent = {source: window, data: messageKey};
       if (postMessageCallback) {
@@ -85,18 +87,11 @@ describe('ChangeEventPlugin', () => {
   // 本文件多数测试都会验证：React 能持续跟踪“当前”值，且仅在值变化时触发事件。
   // 参见 https://github.com/facebook/react/pull/5746。
 
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「should consider initial text value to be current」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：事件断言连接 DOMPluginEventSystem 的委托、合成与传播路径。
-   */
+  /** 文本input初始defaultValue=foo，不改值便连续派发input/change；onChange计数0，验证初始值已进入tracker而非首次事件必报。 */
   it('should consider initial text value to be current', async () => {
     let called = 0;
 
-    /** `cb`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 累计本例实际生成的合成change，并检查type已标准化为change；重复原生事件是否被去重由外层计数断言决定。 */
     function cb(e) {
       called++;
       expect(e.type).toBe('change');
@@ -115,11 +110,11 @@ describe('ChangeEventPlugin', () => {
     expect(called).toBe(0);
   });
 
-  /** 测试场景：验证「should consider initial text value to be current (capture)」描述的渲染、交互或错误处理结果。 */
+  /** 相同foo初值改用onChangeCapture，不改值派发input/change仍0次；验证capture同样应用值去重。 */
   it('should consider initial text value to be current (capture)', async () => {
     let called = 0;
 
-    /** `cb`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 累计本例实际生成的合成change，并检查type已标准化为change；重复原生事件是否被去重由外层计数断言决定。 */
     function cb(e) {
       called++;
       expect(e.type).toBe('change');
@@ -140,11 +135,11 @@ describe('ChangeEventPlugin', () => {
     expect(called).toBe(0);
   });
 
-  /** 测试场景：验证「should not invoke a change event for textarea same value」描述的渲染、交互或错误处理结果。 */
+  /** 初始textarea为initial，不改变value派发input/change，onChange为0；验证textarea初值跟踪。 */
   it('should not invoke a change event for textarea same value', async () => {
     let called = 0;
 
-    /** `cb`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 累计本例实际生成的合成change，并检查type已标准化为change；重复原生事件是否被去重由外层计数断言决定。 */
     function cb(e) {
       called++;
       expect(e.type).toBe('change');
@@ -162,11 +157,11 @@ describe('ChangeEventPlugin', () => {
     expect(called).toBe(0);
   });
 
-  /** 测试场景：验证「should not invoke a change event for textarea same value (capture)」描述的渲染、交互或错误处理结果。 */
+  /** 相同textarea场景使用capture handler，事件计数仍0，覆盖捕获阶段去重。 */
   it('should not invoke a change event for textarea same value (capture)', async () => {
     let called = 0;
 
-    /** `cb`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 累计本例实际生成的合成change，并检查type已标准化为change；重复原生事件是否被去重由外层计数断言决定。 */
     function cb(e) {
       called++;
       expect(e.type).toBe('change');
@@ -184,11 +179,11 @@ describe('ChangeEventPlugin', () => {
     expect(called).toBe(0);
   });
 
-  /** 测试场景：验证「should consider initial checkbox checked=true to be current」描述的渲染、交互或错误处理结果。 */
+  /** checkbox初始checked=true，原生setter暗设false再MouseEvent click自动变true；与tracker初始true相同故0次change，验证比较事件最终值。 */
   it('should consider initial checkbox checked=true to be current', async () => {
     let called = 0;
 
-    /** `cb`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 累计本例实际生成的合成change，并检查type已标准化为change；重复原生事件是否被去重由外层计数断言决定。 */
     function cb(e) {
       called++;
       expect(e.type).toBe('change');
@@ -213,11 +208,11 @@ describe('ChangeEventPlugin', () => {
     expect(called).toBe(0);
   });
 
-  /** 测试场景：验证「should consider initial checkbox checked=false to be current」描述的渲染、交互或错误处理结果。 */
+  /** checkbox初始false，原生setter暗设true后click自动变false；0次change，覆盖相反初值的去重。 */
   it('should consider initial checkbox checked=false to be current', async () => {
     let called = 0;
 
-    /** `cb`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 累计本例实际生成的合成change，并检查type已标准化为change；重复原生事件是否被去重由外层计数断言决定。 */
     function cb(e) {
       called++;
       expect(e.type).toBe('change');
@@ -242,11 +237,11 @@ describe('ChangeEventPlugin', () => {
     expect(called).toBe(0);
   });
 
-  /** 测试场景：验证「should fire change for checkbox input」描述的渲染、交互或错误处理结果。 */
+  /** 普通checkbox初始false，两个MouseEvent click分别切true/false并各触发一次change；验证点击默认行为与tracker更新。 */
   it('should fire change for checkbox input', async () => {
     let called = 0;
 
-    /** `cb`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 累计本例实际生成的合成change，并检查type已标准化为change；重复原生事件是否被去重由外层计数断言决定。 */
     function cb(e) {
       called++;
       expect(e.type).toBe('change');
@@ -276,11 +271,11 @@ describe('ChangeEventPlugin', () => {
     expect(called).toBe(2);
   });
 
-  /** 测试场景：验证「should not fire change setting the value programmatically」描述的渲染、交互或错误处理结果。 */
+  /** 直接赋input.value=bar同时更新tracker，input事件不报；原生setter改foo绕过tracker后报一次，再重复input不报，验证程序赋值与用户模拟的差别。 */
   it('should not fire change setting the value programmatically', async () => {
     let called = 0;
 
-    /** `cb`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 累计本例实际生成的合成change，并检查type已标准化为change；重复原生事件是否被去重由外层计数断言决定。 */
     function cb(e) {
       called++;
       expect(e.type).toBe('change');
@@ -316,11 +311,11 @@ describe('ChangeEventPlugin', () => {
     expect(called).toBe(1);
   });
 
-  /** 测试场景：验证「should not distinguish equal string and number values」描述的渲染、交互或错误处理结果。 */
+  /** 初始文本42，直接赋数字42再input；DOM字符串42且change0次，验证tracker按字符串化后的值比较。 */
   it('should not distinguish equal string and number values', async () => {
     let called = 0;
 
-    /** `cb`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 累计本例实际生成的合成change，并检查type已标准化为change；重复原生事件是否被去重由外层计数断言决定。 */
     function cb(e) {
       called++;
       expect(e.type).toBe('change');
@@ -344,11 +339,12 @@ describe('ChangeEventPlugin', () => {
   });
 
   // 详细原因参见上方相似的 `input` 测试。
-  /** 测试场景：验证「should not fire change when setting checked programmatically」描述的渲染、交互或错误处理结果。 */
+
+  /** 直接checked=true更新tracker，再原生setter设false后click回true不报；下一普通click变false才报一次，验证程序赋值后当前checked基线。 */
   it('should not fire change when setting checked programmatically', async () => {
     let called = 0;
 
-    /** `cb`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 累计本例实际生成的合成change，并检查type已标准化为change；重复原生事件是否被去重由外层计数断言决定。 */
     function cb(e) {
       called++;
       expect(e.type).toBe('change');
@@ -379,7 +375,7 @@ describe('ChangeEventPlugin', () => {
     expect(called).toBe(1);
   });
 
-  /** 测试场景：验证「should unmount」描述的渲染、交互或错误处理结果。 */
+  /** 挂载普通input后act卸载，不额外检查旧节点tracker或DOM身份；主要验证该清理流程不抛错。 */
   it('should unmount', async () => {
     const root = ReactDOMClient.createRoot(container);
     await act(() => {
@@ -393,11 +389,11 @@ describe('ChangeEventPlugin', () => {
     });
   });
 
-  /** 测试场景：验证「should only fire change for checked radio button once」描述的渲染、交互或错误处理结果。 */
+  /** 原生setter把radio checked改true，连续派两个普通Event click但不再改值；只有一次change，验证checked事件去重。 */
   it('should only fire change for checked radio button once', async () => {
     let called = 0;
 
-    /** `cb`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 累计本例实际生成的合成change，并检查type已标准化为change；重复原生事件是否被去重由外层计数断言决定。 */
     function cb(e) {
       called++;
       expect(e.type).toBe('change');
@@ -416,18 +412,18 @@ describe('ChangeEventPlugin', () => {
     expect(called).toBe(1);
   });
 
-  /** 测试场景：验证「should track radio button cousins in a group」描述的渲染、交互或错误处理结果。 */
+  /** 同name两个radio依次click第一、第二、第一；计数2/1，验证自动取消兄弟选中后其tracker基线也同步，回选仍被识别。 */
   it('should track radio button cousins in a group', async () => {
     let called1 = 0;
     let called2 = 0;
 
-    /** `cb1`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 累计第一个radio收到的change，并检查合成type。 */
     function cb1(e) {
       called1++;
       expect(e.type).toBe('change');
     }
 
-    /** `cb2`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 累计第二个radio收到的change，并检查合成type。 */
     function cb2(e) {
       called2++;
       expect(e.type).toBe('change');
@@ -464,11 +460,11 @@ describe('ChangeEventPlugin', () => {
     expect(called2).toBe(1);
   });
 
-  /** 测试场景：验证「should deduplicate input value change events」描述的渲染、交互或错误处理结果。 */
+  /** 依次测试range/number/text，每类型分别用全change、全input与混合事件三独立根；原生setter改42只有一有效变化，初始及重复事件不报，验证跨原生类型共享tracker去重。 */
   it('should deduplicate input value change events', async () => {
     let called = 0;
 
-    /** `cb`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 累计本例实际生成的合成change，并检查type已标准化为change；重复原生事件是否被去重由外层计数断言决定。 */
     function cb(e) {
       called++;
       expect(e.type).toBe('change');
@@ -551,11 +547,11 @@ describe('ChangeEventPlugin', () => {
     }
   });
 
-  /** 测试场景：验证「should listen for both change and input events when supported」描述的渲染、交互或错误处理结果。 */
+  /** range原生setter先10并input、再20并change；计数2，验证支持input与change两条提取入口。 */
   it('should listen for both change and input events when supported', async () => {
     let called = 0;
 
-    /** `cb`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 累计本例实际生成的合成change，并检查type已标准化为change；重复原生事件是否被去重由外层计数断言决定。 */
     function cb(e) {
       called++;
       expect(e.type).toBe('change');
@@ -577,11 +573,11 @@ describe('ChangeEventPlugin', () => {
     expect(called).toBe(2);
   });
 
-  /** 测试场景：验证「should only fire events when the value changes for range inputs」描述的渲染、交互或错误处理结果。 */
+  /** range从初值改40，随后赋非法foo被DOM规范化；每次input/change成对只报一次，共2次，验证按实际规范化value判断并跨事件去重。 */
   it('should only fire events when the value changes for range inputs', async () => {
     let called = 0;
 
-    /** `cb`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 累计本例实际生成的合成change，并检查type已标准化为change；重复原生事件是否被去重由外层计数断言决定。 */
     function cb(e) {
       called++;
       expect(e.type).toBe('change');
@@ -604,18 +600,21 @@ describe('ChangeEventPlugin', () => {
     expect(called).toBe(2);
   });
 
-  /** 测试场景：验证「does not crash for nodes with custom value property」描述的渲染、交互或错误处理结果。 */
+  /** 临时createElement给节点自定义空get/set value，input挂载、更新、change与卸载都可执行；finally还原createElement，验证不能安装tracker时不崩溃。 */
   it('does not crash for nodes with custom value property', async () => {
     let originalCreateElement;
     // https://github.com/facebook/react/issues/10196
     try {
       originalCreateElement = document.createElement;
+      /** 保留原createElement的this/arguments，给所有创建节点加自有value访问器，制造无法正常安装tracker的情形；外层finally恢复。 */
       document.createElement = function () {
         const node = originalCreateElement.apply(this, arguments);
         Object.defineProperty(node, 'value', {
-          /** `get`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+          /** 自定义value getter返回undefined，不提供标准DOM字符串读取。 */
           get() {},
-          /** `set`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+          /** 自定义value setter忽略赋值，使tracker安装必须避开已有自有属性。 */
           set() {},
         });
         return node;
@@ -646,18 +645,22 @@ describe('ChangeEventPlugin', () => {
   });
 
   describe('concurrent mode', () => {
-    /** 测试场景：验证「text input」描述的渲染、交互或错误处理结果。 */
+
+    /** 受控text初始异步挂载，原生setter改changed后input立即触发更新；最终DOM为派生changed [!]，验证事件批结束提交并恢复受控输出。 */
     it('text input', async () => {
       const root = ReactDOMClient.createRoot(container);
       let input;
 
-      /** `ControlledInput`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+      /** 受控input把state changed派生为changed [!]，用于检查事件结束恢复。 */
       class ControlledInput extends React.Component {
-        /** `ControlledInput.state`：记录测试夹具在当前场景中的状态。 */
+
+        /** 保存输入原始state值，初始initial。 */
         state = {value: 'initial'};
-        /** `ControlledInput.onChange`：封装当前用例复用的操作、回调或断言步骤。 */
+
+        /** 立即捕获event.target.value并排state更新。 */
         onChange = event => this.setState({value: event.target.value});
-        /** `ControlledInput.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 记录原始state而把派生value送input，ref暴露实际DOM。 */
         render() {
           Scheduler.log(`render: ${this.state.value}`);
           const controlledValue =
@@ -693,20 +696,23 @@ describe('ChangeEventPlugin', () => {
       expect(input.value).toBe('changed [!]');
     });
 
-    /** 测试场景：验证「checkbox input」描述的渲染、交互或错误处理结果。 */
+    /** 受控checkbox先正常checked再reverse输出反值，click更新后DOM遵循派生checked而非原生切换值；验证checked恢复与反向受控输出。 */
     it('checkbox input', async () => {
       const root = ReactDOMClient.createRoot(container);
       let input;
 
-      /** `ControlledInput`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+      /** 可反转受控checked输出的类，区分state与主机最终checked。 */
       class ControlledInput extends React.Component {
-        /** `ControlledInput.state`：记录测试夹具在当前场景中的状态。 */
+
+        /** 初始checked state为false。 */
         state = {checked: false};
-        /** `ControlledInput.onChange`：封装当前用例复用的操作、回调或断言步骤。 */
+
+        /** 读取事件当时target.checked并写state。 */
         onChange = event => {
           this.setState({checked: event.target.checked});
         };
-        /** `ControlledInput.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 按reverse决定输出checked是否取反，记录state而非派生值。 */
         render() {
           Scheduler.log(`render: ${this.state.checked}`);
           const controlledValue = this.props.reverse
@@ -753,18 +759,21 @@ describe('ChangeEventPlugin', () => {
       expect(input.checked).toBe(false);
     });
 
-    /** 测试场景：验证「textarea」描述的渲染、交互或错误处理结果。 */
+    /** 受控textarea初始异步挂载，原生setter改changed并input后同步日志及DOM changed [!]；覆盖textarea受控恢复。 */
     it('textarea', async () => {
       const root = ReactDOMClient.createRoot(container);
       let textarea;
 
-      /** `ControlledTextarea`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+      /** textarea受控输出fixture，使用其独立value原型。 */
       class ControlledTextarea extends React.Component {
-        /** `ControlledTextarea.state`：记录测试夹具在当前场景中的状态。 */
+
+        /** 初始文本状态为initial。 */
         state = {value: 'initial'};
-        /** `ControlledTextarea.onChange`：封装当前用例复用的操作、回调或断言步骤。 */
+
+        /** 把event.target.value捕获进state。 */
         onChange = event => this.setState({value: event.target.value});
-        /** `ControlledTextarea.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 将changed转changed [!]并记录render，检验受控textarea输出覆盖用户原值。 */
         render() {
           Scheduler.log(`render: ${this.state.value}`);
           const controlledValue =
@@ -800,18 +809,21 @@ describe('ChangeEventPlugin', () => {
       expect(textarea.value).toBe('changed [!]');
     });
 
-    /** 测试场景：验证「parent of input」描述的渲染、交互或错误处理结果。 */
+    /** input自身onChange为空，祖先div handler读input.target.value更新；事件后DOM changed [!]，验证合成change冒泡及批结束受控恢复。 */
     it('parent of input', async () => {
       const root = ReactDOMClient.createRoot(container);
       let input;
 
-      /** `ControlledInput`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+      /** 让change在祖先div更新state的受控inputfixture。 */
       class ControlledInput extends React.Component {
-        /** `ControlledInput.state`：记录测试夹具在当前场景中的状态。 */
+
+        /** 保存祖先读取到的原输入值。 */
         state = {value: 'initial'};
-        /** `ControlledInput.onChange`：封装当前用例复用的操作、回调或断言步骤。 */
+
+        /** 读取冒泡事件target.value并更新父state。 */
         onChange = event => this.setState({value: event.target.value});
-        /** `ControlledInput.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 在div装onChange，input只保留空handler避免受控警告；value派生后由提交恢复。 */
         render() {
           Scheduler.log(`render: ${this.state.value}`);
           const controlledValue =
@@ -851,22 +863,26 @@ describe('ChangeEventPlugin', () => {
       expect(input.value).toBe('changed [!]');
     });
 
-    /** 测试场景：验证「is sync for non-input events」描述的渲染、交互或错误处理结果。 */
+    /** 受控input以普通onClick重置state，派click后等离散微任务，DOM为空；验证非Change插件事件导致的更新也能完成受控值提交。 */
     it('is sync for non-input events', async () => {
       const root = ReactDOMClient.createRoot(container);
       let input;
 
-      /** `ControlledInput`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+      /** 除了onChange还用onClick清空受控文本，比较非input事件更新。 */
       class ControlledInput extends React.Component {
-        /** `ControlledInput.state`：记录测试夹具在当前场景中的状态。 */
+
+        /** 保存初始文本state。 */
         state = {value: 'initial'};
-        /** `ControlledInput.onChange`：封装当前用例复用的操作、回调或断言步骤。 */
+
+        /** 把input的change目标值送state。 */
         onChange = event => this.setState({value: event.target.value});
-        /** `ControlledInput.reset`：封装当前用例复用的操作、回调或断言步骤。 */
+
+        /** click时将state设空字符串，后续提交驱动受控value。 */
         reset = () => {
           this.setState({value: ''});
         };
-        /** `ControlledInput.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 记录state并输出受控value，同时连接change与click两个事件入口。 */
         render() {
           Scheduler.log(`render: ${this.state.value}`);
           const controlledValue =
@@ -902,14 +918,15 @@ describe('ChangeEventPlugin', () => {
       expect(input.value).toBe('');
     });
 
-    /** 测试场景：验证「mouse enter/leave should be user-blocking but not discrete」描述的渲染、交互或错误处理结果。 */
+    /** mouseover触发onMouseEnter设hover=true，handler后的flushSync仍读not hovered，act最终读hovered；验证连续事件更新不属于该同步冲刷优先级，本例未派mouseleave。 */
     it('mouse enter/leave should be user-blocking but not discrete', async () => {
       const {useState} = React;
 
       const root = ReactDOMClient.createRoot(container);
 
       const target = React.createRef(null);
-      /** `Foo`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /** 用鼠标enter/leave更新hover显示，连续事件应等act刷新而不被无callback flushSync强制提交。 */
       function Foo() {
         const [isHover, setHover] = useState(false);
         return (

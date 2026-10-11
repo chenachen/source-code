@@ -8,10 +8,6 @@ const defines = viteConfig.define
 const envDefines = viteConfig.environments.client.define
 
 /** 覆盖表达式、字符串/数值/对象、process.env、特殊标识符及 per-environment define。 */
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “await page.textContent('.exp')”。
- * 验证目标：“await page.textContent('.exp')” 应等于 “String(typeof eval(defines.__EXP__))”；“await page.textContent('.string')” 应等于 “JSON.parse(defines.__STRING__)”，从而确认define 只替换语法上的标识符/成员表达式，不破坏字符串与可选链。
- */
 test('string', async () => {
   expect(await page.textContent('.exp')).toBe(
     String(typeof eval(defines.__EXP__)),
@@ -61,11 +57,7 @@ test('string', async () => {
   )
 })
 
-/** define 只改 AST 表达式，字符串中的同名文本和拆开的 import.meta.hot 不应改变。 */
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “await page.textContent('.ignores-string-literals .process-env-dot')”。
- * 验证目标：“await page.textContent('.ignores-string-literals .process-env-dot')” 应等于 “'process.env.'”；“await page.textContent('.ignores-string-literals .global-process-env-dot')” 应等于 “'global.process.env.'”，从而确认define 只替换语法上的标识符/成员表达式，不破坏字符串与可选链。
- */
+/** 字符串中的同名文本和拆开的 import.meta.hot 不应被 define 改写。 */
 test('ignores constants in string literals', async () => {
   expect(
     await page.textContent('.ignores-string-literals .process-env-dot'),
@@ -97,10 +89,6 @@ test('ignores constants in string literals', async () => {
 })
 
 /** 模板字面量静态文本保持不变，但 `${...}` 表达式内部仍要替换。 */
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “await page.textContent( '.replaces-constants-in-template-literal-expressions .process-env-dot', )”。
- * 验证目标：“await page.textContent( '.replaces-constants-in-template-literal-expressions .process-env-dot', )” 应等于 “JSON.parse(defines['process.env.SOMEVAR'])”；“await page.textContent( '.replaces-constants-in-template-literal-expressions .process-env-NODE_ENV', )” 应等于 “'dev'”，从而确认define 只替换语法上的标识符/成员表达式，不破坏字符串与可选链。
- */
 test('replaces constants in template literal expressions', async () => {
   expect(
     await page.textContent(
@@ -115,10 +103,6 @@ test('replaces constants in template literal expressions', async () => {
 })
 
 /** import.meta.env define 可引用 undefined 或其他源码标识符，不要求自身是 JSON。 */
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “await page.textContent( '.replace-undefined-constants-on-import-meta-env .import-meta-env-UNDEFINED', )”。
- * 验证目标：“await page.textContent( '.replace-undefined-constants-on-import-meta-env .import-meta-env-UNDEFINED', )” 应等于 “'undefined'”；“await page.textContent( '.replace-undefined-constants-on-import-meta-env .import-meta-env-SOME_IDENTIFIE…” 应等于 “'true'”，从而确认define 只替换语法上的标识符/成员表达式，不破坏字符串与可选链。
- */
 test('replace constants on import.meta.env when it is a invalid json', async () => {
   expect(
     await page.textContent(
@@ -132,23 +116,14 @@ test('replace constants on import.meta.env when it is a invalid json', async () 
   ).toBe('true')
 })
 
-/** 快速 pattern 需要识别 `process?.env` 可选链，不能因 `?.` 漏掉 transform。 */
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “await page.textContent('.optional-env')”。
- * 验证目标：“await page.textContent('.optional-env')” 应等于 “JSON.parse(defines['process.env.SOMEVAR'])”，从而确认define 只替换语法上的标识符/成员表达式，不破坏字符串与可选链。
- */
+/** 普通属性与 `process?.env` 可选链读取相同的用户 define 值。 */
 test('optional values are detected by pattern properly', async () => {
   expect(await page.textContent('.optional-env')).toBe(
     JSON.parse(defines['process.env.SOMEVAR']),
   )
 })
 
-// bundled-dev 的 `?query` env 入口当前不注入 __DEFINES__，该模式单独跳过。
-/** 普通 dev 中带 query 的 `@vite/env` 仍应识别为同一注入入口（#20998）。 */
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “await page.textContent('.env-with-query')”。
- * 验证目标：“await page.textContent('.env-with-query')” 应等于 “'success'”，从而确认define 只替换语法上的标识符/成员表达式，不破坏字符串与可选链。
- */
+/** 场景：入口导入带 query 的 @vite/env，读取页面success；非bundledDev矩阵执行，bundledDev skip（#20998）。 */
 test.skipIf(isBundledDev)(
   'env import with query parameters works correctly',
   async () => {

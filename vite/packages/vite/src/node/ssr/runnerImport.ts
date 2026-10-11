@@ -13,7 +13,8 @@ interface RunnerImportResult<T> {
 
 /**
  * 创建一次性的默认 server Environment，通过 Vite 插件链导入任意文件，并返回
- * 所有 internalized 依赖文件；完成后无论成功失败都关闭环境。
+ * 所有 internalized 依赖文件。init 成功后，导入或依赖收集无论成功失败都关闭环境；
+ * init 自身位于 try/finally 之前，其失败不会进入这里的关闭分支。
  * @experimental
  */
 export async function runnerImport<T>(

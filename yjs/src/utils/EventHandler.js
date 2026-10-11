@@ -11,6 +11,7 @@ export class EventHandler {
   /** 创建空监听器列表；列表对象后续可能由移除操作整体替换。 */
   constructor () {
     /**
+     * 当前调用列表。添加原地 push，单项移除改用新数组，全量移除原地置零；调用者不应把旧数组当作长期订阅句柄。
      * @type {Array<function(ARG0, ARG1):void>}
      */
     this.l = []
@@ -19,6 +20,8 @@ export class EventHandler {
 
 /**
  * 创建无监听器的事件处理器。
+ *
+ * YType 为直接 observer 与 deep observer 分别持有处理器，事件参数由事务通知阶段提供。
  *
  * @template ARG0,ARG1
  * @returns {EventHandler<ARG0,ARG1>}
@@ -76,6 +79,7 @@ export const removeAllEventHandlerListeners = eventHandler => {
  * 按注册顺序调用全部监听器，并把两个参数原样传入。
  *
  * `lib0/function.callAll` 保证某个监听器抛错时仍会尝试其余监听器，最后再传播错误。
+ * 调用同步执行；传入的是当前数组引用，移除操作若替换了处理器数组，不会回头改动已开始调用的旧数组。
  *
  * @template ARG0,ARG1
  * @param {EventHandler<ARG0,ARG1>} eventHandler

@@ -393,7 +393,7 @@ describe('Activity Suspense', () => {
 
   /**
    * Given hidden Activity 已提交异步文本 A；When Transition 把内部 state 更新到未解析 B；
-   * Then 更新可在后台挂起而不影响可见树。验证隐藏更新被标记为 Offscreen 工作而非前台 fallback。
+   * Then act 调用能完成而不抛错；本例没有更新后的日志/宿主快照或 lane 位断言，不能由它单独证明后台状态终态。
    */
   test('update that suspends inside hidden tree', async () => {
     let setText;
@@ -492,7 +492,7 @@ describe('Activity Suspense', () => {
   });
 
   /**
-   * Given visible 树正在并发 render 为 hidden，且内外 state 必须成对更新；When render 未提交前又发生同 lane 事件；
+   * Given visible 树正在并发 render 为 hidden，且内外 state 必须成对更新；When render 未提交前又发生第二组 transition 更新；
    * Then 内部更新原子排队，揭示时只处理与已提交 outer 匹配的版本，最终再收敛到第二组值，无 tearing。
    * 验证机制：分片 waitFor/waitForPaint、effect 一致性日志与树输出；对应隐藏祖先检测和并发 update queue 原子转移。
    */
@@ -606,7 +606,7 @@ describe('Activity Suspense', () => {
         root.render(<App show={true} />);
       });
       assertLog([
-        // Inner 有两个同 lane pending 更新，但这里只能处理第一个；若错误处理第二个，Inner 会与 Outer 不一致。
+        // Inner 有两组 pending transition 更新，但这里只能处理第一个；若错误处理第二个，Inner 会与 Outer 不一致。
         'Inner: 1',
         'Outer: 1',
         'Sibling: 1',

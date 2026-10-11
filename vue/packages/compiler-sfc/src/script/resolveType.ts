@@ -54,16 +54,10 @@ export type SimpleTypeResolveOptions = Partial<
 
 /**
  * SimpleTypeResolveContext 与 ScriptCompileContext 的类型解析接口兼容，但只要求最少字段。
- * Babel 插件等非 SFC 场景可独立复用 resolveType，最简单的上下文如下：
- * ```ts
- * const ctx: SimpleTypeResolveContext = {
- *   filename: '...',
- *   source: '...',
- *   options: {},
- *   error() {},
- *   ast: []
- * }
- * ```
+ * 非 SFC 调用者提供 filename/source、已解析的顶层 ast、options，以及 error/warn/helper/
+ * getString 等诊断与源码提取方法，以及 Pick 中的 props/emits/CE 字段（不用的值可为空）；
+ * scope、globalScopes、deps、fs 则允许解析过程按需填充。
+ * error 必须终止当前解析（通常抛错），否则无法满足分支中依赖它的 never 返回约定。
  */
 export type SimpleTypeResolveContext = Pick<
   ScriptCompileContext,
@@ -175,7 +169,7 @@ function recordScopeDep(
   }
 }
 
-/** 从缓存的已解析属性中补记所有跨文件依赖。 */
+/** 从缓存结果的属性 owner scope 补记来源文件依赖。 */
 function recordResolvedElementDeps(
   ctx: TypeResolveContext,
   { props }: ResolvedElements,
@@ -187,7 +181,12 @@ function recordResolvedElementDeps(
 
 /**
  * 把任意可支持的 TS 类型展开为属性/调用签名，供运行时 props 或 emits 生成。
- * 无泛型实参时结果缓存到 AST 节点；读取缓存仍会重放依赖登记，保证 HMR 信息完整。
+ * 无泛型实参时结果缓存到 AST 节点；命中时从结果属性的 owner scope 补记来源文件。
+ * 此分支不重新遍历已折叠的类型引用链，deps 可能缺少中间别名文件。
+ * @param scope - 缺少节点 ownerScope 时使用的显式作用域；再缺省才创建当前文件作用域。
+ * @param typeParameters - 本次实例化的形参到类型节点映射；存在时禁用节点级展开缓存。
+ * @returns 以公开键索引的 prop 签名，以及可选调用签名列表；节点附着 ownerScope 供后续推导。
+ * @throws 宏顶层结构、计算键或引用无法展开时经 ctx.error 抛错；@vue-ignore 可显式跳过节点。
  */
 export function resolveTypeElements(
   ctx: TypeResolveContext,
@@ -388,7 +387,12 @@ function innerResolveTypeElements(
   return ctx.error(`Unresolvable type: ${node.type}`, node, scope)
 }
 
-/** 将 type literal/interface body 成员整理成按静态属性名索引的映射。 */
+/**
+ * 将 type literal/interface body 成员整理成静态属性表，调用签名另存 calls。
+ * 有泛型实参时创建 prototype 继承外层的类型子表，成员 ownerScope 指向该实例化作用域，
+ * 使 foo:T 可在后续 inferRuntimeType 阶段找到本次 T，且不会改写文件级的形参映射。
+ * 索引签名不产生有限公开键，因此不加入 props；动态计算属性键由 ctx.error 拒绝。
+ */
 function typeElementsToMap(
   ctx: TypeResolveContext,
   elements: TSTypeElement[],
@@ -604,7 +608,11 @@ function resolveIndexType(
   return types
 }
 
-/** 从 `T[]`、tuple、`Array<T>` 或其别名中取得元素类型。 */
+/**
+ * 为 number 索引展开数组/元组元素：具名元组只取 elementType，Array<T> 直接取第一个实参。
+ * 本地或导入引用先解析再递归；当前分支不额外展开仍以 TSTypeAliasDeclaration 保留的泛型别名。
+ * 不支持的目标通过 ctx.error 抛错，由字段运行时推导调用时再软降级。
+ */
 function resolveArrayElementType(
   ctx: TypeResolveContext,
   node: Node,
@@ -641,6 +649,8 @@ function resolveArrayElementType(
 /**
  * 把类型解析为有限字符串键集合，供 mapped/Pick/Omit/索引访问使用。
  * 支持字面量联合、模板字面量、泛型参数及常见字符串工具类型；无法枚举的 string 会报错。
+ * Extract 当前直接采用第二实参键集合，Exclude 则从第一集合删除第二集合；这些分支用于
+ * 有限属性名生成，并不执行通用的 TypeScript 子类型判断。字符串变换逐键执行后继续展开。
  */
 function resolveStringType(
   ctx: TypeResolveContext,
@@ -759,7 +769,11 @@ const SupportedBuiltinsSet = new Set([
 /** 从 Set 类型提取成员联合，用于保持 resolveBuiltin 的 name 与白名单同步。 */
 type GetSetType<T> = T extends Set<infer V> ? V : never
 
-/** 实现 Partial/Required/Readonly/Pick/Omit 对已解析属性集合的变换。 */
+/**
+ * 对已解析属性表实现 Partial/Required/Readonly/Pick/Omit，保留调用签名集合。
+ * Partial/Required 克隆成员后改 optional，避免污染原类型的节点缓存；Readonly 直接复用结构。
+ * Pick/Omit 先枚举有限键再筛表，未命中键不生成属性。Record 不在这条顶层结构展开路径中。
+ */
 function resolveBuiltin(
   ctx: TypeResolveContext,
   node: TSTypeReference | TSExpressionWithTypeArguments,
@@ -1130,7 +1144,7 @@ function importSourceToScope(
  * 仍应解析到对应 `.ts`/`.d.ts`，因为这是 TypeScript 常见的 ESM 写法。
  */
 function resolveExt(filename: string, fs: FS) {
-  let moduleType: /*cjs*/ 'c' | /*mjs*/ 'm' | /*unknown*/ 'u' = 'u'
+  let moduleType: /* CommonJS */ 'c' | /* ESM */ 'm' | /* 未指定 */ 'u' = 'u'
   if (filename.endsWith('.mjs')) {
     moduleType = 'm'
   } else if (filename.endsWith('.cjs')) {
@@ -1184,6 +1198,9 @@ const tsConfigRefMap = new Map<string, string>()
 /**
  * 使用 TypeScript 官方模块解析器处理包、paths alias 与 project references。
  * 多配置时按 include/exclude 选择覆盖当前 SFC 的 tsconfig，并复用模块解析缓存。
+ * project reference 子配置排在父配置前；若没有匹配项则使用列表末尾父配置。include/exclude
+ * 在 configDir 下判断 SFC 路径，TS 5.5 的 ${configDir} 通过实际配置字段补正。
+ * fs.realpath 可消除符号链接路径，返回值再规范为正斜杠用于作用域缓存与依赖登记。
  */
 function resolveWithTS(
   containingFile: string,
@@ -1279,7 +1296,8 @@ function resolveWithTS(
 
 /**
  * 递归解析 tsconfig 与 project references，子项目排在父配置前以优先匹配。
- * visited 防止循环引用；同时建立反向映射供 HMR 精确清理父配置缓存。
+ * visited 防止循环引用；反向表只记录每个引用配置最后登记的直接父配置，供失效时清理，
+ * 并不保存完整父链或一个子项目的全部父项目。
  */
 function loadTSConfig(
   configPath: string,
@@ -1360,9 +1378,9 @@ export function fileToScope(
 }
 
 /**
- * 按扩展名把 TS/JS/Vue/任意扩展声明文件解析为 Babel statements。
+ * 按扩展名把 TS、Vue 的 TS 脚本及任意扩展对应的声明文件解析为 Babel statements。
  * Vue 文件会拼接两个 script block 并用空格保持原始 offset；TS 5 的任意扩展声明约定
- * `foo.ext` → `foo.d.ext.ts` 也在这里模拟。
+ * `foo.ext` → `foo.d.ext.ts` 也在这里模拟；普通 JS 文件在此返回空语句表。
  */
 function parseFile(
   filename: string,
@@ -1504,6 +1522,9 @@ const importExportRE = /^Import|^Export/
  * 扫描 statements，把类型和值声明登记到当前 TypeScope。
  * asGlobal 模式只接收 ambient 顶层声明或 `declare global` 内容；普通模块模式还构造
  * exportedTypes、re-export 与 export-all 链。
+ * 先登记本地声明再处理导出，支持 export { Local as Public } 引用稍后声明。模块再导出
+ * 用导入记录与合成引用延迟解析；全局再导出则立即加载并保留源节点 ownerScope，不能把
+ * 源文件内的私有类型/import 改为在 global 文件查找。最终只为未附归属的节点补 ownerScope。
  */
 function recordTypes(
   ctx: TypeResolveContext,
@@ -1791,6 +1812,14 @@ function recordImport(node: Node, imports: TypeScope['imports']) {
  *
  * 该过程不是完整 TS 类型检查器：支持常见关键字、容器、联合/交叉、工具类型、import、
  * enum、keyof 及 Vue Ref 包装；任何解析失败都软退化为 `Unknown`，不应阻断正常编译。
+ * 暂时开启 silentOnExtendsFailure，在 finally 恢复调用者原值，避免一次字段近似推导
+ * 改变后续宏顶层结构解析的报错策略。构造器数组按首次出现去重；交叉会过滤 Unknown，
+ * 联合保留它交给 props 生成决定 type:null/skipCheck。keyof 只推导 String/Number/Symbol
+ * 等键类别，未计算 TS 的精确键集合；普通类型引用失败后仍尝试内建及 Vue wrapper 名称兜底。
+ *
+ * @param isKeyOf - 把对象成员/内建类型解释为键类别，而非该值的运行时容器。
+ * @param typeParameters - 泛型形参的本次实参，递归字段/联合推导时继续传递。
+ * @returns 构造器名称列表、字符串 null 或 Unknown；调用者负责转成源码及校验策略。
  */
 export function inferRuntimeType(
   ctx: TypeResolveContext,
@@ -2288,6 +2317,8 @@ function resolveExtractPropTypes(
 /**
  * 从 `{ type: StringConstructor, required: true }` 等运行时 props 类型声明反推 TS 属性签名。
  * 无法识别时生成 TSNullKeyword，使后续运行时推导安全退化。
+ * 对象式声明仅静态识别 type/required，PropType<T> 直接保留 T；构造器接口名按后缀映射。
+ * 包装泛型当前总在第一个实参递归后得到合成签名并返回，不会继续选择后续实参。
  */
 function reverseInferType(
   key: Expression,

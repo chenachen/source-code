@@ -2,11 +2,11 @@
 import { CallableFunctionForInteract, AppName } from '@micro-app/types'
 import { logError, isFunction, isPlainObject, assign, defer } from '../libs/utils'
 
-/** 保存单个事件通道已提交数据、待提交批次及订阅者。 */
+/** 保存单个事件通道的可读取数据、待提交数据及订阅者。 */
 interface IEventInfo {
-  /** 最近一次完成分发的数据快照。 */
+  /** 当前可读取的数据；首次 dispatch 同步写入，已有通道则在批次处理时更新。 */
   data: Record<PropertyKey, unknown>
-  /** 当前微任务批次内合并、尚未提交的数据。 */
+  /** dispatch 合并后尚未被 process 消费的数据。 */
   tempData?: Record<PropertyKey, unknown> | null
   /** 当前批次是否必须越过浅比较并通知订阅者。 */
   force?: boolean
@@ -18,13 +18,14 @@ interface IEventInfo {
  * 以内存事件通道连接基座与子应用，并在同一微任务批次内合并连续数据更新。
  *
  * @remarks
- * `dispatch()` 只写入待提交状态并入队；数据变化或强制通知时，`process()` 在微任务中提交快照、通知监听器，再执行本批调用对应的后续回调。
+ * 已有通道的 `dispatch()` 合并到待提交数据；首次派发会立即建立可读取数据。监听器、DOM 数据事件和
+ * 后续回调统一由微任务处理，只有浅比较发现变化或本批要求强制通知时才执行。
  */
 export default class EventCenter {
-  /** 事件名到其已提交数据、待提交数据和监听器集合的注册表。 */
+  /** 事件名到其可读取数据、待提交数据和监听器集合的注册表。 */
   public eventList = new Map<string, IEventInfo | undefined>()
 
-  /** 校验事件名非空；非法名称会记录错误并阻止后续读写。 */
+  /** 只校验名称是否为真值；适配 API 负责先格式化应用名，此层不额外做字符串类型检查。 */
   private isLegalName (name: string): boolean {
     if (!name) {
       logError('event-center: Invalid name')
@@ -38,7 +39,7 @@ export default class EventCenter {
   private queue: string[] = []
   /** 记录当前批次内每个事件对应的后续步骤及可选 DOM 数据事件。 */
   private recordStep: Record<string, {
-    /** 同一事件名每次 `dispatch()` 注册的完成回调，按调用顺序执行。 */
+    /** 本批实际通知时，按 dispatch 调用顺序执行的后续回调。 */
     nextStepList: Array<CallableFunction>,
     /** 数据提交后、完成回调前派发的可选 DOM 事件；同批次保留最后一个非空值。 */
     dispatchDataEvent?: CallableFunction,
@@ -48,14 +49,15 @@ export default class EventCenter {
    * 把事件及其完成步骤并入当前批次，并在队列由空变为非空时安排一次微任务。
    *
    * @remarks
-   * 同名连续更新共享一个事件队列项，但每次调用的 `nextStep` 都会保留。异步提交还可确保子应用二次渲染时，已排队的数据更新先于随后绑定的监听逻辑结算。
+   * 同名连续更新共享一个队列项，但每次调用的 `nextStep` 都会保留。微任务边界使同一同步调用栈内
+   * 后绑定的监听器也能加入本次通知，不必先收到旧缓存再收到新数据。
    */
   private enqueue (
     name: AppName,
     nextStep: CallableFunction,
     dispatchDataEvent?: CallableFunction,
   ): void {
-    // 旧实现曾使用单一后续步骤；当前按事件名保存完整调用序列。
+    // 同名派发只合并数据，不丢弃每次调用登记的后续步骤。
     if (this.recordStep[name]) {
       this.recordStep[name]!.nextStepList.push(nextStep)
       dispatchDataEvent && (this.recordStep[name]!.dispatchDataEvent = dispatchDataEvent)
@@ -73,7 +75,12 @@ export default class EventCenter {
    * 提交当前批次的数据并依次通知监听器、DOM 事件与完成回调。
    *
    * @remarks
-   * 处理前先交换队列和步骤表，使监听器内再次 `dispatch()` 的数据进入下一批，避免新旧批次共用 `tempData` 与 `force`。
+   * 先取走队列和步骤表，让回调内的派发可以登记新的微任务。各通道的 `tempData/force` 则在轮到该
+   * 通道时才取走并清空：向已处理通道重入时建立下一批数据，向本轮尚未处理通道派发则仍会改变它
+   * 本轮读取的数据。只有发生通知时才执行后续步骤，监听器返回的真值被收集为数组，不等待 Promise。
+   * 同步回调抛错会中断当前处理，后续 DOM 事件、完成步骤和本轮剩余通道不会继续执行。
+   * 若旧队列为 A/B，A 向尚未消费的 B 派发，B 本轮会用新数据配旧完成步骤；新队列又留下 B，
+   * 下一批读取已清成 null 的 tempData，浅比较判为不等，可重复通知同一 data 并执行新完成步骤。
    */
   private process = (): void => {
     let name: string | void
@@ -81,9 +88,10 @@ export default class EventCenter {
     const queue = this.queue
     this.recordStep = {}
     this.queue = []
+    // 队列只保存名称，没有通道数据快照；重入修改的仍是 eventList 中的同一个 eventInfo。
     while (name = queue.shift()) {
       const eventInfo = this.eventList.get(name)!
-      // 在回调前清空批次标记；回调内重入派发可安全建立下一批状态。
+      // 先清空当前通道的批次标记；该通道监听器再次派发时会建立新的待提交数据。
       const tempData = eventInfo.tempData
       const force = eventInfo.force
       eventInfo.tempData = null
@@ -91,6 +99,7 @@ export default class EventCenter {
       let resArr: unknown[]
       if (force || !this.isEqual(eventInfo.data, tempData)) {
         eventInfo.data = tempData || eventInfo.data
+        // 遍历活的 Set：回调中的增删遵循 Set 迭代规则，不冻结本轮监听器名单。
         for (const f of eventInfo.callbacks) {
           const res = f(eventInfo.data)
           res && (resArr ??= []).push(res)
@@ -98,7 +107,7 @@ export default class EventCenter {
 
         temRecordStep[name]!.dispatchDataEvent?.()
 
-        // 完成回调最后执行；其中若向其他应用派发数据，会进入已交换出的下一批队列。
+        // 后续步骤拿到监听器返回的真值数组；没有真值时为 undefined，可选 DOM 数据事件已先派发。
         temRecordStep[name]!.nextStepList.forEach((nextStep) => nextStep(resArr))
       }
     }
@@ -108,7 +117,8 @@ export default class EventCenter {
    * 对新旧数据做浅层严格比较，过滤 React 等场景中重复 `setData` 造成的通知。
    *
    * @remarks
-   * 只比较双方自有可枚举键的数量和值引用；嵌套对象不会递归比较，缺少待提交数据视为不相等。
+   * 先比较自有可枚举字符串键数量，再逐个检查旧对象自有键的值是否严格相等；不递归比较嵌套对象，
+   * 也不比较 Symbol 键。缺少待提交数据视为不相等，因此首次派发仍会进入通知分支。
    */
   private isEqual (
     oldData: Record<PropertyKey, unknown>,
@@ -126,11 +136,11 @@ export default class EventCenter {
   }
 
   /**
-   * 为事件通道添加去重监听器，并可立即回放稳定的缓存数据。
+   * 为事件通道添加去重监听器，并可按队列状态同步回放当前 data。
    *
    * @param name - 事件通道名。
    * @param f - 数据更新监听器。
-   * @param autoTrigger - 首次绑定时是否回放非空缓存；默认不回放。
+   * @param autoTrigger - 是否同步回放非空 data；当前待调度队列含该通道且新旧值不等时跳过，默认关闭。
    */
   public on (name: string, f: CallableFunctionForInteract, autoTrigger = false): void {
     if (this.isLegalName(name)) {
@@ -153,7 +163,8 @@ export default class EventCenter {
           this.isEqual(eventInfo.data, eventInfo.tempData)
         )
       ) {
-        // 仅在缓存非空且没有不同的待提交数据时回放，避免监听器先收到过期快照。
+        // 仅检查当前待调度队列；process 已取走的本轮队列不在 this.queue 中。
+        // 普通同步派发后，新旧值不等时跳过旧值回放，监听器随后加入批次通知。
         f(eventInfo.data)
       }
 
@@ -161,7 +172,7 @@ export default class EventCenter {
     }
   }
 
-  /** 移除指定监听器；未传监听器时清空通道订阅，但保留已提交数据。 */
+  /** 移除指定监听器；未传函数时清空通道订阅，保留数据与已排队的派发。 */
   public off (
     name: string,
     f?: CallableFunctionForInteract,
@@ -179,7 +190,9 @@ export default class EventCenter {
   }
 
   /**
-   * 清空事件通道的已提交数据，不改变监听器集合。
+   * 清空事件通道当前可读取的数据，不改变监听器或待提交批次。
+   *
+   * 已排队的 tempData 仍可能在随后微任务中重新写入；此方法不取消派发。
    */
   public clearData (name: string): void {
     if (this.isLegalName(name)) {
@@ -194,7 +207,14 @@ export default class EventCenter {
    * 合并一次数据更新并排入异步批次。
    *
    * @remarks
-   * 连续普通更新基于待提交值合并；任一调用要求 `force` 时整批保持强制通知。首次创建通道时强制处理，确保完成回调仍会结算。
+   * 已有通道基于待提交值或当前数据做浅合并；任一调用要求 `force` 时整批保持强制通知。新通道直接
+   * 保存传入对象并强制处理，因此首次 `getData()` 可同步读到它，通知及后续步骤仍在微任务中执行。
+   *
+   * @param name - 内部通道名；应由适配层生成。
+   * @param data - 浅合并的对象数据，数组及其他类型会被拒绝。
+   * @param nextStep - 必需的完成回调，适配层会包装可选用户回调；直接漏传会在通知后调用时抛错。
+   * @param force - 越过同值过滤；同一待提交批次内一旦为 true 就不再被后续 false 覆盖。
+   * @param dispatchDataEvent - 通知监听器后派发的可选 DOM 事件，同批次保留最后一个非空回调。
    */
   public dispatch (
     name: string,
@@ -218,7 +238,7 @@ export default class EventCenter {
           callbacks: new Set(),
         }
         this.eventList.set(name, eventInfo)
-        // 子应用可能先发送数据、基座稍后才监听 `datachange`，因此首次派发需创建并强制提交通道。
+        // 首次派发没有 tempData；强制通知保证它仍会派发 DOM 事件并执行后续步骤。
         eventInfo.force = true
       }
       // 无论通道是否刚创建，都由统一批处理队列完成通知和后续步骤。
@@ -226,7 +246,7 @@ export default class EventCenter {
     }
   }
 
-  /** 返回事件通道最近提交的数据；通道不存在时返回 `null`。 */
+  /** 返回通道当前 data 引用；首次派发立即可读，已有通道的待提交合并值尚不可读，未建通道返回 null。 */
   public getData (name: string): Record<PropertyKey, unknown> | null {
     const eventInfo = this.eventList.get(name)
     return eventInfo?.data ?? null

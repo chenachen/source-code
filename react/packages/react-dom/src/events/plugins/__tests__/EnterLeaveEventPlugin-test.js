@@ -25,7 +25,7 @@ describe('EnterLeaveEventPlugin', () => {
     ReactDOMClient = require('react-dom/client');
     act = require('internal-test-utils').act;
 
-    // 容器必须挂载才能触发事件。
+    // 将根容器挂到body，供iframe所属窗口和跨根/portal的DOM传播路径使用。
     container = document.createElement('div');
     document.body.appendChild(container);
   });
@@ -35,14 +35,7 @@ describe('EnterLeaveEventPlugin', () => {
     container = null;
   });
 
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「should set onMouseLeave relatedTarget properly in iframe」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：事件断言连接 DOMPluginEventSystem 的委托、合成与传播路径。
-   */
+  /** iframe内根节点注册onMouseLeave，派发mouseout relatedTarget=iframe.contentWindow；收集事件target为节点、relatedTarget为该窗口，验证采用目标文档所属window。 */
   it('should set onMouseLeave relatedTarget properly in iframe', async () => {
     const iframe = document.createElement('iframe');
     container.appendChild(iframe);
@@ -82,7 +75,7 @@ describe('EnterLeaveEventPlugin', () => {
     expect(leaveEvents[0].relatedTarget).toBe(iframe.contentWindow);
   });
 
-  /** 测试场景：验证「should set onMouseEnter relatedTarget properly in iframe」描述的渲染、交互或错误处理结果。 */
+  /** iframe内节点注册onMouseEnter，派发mouseover且relatedTarget=null；事件target为节点、relatedTarget补为iframe窗口，验证外部进入的默认window属于目标文档。 */
   it('should set onMouseEnter relatedTarget properly in iframe', async () => {
     const iframe = document.createElement('iframe');
     container.appendChild(iframe);
@@ -123,15 +116,15 @@ describe('EnterLeaveEventPlugin', () => {
   });
 
   // 针对 https://github.com/facebook/react/issues/10906 的回归测试。
-  /** 测试场景：验证「should find the common parent after updates」描述的渲染、交互或错误处理结果。 */
+  /** Parent先不显示child再更新显示，随后父节点mouseout指向child；child enter一次、parent零次，验证更新后找到共同祖先且只分发进入差集。 */
   it('should find the common parent after updates', async () => {
     let parentEnterCalls = 0;
     let childEnterCalls = 0;
     let parent = null;
 
-    /** `Parent`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 父宿主注册enter计数并按showChild控制子级，验证更新后共同祖先判定。 */
     class Parent extends React.Component {
-      /** `Parent.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 保存父DOM引用并按props显示child，两级enter计数各自独立。 */
       render() {
         return (
           <div
@@ -171,39 +164,39 @@ describe('EnterLeaveEventPlugin', () => {
 
   // https://github.com/facebook/react/issues/16763. 测试
   // @gate !disableLegacyMode
-  /** 测试场景：验证「should call mouseEnter once from sibling rendered inside a rendered component in legacy roots」描述的渲染、交互或错误处理结果。 */
+  /** 仅legacy开启时，Parent.componentDidMount在自身div中建立嵌套legacy根，子组件挂载后从兄弟派mouseout到监听节点；enter仅一次，验证两层根路由不重复提取。 */
   it('should call mouseEnter once from sibling rendered inside a rendered component in legacy roots', async () => {
     const mockFn = jest.fn();
 
-    /** `Parent`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** legacy外根的类包装，挂载后在parentEl创建内根。 */
     class Parent extends React.Component {
-      /** `Parent.constructor`：初始化测试夹具实例及其状态。 */
+      /** 初始化parentEl ref，作为嵌套legacy根容器。 */
       constructor(props) {
         super(props);
         this.parentEl = React.createRef();
       }
 
-      /** `Parent.componentDidMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 在已提交父div里同步建立MouseEnterDetect legacy根，构造嵌套容器路由。 */
       componentDidMount() {
         ReactDOM.render(<MouseEnterDetect />, this.parentEl.current);
       }
 
-      /** `Parent.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 输出仅带parentEl的div，为内根提供容器。 */
       render() {
         return <div ref={this.parentEl} />;
       }
     }
 
-    /** `MouseEnterDetect`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 内根输出两个相邻div并在挂载后模拟从兄弟进入监听节点。 */
     class MouseEnterDetect extends React.Component {
-      /** `MouseEnterDetect.constructor`：初始化测试夹具实例及其状态。 */
+      /** 初始化firstEl/siblingEl ref用于设置准确mouseout目标与relatedTarget。 */
       constructor(props) {
         super(props);
         this.firstEl = React.createRef();
         this.siblingEl = React.createRef();
       }
 
-      /** `MouseEnterDetect.componentDidMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 从第二div派mouseout指向第一div，验证两根监听下合成enter仅一次。 */
       componentDidMount() {
         this.siblingEl.current.dispatchEvent(
           new MouseEvent('mouseout', {
@@ -214,7 +207,7 @@ describe('EnterLeaveEventPlugin', () => {
         );
       }
 
-      /** `MouseEnterDetect.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 输出第一div的onMouseEnter与无监听兄弟，建立最短兄弟移动场景。 */
       render() {
         return (
           <React.Fragment>
@@ -232,39 +225,39 @@ describe('EnterLeaveEventPlugin', () => {
   });
 
   // @gate !disableLegacyMode
-  /** 测试场景：验证「should call mouseEnter when pressing a non tracked React node in legacy root」描述的渲染、交互或错误处理结果。 */
+  /** 仅legacy开启时，内层根div手工append无Fiber节点，再从该节点mouseout到React兄弟；enter一次，验证未跟踪target可向上找到有效宿主Fiber。 */
   it('should call mouseEnter when pressing a non tracked React node in legacy root', async () => {
     const mockFn = jest.fn();
 
-    /** `Parent`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** legacy外根包装，挂载后在自身div建立内根并容纳非React节点移动场景。 */
     class Parent extends React.Component {
-      /** `Parent.constructor`：初始化测试夹具实例及其状态。 */
+      /** 初始化parentEl ref供componentDidMount创建内根。 */
       constructor(props) {
         super(props);
         this.parentEl = React.createRef();
       }
 
-      /** `Parent.componentDidMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 在父div中render MouseEnterDetect，形成两层legacy根。 */
       componentDidMount() {
         ReactDOM.render(<MouseEnterDetect />, this.parentEl.current);
       }
 
-      /** `Parent.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 输出内根容器div并记录ref。 */
       render() {
         return <div ref={this.parentEl} />;
       }
     }
 
-    /** `MouseEnterDetect`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 内根输出div/child，并在提交后手工插入无Fiber节点再派事件。 */
     class MouseEnterDetect extends React.Component {
-      /** `MouseEnterDetect.constructor`：初始化测试夹具实例及其状态。 */
+      /** 初始化divRef与目标siblingEl，区分手工事件源与React目标。 */
       constructor(props) {
         super(props);
         this.divRef = React.createRef();
         this.siblingEl = React.createRef();
       }
 
-      /** `MouseEnterDetect.componentDidMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 把新原生div插到React父节点，再mouseout指向React子div，让插件从未缓存源向上查找Fiber。 */
       componentDidMount() {
         const attachedNode = document.createElement('div');
         this.divRef.current.appendChild(attachedNode);
@@ -277,7 +270,7 @@ describe('EnterLeaveEventPlugin', () => {
         );
       }
 
-      /** `MouseEnterDetect.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 输出宿主父div与带onMouseEnter子div，作为未跟踪事件源的有效祖先和进入目标。 */
       render() {
         return (
           <div ref={this.divRef}>
@@ -293,12 +286,12 @@ describe('EnterLeaveEventPlugin', () => {
     expect(mockFn.mock.calls.length).toBe(1);
   });
 
-  /** 测试场景：验证「should work with portals outside of the root that has onMouseLeave」描述的渲染、交互或错误处理结果。 */
+  /** 组件的React祖先div注册leave，portal子div实际在body外部根容器；从portal移到body应触发祖先leave一次，验证Portal的Fiber祖先传播。 */
   it('should work with portals outside of the root that has onMouseLeave', async () => {
     const divRef = React.createRef();
     const onMouseLeave = jest.fn();
 
-    /** `Component`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 祖先div有onMouseLeave，子树portal到document.body，验证逻辑祖先收集跨DOM容器。 */
     function Component() {
       return (
         <div onMouseLeave={onMouseLeave}>
@@ -327,13 +320,13 @@ describe('EnterLeaveEventPlugin', () => {
     expect(onMouseLeave).toHaveBeenCalledTimes(1);
   });
 
-  /** 测试场景：验证「should work with portals that have onMouseEnter outside of the root」描述的渲染、交互或错误处理结果。 */
+  /** 普通父div内逻辑挂portal，portal子div有enter；从父div派mouseout relatedTarget为portal子节点；enter一次，验证跨DOM容器但同Fiber树的进入目标收集。 */
   it('should work with portals that have onMouseEnter outside of the root', async () => {
     const divRef = React.createRef();
     const otherDivRef = React.createRef();
     const onMouseEnter = jest.fn();
 
-    /** `Component`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 普通父div保存ref，portal子div另保存ref并有onMouseEnter，模拟父到portal的relatedTarget移动。 */
     function Component() {
       return (
         <div ref={divRef}>
@@ -351,7 +344,7 @@ describe('EnterLeaveEventPlugin', () => {
       root.render(<Component />);
     });
 
-    // 从 Portal 的 div 离开。
+    // 从普通父div移向实际挂在body的Portal子节点。
     divRef.current.dispatchEvent(
       new MouseEvent('mouseout', {
         bubbles: true,

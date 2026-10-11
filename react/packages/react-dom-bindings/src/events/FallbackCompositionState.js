@@ -6,31 +6,32 @@
  */
 
 /**
- * 这些变量保存目标节点的文本内容，用于比较事件前后的差异。
- * 
- * 先定位选择区起点节点，再记录其文本和 DOM 位置。浏览器可能在输入法组合期间原生替换目标节点，
- * 因此需要依靠保存的位置找到替代节点。
+ * 保存 composition 开始时的目标与文本；结束时从同一目标读取新文本，
+ * 剔除共同前缀/后缀得到插入字符。
  */
 
 let root = null;
 let startText = null;
 let fallbackText = null;
 
-/** initialize 执行在缺少可靠 composition data 时缓存选择区并计算输入前后的文本差异的核心步骤；输入来自原生事件/Fiber，输出保持插件分发与调度边界。 */
+/** 保存本轮输入法目标与输入前文本，作为 composition 字符差异的基线。 */
 export function initialize(nativeEventTarget) {
   root = nativeEventTarget;
   startText = getText();
   return true;
 }
 
-/** reset 更新在缺少可靠 composition data 时缓存选择区并计算输入前后的文本差异的模块状态或 DOM 状态；重复调用需保持队列顺序与恢复幂等性。 */
+/** 清空本轮目标、初始文本和已计算的组合文本。 */
 export function reset() {
   root = null;
   startText = null;
   fallbackText = null;
 }
 
-/** getData 查询并返回在缺少可靠 composition data 时缓存选择区并计算输入前后的文本差异所需状态；无匹配时使用 null/默认值而不修改事件队列。 */
+/**
+ * composition 结束时比较 UTF-16 文本，剔除共同前缀和不越过前缀的共同后缀，提取本轮插入的中间文本。
+ * 非空结果缓存到 fallbackText；空结果由于 truthy 检查会在下次调用时重新计算，reset 结束本轮基线。
+ */
 export function getData() {
   if (fallbackText) {
     return fallbackText;
@@ -61,7 +62,7 @@ export function getData() {
   return fallbackText;
 }
 
-/** getText 查询并返回在缺少可靠 composition data 时缓存选择区并计算输入前后的文本差异所需状态；无匹配时使用 null/默认值而不修改事件队列。 */
+/** 读取已登记目标的 value；没有 value 字段时读取 textContent。 */
 export function getText() {
   if ('value' in root) {
     return root.value;

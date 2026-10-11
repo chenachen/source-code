@@ -34,17 +34,19 @@ describe('ReactDOMFizzServerBrowser', () => {
   });
 
   const theError = new Error('This is an error');
-  /** `Throw`：封装当前用例复用的操作、回调或断言步骤。 */
+
+  /** 抛同一theError对象，比较外Promise和onError身份。 */
   function Throw() {
     throw theError;
   }
   const theInfinitePromise = new Promise(() => {});
-  /** `InfiniteSuspend`：封装当前用例复用的操作、回调或断言步骤。 */
+
+  /** 抛永不完成Promise，使边界只能通过取消收尾。 */
   function InfiniteSuspend() {
     throw theInfinitePromise;
   }
 
-  /** `readResult`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 用Web reader串行读到done，逐块Buffer转UTF8并拼字串；读失败自然拒绝，未releaseLock/取消或做跨块增量解码。 */
   async function readResult(stream) {
     const reader = stream.getReader();
     let result = '';
@@ -57,14 +59,7 @@ describe('ReactDOMFizzServerBrowser', () => {
     }
   }
 
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「should call renderToReadableStream」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言覆盖 react-dom 的服务端流适配层；完整 Fizz 状态机位于 react-server。
-   */
+  /** 浏览器入口renderToReadableStream渲染hello div，serverAct后读到done快照相同，验证公开Web流入口。 */
   it('should call renderToReadableStream', async () => {
     const stream = await serverAct(() =>
       ReactDOMFizzServer.renderToReadableStream(<div>hello world</div>),
@@ -73,7 +68,7 @@ describe('ReactDOMFizzServerBrowser', () => {
     expect(result).toMatchInlineSnapshot(`"<div>hello world</div>"`);
   });
 
-  /** 测试场景：验证「should emit DOCTYPE at the root of the document」描述的渲染、交互或错误处理结果。 */
+  /** 完整html/body文档；DOCTYPE及补head固定，blocking-render开时另有expect link/_R_模板，验证文档协议构建差异。 */
   it('should emit DOCTYPE at the root of the document', async () => {
     const stream = await serverAct(() =>
       ReactDOMFizzServer.renderToReadableStream(
@@ -94,7 +89,7 @@ describe('ReactDOMFizzServerBrowser', () => {
     }
   });
 
-  /** 测试场景：验证「should emit bootstrap script src at the end」描述的渲染、交互或错误处理结果。 */
+  /** div加内联/经典/模块bootstrap；快照顺序preload/modulepreload→div→INIT script→两async脚本，验证提示与执行标签位置。 */
   it('should emit bootstrap script src at the end', async () => {
     const stream = await serverAct(() =>
       ReactDOMFizzServer.renderToReadableStream(<div>hello world</div>, {
@@ -109,12 +104,13 @@ describe('ReactDOMFizzServerBrowser', () => {
     );
   });
 
-  /** 测试场景：验证「emits all HTML as one unit if we wait until the end to start」描述的渲染、交互或错误处理结果。 */
+  /** Wait首次挂起，stream返回时allReady未完成；resolve后allReady完成才开始读，输出完整Done无Loading，验证延迟消费可避免fallback流，而allReady本身不表示已消费字节。 */
   it('emits all HTML as one unit if we wait until the end to start', async () => {
     let hasLoaded = false;
     let resolve;
     const promise = new Promise(r => (resolve = r));
-    /** `Wait`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** hasLoaded前抛本例Promise，resolve后返回Done；allReady观察任务完成而非字节消费。 */
     function Wait() {
       if (!hasLoaded) {
         throw promise;
@@ -147,7 +143,7 @@ describe('ReactDOMFizzServerBrowser', () => {
     );
   });
 
-  /** 测试场景：验证「should reject the promise when an error is thrown at the root」描述的渲染、交互或错误处理结果。 */
+  /** 根Throw且无边界；外Promise拒绝共享theError，onError同对象一次，验证shell建立前致命错误。 */
   it('should reject the promise when an error is thrown at the root', async () => {
     const reportedErrors = [];
     let caughtError = null;
@@ -158,7 +154,8 @@ describe('ReactDOMFizzServerBrowser', () => {
             <Throw />
           </div>,
           {
-            /** `onError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+            /** 收集根致命Error原对象，不自行捕获恢复。 */
             onError(x) {
               reportedErrors.push(x);
             },
@@ -172,7 +169,7 @@ describe('ReactDOMFizzServerBrowser', () => {
     expect(reportedErrors).toEqual([theError]);
   });
 
-  /** 测试场景：验证「should reject the promise when an error is thrown inside a fallback」描述的渲染、交互或错误处理结果。 */
+  /** 内容永久挂起、fallback Throw；外Promise拒绝theError且报告一次，验证fallback失败不能建立shell。 */
   it('should reject the promise when an error is thrown inside a fallback', async () => {
     const reportedErrors = [];
     let caughtError = null;
@@ -185,7 +182,8 @@ describe('ReactDOMFizzServerBrowser', () => {
             </Suspense>
           </div>,
           {
-            /** `onError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+            /** 收集fallback致命Error，外Promise应拒绝同对象。 */
             onError(x) {
               reportedErrors.push(x);
             },
@@ -199,7 +197,7 @@ describe('ReactDOMFizzServerBrowser', () => {
     expect(reportedErrors).toEqual([theError]);
   });
 
-  /** 测试场景：验证「should not error the stream when an error is thrown inside suspense boundary」描述的渲染、交互或错误处理结果。 */
+  /** 边界内容Throw、fallback Loading正常；Web流可读含Loading、onError一次，验证可恢复边界错误不终止整个流。 */
   it('should not error the stream when an error is thrown inside suspense boundary', async () => {
     const reportedErrors = [];
     const stream = await serverAct(() =>
@@ -210,7 +208,8 @@ describe('ReactDOMFizzServerBrowser', () => {
           </Suspense>
         </div>,
         {
-          /** `onError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+          /** 记录边界内错误而保留fallback流，区分致命根失败。 */
           onError(x) {
             reportedErrors.push(x);
           },
@@ -223,7 +222,7 @@ describe('ReactDOMFizzServerBrowser', () => {
     expect(reportedErrors).toEqual([theError]);
   });
 
-  /** 测试场景：验证「should be able to complete by aborting even if the promise never resolves」描述的渲染、交互或错误处理结果。 */
+  /** 正常shell中的边界永远挂起，默认signal.abort后流可读Loading，报告默认浏览器取消message，验证取消未完成边界仍能结束现有shell。 */
   it('should be able to complete by aborting even if the promise never resolves', async () => {
     const errors = [];
     const controller = new AbortController();
@@ -236,7 +235,8 @@ describe('ReactDOMFizzServerBrowser', () => {
         </div>,
         {
           signal: controller.signal,
-          /** `onError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+          /** 提取默认AbortSignal原因message，边界shell仍可读完。 */
           onError(x) {
             errors.push(x.message);
           },
@@ -254,7 +254,7 @@ describe('ReactDOMFizzServerBrowser', () => {
     expect(errors).toEqual(['The operation was aborted.']);
   });
 
-  /** 测试场景：验证「should reject if aborting before the shell is complete」描述的渲染、交互或错误处理结果。 */
+  /** 根永久挂起、无shell；自定义Error abort后外Promise拒绝同对象并报告message，验证动态流与静态空prelude取消语义区别。 */
   it('should reject if aborting before the shell is complete', async () => {
     const errors = [];
     const controller = new AbortController();
@@ -265,7 +265,8 @@ describe('ReactDOMFizzServerBrowser', () => {
         </div>,
         {
           signal: controller.signal,
-          /** `onError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+          /** 记录shell完成前自定义取消message，外Promise也以该Error拒绝。 */
           onError(x) {
             errors.push(x.message);
           },
@@ -288,11 +289,12 @@ describe('ReactDOMFizzServerBrowser', () => {
     expect(errors).toEqual(['aborted for reasons']);
   });
 
-  /** 测试场景：验证「should be able to abort before something suspends」描述的渲染、交互或错误处理结果。 */
+  /** App渲染期间先abort再返回含挂起边界；外Promise拒绝默认取消message且仅一次报告，验证建shell前取消。 */
   it('should be able to abort before something suspends', async () => {
     const errors = [];
     const controller = new AbortController();
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 渲染中立即abort，再返回挂起子树，测试取消早于建立shell。 */
     function App() {
       controller.abort();
       return (
@@ -308,7 +310,8 @@ describe('ReactDOMFizzServerBrowser', () => {
         </div>,
         {
           signal: controller.signal,
-          /** `onError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+          /** 保存建shell期间默认取消报告。 */
           onError(x) {
             errors.push(x.message);
           },
@@ -326,7 +329,7 @@ describe('ReactDOMFizzServerBrowser', () => {
     expect(errors).toEqual(['The operation was aborted.']);
   });
 
-  /** 测试场景：验证「should reject if passing an already aborted signal」描述的渲染、交互或错误处理结果。 */
+  /** 调用前signal已自定义Error abort；外Promise拒绝同对象并报告该message，验证已取消不会继续shell工作。 */
   it('should reject if passing an already aborted signal', async () => {
     const errors = [];
     const controller = new AbortController();
@@ -342,7 +345,8 @@ describe('ReactDOMFizzServerBrowser', () => {
         </div>,
         {
           signal: controller.signal,
-          /** `onError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+          /** 记录预先已取消signal的自定义message。 */
           onError(x) {
             errors.push(x.message);
           },
@@ -361,14 +365,15 @@ describe('ReactDOMFizzServerBrowser', () => {
     expect(errors).toEqual(['aborted for reasons']);
   });
 
-  /** 测试场景：验证「should not continue rendering after the reader cancels」描述的渲染、交互或错误处理结果。 */
+  /** 边界Wait待定，reader先读shell再cancel；错误一次为无原因取消，之后resolve数据也不render Done但allReady=true，验证消费取消终止任务且allReady可因中止完成。 */
   it('should not continue rendering after the reader cancels', async () => {
     let hasLoaded = false;
     let resolve;
     let isComplete = false;
     let rendered = false;
     const promise = new Promise(r => (resolve = r));
-    /** `Wait`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 未加载时挂起，完成后置rendered=true；reader.cancel后即使数据resolve也不该执行完成分支。 */
     function Wait() {
       if (!hasLoaded) {
         throw promise;
@@ -385,7 +390,8 @@ describe('ReactDOMFizzServerBrowser', () => {
           </Suspense>
         </div>,
         {
-          /** `onError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+          /** 记录reader.cancel触发的无原因中止message，后续数据resolve不追加报告。 */
           onError(x) {
             errors.push(x.message);
           },
@@ -417,13 +423,13 @@ describe('ReactDOMFizzServerBrowser', () => {
     ]);
   });
 
-  /** 测试场景：验证「should stream large contents that might overlow individual buffers」描述的渲染、交互或错误处理结果。 */
+  /** 两492 ASCII块与空span组合、再独立2049块；完整读取HTML快照均无丢失。当前VIEW_SIZE=2048，2049跨过一个view；前布局是历史边界构造，验证拼接/大Chunk直写。 */
   it('should stream large contents that might overlow individual buffers', async () => {
     const str492 = `(492) This string is intentionally 492 bytes long because we want to make sure we process chunks that will overflow buffer boundaries. It will repeat to fill out the bytes required (inclusive of this prompt):: foo bar qux quux corge grault garply waldo fred plugh xyzzy thud foo bar qux quux corge grault garply waldo fred plugh xyzzy thud foo bar qux quux corge grault garply waldo fred plugh xyzzy thud foo bar qux quux corge grault garply waldo fred plugh xyzzy thud foo bar qux q :: total count (492)`;
     const str2049 = `(2049) This string is intentionally 2049 bytes long because we want to make sure we process chunks that will overflow buffer boundaries. It will repeat to fill out the bytes required (inclusive of this prompt):: foo bar qux quux corge grault garply waldo fred plugh xyzzy thud foo bar qux quux corge grault garply waldo fred plugh xyzzy thud foo bar qux quux corge grault garply waldo fred plugh xyzzy thud foo bar qux quux corge grault garply waldo fred plugh xyzzy thud foo bar qux quux corge grault garply waldo fred plugh xyzzy thud foo bar qux quux corge grault garply waldo fred plugh xyzzy thud foo bar qux quux corge grault garply waldo fred plugh xyzzy thud foo bar qux quux corge grault garply waldo fred plugh xyzzy thud foo bar qux quux corge grault garply waldo fred plugh xyzzy thud foo bar qux quux corge grault garply waldo fred plugh xyzzy thud foo bar qux quux corge grault garply waldo fred plugh xyzzy thud foo bar qux quux corge grault garply waldo fred plugh xyzzy thud foo bar qux quux corge grault garply waldo fred plugh xyzzy thud foo bar qux quux corge grault garply waldo fred plugh xyzzy thud foo bar qux quux corge grault garply waldo fred plugh xyzzy thud foo bar qux quux corge grault garply waldo fred plugh xyzzy thud foo bar qux quux corge grault garply waldo fred plugh xyzzy thud foo bar qux quux corge grault garply waldo fred plugh xyzzy thud foo bar qux quux corge grault garply waldo fred plugh xyzzy thud foo bar qux quux corge grault garply waldo fred plugh xyzzy thud foo bar qux quux corge grault garply waldo fred plugh xyzzy thud foo bar qux quux corge grault garply waldo fred plugh xyzzy thud foo bar qux quux corge grault garply waldo fred plugh xyzzy thud foo bar qux quux corge grault garply waldo fred plugh xyzzy thud foo bar qux quux corge grault garply waldo fred plugh xyzzy thud foo bar qux quux corge grault garply waldo fred plugh xyzzy thud foo bar qux quux corge grault garply waldo fred plugh xyzzy thud foo bar qux quux corge grault garply waldo fred plugh xyzzy  :: total count (2049)`;
 
-    // 这个布局是为恰好落在 view boundary 上而刻意构造的。该边缘情况并非关键，只是既然要测试较大
-    // chunk，暂时这样安排；未来若 view 大小改变或因 byobRequest 变为动态，无需继续维持这一精确布局。
+    // 两个492字节块及标签壳沿用历史边界布局；当前view为2048，这组并非恰好切在view末端。
+    // 仍用完整HTML快照检查多块拼接，下面2049输入才明确大于当前view。
     let stream;
     stream = await serverAct(() =>
       ReactDOMFizzServer.renderToReadableStream(
@@ -446,8 +452,7 @@ describe('ReactDOMFizzServerBrowser', () => {
       `"<div><span></span></div><div>${str492}</div><div>${str492}</div>"`,
     );
 
-    // 之所以选择 2049，是因为它比当前 view 大小高出几个二进制数量级；未来大小变化后，它应仍能覆盖
-    // chunk 大于 view 的情况。
+    // 2049个ASCII字节比当前2048字节view多1，覆盖大Chunk直接写出分支；view大小变化需重新核对该边界。
     stream = await serverAct(() =>
       ReactDOMFizzServer.renderToReadableStream(
         <>
@@ -462,14 +467,16 @@ describe('ReactDOMFizzServerBrowser', () => {
     expect(result).toMatchInlineSnapshot(`"<div>${str2049}</div>"`);
   });
 
-  /** 测试场景：验证「supports custom abort reasons with a string」描述的渲染、交互或错误处理结果。 */
+  /** 两独立Suspense永久Wait，signal.abort字符串foobar；onError原字符串两次，验证非Error原因按未完成任务传递，未消费流/检查digest。 */
   it('supports custom abort reasons with a string', async () => {
     const promise = new Promise(r => {});
-    /** `Wait`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 两独立边界Wait抛同一永久Promise，分别产生取消任务报告。 */
     function Wait() {
       throw promise;
     }
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** p/span各一边界与独立fallback，字符串取消应报告两次。 */
     function App() {
       return (
         <div>
@@ -492,7 +499,8 @@ describe('ReactDOMFizzServerBrowser', () => {
     await serverAct(() =>
       ReactDOMFizzServer.renderToReadableStream(<App />, {
         signal: controller.signal,
-        /** `onError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 保留原字符串原因并返回digest，本例未消费标记验证digest。 */
         onError(x) {
           errors.push(x);
           return 'a digest';
@@ -507,14 +515,16 @@ describe('ReactDOMFizzServerBrowser', () => {
     expect(errors).toEqual(['foobar', 'foobar']);
   });
 
-  /** 测试场景：验证「supports custom abort reasons with an Error」描述的渲染、交互或错误处理结果。 */
+  /** 同两边界abort Error uh oh；onError.message两次，验证Error自定义取消原因。 */
   it('supports custom abort reasons with an Error', async () => {
     const promise = new Promise(r => {});
-    /** `Wait`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** Error取消场景共用永久Promise的Wait。 */
     function Wait() {
       throw promise;
     }
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 构造p/span两边界，使Error原因分别报告。 */
     function App() {
       return (
         <div>
@@ -537,7 +547,8 @@ describe('ReactDOMFizzServerBrowser', () => {
     await serverAct(() =>
       ReactDOMFizzServer.renderToReadableStream(<App />, {
         signal: controller.signal,
-        /** `onError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 保存Error.message并返回digest，不改原始取消原因。 */
         onError(x) {
           errors.push(x.message);
           return 'a digest';
@@ -553,7 +564,8 @@ describe('ReactDOMFizzServerBrowser', () => {
   });
 
   // https://github.com/facebook/react/pull/25534/files —— 修复对调的转义函数。
-  /** 测试场景：验证「should encode title properly」描述的渲染、交互或错误处理结果。 */
+
+  /** 文档title foo/body bar；完整HTML含正确title编码、blocking标记按开关，验证title块使用对应文本编码路径。 */
   it('should encode title properly', async () => {
     const stream = await serverAct(() =>
       ReactDOMFizzServer.renderToReadableStream(
@@ -580,7 +592,7 @@ describe('ReactDOMFizzServerBrowser', () => {
     );
   });
 
-  /** 测试场景：验证「should support nonce attribute for bootstrap scripts」描述的渲染、交互或错误处理结果。 */
+  /** 字符串nonce R4nd0m加三种bootstrap；快照脚本preload与执行标签都有nonce，验证字符串配置作用于script相关输出，本例不覆盖style nonce。 */
   it('should support nonce attribute for bootstrap scripts', async () => {
     const nonce = 'R4nd0m';
     const stream = await serverAct(() =>

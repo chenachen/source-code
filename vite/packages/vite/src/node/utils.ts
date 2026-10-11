@@ -77,7 +77,7 @@ const replaceNestedIdRE = /\s*>\s*/g
  * 把模块 ID 编码成可作依赖缓存文件名的稳定扁平字符串。
  *
  * @param id - 可含路径分隔符、query 非法字符或嵌套依赖链分隔符的原始模块 ID。
- * @returns 转义歧义字符并限制长度后的文件名片段；超长结果带原 ID 摘要以降低冲突风险。
+ * @returns 转义并限制长度后的文件名片段；超长结果带完整扁平字符串的摘要。
  */
 export const flattenId = (id: string): string => {
   const flatId = limitFlattenIdLength(
@@ -100,7 +100,7 @@ const FLATTEN_ID_HASH_LENGTH = 8
 /** 扁平模块 ID 的最大文件名长度，为依赖缓存追加扩展名等后缀预留空间。 */
 const FLATTEN_ID_MAX_FILE_LENGTH = 170
 
-/** 截断超长扁平 ID，并附加原始完整 ID 的摘要以降低前缀相同造成的冲突。 */
+/** 截断超长扁平 ID，并附加截断前扁平字符串的摘要以降低前缀冲突。 */
 const limitFlattenIdLength = (
   id: string,
   limit: number = FLATTEN_ID_MAX_FILE_LENGTH,
@@ -150,13 +150,13 @@ export function isNodeLikeBuiltin(id: string): boolean {
   return isBuiltin(nodeLikeBuiltins, id)
 }
 
-/** 判断 ID 是否为 Node 自身内置模块，不把 Bun 等其他命名空间计入。 */
+/** 接受 node: 前缀或已知 Node 内置名称；前缀分支不检查模块名是否实际存在。 */
 export function isNodeBuiltin(id: string): boolean {
   if (id.startsWith(NODE_BUILTIN_NAMESPACE)) return true
   return nodeBuiltins.includes(id)
 }
 
-/** 判断模块 ID 的路径片段中是否包含 `node_modules`。 */
+/** 判断模块 ID 是否包含 `node_modules` 子串，不要求完整路径段匹配。 */
 export function isInNodeModules(id: string): boolean {
   return id.includes('node_modules')
 }
@@ -194,6 +194,7 @@ export const _dirname: string = path.dirname(
 )
 
 // https://github.com/rolldown/rolldown/blob/62fba31428af244f871f0e119ed43936ee5d01fd/packages/rolldown/src/log/logger.ts#L64
+/** 插件上下文公开的 Rollup 兼容版本；实际打包器版本由 rolldownVersion 提供。 */
 export const rollupVersion = '4.23.0'
 export { VERSION as rolldownVersion } from 'rolldown'
 
@@ -263,7 +264,7 @@ export const isCaseInsensitiveFS: boolean = testCaseInsensitiveFS()
 /** 匹配字符串开头的 Windows 盘符前缀。 */
 const VOLUME_RE = /^[A-Z]:/i
 
-/** 把平台路径分隔符转换为 `/`，并消解 `.`、`..` 等路径段。 */
+/** Windows 上先把反斜杠转为 `/`，再统一用 posix.normalize 消解路径段。 */
 export function normalizePath(id: string): string {
   return path.posix.normalize(isWindows ? slash(id) : id)
 }
@@ -394,7 +395,7 @@ export function removeUrlQuery(url: string): string {
 export function injectQuery(url: string, queryToInject: string): string {
   const { file, postfix } = splitFileAndPostfix(url)
   const normalizedFile = isWindows ? slash(file) : file
-  return `${normalizedFile}?${queryToInject}${postfix[0] === '?' ? `&${postfix.slice(1)}` : /* hash only */ postfix}`
+  return `${normalizedFile}?${queryToInject}${postfix[0] === '?' ? `&${postfix.slice(1)}` : /* 只有片段 */ postfix}`
 }
 
 /** 匹配 HMR 使用的 13 位毫秒时间戳查询参数。 */
@@ -404,7 +405,10 @@ export function removeTimestampQuery(url: string): string {
   return url.replace(timestampRE, '').replace(trailingSeparatorRE, '')
 }
 
-/** 按匹配顺序等待异步替换器并拼接结果，保持输入中未命中片段不变。 */
+/**
+ * 每轮对剩余文本调用 re.exec，等待替换器后拼接并截去已处理前缀。
+ * 本函数不重置正则的 lastIndex；带 g/y 的输入正则会把自身状态带到下一轮剩余文本。
+ */
 export async function asyncReplace(
   input: string,
   re: RegExp,
@@ -450,7 +454,7 @@ export function prettifyUrl(url: string, root: string): string {
   }
 }
 
-/** 判断值是否为对象字面量或具有同一 `Object` 标签的普通对象。 */
+/** 判断值的 toString 标签是否为 Object；普通 class 实例也可能命中。 */
 export function isObject(value: unknown): value is Record<string, any> {
   return Object.prototype.toString.call(value) === '[object Object]'
 }
@@ -492,7 +496,7 @@ export function lookupFile(
  *
  * @param filePath - 磁盘路径或以 `\0` 开头的虚拟模块 ID。
  * @param packageCache - 可选 package.json 查找缓存，供无显式模块扩展名的路径复用。
- * @returns `.mjs/.mts` 与 virtual ID 返回 true，`.cjs/.cts` 返回 false；其余取最近包的 `type`。
+ * @returns 先按 `.mjs/.mts`、`.cjs/.cts` 决定格式，再接受 null-byte ID 为 ESM；其余取最近包的 `type`。
  */
 export function isFilePathESM(
   filePath: string,
@@ -566,7 +570,7 @@ type Pos = {
   column: number
 }
 
-/** 把行列位置转换为源码字符串中的零基偏移；数字偏移直接返回。 */
+/** 把行列位置转换为零基偏移，每行分隔符按一个字符计算；数字偏移直接返回。 */
 export function posToNumber(source: string, pos: number | Pos): number {
   if (typeof pos === 'number') return pos
   const lines = source.split(splitRE)
@@ -771,7 +775,7 @@ export function copyDir(srcDir: string, destDir: string): void {
 export const ERR_SYMLINK_IN_RECURSIVE_READDIR =
   'ERR_SYMLINK_IN_RECURSIVE_READDIR'
 /**
- * 递归列出目录中的普通文件，不穿越符号链接。
+ * 递归列出目录中的非目录条目，遇到符号链接即拒绝本次扫描。
  *
  * @param dir - 要遍历的目录；不存在时视为空目录。
  * @returns 使用 `normalizePath()` 统一分隔符的绝对文件路径列表。
@@ -819,6 +823,7 @@ export let safeRealpathSync:
 // Windows 网络盘映射逻辑基于以下实现：
 // https://github.com/larrybahr/windows-network-drive
 // MIT License, Copyright (c) 2017 Larry Bahr
+/** 从 UNC 网络共享前缀到 Windows 盘符的已探测映射。 */
 const windowsNetworkMap = new Map()
 /** 把 Windows UNC realpath 按已发现的网络盘映射改写回盘符路径。 */
 function windowsMappedRealpathSync(path: string) {
@@ -1002,7 +1007,8 @@ const nullSourceMap: RawSourceMap = {
 }
 /**
  * 把多层转换的 sourcemap 合成为一张最终映射。
- * 当前实现要求 sourcemapList 长度为 2；空 sources 会返回标准空 map。
+ * 中间 map 均只有一个 source 时使用数组链；否则仅沿 filename 对应的 source 加载下一张 map。
+ * 空列表或所有 sources 均为空时返回标准空 map。
  */
 export function combineSourcemaps(
   filename: string,
@@ -1037,14 +1043,18 @@ export function combineSourcemaps(
   if (useArrayInterface) {
     map = remapping(sourcemapList, () => null)
   } else {
-    map = remapping(sourcemapList[0], function loader(sourcefile) {
-      // 此 loader 分支依赖 sourcemapList 长度为 2 的当前调用约束。
-      if (sourcefile === escapedFilename && sourcemapList[mapIndex]) {
-        return sourcemapList[mapIndex++]
-      } else {
-        return null
+    map = remapping(
+      sourcemapList[0],
+      /** 只在 source 等于当前 filename 时依次提供下一层 map，其他来源停止继续追溯。 */
+      function loader(sourcefile) {
+        // 只继续追溯当前文件，其余 source 保留；常见调用在这里合并前后两张 map。
+        if (sourcefile === escapedFilename && sourcemapList[mapIndex]) {
+          return sourcemapList[mapIndex++]
+        } else {
+          return null
+        }
       }
-    })
+    )
   }
   if (!map.file) {
     delete map.file
@@ -1112,7 +1122,7 @@ export interface Hostname {
   name: string
 }
 
-/** 把 host 选项解析为安全监听地址与可用于访问 URL 的显示名称。 */
+/** 把 host 选项解析为监听地址与生成 URL 时使用的显示名称。 */
 export async function resolveHostname(
   optionsHost: string | boolean | undefined,
 ): Promise<Hostname> {
@@ -1141,7 +1151,7 @@ export async function resolveHostname(
   return { host, name }
 }
 
-/** 从一个或多个 TLS 证书的 subjectAltName 中提取去重后的可访问主机名。 */
+/** 从 TLS 证书的 DNS subjectAltName 提取去重后的显示主机名，不探测是否可访问。 */
 export function extractHostnamesFromCerts(
   certs: HttpsServerOptions['cert'] | undefined,
 ): string[] {
@@ -1274,7 +1284,7 @@ export function extractHostnamesFromSubjectAltName(
       value = remaining.slice(0, endIndex)
       remaining = remaining.slice(endIndex)
     }
-    remaining = remaining.slice(/* for , */ 1).trimStart()
+    remaining = remaining.slice(/* 跳过逗号 */ 1).trimStart()
 
     if (
       name === 'DNS' &&
@@ -1343,10 +1353,10 @@ type DeepWritable<T> =
         : { -readonly [P in keyof T]: DeepWritable<T[P]> }
 
 /**
- * 深克隆配置默认值支持的纯数据结构。
+ * 深克隆配置默认值支持的结构。
  *
- * 数组和普通对象递归复制，RegExp 创建新实例，函数保持引用。Map、Set、Date 等非纯
- * 对象没有明确合并语义，直接拒绝，避免看似成功却共享内部状态。
+ * 数组和 Object 标签对象递归复制，RegExp 创建新实例，函数保持引用。class 实例若
+ * 具有 Object 标签也会复制为普通对象；Map、Set、Date 等其他对象标签会抛错。
  */
 export function deepClone<T>(value: T): DeepWritable<T> {
   if (Array.isArray(value)) {
@@ -1399,7 +1409,7 @@ type MergeWithDefaultsResult<D, V> =
 /**
  * 递归填充默认配置的内部实现。
  * undefined 表示“未配置”并保留默认值；null 是用户显式值，必须保留。数组和函数都
- * 整体替换，只有两侧均为普通对象时才继续递归。
+ * 整体替换，只有两侧均命中 isObject 的 Object 标签时才继续递归。
  */
 function mergeWithDefaultsRecursively<
   D extends Record<string, any>,
@@ -1436,7 +1446,7 @@ const environmentPathRE = /^environments\.[^.]+$/
  *
  * @param defaults - 完整或部分默认配置。
  * @param values - 用户/插件提供的覆盖值。
- * @returns 深克隆默认值后得到的新配置。
+ * @returns 深克隆默认值后得到的新配置；整体替换的用户值仍保留原引用。
  */
 export function mergeWithDefaults<
   D extends Record<string, any>,
@@ -1479,7 +1489,7 @@ export function setupRollupOptionCompat<
   buildConfig: T,
   path: string,
 ): asserts buildConfig is T & {
-  /** 兼容迁移完成后必定存在、且与旧字段代理保持同步的 Rolldown 配置。 */
+  /** 类型层断言为非空；运行时两字段均未提供时仍可能为 undefined，默认值由调用方补齐。 */
   rolldownOptions: Exclude<T['rolldownOptions'], undefined>
 } {
   // 两者同时存在时忽略旧 rollupOptions，以显式新配置为准。
@@ -1519,8 +1529,8 @@ const rollupOptionsRootPaths = new Set([
 ])
 
 /**
- * 克隆 Environment 覆盖对象，并为其中的 build 配置建立 Rolldown 兼容代理。
- * 克隆可防止 mergeConfig 在新增环境时修改调用方原对象（#21612）。
+ * 浅拷贝 Environment 覆盖对象，并为其中的 build 配置建立 Rolldown 兼容代理。
+ * build 仍与原对象共享，安装 getter/setter 会修改这层对象；外层属性在副本上合并。
  */
 function setupRollupOptionCompatForEnvironment(environment: any): any {
   if (!isObject(environment)) {
@@ -1534,7 +1544,7 @@ function setupRollupOptionCompatForEnvironment(environment: any): any {
 }
 
 /**
- * 判断用户是否显式提供了内容不同的 rollupOptions 与 rolldownOptions。
+ * 判断用户是否同时提供了引用不同的 rollupOptions 与 rolldownOptions，不比较对象内容。
  * 兼容代理会让两个属性指向同一对象，该情况不算冲突（#22043）。
  */
 export function hasBothRollupOptionsAndRolldownOptions(
@@ -1688,7 +1698,7 @@ function mergeConfigRecursively(
 
     if (existing == null) {
       if (rootPath === '' && key === 'environments' && isObject(value)) {
-        // 新增整组 environments 时先克隆，避免安装兼容代理修改调用方原对象。
+        // 新增整组 environments 时浅拷贝外层；环境内 build 的兼容代理仍安装在共享对象上。
         const environments = { ...value }
         for (const envName in environments) {
           environments[envName] = setupRollupOptionCompatForEnvironment(
@@ -1724,6 +1734,7 @@ function mergeConfigRecursively(
       merged[key] = true
       continue
     } else if (key === 'plugins' && rootPath === 'worker') {
+      /** 延迟调用两侧 Worker 插件工厂，并按 defaults、overrides 顺序连接插件数组。 */
       merged[key] = () => [
         ...backwardCompatibleWorkerPlugins(existing),
         ...backwardCompatibleWorkerPlugins(value),
@@ -1895,8 +1906,8 @@ function normalizeSingleAlias({
 }
 
 /**
- * 生成不改变行号的转译结果，使开发阶段可省略 sourcemap；构建阶段若用户要求
- * sourcemap，仍生成边界级映射。
+ * 为保持行结构的改写生成结果，保持行号是调用方对 MagicString 编辑的约束。
+ * dev 返回 null map；build 且启用 sourcemap 时生成边界级映射。
  */
 export function transformStableResult(
   s: MagicString,
@@ -1937,8 +1948,7 @@ export function stripBomTag(content: string): string {
 }
 
 /**
- * 判断请求路径大小写是否与磁盘真实名称一致，保证大小写不敏感开发机与生产系统
- * 的行为一致。
+ * 在大小写不敏感文件系统上逐级核对请求路径与磁盘名称；大小写敏感系统直接返回 true。
  */
 export function shouldServeFile(filePath: string, root: string): boolean {
   // 大小写敏感文件系统已由磁盘查找保证，无需额外逐级扫描。
@@ -1960,7 +1970,7 @@ function hasCorrectCase(file: string, assets: string): boolean {
   return false
 }
 
-/** 连接两个 URL 路径段，并保证边界处恰有一个 `/`。 */
+/** 连接 URL 路径段：移除 a 的一个尾斜杠，并在 b 没有前导斜杠时补一个。 */
 export function joinUrlSegments(a: string, b: string): string {
   if (!a || !b) {
     return a || b || ''

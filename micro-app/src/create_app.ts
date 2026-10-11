@@ -38,7 +38,7 @@ import microApp from './micro_app'
 import sourceCenter from './source/source_center'
 
 /**
- * 进程内应用实例注册表；名称是规范化后的唯一键。
+ * 当前框架模块共享的应用实例注册表；名称是规范化后的唯一键。
  *
  * 预取、预渲染、已挂载、隐藏和未彻底销毁的已卸载实例都保留在此，供元素复用与公开 API 查询。
  */
@@ -83,9 +83,9 @@ export default class CreateApp implements AppInterface {
   private state: string = appStates.CREATED
   /** 独立于主生命周期的 keep-alive 显示/隐藏状态。 */
   private keepAliveState: string | null = null
-  /** HTML 与静态资源两路加载进度；2 表示全部就绪，-1 表示 HTML 加载失败。 */
+  /** 样式处理与普通静态脚本预取的两路计数；2 只表示准备屏障完成，async/defer/module 的执行另由脚本执行器安排；-1 表示 HTML 加载失败。 */
   private loadSourceLevel: -1|0|1|2 = 0
-  /** UMD 子应用提供的挂载钩子；脚本首次执行后识别并缓存。 */
+  /** 首次执行脚本时由沙箱捕获的 UMD 挂载钩子，供后续挂载复用。 */
   private umdHookMount: Func | null = null
   /** UMD 子应用提供的卸载钩子；与挂载钩子同时存在时才进入 UMD 模式。 */
   private umdHookUnmount: Func | null = null
@@ -130,6 +130,8 @@ export default class CreateApp implements AppInterface {
 
   /**
    * 注册实例、归一化执行环境，随后立即启动资源加载并按需创建沙箱。
+   * 注册先于字段初始化，加载调用先于沙箱构造；HTML 请求的异步回调和 sandboxReady
+   * 是两条独立链，挂载时才汇合。构造并不代表沙箱已经 active 或 DOM 已经渲染。
    *
    * @param param - 应用身份、隔离方式、容器及预取配置。
    */
@@ -183,11 +185,14 @@ export default class CreateApp implements AppInterface {
     HTMLLoader.getInstance().run(this, extractSourceDom)
   }
 
-    /**
-   * 汇合 HTML 与静态资源两路完成信号，并按普通、纯预取或预渲染模式继续。
+  /**
+   * 汇合样式处理与脚本预取两路完成信号，并按普通、纯预取或预渲染模式继续。
    *
-   * `loadSourceLevel` 到 2 才写入 HTML。普通实例通知宿主元素挂载；三级预取实例在
-   * 临时 `<div prerender>` 中挂载并冻结对浏览器可见的路由/生命周期副作用。
+   * HTML 提取后，两条资源链各调用一次本方法；到 2 才保存 DOM 模板并继续挂载。
+   * 模板先保存，再检查 UNMOUNT：加载期间卸载仍可留下准备结果供后续复用。
+   * 计数依赖每条资源链恰好通知一次，本方法不去重，也不将脚本执行完成计入此屏障。
+   * 普通实例通知宿主元素；三级预取实例在临时 `<div prerender>` 中执行脚本，
+   * 暂缓向真实宿主派发 beforemount/mounted，并阻止路由改动宿主地址。
    * `defaultPage`、`disablePatchRequest`、`routerMode`、`baseroute` 仅供预渲染使用。
    */
   public onLoad ({
@@ -205,10 +210,10 @@ export default class CreateApp implements AppInterface {
         getRootContainer(this.container!).mount(this)
       } else if (this.isPrerender) {
         /**
-         * 预渲染是三级预取的执行阶段：强制 fiber，且只支持虚拟路由。
-         * 为保持对用户不可见，子应用 `pushState/replaceState` 只更新 microLocation，
-         * 不把路由附加到浏览器 URL；不向浏览器派发 popstate/hashchange，不执行会重载
-         * window 的 location 导航，也不派发生命周期事件。
+         * 三级预取强制使用 fiber 执行。`isPrefetch` 使路由层的有效性检查失败，
+         * 阻止 History 提交宿主 URL、宿主路由事件和 location 文档导航；
+         * History 仍可更新内部 microLocation。beforemount/mounted 留待真实挂载补发，
+         * 子应用侧 MOUNTING 状态事件仍会在启动沙箱前派发。
          *
          * 卸载可能发生在资源加载中、脚本分片执行中或脚本完成后，后续流程都必须检查状态。
          */
@@ -248,12 +253,13 @@ export default class CreateApp implements AppInterface {
    * 将已加载实例挂载到目标容器，或在资源未完成时先保存挂载意图。
    *
    * 正常路径依次进入 `BEFORE_MOUNT`/`MOUNTING`、转移 HTML、启动沙箱、执行脚本，
-   * 再由 UMD 钩子或脚本完成回调进入 `MOUNTED`。iframe 沙箱就绪是异步边界；其间
+   * 再由 UMD 钩子或脚本完成回调进入 `MOUNTED`。with 的已解决 ready Promise 也会排微任务，
+   * iframe 的 ready 还需等待 realm 初始化；其间
    * 若实例已卸载，`nextAction` 不再执行。
    *
    * @param container - 真实宿主或预渲染临时容器。
    * @param inline - 是否使用内联脚本节点执行。
-   * @param routerMode - 虚拟路由模式。
+   * @param routerMode - 当前挂载采用的路由模式。
    * @param defaultPage - 虚拟路由缺少状态时的默认页面。
    * @param baseroute - 子应用路由前缀，默认空字符串。
    * @param disablePatchRequest - 是否禁止沙箱改写子应用请求地址。
@@ -272,6 +278,7 @@ export default class CreateApp implements AppInterface {
       /**
        * 资源完成回调需要非空容器，因此加载结束前发生的预取转渲染或卸载后重挂载，
        * 都先保存最新容器。预渲染标志同时取消，避免旧预取意图覆盖真实挂载。
+       * 此分支未保存 inline/fiber/router 等其余挂载参数；资源回调随后重新向宿主取配置。
        */
       this.container = container
       // 真实挂载已先于预渲染开始，取消预渲染身份。
@@ -360,7 +367,7 @@ export default class CreateApp implements AppInterface {
         })
 
         if (!this.umdMode) {
-          // 脚本执行前补丁会在结束时返回可能由子应用注册的 UMD 钩子。
+          // 脚本执行前安装 UMD 属性拦截；子应用写入钩子时立即回调，并非等全部脚本结束。
           this.sandBox?.actionsBeforeExecScripts(this.container, (mount, unmount) => {
             if (!this.umdMode && !this.isUnmounted()) {
               this.umdHookMount = isFunction(mount) ? mount : null
@@ -370,7 +377,7 @@ export default class CreateApp implements AppInterface {
               if (isFunction(this.umdHookMount) && isFunction(this.umdHookUnmount)) {
                 this.sandBox?.markUmdMode(this.umdMode = true)
                 try {
-                  // 脚本完成回调可能已先标记 MOUNTED；此时只补执行刚识别出的 UMD mount。
+                  // 脚本完成回调可能已先标记 MOUNTED；此时只补执行 UMD mount，不等待其返回的 Promise。
                   if (this.getAppState() === appStates.MOUNTED) {
                     this.umdHookMount(microApp.getData(this.name, true))
                   } else {
@@ -383,7 +390,7 @@ export default class CreateApp implements AppInterface {
             }
           })
 
-          // 仅最后一个脚本完成且仍非 UMD 模式时结束普通挂载。
+          // 执行器报告完成且仍非 UMD 模式时进入普通收尾；原生 module 的完成取决于执行器的计数约定。
           execScripts(this, (isFinished: boolean) => {
             if (!this.umdMode && isFinished === true) {
               this.handleMounted()
@@ -410,7 +417,9 @@ export default class CreateApp implements AppInterface {
   }
 
   /**
-   * 统一处理同步或异步 UMD mount 结果，并在失败后仍推进挂载收尾。
+   * 处理 UMD mount 的返回值；返回 Promise 时等待结算，拒绝后仍推进挂载收尾。
+   * 配对 setter 可在脚本序列中途调用本方法，因此不能据此认定所有后续脚本已执行。
+   * `.catch` 也会接住 `.then(nextAction)` 的同步异常，并再次调用收尾，不只处理钩子拒绝。
    *
    * 预渲染时不立即派发生命周期，而是记录动作并释放副作用；真实挂载恢复快照后再执行。
    *
@@ -442,10 +451,10 @@ export default class CreateApp implements AppInterface {
   }
 
   /**
-   * 在脚本及可选 UMD mount 完成后写入 `MOUNTED`，再通知子应用与基座。
+   * 在脚本完成通知或 UMD mount 结算后写入 `MOUNTED`，再通知子应用与基座。
    *
-   * 若应用已在异步期间卸载则不再派发。隐藏中的 keep-alive 应用仍需完成首次渲染，
-   * 随后立即记录并释放全局副作用，使其保持“后台已运行”状态。
+   * 若应用已在异步期间卸载则不再派发。资源已就绪、脚本仍在执行时隐藏的 keep-alive
+   * 应用会继续完成首次挂载，随后再记录并释放本轮新增的全局副作用。
    */
   private actionsAfterMounted (): void {
     if (!this.isUnmounted()) {
@@ -473,26 +482,23 @@ export default class CreateApp implements AppInterface {
       )
 
       /**
-       * 资源加载期间被隐藏的 keep-alive 应用仍要完成渲染，以维持后台运行语义；挂载完成后
-       * 立即记录并释放全部全局事件和定时副作用。
+       * 隐藏时已越过资源屏障、但脚本尚未执行完的应用会走到这里；
+       * 记录执行期间新增的副作用，并尝试解除对应监听。window 记录不保存原目标，
+       * 作用域事件会按当前临时容器选择释放目标，不能保证旧宿主上的监听已经移除。
        */
       if (this.isHidden()) {
         this.sandBox?.recordAndReleaseEffect({ keepAlive: true })
       }
     }
-    /**
-     * TODO: 这里增加一个处理，如果渲染完成时已经卸载，则进行一些操作
-     * 如果是默认模式：删除所有事件和定时器
-     * 如果是umd模式：重新记录和清空事件
-     * 补充：非必需，优先级低
-     */
+    // 已卸载时直接跳过收尾；本方法没有再次清理卸载后异步任务可能新增的副作用。
   }
 
   /**
    * 进入 `UNMOUNT` 并执行子应用 UMD 卸载钩子，随后清理沙箱、DOM 和可选缓存。
    *
-   * 加载失败会强制销毁。iframe 沙箱可能尚未 ready，因此容器可能已被提前清空；
-   * 资源仍在加载时容器也可能存在。参数结构需保持与公开 `unmountApp` 调用链一致。
+   * `LOAD_FAILED` 会强制销毁；状态在钩子调用前写入，异步卸载期间已被视为未挂载。
+   * 钩子返回 Promise 时由后续方法等待；若钩子同步抛错，本方法只记录错误，
+   * 不会继续调用沙箱与 DOM 清理。
    *
    * @param destroy - 是否彻底销毁并删除实例/内联脚本缓存。
    * @param clearData - 是否清除两侧数据中心数据。
@@ -523,7 +529,9 @@ export default class CreateApp implements AppInterface {
   }
 
   /**
-   * 等待异步 UMD unmount，并保证拒绝后仍进入统一清理。
+   * 发出子应用卸载通知后等待异步 UMD unmount，拒绝后仍进入统一清理。
+   * statechange、unmount、onunmount 都在等待 Promise 前同步执行；基座 unmount 则在 stop 后。
+   * Promise 的 catch 同时覆盖 nextAction 抛错，可能再次尝试清理，并非钩子错误的专用通道。
    *
    * 异步等待前清除当前 DOM 作用域，防止嵌套应用把后续异步操作错误绑定到旧应用名。
    *
@@ -579,8 +587,8 @@ export default class CreateApp implements AppInterface {
   /**
    * 执行卸载后的唯一清理出口：保存可复用 DOM、停止沙箱、派发生命周期并清字段。
    *
-   * UMD 非销毁卸载会把当前 DOM 克隆回源码模板以便重挂载；reload 始终保留数据，
-   * 其余场景由 `clearData || destroy` 决定数据清理。
+   * UMD 非销毁卸载会把当前节点转移回 `source.html`，保留节点身份供重挂载复用。
+   * reload 时向沙箱传入 `clearData: false`；其余场景由 `clearData || destroy` 决定。
    *
    * @param destroy - 是否彻底销毁。
    * @param clearData - 是否清除数据中心数据。
@@ -598,8 +606,8 @@ export default class CreateApp implements AppInterface {
     }
     const shouldClearData = this.isReloading ? false : (clearData || destroy)
     /**
-     * 容器中可能包含仍需保存的微应用 DOM，因此必须先克隆再停止沙箱。销毁始终清路由；
-     * UMD 非销毁和 keep-alive 模式不会清 EventSource，以支持恢复。
+     * UMD DOM 要先转存，再停止沙箱。销毁时强制不保留内部路由状态；
+     * with 沙箱的 UMD 非销毁卸载保留 EventSource，隐藏流程则只暂停可恢复副作用。
      */
     this.sandBox?.stop({
       umdMode: this.umdMode,
@@ -608,7 +616,7 @@ export default class CreateApp implements AppInterface {
       clearData: shouldClearData,
     })
 
-    // 沙箱副作用已释放后再通知基座，监听器观察到的是稳定卸载状态。
+    // 先停止沙箱再通知基座；此时状态已是 UNMOUNT，但容器清空和实例删除尚未执行。
     dispatchLifecyclesEvent(
       this.container,
       this.name,
@@ -637,8 +645,8 @@ export default class CreateApp implements AppInterface {
       this.container = null
     } else if (!this.umdMode) {
       /**
-       * 容器为空说明 `sandBox.start` 尚未执行，因而 `sandBox.stop` 也不会运行；
-       * 默认模式必须在这里手动删除已创建的 iframe 元素。
+       * 纯预取实例可能还没有容器，iframe 也可能尚未 start，stop 的 active 检查会跳过；
+       * 默认模式在这里补删已创建的 iframe 元素。
        */
       this.sandBox?.deleteIframeElement?.()
     }
@@ -653,7 +661,7 @@ export default class CreateApp implements AppInterface {
     removeDomScope()
   }
 
-  /** 删除 iframe、当前应用的内联脚本缓存及实例注册，完成不可复用销毁。 */
+  /** 删除 iframe、当前应用的内联脚本缓存及实例注册；共享外链源码和其 appSpace 不在此整体清空，也不单独执行 stop。 */
   public actionsForCompletelyDestroy (): void {
     this.sandBox?.deleteIframeElement?.()
     sourceCenter.script.deleteInlineInfo(this.source.scripts)
@@ -661,22 +669,21 @@ export default class CreateApp implements AppInterface {
   }
 
   /**
-   * 把 keep-alive 应用切换为隐藏态，转移 DOM 并暂停可恢复的全局副作用。
+   * 把 keep-alive 应用切换为隐藏态，转移 DOM 并记录、尝试释放可恢复的副作用。
    *
-   * `afterhidden` 必须在容器转成临时 div、数据监听被释放前派发。资源尚未完成时无法
+   * `afterhidden` 在容器转成临时 div、数据监听被释放前派发。资源尚未完成时无法
    * 保留完整后台实例，会退化为普通卸载；已完成时把 DOM 移入临时容器并保存副作用快照。
+   * 就绪路径不调用 stop，沙箱 active、共享计数及计时器继续保持；window 的作用域监听
+   * 释放按转存后的 container 选目标，记录没有保留旧宿主，所以隐藏不等于全部监听已解除。
    *
    * @param callback - 隐藏或退化卸载完成后的回调。
    */
   public hiddenKeepAliveApp (callback?: CallableFunction): void {
     this.setKeepAliveState(keepAliveStates.KEEP_ALIVE_HIDDEN)
     /**
-     * afterhidden事件需要提前发送，原因如下：
-     *  1. 此时发送this.container还指向micro-app元素，而不是临时div元素
-     *  2. 沙箱执行recordAndReleaseEffect后会将appstate-change方法也清空，之后再发送子应用也接受不到了
-     *  3. 对于this.loadSourceLevel !== 2的情况，unmount是同步执行的，所以也会出现2的问题
-     * TODO: 有可能导致的问题
-     *  1. 在基座接受到afterhidden方法后立即执行unmount，彻底destroy应用时，因为unmount时同步执行，所以this.container为null后才执行cloneContainer
+     * 先向两侧发送 afterhidden：当前容器仍是宿主元素，子应用的 appstate-change
+     * 监听也尚未释放。基座回调若同步销毁应用，会把 container 清空；后面的
+     * cloneContainer 允许空来源，因此不会再把已销毁节点转入临时容器。
      */
     dispatchCustomEventToMicroApp(this, 'appstate-change', {
       appState: 'afterhidden',
@@ -695,7 +702,7 @@ export default class CreateApp implements AppInterface {
     }
 
     /**
-     * 资源完成前隐藏无法建立完整快照，必须卸载；否则转移 DOM 并暂停副作用。
+     * 资源完成前隐藏退回元素卸载；否则先移走活 DOM，再记录与尝试释放监听。
      */
     if (this.loadSourceLevel !== 2) {
       getRootContainer(this.container!).unmount()
@@ -745,11 +752,7 @@ export default class CreateApp implements AppInterface {
       false,
     )
 
-    /**
-     * TODO:
-     *  问题：当路由模式为custom时，keep-alive应用在重新展示，是否需要根据子应用location信息更新浏览器地址？
-     *  暂时不这么做，因为无法确定二次展示时新旧地址是否相同，是否带有特殊信息
-     */
+    // 恢复时只有 search 模式重新附加路由；native/native-scope 不在这里改写浏览器地址。
     if (isRouterModeSearch(this.name)) {
       // 路由先恢复，aftershow 监听器才能读取到可见地址。
       this.sandBox?.setRouteInfoForKeepAliveApp()
@@ -768,12 +771,14 @@ export default class CreateApp implements AppInterface {
   }
 
   /**
-   * 将资源或渲染错误同时通知子应用元素与基座生命周期。
+   * 向子应用窗口派发 `LOAD_FAILED` 状态事件，再向基座派发 error 生命周期。
+   *
+   * 本方法不写入实例主状态；HTML 加载失败时由 `onLoadError()` 随后写入 `LOAD_FAILED`。
    *
    * @param e - 原始错误对象，作为基座 `error` 事件详情的一部分。
    */
   public onerror (e: Error): void {
-    // 子应用先观察 `LOAD_FAILED` 状态，再由基座接收 error 生命周期。
+    // 事件 detail 表示错误状态；此时实例主状态与静态全局状态尚未因此改变。
     dispatchCustomEventToMicroApp(this, 'statechange', {
       appState: appStates.LOAD_FAILED
     })
@@ -809,13 +814,15 @@ export default class CreateApp implements AppInterface {
    * @param origin - 提供节点或 HTML 模板的容器。
    * @param deep - `true` 时重新解析 HTML 形成深拷贝；`false` 时转移现有节点所有权。
    * @returns 原目标容器，任一容器为空时不执行操作。
+   * @remarks Array.from 先固定 childNodes 列表，避免 appendChild 的移动改变遍历集合。
+   * 深拷贝保留 HTML 表达的结构，不保留原节点的事件监听、对象属性和运行状态。
    */
   private cloneContainer <T extends HTMLElement | ShadowRoot | null> (
     target: T,
     origin: T,
     deep: boolean,
   ): T {
-    // 在基座接受到afterhidden方法后立即执行unmount，彻底destroy应用时，因为unmount时同步执行，所以this.container为null后才执行cloneContainer
+    // afterhidden 回调可能同步销毁实例并清空来源容器，此时不再转移节点。
     if (origin && target) {
       target.innerHTML = ''
       Array.from(deep ? this.parseHtmlString(origin.innerHTML).childNodes : origin.childNodes).forEach((node) => {
@@ -880,12 +887,12 @@ export default class CreateApp implements AppInterface {
     return isFunction(listener) ? listener : null
   }
 
-  /** 使用保存的原生查询方法在当前应用容器内查找首个节点。 */
+  /** 在当前真实或临时容器内用捕获的查询方法查找首个节点；无容器返回 null，非法选择器仍由 DOM API 抛错。 */
   public querySelector (selectors: string): Node | null {
     return this.container ? globalEnv.rawElementQuerySelector.call(this.container, selectors) : null
   }
 
-  /** 使用保存的原生查询方法在当前应用容器内查找全部节点。 */
+  /** 在当前容器内查询全部匹配节点；有容器返回静态 NodeList，无容器实际返回空数组，声明类型未表达这个差异。 */
   public querySelectorAll (selectors: string): NodeListOf<Node> {
     return this.container ? globalEnv.rawElementQuerySelectorAll.call(this.container, selectors) : []
   }

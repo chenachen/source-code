@@ -35,7 +35,8 @@ export const transformModel: DirectiveTransform = (dir, node, context) => {
     return createTransformProps()
   }
 
-  // v-model 应来自 parser，loc.source 保留用户原始左值；转换器不支持人工构造且无源码的节点。
+  // parser 的 loc.source 保留用户原始左值。复合表达式用它恢复完整文本，
+  // inline 模式也用它查询 setup 绑定，避免把改写后的 _unref(foo) 当成脚本变量名。
   const rawExp = exp.loc.source.trim()
   const expString =
     exp.type === NodeTypes.SIMPLE_EXPRESSION ? exp.content : rawExp

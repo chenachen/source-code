@@ -4,30 +4,17 @@ import * as t from 'lib0/testing'
 import * as s from 'lib0/schema'
 
 /**
- * 验证 Delta 的游标式 retain/delete/insert 可把 `hello world` 变为 `hello!`。
+ * 内存 Delta 状态为 hello world；应用 retain(5)、delete(6)、insert(!)。结果等于 hello! 的完整 Delta。
  *
- * Delta 属于 lib0，非 Yjs 应用无需引入完整 Yjs 即可用它描述状态与变化集。以下从文本
- * `hello world` 删除 ` world` 并插入感叹号，结果应为 `hello!`。
- *
- * 传统绝对索引写法可能是“删除 [5,11)，再在 11 插入 `!`”；多个变化组合时，后一索引究竟基于变化前
- * 还是变化后状态容易含糊。Delta 改用从左到右移动的游标，`|` 表示当前位置：
- *
- * - `retain(5)`：`|hello world → hello| world`，跳过五个字符；
- * - `delete(6)`：`hello| world → hello|`，删除接下来六个字符；
- * - `insert('!')`：`hello| → hello!|`，在当前游标插入。
- *
- * 两个独立变化也可 rebase/merge：`d1 = retain(5).delete(6)` 删除后半段，`d2 = retain(11).insert('!')`
- * 基于旧状态追加；`d2.rebase(d1)` 会把插入位置改为 5，`d1.apply(d2)` 则合成一次变化。
- *
- * Given：状态为 `hello world`。When：应用紧凑变化 `retain(5).delete(6).insert('!')`。
- * Then：最终状态严格等于只含 `hello!` 的 Delta。
+ * retain/delete 消费旧内容坐标，insert 只推进输出游标；所以删除后缀后，感叹号插在保留的 hello 后。
+ * 并发变化须先 rebase 到同一坐标再顺序 apply；本用例直接应用一个已排好顺序的 change。
  *
  * @param {t.TestCase} _tc
  */
 export const testDeltaBasics = _tc => {
   // 初始状态。
   const state = delta.create().insert('hello world')
-  // 唯一触发动作：删除后缀并在当前游标插入感叹号。
+  // 删除后缀并在当前游标插入感叹号。
   const change = delta.create().retain(5).delete(6).insert('!')
   // DeltaBuilder 原地应用变化。
   state.apply(change)
@@ -36,18 +23,8 @@ export const testDeltaBasics = _tc => {
 }
 
 /**
- * 验证 Delta schema 同时约束属性键值与应用进来的外部 Delta。
- *
- * lib0 schema 可校验 JSON 与 Yjs 自定义类型；约定以 `$` 前缀区分 schema 和实例。例如：
- *
- * const $myobj = s.$object({ key: s.$number })
- * let inputValue: any
- * if ($myobj.check(inputValue)) {
- *   inputValue // 此分支内已通过校验并收窄类型
- * }
- *
- * Given：schema 要求属性 `key` 为字符串。When：直接写布尔值或应用含布尔值的外部 Delta。
- * Then：静态类型拒绝直接写入，运行时 schema 拒绝外部变化。
+ * Delta schema 只允许字符串 key 属性和数值子项；用被静态抑制的代码写入布尔 key，再尝试 apply 含布尔属性的外部 Delta。直接 set 的类型约束产生预期 TypeScript 错误，apply 在运行时 schema 校验抛错。
+ * 本用例未写入 children；schema 配置同时声明其类型。
  *
  * @param {t.TestCase} _tc
  */
@@ -63,18 +40,14 @@ export const testDeltaBasicSchema = _tc => {
 }
 
 /**
- * 验证 Delta 可同时描述属性变化、文本子项、JSON 子项，并按 op 种类遍历。
- *
- * 文本插入也是 children；children 还可包含 JSON 对象与嵌套 Delta，键值对则由 attrs 表示。因此一次
- * 变化可同时设置/删除属性、保留/删除文本并插入异构子项：
- *
- * delta.create().setAttr('a', 42).retain(5).delete(6).insert('!').deleteAttr('b')
+ * 构造含设置/删除属性、retain/delete、文本和对象 insert 的变化；分别迭代属性与子操作并按谓词打印。子操作演示可打印相应内容，旧属性谓词不命中。
+ * SetAttrOp/DeleteAttrOp 应使用属性谓词；此用例无断言，未验证打印输出。
  *
  * @param {t.TestCase} _tc
  */
 export const testDeltaValues = _tc => {
   const change = delta.create().setAttr('a', 42).deleteAttr('b').retain(5).delete(6).insert('!').insert([{ my: 'custom object' }])
-  // 属性迭代器只产生 set/delete 类操作。
+  // 此处迭代到 SetAttrOp/DeleteAttrOp；下方旧子操作谓词不会命中，应分别使用 $setAttrOp/$deleteAttrOp。
   for (const attrChange of change.attrs) {
     if (delta.$insertOp.check(attrChange)) {
       console.log(`set ${attrChange.key} to ${attrChange.value}`)
@@ -97,11 +70,7 @@ export const testDeltaValues = _tc => {
 }
 
 /**
- * 验证同一 Delta 模型既可表示 YType 当前状态，也可表示属性与子项变化。
- *
- * Given：一个空 YType 与分别设置属性、插入文本/对象的两个变化。
- * When：先合并两个变化，再通过 `applyDelta()` 一次写入。
- * Then：observer 收到的深层 Delta 等于合并变化，`toDeltaDeep()` 读出的当前状态也相同。
+ * 空文档根类型注册 observer 捕获深层 Delta；合成 a=42 与 hello/对象插入并一次 applyDelta。事件和最终完整状态都等于输入变化，因为起始状态为空。
  *
  * @param {t.TestCase} _tc
  */
@@ -134,14 +103,8 @@ export const testBasics = _tc => {
 }
 
 /**
- * 验证 attribution 可把两份 Yjs 文档的插入、删除和格式来源投影为仍可编辑的正向内容。
- *
- * attribution 可归属到用户或用户组，分为 `insert`、`delete`、`format`。Renderer 把插入和删除都
- * 输出为带元数据的正向 insert，使编辑器可用删除线展示旧内容、用背景色展示新增内容。
- *
- * Given：V1 为 `hello world`，V2 删除后缀并插入 `!`。When：用 DiffRenderer 渲染 V2。
- * Then：`hello` 无归因，` world` 带 delete，`!` 带 insert；在该历史视图继续编辑时，事件同时给出
- * Renderer 坐标下的归因变化和当前状态坐标下的普通变化。
+ * V1 为 hello world，V2 复制后删除后缀并加 !；建 DiffRenderer 检查完整视图，再以该 Renderer retain 11 后插入 !。完整视图保留带 delete 的旧后缀；后续归因事件 retain 11，普通事件 retain 5。
+ * 两种 retain 坐标都指向原有 ! 之前。格式来源属于机制介绍，本用例没有格式化动作。
  *
  * @param {t.TestCase} _tc
  */

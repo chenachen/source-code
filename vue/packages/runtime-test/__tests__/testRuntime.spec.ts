@@ -15,7 +15,9 @@ import {
   triggerEvent,
 } from '../src'
 
+/** runtime-test宿主把元素、文本和事件保存在普通对象树中；本组直接比较序列化结果，并用triggerEvent驱动单个/数组监听器产生响应式更新。 */
 describe('test renderer', () => {
+  /** 测试场景：空测试root渲染带id和hello文本的div，断言节点种类、props和单文本child；核对内存宿主基础树。 */
   it('should work', () => {
     const root = nodeOps.createElement('div')
     render(
@@ -41,6 +43,7 @@ describe('test renderer', () => {
     expect(text.text).toBe('hello')
   })
 
+  /** 测试场景：清日志后挂响应式div，四条日志顺序为CREATE/SET_ELEMENT_TEXT/PATCH/INSERT；更新id/text后只有两条更新且目标身份相同，核对增量渲染操作。 */
   it('should record ops', async () => {
     const state = reactive({
       id: 'test',
@@ -48,6 +51,7 @@ describe('test renderer', () => {
     })
 
     const App = {
+      /** 渲染'div'节点（属性{id: state.id}；state.text）。 */
       render() {
         return h(
           'div',
@@ -94,7 +98,7 @@ describe('test renderer', () => {
       refNode: null,
     })
 
-    // test update ops
+    // 更新文本与 id 后只应记录两次更新，不再创建或插入元素。
     state.id = 'foo'
     state.text = 'bar'
     await nextTick()
@@ -117,8 +121,10 @@ describe('test renderer', () => {
     })
   })
 
+  /** 测试场景：div含裸布尔prop、span与文本，普通和两空格缩进序列化分别断言完整字符串，核对属性编码与递归层级。 */
   it('should be able to serialize nodes', () => {
     const App = {
+      /** 渲染'div'节点（属性{id: 'test'，boolean: ''}；根数组['span'节点（'foo'）、'hello']）。 */
       render() {
         return h(
           'div',
@@ -135,7 +141,7 @@ describe('test renderer', () => {
     expect(serialize(root)).toEqual(
       `<div><div id="test" boolean><span>foo</span>hello</div></div>`,
     )
-    // indented output
+    // 启用两空格缩进，验证递归层级与节点间换行。
     expect(serialize(root, 2)).toEqual(
       `<div>
   <div id="test" boolean>
@@ -148,13 +154,16 @@ describe('test renderer', () => {
     )
   })
 
+  /** 测试场景：span click递增ref，triggerEvent同步改变count，nextTick后宿主文本更新；核对内存事件与响应式调度边界。 */
   it('should be able to trigger events', async () => {
     const count = ref(0)
 
+    /** 返回'span'节点（属性{onClick回调}；count.value）。 */
     const App = () => {
       return h(
         'span',
         {
+          /** 点击时递增count ref，触发测试宿主span文本在下一轮更新。 */
           onClick: () => {
             count.value++
           },
@@ -171,10 +180,12 @@ describe('test renderer', () => {
     expect(serialize(root)).toBe(`<div><span>1</span></div>`)
   })
 
+  /** 测试场景：span click数组有两个函数，各自递增不同ref；一次triggerEvent后两值都变，nextTick后输出1,2，核对数组顺序分发。 */
   it('should be able to trigger events with multiple listeners', async () => {
     const count = ref(0)
     const count2 = ref(1)
 
+    /** 返回'span'节点（属性{onClick: [ () => { count.value++ }, () => { count2.value++ }, ]}；`${count.value}, ${count2.value}`）。 */
     const App = () => {
       return h(
         'span',

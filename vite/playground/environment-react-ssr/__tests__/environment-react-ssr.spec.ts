@@ -12,6 +12,7 @@ import {
   testDir,
 } from '~utils'
 
+/** 场景：React SSR页面执行hydration；调用hydrated/Count0的isVisible后点击+，再调用Count1的isVisible。此例未断言isVisible返回布尔值，操作成功是实际检查范围。 */
 test('basic', async () => {
   await page.getByText('hydrated: true').isVisible()
   await page.getByText('Count: 0').isVisible()
@@ -20,8 +21,8 @@ test('basic', async () => {
 })
 
 describe.runIf(!isBuild)('pre-bundling', () => {
-  // bundled dev by design: the client environment has no dep optimizer, so
-  // there is no .vite/deps folder to read. Dependencies come from the bundle.
+  // bundled dev 的client依赖来自bundle，没有可读取的.vite/deps。
+  /** 场景：仅非构建且非bundledDev执行：读取client依赖优化清单，核对React/client/JSX runtime存在而react-dom/server不存在。bundledDev没有client optimizer，故skip。 */
   test.skipIf(isBundledDev)('client', async () => {
     const metaJson = readDepOptimizationMetadata()
 
@@ -32,6 +33,7 @@ describe.runIf(!isBuild)('pre-bundling', () => {
     expect(metaJson.optimized['react-dom/server']).toBeFalsy()
   })
 
+  /** 场景：仅非构建执行：读取SSR优化清单，核对React/server/JSX runtime存在而client不存在；扫描SSR产物至少一份保留process.env.NODE_ENV。 */
   test('ssr', async () => {
     const metaJson = readDepOptimizationMetadata('ssr')
 
@@ -41,7 +43,7 @@ describe.runIf(!isBuild)('pre-bundling', () => {
 
     expect(metaJson.optimized['react-dom/client']).toBeFalsy()
 
-    // process.env.NODE_ENV should be kept as keepProcessEnv is true
+    // keepProcessEnv=true 应让SSR优化产物保留process.env.NODE_ENV。
     const depsFiles = fs
       .readdirSync(path.resolve(testDir, 'node_modules/.vite/deps_ssr'), {
         withFileTypes: true,
@@ -55,8 +57,8 @@ describe.runIf(!isBuild)('pre-bundling', () => {
     expect(depsFilesWithProcessEnvNodeEnv.length).toBeGreaterThan(0)
   })
 
-  // bundled dev by design: there is no client dep-optimizer metadata to
-  // compare before and after. The reload this test checks cannot happen.
+  // bundled dev 没有client优化元数据，不能运行此两环境增量优化比较。
+  /** 场景：仅非构建且非bundledDev执行：初始两环境无fake包，给client/server入口各加对应导入并注册文件恢复；等待server→client优化日志顺序，再核对各清单只新增自身fake依赖。bundledDev skip。 */
   test.skipIf(isBundledDev)('deps reload', async () => {
     const envs = ['client', 'server'] as const
 

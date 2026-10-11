@@ -60,7 +60,7 @@ describe('ErrorBoundaryReconciliation', () => {
 
   /**
    * 先提交正常子树，再更新为失败子树；断言传入边界能恢复为指定 fallbackTagName。
-   * 同时覆盖 fallback 与原输出标签相同或不同导致的复用、删除和插入边界。
+   * 覆盖 fallback 与原输出标签相同和不同两种恢复结果；输出断言只核对标签与 prop。
    */
   async function sharedTest(ErrorBoundary, fallbackTagName) {
     let renderer;
@@ -88,28 +88,28 @@ describe('ErrorBoundaryReconciliation', () => {
 
   /**
    * Given componentDidCatch 边界与初始 span；When 同位置子树抛错且 fallback 仍为 span；
-   * Then 边界通过 setState 恢复并正确更新同类型宿主节点。验证 ReactFiberThrow 与 ReactChildFiber 的同类型复用路径。
+   * Then 边界通过 setState 恢复，最终输出带 ErrorBoundary 标记的 span。
    */
   it('componentDidCatch can recover by rendering an element of the same type', () =>
     sharedTest(DidCatchErrorBoundary, 'span'));
 
   /**
    * Given componentDidCatch 边界与初始 span；When 失败后改渲染 div fallback；
-   * Then 旧宿主节点被替换且边界恢复完成。验证 ReactFiberThrow 与 ReactChildFiber 的异类型替换路径。
+   * Then 边界恢复，最终输出带 ErrorBoundary 标记的 div。
    */
   it('componentDidCatch can recover by rendering an element of a different type', () =>
     sharedTest(DidCatchErrorBoundary, 'div'));
 
   /**
    * Given getDerivedStateFromError 边界；When span 子树失败且 fallback 同为 span；
-   * Then render 恢复阶段立即选中 fallback，并复用合法宿主类型。验证 ReactFiberThrow 的派生状态恢复路径。
+   * Then 派生错误状态使恢复 render 选中 span fallback，并提交 ErrorBoundary 标记。
    */
   it('getDerivedStateFromError can recover by rendering an element of the same type', () =>
     sharedTest(GetDerivedErrorBoundary, 'span'));
 
   /**
    * Given getDerivedStateFromError 边界；When span 子树失败而 fallback 为 div；
-   * Then 恢复 render 删除旧节点并提交新类型。验证错误恢复与 reconciliation 组合边界。
+   * Then 派生错误状态使恢复 render 选中 div fallback，并提交 ErrorBoundary 标记。
    */
   it('getDerivedStateFromError can recover by rendering an element of a different type', () =>
     sharedTest(GetDerivedErrorBoundary, 'div'));

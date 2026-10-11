@@ -13,13 +13,13 @@ export type HookFlags = number;
 /** 该 effect 当前不属于任何阶段，也无需在本次 commit 执行。 */
 export const NoFlags = /*   */ 0b0000;
 
-/** 标记依赖已变化，本次对应 commit 阶段需要执行 effect 或 cleanup。 */
+/** 标记首次挂载或依赖变化，本次对应 commit 路径需要执行 effect 或旧 cleanup。 */
 export const HasEffect = /* */ 0b0001;
 
-// 以下位描述 effect 创建函数执行的阶段；cleanup 会在该阶段对应的卸载路径运行。
+// 以下位区分 effect 种类；layout cleanup 在 mutation 阶段，layout create 在之后的 layout 阶段。
 /** useInsertionEffect 所属阶段，早于 layout 读取，用于样式注入等操作。 */
 export const Insertion = /* */ 0b0010;
 /** useLayoutEffect 所属阶段，在 DOM mutation 后、浏览器绘制前同步执行。 */
 export const Layout = /*    */ 0b0100;
-/** useEffect 所属被动阶段，在 commit 主体之后异步 flush。 */
+/** useEffect 所属被动阶段；在 mutation/layout 之后 flush，同步 lane 等路径可在当前任务内冲刷。 */
 export const Passive = /*   */ 0b1000;

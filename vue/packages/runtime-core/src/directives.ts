@@ -114,7 +114,7 @@ export interface ObjectDirective<
   >
   /** 元素卸载前调用。 */
   beforeUnmount?: DirectiveHook<HostElement, null, Value, Modifiers, Arg>
-  /** 元素从宿主环境移除后调用。 */
+  /** 逻辑卸载后的 post 阶段调用；若 leave 延迟物理删除，此钩子不等待动画完成。 */
   unmounted?: DirectiveHook<HostElement, null, Value, Modifiers, Arg>
   /** SSR 时生成额外元素 props；客户端生命周期钩子不会在服务端运行。 */
   getSSRProps?: SSRDirectiveHook<Value, Modifiers, Arg>

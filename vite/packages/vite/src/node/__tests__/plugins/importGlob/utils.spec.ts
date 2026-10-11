@@ -2,11 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { getCommonBase } from '../../../plugins/importMetaGlob'
 
 describe('getCommonBase()', async () => {
-  /**
-   * 场景：tinyglobby 的 cwd 应尽可能收窄到所有正 pattern 的共同静态目录。
-   * 验证目标：区分路径前缀与完整目录，并修正 picomatch.scan 对静态文件把文件名当 base 的行为。
-   * 机制：用多 pattern、单 pattern、静态文件和仅根目录相交的表式断言覆盖。
-   */
+  /** 输入 /a/b/*.js 与 /a/c/*.js；取共同静态目录应为 /a，不能包含分叉后的 b/c。 */
   it('basic', () => {
     expect(getCommonBase(['/a/b/*.js', '/a/c/*.js'])).toBe('/a')
   })

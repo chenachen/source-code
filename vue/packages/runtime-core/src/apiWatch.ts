@@ -108,6 +108,9 @@ export function watchSyncEffect(
 export type MultiWatchSources = (WatchSource<unknown> | object)[]
 
 // 单个 source：回调值类型直接从 source 推导。
+/**
+ * 单个 ref/getter source 的公开重载：从 source 推导新值类型，immediate:true 时旧值允许 undefined。
+ */
 export function watch<T, Immediate extends Readonly<boolean> = false>(
   source: WatchSource<T>,
   cb: WatchCallback<T, MaybeUndefined<T, Immediate>>,
@@ -115,6 +118,9 @@ export function watch<T, Immediate extends Readonly<boolean> = false>(
 ): WatchHandle
 
 // 只读数组/元组：保留每一项类型；ReactiveMarker 用于区分响应式数组本身。
+/**
+ * 只读多 source 元组的重载：逐项保留值类型；ReactiveMarker 区分响应式数组本身与 source 列表。
+ */
 export function watch<
   T extends Readonly<MultiWatchSources>,
   Immediate extends Readonly<boolean> = false,
@@ -127,6 +133,9 @@ export function watch<
 ): WatchHandle
 
 // 可变多 source 元组。
+/**
+ * 可变多 source 元组的重载：回调接收映射后的新旧值元组，而非 source 包装器。
+ */
 export function watch<
   T extends MultiWatchSources,
   Immediate extends Readonly<boolean> = false,
@@ -137,6 +146,9 @@ export function watch<
 ): WatchHandle
 
 // 直接监听响应式对象时，回调接收该对象类型。
+/**
+ * 直接对象 source 的重载：回调接收该对象；底层负责按 deep 设置决定遍历范围。
+ */
 export function watch<
   T extends object,
   Immediate extends Readonly<boolean> = false,
@@ -217,6 +229,9 @@ function doWatch(
     } else if (!runsImmediately) {
       // SSR 只有一次同步渲染，不立即运行的异步 watcher 永远没有触发机会，返回形状
       // 完整的空句柄，既避免创建 effect，也不破坏调用方 stop/pause/resume 代码。
+      /**
+       * SSR 非同步且不会立即运行的 watcher 使用空停止句柄；不创建 effect，并补 stop/pause/resume 以保持调用协议。
+       */
       const watchStopHandle = () => {}
       watchStopHandle.stop = NOOP
       watchStopHandle.resume = NOOP
@@ -226,18 +241,27 @@ function doWatch(
   }
 
   const instance = currentInstance
+  /**
+   * 把 getter、回调和 cleanup 的执行连接到捕获组件的错误边界；type 由响应式 watch 传入，args 保持底层调用约定。
+   */
   baseWatchOptions.call = (fn, type, args) =>
     callWithAsyncErrorHandling(fn, instance, type, args)
 
   // 将响应式层产生的 job 对接组件渲染调度顺序。
   let isPre = false
   if (flush === 'post') {
+    /**
+     * post 模式将 job 交给组件提交后的队列；处于 pending Suspense 时由边界暂存，等分支提交才释放。
+     */
     baseWatchOptions.scheduler = job => {
       queuePostRenderEffect(job, instance && instance.suspense)
     }
   } else if (flush !== 'sync') {
     // 默认 `pre`：首次执行同步完成依赖收集，后续变化再进入去重队列。
     isPre = true
+    /**
+     * pre 模式首轮同步执行以建立依赖，后续 job 进入去重主队列；组件 uid/PRE 标志在 augmentJob 中补齐。
+     */
     baseWatchOptions.scheduler = (job, isFirstRun) => {
       if (isFirstRun) {
         job()
@@ -247,6 +271,9 @@ function doWatch(
     }
   }
 
+  /**
+   * watch 回调任务允许有意回写 source；pre 任务附加 PRE 与所属组件 uid，排序在该组件 render job 前，并保存实例用于错误诊断。
+   */
   baseWatchOptions.augmentJob = (job: SchedulerJob) => {
     // #1727：watch 回调不在执行期间追踪依赖；它若写回 source 通常是有意的状态
     // 归一化流程，因此允许自触发。watchEffect 没有此标记，避免读写同一依赖死循环。
@@ -309,8 +336,11 @@ export function instanceWatch(
 }
 
 /**
- * 为 Options API 字符串路径创建安全 getter。
- * 遍历途中遇到 null/undefined 即停止，避免尚未初始化的中间属性导致运行时异常。
+ * 为 Options API 字符串 source 创建点路径 getter。
+ *
+ * @param ctx 本组件公共代理，是路径读取的起点
+ * @param path 点分隔路径，不解析任意 JavaScript 表达式
+ * @returns 每次重新沿路径取值的函数；中间值为任意 falsy（含 null、undefined、0、false、空串）就停止并返回该值，避免继续访问。
  */
 export function createPathGetter(
   ctx: ComponentPublicInstance,

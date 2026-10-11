@@ -12,6 +12,9 @@ import {
 import { transformElement } from '../../src/transforms/transformElement'
 
 describe('compiler: noop directive transform', () => {
+  /**
+   * 解析带 v-noop 的原生 div，并将 noopDirectiveTransform 注册进指令转换表；转换后检查 VNodeCall 的 props 为 undefined。该指令返回空属性列表，因此不会给元素生成属性。
+   */
   test('should add no props to DOM', () => {
     const ast = parse(`<div v-noop/>`)
     transform(ast, {

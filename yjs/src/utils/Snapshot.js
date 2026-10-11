@@ -20,7 +20,7 @@ import { Doc } from './Doc.js'
  */
 export class Snapshot {
   /**
-   * 创建快照值对象；调用方应把参数视为快照拥有的只读状态。
+   * 保存删除集与 state vector 的引用，不复制或冻结；修改传入集合也会改变此快照。
    *
    * @param {IdSet} ds - 快照时已删除的 ID 区间。
    * @param {Map<number,number>} sv - 快照时各 client 的下一个 clock。
@@ -37,6 +37,8 @@ export class Snapshot {
 
 /**
  * 比较两个快照的 state vector 与 delete set 是否结构相等。
+ *
+ * state vector 严格比较键数量和值，显式的 client→0 项与缺省项不会被视为相等，即使两者都不包含该 client 的插入。
  *
  * @param {Snapshot} snap1 - 左快照。
  * @param {Snapshot} snap2 - 右快照。
@@ -59,6 +61,8 @@ export const equalSnapshots = (snap1, snap2) => {
 /**
  * 以指定 V1/V2 ID-set 编码器依次写入 delete set 与 state vector。
  *
+ * 这里编码的是边界元数据而非 Item 内容；格式版本由调用方选择，没有独立版本标志可供 decode 自动识别。
+ *
  * @param {Snapshot} snapshot - 待编码快照。
  * @param {IdSetEncoderV1 | IdSetEncoderV2} [encoder] - 默认使用 V2。
  * @return {Uint8Array} 版本匹配的快照载荷。
@@ -79,6 +83,8 @@ export const encodeSnapshot = snapshot => encodeSnapshotV2(snapshot, new IdSetEn
 
 /**
  * 按写入顺序从载荷读取 delete set 和 state vector。
+ *
+ * 若显式传入 decoder，就直接从该 decoder 当前游标读；buf 只用于默认 decoder 的构造，不能靠它覆盖已有解码器游标。
  *
  * @param {Uint8Array} buf - 快照字节。
  * @param {IdSetDecoderV1 | IdSetDecoderV2} [decoder] - 默认使用 V2。
@@ -105,7 +111,7 @@ export const decodeSnapshot = buf => decodeSnapshotV2(buf, new IdSetDecoderV1(de
  */
 export const createSnapshot = (ds, sm) => new Snapshot(ds, sm)
 
-/** 不含任何已知结构和删除区间的共享空快照。 */
+/** 不含已知结构/删除区间的共享空快照；其集合可变，修改它会影响所有引用此常量的调用方。 */
 export const emptySnapshot = createSnapshot(createIdSet(), new Map())
 
 /**
@@ -120,6 +126,7 @@ export const snapshot = doc => createSnapshot(createDeleteSetFromStructStore(doc
  * 把受快照边界影响的结构切开，使后续可见性判断能按整结构处理。
  *
  * state vector 上界与 delete-set 区间端点都可能落在 Item 内部；先切分可保证每个结构整体属于快照内/外或删除/未删。事务 meta 按快照去重，避免同一事务重复改变结构分段。
+ * 去重依据 Snapshot 对象身份，不是 equalSnapshots；这里只改变物理分段并登记合并候选，不新增插入或删除事实。
  *
  * @param {Transaction} transaction - 允许登记切分与后续合并的事务。
  * @param {Snapshot} snapshot - 决定切分边界的快照。
@@ -142,7 +149,9 @@ export const splitSnapshotAffectedStructs = (transaction, snapshot) => {
 /**
  * 从禁用 GC 的源文档中编码快照以内的历史，并应用到新文档以重建该切面。
  *
- * WHY：快照只保存边界，不保存内容；恢复必须从源 store 取出每个 client 在 `sv` 之前的结构，再附上快照 delete set。GC 会抹去删除内容，因此启用 GC 的源文档无法保证可恢复。
+ * 快照只保存边界，不保存内容；源 store 必须仍含每个 client 在 `sv` 之前的结构与载荷。此前已被 GC 的内容不能通过后来设置 `gc=false` 补回。
+ * 恢复通过 applyUpdateV2 应用历史前缀和快照删除集；目标应为空，非空目标已有的后续结构不会被回滚。
+ * 编码在源文档的同步事务内执行，必要时临时切开 Item；它可触发源 Doc 的事务生命周期，但不改变源文档可见内容。
  *
  * @example
  *  const ydoc = new Y.Doc({ gc: false })
@@ -154,7 +163,7 @@ export const splitSnapshotAffectedStructs = (transaction, snapshot) => {
  *
  * @param {Doc} originDoc - `gc=false` 且仍持有历史内容的源文档。
  * @param {Snapshot} snapshot - 待恢复切面。
- * @param {Doc} [newDoc] - 可选目标文档；默认新建空文档。
+ * @param {Doc} [newDoc] - 可选目标文档；精确恢复旧切面时需为空，默认新建空文档。
  * @return {Doc} 应用快照 update 后的目标文档。
  */
 export const createDocFromSnapshot = (originDoc, snapshot, newDoc = new Doc()) => {
@@ -200,7 +209,7 @@ export const createDocFromSnapshot = (originDoc, snapshot, newDoc = new Doc()) =
 }
 
 /**
- * 判断一个 update 的全部新增结构与删除区间是否已包含在快照中。
+ * 判断 update 编码的全部结构 ID 区间与删除事实是否已被快照覆盖；不比较结构载荷。
  *
  * 每个结构末端必须不超过快照对应 client 的 state；把 update delete set 合并进快照后仍与原集合相等，才能证明 update 未引入快照之外的删除事实。
  *

@@ -15,6 +15,8 @@ import * as error from 'lib0/error'
 /**
  * 把兼容 fixture 中的共享类型 JSON 规整为便于比较的 children/attrs 值。
  *
+ * 输入是已应用历史更新的根类型；数组子类型仅保留其 attrs 或 children 作为旧版 JSON 对照，返回值不是完整当前类型 JSON。
+ *
  * @param {Y.Type} ytype
  */
 const ytypeToJSON = ytype => ytype.toJSON()?.children?.map(x => s.$objectAny.check(x) ? (x.attrs || x.children) : x)

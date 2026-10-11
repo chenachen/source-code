@@ -800,7 +800,7 @@ describe('ReactDeferredValue', () => {
   /**
    * 场景（Given–When–Then）：给定父 App 和子 Content 各有 `initialValue`；当首次挂载；那么只
    * 使用最外层 App Preview，内层直接尝试 Content，避免预览逐层瀑布。
-   * 对应机制：同一渲染树中的 deferred depth 标记只允许第一层走初始值。
+   * 对应机制：后台渲染携带 DeferredLane；isRenderingDeferredWork() 让其中新挂载的 deferred Hook 直接采用最终值，避免再次安排预览。
    */
   it(
     'if there are multiple useDeferredValues in the same tree, only the ' +
@@ -829,9 +829,8 @@ describe('ReactDeferredValue', () => {
       assertLog([
         // App 先显示即时预览。
         'App Preview',
-        // 随后切到 Content；父级已经显示过预览，因此跳过内层预览并直接尝试最终值。
-        //
-        // 这刻意不同于嵌套 Suspense：后者总是优先显示最内层 loading 状态。
+        // 随后切到 Content；本轮是父级派生的 deferred 工作，因此跳过内层预览并直接尝试最终值。
+        // 内层挂起时，已提交的 App Preview 仍保留。
         'Suspend! [Content]',
       ]);
       // 内层内容挂起，所以仍显示 App Preview。
@@ -891,7 +890,7 @@ describe('ReactDeferredValue', () => {
   /**
    * 场景（Given–When–Then）：给定父级 deferred 预览与内层 Content 之间隔着 Suspense；当
    * 父预览结束、内层最终内容挂起；那么仍跳过 Content Preview 并显示边界 fallback。
-   * 对应机制：Suspense 边界不会重置 deferred depth 的防瀑布标记。
+   * 对应机制：Suspense 边界内仍带有 DeferredLane，isRenderingDeferredWork() 让新挂载 Hook 跳过初始预览。
    */
   it('avoids a useDeferredValue waterfall when separated by a Suspense boundary', async () => {
     // 与上一防瀑布场景相同，但两个 deferred hook 之间增加 Suspense 边界。
@@ -957,6 +956,7 @@ describe('ReactDeferredValue', () => {
     /** 持有 Activity 可见性状态，并暴露揭示回调给测试。 */
     function Container({children}) {
       const [shouldShow, setState] = useState(false);
+      /** 把 Activity 切为 visible，检查已预渲染内容及 pending deferred 工作能否复用。 */
       revealContent = () => setState(true);
       return (
         <Activity mode={shouldShow ? 'visible' : 'hidden'}>{children}</Activity>
@@ -990,7 +990,7 @@ describe('ReactDeferredValue', () => {
 
   /**
    * 场景（Given–When–Then）：给定隐藏树从 A 更新到 B 且提供 Preview B；当后台仅预渲染预览时
-   * 揭示；那么先无额外工作显示预览，再后台完成 B。对应机制：reveal 视为挂载并保留 initialValue。
+   * 揭示；那么先无额外工作显示预览，再后台完成 B。对应机制：隐藏树取值沿用 mountDeferredValueImpl 的预览策略，组件与 Hook 状态继续保留。
    */
   it('useDeferredValue can prerender the initial value inside a hidden tree', async () => {
     /** 为每个文本生成 Preview，并记录隐藏树原始/最终渲染顺序。 */
@@ -1007,6 +1007,7 @@ describe('ReactDeferredValue', () => {
     /** 持有 Activity 可见性状态，并暴露揭示回调。 */
     function Container({children}) {
       const [shouldShow, setState] = useState(false);
+      /** 把 Activity 切为 visible，检查已预渲染内容及 pending deferred 工作能否复用。 */
       revealContent = () => setState(true);
       return (
         <Activity mode={shouldShow ? 'visible' : 'hidden'}>{children}</Activity>
@@ -1038,7 +1039,7 @@ describe('ReactDeferredValue', () => {
       await waitForPaint(['Preview [B]']);
       expect(root).toMatchRenderedOutput(<div hidden={true}>Preview [B]</div>);
 
-      // 预渲染尚未完成时揭示；揭示被视为新挂载，因此不能跳过 preview 状态。
+      // 预渲染尚未完成时揭示；现有 deferred Hook 仍保留 preview，揭示不会重置组件状态。
       revealContent();
       // preview 已经预渲染，可不做额外内部工作直接揭示。
       if (gate(flags => flags.enableYieldingBeforePassive)) {
@@ -1087,7 +1088,7 @@ describe('ReactDeferredValue', () => {
       assertLog(['Preview [A]', 'A']);
       expect(root).toMatchRenderedOutput(<div hidden={true}>A</div>);
 
-      // 揭示时最终值与已预渲染值引用相同，可跳过 preview、直接复用最终树，无需补做揭示工作。
+      // 揭示时最终值与已预渲染值引用相同，可跳过 preview、直接采用最终 A；内层仍有 A 的渲染日志，但不再次显示 Preview A。
       await act(() => root.render(<Container text="A" shouldShow={true} />));
       assertLog(['A']);
       expect(root).toMatchRenderedOutput(<div>A</div>);
@@ -1095,9 +1096,9 @@ describe('ReactDeferredValue', () => {
   );
 
   /**
-   * 场景（Given–When–Then）：给定隐藏树预渲染 A，但揭示时输入变为 B；当同步 reveal；那么
+   * 场景（Given–When–Then）：给定隐藏树预渲染 A，但揭示时输入变为 B；当普通更新同时揭示并把输入改为 B；那么
    * 不能 bailout，先提交 Preview B，再 deferred 提交 B。对应机制：final value 身份变化使揭示
-   * 按新挂载语义采用 `initialValue`。
+   * 让既有 Hook 复用 mountDeferredValueImpl 的值选择策略，先采用 `initialValue`。
    */
   it(
     'useDeferredValue does not skip the preview state when revealing a ' +
@@ -1129,7 +1130,7 @@ describe('ReactDeferredValue', () => {
       assertLog(['Preview [A]', 'A']);
       expect(root).toMatchRenderedOutput(<div hidden={true}>A</div>);
 
-      // 揭示时最终值已变为 B，不能 bailout；揭示视为新挂载，因此先显示 Preview B。
+      // 揭示时最终值已变为 B，不能 bailout；既有 Hook 复用首次渲染的值选择策略，因此先显示 Preview B。
       await act(async () => {
         root.render(<Container text="B" shouldShow={true} />);
         // 首先提交预览状态。
@@ -1144,7 +1145,7 @@ describe('ReactDeferredValue', () => {
 
   /**
    * 场景（Given–When–Then）：给定未提供 initialValue 的隐藏树先预渲染 A；当更新为 B 并同时
-   * 揭示；那么直接显示 B 而非把 A 当“上一值”延迟复用。对应机制：reveal 概念上是新树挂载。
+   * 揭示；那么直接显示 B 而非把 A 当“上一值”延迟复用。对应机制：隐藏树更新复用 mountDeferredValueImpl；未提供 initialValue 时直接采用新值。
    */
   it(
     'useDeferredValue does not show "previous" value when revealing a hidden ' +
@@ -1176,7 +1177,7 @@ describe('ReactDeferredValue', () => {
       assertLog(['A']);
       expect(root).toMatchRenderedOutput(<div hidden={true}>A</div>);
 
-      // 同时更新并揭示；即使是同步更新，也应把它视为新树并立即采用 B，而非停留在旧 A。
+      // 同时更新并揭示；既有 Hook 使用首次渲染的值选择策略，未提供 initialValue 时立即采用 B。
       await act(() => root.render(<Container text="B" shouldShow={true} />));
       assertLog(['B']);
       expect(root).toMatchRenderedOutput(<div>B</div>);
@@ -1227,7 +1228,7 @@ describe('ReactDeferredValue', () => {
 
     await act(() => setValue('updated'));
     assertLog([
-      // 同步 render 延迟新值。
+      // 普通紧急更新先保留 deferred 旧值。
       'A:initial',
       'B: initial',
       // deferred render 中 A 挂起，Sibling 随后在同轮完成 A。

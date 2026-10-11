@@ -16,12 +16,9 @@ import {
  * IIFE 格式 worker 的浏览器集成矩阵。
  *
  * 重点验证无 ESM 语法的 worker 输出、`import.meta` 兼容改写、内联包装器、
- * 嵌套 worker 与 sourcemap；与 ES 套件对照可看到 format 只改变装载机制。
+ * 嵌套 worker 与 sourcemap；与 ES 套件对照观察输出格式对代码与装载方式的影响。
  */
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “page.textContent('.pong')”。
- * 验证目标：“page.textContent('.pong')” 应匹配 “'pong'”；“page.textContent('.mode')” 应匹配 “process.env.NODE_ENV”，从而确认Worker/SharedWorker 包装、格式与消息传递在浏览器中可执行。
- */
+/** 页面先创建独立 worker，轮询 pong、NODE_ENV 与子构建插件成功消息；SVG URL 在构建时指向带 hash 产物、dev 指向源文件，ES 套件还检查 CJS 依赖消息。 */
 test('normal', async () => {
   await expect.poll(() => page.textContent('.pong')).toMatch('pong')
   await expect
@@ -39,72 +36,48 @@ test('normal', async () => {
     )
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “page.textContent('.pong-named')”。
- * 验证目标：“page.textContent('.pong-named')” 应匹配 “'namedWorker'”，从而确认Worker/SharedWorker 包装、格式与消息传递在浏览器中可执行。
- */
+/** 页面以 name=namedWorker 创建 worker，轮询回传文本含该名称，验证构造选项传入 worker 全局。 */
 test('named', async () => {
   await expect
     .poll(() => page.textContent('.pong-named'))
     .toMatch('namedWorker')
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “page.textContent('.pong-ts-output')”。
- * 验证目标：“page.textContent('.pong-ts-output')” 应匹配 “'pong'”，从而确认Worker/SharedWorker 包装、格式与消息传递在浏览器中可执行。
- */
+/** 页面加载由插件输出为 TypeScript 的 worker，轮询 pong，验证子构建继续处理其输出类型。 */
 test('TS output', async () => {
   await expect.poll(() => page.textContent('.pong-ts-output')).toMatch('pong')
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “page.textContent('.pong-inline')”。
- * 验证目标：“page.textContent('.pong-inline')” 应匹配 “'pong'”，从而确认worker 内联包装器生成可执行 blob/data URL 且保留格式语义。
- */
+/** 页面通过 inline worker 包装器启动实例，轮询 pong，验证内联代码可以执行。 */
 test('inlined', async () => {
   await expect.poll(() => page.textContent('.pong-inline')).toMatch('pong')
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “page.textContent('.pong-inline-named')”。
- * 验证目标：“page.textContent('.pong-inline-named')” 应匹配 “'namedInlineWorker'”，从而确认worker 内联包装器生成可执行 blob/data URL 且保留格式语义。
- */
+/** 页面传 name=namedInlineWorker 给 inline 包装器，轮询回传该名称，验证包装器保留选项。 */
 test('named inlined', async () => {
   await expect
     .poll(() => page.textContent('.pong-inline-named'))
     .toMatch('namedInlineWorker')
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “page.textContent('.tick-count')”。
- * 验证目标：“page.textContent('.tick-count')” 应匹配 “'pong'”，从而确认Worker/SharedWorker 包装、格式与消息传递在浏览器中可执行。
- */
+/** 页面连接 SharedWorker 端口并发送消息，轮询端口回传 pong，验证共享实例通信。 */
 test('shared worker', async () => {
   await expect.poll(() => page.textContent('.tick-count')).toMatch('pong')
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “page.textContent('.tick-count-named')”。
- * 验证目标：“page.textContent('.tick-count-named')” 应匹配 “'pong'”，从而确认Worker/SharedWorker 包装、格式与消息传递在浏览器中可执行。
- */
+/** 页面创建带名称的 SharedWorker 并连接端口，轮询 pong，验证命名构造选项下仍可通信。 */
 test('named shared worker', async () => {
   await expect.poll(() => page.textContent('.tick-count-named')).toMatch('pong')
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “page.textContent('.pong-shared-inline')”。
- * 验证目标：“page.textContent('.pong-shared-inline')” 应匹配 “'pong'”，从而确认worker 内联包装器生成可执行 blob/data URL 且保留格式语义。
- */
+/** 页面连接 inline SharedWorker 的端口，轮询 pong，验证内联共享实例可执行并通信。 */
 test('inline shared worker', async () => {
   await expect
     .poll(() => page.textContent('.pong-shared-inline'))
     .toMatch('pong')
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “page.textContent('.nested-worker')”。
- * 验证目标：“page.textContent('.nested-worker')” 应匹配 “'/worker-nested'”；“page.textContent('.nested-worker-module')” 应匹配 “'/sub-worker'”，从而确认子构建递归发现 worker 入口并发出可访问 chunk。
- */
+/** 页面启动父 worker 和嵌套 worker，分别轮询父入口名、sub-worker 名与 constructor 消息；IIFE 套件仅 dev 执行此分支，其余套件两模式均有对应断言。 */
 test.runIf(!isBuild)(
   'worker emitted and import.meta.url in nested worker (serve)',
   async () => {
@@ -122,15 +95,12 @@ test.runIf(!isBuild)(
 
 describe.runIf(isBuild)('build', () => {
   // 构建期同时验证文件集合与 IIFE 包装代码。
-  /**
-   * 场景：在 “'build'” 中，加载用例 fixture 并观察 “fileContent”。
-   * 验证目标：“fileContent” 不应包含 “'my-inline-shared-worker.js'”；“workerContent” 不应匹配 “/import\s*["(]/”，从而确认worker 内联包装器生成可执行 blob/data URL 且保留格式语义。
-   */
+  /** 仅构建模式枚举输出并读取独立 worker 与主 chunk：检查 worker 无所匹配的 import/export 文本，主 chunk 使用资产 URL，内联包装含 Blob/createObjectURL；ES 套件还检查 data URL 回退与内联 SharedWorker。 */
   test('inlined code generation', async () => {
     const assetsDir = path.resolve(testDir, 'dist/iife/assets')
     const files = fs.readdirSync(assetsDir)
 
-    // 只以内联方式使用的 worker 不应再额外发射独立文件。
+    // 已发射的 worker 文件中不包含内联 SharedWorker 的源文件名。
     const workerFiles = files.filter((f) => f.startsWith('worker_'))
     for (const file of workerFiles) {
       const fileContent = fs.readFileSync(
@@ -159,10 +129,7 @@ describe.runIf(isBuild)('build', () => {
     expect(content).toMatch(`self.Blob`)
   })
 
-  /**
-   * 场景：在 “'build'” 中，加载用例 fixture 并观察 “page.textContent('.nested-worker-module')”。
-   * 验证目标：“page.textContent('.nested-worker-module')” 应匹配 “'"type":"module"'”；“page.textContent('.nested-worker-constructor')” 应匹配 “'"type":"constructor"'”，从而确认子构建递归发现 worker 入口并发出可访问 chunk。
-   */
+  /** 仅构建模式检查已启动嵌套 worker 的回传，分别要求 module 与 constructor 类型文本，验证两条创建路径的产物可执行。 */
   test('worker emitted and import.meta.url in nested worker (build)', async () => {
     await expect
       .poll(() => page.textContent('.nested-worker-module'))
@@ -172,22 +139,16 @@ describe.runIf(isBuild)('build', () => {
       .toMatch('"type":"constructor"')
   })
 
-  /**
-   * 场景：在 “'build'” 中，加载用例 fixture 并观察 “manifest['index.html']”。
-   * 验证目标：“manifest['index.html']” 应已定义，从而确认子构建递归发现 worker 入口并发出可访问 chunk。
-   */
+  /** 仅构建模式读取 IIFE 主 manifest，确认 index.html 键存在；该断言未单独枚举 worker manifest 文件。 */
   test('should not emit worker manifest', async () => {
     const manifest = readManifest('iife')
     expect(manifest['index.html']).toBeDefined()
   })
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “page.textContent('.worker-import-meta-url')”。
- * 验证目标：“page.textContent('.worker-import-meta-url')” 应匹配 “/A\sstring.*\/iife\/.+url-worker\.js.+url-worker\.js/”；“page.textContent('.worker-import-meta-url-resolve')” 应匹配 “/A\sstring.*\/iife\/.+url-worker\.js.+url-worker\.js/”，从而确认Worker/SharedWorker 包装、格式与消息传递在浏览器中可执行。
- */
+/** 页面分别通过相对路径、别名、无扩展名 URL 创建 worker，并连接 URL SharedWorker；轮询 A string，IIFE 另检查回显的入口 URL。 */
 test('module worker', async () => {
-  // IIFE 输出中 import.meta.url / resolve 均需改写为基于 self.location 的表达式。
+  // IIFE 输出中的 import.meta.url 改写为 self.location.href；别名解析发生在 URL 转换时。
   await expect
     .poll(async () => page.textContent('.worker-import-meta-url'))
     .toMatch(/A\sstring.*\/iife\/.+url-worker\.js.+url-worker\.js/)
@@ -202,10 +163,7 @@ test('module worker', async () => {
     .toMatch('A string')
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “page.textContent('.classic-worker')”。
- * 验证目标：“page.textContent('.classic-worker')” 应匹配 “'A classic'”；“page.textContent('.classic-worker-import')” 应匹配 “'[success] classic-esm'”，从而确认Worker/SharedWorker 包装、格式与消息传递在浏览器中可执行。
- */
+/** 页面启动 classic Worker 与 SharedWorker，轮询 A classic；仅 dev 另检查 classic worker 中动态 ESM 导入回传 success。 */
 test('classic worker', async () => {
   await expect
     .poll(() => page.textContent('.classic-worker'))
@@ -220,71 +178,50 @@ test('classic worker', async () => {
     .toMatch('A classic')
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “page.textContent('.simple-worker-url')”。
- * 验证目标：“page.textContent('.simple-worker-url')” 应匹配 “'Hello from simple worker!'”，从而确认Worker/SharedWorker 包装、格式与消息传递在浏览器中可执行。
- */
+/** 页面将 ?worker&url 导出的 URL 交给 Worker，轮询 Hello from simple worker，验证 URL 包装入口。 */
 test('url query worker', async () => {
   await expect
     .poll(() => page.textContent('.simple-worker-url'))
     .toMatch('Hello from simple worker!')
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “page.textContent('.importMetaGlobEager-worker')”。
- * 验证目标：“page.textContent('.importMetaGlobEager-worker')” 应匹配 “'["'”，从而确认worker 内部的插件解析、glob/JSON 和包自引用与主构建一致。
- */
+/** worker 的 eager glob 预先导入匹配模块，再回传映射的键数组；页面轮询文本含 JSON 数组开头，验证键数组消息已到达。 */
 test('import.meta.glob eager in worker', async () => {
   await expect
     .poll(() => page.textContent('.importMetaGlobEager-worker'))
     .toMatch('["')
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “page.textContent('.worker-require-json')”。
- * 验证目标：“page.textContent('.worker-require-json')” 应匹配 “'[{"name":"a"},{"name":"b"}]'”，从而确认worker 内部的插件解析、glob/JSON 和包自引用与主构建一致。
- */
+/** 仅构建模式启动含 require(JSON) 的 worker，轮询两个 name 对象的数组文本，验证子构建处理 CommonJS JSON。 */
 test.runIf(isBuild)('require json in worker', async () => {
   await expect
     .poll(() => page.textContent('.worker-require-json'))
     .toMatch('[{"name":"a"},{"name":"b"}]')
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “page.textContent('.self-reference-worker')”。
- * 验证目标：“page.textContent('.self-reference-worker')” 应等于 “'pong: main\npong: nested\n'”，从而确认worker 内部的插件解析、glob/JSON 和包自引用与主构建一致。
- */
+/** 页面启动 ?worker 自引用入口，以 main 消息控制只创建下一层，轮询两行 main/nested，验证两层执行且没有持续递归创建。 */
 test('self reference worker', async () => {
-  // 自引用由运行时逻辑终止，不应被 worker 子构建缓存误判为静态循环。
+  // main 创建下一层，nested 只回传消息；运行时条件终止继续创建。
   await expect
     .poll(() => page.textContent('.self-reference-worker'))
     .toBe('pong: main\npong: nested\n')
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “page.textContent('.self-reference-url-worker')”。
- * 验证目标：“page.textContent('.self-reference-url-worker')” 应等于 “'pong: main\npong: nested\n'”，从而确认worker 内部的插件解析、glob/JSON 和包自引用与主构建一致。
- */
+/** 页面启动 new URL 自引用入口，以 main 消息控制只创建下一层，轮询两行 main/nested，验证两层执行。 */
 test('self reference url worker', async () => {
   await expect
     .poll(() => page.textContent('.self-reference-url-worker'))
     .toBe('pong: main\npong: nested\n')
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “page.textContent('.self-reference-url-worker-dep')”。
- * 验证目标：“page.textContent('.self-reference-url-worker-dep')” 应等于 “'pong: main\npong: nested\n'”，从而确认worker 内部的插件解析、glob/JSON 和包自引用与主构建一致。
- */
+/** 页面启动依赖包中的 URL 自引用入口，轮询 main/nested 两行，验证包内入口也能解析自身并只创建下一层。 */
 test('self reference url worker in dependency', async () => {
   await expect
     .poll(() => page.textContent('.self-reference-url-worker-dep'))
     .toBe('pong: main\npong: nested\n')
 })
 
-/**
- * 场景：在当前 playground 中，导航到 “page.goto(viteTestUrl)”。
- * 验证目标：移除注入的 env import 后，Source Map 的 sources 必须指向 `my-worker.ts?worker_file&type=module`，mappings 仍覆盖原 worker 语句，确认运行时前置代码没有错移源码行列。
- */
+/** 仅 dev 先监听 worker_file 响应再导航页面，移除 env import 文本后提取 source map，将 sources、mappings 与可视化数据完整对照快照，验证注入与转换偏移。 */
 test.runIf(isServe)('sourcemap is correct after env is injected', async () => {
   // 环境运行时被前置后，原 worker 源码位置仍应映射到正确行列。
   const response = page.waitForResponse(

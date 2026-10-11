@@ -66,6 +66,9 @@ import {useOptimistic} from './src/ReactClient';
  * 保留旧实验名称，并把调用转发给已进入 canary 渠道的 `useOptimistic`。
  *
  * @remarks 此开发入口始终保留迁移提示；别名本身不改变 reducer 或派发语义。
+ * @param passthrough - 本次 render 提供的基础状态，乐观 action 在其上计算临时状态。
+ * @param reducer - 可选的状态合并规则，原样交给当前 renderer dispatcher。
+ * @returns 当前乐观状态与派发函数；存储、回放和 transition 生命周期由 useOptimistic 实现。
  */
 export function experimental_useOptimistic<S, A>(
   passthrough: S,

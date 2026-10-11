@@ -121,7 +121,7 @@ export interface TransformContext
   cached: (CacheExpression | null)[]
   /** 当前模板局部标识符及其嵌套声明次数。 */
   identifiers: {
-    /** 名称当前被多少层 v-for/v-slot/表达式函数参数声明。 */
+    /** 名称当前被多少层模板局部作用域声明，主要来自 v-for/v-slot。 */
     [name: string]: number | undefined
   }
   /** 各结构语法的嵌套深度，用于判断动态性和缓存安全性。 */
@@ -130,9 +130,9 @@ export interface TransformContext
     vFor: number
     /** 当前 `v-slot` 作用域嵌套层数。 */
     vSlot: number
-    /** 当前 `v-pre` 区域嵌套层数。 */
+    /** 保留字段；当前内置转换不维护 v-pre 深度，v-pre 在解析阶段处理。 */
     vPre: number
-    /** 当前 `v-once` 子树嵌套层数。 */
+    /** 保留字段；当前 v-once 转换使用 inVOnce，未维护此计数。 */
     vOnce: number
   }
   /** 当前节点父级。 */
@@ -400,7 +400,7 @@ export function createTransformContext(
 /**
  * 执行 AST 转换阶段，并把收集结果固化到根节点。
  *
- * 顺序为：深度优先运行插件 → 可选静态提升 → 为客户端创建根 codegenNode →
+ * 顺序为：深度优先运行插件 → 可选静态缓存/提升 → 为客户端创建根 codegenNode →
  * 汇总 helper/组件/指令/缓存元数据。SSR 自己在后续阶段创建根输出，故跳过客户端根节点。
  */
 export function transform(root: RootNode, options: TransformOptions): void {
@@ -499,6 +499,8 @@ export function traverseChildren(
  *
  * 所有插件先执行进入阶段，再递归容器 children，最后以相反顺序执行退出回调。
  * 反序退出让先注册的高层转换在更晚时刻看到其他转换已完成的 codegenNode。
+ * 插件返回的回调数组也按后进先出执行；替换只影响后续插件，不重跑已经执行的进入转换。
+ * 删除节点会放弃此前收集的退出回调。错误处理器或插件抛出时同样中断遍历，退出不是 finally 清理。
  */
 export function traverseNode(
   node: RootNode | TemplateChildNode,

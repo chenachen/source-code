@@ -170,8 +170,8 @@ const processNodeUrl = (
       //
       // 含 `:` 表示 URL 协议或 Windows 路径，不做相对改写。
       //
-      // `/a/b` fallback 示例：`./index.js` → `/a/index.js`，`../index.js` → `/index.js`，
-      // `relative/index.js` → `/a/relative/index.js`。
+      // base 为 `/` 的 `/a/b` fallback：`./index.js` → `/index.js`，`../index.js` → `/index.js`，
+      // `relative/index.js` → `/relative/index.js`。资源以返回的根 HTML 为基准，而非导航目录。
       ((url[0] === '.' || isBareRelative(url)) &&
         originalUrl &&
         originalUrl !== '/' &&
@@ -480,6 +480,7 @@ export function indexHtmlMiddleware(
   const fullBundle = isDev && server.environments.client.bundledDev
 
   // 保留命名函数；`DEBUG=connect:dispatcher` 会显示它的名称。
+  /** 响应解析后的 HTML 路径：bundled dev 用内存/等待页，普通 dev 转换磁盘 HTML，preview 仅读取输出目录。 */
   return async function viteIndexHtmlMiddleware(req, res, next) {
     if (res.writableEnded) {
       return next()

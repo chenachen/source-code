@@ -6,6 +6,7 @@
   <meta name="description" content="packages/scheduler 0.28.0 源码指南：双最小堆、优先级超时、continuation、host loop 与错误恢复。" />
   <title>02 · scheduler：时间、任务与让步</title>
   <link rel="stylesheet" href="assets/guide.css?v=1" />
+  <link rel="stylesheet" href="assets/engineering-diagrams.css?v=1" />
 </head>
 <body>
   <header class="topbar">
@@ -31,15 +32,13 @@
       <p class="eyebrow">02 · Host scheduling</p>
       <h1>scheduler：把工作切成 host 可接受的片段</h1>
       <p class="lede">
-        Scheduler 接收“带优先级、可延迟、可 continuation”的回调，用两个最小堆排序，
-        再通过环境可用的 host API 分批执行。它调度的是函数，不知道 Fiber、Lane 或 DOM。
+        Scheduler 接收带优先级、可延迟的回调；回调返回函数时，表示剩余工作由 continuation 继续。
+        默认 DOM/Node 实现用两个最小堆排序，再通过 host API 分批执行。它调度函数，不知道 Fiber、Lane 或 DOM。
       </p>
       <div class="meta">
         <span class="pill">scheduler 0.28.0</span>
         <span class="pill">25 个手写 JS 目标</span>
-        <span class="pill">245 / 245 声明已记录</span>
         <span class="pill">默认时间片 5ms</span>
-        <span class="pill">73 个测试场景</span>
       </div>
 
       <section id="contract">
@@ -65,8 +64,9 @@
           </table>
         </div>
         <p>
-          根入口和 npm shim 只做环境/构建路由，核心默认实现位于 fork 文件。
-          <code>npm/umd</code> 中三个 legacy 预构建产物不在当前发布清单，也不作为手写声明审计对象。
+          根入口和 npm shim 负责环境/构建路由。下文的双堆、过期时间与 host loop 都来自默认
+          <code>Scheduler.js</code>；Native 核心 API 转发到 runtime，PostTask 将排序和取消交给浏览器，
+          Mock 则由测试显式推进虚拟时间与 flush。它们共享 API 名称，执行边界各有实现。
         </p>
       </section>
 
@@ -93,7 +93,7 @@
             <tbody>
               <tr><td>延迟等待</td><td>timerQueue</td><td>startTime</td><td>当前时间到达 startTime，迁入 ready 堆</td></tr>
               <tr><td>可运行</td><td>taskQueue</td><td>expirationTime</td><td>完成、被消费，或取消节点到达堆顶</td></tr>
-              <tr><td>执行中</td><td>仍是 taskQueue 堆顶</td><td>expirationTime 不变</td><td>callback 返回值决定完成或 continuation</td></tr>
+              <tr><td>执行中</td><td>仍留在 taskQueue；执行中加入更早到期任务后可能不再是堆顶</td><td>expirationTime 不变</td><td>callback 返回值决定完成或 continuation</td></tr>
               <tr><td>continuation</td><td>同一个 Task 留在 taskQueue</td><td>原 expirationTime</td><td>新 host task 再次竞争堆顶</td></tr>
               <tr><td>已取消</td><td>暂留原堆</td><td>不变</td><td>堆顶扫描看到 callback=null 后弹出</td></tr>
             </tbody>
@@ -120,22 +120,24 @@
         </figure>
         <div class="callout">
           <p><strong>为什么取消不在任意下标删除？</strong>当前 Task 没有维护 heap index；查找并修复任意节点会增加状态与热路径成本。
-          把 <code>callback</code> 置 null 是 O(1)，代价是取消节点会占内存到它接近堆顶。</p>
+          把 <code>callback</code> 置 null 是 O(1)，代价是节点仍留在堆数组中，直到到达堆顶被扫描清理。</p>
         </div>
       </section>
 
       <section id="schedule">
         <h2>算法二：delay 与 priority 共同决定队列</h2>
         <p>
-          schedule 先得到 startTime，再按优先级加超时预算：Immediate 为 −1ms、UserBlocking 250ms、Normal 5000ms、
+          schedule 先得到 <code>startTime = 当前时间 + 正数 delay</code>；未提供有效正数 delay 时直接使用当前时间。
+          再从 startTime 加优先级预算：Immediate 为 −1ms、UserBlocking 250ms、Normal 5000ms、
           Low 10000ms、Idle 用最大 31 位整数。未知优先级按 Normal 预算计算，但 Task 仍保留调用方原值。
+          因此延迟 Immediate 任务也必须先等到 startTime；迁入 ready 堆时才以已过期任务执行。
         </p>
         <figure class="source">
           <figcaption><span>删节源码 · Scheduler.js / schedule 分流</span><a href="../../react/packages/scheduler/src/forks/Scheduler.js">打开文件</a></figcaption>
           <pre><span class="kw">if</span> (startTime &gt; currentTime) {
   newTask.sortIndex = startTime;
   push(timerQueue, newTask);
-  <span class="cm">// 只有新的最早 timer 需要重设 host timeout</span>
+  <span class="cm">// ready 堆为空且它成为最早 timer 时，登记或重设 host timeout</span>
 } <span class="kw">else</span> {
   newTask.sortIndex = expirationTime;
   push(taskQueue, newTask);
@@ -154,12 +156,55 @@
   <span class="kw">return</span>;
 }</pre>
         </figure>
+        <figure class="engineering-diagram" data-diagram="react-scheduler-queues" style="--diagram-min-width: 1120px">
+          <div class="diagram-scroll">
+            <svg viewBox="0 0 1120 890" role="img" aria-labelledby="react-scheduler-queues-title react-scheduler-queues-desc">
+              <title id="react-scheduler-queues-title">延迟任务如何换堆与排序键</title>
+              <desc id="react-scheduler-queues-desc">N 在零毫秒即可运行，H 在二十毫秒之前只属于 timerQueue。advanceTimers 先清理取消节点，再比较 startTime；未到时间保留，已到时间改用 expirationTime 排序并迁入 taskQueue。</desc>
+              <defs><marker id="react-scheduler-queues-arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0 0 L9 4.5 L0 9 Z" fill="#507476"/></marker></defs>
+              <text class="d-label" x="560" y="26" text-anchor="middle"><tspan x="560" dy="0">同一输入：t=0 创建 N（Normal、无 delay）与 H（UserBlocking、delay=20ms）</tspan></text>
+              <g data-node="schedule"><rect class="d-node" x="40" y="70" width="300" height="120" rx="12"/><text class="d-label" x="190.0" y="112.0" text-anchor="middle"><tspan x="190.0" dy="0">scheduleCallback</tspan><tspan x="190.0" dy="24">N：start=0，expiration=5000</tspan><tspan x="190.0" dy="24">H：start=20，expiration=270</tspan></text></g>
+              <g data-node="delayed"><path class="d-condition" d="M510.0 75 L625 130.0 L510.0 185 L395 130.0 Z"/><text class="d-label" x="510.0" y="124.0" text-anchor="middle"><tspan x="510.0" dy="0">startTime</tspan><tspan x="510.0" dy="24">&gt; currentTime？</tspan></text></g>
+              <g data-node="timers"><rect class="d-state" x="740" y="55" width="330" height="145" rx="12"/><text class="d-label" x="905.0" y="109.5" text-anchor="middle"><tspan x="905.0" dy="0">timerQueue · 等待堆</tspan><tspan x="905.0" dy="24">H 的 sortIndex = startTime = 20</tspan><tspan x="905.0" dy="24">先按开始时间，再按 id 排序</tspan></text></g>
+              <g data-node="ready"><rect class="d-state" x="740" y="655" width="330" height="130" rx="12"/><text class="d-label" x="905.0" y="702.0" text-anchor="middle"><tspan x="905.0" dy="0">taskQueue · 可运行堆</tspan><tspan x="905.0" dy="24">N：sortIndex=5000</tspan><tspan x="905.0" dy="24">H 开始时间到点：sortIndex=270</tspan></text></g>
+              <g data-node="timer-cancelled"><path class="d-condition" d="M930.0 255 L1070 310.0 L930.0 365 L790 310.0 Z"/><text class="d-label" x="930.0" y="304.0" text-anchor="middle"><tspan x="930.0" dy="0">堆顶 timer 的</tspan><tspan x="930.0" dy="24">callback === null？</tspan></text></g>
+              <g data-node="discard-timer"><rect class="d-node" x="390" y="260" width="300" height="90" rx="12"/><text class="d-label" x="540.0" y="299.0" text-anchor="middle"><tspan x="540.0" dy="0">pop(timerQueue)</tspan><tspan x="540.0" dy="24">已取消：继续扫描下一 timer</tspan></text></g>
+              <g data-node="timer-due"><path class="d-condition" d="M930.0 430 L1070 485.0 L930.0 540 L790 485.0 Z"/><text class="d-label" x="930.0" y="479.0" text-anchor="middle"><tspan x="930.0" dy="0">startTime</tspan><tspan x="930.0" dy="24">&lt;= currentTime？</tspan></text></g>
+              <g data-node="future-timer"><rect class="d-node" x="390" y="440" width="300" height="90" rx="12"/><text class="d-label" x="540.0" y="479.0" text-anchor="middle"><tspan x="540.0" dy="0">尚未到 startTime</tspan><tspan x="540.0" dy="24">保留 timer，结束本次扫描</tspan></text></g>
+              <g data-node="migrate"><rect class="d-node" x="740" y="575" width="330" height="60" rx="12"/><text class="d-label" x="905.0" y="611.0" text-anchor="middle"><tspan x="905.0" dy="0">pop timer；sortIndex = expiration</tspan></text></g>
+              <g data-node="scan">
+              <rect class="d-lane" x="40" y="315" width="300" height="135" rx="12"/><text class="d-label" x="190.0" y="364.5" text-anchor="middle"><tspan x="190.0" dy="0">advanceTimers(now) 的调用点</tspan><tspan x="190.0" dy="24">timeout 到点 / flush 开始</tspan><tspan x="190.0" dy="24">callback 正常返回之后</tspan></text></g>
+              <g data-node="wake-condition">
+              <rect class="d-lane" x="40" y="630" width="650" height="155" rx="12"/><text class="d-label" x="365.0" y="689.5" text-anchor="middle"><tspan x="365.0" dy="0">延迟 H 何时单独登记 timeout？</tspan><tspan x="365.0" dy="24">ready 堆为空，且 H 成为最早 timer 时。</tspan><tspan x="365.0" dy="24">本例 N 已 ready：无需单独登记；N 返回后检查 H。</tspan></text></g>
+              <path class="d-edge" d="M340 130 H395" marker-end="url(#react-scheduler-queues-arrow)"/>
+              <path class="d-edge" d="M625 130 H740" marker-end="url(#react-scheduler-queues-arrow)"/>
+              <text class="d-muted" x="678" y="111" text-anchor="middle"><tspan x="678" dy="0">是</tspan></text>
+              <path class="d-edge" d="M510 185 V205 H20 V815 H1100 V720 H1070" marker-end="url(#react-scheduler-queues-arrow)"/>
+              <text class="d-muted" x="570" y="802" text-anchor="middle"><tspan x="570" dy="0">否：N 立即入 ready</tspan></text>
+              <path class="d-edge" d="M905 200 V235 H930 V255" marker-end="url(#react-scheduler-queues-arrow)"/>
+              <path class="d-edge" d="M790 310 H690" marker-end="url(#react-scheduler-queues-arrow)"/>
+              <text class="d-muted" x="732" y="292" text-anchor="middle"><tspan x="732" dy="0">是</tspan></text>
+              <path class="d-edge" d="M690 280 H715 V225 H930 V255" marker-end="url(#react-scheduler-queues-arrow)"/>
+              <text class="d-muted" x="779" y="240" text-anchor="middle"><tspan x="779" dy="0">下一 timer</tspan></text>
+              <path class="d-edge" d="M930 365 V430" marker-end="url(#react-scheduler-queues-arrow)"/>
+              <text class="d-muted" x="953" y="405" text-anchor="middle"><tspan x="953" dy="0">否</tspan></text>
+              <path class="d-edge" d="M790 485 H690" marker-end="url(#react-scheduler-queues-arrow)"/>
+              <text class="d-muted" x="732" y="467" text-anchor="middle"><tspan x="732" dy="0">否</tspan></text>
+              <path class="d-edge" d="M930 540 V575" marker-end="url(#react-scheduler-queues-arrow)"/>
+              <text class="d-muted" x="955" y="568" text-anchor="middle"><tspan x="955" dy="0">是</tspan></text>
+              <path class="d-edge" d="M905 635 V655" marker-end="url(#react-scheduler-queues-arrow)"/>
+              <path class="d-edge d-async" d="M340 380 H360 V215 H930 V255" marker-end="url(#react-scheduler-queues-arrow)"/>
+              <text class="d-muted" x="560" y="870" text-anchor="middle"><tspan x="560" dy="0">例：N 在 t=20 返回后扫描 H，改用 270 排序；下一次 peek 先选 H。</tspan></text>
+            </svg>
+          </div>
+          <figcaption><strong>问题：H 优先级高，为什么 t=0 仍不能挡住 N？</strong>timerQueue 按开始时间排堆顶；达到 startTime 且 advanceTimers 扫描到 H 时，才把排序键改成 270，进入 taskQueue 与 N 的 5000 竞争。取消只置空 callback，清理发生在对应堆顶。虚线表示调用 advanceTimers 的触发路径。</figcaption>
+        </figure>
       </section>
 
       <section id="workloop">
         <h2>work loop：让步、continuation 与重新竞争</h2>
         <p>
-          workLoop 总是查看 ready 堆顶。未过期任务在 host 要求让步时停止；过期任务继续执行。
+          workLoop 总是查看 ready 堆顶。默认模式下，未过期任务在 host 要求让步时停止；过期任务绕过这项检查。
           执行前先把 callback 置 null，防止错误或重入把同一函数重复消费。返回函数时把它写回同一 Task，
           但立即结束本轮 slice，让 continuation 在新的 host task 中重新与更高优先级工作竞争。
         </p>
@@ -177,22 +222,21 @@ currentTime = getCurrentTime();
 }</pre>
         </figure>
         <p>
-          <code>shouldYieldToHost</code> 先考虑 renderer 的 paint 请求，再比较本轮已占用时间与 frameInterval。
-          默认 5ms，WWW fork 为 10ms；这只是 Scheduler slice，不承诺与显示器帧边界对齐。
+          callback 内部可能安排更早到期的任务，所以完成后只在当前任务仍是堆顶时直接 pop；否则它以
+          <code>callback=null</code> 留在堆中，后续扫描再清理。下一次选择始终重新 peek，因而不会误弹新任务。
+        </p>
+        <p>
+          非 always-yield 模式且 <code>enableRequestPaint</code> 开启时，<code>shouldYieldToHost</code>
+          优先响应 renderer 的 paint 请求，再比较本轮耗时与 frameInterval。默认 5ms，WWW fork 为 10ms；
+          时间片不对齐显示器帧边界。开启 <code>enableAlwaysYieldScheduler</code> 时，每轮先处理一个堆顶节点，
+          然后只连续处理已过期节点，把后续未过期工作留给下一 host task。
         </p>
       </section>
 
       <section id="host">
         <h2>host loop：只保留一次唤醒，错误后仍不饿死队列</h2>
-        <div class="chain" aria-label="Scheduler host loop">
-          <div class="node">scheduleCallback<small>push heap</small></div><span class="arrow">→</span>
-          <div class="node">requestHostCallback<small>去重唤醒</small></div><span class="arrow">→</span>
-          <div class="node">host message<small>新 task 边界</small></div><span class="arrow">→</span>
-          <div class="node">flushWork<small>保存/恢复 priority</small></div><span class="arrow">→</span>
-          <div class="node">workLoop<small>完成或 yield</small></div>
-        </div>
         <p>
-          模块初始化时捕获原生 setImmediate/setTimeout 引用，避免之后的 polyfill 或 fake timer 偷换调度语义。
+          模块初始化时捕获当时的 setImmediate/setTimeout 引用，后续改写全局函数不会替换这些引用。
           默认优先 setImmediate，其次 MessageChannel，最后才用 setTimeout，后者可能受到嵌套 timer clamp。
         </p>
         <figure class="source">
@@ -216,59 +260,140 @@ currentTime = getCurrentTime();
 
       <section id="walkthrough">
         <h2>手工推演：高优先级工作如何插入 continuation</h2>
-        <p>假设默认超时，虚拟时间从 0 开始，Normal 工作 A/B/C/D 每段都在 yield 边界返回同一个 continuation：</p>
+        <p>下面跟随 Mock 测试：虚拟时间从 0 开始，Normal 工作依次处理 A/B/C/D，每段耗时 100ms；测试先只允许输出 A。</p>
         <ol class="state-list">
-          <li><strong>t=0。</strong>Normal Task N 入 ready 堆，expiration=5000，id=1；host message 被登记一次。</li>
-          <li><strong>第一轮。</strong>N 输出 A 后返回 continuation；callback 写回 N，expiration 与 id 均不变，本轮返回 <code>true</code> 并登记新 host message。</li>
-          <li><strong>插队。</strong>新的 UserBlocking Task H 入 ready 堆，expiration=当前时间+250；其排序键小于 N 的 5000，成为堆顶。</li>
-          <li><strong>第二轮。</strong>workLoop 重新 peek，先执行 H；完成并 pop 后才再次看到 N。</li>
-          <li><strong>恢复。</strong>N 继续输出 B/C/D。continuation 保留原到期时间，但没有不可中断特权。</li>
+          <li><strong>t=0。</strong>Normal Task N 入 ready 堆，expiration=5000，id=1。</li>
+          <li><strong>t=100。</strong><code>waitFor(['A'])</code> 限制本次日志数量。A 输出后 shouldYield 返回 true，N 留下 continuation；expiration 与 id 均不变。</li>
+          <li><strong>插队。</strong>UserBlocking Task H 入 ready 堆，expiration=100+250=350，小于 N 的 5000，成为堆顶。</li>
+          <li><strong>继续 flush。</strong><code>waitForAll</code> 重新驱动 workLoop，先执行 H；H 推进到 t=200，完成并 pop 后才再次看到 N。</li>
+          <li><strong>恢复。</strong>排空时没有日志数量限制，N 可以在同一个 callback 内处理 B/C/D，最终时间为 t=500。日志严格按 High pri、B、C、D 排列。</li>
         </ol>
         <figure class="source">
           <figcaption><span>连续测试原码 · SchedulerMock-test.js</span><a href="../../react/packages/scheduler/src/__tests__/SchedulerMock-test.js">打开测试</a></figcaption>
-          <pre>    scheduleCallback(NormalPriority, work);
-    <span class="kw">await</span> waitFor([<span class="str">'A'</span>]);
+          <pre>    const tasks = [
+      ['A', 100],
+      ['B', 100],
+      ['C', 100],
+      ['D', 100],
+    ];
+    /** 在当前测试 flush 要求 yield 时保存剩余分段为 continuation。 */
+    const work = () =&gt; {
+      while (tasks.length &gt; 0) {
+        const [label, ms] = tasks.shift();
+        Scheduler.unstable_advanceTime(ms);
+        Scheduler.log(label);
+        if (tasks.length &gt; 0 &amp;&amp; shouldYield()) {
+          return work;
+        }
+      }
+    };
+    scheduleCallback(NormalPriority, work);
+    await waitFor(['A']);
 
     scheduleCallback(UserBlockingPriority, () =&gt; {
       Scheduler.unstable_advanceTime(100);
-      Scheduler.log(<span class="str">'High pri'</span>);
+      Scheduler.log('High pri');
     });
 
-    <span class="kw">await</span> waitForAll([<span class="str">'High pri'</span>, <span class="str">'B'</span>, <span class="str">'C'</span>, <span class="str">'D'</span>]);</pre>
+    await waitForAll(['High pri', 'B', 'C', 'D']);</pre>
         </figure>
+        <p>这条 Mock 测试说明堆顶会重新竞争。生产默认实现另有一条规则：只要 callback 返回 continuation，
+          就立即结束当前 host task；Mock 的普通 flush 可以在同一轮继续，paint flush 才要求 continuation 先让出。</p>
       </section>
 
       <section id="full-flow">
         <h2>完整流程图：一次 callback 的所有出口</h2>
-        <ol class="state-list">
-          <li><strong>创建：</strong>根据 delay 计算 startTime，根据 priority 计算 expirationTime。</li>
-          <li><strong>分流：</strong>未来任务进 timerQueue；立即任务进 taskQueue；只为最早 timer 或首批 ready work 唤醒 host。</li>
-          <li><strong>迁移：</strong>timeout 到点调用 advanceTimers；取消节点被丢弃，到期节点改排序键后进 ready 堆。</li>
-          <li><strong>执行：</strong>未过期且应 yield → 保留堆；callback 抛错 → 原样传播；返回函数 → 保存 continuation；否则完成并 pop。</li>
-          <li><strong>续发：</strong>仍有 ready work → 新 host task；只有未来 timer → 设最早 timeout；两堆皆空 → 关闭 message loop。</li>
-          <li><strong>外部取消：</strong>任何时刻 cancel 只清 callback；真正释放发生在堆顶扫描，profiling 记录则即时更新 queued 状态。</li>
-        </ol>
+        <figure class="engineering-diagram" data-diagram="react-scheduler-host-exits" style="--diagram-min-width: 1300px">
+          <div class="diagram-scroll">
+            <svg viewBox="0 0 1300 1345" role="img" aria-labelledby="react-scheduler-host-exits-title react-scheduler-host-exits-desc">
+              <title id="react-scheduler-host-exits-title">callback 各种出口怎样决定 host loop 续发或停机</title>
+              <desc id="react-scheduler-host-exits-desc">默认 Scheduler 先检查 ready 堆顶与让步条件，再判断 callback 是否为函数。取消节点直接弹出；callback 返回函数保存同一任务并续发，正常完成重新选堆顶，抛错保留 hasMoreWork 初值并在 finally 续发。ready 为空时，必要时为最早 timer 设置 timeout，然后关闭消息循环。</desc>
+              <defs><marker id="react-scheduler-host-exits-arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0 0 L9 4.5 L0 9 Z" fill="#507476"/></marker></defs>
+              <text class="d-label" x="630" y="26" text-anchor="middle"><tspan x="630" dy="0">同一 N/H 输入 · 默认模式：enableAlwaysYieldScheduler = false</tspan></text>
+              <g data-node="host"><rect class="d-state" x="425" y="60" width="390" height="105" rx="12"/><text class="d-label" x="620.0" y="94.5" text-anchor="middle"><tspan x="620.0" dy="0">新 host task → flushWork</tspan><tspan x="620.0" dy="24">hasMoreWork 初值为 true</tspan><tspan x="620.0" dy="24">advanceTimers(now)，再 peek ready</tspan></text></g>
+              <g data-node="resend"><rect class="d-state" x="875" y="65" width="330" height="92" rx="12"/><text class="d-label" x="1040.0" y="105.0" text-anchor="middle"><tspan x="1040.0" dy="0">finally：续发 host 消息</tspan><tspan x="1040.0" dy="24">下一轮重新竞争堆顶</tspan></text></g>
+              <g data-node="ready-exists"><path class="d-condition" d="M620.0 225 L775 277.5 L620.0 330 L465 277.5 Z"/><text class="d-label" x="620.0" y="271.5" text-anchor="middle"><tspan x="620.0" dy="0">存在 ready</tspan><tspan x="620.0" dy="24">堆顶 task？</tspan></text></g>
+              <g data-node="future-exists"><path class="d-condition" d="M1040.0 215 L1195 272.5 L1040.0 330 L885 272.5 Z"/><text class="d-label" x="1040.0" y="278.5" text-anchor="middle"><tspan x="1040.0" dy="0">还有未来 timer？</tspan></text></g>
+              <g data-node="set-timeout"><rect class="d-node" x="885" y="375" width="310" height="87" rx="12"/><text class="d-label" x="1040.0" y="412.5" text-anchor="middle"><tspan x="1040.0" dy="0">requestHostTimeout</tspan><tspan x="1040.0" dy="24">等待最早 startTime</tspan></text></g>
+              <g data-node="stop-loop"><rect class="d-state" x="885" y="515" width="310" height="91" rx="12"/><text class="d-label" x="1040.0" y="554.5" text-anchor="middle"><tspan x="1040.0" dy="0">workLoop 返回 false</tspan><tspan x="1040.0" dy="24">关闭 message loop</tspan></text></g>
+              <g data-node="yield"><path class="d-condition" d="M620.0 400 L775 465.0 L620.0 530 L465 465.0 Z"/><text class="d-label" x="620.0" y="459.0" text-anchor="middle"><tspan x="620.0" dy="0">未过期，且</tspan><tspan x="620.0" dy="24">shouldYieldToHost()？</tspan></text></g>
+              <g data-node="yield-exit"><rect class="d-node" x="35" y="420" width="330" height="89" rx="12"/><text class="d-label" x="200.0" y="458.5" text-anchor="middle"><tspan x="200.0" dy="0">保留 ready 队列；return true</tspan><tspan x="200.0" dy="24">让出本轮，下一 host task 再试</tspan></text></g>
+              <g data-node="callback-type"><path class="d-condition" d="M620.0 590 L785 662.5 L620.0 735 L455 662.5 Z"/><text class="d-label" x="620.0" y="656.5" text-anchor="middle"><tspan x="620.0" dy="0">typeof callback</tspan><tspan x="620.0" dy="24">=== function？</tspan></text></g>
+              <g data-node="discard-ready"><rect class="d-node" x="35" y="615" width="330" height="90" rx="12"/><text class="d-label" x="200.0" y="654.0" text-anchor="middle"><tspan x="200.0" dy="0">pop 空 callback 节点</tspan><tspan x="200.0" dy="24">跳过调用，继续扫描</tspan></text></g>
+              <g data-node="call"><rect class="d-node" x="425" y="790" width="390" height="115" rx="12"/><text class="d-label" x="620.0" y="829.5" text-anchor="middle"><tspan x="620.0" dy="0">先把 task.callback 置 null</tspan><tspan x="620.0" dy="24">设置 priority，调用 callback</tspan><tspan x="620.0" dy="24">didTimeout = expiration &lt;= now</tspan></text></g>
+              <g data-node="throw"><rect class="d-state" x="875" y="780" width="330" height="126" rx="12"/><text class="d-label" x="1040.0" y="813.0" text-anchor="middle"><tspan x="1040.0" dy="0">callback 抛错</tspan><tspan x="1040.0" dy="24">原错误离开当前 host task</tspan><tspan x="1040.0" dy="24">hasMoreWork 仍为初值 true</tspan><tspan x="1040.0" dy="24">finally 仍续发消息</tspan></text></g>
+              <g data-node="continuation"><path class="d-condition" d="M620.0 960 L775 1017.5 L620.0 1075 L465 1017.5 Z"/><text class="d-label" x="620.0" y="1023.5" text-anchor="middle"><tspan x="620.0" dy="0">返回值是函数？</tspan></text></g>
+              <g data-node="save-continuation"><rect class="d-state" x="875" y="965" width="330" height="126" rx="12"/><text class="d-label" x="1040.0" y="998.0" text-anchor="middle"><tspan x="1040.0" dy="0">写回同一个 task.callback</tspan><tspan x="1040.0" dy="24">advanceTimers(now)</tspan><tspan x="1040.0" dy="24">立即 return true</tspan><tspan x="1040.0" dy="24">id / expiration 保持原值</tspan></text></g>
+              <g data-node="still-top"><path class="d-condition" d="M207.5 960 L365 1022.5 L207.5 1085 L50 1022.5 Z"/><text class="d-label" x="207.5" y="1016.5" text-anchor="middle"><tspan x="207.5" dy="0">currentTask 仍是</tspan><tspan x="207.5" dy="24">ready 堆顶？</tspan></text></g>
+              <g data-node="pop-completed"><rect class="d-node" x="35" y="1145" width="220" height="85" rx="12"/><text class="d-label" x="145.0" y="1181.5" text-anchor="middle"><tspan x="145.0" dy="0">pop 当前 task</tspan><tspan x="145.0" dy="24">完成并移出堆</tspan></text></g>
+              <g data-node="keep-completed"><rect class="d-node" x="305" y="1145" width="300" height="85" rx="12"/><text class="d-label" x="455.0" y="1181.5" text-anchor="middle"><tspan x="455.0" dy="0">callback=null 暂留堆内</tspan><tspan x="455.0" dy="24">后续堆顶扫描再清理</tspan></text></g>
+              <g data-node="next-task"><rect class="d-state" x="665" y="1160" width="390" height="87" rx="12"/><text class="d-label" x="860.0" y="1197.5" text-anchor="middle"><tspan x="860.0" dy="0">advanceTimers(now)，重新 peek</tspan><tspan x="860.0" dy="24">同轮竞争下一 task</tspan></text></g>
+              <path class="d-edge" d="M620 165 V225" marker-end="url(#react-scheduler-host-exits-arrow)"/>
+              <path class="d-edge d-async" d="M1205 111 H1235 V45 H815 V90" marker-end="url(#react-scheduler-host-exits-arrow)"/>
+              <path class="d-edge" d="M775 278 H850 V273 H885" marker-end="url(#react-scheduler-host-exits-arrow)"/>
+              <text class="d-muted" x="865" y="257" text-anchor="middle"><tspan x="865" dy="0">否</tspan></text>
+              <path class="d-edge" d="M620 330 V400" marker-end="url(#react-scheduler-host-exits-arrow)"/>
+              <text class="d-muted" x="644" y="370" text-anchor="middle"><tspan x="644" dy="0">是</tspan></text>
+              <path class="d-edge" d="M1040 330 V375" marker-end="url(#react-scheduler-host-exits-arrow)"/>
+              <text class="d-muted" x="1062" y="363" text-anchor="middle"><tspan x="1062" dy="0">是</tspan></text>
+              <path class="d-edge" d="M1040 462 V515" marker-end="url(#react-scheduler-host-exits-arrow)"/>
+              <path class="d-edge" d="M1195 273 H1220 V560 H1195" marker-end="url(#react-scheduler-host-exits-arrow)"/>
+              <text class="d-muted" x="1219" y="481" text-anchor="end"><tspan x="1219" dy="0">否</tspan></text>
+              <path class="d-edge" d="M465 465 H365" marker-end="url(#react-scheduler-host-exits-arrow)"/>
+              <text class="d-muted" x="413" y="446" text-anchor="middle"><tspan x="413" dy="0">是</tspan></text>
+              <path class="d-edge d-async" d="M200 420 V190 H865 V110 H875" marker-end="url(#react-scheduler-host-exits-arrow)"/>
+              <text class="d-muted" x="279" y="179" text-anchor="middle"><tspan x="279" dy="0">yield：hasMoreWork=true</tspan></text>
+              <path class="d-edge" d="M620 530 V590" marker-end="url(#react-scheduler-host-exits-arrow)"/>
+              <text class="d-muted" x="644" y="568" text-anchor="middle"><tspan x="644" dy="0">否</tspan></text>
+              <path class="d-edge" d="M455 663 H365" marker-end="url(#react-scheduler-host-exits-arrow)"/>
+              <text class="d-muted" x="412" y="644" text-anchor="middle"><tspan x="412" dy="0">否</tspan></text>
+              <path class="d-edge" d="M35 660 H15 V278 H465" marker-end="url(#react-scheduler-host-exits-arrow)"/>
+              <text class="d-muted" x="114" y="264" text-anchor="middle"><tspan x="114" dy="0">继续 peek</tspan></text>
+              <path class="d-edge" d="M620 735 V790" marker-end="url(#react-scheduler-host-exits-arrow)"/>
+              <text class="d-muted" x="644" y="775" text-anchor="middle"><tspan x="644" dy="0">是</tspan></text>
+              <path class="d-edge" d="M815 849 H875" marker-end="url(#react-scheduler-host-exits-arrow)"/>
+              <text class="d-muted" x="850" y="830" text-anchor="middle"><tspan x="850" dy="0">throw</tspan></text>
+              <path class="d-edge d-async" d="M1205 838 H1250 V110 H1205" marker-end="url(#react-scheduler-host-exits-arrow)"/>
+              <path class="d-edge" d="M620 905 V960" marker-end="url(#react-scheduler-host-exits-arrow)"/>
+              <text class="d-muted" x="670" y="943" text-anchor="middle"><tspan x="670" dy="0">正常返回</tspan></text>
+              <path class="d-edge" d="M775 1018 H875" marker-end="url(#react-scheduler-host-exits-arrow)"/>
+              <text class="d-muted" x="822" y="1000" text-anchor="middle"><tspan x="822" dy="0">是</tspan></text>
+              <path class="d-edge d-async" d="M1205 1028 H1265 V135 H1205" marker-end="url(#react-scheduler-host-exits-arrow)"/>
+              <path class="d-edge" d="M465 1018 H400 V930 H325 V1007" marker-end="url(#react-scheduler-host-exits-arrow)"/>
+              <text class="d-muted" x="413" y="1000" text-anchor="middle"><tspan x="413" dy="0">否</tspan></text>
+              <path class="d-edge" d="M207 1085 V1145" marker-end="url(#react-scheduler-host-exits-arrow)"/>
+              <text class="d-muted" x="230" y="1129" text-anchor="middle"><tspan x="230" dy="0">是</tspan></text>
+              <path class="d-edge" d="M365 1023 H455 V1145" marker-end="url(#react-scheduler-host-exits-arrow)"/>
+              <text class="d-muted" x="433" y="1125" text-anchor="middle"><tspan x="433" dy="0">否</tspan></text>
+              <path class="d-edge" d="M145 1230 V1270 H770 V1247" marker-end="url(#react-scheduler-host-exits-arrow)"/>
+              <path class="d-edge" d="M605 1187 H665" marker-end="url(#react-scheduler-host-exits-arrow)"/>
+              <path class="d-edge" d="M860 1160 V940 H825 V205 H735 V264" marker-end="url(#react-scheduler-host-exits-arrow)"/>
+              <text class="d-muted" x="854" y="718" text-anchor="start"><tspan x="854" dy="0">同轮</tspan></text>
+              <text class="d-muted" x="630" y="1320" text-anchor="middle"><tspan x="630" dy="0">例：N 执行到 t=20 返回 continuation → H 迁入 ready → 新 host task 先运行 H。</tspan></text>
+            </svg>
+          </div>
+          <figcaption><strong>问题：一次 callback 怎样结束，而队列怎样继续？</strong>让步、continuation 与抛错都会促成下一条 host 消息；正常完成可在同轮重新选任务。ready 为空时，未来 timer 由 timeout 接棒，message loop 停止。若 N 的 callback 自己占用 20ms，Scheduler 要等它返回；取消不能打断已经开始的 JavaScript。开启 always-yield 的额外边界见上文。</figcaption>
+        </figure>
       </section>
 
       <section id="evidence">
         <h2>测试证据与保证边界</h2>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>机制</th><th>代表测试</th><th>关键断言</th><th>不能扩大成</th></tr></thead>
+            <thead><tr><th>机制</th><th>代表测试</th><th>关键断言</th><th>执行条件</th></tr></thead>
             <tbody>
-              <tr><td>continuation 跨 host task</td><td><a href="../../react/packages/scheduler/src/__tests__/Scheduler-test.js">task with continuation</a></td><td>首轮再次 Post Message，第二轮才输出 Continuation</td><td>不能保证任意用户函数自动可中断</td></tr>
-              <tr><td>惰性取消</td><td>Scheduler-test / cancels tasks</td><td>host event 仍触发，但取消 callback 无日志</td><td>不能保证节点立即从堆数组释放</td></tr>
-              <tr><td>错误后继续</td><td>throws…then continues in a new event</td><td>原错误抛出，同时新事件执行后续 Yay</td><td>不能保证错误 callback 自身恢复</td></tr>
-              <tr><td>优先级抢占 continuation</td><td><a href="../../react/packages/scheduler/src/__tests__/SchedulerMock-test.js">continuations are interrupted…</a></td><td>High pri 严格早于 B/C/D</td><td>不是执行中途的线程级抢占</td></tr>
-              <tr><td>环境 fallback</td><td>SetImmediate / SetTimeout / PostTask tests</td><td>API 缺失、覆盖与错误路径保持队列前进</td><td>不等于所有浏览器 task 排序完全相同</td></tr>
+              <tr><td>continuation 跨 host task</td><td><a href="../../react/packages/scheduler/src/__tests__/Scheduler-test.js">task with continuation</a></td><td>首轮再次 Post Message，第二轮才输出 Continuation</td><td>callback 主动返回函数后，默认实现结束当前 slice</td></tr>
+              <tr><td>惰性取消</td><td>Scheduler-test / cancels tasks</td><td>host event 仍触发，但取消 callback 无日志</td><td>取消发生在 callback 被读取之前；堆节点随后清理</td></tr>
+              <tr><td>错误后继续</td><td>throws…then continues in a new event</td><td>原错误抛出，同时新事件执行后续 Yay</td><td>失败 callback 已被置空，新事件继续其他工作</td></tr>
+              <tr><td>优先级抢占 continuation</td><td><a href="../../react/packages/scheduler/src/__tests__/SchedulerMock-test.js">continuations are interrupted…</a></td><td>High pri 严格早于 B/C/D</td><td>每次 callback 返回后重新选堆顶</td></tr>
+              <tr><td>环境 fallback</td><td>SetImmediate / SetTimeout / PostTask tests</td><td>按各自 host API 驱动调度并观察日志</td><td>setImmediate/MessageChannel 缺失时用 timer；PostTask 是独立入口</td></tr>
               <tr><td>profiling</td><td><a href="../../react/packages/scheduler/src/__tests__/SchedulerProfiling-test.js">SchedulerProfiling-test</a></td><td>start/run/yield/error/cancel 事件序列</td><td>默认构建未开启 profiling</td></tr>
             </tbody>
           </table>
         </div>
         <p>
-          本次编辑只增加/翻译注释：25 个目标文件的 245 个结构声明全部有记录，Hermes 解析无诊断；
-          六个测试文件共 73 个场景均有中文邻近说明，其中 36 个关键场景使用 Given–When–Then。
-          去注释 AST 哈希与编辑前一致，因此未机械重跑 Jest；这里引用的是仓库已有测试所表达的机制证据。
+          测试分别控制 host event 或 Mock 虚拟时间，观察 callback 顺序、continuation、取消与错误后的队列。
+          阅读默认 host 行为时看 Scheduler-test；需要逐毫秒推演优先级时看 SchedulerMock-test。
         </p>
       </section>
 
@@ -287,7 +412,7 @@ currentTime = getCurrentTime();
         <a href="01-shared.html">← 上一页：shared</a>
         <a href="03-react.html">下一页：React 描述层 →</a>
       </div>
-      <footer><p>下一层将由 react 的公开描述对象进入 reconciler；Scheduler 只在根级回调边界重新出现。</p></footer>
+      <footer><p>下一页从 React 公开描述对象进入 reconciler；根级工作与 passive effects 将通过 Scheduler 回调获得执行机会。</p></footer>
     </main>
 
     <aside class="toc" aria-label="本页目录">

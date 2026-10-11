@@ -6,7 +6,7 @@ import type { Connect } from '#dep-types/connect'
  * 处理，尤其可能扰乱 `server.fs.deny` 路径校验（#19830）。
  */
 export function rejectInvalidRequestMiddleware(): Connect.NextHandleFunction {
-  // 保留命名函数；`DEBUG=connect:dispatcher` 会把名称显示在调度日志中。
+  /** URL含#时直接结束为400；其余请求继续next，后续中间件可以按无fragment前提处理。 */
   return function viteRejectInvalidRequestMiddleware(req, res, next) {
     // HTTP/1.1 与 HTTP/2 都不允许 request-target 包含 `#`：
     // (HTTP 1.1: https://datatracker.ietf.org/doc/html/rfc9112#section-3.2)

@@ -19,7 +19,7 @@ let waitFor;
 let assertLog;
 let waitForPaint;
 
-/** 覆盖跨根、跨 lane 与生命周期更新的增量调度顺序，以及时间片边界上的 Task 工作保证。 */
+/** 覆盖跨根、跨 lane 与生命周期更新的增量调度顺序，以及时间片边界上的 同步工作保证。 */
 describe('ReactIncrementalScheduling', () => {
   /** 重置模块和多根调度状态，并绑定按工作单元、paint 或全量冲刷的测试工具。 */
   beforeEach(() => {
@@ -59,7 +59,7 @@ describe('ReactIncrementalScheduling', () => {
     expect(ReactNoop.getChildrenAsJSX('c')).toEqual(<span prop="c:1" />);
   });
 
-  /** Given–When–Then：Given 批处理内先安排 prop=5 的异步更新，再安排 prop=2/3/4 的同步更新；When flushSync 与后续异步队列分别冲刷；Then同步更新先提交且最后插入的同步值 4 保持最终结果。通过提交前后宿主输出验证 lane 优先级与 rebase 顺序。 */
+  /** Given–When–Then：Given 已提交 prop=1，批处理先入队 DefaultLane 的 5，再在 flushSync 内入队 SyncLane 的 2/3/4；When 同步冲刷及后续耗尽调度工作；Then两次读取均为 4。本版存在 SyncLane 时将 DefaultLane 纳入 SyncUpdateLanes 同批处理，队列最后一项 4 决定结果；本例没有观察到先提交 4、再重放 5 的两个独立批次。 */
   it('schedules top-level updates in order of priority', async () => {
     // 建立初始已提交基线。
     ReactNoop.render(<span prop={1} />);
@@ -74,7 +74,7 @@ describe('ReactIncrementalScheduling', () => {
         ReactNoop.render(<span prop={4} />);
       });
     });
-    // 同步 lane 先于外层批处理中的异步更新提交。
+    // Default 的 5 与 Sync 的 2/3/4 同批按入队顺序处理，结果为 4。
     expect(ReactNoop).toMatchRenderedOutput(<span prop={4} />);
 
     // 最终值由队列中最后一个实际生效的更新决定，
@@ -99,7 +99,7 @@ describe('ReactIncrementalScheduling', () => {
     expect(ReactNoop).toMatchRenderedOutput(<span prop={5} />);
   });
 
-  /** Given–When–Then：Given a/b/c 三个根已挂载，transition 以 c、b、a 顺序安排更新；When 每次只推进一个根的工作；Then提交次序严格为 c、b、a。通过 effect 日志和各根快照验证跨根调度顺序。 */
+  /** Given–When–Then：Given a/b/c 三个根已挂载，transition 先安排 c、b，c 提交后才追加 a；When 每次推进至一个根的 effect 日志；Then输出依次更新 c、b、a。逐根快照验证后来插入的 a 不越过已等待的 b。 */
   it('works on deferred roots in the order they were scheduled', async () => {
     const {useEffect} = React;
     /** 在被动 effect 中记录提交文本，用于观察不同 root 的实际提交先后。 */
@@ -152,11 +152,11 @@ describe('ReactIncrementalScheduling', () => {
     });
   });
 
-  /** Given–When–Then：Given transition 挂载 Foo，挂载/更新生命周期内部直接 setState；When 渲染停在提交前后逐单元推进；Then生命周期更新获得 Task 优先级并在同一任务中连续冲刷至 tick=1/3。通过完整生命周期日志验证 commit 阶段同步更新规则。 */
+  /** Given–When–Then：Given transition 挂载 Foo，挂载/更新生命周期内部直接 setState；When 渲染停在提交前后逐单元推进；Then生命周期更新获得 SyncLane并在同一任务中连续冲刷至 tick=1/3。通过完整生命周期日志验证 commit 阶段同步更新规则。 */
   it('schedules sync updates when inside componentDidMount/Update', async () => {
     let instance;
 
-    /** 在挂载和更新生命周期中直接 setState，验证提交阶段更新默认升级为 Task 工作。 */
+    /** 在挂载和更新生命周期中直接 setState，验证提交阶段更新默认升级为 同步工作。 */
     class Foo extends React.Component {
       /** 生命周期驱动的 tick；0/2 为外部输入，1/3 为对应生命周期内更新。 */
       state = {tick: 0};
@@ -171,7 +171,7 @@ describe('ReactIncrementalScheduling', () => {
         Scheduler.log('componentDidMount (after setState): ' + this.state.tick);
       }
 
-      /** 记录每次提交；tick=2 时直接安排 tick=3，验证同一 Task 内继续冲刷。 */
+      /** 记录每次提交；tick=2 时直接安排 tick=3，验证同一同步冲刷中继续冲刷。 */
       componentDidUpdate() {
         Scheduler.log('componentDidUpdate: ' + this.state.tick);
         if (this.state.tick === 2) {
@@ -205,7 +205,7 @@ describe('ReactIncrementalScheduling', () => {
       'componentDidMount (before setState): 0',
       'componentDidMount (after setState): 0',
       // 若 componentDidMount 内的 setState 被延后，这里不会再有日志；
-      // 实际它获得 Task 优先级，因此同一任务还会完成以下更新。
+      // 实际它获得 SyncLane，因此同一任务还会完成以下更新。
       'render: 1',
       'componentDidUpdate: 1',
     ]);
@@ -219,13 +219,13 @@ describe('ReactIncrementalScheduling', () => {
       'componentDidUpdate (before setState): 2',
       'componentDidUpdate (after setState): 2',
       // 若 componentDidUpdate 内的 setState 被延后，这里不会再有日志；
-      // 实际它获得 Task 优先级，因此同一任务还会完成以下更新。
+      // 实际它获得 SyncLane，因此同一任务还会完成以下更新。
       'render: 3',
       'componentDidUpdate: 3',
     ]);
   });
 
-  /** Given–When–Then：Given 生命周期将 setState 显式包进 startTransition；When 同步挂载后分阶段冲刷；Then tick=1/3 都延后到后续异步轮次。通过每次 paint 的状态和日志验证 transition 能覆盖生命周期默认 Task 优先级。 */
+  /** Given–When–Then：Given 生命周期将 setState 显式包进 startTransition；When 同步挂载后分阶段冲刷；Then tick=1/3 都延后到后续异步轮次。通过每次 paint 的状态和日志验证 transition 能覆盖生命周期默认 SyncLane。 */
   it('can opt-in to async scheduling inside componentDidMount/Update', async () => {
     let instance;
     /** 把生命周期 setState 包入 transition，验证显式异步优先级覆盖默认提交阶段优先级。 */
@@ -302,9 +302,9 @@ describe('ReactIncrementalScheduling', () => {
     expect(ReactNoop).toMatchRenderedOutput(<span prop={3} />);
   });
 
-  /** Given–When–Then：Given componentDidMount 回调链连续安排 step=2..5；When 首次 render 已耗尽时间片但再推进一个提交单元；Then所有 Task 更新仍一次冲刷到 step=5。通过最终宿主输出验证过期时间不会中断同步任务链。 */
+  /** Given–When–Then：Given transition 挂载的 Foo 在 componentDidMount 回调链中连续安排 step=2..5；When waitFor 收到一次 Foo 日志后让出，再调用 flushNextYield；Then首次检查尚未提交，第二次已提交 step=5。测试使用 mock yield 数量控制暂停点，没有推进模拟时钟；最终输出验证提交触发的同步更新链不会因继续收到 render 日志而中断。 */
   it('performs Task work even after time runs out', async () => {
-    /** 在挂载回调中串联四次 setState，作为时间片耗尽后 Task 队列连续性的探针。 */
+    /** 在挂载回调中串联四次 setState，观察 mock 让出点之后的同步队列连续性。 */
     class Foo extends React.Component {
       /** 回调链推进的步骤值，最终必须连续到 5。 */
       state = {step: 1};
@@ -318,7 +318,7 @@ describe('ReactIncrementalScheduling', () => {
           });
         });
       }
-      /** 每次 render 记录 Foo 并输出当前 step，以时间片和最终值双重断言任务链。 */
+      /** 每次 render 记录 Foo 并输出当前 step，以暂停点和最终值共同断言任务链。 */
       render() {
         Scheduler.log('Foo');
         return <span prop={this.state.step} />;
@@ -335,7 +335,7 @@ describe('ReactIncrementalScheduling', () => {
 
     // 再推进一个工作单元触发提交。
     ReactNoop.flushNextYield();
-    // 回调链中的更新都应以 Task 优先级冲刷完成。
+    // 回调链中的更新都应以 SyncLane冲刷完成。
     expect(ReactNoop).toMatchRenderedOutput(<span prop={5} />);
   });
 });

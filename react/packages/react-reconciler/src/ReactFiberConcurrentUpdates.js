@@ -43,8 +43,11 @@ type ConcurrentQueue = {
   pending: ConcurrentUpdate | null,
 };
 
-// 渲染进行中收到并发事件更新时，等当前渲染完成或中断后再把它接入 Fiber/Hook
-// 队列。先把 fiber、queue、update、lane 四元组顺序写入此数组，稍后统一处理。
+/**
+ * 暂存并发入队的 fiber、queue、update、lane 四元组；queue 可为空，只传播该 Fiber 的 lane。
+ * finishQueueingConcurrentUpdates 统一接入 pending 环并标记祖先 lanes，避免进行中的 render 直接改队列。
+ * bailout 更新在没有并发 render 时也可立即调用该收尾函数，不要求先完成一次渲染。
+ */
 const concurrentQueues: Array<any> = [];
 let concurrentQueuesIndex = 0;
 
@@ -99,7 +102,8 @@ export function getConcurrentlyUpdatedLanes(): Lanes {
 
 /**
  * 把一次并发更新四元组写入全局缓冲，并立即标记源 Fiber/alternate 的 lanes。
- * childLanes 要等当前渲染结束后再沿 return 路径传播，避免干扰进行中的遍历。
+ * childLanes 在 finishQueueingConcurrentUpdates 收口时沿 return 路径传播；
+ * 收口点包括新 render 开始前与已有 render 完成后，避免事件入口改写正在遍历的父链。
  */
 function enqueueUpdate(
   fiber: Fiber,
@@ -206,7 +210,8 @@ export function unsafe_markUpdateLaneFromFiberToRoot(
  * 把更新 Lane 从源 Fiber 沿 return 链传播到 HostRoot。
  *
  * 同步更新源与 alternate 的 lanes、所有祖先与 alternate 的 childLanes；若路径经过
- * 隐藏 Offscreen，则把具体更新记入根的 hiddenUpdates，供重新显示时恢复优先级。
+ * 隐藏 Offscreen，则给更新附加 OffscreenLane，并把引用记入根的 hiddenUpdates；
+ * 原 Lane 完成时会清掉该标记，更新无需重新接回组件队列。
  */
 function markUpdateLaneFromFiberToRoot(
   sourceFiber: Fiber,

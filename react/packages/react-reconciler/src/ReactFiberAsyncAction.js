@@ -59,6 +59,7 @@ let isomorphicDefaultTransitionIndicator:
 let pendingIsomorphicIndicator: null | (() => void) = null;
 // 仍有待处理 Transition、因而继续持有默认指示器的根数量。
 let pendingEntangledRoots: number = 0;
+/** 首个异步 Action 尚未由具体根接管的指示器需求；microtask 会据此尝试启动同构指示器。 */
 let needsIsomorphicIndicator: boolean = false;
 
 /**
@@ -140,15 +141,14 @@ function pingEngtangledActionScope() {
 /**
  * 创建一个跟随输入 Thenable 状态、但成功值固定为 `result` 的 React Thenable。
  *
- * 等价于 `Promise.resolve(thenable).then(() => result)`，但不要求客户端具备 Promise；
- * 拒绝时直接保存 reason，并用同一个 fulfill ping 唤醒 React 读取状态。
+ * 成功值覆盖与 `Promise.resolve(thenable).then(() => result)` 相同；拒绝时保存 reason。
+ * React 先读 status，仅在 pending 时订阅 ping；这里不实现完整 Promise 的链式返回或已落定订阅。
  */
 export function chainThenableValue<T>(
   thenable: Thenable<T>,
   result: T,
 ): Thenable<T> {
-  // 语义等价于 Promise.resolve(thenable).then(() => result)，但唯一消费者是 React，
-  // 因此可以使用更轻量的状态对象。
+  // React 只需要可读的 status/value/reason，以及落定时通知已有监听器的 then。
   //
   // 客户端目前并不强制具备 Promise 支持，所以不能直接采用上述写法。
   const listeners = [];
@@ -220,7 +220,11 @@ export function registerDefaultIndicator(
   }
 }
 
-/** 在确有异步 Action 需要且实现唯一时启动同构默认 Transition 指示器。 */
+/**
+ * 在纠缠组需要且全局实现唯一时启动默认指示器，已启动时不重复调用。
+ * 启动返回的清理函数保存到 pendingIsomorphicIndicator；无返回值或启动抛错都保存 noop，
+ * 保持“已经尝试启动”的状态。启动错误交给 reportGlobalError，随后仍由释放路径结束该状态。
+ */
 export function startIsomorphicDefaultIndicatorIfNeeded() {
   if (!enableDefaultTransitionIndicator) {
     return;
@@ -242,7 +246,10 @@ export function startIsomorphicDefaultIndicatorIfNeeded() {
   }
 }
 
-/** 停止当前同构默认指示器，并执行它返回的清理函数。 */
+/**
+ * 停止当前同构默认指示器；先清空保存槽，再同步调用用户返回的清理函数。
+ * 先清槽使清理中的重入不再次调用同一函数；此处没有 catch，清理错误会向当前调用路径传播。
+ */
 function stopIsomorphicDefaultIndicator() {
   if (!enableDefaultTransitionIndicator) {
     return;

@@ -50,7 +50,7 @@ function createDrainHandler(destination: Destination, request: Request) {
   return () => startFlowing(request, destination);
 }
 
-/** 为 destination 的 error/close 事件创建停止并中止 Fizz 请求的回调。 */
+/** error/close回调先stopFlowing移除当前destination再用固定reason创建Error中止request；不消费事件传入的原错误。此监听不区分正常close与提前close，已关闭request由核心状态门处理，适配层不另移除监听器。 */
 function createCancelHandler(request: Request, reason: string) {
   return () => {
     stopFlowing(request);
@@ -59,7 +59,7 @@ function createCancelHandler(request: Request, reason: string) {
   };
 }
 
-/** 可统一配置 nonce，也可分别配置脚本与样式 nonce。 */
+/** 字符串仅配置脚本nonce；对象分别配置script/style，字符串不配置样式nonce。 */
 type NonceOption =
   | string
   | {
@@ -83,13 +83,13 @@ type Options = {
   bootstrapScripts?: Array<string | BootstrapScriptDescriptor>,
   /** 需要生成 module script 标签的启动资源。 */
   bootstrapModules?: Array<string | BootstrapScriptDescriptor>,
-  /** Fizz 渐进输出采用的目标 chunk 大小。 */
+  /** 决定已完成 Suspense 边界是否单独输出的字节阈值；不是流中每个 chunk 的固定大小。 */
   progressiveChunkSize?: number,
   /** 首个可显示 shell 准备好时调用。 */
   onShellReady?: () => void,
   /** shell 生成失败且无法开始输出时调用。 */
   onShellError?: (error: mixed) => void,
-  /** 所有 Suspense 边界完成时调用。 */
+  /** 当前服务端待处理任务归零时调用；已错误/中止而交客户端的边界也可结算，不等于下游流已读完。 */
   onAllReady?: () => void,
   /** 接收渲染错误，并可返回供错误摘要使用的字符串。 */
   onError?: (error: mixed, errorInfo: ErrorInfo) => ?string,
@@ -103,7 +103,7 @@ type Options = {
   formState?: ReactFormState<any, any> | null,
   /** 在开始正文前接收协议生成的原始 header 描述符。 */
   onHeaders?: (headers: HeadersDescriptor) => void,
-  /** 允许 Fizz 收集的 headers 总长度上限。 */
+  /** Link 提示头的 UTF-16 码元预算；不等同于 HTTP 头 UTF-8 字节数。 */
   maxHeadersLength?: number,
 };
 
@@ -115,7 +115,7 @@ type ResumeOptions = {
   onShellReady?: () => void,
   /** 恢复请求的 shell 无法生成时调用。 */
   onShellError?: (error: mixed) => void,
-  /** 恢复请求所有边界完成时调用。 */
+  /** 恢复请求的服务端待处理任务归零时调用；不代表每个边界均有完整服务器内容或下游已读完。 */
   onAllReady?: () => void,
   /** 接收恢复阶段错误，并可返回错误摘要。 */
   onError?: (error: mixed, errorInfo: ErrorInfo) => ?string,
@@ -125,7 +125,7 @@ type ResumeOptions = {
 
 /** 绑定单个 Node Writable destination 的可中止流句柄。 */
 type PipeableStream = {
-  /** 取消待处理 I/O，并让剩余 Suspense 内容转为客户端渲染。 */
+  /** 把reason交Fizz中止未完成渲染任务；可写边界转客户端恢复，不在此句柄取消任意用户I/O或销毁destination。 */
   abort(reason: mixed): void,
   /** 把输出连接到唯一的 Node Writable，并原样返回 destination。 */
   pipe<T: Writable>(destination: T): T,
@@ -169,8 +169,10 @@ function createRequestImpl(children: ReactNodeList, options: void | Options) {
 
 /**
  * 创建 Node pipeable stream 适配器并立即启动 Fizz 工作。
- * `pipe` 只允许绑定一次 destination；drain 恢复写出，error/提前 close 会停流并 abort，
- * 从而让 Node 背压与 Fizz request 生命周期保持一致。
+ * pipe只允许调用一次；先把hasStartedFlowing设true、准备尚未allReady时的输出再startFlowing，
+ * 随后安装destination的drain/error/close监听。drain恢复写出，任何close/error都停流并abort，
+ * 从而接通Node write=false暂停与drain续流；监听器此处不移除。abort句柄仅调用核心abort，
+ * 不先stopFlowing，仍可把剩余边界的客户端恢复说明写到已连接destination。
  */
 function renderToPipeableStream(
   children: ReactNodeList,
@@ -180,7 +182,7 @@ function renderToPipeableStream(
   let hasStartedFlowing = false;
   startWork(request);
   return {
-    /** 绑定唯一 Writable，安装背压/失败监听器，并开始向它写出。 */
+    /** 绑定唯一 Writable，先开始写出，再注册 drain/error/close 监听器。 */
     pipe<T: Writable>(destination: T): T {
       if (hasStartedFlowing) {
         throw new Error(
@@ -214,7 +216,8 @@ function renderToPipeableStream(
 /**
  * 把 Web ReadableStream controller 伪装成 Node Writable 协议。
  * 当前 Node host config 只认识 Writable；此桥接编码字符串并转发 enqueue/close/error，
- * 让同一 Fizz request 能服务 Web Streams API。
+ * 让同一Fizz request能服务Web Streams API。write恒true且不看desiredSize，
+ * pull开始后可继续enqueue所有当轮可用块，不能按Node write=false描述此Web桥的背压。
  */
 function createFakeWritableFromReadableStreamController(
   controller: ReadableStreamController,
@@ -249,7 +252,7 @@ function createFakeWritableFromReadableStreamController(
 
 /** 带“全部内容就绪”Promise 的 Node Web Streams 返回类型。 */
 type ReactDOMServerReadableStream = ReadableStream & {
-  /** 所有 Suspense 边界均完成或请求发生致命错误时结算。 */
+  /** 服务端待处理任务归零时 resolve，致命错误时 reject；不表示下游已读完全部字节。 */
   allReady: Promise<void>,
 };
 
@@ -266,8 +269,10 @@ type WebStreamsOptions = Omit<
 
 /**
  * 在 Node 构建中把 React 子树适配为 Web ReadableStream。
- * start 创建 Writable 桥，pull 驱动 Fizz 写出，cancel 停流并 abort；shell 就绪后才向
- * 调用方交付流，而 `allReady` 独立表示全部边界完成。
+ * start创建Writable桥，pull驱动Fizz写出，cancel先stopFlowing再abort；shell就绪后才向
+ * 调用方交付流，而allReady独立表示服务端任务已完成。shell前错误拒绝外层Promise并
+ * 消费无法取得的allReady拒绝；shell后错误交流/controller及尚未结算的allReady。
+ * AbortSignal已中止立即abort，否则仅在abort触发后移除监听，正常完成不另清理。
  */
 function renderToReadableStream(
   children: ReactNodeList,
@@ -360,7 +365,7 @@ function renderToReadableStream(
       if (signal.aborted) {
         abort(request, (signal as any).reason);
       } else {
-        /** 只处理一次 abort，并立即注销监听器，避免 request 被信号长期引用。 */
+        /** 信号触发 abort 后移除本监听器，避免同一监听器再次中止请求。 */
         const listener = () => {
           abort(request, (signal as any).reason);
           signal.removeEventListener('abort', listener);
@@ -372,7 +377,7 @@ function renderToReadableStream(
   });
 }
 
-/** 用 postponed state 与恢复选项创建底层 Fizz resume request。 */
+/** 用postponedState的resumableState创建新renderState，nonce可覆盖，onError/bailout及生命周期回调重新接入；根格式/标识/bootstrap沿用延期状态，不重新创建resumableState。 */
 function resumeRequestImpl(
   children: ReactNodeList,
   postponedState: PostponedState,
@@ -396,7 +401,9 @@ function resumeRequestImpl(
 
 /**
  * 从 postponed state 创建 Node pipeable 恢复流。
- * 恢复请求仍只允许一个 destination，并复用 drain/error/close 的生命周期桥接。
+ * 恢复请求仍只允许一次pipe，并复用drain/error/close生命周期桥接；先startWork，
+ * pipe直接startFlowing，此路径没有首次renderToPipeableStream的prepareForStartFlowing调用。
+ * abort仅交核心中止，不在该方法移除destination监听或先stopFlowing。
  */
 function resumeToPipeableStream(
   children: ReactNodeList,
@@ -407,7 +414,7 @@ function resumeToPipeableStream(
   let hasStartedFlowing = false;
   startWork(request);
   return {
-    /** 绑定唯一 Writable，安装背压/失败监听器，并开始写出恢复内容。 */
+    /** 绑定唯一 Writable，先开始写出恢复内容，再注册 drain/error/close 监听器。 */
     pipe<T: Writable>(destination: T): T {
       if (hasStartedFlowing) {
         throw new Error(
@@ -437,7 +444,7 @@ function resumeToPipeableStream(
   };
 }
 
-/** Web Streams 恢复入口移除 pipeable 生命周期回调并要求 AbortSignal。 */
+/** 从Options类型移除pipeable生命周期回调并要求AbortSignal；resume实际只读取nonce/signal及两种错误回调，其余保留字段不参与恢复配置。 */
 type WebStreamsResumeOptions = Omit<
   Options,
   'onShellReady' | 'onShellError' | 'onAllReady',
@@ -448,7 +455,10 @@ type WebStreamsResumeOptions = Omit<
 
 /**
  * 从 postponed state 恢复 Node 构建的 Web ReadableStream。
- * 复用已序列化 render state，且保持 start/pull/cancel 与 allReady 的首次渲染协议。
+ * 根据已序列化resumableState新建RenderState，且保持start/pull/cancel与allReady首次协议。
+ * 本函数只读nonce/signal/onError/onBrowserBailout，不读取Options派生类型中的onHeaders、
+ * formState、bootstrap或根namespace字段；它们由postponedState恢复。
+ * 信号监听仅abort触发后移除，Web桥write恒true，取消先断destination再中止request。
  */
 function resume(
   children: ReactNodeList,
@@ -518,7 +528,7 @@ function resume(
       if (signal.aborted) {
         abort(request, (signal as any).reason);
       } else {
-        /** 只处理一次 abort，并立即注销监听器，避免恢复 request 被信号长期引用。 */
+        /** 信号触发 abort 后移除本监听器，避免同一监听器再次中止恢复请求。 */
         const listener = () => {
           abort(request, (signal as any).reason);
           signal.removeEventListener('abort', listener);

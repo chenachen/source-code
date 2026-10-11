@@ -7,13 +7,13 @@
  * @flow
  */
 
-/** EventListenerWWW 保存为 www fork 转接 EventListener 实现并保持相同监听契约所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** WWW 宿主提供的监听实现，安装方法返回带 remove 的订阅对象。 */
 const EventListenerWWW = require('EventListener');
 
 import typeof * as EventListenerType from '../EventListener';
 import typeof * as EventListenerShimType from './EventListener-www';
 
-/** addEventBubbleListener 管理为 www fork 转接 EventListener 实现并保持相同监听契约的注册/监听边界；避免同一容器重复安装或遗漏 capture 配置。 */
+/** 在目标安装原生 bubble listener 并返回WWW 可移除的订阅对象。 */
 export function addEventBubbleListener(
   target: EventTarget,
   eventType: string,
@@ -22,7 +22,7 @@ export function addEventBubbleListener(
   return EventListenerWWW.listen(target, eventType, listener);
 }
 
-/** addEventCaptureListener 管理为 www fork 转接 EventListener 实现并保持相同监听契约的注册/监听边界；避免同一容器重复安装或遗漏 capture 配置。 */
+/** 在目标安装原生 capture listener 并返回WWW 可移除的订阅对象。 */
 export function addEventCaptureListener(
   target: EventTarget,
   eventType: string,
@@ -31,7 +31,7 @@ export function addEventCaptureListener(
   return EventListenerWWW.capture(target, eventType, listener);
 }
 
-/** addEventCaptureListenerWithPassiveFlag 管理为 www fork 转接 EventListener 实现并保持相同监听契约的注册/监听边界；避免同一容器重复安装或遗漏 capture 配置。 */
+/** 按指定 passive 值安装 capture listener；返回WWW 订阅对象。 */
 export function addEventCaptureListenerWithPassiveFlag(
   target: EventTarget,
   eventType: string,
@@ -46,7 +46,7 @@ export function addEventCaptureListenerWithPassiveFlag(
   );
 }
 
-/** addEventBubbleListenerWithPassiveFlag 管理为 www fork 转接 EventListener 实现并保持相同监听契约的注册/监听边界；避免同一容器重复安装或遗漏 capture 配置。 */
+/** 按指定 passive 值安装 bubble listener；返回WWW 订阅对象。 */
 export function addEventBubbleListenerWithPassiveFlag(
   target: EventTarget,
   eventType: string,
@@ -61,7 +61,7 @@ export function addEventBubbleListenerWithPassiveFlag(
   );
 }
 
-/** removeEventListener 管理为 www fork 转接 EventListener 实现并保持相同监听契约的注册/监听边界；避免同一容器重复安装或遗漏 capture 配置。 */
+/** 调用 WWW 订阅对象的 remove 解除监听；其余参数保持公共签名。 */
 export function removeEventListener(
   target: EventTarget,
   eventType: string,

@@ -10,10 +10,8 @@
 import {TEXT_NODE} from './HTMLNodeType';
 
 /**
- * 给定任意节点，返回第一个没有子节点的叶节点。
- *
- * @param {DOMElement|DOMTextNode} node
- * @return {DOMElement|DOMTextNode}
+ * 沿 firstChild 找到子树最左侧叶节点，供字符偏移遍历从文档顺序的起点开始。
+ * 空节点原样返回；叶节点不一定是文本，调用者再检查 nodeType。
  */
 function getLeafNode(node: ?(Node | Element)) {
   while (node && node.firstChild) {
@@ -23,10 +21,8 @@ function getLeafNode(node: ?(Node | Element)) {
 }
 
 /**
- * 在容器中获取下一个兄弟节点。如果节点的兄弟节点用尽，这将向上遍历DOM。
- *
- * @param {DOMElement|DOMTextNode} node
- * @return {?DOMElement|DOMTextNode}
+ * 寻找文档顺序中的下一棵兄弟子树；当前节点没有兄弟时向祖先逐层寻找。
+ * 本函数不接收遍历根边界，直到祖先链耗尽才返回 undefined。
  */
 function getSiblingNode(node: ?(Node | Element)) {
   while (node) {
@@ -38,11 +34,12 @@ function getSiblingNode(node: ?(Node | Element)) {
 }
 
 /**
- * 获取描述包含偏移量处字符的节点的对象。
+ * 把拼接文本的字符偏移换成具体 Text 节点及其内部偏移，供选区恢复使用。
+ * 遍历只把 Text 的 textContent 长度计入累计值；边界偏移优先落到前一个文本节点末尾。
+ * 找不到覆盖 offset 的文本节点时返回 undefined。
  *
- * @param {DOMElement|DOMTextNode} root
- * @param {number} offset
- * @return {?object}
+ * @param root - 开始按文档顺序寻找文本的节点。
+ * @param offset - UTF-16 代码单元偏移，与 DOM Selection 的 offset 单位一致。
  */
 function getNodeForCharacterOffset(root: Element, offset: number): ?Object {
   let node = getLeafNode(root);

@@ -14,7 +14,7 @@ import type { HMRLogger } from '../../../../../dist/node/module-runner'
 import { createModuleRunnerTester } from './utils'
 
 /**
- * 阅读目标：从 `runner.import()` 的黑盒行为理解 Module Runner。
+ * 保存测试环境原始 URL 构造器，避免夹具改变全局 URL 后影响 file URL 身份核对。
  *
  * 用例覆盖 id 规范化、虚拟/外部模块、缓存身份、导出只读视图、循环依赖、live binding、
  * `import.meta`、优化依赖、HMR full reload 与关闭竞态；快照是其 ESM 兼容边界。
@@ -354,7 +354,8 @@ describe('module runner initialization', async () => {
   })
 
   /**
-   * 场景：四组合法循环依赖夹具以不同 import/re-export 结构互相引用。
+   * 场景：四组合法循环依赖入口分别采用穿插 import/export（test1）、具名 re-export（test2）、
+   * 先导入后导出（test3）与 export-all（test4）结构；每行导入其入口。
    * 验证目标：每组都完成求值，并得到 dep1/dep2 的完整 `{ ok: true }` 导出。
    */
   it.for([
@@ -713,7 +714,9 @@ describe('full-reload during close', () => {
   it('does not error when server closes during full-reload re-import', async () => {
     const errors: (string | Error)[] = []
     const logger: HMRLogger = {
+      /** 收集 HMR 错误，关闭后检查是否误报 transport disconnected。 */
       error: (msg) => errors.push(msg),
+      /** 忽略 HMR 调试消息，使本例只观察错误通道。 */
       debug: () => {},
     }
 

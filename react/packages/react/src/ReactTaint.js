@@ -38,6 +38,9 @@ const defaultMessage =
  *
  * 在途请求仍可能握有该值，因此先把释放任务复制到每个请求队列并增加计数，再释放当前
  * 生命周期的一份计数；只有没有任何持有者时才删除注册表项。
+ * @param entryValue - FinalizationRegistry 保存的原始键；不持有已回收 lifetime 对象。
+ * @remarks 每个当前在途请求获得一项延迟清理记录，使 GC 不能在请求尚可能序列化该值
+ * 时提前解除 taint；请求最终减去这些计数。二进制长度筛选集合不随单项删除而清空。
  */
 function cleanup(entryValue: string | bigint): void {
   const entry = TaintRegistryValues.get(entryValue);
@@ -69,6 +72,12 @@ const finalizationRegistry =
  * @param message 泄漏时显示的消息；为空时使用默认安全提示。
  * @param lifetime 持有该值的对象/函数，其回收会触发引用计数清理。
  * @param value 需要全局阻止泄漏的唯一值。
+ * @remarks 注册表作用于当前服务端 React 模块实例的所有请求，不是单请求本地状态。
+ * 不测量 value 的熵或扫描其他对象内容，只检查允许的输入类型。二进制 view 编码成
+ * 当前字节区间的字符串，与相同字符串键共用记录；后续修改 buffer 不改已登记的键。
+ * 同一键重复登记增加 count 并保留第一条 message，每次登记都绑定 lifetime 回收通知。
+ * FinalizationRegistry 回调时机由 GC 决定，无显式取消；不支持它时记录保留到 VM 结束。
+ * 特性关闭、非法 lifetime/value 或字节编码失败会抛错，不注册完整结果。
  */
 export function taintUniqueValue(
   message: ?string,
@@ -98,8 +107,7 @@ export function taintUniqueValue(
     value instanceof TypedArrayConstructor ||
     value instanceof DataView
   ) {
-    // 暂把二进制内容转换为稳定字符串，从而复用原生 Map 哈希。字符串具体形式不重要，
-    // 只需登记与查询产生相同结果；此 API 面向高熵唯一值，因此碰撞风险可以忽略。
+    // 把字节内容编码为字符串键；Flight 序列化时采用相同编码，才能按内容找到污染记录。
     TaintRegistryByteLengths.add(value.byteLength);
     entryValue = binaryToComparableString(value);
   } else {
@@ -135,6 +143,9 @@ export function taintUniqueValue(
  *
  * @param message 泄漏时显示的消息；为空时使用默认安全提示。
  * @param object 需要阻止传给客户端的对象或函数引用。
+ * @remarks 只记录该引用身份，不递归 taint 内部字段或同内容副本；同对象再次调用覆盖
+ * message。实际拒绝序列化发生在 Flight 消费注册表时，这里不立即遍历/传输对象。
+ * WeakMap 与 unique-value 的引用计数表分开，对象 taint 不需要独立 lifetime 参数。
  */
 export function taintObjectReference(
   message: ?string,

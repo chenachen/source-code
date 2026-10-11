@@ -10,19 +10,19 @@ afterEach(async () => {
   server = undefined
 })
 
-// In full bundle mode the build is driven by Rolldown's dev engine, which is the
-// one that invokes plugins' `buildStart`/`buildEnd` hooks. Regression test for
-// `buildEnd` being called twice because both `bundledDev.close()` and
-// `pluginContainer.close()` fired it on server close.
+// Rolldown dev engine 驱动bundledDev构建钩子；关闭时pluginContainer不应再次触发buildEnd（回归）。
 describe.runIf(isServe)('full bundle mode build hooks', () => {
+  /** 场景：仅开发执行：显式启用bundledDev并插入计数插件；listen后等待buildEnd=1且buildStart=1，再close，核对两计数都保持1，覆盖close重复触发buildEnd回归。 */
   test('buildStart and buildEnd are each called only once', async () => {
     let buildStartCount = 0
     let buildEndCount = 0
     const countPlugin: Plugin = {
       name: 'count-build-hooks',
+      /** 记录bundledDev初始构建进入次数，供close前后比较。 */
       buildStart() {
         buildStartCount++
       },
+      /** 记录初始构建结束次数，检查服务器关闭没有重复调用。 */
       buildEnd() {
         buildEndCount++
       },
@@ -37,14 +37,14 @@ describe.runIf(isServe)('full bundle mode build hooks', () => {
     })
     await server.listen()
 
-    // the initial full-bundle build runs on listen and fires buildStart + buildEnd once
+    // listen触发初始full-bundle构建，等待buildEnd完成。
     await expect.poll(() => buildEndCount, { timeout: 10000 }).toBe(1)
     expect(buildStartCount).toBe(1)
 
     await server.close()
     server = undefined
 
-    // closing must not fire buildStart/buildEnd again
+    // close后两钩子计数仍应为1。
     expect(buildStartCount).toBe(1)
     expect(buildEndCount).toBe(1)
   })

@@ -24,7 +24,7 @@ let hasErrored = false;
 let fatalError = undefined;
 let waitForAll;
 
-/** `normalizeError`：封装当前用例复用的操作、回调或断言步骤。 */
+/** 保留错误消息首个句号以前及句号，无句号则原样，用于稳定hydration恢复日志首句。 */
 function normalizeError(msg) {
   // 将第一个句子作为基础，以便更容易地进行断言。
   const idx = msg.indexOf('.');
@@ -71,10 +71,10 @@ describe('ReactDOMFizzServerHydrationWarning', () => {
     });
   });
 
-  /** `act`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 执行callback并等一次setImmediate，把PassThrough本轮buffer整体解析到JSDOM；遇流error抛原原因。SCRIPT仅复制textContent后新建执行、不复制其属性；不是通用增量HTML parser或任意异步完成等待。 */
   async function act(callback) {
     await callback();
-    // 等待一次事件循环的轮询。 这假设我们已经将所有东西都冲刷了。
+    // 等一次setImmediate处理本例流工作；这里依赖得到可完整解析的片段，不等待任意异步任务。
     await new Promise(resolve => {
       setImmediate(resolve);
     });
@@ -100,7 +100,7 @@ describe('ReactDOMFizzServerHydrationWarning', () => {
     }
   }
 
-  /** `getVisibleChildren`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 递归创建断言用React树，过滤script/template和具有hidden/aria-hidden属性的节点、冒号id；不计算CSS，0/1/多children分别undefined/单项/数组。 */
   function getVisibleChildren(element) {
     const children = [];
     let node = element.firstChild;
@@ -140,16 +140,9 @@ describe('ReactDOMFizzServerHydrationWarning', () => {
         : children;
   }
 
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「suppresses but does not fix text mismatches with suppressHydrationWarning」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言对应 ReactDOMRoot.hydrateRoot 的容器认领与事件重放路径。
-   */
+  /** SSR两suppress span为Server Text/1，客户端Client Text/2；水合无恢复日志且仍服务器文字，验证抑制同层文本诊断并不修补文本。 */
   it('suppresses but does not fix text mismatches with suppressHydrationWarning', async () => {
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 两个同层suppress span切换文字/数字，隔离直接文本属性快路。 */
     function App({isClient}) {
       return (
         <div>
@@ -173,7 +166,7 @@ describe('ReactDOMFizzServerHydrationWarning', () => {
       </div>,
     );
     ReactDOMClient.hydrateRoot(container, <App isClient={true} />, {
-      /** `onRecoverableError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 记录错误及可选cause的首句到Scheduler，waitForAll的预期列表决定该case是否允许恢复错误；回调本身不抛或手动修改DOM。 */
       onRecoverableError(error) {
         // 不要漏掉 hydration 错误；这里应当没有任何错误。
         Scheduler.log('onRecoverableError: ' + normalizeError(error.message));
@@ -183,7 +176,7 @@ describe('ReactDOMFizzServerHydrationWarning', () => {
       },
     });
     await waitForAll([]);
-    // 文本不匹配应被静默修复，生产环境也一样。
+    // suppressHydrationWarning 抑制这次文本差异报告，并保留服务端文本；生产环境也不会在 hydration 时修补它。
     expect(getVisibleChildren(container)).toEqual(
       <div>
         <span>Server Text</span>
@@ -192,9 +185,9 @@ describe('ReactDOMFizzServerHydrationWarning', () => {
     );
   });
 
-  /** 测试场景：验证「suppresses but does not fix multiple text node mismatches with suppressHydrationWarning」描述的渲染、交互或错误处理结果。 */
+  /** SSR同suppress span内两个独立Server1/2 Text，客户端Client1/2；无恢复日志且两个服务器节点内容保留，验证多直接Text差异抑制。 */
   it('suppresses but does not fix multiple text node mismatches with suppressHydrationWarning', async () => {
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 同span下两个独立字符串子级分别切换，测试HostText多节点。 */
     function App({isClient}) {
       return (
         <div>
@@ -220,7 +213,7 @@ describe('ReactDOMFizzServerHydrationWarning', () => {
       </div>,
     );
     ReactDOMClient.hydrateRoot(container, <App isClient={true} />, {
-      /** `onRecoverableError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 记录错误及可选cause的首句到Scheduler，waitForAll的预期列表决定该case是否允许恢复错误；回调本身不抛或手动修改DOM。 */
       onRecoverableError(error) {
         Scheduler.log('onRecoverableError: ' + normalizeError(error.message));
         if (error.cause) {
@@ -239,9 +232,9 @@ describe('ReactDOMFizzServerHydrationWarning', () => {
     );
   });
 
-  /** 测试场景：验证「errors on text-to-element mismatches with suppressHydrationWarning」描述的渲染、交互或错误处理结果。 */
+  /** SSR Hello/Server/!文本，客户端中间变span/Client，父suppress；报告HTML错配并恢复出客户端span，验证文本→元素结构不能抑制。 */
   it('errors on text-to-element mismatches with suppressHydrationWarning', async () => {
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 在多个children中把中间Server文字换Client span，制造结构变化。 */
     function App({isClient}) {
       return (
         <div>
@@ -267,7 +260,7 @@ describe('ReactDOMFizzServerHydrationWarning', () => {
       </div>,
     );
     ReactDOMClient.hydrateRoot(container, <App isClient={true} />, {
-      /** `onRecoverableError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 记录错误及可选cause的首句到Scheduler，waitForAll的预期列表决定该case是否允许恢复错误；回调本身不抛或手动修改DOM。 */
       onRecoverableError(error) {
         Scheduler.log('onRecoverableError: ' + normalizeError(error.message));
         if (error.cause) {
@@ -287,9 +280,9 @@ describe('ReactDOMFizzServerHydrationWarning', () => {
     );
   });
 
-  /** 测试场景：验证「suppresses but does not fix client-only single text node mismatches with suppressHydrationWarning」描述的渲染、交互或错误处理结果。 */
+  /** SSR suppress span无text，客户端Client单文本；水合无日志且仍空，随后root.render Client 2才写文字，验证textContent快路的新增文字抑制与后续正常更新。 */
   it('suppresses but does not fix client-only single text node mismatches with suppressHydrationWarning', async () => {
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** text prop可从null变Client及Client 2，展示水合抑制与后续正常更新不同。 */
     function App({text}) {
       return (
         <div>
@@ -309,7 +302,7 @@ describe('ReactDOMFizzServerHydrationWarning', () => {
       </div>,
     );
     const root = ReactDOMClient.hydrateRoot(container, <App text="Client" />, {
-      /** `onRecoverableError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 记录错误及可选cause的首句到Scheduler，waitForAll的预期列表决定该case是否允许恢复错误；回调本身不抛或手动修改DOM。 */
       onRecoverableError(error) {
         Scheduler.log('onRecoverableError: ' + normalizeError(error.message));
         if (error.cause) {
@@ -335,9 +328,9 @@ describe('ReactDOMFizzServerHydrationWarning', () => {
 
   // TODO：该行为与仅客户端渲染的单文本节点不一致。
 
-  /** 测试场景：验证「errors on server-only single text node mismatches with suppressHydrationWarning」描述的渲染、交互或错误处理结果。 */
+  /** SSR suppress span单Server文本，客户端null；报告HTML错配并变空，验证服务端多余单Text仍算结构，不对称于客户端单text快路。 */
   it('errors on server-only single text node mismatches with suppressHydrationWarning', async () => {
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** isClient时删掉唯一Server Text，测试服务器多余文本结构。 */
     function App({isClient}) {
       return (
         <div>
@@ -359,7 +352,7 @@ describe('ReactDOMFizzServerHydrationWarning', () => {
       </div>,
     );
     ReactDOMClient.hydrateRoot(container, <App isClient={true} />, {
-      /** `onRecoverableError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 记录错误及可选cause的首句到Scheduler，waitForAll的预期列表决定该case是否允许恢复错误；回调本身不抛或手动修改DOM。 */
       onRecoverableError(error) {
         Scheduler.log('onRecoverableError: ' + normalizeError(error.message));
         if (error.cause) {
@@ -377,9 +370,9 @@ describe('ReactDOMFizzServerHydrationWarning', () => {
     );
   });
 
-  /** 测试场景：验证「errors on client-only extra text node mismatches with suppressHydrationWarning」描述的渲染、交互或错误处理结果。 */
+  /** SSR suppress span内已有Shared子span，客户端另加Client Text；报告HTML错配并恢复Shared+Client，验证真实子级额外Text不能抑制。 */
   it('errors on client-only extra text node mismatches with suppressHydrationWarning', async () => {
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 已有Shared span后仅客户端增加Text，迫使走多子级认领。 */
     function App({isClient}) {
       return (
         <div>
@@ -404,7 +397,7 @@ describe('ReactDOMFizzServerHydrationWarning', () => {
       </div>,
     );
     ReactDOMClient.hydrateRoot(container, <App isClient={true} />, {
-      /** `onRecoverableError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 记录错误及可选cause的首句到Scheduler，waitForAll的预期列表决定该case是否允许恢复错误；回调本身不抛或手动修改DOM。 */
       onRecoverableError(error) {
         Scheduler.log('onRecoverableError: ' + normalizeError(error.message));
         if (error.cause) {
@@ -425,9 +418,9 @@ describe('ReactDOMFizzServerHydrationWarning', () => {
     );
   });
 
-  /** 测试场景：验证「errors on server-only extra text node mismatches with suppressHydrationWarning」描述的渲染、交互或错误处理结果。 */
+  /** SSR Shared子span加Server Text，客户端只Shared；报告并删除Server，验证真实子级额外服务器Text结构差异。 */
   it('errors on server-only extra text node mismatches with suppressHydrationWarning', async () => {
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 已有Shared span后仅服务端含Server Text，测试服务器多余子节点。 */
     function App({isClient}) {
       return (
         <div>
@@ -452,7 +445,7 @@ describe('ReactDOMFizzServerHydrationWarning', () => {
       </div>,
     );
     ReactDOMClient.hydrateRoot(container, <App isClient={true} />, {
-      /** `onRecoverableError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 记录错误及可选cause的首句到Scheduler，waitForAll的预期列表决定该case是否允许恢复错误；回调本身不抛或手动修改DOM。 */
       onRecoverableError(error) {
         Scheduler.log('onRecoverableError: ' + normalizeError(error.message));
         if (error.cause) {
@@ -472,9 +465,9 @@ describe('ReactDOMFizzServerHydrationWarning', () => {
     );
   });
 
-  /** 测试场景：验证「errors on element-to-text mismatches with suppressHydrationWarning」描述的渲染、交互或错误处理结果。 */
+  /** SSR Hello/span Server/!，客户端中间文字Client；报告并恢复三个文本片段，验证元素→文本结构变化不能抑制。 */
   it('errors on element-to-text mismatches with suppressHydrationWarning', async () => {
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 多个children中把服务器span换客户端文字，验证结构不能豁免。 */
     function App({isClient}) {
       return (
         <div>
@@ -498,7 +491,7 @@ describe('ReactDOMFizzServerHydrationWarning', () => {
       </div>,
     );
     ReactDOMClient.hydrateRoot(container, <App isClient={true} />, {
-      /** `onRecoverableError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 记录错误及可选cause的首句到Scheduler，waitForAll的预期列表决定该case是否允许恢复错误；回调本身不抛或手动修改DOM。 */
       onRecoverableError(error) {
         Scheduler.log('onRecoverableError: ' + normalizeError(error.message));
         if (error.cause) {
@@ -520,9 +513,9 @@ describe('ReactDOMFizzServerHydrationWarning', () => {
     );
   });
 
-  /** 测试场景：验证「suppresses but does not fix attribute mismatches with suppressHydrationWarning」描述的渲染、交互或错误处理结果。 */
+  /** SSR suppress span有server class、opacity0、server-only data，客户端另一组属性；无恢复日志且所有服务器属性保留，验证仅抑制告警而不补属性。 */
   it('suppresses but does not fix attribute mismatches with suppressHydrationWarning', async () => {
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 切换class/style及data属性，hydration抑制后仍不主动修补。 */
     function App({isClient}) {
       return (
         <div>
@@ -548,7 +541,7 @@ describe('ReactDOMFizzServerHydrationWarning', () => {
       </div>,
     );
     ReactDOMClient.hydrateRoot(container, <App isClient={true} />, {
-      /** `onRecoverableError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 记录错误及可选cause的首句到Scheduler，waitForAll的预期列表决定该case是否允许恢复错误；回调本身不抛或手动修改DOM。 */
       onRecoverableError(error) {
         Scheduler.log('onRecoverableError: ' + normalizeError(error.message));
         if (error.cause) {
@@ -564,9 +557,9 @@ describe('ReactDOMFizzServerHydrationWarning', () => {
     );
   });
 
-  /** 测试场景：验证「suppresses and does not fix html mismatches with suppressHydrationWarning」描述的渲染、交互或错误处理结果。 */
+  /** SSR suppress p rawHTML为Server HTML，客户端Client HTML；无恢复日志且原服务器HTML保持，验证innerHTML差异抑制。 */
   it('suppresses and does not fix html mismatches with suppressHydrationWarning', async () => {
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 切换rawHTML Server/Client，测试dangerouslySetInnerHTML差异。 */
     function App({isClient}) {
       return (
         <div>
@@ -591,7 +584,7 @@ describe('ReactDOMFizzServerHydrationWarning', () => {
       </div>,
     );
     ReactDOMClient.hydrateRoot(container, <App isClient={true} />, {
-      /** `onRecoverableError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 记录错误及可选cause的首句到Scheduler，waitForAll的预期列表决定该case是否允许恢复错误；回调本身不抛或手动修改DOM。 */
       onRecoverableError(error) {
         Scheduler.log('onRecoverableError: ' + normalizeError(error.message));
         if (error.cause) {
@@ -607,9 +600,9 @@ describe('ReactDOMFizzServerHydrationWarning', () => {
     );
   });
 
-  /** 测试场景：验证「errors on insertions with suppressHydrationWarning」描述的渲染、交互或错误处理结果。 */
+  /** SSR suppress父div只有Shared p，客户端新增Client only p；报告并恢复两p，验证元素插入不是可抑制属性/文字差异。 */
   it('errors on insertions with suppressHydrationWarning', async () => {
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 客户端增加第二p元素，suppress只在父层，结构须恢复。 */
     function App({isClient}) {
       return (
         <div suppressHydrationWarning={true}>
@@ -630,7 +623,7 @@ describe('ReactDOMFizzServerHydrationWarning', () => {
       </div>,
     );
     ReactDOMClient.hydrateRoot(container, <App isClient={true} />, {
-      /** `onRecoverableError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 记录错误及可选cause的首句到Scheduler，waitForAll的预期列表决定该case是否允许恢复错误；回调本身不抛或手动修改DOM。 */
       onRecoverableError(error) {
         Scheduler.log('onRecoverableError: ' + normalizeError(error.message));
         if (error.cause) {
@@ -649,9 +642,9 @@ describe('ReactDOMFizzServerHydrationWarning', () => {
     );
   });
 
-  /** 测试场景：验证「errors on deletions with suppressHydrationWarning」描述的渲染、交互或错误处理结果。 */
+  /** SSR suppress父div有Shared及Server only p，客户端删后者；报告并恢复单p，验证元素删除不能抑制。 */
   it('errors on deletions with suppressHydrationWarning', async () => {
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 服务器多第二p元素，客户端删掉，验证结构恢复。 */
     function App({isClient}) {
       return (
         <div suppressHydrationWarning={true}>
@@ -673,7 +666,7 @@ describe('ReactDOMFizzServerHydrationWarning', () => {
       </div>,
     );
     ReactDOMClient.hydrateRoot(container, <App isClient={true} />, {
-      /** `onRecoverableError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 记录错误及可选cause的首句到Scheduler，waitForAll的预期列表决定该case是否允许恢复错误；回调本身不抛或手动修改DOM。 */
       onRecoverableError(error) {
         Scheduler.log('onRecoverableError: ' + normalizeError(error.message));
         if (error.cause) {

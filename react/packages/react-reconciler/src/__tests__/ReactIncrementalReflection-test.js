@@ -62,7 +62,7 @@ describe('ReactIncrementalReflection', () => {
       }
     }
 
-    /** 跨多个 step 保存自身及宿主 ref 的反射探针，覆盖挂载、替换、隐藏与卸载生命周期。 */
+    /** 跨多个 step 保存自身及宿主 ref 的反射探针，覆盖挂载、替换、返回 null、恢复与卸载。 */
     class Component extends React.Component {
       /** 在首次提交前保存类实例，并记录 findInstance 仍为 null 的未提交状态。 */
       UNSAFE_componentWillMount() {

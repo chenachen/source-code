@@ -14,7 +14,7 @@ import queueMacrotask from 'shared/enqueueTask';
 
 import {disableLegacyMode} from 'shared/ReactFeatureFlags';
 
-/** 当前调用栈中的 `act` 作用域深度；嵌套调用共享同一任务队列。 */
+/** 尚未退出的 `act` 作用域深度；异步作用域直到被等待且回调落定后才退出。 */
 let actScopeDepth = 0;
 
 /** 是否已经报告过未等待 `act` 的告警，避免同一测试进程重复刷屏。 */
@@ -29,14 +29,19 @@ function aggregateErrors(errors: Array<mixed>): mixed {
 }
 
 /**
- * 在受控测试作用域中执行回调，并冲刷 React 调度到内部队列的全部工作。
+ * 在开发态测试作用域中执行回调，并冲刷 renderer 调度到 actQueue 的工作。
  *
  * 同步回调仍返回 Thenable，以便挂起或微任务产生后续工作时调用方可以 `await`；最外层作用域
- * 负责最终冲刷和清空共享队列，嵌套作用域只恢复深度。所有退出路径都会恢复旧模式批处理状态
- * 并聚合 renderer 报告的错误。
+ * 负责最终冲刷，嵌套作用域不单独清空队列。旧模式批处理标记只覆盖回调的同步执行阶段；
+ * 异步作用域则保留深度，直到调用方消费返回的 Thenable。renderer 报告的错误由共享数组聚合。
  *
  * @param callback 触发待测试更新的同步或异步回调。
- * @returns 在回调结果及递归调度工作全部完成后落定的 Thenable。
+ * @returns 回调与队列冲刷结束后落定的 Thenable；它不代替测试自己推进定时器或提供外部数据。
+ * @remarks 作用域状态是 DEV 模块全局，多个重叠 act 共享同一队列；深度顺序不匹配时
+ * 只报告告警，没有另建隔离队列。生产构建立即抛错，不调用 callback。
+ * 返回值只按非 null 对象且 then 为函数识别异步，函数形式的 thenable 不走该分支；
+ * 用户 then getter 或 then 调用抛错并不全部位于统一 catch 中，不能把 act 当作任意
+ * thenable 的安全适配器。Promise reject 时若已积累 renderer 错误，优先拒绝聚合错误。
  */
 export function act<T>(callback: () => T | Thenable<T>): Thenable<T> {
   if (__DEV__) {
@@ -126,7 +131,11 @@ export function act<T>(callback: () => T | Thenable<T>): Thenable<T> {
       });
 
       return {
-        /** 消费异步 `act`，等待用户 Thenable 后退出作用域并递归冲刷最外层队列。 */
+        /**
+         * 消费异步 act，注册用户 thenable 完成后再退出作用域；最外层继续冲刷队列。
+         * resolve 接收 callback 的解析值，reject 接收共享聚合错误或原拒绝原因。
+         * 每次 then 调用都会注册一次处理，不在这里缓存已消费状态或返回链式 Promise。
+         */
         then(resolve: T => mixed, reject: mixed => mixed) {
           didAwaitActCall = true;
           thenable.then(
@@ -201,7 +210,7 @@ export function act<T>(callback: () => T | Thenable<T>): Thenable<T> {
         //
         // 当前并不强制所有 `act` 都被等待；同步回调必须在返回前先退出共享作用域。
         //
-        // 若调用方随后消费返回的 Thenable，下方会立即恢复队列并继续冲刷，对外不可观察到空档。
+        // 调用方消费返回的 Thenable 后才重新挂载队列，并跨宏任务检查微任务产生的后续工作。
         //
         // 异步回调不受此兼容分支影响，因为它始终要求等待。
         //
@@ -216,7 +225,11 @@ export function act<T>(callback: () => T | Thenable<T>): Thenable<T> {
       }
 
       return {
-        /** 消费同步 `act` 的可等待结果；最外层会恢复队列并追踪挂起后的异步工作。 */
+        /**
+         * 消费同步 act 的可等待结果；最外层重新安装刚释放的队列并从宏任务开始追踪。
+         * resolve 接收同步 callback 返回值，reject 接收后续 renderer 错误；嵌套层直接
+         * resolve，最终冲刷仍归外层。此 then 方法不返回可链式的新 Promise。
+         */
         then(resolve: T => mixed, reject: mixed => mixed) {
           didAwaitActCall = true;
           if (prevActScopeDepth === 0) {
@@ -239,6 +252,9 @@ export function act<T>(callback: () => T | Thenable<T>): Thenable<T> {
 
 /**
  * 恢复进入当前 `act` 前的深度，并在开发环境检测未按顺序等待导致的重叠作用域。
+ * @param prevActQueue - 调用点保存的旧队列；当前实现未读取此参数，也不在这里恢复队列槽。
+ * @param prevActScopeDepth - 当前 act 进入前的深度，退出后直接写回该值。
+ * @remarks 队列释放/恢复由 act 的最外层分支负责；告警不阻止深度写回。
  */
 function popActScope(
   prevActQueue: null | Array<RendererTask>,
@@ -258,6 +274,11 @@ function popActScope(
 /**
  * 跨宏任务反复冲刷异步 `act` 工作，直到队列为空，再解析结果或拒绝聚合错误。
  * 宏任务边界允许 Promise 微任务先把 continuation 重新加入队列。
+ * @param returnValue - 用户 callback 的结果；冲刷 renderer 不替换该值。
+ * @param resolve - 队列稳定为空且无共享错误时的完成出口。
+ * @param reject - 清空共享 thrownErrors 后接收聚合错误的失败出口。
+ * @remarks 没有超时或取消预算；任务不断产生 continuation 时会持续安排宿主 task。
+ * 这里只冲刷当前共享 actQueue，不等待任意外部 Promise 自动完成。
  */
 function recursivelyFlushAsyncActWork<T>(
   returnValue: T,
@@ -303,6 +324,10 @@ let isFlushing = false;
  *
  * 若任务调用过 `use` 并返回 continuation，先让出给微任务解包可能已兑现的 Promise；异常时
  * 删除已消费前缀、保留剩余任务，并把错误放入共享聚合队列。
+ * @param queue - renderer 写入的共享任务数组，按当前长度逐项执行，允许任务同步追加新项。
+ * @remarks didUsePromise 且有 continuation 时保存的是刚执行的 callback，而不是返回的
+ * continuation，以便微任务 ping 后从该回调重新尝试；已消费前缀原地删除。回调参数
+ * 固定 false，不按真实 Scheduler 过期时间执行。重入时直接返回，错误收集后也不在此重抛。
  */
 function flushActQueue(queue: Array<RendererTask>) {
   if (__DEV__) {

@@ -74,10 +74,13 @@ export const withScopeId = (_id: string): typeof withCtx => withCtx
  * 四个短字段由编译器和运行时共同读取，使用属性而非额外包装对象可减少热路径分配。
  */
 export type ContextualRenderFn = {
+  /**
+   * 上下文绑定插槽的调用签名，透传 slot props 参数并返回原函数结果；_n/_c/_d 字段由包装器附加。
+   */
   (...args: any[]): any
   /** 已完成上下文包装，避免重复包装。 */
   _n: boolean
-  /** 是否由编译器生成，用于选择 slots 子节点标准化规则。 */
+  /** 编译插槽函数标记，受控调用据此管理 block tracking。 */
   _c: boolean
   /** 调用时是否暂时关闭 block tracking。 */
   _d: boolean
@@ -106,10 +109,13 @@ export function withCtx(
     return fn
   }
 
+  /**
+   * 调用 slot 前按 _d 暂停 block tracking 并切到声明实例；finally 关闭本次遗留 block、恢复实例与追踪开关。成功后通知 devtools，并返回原 slot 结果。
+   */
   const renderFnWithContext: ContextualRenderFn = (...args: any[]) => {
     // #1745：用户可能在普通模板表达式中手动调用已编译插槽。此时插槽内部动态节点
     // 会被错误收集进调用方 block，破坏动态子节点索引。默认通过 `_d` 暂停追踪并让
-    // diff 走安全路径；正常的编译 `<slot>` 由 `renderSlot` 临时关闭 `_d`，保留快路径。
+    // diff 走安全路径；`renderSlot` 或元素/Teleport 的默认插槽展开会临时关闭 `_d`。
     if (renderFnWithContext._d) {
       setBlockTracking(-1)
     }
@@ -137,9 +143,9 @@ export function withCtx(
 
   // 标记已标准化，防止同一插槽被重复包装。
   renderFnWithContext._n = true
-  // 默认视为编译插槽；`normalizeChildren()` 据此设置 slots 的编译标志。
+  // 标记编译插槽函数，供调用方控制 `_d`；slots 对象的稳定性另由 `_`/SlotFlags 表示。
   renderFnWithContext._c = true
-  // 默认暂停 block tracking，只有 `renderSlot()` 的受控调用会临时开启。
+  // 默认暂停 block tracking；renderSlot 和元素/Teleport 默认插槽的受控展开会临时开启。
   renderFnWithContext._d = true
   // compat 构建需额外区分 Vue 2 的作用域插槽与非作用域插槽。
   if (__COMPAT__ && isNonScopedSlot) {

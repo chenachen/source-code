@@ -9,7 +9,7 @@
 
 import getVendorPrefixedEventName from './getVendorPrefixedEventName';
 
-/** DOMEventName 定义 Flow 数据形状，用于限定 React DOM 事件系统接受的原生事件名；类型边界阻止插件、原生事件与 Fiber 状态混用。 */
+/** React DOM 事件系统接受的原生事件名联合。 */
 export type DOMEventName =
   | 'abort'
   | 'afterblur' // 这不是真实原生事件，仅供事件实验使用。
@@ -116,25 +116,25 @@ export type DOMEventName =
   | 'waiting'
   | 'wheel';
 
-/** ANIMATION_END 是限定 React DOM 事件系统接受的原生事件名使用的稳定常量，避免在热路径重复分配或推导。 */
+/** 按浏览器能力解析的 animationend 原生名称。 */
 export const ANIMATION_END: DOMEventName =
   getVendorPrefixedEventName('animationend');
-/** ANIMATION_ITERATION 是限定 React DOM 事件系统接受的原生事件名使用的稳定常量，避免在热路径重复分配或推导。 */
+/** 按浏览器能力解析的 animationiteration 原生名称。 */
 export const ANIMATION_ITERATION: DOMEventName =
   getVendorPrefixedEventName('animationiteration');
-/** ANIMATION_START 是限定 React DOM 事件系统接受的原生事件名使用的稳定常量，避免在热路径重复分配或推导。 */
+/** 按浏览器能力解析的 animationstart 原生名称。 */
 export const ANIMATION_START: DOMEventName =
   getVendorPrefixedEventName('animationstart');
 
-/** TRANSITION_RUN 是限定 React DOM 事件系统接受的原生事件名使用的稳定常量，避免在热路径重复分配或推导。 */
+/** 按浏览器能力解析的 transitionrun 原生名称。 */
 export const TRANSITION_RUN: DOMEventName =
   getVendorPrefixedEventName('transitionrun');
-/** TRANSITION_START 是限定 React DOM 事件系统接受的原生事件名使用的稳定常量，避免在热路径重复分配或推导。 */
+/** 按浏览器能力解析的 transitionstart 原生名称。 */
 export const TRANSITION_START: DOMEventName =
   getVendorPrefixedEventName('transitionstart');
-/** TRANSITION_CANCEL 是限定 React DOM 事件系统接受的原生事件名使用的稳定常量，避免在热路径重复分配或推导。 */
+/** 按浏览器能力解析的 transitioncancel 原生名称。 */
 export const TRANSITION_CANCEL: DOMEventName =
   getVendorPrefixedEventName('transitioncancel');
-/** TRANSITION_END 是限定 React DOM 事件系统接受的原生事件名使用的稳定常量，避免在热路径重复分配或推导。 */
+/** 按浏览器能力解析的 transitionend 原生名称。 */
 export const TRANSITION_END: DOMEventName =
   getVendorPrefixedEventName('transitionend');

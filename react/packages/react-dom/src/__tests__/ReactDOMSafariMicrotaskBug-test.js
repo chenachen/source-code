@@ -27,6 +27,7 @@ describe('ReactDOMSafariMicrotaskBug-test', () => {
     const originalQueueMicrotask = queueMicrotask;
     overrideQueueMicrotask = false;
     const fakeMicrotaskQueue = [];
+    /** override 打开时把微任务保存到测试数组，否则转发原 queueMicrotask；模拟 Safari 在用户调用栈内提前运行的根任务。 */
     global.queueMicrotask = cb => {
       if (overrideQueueMicrotask) {
         fakeMicrotaskQueue.push(cb);
@@ -34,6 +35,7 @@ describe('ReactDOMSafariMicrotaskBug-test', () => {
         originalQueueMicrotask(cb);
       }
     };
+    /** 按 FIFO 消费模拟微任务，连回调执行期间新追加的任务也一起冲刷，以制造真实的可重入调度条件。 */
     flushFakeMicrotasks = () => {
       while (fakeMicrotaskQueue.length > 0) {
         const cb = fakeMicrotaskQueue.shift();
@@ -56,17 +58,11 @@ describe('ReactDOMSafariMicrotaskBug-test', () => {
     document.body.removeChild(container);
   });
 
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「should deal with premature microtask in commit phase」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言连接 ReactDOM 公开入口、ReactDOMRoot 根生命周期及 DOM 提交结果。
-   */
+  /** ref 提交回调中安排 state=1 并同步冲刷模拟微任务；ref 结束日志仍应看到 DOM 0，整个 act 后变为 1，验证 commit 期间过早运行根微任务不能重入提交。 */
   it('should deal with premature microtask in commit phase', async () => {
     let ran = false;
-    /** `Foo`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 在宿主 ref 回调中首次安排更新并立即冲刷假微任务，用 ran 防止第二次提交重复调度。 */
     function Foo() {
       const [state, setState] = React.useState(0);
       return (
@@ -94,9 +90,10 @@ describe('ReactDOMSafariMicrotaskBug-test', () => {
     expect(container.textContent).toBe('1');
   });
 
-  /** 测试场景：验证「should deal with premature microtask in event handler」描述的渲染、交互或错误处理结果。 */
+  /** 按钮 click 中安排 state=1 并同步冲刷模拟微任务；handler 结束日志与最终 DOM 都应为 1，记录事件阶段允许提前冲刷的现状，并验证 Safari 式同步微任务不会使更新崩溃。 */
   it('should deal with premature microtask in event handler', async () => {
-    /** `Foo`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 在 click handler 内安排状态并立即冲刷假微任务，让 DOM 日志观察事件阶段的同步提交现状。 */
     function Foo() {
       const [state, setState] = React.useState(0);
       return (

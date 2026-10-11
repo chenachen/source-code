@@ -109,13 +109,13 @@ export function dispatchHint<Code: HintCode>(
 }
 
 /**
- * 帮助 Flow 按 HintCode 收窄对应模型；运行时原样返回，生产构建会消除该辅助层。
+ * 帮助 Flow 按 HintCode 收窄对应模型；运行时原样返回 model。
  */
 function refineModel<T>(code: T, model: HintModel<any>): HintModel<T> {
   return model;
 }
 
-/** 为 SSR 注册模块脚本 preinit，并规范化 nonce 与 crossOrigin 选项。 */
+/** 为 SSR 注册模块脚本 preinit；规范化 crossOrigin，原样转交 nonce。 */
 export function preinitModuleForSSR(
   href: string,
   nonce: ?string,
@@ -130,7 +130,7 @@ export function preinitModuleForSSR(
     });
 }
 
-/** 为 SSR 注册普通脚本 preinit，并规范化 nonce 与 crossOrigin 选项。 */
+/** 为 SSR 注册普通脚本 preinit；规范化 crossOrigin，原样转交 nonce。 */
 export function preinitScriptForSSR(
   href: string,
   nonce: ?string,

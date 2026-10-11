@@ -6,6 +6,7 @@
   <meta name="description" content="从 React 19.3.0 真实源码与测试理解 Suspense：thenable 挂起、边界捕获、fallback 二次渲染、ping 去重、RetryLane、Offscreen 可见性、effect 重连与错误出口。" />
   <title>17 · Suspense：挂起、ping 与 retry 状态机</title>
   <link rel="stylesheet" href="assets/guide.css?v=1" />
+  <link rel="stylesheet" href="assets/engineering-diagrams.css" />
 </head>
 <body>
 <header class="topbar">
@@ -27,8 +28,8 @@
 <div class="layout">
 <main>
   <p class="eyebrow">17 · React 19.3.0 / Suspense state machine</p>
-  <h1>Suspense：一次 throw，为什么会经历两次 render</h1>
-  <p class="lede">Suspense 不是“捕获 Promise 后直接把 DOM 换成 loading”。组件在 render 中抛出 thenable；reconciler 标记最近边界并退栈；同一个边界第二遍 render 才构造隐藏的 primary Offscreen 与可见 fallback。thenable 就绪后，ping 让根或已提交边界重新调度，下一遍 render 再决定能否提交主内容。</p>
+  <h1>Suspense：挂起怎样选择 fallback，再由 ping 与 retry 恢复</h1>
+  <p class="lede">Suspense 不是“捕获 Promise 后直接把 DOM 换成 loading”。render 读取未就绪资源时，React 先判断能否重放当前组件。需要回退时，reconciler 才标记最近边界并退栈，由边界第二遍 render 构造 hidden primary Offscreen 与 fallback。资源 settle 后，ping 或 retry 安排再次求值，commit 决定本轮宿主输出。</p>
   <div class="meta">
     <span class="pill">真实版本 19.3.0</span>
     <span class="pill">连续源码 + 连续测试</span>
@@ -39,27 +40,29 @@
 
   <section id="one-sentence">
     <h2>先用一句话建立正确模型</h2>
-    <div class="callout"><p><strong>Suspense 是 render 控制流 + 调度协议：</strong>“抛 thenable”中止当前 Fiber 完成；“边界捕获”选择替代子树；“ping/retry”只声明可能可运行；最终显示什么仍由下一次 render 计算，再由 commit 改宿主树。
-    本页的 <strong>wakeable</strong> 是 React 内部对“可订阅 thenable”的称呼：它是带 <code>then</code> 方法、可在 settle 时通知回调的对象；在本页流程中，wakeable 与组件抛出的 thenable 指同一个对象。</p></div>
+    <div class="callout"><p><strong>Suspense 是 render 控制流 + 调度协议：</strong>挂起中止当前 Fiber 完成；“边界捕获”选择替代子树；“ping/retry”只声明可能可运行；最终显示什么仍由下一次 render 计算，再由 commit 改宿主树。
+    本页的 <strong>wakeable</strong> 是 React 内部对“可订阅 thenable”的称呼：它是带 <code>then</code> 方法、可在 settle 时通知回调的对象；直接抛 thenable 的测试中，二者指同一个对象；<code>use</code> 与 <code>lazy</code> 通过内部异常和旁路槽把它交给工作循环。</p></div>
     <div class="grid three">
-      <article class="card"><span class="number">NOT DATA FETCHING</span><h3>React 不拥有请求</h3><p>资源层拥有 pending/resolved/rejected 记录和 thenable。React 只读取抛出的对象、订阅它，并在回调触发时重试。</p></article>
+      <article class="card"><span class="number">NOT DATA FETCHING</span><h3>React 不拥有请求</h3><p>资源层管理请求、cache 与测试中的三态记录。<code>use</code> 也可在传入 thenable 上补充 <code>status/value/reason</code>，以便重放时同步读取结果；它不定义请求或 cache 策略。</p></article>
       <article class="card"><span class="number">NOT TRY / CATCH UI</span><h3>fallback 不是 catch 里的 DOM</h3><p><code>throwException</code> 不创建 fallback DOM；它设置捕获标志。退栈返回边界后，<code>beginWork</code> 第二遍才协调 fallback。</p></article>
       <article class="card"><span class="number">NOT A PROMISE LANE</span><h3>Lane 属于工作，不属于 Promise</h3><p>同一 wakeable 可被多个根、边界或 Lane 读取。<code>pingCache</code> 以 root + wakeable + lanes 去重，而非给 Promise 永久绑定优先级。</p></article>
     </div>
   </section>
 
   <section id="full-chain">
-    <h2>完整链：pending → fallback → ping → primary</h2>
-    <div class="chain" aria-label="Suspense 挂起到恢复的完整控制流">
-      <div class="node">resource.read<small>pending，throw wakeable</small></div><span class="arrow">→</span>
-      <div class="node">throwException<small>最近 handler / retryQueue</small></div><span class="arrow">→</span>
-      <div class="node">unwindWork<small>ShouldCapture → DidCapture</small></div><span class="arrow">→</span>
-      <div class="node">第二次 beginWork<small>showFallback=true</small></div><span class="arrow">→</span>
-      <div class="node">commit fallback<small>primary Offscreen hidden</small></div><span class="arrow">→</span>
-      <div class="node">wakeable settles<small>root ping + boundary retry</small></div><span class="arrow">→</span>
-      <div class="node">retry render<small>重新 read resource</small></div><span class="arrow">→</span>
-      <div class="node">commit primary<small>unhide / delete fallback / effect update 或 reconnect</small></div>
-    </div>
+    <h2>已提交 fallback 的主线：pending → fallback → ping → primary</h2>
+    <p>以下采用仓库测试的直接 <code>throw thenable</code> 资源协议，跟踪并发根已提交 fallback 后的恢复。<code>use</code> 的即时重放分支见后文；Transition 保留上一屏的条件也会影响是否提交 fallback。</p>
+    <figure class="engineering-diagram" data-diagram="engineering-suspense-resource-a-ping-retry">
+          <div class="diagram-scroll">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 1310" role="img" aria-labelledby="engineering-suspense-resource-a-ping-retry-title engineering-suspense-resource-a-ping-retry-desc" style="min-width:840px">
+              <title id="engineering-suspense-resource-a-ping-retry-title">资源 A 的两条恢复通知：root ping 与边界 retry</title>
+              <desc id="engineering-suspense-resource-a-ping-retry-desc">A pending 时 render 安装保存原 lanes 的 root ping，fallback commit 安装保存边界 Fiber 的 retry。A resolved 后分别清理各自 cache：root ping 标原 lanes 与 suspended 的交集，边界 retry 可申请新的 RetryLane。两者汇入根调度，重新读取资源而不是回调直接渲染。</desc>
+              <defs><marker id="engineering-suspense-resource-a-ping-retry-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#526273"/></marker></defs>
+              <text class="d-label" x="25" y="30" text-anchor="start" font-size="18"><tspan x="25" dy="0">并发根：直接 throw wakeable；本图选择 fallback 已提交、随后 A 就绪</tspan></text><rect class="d-state" x="265" y="65" width="310" height="120" rx="12"/><text class="d-label" x="420.0" y="105.0" text-anchor="middle" font-size="18"><tspan x="420.0" dy="0">资源 readText(&#x27;A&#x27;)</tspan><tspan x="420.0" dy="26">record.status = &#x27;pending&#x27;</tspan><tspan x="420.0" dy="26">record.value = wakeable</tspan></text><path class="d-edge" d="M 310 185 V 210 H 205 V 235" marker-end="url(#engineering-suspense-resource-a-ping-retry-arrow)"/><text class="d-label" x="190" y="210" text-anchor="end" font-size="18"><tspan x="190" dy="0">抛 wakeable</tspan></text><rect class="d-node" x="25" y="235" width="360" height="135" rx="12"/><text class="d-label" x="205.0" y="282.5" text-anchor="middle" font-size="18"><tspan x="205.0" dy="0">render / throwException</tspan><tspan x="205.0" dy="26">source 标 Incomplete</tspan><tspan x="205.0" dy="26">查找最近 Suspense handler</tspan></text><path class="d-edge" d="M 385 300 H 455" marker-end="url(#engineering-suspense-resource-a-ping-retry-arrow)"/><rect class="d-node" x="455" y="235" width="360" height="135" rx="12"/><text class="d-label" x="635.0" y="282.5" text-anchor="middle" font-size="18"><tspan x="635.0" dy="0">Suspense Fiber</tspan><tspan x="635.0" dy="26">ShouldCapture → DidCapture</tspan><tspan x="635.0" dy="26">updateQueue 收集 wakeable</tspan></text><path class="d-edge" d="M 205 370 V 415" marker-end="url(#engineering-suspense-resource-a-ping-retry-arrow)"/><rect class="d-node" x="25" y="415" width="360" height="145" rx="12"/><text class="d-label" x="205.0" y="454.5" text-anchor="middle" font-size="18"><tspan x="205.0" dy="0">render 给 root 安装 ping</tspan><tspan x="205.0" dy="26">root.pingCache：wakeable + L</tspan><tspan x="205.0" dy="26">attachPingListener</tspan><tspan x="205.0" dy="26">闭包保存原 render lanes L</tspan></text><path class="d-edge" d="M 635 370 V 415" marker-end="url(#engineering-suspense-resource-a-ping-retry-arrow)"/><rect class="d-node" x="455" y="415" width="360" height="145" rx="12"/><text class="d-label" x="635.0" y="454.5" text-anchor="middle" font-size="18"><tspan x="635.0" dy="0">commit：fallback 成为可见 UI</tspan><tspan x="635.0" dy="26">边界 retry cache 去重</tspan><tspan x="635.0" dy="26">attachSuspenseRetryListeners</tspan><tspan x="635.0" dy="26">闭包保存边界 Fiber</tspan></text><path class="d-edge" d="M 25 465 H 10 V 125 H 265" marker-end="url(#engineering-suspense-resource-a-ping-retry-arrow)"/><path class="d-edge" d="M 815 465 H 830 V 125 H 575" marker-end="url(#engineering-suspense-resource-a-ping-retry-arrow)"/><text class="d-label" x="420" y="598" text-anchor="middle" font-size="18"><tspan x="420" dy="0">两条 listener 都订阅同一个 wakeable</tspan></text><rect class="d-state" x="265" y="630" width="310" height="110" rx="12"/><text class="d-label" x="420.0" y="665.0" text-anchor="middle" font-size="18"><tspan x="420.0" dy="0">后续 resolveText(&#x27;A&#x27;)</tspan><tspan x="420.0" dy="26">record.status = &#x27;resolved&#x27;</tspan><tspan x="420.0" dy="26">通知已登记的 pings</tspan></text><path class="d-edge d-async" d="M 325 740 V 770 H 205 V 800" marker-end="url(#engineering-suspense-resource-a-ping-retry-arrow)"/><path class="d-edge d-async" d="M 515 740 V 770 H 635 V 800" marker-end="url(#engineering-suspense-resource-a-ping-retry-arrow)"/><rect class="d-node" x="25" y="800" width="360" height="145" rx="12"/><text class="d-label" x="205.0" y="839.5" text-anchor="middle" font-size="18"><tspan x="205.0" dy="0">root：pingSuspendedRoot</tspan><tspan x="205.0" dy="26">删除 pingCache 中 wakeable</tspan><tspan x="205.0" dy="26">标记 L ∩ suspendedLanes</tspan><tspan x="205.0" dy="26">交集可能为空</tspan></text><rect class="d-node" x="455" y="800" width="360" height="145" rx="12"/><text class="d-label" x="635.0" y="839.5" text-anchor="middle" font-size="18"><tspan x="635.0" dy="0">边界：resolveRetryWakeable</tspan><tspan x="635.0" dy="26">删除边界 retry cache 项</tspan><tspan x="635.0" dy="26">NoLane 时申请 RetryLane R</tspan><tspan x="635.0" dy="26">enqueue + markRootUpdated(R)</tspan></text><path class="d-edge" d="M 205 945 V 975 H 420 V 1005" marker-end="url(#engineering-suspense-resource-a-ping-retry-arrow)"/><path class="d-edge" d="M 635 945 V 975 H 420" marker-end="url(#engineering-suspense-resource-a-ping-retry-arrow)"/><rect class="d-condition" x="265" y="1005" width="310" height="105" rx="12"/><text class="d-label" x="420.0" y="1037.5" text-anchor="middle" font-size="18"><tspan x="420.0" dy="0">RootScheduler / microtask</tspan><tspan x="420.0" dy="26">getNextLanes 有可运行工作？</tspan><tspan x="420.0" dy="26">重新选择当前 lanes</tspan></text><path class="d-edge" d="M 265 1058 H 210" marker-end="url(#engineering-suspense-resource-a-ping-retry-arrow)"/><text class="d-label" x="230" y="1040" text-anchor="middle" font-size="18"><tspan x="230" dy="0">无</tspan></text><rect class="d-state" x="25" y="1025" width="185" height="75" rx="12"/><text class="d-label" x="117.5" y="1055.5" text-anchor="middle" font-size="18"><tspan x="117.5" dy="0">不建渲染任务</tspan><tspan x="117.5" dy="26">等待后续信号</tspan></text><path class="d-edge" d="M 420 1110 V 1155" marker-end="url(#engineering-suspense-resource-a-ping-retry-arrow)"/><text class="d-label" x="440" y="1140" text-anchor="start" font-size="18"><tspan x="440" dy="0">有</tspan></text><rect class="d-state" x="180" y="1155" width="480" height="120" rx="12"/><text class="d-label" x="420.0" y="1195.0" text-anchor="middle" font-size="18"><tspan x="420.0" dy="0">retry render 重新调用 readText(A)</tspan><tspan x="420.0" dy="26">resolved 返回 cache.version；AsyncText 输出 A</tspan><tspan x="420.0" dy="26">primary 完成后，commit 才显示主内容</tspan></text>
+            </svg>
+          </div>
+          <figcaption>同一资源，两条通知：root ping 在 render 订阅，边界 retry 在 fallback commit 订阅；二者分别清理自己的 cache，再安排根。虚线跨越资源等待期：该测试的 resolveText 会同步广播已有回调，并不保证先经过微任务。只有后续根工作才执行组件和 commit。</figcaption>
+        </figure>
     <ol class="state-list">
       <li><strong>第一次 render primary。</strong>函数组件执行资源读取；pending 记录抛出 thenable，source Fiber 加 <code>Incomplete</code>。</li>
       <li><strong>选择捕获者。</strong>Suspense handler 栈给出最近边界；边界记 <code>ShouldCapture</code>，wakeable 同时写入边界 retry queue，并给根安装 ping listener。</li>
@@ -76,9 +79,9 @@
     <div class="table-wrap"><table>
       <thead><tr><th>所有者</th><th>关键字段</th><th>何时写</th><th>解决什么问题</th></tr></thead>
       <tbody>
-        <tr><td>资源/cache</td><td><code>record.status/value</code>、thenable 回调</td><td>读取、resolve、reject</td><td>数据是否就绪；React 不替它保存业务结果</td></tr>
+        <tr><td>资源/cache</td><td><code>record.status/value</code>、thenable 回调</td><td>读取、resolve、reject</td><td>数据是否就绪；这个测试 cache 的业务记录由资源层保存</td></tr>
         <tr><td>Suspense Fiber</td><td><code>flags</code>、<code>memoizedState</code>、render 期 <code>updateQueue</code>、commit 后 retry cache</td><td>捕获、第二遍 render、commit</td><td>本边界显示 primary 还是 fallback；哪些 wakeable 能重试它</td></tr>
-        <tr><td>primary Offscreen Fiber/instance</td><td><code>memoizedState</code>、<code>mode</code>、<code>_visibility</code></td><td>fallback render 与 visibility commit</td><td>主内容保留但隐藏、重新显示、layout/passive effect 连接状态</td></tr>
+        <tr><td>primary Offscreen Fiber/instance</td><td><code>memoizedState</code>、<code>mode</code>、<code>_visibility</code></td><td>fallback render 与 visibility commit</td><td>复用已提交的主内容；首次挂起的未完成组件尚无已提交状态；跟踪隐藏、揭示与 effect 连接状态</td></tr>
         <tr><td>FiberRoot</td><td><code>pendingLanes</code>、<code>suspendedLanes</code>、<code>pingedLanes</code>、<code>pingCache</code></td><td>调度、render 退出、wakeable 回调</td><td>哪些工作未完成、哪些在等数据、哪些刚可能解锁；root+lanes 监听去重</td></tr>
         <tr><td>RootScheduler</td><td>root 链表、callback priority/node</td><td><code>ensureRootIsScheduled</code> 后的 microtask</td><td>重新选择当前可运行 Lane；没有可运行 Lane 时不创建渲染任务</td></tr>
       </tbody>
@@ -94,7 +97,7 @@
     const textCache = getCacheForType(createTextCache);
     const record = textCache.data.get(text);
     if (record !== undefined) {
-      /** 状态机边界：`pending` 抛 thenable 交给 Suspense，`rejected` 抛业务错误，`resolved` 返回已缓存值；未知状态不得静默降级。 */
+      /** 状态机边界：`pending` 抛 thenable 交给 Suspense，`rejected` 抛业务错误，`resolved` 返回已缓存值。 */
       switch (record.status) {
         case 'pending':
           Scheduler.log(`Suspend! [${text}]`);
@@ -110,7 +113,7 @@
 
       const thenable = {
         pings: [],
-        /** readText.then 实现 thenable 订阅：pending 时登记 ping，已结束时用微任务通知；同一监听器不得同步重复执行。 */
+        /** readText.then 实现 thenable 订阅：pending 时登记 ping，已结束时用微任务通知。 */
         then(resolve) {
           if (newRecord.status === 'pending') {
             thenable.pings.push(resolve);
@@ -137,6 +140,20 @@
     <p><strong>一个容易错的说法：</strong>不是“Promise resolve 后 React 从 Promise 里取数据”。ping 回调不消费 resolved value；retry 时组件再次执行 <code>readText</code>，由资源层返回值。</p>
   </section>
 
+  <section id="use-thenable">
+    <h2>use 与 lazy：先交给工作循环，再决定重放或退栈</h2>
+    <p><code>use(promise)</code> 经 <code>useThenable → trackUsedThenable</code>，按本次跟踪状态中的调用索引保存对象。若同一索引收到新 Promise，React 继续读旧对象并给新对象挂空监听器，避免组件重放时不断换成新的 pending 依赖。<code>fulfilled</code> 直接返回 <code>value</code>；<code>rejected</code> 抛 <code>reason</code>；未就绪时先把真实 thenable 写入模块槽，再抛 <code>SuspenseException</code>。<code>resolveLazy</code> 捕获 lazy 初始化抛出的 thenable 后，也进入同一个旁路。</p>
+    <figure class="source"><figcaption><span>连续原码 · getSuspendedThenable 取走并清空旁路槽</span><a href="../../react/packages/react-reconciler/src/ReactFiberThenable.js">ReactFiberThenable.js</a></figcaption><pre>  const thenable = suspendedThenable;
+  suspendedThenable = null;
+  if (__DEV__) {
+    needsToResetSuspendedThenableDEV = false;
+  }
+  return thenable;
+}</pre></figure>
+    <p><code>handleThrow</code> 识别内部异常，取回真实 thenable，并把当前挂起原因设为 <code>SuspendedOnImmediate</code>。并发工作循环先让出一次，给微任务中的资源结算机会；恢复时若插桩状态已 fulfilled/rejected，直接 <code>replaySuspendedUnitOfWork</code>，保留当前栈而不进入 fallback 捕获。若仍 pending，才走 <code>throwAndUnwindWorkLoop → throwException</code>。直接抛 thenable 的旧资源协议则标记为 <code>SuspendedOnDeprecatedThrowPromise</code>，始终退栈；同步工作循环也不会等待这次并发让出。</p>
+    <p>重放函数组件会进入 <code>replaySuspendedComponentWithHooks</code>：沿挂起时的 WIP Hook 链重跑，并重建组件提交队列。<code>useThenable</code> 走完已经创建的 Hook 后会切回 mount/update dispatcher，使挂起点之后此前未执行的 Hook 可以继续建立。完成组件或放弃本轮退栈时，Hook 游标才彻底清理。</p>
+  </section>
+
   <section id="capture">
     <h2>阶段 2：throwException 先区分 thenable，再找最近边界</h2>
     <p><code>throwException</code> 先把 source Fiber 标成未完成。只有非 null object 且 <code>then</code> 是函数，才进入 Wakeable 路径；否则落到普通错误路径。最近边界不是沿 DOM 找，也不是运行时 <code>try/catch</code> 猜出来，而是 beginWork 进入 Suspense/Offscreen 时维护的 handler 栈由 <code>getSuspenseHandler()</code> 给出。</p>
@@ -145,7 +162,7 @@
       // 这是 Wakeable，组件进入挂起状态。
       const wakeable: Wakeable = value as any;
       resetSuspendedComponent(sourceFiber, rootRenderLanes);</code></pre></figure>
-    <p>找到 Suspense/Activity/SuspenseList 后，函数做三件互不替代的事：</p>
+    <p>在普通 wakeable 由并发 Suspense 边界捕获的路径，函数分三步处理：</p>
     <ol class="state-list">
       <li><strong>捕获控制流。</strong><code>markSuspenseBoundaryShouldCapture</code> 给边界加 <code>ShouldCapture</code>，使退栈停在这里。</li>
       <li><strong>保存边界重试证据。</strong>把 wakeable 放入边界 Fiber 的 <code>updateQueue</code> Set；fallback commit 时将它转成真实 retry listener。</li>
@@ -222,19 +239,24 @@ if (suspenseBoundary !== null) {
 
   <section id="fallback-tree">
     <h2>fallback Fiber 不是替换 primary：它与 hidden Offscreen 并存</h2>
-    <p>首次 fallback pass 的 Fiber 形状是：Suspense 的 child 为 <code>mode:'hidden'</code> 的 primary Offscreen；Offscreen 的 sibling 是 fallback Fragment。保留 primary 让 React 能保存状态、继续预热和在恢复时复用；fallback 则是本次可见输出。</p>
+    <p>首次 fallback pass 的 Fiber 形状是：Suspense 的 child 为 <code>mode:'hidden'</code> 的 primary Offscreen；Offscreen 的 sibling 是 fallback Fragment。更新挂起时，primary Offscreen 保留已提交子树的状态，恢复时可复用；首次挂起的未完成组件在 reveal 前尚未挂载，重试会重新执行它。后台 prewarm 探索尚未尝试的兄弟；fallback 是本次可见输出。</p>
     <figure class="source"><figcaption><span>连续原码 · ReactFiberBeginWork.js · fallback 子树收口</span><a href="../../react/packages/react-reconciler/src/ReactFiberBeginWork.js">打开源码</a></figcaption><pre><code>  primaryChildFragment.return = workInProgress;
   fallbackChildFragment.return = workInProgress;
   primaryChildFragment.sibling = fallbackChildFragment;
   workInProgress.child = primaryChildFragment;
   return fallbackChildFragment;</code></pre></figure>
-    <div class="chain" aria-label="Suspense fallback Fiber 结构">
-      <div class="node">Suspense<small>memoizedState = SUSPENDED_MARKER</small></div><span class="arrow">child →</span>
-      <div class="node">Offscreen primary<small>mode=hidden / 保存主树</small></div><span class="arrow">sibling →</span>
-      <div class="node">Fallback Fragment<small>本轮继续 beginWork</small></div><span class="arrow">→</span>
-      <div class="node">Host fallback<small>commit 后才可见</small></div>
-    </div>
-    <p>首次挂起与“已有内容退回 fallback”观察语义不同：首次可以直接挂载 hidden Offscreen；更新时会复用 current primary，是否立刻显示 fallback还受 Transition、shell、节流和 SuspenseList context 影响。因此本页讲状态机，不承诺所有更新都立即闪 loading。</p>
+    <figure class="engineering-diagram" data-diagram="engineering-suspense-primary-fallback-tree">
+          <div class="diagram-scroll">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 755" role="img" aria-labelledby="engineering-suspense-primary-fallback-tree-title engineering-suspense-primary-fallback-tree-desc" style="min-width:840px">
+              <title id="engineering-suspense-primary-fallback-tree-title">Suspense 的真实分支：primary Offscreen 与 fallback Fragment</title>
+              <desc id="engineering-suspense-primary-fallback-tree-desc">左图Suspense.child指向hidden primary Offscreen，其sibling指向fallback Fragment，二者各有自己的子树。右图成功reveal后primary visible、sibling null，旧fallback加入父边界deletions并由commit删除。图限定已有主内容的并发更新，不表示初次挂起已经存在primary DOM。</desc>
+              <defs><marker id="engineering-suspense-primary-fallback-tree-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#526273"/></marker></defs>
+              <text class="d-label" x="25" y="30" text-anchor="start" font-size="18"><tspan x="25" dy="0">并发更新：A pending 显示 fallback；A resolved 后揭示 primary</tspan></text><text class="d-label" x="205" y="80" text-anchor="middle" font-size="18"><tspan x="205" dy="0">fallback 已提交</tspan></text><text class="d-label" x="635" y="80" text-anchor="middle" font-size="18"><tspan x="635" dy="0">retry 成功后的提交</tspan></text><rect class="d-node" x="90" y="105" width="230" height="105" rx="12"/><text class="d-label" x="205.0" y="137.5" text-anchor="middle" font-size="18"><tspan x="205.0" dy="0">Suspense</tspan><tspan x="205.0" dy="26">memoizedState =</tspan><tspan x="205.0" dy="26">SUSPENDED_MARKER</tspan></text><path class="d-edge" d="M 140 210 V 245 H 110 V 275" marker-end="url(#engineering-suspense-primary-fallback-tree-arrow)"/><text class="d-label" x="90" y="245" text-anchor="end" font-size="18"><tspan x="90" dy="0">child</tspan></text><rect class="d-node" x="25" y="275" width="170" height="105" rx="12"/><text class="d-label" x="110.0" y="307.5" text-anchor="middle" font-size="18"><tspan x="110.0" dy="0">primary Offscreen</tspan><tspan x="110.0" dy="26">mode = &#x27;hidden&#x27;</tspan><tspan x="110.0" dy="26">保留已提交主树</tspan></text><path class="d-edge" d="M 195 322 H 225" marker-end="url(#engineering-suspense-primary-fallback-tree-arrow)"/><text class="d-label" x="210" y="265" text-anchor="middle" font-size="18"><tspan x="210" dy="0">sibling</tspan></text><rect class="d-node" x="225" y="275" width="170" height="105" rx="12"/><text class="d-label" x="310.0" y="320.5" text-anchor="middle" font-size="18"><tspan x="310.0" dy="0">fallback Fragment</tspan><tspan x="310.0" dy="26">本轮可见分支</tspan></text><path class="d-edge" d="M 110 380 V 425" marker-end="url(#engineering-suspense-primary-fallback-tree-arrow)"/><text class="d-label" x="130" y="408" text-anchor="start" font-size="18"><tspan x="130" dy="0">child</tspan></text><rect class="d-node" x="25" y="425" width="170" height="90" rx="12"/><text class="d-label" x="110.0" y="463.0" text-anchor="middle" font-size="18"><tspan x="110.0" dy="0">已提交的主子树</tspan><tspan x="110.0" dy="26">已有 state 保留</tspan></text><path class="d-edge" d="M 310 380 V 425" marker-end="url(#engineering-suspense-primary-fallback-tree-arrow)"/><text class="d-label" x="330" y="408" text-anchor="start" font-size="18"><tspan x="330" dy="0">child</tspan></text><rect class="d-node" x="225" y="425" width="170" height="90" rx="12"/><text class="d-label" x="310.0" y="463.0" text-anchor="middle" font-size="18"><tspan x="310.0" dy="0">Text(&#x27;Loading&#x27;)</tspan><tspan x="310.0" dy="26">函数 Fiber</tspan></text><path class="d-edge" d="M 110 515 V 555" marker-end="url(#engineering-suspense-primary-fallback-tree-arrow)"/><rect class="d-state" x="25" y="555" width="170" height="85" rx="12"/><text class="d-label" x="110.0" y="590.5" text-anchor="middle" font-size="18"><tspan x="110.0" dy="0">旧主内容宿主</tspan><tspan x="110.0" dy="26">被隐藏</tspan></text><path class="d-edge" d="M 310 515 V 555" marker-end="url(#engineering-suspense-primary-fallback-tree-arrow)"/><rect class="d-state" x="225" y="555" width="170" height="85" rx="12"/><text class="d-label" x="310.0" y="590.5" text-anchor="middle" font-size="18"><tspan x="310.0" dy="0">span Loading</tspan><tspan x="310.0" dy="26">可见</tspan></text><rect class="d-node" x="510" y="105" width="250" height="105" rx="12"/><text class="d-label" x="635.0" y="137.5" text-anchor="middle" font-size="18"><tspan x="635.0" dy="0">Suspense</tspan><tspan x="635.0" dy="26">memoizedState = null</tspan><tspan x="635.0" dy="26">ChildDeletion：旧 fallback</tspan></text><path class="d-edge" d="M 590 210 V 275" marker-end="url(#engineering-suspense-primary-fallback-tree-arrow)"/><text class="d-label" x="610" y="250" text-anchor="start" font-size="18"><tspan x="610" dy="0">child</tspan></text><rect class="d-node" x="485" y="275" width="210" height="105" rx="12"/><text class="d-label" x="590.0" y="307.5" text-anchor="middle" font-size="18"><tspan x="590.0" dy="0">primary Offscreen</tspan><tspan x="590.0" dy="26">mode = &#x27;visible&#x27;</tspan><tspan x="590.0" dy="26">sibling = null</tspan></text><path class="d-edge" d="M 760 158 H 810 V 280" marker-end="url(#engineering-suspense-primary-fallback-tree-arrow)"/><rect class="d-node" x="710" y="280" width="105" height="115" rx="12"/><text class="d-label" x="762.5" y="317.5" text-anchor="middle" font-size="18"><tspan x="762.5" dy="0">旧 fallback</tspan><tspan x="762.5" dy="26">deletions 项</tspan><tspan x="762.5" dy="26">commit 删除</tspan></text><path class="d-edge" d="M 590 380 V 425" marker-end="url(#engineering-suspense-primary-fallback-tree-arrow)"/><rect class="d-node" x="485" y="425" width="210" height="90" rx="12"/><text class="d-label" x="590.0" y="463.0" text-anchor="middle" font-size="18"><tspan x="590.0" dy="0">AsyncText(&#x27;A&#x27;)</tspan><tspan x="590.0" dy="26">资源已就绪</tspan></text><path class="d-edge" d="M 590 515 V 555" marker-end="url(#engineering-suspense-primary-fallback-tree-arrow)"/><rect class="d-state" x="485" y="555" width="210" height="85" rx="12"/><text class="d-label" x="590.0" y="590.5" text-anchor="middle" font-size="18"><tspan x="590.0" dy="0">span A</tspan><tspan x="590.0" dy="26">显示主内容</tspan></text><text class="d-label" x="25" y="690" text-anchor="start" font-size="18"><tspan x="25" dy="0">mutation：隐藏主宿主、显示 fallback；layout 断开</tspan></text><text class="d-label" x="25" y="725" text-anchor="start" font-size="18"><tspan x="25" dy="0">恢复提交：删除 fallback、显示 primary；layout 再连接</tspan></text>
+            </svg>
+          </div>
+          <figcaption>左图的 child / sibling 是 Fiber 指针，Fragment 不产生包装 DOM。右图把 render 记录的可见性与删除应用到宿主树；表中的 state 保留只针对已有主内容。若 A 在初次挂载就挂起，主组件尚未挂载，左侧可没有旧主 DOM。普通 Suspense 的 passive 连接状态另见下文 Effect 收口。</figcaption>
+        </figure>
+    <p>首次挂起与“已有内容退回 fallback”观察语义不同：首次可以直接挂载 hidden Offscreen；更新时会复用 current primary，是否立刻显示 fallback还受 Transition、shell、节流和 SuspenseList context 影响。Transition 在已有内容的 shell 中挂起时可保留上一屏；这些条件决定本轮是否提交 loading。</p>
   </section>
 
   <section id="lanes">
@@ -323,7 +345,7 @@ export function markRootPinged(root: FiberRoot, pingedLanes: Lanes) {
 ) {
   // 安装 ping listener。数据可能在 fallback commit 前 resolve，refresh 甚至不会提交 fallback；
   // 因此现在订阅，ping 后再决定是否重渲染。仅当当前 lanes（此处相当于 thread ID）尚无监听
-  // 时安装；只需并发模式，Legacy Suspense 同步提交 fallback，不存在 ping 窗口。
+  // 时安装；并发 Suspense 可在提交前接收 ping；Legacy 的唤醒主要由提交边界的 retry listener 处理。
   let pingCache = root.pingCache;
   let threadIDs;
   if (pingCache === null) {
@@ -463,18 +485,18 @@ export function markRootPinged(root: FiberRoot, pingedLanes: Lanes) {
             includeWorkInProgressEffects,
             endTime,
           );</code></pre></figure>
-    <p>上面连续源码只展示<strong>当前未连接</strong>的分支，不代表每次 reveal 都会 reconnect。“保留 hidden primary”也不等于 effects 永远保持活跃：layout 有 disappear/reappear；passive 先看 connected 位，决定普通 update 还是 reconnect；缓存引用计数等 atomic effect 又可能在隐藏预渲染中执行。具体分支受模式和特性开关影响，不能用一句“Suspense 不卸载组件”替代。</p>
+    <p>上面展示的是<strong>当前未连接</strong>的分支，只有这种情况才执行 reconnect。“保留 hidden primary”也不等于 effects 永远保持活跃：layout 有 disappear/reappear；passive 先看 connected 位，决定普通 update 还是 reconnect；缓存引用计数等 atomic effect 又可能在隐藏预渲染中执行。并发根隐藏已可见 primary 时，类组件也会执行 <code>componentWillUnmount</code>；reveal 再执行 <code>componentDidMount</code>，但 Fiber 和 state 仍可保留。legacy 模式则保留既有 layout/passive 连接。</p>
   </section>
 
   <section id="real-test">
     <h2>真实测试：两个 pending child 先提交 fallback，再一起恢复</h2>
     <p>来源：<a href="../../react/packages/react-reconciler/src/__tests__/ReactSuspenseWithNoopRenderer-test.js">ReactSuspenseWithNoopRenderer-test.js · a Suspense component correctly handles more than one suspended child</a>。这个用例比只断言日志更强：它先断言真实 Noop 宿主输出是 Loading，再 resolve 两个资源，最后断言 A/B 主内容。</p>
     <div class="table-wrap"><table><thead><tr><th>GWT</th><th>精确事实</th><th>证明的机制</th></tr></thead><tbody>
-      <tr><td>Given</td><td>一个 Suspense 边界内有 <code>AsyncText A</code> 与 <code>B</code>；两个资源都从 pending 开始</td><td>测试建立多资源场景；retryQueue 用 Set 保存 wakeable 是源码事实，不由此行断言单独证明</td></tr>
+      <tr><td>Given</td><td>一个 Suspense 边界内有 <code>AsyncText A</code> 与 <code>B</code>；两个资源都从 pending 开始</td><td>两个资源均未就绪，首次提交 fallback</td></tr>
       <tr><td>When 1</td><td>初次 render 并 flush 全部工作</td><td>A 挂起使边界第二遍 render Loading；预热又遇到 A/B</td></tr>
       <tr><td>Then 1</td><td><code>toMatchRenderedOutput(&lt;span prop="Loading..." /&gt;)</code></td><td>fallback 已真正 commit，不只是 render 日志</td></tr>
       <tr><td>When 2</td><td>同一 act 内 resolve A 与 B</td><td>两个资源记录先改 resolved；至少一个 retry 信号即可让下一遍读到二者</td></tr>
-      <tr><td>Then 2</td><td>日志为 A、B；宿主输出同时含 A、B</td><td>直接证明两资源都 ready 后 primary 能提交；不能单独证明两个 listener 都存在或 ping 去重</td></tr>
+      <tr><td>Then 2</td><td>日志为 A、B；宿主输出同时含 A、B</td><td>两资源都 ready 后 primary 能提交；监听器登记与去重对应前文 retryQueue、pingCache 实现</td></tr>
     </tbody></table></div>
     <figure class="source"><figcaption><span>连续测试原码 · ReactSuspenseWithNoopRenderer-test.js · fallback 到 primary</span><a href="../../react/packages/react-reconciler/src/__tests__/ReactSuspenseWithNoopRenderer-test.js">打开测试</a></figcaption><pre><code>    ReactNoop.render(
       &lt;Suspense fallback={&lt;Text text="Loading..." /&gt;}&gt;
@@ -502,9 +524,7 @@ export function markRootPinged(root: FiberRoot, pingedLanes: Lanes) {
         &lt;span prop="B" /&gt;
       &lt;/&gt;,
     );</code></pre></figure>
-    <div class="callout warn"><p><strong>测试证据边界：</strong>该用例一次同时 resolve A/B；即使只由其中一个回调触发 retry，下一遍也能读到两个 resolved 记录。
-    所以它证明 fallback/prewarm 的可观察顺序与最终 reveal，不直接证明 retryQueue 的 Set 完整性或 pingCache 去重；后两项由数据结构与订阅源码证明。</p></div>
-    <p class="callout"><strong>测试没有声称：</strong>每次挂起都必须先画 fallback；Transition 可能保留旧 UI，shell/节流可能延迟提交，资源若在 commit 前 ping 也可能直接完成 primary。这个用例只锁定“fallback 已提交后，多 wakeable 全部解决能恢复主内容”。</p>
+    <p>A/B 在同一个 <code>act</code> 内先完成资源记录，再触发 retry；下一遍读取时两个记录都已 resolved。初次 fallback、后台预热与最终 reveal 的日志和宿主断言共同锁定了这条过程。</p>
   </section>
 
   <section id="rejection">
@@ -535,10 +555,8 @@ export function markRootPinged(root: FiberRoot, pingedLanes: Lanes) {
     assertLog([
       'Error! [Result]',
 
-      // 推进或等待指定时间窗口，观察 Suspense 的节流、超时与恢复时机。
       'Error! [Result]',
 
-      // 让资源或渲染路径进入错误状态，确认错误传播与边界恢复行为。
       'Caught error: Failed to load: Result',
     ]);
     expect(ReactNoop).toMatchRenderedOutput(
@@ -595,7 +613,7 @@ export function markRootPinged(root: FiberRoot, pingedLanes: Lanes) {
   </section>
 
   <section id="boundaries">
-    <h2>边界说明：读完后仍不要过度外推</h2>
+    <h2>影响行为的条件</h2>
     <ul class="qa">
       <li><strong>版本边界：</strong>本页对应仓库 <code>packages/react/package.json</code> 的 19.3.0；<code>Activity</code>、CPU Suspense、View Transition、特性开关会增加分支。</li>
       <li><strong>renderer 边界：</strong>测试使用 ReactNoop 锁定 reconciler 语义；DOM renderer 的 hide/unhide 最终由 HostConfig 实现，具体节点样式/属性不在该测试中证明。</li>
@@ -622,7 +640,7 @@ export function markRootPinged(root: FiberRoot, pingedLanes: Lanes) {
     <a href="16-end-to-end-source.html">← 上一页：真实源码主线</a>
     <a href="09-evidence.html">下一页：证据与门禁 →</a>
   </div>
-  <footer><p>阅读口诀：throw 只中止，capture 只选路，第二遍才产 fallback，ping 只唤醒，retry render 才验证，commit 才改变现实。</p></footer>
+  <footer><p>挂起后的重放或回退都发生在 render；显示哪棵树，由完成后的 commit 决定。</p></footer>
 </main>
 
 <aside class="toc" aria-label="本页目录">
@@ -631,7 +649,7 @@ export function markRootPinged(root: FiberRoot, pingedLanes: Lanes) {
   <a href="#full-chain">完整链</a>
   <a href="#ownership">所有权</a>
   <a href="#resource">资源三态</a>
-  <a href="#capture">throwException</a>
+  <a href="#use-thenable">use / lazy 重放</a><a href="#capture">throwException</a>
   <a href="#second-pass">二次 render</a>
   <a href="#fallback-tree">fallback 树形</a>
   <a href="#lanes">Lane 状态</a>

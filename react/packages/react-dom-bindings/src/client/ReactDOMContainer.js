@@ -16,7 +16,7 @@ import {
   DOCUMENT_FRAGMENT_NODE,
 } from './HTMLNodeType';
 
-/** `isValidContainer` 判断适用条件并返回布尔结果，不写入宿主状态；用于判断 DOM 节点能否作为 React 根容器。 */
+/** 允许 Element、Document、DocumentFragment；注释容器须特性开关允许且文本为 react-mount-point-unstable。 */
 export function isValidContainer(node: any): boolean {
   return !!(
     node &&

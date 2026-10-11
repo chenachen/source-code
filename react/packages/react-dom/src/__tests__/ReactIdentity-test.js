@@ -24,17 +24,10 @@ describe('ReactIdentity', () => {
       require('internal-test-utils').assertConsoleErrorDev;
   });
 
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「should allow key property to express identity」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言连接 ReactDOM 公开入口、ReactDOMRoot 根生命周期及 DOM 提交结果。
-   */
+  /** 两个同类型div按apple/banana key排列，再swap调换位置；旧DOM对象分别等于新的反向位置对象，验证key控制复用身份而非数组下标。 */
   it('should allow key property to express identity', async () => {
     let node;
-    /** `Component`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 依据swap生成apple/banana互换key的两个div，并通过ref返回父DOM供身份比较。 */
     const Component = props => (
       <div ref={c => (node = c)}>
         <div key={props.swap ? 'banana' : 'apple'} />
@@ -56,11 +49,11 @@ describe('ReactIdentity', () => {
     expect(origChildren[1]).toBe(newChildren[0]);
   });
 
-  /** 测试场景：验证「should use composite identity」描述的渲染、交互或错误处理结果。 */
+  /** Wrapper key由wrap1改wrap2、内部span类型不变；前后span对象不同，验证复合组件身份变化会重建其子树。 */
   it('should use composite identity', async () => {
-    /** `Wrapper`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 用a包住children的类组件，外层key变化作为重建边界。 */
     class Wrapper extends React.Component {
-      /** `Wrapper.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 透传span到a，保持宿主形状相同以隔离Wrapper key改变的影响。 */
       render() {
         return <a>{this.props.children}</a>;
       }
@@ -87,13 +80,13 @@ describe('ReactIdentity', () => {
     expect(node1).not.toBe(node2);
   });
 
-  /** `renderAComponentWithKeyIntoContainer`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 在给定根挂载本调用创建的Wrapper，把传入任意key用于span；act后断言span ref存在。不比较跨调用复用，主要验证特殊key可挂载。 */
   async function renderAComponentWithKeyIntoContainer(key, root) {
-    /** `renderAComponentWithKeyIntoContainer.Wrapper`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 此工具局部类给span持有ref，并闭包使用调用参数key。 */
     class Wrapper extends React.Component {
-      /** `Wrapper.spanRef`：记录测试夹具在当前场景中的状态。 */
+      /** 记录目标span DOM，避免按key构造DOM ID或选择器。 */
       spanRef = React.createRef();
-      /** `Wrapper.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 输出带传入key的span，渲染完成后由工具直接检查ref。 */
       render() {
         return (
           <div>
@@ -110,14 +103,14 @@ describe('ReactIdentity', () => {
     expect(span).not.toBe(null);
   }
 
-  /** 测试场景：验证「should allow any character as a key, in a detached parent」描述的渲染、交互或错误处理结果。 */
+  /** 未挂body的容器中span key含尖括号、引号、斜杠和反斜杠；ref非null且渲染完成，验证key字符不用于不安全DOM查找。 */
   it('should allow any character as a key, in a detached parent', async () => {
     const detachedContainer = document.createElement('div');
     const root = ReactDOMClient.createRoot(detachedContainer);
     await renderAComponentWithKeyIntoContainer("<'WEIRD/&\\key'>", root);
   });
 
-  /** 测试场景：验证「should allow any character as a key, in an attached parent」描述的渲染、交互或错误处理结果。 */
+  /** 已挂body容器使用相同特殊字符key；ref非null且随后移除容器，验证附着DOM下也不依赖key拼接选择器。 */
   it('should allow any character as a key, in an attached parent', async () => {
     // 此测试旨在防止使用 DOM 工具（如 getElementById）错误地查询已转义的 ID 的实现细节。
     const attachedContainer = document.createElement('div');
@@ -129,7 +122,7 @@ describe('ReactIdentity', () => {
     document.body.removeChild(attachedContainer);
   });
 
-  /** 测试场景：验证「should not allow scripts in keys to execute」描述的渲染、交互或错误处理结果。 */
+  /** key字符串含完整script注入片段；挂body渲染后window.YOUVEBEENH4X0RED仍undefined，验证key不成为可执行HTML。 */
   it('should not allow scripts in keys to execute', async () => {
     const h4x0rKey =
       '"><script>window[\'YOUVEBEENH4X0RED\']=true;</script><div id="';
@@ -146,15 +139,15 @@ describe('ReactIdentity', () => {
     expect(window.YOUVEBEENH4X0RED).toBe(undefined);
   });
 
-  /** 测试场景：验证「should let restructured components retain their uniqueness」描述的渲染、交互或错误处理结果。 */
+  /** 三个span元素由TestComponent把自身instance2与传入children重排为一个div子树；act不抛错，验证重组children不会产生身份冲突；没有DOM复用断言。 */
   it('should let restructured components retain their uniqueness', async () => {
     const instance0 = <span />;
     const instance1 = <span />;
     const instance2 = <span />;
 
-    /** `TestComponent`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 把自身instance2插入传入两元素之前，构造一次children重组。 */
     class TestComponent extends React.Component {
-      /** `TestComponent.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 在div中排列instance2、children[0]/[1]，原元素对象无需复制。 */
       render() {
         return (
           <div>
@@ -166,9 +159,9 @@ describe('ReactIdentity', () => {
       }
     }
 
-    /** `TestContainer`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 把instance0/1作为两children交给重组fixture。 */
     class TestContainer extends React.Component {
-      /** `TestContainer.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 输出TestComponent，验证元素从父props移入新容器不会冲突。 */
       render() {
         return (
           <TestComponent>
@@ -188,15 +181,15 @@ describe('ReactIdentity', () => {
     ).resolves.not.toThrow();
   });
 
-  /** 测试场景：验证「should let nested restructures retain their uniqueness」描述的渲染、交互或错误处理结果。 */
+  /** 相同元素重组再包一层div；act不抛错，验证嵌套包装仍不冲突。 */
   it('should let nested restructures retain their uniqueness', async () => {
     const instance0 = <span />;
     const instance1 = <span />;
     const instance2 = <span />;
 
-    /** `TestComponent`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 嵌套重组fixture，仍把instance2置于传入两元素前。 */
     class TestComponent extends React.Component {
-      /** `TestComponent.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 重排共享元素对象到div，不修改元素key。 */
       render() {
         return (
           <div>
@@ -208,9 +201,9 @@ describe('ReactIdentity', () => {
       }
     }
 
-    /** `TestContainer`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 多套一层div的传入组件，增加复合层级。 */
     class TestContainer extends React.Component {
-      /** `TestContainer.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 外层div包含TestComponent并传入instance0/1，测试嵌套重组。 */
       render() {
         return (
           <div>
@@ -232,11 +225,11 @@ describe('ReactIdentity', () => {
     ).resolves.not.toThrow();
   });
 
-  /** 测试场景：验证「should let text nodes retain their uniqueness」描述的渲染、交互或错误处理结果。 */
+  /** TestComponent透传div和文本second并追加span；act不抛错，验证文字与重组元素共存时无身份冲突。 */
   it('should let text nodes retain their uniqueness', async () => {
-    /** `TestComponent`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 透传包含元素和文本的children，再追加span。 */
     class TestComponent extends React.Component {
-      /** `TestComponent.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 输出children与span，检查文字在重组中不引发冲突。 */
       render() {
         return (
           <div>
@@ -247,9 +240,9 @@ describe('ReactIdentity', () => {
       }
     }
 
-    /** `TestContainer`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 给TestComponent传入div和second文字的类包装。 */
     class TestContainer extends React.Component {
-      /** `TestContainer.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 固定混合children输入，让测试只检查成功渲染。 */
       render() {
         return (
           <TestComponent>
@@ -269,27 +262,27 @@ describe('ReactIdentity', () => {
     ).resolves.not.toThrow();
   });
 
-  /** 测试场景：验证「should retain key during updates in composite components」描述的渲染、交互或错误处理结果。 */
+  /** TestContainer透传带A/B显式key的span，setState交换children；前后A/B DOM身份各自保持，验证经过复合包装仍保留key。 */
   it('should retain key during updates in composite components', async () => {
-    /** `TestComponent`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 透传有key子级的复合包装，不重建或剥离元素。 */
     class TestComponent extends React.Component {
-      /** `TestComponent.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 输出包裹children的div，DOM身份从此容器直接取得。 */
       render() {
         return <div>{this.props.children}</div>;
       }
     }
 
-    /** `TestContainer`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 持有swapped状态并交换两个已有带key元素的类fixture。 */
     class TestContainer extends React.Component {
-      /** `TestContainer.state`：记录测试夹具在当前场景中的状态。 */
+      /** 初始false使first在前；swap只改变顺序而不改变元素对象。 */
       state = {swapped: false};
 
-      /** `TestContainer.swap`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 把swapped设true触发更新，让key身份与位置解耦。 */
       swap = () => {
         this.setState({swapped: true});
       };
 
-      /** `TestContainer.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 依据swapped选择first/second前后次序并交给TestComponent。 */
       render() {
         return (
           <TestComponent>
@@ -325,7 +318,7 @@ describe('ReactIdentity', () => {
     expect(beforeB).toBe(afterB);
   });
 
-  /** 测试场景：验证「should not allow implicit and explicit keys to collide」描述的渲染、交互或错误处理结果。 */
+  /** 同一div中首span无key、次span显式key=0；act不抛错，验证隐式索引key不与用户字符串key碰撞。 */
   it('should not allow implicit and explicit keys to collide', async () => {
     const component = (
       <div>
@@ -343,17 +336,17 @@ describe('ReactIdentity', () => {
     ).resolves.not.toThrow();
   });
 
-  /** 测试场景：验证「should throw if key is a Temporal-like object」描述的渲染、交互或错误处理结果。 */
+  /** TemporalLike.valueOf抛TypeError而toString能返回日期，作为span.key在root.render回调中创建元素；同步抛原TypeError并DEV给类型诊断，验证key使用默认强制转换而非显式toString。 */
   it('should throw if key is a Temporal-like object', async () => {
-    /** `TemporalLike`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 模拟默认转换抛错但显式toString可用的Temporal对象，作为key输入。 */
     class TemporalLike {
-      /** `TemporalLike.valueOf`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 默认原始值转换抛原TypeError，用于确认key不是直接调用toString。 */
       valueOf() {
         // 此处抛错符合 ECMAScript “Temporal” 日期/时间 API 的行为。
         // 参见 https://tc39.es/proposal-temporal/docs/plaindate.html#valueOf
         throw new TypeError('prod message');
       }
-      /** `TemporalLike.toString`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 显式toString返回日期，但本用例key默认转换先触发valueOf。 */
       toString() {
         return '2020-01-01';
       }

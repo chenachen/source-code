@@ -8,6 +8,7 @@ self.postMessage({
   ].join(' '),
 })
 
+/** 根worker创建的第二层实例，转发消息给页面使三层入口路径均可观察。 */
 const deeplyNestedSecondWorker = new Worker(
   new URL('deeply-nested-second-worker.js', import.meta.url),
   { type: 'module' },

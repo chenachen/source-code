@@ -118,8 +118,16 @@ export type LazyComponent<T, P> = {
 /**
  * 推进惰性载荷状态机，并返回已经解析出的默认导出。
  *
- * 等待态会抛出 Wakeable 以交给 Suspense；拒绝态会重抛原始错误。状态转换只在载荷仍为
- * 初始态或等待态时发生，避免多个回调覆盖已经提交的终态。
+ * 初始态先调用加载器再订阅 thenable；同步落定可直接进入完成/拒绝态，不必经过等待态。
+ * 订阅后仍未落定才保存 thenable 并进入等待态；等待时抛它，拒绝时重抛错误。
+ * 回调只从初始态/等待态改写 payload，防止迟到回调覆盖终态。加载器或 then 订阅在落定前
+ * 同步抛错时，payload 仍为初始态，下次解析会重新调用加载器。
+ * @param payload - 由 lazy 创建并归该 lazy 类型持有的可变四态槽，多个 render 共用此槽。
+ * @returns Resolved 模块的 default；Pending 抛同一 thenable，Rejected 抛保存的原因。
+ * @remarks 此状态与 renderer 请求缓存不同，终态会随 lazy 类型引用一直保留，没有
+ * 自动取消/超时/卸载重置。异步回调写入终态后才执行调试插桩；这些后续读取抛错不会
+ * 自动回退 payload。Resolved 分支的 DEV 诊断不修正模块：缺 default 可返回 undefined，
+ * null/undefined 模块或 default getter 仍可能抛错，且下次仍从 Resolved 读取。
  */
 function lazyInitializer<T>(payload: Payload<T>): T {
   if (payload._status === Uninitialized) {
@@ -280,10 +288,13 @@ function lazyInitializer<T>(payload: Payload<T>): T {
 }
 
 /**
- * 创建惰性组件描述符，并把实际加载延迟到 reconciler 首次解析该类型时。
+ * 创建惰性组件描述符，并把实际加载延迟到描述符首次被解析时。
  *
- * @param ctor 返回含默认导出的 Thenable；React 会缓存其进行中、成功或失败结果。
+ * @param ctor 返回含默认导出的 Thenable；React 缓存其等待及落定结果，同步启动失败则保留初始态。
  * @returns 可被 React 识别并通过 Suspense 协调加载的惰性组件类型。
+ * @remarks 创建本身不调用 ctor；renderer 或调试命名工具首次调用 _init 才启动加载。
+ * 每次 lazy(ctor) 有独立 payload，即使 ctor 相同也不在本函数按工厂去重；返回类型
+ * 的所有消费者才共享同一 payload。DEV 开启异步调试时另建 I/O 信息，但不改变业务模块结果。
  */
 export function lazy<T>(
   ctor: () => Thenable<{

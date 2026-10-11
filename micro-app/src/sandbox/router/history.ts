@@ -50,7 +50,8 @@ import {
  * @remarks
  * `pushState`/`replaceState` 先按路由模式计算宿主 URL 与应用级 state，再更新共享的 microLocation。
  * with 沙箱通过 Proxy 暴露宿主 History 的其余能力、绑定真实接收者，并把 `state` 映射为当前应用
- * 业务 state；iframe 沙箱把显式写入方法合并到其原生 History，`go` 仍转发宿主共享历史栈。
+ * 业务 state；iframe 沙箱由 patchRouter 把返回方法合并到原生 History，`go` 转发宿主共享历史栈，
+ * 本工厂没有覆写 iframe 的 back/forward 或 state getter。
  *
  * @param appName - history 所属的微应用名称。
  * @param microLocation - 与 history 共享的 location；with 为代理 location，iframe 为 iframe location。
@@ -65,11 +66,13 @@ export function createMicroHistory (appName: string, microLocation: MicroLocatio
    * @remarks
    * 空 URL 按浏览器语义落到当前 microLocation；相对 URL 也基于它解析。非 `pure` 模式先提交宿主
    * 历史，随后仅在路径变化时原地更新 location，最后刷新 iframe base，使后续相对资源解析跟随新路由。
+   * 输入 URL 的 origin 不用于跨站导航，只取 pathname/search/hash；应用业务 state 保存在宿主命名空间。
+   * 任一步同步抛错都会打断后续 location/base 更新，已经写入的宿主历史记录不回滚。
    */
   function getMicroHistoryMethod (methodName: string): CallableFunction {
     /** 规范化 History API 参数，并按当前路由模式完成一次微应用导航。 */
     return function (...rests: any[]): void {
-      // TODO：补充 iframe 中 History API 第三个参数为 `URL` 实例时的兼容测试。
+      // URL 对象也通过字符串化解析；undefined/null/空字符串都使用当前微应用 href。
       rests[2] = isUndefined(rests[2]) || isNull(rests[2]) || ('' + rests[2] === '') ? microLocation.href : '' + rests[2]
       const targetLocation = createURL(rests[2], microLocation.href)
       const targetFullPath = targetLocation.pathname + targetLocation.search + targetLocation.hash
@@ -138,6 +141,7 @@ export function createMicroHistory (appName: string, microLocation: MicroLocatio
  * @remarks
  * 只接受 `pushState` 与 `replaceState` 语义；方法名不是前者时使用后者。直接调用初始化时保存的原始
  * 方法可绕过全局 history 补丁，避免重入 `reWriteHistoryMethod`。
+ * 有效性只要求实例存在且非预加载；隐藏或已停止但仍保留实例的应用也可能进入，供卸载路由清理使用。
  *
  * @param appName - 发起导航的微应用名称，用于有效性校验。
  * @param methodName - 选择新增或替换历史条目的方法名。
@@ -222,6 +226,7 @@ export function attachRouteToBrowserURL (
  * `__MICRO_APP_STATE__`，直接提交会使所有子应用路由丢失；仅在目标 href 与当前 href 相同的场景合并
  * 旧快照，避免把旧页面的应用状态带到真正的新地址。原方法完成后，再为仍活动且记录缺失的应用补回
  * URL/state。最后清除 DOM 作用域，兼容嵌套应用中上层已补丁化的 History 方法。
+ * 原方法或补回记录时抛错会停止本轮修复，末尾 removeDomScope 没有 finally；它不回滚先前 History 写入。
  *
  * @param method - 初始化阶段保存的真实 `history.pushState` 或 `history.replaceState`。
  * @returns 安装到宿主 History 的包装函数。
@@ -272,15 +277,7 @@ function reWriteHistoryMethod (method: History['pushState' | 'replaceState']): C
         )
       }
 
-      // 曾计划在自定义与 search 模式下主动触发子应用响应，但卸载/恢复的异步边界尚无稳定顺序。
-      /**
-         * 若 History 写入后立即通知，异步卸载中的子应用可能先跳到不属于自己的地址，造成 404 或反改
-         * 浏览器 URL；若用 setTimeout 延迟，keep-alive 应用又可能在恢复渲染后才收到旧事件并丢状态。
-         * 同页多应用及 Vue 3 导航前的 replace 还会扩大顺序歧义，因此当前代码只修复路由记录，不在
-         * 此处主动向子应用派发事件。
-         */
-
-      // }
+      // 此处只补齐路由记录；基座调用 pushState/replaceState 不在这里直接通知子应用。
     })
 
     // 嵌套应用的上层 History 包装可能留下 DOM 作用域；返回基座前统一清除。
@@ -295,6 +292,7 @@ function reWriteHistoryMethod (method: History['pushState' | 'replaceState']): C
  * 基座框架响应 popstate 后可能用新 state 在同一路径执行 `replaceState`；包装两个写入方法可保留
  * `__MICRO_APP_STATE__` 并在基座导航后补齐活动应用记录。补丁应在首个沙箱启动时安装，由最后一个
  * 沙箱停止流程调用 `releasePatchHistory` 恢复。
+ * 本函数自身没有引用计数或重复安装门禁；安装次数由两个沙箱共用的 globalEnv.activeSandbox 边界控制。
  */
 export function patchHistory (): void {
   const rawWindow = globalEnv.rawWindow
@@ -307,7 +305,8 @@ export function patchHistory (): void {
 }
 
 /**
- * 恢复初始化时保存的原始宿主 History 方法，解除全局路由补丁与其闭包引用。
+ * 恢复初始化时保存的原始宿主 History 方法，移除宿主属性上的全局路由包装。
+ * 外部若缓存了旧包装函数，其闭包仍可存活；本函数不撤销缓存引用或已排出的路由事件任务。
  */
 export function releasePatchHistory (): void {
   const rawWindow = globalEnv.rawWindow

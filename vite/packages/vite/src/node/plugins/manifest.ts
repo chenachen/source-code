@@ -51,7 +51,7 @@ export function manifestPlugin(): Plugin {
     return {
       manifest: {} as Manifest,
       outputCount: 0,
-      /** 清空当前环境的清单与 CSS 入口状态，保证监听重构建不混入旧产物。 */
+      /** 完成最后一个 output 后清空本环境累计的清单与输出计数。 */
       reset() {
         this.manifest = {}
         this.outputCount = 0
@@ -80,7 +80,7 @@ export function manifestPlugin(): Plugin {
     return [
       {
         name: 'native:manifest-envs',
-        /** 捕获当前构建环境并重置清单状态。 */
+        /** 登记实际 hook Environment，供原生插件查询同一环境的 CSS 入口缓存。 */
         buildStart() {
           envs[environment.name] = this.environment
         },
@@ -90,7 +90,7 @@ export function manifestPlugin(): Plugin {
         outPath,
         isOutputOptionsForLegacyChunks:
           environment.config.isOutputOptionsForLegacyChunks,
-        /** 把已登记 CSS 入口引用转换为最终文件名集合。 */
+        /** 返回 CSS 入口 referenceId 到逻辑名称的映射，由原生插件解析最终文件名。 */
         cssEntries() {
           return Object.fromEntries(
             [...cssEntriesMap.get(envs[environment.name])!.values()].map(
@@ -103,7 +103,7 @@ export function manifestPlugin(): Plugin {
       }),
       {
         name: 'native:manifest-compatible',
-        /** 遍历 chunk 与资源构造清单；多环境输出时合并后只发射一次最终文件。 */
+        /** 给原生清单补 CSS/asset metadata；同一环境多个 output 累计后在最后一轮保留合并清单。 */
         generateBundle(_, bundle) {
           const asset = bundle[outPath]
           if (asset.type === 'asset') {

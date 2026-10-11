@@ -96,14 +96,14 @@ function shouldProfile(current: Fiber): boolean {
 }
 
 /**
- * 挂载符合 hookFlags 的 layout effect；mutation 阶段已先销毁旧 effect，确保所有 destroy
- * 先于任何 create，避免 sibling 的 cleanup 覆盖另一 sibling 新设置的 ref。
+ * 挂载符合 hookFlags 的 layout effect。普通更新中，mutation 阶段先完成本轮旧 layout
+ * cleanup，layout 阶段才执行新 create，避免 sibling cleanup 覆盖刚建立的连接。
+ * Offscreen 重连与 Strict Effects 重放也复用此函数，并由调用者安排拆装顺序。
  */
 export function commitHookLayoutEffects(
   finishedWork: Fiber,
   hookFlags: HookFlags,
 ) {
-  // mutation 阶段已销毁旧 layout effect，确保 sibling 间 destroy/create 不互相覆盖 ref。
   if (shouldProfile(finishedWork)) {
     startEffectTimer();
     commitHookEffectListMount(hookFlags, finishedWork);
@@ -114,15 +114,15 @@ export function commitHookLayoutEffects(
 }
 
 /**
- * 在 mutation 阶段销毁匹配的 layout effect；所有 Fiber 的 destroy 均先于 layout 阶段
- * create，隔离同次提交中 sibling effect 的可见副作用。
+ * 销毁匹配的 layout effect。普通更新传 HookLayout | HookHasEffect，只清理依赖变化项；
+ * 删除、Offscreen 消失与 DEV 重放传 HookLayout，清理所有已连接项。
+ * 普通提交把这些 cleanup 放在 mutation，将新 create 留到 layout。
  */
 export function commitHookLayoutUnmountEffects(
   finishedWork: Fiber,
   nearestMountedAncestor: null | Fiber,
   hookFlags: HookFlags,
 ) {
-  // mutation 阶段先销毁全部 layout effect，再运行任何 create，避免 sibling 相互干扰。
   if (shouldProfile(finishedWork)) {
     startEffectTimer();
     commitHookEffectListUnmount(
@@ -143,7 +143,8 @@ export function commitHookLayoutUnmountEffects(
 /**
  * 遍历函数组件循环 Effect 链并执行匹配 flags 的 create。
  * 保存 destroy、维护 insertion-effect 执行标记与 Scheduling Profiler，非法返回值在 DEV
- * 给出 Hook 定位；单个 effect 抛错由提交阶段错误边界捕获。
+ * 给出 Hook 定位。try/catch 包住整条链：create 抛错会停止此 Fiber 剩余 create，
+ * 记录边界恢复更新后返回，让外层提交继续处理其他 Fiber。
  */
 export function commitHookEffectListMount(
   flags: HookFlags,
@@ -314,7 +315,7 @@ export function commitHookEffectListUnmount(
   }
 }
 
-/** 挂载匹配的 passive effect，并在 Profiler 开启时计入当前 Fiber effectDuration。 */
+/** 挂载匹配的 passive effect，并记录耗时，供 passive 遍历累计到 Profiler/Root。 */
 export function commitHookPassiveMountEffects(
   finishedWork: Fiber,
   hookFlags: HookFlags,
@@ -328,7 +329,7 @@ export function commitHookPassiveMountEffects(
   }
 }
 
-/** 销毁匹配的 passive effect，并在 Profiler 开启时计入当前 Fiber effectDuration。 */
+/** 销毁匹配的 passive effect，并记录耗时，供 passive 遍历累计到 Profiler/Root。 */
 export function commitHookPassiveUnmountEffects(
   finishedWork: Fiber,
   nearestMountedAncestor: null | Fiber,
@@ -608,7 +609,8 @@ export function commitClassHiddenCallbacks(finishedWork: Fiber) {
 }
 
 /**
- * 冲刷 HostRoot UpdateQueue callbacks，并以首个宿主/类 child 的公开实例作为 this。
+ * 冲刷 HostRoot UpdateQueue callbacks。仅当根的第一个直接 child 是宿主或类组件时，
+ * 用它的公开实例作为 this；其他 tag 传 null，不继续搜索后代或其他 sibling。
  */
 export function commitRootCallbacks(finishedWork: Fiber) {
   // TODO：到提交阶段队列可能已保证非空，可评估移除类型检查。
@@ -783,7 +785,7 @@ export function safelyCallComponentWillUnmount(
 /**
  * 解析 Fiber 对应公开实例并附加 ref。
  * ViewTransition/Fragment 按需创建专用公开包装；函数 ref 的返回值保存为 refCleanup，
- * 对象 ref 写入 current，非法旧式 ref 仅在 DEV 警告。
+ * 对象 ref 写入 current；DEV 还会诊断 string ref 或缺少 current 的 ref 对象。
  */
 function commitAttachRef(finishedWork: Fiber) {
   const ref = finishedWork.ref;
@@ -870,8 +872,9 @@ export function safelyAttachRef(
 }
 
 /**
- * 安全分离函数/对象 ref：优先调用 refCleanup，否则以 null 调用函数 ref 或清空 current。
- * cleanup 执行后同时清空 current/alternate 引用，防止后续路径重复调用。
+ * 分离函数/对象 ref：优先调用 refCleanup，否则以 null 调用函数 ref 或清空 ref.current。
+ * 函数 ref/cleanup 的错误在此捕获；cleanup 无论成功或抛错，都在 finally 中清空两侧
+ * Fiber.refCleanup，防止重复调用。对象 ref 的赋值直接执行。
  */
 export function safelyDetachRef(
   current: Fiber,
@@ -942,7 +945,7 @@ export function safelyDetachRef(
 }
 
 /**
- * 安全调用 Hook cleanup；CRUD effect 可先绑定 resource，DEV 用当前 Fiber 包装用户代码，
+ * 安全调用 Hook cleanup；提供 resource 时先将其绑定为参数，DEV 用当前 Fiber 包装用户代码，
  * 生产则直接捕获并上报提交阶段错误。
  */
 function safelyCallDestroy(
@@ -974,6 +977,9 @@ function safelyCallDestroy(
 /**
  * 调用 Profiler onRender，并在启用 commit hooks 时调用 onCommit。
  * phase 区分 mount、update 与由提交 effect 触发的 nested-update。
+ * @param commitStartTime 本次提交共享的 Scheduler 相对毫秒时间，非回调自身执行时刻。
+ * @param effectDuration Profiler 子树在 mutation/layout 中被计时的 effect、类生命周期及
+ * 函数 ref 工作累计毫秒数；不含 passive 耗时，也不是整次提交的墙钟时长。
  */
 function commitProfiler(
   finishedWork: Fiber,

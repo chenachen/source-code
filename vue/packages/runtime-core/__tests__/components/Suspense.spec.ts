@@ -1,6 +1,6 @@
 /**
- * 测试阅读说明：本文件验证 `runtime-core/components/Suspense` 的运行时行为。
- * “测试组”概括共享前置条件，“测试场景”说明当前输入、边界或历史回归目标；具体预期以断言为准。
+ * 本地 defineAsyncComponent 返回 async setup Promise，并把等待任务记入 deps；它不是公共异步加载器。
+ * beforeEach 清空 deps、重置 suspenseId。用例先检查 fallback/旧分支，再等待依赖与 nextTick 检查提交。
  */
 /**
  * @vitest-environment jsdom
@@ -59,20 +59,22 @@ describe('Suspense', () => {
     resetSuspenseId()
   })
 
-  // a simple async factory for testing purposes only.
+  // 测试专用 async setup 工厂。
+  /** 测试专用工厂：delay毫秒后让async setup Promise返回渲染给定comp的函数，透传props/slots；把多一微任务的等待项放deps，便于逐层驱动依赖完成。不同于公共异步加载器。 */
   function defineAsyncComponent<T extends ComponentOptions>(
     comp: T,
     delay: number = 0,
   ) {
     return {
+      /** 执行deps.push(p.then(() => Promise.resolve()))。setup返回p。 */
       setup(props: any, { slots }: any) {
         const p = new Promise(resolve => {
           setTimeout(() => {
             resolve(() => h(comp, props, slots))
           }, delay)
         })
-        // in Node 12, due to timer/nextTick mechanism change, we have to wait
-        // an extra tick to avoid race conditions
+        // Node 12 的定时器/nextTick 顺序发生变化，
+        // 额外等待一轮微任务，让 setup 恢复后再断言。
         deps.push(p.then(() => Promise.resolve()))
         return p
       },
@@ -80,6 +82,7 @@ describe('Suspense', () => {
   }
 
   const RouterView = {
+    /** 从注入route中按当前depth选组件，再provide下一层depth；每次渲染将当前Component交给默认插槽并取其首个VNode，模拟嵌套RouterView。 */
     setup(_: any, { slots }: any) {
       const route = inject('route') as any
       const depth = inject('depth', 0)
@@ -91,15 +94,17 @@ describe('Suspense', () => {
     },
   }
 
-  // 测试场景：后备内容。
+  /** 测试场景：本地异步 setup 工厂未完成时显示 fallback div；等待记录的 deps 与 nextTick 后改为 async div，验证首次依赖等待和内容提交。 */
   test('fallback content', async () => {
     const Async = defineAsyncComponent({
+      /** 渲染'div'节点（'async'）。 */
       render() {
         return h('div', 'async')
       },
     })
 
     const Comp = {
+      /** setup返回渲染函数：Suspense节点（null；插槽{default: h(Async)，fallback: h('div', 'fallback')}）。 */
       setup() {
         return () =>
           h(Suspense, null, {
@@ -118,9 +123,10 @@ describe('Suspense', () => {
     expect(serializeInner(root)).toBe(`<div>async</div>`)
   })
 
-  // 测试场景：emits事件。
+  /** 测试场景：timeout=0，首次异步挂载 pending/fallback 各一次，完成后 resolve 一次；切空根同步 pending+resolve 而不 fallback，再回异步根产生新一轮三种事件，核对次数边界。 */
   test('emits events', async () => {
     const Async = defineAsyncComponent({
+      /** 渲染'div'节点（'async'）。 */
       render() {
         return h('div', 'async')
       },
@@ -132,6 +138,7 @@ describe('Suspense', () => {
 
     const show = ref(true)
     const Comp = {
+      /** setup返回渲染函数：Suspense节点（属性{onFallback，onResolve，onPending，timeout: 0}；插槽{default回调，fallback: h('div', 'fallback')}）。 */
       setup() {
         return () =>
           h(
@@ -140,10 +147,11 @@ describe('Suspense', () => {
               onFallback,
               onResolve,
               onPending,
-              // force displaying the fallback right away
+              // 新一轮 pending 立即进入 fallback。
               timeout: 0,
             },
             {
+              /** 提供default插槽：show.value决定Async节点或null。 */
               default: () => (show.value ? h(Async) : null),
               fallback: h('div', 'fallback'),
             },
@@ -183,11 +191,12 @@ describe('Suspense', () => {
     expect(onResolve).toHaveBeenCalledTimes(3)
   })
 
-  // 测试场景：嵌套异步依赖。
+  /** 测试场景：外异步组件完成后才发现内层更慢依赖；只完成外依赖仍显示 fallback且无 mounted，全部完成后显示 inner，mounted 顺序 outer、inner。 */
   test('nested async deps', async () => {
     const calls: string[] = []
 
     const AsyncOuter = defineAsyncComponent({
+      /** 注册onMounted回调写入calls.push('outer mounted')。setup返回渲染函数：AsyncInner节点。 */
       setup() {
         onMounted(() => {
           calls.push('outer mounted')
@@ -198,6 +207,7 @@ describe('Suspense', () => {
 
     const AsyncInner = defineAsyncComponent(
       {
+        /** 注册onMounted回调写入calls.push('inner mounted')。setup返回渲染函数：'div'节点（'inner'）。 */
         setup() {
           onMounted(() => {
             calls.push('inner mounted')
@@ -209,6 +219,7 @@ describe('Suspense', () => {
     )
 
     const Comp = {
+      /** setup返回渲染函数：Suspense节点（null；插槽{default: h(AsyncOuter)，fallback: h('div', 'fallback')}）。 */
       setup() {
         return () =>
           h(Suspense, null, {
@@ -234,9 +245,10 @@ describe('Suspense', () => {
     expect(serializeInner(root)).toBe(`<div>inner</div>`)
   })
 
-  // 测试场景：所有异步依赖完成且内容分支提交后触发 onResolve。
+  /** 测试场景：异步 setup pending 时展示 fallback且 onResolve 未调用；全部依赖完成并更新后展示 async且 onResolve 调用，检查提交事件。 */
   test('onResolve', async () => {
     const Async = defineAsyncComponent({
+      /** 渲染'div'节点（'async'）。 */
       render() {
         return h('div', 'async')
       },
@@ -245,6 +257,7 @@ describe('Suspense', () => {
     const onResolve = vi.fn()
 
     const Comp = {
+      /** setup返回渲染函数：Suspense节点（属性{onResolve}；插槽{default: h(Async)，fallback: h('div', 'fallback')}）。 */
       setup() {
         return () =>
           h(
@@ -271,16 +284,17 @@ describe('Suspense', () => {
     expect(onResolve).toHaveBeenCalled()
   })
 
-  // 测试场景：pending 分支的 mounted/updated 钩子和 post-flush watcher 应缓冲到 resolve 后。
+  /** 测试场景：异步 setup 注册 post watchEffect/watch并立即递增 count，同时注册 mounted/unmounted；pending 时记录为空，resolve 后按 effect、watch、mounted 放行，移除后再记 unmounted，此例没有 updated 钩子断言。 */
   test('buffer mounted/updated hooks & post flush watch callbacks', async () => {
     const deps: Promise<any>[] = []
     const calls: string[] = []
     const toggle = ref(true)
 
     const Async = {
+      /** 建立count=ref(0)；执行deps.push(p.then(() => Promise.resolve()))；count.value++；注册watchEffect回调写入calls.push('watch effect')；watch回调写入calls.push('watch callback')；onMounted回调写入calls.push('mounted')；onUnmounted回调写入calls.push('unmounted')。setup返回渲染函数：'div'节点（'async'）。 async返回Promise，等待p后完成。 */
       async setup() {
         const p = new Promise(r => setTimeout(r, 1))
-        // extra tick needed for Node 12+
+        // 多一轮微任务等待 setup 恢复与边界提交。
         deps.push(p.then(() => Promise.resolve()))
 
         watchEffect(
@@ -298,7 +312,7 @@ describe('Suspense', () => {
           },
           { flush: 'post' },
         )
-        count.value++ // trigger the watcher now
+        count.value++ // 立即修改 count，触发尚在 pending 分支的 watcher。
 
         onMounted(() => {
           calls.push('mounted')
@@ -314,6 +328,7 @@ describe('Suspense', () => {
     }
 
     const Comp = {
+      /** setup返回渲染函数：Suspense节点（null；插槽{default: toggle.value ? h(Async) : null，fallback: h('div', 'fallback')}）。 */
       setup() {
         return () =>
           h(Suspense, null, {
@@ -333,7 +348,7 @@ describe('Suspense', () => {
     expect(serializeInner(root)).toBe(`<div>async</div>`)
     expect(calls).toEqual([`watch effect`, `watch callback`, `mounted`])
 
-    // effects inside an already resolved suspense should happen at normal timing
+    // 边界已 resolve，后续 unmounted 按正常 post 队列执行。
     toggle.value = false
     await nextTick()
     await nextTick()
@@ -347,16 +362,17 @@ describe('Suspense', () => {
   })
 
   // #1059
-  // 测试场景：挂载/更新的钩子和后备组件。
+  /** 测试场景：fallback 是注册 mounted/unmounted 的组件；pending 时 mounted立即执行，resolve 后内容替换 fallback并调用其 unmounted，核对 fallback 无需等待本边界。 */
   test('mounted/updated hooks & fallback component', async () => {
     const deps: Promise<any>[] = []
     const calls: string[] = []
     const toggle = ref(true)
 
     const Async = {
+      /** 执行deps.push(p.then(() => Promise.resolve()))。setup返回渲染函数：'div'节点（'async'）。 async返回Promise，等待p后完成。 */
       async setup() {
         const p = new Promise(r => setTimeout(r, 1))
-        // extra tick needed for Node 12+
+        // 多一轮微任务等待 setup 恢复与边界提交。
         deps.push(p.then(() => Promise.resolve()))
 
         await p
@@ -365,6 +381,7 @@ describe('Suspense', () => {
     }
 
     const Fallback = {
+      /** 注册onMounted回调写入calls.push('mounted')；onUnmounted回调写入calls.push('unmounted')。setup返回渲染函数：'div'节点（'fallback'）。 */
       setup() {
         onMounted(() => {
           calls.push('mounted')
@@ -378,6 +395,7 @@ describe('Suspense', () => {
     }
 
     const Comp = {
+      /** setup返回渲染函数：Suspense节点（null；插槽{default: toggle.value ? h(Async) : null，fallback: h(Fallback)}）。 */
       setup() {
         return () =>
           h(Suspense, null, {
@@ -398,10 +416,11 @@ describe('Suspense', () => {
     expect(calls).toEqual([`mounted`, `unmounted`])
   })
 
-  // 测试场景：suspense 解析前内容更新。
+  /** 测试场景：pending 异步子 props.msg 从 foo 改 bar；可见 fallback同步改 bar，完成依赖后内容使用 bar，确认隐藏分支接收最新 props。 */
   test('content update before suspense resolve', async () => {
     const Async = defineAsyncComponent({
       props: { msg: String },
+      /** setup返回渲染函数：'div'节点（props.msg）。 */
       setup(props: any) {
         return () => h('div', props.msg)
       },
@@ -410,6 +429,7 @@ describe('Suspense', () => {
     const msg = ref('foo')
 
     const Comp = {
+      /** setup返回渲染函数：Suspense节点（null；插槽{default: h(Async, { msg: msg.value })，fallback: h('div', `fallback ${msg.value}`)}）。 */
       setup() {
         return () =>
           h(Suspense, null, {
@@ -423,26 +443,27 @@ describe('Suspense', () => {
     render(h(Comp), root)
     expect(serializeInner(root)).toBe(`<div>fallback foo</div>`)
 
-    // value changed before resolve
+    // 依赖完成前修改输入值。
     msg.value = 'bar'
     await nextTick()
-    // fallback content should be updated
+    // 可见 fallback 同步更新。
     expect(serializeInner(root)).toBe(`<div>fallback bar</div>`)
 
     await Promise.all(deps)
     await nextTick()
-    // async component should receive updated props/slots when resolved
+    // 异步组件恢复后接收最新 props/slots。
     expect(serializeInner(root)).toBe(`<div>bar</div>`)
   })
 
-  // mount/unmount hooks should not even fire
-  // 测试场景：suspense解析前卸载。
+  // 实际内容组件尚未创建，相关 mounted/unmounted 不执行。
+  /** 测试场景：异步 setup 已注册 post watchers 和生命周期但尚未完成时将 default 切 null；fallback替为注释，Promise 后来完成仍为注释且全部回调记录为空，验证废弃分支副作用清理。 */
   test('unmount before suspense resolve', async () => {
     const deps: Promise<any>[] = []
     const calls: string[] = []
     const toggle = ref(true)
 
     const Async = {
+      /** 建立count=ref(0)；执行deps.push(p)；count.value++；注册watchEffect回调写入calls.push('watch effect')；watch回调写入calls.push('watch callback')；onMounted回调写入calls.push('mounted')；onUnmounted回调写入calls.push('unmounted')。setup返回渲染函数：'div'节点（'async'）。 async返回Promise，等待p后完成。 */
       async setup() {
         const p = new Promise(r => setTimeout(r, 1))
         deps.push(p)
@@ -462,7 +483,7 @@ describe('Suspense', () => {
           },
           { flush: 'post' },
         )
-        count.value++ // trigger the watcher now
+        count.value++ // 立即修改 count，触发尚在 pending 分支的 watcher。
 
         onMounted(() => {
           calls.push('mounted')
@@ -478,6 +499,7 @@ describe('Suspense', () => {
     }
 
     const Comp = {
+      /** setup返回渲染函数：Suspense节点（null；插槽{default: toggle.value ? h(Async) : null，fallback: h('div', 'fallback')}）。 */
       setup() {
         return () =>
           h(Suspense, null, {
@@ -492,25 +514,26 @@ describe('Suspense', () => {
     expect(serializeInner(root)).toBe(`<div>fallback</div>`)
     expect(calls).toEqual([])
 
-    // remove the async dep before it's resolved
+    // 依赖未完成就移除该异步分支。
     toggle.value = false
     await nextTick()
-    // should cause the suspense to resolve immediately
+    // 新空分支无依赖，边界立即提交注释。
     expect(serializeInner(root)).toBe(`<!---->`)
 
     await Promise.all(deps)
     await nextTick()
     expect(serializeInner(root)).toBe(`<!---->`)
-    // should discard effects
+    // 废弃分支缓冲的 effects 不再执行。
     expect(calls).toEqual([])
   })
 
-  // 测试场景：解决后卸载suspense。
+  /** 测试场景：异步内容 resolve 后整体关闭 Suspense；由 fallback到 async再到注释，内容 unmounted调用，确认已提交活动分支销毁。 */
   test('unmount suspense after resolve', async () => {
     const toggle = ref(true)
     const unmounted = vi.fn()
 
     const Async = defineAsyncComponent({
+      /** 注册onUnmounted。setup返回渲染函数：'div'节点（'async'）。 */
       setup() {
         onUnmounted(unmounted)
         return () => h('div', 'async')
@@ -518,6 +541,7 @@ describe('Suspense', () => {
     })
 
     const Comp = {
+      /** setup返回渲染函数：toggle.value决定Suspense节点（null；插槽{default: h(Async)，fallback: h('div', 'fallback')}）或null。 */
       setup() {
         return () =>
           toggle.value
@@ -544,13 +568,14 @@ describe('Suspense', () => {
     expect(unmounted).toHaveBeenCalled()
   })
 
-  // 测试场景：解析前卸载suspense。
+  /** 测试场景：首次 pending 时整体关闭 Suspense再完成其依赖；mounted/unmounted spies均不调用，确认内层实际组件尚未创建，迟到恢复不会提交。 */
   test('unmount suspense before resolve', async () => {
     const toggle = ref(true)
     const mounted = vi.fn()
     const unmounted = vi.fn()
 
     const Async = defineAsyncComponent({
+      /** 注册onMounted；onUnmounted。setup返回渲染函数：'div'节点（'async'）。 */
       setup() {
         onMounted(mounted)
         onUnmounted(unmounted)
@@ -559,6 +584,7 @@ describe('Suspense', () => {
     })
 
     const Comp = {
+      /** setup返回渲染函数：toggle.value决定Suspense节点（null；插槽{default: h(Async)，fallback: h('div', 'fallback')}）或null。 */
       setup() {
         return () =>
           toggle.value
@@ -582,19 +608,20 @@ describe('Suspense', () => {
 
     await Promise.all(deps)
     await nextTick()
-    // should not resolve and cause unmount
+    // 迟到 Promise 不再提交内容或触发未创建组件的卸载。
     expect(mounted).not.toHaveBeenCalled()
     expect(unmounted).not.toHaveBeenCalled()
   })
 
   // vuetifyjs/vuetify#15207
-  // 测试场景：在 suspense 解析之前更新异步元素的属性。
+  /** 测试场景：Root mounted 将 data由1改2，而异步子 setup仍等待；等待子 mounted Promise后元素 data-test=2，确认未解析子组件更新 attrs 的继承。 */
   test('update prop of async element before suspense resolve', async () => {
     let resolve: () => void
     const mounted = new Promise<void>(r => {
       resolve = r
     })
     const Async = {
+      /** 注册onMounted。setup返回渲染函数：'div'节点（'async'）。 async返回Promise，等待p后完成。 */
       async setup() {
         onMounted(() => {
           resolve()
@@ -605,14 +632,19 @@ describe('Suspense', () => {
       },
     }
 
-    const Comp: ComponentOptions<{ data: string }> = {
+    const Comp: ComponentOptions<{
+      /** 父组件声明的字符串data prop，由Root在挂载时从1改2，并透传为异步根data-test，验证pending期attrs更新。 */
+      data: string
+    }> = {
       props: ['data'],
+      /** setup返回渲染函数：Async节点（属性{'data-test': props.data}）。 */
       setup(props) {
         return () => h(Async, { 'data-test': props.data })
       },
     }
 
     const Root = {
+      /** 建立data=ref('1')；注册onMounted回调写入data.value='2'。setup返回渲染函数：Suspense节点（null；插槽{default: h(Comp, { data: data.value })，fallback: h('div', 'fallback')}）。 */
       setup() {
         const data = ref('1')
         onMounted(() => {
@@ -633,12 +665,13 @@ describe('Suspense', () => {
     expect(serializeInner(root)).toBe(`<div data-test="2">async</div>`)
   })
 
-  // 测试场景：嵌套suspense（父级首先解析）。
+  /** 测试场景：独立嵌套边界中外依赖1ms、内依赖10ms；父先展示 outer+inner fallback且仅 outer mounted，子完成后替为 inner内容并执行 inner mounted。 */
   test('nested suspense (parent resolves first)', async () => {
     const calls: string[] = []
 
     const AsyncOuter = defineAsyncComponent(
       {
+        /** 注册onMounted回调写入calls.push('outer mounted')。setup返回渲染函数：'div'节点（'async outer'）。 */
         setup: () => {
           onMounted(() => {
             calls.push('outer mounted')
@@ -651,6 +684,7 @@ describe('Suspense', () => {
 
     const AsyncInner = defineAsyncComponent(
       {
+        /** 注册onMounted回调写入calls.push('inner mounted')。setup返回渲染函数：'div'节点（'async inner'）。 */
         setup: () => {
           onMounted(() => {
             calls.push('inner mounted')
@@ -662,6 +696,7 @@ describe('Suspense', () => {
     )
 
     const Inner = {
+      /** setup返回渲染函数：Suspense节点（null；插槽{default: h(AsyncInner)，fallback: h('div', 'fallback inner')}）。 */
       setup() {
         return () =>
           h(Suspense, null, {
@@ -672,6 +707,7 @@ describe('Suspense', () => {
     }
 
     const Comp = {
+      /** setup返回渲染函数：Suspense节点（null；插槽{default: h('div', [h(AsyncOuter), h(Inner)])，fallback: h('div', 'fallback outer')}）。 */
       setup() {
         return () =>
           h(Suspense, null, {
@@ -700,12 +736,13 @@ describe('Suspense', () => {
     expect(calls).toEqual([`outer mounted`, `inner mounted`])
   })
 
-  // 测试场景：嵌套suspense（子级首先解析）。
+  /** 测试场景：独立嵌套边界中内依赖先完成、外依赖后完成；外仍 fallback且 mounted记录为空，父完成后两层内容一起可见，缓冲 mounted按 inner、outer顺序放行。 */
   test('nested suspense (child resolves first)', async () => {
     const calls: string[] = []
 
     const AsyncOuter = defineAsyncComponent(
       {
+        /** 注册onMounted回调写入calls.push('outer mounted')。setup返回渲染函数：'div'节点（'async outer'）。 */
         setup: () => {
           onMounted(() => {
             calls.push('outer mounted')
@@ -718,6 +755,7 @@ describe('Suspense', () => {
 
     const AsyncInner = defineAsyncComponent(
       {
+        /** 注册onMounted回调写入calls.push('inner mounted')。setup返回渲染函数：'div'节点（'async inner'）。 */
         setup: () => {
           onMounted(() => {
             calls.push('inner mounted')
@@ -729,6 +767,7 @@ describe('Suspense', () => {
     )
 
     const Inner = {
+      /** setup返回渲染函数：Suspense节点（null；插槽{default: h(AsyncInner)，fallback: h('div', 'fallback inner')}）。 */
       setup() {
         return () =>
           h(Suspense, null, {
@@ -739,6 +778,7 @@ describe('Suspense', () => {
     }
 
     const Comp = {
+      /** setup返回渲染函数：Suspense节点（null；插槽{default: h('div', [h(AsyncOuter), h(Inner)])，fallback: h('div', 'fallback outer')}）。 */
       setup() {
         return () =>
           h(Suspense, null, {
@@ -765,15 +805,17 @@ describe('Suspense', () => {
     expect(calls).toEqual([`inner mounted`, `outer mounted`])
   })
 
-  // 测试场景：错误处理。
+  /** 测试场景：异步 setup拒绝 Error(oops)，祖先 errorCaptured写错误状态并return false；首次fallback后刷新改为oops div，验证错误可转为祖先渲染状态。 */
   test('error handling', async () => {
     const Async = {
+      /** async setup直接抛Error(oops)，返回拒绝的Promise；供祖先errorCaptured把错误转换为替代渲染。 */
       async setup() {
         throw new Error('oops')
       },
     }
 
     const Comp = {
+      /** 建立errorMessage=ref<string | null>(null)；注册onErrorCaptured回调写入errorMessage.value=err instanceof Error ? err.message : `A non-Error value thrown: ${err}`。setup返回渲染函数：errorMessage.value决定'div'节点（errorMessage.value）或Suspense节点（null；插槽{default: h(Async)，fallback: h('div', 'fallback')}）。 */
       setup() {
         const errorMessage = ref<string | null>(null)
         onErrorCaptured(err => {
@@ -804,9 +846,10 @@ describe('Suspense', () => {
   })
 
   // #3857
-  // 测试场景：带有模板优化的错误处理。
+  /** 测试场景：编译优化模板用 v-if错误状态/v-else Suspense，内层异步setup拒绝oops；捕获错误后fallback切oops div，核对优化block的卸载切换。 */
   test('error handling w/ template optimization', async () => {
     const Async = {
+      /** 优化模板中的异步子setup抛Error(oops)，让祖先捕获后触发v-if/v-else分支替换。 */
       async setup() {
         throw new Error('oops')
       },
@@ -825,6 +868,7 @@ describe('Suspense', () => {
       </Suspense>
       `,
       components: { Async },
+      /** 建立errorMessage=ref<string | null>(null)；注册onErrorCaptured回调写入errorMessage.value=err instanceof Error ? err.message : `A non-Error value thrown: ${err}`。setup返回{errorMessage}。 */
       setup() {
         const errorMessage = ref<string | null>(null)
         onErrorCaptured(err => {
@@ -847,13 +891,14 @@ describe('Suspense', () => {
     expect(serializeInner(root)).toBe(`<div>oops</div>`)
   })
 
-  // 测试场景：组合使用（嵌套异步+嵌套suspense+多个依赖）。
+  /** 测试场景：父边界同时等待嵌套异步链和独立子边界；只完成首层依赖仍fallback，父链齐全后展示nested fallback+root async并放行0/1/3，子完成后追加2并使用等待期更新的msg。 */
   it('combined usage (nested async + nested suspense + multiple deps)', async () => {
     const msg = ref('nested msg')
     const calls: number[] = []
 
     const AsyncChildWithSuspense = defineAsyncComponent({
       props: { msg: String },
+      /** 注册onMounted回调写入calls.push(0)。setup返回渲染函数：Suspense节点（null；插槽{default: h(AsyncInsideNestedSuspense, { msg: props.msg })，fallback: h('div', 'nested fallback')}）。 */
       setup(props: any) {
         onMounted(() => {
           calls.push(0)
@@ -869,6 +914,7 @@ describe('Suspense', () => {
     const AsyncInsideNestedSuspense = defineAsyncComponent(
       {
         props: { msg: String },
+        /** 注册onMounted回调写入calls.push(2)。setup返回渲染函数：'div'节点（props.msg）。 */
         setup(props: any) {
           onMounted(() => {
             calls.push(2)
@@ -881,6 +927,7 @@ describe('Suspense', () => {
 
     const AsyncChildParent = defineAsyncComponent({
       props: { msg: String },
+      /** 注册onMounted回调写入calls.push(1)。setup返回渲染函数：NestedAsyncChild节点（属性{msg: props.msg}）。 */
       setup(props: any) {
         onMounted(() => {
           calls.push(1)
@@ -892,6 +939,7 @@ describe('Suspense', () => {
     const NestedAsyncChild = defineAsyncComponent(
       {
         props: { msg: String },
+        /** 注册mounted时向calls写入3；返回读取props.msg的div渲染函数，记录根异步组件完成后的挂载时序。 */
         setup(props: any) {
           onMounted(() => {
             calls.push(3)
@@ -903,6 +951,7 @@ describe('Suspense', () => {
     )
 
     const MiddleComponent = {
+      /** setup返回渲染函数：AsyncChildWithSuspense节点（属性{msg: msg.value}）。 */
       setup() {
         return () =>
           h(AsyncChildWithSuspense, {
@@ -912,6 +961,7 @@ describe('Suspense', () => {
     }
 
     const Comp = {
+      /** setup返回渲染函数：Suspense节点（null；插槽{default: h('div', [ h(MiddleComponent), h(AsyncChildParent, { msg: 'root async', }), ])，fallback: h('div', 'root fallback')}）。 */
       setup() {
         return () =>
           h(Suspense, null, {
@@ -935,22 +985,22 @@ describe('Suspense', () => {
      * <Root>
      *   <Suspense>
      *     <MiddleComponent>
-     *       <AsyncChildWithSuspense> (0: resolves on macrotask)
+     *       <AsyncChildWithSuspense> (0: 宏任务完成)
      *         <Suspense>
-     *           <AsyncInsideNestedSuspense> (2: resolves on macrotask + 20ms)
-     *     <AsyncChildParent> (1: resolves on macrotask)
-     *       <NestedAsyncChild> (3: resolves on macrotask + 10ms)
+     *           <AsyncInsideNestedSuspense> (2: 宏任务完成 后20ms)
+     *     <AsyncChildParent> (1: 宏任务完成)
+     *       <NestedAsyncChild> (3: 宏任务完成 后10ms)
      */
 
-    // both top level async deps resolved, but there is another nested dep
-    // so should still be in fallback state
+    // 首层两个依赖已完成，但普通异步链还有嵌套依赖，
+    // 父边界继续显示 fallback。
     await Promise.all([deps[0], deps[1]])
     await nextTick()
     expect(serializeInner(root)).toBe(`<div>root fallback</div>`)
     expect(calls).toEqual([])
 
-    // root suspense all deps resolved. should show root content now
-    // with nested suspense showing fallback content
+    // 父边界自己的依赖齐全，现在提交父内容；
+    // 独立嵌套边界仍展示其 fallback。
     await deps[3]
     await nextTick()
     expect(serializeInner(root)).toBe(
@@ -958,10 +1008,10 @@ describe('Suspense', () => {
     )
     expect(calls).toEqual([0, 1, 3])
 
-    // change state for the nested component before it resolves
+    // 嵌套组件未完成时修改其输入。
     msg.value = 'nested changed'
 
-    // all deps resolved, nested suspense should resolve now
+    // 内层依赖完成，子边界提交默认内容。
     await Promise.all(deps)
     await nextTick()
     expect(serializeInner(root)).toBe(
@@ -969,7 +1019,7 @@ describe('Suspense', () => {
     )
     expect(calls).toEqual([0, 1, 3, 2])
 
-    // should update just fine after resolve
+    // resolve 后继续检查响应式更新。
     msg.value = 'nested changed again'
     await nextTick()
     expect(serializeInner(root)).toBe(
@@ -977,12 +1027,13 @@ describe('Suspense', () => {
     )
   })
 
-  // 测试场景：切换分支。
+  /** 测试场景：Foo含更慢FooNested，先等二者全部完成；切Bar等待时保留Foo，再完成后替Bar并按钩子顺序卸载Foo；切回Foo也等两层依赖，旧Bar保持直到新链就绪。 */
   test('switching branches', async () => {
     const calls: string[] = []
     const toggle = ref(true)
 
     const Foo = defineAsyncComponent({
+      /** 注册onMounted回调写入calls.push('foo mounted')；onUnmounted回调写入calls.push('foo unmounted')。setup返回渲染函数：'div'节点（根数组['foo'、FooNested节点]）。 */
       setup() {
         onMounted(() => {
           calls.push('foo mounted')
@@ -996,6 +1047,7 @@ describe('Suspense', () => {
 
     const FooNested = defineAsyncComponent(
       {
+        /** 注册onMounted回调写入calls.push('foo nested mounted')；onUnmounted回调写入calls.push('foo nested unmounted')。setup返回渲染函数：'div'节点（'foo nested'）。 */
         setup() {
           onMounted(() => {
             calls.push('foo nested mounted')
@@ -1011,6 +1063,7 @@ describe('Suspense', () => {
 
     const Bar = defineAsyncComponent(
       {
+        /** 注册onMounted回调写入calls.push('bar mounted')；onUnmounted回调写入calls.push('bar unmounted')。setup返回渲染函数：'div'节点（'bar'）。 */
         setup() {
           onMounted(() => {
             calls.push('bar mounted')
@@ -1025,6 +1078,7 @@ describe('Suspense', () => {
     )
 
     const Comp = {
+      /** setup返回渲染函数：Suspense节点（null；插槽{default: toggle.value ? h(Foo) : h(Bar)，fallback: h('div', 'fallback')}）。 */
       setup() {
         return () =>
           h(Suspense, null, {
@@ -1049,11 +1103,11 @@ describe('Suspense', () => {
     expect(calls).toEqual([`foo mounted`, `foo nested mounted`])
     expect(serializeInner(root)).toBe(`<div>foo<div>foo nested</div></div>`)
 
-    // toggle
+    // 切换分支。
     toggle.value = false
     await nextTick()
     expect(deps.length).toBe(3)
-    // should remain on current view
+    // 新分支仍 pending，保留当前可见内容。
     expect(calls).toEqual([`foo mounted`, `foo nested mounted`])
     expect(serializeInner(root)).toBe(`<div>foo<div>foo nested</div></div>`)
 
@@ -1069,16 +1123,16 @@ describe('Suspense', () => {
     expect(calls).toEqual(tempCalls)
     expect(serializeInner(root)).toBe(`<div>bar</div>`)
 
-    // toggle back
+    // 切换分支。 back
     toggle.value = true
     await nextTick()
-    // should remain
+    // 仍保留原活动内容。
     expect(calls).toEqual(tempCalls)
     expect(serializeInner(root)).toBe(`<div>bar</div>`)
 
     await deps[3]
     await nextTick()
-    // still pending...
+    // 嵌套依赖尚未齐全，继续保留旧内容。
     expect(calls).toEqual(tempCalls)
     expect(serializeInner(root)).toBe(`<div>bar</div>`)
 
@@ -1094,14 +1148,17 @@ describe('Suspense', () => {
   })
 
   // #10098
-  // 测试场景：使用嵌套 suspense 切换分支。
+  /** 测试场景：模拟两层RouterView嵌套Suspense，先解析到innerA；切B尚未完成便切回A，等待全部任务后仍innerA，确认过期分支不会覆盖恢复的路由内容。 */
   test('switching branches w/ nested suspense', async () => {
     const OuterB = defineAsyncComponent({
+      /** setup返回渲染函数：RouterView节点（null；插槽{default回调}）。 */
       setup: () => {
         return () =>
           h(RouterView, null, {
+            /** 提供default插槽：根数组[Suspense节点（null；插槽{default回调}）]。 */
             default: ({ Component }: any) => [
               h(Suspense, null, {
+                /** 提供default插槽：Component节点。 */
                 default: () => h(Component),
               }),
             ],
@@ -1110,17 +1167,21 @@ describe('Suspense', () => {
     })
 
     const InnerB = defineAsyncComponent({
+      /** setup返回渲染函数：'div'节点（'innerB'）。 */
       setup: () => {
         return () => h('div', 'innerB')
       },
     })
 
     const OuterA = defineAsyncComponent({
+      /** setup返回渲染函数：RouterView节点（null；插槽{default回调}）。 */
       setup: () => {
         return () =>
           h(RouterView, null, {
+            /** 提供default插槽：根数组[Suspense节点（null；插槽{default回调}）]。 */
             default: ({ Component }: any) => [
               h(Suspense, null, {
+                /** 提供default插槽：Component节点。 */
                 default: () => h(Component),
               }),
             ],
@@ -1129,6 +1190,7 @@ describe('Suspense', () => {
     })
 
     const InnerA = defineAsyncComponent({
+      /** setup返回渲染函数：'div'节点（'innerA'）。 */
       setup: () => {
         return () => h('div', 'innerA')
       },
@@ -1140,12 +1202,15 @@ describe('Suspense', () => {
     })
 
     const Comp = {
+      /** 执行provide('route', route)。setup返回渲染函数：RouterView节点（null；插槽{default回调}）。 */
       setup() {
         provide('route', route)
         return () =>
           h(RouterView, null, {
+            /** 提供default插槽：根数组[Suspense节点（null；插槽{default回调}）]。 */
             default: ({ Component }: any) => [
               h(Suspense, null, {
+                /** 提供default插槽：Component节点。 */
                 default: () => h(Component),
               }),
             ],
@@ -1167,7 +1232,7 @@ describe('Suspense', () => {
 
     toggle.value = false
     await nextTick()
-    // toggle again
+    // 切换分支。 again
     toggle.value = true
 
     await Promise.all(deps)
@@ -1176,14 +1241,17 @@ describe('Suspense', () => {
   })
 
   // #10415
-  // 测试场景：在父 suspense 解析之前嵌套 suspense（带暂停）开关多次。
+  /** 测试场景：RouterView子边界启用suspensible，切OuterB后其异步回调连续将InnerB换InnerB1/InnerB2；父等待期间各周期更新依赖，最终只展示innerB2，避免过期子resolve提前结算父。 */
   test('nested suspense (w/ suspensible) switch several times before parent suspense resolve', async () => {
     const OuterA = defineAsyncComponent({
+      /** setup返回渲染函数：RouterView节点（null；插槽{default回调}）。 */
       setup: () => {
         return () =>
           h(RouterView, null, {
+            /** 提供default插槽：根数组[Suspense节点（null；插槽{default回调}）]。 */
             default: ({ Component }: any) => [
               h(Suspense, null, {
+                /** 提供default插槽：Component节点。 */
                 default: () => h(Component),
               }),
             ],
@@ -1192,6 +1260,7 @@ describe('Suspense', () => {
     })
 
     const InnerA = defineAsyncComponent({
+      /** setup返回渲染函数：'div'节点（'innerA'）。 */
       setup: () => {
         return () => h('div', 'innerA')
       },
@@ -1200,6 +1269,7 @@ describe('Suspense', () => {
     const route = shallowRef([OuterA, InnerA])
     const InnerB = defineAsyncComponent(
       {
+        /** setup返回渲染函数：'div'节点（'innerB'）。 */
         setup: () => {
           return () => h('div', 'innerB')
         },
@@ -1209,6 +1279,7 @@ describe('Suspense', () => {
 
     const InnerB1 = defineAsyncComponent(
       {
+        /** setup返回渲染函数：'div'节点（'innerB1'）。 */
         setup: () => {
           return () => h('div', 'innerB1')
         },
@@ -1218,6 +1289,7 @@ describe('Suspense', () => {
 
     const InnerB2 = defineAsyncComponent(
       {
+        /** setup返回渲染函数：'div'节点（'innerB2'）。 */
         setup: () => {
           return () => h('div', 'innerB2')
         },
@@ -1227,6 +1299,7 @@ describe('Suspense', () => {
 
     const OuterB = defineAsyncComponent(
       {
+        /** 安排nextTick回调route.value=[OuterB, InnerB1]；nextTick回调route.value=[OuterB, InnerB2]。setup返回渲染函数：RouterView节点（null；插槽{default回调}）。 */
         setup() {
           nextTick(async () => {
             await new Promise(resolve => setTimeout(resolve, 1))
@@ -1240,11 +1313,13 @@ describe('Suspense', () => {
 
           return () =>
             h(RouterView, null, {
+              /** 提供default插槽：根数组[Suspense节点（属性{suspensible: true}；插槽{default回调}）]。 */
               default: ({ Component }: any) => [
                 h(
                   Suspense,
                   { suspensible: true },
                   {
+                    /** 提供default插槽：Component节点。 */
                     default: () => h(Component),
                   },
                 ),
@@ -1256,12 +1331,15 @@ describe('Suspense', () => {
     )
 
     const Comp = {
+      /** 执行provide('route', route)。setup返回渲染函数：RouterView节点（null；插槽{default回调}）。 */
       setup() {
         provide('route', route)
         return () =>
           h(RouterView, null, {
+            /** 提供default插槽：根数组[Suspense节点（null；插槽{default回调}）]。 */
             default: ({ Component }: any) => [
               h(Suspense, null, {
+                /** 提供default插槽：Component节点。 */
                 default: () => h(Component),
               }),
             ],
@@ -1291,13 +1369,15 @@ describe('Suspense', () => {
     expect(serializeInner(root)).toBe(`<div>innerB2</div>`)
   })
 
-  // 测试场景：解析前分支切换到第三个分支。
+  /** 测试场景：One已展示，Two pending期间改Three；Two完成后仍One且无Two mounted，Three完成后展示Three并卸载One，验证pending代次丢弃。 */
   test('branch switch to 3rd branch before resolve', async () => {
     const calls: string[] = []
 
+    /** 接收name和delay，创建定时完成async setup并输出name div的fixture。mounted/unmounted把对应名字写calls，记录旧内容保留与最终替换。 */
     const makeComp = (name: string, delay = 0) =>
       defineAsyncComponent(
         {
+          /** 注册onMounted回调写入calls.push(`${name} mounted`)；onUnmounted回调写入calls.push(`${name} unmounted`)。setup返回渲染函数：'div'节点（根数组[name]）。 */
           setup() {
             onMounted(() => {
               calls.push(`${name} mounted`)
@@ -1318,6 +1398,7 @@ describe('Suspense', () => {
     const view = shallowRef(One)
 
     const Comp = {
+      /** setup返回渲染函数：Suspense节点（null；插槽{default: h(view.value)，fallback: h('div', 'fallback')}）。 */
       setup() {
         return () =>
           h(Suspense, null, {
@@ -1341,15 +1422,15 @@ describe('Suspense', () => {
     await nextTick()
     expect(deps.length).toBe(2)
 
-    // switch before two resolves
+    // Two 未完成时切换到 Three。
     view.value = Three
     await nextTick()
     expect(deps.length).toBe(3)
 
-    // dep for two resolves
+    // 等待被废弃的 Two 依赖完成。
     await deps[1]
     await nextTick()
-    // should still be on view one
+    // Two 的迟到恢复不会覆盖当前 One。
     expect(serializeInner(root)).toBe(`<div>one</div>`)
     expect(calls).toEqual([`one mounted`])
 
@@ -1359,13 +1440,15 @@ describe('Suspense', () => {
     expect(calls).toEqual([`one mounted`, `three mounted`, `one unmounted`])
   })
 
-  // 测试场景：解决前分支切换回来。
+  /** 测试场景：One已展示，Two pending期间切回One；依赖数不增加，Two迟到完成后仍One且仅one mounted记录，验证恢复活动分支。 */
   test('branch switch back before resolve', async () => {
     const calls: string[] = []
 
+    /** 接收name和delay，创建定时完成async setup并输出name div的fixture。mounted/unmounted把对应名字写calls，记录旧内容保留与最终替换。 */
     const makeComp = (name: string, delay = 0) =>
       defineAsyncComponent(
         {
+          /** 注册onMounted回调写入calls.push(`${name} mounted`)；onUnmounted回调写入calls.push(`${name} unmounted`)。setup返回渲染函数：'div'节点（根数组[name]）。 */
           setup() {
             onMounted(() => {
               calls.push(`${name} mounted`)
@@ -1385,6 +1468,7 @@ describe('Suspense', () => {
     const view = shallowRef(One)
 
     const Comp = {
+      /** setup返回渲染函数：Suspense节点（null；插槽{default: h(view.value)，fallback: h('div', 'fallback')}）。 */
       setup() {
         return () =>
           h(Suspense, null, {
@@ -1408,26 +1492,28 @@ describe('Suspense', () => {
     await nextTick()
     expect(deps.length).toBe(2)
 
-    // switch back before two resolves
+    // Two 未完成时切回活动 One。
     view.value = One
     await nextTick()
     expect(deps.length).toBe(2)
 
-    // dep for two resolves
+    // 等待被废弃的 Two 依赖完成。
     await deps[1]
     await nextTick()
-    // should still be on view one
+    // Two 的迟到恢复不会覆盖当前 One。
     expect(serializeInner(root)).toBe(`<div>one</div>`)
     expect(calls).toEqual([`one mounted`])
   })
 
-  // 测试场景：分支切换超时+回退。
+  /** 测试场景：One已展示后切20ms的Two，边界timeout10ms；先保留One，超时后展示fallback并卸载One，Two完成才展示Two并mounted。 */
   test('branch switch timeout + fallback', async () => {
     const calls: string[] = []
 
+    /** 接收name和delay，创建定时完成async setup并输出name div的fixture。mounted/unmounted把对应名字写calls，记录旧内容保留与最终替换。 */
     const makeComp = (name: string, delay = 0) =>
       defineAsyncComponent(
         {
+          /** 注册onMounted回调写入calls.push(`${name} mounted`)；onUnmounted回调写入calls.push(`${name} unmounted`)。setup返回渲染函数：'div'节点（根数组[name]）。 */
           setup() {
             onMounted(() => {
               calls.push(`${name} mounted`)
@@ -1447,6 +1533,7 @@ describe('Suspense', () => {
     const view = shallowRef(One)
 
     const Comp = {
+      /** setup返回渲染函数：Suspense节点（属性{timeout: 10}；插槽{default: h(view.value)，fallback: h('div', 'fallback')}）。 */
       setup() {
         return () =>
           h(
@@ -1488,11 +1575,13 @@ describe('Suspense', () => {
     expect(calls).toEqual([`one mounted`, `one unmounted`, `two mounted`])
   })
 
-  // 测试场景：挂载后备内容位于正确位置。
+  /** 测试场景：Suspense后有three兄弟，One→Two时timeout10ms；旧内容、fallback、新内容始终位于three前，验证超时替换保存插入锚点。 */
   test('mount the fallback content is in the correct position', async () => {
+    /** 接收name和delay，创建定时完成async setup并输出name div的fixture。返回组件定义，供与three兄弟比较边界插入位置。 */
     const makeComp = (name: string, delay = 0) =>
       defineAsyncComponent(
         {
+          /** setup返回渲染函数：'div'节点（根数组[name]）。 */
           setup() {
             return () => h('div', [name])
           },
@@ -1506,6 +1595,7 @@ describe('Suspense', () => {
     const view = shallowRef(One)
 
     const Comp = {
+      /** setup返回渲染函数：'div'节点（根数组[Suspense节点（属性{timeout: 10}；插槽{default: h(view.value)，fallback: h('div', 'fallback')}）、'div'节点（'three'）]）。 */
       setup() {
         return () =>
           h('div', [
@@ -1556,12 +1646,13 @@ describe('Suspense', () => {
   })
 
   // #2214
-  // Since suspense renders its own root like a component, it should not patch
-  // its content in optimized mode.
-  // 测试场景：在模板中使用时不应错过嵌套元素更新。
+  // Suspense 自行修补内容根，
+  // 内容 patch 不沿用外层 optimized 标志，避免漏掉嵌套动态节点。
+  /** 测试场景：编译模板Suspense内嵌div/span，n从1增2；span文本正常更新，验证边界内容不因外层优化标志漏patch。 */
   test('should not miss nested element updates when used in templates', async () => {
     const n = ref(1)
     const Comp = {
+      /** setup返回{n}。 */
       setup() {
         return { n }
       },
@@ -1581,16 +1672,19 @@ describe('Suspense', () => {
   })
 
   // #2215
-  // 测试场景：切换嵌套异步 setup 组件内部已解析的 suspense。
+  /** 测试场景：已resolve的同步Parent div内按toggle新增/移除async setup Child；新增后等待两tick出现child，移除恢复注释，验证已活动子树中新异步组件可单独恢复。 */
   test('toggling nested async setup component inside already resolved suspense', async () => {
     const toggle = ref(false)
     const Child = {
+      /** setup返回渲染函数：'div'节点（'child'）。 async返回Promise；即使没有await，返回值也需经Promise完成后使用。 */
       async setup() {
         return () => h('div', 'child')
       },
     }
+    /** 在固定div根内输出parent文本，并按toggle添加async Child；用来检查已resolve边界中新出现的异步后代。 */
     const Parent = () => h('div', ['parent', toggle.value ? h(Child) : null])
     const Comp = {
+      /** setup返回渲染函数：Suspense节点（渲染函数：Parent节点）。 */
       setup() {
         return () => h(Suspense, () => h(Parent))
       },
@@ -1601,11 +1695,11 @@ describe('Suspense', () => {
     expect(serializeInner(root)).toBe(`<div>parent<!----></div>`)
 
     toggle.value = true
-    // wait for flush
+    // 等待组件更新队列刷新。
     await nextTick()
-    // wait for child async setup resolve
+    // 再等待异步子 setup 恢复。
     await nextTick()
-    // child should be rendered now instead of stuck in limbo
+    // 异步子已恢复，实际内容应替换注释。
     expect(serializeInner(root)).toBe(`<div>parent<div>child</div></div>`)
 
     toggle.value = false
@@ -1613,15 +1707,17 @@ describe('Suspense', () => {
     expect(serializeInner(root)).toBe(`<div>parent<!----></div>`)
   })
 
-  // 测试场景：不在 Suspense 边界内时使用异步 setup 时发出警告。
+  /** 测试场景：普通Parent直接挂载async setup Child且无Suspense；检查必须嵌套边界的警告，只验证诊断信息。 */
   test('warn if using async setup when not in a Suspense boundary', () => {
     const Child = {
       name: 'Child',
+      /** setup返回渲染函数：'div'节点（'child'）。 async返回Promise；即使没有await，返回值也需经Promise完成后使用。 */
       async setup() {
         return () => h('div', 'child')
       },
     }
     const Parent = {
+      /** setup返回渲染函数：'div'节点（根数组[Child节点]）。 */
       setup() {
         return () => h('div', [h(Child)])
       },
@@ -1635,13 +1731,14 @@ describe('Suspense', () => {
     ).toHaveBeenWarned()
   })
 
-  // 测试场景：嵌套suspense，带悬浮。
+  /** 测试场景：异步外组件5ms、内组件10ms且子边界suspensible；外完成后父仍fallback，内完成一起提交；再切外/内分别保持旧可见内容至各次完成，检查mounted放行。 */
   test('nested suspense with suspensible', async () => {
     const calls: string[] = []
     let expected = ''
 
     const InnerA = defineAsyncComponent(
       {
+        /** 执行calls.push('innerA created')；注册onMounted回调写入calls.push('innerA mounted')。setup返回渲染函数：'div'节点（'innerA'）。 */
         setup: () => {
           calls.push('innerA created')
           onMounted(() => {
@@ -1655,6 +1752,7 @@ describe('Suspense', () => {
 
     const InnerB = defineAsyncComponent(
       {
+        /** 执行calls.push('innerB created')；注册onMounted回调写入calls.push('innerB mounted')。setup返回渲染函数：'div'节点（'innerB'）。 */
         setup: () => {
           calls.push('innerB created')
           onMounted(() => {
@@ -1668,6 +1766,7 @@ describe('Suspense', () => {
 
     const OuterA = defineAsyncComponent(
       {
+        /** 执行calls.push('outerA created')；注册onMounted回调写入calls.push('outerA mounted')。setup返回渲染函数：Fragment节点（null；根数组['div'节点（'outerA'）、slots.default?.()]）。 */
         setup: (_, { slots }: any) => {
           calls.push('outerA created')
           onMounted(() => {
@@ -1682,6 +1781,7 @@ describe('Suspense', () => {
 
     const OuterB = defineAsyncComponent(
       {
+        /** 执行calls.push('outerB created')；注册onMounted回调写入calls.push('outerB mounted')。setup返回渲染函数：Fragment节点（null；根数组['div'节点（'outerB'）、slots.default?.()]）。 */
         setup: (_, { slots }: any) => {
           calls.push('outerB created')
           onMounted(() => {
@@ -1707,11 +1807,13 @@ describe('Suspense', () => {
      *  </Suspense>
      */
     const Comp = {
+      /** setup返回渲染函数：Suspense节点（null；插槽{default: [ h(outerToggle.value ? OuterB : OuterA, null, { default: () => h( Suspense, { suspensible: true }, { default: h(innerToggle.value ? InnerB : InnerA), }, ), }), ]，fallback: h('div', 'fallback outer')}）。 */
       setup() {
         return () =>
           h(Suspense, null, {
             default: [
               h(outerToggle.value ? OuterB : OuterA, null, {
+                /** 提供default插槽：Suspense节点（属性{suspensible: true}；插槽{default: h(innerToggle.value ? InnerB : InnerA)}）。 */
                 default: () =>
                   h(
                     Suspense,
@@ -1732,14 +1834,14 @@ describe('Suspense', () => {
     render(h(Comp), root)
     expect(serializeInner(root)).toBe(expected)
 
-    // mount outer component
+    // 等待外层组件依赖完成。
     await Promise.all(deps)
     await nextTick()
 
     expect(serializeInner(root)).toBe(expected)
     expect(calls).toEqual([`outerA created`])
 
-    // mount inner component
+    // 等待内层组件依赖完成。
     await Promise.all(deps)
     await nextTick()
     expected = `<div>outerA</div><div>innerA</div>`
@@ -1752,7 +1854,7 @@ describe('Suspense', () => {
       'innerA mounted',
     ])
 
-    // toggle outer component
+    // 切换分支。 outer component
     calls.length = 0
     deps.length = 0
     outerToggle.value = true
@@ -1760,7 +1862,7 @@ describe('Suspense', () => {
 
     await Promise.all(deps)
     await nextTick()
-    expect(serializeInner(root)).toBe(expected) // expect not change
+    expect(serializeInner(root)).toBe(expected) // 等待期间可见内容保持不变。
 
     await Promise.all(deps)
     await nextTick()
@@ -1769,12 +1871,12 @@ describe('Suspense', () => {
     expect(calls).toContain('outerB mounted')
     expect(calls).toContain('innerA mounted')
 
-    // toggle inner component
+    // 切换分支。 inner component
     calls.length = 0
     deps.length = 0
     innerToggle.value = true
     await nextTick()
-    expect(serializeInner(root)).toBe(expected) // expect not change
+    expect(serializeInner(root)).toBe(expected) // 等待期间可见内容保持不变。
 
     await Promise.all(deps)
     await nextTick()
@@ -1784,12 +1886,13 @@ describe('Suspense', () => {
   })
 
   // #8206
-  // 测试场景：嵌套 suspense 具有可挂起且无异步依赖。
+  /** 测试场景：相同suspensible结构但组件全部同步；首次立即显示outerA+innerA、钩子按子后父执行；切外和内均正常更新，确认无异步依赖不滞留pending。 */
   test('nested suspense with suspensible & no async deps', async () => {
     const calls: string[] = []
     let expected = ''
 
     const InnerA = defineComponent({
+      /** 执行calls.push('innerA created')；注册onMounted回调写入calls.push('innerA mounted')。setup返回渲染函数：'div'节点（'innerA'）。 */
       setup: () => {
         calls.push('innerA created')
         onMounted(() => {
@@ -1800,6 +1903,7 @@ describe('Suspense', () => {
     })
 
     const InnerB = defineComponent({
+      /** 执行calls.push('innerB created')；注册onMounted回调写入calls.push('innerB mounted')。setup返回渲染函数：'div'节点（'innerB'）。 */
       setup: () => {
         calls.push('innerB created')
         onMounted(() => {
@@ -1810,6 +1914,7 @@ describe('Suspense', () => {
     })
 
     const OuterA = defineComponent({
+      /** 执行calls.push('outerA created')；注册onMounted回调写入calls.push('outerA mounted')。setup返回渲染函数：Fragment节点（null；根数组['div'节点（'outerA'）、slots.default?.()]）。 */
       setup: (_, { slots }: any) => {
         calls.push('outerA created')
         onMounted(() => {
@@ -1820,6 +1925,7 @@ describe('Suspense', () => {
     })
 
     const OuterB = defineComponent({
+      /** 执行calls.push('outerB created')；注册onMounted回调写入calls.push('outerB mounted')。setup返回渲染函数：Fragment节点（null；根数组['div'节点（'outerB'）、slots.default?.()]）。 */
       setup: (_, { slots }: any) => {
         calls.push('outerB created')
         onMounted(() => {
@@ -1842,11 +1948,13 @@ describe('Suspense', () => {
      *  </Suspense>
      */
     const Comp = defineComponent({
+      /** setup返回渲染函数：Suspense节点（null；插槽{default: [ h(outerToggle.value ? OuterB : OuterA, null, { default: () => h( Suspense, { suspensible: true }, { default: h(innerToggle.value ? InnerB : InnerA), }, ), }), ]，fallback: h('div', 'fallback outer')}）。 */
       setup() {
         return () =>
           h(Suspense, null, {
             default: [
               h(outerToggle.value ? OuterB : OuterA, null, {
+                /** 提供default插槽：Suspense节点（属性{suspensible: true}；插槽{default: h(innerToggle.value ? InnerB : InnerA)}）。 */
                 default: () =>
                   h(
                     Suspense,
@@ -1867,7 +1975,7 @@ describe('Suspense', () => {
     render(h(Comp), root)
     expect(serializeInner(root)).toBe(expected)
 
-    // mount outer component and inner component
+    // 等待外层组件依赖完成。 and inner component
     await Promise.all(deps)
     await nextTick()
 
@@ -1879,7 +1987,7 @@ describe('Suspense', () => {
       'outerA mounted',
     ])
 
-    // toggle outer component
+    // 切换分支。 outer component
     calls.length = 0
     deps.length = 0
     outerToggle.value = true
@@ -1892,7 +2000,7 @@ describe('Suspense', () => {
     expect(calls).toContain('outerB mounted')
     expect(calls).toContain('innerA mounted')
 
-    // toggle inner component
+    // 切换分支。 inner component
     calls.length = 0
     deps.length = 0
     innerToggle.value = true
@@ -1903,12 +2011,13 @@ describe('Suspense', () => {
   })
 
   //#8678
-  // 测试场景：嵌套 suspense（子 suspense 在父 suspense 解析之前更新）。
+  /** 测试场景：独立子边界不suspensible，父先完成时展示outerA+注释；同时切外/内后先展示outerB+注释，子完成才展示innerB，核对各边界分开提交。 */
   test('nested suspense (child suspense update before parent suspense resolve)', async () => {
     const calls: string[] = []
 
     const InnerA = defineAsyncComponent(
       {
+        /** 执行calls.push('innerA created')；注册onMounted回调写入calls.push('innerA mounted')。setup返回渲染函数：'div'节点（'innerA'）。 */
         setup: () => {
           calls.push('innerA created')
           onMounted(() => {
@@ -1922,6 +2031,7 @@ describe('Suspense', () => {
 
     const InnerB = defineAsyncComponent(
       {
+        /** 执行calls.push('innerB created')；注册onMounted回调写入calls.push('innerB mounted')。setup返回渲染函数：'div'节点（'innerB'）。 */
         setup: () => {
           calls.push('innerB created')
           onMounted(() => {
@@ -1935,6 +2045,7 @@ describe('Suspense', () => {
 
     const OuterA = defineAsyncComponent(
       {
+        /** 执行calls.push('outerA created')；注册onMounted回调写入calls.push('outerA mounted')。setup返回渲染函数：Fragment节点（null；根数组['div'节点（'outerA'）、slots.default?.()]）。 */
         setup: (_, { slots }: any) => {
           calls.push('outerA created')
           onMounted(() => {
@@ -1949,6 +2060,7 @@ describe('Suspense', () => {
 
     const OuterB = defineAsyncComponent(
       {
+        /** 执行calls.push('outerB created')；注册onMounted回调写入calls.push('outerB mounted')。setup返回渲染函数：Fragment节点（null；根数组['div'节点（'outerB'）、slots.default?.()]）。 */
         setup: (_, { slots }: any) => {
           calls.push('outerB created')
           onMounted(() => {
@@ -1974,11 +2086,13 @@ describe('Suspense', () => {
      *  </Suspense>
      */
     const Comp = {
+      /** setup返回渲染函数：Suspense节点（null；插槽{default: [ h(outerToggle.value ? OuterB : OuterA, null, { default: () => h(Suspense, null, { default: h(innerToggle.value ? InnerB : InnerA), }), }), ]，fallback: h('div', 'fallback outer')}）。 */
       setup() {
         return () =>
           h(Suspense, null, {
             default: [
               h(outerToggle.value ? OuterB : OuterA, null, {
+                /** 提供default插槽：Suspense节点（null；插槽{default: h(innerToggle.value ? InnerB : InnerA)}）。 */
                 default: () =>
                   h(Suspense, null, {
                     default: h(innerToggle.value ? InnerB : InnerA),
@@ -1994,14 +2108,14 @@ describe('Suspense', () => {
     render(h(Comp), root)
     expect(serializeInner(root)).toBe(`<div>fallback outer</div>`)
 
-    // mount outer component
+    // 等待外层组件依赖完成。
     await Promise.all(deps)
     await nextTick()
 
     expect(serializeInner(root)).toBe(`<div>outerA</div><!---->`)
     expect(calls).toEqual([`outerA created`, `outerA mounted`])
 
-    // mount inner component
+    // 等待内层组件依赖完成。
     await Promise.all(deps)
     await nextTick()
     expect(serializeInner(root)).toBe(`<div>outerA</div><div>innerA</div>`)
@@ -2016,7 +2130,7 @@ describe('Suspense', () => {
     calls.length = 0
     deps.length = 0
 
-    // toggle both outer and inner components
+    // 切换分支。 both outer and inner components
     outerToggle.value = true
     innerToggle.value = true
     await nextTick()
@@ -2029,7 +2143,7 @@ describe('Suspense', () => {
     await nextTick()
     expect(serializeInner(root)).toBe(`<div>outerB</div><div>innerB</div>`)
 
-    // innerB only mount once
+    // innerB mounted 只登记一次。
     expect(calls).toEqual([
       'outerB created',
       'outerB mounted',
@@ -2039,14 +2153,16 @@ describe('Suspense', () => {
   })
 
   // #6416
-  // 测试场景：KeepAlive与Suspense。
+  /** 测试场景：KeepAlive包裹Suspense，异步默认未完成先切同步分支；切回异步时保留sync至resolve，再切sync正常显示，核对缓存和边界切换。 */
   test('KeepAlive with Suspense', async () => {
     const Async = defineAsyncComponent({
+      /** 渲染'div'节点（'async'）。 */
       render() {
         return h('div', 'async')
       },
     })
     const Sync = {
+      /** 渲染'div'节点（'sync'）。 */
       render() {
         return h('div', 'sync')
       },
@@ -2055,8 +2171,10 @@ describe('Suspense', () => {
     const viewRef = ref(0)
     const root = nodeOps.createElement('div')
     const App = {
+      /** 渲染KeepAlive节点（null；插槽{default回调}）。 */
       render() {
         return h(KeepAlive, null, {
+          /** 提供default插槽：Suspense节点（null；插槽{default: h(components[viewRef.value])，fallback: h('div', 'Loading-dynamic-components')}）。 */
           default: () => {
             return h(Suspense, null, {
               default: h(components[viewRef.value]),
@@ -2080,25 +2198,27 @@ describe('Suspense', () => {
 
     await Promise.all(deps)
     await nextTick()
-    // when async resolve,it should be <div>async</div>
+    // 异步依赖完成后显示 async div。
     expect(serializeInner(root)).toBe('<div>async</div>')
 
     viewRef.value = 1
     await nextTick()
-    // TypeError: Cannot read properties of null (reading 'parentNode')
-    // This has been fixed
+    // 回归检查：切回缓存内容不因空 host el 读取 parentNode 而抛错。
+    // 后续切换正常完成。
     expect(serializeInner(root)).toBe(`<div>sync</div>`)
   })
 
   // #10899 / #11427
-  // 测试场景：KeepAlive + Suspense 在分支解析之前切换。
+  /** 测试场景：KeepAlive max=1包裹Suspense，在Async1首次pending时切Async2；完成后只显示Async2，再往返两异步分支均显示所选内容，验证容量淘汰不破坏待定边界。 */
   test('KeepAlive + Suspense switch before branch resolves', async () => {
     const Async1 = defineAsyncComponent({
+      /** 渲染'div'节点（'async1'）。 */
       render() {
         return h('div', 'async1')
       },
     })
     const Async2 = defineAsyncComponent({
+      /** 渲染'div'节点（'async2'）。 */
       render() {
         return h('div', 'async2')
       },
@@ -2107,6 +2227,7 @@ describe('Suspense', () => {
     const viewRef = ref(0)
     const root = nodeOps.createElement('div')
     const App = {
+      /** 渲染KeepAlive节点（属性{max: 1}；插槽{default回调}）。 */
       render() {
         return h(
           KeepAlive,
@@ -2114,6 +2235,7 @@ describe('Suspense', () => {
             max: 1,
           },
           {
+            /** 提供default插槽：Suspense节点（null；插槽{default: h(components[viewRef.value])，fallback: h('div', 'loading')}）。 */
             default: () => {
               return h(Suspense, null, {
                 default: h(components[viewRef.value]),
@@ -2127,7 +2249,7 @@ describe('Suspense', () => {
     render(h(App), root)
     expect(serializeInner(root)).toBe(`<div>loading</div>`)
 
-    // switch to Async2 before Async1 resolves
+    // Async1 未完成时改为 Async2。
     viewRef.value = 1
     await nextTick()
     expect(serializeInner(root)).toBe(`<div>loading</div>`)
@@ -2147,17 +2269,20 @@ describe('Suspense', () => {
     expect(serializeInner(root)).toBe(`<div>async2</div>`)
   })
 
-  // 测试场景：KeepAlive + Suspense + 注释 slot。
+  /** 测试场景：KeepAlive内Suspense初始default为v-if注释；打开异步组件并等待依赖后显示async1，确认注释分支向可缓存内容切换。 */
   test('KeepAlive + Suspense + comment slot', async () => {
     const toggle = ref(false)
     const Async = defineAsyncComponent({
+      /** 渲染'div'节点（'async1'）。 */
       render() {
         return h('div', 'async1')
       },
     })
     const App = {
+      /** 渲染KeepAlive节点（null；插槽{default回调}）。 */
       render() {
         return h(KeepAlive, null, {
+          /** 提供default插槽：Suspense节点（null；插槽{default: toggle.value ? h(Async) : createCommentVNode('v-if')}）。 */
           default: () => {
             return h(Suspense, null, {
               default: toggle.value ? h(Async) : createCommentVNode('v-if'),
@@ -2177,19 +2302,21 @@ describe('Suspense', () => {
     expect(serializeInner(root)).toBe(`<div>async1</div>`)
   })
 
-  // #6416 follow up / #10017
-  // 测试场景：Suspense 在 HOC 异步组件重新挂载期间修补。
+  // #6416 的后续回归 / #10017
+  /** 测试场景：Suspense根为HOC Comp，异步子先resolve再修改key强制重挂，随后更新透传data；用例仅断言初始注释并要求整个更新流程不抛错，未断言最终DOM。 */
   test('Suspense patched during HOC async component re-mount', async () => {
     const key = ref('k')
     const data = ref('data')
 
     const Async = defineAsyncComponent({
+      /** 渲染'div'节点（'async'）。 */
       render() {
         return h('div', 'async')
       },
     })
 
     const Comp = {
+      /** 渲染Async节点（属性{key: key.value}）。 */
       render() {
         return h(Async, { key: key.value })
       },
@@ -2197,6 +2324,7 @@ describe('Suspense', () => {
 
     const root = nodeOps.createElement('div')
     const App = {
+      /** 渲染Suspense节点（null；插槽{default: h(Comp, { k: key.value, data: data.value })}）。 */
       render() {
         return h(Suspense, null, {
           default: h(Comp, { k: key.value, data: data.value }),
@@ -2208,24 +2336,25 @@ describe('Suspense', () => {
 
     await Promise.all(deps)
 
-    // async mounted, but key change causing a new async comp to be loaded
+    // 原异步内容已挂载，key 变化建立新的异步实例。
     key.value = 'k1'
     await nextTick()
 
-    // patch the Suspense
-    // should not throw error due to Suspense vnode.el being null
+    // 再次 patch 尚在等待的 Suspense。
+    // 不得因边界 VNode.el 暂未提交而读取空宿主抛错。
     data.value = 'data2'
     await Promise.all(deps)
   })
 
   // #12920
-  // 测试场景：异步子级（带有defineAsyncComponent）自触发更新后卸载Suspense。
+  /** 测试场景：公共异步wrapper加载的子组件mounted自切keyed根show→hidden；刷新后关闭外Suspense，只留下v-if注释，验证最新host el用于移除。 */
   test('unmount Suspense after async child (with defineAsyncComponent) self-triggered update', async () => {
     const Comp = defineComponent({
+      /** 建立show=ref(true)；注册onMounted回调写入show.value=!show.value。setup返回渲染函数：show.value决定openBlock(), createElementBlock('div', { key: 0 }, 'show')或openBlock(), createElementBlock('div', { key: 1 }, 'hidden')。 */
       setup() {
         const show = ref(true)
         onMounted(() => {
-          // trigger update
+          // 触发响应式更新。
           show.value = !show.value
         })
         return () =>
@@ -2246,6 +2375,7 @@ describe('Suspense', () => {
     const toggle = ref(true)
     const root = nodeOps.createElement('div')
     const App = {
+      /** 渲染openBlock(), createElementBlock( Fragment, null, [ h('h1', null, toggle.value), toggle.value ? (openBlock(), createBlock( Suspense, { key: 0 }, { default: h(AsyncComp), }, )) : createCommentVNode('v-if', true), ], PatchFlags.STABLE_FRAGMENT, )。 */
       render() {
         return (
           openBlock(),
@@ -2281,24 +2411,25 @@ describe('Suspense', () => {
     await nextTick()
     expect(serializeInner(root)).toBe(`<h1>true</h1><div>hidden</div>`)
 
-    // unmount suspense
+    // 关闭外层 Suspense。
     toggle.value = false
     await Promise.all(deps)
     await nextTick()
     expect(serializeInner(root)).toBe(`<h1>true</h1><!--v-if-->`)
   })
 
-  // 测试场景：异步子级（带有异步setup）自触发更新后卸载Suspense。
+  /** 测试场景：async setup子组件mounted自切keyed根show→hidden；resolve后直接显示hidden，关闭外Suspense只留下v-if注释，确认异步setup路径host el同步。 */
   test('unmount Suspense after async child (with async setup) self-triggered update', async () => {
     const AsyncComp = defineComponent({
+      /** 建立show=ref(true)；执行deps.push(p.then(() => Promise.resolve()))；注册onMounted回调写入show.value=!show.value。setup返回渲染函数：show.value决定openBlock(), createElementBlock('div', { key: 0 }, 'show')或openBlock(), createElementBlock('div', { key: 1 }, 'hidden')。 async返回Promise；即使没有await，返回值也需经Promise完成后使用。 */
       async setup() {
         const show = ref(true)
         onMounted(() => {
-          // trigger update
+          // 触发响应式更新。
           show.value = !show.value
         })
         const p = new Promise(r => setTimeout(r, 1))
-        // extra tick needed for Node 12+
+        // 多一轮微任务等待 setup 恢复与边界提交。
         deps.push(p.then(() => Promise.resolve()))
         return () =>
           show.value
@@ -2310,6 +2441,7 @@ describe('Suspense', () => {
     const toggle = ref(true)
     const root = nodeOps.createElement('div')
     const App = {
+      /** 渲染openBlock(), createElementBlock( Fragment, null, [ h('h1', null, toggle.value), toggle.value ? (openBlock(), createBlock( Suspense, { key: 0 }, { default: h(AsyncComp), }, )) : createCommentVNode('v-if', true), ], PatchFlags.STABLE_FRAGMENT, )。 */
       render() {
         return (
           openBlock(),
@@ -2341,16 +2473,17 @@ describe('Suspense', () => {
     await nextTick()
     expect(serializeInner(root)).toBe(`<h1>true</h1><div>hidden</div>`)
 
-    // unmount suspense
+    // 关闭外层 Suspense。
     toggle.value = false
     await Promise.all(deps)
     await nextTick()
     expect(serializeInner(root)).toBe(`<h1>true</h1><!--v-if-->`)
   })
 
-  // 测试场景：异步子自触发更新后通过 Suspense 之上的包装器组件传播主机 el。
+  /** 测试场景：Outer→Inner→Suspense→async Child，Child mounted自切根key；完成后Suspense、Inner、Outer VNode.el均指当前hidden div，验证宿主引用向HOC链传播。 */
   test('propagates host el through wrapper components above Suspense after async child self-triggered update', async () => {
     const AsyncComp = defineComponent({
+      /** 建立show=ref(true)；执行deps.push(p.then(() => Promise.resolve()))；注册onMounted回调写入show.value=false。setup返回渲染函数：'div'节点（属性{key: show.value ? 'show' : 'hidden'}；show.value决定'show'或'hidden'）。 async返回Promise；即使没有await，返回值也需经Promise完成后使用。 */
       async setup() {
         const show = ref(true)
         onMounted(() => {
@@ -2368,14 +2501,17 @@ describe('Suspense', () => {
     })
 
     const Inner = defineComponent({
+      /** 渲染Suspense节点（null；插槽{default回调}）。 */
       render() {
         return h(Suspense, null, {
+          /** 提供default插槽：AsyncComp节点。 */
           default: () => h(AsyncComp),
         })
       },
     })
 
     const Outer = defineComponent({
+      /** 渲染Inner节点。 */
       render() {
         return h(Inner)
       },
@@ -2399,17 +2535,19 @@ describe('Suspense', () => {
     expect(vnode.el).toBe(renderedEl)
   })
 
-  // 测试场景：应该在 suspense 解析后挂载。
+  /** 测试场景：pending默认div含Async和Teleport；初始fallback且target空，依赖完成并刷新后主树提交双锚点、target才出现teleported，检查远端挂载排队。 */
   test('should mount after suspense is resolved', async () => {
     const target = nodeOps.createElement('div')
 
     const Async = defineAsyncComponent({
+      /** 渲染'div'节点（'async'）。 */
       render() {
         return h('div', 'async')
       },
     })
 
     const Comp = {
+      /** setup返回渲染函数：Suspense节点（null；插槽{default: h('div', null, [ h(Async), h(Teleport, { to: target }, h('div', 'teleported')), ])，fallback: h('div', 'fallback')}）。 */
       setup() {
         return () =>
           h(Suspense, null, {
@@ -2435,18 +2573,20 @@ describe('Suspense', () => {
     expect(serializeInner(target)).toBe(`<div>teleported</div>`)
   })
 
-  // 测试场景：应该在解决 suspense 之前修补 teleport。
+  /** 测试场景：pending默认div内Teleport文本one改two；等待期间target空，resolve后仅挂最新two，验证延迟远端patch使用最新VNode。 */
   test('should patch teleport before suspense is resolved', async () => {
     const target = nodeOps.createElement('div')
     const text = ref('one')
 
     const Async = defineAsyncComponent({
+      /** 渲染'div'节点（'async'）。 */
       render() {
         return h('div', 'async')
       },
     })
 
     const Comp = {
+      /** setup返回渲染函数：Suspense节点（null；插槽{default: h('div', null, [ h(Async), h(Teleport, { to: target }, h('div', text.value)), ])，fallback: h('div', 'fallback')}）。 */
       setup() {
         return () =>
           h(Suspense, null, {
@@ -2477,18 +2617,20 @@ describe('Suspense', () => {
     expect(serializeInner(target)).toBe(`<div>two</div>`)
   })
 
-  // 测试场景：应该在解决 suspense 之前处理禁用的 teleport 更新。
+  /** 测试场景：pending期间将Teleport disabled false改true；resolve后child挂在主锚点间而target保持空，确认延迟挂载采用最新disabled和已提交容器。 */
   test('should handle disabled teleport updates before suspense is resolved', async () => {
     const target = nodeOps.createElement('div')
     const disabled = ref(false)
 
     const Async = defineAsyncComponent({
+      /** 渲染'div'节点（'async'）。 */
       render() {
         return h('div', 'async')
       },
     })
 
     const Comp = {
+      /** setup返回渲染函数：Suspense节点（null；插槽{default: h('div', null, [ h(Async), h( Teleport, { to: target, disabled: disabled.value }, h('div', 'teleported'), ), ])，fallback: h('div', 'fallback')}）。 */
       setup() {
         return () =>
           h(Suspense, null, {
@@ -2523,18 +2665,20 @@ describe('Suspense', () => {
     expect(serializeInner(target)).toBe(``)
   })
 
-  // 测试场景：suspense 解析后不应挂载废弃的 teleport。
+  /** 测试场景：pending期间从默认children移除Teleport；resolve后仅保留Async，target始终空，确认废弃远端挂载任务被跳过。 */
   test('should not mount discarded teleport after suspense is resolved', async () => {
     const target = nodeOps.createElement('div')
     const showTeleport = ref(true)
 
     const Async = defineAsyncComponent({
+      /** 渲染'div'节点（'async'）。 */
       render() {
         return h('div', 'async')
       },
     })
 
     const Comp = {
+      /** setup返回渲染函数：Suspense节点（null；插槽{default: h('div', null, children)，fallback: h('div', 'fallback')}）。 */
       setup() {
         return () => {
           const children = [h(Async)]
@@ -2566,24 +2710,27 @@ describe('Suspense', () => {
   })
 
   // #14876
-  // 测试场景：在解析 suspense 后不应将废弃的 teleport 与子组件一起挂载。
+  /** 测试场景：pending期间移除带Inner组件的Teleport；resolve后主树仅Async、target空，确认未挂载组件子树不会被迟到任务提交。 */
   test('should not mount discarded teleport with component child after suspense is resolved', async () => {
     const target = nodeOps.createElement('div')
     const showTeleport = ref(true)
 
     const Async = defineAsyncComponent({
+      /** 渲染'div'节点（'async'）。 */
       render() {
         return h('div', 'async')
       },
     })
 
     const Inner = {
+      /** 渲染'div'节点（'inner'）。 */
       render() {
         return h('div', 'inner')
       },
     }
 
     const Comp = {
+      /** setup返回渲染函数：Suspense节点（null；插槽{default: h('div', null, children)，fallback: h('div', 'fallback')}）。 */
       setup() {
         return () => {
           const children = [h(Async)]
@@ -2614,19 +2761,21 @@ describe('Suspense', () => {
     expect(serializeInner(target)).toBe(``)
   })
 
-  // 测试场景：解决 suspense 后不应处理丢弃的禁用 teleport 更新。
+  /** 测试场景：pending期间先禁用Teleport再将其移除；resolve后主树仅Async、target空，验证废弃本地挂载更新也不执行。 */
   test('should not process discarded disabled teleport update after suspense is resolved', async () => {
     const target = nodeOps.createElement('div')
     const showTeleport = ref(true)
     const disabled = ref(false)
 
     const Async = defineAsyncComponent({
+      /** 渲染'div'节点（'async'）。 */
       render() {
         return h('div', 'async')
       },
     })
 
     const Comp = {
+      /** setup返回渲染函数：Suspense节点（null；插槽{default: h('div', null, children)，fallback: h('div', 'fallback')}）。 */
       setup() {
         return () => {
           const children = [h(Async)]
@@ -2669,19 +2818,21 @@ describe('Suspense', () => {
   })
 
   // #14701
-  // 测试场景：在 suspense 内移动禁用的 teleport 和子组件时不应崩溃。
+  /** 测试场景：异步组件返回普通div+禁用Teleport的多根Fragment，Teleport子是组件；resolve搬运后主树含content和锚点间comp div，验证尚未挂载子组件时移动不崩溃。 */
   test('should not crash when moving disabled teleport with component children inside suspense', async () => {
     const target = nodeOps.createElement('div')
 
     const Comp = {
+      /** 渲染'div'节点（'comp'）。 */
       render() {
         return h('div', 'comp')
       },
     }
 
     const Async = defineAsyncComponent({
+      /** 渲染根数组['div'节点（'content'）、Teleport节点（属性{to: target，disabled: true}；Comp节点）]。 */
       render() {
-        // Multi-root fragment: element + disabled teleport with component child
+        // 多根 Fragment：普通元素，加含组件子节点的禁用 Teleport。
         return [
           h('div', 'content'),
           h(Teleport, { to: target, disabled: true }, h(Comp)),
@@ -2708,11 +2859,12 @@ describe('Suspense', () => {
   })
 
   //#11617
-  // 测试场景：在解析之前更新异步组件，然后再次更新。
+  /** 测试场景：App mounted将同步Dummy换Parent，Parent mounted先设loading=true、定时改false；异步Child的onUpdated最终记录[true,false]，断言位于延迟挂载回调内，用例主体不等待该定时器。 */
   test('update async component before resolve then update again', async () => {
     const arr: boolean[] = []
     const Child = {
       props: ['loading'],
+      /** 注册onUpdated回调写入arr.push(props.loading)。setup返回渲染函数：'div'节点（null；loading决定'1'或'2'）。 async返回Promise，等待1后完成。 */
       async setup(props: any) {
         onUpdated(() => {
           arr.push(props.loading)
@@ -2726,8 +2878,10 @@ describe('Suspense', () => {
     }
 
     const Parent = defineComponent({
+      /** 建立loading=false，注册异步onMounted：先设true，等待delay(1000)再设false，并在更新后断言onUpdated记录[true,false]；返回读取loading的Child渲染函数。 */
       setup() {
         const loading = ref(false)
+        /** 返回delayInms毫秒后完成的Promise，延后把loading由true改false，制造两轮异步子更新。 */
         const delay = (delayInms: any) => {
           return new Promise(resolve => setTimeout(resolve, delayInms))
         }
@@ -2748,6 +2902,7 @@ describe('Suspense', () => {
       props: {
         name: { type: Object },
       },
+      /** setup返回渲染函数：name节点。 */
       setup(props: any) {
         return () => {
           const name = props.name
@@ -2756,8 +2911,10 @@ describe('Suspense', () => {
       },
     }
     const App = {
+      /** 建立flag=shallowRef(Dummy)；注册onMounted回调写入flag.value=Parent。setup返回渲染函数：Suspense节点（null；插槽{default回调}）。 */
       setup() {
         const Dummy = {
+          /** setup返回渲染函数：'div'节点（null；'dummy'）。 */
           setup() {
             return () => {
               return h('div', null, 'dummy')
@@ -2772,6 +2929,7 @@ describe('Suspense', () => {
         })
         return () => {
           return h(Suspense, null, {
+            /** 提供default插槽：RouterView节点（属性{name: flag.value}）。 */
             default: () => h(RouterView, { name: flag.value }),
           })
         }
@@ -2784,17 +2942,20 @@ describe('Suspense', () => {
   })
 
   // #13453
-  // 测试场景：在修补期间添加新的异步依赖项。
+  /** 测试场景：按types注册keyed边界，先展示A；追加B后异步间隔移除A，B仍pending时重新patch其插槽，等待依赖后展示B，验证patch新异步依赖不会丢登记。 */
   test('add new async deps during patching', async () => {
+    /** 按type返回新建的A或B异步fixture，setup完成后输出对应文本div；每次调用生成新类型，用于pending边界再次patch的依赖登记。 */
     const getComponent = (type: string) => {
       if (type === 'A') {
         return defineAsyncComponent({
+          /** setup返回渲染函数：'div'节点（'A'）。 */
           setup() {
             return () => h('div', 'A')
           },
         })
       }
       return defineAsyncComponent({
+        /** setup返回渲染函数：'div'节点（'B'）。 */
         setup() {
           return () => h('div', 'B')
         },
@@ -2802,20 +2963,23 @@ describe('Suspense', () => {
     }
 
     const types = ref(['A'])
+    /** 把B加入types列表，async返回让调用方在移除A之前经历一个调度间隔，制造新边界的pending更新。 */
     const add = async () => {
       types.value.push('B')
     }
 
+    /** 先异步追加B再移除A，让B在尚pending时被再次patch，供依赖登记回归断言。 */
     const update = async () => {
-      // mount Suspense B
-      // [Suspense A] -> [Suspense A(pending), Suspense B(pending)]
+      // 追加 B，让其边界进入 pending。
+      // 列表由 A 扩为 A 与 pending B。
       await add()
-      // patch Suspense B (still pending)
-      // [Suspense A(pending), Suspense B(pending)] -> [Suspense B(pending)]
+      // 移除 A 后，再 patch 仍 pending 的 B。
+      // 列表缩为 B，插槽重新创建异步组件类型。
       types.value.shift()
     }
 
     const Comp = {
+      /** 渲染Fragment节点（null；根数组[renderList(types.value, type => { return h( Suspense, { key: type }, { default: () => [ renderSlot(this.$slots, 'default', { type: type }), ], }, ) })]）。 */
       render(this: any) {
         return h(Fragment, null, [
           renderList(types.value, type => {
@@ -2823,6 +2987,7 @@ describe('Suspense', () => {
               Suspense,
               { key: type },
               {
+                /** 提供default插槽：根数组[renderSlot(this.$slots, 'default', { type: type })]。 */
                 default: () => [
                   renderSlot(this.$slots, 'default', { type: type }),
                 ],
@@ -2834,9 +2999,11 @@ describe('Suspense', () => {
     }
 
     const App = {
+      /** setup返回渲染函数：Comp节点（null；插槽{default回调}）。 */
       setup() {
         return () =>
           h(Comp, null, {
+            /** 提供default插槽：根数组[getComponent(params.type)节点]。 */
             default: (params: any) => [h(getComponent(params.type))],
           })
       },
@@ -2851,22 +3018,24 @@ describe('Suspense', () => {
 
     update()
     await nextTick()
-    // wait for both A and B to resolve
+    // 等待本轮记录的依赖恢复。
     await Promise.all(deps)
-    // wait for new B to resolve
+    // 再等待 B 在 patch 中新登记的依赖。
     await Promise.all(deps)
     expect(serializeInner(root)).toBe(`<div>B</div>`)
   })
 
   // 测试组：Suspense 结构或用法不合法时的开发期警告。
   describe('warnings', () => {
-    // base function to check if a combination of slots warns or not
+    // 挂载给定插槽组合并按参数核对结构警告。
+    /** 挂载给定default/fallback原始插槽与边界props，shouldWarn决定断言single-root警告出现还是缺席，供空值、单根和多根正规化复用。 */
     function baseCheckWarn(
       shouldWarn: boolean,
       children: RawSlots,
       props: SuspenseProps | null = null,
     ) {
       const Comp = {
+        /** setup返回渲染函数：Suspense节点（props；children）。 */
         setup() {
           return () => h(Suspense, props, children)
         },
@@ -2884,11 +3053,13 @@ describe('Suspense', () => {
       }
     }
 
-    // actual function that we use in tests
+    // 固定 shouldWarn 参数，生成两个调用入口。
+    /** 固定shouldWarn=true的绑定函数，挂载给定slots并要求single-root警告。 */
     const checkWarn = baseCheckWarn.bind(null, true)
+    /** 固定shouldWarn=false的绑定函数，挂载给定slots并要求没有single-root警告。 */
     const checkNoWarn = baseCheckWarn.bind(null, false)
 
-    // 测试场景：不警告独生子女。
+    /** 测试场景：default/fallback各传一个div；共享helper挂载并检查无single-root结构警告，验证单根正规化。 */
     test('does not warn on single child', async () => {
       checkNoWarn({
         default: h('div'),
@@ -2896,7 +3067,7 @@ describe('Suspense', () => {
       })
     })
 
-    // 测试场景：不对 null 发出警告。
+    /** 测试场景：default/fallback直接传null；共享helper挂载且无single-root警告，验证空插槽可正规化为注释。 */
     test('does not warn on null', async () => {
       checkNoWarn({
         default: null,
@@ -2904,30 +3075,33 @@ describe('Suspense', () => {
       })
     })
 
-    // 测试场景：<component :is="null" /> 上不发出警告。
+    /** 测试场景：default函数返回resolveDynamicComponent(null)、fallback函数返回null；挂载无single-root警告，验证空动态组件的占位正规化。 */
     test('does not warn on <component :is="null" />', async () => {
       checkNoWarn({
+        /** 提供default插槽：根数组[resolveDynamicComponent(null)]。 */
         default: () => [resolveDynamicComponent(null)],
+        /** 提供fallback插槽：null。 */
         fallback: () => null,
       })
     })
 
-    // 测试场景：不对空数组发出警告。
+    /** 测试场景：default直接空数组、fallback函数返回空数组；挂载无single-root警告，确认空children按空根处理。 */
     test('does not warn on empty array', async () => {
       checkNoWarn({
         default: [],
+        /** 提供fallback插槽：根数组[]。 */
         fallback: () => [],
       })
     })
 
-    // 测试场景：默认情况下对多个子项发出警告。
+    /** 测试场景：default传两个div；共享helper检查slots expect a single root node警告，验证默认插槽多根诊断。 */
     test('warns on multiple children in default', async () => {
       checkWarn({
         default: [h('div'), h('div')],
       })
     })
 
-    // 测试场景：fallback slot 返回多个根 children 时给出结构警告。
+    /** 测试场景：default单div而fallback双div；挂载同一single-root警告，验证后备插槽也受根约束。 */
     test('warns on multiple children in fallback', async () => {
       checkWarn({
         default: h('div'),
@@ -2936,10 +3110,11 @@ describe('Suspense', () => {
     })
 
     // #13559
-    // 测试场景：用 v-for 渲染 Suspense 中的多个异步组件并更新项目更改。
+    /** 测试场景：Fragment按key映射三个异步组件，全部resolve后显示111/222/333；整批替换items/key后等待新依赖，显示444/555/666，验证列表更新。 */
     test('renders multiple async components in Suspense with v-for and updates on items change', async () => {
       const CompAsyncSetup = defineAsyncComponent({
         props: ['item'],
+        /** 渲染'div'节点（ctx.item.name）。 */
         render(ctx: any) {
           return h('div', ctx.item.name)
         },
@@ -2952,9 +3127,11 @@ describe('Suspense', () => {
       ])
 
       const Comp = {
+        /** setup返回渲染函数：Suspense节点（null；插槽{default回调}）。 */
         setup() {
           return () =>
             h(Suspense, null, {
+              /** 提供default插槽：Fragment节点（null；items.value.map(item => h(CompAsyncSetup, { item, key: item.id }), )）。 */
               default: () =>
                 h(
                   Fragment,
@@ -2989,10 +3166,11 @@ describe('Suspense', () => {
     })
 
     // #14173
-    // 测试场景：带有 v-for 的嵌套异步组件 + 仅 Suspense 和异步组件包装器。
+    /** 测试场景：外列表每项经普通/异步wrapper进入内Suspense列表；分别替换外id和内items，三轮结果按外id×内name输出9节点，验证嵌套无元素包装链的host/锚点更新。 */
     test('nested async components with v-for + only Suspense and async component wrappers', async () => {
       const CompAsyncSetup = defineAsyncComponent({
         props: ['item', 'id'],
+        /** 渲染'div'节点（ctx.id + '-' + ctx.item.name）。 */
         render(ctx: any) {
           return h('div', ctx.id + '-' + ctx.item.name)
         },
@@ -3004,9 +3182,11 @@ describe('Suspense', () => {
       ])
       const Comp = {
         props: ['id'],
+        /** setup返回渲染函数：Suspense节点（null；插槽{default回调}）。 */
         setup(props: any) {
           return () =>
             h(Suspense, null, {
+              /** 提供default插槽：Fragment节点（null；items.value.map(item => h(CompAsyncSetup, { item, key: item.id, id: props.id, }), )）。 */
               default: () =>
                 h(
                   Fragment,
@@ -3025,12 +3205,14 @@ describe('Suspense', () => {
 
       const CompAsyncWrapper = defineAsyncComponent({
         props: ['id'],
+        /** 渲染Comp节点（属性{id: ctx.id}）。 */
         render(ctx: any) {
           return h(Comp, { id: ctx.id })
         },
       })
       const CompWrapper = defineComponent({
         props: ['id'],
+        /** 渲染CompAsyncWrapper节点（属性{id: ctx.id}）。 */
         render(ctx: any) {
           return h(CompAsyncWrapper, { id: ctx.id })
         },
@@ -3038,9 +3220,11 @@ describe('Suspense', () => {
       const list = ref([{ id: 1 }, { id: 2 }, { id: 3 }])
 
       const App = {
+        /** setup返回渲染函数：Suspense节点（null；插槽{default回调}）。 */
         setup() {
           return () =>
             h(Suspense, null, {
+              /** 提供default插槽：Fragment节点（null；list.value.map(item => h(CompWrapper, { id: item.id, key: item.id }), )）。 */
               default: () =>
                 h(
                   Fragment,
@@ -3084,14 +3268,16 @@ describe('Suspense', () => {
       )
     })
 
-    // 测试场景：当回退被解析的异步组件替换时应该调用一次未挂载的指令。
+    /** 测试场景：fallback div绑定unmounted指令，默认异步Foo再包Comp；全部resolve并刷新后指令unmounted恰一次，避免替换后备内容时重复卸载。 */
     test('should call unmounted directive once when fallback is replaced by resolved async component', async () => {
       const Comp = {
+        /** 渲染'div'节点（null；'comp'）。 */
         render() {
           return h('div', null, 'comp')
         },
       }
       const Foo = defineAsyncComponent({
+        /** 渲染Comp节点。 */
         render() {
           return h(Comp)
         },
@@ -3103,10 +3289,13 @@ describe('Suspense', () => {
         unmounted,
       }
       const App = {
+        /** setup返回渲染函数：Suspense节点（null；插槽{fallback回调，default回调}）。 */
         setup() {
           return () => {
             return h(Suspense, null, {
+              /** 提供fallback插槽：withDirectives(h('div'), [[vDir, true]])。 */
               fallback: () => withDirectives(h('div'), [[vDir, true]]),
+              /** 提供default插槽：Foo节点。 */
               default: () => h(Foo),
             })
           }
@@ -3121,15 +3310,16 @@ describe('Suspense', () => {
     })
   })
 
-  // 测试组：带有顶级等待的异步setup。
+  // 测试组：使用 withAsyncContext 恢复实例上下文的顶层 await。
   describe('async setup with top-level await', () => {
-    // 测试场景：在异步 setup 解析之前替换待定分支。
+    /** 测试场景：SlowComp在withAsyncContext await期间被Filler替换；迟到恢复后创建watch再修改state，updateSpy不调用且filler已展示，验证废弃实例scope清理。 */
     test('pending branch replaced before async setup resolves', async () => {
       const updateSpy = vi.fn()
       const stateRef = ref(0)
       let resolvePending!: (v?: unknown) => void
 
       const SlowComp = defineComponent({
+        /** 执行[__temp, __restore]=withAsyncContext( () => new Promise(r => { resolvePending = r }), )；withAsyncContext(回调)；__temp=await __temp；注册watch。setup返回渲染函数：'div'节点（'slow'）。 async返回Promise，等待__temp后完成。 */
         async setup() {
           let __temp: any, __restore: any
           ;[__temp, __restore] = withAsyncContext(
@@ -3148,11 +3338,13 @@ describe('Suspense', () => {
       })
 
       const FillerComp = defineComponent({
+        /** setup返回渲染函数：'div'节点（'filler'）。 */
         setup: () => () => h('div', 'filler'),
       })
 
       const view = shallowRef<any>(SlowComp)
       const Comp = defineComponent({
+        /** setup返回渲染函数：Suspense节点（null；插槽{default: h(view.value)，fallback: h('div', 'fallback')}）。 */
         setup: () => () =>
           h(Suspense, null, {
             default: h(view.value),
@@ -3168,7 +3360,7 @@ describe('Suspense', () => {
       await nextTick()
       expect(serializeInner(root)).toBe(`<div>filler</div>`)
 
-      // wait a macro task tick for all micro ticks to resolve
+      // 等待宏任务，让全部异步恢复的微任务链完成。
       resolvePending(undefined)
       await new Promise(r => setTimeout(r))
 
@@ -3177,13 +3369,14 @@ describe('Suspense', () => {
       expect(updateSpy).not.toHaveBeenCalled()
     })
 
-    // 测试场景：在异步 setup 解析之前卸载边界。
+    /** 测试场景：SlowComp await期间整体卸载边界；迟到恢复建立watch后修改state，spy不调用，验证卸载实例作用域仍处停止状态。 */
     test('boundary unmounted before async setup resolves', async () => {
       const updateSpy = vi.fn()
       const stateRef = ref(0)
       let resolvePending!: (v?: unknown) => void
 
       const SlowComp = defineComponent({
+        /** 执行[__temp, __restore]=withAsyncContext( () => new Promise(r => { resolvePending = r }), )；withAsyncContext(回调)；__temp=await __temp；注册watch。setup返回渲染函数：'div'节点（'slow'）。 async返回Promise，等待__temp后完成。 */
         async setup() {
           let __temp: any, __restore: any
           ;[__temp, __restore] = withAsyncContext(
@@ -3223,13 +3416,14 @@ describe('Suspense', () => {
       expect(updateSpy).not.toHaveBeenCalled()
     })
 
-    // 测试场景：异步 setup 解析之前重复分支替换。
+    /** 测试场景：Filler和SlowComp往返三次，保存三项未完成resolver；全部迟到恢复后递增state，spy均不调用，验证每个废弃代次的watch都被清理。 */
     test('repeated branch replacement before async setup resolves', async () => {
       const updateSpy = vi.fn()
       const stateRef = ref(0)
       const resolvers: Array<(v?: unknown) => void> = []
 
       const SlowComp = defineComponent({
+        /** 执行[__temp, __restore]=withAsyncContext( () => new Promise(r => { resolvers.push(r) }), )；withAsyncContext(回调)；__temp=await __temp；注册watch回调写入updateSpy(uid)。setup返回渲染函数：'div'节点（'slow'）。 async返回Promise，等待__temp后完成。 */
         async setup() {
           let __temp: any, __restore: any
           ;[__temp, __restore] = withAsyncContext(
@@ -3251,11 +3445,13 @@ describe('Suspense', () => {
       })
 
       const FillerComp = defineComponent({
+        /** setup返回渲染函数：'div'节点（'filler'）。 */
         setup: () => () => h('div', 'filler'),
       })
 
       const view = shallowRef<any>(FillerComp)
       const Comp = defineComponent({
+        /** setup返回渲染函数：Suspense节点（null；插槽{default: h(view.value)，fallback: h('div', 'fallback')}）。 */
         setup: () => () =>
           h(Suspense, null, {
             default: h(view.value),
@@ -3283,13 +3479,14 @@ describe('Suspense', () => {
       expect(updateSpy).not.toHaveBeenCalled()
     })
 
-    // 测试场景：放弃挂起分支后创建的嵌套范围。
+    /** 测试场景：SlowComp await期间被Filler替换，迟到恢复后在新effectScope中创建watch；递增state仍不调用spy，确认新嵌套scope继承废弃父scope的停止状态。 */
     test('nested scope created after pending branch is abandoned', async () => {
       const updateSpy = vi.fn()
       const stateRef = ref(0)
       let resolvePending!: (v?: unknown) => void
 
       const SlowComp = defineComponent({
+        /** 执行[__temp, __restore]=withAsyncContext( () => new Promise(r => { resolvePending = r }), )；withAsyncContext(回调)；__temp=await __temp。setup返回渲染函数：'div'节点（'slow'）。 async返回Promise，等待__temp后完成。 */
         async setup() {
           let __temp: any, __restore: any
           ;[__temp, __restore] = withAsyncContext(
@@ -3310,11 +3507,13 @@ describe('Suspense', () => {
       })
 
       const FillerComp = defineComponent({
+        /** setup返回渲染函数：'div'节点（'filler'）。 */
         setup: () => () => h('div', 'filler'),
       })
 
       const view = shallowRef<any>(SlowComp)
       const Comp = defineComponent({
+        /** setup返回渲染函数：Suspense节点（null；插槽{default: h(view.value)，fallback: h('div', 'fallback')}）。 */
         setup: () => () =>
           h(Suspense, null, {
             default: h(view.value),

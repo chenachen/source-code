@@ -33,7 +33,8 @@ const ERR_DENIED_FILE = 'ERR_DENIED_FILE'
 
 /**
  * 生成三类静态服务共享的 sirv 配置：开发态 ETag、无扩展名猜测、自定义响应头和最终文件
- * 访问控制。安全判断放在 sirv 已解析出的真实路径上，可覆盖目录 index、符号链接等映射。
+ * 访问控制。安全判断使用 sirv 拼接并规范化后的候选绝对路径，覆盖目录 index 等映射；
+ * sirv 的 stat 会跟随符号链接，但交给检查器的路径没有经过 realpath。
  */
 const sirvOptions = ({
   config,
@@ -65,6 +66,7 @@ const sirvOptions = ({
         }
       }
     },
+    /** 按候选文件路径判断访问权限：denied抛专用错误，fallback拒绝sirv响应，allowed放行。 */
     shouldServe: disableFsServeCheck
       ? undefined
       : (filePath) => {
@@ -98,6 +100,7 @@ export function servePublicMiddleware(
     dir,
     sirvOptions({
       config: server.config,
+      /** 每次响应时读取当前server.headers，避免配置兼容层更新后继续使用旧对象。 */
       getHeaders: () => server.config.server.headers,
       disableFsServeCheck: true,
     }),
@@ -116,7 +119,7 @@ export function servePublicMiddleware(
     return normalizePath(filePath)
   }
 
-  // 保留命名函数；`DEBUG=connect:dispatcher` 会把名称显示在调度日志中。
+  /** 已扫描public文件可直接响应；import、内部协议和?url请求继续插件管线。 */
   return function viteServePublicMiddleware(req, res, next) {
     // 内存 Set 随 watcher/重启更新。import、内部路径和资源查询必须跳过 public 原样响应，
     // 例如 `/public-file.js?url` 仍要由 asset 插件生成 URL 导出（#17915）。
@@ -145,11 +148,12 @@ export function serveStaticMiddleware(
     dir,
     sirvOptions({
       config: server.config,
+      /** 读取当前请求使用的自定义响应头，交给sirv的setHeaders逐项设置。 */
       getHeaders: () => server.config.server.headers,
     }),
   )
 
-  // 保留命名函数；`DEBUG=connect:dispatcher` 会把名称显示在调度日志中。
+  /** 跳过HTML/内部路径，应用首个alias后调用sirv；专用拒绝错误转换为403。 */
   return function viteServeStaticMiddleware(req, res, next) {
     // HTML/目录请求需要 fallback 与 HTML transform；内部 URL 有各自协议处理器。
     const cleanedUrl = cleanUrl(req.url!)
@@ -221,11 +225,12 @@ export function serveRawFsMiddleware(
     '/',
     sirvOptions({
       config: server.config,
+      /** 让文件系统根上的资源响应也采用当前server.headers。 */
       getHeaders: () => server.config.server.headers,
     }),
   )
 
-  // 保留命名函数；`DEBUG=connect:dispatcher` 会把名称显示在调度日志中。
+  /** 只处理/@fs/请求，解码并改写为根文件URL；拒绝错误返回403，其余请求next。 */
   return function viteServeRawFsMiddleware(req, res, next) {
     // root 外文件统一改写为 `/@fs/`，以文件系统根为 sirv root 才能定位真实绝对路径。
     if (req.url!.startsWith(FS_PREFIX)) {
@@ -286,7 +291,7 @@ export function isFileServingAllowed(
 }
 
 /**
- * 判断 filePath 是 targetPath 本身或其真实子路径。
+ * 判断 filePath 是 targetPath 本身或其目录子路径。
  *
  * 警告：函数不校验参数，只能传入规范化绝对路径；不能用字符串 startsWith，否则
  * `/parent-other` 会被误判为 `/parent` 的子项（#14241）。
@@ -310,7 +315,7 @@ const windowsDriveRE = /^[A-Z]:/i
 /**
  * 按 `server.fs.strict/deny/allow` 和 safeModulePaths 判断绝对文件路径是否允许加载。
  *
- * 优先级是：关闭 strict → Windows 特殊路径防护 → deny → safeModulePaths → allow。调用方必须
+ * 优先级是：关闭 strict → 短路径/冒号防护 → deny → safeModulePaths → allow。冒号限制也应用于POSIX路径。调用方必须
  * 传规范化绝对路径；本函数不负责路径解析或存在性判断。
  */
 export function isFileLoadingAllowed(

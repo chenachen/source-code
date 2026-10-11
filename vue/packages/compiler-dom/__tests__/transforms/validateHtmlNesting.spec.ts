@@ -1,11 +1,14 @@
 /**
- * HTML 嵌套合法性场景：覆盖浏览器会隐式闭合/重排节点的父子和祖先组合，并单独验证 SVG
- * 不套用 HTML 限制；编译期警告可提前避免 SSR hydration 因 DOM 树形变化而失败。
+ * 验证原生元素直接父子标签的嵌套规则。转换器仅传入父子 tag，不扫描任意祖先，
+ * 也不按 namespace 排除 SVG；下面分别断言 HTML 与 SVG 相关标签对的规则结果。
  */
 import { type CompilerError, compile } from '../../src'
 import { isValidHTMLNesting } from '../../src/htmlNesting'
 
 describe('validate html nesting', () => {
+  /**
+   * 场景：编译 p 直接包 div 的模板，收集 onWarn 并检查父子标签诊断，验证开发期矩阵检查以警告指出可能被 HTML parser 重排的结构。
+   */
   it('should warn with p > div', () => {
     let err: CompilerError | undefined
     compile(`<p><div></div></p>`, {
@@ -15,6 +18,9 @@ describe('validate html nesting', () => {
     expect(err!.message).toMatch(`<div> cannot be child of <p>`)
   })
 
+  /**
+   * 场景：select 直接包 hr，编译后断言无警告，验证该标签已在 select 的允许子元素集合中。
+   */
   it('should not warn with select > hr', () => {
     let err: CompilerError | undefined
     compile(`<select><hr></select>`, {
@@ -23,7 +29,11 @@ describe('validate html nesting', () => {
     expect(err).toBeUndefined()
   })
 
-  // #13318：Vue `<template>` 是编译期透明容器，不是原生 template 元素，不能用其标签名误报嵌套。
+  // #13318：普通 `<template>` 保持原生元素路径，内容存放在 DocumentFragment。
+  // isValidHTMLNesting 对 template 父标签直接放行，因此这个标签对不报嵌套警告。
+  /**
+   * 场景：普通 template 包 tr，编译后断言无警告，验证 template 父标签的特殊放行先于 tr 的允许父元素白名单。
+   */
   it('should not warn when parent tag is template', () => {
     let err: CompilerError | undefined
     compile(`<template><tr/></template>`, {
@@ -37,8 +47,11 @@ describe('validate html nesting', () => {
  * 用例来源：https://github.com/MananTank/validate-html-nesting
  * 原规则来自 validate-html-nesting，遵循 ISC 许可证。
  */
-// 纯规则矩阵：直接验证标签对，便于区分“非法直接 parent”与“非法任意 ancestor”。
+// 直接标签对规则矩阵：验证各白名单和黑名单的返回结果。
 describe('isValidHTMLNesting', () => {
+  /**
+   * 场景：直接调用标签对判断，form 嵌套 form 返回 false，div/input/select/button/label/h1 返回 true，验证同类 form 黑名单不误禁普通表单内容。
+   */
   test('form', () => {
     // 非法组合。
     expect(isValidHTMLNesting('form', 'form')).toBe(false)
@@ -52,6 +65,9 @@ describe('isValidHTMLNesting', () => {
     expect(isValidHTMLNesting('form', 'h1')).toBe(true)
   })
 
+  /**
+   * 场景：p 分别包含块级/同类标签与 phrasing 标签，断言前组 false、后组 true，验证父标签黑名单只拒绝已列出的会隐式闭合 p 的组合。
+   */
   test('p', () => {
     // 非法组合。
     expect(isValidHTMLNesting('p', 'p')).toBe(false)
@@ -71,6 +87,9 @@ describe('isValidHTMLNesting', () => {
     expect(isValidHTMLNesting('p', 'label')).toBe(true)
   })
 
+  /**
+   * 场景：a 嵌套 a 返回 false，a 包 div/span 返回 true，验证 a 的同类嵌套黑名单不禁止普通元素内容。
+   */
   test('a', () => {
     // 非法组合。
     expect(isValidHTMLNesting('a', 'a')).toBe(false)
@@ -80,6 +99,9 @@ describe('isValidHTMLNesting', () => {
     expect(isValidHTMLNesting('a', 'span')).toBe(true)
   })
 
+  /**
+   * 场景：button 嵌套 button 返回 false，button 包 div/span 返回 true，验证特殊子标签约束不等同于禁止 button 的所有元素后代。
+   */
   test('button', () => {
     // 非法组合。
     expect(isValidHTMLNesting('button', 'button')).toBe(false)
@@ -89,6 +111,9 @@ describe('isValidHTMLNesting', () => {
     expect(isValidHTMLNesting('button', 'span')).toBe(true)
   })
 
+  /**
+   * 场景：table 的直接 tr/table/td 均被拒绝，thead/tbody/tfoot/caption/colgroup 被允许，验证严格子元素白名单要求显式表格层级。
+   */
   test('table', () => {
     // 非法组合。
     expect(isValidHTMLNesting('table', 'tr')).toBe(false)
@@ -103,6 +128,9 @@ describe('isValidHTMLNesting', () => {
     expect(isValidHTMLNesting('table', 'colgroup')).toBe(true)
   })
 
+  /**
+   * 场景：td 包 span 与 tr 包 td 被允许，td 包 td 和 div 包 td 被拒绝，验证单元格的允许父级与普通单元格内容分开检查。
+   */
   test('td', () => {
     // 合法组合。
     expect(isValidHTMLNesting('td', 'span')).toBe(true)
@@ -113,6 +141,9 @@ describe('isValidHTMLNesting', () => {
     expect(isValidHTMLNesting('div', 'td')).toBe(false)
   })
 
+  /**
+   * 场景：tbody 直接包 td 返回 false、包 tr 返回 true，验证表体只允许行，不能跳过行层。
+   */
   test('tbody', () => {
     // 非法组合。
     expect(isValidHTMLNesting('tbody', 'td')).toBe(false)
@@ -121,6 +152,9 @@ describe('isValidHTMLNesting', () => {
     expect(isValidHTMLNesting('tbody', 'tr')).toBe(true)
   })
 
+  /**
+   * 场景：tr 包 tr、table 直接包 tr 被拒绝；各表体包 tr 及 tr 包 td/th 被允许，验证行的父子双向严格约束。
+   */
   test('tr', () => {
     // 非法组合。
     expect(isValidHTMLNesting('tr', 'tr')).toBe(false)
@@ -134,6 +168,9 @@ describe('isValidHTMLNesting', () => {
     expect(isValidHTMLNesting('tr', 'th')).toBe(true)
   })
 
+  /**
+   * 场景：li 包 li 被拒绝，li 包 div/ul 被允许，验证同类嵌套黑名单仍允许在 li 内容内建立子列表。
+   */
   test('li', () => {
     // 非法组合。
     expect(isValidHTMLNesting('li', 'li')).toBe(false)
@@ -142,6 +179,9 @@ describe('isValidHTMLNesting', () => {
     expect(isValidHTMLNesting('li', 'ul')).toBe(true)
   })
 
+  /**
+   * 场景：标题之间的同类/异类嵌套都返回 false，h1 包 div 返回 true，验证所有标题共享 headings 禁止父级集合。
+   */
   test('headings', () => {
     // 非法组合。
     expect(isValidHTMLNesting('h1', 'h1')).toBe(false)
@@ -153,8 +193,11 @@ describe('isValidHTMLNesting', () => {
     expect(isValidHTMLNesting('h1', 'div')).toBe(true)
   })
 
-  // SVG 子树不受 HTML content model 限制，但 foreignObject 返回 HTML 后应恢复校验。
+  // SVG 与 foreignObject 标签对在当前规则矩阵中的结果；该函数不接收 namespace。
   describe('SVG', () => {
+    /**
+     * 场景：svg 包 div/img/p/h2/span 被拒绝，包 a/textarea/input/select 与 g/ellipse/feOffset 被允许，验证当前标签对矩阵的实际范围；函数不依据命名空间保证完整 SVG 合法性。
+     */
     test('svg', () => {
       // 非 SVG 标签作为 child：非法。
       expect(isValidHTMLNesting('svg', 'div')).toBe(false)
@@ -175,6 +218,9 @@ describe('isValidHTMLNesting', () => {
       expect(isValidHTMLNesting('svg', 'feOffset')).toBe(true)
     })
 
+    /**
+     * 场景：foreignObject 包 g/div/a/textarea 都返回 true，验证此标签未命中特殊白名单/黑名单；调用目标是标签矩阵函数 isValidHTMLNesting。
+     */
     test('foreignObject', () => {
       // 合法组合。
       expect(isValidHTMLNesting('foreignObject', 'g')).toBe(true)
@@ -183,6 +229,9 @@ describe('isValidHTMLNesting', () => {
       expect(isValidHTMLNesting('foreignObject', 'textarea')).toBe(true)
     })
 
+    /**
+     * 场景：g 包 div/p/a/textarea/g 都返回 true，验证未列入规则的父子对默认放行，而非对 SVG 后代作完整规范校验。
+     */
     test('g', () => {
       // 合法组合。
       expect(isValidHTMLNesting('g', 'div')).toBe(true)
@@ -192,6 +241,9 @@ describe('isValidHTMLNesting', () => {
       expect(isValidHTMLNesting('g', 'g')).toBe(true)
     })
 
+    /**
+     * 场景：dl/div 包 dt/dd 被允许，span 包 dt/dd 被拒绝，验证描述项的允许父级白名单，且 dl 可以有 div 分组。
+     */
     test('dl', () => {
       // 合法组合。
       expect(isValidHTMLNesting('dl', 'dt')).toBe(true)

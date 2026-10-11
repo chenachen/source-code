@@ -50,8 +50,8 @@ JSON 模块放在本章末尾：它既是配置数据，又具有 default/named 
 | SSR unbundled dev         | `definePlugin.transform` → Oxc         | Node/Runner 需要实际替换后的模块 |
 | client unbundled dev      | client injection + import analysis     | 避免每个浏览器模块启动 Oxc       |
 
-这三条路径必须共享语义，但不共享执行位置。`define.spec.ts` 特意用同一 helper 构造 SSR dev 与 native build
-路径，防止一个分支修复后另一个仍旧错误。
+`define.spec.ts` 用同一 helper 构造 SSR dev 与 native build 路径，分别检查显式 define 替换。
+内建 env 的处理还取决于 command 与 isBundled：unbundled dev 的 env 对象由 import analysis 注入。
 
 ## 为什么不是字符串替换
 
@@ -73,7 +73,7 @@ transform 前先跑快速正则。正则 key 来自实际 define 表，并把属
 
 ## `process.env` 与库模式
 
-非库构建默认定义：
+非库模式且 `environment.config.keepProcessEnv=false` 时，默认定义：
 
 ```text
 process.env / global.process.env / globalThis.process.env → {}
@@ -86,6 +86,10 @@ client dev 只替换具体 `process.env.NODE_ENV` 表达式，不创建全局 pr
 库构建完全跳过默认 process.env 替换。库是给下游应用消费的中间产物，不能固化库作者机器上的 mode，
 也不能替最终宿主决定 Node/browser polyfill 策略。
 
+server consumer 默认 `keepProcessEnv=true`，所以 SSR dev 通常保留运行时环境；client consumer
+和旧 `ssr.target: 'webworker'` 默认关闭。用户显式的 process.env define 仍可参与替换，库模式
+跳过的是 Vite 自动生成的默认表。
+
 ## `import.meta.env`
 
 bundled 环境把 config.env 展开为静态点属性，并补：
@@ -96,20 +100,36 @@ bundled 环境把 config.env 展开为静态点属性，并补：
 - 裸 `import.meta.env`：序列化成完整稳定对象。
 
 同一 resolved config 可同时创建 client/server Environment，SSR 不能在插件创建时提前固定。define 表由
-Environment WeakMap 惰性缓存，既避免串值，也让环境关闭后自然回收。
+Environment WeakMap 惰性缓存，不同环境分别生成；环境不再被持有时，相应缓存也可回收。
 
-用户 `define['import.meta.env.X']` 同时进入点属性替换和裸 env 对象。`serializeDefine()` 对 key 排序，保证
-输出与 hash 稳定；相关稳定性修复见 [PR #17748](https://github.com/vitejs/vite/pull/17748)。字符串值按
+build 时，用户 `define['import.meta.env.X']` 同时进入点属性替换和裸 env 对象。bundled-dev 的
+用户值仍进入点属性表，但 `userDefineEnv` 的收集受 `isBuild` 控制，裸对象只汇总 config.env 与 SSR；
+因此当前版本中 `import.meta.env.X` 与 `import.meta.env['X']` 对这类额外定义可得到不同结果。
+
+源码摘录，`plugins/define.ts` 的 `generatePattern()`；字符串先按 define 约定转换，裸对象单独收集：
+
+```ts
+for (const key in environment.config.define) {
+  userDefine[key] = handleDefineValue(environment.config.define[key])
+  if (isBuild && key.startsWith('import.meta.env.')) {
+    userDefineEnv[key.slice(16)] = environment.config.define[key]
+  }
+}
+```
+
+`serializeDefine()` 对 key 排序，使裸对象输出顺序稳定；相关修复见
+[PR #17748](https://github.com/vitejs/vite/pull/17748)。字符串值按
 “源码表达式”处理，而不是自动 JSON stringify，因此可以写 `undefined`、`window` 或兼容标识符；普通对象
 和数值才 JSON 序列化。
 
-计算属性 `import.meta.env['UNKNOWN']` 不由静态通配规则消去，因为运行时 key 可能来自变量；静态
-`.UNKNOWN` 才可确定为 undefined。用户可以用“同值 define”明确保留某个访问。
+计算属性 `import.meta.env['UNKNOWN']` 不由静态通配规则直接消去；它保留为序列化 env 对象上的
+属性读取，键也可来自变量。静态 `.UNKNOWN` 则直接替为 undefined。用户可用同值 define 保留
+某个静态访问，`preserve import.meta.env.UNKNOWN with override` 测试覆盖该写法。
 
 ## Client injections
 
 `clientInjectionsPlugin()` 只应用于 unbundled Environment。buildStart 先解析 hostname，再生成一个闭包，
-把 client.ts/overlay/env.ts 中的占位符替成：
+transform 命中规范化后的 client 或 env 入口时替换其中的占位符：
 
 - mode、base、server host；
 - WebSocket protocol/hostname/port/path/direct fallback；
@@ -122,6 +142,15 @@ Environment WeakMap 惰性缓存，既避免串值，也让环境关闭后自然
 
 HMR 端口优先级：
 
+源码摘录，`plugins/clientInjections.ts` 的 `createClientConfigValueReplacer()`：
+
+```ts
+let port = wsConfig?.clientPort || wsConfig?.port || null
+if (config.server.middlewareMode && !isWsServerSpecified) {
+  port ||= 24678
+}
+```
+
 ```text
 server.ws.clientPort
 → server.ws.port
@@ -129,8 +158,10 @@ server.ws.clientPort
 → client 运行时 new URL(import.meta.url).port
 ```
 
-directTarget 使用显式 ws host/port，否则回到已解析 server hostname/port；path 再与 dev base 拼接。
-bundled-dev 读取 `bundledDevClient.ts` 后走同一配置 replacer，保证两种 client 连接语义一致；Rolldown runtime
+首次连接的 path 使用 `path.posix.join(devBase, server.ws.path)`。directTarget 使用显式 ws host/port，
+缺省时回到已解析 server hostname/port，并只附加 dev base；它不追加 server.ws.path。
+普通 client 首连失败且没有显式 HMR 端口时才尝试该直连地址，已有端口配置时直接暴露连接错误。
+bundled-dev 读取 `bundledDevClient.ts` 后走同一配置 replacer，复用这组连接配置值；Rolldown runtime
 无法额外 import `@vite/env`，所以内联前删除该副作用 import。
 
 ## `@vite/env` 与 realm
@@ -149,28 +180,37 @@ globalThis → self → window → Function fallback
 
 ## JSON 模块
 
-Vite 当前把 JSON 转换委托 Rolldown 原生插件，但仍由 `JsonOptions` 定义公共语义：
+`resolvePlugins()` 注册 `viteJsonPlugin({ ...config.json, minify: isBuild })`。实际转换来自
+Rolldown 1.2.1 的原生插件，按以下条件选择输出：
 
-- `namedExports=true`：顶层对象属性成为命名导出，可 tree-shake；
-- `stringify=true`：生成 `JSON.parse("...")`，大对象解析更快；
-- `stringify='auto'`：仅大于 10 KiB 时采用上述形式；
-- 数组不强制 stringify，避免输出与语义退化；修复见
-  [PR #18541](https://github.com/vitejs/vite/pull/18541)。
+1. `namedExports=true` 且输入是对象：生成顶层命名导出和由它们组成的 default 对象。
+   这一分支优先，即使 `stringify=true` 也使用对象字面量，供 bundler 删除未使用属性。
+2. 未进入对象命名导出分支时，`stringify=true` 生成 `JSON.parse("...")`；`'auto'` 仅在去 BOM 后
+   原始源码超过 10,000 UTF-8 字节时启用。数组也走这个判断。
+3. 其余输入生成 JavaScript 字面量。若希望对象使用 JSON.parse，需要同时设 `namedExports=false`。
 
-`.json`/`.json5` 带 query 仍可识别为 JSON 模块；但 `?url` 与 `?raw` 会在更前面的资源语义分支接管。
+例如默认选项下 `{ "hello": "world" }` 有命名导出 hello 和对象 default；小数组 `[1, 2]`
+直接生成数组，较大数组则可生成 JSON.parse。这里的输出分支见
+[Rolldown 1.2.1 原生实现](https://github.com/rolldown/rolldown/blob/v1.2.1/crates/rolldown_plugin_vite_json/src/lib.rs)，
+阈值见其 [constants.rs](https://github.com/rolldown/rolldown/blob/v1.2.1/crates/rolldown_plugin_utils/src/constants.rs)。
+
+本地 `isJSONRequest()` 同时识别 `.json`/`.json5` 及其 query，但原生插件默认转换的是 `.json`，
+该辅助判断不等于默认支持 JSON5 语法。`?url` 与 `?raw` 被原生 JSON 插件的特殊 query 检查跳过，
+随后由 assetPlugin 返回 URL 或原文本。
 playground 同时区分：
 
-| 写法                | 结果                            |
-| ------------------- | ------------------------------- |
-| `import data`       | 完整对象 default                |
-| `import { key }`    | 顶层 named export               |
-| `import()`          | 含 default/named 的 namespace   |
-| `fetch('/x.json')`  | 原始 HTTP JSON                  |
-| `?url`              | 资源 URL，build 时可能 data URL |
-| `?raw`              | 原文件文本                      |
-| CJS `require(json)` | Node 风格对象，不额外套 default |
+| 写法                | 结果                              |
+| ------------------- | --------------------------------- |
+| `import data`       | 完整对象 default                  |
+| `import { key }`    | 顶层 named export                 |
+| `import()`          | 含 default/named 的 namespace     |
+| `fetch('/x.json')`  | 原始 HTTP JSON                    |
+| `?url`              | 资源 URL，bundled 时可能 data URL |
+| `?raw`              | 原文件文本                        |
+| CJS `require(json)` | Node 风格对象，不额外套 default   |
 
-JSON 模块没有 HMR accept 边界时，编辑走 full reload；用例验证刷新后对象内容确实变化。
+JSON playground 的 HTML 入口直接导入 hmr.json，没有 hot.accept 边界。编辑 JSON 后更新沿导入者
+到达页面入口，触发 full reload；`should full reload` 用例检查重新执行页面后展示的新值。
 
 ## 关键源码证据
 
@@ -180,7 +220,6 @@ JSON 模块没有 HMR accept 边界时，编辑走 full reload；用例验证刷
 const isBuild = config.command === 'build'
 const isBuildLib = isBuild && config.build.lib
 
-// ignore replace process.env in lib build
 const processEnv: Record<string, string> = {}
 if (!isBuildLib) {
   const nodeEnv = process.env.NODE_ENV || config.mode
@@ -195,8 +234,8 @@ if (!isBuildLib) {
 }
 ```
 
-这里的决定性分支是库构建：库产物不接管消费者的 `process.env`；非库路径才生成替换表。
-三个全局对象拼写进入同一替换表，避免不同运行时写法产生语义分叉。
+外层先决定是否生成默认表，`generatePattern(environment)` 再通过 keepProcessEnv 决定是否将它
+合入当前环境。三个全局对象拼写拥有同一默认值；用户 define 随后覆盖同名条目。
 
 ## 建议断点
 

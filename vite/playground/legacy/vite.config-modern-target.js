@@ -10,7 +10,7 @@ export default defineConfig(({ isPreview }) => ({
   plugins: [
     legacy({
       modernPolyfills: ['es.array.at'],
-      // a browser without optional catch binding
+      // Chrome 64 不支持可选 catch 参数，现代输出仍需按该目标降级。
       modernTargets: ['chrome >= 64'],
       renderLegacyChunks: false,
     }),

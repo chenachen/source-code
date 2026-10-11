@@ -9,15 +9,18 @@
 
 'use strict';
 
-/** `React`：保存当前测试场景复用的夹具、状态或回调。 */
+/** 构造各类children和嵌套元素输入，JSX用它创建测试树。 */
 const React = require('react');
-/** `ReactDOMClient`：保存当前测试场景复用的夹具、状态或回调。 */
+
+/** 为每个初始/更新组合创建独立根，避免前一组合影响DOM状态。 */
 const ReactDOMClient = require('react-dom/client');
-/** `act`：保存当前测试场景复用的夹具、状态或回调。 */
+
+/** 等待每轮root.render完成，确保文本与元素节点断言观察提交结果。 */
 const act = require('internal-test-utils').act;
 
-// 帮助人
-/** `testAllPermutations`：封装当前用例复用的操作、回调或断言步骤。 */
+// 以输入/预期对构造全部首次挂载与更新组合。
+
+/** testCases按[输入,预期,输入,预期]交替排列；外层选首次children，内层枚举更新children，各组合新建根并在两次act后调用expectChildren，覆盖所有方向的内容形状切换。 */
 const testAllPermutations = async function (testCases) {
   for (let i = 0; i < testCases.length; i += 2) {
     const renderWithChildren = testCases[i];
@@ -38,7 +41,7 @@ const testAllPermutations = async function (testCases) {
   }
 };
 
-/** `expectChildren`：封装当前用例复用的操作、回调或断言步骤。 */
+/** 预期字符串时检查父div的首Text或空值；预期列表时按mountIndex跳过空字符串并检查Text数据/元素DIV，不另验证元素内部或容器总节点数。 */
 const expectChildren = function (container, children) {
   const outerNode = container.firstChild;
   let textNode;
@@ -77,20 +80,12 @@ const expectChildren = function (container, children) {
 };
 
 /**
- * 集成测试：ReactMultiChild 在 ReactDOM 组件中， 我们确保将单个字符串子元素视为 "content"，这
- * 比渲染和更新更快。
+ * 检查单个文本、相邻文本、数组与元素混合时的 DOM 内容；单个直接文本可走宿主 textContent 路径。
  */
 describe('ReactMultiChildText', () => {
   jest.setTimeout(30000);
 
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「should correctly handle all possible children for render and update」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言连接 ReactDOM 公开入口、ReactDOMRoot 根生命周期及 DOM 提交结果。
-   */
+  /** 输入表包含空值、数字、字符串、数组、嵌套数组、元素与相邻文本；对每个初始输入和每个后续输入执行笛卡尔组合的render/update，以对应文本或节点列表检查DOM，DEV仅两条缺key警告，验证直接文本与HostText/元素列表路径相互切换。 */
   it('should correctly handle all possible children for render and update', async () => {
     spyOnDev(console, 'error').mockImplementation(() => {});
     // prettier-ignore
@@ -191,7 +186,7 @@ describe('ReactMultiChildText', () => {
     }
   });
 
-  /** 测试场景：验证「should correctly handle bigint children for render and update」描述的渲染、交互或错误处理结果。 */
+  /** 以直接10n和[10n]两种输入执行全部初始/更新组合；预期分别单文本10与列表Text10，验证bigint在宿主直接文本与数组子级间转换。 */
   it('should correctly handle bigint children for render and update', async () => {
     // prettier-ignore
     await testAllPermutations([
@@ -200,7 +195,7 @@ describe('ReactMultiChildText', () => {
     ]);
   });
 
-  /** 测试场景：验证「should throw if rendering both HTML and children」描述的渲染、交互或错误处理结果。 */
+  /** 同一div既传dangerouslySetInnerHTML的abcdef又传children=ghjkl；act应拒绝抛错，验证两种内容来源互斥。 */
   it('should throw if rendering both HTML and children', async () => {
     const container = document.createElement('div');
     const root = ReactDOMClient.createRoot(container);
@@ -213,7 +208,7 @@ describe('ReactMultiChildText', () => {
     ).rejects.toThrow();
   });
 
-  /** 测试场景：验证「should render between nested components and inline children」描述的渲染、交互或错误处理结果。 */
+  /** 分别在新根渲染h1下双span、直接A、单项文本数组及A/B数组；各act应正常完成，验证这些嵌套/内联文本形状均可构建；本例未在同一根更新也未比较节点身份。 */
   it('should render between nested components and inline children', async () => {
     let container = document.createElement('div');
     let root = ReactDOMClient.createRoot(container);

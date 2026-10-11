@@ -40,8 +40,7 @@ function customizationHookResolve(
   return nextResolve(specifier, context)
 }
 
-// resolve hook 是进程级链表，只注册一次；每个 Runner 都重复注册会让 hook 链不断增长，
-// 最终触发 “Maximum call stack size exceeded”。
+/** 进程级 hook 的注册标记；防止每个 Runner 都追加 hook，造成解析链不断增长。 */
 let isHookRegistered = false
 
 /**
@@ -49,7 +48,7 @@ let isHookRegistered = false
  *
  * 优先使用同步且开销更低的 `module.registerHooks()`；旧版 Node 则通过 data URL
  * 注册异步 hook。运行时不支持 hook、内建模块被 mock，或旧版网络导入限制生效时，
- * 返回 `undefined`，调用方可退回普通解析逻辑。
+ * 返回 `undefined`。createNodeImportMeta 此时采用默认的“不支持 resolve”实现。
  */
 export function createImportMetaResolver(): ImportMetaResolver | undefined {
   if (isHookRegistered) {
@@ -110,7 +109,7 @@ function importMetaResolveWithCustomHook(
   )
 }
 
-// 用计算属性访问 resolve，避免打包时 `define` 错把 `import.meta.resolve` 当作替换目标。
+/** 可嵌入 Node Runner 的解析器源码；计算属性避免 define 替换 import.meta.resolve。 */
 export const importMetaResolveWithCustomHookString: string = /* js */ `
 
   (() => {

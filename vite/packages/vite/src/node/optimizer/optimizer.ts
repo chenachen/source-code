@@ -62,9 +62,11 @@ export function createDepsOptimizer(
     init,
     metadata,
     registerMissingImport,
+    /** 把已有 discovered 依赖安排到零延迟的串行重跑队列。 */
     run: () => debouncedProcessing(0),
     isOptimizedDepFile: createIsOptimizedDepFile(environment),
     isOptimizedDepUrl: createIsOptimizedDepUrl(environment),
+    /** 把优化产物路径与该依赖的 browserHash 合成为 import 使用的版本化 ID。 */
     getOptimizedDepId: (depInfo: OptimizedDepInfo) =>
       `${depInfo.file}?v=${depInfo.browserHash}`,
     close,
@@ -114,12 +116,13 @@ export function createDepsOptimizer(
     }
   }
 
-  // 每批 discovered 依赖共享一个 processing Promise；只有包含它的某轮结果提交后才 resolve。
+  // 每批 discovered 依赖共享 processing Promise；提交、优化失败或 runOptimizer 的关闭分支
+  // 放行已封存批次，让等待请求继续进行版本和产物检查。
   let depOptimizationProcessing = promiseWithResolvers<void>()
   let depOptimizationProcessingQueue: PromiseWithResolvers<void>[] = []
-  /** 成功发布后放行所有被丢弃批次遗留的优化文件请求。 */
+  /** 放行已封存批次；正常提交让请求读产物，失败/关闭则让请求进入版本或缺文件检查。 */
   const resolveEnqueuedProcessingPromises = () => {
-    // 一次成功提交会放行当前及此前因结果被丢弃而延迟的所有批次请求。
+    // 放行队列中的批次；尚未封存的下一批 processing Promise 由后续运行负责。
     for (const processing of depOptimizationProcessingQueue) {
       processing.resolve()
     }
@@ -137,7 +140,7 @@ export function createDepsOptimizer(
 
   let optimizationResult:
     | {
-        /** 取消当前 Rolldown 预构建并清理 processing 目录。 */
+        /** 设置当前预构建的取消标记并清理 processing 目录，不等待在途 write。 */
         cancel: () => Promise<void>
         /** 当前预构建完成后的可提交结果。 */
         result: Promise<DepOptimizationResult>
@@ -153,7 +156,7 @@ export function createDepsOptimizer(
       }
     | undefined
 
-  /** 关闭 scanner、后台优化和所有等待任务；不让取消异常阻塞其他收尾。 */
+  /** 标记关闭并等待扫描任务 settle，取消候选构建；各取消操作的失败互不阻断。 */
   async function close() {
     closed = true
     await Promise.allSettled([
@@ -182,7 +185,7 @@ export function createDepsOptimizer(
     if (!cachedMetadata) {
       waitingForCrawlEnd = true
 
-      // 静态 crawl 结束前保持 processing，避免过早发出可能立即过期的优化 URL。
+      // 静态 crawl 结束前保持调度互斥，阻止普通 debounce 抢跑；优化 URL 已可返回，文件读取另等 processing。
       currentlyProcessing = true
 
       // include 在 scanner 前即可解析，先成为 discovered 并绑定首批 processing Promise。
@@ -212,7 +215,7 @@ export function createDepsOptimizer(
       } else {
         // scanner 只服务开发冷启动；以后台任务运行，避免阻塞高优先级 server 初始化。
         depsOptimizer.scanProcessing = new Promise((resolve) => {
-          // async IIFE 进入 microtask 后执行，不占住初始化同步主链。
+          // 立即启动异步函数；遇到 scanner 的 await 后让出执行，不阻塞 init 后续收尾。
           ;(async () => {
             try {
               debug?.(colors.green(`scanning for dependencies...`))
@@ -294,7 +297,7 @@ export function createDepsOptimizer(
   function startNextDiscoveredBatch() {
     newDepsDiscovered = false
 
-    // 当前批次加入等待队列，直到某次包含它的重跑成功提交。
+    // 当前批次加入等待队列；后续提交或错误/关闭分支负责放行。
     depOptimizationProcessingQueue.push(depOptimizationProcessing)
 
     // 此后发现的依赖归入下一批 Promise。
@@ -450,8 +453,8 @@ export function createDepsOptimizer(
         }
       } else {
         if (newDepsDiscovered) {
-          // 本轮会 reload 且又出现新依赖：丢弃当前候选，直接下一轮，避免连续 reload；processing
-          // Promise 继续等待真正包含该批依赖的提交。
+          // 本轮会 reload 且又出现新依赖：丢弃候选，接续 missing 登记时安排的 debounce/rerun；processing
+          // Promise 保持等待，后续提交或错误/关闭分支才放行。
           processingResult.cancel()
 
           debug?.(
@@ -593,7 +596,7 @@ export function createDepsOptimizer(
         depsFromOptimizedDepInfo(metadata.optimized),
         depsFromOptimizedDepInfo(metadata.discovered),
       ),
-      // 服务此预构建文件前必须等待它所属批次提交。
+      // 服务此预构建文件前等待所属批次结束，再检查版本和文件。
       processing: depOptimizationProcessing.promise,
       exportsData: extractExportsData(environment, resolved),
     })
@@ -722,7 +725,7 @@ export function createDepsOptimizer(
 }
 
 /**
- * 为 noDiscovery/显式 server Environment 创建阻塞式优化器：无 scanner/运行期 missing 注册，init
+ * 为 server consumer 且 noDiscovery 的 Environment 创建阻塞式优化器：无 scanner/运行期 missing 注册，init
  * 直接完成 include 优化后服务器才继续。
  */
 export function createExplicitDepsOptimizer(
@@ -732,18 +735,21 @@ export function createExplicitDepsOptimizer(
     metadata: initDepsOptimizerMetadata(environment),
     isOptimizedDepFile: createIsOptimizedDepFile(environment),
     isOptimizedDepUrl: createIsOptimizedDepUrl(environment),
+    /** 为显式 include 的产物附加最终 browserHash，供解析结果引用。 */
     getOptimizedDepId: (depInfo: OptimizedDepInfo) =>
       `${depInfo.file}?v=${depInfo.browserHash}`,
 
+    /** 显式优化器只处理 include；运行期补登记属于调用方误用，立即报内部错误。 */
     registerMissingImport: () => {
       throw new Error(
         `Vite Internal Error: registerMissingImport is not supported in dev ${environment.name}`,
       )
     },
     init,
-    // dev SSR 无 scanner，优化器在启动前已阻塞完成，run 无需操作。
+    /** 显式优化只由 init 执行；该接口不安排自动发现或重跑。 */
     run: () => {},
 
+    /** 显式优化工作由 init 完成，没有需在关闭时取消的后台 scanner 或调度队列。 */
     close: async () => {},
     options: environment.config.optimizeDeps,
   }

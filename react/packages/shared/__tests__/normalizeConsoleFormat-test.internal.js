@@ -12,39 +12,40 @@
 let normalizeConsoleFormat;
 
 describe('normalizeConsoleFormat', () => {
+  // 从 shared 入口取得本次构建的 formatter；每例仅比较返回文本，无控制台副作用。
   beforeEach(() => {
     normalizeConsoleFormat = require('shared/normalizeConsoleFormat').default;
   });
 
-  /** Given 空 format 和三个参数，When 归一化，Then 按值类型补 `%o %o %s`。 */
+  /** 空 format 配三个参数时调用归一化，快照要求 `%o %o %s`，验证无格式文本也保留全部参数。 */
   it('normalize empty string', async () => {
     expect(normalizeConsoleFormat('', [1, {}, 'foo'], 0)).toMatchInlineSnapshot(
       `"%o %o %s"`,
     );
   });
 
-  /** Given 一个占位符但三个参数，When 归一化，Then 为剩余对象和字符串补占位符。 */
+  /** `%f` 配数字、对象、字符串时归一化，保留已有占位并补 `%o %s`，验证多余参数按类型追加。 */
   it('normalize extra args', async () => {
     expect(
       normalizeConsoleFormat('%f', [1, {}, 'foo'], 0),
     ).toMatchInlineSnapshot(`"%f %o %s"`);
   });
 
-  /** Given 占位符多于参数，When 归一化，Then 无参数的 `%f` 被转义为字面量。 */
+  /** 四个占位符配三个参数时归一化，末尾 `%f` 变为 `%%f`，验证缺失参数不会误消费后续日志内容。 */
   it('normalize fewer than args', async () => {
     expect(
       normalizeConsoleFormat('%s %O %o %f', [1, {}, 'foo'], 0),
     ).toMatchInlineSnapshot(`"%s %O %o %%f"`);
   });
 
-  /** Given 非法 `%l` 与已有 `%%`，When 扫描，Then 仅消费支持的 specifier。 */
+  /** 输入非法 `%l` 和已有 `%%` 后扫描，仅 `%s` 消费参数且末尾补 `%s`，验证转义与非法符号保持原样。 */
   it('normalize escape sequences', async () => {
     expect(
       normalizeConsoleFormat('hel%lo %s %%s world', [1, 'foo'], 0),
     ).toMatchInlineSnapshot(`"hel%lo %s %%s world %s"`);
   });
 
-  /** Given format 以孤立 `%` 结尾，When 归一化，Then 末尾转义与参数补位互不干扰。 */
+  /** format 以孤立 `%` 结尾，分别带三个与零个参数归一化；快照要求保留尾字符并正确补位/转义，覆盖扫描终止边界。 */
   it('normalize ending with escape', async () => {
     expect(
       normalizeConsoleFormat('hello %s world %', [1, {}, 'foo'], 0),

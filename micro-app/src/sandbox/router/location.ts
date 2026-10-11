@@ -97,6 +97,7 @@ export function createMicroLocation (
    * @param value - 应用请求的目标地址。
    * @param methodName - 对应 assign/replace 的 `pushState` 或 `replaceState` 策略。
    * @returns 需交给真实 location 的路径/原值；已内部处理时返回 `void`。
+ * @throws URL 解析、History 或 reload 的同步错误向调用方传播；已提交的路由不做回滚。
    */
   function commonHandler (value: string | URL, methodName: string): string | URL | void {
     const targetLocation = createURL(value, proxyLocation.href)
@@ -116,7 +117,7 @@ export function createMicroLocation (
           targetLocation.search === proxyLocation.search
         ) {
           let oldHref = null
-          // `pure` 模式即使可见路径未变也需记录这次内部目标，供随后 location 更新使用。
+          // pure 也进入这一分支：目标带 hash 时只更新内部位置，无 hash 时借宿主 state 保存刷新目标。
           if (targetLocation.hash !== proxyLocation.hash || isRouterModePure(appName)) {
             // search 模式把参数写进 hash 时，保存旧宿主 href 以构造正确 hashchange。
             if (setMicroPathResult.isAttach2Hash) {
@@ -146,8 +147,7 @@ export function createMicroLocation (
         }
 
         // pathname/search 变化应具有文档导航效果：先同步路由记录，再显式刷新宿主页面。
-        // TODO：核验 `state` 模式的 pushState 是否会错误继承上一页基座 state，尤其是 Vue 3 场景；
-        // 评估是否应把基座 state 置为 `null`。
+        // search 用 URL 参数保存目标并把宿主 state 置 null；state/pure 则把目标放进应用 state。
         nativeHistoryNavigate(
           appName,
           methodName,
@@ -200,6 +200,7 @@ export function createMicroLocation (
 
   /**
    * 创建 `location.assign`/`replace` 包装方法，在应用有效时选择 push/replace 策略并执行真实跳转。
+   * 有效性是存在且非预加载，不要求 MOUNTED、active 或可见；与 router.push 的活动应用筛选不同。
    */
   const createLocationMethod = (locationMethodName: string) => {
     /** 把 location 方法调用接入统一导航处理器；需真实导航时再补全为宿主 origin。 */
@@ -246,9 +247,9 @@ export function createMicroLocation (
       if (key === 'fullPath') return target.fullPath
 
       /**
-       * `host/hostname/port/protocol/origin/href` 决定应用的同源判断。`native` 模式与宿主共享这些值；
-       * 其他模式呈现子应用 origin。iframe 的 src 实际指向基座地址，故必须从启动时保存的静态子应用
-       * location 取值，不能相信 iframe 当前 origin。
+       * host/hostname/port/protocol/origin 决定应用的来源视图：native 呈现宿主值，其他模式呈现子应用值。
+       * iframe 的真实地址指向基座，因此非 native 模式用启动时保存的子应用来源；href 在下一分支把
+       * 当前内部路径与相应来源组合，不能直接等同于宿主 href。
        */
       if (HIJACK_LOCATION_KEYS.includes(key)) {
         if (isRouterModeNative(appName)) {
@@ -366,8 +367,8 @@ export function autoTriggerNavigationGuard (appName: string, microLocation: Micr
  * 原地更新微应用 location，校正原生模式宿主 URL，并按类型触发导航守卫。
  *
  * @remarks
- * 上游包括 History 写入、popstate、初始化 URL 查询与默认页。调用约定是先更新浏览器 URL，再更新
- * microLocation。函数先捕获 `from`，iframe 通过其保存的原始 replaceState 改真实 location；with 沙箱
+ * 上游包括 History 写入、popstate、初始化 URL 查询与默认页；pure 或默认页预处理可只更新内部地址。
+ * 函数先捕获 `from`，iframe 通过其保存的原始 replaceState 改真实 location；with 沙箱
  * 则改独立 URL 对象且保持子应用 origin。自定义原生模式若 state 中目标路径与当前宿主 URL 不一致，
  * 会以 state 快照为准 replace 校正，避免 Vue Router 4 等主动回写 URL 后出现“页面与地址不一致”。
  *

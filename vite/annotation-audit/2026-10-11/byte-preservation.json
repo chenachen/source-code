@@ -1,0 +1,224 @@
+[
+  {
+    "file": "vite/packages/vite/src/node/ssr/__tests__/fixtures/bundled-with-sourcemaps/bundle.js",
+    "beforeSha256": "3191d42c96905dbbc40766f37ece730c220bd47c44000f1dfbccce7570089752",
+    "afterSha256": "3191d42c96905dbbc40766f37ece730c220bd47c44000f1dfbccce7570089752",
+    "equal": true
+  },
+  {
+    "file": "vite/packages/vite/src/node/ssr/__tests__/fixtures/errors/syntax-error-dep.js",
+    "beforeSha256": "986750589e870edaf556afde9fd8c465b8cc775cd70c6ca82d0e86356ebecabe",
+    "afterSha256": "986750589e870edaf556afde9fd8c465b8cc775cd70c6ca82d0e86356ebecabe",
+    "equal": true
+  },
+  {
+    "file": "vite/packages/vite/src/node/ssr/__tests__/fixtures/errors/syntax-error-dep.ts",
+    "beforeSha256": "9f484238bf5a690c9e44613edfffafd760c93e65fa66241fa7659096571bad8b",
+    "afterSha256": "9f484238bf5a690c9e44613edfffafd760c93e65fa66241fa7659096571bad8b",
+    "equal": true
+  },
+  {
+    "file": "vite/packages/vite/src/node/ssr/__tests__/fixtures/errors/syntax-error.js",
+    "beforeSha256": "a773ffa899847fa969e63794cdd6155da5dbd5ef5cfb82f7fd8b7a6ae222cb7c",
+    "afterSha256": "a773ffa899847fa969e63794cdd6155da5dbd5ef5cfb82f7fd8b7a6ae222cb7c",
+    "equal": true
+  },
+  {
+    "file": "vite/packages/vite/src/node/ssr/__tests__/fixtures/errors/syntax-error.ts",
+    "beforeSha256": "a773ffa899847fa969e63794cdd6155da5dbd5ef5cfb82f7fd8b7a6ae222cb7c",
+    "afterSha256": "a773ffa899847fa969e63794cdd6155da5dbd5ef5cfb82f7fd8b7a6ae222cb7c",
+    "equal": true
+  },
+  {
+    "file": "vite/packages/vite/src/node/ssr/__tests__/fixtures/multi-source-sourcemaps/dist.js",
+    "beforeSha256": "ecad39b8e7db5ca44406cbdc0395a45fa753301b5ab9f18eb90c02e44ce93a45",
+    "afterSha256": "ecad39b8e7db5ca44406cbdc0395a45fa753301b5ab9f18eb90c02e44ce93a45",
+    "equal": true
+  },
+  {
+    "file": "vite/packages/vite/src/node/ssr/__tests__/fixtures/multi-source-sourcemaps/entrypoint.js",
+    "beforeSha256": "0ed267a5381ce8471bb3517f5f99a3a617bec5789b04df5cfbcc75b7175e6e29",
+    "afterSha256": "0ed267a5381ce8471bb3517f5f99a3a617bec5789b04df5cfbcc75b7175e6e29",
+    "equal": true
+  },
+  {
+    "file": "vite/packages/vite/src/node/ssr/__tests__/fixtures/multi-source-sourcemaps/nested-directory/nested-file.js",
+    "beforeSha256": "962a80c07c37872aa0a278b5e9938bf33fb2df4107be94212cb67f4354d5a73f",
+    "afterSha256": "962a80c07c37872aa0a278b5e9938bf33fb2df4107be94212cb67f4354d5a73f",
+    "equal": true
+  },
+  {
+    "file": "vite/packages/vite/src/node/ssr/runtime/__tests__/fixtures/has-error-deep.ts",
+    "beforeSha256": "dfda690ba64598ea70aa19116b38654dc5bc5c3f1a04ec4579f1cd30be042b0a",
+    "afterSha256": "dfda690ba64598ea70aa19116b38654dc5bc5c3f1a04ec4579f1cd30be042b0a",
+    "equal": true
+  },
+  {
+    "file": "vite/packages/vite/src/node/ssr/runtime/__tests__/fixtures/has-error-first-comment.ts",
+    "beforeSha256": "bca74f2290958020053ba18cad73afa07558e4c394cd676cdca1703380e48622",
+    "afterSha256": "bca74f2290958020053ba18cad73afa07558e4c394cd676cdca1703380e48622",
+    "equal": true
+  },
+  {
+    "file": "vite/packages/vite/src/node/ssr/runtime/__tests__/fixtures/has-error-first.js",
+    "beforeSha256": "ce1869f874f817af4ef885619bf562d1a06e891afae1d31a4b59b7c2c8303ffd",
+    "afterSha256": "ce1869f874f817af4ef885619bf562d1a06e891afae1d31a4b59b7c2c8303ffd",
+    "equal": true
+  },
+  {
+    "file": "vite/packages/vite/src/node/ssr/runtime/__tests__/fixtures/has-error-toplevel-dep.js",
+    "beforeSha256": "f7e7b30ade11d6590935b007688689edf6d16905d12a14d07fbc0276c4b25796",
+    "afterSha256": "f7e7b30ade11d6590935b007688689edf6d16905d12a14d07fbc0276c4b25796",
+    "equal": true
+  },
+  {
+    "file": "vite/packages/vite/src/node/ssr/runtime/__tests__/fixtures/has-error-toplevel.js",
+    "beforeSha256": "bd833dd4fa6c03e5f43059200fd4e130dd72ca2c955114d4ce07b3d8a2903cf6",
+    "afterSha256": "bd833dd4fa6c03e5f43059200fd4e130dd72ca2c955114d4ce07b3d8a2903cf6",
+    "equal": true
+  },
+  {
+    "file": "vite/packages/vite/src/node/ssr/runtime/__tests__/fixtures/has-error.js",
+    "beforeSha256": "a93be7b1670d64fbb1b864e80b200909ec32f743371905e0a883e32e1b78db6f",
+    "afterSha256": "a93be7b1670d64fbb1b864e80b200909ec32f743371905e0a883e32e1b78db6f",
+    "equal": true
+  },
+  {
+    "file": "vite/packages/vite/src/node/ssr/runtime/__tests__/fixtures/pre-source-mapped-file.js",
+    "beforeSha256": "294a6c6ceb7114c3eb288af8607acd1e230b1455afbeff15f50d49ddacf46359",
+    "afterSha256": "294a6c6ceb7114c3eb288af8607acd1e230b1455afbeff15f50d49ddacf46359",
+    "equal": true
+  },
+  {
+    "file": "vite/packages/vite/src/node/ssr/runtime/__tests__/fixtures/simple.js",
+    "beforeSha256": "2116dde33d0d160a1b4fee003b85ef87c4b9fdbe6e8df03d5c3b104fd1a3a5e4",
+    "afterSha256": "2116dde33d0d160a1b4fee003b85ef87c4b9fdbe6e8df03d5c3b104fd1a3a5e4",
+    "equal": true
+  },
+  {
+    "file": "vite/packages/vite/src/node/ssr/runtime/__tests__/fixtures/string-literal-sourcemap.ts",
+    "beforeSha256": "15bfde5dce7e630c599542e78063287cd318b6865d512d8fafc4824ac6b0fd91",
+    "afterSha256": "15bfde5dce7e630c599542e78063287cd318b6865d512d8fafc4824ac6b0fd91",
+    "equal": true
+  },
+  {
+    "file": "vite/packages/vite/src/node/ssr/runtime/__tests__/fixtures/throws-error-method.ts",
+    "beforeSha256": "1efb34a7c923b583cf2c41696028561f2f48868e18bfbbc8f1b0c26ddc7bf853",
+    "afterSha256": "1efb34a7c923b583cf2c41696028561f2f48868e18bfbbc8f1b0c26ddc7bf853",
+    "equal": true
+  },
+  {
+    "file": "vite/playground/assets/static/raw.mts",
+    "beforeSha256": "b9b6401e1ef59dbe74bf2d825a43b60d72effb6fdc0a372a221c0fd147cd84a2",
+    "afterSha256": "b9b6401e1ef59dbe74bf2d825a43b60d72effb6fdc0a372a221c0fd147cd84a2",
+    "equal": true
+  },
+  {
+    "file": "vite/playground/assets/static/raw.ts",
+    "beforeSha256": "6c67db9b3f2d1b43183544e569acceb6739a245aa0e1747b8354bfe4ca860163",
+    "afterSha256": "6c67db9b3f2d1b43183544e569acceb6739a245aa0e1747b8354bfe4ca860163",
+    "equal": true
+  },
+  {
+    "file": "vite/playground/external/public/slash@3.0.0.js",
+    "beforeSha256": "edfc163883041c518d57d86d822946c2538d85a4fa65117755d24f6a98b79b61",
+    "afterSha256": "edfc163883041c518d57d86d822946c2538d85a4fa65117755d24f6a98b79b61",
+    "equal": true
+  },
+  {
+    "file": "vite/playground/forward-console/fixtures/throw-dep/index.js",
+    "beforeSha256": "64cad3ff99426a6dcc6e7787ae844d362b4d19244e69e8217ec361e6fb64cf97",
+    "afterSha256": "64cad3ff99426a6dcc6e7787ae844d362b4d19244e69e8217ec361e6fb64cf97",
+    "equal": true
+  },
+  {
+    "file": "vite/playground/forward-console/src/main.ts",
+    "beforeSha256": "8dac15ab9cc713bf53570c7d47d0b153270e0c6a343a38b5e128b2f4eda5e76a",
+    "afterSha256": "8dac15ab9cc713bf53570c7d47d0b153270e0c6a343a38b5e128b2f4eda5e76a",
+    "equal": true
+  },
+  {
+    "file": "vite/playground/js-sourcemap/bar.ts",
+    "beforeSha256": "92fd49577fdeebc2311a67e858442c610cce5e731a983e84c618c38464699ce0",
+    "afterSha256": "92fd49577fdeebc2311a67e858442c610cce5e731a983e84c618c38464699ce0",
+    "equal": true
+  },
+  {
+    "file": "vite/playground/js-sourcemap/dep-class-field-sourcemap-babel/index.js",
+    "beforeSha256": "80716993cb7e3a4125d2a7c9bcf1158b978530b9edeb7150c2e4cb48d3c6ce17",
+    "afterSha256": "80716993cb7e3a4125d2a7c9bcf1158b978530b9edeb7150c2e4cb48d3c6ce17",
+    "equal": true
+  },
+  {
+    "file": "vite/playground/js-sourcemap/dep-class-field-sourcemap-oxc/index.js",
+    "beforeSha256": "80716993cb7e3a4125d2a7c9bcf1158b978530b9edeb7150c2e4cb48d3c6ce17",
+    "afterSha256": "80716993cb7e3a4125d2a7c9bcf1158b978530b9edeb7150c2e4cb48d3c6ce17",
+    "equal": true
+  },
+  {
+    "file": "vite/playground/js-sourcemap/dep-malicious-sourcemap/index.js",
+    "beforeSha256": "d0f8f4251a39791b06afbc998c4d3130fb42fe39aa719dc9520d946e8fb11e47",
+    "afterSha256": "d0f8f4251a39791b06afbc998c4d3130fb42fe39aa719dc9520d946e8fb11e47",
+    "equal": true
+  },
+  {
+    "file": "vite/playground/js-sourcemap/dep-optimized-malicious/index.js",
+    "beforeSha256": "e15ddcb5e1f3c22334e8e100bdcb7b0c2c1db65c4a95be62fefea493975a52ff",
+    "afterSha256": "e15ddcb5e1f3c22334e8e100bdcb7b0c2c1db65c4a95be62fefea493975a52ff",
+    "equal": true
+  },
+  {
+    "file": "vite/playground/js-sourcemap/foo-with-sourcemap.js",
+    "beforeSha256": "a58d75e73b052dfeaa32707f802eed58d5b74fbcaeba22591725f96eb7c592e3",
+    "afterSha256": "a58d75e73b052dfeaa32707f802eed58d5b74fbcaeba22591725f96eb7c592e3",
+    "equal": true
+  },
+  {
+    "file": "vite/playground/js-sourcemap/foo.js",
+    "beforeSha256": "a58d75e73b052dfeaa32707f802eed58d5b74fbcaeba22591725f96eb7c592e3",
+    "afterSha256": "a58d75e73b052dfeaa32707f802eed58d5b74fbcaeba22591725f96eb7c592e3",
+    "equal": true
+  },
+  {
+    "file": "vite/playground/js-sourcemap/with-define-object-ssr.ts",
+    "beforeSha256": "f4ca531d226b02988907ba33c36d855be8f4f2657114f08c369550792fa2709e",
+    "afterSha256": "f4ca531d226b02988907ba33c36d855be8f4f2657114f08c369550792fa2709e",
+    "equal": true
+  },
+  {
+    "file": "vite/playground/js-sourcemap/with-define-object.ts",
+    "beforeSha256": "981f1ba4684a6ecc222008f7c409e50035f64c1eabc6684476f9e0f19e9e558d",
+    "afterSha256": "981f1ba4684a6ecc222008f7c409e50035f64c1eabc6684476f9e0f19e9e558d",
+    "equal": true
+  },
+  {
+    "file": "vite/playground/ssr-html/public/slash@3.0.0.js",
+    "beforeSha256": "edfc163883041c518d57d86d822946c2538d85a4fa65117755d24f6a98b79b61",
+    "afterSha256": "edfc163883041c518d57d86d822946c2538d85a4fa65117755d24f6a98b79b61",
+    "equal": true
+  },
+  {
+    "file": "vite/playground/ssr-html/src/error-js.js",
+    "beforeSha256": "7966426dc76599c1dd54de0387a34a2efe1976d15c8a2700c7a36601e16ed1ce",
+    "afterSha256": "7966426dc76599c1dd54de0387a34a2efe1976d15c8a2700c7a36601e16ed1ce",
+    "equal": true
+  },
+  {
+    "file": "vite/playground/ssr-html/src/error-ts.ts",
+    "beforeSha256": "7966426dc76599c1dd54de0387a34a2efe1976d15c8a2700c7a36601e16ed1ce",
+    "afterSha256": "7966426dc76599c1dd54de0387a34a2efe1976d15c8a2700c7a36601e16ed1ce",
+    "equal": true
+  },
+  {
+    "file": "vite/playground/ssr-html/src/has-error-deep.ts",
+    "beforeSha256": "dfda690ba64598ea70aa19116b38654dc5bc5c3f1a04ec4579f1cd30be042b0a",
+    "afterSha256": "dfda690ba64598ea70aa19116b38654dc5bc5c3f1a04ec4579f1cd30be042b0a",
+    "equal": true
+  },
+  {
+    "file": "vite/playground/worker/my-worker.ts",
+    "beforeSha256": "c50f303b357fdfb38edd87f1c361bfe281342038f7a0b0f3c04fee3bedaea799",
+    "afterSha256": "c50f303b357fdfb38edd87f1c361bfe281342038f7a0b0f3c04fee3bedaea799",
+    "equal": true
+  }
+]

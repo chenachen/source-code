@@ -7,5 +7,5 @@
  * @flow
  */
 
-// 外部 RSC/Fizz 运行时入口只暴露 DOM 指令集适配；不包含 `react-server` 的完整渲染管线。
+// 外部 Fizz runtime 入口导出流式 HTML 指令的 DOM 执行器，用于补入 segment 和完成边界。
 export * from 'react-dom-bindings/src/server/ReactDOMServerExternalRuntime';

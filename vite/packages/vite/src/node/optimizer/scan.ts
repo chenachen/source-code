@@ -58,7 +58,7 @@ export class ScanEnvironment extends BaseEnvironment {
   /** 惰性创建的 scan 模式插件容器。 @internal */
   _pluginContainer: EnvironmentPluginContainer | undefined
 
-  /** 幂等创建不自动 buildStart 的轻量插件容器。 */
+  /** 只创建一次不自动 buildStart 的轻量容器；初始化标记在等待创建完成前置位。 */
   async init(): Promise<void> {
     if (this._initiated) {
       return
@@ -112,15 +112,17 @@ const debug = createDebugger('vite:deps')
 /** scanner 需要先抽取 script 块的 HTML 与常见 SFC 扩展名。 */
 const htmlTypesRE = /\.(?:html|vue|svelte|astro|imba)$/
 
-// 只用于 Vue `<script setup lang=ts>`/Svelte TS 块的轻量 import 提取。TS 转换会删除模板中才使用的
-// import，阻断继续 crawl；es-module-lexer 不支持 TS，完整 AST 又太慢。scanner 允许假阴性由运行时
-// 发现补齐，假阳性会在 resolve 时忽略，因此无需成为完备解析器。
+/**
+ * Vue `<script setup lang=ts>`/Svelte TS 块的轻量 import 提取，保留模板中才用到的依赖。
+ * es-module-lexer 不支持 TS，完整 AST 成本较高，漏提取可由运行期发现补齐；提取路径仍须
+ * 经正常 resolve，无法解析时进入 missing 结果。
+ */
 export const importsRE: RegExp =
   /(?<!\/\/.*)(?<=^|;|\*\/)\s*import(?!\s+type)(?:[\w*{}\n\r\t, ]+from)?\s*("[^"]+"|'[^']+')\s*(?=$|;|\/\/|\/\*)/gm
 
 /**
  * 从推断入口用 Rolldown scan 快速 crawl，收集“可优化裸依赖 → 入口文件”和无法 resolve 的依赖。
- * 返回 cancel + result，允许服务器关闭时终止后台扫描。
+ * 返回 cancel + result；cancel 只置取消标记，使尚未进入 build 的阶段提前退出，不中断或等待在途 build。
  */
 export function scanImports(environment: ScanEnvironment): {
   /** 标记取消，使尚未 build 的 scanner 提前退出。 */
@@ -137,7 +139,7 @@ export function scanImports(environment: ScanEnvironment): {
   const { config } = environment
 
   const scanContext = { cancelled: false }
-  /** 标记后台 scanner 取消；后续阶段在创建/执行 context 前检查。 */
+  /** 标记后台 scanner 取消；computeEntries 与 prepareRolldownScanner 完成后检查，不中断在途 build。 */
   async function cancel() {
     scanContext.cancelled = true
   }
@@ -453,7 +455,7 @@ function rolldownScanPlugin(
 
   /** 阻止非入口依赖继续 crawl，同时保留显式 scanner 入口。 */
   const externalUnlessEntry = ({
-    path
+    path,
   }: {
     /** 当前已解析或待保留的模块路径。 */
     path: string
@@ -608,6 +610,7 @@ function rolldownScanPlugin(
       resolveId: {
         // 协议 URL 交给运行时，不 crawl。
         filter: { id: externalRE },
+        /** 保留 URL ID 并 externalize，使扫描停在该协议入口。 */
         handler: (id) => ({ id, external: true }),
       },
     },
@@ -616,6 +619,7 @@ function rolldownScanPlugin(
       resolveId: {
         // data URL 不依赖磁盘图。
         filter: { id: dataUrlRE },
+        /** data URL 自带内容，保留为 external，不扫描其内部模块。 */
         handler: (id) => ({ id, external: true }),
       },
     },
@@ -624,6 +628,7 @@ function rolldownScanPlugin(
       name: 'vite:dep-scan:local-scripts',
       resolveId: {
         filter: { id: virtualModuleRE },
+        /** 保留本插件生成的虚拟 script ID，交给对应 load 钩子读取缓存。 */
         handler: (id) => ({ id }),
       },
       load: {

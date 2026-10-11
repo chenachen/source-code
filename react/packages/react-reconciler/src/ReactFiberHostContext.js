@@ -33,12 +33,14 @@ const contextFiberStackCursor: StackCursor<Fiber | null> = createCursor(null);
 const rootInstanceStackCursor: StackCursor<Container | null> =
   createCursor(null);
 
-// 最近的宿主 Transition provider（React DOM 中为 <form />）。由于表单不能嵌套，
-// 且只有 React DOM 实现该能力，技术上单个模块变量也够用；这里仍沿用栈协议。
+/** 最近的宿主 Transition provider（React DOM 中为 form）；与宿主上下文一起压栈，在 complete/unwind 弹出后恢复外层 provider。 */
 const hostTransitionProviderCursor: StackCursor<Fiber | null> =
   createCursor(null);
 
-/** 断言内部 HostContext 已存在，并把可空类型收窄为实际值。 */
+/**
+ * 诊断缺失的宿主上下文，并把可空类型转换成调用方约定的非空类型。
+ * DEV 中 null 只触发 console.error，生产中没有检查；两种构建都原样返回输入，不会在此抛错或补值。
+ */
 function requiredContext<Value>(c: Value | null): Value {
   if (__DEV__) {
     if (c === null) {

@@ -50,7 +50,7 @@ describe('ReactIncrementalSideEffects', () => {
 
   /**
    * 场景（Given–When–Then）：给定宿主 div 内一个 Bar；当 Hello→World 更新同时新增第二个 Bar；
-   * 那么原节点文本更新且新节点按序插入。对应机制：宿主父节点的 Update 与 Placement flags。
+   * 那么原节点文本更新且新节点按序插入。对应机制：已存在文本的 Update 与新增 Bar 子树的 Placement flags。
    */
   it('can update child nodes of a host instance', async () => {
     /** 把输入文本包装为宿主 span。 */
@@ -213,7 +213,7 @@ describe('ReactIncrementalSideEffects', () => {
 
   /**
    * 场景（Given–When–Then）：给定无显式 key 的同一位置依次渲染类组件、函数组件、文本和空；
-   * 当类型变化；那么旧类组件只卸载一次且尾随文本稳定。对应机制：隐式索引 key 下类型不匹配删除。
+   * 当类型变化；那么类型替换会调用旧类组件的卸载生命周期，尾随文本保持稳定。对应机制：隐式索引 key 下类型不匹配删除。
    */
   it('can delete a child that changes type - implicit keys', async function () {
     let unmounted = false;
@@ -284,7 +284,7 @@ describe('ReactIncrementalSideEffects', () => {
 
   /**
    * 场景（Given–When–Then）：给定类组件与函数组件共享显式 key `a`；当类型替换再删除；
-   * 那么 key 相同也不能跨类型复用，旧类组件仍卸载一次。
+   * 那么 key 相同也不能跨类型复用，旧类组件会调用卸载生命周期。
    * 对应机制：key 与 elementType 共同决定 Fiber 身份。
    */
   it('can delete a child that changes type - explicit keys', async function () {
@@ -350,7 +350,7 @@ describe('ReactIncrementalSideEffects', () => {
 
   /**
    * 场景（Given–When–Then）：给定 Foo 本身保留但 portal 内 children 在有/无之间切换；当多次
-   * 更新并最终卸载根；那么 portal 容器插入、清空、重建均正确，主根始终只含外层 div。
+   * 更新并最终卸载根；那么 portal 容器插入、清空、重建均正确；包装 Foo 时主根只有外层 div，后半直接渲染 Foo 时主根为空。
    * 对应机制：HostPortal 的独立 container deletion list。
    */
   it('can delete a child when it unmounts inside a portal', async () => {
@@ -605,9 +605,9 @@ describe('ReactIncrementalSideEffects', () => {
   });
 
   /**
-   * 场景（Given–When–Then）：给定隐藏树从 Hi/foo 更新到静态 Hello/World，且只完成首个 Bar 后
-   * 被更高优先级根更新抢占；当恢复低优先级工作；那么复用已完成 Bar 并重放其 Placement/Update。
-   * 对应机制：可恢复 work-in-progress 保存未提交副作用链。
+   * 场景（Given–When–Then）：给定隐藏树从 Hi/foo 更新到静态 Hello/World，且只渲染到首个 Bar 后
+   * 被更高优先级根更新抢占；当恢复低优先级工作；那么恢复后的宿主更新仍提交为 Hello/World。
+   * 对应机制：抢占后重新协调仍生成完整的 Update flags；未提交树不能提前写入宿主。
    */
   // @gate enableLegacyHidden
   it('can reuse side-effects after being preempted', async () => {
@@ -670,12 +670,11 @@ describe('ReactIncrementalSideEffects', () => {
       </div>,
     );
 
-    // 首个 Bar 已完成但尚未提交；用更高优先级更新抢占。middleContent 身份稳定会 bailout，
-    // 下次恢复应复用刚才完成的工作。
+    // 首个 Bar 已渲染但尚未提交；更高优先级更新保持 step=1，仍选择相同 middleContent。
     ReactNoop.render(<Foo text="foo" step={1} />);
     await waitForAll(['Foo', 'Bar', 'Bar']);
 
-    // 抢占期间未修改中间子树，应从断点复用协调结果并仍然重放副作用，而非重头开始。
+    // 恢复阶段重新出现两条 Bar 日志，随后提交 Hello/World；此前未提交的更新不能丢失。
 
     expect(ReactNoop.getChildrenAsJSX()).toEqual(
       <div hidden={true}>
@@ -689,8 +688,8 @@ describe('ReactIncrementalSideEffects', () => {
 
   /**
    * 场景（Given–When–Then）：给定 Content/Bar 通过 shouldComponentUpdate 精确 bailout，隐藏更新
-   * 在首个 Bar 后被相同 step 的高优先级工作抢占；当恢复；那么已完成副作用仍被复用并提交。
-   * 对应机制：SCU bailout 克隆 child lanes 时不丢失可恢复 effect flags。
+   * 在首个 Bar 后被相同 step 的高优先级工作抢占；当恢复；那么两项宿主更新最终仍完整提交。
+   * 对应机制：SCU 的旧 props 基线来自 current，未提交 render 不能让恢复后的宿主更新被跳过。
    */
   // @gate enableLegacyHidden
   it('can reuse side-effects after being preempted, if shouldComponentUpdate is false', async () => {
@@ -762,12 +761,12 @@ describe('ReactIncrementalSideEffects', () => {
       </div>,
     );
 
-    // 首个 Bar 已完成但尚未提交；更高优先级更新保持 step=1，使 Content bailout，
-    // 因而恢复时应复用此前结果。
+    // 首个 Bar 已渲染但尚未提交；更高优先级更新仍指定 step=1。current 中 step 仍为 0，
+    // 因而恢复时 Content 仍需渲染，随后两条 Bar 日志与最终输出共同检查更新没有丢失。
     ReactNoop.render(<Foo text="foo" step={1} />);
     await waitForAll(['Foo', 'Content', 'Bar', 'Bar']);
 
-    // 抢占期间未修改中间子树，应从断点复用协调结果，并仍重放其副作用。
+    // 恢复渲染完成两项宿主更新后，再一次性提交 Hello/World。
 
     expect(ReactNoop.getChildrenAsJSX()).toEqual(
       <div hidden={true}>
@@ -780,9 +779,9 @@ describe('ReactIncrementalSideEffects', () => {
   });
 
   /**
-   * 场景（Given–When–Then）：给定 step 2 的树已完成 render 但尚未 commit；当根又更新到 step 3；
+   * 场景（Given–When–Then）：给定 step 2 已执行 Foo render，但尚未 commit；当根又更新到 step 3；
    * 那么先提交已就绪的 2，再继续处理并提交 3，不丢任一更新。
-   * 对应机制：finishedWork 与根 pending lanes 在提交前新增更新时分别保留。
+   * 对应机制：在途 transition 不被新的同类根更新立即替换，后续更新留在队列；Foo 日志本身不证明整棵树已完成 completeWork。
    */
   it('can update a completed tree before it has a chance to commit', async () => {
     /** 记录每个 step 的 render，并输出 step prop。 */
@@ -793,7 +792,7 @@ describe('ReactIncrementalSideEffects', () => {
     React.startTransition(() => {
       ReactNoop.render(<Foo step={1} />);
     });
-    // 只完成树，不立即提交。
+    // 停在 Foo render 之后，宿主子节点与 complete 路径尚可继续；此时没有提交。
     await waitFor(['Foo 1']);
     expect(ReactNoop.getChildrenAsJSX()).toEqual(null);
     // 再执行一个工作单元，确认完成树此时提交。
@@ -803,7 +802,7 @@ describe('ReactIncrementalSideEffects', () => {
     React.startTransition(() => {
       ReactNoop.render(<Foo step={2} />);
     });
-    // 再次只完成 step 2 树而不提交。
+    // 再次停在 step 2 的 Foo render 后，不提交。
     await waitFor(['Foo 2']);
     expect(ReactNoop.getChildrenAsJSX()).toEqual(<span prop={1} />);
     // 在提交 step 2 前，把根更新到新 props step 3。
@@ -812,7 +811,7 @@ describe('ReactIncrementalSideEffects', () => {
       ReactNoop.render(<Foo step={3} />);
     });
     expect(ReactNoop.getChildrenAsJSX()).toEqual(<span prop={1} />);
-    // 先提交此前已经 pending 的 step 2 完成树。
+    // 继续完成并提交在途 step 2，再处理队列中的 step 3。
     await waitForPaint([]);
     expect(ReactNoop.getChildrenAsJSX()).toEqual(<span prop={2} />);
     // 刷新余下工作应再提交 step 3；若再次得到 2，则说明新更新被丢失。
@@ -1094,7 +1093,7 @@ describe('ReactIncrementalSideEffects', () => {
   /**
    * 场景（Given–When–Then）：给定隐藏树的三个 Bar 正在低优先级更新，其中首个 Bar 又 setState；
    * 当只刷新部分工作；那么局部状态也随隐藏 lane 延后，完整刷新时与其余 props 更新一起提交。
-   * 对应机制：隐藏 Offscreen 上下文降低后代 state update 的调度优先级。
+   * 对应机制：隐藏更新仍按调用上下文选择原始 lane，markHiddenUpdate 另加 OffscreenLane 标记；隐藏树保存 base lanes 并在后台工作中处理，不是将请求 lane 直接改成低优先级。
    */
   // @gate enableLegacyHidden
   it('deprioritizes setStates that happens within a deprioritized tree', async () => {
@@ -1161,7 +1160,7 @@ describe('ReactIncrementalSideEffects', () => {
 
     barInstances[0].activate();
 
-    // 当前预算不足以完成所有隐藏项；隐藏树内的 setState 同样被降优先级。
+    // 当前预算不足以完成所有隐藏项；隐藏树内的 setState 同样留待隐藏子树工作处理。
     // ReactNoop.flushDeferredPri(35);
     await waitFor(['Bar']);
     expect(ReactNoop.getChildrenAsJSX()).toEqual(
@@ -1338,7 +1337,7 @@ describe('ReactIncrementalSideEffects', () => {
   /**
    * 场景（Given–When–Then）：给定相同 keyed 树首次挂载后原样更新；当两次 commit；那么首次
    * didMount、第二次 didUpdate 都按后代先于 Wrapper 的顺序执行。
-   * 对应机制：layout effect list 的类生命周期遍历顺序。
+   * 对应机制：layout 阶段按 child/sibling 深度优先遍历，在后代之后调用类生命周期。
    */
   it('calls componentDidMount/Update after insertion/update', async () => {
     let ops = [];
@@ -1426,7 +1425,7 @@ describe('ReactIncrementalSideEffects', () => {
 
   /**
    * 场景（Given–When–Then）：给定类、函数和宿主节点都传入 ref callback；当挂载、替换回调、
-   * 再卸载；那么函数组件无 ref，变更回调先 detach 后 attach，删除时仅 detach 已附着 ref。
+   * 再卸载；那么忽略 ref prop 的函数组件不触发回调；类和宿主 ref 变更先 detach 后 attach，删除时只 detach。
    * 对应机制：Ref flag 的 mutation/layout 两阶段顺序。
    */
   it('invokes ref callbacks after insertion/update/unmount', async () => {
@@ -1443,7 +1442,7 @@ describe('ReactIncrementalSideEffects', () => {
       }
     }
 
-    /** 函数组件 ref 不应被调用，只返回宿主 span。 */
+    /** 忽略传入的 ref prop，不把它转交内部 span，因此不触发 ref 回调。 */
     function FunctionComponent(props) {
       return <span />;
     }
@@ -1465,7 +1464,7 @@ describe('ReactIncrementalSideEffects', () => {
 
     expect(ops).toEqual([
       classInstance,
-      // 函数组件不会收到 ref 回调。
+      // 此函数组件未转交 ref；只有类实例与直接带 ref 的宿主节点触发回调。
       {type: 'div', children: [], prop: undefined, hidden: false},
     ]);
 

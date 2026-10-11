@@ -26,11 +26,7 @@ async function runError(input: string) {
 }
 
 describe('parse positives', async () => {
-  /**
-   * 场景：glob 可出现在对象/数组任意表达式位置，并接受字符串数组、负 pattern、多行静态选项。
-   * 验证目标：准确得到 pattern、规范化 query/base 选项与源码 start，即使注释中包含右括号。
-   * 机制：对 parser 结果做窄化快照，专门观察静态语法协议。
-   */
+  /** 源码只有一个相对 glob 调用；解析结果应保留 pattern、空 options 和 start=5 的源码偏移。 */
   it('basic', async () => {
     expect(
       await run(`
@@ -273,11 +269,7 @@ describe('parse positives', async () => {
 })
 
 describe('parse negatives', async () => {
-  /**
-   * 场景：glob 展开必须在构建前确定文件全集。
-   * 验证目标：拒绝缺括号、动态 pattern/选项、错误参数数目/类型和非法 base；字符串中的伪调用忽略。
-   * 机制：快照每个错误分支，确保诊断指向用户可修复的约束而非底层 AST 异常。
-   */
+  /** 输入缺少闭括号的 glob 调用；runError 捕获的诊断应明确指出 Close parenthesis not found。 */
   it('syntax error', async () => {
     expect(await runError('import.meta.glob(')).toMatchInlineSnapshot(
       '[Error: Invalid glob import syntax: Close parenthesis not found]',
@@ -321,7 +313,7 @@ describe('parse negatives', async () => {
     )
   })
 
-  /** 场景：无表达式模板用 Unicode 转义拼出 hello；验证目标：解析结果解码为 /hello。 */
+  /** 测试宿主字符串先把 Unicode 转义求值为 /hello；parser 接收到的是无插值的普通模板文本。 */
   it('template with unicode', async () => {
     expect(await run('import.meta.glob(`/\u0068\u0065\u006c\u006c\u006f`)'))
       .toMatchInlineSnapshot(`

@@ -6,6 +6,7 @@ import { BindingTypes } from '@vue/compiler-core'
 import { assertCode, compileSFCScript as compile } from '../utils'
 
 describe('defineModel()', () => {
+  // 同时声明默认、count、toString 模型；生成对应 props/update 事件及 useModel，模型变量是 SETUP_REF，未被本地变量覆盖的模型名登记为 PROPS。
   test('basic usage', () => {
     const { content, bindings } = compile(
       `
@@ -40,6 +41,7 @@ describe('defineModel()', () => {
     })
   })
 
+  // 使用不含插值的模板字符串命名 x/y；静态名称被提取，默认值进入各自 prop，useModel 保留原名称表达式。
   test('w/ template literal name', () => {
     const { content, bindings } = compile(
       `
@@ -63,6 +65,7 @@ describe('defineModel()', () => {
     })
   })
 
+  // 模型名模板字符串含 name 插值；它不是静态名称，回退 modelValue 并把该表达式作为 options 传给 useModel。
   test('w/ template literal name with expressions falls back to modelValue', () => {
     const { content } = compile(
       `
@@ -77,6 +80,7 @@ describe('defineModel()', () => {
     expect(content).toMatch('_useModel(__props, "modelValue",')
   })
 
+  // 已有 foo props/change emits，再声明默认模型；通过 mergeModels 合并选项，生成 useModel 并保留各类绑定。
   test('w/ defineProps and defineEmits', () => {
     const { content, bindings } = compile(
       `
@@ -99,6 +103,7 @@ describe('defineModel()', () => {
     })
   })
 
+  // 已有数组 props，再声明 count 模型；mergeModels 合并数组与模型对象，并生成 countModifiers。
   test('w/ array props', () => {
     const { content, bindings } = compile(
       `
@@ -122,6 +127,7 @@ describe('defineModel()', () => {
     })
   })
 
+  // 声明布尔/字符串联合、数字及含 any 的模型；推导构造器与修饰符 prop，未知联合保留 Boolean 并加 skipCheck。
   test('w/ types, basic usage', () => {
     const { content, bindings } = compile(
       `
@@ -164,6 +170,7 @@ describe('defineModel()', () => {
     })
   })
 
+  // 生产模式编译 Boolean、无默认 Function、有默认 Function、String 及 required 选项；保留转换或默认值解释所需的类型，其余校验类型裁剪。
   test('w/ types, production mode', () => {
     const { content, bindings } = compile(
       `
@@ -202,6 +209,7 @@ describe('defineModel()', () => {
     })
   })
 
+  // 生产模式模型包含 Boolean/String/Object 联合；为布尔转换保留完整构造器数组及原顺序。
   test('w/ types, production mode, boolean + multiple types', () => {
     const { content } = compile(
       `
@@ -215,6 +223,7 @@ describe('defineModel()', () => {
     expect(content).toMatch('"modelValue": { type: [Boolean, String, Object] }')
   })
 
+  // 生产模式模型含 Number/Function 联合和函数默认值；保留两个类型，使运行时不会误执行 Function 默认值。
   test('w/ types, production mode, function + runtime opts + multiple types', () => {
     const { content } = compile(
       `
@@ -230,6 +239,7 @@ describe('defineModel()', () => {
     )
   })
 
+  // 分别以不同位置声明 get/set 与 required/default；prop 选项提升到模型 props，转换器留在 useModel 第三参数且保持方法源码。
   test('get / set transformers', () => {
     const { content } = compile(
       `
@@ -275,6 +285,7 @@ describe('defineModel()', () => {
     )
   })
 
+  // 响应式解构 x 后在模型 set 中读取；转换器留在 setup 并把 x 改为 __props.x，允许捕获 prop。
   test('usage w/ props destructure', () => {
     const { content } = compile(
       `
@@ -291,6 +302,7 @@ describe('defineModel()', () => {
     expect(content).toMatch(`set: (v) => { return v + __props.x }`)
   })
 
+  // 生产模式再次覆盖 boolean | string 默认模型；Boolean 转换要求保留联合类型及 update:modelValue，局部变量仍分类为 SETUP_REF。
   test('w/ Boolean And Function types, production mode', () => {
     const { content, bindings } = compile(
       `

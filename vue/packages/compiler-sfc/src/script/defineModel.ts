@@ -15,7 +15,7 @@ export interface ModelDecl {
   options: string | undefined
   /** 接收 defineModel 返回 ref 的局部变量名。 */
   identifier: string | undefined
-  /** 需参与顶层作用域引用检查的 prop 选项 AST 节点。 */
+  /** 静态可拆对象中被提升的 prop 选项节点；动态 options 不会填此数组。 */
   runtimeOptionNodes: Node[]
 }
 
@@ -23,6 +23,12 @@ export interface ModelDecl {
  * 处理 `defineModel(name?, options?)`，登记隐式 prop/emit 并把宏改写为 useModel。
  * options 中 `get/set` 只属于 useModel，type/default/required 等只属于 prop；对象形状静态
  * 可知时会把两组源码拆开，避免把无关选项重复传到两端。
+ * 静态可拆要求 ObjectExpression 无 spread/计算键；从后往前删除源码片段可保持后续
+ * AST 原始位置。只有剥离的 prop 节点进入 runtimeOptionNodes 的局部引用检查，get/set
+ * 留在 setup 闭包。动态对象/引用参数整段保留，当前不做同样的逐 prop 作用域检查。
+ *
+ * @param declId - 接收 model ref 的声明左值；只有简单 Identifier 写入 identifier。
+ * @returns 是否识别到宏；重复静态模型名称通过 ctx.error 抛出诊断。
  */
 export function processDefineModel(
   ctx: ScriptCompileContext,
@@ -132,6 +138,9 @@ export function processDefineModel(
 /**
  * 为所有 defineModel 生成隐式 model prop 与对应 modifiers prop。
  * 开发环境保留类型校验；生产仅保留会影响 Boolean/Function 语义的类型。
+ * 未知类型与 Boolean/Function 共存时去掉 Unknown 并在开发加 skipCheck；其余未知类型
+ * 退为 type:null。用户运行时 options 后合并，可覆盖推导选项；TS 用 spread，JS 用 assign。
+ * 默认 modelValue 配 modelModifiers，具名模型配 nameModifiers，即使无类型也生成修饰符 prop。
  */
 export function genModelProps(ctx: ScriptCompileContext): string | undefined {
   if (!ctx.hasDefineModelCall) return

@@ -190,9 +190,9 @@ export type UpdateQueue<S, A> = {
   lanes: Lanes,
   /** 绑定当前 Fiber 与队列的稳定派发函数。 */
   dispatch: (A => mixed) | null,
-  /** 最近一次提交使用的 reducer，供 eager state 快路径校验。 */
+  /** 最近一次队列处理记录的 reducer；useState 派发用它提前计算状态，useReducer 派发不走 eager 路径。 */
   lastRenderedReducer: ((S, A) => S) | null,
-  /** 最近一次渲染完成的状态，供派发阶段提前计算。 */
+  /** 最近一次队列处理所得状态，供 useState 派发阶段提前计算；这些共享字段在 render 中写入。 */
   lastRenderedState: S | null,
 };
 
@@ -267,11 +267,11 @@ type StoreConsistencyCheck<T> = {
 
 /** useEffectEvent 更新队列中的实现替换记录。 */
 type EventFunctionPayload<Args, Return, F: (...Array<Args>) => Return> = {
-  /** 持有稳定事件函数及当前实现的共享引用对象。 */
+  /** 在各次渲染返回的事件包装器间共享当前实现的引用对象。 */
   ref: {
-    /** 暴露给组件并保持引用稳定的事件函数。 */
+    /** 事件函数预留槽；当前 mountEvent/updateEvent 不在 ref 上缓存包装器。 */
     eventFn: F,
-    /** 稳定事件函数在调用时转发到的当前实现。 */
+    /** 事件包装器调用时转发到的当前已提交实现。 */
     impl: F,
   },
   /** 本次提交后要写入 ref.impl 的新实现。 */
@@ -482,7 +482,7 @@ function throwInvalidHookError() {
   );
 }
 
-/** 使用 Object.is 逐项比较 Hook 依赖，并在 DEV 下校验依赖形状稳定。 */
+/** 以 Object.is 比较 deps 共同长度内各项；null 的旧 deps 或 DEV 热更新强制视为变化。DEV 会警告长度不同但仍继续比较共同前缀，因此函数不负责在异常长度下强制返回 false；调用方须保持依赖数组长度与顺序稳定。 */
 function areHookInputsEqual(
   nextDeps: Array<mixed>,
   prevDeps: Array<mixed> | null,
@@ -531,13 +531,7 @@ function areHookInputsEqual(
   return true;
 }
 
-/**
- * 以与 current Fiber 匹配的 Hook dispatcher 执行函数组件，并构建 work-in-progress Hook 链。
- *
- * @remarks
- * 挂载、更新和 DEV 顺序校验使用不同 dispatcher。渲染阶段更新会进入重渲染循环；
- * DEV Strict Mode 会再次执行组件，但复用第一次的 Hook 状态，以暴露用户函数副作用。
- */
+/** BeginWork 在函数组件求值前设置 renderLanes/当前 Fiber，清空 WIP Hook 链和提交列表，再按 current.memoizedState 选择 mount/update dispatcher。第二参数用于 ForwardRef 等调用协议；有状态 Hook 占 memoizedState 链，context/use 不占。渲染阶段更新走额外 pass，DEV StrictLegacyMode 再执行组件但复用首遍状态，正常结束统一恢复 dispatcher；挂起保留重放信息，由 WorkLoop 决定 replay 或 unwind。 */
 export function renderWithHooks<Props, SecondArg>(
   current: Fiber | null,
   workInProgress: Fiber,
@@ -782,8 +776,8 @@ export function replaySuspendedComponentWithHooks<Props, SecondArg>(
     ignorePreviousDependencies =
       current !== null && current.type !== workInProgress.type;
   }
-  // renderWithHooks 只重置而不清空 updateQueue，以兼容 Suspense 重放、DEV 双渲染和渲染中 setState。
-  // 但 Suspense 重放必须清空队列，才能正确处理卸载副作用。
+  // 普通 rerender pass 会重置 updateQueue 的临时列表并保留 memo cache；Suspense 重放则
+  // 清空整个 updateQueue，再根据重放路径重新登记 Effect，避免沿用挂起前未完成的提交列表。
   workInProgress.updateQueue = null;
   const children = renderWithHooksAgain(
     workInProgress,
@@ -795,11 +789,7 @@ export function replaySuspendedComponentWithHooks<Props, SecondArg>(
   return children;
 }
 
-/**
- * 为渲染阶段更新或 DEV Strict Mode 双调用执行额外 render pass，尽可能复用前一 pass 的 Hook 状态。
- *
- * @remarks 循环处理新产生的渲染阶段更新，并以 RE_RENDER_LIMIT 防止无限重渲染。
- */
+/** 渲染阶段更新、Strict Mode 再调用或 Suspense replay 的额外求值循环：复用 WIP Hook 节点并重置 effect/event/store 列表及 memo cache 索引。新 render-phase 更新时重置 thenableState，最多允许 25 个此循环 pass；该局部上限不同于跨组件/提交的 nested-update 检测。 */
 function renderWithHooksAgain<Props, SecondArg>(
   workInProgress: Fiber,
   Component: (p: Props, arg: SecondArg) => any,
@@ -1164,7 +1154,7 @@ function use<T>(usable: Usable<T>): T {
   throw new Error('An unsupported type was passed to use(): ' + String(usable));
 }
 
-/** 为 React Compiler 生成的记忆化槽位返回固定尺寸数组，并按 render pass 推进缓存索引。 */
+/** React Compiler 的第 size 个固定容量槽位：按 memoCache.index 取得数组，首次填 sentinel 后推进索引。普通更新复制 current 的各槽位数组；enableNoCloningMemoCache 共享数据依赖编译器输入/输出原子写入，可复用中断尝试结果。rerender 只重置索引保留数据；DEV 热更新重新分配，容量变化仅警告且返回旧数组，不自动 resize。 */
 function useMemoCache(size: number): Array<mixed> {
   let memoCache = null;
   // 快路径：若 work-in-progress Fiber 已准备缓存，直接读取。
@@ -1294,13 +1284,7 @@ function updateReducer<S, I, A>(
   return updateReducerImpl(hook, currentHook as any as Hook, reducer);
 }
 
-/**
- * 按当前 renderLanes 重放 reducer 更新队列，跳过低优先级项并构造可供后续 rebase 的新基线队列。
- *
- * @remarks
- * pending 与 baseQueue 都是循环链表。普通更新、乐观更新、手势更新和纠缠 async action
- * 使用不同的保留/回退规则；新状态变化时标记 Fiber，并可能通过 thenable 挂起以保持 action 批次原子性。
- */
+/** 按当前渲染 lanes 重放 Hook 状态队列：pending/base 都以尾节点表示环，交换首链后以 pending 为新尾，且先写 current.baseQueue 再清 pending，保证尝试中断也不丢入队更新。首个跳过项前状态成为新 baseState；之后已处理普通项以 NoLane 克隆以保持重放顺序。乐观项保留到 revertLane 被渲染，隐藏更新按根 lanes 比较；仅当最终状态变化且消费纠缠 action 时才抛未完成 action thenable。 */
 function updateReducerImpl<S, A>(
   hook: Hook,
   current: Hook,
@@ -1593,11 +1577,7 @@ function rerenderReducer<S, I, A>(
   return [newState, dispatch];
 }
 
-/**
- * 挂载 useSyncExternalStore：读取水合或客户端快照、注册订阅，并安排提交前一致性检查。
- *
- * @remarks 外部存储更新必须同步；非阻塞渲染会在提交前复读快照，避免并发渲染产生 tearing。
- */
+/** 挂载时以 getServerSnapshot 读取 hydration 基线，否则调用 getSnapshot；hydrate 缺少服务端读取器会抛错转客户端恢复。非 hydration 且根 lanes 不含 blocking lane 时登记 StoreConsistency，WorkLoop 提交前可复读。passive 阶段订阅并发布 inst，通知只在 Object.is 值变化或读取抛错时派发 SyncLane；subscribe 返回的取消订阅交给 effect cleanup。 */
 function mountSyncExternalStore<T>(
   subscribe: (() => void) => () => void,
   getSnapshot: () => T,
@@ -1680,7 +1660,7 @@ function mountSyncExternalStore<T>(
   return nextSnapshot;
 }
 
-/** 更新 useSyncExternalStore：比较新旧快照、刷新订阅，并在可能交错变更时安排一致性检查。 */
+/** 更新时再次读取水合/客户端快照并以 Object.is 标记变化，订阅 effect 仅由 subscribe 引用变化触发。getSnapshot/value/订阅变化时安排 passive 更新 inst，并在非 hydration、非 blocking 渲染中登记一致性检查；即使不变化也保留无 HasEffect 的检查 effect，Activity reconnect 时仍可复查隐藏期间的 store 变化。 */
 function updateSyncExternalStore<T>(
   subscribe: (() => void) => () => void,
   getSnapshot: () => T,
@@ -2040,7 +2020,7 @@ type ActionStateQueueNode<S, P> = {
   listeners: Array<() => void>,
 };
 
-/** 将 useActionState payload 封装为 thenable 队列节点，并按派发时 transition 上下文串行入队。 */
+/** 事件派发把当前已发布 action 和 payload 固定进 thenable 节点；渲染期间调用抛错，action=null 的失败队列忽略新派发。transition 内先乐观 pending=true，再把节点入 state 队列；actionQueue.pending 为环尾，空队列立即执行首项，其余等待前项完成后串行运行。 */
 function dispatchActionState<S, P>(
   fiber: Fiber,
   actionQueue: ActionStateQueue<S, P>,
@@ -2100,9 +2080,7 @@ function dispatchActionState<S, P>(
   }
 }
 
-/**
- * 执行队首 action，必要时恢复其派发时的 transition 上下文，并把同步或异步结果交给统一完成路径。
- */
+/** 以 actionQueue.state 为输入执行节点捕获的 action，而不是队列后来发布的新 action。transition 派发项创建执行时 transition 上下文并调用 shared.S 纠缠 async 返回值，finally 恢复父上下文/types；同步 throw 与 thenable reject 都封闭当前串行队列，非 transition async 在 DEV 发出 pending 使用警告。 */
 function runActionStateAction<S, P>(
   actionQueue: ActionStateQueue<S, P>,
   node: ActionStateQueueNode<S, P>,
@@ -2234,7 +2212,7 @@ function handleActionReturnValue<S, P>(
   }
 }
 
-/** 将 action 节点标记为 fulfilled、发布新状态，并从队列弹出后启动下一节点。 */
+/** 先把节点 status/value 发布为 fulfilled 并通知 use 监听器，然后写 actionQueue.state 为下一 action 输入。环只有一项时清 pending，否则先把尾.next 跳过队首，再立刻运行下一节点；成功推进队列不等待 React 将该结果提交到 UI。 */
 function onActionSuccess<S, P>(
   actionQueue: ActionStateQueue<S, P>,
   actionNode: ActionStateQueueNode<S, P>,
@@ -2265,7 +2243,7 @@ function onActionSuccess<S, P>(
   }
 }
 
-/** action 失败时拒绝队列中全部节点、唤醒监听器，并封闭队列以阻止后续派发。 */
+/** 当前 action 失败时先清 pending，再沿原循环队列把当前及后续项标为 rejected 并通知内部监听器，最后设 action=null 阻止未来派发。已经排队的后续 action 不再执行，React 渲染消费 rejected 节点时才向错误边界抛出该原因。 */
 function onActionError<S, P>(
   actionQueue: ActionStateQueue<S, P>,
   actionNode: ActionStateQueueNode<S, P>,
@@ -2303,9 +2281,7 @@ function actionStateReducer<S>(oldState: S, newState: S): S {
   return newState;
 }
 
-/**
- * 挂载 useActionState 的状态、pending 与串行 action 队列三个 Hook，并在水合时认领匹配表单状态。
- */
+/** 按固定顺序建立结果 state、乐观 pending、共享 actionQueue 三个 Hook；action 的上一完成状态在事件执行中维护，与渲染结果 Hook 分开。hydration 若根 formState 的 marker 匹配则复用服务端结果，否则用 initialStateProp；Fiber 路径接受 permalink 但不消费它。dispatch 稳定，已排队节点捕获各自派发时实现。 */
 function mountActionState<S, P>(
   action: (Awaited<S>, P) => S,
   initialStateProp: Awaited<S>,
@@ -2400,7 +2376,7 @@ function updateActionState<S, P>(
   );
 }
 
-/** 重放 action 结果与 pending 状态，借 useThenable 挂起未完成 action，并安排提交新 action 实现。 */
+/** 按 reducer 处理结果 Hook，再读取 pending Hook；结果为 thenable 时用 useThenable 解包，未完成时把 SuspenseException 换为 SuspenseActionException 供 WorkLoop 识别 Action。最后读取 actionQueue Hook，action 与所存引用不同就排入 passive 实现发布，不重写既有节点捕获的 action；initialState/permalink 不在此更新路径使用。 */
 function updateActionStateImpl<S, P>(
   stateHook: Hook,
   currentStateHook: Hook,
@@ -2472,7 +2448,8 @@ function rerenderActionState<S, P>(
   initialState: Awaited<S>,
   permalink?: string,
 ): [Awaited<S>, (P) => void, boolean] {
-  // useActionState 不支持渲染阶段更新，且 passthrough 可能变化，因此需重新重放所有 pending 更新。
+  // useActionState 不支持渲染阶段派发。更新组件的额外 pass 仍须消费状态与 pending Hook，
+  // 并比较最新 action；挂载组件则复用首遍创建的三个 Hook。
   //
   // 无需处理渲染阶段更新的专门分叉，可直接复用常规 mount/update 实现。
   const stateHook = updateWorkInProgressHook();
@@ -2659,7 +2636,7 @@ function updateEffect(
   updateEffectImpl(PassiveEffect, HookPassive, create, deps);
 }
 
-/** 把 Effect Event 的下一实现加入组件更新队列，等待提交阶段原子替换 ref.impl。 */
+/** 把新的实现替换记录加入 FunctionComponentUpdateQueue.events，并标记 Update。commit 在 enableEffectEventMutationPhase 开启时于父先子 mutation 入口发布 ref.impl，否则在 before-mutation 后序发布；两种路径都早于普通 layout effect 创建，渲染期间不发布未提交 callback。 */
 function useEffectEventImpl<Args, Return, F: (...Array<Args>) => Return>(
   payload: EventFunctionPayload<Args, Return, F>,
 ) {
@@ -2680,16 +2657,15 @@ function useEffectEventImpl<Args, Return, F: (...Array<Args>) => Return>(
   }
 }
 
-/** 挂载 useEffectEvent，返回引用稳定且禁止在渲染期间调用的事件包装器。 */
+/** 挂载 useEffectEvent，创建共享实现 ref 并返回禁止在渲染期间调用的包装器；返回函数不承诺引用稳定。 */
 function mountEvent<Args, Return, F: (...Array<Args>) => Return>(
   callback: F,
 ): F {
   const hook = mountWorkInProgressHook();
   const ref = {impl: callback};
   hook.memoizedState = ref;
-  /** 调用提交阶段发布到 ref.impl 的最新事件实现。 */
   // $FlowFixMe[incompatible-type]
-  return function eventFn() {
+  return /** 在 render 外把 arguments 转发给共享 ref.impl；impl 在提交阶段发布，包装器自身每次 mount/update 新建。 */ function eventFn() {
     if (isInvalidExecutionContextForEventFunction()) {
       throw new Error(
         "A function wrapped in useEffectEvent can't be called during rendering.",
@@ -2699,16 +2675,15 @@ function mountEvent<Args, Return, F: (...Array<Args>) => Return>(
   };
 }
 
-/** 更新 useEffectEvent，排队替换实现并返回语义相同的稳定事件包装器。 */
+/** 更新 useEffectEvent，复用实现 ref、排队发布新 callback，并返回一个新的事件包装器。 */
 function updateEvent<Args, Return, F: (...Array<Args>) => Return>(
   callback: F,
 ): F {
   const hook = updateWorkInProgressHook();
   const ref = hook.memoizedState;
   useEffectEventImpl({ref, nextImpl: callback});
-  /** 调用提交阶段发布到 ref.impl 的最新事件实现。 */
   // $FlowFixMe[incompatible-type]
-  return function eventFn() {
+  return /** 在 render 外把 arguments 转发给共享 ref.impl；impl 在提交阶段发布，包装器自身每次 mount/update 新建。 */ function eventFn() {
     if (isInvalidExecutionContextForEventFunction()) {
       throw new Error(
         "A function wrapped in useEffectEvent can't be called during rendering.",
@@ -2718,7 +2693,7 @@ function updateEvent<Args, Return, F: (...Array<Args>) => Return>(
   };
 }
 
-/** 挂载 insertion Effect，使其在宿主变更前执行。 */
+/** 挂载 insertion Effect，登记 mutation 阶段的 create/cleanup；它早于 layout create，但不早于所有宿主变更。 */
 function mountInsertionEffect(
   create: () => (() => void) | void,
   deps: Array<mixed> | void | null,
@@ -2757,7 +2732,7 @@ function updateLayoutEffect(
   return updateEffectImpl(UpdateEffect, HookLayout, create, deps);
 }
 
-/** 执行 useImperativeHandle 的 create 并写入 callback/object ref，返回对称清理函数。 */
+/** layout create 调用用户 create 后附加命令式句柄；callback ref 返回函数时 cleanup 调该函数，否则回调 null。object ref cleanup 把 current 设 null；null/undefined ref 不调用 create。创建/附加/清理错误由 commit effect 层捕获，这里不缓存句柄或自行隔离错误。 */
 function imperativeHandleEffect<T>(
   create: () => T,
   ref: {
@@ -3019,10 +2994,7 @@ function mountDeferredValueImpl<T>(hook: Hook, value: T, initialValue?: T): T {
   }
 }
 
-/**
- * 更新 deferred value：紧急更新继续返回旧值并安排 DeferredLane，非紧急更新立即采用新值。
- * 隐藏树重新显示时按挂载处理，以避免预渲染状态破坏延迟语义。
- */
+/** Object.is 相等时复用；当前树隐藏时采用挂载 initialValue 策略。可见树在包含 urgent lanes 且并非独立 deferred work 时保留旧值并请求后续 lane；非 urgent 或本身 deferred 渲染采用新值并标记 receivedUpdate。deferred lane 由 WorkLoop 根据根/隐藏上下文分配，不能等同固定 Scheduler 优先级或定时器。 */
 function updateDeferredValueImpl<T>(
   hook: Hook,
   prevValue: T,
@@ -3221,7 +3193,7 @@ function startTransition<S>(
 /** 宿主 transition 未提供 action 时使用的空回调，仍允许发布 pending 表单状态。 */
 const noop = () => {};
 
-/** 为宿主 form Fiber 启动 transition，发布 pending 状态并在 action 完成时请求表单重置。 */
+/** 把 HostComponent form 升级为 pending/reset 两个 state Hook，启动 pending→NoPendingHostTransition 过渡。有 action 时先把 reset 请求入同一 transition，再立即调用 action(formData)；异步结算通过 startTransition 的 thenable 更新控制完成提交。不是等待 action 返回后才调用 requestFormReset，action=null 时只发布表单状态。 */
 export function startHostTransition<F>(
   formFiber: Fiber,
   pendingState: TransitionStatus,
@@ -3255,7 +3227,7 @@ export function startHostTransition<F>(
       ? // 未提供 action，仍调用 startTransition 以设置 pending 表单状态。
         noop
       : () => {
-          // action 完成后自动请求重置表单。
+          // 先把表单 reset 请求加入本 transition，再调用 action；实际 reset 随结果提交执行。
           requestFormReset(formFiber);
           return action(formData);
         },
@@ -3327,13 +3299,13 @@ function ensureFormComponentIsStateful(formFiber: Fiber) {
   return stateHook;
 }
 
-/** 在当前 transition lane 为宿主 form 的 reset Hook 派发新对象，令提交阶段执行表单重置。 */
+/** 向 form 的第二 state Hook 派发新对象，渲染比较引用后标记 FormReset，mutation 收尾才使用最新 defaultValue 重置宿主表单。lane 由 requestUpdateLane 选择：transition 外 DEV 警告但仍按当前更新/事件优先级入队，手势 transition 内抛错；不强制 SyncLane，也不直接操作宿主实例。 */
 export function requestFormReset(formFiber: Fiber) {
   const transition = requestCurrentTransition();
 
   if (transition === null) {
     if (__DEV__) {
-      // 当前栈上没有 startTransition，重置会以默认同步优先级安排，通常不是用户意图，
+      // 当前栈上没有 startTransition，重置按现有更新/事件优先级入队，通常不是用户意图，
       // 最常见原因是在 await 之后调用 requestFormReset。
       // TODO：非 transition 更新理论上也可先同步更新 defaultValue、再等提交后重置；
       // 当前仍选择警告，因为 await 误用更常见，但可重新评估。
@@ -3601,11 +3573,7 @@ function dispatchSetState<S, A>(
   markUpdateInDevTools(fiber, lane, action);
 }
 
-/**
- * 把 state 更新入队；空队列时提前运行最近 reducer，若状态未变则走 eager bailout 快路径。
- *
- * @returns 是否实际安排了 Fiber 更新。
- */
+/** 构造 state 更新；render-phase 直接入当前环并请求额外 pass，返回 false。事件路径仅在 fiber/alternate 均无 lanes 且存在 lastRenderedReducer 时计算 eagerState，与 lastRenderedState 相等仍保留更新但不调度；eager 抛错先抑制，后续 render 重算。其余入 concurrent staging，找到 root 才 schedule/entangle 并返回 true；参数 lane 已由调用方选择。 */
 function dispatchSetStateInternal<S, A>(
   fiber: Fiber,
   queue: UpdateQueue<S, A>,
@@ -3630,8 +3598,8 @@ function dispatchSetStateInternal<S, A>(
       fiber.lanes === NoLanes &&
       (alternate === null || alternate.lanes === NoLanes)
     ) {
-      // Fiber 与 alternate 都没有待处理 lane，队列为空，可在进入渲染前 eager 计算下一状态；
-      // 若新旧状态相同，则可能完全 bailout。
+      // Fiber 与 alternate 都没有待处理 lane，可在进入渲染前 eager 计算下一状态。
+      // 队列仍可能留有之前 eager bailout 的无变化更新；此守卫并不检查 pending 是否为空。
       const lastRenderedReducer = queue.lastRenderedReducer;
       if (lastRenderedReducer !== null) {
         let prevDispatcher = null;
@@ -3642,12 +3610,12 @@ function dispatchSetStateInternal<S, A>(
         try {
           const currentState: S = queue.lastRenderedState as any;
           const eagerState = lastRenderedReducer(currentState, action);
-          // 把 eager 状态及其计算事实存入更新；进入渲染时若 reducer 未变，可直接使用而无需再次调用。
+          // 保存 eager 结果；updateReducerImpl 处理到该更新时直接复用，不再调用 reducer。
           update.hasEagerState = true;
           update.eagerState = eagerState;
           if (is(eagerState, currentState)) {
-            // 快路径：无需安排 React 重渲染即可退出。若组件随后因其他原因重渲染且 reducer 已变化，
-            // 仍可能需要 rebase 此更新。
+            // 状态相等时不安排这次渲染，但仍保留更新。若之后有更高优先级工作插队，
+            // 该更新可能进入 baseQueue，后续重放必须保留它在原序列中的位置。
             // TODO：此情况下是否仍需纠缠 transition？
             enqueueConcurrentHookUpdateAndEagerlyBailout(fiber, queue, update);
             return false;
@@ -3672,9 +3640,7 @@ function dispatchSetStateInternal<S, A>(
   return false;
 }
 
-/**
- * 派发 useOptimistic/startTransition 的乐观更新：同步或 GestureLane 提交，并记录 transition revertLane。
- */
+/** 普通乐观项使用 SyncLane，手势上下文使用 GestureLane；revertLane 来自 transition lane，供后续 render 丢弃该项而不是执行反向 reducer。throwIfDuringRender=true（useOptimistic）在 render 调用抛错，false（pending transition）仅 DEV 警告且该乐观项不入队。事件路径先 staging/schedule，再为手势关联稳定 ScheduledGesture/revertLane；无需普通 transition 队列纠缠。 */
 function dispatchOptimisticSetState<S, A>(
   fiber: Fiber,
   throwIfDuringRender: boolean,
@@ -3739,11 +3705,11 @@ function dispatchOptimisticSetState<S, A>(
   } else {
     const root = enqueueConcurrentHookUpdate(fiber, queue, update, lane);
     if (root !== null) {
-      // 乐观实现假定 transition 不会先于乐观更新尝试；当前因乐观更新始终同步而成立。
+      // 普通乐观项使用 SyncLane，手势项使用 GestureLane；回退 transition 不应先于该乐观项尝试。
       // 若未来改变优先级，必须重新处理该顺序约束。
       startUpdateTimerByLane(lane, 'setOptimistic()', fiber);
       scheduleUpdateOnFiber(root, fiber, lane);
-      // 乐观更新始终同步，无需调用 entangleTransitionUpdate。
+      // 乐观项通过 revertLane 关联回退，不走普通 transition 队列的 entangleTransitionUpdate。
       if (enableGestureTransition && transition !== null) {
         const provider = transition.gesture;
         if (provider !== null) {
@@ -4092,7 +4058,7 @@ if (__DEV__) {
         ReactSharedInternals.H = prevDispatcher;
       }
     },
-    /** 登记 `useDebugValue` 的 Hook 类型；运行时值仅供开发工具读取。 */
+    /** 登记 `useDebugValue` 的 Hook 类型；此 dispatcher 不保存 value，DevTools 用独立调试 dispatcher 读取它。 */
     useDebugValue<T>(value: T, formatterFn: ?(value: T) => mixed): void {
       currentHookNameInDev = 'useDebugValue';
       mountHookTypesDev();
@@ -4164,7 +4130,7 @@ if (__DEV__) {
       mountHookTypesDev();
       return mountRefresh();
     },
-    /** 登记 `useEffectEvent`，创建稳定事件包装器及提交期更新的实现单元。 */
+    /** 登记 `useEffectEvent`，创建事件包装器及跨渲染共享的实现 ref。 */
     useEffectEvent<Args, Return, F: (...Array<Args>) => Return>(
       callback: F,
     ): F {
@@ -4283,7 +4249,7 @@ if (__DEV__) {
         ReactSharedInternals.H = prevDispatcher;
       }
     },
-    /** 核对 `useDebugValue` 在历史 Hook 类型序列中的位置，并向开发工具暴露值。 */
+    /** 核对 `useDebugValue` 在历史 Hook 类型序列中的位置；运行时实现不保存 value。 */
     useDebugValue<T>(value: T, formatterFn: ?(value: T) => mixed): void {
       currentHookNameInDev = 'useDebugValue';
       updateHookTypesDev();
@@ -4355,7 +4321,7 @@ if (__DEV__) {
       updateHookTypesDev();
       return mountRefresh();
     },
-    /** 核对 Effect Event Hook 的位置，并挂载稳定包装器与实现单元。 */
+    /** 核对 Effect Event Hook 的位置，并挂载事件包装器与共享实现 ref。 */
     useEffectEvent<Args, Return, F: (...Array<Args>) => Return>(
       callback: F,
     ): F {
@@ -4474,7 +4440,7 @@ if (__DEV__) {
         ReactSharedInternals.H = prevDispatcher;
       }
     },
-    /** 校验 `useDebugValue` 的顺序，并把本轮调试值交给开发工具路径。 */
+    /** 校验 `useDebugValue` 的顺序；运行时实现不保存 value。 */
     useDebugValue<T>(value: T, formatterFn: ?(value: T) => mixed): void {
       currentHookNameInDev = 'useDebugValue';
       updateHookTypesDev();
@@ -4614,7 +4580,7 @@ if (__DEV__) {
       updateHookTypesDev();
       return updateLayoutEffect(create, deps);
     },
-    /** 在无效嵌套 dispatcher 保护下执行 useMemo 创建函数，阻止其内部合法调用 Hook。 */
+    /** 在无效嵌套 dispatcher 保护下执行 useMemo 创建函数，诊断其内部违规调用 Hook。 */
     useMemo<T>(create: () => T, deps: Array<mixed> | void | null): T {
       currentHookNameInDev = 'useMemo';
       updateHookTypesDev();

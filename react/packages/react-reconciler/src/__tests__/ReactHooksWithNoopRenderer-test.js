@@ -86,6 +86,7 @@ describe('ReactHooksWithNoopRenderer', () => {
 
     textCache = new Map();
 
+    /** 读取全用例独立Map：resolved返回text，rejected抛错误，pending抛同一Promise；缺项创建pending并保存兑现入口。 */
     readText = text => {
       const record = textCache.get(text);
       if (record !== undefined) {
@@ -110,6 +111,7 @@ describe('ReactHooksWithNoopRenderer', () => {
       }
     };
 
+    /** 兑现已有pending的原生Promise，随后清timer/记录resolved并释放promise引用；ping的微任务在这些同步写入后执行，缺项可预置resolved。 */
     resolveText = text => {
       const record = textCache.get(text);
       if (record !== undefined) {
@@ -132,13 +134,13 @@ describe('ReactHooksWithNoopRenderer', () => {
     };
   });
 
-  /** 把输入同步到调度日志与宿主输出；服务于“通过 Noop 渲染器验证 Hooks 状态队列、Effect 提交顺序、并发中断与历史回归”场景。 */
+  /** 把输入同步到调度日志与宿主输出。 */
   function Text(props) {
     Scheduler.log(props.text);
     return <span prop={props.text} />;
   }
 
-  /** 把输入同步到调度日志与宿主输出；服务于“通过 Noop 渲染器验证 Hooks 状态队列、Effect 提交顺序、并发中断与历史回归”场景。 */
+  /** 读取资源后输出span；pending记录Suspend并按ms只安装一次Jest timer，非thenable记录Error，均原样重抛。 */
   function AsyncText(props) {
     const text = props.text;
     try {
@@ -160,7 +162,7 @@ describe('ReactHooksWithNoopRenderer', () => {
     }
   }
 
-  /** 推进 Jest 虚拟时间并等待当前 tick 结束，隔离调度器时间与测试时间；服务于“通过 Noop 渲染器验证 Hooks 状态队列、Effect 提交顺序、并发中断与历史回归”场景。 */
+  /** 推进 Jest 虚拟时间并等待当前 tick 结束，隔离调度器时间与测试时间。 */
   function advanceTimers(ms) {
     // 注意：这里只推进 Jest 虚拟时间，不推进 React 时间；后者应使用 `ReactNoop.expire`。
     if (typeof ms !== 'number') {
@@ -171,16 +173,9 @@ describe('ReactHooksWithNoopRenderer', () => {
     return Promise.resolve().then(() => {});
   }
 
-  /**
-   * Given：并发根已挂载，低优先级工作、thenable 与日志检查点均已准备。
-   * When：启动并发渲染，再制造挂起或高优先级中断并恢复。
-   * Then：低优先级 Hook 渲染被同步更新打断后恢复，确认工作进度与更新队列保持一致。
-   *
-   * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果。
-   * 对应源码：`renderWithHooks()` 与当前 Hook 的 mount/update dispatcher。
-   */
+  /** count0已挂载；transition排入替换1及+10，日志Count11时仍未提交；flushSync改label为Total先显示Total0，后恢复为Total11。验证Hook base队列跨同步打断重放并保留新props，没有thenable参与。 */
   it('resumes after an interruption', async () => {
-    /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“低优先级 Hook 渲染被同步更新打断后恢复，确认工作进度与更新队列保持一致”场景。 */
+    /** 保存count并通过imperative handle暴露setter；label来自props，使同步改label与低优先级state可以分开提交。 */
     function Counter(props, ref) {
       const [count, updateCount] = useState(0);
       useImperativeHandle(ref, () => ({updateCount}));
@@ -217,18 +212,11 @@ describe('ReactHooksWithNoopRenderer', () => {
     });
   });
 
-  /**
-   * Given：目标组件已进入可触发开发态保护的最小运行环境。
-   * When：执行用例中的非法 Hook、参数或阶段调用。
-   * Then：在无有效函数组件 dispatcher 的位置调用 Hook，确认立即抛出非法调用错误。
-   *
-   * 验证机制：显式断言联合检查状态、输出和副作用。
-   * 对应源码：`renderWithHooks()` 与当前 Hook 的 mount/update dispatcher。
-   */
+  /** 类BadCounter.render调用useState，waitForThrow匹配非法Hook调用；随后合法GoodCounter初值10正常渲染。验证class dispatcher拒绝Hook且错误后恢复可用环境。 */
   it('throws inside class components', async () => {
-    /** 定义 BadCounter 类 fixture，在“在无有效函数组件 dispatcher 的位置调用 Hook，确认立即抛出非法调用错误”场景中暴露类生命周期、实例 ref 或错误边界。 */
+    /** 类render直接调用函数组件专用Hook，作为非法dispatcher路径的对照。 */
     class BadCounter extends React.Component {
-      /** 渲染 BadCounter.render 对应的类 fixture，并把本轮状态或子树交给宿主输出断言。 */
+      /** 在class render中调用useState，理应在得到Text之前立即抛非法Hook错误。 */
       render() {
         const [count] = useState(0);
         return <Text text={this.props.label + ': ' + count} />;
@@ -246,7 +234,7 @@ describe('ReactHooksWithNoopRenderer', () => {
     );
 
     // 确认后续 Hook 仍能正常工作。
-    /** 作为 GoodCounter fixture 承载当前测试职责；服务于“在无有效函数组件 dispatcher 的位置调用 Hook，确认立即抛出非法调用错误”场景。 */
+    /** 用合法函数组件读取初值，确认前一个非法 Hook 用例后仍能正常渲染。 */
     function GoodCounter(props, ref) {
       const [count] = useState(props.initialCount);
       return <Text text={count} />;
@@ -255,14 +243,7 @@ describe('ReactHooksWithNoopRenderer', () => {
     await waitForAll([10]);
   });
 
-  /**
-   * Given：目标组件已进入可触发开发态保护的最小运行环境。
-   * When：执行用例中的非法 Hook、参数或阶段调用。
-   * Then：在无有效函数组件 dispatcher 的位置调用 Hook，确认立即抛出非法调用错误。
-   *
-   * 验证机制：开发态控制台断言限定诊断内容与去重，异常断言保留原始错误与阶段边界。
-   * 对应源码：`updateReducerImpl()`、`dispatchSetStateInternal()` 与 `renderWithHooksAgain()`。
-   */
+  /** 在组件render外直接useState(0)，抛null dispatcher的属性读取错误并在DEV记录非法调用警告。验证公开Hook先解析dispatcher，与reducer更新处理无关。 */
   it('throws when called outside the render phase', async () => {
     expect(() => useState(0)).toThrow(
       "Cannot read property 'useState' of null",
@@ -279,16 +260,9 @@ describe('ReactHooksWithNoopRenderer', () => {
 
   /** 通过 Noop 渲染器验证 Hooks 状态队列、Effect 提交顺序、并发中断与历史回归。 */
   describe('useState', () => {
-    /**
-     * Given：挂载后更新 Hook 状态，确认初值、更新函数与宿主输出按序变化所需的初始状态、更新入口与观测日志均已建立。
-     * When：安排用例指定的状态、属性、Context 或依赖更新。
-     * Then：挂载后更新 Hook 状态，确认初值、更新函数与宿主输出按序变化。
-     *
-     * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果。
-     * 对应源码：`renderWithHooks()` 与当前 Hook 的 mount/update dispatcher。
-     */
+    /** ref暴露useState setter，初值0，先替换为1再函数式+10，日志与输出为0→1→11。验证basicStateReducer同时接受值与更新函数。 */
     it('simple mount and update', async () => {
-      /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“挂载后更新 Hook 状态，确认初值、更新函数与宿主输出按序变化”场景。 */
+      /** 从count0开始，通过imperative handle暴露setter，输出Count文本以观察值更新和函数式更新。 */
       function Counter(props, ref) {
         const [count, updateCount] = useState(0);
         useImperativeHandle(ref, () => ({updateCount}));
@@ -309,16 +283,9 @@ describe('ReactHooksWithNoopRenderer', () => {
       expect(ReactNoop).toMatchRenderedOutput(<span prop="Count: 11" />);
     });
 
-    /**
-     * Given：以惰性初始化函数挂载 state 或 reducer，确认初始化只在挂载路径执行所需的初始状态、更新入口与观测日志均已建立。
-     * When：安排用例指定的状态、属性、Context 或依赖更新。
-     * Then：以惰性初始化函数挂载 state 或 reducer，确认初始化只在挂载路径执行。
-     *
-     * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果。
-     * 对应源码：`updateReducerImpl()`、`dispatchSetStateInternal()` 与 `renderWithHooksAgain()`。
-     */
+    /** 初挂惰性initializer返回props.initialState=42且只记录一次getInitialState；setter改7不再调用initializer。验证初挂求值与后续state更新分离。 */
     it('lazy state initializer', async () => {
-      /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“以惰性初始化函数挂载 state 或 reducer，确认初始化只在挂载路径执行”场景。 */
+      /** 用惰性initializer读取initialState并记录求值，imperative handle只暴露后续setter。 */
       function Counter(props, ref) {
         const [count, updateCount] = useState(() => {
           Scheduler.log('getInitialState');
@@ -338,16 +305,9 @@ describe('ReactHooksWithNoopRenderer', () => {
       expect(ReactNoop).toMatchRenderedOutput(<span prop="Count: 7" />);
     });
 
-    /**
-     * Given：同一组件声明多个 state Hook，确认各 Hook 槽位独立更新所需的初始状态、更新入口与观测日志均已建立。
-     * When：安排用例指定的状态、属性、Context 或依赖更新。
-     * Then：同一组件声明多个 state Hook，确认各 Hook 槽位独立更新。
-     *
-     * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果。
-     * 对应源码：`updateReducerImpl()`、`dispatchSetStateInternal()` 与 `renderWithHooksAgain()`。
-     */
+    /** count和label分别从0/Count开始；先count7再labelTotal，日志Count0→Count7→Total7。验证相邻Hook各自保存状态与队列。 */
     it('multiple states', async () => {
-      /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“同一组件声明多个 state Hook，确认各 Hook 槽位独立更新”场景。 */
+      /** 建立count与label两个独立state槽，通过imperative handle暴露两份setter并拼接输出。 */
       function Counter(props, ref) {
         const [count, updateCount] = useState(0);
         const [label, updateLabel] = useState('Count');
@@ -367,17 +327,10 @@ describe('ReactHooksWithNoopRenderer', () => {
       assertLog(['Total: 7']);
     });
 
-    /**
-     * Given：跨多次渲染比较 dispatch 身份，确认更新函数引用保持稳定所需的初始状态、更新入口与观测日志均已建立。
-     * When：安排用例指定的状态、属性、Context 或依赖更新。
-     * Then：跨多次渲染比较 dispatch 身份，确认更新函数引用保持稳定。
-     *
-     * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果。
-     * 对应源码：`renderWithHooks()` 与当前 Hook 的 mount/update dispatcher。
-     */
+    /** 保存首次setter，更新1后再用旧setter函数式+10；两次采集的setter引用相同且最终11。验证稳定dispatch仍指向当前队列。 */
     it('returns the same updater function every time', async () => {
       let updater = null;
-      /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“跨多次渲染比较 dispatch 身份，确认更新函数引用保持稳定”场景。 */
+      /** 每轮把当前count的setter写到updater，供测试比较引用身份并用初次setter继续更新。 */
       function Counter() {
         const [count, updateCount] = useState(0);
         updater = updateCount;
@@ -402,17 +355,10 @@ describe('ReactHooksWithNoopRenderer', () => {
       expect(firstUpdater).toBe(secondUpdater);
     });
 
-    /**
-     * Given：目标组件已进入可触发开发态保护的最小运行环境。
-     * When：执行用例中的非法 Hook、参数或阶段调用。
-     * Then：组件卸载前后安排 state 更新，确认清理窗口不会产生过期告警。
-     *
-     * 验证机制：显式断言联合检查状态、输出和副作用。
-     * 对应源码：`commitHookPassiveMountEffects()` 与 `commitHookPassiveUnmountEffects()`。
-     */
+    /** Counter只暴露setter并返回null，根删除且冲刷完后调用旧setter(1)不产生未处理告警。此例没有effect或待passive清理窗口。 */
     it('does not warn on set after unmount', async () => {
       let _updateCount;
-      /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“组件卸载前后安排 state 更新，确认清理窗口不会产生过期告警”场景。 */
+      /** 只暴露setter不使用state值，返回null；删除后保留的闭包用于核对忽略更新。 */
       function Counter(props, ref) {
         const [, updateCount] = useState(0);
         _updateCount = updateCount;
@@ -426,17 +372,10 @@ describe('ReactHooksWithNoopRenderer', () => {
       await act(() => _updateCount(1));
     });
 
-    /**
-     * Given：执行 Noop 渲染器下的 Hook 场景，并以调度日志和宿主输出验证结果所需的初始状态、更新入口与观测日志均已建立。
-     * When：完成挂载以及用例指定的后续渲染或提交步骤。
-     * Then：执行 Noop 渲染器下的 Hook 场景，并以调度日志和宿主输出验证结果。
-     *
-     * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果。
-     * 对应源码：`updateMemo()`、`updateCallback()` 与 `areHookInputsEqual()`。
-     */
+    /** memo Counter初始Count0；相同空props根重渲染没有日志，内部setter1仍产Count1。验证memo props bailout不会阻止本Fiber的Hook更新。 */
     it('works with memo', async () => {
       let _updateCount;
-      /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“执行 Noop 渲染器下的 Hook 场景，并以调度日志和宿主输出验证结果”场景。 */
+      /** memo包裹的有状态Counter，内部setter可更新count，props不变时由memo跳过父请求。 */
       function Counter(props) {
         const [count, updateCount] = useState(0);
         _updateCount = updateCount;
@@ -460,16 +399,9 @@ describe('ReactHooksWithNoopRenderer', () => {
 
   /** 通过 Noop 渲染器验证 Hooks 状态队列、Effect 提交顺序、并发中断与历史回归。 */
   describe('updates during the render phase', () => {
-    /**
-     * Given：执行 Noop 渲染器下的 Hook 场景，并以调度日志和宿主输出验证结果所需的初始状态、更新入口与观测日志均已建立。
-     * When：安排用例指定的状态、属性、Context 或依赖更新。
-     * Then：执行 Noop 渲染器下的 Hook 场景，并以调度日志和宿主输出验证结果。
-     *
-     * 验证机制：宿主输出断言确认实际提交结果。
-     * 对应源码：`updateReducerImpl()`、`dispatchSetStateInternal()` 与 `renderWithHooksAgain()`。
-     */
+    /** ScrollView在render镜像row并计算方向；row序列1→5→5→10→2→2产生false/true/true/true/false/false。验证本组件render-phase更新先合并再协调Text。 */
     it('restarts the render function and applies the new updates on top', async () => {
-      /** 作为 ScrollView fixture 承载当前测试职责；服务于“执行 Noop 渲染器下的 Hook 场景，并以调度日志和宿主输出验证结果”场景。 */
+      /** 在 render 中镜像 row 并计算滚动方向，检验同轮状态重放。 */
       function ScrollView({row: newRow}) {
         const [isScrollingDown, setIsScrollingDown] = useState(false);
         const [row, setRow] = useState(null);
@@ -520,24 +452,17 @@ describe('ReactHooksWithNoopRenderer', () => {
       );
     });
 
-    /**
-     * Given：目标组件已进入可触发开发态保护的最小运行环境。
-     * When：执行用例中的非法 Hook、参数或阶段调用。
-     * Then：渲染期间安排 Hook 更新，确认重渲染合并、收敛上限及跨组件诊断。
-     *
-     * 验证机制：调度日志精确约束执行次数与先后顺序，开发态控制台断言限定诊断内容与去重。
-     * 对应源码：`updateReducerImpl()`、`dispatchSetStateInternal()` 与 `renderWithHooksAgain()`。
-     */
+    /** Foo保存step，Bar在render触发Foo+1；两轮分别日志Foo0/Bar/Foo1、Foo1/Bar/Foo2，开发跨组件告警只第一轮出现。验证这不是Bar自身的render-phase队列，并检查警告去重。 */
     it('warns about render phase update on a different component', async () => {
       let setStep;
-      /** 作为 Foo fixture 承载当前测试职责；服务于“渲染期间安排 Hook 更新，确认重渲染合并、收敛上限及跨组件诊断”场景。 */
+      /** 暴露 Foo 的 step 更新器，供兄弟 Bar 在 render 中派发。 */
       function Foo() {
         const [step, _setStep] = useState(0);
         setStep = _setStep;
         return <Text text={`Foo [${step}]`} />;
       }
 
-      /** 作为 Bar fixture 承载当前测试职责；服务于“渲染期间安排 Hook 更新，确认重渲染合并、收敛上限及跨组件诊断”场景。 */
+      /** 由 triggerUpdate 决定是否在 render 中更新 Foo，制造跨组件更新警告。 */
       function Bar({triggerUpdate}) {
         if (triggerUpdate) {
           setStep(x => x + 1);
@@ -584,16 +509,9 @@ describe('ReactHooksWithNoopRenderer', () => {
       });
     });
 
-    /**
-     * Given：渲染期间安排 Hook 更新，确认重渲染合并、收敛上限及跨组件诊断所需的初始状态、更新入口与观测日志均已建立。
-     * When：安排用例指定的状态、属性、Context 或依赖更新。
-     * Then：渲染期间安排 Hook 更新，确认重渲染合并、收敛上限及跨组件诊断。
-     *
-     * 验证机制：宿主输出断言确认实际提交结果。
-     * 对应源码：`updateReducerImpl()`、`dispatchSetStateInternal()` 与 `renderWithHooksAgain()`。
-     */
+    /** Counter从0开始，每次render若小于3便setCount(count+1)，函数依次render0/1/2/3但Text只输出3。验证renderWithHooksAgain重复到无新更新。 */
     it('keeps restarting until there are no more new updates', async () => {
-      /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“渲染期间安排 Hook 更新，确认重渲染合并、收敛上限及跨组件诊断”场景。 */
+      /** count小于3时render内加1，逐pass记录count；row形参不参与逻辑。 */
       function Counter({row: newRow}) {
         const [count, setCount] = useState(0);
         if (count < 3) {
@@ -608,16 +526,9 @@ describe('ReactHooksWithNoopRenderer', () => {
       expect(ReactNoop).toMatchRenderedOutput(<span prop={3} />);
     });
 
-    /**
-     * Given：执行 Noop 渲染器下的 Hook 场景，并以调度日志和宿主输出验证结果所需的初始状态、更新入口与观测日志均已建立。
-     * When：安排用例指定的状态、属性、Context 或依赖更新。
-     * Then：执行 Noop 渲染器下的 Hook 场景，并以调度日志和宿主输出验证结果。
-     *
-     * 验证机制：宿主输出断言确认实际提交结果。
-     * 对应源码：`renderWithHooks()` 与当前 Hook 的 mount/update dispatcher。
-     */
+    /** Counter每轮render在count<12时排入三次函数式+1，依次render0/3/6/9/12，最终Text12。验证同轮render-phase更新按队列顺序组合。 */
     it('updates multiple times within same render function', async () => {
-      /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“执行 Noop 渲染器下的 Hook 场景，并以调度日志和宿主输出验证结果”场景。 */
+      /** count小于12时render内排三次函数式加1，逐pass记录；row形参没有使用。 */
       function Counter({row: newRow}) {
         const [count, setCount] = useState(0);
         if (count < 12) {
@@ -642,16 +553,9 @@ describe('ReactHooksWithNoopRenderer', () => {
       expect(ReactNoop).toMatchRenderedOutput(<span prop={12} />);
     });
 
-    /**
-     * Given：目标组件已进入可触发开发态保护的最小运行环境。
-     * When：执行用例中的非法 Hook、参数或阶段调用。
-     * Then：渲染期间安排 Hook 更新，确认重渲染合并、收敛上限及跨组件诊断。
-     *
-     * 验证机制：显式断言联合检查状态、输出和副作用。
-     * 对应源码：`renderWithHooks()` 与当前 Hook 的 mount/update dispatcher。
-     */
+    /** Counter每次render无条件setCount(count+1)，waitForThrow匹配Too many re-renders。验证单组件render-phase重复次数上限，不是根级嵌套commit检测。 */
     it('throws after too many iterations', async () => {
-      /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“渲染期间安排 Hook 更新，确认重渲染合并、收敛上限及跨组件诊断”场景。 */
+      /** 每次render无条件加1并记录，故重跑无法收敛，触发单组件重渲染上限。 */
       function Counter({row: newRow}) {
         const [count, setCount] = useState(0);
         setCount(count + 1);
@@ -665,20 +569,13 @@ describe('ReactHooksWithNoopRenderer', () => {
       );
     });
 
-    /**
-     * Given：驱动 reducer 队列与不同优先级更新，确认使用本轮 reducer 并按批次顺序处理 action所需的初始状态、更新入口与观测日志均已建立。
-     * When：安排用例指定的状态、属性、Context 或依赖更新。
-     * Then：驱动 reducer 队列与不同优先级更新，确认使用本轮 reducer 并按批次顺序处理 action。
-     *
-     * 验证机制：宿主输出断言确认实际提交结果。
-     * 对应源码：`updateReducerImpl()`、`dispatchSetStateInternal()` 与 `renderWithHooksAgain()`。
-     */
+    /** useReducer初值0，render内dispatch increment直至3；日志render0/1/2/3且最终Text3。验证re-render dispatcher处理reducer action。 */
     it('works with useReducer', async () => {
-      /** 根据 action 与当前状态计算 reducer 的下一状态；服务于“驱动 reducer 队列与不同优先级更新，确认使用本轮 reducer 并按批次顺序处理 action”场景。 */
+      /** increment action加1，其余action原样返回state；由render阶段调用。 */
       function reducer(state, action) {
         return action === 'increment' ? state + 1 : state;
       }
-      /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“驱动 reducer 队列与不同优先级更新，确认使用本轮 reducer 并按批次顺序处理 action”场景。 */
+      /** render内向reducer排increment直至count3，记录各pass并返回最终Text。 */
       function Counter({row: newRow}) {
         const [count, dispatch] = useReducer(reducer, 0);
         if (count < 3) {
@@ -693,19 +590,12 @@ describe('ReactHooksWithNoopRenderer', () => {
       expect(ReactNoop).toMatchRenderedOutput(<span prop={3} />);
     });
 
-    /**
-     * Given：驱动 reducer 队列与不同优先级更新，确认使用本轮 reducer 并按批次顺序处理 action所需的初始状态、更新入口与观测日志均已建立。
-     * When：安排用例指定的状态、属性、Context 或依赖更新。
-     * Then：驱动 reducer 队列与不同优先级更新，确认使用本轮 reducer 并按批次顺序处理 action。
-     *
-     * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果。
-     * 对应源码：`updateReducerImpl()`、`dispatchSetStateInternal()` 与 `renderWithHooksAgain()`。
-     */
+    /** reducerA增1、B增10；render每次dispatch后交换reducer，初挂0→10→11→21，reset后0→1→11→12→22。验证action由下一pass当前reducer处理，不固定捕获派发时reducer。 */
     it('uses reducer passed at time of render, not time of dispatch', async () => {
       // 该构造虽不常见，但用于展示一个细微边界。
 
       // Reducer A 每次加 1，Reducer B 每次加 10。
-      /** 根据 action 与当前状态计算 reducer 的下一状态；服务于“驱动 reducer 队列与不同优先级更新，确认使用本轮 reducer 并按批次顺序处理 action”场景。 */
+      /** increment加1、reset归0；本例只派发这两种action，其他值没有返回分支。 */
       function reducerA(state, action) {
         switch (action) {
           case 'increment':
@@ -714,7 +604,7 @@ describe('ReactHooksWithNoopRenderer', () => {
             return 0;
         }
       }
-      /** 根据 action 与当前状态计算 reducer 的下一状态；服务于“驱动 reducer 队列与不同优先级更新，确认使用本轮 reducer 并按批次顺序处理 action”场景。 */
+      /** increment加10、reset归0，与A交替成为当前render使用的reducer。 */
       function reducerB(state, action) {
         switch (action) {
           case 'increment':
@@ -724,7 +614,7 @@ describe('ReactHooksWithNoopRenderer', () => {
         }
       }
 
-      /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“驱动 reducer 队列与不同优先级更新，确认使用本轮 reducer 并按批次顺序处理 action”场景。 */
+      /** 把reducer函数存在前置state中，每次render派发increment并交换A/B；下一pass以新reducer处理后置队列。 */
       function Counter({row: newRow}, ref) {
         const [reducer, setReducer] = useState(() => reducerA);
         const [count, dispatch] = useReducer(reducer, 0);
@@ -770,18 +660,11 @@ describe('ReactHooksWithNoopRenderer', () => {
       expect(ReactNoop).toMatchRenderedOutput(<span prop={22} />);
     });
 
-    /**
-     * Given：并发根已挂载，低优先级工作、thenable 与日志检查点均已准备。
-     * When：启动并发渲染，再制造挂起或高优先级中断并恢复。
-     * Then：渲染期间安排 Hook 更新，确认重渲染合并、收敛上限及跨组件诊断。
-     *
-     * 验证机制：宿主输出断言确认实际提交结果。
-     * 对应源码：`updateReducerImpl()`、`dispatchSetStateInternal()` 与 `renderWithHooksAgain()`。
-     */
+    /** signal从true改false时Bar先排counter/signal render-phase更新再抛never；两次transition都再次Suspend且可见计数仍0。验证放弃挂起render清除本轮render-phase更新。 */
     it('discards render phase updates if something suspends', async () => {
-      /** then 模拟 thenable 订阅入口，保存或立即调度渲染唤醒回调。 */
+      /** 永久 pending 的 thenable；空 then 不登记或触发唤醒。 */
       const thenable = {/** 挂起协议入口；该 fixture 永不主动唤醒渲染。 */ then() {}};
-      /** 作为 Foo fixture 承载当前测试职责；服务于“渲染期间安排 Hook 更新，确认重渲染合并、收敛上限及跨组件诊断”场景。 */
+      /** 在 Suspense 中包裹 signal 驱动的 Bar，提供可观察的 Loading 回退。 */
       function Foo({signal}) {
         return (
           <Suspense fallback="Loading...">
@@ -790,7 +673,7 @@ describe('ReactHooksWithNoopRenderer', () => {
         );
       }
 
-      /** 作为 Bar fixture 承载当前测试职责；服务于“渲染期间安排 Hook 更新，确认重渲染合并、收敛上限及跨组件诊断”场景。 */
+      /** signal 变化时派发本组件 state 更新并挂起，检查放弃 render 后不会泄漏这些更新。 */
       function Bar({signal: newSignal}) {
         const [counter, setCounter] = useState(0);
         const [signal, setSignal] = useState(true);
@@ -828,18 +711,11 @@ describe('ReactHooksWithNoopRenderer', () => {
       await waitForAll(['Suspend!']);
     });
 
-    /**
-     * Given：并发根已挂载，低优先级工作、thenable 与日志检查点均已准备。
-     * When：启动并发渲染，再制造挂起或高优先级中断并恢复。
-     * Then：渲染期间安排 Hook 更新，确认重渲染合并、收敛上限及跨组件诊断。
-     *
-     * 验证机制：宿主输出断言确认实际提交结果。
-     * 对应源码：`updateReducerImpl()`、`dispatchSetStateInternal()` 与 `renderWithHooksAgain()`。
-     */
+    /** signal改false与label B同一transition；render-phase counter1挂起，两次尝试不提交；最后signal改true解除挂起，输出B0。验证普通label队列更新保留，render-phase更新被丢弃。 */
     it('discards render phase updates if something suspends, but not other updates in the same component', async () => {
-      /** then 模拟 thenable 订阅入口，保存或立即调度渲染唤醒回调。 */
+      /** 永久 pending 的 thenable；空 then 不登记或触发唤醒。 */
       const thenable = {/** 挂起协议入口；该 fixture 永不主动唤醒渲染。 */ then() {}};
-      /** 作为 Foo fixture 承载当前测试职责；服务于“渲染期间安排 Hook 更新，确认重渲染合并、收敛上限及跨组件诊断”场景。 */
+      /** 以 Suspense 包裹 Bar，观察 signal 更新被挂起后保留的输出。 */
       function Foo({signal}) {
         return (
           <Suspense fallback="Loading...">
@@ -849,7 +725,7 @@ describe('ReactHooksWithNoopRenderer', () => {
       }
 
       let setLabel;
-      /** 作为 Bar fixture 承载当前测试职责；服务于“渲染期间安排 Hook 更新，确认重渲染合并、收敛上限及跨组件诊断”场景。 */
+      /** 在 render-phase 更新与挂起交错时维护 counter，检查后续 props 更新仍可处理。 */
       function Bar({signal: newSignal}) {
         const [counter, setCounter] = useState(0);
 
@@ -903,23 +779,16 @@ describe('ReactHooksWithNoopRenderer', () => {
       });
     });
 
-    /**
-     * Given：执行 Noop 渲染器下的 Hook 场景，并以调度日志和宿主输出验证结果所需的初始状态、更新入口与观测日志均已建立。
-     * When：安排用例指定的状态、属性、Context 或依赖更新。
-     * Then：执行 Noop 渲染器下的 Hook 场景，并以调度日志和宿主输出验证结果。
-     *
-     * 验证机制：宿主输出断言确认实际提交结果。
-     * 对应源码：`renderWithHooks()` 与当前 Hook 的 mount/update dispatcher。
-     */
+    /** Bar第一个Hook在suspend时排counter更新并抛never，后面的label Hook尚未读取；transition同时label B，随后取消suspend得到B0。验证unwind不能清空尚未处理的普通pending队列。 */
     it(
       'preserves pending updates on later hooks that were not processed ' +
         'before unwind',
       async () => {
-        /** then 模拟 thenable 订阅入口，保存或立即调度渲染唤醒回调。 */
+        /** 永久 pending 的 thenable；空 then 不登记或触发唤醒。 */
         const thenable = {/** 挂起协议入口；该 fixture 永不主动唤醒渲染。 */ then() {}};
 
         let setLabel;
-        /** 作为 Foo fixture 承载当前测试职责；服务于“执行 Noop 渲染器下的 Hook 场景，并以调度日志和宿主输出验证结果”场景。 */
+        /** 把可挂起的 Bar 放在边界内，检查尚未执行到的后续 Hook 更新能否在重试时保留。 */
         function Foo({suspend}) {
           return (
             <Suspense fallback="Loading...">
@@ -928,7 +797,7 @@ describe('ReactHooksWithNoopRenderer', () => {
           );
         }
 
-        /** 作为 Bar fixture 承载当前测试职责；服务于“执行 Noop 渲染器下的 Hook 场景，并以调度日志和宿主输出验证结果”场景。 */
+        /** 按 suspend 控制挂起，并在可继续的 render 中推进 counter。 */
         function Bar({suspend}) {
           const [counter, setCounter] = useState(0);
 
@@ -969,17 +838,10 @@ describe('ReactHooksWithNoopRenderer', () => {
       },
     );
 
-    /**
-     * Given：渲染期间安排 Hook 更新，确认重渲染合并、收敛上限及跨组件诊断所需的初始状态、更新入口与观测日志均已建立。
-     * When：安排用例指定的状态、属性、Context 或依赖更新。
-     * Then：渲染期间安排 Hook 更新，确认重渲染合并、收敛上限及跨组件诊断。
-     *
-     * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果。
-     * 对应源码：`updateReducerImpl()`、`dispatchSetStateInternal()` 与 `renderWithHooksAgain()`。
-     */
+    /** row初始10方向Up；同批discrete row5与transition row20，日志Up再Down且最终Down。验证前置state触发render-phase prevRow/方向同步时不丢低优先级row更新。 */
     it('regression: render phase updates cause lower pri work to be dropped', async () => {
       let setRow;
-      /** 作为 ScrollView fixture 承载当前测试职责；服务于“渲染期间安排 Hook 更新，确认重渲染合并、收敛上限及跨组件诊断”场景。 */
+      /** 暴露 row 更新器，触发在 render 中派发第二次状态更新的路径。 */
       function ScrollView() {
         const [row, _setRow] = useState(10);
         setRow = _setRow;
@@ -1016,16 +878,9 @@ describe('ReactHooksWithNoopRenderer', () => {
     });
 
     // TODO：这里可能应产生告警。
-    /**
-     * Given：渲染期间安排 Hook 更新，确认重渲染合并、收敛上限及跨组件诊断所需的初始状态、更新入口与观测日志均已建立。
-     * When：完成挂载以及用例指定的后续渲染或提交步骤。
-     * Then：渲染期间安排 Hook 更新，确认重渲染合并、收敛上限及跨组件诊断。
-     *
-     * 验证机制：宿主输出断言确认实际提交结果。
-     * 对应源码：`updateReducerImpl()`、`dispatchSetStateInternal()` 与 `renderWithHooksAgain()`。
-     */
+    /** 初挂counter0在render内调用React.startTransition并排+1，最终只输出1；保留TODO说明没有专门警告。验证已有render-phase判定优先于transition lane分配。 */
     it('calling startTransition inside render phase', async () => {
-      /** 组织当前用例的根组件、更新入口与受测 Hook；服务于“渲染期间安排 Hook 更新，确认重渲染合并、收敛上限及跨组件诊断”场景。 */
+      /** counter0时在render内用startTransition包住本组件+1，仍按render-phase更新重复到1。 */
       function App() {
         const [counter, setCounter] = useState(0);
 
@@ -1047,19 +902,12 @@ describe('ReactHooksWithNoopRenderer', () => {
 
   /** 通过 Noop 渲染器验证 Hooks 状态队列、Effect 提交顺序、并发中断与历史回归。 */
   describe('useReducer', () => {
-    /**
-     * Given：挂载后更新 Hook 状态，确认初值、更新函数与宿主输出按序变化所需的初始状态、更新入口与观测日志均已建立。
-     * When：安排用例指定的状态、属性、Context 或依赖更新。
-     * Then：挂载后更新 Hook 状态，确认初值、更新函数与宿主输出按序变化。
-     *
-     * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果。
-     * 对应源码：`renderWithHooks()` 与当前 Hook 的 mount/update dispatcher。
-     */
+    /** reducer初值0，INCREMENT后为1，再同批三个DECREMENT为-2；ref暴露dispatch，验证action顺序和批处理。 */
     it('simple mount and update', async () => {
       const INCREMENT = 'INCREMENT';
       const DECREMENT = 'DECREMENT';
 
-      /** 根据 action 与当前状态计算 reducer 的下一状态；服务于“挂载后更新 Hook 状态，确认初值、更新函数与宿主输出按序变化”场景。 */
+      /** INCREMENT加1、DECREMENT减1，未识别action保持state，供普通更新和批量dispatch核对。 */
       function reducer(state, action) {
         switch (action) {
           case 'INCREMENT':
@@ -1071,7 +919,7 @@ describe('ReactHooksWithNoopRenderer', () => {
         }
       }
 
-      /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“挂载后更新 Hook 状态，确认初值、更新函数与宿主输出按序变化”场景。 */
+      /** 以INCREMENT/DECREMENT reducer维护count，imperative handle暴露dispatch并输出Count。 */
       function Counter(props, ref) {
         const [count, dispatch] = useReducer(reducer, 0);
         useImperativeHandle(ref, () => ({dispatch}));
@@ -1096,19 +944,12 @@ describe('ReactHooksWithNoopRenderer', () => {
       expect(ReactNoop).toMatchRenderedOutput(<span prop="Count: -2" />);
     });
 
-    /**
-     * Given：以惰性初始化函数挂载 state 或 reducer，确认初始化只在挂载路径执行所需的初始状态、更新入口与观测日志均已建立。
-     * When：完成挂载以及用例指定的后续渲染或提交步骤。
-     * Then：以惰性初始化函数挂载 state 或 reducer，确认初始化只在挂载路径执行。
-     *
-     * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果。
-     * 对应源码：`renderWithHooks()` 与当前 Hook 的 mount/update dispatcher。
-     */
+    /** reducer第三参数从props.initialCount10初始化，仅初挂日志Init；increment为11再三个decrement为8。验证init只用于建立初值，后续处理reducer action。 */
     it('lazy init', async () => {
       const INCREMENT = 'INCREMENT';
       const DECREMENT = 'DECREMENT';
 
-      /** 根据 action 与当前状态计算 reducer 的下一状态；服务于“以惰性初始化函数挂载 state 或 reducer，确认初始化只在挂载路径执行”场景。 */
+      /** INCREMENT加1、DECREMENT减1，未识别action保持state，供普通更新和批量dispatch核对。 */
       function reducer(state, action) {
         switch (action) {
           case 'INCREMENT':
@@ -1120,7 +961,7 @@ describe('ReactHooksWithNoopRenderer', () => {
         }
       }
 
-      /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“以惰性初始化函数挂载 state 或 reducer，确认初始化只在挂载路径执行”场景。 */
+      /** reducer init从props.initialCount建立初值并记录Init，后续dispatch不重新执行init。 */
       function Counter(props, ref) {
         const [count, dispatch] = useReducer(reducer, props, p => {
           Scheduler.log('Init');
@@ -1150,23 +991,16 @@ describe('ReactHooksWithNoopRenderer', () => {
     });
 
     // 回归场景：https://github.com/facebook/react/issues/14360
-    /**
-     * Given：执行 Noop 渲染器下的 Hook 场景，并以调度日志和宿主输出验证结果所需的初始状态、更新入口与观测日志均已建立。
-     * When：安排用例指定的状态、属性、Context 或依赖更新。
-     * Then：执行 Noop 渲染器下的 Hook 场景，并以调度日志和宿主输出验证结果。
-     *
-     * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果。
-     * 对应源码：`renderWithHooks()` 与当前 Hook 的 mount/update dispatcher。
-     */
+    /** 先batchedUpdates三个increment，再flushSync一个increment；本版输出只Count4。验证Sync出现时选择SyncUpdateLanes组，可把已有Default更新一起处理，不能沿旧标题断言先1再4。 */
     it('handles dispatches with mixed priorities', async () => {
       const INCREMENT = 'INCREMENT';
 
-      /** 根据 action 与当前状态计算 reducer 的下一状态；服务于“执行 Noop 渲染器下的 Hook 场景，并以调度日志和宿主输出验证结果”场景。 */
+      /** increment action加1，其余action原样返回state；由render阶段调用。 */
       function reducer(state, action) {
         return action === INCREMENT ? state + 1 : state;
       }
 
-      /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“执行 Noop 渲染器下的 Hook 场景，并以调度日志和宿主输出验证结果”场景。 */
+      /** ref暴露increment reducer的dispatch，用同一队列观察batched普通更新与flushSync合并。 */
       function Counter(props, ref) {
         const [count, dispatch] = useReducer(reducer, 0);
         useImperativeHandle(ref, () => ({dispatch}));
@@ -1196,16 +1030,9 @@ describe('ReactHooksWithNoopRenderer', () => {
 
   /** 通过 Noop 渲染器验证 Hooks 状态队列、Effect 提交顺序、并发中断与历史回归。 */
   describe('useEffect', () => {
-    /**
-     * Given：挂载后更新 Hook 状态，确认初值、更新函数与宿主输出按序变化所需的初始状态、更新入口与观测日志均已建立。
-     * When：安排用例指定的状态、属性、Context 或依赖更新。
-     * Then：挂载后更新 Hook 状态，确认初值、更新函数与宿主输出按序变化。
-     *
-     * 验证机制：宿主输出断言确认实际提交结果。
-     * 对应源码：`renderWithHooks()` 与当前 Hook 的 mount/update dispatcher。
-     */
+    /** Counter只用props.count安装无deps passive，0/1两轮先render及根callback的Sync effect、随后Passive effect。验证effect在提交后冲刷，与state队列无关。 */
     it('simple mount and update', async () => {
-      /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“挂载后更新 Hook 状态，确认初值、更新函数与宿主输出按序变化”场景。 */
+      /** 输出props.count并安装无deps passive日志，没有本地state更新；根callback提供提交检查点。 */
       function Counter(props) {
         useEffect(() => {
           Scheduler.log(`Passive effect [${props.count}]`);
@@ -1233,23 +1060,16 @@ describe('ReactHooksWithNoopRenderer', () => {
       });
     });
 
-    /**
-     * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-     * When：删除目标子树并冲刷对应提交阶段。
-     * Then：挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序。
-     *
-     * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果。
-     * 对应源码：`commitHookPassiveMountEffects()` 与 `commitHookPassiveUnmountEffects()`。
-     */
+    /** Layout和稳定元素Passive初挂后删除Layout兄弟；尚未执行的passive create仍先被冲刷，剩余输出Passive。验证兄弟删除不会丢全局待passive任务。 */
     it('flushes passive effects even with sibling deletions', async () => {
-      /** 作为 LayoutEffect fixture 承载当前测试职责；服务于“挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序”场景。 */
+      /** 在 layout create 写日志，与兄弟 passive Effect 的待冲刷工作对照。 */
       function LayoutEffect(props) {
         useLayoutEffect(() => {
           Scheduler.log(`Layout effect`);
         });
         return <Text text="Layout" />;
       }
-      /** 作为 PassiveEffect fixture 承载当前测试职责；服务于“挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序”场景。 */
+      /** 首次 passive create 写日志，检查删除兄弟不影响已登记的被动工作。 */
       function PassiveEffect(props) {
         useEffect(() => {
           Scheduler.log(`Passive effect`);
@@ -1275,23 +1095,16 @@ describe('ReactHooksWithNoopRenderer', () => {
       assertLog([]);
     });
 
-    /**
-     * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-     * When：安排用例指定的状态、属性、Context 或依赖更新。
-     * Then：挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序。
-     *
-     * 验证机制：宿主输出断言确认实际提交结果。
-     * 对应源码：`commitHookPassiveMountEffects()` 与 `commitHookPassiveUnmountEffects()`。
-     */
+    /** Layout的layout把count0改1，兄弟Passive待create；日志layout0→Passive effect→layout1，最终两兄弟保留。验证新同步更新前先冲刷上次passive。 */
     it('flushes passive effects even if siblings schedule an update', async () => {
-      /** 作为 PassiveEffect fixture 承载当前测试职责；服务于“挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序”场景。 */
+      /** 每次 passive create 写日志，检查 layout 中安排的新更新不会跳过它。 */
       function PassiveEffect(props) {
         useEffect(() => {
           Scheduler.log('Passive effect');
         });
         return <Text text="Passive" />;
       }
-      /** 作为 LayoutEffect fixture 承载当前测试职责；服务于“挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序”场景。 */
+      /** layout 中将 count 从 0 更新为 1，制造 passive flush 与同步新工作的交错。 */
       function LayoutEffect(props) {
         const [count, setCount] = useState(0);
         useLayoutEffect(() => {
@@ -1325,23 +1138,16 @@ describe('ReactHooksWithNoopRenderer', () => {
       );
     });
 
-    /**
-     * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-     * When：完成挂载以及用例指定的后续渲染或提交步骤。
-     * Then：挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序。
-     *
-     * 验证机制：宿主输出断言确认实际提交结果。
-     * 对应源码：`commitHookPassiveMountEffects()` 与 `commitHookPassiveUnmountEffects()`。
-     */
+    /** Layout的layout向root2渲染New Root，当前根Passive尚待create；日志先Passive effect再New Root。验证跨根调度也不丢待passive工作。 */
     it('flushes passive effects even if siblings schedule a new root', async () => {
-      /** 作为 PassiveEffect fixture 承载当前测试职责；服务于“挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序”场景。 */
+      /** 只在首次 passive create 写日志，检查另一根的更新不会让它丢失。 */
       function PassiveEffect(props) {
         useEffect(() => {
           Scheduler.log('Passive effect');
         }, []);
         return <Text text="Passive" />;
       }
-      /** 作为 LayoutEffect fixture 承载当前测试职责；服务于“挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序”场景。 */
+      /** layout 中更新 root2，核对另一根的新工作与本根 passive 的冲刷顺序。 */
       function LayoutEffect(props) {
         useLayoutEffect(() => {
           Scheduler.log('Layout effect');
@@ -1368,19 +1174,12 @@ describe('ReactHooksWithNoopRenderer', () => {
       });
     });
 
-    /**
-     * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-     * When：完成挂载以及用例指定的后续渲染或提交步骤。
-     * Then：挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序。
-     *
-     * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果。
-     * 对应源码：`commitHookPassiveMountEffects()` 与 `commitHookPassiveUnmountEffects()`。
-     */
+    /** count0已提交但passive未执行时排count1；旧effect观察已提交文本0，随后才render/commit1，新effect观察1。验证每次effect读到它对应提交的宿主状态。 */
     it(
       'flushes effects serially by flushing old effects before flushing ' +
         "new ones, if they haven't already fired",
       async () => {
-        /** 从已提交宿主节点读取文本，供 Effect 阶段检查突变可见性；服务于“挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序”场景。 */
+        /** 从已提交宿主节点读取文本，供 Effect 阶段检查突变可见性。 */
         function getCommittedText() {
           const children = ReactNoop.getChildrenAsJSX();
           if (children === null) {
@@ -1389,7 +1188,7 @@ describe('ReactHooksWithNoopRenderer', () => {
           return children.props.prop;
         }
 
-        /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序”场景。 */
+        /** 输出props.count，passive从已提交宿主读取当前文本，观察旧effect冲刷是否先于下一次渲染。 */
         function Counter(props) {
           useEffect(() => {
             Scheduler.log(
@@ -1421,16 +1220,9 @@ describe('ReactHooksWithNoopRenderer', () => {
       },
     );
 
-    /**
-     * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-     * When：删除目标子树并冲刷对应提交阶段。
-     * Then：挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序。
-     *
-     * 验证机制：显式断言联合检查状态、输出和副作用。
-     * 对应源码：`commitHookPassiveMountEffects()` 与 `commitHookPassiveUnmountEffects()`。
-     */
+    /** Child按bar/foo分别安装layout/passive；初值1/1，更新1/2只清理重建foo，删除时全部layout先清理、全部passive随后清理。验证静态effect信息保留及删除阶段分离。 */
     it('defers passive effect destroy functions during unmount', async () => {
-      /** 作为子级函数组件暴露 Hook 状态和提交日志；服务于“挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序”场景。 */
+      /** 按bar/foo各安装一份layout和passive cleanup，记录同一依赖变化与删除时的阶段顺序。 */
       function Child({bar, foo}) {
         React.useEffect(() => {
           Scheduler.log('passive bar create');
@@ -1474,7 +1266,7 @@ describe('ReactHooksWithNoopRenderer', () => {
         await waitForAll(['passive bar create', 'passive foo create']);
       });
 
-      // 该更新用于验证内部细节：依赖未更新的 Effect 会在更新期间失去 layout/passive 标记。
+      // 本次bar依赖未变，其对应Effect不带HookHasEffect，普通更新提交跳过它；静态标记仍需保留，以便删除时清理。
       await act(async () => {
         ReactNoop.render(<Child bar={1} foo={2} />, () =>
           Scheduler.log('Sync effect'),
@@ -1502,17 +1294,10 @@ describe('ReactHooksWithNoopRenderer', () => {
       });
     });
 
-    /**
-     * Given：目标组件已进入可触发开发态保护的最小运行环境。
-     * When：执行用例中的非法 Hook、参数或阶段调用。
-     * Then：组件卸载前后安排 state 更新，确认清理窗口不会产生过期告警。
-     *
-     * 验证机制：调度日志精确约束执行次数与先后顺序。
-     * 对应源码：`commitHookPassiveMountEffects()` 与 `commitHookPassiveUnmountEffects()`。
-     */
+    /** Component在passive登记请求回调并安装layout/passive cleanup；删除根后仅layout已销毁时回调setDidLoad，再flushPassive见destroy且无过期警告。验证删除后pending passive窗口的更新忽略。 */
     it('does not warn about state updates for unmounted components with pending passive unmounts', async () => {
       let completePendingRequest = null;
-      /** 作为 Component fixture 承载当前测试职责；服务于“组件卸载前后安排 state 更新，确认清理窗口不会产生过期告警”场景。 */
+      /** 用 passive Effect 登记模拟请求回调，并记录 layout/passive 清理，观察删除后的待清理窗口。 */
       function Component() {
         Scheduler.log('Component');
         const [didLoad, setDidLoad] = React.useState(false);
@@ -1525,6 +1310,7 @@ describe('ReactHooksWithNoopRenderer', () => {
         React.useEffect(() => {
           Scheduler.log('passive create');
           // 模拟带完成回调的 XHR 请求，回调会更新 state。
+          /** 模拟请求完成，仅派发didLoad=true；删除后调用用于核对忽略更新的窗口。 */
           completePendingRequest = () => setDidLoad(true);
           return () => {
             Scheduler.log('passive destroy');
@@ -1553,19 +1339,12 @@ describe('ReactHooksWithNoopRenderer', () => {
       });
     });
 
-    /**
-     * Given：目标组件已进入可触发开发态保护的最小运行环境。
-     * When：执行用例中的非法 Hook、参数或阶段调用。
-     * Then：组件卸载前后安排 state 更新，确认清理窗口不会产生过期告警。
-     *
-     * 验证机制：显式断言联合检查状态、输出和副作用。
-     * 对应源码：`commitHookPassiveMountEffects()` 与 `commitHookPassiveUnmountEffects()`。
-     */
+    /** Parent有两个Child，先更新1以建立alternate，再transition改2并暂停第一个render；Continuous更新删除两Child，删除commit后旧setter再派发2，只有两个passive destroy。验证current/alternate删除路径均不告警或重挂。 */
     it('does not warn about state updates for unmounted components with pending passive unmounts for alternates', async () => {
       let setParentState = null;
       const setChildStates = [];
 
-      /** 作为父级 fixture 持有状态、Context 或子树边界；服务于“组件卸载前后安排 state 更新，确认清理窗口不会产生过期告警”场景。 */
+      /** 保存是否显示两个Child的state，暴露setter并分别记录render/layout，供Continuous更新删除子树。 */
       function Parent() {
         const [state, setState] = useState(true);
         setParentState = setState;
@@ -1585,7 +1364,7 @@ describe('ReactHooksWithNoopRenderer', () => {
         }
       }
 
-      /** 作为子级函数组件暴露 Hook 状态和提交日志；服务于“组件卸载前后安排 state 更新，确认清理窗口不会产生过期告警”场景。 */
+      /** 保存数字state，passive把setter加入setChildStates；layout和passive日志定位alternate更新及删除窗口。 */
       function Child({label}) {
         const [state, setState] = useState(0);
         useLayoutEffect(() => {
@@ -1602,7 +1381,7 @@ describe('ReactHooksWithNoopRenderer', () => {
         return state;
       }
 
-      // 为子组件安排防抖 state 更新；在本用例中很可能是无操作。
+      // 先普通更新子state=1以建立alternate，再安排state=2的transition并在中途删除；这里没有防抖计时器。
       // 下一 tick：安排卸载父组件。
       // 开始处理卸载，但不冲刷 Passive Effect。
       // 更新子组件 state。
@@ -1649,23 +1428,17 @@ describe('ReactHooksWithNoopRenderer', () => {
       });
     });
 
-    /**
-     * Given：目标组件已进入可触发开发态保护的最小运行环境。
-     * When：执行用例中的非法 Hook、参数或阶段调用。
-     * Then：组件卸载前后安排 state 更新，确认清理窗口不会产生过期告警。
-     *
-     * 验证机制：显式断言联合检查状态、输出和副作用。
-     * 对应源码：`commitHookPassiveMountEffects()` 与 `commitHookPassiveUnmountEffects()`。
-     */
+    /** Component只有layout登记请求回调与cleanup，没有passive；删除后layout destroy已完成，再回调setDidLoad，不告警。验证无pending passive的已卸载更新也被忽略。 */
     it('does not warn about state updates for unmounted components with no pending passive unmounts', async () => {
       let completePendingRequest = null;
-      /** 作为 Component fixture 承载当前测试职责；服务于“组件卸载前后安排 state 更新，确认清理窗口不会产生过期告警”场景。 */
+      /** 在 layout 中登记请求回调；组件删除后模拟请求完成，检查 state 更新不会产生过期警告。 */
       function Component() {
         Scheduler.log('Component');
         const [didLoad, setDidLoad] = React.useState(false);
         React.useLayoutEffect(() => {
           Scheduler.log('layout create');
           // 模拟带完成回调的 XHR 请求，回调会更新 state。
+          /** 模拟请求完成，仅派发didLoad=true；删除后调用用于核对忽略更新的窗口。 */
           completePendingRequest = () => setDidLoad(true);
           return () => {
             Scheduler.log('layout destroy');
@@ -1689,17 +1462,10 @@ describe('ReactHooksWithNoopRenderer', () => {
       });
     });
 
-    /**
-     * Given：目标组件已进入可触发开发态保护的最小运行环境。
-     * When：执行用例中的非法 Hook、参数或阶段调用。
-     * Then：挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序。
-     *
-     * 验证机制：调度日志精确约束执行次数与先后顺序。
-     * 对应源码：`commitHookPassiveMountEffects()` 与 `commitHookPassiveUnmountEffects()`。
-     */
+    /** 带XHR组件的passive只create无cleanup，另一个兄弟有passive destroy；删除后XHR回调更新已删组件，后续只有兄弟清理。验证不能把全局pending passive误认作当前Fiber待清理。 */
     it('does not warn if there are pending passive unmount effects but not for the current fiber', async () => {
       let completePendingRequest = null;
-      /** 作为 ComponentWithXHR fixture 承载当前测试职责；服务于“挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序”场景。 */
+      /** 安装请求回调与两类 Effect，作为已删除且仍可能收到请求结果的组件。 */
       function ComponentWithXHR() {
         Scheduler.log('Component');
         const [didLoad, setDidLoad] = React.useState(false);
@@ -1712,12 +1478,13 @@ describe('ReactHooksWithNoopRenderer', () => {
         React.useEffect(() => {
           Scheduler.log('a:passive create');
           // 模拟带完成回调的 XHR 请求，回调会更新 state。
+          /** 模拟请求完成，仅派发didLoad=true；删除后调用用于核对忽略更新的窗口。 */
           completePendingRequest = () => setDidLoad(true);
         }, []);
         return didLoad;
       }
 
-      /** 作为 ComponentWithPendingPassiveUnmount fixture 承载当前测试职责；服务于“挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序”场景。 */
+      /** 只登记 passive create/cleanup，作为待被动清理的兄弟组件。 */
       function ComponentWithPendingPassiveUnmount() {
         React.useEffect(() => {
           Scheduler.log('b:passive create');
@@ -1750,18 +1517,11 @@ describe('ReactHooksWithNoopRenderer', () => {
       });
     });
 
-    /**
-     * Given：目标组件已进入可触发开发态保护的最小运行环境。
-     * When：执行用例中的非法 Hook、参数或阶段调用。
-     * Then：挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序。
-     *
-     * 验证机制：调度日志精确约束执行次数与先后顺序。
-     * 对应源码：`commitHookPassiveMountEffects()` 与 `commitHookPassiveUnmountEffects()`。
-     */
+    /** Component passive已有cleanup，删除根并waitForAll全部清理完，再调用旧setter(true)不告警。验证彻底断开后的state更新仍被忽略。 */
     it('does not warn if there are updates after pending passive unmount effects have been flushed', async () => {
       let updaterFunction;
 
-      /** 作为 Component fixture 承载当前测试职责；服务于“挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序”场景。 */
+      /** 暴露 state 更新器并登记 passive cleanup，观察删除后更新与清理的顺序。 */
       function Component() {
         Scheduler.log('Component');
         const [state, setState] = React.useState(false);
@@ -1790,16 +1550,9 @@ describe('ReactHooksWithNoopRenderer', () => {
       });
     });
 
-    /**
-     * Given：目标组件已进入可触发开发态保护的最小运行环境。
-     * When：执行用例中的非法 Hook、参数或阶段调用。
-     * Then：挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序。
-     *
-     * 验证机制：显式断言联合检查状态、输出和副作用。
-     * 对应源码：`commitHookPassiveMountEffects()` 与 `commitHookPassiveUnmountEffects()`。
-     */
+    /** Component passive cleanup中更新自身didLoad；删除根只见passive destroy，没有新Component渲染或未处理告警。验证卸载中更新不会重新挂载自身。 */
     it('does not show a warning when a component updates its own state from within passive unmount function', async () => {
-      /** 作为 Component fixture 承载当前测试职责；服务于“挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序”场景。 */
+      /** 在 passive cleanup 中更新本组件，确认卸载中的更新不会再次挂载它。 */
       function Component() {
         Scheduler.log('Component');
         const [didLoad, setDidLoad] = React.useState(false);
@@ -1825,16 +1578,9 @@ describe('ReactHooksWithNoopRenderer', () => {
       });
     });
 
-    /**
-     * Given：目标组件已进入可触发开发态保护的最小运行环境。
-     * When：执行用例中的非法 Hook、参数或阶段调用。
-     * Then：挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序。
-     *
-     * 验证机制：显式断言联合检查状态、输出和副作用。
-     * 对应源码：`commitHookPassiveMountEffects()` 与 `commitHookPassiveUnmountEffects()`。
-     */
+    /** Parent passive cleanup通过ref调用已删除Child setter，Child的passive只登记setter；删除根仅Parent destroy，验证父清理对已删子队列更新被忽略。 */
     it('does not show a warning when a component updates a child state from within passive unmount function', async () => {
-      /** 作为父级 fixture 持有状态、Context 或子树边界；服务于“挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序”场景。 */
+      /** 通过ref保存子setter，自身passive cleanup更新已删除子；本体不持有父state。 */
       function Parent() {
         Scheduler.log('Parent');
         const updaterRef = useRef(null);
@@ -1848,7 +1594,7 @@ describe('ReactHooksWithNoopRenderer', () => {
         return <Child updaterRef={updaterRef} />;
       }
 
-      /** 作为子级函数组件暴露 Hook 状态和提交日志；服务于“挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序”场景。 */
+      /** 保存布尔state，在passive将setter写入父ref，无cleanup；返回该布尔值供卸载更新检查。 */
       function Child({updaterRef}) {
         Scheduler.log('Child');
         const [state, setState] = React.useState(false);
@@ -1874,23 +1620,16 @@ describe('ReactHooksWithNoopRenderer', () => {
       });
     });
 
-    /**
-     * Given：目标组件已进入可触发开发态保护的最小运行环境。
-     * When：执行用例中的非法 Hook、参数或阶段调用。
-     * Then：挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序。
-     *
-     * 验证机制：显式断言联合检查状态、输出和副作用。
-     * 对应源码：`commitHookPassiveMountEffects()` 与 `commitHookPassiveUnmountEffects()`。
-     */
+    /** Child passive cleanup调用已删除Parent的setter；初挂父子日志后删除根只Child destroy。验证子清理对已删祖先更新也不告警。 */
     it('does not show a warning when a component updates a parents state from within passive unmount function', async () => {
-      /** 作为父级 fixture 持有状态、Context 或子树边界；服务于“挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序”场景。 */
+      /** 保存布尔state并将setter传子，供Child清理期间调用已删除父的更新器。 */
       function Parent() {
         const [state, setState] = React.useState(false);
         Scheduler.log('Parent');
         return <Child setState={setState} state={state} />;
       }
 
-      /** 作为子级函数组件暴露 Hook 状态和提交日志；服务于“挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序”场景。 */
+      /** 返回父state并安装passive cleanup，在删除时记录后调用父setter(true)。 */
       function Child({setState, state}) {
         Scheduler.log('Child');
         React.useEffect(() => {
@@ -1913,16 +1652,9 @@ describe('ReactHooksWithNoopRenderer', () => {
       });
     });
 
-    /**
-     * Given：执行 Noop 渲染器下的 Hook 场景，并以调度日志和宿主输出验证结果所需的初始状态、更新入口与观测日志均已建立。
-     * When：安排用例指定的状态、属性、Context 或依赖更新。
-     * Then：执行 Noop 渲染器下的 Hook 场景，并以调度日志和宿主输出验证结果。
-     *
-     * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果。
-     * 对应源码：`renderWithHooks()` 与当前 Hook 的 mount/update dispatcher。
-     */
+    /** Counter passive把props.count写入state；先提交(empty)，显式flushPassive只记录Schedule0，后冲刷才Count0；props1时同样先旧Count0再Count1。验证passive派发的普通更新仍由后续调度执行。 */
     it('updates have async priority', async () => {
-      /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“执行 Noop 渲染器下的 Hook 场景，并以调度日志和宿主输出验证结果”场景。 */
+      /** 初state为(empty)，passive按props.count派发替换更新并记录Schedule，输出state而非prop。 */
       function Counter(props) {
         const [count, updateCount] = useState('(empty)');
         useEffect(() => {
@@ -1954,16 +1686,9 @@ describe('ReactHooksWithNoopRenderer', () => {
       });
     });
 
-    /**
-     * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-     * When：安排用例指定的状态、属性、Context 或依赖更新。
-     * Then：挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序。
-     *
-     * 验证机制：宿主输出断言确认实际提交结果。
-     * 对应源码：`commitHookPassiveMountEffects()` 与 `commitHookPassiveUnmountEffects()`。
-     */
+    /** 初挂(empty)的passive待执行时排transition props1；先旧effect派发0并渲染Count0，再transition commit和新effect派发1，最终Count1。验证提前冲刷passive不使新state更新进入原transition。 */
     it('updates have async priority even if effects are flushed early', async () => {
-      /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序”场景。 */
+      /** 同样从(empty)开始，在passive依赖props.count变化时派发替换，观察提前冲刷与后续transition顺序。 */
       function Counter(props) {
         const [count, updateCount] = useState('(empty)');
         useEffect(() => {
@@ -2000,17 +1725,10 @@ describe('ReactHooksWithNoopRenderer', () => {
       });
     });
 
-    /**
-     * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-     * When：完成挂载以及用例指定的后续渲染或提交步骤。
-     * Then：挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序。
-     *
-     * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果。
-     * 对应源码：`commitHookPassiveMountEffects()` 与 `commitHookPassiveUnmountEffects()`。
-     */
+    /** count0已提交但effect尚待执行，flushSync回调先setter2；act完成只断言Will set count to1及Count1，最终为1。验证较后入队的effect更新覆盖2，不扩大为所有flushSync都不冲刷passive。 */
     it('does not flush non-discrete passive effects when flushing sync', async () => {
       let _updateCount;
-      /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序”场景。 */
+      /** 暴露count setter，初state0；一次passive固定写1，与flushSync提前排入的2形成覆盖顺序。 */
       function Counter(props) {
         const [count, updateCount] = useState(0);
         _updateCount = updateCount;
@@ -2026,7 +1744,7 @@ describe('ReactHooksWithNoopRenderer', () => {
       );
       await waitFor(['Count: 0', 'Sync effect']);
       expect(ReactNoop).toMatchRenderedOutput(<span prop="Count: 0" />);
-      // 同步冲刷不会执行 Passive Effect，因此另一项更新尚未加入。
+      // 先在flushSync回调排入2；随后旧passive派发1，本例最终断言1，不由标题推断普遍冲刷规则。
       await act(() => {
         ReactNoop.flushSync(() => {
           _updateCount(2);
@@ -2039,20 +1757,13 @@ describe('ReactHooksWithNoopRenderer', () => {
       expect(ReactNoop).toMatchRenderedOutput(<span prop="Count: 1" />);
     });
 
-    /**
-     * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-     * When：安排用例指定的状态、属性、Context 或依赖更新。
-     * Then：挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序。
-     *
-     * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果。
-     * 对应源码：`commitHookPassiveMountEffects()` 与 `commitHookPassiveUnmountEffects()`。
-     */
+    /** legacy根flushSync初挂(empty)，回调内尚无passive日志；act结束passive连续六次写count0，日志仅一次Count0。验证legacy passive延迟执行且其更新同批收敛。 */
     // @gate !disableLegacyMode
     it(
       'in legacy mode, useEffect is deferred and updates finish synchronously ' +
         '(in a single batch)',
       async () => {
-        /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序”场景。 */
+        /** 初state(empty)，每次props.count变化的passive连续六次写同值，检测legacy批处理渲染次数。 */
         function Counter(props) {
           const [count, updateCount] = useState('(empty)');
           useEffect(() => {
@@ -2071,7 +1782,7 @@ describe('ReactHooksWithNoopRenderer', () => {
             ReactNoop.renderLegacySyncRoot(<Counter count={0} />);
           });
 
-          // 即使在 legacy 模式，Effect 也延迟到绘制后执行。
+          // 即使在 legacy 模式，回调内passive尚未执行；Noop检查点没有真实浏览器绘制。
           assertLog(['Count: (empty)']);
           expect(ReactNoop).toMatchRenderedOutput(
             <span prop="Count: (empty)" />,
@@ -2085,16 +1796,9 @@ describe('ReactHooksWithNoopRenderer', () => {
       },
     );
 
-    /**
-     * Given：执行 Noop 渲染器下的 Hook 场景，并以调度日志和宿主输出验证结果所需的初始状态、更新入口与观测日志均已建立。
-     * When：完成挂载以及用例指定的后续渲染或提交步骤。
-     * Then：执行 Noop 渲染器下的 Hook 场景，并以调度日志和宿主输出验证结果。
-     *
-     * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果，开发态控制台断言限定诊断内容与去重。
-     * 对应源码：`renderWithHooks()` 与当前 Hook 的 mount/update dispatcher。
-     */
+    /** Counter passive内部调用flushSync(setter0)；DEV警告已在生命周期中，effect返回前宿主仍不是Count0，随后act完成才Count0。验证CommitContext阻止递归同步冲刷。 */
     it('flushSync is not allowed', async () => {
-      /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“执行 Noop 渲染器下的 Hook 场景，并以调度日志和宿主输出验证结果”场景。 */
+      /** passive内部调用flushSync更新state，并立即检查告警和宿主尚未更新；随后由外层调度完成。 */
       function Counter(props) {
         const [count, updateCount] = useState('(empty)');
         useEffect(() => {
@@ -2128,16 +1832,9 @@ describe('ReactHooksWithNoopRenderer', () => {
       expect(ReactNoop).toMatchRenderedOutput(<span prop="Count: 0" />);
     });
 
-    /**
-     * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-     * When：删除目标子树并冲刷对应提交阶段。
-     * Then：挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序。
-     *
-     * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果。
-     * 对应源码：`commitHookPassiveMountEffects()` 与 `commitHookPassiveUnmountEffects()`。
-     */
+    /** 无deps passive初挂count0后更新1；新passive阶段先Did destroy0再Did create1。验证上次cleanup先于同Hook新create。 */
     it('unmounts previous effect', async () => {
-      /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序”场景。 */
+      /** 输出props.count，无deps passive记录create和闭包count的cleanup，每次提交重新安装。 */
       function Counter(props) {
         useEffect(() => {
           Scheduler.log(`Did create [${props.count}]`);
@@ -2168,16 +1865,9 @@ describe('ReactHooksWithNoopRenderer', () => {
       assertLog(['Did destroy [0]', 'Did create [1]']);
     });
 
-    /**
-     * Given：挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序所需的初始状态、更新入口与观测日志均已建立。
-     * When：删除目标子树并冲刷对应提交阶段。
-     * Then：挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序。
-     *
-     * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果。
-     * 对应源码：`commitHookPassiveMountEffects()` 与 `commitHookPassiveUnmountEffects()`。
-     */
+    /** 无deps passive初挂count0后根render(null)，Did destroy0且最终null。验证删除执行已安装cleanup。 */
     it('unmounts on deletion', async () => {
-      /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序”场景。 */
+      /** 输出props.count并安装无deps passive create/cleanup，供初挂后整树删除的清理验证。 */
       function Counter(props) {
         useEffect(() => {
           Scheduler.log(`Did create [${props.count}]`);
@@ -2202,16 +1892,9 @@ describe('ReactHooksWithNoopRenderer', () => {
       expect(ReactNoop).toMatchRenderedOutput(null);
     });
 
-    /**
-     * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-     * When：删除目标子树并冲刷对应提交阶段。
-     * Then：挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序。
-     *
-     * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果。
-     * 对应源码：`commitHookPassiveMountEffects()` 与 `commitHookPassiveUnmountEffects()`。
-     */
+    /** [] passive初挂count0，props更新1时无effect日志；删除仍Did destroy0，说明跳过更新不能抹掉原cleanup。 */
     it('unmounts on deletion after skipped effect', async () => {
-      /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序”场景。 */
+      /** passive []保留初挂count闭包，后续props变化只更新Text，删除仍清理初次effect。 */
       function Counter(props) {
         useEffect(() => {
           Scheduler.log(`Did create [${props.count}]`);
@@ -2246,23 +1929,16 @@ describe('ReactHooksWithNoopRenderer', () => {
       expect(ReactNoop).toMatchRenderedOutput(null);
     });
 
-    /**
-     * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-     * When：安排用例指定的状态、属性、Context 或依赖更新。
-     * Then：挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序。
-     *
-     * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果。
-     * 对应源码：`commitHookPassiveMountEffects()` 与 `commitHookPassiveUnmountEffects()`。
-     */
+    /** 同一effect函数不传deps，两次render即使函数身份相同也destroy/create，删除再destroy。验证缺省deps每次提交都执行。 */
     it('always fires effects if no dependencies are provided', async () => {
-      /** 作为 effect fixture 承载当前测试职责；服务于“挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序”场景。 */
+      /** 记录 Effect 的 create 与 destroy，观察无依赖更新时的重复执行。 */
       function effect() {
         Scheduler.log(`Did create`);
         return () => {
           Scheduler.log(`Did destroy`);
         };
       }
-      /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序”场景。 */
+      /** 把同一effect函数交给无deps useEffect，props.count仅用于宿主文本，函数身份不作为跳过条件。 */
       function Counter(props) {
         useEffect(effect);
         return <Text text={'Count: ' + props.count} />;
@@ -2292,16 +1968,9 @@ describe('ReactHooksWithNoopRenderer', () => {
       expect(ReactNoop).toMatchRenderedOutput(null);
     });
 
-    /**
-     * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-     * When：完成挂载以及用例指定的后续渲染或提交步骤。
-     * Then：挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序。
-     *
-     * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果。
-     * 对应源码：`commitHookPassiveMountEffects()` 与 `commitHookPassiveUnmountEffects()`。
-     */
+    /** 依赖[label,count]初挂Count0，count1重建；相同Count1无effect，label改Total1再次重建。验证逐项Object.is比较而非渲染函数是否执行。 */
     it('skips effect if inputs have not changed', async () => {
-      /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序”场景。 */
+      /** 拼接label/count输出，以[label,count]控制passive create/cleanup及相同依赖跳过。 */
       function Counter(props) {
         const text = `${props.label}: ${props.count}`;
         useEffect(() => {
@@ -2356,16 +2025,9 @@ describe('ReactHooksWithNoopRenderer', () => {
       assertLog(['Did destroy [Count: 1]', 'Did create [Total: 1]']);
     });
 
-    /**
-     * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-     * When：完成挂载以及用例指定的后续渲染或提交步骤。
-     * Then：挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序。
-     *
-     * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果。
-     * 对应源码：`commitHookPassiveMountEffects()` 与 `commitHookPassiveUnmountEffects()`。
-     */
+    /** Counter连续注册两份无deps passive，count0/1各轮按Hook顺序Did commit1再2。验证单Fiber effect环的登记顺序。 */
     it('multiple effects', async () => {
-      /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序”场景。 */
+      /** 按Hook顺序登记两份无deps passive日志，输出props.count以比较render与create阶段。 */
       function Counter(props) {
         useEffect(() => {
           Scheduler.log(`Did commit 1 [${props.count}]`);
@@ -2395,16 +2057,9 @@ describe('ReactHooksWithNoopRenderer', () => {
       assertLog(['Did commit 1 [1]', 'Did commit 2 [1]']);
     });
 
-    /**
-     * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-     * When：删除目标子树并冲刷对应提交阶段。
-     * Then：挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序。
-     *
-     * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果。
-     * 对应源码：`commitHookPassiveMountEffects()` 与 `commitHookPassiveUnmountEffects()`。
-     */
+    /** 单Counter含A/B两份passive，更新0→1时先Unmount A0/B0，再Mount A1/B1。验证passive全清理遍先于全创建遍。 */
     it('unmounts all previous effects before creating any new ones', async () => {
-      /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序”场景。 */
+      /** 按顺序登记A/B两份passive cleanup，count闭包记录旧清理与新创建，核对两阶段遍历。 */
       function Counter(props) {
         useEffect(() => {
           Scheduler.log(`Mount A [${props.count}]`);
@@ -2445,16 +2100,9 @@ describe('ReactHooksWithNoopRenderer', () => {
       ]);
     });
 
-    /**
-     * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-     * When：删除目标子树并冲刷对应提交阶段。
-     * Then：挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序。
-     *
-     * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果。
-     * 对应源码：`commitHookPassiveMountEffects()` 与 `commitHookPassiveUnmountEffects()`。
-     */
+    /** 两兄弟无key的Counter先A0/B0再A1/B1，后按位置换为B2/C0；各轮全部旧cleanup先于新create。最后只是同类型按slot更新label，不能因文本变化声称key删除/新挂载。 */
     it('unmounts all previous effects between siblings before creating any new ones', async () => {
-      /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序”场景。 */
+      /** 每个slot输出label/count并安装无deps passive，测试按位置换label时旧闭包清理与新闭包创建。 */
       function Counter({count, label}) {
         useEffect(() => {
           Scheduler.log(`Mount ${label} [${count}]`);
@@ -2530,16 +2178,9 @@ describe('ReactHooksWithNoopRenderer', () => {
       ]);
     });
 
-    /**
-     * Given：执行 Noop 渲染器下的 Hook 场景，并以调度日志和宿主输出验证结果所需的初始状态、更新入口与观测日志均已建立。
-     * When：完成挂载以及用例指定的后续渲染或提交步骤。
-     * Then：执行 Noop 渲染器下的 Hook 场景，并以调度日志和宿主输出验证结果。
-     *
-     * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果，异常断言保留原始错误与阶段边界。
-     * 对应源码：`renderWithHooks()` 与当前 Hook 的 mount/update dispatcher。
-     */
+    /** passive A成功安装、B create初挂即抛Oops，错误后根删除且只清理已安装A；最终null。验证未成功返回cleanup的B不会执行cleanup。 */
     it('handles errors in create on mount', async () => {
-      /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“执行 Noop 渲染器下的 Hook 场景，并以调度日志和宿主输出验证结果”场景。 */
+      /** A passive成功安装cleanup，B create记录Oops后必抛错，后面的B create/cleanup代码不可到达。 */
       function Counter(props) {
         useEffect(() => {
           Scheduler.log(`Mount A [${props.count}]`);
@@ -2577,16 +2218,9 @@ describe('ReactHooksWithNoopRenderer', () => {
       expect(ReactNoop).toMatchRenderedOutput(null);
     });
 
-    /**
-     * Given：执行 Noop 渲染器下的 Hook 场景，并以调度日志和宿主输出验证结果所需的初始状态、更新入口与观测日志均已建立。
-     * When：安排用例指定的状态、属性、Context 或依赖更新。
-     * Then：执行 Noop 渲染器下的 Hook 场景，并以调度日志和宿主输出验证结果。
-     *
-     * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果，异常断言保留原始错误与阶段边界。
-     * 对应源码：`renderWithHooks()` 与当前 Hook 的 mount/update dispatcher。
-     */
+    /** count0的A/B都安装；更新count1时旧A/B cleanup、新A create后B create抛错；错误删除只清理新A，act拒绝Oops且根null。验证create错误恢复的已安装集合。 */
     it('handles errors in create on update', async () => {
-      /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“执行 Noop 渲染器下的 Hook 场景，并以调度日志和宿主输出验证结果”场景。 */
+      /** A/B passive正常初挂，B在新props.count1的create抛错，A先返回有效cleanup供错误删除使用。 */
       function Counter(props) {
         useEffect(() => {
           Scheduler.log(`Mount A [${props.count}]`);
@@ -2638,16 +2272,9 @@ describe('ReactHooksWithNoopRenderer', () => {
       }).rejects.toThrow('Oops error!');
     });
 
-    /**
-     * Given：执行 Noop 渲染器下的 Hook 场景，并以调度日志和宿主输出验证结果所需的初始状态、更新入口与观测日志均已建立。
-     * When：安排用例指定的状态、属性、Context 或依赖更新。
-     * Then：执行 Noop 渲染器下的 Hook 场景，并以调度日志和宿主输出验证结果。
-     *
-     * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果，异常断言保留原始错误与阶段边界。
-     * 对应源码：`renderWithHooks()` 与当前 Hook 的 mount/update dispatcher。
-     */
+    /** 更新count0→1时旧A cleanup抛错，仍清理旧B并create新A/B；错误导致根删除后清理新A/B，最终null。新A的Oops日志不会再抛（其闭包count1），验证cleanup错误不截断其他effect遍历。 */
     it('handles errors in destroy on update', async () => {
-      /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“执行 Noop 渲染器下的 Hook 场景，并以调度日志和宿主输出验证结果”场景。 */
+      /** A cleanup总记录Oops但只有闭包count0会抛错，B cleanup正常，观察捕获错误后遍历仍继续。 */
       function Counter(props) {
         useEffect(() => {
           Scheduler.log(`Mount A [${props.count}]`);
@@ -2687,13 +2314,13 @@ describe('ReactHooksWithNoopRenderer', () => {
           expect(ReactNoop).toMatchRenderedOutput(<span prop="Count: 1" />);
           ReactNoop.flushPassiveEffects();
 
-          // 该分支启用两阶段冲刷开关：先独立执行全部 Passive 清理，再执行任何 Passive 创建；因此卸载清理抛错不会阻止后续创建函数运行。
+          // 被动阶段先遍历全部旧cleanup，再遍历新create；这里没有额外两阶段开关，cleanup错误也被捕获后继续遍历。
           assertLog([
             'Oops!',
             'Unmount B [0]',
             'Mount A [1]',
             'Mount B [1]',
-            // 上方抛错导致 `<Counter>` 卸载；其余 Passive 清理稍后在卸载阶段执行，其中一个会因本用例构造再次抛错。
+            // 上方抛错导致 `<Counter>` 卸载；其余 Passive 清理稍后在卸载阶段执行，A再次记录Oops，但其新闭包count=1，不会再次抛错。
             'Oops!',
             'Unmount B [1]',
           ]);
@@ -2703,16 +2330,9 @@ describe('ReactHooksWithNoopRenderer', () => {
       expect(ReactNoop).toMatchRenderedOutput(null);
     });
 
-    /**
-     * Given：执行 Noop 渲染器下的 Hook 场景，并以调度日志和宿主输出验证结果所需的初始状态、更新入口与观测日志均已建立。
-     * When：完成挂载以及用例指定的后续渲染或提交步骤。
-     * Then：执行 Noop 渲染器下的 Hook 场景，并以调度日志和宿主输出验证结果。
-     *
-     * 验证机制：宿主输出断言确认实际提交结果。
-     * 对应源码：`updateMemo()`、`updateCallback()` 与 `areHookInputsEqual()`。
-     */
+    /** 本例虽在useEffect组内，Counter实际安装useLayoutEffect并被memo包装；props count0→1清理重建layout，删除再cleanup。验证memo不会丢layout清理，不写成passive。 */
     it('works with memo', async () => {
-      /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“执行 Noop 渲染器下的 Hook 场景，并以调度日志和宿主输出验证结果”场景。 */
+      /** memo Counter实际安装无deps layout create/cleanup，props.count变化时记录更新与删除。 */
       function Counter({count}) {
         useLayoutEffect(() => {
           Scheduler.log('Mount: ' + count);
@@ -2747,6 +2367,7 @@ describe('ReactHooksWithNoopRenderer', () => {
 
       /** 每个用例重置模块与警告状态，并重新绑定 React、Noop 渲染器、调度日志及内部断言工具。 */
       beforeEach(() => {
+        /** 返回inner child并安装一次passive；cleanup记录后必抛Expected error，以检查最近仍挂载祖先。 */
         BrokenUseEffectCleanup = function () {
           useEffect(() => {
             Scheduler.log('BrokenUseEffectCleanup useEffect');
@@ -2759,8 +2380,9 @@ describe('ReactHooksWithNoopRenderer', () => {
           return 'inner child';
         };
 
+        /** 保存cleanup错误并显示固定fallback，记录派生state/render/DidCatch的恢复顺序。 */
         ErrorBoundary = class extends React.Component {
-          /** 保存 state 的实例状态，作为错误恢复或生命周期断言的跨提交标记。 */
+          /** 保存cleanup错误；null表示正常透传children，非null进入固定fallback。 */
           state = {error: null};
           /** getDerivedStateFromError 把捕获错误转换为稳定的边界回退状态。 */
           static getDerivedStateFromError(error) {
@@ -2771,7 +2393,7 @@ describe('ReactHooksWithNoopRenderer', () => {
           componentDidCatch(error, info) {
             Scheduler.log(`ErrorBoundary componentDidCatch`);
           }
-          /** 渲染 render 对应的类 fixture，并把本轮状态或子树交给宿主输出断言。 */
+          /** 记录成功或错误分支；有error时固定fallback，否则透传children。 */
           render() {
             if (this.state.error) {
               Scheduler.log('ErrorBoundary render error');
@@ -2782,12 +2404,13 @@ describe('ReactHooksWithNoopRenderer', () => {
           }
         };
 
+        /** 只记录DidCatch，不更新state；透传children，核对删除后仍挂载的外层捕获者。 */
         LogOnlyErrorBoundary = class extends React.Component {
           /** componentDidCatch 接收已提交错误；fixture 仅用其证明最近仍挂载边界被选中。 */
           componentDidCatch(error, info) {
             Scheduler.log(`LogOnlyErrorBoundary componentDidCatch`);
           }
-          /** 渲染 render 对应的类 fixture，并把本轮状态或子树交给宿主输出断言。 */
+          /** 只记录LogOnlyErrorBoundary render并透传children；DidCatch不改变渲染状态。 */
           render() {
             Scheduler.log(`LogOnlyErrorBoundary render`);
             return this.props.children || null;
@@ -2795,14 +2418,7 @@ describe('ReactHooksWithNoopRenderer', () => {
         };
       });
 
-      /**
-       * Given：挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序所需的初始状态、更新入口与观测日志均已建立。
-       * When：删除目标子树并冲刷对应提交阶段。
-       * Then：挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序。
-       *
-       * 验证机制：调度日志精确约束执行次数与先后顺序。
-       * 对应源码：`commitHookPassiveMountEffects()` 与 `commitHookPassiveUnmountEffects()`。
-       */
+      /** LogOnlyErrorBoundary保留自身但删除Broken子，passive cleanup抛错后由仍挂载外边界DidCatch记录。无派生statefallback，验证nearestMountedAncestor。 */
       it('should use the nearest still-mounted boundary if there are no unmounted boundaries', async () => {
         await act(() => {
           ReactNoop.render(
@@ -2828,16 +2444,9 @@ describe('ReactHooksWithNoopRenderer', () => {
         ]);
       });
 
-      /**
-       * Given：挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序所需的初始状态、更新入口与观测日志均已建立。
-       * When：删除目标子树并冲刷对应提交阶段。
-       * Then：挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序。
-       *
-       * 验证机制：调度日志精确约束执行次数与先后顺序。
-       * 对应源码：`commitHookPassiveMountEffects()` 与 `commitHookPassiveUnmountEffects()`。
-       */
+      /** 删除Conditional下ErrorBoundary与Broken子，同时外LogOnly保留；cleanup错误跳过已删除内边界，日志仅外DidCatch。验证删除树的return不能选中已卸载边界。 */
       it('should skip unmounted boundaries and use the nearest still-mounted boundary', async () => {
-        /** 作为 Conditional fixture 承载当前测试职责；服务于“挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序”场景。 */
+        /** 按 showChildren 删除包含 cleanup 错误的边界子树，检查错误应交给仍挂载的祖先。 */
         function Conditional({showChildren}) {
           if (showChildren) {
             return (
@@ -2879,16 +2488,9 @@ describe('ReactHooksWithNoopRenderer', () => {
         ]);
       });
 
-      /**
-       * Given：执行 Noop 渲染器下的 Hook 场景，并以调度日志和宿主输出验证结果所需的初始状态、更新入口与观测日志均已建立。
-       * When：安排用例指定的状态、属性、Context 或依赖更新。
-       * Then：执行 Noop 渲染器下的 Hook 场景，并以调度日志和宿主输出验证结果。
-       *
-       * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果。
-       * 对应源码：`updateReducerImpl()`、`dispatchSetStateInternal()` 与 `renderWithHooksAgain()`。
-       */
+      /** ErrorBoundary保留且Conditional只删除Broken子；cleanup错误触发其getDerivedStateFromError、错误render和DidCatch，最终ErrorBoundary fallback。验证最近仍挂载边界可更新state恢复。 */
       it('should call getDerivedStateFromError in the nearest still-mounted boundary', async () => {
-        /** 作为 Conditional fixture 承载当前测试职责；服务于“执行 Noop 渲染器下的 Hook 场景，并以调度日志和宿主输出验证结果”场景。 */
+        /** 按 showChildren 删除会在 passive cleanup 中抛错的子组件。 */
         function Conditional({showChildren}) {
           if (showChildren) {
             return <BrokenUseEffectCleanup />;
@@ -2931,16 +2533,9 @@ describe('ReactHooksWithNoopRenderer', () => {
         );
       });
 
-      /**
-       * Given：执行 Noop 渲染器下的 Hook 场景，并以调度日志和宿主输出验证结果所需的初始状态、更新入口与观测日志均已建立。
-       * When：完成挂载以及用例指定的后续渲染或提交步骤。
-       * Then：执行 Noop 渲染器下的 Hook 场景，并以调度日志和宿主输出验证结果。
-       *
-       * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果。
-       * 对应源码：`renderWithHooks()` 与当前 Hook 的 mount/update dispatcher。
-       */
+      /** Conditional连同内部ErrorBoundary一起删除Broken，外部无边界；waitForThrow匹配Expected error，输出null且只cleanup日志。验证已删边界不能吞错，错误上报根。 */
       it('should rethrow error if there are no still-mounted boundaries', async () => {
-        /** 作为 Conditional fixture 承载当前测试职责；服务于“执行 Noop 渲染器下的 Hook 场景，并以调度日志和宿主输出验证结果”场景。 */
+        /** 删除内层 ErrorBoundary 与抛错 cleanup，检查不能由已删除边界接住错误。 */
         function Conditional({showChildren}) {
           if (showChildren) {
             return (
@@ -2973,18 +2568,11 @@ describe('ReactHooksWithNoopRenderer', () => {
       });
     });
 
-    /**
-     * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-     * When：完成挂载以及用例指定的后续渲染或提交步骤。
-     * Then：挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序。
-     *
-     * 验证机制：调度日志精确约束执行次数与先后顺序。
-     * 对应源码：`commitHookPassiveMountEffects()` 与 `commitHookPassiveUnmountEffects()`。
-     */
+    /** MemoizedChild有layout/passive []：key1相同props先bailout，换key2才旧cleanup和新create，删除根再次清理。验证memo跳过之后静态effect标记仍保留。 */
     it('calls passive effect destroy functions for memoized components', async () => {
-      /** Wrapper 保存可由测试步骤调用的函数入口，跨渲染驱动当前场景。 */
+      /** 只透传children，提供memo组件外的稳定包装层，不持有更新器。 */
       const Wrapper = ({children}) => children;
-      /** 作为子级函数组件暴露 Hook 状态和提交日志；服务于“挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序”场景。 */
+      /** 本节点同时安装layout/passive []并记录render，供memo bailout后key替换与删除清理。 */
       function Child() {
         React.useEffect(() => {
           Scheduler.log('passive create');
@@ -3002,7 +2590,7 @@ describe('ReactHooksWithNoopRenderer', () => {
         return null;
       }
 
-      /** isEqual 作为 memo 比较器记录输入并决定是否跳过子树渲染。 */
+      /** 仅比较prop字段相等；本体不记录日志，两次未传prop均undefined故可bailout。 */
       const isEqual = (prevProps, nextProps) =>
         prevProps.prop === nextProps.prop;
       const MemoizedChild = React.memo(Child, isEqual);
@@ -3047,23 +2635,16 @@ describe('ReactHooksWithNoopRenderer', () => {
       assertLog(['layout destroy', 'passive destroy']);
     });
 
-    /**
-     * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-     * When：完成挂载以及用例指定的后续渲染或提交步骤。
-     * Then：挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序。
-     *
-     * 验证机制：调度日志精确约束执行次数与先后顺序。
-     * 对应源码：`commitHookPassiveMountEffects()` 与 `commitHookPassiveUnmountEffects()`。
-     */
+    /** 同上但effects在MemoizedChild的Grandchild后代；key1 bailout、key2替换、删除均有完整后代cleanup。验证静态子树标记穿透memo复用。 */
     it('calls passive effect destroy functions for descendants of memoized components', async () => {
-      /** Wrapper 保存可由测试步骤调用的函数入口，跨渲染驱动当前场景。 */
+      /** 只透传children，提供memo组件外的稳定包装层，不持有更新器。 */
       const Wrapper = ({children}) => children;
-      /** 作为子级函数组件暴露 Hook 状态和提交日志；服务于“挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序”场景。 */
+      /** 只返回Grandchild，没有本节点effects；memo包装在这一层，清理探针在后代。 */
       function Child() {
         return <Grandchild />;
       }
 
-      /** 作为 Grandchild fixture 承载当前测试职责；服务于“挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序”场景。 */
+      /** 记录 layout/passive 创建与清理，检查 memo bailout 后静态清理信息仍保留。 */
       function Grandchild() {
         React.useEffect(() => {
           Scheduler.log('passive create');
@@ -3081,7 +2662,7 @@ describe('ReactHooksWithNoopRenderer', () => {
         return null;
       }
 
-      /** isEqual 作为 memo 比较器记录输入并决定是否跳过子树渲染。 */
+      /** 仅比较prop字段相等；本体不记录日志，两次未传prop均undefined故可bailout。 */
       const isEqual = (prevProps, nextProps) =>
         prevProps.prop === nextProps.prop;
       const MemoizedChild = React.memo(Child, isEqual);
@@ -3126,16 +2707,9 @@ describe('ReactHooksWithNoopRenderer', () => {
       assertLog(['layout destroy', 'passive destroy']);
     });
 
-    /**
-     * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-     * When：完成挂载以及用例指定的后续渲染或提交步骤。
-     * Then：挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序。
-     *
-     * 验证机制：开发态控制台断言限定诊断内容与去重。
-     * 对应源码：`commitHookPassiveMountEffects()` 与 `commitHookPassiveUnmountEffects()`。
-     */
+    /** 三个根passive分别返回17/null/Promise，开发态给不同协议警告；删除Promise根时waitForThrow匹配is not a function。验证create返回值是cleanup协议，不自动等待Promise。 */
     it('assumes passive effect destroy function is either a function or undefined', async () => {
-      /** 组织当前用例的根组件、更新入口与受测 Hook；服务于“挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序”场景。 */
+      /** passive create原样返回props.return，制造数字/null/Promise等违反cleanup协议的值。 */
       function App(props) {
         useEffect(() => {
           return props.return;
@@ -3197,16 +2771,9 @@ describe('ReactHooksWithNoopRenderer', () => {
 
   /** 通过 Noop 渲染器验证 Hooks 状态队列、Effect 提交顺序、并发中断与历史回归。 */
   describe('useInsertionEffect', () => {
-    /**
-     * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-     * When：安排用例指定的状态、属性、Context 或依赖更新。
-     * Then：提交 Insertion Effect 与其他阶段交错的树，确认清理、创建及更新限制。
-     *
-     * 验证机制：显式断言联合检查状态、输出和副作用。
-     * 对应源码：`commitHookEffectListMount()` 与 Insertion Effect 提交路径。
-     */
+    /** Insertion的CounterA与有snapshot的类CounterB并列；更新日志Get Snapshot→Destroy insertion→Create insertion，删除仅destroy。验证snapshot的before-mutation顺序先于insertion mutation。 */
     it('fires insertion effects after snapshots on update', async () => {
-      /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“提交 Insertion Effect 与其他阶段交错的树，确认清理、创建及更新限制”场景。 */
+      /** 只安装无deps insertion create/cleanup并返回null，与类兄弟的snapshot比较顺序。 */
       function CounterA(props) {
         useInsertionEffect(() => {
           Scheduler.log(`Create insertion`);
@@ -3217,7 +2784,7 @@ describe('ReactHooksWithNoopRenderer', () => {
         return null;
       }
 
-      /** 定义 CounterB 类 fixture，在“提交 Insertion Effect 与其他阶段交错的树，确认清理、创建及更新限制”场景中暴露类生命周期、实例 ref 或错误边界。 */
+      /** 空输出的class兄弟，只通过getSnapshotBeforeUpdate标记before-mutation检查点。 */
       class CounterB extends React.Component {
         /** CounterB.getSnapshotBeforeUpdate 在宿主突变前记录快照，用于与 Insertion/Layout Effect 排序比较。 */
         getSnapshotBeforeUpdate(prevProps, prevState) {
@@ -3225,10 +2792,10 @@ describe('ReactHooksWithNoopRenderer', () => {
           return null;
         }
 
-        /** CounterB.componentDidUpdate 记录更新提交及前后状态，区分更新生命周期与挂载重放。 */
+        /** 配合getSnapshotBeforeUpdate提供所需更新生命周期，本体空实现且不记录日志。 */
         componentDidUpdate() {}
 
-        /** 渲染 CounterB.render 对应的类 fixture，并把本轮状态或子树交给宿主输出断言。 */
+        /** 固定返回null，没有宿主输出，以snapshot日志作为唯一类阶段观察。 */
         render() {
           return null;
         }
@@ -3269,18 +2836,11 @@ describe('ReactHooksWithNoopRenderer', () => {
       });
     });
 
-    /**
-     * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-     * When：完成挂载以及用例指定的后续渲染或提交步骤。
-     * Then：提交 Insertion Effect 与其他阶段交错的树，确认清理、创建及更新限制。
-     *
-     * 验证机制：调度日志精确约束执行次数与先后顺序。
-     * 对应源码：`commitHookEffectListMount()` 与 Insertion Effect 提交路径。
-     */
+    /** insertion先写共享committedText0，layout和passive随后均看到0；删除时insertion/layout先清理，passive在act余下阶段清理。验证layout create读取insertion产物。 */
     it('fires insertion effects before layout effects', async () => {
       let committedText = '(empty)';
 
-      /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“提交 Insertion Effect 与其他阶段交错的树，确认清理、创建及更新限制”场景。 */
+      /** insertion写共享committedText，layout/passive只读取日志；没有宿主节点或本地state。 */
       function Counter(props) {
         useInsertionEffect(() => {
           Scheduler.log(`Create insertion [current: ${committedText}]`);
@@ -3328,18 +2888,11 @@ describe('ReactHooksWithNoopRenderer', () => {
       assertLog(['Destroy passive [current: 0]']);
     });
 
-    /**
-     * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-     * When：完成挂载以及用例指定的后续渲染或提交步骤。
-     * Then：提交 Insertion Effect 与其他阶段交错的树，确认清理、创建及更新限制。
-     *
-     * 验证机制：调度日志精确约束执行次数与先后顺序。
-     * 对应源码：`commitHookEffectListMount()` 与 Insertion Effect 提交路径。
-     */
+    /** transition count0已commit insertion/layout但passive未执行时排count1；先旧passive create0，再新insertion/layout，最后passive destroy/create均观察共享值1。enableYieldingBeforePassive只改变paint检查点，不能改变此顺序。 */
     it('force flushes passive effects before firing new insertion effects', async () => {
       let committedText = '(empty)';
 
-      /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“提交 Insertion Effect 与其他阶段交错的树，确认清理、创建及更新限制”场景。 */
+      /** insertion与layout都写共享committedText，passive只读取，供旧passive与下一次insertion的顺序核对。 */
       function Counter(props) {
         useInsertionEffect(() => {
           Scheduler.log(`Create insertion [current: ${committedText}]`);
@@ -3402,19 +2955,12 @@ describe('ReactHooksWithNoopRenderer', () => {
       ]);
     });
 
-    /**
-     * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-     * When：完成挂载以及用例指定的后续渲染或提交步骤。
-     * Then：提交 Insertion Effect 与其他阶段交错的树，确认清理、创建及更新限制。
-     *
-     * 验证机制：显式断言联合检查状态、输出和副作用。
-     * 对应源码：`commitHookEffectListMount()` 与 Insertion Effect 提交路径。
-     */
+    /** A/B各两份insertion和layout，初挂所有insertion create先于layout create；更新按Fiber交错旧insertion cleanup/newcreate/layoutcleanup，全部完成后才layoutcreate；删除也按Fiber清理。验证insertion不是全树先清理再创建。 */
     it('fires all insertion effects (interleaved) before firing any layout effects', async () => {
       let committedA = '(empty)';
       let committedB = '(empty)';
 
-      /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“提交 Insertion Effect 与其他阶段交错的树，确认清理、创建及更新限制”场景。 */
+      /** A节点登记两份insertion并写committedA，两份layout读取A/B，观察每Fiber mutation遍历交错。 */
       function CounterA(props) {
         useInsertionEffect(() => {
           Scheduler.log(
@@ -3463,7 +3009,7 @@ describe('ReactHooksWithNoopRenderer', () => {
         return null;
       }
 
-      /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“提交 Insertion Effect 与其他阶段交错的树，确认清理、创建及更新限制”场景。 */
+      /** B节点登记两份insertion并写committedB，两份layout读取A/B，观察全树layout创建前的状态。 */
       function CounterB(props) {
         useInsertionEffect(() => {
           Scheduler.log(
@@ -3578,16 +3124,9 @@ describe('ReactHooksWithNoopRenderer', () => {
       });
     });
 
-    /**
-     * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-     * When：完成挂载以及用例指定的后续渲染或提交步骤。
-     * Then：提交 Insertion Effect 与其他阶段交错的树，确认清理、创建及更新限制。
-     *
-     * 验证机制：开发态控制台断言限定诊断内容与去重。
-     * 对应源码：`commitHookEffectListMount()` 与 Insertion Effect 提交路径。
-     */
+    /** 三个根insertion分别返回17/null/Promise，有具体DEV警告；删除Promise根报is not a function。验证insertion cleanup协议与passive一致但发生于mutation。 */
     it('assumes insertion effect destroy function is either a function or undefined', async () => {
-      /** 组织当前用例的根组件、更新入口与受测 Hook；服务于“提交 Insertion Effect 与其他阶段交错的树，确认清理、创建及更新限制”场景。 */
+      /** insertion create原样返回props.return，制造错误cleanup协议值并在mutation阶段观察诊断。 */
       function App(props) {
         useInsertionEffect(() => {
           return props.return;
@@ -3647,16 +3186,9 @@ describe('ReactHooksWithNoopRenderer', () => {
       });
     });
 
-    /**
-     * Given：目标组件已进入可触发开发态保护的最小运行环境。
-     * When：执行用例中的非法 Hook、参数或阶段调用。
-     * Then：提交 Insertion Effect 与其他阶段交错的树，确认清理、创建及更新限制。
-     *
-     * 验证机制：开发态控制台断言限定诊断内容与去重。
-     * 对应源码：`commitHookEffectListMount()` 与 Insertion Effect 提交路径。
-     */
+    /** insertion setup先setX1产生DEV禁更新警告，再props.throw使setup抛No；随后普通passive的NotInsertion setX1无同类告警。验证insertion执行标记在异常后复位。 */
     it('warns when setState is called from insertion effect setup', async () => {
-      /** 组织当前用例的根组件、更新入口与受测 Hook；服务于“提交 Insertion Effect 与其他阶段交错的树，确认清理、创建及更新限制”场景。 */
+      /** insertion setup先setX1，throw prop可使同一setup抛No，用于检查异常后insertion标记清理。 */
       function App(props) {
         const [, setX] = useState(0);
         useInsertionEffect(() => {
@@ -3683,7 +3215,7 @@ describe('ReactHooksWithNoopRenderer', () => {
       });
 
       // 抛错后执行普通 Effect 不应产生同类告警。
-      /** 作为 NotInsertion fixture 承载当前测试职责；服务于“提交 Insertion Effect 与其他阶段交错的树，确认清理、创建及更新限制”场景。 */
+      /** 在普通 passive Effect 中更新 state，确认此前 insertion Effect 抛错没有残留阶段标记。 */
       function NotInsertion() {
         const [, setX] = useState(0);
         useEffect(() => {
@@ -3696,16 +3228,9 @@ describe('ReactHooksWithNoopRenderer', () => {
       });
     });
 
-    /**
-     * Given：目标组件已进入可触发开发态保护的最小运行环境。
-     * When：执行用例中的非法 Hook、参数或阶段调用。
-     * Then：提交 Insertion Effect 与其他阶段交错的树，确认清理、创建及更新限制。
-     *
-     * 验证机制：开发态控制台断言限定诊断内容与去重。
-     * 对应源码：`commitHookEffectListMount()` 与 Insertion Effect 提交路径。
-     */
+    /** insertion依赖foo/throw，foo hello→goodbye触发旧cleanup setX1并警告；随后setup抛No，再普通passive更新无残留insertion告警。错误发生在setup，cleanup自身只更新state。 */
     it('warns when setState is called from insertion effect cleanup', async () => {
-      /** 组织当前用例的根组件、更新入口与受测 Hook；服务于“提交 Insertion Effect 与其他阶段交错的树，确认清理、创建及更新限制”场景。 */
+      /** insertion setup可依throw抛No；正常返回的cleanup调用setX1，依foo变化触发禁更新诊断。 */
       function App(props) {
         const [, setX] = useState(0);
         useInsertionEffect(() => {
@@ -3737,7 +3262,7 @@ describe('ReactHooksWithNoopRenderer', () => {
       });
 
       // 抛错后执行普通 Effect 不应产生同类告警。
-      /** 作为 NotInsertion fixture 承载当前测试职责；服务于“提交 Insertion Effect 与其他阶段交错的树，确认清理、创建及更新限制”场景。 */
+      /** 在普通 passive Effect 中更新 state，确认此前 insertion cleanup 抛错后阶段标记已恢复。 */
       function NotInsertion() {
         const [, setX] = useState(0);
         useEffect(() => {
@@ -3750,16 +3275,9 @@ describe('ReactHooksWithNoopRenderer', () => {
       });
     });
 
-    /**
-     * Given：目标组件已进入可触发开发态保护的最小运行环境。
-     * When：执行用例中的非法 Hook、参数或阶段调用。
-     * Then：提交 Insertion Effect 与其他阶段交错的树，确认清理、创建及更新限制。
-     *
-     * 验证机制：开发态控制台断言限定诊断内容与去重。
-     * 对应源码：`commitHookEffectListMount()` 与 Insertion Effect 提交路径。
-     */
+    /** Activity hidden下App安装insertion，随后删除该子时cleanup setX1产生DEV禁更新警告；再普通passive更新无此警告。没有props.throw=true，本例没有cleanup抛错。 */
     it('warns when setState is called from offscreen deleted insertion effect cleanup', async () => {
-      /** 组织当前用例的根组件、更新入口与受测 Hook；服务于“提交 Insertion Effect 与其他阶段交错的树，确认清理、创建及更新限制”场景。 */
+      /** 隐藏Activity下仍安装insertion cleanup，删除此节点时调用setX1；throw分支本例没有触发。 */
       function App(props) {
         const [, setX] = useState(0);
         useInsertionEffect(() => {
@@ -3790,8 +3308,8 @@ describe('ReactHooksWithNoopRenderer', () => {
           '    in App (at **)',
       ]);
 
-      // 抛错后执行普通 Effect 不应产生同类告警。
-      /** 作为 NotInsertion fixture 承载当前测试职责；服务于“提交 Insertion Effect 与其他阶段交错的树，确认清理、创建及更新限制”场景。 */
+      // 隐藏子删除后执行普通Effect不应产生同类告警。
+      /** 在普通passive中setX1，检查隐藏子删除后insertion执行标记没有残留。 */
       function NotInsertion() {
         const [, setX] = useState(0);
         useEffect(() => {
@@ -3807,16 +3325,9 @@ describe('ReactHooksWithNoopRenderer', () => {
 
   /** 通过 Noop 渲染器验证 Hooks 状态队列、Effect 提交顺序、并发中断与历史回归。 */
   describe('useLayoutEffect', () => {
-    /**
-     * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-     * When：完成挂载以及用例指定的后续渲染或提交步骤。
-     * Then：在宿主突变后执行 Layout Effect，确认阶段顺序、强制冲刷和错误边界。
-     *
-     * 验证机制：宿主输出断言确认实际提交结果。
-     * 对应源码：`commitHookLayoutEffects()` 与 `commitHookLayoutUnmountEffects()`。
-     */
+    /** layout读取ReactNoop已提交span文本，props count0→1分别Current0/Current1且根callback在后。验证宿主mutation完成后才运行layout。 */
     it('fires layout effects after the host has been mutated', async () => {
-      /** 从已提交宿主节点读取文本，供 Effect 阶段检查突变可见性；服务于“在宿主突变后执行 Layout Effect，确认阶段顺序、强制冲刷和错误边界”场景。 */
+      /** 从已提交宿主节点读取文本，供 Effect 阶段检查突变可见性。 */
       function getCommittedText() {
         const yields = Scheduler.unstable_clearLog();
         const children = ReactNoop.getChildrenAsJSX();
@@ -3827,7 +3338,7 @@ describe('ReactHooksWithNoopRenderer', () => {
         return children.props.prop;
       }
 
-      /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“在宿主突变后执行 Layout Effect，确认阶段顺序、强制冲刷和错误边界”场景。 */
+      /** 输出props.count，在layout中读取已提交宿主文本；读取器还把之前render日志封装为数组。 */
       function Counter(props) {
         useLayoutEffect(() => {
           Scheduler.log(`Current: ${getCommittedText()}`);
@@ -3848,18 +3359,11 @@ describe('ReactHooksWithNoopRenderer', () => {
       expect(ReactNoop).toMatchRenderedOutput(<span prop={1} />);
     });
 
-    /**
-     * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-     * When：完成挂载以及用例指定的后续渲染或提交步骤。
-     * Then：在宿主突变后执行 Layout Effect，确认阶段顺序、强制冲刷和错误边界。
-     *
-     * 验证机制：调度日志精确约束执行次数与先后顺序。
-     * 对应源码：`commitHookLayoutEffects()` 与 `commitHookLayoutUnmountEffects()`。
-     */
+    /** layout写共享committedText；count0已layout提交后立刻排1，先旧passive Mount normal0，再layoutcleanup0/create1；最后passivecleanup/create都观察共享1。验证旧passive先于下一次layout。 */
     it('force flushes passive effects before firing new layout effects', async () => {
       let committedText = '(empty)';
 
-      /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“在宿主突变后执行 Layout Effect，确认阶段顺序、强制冲刷和错误边界”场景。 */
+      /** layout将props.count写入共享committedText并记录cleanup，passive观察共享值，比较前后两次提交。 */
       function Counter(props) {
         useLayoutEffect(() => {
           // 通常该写入会放在 mutation Effect 中，但本用例刻意省略 mutation Effect。
@@ -3900,25 +3404,18 @@ describe('ReactHooksWithNoopRenderer', () => {
       assertLog(['Unmount normal [current: 1]', 'Mount normal [current: 1]']);
     });
 
-    /**
-     * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-     * When：完成挂载以及用例指定的后续渲染或提交步骤。
-     * Then：在宿主突变后执行 Layout Effect，确认阶段顺序、强制冲刷和错误边界。
-     *
-     * 验证机制：宿主输出断言确认实际提交结果。
-     * 对应源码：`commitHookLayoutEffects()` 与 `commitHookLayoutUnmountEffects()`。
-     */
+    /** 外/内错误边界下layout cleanup会抛Expected；更新删除内边界及Broken但保留外边界/兄弟，错误由外getDerived捕获并输出OuterFallback。验证跳过正在删除的layout错误边界。 */
     it('catches errors thrown in useLayoutEffect', async () => {
-      /** 定义 ErrorBoundary 类 fixture，在“在宿主突变后执行 Layout Effect，确认阶段顺序、强制冲刷和错误边界”场景中暴露类生命周期、实例 ref 或错误边界。 */
+      /** 以派生error state接住layout删除错误，按id/fallbackID区分仍挂载的外边界与已删内边界。 */
       class ErrorBoundary extends React.Component {
-        /** 保存 ErrorBoundary.state 的实例状态，作为错误恢复或生命周期断言的跨提交标记。 */
+        /** 保存捕获错误；error非null时显示由fallbackID指定的Component。 */
         state = {error: null};
         /** ErrorBoundary.getDerivedStateFromError 把捕获错误转换为稳定的边界回退状态。 */
         static getDerivedStateFromError(error) {
           Scheduler.log(`ErrorBoundary static getDerivedStateFromError`);
           return {error};
         }
-        /** 渲染 ErrorBoundary.render 对应的类 fixture，并把本轮状态或子树交给宿主输出断言。 */
+        /** 根据error选择fallbackID组件或children，用id区分内外边界的成功/错误日志。 */
         render() {
           const {children, id, fallbackID} = this.props;
           const {error} = this.state;
@@ -3931,13 +3428,13 @@ describe('ReactHooksWithNoopRenderer', () => {
         }
       }
 
-      /** 作为 Component fixture 承载当前测试职责；服务于“在宿主突变后执行 Layout Effect，确认阶段顺序、强制冲刷和错误边界”场景。 */
+      /** 记录组件 render 并输出 id，观察错误恢复后的宿主内容。 */
       function Component({id}) {
         Scheduler.log('Component render ' + id);
         return <span prop={id} />;
       }
 
-      /** 作为 BrokenLayoutEffectDestroy fixture 承载当前测试职责；服务于“在宿主突变后执行 Layout Effect，确认阶段顺序、强制冲刷和错误边界”场景。 */
+      /** 登记必定抛错的 layout cleanup，检查删除时向最近仍挂载边界报告。 */
       function BrokenLayoutEffectDestroy() {
         useLayoutEffect(() => {
           return () => {
@@ -3990,16 +3487,9 @@ describe('ReactHooksWithNoopRenderer', () => {
       expect(ReactNoop).toMatchRenderedOutput(<span prop="OuterFallback" />);
     });
 
-    /**
-     * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-     * When：完成挂载以及用例指定的后续渲染或提交步骤。
-     * Then：在宿主突变后执行 Layout Effect，确认阶段顺序、强制冲刷和错误边界。
-     *
-     * 验证机制：开发态控制台断言限定诊断内容与去重。
-     * 对应源码：`commitHookLayoutEffects()` 与 `commitHookLayoutUnmountEffects()`。
-     */
+    /** 三个根layout分别返回17/null/Promise，有不同DEV协议警告；删除Promise根时is not a function。验证layout create必须同步返回可调用cleanup或undefined。 */
     it('assumes layout effect destroy function is either a function or undefined', async () => {
-      /** 组织当前用例的根组件、更新入口与受测 Hook；服务于“在宿主突变后执行 Layout Effect，确认阶段顺序、强制冲刷和错误边界”场景。 */
+      /** layout create原样返回props.return，覆盖不同非法cleanup值及删除调用错误。 */
       function App(props) {
         useLayoutEffect(() => {
           return props.return;
@@ -4061,28 +3551,21 @@ describe('ReactHooksWithNoopRenderer', () => {
 
   /** 通过 Noop 渲染器验证 Hooks 状态队列、Effect 提交顺序、并发中断与历史回归。 */
   describe('useCallback', () => {
-    /**
-     * Given：改变或保持 memo 输入，确认回调与值只在依赖变化时重新计算所需的初始状态、更新入口与观测日志均已建立。
-     * When：完成挂载以及用例指定的后续渲染或提交步骤。
-     * Then：改变或保持 memo 输入，确认回调与值只在依赖变化时重新计算。
-     *
-     * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果。
-     * 对应源码：`updateMemo()`、`updateCallback()` 与 `areHookInputsEqual()`。
-     */
+    /** useCallback依赖incrementBy，Pure按钮初挂渲染；state递增0→1时回调相同所以按钮跳过，incrementBy改10使按钮重渲染，旧ref方法调用新props回调后count11。验证闭包与依赖更新。 */
     it('memoizes callback by comparing inputs', async () => {
-      /** 定义 IncrementButton 类 fixture，在“改变或保持 memo 输入，确认回调与值只在依赖变化时重新计算”场景中暴露类生命周期、实例 ref 或错误边界。 */
+      /** PureComponent按钮，props.increment的函数身份决定是否重复输出Increment。 */
       class IncrementButton extends React.PureComponent {
-        /** IncrementButton.increment 调用当前提交版本的 Effect Event，并把领域参数转交事件闭包。 */
+        /** 调用当前props.increment，通过实例方法观察useCallback更新后的闭包。 */
         increment = () => {
           this.props.increment();
         };
-        /** 渲染 IncrementButton.render 对应的类 fixture，并把本轮状态或子树交给宿主输出断言。 */
+        /** 固定输出Increment日志文本；PureComponent是否调用此方法暴露useCallback引用变化。 */
         render() {
           return <Text text="Increment" />;
         }
       }
 
-      /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“改变或保持 memo 输入，确认回调与值只在依赖变化时重新计算”场景。 */
+      /** count state配合依赖incrementBy的useCallback，把稳定函数交Pure按钮；函数式更新读取最新state。 */
       function Counter({incrementBy}) {
         const [count, updateCount] = useState(0);
         const increment = useCallback(
@@ -4148,16 +3631,9 @@ describe('ReactHooksWithNoopRenderer', () => {
 
   /** 通过 Noop 渲染器验证 Hooks 状态队列、Effect 提交顺序、并发中断与历史回归。 */
   describe('useMemo', () => {
-    /**
-     * Given：改变或保持 memo 输入，确认回调与值只在依赖变化时重新计算所需的初始状态、更新入口与观测日志均已建立。
-     * When：完成挂载以及用例指定的后续渲染或提交步骤。
-     * Then：改变或保持 memo 输入，确认回调与值只在依赖变化时重新计算。
-     *
-     * 验证机制：宿主输出断言确认实际提交结果。
-     * 对应源码：`updateMemo()`、`updateCallback()` 与 `areHookInputsEqual()`。
-     */
+    /** useMemo依赖text，hello→hi计算大写，重复hi只输出HI不再Capitalize，goodbye重新计算。验证同deps缓存计算结果但Text仍可render。 */
     it('memoizes value by comparing to previous inputs', async () => {
-      /** 作为 CapitalizedText fixture 承载当前测试职责；服务于“改变或保持 memo 输入，确认回调与值只在依赖变化时重新计算”场景。 */
+      /** 按 text 缓存大写转换，记录计算次数以检查 useMemo 命中与失效。 */
       function CapitalizedText(props) {
         const text = props.text;
         const capitalizedText = useMemo(() => {
@@ -4184,28 +3660,21 @@ describe('ReactHooksWithNoopRenderer', () => {
       expect(ReactNoop).toMatchRenderedOutput(<span prop="GOODBYE" />);
     });
 
-    /**
-     * Given：改变或保持 memo 输入，确认回调与值只在依赖变化时重新计算所需的初始状态、更新入口与观测日志均已建立。
-     * When：完成挂载以及用例指定的后续渲染或提交步骤。
-     * Then：改变或保持 memo 输入，确认回调与值只在依赖变化时重新计算。
-     *
-     * 验证机制：显式断言联合检查状态、输出和副作用。
-     * 对应源码：`renderWithHooks()` 与当前 Hook 的 mount/update dispatcher。
-     */
+    /** LazyCompute不传deps，同computeA连续三次都执行并输出A，换computeB执行B。验证缓存依赖缺省时不按函数引用bailout。 */
     it('always re-computes if no inputs are provided', async () => {
-      /** 作为 LazyCompute fixture 承载当前测试职责；服务于“改变或保持 memo 输入，确认回调与值只在依赖变化时重新计算”场景。 */
+      /** 不传依赖数组，每次 render 调用 props.compute。 */
       function LazyCompute(props) {
         const computed = useMemo(props.compute);
         return <Text text={computed} />;
       }
 
-      /** 作为 computeA fixture 承载当前测试职责；服务于“改变或保持 memo 输入，确认回调与值只在依赖变化时重新计算”场景。 */
+      /** 记录 compute A 并返回 A，供计算函数切换测试使用。 */
       function computeA() {
         Scheduler.log('compute A');
         return 'A';
       }
 
-      /** 作为 computeB fixture 承载当前测试职责；服务于“改变或保持 memo 输入，确认回调与值只在依赖变化时重新计算”场景。 */
+      /** 记录 compute B 并返回 B，供计算函数切换测试使用。 */
       function computeB() {
         Scheduler.log('compute B');
         return 'B';
@@ -4224,16 +3693,9 @@ describe('ReactHooksWithNoopRenderer', () => {
       await waitForAll(['compute B', 'B']);
     });
 
-    /**
-     * Given：改变或保持 memo 输入，确认回调与值只在依赖变化时重新计算所需的初始状态、更新入口与观测日志均已建立。
-     * When：完成挂载以及用例指定的后续渲染或提交步骤。
-     * Then：改变或保持 memo 输入，确认回调与值只在依赖变化时重新计算。
-     *
-     * 验证机制：显式断言联合检查状态、输出和副作用。
-     * 对应源码：`updateMemo()`、`updateCallback()` 与 `areHookInputsEqual()`。
-     */
+    /** LazyCompute在render-phase count0→3循环中memo[input]；初挂A计算一次，重复A不计算，换B计算一次。验证re-render复用memo槽位而非每个pass重复调用。 */
     it('should not invoke memoized function during re-renders unless inputs change', async () => {
-      /** 作为 LazyCompute fixture 承载当前测试职责；服务于“改变或保持 memo 输入，确认回调与值只在依赖变化时重新计算”场景。 */
+      /** 按 input 缓存计算值，同时用 render-phase state 更新重跑组件，检查 memo 值复用。 */
       function LazyCompute(props) {
         const computed = useMemo(
           () => props.compute(props.input),
@@ -4246,7 +3708,7 @@ describe('ReactHooksWithNoopRenderer', () => {
         return <Text text={computed} />;
       }
 
-      /** 作为 compute fixture 承载当前测试职责；服务于“改变或保持 memo 输入，确认回调与值只在依赖变化时重新计算”场景。 */
+      /** 记录输入并原样返回，暴露 useMemo 计算次数。 */
       function compute(val) {
         Scheduler.log('compute ' + val);
         return val;
@@ -4265,23 +3727,16 @@ describe('ReactHooksWithNoopRenderer', () => {
 
   /** 通过 Noop 渲染器验证 Hooks 状态队列、Effect 提交顺序、并发中断与历史回归。 */
   describe('useImperativeHandle', () => {
-    /**
-     * Given：改变 Hook 依赖数组，确认相等依赖跳过、缺省依赖重跑、差异依赖更新所需的初始状态、更新入口与观测日志均已建立。
-     * When：安排用例指定的状态、属性、Context 或依赖更新。
-     * Then：改变 Hook 依赖数组，确认相等依赖跳过、缺省依赖重跑、差异依赖更新。
-     *
-     * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果。
-     * 对应源码：`updateMemo()`、`updateCallback()` 与 `areHookInputsEqual()`。
-     */
+    /** useImperativeHandle []暴露count/dispatch，内部reducer0→1后宿主Count1但ref.current.count仍0。验证固定deps保留初次闭包，不随state自动更新。 */
     it('does not update when deps are the same', async () => {
       const INCREMENT = 'INCREMENT';
 
-      /** 根据 action 与当前状态计算 reducer 的下一状态；服务于“改变 Hook 依赖数组，确认相等依赖跳过、缺省依赖重跑、差异依赖更新”场景。 */
+      /** increment action加1，其余action原样返回state；由render阶段调用。 */
       function reducer(state, action) {
         return action === INCREMENT ? state + 1 : state;
       }
 
-      /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“改变 Hook 依赖数组，确认相等依赖跳过、缺省依赖重跑、差异依赖更新”场景。 */
+      /** reducer维护count，imperative handle []暴露初次count与稳定dispatch，后续state不会刷新对象。 */
       function Counter(props, ref) {
         const [count, dispatch] = useReducer(reducer, 0);
         useImperativeHandle(ref, () => ({count, dispatch}), []);
@@ -4305,23 +3760,16 @@ describe('ReactHooksWithNoopRenderer', () => {
     });
 
     // 回归场景：https://github.com/facebook/react/issues/14782
-    /**
-     * Given：改变 Hook 依赖数组，确认相等依赖跳过、缺省依赖重跑、差异依赖更新所需的初始状态、更新入口与观测日志均已建立。
-     * When：安排用例指定的状态、属性、Context 或依赖更新。
-     * Then：改变 Hook 依赖数组，确认相等依赖跳过、缺省依赖重跑、差异依赖更新。
-     *
-     * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果。
-     * 对应源码：`updateMemo()`、`updateCallback()` 与 `areHookInputsEqual()`。
-     */
+    /** useImperativeHandle省略deps，reducer0→1后宿主与ref.current.count都1。验证每次提交重建命令对象。 */
     it('automatically updates when deps are not specified', async () => {
       const INCREMENT = 'INCREMENT';
 
-      /** 根据 action 与当前状态计算 reducer 的下一状态；服务于“改变 Hook 依赖数组，确认相等依赖跳过、缺省依赖重跑、差异依赖更新”场景。 */
+      /** increment action加1，其余action原样返回state；由render阶段调用。 */
       function reducer(state, action) {
         return action === INCREMENT ? state + 1 : state;
       }
 
-      /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“改变 Hook 依赖数组，确认相等依赖跳过、缺省依赖重跑、差异依赖更新”场景。 */
+      /** reducer维护count，imperative handle省略deps，每次layout提交更新命令对象的count快照。 */
       function Counter(props, ref) {
         const [count, dispatch] = useReducer(reducer, 0);
         useImperativeHandle(ref, () => ({count, dispatch}));
@@ -4343,24 +3791,17 @@ describe('ReactHooksWithNoopRenderer', () => {
       expect(counter.current.count).toBe(1);
     });
 
-    /**
-     * Given：改变 Hook 依赖数组，确认相等依赖跳过、缺省依赖重跑、差异依赖更新所需的初始状态、更新入口与观测日志均已建立。
-     * When：安排用例指定的状态、属性、Context 或依赖更新。
-     * Then：改变 Hook 依赖数组，确认相等依赖跳过、缺省依赖重跑、差异依赖更新。
-     *
-     * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果。
-     * 对应源码：`updateMemo()`、`updateCallback()` 与 `areHookInputsEqual()`。
-     */
+    /** useImperativeHandle [count]的create计数初挂1、递增后2；再相同ref/props根渲染Count1也不增。验证依赖变化与ref身份都参与layout effect条件。 */
     it('updates when deps are different', async () => {
       const INCREMENT = 'INCREMENT';
 
-      /** 根据 action 与当前状态计算 reducer 的下一状态；服务于“改变 Hook 依赖数组，确认相等依赖跳过、缺省依赖重跑、差异依赖更新”场景。 */
+      /** increment action加1，其余action原样返回state；由render阶段调用。 */
       function reducer(state, action) {
         return action === INCREMENT ? state + 1 : state;
       }
 
       let totalRefUpdates = 0;
-      /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“改变 Hook 依赖数组，确认相等依赖跳过、缺省依赖重跑、差异依赖更新”场景。 */
+      /** imperative handle依赖[count]，每次create增加totalRefUpdates并返回count/dispatch，供命中条件核对。 */
       function Counter(props, ref) {
         const [count, dispatch] = useReducer(reducer, 0);
         useImperativeHandle(ref, () => {
@@ -4397,20 +3838,14 @@ describe('ReactHooksWithNoopRenderer', () => {
 
   /** 通过 Noop 渲染器验证 Hooks 状态队列、Effect 提交顺序、并发中断与历史回归。 */
   describe('useTransition', () => {
-    /**
-     * Given：安排 transition 或 deferred value 更新，确认高低优先级输出与回退时机所需的初始状态、更新入口与观测日志均已建立。
-     * When：安排用例指定的状态、属性、Context 或依赖更新。
-     * Then：安排 transition 或 deferred value 更新，确认高低优先级输出与回退时机。
-     *
-     * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果。
-     * 对应源码：`updateReducerImpl()`、`dispatchSetStateInternal()` 与 `renderWithHooksAgain()`。
-     */
+    /** 已有Before/Pending false，本地transition打开待决After；先Before/Pending true，推进500再100000ms仍保持它，解析After后After/Pending false。标题的timeout不表示当前实现会超时显示Loading。 */
     it('delays showing loading state until after timeout', async () => {
       let transition;
-      /** 组织当前用例的根组件、更新入口与受测 Hook；服务于“安排 transition 或 deferred value 更新，确认高低优先级输出与回退时机”场景。 */
+      /** 本地transition切show为true，isPending拼入旧主内容、新资源键和fallback，用各分支日志区分紧急与延后工作。 */
       function App() {
         const [show, setShow] = useState(false);
         const [isPending, startTransition] = useTransition();
+        /** 用本地transition打开show，紧急pending更新与挂起主内容分别推进。 */
         transition = () => {
           startTransition(() => {
             setShow(true);
@@ -4466,22 +3901,15 @@ describe('ReactHooksWithNoopRenderer', () => {
 
   /** 通过 Noop 渲染器验证 Hooks 状态队列、Effect 提交顺序、并发中断与历史回归。 */
   describe('useDeferredValue', () => {
-    /**
-     * Given：安排 transition 或 deferred value 更新，确认高低优先级输出与回退时机所需的初始状态、更新入口与观测日志均已建立。
-     * When：完成挂载以及用例指定的后续渲染或提交步骤。
-     * Then：安排 transition 或 deferred value 更新，确认高低优先级输出与回退时机。
-     *
-     * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果。
-     * 对应源码：`mountTransition()` 与 `updateDeferredValueImpl()`。
-     */
+    /** 外text A与deferredText异步A先Loading再AA；普通setterB先显示B/A，后台B挂起即使250和100000ms也不显示Loading，B解析后BB。验证非紧急deferred重试保留旧值，不固定超时时长。 */
     it('defers text value', async () => {
-      /** 作为 TextBox fixture 承载当前测试职责；服务于“安排 transition 或 deferred value 更新，确认高低优先级输出与回退时机”场景。 */
+      /** 把 text 交给 AsyncText，作为 deferred value 的可挂起输出。 */
       function TextBox({text}) {
         return <AsyncText text={text} />;
       }
 
       let _setText;
-      /** 组织当前用例的根组件、更新入口与受测 Hook；服务于“安排 transition 或 deferred value 更新，确认高低优先级输出与回退时机”场景。 */
+      /** 保存text并暴露setter，同步Text显示最新值，边界内Async TextBox读取useDeferredValue的旧/新值。 */
       function App() {
         const [text, setText] = useState('A');
         const deferredText = useDeferredValue(text);
@@ -4573,20 +4001,13 @@ describe('ReactHooksWithNoopRenderer', () => {
 
   /** 通过 Noop 渲染器验证 Hooks 状态队列、Effect 提交顺序、并发中断与历史回归。 */
   describe('progressive enhancement (not supported)', () => {
-    /**
-     * Given：改变 Hook 列表长度的历史场景，确认受控路径的状态槽行为所需的初始状态、更新入口与观测日志均已建立。
-     * When：安排用例指定的状态、属性、Context 或依赖更新。
-     * Then：改变 Hook 列表长度的历史场景，确认受控路径的状态槽行为。
-     *
-     * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果，开发态控制台断言限定诊断内容与去重。
-     * 对应源码：`updateReducerImpl()`、`dispatchSetStateInternal()` 与 `renderWithHooksAgain()`。
-     */
+    /** App已有A/B两个state并更新为2/3；loadC=true动态多读一个useState，抛Rendered more hooks并有DEV次序表。验证不支持动态追加Hook，注释掉的未来输出不执行。 */
     it('mount additional state', async () => {
       let updateA;
       let updateB;
       // let updateC;
 
-      /** 组织当前用例的根组件、更新入口与受测 Hook；服务于“改变 Hook 列表长度的历史场景，确认受控路径的状态槽行为”场景。 */
+      /** A/B固定state，loadC为真额外调用第三useState但不保存其结果，故制造非法Hook列表增长。 */
       function App(props) {
         const [A, _updateA] = useState(0);
         const [B, _updateB] = useState(0);
@@ -4647,20 +4068,13 @@ describe('ReactHooksWithNoopRenderer', () => {
       // expect(ReactNoop).toMatchRenderedOutput(<span prop="A: 2, B: 3, C: 4" />]);
     });
 
-    /**
-     * Given：挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序所需的初始状态、更新入口与观测日志均已建立。
-     * When：删除目标子树并冲刷对应提交阶段。
-     * Then：挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序。
-     *
-     * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果。
-     * 对应源码：`commitHookPassiveMountEffects()` 与 `commitHookPassiveUnmountEffects()`。
-     */
+    /** App已有A/B/C三个state并更新2/3/4；loadC=false省略第三Hook，抛Rendered fewer hooks。验证不支持动态删除state槽，不当作合法卸载。 */
     it('unmount state', async () => {
       let updateA;
       let updateB;
       let updateC;
 
-      /** 组织当前用例的根组件、更新入口与受测 Hook；服务于“挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序”场景。 */
+      /** A/B固定state，loadC控制是否读取并暴露第三C槽，故从true到false制造非法Hook列表缩短。 */
       function App(props) {
         const [A, _updateA] = useState(0);
         const [B, _updateB] = useState(0);
@@ -4696,16 +4110,9 @@ describe('ReactHooksWithNoopRenderer', () => {
       );
     });
 
-    /**
-     * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-     * When：删除目标子树并冲刷对应提交阶段。
-     * Then：挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序。
-     *
-     * 验证机制：调度日志精确约束执行次数与先后顺序，开发态控制台断言限定诊断内容与去重，异常断言保留原始错误与阶段边界。
-     * 对应源码：`commitHookPassiveMountEffects()` 与 `commitHookPassiveUnmountEffects()`。
-     */
+    /** App先仅passive A挂载，showMore=true多注册B，抛Rendered more hooks、DEV次序表，错误删除原A导致Unmount A。验证不是合法按条件新增effect，后半注释代码未执行。 */
     it('unmount effects', async () => {
-      /** 组织当前用例的根组件、更新入口与受测 Hook；服务于“挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序”场景。 */
+      /** 固定passive A，showMore控制额外注册B的条件Hook，刻意触发more-hooks错误及原树清理。 */
       function App(props) {
         useEffect(() => {
           Scheduler.log('Mount A');
@@ -4768,28 +4175,21 @@ describe('ReactHooksWithNoopRenderer', () => {
     });
   });
 
-  /**
-   * Given：驱动 reducer 队列与不同优先级更新，确认使用本轮 reducer 并按批次顺序处理 action所需的初始状态、更新入口与观测日志均已建立。
-   * When：安排用例指定的状态、属性、Context 或依赖更新。
-   * Then：驱动 reducer 队列与不同优先级更新，确认使用本轮 reducer 并按批次顺序处理 action。
-   *
-   * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果。
-   * 对应源码：`updateReducerImpl()`、`dispatchSetStateInternal()` 与 `renderWithHooksAgain()`。
-   */
+  /** Component reducer捕获当前props.count，passive dispatch；初挂state-1→1，父state改2时先旧Render1再Effect2/Reducer2/Render2，输出按props为2。验证dispatchReducerAction不预计算旧reducer造成eager bailout。 */
   it('useReducer does not eagerly bail out of state updates', async () => {
     // 根据缺陷报告构造的边界场景。
     let setCounter;
-    /** 组织当前用例的根组件、更新入口与受测 Hook；服务于“驱动 reducer 队列与不同优先级更新，确认使用本轮 reducer 并按批次顺序处理 action”场景。 */
+    /** 父counter从1开始并暴露setter，传给Component的reducer闭包，观察非eager reducer处理。 */
     function App() {
       const [counter, _setCounter] = useState(1);
       setCounter = _setCounter;
       return <Component count={counter} />;
     }
 
-    /** 作为 Component fixture 承载当前测试职责；服务于“驱动 reducer 队列与不同优先级更新，确认使用本轮 reducer 并按批次顺序处理 action”场景。 */
+    /** 在 Effect 中派发 reducer action；render 使用捕获最新 count 的 reducer。 */
     function Component({count}) {
       const [state, dispatch] = useReducer(() => {
-        // 该 reducer 闭包捕获 props 值；若本轮未正确更新 reducer，急切计算会与旧值比较并错误提前退出。
+        // reducer 捕获本轮 count；dispatchReducerAction 不预计算状态，render 才调用当前 reducer，避免在旧 props 上把 action 提前当作无变化。
         Scheduler.log('Reducer: ' + count);
         return count;
       }, -1);
@@ -4814,19 +4214,12 @@ describe('ReactHooksWithNoopRenderer', () => {
     expect(ReactNoop).toMatchRenderedOutput('2');
   });
 
-  /**
-   * Given：驱动 reducer 队列与不同优先级更新，确认使用本轮 reducer 并按批次顺序处理 action所需的初始状态、更新入口与观测日志均已建立。
-   * When：安排用例指定的状态、属性、Context 或依赖更新。
-   * Then：驱动 reducer 队列与不同优先级更新，确认使用本轮 reducer 并按批次顺序处理 action。
-   *
-   * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果。
-   * 对应源码：`updateReducerImpl()`、`dispatchSetStateInternal()` 与 `renderWithHooksAgain()`。
-   */
+  /** disabled是Counter自身state，true时三次increment本轮reducer均no-op且仍render0；随后单独disabled=false不重放旧actions，仍0。验证已处理队列项不会因reducer闭包改变重新生效。 */
   it('useReducer does not replay previous no-op actions when other state changes', async () => {
     let increment;
     let setDisabled;
 
-    /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“驱动 reducer 队列与不同优先级更新，确认使用本轮 reducer 并按批次顺序处理 action”场景。 */
+    /** disabled与count分别用state/reducer保存；reducer捕获当前disabled，true时所有increment返回原state。 */
     function Counter() {
       const [disabled, _setDisabled] = useState(true);
       const [count, dispatch] = useReducer((state, action) => {
@@ -4839,6 +4232,7 @@ describe('ReactHooksWithNoopRenderer', () => {
         return state;
       }, 0);
 
+      /** 只排入increment action，disabled是否阻止递增由render时当前reducer决定。 */
       increment = () => dispatch({type: 'increment'});
       setDisabled = _setDisabled;
 
@@ -4868,19 +4262,12 @@ describe('ReactHooksWithNoopRenderer', () => {
     expect(ReactNoop).toMatchRenderedOutput('0');
   });
 
-  /**
-   * Given：驱动 reducer 队列与不同优先级更新，确认使用本轮 reducer 并按批次顺序处理 action所需的初始状态、更新入口与观测日志均已建立。
-   * When：安排用例指定的状态、属性、Context 或依赖更新。
-   * Then：驱动 reducer 队列与不同优先级更新，确认使用本轮 reducer 并按批次顺序处理 action。
-   *
-   * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果。
-   * 对应源码：`updateReducerImpl()`、`dispatchSetStateInternal()` 与 `renderWithHooksAgain()`。
-   */
+  /** disabled来自父props，true时三increment触发子render0；之后父独立改false，子仍0。验证已消费no-op action不会因为props捕获变化再重放。 */
   it('useReducer does not replay previous no-op actions when props change', async () => {
     let setDisabled;
     let increment;
 
-    /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“驱动 reducer 队列与不同优先级更新，确认使用本轮 reducer 并按批次顺序处理 action”场景。 */
+    /** reducer捕获props.disabled，只有未禁用的increment才加1，dispatch不预计算该闭包。 */
     function Counter({disabled}) {
       const [count, dispatch] = useReducer((state, action) => {
         if (disabled) {
@@ -4892,13 +4279,14 @@ describe('ReactHooksWithNoopRenderer', () => {
         return state;
       }, 0);
 
+      /** 只排入increment action，disabled是否阻止递增由render时当前reducer决定。 */
       increment = () => dispatch({type: 'increment'});
 
       Scheduler.log('Render count: ' + count);
       return count;
     }
 
-    /** 组织当前用例的根组件、更新入口与受测 Hook；服务于“驱动 reducer 队列与不同优先级更新，确认使用本轮 reducer 并按批次顺序处理 action”场景。 */
+    /** 父disabled初始true并暴露setter，记录父render，props驱动子reducer闭包切换。 */
     function App() {
       const [disabled, _setDisabled] = useState(true);
       setDisabled = _setDisabled;
@@ -4927,19 +4315,12 @@ describe('ReactHooksWithNoopRenderer', () => {
     expect(ReactNoop).toMatchRenderedOutput('0');
   });
 
-  /**
-   * Given：驱动 reducer 队列与不同优先级更新，确认使用本轮 reducer 并按批次顺序处理 action所需的初始状态、更新入口与观测日志均已建立。
-   * When：安排用例指定的状态、属性、Context 或依赖更新。
-   * Then：驱动 reducer 队列与不同优先级更新，确认使用本轮 reducer 并按批次顺序处理 action。
-   *
-   * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果。
-   * 对应源码：`updateReducerImpl()`、`dispatchSetStateInternal()` 与 `renderWithHooksAgain()`。
-   */
+  /** 父disabled初始true，同一act先increment再setDisabled(false)；父先以false更新子props，子当前reducer处理action为1。验证潜在no-op未被dispatch阶段丢弃，与已消费action分开。 */
   it('useReducer applies potential no-op changes if made relevant by other updates in the batch', async () => {
     let setDisabled;
     let increment;
 
-    /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“驱动 reducer 队列与不同优先级更新，确认使用本轮 reducer 并按批次顺序处理 action”场景。 */
+    /** reducer捕获props.disabled并在render时处理increment，与父同批启用更新组合。 */
     function Counter({disabled}) {
       const [count, dispatch] = useReducer((state, action) => {
         if (disabled) {
@@ -4951,13 +4332,14 @@ describe('ReactHooksWithNoopRenderer', () => {
         return state;
       }, 0);
 
+      /** 只排入increment action，disabled是否阻止递增由render时当前reducer决定。 */
       increment = () => dispatch({type: 'increment'});
 
       Scheduler.log('Render count: ' + count);
       return count;
     }
 
-    /** 组织当前用例的根组件、更新入口与受测 Hook；服务于“驱动 reducer 队列与不同优先级更新，确认使用本轮 reducer 并按批次顺序处理 action”场景。 */
+    /** 父disabled state与子increment队列分别持有更新，同批父render把false传给子。 */
     function App() {
       const [disabled, _setDisabled] = useState(true);
       setDisabled = _setDisabled;
@@ -4979,19 +4361,12 @@ describe('ReactHooksWithNoopRenderer', () => {
   });
 
   // 回归场景：内部状态变量 `didReceiveUpdate` 未正确复位。
-  /**
-   * Given：复现既有 Hook 队列或 Effect 标记回归，确认更新与卸载标记不会丢失所需的初始状态、更新入口与观测日志均已建立。
-   * When：安排用例指定的状态、属性、Context 或依赖更新。
-   * Then：复现既有 Hook 队列或 Effect 标记回归，确认更新与卸载标记不会丢失。
-   *
-   * 验证机制：调度日志精确约束执行次数与先后顺序。
-   * 对应源码：`updateReducerImpl()`、`dispatchSetStateInternal()` 与 `renderWithHooksAgain()`。
-   */
+  /** 兄弟A/B初值0；同批A1、B1再B0，两个函数都render但只有A effect commit。验证B最终state相等时清除本Fiber effect执行标记，不继承A的didReceiveUpdate。 */
   it('state bail out edge case (#16359)', async () => {
     let setCounterA;
     let setCounterB;
 
-    /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“复现既有 Hook 队列或 Effect 标记回归，确认更新与卸载标记不会丢失”场景。 */
+    /** 保存A的counter和setter，分别记录render与无deps passive，作为真实state变化的兄弟。 */
     function CounterA() {
       const [counter, setCounter] = useState(0);
       setCounterA = setCounter;
@@ -5002,7 +4377,7 @@ describe('ReactHooksWithNoopRenderer', () => {
       return counter;
     }
 
-    /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“复现既有 Hook 队列或 Effect 标记回归，确认更新与卸载标记不会丢失”场景。 */
+    /** 保存B的counter和setter，分别记录render/passive，最终state相等时effect应被bailout跳过。 */
     function CounterB() {
       const [counter, setCounter] = useState(0);
       setCounterB = setCounter;
@@ -5040,18 +4415,11 @@ describe('ReactHooksWithNoopRenderer', () => {
     ]);
   });
 
-  /**
-   * Given：渲染期间安排 Hook 更新，确认重渲染合并、收敛上限及跨组件诊断所需的初始状态、更新入口与观测日志均已建立。
-   * When：安排用例指定的状态、属性、Context 或依赖更新。
-   * Then：渲染期间安排 Hook 更新，确认重渲染合并、收敛上限及跨组件诊断。
-   *
-   * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果。
-   * 对应源码：`updateReducerImpl()`、`dispatchSetStateInternal()` 与 `renderWithHooksAgain()`。
-   */
+  /** 前置step state在render0→5，后置reducer shadow一直0；render结束后dispatch使用最新捕获step5的reducer得到shadow5。验证re-render更新lastRenderedReducer即使当时无action。 */
   it('should update latest rendered reducer when a preceding state receives a render phase update', async () => {
     // 与上一用例类似，但改用前置渲染阶段更新，而非新 props。
     let dispatch;
-    /** 组织当前用例的根组件、更新入口与受测 Hook；服务于“渲染期间安排 Hook 更新，确认重渲染合并、收敛上限及跨组件诊断”场景。 */
+    /** 前置step render-phase递增到5，后置reducer每次捕获当前step并暴露dispatch，shadow仅由action更新。 */
     function App() {
       const [step, setStep] = useState(0);
       const [shadow, _dispatch] = useReducer(() => step, step);
@@ -5081,19 +4449,12 @@ describe('ReactHooksWithNoopRenderer', () => {
     expect(ReactNoop).toMatchRenderedOutput('5');
   });
 
-  /**
-   * Given：渲染期间安排 Hook 更新，确认重渲染合并、收敛上限及跨组件诊断所需的初始状态、更新入口与观测日志均已建立。
-   * When：安排用例指定的状态、属性、Context 或依赖更新。
-   * Then：渲染期间安排 Hook 更新，确认重渲染合并、收敛上限及跨组件诊断。
-   *
-   * 验证机制：宿主输出断言确认实际提交结果。
-   * 对应源码：`updateReducerImpl()`、`dispatchSetStateInternal()` 与 `renderWithHooksAgain()`。
-   */
+  /** A/B/C初始false；同批普通A/C=true，render中setB(A)镜像前置变化，最终ABC。验证render-phase重跑仍处理后置C的普通pending更新。 */
   it('should process the rest pending updates after a render phase update', async () => {
     // 与上一用例类似，但改用前置渲染阶段更新，而非新 props。
     let updateA;
     let updateC;
-    /** 组织当前用例的根组件、更新入口与受测 Hook；服务于“渲染期间安排 Hook 更新，确认重渲染合并、收敛上限及跨组件诊断”场景。 */
+    /** 三个state槽中B在render镜像A，C位于其后且有独立pending更新，输出大小写反映最终状态。 */
     function App() {
       const [a, setA] = useState(false);
       const [b, setB] = useState(false);
@@ -5118,18 +4479,11 @@ describe('ReactHooksWithNoopRenderer', () => {
     expect(ReactNoop).toMatchRenderedOutput('ABC');
   });
 
-  /**
-   * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-   * When：删除目标子树并冲刷对应提交阶段。
-   * Then：挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序。
-   *
-   * 验证机制：调度日志精确约束执行次数与先后顺序。
-   * 对应源码：`commitHookPassiveMountEffects()` 与 `commitHookPassiveUnmountEffects()`。
-   */
+  /** keyed A/B各有layout/passive [label]，删除A只清理A，后删除根才清理B。验证删除遍历不越过deleted子树到其保留兄弟。 */
   it("regression test: don't unmount effects on siblings of deleted nodes", async () => {
     const root = ReactNoop.createRoot();
 
-    /** 作为子级函数组件暴露 Hook 状态和提交日志；服务于“挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序”场景。 */
+    /** 输出label并安装[label]的layout/passive cleanup，供只删除A而保留B的边界核对。 */
     function Child({label}) {
       useLayoutEffect(() => {
         Scheduler.log('Mount layout ' + label);
@@ -5178,18 +4532,11 @@ describe('ReactHooksWithNoopRenderer', () => {
     assertLog(['Unmount layout B', 'Unmount passive B']);
   });
 
-  /**
-   * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-   * When：删除目标子树并冲刷对应提交阶段。
-   * Then：挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序。
-   *
-   * 验证机制：调度日志精确约束执行次数与先后顺序。
-   * 对应源码：`commitHookPassiveMountEffects()` 与 `commitHookPassiveUnmountEffects()`。
-   */
+  /** keyed A/B先挂载passive，重排B/A无effect日志，删除根依新树顺序Unmount B/A。验证重排复用后静态passive标记仍存在。 */
   it('regression: deleting a tree and unmounting its effects after a reorder', async () => {
     const root = ReactNoop.createRoot();
 
-    /** 作为子级函数组件暴露 Hook 状态和提交日志；服务于“挂载、更新或删除含 Passive Effect 的组件树，确认创建、清理、错误与兄弟顺序”场景。 */
+    /** 输出label并安装[label]的passive cleanup，供keyed重排后整树删除的顺序验证。 */
     function Child({label}) {
       useEffect(() => {
         Scheduler.log('Mount ' + label);
@@ -5231,17 +4578,10 @@ describe('ReactHooksWithNoopRenderer', () => {
     ]);
   });
 
-  /**
-   * Given：Hook 更新参与的并发渲染发生挂起或恢复，确认未提交尝试不会污染后续队列与 Effect所需的初始状态、更新入口与观测日志均已建立。
-   * When：删除目标子树并冲刷对应提交阶段。
-   * Then：Hook 更新参与的并发渲染发生挂起或恢复，确认未提交尝试不会污染后续队列与 Effect。
-   *
-   * 验证机制：调度日志精确约束执行次数与先后顺序。
-   * 对应源码：`commitHookPassiveMountEffects()` 与 `commitHookPassiveUnmountEffects()`。
-   */
+  /** SuspenseList together两Row均异步挂起但Row的passive已挂载；只解析A会retry A/B，随后删除根两份cleanup都执行。验证列表第二遍协调不丢Row的静态effect信息。 */
   // @gate enableSuspenseList
   it('regression: SuspenseList causes unmounts to be dropped on deletion', async () => {
-    /** 作为 Row fixture 承载当前测试职责；服务于“Hook 更新参与的并发渲染发生挂起或恢复，确认未提交尝试不会污染后续队列与 Effect”场景。 */
+    /** 把 label 的 Effect 与异步文本放入一行，检查 SuspenseList 重试后删除仍执行 cleanup。 */
     function Row({label}) {
       useEffect(() => {
         Scheduler.log('Mount ' + label);
@@ -5256,7 +4596,7 @@ describe('ReactHooksWithNoopRenderer', () => {
       );
     }
 
-    /** 组织当前用例的根组件、更新入口与受测 Hook；服务于“Hook 更新参与的并发渲染发生挂起或恢复，确认未提交尝试不会污染后续队列与 Effect”场景。 */
+    /** 用together列表组合Row A/B，Row自己安装effect且后代边界读资源，retry不能丢Row的清理标记。 */
     function App() {
       return (
         <SuspenseList revealOrder="together">
@@ -5284,17 +4624,10 @@ describe('ReactHooksWithNoopRenderer', () => {
     assertLog(['Unmount A', 'Unmount B']);
   });
 
-  /**
-   * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-   * When：安排用例指定的状态、属性、Context 或依赖更新。
-   * Then：渲染期间安排 Hook 更新，确认重渲染合并、收敛上限及跨组件诊断。
-   *
-   * 验证机制：调度日志精确约束执行次数与先后顺序。
-   * 对应源码：`commitHookPassiveMountEffects()` 与 `commitHookPassiveUnmountEffects()`。
-   */
+  /** count0 effect依赖[count]已执行；handleClick设2后render-phase立刻归0，连续三轮都只Render0、无Effect0重跑。验证re-render保存最终deps与上次已提交deps比较，不沿中间count2误标执行。 */
   it('effect dependencies are persisted after a render phase update', async () => {
     let handleClick;
-    /** 作为 Test fixture 承载当前测试职责；服务于“渲染期间安排 Hook 更新，确认重渲染合并、收敛上限及跨组件诊断”场景。 */
+    /** 在 Effect 与 render-phase 更新交错时维护 count，检查提交后状态不会被前一 pass 覆盖。 */
     function Test() {
       const [count, setCount] = useState(0);
 
@@ -5306,6 +4639,7 @@ describe('ReactHooksWithNoopRenderer', () => {
         setCount(0);
       }
 
+      /** 普通事件更新先把count设2，下一次render内部再归0，以检查最终effect依赖。 */
       handleClick = () => setCount(2);
 
       return <Text text={`Render: ${count}`} />;

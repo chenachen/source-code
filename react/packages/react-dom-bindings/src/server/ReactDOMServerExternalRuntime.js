@@ -35,7 +35,7 @@ if (document.body != null) {
   domBodyObserver.observe(document.documentElement, {childList: true});
 }
 
-/** 扫描目标下加载前已存在的 template 指令节点。 */
+/** 查询目标后代的template并按DOM顺序消费已有指令；用于runtime加载晚于shell/片段输出的情况。 */
 function handleExistingNodes(target: HTMLElement) {
   const existingNodes = target.querySelectorAll('template');
   for (let i = 0; i < existingNodes.length; i++) {
@@ -43,7 +43,7 @@ function handleExistingNodes(target: HTMLElement) {
   }
 }
 
-/** 观察流式追加到 body 的节点，并在 DOMContentLoaded 后消费尾部记录再断开。 */
+/** 只观察body直接新增的childList节点，不启用subtree；Fizz指令追加于body。DOMContentLoaded先takeRecords消费最后一批，再disconnect停止接收。 */
 function installFizzInstrObserver(target: Node) {
   /** 遍历每批新增节点，只处理仍连接到父节点的候选指令。 */
   const handleMutations = (mutations: Array<MutationRecord>) => {
@@ -70,7 +70,9 @@ function installFizzInstrObserver(target: Node) {
 }
 
 /**
- * 识别 template dataset 上的 Fizz 指令码，调用对应全局处理器后移除指令节点。
+ * 按rxi/rri/rci/rsi优先顺序识别元素dataset里的Fizz指令码，传边界/片段id及错误或样式载荷
+ * 给对应全局处理器，成功后移除指令节点；没有指令码的元素保持原状。
+ * JSON解析或全局处理器异常原样传播，尚未执行的remove不会清理该指令。
  * 非元素或无 dataset 的节点直接忽略。
  */
 function handleNode(node_: Node) {

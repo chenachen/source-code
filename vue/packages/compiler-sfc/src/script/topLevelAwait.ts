@@ -11,8 +11,7 @@ import type { ScriptCompileContext } from './context'
  * ```
  *
  * JS 在 await 后继续执行时不会天然保留 Vue 的 currentInstance。`withAsyncContext` 返回
- * promise 与 restore 函数，挂起前暂时卸下上下文，恢复执行后立即还原。未来 Async Context
- * 广泛可用后可考虑移除此转换：https://github.com/tc39/proposal-async-context
+ * 待等待的值与 restore 函数，挂起前暂时卸下上下文，恢复执行后立即还原。
  *
  * ```js
  * // 输入
@@ -34,6 +33,11 @@ import type { ScriptCompileContext } from './context'
  *   __temp
  * )
  * ```
+ *
+ * @param node - setup 顶层执行路径中的 await；函数内部 await 由调用者跳过。
+ * @param needSemi - 是否在包装前补分号，防止 ASI 粘连；单行 if/while 的 body 不可随意补分号。
+ * @param isStatement - 独立语句无需保存结果；作为子表达式时以逗号表达式返回等待后的 __temp。
+ * @remarks 参数源码只用 await 单词正则决定回调是否加 async；原位置与括号信息由 Babel AST 提供。
  */
 export function processAwait(
   ctx: ScriptCompileContext,

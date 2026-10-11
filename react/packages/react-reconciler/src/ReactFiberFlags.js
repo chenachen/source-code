@@ -59,7 +59,7 @@ export const StoreConsistency = /*             */ 0b0000000000000000100000000000
 // 下列语义只出现在互斥的 Fiber 类型或阶段，因此可复用位；位空间已经紧张，复用可避免扩宽字段。
 /** HostRoot 首次提交时需要完成容器 hydration；与普通 Callback 语义互斥。 */
 export const Hydrate = Callback;
-/** Suspense 边界需在 thenable ping 后重新登记 retry；与 store consistency 互斥。 */
+/** completeWork 需立即安排 retry Lane 以预渲染未探索的挂起子树；与 store consistency 互斥。 */
 export const ScheduleRetry = StoreConsistency;
 /** 资源尚未准备好，当前 commit 必须挂起；与普通 visibility 更新互斥。 */
 export const ShouldSuspendCommit = Visibility;
@@ -86,7 +86,7 @@ export const Incomplete = /*                   */ 0b0000000000000001000000000000
 export const ShouldCapture = /*                */ 0b0000000000000010000000000000000;
 /** 旧版 Suspense 兼容路径需强制重新计算一次 class 更新。 */
 export const ForceUpdateForLegacySuspense = /* */ 0b0000000000000100000000000000000;
-/** 新 Context 已在此子树完整传播，可避免重复扫描。 */
+/** 已检查祖先 Provider 的变化并向子树传播，后代 bailout 可避免重复检查同一段祖先链。 */
 export const DidPropagateContext = /*          */ 0b0000000000001000000000000000000;
 /** 子树仍需执行惰性 Context 传播。 */
 export const NeedsPropagation = /*             */ 0b0000000000010000000000000000000;
@@ -119,7 +119,7 @@ export const ViewTransitionStaticParent = /*   */ 0b1000000000000000000000000000
 /** 子树含 HostPortal；跨容器 effect 与 transition 遍历不能把它当普通宿主后代。 */
 export const PortalStatic = /*                 */ 0b0000100000000000000000000000000;
 
-/** 开发构建中永久标记新插入 Fiber；不同于 Placement，commit 后不清除。 */
+/** 开发构建中标记本轮新插入 Fiber；commit 后不清除，下一轮 createWorkInProgress 会重置。 */
 export const PlacementDEV = /*                 */ 0b0001000000000000000000000000000;
 /** StrictEffects 开发检查需重新挂载 layout effects。 */
 export const MountLayoutDev = /*               */ 0b0010000000000000000000000000000;

@@ -1,5 +1,6 @@
 import { view1 } from './views/view1'
 
+/** 把传入 view HTML 嵌入标题与样式节点；入口自身和 view 依赖的 HMR 分别重渲染同一 app。 */
 export const main = (view1Content) => /* html */ `
   <h1 id="pagetitle" class="text-3xl text-violet-600">Page title</h1>
   ${view1Content}

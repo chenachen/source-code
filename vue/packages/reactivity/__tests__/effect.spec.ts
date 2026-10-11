@@ -30,14 +30,18 @@ import {
 } from '../src/effect'
 
 describe('reactivity/effect', () => {
-  // 场景：创建 effect 包装普通函数；验证创建时立即执行一次并返回 runner。
+  /**
+   * 把空函数 spy 传给 effect；创建时立即调用一次，验证 effect 默认执行传入函数。
+   */
   it('should run the passed function once (wrapped by a effect)', () => {
     const fnSpy = vi.fn(() => {})
     effect(fnSpy)
     expect(fnSpy).toHaveBeenCalledTimes(1)
   })
 
-  // 场景：effect 读取单个响应式属性；验证属性修改会重新执行并更新结果。
+  /**
+   * effect 读取响应式 counter.num = 0；赋 num = 7 后 dummy 同步为 7，验证普通属性 SET 的依赖通知。
+   */
   it('should observe basic properties', () => {
     let dummy
     const counter = reactive({ num: 0 })
@@ -48,7 +52,9 @@ describe('reactivity/effect', () => {
     expect(dummy).toBe(7)
   })
 
-  // 场景：effect 同时读取多个属性；验证任一依赖变化均能触发更新。
+  /**
+   * effect 两次读取 num1、一次读取 num2，初始均为 0；把两者设为 7 后 dummy 为 21，验证重复读取同一属性与多个属性共同参与更新。
+   */
   it('should observe multiple properties', () => {
     let dummy
     const counter = reactive({ num1: 0, num2: 0 })
@@ -59,7 +65,9 @@ describe('reactivity/effect', () => {
     expect(dummy).toBe(21)
   })
 
-  // 场景：多个 effect 订阅同一属性；验证每个订阅者都独立收到通知。
+  /**
+   * 两个 effect 同时读取 num = 0；num 自增后两个 dummy 都为 1，验证同一属性可通知多个订阅者。
+   */
   it('should handle multiple effects', () => {
     let dummy1, dummy2
     const counter = reactive({ num: 0 })
@@ -73,7 +81,9 @@ describe('reactivity/effect', () => {
     expect(dummy2).toBe(1)
   })
 
-  // 场景：effect 读取响应式对象的嵌套字段；验证深层修改可被追踪。
+  /**
+   * effect 读取对象内部 nested.num = 0；把嵌套值设为 8 后 dummy 为 8，验证深层代理的属性订阅。
+   */
   it('should observe nested properties', () => {
     let dummy
     const counter = reactive({ nested: { num: 0 } })
@@ -84,10 +94,15 @@ describe('reactivity/effect', () => {
     expect(dummy).toBe(8)
   })
 
-  // 场景：effect 读取属性后删除该属性；验证 DELETE 操作触发并得到 undefined。
+  /**
+   * effect 读取可删除属性 prop = value；删除 prop 后 dummy 为 undefined，验证 DELETE 通知读取订阅者。
+   */
   it('should observe delete operations', () => {
     let dummy
     const obj = reactive<{
+      /**
+       * 可删除的字符串属性，用于检查读取订阅收到 DELETE。
+       */
       prop?: string
     }>({ prop: 'value' })
     effect(() => (dummy = obj.prop))
@@ -97,10 +112,15 @@ describe('reactivity/effect', () => {
     expect(dummy).toBe(undefined)
   })
 
-  // 场景：effect 使用 `in` 检查属性；验证新增和删除触发 HAS 依赖。
+  /**
+   * effect 检查 prop 是否存在，初始为真；删除后为假，重新添加数字值后为真，验证 HAS 依赖随属性增删更新。
+   */
   it('should observe has operations', () => {
     let dummy
-    const obj = reactive<{ prop?: string | number }>({ prop: 'value' })
+    const obj = reactive<{
+      /** 允许删除和重新添加的属性，用于检查 HAS 订阅。 */
+      prop?: string | number
+    }>({ prop: 'value' })
     effect(() => (dummy = 'prop' in obj))
 
     expect(dummy).toBe(true)
@@ -110,10 +130,15 @@ describe('reactivity/effect', () => {
     expect(dummy).toBe(true)
   })
 
-  // 场景：effect 读取原型链属性；验证原型属性和实例遮蔽变化触发正确。
+  /**
+   * 子对象 num = 0、响应式原型 num = 2；删除自有属性后读取回退为 2，修改原型后为 4，再给子对象赋 3 后读取为 3，验证原型链 GET 依赖与遮蔽。
+   */
   it('should observe properties on the prototype chain', () => {
     let dummy
-    const counter = reactive<{ num?: number }>({ num: 0 })
+    const counter = reactive<{
+      /** 子对象的可选数值字段，删除后读取响应式原型的同名字段。 */
+      num?: number
+    }>({ num: 0 })
     const parentCounter = reactive({ num: 2 })
     Object.setPrototypeOf(counter, parentCounter)
     effect(() => (dummy = counter.num))
@@ -127,11 +152,19 @@ describe('reactivity/effect', () => {
     expect(dummy).toBe(3)
   })
 
-  // 场景：通过 `in` 查询原型链属性；验证原型与自有属性增删都正确更新。
+  /**
+   * 子对象和响应式原型都含 num；删除子属性后 in 仍为真，删除原型属性后为假，再添加子属性后为真，验证原型链 HAS 依赖。
+   */
   it('should observe has operations on the prototype chain', () => {
     let dummy
-    const counter = reactive<{ num?: number }>({ num: 0 })
-    const parentCounter = reactive<{ num?: number }>({ num: 2 })
+    const counter = reactive<{
+      /** 子对象的可选字段，用于检查原型链上的存在性。 */
+      num?: number
+    }>({ num: 0 })
+    const parentCounter = reactive<{
+      /** 原型的可选字段，删除它后整个原型链不再含 num。 */
+      num?: number
+    }>({ num: 2 })
     Object.setPrototypeOf(counter, parentCounter)
     effect(() => (dummy = 'num' in counter))
 
@@ -144,14 +177,25 @@ describe('reactivity/effect', () => {
     expect(dummy).toBe(true)
   })
 
-  // 场景：effect 读取继承的 getter/setter 属性；验证访问器内部依赖和写入接收者正确。
+  /**
+   * 子对象继承共享 hiddenValue 的访问器，并分别由 effect 读取子对象和原型的 prop；写子对象为 4 后子 dummy 为 4，写原型为 2 后两者都为 2，验证继承访问器的订阅通知。被注释的 parentDummy = 4 断言不作为验证结果。
+   */
   it('should observe inherited property accessors', () => {
     let dummy, parentDummy, hiddenValue: any
-    const obj = reactive<{ prop?: number }>({})
+    const obj = reactive<{
+      /** 子对象继承的可选属性类型，实际读写由原型访问器处理。 */
+      prop?: number
+    }>({})
     const parent = reactive({
+      /**
+       * 把继承属性写入共享 hiddenValue，以比较子对象和原型的通知。
+       */
       set prop(value) {
         hiddenValue = value
       },
+      /**
+       * 返回共享 hiddenValue，使子对象和原型读取相同访问器结果。
+       */
       get prop() {
         return hiddenValue
       },
@@ -164,19 +208,24 @@ describe('reactivity/effect', () => {
     expect(parentDummy).toBe(undefined)
     obj.prop = 4
     expect(dummy).toBe(4)
-    // this doesn't work, should it?
+    // 下方父级值为 4 的历史断言未启用；当前只核对子对象值为 4。
     // expect(parentDummy).toBe(4)
     parent.prop = 2
     expect(dummy).toBe(2)
     expect(parentDummy).toBe(2)
   })
 
-  // 场景：effect 调用多层函数，间接读取响应式状态；验证调用链中的读取仍被收集。
+  /**
+   * getNum 函数读取 counter.num = 0，effect 调用该函数；把 num 设为 2 后 dummy 为 2，验证依赖收集能穿过普通函数调用。
+   */
   it('should observe function call chains', () => {
     let dummy
     const counter = reactive({ num: 0 })
     effect(() => (dummy = getNum()))
 
+    /**
+     * 读取响应式 counter.num，让 effect 经普通函数调用收集依赖。
+     */
     function getNum() {
       return counter.num
     }
@@ -186,7 +235,9 @@ describe('reactivity/effect', () => {
     expect(dummy).toBe(2)
   })
 
-  // 场景：effect 使用 for...in 遍历对象；验证属性新增和删除触发遍历依赖。
+  /**
+   * effect 对初始数组 [Hello] 执行 join；push World! 后为 Hello World!，shift 后为 World!，验证数组迭代读取随增删更新。
+   */
   it('should observe iteration', () => {
     let dummy
     const list = reactive(['Hello'])
@@ -199,7 +250,9 @@ describe('reactivity/effect', () => {
     expect(dummy).toBe('World!')
   })
 
-  // 场景：通过新增越界索引隐式增大数组 length；验证 length 订阅者被触发。
+  /**
+   * effect 对 [Hello] 执行 join；写索引 1 为 World!、再写索引 3 为 Hello!，最后结果为 Hello World!  Hello!（中间两空格），验证索引写入隐式扩展 length 时更新迭代结果。
+   */
   it('should observe implicit array length changes', () => {
     let dummy
     const list = reactive(['Hello'])
@@ -212,7 +265,9 @@ describe('reactivity/effect', () => {
     expect(dummy).toBe('Hello World!  Hello!')
   })
 
-  // 场景：修改稀疏数组索引与长度；验证被截断索引和 length 依赖准确通知。
+  /**
+   * 响应式空数组先写索引 1 为 World! 形成空槽，再注册 join 的 effect；初读为带前导空格的 World!，补索引 0 为 Hello 后得到 Hello World!，pop 后为 Hello，验证稀疏数组的补项和删除。
+   */
   it('should observe sparse array mutations', () => {
     let dummy
     const list = reactive<string[]>([])
@@ -226,7 +281,9 @@ describe('reactivity/effect', () => {
     expect(dummy).toBe('Hello')
   })
 
-  // 场景：effect 使用 Object.keys 等枚举 API；验证自有键集合变化触发更新。
+  /**
+   * effect 用 for...in 累加初始 num1 = 3；增加 num2 = 4 后和为 7，删除 num1 后和为 4，验证属性枚举依赖。
+   */
   it('should observe enumeration', () => {
     let dummy = 0
     const numbers = reactive<Record<string, number>>({ num1: 3 })
@@ -244,11 +301,16 @@ describe('reactivity/effect', () => {
     expect(dummy).toBe(4)
   })
 
-  // 场景：effect 读取用户自定义 Symbol 属性；验证该 Symbol 可作为普通依赖键追踪。
+  /**
+   * 两个 effect 分别读取自定义 Symbol 属性和检查其存在；属性从 value 改为 newValue 后读取更新，删除后读为 undefined 且存在检查为假，验证 Symbol 的 GET、HAS 通知。
+   */
   it('should observe symbol keyed properties', () => {
     const key = Symbol('symbol keyed prop')
     let dummy, hasDummy
-    const obj = reactive<{ [key]?: string }>({ [key]: 'value' })
+    const obj = reactive<{
+      /** 以当前自定义 Symbol 为键的可删除属性，分别覆盖 GET 和 HAS。 */
+      [key]?: string
+    }>({ [key]: 'value' })
     effect(() => (dummy = obj[key]))
     effect(() => (hasDummy = key in obj))
 
@@ -261,7 +323,9 @@ describe('reactivity/effect', () => {
     expect(hasDummy).toBe(false)
   })
 
-  // 场景：读取 Symbol.iterator 等内建协议属性；验证不会建立无关业务依赖。
+  /**
+   * effect 读取数组的 Symbol.isConcatSpreadable，初始为 undefined；写为 true 后实际属性为 true，但 dummy 仍为 undefined，验证内建 Symbol 读取不被收集。
+   */
   it('should not observe well-known symbol keyed properties', () => {
     const key = Symbol.isConcatSpreadable
     let dummy
@@ -275,7 +339,9 @@ describe('reactivity/effect', () => {
     expect(dummy).toBe(undefined)
   })
 
-  // 场景：用 `in` 检查内建 Symbol；验证 HAS 操作同样跳过依赖收集。
+  /**
+   * effect 用 in 检查对象的内建 Symbol 属性；把其值由 true 改为 false 后 spy 仍只一次，验证内建 Symbol 的 HAS 检查不订阅。
+   */
   it('should not observe well-known symbol keyed properties in has operation', () => {
     const key = Symbol.isConcatSpreadable
     const obj = reactive({
@@ -292,7 +358,9 @@ describe('reactivity/effect', () => {
     expect(spy).toHaveBeenCalledTimes(1)
   })
 
-  // 场景：effect 读取数组 Symbol 属性并执行数组变异；验证暂停追踪不会破坏这些操作。
+  /**
+   * effect 只读取 [1, 2, 3] 的自定义 Symbol 属性，初值为 undefined；pop、shift、splice 不改变 dummy，给 Symbol 赋 value 后再清空 length 仍保留 value，验证普通数组变更不误通知 Symbol 读取。
+   */
   it('should support manipulating an array while observing symbol keyed properties', () => {
     const key = Symbol()
     let dummy
@@ -309,9 +377,17 @@ describe('reactivity/effect', () => {
     expect(dummy).toBe('value')
   })
 
-  // 场景：响应式属性值是函数并在 effect 中读取/调用；验证函数属性替换能触发。
+  /**
+   * 响应式属性 func 初始保存 oldFunc，effect 记录函数引用；替换为 newFunc 后 dummy 变为新引用，验证函数作为属性值同样参与变更检测。
+   */
   it('should observe function valued properties', () => {
+    /**
+     * 初始空函数值；测试仅比较引用，不执行函数体。
+     */
     const oldFunc = () => {}
+    /**
+     * 替换后的空函数值，用不同引用触发 func 属性更新。
+     */
     const newFunc = () => {}
 
     let dummy
@@ -323,10 +399,15 @@ describe('reactivity/effect', () => {
     expect(dummy).toBe(newFunc)
   })
 
-  // 场景：对象 getter 通过 this 读取另一个 getter/属性；验证接收者保持代理并收集完整依赖。
+  /**
+   * 对象 getter b 返回 this.a = 1，effect 读取 b；a 自增后 dummy 为 2，验证访问器中的 this 指向代理并追踪 a。
+   */
   it('should observe chained getters relying on this', () => {
     const obj = reactive({
       a: 1,
+      /**
+       * 通过代理 this 读取 a，把 getter 的内部读取纳入当前 effect。
+       */
       get b() {
         return this.a
       },
@@ -339,10 +420,15 @@ describe('reactivity/effect', () => {
     expect(dummy).toBe(2)
   })
 
-  // 场景：对象方法通过 this 读取响应式属性；验证方法调用内部读取被追踪。
+  /**
+   * 对象方法 b 返回 this.a = 1，effect 调用 b；a 自增后 dummy 为 2，验证方法中的代理 this 读取参与依赖收集。
+   */
   it('should observe methods relying on this', () => {
     const obj = reactive({
       a: 1,
+      /**
+       * 通过代理 this 读取 a，把方法调用中的读取纳入当前 effect。
+       */
       b() {
         return this.a
       },
@@ -355,7 +441,9 @@ describe('reactivity/effect', () => {
     expect(dummy).toBe(2)
   })
 
-  // 场景：给属性重复写入相同值；验证 Object.is 语义下不触发 effect。
+  /**
+   * 两个 effect 分别读取 prop 和检查 prop 存在；重复赋入初始 value 后两个 spy 都只一次，验证同值 SET 不通知 GET 或 HAS 订阅。
+   */
   it('should not observe set operations without a value change', () => {
     let hasDummy, getDummy
     const obj = reactive({ prop: 'value' })
@@ -374,10 +462,15 @@ describe('reactivity/effect', () => {
     expect(hasDummy).toBe(true)
   })
 
-  // 场景：effect 直接读取原始对象；验证 raw 读取不会建立响应式依赖。
+  /**
+   * effect 通过 toRaw 读取空对象的 prop；随后经代理赋 value，dummy 仍为 undefined，验证原始对象读取没有建立代理依赖。
+   */
   it('should not observe raw mutations', () => {
     let dummy
-    const obj = reactive<{ prop?: string }>({})
+    const obj = reactive<{
+      /** 初始缺失的可选字段，用于原始对象读取不收集依赖的场景。 */
+      prop?: string
+    }>({})
     effect(() => (dummy = toRaw(obj).prop))
 
     expect(dummy).toBe(undefined)
@@ -385,10 +478,15 @@ describe('reactivity/effect', () => {
     expect(dummy).toBe(undefined)
   })
 
-  // 场景：effect 经代理建立依赖后直接修改 raw 对象；验证绕过代理不会主动触发。
+  /**
+   * effect 经代理读取空对象的 prop；随后通过 toRaw 写入 value，dummy 仍为 undefined，验证原始对象写入绕过通知。
+   */
   it('should not be triggered by raw mutations', () => {
     let dummy
-    const obj = reactive<{ prop?: string }>({})
+    const obj = reactive<{
+      /** 初始缺失的可选字段，用于原始对象写入不触发通知的场景。 */
+      prop?: string
+    }>({})
     effect(() => (dummy = obj.prop))
 
     expect(dummy).toBe(undefined)
@@ -396,14 +494,25 @@ describe('reactivity/effect', () => {
     expect(dummy).toBe(undefined)
   })
 
-  // 场景：代理写入调用原型上的原始 setter；验证 setter 内 raw 修改不会造成双重触发。
+  /**
+   * 子对象继承共享 hiddenValue 的访问器，effect 分别读子对象和原型；通过 toRaw(obj).prop 写入 4 后两个 dummy 仍为 undefined，验证原始 receiver 的继承 setter 写入不通知代理订阅。
+   */
   it('should not be triggered by inherited raw setters', () => {
     let dummy, parentDummy, hiddenValue: any
-    const obj = reactive<{ prop?: number }>({})
+    const obj = reactive<{
+      /** 子对象继承的可选属性，供原始 receiver 写入访问器。 */
+      prop?: number
+    }>({})
     const parent = reactive({
+      /**
+       * 写入共享 hiddenValue，用于检查 toRaw receiver 绕过通知的路径。
+       */
       set prop(value) {
         hiddenValue = value
       },
+      /**
+       * 返回共享 hiddenValue，供子对象与原型各自读取。
+       */
       get prop() {
         return hiddenValue
       },
@@ -419,7 +528,9 @@ describe('reactivity/effect', () => {
     expect(parentDummy).toBe(undefined)
   })
 
-  // 场景：effect 读取并同步修改自己的依赖；验证默认禁止运行中自递归。
+  /**
+   * effect 内部自增 num，创建后 num 为 1 且 spy 一次；外部设 num = 4 后 effect 只再执行一次使 num 为 5，验证执行中自写不会无限递归。
+   */
   it('should avoid implicit infinite recursive loops with itself', () => {
     const counter = reactive({ num: 0 })
 
@@ -432,7 +543,9 @@ describe('reactivity/effect', () => {
     expect(counterSpy).toHaveBeenCalledTimes(2)
   })
 
-  // 场景：effect 内执行会读写 length 的数组方法；验证暂停追踪避免相互触发死循环。
+  /**
+   * 循环覆盖 push、unshift、pop、shift，各由两个 effect 修改同一数组；前两种从空数组各加 1、2，后两种从 [1, 2, 3, 4] 各删一项，最终长度都为 2、每个 spy 仅一次，验证数组操作避免收集导致自身循环的 length 依赖。
+   */
   it('should avoid infinite recursive loops when use Array.prototype.push/unshift/pop/shift', () => {
     ;(['push', 'unshift'] as const).forEach(key => {
       const arr = reactive<number[]>([])
@@ -456,7 +569,9 @@ describe('reactivity/effect', () => {
     })
   })
 
-  // 场景：runner 函数显式递归调用普通函数逻辑；验证系统不阻止用户主动的非响应式递归。
+  /**
+   * 原始 spy 函数主动递归自增 num，直到 num 为 10，再交给 effect 执行；断言 num = 10 且函数调用十次，验证显式函数递归仍可执行。
+   */
   it('should allow explicitly recursive raw function loops', () => {
     const counter = reactive({ num: 0 })
     const numSpy = vi.fn(() => {
@@ -470,7 +585,9 @@ describe('reactivity/effect', () => {
     expect(numSpy).toHaveBeenCalledTimes(10)
   })
 
-  // 场景：两个 effect 相互修改对方依赖；验证批处理与运行标记避免无限互触发。
+  /**
+   * 两个 effect 分别把 num2 赋给 num1、把 num1 赋给 num2；初始两值收敛为 1，外部写 4、10 后均收敛且每个 spy 只各新增一次，验证相互写入不会形成无限循环。
+   */
   it('should avoid infinite loops with other effects', () => {
     const nums = reactive({ num1: 0, num2: 1 })
 
@@ -494,8 +611,13 @@ describe('reactivity/effect', () => {
     expect(spy2).toHaveBeenCalledTimes(3)
   })
 
-  // 场景：把已有 effect runner 再传给 effect；验证提取原函数并创建独立新 effect。
+  /**
+   * 把同一个返回 Hello World 的 greet 函数分别交给两个 effect；返回的两个 runner 都是函数且互不相同、也不等于 greet，验证每次创建返回独立 runner。
+   */
   it('should return a new reactive version of the function', () => {
+    /**
+     * 返回固定问候文本，供比较同一函数创建的两个独立 effect runner。
+     */
     function greet() {
       return 'Hello World'
     }
@@ -507,7 +629,9 @@ describe('reactivity/effect', () => {
     expect(effect1).not.toBe(effect2)
   })
 
-  // 场景：effect 条件分支自动切换；验证新分支依赖被收集、旧分支依赖被清理。
+  /**
+   * 响应式 run 初始为 false，effect 返回 other 而不读 prop；修改 prop 不执行，打开 run 后读取 Hi，再改 prop 得到 World，验证自动重跑能发现新分支依赖。
+   */
   it('should discover new branches while running automatically', () => {
     let dummy
     const obj = reactive({ prop: 'value', run: false })
@@ -530,7 +654,9 @@ describe('reactivity/effect', () => {
     expect(conditionalSpy).toHaveBeenCalledTimes(3)
   })
 
-  // 场景：手动 runner 执行时条件分支切换；验证依赖链同样按本轮访问更新。
+  /**
+   * 普通布尔变量 run 初始为 false，runner 读取 other；手动执行后再把 run 改为 true 并手动执行，之后 prop 改为 World 能自动更新，验证手动 runner 同样重收集分支依赖。
+   */
   it('should discover new branches when running manually', () => {
     let dummy
     let run = false
@@ -549,7 +675,9 @@ describe('reactivity/effect', () => {
     expect(dummy).toBe('World')
   })
 
-  // 场景：修改 effect 当前未走分支中的属性；验证已清理的旧依赖不再触发。
+  /**
+   * 响应式 run 初始为 true，effect 读取 prop；关闭 run 后结果为 other，再改 prop 不增加 spy 次数，验证不活跃分支的依赖被清理。
+   */
   it('should not be triggered by mutating a property, which is used in an inactive branch', () => {
     let dummy
     const obj = reactive({ prop: 'value', run: true })
@@ -569,10 +697,17 @@ describe('reactivity/effect', () => {
     expect(conditionalSpy).toHaveBeenCalledTimes(2)
   })
 
-  // 场景：大量嵌套 effect 递归执行并切换依赖；验证深层清理回退路径保持正确。
+  /**
+   * 从 results[0] = 0 建立 39 个逐层乘 2 的 effect；把根值设为 1 后第 39 项为 2 的 39 次方，验证深层嵌套触发能正确完成。测试名保留历史 cleanup fallback 表述，断言只检查传播结果。
+   */
   it('should handle deep effect recursion using cleanup fallback', () => {
     const results = reactive([0])
-    const effects: { fx: ReactiveEffectRunner; index: number }[] = []
+    const effects: {
+      /** 当前层的 effect runner，与 index 一起保存链式测试条目。 */
+      fx: ReactiveEffectRunner;
+      /** 当前层对应 results 的索引，标识逐层乘 2 的位置。 */
+      index: number
+    }[] = []
     for (let i = 1; i < 40; i++) {
       ;(index => {
         const fx = effect(() => {
@@ -587,7 +722,9 @@ describe('reactivity/effect', () => {
     expect(results[39]).toBe(Math.pow(2, 39))
   })
 
-  // 场景：effect 递归过程中嵌套不同订阅上下文；验证每层独立登记自己的依赖。
+  /**
+   * 输入 a = 1、b = 2、c = 0，独立创建的 fx2 读取 fx1 的输出；依次写 b = 3、c = 1/2/3、a = 10，输出依次为 [1, 4]、[1, 4]、[3, 7]、[3, 4]、[3, 13]，每步清零后的调用次数分别为 [0, 1]、[1, 1]、[1, 1]、[1, 1]、[0, 1]，验证联动通知中各 effect 独立维护动态依赖。
+   */
   it('should register deps independently during effect recursion', () => {
     const input = reactive({ a: 1, b: 2, c: 0 })
     const output = reactive({ fx1: 0, fx2: 0 })
@@ -641,7 +778,7 @@ describe('reactivity/effect', () => {
     expect(output.fx2).toBe(1 + 3 + 3)
     expect(fx1Spy).toHaveBeenCalledTimes(1)
 
-    // Invoked due to change of fx1.
+    // fx1 的值变化还会触发读取它的 fx2。
     expect(fx2Spy).toHaveBeenCalledTimes(1)
 
     fx1Spy.mockClear()
@@ -661,7 +798,9 @@ describe('reactivity/effect', () => {
     expect(fx2Spy).toHaveBeenCalledTimes(1)
   })
 
-  // 场景：effect 接收真正的 runner；验证不会执行 runner 外壳导致双层依赖收集。
+  /**
+   * 把已有 effect runner 再交给 effect；新 runner 与旧 runner 不同，但底层 effect.fn 相同，验证识别真实 runner 后复用原函数而不嵌套包装 runner。
+   */
   it('should not double wrap if the passed function is a effect', () => {
     const runner = effect(() => {})
     const otherRunner = effect(runner)
@@ -669,8 +808,13 @@ describe('reactivity/effect', () => {
     expect(runner.effect.fn).toBe(otherRunner.effect.fn)
   })
 
-  // 场景：普通函数伪造 effect 字段；验证仅真实 ReactiveEffect 实例才触发解包逻辑。
+  /**
+   * 普通空函数 fakeRunner 手动带上一个空 effect 属性；交给 effect 后返回不同 runner，底层 fn 仍为 fakeRunner，验证仅伪造属性不会被当作真实 runner 解包。
+   */
   it('should wrap if the passed function is a fake effect', () => {
+    /**
+     * 仅手动添加 effect 属性的普通空函数，用于区分真实 runner。
+     */
     const fakeRunner = () => {}
     fakeRunner.effect = {}
     const runner = effect(fakeRunner)
@@ -678,7 +822,9 @@ describe('reactivity/effect', () => {
     expect(runner.effect.fn).toBe(fakeRunner)
   })
 
-  // 场景：同一 effect 通过多个依赖路径受一次写操作影响；验证批内去重只执行一次。
+  /**
+   * effect 同时枚举空对象并读取 prop；新增 prop = 16 后 spy 从一次变为两次，验证一次新增同时命中多个依赖时合并通知。
+   */
   it('should not run multiple times for a single mutation', () => {
     let dummy
     const obj = reactive<Record<string, number>>({})
@@ -696,7 +842,9 @@ describe('reactivity/effect', () => {
     expect(fnSpy).toHaveBeenCalledTimes(2)
   })
 
-  // 场景：外层 effect 执行时创建并运行内层 effect；验证 activeSub 栈正确恢复。
+  /**
+   * num1/num2/num3 初始为 0/1/2，父 effect 读 num2、调用读取 num1 的子 runner、再读 num3；依次设 num1 = 4、num2 = 10、num3 = 7，父/子总调用次数为 3/5，结果为 4/10/7，验证子依赖单独通知、父执行恢复各自收集上下文。
+   */
   it('should allow nested effects', () => {
     const nums = reactive({ num1: 0, num2: 1, num3: 2 })
     const dummy: any = {}
@@ -713,24 +861,26 @@ describe('reactivity/effect', () => {
     expect(dummy).toEqual({ num1: 0, num2: 1, num3: 2 })
     expect(parentSpy).toHaveBeenCalledTimes(1)
     expect(childSpy).toHaveBeenCalledTimes(2)
-    // this should only call the childeffect
+    // 仅 num1 变化，只有子 effect 执行。
     nums.num1 = 4
     expect(dummy).toEqual({ num1: 4, num2: 1, num3: 2 })
     expect(parentSpy).toHaveBeenCalledTimes(1)
     expect(childSpy).toHaveBeenCalledTimes(3)
-    // this calls the parenteffect, which calls the childeffect once
+    // 父 effect 的依赖变化，父执行时会手动调用子 runner 一次。
     nums.num2 = 10
     expect(dummy).toEqual({ num1: 4, num2: 10, num3: 2 })
     expect(parentSpy).toHaveBeenCalledTimes(2)
     expect(childSpy).toHaveBeenCalledTimes(4)
-    // this calls the parenteffect, which calls the childeffect once
+    // 父 effect 的依赖变化，父执行时会手动调用子 runner 一次。
     nums.num3 = 7
     expect(dummy).toEqual({ num1: 4, num2: 10, num3: 7 })
     expect(parentSpy).toHaveBeenCalledTimes(3)
     expect(childSpy).toHaveBeenCalledTimes(5)
   })
 
-  // 场景：effect 对响应式对象执行 JSON.stringify；验证枚举和属性读取变化触发更新。
+  /**
+   * effect 对响应式空对象先 JSON.stringify 再 JSON.parse；新增 a = 1 后解析结果的 a 为 1，验证 JSON 枚举与属性读取可建立依赖。
+   */
   it('should observe json methods', () => {
     let dummy = <Record<string, number>>{}
     const obj = reactive<Record<string, number>>({})
@@ -741,13 +891,27 @@ describe('reactivity/effect', () => {
     expect(dummy.a).toBe(1)
   })
 
-  // 场景：响应式类实例方法读取字段；验证类方法 this 指向代理并能建立依赖。
+  /**
+   * Model 实例的 count 初始为 0，reactive 包装后由 effect 读取；调用 model.inc 后 dummy 为 1，验证类方法对代理实例字段的修改能触发订阅。
+   */
   it('should observe class method invocations', () => {
+    /**
+     * 带字段和实例方法的测试模型，用于验证 reactive 类实例。
+     */
     class Model {
+      /**
+       * 被 effect 读取、由 inc 修改的数值字段。
+       */
       count: number
+      /**
+       * 将模型计数初始化为 0，提供首次订阅的基线值。
+       */
       constructor() {
         this.count = 0
       }
+      /**
+       * 把当前实例 count 自增一次，测试通过代理实例调用的方法写入。
+       */
       inc() {
         this.count++
       }
@@ -762,7 +926,9 @@ describe('reactivity/effect', () => {
     expect(dummy).toBe(1)
   })
 
-  // 场景：effect 配置自定义 scheduler；验证依赖变化只调度，runner 由用户决定执行时机。
+  /**
+   * 带 scheduler 的 effect 首次直接读取 foo = 1；foo 自增只调用 scheduler、dummy 仍为 1，手动调用 runner 后为 2，验证调度器接管后续执行。
+   */
   it('scheduler', () => {
     let dummy
     let run: any
@@ -778,18 +944,20 @@ describe('reactivity/effect', () => {
     )
     expect(scheduler).not.toHaveBeenCalled()
     expect(dummy).toBe(1)
-    // should be called on first trigger
+    // 首次源变化调用调度器。
     obj.foo++
     expect(scheduler).toHaveBeenCalledTimes(1)
-    // should not run yet
+    // 调度器尚未调用 runner，effect 结果仍保持旧值。
     expect(dummy).toBe(1)
-    // manually run
+    // 手动执行 runner，读取最新源值。
     run()
-    // should have run
+    // 手动执行后结果已更新。
     expect(dummy).toBe(2)
   })
 
-  // 场景：effect 配置 onTrack 并执行多类读取；验证调试事件完整描述 GET/HAS/ITERATE。
+  /**
+   * effect 读取 foo、检查 bar、枚举键，并配置 onTrack；核对三条 GET、HAS、ITERATE 事件中的 effect、原始 target 和 key，验证普通 effect 的依赖调试事件。
+   */
   it('events: onTrack', () => {
     let events: DebuggerEvent[] = []
     let dummy
@@ -829,12 +997,20 @@ describe('reactivity/effect', () => {
     ])
   })
 
-  // 场景：多个 effect 按顺序收集同一依赖；验证 onTrack 调用顺序与实际读取一致。
+  /**
+   * 两个 effect 依次订阅 ref(0)，onTrack 分别记录 1、2；断言序列为 [1, 2]，验证依赖收集回调按实际注册读取顺序执行。
+   */
   it('debug: the call sequence of onTrack', () => {
     const seq: number[] = []
     const s = ref(0)
 
+    /**
+     * 记录第一条 onTrack 回调的顺序编号 1。
+     */
     const track1 = () => seq.push(1)
+    /**
+     * 记录第二条 onTrack 回调的顺序编号 2。
+     */
     const track2 = () => seq.push(2)
 
     effect(
@@ -856,14 +1032,19 @@ describe('reactivity/effect', () => {
     expect(seq.toString()).toBe('1,2')
   })
 
-  // 场景：effect 配置 onTrigger 并执行各类写操作；验证事件包含新旧值和操作类型。
+  /**
+   * effect 订阅 foo = 1 并配置 onTrigger；自增后核对 SET 事件的 1 → 2，再删除后核对 DELETE 的旧值 2，验证变更类型和新旧值。
+   */
   it('events: onTrigger', () => {
     let events: DebuggerEvent[] = []
     let dummy
     const onTrigger = vi.fn((e: DebuggerEvent) => {
       events.push(e)
     })
-    const obj = reactive<{ foo?: number }>({ foo: 1 })
+    const obj = reactive<{
+      /** 允许删除的数值源字段，用于核对 SET、DELETE 的调试信息。 */
+      foo?: number
+    }>({ foo: 1 })
     const runner = effect(
       () => {
         dummy = obj.foo
@@ -895,14 +1076,28 @@ describe('reactivity/effect', () => {
     })
   })
 
-  // 场景：同一 Dep 有多个订阅者；验证 onTrigger 按原订阅顺序调用。
+  /**
+   * 四个嵌套建立的 effect 订阅同一个 ref(0)，各自 onTrigger 记录编号；Ref 自增后序列为 [1, 2, 3, 4]，验证通知调试回调的顺序。
+   */
   it('debug: the call sequence of onTrigger', () => {
     const seq: number[] = []
     const s = ref(0)
 
+    /**
+     * 记录第一层 onTrigger 的顺序编号 1。
+     */
     const trigger1 = () => seq.push(1)
+    /**
+     * 记录第二层 onTrigger 的顺序编号 2。
+     */
     const trigger2 = () => seq.push(2)
+    /**
+     * 记录第三层 onTrigger 的顺序编号 3。
+     */
     const trigger3 = () => seq.push(3)
+    /**
+     * 记录第四层 onTrigger 的顺序编号 4。
+     */
     const trigger4 = () => seq.push(4)
 
     effect(
@@ -941,7 +1136,9 @@ describe('reactivity/effect', () => {
     expect(seq.toString()).toBe('1,2,3,4')
   })
 
-  // 场景：停止 effect 后继续修改依赖并手动运行 runner；验证自动响应停止但手动调用可用。
+  /**
+   * effect 读取 prop = 1，改为 2 后停止 runner，再改为 3 时 dummy 保留 2；手动调用 runner 后 dummy 为 3，验证 stop 解除自动通知但保留手动执行。
+   */
   it('stop', () => {
     let dummy
     const obj = reactive({ prop: 1 })
@@ -954,12 +1151,14 @@ describe('reactivity/effect', () => {
     obj.prop = 3
     expect(dummy).toBe(2)
 
-    // stopped effect should still be manually callable
+    // 已停止的 runner 仍可手动调用。
     runner()
     expect(dummy).toBe(3)
   })
 
-  // 场景：停止订阅多个属性的 effect；验证从所有 Dep 链完整移除。
+  /**
+   * 同一个 effect 读取两个对象的 prop；分别更新后停止，再修改两者时 dummy 保留停止前的 2、3，验证 stop 清理所有依赖。
+   */
   it('stop with multiple dependencies', () => {
     let dummy1, dummy2
     const obj1 = reactive({ prop: 1 })
@@ -980,12 +1179,14 @@ describe('reactivity/effect', () => {
     obj1.prop = 4
     obj2.prop = 5
 
-    // Check that both dependencies have been cleared
+    // 分别修改两个源，检查停止后两条依赖都不再自动通知。
     expect(dummy1).toBe(2)
     expect(dummy2).toBe(3)
   })
 
-  // 场景：effect 配置 onStop 并重复停止；验证停止钩子只调用一次。
+  /**
+   * effect 配置 onStop spy；调用 stop 后 spy 被调用，验证停止钩子执行。
+   */
   it('events: onStop', () => {
     const onStop = vi.fn()
     const runner = effect(() => {}, {
@@ -996,7 +1197,9 @@ describe('reactivity/effect', () => {
     expect(onStop).toHaveBeenCalled()
   })
 
-  // 场景：已停止 runner 在另一个活动 effect 内手动执行；验证不会把旧 effect 重新激活。
+  /**
+   * 读取 prop 的 runner 停止后不再自动更新；另一 effect 内手动调用该 runner 后，新值 2 被读取，后续 prop = 3 更新为 3，验证停止 runner 的读取归属于外层活动 effect。
+   */
   it('stop: a stopped effect is nested in a normal effect', () => {
     let dummy
     const obj = reactive({ prop: 1 })
@@ -1007,19 +1210,21 @@ describe('reactivity/effect', () => {
     obj.prop = 2
     expect(dummy).toBe(1)
 
-    // observed value in inner stopped effect
-    // will track outer effect as an dependency
+    // 在外层 effect 中调用已经停止的 runner，
+    // 其读取会归入当前活动的外层 effect。
     effect(() => {
       runner()
     })
     expect(dummy).toBe(2)
 
-    // notify outer effect to run
+    // 属性变化通知新建立依赖的外层 effect。
     obj.prop = 3
     expect(dummy).toBe(3)
   })
 
-  // 场景：effect 读取 markRaw 对象的字段；验证其内部变化不会被响应式追踪。
+  /**
+   * reactive 对象的 foo 初始为 markRaw({ prop: 0 })；内部 prop 自增不更新 dummy，替换 foo 为普通对象 { prop: 1 } 后更新为 1，验证 markRaw 内部跳过代理但外层槽位可订阅。
+   */
   it('markRaw', () => {
     const obj = reactive({
       foo: markRaw({
@@ -1037,7 +1242,9 @@ describe('reactivity/effect', () => {
     expect(dummy).toBe(1)
   })
 
-  // 场景：响应式属性从 NaN 写回 NaN；验证不产生无意义触发。
+  /**
+   * effect 读取初值 NaN；再次赋 NaN 后 spy 仍只一次，验证 Object.is 语义将两个 NaN 视为相同值。
+   */
   it('should not be triggered when the value and the old value both are NaN', () => {
     const obj = reactive({
       foo: NaN,
@@ -1048,7 +1255,9 @@ describe('reactivity/effect', () => {
     expect(fnSpy).toHaveBeenCalledTimes(1)
   })
 
-  // 场景：把数组 length 设为 0；验证 length、迭代及全部已有索引依赖被触发。
+  /**
+   * 数组初始为 [1]，两个 effect 分别读取 length 和索引 0；增加索引并 unshift 后长度为 3、首项为 3，再设 length = 0 后为 0 和 undefined，验证截断同时通知长度与被移除索引。
+   */
   it('should trigger all effects when array length is set to 0', () => {
     const observed: any = reactive([1])
     let dummy, record
@@ -1073,7 +1282,9 @@ describe('reactivity/effect', () => {
     expect(record).toBeUndefined()
   })
 
-  // 场景：属性当前值和新值是同一 raw 对象的同一代理；验证不会误触发。
+  /**
+   * 深层 reactive 包装已代理对象，浅层 shallowReactive 也保存一个代理对象；向各槽位重新赋入原先的同一代理后 spy 均只一次，验证同一代理身份不误触发。
+   */
   it('should not be triggered when set with the same proxy', () => {
     const obj = reactive({ foo: 1 })
     const observed: any = reactive({ obj })
@@ -1096,7 +1307,9 @@ describe('reactivity/effect', () => {
     expect(fnSpy2).toHaveBeenCalledTimes(1)
   })
 
-  // 场景：以数字字符串给数组 length 赋值；验证长度归一化后正确触发被截断索引。
+  /**
+   * 两个初始长度 11 的响应式数组都由 effect 读取索引 10；分别给 length 赋数字 2 和字符串 2 后结果相等，验证字符串长度也按数组截断语义通知索引。
+   */
   it('should be triggered when set length with string', () => {
     let ret1 = 'idle'
     let ret2 = 'idle'
@@ -1114,7 +1327,9 @@ describe('reactivity/effect', () => {
   })
 
   describe('readonly + reactive for Map', () => {
-    // 场景：effect 通过 readonly(reactive(Map)) 读取缺失/已有键；验证内层 Map 正确追踪。
+    /**
+     * 对 reactive Map 再包 readonly，effect 读取缺失键；通过内层 Map 设置该键后 spy 从一次变为两次，验证只读外层仍转发内层响应式读取。
+     */
     test('should work with readonly(reactive(Map))', () => {
       const m = reactive(new Map())
       const roM = readonly(m)
@@ -1126,7 +1341,9 @@ describe('reactivity/effect', () => {
       expect(fnSpy).toHaveBeenCalledTimes(2)
     })
 
-    // 场景：effect 以响应式对象作为集合键查询；验证键身份归一化与依赖触发正确。
+    /**
+     * reactive 对象作为 Map 键，初值为 1，effect 通过 readonly 视图读取；同键再设 1 不执行，改为 2 才执行第二次，验证代理键身份归一化与同值过滤。
+     */
     test('should work with observed value as key', () => {
       const key = reactive({})
       const m = reactive(new Map())
@@ -1142,7 +1359,9 @@ describe('reactivity/effect', () => {
       expect(fnSpy).toHaveBeenCalledTimes(2)
     })
 
-    // 场景：effect 调用代理对象 hasOwnProperty；验证属性新增/删除触发 HAS 依赖。
+    /**
+     * effect 调用 hasOwnProperty 检查空对象 foo；添加后为真、删除后为假，spy 依次为 1、2、3，随后添加无关 bar 不增加次数，验证按键追踪自有属性存在性。
+     */
     test('should track hasOwnProperty', () => {
       const obj: any = reactive({})
       let has = false
@@ -1163,14 +1382,16 @@ describe('reactivity/effect', () => {
       expect(fnSpy).toHaveBeenCalledTimes(3)
       expect(has).toBe(false)
 
-      // should not trigger on unrelated key
+      // 无关键 bar 的新增不通知 foo 的存在性订阅。
       obj.bar = 2
       expect(fnSpy).toHaveBeenCalledTimes(3)
       expect(has).toBe(false)
     })
   })
 
-  // 场景：一次操作同时触发 effect 的多个依赖；验证批处理去重后只执行一次。
+  /**
+   * effect 订阅 num = 0 后清空 spy 记录，显式 startBatch 中自增两次再 endBatch；spy 只调用一次，验证批次结束时合并同一 effect 的通知。
+   */
   it('should be triggered once with batching', () => {
     const counter = reactive({ num: 0 })
 
@@ -1187,12 +1408,17 @@ describe('reactivity/effect', () => {
   })
 
   // #10082
-  // 场景：允许递归的 effect 在运行中再次被触发；验证脏状态保留供后续调度。
+  /**
+   * s 初始为 0，父组件 render 读取 s + 1 的 computed 并渲染子组件，子组件 setup 将 s 自增；等待 tick 后 DOM 为 22、父 renderSpy 两次，验证组件渲染期间的源写入能安排后续更新。
+   */
   it('should set dirtyLevel when effect is allowRecurse and is running', async () => {
     const s = ref(0)
     const n = computed(() => s.value + 1)
 
     const Child = {
+      /**
+       * 在子组件初始化时递增 s，并返回读取计算值 n 的渲染函数。
+       */
       setup() {
         s.value++
         return () => n.value
@@ -1201,6 +1427,9 @@ describe('reactivity/effect', () => {
 
     const renderSpy = vi.fn()
     const Parent = {
+      /**
+       * 返回记录 renderSpy、读取 n 并渲染 Child 的父组件渲染函数。
+       */
       setup() {
         return () => {
           renderSpy()
@@ -1216,7 +1445,9 @@ describe('reactivity/effect', () => {
     expect(renderSpy).toHaveBeenCalledTimes(2)
   })
 
-  // 场景：外层暂停收集时主动运行嵌套 effect；验证 run 内会临时强制启用追踪。
+  /**
+   * 外层 effect 在 pauseTracking 区域读取 n 并创建内层 effect；n 自增后外层 spy 一次、内层两次，验证内层 effect 会独立启用依赖收集并恢复外层状态。
+   */
   it('nested effect should force track in untracked zone', () => {
     const n = ref(0)
     const spy1 = vi.fn()
@@ -1238,13 +1469,16 @@ describe('reactivity/effect', () => {
     expect(spy2).toHaveBeenCalledTimes(1)
 
     n.value++
-    // outer effect should not trigger
+    // 外层未订阅 n，因此不重新执行。
     expect(spy1).toHaveBeenCalledTimes(1)
-    // inner effect should trigger
+    // 内层独立建立依赖，因此重新执行。
     expect(spy2).toHaveBeenCalledTimes(2)
   })
 
   describe('dep unsubscribe', () => {
+    /**
+     * 从 Dep.subs 沿 prevSub 计数实际订阅 Link；调用处保证 Dep 存在。
+     */
     function getSubCount(dep: Dep | undefined) {
       let count = 0
       let sub = dep!.subs
@@ -1255,7 +1489,9 @@ describe('reactivity/effect', () => {
       return count
     }
 
-    // 场景：唯一订阅属性的 effect 被停止；验证属性 Dep 从 targetMap 删除。
+    /**
+     * 单个 effect 订阅 prop 后，getSubCount 为 1；更新仍为 1，stop 后为 0，后续更新和手动 runner 均不重新订阅，验证停止清理订阅 Link。
+     */
     it('should remove the dep when the effect is stopped', () => {
       const obj = reactive({ prop: 1 })
       const runner = effect(() => obj.prop)
@@ -1270,7 +1506,9 @@ describe('reactivity/effect', () => {
       expect(getSubCount(dep)).toBe(0)
     })
 
-    // 场景：多个 effect 共享同一属性 Dep；验证只在最后一个订阅者停止时删除。
+    /**
+     * 两个 effect 订阅同一 prop，订阅数先为 2；依次 stop 后为 1、0，后续修改和手动调用停止的 runner 仍为 0，验证仅移除对应订阅且全部停止后不恢复。
+     */
     it('should only remove the dep when the last effect is stopped', () => {
       const obj = reactive({ prop: 1 })
       const runner1 = effect(() => obj.prop)
@@ -1291,9 +1529,18 @@ describe('reactivity/effect', () => {
       expect(getSubCount(dep)).toBe(0)
     })
 
-    // 场景：effect 分支切换后不再使用某属性；验证清理阶段删除无人订阅的 Dep。
+    /**
+     * effect 根据 c = a 选择读取 a，初始 a 与 c 各一个订阅；切换 c = b 后修改 a，检查 b 的订阅数为 1、c 的 Dep 身份和订阅数保持，验证动态分支切换保留仍在使用的依赖。
+     */
     it('should remove the dep when it is no longer used by the effect', () => {
-      const obj = reactive<{ a: number; b: number; c: 'a' | 'b' }>({
+      const obj = reactive<{
+        /** 选择 c = a 时读取的数值字段，用于检查分支依赖替换。 */
+        a: number;
+        /** 选择 c = b 时读取的数值字段，切换后成为活动依赖。 */
+        b: number;
+        /** 仅取 a 或 b 的分支选择键，切换时自身 Dep 应保持不变。 */
+        c: 'a' | 'b'
+      }>({
         a: 1,
         b: 2,
         c: 'a',
@@ -1311,7 +1558,9 @@ describe('reactivity/effect', () => {
   })
 
   describe('onEffectCleanup', () => {
-    // 场景：effect 注册清理函数并重跑/停止；验证每轮前调用且可登记下一轮清理。
+    /**
+     * effect 读取 count 并注册 onEffectCleanup；两次自增分别让 cleanupSpy 达到一次、两次，stop 后第三次调用，验证清理在每次重跑前和停止时执行。
+     */
     it('should get called correctly', async () => {
       const count = ref(0)
       const cleanupEffect = vi.fn()
@@ -1329,12 +1578,14 @@ describe('reactivity/effect', () => {
       await nextTick()
       expect(cleanupEffect).toHaveBeenCalledTimes(2)
 
-      // call it on stop
+      // 停止时再执行一次已登记的清理。
       e.effect.stop()
       expect(cleanupEffect).toHaveBeenCalledTimes(3)
     })
 
-    // 场景：无活动 effect 时调用 onEffectCleanup；验证开发模式发出警告。
+    /**
+     * 在没有活动 effect 的位置调用 onEffectCleanup；断言出现无法找到活动 effect 的警告，验证清理注册上下文检查。
+     */
     it('should warn if called without active effect', () => {
       onEffectCleanup(() => {})
       expect(
@@ -1342,7 +1593,9 @@ describe('reactivity/effect', () => {
       ).toHaveBeenWarned()
     })
 
-    // 场景：无活动 effect 且要求静默注册清理；验证不产生警告。
+    /**
+     * 没有活动 effect 时调用 onEffectCleanup 并传 failSilently = true；断言不发警告，验证静默参数。
+     */
     it('should not warn without active effect when failSilently argument is passed', () => {
       onEffectCleanup(() => {}, true)
       expect(
@@ -1351,7 +1604,9 @@ describe('reactivity/effect', () => {
     })
   })
 
-  // 场景：暂停 effect 后连续修改依赖再恢复；验证暂停期间不执行、恢复后合并补执行。
+  /**
+   * effect 初次读取 foo = 1 后暂停；foo 自增为 2 时 spy 仍一次，resume 立即执行第二次，后续自增执行第三次且结果为 3，验证暂停积累更新与恢复订阅。
+   */
   test('should pause/resume effect', () => {
     const obj = reactive({ foo: 1 })
     const fnSpy = vi.fn(() => obj.foo)
@@ -1374,7 +1629,9 @@ describe('reactivity/effect', () => {
     expect(obj.foo).toBe(3)
   })
 
-  // 场景：暂停 effect 期间多次触发后调用 resume；验证恢复调用同步且只执行一次。
+  /**
+   * effect 初次读取 foo = 1 后暂停，期间连续自增两次；恢复前 foo = 3 而 spy 一次，resume 后 spy 立即为两次，验证多次暂停通知合并为一次恢复执行。
+   */
   test('should be executed once immediately when resume is called', () => {
     const obj = reactive({ foo: 1 })
     const fnSpy = vi.fn(() => obj.foo)

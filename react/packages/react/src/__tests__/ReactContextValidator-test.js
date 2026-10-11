@@ -19,6 +19,7 @@ let act;
 let assertConsoleErrorDev;
 
 describe('ReactContextValidator', () => {
+  // 每例重置模块并重新取 act/诊断工具，隔离各组件类型的 Context 告警缓存。
   beforeEach(() => {
     jest.resetModules();
 
@@ -31,17 +32,11 @@ describe('ReactContextValidator', () => {
   // TODO：此行为会引入对 propTypes 的运行时依赖；应确认使用 Flow 的 ES6 class 不需要该依赖。
 
   // @gate !disableLegacyContext
-  /**
-   * Given：已建立该文件所需的 renderer、容器与测试夹具。
-   * When：执行“should filter out context not in contextTypes”场景的唯一关键操作。
-   * Then：断言 旧版与新版 Context 的校验、传播和诊断契约 的可观察结果。
-   *
-   * 验证机制：同时观察返回值、渲染输出或诊断信息，证明结果来自目标分支。
-   */
+  /** 旧版提供者输出 foo=abc/bar=123，消费者只声明 foo；act 挂载后实例 context 仅含 foo，且两类型各有迁移告警，验证 contextTypes 掩码。 */
   it('should filter out context not in contextTypes', async () => {
-    /** 作为“should filter out context not in contextTypes”场景的组件夹具，隔离待验证的 React 行为。 */
+    /** 旧版 context 消费者，仅声明 foo；由父组件提供 foo/bar，供实例 context 掩码断言。 */
     class Component extends React.Component {
-      /** 渲染“should filter out context not in contextTypes”场景所需的元素树，使断言能够观察协调与提交结果。 */
+      /** 返回空 div，使挂载成功且不影响对实例 context 的检查。 */
       render() {
         return <div />;
       }
@@ -50,12 +45,12 @@ describe('ReactContextValidator', () => {
       foo: PropTypes.string,
     };
 
-    /** 作为“should filter out context not in contextTypes”场景的组件夹具，隔离待验证的 React 行为。 */
+    /** 旧版提供者以 childRef 暴露消费者实例；提供 foo 与 bar，验证未声明字段被过滤。 */
     class ComponentInFooBarContext extends React.Component {
-      /** 保存“should filter out context not in contextTypes”场景需要跨生命周期读取的实例或宿主节点引用。 */
+      /** 每个父实例独立 ref，提交后取得消费者实例及其已过滤 context。 */
       childRef = React.createRef();
 
-      /** 向后代提供“should filter out context not in contextTypes”场景使用的旧版上下文值。 */
+      /** 返回 foo=abc/bar=123，覆盖消费者只订阅 foo 的掩码边界。 */
       getChildContext() {
         return {
           foo: 'abc',
@@ -63,7 +58,7 @@ describe('ReactContextValidator', () => {
         };
       }
 
-      /** 渲染“should filter out context not in contextTypes”场景所需的元素树，使断言能够观察协调与提交结果。 */
+      /** 将独立 childRef 传给消费者，供提交后的 context 检查。 */
       render() {
         return <Component ref={this.childRef} />;
       }
@@ -93,10 +88,7 @@ describe('ReactContextValidator', () => {
   });
 
   // @gate !disableLegacyContext
-  /**
-   * 场景：“should pass next context to lifecycles”。
-   * 机制：验证旧版与新版 Context 的校验、传播和诊断契约，锁定可观察结果与失败边界。
-   */
+  /** 旧版父 foo 从 abc 更新到 def，子只订阅 foo；挂载阶段全读 abc，接收/SCU/更新前 this.context 仍旧且 nextContext 为新，render/didUpdate 已为 def，验证字段过滤和切换时机。 */
   it('should pass next context to lifecycles', async () => {
     let componentDidMountContext;
     let componentDidUpdateContext;
@@ -109,16 +101,16 @@ describe('ReactContextValidator', () => {
     let shouldComponentUpdateContext;
     let shouldComponentUpdateNextContext;
 
-    /** 作为“should pass next context to lifecycles”场景的组件夹具，隔离待验证的 React 行为。 */
+    /** 把 props.foo 与固定 bar 作为旧版 context；两次 root.render 驱动消费者生命周期。 */
     class Parent extends React.Component {
-      /** 向后代提供“should pass next context to lifecycles”场景使用的旧版上下文值。 */
+      /** 根据当前父 props 返回 foo，并附带消费者未订阅的 bar。 */
       getChildContext() {
         return {
           foo: this.props.foo,
           bar: 'bar',
         };
       }
-      /** 渲染“should pass next context to lifecycles”场景所需的元素树，使断言能够观察协调与提交结果。 */
+      /** 返回同一消费者类型，使父 foo 更新复用实例并进入更新生命周期。 */
       render() {
         return <Component />;
       }
@@ -128,40 +120,40 @@ describe('ReactContextValidator', () => {
       bar: PropTypes.string.isRequired,
     };
 
-    /** 作为“should pass next context to lifecycles”场景的组件夹具，隔离待验证的 React 行为。 */
+    /** 逐阶段捕获旧版 context 的探针；区分更新前 this.context 与传入 nextContext。 */
     class Component extends React.Component {
-      /** 初始化“should pass next context to lifecycles”场景所需的实例状态与观测记录。 */
+      /** 把 props/context 交给基类，并记录已过滤的挂载 context；不复制该对象。 */
       constructor(props, context) {
         super(props, context);
         constructorContext = context;
       }
-      /** 记录“should pass next context to lifecycles”场景接收新属性时的旧版生命周期调用。 */
+      /** 记录旧 this.context 与更新参数 nextContext；nextProps 不使用，返回 true 不参与更新判定。 */
       UNSAFE_componentWillReceiveProps(nextProps, nextContext) {
         componentWillReceivePropsContext = this.context;
         componentWillReceivePropsNextContext = nextContext;
         return true;
       }
-      /** 决定“should pass next context to lifecycles”场景是否继续协调，并让测试验证跳过更新的边界。 */
+      /** 记录旧 context 与第三参数 nextContext，然后返回 true 允许更新；props/state 参数只满足生命周期签名。 */
       shouldComponentUpdate(nextProps, nextState, nextContext) {
         shouldComponentUpdateContext = this.context;
         shouldComponentUpdateNextContext = nextContext;
         return true;
       }
-      /** 记录“should pass next context to lifecycles”场景的旧版更新前生命周期调用。 */
+      /** 在 render 前记录旧 context 和第三参数新 context；用于检查切换时机。 */
       UNSAFE_componentWillUpdate(nextProps, nextState, nextContext) {
         componentWillUpdateContext = this.context;
         componentWillUpdateNextContext = nextContext;
       }
-      /** 渲染“should pass next context to lifecycles”场景所需的元素树，使断言能够观察协调与提交结果。 */
+      /** 记录本次渲染读取的新 this.context，再返回最小宿主 div。 */
       render() {
         renderContext = this.context;
         return <div />;
       }
-      /** 记录“should pass next context to lifecycles”场景的挂载提交，并执行仅在挂载后有效的观测。 */
+      /** 提交挂载后捕获 this.context，供与 constructor/render 阶段比较。 */
       componentDidMount() {
         componentDidMountContext = this.context;
       }
-      /** 记录“should pass next context to lifecycles”场景的更新提交，供生命周期顺序断言使用。 */
+      /** 提交更新后捕获 this.context，证明 commit 已可读取新值。 */
       componentDidUpdate() {
         componentDidUpdateContext = this.context;
       }
@@ -203,29 +195,26 @@ describe('ReactContextValidator', () => {
 
     // TODO（bvaughn）：未来删除此测试及对应行为；Fiber 仅为兼容 Stack 的非预期行为而保留它。
   // @gate !disableLegacyContext || !__DEV__
-  /**
-   * 场景：“should warn (but not error) if getChildContext method is missing”。
-   * 机制：验证旧版与新版 Context 的校验、传播和诊断契约，锁定可观察结果与失败边界。
-   */
+  /** A/B 各声明旧版 childContextTypes 却缺少 getChildContext；先挂 A、重渲染 A、再挂 B，act 均完成且诊断各类型一次，验证缺少方法的兼容警告与类型去重。 */
   it('should warn (but not error) if getChildContext method is missing', async () => {
-    /** 作为“should warn (but not error) if getChildContext method is missing”场景的组件夹具，隔离待验证的 React 行为。 */
+    /** 只声明旧版 childContextTypes 而故意缺少 getChildContext；分别作为两个类型验证告警去重。 */
     class ComponentA extends React.Component {
-      /** 声明“should warn (but not error) if getChildContext method is missing”场景消费或提供的上下文类型，用于验证上下文协议。 */
+      /** 声明必需 foo，却不提供实例 getChildContext，触发缺少提供方法的诊断。 */
       static childContextTypes = {
         foo: PropTypes.string.isRequired,
       };
-      /** 渲染“should warn (but not error) if getChildContext method is missing”场景所需的元素树，使断言能够观察协调与提交结果。 */
+      /** 返回 div，使告警场景可以正常完成挂载，避免另引入 render 错误。 */
       render() {
         return <div />;
       }
     }
-    /** 作为“should warn (but not error) if getChildContext method is missing”场景的组件夹具，隔离待验证的 React 行为。 */
+    /** 只声明旧版 childContextTypes 而故意缺少 getChildContext；分别作为两个类型验证告警去重。 */
     class ComponentB extends React.Component {
-      /** 声明“should warn (but not error) if getChildContext method is missing”场景消费或提供的上下文类型，用于验证上下文协议。 */
+      /** 声明必需 foo，却不提供实例 getChildContext，触发缺少提供方法的诊断。 */
       static childContextTypes = {
         foo: PropTypes.string.isRequired,
       };
-      /** 渲染“should warn (but not error) if getChildContext method is missing”场景所需的元素树，使断言能够观察协调与提交结果。 */
+      /** 返回 div，使告警场景可以正常完成挂载，避免另引入 render 错误。 */
       render() {
         return <div />;
       }
@@ -263,45 +252,42 @@ describe('ReactContextValidator', () => {
 
     // TODO（bvaughn）：未来删除此测试及对应行为；Fiber 仅为兼容 Stack 的非预期行为而保留它。
   // @gate !disableLegacyContext
-  /**
-   * 场景：“should pass parent context if getChildContext method is missing”。
-   * 机制：验证旧版与新版 Context 的校验、传播和诊断契约，锁定可观察结果与失败边界。
-   */
+  /** 祖先提供 foo=FOO，中间层声明 bar 却缺少 getChildContext，后代订阅两字段；挂载诊断后 foo 保留、bar 未定义，验证中间错误形状不会丢祖先 context。 */
   it('should pass parent context if getChildContext method is missing', async () => {
-    /** 作为“should pass parent context if getChildContext method is missing”场景的组件夹具，隔离待验证的 React 行为。 */
+    /** 祖先旧版提供者输出 foo=FOO；通过缺少提供方法的中间层检查 context 保留。 */
     class ParentContextProvider extends React.Component {
-      /** 声明“should pass parent context if getChildContext method is missing”场景消费或提供的上下文类型，用于验证上下文协议。 */
+      /** 声明父提供者可以输出的旧版 foo 字段，供后代继承路径使用。 */
       static childContextTypes = {
         foo: PropTypes.string,
       };
-      /** 向后代提供“should pass parent context if getChildContext method is missing”场景使用的旧版上下文值。 */
+      /** 返回固定 foo=FOO，作为旧版 context 传播与新旧 API 冲突场景的输入。 */
       getChildContext() {
         return {
           foo: 'FOO',
         };
       }
-      /** 渲染“should pass parent context if getChildContext method is missing”场景所需的元素树，使断言能够观察协调与提交结果。 */
+      /** 渲染缺少 getChildContext 的中间层，形成祖先→中间→消费者链。 */
       render() {
         return <MiddleMissingContext />;
       }
     }
 
-    /** 作为“should pass parent context if getChildContext method is missing”场景的组件夹具，隔离待验证的 React 行为。 */
+    /** 声明必需 bar 却没有 getChildContext；检查告警后仍传递祖先 foo 的兼容行为。 */
     class MiddleMissingContext extends React.Component {
-      /** 声明“should pass parent context if getChildContext method is missing”场景消费或提供的上下文类型，用于验证上下文协议。 */
+      /** 声明 bar 为必需字符串，故意不实现 getChildContext，构造缺失提供者形状。 */
       static childContextTypes = {
         bar: PropTypes.string.isRequired,
       };
-      /** 渲染“should pass parent context if getChildContext method is missing”场景所需的元素树，使断言能够观察协调与提交结果。 */
+      /** 把 ChildContextConsumer 放在中间层下，让其观察祖先 foo 与缺失 bar。 */
       render() {
         return <ChildContextConsumer />;
       }
     }
 
     let childContext;
-    /** 作为“should pass parent context if getChildContext method is missing”场景的组件夹具，隔离待验证的 React 行为。 */
+    /** 同时订阅 foo/bar 的旧版消费者；把实际 context 写入外部探针供提交后断言。 */
     class ChildContextConsumer extends React.Component {
-      /** 渲染“should pass parent context if getChildContext method is missing”场景所需的元素树，使断言能够观察协调与提交结果。 */
+      /** 保存 this.context 到 childContext 并返回 div；验证 foo 继承与 bar 缺失。 */
       render() {
         childContext = this.context;
         return <div />;
@@ -336,10 +322,7 @@ describe('ReactContextValidator', () => {
     expect(childContext.foo).toBe('FOO');
   });
 
-  /**
-   * 场景：“should pass next context to lifecycles on update”。
-   * 机制：验证旧版与新版 Context 的校验、传播和诊断契约，锁定可观察结果与失败边界。
-   */
+  /** 现代 Provider 从 firstContext 对象换为 secondContext，类用 contextType 订阅；断言挂载/更新各阶段严格引用身份以及 SCU 被调用，验证更新前旧值和 render/commit 新值的切换。 */
   it('should pass next context to lifecycles on update', async () => {
     let componentDidMountContext;
     let componentDidUpdateContext;
@@ -353,41 +336,41 @@ describe('ReactContextValidator', () => {
 
     const Context = React.createContext();
 
-    /** 作为“should pass next context to lifecycles on update”场景的组件夹具，隔离待验证的 React 行为。 */
+    /** 订阅现代 Context 的生命周期探针；父 Provider 替换对象身份，观察旧/新 context 时机与 SCU 调用。 */
     class Component extends React.Component {
-      /** 声明“should pass next context to lifecycles on update”场景消费或提供的上下文类型，用于验证上下文协议。 */
+      /** 订阅本例现代 Context；renderer 把 Provider 值交给 constructor 和 this.context。 */
       static contextType = Context;
-      /** 初始化“should pass next context to lifecycles on update”场景所需的实例状态与观测记录。 */
+      /** 把 props/context 交给基类并保存挂载 context 引用；供严格身份断言。 */
       constructor(props, context) {
         super(props, context);
         constructorContext = context;
       }
-      /** 记录“should pass next context to lifecycles on update”场景接收新属性时的旧版生命周期调用。 */
+      /** 同时记录旧 this.context 与传入的 nextContext；返回 true 不承担 SCU 决策。 */
       UNSAFE_componentWillReceiveProps(nextProps, nextContext) {
         componentWillReceivePropsContext = this.context;
         componentWillReceivePropsNextContext = nextContext;
         return true;
       }
-      /** 决定“should pass next context to lifecycles on update”场景是否继续协调，并让测试验证跳过更新的边界。 */
+      /** 把调用探针设为 true 并允许更新；形参不用于计算，测试只断言调用确实发生。 */
       shouldComponentUpdate(nextProps, nextState, nextContext) {
         shouldComponentUpdateWasCalled = true;
         return true;
       }
-      /** 记录“should pass next context to lifecycles on update”场景的旧版更新前生命周期调用。 */
+      /** 在 render 前捕获旧 this.context 与新 nextContext 对象，供严格身份检查。 */
       UNSAFE_componentWillUpdate(nextProps, nextState, nextContext) {
         componentWillUpdateContext = this.context;
         componentWillUpdateNextContext = nextContext;
       }
-      /** 渲染“should pass next context to lifecycles on update”场景所需的元素树，使断言能够观察协调与提交结果。 */
+      /** 保存当前 this.context 引用并输出 div，证明 render 已读到第二个 Provider 对象。 */
       render() {
         renderContext = this.context;
         return <div />;
       }
-      /** 记录“should pass next context to lifecycles on update”场景的挂载提交，并执行仅在挂载后有效的观测。 */
+      /** 保存挂载提交后的 context 引用，与 constructor/render 共同比较 firstContext。 */
       componentDidMount() {
         componentDidMountContext = this.context;
       }
-      /** 记录“should pass next context to lifecycles on update”场景的更新提交，供生命周期顺序断言使用。 */
+      /** 保存更新提交后的 context 引用，供 secondContext 严格身份断言。 */
       componentDidUpdate() {
         componentDidUpdateContext = this.context;
       }
@@ -426,20 +409,17 @@ describe('ReactContextValidator', () => {
     expect(shouldComponentUpdateWasCalled).toBe(true);
   });
 
-  /**
-   * 场景：“should re-render PureComponents when context Provider updates”。
-   * 机制：验证旧版与新版 Context 的校验、传播和诊断契约，锁定可观察结果与失败边界。
-   */
+  /** PureComponent 没有变化的 props/state，只订阅 Context；Provider 换对象后 renderedContext 必须为新引用，验证 Context 更新驱动消费者重渲染。 */
   it('should re-render PureComponents when context Provider updates', async () => {
     let renderedContext;
 
     const Context = React.createContext();
 
-    /** 作为“should re-render PureComponents when context Provider updates”场景的组件夹具，隔离待验证的 React 行为。 */
+    /** 无 props/state 变化的 PureComponent 消费者；检查 Context 依赖更新可穿过浅比较优化。 */
     class Component extends React.PureComponent {
-      /** 声明“should re-render PureComponents when context Provider updates”场景消费或提供的上下文类型，用于验证上下文协议。 */
+      /** 订阅本例现代 Context；renderer 把 Provider 值交给 constructor 和 this.context。 */
       static contextType = Context;
-      /** 渲染“should re-render PureComponents when context Provider updates”场景所需的元素树，使断言能够观察协调与提交结果。 */
+      /** 把 this.context 写到 renderedContext，观察 Provider 换值是否确实重渲染。 */
       render() {
         renderedContext = this.context;
         return <div />;
@@ -472,53 +452,50 @@ describe('ReactContextValidator', () => {
   });
 
   // @gate !disableLegacyContext || !__DEV__
-  /**
-   * 场景：“should warn if both contextType and contextTypes are defined”。
-   * 机制：验证旧版与新版 Context 的校验、传播和诊断契约，锁定可观察结果与失败边界。
-   */
+  /** 旧版祖先下 A/B 同时声明新旧 Context API；重复挂 A 再切 B，各类型一次冲突与迁移诊断，验证现代订阅优先和警告去重。 */
   it('should warn if both contextType and contextTypes are defined', async () => {
     const Context = React.createContext();
 
-    /** 作为“should warn if both contextType and contextTypes are defined”场景的组件夹具，隔离待验证的 React 行为。 */
+    /** 旧版祖先提供 foo 并透传 children；用于同时定义 contextType/contextTypes 的冲突告警。 */
     class ParentContextProvider extends React.Component {
-      /** 声明“should warn if both contextType and contextTypes are defined”场景消费或提供的上下文类型，用于验证上下文协议。 */
+      /** 声明父提供者可以输出的旧版 foo 字段，供后代继承路径使用。 */
       static childContextTypes = {
         foo: PropTypes.string,
       };
-      /** 向后代提供“should warn if both contextType and contextTypes are defined”场景使用的旧版上下文值。 */
+      /** 返回固定 foo=FOO，作为旧版 context 传播与新旧 API 冲突场景的输入。 */
       getChildContext() {
         return {
           foo: 'FOO',
         };
       }
-      /** 渲染“should warn if both contextType and contextTypes are defined”场景所需的元素树，使断言能够观察协调与提交结果。 */
+      /** 透传本例 children，让 A/B 分别在同一旧版提供者下挂载。 */
       render() {
         return this.props.children;
       }
     }
 
-    /** 作为“should warn if both contextType and contextTypes are defined”场景的组件夹具，隔离待验证的 React 行为。 */
+    /** 同时定义现代 contextType 和旧版 contextTypes；两个独立类型检查冲突告警按类型去重。 */
     class ComponentA extends React.Component {
-      /** 声明“should warn if both contextType and contextTypes are defined”场景消费或提供的上下文类型，用于验证上下文协议。 */
+      /** 旧版 foo 订阅声明，与现代 contextType 冲突；本例要求诊断指出旧版声明被忽略。 */
       static contextTypes = {
         foo: PropTypes.string.isRequired,
       };
-      /** 声明“should warn if both contextType and contextTypes are defined”场景消费或提供的上下文类型，用于验证上下文协议。 */
+      /** 现代 Context 订阅，与旧版 contextTypes 同时存在时获得优先选择。 */
       static contextType = Context;
-      /** 渲染“should warn if both contextType and contextTypes are defined”场景所需的元素树，使断言能够观察协调与提交结果。 */
+      /** 返回空 div，仅触发组件静态 context 声明校验，不读取 context 值。 */
       render() {
         return <div />;
       }
     }
-    /** 作为“should warn if both contextType and contextTypes are defined”场景的组件夹具，隔离待验证的 React 行为。 */
+    /** 同时定义现代 contextType 和旧版 contextTypes；两个独立类型检查冲突告警按类型去重。 */
     class ComponentB extends React.Component {
-      /** 声明“should warn if both contextType and contextTypes are defined”场景消费或提供的上下文类型，用于验证上下文协议。 */
+      /** 旧版 foo 订阅声明，与现代 contextType 冲突；本例要求诊断指出旧版声明被忽略。 */
       static contextTypes = {
         foo: PropTypes.string.isRequired,
       };
-      /** 声明“should warn if both contextType and contextTypes are defined”场景消费或提供的上下文类型，用于验证上下文协议。 */
+      /** 现代 Context 订阅，与旧版 contextTypes 同时存在时获得优先选择。 */
       static contextType = Context;
-      /** 渲染“should warn if both contextType and contextTypes are defined”场景所需的元素树，使断言能够观察协调与提交结果。 */
+      /** 返回空 div，仅触发组件静态 context 声明校验，不读取 context 值。 */
       render() {
         return <div />;
       }
@@ -571,17 +548,14 @@ describe('ReactContextValidator', () => {
     ]);
   });
 
-  /**
-   * 场景：“should warn if an invalid contextType is defined”。
-   * 机制：验证旧版与新版 Context 的校验、传播和诊断契约，锁定可观察结果与失败边界。
-   */
+  /** A 的 contextType 为 Consumer，重复挂载只报一次无效类型建议；再挂 contextType=Provider 的 B 并完成 act，验证当前 Provider 等同 Context 的允许身份，末段没有单独输出断言。 */
   it('should warn if an invalid contextType is defined', async () => {
     const Context = React.createContext();
-    /** 作为“should warn if an invalid contextType is defined”场景的组件夹具，隔离待验证的 React 行为。 */
+    /** 把 Context.Consumer 误填为 contextType，触发现代 Context 类型校验与去重。 */
     class ComponentA extends React.Component {
-      /** 声明“should warn if an invalid contextType is defined”场景消费或提供的上下文类型，用于验证上下文协议。 */
+      /** 故意使用 Consumer 包装类型；renderer 应建议使用 createContext 返回的 Context 对象。 */
       static contextType = Context.Consumer;
-      /** 渲染“should warn if an invalid contextType is defined”场景所需的元素树，使断言能够观察协调与提交结果。 */
+      /** 返回 div，不额外读取错误 context，使断言只观察类型诊断。 */
       render() {
         return <div />;
       }
@@ -602,11 +576,11 @@ describe('ReactContextValidator', () => {
       root.render(<ComponentA />);
     });
 
-    /** 作为“should warn if an invalid contextType is defined”场景的组件夹具，隔离待验证的 React 行为。 */
+    /** 把 Context.Provider 填为 contextType；在当前 Provider 与 Context 同一身份的形状下进行挂载。 */
     class ComponentB extends React.Component {
-      /** 声明“should warn if an invalid contextType is defined”场景消费或提供的上下文类型，用于验证上下文协议。 */
+      /** 使用本例 Context.Provider；当前版本 Provider 即 Context 自身，因此此挂载没有对应无效类型告警断言。 */
       static contextType = Context.Provider;
-      /** 渲染“should warn if an invalid contextType is defined”场景所需的元素树，使断言能够观察协调与提交结果。 */
+      /** 返回 div，让 Provider 身份作为 contextType 的路径完成挂载。 */
       render() {
         return <div />;
       }
@@ -616,16 +590,13 @@ describe('ReactContextValidator', () => {
     });
   });
 
-  /**
-   * 场景：“should not warn when class contextType is null”。
-   * 机制：验证旧版与新版 Context 的校验、传播和诊断契约，锁定可观察结果与失败边界。
-   */
+  /** 类显式 contextType=null 后深读 hello.world，act 拒绝 world 访问错误而没有预期类型诊断；验证 null 可关闭订阅，render 错误仍向外传播。 */
   it('should not warn when class contextType is null', async () => {
-    /** 作为“should not warn when class contextType is null”场景的组件夹具，隔离待验证的 React 行为。 */
+    /** 显式 contextType=null 的类；故意深读空 context，以区分 render 失败和类型诊断。 */
     class Foo extends React.Component {
-      /** 声明“should not warn when class contextType is null”场景消费或提供的上下文类型，用于验证上下文协议。 */
+      /** null 表示关闭 Context 订阅；属于允许值，后续深读错误不应误归为静态类型告警。 */
       static contextType = null; // 便于应用按条件启用或禁用 contextType 声明。
-      /** 渲染“should not warn when class contextType is null”场景所需的元素树，使断言能够观察协调与提交结果。 */
+      /** 故意读取 this.context.hello.world；空 context 的 hello 未定义，应在 world 访问处抛错。 */
       render() {
         return this.context.hello.world;
       }
@@ -639,17 +610,13 @@ describe('ReactContextValidator', () => {
     }).rejects.toThrow("Cannot read properties of undefined (reading 'world')");
   });
 
-  /**
-   * 场景：“should warn when class contextType is undefined”。
-   * 机制：验证旧版与新版 Context 的校验、传播和诊断契约，锁定可观察结果与失败边界。
-   */
+  /** 类静态 contextType=undefined 且深读 hello.world；act 拒绝 world 访问错误，同时断言提示 typo/import/cycle 的诊断，区分配置错误和渲染异常。 */
   it('should warn when class contextType is undefined', async () => {
-    /** 作为“should warn when class contextType is undefined”场景的组件夹具，隔离待验证的 React 行为。 */
+    /** 显式 contextType=undefined 的类；同时检查静态声明诊断和渲染中的深读失败。 */
     class Foo extends React.Component {
-    // 循环依赖常会让组件类型在初始化完成前保持为 `undefined`。
-      // https://github.com/facebook/react/issues/13969
+      /** 循环依赖常会让组件类型在初始化完成前保持为 `undefined`。 https://github.com/facebook/react/issues/13969 */
       static contextType = undefined;
-      /** 渲染“should warn when class contextType is undefined”场景所需的元素树，使断言能够观察协调与提交结果。 */
+      /** 故意深读 hello.world，在未提供有效订阅时触发 world 访问错误。 */
       render() {
         return this.context.hello.world;
       }
@@ -674,19 +641,16 @@ describe('ReactContextValidator', () => {
     ]);
   });
 
-  /**
-   * 场景：“should warn when class contextType is an object”。
-   * 机制：验证旧版与新版 Context 的校验、传播和诊断契约，锁定可观察结果与失败边界。
-   */
+  /** 类静态 contextType={x:42,y:hello} 后深读；act 拒绝 hello 访问错误且 DEV 诊断列出 x/y，验证普通对象不能充当 Context。 */
   it('should warn when class contextType is an object', async () => {
-    /** 作为“should warn when class contextType is an object”场景的组件夹具，隔离待验证的 React 行为。 */
+    /** 把含 x/y 的普通对象误当 Context，检查诊断列出对象键与随后的 render 失败。 */
     class Foo extends React.Component {
-    // 拼写错误可能把预期组件解析为 `undefined`，此处锁定对应诊断。
+      /** 普通对象没有 Context 品牌和值槽；DEV 报告其字段，随后 this.context 读取会失败。 */
       static contextType = {
         x: 42,
         y: 'hello',
       };
-      /** 渲染“should warn when class contextType is an object”场景所需的元素树，使断言能够观察协调与提交结果。 */
+      /** 读取无效对象订阅产生的 undefined context，故意在 hello 访问处失败。 */
       render() {
         return this.context.hello.world;
       }
@@ -708,16 +672,13 @@ describe('ReactContextValidator', () => {
     ]);
   });
 
-  /**
-   * 场景：“should warn when class contextType is a primitive”。
-   * 机制：验证旧版与新版 Context 的校验、传播和诊断契约，锁定可观察结果与失败边界。
-   */
+  /** 类静态 contextType=foo 字符串后深读；act 拒绝 world 访问错误，DEV 诊断报告 string，验证原始值静态声明失败路径。 */
   it('should warn when class contextType is a primitive', async () => {
-    /** 作为“should warn when class contextType is a primitive”场景的组件夹具，隔离待验证的 React 行为。 */
+    /** 把字符串 foo 误当 Context，检查原始类型诊断与空 context 深读失败。 */
     class Foo extends React.Component {
-      /** 声明“should warn when class contextType is a primitive”场景消费或提供的上下文类型，用于验证上下文协议。 */
+      /** 故意使用字符串 foo；应触发 contextType 为 string 的诊断，不构成有效 Context。 */
       static contextType = 'foo';
-      /** 渲染“should warn when class contextType is a primitive”场景所需的元素树，使断言能够观察协调与提交结果。 */
+      /** 故意深读 hello.world，使字符串 contextType 场景同时覆盖 renderer 的异常出口。 */
       render() {
         return this.context.hello.world;
       }
@@ -739,20 +700,17 @@ describe('ReactContextValidator', () => {
     ]);
   });
 
-  /**
-   * 场景：“should warn if you define contextType on a function component”。
-   * 机制：验证旧版与新版 Context 的校验、传播和诊断契约，锁定可观察结果与失败边界。
-   */
+  /** A/B 两函数组件挂同一个 Context 静态属性；重复挂 A 再挂 B，各类型只报一次函数不支持 contextType，验证支持范围和去重。 */
   it('should warn if you define contextType on a function component', async () => {
     const Context = React.createContext();
 
-    /** 作为“should warn if you define contextType on a function component”场景的函数夹具，返回待协调内容或触发目标行为。 */
+    /** 返回 div 的普通函数组件，随后挂静态 contextType；两个独立函数用于检查仅类支持该声明以及按类型去重。 */
     function ComponentA() {
       return <div />;
     }
     ComponentA.contextType = Context;
 
-    /** 作为“should warn if you define contextType on a function component”场景的函数夹具，返回待协调内容或触发目标行为。 */
+    /** 返回 div 的普通函数组件，随后挂静态 contextType；两个独立函数用于检查仅类支持该声明以及按类型去重。 */
     function ComponentB() {
       return <div />;
     }

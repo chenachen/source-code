@@ -6,6 +6,7 @@
   <meta name="description" content="React 19.3 / react-reconciler 0.34 commit 深挖：用具体 Fiber flags 树推演 beforeMutation、mutation、current 切换、layout、passive、错误与卸载清理。" />
   <title>14 · commit、ref 与 effect：一棵 flags 树的完整提交</title>
   <link rel="stylesheet" href="assets/guide.css?v=1" />
+  <link rel="stylesheet" href="assets/engineering-diagrams.css?v=1" />
 </head>
 <body>
 <header class="topbar"><div class="topbar-inner">
@@ -19,7 +20,7 @@
 
 <div class="layout"><main>
 <p class="eyebrow">14 · Deep dive / commit effects</p>
-<h1>同一棵 Fiber 树，怎样变成唯一可见现实</h1>
+<h1>一次提交中的 DOM、ref 与 effect 顺序</h1>
 <p class="lede">render 构建 WIP/finishedWork、flags，并可在 completeWork 创建和组装尚未接入页面的宿主候选；它不修改已提交宿主树。commit 才依次读取旧 DOM、写宿主树、切换
 <code>root.current</code>、连接 ref/layout effect，并在后续冲刷 passive effect。下面不再只列阶段名，而是让一棵带
 <code>Snapshot / Placement / Update / ChildDeletion / Ref / Passive</code> 的树完整跑一遍。</p>
@@ -73,7 +74,8 @@
 <section id="demo-tree"><h2>本页唯一示例：列表更新、快照、ref 与两类 effect 同时发生</h2>
 <p>设已提交页面包含 <code>Measure</code>、标题文本与列表 <code>[A, B]</code>。本轮更新把标题 <code>old</code> 改为
 <code>new</code>，列表改成 <code>[B, C]</code>，同时替换 <code>&lt;section&gt;</code> 的 ref，且 App 的 layout/passive
-依赖都变化。<code>B</code> 复用且保持相对顺序；删除 <code>A</code> 后它自然成为首项，不需要 Placement。<code>C</code> 是唯一新增项。</p>
+依赖都变化。标题以 <code>&lt;h1&gt;{[text]}&lt;/h1&gt;</code> 的数组 children 形成 HostText，section 的 <code>data-mode</code> 也从 old 改为 new。
+<code>B</code> 复用且保持相对顺序；删除 <code>A</code> 后它自然成为首项，不需要 Placement。<code>C</code> 是唯一新增项。</p>
 
 <figure class="source"><figcaption><span>教程伪代码（不可执行）· render 完成后的 finishedWork</span></figcaption><pre>HostRoot  subtreeFlags = Snapshot | ChildDeletion | Placement | Update | Ref | Passive
 └─ App(Function)                 flags = Update | Passive
@@ -91,6 +93,11 @@ App passive effect: old destroyP → new createP</pre></figure>
 <div class="callout"><p><strong>为什么 <code>A</code> 不出现在新 child 链：</strong>它属于旧 current 树。协调器把它放进
 <code>section.deletions</code>，再给 section 写 <code>ChildDeletion</code>；否则只遍历 finishedWork 会永远找不到待卸载子树。</p></div>
 
+<figure class="engineering-diagram" data-diagram="commit14-observation-lanes"><div class="diagram-scroll" style="padding:8px"><svg xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="commit14-observation-lanes-title commit14-observation-lanes-desc" viewBox="0 0 840 1310" width="840" height="1310" style="min-width:840px;width:840px;max-width:none">
+<title id="commit14-observation-lanes-title">具体示树的提交观察窗口与跨角色顺序</title><desc id="commit14-observation-lanes-desc">四条纵向泳道为root.current、Measure、DOM和section ref、App effects。mutation依次删除A、更新标题并插入C、清旧ref、更新section属性、拆旧layout。此阶段root.current仍旧。切换后layout依次连接新ref、didUpdate、创建App layout。passive先拆旧再建新，可以在paint之前。</desc>
+<defs><marker id="commit14-observation-lanes-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/></marker></defs>
+<text class="d-label" x="420" y="30" text-anchor="middle" font-size="18"><tspan x="420" dy="0">同一次普通更新：时间向下，操作分属四个角色</tspan></text><rect class="d-lane" x="128" y="48" width="140" height="1210" rx="8"/><text class="d-label" x="198.0" y="76" text-anchor="middle" font-size="18"><tspan x="198.0" dy="0">root.current</tspan></text><rect class="d-lane" x="282" y="48" width="166" height="1210" rx="8"/><text class="d-label" x="365.0" y="76" text-anchor="middle" font-size="18"><tspan x="365.0" dy="0">Measure</tspan></text><rect class="d-lane" x="466" y="48" width="198" height="1210" rx="8"/><text class="d-label" x="565.0" y="76" text-anchor="middle" font-size="18"><tspan x="565.0" dy="0">DOM / section ref</tspan></text><rect class="d-lane" x="682" y="48" width="148" height="1210" rx="8"/><text class="d-label" x="756.0" y="76" text-anchor="middle" font-size="18"><tspan x="756.0" dy="0">App effects</tspan></text><line x1="16" y1="197" x2="829" y2="197" stroke="#d8d3c8" stroke-width="1"/><line x1="16" y1="677" x2="829" y2="677" stroke="#d8d3c8" stroke-width="1"/><line x1="16" y1="789" x2="829" y2="789" stroke="#d8d3c8" stroke-width="1"/><line x1="16" y1="1080" x2="829" y2="1080" stroke="#d8d3c8" stroke-width="1"/><text class="d-label" x="20" y="122" text-anchor="start" font-size="18"><tspan x="20" dy="0">before</tspan><tspan x="20" dy="24">mutation</tspan></text><text class="d-label" x="20" y="246" text-anchor="start" font-size="18"><tspan x="20" dy="0">mutation</tspan><tspan x="20" dy="24">DOM 逐步变化</tspan></text><text class="d-label" x="20" y="718" text-anchor="start" font-size="18"><tspan x="20" dy="0">current</tspan><tspan x="20" dy="24">切换</tspan></text><text class="d-label" x="20" y="838" text-anchor="start" font-size="18"><tspan x="20" dy="0">layout</tspan><tspan x="20" dy="24">后代先执行</tspan></text><text class="d-label" x="20" y="1135" text-anchor="start" font-size="18"><tspan x="20" dy="0">passive</tspan><tspan x="20" dy="24">先 unmount</tspan><tspan x="20" dy="24">再 mount</tspan></text><rect class="d-state" x="134" y="110" width="128" height="66" rx="10"/><text class="d-label" x="198.0" y="149.0" text-anchor="middle" font-size="18"><tspan x="198.0" dy="0">旧 current</tspan></text><rect class="d-node" x="289" y="105" width="152" height="76" rx="10"/><text class="d-label" x="365.0" y="137.0" text-anchor="middle" font-size="18"><tspan x="365.0" dy="0">snapshot</tspan><tspan x="365.0" dy="24">读取旧 DOM</tspan></text><rect class="d-state" x="473" y="105" width="184" height="76" rx="10"/><text class="d-label" x="565.0" y="137.0" text-anchor="middle" font-size="18"><tspan x="565.0" dy="0">text=old</tspan><tspan x="565.0" dy="24">[A,B] / mode=old</tspan></text><rect class="d-state" x="688" y="110" width="136" height="66" rx="10"/><text class="d-label" x="756.0" y="137.0" text-anchor="middle" font-size="18"><tspan x="756.0" dy="0">旧 L / P</tspan><tspan x="756.0" dy="24">已连接</tspan></text><path class="d-edge" d="M473 143 H442" marker-end="url(#commit14-observation-lanes-arrow)"/><rect class="d-state" x="134" y="222" width="128" height="432" rx="10"/><text class="d-label" x="198.0" y="420.0" text-anchor="middle" font-size="18"><tspan x="198.0" dy="0">旧 current</tspan><tspan x="198.0" dy="24">mutation 中</tspan><tspan x="198.0" dy="24">指针未切换</tspan></text><rect class="d-state" x="289" y="222" width="152" height="90" rx="10"/><text class="d-label" x="365.0" y="261.0" text-anchor="middle" font-size="18"><tspan x="365.0" dy="0">旧 snapshot</tspan><tspan x="365.0" dy="24">已保存</tspan></text><rect class="d-node" x="473" y="220" width="184" height="58" rx="10"/><text class="d-label" x="565.0" y="255.0" text-anchor="middle" font-size="18"><tspan x="565.0" dy="0">① remove A</tspan></text><rect class="d-node" x="473" y="300" width="184" height="82" rx="10"/><text class="d-label" x="565.0" y="335.0" text-anchor="middle" font-size="18"><tspan x="565.0" dy="0">② h1.text=new</tspan><tspan x="565.0" dy="24">B 原位，插入 C</tspan></text><rect class="d-node" x="473" y="404" width="184" height="102" rx="10"/><text class="d-label" x="565.0" y="437.0" text-anchor="middle" font-size="18"><tspan x="565.0" dy="0">③ oldRef detach</tspan><tspan x="565.0" dy="24">text / list 已新</tspan><tspan x="565.0" dy="24">data-mode 仍 old</tspan></text><rect class="d-node" x="473" y="534" width="184" height="58" rx="10"/><text class="d-label" x="565.0" y="569.0" text-anchor="middle" font-size="18"><tspan x="565.0" dy="0">④ mode=new</tspan></text><rect class="d-node" x="688" y="600" width="136" height="64" rx="10"/><text class="d-label" x="756.0" y="626.0" text-anchor="middle" font-size="18"><tspan x="756.0" dy="0">⑤ destroyL</tspan><tspan x="756.0" dy="24">oldDeps</tspan></text><path class="d-edge" d="M565 278 V300" marker-end="url(#commit14-observation-lanes-arrow)"/><path class="d-edge" d="M565 382 V404" marker-end="url(#commit14-observation-lanes-arrow)"/><path class="d-edge" d="M565 506 V534" marker-end="url(#commit14-observation-lanes-arrow)"/><path class="d-edge" d="M565 592 V632 H688" marker-end="url(#commit14-observation-lanes-arrow)"/><rect class="d-node" x="134" y="701" width="128" height="68" rx="10"/><text class="d-label" x="198.0" y="729.0" text-anchor="middle" font-size="18"><tspan x="198.0" dy="0">current =</tspan><tspan x="198.0" dy="24">finishedWork</tspan></text><rect class="d-state" x="289" y="700" width="152" height="68" rx="10"/><text class="d-label" x="365.0" y="728.0" text-anchor="middle" font-size="18"><tspan x="365.0" dy="0">旧 snapshot</tspan><tspan x="365.0" dy="24">继续传递</tspan></text><rect class="d-state" x="473" y="691" width="184" height="88" rx="10"/><text class="d-label" x="565.0" y="717.0" text-anchor="middle" font-size="18"><tspan x="565.0" dy="0">new + [B,C]</tspan><tspan x="565.0" dy="24">mode=new</tspan><tspan x="565.0" dy="24">newRef 待连接</tspan></text><rect class="d-state" x="688" y="700" width="136" height="68" rx="10"/><text class="d-label" x="756.0" y="728.0" text-anchor="middle" font-size="18"><tspan x="756.0" dy="0">L 已清理</tspan><tspan x="756.0" dy="24">旧 P 仍连接</tspan></text><rect class="d-state" x="134" y="810" width="128" height="252" rx="10"/><text class="d-label" x="198.0" y="918.0" text-anchor="middle" font-size="18"><tspan x="198.0" dy="0">新 current</tspan><tspan x="198.0" dy="24">layout 已以</tspan><tspan x="198.0" dy="24">完成树为准</tspan></text><rect class="d-node" x="473" y="810" width="184" height="66" rx="10"/><text class="d-label" x="565.0" y="837.0" text-anchor="middle" font-size="18"><tspan x="565.0" dy="0">⑥ newRef attach</tspan><tspan x="565.0" dy="24">指向复用 section</tspan></text><rect class="d-node" x="289" y="899" width="152" height="80" rx="10"/><text class="d-label" x="365.0" y="921.0" text-anchor="middle" font-size="18"><tspan x="365.0" dy="0">⑦ didUpdate</tspan><tspan x="365.0" dy="24">新 DOM</tspan><tspan x="365.0" dy="24">+ 旧 snapshot</tspan></text><rect class="d-node" x="688" y="998" width="136" height="64" rx="10"/><text class="d-label" x="756.0" y="1024.0" text-anchor="middle" font-size="18"><tspan x="756.0" dy="0">⑧ createL</tspan><tspan x="756.0" dy="24">newDeps</tspan></text><path class="d-edge" d="M473 843 H457 V939 H441" marker-end="url(#commit14-observation-lanes-arrow)"/><path class="d-edge" d="M365 979 V1030 H688" marker-end="url(#commit14-observation-lanes-arrow)"/><rect class="d-state" x="134" y="1120" width="128" height="114" rx="10"/><text class="d-label" x="198.0" y="1183.0" text-anchor="middle" font-size="18"><tspan x="198.0" dy="0">新 current</tspan></text><rect class="d-state" x="289" y="1120" width="152" height="114" rx="10"/><text class="d-label" x="365.0" y="1171.0" text-anchor="middle" font-size="18"><tspan x="365.0" dy="0">Measure 无</tspan><tspan x="365.0" dy="24">passive Hook</tspan></text><rect class="d-state" x="473" y="1120" width="184" height="114" rx="10"/><text class="d-label" x="565.0" y="1159.0" text-anchor="middle" font-size="18"><tspan x="565.0" dy="0">DOM 已是新结果</tspan><tspan x="565.0" dy="24">passive 可再</tspan><tspan x="565.0" dy="24">调度下一轮更新</tspan></text><rect class="d-node" x="688" y="1110" width="136" height="58" rx="10"/><text class="d-label" x="756.0" y="1133.0" text-anchor="middle" font-size="18"><tspan x="756.0" dy="0">⑨ destroyP</tspan><tspan x="756.0" dy="24">oldDeps</tspan></text><rect class="d-node" x="688" y="1190" width="136" height="58" rx="10"/><text class="d-label" x="756.0" y="1213.0" text-anchor="middle" font-size="18"><tspan x="756.0" dy="0">⑩ createP</tspan><tspan x="756.0" dy="24">newDeps</tspan></text><path class="d-edge" d="M756 1168 V1190" marker-end="url(#commit14-observation-lanes-arrow)"/><text class="d-muted" x="420" y="1287" text-anchor="middle" font-size="18"><tspan x="420" dy="0">passive 可在当前任务冲刷；paint 不是这里的阶段边界。</tspan></text>
+</svg></div><figcaption>图 14-1 · 对应本页 finishedWork 示树。数字给出相关动作顺序；状态块说明回调可观察到什么。oldRef detach 的窗口尤其容易漏掉：标题/列表已新，data-mode 与 current 仍旧。数字记录这次普通更新的单次提交。</figcaption></figure>
 <div class="table-wrap"><table><thead><tr><th>时刻</th><th><code>root.current</code></th><th>浏览器 DOM</th><th>ref/effect</th></tr></thead><tbody>
 <tr><td>render 刚结束</td><td>旧树</td><td><code>old + [A,B]</code></td><td>oldRef、旧 create 已连接</td></tr>
 <tr><td>before-mutation 后</td><td>旧树</td><td>仍是 <code>old + [A,B]</code></td><td>Measure 已保存 snapshot</td></tr>
@@ -163,14 +170,16 @@ if (subtreeHasBeforeMutationEffects || rootHasBeforeMutationEffect) {
 }</pre></figure>
 
 <ol class="state-list">
-  <li><strong>删除 A。</strong>section 的 <code>deletions=[A]</code> 先被消费。React 运行 class
-  <code>componentWillUnmount</code>、layout/insertion cleanup、ref detach，并移除正确的顶层宿主节点；Portal 会切换宿主 parent，不能化约成一次固定 <code>removeChild</code>。</li>
+  <li><strong>删除 A。</strong>section 的 <code>deletions=[A]</code> 先被消费。本例 A 是宿主列表项，直接从 section 移除。
+  若被删项还包含类、函数组件或 ref，删除遍历会先执行对应 <code>componentWillUnmount</code>、insertion/layout cleanup 与 ref detach，再移除该分支最上层宿主节点；Portal 会切换到自己的容器。</li>
   <li><strong>更新标题。</strong>HostText 的 <code>Update</code> 最终进入 HostConfig 的 <code>commitTextUpdate</code>，DOM 文本从 old 变为 new。</li>
   <li><strong>复用 B。</strong>B 的 oldIndex=1，而此时 lastPlacedIndex=0，所以不写 <code>Placement</code>。删除 A 后 B 在 DOM 中自然成为首项；本例没有已有节点移动。</li>
   <li><strong>插入 C。</strong>C 无 alternate；<code>commitHostPlacement</code> 递归找到其宿主 descendants 并插入。</li>
-  <li><strong>更新 section 并换 ref。</strong>old/new props 交给 <code>commitHostUpdate</code>；旧 ref 在 mutation detach。新 ref 此时不能 attach，因为整树 mutation 还未完成。</li>
+  <li><strong>换 ref 并更新 section。</strong>先 detach oldRef，再把 old/new props 交给 <code>commitHostUpdate</code> 更新 data-mode。
+  因而 oldRef 的 detach 回调可看到标题和列表已更新，section 属性尚为旧值，current 也仍是旧树；newRef 留到 layout attach。</li>
   <li><strong>拆旧 layout effect。</strong>函数组件更新时，旧 insertion/layout destroy 在 mutation 路径运行；App 的 layout destroy
-  发生在其后代 mutation 后。不能把“所有 layout cleanup 都先于所有 DOM 写入”当成不变量。</li>
+  发生在其后代 mutation 后。每个 Fiber 的 insertion destroy/create 在同一路径连续运行，随后才清理该 Fiber 的 layout effect；
+  全树 layout create 则统一留到 layout 阶段。</li>
 </ol>
 
 <figure class="source"><figcaption><span>删节源码 · ReactFiberCommitWork.js / Placement 被消费（仅省略解释注释）</span>
@@ -277,7 +286,7 @@ if (__DEV__) {
 
 executionContext = prevExecutionContext;</pre></figure>
 <p>本例结果是 <code>destroyP(oldDeps)</code> 先于 <code>createP(newDeps)</code>。删除 A 的 passive cleanup 也在 unmount
-遍历完成；删除树随后断开 child/sibling 等引用，避免已卸载 Fiber 长期保留组件与 DOM。DEV Strict Effects 可能额外模拟一次拆装，不能把开发日志次数当生产次数。</p>
+遍历完成；删除树随后断开 child/sibling 等引用，避免已卸载 Fiber 长期保留组件与 DOM。DEV StrictMode 会对新挂载或重新显示的相关子树额外断开并重连 layout/ref/passive；这次模拟保留宿主节点和组件状态，生产路径不执行。</p>
 
 <figure class="source"><figcaption><span>删节源码 · ReactFiberCommitEffects.js / 环形 Effect 链 mount 核心（省略 profiling、insertion 与 DEV 诊断分支）</span>
 <a href="../../react/packages/react-reconciler/src/ReactFiberCommitEffects.js">打开文件</a></figcaption><pre>const lastEffect = updateQueue !== null ? updateQueue.lastEffect : null;
@@ -300,10 +309,16 @@ if (lastEffect !== null) {
   } while (effect !== firstEffect);
 }</pre></figure>
 <p><code>lastEffect.next</code> 是首节点，所以无需额外数组即可遍历环。只有 <code>(effect.tag &amp; flags) === flags</code>
-的 effect 执行；依赖未变的 effect 仍留在链中，但没有本轮 <code>HookHasEffect</code>，不会无故 destroy/create。</p>
+的 effect 执行。普通更新使用类型位加 <code>HookHasEffect</code>，依赖未变项留在链中而不拆装；
+删除和 Offscreen/Strict Effects 断连重连只传类型位，因此即使依赖未变，也会清理或创建该类型的所有项。</p>
 </section>
 
 <section id="deletion"><h2>删除不是一个 DOM API：它跨两个提交窗口清理</h2>
+<figure class="engineering-diagram" data-diagram="commit14-deletion-windows"><div class="diagram-scroll" style="padding:8px"><svg xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="commit14-deletion-windows-title commit14-deletion-windows-desc" viewBox="0 0 840 877" width="840" height="877" style="min-width:840px;width:840px;max-width:none">
+<title id="commit14-deletion-windows-title">删除A的宿主移除、mounted断开与passive最终分离</title><desc id="commit14-deletion-windows-desc">section的deletions保留旧A入口，新child链已经没有A。mutation从DOM移除A并断A及alternate的return，使它不再mounted。passive后清Fiber字段和DOM内部缓存。A在本页只是宿主节点，没有Hook；若删除函数父子树，两个cleanup窗口都父先子后。</desc>
+<defs><marker id="commit14-deletion-windows-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/></marker></defs>
+<text class="d-label" x="420" y="31" text-anchor="middle" font-size="18"><tspan x="420" dy="0">旧 A 已离开新 child 链，但仍需两个窗口完成清理</tspan></text><rect class="d-state" x="40" y="75" width="240" height="76" rx="10"/><text class="d-label" x="160.0" y="107.0" text-anchor="middle" font-size="18"><tspan x="160.0" dy="0">保留的 section</tspan><tspan x="160.0" dy="24">deletions = [A]</tspan></text><rect class="d-state" x="400" y="75" width="400" height="76" rx="10"/><text class="d-label" x="600.0" y="107.0" text-anchor="middle" font-size="18"><tspan x="600.0" dy="0">旧 A：HostComponent</tspan><tspan x="600.0" dy="24">通过 deletions 找到</tspan></text><path class="d-edge d-async" d="M280 113 H400" marker-end="url(#commit14-deletion-windows-arrow)"/><rect class="d-state" x="40" y="192" width="240" height="112" rx="10"/><text class="d-label" x="160.0" y="230.0" text-anchor="middle" font-size="18"><tspan x="160.0" dy="0">finishedWork child</tspan><tspan x="160.0" dy="24">h1 → B → C</tspan><tspan x="160.0" dy="24">不再包含 A</tspan></text><path class="d-edge" d="M160 151 V192" marker-end="url(#commit14-deletion-windows-arrow)"/><rect class="d-node" x="400" y="211" width="400" height="136" rx="10"/><text class="d-label" x="600.0" y="249.0" text-anchor="middle" font-size="18"><tspan x="600.0" dy="0">mutation</tspan><tspan x="600.0" dy="24">removeChild(section, A)</tspan><tspan x="600.0" dy="24">A / alternate 的 return = null</tspan><tspan x="600.0" dy="24">保留 passive 遍历所需其余关系</tspan></text><path class="d-edge" d="M600 151 V211" marker-end="url(#commit14-deletion-windows-arrow)"/><rect class="d-state" x="40" y="358" width="240" height="82" rx="10"/><text class="d-label" x="160.0" y="393.0" text-anchor="middle" font-size="18"><tspan x="160.0" dy="0">移除 A 后：DOM [B]</tspan><tspan x="160.0" dy="24">A 失去 mounted 身份</tspan></text><path class="d-edge" d="M400 277 H310 V399 H280" marker-end="url(#commit14-deletion-windows-arrow)"/><rect class="d-state" x="40" y="484" width="240" height="112" rx="10"/><text class="d-label" x="160.0" y="522.0" text-anchor="middle" font-size="18"><tspan x="160.0" dy="0">DOM → Fiber / props</tspan><tspan x="160.0" dy="24">内部缓存尚待清理</tspan><tspan x="160.0" dy="24">不等于仍已挂载</tspan></text><rect class="d-node" x="400" y="448" width="400" height="156" rx="10"/><text class="d-label" x="600.0" y="496.0" text-anchor="middle" font-size="18"><tspan x="600.0" dy="0">passive</tspan><tspan x="600.0" dy="24">本例 A 没有 passive Hook</tspan><tspan x="600.0" dy="24">detachFiberAfterEffects 清字段</tspan><tspan x="600.0" dy="24">detachDeletedInstance 清 DOM 缓存</tspan></text><path class="d-edge d-async" d="M600 347 V448" marker-end="url(#commit14-deletion-windows-arrow)"/><text class="d-muted" x="617" y="395" text-anchor="start" font-size="18"><tspan x="617" dy="0">passive 遍历</tspan></text><path class="d-edge d-async" d="M280 540 H400" marker-end="url(#commit14-deletion-windows-arrow)"/><rect class="d-state" x="400" y="645" width="400" height="74" rx="10"/><text class="d-label" x="600.0" y="676.0" text-anchor="middle" font-size="18"><tspan x="600.0" dy="0">框架保留关系断开</tspan><tspan x="600.0" dy="24">外部引用也释放后才可回收</tspan></text><path class="d-edge" d="M600 604 V645" marker-end="url(#commit14-deletion-windows-arrow)"/><rect class="d-condition" x="40" y="754" width="760" height="102" rx="10"/><text class="d-label" x="420.0" y="787.0" text-anchor="middle" font-size="18"><tspan x="420.0" dy="0">若被删项包含函数组件 Parent → Child：</tspan><tspan x="420.0" dy="24">mutation 的 layout cleanup：Parent → Child</tspan><tspan x="420.0" dy="24">passive cleanup 也先 Parent → Child；普通更新则后代先。</tspan></text>
+</svg></div><figcaption>图 14-2 · 本例 A 是宿主列表项。下方条件框说明含函数父子树的删除顺序，与 ReactEffectOrdering-test.js 的断言一致；虚线表示保留入口或后续清理；passive 完成前的保留关系为清理服务，不表示组件还 mounted。</figcaption></figure>
 <div class="table-wrap"><table><thead><tr><th>资源</th><th>删除树 mutation</th><th>后续 passive</th><th>原因</th></tr></thead><tbody>
 <tr><td>class 生命周期</td><td><code>componentWillUnmount</code></td><td>无</td><td>类卸载属于同步提交语义</td></tr>
 <tr><td>layout/insertion effect</td><td>destroy</td><td>无</td><td>不能让已删除组件继续同步观察布局</td></tr>
@@ -312,7 +327,15 @@ if (lastEffect !== null) {
 <tr><td>passive effect</td><td>标记并保留必要 Fiber 关系</td><td>destroy</td><td>不阻塞本次可见提交</td></tr>
 <tr><td>Fiber / DOM 内部关联</td><td><code>detachFiberMutation</code> 只断 deleted Fiber 与 alternate 的 <code>return</code>，使 mounted 检查立即失败</td><td><code>detachFiberAfterEffects</code> 清 child/sibling/state/updateQueue，并由 <code>detachDeletedInstance</code> 移除 DOM→Fiber/props cache</td><td>既要立即失去 mounted 身份，又要保留 passive cleanup 遍历，最后才允许 GC</td></tr>
 </tbody></table></div>
-<p>若 cleanup 抛错，safe wrapper 捕获后继续其余清理。一个 destroy 失败不能成为跳过兄弟 ref、DOM 删除或其他 destroy 的理由。</p>
+<p>删除树的 layout/passive cleanup 都按<strong>父组件先、子组件后</strong>执行；普通更新的 cleanup 和 create 则通常是后代先。
+<a href="../../react/packages/react-reconciler/src/__tests__/ReactEffectOrdering-test.js">ReactEffectOrdering-test.js</a> 的两个用例分别删除带 layout/passive effect 的父子树，均断言日志为 Parent unmount → Child unmount。
+cleanup 的安全调用器逐项捕获错误，因此一个 destroy 失败后，仍可执行剩余 destroy、ref 清理和宿主移除。</p>
+<p><strong>Offscreen 隐藏保留 Fiber 与状态。</strong>现代根隐藏可见子树时，在 mutation 清理 layout、detach ref、调用 class willUnmount，再隐藏宿主节点；
+重新显示时，layout 阶段通过 reappear 路径创建全部 layout effect、attach ref 并调用 class didMount。嵌套边界仍隐藏时会跳过它。
+passive 是否断连另由 <code>OffscreenPassiveEffectsConnected</code> 记录：Activity 等隐藏树会在 passive 阶段断连，重现后重连；
+直接属于 Suspense 的 primary Offscreen 暂时隐藏时保留 passive 连接，因此其订阅不能按“隐藏即全部卸载”推断。
+隐藏树还会执行 cache 引用等 atomic passive 工作；真正 deletion 才继续清理并分离 Fiber。删除已隐藏树时，
+此前已断开的 layout/ref 与 class 生命周期不再重复清理，insertion effect 则仍在删除路径清理。</p>
 </section>
 
 <section id="errors"><h2>错误路径：记录恢复更新，不回滚已经发生的动作</h2>
@@ -356,9 +379,9 @@ if (lastEffect !== null) {
 }</pre></figure>
 <ol class="state-list">
   <li><strong>归属 source。</strong>HostConfig、lifecycle、ref、effect wrapper 都把抛错 Fiber 传入捕获函数。</li>
-  <li><strong>向 return 搜边界。</strong>可用 class error boundary 优先；否则到 HostRoot。</li>
+  <li><strong>从已挂载祖先搜边界。</strong>起点是 <code>nearestMountedAncestor</code>；普通 effect 传 Fiber.return，删除清理传删除树外仍存活的父级。遇到可用 class error boundary 就排队，否则到 HostRoot。</li>
   <li><strong>排 SyncLane。</strong>错误 fallback 是下一次 render/commit，不是当前调用栈里反向执行 DOM API。</li>
-  <li><strong>当前遍历继续。</strong>捕获函数返回，调用侧可继续兄弟 effect 和必要清理。</li>
+  <li><strong>按捕获范围继续。</strong>destroy 逐项捕获，失败后继续同链清理；create 的 catch 包住整条链，失败会跳过同一 Fiber 余下 create，外层仍能继续其他 Fiber。</li>
   <li><strong>恢复树再提交。</strong>边界 fallback 删除失败子树；这会产生新的 flags、mutation 和 cleanup。</li>
 </ol>
 <div class="callout warn"><p><strong>不回滚的可观察含义：</strong>若 C 已插入，随后某个 ref 或
@@ -408,7 +431,7 @@ await act(async () =&gt; {
 <tr><td>When</td><td>只把 foo 从 1 改成 2</td><td>依赖未变的 bar 不带 <code>HookHasEffect</code></td></tr>
 <tr><td>Then</td><td>layout foo destroy/create 在同步回调前；passive foo destroy/create 后续出现</td><td>阶段分离，且同类先 destroy 后 create</td></tr>
 <tr><td>When</td><td>render(null)</td><td>进入 deletion 路径</td></tr>
-<tr><td>Then</td><td>layout 两次清理先于 Sync effect，passive 两次清理延后</td><td>删除跨 mutation/layout 与 passive 两个窗口</td></tr>
+<tr><td>Then</td><td>layout 两次清理先于 Sync effect，passive 两次清理延后</td><td>删除的 layout cleanup 在 mutation，passive cleanup 在 passive</td></tr>
 </tbody></table></div>
 </section>
 
@@ -426,8 +449,8 @@ expect(root).toMatchRenderedOutput('Hi');
 expect(ref1.current).toBe(null);
 expect(ref2.current).toBe(component);</pre></figure>
 <p><strong>Given：</strong><code>shouldComponentUpdate</code> 恒 false。<strong>When：</strong>只替换 ref。
-<strong>Then：</strong>没有 Render 日志，输出不变，但 ref1 清空、ref2 附加。测试直接证明的是 bailout 不能吞掉 ref1→ref2 的最终所有权交换，
-以及 Ref 工作独立于 DOM Update。old ref 在 mutation detach、<code>root.current</code> 随后切换、new ref 在 layout attach 的中间顺序，则由 WorkLoop/CommitWork 阶段源码证明，不能只靠终态断言反推。</p>
+<strong>Then：</strong>没有 Render 日志，输出不变，但 ref1 清空、ref2 附加。Ref flag 独立于是否重新 render：mutation 中 detach ref1，切换 <code>root.current</code>，layout 中 attach ref2。
+上面的终态断言检查两者最终归属；这一阶段顺序对应前文 WorkLoop/CommitWork 的实际调用位置。</p>
 </section>
 
 <section id="test-error"><h2>真实测试 3 · layout 抛错后，后续 layout 仍执行，再提交 fallback</h2>
@@ -467,30 +490,27 @@ expect(ref2.current).toBe(component);</pre></figure>
 ]);
 expect(ReactNoop).toMatchRenderedOutput(&lt;span prop="Error" /&gt;);</pre></figure>
 <p><strong>Given：</strong>reveal 提交中 didMount 会抛错。<strong>When：</strong>资源完成并提交主树。
-<strong>Then：</strong>抛错日志之后仍有 <code>Text:Inside create layout</code>，随后才清理错误树并 render catch。
-该断言直接排除了“首个 commit 错误立即中止并回滚”的解释。</p>
+<strong>Then：</strong>抛错日志之后仍有 <code>Text:Inside create layout</code>，随后清理失败子树并渲染 catch。这里的后续 layout 属于另一个 Fiber，仍会执行；同一函数 Fiber 的 create 失败则跳过该 effect 链剩余项。</p>
 </section>
 
 <section id="walk"><h2>把示例压成一条可复述调用链</h2>
 <ol class="state-list">
   <li><strong>render / complete：</strong>协调、Hooks、begin/complete 各自写本节点 flags，<code>deleteChild</code> 在协调时保存 section.deletions；completeWork 主要完成宿主候选，<code>bubbleProperties</code> 再把后代 flags 上冒到 HostRoot。</li>
   <li><strong>before-mutation：</strong>按 <code>BeforeMutationMask</code> 剪枝；Measure 读取旧 DOM snapshot，renderer 保存 selection。</li>
-  <li><strong>mutation：</strong>section 先卸载 A，再改标题、复用原位 B、插 C、写属性、detach oldRef；旧 layout cleanup 在对应 Fiber 路径执行。</li>
+  <li><strong>mutation：</strong>section 先卸载 A，再改标题、复用原位 B、插 C、detach oldRef、写 section 属性；旧 layout cleanup 在对应 Fiber 路径执行。</li>
   <li><strong>HostConfig 收尾：</strong><code>resetAfterCommit</code> 恢复 DOM 选择/事件状态。</li>
   <li><strong>逻辑提交点：</strong><code>root.current = finishedWork</code>。</li>
-  <li><strong>layout：</strong>didUpdate 收到旧 snapshot；newRef attach；新 layout create 观察新 DOM。</li>
+  <li><strong>layout：</strong>section 的 newRef 先 attach，Measure.didUpdate 再收到旧 snapshot，最后 App 的新 layout create 观察新 DOM。</li>
   <li><strong>passive：</strong>全树 passive unmount 后 mount；删除树完成 passive cleanup 与最终 detach。</li>
   <li><strong>若任一步用户代码抛错：</strong>捕获到边界/根的 SyncLane；当前必要遍历继续，下一轮提交 fallback，不回滚既有动作。</li>
 </ol>
 </section>
 
-<section id="boundaries"><h2>边界与本页没有偷换的概念</h2>
+<section id="boundaries"><h2>本页模型与适用路径</h2>
 <ul class="qa">
   <li>示例 flags 树是<strong>教程状态模型（不可执行）</strong>；flags 名称、字段关系与阶段顺序来自当前源码，具体 Fiber 组合用于集中展示机制。</li>
-  <li>代码框标“连续原码/连续测试原码”时可在链接文件逐字连续匹配；“删节源码”明确写出省略内容；状态模型统一标“教程伪代码”。</li>
-  <li>View Transition、Offscreen 隐藏/重连、资源 hoist、persistence renderer 有额外 phase/flag 分支；本页主线针对 DOM mutation renderer。</li>
-  <li>“通常 paint 后 passive”不是浏览器时序硬保证；同步 flush、离散更新或嵌套更新可能改变实际 paint 机会。</li>
-  <li>commit 不回滚是当前控制流事实；不是建议用户依赖某个失败提交留下的瞬态 DOM。</li>
+  <li>本页主线针对 DOM mutation renderer。View Transition 另在 layout 后执行 after-mutation 测量，然后才进入 spawned/passive 收尾；普通同步路径跳过这次动画测量。</li>
+  <li>现代根提交包含 SyncLane 时，<code>flushSpawnedWork</code> 在当前任务调用 <code>flushPendingEffects</code>，passive 可以先于 paint；新 render 前的待办冲刷和 layout 派生同步更新也会提前处理 passive。</li>
 </ul>
 </section>
 

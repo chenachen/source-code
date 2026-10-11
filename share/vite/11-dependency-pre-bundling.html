@@ -506,6 +506,7 @@ a:hover {
 .prose p,
 .prose li {
   color: var(--text);
+  overflow-wrap: anywhere;
 }
 
 .prose p {
@@ -762,6 +763,124 @@ code {
   border-radius: var(--radius);
   background: var(--surface);
   box-shadow: var(--shadow);
+}
+
+.engineering-diagram {
+  min-width: 0;
+  margin: 28px 0;
+  padding: 18px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.engineering-diagram > figcaption {
+  margin-bottom: 12px;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 750;
+  line-height: 1.5;
+}
+
+.diagram-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.diagram-toolbar button,
+.diagram-toolbar a {
+  display: inline-flex;
+  min-height: 36px;
+  padding: 6px 10px;
+  align-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: var(--surface-soft);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.diagram-toolbar button:hover,
+.diagram-toolbar a:hover {
+  border-color: var(--brand);
+  color: var(--brand-strong);
+}
+
+.diagram-scale {
+  min-width: 42px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.diagram-viewport {
+  max-width: 100%;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #f8fafc;
+  overscroll-behavior: contain;
+}
+
+.diagram-canvas {
+  max-width: none;
+}
+
+.diagram-canvas > svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.engineering-diagram .diagram-hint {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+body.diagram-is-expanded {
+  overflow: hidden;
+}
+
+body.diagram-is-expanded::after {
+  position: fixed;
+  z-index: 999;
+  inset: 0;
+  background: rgb(0 0 0 / 65%);
+  content: '';
+}
+
+.engineering-diagram.is-expanded {
+  position: fixed;
+  z-index: 1000;
+  inset: 16px;
+  display: flex;
+  margin: 0;
+  flex-direction: column;
+  box-shadow: var(--shadow);
+}
+
+.engineering-diagram.is-expanded .diagram-viewport {
+  min-height: 0;
+  flex: 1;
+}
+
+@media (max-width: 700px) {
+  .engineering-diagram {
+    padding: 12px;
+  }
+
+  .engineering-diagram.is-expanded {
+    inset: 6px;
+  }
 }
 
 .flow-caption {
@@ -1363,7 +1482,7 @@ code {
     break-inside: avoid;
   }
 }
-</style><script>(function(){try{var t=localStorage.getItem("vite-guide-theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(_){}})();</script></head><body><a class="skip-link" href="#article-start">跳到正文</a><div class="reading-progress" aria-hidden="true"><span data-reading-progress></span></div><header class="topbar"><div class="topbar-inner"><button class="icon-button nav-toggle" type="button" data-nav-toggle aria-expanded="false" aria-label="打开模块导航">☰</button><a class="brand" href="index.html"><span class="brand-mark">V</span><span class="brand-text">Vite 源码解剖</span></a><span class="topbar-path">转换与增量更新 / 11 依赖预构建</span><div class="topbar-actions"><button class="icon-button" type="button" data-theme-toggle aria-label="切换主题">◐</button></div></div></header><div class="page-grid"><nav class="site-nav" aria-label="模块导航"><a class="nav-home" href="index.html"><span>⌂</span><span>阅读总览</span></a><section class="nav-group"><h2 class="nav-group-title">全景</h2><ul class="nav-list"><li><a href="00-system-map-and-end-to-end.html"><span class="nav-code">00</span><span>系统全景与请求链</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">启动与配置</h2><ul class="nav-list"><li><a href="01-cli-and-startup.html"><span class="nav-code">01</span><span>CLI 与启动</span></a></li><li><a href="02a-env-loading.html"><span class="nav-code">02A</span><span>环境文件加载</span></a></li><li><a href="02b-config-resolution.html"><span class="nav-code">02B</span><span>配置加载与解析</span></a></li><li><a href="02c-define-client-injection-and-json.html"><span class="nav-code">02C</span><span>Define、注入与 JSON</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">开发服务器核心</h2><ul class="nav-list"><li><a href="03-plugin-system.html"><span class="nav-code">03</span><span>插件体系</span></a></li><li><a href="04-dev-server-lifecycle.html"><span class="nav-code">04</span><span>Dev Server 生命周期</span></a></li><li><a href="05-environment-api.html"><span class="nav-code">05</span><span>Environment API</span></a></li><li><a href="06-middleware-request-pipeline.html"><span class="nav-code">06</span><span>中间件与请求入口</span></a></li><li><a href="07-module-resolution.html"><span class="nav-code">07</span><span>模块解析</span></a></li><li><a href="08-transform-and-module-graph.html"><span class="nav-code">08</span><span>Transform 与模块图</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">转换与增量更新</h2><ul class="nav-list"><li><a href="09-html-transform.html"><span class="nav-code">09</span><span>HTML 转换</span></a></li><li><a href="10-import-analysis.html"><span class="nav-code">10</span><span>Import Analysis</span></a></li><li><a href="11-dependency-pre-bundling.html" aria-current="page"><span class="nav-code">11</span><span>依赖预构建</span></a></li><li><a href="12-hmr.html"><span class="nav-code">12</span><span>HMR</span></a></li><li><a href="12b-bundled-dev.html"><span class="nav-code">12B</span><span>Bundled Dev</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">资源管线</h2><ul class="nav-list"><li><a href="13a-css-pipeline.html"><span class="nav-code">13A</span><span>CSS 管线</span></a></li><li><a href="13b-asset-worker-wasm.html"><span class="nav-code">13B</span><span>Asset、Worker、Wasm</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">生产构建</h2><ul class="nav-list"><li><a href="14a-build-orchestration.html"><span class="nav-code">14A</span><span>生产构建编排</span></a></li><li><a href="14b-build-output-and-preload.html"><span class="nav-code">14B</span><span>Preload 与构建输出</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">SSR 与运行时</h2><ul class="nav-list"><li><a href="15a-ssr-transform-and-loading.html"><span class="nav-code">15A</span><span>SSR 变换与加载</span></a></li><li><a href="15b-module-runner.html"><span class="nav-code">15B</span><span>Module Runner</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">公共边界</h2><ul class="nav-list"><li><a href="16-public-api-diagnostics-and-types.html"><span class="nav-code">16</span><span>公共 API 与类型</span></a></li></ul></section></nav><main class="article" id="article-start"><header class="article-hero"><div class="eyebrow"><span class="pill">11</span><span>转换与增量更新</span></div><h1>11. 依赖预构建</h1><p class="lede">预构建允许先启动、后台发现、候选构建、hash 比较和目录换代，是并发状态机而非一次扫描。</p><div class="hero-meta"><span>证据基线：v8.2.1</span><span>commit <code>421615865dad</code></span><span>约 25 分钟</span><a href="../../vite/reading-guides/11-dependency-pre-bundling.md">查看 Markdown 原稿</a></div></header><section class="focus-card" aria-label="阅读重点与边界"><div><h2>本页重点</h2><p>预构建允许先启动、后台发现、候选构建、hash 比较和目录换代，是并发状态机而非一次扫描。</p></div><div class="boundary"><h3>推导边界</h3><p>Scanner 是预测；真实 crawl 会校验与补漏，候选结果也可能丢弃重跑。</p></div></section><aside class="evidence-note"><h3>证据口径</h3><p>正文保留目标版本中的真实源码、状态说明与代表性测试映射。测试源码用于锁定设计契约；本轮没有执行测试命令。</p></aside><article class="prose"><h2 id="阅读边界"><a class="heading-anchor" href="#%E9%98%85%E8%AF%BB%E8%BE%B9%E7%95%8C" aria-label="链接到本节">#</a>阅读边界</h2>
+</style><script>(function(){try{var t=localStorage.getItem("vite-guide-theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(_){}})();</script></head><body><a class="skip-link" href="#article-start">跳到正文</a><div class="reading-progress" aria-hidden="true"><span data-reading-progress></span></div><header class="topbar"><div class="topbar-inner"><button class="icon-button nav-toggle" type="button" data-nav-toggle aria-expanded="false" aria-label="打开模块导航">☰</button><a class="brand" href="index.html"><span class="brand-mark">V</span><span class="brand-text">Vite 源码解剖</span></a><span class="topbar-path">转换与增量更新 / 11 依赖预构建</span><div class="topbar-actions"><button class="icon-button" type="button" data-theme-toggle aria-label="切换主题">◐</button></div></div></header><div class="page-grid"><nav class="site-nav" aria-label="模块导航"><a class="nav-home" href="index.html"><span>⌂</span><span>阅读总览</span></a><section class="nav-group"><h2 class="nav-group-title">全景</h2><ul class="nav-list"><li><a href="00-system-map-and-end-to-end.html"><span class="nav-code">00</span><span>系统全景与请求链</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">启动与配置</h2><ul class="nav-list"><li><a href="01-cli-and-startup.html"><span class="nav-code">01</span><span>CLI 与启动</span></a></li><li><a href="02a-env-loading.html"><span class="nav-code">02A</span><span>环境文件加载</span></a></li><li><a href="02b-config-resolution.html"><span class="nav-code">02B</span><span>配置加载与解析</span></a></li><li><a href="02c-define-client-injection-and-json.html"><span class="nav-code">02C</span><span>Define、注入与 JSON</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">开发服务器核心</h2><ul class="nav-list"><li><a href="03-plugin-system.html"><span class="nav-code">03</span><span>插件体系</span></a></li><li><a href="04-dev-server-lifecycle.html"><span class="nav-code">04</span><span>Dev Server 生命周期</span></a></li><li><a href="05-environment-api.html"><span class="nav-code">05</span><span>Environment API</span></a></li><li><a href="06-middleware-request-pipeline.html"><span class="nav-code">06</span><span>中间件与请求入口</span></a></li><li><a href="07-module-resolution.html"><span class="nav-code">07</span><span>模块解析</span></a></li><li><a href="08-transform-and-module-graph.html"><span class="nav-code">08</span><span>Transform 与模块图</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">转换与增量更新</h2><ul class="nav-list"><li><a href="09-html-transform.html"><span class="nav-code">09</span><span>HTML 转换</span></a></li><li><a href="10-import-analysis.html"><span class="nav-code">10</span><span>Import Analysis</span></a></li><li><a href="11-dependency-pre-bundling.html" aria-current="page"><span class="nav-code">11</span><span>依赖预构建</span></a></li><li><a href="12-hmr.html"><span class="nav-code">12</span><span>HMR</span></a></li><li><a href="12b-bundled-dev.html"><span class="nav-code">12B</span><span>Bundled Dev</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">资源管线</h2><ul class="nav-list"><li><a href="13a-css-pipeline.html"><span class="nav-code">13A</span><span>CSS 管线</span></a></li><li><a href="13b-asset-worker-wasm.html"><span class="nav-code">13B</span><span>Asset、Worker、Wasm</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">生产构建</h2><ul class="nav-list"><li><a href="14a-build-orchestration.html"><span class="nav-code">14A</span><span>生产构建编排</span></a></li><li><a href="14b-build-output-and-preload.html"><span class="nav-code">14B</span><span>Preload 与构建输出</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">SSR 与运行时</h2><ul class="nav-list"><li><a href="15a-ssr-transform-and-loading.html"><span class="nav-code">15A</span><span>SSR 变换与加载</span></a></li><li><a href="15b-module-runner.html"><span class="nav-code">15B</span><span>Module Runner</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">公共边界</h2><ul class="nav-list"><li><a href="16-public-api-diagnostics-and-types.html"><span class="nav-code">16</span><span>公共 API 与类型</span></a></li></ul></section></nav><main class="article" id="article-start"><header class="article-hero"><div class="eyebrow"><span class="pill">11</span><span>转换与增量更新</span></div><h1>11. 依赖预构建</h1><p class="lede">预构建允许先启动、后台发现、候选构建、hash 比较和目录换代，是并发状态机而非一次扫描。</p><div class="hero-meta"><span>证据基线：v8.2.1</span><span>commit <code>421615865dad</code></span><span>约 26 分钟</span><a href="../../vite/reading-guides/11-dependency-pre-bundling.md">查看 Markdown 原稿</a></div></header><aside class="boundary-note" aria-label="阅读范围"><p>Scanner 是预测；真实 crawl 会校验与补漏，候选结果也可能丢弃重跑。</p></aside><article class="prose"><h2 id="阅读边界"><a class="heading-anchor" href="#%E9%98%85%E8%AF%BB%E8%BE%B9%E7%95%8C" aria-label="链接到本节">#</a>阅读边界</h2>
 <p>本章研究开发服务器怎样发现第三方依赖、把它们预构建为浏览器可消费的 ESM、缓存结果，并在运行期
 发现漏网依赖时安全换代。它不只是一次打包，而是一套允许“服务器先启动、优化在后台完成、请求按需
 等待”的并发状态机。</p>
@@ -1479,8 +1598,9 @@ linked/workspace package      → 当作项目源码继续 crawl，直到遇到�
 CSS/asset/worker/query         → 交给对应 Vite 插件，不进入 JS 依赖预构建
 </code></pre></figure><h2 id="两条发现路径-预测与校验"><a class="heading-anchor" href="#%E4%B8%A4%E6%9D%A1%E5%8F%91%E7%8E%B0%E8%B7%AF%E5%BE%84-%E9%A2%84%E6%B5%8B%E4%B8%8E%E6%A0%A1%E9%AA%8C" aria-label="链接到本节">#</a>两条发现路径：预测与校验</h2>
 <h3 id="scanner-快速预测"><a class="heading-anchor" href="#scanner-%E5%BF%AB%E9%80%9F%E9%A2%84%E6%B5%8B" aria-label="链接到本节">#</a>scanner：快速预测</h3>
-<p>冷启动时 <code>scanImports()</code> 创建一个轻量 <code>ScanEnvironment</code>，复用插件容器和 resolve 配置，但不允许访问
-模块图或完整 server 状态。它计算入口后调用 Rolldown，只做依赖图遍历，不生成正式产物：</p>
+<p>开发服务器冷启动把 <code>DevEnvironment</code> 窄化成 <code>devToScanEnvironment()</code> 视图后交给 <code>scanImports()</code>，
+复用插件容器与 resolve 配置，视图不暴露模块图或完整 server 状态。单独调用 <code>optimizeDeps()</code> 时则创建
+轻量 <code>ScanEnvironment</code>。扫描计算入口后调用 Rolldown，只遍历依赖图，不生成正式产物：</p>
 <figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">optimizeDeps.entries
   优先于顶层 input / build.rolldownOptions.input
   优先于项目内所有 HTML
@@ -1557,7 +1677,9 @@ runtime，会触发优化器重跑。相关历史修复见
 先解析，不能把 <code>#alias/*.js</code> 当普通磁盘 pattern；对应修复见
 <a href="https://github.com/vitejs/vite/pull/22018" target="_blank" rel="noreferrer noopener">PR #22018</a>。</p>
 <h3 id="入口解析必须复用插件与-root"><a class="heading-anchor" href="#%E5%85%A5%E5%8F%A3%E8%A7%A3%E6%9E%90%E5%BF%85%E9%A1%BB%E5%A4%8D%E7%94%A8%E6%8F%92%E4%BB%B6%E4%B8%8E-root" aria-label="链接到本节">#</a>入口解析必须复用插件与 root</h3>
-<p>顶层 <code>input</code> 可能是插件提供的虚拟 ID，所以入口也要经过插件容器解析；支持该场景见
+<p>顶层 <code>input</code> 可以先写成插件认识的虚拟 ID，再由插件解析到实际存在、可扫描的文件；入口解析后仍会
+经过 <code>isScannable()</code> 和 <code>fs.existsSync()</code> 过滤，因此这条路径要求最终落在磁盘文件。对应测试的
+<code>virtual:entry</code> 正是被映射到 fixture 的 <code>entry.js</code>；支持该场景见
 <a href="https://github.com/vitejs/vite/pull/23101" target="_blank" rel="noreferrer noopener">PR #23101</a>。相对
 <code>build.rolldownOptions.input</code> 必须以项目 root 为基准，而不是 <code>process.cwd()</code>；回归修复见
 <a href="https://github.com/vitejs/vite/pull/22769" target="_blank" rel="noreferrer noopener">PR #22769</a>。</p>
@@ -1621,16 +1743,14 @@ exportsData  提前启动的入口导出分析 Promise
 </code></pre></figure><p>关键设计是“路径先确定，内容后落盘”。<code>registerMissingImport()</code> 可以立即把 <code>file?v=browserHash</code> 返回给
 Import Analysis，但 <code>optimizedDepsPlugin.load()</code> 在读文件前等待 <code>processing</code>。因此单个请求被精准
 阻塞，服务器其他初始化和源码转换不必等待整个依赖打包。</p>
-<p>每批新依赖共享一个 <code>processing</code> Promise。开始一轮打包时，当前 Promise 被封存进队列，新发现项绑定
-下一批 Promise。只有某次真正包含这些依赖的结果提交后，队列才统一 resolve；被丢弃的中间结果不能
-提前放行等待请求。</p>
+<p>每批新依赖共享一个 <code>processing</code> Promise。开始一轮打包时，当前 Promise 被封存进队列，随后发现项
+绑定下一批 Promise。正常提交会放行已封存批次；因又有 missing 而取消候选时仍保留队列，让请求等待
+更完整的重跑结果。构建失败或关闭分支也会 resolve 队列以结束等待，此时请求仍要做版本检查和文件
+读取，Promise fulfilled 本身不表示构建成功。</p>
 <h3 id="决定性源码-2-missing-先获得稳定-url-再等待内容"><a class="heading-anchor" href="#%E5%86%B3%E5%AE%9A%E6%80%A7%E6%BA%90%E7%A0%81-2-missing-%E5%85%88%E8%8E%B7%E5%BE%97%E7%A8%B3%E5%AE%9A-url-%E5%86%8D%E7%AD%89%E5%BE%85%E5%86%85%E5%AE%B9" aria-label="链接到本节">#</a>决定性源码 2：missing 先获得稳定 URL，再等待内容</h3>
 <p>来源：<code>packages/vite/src/node/optimizer/optimizer.ts</code>，<code>registerMissingImport()</code> 与
 <code>addMissingDep()</code>。这是“路径先确定、文件后落盘”的真正写入点。</p>
-<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">function registerMissingImport(
-  id: string,
-  resolved: string,
-): OptimizedDepInfo {
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">function registerMissingImport(id: string, resolved: string): OptimizedDepInfo {
   let missing = metadata.discovered[id]
   if (missing) {
     return missing
@@ -1813,8 +1933,7 @@ const needsInteropMismatch = findInteropMismatches(
   result.metadata.optimized,
 )
 const scannerMissedDeps = crawlDeps.some((dep) =&gt; !scanDeps.includes(dep))
-const outdatedResult =
-  needsInteropMismatch.length &gt; 0 || scannerMissedDeps
+const outdatedResult = needsInteropMismatch.length &gt; 0 || scannerMissedDeps
 
 if (outdatedResult) {
   result.cancel()
@@ -1862,8 +1981,8 @@ if (outdatedResult) {
 <li>需要 reload，但打包期间又发现依赖：取消当前结果，接续 missing 登记时已经安排的 debounce/rerun，再打包
 更完整快照，避免连续两次 reload；这条分支不执行 <code>onCrawlEnd()</code> 的 scan∪crawl 合并代码，也不保证立即开始。</li>
 </ul>
-<p>最后一种分支最容易漏读：已经花时间打好的结果仍不能发布，因为它一发布就知道还要再次换代。批次
-Promise 继续等待，直到真正包含依赖的后续结果提交。</p>
+<p>最后一种分支最容易漏读：已经花时间打好的结果仍不能发布，因为它一发布就知道还要再次换代。已封存批次
+Promise 保持等待，后续结果正常提交或失败/关闭处理才将它放行。</p>
 <h3 id="决定性源码-5-reload-判定-无感合并与丢弃重批"><a class="heading-anchor" href="#%E5%86%B3%E5%AE%9A%E6%80%A7%E6%BA%90%E7%A0%81-5-reload-%E5%88%A4%E5%AE%9A-%E6%97%A0%E6%84%9F%E5%90%88%E5%B9%B6%E4%B8%8E%E4%B8%A2%E5%BC%83%E9%87%8D%E6%89%B9" aria-label="链接到本节">#</a>决定性源码 5：reload 判定、无感合并与丢弃重批</h3>
 <p>来源：<code>packages/vite/src/node/optimizer/optimizer.ts</code>，<code>runOptimizer()</code>。源码删节摘录用教程注释标出
 原位补全与日志省略；决定分支保持原样。</p>
@@ -1910,7 +2029,7 @@ processing 目录 → 正式 deps 目录
 后台删除 backup
 </code></pre></figure><p>相较“删除正式目录，再移动新目录”，两次 rename 把缓存不可用窗口压到最小，也避免请求读到半写文件。
 POSIX 使用同步 rename；Windows 的杀毒软件可能短暂锁目录，所以 <code>safeRename()</code> 对 EACCES/EPERM 重试，
-并验证目标是否已经落地。临时目录换代方案见
+只在目标路径仍不存在时再次调用 rename；目标已存在时仍按原锁冲突错误继续等待，超时后报错。临时目录换代方案见
 <a href="https://github.com/vitejs/vite/pull/12622" target="_blank" rel="noreferrer noopener">PR #12622</a>。异常退出残留超过 24 小时的临时目录在下次启动
 异步清理，不阻塞当前冷启动。</p>
 <p>这不是跨两次 rename 的事务：若旧正式目录已移到 backup，而 processing→正式目录这一步仍失败，源码没有
@@ -2013,7 +2132,8 @@ if (info) {
 try {
   const [code, map] = await Promise.all([
     fsp.readFile(file, &#039;utf-8&#039;),
-    fsp.readFile(`${file}.map`, &#039;utf-8&#039;)
+    fsp
+      .readFile(`${file}.map`, &#039;utf-8&#039;)
       .then((map) =&gt; JSON.parse(map))
       .catch(() =&gt; null),
   ])
@@ -2024,8 +2144,10 @@ try {
   }
   throwFileNotFoundInOptimizedDep(id)
 }
-</code></pre></figure><p>等待后必须再次比较 metadata 引用。原因：等待期间 <code>commitProcessing()</code> 可能整体替换快照；只做等待前
-校验存在 TOCTOU 窗口。错误分支也要按源码精确区分：</p>
+</code></pre></figure><p>等待期间 <code>commitProcessing()</code> 可能整体替换 metadata，所以放行后要用新快照再次按文件查找。这里
+比较的是所持 <code>info.browserHash</code> 与新记录，不是重新比较 URL 的原始 <code>?v=</code>。提交还会原位补全旧
+<code>discovered</code> 对象的 hash、interop，并清 <code>processing</code>，因此持有该对象的请求能看到最终信息；其他
+旧记录若已与新快照不同，则进入过期分支。具体错误条件如下：</p>
 <div class="table-scroll"><table>
 <thead>
 <tr>
@@ -2049,10 +2171,10 @@ try {
 <td>优化等待异常</td>
 </tr>
 <tr>
-<td>等待期间 metadata 换代且 hash 改变</td>
+<td>等待期间 metadata 换代，原 <code>info.browserHash</code> 与新文件记录不同</td>
 <td><code>ERR_OUTDATED_OPTIMIZED_DEP</code></td>
 <td style="text-align:right">504</td>
-<td>等候者已落后于新快照</td>
+<td>等候者所持记录已与当前快照分离</td>
 </tr>
 <tr>
 <td><code>readFile</code> 失败且 URL 带 hash、未忽略过期</td>
@@ -2068,10 +2190,10 @@ try {
 </tr>
 </tbody>
 </table></div>
-<p>当前 <code>createDepsOptimizer()</code> 协调代码只显式 <code>resolve()</code> 批次 Promise，没有找到主动 <code>reject()</code>；因此
-processing-error 504 是插件协议的防御分支，不能把它写成“每次 Rolldown 构建失败都会走 504”。构建
-失败在 <code>runOptimizer()</code> 自己的 catch 中记录并清 <code>discovered</code>，实际 HTTP 结果还取决于 URL/hash 与文件
-读取分支。</p>
+<p><code>createDepsOptimizer()</code> 在构建失败时记录错误、resolve 已封存批次并清空 <code>discovered</code>，没有通过
+批次 Promise 拒绝请求。等候者继续走版本与文件检查：带 hash 且未忽略过期的缺文件请求返回过期
+504；无 hash 或开启 <code>ignoreOutdatedRequests</code> 时返回缺文件 404。处理错误 504 则仅在所等 Promise
+本身 reject 时产生。</p>
 <h2 id="真实完整测试-jsx-runtime-扫描后的模块复用结果"><a class="heading-anchor" href="#%E7%9C%9F%E5%AE%9E%E5%AE%8C%E6%95%B4%E6%B5%8B%E8%AF%95-jsx-runtime-%E6%89%AB%E6%8F%8F%E5%90%8E%E7%9A%84%E6%A8%A1%E5%9D%97%E5%A4%8D%E7%94%A8%E7%BB%93%E6%9E%9C" aria-label="链接到本节">#</a>真实完整测试：JSX runtime 扫描后的模块复用结果</h2>
 <p>来源：<code>packages/vite/src/node/__tests__/scan.spec.ts</code>。下方只删去同文件其他测试所需 import；本测试体、
 准备、操作、断言与 <code>onTestFinished</code> 清理语句保持目标版本原样；原测试内解释性注释为篇幅省略。</p>
@@ -2122,15 +2244,15 @@ test(&#039;scan jsx-runtime&#039;, async (ctx) =&gt; {
 <ul>
 <li><strong>Given</strong>：SSR Environment 强制冷缓存，scanner 从 JSX 与非 JSX 两个入口开始；client 自动发现关闭，
 测试结束时关闭 server。</li>
-<li><strong>When</strong>：<code>listen()</code> 初始化优化器；测试等 scanner 结束，先 import 非 JSX 入口，再连续两次 import JSX
-入口。<code>scanProcessing</code> 只证明 scanner settle，不单独证明候选已经 commit。</li>
+<li><strong>When</strong>：<code>listen()</code> 初始化优化器；测试等 <code>scanProcessing</code> settle，先 import 非 JSX 入口，让真实
+request crawl 启动，再连续两次 import JSX 入口。优化文件请求仍由各自 <code>processing</code> 等待提交。</li>
 <li><strong>Then</strong>：fixture 的全局执行计数为 <code>1</code>，两次 import 返回同一模块对象。</li>
-<li><strong>Mechanism / Source</strong>：<code>prepareRolldownScanner()</code> 传播 JSX transform，<code>init()</code> 建候选，<code>onCrawlEnd()</code>
-验收，<code>runOptimizer()</code> 发布。测试直接证明模块复用结果；“没有因 JSX runtime 再跑 optimizer”是结合这条
-源码链得到的回归意图，测试没有直接计数 <code>runOptimizeDeps()</code>。</li>
+<li><strong>Mechanism / Source</strong>：<code>prepareRolldownScanner()</code> 把 JSX transform 传给扫描器，提前发现自动注入的
+runtime；<code>init()</code> 建候选、<code>onCrawlEnd()</code> 验收、<code>runOptimizer()</code> 发布。计数与对象身份断言检查的是
+此后 Runner 两次导入仍复用同一实例。</li>
 </ul>
 <h2 id="同一-demo-的端到端流程与时间线"><a class="heading-anchor" href="#%E5%90%8C%E4%B8%80-demo-%E7%9A%84%E7%AB%AF%E5%88%B0%E7%AB%AF%E6%B5%81%E7%A8%8B%E4%B8%8E%E6%97%B6%E9%97%B4%E7%BA%BF" aria-label="链接到本节">#</a>同一 Demo 的端到端流程与时间线</h2>
-<figure class="flow-figure" aria-label="离线流程图"><figcaption class="flow-caption"><strong>执行流程图</strong><span>教程图依据目标版本源码与测试绘制；折叠区保留原始 Mermaid</span></figcaption><div class="flow-lanes request-topology optimizer-topology"><section class="flow-lane"><h4 class="lane-label">预测与真实 crawl</h4><div class="lane-path"><span class="lane-step">server.listen → depsOptimizer.init</span><span class="lane-arrow">→</span><span class="lane-step">scanner 预测 deps</span><span class="lane-arrow">／</span><span class="lane-step">真实 transform 登记 missing</span><span class="lane-arrow">→</span><span class="lane-choice">scan 覆盖 crawl 且 interop 一致？</span></div><div class="lane-split"><span><b>是</b> → 接管候选结果</span><span><b>否</b> → cancel scanner 候选；scan ∪ crawl；debounce 0 重批</span></div></section><section class="flow-lane"><h4 class="lane-label">批次与候选</h4><div class="lane-path"><span class="lane-step">discovered 绑定 processing Promise</span><span class="lane-arrow">→</span><span class="lane-step">runOptimizeDeps 写唯一 processing dir</span><span class="lane-arrow">→</span><span class="lane-choice">旧入口 hash / fileHash / interop 变化？</span></div><div class="lane-split"><span><b>否</b> → 可无感合并并保留旧 browserHash</span><span><b>是且又有 missing</b> → 丢弃重批；否则提交并 full reload</span></div></section><section class="flow-lane"><h4 class="lane-label">目录换代（非可回滚事务）</h4><div class="lane-path"><span class="lane-step">写 _metadata.json</span><span class="lane-arrow">→</span><span class="lane-step">正式目录 → backup</span><span class="lane-arrow">→</span><span class="lane-step">processing → 正式目录</span><span class="lane-arrow">→</span><span class="lane-step">启动后台删 backup；发布 metadata 并 resolve 批次</span></div></section><section class="flow-lane"><h4 class="lane-label">请求侧</h4><div class="lane-path"><span class="lane-step">优化 URL ?v=browserHash</span><span class="lane-arrow">→</span><span class="lane-step">load：先验 hash</span><span class="lane-arrow">→</span><span class="lane-step">等 processing</span><span class="lane-arrow">→</span><span class="lane-step">再验 metadata</span><span class="lane-arrow">→</span><span class="lane-step">读 code / map</span></div></section><section class="flow-lane"><h4 class="lane-label">失败与关闭</h4><div class="lane-split three"><span>旧 hash / processing 异常 → 504</span><span>确认优化目录缺文件 → 404</span><span>commit 中途 I/O 失败无回滚；close 取消后台任务并保留已提交 cache</span></div></section></div><details class="diagram-source"><summary>查看原始 Mermaid 源码</summary><pre><code>flowchart TD
+<figure class="flow-figure" aria-label="离线流程图"><figcaption class="flow-caption"><strong>执行流程图</strong><span>教程图依据目标版本源码与测试绘制；折叠区保留原始 Mermaid</span></figcaption><div class="flow-lanes request-topology optimizer-topology"><section class="flow-lane"><h4 class="lane-label">预测与真实 crawl</h4><div class="lane-path"><span class="lane-step">server.listen → depsOptimizer.init</span><span class="lane-arrow">→</span><span class="lane-step">scanner 预测 deps</span><span class="lane-arrow">／</span><span class="lane-step">真实 transform 登记 missing</span><span class="lane-arrow">→</span><span class="lane-choice">scan 覆盖 crawl 且 interop 一致？</span></div><div class="lane-split"><span><b>是</b> → 接管候选结果</span><span><b>否</b> → cancel scanner 候选；scan ∪ crawl；debounce 0 重批</span></div></section><section class="flow-lane"><h4 class="lane-label">批次与候选</h4><div class="lane-path"><span class="lane-step">discovered 绑定 processing Promise</span><span class="lane-arrow">→</span><span class="lane-step">runOptimizeDeps 写唯一 processing dir</span><span class="lane-arrow">→</span><span class="lane-choice">旧入口 hash / fileHash / interop 变化？</span></div><div class="lane-split"><span><b>否</b> → 可无感合并并保留旧 browserHash</span><span><b>是且又有 missing</b> → 丢弃重批；否则提交并 full reload</span></div></section><section class="flow-lane"><h4 class="lane-label">目录换代</h4><div class="lane-path"><span class="lane-step">写 _metadata.json</span><span class="lane-arrow">→</span><span class="lane-step">正式目录 → backup</span><span class="lane-arrow">→</span><span class="lane-step">processing → 正式目录</span><span class="lane-arrow">→</span><span class="lane-step">启动后台删 backup；发布 metadata 并 resolve 批次</span></div></section><section class="flow-lane"><h4 class="lane-label">请求侧</h4><div class="lane-path"><span class="lane-step">优化 URL ?v=browserHash</span><span class="lane-arrow">→</span><span class="lane-step">load：先验 hash</span><span class="lane-arrow">→</span><span class="lane-step">等 processing</span><span class="lane-arrow">→</span><span class="lane-step">再验 metadata</span><span class="lane-arrow">→</span><span class="lane-step">读 code / map</span></div></section><section class="flow-lane"><h4 class="lane-label">失败与关闭</h4><div class="lane-split three"><span>过期版本 / processing 自身拒绝 → 504；构建失败与关闭也会放行批次，再查版本和文件</span><span>读文件失败：带 hash 且不忽略过期请求 → 504；否则 → 404</span><span>commit 中途 I/O 失败无回滚；close 标记取消并等准备/扫描，已开始的 write 可继续</span></div></section></div><details class="diagram-source"><summary>查看原始 Mermaid 源码</summary><pre><code>flowchart TD
   A[&quot;test: createServer，SSR force + 两个 entries&quot;] --&gt; B[&quot;server.listen → depsOptimizer.init&quot;]
   B --&gt; C[&quot;scanner 使用 JSX 配置 → discovered → processing 候选&quot;]
   B --&gt; D[&quot;注册 waitForRequestsIdle → onCrawlEnd&quot;]
@@ -2169,7 +2291,9 @@ Rolldown build、processing 等待和磁盘读取。提交点之前候选只在�
     optimizationResult?.cancel(),
   ])
 }
-</code></pre></figure><p><code>allSettled</code> 保证某项取消失败不跳过其他收尾。这里没有删除已提交正式 cache，也没有发送 reload；
+</code></pre></figure><p><code>allSettled</code> 收集这些异步收尾的结果。scanner cancel 只置标记，<code>scanProcessing</code> 另行等待后台任务；
+预构建 cancel 等待准备阶段、设置 context 标记并删除候选目录，不中断或等待已开始的 write。这里没有
+删除已提交正式 cache，也没有发送 reload；
 Environment 的 <code>close()</code> 还会并行关闭插件/HotChannel，并等待 <code>_pendingRequests</code> settle。</p>
 <div class="table-scroll"><table>
 <thead>
@@ -2217,13 +2341,13 @@ Environment 的 <code>close()</code> 还会并行关闭插件/HotChannel，并�
 <td>scanner 分类与入口</td>
 <td><code>scan.ts::rolldownScanPlugin</code></td>
 <td><code>scan.spec.ts</code> script/input/glob 组</td>
-<td>证明发现集合，不证明最终提交</td>
+<td>检查 scanner 发现的依赖集合</td>
 </tr>
 <tr>
 <td>JSX 隐式 runtime</td>
 <td><code>scan.ts::prepareRolldownScanner</code></td>
 <td><code>scan jsx-runtime</code></td>
-<td>完整测试见上；不直接计数 optimizer run</td>
+<td>检查执行计数与两次导入的实例复用</td>
 </tr>
 <tr>
 <td>include / exports</td>
@@ -2247,13 +2371,13 @@ Environment 的 <code>close()</code> 还会并行关闭插件/HotChannel，并�
 <td>reload/rebatch</td>
 <td><code>optimizer.ts::runOptimizer</code></td>
 <td>optimizer/playground 组合回归</td>
-<td>当前没有单测直接覆盖每个布尔组合，结论主要来自源码</td>
+<td>reload/rebatch 条件由源码分支给出，组合回归观察最终更新</td>
 </tr>
 <tr>
 <td>Rolldown 产物与插件边界</td>
 <td><code>index.ts::runOptimizeDeps</code>、<code>rolldownDepPlugin.ts</code></td>
 <td><code>playground/optimize-deps</code>、<code>rolldownDepPlugin.spec.ts</code>、<code>pluginConverter.spec.ts</code></td>
-<td>证明 CJS/ESM/静态资源和兼容层结果，不证明 rename 瞬时序列</td>
+<td>检查 CJS/ESM/静态资源和兼容层结果</td>
 </tr>
 <tr>
 <td>目录换代</td>
@@ -2265,24 +2389,21 @@ Environment 的 <code>close()</code> 还会并行关闭插件/HotChannel，并�
 <td>URL 等待/错误</td>
 <td><code>optimizedDeps.ts::load</code> + transform middleware</td>
 <td>optimize-missing-deps playground</td>
-<td>504/404 条件来自源码；不能由成功测试外推</td>
+<td>load 错误码与 transform middleware 一起给出 504/404 条件</td>
 </tr>
 <tr>
 <td>close</td>
 <td><code>optimizer.ts::close</code>、<code>environment.ts::close</code></td>
 <td><code>scan ignores ... mid-scan</code></td>
-<td>证明 closed-server 扫描取消；不证明所有 OS 清理失败</td>
+<td>检查 closed-server 扫描返回空结果</td>
 </tr>
 </tbody>
 </table></div>
-<h2 id="结论与证据边界"><a class="heading-anchor" href="#%E7%BB%93%E8%AE%BA%E4%B8%8E%E8%AF%81%E6%8D%AE%E8%BE%B9%E7%95%8C" aria-label="链接到本节">#</a>结论与证据边界</h2>
-<p>依赖预构建的核心不是“用 Rolldown 打一次包”，而是让预测扫描、真实 crawl、请求等待与候选发布共享一套
-版本化状态机。<code>processing</code> 让单个请求等待自己的批次；<code>fileHash</code> 与 interop 决定能否无感发布；双 rename
-只保证不暴露半写目录，不构成可回滚事务。</p>
-<p>本章的完整测试直接证明 JSX 场景的执行次数与模块对象复用。optimizer 是否重跑、每个 reload/rebatch
-布尔组合、rename 中途失败以及 504/404 的所有条件，主要由决定性源码与专项测试共同限定，不能从这一条
-成功测试外推。</p>
-</article><nav class="article-pager" aria-label="前后篇"><a class="pager-link previous" href="10-import-analysis.html"><span class="pager-label">上一篇 · 10</span><span class="pager-title">Import Analysis</span></a><a class="pager-link next" href="12-hmr.html"><span class="pager-label">下一篇 · 12</span><span class="pager-title">HMR</span></a></nav><footer class="site-footer">Vite v8.2.1 源码阅读站 · 所有机制结论限定于 commit 421615865dad3ed39137d17281814fc78a41246c。</footer></main><aside class="page-toc" aria-label="页内目录"><h2 class="toc-title">本页目录</h2><ol class="toc-list"><li class="depth-2"><a href="#%E9%98%85%E8%AF%BB%E8%BE%B9%E7%95%8C">阅读边界</a></li><li class="depth-2"><a href="#%E6%8E%A8%E8%8D%90%E9%98%85%E8%AF%BB%E9%A1%BA%E5%BA%8F">推荐阅读顺序</a></li><li class="depth-2"><a href="#%E6%A8%A1%E5%9D%97%E8%BE%B9%E7%95%8C%E4%B8%8E%E5%AF%B9%E8%B1%A1%E6%89%80%E6%9C%89%E6%9D%83">模块边界与对象所有权</a></li><li class="depth-2"><a href="#%E4%B8%BA%E4%BB%80%E4%B9%88%E9%9C%80%E8%A6%81%E9%A2%84%E6%9E%84%E5%BB%BA">为什么需要预构建</a></li><li class="depth-3"><a href="#%E7%BB%9F%E4%B8%80%E6%A8%A1%E5%9D%97%E6%A0%BC%E5%BC%8F">统一模块格式</a></li><li class="depth-3"><a href="#%E5%8E%8B%E7%BC%A9%E8%AF%B7%E6%B1%82%E7%80%91%E5%B8%83">压缩请求瀑布</a></li><li class="depth-2"><a href="#%E4%B8%A4%E6%9D%A1%E5%8F%91%E7%8E%B0%E8%B7%AF%E5%BE%84-%E9%A2%84%E6%B5%8B%E4%B8%8E%E6%A0%A1%E9%AA%8C">两条发现路径：预测与校验</a></li><li class="depth-3"><a href="#scanner-%E5%BF%AB%E9%80%9F%E9%A2%84%E6%B5%8B">scanner：快速预测</a></li><li class="depth-3"><a href="#%E7%9C%9F%E5%AE%9E%E6%A8%A1%E5%9D%97-crawl-%E8%BF%90%E8%A1%8C%E8%AF%AD%E4%B9%89%E7%9A%84%E4%BA%8B%E5%AE%9E%E6%9D%A5%E6%BA%90">真实模块 crawl：运行语义的事实来源</a></li><li class="depth-3"><a href="#%E5%86%B3%E5%AE%9A%E6%80%A7%E6%BA%90%E7%A0%81-1-scanner-%E5%9C%A8%E8%A3%B8%E5%8C%85%E8%BE%B9%E7%95%8C%E7%99%BB%E8%AE%B0%E5%90%8E%E5%81%9C%E6%AD%A2-crawl">决定性源码 1：scanner 在裸包边界登记后停止 crawl</a></li><li class="depth-2"><a href="#scanner-%E6%80%8E%E6%A0%B7%E5%A4%84%E7%90%86-html-sfc-jsx-%E4%B8%8E-glob">scanner 怎样处理 HTML、SFC、JSX 与 glob</a></li><li class="depth-3"><a href="#html-sfc-%E8%84%9A%E6%9C%AC%E9%9A%94%E7%A6%BB">HTML/SFC 脚本隔离</a></li><li class="depth-3"><a href="#jsx-%E9%9A%90%E5%BC%8F-runtime">JSX 隐式 runtime</a></li><li class="depth-3"><a href="#import-meta-glob">import.meta.glob</a></li><li class="depth-3"><a href="#%E5%85%A5%E5%8F%A3%E8%A7%A3%E6%9E%90%E5%BF%85%E9%A1%BB%E5%A4%8D%E7%94%A8%E6%8F%92%E4%BB%B6%E4%B8%8E-root">入口解析必须复用插件与 root</a></li><li class="depth-2"><a href="#%E6%98%BE%E5%BC%8F-include-%E5%B5%8C%E5%A5%97%E4%BE%9D%E8%B5%96-glob-%E4%B8%8E-exports">显式 include：嵌套依赖、glob 与 exports</a></li><li class="depth-2"><a href="#%E5%85%83%E6%95%B0%E6%8D%AE%E5%B0%B1%E6%98%AF%E7%8A%B6%E6%80%81%E6%9C%BA%E5%8D%8F%E8%AE%AE">元数据就是状态机协议</a></li><li class="depth-3"><a href="#%E5%86%B3%E5%AE%9A%E6%80%A7%E6%BA%90%E7%A0%81-2-missing-%E5%85%88%E8%8E%B7%E5%BE%97%E7%A8%B3%E5%AE%9A-url-%E5%86%8D%E7%AD%89%E5%BE%85%E5%86%85%E5%AE%B9">决定性源码 2：missing 先获得稳定 URL，再等待内容</a></li><li class="depth-3"><a href="#%E5%8D%8F%E8%B0%83%E7%8A%B6%E6%80%81%E8%A1%A8">协调状态表</a></li><li class="depth-2"><a href="#%E4%B8%89%E7%A7%8D-hash-%E5%90%84%E7%AE%A1%E4%B8%80%E5%B1%82%E4%B8%80%E8%87%B4%E6%80%A7">三种 hash 各管一层一致性</a></li><li class="depth-2"><a href="#%E5%88%9D%E5%A7%8B%E5%8C%96-%E9%A6%96%E8%BD%AE%E5%80%99%E9%80%89%E4%B8%8E%E9%AA%8C%E6%94%B6">初始化、首轮候选与验收</a></li><li class="depth-3"><a href="#%E5%86%B3%E5%AE%9A%E6%80%A7%E6%BA%90%E7%A0%81-3-init-%E5%90%8C%E6%97%B6%E5%90%AF%E5%8A%A8%E7%9C%9F%E5%AE%9E-crawl-%E9%97%B8%E9%97%A8%E4%B8%8E-scanner-%E5%80%99%E9%80%89">决定性源码 3：init 同时启动真实 crawl 闸门与 scanner 候选</a></li><li class="depth-3"><a href="#%E5%86%B3%E5%AE%9A%E6%80%A7%E6%BA%90%E7%A0%81-4-crawl-%E7%BB%93%E6%9D%9F%E5%90%8E%E9%AA%8C%E6%94%B6%E5%80%99%E9%80%89-%E8%80%8C%E9%9D%9E%E7%9B%B2%E7%9B%AE%E6%8F%90%E4%BA%A4">决定性源码 4：crawl 结束后验收候选，而非盲目提交</a></li><li class="depth-3"><a href="#holduntilcrawlend">holdUntilCrawlEnd</a></li><li class="depth-2"><a href="#%E4%B8%80%E8%BD%AE%E4%BC%98%E5%8C%96%E6%80%8E%E6%A0%B7%E7%94%9F%E6%88%90%E5%B9%B6%E5%8F%91%E5%B8%83">一轮优化怎样生成并发布</a></li><li class="depth-3"><a href="#%E6%8F%90%E4%BA%A4%E5%89%8D%E4%B8%BA%E4%BB%80%E4%B9%88%E4%BB%8D%E5%8F%AF%E8%83%BD%E4%B8%A2%E5%BC%83%E7%BB%93%E6%9E%9C">提交前为什么仍可能丢弃结果</a></li><li class="depth-3"><a href="#%E5%86%B3%E5%AE%9A%E6%80%A7%E6%BA%90%E7%A0%81-5-reload-%E5%88%A4%E5%AE%9A-%E6%97%A0%E6%84%9F%E5%90%88%E5%B9%B6%E4%B8%8E%E4%B8%A2%E5%BC%83%E9%87%8D%E6%89%B9">决定性源码 5：reload 判定、无感合并与丢弃重批</a></li><li class="depth-2"><a href="#%E7%BC%93%E5%AD%98%E7%9B%AE%E5%BD%95%E6%8D%A2%E4%BB%A3-%E5%8F%8C-rename-%E7%9A%84%E4%BF%9D%E8%AF%81%E4%B8%8E%E7%BC%BA%E5%8F%A3">缓存目录换代：双 rename 的保证与缺口</a></li><li class="depth-3"><a href="#%E5%86%B3%E5%AE%9A%E6%80%A7%E6%BA%90%E7%A0%81-6-%E6%AD%A3%E5%BC%8F%E7%9B%AE%E5%BD%95%E5%8F%AA%E6%8E%A5%E6%94%B6%E5%AE%8C%E6%95%B4%E5%80%99%E9%80%89">决定性源码 6：正式目录只接收完整候选</a></li><li class="depth-2"><a href="#rolldown-%E4%BE%9D%E8%B5%96%E6%8F%92%E4%BB%B6%E7%9A%84%E8%BE%B9%E7%95%8C">Rolldown 依赖插件的边界</a></li><li class="depth-2"><a href="#alias-%E4%B8%8E%E8%AF%B7%E6%B1%82%E4%BE%A7%E6%80%8E%E6%A0%B7%E6%8E%A5%E5%85%A5">alias 与请求侧怎样接入</a></li><li class="depth-3"><a href="#prealiasplugin">preAliasPlugin</a></li><li class="depth-3"><a href="#optimizeddepsplugin">optimizedDepsPlugin</a></li><li class="depth-3"><a href="#%E5%86%B3%E5%AE%9A%E6%80%A7%E6%BA%90%E7%A0%81-7-%E8%AF%B7%E6%B1%82%E7%AD%89%E5%BE%85-%E4%BA%8C%E6%AC%A1%E9%AA%8C%E7%89%88%E6%9C%AC-%E5%86%8D%E8%AF%BB%E6%AD%A3%E5%BC%8F%E7%9B%AE%E5%BD%95">决定性源码 7：请求等待、二次验版本、再读正式目录</a></li><li class="depth-2"><a href="#%E7%9C%9F%E5%AE%9E%E5%AE%8C%E6%95%B4%E6%B5%8B%E8%AF%95-jsx-runtime-%E6%89%AB%E6%8F%8F%E5%90%8E%E7%9A%84%E6%A8%A1%E5%9D%97%E5%A4%8D%E7%94%A8%E7%BB%93%E6%9E%9C">真实完整测试：JSX runtime 扫描后的模块复用结果</a></li><li class="depth-3"><a href="#gwtms-%E8%AF%81%E6%8D%AE%E6%8B%86%E8%A7%A3">GWTMS 证据拆解</a></li><li class="depth-2"><a href="#%E5%90%8C%E4%B8%80-demo-%E7%9A%84%E7%AB%AF%E5%88%B0%E7%AB%AF%E6%B5%81%E7%A8%8B%E4%B8%8E%E6%97%B6%E9%97%B4%E7%BA%BF">同一 Demo 的端到端流程与时间线</a></li><li class="depth-2"><a href="#%E5%85%B3%E9%97%AD-%E9%94%99%E8%AF%AF%E4%B8%8E%E6%B8%85%E7%90%86%E8%BE%B9%E7%95%8C">关闭、错误与清理边界</a></li><li class="depth-3"><a href="#%E5%86%B3%E5%AE%9A%E6%80%A7%E6%BA%90%E7%A0%81-8-%E5%85%B3%E9%97%AD%E5%8F%AA%E5%8F%96%E6%B6%88%E6%9C%AC%E5%AE%9E%E4%BE%8B%E6%8B%A5%E6%9C%89%E7%9A%84%E5%90%8E%E5%8F%B0%E5%B7%A5%E4%BD%9C">决定性源码 8：关闭只取消本实例拥有的后台工作</a></li><li class="depth-2"><a href="#%E7%AB%A0%E8%8A%82-%E6%BA%90%E7%A0%81-%E6%B5%8B%E8%AF%95%E8%AF%81%E6%8D%AE%E8%A1%A8">章节—源码—测试证据表</a></li><li class="depth-2"><a href="#%E7%BB%93%E8%AE%BA%E4%B8%8E%E8%AF%81%E6%8D%AE%E8%BE%B9%E7%95%8C">结论与证据边界</a></li></ol></aside></div><script>;(function () {
+<h2 id="请求等待与版本发布的联系"><a class="heading-anchor" href="#%E8%AF%B7%E6%B1%82%E7%AD%89%E5%BE%85%E4%B8%8E%E7%89%88%E6%9C%AC%E5%8F%91%E5%B8%83%E7%9A%84%E8%81%94%E7%B3%BB" aria-label="链接到本节">#</a>请求等待与版本发布的联系</h2>
+<p>发现依赖时先返回未来 URL，请求加载时再等所属批次；批次正常提交后读正式文件，失败放行后则进入
+版本或缺文件错误。<code>fileHash</code> 与 interop 决定新依赖能否沿用现有 URL，改变旧入口图时需要换代刷新。
+双 rename 发布的是完整目录，第二次移动失败仍可能留下正式路径缺失。</p>
+</article><nav class="article-pager" aria-label="前后篇"><a class="pager-link previous" href="10-import-analysis.html"><span class="pager-label">上一篇 · 10</span><span class="pager-title">Import Analysis</span></a><a class="pager-link next" href="12-hmr.html"><span class="pager-label">下一篇 · 12</span><span class="pager-title">HMR</span></a></nav><footer class="site-footer">Vite v8.2.1 源码阅读站 · 所有机制结论限定于 commit 421615865dad3ed39137d17281814fc78a41246c。</footer></main><aside class="page-toc" aria-label="页内目录"><h2 class="toc-title">本页目录</h2><ol class="toc-list"><li class="depth-2"><a href="#%E9%98%85%E8%AF%BB%E8%BE%B9%E7%95%8C">阅读边界</a></li><li class="depth-2"><a href="#%E6%8E%A8%E8%8D%90%E9%98%85%E8%AF%BB%E9%A1%BA%E5%BA%8F">推荐阅读顺序</a></li><li class="depth-2"><a href="#%E6%A8%A1%E5%9D%97%E8%BE%B9%E7%95%8C%E4%B8%8E%E5%AF%B9%E8%B1%A1%E6%89%80%E6%9C%89%E6%9D%83">模块边界与对象所有权</a></li><li class="depth-2"><a href="#%E4%B8%BA%E4%BB%80%E4%B9%88%E9%9C%80%E8%A6%81%E9%A2%84%E6%9E%84%E5%BB%BA">为什么需要预构建</a></li><li class="depth-3"><a href="#%E7%BB%9F%E4%B8%80%E6%A8%A1%E5%9D%97%E6%A0%BC%E5%BC%8F">统一模块格式</a></li><li class="depth-3"><a href="#%E5%8E%8B%E7%BC%A9%E8%AF%B7%E6%B1%82%E7%80%91%E5%B8%83">压缩请求瀑布</a></li><li class="depth-2"><a href="#%E4%B8%A4%E6%9D%A1%E5%8F%91%E7%8E%B0%E8%B7%AF%E5%BE%84-%E9%A2%84%E6%B5%8B%E4%B8%8E%E6%A0%A1%E9%AA%8C">两条发现路径：预测与校验</a></li><li class="depth-3"><a href="#scanner-%E5%BF%AB%E9%80%9F%E9%A2%84%E6%B5%8B">scanner：快速预测</a></li><li class="depth-3"><a href="#%E7%9C%9F%E5%AE%9E%E6%A8%A1%E5%9D%97-crawl-%E8%BF%90%E8%A1%8C%E8%AF%AD%E4%B9%89%E7%9A%84%E4%BA%8B%E5%AE%9E%E6%9D%A5%E6%BA%90">真实模块 crawl：运行语义的事实来源</a></li><li class="depth-3"><a href="#%E5%86%B3%E5%AE%9A%E6%80%A7%E6%BA%90%E7%A0%81-1-scanner-%E5%9C%A8%E8%A3%B8%E5%8C%85%E8%BE%B9%E7%95%8C%E7%99%BB%E8%AE%B0%E5%90%8E%E5%81%9C%E6%AD%A2-crawl">决定性源码 1：scanner 在裸包边界登记后停止 crawl</a></li><li class="depth-2"><a href="#scanner-%E6%80%8E%E6%A0%B7%E5%A4%84%E7%90%86-html-sfc-jsx-%E4%B8%8E-glob">scanner 怎样处理 HTML、SFC、JSX 与 glob</a></li><li class="depth-3"><a href="#html-sfc-%E8%84%9A%E6%9C%AC%E9%9A%94%E7%A6%BB">HTML/SFC 脚本隔离</a></li><li class="depth-3"><a href="#jsx-%E9%9A%90%E5%BC%8F-runtime">JSX 隐式 runtime</a></li><li class="depth-3"><a href="#import-meta-glob">import.meta.glob</a></li><li class="depth-3"><a href="#%E5%85%A5%E5%8F%A3%E8%A7%A3%E6%9E%90%E5%BF%85%E9%A1%BB%E5%A4%8D%E7%94%A8%E6%8F%92%E4%BB%B6%E4%B8%8E-root">入口解析必须复用插件与 root</a></li><li class="depth-2"><a href="#%E6%98%BE%E5%BC%8F-include-%E5%B5%8C%E5%A5%97%E4%BE%9D%E8%B5%96-glob-%E4%B8%8E-exports">显式 include：嵌套依赖、glob 与 exports</a></li><li class="depth-2"><a href="#%E5%85%83%E6%95%B0%E6%8D%AE%E5%B0%B1%E6%98%AF%E7%8A%B6%E6%80%81%E6%9C%BA%E5%8D%8F%E8%AE%AE">元数据就是状态机协议</a></li><li class="depth-3"><a href="#%E5%86%B3%E5%AE%9A%E6%80%A7%E6%BA%90%E7%A0%81-2-missing-%E5%85%88%E8%8E%B7%E5%BE%97%E7%A8%B3%E5%AE%9A-url-%E5%86%8D%E7%AD%89%E5%BE%85%E5%86%85%E5%AE%B9">决定性源码 2：missing 先获得稳定 URL，再等待内容</a></li><li class="depth-3"><a href="#%E5%8D%8F%E8%B0%83%E7%8A%B6%E6%80%81%E8%A1%A8">协调状态表</a></li><li class="depth-2"><a href="#%E4%B8%89%E7%A7%8D-hash-%E5%90%84%E7%AE%A1%E4%B8%80%E5%B1%82%E4%B8%80%E8%87%B4%E6%80%A7">三种 hash 各管一层一致性</a></li><li class="depth-2"><a href="#%E5%88%9D%E5%A7%8B%E5%8C%96-%E9%A6%96%E8%BD%AE%E5%80%99%E9%80%89%E4%B8%8E%E9%AA%8C%E6%94%B6">初始化、首轮候选与验收</a></li><li class="depth-3"><a href="#%E5%86%B3%E5%AE%9A%E6%80%A7%E6%BA%90%E7%A0%81-3-init-%E5%90%8C%E6%97%B6%E5%90%AF%E5%8A%A8%E7%9C%9F%E5%AE%9E-crawl-%E9%97%B8%E9%97%A8%E4%B8%8E-scanner-%E5%80%99%E9%80%89">决定性源码 3：init 同时启动真实 crawl 闸门与 scanner 候选</a></li><li class="depth-3"><a href="#%E5%86%B3%E5%AE%9A%E6%80%A7%E6%BA%90%E7%A0%81-4-crawl-%E7%BB%93%E6%9D%9F%E5%90%8E%E9%AA%8C%E6%94%B6%E5%80%99%E9%80%89-%E8%80%8C%E9%9D%9E%E7%9B%B2%E7%9B%AE%E6%8F%90%E4%BA%A4">决定性源码 4：crawl 结束后验收候选，而非盲目提交</a></li><li class="depth-3"><a href="#holduntilcrawlend">holdUntilCrawlEnd</a></li><li class="depth-2"><a href="#%E4%B8%80%E8%BD%AE%E4%BC%98%E5%8C%96%E6%80%8E%E6%A0%B7%E7%94%9F%E6%88%90%E5%B9%B6%E5%8F%91%E5%B8%83">一轮优化怎样生成并发布</a></li><li class="depth-3"><a href="#%E6%8F%90%E4%BA%A4%E5%89%8D%E4%B8%BA%E4%BB%80%E4%B9%88%E4%BB%8D%E5%8F%AF%E8%83%BD%E4%B8%A2%E5%BC%83%E7%BB%93%E6%9E%9C">提交前为什么仍可能丢弃结果</a></li><li class="depth-3"><a href="#%E5%86%B3%E5%AE%9A%E6%80%A7%E6%BA%90%E7%A0%81-5-reload-%E5%88%A4%E5%AE%9A-%E6%97%A0%E6%84%9F%E5%90%88%E5%B9%B6%E4%B8%8E%E4%B8%A2%E5%BC%83%E9%87%8D%E6%89%B9">决定性源码 5：reload 判定、无感合并与丢弃重批</a></li><li class="depth-2"><a href="#%E7%BC%93%E5%AD%98%E7%9B%AE%E5%BD%95%E6%8D%A2%E4%BB%A3-%E5%8F%8C-rename-%E7%9A%84%E4%BF%9D%E8%AF%81%E4%B8%8E%E7%BC%BA%E5%8F%A3">缓存目录换代：双 rename 的保证与缺口</a></li><li class="depth-3"><a href="#%E5%86%B3%E5%AE%9A%E6%80%A7%E6%BA%90%E7%A0%81-6-%E6%AD%A3%E5%BC%8F%E7%9B%AE%E5%BD%95%E5%8F%AA%E6%8E%A5%E6%94%B6%E5%AE%8C%E6%95%B4%E5%80%99%E9%80%89">决定性源码 6：正式目录只接收完整候选</a></li><li class="depth-2"><a href="#rolldown-%E4%BE%9D%E8%B5%96%E6%8F%92%E4%BB%B6%E7%9A%84%E8%BE%B9%E7%95%8C">Rolldown 依赖插件的边界</a></li><li class="depth-2"><a href="#alias-%E4%B8%8E%E8%AF%B7%E6%B1%82%E4%BE%A7%E6%80%8E%E6%A0%B7%E6%8E%A5%E5%85%A5">alias 与请求侧怎样接入</a></li><li class="depth-3"><a href="#prealiasplugin">preAliasPlugin</a></li><li class="depth-3"><a href="#optimizeddepsplugin">optimizedDepsPlugin</a></li><li class="depth-3"><a href="#%E5%86%B3%E5%AE%9A%E6%80%A7%E6%BA%90%E7%A0%81-7-%E8%AF%B7%E6%B1%82%E7%AD%89%E5%BE%85-%E4%BA%8C%E6%AC%A1%E9%AA%8C%E7%89%88%E6%9C%AC-%E5%86%8D%E8%AF%BB%E6%AD%A3%E5%BC%8F%E7%9B%AE%E5%BD%95">决定性源码 7：请求等待、二次验版本、再读正式目录</a></li><li class="depth-2"><a href="#%E7%9C%9F%E5%AE%9E%E5%AE%8C%E6%95%B4%E6%B5%8B%E8%AF%95-jsx-runtime-%E6%89%AB%E6%8F%8F%E5%90%8E%E7%9A%84%E6%A8%A1%E5%9D%97%E5%A4%8D%E7%94%A8%E7%BB%93%E6%9E%9C">真实完整测试：JSX runtime 扫描后的模块复用结果</a></li><li class="depth-3"><a href="#gwtms-%E8%AF%81%E6%8D%AE%E6%8B%86%E8%A7%A3">GWTMS 证据拆解</a></li><li class="depth-2"><a href="#%E5%90%8C%E4%B8%80-demo-%E7%9A%84%E7%AB%AF%E5%88%B0%E7%AB%AF%E6%B5%81%E7%A8%8B%E4%B8%8E%E6%97%B6%E9%97%B4%E7%BA%BF">同一 Demo 的端到端流程与时间线</a></li><li class="depth-2"><a href="#%E5%85%B3%E9%97%AD-%E9%94%99%E8%AF%AF%E4%B8%8E%E6%B8%85%E7%90%86%E8%BE%B9%E7%95%8C">关闭、错误与清理边界</a></li><li class="depth-3"><a href="#%E5%86%B3%E5%AE%9A%E6%80%A7%E6%BA%90%E7%A0%81-8-%E5%85%B3%E9%97%AD%E5%8F%AA%E5%8F%96%E6%B6%88%E6%9C%AC%E5%AE%9E%E4%BE%8B%E6%8B%A5%E6%9C%89%E7%9A%84%E5%90%8E%E5%8F%B0%E5%B7%A5%E4%BD%9C">决定性源码 8：关闭只取消本实例拥有的后台工作</a></li><li class="depth-2"><a href="#%E7%AB%A0%E8%8A%82-%E6%BA%90%E7%A0%81-%E6%B5%8B%E8%AF%95%E8%AF%81%E6%8D%AE%E8%A1%A8">章节—源码—测试证据表</a></li><li class="depth-2"><a href="#%E8%AF%B7%E6%B1%82%E7%AD%89%E5%BE%85%E4%B8%8E%E7%89%88%E6%9C%AC%E5%8F%91%E5%B8%83%E7%9A%84%E8%81%94%E7%B3%BB">请求等待与版本发布的联系</a></li></ol></aside></div><script>;(function () {
   'use strict'
 
   var root = document.documentElement
@@ -2357,6 +2478,80 @@ Environment 的 <code>close()</code> 还会并行关闭插件/HotChannel，并�
   updateProgress()
   window.addEventListener('scroll', updateProgress, { passive: true })
   window.addEventListener('resize', updateProgress)
+
+  var expandedDiagram = null
+
+  function closeDiagram() {
+    if (!expandedDiagram) return
+    var figure = expandedDiagram
+    var button = figure.querySelector('[data-diagram-action="expand"]')
+    figure.classList.remove('is-expanded')
+    figure.removeAttribute('role')
+    figure.removeAttribute('aria-modal')
+    body.classList.remove('diagram-is-expanded')
+    button.setAttribute('aria-expanded', 'false')
+    button.textContent = '展开图示'
+    expandedDiagram = null
+    button.focus()
+  }
+
+  document.querySelectorAll('.engineering-diagram').forEach(function (figure) {
+    var viewport = figure.querySelector('.diagram-viewport')
+    var canvas = figure.querySelector('.diagram-canvas')
+    var output = figure.querySelector('.diagram-scale')
+    var width = Number(figure.getAttribute('data-diagram-width'))
+    var scale = 1
+
+    function setScale(next) {
+      scale = Math.min(2, Math.max(0.15, next))
+      canvas.style.width = width * scale + 'px'
+      output.textContent = Math.round(scale * 100) + '%'
+    }
+
+    figure.querySelectorAll('[data-diagram-action]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        var action = button.getAttribute('data-diagram-action')
+        if (action === 'in') setScale(scale * 1.2)
+        if (action === 'out') setScale(scale / 1.2)
+        if (action === 'fit') setScale(viewport.clientWidth / width)
+        if (action === 'reset') setScale(1)
+        if (action === 'expand') {
+          if (expandedDiagram === figure) {
+            closeDiagram()
+            return
+          }
+          closeDiagram()
+          expandedDiagram = figure
+          figure.classList.add('is-expanded')
+          figure.setAttribute('role', 'dialog')
+          figure.setAttribute('aria-modal', 'true')
+          body.classList.add('diagram-is-expanded')
+          button.setAttribute('aria-expanded', 'true')
+          button.textContent = '收起图示'
+          button.focus()
+        }
+      })
+    })
+  })
+
+  document.addEventListener('keydown', function (event) {
+    if (!expandedDiagram) return
+    if (event.key === 'Escape') closeDiagram()
+    if (event.key === 'Tab') {
+      var controls = Array.from(
+        expandedDiagram.querySelectorAll('button, a, [tabindex="0"]'),
+      )
+      var first = controls[0]
+      var last = controls[controls.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+  })
 
   document.querySelectorAll('.copy-code').forEach(function (button) {
     button.addEventListener('click', async function () {

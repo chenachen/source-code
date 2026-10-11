@@ -6,6 +6,7 @@
   <meta name="description" content="React 19.3 keyed children 协调算法深挖：以 [A,B,C] 到 [B,A,D] 手推 updateSlot、Map 慢路径、placeChild、Deletion、状态保留与真实测试。" />
   <title>12 · keyed children：一次重排怎样变成 Fiber flags</title>
   <link rel="stylesheet" href="assets/guide.css?v=1" />
+  <link rel="stylesheet" href="assets/engineering-diagrams.css?v=1" />
 </head>
 <body>
   <header class="topbar"><div class="topbar-inner">
@@ -23,14 +24,6 @@
       <h1>一次重排，怎样变成可提交的 Fiber flags</h1>
       <p class="lede"><code>[A, B, C] → [B, A, D]</code> 看似一次数组比较，实际要同时回答三件事：谁仍是同一个组件、谁需要移动或插入、谁必须在 commit 清理。React 先顺序试配；首个 key 失配后才建立 Map，并用单调的 <code>lastPlacedIndex</code> 生成副作用。</p>
       <div class="meta"><span class="pill">react-reconciler 0.34.0</span><span class="pill">React 19.3.0</span><span class="pill">真实源码 + 手工推演</span><span class="pill">真实 GWT 测试</span></div>
-
-      <section id="reading-contract"><h2>先约定证据标签</h2>
-        <div class="grid three">
-          <article class="card"><span class="number">REAL · CONTIGUOUS</span><h3>当前仓库连续原码</h3><p>代码块内部不重排、不改写；若只截取函数的一段，标题明确写出边界，并链接完整文件。</p></article>
-          <article class="card"><span class="number">REAL · TEST</span><h3>仓库真实测试</h3><p>Given、When、Then 来自断言本身；正文只解释该断言能证明的机制，不扩大成未覆盖保证。</p></article>
-          <article class="card"><span class="number">TEACHING TRACE</span><h3>教学推演</h3><p>状态表与简化 Fiber 名称由真实分支逐步推得，不是仓库可执行代码，也不冒充源码。</p></article>
-        </div>
-      </section>
 
       <section id="goal"><h2>算法输入与输出：它不直接改 DOM</h2>
         <div class="callout warn"><p><strong>教学页序不等于函数组件运行序。</strong>本指南先讲通用 child identity 算法，再讲 Hooks，便于单独手算 key；但一次函数组件更新的真实顺序是
@@ -57,87 +50,33 @@
         <p><code>reconcileChildrenArray</code> 不先构造“DOM diff”。它边生成 WIP sibling 链，边给 child 写 <code>Placement</code>，并把未复用 current child 收集到父 Fiber 的 <code>deletions</code>。这使 render 仍可被丢弃：真实宿主树尚未变化。</p>
       </section>
 
-      <section id="exact-anchors"><h2>逐字连续原码核验锚点</h2>
-        <p>下面六块逐字取自当前仓库，只截连续区间，不删除区间内注释或语句。它们为后续“删节源码”提供可机械回查的控制流锚点；完整函数仍以文件链接为准。</p>
-        <figure class="source"><figcaption><span>连续原码 · deleteRemainingChildren 的 sibling 删除循环</span><a href="../../react/packages/react-reconciler/src/ReactChildFiber.js">ReactChildFiber.js</a></figcaption><pre>    let childToDelete = currentFirstChild;
-    while (childToDelete !== null) {
-      deleteChild(returnFiber, childToDelete);
-      childToDelete = childToDelete.sibling;
-    }
-    return null;</pre></figure>
-        <figure class="source"><figcaption><span>连续原码 · mapRemainingChildren 的显式 key / index 入口</span><a href="../../react/packages/react-reconciler/src/ReactChildFiber.js">ReactChildFiber.js</a></figcaption><pre>    let existingChild: null | Fiber = currentFirstChild;
-    while (existingChild !== null) {
-      if (existingChild.key === null) {
-        existingChildren.set(existingChild.index, existingChild);</pre></figure>
-        <figure class="source"><figcaption><span>连续原码 · updateSlot 的 Element key 决策</span><a href="../../react/packages/react-reconciler/src/ReactChildFiber.js">ReactChildFiber.js</a></figcaption><pre>    if (typeof newChild === 'object' &amp;&amp; newChild !== null) {
-      switch (newChild.$$typeof) {
-        case REACT_ELEMENT_TYPE: {
-          if (
-            // 这里只接受真实 key 相等；optimistic 槽不在顺序快路径抢占身份，交给 Map 慢
-            // 路径，确保列表其他位置的真实 key 匹配优先。
-            newChild.key === key
-          ) {
-            const prevDebugInfo = pushDebugInfo(newChild._debugInfo);
-            const updated = updateElement(
-              returnFiber,
-              oldFiber,
-              newChild,
-              lanes,
-            );
-            currentDebugInfo = prevDebugInfo;
-            return updated;
-          } else {
-            return null;
-          }</pre></figure>
-        <figure class="source"><figcaption><span>连续原码 · updateFromMap 的 Element 查找与复用</span><a href="../../react/packages/react-reconciler/src/ReactChildFiber.js">ReactChildFiber.js</a></figcaption><pre>    if (typeof newChild === 'object' &amp;&amp; newChild !== null) {
-      switch (newChild.$$typeof) {
-        case REACT_ELEMENT_TYPE: {
-          const matchedFiber =
-            existingChildren.get(
-              newChild.key === null ? newIdx : newChild.key,
-            ) ||
-            (enableOptimisticKey &amp;&amp;
-              // 既有 child 使用 optimistic key 时，仍可退回按 index 匹配。
-              existingChildren.get(-newIdx - 1)) ||
-            null;
-          const prevDebugInfo = pushDebugInfo(newChild._debugInfo);
-          const updated = updateElement(
-            returnFiber,
-            matchedFiber,
-            newChild,
-            lanes,
-          );
-          currentDebugInfo = prevDebugInfo;
-          return updated;</pre></figure>
-        <figure class="source"><figcaption><span>连续原码 · placeChild 的原位、移动与插入</span><a href="../../react/packages/react-reconciler/src/ReactChildFiber.js">ReactChildFiber.js</a></figcaption><pre>    const current = newFiber.alternate;
-    if (current !== null) {
-      const oldIndex = current.index;
-      if (oldIndex &lt; lastPlacedIndex) {
-        // 旧 index 落后表示移动。Fiber 已存在，不设置 PlacementDEV，避免 StrictMode 把
-        // 子树当作重新挂载而重复运行 effect。
-        newFiber.flags |= Placement;
-        return lastPlacedIndex;
-      } else {
-        // 旧 index 仍在单调序列中，可原位保留。
-        return oldIndex;
+      <section id="exact-anchors"><h2>匹配 key 后，还要通过类型兼容检查</h2>
+        <p>调用方先用 key 找到候选，<code>updateElement</code> 再决定是否复用。普通元素比较 <code>current.elementType === element.type</code>；开发期 Refresh Family 与解析后的 lazy type 也有兼容路径。通过检查才调用 <code>useFiber</code>，把旧状态带进 WIP；未通过则新建 Fiber，由外层把旧节点记录为删除。</p>
+        <figure class="source"><figcaption><span>连续原码 · ReactChildFiber.js · updateElement 的候选复用分支</span><a href="../../react/packages/react-reconciler/src/ReactChildFiber.js">打开文件</a></figcaption><pre><code>    if (current !== null) {
+      if (
+        current.elementType === elementType ||
+        // 保持内联，让热更新兼容检查只在类型不相等的慢分支执行。
+        (__DEV__
+          ? isCompatibleFamilyForHotReloading(current, element)
+          : false) ||
+        // Lazy 应以 resolved type 对齐；必须晚于热更新检查，因为热更新不会重新挂起，不能
+        // 让下面的 resolve 提前 suspend 改变其语义。
+        (typeof elementType === &#x27;object&#x27; &amp;&amp;
+          elementType !== null &amp;&amp;
+          elementType.$$typeof === REACT_LAZY_TYPE &amp;&amp;
+          resolveLazy(elementType) === current.type)
+      ) {
+        // 复用 Fiber，列表移动由旧 index 决定。
+        const existing = useFiber(current, element.props);
+        coerceRef(existing, element);
+        existing.return = returnFiber;
+        if (__DEV__) {
+          existing._debugOwner = element._owner;
+          existing._debugInfo = currentDebugInfo;
+        }
+        return existing;
       }
-    } else {
-      // 没有 alternate，属于新插入。
-      newFiber.flags |= Placement | PlacementDEV;
-      return lastPlacedIndex;
-    }</pre></figure>
-        <figure class="source"><figcaption><span>连续原码 · reconcileChildrenArray 首次 miss 后建立 Map</span><a href="../../react/packages/react-reconciler/src/ReactChildFiber.js">ReactChildFiber.js</a></figcaption><pre>    // 首次顺序 miss 后，把剩余旧 child 建成 key/index Map。
-    const existingChildren = mapRemainingChildren(oldFiber);
-
-    // 继续扫描新数组；从 Map 取回的旧项按位置判断为原位或移动。
-    for (; newIdx &lt; newChildren.length; newIdx++) {
-      const newFiber = updateFromMap(
-        existingChildren,
-        returnFiber,
-        newIdx,
-        newChildren[newIdx],
-        lanes,
-      );</pre></figure>
+    }</code></pre></figure>
       </section>
 
       <section id="source-delete-map"><h2>源码 1：删除链与剩余项 Map</h2>
@@ -239,7 +178,7 @@
       }
     }
   }</pre></figure>
-        <div class="callout warn"><p><strong>节选边界：</strong>代码块是当前文件中的连续片段，但在 Element 分支后停止；完整函数随后还处理 Portal、Lazy、Fragment、thenable、Context 与非法类型。这里没有用省略号伪装成完整函数。</p></div>
+        <div class="callout warn"><p><strong>节选边界：</strong>本段只保留文本与 Element 决策，省略区间内说明注释和 optimistic key 分支；函数后半还处理 Portal、Lazy、Fragment、thenable、Context 与非法类型。</p></div>
       </section>
 
       <section id="source-map-place"><h2>源码 3：Map 找身份，lastPlacedIndex 判断位置</h2>
@@ -346,6 +285,53 @@ if (shouldTrackSideEffects) {
 
       <section id="trace"><h2>完整手推：[A,B,C] → [B,A,D]</h2>
         <p><span class="pill">TEACHING TRACE</span> 假设 A/B/C/D 都是同一组件 type，key 分别为字母；这是对上面真实分支的逐步求值。<code>lastPlacedIndex</code> 是“已确认可不移动节点的最大旧 index”，不是当前 DOM 下标。</p>
+        <figure class="engineering-diagram" data-diagram="12-reorder-structure" style="--diagram-min-width:860px">
+          <div class="diagram-scroll">
+            <svg viewBox="0 0 860 1150" role="img" aria-labelledby="12-reorder-structure-title 12-reorder-structure-desc">
+              <title id="12-reorder-structure-title">A、B、C 到 B、A、D 的 Fiber 结构与 Map 消费</title>
+              <desc id="12-reorder-structure-desc">旧 sibling 链 A、B、C 作为 current；新 WIP 链 B、A、D。A 和 B 与旧 Fiber 双向 alternate 相连，C 不进入新链，父 WIP 记录 ChildDeletion 和 deletions。下面四步分别消费 B、A，插入 D，并登记旧 C 删除，展示 lastPlacedIndex 从零升为一后保持。</desc>
+              <defs><marker id="12-reorder-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#507476" /></marker></defs>
+              <text class="d-label" x="30" y="32"><tspan x="30" dy="0">① 结构：render 生成新 sibling 链，宿主树仍为 A → B → C</tspan></text>
+              <rect class="d-node" x="30" y="66" width="250" height="108" rx="10" /><text class="d-label" x="46" y="95"><tspan x="46" dy="0">父 Fiber · current</tspan><tspan x="46" dy="25">child → old A</tspan><tspan x="46" dy="25">同一父级的旧身份域</tspan></text>
+              <rect class="d-state" x="550" y="66" width="280" height="108" rx="10" /><text class="d-label" x="566" y="95"><tspan x="566" dy="0">父 Fiber · WIP</tspan><tspan x="566" dy="25">flags |= ChildDeletion</tspan><tspan x="566" dy="25">deletions = [old C]</tspan></text>
+              <path class="d-edge" d="M155 174 V235" marker-end="url(#12-reorder-arrow)" />
+              <text class="d-muted" x="170" y="207"><tspan x="170" dy="0">child</tspan></text>
+              <path class="d-edge" d="M690 174 V235" marker-end="url(#12-reorder-arrow)" />
+              <text class="d-muted" x="705" y="207"><tspan x="705" dy="0">child</tspan></text>
+              <text class="d-muted" x="341" y="205"><tspan x="341" dy="0">虚线双向：alternate</tspan></text>
+              <rect class="d-node" x="30" y="235" width="250" height="104" rx="10" /><text class="d-label" x="46" y="264"><tspan x="46" dy="0">old A · key=A / Row</tspan><tspan x="46" dy="25">index=0 · state=17</tspan></text>
+              <rect class="d-node" x="30" y="405" width="250" height="104" rx="10" /><text class="d-label" x="46" y="434"><tspan x="46" dy="0">old B · key=B / Row</tspan><tspan x="46" dy="25">index=1 · state=42</tspan></text>
+              <rect class="d-node" x="30" y="575" width="250" height="104" rx="10" /><text class="d-label" x="46" y="604"><tspan x="46" dy="0">old C · key=C / Row</tspan><tspan x="46" dy="25">index=2 · state=9</tspan><tspan x="46" dy="25">未消费，等待删除</tspan></text>
+              <rect class="d-state" x="550" y="235" width="280" height="104" rx="10" /><text class="d-label" x="566" y="264"><tspan x="566" dy="0">new B · index=0</tspan><tspan x="566" dy="25">复用 old B · state=42</tspan><tspan x="566" dy="25">不加 Placement</tspan></text>
+              <rect class="d-state" x="550" y="405" width="280" height="104" rx="10" /><text class="d-label" x="566" y="434"><tspan x="566" dy="0">new A · index=1</tspan><tspan x="566" dy="25">复用 old A · state=17</tspan><tspan x="566" dy="25">Placement：移动</tspan></text>
+              <rect class="d-state" x="550" y="575" width="280" height="104" rx="10" /><text class="d-label" x="566" y="604"><tspan x="566" dy="0">new D · index=2</tspan><tspan x="566" dy="25">alternate=null · 新 state</tspan><tspan x="566" dy="25">Placement | PlacementDEV</tspan></text>
+              <path class="d-edge" d="M155 339 V405" marker-end="url(#12-reorder-arrow)" />
+              <text class="d-muted" x="172" y="379"><tspan x="172" dy="0">sibling</tspan></text>
+              <path class="d-edge" d="M155 509 V575" marker-end="url(#12-reorder-arrow)" />
+              <text class="d-muted" x="172" y="549"><tspan x="172" dy="0">sibling</tspan></text>
+              <path class="d-edge" d="M690 339 V405" marker-end="url(#12-reorder-arrow)" />
+              <text class="d-muted" x="707" y="379"><tspan x="707" dy="0">sibling</tspan></text>
+              <path class="d-edge" d="M690 509 V575" marker-end="url(#12-reorder-arrow)" />
+              <text class="d-muted" x="707" y="549"><tspan x="707" dy="0">sibling</tspan></text>
+              <path class="d-edge" d="M280 281 C366 281 464 457 550 457" marker-end="url(#12-reorder-arrow)" marker-start="url(#12-reorder-arrow)" style="stroke-dasharray:7 5" />
+              <path class="d-edge" d="M280 457 C366 457 464 281 550 281" marker-end="url(#12-reorder-arrow)" marker-start="url(#12-reorder-arrow)" style="stroke-dasharray:7 5" />
+              <text class="d-muted" x="30" y="716"><tspan x="30" dy="0">old C.sibling = null</tspan></text>
+              <text class="d-muted" x="550" y="716"><tspan x="550" dy="0">new D.sibling = null</tspan></text>
+              <text class="d-muted" x="30" y="749"><tspan x="30" dy="0">各 child.return 指向本列父 Fiber；D 没有对应的 current。</tspan></text>
+              <rect class="d-lane" x="16" y="774" width="828" height="360" rx="12" />
+              <text class="d-label" x="30" y="806"><tspan x="30" dy="0">② Map 慢路径：updateSlot(A, B) 失配后，初始 lastPlacedIndex=0</tspan></text>
+              <text class="d-muted" x="30" y="836"><tspan x="30" dy="0">Map = {A→old0, B→old1, C→old2}；先按 key，再比 type。</tspan></text>
+              <rect class="d-state" x="30" y="857" width="390" height="113" rx="10" /><text class="d-label" x="46" y="886"><tspan x="46" dy="0">1. B：oldIndex 1 ≥ 0 · 复用</tspan><tspan x="46" dy="25">删除 Map[B] → {A,C}</tspan><tspan x="46" dy="25">last：0 → 1；不加 Placement</tspan></text>
+              <rect class="d-state" x="440" y="857" width="390" height="113" rx="10" /><text class="d-label" x="456" y="886"><tspan x="456" dy="0">2. A：oldIndex 0 &lt; 1 · 移动</tspan><tspan x="456" dy="25">删除 Map[A] → {C}</tspan><tspan x="456" dy="25">last 保持 1；加 Placement</tspan></text>
+              <rect class="d-state" x="30" y="999" width="390" height="113" rx="10" /><text class="d-label" x="46" y="1028"><tspan x="46" dy="0">3. D：Map 未命中 · 新建</tspan><tspan x="46" dy="25">Map 仍 {C}；last 保持 1</tspan><tspan x="46" dy="25">加 Placement | PlacementDEV</tspan></text>
+              <rect class="d-state" x="440" y="999" width="390" height="113" rx="10" /><text class="d-label" x="456" y="1028"><tspan x="456" dy="0">4. 剩余 C → deleteChild(parent, C)</tspan><tspan x="456" dy="25">父：ChildDeletion；deletions=[C]</tspan><tspan x="456" dy="25">等待 commit 清理旧 C</tspan></text>
+              <path class="d-edge" d="M420 913 H440" marker-end="url(#12-reorder-arrow)" />
+              <path class="d-edge" d="M635 970 V983 H225 V999" marker-end="url(#12-reorder-arrow)" />
+              <path class="d-edge" d="M420 1055 H440" marker-end="url(#12-reorder-arrow)" />
+            </svg>
+          </div>
+          <figcaption><strong>结构与逐步求值：</strong>上半实线表示 <code>child/sibling</code>，虚线双向表示 <code>alternate</code>；下半实线表示处理顺序，框中是同一轮 render 的 Map 快照。state 数值沿下一节的示意设定。A/B 的 state 随身份保留；<code>lastPlacedIndex</code> 决定移动标记，父 Fiber 持有旧 C 的删除记录。Map 末尾遍历只登记删除，不再消费表项。</figcaption>
+        </figure>
         <div class="table-wrap"><table><thead><tr><th>步</th><th>输入 / 调用</th><th>匹配与位置计算</th><th>Map 余项</th><th>输出链与 flags</th><th>state</th></tr></thead><tbody>
           <tr><td>0</td><td>current：A₀ → B₁ → C₂<br />new：B₀,A₁,D₂</td><td><code>lastPlacedIndex = 0</code></td><td>尚未创建</td><td>空</td><td>A/B/C 旧状态可候选</td></tr>
           <tr><td>1</td><td><code>updateSlot(A, B)</code></td><td>key A ≠ B，返回 null；顺序快路径停止</td><td>尚未创建</td><td>空；未删除任何节点</td><td>未决定</td></tr>
@@ -353,16 +339,10 @@ if (shouldTrackSideEffects) {
           <tr><td>3</td><td><code>updateFromMap(..., 0, B)</code></td><td>取 B₁；type 同，WIP B 有 alternate。<code>1 ≥ 0</code>，留位；last：0→1</td><td><code>{A,C}</code></td><td>B₀；无 Placement</td><td><strong>B 保留</strong></td></tr>
           <tr><td>4</td><td><code>updateFromMap(..., 1, A)</code></td><td>取 A₀；type 同。<code>0 &lt; 1</code>，标移动；last 仍 1</td><td><code>{C}</code></td><td>B₀ → A₁；A: Placement</td><td><strong>A 保留</strong></td></tr>
           <tr><td>5</td><td><code>updateFromMap(..., 2, D)</code></td><td>无匹配，创建 D；无 alternate，标插入</td><td><code>{C}</code></td><td>B₀ → A₁ → D₂；D: Placement + PlacementDEV</td><td><strong>D 新建</strong></td></tr>
-          <tr><td>6</td><td>遍历 Map leftovers</td><td><code>deleteChild(parent, C)</code></td><td>空</td><td>parent: ChildDeletion；deletions=[C]</td><td><strong>C 等待清理</strong></td></tr>
+          <tr><td>6</td><td>遍历 Map leftovers</td><td><code>deleteChild(parent, C)</code></td><td><code>{C}</code>（记录删除，不修改 Map）</td><td>parent: ChildDeletion；deletions=[C]</td><td><strong>C 等待清理</strong></td></tr>
           <tr><td>7</td><td>render 返回 WIP child 链</td><td>此时真实宿主顺序仍是 A,B,C</td><td>—</td><td>commit 消费 A/D/C 的副作用后才呈现 B,A,D</td><td>A/B state 延续；C cleanup；D mount</td></tr>
         </tbody></table></div>
 
-        <div class="chain" aria-label="本例 Fiber 结果">
-          <div class="node">B<small>old 1 → new 0<br />state 保留<br />无 Placement</small></div><span class="arrow">→</span>
-          <div class="node">A<small>old 0 → new 1<br />state 保留<br />Placement</small></div><span class="arrow">→</span>
-          <div class="node">D<small>new 2<br />新 state<br />Placement + DEV</small></div><span class="arrow">｜</span>
-          <div class="node">parent<small>ChildDeletion<br />deletions=[C]</small></div>
-        </div>
         <div class="callout"><p><strong>为什么移动 A，不移动 B？</strong>处理 B 后，算法选择旧 index 1 作为单调基线。之后 A 的旧 index 0 落后于它，所以移动 A 到 B 后即可得到 B,A。flags 描述一种正确提交方案，不承诺“直觉上被拿到前面的节点一定带移动标志”。</p></div>
       </section>
 
@@ -375,6 +355,39 @@ if (shouldTrackSideEffects) {
           <tr><td>—</td><td>C / Row</td><td>未消费 old C</td><td>不进入 WIP 链</td><td>不再可见</td><td>commit 删除时执行 ref/effect/宿主清理</td></tr>
         </tbody></table></div>
         <p>换成 <code>&lt;Other key="A" /&gt;</code> 时，Map 仍能找到 old A，但 type 不兼容；结果是 old A 删除、new Other 插入，原 state 不保留。把 A 移到另一个父节点也一样：每个父 Fiber 的 child 协调是独立身份域，没有跨父 Map。</p>
+        <figure class="engineering-diagram" data-diagram="12-type-replacement" style="--diagram-min-width:860px">
+          <div class="diagram-scroll">
+            <svg viewBox="0 0 860 805" role="img" aria-labelledby="12-type-replacement-title 12-type-replacement-desc">
+              <title id="12-type-replacement-title">同 key 不同 type 时的插入与父级删除记录</title>
+              <desc id="12-type-replacement-desc">沿前例把 A 的类型从 Row 改为 Other。Map 命中 old A 但类型检查失败，新 Fiber 没有 alternate，旧 A 留在 Map。末尾父 WIP 的 deletions 保存 old A 和 old C 的引用，并标 ChildDeletion；新的 Other 和 D 各带 Placement，提交才清理和挂载。</desc>
+              <defs><marker id="12-type-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#507476" /></marker></defs>
+              <text class="d-label" x="30" y="32"><tspan x="30" dy="0">同 key 的候选不等于可复用：将本例 A / Row 换为 Other</tspan></text>
+              <rect class="d-node" x="30" y="70" width="320" height="122" rx="10" /><text class="d-label" x="46" y="99"><tspan x="46" dy="0">Map[&quot;A&quot;] → old A</tspan><tspan x="46" dy="25">key=A · elementType=Row</tspan><tspan x="46" dy="25">current state=17</tspan></text>
+              <rect class="d-node" x="510" y="70" width="320" height="122" rx="10" /><text class="d-label" x="526" y="99"><tspan x="526" dy="0">新 ReactElement</tspan><tspan x="526" dy="25">key=A · type=Other</tspan><tspan x="526" dy="25">来自新的 children 数组</tspan></text>
+              <path class="d-edge" d="M190 192 V218 H335 V250" marker-end="url(#12-type-arrow)" />
+              <text class="d-muted" x="40" y="220"><tspan x="40" dy="0">key 找候选</tspan></text>
+              <path class="d-edge" d="M670 192 V218 H525 V250" marker-end="url(#12-type-arrow)" />
+              <text class="d-muted" x="680" y="220"><tspan x="680" dy="0">新 type</tspan></text>
+              <rect class="d-condition" x="270" y="250" width="320" height="98" rx="10" /><text class="d-label" x="286" y="279"><tspan x="286" dy="0">updateElement：类型检查</tspan><tspan x="286" dy="25">Row 与 Other 不兼容</tspan><tspan x="286" dy="25">创建无 alternate 的 Fiber</tspan></text>
+              <path class="d-edge" d="M270 300 H205 V425" marker-end="url(#12-type-arrow)" />
+              <text class="d-muted" x="35" y="375"><tspan x="35" dy="0">旧项未被复用</tspan></text>
+              <path class="d-edge" d="M590 300 H655 V425" marker-end="url(#12-type-arrow)" />
+              <text class="d-muted" x="680" y="364"><tspan x="680" dy="0">无 alternate</tspan><tspan x="680" dy="25">走新建路径</tspan></text>
+              <rect class="d-node" x="30" y="425" width="350" height="110" rx="10" /><text class="d-label" x="46" y="454"><tspan x="46" dy="0">旧 A 仍在 Map</tspan><tspan x="46" dy="25">处理 B/Other(A)/D 后余 {A,C}</tspan><tspan x="46" dy="25">不执行 Map.delete(&quot;A&quot;)</tspan></text>
+              <rect class="d-state" x="480" y="425" width="350" height="110" rx="10" /><text class="d-label" x="496" y="454"><tspan x="496" dy="0">新 Other Fiber · key=A</tspan><tspan x="496" dy="25">alternate=null · 使用初始 state</tspan><tspan x="496" dy="25">Placement | PlacementDEV</tspan></text>
+              <path class="d-edge" d="M190 535 V610" marker-end="url(#12-type-arrow)" />
+              <text class="d-muted" x="215" y="578"><tspan x="215" dy="0">余项 → deleteChild</tspan></text>
+              <path class="d-edge" d="M655 535 V584 H410 V655" marker-end="url(#12-type-arrow)" />
+              <text class="d-muted" x="490" y="578"><tspan x="490" dy="0">链接到新 sibling 链</tspan></text>
+              <rect class="d-state" x="30" y="610" width="380" height="140" rx="10" /><text class="d-label" x="46" y="639"><tspan x="46" dy="0">父 Fiber · WIP</tspan><tspan x="46" dy="25">flags |= ChildDeletion</tspan><tspan x="46" dy="25">deletions = [old A, old C]</tspan><tspan x="46" dy="25">child 链：B → Other(A) → D</tspan></text>
+              <path class="d-edge" d="M30 687 H15 V132 H30" marker-end="url(#12-type-arrow)" style="stroke-dasharray:7 5" />
+              <text class="d-muted" x="36" y="780"><tspan x="36" dy="0">左侧回线：deletions 中的引用指回 current 的 old A。</tspan></text>
+              <rect class="d-node" x="480" y="635" width="350" height="115" rx="10" /><text class="d-label" x="496" y="664"><tspan x="496" dy="0">commit 消费父级与子级 flags</tspan><tspan x="496" dy="25">清理 old A / old C</tspan><tspan x="496" dy="25">挂载 Other / D；B 继续复用</tspan></text>
+              <path class="d-edge" d="M410 700 H480" marker-end="url(#12-type-arrow)" />
+            </svg>
+          </div>
+          <figcaption><strong>删除记录属于父 Fiber：</strong>同 key 命中 old A 后仍要通过类型检查。新 Other 没有 <code>alternate</code>，旧 A 保留在 Map，和原本剩余的 C 一起进入父级 <code>deletions</code>；数组保存 current Fiber 引用。新 sibling 链里的 Other 是另一个 Fiber，原 state=17 不随 key 单独迁移。</figcaption>
+        </figure>
       </section>
 
       <section id="tests"><h2>真实 GWT：重排复用身份，也不重跑 Effect</h2>
@@ -406,10 +419,10 @@ await act(() =&gt; {
 
 expect(log).toEqual([]);</pre></figure>
         <div class="table-wrap"><table><thead><tr><th>GWT</th><th>测试事实</th><th>能证明什么</th></tr></thead><tbody>
-          <tr><td>Given</td><td>key a/b 的 Child 已挂载，layout/passive Effect 均有 mount 与 cleanup 日志</td><td>日志能观察 remount/unmount</td></tr>
+          <tr><td>Given</td><td>key a/b 的 Child 已挂载，layout/passive Effect 的回调记录 mount/cleanup</td><td>日志能观察 remount/unmount</td></tr>
           <tr><td>When</td><td>同一父级把 keys 从 a,b 更新为 b,a</td><td>触发 keyed reorder</td></tr>
           <tr><td>Then</td><td>清空旧日志后，重排结果严格为 <code>[]</code></td><td>已有 keyed child 没被卸载或重挂；移动不带 PlacementDEV，依赖也未变</td></tr>
-          <tr><td>不证明</td><td>没有覆盖跨父移动、type 改变、重复 key</td><td>这些边界必须回到源码分支单独判断</td></tr>
+          <tr><td>适用条件</td><td>同父、同 key、兼容 type，Effect 依赖为 []</td><td>跨父或 type 改变会重建；重复 key 的警告与冲突见后面的边界表</td></tr>
         </tbody></table></div>
 
         <figure class="source"><figcaption><span>删节源码（真实测试）· ReactIdentity-test.js · DOM 引用交换</span><a href="../../react/packages/react-dom/src/__tests__/ReactIdentity-test.js">打开完整测试</a></figcaption><pre>it(<span class="str">'should allow key property to express identity'</span>, async () =&gt; {
@@ -463,14 +476,14 @@ expect(log).toEqual([]);</pre></figure>
 
       <section id="boundaries"><h2>失败边界：key 不是万能身份证</h2>
         <div class="table-wrap"><table><thead><tr><th>输入边界</th><th>真实行为</th><th>可见风险</th><th>对应分支</th></tr></thead><tbody>
-          <tr><td>无 key 列表前插</td><td>Map 按 index 匹配</td><td>相同 type 的 state 可能跟位置而非业务项绑定</td><td><code>key === null ? newIdx : key</code></td></tr>
+          <tr><td>无 key 列表前插</td><td>顺序路径按槽位匹配；进入 Map 时按 index 匹配</td><td>相同 type 的 state 可能跟位置而非业务项绑定</td><td><code>key === null ? newIdx : key</code></td></tr>
           <tr><td>重复 key</td><td>DEV 警告；Map 的单值槽不能表达两个稳定身份</td><td>child 可能重复或遗漏，行为不受保证</td><td><code>warnOnInvalidKey</code></td></tr>
           <tr><td>同 key、不同 type</td><td>候选命中但 <code>updateElement</code> 新建 Fiber</td><td>旧 state/effect 清理，新组件 mount</td><td><code>alternate === null</code>，旧项留 Map</td></tr>
           <tr><td>跨父节点移动</td><td>两个父级各自协调</td><td>旧父删除，新父插入；state 不保留</td><td>Map 仅含当前 <code>returnFiber</code> children</td></tr>
           <tr><td>null/boolean/undefined 空槽</td><td>当前快路径无法区分 miss 与空结果，可能提前进 Map</td><td>主要是性能边界，不等于错误删除</td><td>源码中的 TODO</td></tr>
           <tr><td>新数组先结束</td><td>调用 <code>deleteRemainingChildren</code></td><td>剩余所有 sibling 等待 commit 清理</td><td>数组快出口</td></tr>
           <tr><td>旧链先结束</td><td>剩余新 child 直接创建</td><td>全部标插入；无需 Map</td><td>批量插入快路径</td></tr>
-          <tr><td>首次 mount / hydration</td><td><code>shouldTrackSideEffects</code> 为 false 时不记删除/Placement；列表节点可标 Forked</td><td>不能拿 update flags 套用到首挂载</td><td><code>placeChild</code> 早退</td></tr>
+          <tr><td>新建父 Fiber 的首轮 children 协调</td><td><code>mountChildFibers</code> 不记删除/Placement；列表节点标 Forked</td><td>新建子树由上层 Placement 插入；HostRoot 首次客户端 render 仍走 reconcileChildFibers，hydration 另由游标认领宿主</td><td><code>placeChild</code> 早退</td></tr>
         </tbody></table></div>
       </section>
 
@@ -513,7 +526,7 @@ delete every old Fiber still in existing</pre></figure>
     </main>
 
     <aside class="toc" aria-label="本页目录"><strong>keyed children 深挖</strong>
-      <a href="#reading-contract">证据标签</a><a href="#goal">输入与输出</a><a href="#overview">控制流</a><a href="#exact-anchors">连续原码</a>
+      <a href="#goal">输入与输出</a><a href="#overview">控制流</a><a href="#exact-anchors">类型兼容</a>
       <a href="#source-delete-map">删除与 Map</a><a href="#source-slot">updateSlot</a><a href="#source-map-place">updateFromMap / placeChild</a>
       <a href="#source-loop">慢路径</a><a href="#trace">完整手推</a><a href="#state">state 保留</a>
       <a href="#tests">真实 GWT</a><a href="#complexity">复杂度</a><a href="#boundaries">失败边界</a>

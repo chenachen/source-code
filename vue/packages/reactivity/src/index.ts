@@ -85,7 +85,7 @@ export {
   ARRAY_ITERATE_KEY,
   MAP_KEY_ITERATE_KEY,
 } from './dep'
-// 副作用作用域：成组管理 effect、computed 和 watcher 的生命周期。
+// 副作用作用域：成组管理 effect、watcher 及销毁回调。
 export {
   effectScope,
   EffectScope,

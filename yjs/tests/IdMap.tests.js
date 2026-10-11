@@ -7,7 +7,7 @@ import * as YY from '../src/index.js'
 import * as time from 'lib0/time'
 
 /**
- * 用紧凑四元组 fixture 构造带匿名属性值的 IdMap。
+ * 按 `[client, clock, len, 属性值数组]` 构造 IdMap；属性名统一为空字符串。
  *
  * @template T
  * @param {Array<[number, number, number, Array<T>]>} ops
@@ -21,12 +21,9 @@ const simpleConstructAttrs = ops => {
 }
 
 /**
- * Given：零长、相邻、重叠且属性相同或不同的手工区间。
- * When：`AttrRanges.getIds()` 随比较被规范化。
- * Then：零长段消失；同属性连续段合并；重叠异属性段按边界切分并取属性并集。
- *
- * 验证机制：逐个边界比较规范化 IdMap，覆盖 `AttrRanges.getIds()` 的切分、冒泡
- * 重排和最终相邻归并。
+ * 比较手工构造的 IdMap 与预期区间：相邻同属性段合并，重叠异属性段按边界切分
+ * 并取属性并集。零长度输入在 `IdMap.add()` 时即被忽略；其余范围在比较调用
+ * `AttrRanges.getIds()` 时才规范化。
  *
  * @param {t.TestCase} _tc
  */
@@ -85,8 +82,10 @@ export const testAmMerge = _tc => {
 /**
  * 随机验证多个 IdMap 合并与输入顺序无关，且等价于逐 ID 重建。
  *
- * 验证机制：同时比较正反输入的合并值、逐时钟存在性与逐切片重建结果，证明覆盖
- * 并集和属性集合都保持，而非只验证范围边界。
+ * 比较正反输入的范围和属性集合，并将合并结果逐 ID 切片后重新构造。逐时钟
+ * `hasId()` 另与输入集合的覆盖并集比较；重建使用合并结果自身的属性。
+ *
+ * 初始：三个四 client/5 clock 的随机属性映射，属性候选为 1/2/3。触发：正反序合并，再逐 ID 切片重建。预期：覆盖并集相同，重建范围与合并结果属性集合相同；该重建以合并结果自身的属性作参考。
  *
  * @param {t.TestCase} tc
  */
@@ -123,6 +122,8 @@ export const testRepeatMergingMultipleIdMaps = tc => {
 /**
  * 随机验证 `A \ B` 等于 `(A ∪ B) \ B`，并验证差集可无损编解码。
  *
+ * 初始：四 client/100 clock 的两个随机映射，属性候选为 1/2/3。触发：比较 A\B 与 (A∪B)\B，并 V2 编解码第一个差集。预期：覆盖、属性 hash 集合与驻留索引均保持一致。
+ *
  * @param {t.TestCase} tc
  */
 export const testRepeatRandomDiffing = tc => {
@@ -141,6 +142,8 @@ export const testRepeatRandomDiffing = tc => {
 
 /**
  * 随机验证“先合并再排除”等于“分别排除再合并”，并验证结果可无损编解码。
+ *
+ * 初始：两个随机 IdMap 和随机 IdSet 排除集，均为四 client/100 clock。触发：合并后排除与分别排除后合并，再编解码结果。预期：覆盖与属性集合相同，序列化往返不变。
  *
  * @param {t.TestCase} tc
  */
@@ -166,6 +169,8 @@ export const testRepeatRandomDiffing2 = tc => {
  *
  * 删除长度允许越过已生成范围，覆盖尾端裁剪和整客户端键移除边界。
  *
+ * 初始：一 client 随机 IdMap，候选值为空时 helper 实际创建 val=undefined 的属性；删除范围可超过尾端。触发：比较 delete 与 diffIdMap。预期：被删 clock 无覆盖，完整规范范围和属性一致；未覆盖真正 attrs=[] 的输入。
+ *
  * @param {t.TestCase} tc
  */
 export const testRepeatRandomDeletes = tc => {
@@ -186,9 +191,11 @@ export const testRepeatRandomDeletes = tc => {
 }
 
 /**
- * 随机逐 ID 验证 IdMap 交集只保留双方覆盖，并连接双方属性。
+ * 随机逐 ID 检查 IdMap 交集的覆盖范围，并比较结果属性数量与双方属性数量之和。
  *
- * 另比较 `A \ B` 与 `A \ (A ∩ B)`，证明交集范围恰好代表需从 A 排除的重叠。
+ * 另比较 `A \ B` 与 `A \ (A ∩ B)`，检查排除交集与排除整个 B 得到同一差集。
+ *
+ * 初始：左右映射分别只用属性值 1 与 two，避免同值合并影响计数。触发：逐 ID 比较交集覆盖与两侧属性数量，再比较两个差集。预期：共同覆盖处属性数量为两侧数量之和，非共同覆盖处为空，差集相等。
  *
  * @param {t.TestCase} tc
  */
@@ -225,8 +232,9 @@ export const testRepeatRandomIntersects = tc => {
 /**
  * 基准化事务插入/删除归因的收集与 IdMap 编码体积。
  *
- * 此用例记录性能和每次变更字节数，不建立时间阈值；机制目标是覆盖真实事务产生
- * 的大量重叠归因区间及属性去重编码。
+ * 通过真实事务收集插入/删除归因，再记录收集耗时、编码耗时和每次变更字节数。
+ *
+ * 初始：空文本和空归因表，afterTransaction 收集插入/删除及同一时间戳。触发：10,000 轮随机插入或删除，然后编码归因表。目标：打印两个阶段耗时、总字节数及每轮字节数；没有数值正确性断言或性能阈值。
  *
  * @param {t.TestCase} tc
  */

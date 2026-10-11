@@ -17,6 +17,7 @@ export class IdSetDecoderV1 {
    * @param {decoding.Decoder} decoder
    */
   constructor (decoder) {
+    /** 与调用方共享当前位置；读取会推进同一基础解码器。 */
     this.restDecoder = decoder
   }
 
@@ -112,6 +113,8 @@ export class UpdateDecoderV1 extends IdSetDecoderV1 {
   /**
    * 读取结构或内容长度。
    *
+   * 返回占用的逻辑 clock 数；对字符串是 UTF-16 单位，对数组是元素数，与线格式字节长度不同。
+   *
    * @return {number} len
    */
   readLen () {
@@ -171,6 +174,7 @@ export class IdSetDecoderV2 {
      * @private
      */
     this.dsCurrVal = 0
+    /** 与调用方共享当前位置；读取会推进同一基础解码器。 */
     this.restDecoder = decoder
   }
 
@@ -213,6 +217,8 @@ export class UpdateDecoderV2 extends IdSetDecoderV2 {
   /**
    * 从更新头拆出各专用 RLE/差分解码器。
    *
+   * 九列用各自长度切开后，传入 decoder 的当前位置就是通用尾流起点；restDecoder 继续复用该对象。预留标志只被读取，不验证其值。
+   *
    * @param {decoding.Decoder} decoder
    */
   constructor (decoder) {
@@ -224,14 +230,23 @@ export class UpdateDecoderV2 extends IdSetDecoderV2 {
      */
     this.keys = []
     decoding.readVarUint(decoder) // 读取预留功能标志；当前版本固定为 0。
+    /** 格式键引用号的有符号差分/RLE 列；当前编码器为每次写键递增新编号。 */
     this.keyClockDecoder = new decoding.IntDiffOptRleDecoder(decoding.readVarUint8Array(decoder))
+    /** 结构 client 和左右锚点 client 共用的无符号 RLE 列，读取顺序须与写入一致。 */
     this.clientDecoder = new decoding.UintOptRleDecoder(decoding.readVarUint8Array(decoder))
+    /** 左锚点绝对 clock 的有符号差分/RLE 列，与右 clock 独立维护差分状态。 */
     this.leftClockDecoder = new decoding.IntDiffOptRleDecoder(decoding.readVarUint8Array(decoder))
+    /** 右锚点绝对 clock 的有符号差分/RLE 列，与左 clock 独立维护差分状态。 */
     this.rightClockDecoder = new decoding.IntDiffOptRleDecoder(decoding.readVarUint8Array(decoder))
+    /** 结构 info 字节的 RLE 列，低五位为内容/结构引用，高三位描述锚点与 parentSub。 */
     this.infoDecoder = new decoding.RleDecoder(decoding.readVarUint8Array(decoder), decoding.readUint8)
+    /** 字符串内容、根键、属性键等共享的字符串列；按消费次序拆分长度。 */
     this.stringDecoder = new decoding.StringDecoder(decoding.readVarUint8Array(decoder))
+    /** 父引用种类的字节 RLE 列，1 为根键、0 为父 Item ID。 */
     this.parentInfoDecoder = new decoding.RleDecoder(decoding.readVarUint8Array(decoder), decoding.readUint8)
+    /** 嵌套类型引用号的无符号 RLE 列；与内容引用号 info 分属不同字段。 */
     this.typeRefDecoder = new decoding.UintOptRleDecoder(decoding.readVarUint8Array(decoder))
+    /** GC/数组等长度的无符号 RLE 列，值表示逻辑 clock 数。 */
     this.lenDecoder = new decoding.UintOptRleDecoder(decoding.readVarUint8Array(decoder))
   }
 
@@ -299,6 +314,8 @@ export class UpdateDecoderV2 extends IdSetDecoderV2 {
   /**
    * 从长度 RLE 列读取结构或内容长度。
    *
+   * 返回结构/内容占用的逻辑 clock 数；解码列的读取顺序须与对应内容写入顺序一致。
+   *
    * @return {number}
    */
   readLen () {
@@ -315,7 +332,7 @@ export class UpdateDecoderV2 extends IdSetDecoderV2 {
   }
 
   /**
-   * 从尾部流读取带长度前缀的字节数组。
+   * 从尾部流读取带长度前缀的字节数组视图，与输入更新共享底层缓冲区。
    *
    * @return {Uint8Array}
    */
@@ -326,7 +343,7 @@ export class UpdateDecoderV2 extends IdSetDecoderV2 {
   /**
    * 从尾部流读取兼容 JSON 内容的 any 值。
    *
-   * 方法名保留旧内容协议语义；V2 实际使用更快的 lib0 any 编码。
+   * 方法名保留旧内容协议语义；V2 使用 lib0 any 编码，不执行 JSON.parse。
    *
    * @return {any}
    */
@@ -337,8 +354,8 @@ export class UpdateDecoderV2 extends IdSetDecoderV2 {
   /**
    * 按引用号读取或登记格式键。
    *
-   * 已知编号直接复用缓存；新编号必须恰好等于下一个数组位置，并从字符串列消费
-   * 一个新键，与编码器的单调 `keyClock` 保持同步。
+   * 已知编号直接复用缓存；编号不小于缓存长度时，从字符串列消费一个键并追加。
+   * 当前编码器按 0、1、2… 分配新编号，使其与数组下标对应；这里不额外校验新编号。
    *
    * @return {string}
    */

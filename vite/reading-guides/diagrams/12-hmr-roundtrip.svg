@@ -1,0 +1,204 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1160" height="1940" viewBox="0 0 1160 1940" role="img" aria-labelledby="hr-title hr-desc" style="font-family:system-ui,-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif">
+<title id="hr-title">普通 HMR：child invalidate 的两轮跨角色时序</title>
+<desc id="hr-desc">Vite v8.2.1，playground/hmr/invalidation。Watcher 先等待 watchChange 并清转换缓存，再进入 HMR 边界计算；传播后写 HMR timestamp。第一轮更新 child，HMRClient 冻结旧回调，有 disposer 时等待 dispose，再导入新 child，同步旧 callback 发送 vite:invalidate，不等待 callback 返回的 Promise。服务端对首个上报去重，从 child.importers 的 parent 重新传播，复用 timestamp 与 firstInvalidatedBy=child。若第二轮 payload 在第一轮 handler 结束前到达，只能排队。parent 重执行读取新 child 并写 DOM。蓝色阴影只画实现允许的交叠，测试未测网络先后。</desc>
+<defs>
+<marker id="hr-arrow-blue" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0 L9 4.5 L0 9 Z" fill="#17659b"/></marker>
+<marker id="hr-arrow-green" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0 L9 4.5 L0 9 Z" fill="#18734a"/></marker>
+<marker id="hr-arrow-red" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0 L9 4.5 L0 9 Z" fill="#b13b42"/></marker>
+<marker id="hr-arrow-line" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0 L9 4.5 L0 9 Z" fill="#8296a8"/></marker>
+</defs>
+<style>.hr-title{font-weight:700;fill:#17324d;font-size:30px} .hr-section{font-weight:700;fill:#17324d;font-size:23px} .hr-label{fill:#17324d;font-size:19px} .hr-small{fill:#456078;font-size:17px} .hr-edge{font-size:18px;fill:#17659b;font-weight:600} .hr-role{font-size:20px;fill:#17324d;font-weight:700}</style>
+<rect x="0" y="0" width="1160" height="1940" rx="0" fill="#f7fafc"/>
+<text class="hr-title" x="38" y="47" text-anchor="start">
+<tspan x="38" dy="0">child 主动 invalidate：两轮 HMR 跨角色协作</tspan>
+</text>
+<text class="hr-small" x="38" y="82" text-anchor="start">
+<tspan x="38" dy="0">时间自上而下 · 实线为调用 / 消息，虚线为返回 · 两轮共用 timestamp</tspan>
+</text>
+<rect x="34" y="104" width="1092" height="118" rx="14" fill="#ffffff" stroke="#cad8e3" stroke-width="1.7"/>
+<rect x="62" y="133" width="225" height="60" rx="12" fill="#e9f7ee" stroke="#18734a" stroke-width="1.7"/>
+<text class="hr-label" x="174.5" y="157.5" text-anchor="middle">
+<tspan x="174.5" dy="0">parent.js</tspan>
+<tspan x="174.5" dy="25">self-accept</tspan>
+</text>
+<rect x="452" y="133" width="225" height="60" rx="12" fill="#e9f7ee" stroke="#18734a" stroke-width="1.7"/>
+<text class="hr-label" x="564.5" y="157.5" text-anchor="middle">
+<tspan x="564.5" dy="0">child.js</tspan>
+<tspan x="564.5" dy="25">self-accept</tspan>
+</text>
+<path d="M289 163 L448 163" fill="none" stroke="#8296a8" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#hr-arrow-line)"/>
+<text class="hr-edge" x="368.5" y="148" text-anchor="middle">
+<tspan x="368.5" dy="0">import</tspan>
+</text>
+<rect x="829" y="133" width="267" height="60" rx="12" fill="#f0f4f7" stroke="#8296a8" stroke-width="1.7"/>
+<text class="hr-label" x="962.5" y="157.5" text-anchor="middle">
+<tspan x="962.5" dy="0">浏览器已执行两个模块</tspan>
+<tspan x="962.5" dy="25">各自保存当前一代 callback</tspan>
+</text>
+<text class="hr-role" x="140" y="272" text-anchor="middle">
+<tspan x="140" dy="0">Watcher / 图缓存</tspan>
+</text>
+<path d="M140 296 L140 1852" fill="none" stroke="#8296a8" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="4 7"/>
+<text class="hr-role" x="370" y="272" text-anchor="middle">
+<tspan x="370" dy="0">HMR server</tspan>
+</text>
+<path d="M370 296 L370 1852" fill="none" stroke="#8296a8" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="4 7"/>
+<text class="hr-role" x="590" y="272" text-anchor="middle">
+<tspan x="590" dy="0">HotChannel / WS</tspan>
+</text>
+<path d="M590 296 L590 1852" fill="none" stroke="#8296a8" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="4 7"/>
+<text class="hr-role" x="805" y="272" text-anchor="middle">
+<tspan x="805" dy="0">Browser handler</tspan>
+</text>
+<path d="M805 296 L805 1852" fill="none" stroke="#8296a8" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="4 7"/>
+<text class="hr-role" x="1040" y="272" text-anchor="middle">
+<tspan x="1040" dy="0">浏览器 ESM</tspan>
+</text>
+<path d="M1040 296 L1040 1852" fill="none" stroke="#8296a8" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="4 7"/>
+<rect x="34" y="1149" width="1092" height="323" rx="12" fill="#edf6fb" stroke="#b7d5e7" stroke-width="1.7"/>
+<text class="hr-small" x="47" y="1411" text-anchor="start">
+<tspan x="47" dy="0">条件性示意：若 #2 先到达、#1 尚未结束，只入队。</tspan>
+<tspan x="47" dy="24">网络返回与 afterUpdate #1 没有固定先后。</tspan>
+</text>
+<rect x="36" y="315" width="240" height="116" rx="12" fill="#f0f4f7" stroke="#8296a8" stroke-width="1.7"/>
+<text class="hr-small" x="156.0" y="342.5" text-anchor="middle">
+<tspan x="156.0" dy="0">await watchChange hooks</tspan>
+<tspan x="156.0" dy="25">onFileChange 清转换 / ETag</tspan>
+<tspan x="156.0" dy="25">保留图节点、importers</tspan>
+<tspan x="156.0" dy="25">与最近的 accept 状态</tspan>
+</text>
+<path d="M140 460 L370 460" fill="none" stroke="#17659b" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#hr-arrow-blue)"/>
+<text class="hr-edge" x="255.0" y="447" text-anchor="middle">
+<tspan x="255.0" dy="0">onHMRUpdate(update)</tspan>
+</text>
+<rect x="251" y="487" width="238" height="108" rx="12" fill="#edf6fc" stroke="#17659b" stroke-width="1.7"/>
+<text class="hr-small" x="370.0" y="508" text-anchor="middle">
+<tspan x="370.0" dy="0">hotUpdate hooks</tspan>
+<tspan x="370.0" dy="19">propagateUpdate(child)</tspan>
+<tspan x="370.0" dy="19">child self-accept</tspan>
+<tspan x="370.0" dy="19">boundary = child</tspan>
+<tspan x="370.0" dy="19">acceptedVia = child</tspan>
+</text>
+<rect x="251" y="613" width="238" height="62" rx="12" fill="#edf6fc" stroke="#17659b" stroke-width="1.7"/>
+<text class="hr-small" x="370.0" y="638.5" text-anchor="middle">
+<tspan x="370.0" dy="0">HMR invalidateModule(child)</tspan>
+<tspan x="370.0" dy="25">写 timestamp · 重置去重标记</tspan>
+</text>
+<path d="M370 701 L590 701" fill="none" stroke="#17659b" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#hr-arrow-blue)"/>
+<text class="hr-edge" x="480.0" y="686" text-anchor="middle">
+<tspan x="480.0" dy="0">#1 update(child → child)</tspan>
+</text>
+<path d="M590 744 L805 744" fill="none" stroke="#17659b" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#hr-arrow-blue)"/>
+<text class="hr-edge" x="697.5" y="731" text-anchor="middle">
+<tspan x="697.5" dy="0">payload #1</tspan>
+</text>
+<rect x="797" y="744" width="16" height="697" rx="3" fill="#d8ede4" stroke="#18734a" stroke-width="1.7"/>
+<rect x="699" y="774" width="214" height="93" rx="12" fill="#e9f7ee" stroke="#18734a" stroke-width="1.7"/>
+<text class="hr-label" x="806.0" y="802.5" text-anchor="middle">
+<tspan x="806.0" dy="0">await beforeUpdate</tspan>
+<tspan x="806.0" dy="25">冻结旧 child callback</tspan>
+<tspan x="806.0" dy="25">有 dispose 时先 await</tspan>
+</text>
+<path d="M805 894 L1040 894" fill="none" stroke="#17659b" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#hr-arrow-blue)"/>
+<text class="hr-edge" x="922.5" y="881" text-anchor="middle">
+<tspan x="922.5" dy="0">import child.js?t=ts</tspan>
+</text>
+<rect x="1032" y="895" width="16" height="93" rx="3" fill="#e0eef8" stroke="#17659b" stroke-width="1.7"/>
+<rect x="928" y="912" width="194" height="56" rx="12" fill="#edf6fc" stroke="#17659b" stroke-width="1.7"/>
+<text class="hr-small" x="1025.0" y="938.5" text-anchor="middle">
+<tspan x="1025.0" dy="0">新 child 求值</tspan>
+<tspan x="1025.0" dy="25">登记新 context 与回调</tspan>
+</text>
+<path d="M1040 1008 L805 1008" fill="none" stroke="#17659b" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="6 5" marker-end="url(#hr-arrow-blue)"/>
+<text class="hr-edge" x="922.5" y="995" text-anchor="middle">
+<tspan x="922.5" dy="0">新 namespace</tspan>
+</text>
+<rect x="699" y="1021" width="214" height="72" rx="12" fill="#e9f7ee" stroke="#18734a" stroke-width="1.7"/>
+<text class="hr-small" x="806.0" y="1051.5" text-anchor="middle">
+<tspan x="806.0" dy="0">同步执行旧 child callback</tspan>
+<tspan x="806.0" dy="25">hot.invalidate()</tspan>
+</text>
+<path d="M805 1126 L590 1126" fill="none" stroke="#17659b" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#hr-arrow-blue)"/>
+<text class="hr-edge" x="697.5" y="1110" text-anchor="middle">
+<tspan x="697.5" dy="0">vite:invalidate(child)</tspan>
+</text>
+<text class="hr-small" x="695" y="1147" text-anchor="middle">
+<tspan x="695" dy="0">firstInvalidatedBy = child</tspan>
+</text>
+<path d="M590 1176 L370 1176" fill="none" stroke="#17659b" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#hr-arrow-blue)"/>
+<text class="hr-edge" x="480.0" y="1163" text-anchor="middle">
+<tspan x="480.0" dy="0">custom invalidate</tspan>
+</text>
+<rect x="251" y="1204" width="238" height="102" rx="12" fill="#edf6fc" stroke="#17659b" stroke-width="1.7"/>
+<text class="hr-small" x="370.0" y="1227.5" text-anchor="middle">
+<tspan x="370.0" dy="0">首个上报：去重 = true</tspan>
+<tspan x="370.0" dy="23">从 child.importers = {parent}</tspan>
+<tspan x="370.0" dy="23">传播；parent self-accept</tspan>
+<tspan x="370.0" dy="23">复用 timestamp 与根来源</tspan>
+</text>
+<rect x="699" y="1204" width="214" height="89" rx="12" fill="#e9f7ee" stroke="#18734a" stroke-width="1.7"/>
+<text class="hr-small" x="806.0" y="1230.5" text-anchor="middle">
+<tspan x="806.0" dy="0">await afterUpdate #1</tspan>
+<tspan x="806.0" dy="25">listeners；旧回调已返回</tspan>
+<tspan x="806.0" dy="25">accept Promise 未被等待</tspan>
+</text>
+<path d="M370 1347 L590 1347" fill="none" stroke="#17659b" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#hr-arrow-blue)"/>
+<text class="hr-edge" x="480.0" y="1332" text-anchor="middle">
+<tspan x="480.0" dy="0">#2 update(parent → parent)</tspan>
+</text>
+<path d="M590 1387 L805 1387" fill="none" stroke="#17659b" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#hr-arrow-blue)"/>
+<text class="hr-edge" x="697.5" y="1372" text-anchor="middle">
+<tspan x="697.5" dy="0">payload #2 → 仅入队</tspan>
+</text>
+<path d="M813 1394 L901 1394" fill="none" stroke="#8296a8" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#hr-arrow-line)"/>
+<rect x="905" y="1350" width="206" height="79" rx="12" fill="#fff7e7" stroke="#bd9347" stroke-width="1.7"/>
+<text class="hr-label" x="1008.0" y="1384.0" text-anchor="middle">
+<tspan x="1008.0" dy="0">运行：#1 handler</tspan>
+<tspan x="1008.0" dy="25">排队：#2 payload</tspan>
+</text>
+<rect x="699" y="1413" width="214" height="45" rx="12" fill="#e9f7ee" stroke="#18734a" stroke-width="1.7"/>
+<text class="hr-label" x="806.0" y="1442.5" text-anchor="middle">
+<tspan x="806.0" dy="0">#1 handler 完成</tspan>
+</text>
+<path d="M805 1477 L805 1500" fill="none" stroke="#17659b" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#hr-arrow-blue)"/>
+<text class="hr-edge" x="780" y="1491" text-anchor="end">
+<tspan x="780" dy="0">队列启动下一项</tspan>
+</text>
+<rect x="797" y="1508" width="16" height="320" rx="3" fill="#d8ede4" stroke="#18734a" stroke-width="1.7"/>
+<rect x="699" y="1508" width="214" height="74" rx="12" fill="#e9f7ee" stroke="#18734a" stroke-width="1.7"/>
+<text class="hr-small" x="806.0" y="1529" text-anchor="middle">
+<tspan x="806.0" dy="0">#2 await beforeUpdate</tspan>
+<tspan x="806.0" dy="21">冻结旧 parent 回调</tspan>
+<tspan x="806.0" dy="21">有 dispose 时先 await</tspan>
+</text>
+<path d="M805 1608 L1040 1608" fill="none" stroke="#17659b" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#hr-arrow-blue)"/>
+<text class="hr-edge" x="922.5" y="1595" text-anchor="middle">
+<tspan x="922.5" dy="0">import parent.js?t=ts</tspan>
+</text>
+<rect x="1032" y="1608" width="16" height="107" rx="3" fill="#e0eef8" stroke="#17659b" stroke-width="1.7"/>
+<rect x="920" y="1629" width="206" height="61" rx="12" fill="#edf6fc" stroke="#17659b" stroke-width="1.7"/>
+<text class="hr-small" x="1023.0" y="1653" text-anchor="middle">
+<tspan x="1023.0" dy="0">parent 读取新 child</tspan>
+<tspan x="1023.0" dy="23">重执行并写入 DOM</tspan>
+</text>
+<path d="M1040 1725 L805 1725" fill="none" stroke="#17659b" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="6 5" marker-end="url(#hr-arrow-blue)"/>
+<text class="hr-edge" x="922.5" y="1712" text-anchor="middle">
+<tspan x="922.5" dy="0">新 parent namespace</tspan>
+</text>
+<rect x="699" y="1740" width="214" height="69" rx="12" fill="#e9f7ee" stroke="#18734a" stroke-width="1.7"/>
+<text class="hr-small" x="806.0" y="1769.0" text-anchor="middle">
+<tspan x="806.0" dy="0">同步 parent accept callback</tspan>
+<tspan x="806.0" dy="25">本例 accept() 为无操作</tspan>
+</text>
+<text class="hr-small" x="805" y="1842" text-anchor="middle">
+<tspan x="805" dy="0">await afterUpdate #2 → handler 完成</tspan>
+</text>
+<rect x="34" y="1817" width="498" height="70" rx="12" fill="#e9f7ee" stroke="#18734a" stroke-width="1.7"/>
+<text class="hr-small" x="283.0" y="1846.5" text-anchor="middle">
+<tspan x="283.0" dy="0">DOM：child → child updated</tspan>
+<tspan x="283.0" dy="25">测试主页面精确日志只有一轮 parent 更新</tspan>
+</text>
+<text class="hr-small" x="42" y="1912" text-anchor="start">
+<tspan x="42" dy="0">证据：onFileChange → propagateUpdate → HMRClient.fetchUpdate → DevEnvironment.invalidateModule → createHMRHandler</tspan>
+</text>
+</svg>

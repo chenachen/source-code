@@ -259,11 +259,11 @@ export interface SlotOutletNode extends BaseElementNode {
   ssrCodegenNode?: CallExpression
 }
 
-/** `<template>` 透明容器；结构转换消费它，最终不会直接生成 VNode。 */
+/** 结构或插槽 `<template>` 容器；转换器使用其子节点，不生成容器自身的 VNode。 */
 export interface TemplateNode extends BaseElementNode {
   /** 将联合类型收窄为透明模板容器。 */
   tagType: ElementTypes.TEMPLATE
-  /** `<template>` 仅组织指令与子节点，转换后必定被消除。 */
+  /** 结构转换可替换该节点；插槽 template 可留在模板 AST 中，自身没有 codegenNode。 */
   codegenNode: undefined
 }
 
@@ -498,7 +498,7 @@ export interface VNodeCall extends Node {
   isBlockRequired?: boolean
   /** 是否以 block 形式生成，以收集动态子节点。 */
   isBlock: boolean
-  /** 调用 `openBlock(true)` 禁用动态子节点追踪；稳定 Fragment 等场景会使用。 */
+  /** 是否生成 `openBlock(true)`；动态 v-for 列表外层关闭收集，稳定列表保持追踪。 */
   disableTracking: boolean
   /** 是否为组件 VNode；决定使用通用还是 element 创建 helper。 */
   isComponent: boolean
@@ -609,7 +609,7 @@ export interface CacheExpression extends Node {
   index: number
   /** 首次渲染时计算并写入缓存的值。 */
   value: JSChildNode
-  /** 求值期间是否暂停响应式依赖追踪，主要供 `v-once` 使用。 */
+  /** 求值期间是否暂停 block 动态节点收集，避免 v-once 缓存子树进入外层 dynamicChildren。 */
   needPauseTracking: boolean
   /** 是否处于 `v-once` 子树内，影响 block 与缓存恢复逻辑。 */
   inVOnce: boolean
@@ -818,7 +818,7 @@ export interface ListDynamicSlotIterator extends FunctionExpression {
 
 /** 运行时动态插槽描述对象，固定包含名称和函数属性。 */
 export interface DynamicSlotNode extends ObjectExpression {
-  /** 固定为名称属性和函数属性；分支 key 可作为名称侧附加信息生成。 */
+  /** 类型约束列出 name/fn 两项；条件插槽生成时还会实际追加独立的 key 属性。 */
   properties: [Property, DynamicSlotFnProperty]
 }
 
@@ -855,7 +855,7 @@ export interface ForCodegenNode extends VNodeCall {
   disableTracking: boolean
 }
 
-/** `renderList(source, iterator)` 的精确调用形状。 */
+/** 常规 `renderList(source, iterator)` 调用形状；带 v-memo 时生成器还会追加缓存数组与索引。 */
 export interface ForRenderListExpression extends CallExpression {
   /** `v-for` 固定调用运行时 `renderList` helper。 */
   callee: typeof RENDER_LIST
@@ -870,6 +870,9 @@ export interface ForIteratorExpression extends FunctionExpression {
 }
 
 // AST 工厂与辅助函数 ----------------------------------------------------------
+
+// 工厂仅创建当前层对象，children、参数和 loc 均保留调用方引用，不深拷贝。
+// 因此转换器可先挂载父级生成描述，再让后续遍历补齐被引用的子节点。
 
 /**
  * 无真实源码位置时复用的占位 location。
@@ -907,6 +910,7 @@ export function createRoot(
  *
  * block 节点需要 `openBlock` 加对应的 createBlock helper；普通节点只需 createVNode。
  * 原生元素可使用体积更小的 element 版本，组件与 SSR 则统一使用通用版本。
+ * context 为 null 时只组装节点，不登记 helper；调用方须另外保证根 helper 集合完整。
  */
 export function createVNodeCall(
   context: TransformContext | null,
@@ -1035,7 +1039,7 @@ type InferCodegenNodeType<T> = T extends typeof RENDER_SLOT
   ? RenderSlotCall
   : CallExpression
 
-/** 创建函数/helper 调用节点。 */
+/** 创建函数/helper 调用节点；callee 的 helper 登记由调用方完成，此工厂没有上下文副作用。 */
 export function createCallExpression<T extends CallExpression['callee']>(
   callee: T,
   args: CallExpression['arguments'] = [],

@@ -7,7 +7,7 @@
  * @flow
  */
 
-/** addEventBubbleListener 管理封装浏览器 addEventListener/removeEventListener 的 capture、passive 与 once 选项的注册/监听边界；避免同一容器重复安装或遗漏 capture 配置。 */
+/** 在目标安装原生 bubble listener 并返回该回调，供移除使用。 */
 export function addEventBubbleListener(
   target: EventTarget,
   eventType: string,
@@ -17,7 +17,7 @@ export function addEventBubbleListener(
   return listener;
 }
 
-/** addEventCaptureListener 管理封装浏览器 addEventListener/removeEventListener 的 capture、passive 与 once 选项的注册/监听边界；避免同一容器重复安装或遗漏 capture 配置。 */
+/** 在目标安装原生 capture listener 并返回该回调，供移除使用。 */
 export function addEventCaptureListener(
   target: EventTarget,
   eventType: string,
@@ -27,7 +27,7 @@ export function addEventCaptureListener(
   return listener;
 }
 
-/** addEventCaptureListenerWithPassiveFlag 管理封装浏览器 addEventListener/removeEventListener 的 capture、passive 与 once 选项的注册/监听边界；避免同一容器重复安装或遗漏 capture 配置。 */
+/** 按指定 passive 值安装 capture listener；返回回调。 */
 export function addEventCaptureListenerWithPassiveFlag(
   target: EventTarget,
   eventType: string,
@@ -41,7 +41,7 @@ export function addEventCaptureListenerWithPassiveFlag(
   return listener;
 }
 
-/** addEventBubbleListenerWithPassiveFlag 管理封装浏览器 addEventListener/removeEventListener 的 capture、passive 与 once 选项的注册/监听边界；避免同一容器重复安装或遗漏 capture 配置。 */
+/** 按指定 passive 值安装 bubble listener；返回回调。 */
 export function addEventBubbleListenerWithPassiveFlag(
   target: EventTarget,
   eventType: string,
@@ -54,7 +54,7 @@ export function addEventBubbleListenerWithPassiveFlag(
   return listener;
 }
 
-/** removeEventListener 管理封装浏览器 addEventListener/removeEventListener 的 capture、passive 与 once 选项的注册/监听边界；避免同一容器重复安装或遗漏 capture 配置。 */
+/** 按事件名、回调身份和 capture 值解除原生监听。 */
 export function removeEventListener(
   target: EventTarget,
   eventType: string,

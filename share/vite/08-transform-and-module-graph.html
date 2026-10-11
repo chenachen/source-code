@@ -506,6 +506,7 @@ a:hover {
 .prose p,
 .prose li {
   color: var(--text);
+  overflow-wrap: anywhere;
 }
 
 .prose p {
@@ -762,6 +763,124 @@ code {
   border-radius: var(--radius);
   background: var(--surface);
   box-shadow: var(--shadow);
+}
+
+.engineering-diagram {
+  min-width: 0;
+  margin: 28px 0;
+  padding: 18px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.engineering-diagram > figcaption {
+  margin-bottom: 12px;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 750;
+  line-height: 1.5;
+}
+
+.diagram-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.diagram-toolbar button,
+.diagram-toolbar a {
+  display: inline-flex;
+  min-height: 36px;
+  padding: 6px 10px;
+  align-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: var(--surface-soft);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.diagram-toolbar button:hover,
+.diagram-toolbar a:hover {
+  border-color: var(--brand);
+  color: var(--brand-strong);
+}
+
+.diagram-scale {
+  min-width: 42px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.diagram-viewport {
+  max-width: 100%;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #f8fafc;
+  overscroll-behavior: contain;
+}
+
+.diagram-canvas {
+  max-width: none;
+}
+
+.diagram-canvas > svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.engineering-diagram .diagram-hint {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+body.diagram-is-expanded {
+  overflow: hidden;
+}
+
+body.diagram-is-expanded::after {
+  position: fixed;
+  z-index: 999;
+  inset: 0;
+  background: rgb(0 0 0 / 65%);
+  content: '';
+}
+
+.engineering-diagram.is-expanded {
+  position: fixed;
+  z-index: 1000;
+  inset: 16px;
+  display: flex;
+  margin: 0;
+  flex-direction: column;
+  box-shadow: var(--shadow);
+}
+
+.engineering-diagram.is-expanded .diagram-viewport {
+  min-height: 0;
+  flex: 1;
+}
+
+@media (max-width: 700px) {
+  .engineering-diagram {
+    padding: 12px;
+  }
+
+  .engineering-diagram.is-expanded {
+    inset: 6px;
+  }
 }
 
 .flow-caption {
@@ -1363,7 +1482,7 @@ code {
     break-inside: avoid;
   }
 }
-</style><script>(function(){try{var t=localStorage.getItem("vite-guide-theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(_){}})();</script></head><body><a class="skip-link" href="#article-start">跳到正文</a><div class="reading-progress" aria-hidden="true"><span data-reading-progress></span></div><header class="topbar"><div class="topbar-inner"><button class="icon-button nav-toggle" type="button" data-nav-toggle aria-expanded="false" aria-label="打开模块导航">☰</button><a class="brand" href="index.html"><span class="brand-mark">V</span><span class="brand-text">Vite 源码解剖</span></a><span class="topbar-path">开发服务器核心 / 08 Transform 与模块图</span><div class="topbar-actions"><button class="icon-button" type="button" data-theme-toggle aria-label="切换主题">◐</button></div></div></header><div class="page-grid"><nav class="site-nav" aria-label="模块导航"><a class="nav-home" href="index.html"><span>⌂</span><span>阅读总览</span></a><section class="nav-group"><h2 class="nav-group-title">全景</h2><ul class="nav-list"><li><a href="00-system-map-and-end-to-end.html"><span class="nav-code">00</span><span>系统全景与请求链</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">启动与配置</h2><ul class="nav-list"><li><a href="01-cli-and-startup.html"><span class="nav-code">01</span><span>CLI 与启动</span></a></li><li><a href="02a-env-loading.html"><span class="nav-code">02A</span><span>环境文件加载</span></a></li><li><a href="02b-config-resolution.html"><span class="nav-code">02B</span><span>配置加载与解析</span></a></li><li><a href="02c-define-client-injection-and-json.html"><span class="nav-code">02C</span><span>Define、注入与 JSON</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">开发服务器核心</h2><ul class="nav-list"><li><a href="03-plugin-system.html"><span class="nav-code">03</span><span>插件体系</span></a></li><li><a href="04-dev-server-lifecycle.html"><span class="nav-code">04</span><span>Dev Server 生命周期</span></a></li><li><a href="05-environment-api.html"><span class="nav-code">05</span><span>Environment API</span></a></li><li><a href="06-middleware-request-pipeline.html"><span class="nav-code">06</span><span>中间件与请求入口</span></a></li><li><a href="07-module-resolution.html"><span class="nav-code">07</span><span>模块解析</span></a></li><li><a href="08-transform-and-module-graph.html" aria-current="page"><span class="nav-code">08</span><span>Transform 与模块图</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">转换与增量更新</h2><ul class="nav-list"><li><a href="09-html-transform.html"><span class="nav-code">09</span><span>HTML 转换</span></a></li><li><a href="10-import-analysis.html"><span class="nav-code">10</span><span>Import Analysis</span></a></li><li><a href="11-dependency-pre-bundling.html"><span class="nav-code">11</span><span>依赖预构建</span></a></li><li><a href="12-hmr.html"><span class="nav-code">12</span><span>HMR</span></a></li><li><a href="12b-bundled-dev.html"><span class="nav-code">12B</span><span>Bundled Dev</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">资源管线</h2><ul class="nav-list"><li><a href="13a-css-pipeline.html"><span class="nav-code">13A</span><span>CSS 管线</span></a></li><li><a href="13b-asset-worker-wasm.html"><span class="nav-code">13B</span><span>Asset、Worker、Wasm</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">生产构建</h2><ul class="nav-list"><li><a href="14a-build-orchestration.html"><span class="nav-code">14A</span><span>生产构建编排</span></a></li><li><a href="14b-build-output-and-preload.html"><span class="nav-code">14B</span><span>Preload 与构建输出</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">SSR 与运行时</h2><ul class="nav-list"><li><a href="15a-ssr-transform-and-loading.html"><span class="nav-code">15A</span><span>SSR 变换与加载</span></a></li><li><a href="15b-module-runner.html"><span class="nav-code">15B</span><span>Module Runner</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">公共边界</h2><ul class="nav-list"><li><a href="16-public-api-diagnostics-and-types.html"><span class="nav-code">16</span><span>公共 API 与类型</span></a></li></ul></section></nav><main class="article" id="article-start"><header class="article-hero"><div class="eyebrow"><span class="pill">08</span><span>开发服务器核心</span></div><h1>08. Transform 与模块图</h1><p class="lede">pending 合并当前并发，ModuleNode 保存长期结果；URL、ID、file 三种索引共同维持增量状态。</p><div class="hero-meta"><span>证据基线：v8.2.1</span><span>commit <code>421615865dad</code></span><span>约 12 分钟</span><a href="../../vite/reading-guides/08-transform-and-module-graph.md">查看 Markdown 原稿</a></div></header><section class="focus-card" aria-label="阅读重点与边界"><div><h2>本页重点</h2><p>pending 合并当前并发，ModuleNode 保存长期结果；URL、ID、file 三种索引共同维持增量状态。</p></div><div class="boundary"><h3>推导边界</h3><p>短期 Promise 不是长期缓存；缓存是否可用还要结合失效时间和软硬失效。</p></div></section><aside class="evidence-note"><h3>证据口径</h3><p>正文保留目标版本中的真实源码、状态说明与代表性测试映射。测试源码用于锁定设计契约；本轮没有执行测试命令。</p></aside><article class="prose"><h2 id="阅读边界"><a class="heading-anchor" href="#%E9%98%85%E8%AF%BB%E8%BE%B9%E7%95%8C" aria-label="链接到本节">#</a>阅读边界</h2>
+</style><script>(function(){try{var t=localStorage.getItem("vite-guide-theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(_){}})();</script></head><body><a class="skip-link" href="#article-start">跳到正文</a><div class="reading-progress" aria-hidden="true"><span data-reading-progress></span></div><header class="topbar"><div class="topbar-inner"><button class="icon-button nav-toggle" type="button" data-nav-toggle aria-expanded="false" aria-label="打开模块导航">☰</button><a class="brand" href="index.html"><span class="brand-mark">V</span><span class="brand-text">Vite 源码解剖</span></a><span class="topbar-path">开发服务器核心 / 08 Transform 与模块图</span><div class="topbar-actions"><button class="icon-button" type="button" data-theme-toggle aria-label="切换主题">◐</button></div></div></header><div class="page-grid"><nav class="site-nav" aria-label="模块导航"><a class="nav-home" href="index.html"><span>⌂</span><span>阅读总览</span></a><section class="nav-group"><h2 class="nav-group-title">全景</h2><ul class="nav-list"><li><a href="00-system-map-and-end-to-end.html"><span class="nav-code">00</span><span>系统全景与请求链</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">启动与配置</h2><ul class="nav-list"><li><a href="01-cli-and-startup.html"><span class="nav-code">01</span><span>CLI 与启动</span></a></li><li><a href="02a-env-loading.html"><span class="nav-code">02A</span><span>环境文件加载</span></a></li><li><a href="02b-config-resolution.html"><span class="nav-code">02B</span><span>配置加载与解析</span></a></li><li><a href="02c-define-client-injection-and-json.html"><span class="nav-code">02C</span><span>Define、注入与 JSON</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">开发服务器核心</h2><ul class="nav-list"><li><a href="03-plugin-system.html"><span class="nav-code">03</span><span>插件体系</span></a></li><li><a href="04-dev-server-lifecycle.html"><span class="nav-code">04</span><span>Dev Server 生命周期</span></a></li><li><a href="05-environment-api.html"><span class="nav-code">05</span><span>Environment API</span></a></li><li><a href="06-middleware-request-pipeline.html"><span class="nav-code">06</span><span>中间件与请求入口</span></a></li><li><a href="07-module-resolution.html"><span class="nav-code">07</span><span>模块解析</span></a></li><li><a href="08-transform-and-module-graph.html" aria-current="page"><span class="nav-code">08</span><span>Transform 与模块图</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">转换与增量更新</h2><ul class="nav-list"><li><a href="09-html-transform.html"><span class="nav-code">09</span><span>HTML 转换</span></a></li><li><a href="10-import-analysis.html"><span class="nav-code">10</span><span>Import Analysis</span></a></li><li><a href="11-dependency-pre-bundling.html"><span class="nav-code">11</span><span>依赖预构建</span></a></li><li><a href="12-hmr.html"><span class="nav-code">12</span><span>HMR</span></a></li><li><a href="12b-bundled-dev.html"><span class="nav-code">12B</span><span>Bundled Dev</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">资源管线</h2><ul class="nav-list"><li><a href="13a-css-pipeline.html"><span class="nav-code">13A</span><span>CSS 管线</span></a></li><li><a href="13b-asset-worker-wasm.html"><span class="nav-code">13B</span><span>Asset、Worker、Wasm</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">生产构建</h2><ul class="nav-list"><li><a href="14a-build-orchestration.html"><span class="nav-code">14A</span><span>生产构建编排</span></a></li><li><a href="14b-build-output-and-preload.html"><span class="nav-code">14B</span><span>Preload 与构建输出</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">SSR 与运行时</h2><ul class="nav-list"><li><a href="15a-ssr-transform-and-loading.html"><span class="nav-code">15A</span><span>SSR 变换与加载</span></a></li><li><a href="15b-module-runner.html"><span class="nav-code">15B</span><span>Module Runner</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">公共边界</h2><ul class="nav-list"><li><a href="16-public-api-diagnostics-and-types.html"><span class="nav-code">16</span><span>公共 API 与类型</span></a></li></ul></section></nav><main class="article" id="article-start"><header class="article-hero"><div class="eyebrow"><span class="pill">08</span><span>开发服务器核心</span></div><h1>08. Transform 与模块图</h1><p class="lede">pending 合并当前并发，ModuleNode 保存长期结果；URL、ID、file 三种索引共同维持增量状态。</p><div class="hero-meta"><span>证据基线：v8.2.1</span><span>commit <code>421615865dad</code></span><span>约 16 分钟</span><a href="../../vite/reading-guides/08-transform-and-module-graph.md">查看 Markdown 原稿</a></div></header><aside class="boundary-note" aria-label="阅读范围"><p>pending 只合并未过期的在途请求；长期缓存由节点保存，并按软硬失效决定复用或重算。</p></aside><article class="prose"><h2 id="阅读边界"><a class="heading-anchor" href="#%E9%98%85%E8%AF%BB%E8%BE%B9%E7%95%8C" aria-label="链接到本节">#</a>阅读边界</h2>
 <p>本节研究开发服务器收到模块请求后，怎样把 URL 解析、加载、转换并缓存，以及 ModuleGraph
 怎样记录模块身份、依赖边和失效状态。插件 hook 的调度规则已在第 03 章说明，文件 ID 如何得到已在
 第 07 章说明；本章聚焦两者进入请求热路径后的协作。</p>
@@ -1371,7 +1490,7 @@ code {
 <ol>
 <li>URL、resolved ID 和 file 为什么是三种身份，分别在哪些索引中使用？</li>
 <li>两个相同 URL 的并发请求怎样共享 Promise，失效穿插其中时为何必须开新请求？</li>
-<li>为什么 load 成功后才创建模块图节点，而 resolve 成功不能立即入图？</li>
+<li>请求首次 load 成功后为何才确保节点？import analysis 为依赖预建节点又有什么不同？</li>
 <li>transformResult、ETag、pending request 和 HTTP 304 分别是哪一层缓存？</li>
 <li>硬失效与软失效保存、清除哪些状态，失效为什么需要向 importer 传播？</li>
 <li>client 软失效为什么只改 import 时间戳，SSR 又为什么连代码都不用改？</li>
@@ -1387,7 +1506,7 @@ code {
 <li><code>invalidateModule()</code> 与 <code>handleModuleSoftInvalidation()</code>：理解 HMR 快路径。</li>
 <li><code>sourcemap.ts</code>：理解转换产物如何补源码、标记 ignoreList 和防止越界读取。</li>
 <li><code>mixedModuleGraph.ts</code>：最后看 Environment API 迁移期的旧接口兼容，不要先被代理代码打断主线。</li>
-<li>三份测试：用最小场景复盘扩展名推断、resolved ID 去重、双图兼容和包根边界。</li>
+<li><code>transformRequest.spec.ts</code>、<code>moduleGraph.spec.ts</code> 与 <code>sourcemap.spec.ts</code>：复盘扩展名推断、ID 去重、双图兼容和包根边界。</li>
 </ol>
 <h2 id="一次-http-模块请求"><a class="heading-anchor" href="#%E4%B8%80%E6%AC%A1-http-%E6%A8%A1%E5%9D%97%E8%AF%B7%E6%B1%82" aria-label="链接到本节">#</a>一次 HTTP 模块请求</h2>
 <figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">GET /src/main.ts?t=...
@@ -1406,8 +1525,8 @@ code {
       → loadAndTransform
 → send(code, etag, cache-control, sourcemap)
 </code></pre></figure><p><code>Sec-Fetch-Dest: document</code> 的请求必须继续交给 HTML/static fallback。若把导航请求误当 JS，服务器
-会返回转换后的模块代码而不是页面。响应追加 <code>Vary: Sec-Fetch-Dest</code>，保证代理缓存不会把文档与
-模块响应混为一份。</p>
+会返回转换后的模块代码而不是页面。缓存快路径放行 document 请求时追加
+<code>Vary: Sec-Fetch-Dest</code>，让该文档响应的缓存区分请求目的。</p>
 <h3 id="css-为什么有两个-url-身份"><a class="heading-anchor" href="#css-%E4%B8%BA%E4%BB%80%E4%B9%88%E6%9C%89%E4%B8%A4%E4%B8%AA-url-%E8%BA%AB%E4%BB%BD" aria-label="链接到本节">#</a>CSS 为什么有两个 URL 身份</h3>
 <p>同一 <code>style.css</code> 有两种消费者：</p>
 <figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">import &#039;./style.css&#039;       → JS 模块，运行时注入样式
@@ -1418,7 +1537,7 @@ code {
 <h3 id="http-错误不是一律-500"><a class="heading-anchor" href="#http-%E9%94%99%E8%AF%AF%E4%B8%8D%E6%98%AF%E4%B8%80%E5%BE%8B-500" aria-label="链接到本节">#</a>HTTP 错误不是一律 500</h3>
 <figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">依赖优化仍在处理 / 旧优化产物    → 504，等待页面用新版本重试
 普通模块不存在                  → 交给下游，最终通常 404
-资源 ID 被 server.fs 拒绝       → 403
+资源 ID 被 server.fs 拒绝       → 可读文件返回 403，不存在路径交给下游
 可恢复服务器已经关闭            → 504，客户端连接新实例
 真正的插件/转换异常              → next(error)，由错误中间件格式化
 </code></pre></figure><p>版本 hash 对应的优化依赖可使用一年 immutable 缓存；项目源码仍是 <code>no-cache + ETag</code>。两者的
@@ -1462,8 +1581,8 @@ file      去 query 的磁盘关联，例如 /abs/app/src/data.ts
 <p><code>ensureEntryFromUrl()</code> 先 resolve URL，再按 resolved ID 查已有节点。<code>/x.js</code> 与 <code>/xx.js</code> 若都解析到
 <code>/x.js</code>，第二个 URL 只登记到同一节点，而不是复制 meta、importers 和失效状态。这一竞态/去重
 边界的历史修复见 <a href="https://github.com/vitejs/vite/pull/9759" target="_blank" rel="noreferrer noopener">PR #9759</a>。</p>
-<p>未解析 URL 的查找本身也是异步操作。图用 <code>unresolvedUrlToModuleMap</code> 暂存 Promise，让并发调用
-共享一次 resolve；Promise 完成后移除临时项。它与 transform 的 pending request 类似，但前者
+<p>未解析 URL 的查找本身也是异步操作。<code>_ensureEntryFromUrl()</code> 用 <code>_unresolvedUrlToModuleMap</code> 缓存 Promise，让同 URL 的并发入图
+共享一次 resolve；成功后把该项替换为节点，后续查找仍可直接复用。它与 transform 的 pending request 类似，但前者
 只合并“URL 对应哪个节点”，后者合并完整加载和转换。</p>
 <h2 id="四层缓存不能混为一谈"><a class="heading-anchor" href="#%E5%9B%9B%E5%B1%82%E7%BC%93%E5%AD%98%E4%B8%8D%E8%83%BD%E6%B7%B7%E4%B8%BA%E4%B8%80%E8%B0%88" aria-label="链接到本节">#</a>四层缓存不能混为一谈</h2>
 <figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">HTTP ETag                         浏览器已有内容，可能直接 304
@@ -1487,6 +1606,110 @@ ModuleNode 保存。这样失败 Promise 不会永久污染后续请求。</p>
 </code></pre></figure><p>这里的 abort 只是不再共享旧 Promise，不强行取消插件 hook。插件可能有不可取消的异步副作用，
 旧调用者仍可收到旧结果；关键是旧结果不能覆盖新缓存。<code>loadAndTransform()</code> 完成时再次比较开始
 时间与 <code>lastInvalidationTimestamp</code>，只有较新的请求能写 transformResult。</p>
+<p>下面沿同一个已入图 URL 观察两个请求。非 HMR 失效先清节点结果并写入失效时间；它没有删除
+pending，旧请求也继续运行。请求 2 发现旧时间戳后才释放 P1 的槽位，再递归取得新时间戳、建立 P2。
+若图中节点尚不存在，源码会直接复用 pending；图示选择已有节点的失效分支。</p>
+<figure class="engineering-diagram" data-diagram-width="1160" aria-labelledby="diagram-08-pending-race-caption"><figcaption id="diagram-08-pending-race-caption">同 URL 的两个请求跨过失效事件时，pending 槽位与模块缓存各自怎样变化</figcaption><div class="diagram-toolbar" role="group" aria-label="图示查看"><button type="button" data-diagram-action="out" aria-label="缩小图示">−</button><output class="diagram-scale" aria-live="polite">100%</output><button type="button" data-diagram-action="in" aria-label="放大图示">＋</button><button type="button" data-diagram-action="fit">适应宽度</button><button type="button" data-diagram-action="reset">原尺寸</button><button type="button" data-diagram-action="expand" aria-expanded="false">展开图示</button><a href="diagrams/08-pending-race.svg" target="_blank" rel="noopener">独立 SVG</a></div><div class="diagram-viewport" tabindex="0" role="region" aria-label="同 URL 的两个请求跨过失效事件时，pending 槽位与模块缓存各自怎样变化，可滚动图示"><div class="diagram-canvas" style="width:1160px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1160 1260" role="img" aria-labelledby="diagram-08-pending-race-title diagram-08-pending-race-desc">
+<title id="diagram-08-pending-race-title">请求失效时 pending 槽位与模块缓存的竞争</title>
+<desc id="diagram-08-pending-race-desc">同 URL 的请求 P1 正在运行时，非 HMR 失效更新节点 lastInvalidationTimestamp 并清缓存，但不删除 pending 槽位。请求 2 比较 P1 的旧时间戳后调用 abort，仅删除槽位并设置 P1 的 cleared 标志，再递归建立 P2。P1 继续完成，其结果不写缓存；旧 finally 因 cleared 为 true 不再删除 P2。P2 开始时间仍新于最近失效时间，才写新缓存并在自己的 finally 中删除槽位。</desc>
+<defs>
+<marker id="diagram-08-pending-race-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563eb"/></marker>
+<marker id="diagram-08-pending-race-purple" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#7c3aed"/></marker>
+<marker id="diagram-08-pending-race-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#a8333e"/></marker>
+<marker id="diagram-08-pending-race-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#247449"/></marker>
+<marker id="diagram-08-pending-race-gray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#526377"/></marker>
+</defs>
+<style>.race-text{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Noto Sans CJK SC",sans-serif;font-size:18px;fill:#14263c}.race-code{font-family:ui-monospace,"SFMono-Regular",Consolas,"PingFang SC",monospace;font-size:16px}.race-muted{fill:#526377}.race-small{font-size:16px}.race-heading{font-size:22px;font-weight:650}.race-title{font-size:30px;font-weight:700}.race-label{font-size:17px}.race-blue{fill:#1d4ed8}.race-purple{fill:#6d28d9}.race-red{fill:#a8333e}.race-green{fill:#247449}</style>
+<rect width="1160" height="1260" fill="#f7f9fc"/>
+<text x="36" y="46" class="race-text race-title" text-anchor="start">一次性清理守住 pending，时间戳守住模块缓存</text>
+<text x="36" y="80" class="race-text race-muted" text-anchor="start">client 节点 A 已存在，期间未再次失效；时间值仅为示意，cleared1/2 是各请求的闭包变量。</text>
+<rect x="28" y="105" width="1104" height="1124" rx="12" fill="#fff" stroke="#cbd5e1" stroke-width="1.6"/>
+<rect x="20" y="130" width="200" height="72" rx="12" fill="#edf4ff" stroke="#b4c9ef" stroke-width="1.6"/>
+<text x="120" y="160" class="race-text race-heading" text-anchor="middle">请求 1</text>
+<text x="120" y="186" class="race-text race-small race-muted" text-anchor="middle">P1 的转换与 finally</text>
+<path d="M120 205 V1154" fill="none" stroke="#526377" stroke-width="1.3" stroke-dasharray="4 7"/>
+<rect x="300" y="130" width="200" height="72" rx="12" fill="#edf4ff" stroke="#b4c9ef" stroke-width="1.6"/>
+<text x="400" y="160" class="race-text race-heading" text-anchor="middle">pending[url]</text>
+<text x="400" y="186" class="race-text race-small race-muted" text-anchor="middle">Environment 的 Map</text>
+<path d="M400 205 V1154" fill="none" stroke="#526377" stroke-width="1.3" stroke-dasharray="4 7"/>
+<rect x="590" y="130" width="200" height="72" rx="12" fill="#edf4ff" stroke="#b4c9ef" stroke-width="1.6"/>
+<text x="690" y="160" class="race-text race-heading" text-anchor="middle">模块图 / 节点 A</text>
+<text x="690" y="186" class="race-text race-small race-muted" text-anchor="middle">结果与失效时间</text>
+<path d="M690 205 V1154" fill="none" stroke="#526377" stroke-width="1.3" stroke-dasharray="4 7"/>
+<rect x="930" y="130" width="200" height="72" rx="12" fill="#edf4ff" stroke="#b4c9ef" stroke-width="1.6"/>
+<text x="1030" y="160" class="race-text race-heading" text-anchor="middle">请求 2</text>
+<text x="1030" y="186" class="race-text race-small race-muted" text-anchor="middle">检查 P1，再创建 P2</text>
+<path d="M1030 205 V1154" fill="none" stroke="#526377" stroke-width="1.3" stroke-dasharray="4 7"/>
+<path d="M47 220 V1154" fill="none" stroke="#526377" stroke-width="1.6" marker-end="url(#diagram-08-pending-race-gray)"/>
+<text x="40" y="1188" class="race-text race-small race-muted" text-anchor="start">时间向下</text>
+<path d="M120 242 H400" fill="none" stroke="#2563eb" stroke-width="2.6" marker-end="url(#diagram-08-pending-race-blue)"/>
+<text x="142" y="226" class="race-text race-label race-blue" text-anchor="start">t1 = 100，保存 P1</text>
+<rect x="288" y="261" width="225" height="75" rx="12" fill="#edf4ff" stroke="#b4c9ef" stroke-width="1.6"/>
+<text x="302" y="288" class="race-text race-label" text-anchor="start">槽位 = P1</text>
+<text x="302" y="310" class="race-text race-code" text-anchor="start">timestamp = 100</text>
+<text x="302" y="331" class="race-text race-code" text-anchor="start">abort = clearCache1</text>
+<rect x="57" y="268" width="186" height="86" rx="12" fill="#fff" stroke="#d5dce6" stroke-width="1.6"/>
+<text x="71" y="293" class="race-text race-small" text-anchor="start">load / transform 等待中</text>
+<text x="71" y="316" class="race-text race-small race-muted" text-anchor="start">插件 Promise 继续运行</text>
+<text x="71" y="341" class="race-text race-code" text-anchor="start">cleared1 = false</text>
+<path d="M690 359 H881 V384 H690" fill="none" stroke="#a8333e" stroke-width="2.6" marker-end="url(#diagram-08-pending-race-red)"/>
+<text x="714" y="348" class="race-text race-label race-red" text-anchor="start">非 HMR invalidate，I = 150</text>
+<rect x="554" y="405" width="390" height="90" rx="12" fill="#fff3f2" stroke="#e5bfc1" stroke-width="1.6"/>
+<text x="572" y="432" class="race-text race-code" text-anchor="start">lastInvalidationTimestamp = 150</text>
+<text x="572" y="458" class="race-text race-code" text-anchor="start">transformResult = null</text>
+<text x="572" y="483" class="race-text race-small race-red" text-anchor="start">P1 仍在 pending；失效本身不 abort</text>
+<path d="M1030 527 H400" fill="none" stroke="#2563eb" stroke-width="2.6" marker-end="url(#diagram-08-pending-race-blue)"/>
+<text x="650" y="513" class="race-text race-label race-blue" text-anchor="start">请求 2：t2 = 200，读取 P1</text>
+<path d="M1030 575 H690" fill="none" stroke="#2563eb" stroke-width="2.6" marker-end="url(#diagram-08-pending-race-blue)"/>
+<text x="719" y="560" class="race-text race-label race-blue" text-anchor="start">查 A：100 ≤ 150，不能复用 P1</text>
+<path d="M1030 621 H400" fill="none" stroke="#a8333e" stroke-width="2.6" marker-end="url(#diagram-08-pending-race-red)"/>
+<text x="610" y="607" class="race-text race-label race-red" text-anchor="start">调用 P1.abort()，仅清槽位</text>
+<rect x="288" y="642" width="225" height="86" rx="12" fill="#fff3f2" stroke="#e5bfc1" stroke-width="1.6"/>
+<text x="302" y="665" class="race-text race-label" text-anchor="start">clearCache1 操作</text>
+<text x="302" y="690" class="race-text race-code" text-anchor="start">delete(url)</text>
+<text x="302" y="716" class="race-text race-code" text-anchor="start">cleared1 = true</text>
+<text x="561" y="678" class="race-text race-label race-red" text-anchor="start">P1 的插件没有被取消。</text>
+<path d="M1030 750 H400" fill="none" stroke="#2563eb" stroke-width="2.6" marker-end="url(#diagram-08-pending-race-blue)"/>
+<text x="629" y="735" class="race-text race-label race-blue" text-anchor="start">递归调用，t2′ = 201，保存 P2</text>
+<rect x="288" y="769" width="225" height="71" rx="12" fill="#edf4ff" stroke="#b4c9ef" stroke-width="1.6"/>
+<text x="302" y="795" class="race-text race-label" text-anchor="start">槽位 = P2</text>
+<text x="302" y="819" class="race-text race-code" text-anchor="start">timestamp = 201</text>
+<text x="884" y="819" class="race-text race-code" text-anchor="start">cleared2 = false</text>
+<path d="M120 876 H690" fill="none" stroke="#a8333e" stroke-width="2.6" marker-end="url(#diagram-08-pending-race-red)"/>
+<text x="151" y="860" class="race-text race-label race-red" text-anchor="start">P1 完成：100 &gt; 150 为 false，不写缓存</text>
+<text x="137" y="902" class="race-text race-small race-muted" text-anchor="start">结果仍返回给请求 1 的原调用者。</text>
+<path d="M120 944 H400" fill="none" stroke="#a8333e" stroke-width="2.6" stroke-dasharray="5 6" marker-end="url(#diagram-08-pending-race-red)"/>
+<text x="147" y="928" class="race-text race-label race-red" text-anchor="start">旧 finally：cleared1 已为 true</text>
+<text x="259" y="951" class="race-text race-heading race-red" text-anchor="start">×</text>
+<text x="450" y="949" class="race-text race-label race-red" text-anchor="start">跳过 delete(url)，槽位仍是 P2</text>
+<path d="M1030 1013 H690" fill="none" stroke="#247449" stroke-width="2.6" marker-end="url(#diagram-08-pending-race-green)"/>
+<text x="709" y="995" class="race-text race-label race-green" text-anchor="start">P2 完成：201 &gt; 150，写新结果</text>
+<text x="709" y="1040" class="race-text race-small race-green" text-anchor="start">更新 A.transformResult 与 client ETag</text>
+<path d="M1030 1099 H400" fill="none" stroke="#247449" stroke-width="2.6" marker-end="url(#diagram-08-pending-race-green)"/>
+<text x="641" y="1083" class="race-text race-label race-green" text-anchor="start">P2 自己的 finally：delete(url)</text>
+<rect x="288" y="1120" width="225" height="94" rx="12" fill="#eef8f0" stroke="#b4d2be" stroke-width="1.6"/>
+<text x="302" y="1144" class="race-text race-label" text-anchor="start">clearCache2 操作</text>
+<text x="302" y="1168" class="race-text race-code" text-anchor="start">cleared2 = true</text>
+<text x="302" y="1194" class="race-text race-label race-green" text-anchor="start">pending[url] 已空</text>
+<text x="559" y="1143" class="race-text race-small race-muted" text-anchor="start">写缓存还会检查当时最新的失效时间。</text>
+<text x="559" y="1174" class="race-text race-small race-muted" text-anchor="start">清理条件是闭包 cleared，不是槽位身份比较。</text>
+<text x="36" y="1244" class="race-text race-small race-muted" text-anchor="start">依据：transformRequest() / loadAndTransform() / invalidateModule()；abort 不取消 hooks，等号也算过期。</text>
+</svg>
+</div></div><p class="diagram-hint">可横向滚动；适应宽度看全图，原尺寸读节点。</p></figure>
+<p>图中 <code>cleared1</code> 与 <code>cleared2</code> 是各请求 <code>clearCache</code> 闭包的变量，不在 pending 记录中。P1 的 abort
+第一次删除槽位并置 <code>cleared1=true</code>；P2 随后占用该 URL。P1 结束时，旧 finally 因这个标志跳过再次
+删除，所以 P2 能继续被后续请求复用。源码没有进行“Map 当前值是否仍是 P1”的身份比较。</p>
+<p>这一清理条件来自 <code>transformRequest.ts</code> 的 <code>transformRequest()</code>（源码摘录）：</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">let cleared = false
+const clearCache = () =&gt; {
+  if (!cleared) {
+    environment._pendingRequests.delete(url)
+    cleared = true
+  }
+}
+</code></pre></figure><p><code>abort</code> 和 finally 共用这个函数。与此同时，写缓存仍需满足“请求开始时间严格晚于节点最近失效
+时间”：P1 的结果返回原调用者，但不能缓存；P2 只有在完成时仍新鲜才写入结果。图中没有再次失效，
+所以 P2 通过检查，最后由自己的 finally 清掉槽位。</p>
 <p>这套双重保护分别覆盖历史上的模块图竞态、过期结果写缓存、失效后继续复用 pending request：
 <a href="https://github.com/vitejs/vite/pull/5470" target="_blank" rel="noreferrer noopener">PR #5470</a>、
 <a href="https://github.com/vitejs/vite/pull/7254" target="_blank" rel="noreferrer noopener">PR #7254</a>、
@@ -1505,27 +1728,129 @@ ModuleNode 保存。这样失败 Promise 不会永久污染后续请求。</p>
    └─ 仍无 code → 区分 publicDir import 与普通不存在，抛专用错误
 </code></pre></figure><p>二进制、虚拟模块和特殊 query 应由插件拥有；文件系统回退只负责普通文本。publicDir 文件构建时
 原样复制，不经过插件转换，因此源码 import 它不是“路径碰巧找不到”，而是违反资源模型。</p>
-<h3 id="3-load-成功后才入图"><a class="heading-anchor" href="#3-load-%E6%88%90%E5%8A%9F%E5%90%8E%E6%89%8D%E5%85%A5%E5%9B%BE" aria-label="链接到本节">#</a>3. load 成功后才入图</h3>
-<p>resolve 只说明“它可能对应这个 ID”，不证明插件能 load。若在 load 前建节点，API 路由、缺失
-文件和被下游中间件处理的 URL 都会污染图。入图后再执行 transform，import analysis 等插件才能
-把依赖边写回已存在节点。</p>
+<h3 id="3-首次请求-load-成功后确保节点"><a class="heading-anchor" href="#3-%E9%A6%96%E6%AC%A1%E8%AF%B7%E6%B1%82-load-%E6%88%90%E5%8A%9F%E5%90%8E%E7%A1%AE%E4%BF%9D%E8%8A%82%E7%82%B9" aria-label="链接到本节">#</a>3. 首次请求 load 成功后确保节点</h3>
+<p><code>loadAndTransform()</code> 在拿到 code 后才为尚无节点的请求调用 <code>_ensureEntryFromUrl()</code>，避免仅凭
+resolve 结果就把未加载的 API/缺失 URL 登记为本次转换模块。节点先于 transform 建立，import
+analysis 才能把当前模块的依赖边写回图中。</p>
+<p>这不是“图中所有节点都已 load”的保证：import analysis 的 <code>updateModuleInfo()</code> 会先为依赖
+调用 <code>ensureEntryFromUrl()</code>，即使浏览器还未请求它们。图既保存已转换模块，也保存已发现的依赖身份。</p>
 <h3 id="4-transform-与-source-map-规范化"><a class="heading-anchor" href="#4-transform-%E4%B8%8E-source-map-%E8%A7%84%E8%8C%83%E5%8C%96" aria-label="链接到本节">#</a>4. transform 与 Source Map 规范化</h3>
 <p>插件 transform 串行传递 code、map 和 moduleType。插件未声明类型时，Vite 从已知扩展名推断
-非 JS 类型；无扩展名继续留空。字符串 map 解析成对象，缺失 map 保留 null，空 mappings 则是
+非 JS 类型；无扩展名继续留空。推断函数不剥离 query，<code>file.ts?raw</code> 不会被当作末尾为 <code>ts</code>。
+字符串 map 解析成对象，缺失 map 保留 null，空 mappings 则是
 显式“无需 fallback”的结果。</p>
-<p>client 结果生成弱 ETag；启用 <code>moduleRunnerTransform</code> 的 server Environment 还要通过
-<code>ssrTransform()</code> 改写成 Module Runner 协议。最后只有未在处理中失效的结果才写图缓存。</p>
+<p><code>moduleRunnerTransform</code> 关闭时结果生成弱 ETag；开启时通过 <code>ssrTransform()</code> 改写成 Module
+Runner 协议。默认 client 与 server 分别采用这两条分支，配置也可以显式覆盖。最后只有未在处理中失效的结果才写图缓存。</p>
 <h2 id="模块图怎样维护依赖边"><a class="heading-anchor" href="#%E6%A8%A1%E5%9D%97%E5%9B%BE%E6%80%8E%E6%A0%B7%E7%BB%B4%E6%8A%A4%E4%BE%9D%E8%B5%96%E8%BE%B9" aria-label="链接到本节">#</a>模块图怎样维护依赖边</h2>
 <p><code>updateModuleInfo()</code> 接收 import analysis 解析出的依赖，完成双向更新：</p>
 <figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">当前模块 importedModules = 新集合
 每个新依赖.importers += 当前模块
 每个已移除依赖.importers -= 当前模块
 当前模块.acceptedHmrDeps / acceptedHmrExports / isSelfAccepting = 新 HMR 元数据
-返回不再被任何模块引用的依赖集合
-</code></pre></figure><p>只维护 <code>A.importedModules</code> 而不维护 <code>B.importers</code>，文件变化时就无法向上寻找受影响边界。删除文件
+返回本次移除且已没有 importer 的旧依赖集合
+</code></pre></figure><p>三个索引和依赖边引用的是同一批节点。下图先把 URL、ID、file 的查找入口连接到节点 A，再对照
+一次依赖改写前后的关系：<code>main.ts</code> 不再导入 <code>old.ts</code>，改为导入 <code>next.ts</code>。</p>
+<figure class="engineering-diagram" data-diagram-width="1160" aria-labelledby="diagram-08-module-graph-caption"><figcaption id="diagram-08-module-graph-caption">同一 Environment 内共享节点的三种索引，以及依赖改写前后的正向和反向边</figcaption><div class="diagram-toolbar" role="group" aria-label="图示查看"><button type="button" data-diagram-action="out" aria-label="缩小图示">−</button><output class="diagram-scale" aria-live="polite">100%</output><button type="button" data-diagram-action="in" aria-label="放大图示">＋</button><button type="button" data-diagram-action="fit">适应宽度</button><button type="button" data-diagram-action="reset">原尺寸</button><button type="button" data-diagram-action="expand" aria-expanded="false">展开图示</button><a href="diagrams/08-module-graph.svg" target="_blank" rel="noopener">独立 SVG</a></div><div class="diagram-viewport" tabindex="0" role="region" aria-label="同一 Environment 内共享节点的三种索引，以及依赖改写前后的正向和反向边，可滚动图示"><div class="diagram-canvas" style="width:1160px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1160 1110" role="img" aria-labelledby="diagram-08-module-graph-title diagram-08-module-graph-desc">
+<title id="diagram-08-module-graph-title">模块图的三种索引与依赖边更新</title>
+<desc id="diagram-08-module-graph-desc">在同一个 client Environment 内，URL 和 resolved ID 索引引用同一节点 A；file 索引的 Set 同时包含 A 和 raw 查询节点 R。下半部对照将 main.ts 的依赖从 old.ts 换为 next.ts 前后的 importedModules 正向边和 importers 反向边，旧边删除，新边添加；无其他 importer 的旧节点会被返回但不会在这里从索引删除。</desc>
+<defs>
+<marker id="diagram-08-module-graph-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563eb"/></marker>
+<marker id="diagram-08-module-graph-purple" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#7c3aed"/></marker>
+<marker id="diagram-08-module-graph-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#a8333e"/></marker>
+<marker id="diagram-08-module-graph-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#247449"/></marker>
+<marker id="diagram-08-module-graph-gray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#526377"/></marker>
+</defs>
+<style>.mg-text{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Noto Sans CJK SC",sans-serif;font-size:18px;fill:#14263c}.mg-code{font-family:ui-monospace,"SFMono-Regular",Consolas,"PingFang SC",monospace;font-size:16px}.mg-muted{fill:#526377}.mg-small{font-size:16px}.mg-heading{font-size:22px;font-weight:650}.mg-title{font-size:30px;font-weight:700}.mg-label{font-size:17px}.mg-blue{fill:#1d4ed8}.mg-purple{fill:#6d28d9}.mg-red{fill:#a8333e}.mg-green{fill:#247449}</style>
+<rect width="1160" height="1110" fill="#f7f9fc"/>
+<text x="36" y="46" class="mg-text mg-title" text-anchor="start">模块身份共享节点，依赖变化同时更新两条边</text>
+<text x="36" y="79" class="mg-text mg-muted" text-anchor="start">索引负责找到对象；正向边与反向边负责描述谁依赖谁。</text>
+<rect x="28" y="106" width="1104" height="373" rx="12" fill="#fff" stroke="#cbd5e1" stroke-width="1.6"/>
+<text x="50" y="137" class="mg-text mg-heading" text-anchor="start">同一个 client EnvironmentModuleGraph</text>
+<rect x="48" y="158" width="300" height="112" rx="12" fill="#edf4ff" stroke="#b4c9ef" stroke-width="1.6"/>
+<text x="66" y="187" class="mg-text mg-code" text-anchor="start">urlToModuleMap</text>
+<text x="66" y="218" class="mg-text mg-code" text-anchor="start">/src/main.ts  → A</text>
+<text x="66" y="249" class="mg-text mg-code" text-anchor="start">/entry.ts     → A</text>
+<rect x="810" y="158" width="302" height="112" rx="12" fill="#edf4ff" stroke="#b4c9ef" stroke-width="1.6"/>
+<text x="828" y="187" class="mg-text mg-code" text-anchor="start">idToModuleMap</text>
+<text x="828" y="220" class="mg-text mg-code" text-anchor="start">/project/src/main.ts</text>
+<text x="828" y="249" class="mg-text mg-code" text-anchor="start">→ A</text>
+<rect x="430" y="179" width="310" height="130" rx="12" fill="#f0edff" stroke="#c5b8ee" stroke-width="1.6"/>
+<text x="448" y="207" class="mg-text mg-code" text-anchor="start">A · EnvironmentModuleNode</text>
+<text x="448" y="239" class="mg-text mg-code" text-anchor="start">url: /src/main.ts</text>
+<text x="448" y="269" class="mg-text mg-code" text-anchor="start">id: /project/src/main.ts</text>
+<text x="448" y="293" class="mg-text mg-label" text-anchor="start">file: 同上，去掉 query</text>
+<path d="M348 210 H430" fill="none" stroke="#2563eb" stroke-width="2.6" marker-end="url(#diagram-08-module-graph-blue)"/>
+<path d="M810 228 H740" fill="none" stroke="#2563eb" stroke-width="2.6" marker-end="url(#diagram-08-module-graph-blue)"/>
+<rect x="48" y="313" width="340" height="114" rx="12" fill="#edf4ff" stroke="#b4c9ef" stroke-width="1.6"/>
+<text x="66" y="344" class="mg-text mg-code" text-anchor="start">fileToModulesMap</text>
+<text x="66" y="377" class="mg-text mg-code" text-anchor="start">/project/src/main.ts</text>
+<text x="66" y="406" class="mg-text mg-code" text-anchor="start">→ Set { A, R }</text>
+<path d="M388 349 C414 349 407 280 430 280" fill="none" stroke="#2563eb" stroke-width="2.6" marker-end="url(#diagram-08-module-graph-blue)"/>
+<path d="M388 399 H762 V365 H795" fill="none" stroke="#2563eb" stroke-width="2.6" marker-end="url(#diagram-08-module-graph-blue)"/>
+<rect x="795" y="321" width="317" height="98" rx="12" fill="#f6f3ff" stroke="#c5b8ee" stroke-width="1.6"/>
+<text x="813" y="351" class="mg-text mg-label" text-anchor="start">R · 独立的 raw 查询节点</text>
+<text x="813" y="381" class="mg-text mg-code" text-anchor="start">url: /src/main.ts?raw</text>
+<text x="813" y="406" class="mg-text mg-label" text-anchor="start">file 与 A 相同，id 带 ?raw</text>
+<text x="445" y="438" class="mg-text mg-label" text-anchor="start">三个索引保存引用，A 没有三份副本。</text>
+<text x="445" y="462" class="mg-text mg-small mg-muted" text-anchor="start">本例解析器把 /entry.ts 指向同一 ID。</text>
+<text x="36" y="522" class="mg-text mg-heading" text-anchor="start">将 main.ts 的 import 从 old.ts 改为 next.ts</text>
+<rect x="28" y="546" width="535" height="467" rx="12" fill="#fff" stroke="#cbd5e1" stroke-width="1.6"/>
+<rect x="597" y="546" width="535" height="467" rx="12" fill="#fff" stroke="#cbd5e1" stroke-width="1.6"/>
+<text x="48" y="582" class="mg-text mg-heading" text-anchor="start">更新前：A 导入 B</text>
+<text x="617" y="582" class="mg-text mg-heading" text-anchor="start">更新后：A 导入 C</text>
+<rect x="167" y="621" width="270" height="80" rx="12" fill="#f0edff" stroke="#c5b8ee" stroke-width="1.6"/>
+<text x="185" y="651" class="mg-text mg-heading" text-anchor="start">A · main.ts</text>
+<text x="185" y="680" class="mg-text mg-code" text-anchor="start">importedModules = { B }</text>
+<rect x="736" y="621" width="270" height="80" rx="12" fill="#f0edff" stroke="#c5b8ee" stroke-width="1.6"/>
+<text x="754" y="651" class="mg-text mg-heading" text-anchor="start">A · main.ts</text>
+<text x="754" y="680" class="mg-text mg-code" text-anchor="start">importedModules = { C }</text>
+<rect x="48" y="829" width="240" height="88" rx="12" fill="#edf4ff" stroke="#b4c9ef" stroke-width="1.6"/>
+<text x="64" y="861" class="mg-text mg-heading" text-anchor="start">B · old.ts</text>
+<text x="64" y="893" class="mg-text mg-code" text-anchor="start">importers = { A }</text>
+<rect x="312" y="829" width="230" height="88" rx="12" fill="#f8fafc" stroke="#d5dce6" stroke-width="1.6"/>
+<text x="328" y="861" class="mg-text mg-heading" text-anchor="start">C · next.ts</text>
+<text x="328" y="893" class="mg-text mg-code" text-anchor="start">importers = {  }</text>
+<rect x="617" y="829" width="240" height="88" rx="12" fill="#fff3f2" stroke="#e5bfc1" stroke-width="1.6"/>
+<text x="633" y="861" class="mg-text mg-heading" text-anchor="start">B · old.ts</text>
+<text x="633" y="893" class="mg-text mg-code" text-anchor="start">importers = {  }</text>
+<rect x="881" y="829" width="240" height="88" rx="12" fill="#edf4ff" stroke="#b4c9ef" stroke-width="1.6"/>
+<text x="897" y="861" class="mg-text mg-heading" text-anchor="start">C · next.ts</text>
+<text x="897" y="893" class="mg-text mg-code" text-anchor="start">importers = { A }</text>
+<path d="M232 701 C206 748 128 775 138 829" fill="none" stroke="#2563eb" stroke-width="2.6" marker-end="url(#diagram-08-module-graph-blue)"/>
+<path d="M193 829 C204 770 301 755 307 701" fill="none" stroke="#7c3aed" stroke-width="2.6" stroke-dasharray="7 5" marker-end="url(#diagram-08-module-graph-purple)"/>
+<text x="52" y="768" class="mg-text mg-label mg-blue" text-anchor="start">正向 imports</text>
+<text x="288" y="795" class="mg-text mg-label mg-purple" text-anchor="start">反向 importers</text>
+<text x="333" y="777" class="mg-text mg-label mg-muted" text-anchor="start">暂无依赖边</text>
+<path d="M799 701 C773 748 697 775 707 829" fill="none" stroke="#a8333e" stroke-width="2.6" stroke-dasharray="4 6" marker-end="url(#diagram-08-module-graph-red)"/>
+<path d="M762 829 C773 770 870 755 876 701" fill="none" stroke="#a8333e" stroke-width="2.6" stroke-dasharray="4 6" marker-end="url(#diagram-08-module-graph-red)"/>
+<text x="747" y="781" class="mg-text mg-red mg-heading" text-anchor="start">×</text>
+<text x="642" y="749" class="mg-text mg-label mg-red" text-anchor="start">旧边已删除</text>
+<path d="M918 701 C959 745 1008 773 1005 829" fill="none" stroke="#2563eb" stroke-width="2.6" marker-end="url(#diagram-08-module-graph-blue)"/>
+<path d="M1063 829 C1080 767 978 746 977 701" fill="none" stroke="#7c3aed" stroke-width="2.6" stroke-dasharray="7 5" marker-end="url(#diagram-08-module-graph-purple)"/>
+<rect x="963" y="733" width="111" height="27" fill="#fff"/>
+<text x="972" y="753" class="mg-text mg-label mg-blue" text-anchor="start">新正向边</text>
+<rect x="928" y="781" width="114" height="27" fill="#fff"/>
+<text x="937" y="801" class="mg-text mg-label mg-purple" text-anchor="start">新反向边</text>
+<text x="48" y="955" class="mg-text mg-label" text-anchor="start">A.importedModules 和 B.importers 互相对应。</text>
+<text x="48" y="986" class="mg-text mg-label mg-muted" text-anchor="start">图中已有 C，但它还没有导入者。</text>
+<text x="617" y="955" class="mg-text mg-label" text-anchor="start">本例 B 已无其他 importer，返回 { B }。</text>
+<text x="617" y="986" class="mg-text mg-label mg-muted" text-anchor="start">返回孤立旧节点；这里不删除 B 的索引。</text>
+<path d="M50 1045 H102" fill="none" stroke="#2563eb" stroke-width="2.6" marker-end="url(#diagram-08-module-graph-blue)"/>
+<text x="116" y="1051" class="mg-text mg-label" text-anchor="start">importedModules：导入者 → 依赖</text>
+<path d="M560 1045 H612" fill="none" stroke="#7c3aed" stroke-width="2.6" stroke-dasharray="7 5" marker-end="url(#diagram-08-module-graph-purple)"/>
+<text x="626" y="1051" class="mg-text mg-label" text-anchor="start">importers：依赖 → 导入者</text>
+<text x="36" y="1084" class="mg-text mg-small mg-muted" text-anchor="start">依据：moduleGraph.ts · _ensureEntryFromUrl() / updateModuleInfo()；图中 A、B、C、R 是节点引用。</text>
+</svg>
+</div></div><p class="diagram-hint">可横向滚动；适应宽度看全图，原尺寸读节点。</p></figure>
+<p>更新时，<code>updateModuleInfo()</code> 先给新依赖 C 的 <code>importers</code> 加入 A，再把 A 的 <code>importedModules</code>
+替换为新集合，并从已移除的 B 上删除 A。图中 B 没有其他 importer，因此它进入返回的
+<code>noLongerImported</code> 集合；此方法没有把 B 从 URL、ID 或 file 索引中删除。R 与 A 的 file 相同，
+但 R 的 resolved ID 带 query，所以它仍是另一个节点。</p>
+<p>只维护 <code>A.importedModules</code> 而不维护 <code>B.importers</code>，文件变化时就无法向上寻找受影响边界。删除文件
 时还要清理它作为 importer 留在依赖节点中的反向引用，避免悬挂边。</p>
 <p>CSS 分析过程中可能只有文件依赖、尚无浏览器 URL，<code>createFileOnlyEntry()</code> 会创建 asset 节点。
-后续真实 URL 到来时仍可按 file 找到它；这类节点不能被错误当成可直接请求的 JS/CSS 模块。</p>
+它只进入 <code>fileToModulesMap</code>，没有 resolved ID，也不进入 URL/ID 索引；后续正常请求仍会建立
+自己的节点。文件变化通过 file 索引同时找到这些节点，asset 节点本身不提供可直接返回的转换结果。</p>
 <h2 id="硬失效与软失效"><a class="heading-anchor" href="#%E7%A1%AC%E5%A4%B1%E6%95%88%E4%B8%8E%E8%BD%AF%E5%A4%B1%E6%95%88" aria-label="链接到本节">#</a>硬失效与软失效</h2>
 <div class="table-scroll"><table>
 <thead>
@@ -1553,10 +1878,13 @@ ModuleNode 保存。这样失败 Promise 不会永久污染后续请求。</p>
 </tr>
 </tbody>
 </table></div>
-<p>失效时先清 <code>transformResult</code>、SSR 执行错误和 ETag 反向索引，再更新单调时间。传播到 importer 时：</p>
+<p>失效会清 <code>transformResult</code>、旧 SSR 执行结果/错误和 ETag 反向索引。非 HMR 失效更新
+<code>lastInvalidationTimestamp</code>，阻止较早启动的请求写缓存；HMR 传播更新 <code>lastHMRTimestamp</code>，
+供浏览器 import URL 的 <code>?t=</code> 使用，并复位运行时 invalidate 的去重标记。传播到 importer 时：</p>
 <ul>
 <li>显式失效的根模块必须硬失效；</li>
-<li>importer 若只是依赖版本变化，可软失效；</li>
+<li>importer 声明 accept 该依赖时停止传播；其余 JS importer 的静态 import 边可以软失效；</li>
+<li>依赖已经通过软失效向上传播时，其他 JS importer 也可继续软失效；非静态硬失效边走完整转换；</li>
 <li>同一轮传播中，硬失效可以把先前的软失效升级；</li>
 <li><code>seen</code> 防止循环依赖无限递归，但升级判断必须发生在提前返回之前；</li>
 <li>直接 CSS 请求不能按 JS import 语法重写，需走硬失效边界
@@ -1564,25 +1892,25 @@ ModuleNode 保存。这样失败 Promise 不会永久污染后续请求。</p>
 </ul>
 <p>软失效是 HMR 性能优化（<a href="https://github.com/vitejs/vite/pull/14654" target="_blank" rel="noreferrer noopener">PR #14654</a>）：模块本身源码没变，
 无需重跑整条插件管线。client 用 <code>es-module-lexer</code> 扫描旧转换结果，对已更新依赖写入新的 <code>?t=</code>；
-静态直接 import 还可触发预热。替换只改变 URL 字符，不改变行结构，因此旧 Source Map 可沿用，
-但 code 对应的 ETag 必须重算。</p>
+静态直接 import 还可触发预热。实现保留旧 map，避免为仅改变依赖 URL 的模块重跑转换；URL 长度变化仍会改变该行后续字符列，
+这里没有重新生成精确列映射。code 对应的 ETag 必须重算。</p>
 <p>SSR 不靠浏览器 query 破缓存，Module Runner 管理执行缓存，所以直接复用旧 transformResult。无论
 client 还是 SSR，修补结束都再次做时间戳新鲜度检查，防止修补过程中发生第二次失效。</p>
 <h2 id="source-map-可调试性与安全边界"><a class="heading-anchor" href="#source-map-%E5%8F%AF%E8%B0%83%E8%AF%95%E6%80%A7%E4%B8%8E%E5%AE%89%E5%85%A8%E8%BE%B9%E7%95%8C" aria-label="链接到本节">#</a>Source Map：可调试性与安全边界</h2>
 <p>Source Map 处理分四类：</p>
 <ol>
-<li>从源码尾部读取 inline/external map，并用等长空白移除引用，保持行列稳定；</li>
+<li>从源码的 Source Map 引用读取 inline/external map，并用等长空白移除引用，保持行列稳定；</li>
 <li>对缺失的 <code>sourcesContent</code> 并行读取原源码；</li>
 <li>根据 <code>server.sourcemapIgnoreList</code> 合并 <code>x_google_ignoreList</code>；</li>
 <li>响应 <code>.map</code> 请求或把 map 以内联 data URL 附加到 JS/CSS。</li>
 </ol>
 <p>第三方 map 不能被当作可信文件读取清单。若转换文件在 node_modules，Vite 先找最近的普通包或
-<code>@scope/pkg</code> 根；外部 map 文件和每个 source 都必须仍位于该包内。否则恶意依赖可用
+<code>@scope/pkg</code> 根；外部 map 文件和需要补读的 source 路径都必须仍位于该包内。否则恶意依赖可用
 <code>../../.env</code> 一类路径把宿主文件读进 <code>sourcesContent</code> 并发送给浏览器。这个边界见
 <a href="https://github.com/vitejs/vite/pull/22158" target="_blank" rel="noreferrer noopener">PR #22158</a>。嵌套 node_modules 必须取最后一段，才能
 限制到真正产出 map 的内层包。</p>
-<p>找不到普通 source 只告警，不让模块转换失败；虚拟 source 则根本不尝试磁盘读取。可调试性是
-附加能力，不能改变应用能否运行。</p>
+<p>补读普通 source 的文件读取失败会记录告警，虚拟 source 则不尝试磁盘读取。这种容错限于
+补读流程；畸形 URI 的解码错误或用户 <code>sourcemapIgnoreList</code> 回调抛错仍可能使转换失败。</p>
 <h2 id="mixed-modulegraph-兼容层"><a class="heading-anchor" href="#mixed-modulegraph-%E5%85%BC%E5%AE%B9%E5%B1%82" aria-label="链接到本节">#</a>Mixed ModuleGraph 兼容层</h2>
 <p>Environment API 把 client 与 ssr 状态拆成独立 EnvironmentModuleGraph，但旧插件仍期待：</p>
 <figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">server.moduleGraph.getModuleById(id) → 一个 ModuleNode
@@ -1592,8 +1920,9 @@ idToModuleMap / fileToModulesMap     → 一张 Map
 <ul>
 <li>ModuleNode 同时持有可选 <code>_clientModule</code> 与 <code>_ssrModule</code>；</li>
 <li>相同 URL/ID 的双环境节点合成一个包装实例；</li>
-<li>Set/Map 代理遍历两边并按逻辑模块去重；</li>
-<li>旧 <code>ssr?: boolean</code> 参数把调用路由到对应环境图；</li>
+<li>importers/importedModules 返回合并 Set；单端依赖集合与索引 Map 使用兼容读取对象；</li>
+<li>ensureEntryFromUrl/resolveUrl/updateModuleTransformResult 的旧 <code>ssr?: boolean</code> 选择对应图，
+getModuleByUrl 则忽略该参数、并行查两图；</li>
 <li><code>DualWeakMap</code> 以一对底层节点缓存包装对象，保证同一输入始终返回同一实例。</li>
 </ul>
 <p>稳定实例很重要：插件可能用节点作 Set/Map key 或比较引用。只保证字段相等仍会破坏插件，相关
@@ -1636,8 +1965,8 @@ idToModuleMap / fileToModulesMap     → 一张 Map
 </tr>
 </tbody>
 </table></div>
-<p>这些用例不是主链的端到端演示，而是锁定最容易在重构时破坏的身份与边界条件。主链应从源码
-状态机阅读，用例用于反证自己的理解。</p>
+<p>模块类型用例固定扩展名查表结果；图用例直接构造节点、依赖和错误状态，分别验证失效清理、
+resolved ID 复用与兼容视图。下面把这些状态连接到一次具体模块请求。</p>
 <h2 id="关键源码证据"><a class="heading-anchor" href="#%E5%85%B3%E9%94%AE%E6%BA%90%E7%A0%81%E8%AF%81%E6%8D%AE" aria-label="链接到本节">#</a>关键源码证据</h2>
 <p>目标版本源码摘录，来源：<code>packages/vite/src/node/server/transformRequest.ts</code>，
 <code>transformRequest()</code>：</p>
@@ -1649,22 +1978,55 @@ const pending = environment._pendingRequests.get(url)
 if (pending) {
   return environment.moduleGraph.getModuleByUrl(url).then((module) =&gt; {
     if (!module || pending.timestamp &gt; module.lastInvalidationTimestamp) {
-      // The pending request is still valid, we can safely reuse its result
+      // 在途请求开始于最近一次失效之后，可安全共享同一 Promise。
       return pending.request
     } else {
-      // Request 1 for module A     (pending.timestamp)
-      // Invalidate module A        (module.lastInvalidationTimestamp)
-      // Request 2 for module A     (timestamp)
-
-      // First request has been invalidated, abort it to clear the cache,
-      // then perform a new doTransform.
+      // 时序：请求 1 → 模块失效 → 请求 2。请求 1 已过期，先清除其 pending 槽位，再让请求 2
+      // 建立新的 transform；abort 只停止复用，不强行取消正在执行的插件 Promise。
       pending.abort()
       return transformRequest(environment, url, options)
     }
   })
 }
-</code></pre></figure><p>同 URL 的请求通常复用 pending Promise；若模块在该请求开始后已失效，则中止旧工作并递归重跑。
+</code></pre></figure><p>同 URL 的请求通常复用 pending Promise；若模块在该请求开始后已失效，则释放旧 pending 槽位
+并递归建立新请求。旧插件 hook 继续执行，原调用者仍等待它；写缓存时另做时间戳检查。
 因此并发去重不能只按 URL 缓存，还必须和模块图的失效时间比较。</p>
+<p>成功入图后，原始 URL 索引保留节点，见 <code>moduleGraph.ts</code> 的 <code>_ensureEntryFromUrl()</code>（源码摘录，
+省略节点初始化和 file 索引写入）：</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">const modPromise = (async () =&gt; {
+  const [url, resolvedId, meta] = await this._resolveUrl(rawUrl, resolved)
+  mod = this.idToModuleMap.get(resolvedId)
+  // 新 ID 创建节点；已有 ID 复用，并补登记 URL。
+  // 此处省略两个分支的实现。
+  this._setUnresolvedUrlToModule(rawUrl, mod)
+  return mod
+})()
+this._setUnresolvedUrlToModule(rawUrl, modPromise)
+return modPromise
+</code></pre></figure><p><code>rawUrl → Promise → ModuleNode</code> 是这个索引的变化；<code>pending request → 删除槽位</code> 则是转换请求索引
+的变化。两者合并的任务与保留时长都不同。</p>
+<p>失效时间和 importer 分支来自同文件 <code>invalidateModule()</code>（源码摘录，省略状态合并、seen 与清理）：</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">if (isHmr) {
+  mod.lastHMRTimestamp = timestamp
+  mod.lastHMRInvalidationReceived = false
+} else {
+  mod.lastInvalidationTimestamp = timestamp
+}
+</code></pre></figure><figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">const shouldSoftInvalidateImporter =
+  (importer.staticImportedUrls?.has(mod.url) || softInvalidate) &amp;&amp;
+  importer.type === &#039;js&#039;
+this.invalidateModule(
+  importer,
+  seen,
+  timestamp,
+  isHmr,
+  shouldSoftInvalidateImporter,
+)
+</code></pre></figure><p>例如 <code>main.js</code> 静态导入 <code>data.js</code>，未 accept 该依赖，但 main 自身接受 HMR。data 内容变化时，watcher 的 onFileChange
+把 data 硬失效、main 软失效，并写入两者的 lastInvalidationTimestamp；HMR 更新随后写入依赖的
+lastHMRTimestamp。下一次 main 请求消费旧结果，只把 data 的 import URL 改成带新 <code>?t=</code> 的 URL，
+重算 ETag 后写回 main 缓存。若 main 是通过 watch 文件而非静态 import 依赖 data，根节点的硬失效
+会把 main 也硬失效；下次请求必须重新 load 和 transform。</p>
 <h2 id="建议断点"><a class="heading-anchor" href="#%E5%BB%BA%E8%AE%AE%E6%96%AD%E7%82%B9" aria-label="链接到本节">#</a>建议断点</h2>
 <p>用一个含 TS、CSS 和动态 import 的最小页面，按顺序观察：</p>
 <ol>
@@ -1677,20 +2039,19 @@ if (pending) {
 <li><code>handleModuleSoftInvalidation</code>：观察依赖 URL 的 <code>?t=</code> 与 ETag 更新。</li>
 </ol>
 <p>并发竞态可在 load hook 中手工挂起 Promise：发请求 A，修改文件触发失效，再发请求 B。正确结果
-是 B 不复用 A，且 A 即使最后完成也不能写回模块缓存。这个实验用来验证思路即可；纯注释修改
-本身不需要重复执行测试套件。</p>
+是 B 不复用 A，且 A 即使最后完成也不能写回模块缓存。它对应两处检查：pending 复用前比较时间戳，转换完成后再次比较时间戳。</p>
 <h2 id="复盘题"><a class="heading-anchor" href="#%E5%A4%8D%E7%9B%98%E9%A2%98" aria-label="链接到本节">#</a>复盘题</h2>
 <ol>
 <li>为什么清掉 pending request 还不够，写 transformResult 前仍要比较时间戳？</li>
 <li>如果只用 URL 作为唯一索引，alias 或虚拟 URL 会制造什么重复状态？</li>
 <li>为什么直接 CSS 的 ETag 判断晚于普通模块的快速 304？</li>
-<li>load 失败的 URL 若提前入图，会怎样影响 HMR、404 与后续中间件？</li>
-<li>软失效为什么能保留 Source Map，却不能保留旧 ETag？</li>
+<li>请求 load 成功前不主动入图，为何不妨碍 import analysis 先为依赖建立节点？</li>
+<li>软失效为什么重新计算 ETag、保留旧 map？URL 长度变化影响哪种调试精度？</li>
 <li>环形依赖中，<code>seen</code> 判断放在软→硬升级之前会发生什么？</li>
 <li>为什么 sourcemap 的 source 读取边界是 package root，而不只是 node_modules root？</li>
 <li>Mixed ModuleGraph 若每次访问都创建新包装节点，会破坏哪些插件代码？</li>
 </ol>
-</article><nav class="article-pager" aria-label="前后篇"><a class="pager-link previous" href="07-module-resolution.html"><span class="pager-label">上一篇 · 07</span><span class="pager-title">模块解析</span></a><a class="pager-link next" href="09-html-transform.html"><span class="pager-label">下一篇 · 09</span><span class="pager-title">HTML 转换</span></a></nav><footer class="site-footer">Vite v8.2.1 源码阅读站 · 所有机制结论限定于 commit 421615865dad3ed39137d17281814fc78a41246c。</footer></main><aside class="page-toc" aria-label="页内目录"><h2 class="toc-title">本页目录</h2><ol class="toc-list"><li class="depth-2"><a href="#%E9%98%85%E8%AF%BB%E8%BE%B9%E7%95%8C">阅读边界</a></li><li class="depth-2"><a href="#%E6%8E%A8%E8%8D%90%E9%98%85%E8%AF%BB%E9%A1%BA%E5%BA%8F">推荐阅读顺序</a></li><li class="depth-2"><a href="#%E4%B8%80%E6%AC%A1-http-%E6%A8%A1%E5%9D%97%E8%AF%B7%E6%B1%82">一次 HTTP 模块请求</a></li><li class="depth-3"><a href="#css-%E4%B8%BA%E4%BB%80%E4%B9%88%E6%9C%89%E4%B8%A4%E4%B8%AA-url-%E8%BA%AB%E4%BB%BD">CSS 为什么有两个 URL 身份</a></li><li class="depth-3"><a href="#http-%E9%94%99%E8%AF%AF%E4%B8%8D%E6%98%AF%E4%B8%80%E5%BE%8B-500">HTTP 错误不是一律 500</a></li><li class="depth-2"><a href="#%E6%A8%A1%E5%9D%97%E7%9A%84%E4%B8%89%E7%A7%8D%E8%BA%AB%E4%BB%BD">模块的三种身份</a></li><li class="depth-2"><a href="#%E5%9B%9B%E5%B1%82%E7%BC%93%E5%AD%98%E4%B8%8D%E8%83%BD%E6%B7%B7%E4%B8%BA%E4%B8%80%E8%B0%88">四层缓存不能混为一谈</a></li><li class="depth-2"><a href="#%E5%B9%B6%E5%8F%91%E8%AF%B7%E6%B1%82%E4%B8%8E%E5%A4%B1%E6%95%88%E7%AB%9E%E6%80%81">并发请求与失效竞态</a></li><li class="depth-2"><a href="#loadandtransform-%E7%9A%84%E9%98%B6%E6%AE%B5%E8%BE%B9%E7%95%8C">loadAndTransform 的阶段边界</a></li><li class="depth-3"><a href="#1-%E8%AE%BF%E9%97%AE%E6%8E%A7%E5%88%B6">1. 访问控制</a></li><li class="depth-3"><a href="#2-%E6%8F%92%E4%BB%B6-load-%E4%BC%98%E5%85%88-%E7%A3%81%E7%9B%98%E5%8F%AA%E6%98%AF%E5%9B%9E%E9%80%80">2. 插件 load 优先，磁盘只是回退</a></li><li class="depth-3"><a href="#3-load-%E6%88%90%E5%8A%9F%E5%90%8E%E6%89%8D%E5%85%A5%E5%9B%BE">3. load 成功后才入图</a></li><li class="depth-3"><a href="#4-transform-%E4%B8%8E-source-map-%E8%A7%84%E8%8C%83%E5%8C%96">4. transform 与 Source Map 规范化</a></li><li class="depth-2"><a href="#%E6%A8%A1%E5%9D%97%E5%9B%BE%E6%80%8E%E6%A0%B7%E7%BB%B4%E6%8A%A4%E4%BE%9D%E8%B5%96%E8%BE%B9">模块图怎样维护依赖边</a></li><li class="depth-2"><a href="#%E7%A1%AC%E5%A4%B1%E6%95%88%E4%B8%8E%E8%BD%AF%E5%A4%B1%E6%95%88">硬失效与软失效</a></li><li class="depth-2"><a href="#source-map-%E5%8F%AF%E8%B0%83%E8%AF%95%E6%80%A7%E4%B8%8E%E5%AE%89%E5%85%A8%E8%BE%B9%E7%95%8C">Source Map：可调试性与安全边界</a></li><li class="depth-2"><a href="#mixed-modulegraph-%E5%85%BC%E5%AE%B9%E5%B1%82">Mixed ModuleGraph 兼容层</a></li><li class="depth-2"><a href="#%E7%94%A8%E4%BE%8B%E6%80%8E%E6%A0%B7%E6%98%A0%E5%B0%84%E6%BA%90%E7%A0%81">用例怎样映射源码</a></li><li class="depth-2"><a href="#%E5%85%B3%E9%94%AE%E6%BA%90%E7%A0%81%E8%AF%81%E6%8D%AE">关键源码证据</a></li><li class="depth-2"><a href="#%E5%BB%BA%E8%AE%AE%E6%96%AD%E7%82%B9">建议断点</a></li><li class="depth-2"><a href="#%E5%A4%8D%E7%9B%98%E9%A2%98">复盘题</a></li></ol></aside></div><script>;(function () {
+</article><nav class="article-pager" aria-label="前后篇"><a class="pager-link previous" href="07-module-resolution.html"><span class="pager-label">上一篇 · 07</span><span class="pager-title">模块解析</span></a><a class="pager-link next" href="09-html-transform.html"><span class="pager-label">下一篇 · 09</span><span class="pager-title">HTML 转换</span></a></nav><footer class="site-footer">Vite v8.2.1 源码阅读站 · 所有机制结论限定于 commit 421615865dad3ed39137d17281814fc78a41246c。</footer></main><aside class="page-toc" aria-label="页内目录"><h2 class="toc-title">本页目录</h2><ol class="toc-list"><li class="depth-2"><a href="#%E9%98%85%E8%AF%BB%E8%BE%B9%E7%95%8C">阅读边界</a></li><li class="depth-2"><a href="#%E6%8E%A8%E8%8D%90%E9%98%85%E8%AF%BB%E9%A1%BA%E5%BA%8F">推荐阅读顺序</a></li><li class="depth-2"><a href="#%E4%B8%80%E6%AC%A1-http-%E6%A8%A1%E5%9D%97%E8%AF%B7%E6%B1%82">一次 HTTP 模块请求</a></li><li class="depth-3"><a href="#css-%E4%B8%BA%E4%BB%80%E4%B9%88%E6%9C%89%E4%B8%A4%E4%B8%AA-url-%E8%BA%AB%E4%BB%BD">CSS 为什么有两个 URL 身份</a></li><li class="depth-3"><a href="#http-%E9%94%99%E8%AF%AF%E4%B8%8D%E6%98%AF%E4%B8%80%E5%BE%8B-500">HTTP 错误不是一律 500</a></li><li class="depth-2"><a href="#%E6%A8%A1%E5%9D%97%E7%9A%84%E4%B8%89%E7%A7%8D%E8%BA%AB%E4%BB%BD">模块的三种身份</a></li><li class="depth-2"><a href="#%E5%9B%9B%E5%B1%82%E7%BC%93%E5%AD%98%E4%B8%8D%E8%83%BD%E6%B7%B7%E4%B8%BA%E4%B8%80%E8%B0%88">四层缓存不能混为一谈</a></li><li class="depth-2"><a href="#%E5%B9%B6%E5%8F%91%E8%AF%B7%E6%B1%82%E4%B8%8E%E5%A4%B1%E6%95%88%E7%AB%9E%E6%80%81">并发请求与失效竞态</a></li><li class="depth-2"><a href="#loadandtransform-%E7%9A%84%E9%98%B6%E6%AE%B5%E8%BE%B9%E7%95%8C">loadAndTransform 的阶段边界</a></li><li class="depth-3"><a href="#1-%E8%AE%BF%E9%97%AE%E6%8E%A7%E5%88%B6">1. 访问控制</a></li><li class="depth-3"><a href="#2-%E6%8F%92%E4%BB%B6-load-%E4%BC%98%E5%85%88-%E7%A3%81%E7%9B%98%E5%8F%AA%E6%98%AF%E5%9B%9E%E9%80%80">2. 插件 load 优先，磁盘只是回退</a></li><li class="depth-3"><a href="#3-%E9%A6%96%E6%AC%A1%E8%AF%B7%E6%B1%82-load-%E6%88%90%E5%8A%9F%E5%90%8E%E7%A1%AE%E4%BF%9D%E8%8A%82%E7%82%B9">3. 首次请求 load 成功后确保节点</a></li><li class="depth-3"><a href="#4-transform-%E4%B8%8E-source-map-%E8%A7%84%E8%8C%83%E5%8C%96">4. transform 与 Source Map 规范化</a></li><li class="depth-2"><a href="#%E6%A8%A1%E5%9D%97%E5%9B%BE%E6%80%8E%E6%A0%B7%E7%BB%B4%E6%8A%A4%E4%BE%9D%E8%B5%96%E8%BE%B9">模块图怎样维护依赖边</a></li><li class="depth-2"><a href="#%E7%A1%AC%E5%A4%B1%E6%95%88%E4%B8%8E%E8%BD%AF%E5%A4%B1%E6%95%88">硬失效与软失效</a></li><li class="depth-2"><a href="#source-map-%E5%8F%AF%E8%B0%83%E8%AF%95%E6%80%A7%E4%B8%8E%E5%AE%89%E5%85%A8%E8%BE%B9%E7%95%8C">Source Map：可调试性与安全边界</a></li><li class="depth-2"><a href="#mixed-modulegraph-%E5%85%BC%E5%AE%B9%E5%B1%82">Mixed ModuleGraph 兼容层</a></li><li class="depth-2"><a href="#%E7%94%A8%E4%BE%8B%E6%80%8E%E6%A0%B7%E6%98%A0%E5%B0%84%E6%BA%90%E7%A0%81">用例怎样映射源码</a></li><li class="depth-2"><a href="#%E5%85%B3%E9%94%AE%E6%BA%90%E7%A0%81%E8%AF%81%E6%8D%AE">关键源码证据</a></li><li class="depth-2"><a href="#%E5%BB%BA%E8%AE%AE%E6%96%AD%E7%82%B9">建议断点</a></li><li class="depth-2"><a href="#%E5%A4%8D%E7%9B%98%E9%A2%98">复盘题</a></li></ol></aside></div><script>;(function () {
   'use strict'
 
   var root = document.documentElement
@@ -1765,6 +2126,80 @@ if (pending) {
   updateProgress()
   window.addEventListener('scroll', updateProgress, { passive: true })
   window.addEventListener('resize', updateProgress)
+
+  var expandedDiagram = null
+
+  function closeDiagram() {
+    if (!expandedDiagram) return
+    var figure = expandedDiagram
+    var button = figure.querySelector('[data-diagram-action="expand"]')
+    figure.classList.remove('is-expanded')
+    figure.removeAttribute('role')
+    figure.removeAttribute('aria-modal')
+    body.classList.remove('diagram-is-expanded')
+    button.setAttribute('aria-expanded', 'false')
+    button.textContent = '展开图示'
+    expandedDiagram = null
+    button.focus()
+  }
+
+  document.querySelectorAll('.engineering-diagram').forEach(function (figure) {
+    var viewport = figure.querySelector('.diagram-viewport')
+    var canvas = figure.querySelector('.diagram-canvas')
+    var output = figure.querySelector('.diagram-scale')
+    var width = Number(figure.getAttribute('data-diagram-width'))
+    var scale = 1
+
+    function setScale(next) {
+      scale = Math.min(2, Math.max(0.15, next))
+      canvas.style.width = width * scale + 'px'
+      output.textContent = Math.round(scale * 100) + '%'
+    }
+
+    figure.querySelectorAll('[data-diagram-action]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        var action = button.getAttribute('data-diagram-action')
+        if (action === 'in') setScale(scale * 1.2)
+        if (action === 'out') setScale(scale / 1.2)
+        if (action === 'fit') setScale(viewport.clientWidth / width)
+        if (action === 'reset') setScale(1)
+        if (action === 'expand') {
+          if (expandedDiagram === figure) {
+            closeDiagram()
+            return
+          }
+          closeDiagram()
+          expandedDiagram = figure
+          figure.classList.add('is-expanded')
+          figure.setAttribute('role', 'dialog')
+          figure.setAttribute('aria-modal', 'true')
+          body.classList.add('diagram-is-expanded')
+          button.setAttribute('aria-expanded', 'true')
+          button.textContent = '收起图示'
+          button.focus()
+        }
+      })
+    })
+  })
+
+  document.addEventListener('keydown', function (event) {
+    if (!expandedDiagram) return
+    if (event.key === 'Escape') closeDiagram()
+    if (event.key === 'Tab') {
+      var controls = Array.from(
+        expandedDiagram.querySelectorAll('button, a, [tabindex="0"]'),
+      )
+      var first = controls[0]
+      var last = controls[controls.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+  })
 
   document.querySelectorAll('.copy-code').forEach(function (button) {
     button.addEventListener('click', async function () {

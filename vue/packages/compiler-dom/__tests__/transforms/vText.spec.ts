@@ -28,6 +28,9 @@ function transformWithVText(template: string, options: CompilerOptions = {}) {
 }
 
 describe('compiler: v-text transform', () => {
+  /**
+   * 场景：无 children 的 div 使用动态 v-text=test，断言 textContent 的调用参数、PROPS 标志及动态键，验证动态展示值经 toDisplayString 写入属性。
+   */
   it('should convert v-text to textContent', () => {
     const ast = transformWithVText(`<div v-text="test"/>`)
     expect((ast.children[0] as PlainElementNode).codegenNode).toMatchObject({
@@ -43,6 +46,9 @@ describe('compiler: v-text transform', () => {
     })
   })
 
+  /**
+   * 场景：v-text=test 与 hello children 同存，收集错误后断言 WITH_CHILDREN 与 children 被移除，验证无效子树不会参与生成。
+   */
   it('should raise error and ignore children when v-text is present', () => {
     const onError = vi.fn()
     const ast = transformWithVText(`<div v-text="test">hello</div>`, {
@@ -58,12 +64,15 @@ describe('compiler: v-text transform', () => {
           arguments: [{ content: 'test' }],
         },
       }),
-      children: undefined, // <-- children should have been removed
+      children: undefined, // v-text 已清空原有子节点
       patchFlag: PatchFlags.PROPS,
       dynamicProps: `["textContent"]`,
     })
   })
 
+  /**
+   * 场景：v-text 缺少表达式，收集型 onError 转换并断言 NO_EXPRESSION，验证必需输入的诊断而非文本更新行为。
+   */
   it('should raise error if has no expression', () => {
     const onError = vi.fn()
     transformWithVText(`<div v-text></div>`, {

@@ -154,10 +154,11 @@ export type PreinitModuleScriptOptions = {
 
 /**
  * ReactDOM 公共 API 到当前 DOM renderer 的紧凑 dispatcher 协议。
- * 短字段名是发布产物契约；renderer 安装真实实现，同构加载阶段使用 noop。
+ * 短字段名是发布产物契约；renderer 安装真实实现，同构阶段资源/flush 槽为空，
+ * 默认表单重置槽则报告表单不受 React 管理的错误。
  */
 export type HostDispatcher = {
-  /** 冲刷当前同步工作；渲染期调用时返回真供开发态诊断。 */
+  /** 冲刷当前同步工作；render/commit 期间无法重入时返回真，供开发态诊断。 */
   f /* flushSyncWork */: () => boolean | void,
   /** 重置由 React 管理的 form。 */
   r /* requestFormReset */: (form: HTMLFormElement) => void,

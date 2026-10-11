@@ -7,7 +7,7 @@
  * @emails react-core
  */
 
-// 注意：这里刻意不使用 JSX，以便在 Babel 不添加源码位置信息时测试当前的 stack addendum。
+// 重复 key 用例同时检查元素来源栈；Parent 通过 cloneElement 转交已有 child，预期栈保留其创建者链。
 
 'use strict';
 
@@ -25,14 +25,14 @@ describe('ReactChildReconciler', () => {
     ({act, assertConsoleErrorDev} = require('internal-test-utils'));
   });
 
-  /** `createIterable`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 用 @@iterator 包装数组，每次创建独立索引迭代器，使重复 key case 进入 iterable 协调分支。 */
   function createIterable(array) {
     return {
-      /** `createIterable.@@iterator`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 从 i=0 创建迭代器，不共用跨渲染的消费进度。 */
       '@@iterator': function () {
         let i = 0;
         return {
-          /** `@@iterator.next`：实现测试夹具的生命周期、渲染或交互步骤。 */
+          /** 依次返回数组元素，i 等于长度时 done=true；返回后递增，使协调器消费到一次完成记录。 */
           next() {
             const next = {
               value: i < array.length ? array[i] : undefined,
@@ -46,14 +46,15 @@ describe('ReactChildReconciler', () => {
     };
   }
 
-  /** `makeIterableFunction`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 给空函数附加单元素 @@iterator；输入同时是 callable 与 iterable，用于验证函数子节点优先被拒绝。 */
   function makeIterableFunction(value) {
-    /** `makeIterableFunction.fn`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 空函数仅作为函数类型身份，实际迭代能力由随后附加的 @@iterator 提供。 */
     const fn = () => {};
+    /** 每次建立单元素迭代器，第一项返回 value，之后 done；React 不应因该属性而接受函数本身作为 children。 */
     fn['@@iterator'] = function iterator() {
       let timesCalled = 0;
       return {
-        /** `iterator.next`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 第一次返回 done=false 与输入值，第二次起返回 done=true，构造可正常消费但应被类型分支拒绝的 iterable 函数。 */
         next() {
           const done = timesCalled++ > 0;
           return {done, value: done ? undefined : value};
@@ -63,14 +64,7 @@ describe('ReactChildReconciler', () => {
     return fn;
   }
 
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「does not treat functions as iterables」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言连接 ReactDOM 公开入口、ReactDOMRoot 根生命周期及 DOM 提交结果。
-   */
+  /** 把带 @@iterator 且可产出 foo 的函数本身作为 h1 child；DEV 应报函数不是有效 React child，验证 typeof function 分支不会因迭代器属性而当集合渲染。本 case 的 toContain("") 不独立证明 h1 内容为空，主要证据是诊断。 */
   it('does not treat functions as iterables', async () => {
     const iterableFunction = makeIterableFunction('foo');
 
@@ -95,11 +89,11 @@ describe('ReactChildReconciler', () => {
     expect(node.innerHTML).toContain(''); // h1
   });
 
-  /** 测试场景：验证「warns for duplicated array keys」描述的渲染、交互或错误处理结果。 */
+  /** 类 fixture 返回含两个相同 key=1 的 div 数组；DEV 应一次报告重复 key 并附 div/Component 栈，验证数组兄弟身份冲突。 */
   it('warns for duplicated array keys', async () => {
-    /** `Component`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 提供同一数组中两个 key=1 的 JSX child，触发最小重复 key 诊断。 */
     class Component extends React.Component {
-      /** `Component.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 返回两个重复键 div 的数组，宿主父 div 是唯一性检查的兄弟集合边界。 */
       render() {
         return <div>{[<div key="1" />, <div key="1" />]}</div>;
       }
@@ -120,27 +114,27 @@ describe('ReactChildReconciler', () => {
     ]);
   });
 
-  /** 测试场景：验证「warns for duplicated array keys with component stack info」描述的渲染、交互或错误处理结果。 */
+  /** 重复 key 数组经过 GrandParent 创建元素、Parent cloneElement 转交；DEV 仍报告冲突且栈为 div/Component/GrandParent，验证元素创建者链中的来源信息。 */
   it('warns for duplicated array keys with component stack info', async () => {
-    /** `Component`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 提供经过父组件转交的重复键数组，用以核对诊断来源栈。 */
     class Component extends React.Component {
-      /** `Component.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 在 Component 创建重复键元素，使冲突来源指向该组件。 */
       render() {
         return <div>{[<div key="1" />, <div key="1" />]}</div>;
       }
     }
 
-    /** `Parent`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 通过 cloneElement 转交 GrandParent 创建的 Component，测试元素来源栈经过克隆仍可追踪。 */
     class Parent extends React.Component {
-      /** `Parent.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 克隆已有 child 而不替换其 props/ref，保留原元素创建者信息。 */
       render() {
         return React.cloneElement(this.props.child);
       }
     }
 
-    /** `GrandParent`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 创建交给 Parent 的 Component 元素，作为诊断栈的上层创建来源。 */
     class GrandParent extends React.Component {
-      /** `GrandParent.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 输出 Parent 并在 child 参数中创建 Component，建立预期 GrandParent 来源帧。 */
       render() {
         return <Parent child={<Component />} />;
       }
@@ -163,11 +157,11 @@ describe('ReactChildReconciler', () => {
     ]);
   });
 
-  /** 测试场景：验证「warns for duplicated iterable keys」描述的渲染、交互或错误处理结果。 */
+  /** 把相同 key=1 的两个 div 包进自定义 @@iterator 集合；DEV 应报告重复 key 与 div/Component 栈，验证 iterable 与数组执行同样的 key 唯一性检查。 */
   it('warns for duplicated iterable keys', async () => {
-    /** `Component`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 提供自定义 iterable 内两个重复 key 的宿主子节点，覆盖另一种集合协调入口。 */
     class Component extends React.Component {
-      /** `Component.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 把重复键 div 放入 createIterable，而非直接数组 children。 */
       render() {
         return <div>{createIterable([<div key="1" />, <div key="1" />])}</div>;
       }
@@ -189,27 +183,27 @@ describe('ReactChildReconciler', () => {
     ]);
   });
 
-  /** 测试场景：验证「warns for duplicated iterable keys with component stack info」描述的渲染、交互或错误处理结果。 */
+  /** 重复 key iterable 经过 GrandParent 与 cloneElement 转交；DEV 应保留 div/Component/GrandParent 来源栈，验证集合迭代分支的诊断来源信息。 */
   it('warns for duplicated iterable keys with component stack info', async () => {
-    /** `Component`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 提供跨组件转交的重复 key iterable，用以核对迭代分支组件来源栈。 */
     class Component extends React.Component {
-      /** `Component.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 在 Component 内建立重复键 iterable，保留冲突节点的创建来源。 */
       render() {
         return <div>{createIterable([<div key="1" />, <div key="1" />])}</div>;
       }
     }
 
-    /** `Parent`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 克隆并转交包含 iterable 的 Component 元素，与数组 case 保持同样来源关系。 */
     class Parent extends React.Component {
-      /** `Parent.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 原样 cloneElement child，令 iterable 场景只改变集合形式而不改变组件创建者关系。 */
       render() {
         return React.cloneElement(this.props.child);
       }
     }
 
-    /** `GrandParent`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 创建 iterable Component 并经 Parent 转交，提供诊断中的 GrandParent 来源。 */
     class GrandParent extends React.Component {
-      /** `GrandParent.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 组合 Parent 与 child Component，覆盖克隆转交后的 iterable 重复键诊断。 */
       render() {
         return <Parent child={<Component />} />;
       }

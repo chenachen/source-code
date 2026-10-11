@@ -35,7 +35,7 @@ describe('ReactInterleavedUpdates', () => {
     return text;
   }
 
-  /** Given 三个 Child 的 transition 渲染只完成第一个；When 渲染中再次给全部 Child 安排 transition 更新；Then 当前轮仍提交 111，新更新另起一轮提交 222。通过分片 Scheduler 日志与宿主输出验证 enqueueInterleavedUpdates 的快照隔离。 */
+  /** Given 三个 Child 的 transition 渲染只完成第一个；When 渲染中再次给全部 Child 安排 transition 更新；Then 当前轮仍提交 111，新更新另起一轮提交 222。通过分片 Scheduler 日志与宿主输出验证 concurrentQueues 暂存与 finishQueueingConcurrentUpdates 转移的隔离。 */
   it('update during an interleaved event is not processed during the current render', async () => {
     const updaters = [];
 
@@ -122,7 +122,7 @@ describe('ReactInterleavedUpdates', () => {
       });
       await waitFor(['A1', 'B1']);
 
-      // 安排交错更新；它会先进入专用队列。
+      // 安排交错更新；它先暂存于 concurrentQueues，之后接入对应 Hook 的 pending 队列。
       startTransition(() => {
         setStep(2);
       });

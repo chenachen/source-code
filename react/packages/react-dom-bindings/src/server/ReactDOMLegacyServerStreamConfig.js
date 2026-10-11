@@ -29,7 +29,8 @@ export function scheduleWork(callback: () => void) {
 
 /**
  * Legacy 配置同步执行“微任务”回调，以与其同步工作调度覆盖保持一致。
- * 当前 legacy API 不调用它，保留该行为用于未来一致性。
+ * Fizz.startWork也经此入口执行首轮performWork；它必须立即运行，才能让renderToString
+ * 在同一调用栈先产生shell、再abort未完成任务并同步收集字符串。
  */
 export function scheduleMicrotask(callback: () => void) {
   callback();
@@ -101,7 +102,7 @@ export function closeWithError(destination: Destination, error: mixed): void {
 /** 复用 React Server 的 JavaScript 快速哈希实现。 */
 export {createFastHashJS as createFastHash} from 'react-server/src/createFastHashJS';
 
-/** 将 Blob 编码为带 MIME 类型的 base64 data URL。 */
+/** await Blob.arrayBuffer后把完整字节base64编码为data URL；有Buffer时用Buffer.from，否则用btoa，MIME缺失回退application/octet-stream。读取/编码失败保持Promise拒绝，不做流式分块。 */
 export function readAsDataURL(blob: Blob): Promise<string> {
   return blob.arrayBuffer().then(arrayBuffer => {
     const encoded =

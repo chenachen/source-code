@@ -31,7 +31,7 @@ import {
 } from 'react-reconciler/src/ReactWorkTags';
 import {getNearestMountedFiber} from 'react-reconciler/src/ReactFiberTreeReflection';
 
-/** registerEvents 管理从 mouse/pointer over/out 推导不冒泡的 enter/leave 配对事件的注册/监听边界；避免同一容器重复安装或遗漏 capture 配置。 */
+/** 登记 mouse/pointer enter/leave 的直接注册名，共用 over/out 原生依赖。 */
 function registerEvents() {
   registerDirectEvent('onMouseEnter', ['mouseout', 'mouseover']);
   registerDirectEvent('onMouseLeave', ['mouseout', 'mouseover']);
@@ -44,7 +44,7 @@ function registerEvents() {
  * 避免提取重复事件；但指针从浏览器外进入时不会触发 `mouseout`，
  * 此时必须改用顶层 `mouseover`。
  */
-/** extractEvents 从原生事件和 Fiber 路径收集从 mouse/pointer over/out 推导不冒泡的 enter/leave 配对事件所需数据；只生成满足插件条件的 listener/event。 */
+/** 以 out 为主推导 from/to，窗口进入或 replay 的 over 补进入路径；围绕共同祖先累积 leave/enter，避免配对事件重复提取。 */
 function extractEvents(
   dispatchQueue: DispatchQueue,
   domEventName: DOMEventName,

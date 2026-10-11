@@ -1,16 +1,13 @@
-/**
- * 测试阅读说明：本文件验证 `runtime-dom/directives/vCloak` 的运行时行为。
- * “测试组”概括共享前置条件，“测试场景”说明当前输入、边界或历史回归目标；具体预期以断言为准。
- */
 import { createApp } from '@vue/runtime-dom'
 
-// 测试组：组件挂载后移除用于隐藏未编译模板的 v-cloak attribute。
+// 测试组：在含v-cloak的div挂载组件，检查挂载完成后宿主移除此attribute。
 describe('vCloak', () => {
-  // 测试场景：编译后应删除。
+  /** 测试场景：mount前容器已有v-cloak，挂载空render应用后标记被删除；实际覆盖runtime-dom mount清理，不是模板编译删除。 */
   test('should be removed after compile', () => {
     const root = document.createElement('div')
     root.setAttribute('v-cloak', '')
     createApp({
+      /** 提供空根组件，不返回VNode。 */
       render() {},
     }).mount(root)
     expect(root.hasAttribute('v-cloak')).toBe(false)

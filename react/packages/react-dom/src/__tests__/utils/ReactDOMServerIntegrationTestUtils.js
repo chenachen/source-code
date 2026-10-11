@@ -9,30 +9,31 @@
 
 'use strict';
 
-/** `stream`：保存当前测试场景复用的夹具、状态或回调。 */
+/** 提供 Node Writable 基类，用来按 Fizz 实际 chunk 收集服务端 HTML。 */
 const stream = require('stream');
-/** `shouldIgnoreConsoleError`：保存当前测试场景复用的夹具、状态或回调。 */
+/** 过滤测试环境约定的 console.error噪声，使错误计数针对场景诊断。 */
 const shouldIgnoreConsoleError = require('internal-test-utils/shouldIgnoreConsoleError');
 
+/** 以 initModules 回调构造集成工具集合，闭包保存当前 client/server和 act；调用者需先 resetModules初始化再执行 render。 */
 module.exports = function (initModules) {
   let ReactDOM;
   let ReactDOMClient;
   let ReactDOMServer;
   let act;
 
-  /** `resetModules`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 调用场景提供的 initModules更新 client/server模块引用并重新取 act；SSR到hydration 的切换清除模块级缓存。 */
   function resetModules() {
     ({ReactDOM, ReactDOMClient, ReactDOMServer} = initModules());
     act = require('internal-test-utils').act;
   }
 
-  /** `shouldUseDocument`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 仅当 React 元素顶层 type 精确为 html 时选整文档容器；Fragment或包装组件中的 html不触发此快捷分支。 */
   function shouldUseDocument(reactElement) {
     // 用于整个文档测试。
     return reactElement && reactElement.type === 'html';
   }
 
-  /** `getContainerFromMarkup`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** html 输入创建独立 HTMLDocument并用 document.write解析 markup或空文档基准；其它输入建 div并赋 innerHTML。解析得到的节点供 SSR断言与hydration使用。 */
   function getContainerFromMarkup(reactElement, markup) {
     if (shouldUseDocument(reactElement)) {
       const doc = document.implementation.createHTMLDocument('');
@@ -52,13 +53,13 @@ module.exports = function (initModules) {
 
   // 渲染测试辅助函数 ==================================================
 
-  // 把 ReactDOM.render() 包装为 Promise 形式。
-  /** `asyncReactDOMRender`：封装当前用例复用的操作、回调或断言步骤。 */
+  // 在 act 内调用客户端根的 render 或 hydrateRoot；兼容分支使用 legacy ReactDOM.render。
+  /** 在 act 中完成 hydrateRoot或新根render；hydrate以 onRecoverableError转console.error但过滤指定根回退消息，非hydrate缺 client模块才回退legacy render。此函数不返回root也不统一卸载。 */
   async function asyncReactDOMRender(reactElement, domElement, forceHydrate) {
     if (forceHydrate) {
       await act(() => {
         ReactDOMClient.hydrateRoot(domElement, reactElement, {
-          /** `asyncReactDOMRender.onRecoverableError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+          /** 过滤指定的整根切换客户端渲染消息，其它可恢复错误写 console.error供场景计数；不吞掉任意 hydration诊断。 */
           onRecoverableError(e) {
             if (
               e.message.startsWith(
@@ -83,8 +84,8 @@ module.exports = function (initModules) {
       });
     }
   }
-  // 异步执行 fn，并期望 console.error 记录 count 个错误；实际错误数不等于 count 时测试失败。
-  /** `expectErrors`：封装当前用例复用的操作、回调或断言步骤。 */
+  // 执行 fn 并过滤已知 console.error 噪声；有日志且过滤后数量不符时，DEV 校验原始调用次数。
+  /** 清空/安装console.error mock并await fn；仅存在日志时过滤噪声，过滤数不匹配才打印并DEV断言原始调用总数。零调用或数量相等时不额外断言，因此此辅助器不是严格的逐条诊断匹配器。 */
   async function expectErrors(fn, count) {
     if (console.error.mockClear) {
       console.error.mockClear();
@@ -126,8 +127,8 @@ module.exports = function (initModules) {
     return result;
   }
 
-  // 把 reactElement 渲染进 domElement，并校验预期错误数；返回的 Promise 会在渲染完成时兑现。
-  /** `renderIntoDom`：封装当前用例复用的操作、回调或断言步骤。 */
+  // 在 act 中完成客户端渲染或 hydration，经 expectErrors 检查日志后返回容器 firstChild。
+  /** 经 expectErrors在 act 中完成 render/hydrate，再返回容器 firstChild；errorCount为期望日志数，返回首节点不检查其余结构。 */
   function renderIntoDom(
     reactElement,
     domElement,
@@ -140,7 +141,7 @@ module.exports = function (initModules) {
     }, errorCount);
   }
 
-  /** `renderIntoString`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 在 Promise executor 中调用同步 renderToString；同步异常转拒绝，成功结果经 expectErrors作为 HTML字符串返回。 */
   async function renderIntoString(reactElement, errorCount = 0) {
     return await expectErrors(
       () =>
@@ -151,38 +152,37 @@ module.exports = function (initModules) {
     );
   }
 
-  // 使用服务器端渲染（SSR）渲染文本，并将结果塞入一个 DOM 节点中； 返回与 reactElement 对应的
-  // DOM 元素。 不渲染客户端或不进行客户端复活。
-  /** `serverRender`：封装当前用例复用的操作、回调或断言步骤。 */
+  // 把 renderToString 的 HTML 解析为测试容器，返回 firstChild；此路径不创建客户端根。
+  /** 字符串 SSR后解析适用容器并返回 firstChild，不创建客户端 Fiber根；场景可对解析后的 DOM形状断言。 */
   async function serverRender(reactElement, errorCount = 0) {
     const markup = await renderIntoString(reactElement, errorCount);
     return getContainerFromMarkup(reactElement, markup).firstChild;
   }
 
-  // 这将读取管道中的可读内容并将其转换为字符串。 该值可以通过 `.buffer` 属性访问。
-  /** `DrainWritable`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+  // Writable 收集 Fizz 写出的每个 chunk，拼接到 .buffer。
+  /** Node Writable子类，按写入顺序把每个 chunk字符串化后累加到 buffer，供流 finish时取完整HTML。 */
   class DrainWritable extends stream.Writable {
-    /** `DrainWritable.constructor`：初始化测试夹具实例及其状态。 */
+    /** 调用 Writable基类并把输出缓存设为空，options由 Node流基类解释。 */
     constructor(options) {
       super(options);
       this.buffer = '';
     }
 
-    /** `DrainWritable._write`：实现测试夹具的生命周期、渲染或交互步骤。 */
+    /** 把 chunk追加到 buffer后立即 cb确认写完，不模拟背压或延迟，也不使用 encoding另行解码。 */
     _write(chunk, encoding, cb) {
       this.buffer += chunk;
       cb();
     }
   }
 
-  /** `renderIntoStream`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 创建 DrainWritable并pipe renderToPipeableStream；shell错误拒绝，Writable finish解析完整buffer后resolve，经expectErrors过滤诊断。本工具未另注册 Writable error回调。 */
   async function renderIntoStream(reactElement, errorCount = 0) {
     return await expectErrors(
       () =>
         new Promise((resolve, reject) => {
           const writable = new DrainWritable();
           const s = ReactDOMServer.renderToPipeableStream(reactElement, {
-            /** `renderIntoStream.onShellError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+            /** 把无法产生shell的服务端错误传给 Promise.reject，避免等待正常finish结果。 */
             onShellError(e) {
               reject(e);
             },
@@ -194,9 +194,8 @@ module.exports = function (initModules) {
     );
   }
 
-  // 使用 node stream SSR 渲染文本并放入 DOM 节点；返回与 reactElement 对应的 DOM 元素。
-  // 不在客户端渲染，也不执行 client-side revival。
-  /** `streamRender`：封装当前用例复用的操作、回调或断言步骤。 */
+  // 收集 Node 流输出并解析为 DOM，跳过开头的 doctype；此路径不创建客户端根。
+  /** 等待流 finish得到HTML后解析容器；若firstChild是doctype则向nextSibling一步，返回第一个内容节点。 */
   async function streamRender(reactElement, errorCount = 0) {
     const markup = await renderIntoStream(reactElement, errorCount);
     let firstNode = getContainerFromMarkup(reactElement, markup).firstChild;
@@ -207,17 +206,17 @@ module.exports = function (initModules) {
     return firstNode;
   }
 
-  /** `clientCleanRender`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 普通元素在新div中创建客户端根；顶层html改走正确服务器字符串的hydration，避免不合法空document初始化。 */
   const clientCleanRender = (element, errorCount = 0) => {
     if (shouldUseDocument(element)) {
-      // 文档不能从头开始渲染。
+      // 此辅助函数把整个文档的测试转到服务端字符串加 hydration 路径。
       return clientRenderOnServerString(element, errorCount);
     }
     const container = document.createElement('div');
     return renderIntoDom(element, container, false, errorCount);
   };
 
-  /** `clientRenderOnServerString`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 先SSR再resetModules，hydrate同一容器后逐个顶层节点比较类型与对象身份；返回firstClientNode，任何替换/数量变化都会失败。 */
   const clientRenderOnServerString = async (element, errorCount = 0) => {
     const markup = await renderIntoString(element, errorCount);
     resetModules();
@@ -247,12 +246,12 @@ module.exports = function (initModules) {
     return firstClientNode;
   };
 
-  /** `BadMarkupExpected`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 专用空构造器，仅作为错误标记模式完成文本恢复后的拒绝哨兵，区别于渲染错误。 */
   function BadMarkupExpected() {}
 
-  /** `clientRenderOnBadMarkup`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 用意外div标记触发hydration恢复，取末尾节点文本，再以空基准执行hydrate并比较文本；成功后抛专用哨兵终止当前模式，不继续进行原场景的结构或交互断言。 */
   const clientRenderOnBadMarkup = async (element, errorCount = 0) => {
-    // 首先渲染坏的标记。
+    // 先建立含意外 div 的服务端容器，以触发 hydration mismatch。
 
     const container = getContainerFromMarkup(
       element,
@@ -263,14 +262,14 @@ module.exports = function (initModules) {
 
     await renderIntoDom(element, container, true, errorCount + 1);
 
-    // 这给我们返回了结果文本内容。
+    // 记录错误标记经客户端恢复后的最后一个顶层节点文本。
     const hydratedTextContent =
       container.lastChild && container.lastChild.textContent;
 
-    // 我们现在将元素渲染到一个干净的 DOM 客户端侧。
+    // 再对空白基准容器执行 hydration，比较客户端恢复后的文本。
     let cleanContainer;
     if (shouldUseDocument(element)) {
-      // 全新渲染时不能直接渲染进 document，因此改为把子节点渲染进 documentElement。
+      // 整个文档的基准使用空 html 元素，改以其 children 作为 hydration 输入。
       cleanContainer = getContainerFromMarkup(
         element,
         '<html></html>',
@@ -280,57 +279,43 @@ module.exports = function (initModules) {
       cleanContainer = document.createElement('div');
     }
     await asyncReactDOMRender(element, cleanContainer, true);
-    // 这为我们提供了预期的文本内容。
+    // 基准容器的最后一个顶层节点提供预期文本。
     const cleanTextContent =
       (cleanContainer.lastChild && cleanContainer.lastChild.textContent) || '';
 
-    // 唯一保证是文本内容已修补。
+    // 此辅助函数在错误标记场景只比较最终文本内容，不继续验证节点结构和身份。
     expect(hydratedTextContent).toBe(cleanTextContent);
 
-    // 终止后续断言；执行到这里后其余前提都已不再可靠。
+    // 抛出专用 BadMarkupExpected，让运行器结束此模式；普通错误仍会向外抛出。
     throw new BadMarkupExpected();
   };
 
-  // 把一个 DOM 渲染用例扩展为四种场景：服务端字符串渲染、无服务端标记的客户端全新渲染、在正确服
-  // 务端标记上渲染，以及在错误服务端标记上渲染。testFn 接收一个 render 函数；render 接收
-  // ReactElement 与可选的预期错误数。
-  // 返回一个包含 DOM 元素的 Promise。
-  //
-  // 你应该只进行测试以检查渲染结果的 DOM。 您不应依赖返回的 DOM 元素的交互性。 因为那在服务器字
-  // 符串场景中不会起作用。
-  /** `itRenders`：封装当前用例复用的操作、回调或断言步骤。 */
+  // 把用例扩展为五种模式：服务端字符串、服务端流、客户端全新渲染、正确标记的 hydration、
+  // 错误标记的 hydration。testFn 接收 render(element, errorCount)，前三种及正确标记模式
+  // 返回 DOM 节点；错误标记模式比较恢复后的文本并以 BadMarkupExpected 结束。
+  // 服务端两种模式只解析 HTML，跨模式的断言应检查 DOM 输出。
+  /** 把同一desc/testFn注册为字符串SSR、Node流SSR及三种客户端测试；testFn接render(element,errorCount)，错误标记模式由专用拒绝提前结束。 */
   function itRenders(desc, testFn) {
-    /**
-     * 代表场景（Given–When–Then）：
-     * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-     * When 执行「当前参数化场景」描述的渲染或交互；
-     * Then 通过本用例的 DOM、日志或调度断言确认行为。
-     *
-     * 验证机制：断言覆盖 react-dom 的服务端流适配层；完整 Fizz 状态机位于 react-server。
-     */
+    /** 把调用方的 testFn 与 serverRender 绑定后注册普通 it；该模式 renderToString 后解析 HTML，不建客户端根，用同一 DOM 断言验证字符串 SSR 输出。 */
     it(`renders ${desc} with server string render`, () => testFn(serverRender));
-    /** 测试场景：验证「当前参数化场景」描述的渲染、交互或错误处理结果。 */
+    /** 把同一 testFn 与 streamRender 绑定注册 it；该模式收集 Node Writable finish 前全部 chunk后解析 HTML，验证 Node 流输出。 */
     it(`renders ${desc} with server stream render`, () => testFn(streamRender));
+    /** 把同一 desc/testFn 交给三种客户端包装；各模式分别新建、认领正确标记、从错误标记恢复，避免字符串/流模式承担客户端交互断言。 */
     itClientRenders(desc, testFn);
   }
 
-  // 运行在三种不同的渲染场景中的 testFn：
-  // 在客户端渲染，不包含任何服务器标记的“干净的客户端渲染” 在客户端渲染，覆盖良好生成的服务器
-  // 标记的“干净的客户端渲染” 在客户端渲染，覆盖不良生成的服务器标记的“干净的客户端渲染”
-  //
-  // testFn 是一个测试函数，它有一个参数，该参数是一个渲染函数。 该函数接收一个 ReactElement 和一
-  // 个可选的期望错误计数。
-  // 返回一个包含 DOM 元素的 Promise。
-  // 此函数中的渲染全部发生在客户端，因此可以测试交互；itRenders 不具备这一条件。
-  /** `itClientRenders`：封装当前用例复用的操作、回调或断言步骤。 */
+  // 客户端三种模式：全新渲染、复用正确服务端标记、从错误服务端标记恢复。
+  // testFn 接收 render(element, errorCount)；前两种可继续检查返回节点的交互，
+  // 错误标记模式只比较恢复文本，随后以 BadMarkupExpected 结束。
+  /** 注册全新客户端、正确SSR标记认领、错误标记恢复三种测试；末种只接受BadMarkupExpected哨兵，普通渲染/断言错误原样传播。 */
   function itClientRenders(desc, testFn) {
-    /** 测试场景：验证「当前参数化场景」描述的渲染、交互或错误处理结果。 */
+    /** 同一 testFn 接 clientCleanRender；普通容器从空 div 创建根，html 元素改走正确 SSR 标记 hydration，验证适用容器的首次客户端输出。 */
     it(`renders ${desc} with clean client render`, () =>
       testFn(clientCleanRender));
-    /** 测试场景：验证「当前参数化场景」描述的渲染、交互或错误处理结果。 */
+    /** 同一 testFn 接 clientRenderOnServerString；SSR 后重置模块并 hydrate，辅助器逐顶层节点校验身份，验证认领而非替换。 */
     it(`renders ${desc} with client render on top of good server markup`, () =>
       testFn(clientRenderOnServerString));
-    /** 测试场景：验证「当前参数化场景」描述的渲染、交互或错误处理结果。 */
+    /** 同一 testFn 接 clientRenderOnBadMarkup；从错误 div 标记 hydration 后只比较末尾文本，专用 BadMarkupExpected 可终止本模式，普通异常必须继续抛，验证 mismatch 恢复而非后续交互。 */
     it(`renders ${desc} with client render on top of bad server markup`, async () => {
       try {
         await testFn(clientRenderOnBadMarkup);
@@ -344,9 +329,9 @@ module.exports = function (initModules) {
     });
   }
 
-  /** `itThrows`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 把testFn Promise拒绝验证包装成it；成功resolve必须失败，错误须是Error且message含partialMessage，不接受任意非Error抛值。 */
   function itThrows(desc, testFn, partialMessage) {
-    /** 测试场景：验证「当前参数化场景」描述的渲染、交互或错误处理结果。 */
+    /** testFn 返回应拒绝的 Promise；若 resolve则显式失败，若 reject需为 Error且消息含 partialMessage，验证错误类型与诊断片段。 */
     it(`throws ${desc}`, () => {
       return testFn().then(
         () => expect(false).toBe('The promise resolved and should not have.'),
@@ -358,13 +343,15 @@ module.exports = function (initModules) {
     });
   }
 
-  /** `itThrowsWhenRendering`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 把错误场景分发到字符串SSR、新客户端及错误标记恢复三条路径；最后对warningCount减1，因为抛错使普通mismatch警告不再发生。 */
   function itThrowsWhenRendering(desc, testFn, partialMessage) {
+    /** 对 serverRender 调用 testFn并要求 Error消息含 partialMessage，验证字符串 SSR 的抛错路径。 */
     itThrows(
       `when rendering ${desc} with server string render`,
       () => testFn(serverRender),
       partialMessage,
     );
+    /** 对 clientCleanRender 调用 testFn并要求相同消息片段，验证首次客户端渲染错误传播。 */
     itThrows(
       `when rendering ${desc} with clean client render`,
       () => testFn(clientCleanRender),
@@ -372,6 +359,7 @@ module.exports = function (initModules) {
     );
 
     // 我们在这里从警告计数中减去1，因为抛出意味着它不会得到通常的标记不匹配警告。
+    /** 对错误标记恢复模式调用 testFn，warningCount减一以扣除未发生的普通 mismatch诊断；仍需捕获预期 Error而不是完成专用恢复标记，验证抛错中断恢复。 */
     itThrows(
       `when rendering ${desc} with client render on top of bad server markup`,
       () =>
@@ -382,9 +370,9 @@ module.exports = function (initModules) {
     );
   }
 
-  // 先把 serverElement 渲染成字符串并放入 DOM 元素，再尝试在其上渲染 clientElement；shouldMatch
-  // 表示是否应期望两份标记匹配。
-  /** `testMarkupMatch`：封装当前用例复用的操作、回调或断言步骤。 */
+  // 将 serverElement 的 HTML 放入容器，再用 clientElement 调用 hydrateRoot；
+  // shouldMatch 选择传给日志检查器的预期错误数。
+  /** 先serverRender得到节点并重置模块，再hydrate节点parentNode；shouldMatch决定传expectErrors的0/1错误预算，不另手工对比HTML。 */
   async function testMarkupMatch(serverElement, clientElement, shouldMatch) {
     const domElement = await serverRender(serverElement);
     resetModules();
@@ -396,14 +384,14 @@ module.exports = function (initModules) {
     );
   }
 
-  // 期望在客户端元素渲染在服务器渲染的服务器元素之上时不会引发标记不匹配警告。
-  /** `expectMarkupMatch`：封装当前用例复用的操作、回调或断言步骤。 */
+  // hydration 匹配场景：传入预期错误数 0。
+  /** 调用testMarkupMatch并使用0错误预算，验证服务端与客户端输入可在无mismatch诊断下认领。 */
   function expectMarkupMatch(serverElement, clientElement) {
     return testMarkupMatch(serverElement, clientElement, true);
   }
 
-  // 期望在服务器渲染的服务器元素上渲染 clientElement 会引发标记不匹配警告。
-  /** `expectMarkupMismatch`：封装当前用例复用的操作、回调或断言步骤。 */
+  // hydration 不匹配场景：传入预期错误数 1。
+  /** 调用testMarkupMatch并使用1错误预算，验证不同输入应进入hydration诊断路径。 */
   function expectMarkupMismatch(serverElement, clientElement) {
     return testMarkupMatch(serverElement, clientElement, false);
   }

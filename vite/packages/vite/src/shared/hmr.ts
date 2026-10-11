@@ -31,14 +31,20 @@ export interface HMRLogger {
 }
 
 /**
- * 单个模块执行时暴露的 `import.meta.hot` 上下文。模块重执行会创建新实例，保留 data，替换旧回调和
+ * 单个模块执行时暴露的 `import.meta.hot` 上下文。模块重执行会创建新实例，保留 data，替换旧 accept 回调和
  * 事件监听器，避免同一个 accept/on 在每轮更新后重复触发。
+ * dispose/prune 索引不在构造时清空；再次调用对应注册方法时才覆盖该 owner 的旧条目。
  */
 export class HMRContext implements ViteHotContext {
   /** 当前 context 新登记的监听器，用于下一次重执行时精确移除。 */
   private newListeners: CustomListenersMap
 
-  /** 初始化模块 data，并替换该 owner 上一代 accept 与自定义监听器。 */
+  /**
+   * 初始化 owner 的持久 data，并从全局事件表移除上一代 context 实际登记过的监听器。
+   * 只清该 owner 的 accept 数组，其他模块的回调与同名事件监听器保留。
+   *
+   * @param ownerPath - 当前执行模块的规范化 URL，同时作为全部生命周期表的键。
+   */
   constructor(
     private hmrClient: HMRClient,
     private ownerPath: string,
@@ -76,7 +82,11 @@ export class HMRContext implements ViteHotContext {
     return this.hmrClient.dataMap.get(this.ownerPath)
   }
 
-  /** 登记自接受、单依赖或依赖数组形式的更新边界。 */
+  /**
+   * 按调用形态登记自接受、单依赖或依赖数组回调，不在注册时重新导入模块。
+   * 自接受与单依赖包装器把 namespace 数组取成一个值；数组形式保留原顺序与完整数组。
+   * 非函数/字符串/数组的 truthy deps 会抛错，实际依赖 URL 的规范化由服务端转换完成。
+   */
   accept(deps?: any, callback?: any): void {
     if (typeof deps === 'function' || !deps) {
       // 自接受：hot.accept(() => {})。
@@ -91,7 +101,10 @@ export class HMRContext implements ViteHotContext {
     }
   }
 
-  /** export 名只供服务端判定边界；运行端仍重新导入 owner 自身。 */
+  /**
+   * export 名由服务端 import analysis 用于部分接受判定，客户端不重新解析这些名称。
+   * 运行端仍登记 owner 自身，并把重导入后的 namespace 交给回调。
+   */
   acceptExports(
     _: string | readonly string[],
     callback?: (data: any) => void,
@@ -99,12 +112,12 @@ export class HMRContext implements ViteHotContext {
     this.acceptDeps([this.ownerPath], ([mod]) => callback?.(mod))
   }
 
-  /** 登记模块缓存移除前执行的清理回调。 */
+  /** 登记模块缓存移除前的清理回调，覆盖 owner 的上一条；更新时接收持久 data 并被等待。 */
   dispose(cb: (data: any) => void): void {
     this.hmrClient.disposeMap.set(this.ownerPath, cb)
   }
 
-  /** 登记模块永久离开图时执行的清理回调。 */
+  /** 登记模块从当前图移除时的清理回调，覆盖 owner 的上一条；prunePaths 在 dispose 后调用它。 */
   prune(cb: (data: any) => void): void {
     this.hmrClient.pruneMap.set(this.ownerPath, cb)
   }
@@ -113,7 +126,7 @@ export class HMRContext implements ViteHotContext {
   // eslint-disable-next-line @typescript-eslint/no-empty-function
   decline(): void {}
 
-  /** 请求当前模块的 importer 继续处理更新，并保留首次失效来源。 */
+  /** 请求当前模块的 importer 继续处理更新；同步 accept 回调期间沿用该轮 firstInvalidatedBy，其他时刻以 owner 为来源。 */
   invalidate(message: string): void {
     const firstInvalidatedBy =
       this.hmrClient.currentFirstInvalidatedBy ?? this.ownerPath
@@ -192,8 +205,9 @@ export class HMRContext implements ViteHotContext {
 }
 
 /**
- * 运行环境无关的 HMR 执行内核：保存 accept/dispose/prune/data 状态，串行重新导入更新模块，并在所有
- * fetch 完成后按服务端发送顺序调用 accept 回调。浏览器和 Module Runner 只需提供 transport 与导入器。
+ * 运行环境无关的 HMR 执行内核：保存 accept/dispose/prune/data 状态，并行获取本批更新模块，并在所有
+ * fetch 完成后按服务端发送顺序同步调用 accept 回调，不等待返回的 Promise。浏览器和 Module Runner
+ * 只需提供 transport 与导入器。
  */
 export class HMRClient {
   /** 模块 URL 到当前 accept 回调的索引。 */
@@ -201,7 +215,7 @@ export class HMRClient {
   /** 模块 URL 到缓存删除前 dispose 回调的索引。 */
   public disposeMap: Map<string, (data: any) => void | Promise<void>> =
     new Map()
-  /** 模块 URL 到永久移除时 prune 回调的索引。 */
+  /** 模块 URL 到从当前图移除时 prune 回调的索引。 */
   public pruneMap: Map<string, (data: any) => void | Promise<void>> = new Map()
   /** 跨模块重执行保留的用户 data。 */
   public dataMap: Map<string, any> = new Map()
@@ -209,7 +223,7 @@ export class HMRClient {
   public customListenersMap: CustomListenersMap = new Map()
   /** 每个模块 context 本轮登记的监听器，用于重执行清理。 */
   public ctxToListenersMap: Map<string, CustomListenersMap> = new Map()
-  /** 当前回调链最初调用 invalidate 的模块 URL。 */
+  /** 当前同步 accept 回调所属更新的 firstInvalidatedBy，回调结束后清空。 */
   public currentFirstInvalidatedBy: string | undefined
 
   /** 绑定日志器、传输层与环境特定的模块重新导入实现。 */
@@ -220,12 +234,15 @@ export class HMRClient {
     private importUpdatedModule: (update: Update) => Promise<ModuleNamespace>,
   ) {}
 
-  /** 通知指定事件的全部监听器，并隔离单个监听器的拒绝。 */
+  /** 通知指定事件的监听器并等待它们返回的 Promise；异步拒绝由 allSettled 收集。 */
   public async notifyListeners<T extends string>(
     event: T,
     data: InferCustomEventPayload<T>,
   ): Promise<void>
-  /** 执行通知重载签名的通用实现。 */
+  /**
+   * 同步依次调用当前监听器，再并行等待返回值，异步拒绝不会取消其余已发起通知。
+   * map 中的同步抛错会在 allSettled 建立前拒绝本方法，后续监听器尚未被调用。
+   */
   public async notifyListeners(event: string, data: any): Promise<void> {
     const cbs = this.customListenersMap.get(event)
     if (cbs) {
@@ -251,8 +268,8 @@ export class HMRClient {
   }
 
   /**
-   * 清理已不在当前模块图中的路径：先运行 dispose，再运行 prune，最后丢弃跨更新 data。即使清理回调
-   * 抛错，data 也必须删除，避免未来重新导入继承失效状态。
+   * 先并行等待本批 dispose，成功后并行等待 prune，最后删除 data；dispose 失败会跳过 prune，
+   * finally 仍删除 data。其他 maps 保留，重新执行时由新 context 替换 callbacks/listeners。
    */
   public async prunePaths(paths: string[]): Promise<void> {
     try {
@@ -294,7 +311,11 @@ export class HMRClient {
 
   /**
    * 缓冲同一次源文件变化产生的多个 update：并行获取新模块，但等同一 microtask 收齐后按服务端发送
-   * 顺序调用回调。否则 HTTP 往返时序可能让依赖更新顺序漂移。
+   * 顺序同步调用回调，不等待其返回 Promise。否则 HTTP 往返时序可能让依赖更新顺序漂移。
+   * 首个调用负责等待并提交这一批；同窗口后续调用只追加任务，其返回并不表示整批已完成。
+   * pending 标志在等待 fetch 前已释放，跨 payload 的顺序由外层 createHMRHandler 队列维持。
+   *
+   * @param payload - path 指接受边界，acceptedPath 指需要重新获取的模块，不一定是同一 URL。
    */
   public async queueUpdate(payload: Update): Promise<void> {
     this.updateQueue.push(this.fetchUpdate(payload))
@@ -308,7 +329,13 @@ export class HMRClient {
     }
   }
 
-  /** 获取更新后 namespace，并返回延迟执行 accept 回调的提交函数。 */
+  /**
+   * 固定旧一代合格 callbacks，等待可选 disposer 与模块导入，返回供批量提交阶段同步调用的函数。
+   * 无已加载边界时直接跳过；导入失败会记录警告，回调仍可能收到 undefined namespace。
+   * disposer 拒绝不经过导入错误的 catch，会拒绝 fetch 任务；accept 同步抛错则中断当次提交。
+   * 多依赖回调仅在 acceptedPath 对应的位置得到新 namespace，未更新位置保持 undefined。
+   * 提交期间设置 firstInvalidatedBy，finally 清空；回调返回的异步工作不处于这个同步作用域。
+   */
   private async fetchUpdate(update: Update): Promise<(() => void) | undefined> {
     const { path, acceptedPath, firstInvalidatedBy } = update
     const mod = this.hotModulesMap.get(path)

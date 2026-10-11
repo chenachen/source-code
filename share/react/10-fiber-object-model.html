@@ -6,6 +6,7 @@
   <meta name="description" content="React 19.3 Fiber 对象模型深挖：FiberRoot、树指针、stateNode、current/work-in-progress 双缓冲、alternate、提交切换与删除清理。" />
   <title>10 · Fiber 对象模型：两棵树如何成为一个组件世界</title>
   <link rel="stylesheet" href="assets/guide.css?v=1" />
+  <link rel="stylesheet" href="assets/engineering-diagrams.css" />
 </head>
 <body>
   <header class="topbar"><div class="topbar-inner">
@@ -38,12 +39,22 @@
     <section id="root"><h2>FiberRoot 与 HostRoot Fiber：容器状态和树中工作分开保存</h2>
       <p><code>FiberRoot</code> 是 renderer 根的长期状态容器：持有 DOM/Noop 容器、根级 Lane 状态、调度 callback、错误回调和缓存。
         <code>HostRoot Fiber</code> 才是 Fiber 树的顶点，参与 begin/complete/commit。两者通过一组双向指针连接：</p>
-      <div class="chain" aria-label="FiberRoot 与 HostRoot Fiber 双向关系">
-        <div class="node">外部 Root handle<small>ReactDOMRoot._internalRoot</small></div><span class="arrow">→</span>
-        <div class="node">FiberRoot<small>current / pendingLanes / containerInfo</small></div><span class="arrow">→</span>
-        <div class="node">HostRoot Fiber<small>tag = HostRoot</small></div><span class="arrow">→</span>
-        <div class="node">FiberRoot<small>stateNode 回指</small></div>
-      </div>
+      <figure class="engineering-diagram" data-diagram="engineering-fiber-root-references">
+        <div class="diagram-scroll"><svg viewBox="0 0 860 390" role="img" aria-labelledby="fiber-root-title fiber-root-desc">
+          <title id="fiber-root-title">公开 handle、FiberRoot 与 HostRoot 之间实际保存哪些指针？</title>
+          <desc id="fiber-root-desc">handle 的 internalRoot 指向唯一的 FiberRoot；FiberRoot 的 current 指向 HostRoot，HostRoot 的 stateNode 指回同一个 FiberRoot。containerInfo 单独指向宿主容器。</desc>
+          <defs><marker id="fiber-root-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="#507476"/></marker></defs>
+          <rect class="d-node" x="25" y="65" width="200" height="90" rx="9"/><text x="125" y="96" text-anchor="middle" class="d-label">ReactDOMRoot handle</text><text x="125" y="126" text-anchor="middle">_internalRoot</text>
+          <rect class="d-state" x="295" y="65" width="235" height="120" rx="9"/><text x="412" y="96" text-anchor="middle" class="d-label">同一个 FiberRoot</text><text x="412" y="126" text-anchor="middle">current / pendingLanes</text><text x="412" y="156" text-anchor="middle">containerInfo / callbackNode</text>
+          <rect class="d-node" x="600" y="65" width="235" height="120" rx="9"/><text x="717" y="96" text-anchor="middle" class="d-label">HostRoot Fiber</text><text x="717" y="126" text-anchor="middle">tag = HostRoot</text><text x="717" y="156" text-anchor="middle">stateNode</text>
+          <rect class="d-node" x="295" y="280" width="235" height="80" rx="9"/><text x="412" y="312" text-anchor="middle" class="d-label">宿主容器</text><text x="412" y="338" text-anchor="middle">DOM / Noop container</text>
+          <path class="d-edge" d="M225 110H295" marker-end="url(#fiber-root-arrow)"/>
+          <path class="d-edge" d="M530 85H600" marker-end="url(#fiber-root-arrow)"/><text x="565" y="52" text-anchor="middle">current</text>
+          <path class="d-edge" d="M600 165H530" marker-end="url(#fiber-root-arrow)"/><text x="565" y="216" text-anchor="middle">stateNode 回指</text>
+          <path class="d-edge" d="M412 185V280" marker-end="url(#fiber-root-arrow)"/><text x="425" y="253">containerInfo</text>
+        </svg></div>
+        <figcaption><strong>箭头表示对象字段引用。</strong>HostRoot 的回指回到同一个 FiberRoot；render/commit 会交换 <code>current</code> 指向哪一面，FiberRoot 与宿主容器仍是原来的对象。</figcaption>
+      </figure>
 
       <figure class="source"><figcaption><span>连续原码 · ReactFiberRoot.js · createFiberRoot</span><a href="../../react/packages/react-reconciler/src/ReactFiberRoot.js">打开文件</a></figcaption><pre><code>  // 循环构造：root.current 指向 HostRoot Fiber，HostRoot.stateNode 再指回 root；stateNode 为 any，
   // 因而当前 Flow 类型无法静态证明这组双向不变量。
@@ -111,11 +122,28 @@
       </tbody></table></div>
 
       <h3>child / sibling / return：用单链结构编码多叉树</h3>
-      <figure class="source"><figcaption><span>教程伪代码 · 状态图，不是仓库源码</span></figcaption><pre><code>HostRoot
-  child ──▶ App(FunctionComponent)
-             return ──▶ HostRoot
-             child ──▶ Header ──sibling──▶ Main ──sibling──▶ Footer
-                         return ──▶ App      return ──▶ App       return ──▶ App</code></pre></figure>
+      <figure class="engineering-diagram" data-diagram="engineering-fiber-child-sibling-return">
+        <div class="diagram-scroll"><svg viewBox="0 0 860 470" role="img" aria-labelledby="fiber-tree-title fiber-tree-desc">
+          <title id="fiber-tree-title">三个子组件为何只需一个 child 指针？</title>
+          <desc id="fiber-tree-desc">HostRoot 的 child 指 App，App 的 child 只指 Header。Header 的 sibling 指 Main，Main 的 sibling 指 Footer；三个子 Fiber 的 return 都指 App。实线是 child 或 sibling，虚线是 return 引用。</desc>
+          <defs><marker id="fiber-tree-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="#507476"/></marker></defs>
+          <rect class="d-node" x="340" y="25" width="180" height="65" rx="9"/><text x="430" y="64" text-anchor="middle" class="d-label">HostRoot</text>
+          <rect class="d-state" x="340" y="175" width="180" height="65" rx="9"/><text x="430" y="214" text-anchor="middle" class="d-label">App</text>
+          <rect class="d-node" x="20" y="345" width="220" height="70" rx="9"/><text x="130" y="385" text-anchor="middle" class="d-label">Header</text>
+          <rect class="d-node" x="320" y="345" width="220" height="70" rx="9"/><text x="430" y="385" text-anchor="middle" class="d-label">Main</text>
+          <rect class="d-node" x="620" y="345" width="220" height="70" rx="9"/><text x="730" y="385" text-anchor="middle" class="d-label">Footer</text>
+          <path class="d-edge" d="M395 90V175" marker-end="url(#fiber-tree-arrow)"/><text x="337" y="136">child</text>
+          <path class="d-edge" stroke-dasharray="6 5" d="M475 175V90" marker-end="url(#fiber-tree-arrow)"/><text x="492" y="136">return</text>
+          <path class="d-edge" d="M340 225H130V345" marker-end="url(#fiber-tree-arrow)"/><text x="147" y="288">child</text>
+          <path class="d-edge" d="M240 380H320" marker-end="url(#fiber-tree-arrow)"/><text x="280" y="332" text-anchor="middle">sibling</text>
+          <path class="d-edge" d="M540 380H620" marker-end="url(#fiber-tree-arrow)"/><text x="580" y="332" text-anchor="middle">sibling</text>
+          <path class="d-edge" stroke-dasharray="6 5" d="M20 360H10V195H340" marker-end="url(#fiber-tree-arrow)"/><text x="37" y="184">return → App</text>
+          <path class="d-edge" stroke-dasharray="6 5" d="M430 345V240" marker-end="url(#fiber-tree-arrow)"/><text x="445" y="288">return</text>
+          <path class="d-edge" stroke-dasharray="6 5" d="M840 360H850V195H520" marker-end="url(#fiber-tree-arrow)"/><text x="656" y="184">return → App</text>
+          <text x="430" y="450" text-anchor="middle" class="d-muted">Footer.sibling = null；App.return = HostRoot</text>
+        </svg></div>
+        <figcaption><strong>虚线表示 return 引用，不表示异步。</strong>下钻从 <code>App.child</code> 开始；Header 完成后走 sibling 到 Main，再到 Footer。Footer 没有 sibling，完成遍历沿 return 回到 App。</figcaption>
+      </figure>
       <p>对 <code>App</code> 的三个 child，只在第一个 child 上保存父到子的入口，再用 sibling 串起其余节点。工作循环下钻 child；一个节点完成后，先尝试 sibling，
         没有 sibling 才沿 return 回溯。它能把“递归遍历组件树”拆成可暂停的逐 Fiber 状态机。</p>
       <div class="callout warn"><p><strong>return 不是 DOM parent：</strong>函数组件、Fragment、Context、Suspense 都有 Fiber 却没有对应 DOM；Portal 的宿主容器也可跳出普通父 DOM。
@@ -135,7 +163,7 @@
     <section id="double-buffer"><h2>current ↔ WIP：同一逻辑树的已提交面与候选面</h2>
       <p>第一次更新某节点时，<code>createWorkInProgress</code> 惰性创建 alternate；以后更新复用旧对象，只重置本轮 effect 字段并复制当前基线。
         这既避免每次 render 为所有复用节点永久分配第三版，也允许未提交候选被安全覆盖。</p>
-      <figure class="source"><figcaption><span>删节源码 · ReactFiber.js · createWorkInProgress（省略注释与 DEV 归因复制）</span><a href="../../react/packages/react-reconciler/src/ReactFiber.js">打开文件</a></figcaption><pre><code>export function createWorkInProgress(current: Fiber, pendingProps: any): Fiber {
+      <figure class="source"><figcaption><span>删节源码 · ReactFiber.js · createWorkInProgress（省略说明注释与后续字段复制）</span><a href="../../react/packages/react-reconciler/src/ReactFiber.js">打开文件</a></figcaption><pre><code>export function createWorkInProgress(current: Fiber, pendingProps: any): Fiber {
   let workInProgress = current.alternate;
   if (workInProgress === null) {
     workInProgress = createFiber(
@@ -164,7 +192,7 @@
     workInProgress.flags = NoFlags;
     workInProgress.subtreeFlags = NoFlags;
     workInProgress.deletions = null;</code></pre></figure>
-      <p>这里是明确标注的<strong>删节源码</strong>：保留创建/复用控制流与关键写入，省去原文件注释、DEV 归因复制和后续 profiler/optimistic-key 分支。</p>
+      <p>这里是明确标注的<strong>删节源码</strong>：保留创建/复用控制流与关键写入，省去原文件注释和后续 profiler/optimistic-key 分支。</p>
 
       <figure class="source"><figcaption><span>连续原码 · ReactFiber.js · createWorkInProgress（复制 render 基线）</span><a href="../../react/packages/react-reconciler/src/ReactFiber.js">打开文件</a></figcaption><pre><code>  workInProgress.flags = current.flags &amp; StaticMask;
   workInProgress.childLanes = current.childLanes;
@@ -181,7 +209,7 @@
         <tr><td>T0 首次提交后</td><td>A</td><td>HostRoot 的 B 已存在；首次挂载的新后代可能仍无 alternate</td><td>A 对应输出</td><td>A 是权威基线；根为首次 render 必先创建 WIP</td></tr>
         <tr><td>T1 开始更新</td><td>A</td><td><code>B = createWorkInProgress(A)</code></td><td>仍是 A</td><td>B 复制 A 的基线，接收新 props/state</td></tr>
         <tr><td>T2 render yield / 挂起</td><td>A</td><td>B 仅完成一部分</td><td>仍是 A</td><td>可以保留 B 恢复，也可以覆盖 B 从根重启</td></tr>
-        <tr><td>T3 mutation 完成</td><td>A，尚未切换</td><td>B = finishedWork</td><td>宿主节点正在变成 B</td><td>卸载路径仍以旧 current 解释身份</td></tr>
+        <tr><td>T3 mutation 完成</td><td>A，尚未切换</td><td>B = finishedWork</td><td>宿主节点已完成 B 的变更</td><td>mutation 内的卸载路径仍以旧 current 解释身份</td></tr>
         <tr><td>T4 current 切换</td><td>B</td><td>A</td><td>B 对应输出</td><td><code>root.current = finishedWork</code>；layout 读新树</td></tr>
         <tr><td>T5 下一次更新</td><td>B</td><td>复用 A 作为新 WIP</td><td>仍是 B</td><td>两枚对象角色互换，而非创建“第三棵树”</td></tr>
       </tbody></table></div>
@@ -250,6 +278,15 @@
     </section>
 
     <section id="walkthrough"><h2>手工推演：一次更新怎样让 A/B 两面交换角色</h2>
+      <figure class="engineering-diagram" data-diagram="engineering-fiber-buffer-count-snapshots">
+        <div class="diagram-scroll"><svg viewBox="0 0 860 960" role="img" aria-labelledby="fiber-snapshot-title fiber-snapshot-desc">
+          <title id="fiber-snapshot-title">setCount(1) 前、候选完成和提交后，A/B 哪一面是 current？</title>
+          <desc id="fiber-snapshot-desc">三个时间快照保留同一 FiberRoot、B0 与 A0。首次 B_App 的 alternate 可为空；render 创建 A_App，与 B_App 互指，候选 count 为1但宿主仍为0。mutation 后 current 指向 A0，宿主显示1，旧 B 留作下次 WIP。</desc>
+          <defs><marker id="fiber-snapshot-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto-start-reverse"><path d="M0 0L8 4L0 8Z" fill="#507476"/></marker></defs>
+          <text x="30" y="29" class="d-label">首次提交后：B 是 current</text><rect class="d-state" x="30" y="60" width="195" height="70" rx="8"/><text x="127.5" y="89" text-anchor="middle" class="d-label">唯一 FiberRoot</text><text x="127.5" y="114" text-anchor="middle">current = B0</text><rect class="d-state" x="30" y="175" width="195" height="70" rx="8"/><text x="127.5" y="204" text-anchor="middle" class="d-label">已提交宿主输出</text><text x="127.5" y="229" text-anchor="middle">显示 0</text><rect class="d-node" x="300" y="60" width="190" height="70" rx="8"/><text x="395" y="89" text-anchor="middle" class="d-label">B0 · HostRoot</text><text x="395" y="114" text-anchor="middle">已提交根</text><rect class="d-node" x="300" y="175" width="190" height="70" rx="8"/><text x="395" y="204" text-anchor="middle" class="d-label">A0 · HostRoot</text><text x="395" y="229" text-anchor="middle">可复用／候选根</text><rect class="d-node" x="570" y="60" width="240" height="70" rx="8"/><text x="690" y="89" text-anchor="middle" class="d-label">B_App</text><text x="690" y="114" text-anchor="middle">Hook count = 0</text><path class="d-edge" d="M490 95H570" marker-end="url(#fiber-snapshot-arrow)" /><text x="530" y="82" text-anchor="middle">child</text><path class="d-edge" d="M395 130V175" marker-end="url(#fiber-snapshot-arrow)" marker-start="url(#fiber-snapshot-arrow)"/><text x="410" y="157">alternate</text><path class="d-edge" d="M225 95H300" marker-end="url(#fiber-snapshot-arrow)" /><text x="262" y="82" text-anchor="middle">current</text><text x="570" y="201">B_App.alternate = null</text><text x="570" y="230" class="d-muted">子 Fiber 的另一面尚未创建</text><text x="30" y="285" class="d-muted">HostRoot 的 A0 已存在；首次挂载的 App 可尚无 alternate。</text><path d="M30 307H830" stroke="#b9cecb"/><text x="30" y="344" class="d-label">render 候选完成／暂停：current 仍是 B</text><rect class="d-state" x="30" y="375" width="195" height="70" rx="8"/><text x="127.5" y="404" text-anchor="middle" class="d-label">唯一 FiberRoot</text><text x="127.5" y="429" text-anchor="middle">current = B0</text><rect class="d-state" x="30" y="490" width="195" height="70" rx="8"/><text x="127.5" y="519" text-anchor="middle" class="d-label">已提交宿主输出</text><text x="127.5" y="544" text-anchor="middle">显示 0</text><rect class="d-node" x="300" y="375" width="190" height="70" rx="8"/><text x="395" y="404" text-anchor="middle" class="d-label">B0 · HostRoot</text><text x="395" y="429" text-anchor="middle">已提交根</text><rect class="d-node" x="300" y="490" width="190" height="70" rx="8"/><text x="395" y="519" text-anchor="middle" class="d-label">A0 · HostRoot</text><text x="395" y="544" text-anchor="middle">可复用／候选根</text><rect class="d-node" x="570" y="375" width="240" height="70" rx="8"/><text x="690" y="404" text-anchor="middle" class="d-label">B_App</text><text x="690" y="429" text-anchor="middle">Hook count = 0</text><path class="d-edge" d="M490 410H570" marker-end="url(#fiber-snapshot-arrow)" /><text x="530" y="397" text-anchor="middle">child</text><path class="d-edge" d="M395 445V490" marker-end="url(#fiber-snapshot-arrow)" marker-start="url(#fiber-snapshot-arrow)"/><text x="410" y="472">alternate</text><rect class="d-node" x="570" y="490" width="240" height="70" rx="8"/><text x="690" y="519" text-anchor="middle" class="d-label">A_App</text><text x="690" y="544" text-anchor="middle">Hook count = 1</text><path class="d-edge" d="M490 525H570" marker-end="url(#fiber-snapshot-arrow)" /><text x="530" y="512" text-anchor="middle">child</text><path class="d-edge" d="M690 445V490" marker-end="url(#fiber-snapshot-arrow)" marker-start="url(#fiber-snapshot-arrow)"/><text x="705" y="472">alternate</text><path class="d-edge" d="M225 410H300" marker-end="url(#fiber-snapshot-arrow)" /><text x="262" y="397" text-anchor="middle">current</text><text x="30" y="600" class="d-muted">yield 或重启前，已提交 B 与宿主输出 0 仍有效；候选 A 尚未发布。</text><path d="M30 622H830" stroke="#b9cecb"/><text x="30" y="659" class="d-label">mutation 完成并切换后：A 是 current</text><rect class="d-state" x="30" y="690" width="195" height="70" rx="8"/><text x="127.5" y="719" text-anchor="middle" class="d-label">唯一 FiberRoot</text><text x="127.5" y="744" text-anchor="middle">current = A0</text><rect class="d-state" x="30" y="805" width="195" height="70" rx="8"/><text x="127.5" y="834" text-anchor="middle" class="d-label">已提交宿主输出</text><text x="127.5" y="859" text-anchor="middle">显示 1</text><rect class="d-node" x="300" y="690" width="190" height="70" rx="8"/><text x="395" y="719" text-anchor="middle" class="d-label">B0 · HostRoot</text><text x="395" y="744" text-anchor="middle">可复用的另一面</text><rect class="d-state" x="300" y="805" width="190" height="70" rx="8"/><text x="395" y="834" text-anchor="middle" class="d-label">A0 · HostRoot</text><text x="395" y="859" text-anchor="middle">新的已提交根</text><rect class="d-node" x="570" y="690" width="240" height="70" rx="8"/><text x="690" y="719" text-anchor="middle" class="d-label">B_App</text><text x="690" y="744" text-anchor="middle">Hook count = 0</text><path class="d-edge" d="M490 725H570" marker-end="url(#fiber-snapshot-arrow)" /><text x="530" y="712" text-anchor="middle">child</text><path class="d-edge" d="M395 760V805" marker-end="url(#fiber-snapshot-arrow)" marker-start="url(#fiber-snapshot-arrow)"/><text x="410" y="787">alternate</text><rect class="d-state" x="570" y="805" width="240" height="70" rx="8"/><text x="690" y="834" text-anchor="middle" class="d-label">A_App</text><text x="690" y="859" text-anchor="middle">Hook count = 1</text><path class="d-edge" d="M490 840H570" marker-end="url(#fiber-snapshot-arrow)" /><text x="530" y="827" text-anchor="middle">child</text><path class="d-edge" d="M690 760V805" marker-end="url(#fiber-snapshot-arrow)" marker-start="url(#fiber-snapshot-arrow)"/><text x="705" y="787">alternate</text><path class="d-edge" d="M225 725H260V840H300" marker-end="url(#fiber-snapshot-arrow)" /><text x="180" y="788">current</text><text x="30" y="915" class="d-muted">发布顺序：mutation 写宿主 → root.current = A0 → layout；下次复用旧 B。</text>
+        </svg></div>
+        <figcaption><strong>沿用下面的 setCount(1) 示例。</strong>箭头是字段引用，三个面板是时间快照；A0/B0 的 <code>stateNode</code> 都指同一个 FiberRoot。render 为本次参与工作的子 Fiber 建立另一面，尚未处理的后代可暂时共享 current 的 child。宿主变化与 current 切换发生在 commit。</figcaption>
+      </figure>
       <figure class="source"><figcaption><span>教程伪代码 · 状态图，不是仓库源码</span></figcaption><pre><code>首次提交后：root.current = B0 ─child→ B_App(count=0)
                     B0.alternate = A0；首次挂载的 B_App.alternate 可为 null
 
@@ -265,7 +302,7 @@ setCount(1)
 
 commit mutation 完成：root.current = A0
 下一次更新：复用旧 B0/B_App 作为新的 WIP</code></pre></figure>
-      <p>关键不变量是“候选状态只能沿 WIP 链传播，宿主可见状态只在 commit 推进”。下一页会把第 1、4 步展开为 Update 对象、Lane 与 base queue 的确定性重放。</p>
+      <p>本轮组件计算结果保存在 WIP 上；共享 Update queue 保留重试所需的输入，已提交宿主的更新则在 commit 推进。下一页会把第 1、4 步展开为 Update 对象、Lane 与 base queue 的确定性重放。</p>
     </section>
 
     <section id="test"><h2>真实 GWT：低优先级 Hook 候选被同步更新打断后恢复</h2>
@@ -299,7 +336,7 @@ await act(async () =&gt; {
         <tr><td>Then</td><td>先提交 <code>Total: 0</code>，随后恢复为 <code>Total: 11</code></td><td>树的候选进度可丢弃；共享/基线更新队列仍能确定性重放</td></tr>
         <tr><td>Cleanup</td><td><code>act</code> 耗尽这次测试产生的工作；Noop root 由测试框架隔离</td><td>断言不会把未 flush 工作误当成最终提交</td></tr>
       </tbody></table></div>
-      <div class="callout warn"><p><strong>证据边界：</strong>该测试证明候选可见性与队列恢复，不直接读取 Fiber 私有字段；字段配对和 current 切换由上面的实现源码作证。两类证据互补，不能用测试日志反推所有内部布局。</p></div>
+      <div class="callout warn"><p><strong>实现与测试的联系：</strong>宿主输出展示候选何时可见；createWorkInProgress 与 current 切换说明两版 Fiber 如何支撑这个行为。</p></div>
     </section>
 
     <section id="invariants"><h2>六条不变量，串起 Fiber 原理</h2>
@@ -307,7 +344,7 @@ await act(async () =&gt; {
         <li><strong>单一事实：</strong>每个根只有 <code>root.current</code> 指向已提交树。</li>
         <li><strong>最多两面：</strong>同一协调身份通常复用 current/WIP 两枚 Fiber；alternate 双向配对。</li>
         <li><strong>结构可暂停：</strong>child/sibling/return 把递归树展开为可保存游标的工作链。</li>
-        <li><strong>render 无宿主可见副作用：</strong>WIP props/state/flags 可反复覆盖，直到 commit 才写宿主。</li>
+        <li><strong>render 保留已提交宿主树：</strong>WIP props/state/flags 和新建的脱离容器实例可反复覆盖；已提交宿主的变更在 commit 执行。</li>
         <li><strong>切换有观察窗口：</strong>current 在 mutation 后、layout 前切换。</li>
         <li><strong>清理分阶段：</strong>删除先断挂载身份，再等 passive 工作结束后断开完整对象图。</li>
       </ol>
@@ -321,7 +358,7 @@ await act(async () =&gt; {
         <tr><td>删除 Fiber 分两阶段断链</td><td><a href="../../react/packages/react-reconciler/src/ReactFiberCommitWork.js">ReactFiberCommitWork.js · detachFiber*</a></td><td><a href="../../react/packages/react-reconciler/src/__tests__/ReactHooksWithNoopRenderer-test.js">ReactHooksWithNoopRenderer-test.js · pending passive unmounts for alternates</a></td></tr>
       </tbody></table></div>
       <p class="callout"><strong>版本边界：</strong>以上结论针对当前工作区的 react-reconciler 0.34.0。实验开关会改变 profiler、gesture、Offscreen/ViewTransition 分支，
-        但本页展示的根指针、树指针、alternate 创建与 commit 切换是当前源码中的主干事实。未运行测试；本页只引用并逐段核对仓库现有测试。</p>
+        但本页展示的根指针、树指针、alternate 创建与 commit 切换是当前源码中的主干事实。</p>
     </section>
 
     <section id="questions"><h2>检查理解</h2><ul class="qa">

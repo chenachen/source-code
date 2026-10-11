@@ -57,8 +57,8 @@ describe('hook filter with plugin container', async () => {
   const pluginContainer = server.environments.ssr.pluginContainer
 
   /**
-   * 场景：resolveId 的正则只接受 `.js`。
-   * 验证目标：foo.ts 在进入插件 handler 前被跳过，foo.js 的参数保持完整。
+   * resolveId 的正则只接受 `.js`。
+   * foo.ts 在进入插件 handler 前被跳过，foo.js 的参数保持完整。
    */
   test('resolveId', async () => {
     await pluginContainer.resolveId('foo.js')
@@ -68,8 +68,8 @@ describe('hook filter with plugin container', async () => {
   })
 
   /**
-   * 场景：load 的 glob 只接受 `.js`。
-   * 验证目标：Dev Container 与 Rolldown 对对象 hook filter 使用相同语义。
+   * load 的 glob 只接受 `.js`。
+   * 开发容器只把 foo.js 交给 load handler；下方 build 用例检查构建路径。
    */
   test('load', async () => {
     await pluginContainer.load('foo.js')
@@ -79,8 +79,8 @@ describe('hook filter with plugin container', async () => {
   })
 
   /**
-   * 场景：两个 transform 分别按 ID 与源码子串过滤。
-   * 验证目标：`.js` 只进入 ID 插件，含 import.meta 的 `.ts` 只进入 code 插件。
+   * 两个 transform 分别按 ID 与源码子串过滤。
+   * `.js` 只进入 ID 插件，含 import.meta 的 `.ts` 只进入 code 插件。
    */
   test('transform', async () => {
     await server.environments.ssr.moduleGraph.ensureEntryFromUrl('foo.js')
@@ -161,8 +161,8 @@ describe('hook filter with build', async () => {
   await build(config)
 
   /**
-   * 场景：构建解析 foo.js 与 foo.ts。
-   * 验证目标：只有符合 `.js` 正则的导入进入被测 resolveId。
+   * 构建解析 foo.js 与 foo.ts。
+   * 只有符合 `.js` 正则的导入进入被测 resolveId。
    */
   test('resolveId', async () => {
     expect(resolveId).toHaveBeenCalledTimes(1)
@@ -170,8 +170,8 @@ describe('hook filter with build', async () => {
   })
 
   /**
-   * 场景：构建加载两个虚拟入口。
-   * 验证目标：load glob 在 Rolldown 原生管线中也只放行 foo.js。
+   * 构建加载两个虚拟入口。
+   * load glob 在 Rolldown 原生管线中也只放行 foo.js。
    */
   test('load', async () => {
     expect(load).toHaveBeenCalledTimes(1)
@@ -179,8 +179,8 @@ describe('hook filter with build', async () => {
   })
 
   /**
-   * 场景：ID filter 还排除 Rolldown runtime 虚拟模块，code filter 匹配 import.meta。
-   * 验证目标：目标业务模块各调用一次，内部 runtime 不造成额外 handler 调用（#20076）。
+   * ID filter 还排除 Rolldown runtime 虚拟模块，code filter 匹配 import.meta。
+   * 目标业务模块各调用一次，内部 runtime 不造成额外 handler 调用（#20076）。
    */
   test('transform', async () => {
     expect(transformWithId).toHaveBeenCalledTimes(1)

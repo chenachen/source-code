@@ -34,10 +34,15 @@ interface Worker {
 /** 初始化模块时捕获的原生 Worker 构造器。 */
 const originalWorker = window.Worker
 
-/** 按应用名保存已创建的 Worker，以便沙箱销毁时成组终止。 */
+/** 按应用名保存构造成功的 Worker；with/iframe 的默认 stop 或 destroy 批量终止，UMD 软卸载保留。 */
 const workerInstanceMap = new Map<string, Set<WorkerInstance>>()
 
-/** 终止并移除指定应用登记的全部 Worker 实例。 */
+/**
+ * 终止并移除指定应用登记的全部 Worker 实例。
+ *
+ * 应用自行 terminate 不会删除登记，因此这里也可能再次终止已停止的实例。
+ * @param appName - 构造阶段按当前 DOM 作用域登记的归属名。
+ */
 export function releaseWorkersByApp(appName: string): void {
   workerInstanceMap.get(appName)?.forEach(w => w.terminate())
   workerInstanceMap.delete(appName)
@@ -71,6 +76,7 @@ function isSameOrigin(url: string | URL): boolean {
  *
  * @remarks
  * 标准 `Blob` 不可用时回退到旧浏览器的厂商 BlobBuilder 实现。
+ * 返回的 object URL 未在此模块 revoke；releaseWorkersByApp 只终止线程并删除实例引用。
  */
 function urlFromScript(script: string) {
   let blob
@@ -98,15 +104,17 @@ function urlFromScript(script: string) {
 }
 
 /**
- * 代理原生 Worker 构造器，补全子应用相对地址、桥接跨域脚本并登记实例。
+ * 代理原生 Worker 构造器，按补全地址选择同源或 Blob 引导路径，并登记子应用实例。
  *
  * @remarks
- * 同源脚本直接创建；跨域脚本先生成同源 Blob 引导文件，module 使用 `import`，classic 使用 `importScripts`。
+ * 有应用归属时先用 CompletionPath 计算地址。跨域分支用该地址生成同源 Blob 引导脚本，module 使用
+ * import，classic 使用 importScripts；同源分支仍把原始 scriptURL 交给 Worker，并未使用补全结果加载。
+ * URL/Blob 创建与原生构造异常直接上抛，只有成功返回的实例才加入应用登记表。
  */
 const WorkerProxy =
   // @ts-ignore
   new Proxy<Worker>(originalWorker, {
-  /** 拦截构造调用并返回行为等价的原生 Worker 实例。 */
+  /** 按当前应用名登记构造成功的 Worker；原生线程仍由底层构造器创建。 */
   construct(Target, args): WorkerInstance {
     let [scriptURL, options] = args
     options = options || {}
@@ -119,7 +127,7 @@ const WorkerProxy =
 
     let instance: WorkerInstance
     if (url && !isSameOrigin(url)) {
-      // 跨域地址由同源 Blob 引导脚本间接加载，绕过 Worker 构造器的同源地址限制。
+      // Blob 引导文件满足 Worker 构造器的地址限制；其中 import/importScripts 仍受浏览器资源加载规则约束。
       const workerScriptURL = JSON.stringify(String(url))
 
       // 保持调用方选择的 module/classic 加载语义。
@@ -129,7 +137,7 @@ const WorkerProxy =
       const workerPath = urlFromScript(script)
       instance = new Target(workerPath, options) as WorkerInstance
     } else {
-      // 同源地址直接交给原生构造器，避免额外 Blob 包装。
+      // 同源判断使用补全结果，此处分支却传原输入；相对路径仍由底层 Worker 的执行环境解析。
       instance = new Target(scriptURL, options) as WorkerInstance
     }
 

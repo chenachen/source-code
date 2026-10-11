@@ -4,11 +4,9 @@ import { init } from './testHelper.js'
 import * as delta from 'lib0/delta'
 
 /**
- * Given：关闭 GC 的文档在写入 `world!` 后取快照，再前插 `hello `。
- * When：从当前 store 与旧快照重建文档。
- * Then：目标只包含快照时的 `world!`。
- *
- * 验证机制：证明 state vector 截断后续插入，而源 store 提供快照内容。
+ * 测试场景：gc=false 文档写 world! 后取快照。
+ * 触发操作：前插 hello ，再用当前 store 恢复旧快照。
+ * 预期结果：恢复 Delta 仍只含 world!，排除快照之后的新增 ID。
  *
  * @param {t.TestCase} _tc
  */
@@ -22,7 +20,9 @@ export const testBasic = _tc => {
 }
 
 /**
- * 验证属性读取传入不同快照时，分别返回空、历史值和当前值。
+ * 测试场景：gc=false 文档有 div 子类型；在设置属性前与 a=1 后分别取快照。
+ * 触发操作：把当前属性改为 a=2，再按当前状态及两个快照读取。
+ * 预期结果：依次为 {a: "2"}、{a: "1"} 和空属性对象，历史赋值由快照边界区分。
  *
  * @param {t.TestCase} _tc
  */
@@ -39,7 +39,9 @@ export const testBasicXmlAttributes = _tc => {
 }
 
 /**
- * 验证恢复快照不会修改源文档，目标只接收快照 state vector 以内的数组项。
+ * 测试场景：gc=false 数组写 hello 后取快照。
+ * 触发操作：追加 world，再恢复旧快照。
+ * 预期结果：目标只有 hello，源仍为 hello/world；允许编码期间结构切分，不能改变源的可见内容。
  *
  * @param {t.TestCase} _tc
  */
@@ -56,7 +58,9 @@ export const testBasicRestoreSnapshot = _tc => {
 }
 
 /**
- * 验证空快照（含 clock=0 client 项）可恢复为空，最新快照仍可完整恢复当前内容。
+ * 测试场景：空文档快照额外带 client=9999、clock=0。
+ * 触发操作：写 world，恢复空快照，再对最新快照进行恢复。
+ * 预期结果：旧快照目标为空且源保留 world；最新快照目标包含 world。
  *
  * @param {t.TestCase} _tc
  */
@@ -78,7 +82,9 @@ export const testEmptyRestoreSnapshot = _tc => {
 }
 
 /**
- * 验证快照 state vector 同时约束嵌套类型内的后续属性变更。
+ * 测试场景：gc=false 数组包含子类型，其属性 key1=value1 已写入并取快照。
+ * 触发操作：新增 key2=value2 后恢复旧快照。
+ * 预期结果：目标子类型仅有 key1，源仍有两属性，嵌套内容同样受 sv 约束。
  *
  * @param {t.TestCase} _tc
  */
@@ -107,7 +113,9 @@ export const testRestoreSnapshotWithSubType = _tc => {
 }
 
 /**
- * 验证快照后删除的首个数组项可从 `gc=false` 历史中恢复。
+ * 测试场景：gc=false 数组含 item1/item2，删除前取快照。
+ * 触发操作：删除首项后恢复该快照。
+ * 预期结果：目标恢复两项，源只剩 item2；删除后载荷仍由旧 store 提供。
  *
  * @param {t.TestCase} _tc
  */
@@ -125,7 +133,9 @@ export const testRestoreDeletedItem1 = _tc => {
 }
 
 /**
- * 验证快照恢复保留被后续删除项与其左邻居的原顺序，覆盖结构切分边界。
+ * 测试场景：数组写 item1，中间另一根属性占用 clock，再头插 item0 后取快照。
+ * 触发操作：删除索引 1 的 item1，再恢复。
+ * 预期结果：目标为 item0/item1，源为 item0；跨根的 clock 间隔不改变数组左右关系。
  *
  * @param {t.TestCase} _tc
  */
@@ -145,7 +155,9 @@ export const testRestoreLeftItem = _tc => {
 }
 
 /**
- * 验证快照创建前已删除的内容保持不可见，快照后的新插入也不会进入恢复结果。
+ * 测试场景：gc=false 数组的 item1 在取快照前已删除。
+ * 触发操作：快照后头插 item0，再恢复旧状态。
+ * 预期结果：目标为空：删除集排除 item1，sv 排除 item0；源仍含 item0。
  *
  * @param {t.TestCase} _tc
  */
@@ -163,7 +175,9 @@ export const testDeletedItemsBase = _tc => {
 }
 
 /**
- * 验证 delete set 能精确排除快照前删除的中间项，同时 state vector 排除快照后头插项。
+ * 测试场景：数组有 item1/item2/item3，删除中间项后取快照。
+ * 触发操作：头插 item0，再恢复旧快照。
+ * 预期结果：目标为 item1/item3，源为 item0/item1/item3；同时验证删除集和新增上界。
  *
  * @param {t.TestCase} _tc
  */
@@ -181,13 +195,9 @@ export const testDeletedItems2 = _tc => {
 }
 
 /**
- * 验证两个已同步 peer 从同一快照恢复时得到相同因果闭包，不包含双方后续依赖变更。
- *
- * Given：两个客户端各写一项并同步后取快照，再各写一项并同步。
- * When：分别从两个最终 store 恢复同一快照。
- * Then：两份恢复文档都只含前两项且顺序相同。
- *
- * 对应源码：`createDocFromSnapshot()` 按快照 sv 编码每个 client 的历史前缀。
+ * 测试场景：两个同步副本关闭 GC，各写第一项并同步后取同一快照。
+ * 触发操作：两客户端再各写第二项并同步，用两份最终 store 分别恢复。
+ * 预期结果：两个恢复结果都按相同顺序保留 user1item1/user2item1，排除后续两项。
  *
  * @param {t.TestCase} tc
  */
@@ -233,13 +243,9 @@ export const testDependentChanges = tc => {
 }
 
 /**
- * 验证 `snapshotContainsUpdate` 同时检查新增结构上界与 delete set 包含关系。
- *
- * Given：依次取得空、插入后、删除后的三个快照与两条 update。
- * When：交叉检查每个快照是否包含对应 update。
- * Then：只有 state vector 已覆盖插入且 delete set 已覆盖删除时返回 true。
- *
- * 验证机制：插入与删除两类负例分别锁定函数的两个判定阶段。
+ * 测试场景：新文档记录 update，依次取空、插入 [1] 后、删除后快照。
+ * 触发操作：交叉查询各快照是否包含插入 update 和删除 update。
+ * 预期结果：空快照不含插入；插入后快照不含删除但包含插入；最终快照包含两者。
  *
  * @param {t.TestCase} _tc
  */
@@ -266,7 +272,9 @@ export const testContainsUpdate = _tc => {
 }
 
 /**
- * 回归验证 issue #767：只含较早删除集的远端快照不能声称包含本地后续删除 update。
+ * 测试场景：本地写 abcdefghij、删除前三字符，远端同步后取快照。
+ * 触发操作：本地再删前三个当前字符，编码完整状态并查询远端旧快照。
+ * 预期结果：返回 false；新增结构已在旧快照中，缺失的是较晚的删除事实（issue #767）。
  *
  * @param {t.TestCase} _tc
  */

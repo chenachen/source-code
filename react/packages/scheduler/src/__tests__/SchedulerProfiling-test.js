@@ -57,7 +57,7 @@ describe('Scheduler', () => {
   const {enableProfiling} = require('scheduler/src/SchedulerFeatureFlags');
   if (!enableProfiling) {
     // 其余用例都依赖 profiling buffer；关闭 feature flag 时只验证 API 明确暴露为 null。
-    /** 场景：非 profiling 构建不得暴露半可用的 profiling 控制器。 */
+    /** enableProfiling=false 时导入 scheduler，断言 unstable_Profiling 为 null；验证未启用记录器的构建 API 形状，并提前结束本组其余注册。 */
     it('profiling APIs are not available', () => {
       Scheduler = require('scheduler');
       expect(Scheduler.unstable_Profiling).toBe(null);
@@ -65,6 +65,7 @@ describe('Scheduler', () => {
     return;
   }
 
+  // 每例重载 mock 调度器及记录器，隔离虚拟时钟、任务 id、二进制缓冲区与 helper 日志。
   beforeEach(() => {
     jest.resetModules();
     jest.mock('scheduler', () => require('scheduler/unstable_mock'));
@@ -98,11 +99,11 @@ describe('Scheduler', () => {
   const TaskCancelEvent = 4;
   /** 某个 task callback 开始或恢复运行事件。 */
   const TaskRunEvent = 5;
-  /** task callback 返回 continuation、让出执行权事件。 */
+  /** callback 返回 continuation、当前运行片段结束；mock 可在同次 flush 继续运行它。 */
   const TaskYieldEvent = 6;
-  /** Scheduler work loop 离开主线程事件。 */
+  /** Scheduler 退出本次 flush 的事件。 */
   const SchedulerSuspendEvent = 7;
-  /** Scheduler work loop 重新占用主线程事件。 */
+  /** Scheduler 进入一次 flush 的事件。 */
   const SchedulerResumeEvent = 8;
 
   /**
@@ -240,6 +241,8 @@ describe('Scheduler', () => {
 
     const mainThreadLabelColumn = '!!! Main thread              ';
     let mainThreadTimelineColumn = '';
+    // 该辅助器从 true 开始交替填充：Resume/Suspend 之间画 ░，flush 外画 █。
+    // Task 行则以 █ 表示运行；读取 Main thread 行的执行区间应按 Resume/Suspend 边界解释。
     let isMainThreadBusy = true;
     for (const time of mainThreadRuns) {
       const index = time / microsecondsPerChar;
@@ -400,8 +403,8 @@ Task 1 [Normal]              │██████🡐 errored
   });
 
   /**
-   * 场景：同时取消已 yield 的 task 和尚未运行的 task；两者都应各有一个 canceled 终态，
-   * 且队列清空后的额外虚拟时间不能继续拉长主线程 busy 区间。
+   * 同时取消已 yield 和尚未运行的 task；两行分别终止于同一个取消时刻，并各标记 canceled。
+   * 随后清理空 callback 的 flush 仍记录 Resume/Suspend，任务行的终止时间不再变化。
    */
   it('marks when multiple tasks are canceled', async () => {
     Scheduler.unstable_Profiling.startLoggingProfilingEvents();
@@ -431,11 +434,11 @@ Task 1 [Normal]              │██████🡐 errored
     cancelCallback(task1);
     cancelCallback(task2);
 
-    // 队列已经为空；继续推进虚拟时间不应拉长主线程行的 busy 区间。
+    // callback 已清空但节点仍待惰性删除；推进时间后 flush 会清理节点并记录新一对 Resume/Suspend。
     Scheduler.unstable_advanceTime(1000);
     await waitForAll([]);
 
-    // 主线程行应终止于 callback 被取消、Scheduler suspend 的时刻。
+    // 任务行终止于取消时刻；Main thread 行还包括随后清理节点的 flush 边界。
     expect(stopProfilingAndPrintFlamegraph()).toEqual(
       `
 !!! Main thread              │░░░░░░██████████████████████
@@ -445,7 +448,7 @@ Task 2 [Normal]              │░░░░░░░░🡐 canceled
     );
   });
 
-  /** 场景：对已 completed task 再调用 cancel 是幂等空操作，不得把终态改写为 canceled。 */
+  /** 启动 profile 并 flush 完成运行 1000ms 的 A，再 cancel 原 handle；flamegraph 仍只有 completed 运行行，验证完成终态不会被取消改写。 */
   it('handles cancelling a task that already finished', async () => {
     Scheduler.unstable_Profiling.startLoggingProfilingEvents();
 
@@ -463,7 +466,7 @@ Task 1 [Normal]              │████████████████
     );
   });
 
-  /** 场景：对同一 pending task 连续取消三次，只记录一次 cancel 终态，也不影响另一 task 完成。 */
+  /** A/B 两任务待执行时推进到 600ms，连续 cancel B 三次再 flush A；flamegraph 只给 B 一个 canceled 终态且 A 完成，验证重复取消幂等。 */
   it('handles cancelling a task multiple times', async () => {
     Scheduler.unstable_Profiling.startLoggingProfilingEvents();
 
@@ -500,6 +503,8 @@ Task 2 [Normal]              │    ░░░░░░░░🡐 canceled
 
   /**
    * 场景：带 1000ms delay 的 task 在到期前不产生运行区间；到期后从对应时间位置开始并完成。
+   * 先 flush 得到空日志，再推进 1000ms 并 flush 运行 1000ms 的 A；时间线从 1000ms
+   * 起显示 task 行，用于验证 TaskStart 在进入 ready queue 时记录而非创建 timer 时。
    * 对应源码：timer queue 到 ready queue 的迁移及 profiling run/complete 事件。
    */
   it('handles delayed tasks', async () => {
@@ -528,7 +533,7 @@ Task 1 [Normal]              │                    █████████�
     );
   });
 
-  /** 场景：延迟 task 在到期前取消，不应留下可见 task 行或主线程运行区间。 */
+  /** profile 中安排 delay=1000ms 的 A 后立即 cancel，再 flush；输出仅空主线程行，验证未进入 ready queue 的 timer 不产生 task/cancel 记录。 */
   it('handles cancelling a delayed task', async () => {
     Scheduler.unstable_Profiling.startLoggingProfilingEvents();
     const task = scheduleCallback(NormalPriority, () => Scheduler.log('A'), {
@@ -556,7 +561,7 @@ Task 1 [Normal]              │                    █████████�
 
     spyOnDevAndProd(console, 'error').mockImplementation(() => {});
 
-    // 扩大测试环境的无限循环保护阈值，允许创建足够多事件触发约 2MB profiling 上限。
+    // 扩大循环保护阈值，以触发 524288 个 Int32 的逻辑日志上限；扩容后的实际 backing buffer 最大为 8 MiB。
     const originalMaxIterations = global.__MAX_ITERATIONS__;
     global.__MAX_ITERATIONS__ = 120000;
 
@@ -574,7 +579,7 @@ Task 1 [Normal]              │                    █████████�
         'to call `stopLoggingProfilingEvents()`.',
     );
 
-    // 超限停止时应自动清空旧 profile，不能返回截断且貌似有效的事件流。
+    // 超限会调用 stopLoggingProfilingEvents 丢弃返回值；随后再停止时只能取得 null。
     expect(stopProfilingAndPrintFlamegraph()).toEqual('(empty profile)');
 
     // 自动停止不是永久失效；随后启动的新 profile 应从干净 buffer 继续工作。

@@ -18,6 +18,9 @@ const normalizedFunctionalComponentMap = new WeakMap<
  * 每个 slot 时立即执行，复现旧访问方式。
  */
 export const legacySlotProxyHandlers: ProxyHandler<InternalSlots> = {
+  /**
+   * 读取 Vue 2 普通 slot 内容时执行同名 Vue 3 slot 函数；缺少该键返回 undefined，不预先缓存 slot 返回的 VNode。
+   */
   get(target, key: string) {
     const slot = target[key]
     return slot && slot()
@@ -38,6 +41,9 @@ export function convertLegacyFunctionalComponent(
 
   const legacyFn = comp.render as any
 
+  /**
+   * 每次 Vue 3 函数式 render 构造旧 render(h, ctx) 上下文，提供原始 children/data、父公共实例、slots/listeners/injections，再调用旧 render。组件类型在外层 WeakMap 中缓存。
+   */
   const Func: FunctionalComponent = (props, ctx) => {
     const instance = getCurrentInstance()!
 
@@ -47,12 +53,21 @@ export function convertLegacyFunctionalComponent(
       data: instance.vnode.props || {},
       scopedSlots: ctx.slots,
       parent: instance.parent && instance.parent.proxy,
+      /**
+       * 为当前 ctx.slots 创建按读取执行 slot 的代理，兼容 Vue 2 ctx.slots() 返回内容对象的约定。
+       */
       slots() {
         return new Proxy(ctx.slots, legacySlotProxyHandlers)
       },
+      /**
+       * 按当前内部实例读取 Vue 2 监听器映射；getter 每次访问重新取得结果，避免复用旧 VNode 的监听器。
+       */
       get listeners() {
         return getCompatListeners(instance)
       },
+      /**
+       * 按旧组件 inject 声明解析祖先注入到新对象；无 inject 声明返回空对象，Ref 的解包沿用 Options API 注入协议。
+       */
       get injections() {
         if (comp.inject) {
           const injections = {}

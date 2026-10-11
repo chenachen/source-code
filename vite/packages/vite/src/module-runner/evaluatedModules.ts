@@ -15,20 +15,20 @@ export class EvaluatedModuleNode {
   public importers: Set<string> = new Set()
   /** 当前节点本轮执行直接导入的模块 ID。 */
   public imports: Set<string> = new Set()
-  /** 当前 factory 是否已经成功完成求值。 */
+  /** 本轮求值是否已结束；成功和失败都会置为 true，结果或错误由 promise 保存。 */
   public evaluated = false
   /** 服务端 fetchModule 返回的解析结果与代码。 */
   public meta: ResolvedResult | undefined
-  /** 正在进行的求值 Promise，用于并发请求去重与循环检测。 */
+  /** 本轮求值 Promise；完成后仍保留，以复用导出或同一错误，失效时清除。 */
   public promise: Promise<any> | undefined
   /** 当前模块的稳定 exports namespace。 */
   public exports: any
-  /** 去除 query/hash 的真实文件索引键。 */
+  /** 规范 ID 去除 query/hash 后的索引键；虚拟模块和 builtin 也有此键，未必是磁盘文件。 */
   public file: string
   /** 首次需要堆栈映射时惰性解码的 sourcemap。 */
   public map: DecodedMap | undefined
 
-  /** 创建节点并由规范 ID 推导真实文件索引键。 */
+  /** 创建节点并去掉 ID 的 query/hash，得到文件或虚拟模块的分组键。 */
   constructor(
     public id: string,
     public url: string,
@@ -90,8 +90,8 @@ export class EvaluatedModules {
     node.map = undefined
     node.promise = undefined
     node.exports = undefined
-    // imports 会随新代码变化；importers 必须保留到重评估完成，否则 full reload 无法
-    // 反向找到入口。文件删除后可能暂留旧 importer，是当前接受的低频边界。
+    // imports 会随新代码变化；保留 importers 让 full reload 能沿已知反向边找到入口。
+    // 重求值会追加新边，但这里没有删除旧反向边，所以已移除的依赖也可能保留 importer。
     node.imports.clear()
   }
 
@@ -122,7 +122,7 @@ export class EvaluatedModules {
   }
 }
 
-// 必须保留 node: 前缀的内建模块；它们没有 `test` 这类等价裸导入。
+/** 必须保留 node: 前缀的内建模块集合；这些模块没有可互换的裸导入名称。 */
 // https://nodejs.org/api/modules.html#built-in-modules-with-mandatory-node-prefix
 const prefixedBuiltins = new Set([
   'node:sea',

@@ -40,7 +40,7 @@ type Options = {
   identifierPrefix?: string,
   /** 指定根节点使用的 HTML/SVG/MathML 命名空间。 */
   namespaceURI?: string,
-  /** 写入资源的 CSP nonce；可统一设置或分别指定脚本与样式。 */
+  /** CSP nonce：字符串仅给脚本，对象可分别给script/style。 */
   nonce?:
     | string
     | {
@@ -55,7 +55,7 @@ type Options = {
   bootstrapScripts?: Array<string | BootstrapScriptDescriptor>,
   /** 需要生成 module script 标签的启动资源。 */
   bootstrapModules?: Array<string | BootstrapScriptDescriptor>,
-  /** Fizz 渐进输出采用的目标 chunk 大小。 */
+  /** 决定已完成 Suspense 边界是否单独输出的字节阈值；不是流中每个 chunk 的固定大小。 */
   progressiveChunkSize?: number,
   /** 调用方用于取消服务端请求的信号。 */
   signal?: AbortSignal,
@@ -71,13 +71,13 @@ type Options = {
   formState?: ReactFormState<any, any> | null,
   /** 在开始正文前接收协议生成的 HTTP headers。 */
   onHeaders?: (headers: Headers) => void,
-  /** 允许 Fizz 收集的 headers 总长度上限。 */
+  /** Link 提示头的 UTF-16 码元预算；不等同于 HTTP 头 UTF-8 字节数。 */
   maxHeadersLength?: number,
 };
 
 /** 带“全部内容就绪”Promise 的 Bun 直连流返回类型。 */
 type ReactDOMServerReadableStream = ReadableStream & {
-  /** 所有 Suspense 边界均完成或请求发生致命错误时结算。 */
+  /** 服务端待处理任务归零时 resolve，致命错误时 reject；不表示下游已读完全部字节。 */
   allReady: Promise<void>,
 };
 
@@ -86,7 +86,9 @@ type ReactDOMServerReadableStream = ReadableStream & {
  *
  * 本文件只把 DOM host config 与范围外 `react-server` 中的完整 Fizz 状态机接到 Bun
  * stream：shell 就绪才公开流，pull 启动写出，cancel 同时停流并 abort；Bun 的
- * `type: 'direct'` 与 2048 高水位是宿主背压适配，不改变 Fizz 请求状态机。
+ * `type: 'direct'` 与 2048高水位接宿主背压。shell错误拒绝外层Promise，shell成功后
+ * fatal错误由stream/allReady通道体现；allReady不等待消费者排空。AbortSignal已经中止时
+ * 立即把reason传给request，否则仅在abort事件触发后移除监听器，正常结束未在此处移除。
  */
 function renderToReadableStream(
   children: ReactNodeList,
@@ -174,7 +176,7 @@ function renderToReadableStream(
       if (signal.aborted) {
         abort(request, (signal as any).reason);
       } else {
-        /** 只处理一次 abort，并立即注销监听器，避免 request 被信号长期引用。 */
+        /** 信号触发 abort 后移除本监听器，避免同一监听器再次中止请求。 */
         const listener = () => {
           abort(request, (signal as any).reason);
           signal.removeEventListener('abort', listener);

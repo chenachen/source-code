@@ -3,9 +3,9 @@ import { getGlobalThis } from '@vue/shared'
 /**
  * 初始化 ESM bundler 构建所需的编译期特性开关。
  *
- * 该函数只在创建渲染器时由 `baseCreateRenderer` 调用，而不在模块顶层执行，从而保证
- * 单纯导入 `runtime-core` 没有副作用，打包器可以安全 tree-shaking。若用户的打包配置
- * 未注入开关，则写入兼容默认值，并在开发环境提示：显式替换常量才能让生产构建删除
+ * 该函数只在创建渲染器时由 `baseCreateRenderer` 调用，导入模块时不初始化这些开关，
+ * 因而未使用渲染器的构建可删除这条初始化路径。若用户的打包配置未注入开关，
+ * 则写入兼容默认值，并在开发环境提示：显式替换常量才能让生产构建删除
  * 未启用的 Options API、devtools 或水合诊断代码。
  */
 export function initFeatureFlags(): void {

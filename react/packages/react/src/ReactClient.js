@@ -131,8 +131,8 @@ export {
   startGestureTransition as unstable_startGestureTransition,
   // 由 `enableOptimisticKey` 控制的入口。
   REACT_OPTIMISTIC_KEY as optimisticKey,
-  // 仅开发环境公开的诊断与测试入口。
   useId,
+  // act/captureOwnerStack 的具体 DEV 可用性由渠道入口与函数实现共同决定；useId 各构建均可用。
   act,
   captureOwnerStack,
 };

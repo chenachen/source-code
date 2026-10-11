@@ -107,6 +107,7 @@ const resolveTarget = <T = RendererElement>(
 export const TeleportImpl = {
   name: 'Teleport',
   __isTeleport: true,
+  /** renderer 的 Teleport 挂载/更新入口：维护主树与目标锚点，先 patch 旧物理容器中的 children，再按 disabled/to 变化移动；defer/pending Suspense 用可废弃 job 挂最新 VNode。 */
   process(
     n1: TeleportVNode | null,
     n2: TeleportVNode,
@@ -193,6 +194,7 @@ export const TeleportImpl = {
      * WeakMap 中的身份检查让新一次更新可以废弃旧任务，保证最终只挂载最新 VNode。
      */
     const queuePendingMount = (vnode: TeleportVNode) => {
+      /** 执行当前 VNode 仍持有的挂载 job，先删除 pending 记录；disabled 从主锚点的现父重新找容器，随后解析/建立远端锚点，避免使用 Suspense 移动前的旧位置。 */
       const mountJob: SchedulerJob = () => {
         if (pendingMounts.get(vnode) !== mountJob) return
         pendingMounts.delete(vnode)
@@ -341,6 +343,7 @@ export const TeleportImpl = {
     }
   },
 
+  /** 取消尚未执行的挂载 job，并清理目标锚点。未挂载 children 不执行卸载；已挂载远端内容必须移除，disabled 主树内容按 doRemove 处理。 */
   remove(
     vnode: VNode,
     parentComponent: ComponentInternalInstance | null,
@@ -421,7 +424,9 @@ function moveTeleport(
   { o: { insert }, m: move }: RendererInternals,
   moveType: TeleportMoveTypes = TeleportMoveTypes.REORDER,
 ): void {
-  // 目标变化先把结束锚点插入新容器，children 随后都移动到它之前。
+  // 目标变化先插入 targetAnchor，再用同一个 parentAnchor 移动 children。
+  // process 的 TARGET_CHANGE 路径传入 null，二者依次追加，所以新目标内是
+  // targetAnchor、children；targetStart 仍留在旧目标，不构成新的完整包围区间。
   if (moveType === TeleportMoveTypes.TARGET_CHANGE) {
     insert(vnode.targetAnchor!, container, parentAnchor)
   }
@@ -489,6 +494,7 @@ function hydrateTeleport(
 ): Node | null {
   // 向前扫描 SSR 注释，找到当前 Teleport 在目标中的 start/end。不能依赖
   // hydrateChildren 返回值，因为嵌套 Teleport 会让物理兄弟关系与逻辑子树不一致。
+  /** 从目标游标扫描 SSR 的 Teleport 起止注释；记下 targetStart/targetAnchor，并把 _lpa 推进到结束锚点之后，供下一个共用目标的 Teleport 认领。 */
   function hydrateAnchor(
     target: TeleportTargetElement,
     targetNode: Node | null,
@@ -581,10 +587,15 @@ function hydrateTeleport(
 
 /** 强制声明公共构造类型，供 `h()` 和 TSX 正确推导 Teleport props/默认插槽。 */
 export const Teleport = TeleportImpl as unknown as {
+  /** 供 renderer 分派的内置字面量标记。 */
   __isTeleport: true
+  /** 供 h/TSX 推导 Teleport props/slots 的虚拟构造协议。 */
   new (): {
+    /** VNode 通用属性与目标/禁用/延迟参数的交集。 */
     $props: VNodeProps & TeleportProps
+    /** 逻辑默认 children 的公共类型；宿主位置由 Teleport 决定。 */
     $slots: {
+      /** 返回要传送/原位渲染的 VNode 列表。 */
       default(): VNode[]
     }
   }
@@ -616,8 +627,8 @@ function updateCssVars(vnode: VNode, isDisabled: boolean) {
 }
 
 /**
- * 在 Teleport 目标中创建起止锚点，并把二者关系写到起始锚点上。
- * 锚点既限定 children 范围，也使空 Teleport、移动和卸载拥有稳定定位点。
+ * 首次为目标建立空文本起止锚点，并把结束引用写到开始节点的 TeleportEndKey。
+ * 有 target 时依序插入，返回结束锚点供 children 挂在其前；目标后续切换只移动结束锚点，因此不能把初始包围关系当成跨目标不变量。
  */
 function prepareAnchor(
   target: RendererElement | null,

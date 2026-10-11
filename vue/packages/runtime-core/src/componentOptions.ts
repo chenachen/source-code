@@ -136,6 +136,9 @@ export interface ComponentOptionsBase<
     LegacyOptions<Props, D, C, M, Mixin, Extends, I, II, Provide>,
     ComponentInternalOptions,
     ComponentCustomOptions {
+  /**
+   * 有状态组件的初始化入口；实例上下文在同步执行窗口内有效，返回状态对象、渲染函数或 async Promise。
+   */
   setup?: (
     this: void,
     props: LooseRequired<
@@ -149,23 +152,53 @@ export interface ComponentOptionsBase<
     >,
     ctx: SetupContext<E, S>,
   ) => Promise<RawBindings> | RawBindings | RenderFunction | void
+  /**
+   * 显式组件名称，供诊断格式化、自引用及 KeepAlive 名称匹配。
+   */
   name?: string
   /** 模板字符串，完整版 Web 构建也兼容直接传 DOM 节点。 */
   template?: string | object
   // 此处刻意使用无签名 Function；带具体签名的函数若返回表达式引用 `this`，会使整个
   // Options API ThisType 推导失败。render 不需要在这里约束参数或返回类型。
+  /**
+   * 组件渲染入口的宽签名，允许编译产物和用户函数；具体公共 this 类型由 DefineComponent 推导。
+   */
   render?: Function
   // 同时约束 LC 与 Record<string, Component>：既强制每个值为组件，又保留具体键推导。
+  /**
+   * 本地组件注册表，与 LC 泛型推导的组件名称集合合并。
+   */
   components?: LC & Record<string, Component>
   // 指令表采用相同技巧，在校验值类型的同时保留局部指令名称。
+  /**
+   * 本地指令注册表，供资源解析优先于应用全局表查找。
+   */
   directives?: Directives & Record<string, Directive>
+  /**
+   * 为 false 时关闭 renderComponentRoot 的自动 attrs 透传，组件可自行绑定 attrs。
+   */
   inheritAttrs?: boolean
+  /**
+   * 运行时事件声明及校验器；用于 emit 诊断和 props/attrs 监听器分流。
+   */
   emits?: (E | EE[]) & ThisType<void>
+  /**
+   * 只承载 slots 类型信息，运行时插槽从 VNode children 初始化。
+   */
   slots?: S
+  /**
+   * Options API 对外实例字段列表，applyOptions 为每个键建立回读 publicThis 的描述符。
+   */
   expose?: Exposed[]
+  /**
+   * 服务端预取钩子签名；server-renderer 等待其 Promise，客户端不消费此阶段。
+   */
   serverPrefetch?(): void | Promise<any>
 
   // 仅运行时编译器构建 --------------------------------------------------------
+  /**
+   * 当前组件的模板编译配置，仅在运行时编译 template 时参与。
+   */
   compilerOptions?: RuntimeCompilerOptions
 
   // 内部字段 ------------------------------------------------------------------
@@ -213,6 +246,9 @@ export interface ComponentOptionsBase<
   // 这些字段运行时内部使用，但必须出现在 d.ts 中才能完成联合类型判别与推导。
 
   // 纯类型判别：区分普通 options 与 defineComponent/FunctionalComponent 构造类型。
+  /**
+   * 阻止组件选项对象被结构类型误认为可直接调用的 Function；运行时不提供此方法。
+   */
   call?: (this: unknown, ...args: unknown[]) => never
   // 内置 VNode 类型的纯类型判别字段。
   __isFragment?: never
@@ -226,9 +262,21 @@ export interface ComponentOptionsBase<
  * 运行时模板编译能够接受的编译器选项子集。
  */
 export interface RuntimeCompilerOptions {
+  /**
+   * 平台自定义元素判定函数；命中标签不解析为 Vue 组件。
+   */
   isCustomElement?: (tag: string) => boolean
+  /**
+   * 模板空白文本保留或折叠策略，传递给运行时编译器。
+   */
   whitespace?: 'preserve' | 'condense'
+  /**
+   * 是否保留模板注释节点。
+   */
   comments?: boolean
+  /**
+   * 模板插值起止符二元组。
+   */
   delimiters?: [string, string]
 }
 
@@ -336,6 +384,9 @@ export type ExtractComputedReturns<T extends any> = {
 
 /** Options API watch 的对象写法：handler 加 deep/immediate/flush 等 watch 选项。 */
 export type ObjectWatchOptionItem = {
+  /**
+   * watch 的实际回调或 methods 中的方法名，createWatcher 在状态初始化后解析它。
+   */
   handler: WatchCallback | string
 } & WatchOptions
 
@@ -360,7 +411,14 @@ export type ComponentInjectOptions = string[] | ObjectInjectOptions
 /** 对象式 inject 的来源键与可选默认值描述。 */
 type ObjectInjectOptions = Record<
   string | symbol,
-  string | symbol | { from?: string | symbol; default?: unknown }
+   string
+  | symbol
+  | {
+      /** 祖先提供的来源键，缺省使用本地键名。 */
+      from?: string | symbol;
+      /** 来源键缺失时使用的值；函数按工厂调用并绑定消费组件公开实例。 */
+      default?: unknown
+    }
 >
 
 /** 把 inject 声明转换为 Options API `this` 上可访问的可选属性映射。 */
@@ -387,6 +445,9 @@ interface LegacyOptions<
   II extends string,
   Provide extends ComponentProvideOptions = ComponentProvideOptions,
 > {
+  /**
+   * 本组件 Vue 2 兼容能力的局部配置。
+   */
   compatConfig?: CompatConfig
 
   // 允许用户通过 ComponentCustomOptions/生态插件加入自定义选项。
@@ -394,6 +455,9 @@ interface LegacyOptions<
 
   // 状态选项。data 的 `this` 无法暴露 RawBindings，否则会形成循环推导并破坏整个
   // 组件的 ThisType，因此这里仅提供 props/methods/mixins 等已知成员。
+  /**
+   * 每实例 data 工厂，以已就绪的公共 this 为接收者和首个参数；类型容许读取 props、setup、inject 与 methods，运行时要求返回普通对象。
+   */
   data?: (
     this: CreateComponentPublicInstanceWithMixins<
       Props,
@@ -414,36 +478,105 @@ interface LegacyOptions<
       Extends
     >,
   ) => D
+  /**
+   * 计算属性 getter 或 get/set 选项映射，初始化为 ctx 描述符。
+   */
   computed?: C
+  /**
+   * 实例方法映射，初始化时绑定 publicThis 后写入 ctx。
+   */
   methods?: M
+  /**
+   * 状态字段/点路径到回调配置的映射，data/computed 就绪后注册。
+   */
   watch?: ComponentWatchOptions
+  /**
+   * 提供给后代的对象或 this 工厂，初始化完成后写入 provides。
+   */
   provide?: Provide
+  /**
+   * 本地字段到祖先键的声明，先于 methods/data 初始化以便这些工厂读取注入值。
+   */
   inject?: I | II[]
 
-  // assets
+  // 局部资源注册表。
+  /**
+   * 仅供 Vue 2 兼容构建注册的过滤器映射；普通 Vue 3 已移除此选项。
+   */
   filters?: Record<string, Function>
 
-  // composition
+  // 组件继承与混入来源。
+  /**
+   * 局部 mixin 列表，按数组顺序递归合并，在本组件自身选项之前生效。
+   */
   mixins?: Mixin[]
+  /**
+   * 单个继承选项来源，mergeOptions 先递归它再处理 mixins 与自身字段。
+   */
   extends?: Extends
 
-  // lifecycle
+  // 生命周期选项。
+  /**
+   * Options API beforeCreate 钩子签名；在状态选项初始化前调用，可修改 $options，运行时会绑定公共实例为 this。
+   */
   beforeCreate?(): any
+  /**
+   * Options API created 钩子签名；在 inject/methods/data/computed/watch/provide 初始化完成后调用，运行时会绑定公共实例为 this。
+   */
   created?(): any
+  /**
+   * Options API beforeMount 钩子签名；在首次 render 和宿主子树创建前调用，运行时会绑定公共实例为 this。
+   */
   beforeMount?(): any
+  /**
+   * Options API mounted 钩子签名；在宿主子树插入后的 post 阶段调用，运行时会绑定公共实例为 this。
+   */
   mounted?(): any
+  /**
+   * Options API beforeUpdate 钩子签名；在本轮 render/patch 前调用，运行时会绑定公共实例为 this。
+   */
   beforeUpdate?(): any
+  /**
+   * Options API updated 钩子签名；在本轮子树 patch 后的 post 阶段调用，运行时会绑定公共实例为 this。
+   */
   updated?(): any
+  /**
+   * Options API activated 钩子签名；在 KeepAlive 缓存组件重新激活后调用，运行时会绑定公共实例为 this。
+   */
   activated?(): any
+  /**
+   * Options API deactivated 钩子签名；在 KeepAlive 组件移入缓存后调用，运行时会绑定公共实例为 this。
+   */
   deactivated?(): any
-  /** @deprecated use `beforeUnmount` instead */
+  /**
+   * Vue 2 兼容生命周期名称，兼容构建把它登记到 beforeUnmount 阶段。
+   * @deprecated 请使用 beforeUnmount。
+   */
   beforeDestroy?(): any
+  /**
+   * Options API beforeUnmount 钩子签名；在停止 effect scope 和卸载子树前调用，运行时会绑定公共实例为 this。
+   */
   beforeUnmount?(): any
-  /** @deprecated use `unmounted` instead */
+  /**
+   * Vue 2 兼容生命周期名称，兼容构建把它登记到 unmounted 阶段。
+   * @deprecated 请使用 unmounted。
+   */
   destroyed?(): any
+  /**
+   * Options API unmounted 钩子签名；在子树已卸载后的 post 阶段调用，运行时会绑定公共实例为 this。
+   */
   unmounted?(): any
+  /**
+   * 渲染 effect 收集依赖时的开发调试钩子。
+   */
   renderTracked?: DebuggerHook
+  /**
+   * 响应式依赖触发渲染 effect 时的开发调试钩子。
+   */
   renderTriggered?: DebuggerHook
+  /**
+   * 后代错误捕获钩子；返回 false 停止向上传播。
+   */
   errorCaptured?: ErrorCapturedHook
 
   /**
@@ -479,10 +612,16 @@ export type MergedComponentOptionsOverride = {
   updated?: MergedHook
   activated?: MergedHook
   deactivated?: MergedHook
-  /** @deprecated use `beforeUnmount` instead */
+  /**
+   * 合并后的 Vue 2 兼容 beforeDestroy 钩子，允许单函数或数组；兼容初始化将其注册到 beforeUnmount。
+   * @deprecated 请使用 beforeUnmount。
+   */
   beforeDestroy?: MergedHook
   beforeUnmount?: MergedHook
-  /** @deprecated use `unmounted` instead */
+  /**
+   * 合并后的 Vue 2 兼容 destroyed 钩子，允许单函数或数组；兼容初始化将其注册到 unmounted。
+   * @deprecated 请使用 unmounted。
+   */
   destroyed?: MergedHook
   unmounted?: MergedHook
   renderTracked?: MergedHook<DebuggerHook>
@@ -537,8 +676,9 @@ function createDuplicateChecker() {
 }
 
 /**
- * 公开实例 proxy 是否可缓存 key 来源。Options 初始化期间会临时关闭，因为 inject、
- * methods、data 等字段正逐步加入 ctx，过早缓存 OTHER 会让稍后新增字段永远查不到。
+ * 公开实例 proxy 是否可缓存未命中 key 的 OTHER 来源。初始化 inject、methods、data
+ * 期间临时关闭，避免提前访问 data 字段后跳过它的后续查找；data 完成后恢复。
+ * computed 随后加入 ctx，而 ctx/globalProperties 在 OTHER 命中后仍会继续查找。
  */
 export let shouldCacheAccess = true
 
@@ -669,6 +809,9 @@ export function applyOptions(instance: ComponentInternalInstance): void {
             Object.defineProperty(ctx, key, {
               configurable: true,
               enumerable: true,
+              /**
+               * 开发 ctx 的 data getter 回读原 data 对象，便于控制台枚举；真实响应式读取仍由公开代理的 DATA 分支完成。
+               */
               get: () => data[key],
               set: NOOP,
             })
@@ -709,7 +852,13 @@ export function applyOptions(instance: ComponentInternalInstance): void {
       Object.defineProperty(ctx, key, {
         enumerable: true,
         configurable: true,
+        /**
+         * 把 Options computed 的 ctx 属性读取转发到 c.value，使用 computed 自身的惰性求值与缓存。
+         */
         get: () => c.value,
+        /**
+         * ctx 计算属性赋值转发到 c.value，由该 computed 的用户 setter 或只读警告处理。
+         */
         set: v => (c.value = v),
       })
       if (__DEV__) {
@@ -737,6 +886,9 @@ export function applyOptions(instance: ComponentInternalInstance): void {
     callHook(created, instance, LifecycleHooks.CREATED)
   }
 
+  /**
+   * 把合并后的单函数或数组逐项绑定 publicThis，再交给对应组合式 API 注册；保留合并顺序，并复用统一钩子包装/错误处理。
+   */
   function registerLifecycleHook(
     register: Function,
     hook?: Function | Function[],
@@ -781,7 +933,13 @@ export function applyOptions(instance: ComponentInternalInstance): void {
       const exposed = instance.exposed || (instance.exposed = {})
       expose.forEach(key => {
         Object.defineProperty(exposed, key, {
+          /**
+           * Options expose 列表的属性 getter 回读 publicThis，保证对外暴露的是最新实例值而非注册时快照。
+           */
           get: () => publicThis[key],
+          /**
+           * Options expose 列表的属性 setter 写回 publicThis，继续受 props/只读公开属性等代理规则约束。
+           */
           set: val => (publicThis[key] = val),
           enumerable: true,
         })
@@ -835,7 +993,7 @@ export function resolveInjections(
         injected = inject(
           opt.from || key,
           opt.default,
-          true /* treat default function as factory */,
+          true /* 将函数默认值作为工厂 */,
         )
       } else {
         injected = inject(opt.from || key)
@@ -848,7 +1006,13 @@ export function resolveInjections(
       Object.defineProperty(ctx, key, {
         enumerable: true,
         configurable: true,
+        /**
+         * Options inject 读取 Ref.value，让 this 上的注入字段自动解包，同时追踪原 Ref 依赖。
+         */
         get: () => (injected as Ref).value,
+        /**
+         * Options inject 赋值回写原 Ref.value，保留提供方与消费方共享的引用关系。
+         */
         set: v => ((injected as Ref).value = v),
       })
     } else {
@@ -905,6 +1069,9 @@ export function createWatcher(
     }
 
     const baseGetter = getter
+    /**
+     * 兼容 WATCH_ARRAY 的路径 getter：取原值后对数组 traverse，恢复 Vue 2 数组内部修改可触发 watch 的依赖收集。
+     */
     getter = () => {
       const val = baseGetter()
       if (
@@ -953,8 +1120,9 @@ export function createWatcher(
 }
 
 /**
- * 合并组件的全局 mixin、extends、局部 mixins 并按组件定义缓存。
- * 合并只依赖组件与 appContext，不依赖具体实例，因此同一应用内每个组件定义只做一次。
+ * 读取或构造当前组件的合并选项，并按 appContext 中的组件定义缓存。普通 Vue 3 合并按全局 mixin、extends、局部 mixins、自身字段执行；无继承来源时可直接复用组件定义。
+ *
+ * 兼容 PRIVATE_APIS 的无继承分支会浅复制并附加当前 parent/propsData，这些字段来自该次实例；不能把整个 compat 结果概括为完全不依赖实例。后续 applyOptions 使用返回对象初始化实例。
  */
 export function resolveMergedOptions(
   instance: ComponentInternalInstance,
@@ -1043,10 +1211,10 @@ export const internalOptionMergeStrats: Record<string, Function> = {
   data: mergeDataFn,
   props: mergeEmitsOrPropsOptions,
   emits: mergeEmitsOrPropsOptions,
-  // objects
+  // 同名对象选项按键覆盖。
   methods: mergeObjectOptions,
   computed: mergeObjectOptions,
-  // lifecycle
+  // 生命周期选项。
   beforeCreate: mergeAsArray,
   created: mergeAsArray,
   beforeMount: mergeAsArray,
@@ -1061,12 +1229,12 @@ export const internalOptionMergeStrats: Record<string, Function> = {
   deactivated: mergeAsArray,
   errorCaptured: mergeAsArray,
   serverPrefetch: mergeAsArray,
-  // assets
+  // 局部资源注册表。
   components: mergeObjectOptions,
   directives: mergeObjectOptions,
-  // watch
+  // 同一 source 的 watch 处理器按顺序合并。
   watch: mergeWatchOptions,
-  // provide / inject
+  // provide 合并工厂，inject 先统一声明形态。
   provide: mergeDataFn,
   inject: mergeInject,
 }
@@ -1083,7 +1251,9 @@ function mergeDataFn(to: any, from: any) {
   if (!to) {
     return from
   }
-  return function mergedDataFn(this: ComponentPublicInstance) {
+  return /** 执行合并后的 data/provide 工厂：两个来源都绑定调用时的公共 this；普通构建浅覆盖前结果，Vue 2 兼容开关启用时递归合并。 */ function mergedDataFn(
+    this: ComponentPublicInstance
+  ) {
     return (
       __COMPAT__ && isCompatEnabled(DeprecationTypes.OPTIONS_DATA_MERGE, null)
         ? deepMergeData
@@ -1132,10 +1302,16 @@ function mergeEmitsOrPropsOptions(
   to: EmitsOptions | undefined,
   from: EmitsOptions | undefined,
 ): EmitsOptions | undefined
+/**
+ * props 合并重载：保留 ComponentPropsOptions 输入/输出类型，运行时与 emits 使用同一个数组/对象规范化策略。
+ */
 function mergeEmitsOrPropsOptions(
   to: ComponentPropsOptions | undefined,
   from: ComponentPropsOptions | undefined,
 ): ComponentPropsOptions | undefined
+/**
+ * 合并 props/emits 的实现：两份数组按顺序去重；混合形状转对象并在无原型目标上后项覆盖，缺少前项直接返回后项。
+ */
 function mergeEmitsOrPropsOptions(
   to: ComponentPropsOptions | EmitsOptions | undefined,
   from: ComponentPropsOptions | EmitsOptions | undefined,
@@ -1171,7 +1347,7 @@ function mergeWatchOptions(
 // 已弃用的历史类型；因过去属于公共导出，为兼容现有 TypeScript 代码继续保留 --------
 
 /**
- * 以字符串数组声明 props 时使用的旧版组件选项类型别名。
+ * 不声明运行时 props 时使用的旧版组件选项类型别名，可由 __typeProps 携带纯类型信息。
  * 新代码应使用统一的 ComponentOptions/defineComponent 类型推导入口。
  *
  * @deprecated

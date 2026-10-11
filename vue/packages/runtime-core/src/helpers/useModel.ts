@@ -22,6 +22,7 @@ export function useModel<
   name: K,
   options?: DefineModelOptions<T[K], G, S>,
 ): ModelRef<T[K], M, G, S>
+/** 建立 model 的同步 prop 观察与 customRef 写回；未声明 prop/无实例时开发态返回空 ref。 */
 export function useModel(
   props: Record<string, any>,
   name: string,
@@ -61,11 +62,13 @@ export function useModel(
     })
 
     return {
+      /** 收集当前消费者，并仅在读取边界应用用户 getter；缓存仍保留父 prop 的原始值。 */
       get() {
         track()
         return options.get ? options.get(localValue) : localValue
       },
 
+      /** 转换后 emit；没有完整父 v-model 时本地更新，折叠输入还需通知 DOM 重新同步。 */
       set(value) {
         const emittedValue = options.set ? options.set(value) : value
         // emit 值与当前 prop 相同通常无需工作；但若 setter 把不同输入折叠成相同输出，
@@ -119,9 +122,11 @@ export function useModel(
 
   // 让返回值支持 `[model, modifiers] = useModel(...)`；第一次产出自身，第二次修饰符。
   // @ts-expect-error
+  /** 为每次解构创建独立计数器，依次产出 model ref 自身及修饰符对象。 */
   res[Symbol.iterator] = () => {
     let i = 0
     return {
+      /** 固定产出 modelRef 与 modifiers 两项后结束，重复解构由新迭代器重新计数。 */
       next() {
         if (i < 2) {
           return { value: i++ ? modifiers || EMPTY_OBJ : res, done: false }

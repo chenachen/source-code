@@ -13,7 +13,7 @@ const { JSDOM, VirtualConsole } = jsdom;
 /** 接收测试 realm 的控制台事件，避免 JSDOM 默认转发扰乱 QUnit 输出。 */
 const virtualConsole = new VirtualConsole();
 /**
- * Node.js 8+ 测试共享的 JSDOM window；允许脚本，以覆盖真实 DOM sink 行为。
+ * Node.js 测试共享的 JSDOM window；允许脚本，以覆盖真实 DOM sink 行为。
  */
 const { window } = new JSDOM(
   `<html><head></head><body><div id="qunit-fixture"></div></body></html>`,
@@ -38,9 +38,8 @@ async function startQUnit() {
   /**
    * 判断实际输出是否命中期望候选。
    *
-   * 审计 caveat：expected 为数组时，indexOf 表示严格候选匹配；expected 为字符串时，
-   * 它退化为子串匹配，且 actual 为空字符串会命中任意字符串。因而标量 fixture 不能单独
-   * 证明完整输出相等，必须结合专门的精确断言或真实 DOM sink 测试理解其证据强度。
+   * expected 为数组时，用严格相等查找候选；为字符串时，检查 actual 是否为其子串，
+   * 包括空字符串。需要验证完整输出相等的用例使用 assert.strictEqual。
    *
    * @param {*} actual DOMPurify 的实际输出。
    * @param {Array<*> | string} expected 可接受候选数组或历史标量期望。

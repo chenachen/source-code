@@ -27,7 +27,7 @@ export interface AssetURLTagConfig {
 /** 模板静态资源 URL 转换选项。 */
 export interface AssetURLOptions {
   /**
-   * 提供 base 后，相对 URL 直接拼成以 base 开头的 URL，不再生成模块 import。
+   * 提供 base 后，`.` 开头的资源路径直接与 base 拼接；`~`、`@`、`#` 等模块候选仍走 import。
    */
   base?: string | null
   /**

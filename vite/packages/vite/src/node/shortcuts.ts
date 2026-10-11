@@ -37,7 +37,8 @@ export type CLIShortcut<Server = ViteDevServer | PreviewServer> = {
 /**
  * 为 Dev/Preview Server 绑定终端行快捷键。
  *
- * 只在存在 httpServer 且默认 TTY/非 CI 条件满足时启用。重复调用复用 readline、替换 line
+ * 存在 httpServer 且 enabled=true 时启用；enabled 默认由 stdin 的 TTY 状态和非 CI 条件决定。
+ * 重复调用复用 readline、替换 line
  * listener，并按“手动已有顺序优先、插件新键前插”合并自定义项；Server 重启因而不会重复
  * 监听 stdin 或丢失插件快捷键（#21166）。
  */
@@ -86,7 +87,7 @@ export function bindCLIShortcuts<Server extends ViteDevServer | PreviewServer>(
 
   let actionRunning = false
 
-  /** 处理一行输入；同一时刻只运行一个异步 action。 */
+  /** 执行动作期间忽略新输入；await 正常完成才解锁，拒绝会保留占用状态直到重新绑定。 */
   const onInput = async (input: string) => {
     if (actionRunning) return
 
@@ -175,7 +176,7 @@ const BASE_DEV_SHORTCUTS: CLIShortcut<ViteDevServer>[] = [
   {
     key: 'q',
     description: 'quit',
-    /** 等待 Dev Server 关闭后退出进程。 */
+    /** 尝试等待 Dev Server 关闭，finally 退出进程。 */
     async action(server) {
       try {
         await server.close()
@@ -205,7 +206,7 @@ const BASE_PREVIEW_SHORTCUTS: CLIShortcut<PreviewServer>[] = [
   {
     key: 'q',
     description: 'quit',
-    /** 等待预览服务器关闭后退出进程。 */
+    /** 尝试等待预览服务器关闭，finally 退出进程。 */
     async action(server) {
       try {
         await server.close()

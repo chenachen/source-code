@@ -5,8 +5,8 @@ import type { RollupOutput } from 'rollup'
 import type { TerserOptions } from '../../plugins/terser'
 
 /**
- * Terser worker 场景：基础压缩可在线程执行；自定义 nth_identifier 函数与
- * nameCache 不可安全结构化克隆，必须回退主线程并保留其可变/回调语义。
+ * Terser 基础压缩、自定义 nth_identifier 与 nameCache 回写场景。函数不能结构化克隆；
+ * nameCache 虽可克隆，但需要回写原对象，因此这些选项走本线程执行。
  */
 describe('terser', () => {
   /** 使用指定 Terser 选项构建固定虚拟入口，并返回压缩后的入口代码。 */
@@ -45,7 +45,7 @@ describe('terser', () => {
     return result.output[0].code
   }
 
-  /** 场景：使用默认 Terser 选项压缩样例代码；验证目标：worker 转换完成且返回可用代码。 */
+  /** 默认 Terser 选项的构建能完成；此用例只等待成功，不单独断言线程选择或产物内容。 */
   test('basic', async () => {
     await run({})
   })
@@ -55,6 +55,7 @@ describe('terser', () => {
     const resultCode = await run({
       mangle: {
         nth_identifier: {
+          /** 用 prefix_ 加索引生成压缩标识符，供产物断言识别自定义命名器被调用。 */
           get: (n) => {
             return 'prefix_' + n.toString()
           },

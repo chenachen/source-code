@@ -163,9 +163,16 @@ const MACROS = [
 /**
  * 编译 script setup，并在同时存在普通 script 时合并两者。
  *
- * 该函数需要完整 SFC descriptor，因为宏类型推导会读取模板、CSS vars 与 style scoped
- * 信息。主流程依次处理 import、普通 script、宏、顶层 await、绑定分类、模板内联，最后
- * 生成 setup 和组件默认导出。
+ * descriptor 同时提供脚本、模板和样式信息：模板使用分析决定返回哪些 import，CSS vars
+ * 决定是否注入 useCssVars，内联模板还需要 scoped/slotted 状态。宏类型解析另行读取类型依赖。
+ * 先收集 import 并合并普通 script，再删除/改写宏与顶层 await，随后确定绑定类别、检查
+ * 提升参数的作用域，最后生成 props/emits、setup 返回值（或内联 render）及组件导出。
+ * MagicString 始终使用完整 SFC 的原始偏移，语句移动不会改变后续 AST 节点的定位基准。
+ *
+ * @param sfc - parse 产出的完整 descriptor；无 setup 时走普通 script 的独立处理路径。
+ * @param options - scope id、类型文件系统、解构与模板内联等编译配置。
+ * @returns 受支持语言返回生成代码及绑定/AST/map/依赖；未知语言或普通脚本后处理失败时可返回原块。
+ * @throws 缺少脚本、语言不一致、Babel 解析失败或宏约束违反；宏诊断附完整 SFC 中的源码位置。
  */
 export function compileScript(
   sfc: SFCDescriptor,
@@ -250,7 +257,11 @@ export function compileScript(
     ctx.s.move(start, end, 0)
   }
 
-  /** 登记 import，并在必要时分析它是否被非内联模板引用。 */
+  /**
+   * 把值/类型 import 按本地名写入 ctx.userImports，保留来源、原名及属于哪个 script。
+   * 非内联 TS+HTML 模板按标识符使用决定是否返回该 import；JS 或预处理模板采取保留策略。
+   * 此函数只登记状态，import 去重、冲突诊断与 MagicString 移动由外层语句扫描负责。
+   */
   function registerUserImport(
     source: string,
     local: string,
@@ -283,7 +294,8 @@ export function compileScript(
 
   /**
    * 禁止被提升到 setup 外的宏参数引用 setup 局部变量。
-   * 字面量常量也可安全提升，其余绑定尚未在模块初始化时创建。
+   * 只放行已被绑定分类标为 LITERAL_CONST 的 setup 局部常量；其余局部绑定不能供模块选项使用。
+   * 调用者决定检查哪些参数：defineModel 仅检查静态可拆对象中的 prop 选项，get/set 保留在 setup。
    */
   function checkInvalidScopeReference(node: Node | undefined, method: string) {
     if (!node) return
@@ -973,8 +985,8 @@ export function compileScript(
   }
 
   if (!options.inlineTemplate && !__TEST__) {
-    // 非 inline 模式用不可枚举 __isScriptSetup 标记告诉公共实例代理：setup 返回中以
-    // `$`/`_` 开头的属性也可被模板合法访问。
+    // 标记返回对象，使公开实例代理和 Options API 不把这些绑定当普通 setup 状态暴露或修改。
+    // 独立编译的模板仍通过 render 的 $setup 参数访问这些绑定，包括 `$`/`_` 开头的名字。
     ctx.s.appendRight(
       endOffset,
       `\nconst __returned__ = ${returned}\n` +
@@ -1108,6 +1120,15 @@ function registerBinding(
 /**
  * 分析顶层声明中的所有绑定并判断整条声明是否可静态提升。
  * BindingTypes 决定模板代码是否直接访问、unref、写 setter 或按 props 处理。
+ *
+ * from=script 的模块常量天然在实例外；setup 只有启用 hoistStatic 才把静态标识符声明
+ * 归为 LITERAL_CONST。整条多变量声明必须每项都为静态 Identifier 才返回 true，避免只
+ * 移动其中一部分破坏声明结构；单项绑定分类仍可比整条声明的可提升性更精确。
+ * Vue API 识别依赖先前收集的 userImportAliases，同名外部函数不能据名字猜为 Ref。
+ * 响应式 props 解构已由专门转换器登记，跳过它以免覆盖 PROPS/PROPS_ALIASED 分类。
+ *
+ * @param bindings - 当前脚本块的绑定表，按实际声明名原位写入。
+ * @returns 变量声明或 enum 是否全部由静态节点构成；调用者再结合提升开关决定是否移动源码。
  */
 function walkDeclaration(
   from: 'script' | 'scriptSetup',
@@ -1252,7 +1273,11 @@ function walkArrayPattern(
   }
 }
 
-/** 处理嵌套对象/数组/rest/默认值解构 pattern 中的绑定。 */
+/**
+ * 沿对象、数组和默认值的左侧登记实际绑定，默认值右侧只是表达式，不产生声明。
+ * const 普通解构值可能是 Ref，宏直接创建的绑定按 SETUP_CONST；let 始终是 SETUP_LET。
+ * 遇到再嵌套 pattern 时当前实现只传 isConst，不把 isDefineCall 继续向下传播。
+ */
 function walkPattern(
   node: Node,
   bindings: Record<string, BindingTypes>,
@@ -1267,7 +1292,7 @@ function walkPattern(
         : BindingTypes.SETUP_LET
     registerBinding(bindings, node, type)
   } else if (node.type === 'RestElement') {
-    // 解构 rest argument 按语法只能是标识符。
+    // 此分支按 Identifier 登记 rest 绑定；它没有继续递归展开数组 rest 中的嵌套 pattern。
     const type = isConst ? BindingTypes.SETUP_CONST : BindingTypes.SETUP_LET
     registerBinding(bindings, node.argument as Identifier, type)
   } else if (node.type === 'ObjectPattern') {
@@ -1289,8 +1314,10 @@ function walkPattern(
 }
 
 /**
- * 保守判断表达式结果是否确定不可能是 Ref。
- * 只有明确值类型/容器/函数/类等返回 true；一般调用和标识符可能返回 ref，必须保留 unref。
+ * 按编译器的语法分类判断初始化值是否走无需 unref 的路径。
+ * reactive 别名调用、字面量、容器、函数/类等返回 true；序列表达式只看最终值。
+ * 一般调用和标识符返回 false。TaggedTemplateExpression 也在直接访问白名单中，
+ * 因此该结果表示当前分类规则，不能当作任意 tag 函数返回值的语义证明。
  */
 function canNeverBeRef(node: Node, userReactiveImport?: string): boolean {
   if (isCallOf(node, userReactiveImport)) {
@@ -1363,6 +1390,9 @@ function isStaticNode(node: Node): boolean {
 
 /**
  * 合并 script 变换 map 与 inline template render map，并对模板生成行增加插入偏移。
+ * 两份输入都已映射到原 SFC，故这里是追加映射而非沿中间坐标再合成；模板列号不平移。
+ * 先复制来源文本，再跳过没有 originalLine 的合成节点，最终沿用 script 的 file/sourceRoot。
+ * @param templateLineOffset - render 插入 script 输出后增加的生成行数。
  */
 export function mergeSourceMaps(
   scriptMap: RawSourceMap,

@@ -55,7 +55,7 @@ export type ExportsData = {
   hasModuleSyntax: boolean
   /** 导出名；`export { a as b }` 记录 `b`。 */
   exports: readonly string[]
-  /** 入口需用 JSX loader 才能解析的提示。 */
+  /** 入口曾经 Oxc JSX/TS 回退转换；优化准备阶段据此把普通 .js 默认按 JSX 解析。 */
   jsxLoader?: boolean
 }
 
@@ -70,12 +70,12 @@ export interface DepsOptimizer {
   scanProcessing?: Promise<void>
   /** 运行期发现 scanner 漏掉的依赖，并返回可立即用于 resolve 的待处理元数据。 */
   registerMissingImport: (id: string, resolved: string) => OptimizedDepInfo
-  /** 通知首轮模块 crawl 结束，允许提交或重跑。 */
+  /** 请求尽快运行优化；自动优化器安排零延迟重跑，显式优化器为空操作。 */
   run: () => void
 
   /** 判断 resolved ID 是否位于任一 Environment 的优化缓存目录。 */
   isOptimizedDepFile: (id: string) => boolean
-  /** 判断浏览器 URL 是否指向当前 Environment 的优化缓存。 */
+  /** 判断浏览器 URL 是否位于共用 deps 前缀，包含其他 Environment 的后缀目录。 */
   isOptimizedDepUrl: (url: string) => boolean
   /** 给优化文件路径附加 browserHash，形成浏览器请求 ID。 */
   getOptimizedDepId: (depInfo: OptimizedDepInfo) => string
@@ -168,7 +168,7 @@ export interface DepOptimizationConfig {
 /** 完整依赖优化配置，在公共选项上增加入口覆盖与强制重建控制。 */
 export type DepOptimizationOptions = DepOptimizationConfig & {
   /**
-   * 自定义 scanner 入口。默认扫描 index.html；若配置 build.rolldownOptions.input 则扫描它。
+   * 自定义 scanner 入口。默认扫描 root 下的 HTML；config.input 或 build.rolldownOptions.input 可覆盖推断。
    * 本项可用相对 root 的 tinyglobby pattern 覆盖默认推断。
    * @see https://github.com/SuperchupuDev/tinyglobby
    */
@@ -196,7 +196,7 @@ export interface DepOptimizationResult {
   /** 本轮在 processing 目录中生成的新元数据。 */
   metadata: DepOptimizationMetadata
   /**
-   * 原子发布临时目录；重跑期间若又发现依赖，可先丢弃本轮而不污染正式缓存。
+   * 先写元数据，再以两次 rename 发布完整临时目录；开始提交前可取消，提交中途失败不回滚。
    */
   commit: () => Promise<void>
   /** 放弃本轮并删除唯一临时目录。 */
@@ -310,7 +310,7 @@ export async function optimizeDeps(
   return result.metadata
 }
 
-/** noDiscovery/显式场景只解析 include，并复用缓存/原子提交协议。 */
+/** 显式优化只解析 include，并复用缓存读取与目录换代协议。 */
 export async function optimizeExplicitEnvironmentDeps(
   environment: Environment,
 ): Promise<DepOptimizationMetadata> {
@@ -442,7 +442,7 @@ export async function loadCachedDepOptimizationMetadata(
 
 /** 冷启动快速扫描入口 imports；统一汇总无法 resolve 的依赖，再返回可优化裸依赖映射。 */
 export function discoverProjectDependencies(environment: ScanEnvironment): {
-  /** 取消仍在运行的 scanner，并等待其关闭。 */
+  /** 为 scanner 设置取消标记；不等待或中断已开始的 Rolldown scan。 */
   cancel: () => Promise<void>
   /** scanner 完成后的可优化依赖映射；缺失依赖会统一拒绝。 */
   result: Promise<Record<string, string>>
@@ -512,7 +512,7 @@ export function runOptimizeDeps(
   environment: Environment,
   depsInfo: Record<string, OptimizedDepInfo>,
 ): {
-  /** 取消 Rolldown context 并删除本轮 processing 目录。 */
+  /** 等待准备结束后设置取消标记并清理临时目录；已开始的 write 不受该标记中断。 */
   cancel: () => Promise<void>
   /** 本轮可提交结果；构建失败时拒绝。 */
   result: Promise<DepOptimizationResult>
@@ -522,7 +522,7 @@ export function runOptimizeDeps(
   const depsCacheDir = getDepsCacheDir(environment)
   const processingCacheDir = getProcessingDepsCacheDir(environment)
 
-  // 每轮写唯一临时目录；处理完成前不动正式缓存，失败/取消不会留下半写状态。
+  // 每轮写唯一临时目录；commit 开始前不动正式缓存，build 失败或取消只清理候选目录。
   fs.mkdirSync(processingCacheDir, { recursive: true })
 
   // 用局部 package.json 明确所有预构建 `.js` 产物是 ESM。
@@ -563,13 +563,14 @@ export function runOptimizeDeps(
   const successfulResult: DepOptimizationResult = {
     metadata,
     cancel: cleanUp,
+    /** 写元数据并以目录 rename 发布候选结果；开始提交后禁止 cleanup，换代失败不回滚。 */
     commit: async () => {
       if (cleaned) {
         throw new Error(
           'Can not commit a Deps Optimization run as it was cancelled',
         )
       }
-      // 从此刻屏蔽 cleanup，保证临时目录活到正式换代完成。
+      // 从此刻屏蔽 cleanup，避免迟到取消删除正在换代的目录。
       committed = true
 
       // 元数据中的 file 路径按最终 cache dir 序列化；写完后再发布整个 processing 目录。
@@ -583,7 +584,8 @@ export function runOptimizeDeps(
       )
 
       // 用“旧正式目录 → 备份，新 processing → 正式目录”两次 rename，最小化缓存不可用窗口；比
-      // delete+rename 更安全。POSIX 同步 rename 对本线程原子，Windows 用带重试/落地检查的 safeRename。
+      // delete+rename 更安全。每次 rename 单独发布目录；两次之间正式路径短暂缺失，第二次失败不回滚。
+      // Windows 对锁冲突重试。
       const temporaryPath = depsCacheDir + getTempSuffix()
       const depsCacheDirPresent = fs.existsSync(depsCacheDir)
       if (isWindows) {
@@ -617,6 +619,7 @@ export function runOptimizeDeps(
   if (!qualifiedIds.length) {
     // 零依赖也提交空目录/元数据：清掉可能存在的旧产物，并让下次 hash 一致时跳过扫描。
     return {
+      /** 零入口时无需取消打包，只删除尚未提交的候选目录。 */
       cancel: async () => cleanUp(),
       result: Promise.resolve(successfulResult),
     }
@@ -624,6 +627,7 @@ export function runOptimizeDeps(
 
   const cancelledResult: DepOptimizationResult = {
     metadata,
+    /** 已取消的构建不发布缓存；调用 commit 同样只清理临时目录。 */
     commit: async () => cleanUp(),
     cancel: cleanUp,
   }
@@ -715,7 +719,7 @@ export function runOptimizeDeps(
       .catch((e) => {
         clearTimeout(bundleTimer)
         if (e.errors && e.message.includes('The build was canceled')) {
-          // Rolldown cancel 会以 build error 结束；这是正常控制流，转成 cancelledResult。
+          // 带 errors 的 canceled build 错误在此转成 cancelledResult；其他错误仍按优化失败抛出。
           return cancelledResult
         }
         const prependMessage = colors.red(
@@ -731,7 +735,7 @@ export function runOptimizeDeps(
   })
 
   return {
-    /** 标记取消、停止 Rolldown context，并清理临时目录。 */
+    /** 设置 optimizer/context 的取消标记并清理临时目录；不等待或中断已经开始的 write。 */
     async cancel() {
       optimizerContext.cancelled = true
       const { context } = await preparedRun
@@ -758,7 +762,7 @@ async function prepareRolldownOptimizerRun(
   context?: {
     /** 写入 processing 目录并返回输出图。 */
     build: () => Promise<RolldownOutput>
-    /** 阻止尚未发布的构建结果继续写入。 */
+    /** 设置取消标记，在 Rolldown bundle 创建后、write 开始前检查。 */
     cancel: () => void
   }
   /** 原始依赖 ID 到入口导出形状的映射。 */
@@ -858,7 +862,7 @@ async function prepareRolldownOptimizerRun(
     }
   }
 
-  /** 标记本次延迟构建已取消；已创建 bundle 会在写入前关闭。 */
+  /** 设置取消标记；rolldown() 完成后、write 开始前检查它，write 已开始则不再中断。 */
   function cancel() {
     canceled = true
   }
@@ -994,6 +998,7 @@ export function createIsOptimizedDepUrl(
     : // root 内示例：`/node_modules/.vite`。
       `/${depsCacheDirRelative}`
 
+  /** 按共用缓存 URL 前缀判断请求，涵盖当前和其他 Environment 的缓存后缀。 */
   return function isOptimizedDepUrl(url: string): boolean {
     return url.startsWith(depsCacheDirPrefix)
   }
@@ -1288,7 +1293,7 @@ const lockfileFormats = [
 /** 供向上查找最近锁文件使用的候选相对路径。 */
 const lockfilePaths = lockfileFormats.map((l) => l.path)
 
-/** 只序列化会影响依赖优化输出的配置；函数/正则转字符串，插件用名称列表表示。 */
+/** 对选定的解析、插件及优化配置生成缓存指纹；函数/正则转字符串，插件只记录名称。 */
 function getConfigHash(environment: Environment): string {
   const { config } = environment
   const { optimizeDeps } = config
@@ -1477,14 +1482,18 @@ export async function cleanupDepsCacheStaleDirs(
 /** Windows 目录锁冲突的最长重试窗口，单位毫秒。 */
 const GRACEFUL_RENAME_TIMEOUT = 5000
 /** 带 Windows EACCES/EPERM 退避重试的目录 rename Promise。 */
-const safeRename = promisify(function gracefulRename(
+const safeRename = promisify(
+  /** 将 Windows 目录锁冲突按递增延时重试，直到成功、非锁错误或五秒窗口耗尽后回调。 */
+  function gracefulRename(
   from: string,
   to: string,
   cb: (error: NodeJS.ErrnoException | null) => void,
 ) {
   const start = Date.now()
   let backoff = 0
-  fs.rename(from, to, function CB(er) {
+  fs.rename(from, to,
+    /** 仅 EACCES/EPERM 且目标仍不存在时重试；目标已出现或其他错误直接结束。 */
+    function CB(er) {
     if (
       er &&
       (er.code === 'EACCES' || er.code === 'EPERM') &&

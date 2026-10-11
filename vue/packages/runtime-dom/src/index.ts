@@ -39,11 +39,17 @@ import type { ClassValue, StyleValue } from './jsx'
  * 没有 DOM lib 时的类型桩，避免单纯消费 Vue 类型必须加载浏览器类型。
  * 要获得真实 DOM 类型，请在 tsconfig `lib` 中加入 `"dom"`。
  */
-type DomType<T> = typeof globalThis extends { window: unknown } ? T : never
+type DomType<T> = typeof globalThis extends {
+  /** 仅供条件类型检查是否加载 DOM lib 的结构探针，不是运行时 window 状态。 */
+  window: unknown
+}
+  ? T
+  : never
 
 declare module '@vue/reactivity' {
   /** DOM Node 与 Window 含有复杂宿主对象结构，ref 解包必须在这里停止递归。 */
   export interface RefUnwrapBailTypes {
+    /** Node/Window 停止 ref 深层解包，避免遍历浏览器宿主结构。 */
     runtimeDOMBailTypes: DomType<Node | Window>
   }
 }
@@ -51,23 +57,33 @@ declare module '@vue/reactivity' {
 declare module '@vue/runtime-core' {
   /** runtime-dom 为所有组件补充可透传的 class 与 style 属性类型。 */
   interface AllowedAttrs {
+    /** 允许组件透传 normalizeClass 接受的类名绑定形态。 */
     class?: ClassValue
+    /** 允许组件透传 normalizeStyle 接受的样式绑定形态。 */
     style?: StyleValue
   }
 
   /** 无需局部注册即可在模板中获得类型提示的 DOM 过渡内置组件。 */
   interface GlobalComponents {
+    /** 模板类型检查的单根 DOM 过渡组件。 */
     Transition: DefineComponent<TransitionProps>
+    /** 模板类型检查的 keyed 列表移动过渡组件。 */
     TransitionGroup: DefineComponent<TransitionGroupProps>
   }
 
   /** runtime-dom 向模板类型系统登记的 DOM 平台内置指令。 */
   interface GlobalDirectives {
+    /** 用 display 控制可见性的 DOM 指令类型。 */
     vShow: typeof vShow
+    /** 带运行时事件修饰符的指令类型。 */
     vOn: VOnDirective
+    /** 此全局类型扩展使用 VModelDirective；这里只登记现有类型，不定义运行时绑定行为。 */
     vBind: VModelDirective
+    /** 接收布尔条件的模板结构指令类型。 */
     vIf: Directive<any, boolean>
+    /** 模板一次渲染标记的类型入口，运行行为由编译器生成。 */
     vOnce: Directive
+    /** 模板插槽声明的类型入口，运行行为由编译器生成。 */
     vSlot: Directive
   }
 }
@@ -124,6 +140,7 @@ export const createApp = ((...args) => {
   }
 
   const { mount } = app
+  /** 解析客户端 mount 容器；缺 render/template 时读取可信 in-DOM 模板，只清空 Element，保留 ShadowRoot 样式，再调用 core mount 并更新 v-cloak/data-v-app。 */
   app.mount = (containerOrSelector: Element | ShadowRoot | string): any => {
     const container = normalizeContainer(containerOrSelector)
     if (!container) return
@@ -148,7 +165,7 @@ export const createApp = ((...args) => {
       }
     }
 
-    // 客户端 mount 不复用旧内容，先清空；ShadowRoot 无 textContent 特判需要。
+    // 只清空 Element；保留 ShadowRoot 已有节点，包括 Custom Element 在 mount 前注入的 style。
     if (container.nodeType === 1) {
       container.textContent = ''
     }
@@ -173,6 +190,7 @@ export const createSSRApp = ((...args) => {
   }
 
   const { mount } = app
+  /** 解析 SSR 容器并以 hydrate=true 调 core mount；复用已有 DOM，不执行普通应用的清空和标记逻辑。 */
   app.mount = (containerOrSelector: Element | ShadowRoot | string): any => {
     const container = normalizeContainer(containerOrSelector)
     if (container) {
@@ -201,6 +219,7 @@ function resolveRootNamespace(
 /** 开发环境注入 DOM 原生标签判断，供组件名校验拒绝 HTML/SVG/MathML 标签冲突。 */
 function injectNativeTagCheck(app: App) {
   Object.defineProperty(app.config, 'isNativeTag', {
+    /** 把 HTML/SVG/MathML 标签名判为原生，供组件名称开发校验使用。 */
     value: (tag: string) => isHTMLTag(tag) || isSVGTag(tag) || isMathMLTag(tag),
     writable: false,
   })
@@ -211,9 +230,11 @@ function injectCompilerOptionsCheck(app: App) {
   if (isRuntimeOnly()) {
     const isCustomElement = app.config.isCustomElement
     Object.defineProperty(app.config, 'isCustomElement', {
+      /** 返回安装访问器前捕获的isCustomElement配置；读取本身不发警告。 */
       get() {
         return isCustomElement
       },
+      /** 忽略新的isCustomElement配置并发出弃用提示，要求改用compilerOptions.isCustomElement；捕获的原配置保持不变。 */
       set() {
         warn(
           `The \`isCustomElement\` config option is deprecated. Use ` +
@@ -233,10 +254,12 @@ function injectCompilerOptionsCheck(app: App) {
       `- For vite: pass it via @vitejs/plugin-vue options. See https://github.com/vitejs/vite-plugin-vue/tree/main/packages/plugin-vue#example-for-passing-options-to-vuecompiler-sfc`
 
     Object.defineProperty(app.config, 'compilerOptions', {
+      /** 返回原配置；compilerOptions 的读取同时发出 runtime-only 构建提示。 */
       get() {
         warn(msg)
         return compilerOptions
       },
+      /** 拦截运行时配置写入并发出迁移提示，不修改捕获的原配置。 */
       set() {
         warn(msg)
       },

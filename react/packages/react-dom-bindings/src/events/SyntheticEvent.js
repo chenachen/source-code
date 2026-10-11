@@ -14,44 +14,43 @@ import type {Fiber} from 'react-reconciler/src/ReactInternalTypes';
 import assign from 'shared/assign';
 import getEventCharCode from './getEventCharCode';
 
-/** EventInterfaceType 定义 Flow 数据形状，用于构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族；类型边界阻止插件、原生事件与 Fiber 状态混用。 */
+/** 合成事件字段的复制/归一化表：0 直接复制，函数从 nativeEvent 计算字段值。 */
 type EventInterfaceType = {
-  /** EventInterfaceType.propName 描述构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族的数据字段；该字段限定跨插件、队列或原生事件传递的状态边界。；EventInterfaceType.propName 描述构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族的数据字段；该字段限定跨插件、队列或原生事件传递的状态边界。 */
+  /** 字段名映射到直接复制标记 0 或归一化函数。 */
   [propName: string]: 0 | ((event: {
     /** propName 是 Flow 索引签名的键名，仅描述任意宿主属性，不会在运行时生成字段。 */
     [propName: string]: mixed, ...}) => mixed),
 };
 
-/** functionThatReturnsTrue 执行构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族的核心步骤；输入来自原生事件/Fiber，输出保持插件分发与调度边界。 */
+/** 作为事件状态查询的恒真实现。 */
 function functionThatReturnsTrue() {
   return true;
 }
 
-/** functionThatReturnsFalse 执行构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族的核心步骤；输入来自原生事件/Fiber，输出保持插件分发与调度边界。 */
+/** 作为事件状态查询的恒假实现。 */
 function functionThatReturnsFalse() {
   return false;
 }
 
 // 这里刻意使用工厂，为不同事件接口返回不同 constructor。
 // 若共用单一 constructor，调用点会变成 megamorphic，导致引擎去优化。
-/** createSyntheticEvent 为构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族创建封装对象；生成值保留原生事件身份并携带必要调度上下文。 */
+/**
+ * 为每张字段接口表创建独立 constructor，避免所有事件类型共用构造器形成多态热点。
+ * 表值为 0 时复制原生同名字段，为函数时计算归一化值；原型方法读取各实例自己的
+ * nativeEvent，默认行为和传播状态则用恒真/恒假函数表示。对象不回收到事件池。
+ */
 function createSyntheticEvent(Interface: EventInterfaceType) {
   /**
-   * SyntheticEvent 通常由事件插件响应顶层委托 listener 而创建和分发。
-   * 
-   * 旧事件系统可通过池化降低 GC 频率：分发后检查 `isPersistent`，非持久事件可回收到池；
-   * 需要保留引用的用户应调用 `persist`。现代事件系统不再池化。
-   * 
-   * SyntheticEvent 及子类通过归一化浏览器差异实现 DOM Level 3 Events API。
-   * 子类不必对应 DOM 接口，应用自定义事件也可继承。
+   * 插件按 Interface 创建独立事件对象，并归一化浏览器字段差异。
+   * 现代 DOM 事件不池化，用户无需调用 persist 才能保留对象引用。
    */
   // $FlowFixMe[missing-this-annot]
-  /** SyntheticBaseEvent 执行构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族的核心步骤；输入来自原生事件/Fiber，输出保持插件分发与调度边界。 */
+  /** 保存原生事件与目标，按 Interface 复制/归一化字段，并初始化默认行为和传播状态。 */
   function SyntheticBaseEvent(
     reactName: string | null,
     reactEventType: string,
     targetInst: Fiber | null,
-    /** createSyntheticEvent.SyntheticBaseEvent.propName 描述构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族的数据字段；该字段限定跨插件、队列或原生事件传递的状态边界。 */
+    /** 插件传入的原生事件字段集合。 */
     nativeEvent: {
       /** propName 是 Flow 索引签名的键名，仅描述任意宿主属性，不会在运行时生成字段。 */
       [propName: string]: mixed, ...},
@@ -92,7 +91,7 @@ function createSyntheticEvent(Interface: EventInterfaceType) {
   // $FlowFixMe[prop-missing] found when upgrading Flow
   assign(SyntheticBaseEvent.prototype, {
     // $FlowFixMe[missing-this-annot]
-    /** createSyntheticEvent.preventDefault 是构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族的可调用属性；它在读取或归一化该字段时保持宿主事件语义。 */
+    /** 标记 defaultPrevented；有 nativeEvent 时取消其默认行为，并把 isDefaultPrevented 改为恒真。 */
     preventDefault: function () {
       this.defaultPrevented = true;
       const event = this.nativeEvent;
@@ -110,7 +109,7 @@ function createSyntheticEvent(Interface: EventInterfaceType) {
     },
 
     // $FlowFixMe[missing-this-annot]
-    /** createSyntheticEvent.stopPropagation 是构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族的可调用属性；它在读取或归一化该字段时保持宿主事件语义。 */
+    /** 有 nativeEvent 时停止其传播，并把 isPropagationStopped 改为恒真；没有原事件则直接返回。 */
     stopPropagation: function () {
       const event = this.nativeEvent;
       if (!event) {
@@ -133,18 +132,15 @@ function createSyntheticEvent(Interface: EventInterfaceType) {
     },
 
     /**
-     * 旧事件系统在每轮事件循环后释放已分发的 `SyntheticEvent` 并放回池中；
-     * persist 提供保留引用、阻止回收的方式。
+     * 保留旧 persist API 形状；现代实现无需阻止事件回收。
      */
-    /** createSyntheticEvent.persist 是构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族的可调用属性；它在读取或归一化该字段时保持宿主事件语义。 */
+    /** 兼容旧调用形状；现代 DOM 合成事件不池化，此方法为空。 */
     persist: function () {
       // 现代事件系统不使用事件池。
     },
 
     /**
-     * 判断该事件是否应避免回收到池。
-     * 
-     * @return {boolean} true 表示保留，false 表示可释放。
+     * 现代 DOM 合成事件不池化，因此此兼容查询恒为 true。
      */
     isPersistent: functionThatReturnsTrue,
   });
@@ -156,12 +152,12 @@ function createSyntheticEvent(Interface: EventInterfaceType) {
  * @interface Event
  * @see http://www.w3.org/TR/DOM-Level-3-Events/
  */
-/** EventInterface 保存构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** 供 Event 合成事件使用的字段复制/归一化表；继承的字段与本类型字段合并。 */
 const EventInterface: EventInterfaceType = {
   eventPhase: 0,
   bubbles: 0,
   cancelable: 0,
-  /** timeStamp 是构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族的可调用属性；它在读取或归一化该字段时保持宿主事件语义。；timeStamp.propName 描述构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族的数据字段；该字段限定跨插件、队列或原生事件传递的状态边界。 */
+  /** 原生 timeStamp 为 truthy 时复制，否则使用 Date.now()；原生值为 0 也走回退。 */
   timeStamp: function (event: {
     /** propName 是 Flow 索引签名的键名，仅描述任意宿主属性，不会在运行时生成字段。 */
     [propName: string]: mixed}) {
@@ -170,27 +166,27 @@ const EventInterface: EventInterfaceType = {
   defaultPrevented: 0,
   isTrusted: 0,
 };
-/** SyntheticEvent 保存构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** 按 EventInterface 创建的合成事件 constructor；每次派发创建独立事件对象。 */
 export const SyntheticEvent: $FlowFixMe = createSyntheticEvent(EventInterface);
 
-/** UIEventInterface 保存构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** 供 UIEvent 合成事件使用的字段复制/归一化表；继承的字段与本类型字段合并。 */
 const UIEventInterface: EventInterfaceType = {
   ...EventInterface,
   view: 0,
   detail: 0,
 };
-/** SyntheticUIEvent 保存构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** 按 UIEventInterface 创建的合成事件 constructor；每次派发创建独立事件对象。 */
 export const SyntheticUIEvent: $FlowFixMe =
   createSyntheticEvent(UIEventInterface);
 
 let lastMovementX;
 let lastMovementY;
-/** propName 描述构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族的数据字段；该字段限定跨插件、队列或原生事件传递的状态边界。 */
+/** 原生事件字段名到字段值的开放映射。 */
 let lastMouseEvent: ?{
   /** propName 是 Flow 索引签名的键名，仅描述任意宿主属性，不会在运行时生成字段。 */
   [propName: string]: mixed};
 
-/** updateMouseMovementPolyfillState 更新构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族的模块状态或 DOM 状态；重复调用需保持队列顺序与恢复幂等性。；updateMouseMovementPolyfillState.propName 描述构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族的数据字段；该字段限定跨插件、队列或原生事件传递的状态边界。 */
+/** 原生 movementX/Y 缺失时，用相邻 mousemove 的 screen 坐标更新位移；同一原生事件只计算一次。 */
 function updateMouseMovementPolyfillState(event: {
   /** propName 是 Flow 索引签名的键名，仅描述任意宿主属性，不会在运行时生成字段。 */
   [propName: string]: mixed}) {
@@ -213,7 +209,7 @@ function updateMouseMovementPolyfillState(event: {
  * @interface MouseEvent
  * @see http://www.w3.org/TR/DOM-Level-3-Events/
  */
-/** MouseEventInterface 保存构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** 供 MouseEvent 合成事件使用的字段复制/归一化表；继承的字段与本类型字段合并。 */
 const MouseEventInterface: EventInterfaceType = {
   ...UIEventInterface,
   screenX: 0,
@@ -229,7 +225,7 @@ const MouseEventInterface: EventInterfaceType = {
   getModifierState: getEventModifierState,
   button: 0,
   buttons: 0,
-  /** relatedTarget 是构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族的可调用属性；它在读取或归一化该字段时保持宿主事件语义。 */
+  /** 优先读取 relatedTarget，旧 IE 从 fromElement/toElement 推导关联目标。 */
   relatedTarget: function (event) {
     if (event.relatedTarget === undefined)
       return event.fromElement === event.srcElement
@@ -238,7 +234,7 @@ const MouseEventInterface: EventInterfaceType = {
 
     return event.relatedTarget;
   },
-  /** movementX 是构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族的可调用属性；它在读取或归一化该字段时保持宿主事件语义。 */
+  /** 优先读取原生 movementX，否则先更新位移缓存，再返回水平坐标差。 */
   movementX: function (event) {
     if ('movementX' in event) {
       return event.movementX;
@@ -246,7 +242,7 @@ const MouseEventInterface: EventInterfaceType = {
     updateMouseMovementPolyfillState(event);
     return lastMovementX;
   },
-  /** movementY 是构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族的可调用属性；它在读取或归一化该字段时保持宿主事件语义。 */
+  /** 优先读取原生 movementY，否则返回 movementX 读取时已更新的垂直坐标差。 */
   movementY: function (event) {
     if ('movementY' in event) {
       return event.movementY;
@@ -258,7 +254,7 @@ const MouseEventInterface: EventInterfaceType = {
   },
 };
 
-/** SyntheticMouseEvent 保存构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** 按 MouseEventInterface 创建的合成事件 constructor；每次派发创建独立事件对象。 */
 export const SyntheticMouseEvent: $FlowFixMe =
   createSyntheticEvent(MouseEventInterface);
 
@@ -267,12 +263,12 @@ export const SyntheticMouseEvent: $FlowFixMe =
  * @interface DragEvent
  * @see http://www.w3.org/TR/DOM-Level-3-Events/
  */
-/** DragEventInterface 保存构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** 供 DragEvent 合成事件使用的字段复制/归一化表；继承的字段与本类型字段合并。 */
 const DragEventInterface: EventInterfaceType = {
   ...MouseEventInterface,
   dataTransfer: 0,
 };
-/** SyntheticDragEvent 保存构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** 按 DragEventInterface 创建的合成事件 constructor；每次派发创建独立事件对象。 */
 export const SyntheticDragEvent: $FlowFixMe =
   createSyntheticEvent(DragEventInterface);
 
@@ -281,12 +277,12 @@ export const SyntheticDragEvent: $FlowFixMe =
  * @interface FocusEvent
  * @see http://www.w3.org/TR/DOM-Level-3-Events/
  */
-/** FocusEventInterface 保存构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** 供 FocusEvent 合成事件使用的字段复制/归一化表；继承的字段与本类型字段合并。 */
 const FocusEventInterface: EventInterfaceType = {
   ...UIEventInterface,
   relatedTarget: 0,
 };
-/** SyntheticFocusEvent 保存构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** 按 FocusEventInterface 创建的合成事件 constructor；每次派发创建独立事件对象。 */
 export const SyntheticFocusEvent: $FlowFixMe =
   createSyntheticEvent(FocusEventInterface);
 
@@ -296,14 +292,14 @@ export const SyntheticFocusEvent: $FlowFixMe =
  * @see http://www.w3.org/TR/css3-animations/#AnimationEvent-interface
  * @see https://developer.mozilla.org/en-US/docs/Web/API/AnimationEvent
  */
-/** AnimationEventInterface 保存构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** 供 AnimationEvent 合成事件使用的字段复制/归一化表；继承的字段与本类型字段合并。 */
 const AnimationEventInterface: EventInterfaceType = {
   ...EventInterface,
   animationName: 0,
   elapsedTime: 0,
   pseudoElement: 0,
 };
-/** SyntheticAnimationEvent 保存构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** 按 AnimationEventInterface 创建的合成事件 constructor；每次派发创建独立事件对象。 */
 export const SyntheticAnimationEvent: $FlowFixMe = createSyntheticEvent(
   AnimationEventInterface,
 );
@@ -313,17 +309,17 @@ export const SyntheticAnimationEvent: $FlowFixMe = createSyntheticEvent(
  * @interface Event
  * @see http://www.w3.org/TR/clipboard-apis/
  */
-/** ClipboardEventInterface 保存构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** 供 ClipboardEvent 合成事件使用的字段复制/归一化表；继承的字段与本类型字段合并。 */
 const ClipboardEventInterface: EventInterfaceType = {
   ...EventInterface,
-  /** clipboardData 是构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族的可调用属性；它在读取或归一化该字段时保持宿主事件语义。 */
+  /** 复制原生 clipboardData，旧 IE 回退 window.clipboardData。 */
   clipboardData: function (event) {
     return 'clipboardData' in event
       ? event.clipboardData
       : window.clipboardData;
   },
 };
-/** SyntheticClipboardEvent 保存构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** 按 ClipboardEventInterface 创建的合成事件 constructor；每次派发创建独立事件对象。 */
 export const SyntheticClipboardEvent: $FlowFixMe = createSyntheticEvent(
   ClipboardEventInterface,
 );
@@ -333,12 +329,12 @@ export const SyntheticClipboardEvent: $FlowFixMe = createSyntheticEvent(
  * @interface Event
  * @see http://www.w3.org/TR/DOM-Level-3-Events/#events-compositionevents
  */
-/** CompositionEventInterface 保存构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** 供 CompositionEvent 合成事件使用的字段复制/归一化表；继承的字段与本类型字段合并。 */
 const CompositionEventInterface: EventInterfaceType = {
   ...EventInterface,
   data: 0,
 };
-/** SyntheticCompositionEvent 保存构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** 按 CompositionEventInterface 创建的合成事件 constructor；每次派发创建独立事件对象。 */
 export const SyntheticCompositionEvent: $FlowFixMe = createSyntheticEvent(
   CompositionEventInterface,
 );
@@ -350,14 +346,14 @@ export const SyntheticCompositionEvent: $FlowFixMe = createSyntheticEvent(
  *      /#events-inputevents
  */
 // 当前恰好与 CompositionEvent 共用同一字段列表。
-/** SyntheticInputEvent 保存构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** 复用 CompositionEventInterface 的 data 字段创建 beforeInput 合成事件 constructor。 */
 export const SyntheticInputEvent = SyntheticCompositionEvent;
 
 /**
  * 归一化已废弃的 HTML5 `key` 值。
  * @see https://developer.mozilla.org/en-US/docs/Web/API/KeyboardEvent#Key_names
  */
-/** normalizeKey 保存构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** 旧浏览器 key 拼写到标准 key 名的别名表。 */
 const normalizeKey = {
   Esc: 'Escape',
   Spacebar: ' ',
@@ -377,7 +373,7 @@ const normalizeKey = {
  * 把旧 `keyCode` 转换为 HTML5 `key`。仅映射特殊键；其他键取决于键盘布局或浏览器。
  * @see https://developer.mozilla.org/en-US/docs/Web/API/KeyboardEvent#Key_names
  */
-/** translateToKey 保存构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** 旧 keyCode 到特殊按键名称的回退表；不映射依赖键盘布局的普通字符。 */
 const translateToKey = {
   '8': 'Backspace',
   '9': 'Tab',
@@ -421,7 +417,7 @@ const translateToKey = {
  * @param {object} nativeEvent 原生浏览器事件。
  * @return {string} 归一化后的 `key`。
  */
-/** getEventKey 查询并返回构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族所需状态；无匹配时使用 null/默认值而不修改事件队列。；getEventKey.propName 描述构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族的数据字段；该字段限定跨插件、队列或原生事件传递的状态边界。 */
+/** 优先使用规范化的 nativeEvent.key，未提供时按 keypress 的字符或 keydown/up 的特殊编码回退。 */
 function getEventKey(nativeEvent: {
   /** propName 是 Flow 索引签名的键名，仅描述任意宿主属性，不会在运行时生成字段。 */
   [propName: string]: mixed}) {
@@ -463,7 +459,7 @@ function getEventKey(nativeEvent: {
  * 把修饰键名称转换为事件上的对应属性。
  * @see http://www.w3.org/TR/DOM-Level-3-Events/#keys-Modifiers
  */
-/** modifierKeyToProp 保存构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** 旧浏览器修饰键名称到 ctrlKey/shiftKey/altKey/metaKey 的映射。 */
 const modifierKeyToProp = {
   Alt: 'altKey',
   Control: 'ctrlKey',
@@ -476,7 +472,7 @@ const modifierKeyToProp = {
 // 修饰键字段；该路径不支持 Lock 类按键。
 // $FlowFixMe[missing-local-annot]
 // $FlowFixMe[missing-this-annot]
-/** modifierStateGetter 执行构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族的核心步骤；输入来自原生事件/Fiber，输出保持插件分发与调度边界。 */
+/** 优先调用原生 getModifierState；旧浏览器从相应 modifier 字段读值。 */
 function modifierStateGetter(keyArg) {
   const syntheticEvent = this;
   const nativeEvent = syntheticEvent.nativeEvent;
@@ -487,7 +483,7 @@ function modifierStateGetter(keyArg) {
   return keyProp ? !!nativeEvent[keyProp] : false;
 }
 
-/** getEventModifierState 查询并返回构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族所需状态；无匹配时使用 null/默认值而不修改事件队列。；getEventModifierState.propName 描述构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族的数据字段；该字段限定跨插件、队列或原生事件传递的状态边界。 */
+/** 返回绑定合成事件 this 使用的 modifierStateGetter，实际调用时读取 this.nativeEvent。 */
 function getEventModifierState(nativeEvent: {
   /** propName 是 Flow 索引签名的键名，仅描述任意宿主属性，不会在运行时生成字段。 */
   [propName: string]: mixed}) {
@@ -499,7 +495,7 @@ function getEventModifierState(nativeEvent: {
  * @interface KeyboardEvent
  * @see http://www.w3.org/TR/DOM-Level-3-Events/
  */
-/** KeyboardEventInterface 保存构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** 供 KeyboardEvent 合成事件使用的字段复制/归一化表；继承的字段与本类型字段合并。 */
 const KeyboardEventInterface: EventInterfaceType = {
   ...UIEventInterface,
   key: getEventKey,
@@ -513,15 +509,14 @@ const KeyboardEventInterface: EventInterfaceType = {
   locale: 0,
   getModifierState: getEventModifierState,
   // 以下为旧 KeyboardEvent 接口。
-  /** charCode 是构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族的可调用属性；它在读取或归一化该字段时保持宿主事件语义。；charCode.propName 描述构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族的数据字段；该字段限定跨插件、队列或原生事件传递的状态边界。 */
+  /** 仅 keypress 返回归一化可打印字符编码；其他键盘事件返回 0。 */
   charCode: function (event: {
     /** propName 是 Flow 索引签名的键名，仅描述任意宿主属性，不会在运行时生成字段。 */
     [propName: string]: mixed}) {
     // `charCode` 来自 KeyPress，表示
     // 实际可打印字符的编码。
 
-    // KeyPress 已废弃，但替代方案尚未定稿，主流浏览器也未
-    // 实现；目前只有 KeyPress 提供 charCode。
+    // 此兼容字段只在 keypress 中读取 charCode；keydown/keyup 返回 0。
     if (event.type === 'keypress') {
       return getEventCharCode(
         // $FlowFixMe[incompatible-type] unable to narrow to `KeyboardEvent`
@@ -530,7 +525,7 @@ const KeyboardEventInterface: EventInterfaceType = {
     }
     return 0;
   },
-  /** keyCode 是构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族的可调用属性；它在读取或归一化该字段时保持宿主事件语义。；keyCode.propName 描述构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族的数据字段；该字段限定跨插件、队列或原生事件传递的状态边界。 */
+  /** 仅 keydown/keyup 复制原生 keyCode；其他事件返回 0。 */
   keyCode: function (event: {
     /** propName 是 Flow 索引签名的键名，仅描述任意宿主属性，不会在运行时生成字段。 */
     [propName: string]: mixed}) {
@@ -546,7 +541,7 @@ const KeyboardEventInterface: EventInterfaceType = {
     }
     return 0;
   },
-  /** which 是构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族的可调用属性；它在读取或归一化该字段时保持宿主事件语义。；which.propName 描述构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族的数据字段；该字段限定跨插件、队列或原生事件传递的状态边界。 */
+  /** keypress 使用归一化 charCode，keydown/keyup 使用 keyCode。 */
   which: function (event: {
     /** propName 是 Flow 索引签名的键名，仅描述任意宿主属性，不会在运行时生成字段。 */
     [propName: string]: mixed}) {
@@ -564,7 +559,7 @@ const KeyboardEventInterface: EventInterfaceType = {
     return 0;
   },
 };
-/** SyntheticKeyboardEvent 保存构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** 按 KeyboardEventInterface 创建的合成事件 constructor；每次派发创建独立事件对象。 */
 export const SyntheticKeyboardEvent: $FlowFixMe = createSyntheticEvent(
   KeyboardEventInterface,
 );
@@ -574,7 +569,7 @@ export const SyntheticKeyboardEvent: $FlowFixMe = createSyntheticEvent(
  * @interface PointerEvent
  * @see http://www.w3.org/TR/pointerevents/
  */
-/** PointerEventInterface 保存构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** 供 PointerEvent 合成事件使用的字段复制/归一化表；继承的字段与本类型字段合并。 */
 const PointerEventInterface: EventInterfaceType = {
   ...MouseEventInterface,
   pointerId: 0,
@@ -588,7 +583,7 @@ const PointerEventInterface: EventInterfaceType = {
   pointerType: 0,
   isPrimary: 0,
 };
-/** SyntheticPointerEvent 保存构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** 按 PointerEventInterface 创建的合成事件 constructor；每次派发创建独立事件对象。 */
 export const SyntheticPointerEvent: $FlowFixMe = createSyntheticEvent(
   PointerEventInterface,
 );
@@ -598,12 +593,12 @@ export const SyntheticPointerEvent: $FlowFixMe = createSyntheticEvent(
  * @interface SubmitEvent
  * @see https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#the-submitevent-interface
  */
-/** SubmitEventInterface 保存构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** 供 SubmitEvent 合成事件使用的字段复制/归一化表；继承的字段与本类型字段合并。 */
 const SubmitEventInterface: EventInterfaceType = {
   ...EventInterface,
   submitter: 0,
 };
-/** SyntheticSubmitEvent 保存构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** 按 SubmitEventInterface 创建的合成事件 constructor；每次派发创建独立事件对象。 */
 export const SyntheticSubmitEvent: $FlowFixMe =
   createSyntheticEvent(SubmitEventInterface);
 
@@ -612,7 +607,7 @@ export const SyntheticSubmitEvent: $FlowFixMe =
  * @interface TouchEvent
  * @see http://www.w3.org/TR/touch-events/
  */
-/** TouchEventInterface 保存构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** 供 TouchEvent 合成事件使用的字段复制/归一化表；继承的字段与本类型字段合并。 */
 const TouchEventInterface: EventInterfaceType = {
   ...UIEventInterface,
   touches: 0,
@@ -624,7 +619,7 @@ const TouchEventInterface: EventInterfaceType = {
   shiftKey: 0,
   getModifierState: getEventModifierState,
 };
-/** SyntheticTouchEvent 保存构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** 按 TouchEventInterface 创建的合成事件 constructor；每次派发创建独立事件对象。 */
 export const SyntheticTouchEvent: $FlowFixMe =
   createSyntheticEvent(TouchEventInterface);
 
@@ -634,14 +629,14 @@ export const SyntheticTouchEvent: $FlowFixMe =
  * @see http://www.w3.org/TR/2009/WD-css3-transitions-20090320/#transition-events-
  * @see https://developer.mozilla.org/en-US/docs/Web/API/TransitionEvent
  */
-/** TransitionEventInterface 保存构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** 供 TransitionEvent 合成事件使用的字段复制/归一化表；继承的字段与本类型字段合并。 */
 const TransitionEventInterface: EventInterfaceType = {
   ...EventInterface,
   propertyName: 0,
   elapsedTime: 0,
   pseudoElement: 0,
 };
-/** SyntheticTransitionEvent 保存构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** 按 TransitionEventInterface 创建的合成事件 constructor；每次派发创建独立事件对象。 */
 export const SyntheticTransitionEvent: $FlowFixMe = createSyntheticEvent(
   TransitionEventInterface,
 );
@@ -651,10 +646,10 @@ export const SyntheticTransitionEvent: $FlowFixMe = createSyntheticEvent(
  * @interface WheelEvent
  * @see http://www.w3.org/TR/DOM-Level-3-Events/
  */
-/** WheelEventInterface 保存构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** 供 WheelEvent 合成事件使用的字段复制/归一化表；继承的字段与本类型字段合并。 */
 const WheelEventInterface: EventInterfaceType = {
   ...MouseEventInterface,
-  /** deltaX 是构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族的可调用属性；它在读取或归一化该字段时保持宿主事件语义。；deltaX.propName 描述构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族的数据字段；该字段限定跨插件、队列或原生事件传递的状态边界。 */
+  /** 优先读取原生 deltaX；旧 WebKit wheelDeltaX 反号后返回，缺失时为 0。 */
   deltaX(event: {
     /** propName 是 Flow 索引签名的键名，仅描述任意宿主属性，不会在运行时生成字段。 */
     [propName: string]: mixed}) {
@@ -666,7 +661,7 @@ const WheelEventInterface: EventInterfaceType = {
           -event.wheelDeltaX
         : 0;
   },
-  /** deltaY 是构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族的可调用属性；它在读取或归一化该字段时保持宿主事件语义。；deltaY.propName 描述构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族的数据字段；该字段限定跨插件、队列或原生事件传递的状态边界。 */
+  /** 优先读取原生 deltaY；旧 wheelDeltaY/wheelDelta 反号后返回，缺失时为 0。 */
   deltaY(event: {
     /** propName 是 Flow 索引签名的键名，仅描述任意宿主属性，不会在运行时生成字段。 */
     [propName: string]: mixed}) {
@@ -684,22 +679,19 @@ const WheelEventInterface: EventInterfaceType = {
   },
   deltaZ: 0,
 
-  // 没有“deltaMode”的浏览器报告原始 wheel delta，每个
-  // 滚轮刻度固定为 +/-120，需要近似换算为像素。
-  // DOM_DELTA_LINE (1) 可近似为视口尺寸的 5% 或
-  // 约 40 像素；DOM_DELTA_SCREEN (2) 可近似为视口的 87.5%。
+  // deltaMode 按原生字段复制；旧 wheelDelta 回退仅修正方向，不换算成像素。
   deltaMode: 0,
 };
-/** SyntheticWheelEvent 保存构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** 按 WheelEventInterface 创建的合成事件 constructor；每次派发创建独立事件对象。 */
 export const SyntheticWheelEvent: $FlowFixMe =
   createSyntheticEvent(WheelEventInterface);
 
-/** ToggleEventInterface 保存构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** 供 ToggleEvent 合成事件使用的字段复制/归一化表；继承的字段与本类型字段合并。 */
 const ToggleEventInterface: EventInterfaceType = {
   ...EventInterface,
   newState: 0,
   oldState: 0,
 };
-/** SyntheticToggleEvent 保存构造、归一化并控制默认行为/传播状态的 SyntheticEvent 类型族所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** 按 ToggleEventInterface 创建的合成事件 constructor；每次派发创建独立事件对象。 */
 export const SyntheticToggleEvent: $FlowFixMe =
   createSyntheticEvent(ToggleEventInterface);

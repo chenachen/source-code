@@ -31,8 +31,7 @@
       <p class="eyebrow">Source-guided · Offline edition</p>
       <h1>从元素描述到 DOM 提交</h1>
       <p class="lede">
-        这不是按文件名排列的 API 清单，而是一张可核验的运行地图：先建立身份与类型契约，
-        再解释时间切片、Fiber 状态机、DOM 宿主操作，最后用同一个客户端更新串起六个包。
+        本指南从身份与类型契约开始，解释更新调度、Fiber 状态机与 DOM 宿主操作，再用一个客户端更新串起六个包。
       </p>
       <div class="meta">
         <span class="pill">React / ReactDOM 19.3.0</span>
@@ -53,7 +52,7 @@
           <article class="card">
             <span class="number">02 / STATE MACHINE</span>
             <h3>Fiber 把计算与副作用分开</h3>
-            <p>render 阶段计算候选树和 flags；commit 阶段才把确定的变更写入宿主环境。中断 render 不应泄漏半成品 DOM。</p>
+            <p>render 阶段计算候选树和 flags；complete 阶段可创建和设置脱离容器的 DOM；commit 才修改可见宿主树。放弃候选 render 时，当前 DOM 仍保持已提交状态。</p>
           </article>
           <article class="card">
             <span class="number">03 / HOST BOUNDARY</span>
@@ -125,7 +124,7 @@
           <li><strong>收尾。</strong>passive effects 在后续边界 flush；unmount 用同一更新管线提交删除并断开 Fiber/DOM 关联。</li>
         </ol>
         <div class="callout">
-          <p><strong>两个“优先级”不要混为一谈：</strong>Lane 是 reconciler 的更新集合与根级调度状态；Scheduler Priority 是 host callback 的时间预算。
+          <p><strong>两个“优先级”不要混为一谈：</strong>Lane 是 reconciler 的更新集合与根级调度状态；Scheduler Priority 决定 callback 的过期时间和排序；时间片是否让出还要看 host deadline 与 render 条件。
           reconciler 在边界处做映射，但 scheduler 从不读取 Fiber。</p>
         </div>
       </section>
@@ -140,8 +139,7 @@
           <div class="node">Lane + root 调度<small>reconciler</small></div>
         </div>
         <p>
-          Hydration 会在“事件派发”之前增加阻塞目标检查：若目标 Fiber 尚未 hydrated，事件可能被排队或尝试同步 hydration；
-          因此事件页必须和 hydration 页交叉阅读，不能把所有原生事件都描述成即时派发。
+          Hydration 在插件派发前检查 blocker。被阻塞的 click 在 capture 阶段尝试同步 hydration，仍失败则停止原生传播；focus、drag、mouse、pointer 中受支持的事件才保存在 replay 槽。两条路径在事件与 hydration 页展开。
         </p>
       </section>
 
@@ -170,11 +168,14 @@
           <tr><td><a href="12-child-reconciliation.html">12 · keyed children 协调</a></td><td>复用、移动、插入、删除与 state 身份</td><td><code>[A,B,C] → [B,A,D]</code> 的每个 flag</td></tr>
           <tr><td><a href="13-hooks-state-machine.html">13 · Hooks 状态机</a></td><td>dispatcher、Hook 链、环形 queue、eager bailout</td><td>三次函数式 setState 如何得到 3</td></tr>
           <tr><td><a href="14-commit-effects.html">14 · commit/effects/deletion</a></td><td>flags 遍历、DOM mutation、ref、effect、错误与清理</td><td>为什么 current 在 mutation 后、layout 前切换</td></tr>
-          <tr><td><a href="15-events-hydration.html">15 · 事件与 hydration</a></td><td>根委托、插件、优先级、blocker 与事件重放</td><td>未 hydration 的 click 怎样等待又保持因果</td></tr>
+          <tr><td><a href="15-events-hydration.html">15 · 事件与 hydration</a></td><td>根委托、插件、优先级、blocker 与事件重放</td><td>被阻塞 click 怎样尝试 hydration，哪些事件会保存并重放</td></tr>
           <tr><td><a href="16-end-to-end-source.html">16 · 真实源码主线</a></td><td>跨包知识无法接成一次真实运行</td><td>同一 act 的三次 click 为何只提交 count=3；随后两次独立 click 才到 DOM 5</td></tr>
           <tr><td><a href="17-suspense-retry.html">17 · Suspense retry</a></td><td>“抛 Promise”如何变成 fallback 与可重试根状态</td><td>thenable settle 后为何重新 render，而非续跑旧栈</td></tr>
         </tbody></table></div>
       </section>
+
+      <section id="single-guide"><h2>客户端单文件教程</h2><p><a href="client-rendering-19.3.0/index.html">从 createRoot 到一次 click：计数与 keyed 列表</a>将对象关系、Default 首次挂载、Sync 点击更新与列表重排放在同一页，便于连续阅读和离线分享。</p></section>
+      <p class="callout"><a href="09-evidence.html#engineering-diagrams">工程图索引</a>汇总双缓冲、拼环重放、调度出口、协调移动、commit 清理、事件恢复与 Suspense 重试的章节入口。</p>
 
       <section id="questions">
         <h2>读完应能回答</h2>

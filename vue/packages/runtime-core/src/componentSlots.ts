@@ -44,6 +44,9 @@ export type Slots = Readonly<InternalSlots>
 declare const SlotSymbol: unique symbol
 /** 在不生成运行时代码的前提下封装 slots 类型信息。 */
 export type SlotsType<T extends Record<string, any> = Record<string, any>> = {
+  /**
+   * 纯类型 slots 声明的载体键；运行时不建立此 Symbol 属性。
+   */
   [SlotSymbol]?: T
 }
 
@@ -74,7 +77,7 @@ export type RawSlots = {
   $stable?: boolean
   /**
    * 插槽声明方实例。组件 VNode 在 `normalizeChildren()` 时附加，执行插槽时用于恢复
-   * 资源解析、scopeId 和依赖归属。
+   * 资源解析、scopeId 和警告上下文；响应式依赖仍由执行插槽时的活动 effect 收集。
    * @internal
    */
   _ctx?: ComponentInternalInstance | null
@@ -155,6 +158,9 @@ const normalizeObjectSlots = (
         )
       }
       const normalized = normalizeSlotValue(value)
+      /**
+       * 非函数 slot 的固定内容包装器：返回本次标准化得到的同一 VNode 数组，更新时由 normalizeObjectSlots 替换此函数。
+       */
       slots[key] = () => normalized
     }
   }
@@ -176,6 +182,9 @@ const normalizeVNodeSlots = (
     )
   }
   const normalized = normalizeSlotValue(children)
+  /**
+   * 普通 children 的 default slot 包装器：返回本次标准化数组，保留 Vue 3 所有实例 slots 值为函数的协议。
+   */
   instance.slots.default = () => normalized
 }
 
@@ -220,7 +229,8 @@ export const initSlots = (
 
 /**
  * 更新组件 slots，并删除新输入已不存在的旧 slot。
- * 稳定编译 slots 可完全跳过；动态插槽只复制无需再包装；HMR 强制覆盖并触发 `$slots`。
+ * 优化更新中的稳定编译 slots 可跳过复制和删除；其余编译 slots 直接复制，手写 slots
+ * 需要标准化。HMR 强制覆盖并触发 `$slots`。
  */
 export const updateSlots = (
   instance: ComponentInternalInstance,
@@ -239,10 +249,11 @@ export const updateSlots = (
         assignSlots(slots, children as Slots, optimized)
         trigger(instance, TriggerOpTypes.SET, '$slots')
       } else if (optimized && type === SlotFlags.STABLE) {
-        // 编译且稳定：函数身份和键集合都不变，无需更新或删除检查。
+        // 稳定编译 slots 能在执行时收集自身依赖；优化更新跳过映射复制和删除检查。
+        // STABLE 不保证父组件每次 render 生成的 slot 函数引用相同。
         needDeletionCheck = false
       } else {
-        // v-if/v-for 生成的动态编译 slots：更新映射，但函数已经标准化。
+        // 动态编译 slots 或未启用优化的稳定 slots：复制映射，函数无需再次标准化。
         assignSlots(slots, children as Slots, optimized)
       }
     } else {

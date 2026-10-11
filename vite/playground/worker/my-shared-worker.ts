@@ -1,5 +1,7 @@
 let sharedWorkerCount = 0
 
+/** 每次连接递增共享计数，仅第二次及之后回传pong，供默认与命名SharedWorker的双连接场景消费。
+ * @param event 连接端口事件。 */
 // @ts-expect-error onconnect exists in worker
 self.onconnect = (event) => {
   sharedWorkerCount++
@@ -9,5 +11,5 @@ self.onconnect = (event) => {
   }
 }
 
-// for sourcemap
+// 为 source map 检查保留可定位的日志语句。
 console.log('my-shared-worker.js')

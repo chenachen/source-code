@@ -8,10 +8,10 @@ import type { ViteDevServer } from '../index'
 import type { DevEnvironment } from './environment'
 
 /**
- * 展开 `server.warmup` 配置并后台预转换匹配文件。
+ * 展开当前 Environment 的 `dev.warmup` 配置并后台预转换匹配文件。
  *
- * 函数刻意不返回 Promise：预热是启动后的性能优化，不应阻塞服务器开始监听；
- * 单文件错误由具体转换路径记录，不让后台任务形成未处理异常。
+ * 函数不返回 Promise，Environment.listen 发起预热后即可继续启动。HTML 和模块转换错误
+ * 由各自路径处理；文件匹配的 mapFiles Promise 在这里没有额外 catch。
  */
 export function warmupFiles(
   server: ViteDevServer,
@@ -58,19 +58,19 @@ async function warmupFile(
   }
 }
 
-/** 将 root 内 HTML 文件转换为根相对 URL；root 外 HTML 不参与预热。 */
+/** 将相对 root 的路径转成 HTML URL；相对路径以 `.` 开头时忽略，包括 root 外和点开头文件。 */
 function htmlFileToUrl(file: string, root: string) {
   const url = path.relative(root, file)
-  // HTML 转换依赖项目根语义，root 外文件直接忽略。
+  // 实现按首字符判断：root 外 `../` 路径及 root 内 `.page.html` 一类路径都会忽略。
   if (url[0] === '.') return
   // root 内文件生成浏览器正常请求的根相对 URL。
   return '/' + normalizePath(url)
 }
 
-/** 将普通文件转换为 Vite 请求 URL，root 外路径使用 `/@fs/` 编码。 */
+/** 将普通文件转换为请求 URL；相对路径以 `.` 开头时使用 `/@fs/`，其他路径使用根相对 URL。 */
 function fileToUrl(file: string, root: string) {
   const url = path.relative(root, file)
-  // root 外模块不能表示为根相对 URL，使用文件系统保留前缀。
+  // `../` 的 root 外模块及点开头相对路径使用绝对文件系统 URL。
   if (url[0] === '.') {
     return path.posix.join(FS_PREFIX, normalizePath(file))
   }

@@ -24,7 +24,7 @@ import { getImportMap, getImportMapFilename } from './html'
 type FileDep = {
   /** 待加载或写入产物的资源 URL。 */
   url: string
-  /** 为 true 时该依赖必须留到浏览器运行时解析。 */
+  /** 为 true 时 url 是生成的 JS 表达式，写入依赖表时不得加字符串引号。 */
   runtime: boolean
 }
 
@@ -41,7 +41,7 @@ type VitePreloadErrorEvent = Event & {
 export const isModernFlag = `__VITE_IS_MODERN__`
 /** 构建产物中调用 preload 辅助函数的稳定标识符。 */
 export const preloadMethod = `__vitePreload`
-/** renderChunk 阶段写入的 preload 依赖占位标记。 */
+/** 原生插件在 transform 阶段写入、generateBundle 阶段填充的 preload 依赖标记。 */
 export const preloadMarker = `__VITE_PRELOAD__`
 
 /** preload 运行时辅助模块的内部虚拟 ID。 */
@@ -55,7 +55,7 @@ function toRelativePath(filename: string, importer: string) {
   return relPath[0] === '.' ? relPath : `./${relPath}`
 }
 
-/** 从指定位置查找下一个 preload 占位符，并重置全局正则游标。 */
+/** 将全局正则游标设到指定位置，再查找下一个 preload 占位符。 */
 function findPreloadMarker(str: string, pos: number = 0): number {
   preloadMarkerRE.lastIndex = pos
   const result = preloadMarkerRE.exec(str)
@@ -107,8 +107,6 @@ export function matchImportsToPreloadMarkers(
   return importMarkerPos
 }
 
-/** 动态 chunk 执行前，并行加载其 CSS 与直接静态依赖的浏览器运行时 helper。 */
-
 /** 检测浏览器原生 modulepreload；不支持时退为 preload as=script。 */
 function detectScriptRel() {
   const relList =
@@ -123,7 +121,7 @@ declare const scriptRel: string
 /** 记录已插入的 preload URL，防止同一依赖重复创建 link。 */
 declare const seen: Record<string, boolean>
 /**
- * 先去重并加载依赖，再执行真正动态 import；CSS 会等待 load/error，错误通过
+ * 先去重并加载依赖，再执行真正动态 import；CSS 会等待 load/error，CSS 装载或 import 失败通过
  * 可取消的 `vite:preloadError` 事件交给应用决定是否继续抛出。
  */
 function preload(
@@ -177,7 +175,7 @@ function preload(
         seen[dep] = true
         const isCss = dep.endsWith('.css')
 
-        // SSR HTML 可能已输出相同 preload；assetsURL 已把 dep 转成绝对 URL，可直接去重。
+        // SSR HTML 可能已输出相同 preload；assetsURL 与 importMetaResolve 已将 dep 转成绝对 URL，可直接去重。
         for (let i = links.length - 1; i >= 0; i--) {
           const link = links[i]
           // 浏览器读取 link.href 时会自动反射为绝对 URL，可与 dep 直接比较：
@@ -269,7 +267,7 @@ function getPreloadCode(
  * 开发态的对应职责位于 `./importAnalysis`。
  */
 export function buildImportAnalysisPlugin(config: ResolvedConfig): Plugin[] {
-  /** 按环境配置决定 preload 辅助函数的插入位置与依赖标记形式。 */
+  /** 仅为 client consumer 且顶层配置不是 worker/library 的构建插入 preload。 */
   const getInsertPreload = (environment: PartialEnvironment) =>
     environment.config.consumer === 'client' &&
     !config.isWorker &&
@@ -281,7 +279,7 @@ export function buildImportAnalysisPlugin(config: ResolvedConfig): Plugin[] {
   const plugin: Plugin = {
     name: 'vite:build-import-analysis',
 
-    /** 在 chunk 中插入 preload 辅助调用，并把现代构建条件折叠为目标布尔值。 */
+    /** 按输出 format 把 helper 的现代格式标记等长替换为布尔值。 */
     renderChunk(code, _, { format }) {
       // 只有 ES 现代输出保留 preload helper；legacy 输出可通过常量折叠删除。
       if (code.includes(isModernFlag)) {
@@ -297,7 +295,7 @@ export function buildImportAnalysisPlugin(config: ResolvedConfig): Plugin[] {
       return null
     },
 
-    /** 分析 chunk 依赖图并替换 preload 标记，同时补入 CSS 与资源依赖。 */
+    /** 递归分析静态 chunk 与 CSS 依赖，替换 preload 标记并清理已删除的纯 CSS 动态目标。 */
     async generateBundle(opts, bundle) {
       const { format } = opts
       if (format !== 'es') {
@@ -411,11 +409,11 @@ export function buildImportAnalysisPlugin(config: ResolvedConfig): Plugin[] {
           }
 
           const s = new MagicString(code)
-          // 记录已重写标记的起始双引号位置，避免同一字面量被重复处理。
+          // 记录已重写标记的起始位置，避免同一 marker 被重复处理。
           const rewroteMarkerStartPos = new Set()
 
           const fileDeps: FileDep[] = []
-          /** 把文件依赖加入当前 preload 标记，并区分运行时 URL 与静态产物。 */
+          /** 将 URL 或 JS 表达式去重加入当前 chunk 的共享依赖表，返回其索引。 */
           const addFileDep = (
             url: string,
             runtime: boolean = false,
@@ -464,7 +462,7 @@ export function buildImportAnalysisPlugin(config: ResolvedConfig): Plugin[] {
                 const ownerFilename = chunk.fileName
                 // 字面量 import：递归追踪直接静态 imports，收集并行 preload 依赖。
                 const analyzed: Set<string> = new Set<string>()
-                /** 递归收集 chunk 的静态依赖、CSS 与资源，并保持去重后的加载顺序。 */
+                /** 递归收集输出 chunk 的静态 imports 与 importedCss，跳过 owner 自环及已访问节点。 */
                 const addDeps = (rawFilename: string) => {
                   const filename =
                     importMapMapping?.[rawFilename] ?? rawFilename
@@ -528,7 +526,7 @@ export function buildImportAnalysisPlugin(config: ResolvedConfig): Plugin[] {
                     ;(dep.endsWith('.css') ? cssDeps : otherDeps).push(dep)
                   }
                   depsArray = [
-                    // 传给用户的是最终 URL，不是 import map 中的 specifier。
+                    // 传给用户的是相对 outDir 的输出文件路径，尚未转成公开 URL 或 import map specifier。
                     ...resolveDependencies(normalizedFile, otherDeps, {
                       hostId: file,
                       hostType: 'js',
@@ -561,8 +559,7 @@ export function buildImportAnalysisPlugin(config: ResolvedConfig): Plugin[] {
                   })
                 } else {
                   renderedDeps = depsArray.map((d) =>
-                    // 相对 base 下不保留默认 assetsDir 前缀；preload helper 会结合当前
-                    // importer URL 重新构造完整路径。
+                    // 相对 base 下按当前 chunk 文件位置计算依赖路径；helper 再结合 importer URL 解析。
                     isRelativeBase
                       ? addFileDep(toRelativePath(d, file))
                       : addFileDep(d),
@@ -626,6 +623,7 @@ export function buildImportAnalysisPlugin(config: ResolvedConfig): Plugin[] {
                 nextMap as RawSourceMap,
                 chunk.map as RawSourceMap,
               ]) as SourceMap
+              /** 以合成后的 map 生成 data URL，恢复 SourceMap 对象供 inline 输出使用的接口。 */
               map.toUrl = () => genSourceMapUrl(map)
               if (originalFile) {
                 map.file = originalFile

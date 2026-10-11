@@ -4,7 +4,7 @@ import { assetUrlRE } from '../../plugins/asset'
 describe('wasm plugin assetUrlRE usage', () => {
   // 回归场景：assetUrlRE 带 `/g`，`.test()` 会通过 lastIndex 保留状态。Wasm
   // 插件若连续检测两个资产占位符而未重置，第二次匹配会从字符串末尾开始失败，
-  // 导致约一半 SSR Wasm 文件漏掉 __VITE_ASSET__ → __VITE_WASM_INIT__ 替换，
+  // 使第二个同长度占位符漏掉 __VITE_ASSET__ → __VITE_WASM_INIT__ 替换，
   // 最终在运行时读取错误路径并报 ENOENT。
   /** 场景：复用带 global 标志的 assetUrlRE 连续测试两个短占位符且不重置 lastIndex；验证目标：首次成功、第二次失败，复现游标污染。 */
   test('assetUrlRE.test() fails on second call without lastIndex reset', () => {

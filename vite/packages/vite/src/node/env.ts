@@ -153,7 +153,7 @@ export function loadEnv(
  * `.env` 变量名中无法正常工作，但不构成泄密风险，所以只告警。
  *
  * @param config - 用户配置；这里只读取 `envPrefix`。
- * @returns 至少包含默认 `VITE_`，或用户明确提供的前缀数组。
+ * @returns 未配置时返回 `['VITE_']`；显式配置时只返回用户前缀，空数组表示不公开任何键。
  * @see https://github.com/vitejs/vite/pull/21292
  */
 export function resolveEnvPrefix({

@@ -1,8 +1,8 @@
-// no `exports` key, should resolve to entries/dir/index.js
+// 包没有 exports，目录入口应解析到 entries/dir/index.js。
 import dirEntry from '@vitejs/test-entries/dir'
-// no `exports` key, should resolve to entries/file.js
+// 包没有 exports，文件入口应解析到 entries/file.js。
 import fileEntry from '@vitejs/test-entries/file'
-// has `exports` key, should resolve to pkg-exports/entry
+// 包有 exports，入口应按其映射解析到 pkg-exports/entry。
 import pkgExportsEntry from '@vitejs/test-resolve-pkg-exports/entry'
 import deepFoo from '@vitejs/test-deep-import/foo'
 // import deepBar from '@vitejs/test-deep-import/bar'

@@ -3,8 +3,8 @@ import { expect, test } from 'vitest'
 import { createServer } from '../../server'
 
 /**
- * 阅读目标：堆栈修正必须可重复调用，并能识别已经由其他工具改写过的堆栈，
- * 避免二次映射产生误导位置或直接抛错。
+ * SSR 堆栈夹具目录，供最小开发服务器定位报错模块。堆栈修正须可重复调用，
+ * 两个用例分别检查重复调用与看似已由其他工具改写过的堆栈。
  */
 const root = fileURLToPath(new URL('./', import.meta.url))
 

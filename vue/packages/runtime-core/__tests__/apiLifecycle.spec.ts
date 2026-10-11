@@ -1,6 +1,6 @@
 /**
- * 测试阅读说明：本文件验证 `runtime-core/apiLifecycle` 的运行时行为。
- * “测试组”概括共享前置条件，“测试场景”说明当前输入、边界或历史回归目标；具体预期以断言为准。
+ * 在 runtime-test 宿主树中记录生命周期调用，并检查钩子执行时的节点与文本。
+ * 父子顺序、钩子内状态修改、调试事件及挂载后立即卸载各有独立夹具。
  */
 import {
   KeepAlive,
@@ -28,17 +28,20 @@ import {
   TriggerOpTypes,
 } from '@vue/reactivity'
 
-// 测试组：组合式 API 生命周期钩子的注册、执行顺序与清理。
+// 组合式 API 生命周期钩子的注册、执行顺序与清理。
 describe('api: lifecycle hooks', () => {
-  // 测试场景：onBeforeMount 在首次渲染完成、宿主节点插入之前调用。
+  // onBeforeMount 在首次 render 前执行；钩子内宿主容器仍为空，调用没有参数。
   it('onBeforeMount', () => {
     const root = nodeOps.createElement('div')
     const fn = vi.fn(() => {
-      // should be called before inner div is rendered
+      // 钩子执行时内部 div 尚未创建，宿主容器为空。
       expect(serializeInner(root)).toBe(``)
     })
 
     const Comp = {
+      /**
+       * 调用 `onBeforeMount(fn)` 完成本例的初始化登记或读取；返回渲染闭包，执行时产出 `h('div')`。
+       */
       setup() {
         onBeforeMount(fn)
         return () => h('div')
@@ -50,15 +53,18 @@ describe('api: lifecycle hooks', () => {
     expect(fn).toHaveBeenCalledWith()
   })
 
-  // 测试场景：onMounted 在组件子树插入宿主环境后调用。
+  // onMounted 执行时，组件子树已插入宿主容器。
   it('onMounted', () => {
     const root = nodeOps.createElement('div')
     const fn = vi.fn(() => {
-      // should be called after inner div is rendered
+      // 钩子执行时内部 div 已插入宿主容器。
       expect(serializeInner(root)).toBe(`<div></div>`)
     })
 
     const Comp = {
+      /**
+       * 调用 `onMounted(fn)` 完成本例的初始化登记或读取；返回渲染闭包，执行时产出 `h('div')`。
+       */
       setup() {
         onMounted(fn)
         return () => h('div')
@@ -68,16 +74,19 @@ describe('api: lifecycle hooks', () => {
     expect(fn).toHaveBeenCalledTimes(1)
   })
 
-  // 测试场景：onBeforeUpdate 在响应式更新修补 DOM 之前调用。
+  // onBeforeUpdate 执行时，宿主文本仍保留更新前的值。
   it('onBeforeUpdate', async () => {
     const count = ref(0)
     const root = nodeOps.createElement('div')
     const fn = vi.fn(() => {
-      // should be called before inner div is updated
+      // 更新前钩子仍读取上一轮宿主文本 0。
       expect(serializeInner(root)).toBe(`<div>0</div>`)
     })
 
     const Comp = {
+      /**
+       * 调用 `onBeforeUpdate(fn)` 完成本例的初始化登记或读取；返回渲染闭包，执行时产出 `h('div', count.value)`。
+       */
       setup() {
         onBeforeUpdate(fn)
         return () => h('div', count.value)
@@ -91,18 +100,21 @@ describe('api: lifecycle hooks', () => {
     expect(serializeInner(root)).toBe(`<div>1</div>`)
   })
 
-  // 测试场景：onBeforeUpdate的状态突变。
+  // onBeforeUpdate 内再次修改状态纳入当前 render，不额外执行一次钩子或 render。
   it('state mutation in onBeforeUpdate', async () => {
     const count = ref(0)
     const root = nodeOps.createElement('div')
     const fn = vi.fn(() => {
-      // should be called before inner div is updated
+      // 更新前钩子仍读取上一轮宿主文本 0。
       expect(serializeInner(root)).toBe(`<div>0</div>`)
       count.value++
     })
     const renderSpy = vi.fn()
 
     const Comp = {
+      /**
+       * 调用 `onBeforeUpdate(fn)` 完成本例的初始化登记或读取；返回渲染闭包，执行时产出 `h('div', count.value)`。
+       */
       setup() {
         onBeforeUpdate(fn)
         return () => {
@@ -121,16 +133,19 @@ describe('api: lifecycle hooks', () => {
     expect(serializeInner(root)).toBe(`<div>2</div>`)
   })
 
-  // 测试场景：onUpdated 在组件更新及 DOM 提交完成后调用。
+  // onUpdated 执行时，宿主文本已是本轮的新值。
   it('onUpdated', async () => {
     const count = ref(0)
     const root = nodeOps.createElement('div')
     const fn = vi.fn(() => {
-      // should be called after inner div is updated
+      // 更新后钩子读取本轮宿主文本 1。
       expect(serializeInner(root)).toBe(`<div>1</div>`)
     })
 
     const Comp = {
+      /**
+       * 调用 `onUpdated(fn)` 完成本例的初始化登记或读取；返回渲染闭包，执行时产出 `h('div', count.value)`。
+       */
       setup() {
         onUpdated(fn)
         return () => h('div', count.value)
@@ -143,22 +158,28 @@ describe('api: lifecycle hooks', () => {
     expect(fn).toHaveBeenCalledTimes(1)
   })
 
-  // 测试场景：onBeforeUnmount 在组件 effect 停止和子树移除之前调用。
+  // onBeforeUnmount 执行时，待卸载子组件的宿主节点仍在容器中。
   it('onBeforeUnmount', async () => {
     const toggle = ref(true)
     const root = nodeOps.createElement('div')
     const fn = vi.fn(() => {
-      // should be called before inner div is removed
+      // 卸载前钩子执行时内部 div 仍在容器中。
       expect(serializeInner(root)).toBe(`<div></div>`)
     })
 
     const Comp = {
+      /**
+       * 返回渲染闭包，执行时产出 `(toggle.value ? h(Child) : null)`。
+       */
       setup() {
         return () => (toggle.value ? h(Child) : null)
       },
     }
 
     const Child = {
+      /**
+       * 调用 `onBeforeUnmount(fn)` 完成本例的初始化登记或读取；返回渲染闭包，执行时产出 `h('div')`。
+       */
       setup() {
         onBeforeUnmount(fn)
         return () => h('div')
@@ -172,22 +193,28 @@ describe('api: lifecycle hooks', () => {
     expect(fn).toHaveBeenCalledTimes(1)
   })
 
-  // 测试场景：onUnmounted 在组件子树与副作用完成清理后调用。
+  // onUnmounted 执行时，子组件节点已移除并替换为父级空分支。
   it('onUnmounted', async () => {
     const toggle = ref(true)
     const root = nodeOps.createElement('div')
     const fn = vi.fn(() => {
-      // should be called after inner div is removed
+      // 卸载后钩子执行时 div 已由空分支占位替代。
       expect(serializeInner(root)).toBe(`<!---->`)
     })
 
     const Comp = {
+      /**
+       * 返回渲染闭包，执行时产出 `(toggle.value ? h(Child) : null)`。
+       */
       setup() {
         return () => (toggle.value ? h(Child) : null)
       },
     }
 
     const Child = {
+      /**
+       * 调用 `onUnmounted(fn)` 完成本例的初始化登记或读取；返回渲染闭包，执行时产出 `h('div')`。
+       */
       setup() {
         onUnmounted(fn)
         return () => h('div')
@@ -201,22 +228,28 @@ describe('api: lifecycle hooks', () => {
     expect(fn).toHaveBeenCalledTimes(1)
   })
 
-  // 测试场景：onBeforeUnmount在onMounted。
+  // onMounted 中登记 onBeforeUnmount，卸载时仍能执行该钩子。
   it('onBeforeUnmount in onMounted', async () => {
     const toggle = ref(true)
     const root = nodeOps.createElement('div')
     const fn = vi.fn(() => {
-      // should be called before inner div is removed
+      // 卸载前钩子执行时内部 div 仍在容器中。
       expect(serializeInner(root)).toBe(`<div></div>`)
     })
 
     const Comp = {
+      /**
+       * 返回渲染闭包，执行时产出 `(toggle.value ? h(Child) : null)`。
+       */
       setup() {
         return () => (toggle.value ? h(Child) : null)
       },
     }
 
     const Child = {
+      /**
+       * 调用 `onMounted(() => { onBeforeUnmount(fn); })` 完成本例的初始化登记或读取；返回渲染闭包，执行时产出 `h('div')`。
+       */
       setup() {
         onMounted(() => {
           onBeforeUnmount(fn)
@@ -232,13 +265,16 @@ describe('api: lifecycle hooks', () => {
     expect(fn).toHaveBeenCalledTimes(1)
   })
 
-  // 测试场景：生命周期调用顺序。
+  // 父子 before 钩子父先子后，mounted、updated 与 unmounted 钩子子先父后。
   it('lifecycle call order', async () => {
     const count = ref(0)
     const root = nodeOps.createElement('div')
     const calls: string[] = []
 
     const Root = {
+      /**
+       * 调用 `onBeforeMount(() => calls.push('root onBeforeMount'))`、`onMounted(() => calls.push('root onMounted'))`、`onBeforeUpdate(() => calls.push('root onBeforeUpdate'))` 完成本例的初始化登记或读取；返回渲染闭包，执行时产出 `h(Mid, { count: count.value })`。
+       */
       setup() {
         onBeforeMount(() => calls.push('root onBeforeMount'))
         onMounted(() => calls.push('root onMounted'))
@@ -252,6 +288,9 @@ describe('api: lifecycle hooks', () => {
 
     const Mid = {
       props: ['count'],
+      /**
+       * 调用 `onBeforeMount(() => calls.push('mid onBeforeMount'))`、`onMounted(() => calls.push('mid onMounted'))`、`onBeforeUpdate(() => calls.push('mid onBeforeUpdate'))` 完成本例的初始化登记或读取；返回渲染闭包，执行时产出 `h(Child, { count: props.count })`。
+       */
       setup(props: any) {
         onBeforeMount(() => calls.push('mid onBeforeMount'))
         onMounted(() => calls.push('mid onMounted'))
@@ -265,6 +304,9 @@ describe('api: lifecycle hooks', () => {
 
     const Child = {
       props: ['count'],
+      /**
+       * 调用 `onBeforeMount(() => calls.push('child onBeforeMount'))`、`onMounted(() => calls.push('child onMounted'))`、`onBeforeUpdate(() => calls.push('child onBeforeUpdate'))` 完成本例的初始化登记或读取；返回渲染闭包，执行时产出 `h('div', props.count)`。
+       */
       setup(props: any) {
         onBeforeMount(() => calls.push('child onBeforeMount'))
         onMounted(() => calls.push('child onMounted'))
@@ -276,7 +318,7 @@ describe('api: lifecycle hooks', () => {
       },
     }
 
-    // mount
+    // 首次挂载，核对记录的调用顺序。
     render(h(Root), root)
     expect(calls).toEqual([
       'root onBeforeMount',
@@ -289,7 +331,7 @@ describe('api: lifecycle hooks', () => {
 
     calls.length = 0
 
-    // update
+    // 修改渲染依赖并等待一次刷新，核对更新顺序。
     count.value++
     await nextTick()
     expect(calls).toEqual([
@@ -303,7 +345,7 @@ describe('api: lifecycle hooks', () => {
 
     calls.length = 0
 
-    // unmount
+    // 卸载根树，核对卸载钩子顺序。
     render(null, root)
     expect(calls).toEqual([
       'root onBeforeUnmount',
@@ -315,7 +357,7 @@ describe('api: lifecycle hooks', () => {
     ])
   })
 
-  // 测试场景：onRenderTracked 报告渲染 effect 新追踪到的响应式依赖。
+  // onRenderTracked 报告 render 对属性读取、键检查和对象枚举的三类依赖。
   it('onRenderTracked', () => {
     const events: DebuggerEvent[] = []
     const onTrack = vi.fn((e: DebuggerEvent) => {
@@ -324,6 +366,9 @@ describe('api: lifecycle hooks', () => {
     const obj = reactive({ foo: 1, bar: 2 })
 
     const Comp = {
+      /**
+       * 调用 `onRenderTracked(onTrack)` 完成本例的初始化登记或读取；返回渲染闭包，执行时产出 `h('div', [obj.foo, 'bar' in obj, Object.keys(obj).join('')])`。
+       */
       setup() {
         onRenderTracked(onTrack)
         return () =>
@@ -352,7 +397,7 @@ describe('api: lifecycle hooks', () => {
     ])
   })
 
-  // 测试场景：onRenderTriggered 报告触发组件重新渲染的响应式写操作。
+  // onRenderTriggered 报告触发 render 的属性设置、删除和添加。
   it('onRenderTriggered', async () => {
     const events: DebuggerEvent[] = []
     const onTrigger = vi.fn((e: DebuggerEvent) => {
@@ -364,6 +409,9 @@ describe('api: lifecycle hooks', () => {
     }>({ foo: 1, bar: 2 })
 
     const Comp = {
+      /**
+       * 调用 `onRenderTriggered(onTrigger)` 完成本例的初始化登记或读取；返回渲染闭包，执行时产出 `h('div', [obj.foo, 'bar' in obj, Object.keys(obj).join('')])`。
+       */
       setup() {
         onRenderTriggered(onTrigger)
         return () =>
@@ -401,16 +449,22 @@ describe('api: lifecycle hooks', () => {
     })
   })
 
-  // 测试场景：为每个实例运行共享钩子 fn。
+  // 两个组件实例共用同一用户钩子函数，各自的挂载与卸载前阶段都会调用它。
   it('runs shared hook fn for each instance', async () => {
     const fn = vi.fn()
     const toggle = ref(true)
     const Comp = {
+      /**
+       * 返回渲染闭包，执行时产出 `(toggle.value ? [h(Child), h(Child)] : null)`。
+       */
       setup() {
         return () => (toggle.value ? [h(Child), h(Child)] : null)
       },
     }
     const Child = {
+      /**
+       * 调用 `onMounted(fn)`、`onBeforeUnmount(fn)` 完成本例的初始化登记或读取；返回渲染闭包，执行时产出 `h('div')`。
+       */
       setup() {
         onMounted(fn)
         onBeforeUnmount(fn)
@@ -425,21 +479,27 @@ describe('api: lifecycle hooks', () => {
     expect(fn).toHaveBeenCalledTimes(4)
   })
 
-  // 测试场景：渲染时立即触发卸载。
+  // 子 setup 立即把父级分支切回空值，失效的 mounted 钩子不再执行。
   it('immediately trigger unmount during rendering', async () => {
     const fn = vi.fn()
     const toggle = ref(false)
 
     const Child = {
+      /**
+       * 调用 `onMounted(fn)` 完成本例的初始化登记或读取；把 `toggle.value` 写入本例的状态或观察变量；返回渲染闭包，执行时产出 `h('div')`。
+       */
       setup() {
         onMounted(fn)
-        // trigger unmount immediately
+        // 子 setup 立即关闭父级分支，令尚未执行的 post 挂载钩子失效。
         toggle.value = false
         return () => h('div')
       },
     }
 
     const Comp = {
+      /**
+       * 返回渲染闭包，执行时产出 `(toggle.value ? [h(Child)] : null)`。
+       */
       setup() {
         return () => (toggle.value ? [h(Child)] : null)
       },
@@ -452,24 +512,30 @@ describe('api: lifecycle hooks', () => {
     expect(fn).toHaveBeenCalledTimes(0)
   })
 
-  // 测试场景：渲染时立即触发卸载（使用KeepAlive）。
+  // KeepAlive 内子 setup 立即切回空分支，失效的 mounted 和 activated 钩子都不执行。
   it('immediately trigger unmount during rendering(with KeepAlive)', async () => {
     const mountedSpy = vi.fn()
     const activeSpy = vi.fn()
     const toggle = ref(false)
 
     const Child = {
+      /**
+       * 调用 `onMounted(mountedSpy)`、`onActivated(activeSpy)` 完成本例的初始化登记或读取；把 `toggle.value` 写入本例的状态或观察变量；返回渲染闭包，执行时产出 `h('div')`。
+       */
       setup() {
         onMounted(mountedSpy)
         onActivated(activeSpy)
 
-        // trigger unmount immediately
+        // 子 setup 立即关闭父级分支，令尚未执行的 post 挂载钩子失效。
         toggle.value = false
         return () => h('div')
       },
     }
 
     const Comp = {
+      /**
+       * 返回渲染闭包，执行时产出 `h(KeepAlive, [toggle.value ? h(Child) : null])`。
+       */
       setup() {
         return () => h(KeepAlive, [toggle.value ? h(Child) : null])
       },

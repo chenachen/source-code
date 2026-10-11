@@ -93,7 +93,7 @@ if (__DEV__) {
   Object.freeze(fakeInternalInstance);
 }
 
-/** 对 setState/replaceState/forceUpdate 的非法 callback 按值去重警告。 */
+/** 对 setState/replaceState/forceUpdate 的非法 callback 按 String(callback) 去重警告；不同值的同一字符串只报一次。 */
 function warnOnInvalidCallback(callback: mixed) {
   if (__DEV__) {
     if (callback === null || typeof callback === 'function') {
@@ -131,8 +131,10 @@ function warnOnUndefinedDerivedState(type: any, partialState: any) {
 
 /**
  * 调用静态 getDerivedStateFromProps 并把 partial state 浅合并到旧状态。
- * StrictLegacyMode 在 DEV 中额外调用一次以暴露副作用；更新队列耗尽时同时推进 baseState，
- * 让下轮低优先级重放从相同派生结果开始。
+ * StrictLegacyMode 在 DEV 中额外调用一次并使用第二次结果；仅当工作 Fiber 没有剩余
+ * lanes 时把派生结果写入 baseState，有跳过的更新时保留原重放起点。
+ * nextProps 是已解析 defaultProps/ref 的实例 props；用户方法在 render 阶段运行，
+ * 抛错直接交给工作循环，DevTools 的 StrictMode 标志通过 finally 复原。
  */
 function applyDerivedStateFromProps(
   workInProgress: Fiber,
@@ -175,7 +177,7 @@ function applyDerivedStateFromProps(
  */
 const classComponentUpdater = {
   // $FlowFixMe[missing-local-annot]
-  /** 将 this.setState 的对象/函数 payload 入队，保留可选提交后 callback。 */
+  /** 将实例映射到 Fiber，按当前 Transition/事件/render 上下文选 lane，把对象或 updater 函数保存在 payload；这里只入队和调度，不直接调用函数或更新 inst.state。可选 callback 留到实际提交。 */
   enqueueSetState(inst: any, payload: any, callback) {
     const fiber = getInstance(inst);
     const lane = requestUpdateLane(fiber);
@@ -200,7 +202,7 @@ const classComponentUpdater = {
       markStateUpdateScheduled(fiber, lane);
     }
   },
-  /** 以 ReplaceState 标签入队，处理旧 createClass 风格的整状态替换。 */
+  /** 以 ReplaceState 标签入队，供旧 createClass/legacy 生命周期的整状态替换使用；处理队列时覆盖此前累积 state，跳过的旧更新仍按队列规则保留重放，不在此删除。 */
   enqueueReplaceState(inst: any, payload: any, callback: null) {
     const fiber = getInstance(inst);
     const lane = requestUpdateLane(fiber);
@@ -228,7 +230,7 @@ const classComponentUpdater = {
     }
   },
   // $FlowFixMe[missing-local-annot]
-  /** 以 ForceUpdate 标签入队，跳过 shouldComponentUpdate 的常规否决。 */
+  /** 入队无 state payload 的 ForceUpdate，队列处理设置 hasForceUpdate 使本次类组件跳过 SCU 否决；依然经过 lane 调度、Transition 纠缠与正常 render/commit，不直接调用生命周期。 */
   enqueueForceUpdate(inst: any, callback) {
     const fiber = getInstance(inst);
     const lane = requestUpdateLane(fiber);
@@ -259,6 +261,8 @@ const classComponentUpdater = {
 /**
  * 决定类组件是否重新渲染：优先调用实例 shouldComponentUpdate，PureComponent 则浅比较
  * props/state，其余默认更新。StrictLegacyMode 会重复调用用户函数以探测副作用。
+ * old/new props 已解析默认值，state 来自更新队列前后结果；nextContext 传给用户 SCU。
+ * 此函数只返回 SCU/PureComponent 结果，现代 Context 依赖变化绕过 SCU 的判断由调用者另加。
  */
 function checkShouldComponentUpdate(
   workInProgress: Fiber,
@@ -552,6 +556,8 @@ function checkClassInstance(workInProgress: Fiber, ctor: any, newProps: any) {
  *
  * 先解析新/旧 Context，StrictLegacyMode 在 DEV 中二次构造以探测副作用；随后初始化
  * state/updater 与实例映射，并校验新生命周期和 legacy 生命周期不能混用。
+ * 构造器可能在 render 重试中再次执行；DEV 严格模式保留第二个实例，未采用的第一个
+ * 实例没有绑定 Fiber。这里只完成构造和映射，更新队列与挂载标志由 mountClassInstance 建立。
  */
 function constructClassInstance(
   workInProgress: Fiber,
@@ -797,6 +803,9 @@ function callComponentWillReceiveProps(
  *
  * 建立 props/state/refs/Context 与更新队列，应用派生状态；新生命周期存在时跳过 unsafe
  * 生命周期，否则处理其中产生的更新，最后为 componentDidMount 与 Strict Effects 打标。
+ * renderLanes 限制挂载前生命周期入队的更新是否本轮处理；纠缠异步 Action 仍未完成时
+ * suspendIfUpdateReadFromEntangledAsyncAction 可以抛出挂起控制流。didMount 此处只标记，
+ * 真正用户回调留到 layout 提交阶段，不在挂载前调用。
  */
 function mountClassInstance(
   workInProgress: Fiber,
@@ -891,7 +900,8 @@ function mountClassInstance(
  * 恢复曾开始但尚未提交的类实例挂载，并判断本次是否需要重新渲染。
  *
  * 重新解析 props/Context、重放 UpdateQueue 与派生状态；即使 bailout 也保留挂载 effect，
- * 并始终把实例指针推进到本轮 props/state/context，保证后续生命周期观察一致。
+ * 正常走到函数末端时把实例指针推进到本轮 props/state/context；队列处理后的快速
+ * bailout 提前返回，不经过末尾写入。返回值只决定是否 render，didMount 即使 bailout 仍可打标。
  */
 function resumeMountClassInstance(
   workInProgress: Fiber,
@@ -1039,7 +1049,11 @@ function resumeMountClassInstance(
  * 重放已挂载类实例的更新队列与生命周期，并返回是否需要重新渲染。
  *
  * 它克隆 current 队列、解析 Context/派生状态，组合 ForceUpdate、SCU 和 Context 变化；
- * bailout 时仍为已开始的 didUpdate/snapshot 打标，且始终同步实例的公开字段。
+ * bailout 时若本轮旧值已经不同于 current，仍为 didUpdate/snapshot 打标，保留前次尝试
+ * 已产生的提交职责；这些回调接收真正 current 的旧 props/state。快速 bailout 提前返回，
+ * 其它路径即使 SCU 为 false 也写入实例公开字段及 memoized 状态。
+ * current 与 workInProgress 共用类实例，队列外壳先克隆；renderLanes 控制哪些更新进入
+ * 本轮 state，跳过项留作 rebase。ForceUpdate 或已记录 Context 依赖变化均能绕过 SCU 否决。
  */
 function updateClassInstance(
   current: Fiber,
@@ -1217,7 +1231,8 @@ function updateClassInstance(
 
 /**
  * 生成类实例实际接收的 props：移除保留的 ref，并为 undefined 字段补上 defaultProps。
- * 仅在需要修改时克隆输入对象，保持无变化路径的引用稳定。
+ * 无 ref 且无 truthy defaultProps 时保留输入引用；只要存在 defaultProps 就会克隆，
+ * 即使所有属性均已定义。默认值只填 undefined，null 保持原值；本函数不改 baseProps。
  */
 export function resolveClassComponentProps(
   Component: any,

@@ -91,20 +91,20 @@ describe('ReactFragment', () => {
   it('should preserve state of children with 1 level nesting', async function () {
     const ops = [];
 
-    /** 当前场景的有状态身份探针；实例是否进入更新生命周期用于区分 Fiber 复用与重新挂载。 */
+    /** 用更新生命周期辨认 key=a 的子组件是否在一层 Fragment 展开前后仍是同一实例。 */
     class Stateful extends React.Component {
       /** 记录既有实例完成更新；若组件被重挂载，此生命周期不会留下记录。 */
       componentDidUpdate() {
         ops.push('Update Stateful');
       }
 
-      /** 输出稳定宿主标记，使断言可把组件身份变化与最终树形状同时关联。 */
+      /** 输出固定 Hello；新增 World 兄弟由 Foo 控制，实例延续由 componentDidUpdate 记录验证。 */
       render() {
         return <div>Hello</div>;
       }
     }
 
-    /** 按 condition 构造本场景的两种 Fragment/数组子树形态，驱动协调器比较身份路径。 */
+    /** condition 在裸 Stateful 与无 key Fragment 的 a/b 两个 children 间切换，保持 Stateful 的 key=a。 */
     function Foo({condition}) {
       return condition ? (
         <Stateful key="a" />
@@ -141,20 +141,20 @@ describe('ReactFragment', () => {
   it('should preserve state between top-level fragments', async function () {
     const ops = [];
 
-    /** 当前场景的有状态身份探针；实例是否进入更新生命周期用于区分 Fiber 复用与重新挂载。 */
+    /** 作为顶层无 key Fragment 两种返回形态之间的实例复用探针，不依赖宿主内容变化。 */
     class Stateful extends React.Component {
       /** 记录既有实例完成更新；若组件被重挂载，此生命周期不会留下记录。 */
       componentDidUpdate() {
         ops.push('Update Stateful');
       }
 
-      /** 输出稳定宿主标记，使断言可把组件身份变化与最终树形状同时关联。 */
+      /** 两次分支都输出相同 Hello，令测试以更新生命周期而非文本差异判断复用。 */
       render() {
         return <div>Hello</div>;
       }
     }
 
-    /** 按 condition 构造本场景的两种 Fragment/数组子树形态，驱动协调器比较身份路径。 */
+    /** 两侧都返回一个顶层无 key Fragment，保持内部 Stateful 的相同位置。 */
     function Foo({condition}) {
       return condition ? (
         <>
@@ -187,20 +187,20 @@ describe('ReactFragment', () => {
   it('should preserve state of children nested at same level', async function () {
     const ops = [];
 
-    /** 当前场景的有状态身份探针；实例是否进入更新生命周期用于区分 Fiber 复用与重新挂载。 */
+    /** 检测三层 Fragment 内 key=a 的组件在同层插入兄弟后是否保留实例。 */
     class Stateful extends React.Component {
       /** 记录既有实例完成更新；若组件被重挂载，此生命周期不会留下记录。 */
       componentDidUpdate() {
         ops.push('Update Stateful');
       }
 
-      /** 输出稳定宿主标记，使断言可把组件身份变化与最终树形状同时关联。 */
+      /** 输出用于最终兄弟顺序断言的 Hello 节点；生命周期日志另证实组件未重挂载。 */
       render() {
         return <div>Hello</div>;
       }
     }
 
-    /** 按 condition 构造本场景的两种 Fragment/数组子树形态，驱动协调器比较身份路径。 */
+    /** 保持三层 Fragment 路径，在最内层 Stateful 前插入或移除无 key div，依 key=a 找回原组件。 */
     function Foo({condition}) {
       return condition ? (
         <>
@@ -247,20 +247,20 @@ describe('ReactFragment', () => {
   it('should not preserve state in non-top-level fragment nesting', async function () {
     const ops = [];
 
-    /** 当前场景的有状态身份探针；实例是否进入更新生命周期用于区分 Fiber 复用与重新挂载。 */
+    /** 辨认 Stateful 跨非顶层 Fragment 身份边界时被重新挂载，而非已有实例更新。 */
     class Stateful extends React.Component {
       /** 记录既有实例完成更新；若组件被重挂载，此生命周期不会留下记录。 */
       componentDidUpdate() {
         ops.push('Update Stateful');
       }
 
-      /** 输出稳定宿主标记，使断言可把组件身份变化与最终树形状同时关联。 */
+      /** 新旧实例都返回 Hello，宿主树一致不作为跨层复用证据。 */
       render() {
         return <div>Hello</div>;
       }
     }
 
-    /** 按 condition 构造本场景的两种 Fragment/数组子树形态，驱动协调器比较身份路径。 */
+    /** condition 在双层与单层 Fragment 之间切换，即使 key=a 不变也改变组件的父 Fiber 路径。 */
     function Foo({condition}) {
       return condition ? (
         <>
@@ -295,20 +295,20 @@ describe('ReactFragment', () => {
   it('should not preserve state of children if nested 2 levels without siblings', async function () {
     const ops = [];
 
-    /** 当前场景的有状态身份探针；实例是否进入更新生命周期用于区分 Fiber 复用与重新挂载。 */
+    /** 为裸节点与双层无 key Fragment 的对照提供更新生命周期计数。 */
     class Stateful extends React.Component {
       /** 记录既有实例完成更新；若组件被重挂载，此生命周期不会留下记录。 */
       componentDidUpdate() {
         ops.push('Update Stateful');
       }
 
-      /** 输出稳定宿主标记，使断言可把组件身份变化与最终树形状同时关联。 */
+      /** 保持 Hello 输出不变，重挂载与否由 ops 是否新增 Update Stateful 区分。 */
       render() {
         return <div>Hello</div>;
       }
     }
 
-    /** 按 condition 构造本场景的两种 Fragment/数组子树形态，驱动协调器比较身份路径。 */
+    /** 把 key=a 的 Stateful 从直接返回值移入双层 Fragment；没有额外宿主兄弟参与此场景。 */
     function Foo({condition}) {
       return condition ? (
         <Stateful key="a" />
@@ -341,20 +341,20 @@ describe('ReactFragment', () => {
   it('should not preserve state of children if nested 2 levels with siblings', async function () {
     const ops = [];
 
-    /** 当前场景的有状态身份探针；实例是否进入更新生命周期用于区分 Fiber 复用与重新挂载。 */
+    /** 观察直接组件移入双层 Fragment 且出现外层兄弟时的身份变化。 */
     class Stateful extends React.Component {
       /** 记录既有实例完成更新；若组件被重挂载，此生命周期不会留下记录。 */
       componentDidUpdate() {
         ops.push('Update Stateful');
       }
 
-      /** 输出稳定宿主标记，使断言可把组件身份变化与最终树形状同时关联。 */
+      /** 提供双层包装分支中第一个 Hello 宿主节点；外层空 div 由 Foo 添加。 */
       render() {
         return <div>Hello</div>;
       }
     }
 
-    /** 按 condition 构造本场景的两种 Fragment/数组子树形态，驱动协调器比较身份路径。 */
+    /** 在直接 Stateful 与双层 Fragment 加空 div 兄弟之间切换，保留子组件 key=a 作为对照。 */
     function Foo({condition}) {
       return condition ? (
         <Stateful key="a" />
@@ -393,20 +393,20 @@ describe('ReactFragment', () => {
   it('should preserve state between array nested in fragment and fragment', async function () {
     const ops = [];
 
-    /** 当前场景的有状态身份探针；实例是否进入更新生命周期用于区分 Fiber 复用与重新挂载。 */
+    /** 验证顶层 Fragment 内的单元素数组不会让 key=a 的子组件重新挂载。 */
     class Stateful extends React.Component {
       /** 记录既有实例完成更新；若组件被重挂载，此生命周期不会留下记录。 */
       componentDidUpdate() {
         ops.push('Update Stateful');
       }
 
-      /** 输出稳定宿主标记，使断言可把组件身份变化与最终树形状同时关联。 */
+      /** 数组和直接子节点两种路径均输出 Hello，使生命周期日志成为复用信号。 */
       render() {
         return <div>Hello</div>;
       }
     }
 
-    /** 按 condition 构造本场景的两种 Fragment/数组子树形态，驱动协调器比较身份路径。 */
+    /** 顶层无 key Fragment 保持不变，children 在直接 Stateful 与单元素数组之间切换。 */
     function Foo({condition}) {
       return condition ? (
         <>
@@ -437,20 +437,20 @@ describe('ReactFragment', () => {
   it('should preserve state between top level fragment and array', async function () {
     const ops = [];
 
-    /** 当前场景的有状态身份探针；实例是否进入更新生命周期用于区分 Fiber 复用与重新挂载。 */
+    /** 检查顶层单元素数组与顶层无 key Fragment 之间的组件实例延续。 */
     class Stateful extends React.Component {
       /** 记录既有实例完成更新；若组件被重挂载，此生命周期不会留下记录。 */
       componentDidUpdate() {
         ops.push('Update Stateful');
       }
 
-      /** 输出稳定宿主标记，使断言可把组件身份变化与最终树形状同时关联。 */
+      /** 保留相同 Hello 内容；两次更新是否命中同一实例由生命周期日志反映。 */
       render() {
         return <div>Hello</div>;
       }
     }
 
-    /** 按 condition 构造本场景的两种 Fragment/数组子树形态，驱动协调器比较身份路径。 */
+    /** condition 在顶层数组与 Fragment 两种返回值中保留同一个 key=a 的 Stateful 类型。 */
     function Foo({condition}) {
       return condition ? (
         [<Stateful key="a" />]
@@ -481,20 +481,20 @@ describe('ReactFragment', () => {
   it('should not preserve state between array nested in fragment and double nested fragment', async function () {
     const ops = [];
 
-    /** 当前场景的有状态身份探针；实例是否进入更新生命周期用于区分 Fiber 复用与重新挂载。 */
+    /** 为数组展开路径与双层 Fragment 边界的对照记录已有实例更新次数。 */
     class Stateful extends React.Component {
       /** 记录既有实例完成更新；若组件被重挂载，此生命周期不会留下记录。 */
       componentDidUpdate() {
         ops.push('Update Stateful');
       }
 
-      /** 输出稳定宿主标记，使断言可把组件身份变化与最终树形状同时关联。 */
+      /** 相同 Hello 输出覆盖两条结构路径，防止仅凭最终宿主树误判状态保留。 */
       render() {
         return <div>Hello</div>;
       }
     }
 
-    /** 按 condition 构造本场景的两种 Fragment/数组子树形态，驱动协调器比较身份路径。 */
+    /** 从顶层 Fragment 的数组 children 切换成双层 Fragment，新增一个实际的内部身份边界。 */
     function Foo({condition}) {
       return condition ? (
         <>{[<Stateful key="a" />]}</>
@@ -523,24 +523,24 @@ describe('ReactFragment', () => {
     expect(ReactNoop).toMatchRenderedOutput(<div>Hello</div>);
   });
 
-  /** Given Stateful 从 Fragment 内数组切换到双层数组；When 条件往返更新；Then不同的嵌套深度阻止 Fiber 复用。通过零次更新日志验证实例被替换。 */
+  /** Given Stateful 从顶层 Fragment 内数组切换到双层数组；When 条件往返更新；Then顶层无 key Fragment 展开后直接协调 Stateful，而双层数组仍留下嵌套 Fragment Fiber。身份边界变化使更新日志始终为空。 */
   it('should not preserve state between array nested in fragment and double nested array', async function () {
     const ops = [];
 
-    /** 当前场景的有状态身份探针；实例是否进入更新生命周期用于区分 Fiber 复用与重新挂载。 */
+    /** 检测顶层 Fragment 内数组改成双层数组时的组件重挂载。 */
     class Stateful extends React.Component {
       /** 记录既有实例完成更新；若组件被重挂载，此生命周期不会留下记录。 */
       componentDidUpdate() {
         ops.push('Update Stateful');
       }
 
-      /** 输出稳定宿主标记，使断言可把组件身份变化与最终树形状同时关联。 */
+      /** 固定返回 Hello；此场景没有文本变化，零更新日志才是实例被替换的证据。 */
       render() {
         return <div>Hello</div>;
       }
     }
 
-    /** 按 condition 构造本场景的两种 Fragment/数组子树形态，驱动协调器比较身份路径。 */
+    /** 两侧分别为 Fragment 包裹单层数组与双层数组，后者保留一层嵌套 Fragment Fiber。 */
     function Foo({condition}) {
       return condition ? (
         <>{[<Stateful key="a" />]}</>
@@ -569,20 +569,20 @@ describe('ReactFragment', () => {
   it('should preserve state between double nested fragment and double nested array', async function () {
     const ops = [];
 
-    /** 当前场景的有状态身份探针；实例是否进入更新生命周期用于区分 Fiber 复用与重新挂载。 */
+    /** 验证双层 Fragment 与双层数组在等深路径下可复用 key=a 的组件。 */
     class Stateful extends React.Component {
       /** 记录既有实例完成更新；若组件被重挂载，此生命周期不会留下记录。 */
       componentDidUpdate() {
         ops.push('Update Stateful');
       }
 
-      /** 输出稳定宿主标记，使断言可把组件身份变化与最终树形状同时关联。 */
+      /** 两种等深容器都输出 Hello，生命周期日志应累计两次更新。 */
       render() {
         return <div>Hello</div>;
       }
     }
 
-    /** 按 condition 构造本场景的两种 Fragment/数组子树形态，驱动协调器比较身份路径。 */
+    /** 在双层 Fragment 和双层数组之间切换，保留嵌套深度与 key=a 的位置。 */
     function Foo({condition}) {
       return condition ? (
         <>
@@ -615,20 +615,20 @@ describe('ReactFragment', () => {
   it('should not preserve state of children when the keys are different', async function () {
     const ops = [];
 
-    /** 当前场景的有状态身份探针；实例是否进入更新生命周期用于区分 Fiber 复用与重新挂载。 */
+    /** 验证父 Fragment key 改变时内部 Stateful 即使同类型也不会复用。 */
     class Stateful extends React.Component {
       /** 记录既有实例完成更新；若组件被重挂载，此生命周期不会留下记录。 */
       componentDidUpdate() {
         ops.push('Update Stateful');
       }
 
-      /** 输出稳定宿主标记，使断言可把组件身份变化与最终树形状同时关联。 */
+      /** 提供新旧 keyed Fragment 都具有的 Hello 内容，避免内容变化干扰身份判断。 */
       render() {
         return <div>Hello</div>;
       }
     }
 
-    /** 按 condition 构造本场景的两种 Fragment/数组子树形态，驱动协调器比较身份路径。 */
+    /** condition 将父 Fragment 的 key 从 a 改为 b，并在 b 分支添加 World 兄弟。 */
     function Foo({condition}) {
       return condition ? (
         <React.Fragment key="a">
@@ -667,20 +667,20 @@ describe('ReactFragment', () => {
   it('should not preserve state between unkeyed and keyed fragment', async function () {
     const ops = [];
 
-    /** 当前场景的有状态身份探针；实例是否进入更新生命周期用于区分 Fiber 复用与重新挂载。 */
+    /** 区分 keyed Fragment 保留的边界与顶层 unkeyed Fragment 展开后的直接子组件。 */
     class Stateful extends React.Component {
       /** 记录既有实例完成更新；若组件被重挂载，此生命周期不会留下记录。 */
       componentDidUpdate() {
         ops.push('Update Stateful');
       }
 
-      /** 输出稳定宿主标记，使断言可把组件身份变化与最终树形状同时关联。 */
+      /** 两条路径都渲染 Hello，预期无 Update Stateful 来证明父级身份边界改变。 */
       render() {
         return <div>Hello</div>;
       }
     }
 
-    /** 按 condition 构造本场景的两种 Fragment/数组子树形态，驱动协调器比较身份路径。 */
+    /** 在 key=a 的 Fragment 与无 key Fragment 间切换，内部 Stateful 本身不带 key。 */
     function Foo({condition}) {
       return condition ? (
         <React.Fragment key="a">
@@ -713,20 +713,20 @@ describe('ReactFragment', () => {
   it('should preserve state with reordering in multiple levels', async function () {
     const ops = [];
 
-    /** 当前场景的有状态身份探针；实例是否进入更新生命周期用于区分 Fiber 复用与重新挂载。 */
+    /** 作为多层 keyed 重排中深层 key=a 组件的身份探针。 */
     class Stateful extends React.Component {
       /** 记录既有实例完成更新；若组件被重挂载，此生命周期不会留下记录。 */
       componentDidUpdate() {
         ops.push('Update Stateful');
       }
 
-      /** 输出稳定宿主标记，使断言可把组件身份变化与最终树形状同时关联。 */
+      /** 渲染被 key=b 容器包裹的 Hello；父级 Fragment 和容器移动均不改变该输出。 */
       render() {
         return <div>Hello</div>;
       }
     }
 
-    /** 按 condition 构造本场景的两种 Fragment/数组子树形态，驱动协调器比较身份路径。 */
+    /** 同时重排 key=c Fragment 与其中 key=b 容器，Stateful 的 key=a 保持；无 key span 仅改变邻接内容。 */
     function Foo({condition}) {
       return condition ? (
         <div>
@@ -787,20 +787,20 @@ describe('ReactFragment', () => {
   it('should not preserve state when switching to a keyed fragment to an array', async () => {
     const ops = [];
 
-    /** 当前场景的有状态身份探针；实例是否进入更新生命周期用于区分 Fiber 复用与重新挂载。 */
+    /** 检测宿主 div 内 key=foo Fragment 切为无 key 数组时子组件被重挂载。 */
     class Stateful extends React.Component {
       /** 记录既有实例完成更新；若组件被重挂载，此生命周期不会留下记录。 */
       componentDidUpdate() {
         ops.push('Update Stateful');
       }
 
-      /** 输出稳定宿主标记，使断言可把组件身份变化与最终树形状同时关联。 */
+      /** 始终输出 Hello，与另一个空 span 一起构成相同宿主结构；身份结果由更新日志区分。 */
       render() {
         return <div>Hello</div>;
       }
     }
 
-    /** 按 condition 构造本场景的两种 Fragment/数组子树形态，驱动协调器比较身份路径。 */
+    /** 在相同 div 槽位切换 keyed Fragment 与无 key 数组，数组中的 Stateful 故意缺 key 以验证警告。 */
     function Foo({condition}) {
       return condition ? (
         <div>
@@ -862,20 +862,20 @@ describe('ReactFragment', () => {
       return children;
     }
 
-    /** 当前场景的有状态身份探针；实例是否进入更新生命周期用于区分 Fiber 复用与重新挂载。 */
+    /** 用于证明嵌套 unkeyed Fragment 与 Passthrough 函数组件不是同一身份边界。 */
     class Stateful extends React.Component {
       /** 记录既有实例完成更新；若组件被重挂载，此生命周期不会留下记录。 */
       componentDidUpdate() {
         ops.push('Update Stateful');
       }
 
-      /** 输出稳定宿主标记，使断言可把组件身份变化与最终树形状同时关联。 */
+      /** 两种父级都转发为 Hello 输出，只有更新日志能够辨认组件是否重挂载。 */
       render() {
         return <div>Hello</div>;
       }
     }
 
-    /** 按 condition 构造本场景的两种 Fragment/数组子树形态，驱动协调器比较身份路径。 */
+    /** 保持顶层 Fragment，在内部 Fragment 与 Passthrough 之间替换 Stateful 的父节点类型。 */
     function Foo({condition}) {
       return condition ? (
         <>
@@ -917,20 +917,20 @@ describe('ReactFragment', () => {
       return children;
     }
 
-    /** 当前场景的有状态身份探针；实例是否进入更新生命周期用于区分 Fiber 复用与重新挂载。 */
+    /** 检查 keyed Fragment 被 Passthrough 替换时内部 Stateful 的实例重置。 */
     class Stateful extends React.Component {
       /** 记录既有实例完成更新；若组件被重挂载，此生命周期不会留下记录。 */
       componentDidUpdate() {
         ops.push('Update Stateful');
       }
 
-      /** 输出稳定宿主标记，使断言可把组件身份变化与最终树形状同时关联。 */
+      /** 让 keyed Fragment 与函数父边界产生同样的 Hello 宿主内容作为对照。 */
       render() {
         return <div>Hello</div>;
       }
     }
 
-    /** 按 condition 构造本场景的两种 Fragment/数组子树形态，驱动协调器比较身份路径。 */
+    /** 在顶层 Fragment 内，将 key=a 的 Fragment 替换为无 key Passthrough，子内容类型不变。 */
     function Foo({condition}) {
       return condition ? (
         <>
@@ -972,20 +972,20 @@ describe('ReactFragment', () => {
       return children;
     }
 
-    /** 当前场景的有状态身份探针；实例是否进入更新生命周期用于区分 Fiber 复用与重新挂载。 */
+    /** 比较 key=a 的数组子元素与 Passthrough 内无 key 子元素的实例延续。 */
     class Stateful extends React.Component {
       /** 记录既有实例完成更新；若组件被重挂载，此生命周期不会留下记录。 */
       componentDidUpdate() {
         ops.push('Update Stateful');
       }
 
-      /** 输出稳定宿主标记，使断言可把组件身份变化与最终树形状同时关联。 */
+      /** 返回固定 Hello，以零次 componentDidUpdate 辨认容器形态替换后的新实例。 */
       render() {
         return <div>Hello</div>;
       }
     }
 
-    /** 按 condition 构造本场景的两种 Fragment/数组子树形态，驱动协调器比较身份路径。 */
+    /** 在 Fragment 的 keyed 单元素数组与 Passthrough 子树间切换；后一分支也移除 Stateful 的 key。 */
     function Foo({condition}) {
       return condition ? (
         <>{[<Stateful key="a" />]}</>
@@ -1014,24 +1014,24 @@ describe('ReactFragment', () => {
     expect(ReactNoop).toMatchRenderedOutput(<div>Hello</div>);
   });
 
-  /** Given 两个无 key 顶层数组保持相同槽位和 Fragment 结构；When 条件往返更新；Then Stateful 保留身份，而重复 key 警告被组件级去重。通过更新日志、控制台断言与宿主输出验证位置匹配。 */
+  /** Given 两个无 key 顶层数组保持相同槽位和 Fragment 结构；When 条件往返更新；Then Stateful 保留身份，而缺失 key 的警告在首次渲染后被组件级去重。通过更新日志、控制台断言与宿主输出验证位置匹配。 */
   it('should preserve state when it does not change positions', async function () {
     const ops = [];
 
-    /** 当前场景的有状态身份探针；实例是否进入更新生命周期用于区分 Fiber 复用与重新挂载。 */
+    /** 验证无 key 顶层数组中第二槽位的 Fragment 不变时 Stateful 仍能更新。 */
     class Stateful extends React.Component {
       /** 记录既有实例完成更新；若组件被重挂载，此生命周期不会留下记录。 */
       componentDidUpdate() {
         ops.push('Update Stateful');
       }
 
-      /** 输出稳定宿主标记，使断言可把组件身份变化与最终树形状同时关联。 */
+      /** 提供 span 之后的 Hello 宿主节点，配合输出顺序与生命周期次数验证位置匹配。 */
       render() {
         return <div>Hello</div>;
       }
     }
 
-    /** 按 condition 构造本场景的两种 Fragment/数组子树形态，驱动协调器比较身份路径。 */
+    /** 两侧均返回无 key 数组 [span, Fragment(Stateful)]，保留槽位并故意触发一次列表 key 警告。 */
     function Foo({condition}) {
       return condition
         ? [
@@ -1089,14 +1089,14 @@ describe('ReactFragment', () => {
   it('should preserve state of children when adding a fragment wrapped in Lazy', async function () {
     const ops = [];
 
-    /** 当前场景的有状态身份探针；实例是否进入更新生命周期用于区分 Fiber 复用与重新挂载。 */
+    /** 验证 Lazy child 解包得到 Fragment 后可继续复用直接返回的 key=a 子组件。 */
     class Stateful extends React.Component {
       /** 记录既有实例完成更新；若组件被重挂载，此生命周期不会留下记录。 */
       componentDidUpdate() {
         ops.push('Update Stateful');
       }
 
-      /** 输出稳定宿主标记，使断言可把组件身份变化与最终树形状同时关联。 */
+      /** 产生稳定 Hello 节点；Lazy 解包后的新增 World 节点由已加载 Fragment 提供。 */
       render() {
         return <div>Hello</div>;
       }
@@ -1111,7 +1111,7 @@ describe('ReactFragment', () => {
       ),
     }));
 
-    /** 按 condition 构造本场景的两种 Fragment/数组子树形态，驱动协调器比较身份路径。 */
+    /** condition 在直接 key=a Stateful 与解析为 Fragment 描述值的 lazyChild 之间切换。 */
     function Foo({condition}) {
       return condition ? <Stateful key="a" /> : lazyChild;
     }

@@ -133,7 +133,7 @@ const debugPluginContainerContext = createDebugger(
 export const ERR_CLOSED_SERVER = 'ERR_CLOSED_SERVER'
 
 /**
- * 中断无法恢复的旧模块请求。
+ * 中断已过期的旧模块请求。
  * transform 中间件会识别该错误并返回 504 Request Timeout，让浏览器重新发起新请求，
  * 而不是把服务器重启误报成源码编译错误。
  */
@@ -146,11 +146,11 @@ export function throwClosedServerError(): never {
   throw err
 }
 
-/** PluginContainer 在测试/兼容层可覆盖的 Rolldown 运行选项。 */
+/** 保留的容器选项类型；当前创建函数和构造器均不接收该对象。 */
 export interface PluginContainerOptions {
   /** 模块 ID 相对解析的工作目录。 */
   cwd?: string
-  /** 模拟输出阶段时使用的 Rolldown 输出选项。 */
+  /** 输出选项声明；当前开发容器不实现产物阶段。 */
   output?: OutputOptions
   /** 预置的 ModuleInfo 容器。 */
   modules?: Map<
@@ -189,30 +189,31 @@ export async function createEnvironmentPluginContainer<
 }
 
 /**
- * 一次嵌套 `this.resolve()` 需要跳过的历史调用。
- * 以 plugin + id + importer 三元组跟踪，而不是只按插件跳过，避免不同请求被误判成递归
- * （#18903）。
+ * 嵌套 `this.resolve()` 登记的委托解析记录，按 plugin + 请求 id + 请求 importer 跟踪。
+ * 首次登记只在请求匹配时跳过该插件；再次委托相同三元组则标记 called，后续嵌套分支
+ * 都跳过它，截断来回改写 ID 的循环（#18903）。
  */
 export type SkipInformation = {
   /** 本次解析的模块 ID。 */
   id: string
   /** 发起本次解析的模块。 */
   importer: string | undefined
-  /** 已处理该三元组的插件。 */
+  /** 发起委托解析、要求 skipSelf 的插件。 */
   plugin: Plugin
-  /** 同一调用链中该记录是否已被再次遇到。 */
+  /** 该插件再次委托了相同请求；为 true 后，后续嵌套解析不再按 ID 匹配才跳过。 */
   called?: boolean
 }
 
 /**
  * 单个 Environment 的开发态 Rolldown 插件模拟器。
  *
- * 它实现 options/buildStart/resolveId/load/transform/watchChange/buildEnd/closeBundle 等非
- * output 生命周期，把每个插件绑定到可复用 PluginContext，并与 ModuleGraph 同步 meta、
- * watch file 和 Source Map。生产构建使用真正的 Rolldown，不走此容器。
+ * 它实现 options/buildStart/resolveId/load/transform/watchChange/buildEnd/closeBundle 等钩子，
+ * 没有产物生成阶段，但仍调用 closeBundle 做清理。生命周期钩子复用插件
+ * 上下文，模块钩子按每次流水线另建上下文，并与 ModuleGraph 同步 meta、监听依赖和
+ * Source Map。生产构建和 bundled dev 使用真正的 Rolldown，不走这条逐模块转换管线。
  */
 class EnvironmentPluginContainer<Env extends Environment = Environment> {
-  /** 每个插件复用一个上下文，保存当前活动模块和递归解析信息。 */
+  /** 生命周期钩子按插件复用上下文；resolve/load/transform 另建每次调用的上下文。 */
   private _pluginContextMap = new Map<Plugin, PluginContext>()
   /** options 钩子执行一次后的缓存。 */
   private _resolvedRolldownOptions?: InputOptions
@@ -247,6 +248,7 @@ class EnvironmentPluginContainer<Env extends Environment = Environment> {
   private _closed = false
 
   /**
+   * 初始化当前环境的模块图与 hook 排序工具；autoStart 为 false 时直接标记已启动，禁用惰性 buildStart。
    * @internal 请使用 `createEnvironmentPluginContainer()`，确保 options 钩子已完成解析。
    */
   constructor(
@@ -289,7 +291,8 @@ class EnvironmentPluginContainer<Env extends Environment = Environment> {
   /**
    * 返回开发模块图中可支持的 ModuleInfo 视图。
    * 未支持字段通过 Proxy 抛出明确错误；`then` 特判为 undefined，避免 async 返回值把
-   * ModuleInfo 误识别为 thenable。meta 会在 resolve/load/transform 阶段持续合并。
+   * ModuleInfo 误识别为 thenable。resolve meta 由 ModuleGraph 建点时保存；此后 load 与
+   * transform 的 meta 合并到该视图。
    */
   getModuleInfo(id: string): ModuleInfo | null {
     const module = this.moduleGraph?.getModuleById(id)
@@ -301,7 +304,7 @@ class EnvironmentPluginContainer<Env extends Environment = Environment> {
         { id, meta: module.meta || EMPTY_OBJECT } as ModuleInfo,
         // 访问未实现字段立即报清晰错误，避免不兼容 Rollup 插件以隐晦方式继续失败。
         {
-          /** 返回已实现字段，并拒绝开发容器无法提供的 output 信息。 */
+          /** 返回已实现字段；code、导入表等尚未实现的字段也会抛错。 */
           get(info: any, key: string) {
             if (key in info) {
               return info[key]
@@ -434,9 +437,10 @@ class EnvironmentPluginContainer<Env extends Environment = Environment> {
   /**
    * 依次执行 resolveId，返回第一个非空结果（hookFirst）。
    *
-   * 首次调用会惰性等待 buildStart；声明式 ID filter 在 handler 前执行；普通文件路径统一
-   * normalize，外部 URL 与 `\0` 虚拟 ID 保持原样。skipCalls 精确阻止递归
-   * `this.resolve()`，同时允许同一插件解析不同 id/importer（#18903）。
+   * 未启动时，本次调用触发并等待 buildStart；_started 在钩子执行前置为 true，因此钩子
+   * 内重入 resolveId 不会等待自身。已启动分支不再等待 _buildStartPromise。
+   * 声明式 ID filter 在 handler 前执行；普通路径规范化，外部 URL 与 `\0` ID 保持原样。
+   * skipCalls 先按请求三元组跳过，重复委托标记 called 后改为后续嵌套分支始终跳过。
    */
   async resolveId(
     rawId: string,
@@ -544,7 +548,7 @@ class EnvironmentPluginContainer<Env extends Environment = Environment> {
         prettifyUrl(id, this.environment.config.root),
       )
 
-      // resolveId 是 hookFirst：第一个非空结果终止后续插件。
+      // 此开发容器只接受 truthy 结果；false、空字符串等会继续到下一插件。
       break
     }
 
@@ -761,8 +765,9 @@ class EnvironmentPluginContainer<Env extends Environment = Environment> {
   }
 
   /**
-   * 幂等关闭容器：先阻止新可恢复请求，等待在途 hook settle，再运行 buildEnd 和
-   * closeBundle。使用 allSettled 确保某个在途任务失败不会跳过其他插件的清理。
+   * 首次关闭先阻止新可恢复模块请求，等待当前已跟踪 Promise 的快照 settle，再串接
+   * buildEnd 和 closeBundle。在途任务拒绝不会阻止进入 buildEnd；buildEnd 自身若拒绝，
+   * 本方法会拒绝且不再进入 closeBundle。后续 close 调用直接返回，不等待首轮关闭。
    */
   async close(): Promise<void> {
     if (this._closed) return
@@ -899,7 +904,7 @@ class PluginContext
   extends MinimalPluginContext
   implements Omit<RollupPluginContext, 'cache'>
 {
-  /** 旧插件读取的 SSR 标记；实际来源是当前 Environment consumer。 */
+  /** 保留的旧上下文字段，当前实现始终为 false；hook 的 options.ssr 根据 consumer 计算。 */
   ssr = false
   /** 当前解析是否来自依赖扫描。 */
   _scan = false
@@ -935,8 +940,9 @@ class PluginContext
 
   /**
    * 在当前 Environment 中再次进入 resolveId 流水线。
-   * 默认 `skipSelf: true`，但只跳过相同 plugin/id/importer 三元组；不同子请求仍允许当前
-   * 插件参与。显式 false 则不追加当前调用记录（#18903）。
+   * 默认 skipSelf 为 true，登记的是本次委托的 id/importer。首次记录只在同请求中跳过
+   * 当前插件；重复记录置 called=true，后续嵌套请求都跳过它。显式 false 不追加记录，
+   * 但继续继承外层已有的跳过状态（#18903）。
    */
   async resolve(
     id: string,
@@ -948,7 +954,7 @@ class PluginContext
       custom?: CustomPluginOptions
       /** 标记该请求是否为入口解析。 */
       isEntry?: boolean
-      /** 默认跳过当前同一调用；设为 false 时允许插件递归处理。 */
+      /** 默认登记本次委托并跳过自己；false 不新增记录，但不清除外层跳过状态。 */
       skipSelf?: boolean
     },
   ): Promise<ResolvedId | null> {
@@ -987,8 +993,9 @@ class PluginContext
   }
 
   /**
-   * 模拟 Rolldown `this.load()`：确保模块图节点存在，运行 load 与 transform，再返回
-   * ModuleInfo。transform 不能省略，否则调用方会读到转换前 meta（#11469、#14965）。
+   * 模拟 Rolldown `this.load()`：确保模块图节点存在，运行 load；仅当插件返回源码时继续
+   * transform，使返回的 ModuleInfo 包含转换后的 meta。此处不做磁盘读取回退，也不写入
+   * 普通请求的 transformResult 缓存（#11469、#14965）。
    */
   async load(
     options: {
@@ -1010,8 +1017,7 @@ class PluginContext
     }
 
     const moduleInfo = this.getModuleInfo(options.id)
-    // 正常开发环境已通过 ensureEntryFromUrl 建立节点；类型无法证明这一点，且精简容器可
-    // 没有 moduleGraph，所以仍保留显式失败分支。
+    // 没有模块图或所给 ID 未对应到节点时，无法返回 ModuleInfo，明确报加载失败。
     if (!moduleInfo) throw Error(`Failed to load module with id ${options.id}`)
     return moduleInfo
   }
@@ -1025,7 +1031,7 @@ class PluginContext
   _updateModuleInfo(
     id: string,
     {
-      meta
+      meta,
     }: {
       /** 当前钩子新增或覆写的插件元数据。 */
       meta?: object | null
@@ -1130,8 +1136,8 @@ class PluginContext
 
   /**
    * 把 Rolldown 多种错误位置格式统一为 plugin/id/loc/frame。
-   * transform 错误还通过组合 Source Map 回溯到原始源文件；CSS 预处理器报告 include
-   * 文件时优先读取该文件生成代码帧。
+   * transform 错误有可映射位置时回溯 loc；已有 id、frame 和 pluginCode 保持格式化时的
+   * 值。CSS 预处理器报告 include 文件且未给 frame 时，优先读取该文件生成代码帧。
    */
   private _formatLog<E extends RollupLog>(
     e: string | E,
@@ -1341,8 +1347,8 @@ class TransformPluginContext
   /**
    * 惰性合并 sourcemapChain。
    * `{ mappings: '' }` 是“有效但无映射”的兼容哨兵；缺少 version 的其他对象表示插件
-   * 显式清空 Map。MagicString 未给 filename 时生成空 source，需替换为当前 ID/原始源码
-   * 才满足 Source Map 规范并兼容 Rollup（#13657）。
+   * 使本轮合成返回 null。首个有效 Map 若只有一个空 source，修复为当前 ID/原始源码，
+   * 使 MagicString 未传 filename 时仍能标识调试来源（#13657）。
    */
   _getCombinedSourcemap():
     | SourceMap
@@ -1378,7 +1384,9 @@ class TransformPluginContext
       if (!('version' in (m as SourceMap))) {
         // `{ mappings: '' }` 保留为 Rolldown/Rollup 认可的空映射。
         if ((m as SourceMap).mappings === '') {
-          combinedMap = { /** 保留 Rolldown/Rollup 约定的空映射哨兵。 */ mappings: '' }
+          combinedMap = {
+            /** 保留 Rolldown/Rollup 约定的空映射哨兵。 */ mappings: '',
+          }
           break
         }
         // 其他无 version 值表示插件主动使 Source Map 失效。
@@ -1414,7 +1422,8 @@ class TransformPluginContext
   }
 
   /**
-   * 返回标准 SourceMap。若插件链没有可用映射，则为原始源码生成 identity-like 高精度 Map。
+   * 返回标准 SourceMap。若插件链没有可用映射，则按 originalCode 生成 boundary 精度映射；
+   * 这张回退 Map 不会重建插件已改变的代码位置，也不改写内部 combinedMap。
    */
   getCombinedSourcemap(): SourceMap {
     const map = this._getCombinedSourcemap()
@@ -1490,6 +1499,7 @@ class PluginContainer {
     if (clientModuleInfo == null && ssrModuleInfo == null) return null
 
     return new Proxy({} as any, {
+      /** meta 浅合并两侧且 client 覆盖；其他字段按键存在性选择 client，再回退 ssr。 */
       get: (_, key: string) => {
         // 旧入口中的 meta 代表两个 Environment 的模块元数据，因此不能只取 client。
         if (key === 'meta') {

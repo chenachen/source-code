@@ -1,6 +1,7 @@
 import path from 'node:path'
 import { defineConfig } from 'vite'
 
+/** test-package-f 的磁盘绝对目录，用作 alias 与优化 include 解析的对照输入。 */
 const packageFPath = path.resolve(import.meta.dirname, 'test-package-f')
 
 export default defineConfig({

@@ -7,7 +7,7 @@
  * @noflow
  */
 
-/** 原生语义上 value 只读、无需 onChange 的 input 类型集合。 */
+/** 用户交互不直接编辑 value 的 input 类型；此豁免不适用于 checked 的警告。 */
 const hasReadOnlyValue = {
   button: true,
   checkbox: true,
@@ -20,7 +20,7 @@ const hasReadOnlyValue = {
 
 /**
  * 在开发环境检查受控表单值是否配有可写入口。
- * 边界：只读 input 类型、显式 readOnly/disabled 或未提供 value/checked 时不警告。
+ * value 接受 onChange/onInput 或类型豁免；checked 仅接受 onChange。readOnly/disabled 或未指定值时跳过相应警告。
  */
 export function checkControlledValueProps(
   tagName: string,

@@ -34,6 +34,12 @@ export interface ResolvedForwardConsoleOptions {
 /**
  * 在客户端包装指定 console 方法并监听未处理错误，通过 ModuleRunner transport 转发给
  * Vite server。原 console 始终先执行，所以网络失败不能吞掉浏览器本地日志。
+ * console 调用不等待发送完成，各次发送可重叠；此函数只负责安装，不返回卸载器。
+ * 不存在的 console 方法会跳过，window 事件则仅在浏览器中安装。
+ *
+ * @param transport - 已归一化的发送通道；连接尚未建立时的专用错误会被转发层忽略。
+ * @param options - 已合并默认值的开关与方法集合，disabled 时不改动 console 或监听器。
+ * @param console - 要包装的输出对象；保存其原 error 方法，供双重发送失败时回退。
  */
 export function setupForwardConsoleHandler(
   transport: NormalizedModuleRunnerTransport,
@@ -44,7 +50,10 @@ export function setupForwardConsoleHandler(
     return
   }
 
-  /** 把任意 throw/rejection 值归一成可序列化 Error 数据并发送。 */
+  /**
+   * 将 window 错误或拒绝原因缩为 name/message/stack 数据包。
+   * 不在这里吞掉发送异常，让事件入口或 sendLog 决定是否回落原 console.error。
+   */
   async function sendError(type: 'error' | 'unhandled-rejection', error: any) {
     await transport.send({
       type: 'custom',
@@ -60,7 +69,10 @@ export function setupForwardConsoleHandler(
     })
   }
 
-  /** 格式化一次 console 调用；发送失败再尝试按 unhandled rejection 报告。 */
+  /**
+   * 格式化并发送一次 console 调用；格式化或发送失败后，再发送错误包。
+   * 错误包也失败时仅记录最后一次失败，且避开包装后的 error，防止转发递归。
+   */
   async function sendLog(level: ForwardConsoleLogLevel, args: unknown[]) {
     try {
       await transport.send({
@@ -94,6 +106,7 @@ export function setupForwardConsoleHandler(
     if (typeof original !== 'function') {
       continue
     }
+    /** 同步调用保存的本地方法，再启动无需调用方等待的日志转发。 */
     ;(console as any)[level] = (...args: unknown[]) => {
       // 本地输出优先且不 await transport，保持 console 的同步调用体验。
       original(...args)
@@ -133,7 +146,11 @@ export function setupForwardConsoleHandler(
 // https://github.com/vitest-dev/vitest/blob/a2d650e00dbd8220397c5c25aef05c850100e446/packages/utils/src/display.ts#L129
 /**
  * 近似浏览器/Node console 的 `%s/%d/%i/%f/%j/%o/%O/%c/%%` 格式规则，并把剩余参数
- * 追加成稳定文本。无法 JSON.stringify 的循环对象不会让日志转发本身抛错。
+ * 追加成文本。`%j` 的 JSON 序列化失败统一显示 `[Circular]`，其中也包括 BigInt 或 toJSON 抛错。
+ * 第一个参数不是字符串时不解析占位符；参数不足时保留原占位符，`%%` 不消耗参数。
+ * `%c` 消耗样式参数但不把它写入服务端文本，其余对象格式由 stringifyConsoleArg 处理。
+ *
+ * @returns 供 console 转发 payload 使用的单行参数文本；这里不写 console 或发送消息。
  */
 export function formatConsoleArgs(args: unknown[]): string {
   if (args.length === 0) {
@@ -208,7 +225,7 @@ export function formatConsoleArgs(args: unknown[]): string {
 
 /**
  * 把单个 console 参数转成可跨 transport 的文本：保留 Error stack、函数名、BigInt 后缀，
- * 并用 WeakSet 标记循环引用；JSON 仍失败时退回 String(value)。
+ * 并用 WeakSet 标记已见对象（环或重复引用均显示 `[Circular]`）；JSON 失败时退回 String(value)。
  */
 function stringifyConsoleArg(value: unknown): string {
   if (typeof value === 'string') {

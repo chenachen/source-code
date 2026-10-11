@@ -41,7 +41,7 @@ describe('ReactIncrementalErrorReplay', () => {
   });
 
   /**
-   * Given lazy 初始化仅在第一次 render 抛错；When 并发尝试失败后 React 同步重放整根；
+   * Given 用户惰性初始化器仅在第一次 render 抛错；When 并发尝试失败后 React 同步重放整根；
    * Then 第二次初始化成功、根完成提交，并只记录“已同步恢复”诊断。
    * 验证机制：空调度日志与 console error；对应 ReactFiberWorkLoop 的 error replay/synchronous retry。
    */

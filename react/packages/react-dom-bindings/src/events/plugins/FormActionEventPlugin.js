@@ -23,7 +23,7 @@ import {checkAttributeStringCoercion} from 'shared/CheckStringCoercion';
 
 import {SyntheticEvent} from '../SyntheticEvent';
 
-/** coerceFormActionProp 执行把 form submit 提取为 action 合成事件并协调 transition、FormData 与阻塞状态的核心步骤；输入来自原生事件/Fiber，输出保持插件分发与调度边界。 */
+/** 函数 action 保持原值；不支持类型变为 null，其他值字符串化并清洗 URL。 */
 function coerceFormActionProp(
   actionProp: mixed,
 ): string | (FormData => void | Promise<void>) | null {
@@ -47,9 +47,11 @@ function coerceFormActionProp(
 }
 
 /**
- * 若表单没有阻止默认行为，该插件会调用 form、input 或 button 上的 action 函数。
+ * 仅为当前根拥有的 form submit 提取 action 事件；嵌套父根看到的替代 target 不处理。
+ * 从节点缓存读取最新 form action，submitter 的非空 formAction 可覆盖它，再把
+ * submitForm 排在普通 onSubmit 监听器之后，使其读取用户处理后的 defaultPrevented。
+ * 是否调用函数 action、仅更新 pending 状态或让浏览器继续导航，延后到该监听器决定。
  */
-/** extractEvents 从原生事件和 Fiber 路径收集把 form submit 提取为 action 合成事件并协调 transition、FormData 与阻塞状态所需数据；只生成满足插件条件的 listener/event。 */
 function extractEvents(
   dispatchQueue: DispatchQueue,
   domEventName: DOMEventName,
@@ -85,8 +87,8 @@ function extractEvents(
     if (submitterAction !== null) {
       // submitter 上的 formAction 会覆盖 form action。
       action = submitterAction;
-      // 若 action 是函数，不应把 submitter 的 name
-      // 值写入 FormData，因为该字段由服务端控制。
+      // 有独立 formAction 时清掉 submitter，后续 FormData 不再加入其 name/value；
+      // 该分支对函数和字符串覆盖值都成立。
       submitter = null;
     }
   }
@@ -99,7 +101,12 @@ function extractEvents(
     nativeEventTarget,
   );
 
-  /** submitForm 执行把 form submit 提取为 action 合成事件并协调 transition、FormData 与阻塞状态的核心步骤；输入来自原生事件/Fiber，输出保持插件分发与调度边界。 */
+  /**
+   * 在 onSubmit 之后决定提交行为。已阻止默认且本事件调度过 Transition 时，以
+   * null action 启动宿主 transition，仅提供 pending 表单状态；未调度则直接退出。
+   * 默认未阻止且 action 为函数时阻止导航、构造提交时的 FormData 并执行 action；
+   * 字符串或空 action 保留浏览器默认提交，也不在此设置 pending 状态。
+   */
   function submitForm() {
     if (nativeEvent.defaultPrevented) {
       // 较早的事件已阻止表单提交；若同时调度了 transition 更新，
@@ -124,13 +131,13 @@ function extractEvents(
           // 将 `null` 作为 action 传入。
           // TODO：考虑把 startHostTransition 拆成两个
           // 函数：一个设置 form status，另一个调用
-    // action 函数。
+          // action 函数。
           null,
           formData,
         );
       } else {
         // 没有更早的事件调度 transition，因此退出且不设置
-      // pending form status 状态。
+        // pending form status 状态。
       }
     } else if (typeof action === 'function') {
       // 已提供 form action，需要阻止原生导航。
@@ -168,7 +175,7 @@ function extractEvents(
 
 export {extractEvents};
 
-/** dispatchReplayedFormAction 推进把 form submit 提取为 action 合成事件并协调 transition、FormData 与阻塞状态的分发或重放状态机；阻塞时保留事件，解除后按原优先级继续。 */
+/** 把 hydration 后已解析的 form action 和 FormData 交给 startHostTransition。 */
 export function dispatchReplayedFormAction(
   formInst: Fiber,
   form: HTMLFormElement,

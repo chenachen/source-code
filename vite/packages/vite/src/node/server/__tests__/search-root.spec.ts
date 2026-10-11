@@ -7,7 +7,7 @@ const dirname = import.meta.dirname
 
 /**
  * 从不同 monorepo 标记的嵌套目录开始向上搜索，验证 workspace 根识别优先于最近
- * package 根；无 workspace 标记时应稳定退回 Vite 仓库根。
+ * package 根；夹具自身无标记时仍继续向上命中 Vite 仓库的 workspace 标记。
  */
 describe('searchForWorkspaceRoot', () => {
   /**
@@ -73,14 +73,14 @@ describe('searchForWorkspaceRoot', () => {
   })
 
   /**
-   * 场景：嵌套夹具路径沿途没有 workspace 标记。
-   * 验证目标：回退到最近可用的包根，即当前 Vite 仓库根。
+   * 场景：嵌套夹具及其近邻没有 workspace 标记，但祖先 Vite 仓库有 pnpm-workspace.yaml。
+   * 验证目标：越过夹具自身的 package.json，返回祖先 Vite workspace 根。
    */
   test('none', () => {
     const resolved = searchForWorkspaceRoot(
       resolve(dirname, 'fixtures/none/nested'),
     )
-    // 当前夹具位于 Vite 包内部，所以最近的兜底包根就是仓库根。
+    // 夹具的最近包根是 nested；这里返回仓库根，证明搜索没有在最近 package.json 停止。
     expect(resolved).toBe(resolve(dirname, '../../../../../..'))
   })
 })

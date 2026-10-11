@@ -1,14 +1,7 @@
-/**
- * 测试阅读说明：本文件验证 `runtime-dom/directives/vOn` 的运行时行为。
- * “测试组”概括共享前置条件，“测试场景”说明当前输入、边界或历史回归目标；具体预期以断言为准。
- */
 import { patchEvent } from '../../src/modules/events'
 import { withKeys, withModifiers } from '@vue/runtime-dom'
 
-/**
- * 构造并派发可冒泡、可取消的 DOM 事件。
- * 可选 process 回调允许用例在派发前补充按键、鼠标键等只读环境信息。
- */
+/** 执行(e as any).button=0；target.dispatchEvent(e)。返回e。 */
 function triggerEvent(
   target: Element,
   event: string,
@@ -26,9 +19,9 @@ function triggerEvent(
   return e
 }
 
-// 测试组：runtime-dom 的 v-on 事件修饰符和按键修饰符。
+// 测试组：triggerEvent派发可冒泡和取消的原生事件，withModifiers/withKeys包装spy；通过按键、鼠标及系统键输入比较默认取消、传播和调用次数。
 describe('runtime-dom: v-on directive', () => {
-  // 测试场景：应该支持“停止”和“阻止”。
+  /** 测试场景：input 嵌套于 div，两者绑定 click；子处理器使用 prevent/stop 后触发可冒泡点击，事件 defaultPrevented=true 且父处理器不调用。 */
   test('it should support "stop" and "prevent"', () => {
     const parent = document.createElement('div')
     const child = document.createElement('input')
@@ -41,7 +34,7 @@ describe('runtime-dom: v-on directive', () => {
     expect(parentNextValue).not.toBeCalled()
   })
 
-  // 测试场景：它应该支持“自我”。
+  /** 测试场景：父 div 处理器加 self，点击嵌套 input；target 与 currentTarget 不同，父处理器被过滤。 */
   test('it should support "self"', () => {
     const parent = document.createElement('div')
     const child = document.createElement('input')
@@ -53,7 +46,7 @@ describe('runtime-dom: v-on directive', () => {
     expect(fn).not.toBeCalled()
   })
 
-  // 测试场景：它应该支持按键修饰符和系统修饰符。
+  /** 测试场景：逐一组合 ctrl/shift/meta/alt 与 esc、arrow-left；普通 a 或缺少系统键时不调用，系统键按下并使用 Escape/ArrowLeft 别名时各调用一次，验证两层守卫共同通过。 */
   test('it should support key modifiers and system modifiers', () => {
     const keyNames = ['ctrl', 'shift', 'meta', 'alt'] as const
 
@@ -90,10 +83,10 @@ describe('runtime-dom: v-on directive', () => {
     })
   })
 
-  // 测试场景：它应该支持“精确”修饰符。
+  /** 测试场景：先为 exact 单独触发无系统键和 ctrl 事件，再组合 ctrl+exact+a；只有无多余系统键的匹配组合调用，ctrl+alt+a 被过滤。 */
   test('it should support "exact" modifier', () => {
     const el = document.createElement('div')
-    // Case 1: <div @keyup.exact="test"/>
+    // 场景一：<div @keyup.exact="test"/>，无其他系统键才通过。
     const fn1 = vi.fn()
     const next1 = withModifiers(fn1, ['exact'])
     patchEvent(el, 'onKeyup', null, next1, null)
@@ -101,7 +94,7 @@ describe('runtime-dom: v-on directive', () => {
     expect(fn1.mock.calls.length).toBe(1)
     triggerEvent(el, 'keyup', e => (e.ctrlKey = true))
     expect(fn1.mock.calls.length).toBe(1)
-    // Case 2: <div @keyup.ctrl.a.exact="test"/>
+    // 场景二：<div @keyup.ctrl.a.exact="test"/>，只允许 ctrl 与 a。
     const fn2 = vi.fn()
     const next2 = withKeys(withModifiers(fn2, ['ctrl', 'exact']), ['a'])
     patchEvent(el, 'onKeyup', null, next2, null)
@@ -113,7 +106,7 @@ describe('runtime-dom: v-on directive', () => {
     })
     expect(fn2.mock.calls.length).toBe(1)
     triggerEvent(el, 'keyup', e => {
-      // should not trigger if has other system modifiers
+      // 带有未声明系统键 alt 时被 exact 过滤。
       e.key = 'a'
       e.ctrlKey = true
       e.altKey = true
@@ -121,7 +114,7 @@ describe('runtime-dom: v-on directive', () => {
     expect(fn2.mock.calls.length).toBe(1)
   })
 
-  // 测试场景：应该支持鼠标修改器。
+  /** 测试场景：循环 left/middle/right 并遍历 0/1/2 按钮事件；非对应按钮不调用，对应按钮调用，核对鼠标 button 守卫。 */
   it('should support mouse modifiers', () => {
     const buttons = ['left', 'middle', 'right'] as const
     const buttonCodes = { left: 0, middle: 1, right: 2 }
@@ -141,7 +134,7 @@ describe('runtime-dom: v-on directive', () => {
     })
   })
 
-  // 测试场景：使用修饰符时应处理多个参数。
+  /** 测试场景：ctrl 点击通过守卫后手动向包装器传 event、value、true；原处理器收到全部三个参数，验证包装不丢弃额外参数。 */
   it('should handle multiple arguments when using modifiers', () => {
     const el = document.createElement('div')
     const fn = vi.fn()
@@ -151,7 +144,7 @@ describe('runtime-dom: v-on directive', () => {
     expect(fn).toBeCalledWith(event, 'value', true)
   })
 
-  // 测试场景：withKeys 为不同的修饰符分别缓存包装监听器。
+  /** 测试场景：同一处理器分别以 a、b 生成按键包装并绑定两个按钮；包装对象不同，各自匹配按键后原处理器累计两次，防止缓存串用修饰符。 */
   it('withKeys cache wrapped listener separately for different modifiers', () => {
     const el1 = document.createElement('button')
     const el2 = document.createElement('button')
@@ -166,7 +159,7 @@ describe('runtime-dom: v-on directive', () => {
     expect(fn).toBeCalledTimes(2)
   })
 
-  // 测试场景：withModifiers 为不同的修饰符分别缓存包装监听器。
+  /** 测试场景：同一处理器分别以 ctrl、shift 生成包装并绑定两个按钮；包装对象不同，各自匹配系统键后原处理器累计两次，防止缓存串用守卫。 */
   it('withModifiers cache wrapped listener separately for different modifiers', () => {
     const el1 = document.createElement('button')
     const el2 = document.createElement('button')
@@ -181,7 +174,7 @@ describe('runtime-dom: v-on directive', () => {
     expect(fn).toBeCalledTimes(2)
   })
 
-  // 测试场景：事件处理器为 null 或 undefined 时，withModifiers 能安全跳过调用。
+  /** 测试场景：传入 null、undefined 处理器并指定修饰符；不抛错且分别原样返回 null、undefined，验证空处理器不会被包成可调用函数。 */
   it('withModifiers should handle null or undefined handler', () => {
     expect(() => {
       const handler1 = withModifiers(null as any, ['ctrl'])

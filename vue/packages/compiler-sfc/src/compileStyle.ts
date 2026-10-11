@@ -27,7 +27,7 @@ export interface SFCStyleCompileOptions {
   id: string
   /** 是否重写选择器以限制样式作用域。 */
   scoped?: boolean
-  /** 是否通过 trim 插件清理每条规则首尾空白节点。 */
+  /** 是否通过 trim 插件把 rule/at-rule 的 raws.before/after 空白规范为换行。 */
   trim?: boolean
   /** 是否按生产模式生成更短且稳定的 CSS 变量名。 */
   isProd?: boolean
@@ -41,7 +41,7 @@ export interface SFCStyleCompileOptions {
   preprocessCustomRequire?: (id: string) => any
   /** 传给 PostCSS `process()` 的配置。 */
   postcssOptions?: any
-  /** 在 Vue 内置插件之后执行的用户 PostCSS 插件。 */
+  /** 注册在 CSS vars 之后、trim/scoped/CSS Modules 之前的用户插件；调用时机由 PostCSS hook 决定。 */
   postcssPlugins?: any[]
   /**
    * @deprecated 请改用 `inMap`；保留用于兼容旧版插件调用。
@@ -116,9 +116,13 @@ export function compileStyleAsync(
 }
 
 /**
- * 样式编译主流程：预处理语言 → CSS vars → trim → scoped → CSS Modules/用户插件。
+ * 先预处理为 CSS，再按 CSS vars → 用户插件 → trim → scoped → CSS Modules 注册插件。
+ * PostCSS 分别执行 Once、节点访问和 OnceExit；注册顺序不表示每个插件整体先后执行。
  *
  * 所有预处理依赖和 PostCSS dependency message 会汇总返回，供构建工具监听 HMR。
+ * 预处理器加载与 CSS Modules 配置检查在 try 之外，配置异常直接抛出；预处理器返回的
+ * errors 先累积，仍用其 code 进入 PostCSS。同步处理异常返回空 code，可保留 LazyResult；
+ * 异步拒绝则返回空 code 且清空 map/rawResult，保留此前已知依赖。
  */
 export function doCompileStyle(
   options: SFCAsyncStyleCompileOptions,
@@ -203,11 +207,11 @@ export function doCompileStyle(
     errors.push(...preProcessedSource.errors)
   }
 
-  /** 收集普通 PostCSS 插件通过 dependency message 报告的绝对依赖路径。 */
+  /** 原样收集 dependency message.file；插件应提供可监听路径，本函数不做绝对化或自身过滤。 */
   const recordPlainCssDependencies = (messages: Message[]) => {
     messages.forEach(msg => {
       if (msg.type === 'dependency') {
-        // PostCSS dependency message 的 file 已是绝对路径，可直接交给构建器监听。
+        // file 由报告依赖的插件负责；Set 去重，但插件仍可把刚删掉的当前 filename 加回来。
         dependencies.add(msg.file)
       }
     })

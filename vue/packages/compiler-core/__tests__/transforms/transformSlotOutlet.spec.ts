@@ -1,6 +1,6 @@
 /**
  * `<slot>` 出口场景：提取静态/动态名称、生成 props 和 fallback，并验证 scoped/slotted、
- * 条件分支 key 与非法自定义指令对 renderSlot 参数形状的影响。
+ * 同名简写与非法自定义指令对 renderSlot 参数形状的影响。
  */
 import {
   type CompilerOptions,
@@ -36,6 +36,9 @@ function parseWithSlots(template: string, options: CompilerOptions = {}) {
 }
 
 describe('compiler: transform <slot> outlets', () => {
+  /**
+   * 解析空 slot outlet；检查 renderSlot 仅接收 $slots 和默认名称，省略未使用的 props/fallback 尾参。
+   */
   test('default slot outlet', () => {
     const ast = parseWithSlots(`<slot/>`)
     expect((ast.children[0] as ElementNode).codegenNode).toMatchObject({
@@ -45,6 +48,9 @@ describe('compiler: transform <slot> outlets', () => {
     })
   })
 
+  /**
+   * 出口静态 name 为 foo；检查第二参数为带引号的 foo，普通 name 属性不生成额外 props。
+   */
   test('statically named slot outlet', () => {
     const ast = parseWithSlots(`<slot name="foo" />`)
     expect((ast.children[0] as ElementNode).codegenNode).toMatchObject({
@@ -54,6 +60,9 @@ describe('compiler: transform <slot> outlets', () => {
     })
   })
 
+  /**
+   * 出口使用 :name="foo"；检查名称为动态表达式而非字符串字面量，仍只保留两个调用参数。
+   */
   test('dynamically named slot outlet', () => {
     const ast = parseWithSlots(`<slot :name="foo" />`)
     expect((ast.children[0] as ElementNode).codegenNode).toMatchObject({
@@ -70,6 +79,9 @@ describe('compiler: transform <slot> outlets', () => {
     })
   })
 
+  /**
+   * 出口名称为 foo + bar 并开启前缀；检查 _ctx.$slots 与分段的 _ctx.foo/_ctx.bar，表达式结构继续参与 codegen。
+   */
   test('dynamically named slot outlet w/ prefixIdentifiers: true', () => {
     const ast = parseWithSlots(`<slot :name="foo + bar" />`, {
       prefixIdentifiers: true,
@@ -99,6 +111,9 @@ describe('compiler: transform <slot> outlets', () => {
     })
   })
 
+  /**
+   * 默认出口带静态 foo、动态 baz 和短横线绑定 foo-bar；检查第三参数对象区分静态/动态值，并将绑定 key 转成 fooBar。
+   */
   test('default slot outlet with props', () => {
     const ast = parseWithSlots(
       `<slot foo="bar" :baz="qux" :foo-bar="foo-bar" />`,
@@ -148,6 +163,9 @@ describe('compiler: transform <slot> outlets', () => {
     })
   })
 
+  /**
+   * 静态命名出口还带 foo/baz props；检查 name 仅作为调用第二参数，其余两项才进入第三参数对象。
+   */
   test('statically named slot outlet with props', () => {
     const ast = parseWithSlots(`<slot name="foo" foo="bar" :baz="qux" />`)
     expect((ast.children[0] as ElementNode).codegenNode).toMatchObject({
@@ -186,6 +204,9 @@ describe('compiler: transform <slot> outlets', () => {
     })
   })
 
+  /**
+   * 动态命名出口还带 foo/baz props；检查动态 name 同样被排除在 props 外，避免重复传给插槽函数。
+   */
   test('dynamically named slot outlet with props', () => {
     const ast = parseWithSlots(`<slot :name="foo" foo="bar" :baz="qux" />`)
     expect((ast.children[0] as ElementNode).codegenNode).toMatchObject({
@@ -224,6 +245,9 @@ describe('compiler: transform <slot> outlets', () => {
     })
   })
 
+  /**
+   * 默认出口包含 div fallback；检查第三参数补空对象，第四参数是返回该 div 的无参函数，后续子节点遍历负责其 codegen。
+   */
   test('default slot outlet with fallback', () => {
     const ast = parseWithSlots(`<slot><div/></slot>`)
     expect((ast.children[0] as ElementNode).codegenNode).toMatchObject({
@@ -247,6 +271,9 @@ describe('compiler: transform <slot> outlets', () => {
     })
   })
 
+  /**
+   * 命名 foo 出口包含 div fallback；检查名称与 fallback 函数分别占第二和第四参数，空 props 占位保证参数位置。
+   */
   test('named slot outlet with fallback', () => {
     const ast = parseWithSlots(`<slot name="foo"><div/></slot>`)
     expect((ast.children[0] as ElementNode).codegenNode).toMatchObject({
@@ -270,6 +297,9 @@ describe('compiler: transform <slot> outlets', () => {
     })
   })
 
+  /**
+   * 默认出口同时带动态 foo prop 与 div fallback；检查第三参数对象和第四参数函数共同生成，不丢失绑定与后备内容。
+   */
   test('default slot outlet with props & fallback', () => {
     const ast = parseWithSlots(`<slot :foo="bar"><div/></slot>`)
     expect((ast.children[0] as ElementNode).codegenNode).toMatchObject({
@@ -307,6 +337,9 @@ describe('compiler: transform <slot> outlets', () => {
     })
   })
 
+  /**
+   * 命名出口同时带动态 foo prop 与 div fallback；检查 name 被单独提取，props 和 fallback 保持 renderSlot 的固定位置。
+   */
   test('named slot outlet with props & fallback', () => {
     const ast = parseWithSlots(`<slot name="foo" :foo="bar"><div/></slot>`)
     expect((ast.children[0] as ElementNode).codegenNode).toMatchObject({
@@ -344,6 +377,9 @@ describe('compiler: transform <slot> outlets', () => {
     })
   })
 
+  /**
+   * 传 scopeId 且 slotted:false，分别编译空出口与文本 fallback；检查第五参数 true，缺失的中间项用空对象/undefined 补齐，避免对子级插槽内容追加 slotted scopeId。
+   */
   test('slot with slotted: false', async () => {
     const ast = parseWithSlots(`<slot/>`, { slotted: false, scopeId: 'foo' })
     expect((ast.children[0] as ElementNode).codegenNode).toMatchObject({
@@ -373,6 +409,9 @@ describe('compiler: transform <slot> outlets', () => {
     })
   })
 
+  /**
+   * 出口带未知 v-foo 并收集诊断；检查错误代码及 v-foo 精确范围。运行时自定义指令不能直接作用于 renderSlot 调用。
+   */
   test(`error on unexpected custom directive on <slot>`, () => {
     const onError = vi.fn()
     const source = `<slot v-foo />`
@@ -395,6 +434,9 @@ describe('compiler: transform <slot> outlets', () => {
     })
   })
 
+  /**
+   * 出口使用裸 :name 同名简写；processSlotOutlet 自行补出动态 name 表达式，检查第二参数保持动态节点。
+   */
   test('dynamically named slot outlet with v-bind shorthand', () => {
     const ast = parseWithSlots(`<slot :name />`)
     expect((ast.children[0] as ElementNode).codegenNode).toMatchObject({

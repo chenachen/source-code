@@ -22,6 +22,7 @@ afterEach(async () => {
 test('does not crash when a dep is discovered before the server starts listening', async () => {
   const errors: string[] = []
   const logger = createLogger('error')
+  /** 收集 optimizer 的错误日志，在后台扫描结束后断言没有迟发异常。 */
   logger.error = (msg) => {
     errors.push(typeof msg === 'string' ? msg : String(msg))
   }

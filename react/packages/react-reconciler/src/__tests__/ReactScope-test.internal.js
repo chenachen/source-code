@@ -46,7 +46,7 @@ describe('ReactScope', () => {
       container = null;
     });
 
-    /** Given–When–Then：Given Scope 含 div/span/a；When在两种兄弟顺序间更新；Then queryAllNodes 按当前宿主遍历顺序返回全部 真实 DOM 根 实例。通过 ref 数组验证重排后查询不缓存旧顺序。 */
+    /** Given–When–Then：Given Scope 含 div/span/a；When在两种兄弟顺序间更新；Then queryAllNodes 按当前宿主遍历顺序返回全部 DOM 宿主实例。通过 ref 数组验证重排后查询不缓存旧顺序。 */
     // @gate enableScopeAPI
     it('DO_NOT_USE_queryAllNodes() works as intended', async () => {
       /** 匹配所有宿主节点，用于验证 Scope 的遍历顺序或 hydration 可见性。 */
@@ -157,7 +157,7 @@ describe('ReactScope', () => {
       expect(scopeRef.current).toBe(null);
     });
 
-    /** Given–When–Then：Given Scope 子节点从 div-first 切为 a-first；When每次调用 queryFirstNode；Then返回当前顺序第一个匹配的 真实 DOM 根 实例。通过 ref 身份验证提前终止遍历。 */
+    /** Given–When–Then：Given Scope 子节点从 div-first 切为 a-first；When每次调用 queryFirstNode；Then返回当前顺序第一个匹配的 DOM 宿主实例。通过 ref 身份验证提前终止遍历。 */
     // @gate enableScopeAPI
     it('DO_NOT_USE_queryFirstNode() works as intended', async () => {
       /** 匹配所有宿主节点，用于验证 Scope 的遍历顺序或 hydration 可见性。 */
@@ -205,7 +205,7 @@ describe('ReactScope', () => {
       expect(scopeRef.current).toBe(null);
     });
 
-    /** Given–When–Then：Given div/span/a 位于 Scope 内，outerSpan/em 在更新前后跨边界移动；When切换 toggle；Then containsNode 只随当前 Fiber 归属变化。通过 真实 DOM 根 ref 的 true/false 矩阵验证边界。 */
+    /** Given–When–Then：Given div/span/a 位于 Scope 内，em 在更新前后跨边界移动，outerSpan 始终在外侧；When切换 toggle；Then containsNode 只随当前 Fiber 归属变化。通过 DOM 宿主 ref 的 true/false 矩阵验证边界。 */
     // @gate enableScopeAPI
     it('containsNode() works as intended', async () => {
       const TestScope = React.unstable_Scope;
@@ -515,7 +515,7 @@ describe('ReactScope', () => {
       expect(node).toEqual(aRef.current);
     });
 
-    /** Given–When–Then：Given div/span/a 位于 Scope 内，outerSpan/em 在更新前后跨边界移动；When切换 toggle；Then containsNode 只随当前 Fiber 归属变化。通过 ReactTestRenderer 节点 mock ref 的 true/false 矩阵验证边界。 */
+    /** Given–When–Then：Given div/span/a 位于 Scope 内，em 在更新前后跨边界移动，outerSpan 始终在外侧；When切换 toggle；Then containsNode 只随当前 Fiber 归属变化。通过 ReactTestRenderer 节点 mock ref 的 true/false 矩阵验证边界。 */
     // @gate enableScopeAPI
     it('containsNode() works as intended', async () => {
       const TestScope = React.unstable_Scope;

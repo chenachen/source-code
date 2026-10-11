@@ -20,7 +20,7 @@ if (__DEV__) {
   didWarnValueDefaultValue = false;
 }
 
-/** `getDeclarationErrorAddendum` 查询并返回所需值；缺失或不适用时走显式回退；用于同步 select 的单选、多选与默认选项状态。 */
+/** 开发期取得当前组件名，附加到 select prop 警告。 */
 function getDeclarationErrorAddendum() {
   const ownerName = getCurrentFiberOwnerNameInDevOrNull();
   if (ownerName) {
@@ -29,11 +29,11 @@ function getDeclarationErrorAddendum() {
   return '';
 }
 
-/** `valuePropNames` 保存同步 select 的单选、多选与默认选项状态所需的稳定配置、索引或模块级状态；调用方共享其身份。 */
+/** 需要按 multiple 校验标量/数组形态的两个 select props。 */
 const valuePropNames = ['value', 'defaultValue'];
 
 /**
- * 用于 `value` 和 `defaultValue` 的验证函数。
+ * 开发期检查 value/defaultValue 与 multiple 的形态约定：多选要求数组，单选要求标量。
  */
 function checkSelectPropTypes(props: any) {
   if (__DEV__) {
@@ -62,7 +62,12 @@ function checkSelectPropTypes(props: any) {
   }
 }
 
-/** `updateOptions` 更新对应关联或宿主状态，并保持后续读取看到一致快照；用于同步 select 的单选、多选与默认选项状态。 */
+/**
+ * 根据 select 的最终 value 更新 option.selected；多选先建字符串键集合，避免每个 option 重扫值数组。
+ * 单选找到相等项立即返回，找不到时选第一个未禁用项；全部禁用时不写选择。
+ *
+ * @param setDefaultSelected - 初始化 defaultValue 时同时标记选中项的默认状态，供原生 form reset 使用。
+ */
 function updateOptions(
   node: HTMLSelectElement,
   multiple: boolean,
@@ -91,8 +96,7 @@ function updateOptions(
       }
     }
   } else {
-    //不要将 `select.value` 设置为精确，因为不同环境下的行为不一致
-    //适用于所有情况的浏览器。
+    // 逐项设置 option.selected，兼容各浏览器对 select.value 的差异。
     const selectedValue = toString(getToStringValue(propValue));
     let defaultSelected = null;
     for (let i = 0; i < options.length; i++) {
@@ -114,16 +118,12 @@ function updateOptions(
 }
 
 /**
- * 实现一个 <select> 主机组件，该组件允许可选设置 props `value` 和 `defaultValue`。如果 `multiple` 为 false，则该 prop 必须是可转为字符串的值。如果 `multiple` 为 true，则该 prop 必须是可转为字符串值的数组。
- *
- * 如果未提供 `value`（或为 null/undefined），用户更改所选选项的操作将触发渲染选项的更新。
- *
- * 如果提供了该 prop（且不为 null/undefined），渲染的选项将不会响应用户操作进行更新。相反，渲染选项的更新必须通过 `value` prop 的更改来触发。
- *
- * 如果提供了 `defaultValue`，则任何具有提供值的选项将被选中。
+ * select 的 value 非 null 时由 React 控制，用户选择后由事件恢复路径重新应用最终 props。
+ * 非受控模式保留用户选择；defaultValue 用于初始化，以及 multiple 模式切换时的重置。
+ * multiple=true 时 value/defaultValue 应为值数组，否则应为可转换成字符串的标量。
  */
 
-/** `validateSelectProps` 校验输入并在开发环境报告不满足的不变量；用于同步 select 的单选、多选与默认选项状态。 */
+/** 开发期校验 value/defaultValue 形态，并警告同时传入两者。 */
 export function validateSelectProps(element: Element, props: Object) {
   if (__DEV__) {
     checkSelectPropTypes(props);
@@ -144,7 +144,7 @@ export function validateSelectProps(element: Element, props: Object) {
   }
 }
 
-/** `initSelect` 执行该模块的单一职责，并把副作用限制在当前 DOM/Fiber 边界；用于同步 select 的单选、多选与默认选项状态。 */
+/** 先设置 multiple，再按 value 或 defaultValue 初始化 option 选择。 */
 export function initSelect(
   element: Element,
   value: ?string,
@@ -160,7 +160,7 @@ export function initSelect(
   }
 }
 
-/** `hydrateSelect` 执行该模块的单一职责，并把副作用限制在当前 DOM/Fiber 边界；用于同步 select 的单选、多选与默认选项状态。 */
+/** 保留服务端 DOM 的当前选择；与初始 props 期望选择不同则排队 hydration change。 */
 export function hydrateSelect(
   element: Element,
   value: ?string,
@@ -217,7 +217,7 @@ export function hydrateSelect(
   }
 }
 
-/** `updateSelect` 更新对应关联或宿主状态，并保持后续读取看到一致快照；用于同步 select 的单选、多选与默认选项状态。 */
+/** 受控 select 重应用 value；非受控 select 仅在 multiple 改变时重应用 defaultValue 或清选择。 */
 export function updateSelect(
   element: Element,
   value: ?string,
@@ -240,7 +240,7 @@ export function updateSelect(
   }
 }
 
-/** `restoreControlledSelectState` 更新对应关联或宿主状态，并保持后续读取看到一致快照；用于同步 select 的单选、多选与默认选项状态。 */
+/** 仅对提供 value 的 select 按最新 props 恢复选择。 */
 export function restoreControlledSelectState(element: Element, props: Object) {
   const node: HTMLSelectElement = element as any;
   const value = props.value;

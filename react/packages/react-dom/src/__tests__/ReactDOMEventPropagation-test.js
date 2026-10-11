@@ -17,6 +17,7 @@ describe('ReactDOMEventListener', () => {
   let root;
 
   beforeEach(() => {
+    /** 安装空TextEvent构造器替身，使BeforeInput插件探测走textInput能力分支；不创建真实文本输入事件。 */
     window.TextEvent = function () {};
     jest.resetModules();
     jest.isolateModules(() => {
@@ -35,7 +36,7 @@ describe('ReactDOMEventListener', () => {
     await cleanup();
   });
 
-  /** `cleanup`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 有当前容器时，在act内卸载外根并移除body容器、清空container；外根的NestedReact layout清理会卸载内根，保证下一分支重新创建监听目标。 */
   async function cleanup() {
     if (container) {
       await act(() => {
@@ -46,7 +47,7 @@ describe('ReactDOMEventListener', () => {
     }
   }
 
-  /** `render`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 先await cleanup，再创建附到body的新div和外根，act内提交tree；把每个传播场景隔离到新的内外两根。 */
   async function render(tree) {
     await cleanup();
     container = document.createElement('div');
@@ -58,21 +59,16 @@ describe('ReactDOMEventListener', () => {
   }
 
   describe('bubbling events', () => {
-    /**
-     * 代表场景（Given–When–Then）：
-     * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-     * When 执行「onAnimationEnd」描述的渲染或交互；
-     * Then 通过本用例的 DOM、日志或调度断言确认行为。
-     *
-     * 验证机制：事件断言连接 DOMPluginEventSystem 的委托、合成与传播路径。
-     */
+
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 div；手动分发 animationend（可取消）触发 onAnimationEnd/animationend。断言基线捕获外父→外→内父→目标、冒泡反向到外父；无目标回调时省去目标两项，并逐分支检查合成/原生停止传播的位置，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onAnimationEnd', async () => {
       await testNativeBubblingEvent({
         type: 'div',
         reactEvent: 'onAnimationEnd',
         reactEventType: 'animationend',
         nativeEvent: 'animationend',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(animationend) 并 dispatchEvent；bubbles=true、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           node.dispatchEvent(
             new Event('animationend', {
@@ -84,14 +80,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onAnimationIteration」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 div；手动分发 animationiteration（可取消）触发 onAnimationIteration/animationiteration。断言基线捕获外父→外→内父→目标、冒泡反向到外父；无目标回调时省去目标两项，并逐分支检查合成/原生停止传播的位置，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onAnimationIteration', async () => {
       await testNativeBubblingEvent({
         type: 'div',
         reactEvent: 'onAnimationIteration',
         reactEventType: 'animationiteration',
         nativeEvent: 'animationiteration',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(animationiteration) 并 dispatchEvent；bubbles=true、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           node.dispatchEvent(
             new Event('animationiteration', {
@@ -103,14 +100,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onAnimationStart」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 div；手动分发 animationstart（可取消）触发 onAnimationStart/animationstart。断言基线捕获外父→外→内父→目标、冒泡反向到外父；无目标回调时省去目标两项，并逐分支检查合成/原生停止传播的位置，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onAnimationStart', async () => {
       await testNativeBubblingEvent({
         type: 'div',
         reactEvent: 'onAnimationStart',
         reactEventType: 'animationstart',
         nativeEvent: 'animationstart',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(animationstart) 并 dispatchEvent；bubbles=true、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           node.dispatchEvent(
             new Event('animationstart', {
@@ -122,14 +120,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onAuxClick」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 div；手动分发 auxclick（可取消）触发 onAuxClick/auxclick。断言基线捕获外父→外→内父→目标、冒泡反向到外父；无目标回调时省去目标两项，并逐分支检查合成/原生停止传播的位置，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onAuxClick', async () => {
       await testNativeBubblingEvent({
         type: 'div',
         reactEvent: 'onAuxClick',
         reactEventType: 'auxclick',
         nativeEvent: 'auxclick',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 KeyboardEvent(auxclick) 并 dispatchEvent；bubbles=true、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           node.dispatchEvent(
             new KeyboardEvent('auxclick', {
@@ -141,14 +140,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onBlur」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 input；手动分发 focusout（可取消）触发 onBlur/blur。断言基线捕获外父→外→内父→目标、冒泡反向到外父；无目标回调时省去目标两项，并逐分支检查合成/原生停止传播的位置，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onBlur', async () => {
       await testNativeBubblingEvent({
         type: 'input',
         reactEvent: 'onBlur',
         reactEventType: 'blur',
         nativeEvent: 'focusout',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(focusout) 并 dispatchEvent；bubbles=true、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           const e = new Event('focusout', {
             bubbles: true,
@@ -162,28 +162,31 @@ describe('ReactDOMEventListener', () => {
     // 该测试在仅供 WWW 使用的 legacy 模式下会失败，因为该模式模拟 React 16，把 click 处理器挂到
     // document 上。
     // @gate !enableLegacyFBSupport
-    /** 测试场景：验证「onClick」描述的渲染、交互或错误处理结果。 */
+
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 div；调用 node.click()（不可取消）触发 onClick/click。断言基线捕获外父→外→内父→目标、冒泡反向到外父；无目标回调时省去目标两项，并逐分支检查合成/原生停止传播的位置，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onClick', async () => {
       await testNativeBubblingEvent({
         type: 'div',
         reactEvent: 'onClick',
         reactEventType: 'click',
         nativeEvent: 'click',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node 并调用 click()，作为 onClick 原生分发入口；后续路径与停止传播由共享 helper 断言。 */
         dispatch(node) {
           node.click();
         },
       });
     });
 
-    /** 测试场景：验证「onContextMenu」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 div；手动分发 contextmenu（可取消）触发 onContextMenu/contextmenu。断言基线捕获外父→外→内父→目标、冒泡反向到外父；无目标回调时省去目标两项，并逐分支检查合成/原生停止传播的位置，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onContextMenu', async () => {
       await testNativeBubblingEvent({
         type: 'div',
         reactEvent: 'onContextMenu',
         reactEventType: 'contextmenu',
         nativeEvent: 'contextmenu',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 MouseEvent(contextmenu) 并 dispatchEvent；bubbles=true、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           node.dispatchEvent(
             new MouseEvent('contextmenu', {
@@ -195,14 +198,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onCopy」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 div；手动分发 copy（可取消）触发 onCopy/copy。断言基线捕获外父→外→内父→目标、冒泡反向到外父；无目标回调时省去目标两项，并逐分支检查合成/原生停止传播的位置，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onCopy', async () => {
       await testNativeBubblingEvent({
         type: 'div',
         reactEvent: 'onCopy',
         reactEventType: 'copy',
         nativeEvent: 'copy',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(copy) 并 dispatchEvent；bubbles=true、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           node.dispatchEvent(
             new Event('copy', {
@@ -214,14 +218,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onCut」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 div；手动分发 cut（可取消）触发 onCut/cut。断言基线捕获外父→外→内父→目标、冒泡反向到外父；无目标回调时省去目标两项，并逐分支检查合成/原生停止传播的位置，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onCut', async () => {
       await testNativeBubblingEvent({
         type: 'div',
         reactEvent: 'onCut',
         reactEventType: 'cut',
         nativeEvent: 'cut',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(cut) 并 dispatchEvent；bubbles=true、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           node.dispatchEvent(
             new Event('cut', {
@@ -233,14 +238,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onDoubleClick」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 div；手动分发 dblclick（可取消）触发 onDoubleClick/dblclick。断言基线捕获外父→外→内父→目标、冒泡反向到外父；无目标回调时省去目标两项，并逐分支检查合成/原生停止传播的位置，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onDoubleClick', async () => {
       await testNativeBubblingEvent({
         type: 'div',
         reactEvent: 'onDoubleClick',
         reactEventType: 'dblclick',
         nativeEvent: 'dblclick',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 KeyboardEvent(dblclick) 并 dispatchEvent；bubbles=true、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           node.dispatchEvent(
             new KeyboardEvent('dblclick', {
@@ -252,14 +258,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onDrag」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 div；手动分发 drag（可取消）触发 onDrag/drag。断言基线捕获外父→外→内父→目标、冒泡反向到外父；无目标回调时省去目标两项，并逐分支检查合成/原生停止传播的位置，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onDrag', async () => {
       await testNativeBubblingEvent({
         type: 'div',
         reactEvent: 'onDrag',
         reactEventType: 'drag',
         nativeEvent: 'drag',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 MouseEvent(drag) 并 dispatchEvent；bubbles=true、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           node.dispatchEvent(
             new MouseEvent('drag', {
@@ -271,14 +278,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onDragEnd」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 div；手动分发 dragend（可取消）触发 onDragEnd/dragend。断言基线捕获外父→外→内父→目标、冒泡反向到外父；无目标回调时省去目标两项，并逐分支检查合成/原生停止传播的位置，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onDragEnd', async () => {
       await testNativeBubblingEvent({
         type: 'div',
         reactEvent: 'onDragEnd',
         reactEventType: 'dragend',
         nativeEvent: 'dragend',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 MouseEvent(dragend) 并 dispatchEvent；bubbles=true、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           node.dispatchEvent(
             new MouseEvent('dragend', {
@@ -290,14 +298,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onDragEnter」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 div；手动分发 dragenter（可取消）触发 onDragEnter/dragenter。断言基线捕获外父→外→内父→目标、冒泡反向到外父；无目标回调时省去目标两项，并逐分支检查合成/原生停止传播的位置，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onDragEnter', async () => {
       await testNativeBubblingEvent({
         type: 'div',
         reactEvent: 'onDragEnter',
         reactEventType: 'dragenter',
         nativeEvent: 'dragenter',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 MouseEvent(dragenter) 并 dispatchEvent；bubbles=true、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           node.dispatchEvent(
             new MouseEvent('dragenter', {
@@ -309,14 +318,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onDragExit」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 div；手动分发 dragexit（可取消）触发 onDragExit/dragexit。断言基线捕获外父→外→内父→目标、冒泡反向到外父；无目标回调时省去目标两项，并逐分支检查合成/原生停止传播的位置，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onDragExit', async () => {
       await testNativeBubblingEvent({
         type: 'div',
         reactEvent: 'onDragExit',
         reactEventType: 'dragexit',
         nativeEvent: 'dragexit',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 MouseEvent(dragexit) 并 dispatchEvent；bubbles=true、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           node.dispatchEvent(
             new MouseEvent('dragexit', {
@@ -328,14 +338,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onDragLeave」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 div；手动分发 dragleave（可取消）触发 onDragLeave/dragleave。断言基线捕获外父→外→内父→目标、冒泡反向到外父；无目标回调时省去目标两项，并逐分支检查合成/原生停止传播的位置，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onDragLeave', async () => {
       await testNativeBubblingEvent({
         type: 'div',
         reactEvent: 'onDragLeave',
         reactEventType: 'dragleave',
         nativeEvent: 'dragleave',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 MouseEvent(dragleave) 并 dispatchEvent；bubbles=true、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           node.dispatchEvent(
             new MouseEvent('dragleave', {
@@ -347,14 +358,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onDragOver」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 div；手动分发 dragover（可取消）触发 onDragOver/dragover。断言基线捕获外父→外→内父→目标、冒泡反向到外父；无目标回调时省去目标两项，并逐分支检查合成/原生停止传播的位置，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onDragOver', async () => {
       await testNativeBubblingEvent({
         type: 'div',
         reactEvent: 'onDragOver',
         reactEventType: 'dragover',
         nativeEvent: 'dragover',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 MouseEvent(dragover) 并 dispatchEvent；bubbles=true、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           node.dispatchEvent(
             new MouseEvent('dragover', {
@@ -366,14 +378,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onDragStart」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 div；手动分发 dragstart（可取消）触发 onDragStart/dragstart。断言基线捕获外父→外→内父→目标、冒泡反向到外父；无目标回调时省去目标两项，并逐分支检查合成/原生停止传播的位置，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onDragStart', async () => {
       await testNativeBubblingEvent({
         type: 'div',
         reactEvent: 'onDragStart',
         reactEventType: 'dragstart',
         nativeEvent: 'dragstart',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 MouseEvent(dragstart) 并 dispatchEvent；bubbles=true、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           node.dispatchEvent(
             new MouseEvent('dragstart', {
@@ -385,14 +398,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onDrop」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 div；手动分发 drop（可取消）触发 onDrop/drop。断言基线捕获外父→外→内父→目标、冒泡反向到外父；无目标回调时省去目标两项，并逐分支检查合成/原生停止传播的位置，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onDrop', async () => {
       await testNativeBubblingEvent({
         type: 'div',
         reactEvent: 'onDrop',
         reactEventType: 'drop',
         nativeEvent: 'drop',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 MouseEvent(drop) 并 dispatchEvent；bubbles=true、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           node.dispatchEvent(
             new MouseEvent('drop', {
@@ -404,14 +418,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onFocus」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 input；手动分发 focusin（可取消）触发 onFocus/focus。断言基线捕获外父→外→内父→目标、冒泡反向到外父；无目标回调时省去目标两项，并逐分支检查合成/原生停止传播的位置，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onFocus', async () => {
       await testNativeBubblingEvent({
         type: 'input',
         reactEvent: 'onFocus',
         reactEventType: 'focus',
         nativeEvent: 'focusin',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(focusin) 并 dispatchEvent；bubbles=true、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           const e = new Event('focusin', {
             bubbles: true,
@@ -422,14 +437,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onGotPointerCapture」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 div；手动分发 gotpointercapture（可取消）触发 onGotPointerCapture/gotpointercapture。断言基线捕获外父→外→内父→目标、冒泡反向到外父；无目标回调时省去目标两项，并逐分支检查合成/原生停止传播的位置，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onGotPointerCapture', async () => {
       await testNativeBubblingEvent({
         type: 'div',
         reactEvent: 'onGotPointerCapture',
         reactEventType: 'gotpointercapture',
         nativeEvent: 'gotpointercapture',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(gotpointercapture) 并 dispatchEvent；bubbles=true、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           node.dispatchEvent(
             new Event('gotpointercapture', {
@@ -441,14 +457,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onKeyDown」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 input；手动分发 keydown（可取消）触发 onKeyDown/keydown。断言基线捕获外父→外→内父→目标、冒泡反向到外父；无目标回调时省去目标两项，并逐分支检查合成/原生停止传播的位置，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onKeyDown', async () => {
       await testNativeBubblingEvent({
         type: 'input',
         reactEvent: 'onKeyDown',
         reactEventType: 'keydown',
         nativeEvent: 'keydown',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 KeyboardEvent(keydown) 并 dispatchEvent；bubbles=true、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           node.dispatchEvent(
             new KeyboardEvent('keydown', {
@@ -460,14 +477,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onKeyPress」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 input；手动分发 keypress（可取消，keypress 的 keyCode=13）触发 onKeyPress/keypress。断言基线捕获外父→外→内父→目标、冒泡反向到外父；无目标回调时省去目标两项，并逐分支检查合成/原生停止传播的位置，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onKeyPress', async () => {
       await testNativeBubblingEvent({
         type: 'input',
         reactEvent: 'onKeyPress',
         reactEventType: 'keypress',
         nativeEvent: 'keypress',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 KeyboardEvent(keypress) 并 dispatchEvent；bubbles=true、cancelable=true，固定此用例的原生输入。 keyCode=13 让 KeyPress 提取走可打印/回车分支。 */
         dispatch(node) {
           node.dispatchEvent(
             new KeyboardEvent('keypress', {
@@ -480,14 +498,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onKeyUp」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 input；手动分发 keyup（可取消）触发 onKeyUp/keyup。断言基线捕获外父→外→内父→目标、冒泡反向到外父；无目标回调时省去目标两项，并逐分支检查合成/原生停止传播的位置，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onKeyUp', async () => {
       await testNativeBubblingEvent({
         type: 'input',
         reactEvent: 'onKeyUp',
         reactEventType: 'keyup',
         nativeEvent: 'keyup',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 KeyboardEvent(keyup) 并 dispatchEvent；bubbles=true、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           node.dispatchEvent(
             new KeyboardEvent('keyup', {
@@ -499,14 +518,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onLostPointerCapture」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 div；手动分发 lostpointercapture（可取消）触发 onLostPointerCapture/lostpointercapture。断言基线捕获外父→外→内父→目标、冒泡反向到外父；无目标回调时省去目标两项，并逐分支检查合成/原生停止传播的位置，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onLostPointerCapture', async () => {
       await testNativeBubblingEvent({
         type: 'div',
         reactEvent: 'onLostPointerCapture',
         reactEventType: 'lostpointercapture',
         nativeEvent: 'lostpointercapture',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(lostpointercapture) 并 dispatchEvent；bubbles=true、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           node.dispatchEvent(
             new Event('lostpointercapture', {
@@ -518,14 +538,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onMouseDown」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 div；手动分发 mousedown（可取消）触发 onMouseDown/mousedown。断言基线捕获外父→外→内父→目标、冒泡反向到外父；无目标回调时省去目标两项，并逐分支检查合成/原生停止传播的位置，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onMouseDown', async () => {
       await testNativeBubblingEvent({
         type: 'div',
         reactEvent: 'onMouseDown',
         reactEventType: 'mousedown',
         nativeEvent: 'mousedown',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 MouseEvent(mousedown) 并 dispatchEvent；bubbles=true、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           node.dispatchEvent(
             new MouseEvent('mousedown', {
@@ -537,14 +558,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onMouseOut」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 div；手动分发 mouseout（可取消）触发 onMouseOut/mouseout。断言基线捕获外父→外→内父→目标、冒泡反向到外父；无目标回调时省去目标两项，并逐分支检查合成/原生停止传播的位置，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onMouseOut', async () => {
       await testNativeBubblingEvent({
         type: 'div',
         reactEvent: 'onMouseOut',
         reactEventType: 'mouseout',
         nativeEvent: 'mouseout',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 MouseEvent(mouseout) 并 dispatchEvent；bubbles=true、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           node.dispatchEvent(
             new MouseEvent('mouseout', {
@@ -556,14 +578,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onMouseOver」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 div；手动分发 mouseover（可取消）触发 onMouseOver/mouseover。断言基线捕获外父→外→内父→目标、冒泡反向到外父；无目标回调时省去目标两项，并逐分支检查合成/原生停止传播的位置，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onMouseOver', async () => {
       await testNativeBubblingEvent({
         type: 'div',
         reactEvent: 'onMouseOver',
         reactEventType: 'mouseover',
         nativeEvent: 'mouseover',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 MouseEvent(mouseover) 并 dispatchEvent；bubbles=true、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           node.dispatchEvent(
             new MouseEvent('mouseover', {
@@ -575,14 +598,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onMouseUp」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 div；手动分发 mouseup（可取消）触发 onMouseUp/mouseup。断言基线捕获外父→外→内父→目标、冒泡反向到外父；无目标回调时省去目标两项，并逐分支检查合成/原生停止传播的位置，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onMouseUp', async () => {
       await testNativeBubblingEvent({
         type: 'div',
         reactEvent: 'onMouseUp',
         reactEventType: 'mouseup',
         nativeEvent: 'mouseup',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 MouseEvent(mouseup) 并 dispatchEvent；bubbles=true、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           node.dispatchEvent(
             new MouseEvent('mouseup', {
@@ -594,14 +618,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onPaste」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 div；手动分发 paste（可取消）触发 onPaste/paste。断言基线捕获外父→外→内父→目标、冒泡反向到外父；无目标回调时省去目标两项，并逐分支检查合成/原生停止传播的位置，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onPaste', async () => {
       await testNativeBubblingEvent({
         type: 'div',
         reactEvent: 'onPaste',
         reactEventType: 'paste',
         nativeEvent: 'paste',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(paste) 并 dispatchEvent；bubbles=true、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           node.dispatchEvent(
             new Event('paste', {
@@ -613,14 +638,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onPointerCancel」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 div；手动分发 pointercancel（可取消）触发 onPointerCancel/pointercancel。断言基线捕获外父→外→内父→目标、冒泡反向到外父；无目标回调时省去目标两项，并逐分支检查合成/原生停止传播的位置，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onPointerCancel', async () => {
       await testNativeBubblingEvent({
         type: 'div',
         reactEvent: 'onPointerCancel',
         reactEventType: 'pointercancel',
         nativeEvent: 'pointercancel',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(pointercancel) 并 dispatchEvent；bubbles=true、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           node.dispatchEvent(
             new Event('pointercancel', {
@@ -632,14 +658,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onPointerDown」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 div；手动分发 pointerdown（可取消）触发 onPointerDown/pointerdown。断言基线捕获外父→外→内父→目标、冒泡反向到外父；无目标回调时省去目标两项，并逐分支检查合成/原生停止传播的位置，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onPointerDown', async () => {
       await testNativeBubblingEvent({
         type: 'div',
         reactEvent: 'onPointerDown',
         reactEventType: 'pointerdown',
         nativeEvent: 'pointerdown',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(pointerdown) 并 dispatchEvent；bubbles=true、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           node.dispatchEvent(
             new Event('pointerdown', {
@@ -651,14 +678,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onPointerMove」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 div；手动分发 pointermove（可取消）触发 onPointerMove/pointermove。断言基线捕获外父→外→内父→目标、冒泡反向到外父；无目标回调时省去目标两项，并逐分支检查合成/原生停止传播的位置，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onPointerMove', async () => {
       await testNativeBubblingEvent({
         type: 'div',
         reactEvent: 'onPointerMove',
         reactEventType: 'pointermove',
         nativeEvent: 'pointermove',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(pointermove) 并 dispatchEvent；bubbles=true、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           node.dispatchEvent(
             new Event('pointermove', {
@@ -670,14 +698,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onPointerOut」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 div；手动分发 pointerout（可取消）触发 onPointerOut/pointerout。断言基线捕获外父→外→内父→目标、冒泡反向到外父；无目标回调时省去目标两项，并逐分支检查合成/原生停止传播的位置，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onPointerOut', async () => {
       await testNativeBubblingEvent({
         type: 'div',
         reactEvent: 'onPointerOut',
         reactEventType: 'pointerout',
         nativeEvent: 'pointerout',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(pointerout) 并 dispatchEvent；bubbles=true、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           node.dispatchEvent(
             new Event('pointerout', {
@@ -689,14 +718,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onPointerOver」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 div；手动分发 pointerover（可取消）触发 onPointerOver/pointerover。断言基线捕获外父→外→内父→目标、冒泡反向到外父；无目标回调时省去目标两项，并逐分支检查合成/原生停止传播的位置，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onPointerOver', async () => {
       await testNativeBubblingEvent({
         type: 'div',
         reactEvent: 'onPointerOver',
         reactEventType: 'pointerover',
         nativeEvent: 'pointerover',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(pointerover) 并 dispatchEvent；bubbles=true、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           node.dispatchEvent(
             new Event('pointerover', {
@@ -708,14 +738,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onPointerUp」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 div；手动分发 pointerup（可取消）触发 onPointerUp/pointerup。断言基线捕获外父→外→内父→目标、冒泡反向到外父；无目标回调时省去目标两项，并逐分支检查合成/原生停止传播的位置，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onPointerUp', async () => {
       await testNativeBubblingEvent({
         type: 'div',
         reactEvent: 'onPointerUp',
         reactEventType: 'pointerup',
         nativeEvent: 'pointerup',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(pointerup) 并 dispatchEvent；bubbles=true、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           node.dispatchEvent(
             new Event('pointerup', {
@@ -727,14 +758,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onReset」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 form；手动分发 reset（可取消）触发 onReset/reset。断言基线捕获外父→外→内父→目标、冒泡反向到外父；无目标回调时省去目标两项，并逐分支检查合成/原生停止传播的位置，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onReset', async () => {
       await testNativeBubblingEvent({
         type: 'form',
         reactEvent: 'onReset',
         reactEventType: 'reset',
         nativeEvent: 'reset',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(reset) 并 dispatchEvent；bubbles=true、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           const e = new Event('reset', {
             bubbles: true,
@@ -745,14 +777,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onSubmit」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 form；手动分发 submit（可取消，submitter=null）触发 onSubmit/submit。断言基线捕获外父→外→内父→目标、冒泡反向到外父；无目标回调时省去目标两项，并逐分支检查合成/原生停止传播的位置，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onSubmit', async () => {
       await testNativeBubblingEvent({
         type: 'form',
         reactEvent: 'onSubmit',
         reactEventType: 'submit',
         nativeEvent: 'submit',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 SubmitEvent(submit) 并 dispatchEvent；bubbles=true、cancelable=true，固定此用例的原生输入。 submitter=null，不触发具体提交按钮 action。 */
         dispatch(node) {
           const e = new SubmitEvent('submit', {
             bubbles: true,
@@ -764,14 +797,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onTouchCancel」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 div；手动分发 touchcancel（可取消）触发 onTouchCancel/touchcancel。断言基线捕获外父→外→内父→目标、冒泡反向到外父；无目标回调时省去目标两项，并逐分支检查合成/原生停止传播的位置，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onTouchCancel', async () => {
       await testNativeBubblingEvent({
         type: 'div',
         reactEvent: 'onTouchCancel',
         reactEventType: 'touchcancel',
         nativeEvent: 'touchcancel',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(touchcancel) 并 dispatchEvent；bubbles=true、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           node.dispatchEvent(
             new Event('touchcancel', {
@@ -783,14 +817,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onTouchEnd」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 div；手动分发 touchend（可取消）触发 onTouchEnd/touchend。断言基线捕获外父→外→内父→目标、冒泡反向到外父；无目标回调时省去目标两项，并逐分支检查合成/原生停止传播的位置，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onTouchEnd', async () => {
       await testNativeBubblingEvent({
         type: 'div',
         reactEvent: 'onTouchEnd',
         reactEventType: 'touchend',
         nativeEvent: 'touchend',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(touchend) 并 dispatchEvent；bubbles=true、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           node.dispatchEvent(
             new Event('touchend', {
@@ -802,14 +837,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onTouchMove」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 div；手动分发 touchmove（可取消）触发 onTouchMove/touchmove。断言基线捕获外父→外→内父→目标、冒泡反向到外父；无目标回调时省去目标两项，并逐分支检查合成/原生停止传播的位置，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onTouchMove', async () => {
       await testNativeBubblingEvent({
         type: 'div',
         reactEvent: 'onTouchMove',
         reactEventType: 'touchmove',
         nativeEvent: 'touchmove',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(touchmove) 并 dispatchEvent；bubbles=true、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           node.dispatchEvent(
             new Event('touchmove', {
@@ -821,14 +857,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onTouchStart」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 div；手动分发 touchstart（可取消）触发 onTouchStart/touchstart。断言基线捕获外父→外→内父→目标、冒泡反向到外父；无目标回调时省去目标两项，并逐分支检查合成/原生停止传播的位置，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onTouchStart', async () => {
       await testNativeBubblingEvent({
         type: 'div',
         reactEvent: 'onTouchStart',
         reactEventType: 'touchstart',
         nativeEvent: 'touchstart',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(touchstart) 并 dispatchEvent；bubbles=true、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           node.dispatchEvent(
             new Event('touchstart', {
@@ -840,14 +877,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onTransitionRun」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 div；手动分发 transitionrun（不可取消）触发 onTransitionRun/transitionrun。断言基线捕获外父→外→内父→目标、冒泡反向到外父；无目标回调时省去目标两项，并逐分支检查合成/原生停止传播的位置，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onTransitionRun', async () => {
       await testNativeBubblingEvent({
         type: 'div',
         reactEvent: 'onTransitionRun',
         reactEventType: 'transitionrun',
         nativeEvent: 'transitionrun',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(transitionrun) 并 dispatchEvent；bubbles=true、cancelable=false，固定此用例的原生输入。 */
         dispatch(node) {
           node.dispatchEvent(
             new Event('transitionrun', {
@@ -859,14 +897,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onTransitionStart」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 div；手动分发 transitionstart（不可取消）触发 onTransitionStart/transitionstart。断言基线捕获外父→外→内父→目标、冒泡反向到外父；无目标回调时省去目标两项，并逐分支检查合成/原生停止传播的位置，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onTransitionStart', async () => {
       await testNativeBubblingEvent({
         type: 'div',
         reactEvent: 'onTransitionStart',
         reactEventType: 'transitionstart',
         nativeEvent: 'transitionstart',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(transitionstart) 并 dispatchEvent；bubbles=true、cancelable=false，固定此用例的原生输入。 */
         dispatch(node) {
           node.dispatchEvent(
             new Event('transitionstart', {
@@ -878,14 +917,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onTransitionCancel」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 div；手动分发 transitioncancel（不可取消）触发 onTransitionCancel/transitioncancel。断言基线捕获外父→外→内父→目标、冒泡反向到外父；无目标回调时省去目标两项，并逐分支检查合成/原生停止传播的位置，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onTransitionCancel', async () => {
       await testNativeBubblingEvent({
         type: 'div',
         reactEvent: 'onTransitionCancel',
         reactEventType: 'transitioncancel',
         nativeEvent: 'transitioncancel',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(transitioncancel) 并 dispatchEvent；bubbles=true、cancelable=false，固定此用例的原生输入。 */
         dispatch(node) {
           node.dispatchEvent(
             new Event('transitioncancel', {
@@ -897,14 +937,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onTransitionEnd」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 div；手动分发 transitionend（不可取消）触发 onTransitionEnd/transitionend。断言基线捕获外父→外→内父→目标、冒泡反向到外父；无目标回调时省去目标两项，并逐分支检查合成/原生停止传播的位置，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onTransitionEnd', async () => {
       await testNativeBubblingEvent({
         type: 'div',
         reactEvent: 'onTransitionEnd',
         reactEventType: 'transitionend',
         nativeEvent: 'transitionend',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(transitionend) 并 dispatchEvent；bubbles=true、cancelable=false，固定此用例的原生输入。 */
         dispatch(node) {
           node.dispatchEvent(
             new Event('transitionend', {
@@ -916,14 +957,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onWheel」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 div；手动分发 wheel（可取消）触发 onWheel/wheel。断言基线捕获外父→外→内父→目标、冒泡反向到外父；无目标回调时省去目标两项，并逐分支检查合成/原生停止传播的位置，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onWheel', async () => {
       await testNativeBubblingEvent({
         type: 'div',
         reactEvent: 'onWheel',
         reactEventType: 'wheel',
         nativeEvent: 'wheel',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(wheel) 并 dispatchEvent；bubbles=true、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           node.dispatchEvent(
             new Event('wheel', {
@@ -935,14 +977,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onFullscreenChange」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 div；手动分发 fullscreenchange（不可取消）触发 onFullscreenChange/fullscreenchange。断言基线捕获外父→外→内父→目标、冒泡反向到外父；无目标回调时省去目标两项，并逐分支检查合成/原生停止传播的位置，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onFullscreenChange', async () => {
       await testNativeBubblingEvent({
         type: 'div',
         reactEvent: 'onFullscreenChange',
         reactEventType: 'fullscreenchange',
         nativeEvent: 'fullscreenchange',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(fullscreenchange) 并 dispatchEvent；bubbles=true、cancelable=false，固定此用例的原生输入。 */
         dispatch(node) {
           node.dispatchEvent(
             new Event('fullscreenchange', {
@@ -954,14 +997,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onFullscreenError」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 div；手动分发 fullscreenerror（不可取消）触发 onFullscreenError/fullscreenerror。断言基线捕获外父→外→内父→目标、冒泡反向到外父；无目标回调时省去目标两项，并逐分支检查合成/原生停止传播的位置，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onFullscreenError', async () => {
       await testNativeBubblingEvent({
         type: 'div',
         reactEvent: 'onFullscreenError',
         reactEventType: 'fullscreenerror',
         nativeEvent: 'fullscreenerror',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(fullscreenerror) 并 dispatchEvent；bubbles=true、cancelable=false，固定此用例的原生输入。 */
         dispatch(node) {
           node.dispatchEvent(
             new Event('fullscreenerror', {
@@ -975,14 +1019,16 @@ describe('ReactDOMEventListener', () => {
   });
 
   describe('non-bubbling events that bubble in React', () => {
-    /** 测试场景：验证「onAbort」描述的渲染、交互或错误处理结果。 */
+
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 video；手动分发 abort（可取消）触发 onAbort/abort。断言捕获遍历外内两根，合成冒泡只在内根目标→内父；无目标回调时仅内父冒泡，并检查捕获及目标停止传播次序，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onAbort', async () => {
       await testEmulatedBubblingEvent({
         type: 'video',
         reactEvent: 'onAbort',
         reactEventType: 'abort',
         nativeEvent: 'abort',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(abort) 并 dispatchEvent；bubbles=false、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           const e = new Event('abort', {
             bubbles: false,
@@ -993,14 +1039,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onCancel」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 dialog；手动分发 cancel（可取消）触发 onCancel/cancel。断言捕获遍历外内两根，合成冒泡只在内根目标→内父；无目标回调时仅内父冒泡，并检查捕获及目标停止传播次序，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onCancel', async () => {
       await testEmulatedBubblingEvent({
         type: 'dialog',
         reactEvent: 'onCancel',
         reactEventType: 'cancel',
         nativeEvent: 'cancel',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(cancel) 并 dispatchEvent；bubbles=false、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           const e = new Event('cancel', {
             bubbles: false,
@@ -1011,14 +1058,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onCanPlay」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 video；手动分发 canplay（可取消）触发 onCanPlay/canplay。断言捕获遍历外内两根，合成冒泡只在内根目标→内父；无目标回调时仅内父冒泡，并检查捕获及目标停止传播次序，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onCanPlay', async () => {
       await testEmulatedBubblingEvent({
         type: 'video',
         reactEvent: 'onCanPlay',
         reactEventType: 'canplay',
         nativeEvent: 'canplay',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(canplay) 并 dispatchEvent；bubbles=false、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           const e = new Event('canplay', {
             bubbles: false,
@@ -1029,14 +1077,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onCanPlayThrough」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 video；手动分发 canplaythrough（可取消）触发 onCanPlayThrough/canplaythrough。断言捕获遍历外内两根，合成冒泡只在内根目标→内父；无目标回调时仅内父冒泡，并检查捕获及目标停止传播次序，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onCanPlayThrough', async () => {
       await testEmulatedBubblingEvent({
         type: 'video',
         reactEvent: 'onCanPlayThrough',
         reactEventType: 'canplaythrough',
         nativeEvent: 'canplaythrough',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(canplaythrough) 并 dispatchEvent；bubbles=false、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           const e = new Event('canplaythrough', {
             bubbles: false,
@@ -1047,14 +1096,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onClose」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 dialog；手动分发 close（可取消）触发 onClose/close。断言捕获遍历外内两根，合成冒泡只在内根目标→内父；无目标回调时仅内父冒泡，并检查捕获及目标停止传播次序，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onClose', async () => {
       await testEmulatedBubblingEvent({
         type: 'dialog',
         reactEvent: 'onClose',
         reactEventType: 'close',
         nativeEvent: 'close',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(close) 并 dispatchEvent；bubbles=false、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           const e = new Event('close', {
             bubbles: false,
@@ -1065,14 +1115,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onDurationChange」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 video；手动分发 durationchange（可取消）触发 onDurationChange/durationchange。断言捕获遍历外内两根，合成冒泡只在内根目标→内父；无目标回调时仅内父冒泡，并检查捕获及目标停止传播次序，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onDurationChange', async () => {
       await testEmulatedBubblingEvent({
         type: 'video',
         reactEvent: 'onDurationChange',
         reactEventType: 'durationchange',
         nativeEvent: 'durationchange',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(durationchange) 并 dispatchEvent；bubbles=false、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           const e = new Event('durationchange', {
             bubbles: false,
@@ -1083,14 +1134,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onEmptied」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 video；手动分发 emptied（可取消）触发 onEmptied/emptied。断言捕获遍历外内两根，合成冒泡只在内根目标→内父；无目标回调时仅内父冒泡，并检查捕获及目标停止传播次序，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onEmptied', async () => {
       await testEmulatedBubblingEvent({
         type: 'video',
         reactEvent: 'onEmptied',
         reactEventType: 'emptied',
         nativeEvent: 'emptied',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(emptied) 并 dispatchEvent；bubbles=false、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           const e = new Event('emptied', {
             bubbles: false,
@@ -1101,14 +1153,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onEncrypted」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 video；手动分发 encrypted（可取消）触发 onEncrypted/encrypted。断言捕获遍历外内两根，合成冒泡只在内根目标→内父；无目标回调时仅内父冒泡，并检查捕获及目标停止传播次序，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onEncrypted', async () => {
       await testEmulatedBubblingEvent({
         type: 'video',
         reactEvent: 'onEncrypted',
         reactEventType: 'encrypted',
         nativeEvent: 'encrypted',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(encrypted) 并 dispatchEvent；bubbles=false、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           const e = new Event('encrypted', {
             bubbles: false,
@@ -1119,14 +1172,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onEnded」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 video；手动分发 ended（可取消）触发 onEnded/ended。断言捕获遍历外内两根，合成冒泡只在内根目标→内父；无目标回调时仅内父冒泡，并检查捕获及目标停止传播次序，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onEnded', async () => {
       await testEmulatedBubblingEvent({
         type: 'video',
         reactEvent: 'onEnded',
         reactEventType: 'ended',
         nativeEvent: 'ended',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(ended) 并 dispatchEvent；bubbles=false、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           const e = new Event('ended', {
             bubbles: false,
@@ -1137,14 +1191,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onError」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 img；手动分发 error（可取消）触发 onError/error。断言捕获遍历外内两根，合成冒泡只在内根目标→内父；无目标回调时仅内父冒泡，并检查捕获及目标停止传播次序，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onError', async () => {
       await testEmulatedBubblingEvent({
         type: 'img',
         reactEvent: 'onError',
         reactEventType: 'error',
         nativeEvent: 'error',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(error) 并 dispatchEvent；bubbles=false、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           const e = new Event('error', {
             bubbles: false,
@@ -1155,14 +1210,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onInvalid」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 input；手动分发 invalid（可取消）触发 onInvalid/invalid。断言捕获遍历外内两根，合成冒泡只在内根目标→内父；无目标回调时仅内父冒泡，并检查捕获及目标停止传播次序，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onInvalid', async () => {
       await testEmulatedBubblingEvent({
         type: 'input',
         reactEvent: 'onInvalid',
         reactEventType: 'invalid',
         nativeEvent: 'invalid',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(invalid) 并 dispatchEvent；bubbles=false、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           const e = new Event('invalid', {
             bubbles: false,
@@ -1173,14 +1229,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onLoad」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 img；手动分发 load（可取消）触发 onLoad/load。断言捕获遍历外内两根，合成冒泡只在内根目标→内父；无目标回调时仅内父冒泡，并检查捕获及目标停止传播次序，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onLoad', async () => {
       await testEmulatedBubblingEvent({
         type: 'img',
         reactEvent: 'onLoad',
         reactEventType: 'load',
         nativeEvent: 'load',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(load) 并 dispatchEvent；bubbles=false、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           const e = new Event('load', {
             bubbles: false,
@@ -1191,14 +1248,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onLoadedData」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 video；手动分发 loadeddata（可取消）触发 onLoadedData/loadeddata。断言捕获遍历外内两根，合成冒泡只在内根目标→内父；无目标回调时仅内父冒泡，并检查捕获及目标停止传播次序，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onLoadedData', async () => {
       await testEmulatedBubblingEvent({
         type: 'video',
         reactEvent: 'onLoadedData',
         reactEventType: 'loadeddata',
         nativeEvent: 'loadeddata',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(loadeddata) 并 dispatchEvent；bubbles=false、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           const e = new Event('loadeddata', {
             bubbles: false,
@@ -1209,14 +1267,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onLoadedMetadata」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 video；手动分发 loadedmetadata（可取消）触发 onLoadedMetadata/loadedmetadata。断言捕获遍历外内两根，合成冒泡只在内根目标→内父；无目标回调时仅内父冒泡，并检查捕获及目标停止传播次序，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onLoadedMetadata', async () => {
       await testEmulatedBubblingEvent({
         type: 'video',
         reactEvent: 'onLoadedMetadata',
         reactEventType: 'loadedmetadata',
         nativeEvent: 'loadedmetadata',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(loadedmetadata) 并 dispatchEvent；bubbles=false、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           const e = new Event('loadedmetadata', {
             bubbles: false,
@@ -1227,14 +1286,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onLoadStart」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 video；手动分发 loadstart（可取消）触发 onLoadStart/loadstart。断言捕获遍历外内两根，合成冒泡只在内根目标→内父；无目标回调时仅内父冒泡，并检查捕获及目标停止传播次序，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onLoadStart', async () => {
       await testEmulatedBubblingEvent({
         type: 'video',
         reactEvent: 'onLoadStart',
         reactEventType: 'loadstart',
         nativeEvent: 'loadstart',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(loadstart) 并 dispatchEvent；bubbles=false、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           const e = new Event('loadstart', {
             bubbles: false,
@@ -1245,14 +1305,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onPause」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 video；手动分发 pause（可取消）触发 onPause/pause。断言捕获遍历外内两根，合成冒泡只在内根目标→内父；无目标回调时仅内父冒泡，并检查捕获及目标停止传播次序，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onPause', async () => {
       await testEmulatedBubblingEvent({
         type: 'video',
         reactEvent: 'onPause',
         reactEventType: 'pause',
         nativeEvent: 'pause',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(pause) 并 dispatchEvent；bubbles=false、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           const e = new Event('pause', {
             bubbles: false,
@@ -1263,14 +1324,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onPlay」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 video；手动分发 play（可取消）触发 onPlay/play。断言捕获遍历外内两根，合成冒泡只在内根目标→内父；无目标回调时仅内父冒泡，并检查捕获及目标停止传播次序，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onPlay', async () => {
       await testEmulatedBubblingEvent({
         type: 'video',
         reactEvent: 'onPlay',
         reactEventType: 'play',
         nativeEvent: 'play',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(play) 并 dispatchEvent；bubbles=false、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           const e = new Event('play', {
             bubbles: false,
@@ -1281,14 +1343,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onPlaying」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 video；手动分发 playing（可取消）触发 onPlaying/playing。断言捕获遍历外内两根，合成冒泡只在内根目标→内父；无目标回调时仅内父冒泡，并检查捕获及目标停止传播次序，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onPlaying', async () => {
       await testEmulatedBubblingEvent({
         type: 'video',
         reactEvent: 'onPlaying',
         reactEventType: 'playing',
         nativeEvent: 'playing',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(playing) 并 dispatchEvent；bubbles=false、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           const e = new Event('playing', {
             bubbles: false,
@@ -1299,14 +1362,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onProgress」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 video；手动分发 progress（可取消）触发 onProgress/progress。断言捕获遍历外内两根，合成冒泡只在内根目标→内父；无目标回调时仅内父冒泡，并检查捕获及目标停止传播次序，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onProgress', async () => {
       await testEmulatedBubblingEvent({
         type: 'video',
         reactEvent: 'onProgress',
         reactEventType: 'progress',
         nativeEvent: 'progress',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(progress) 并 dispatchEvent；bubbles=false、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           const e = new Event('progress', {
             bubbles: false,
@@ -1317,14 +1381,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onRateChange」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 video；手动分发 ratechange（可取消）触发 onRateChange/ratechange。断言捕获遍历外内两根，合成冒泡只在内根目标→内父；无目标回调时仅内父冒泡，并检查捕获及目标停止传播次序，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onRateChange', async () => {
       await testEmulatedBubblingEvent({
         type: 'video',
         reactEvent: 'onRateChange',
         reactEventType: 'ratechange',
         nativeEvent: 'ratechange',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(ratechange) 并 dispatchEvent；bubbles=false、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           const e = new Event('ratechange', {
             bubbles: false,
@@ -1335,14 +1400,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onResize」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 video；手动分发 resize（可取消）触发 onResize/resize。断言捕获遍历外内两根，合成冒泡只在内根目标→内父；无目标回调时仅内父冒泡，并检查捕获及目标停止传播次序，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onResize', async () => {
       await testEmulatedBubblingEvent({
         type: 'video',
         reactEvent: 'onResize',
         reactEventType: 'resize',
         nativeEvent: 'resize',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(resize) 并 dispatchEvent；bubbles=false、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           const e = new Event('resize', {
             bubbles: false,
@@ -1353,14 +1419,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onSeeked」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 video；手动分发 seeked（可取消）触发 onSeeked/seeked。断言捕获遍历外内两根，合成冒泡只在内根目标→内父；无目标回调时仅内父冒泡，并检查捕获及目标停止传播次序，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onSeeked', async () => {
       await testEmulatedBubblingEvent({
         type: 'video',
         reactEvent: 'onSeeked',
         reactEventType: 'seeked',
         nativeEvent: 'seeked',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(seeked) 并 dispatchEvent；bubbles=false、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           const e = new Event('seeked', {
             bubbles: false,
@@ -1371,14 +1438,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onSeeking」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 video；手动分发 seeking（可取消）触发 onSeeking/seeking。断言捕获遍历外内两根，合成冒泡只在内根目标→内父；无目标回调时仅内父冒泡，并检查捕获及目标停止传播次序，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onSeeking', async () => {
       await testEmulatedBubblingEvent({
         type: 'video',
         reactEvent: 'onSeeking',
         reactEventType: 'seeking',
         nativeEvent: 'seeking',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(seeking) 并 dispatchEvent；bubbles=false、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           const e = new Event('seeking', {
             bubbles: false,
@@ -1389,14 +1457,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onStalled」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 video；手动分发 stalled（可取消）触发 onStalled/stalled。断言捕获遍历外内两根，合成冒泡只在内根目标→内父；无目标回调时仅内父冒泡，并检查捕获及目标停止传播次序，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onStalled', async () => {
       await testEmulatedBubblingEvent({
         type: 'video',
         reactEvent: 'onStalled',
         reactEventType: 'stalled',
         nativeEvent: 'stalled',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(stalled) 并 dispatchEvent；bubbles=false、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           const e = new Event('stalled', {
             bubbles: false,
@@ -1407,14 +1476,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onSuspend」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 video；手动分发 suspend（可取消）触发 onSuspend/suspend。断言捕获遍历外内两根，合成冒泡只在内根目标→内父；无目标回调时仅内父冒泡，并检查捕获及目标停止传播次序，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onSuspend', async () => {
       await testEmulatedBubblingEvent({
         type: 'video',
         reactEvent: 'onSuspend',
         reactEventType: 'suspend',
         nativeEvent: 'suspend',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(suspend) 并 dispatchEvent；bubbles=false、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           const e = new Event('suspend', {
             bubbles: false,
@@ -1425,14 +1495,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onTimeUpdate」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 video；手动分发 timeupdate（可取消）触发 onTimeUpdate/timeupdate。断言捕获遍历外内两根，合成冒泡只在内根目标→内父；无目标回调时仅内父冒泡，并检查捕获及目标停止传播次序，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onTimeUpdate', async () => {
       await testEmulatedBubblingEvent({
         type: 'video',
         reactEvent: 'onTimeUpdate',
         reactEventType: 'timeupdate',
         nativeEvent: 'timeupdate',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(timeupdate) 并 dispatchEvent；bubbles=false、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           const e = new Event('timeupdate', {
             bubbles: false,
@@ -1443,14 +1514,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onToggle」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 details；手动分发 toggle（可取消）触发 onToggle/toggle。断言捕获遍历外内两根，合成冒泡只在内根目标→内父；无目标回调时仅内父冒泡，并检查捕获及目标停止传播次序，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onToggle', async () => {
       await testEmulatedBubblingEvent({
         type: 'details',
         reactEvent: 'onToggle',
         reactEventType: 'toggle',
         nativeEvent: 'toggle',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(toggle) 并 dispatchEvent；bubbles=false、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           const e = new Event('toggle', {
             bubbles: false,
@@ -1461,7 +1533,7 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onBeforeToggle Popover API」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 div；手动分发 beforetoggle（可取消，目标具有 popover=any）触发 onBeforeToggle/beforetoggle。断言捕获遍历外内两根，合成冒泡只在内根目标→内父；无目标回调时仅内父冒泡，并检查捕获及目标停止传播次序，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onBeforeToggle Popover API', async () => {
       await testEmulatedBubblingEvent({
         type: 'div',
@@ -1469,7 +1541,8 @@ describe('ReactDOMEventListener', () => {
         reactEvent: 'onBeforeToggle',
         reactEventType: 'beforetoggle',
         nativeEvent: 'beforetoggle',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(beforetoggle) 并 dispatchEvent；bubbles=false、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           const e = new Event('beforetoggle', {
             bubbles: false,
@@ -1480,7 +1553,7 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onToggle Popover API」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 div；手动分发 toggle（可取消，目标具有 popover=any）触发 onToggle/toggle。断言捕获遍历外内两根，合成冒泡只在内根目标→内父；无目标回调时仅内父冒泡，并检查捕获及目标停止传播次序，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onToggle Popover API', async () => {
       await testEmulatedBubblingEvent({
         type: 'div',
@@ -1488,7 +1561,8 @@ describe('ReactDOMEventListener', () => {
         reactEvent: 'onToggle',
         reactEventType: 'toggle',
         nativeEvent: 'toggle',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(toggle) 并 dispatchEvent；bubbles=false、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           const e = new Event('toggle', {
             bubbles: false,
@@ -1499,14 +1573,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onBeforeToggle Dialog API」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 dialog；手动分发 beforetoggle（可取消）触发 onBeforeToggle/beforetoggle。断言捕获遍历外内两根，合成冒泡只在内根目标→内父；无目标回调时仅内父冒泡，并检查捕获及目标停止传播次序，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onBeforeToggle Dialog API', async () => {
       await testEmulatedBubblingEvent({
         type: 'dialog',
         reactEvent: 'onBeforeToggle',
         reactEventType: 'beforetoggle',
         nativeEvent: 'beforetoggle',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(beforetoggle) 并 dispatchEvent；bubbles=false、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           const e = new Event('beforetoggle', {
             bubbles: false,
@@ -1517,14 +1592,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onToggle Dialog API」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 dialog；手动分发 toggle（可取消）触发 onToggle/toggle。断言捕获遍历外内两根，合成冒泡只在内根目标→内父；无目标回调时仅内父冒泡，并检查捕获及目标停止传播次序，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onToggle Dialog API', async () => {
       await testEmulatedBubblingEvent({
         type: 'dialog',
         reactEvent: 'onToggle',
         reactEventType: 'toggle',
         nativeEvent: 'toggle',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(toggle) 并 dispatchEvent；bubbles=false、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           const e = new Event('toggle', {
             bubbles: false,
@@ -1535,14 +1611,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onVolumeChange」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 video；手动分发 volumechange（可取消）触发 onVolumeChange/volumechange。断言捕获遍历外内两根，合成冒泡只在内根目标→内父；无目标回调时仅内父冒泡，并检查捕获及目标停止传播次序，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onVolumeChange', async () => {
       await testEmulatedBubblingEvent({
         type: 'video',
         reactEvent: 'onVolumeChange',
         reactEventType: 'volumechange',
         nativeEvent: 'volumechange',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(volumechange) 并 dispatchEvent；bubbles=false、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           const e = new Event('volumechange', {
             bubbles: false,
@@ -1553,14 +1630,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onWaiting」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 video；手动分发 waiting（可取消）触发 onWaiting/waiting。断言捕获遍历外内两根，合成冒泡只在内根目标→内父；无目标回调时仅内父冒泡，并检查捕获及目标停止传播次序，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onWaiting', async () => {
       await testEmulatedBubblingEvent({
         type: 'video',
         reactEvent: 'onWaiting',
         reactEventType: 'waiting',
         nativeEvent: 'waiting',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(waiting) 并 dispatchEvent；bubbles=false、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           const e = new Event('waiting', {
             bubbles: false,
@@ -1573,14 +1651,16 @@ describe('ReactDOMEventListener', () => {
   });
 
   describe('non-bubbling events that do not bubble in React', () => {
-    /** 测试场景：验证「onScroll」描述的渲染、交互或错误处理结果。 */
+
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 div；手动分发 scroll（可取消）触发 onScroll/scroll。断言捕获遍历两根，冒泡只目标；目标没有回调时仅捕获，并检查捕获/目标阶段停止传播，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onScroll', async () => {
       await testNonBubblingEvent({
         type: 'div',
         reactEvent: 'onScroll',
         reactEventType: 'scroll',
         nativeEvent: 'scroll',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(scroll) 并 dispatchEvent；bubbles=false、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           const e = new Event('scroll', {
             bubbles: false,
@@ -1591,14 +1671,15 @@ describe('ReactDOMEventListener', () => {
       });
     });
 
-    /** 测试场景：验证「onScrollEnd」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的 Fixture 创建嵌套外/内根，目标为 div；手动分发 scrollend（可取消）触发 onScrollEnd/scrollend。断言捕获遍历两根，冒泡只目标；目标没有回调时仅捕获，并检查捕获/目标阶段停止传播，验证该具体事件的根监听/目标监听与合成路径。 */
     it('onScrollEnd', async () => {
       await testNonBubblingEvent({
         type: 'div',
         reactEvent: 'onScrollEnd',
         reactEventType: 'scrollend',
         nativeEvent: 'scrollend',
-        /** `dispatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 接收目标 DOM node，创建 Event(scrollend) 并 dispatchEvent；bubbles=false、cancelable=true，固定此用例的原生输入。 */
         dispatch(node) {
           const e = new Event('scrollend', {
             bubbles: false,
@@ -1610,10 +1691,10 @@ describe('ReactDOMEventListener', () => {
     });
   });
 
-  // 这些事件完全由 React 合成，跨不同 root 的表现不够可靠，所以当前测试范围很有限；
-  // 这里先用测试记录现有行为。
+  // 以下使用隔离模块的两份renderer记录合成事件在嵌套根中的现有顺序。
   describe('enter/leave events', () => {
-    /** 测试场景：验证「onMouseEnter and onMouseLeave」描述的渲染、交互或错误处理结果。 */
+
+    /** 两个隔离 renderer 的内外根均注册 mouse enter/leave；目标 mouseover(relatedTarget=null) 后内父→内→外父→外，mouseout(relatedTarget=body) 后内→内父→外→外父，验证每根单独提取 EnterLeave 的现有次序。 */
     it('onMouseEnter and onMouseLeave', async () => {
       const log = [];
       const targetRef = React.createRef();
@@ -1622,41 +1703,49 @@ describe('ReactDOMEventListener', () => {
           type="div"
           targetRef={targetRef}
           targetProps={{
-            /** `onMouseEnter`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 内根目标的进入回调记录 ---- inner enter，供共享日志断言定位该节点与阶段。 */
             onMouseEnter: e => {
               log.push('---- inner enter');
             },
-            /** `onMouseLeave`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 内根目标的离开回调记录 ---- inner leave，供共享日志断言定位该节点与阶段。 */
             onMouseLeave: e => {
               log.push('---- inner leave');
             },
           }}
           parentProps={{
-            /** `onMouseEnter`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 内根父节点的进入回调记录 --- inner parent enter，供共享日志断言定位该节点与阶段。 */
             onMouseEnter: e => {
               log.push('--- inner parent enter');
             },
-            /** `onMouseLeave`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 内根父节点的离开回调记录 --- inner parent leave，供共享日志断言定位该节点与阶段。 */
             onMouseLeave: e => {
               log.push('--- inner parent leave');
             },
           }}
           outerProps={{
-            /** `onMouseEnter`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 外根内节点的进入回调记录 -- outer enter，供共享日志断言定位该节点与阶段。 */
             onMouseEnter: e => {
               log.push('-- outer enter');
             },
-            /** `onMouseLeave`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 外根内节点的离开回调记录 -- outer leave，供共享日志断言定位该节点与阶段。 */
             onMouseLeave: e => {
               log.push('-- outer leave');
             },
           }}
           outerParentProps={{
-            /** `onMouseEnter`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 外根父节点的进入回调记录 - outer parent enter，供共享日志断言定位该节点与阶段。 */
             onMouseEnter: e => {
               log.push('- outer parent enter');
             },
-            /** `onMouseLeave`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 外根父节点的离开回调记录 - outer parent leave，供共享日志断言定位该节点与阶段。 */
             onMouseLeave: e => {
               log.push('- outer parent leave');
             },
@@ -1694,7 +1783,7 @@ describe('ReactDOMEventListener', () => {
       `);
     });
 
-    /** 测试场景：验证「onPointerEnter and onPointerLeave」描述的渲染、交互或错误处理结果。 */
+    /** 两份 renderer 的四级节点注册 pointer enter/leave；以普通 Event 分发 pointerover/pointerout，断言进入内父→内→外父→外、离开反向各根，验证此人工事件输入的跨根提取顺序；未模拟真实浏览器指针移动。 */
     it('onPointerEnter and onPointerLeave', async () => {
       const log = [];
       const targetRef = React.createRef();
@@ -1703,41 +1792,49 @@ describe('ReactDOMEventListener', () => {
           type="div"
           targetRef={targetRef}
           targetProps={{
-            /** `onPointerEnter`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 内根目标的进入回调记录 ---- inner enter，供共享日志断言定位该节点与阶段。 */
             onPointerEnter: e => {
               log.push('---- inner enter');
             },
-            /** `onPointerLeave`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 内根目标的离开回调记录 ---- inner leave，供共享日志断言定位该节点与阶段。 */
             onPointerLeave: e => {
               log.push('---- inner leave');
             },
           }}
           parentProps={{
-            /** `onPointerEnter`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 内根父节点的进入回调记录 --- inner parent enter，供共享日志断言定位该节点与阶段。 */
             onPointerEnter: e => {
               log.push('--- inner parent enter');
             },
-            /** `onPointerLeave`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 内根父节点的离开回调记录 --- inner parent leave，供共享日志断言定位该节点与阶段。 */
             onPointerLeave: e => {
               log.push('--- inner parent leave');
             },
           }}
           outerProps={{
-            /** `onPointerEnter`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 外根内节点的进入回调记录 -- outer enter，供共享日志断言定位该节点与阶段。 */
             onPointerEnter: e => {
               log.push('-- outer enter');
             },
-            /** `onPointerLeave`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 外根内节点的离开回调记录 -- outer leave，供共享日志断言定位该节点与阶段。 */
             onPointerLeave: e => {
               log.push('-- outer leave');
             },
           }}
           outerParentProps={{
-            /** `onPointerEnter`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 外根父节点的进入回调记录 - outer parent enter，供共享日志断言定位该节点与阶段。 */
             onPointerEnter: e => {
               log.push('- outer parent enter');
             },
-            /** `onPointerLeave`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 外根父节点的离开回调记录 - outer parent leave，供共享日志断言定位该节点与阶段。 */
             onPointerLeave: e => {
               log.push('- outer parent leave');
             },
@@ -1781,10 +1878,10 @@ describe('ReactDOMEventListener', () => {
     'value',
   ).set;
 
-  // 这些事件完全由 React 合成，跨不同 root 的表现不够可靠，所以当前测试范围很有限；
-  // 这里先用测试记录现有行为。
+  // 以下使用隔离模块的两份renderer记录合成事件在嵌套根中的现有顺序。
   describe('polyfilled events', () => {
-    /** 测试场景：验证「onBeforeInput」描述的渲染、交互或错误处理结果。 */
+
+    /** input 位于隔离 renderer 的内根，发送 textInput(data=abcd)；日志先内根捕获/冒泡再外根捕获/冒泡，外父回调核对type=beforeinput，验证 polyfill 在每根各自完成两阶段。 */
     it('onBeforeInput', async () => {
       const log = [];
       const targetRef = React.createRef();
@@ -1793,41 +1890,49 @@ describe('ReactDOMEventListener', () => {
           type="input"
           targetRef={targetRef}
           targetProps={{
-            /** `onBeforeInput`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 内根目标的冒泡回调记录 ---- inner，供共享日志断言定位该节点与阶段。 */
             onBeforeInput: e => {
               log.push('---- inner');
             },
-            /** `onBeforeInputCapture`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 内根目标的捕获回调记录 ---- inner capture，供共享日志断言定位该节点与阶段。 */
             onBeforeInputCapture: e => {
               log.push('---- inner capture');
             },
           }}
           parentProps={{
-            /** `onBeforeInput`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 内根父节点的冒泡回调记录 --- inner parent，供共享日志断言定位该节点与阶段。 */
             onBeforeInput: e => {
               log.push('--- inner parent');
             },
-            /** `onBeforeInputCapture`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 内根父节点的捕获回调记录 --- inner parent capture，供共享日志断言定位该节点与阶段。 */
             onBeforeInputCapture: e => {
               log.push('--- inner parent capture');
             },
           }}
           outerProps={{
-            /** `onBeforeInput`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 外根内节点的冒泡回调记录 -- outer，供共享日志断言定位该节点与阶段。 */
             onBeforeInput: e => {
               log.push('-- outer');
             },
-            /** `onBeforeInputCapture`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 外根内节点的捕获回调记录 -- outer capture，供共享日志断言定位该节点与阶段。 */
             onBeforeInputCapture: e => {
               log.push('-- outer capture');
             },
           }}
           outerParentProps={{
-            /** `onBeforeInput`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 外根父节点的冒泡回调记录 - outer parent，供共享日志断言定位该节点与阶段。 */
             onBeforeInput: e => {
               log.push('- outer parent');
             },
-            /** `onBeforeInputCapture`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 外根父节点的捕获回调记录 - outer parent capture，供共享日志断言定位该节点与阶段。 同时核对合成 event.type 与该事件配置/预期一致。 */
             onBeforeInputCapture: e => {
               expect(e.type).toBe('beforeinput');
               log.push('- outer parent capture');
@@ -1854,7 +1959,7 @@ describe('ReactDOMEventListener', () => {
       `);
     });
 
-    /** 测试场景：验证「onChange」描述的渲染、交互或错误处理结果。 */
+    /** 先用 input 原型 setter 绕过值跟踪写 hello，再向内根 input 发冒泡 input；只记录内父/目标的捕获及目标/内父冒泡，验证 change 只由持有该输入跟踪的 renderer 提取。 */
     it('onChange', async () => {
       const log = [];
       const targetRef = React.createRef();
@@ -1863,41 +1968,49 @@ describe('ReactDOMEventListener', () => {
           type="input"
           targetRef={targetRef}
           targetProps={{
-            /** `onChange`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 内根目标的冒泡回调记录 ---- inner，供共享日志断言定位该节点与阶段。 */
             onChange: e => {
               log.push('---- inner');
             },
-            /** `onChangeCapture`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 内根目标的捕获回调记录 ---- inner capture，供共享日志断言定位该节点与阶段。 */
             onChangeCapture: e => {
               log.push('---- inner capture');
             },
           }}
           parentProps={{
-            /** `onChange`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 内根父节点的冒泡回调记录 --- inner parent，供共享日志断言定位该节点与阶段。 */
             onChange: e => {
               log.push('--- inner parent');
             },
-            /** `onChangeCapture`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 内根父节点的捕获回调记录 --- inner parent capture，供共享日志断言定位该节点与阶段。 */
             onChangeCapture: e => {
               log.push('--- inner parent capture');
             },
           }}
           outerProps={{
-            /** `onChange`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 外根内节点的冒泡回调记录 -- outer，供共享日志断言定位该节点与阶段。 */
             onChange: e => {
               log.push('-- outer');
             },
-            /** `onChangeCapture`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 外根内节点的捕获回调记录 -- outer capture，供共享日志断言定位该节点与阶段。 */
             onChangeCapture: e => {
               log.push('-- outer capture');
             },
           }}
           outerParentProps={{
-            /** `onChange`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 外根父节点的冒泡回调记录 - outer parent，供共享日志断言定位该节点与阶段。 */
             onChange: e => {
               log.push('- outer parent');
             },
-            /** `onChangeCapture`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 外根父节点的捕获回调记录 - outer parent capture，供共享日志断言定位该节点与阶段。 同时核对合成 event.type 与该事件配置/预期一致。 */
             onChangeCapture: e => {
               expect(e.type).toBe('change');
               log.push('- outer parent capture');
@@ -1921,7 +2034,7 @@ describe('ReactDOMEventListener', () => {
       `);
     });
 
-    /** 测试场景：验证「onCompositionStart」描述的渲染、交互或错误处理结果。 */
+    /** 向内根 input 手动分发冒泡 compositionstart；日志先内根再外根各完成捕获/冒泡，外父校验合成type，验证 Composition 插件的每根两阶段提取。 */
     it('onCompositionStart', async () => {
       const log = [];
       const targetRef = React.createRef();
@@ -1930,41 +2043,49 @@ describe('ReactDOMEventListener', () => {
           type="input"
           targetRef={targetRef}
           targetProps={{
-            /** `onCompositionStart`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 内根目标的冒泡回调记录 ---- inner，供共享日志断言定位该节点与阶段。 */
             onCompositionStart: e => {
               log.push('---- inner');
             },
-            /** `onCompositionStartCapture`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 内根目标的捕获回调记录 ---- inner capture，供共享日志断言定位该节点与阶段。 */
             onCompositionStartCapture: e => {
               log.push('---- inner capture');
             },
           }}
           parentProps={{
-            /** `onCompositionStart`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 内根父节点的冒泡回调记录 --- inner parent，供共享日志断言定位该节点与阶段。 */
             onCompositionStart: e => {
               log.push('--- inner parent');
             },
-            /** `onCompositionStartCapture`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 内根父节点的捕获回调记录 --- inner parent capture，供共享日志断言定位该节点与阶段。 */
             onCompositionStartCapture: e => {
               log.push('--- inner parent capture');
             },
           }}
           outerProps={{
-            /** `onCompositionStart`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 外根内节点的冒泡回调记录 -- outer，供共享日志断言定位该节点与阶段。 */
             onCompositionStart: e => {
               log.push('-- outer');
             },
-            /** `onCompositionStartCapture`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 外根内节点的捕获回调记录 -- outer capture，供共享日志断言定位该节点与阶段。 */
             onCompositionStartCapture: e => {
               log.push('-- outer capture');
             },
           }}
           outerParentProps={{
-            /** `onCompositionStart`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 外根父节点的冒泡回调记录 - outer parent，供共享日志断言定位该节点与阶段。 */
             onCompositionStart: e => {
               log.push('- outer parent');
             },
-            /** `onCompositionStartCapture`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 外根父节点的捕获回调记录 - outer parent capture，供共享日志断言定位该节点与阶段。 同时核对合成 event.type 与该事件配置/预期一致。 */
             onCompositionStartCapture: e => {
               expect(e.type).toBe('compositionstart');
               log.push('- outer parent capture');
@@ -1990,7 +2111,7 @@ describe('ReactDOMEventListener', () => {
       `);
     });
 
-    /** 测试场景：验证「onCompositionEnd」描述的渲染、交互或错误处理结果。 */
+    /** 向内根 input 分发 compositionend；两根分别按捕获/冒泡完成日志，外父校验type=compositionend，验证合成事件的跨隔离renderer次序。 */
     it('onCompositionEnd', async () => {
       const log = [];
       const targetRef = React.createRef();
@@ -1999,41 +2120,49 @@ describe('ReactDOMEventListener', () => {
           type="input"
           targetRef={targetRef}
           targetProps={{
-            /** `onCompositionEnd`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 内根目标的冒泡回调记录 ---- inner，供共享日志断言定位该节点与阶段。 */
             onCompositionEnd: e => {
               log.push('---- inner');
             },
-            /** `onCompositionEndCapture`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 内根目标的捕获回调记录 ---- inner capture，供共享日志断言定位该节点与阶段。 */
             onCompositionEndCapture: e => {
               log.push('---- inner capture');
             },
           }}
           parentProps={{
-            /** `onCompositionEnd`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 内根父节点的冒泡回调记录 --- inner parent，供共享日志断言定位该节点与阶段。 */
             onCompositionEnd: e => {
               log.push('--- inner parent');
             },
-            /** `onCompositionEndCapture`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 内根父节点的捕获回调记录 --- inner parent capture，供共享日志断言定位该节点与阶段。 */
             onCompositionEndCapture: e => {
               log.push('--- inner parent capture');
             },
           }}
           outerProps={{
-            /** `onCompositionEnd`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 外根内节点的冒泡回调记录 -- outer，供共享日志断言定位该节点与阶段。 */
             onCompositionEnd: e => {
               log.push('-- outer');
             },
-            /** `onCompositionEndCapture`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 外根内节点的捕获回调记录 -- outer capture，供共享日志断言定位该节点与阶段。 */
             onCompositionEndCapture: e => {
               log.push('-- outer capture');
             },
           }}
           outerParentProps={{
-            /** `onCompositionEnd`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 外根父节点的冒泡回调记录 - outer parent，供共享日志断言定位该节点与阶段。 */
             onCompositionEnd: e => {
               log.push('- outer parent');
             },
-            /** `onCompositionEndCapture`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 外根父节点的捕获回调记录 - outer parent capture，供共享日志断言定位该节点与阶段。 同时核对合成 event.type 与该事件配置/预期一致。 */
             onCompositionEndCapture: e => {
               expect(e.type).toBe('compositionend');
               log.push('- outer parent capture');
@@ -2059,7 +2188,7 @@ describe('ReactDOMEventListener', () => {
       `);
     });
 
-    /** 测试场景：验证「onCompositionUpdate」描述的渲染、交互或错误处理结果。 */
+    /** 向内根 input 分发 compositionupdate；内根两阶段先于外根两阶段，外父校验type，验证该输入的Composition合成顺序。 */
     it('onCompositionUpdate', async () => {
       const log = [];
       const targetRef = React.createRef();
@@ -2068,41 +2197,49 @@ describe('ReactDOMEventListener', () => {
           type="input"
           targetRef={targetRef}
           targetProps={{
-            /** `onCompositionUpdate`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 内根目标的冒泡回调记录 ---- inner，供共享日志断言定位该节点与阶段。 */
             onCompositionUpdate: e => {
               log.push('---- inner');
             },
-            /** `onCompositionUpdateCapture`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 内根目标的捕获回调记录 ---- inner capture，供共享日志断言定位该节点与阶段。 */
             onCompositionUpdateCapture: e => {
               log.push('---- inner capture');
             },
           }}
           parentProps={{
-            /** `onCompositionUpdate`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 内根父节点的冒泡回调记录 --- inner parent，供共享日志断言定位该节点与阶段。 */
             onCompositionUpdate: e => {
               log.push('--- inner parent');
             },
-            /** `onCompositionUpdateCapture`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 内根父节点的捕获回调记录 --- inner parent capture，供共享日志断言定位该节点与阶段。 */
             onCompositionUpdateCapture: e => {
               log.push('--- inner parent capture');
             },
           }}
           outerProps={{
-            /** `onCompositionUpdate`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 外根内节点的冒泡回调记录 -- outer，供共享日志断言定位该节点与阶段。 */
             onCompositionUpdate: e => {
               log.push('-- outer');
             },
-            /** `onCompositionUpdateCapture`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 外根内节点的捕获回调记录 -- outer capture，供共享日志断言定位该节点与阶段。 */
             onCompositionUpdateCapture: e => {
               log.push('-- outer capture');
             },
           }}
           outerParentProps={{
-            /** `onCompositionUpdate`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 外根父节点的冒泡回调记录 - outer parent，供共享日志断言定位该节点与阶段。 */
             onCompositionUpdate: e => {
               log.push('- outer parent');
             },
-            /** `onCompositionUpdateCapture`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 外根父节点的捕获回调记录 - outer parent capture，供共享日志断言定位该节点与阶段。 同时核对合成 event.type 与该事件配置/预期一致。 */
             onCompositionUpdateCapture: e => {
               expect(e.type).toBe('compositionupdate');
               log.push('- outer parent capture');
@@ -2128,7 +2265,7 @@ describe('ReactDOMEventListener', () => {
       `);
     });
 
-    /** 测试场景：验证「onSelect」描述的渲染、交互或错误处理结果。 */
+    /** 先聚焦内根 input，再分发冒泡 keydown；仅内父/目标捕获及目标/内父冒泡，验证 Select 插件对由该renderer记录的活动输入提取选区事件。 */
     it('onSelect', async () => {
       const log = [];
       const targetRef = React.createRef();
@@ -2137,41 +2274,49 @@ describe('ReactDOMEventListener', () => {
           type="input"
           targetRef={targetRef}
           targetProps={{
-            /** `onSelect`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 内根目标的冒泡回调记录 ---- inner，供共享日志断言定位该节点与阶段。 */
             onSelect: e => {
               log.push('---- inner');
             },
-            /** `onSelectCapture`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 内根目标的捕获回调记录 ---- inner capture，供共享日志断言定位该节点与阶段。 */
             onSelectCapture: e => {
               log.push('---- inner capture');
             },
           }}
           parentProps={{
-            /** `onSelect`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 内根父节点的冒泡回调记录 --- inner parent，供共享日志断言定位该节点与阶段。 */
             onSelect: e => {
               log.push('--- inner parent');
             },
-            /** `onSelectCapture`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 内根父节点的捕获回调记录 --- inner parent capture，供共享日志断言定位该节点与阶段。 */
             onSelectCapture: e => {
               log.push('--- inner parent capture');
             },
           }}
           outerProps={{
-            /** `onSelect`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 外根内节点的冒泡回调记录 -- outer，供共享日志断言定位该节点与阶段。 */
             onSelect: e => {
               log.push('-- outer');
             },
-            /** `onSelectCapture`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 外根内节点的捕获回调记录 -- outer capture，供共享日志断言定位该节点与阶段。 */
             onSelectCapture: e => {
               log.push('-- outer capture');
             },
           }}
           outerParentProps={{
-            /** `onSelect`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 外根父节点的冒泡回调记录 - outer parent，供共享日志断言定位该节点与阶段。 */
             onSelect: e => {
               log.push('- outer parent');
             },
-            /** `onSelectCapture`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 外根父节点的捕获回调记录 - outer parent capture，供共享日志断言定位该节点与阶段。 同时核对合成 event.type 与该事件配置/预期一致。 */
             onSelectCapture: e => {
               expect(e.type).toBe('select');
               log.push('- outer parent capture');
@@ -2197,7 +2342,8 @@ describe('ReactDOMEventListener', () => {
   });
 
   // 这些事件在 React 和浏览器中都会冒泡；React 将它们委托到 root。
-  /** `testNativeBubblingEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+  /** 接收事件配置type/React名/原生名/dispatch，依次await十个分支：有无目标、React四阶段停止、原生四位置停止；每分支由render清理并新建嵌套根。 */
   async function testNativeBubblingEvent(config) {
     await testNativeBubblingEventWithTargetListener(config);
     await testNativeBubblingEventWithoutTargetListener(config);
@@ -2212,7 +2358,8 @@ describe('ReactDOMEventListener', () => {
   }
 
   // 这些事件在 React 中冒泡、但在浏览器中不冒泡；React 将监听器直接挂到元素上。
-  /** `testEmulatedBubblingEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+  /** 接收目标监听型非原生冒泡事件配置，依次检查有无目标及React/原生捕获停止、目标冒泡停止；包括React目标监听先于用户原生回调的次序。 */
   async function testEmulatedBubblingEvent(config) {
     await testEmulatedBubblingEventWithTargetListener(config);
     await testEmulatedBubblingEventWithoutTargetListener(config);
@@ -2225,7 +2372,8 @@ describe('ReactDOMEventListener', () => {
   }
 
   // 这些事件在 React 和浏览器中都不冒泡。
-  /** `testNonBubblingEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+  /** 接收scroll类配置，验证有无目标及捕获/目标截断；不调用外层冒泡分支，因为此类合成冒泡仅收集目标。 */
   async function testNonBubblingEvent(config) {
     await testNonBubblingEventWithTargetListener(config);
     await testNonBubblingEventWithoutTargetListener(config);
@@ -2236,7 +2384,7 @@ describe('ReactDOMEventListener', () => {
     await testNativeStopPropagationInInnerCapturePhase(config);
   }
 
-  /** `testNativeBubblingEventWithTargetListener`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 创建四级都有处理器的嵌套隔离根，dispatch后断言捕获从外到内、冒泡从内到外，并核对合成type，作为原生冒泡基线。 */
   async function testNativeBubblingEventWithTargetListener(eventConfig) {
     const log = [];
     const targetRef = React.createRef();
@@ -2245,41 +2393,49 @@ describe('ReactDOMEventListener', () => {
         type={eventConfig.type}
         targetRef={targetRef}
         targetProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根目标的冒泡回调记录 ---- inner，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('---- inner');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根目标的捕获回调记录 ---- inner capture，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             log.push('---- inner capture');
           },
         }}
         parentProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根父节点的冒泡回调记录 --- inner parent，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('--- inner parent');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根父节点的捕获回调记录 --- inner parent capture，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             log.push('--- inner parent capture');
           },
         }}
         outerProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根内节点的冒泡回调记录 -- outer，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('-- outer');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根内节点的捕获回调记录 -- outer capture，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             log.push('-- outer capture');
           },
         }}
         outerParentProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根父节点的冒泡回调记录 - outer parent，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('- outer parent');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根父节点的捕获回调记录 - outer parent capture，供共享日志断言定位该节点与阶段。 同时核对合成 event.type 与该事件配置/预期一致。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             expect(e.type).toBe(eventConfig.reactEventType);
             log.push('- outer parent capture');
@@ -2302,7 +2458,7 @@ describe('ReactDOMEventListener', () => {
     `);
   }
 
-  /** `testEmulatedBubblingEventWithTargetListener`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 创建四级处理器并传目标额外props；非冒泡事件仍经全部原生捕获，React目标监听仅模拟内根目标/内父冒泡，断言外根无冒泡回调。 */
   async function testEmulatedBubblingEventWithTargetListener(eventConfig) {
     const log = [];
     const targetRef = React.createRef();
@@ -2312,41 +2468,49 @@ describe('ReactDOMEventListener', () => {
         targetRef={targetRef}
         targetProps={{
           ...eventConfig.targetProps,
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根目标的冒泡回调记录 ---- inner，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('---- inner');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根目标的捕获回调记录 ---- inner capture，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             log.push('---- inner capture');
           },
         }}
         parentProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根父节点的冒泡回调记录 --- inner parent，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('--- inner parent');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根父节点的捕获回调记录 --- inner parent capture，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             log.push('--- inner parent capture');
           },
         }}
         outerProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根内节点的冒泡回调记录 -- outer，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('-- outer');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根内节点的捕获回调记录 -- outer capture，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             log.push('-- outer capture');
           },
         }}
         outerParentProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根父节点的冒泡回调记录 - outer parent，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('- outer parent');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根父节点的捕获回调记录 - outer parent capture，供共享日志断言定位该节点与阶段。 同时核对合成 event.type 与该事件配置/预期一致。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             expect(e.type).toBe(eventConfig.reactEventType);
             log.push('- outer parent capture');
@@ -2356,7 +2520,7 @@ describe('ReactDOMEventListener', () => {
     );
     expect(log.length).toBe(0);
     eventConfig.dispatch(targetRef.current);
-    // 此事件原生不冒泡，但 React 会模拟冒泡。元素由内层 React 创建，因此冒泡止于内层父节点，永远不会到达外层 React。未来可能完全取消这类模拟冒泡；届时内层父节点也不会被记录。
+    // 此事件的目标监听属于内层renderer：原生事件不进入外根冒泡监听器，内层renderer只收集本根的目标与父回调。
     expect(log).toEqual(unindent`
       - outer parent capture
       -- outer capture
@@ -2367,7 +2531,7 @@ describe('ReactDOMEventListener', () => {
     `);
   }
 
-  /** `testNonBubblingEventWithTargetListener`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 给scroll类四级节点注册两阶段回调；断言所有捕获而冒泡仅目标，验证不模拟祖先scroll冒泡。 */
   async function testNonBubblingEventWithTargetListener(eventConfig) {
     const log = [];
     const targetRef = React.createRef();
@@ -2376,41 +2540,49 @@ describe('ReactDOMEventListener', () => {
         type={eventConfig.type}
         targetRef={targetRef}
         targetProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根目标的冒泡回调记录 ---- inner，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('---- inner');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根目标的捕获回调记录 ---- inner capture，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             log.push('---- inner capture');
           },
         }}
         parentProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根父节点的冒泡回调记录 --- inner parent，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('--- inner parent');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根父节点的捕获回调记录 --- inner parent capture，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             log.push('--- inner parent capture');
           },
         }}
         outerProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根内节点的冒泡回调记录 -- outer，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('-- outer');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根内节点的捕获回调记录 -- outer capture，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             log.push('-- outer capture');
           },
         }}
         outerParentProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根父节点的冒泡回调记录 - outer parent，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('- outer parent');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根父节点的捕获回调记录 - outer parent capture，供共享日志断言定位该节点与阶段。 同时核对合成 event.type 与该事件配置/预期一致。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             expect(e.type).toBe(eventConfig.reactEventType);
             log.push('- outer parent capture');
@@ -2430,7 +2602,7 @@ describe('ReactDOMEventListener', () => {
     `);
   }
 
-  /** `testNativeBubblingEventWithoutTargetListener`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 目标无处理器而三祖先有回调，分发原生冒泡事件；断言捕获/冒泡穿越两根但没有目标日志，验证根委托不依赖目标prop。 */
   async function testNativeBubblingEventWithoutTargetListener(eventConfig) {
     const log = [];
     const targetRef = React.createRef();
@@ -2444,31 +2616,37 @@ describe('ReactDOMEventListener', () => {
           }
         }
         parentProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根父节点的冒泡回调记录 --- inner parent，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('--- inner parent');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根父节点的捕获回调记录 --- inner parent capture，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             log.push('--- inner parent capture');
           },
         }}
         outerProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根内节点的冒泡回调记录 -- outer，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('-- outer');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根内节点的捕获回调记录 -- outer capture，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             log.push('-- outer capture');
           },
         }}
         outerParentProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根父节点的冒泡回调记录 - outer parent，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('- outer parent');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根父节点的捕获回调记录 - outer parent capture，供共享日志断言定位该节点与阶段。 同时核对合成 event.type 与该事件配置/预期一致。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             expect(e.type).toBe(eventConfig.reactEventType);
             log.push('- outer parent capture');
@@ -2489,7 +2667,7 @@ describe('ReactDOMEventListener', () => {
     `);
   }
 
-  /** `testEmulatedBubblingEventWithoutTargetListener`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 目标无React处理器但保留事件所需宿主props；分发原生不冒泡事件，断言两根捕获及仅内父合成冒泡，验证宿主自动目标监听。 */
   async function testEmulatedBubblingEventWithoutTargetListener(eventConfig) {
     const log = [];
     const targetRef = React.createRef();
@@ -2502,31 +2680,37 @@ describe('ReactDOMEventListener', () => {
           // 目标节点自身没有监听器。
         }}
         parentProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根父节点的冒泡回调记录 --- inner parent，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('--- inner parent');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根父节点的捕获回调记录 --- inner parent capture，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             log.push('--- inner parent capture');
           },
         }}
         outerProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根内节点的冒泡回调记录 -- outer，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('-- outer');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根内节点的捕获回调记录 -- outer capture，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             log.push('-- outer capture');
           },
         }}
         outerParentProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根父节点的冒泡回调记录 - outer parent，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('- outer parent');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根父节点的捕获回调记录 - outer parent capture，供共享日志断言定位该节点与阶段。 同时核对合成 event.type 与该事件配置/预期一致。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             expect(e.type).toBe(eventConfig.reactEventType);
             log.push('- outer parent capture');
@@ -2536,7 +2720,7 @@ describe('ReactDOMEventListener', () => {
     );
     expect(log.length).toBe(0);
     eventConfig.dispatch(targetRef.current);
-    // 此事件原生不冒泡，但 React 会模拟冒泡。元素由内层 React 创建，因此冒泡止于内层父节点，永远不会到达外层 React。未来可能完全取消这类模拟冒泡；届时内层父节点也不会被记录。
+    // 此事件的目标监听属于内层renderer：原生事件不进入外根冒泡监听器，内层renderer只收集本根的目标与父回调。
     expect(log).toEqual(unindent`
       - outer parent capture
       -- outer capture
@@ -2545,7 +2729,7 @@ describe('ReactDOMEventListener', () => {
     `);
   }
 
-  /** `testNonBubblingEventWithoutTargetListener`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 目标无scroll处理器，祖先有捕获/冒泡回调；断言只有三祖先捕获，验证不会为目标缺失回调补用祖先冒泡。 */
   async function testNonBubblingEventWithoutTargetListener(eventConfig) {
     const log = [];
     const targetRef = React.createRef();
@@ -2559,31 +2743,37 @@ describe('ReactDOMEventListener', () => {
           }
         }
         parentProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根父节点的冒泡回调记录 --- inner parent，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('--- inner parent');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根父节点的捕获回调记录 --- inner parent capture，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             log.push('--- inner parent capture');
           },
         }}
         outerProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根内节点的冒泡回调记录 -- outer，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('-- outer');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根内节点的捕获回调记录 -- outer capture，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             log.push('-- outer capture');
           },
         }}
         outerParentProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根父节点的冒泡回调记录 - outer parent，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('- outer parent');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根父节点的捕获回调记录 - outer parent capture，供共享日志断言定位该节点与阶段。 同时核对合成 event.type 与该事件配置/预期一致。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             expect(e.type).toBe(eventConfig.reactEventType);
             log.push('- outer parent capture');
@@ -2601,7 +2791,7 @@ describe('ReactDOMEventListener', () => {
     `);
   }
 
-  /** `testReactStopPropagationInOuterCapturePhase`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 外根内节点的React捕获stopPropagation；即使目标有原生监听也只记录外父/外捕获，验证阻断内根及目标路径。 */
   async function testReactStopPropagationInOuterCapturePhase(eventConfig) {
     const log = [];
     const targetRef = React.createRef();
@@ -2611,7 +2801,7 @@ describe('ReactDOMEventListener', () => {
         targetRef={node => {
           targetRef.current = node;
           if (node) {
-            // 无需清理，假设我们只渲染一次。
+            // 本分支只挂载一次该节点；下一分支cleanup卸载两根并移除整棵DOM树，不复用这个监听目标。
             node.addEventListener(eventConfig.nativeEvent, e => {
               // 事件在更早阶段已被阻止，因此日志中完全不应出现这一项。
               log.push('---- inner (native)');
@@ -2619,42 +2809,50 @@ describe('ReactDOMEventListener', () => {
           }
         }}
         targetProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根目标的冒泡回调记录 ---- inner，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('---- inner');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根目标的捕获回调记录 ---- inner capture，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             log.push('---- inner capture');
           },
         }}
         parentProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根父节点的冒泡回调记录 --- inner parent，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('--- inner parent');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根父节点的捕获回调记录 --- inner parent capture，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             log.push('--- inner parent capture');
           },
         }}
         outerProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根内节点的冒泡回调记录 -- outer，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('-- outer');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根内节点的捕获回调先 stopPropagation 再记录 -- outer capture，构造本 helper 的合成传播截断点。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             e.stopPropagation(); // <---------
             log.push('-- outer capture');
           },
         }}
         outerParentProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根父节点的冒泡回调记录 - outer parent，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('- outer parent');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根父节点的捕获回调记录 - outer parent capture，供共享日志断言定位该节点与阶段。 同时核对合成 event.type 与该事件配置/预期一致。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             expect(e.type).toBe(eventConfig.reactEventType);
             log.push('- outer parent capture');
@@ -2671,7 +2869,7 @@ describe('ReactDOMEventListener', () => {
     `);
   }
 
-  /** `testReactStopPropagationInInnerCapturePhase`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 内根父React捕获stopPropagation；保留外父/外/内父捕获、无目标原生或冒泡，验证已进入内根后的合成截断。 */
   async function testReactStopPropagationInInnerCapturePhase(eventConfig) {
     const log = [];
     const targetRef = React.createRef();
@@ -2681,7 +2879,7 @@ describe('ReactDOMEventListener', () => {
         targetRef={node => {
           targetRef.current = node;
           if (node) {
-            // 无需清理，假设我们只渲染一次。
+            // 本分支只挂载一次该节点；下一分支cleanup卸载两根并移除整棵DOM树，不复用这个监听目标。
             node.addEventListener(eventConfig.nativeEvent, e => {
               // 事件在更早阶段已被阻止，因此日志中完全不应出现这一项。
               log.push('---- inner (native)');
@@ -2689,42 +2887,50 @@ describe('ReactDOMEventListener', () => {
           }
         }}
         targetProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根目标的冒泡回调记录 ---- inner，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('---- inner');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根目标的捕获回调记录 ---- inner capture，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             log.push('---- inner capture');
           },
         }}
         parentProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根父节点的冒泡回调记录 --- inner parent，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('--- inner parent');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根父节点的捕获回调先 stopPropagation 再记录 --- inner parent capture，构造本 helper 的合成传播截断点。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             e.stopPropagation(); // <---------
             log.push('--- inner parent capture');
           },
         }}
         outerProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根内节点的冒泡回调记录 -- outer，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('-- outer');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根内节点的捕获回调记录 -- outer capture，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             log.push('-- outer capture');
           },
         }}
         outerParentProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根父节点的冒泡回调记录 - outer parent，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('- outer parent');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根父节点的捕获回调记录 - outer parent capture，供共享日志断言定位该节点与阶段。 同时核对合成 event.type 与该事件配置/预期一致。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             expect(e.type).toBe(eventConfig.reactEventType);
             log.push('- outer parent capture');
@@ -2742,7 +2948,7 @@ describe('ReactDOMEventListener', () => {
     `);
   }
 
-  /** `testReactStopPropagationInInnerBubblePhase`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 目标React冒泡回调stopPropagation，外节点另设原生监听；全部捕获后只记目标冒泡，验证祖先及外原生冒泡被阻断。 */
   async function testReactStopPropagationInInnerBubblePhase(eventConfig) {
     const log = [];
     const targetRef = React.createRef();
@@ -2752,29 +2958,33 @@ describe('ReactDOMEventListener', () => {
         targetRef={targetRef}
         targetProps={{
           ...eventConfig.targetProps,
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根目标的冒泡回调先 stopPropagation 再记录 ---- inner，构造本 helper 的合成传播截断点。 */
           [eventConfig.reactEvent]: e => {
             e.stopPropagation(); // <---------
             log.push('---- inner');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根目标的捕获回调记录 ---- inner capture，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             log.push('---- inner capture');
           },
         }}
         parentProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根父节点的冒泡回调记录 --- inner parent，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('--- inner parent');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根父节点的捕获回调记录 --- inner parent capture，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             log.push('--- inner parent capture');
           },
         }}
         outerRef={node => {
           if (node) {
-            // 无需清理，假设我们只渲染一次。
+            // 本分支只挂载一次该节点；下一分支cleanup卸载两根并移除整棵DOM树，不复用这个监听目标。
             node.addEventListener(eventConfig.nativeEvent, e => {
               // 事件在更早阶段已被阻止，因此日志中完全不应出现这一项。
               log.push('-- outer (native)');
@@ -2782,21 +2992,25 @@ describe('ReactDOMEventListener', () => {
           }
         }}
         outerProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根内节点的冒泡回调记录 -- outer，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('-- outer');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根内节点的捕获回调记录 -- outer capture，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             log.push('-- outer capture');
           },
         }}
         outerParentProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根父节点的冒泡回调记录 - outer parent，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('- outer parent');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根父节点的捕获回调记录 - outer parent capture，供共享日志断言定位该节点与阶段。 同时核对合成 event.type 与该事件配置/预期一致。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             expect(e.type).toBe(eventConfig.reactEventType);
             log.push('- outer parent capture');
@@ -2816,7 +3030,7 @@ describe('ReactDOMEventListener', () => {
     `);
   }
 
-  /** `testReactStopPropagationInOuterBubblePhase`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 外根内节点的React冒泡stopPropagation；日志先完整内根路径再到外节点，不含外父冒泡，验证外根合成队列停止。 */
   async function testReactStopPropagationInOuterBubblePhase(eventConfig) {
     const log = [];
     const targetRef = React.createRef();
@@ -2825,42 +3039,50 @@ describe('ReactDOMEventListener', () => {
         type={eventConfig.type}
         targetRef={targetRef}
         targetProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根目标的冒泡回调记录 ---- inner，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('---- inner');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根目标的捕获回调记录 ---- inner capture，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             log.push('---- inner capture');
           },
         }}
         parentProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根父节点的冒泡回调记录 --- inner parent，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('--- inner parent');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根父节点的捕获回调记录 --- inner parent capture，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             log.push('--- inner parent capture');
           },
         }}
         outerProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根内节点的冒泡回调先 stopPropagation 再记录 -- outer，构造本 helper 的合成传播截断点。 */
           [eventConfig.reactEvent]: e => {
             e.stopPropagation(); // <---------
             log.push('-- outer');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根内节点的捕获回调记录 -- outer capture，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             log.push('-- outer capture');
           },
         }}
         outerParentProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根父节点的冒泡回调记录 - outer parent，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('- outer parent');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根父节点的捕获回调记录 - outer parent capture，供共享日志断言定位该节点与阶段。 同时核对合成 event.type 与该事件配置/预期一致。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             expect(e.type).toBe(eventConfig.reactEventType);
             log.push('- outer parent capture');
@@ -2882,7 +3104,7 @@ describe('ReactDOMEventListener', () => {
     `);
   }
 
-  /** `testNativeStopPropagationInOuterCapturePhase`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 外父DOM原生捕获回调stopPropagation；外根已在根容器捕获完成两条日志，随后原生停止使内根完全无日志，验证原生节点与根监听先后。 */
   async function testNativeStopPropagationInOuterCapturePhase(eventConfig) {
     const log = [];
     const targetRef = React.createRef();
@@ -2891,38 +3113,44 @@ describe('ReactDOMEventListener', () => {
         type={eventConfig.type}
         targetRef={targetRef}
         targetProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根目标的冒泡回调记录 ---- inner，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('---- inner');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根目标的捕获回调记录 ---- inner capture，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             log.push('---- inner capture');
           },
         }}
         parentProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根父节点的冒泡回调记录 --- inner parent，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('--- inner parent');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根父节点的捕获回调记录 --- inner parent capture，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             log.push('--- inner parent capture');
           },
         }}
         outerProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根内节点的冒泡回调记录 -- outer，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('-- outer');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根内节点的捕获回调记录 -- outer capture，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             log.push('-- outer capture');
           },
         }}
         outerParentRef={node => {
           if (node) {
-            // 无需清理，假设我们只渲染一次。
+            // 本分支只挂载一次该节点；下一分支cleanup卸载两根并移除整棵DOM树，不复用这个监听目标。
             node.addEventListener(
               eventConfig.nativeEvent,
               e => {
@@ -2934,11 +3162,13 @@ describe('ReactDOMEventListener', () => {
           }
         }}
         outerParentProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根父节点的冒泡回调记录 - outer parent，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('- outer parent');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根父节点的捕获回调记录 - outer parent capture，供共享日志断言定位该节点与阶段。 同时核对合成 event.type 与该事件配置/预期一致。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             expect(e.type).toBe(eventConfig.reactEventType);
             log.push('- outer parent capture');
@@ -2956,7 +3186,7 @@ describe('ReactDOMEventListener', () => {
     `);
   }
 
-  /** `testNativeStopPropagationInInnerCapturePhase`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 内父DOM原生捕获stopPropagation；两根所有React捕获已执行，随后仅记原生回调且无React冒泡，验证根捕获先于内部原生节点。 */
   async function testNativeStopPropagationInInnerCapturePhase(eventConfig) {
     const log = [];
     const targetRef = React.createRef();
@@ -2965,18 +3195,20 @@ describe('ReactDOMEventListener', () => {
         type={eventConfig.type}
         targetRef={targetRef}
         targetProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根目标的冒泡回调记录 ---- inner，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('---- inner');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根目标的捕获回调记录 ---- inner capture，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             log.push('---- inner capture');
           },
         }}
         parentRef={node => {
           if (node) {
-            // 无需清理，假设我们只渲染一次。
+            // 本分支只挂载一次该节点；下一分支cleanup卸载两根并移除整棵DOM树，不复用这个监听目标。
             node.addEventListener(
               eventConfig.nativeEvent,
               e => {
@@ -2988,31 +3220,37 @@ describe('ReactDOMEventListener', () => {
           }
         }}
         parentProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根父节点的冒泡回调记录 --- inner parent，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('--- inner parent');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根父节点的捕获回调记录 --- inner parent capture，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             log.push('--- inner parent capture');
           },
         }}
         outerProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根内节点的冒泡回调记录 -- outer，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('-- outer');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根内节点的捕获回调记录 -- outer capture，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             log.push('-- outer capture');
           },
         }}
         outerParentProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根父节点的冒泡回调记录 - outer parent，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('- outer parent');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根父节点的捕获回调记录 - outer parent capture，供共享日志断言定位该节点与阶段。 同时核对合成 event.type 与该事件配置/预期一致。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             expect(e.type).toBe(eventConfig.reactEventType);
             log.push('- outer parent capture');
@@ -3032,7 +3270,7 @@ describe('ReactDOMEventListener', () => {
     `);
   }
 
-  /** `testNativeStopPropagationInInnerBubblePhase`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 目标DOM原生冒泡回调stopPropagation；先有全部React捕获再记目标原生，无React冒泡，验证原生停止阻断委托根的冒泡接收。 */
   async function testNativeStopPropagationInInnerBubblePhase(eventConfig) {
     const log = [];
     const targetRef = React.createRef();
@@ -3042,7 +3280,7 @@ describe('ReactDOMEventListener', () => {
         targetRef={node => {
           targetRef.current = node;
           if (node) {
-            // 无需清理，假设我们只渲染一次。
+            // 本分支只挂载一次该节点；下一分支cleanup卸载两根并移除整棵DOM树，不复用这个监听目标。
             node.addEventListener(eventConfig.nativeEvent, e => {
               log.push('---- inner (native)');
               e.stopPropagation(); // <---------
@@ -3050,41 +3288,49 @@ describe('ReactDOMEventListener', () => {
           }
         }}
         targetProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根目标的冒泡回调记录 ---- inner，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('---- inner');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根目标的捕获回调记录 ---- inner capture，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             log.push('---- inner capture');
           },
         }}
         parentProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根父节点的冒泡回调记录 --- inner parent，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('--- inner parent');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根父节点的捕获回调记录 --- inner parent capture，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             log.push('--- inner parent capture');
           },
         }}
         outerProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根内节点的冒泡回调记录 -- outer，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('-- outer');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根内节点的捕获回调记录 -- outer capture，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             log.push('-- outer capture');
           },
         }}
         outerParentProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根父节点的冒泡回调记录 - outer parent，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('- outer parent');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根父节点的捕获回调记录 - outer parent capture，供共享日志断言定位该节点与阶段。 同时核对合成 event.type 与该事件配置/预期一致。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             expect(e.type).toBe(eventConfig.reactEventType);
             log.push('- outer parent capture');
@@ -3104,7 +3350,7 @@ describe('ReactDOMEventListener', () => {
     `);
   }
 
-  /** `testNativeStopPropagationInInnerEmulatedBubblePhase`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 目标挂原生冒泡stopPropagation，且事件由React直接目标监听；断言React内根冒泡先完成、用户原生监听最后，验证后注册监听不能撤销已经执行的合成队列。 */
   async function testNativeStopPropagationInInnerEmulatedBubblePhase(
     eventConfig,
   ) {
@@ -3116,7 +3362,7 @@ describe('ReactDOMEventListener', () => {
         targetRef={node => {
           targetRef.current = node;
           if (node) {
-            // 无需清理，假设我们只渲染一次。
+            // 本分支只挂载一次该节点；下一分支cleanup卸载两根并移除整棵DOM树，不复用这个监听目标。
             node.addEventListener(eventConfig.nativeEvent, e => {
               log.push('---- inner (native)');
               e.stopPropagation(); // <---------
@@ -3125,41 +3371,49 @@ describe('ReactDOMEventListener', () => {
         }}
         targetProps={{
           ...eventConfig.targetProps,
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根目标的冒泡回调记录 ---- inner，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('---- inner');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根目标的捕获回调记录 ---- inner capture，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             log.push('---- inner capture');
           },
         }}
         parentProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根父节点的冒泡回调记录 --- inner parent，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('--- inner parent');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根父节点的捕获回调记录 --- inner parent capture，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             log.push('--- inner parent capture');
           },
         }}
         outerProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根内节点的冒泡回调记录 -- outer，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('-- outer');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根内节点的捕获回调记录 -- outer capture，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             log.push('-- outer capture');
           },
         }}
         outerParentProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根父节点的冒泡回调记录 - outer parent，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('- outer parent');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根父节点的捕获回调记录 - outer parent capture，供共享日志断言定位该节点与阶段。 同时核对合成 event.type 与该事件配置/预期一致。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             expect(e.type).toBe(eventConfig.reactEventType);
             log.push('- outer parent capture');
@@ -3181,7 +3435,7 @@ describe('ReactDOMEventListener', () => {
     `);
   }
 
-  /** `testNativeStopPropagationInOuterBubblePhase`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 外节点DOM原生冒泡stopPropagation；内根合成两阶段已经结束，随后记外原生回调、无外根冒泡，验证阻断第二根的原生入口。 */
   async function testNativeStopPropagationInOuterBubblePhase(eventConfig) {
     const log = [];
     const targetRef = React.createRef();
@@ -3190,28 +3444,32 @@ describe('ReactDOMEventListener', () => {
         type={eventConfig.type}
         targetRef={targetRef}
         targetProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根目标的冒泡回调记录 ---- inner，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('---- inner');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根目标的捕获回调记录 ---- inner capture，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             log.push('---- inner capture');
           },
         }}
         parentProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根父节点的冒泡回调记录 --- inner parent，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('--- inner parent');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 内根父节点的捕获回调记录 --- inner parent capture，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             log.push('--- inner parent capture');
           },
         }}
         outerRef={node => {
           if (node) {
-            // 无需清理，假设我们只渲染一次。
+            // 本分支只挂载一次该节点；下一分支cleanup卸载两根并移除整棵DOM树，不复用这个监听目标。
             node.addEventListener(eventConfig.nativeEvent, e => {
               log.push('-- outer (native)');
               e.stopPropagation(); // <---------
@@ -3219,21 +3477,25 @@ describe('ReactDOMEventListener', () => {
           }
         }}
         outerProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根内节点的冒泡回调记录 -- outer，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('-- outer');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根内节点的捕获回调记录 -- outer capture，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             log.push('-- outer capture');
           },
         }}
         outerParentProps={{
-          /** `eventConfig.reactEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根父节点的冒泡回调记录 - outer parent，供共享日志断言定位该节点与阶段。 */
           [eventConfig.reactEvent]: e => {
             log.push('- outer parent');
           },
-          /** `eventConfig.reactEvent + 'Capture'`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 外根父节点的捕获回调记录 - outer parent capture，供共享日志断言定位该节点与阶段。 同时核对合成 event.type 与该事件配置/预期一致。 */
           [eventConfig.reactEvent + 'Capture']: e => {
             expect(e.type).toBe(eventConfig.reactEventType);
             log.push('- outer parent capture');
@@ -3255,7 +3517,7 @@ describe('ReactDOMEventListener', () => {
     `);
   }
 
-  /** `Fixture`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 接收目标tag、四级props/ref，memo化Inner并用Outer包NestedReact；构造DOM嵌套但分别由两份renderer管理的四级传播fixture。 */
   function Fixture({
     type,
     targetRef,
@@ -3290,7 +3552,7 @@ describe('ReactDOMEventListener', () => {
     );
   }
 
-  /** `NestedReact`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 接收children，在layout中创建内层容器与隔离renderer根、flushSync提交；cleanup卸载内根并移除容器，依赖children变化会先重建该根。 */
   function NestedReact({children}) {
     const ref = React.useRef();
     React.useLayoutEffect(() => {
@@ -3309,7 +3571,7 @@ describe('ReactDOMEventListener', () => {
     return <div ref={ref} />;
   }
 
-  /** `Inner`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 按type创建目标宿主，包在内父div中，分别spread目标/父props并安装ref，供内根两个阶段观测。 */
   function Inner({type, targetRef, targetProps, parentRef, parentProps}) {
     const T = type;
     return (
@@ -3319,7 +3581,7 @@ describe('ReactDOMEventListener', () => {
     );
   }
 
-  /** `Outer`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 接收外层两级props/ref与children，返回两层div包内根容器，提供外根的两个React祖先。 */
   function Outer({
     outerRef,
     outerProps,
@@ -3336,7 +3598,7 @@ describe('ReactDOMEventListener', () => {
     );
   }
 
-  /** `unindent`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 接收模板字符串数组，取首段按行trim并过滤空行，返回日志字符串数组，让路径断言保持可读缩进。 */
   function unindent(str) {
     return str[0]
       .split('\n')

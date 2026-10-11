@@ -52,15 +52,17 @@ export type ResolverFunction = MapToFunction<FunctionPluginHooks['resolveId']>
 
 /** 对象式自定义解析器，可在首次解析前执行 buildStart 初始化。 */
 export interface ResolverObject {
+  /** alias 插件启动时运行的可选初始化钩子，与底层 buildStart 签名一致。 */
   buildStart?: FunctionPluginHooks['buildStart']
+  /** 命中该别名规则后负责解析替换目标的钩子。 */
   resolveId: ResolverFunction
 }
 
 /**
  * import/require 说明符的别名配置，可使用对象简写或规则数组。
  *
- * 数组形式按声明顺序匹配，首条命中规则优先；该值会作为 entries 传给
- * \@rollup/plugin-alias，因此需要更精细的正则或解析器时应使用数组形式。
+ * 数组形式按声明顺序匹配，首条命中规则优先。Vite 规范化后传给 alias 插件；
+ * bundled dev 且没有 customResolver 时改用 Rolldown native alias 插件。
  *
  * https://github.com/rollup/plugins/tree/master/packages/alias#entries
  */

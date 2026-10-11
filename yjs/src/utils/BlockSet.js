@@ -23,7 +23,10 @@ import { writeStructs } from './encoding-helpers.js'
  * 选择 GC、Skip 或 Item 内容；Item 的左右锚点决定父信息能否从邻居复制。
  *
  * @param {UpdateDecoderV1 | UpdateDecoderV2} decoder 结构更新解码器。
- * @return {BlockSet}
+ * 解码只创建未集成结构，left/right 仍为空；不检查依赖、不改 Doc，也不应用尾部删除集。
+ * 完成后 decoder 的通用流位于删除集起点，调用方必须继续消费它。
+ *
+ * @return {BlockSet} 每个 client 的 refs 按 clock 连续排列，消费游标初始为 0。
  *
  * @private
  * @function
@@ -58,7 +61,7 @@ export const readBlockSet = (decoder) => {
         }
         default: { // 带内容的 Item。
           /**
-           * 直接按 info 位内联读取字段，避免热路径临时对象与额外分派。
+           * 按 info 位决定哪些定位字段存在。
            *
            * 不变量：只有 origin 与 rightOrigin 都缺失时才显式携带 parent；否则集成
            * 阶段会从相邻 Item 恢复父上下文。
@@ -88,16 +91,15 @@ export const readBlockSet = (decoder) => {
 /**
  * 把 `BlockSet` 编码为按客户端分组的结构段。
  *
- * 客户端 ID 降序可使并发冲突算法更早看到较大 ID 的结构，减少扫描；每个客户端
- * 交给 `writeStructs()` 写完整时钟范围。
+ * 客户端按 ID 降序输出；每个客户端交给 `writeStructs()` 写完整时钟范围。
  *
  * @param {UpdateEncoderV1 | UpdateEncoderV2} encoder
- * @param {BlockSet} blocks
+ * @param {BlockSet} blocks 每个 client 至少有一个 refs；i 是接收消费游标，编码仍写 refs 的全量范围。
  */
 export const writeBlockSet = (encoder, blocks) => {
   // 写入携带结构的客户端数量。
   encoding.writeVarUint(encoder.restEncoder, blocks.clients.size)
-  // 高 client ID 优先，降低后续并发位置解析成本。
+  // 按 client ID 降序输出客户端结构段。
   array.from(blocks.clients.entries()).sort((a, b) => b[0] - a[0]).forEach(([client, blockrange]) => {
     writeStructs(encoder, blockrange.refs, client, [new IdRange(0, number.MAX_SAFE_INTEGER)])
   })
@@ -108,11 +110,13 @@ class BlockRange {
   /**
    * 创建尚未消费的结构范围。
    *
-   * @param {Array<Item|GC|Skip>} refs
+   * @param {Array<Item|GC|Skip>} refs 一次更新中某 client 的按 clock 排序结构；构造器保留数组身份。
    */
   constructor (refs) {
+    /** 下一待消费 refs 的索引；因果算法预取时递增，转入 pending 前可回退。 */
     this.i = 0
     /**
+     * 解码结构及 Skip 占位的原数组，排除/合并会原地切分或整体替换。
      * @type {Array<Item | GC | Skip>}
      */
     this.refs = refs
@@ -129,6 +133,7 @@ export class BlockSet {
   /** 创建空客户端结构映射。 */
   constructor () {
     /**
+     * 解码 client 到结构范围的索引；范围与结构可由合并输入直接共享，不是深拷贝。
      * @type {Map<number, BlockRange>}
      */
     this.clients = map.create()
@@ -138,6 +143,9 @@ export class BlockSet {
    * 把所有非 Skip 结构归并为插入 ID 集。
    *
    * 相邻结构合并为最大连续范围；Skip 断开范围，不会被误报为当前更新携带内容。
+   * 不读取 BlockRange.i，因此已经消费的 refs 仍参与提取。
+   *
+   * @return {IdSet} 新建插入集，包含 Item/GC 的结构 ID，不表达可见内容或删除。
    */
   toIdSet () {
     const inserts = createIdSet()
@@ -163,10 +171,12 @@ export class BlockSet {
   /**
    * 从更新结构中排除指定 ID 区间，并以 Skip 保留时钟间距。
    *
-   * `findIndexCleanStart()` 会在排除边界切分结构；命中区间随后压缩成一个 Skip。
-   * 这样字节筛选不改变同客户端后续结构的绝对时钟。
+   * 排除边界落在现有结构内部时，`findIndexCleanStart()` 先切分；相交结构随后
+   * 换成一个 Skip。Skip 使用排除区间本身的起点和长度，故排除范围越过更新首尾
+   * 时也会保留这段边界，而非只取交集。剩余真实结构的绝对 ID 不变。
+   * 按较小的客户端键集合遍历；遇到任一侧不存在的客户端会直接 return，结束整个方法。
    *
-   * @param {IdSet} exclude
+   * @param {IdSet} exclude 已知真实结构的 ID 集；不要把本地 Skip 缺口放进该集合。
    */
   exclude (exclude) {
     const clientids = this.clients.size < exclude.clients.size ? this.clients.keys() : exclude.clients.keys()
@@ -203,10 +213,14 @@ export class BlockSet {
   /**
    * 把另一个 BlockSet 的结构并入当前集合并清空输入集合。
    *
-   * 不重叠时直接拼接并按需补 Skip；重叠时双游标过滤 Skip 和重复区间、裁剪部分
-   * 重叠结构，并只在真实空洞处重建 Skip。输出对每个客户端按时钟有序且无重复。
+   * 不重叠时直接拼接并按需补 Skip；重叠时双游标过滤 Skip 和已覆盖区间，再对
+   * 部分重叠结构调用 sliceStruct。当前裁剪实参是剩余长度，而 sliceStruct 按左侧
+   * offset 解释；非对称重叠可能丢失覆盖，并在输出中形成原输入没有的 Skip。
    *
-   * @param {BlockSet} inserts
+   * 输入是可消费的临时解码结构：重叠裁剪调用 `sliceStruct`，会修改传入 Item.content；
+   * 没有已有 client 时复用输入 BlockRange。完成后清空 inserts.clients，调用者不得再把它当独立副本。
+   *
+   * @param {BlockSet} inserts 会被消费并清空的输入集合，不能传入已挂入 Doc 的结构。
    */
   insertInto (inserts) {
     inserts.clients.forEach((newranges, clientid) => {
@@ -232,7 +246,7 @@ export class BlockSet {
         } else {
           // 两组重叠，必须过滤重复并裁剪边界。
           /**
-           * 追加结构并推进下一期望时钟。
+           * 合并结果的暂存数组；真实区段按 nextExpectedClock 连续追加，主循环在缺口处补 Skip。
            *
            * @type {Array<GC|Item|Skip>}
            */
@@ -257,14 +271,14 @@ export class BlockSet {
            * @type {Item|GC|Skip|undefined}
            */
           let rblock = rightRanges[ri]
-          /** 对左侧输入过滤已覆盖区间、裁剪重叠前缀并追加连续真实结构。 */
+          /** 过滤左侧已覆盖区间，以剩余长度为实参切片，再追加恰好接续结果的结构。 */
           const applyLeft = () => {
             if (lblock === undefined) return
             // 跳过左侧缺口及已经被结果覆盖的结构。
             while (lblock !== undefined && (lblock.constructor === Skip || lblock.id.clock + lblock.length <= nextExpectedClock)) {
               lblock = leftRanges[++li]
             }
-            // 裁掉与结果尾部重叠的前缀。
+            // 当前实参是区间末端到 nextExpectedClock 的长度，并非应排除的前缀长度。
             if (lblock !== undefined && lblock.id.clock < nextExpectedClock && lblock.id.clock + lblock.length > nextExpectedClock) {
               lblock = sliceStruct(lblock, lblock.id.clock + lblock.length - nextExpectedClock)
             }
@@ -280,7 +294,7 @@ export class BlockSet {
             while (rblock !== undefined && (rblock.constructor === Skip || rblock.id.clock + rblock.length <= nextExpectedClock)) {
               rblock = rightRanges[++ri]
             }
-            // 裁掉与结果尾部重叠的前缀。
+            // 与左侧一样传入剩余长度；sliceStruct 会把它解释为左侧 offset。
             if (rblock !== undefined && rblock.id.clock < nextExpectedClock && rblock.id.clock + rblock.length > nextExpectedClock) {
               rblock = sliceStruct(rblock, rblock.id.clock + rblock.length - nextExpectedClock)
             }

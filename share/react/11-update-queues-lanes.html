@@ -6,6 +6,7 @@
   <meta name="description" content="React 19.3 Update Queue 与 Lane 深挖：HostRoot/Hook 更新、向根传播、pending/suspended/pinged、getNextLanes、Scheduler 映射与跳过重放。" />
   <title>11 · Update Queue 与 Lane：一次更新如何被选择、跳过和重放</title>
   <link rel="stylesheet" href="assets/guide.css?v=1" />
+  <link rel="stylesheet" href="assets/engineering-diagrams.css" />
 </head>
 <body>
   <header class="topbar"><div class="topbar-inner">
@@ -46,8 +47,49 @@
         <div class="node">render queue<small>apply / skip / rebase</small></div><span class="arrow">→</span>
         <div class="node">commit<small>新 state 成为 current</small></div>
       </div>
+      <figure class="engineering-diagram" data-diagram="r11-staged-pending-base" style="--diagram-min-width:820px">
+        <div class="diagram-scroll"><svg viewBox="0 0 820 930" role="img" aria-labelledby="r11-staged-pending-base-title r11-staged-pending-base-desc" xmlns="http://www.w3.org/2000/svg">
+          <title id="r11-staged-pending-base-title">并发暂存数组、Hook pending 环与 base 环合并</title>
+          <desc id="r11-staged-pending-base-desc">T 和 S 更新先按四元组暂存于全局 concurrentQueues，源 Fiber lanes 同步标记。后续收口接入 pending 环并传播 childLanes。已有 base 环 B 与 pending 环 T、S 交换尾节点的 next，形成 B、T、S 顺序的环，并将 pending 清空。</desc>
+          <defs><marker id="r11-staged-pending-base-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#507476"/></marker></defs>
+          <rect class="d-node" x="40" y="35" width="740" height="65" rx="12"/><text text-anchor="middle" x="410" y="61" style="font-size:17px"><tspan x="410" dy="0">普通 Hook dispatch：T:+10 → S:×2</tspan><tspan x="410" dy="25">只入队，不在入口消费更新</tspan></text>
+          <path class="d-edge" d="M210 100 V155" marker-end="url(#r11-staged-pending-base-arrow)"/>
+          <rect class="d-node" x="40" y="155" width="350" height="130" rx="12"/><text text-anchor="middle" x="215" y="201" style="font-size:17px"><tspan x="215" dy="0">concurrentQueues：暂存数组</tspan><tspan x="215" dy="25">[fiber, queue, T, Tlane]</tspan><tspan x="215" dy="25">[fiber, queue, S, Slane]</tspan></text>
+          <rect class="d-state" x="470" y="155" width="310" height="130" rx="12"/><text text-anchor="middle" x="625" y="201" style="font-size:17px"><tspan x="625" dy="0">入口同步标记源 lanes</tspan><tspan x="625" dy="25">Fiber / alternate |= T | S</tspan><tspan x="625" dy="25">root.pendingLanes 由调度入口标</tspan></text>
+          <path class="d-edge d-async" d="M210 285 V360" marker-end="url(#r11-staged-pending-base-arrow)"/>
+          <text class="d-muted" text-anchor="middle" x="324" y="325"><tspan x="324" dy="0">后续根调度</tspan></text>
+          <rect class="d-node" x="40" y="360" width="350" height="90" rx="12"/><text text-anchor="middle" x="215" y="386" style="font-size:17px"><tspan x="215" dy="0">finishQueueingConcurrentUpdates</tspan><tspan x="215" dy="25">接入目标 pending 环</tspan><tspan x="215" dy="25">再传播祖先 childLanes</tspan></text>
+          <path class="d-edge" d="M390 405 H470" marker-end="url(#r11-staged-pending-base-arrow)"/>
+          <rect class="d-state" x="470" y="350" width="310" height="180" rx="12"/>
+          <text class="d-label" text-anchor="middle" x="625" y="380"><tspan x="625" dy="0">queue.pending → S（尾）</tspan></text>
+          <rect class="d-node" x="490" y="402" width="100" height="50" rx="12"/><text text-anchor="middle" x="540" y="433" style="font-size:17px"><tspan x="540" dy="0">T:+10</tspan></text>
+          <rect class="d-node" x="660" y="402" width="100" height="50" rx="12"/><text text-anchor="middle" x="710" y="433" style="font-size:17px"><tspan x="710" dy="0">S:×2</tspan></text>
+          <path class="d-edge" d="M590 427 H660" marker-end="url(#r11-staged-pending-base-arrow)"/>
+          <path class="d-edge" d="M710 452 V488 H540 V452" marker-end="url(#r11-staged-pending-base-arrow)"/>
+          <text class="d-muted" text-anchor="middle" x="625" y="516"><tspan x="625" dy="0">尾.next → 首 T</tspan></text>
+          <rect class="d-state" x="40" y="555" width="260" height="125" rx="12"/>
+          <text class="d-label" text-anchor="middle" x="170" y="580"><tspan x="170" dy="0">已有 baseQueue → B（尾）</tspan></text>
+          <rect class="d-node" x="90" y="605" width="95" height="45" rx="12"/><text text-anchor="middle" x="137.5" y="633.5" style="font-size:17px"><tspan x="137.5" dy="0">旧更新 B</tspan></text>
+          <path class="d-edge" d="M185 627 H226 V660 H137 V650" marker-end="url(#r11-staged-pending-base-arrow)"/>
+          <text class="d-muted" text-anchor="middle" x="224" y="606"><tspan x="224" dy="0">自环</tspan></text>
+          <path class="d-edge" d="M300 618 H370" marker-end="url(#r11-staged-pending-base-arrow)"/>
+          <path class="d-edge" d="M625 530 V567" marker-end="url(#r11-staged-pending-base-arrow)"/>
+          <rect class="d-condition" x="370" y="567" width="410" height="110" rx="12"/><text text-anchor="middle" x="575" y="603" style="font-size:17px"><tspan x="575" dy="0">updateReducerImpl：交换两尾.next</tspan><tspan x="575" dy="25">B.next = T；S.next = B</tspan><tspan x="575" dy="25">current.baseQueue = S；queue.pending = null</tspan></text>
+          <path class="d-edge" d="M575 677 V740" marker-end="url(#r11-staged-pending-base-arrow)"/>
+          <rect class="d-state" x="100" y="740" width="620" height="155" rx="12"/>
+          <text class="d-label" text-anchor="middle" x="410" y="768"><tspan x="410" dy="0">合并环：从尾.next 开始，旧 base 在前</tspan></text>
+          <rect class="d-node" x="155" y="790" width="110" height="45" rx="12"/><text text-anchor="middle" x="210" y="818.5" style="font-size:17px"><tspan x="210" dy="0">B</tspan></text>
+          <rect class="d-node" x="355" y="790" width="110" height="45" rx="12"/><text text-anchor="middle" x="410" y="818.5" style="font-size:17px"><tspan x="410" dy="0">T:+10</tspan></text>
+          <rect class="d-node" x="555" y="790" width="110" height="45" rx="12"/><text text-anchor="middle" x="610" y="818.5" style="font-size:17px"><tspan x="610" dy="0">S:×2</tspan></text>
+          <path class="d-edge" d="M265 812 H355" marker-end="url(#r11-staged-pending-base-arrow)"/>
+          <path class="d-edge" d="M465 812 H555" marker-end="url(#r11-staged-pending-base-arrow)"/>
+          <path class="d-edge" d="M610 835 V863 H210 V835" marker-end="url(#r11-staged-pending-base-arrow)"/>
+          <text class="d-muted" text-anchor="middle" x="410" y="887"><tspan x="410" dy="0">baseQueue 尾 → S；S.next → B</tspan></text>
+        </svg></div>
+        <figcaption><strong>数组暂存与两种环的边界。</strong>对应上方普通 dispatch 主链及 <a href="../../react/packages/react-reconciler/src/ReactFiberConcurrentUpdates.js">并发队列收口</a>、<a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">updateReducerImpl</a>：实线表示同步操作或 next 指针，虚线跨后续根调度；新 render 的 prepareFreshStack 调用收口函数，render 完成后也会收口新到更新。pending 与 Hook baseQueue 都保存尾指针；图用一条既有更新 B 展示两个非空环的 O(1) 拼接。若旧 baseQueue 为空，则直接采用 pending 环。下一图的 T/S 手算采用旧 base 为空的情况。Class/HostRoot 的 base queue 是单链，不能照搬此环形结构。</figcaption>
+      </figure>
       <ol class="state-list">
-        <li><strong>同步入口。</strong>dispatch 只构造描述，不在调用点递归渲染组件。</li>
+        <li><strong>同步入口。</strong>普通 dispatch 构造并入队 Update；useState 还可尝试 eager state。现代并发根由根调度器决定何时 render。</li>
         <li><strong>缓冲与可达性。</strong>更新先进入全局并发缓冲；源 Fiber/alternate 的 lanes 立即标记，同时沿 return 只读查找 HostRoot。</li>
         <li><strong>根状态。</strong><code>scheduleUpdateOnFiber</code> 先把 lane 合入 <code>root.pendingLanes</code>，并确保根出现在待调度链。</li>
         <li><strong>异步边界。</strong>一个微任务统一检查多个根；同步 Lane 在微任务末 flush，其他 Lane 建 Scheduler task。</li>
@@ -138,9 +180,9 @@ if (root !== null) {
     }
   }
 </code></pre></figure>
-      <p><code>setCount(1)</code> 的 action 是值 1；<code>setCount(c =&gt; c + 1)</code> 的 action 是函数。权威队列消费发生在 render；但队列空闲且 Fiber 没有待处理 Lane 时，
-        <code>dispatchSetStateInternal</code> 可用 <code>lastRenderedReducer</code> 提前计算 eagerState，并因相同 state 快速退出。这是可缓存的预算优化，不改变 Update 需保留可重放语义。</p>
-      <div class="callout warn"><p><strong>render-phase 更新是特例：</strong>当前组件 render 内对自身 Hook 的更新进入独立 render-phase 环并触发有限次重渲染；
+      <p><code>setCount(1)</code> 的 action 是值 1；<code>setCount(c =&gt; c + 1)</code> 的 action 是函数。权威队列消费发生在 render；但 source Fiber 与 alternate 都没有待处理 Lane，且 queue 有 lastRenderedReducer 时，
+        <code>dispatchSetStateInternal</code> 可用 <code>lastRenderedReducer</code> 提前计算 eagerState，并因相同 state 快速退出。这是可缓存的预计算优化，不改变 Update 需保留可重放语义。</p>
+      <div class="callout warn"><p><strong>render-phase 更新是特例：</strong>当前组件 render 内对自身 Hook 的更新写入 queue.pending；模块标记促使 renderWithHooks 再运行组件，rerender dispatcher 单独消费这批更新；
         它不代表普通事件 dispatch 会同步递归 render。条件 Hook、跨组件 render 更新仍是错误或受警告的路径。</p></div>
     </section>
 
@@ -216,7 +258,7 @@ Counter.lanes       |= L       （alternate 同步标记）</code></pre></figure
         <tr><td>pingedLanes</td><td>suspended 中已有 wakeable 解决，可重试</td><td><code>markRootPinged</code> 与 suspended 取交集</td><td>再次挂起时移除；完成时重算</td></tr>
         <tr><td>warmLanes</td><td>本轮已探索完整树，无需仅为预热 sibling 再跑</td><td>完整挂起尝试</td><td>ping 或新非 Idle 更新清理</td></tr>
         <tr><td>expiredLanes</td><td>等待过久，应防止继续饥饿</td><td>微任务调度前按 expirationTimes 标记</td><td>完成时清理</td></tr>
-        <tr><td>entangledLanes</td><td>必须作为相关批次共同选择</td><td>transition/async action 纠缠</td><td>相关 Lane 全部完成后清理</td></tr>
+        <tr><td>entangledLanes</td><td>新 render 扩展为相关批次共同处理</td><td>transition/async action 纠缠</td><td>相关 Lane 全部完成后清理</td></tr>
       </tbody></table></div>
 
       <figure class="source"><figcaption><span>删节源码 · ReactFiberLane.js · markRootUpdated（省略说明注释）</span><a href="../../react/packages/react-reconciler/src/ReactFiberLane.js">打开文件</a></figcaption><pre><code>export function markRootUpdated(root: FiberRoot, updateLane: Lane) {
@@ -279,21 +321,22 @@ if (nonIdlePendingLanes !== NoLanes) {
     }
   }
 }</code></pre></figure>
+      <p><code>getHighestPriorityLanes</code> 先取候选集合与 <code>SyncUpdateLanes = SyncLane | InputContinuousLane | DefaultLane</code> 的交集；只要交集非空，就返回其中全部 Lane。例如 Sync 与 Default 都未阻塞时，两者同批 render，并非先做 Sync、再单独做 Default。这一步发生在纠缠扩展之前。</p>
       <p>随后 <code>getNextLanes</code> 处理只剩 Idle 的同类分支、无候选退出，以及已有 WIP 是否应被中断，然后返回调度候选。它本身不展开 entanglement：
-        <code>prepareFreshStack</code> 后续调用 <code>getEntangledLanes(root, lanes)</code>，才扩展本轮 render 的资格集合；Scheduler callback 优先级仍由未扩展的 nextLanes 决定。
+        <code>prepareFreshStack</code> 后续调用 <code>getEntangledLanes(root, lanes)</code>，才扩展新 render 的资格集合；已经进行中的 render 不会因新 entanglement 立即重新检查。Scheduler callback 优先级仍由未扩展的 nextLanes 决定。
         中断规则也不是“只要来了新 Lane 就重启”：只有更紧急工作，或当前 WIP 自己已挂起，才值得丢弃已有进度；当前实现还特意让 Default 更新不打断未挂起 transition。</p>
       <div class="table-wrap"><table><thead><tr><th>输入条件</th><th>候选</th><th>原因</th></tr></thead><tbody>
         <tr><td>存在非 Idle 且未 suspended</td><td>其中最高优先级组</td><td>新鲜、未阻塞工作优先</td></tr>
         <tr><td>所有非 Idle 都 suspended，部分已 ping</td><td>pinged 中最高组</td><td>外部条件已改变，可实际推进</td></tr>
         <tr><td>未 ping，但有未 warm Lane，且无 pending commit</td><td>未 warm 最高组</td><td>预渲染尚未探索的 sibling</td></tr>
         <tr><td>已有 WIP，next 不更紧急</td><td>保留 wipLanes</td><td>避免为不紧急工作丢弃候选进度</td></tr>
-        <tr><td>选出的 nextLanes 含 entangled Lane</td><td>getNextLanes 先返回调度候选；prepareFreshStack 再扩展 renderLanes</td><td>调度选择与 render 资格分层，同时避免相关 transition/async action 部分提交</td></tr>
+        <tr><td>选出的 nextLanes 含 entangled Lane</td><td>getNextLanes 先返回调度候选；prepareFreshStack 再扩展 renderLanes</td><td>调度选择与 render 资格分层；新 render 把相关 transition/async action 纳入同批</td></tr>
       </tbody></table></div>
     </section>
 
     <section id="scheduler"><h2>Lane 到 Scheduler：不是一一对应的优先级枚举</h2>
-      <p>根进入全局 scheduled-root 链后，一个微任务统一运行 <code>scheduleTaskForRootDuringMicrotask</code>。它调用 getNextLanes、取消或复用旧 callback，
-        最后才把 Lane 组映射到 Scheduler priority。</p>
+      <p>根进入全局 scheduled-root 链后，通常由一个微任务统一运行 <code>scheduleTaskForRootDuringMicrotask</code>。它调用 getNextLanes、取消或复用旧 callback，
+        最后才把 Lane 组映射到 Scheduler priority。不支持微任务的宿主使用 Immediate task 承接同一调度流程。</p>
       <figure class="source"><figcaption><span>删节源码 · ReactFiberRootScheduler.js · callback 映射（省略说明注释）</span><a href="../../react/packages/react-reconciler/src/ReactFiberRootScheduler.js">打开文件</a></figcaption><pre><code>let schedulerPriorityLevel;
 switch (lanesToEventPriority(nextLanes)) {
   case DiscreteEventPriority:
@@ -316,9 +359,9 @@ const newCallbackNode = scheduleCallback(
   performWorkOnRootViaSchedulerTask.bind(null, root),
 );</code></pre></figure>
       <div class="table-wrap"><table><thead><tr><th>nextLanes 主类</th><th>React 根侧处理</th><th>Scheduler task</th></tr></thead><tbody>
-        <tr><td>包含 SyncLane，且非 prerender</td><td>标 callbackPriority = SyncLane；微任务末同步 flush</td><td>不新建普通 task</td></tr>
+        <tr><td>包含 SyncLane 或 SyncHydrationLane，且非 prerender</td><td>标 callbackPriority = SyncLane；调度轮末同步 flush，同批候选可含 Continuous/Default</td><td>不新建普通 task</td></tr>
         <tr><td>离散 / 连续事件</td><td>最高 Lane 写 callbackPriority</td><td>UserBlockingPriority</td></tr>
-        <tr><td>Default / Transition / 常见 Retry</td><td>仍按 Lane 区分根内批次</td><td>通常映射 NormalPriority</td></tr>
+        <tr><td>不含同步 Lane 的 Default / Transition / 常见 Retry</td><td>按候选 Lane 组安排根 callback</td><td>通常映射 NormalPriority</td></tr>
         <tr><td>Idle</td><td>仅无更高未完成工作时选择</td><td>IdlePriority</td></tr>
       </tbody></table></div>
       <p><code>root.callbackPriority</code> 保存的是最高优先 Lane，不是 Scheduler priority。这样同为 Normal task 的不同 React Lane 仍可判断能否复用 callback；
@@ -328,6 +371,41 @@ const newCallbackNode = scheduleCallback(
     <section id="rebase"><h2>核心算法：跳过后为什么必须复制“已经执行”的更新</h2>
       <p>假设 state 初始为 1，队列按调用顺序是低优先 transition <code>T: +10</code>，随后同步 <code>S: ×2</code>。
         当前 renderLanes 只有 S。若只跳过 T、执行 S 并把 T 留下，未来从 state=2 再算 T 会得到 12；但按原始因果顺序应是 <code>(1 + 10) × 2 = 22</code>。</p>
+
+      <figure class="engineering-diagram" data-diagram="r11-skip-rebase-snapshots" style="--diagram-min-width:820px">
+        <div class="diagram-scroll"><svg viewBox="0 0 820 965" role="img" aria-labelledby="r11-skip-rebase-snapshots-title r11-skip-rebase-snapshots-desc" xmlns="http://www.w3.org/2000/svg">
+          <title id="r11-skip-rebase-snapshots-title">T 与 S 更新跳过后按原顺序重放为 22</title>
+          <desc id="r11-skip-rebase-snapshots-desc">初值为 1，T 加 10，S 乘 2。仅渲染 S 时先跳过 T，保存 baseState 1，再执行 S 得提交状态 2，并保存 lane T 与 NoLane 两个 clone。下一次渲染 T 从 baseState 1 开始重放，得到 11 再乘 2 得 22，基线队列清空。</desc>
+          <defs><marker id="r11-skip-rebase-snapshots-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#507476"/></marker></defs>
+          <text class="d-label" text-anchor="middle" x="410" y="38"><tspan x="410" dy="0">同一组普通更新：T:+10 在前，S:×2 在后</tspan></text>
+          <rect class="d-lane" x="40" y="70" width="740" height="195" rx="12"/>
+          <rect class="d-state" x="60" y="100" width="260" height="120" rx="12"/><text text-anchor="middle" x="190" y="141" style="font-size:17px"><tspan x="190" dy="0">初始 state = 1</tspan><tspan x="190" dy="25">baseState = 1</tspan><tspan x="190" dy="25">更新按 T → S 排列</tspan></text>
+          <rect class="d-node" x="370" y="108" width="135" height="80" rx="12"/><text text-anchor="middle" x="437.5" y="141.5" style="font-size:17px"><tspan x="437.5" dy="0">T:+10</tspan><tspan x="437.5" dy="25">lane = T</tspan></text>
+          <rect class="d-node" x="590" y="108" width="150" height="80" rx="12"/><text text-anchor="middle" x="665" y="141.5" style="font-size:17px"><tspan x="665" dy="0">S:×2</tspan><tspan x="665" dy="25">lane = S</tspan></text>
+          <path class="d-edge" d="M505 148 H590" marker-end="url(#r11-skip-rebase-snapshots-arrow)"/>
+          <path class="d-edge" d="M665 188 V229 H437 V188" marker-end="url(#r11-skip-rebase-snapshots-arrow)"/>
+          <text class="d-muted" text-anchor="middle" x="552" y="251"><tspan x="552" dy="0">尾 → S；尾.next → T</tspan></text>
+          <path class="d-edge d-async" d="M410 265 V350" marker-end="url(#r11-skip-rebase-snapshots-arrow)"/>
+          <text class="d-muted" text-anchor="middle" x="596" y="306"><tspan x="596" dy="0">第 1 轮 renderLanes = S</tspan></text>
+          <rect class="d-lane" x="40" y="350" width="740" height="250" rx="12"/>
+          <text class="d-label" text-anchor="middle" x="170" y="379"><tspan x="170" dy="0">S 提交后的快照</tspan></text>
+          <rect class="d-state" x="60" y="400" width="260" height="135" rx="12"/><text text-anchor="middle" x="190" y="448.5" style="font-size:17px"><tspan x="190" dy="0">memoizedState = 2</tspan><tspan x="190" dy="25">baseState 仍为 1</tspan><tspan x="190" dy="25">T Lane 仍待处理</tspan></text>
+          <rect class="d-condition" x="370" y="405" width="135" height="100" rx="12"/><text text-anchor="middle" x="437.5" y="436" style="font-size:17px"><tspan x="437.5" dy="0">T′:+10</tspan><tspan x="437.5" dy="25">lane = T</tspan><tspan x="437.5" dy="25">跳过并 clone</tspan></text>
+          <rect class="d-state" x="590" y="405" width="150" height="100" rx="12"/><text text-anchor="middle" x="665" y="436" style="font-size:17px"><tspan x="665" dy="0">S′:×2</tspan><tspan x="665" dy="25">lane = NoLane</tspan><tspan x="665" dy="25">已执行，再 clone</tspan></text>
+          <path class="d-edge" d="M505 455 H590" marker-end="url(#r11-skip-rebase-snapshots-arrow)"/>
+          <path class="d-edge" d="M665 505 V552 H437 V505" marker-end="url(#r11-skip-rebase-snapshots-arrow)"/>
+          <text class="d-muted" text-anchor="middle" x="552" y="580"><tspan x="552" dy="0">baseQueue 尾 → S′；首 → T′</tspan></text>
+          <path class="d-edge d-async" d="M410 600 V715" marker-end="url(#r11-skip-rebase-snapshots-arrow)"/>
+          <text class="d-muted" text-anchor="middle" x="611" y="646"><tspan x="611" dy="0">第 2 轮 renderLanes = T</tspan><tspan x="611" dy="23">从 baseState = 1 重放</tspan></text>
+          <rect class="d-lane" x="40" y="715" width="740" height="210" rx="12"/>
+          <rect class="d-state" x="60" y="760" width="260" height="125" rx="12"/><text text-anchor="middle" x="190" y="803.5" style="font-size:17px"><tspan x="190" dy="0">提交 state = 22</tspan><tspan x="190" dy="25">baseState = 22</tspan><tspan x="190" dy="25">baseQueue = null</tspan></text>
+          <rect class="d-node" x="360" y="757" width="170" height="65" rx="12"/><text text-anchor="middle" x="445" y="795.5" style="font-size:17px"><tspan x="445" dy="0">T′：1 + 10 = 11</tspan></text>
+          <rect class="d-node" x="580" y="757" width="170" height="65" rx="12"/><text text-anchor="middle" x="665" y="795.5" style="font-size:17px"><tspan x="665" dy="0">S′：11 × 2 = 22</tspan></text>
+          <path class="d-edge" d="M530 789 H580" marker-end="url(#r11-skip-rebase-snapshots-arrow)"/>
+          <rect class="d-state" x="360" y="852" width="390" height="50" rx="12"/><text text-anchor="middle" x="555" y="883" style="font-size:17px"><tspan x="555" dy="0">NoLane clone 不再因优先级被跳过</tspan></text>
+        </svg></div>
+        <figcaption><strong>为什么结果是 22，而不是 12。</strong>本图将下面同一段手算展开为三个队列快照。S 这一轮跳过 T 时保存跳过前的 baseState=1；随后执行 S 得 2，还要把 S 的动作以 NoLane 克隆进基线环。下轮从 1 依次重放 T′、S′，得到 (1+10)×2=22。虚线表示两次 render 之间的调度边界；提交状态 2 不是下一轮的重放起点。普通 Hook Update 无 callback，Class 已执行 clone 的 callback 清理见下文。</figcaption>
+      </figure>
 
       <figure class="source"><figcaption><span>教程伪代码 · 用于手算，不是仓库源码</span></figcaption><pre><code>baseState = 1
 queue     = [ T:+10(lane=T), S:*2(lane=S) ]
@@ -385,7 +463,7 @@ renderLanes = S
       <p>这段是 Hook 实现的<strong>删节源码</strong>，止于普通更新的 NoLane clone。Class/HostRoot 的 <code>processUpdateQueue</code> 使用同一基线思想，但 base queue 是普通单链，
         并处理 ReplaceState、callback 与 CaptureUpdate。</p>
       <div class="callout"><p><strong>NoLane 不表示“删掉更新”：</strong>这里的 clone 表示该更新已经在较高优先提交中生效，未来 rebase 必须再次计算它以保持顺序；
-        设为 0 让所有 renderLanes 都把它视为可执行，同时 callback 被清空以免重复触发提交副作用。</p></div>
+        设为 0 让所有 renderLanes 都把它视为可执行，Class/HostRoot 的已执行 clone 还会清空 callback，避免未来重放再次触发提交副作用；Hook Update 没有 callback 字段。</p></div>
     </section>
 
     <section id="real-test"><h2>真实 GWT：中断 class 队列后插入新优先级，最终仍得到 abcdefg</h2>
@@ -458,10 +536,10 @@ expect(root).toMatchRenderedOutput('(hidden)');</code></pre></figure>
         <tr><td>Fiber 正在/已经卸载</td><td>mutation 先断 return，passive 后才清 updateQueue；中间 queue 可能仍存在，但沿 return 已找不到 HostRoot</td><td>根查找返回 null 就不调度；两阶段 detach 又保留 effect cleanup 所需结构</td></tr>
         <tr><td>eager state 相同</td><td>可不安排立即 render，但 Update 仍可能入队</td><td>未来若有高优先工作，仍可按队列顺序 rebase</td></tr>
         <tr><td>render 中新 update</td><td>render-phase Hook 环重渲染；Class/updater 副作用路径有 DEV 警告</td><td>重渲染次数受限；处理循环也会吸收新 pending</td></tr>
-        <tr><td>thenable 挂起</td><td>Lane 留 pending，并进入 suspended；ping 后才重试</td><td>根状态区分“仍有工作”和“当前不可推进”</td></tr>
+        <tr><td>thenable 挂起</td><td>Lane 留 pending 并进入 suspended；ping、新非 Idle 更新或尚未 warm 的 prerender 都可触发下一次尝试</td><td>根状态区分“仍有工作”和“当前不可推进”</td></tr>
         <tr><td>更高 Lane 中断</td><td>WIP 候选可丢弃，从 current 重启</td><td>pending/base queue 在 current 侧仍保留因果历史</td></tr>
         <tr><td>callback 被重基线</td><td>已执行 Update 的 clone 清空 callback</td><td>状态变换可重算，commit 副作用不能重复调用</td></tr>
-        <tr><td>根暂时无可运行 Lane</td><td>取消已有 Scheduler callback，等待 ping/新更新</td><td>callbackNode/priority 归零，不空转轮询 suspended 工作</td></tr>
+        <tr><td>根暂时无可运行 Lane</td><td>取消已有 Scheduler callback，等待 ping/新更新</td><td>callbackNode/priority 归零；未 warm 工作仍可预渲染，已探索且未获新信号的挂起工作等待唤醒</td></tr>
       </tbody></table></div>
     </section>
 
@@ -499,7 +577,7 @@ expect(root).toMatchRenderedOutput('(hidden)');</code></pre></figure>
        root.current = finishedWork
        layout → 安排/冲刷 passive
        若仍有 Lane，再次进入根调度</code></pre></figure>
-      <p>异步边界在“根调度微任务 / Scheduler callback”，状态资格边界在“queue 与 renderLanes 的集合判断”，可见性边界在“commit 切换 current”。
+      <p>异步边界在“根调度微任务 / Scheduler callback”，状态资格边界在“queue 与 renderLanes 的集合判断”，已提交 Fiber 身份边界在“commit 切换 current”；宿主可见写入发生在此前的 mutation。
         三者分离，让 React 能同时实现事件优先、可中断计算和确定性状态历史。</p>
     </section>
 
@@ -511,8 +589,6 @@ expect(root).toMatchRenderedOutput('(hidden)');</code></pre></figure>
         <tr><td>Scheduler callback 映射/复用</td><td><a href="../../react/packages/react-reconciler/src/ReactFiberRootScheduler.js">ReactFiberRootScheduler.js</a></td><td><a href="../../react/packages/react-reconciler/src/__tests__/ReactSchedulerIntegration-test.js">ReactSchedulerIntegration-test.js</a></td><td>宿主环境具体 task 实现见 scheduler 包</td></tr>
         <tr><td>跳过与确定性 rebase</td><td><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">ReactFiberHooks.js · updateReducerImpl</a>；<a href="../../react/packages/react-reconciler/src/ReactFiberClassUpdateQueue.js">ReactFiberClassUpdateQueue.js · processUpdateQueue</a></td><td><a href="../../react/packages/react-reconciler/src/__tests__/ReactIncrementalUpdates-test.js">abort, schedule additional updates, resume</a></td><td>乐观更新/revertLane 与 async action 只标边界，未完整推演</td></tr>
       </tbody></table></div>
-      <div class="callout warn"><p><strong>验证说明：</strong>这是纯文档编辑，未执行 Jest。所有“测试证明”均来自逐行阅读当前仓库测试的输入、分段 flush 与最终断言；
-        没有把未运行的测试称为“本次通过”。</p></div>
     </section>
 
     <section id="questions"><h2>检查理解</h2><ul class="qa">

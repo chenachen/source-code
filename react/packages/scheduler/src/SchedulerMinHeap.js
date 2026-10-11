@@ -16,9 +16,9 @@ type Heap<T: Node> = Array<T>;
 
 /** Scheduler 两个任务队列都可复用的最小排序契约。 */
 type Node = {
-  // 单调递增的任务编号；当排序键相同时用于维持插入顺序。
+  /** 单调递增的任务编号；当排序键相同时用于维持插入顺序。 */
   id: number,
-  // 当前队列的主排序键：timer queue 使用开始时间，task queue 使用过期时间。
+  /** 当前队列的主排序键：timer queue 使用开始时间，task queue 使用过期时间。 */
   sortIndex: number,
   ...
 };
@@ -60,7 +60,12 @@ export function pop<T: Node>(heap: Heap<T>): T | null {
   return first;
 }
 
-/** 把新插入节点向父级移动，直到父节点排序不晚于它。 */
+/**
+ * 把新插入节点向父级移动，直到父节点排序不晚于它。
+ * @param heap - 插入后的共享数组；每次交换都原地写回。
+ * @param node - 刚放到末尾、排序键保持不变的节点。
+ * @param i - node 的当前数组索引；父索引以 (i - 1) >>> 1 计算。
+ */
 function siftUp<T: Node>(heap: Heap<T>, node: T, i: number): void {
   let index = i;
   while (index > 0) {
@@ -78,7 +83,13 @@ function siftUp<T: Node>(heap: Heap<T>, node: T, i: number): void {
   }
 }
 
-/** 把替换根节点的末尾节点向子级移动，直到两个子节点都不早于它。 */
+/**
+ * 把替换根节点的末尾节点向子级移动，直到两个子节点都不早于它。
+ * @param heap - pop 根节点并填补空位后的共享数组。
+ * @param node - 填补空位的末尾节点；沿途与排序更早的子节点交换。
+ * @param i - 待修复空位索引；当前 pop 调用固定从 0 开始。
+ * @remarks 只有 index < length >>> 1 的节点拥有子节点，避免越界比较不存在的左节点。
+ */
 function siftDown<T: Node>(heap: Heap<T>, node: T, i: number): void {
   let index = i;
   const length = heap.length;
@@ -115,6 +126,7 @@ function siftDown<T: Node>(heap: Heap<T>, node: T, i: number): void {
  * 比较两个节点的调度顺序。
  *
  * 先比较 `sortIndex`，再比较单调递增的 `id`，确保相同开始/过期时间的任务按插入顺序执行。
+ * @returns 负数表示 a 更早，正数表示 b 更早；同键同 id 返回 0，不修改节点。
  */
 function compare(a: Node, b: Node) {
   const diff = a.sortIndex - b.sortIndex;

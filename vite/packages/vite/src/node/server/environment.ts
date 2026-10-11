@@ -63,7 +63,8 @@ export interface DevEnvironmentContext {
 /**
  * 开发态单个运行目标的核心上下文。
  *
- * 每个实例独占配置覆盖、插件容器、模块图、依赖优化器和 HotChannel，使 client、ssr 及
+ * 每个实例持有配置覆盖、插件容器和模块图；依赖优化器可由框架注入，client HotChannel 可复用
+ * 顶层 WebSocket。这些环境上下文使 client、ssr 及
  * 自定义运行时可以对同一 URL 得出不同解析/转换结果，而不再依赖旧 API 的 `ssr` 布尔值。
  */
 export class DevEnvironment extends BaseEnvironment {
@@ -175,12 +176,14 @@ export class DevEnvironment extends BaseEnvironment {
 
     // Module Runner 通过同一双向通道请求转换结果与 builtin 列表。
     this.hot.setInvokeHandler({
+      /** 校验本环境是否允许 Runner 取代码，再合并远端选项执行模块获取。 */
       fetchModule: (id, importer, options) => {
         if (context.disableFetchModule) {
           throw new Error('fetchModule is disabled in this environment')
         }
         return this.fetchModule(id, importer, options)
       },
+      /** 将字符串规则或正则的 source/flags 序列化，供 Runner 创建本地 builtin 判定器。 */
       getBuiltins: async () => {
         // RegExp 不能直接跨结构化消息边界，拆成 source/flags 后由运行时重建（#21029）。
         return this.config.resolve.builtins.map((builtin) =>
@@ -224,7 +227,8 @@ export class DevEnvironment extends BaseEnvironment {
   }
 
   /**
-   * 幂等创建本 Environment 的插件容器。
+   * 创建本 Environment 的插件容器，并在异步创建前置位 `_initiated` 阻止重复进入。
+   * 同一实例的后续 init 直接返回；即使首次创建拒绝，该标记也不会在此复位。
    *
    * 重启时调用顺序是“新实例 init → 旧实例 close → 新实例 listen”。`previousInstance`
    * 允许自定义子类迁移状态，但使用前必须确认旧实例来自同一类或同一工厂。
@@ -247,8 +251,8 @@ export class DevEnvironment extends BaseEnvironment {
   }
 
   /**
-   * 把配置入口解析为受信任的绝对模块路径，供 fs 安全检查放行。默认 index.html 缺失可忽略，
-   * 用户显式 input 的解析错误必须抛出。 @internal
+   * 在 buildStart hooks 完成后，把配置入口解析为绝对模块路径，加入顶层 safeModulePaths。
+   * 未声明 input 时忽略默认 index.html 的解析异常；显式 input 异常向上传递，空结果或 external 不登记。 @internal
    */
   async _registerInputsAsSafeModules(): Promise<void> {
     const input = this.config.input
@@ -399,8 +403,9 @@ export class DevEnvironment extends BaseEnvironment {
   }
 
   /**
-   * 停止接收新工作，取消首轮爬取等待，并行关闭插件/bundle、优化器、非 WS HotChannel，
-   * 同时等待所有在途 transform settle。单项失败不能跳过其他资源清理。
+   * 置位 `_closing`，让 recoverable 环境的后续转换检查抛出关闭错误；取消首轮爬取完成检测，
+   * 并行关闭插件/bundle、优化器、非 WS HotChannel，
+   * 同时等待所有在途 transform settle。已启动的异步清理即使拒绝，也会等待其他项完成。
    */
   async close(): Promise<void> {
     this._closing = true
@@ -410,7 +415,7 @@ export class DevEnvironment extends BaseEnvironment {
       this.bundledDev ? this.bundledDev.close() : this.pluginContainer.close(),
       this.depsOptimizer?.close(),
       // WebSocketServer 被多个 Environment/顶层 Server 共享，Environment 关闭时不能销毁；
-      // 自定义 HotChannel 则由本实例独占。
+      // 自定义 HotChannel 交由本实例关闭。
       isWebSocketServer in this.hot ? Promise.resolve() : this.hot.close(),
       (async () => {
         while (this._pendingRequests.size > 0) {
@@ -456,7 +461,7 @@ interface CrawlEndFinder {
 
 /**
  * 创建“一次性稳定”检测器：每个 id 只注册一次，全部完成且连续 50ms 没有新任务时 resolve。
- * close 时只取消后续 resolve 检查，不再触发生命周期回调。
+ * close 时只取消后续 resolve 检查，不清除已安排的 timer，也不主动完成尚未 resolve 的等待。
  */
 function setupOnCrawlEnd(): CrawlEndFinder {
   const registeredIds = new Set<string>()

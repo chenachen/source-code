@@ -210,6 +210,9 @@ function markCloned(workInProgress: Fiber) {
 /**
  * 判断持久化渲染器是否必须克隆该子树：bailout 可直接复用，删除、放置、可见性或下层
  * 已克隆等结构 effect 则要求祖先生成新持久节点。
+ * child 链与 current 完全相同时先返回 false；否则先查自身删除，再逐 child 检查
+ * Cloned/Visibility/Placement/ChildDeletion。普通 Update 本身不要求祖先重建，
+ * 该节点的 props 克隆由 updateHostComponent 单独处理。
  */
 function doesRequireClone(current: null | Fiber, completedWork: Fiber) {
   const didBailout = current !== null && current.child === completedWork.child;
@@ -241,6 +244,8 @@ function doesRequireClone(current: null | Fiber, completedWork: Fiber) {
  *
  * mutation 模式跳过 Portal/singleton 独立子树；persistence 模式按 Offscreen 隐藏状态克隆
  * 实例。迭代遍历临时修复 return 指针，避免递归栈并保持 sibling 回溯正确。
+ * parent 是尚未放入宿主容器的新建或克隆实例；appendInitialChild 组装其内部结构，
+ * 不把新父节点插入可见树。needsVisibilityToggle/isHidden 只供持久化路径复制隐藏顶层宿主节点。
  */
 function appendAllChildren(
   parent: Instance,
@@ -434,7 +439,7 @@ function updateHostContainer(current: null | Fiber, workInProgress: Fiber) {
       const portalOrRoot: {
         /** Root 或 Portal 的宿主容器。 */
         containerInfo: Container,
-        /** 完成阶段构造、等待提交阶段原子替换的子节点集合。 */
+        /** 完成阶段构造、等待提交阶段整体替换的子节点集合。 */
         pendingChildren: ChildSet,
         ...
       } = workInProgress.stateNode;
@@ -456,7 +461,7 @@ function updateHostContainer(current: null | Fiber, workInProgress: Fiber) {
 }
 
 /**
- * 完成宿主组件更新：mutation 模式只为属性差异打 Update 标记；persistence 模式按结构
+ * 完成宿主组件更新：mutation 模式在 props 引用变化时打 Update 标记，具体属性差异交给宿主 commit；persistence 模式按结构
  * effect 克隆实例/ChildSet，并复用无变化实例。宿主首次挂载 effect 也在此补标。
  */
 function updateHostComponent(
@@ -547,6 +552,10 @@ function updateHostComponent(
  * 必须在 complete 阶段最后调用：它可能抛出挂起；资源若立刻加载，工作循环会把该 Fiber
  * 当作已完成后继续。TODO：理想上移到 begin 阶段，但实例目前到 complete 才创建；现有
  * 会挂起的宿主节点没有 child，未来若放宽该假设需同步重构。
+ * oldProps=null 表示挂载，其余表示更新；HostConfig 据此判断本次属性是否可能阻塞。
+ * renderLanes 控制能否等待提交资源，紧急 lane 还可由 maySuspendCommitInSyncRender 放行。
+ * MaySuspendCommit 保留“将来可再次阻塞”的能力，ShouldSuspendCommit 请求提交前检查；
+ * suspendCommit 在这里抛出 render 控制流，实际宿主资源订阅与等待取消由工作循环负责。
  */
 function preloadInstanceAndSuspendIfNeeded(
   workInProgress: Fiber,
@@ -595,6 +604,8 @@ function preloadInstanceAndSuspendIfNeeded(
 /**
  * Resource 版本的提交前预加载：维护 MaySuspendCommit 标记，未就绪时依据屏幕保留策略
  * 设置 ShouldSuspendCommit 或直接挂起提交。
+ * resource 已由宿主解析；与实例版本不同，这里不根据 renderLanes 筛选预加载，也不在
+ * 已就绪时补 ShouldSuspendCommit。type/props/renderLanes 在当前实现中未读取。
  */
 function preloadResourceAndSuspendIfNeeded(
   workInProgress: Fiber,
@@ -687,8 +698,9 @@ function updateHostText(
 
 /**
  * 按 SuspenseList tailMode 截断尚未提交的尾部插入项。
- * hydration 必须尽量消费全部服务端节点而跳过截断；collapsed 至少保留一个 fallback，
- * hidden 则仅保留已挂载行，避免尾部挂起继续阻塞父级。
+ * hydration 必须尽量消费全部服务端节点而跳过截断。两种截断模式都保留直到最后一个
+ * 有 alternate 行的完整前缀（包含前缀内新行），只截掉之后的新行；全新 tail 时，
+ * collapsed 仅在还没渲染 tail fallback 时留下一行，否则清空，hidden 则直接清空。
  */
 function cutOffTailIfNeeded(
   renderState: SuspenseListRenderState,
@@ -769,7 +781,9 @@ function isOnlyNewMounts(tail: Fiber): boolean {
  * 把 childLanes、subtreeFlags 与 Profiler duration 汇总到完成 Fiber。
  *
  * 正常完成上冒全部 effect；bailout 只上冒与 Fiber/Hook 同生命周期的 StaticMask。遍历中
- * 修复 child.return，且只累计本轮真正克隆/执行过节点的 actualDuration。
+ * 非 ProfileMode 分支会修复 child.return；ProfileMode 分支只汇总 lanes/flags/duration。
+ * 完整复用 child 链时不累加 child 的旧 actualDuration，仍重算 treeBaseDuration；其它
+ * 路径累加已在 Fiber 克隆时归零的本轮 duration。subtreeFlags 用 |= 保留自身已累计标记，childLanes 则重算覆盖。
  */
 function bubbleProperties(completedWork: Fiber) {
   const didBailout =
@@ -1044,6 +1058,10 @@ function completeDehydratedSuspenseBoundary(
  *
  * 返回非空 Fiber 表示当前节点需立即开始第二遍（如 Suspense fallback 或下一行 tail）；
  * 返回 null 表示该节点完成，工作循环可继续其 sibling/parent。
+ * @param current 已提交的同一逻辑 Fiber；首次挂载为 null，不与工作 Fiber 的宿主 stateNode 混用。
+ * @param workInProgress begin 与子树处理后的工作 Fiber，pendingProps 是本轮输入，
+ * stateNode 在此可新建/克隆；宿主创建和属性准备仍属 render，Placement/Update 等留到 commit 消费。
+ * @param renderLanes 本次渲染集合，供资源等待、Offscreen 预渲染及第二遍 child 重置使用。
  */
 function completeWork(
   current: Fiber | null,
@@ -1110,11 +1128,12 @@ function completeWork(
       popHostContainer(workInProgress);
       popTopLevelLegacyContextObject(workInProgress);
       if (fiberRoot.pendingContext) {
+        // legacy 根 Context 在 complete 阶段接管 pendingContext，这里早于宿主 commit。
         fiberRoot.context = fiberRoot.pendingContext;
         fiberRoot.pendingContext = null;
       }
       if (current === null || current.child === null) {
-        // 若执行了 hydration，弹出状态以检查并删除未被消费的剩余 child。
+        // 若执行了 hydration，弹出状态并检查剩余服务端 child；不允许的尾部节点会触发 mismatch 与客户端重建。
         const wasHydrated = popHydrationState(workInProgress);
         if (wasHydrated) {
           emitPendingHydrationWarnings();
@@ -1286,7 +1305,7 @@ function completeWork(
           const wasHydrated = popHydrationState(workInProgress);
           let instance: Instance;
           if (wasHydrated) {
-            // 忽略表示 updateQueue 的布尔结果：它仅用于设置文本 child，HostSingleton 不使用。
+            // 校验并绑定已认领 singleton 的 props；实例沿用之前 hydration 认领的 stateNode。
             prepareToHydrateHostInstance(workInProgress, currentHostContext);
             instance = workInProgress.stateNode;
           } else {

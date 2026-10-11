@@ -68,8 +68,9 @@ function setConvertStyleAttr (convertStyle: HTMLStyleElement, attrs: AttrsType):
  * 提取或规范化一个 link 元素，并按静态/动态场景返回后续处理信息。
  *
  * stylesheet 会登记到全局资源中心：静态入口用注释占位并加入应用资源集合，动态插入则
- * 返回地址与缓存项，由 DOM 补丁异步转换成 style。预取类 link 不在子应用中生效；其他
- * 带 href 的 link 仅补全地址并保留原生行为。
+ * 返回地址与缓存项，由 DOM 补丁异步转换成 style。同一应用的同地址资源保留首次属性；
+ * 静态重复地址在 Set 中只出现一次，占位引用则更新到最后一次出现的位置。
+ * prefetch/preload/prerender/modulepreload/icon 节点移除，其他带 href 的 link 仅补全地址。
  *
  * @param link - 待处理的原始 link 元素。
  * @param parent - 静态入口中用于替换或移除元素的父节点。
@@ -132,10 +133,11 @@ export function extractLinkFromHtml (
 }
 
 /**
- * 并行获取入口中的外链 CSS，并在全部请求结算后通知样式链完成。
+ * 并行获取入口中的外链 CSS，逐项处理结果，并在全部请求结算后通知样式链完成。
  *
- * 已缓存代码直接进入流；请求失败只记录错误，也必须参与结算，避免应用永久停在加载态。
- * fiber 模式先等待内联 style 隔离，再串行处理外链 style，最后调用一次 `app.onLoad()`。
+ * 非空缓存代码直接进入流；请求失败记录错误并参与结算。非 fiber 模式收到单项结果就替换
+ * 该资源的占位，不等所有下载结束；fiber 模式按结果到达顺序收集转换任务，等待内联 style
+ * 隔离结束后再串行处理，最后调用一次 `app.onLoad()`。占位替换保留 CSS 在入口中的顺序。
  *
  * @param wrapElement - 最终交给应用挂载的解析 DOM。
  * @param app - 当前应用实例及其样式资源集合。
@@ -195,7 +197,7 @@ export function fetchLinksFromHtml (
 /**
  * 缓存外链 CSS，并把静态入口中的占位注释替换成隔离后的 style。
  *
- * 此函数只服务首次静态资源处理；重挂载复用已生成 DOM，动态 link 走 `formatDynamicLink()`。
+ * 此函数服务静态资源提取后的处理；同一实例重挂载复用已生成 DOM，动态 link 走 `formatDynamicLink()`。
  * 相同应用前缀可复用 `parsedCode`，prefetch/fiber 模式下调用方会把本操作放进空闲任务。
  *
  * @param address - 完整样式资源地址。
@@ -246,6 +248,8 @@ export function fetchLinkSuccess (
  *
  * 首次处理优先复用其他应用的解析结果并替换前缀，否则调用 `scopedCSS()`；结果写回当前
  * `appSpace`。未启用 CSS 隔离时直接使用全局原始代码。最后迁移原 link 的可保留属性。
+ * 缓存命中只判断 parsedCode 非空，不核对 optionCss、入口基址或原始 code 是否改变；
+ * 跨应用复用也只替换旧前缀，已补全 URL 和控制注释结果不会重新解析。
  *
  * @param app - 决定隔离开关和前缀的应用实例。
  * @param address - 用于 CSS 相对 URL 补全的外链地址。
@@ -285,8 +289,11 @@ export function handleConvertStyle (
 /**
  * 为运行期插入的 stylesheet link 创建同步占位 style，并异步填入隔离 CSS。
  *
- * 缓存命中也延迟到微任务执行，保持动态资源的 load 通知为异步；请求失败时保留空 style、
- * 记录错误并向原 link 派发 error。调用方可立即用返回元素替换原 link。
+ * 非空缓存命中也延迟到微任务填充并发送 load；未命中则等待 fetch 完成。请求链中的下载或
+ * 填充异常会记录并向原 link 发送 error。CSS 解析异常由 `scopedCSS()` 内部记录，仍会继续
+ * 填充原始 CSS 并发送 load。调用方可立即用返回元素替换原 link。
+ * 命中缓存的 defer 没有相应 catch，填充或 load 回调异常会成为未接住的 Promise 拒绝；
+ * code 为 '' 仍视为未命中，且资源中心不去重进行中的请求。
  *
  * @param address - 已补全的样式地址。
  * @param app - 当前应用实例。

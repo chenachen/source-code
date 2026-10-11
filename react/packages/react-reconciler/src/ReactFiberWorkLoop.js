@@ -415,7 +415,7 @@ import {
 } from './ReactFiberGestureScheduler';
 import {claimQueuedTransitionTypes} from './ReactFiberTransitionTypes';
 
-/** 优先使用 WeakMap 保存 root→wakeable 监听；不支持时退回 Map。 */
+/** 为各 Root 的 pingCache 使用 WeakMap，以 wakeable 为键记录已监听的 Lane 集；不支持时退回 Map。 */
 const PossiblyWeakMap = typeof WeakMap === 'function' ? WeakMap : Map;
 
 /** 当前调用栈处于 batched、render、commit 的位掩码。 */
@@ -534,7 +534,7 @@ const FALLBACK_THROTTLE_MS: number = 300;
 
 // 停止继续 render 更多内容、转而采用 CPU Suspense 启发式的绝对时间。
 let workInProgressRootRenderTargetTime: number = Infinity;
-// render 达到此时长后开始采用 CPU Suspense 启发式并停止扩展内容。
+/** 当前 render 时间预算为 500ms；resetRenderTimer 以 now 加此值设定绝对目标，SuspenseList 等 CPU 启发式据此决定是否停止扩展本轮内容。 */
 const RENDER_TIMEOUT_MS = 500;
 
 let workInProgressTransitions: Array<Transition> | null = null;
@@ -574,7 +574,7 @@ export function addTransitionStartCallbackToPendingTransition(
   }
 }
 
-/** 记录 marker 当前仍 pending 的边界，供 commit 后触发 progress。 */
+/** 以 markerName 为键保存当前 transitions/pendingBoundaries 引用，后一次写入覆盖同名 marker 的 progress 快照；不复制 Map/Set 或执行用户回调。passive 与 post-paint 两侧汇合后才以 Idle Scheduler callback 派发。 */
 export function addMarkerProgressCallbackToPendingTransition(
   markerName: string,
   transitions: Set<Transition>,
@@ -660,7 +660,7 @@ export function addMarkerCompleteCallbackToPendingTransition(
   }
 }
 
-/** 记录 Transition 当前 pending boundaries，供 commit 后 progress 回调。 */
+/** 以 Transition 对象为键保存最新 pendingBoundaries 引用，当前提交中后一次 progress 替换前一次。只聚合追踪事件，等待 passive 已处理且 paint 时间已取得后异步派发；不修改 root 的调度 lanes。 */
 export function addTransitionProgressCallbackToPendingTransition(
   transition: Transition,
   boundaries: PendingBoundaries,
@@ -773,7 +773,7 @@ let pendingSuspendedCommitReason: SuspendedCommitReason = null; // 仅用于性�
 let pendingDelayedCommitReason: DelayedCommitReason = IMMEDIATE_COMMIT; // 仅用于性能分析。
 let pendingSuspendedViewTransitionReason: null | string = null; // 仅用于性能分析。
 
-// 用于阻止嵌套更新形成无限循环。
+/** 根级连续嵌套更新的 50 次阈值；throwIfInfiniteUpdateLoopDetected 按检测开关与 instrumentation/阶段决定抛错或 DEV 诊断，计数由根级级联提交维护。 */
 const NESTED_UPDATE_LIMIT = 50;
 let nestedUpdateCount: number = 0;
 let rootWithNestedUpdates: FiberRoot | null = null;
@@ -843,12 +843,12 @@ export function isWorkLoopSuspendedOnData(): boolean {
   );
 }
 
-/** 读取调度器单调时钟。 */
+/** 读取调度器相对毫秒时钟；performance.now 缺失时采用 Date.now 的相对时间。 */
 export function getCurrentTime(): number {
   return now();
 }
 
-/** 按 Fiber mode、render-phase、Transition 与事件优先级为新更新选择 Lane。 */
+/** 按顺序选择更新 lane：Legacy 非并发 Fiber 固定 Sync；任何 render 上下文且根 lanes 非空时取当前根任一 lane，以保留历史 render-phase 语义。其后检查当前 transition（普通 state 在 gesture 中抛错），否则将 HostConfig resolveUpdatePriority 的事件优先级映射为 lane。选择 lane 不等于已经入队/调度/提交。 */
 export function requestUpdateLane(fiber: Fiber): Lane {
   // 先处理 Legacy/render-phase 等特殊情况。
   const mode = fiber.mode;
@@ -913,7 +913,7 @@ function requestRetryLane(fiber: Fiber) {
   return claimNextRetryLane();
 }
 
-/** 为本轮 useDeferredValue/延后工作分配共享 Offscreen 或 Transition deferred Lane。 */
+/** 同一根 render 的全部 useDeferredValue 派生工作共享一个 deferred lane。根含 OffscreenLane 且非 hydration 时使用 OffscreenLane，否则领取 transition-deferred lane；最近 Suspense handler 标 DidDefer，完成时派生/纠缠。此函数仅记录本轮状态，不直接调用 Scheduler 或设置定时器。 */
 export function requestDeferredLane(): Lane {
   if (workInProgressDeferredLane === NoLane) {
     // 同一 render 内多个 useDeferredValue 派生任务应批量处理，因此共享同一 Lane。
@@ -945,7 +945,7 @@ export function requestDeferredLane(): Lane {
   return workInProgressDeferredLane;
 }
 
-/** 为本次 commit 收集普通 ViewTransition 回调，并惰性创建公开边界实例。 */
+/** 把普通 ViewTransition 边界回调绑定到惰性创建的公开 instance，收集到 pendingViewTransitionEvents。事件在 flushSpawnedWork、宿主过渡 ready 后获得本次 types；返回的 cleanup 订阅该运行过渡 finished，若没有实际 committedViewTransition 则不执行所收集事件。 */
 export function scheduleViewTransitionEvent(
   fiber: Fiber,
   callback: ?(
@@ -970,7 +970,7 @@ export function scheduleViewTransitionEvent(
   }
 }
 
-/** 为当前 gesture 收集带 timeline/range 的 ViewTransition 回调。 */
+/** 对 pendingEffectsRoot 的队首 ScheduledGesture 收集边界事件，绑定 provider timeline、rangeStart/rangeEnd 和公开 instance。flushGestureAnimations 在内建动画调整后补入 types 并执行；返回 cleanup 监听该 gesture 的 running transition finished，不等于组件 useEffect cleanup。 */
 export function scheduleGestureTransitionEvent(
   fiber: Fiber,
   callback: ?(
@@ -1012,10 +1012,7 @@ export function peekDeferredLane(): Lane {
   return workInProgressDeferredLane;
 }
 
-/**
- * 把 Fiber 更新标到 root/lane：处理中断的 suspended render/commit、render-phase 与 interleaved
- * 更新、Transition tracing、act 警告，并确保根进入调度队列。
- */
+/** 更新已由调用方入队后，把 lane 标到 root 并登记调度。当前根等待 Data/Action 或 root 有 cancelPendingCommit 时准备 fresh stack 取消旧尝试；render 内累积递归 lanes，render 外追踪 interleaved/Transition/updater 并 ensureRootIsScheduled。只有 Legacy 非并发 SyncLane、无 React 执行上下文的兼容路径在此直接 flush；并发根通常交给根调度。 */
 export function scheduleUpdateOnFiber(
   root: FiberRoot,
   fiber: Fiber,
@@ -1142,16 +1139,13 @@ export function scheduleInitialHydrationOnRoot(root: FiberRoot, lane: Lane) {
   ensureRootIsScheduled(root);
 }
 
-/** Legacy Class 兼容：判断更新是否发生在任意 render 上下文，需走不安全队列路径。 */
+/** 为 class 旧生命周期兼容检测任意 render 上下文；不检查 root 模式或 fiber 身份，并发根也可命中。 */
 export function isUnsafeClassRenderPhaseUpdate(fiber: Fiber): boolean {
   // 判断 Class render-phase update；服务于 UNSAFE_componentWillReceiveProps 的弃用兼容语义。
   return (executionContext & RenderContext) !== NoContext;
 }
 
-/**
- * 根调度入口：按 lanes/时间切片选择同步或并发 render，处理错误恢复、外部 store 一致性，
- * 最后完成、延迟或提交 root。
- */
+/** 根调度执行入口，拒绝 render/commit 重入。forceSync、blocking lanes 或 expired lanes 通常禁用时间切片，prerender 条件优先允许并发循环；并发完成树的 store 不一致时同步重渲染。遇可恢复错误按 errorRetryLanes 再试，最终交给完成/等待提交策略，退出统一确保根调度。 */
 export function performWorkOnRoot(
   root: FiberRoot,
   lanes: Lanes,
@@ -1318,7 +1312,7 @@ export function performWorkOnRoot(
   ensureRootIsScheduled(root);
 }
 
-/** 并发 render 失败后以同步模式重试同一 lanes，并合并 recoverable error。 */
+/** 以 errorRetryLanes 同步重试并发失败；该集合由根剩余更新计算，不保证等于 originallyAttemptedLanes。shell hydration 失败先为根 WIP 标 ForceClientRender；成功后按第一次→第二次顺序合并 recoverable errors。非水合重试又安装 ping listener 时禁用原 lanes 的恢复并返回 delayed suspend，避免未缓存 Promise 隐藏错误；shell 未完成不当作恢复成功。 */
 function recoverFromConcurrentError(
   root: FiberRoot,
   originallyAttemptedLanes: Lanes,
@@ -1392,7 +1386,7 @@ export function queueRecoverableErrors(errors: Array<CapturedValue<mixed>>) {
   }
 }
 
-/** 根据 root exit status 选择立即 commit、fallback throttle、延迟或等待 ping。 */
+/** 依据退出状态决定是否可提交：delayed suspend 的纯 transition/retry 或 shell suspend 只标 suspended 等待，不提交中间树。DEV act 绕过等待直接 completeRoot；纯 retry 按最近 fallback/content 时间加 300ms 节流，仅剩余大于 10ms 且无其他可选 lanes 时安排 timeout，之后还可能等待宿主资源。 */
 function finishConcurrentRender(
   root: FiberRoot,
   exitStatus: RootExitStatus,
@@ -1540,7 +1534,7 @@ function finishConcurrentRender(
   }
 }
 
-/** 收集 suspensey commit 资源；资源就绪则 completeRoot，否则安装取消/继续回调。 */
+/** 渲染已完成后、真正提交前收集 HostConfig suspendedState：依据资源 flags、ViewTransition/gesture eligibility 访问等待项。宿主返回未就绪订阅器时记录 root.cancelPendingCommit 并标 suspended，ready 回调携带 finishedWork 和全部 render 输入快照；fresh render 可取消等待。重试节流与资源等待串行，timeoutOffset 计入已等待时长。 */
 function completeRootWhenReady(
   root: FiberRoot,
   finishedWork: Fiber,
@@ -1744,7 +1738,7 @@ function markRootPinged(root: FiberRoot, pingedLanes: Lanes) {
   }
 }
 
-/** 从挂起 lanes 排除本轮已 ping/interleaved 更新，再通知 Lane 层及 spawned Lane。 */
+/** 先在 parallel-transitions 开关下扩展 root entanglements，再从待挂起 lanes 排除本轮 pinged 和 interleavedUpdated lanes，交给 Lane 层更新 suspended/warm/spawned 状态。这里没有排除 workInProgressRootRenderPhaseUpdatedLanes；didAttemptEntireTree 表示 sibling 是否已尝试，影响随后预热调度。 */
 function markRootSuspended(
   root: FiberRoot,
   suspendedLanes: Lanes,
@@ -1756,7 +1750,7 @@ function markRootSuspended(
     suspendedLanes = getEntangledLanes(root, suspendedLanes);
   }
 
-  // 标记挂起时排除本轮已 ping 或 render phase 已更新的 lanes。
+  // 标记挂起时排除本轮已 ping 或 interleaved event 已更新的 lanes。
   suspendedLanes = removeLanes(suspendedLanes, workInProgressRootPingedLanes);
   suspendedLanes = removeLanes(
     suspendedLanes,
@@ -1783,7 +1777,7 @@ export function getExecutionContext(): ExecutionContext {
   return executionContext;
 }
 
-/** 在默认事件优先级、无 Transition 上下文中运行回调，生成可延后的更新。 */
+/** 临时清空 transition 并设置 DefaultEventPriority 执行 fn，finally 恢复原上下文及回调返回值。该名字沿用历史接口：本版 DefaultLane 通常是 blocking lane，不保证 fn 的更新走可中断渲染或等到空闲时执行。 */
 export function deferredUpdates<A>(fn: () => A): A {
   const prevTransition = ReactSharedInternals.T;
   const previousPriority = getCurrentUpdatePriority();
@@ -1946,7 +1940,7 @@ function resetWorkInProgressStack() {
   workInProgress = null;
 }
 
-/** render 结束时记录 Profiler/性能轨道并恢复 dispatcher、debug task 与警告状态。 */
+/** 仅在 Profiler 性能轨道开启时按 lanes 夹紧 blocking/gesture/transition/retry/idle 的计时基线，表示该次 render 序列已记录完。函数不恢复 dispatcher、清 Hook/context 状态或调度下一任务；这些工作由具体 render/commit 外层完成。 */
 function finalizeRender(lanes: Lanes, finalizationTime: number): void {
   if (enableProfilerTimer && enableComponentPerformanceTrack) {
     if (isGestureRender(lanes)) {
@@ -1966,10 +1960,7 @@ function finalizeRender(lanes: Lanes, finalizationTime: number): void {
   }
 }
 
-/**
- * 取消/flush 旧 pending commit，重置 interrupted 栈，并从 root.current 创建全新 WIP 根及
- * 本轮 lanes、错误、Transition、Profiler 状态。
- */
+/** 取消该 root 的 fallback timeout 和宿主/gesture 待提交订阅，unwind 旧 WIP 栈，然后通过 createWorkInProgress(root.current) 建立根 WIP；已有 alternate 可重置复用，并非每次分配新 Fiber。清本轮错误/跳过/ping/deferred 等状态，计算纠缠 lanes 后 drain concurrent staging；不在这里 flush passive effects。 */
 function prepareFreshStack(root: FiberRoot, lanes: Lanes): Fiber {
   if (enableProfilerTimer && enableComponentPerformanceTrack) {
     // 轨道组按最早 start time 排序。为了始终按优先级展示所有轨道，这里重复写占位标记；
@@ -2498,7 +2489,7 @@ export function renderHasNotSuspendedYet(): boolean {
 }
 
 // TODO：该函数与 renderRootConcurrent 越来越相似，考虑重新合并路径。
-/** 不向主线程 yield 地 render root；遇挂起立即 unwind 到最近 Suspense/Error Boundary。 */
+/** 设置 render/dispatcher 上下文后连续执行 unit；root/lanes 未变时可延续既有 WIP，变化时 fresh stack。挂起立即 unwind，不为普通数据保留 microtask 重放机会；shouldYieldForPrerendering=true 时允许进入预热后提前退出改走并发。退出恢复 dispatcher/context，整树完成才 drain concurrent staging。 */
 function renderRootSync(
   root: FiberRoot,
   lanes: Lanes,
@@ -2635,7 +2626,7 @@ function workLoopSync() {
   }
 }
 
-/** 可中断地 render root；按 SuspendedReason 等待 microtask、重放 unit、unwind 或让出主线程。 */
+/** 可中断根 render：同 root/lanes 复用 WIP 游标，其他情况重新准备栈。use/Action 控制异常先让出一次，再按 thenable status 决定保留 Hook 状态 replay 或 unwind；旧 throw Promise 一直走 unwind，宿主资源就绪可从已完成 Fiber 后继续。DEV act 使用无 shouldYield 的同步循环，否则按调度开关用 25/5ms 或 Scheduler 截止策略。 */
 function renderRootConcurrent(root: FiberRoot, lanes: Lanes): RootExitStatus {
   const prevExecutionContext = executionContext;
   executionContext |= RenderContext;
@@ -2887,7 +2878,7 @@ function renderRootConcurrent(root: FiberRoot, lanes: Lanes): RootExitStatus {
 }
 
 /** @noinline */
-/** 并发热路径：在 Scheduler 时间片内执行 unit；非 idle 工作还受 25ms React 时间片约束。 */
+/** 并发热路径：React 自行设置截止时间，非 idle 工作运行约 25ms、idle 工作约 5ms；只在 unit 边界检查。 */
 function workLoopConcurrent(nonIdle: boolean) {
   // render Transition/Retry 时隔帧 yield；它们阻塞新内容揭示，目的不是省 yield 开销，而是
   // 防止高频动画等主线程工作饿死 React，相当于把动画降到 30fps。Idle 工作每 5ms yield，
@@ -2973,7 +2964,7 @@ function replaySuspendedUnitOfWork(unitOfWork: Fiber): void {
   }
 }
 
-/** 清理挂起时的 hook/context 状态，再调用 replayFunctionComponent 或普通 beginWork。 */
+/** 重放未 unwind 的挂起 unit。Function/SimpleMemo/ForwardRef 通过 replayFunctionComponent 保留 Hook/thenable 状态；HostComponent 先清 Hook 并修复 hydration cursor，其他 tag unwindInterruptedWork/resetWorkInProgress 后重新 begin。不是所有类型都先清 Hook/context，避免丢失 use 挂起的 Promise 复用信息。 */
 function replayBeginWork(unitOfWork: Fiber): null | Fiber {
   // beginWork 的专用分支，用于重放刚挂起的 Fiber。
 
@@ -3133,7 +3124,7 @@ function throwAndUnwindWorkLoop(
   }
 }
 
-/** 记录本轮 render 派生的 RetryLane，供 completeRoot 标记 entanglement。 */
+/** 记录本轮派生且尚未 ping 的 RetryLane，供提交时 markRootFinished 保留为 suspended retry。 */
 export function markSpawnedRetryLane(lane: Lane): void {
   // 记录本轮 fallback 派生且之后未 ping 的 retry lanes，它们确定仍处于挂起状态。
   workInProgressSuspendedRetryLanes = mergeLanes(
@@ -3153,7 +3144,7 @@ function panicOnRootError(root: FiberRoot, error: mixed) {
   workInProgress = null;
 }
 
-/** 后序执行 completeWork，冒泡 flags/lanes，转向 sibling；挂起/错误时切换 unwind。 */
+/** 后序执行 completeWork，使宿主实例准备及 flags/lanes 向上汇总；若 completeWork 返回派生 child/tail 工作立即继续该 Fiber，有 sibling 优先转 sibling，否则沿 return 回溯。Incomplete 节点改走 unwind，只有正常到根且状态仍 InProgress 时标 RootCompleted，完成遍历不等于已提交。 */
 function completeUnitOfWork(unitOfWork: Fiber): void {
   // 尝试完成当前 unit，再转下一个 sibling；无 sibling 时返回父 Fiber。
   let completedWork: Fiber = unitOfWork;
@@ -3280,10 +3271,7 @@ function unwindUnitOfWork(unitOfWork: Fiber, skipSiblings: boolean): void {
   workInProgress = null;
 }
 
-/**
- * 将 finishedWork/lanes 写入 root，取消旧 timeout，决定 synchronous commit 或调度 callback，
- * 并把 spawned Lane、recoverable errors 与 Transition 信息交给 commitRoot。
- */
+/** 首先反复 flush 前序 pending 阶段直至稳定，因为 passive 可能产生新的同步提交；随后保存本次 finishedWork/lanes/错误/Transition 等输入供异步阶段读取。gesture 队首尚未 committing 时可应用克隆动画树并订阅未来正式提交；普通路径才进入 commitRoot，finishedWork=null 则仅停止已提交 gesture 等收尾。 */
 function completeRoot(
   root: FiberRoot,
   finishedWork: null | Fiber,
@@ -3418,7 +3406,7 @@ function completeRoot(
     const committingGesture = root.pendingGestures;
     if (committingGesture !== null && !committingGesture.committing) {
       // gesture 尚不可提交；标记挂起并启动不算副作用的 gesture transition，稍后再回来真正
-      // commit root。
+      // 提交根。
       const didAttemptEntireTree = !didSkipSuspendedSiblings;
       markRootSuspended(root, lanes, spawnedLane, didAttemptEntireTree);
       if (committingGesture.running === null) {
@@ -3484,10 +3472,7 @@ function completeRoot(
   );
 }
 
-/**
- * root 提交协调器：先 flush 前序 passive effects，准备 before-mutation/资源等待/宿主
- * ViewTransition，再驱动 mutation→layout→spawned→passive 状态机。
- */
+/** 根已获准提交后的协调器：合并完成树与 concurrent staging 的剩余 lanes，markRootFinished，再按 flags 尽早安排 passive 任务。before-mutation 使用旧宿主树；普通路径同步 mutation→layout→spawned，ViewTransition 路径由宿主回调驱动各阶段并额外测量 after-mutation。前序 effects flush 和资源 readiness 已由 completeRoot/completeRootWhenReady 处理。 */
 function commitRoot(
   root: FiberRoot,
   finishedWork: Fiber,
@@ -3694,7 +3679,7 @@ function suspendedViewTransition(reason: string): void {
   }
 }
 
-/** 宿主 ViewTransition 完成后记录动画区间、清理 root 动画 lanes 并继续 pending effects。 */
+/** 仅在性能轨道开启且相应 animating lanes 仍活跃时停止其计时，并补记未处于新 render/commit 的轨道动画区间。这个 finished 回调不推进 pending-effects 状态机，不清 root.pendingLanes，也不触发用户边界 cleanup；后者由宿主 finished listeners 处理。 */
 function finishedViewTransition(lanes: Lanes): void {
   if (enableProfilerTimer && enableComponentPerformanceTrack) {
     if ((animatingLanes & lanes) === NoLanes) {
@@ -3752,7 +3737,7 @@ function flushAfterMutationEffects(): void {
   pendingEffectsStatus = PENDING_SPAWNED_WORK;
 }
 
-/** 执行 root mutation effects、切换 current 树，再推进到 layout 阶段。 */
+/** 仅消费 PENDING_MUTATION_PHASE：存在 MutationMask 时以 CommitContext/离散优先级提交宿主变更、after blur 和 resetAfterCommit，finally 恢复上下文。之后无论有无 mutation flags 都把 finishedWork 设为 root.current 并推进 layout，使卸载读旧树而 didMount/didUpdate 读新树。 */
 function flushMutationEffects(): void {
   if (pendingEffectsStatus !== PENDING_MUTATION_PHASE) {
     return;
@@ -3797,7 +3782,7 @@ function flushMutationEffects(): void {
   pendingEffectsStatus = PENDING_LAYOUT_PHASE;
 }
 
-/** 执行 layout effects 与宿主重置，记录性能信息，再推进 after-mutation/spawned。 */
+/** 执行 layout effect create、ref attach 与 class/update callbacks，记录性能信息，再推进 after-mutation/spawned。 */
 function flushLayoutEffects(): void {
   if (pendingEffectsStatus !== PENDING_LAYOUT_PHASE) {
     return;
@@ -3893,7 +3878,7 @@ function flushLayoutEffects(): void {
   pendingEffectsStatus = PENDING_AFTER_MUTATION_PHASE;
 }
 
-/** 提交后处理派生同步任务、Transition callbacks、recoverable errors 与 passive 调度。 */
+/** layout/after-mutation 收尾：请求 paint，确定是否保留 passive 阶段并释放无用缓存，通知 DevTools、报告可恢复错误、执行 ready 后 ViewTransition 边界事件及注册 finished cleanup。现代 SyncLane 提交可在此提前 flush passive；再统计嵌套更新、重放 hydration 事件并 flush 全根同步工作。Tracing 事件需与 post-paint 时间汇合后另排 Idle callback。 */
 function flushSpawnedWork(): void {
   if (
     pendingEffectsStatus !== PENDING_SPAWNED_WORK &&
@@ -4043,7 +4028,7 @@ function flushSpawnedWork(): void {
   }
 
   // 离散 render 产生的 passive effects 在当前任务末尾同步 flush，使结果立即可观察；其他
-  // passive effects 视为无顺序依赖，可等 paint 后执行。
+  // passive effects 通常交给已安排的后续任务，但也可由新工作在 paint 前提前冲刷。
   // TODO：合并多处 callback 调度后，可避免此前先安排再同步 flush 的浪费。
   if (
     includesSyncLane(pendingEffectsLanes) &&
@@ -4402,7 +4387,7 @@ export function flushPendingEffects(): boolean {
   return flushPassiveEffects();
 }
 
-/** 以合适事件优先级进入 passive effect flush，并恢复 Transition/优先级上下文。 */
+/** 只在 PENDING_PASSIVE_PHASE 执行；以 DefaultEventPriority 与原 render 优先级中较低者运行，并临时清 transition。finally 恢复上下文后释放 root pooled cache，因此各缓存边界已有机会 retain；返回是否实际完成 passive flush，不能推断其一定发生在 paint 后。 */
 function flushPassiveEffects(): boolean {
   if (pendingEffectsStatus !== PENDING_PASSIVE_PHASE) {
     return false;
@@ -4433,7 +4418,7 @@ function flushPassiveEffects(): boolean {
   }
 }
 
-/** 卸载再挂载 passive effects，处理 nested updates、Profiler、错误与 root cache 释放。 */
+/** 先保存根/lanes/transitions 并清 pending 状态，拒绝 render/commit 重入，再以 CommitContext 批量 passive unmount→mount，DEV 加 Strict Effects 验证。恢复上下文后 flush 新同步工作；追踪回调与已保存 post-paint 时间汇合才异步派发。DEV 统计 passive 递归更新、通知 DevTools 并重置 root effect durations，pooled cache release 在外层 finally。 */
 function flushPassiveEffectsImpl() {
   // 缓存并清除 passive transitions。
   const transitions = pendingPassiveTransitions;
@@ -4617,7 +4602,7 @@ function captureCommitPhaseErrorOnRoot(
   }
 }
 
-/** 从抛错 Fiber 向上寻找 Class Error Boundary 或 HostRoot，并调度捕获更新。 */
+/** 从 nearestMountedAncestor 向上找可用类错误边界或 HostRoot；删除树清理必须传幸存祖先，不能从已断开的 source.return 查找。用 SyncLane CaptureUpdate 安排之后的恢复渲染，不回滚当前宿主 mutation；只有 source 本身为 HostRoot 时从自身捕获，找不到祖先在 DEV 报内部错误。 */
 export function captureCommitPhaseError(
   sourceFiber: Fiber,
   nearestMountedAncestor: Fiber | null,
@@ -4682,7 +4667,7 @@ export function attachPingListener(
 ) {
   // 安装 ping listener。数据可能在 fallback commit 前 resolve，refresh 甚至不会提交 fallback；
   // 因此现在订阅，ping 后再决定是否重渲染。仅当当前 lanes（此处相当于 thread ID）尚无监听
-  // 时安装；只需并发模式，Legacy Suspense 同步提交 fallback，不存在 ping 窗口。
+  // 时安装；并发 Suspense 可在提交前接收 ping；Legacy 的唤醒主要由提交边界的 retry listener 处理。
   let pingCache = root.pingCache;
   let threadIDs;
   if (pingCache === null) {
@@ -4712,7 +4697,7 @@ export function attachPingListener(
   }
 }
 
-/** wakeable resolve/reject 后标记 root lanes 已 ping，重置/合并 WIP 状态并确保调度。 */
+/** wakeable resolve/reject 时删除根 pingCache 的该对象条目，标记相应 suspended lanes pinged 并调度。仅当它们包含当前根 render lanes 时检查 delayed-suspend/300ms retry-throttle 重启；render 栈内不能立即 reset，改累计 pinged lanes。普通 ping 不等于边界 retry：前者唤醒旧根 lanes，后者另选 RetryLane。 */
 function pingSuspendedRoot(
   root: FiberRoot,
   wakeable: Wakeable,
@@ -4720,7 +4705,7 @@ function pingSuspendedRoot(
 ) {
   const pingCache = root.pingCache;
   if (pingCache !== null) {
-    // wakeable 已 resolve，不会再被抛出，无需继续记忆。
+    // wakeable 已结算，清除旧订阅缓存；之后若再次参与尝试，可重新登记。
     pingCache.delete(wakeable);
   }
 
@@ -4787,7 +4772,7 @@ export function pingGestureRoot(root: FiberRoot): void {
   ensureRootIsScheduled(root);
 }
 
-/** 停止已提交 gesture 并重新安排 GestureLane，重新构造动画目标。 */
+/** 手势重启时若正在 render GestureLane，在 render 栈外清 WIP 栈；或取消该根尚待 gesture commit 的订阅。只要仍有 pendingGestures 就 ping GestureLane 并 ensureRootIsScheduled；本函数不调用 stopCommittedGesture，不直接停止 running 宿主动画。 */
 export function restartGestureRoot(root: FiberRoot): void {
   if (
     workInProgressRoot === root &&
@@ -4843,7 +4828,7 @@ export function retryDehydratedSuspenseBoundary(boundaryFiber: Fiber) {
   retryTimedOutBoundary(boundaryFiber, retryLane);
 }
 
-/** wakeable 就绪时从边界 retry cache 移除并调度对应 retry。 */
+/** 已提交边界的 wakeable 结算后从其 retry cache 删除对象，再复用 Activity/Suspense 状态的 retryLane；未分配时由 retryTimedOutBoundary 领取新 lane。支持 SuspenseList 与 Offscreen 专有 cache，resolve/reject 共用重试入口；重新 render 时才判断资源是否解决或向错误边界抛错。 */
 export function resolveRetryWakeable(boundaryFiber: Fiber, wakeable: Wakeable) {
   let retryLane: Lane = NoLane; // 默认尚未分配 retry Lane。
   let retryCache: WeakSet<Wakeable> | Set<Wakeable> | null;
@@ -4901,7 +4886,11 @@ function throwForcedInfiniteRenderLoopError(
   );
 }
 
-/** 检查同步/passive 嵌套更新计数，超限则重置状态并抛错以打破循环。 */
+/**
+ * 同步嵌套计数超限后先重置计数/根引用；普通同步循环或检测开关关闭时抛错。
+ * 开启插桩检测后，插桩/render 内的 SYNC_LANE 与 PHASE_SPAWN 循环仅在 ForceThrow 开启时抛错，
+ * 否则只在 DEV 警告；passive 计数超限也仅在 DEV 重置并警告。
+ */
 export function throwIfInfiniteUpdateLoopDetected(
   isFromInfiniteRenderLoopDetectionInstrumentation: boolean,
 ) {
@@ -5281,7 +5270,7 @@ function scheduleCallback(priorityLevel: any, callback) {
   }
 }
 
-/** 判断当前 act legacy 模式是否要求同步显示 Suspense fallback。 */
+/** DEV 且 shared actQueue 非空时要求直接完成 fallback 提交，适用于任意根模式；生产恒 false。不是通过 legacy-act 环境标志判断，也不代表普通并发调度绕过资源等待。 */
 function shouldForceFlushFallbacksInDEV() {
   // 生产模式从不强制 flush；函数应被裁剪。
   return __DEV__ && ReactSharedInternals.actQueue !== null;

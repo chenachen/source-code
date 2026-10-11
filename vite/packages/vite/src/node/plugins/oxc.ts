@@ -81,7 +81,7 @@ export function getRollupJsxPresets(
 }
 
 // 源自 Rolldown errors.ts：连接两段文本时保证中间恰好一个换行。
-/** 拼接两段可选代码，并只在两者都存在时插入换行。 */
+/** 去掉连接处的多余换行，再插入一个换行；空字符串也参与拼接。 */
 function joinNewLine(s1: string, s2: string): string {
   // 去掉两端多余换行，避免多层 cause/stack 越拼越松散。
   return s1.replace(/\n+$/, '') + '\n' + s2.replace(/^\n+/, '')
@@ -135,7 +135,7 @@ function getErrorMessage(e: RolldownError): string {
 
 /**
  * 使用 Oxc 转换单个模块，自动推断语言、合成输入 map、读取 tsconfig 并规范化错误。
- * 解析到的 tsconfig 全部加入 watcher；配置变化后 dev server 才能重新转换受影响模块。
+ * 同时提供 config 与 watcher 时，将解析器返回的 tsconfig 路径登记为监听文件。
  */
 export async function transformWithOxc(
   code: string,
@@ -203,7 +203,9 @@ export async function transformWithOxc(
     Object.defineProperty(wrapper, 'errors', {
       configurable: true,
       enumerable: true,
+      /** 延迟暴露全部诊断，供消费方按需读取而不在默认 Error 展示中重复展开。 */
       get: () => result.errors,
+      /** 外部替换诊断后将访问器固化为普通属性，保留可配置、可枚举的属性形态。 */
       set: (value) =>
         Object.defineProperty(wrapper, 'errors', {
           configurable: true,
@@ -229,7 +231,7 @@ function shouldSkipWarning(warning: RolldownLog): boolean {
 
 /**
  * Vite 的 Oxc 语法转换插件：unbundled 逐模块调用 transformWithOxc，bundled 则委托
- * Rolldown 原生 transform 插件；两条路径共享 include/exclude、JSX refresh 与 sourcemap 语义。
+ * Rolldown 原生 transform 插件；分别把过滤器、JSX refresh 和 sourcemap 配置传给对应实现。
  */
 export function oxcPlugin(config: ResolvedConfig): Plugin {
   const options = config.oxc as OxcOptions
@@ -242,7 +244,7 @@ export function oxcPlugin(config: ResolvedConfig): Plugin {
     ...oxcTransformOptions
   } = options
 
-  // 默认转换 TypeScript 与 JSX/TSX；普通 JS 没有降级需求时跳过，减少 dev 开销。
+  // 默认过滤器选入 TypeScript 与 JSX/TSX，并排除普通 .js；refresh filter 可另行扩展集合。
   const filter = createFilter(include || /\.(m?ts|[jt]sx)$/, exclude || /\.js$/)
   const jsxRefreshFilter =
     jsxRefreshInclude || jsxRefreshExclude
@@ -302,7 +304,7 @@ export function oxcPlugin(config: ResolvedConfig): Plugin {
 
   return {
     name: 'vite:oxc',
-    /** 仅在首选开发转换器为 Oxc 的非 bundled 环境启用该插件。 */
+    /** bundled 环境返回 native 插件；unbundled 环境保留下方 JS transform hook。 */
     applyToEnvironment(environment) {
       if (environment.config.isBundled) {
         // bundled 路径把转换交给 Rust/native 插件，避免 JS hook 与 bundler 重复解析 AST。
@@ -333,7 +335,7 @@ export function oxcPlugin(config: ResolvedConfig): Plugin {
       }
       return true
     },
-    /** 开发服务器启动时启用 tsconfig 监听，使 Oxc 配置缓存随文件变化失效。 */
+    /** 保存开发服务器引用，后续 transform 读取 tsconfig 时可使用其 watcher。 */
     configureServer(_server) {
       server = _server
     },

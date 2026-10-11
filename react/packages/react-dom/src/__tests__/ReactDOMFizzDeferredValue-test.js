@@ -54,7 +54,7 @@ describe('ReactDOMFizzForm', () => {
     document.body.removeChild(container);
   });
 
-  /** `readIntoContainer`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 读完 Web Stream 所有字节，解析后调用 Fizz 节点搬移/脚本 helper；本函数没有 await 该 helper 返回的 Promise。 */
   async function readIntoContainer(stream) {
     const reader = stream.getReader();
     let result = '';
@@ -70,22 +70,15 @@ describe('ReactDOMFizzForm', () => {
     insertNodesAndExecuteScripts(temp, container, null);
   }
 
-  /** `Text`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 记录当前阶段的文本并原样输出，用日志区分 deferred 初值、终值与深层 hydration。 */
   function Text({text}) {
     Scheduler.log(text);
     return text;
   }
 
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「returns initialValue argument, if provided」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言覆盖 react-dom 的服务端流适配层；完整 Fizz 状态机位于 react-server。
-   */
+  /** App 对 Final 使用 initialValue=Initial；浏览器流 SSR 文本应为 Initial，同一树 hydration 后变为 Final，验证 deferred 初始值维持服务器同构输出再安排客户端升级。 */
   it('returns initialValue argument, if provided', async () => {
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 对固定 Final 指定 Initial 初值，服务器与 hydration 首轮使用 Initial，随后客户端升级。 */
     function App() {
       return useDeferredValue('Final', 'Initial');
     }
@@ -101,18 +94,18 @@ describe('ReactDOMFizzForm', () => {
     expect(container.textContent).toEqual('Final');
   });
 
-  /** 测试场景：验证「当前参数化场景」描述的渲染、交互或错误处理结果。 */
+  /** SSR 中 B 使用 deferred Initial、C 位于更深 Suspense；分步 hydration 应先记录 A、B Initial、B Final，前三步 C ref 仍 null，最后才认领原 C 节点，验证 deferred 升级比剩余深层 hydration 更紧急且保持 C 宿主身份。 */
   it(
     'useDeferredValue during hydration has higher priority than remaining ' +
       'incremental hydration',
     async () => {
-      /** `B`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 输出带明确 Initial/Final 标识的 deferred 值，让中层 hydration 后的升级时机可观察。 */
       function B() {
         const text = useDeferredValue('B [Final]', 'B [Initial]');
         return <Text text={text} />;
       }
 
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 组合同步 A、含 B 的 Suspense 和更深含 ref 的 C；ref 是否为 null 标识 C 是否已被 hydration 认领。 */
       function App() {
         return (
           <div>

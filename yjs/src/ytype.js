@@ -43,7 +43,7 @@ import { $ydoc } from './utils/schemas.js'
  */
 
 /**
- * 警告调用方：共享类型尚未挂入文档，此时读取只能得到未集成的临时状态。
+ * 警告调用方：共享类型尚未挂入文档，预存的 preliminary Delta 还未写入列表与属性结构，读取不包含这些内容。
  *
  * 参见 https://docs.yjs.dev/getting-started/working-with-shared-types#caveats
  */
@@ -53,11 +53,11 @@ export const warnPrematureAccess = () => { log.warn('Invalid access: Add Yjs typ
 const maxSearchMarker = 80
 
 /**
- * 把 Renderer 输出的属性条目折叠为 Delta attribution；普通字段直接复制，`insert`/`delete` 按实际删除态择一累积。
+ * 把 Renderer 属性条目折叠为 Delta attribution；忽略 `_` 开头的内部字段，`insert`/`delete` 按删除态择一累积。
  *
  * `undefined` 表示跳过并继承 builder 当前 attribution；不能换成 `null`，后者会显式清空上下文。
  * @todo 不应返回可变普通对象。
- * @param {Array<ContentAttribute<any>>?} attrs
+ * @param {Array<ContentAttribute<any>>?} attrs - Renderer 切片的来源属性；空数组仍产生空作者列表，`null` 不开启自身归因。
  * @param {boolean} deleted - 当前属性内容是否处于删除态。
  * @return {Attribution|undefined} 无属性时返回 `undefined`，即 lib0 三态语义中的“跳过/继承”。
  */
@@ -117,10 +117,15 @@ export class ItemTextListPosition {
    * @param {AbstractRenderer?} renderer - 决定 Item 可见长度与归因切片的 Renderer。
    */
   constructor (left, right, index, currentFormats, renderer) {
+    /** 当前插入/删除边界左侧的结构；链首为 null。 */
     this.left = left
+    /** 下一步将扫描的结构；链尾为 null。 */
     this.right = right
+    /** 已越过内容在 Renderer 视图中的长度，不计格式标记。 */
     this.index = index
+    /** right 之前生效的格式表；扫描格式标记时原地维护。 */
     this.currentFormats = currentFormats
+    /** 与游标坐标配套的可见性/归因视图；null 使用存活内容长度。 */
     this.renderer = renderer
   }
 
@@ -146,15 +151,15 @@ export class ItemTextListPosition {
   }
 
   /**
-   * 在当前位置向右格式化指定可见长度，并在范围末端恢复进入范围前的格式。
+   * 在当前位置向右格式化指定可见长度，并在末端恢复该位置原先应生效的格式。
    *
    * Renderer 可能把一个 Item 切成多个可见片段，因此分割点必须按渲染片段时钟定位，不能直接使用
-   * 原始 Item 长度。若长度越过可见内容末尾则抛错，保证 Delta 坐标不会静默漂移。
+   * 原始 Item 长度。扫描到末尾仍有未消费长度时抛错；此前已写入的格式不会自动回滚。
    *
    * @param {Transaction} transaction
    * @param {YType} parent
-   * @param {number} length
-   * @param {Object<string,any>} formats
+   * @param {number} length - 从当前游标消费的 Renderer 可见长度，字符串按 UTF-16 单元计。
+   * @param {Object<string,any>} formats - 仅修改这些键；`null` 清除，未列出的键保留。
    *
    * @function
    */
@@ -237,14 +242,14 @@ export class ItemTextListPosition {
 }
 
 /**
- * 在格式化范围末端写入恢复标记，使后续内容重新获得进入范围前的格式。
+ * 在范围末端写入恢复标记，使后续内容保持修改前在该位置应生效的格式。
  *
- * 写入前先消费等价的现有格式标记；WHY：重复恢复标记会膨胀结构并干扰后续格式清理。
+ * 先越过已表达恢复值的现有标记，只为仍缺失的键创建 Item。
  *
  * @param {Transaction} transaction
  * @param {YType} parent
- * @param {ItemTextListPosition} currPos
- * @param {Map<string,any>} negatedFormats
+ * @param {ItemTextListPosition} currPos - 待恢复边界的可变游标；写入后越过新标记。
+ * @param {Map<string,any>} negatedFormats - 尚未恢复的格式键和值；已有恢复标记会从此 Map 中移除。
  *
  * @private
  * @function
@@ -319,12 +324,13 @@ const minimizeFormatChanges = (currPos, formats) => {
 
 /**
  * 写入与当前位置不同的格式起始标记，并返回范围末端应恢复的旧值集合。
+ * 新标记集成后同步推进游标和 currentFormats；每个键的旧值取当前位置状态，缺失规范化为 null。
  *
  * @param {Transaction} transaction
  * @param {YType} parent
  * @param {ItemTextListPosition} currPos
  * @param {Object<string,any>} formats
- * @return {Map<string,any>}
+ * @return {Map<string,any>} 新建的恢复值 Map，仅包含实际写入新起始标记的格式键。
  *
  * @private
  * @function
@@ -352,14 +358,14 @@ const insertFormats = (transaction, parent, currPos, formats) => {
 /**
  * 插入一个已封装的 AbstractContent，并在两侧写入必要的格式起止标记。
  *
- * 状态顺序：规范化缺失格式 → 定位最小变更点 → 写起始格式 → 更新搜索标记 → 集成内容 → 写恢复格式。
- * 该顺序保证新内容只在目标范围内继承格式，且缓存索引与新增可见长度一致。
+ * `formats` 表示新内容的完整格式：当前位置已有但参数缺失的键会被补为 `null`，因此不带格式的
+ * 插入不会自动继承左侧格式。先写起始标记并更新搜索标记，再集成内容，最后恢复右侧原有格式。
  *
  * @param {Transaction} transaction
  * @param {YType} parent
  * @param {ItemTextListPosition} currPos
- * @param {import('./structs/Item.js').AbstractContent} content
- * @param {Object<string,any>} formats
+ * @param {import('./structs/Item.js').AbstractContent} content - 待集成内容；长度用于平移搜索标记。
+ * @param {Object<string,any>} formats - 插入内容的完整格式对象；本函数会为缺失的当前格式键原地补 `null`。
  *
  * @private
  * @function
@@ -394,7 +400,7 @@ export const insertContent = (transaction, parent, currPos, content, formats) =>
  * @param {Transaction} transaction
  * @param {YType} parent
  * @param {ItemTextListPosition} currPos
- * @param {Array<any>|string} insert
+ * @param {Array<any>|string} insert - 文本或混合数组；数组中的 Delta 先转为 preliminary YType。
  * @param {Object<string,any>} formats
  */
 export const insertContentHelper = (transaction, parent, currPos, insert, formats) => {
@@ -422,15 +428,16 @@ export const insertContentHelper = (transaction, parent, currPos, insert, format
 }
 
 /**
- * 从游标开始删除指定 Renderer 可见长度，并返回移动后的同一游标。
+ * 从游标开始删除内容，并返回移动后的同一游标。
  *
- * 对已删除但仍由 Renderer 显示的内容，不再删除 CRDT Item，而把区间记入事务的
- * `attributedDeletes`；这使后续 Delta 操作仍以调用方看到的坐标继续执行。
+ * 对已删除但仍带 attribution 显示的片段，不再删除 CRDT Item，而把区间记入事务的
+ * `attributedDeletes`，供 DiffRenderer 在关闭建议模式时向基线补发删除；普通 delete 不返回 inverse fix。
+ * 存活可计数 Item 直接按原始长度删除，不经过 Renderer 片段处理，因此仍会删除被自定义视图隐藏的存活内容。
  *
  * @param {Transaction} transaction
  * @param {ItemTextListPosition} currPos
- * @param {number} length
- * @return {ItemTextListPosition}
+ * @param {number} length - 待删除额度；非空列表扫到链尾即结束，不因额度未耗尽而抛错。
+ * @return {ItemTextListPosition} 同一可变游标，已越过删除范围及相应格式标记。
  *
  * @private
  * @function
@@ -498,21 +505,25 @@ export const deleteText = (transaction, currPos, length) => {
 }
 
 /**
- * 共享列表的稀疏定位缓存，保存一个不可合并 Item 及其可见起始索引。
+ * 共享列表的稀疏定位缓存，保存一个 Item 及其存活内容起始索引。
  *
  * 标记不参与 CRDT 结果计算；远端变更可直接清空，因此缓存失效只影响性能，不影响一致性。
  */
 export class ArraySearchMarker {
   /**
-   * 创建标记并在目标 Item 上设置 `marker`，阻止清理阶段跨此边界合并。
+   * 创建标记并设置目标 Item 的 `marker` 位，供缓存规范化时识别已有标记。
+   * Item 仍可合并；`Item.mergeWith` 会把被合并右项上的搜索标记迁移到左项。
    *
    * @param {Item} p - 标记指向的 Item。
    * @param {number} index - Item 在可见列表中的起始索引。
    */
   constructor (p, index) {
     p.marker = true
+    /** 缓存点对应的 Item；分割或合并时由定位/合并路径维护。 */
     this.p = p
+    /** p 的存活列表起始索引，与 Renderer 无关。 */
     this.index = index
+    /** 最近创建/命中的进程内逻辑时钟，供近似 LRU 淘汰。 */
     this.timestamp = globalSearchMarkerTimestamp++
   }
 }
@@ -525,7 +536,7 @@ export class ArraySearchMarker {
 const refreshMarkerTimestamp = marker => { marker.timestamp = globalSearchMarkerTimestamp++ }
 
 /**
- * 原子迁移既有标记到新 Item；所有覆盖都集中在此处，保证旧/新 Item 的 `marker` 位成对更新。
+ * 把既有标记移到新 Item，同时更新旧、新 Item 的 `marker` 位、索引和访问时钟。
  *
  * @param {ArraySearchMarker} marker
  * @param {Item} p
@@ -563,11 +574,13 @@ const markPosition = (searchMarker, p, index) => {
 /**
  * 找到距目标索引最近的搜索标记并沿 Item 链校准，返回刷新过访问时钟的标记。
  *
- * 标记最多 `maxSearchMarker` 个。校准后会向左退到不可与前项合并的边界；WHY：后续结构合并若吞掉
- * 标记 Item，缓存会悬空。命中位置偏移过大时新增/淘汰标记，较近时原地覆盖。
+ * 标记最多 `maxSearchMarker` 个。校准后向左退到同 client、连续 clock 区间的起点并保存标记；
+ * 真正合并时由 `Item.mergeWith` 更新标记。偏移较大时新增或淘汰标记，
+ * 较近时原地覆盖。这里按存活可计数 Item 长度定位，不使用 Renderer 视图。
  *
- * @param {YType} yarray
- * @param {number} index
+ * @param {YType} yarray - 使用存活内容坐标的列表。
+ * @param {number} index - 待查询索引；起点 0 不需要缓存。
+ * @return {ArraySearchMarker|null} 校准后的标记；空列表、起点或禁用缓存时返回 `null`。
  */
 export const findMarker = (yarray, index) => {
   if (yarray._start === null || index === 0 || yarray._searchMarker === null) {
@@ -598,7 +611,7 @@ export const findMarker = (yarray, index) => {
       pindex -= p.length
     }
   }
-  // 退到不可与左邻合并的结构边界，保证清理阶段不会移除标记所依附的 Item。
+  // 退到同 client、连续 clock 区间的左端；这两个条件只是实际合并条件的一部分。
   while (p.left !== null && p.left.id.client === p.id.client && p.left.id.clock + p.left.length === p.id.clock) {
     p = p.left
     if (!p.deleted && p.countable) {
@@ -616,10 +629,11 @@ export const findMarker = (yarray, index) => {
 }
 
 /**
- * 按一次插入或删除平移全部受影响搜索标记；删除前必须调用，届时仍能从原 Item 找到安全前驱。
+ * 按一次插入或删除平移受影响搜索标记。插入前还会把删除/格式项上的标记移到左侧存活项；
+ * 删除路径在 Item 已标为删除后调用，此时只修正索引，指向删除项的标记留待之后规范化。
  *
- * @param {Array<ArraySearchMarker>} searchMarker
- * @param {number} index
+ * @param {Array<ArraySearchMarker>} searchMarker - 待原地维护的缓存数组，规范化可能删除条目。
+ * @param {number} index - 变更前的存活列表起点。
  * @param {number} len - 插入为正长度，删除为负长度。
  */
 export const updateMarkerChanges = (searchMarker, index, len) => {
@@ -678,7 +692,7 @@ export const getTypeChildren = t => {
  *
  * @param {YType} type
  * @param {Transaction} transaction
-  * @param {YEvent<any>} event
+ * @param {YEvent<any>} event - 同一事件先登记到祖先，再同步派发当前类型的浅层 observer。
  */
 export const callTypeObservers = (type, transaction, event) => {
   const changedType = type
@@ -692,7 +706,7 @@ export const callTypeObservers = (type, transaction, event) => {
     }
     type = /** @type {YType} */ (type._item.parent)
   }
-  // tombstone 自身通常不可见；只有 Renderer 声明仍可见时才通知它自己的 observer。
+  // tombstone 类型挂有 Renderer 时仍派发自身 observer；实际可见内容由 Renderer 渲染决定。
   if (changedType._item === null || !changedType._item.deleted || changedType._renderer !== null) {
     callEventHandlerListeners(/** @type {any} */ (changedType._eH), event, transaction)
   }
@@ -742,14 +756,15 @@ export class YType extends ObservableV2 {
     /** @type {null | Array<ArraySearchMarker>} 列表位置的稀疏性能缓存。 */
     this._searchMarker = null
     /**
-     * {@link YType#delta} 背后的深层 Delta 活缓存。首次读取前为 `null`；之后每次事件都增量应用
-     * 深层变化，Renderer 切换时则重新 diff；{@link YType#clearCache} 可释放。
+     * {@link YType#delta} 背后的深层 Delta 活缓存。首次读取前为 `null`；事务和 Renderer change
+     * 原地应用深层变化。切换 Renderer 会重建并替换缓存，{@link YType#clearCache} 可释放。
      * @type {delta.DeltaBuilderAny | null}
      */
     this._delta = null
     /** 二进制更新协议使用的旧式类型引用，名称决定默认 XML fragment/element 编码。 */
     this._legacyTypeRef = this.name == null ? YXmlFragmentRefID : YXmlElementRefID
     /**
+     * 构造结束时启用空搜索缓存；格式 Item 集成后可能将它设为 null，因为仅靠数值索引无法恢复格式上下文。
      * @type {Array<ArraySearchMarker>|null}
      */
     this._searchMarker = []
@@ -784,13 +799,13 @@ export class YType extends ObservableV2 {
 
   /**
    * 返回此类型完整嵌套内容树的深层 Delta 活缓存，子类型会渲染为各自 Delta。
- *
-   * 返回值是原地维护的**活对象**：首次访问时物化，此后随事件更新，Renderer 切换时重新 diff。
-   * 跨编辑持有的引用会继续变化；稳定快照需 `type.delta.clone()`，释放缓存用
-   * {@link YType#clearCache}。
- *
-   * 该 Delta 视为已经 `done`，外部不可编辑。类型刻意暴露为 `Delta` 而非 `DeltaBuilder`；绕过类型
-   * 修改只会破坏缓存，并不会改变 CRDT。写入共享类型必须调用 {@link YType#applyDelta}。
+   *
+   * 返回值是**活对象**：首次访问时物化，普通编辑和 Renderer change 会原地更新。切换 Renderer、
+   * 清缓存或 `destroy()` 会丢弃这份对象，此后须重新读取 getter。稳定快照可用 lib0 的
+   * `delta.clone(type.delta)`，释放缓存用 {@link YType#clearCache}。
+   *
+   * 调用方应把它当作只读 Delta。内部保留可变 builder 用于增量更新，返回类型只暴露 `Delta`；
+   * 绕过类型直接修改会改变缓存而非 CRDT。写入共享类型必须调用 {@link YType#applyDelta}。
    *
    * @type {delta.Delta<DConf>}
    */
@@ -815,9 +830,8 @@ export class YType extends ObservableV2 {
 
   /**
    * 丢弃 {@link YType#delta} 的深层 Delta 缓存，下次读取将从 CRDT 状态完整重建。
- *
-   * 可用于回收内存，或在非基础 Renderer 下编辑后强制精确重算；该模式的增量结果可能与一次全量深层
-   * 渲染发生漂移。
+   *
+   * 已持有的旧缓存对象不再维护；重新读取 getter 会获得新的完整渲染结果。
    */
   clearCache () {
     this._delta = null
@@ -826,10 +840,10 @@ export class YType extends ObservableV2 {
   /**
    * 切换默认 Renderer；之后 `toDelta`、`applyDelta` 与事件在没有显式参数时使用它，单次调用的
    * `{ renderer }` 仍可覆盖。
- *
+   *
    * 若已维护深层缓存或存在 `'delta'` listener，会用新 Renderer 重渲染并仅在 `'delta'` 通道发差异。
-   * Renderer 切换不是 CRDT 变化，因此不产生 `YEvent`，且无事务时 origin 为 `null`。
- *
+   * Renderer 切换不是 CRDT 变化，因此不产生 `YEvent`；这里发出的差异 origin 固定为 `null`。
+   *
    * @param {AbstractRenderer?} renderer - `null` 表示解绑并恢复原样渲染。
    * @return {this}
    */
@@ -842,7 +856,7 @@ export class YType extends ObservableV2 {
     }
     if (renderer !== null && this._rendererChangeHandler === null) {
       // 接受建议等 attribution 修正可能没有 Y 事务；订阅 Renderer 才能同步 RDT 缓存与 `'delta'`。
-      // 此处不能只依据 `renderer !== prev`：`destroy()` 会移除 handler，同一 Renderer 再激活也须重订阅。
+      // `destroy()` 会清空默认 Renderer 和 handler，再次传入原 Renderer 时会重新建立订阅。
       this._rendererChangeHandler = (changes, origin) => typeApplyRendererChange(this, changes, origin)
       renderer.on('change', this._rendererChangeHandler)
     }
@@ -920,10 +934,11 @@ export class YType extends ObservableV2 {
   /**
    * 把 preliminary 共享类型挂入文档和宿主 Item，并在同一集成阶段应用预存 Delta。
    *
-   * 集成后该类型进入 StructStore、可被同步到其他客户端，并由事务清理阶段派发 observer。
+   * 宿主 Item 与随后写入的内容结构进入 StructStore；根类型通过文档的根类型表定位。
+   * 同一事务中新集成子类型的初始化不单独派发自身 observer，由父类型的插入事件携带完整子状态。
    *
    * @param {Doc} y - 所属 Yjs 文档。
-   * @param {Item|null} item
+   * @param {Item|null} item - 嵌套类型的宿主 Item；根类型传 `null`。
    */
   _integrate (y, item) {
     this.doc = y
@@ -946,7 +961,8 @@ export class YType extends ObservableV2 {
   }
 
   /**
-   * 为本次事务创建 `YEvent`、派发浅层/深层 observer，并处理远端缓存与格式清理标志。
+   * 为本次事务创建 `YEvent`，派发浅层 observer 并登记祖先事件；深层 observer 由事务清理随后派发。
+   * 远端变更还会清空搜索标记，并在存在格式项时标记待清理。
    *
    * @param {Transaction} transaction
    * @param {Set<null|string>} parentSubs - 本类型变化的属性键；列表内容变化用 `null`。
@@ -1017,7 +1033,7 @@ export class YType extends ObservableV2 {
    *
    * @param {Object} [opts]
    * @param {AbstractRenderer?} [opts.renderer] - 内容与 attribution Renderer；默认使用当前类型的活跃 Renderer。
-   * @param {IdSet?} [opts.itemsToRender]
+   * @param {IdSet?} [opts.itemsToRender] - `null` 渲染完整状态；ID 集合使范围内内容输出变化，其余内容保留位置。
    * @param {boolean} [opts.retainInserts] - 是否把已渲染插入输出为 retain，供 attribution 修复缓存。
    * @param {boolean} [opts.retainDeletes] - 是否把仍渲染且带 attribution 的删除输出为 retain。
    * @param {IdSet?} [opts.insertedItems] - 本次变化新插入的 id；同次插入又删除的内容仍是 fresh insert。
@@ -1140,7 +1156,6 @@ export class YType extends ObservableV2 {
                 d.useFormats(changedFormats)
                 usingChangedFormats = true
                 if (c.deleted && c.content.constructor === ContentType) {
-                  // @todo 改为复用当前事务。
                   d.modify(/** @type {any} */ (c.content).type.toDelta(optsAll), undefined, attribution ?? null)
                 } else if (c.content.constructor === ContentType && modified?.has(/** @type {ContentType} */ (c.content).type)) {
                   // Renderer 仍显示但归因变化的节点需清/并自身 attribution，再递归精确修复
@@ -1162,7 +1177,6 @@ export class YType extends ObservableV2 {
               d.delete(1)
             } else if (retainContent) {
               if (c.content.constructor === ContentType && modified?.has(/** @type {ContentType} */ (c.content).type)) {
-                // @todo 改为复用当前事务。
                 d.modify(/** @type {any} */ (c.content).type.toDelta(optsAll))
               } else {
                 d.useFormats(changedFormats)
@@ -1357,7 +1371,6 @@ export class YType extends ObservableV2 {
               }
               if (!idrange.exists) {
                 if (content.constructor === ContentType && modified?.has(/** @type {ContentType} */ (content).type)) {
-                  // @todo 改为复用当前事务。
                   d.modify(/** @type {ContentType} */ (content).type.toDelta(optsAll))
                 } else {
                   d.useFormats(changedFormats)
@@ -1451,7 +1464,8 @@ export class YType extends ObservableV2 {
   }
 
   /**
-   * 把 Delta 变化应用到此共享类型；列表 op 使用 Renderer 可见坐标，属性 op 写入 map CRDT。
+   * 把 Delta 变化应用到此共享类型；列表游标按 Renderer 内容长度推进，属性 op 写入 map CRDT。
+   * 存活内容的删除仍按原始 Item 长度处理，见 {@link deleteText}；自定义隐藏视图不能据此当作完整编辑投影。
    *
    * 未集成类型先累积 preliminary Delta。若目标已删除但 Renderer 仍显示，则不写文档，而返回相对
    * 调用方预期状态的 inverse fix；正常应用且无需修正时返回 `null`。
@@ -1494,8 +1508,8 @@ export class YType extends ObservableV2 {
       /**
        * 把嵌套 `modify` 的 fix 追加到正确预期坐标，并可同时恢复父级格式。
        *
-       * @param {delta.DeltaAny?} childFix
-       * @param {{ [k:string]: any }} [invFormat]
+       * @param {delta.DeltaAny?} childFix - 子类型未接受的变化之 inverse；`null` 时仅修正父级格式。
+       * @param {{ [k:string]: any }} [invFormat] - 软删除子节点的原父级格式，`null` 叶用于清除调用方新增格式。
        */
       const appendModifyFix = (childFix, invFormat) => {
         const f = fix ?? (fix = /** @type {any} */ (delta.create()))
@@ -1575,7 +1589,8 @@ export class YType extends ObservableV2 {
   }
 
   /**
-   * 复制完整深层 Delta 到一个未集成类型；副本挂入 YDoc 后才可稳定读取内容。
+   * 复制当前 Renderer 的完整深层 Delta 到一个未集成类型；副本挂入 YDoc 后才可稳定读取内容。
+   * 渲染出的子 Delta 在新类型中重新集成，因而复制的是可见内容树，不沿用原 Item 身份或删除历史。
    *
    * @return {YType<DConf>}
    */
@@ -1586,7 +1601,8 @@ export class YType extends ObservableV2 {
   }
 
   /**
-   * 构造同一 Delta 删除当前所有属性，并以一次事务应用；列表内容不受影响。
+   * 枚举当前 `_map` 的未删除属性，构造同一 Delta 删除它们，并以一次事务应用；列表内容不受影响。
+   * 未集成类型的 preliminary 属性尚未进入 `_map`，因此此方法不会清除预存属性。
    */
   clearAttrs () {
     const d = delta.create()
@@ -1651,7 +1667,7 @@ export class YType extends ObservableV2 {
   /**
    * 返回当前全部属性键值；传入 Snapshot 时按其状态向量和删除集回溯历史获胜值。
    *
-   * @param {Snapshot} [snapshot]
+   * @param {Snapshot} [snapshot] - 可选历史状态；旧值须仍由文档结构保留，GC 不会在这里恢复丢失内容。
    * @return {{ [Key in Extract<keyof delta.DeltaConfGetAttrs<DConf>,string>]?: delta.DeltaConfGetAttrs<DConf>[Key]}} 属性对象。
    *
    * @public
@@ -1661,7 +1677,7 @@ export class YType extends ObservableV2 {
   }
 
   /**
-   * 在逻辑索引处批量插入内容；数组批量写入可共享一个 ContentAny/事务，避免逐元素结构开销。
+   * 在 Renderer 视图的索引处批量插入内容；连续普通数组值可共享一个 ContentAny 和一次事务。
    *
    * 字符串按文本插入；非文本内容必须传数组，而不是单个对象。
    *
@@ -1673,7 +1689,7 @@ export class YType extends ObservableV2 {
    *
    * @param {number} index - 插入位置。
    * @param {Array<delta.DeltaConfGetChildren<DConf>>|delta.DeltaConfGetText<DConf>} content - 文本或待插入内容数组。
-   * @param {delta.Formats} [format]
+   * @param {delta.Formats} [format] - 新内容的完整格式；省略时不继承左侧格式。
    */
   insert (index, content, format) {
     this.applyDelta(delta.create().retain(index).insert(/** @type {any} */ (content), format).done())
@@ -1692,11 +1708,11 @@ export class YType extends ObservableV2 {
   }
 
   /**
-   * 把内容追加到当前末尾，转发给 `insert(length, content)`。
+   * 以存活内容长度为索引调用 `insert(length, content)`。
+   * 默认视图中这就是末尾；Renderer 若显示墓碑，该索引不包含墓碑长度。
    *
    * @param {Array<delta.DeltaConfGetChildren<DConf>>|delta.DeltaConfGetText<DConf>} content - 追加内容。
    *
-   * @todo 所有类型统一使用该实现。
    */
   push (content) {
     this.insert(this.length, content)
@@ -1705,14 +1721,14 @@ export class YType extends ObservableV2 {
   /**
    * 把内容插入到当前起点，转发给 `insert(0, content)`。
    *
-   * @param {delta.DeltaConfGetText<DConf>} content - 前置内容。
+   * @param {Array<delta.DeltaConfGetChildren<DConf>>|delta.DeltaConfGetText<DConf>} content - 前置内容。
    */
   unshift (content) {
     this.insert(0, content)
   }
 
   /**
-   * 从逻辑索引起删除指定可见长度；默认删除一个元素。
+   * 通过 Delta retain 定位起点后删除指定长度，默认一个元素；长度处理见 {@link deleteText}。
    *
    * @param {number} index - 删除起点。
    * @param {number} length - 删除长度，默认 1。
@@ -1725,7 +1741,7 @@ export class YType extends ObservableV2 {
    * 返回第 `index` 个活跃可计数子元素，定位时可复用搜索标记。
    *
    * @param {number} index - 零基逻辑索引。
-   * @return {delta.DeltaConfGetChildren<DConf>}
+   * @return {delta.DeltaConfGetChildren<DConf>} 存活内容值；超出链尾时实际返回 `undefined`，不使用 Renderer 可见坐标。
    */
   get (index) {
     return typeListGet(this, index)
@@ -1734,8 +1750,8 @@ export class YType extends ObservableV2 {
   /**
    * 把半开区间 `[start, end)` 的活跃列表内容复制为 JavaScript 数组；负索引相对末尾计算。
    *
-   * @param {number} [start]
-   * @param {number} [end]
+   * @param {number} [start] - 存活内容起点，默认 0。
+   * @param {number} [end] - 存活内容终点（不包含），默认原始列表长度，不含 Renderer 恢复的墓碑。
    * @return {Array<delta.DeltaConfGetChildren<DConf>>}
    */
   slice (start = 0, end = this.length) {
@@ -1743,7 +1759,8 @@ export class YType extends ObservableV2 {
   }
 
   /**
-   * 把当前 Delta 中的文本与数组 insert 展平为 JavaScript 数组，忽略格式和属性操作。
+   * 把当前 Renderer 输出的数组 insert 展平、文本 insert 按整段字符串保存，忽略格式和属性操作。
+   * 因而文本的一个数组元素可含多个 UTF-16 单元，Renderer 显示的墓碑也可出现在结果中。
    *
    * @todo 重构为只依赖 Content 接口。
    *
@@ -1768,7 +1785,8 @@ export class YType extends ObservableV2 {
   }
 
   /**
-   * 递归把名称、非空属性和非空子内容转换为普通 JSON 结构；空部分不出现在结果中。
+   * 递归把名称、属性和子内容转换为普通 JSON：属性读取当前存活值，子内容来自当前 Renderer 的 `toArray()`。
+   * 是否包含 `children` 仍由存活 `length > 0` 决定，`attrs` 由存活属性数决定，名称非 null 时保留。
    * @return {{ name?: string, attrs?: { [K:string|number]: any }, children?: Array<any>  }}
    */
   toJSON () {
@@ -1799,9 +1817,11 @@ export class YType extends ObservableV2 {
 
   /**
    * 把共享树渲染为确定性的类 XML 字符串；属性按键排序，匿名无属性节点默认只返回子内容。
+   * 属性来自存活 map，子内容来自当前 Renderer；空标签判断仍使用原始 length，文本不做 XML 转义。
    *
-   * @param {object} opts
+   * @param {object} [opts]
    * @param {boolean} [opts.forceTag] - 即使名称为空也强制生成包围标签。
+   * @return {string} 供展示/比较的类 XML 表示，非通用 XML 序列化器。
    */
   toString ({ forceTag = false } = {}) {
     /**
@@ -1938,8 +1958,9 @@ export const $ytypeAny = s.$instanceOf(YType)
  *
  * 一旦某祖先同一键已标记即可停止该父链，避免重复遍历；结果供深层 Delta 只递归变化分支。
  *
- * @param {StructStore} store
- * @param {IdSet} items
+ * @param {StructStore} store - 查找变化 ID 所在结构的文档存储。
+ * @param {IdSet} items - 待汇总的 ID 区间；遍历不切分 Item，GC/Skip 不提供父链。
+ * @return {Map<YType,Set<string|null>>} 新建的受影响类型映射，属性用键名、列表用 `null`。
  */
 export const computeModifiedFromItems = (store, items) => {
   /**
@@ -1959,15 +1980,15 @@ export const computeModifiedFromItems = (store, items) => {
 }
 
 /**
- * 处理 Renderer attribution 覆盖层在无 Y 事务时的变化（如接受/拒绝建议）。
+ * 处理 Renderer 的 attribution change 通知（如接受/拒绝建议），无须新建 Y 事务。
  *
  * 重新渲染受影响 id，增量修补 {@link YType#delta} 并发 `'delta'`，与事务内
  * `cleanupTransactions` 的维护语义一致。尚未集成到文档的 id 此刻渲染为空，稍后的真实事务会经常规
  * 路径补上。该函数由 {@link YType#useRenderer} 绑定到 Renderer `'change'`。
  *
- * @param {YType<any>} type
- * @param {IdSet} changes
- * @param {any} origin
+ * @param {YType<any>} type - 已绑定 Renderer 的缓存/事件目标。
+ * @param {IdSet} changes - attribution 改变的 ID 集合，按 retain 修正现有内容。
+ * @param {any} origin - 原样转发给 delta listener 的来源。
  *
  * @private
  * @function
@@ -1984,7 +2005,7 @@ export const typeApplyRendererChange = (type, changes, origin) => {
 }
 
 /**
- * 比较两个格式值；原始值严格相等，非空普通对象则进行浅层键值比较。
+ * 比较两个格式值；先检查严格相等，再对两个非 null 对象进行浅层键值比较。
  *
  * @param {any} a
  * @param {any} b
@@ -1993,7 +2014,8 @@ export const typeApplyRendererChange = (type, changes, origin) => {
 export const equalFormats = (a, b) => a === b || (typeof a === 'object' && typeof b === 'object' && a && b && object.equalFlat(a, b))
 
 /**
- * 把 Delta 配置中的嵌套 Delta 数据递归替换为 `YType` 后得到的共享类型配置。
+ * 把 Delta 配置中的嵌套 Delta 数据映射为共享类型侧值域，名称、文本等其余配置由 DeltaConfOverwrite 保留。
+ * `attrs` 逐属性键应用 DeltaToYType；`children` 对子值类型应用同一映射，而非对文本 UTF-16 单元转换。
  *
  * @template {delta.DeltaConf} DConf
  * @typedef {delta.DeltaConfOverwrite<DConf, {
@@ -2011,7 +2033,8 @@ export const equalFormats = (a, b) => a === b || (typeof a === 'object' && typeo
  */
 
 /**
- * 返回共享列表半开区间的活跃 Content；负边界先相对 `_length` 归一化。
+ * 返回共享列表半开区间的活跃 Content；负边界先加 `_length`。
+ * 此实现不把仍为负的边界裁剪到 0；调用方应传列表范围内的边界，不能照搬所有 Array.slice 越界语义。
  *
  * @param {YType<any>} type
  * @param {number} start
@@ -2052,8 +2075,6 @@ export const typeListSlice = (type, start, end) => {
 
 /**
  * 借助最近搜索标记定位并返回共享列表第 `index` 个活跃 Content 值。
- *
- * @todo 删除或内联该薄包装。
  *
  * @param {YType} type
  * @param {number} index
@@ -2185,7 +2206,7 @@ export const typeListInsertGenerics = (transaction, parent, index, content) => {
     // 索引正好落在标记起点时退到左侧活 Item，统一复用“在 n 之后插入”的算法。
     if (index === 0) {
       // @todo 此处没有考虑格式，应与文本定位逻辑统一重构。
-      n = n.prev // important! get the left undeleted item so that we can actually decrease index
+      n = n.prev // 取左侧第一个未删除 Item，才能把索引改写为“在此 Item 之后插入”。
       index += (n && n.countable && !n.deleted) ? n.length : 0
     }
   }
@@ -2230,7 +2251,9 @@ export const typeListPushGenerics = (transaction, parent, content) => {
 }
 
 /**
- * 从逻辑索引删除指定活跃长度；先切分起止 Item，再 tombstone 覆盖区间并平移搜索标记。
+ * 旧式列表删除：先按活跃可计数内容定位起点，再逐个未删除 Item 消费其结构长度并 tombstone。
+ * 删除循环没有排除格式 Item，因此不能把它当作富文本 Renderer 删除接口；当前公共 delete 走 `deleteText`。
+ * 若扫描到末尾仍有剩余长度，已删除的前段保留，随后抛错；搜索标记更新也尚未执行。
  *
  * @param {Transaction} transaction
  * @param {YType} parent
@@ -2274,7 +2297,7 @@ export const typeListDelete = (transaction, parent, index, length) => {
     throw lengthExceeded()
   }
   if (parent._searchMarker) {
-    updateMarkerChanges(parent._searchMarker, startIndex, -startLength + length /* in case we remove the above exception */)
+    updateMarkerChanges(parent._searchMarker, startIndex, -startLength + length /* 仅当上方越界检查通过时更新；保留剩余额度项以支持将来放宽检查。 */)
   }
 }
 
@@ -2393,21 +2416,21 @@ export const typeMapGetAll = (parent) => {
  * @template {delta.DeltaBuilderAny} TypeDelta
  * @param {TypeDelta} d
  * @param {YType} parent
- * @param {Set<string|null>?} attrsToRender
- * @param {AbstractRenderer?} renderer
- * @param {boolean} deep
+ * @param {Set<string|null>?} attrsToRender - `null` 枚举全部属性；集合中的 `null` 列表标记跳过，字符串键须存在于 `_map`。
+ * @param {AbstractRenderer?} renderer - 接管属性可见性与归因的 Renderer；`null` 读取普通获胜 Item。
+ * @param {boolean} deep - 是否把嵌套 YType 递归转为 Delta。
  * @param {Set<YType>|Map<YType,any>|null} [modified] - 应按已修改子节点渲染的类型集合/映射。
- * @param {IdSet?} [itemsToRender]
- * @param {any} [opts]
- * @param {any} [optsAll]
+ * @param {IdSet?} [itemsToRender] - 当前变化的 ID 集合；用于判断删除属性需重发旧值还是输出删除。
+ * @param {any} [opts] - 子类型 modifyAttr 使用的变化渲染选项。
+ * @param {any} [optsAll] - 新属性值递归渲染选项；软删除值需要完整状态时会单独忽略范围限制。
  *
  * @private
  * @function
  */
 export const typeMapGetDelta = (d, parent, attrsToRender, renderer, deep, modified, itemsToRender, opts, optsAll) => {
-  // @todo 支持更细粒度的属性 modify op。
   /**
    * 渲染一个属性 Item；Renderer 可能改变其可见性、删除态、内容切片和 attribution。
+   * 属性读法取最后一个输出片段的末尾值，与普通 map 取获胜 Item 最后内容元素一致；零片段则隐藏属性。
    *
    * @param {Item} item
    * @param {string} key
@@ -2486,7 +2509,8 @@ export const typeMapHas = (parent, key) => {
  * Snapshot 可见要求：状态向量已包含该时钟，且删除集未覆盖该 id。
  *
  * @param {Item} item
- * @param {Snapshot|undefined} snapshot
+ * @param {Snapshot|undefined} snapshot - `undefined` 仅检查当前删除位；快照检查 Item 起始 ID 的历史可见性。
+ * @return {boolean} 起始 ID 在所选状态中是否可见；调用方负责按快照边界切分内容。
  *
  * @protected
  * @function
@@ -2686,7 +2710,8 @@ export const contentRefs = [
  * 从 info 低 5 位取得 ContentRef，并分派到对应内容解码器。
  *
  * @param {UpdateDecoderV1 | UpdateDecoderV2} decoder
- * @param {number} info
+ * @param {number} info - Item 标志字节；低 5 位是协议固定 ContentRef。
+ * @return {import('./structs/Item.js').AbstractContent} 解码出的未集成内容。
  */
 export const readItemContent = (decoder, info) => contentRefs[info & binary.BITS5](decoder)
 

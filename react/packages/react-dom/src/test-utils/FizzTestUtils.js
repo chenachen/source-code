@@ -12,6 +12,8 @@
  * 把流式服务端测试产生的节点移入目标容器，并按浏览器插入语义执行其中脚本。
  * CSP nonce 不匹配的内联脚本会暂时清空，完成搬移后再恢复文本，既验证“不可执行”
  * 行为又不破坏最终 DOM 快照。该工具模拟适配器消费结果，不是 Fizz 实现本身。
+ * 依次 await 脚本执行以维持流片段指令顺序；恢复 nonce 文本只在正常完成后进行，
+ * 插入或脚本执行的拒绝会直接传播，不在 finally 中回滚已搬移节点和临时文本。
  */
 async function insertNodesAndExecuteScripts(
   source: Document | Element,
@@ -149,7 +151,9 @@ function stripExternalRuntimeInNodes(
 
 /**
  * 把 DOM 中用户可见的子树归一化为 React 节点，供流式输出断言比较。
- * 脚本、模板、隐藏节点、阻塞 expect 与 React 自动 ID 等实现细节会被剔除。
+ * 模板、有 hidden/aria-hidden 属性的节点和渲染阻塞 expect link 被剔除；这里按
+ * 属性是否存在过滤，因此 aria-hidden="false" 也不保留。脚本默认过滤，但带
+ * data-meaningful 的脚本可参与比较；所有含冒号的 id 属性都按自动标识省略。
  */
 function getVisibleChildren(element: Element): React$Node {
   const children = [];

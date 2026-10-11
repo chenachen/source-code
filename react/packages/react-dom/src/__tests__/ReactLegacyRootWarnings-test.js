@@ -14,14 +14,8 @@ describe('ReactDOMRoot', () => {
   });
 
   // @gate !disableLegacyMode
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「deprecation warning for ReactDOM.render」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言连接 ReactDOM 公开入口、ReactDOMRoot 根生命周期及 DOM 提交结果。
-   */
+
+  /** 在 legacy 模式可用的构建中，对空容器调用 ReactDOM.render("Hi")；内容应实际提交为 Hi，DEV 只报告一次 React 18 起不支持该入口的弃用消息，验证兼容行为与诊断同时保留。 */
   it('deprecation warning for ReactDOM.render', () => {
     spyOnDev(console, 'error');
 

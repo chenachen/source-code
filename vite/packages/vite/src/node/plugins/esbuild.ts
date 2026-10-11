@@ -49,7 +49,7 @@ export interface ESBuildOptions extends EsbuildTransformOptions {
   include?: string | RegExp | ReadonlyArray<string | RegExp>
   /** 匹配这些模式的文件会被排除在处理流程外。 */
   exclude?: string | RegExp | ReadonlyArray<string | RegExp>
-  /** 每个 JSX 模块转换后需要追加的导入或辅助代码。 */
+  /** 每个 JSX 模块转换后前置的导入或辅助代码。 */
   jsxInject?: string
   /**
    * 该字段不生效，请改用 `build.minify`。
@@ -303,8 +303,9 @@ export async function transformWithEsbuild(
 }
 
 /**
- * 单模块 TS/JSX 转译插件。这里只转语法并关闭优化；最终 target 转换与压缩由
- * `buildEsbuildPlugin` 在 chunk 阶段执行，开发态则无需第二次优化。
+ * 兼容保留的单模块 TS/JSX 转译插件工厂，只转语法并关闭优化。
+ * 当前核心 resolvePlugins 装配 oxcPlugin；此工厂不在该流水线中。旧 esbuild chunk 兼容路径
+ * 则由 `buildEsbuildPlugin` 处理最终 target 与压缩。
  */
 export function esbuildPlugin(config: ResolvedConfig): Plugin {
   const options = config.esbuild as ESBuildOptions
@@ -333,7 +334,7 @@ export function esbuildPlugin(config: ResolvedConfig): Plugin {
 
   return {
     name: 'vite:esbuild',
-    /** 开发服务器启动时启用 tsconfig 监听，使配置变化能使转换结果失效。 */
+    /** 保存开发服务器引用，后续 transform 读取 tsconfig 时可使用其 watcher。 */
     configureServer(_server) {
       server = _server
     },
@@ -387,7 +388,7 @@ const rollupToEsbuildFormatMap: Record<
 //    `<esbuild helpers> (function(){ /* 实际内容 */ })()`
 // 改写为：
 //    `(function(){ <esbuild helpers> /* 实际内容 */ })()`
-// 不用正则，避免 #8738/#8099/#10900/#14065 一类回溯性能风险；indexOf/slice 足够。
+// 匹配固定 wrapper 头并用 slice 移动 helper，避免旧复杂正则的回溯问题（#8738/#8099/#10900/#14065）。
 // helper 与 wrapper 头部都不是源映射内容，无需为此创建 MagicString。
 /** 把 esbuild 前置 helper 移入 UMD/IIFE 严格模式 wrapper，隔离全局变量名。 */
 export const injectEsbuildHelpers = (
@@ -414,7 +415,7 @@ export const injectEsbuildHelpers = (
 export const buildEsbuildPlugin = (): Plugin => {
   return {
     name: 'vite:esbuild-transpile',
-    /** 仅在首选构建转换器为 esbuild 时启用 chunk 转译钩子。 */
+    /** 允许 esbuild 配置时启用该插件；构建插件列表只在 minify=esbuild 时加入它。 */
     applyToEnvironment(environment) {
       return environment.config.esbuild !== false
     },
@@ -571,14 +572,14 @@ export function getTSConfigResolutionCache(
 }
 
 /**
- * tsconfig 变化时清空转译缓存与所有环境模块图，并发送 full-reload，避免继续使用
+ * 路径以 /tsconfig.json 结尾的文件变化时，清空解析缓存与所有环境模块图，并发送 full-reload，避免继续使用
  * 旧 compilerOptions 生成的模块结果。
  */
 export function reloadOnTsconfigChange(
   server: ViteDevServer,
   changedFile: string,
 ): void {
-  // 新增任意 tsconfig 都可能比缓存项更接近源码；extends 链也可能引用其他 JSON。
+  // 先筛选 JSON 文件；当前全量失效分支只处理标准 tsconfig.json 文件名。
   if (changedFile.endsWith('.json')) {
     const cache = getTSConfigResolutionCache(server.config)
     if (changedFile.endsWith('/tsconfig.json')) {

@@ -11,6 +11,7 @@ import { ErrorCodes, callWithErrorHandling } from './errorHandling'
 
 /** 警告栈中保证 `type` 为可格式化组件定义的 VNode。 */
 type ComponentVNode = VNode & {
+  /** 将通用 VNode.type 收窄为组件定义，供警告栈格式化组件名。 */
   type: ConcreteComponent
 }
 
@@ -21,9 +22,11 @@ type ComponentVNode = VNode & {
  */
 const stack: VNode[] = []
 
-/** 格式化组件调用链所需的信息；连续递归实例会折叠并累计次数。 */
+/** 格式化组件调用链所需的信息；同一来源 VNode 重现时可折叠到首项并累计次数。 */
 type TraceEntry = {
+  /** 该层警告来源组件的 VNode，供名称与少量 props 格式化。 */
   vnode: ComponentVNode
+  /** 该条 trace 额外折叠的递归次数；0 表示只显示一次。 */
   recurseCount: number
 }
 
@@ -111,6 +114,7 @@ export function getComponentTrace(): ComponentTraceStack {
   const normalizedStack: ComponentTraceStack = []
 
   while (currentVNode) {
+    // 当前实现与首项比较：同一来源 VNode 再次出现时累计首项次数，其他 VNode 追加为新层。
     const last = normalizedStack[0]
     if (last && last.vnode === currentVNode) {
       last.recurseCount++
@@ -167,7 +171,9 @@ function formatProps(props: Data): any[] {
   return res
 }
 
+/** 格式化普通 prop，返回供 console 展开的参数片段数组。 */
 function formatProp(key: string, value: unknown): any[]
+/** raw 重载为嵌套 Ref 格式化返回内部值，避免重复拼接 key。 */
 function formatProp(key: string, value: unknown, raw: true): any
 /**
  * 将单个 prop 转成控制台友好的片段。

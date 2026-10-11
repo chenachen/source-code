@@ -151,8 +151,7 @@ export async function serve() {
 /**
  * 等待 Vite 输出监听地址，并校验实际端口与请求端口一致。
  *
- * 不能只等待任意 `http://...` 日志：若端口被占用且 strictPort 失效，Vite 可能
- * 自动选择其他端口，浏览器随后会访问错误目标。
+ * stdout 地址中的实际端口须等于分配端口，否则拒绝启动等待；结束时移除 data 监听。
  */
 async function startedOnPort(serverProcess, port, timeout) {
   let checkPort

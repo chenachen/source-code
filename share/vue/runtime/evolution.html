@@ -124,23 +124,16 @@
             </article>
           </div>
           <div class="callout">
-            <strong>证据口径修正：</strong>当前工作区只保存一次 vendor
-            快照，不含 Vue 上游完整 Git 历史。因此版本日期来自本地
-            <code>vue/CHANGELOG.md</code> 或上游 release/tag，短哈希来自上游
-            commit 链接；不能再声称它们来自本仓库
-            <code>git log</code>。架构趋势是基于这些历史事实与 v3.5.41
-            当前源码作出的解释性归纳。
+            本章实现基于 v3.5.41 快照。发布日期与能力引入引用对应
+            release、commit 或本地
+            <code>vue/CHANGELOG.md</code>；设计取舍由这些变更与当前实现归纳。
           </div>
         </section>
 
         <section class="article-section prose" id="history-evidence">
           <h2>这些实现为什么会一步步变成今天这样</h2>
           <p>
-            每条演进结论先看“证据类型”。<strong>本地事实</strong>可由当前快照直接复核；
-            <strong>上游历史</strong>由 release/tag/commit 定位；<strong
-              >解释性推断</strong
-            >
-            是从多个事实归纳出的设计主题，不伪装成某个 commit message 的原话。
+            下表连接历史变更与当前运行时机制：先定位能力引入，再观察状态、调用边界和提交方式的变化。
           </p>
           <div class="table-wrap">
             <table>
@@ -148,7 +141,7 @@
                 <tr>
                   <th>节点</th>
                   <th>可核验证据</th>
-                  <th>结论性质</th>
+                  <th>运行时含义</th>
                 </tr>
               </thead>
               <tbody>
@@ -160,7 +153,10 @@
                     >；当前
                     <code>renderer.ts / scheduler.ts / runtime-dom</code> 分层
                   </td>
-                  <td>发布日期是上游事实；“承重墙定型”是跨版本解释性推断。</td>
+                  <td>
+                    renderer 持有宿主操作，scheduler 排组件任务，runtime-dom
+                    提供平台适配。
+                  </td>
                 </tr>
                 <tr>
                   <td>3.2 Custom Element</td>
@@ -171,7 +167,8 @@
                     <code>customElement.spec.ts</code>
                   </td>
                   <td>
-                    能力引入是 commit 事实；“适配层承接外部协议”是架构推断。
+                    元素连接、property/attribute 和 Shadow DOM
+                    与组件生命周期衔接。
                   </td>
                 </tr>
                 <tr>
@@ -181,7 +178,7 @@
                       >cb37d0b9f</a
                     >；当前 <code>Suspense.ts</code> 的祖先依赖计数与对应 spec
                   </td>
-                  <td>选项/提交是历史事实；“隔离或向上聚合”是机制解释。</td>
+                  <td>嵌套边界可独立等待，也可向父边界登记一个待完成依赖。</td>
                 </tr>
                 <tr>
                   <td>3.4 后续 scheduler flags</td>
@@ -193,8 +190,8 @@
                     >；当前 <code>SchedulerJobFlags</code>
                   </td>
                   <td>
-                    具体改动由 commits
-                    证明；“表示收敛但语义不变”需结合测试，是推断。
+                    QUEUED、PRE、ALLOW_RECURSE、DISPOSED 在 job
+                    上记录队列成员、阶段、递归与失效状态。
                   </td>
                 </tr>
                 <tr>
@@ -209,8 +206,8 @@
                     >
                   </td>
                   <td>
-                    API
-                    存在与测试是事实；“稳定身份/启动时机/跨容器提交”是共同主题推断。
+                    useId 管理身份，水合策略延后 DOM 认领，Teleport defer
+                    延后目标提交。
                   </td>
                 </tr>
                 <tr>
@@ -222,7 +219,8 @@
                     记录 2026-08-05 与 #14411/#15105 等修复
                   </td>
                   <td>
-                    版本/修复列表是本地事实；“成熟期更关注边界”是对修复分布的解释性推断。
+                    保留水合前输入的 v-model
+                    值，并避免资源敏感属性的水合校正触发副作用。
                   </td>
                 </tr>
               </tbody>
@@ -236,7 +234,7 @@
                 <tr>
                   <th>结论</th>
                   <th>当前源码/测试锚点</th>
-                  <th>证据等级</th>
+                  <th>机制变化</th>
                 </tr>
               </thead>
               <tbody>
@@ -246,7 +244,7 @@
                     <code>runtime-dom/src/apiCustomElement.ts</code> +
                     <code>customElement.spec.ts</code>
                   </td>
-                  <td>当前机制事实 + 架构推断</td>
+                  <td>连接、属性反射、事件与 slot 接入平台协议</td>
                 </tr>
                 <tr>
                   <td>lazy hydration 把触发时机策略化</td>
@@ -254,7 +252,7 @@
                     <code>runtime-core/src/apiAsyncComponent.ts</code> +
                     <code>hydration.spec.ts</code> / e2e hydration strategies
                   </td>
-                  <td>当前机制事实</td>
+                  <td>组件解析后由策略决定水合触发时机</td>
                 </tr>
                 <tr>
                   <td>Suspense 用 pendingId/deps 抗晚到结果</td>
@@ -262,7 +260,7 @@
                     <code>components/Suspense.ts</code> +
                     <code>Suspense.spec.ts</code>
                   </td>
-                  <td>当前机制与测试事实</td>
+                  <td>周期标记拒绝过期结果，依赖计数决定 resolve</td>
                 </tr>
                 <tr>
                   <td>scheduler 位标志保留排序/清理契约</td>
@@ -270,7 +268,7 @@
                     <code>scheduler.ts</code> + <code>scheduler.spec.ts</code>
                   </td>
                   <td>
-                    当前机制事实；“不改变语义”需 commit 前后测试，属受证推断
+                    位标志集中记录入队、递归和失效状态，排序与清理由具体分支落实
                   </td>
                 </tr>
                 <tr>
@@ -279,7 +277,7 @@
                     分别由 renderer fallback、pendingId/job flags、runtime-dom
                     边界、post effects、renderer internals、相邻回归 spec 支撑
                   </td>
-                  <td>全部是本章综合归纳，不是上游原话</td>
+                  <td>从现有实现归纳状态、平台与提交职责</td>
                 </tr>
               </tbody>
             </table>
@@ -359,7 +357,10 @@
               <tbody>
                 <tr>
                   <td><strong>RendererOptions 宿主抽象</strong></td>
-                  <td>core 不知道 DOM，测试和平台实现可替换</td>
+                  <td>
+                    renderer、组件与 Diff 通过宿主接口提交；包内 DOM hydration
+                    是例外
+                  </td>
                   <td>新 namespace、静态内容与 scope id 通过宿主接口扩展</td>
                 </tr>
                 <tr>
@@ -556,11 +557,8 @@ if (overwritingProp &amp;&amp; hasContentChildren(vnode.children)) {
   warn('... will override its children ...')
 }</code></pre>
             <p>
-              上段压缩了条件并省略完整 warn
-              文案，只能帮助先看结构，不能当作源码原文。 上游提交
-              <code>684a8defd</code> 的 diff 中新增段落曾位于 502–519； v3.5.41
-              tag 与本地中文注释快照的实际行号都不同，因此不再把那个 diff 行号
-              当成当前文件行号。下面改用可机器核对的本地连续原文。
+              上段为说明结构的压缩示意，省略完整 warn
+              文案；下面是当前快照的连续源码摘录。
             </p>
             <pre
               data-source-file="vue/packages/runtime-core/src/vnode.ts"
@@ -583,53 +581,53 @@ if (overwritingProp &amp;&amp; hasContentChildren(vnode.children)) {
   }</code></pre>
             <pre
               data-source-file="vue/packages/runtime-core/__tests__/vnode.spec.ts"
-            ><code>  // 测试组：被 innerHTML / textContent 覆盖的子级。
+            ><code>  // 元素的 innerHTML/textContent 与有内容的 children 并用时给出开发警告。
   describe('children overridden by innerHTML / textContent', () =&gt; {
-    // 测试场景：innerHTML/textContent 会覆盖文本 children，因此开发模式需要给出警告。
+    // innerHTML 会覆盖文本 children，因此开发模式给出警告。
     test('warn on text children', () =&gt; {
       createVNode('div', { innerHTML: '&lt;span/&gt;' }, 'hello')
       expect(
-        &#96;The \&#96;innerHTML\&#96; prop on &lt;div&gt; will override its children&#96;,
+        `The \`innerHTML\` prop on &lt;div&gt; will override its children`,
       ).toHaveBeenWarned()
     })
 
-    // 测试场景：对数组子项发出警告。
+    // innerHTML 与非空 children 数组并用时也会警告。
     test('warn on array children', () =&gt; {
       createVNode('div', { innerHTML: '&lt;span/&gt;' }, [createVNode('span')])
       expect(
-        &#96;The \&#96;innerHTML\&#96; prop on &lt;div&gt; will override its children&#96;,
+        `The \`innerHTML\` prop on &lt;div&gt; will override its children`,
       ).toHaveBeenWarned()
     })
 
-    // 测试场景：对 textContent 发出警告。
+    // textContent 与文本 children 并用时给出警告。
     test('warn on textContent', () =&gt; {
       createVNode('div', { textContent: 'text' }, 'hello')
       expect(
-        &#96;The \&#96;textContent\&#96; prop on &lt;div&gt; will override its children&#96;,
+        `The \`textContent\` prop on &lt;div&gt; will override its children`,
       ).toHaveBeenWarned()
     })
 
-    // 测试场景：当props为空时没有警告。
+    // innerHTML/textContent 为 null 或 undefined 时不警告。
     test('no warning when the prop is nullish', () =&gt; {
       createVNode('div', { innerHTML: undefined }, 'hello')
       createVNode('div', { innerHTML: null }, 'hello')
       createVNode('div', { textContent: undefined }, 'hello')
-      expect(&#96;will override its children&#96;).not.toHaveBeenWarned()
+      expect(`will override its children`).not.toHaveBeenWarned()
     })
 
-    // 测试场景：没有可渲染子项时没有警告。
+    // 没有 children、空字符串或空数组都不构成内容冲突。
     test('no warning without renderable children', () =&gt; {
       createVNode('div', { innerHTML: '&lt;span/&gt;' })
       createVNode('div', { innerHTML: '&lt;span/&gt;' }, '')
       createVNode('div', { innerHTML: '&lt;span/&gt;' }, [])
-      expect(&#96;will override its children&#96;).not.toHaveBeenWarned()
+      expect(`will override its children`).not.toHaveBeenWarned()
     })
 
-    // 测试场景：组件 vnode 没有警告。
+    // 组件上的 innerHTML 是普通 prop，不触发元素内容覆盖警告。
     test('no warning for component vnodes', () =&gt; {
       const Comp = { props: ['innerHTML'], render: () =&gt; null }
       createVNode(Comp, { innerHTML: '&lt;span/&gt;' }, { default: () =&gt; 'slot' })
-      expect(&#96;will override its children&#96;).not.toHaveBeenWarned()
+      expect(`will override its children`).not.toHaveBeenWarned()
     })
   })</code></pre>
             <div class="source-links">
@@ -672,8 +670,8 @@ if (overwritingProp &amp;&amp; hasContentChildren(vnode.children)) {
           <div class="sequence">
             <div class="sequence-item">
               <strong>先建立完整正确路径</strong><br />普通 patch
-              是基线；block、patchFlag、LIS 在有证据时缩小工作，遇到 BAIL
-              可回退。
+              是基线；block、patchFlag 缩小比较范围，显式 BAIL
+              等条件退回通用比较。 LIS 在节点匹配后减少移动，不参与 BAIL 判定。
             </div>
             <div class="sequence-item">
               <strong>用身份令牌解决异步过期</strong><br />pendingId、job
@@ -684,8 +682,9 @@ if (overwritingProp &amp;&amp; hasContentChildren(vnode.children)) {
               例外、namespace、Custom Element 生命周期集中在 runtime-dom。
             </div>
             <div class="sequence-item">
-              <strong>副作用推迟到状态稳定</strong><br />mounted、ref、Suspense
-              effects、deferred Teleport 都使用调度阶段而非随意 Promise。
+              <strong>副作用推迟到状态稳定</strong><br />mounted、字符串/Ref
+              对象的非空赋值、Suspense effects、deferred Teleport
+              都使用调度阶段而非随意 Promise。
             </div>
             <div class="sequence-item">
               <strong>组合能力共享少量原语</strong
@@ -760,8 +759,8 @@ git log --all --grep="#14411" --oneline</code></pre>
         <section class="article-section prose" id="evidence-matrix">
           <h2>每条演进结论去哪里核对</h2>
           <p class="source-note">
-            固定版本实跑：Node v24.5.0，<code>vnode.spec.ts</code> 整文件 56 tests
-            passed； 当前版本号与发布日期另由本地
+            固定版本实跑：Node v24.5.0，<code>vnode.spec.ts</code> 整文件 56
+            tests passed； 当前版本号与发布日期另由本地
             <code>package.json / CHANGELOG.md</code> 交叉核对。
           </p>
           <div class="table-wrap">
@@ -785,7 +784,7 @@ git log --all --grep="#14411" --oneline</code></pre>
                   <td>renderer/scheduler/runtime-dom specs</td>
                   <td>
                     <a href="#timeline">六节点时间线</a>；v3.0.0 release
-                    为事实，“承重墙”是解释性推断
+                    与当前分层源码
                   </td>
                 </tr>
                 <tr>
@@ -838,7 +837,7 @@ git log --all --grep="#14411" --oneline</code></pre>
                   <td>各机制相邻 spec</td>
                   <td>
                     <a href="#evolution-patterns">六模式序列图</a
-                    >；综合推断，不声称为单个提交原话
+                    >；从现有实现归纳职责与状态边界
                   </td>
                 </tr>
               </tbody>

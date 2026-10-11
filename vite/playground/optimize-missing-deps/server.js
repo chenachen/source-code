@@ -3,9 +3,12 @@ import fs from 'node:fs'
 import path from 'node:path'
 import express from 'express'
 
+/** Vitest 环境标记；用于日志级别及是否自动启动独立 HTTP 监听器。 */
 const isTest = process.env.VITEST
 
+/** 创建 Express 应用并挂载 Vite，SSR 加载 main 后将 client 模块脚本注入响应，构造缺失依赖发现时机。 */
 export async function createServer(root = process.cwd(), hmrPort) {
+  /** 以本 server.js 所在目录解析模板路径，使启动 cwd 不影响 fixture 的模板读取。 */
   const resolve = (p) => path.resolve(import.meta.dirname, p)
 
   const app = express()
@@ -33,11 +36,10 @@ export async function createServer(root = process.cwd(), hmrPort) {
       let template = fs.readFileSync(resolve('index.html'), 'utf-8')
       template = await vite.transformIndexHtml(req.originalUrl, template)
 
-      // `main.js` imports dependencies that are yet to be discovered and optimized, aka "missing" deps.
-      // Loading `main.js` in SSR should not trigger optimizing the "missing" deps
+      // main.js 引用尚未被 client 扫描发现的依赖；SSR 加载不应触发 client 优化器发现。
       const { name } = await vite.ssrLoadModule('./main.js')
 
-      // Loading `main.js` in the client should trigger optimizing the "missing" deps
+      // 页面 client 脚本加载 main.js 时，应触发缺失依赖发现与预构建。
       const appHtml = `<div id="app">${name}</div>
 <script type='module'>
   import { name } from './main.js'

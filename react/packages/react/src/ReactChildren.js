@@ -101,6 +101,11 @@ function getElementKey(element: any, index: number): string {
  *
  * 已兑现时返回值，已拒绝时抛错误，等待时抛 Thenable 交给上层 Suspense。安装监听后再次
  * 检查状态，以覆盖会在 `then` 注册期间同步落定的 Thenable。
+ * @param thenable - 待作为 children 解包的异步对象；状态字段可能由 React 或 Flight 提供。
+ * @returns 已 fulfilled 的 value；rejected 抛 reason，未落定抛原 thenable 作为挂起信号。
+ * @remarks 自行插桩时先写 pending，再订阅；两个回调只在仍为 pending 时写终态，
+ * 防止多次结算覆盖结果。读取字段、给冻结对象写状态或 then 注册抛错都直接传播；
+ * 没有独立 WeakMap 状态表，也不生成新的 Promise 或提供取消/超时机制。
  */
 function resolveThenable<T>(thenable: Thenable<T>): T {
   switch (thenable.status) {
@@ -114,12 +119,12 @@ function resolveThenable<T>(thenable: Thenable<T>): T {
     }
     default: {
       if (typeof thenable.status === 'string') {
-        // 仅在 `status` 未定义时写入探查字段。若存在未知字符串，说明用户态实现已经插桩，
-        // 此处保守地按等待态处理。仍挂空监听以触发惰性初始化，例如 Flight 只在真正 await
+        // 已有字符串 `status` 时保留用户态插桩。若字符串不是 fulfilled/rejected，
+        // 此处按等待态处理。仍挂空监听以触发惰性初始化，例如 Flight 只在真正订阅
         // 值时才解析 JSON。
         thenable.then(noop, noop);
       } else {
-        // 首次遇到未缓存的 Thenable：先标记等待态，再用回调原地写入唯一终态。
+        // 没有字符串状态时由 React 安装探查字段：先标记等待态，再用回调写入终态。
 
         // TODO：检测未缓存 Promise 导致的无限 ping 循环。
 
@@ -164,8 +169,17 @@ function resolveThenable<T>(thenable: Thenable<T>): T {
  * 深度优先遍历 children，把叶节点映射、展平并写入目标数组，同时返回叶节点计数。
  *
  * `nameSoFar` 表示输入树路径，`escapedPrefix` 表示映射回调额外产生的路径；两者同时保留，
- * 可使嵌套数组和回调返回元素的 key 在结构变化后仍保持稳定。Lazy 与 Thenable 会先解析再
- * 递归，等待态则通过抛出 Wakeable 把控制权交给 Suspense。
+ * 让映射结果保留原层级路径和新增 key；没有显式 key 的位置仍依赖索引，移动时路径会变化。
+ * Lazy 与 Thenable 会先解析再递归；等待时抛出异步对象，在 render 内可交给 Suspense 处理。
+ * @param children - 当前输入子树；数组/同步 iterable 递归，element/portal 作为叶，不进入其 props.children。
+ * @param array - 映射结果共享数组；只对回调返回的数组继续展平，其他非空返回值直接追加。
+ * @param escapedPrefix - 映射额外产生的 key 路径前缀，区别于原输入层级。
+ * @param nameSoFar - 原输入树到当前位置的编码路径，用显式 key 或索引建立同级身份。
+ * @param callback - 每个叶的转换规则，空叶也以 null 调用；映射成空值仍计一个输入叶。
+ * @returns 当前输入子树的叶数，不是输出数组长度；多个返回节点仍来自一个输入叶。
+ * @remarks 数组空槽/undefined/boolean 都计入叶遍历，顶层 null/undefined 是否进入由
+ * mapChildren 决定。函数、symbol 等未识别原始值不调用 callback。Map 只发 DEV 告警，
+ * 随后仍按 entries 的嵌套结构遍历；迭代或回调中断时没有 try/finally 调用 iterator.return。
  */
 function mapIntoArray(
   children: ?ReactNodeList,
@@ -398,6 +412,8 @@ function mapChildren(
  *
  * @param children 待遍历的子节点树。
  * @returns 按 `Children` 遍历语义计算的叶节点数量。
+ * @remarks 数组中的空值也计数，element/portal 不展开自身子树；顶层 null/undefined 为 0。
+ * 映射回调返回值不会影响计数，lazy/thenable 的解析失败或挂起仍向调用方传播。
  */
 function countChildren(children: ?ReactNodeList): number {
   let n = 0;
@@ -442,6 +458,8 @@ function forEachChildren(
  * 展平通常来自 `props.children` 的子节点树，并返回已经正确重写 key 的数组。
  *
  * 参考：https://reactjs.org/docs/react-api.html#reactchildrentoarray
+ * @param children - 可能嵌套的输入节点序列，沿用 mapChildren 的叶遍历与异常语义。
+ * @returns 新的扁平结果数组；空叶被身份映射后过滤，空输入也总返回 []。
  */
 function toArray(children: ?ReactNodeList): Array<React$Node> {
   return mapChildren(children, child => child) || [];

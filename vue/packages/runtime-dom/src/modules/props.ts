@@ -48,7 +48,8 @@ export function patchDOMProp(
     if (value == null) {
       el.removeAttribute(key)
     }
-    // DOM value 必然字符串化；`_value` 保留原始对象/数字供 v-model 严格取值比较。
+    // DOM value 会字符串化；`_value` 保留原始绑定值供 v-model 读回。
+    // 选中比较由控件与 model 类型决定：Array/单选可用宽松比较，Set 使用 Set.has。
     el._value = value
     return
   }

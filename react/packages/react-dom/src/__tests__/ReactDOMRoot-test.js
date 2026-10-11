@@ -41,14 +41,7 @@ describe('ReactDOMRoot', () => {
     waitForAll = InternalTestUtils.waitForAll;
   });
 
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「renders children」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言连接 ReactDOM 公开入口、ReactDOMRoot 根生命周期及 DOM 提交结果。
-   */
+  /** 空容器createRoot后render div/Hi，再waitForAll；文字Hi，验证root.render异步工作提交。 */
   it('renders children', async () => {
     const root = ReactDOMClient.createRoot(container);
     root.render(<div>Hi</div>);
@@ -56,7 +49,7 @@ describe('ReactDOMRoot', () => {
     expect(container.textContent).toEqual('Hi');
   });
 
-  /** 测试场景：验证「warns if a callback parameter is provided to render」描述的渲染、交互或错误处理结果。 */
+  /** root.render传第二参数jest callback；DEV提示不支持，工作完成后callback零次，验证额外回调被忽略。 */
   it('warns if a callback parameter is provided to render', async () => {
     const callback = jest.fn();
     const root = ReactDOMClient.createRoot(container);
@@ -69,9 +62,10 @@ describe('ReactDOMRoot', () => {
     expect(callback).not.toHaveBeenCalled();
   });
 
-  /** 测试场景：验证「warn if a object is passed to root.render(...)」描述的渲染、交互或错误处理结果。 */
+  /** root.render传<App/>和普通对象第二参数；DEV提示只接受一参数，验证参数误用诊断；本例不等待最终DOM。 */
   it('warn if a object is passed to root.render(...)', async () => {
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 返回Child文字的组件，仅用于root.render第二参数普通对象诊断。 */
     function App() {
       return 'Child';
     }
@@ -84,9 +78,10 @@ describe('ReactDOMRoot', () => {
     ]);
   });
 
-  /** 测试场景：验证「warn if a container is passed to root.render(...)」描述的渲染、交互或错误处理结果。 */
+  /** root.render传<App/>和已提供容器第二参数；DEV提示不必再次传容器，验证旧render调用形式诊断。 */
   it('warn if a container is passed to root.render(...)', async () => {
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 返回Child文字，额外容器参数与组件实现无关。 */
     function App() {
       return 'Child';
     }
@@ -100,7 +95,7 @@ describe('ReactDOMRoot', () => {
     ]);
   });
 
-  /** 测试场景：验证「warns if a callback parameter is provided to unmount」描述的渲染、交互或错误处理结果。 */
+  /** root先render再unmount(callback)；DEV提示不支持回调且callback零次，验证卸载参数校验。 */
   it('warns if a callback parameter is provided to unmount', async () => {
     const callback = jest.fn();
     const root = ReactDOMClient.createRoot(container);
@@ -114,7 +109,7 @@ describe('ReactDOMRoot', () => {
     expect(callback).not.toHaveBeenCalled();
   });
 
-  /** 测试场景：验证「unmounts children」描述的渲染、交互或错误处理结果。 */
+  /** root提交Hi后unmount，再等待；容器文字空，验证根卸载移除子内容。 */
   it('unmounts children', async () => {
     const root = ReactDOMClient.createRoot(container);
     root.render(<div>Hi</div>);
@@ -125,7 +120,7 @@ describe('ReactDOMRoot', () => {
     expect(container.textContent).toEqual('');
   });
 
-  /** 测试场景：验证「can be immediately unmounted」描述的渲染、交互或错误处理结果。 */
+  /** createRoot后从未render即在act内unmount；成功无异常，验证空根清理。 */
   it('can be immediately unmounted', async () => {
     const root = ReactDOMClient.createRoot(container);
     await act(() => {
@@ -133,7 +128,7 @@ describe('ReactDOMRoot', () => {
     });
   });
 
-  /** 测试场景：验证「supports hydration」描述的渲染、交互或错误处理结果。 */
+  /** 服务端span有extra class而客户端无；createRoot模式重建无hydration诊断，hydrateRoot模式DEV给不会修属性的差异消息，验证两入口区别；本例未断言最终class值。 */
   it('supports hydration', async () => {
     const markup = await new Promise(resolve =>
       resolve(
@@ -187,7 +182,7 @@ describe('ReactDOMRoot', () => {
     ]);
   });
 
-  /** 测试场景：验证「clears existing children」描述的渲染、交互或错误处理结果。 */
+  /** 容器预置a/b两div，createRoot渲染c/d后更新d/c；文字cd→dc，验证首次清旧内容与后续正常更新。 */
   it('clears existing children', async () => {
     container.innerHTML = '<div>a</div><div>b</div>';
     const root = ReactDOMClient.createRoot(container);
@@ -209,14 +204,14 @@ describe('ReactDOMRoot', () => {
     expect(container.textContent).toEqual('dc');
   });
 
-  /** 测试场景：验证「throws a good message on invalid containers」描述的渲染、交互或错误处理结果。 */
+  /** 把React JSX元素当createRoot容器；同步抛Target container错误，验证必须DOM节点。 */
   it('throws a good message on invalid containers', () => {
     expect(() => {
       ReactDOMClient.createRoot(<div>Hi</div>);
     }).toThrow('Target container is not a DOM element.');
   });
 
-  /** 测试场景：验证「warns when creating two roots managing the same container」描述的渲染、交互或错误处理结果。 */
+  /** 同容器连续createRoot两次；DEV提示复用已有root.render，验证容器根标记诊断。 */
   it('warns when creating two roots managing the same container', () => {
     ReactDOMClient.createRoot(container);
     ReactDOMClient.createRoot(container);
@@ -227,7 +222,7 @@ describe('ReactDOMRoot', () => {
     ]);
   });
 
-  /** 测试场景：验证「does not warn when creating second root after first one is unmounted」描述的渲染、交互或错误处理结果。 */
+  /** 首根unmount后再同容器createRoot；无未消费警告，验证卸载清根标记。 */
   it('does not warn when creating second root after first one is unmounted', async () => {
     const root = ReactDOMClient.createRoot(container);
     root.unmount();
@@ -235,24 +230,24 @@ describe('ReactDOMRoot', () => {
     ReactDOMClient.createRoot(container); // 无警告
   });
 
-  /** 测试场景：验证「warns if creating a root on the document.body」描述的渲染、交互或错误处理结果。 */
+  /** 当前createRoot(document.body)成功且无诊断，旧标题warns仅历史遗留，验证body容器可用。 */
   it('warns if creating a root on the document.body', async () => {
-    // 我们不再期望在浮点数启用时出现错误。
+    // 当前允许 document.body 作为根容器；本例保留历史名称，但不期望告警。
     ReactDOMClient.createRoot(document.body);
   });
 
-  /** 测试场景：验证「warns if updating a root that has had its contents removed」描述的渲染、交互或错误处理结果。 */
+  /** 已提交Hi后外部innerHTML清空，再render同形div；当前无旧内容移除诊断。本例不等待或断言DOM修复，验证同步告警行为边界。 */
   it('warns if updating a root that has had its contents removed', async () => {
     const root = ReactDOMClient.createRoot(container);
     root.render(<div>Hi</div>);
     await waitForAll([]);
     container.innerHTML = '';
 
-    // 任一标志开启都会关闭此验证，因此这里预期没有警告。
+    // 外部清空 DOM 后再次传入相同元素；当前实现不发出旧的内容移除告警。
     root.render(<div>Hi</div>);
   });
 
-  /** 测试场景：验证「should render different components in same root」描述的渲染、交互或错误处理结果。 */
+  /** 同根先div后span；各act后nodeName对应，验证可更换宿主类型。 */
   it('should render different components in same root', async () => {
     document.body.appendChild(container);
     const root = ReactDOMClient.createRoot(container);
@@ -268,7 +263,7 @@ describe('ReactDOMRoot', () => {
     expect(container.firstChild.nodeName).toBe('SPAN');
   });
 
-  /** 测试场景：验证「should not warn if mounting into non-empty node」描述的渲染、交互或错误处理结果。 */
+  /** 非空容器有div，再createRoot并act渲染div；无警告且仅恒真断言，验证可挂到非空容器，不证明原节点身份复用。 */
   it('should not warn if mounting into non-empty node', async () => {
     container.innerHTML = '<div></div>';
     const root = ReactDOMClient.createRoot(container);
@@ -279,7 +274,7 @@ describe('ReactDOMRoot', () => {
     expect(true).toBe(true);
   });
 
-  /** 测试场景：验证「should reuse markup if rendering to the same target twice」描述的渲染、交互或错误处理结果。 */
+  /** 同根两次render相同div；firstChild对象相同，验证同类型无key变化复用宿主。 */
   it('should reuse markup if rendering to the same target twice', async () => {
     const root = ReactDOMClient.createRoot(container);
     await act(() => {
@@ -293,9 +288,10 @@ describe('ReactDOMRoot', () => {
     expect(firstElm).toBe(container.firstChild);
   });
 
-  /** 测试场景：验证「should unmount and remount if the key changes」描述的渲染、交互或错误处理结果。 */
+  /** Component effect记录Mount/Unmount，key A orange→B green→B blue；首次Mount、换key Unmount/Mount、同key无effect日志，验证key控制重建。 */
   it('should unmount and remount if the key changes', async () => {
-    /** `Component`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 输出text的span并在一次性effect记Mount/清理记Unmount，通过key变化观察重建、同key更新不重复effect。 */
     function Component({text}) {
       useEffect(() => {
         Scheduler.log('Mount');
@@ -331,7 +327,7 @@ describe('ReactDOMRoot', () => {
     assertLog([]);
   });
 
-  /** 测试场景：验证「throws if unmounting a root that has had its contents removed」描述的渲染、交互或错误处理结果。 */
+  /** 已提交div后外部清空容器再root.unmount；act拒绝NotFound删除错误，验证React记录与DOM被外部删除后的清理异常。 */
   it('throws if unmounting a root that has had its contents removed', async () => {
     const root = ReactDOMClient.createRoot(container);
     await act(() => {
@@ -346,7 +342,7 @@ describe('ReactDOMRoot', () => {
     }).rejects.toThrow('The node to be removed is not a child of this node.');
   });
 
-  /** 测试场景：验证「unmount is synchronous」描述的渲染、交互或错误处理结果。 */
+  /** root已提交Hi，act callback内unmount之后立即读文字为空，验证卸载同步可见而不必等act结束。 */
   it('unmount is synchronous', async () => {
     const root = ReactDOMClient.createRoot(container);
     await act(() => {
@@ -361,7 +357,7 @@ describe('ReactDOMRoot', () => {
     });
   });
 
-  /** 测试场景：验证「throws if an unmounted root is updated」描述的渲染、交互或错误处理结果。 */
+  /** 卸载root后再次render文字；同步抛Cannot update an unmounted root，验证公开root失效状态。 */
   it('throws if an unmounted root is updated', async () => {
     const root = ReactDOMClient.createRoot(container);
     await act(() => {
@@ -376,14 +372,14 @@ describe('ReactDOMRoot', () => {
     );
   });
 
-  /** 测试场景：验证「warns if root is unmounted inside an effect」描述的渲染、交互或错误处理结果。 */
+  /** root1 App.step1→2，其effect调用另一个空root2.unmount；flushSync触发DEV重入卸载诊断，验证React正在提交/effect期间不能完成嵌套同步卸载。 */
   it('warns if root is unmounted inside an effect', async () => {
     const container1 = document.createElement('div');
     const root1 = ReactDOMClient.createRoot(container1);
     const container2 = document.createElement('div');
     const root2 = ReactDOMClient.createRoot(container2);
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 按step effect在2时卸载另一个root，构造React执行effect期间的同步卸载重入。 */
     function App({step}) {
       useEffect(() => {
         if (step === 2) {
@@ -410,7 +406,8 @@ describe('ReactDOMRoot', () => {
   });
 
   // @gate disableCommentsAsDOMContainers
-  /** 测试场景：验证「errors if container is a comment node」描述的渲染、交互或错误处理结果。 */
+
+  /** 禁用Comment容器功能时，用特定标记comment给createRoot/hydrateRoot；两入口均抛无效容器，验证构建feature对Node类型的限制。 */
   it('errors if container is a comment node', () => {
     // 这是一个老功能, 在开源构建中被禁用.
     const div = document.createElement('div');
@@ -425,7 +422,7 @@ describe('ReactDOMRoot', () => {
     );
   });
 
-  /** 测试场景：验证「warn if no children passed to hydrateRoot」描述的渲染、交互或错误处理结果。 */
+  /** hydrateRoot只给容器不给初始children；DEV提示必须第二参数，验证显式水合初始化要求。 */
   it('warn if no children passed to hydrateRoot', async () => {
     ReactDOMClient.hydrateRoot(container);
     assertConsoleErrorDev([
@@ -434,9 +431,10 @@ describe('ReactDOMRoot', () => {
     ]);
   });
 
-  /** 测试场景：验证「warn if JSX passed to createRoot」描述的渲染、交互或错误处理结果。 */
+  /** createRoot的options位置传<App/> JSX；DEV提示应使用root.render，验证入口职责误用。 */
   it('warn if JSX passed to createRoot', async () => {
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 仅返回Child，作为误传createRoot options的JSX元素类型。 */
     function App() {
       return 'Child';
     }
@@ -451,9 +449,10 @@ describe('ReactDOMRoot', () => {
     ]);
   });
 
-  /** 测试场景：验证「warns when given a function」描述的渲染、交互或错误处理结果。 */
+  /** root.render直接传Component函数而非元素；flushSync DEV诊断函数不是合法child，验证函数值不会自动当组件执行。 */
   it('warns when given a function', () => {
-    /** `Component`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 普通函数组件返回div，但测试故意传函数本身给root.render，应被child类型校验拒绝。 */
     function Component() {
       return <div />;
     }
@@ -471,7 +470,7 @@ describe('ReactDOMRoot', () => {
     ]);
   });
 
-  /** 测试场景：验证「warns when given a symbol」描述的渲染、交互或错误处理结果。 */
+  /** root.render(Symbol(foo))；flushSync DEV诊断symbol不是合法child，验证顶层非法类型。 */
   it('warns when given a symbol', () => {
     const root = ReactDOMClient.createRoot(document.createElement('div'));
 

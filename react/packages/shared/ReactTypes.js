@@ -14,7 +14,7 @@ export type {ReactOptimisticKey};
 /** React 元素 key 的内部规范化形态；`null` 表示未显式指定身份。 */
 export type ReactKey = null | string | ReactOptimisticKey;
 
-/** renderer 可接收的非空 React 子节点集合。 */
+/** 跨包描述 React 子节点的联合；ReactFragment 分支也包含空值。 */
 export type ReactNode =
   | React$Element<any>
   | ReactPortal
@@ -101,7 +101,7 @@ export type ReactContext<T> = {
   _currentValue: T,
   /** 次 renderer 当前生效的值。 */
   _currentValue2: T,
-  /** 并发 server renderer 为该 Context 分配的线程槽计数。 */
+  /** 为服务端并发 renderer 预留的线程计数；当前创建点初始化为 0，尚无递增消费路径。 */
   _threadCount: number,
   /** 开发期记录占用主值槽的 renderer，用于检测不支持的并发 renderer。 */
   _currentRenderer?: Object | null,
@@ -137,7 +137,13 @@ export type ReactScope = {
   $$typeof: symbol | number,
 };
 
-/** 判断某个宿主实例是否满足 Scope 查询条件。 */
+/**
+ * 判断 Scope 遍历到的某个宿主实例是否满足查询条件。
+ * @param type - 宿主类型名，如 DOM renderer 中的标签名。
+ * @param props - 该宿主 Fiber 的 props，供谓词检查属性而非重新渲染。
+ * @param instance - renderer 的公开宿主实例，具体形状由宿主决定。
+ * @returns true 时纳入查询结果，false 时忽略当前节点并继续既定遍历。
+ */
 export type ReactScopeQuery = (
   type: string,
   props: {
@@ -149,11 +155,11 @@ export type ReactScopeQuery = (
 
 /** renderer 为已挂载 Scope 暴露的受限查询接口。 */
 export type ReactScopeInstance = {
-  /** 返回所有满足查询的后代宿主节点；Scope 不可用时返回 `null`。 */
+  /** 以传入谓词检查 Scope 后代宿主节点，返回全部公开实例；不可用或无命中时为 null。 */
   DO_NOT_USE_queryAllNodes(ReactScopeQuery): null | Array<Object>,
-  /** 返回首个满足查询的后代宿主节点。 */
+  /** 以传入谓词检查 Scope 后代宿主节点，命中首个即返回其公开实例；无命中时为 null。 */
   DO_NOT_USE_queryFirstNode(ReactScopeQuery): null | Object,
-  /** 判断宿主节点是否属于该 Scope 子树。 */
+  /** 用传入公开宿主实例查找内部归属，返回它是否处于该 Scope 子树。 */
   containsNode(Object): boolean,
   /** 读取 Scope 后代中指定 Context 的所有可见值。 */
   getChildContextValues: <T>(context: ReactContext<T>) => Array<T>,
@@ -165,7 +171,10 @@ export type ReactScopeInstance = {
  * @remarks fulfillment/rejection 回调都不要求接收值，只承担“可重试”通知。
  */
 export interface Wakeable {
-  /** 注册完成或失败后的重试通知；返回同类 Wakeable 也被接受。 */
+  /**
+   * 注册 fulfillment/rejection 两个无值重试通知；renderer 对成功和失败都重新尝试读取。
+   * 通知只表示等待结束，不把原始结果写入 Fiber；可返回 void 或另一个 Wakeable。
+   */
   then(onFulfill: () => mixed, onReject: () => mixed): void | Wakeable;
 }
 
@@ -176,7 +185,7 @@ export interface Wakeable {
  * 不要求返回可链式结果。
  */
 interface ThenableImpl<T> {
-  /** 注册值解析或失败回调。 */
+  /** 注册接收解析值和拒绝原因的回调；renderer 可能据此写 status/value/reason 缓存。 */
   then(
     onFulfill: (value: T) => mixed,
     onReject: (error: mixed) => mixed,
@@ -200,9 +209,9 @@ export interface PendingThenable<T> extends ThenableImpl<T> {
   _debugInfo?: null | ReactDebugInfo;
 }
 
-/** 弱等待状态的 Thenable；允许不因等待关系强持有异步资源。 */
+/** Flight 的弱等待 Thenable；其未完成状态不会独自维持响应流。 */
 export interface WeakPendingThenable<T> extends ThenableImpl<T> {
-  /** 区分普通 pending 与弱引用等待。 */
+  /** 区分普通 pending 与不阻止 Flight 响应结束的等待。 */
   status: 'pending_weak';
   /** 可选开发期异步调试链。 */
   _debugInfo?: null | ReactDebugInfo;
@@ -493,7 +502,14 @@ export type GestureOptionsRequired = {
   rangeEnd: number,
 };
 
-/** ViewTransition 边界的 class 规则与生命周期回调。 */
+/**
+ * ViewTransition 边界的 class 规则与动画开始回调。
+ * @remarks 普通回调的 instance 是 renderer 的公开 transition 实例，types 是本批激活
+ * transition type 的数组，无类型时为空数组。返回 cleanup 会挂到宿主 transition
+ * 完成通知，成功或失败落定均可触发；这与组件卸载的 effect 清理生命周期不同。
+ * 手势回调另接收 gesture provider timeline 和已补全的 rangeStart/rangeEnd 区间，
+ * 宿主用该区间映射动画进度；shared 保持 timeline/instance 为不透明类型。
+ */
 export type ViewTransitionProps = {
   /** 用于匹配共享 transition 的可选名称。 */
   name?: string,
@@ -604,7 +620,10 @@ export type SuspenseProps = {
   /** 主子树挂起时可显示的替代内容。 */
   fallback?: ReactNodeList,
 
-  /** TODO：该实验回调是否应增加 `unstable_` 前缀仍未确定。 */
+  /**
+   * 提交 fallback 时接收该边界记录的 Wakeable 集合；集合描述等待来源，不是解析结果。
+   * 返回值不作为子树或状态使用。TODO：是否应增加 unstable_ 前缀仍未确定。
+   */
   suspenseCallback?: (Set<Wakeable> | null) => mixed,
 
   /** 提示协调器优先寻找外层 fallback，属于不稳定选项。 */
@@ -683,11 +702,18 @@ export type CacheProps = {
 /** Profiler 回调区分首次挂载、普通更新与嵌套更新的阶段。 */
 export type ProfilerPhase = 'mount' | 'update' | 'nested-update';
 
-/** Profiler 边界的标识、时长回调与被测子树。 */
+/**
+ * Profiler 边界的标识、时长回调与被测子树。
+ * @remarks 时间值都以 Scheduler 相对时钟的毫秒表示；一次提交中的边界共享 commitTime。
+ * actualDuration 是本次实际 render 计时，baseDuration 是子树最近记录的完整 render
+ * 基准估计。onCommit 的 effectDuration 累计被计时的 mutation/layout 工作，包括
+ * layout effect、类生命周期、函数 ref 及其清理；它不等于整次 commit 墙钟耗时，
+ * 也不包含随后执行的 passive effects。只有启用对应 profiling 构建能力才报告。
+ */
 export type ProfilerProps = {
   /** 传回所有 Profiler 回调的调用方标识。 */
   id?: string,
-  /** render 完成时接收实际/基准耗时与时间戳。 */
+  /** 子树提交时接收本次 render 的实际/基准耗时与时间戳。 */
   onRender?: (
     id: void | string,
     phase: ProfilerPhase,

@@ -41,7 +41,7 @@ import {textEncoder} from 'react-server/src/ReactServerStreamConfigNode';
 import {ensureCorrectIsomorphicReactVersion} from '../shared/ensureCorrectIsomorphicReactVersion';
 ensureCorrectIsomorphicReactVersion();
 
-/** 可统一配置 nonce，也可分别配置脚本与样式 nonce。 */
+/** 字符串仅配置脚本nonce；对象分别配置script/style，字符串不配置样式nonce。 */
 type NonceOption =
   | string
   | {
@@ -63,7 +63,7 @@ type Options = {
   bootstrapScripts?: Array<string | BootstrapScriptDescriptor>,
   /** 需要生成 module script 标签的启动资源。 */
   bootstrapModules?: Array<string | BootstrapScriptDescriptor>,
-  /** Fizz 渐进输出采用的目标 chunk 大小。 */
+  /** 决定已完成 Suspense 边界是否单独输出的字节阈值；不是流中每个 chunk 的固定大小。 */
   progressiveChunkSize?: number,
   /** 调用方用于取消预渲染请求的信号。 */
   signal?: AbortSignal,
@@ -77,7 +77,7 @@ type Options = {
   importMap?: ImportMap,
   /** 在开始正文前接收协议生成的原始 header 描述符。 */
   onHeaders?: (headers: HeadersDescriptor) => void,
-  /** 允许 Fizz 收集的 headers 总长度上限。 */
+  /** Link 提示头的 UTF-16 码元预算；不等同于 HTTP 头 UTF-8 字节数。 */
   maxHeadersLength?: number,
 };
 
@@ -91,7 +91,9 @@ type StaticResult = {
 
 /**
  * 把 Web ReadableStream controller 伪装成 Node Writable 协议。
- * Node host config 只认识 Writable；此桥接编码字符串并转发 enqueue/close/error。
+ * Node host config只认识Writable；此桥接把字符串以TextEncoder转Uint8Array，二进制块原样
+ * enqueue，end/error转controller关闭/错误。write恒true，不用desiredSize控制布尔背压，
+ * 因此pull触发后可以继续入队本轮完整输出；取消由外层cancel先停destination再abort。
  */
 function createFakeWritableFromReadableStreamController(
   controller: ReadableStreamController,
@@ -124,7 +126,7 @@ function createFakeWritableFromReadableStreamController(
   } as any;
 }
 
-/** 把 Node Readable 的 push/destroy 接口桥接成 host config 需要的 Writable。 */
+/** 以Node Readable的push/destroy伪装Writable；push(chunk)的false交给Fizz暂停destination，read再startFlowing恢复。end推null结束，destroy(error)让Readable报错；桥本身不注册消费者close/destroy到request.abort。 */
 function createFakeWritableFromReadable(readable: any): Writable {
   // 当前 host config 需要 Writable，因此用 Readable 的反向 push 接收服务端输出。
   return {
@@ -146,7 +148,10 @@ function createFakeWritableFromReadable(readable: any): Writable {
 /**
  * 等待全部可预渲染内容就绪，再返回 Node Readable 与 postponed state。
  * 本文件只负责 Node stream/DOM host config 适配；完整 Fizz 预渲染状态机位于范围外的
- * `react-server`。Readable 的 read 回调按下游需求启动写出，保留 Node 背压语义。
+ * `react-server`。onAllReady才创建Readable与延期快照，read按下游需求启动写出，
+ * push=false会暂停Fizz写出，后续read重新接回。结果Promise就绪不等于流已读完。
+ * 本Node入口未为Readable的close/destroy添加abort回调；外部signal中止仍交给request，
+ * 信号监听只在abort触发后移除，正常完成未在此处清理。
  */
 function prerenderToNodeStream(
   children: ReactNodeList,
@@ -205,7 +210,7 @@ function prerenderToNodeStream(
       if (signal.aborted) {
         abort(request, (signal as any).reason);
       } else {
-        /** 只处理一次 abort，并立即注销监听器，避免 request 被信号长期引用。 */
+        /** 信号触发 abort 后移除本监听器，避免同一监听器再次中止请求。 */
         const listener = () => {
           abort(request, (signal as any).reason);
           signal.removeEventListener('abort', listener);
@@ -220,7 +225,9 @@ function prerenderToNodeStream(
 /**
  * 在 Node 构建中把静态预渲染结果适配为 Web ReadableStream。
  * 与 Node stream 入口共享 Fizz 请求配置，但通过 controller/Writable 桥提供 Web Streams
- * 的 start/pull/cancel 生命周期，并把 header 描述符转换为 Web Headers。
+ * 的start/pull/cancel生命周期，并把header描述符转换为Web Headers。
+ * start只准备桥，onAllReady交付后pull才写出；桥write恒true，未采用Node push式背压。
+ * cancel先stopFlowing再abort，fatal在交付前拒绝结果、写出后由controller体现。
  */
 function prerender(
   children: ReactNodeList,
@@ -312,7 +319,7 @@ function prerender(
       if (signal.aborted) {
         abort(request, (signal as any).reason);
       } else {
-        /** 只处理一次 abort，并立即注销监听器，避免 request 被信号长期引用。 */
+        /** 信号触发 abort 后移除本监听器，避免同一监听器再次中止请求。 */
         const listener = () => {
           abort(request, (signal as any).reason);
           signal.removeEventListener('abort', listener);
@@ -338,7 +345,10 @@ type ResumeOptions = {
 
 /**
  * 从 postponed state 继续预渲染，并以 Node Readable 返回本轮内容。
- * 恢复请求复用序列化 state；Readable/Writable 桥继续承载 Node 背压。
+ * 从postponedState复用resumableState、用undefined nonce创建新renderState；只读取
+ * signal/onError/onBrowserBailout，新的options不重选根格式或bootstrap。
+ * onAllReady才交付新延期快照，Readable/Writable桥继续承载Node push背压；消费者
+ * destroy没有专门接到abort，信号监听清理边界与首次Node预渲染相同。
  */
 function resumeAndPrerenderToNodeStream(
   children: ReactNodeList,
@@ -382,7 +392,7 @@ function resumeAndPrerenderToNodeStream(
       if (signal.aborted) {
         abort(request, (signal as any).reason);
       } else {
-        /** 只处理一次 abort，并立即注销监听器，避免恢复 request 被信号长期引用。 */
+        /** 信号触发 abort 后移除本监听器，避免同一监听器再次中止恢复请求。 */
         const listener = () => {
           abort(request, (signal as any).reason);
           signal.removeEventListener('abort', listener);
@@ -396,7 +406,10 @@ function resumeAndPrerenderToNodeStream(
 
 /**
  * 从 postponed state 继续预渲染，并以 Web ReadableStream 返回本轮内容。
- * start/pull/cancel 通过 Writable 桥连接恢复 request，继续保持禁止 nonce 的静态协议。
+ * 从postponedState复用resumableState并创建新renderState，nonce固定undefined；
+ * 类型Omit限制nonce，运行时未对多余字段抛错。onAllReady交付新延期快照及Web流，
+ * start准备恒true写入桥，pull连接request，cancel依次stopFlowing/abort；消费背压
+ * 不经Node push实现。options仅取signal和两种错误回调，信号监听正常完成时未清理。
  */
 function resumeAndPrerender(
   children: ReactNodeList,
@@ -462,7 +475,7 @@ function resumeAndPrerender(
       if (signal.aborted) {
         abort(request, (signal as any).reason);
       } else {
-        /** 只处理一次 abort，并立即注销监听器，避免恢复 request 被信号长期引用。 */
+        /** 信号触发 abort 后移除本监听器，避免同一监听器再次中止恢复请求。 */
         const listener = () => {
           abort(request, (signal as any).reason);
           signal.removeEventListener('abort', listener);

@@ -3,7 +3,8 @@ import { createServer } from 'vite'
 import { expect, test } from 'vitest'
 import { getBgColor, getColor, isServe, page, ports } from '~utils'
 
-// Regression test for https://github.com/vitejs/vite/issues/4000
+// 回归场景：https://github.com/vitejs/vite/issues/4000
+/** 场景：仅开发执行：另以 tailwind fixture 为 root 启动专属服务器；导航并核对 PostCSS 插件生成的背景 oklch 与文字 rgb，finally 关闭。 */
 test.runIf(isServe)('postcss plugins in different dir', async () => {
   const port = ports['css/postcss-plugins-different-dir']
   const server = await createServer({
@@ -14,7 +15,7 @@ test.runIf(isServe)('postcss plugins in different dir', async () => {
       strictPort: true,
     },
     build: {
-      // skip transpilation during tests to make it faster
+      // 目标为 esnext，测试聚焦 PostCSS 配置而无需语法降级。
       target: 'esnext',
     },
   })

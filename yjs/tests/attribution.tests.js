@@ -1,7 +1,7 @@
 /**
- * 本文件验证 attribution/RDT 行为及编解码、集成兼容性。
+ * 验证 attribution 视图的坐标、事件、建议接受/拒绝，以及 lib0 RDT 绑定和增量缓存。
  *
- * 即使集成算法升级或增加编码方案，同一更新历史的可见文档也必须保持一致。V1 兼容样本由 Yjs v13.2.0 随机测试生成。
+ * 关键回归会把已维护的 `type.delta` 与一次新的深层渲染比较，检查事件是否足以重建当前视图。
  */
 
 import * as Y from '../src/index.js'
@@ -13,7 +13,7 @@ import { bind, $rdt } from 'lib0/delta/rdt'
 import { init } from './testHelper.js' // eslint-disable-line
 
 /**
- * 验证同一相对位置按 DiffRenderer 可见内容解析为建议视图索引，而基础视图解析为文档存活索引。
+ * hello world 的克隆为基线，当前文档删掉索引 1 的六字符并插入 x，diff 视图仍显示旧内容；在建议视图索引 9 创建相对位置，再分别按 Renderer 与普通视图解析。同一位置的索引分别为 9 与 3。
  *
  * @param {t.TestCase} _tc
  */
@@ -25,7 +25,7 @@ export const testRelativePositions = _tc => {
   ytext.delete(1, 6)
   ytext.insert(1, 'x')
   const renderer = Y.createDiffRenderer(v1, ydoc)
-  const rel = Y.createRelativePositionFromTypeIndex(ytext, 9, 1, renderer) // DiffRenderer 视图中位于 `hello wo` 之后。
+  const rel = Y.createRelativePositionFromTypeIndex(ytext, 9, 1, renderer) // 渲染内容为 `hello wxorld`，索引 9 位于 `r` 前；普通内容 `hxorld` 的同一位置是索引 3。
   const abs1 = Y.createAbsolutePositionFromRelativePosition(rel, ydoc, true, renderer)
   const abs2 = Y.createAbsolutePositionFromRelativePosition(rel, ydoc, true)
   t.assert(abs1?.index === 9)
@@ -33,7 +33,7 @@ export const testRelativePositions = _tc => {
 }
 
 /**
- * 验证 observer 的 `getDelta({ renderer })` 为新插入内容附上 DiffRenderer 的 insert attribution。
+ * 基线为 hello world，当前文档已删 world，diff 视图仍显示带 delete 归因的旧词；注册 observer 后按 Renderer retain 11 并插入 !。初始完整视图符合预期，observer 确实运行，变化为 retain 11 加带 insert 归因的 !。
  *
  * @param {t.TestCase} _tc
  */
@@ -59,7 +59,7 @@ export const testAttributedEvents = _tc => {
 }
 
 /**
- * 验证在 renderer 恢复显示的建议删除内容之后插入时，applyDelta 的可见索引正确映射到底层文档。
+ * 基线为 hello world，当前文档只剩 hello 加空格，DiffRenderer 保留 world 删除建议；按 Renderer retain 11 后插入 content。初始归因视图匹配预期，实际存活字符串为 hello content。
  *
  * @param {t.TestCase} _tc
  */
@@ -79,7 +79,7 @@ export const testInsertionsMindingAttributedContent = _tc => {
 }
 
 /**
- * 验证在建议插入片段内部按 renderer 索引继续插入，可形成预期底层字符串。
+ * 基线为 hello 加空格，当前文档新增 word 作为插入建议；按 Renderer retain 9，在 word 的 r/d 之间插入 l。归因初值匹配 hello 加带 insert 的 word，实际存活字符串变为 hello world。
  *
  * @param {t.TestCase} _tc
  */
@@ -98,7 +98,10 @@ export const testInsertionsIntoAttributedContent = _tc => {
   t.assert(ytext.toString() === 'hello world')
 }
 
-/** 验证文档级 diff 把根文本、数组、Map 属性和嵌套类型变更组合成深层 Delta。 */
+/**
+ * 基线已有文本 hello、数组三数、map 的 k 和空 nested 子类型，目标为其克隆；目标追加文本、数组位置 1 插 x、新增属性及 nested 子内容。文档 diff 以各根键 modifyAttr 合成预期深层变化，新增内容均带空作者 insert 归因。
+ * 自定义 attribution 仍是下方 todo，此用例只比较默认空作者归因。
+ */
 export const testYdocDiff = () => {
   const ydocStart = new Y.Doc()
   ydocStart.get('text').insert(0, 'hello')
@@ -121,7 +124,9 @@ export const testYdocDiff = () => {
   t.compare(d, expectedDone)
 }
 
-/** 验证插入带文本与属性的嵌套节点时，文档 diff 保留完整子树内容并只触发一次深层事件。 */
+/**
+ * 基线为空，目标空根数组已注册 observeDeep；preliminary test 节点预存文本和 k=v；把新节点集成到目标数组，再计算文档 diff。恰有一次深层事件带完整子状态，diff 给节点、文本和属性加 insert 归因。
+ */
 export const testChildListContent = () => {
   const ydocStart = new Y.Doc()
   const ydocUpdated = Y.cloneDoc(ydocStart)
@@ -146,7 +151,7 @@ export const testChildListContent = () => {
 }
 
 /**
- * 验证多用户 attribution session 可按作者筛选渲染，并通过 ContentIds 只撤销指定用户变更。
+ * 三端空文本记录本地 update 的作者，user0 关闭 GC，并保存空基线；两端分别插 a/b，再删 b、插 c；随后只筛 user0 的 ID 并撤销。第一视图 a/b 标作者0/1，第二视图 b 标作者0删除、c 标作者1插入；筛选后只有user0变更归因，撤销后文本为 bc。
  *
  * @param {t.TestCase} tc
  */
@@ -188,11 +193,8 @@ export const testAttributionSession1 = tc => {
 }
 
 /**
- * Given：DiffRenderer 正在显示含子文本的段落。
- * When：删除整个段落节点。
- * Then：change 事件范围同时覆盖父项及其被归因的后代内容。
- *
- * 验证机制：对事件 IdSet 与预期 ContentIds 做结构比较。
+ * 根已有 p 节点及 hi，克隆基线并建 DiffRenderer，根注册 observeDeep；删除 p 节点。observer 确实运行，事件以 modify 包含 retain(2) 的文本 delete 归因，父节点也带 delete 归因。
+ * 旧节点仍在建议视图，不以删除整段的 DeleteOp 更新消费方。
  */
 export const testAttributionEvent = () => {
   const ydoc = new Y.Doc()
@@ -216,7 +218,10 @@ export const testAttributionEvent = () => {
   t.assert(called)
 }
 
-/** 验证接受建议后 attribution change 可生成 tri-state `null`，清除缓存中原 insert attribution。 */
+/**
+ * 基线与当前均为 hi，当前已插 ! 作为建议，Renderer 注册 change handler；把当前完整更新应用到基线以接受新增内容。handler 确实运行；变化 retain hi 后 retain ! 并以 attribution=null 清掉原 insert 归因。
+ * null 是清理指令，undefined 只会跳过归因更新。
+ */
 export const testAttributionChange = () => {
   const ydoc = new Y.Doc()
   const ytype = ydoc.get()
@@ -236,7 +241,9 @@ export const testAttributionChange = () => {
   t.assert(calledHandler)
 }
 
-/** 验证 YType 实现 lib0 `RDT` 接口，`bind` 可双向同步两个类型，销毁绑定后停止传播。 */
+/**
+ * 两个独立文档的文本都为空，用 lib0 bind 建双向绑定；A 插 hello、B 追加 world，然后 destroy 绑定再在 A 头插 x。销毁前两端为 hello world，销毁后 A 变为 xhello world 而 B 保持原文。
+ */
 export const testRdtBinding = () => {
   const docA = new Y.Doc()
   const docB = new Y.Doc()
@@ -257,7 +264,9 @@ export const testRdtBinding = () => {
   t.assert(b.toString() === 'hello world')
 }
 
-/** 验证本地修改通过 `delta` 通道发出以当前类型为根的深层 Delta。 */
+/**
+ * 空根类型注册 delta listener；本地插入 hello。捕获 Delta 等于一次 hello insert。
+ */
 export const testRdtDeltaEvent = () => {
   const ydoc = new Y.Doc()
   const ytext = ydoc.get()
@@ -270,7 +279,9 @@ export const testRdtDeltaEvent = () => {
   t.compare(captured, delta.create().insert('hello').done())
 }
 
-/** 验证 `delta` 事件第二参数透传事务 origin，未显式提供时为 null。 */
+/**
+ * 空文本注册 listener 保存 origin；分别用自定义外层事务、无 origin 插入、自定义 applyDelta origin、无 origin applyDelta 编辑。事件来源依次为原对象、null、applyOrigin 原对象、null。
+ */
 export const testRdtDeltaEventOrigin = () => {
   const ydoc = new Y.Doc()
   const ytext = ydoc.get()
@@ -298,7 +309,9 @@ export const testRdtDeltaEventOrigin = () => {
   t.assert(capturedOrigin === null)
 }
 
-/** 验证 `useRenderer` 更换 `toDelta` 等 API 的默认 renderer，省略参数与显式传入结果一致。 */
+/**
+ * 基线 hello world，当前删除 world，已保存显式 Renderer 渲染结果；把 DiffRenderer 安装为根默认视图，再无参调用 toDelta。无参结果等于显式结果，旧 world 仍带 delete 归因。
+ */
 export const testUseRenderer = () => {
   const ydoc = new Y.Doc()
   const ytext = ydoc.get()
@@ -316,7 +329,10 @@ export const testUseRenderer = () => {
   t.compare(viaDefault, delta.create().insert('hello ').insert('world', null, { delete: [] }).done())
 }
 
-/** 验证类型显式 destroy 与 Doc destroy 顶层类型都会各触发一次 RDT `destroy` 事件。 */
+/**
+ * 两组新文档各有一个注册 destroy listener 的根类型；第一组直接销毁类型，第二组销毁文档。两组计数各为 1。
+ * 没有检验重复 destroy 调用或嵌套类型销毁。
+ */
 export const testRdtDestroy = () => {
   const ydoc = new Y.Doc()
   const ytext = ydoc.get('text')
@@ -333,7 +349,10 @@ export const testRdtDestroy = () => {
   t.assert(destroyed2 === 1)
 }
 
-/** 验证嵌套子类型修改时 `delta` 像 observeDeep 一样冒泡，祖先收到以自身为根的非空 modify Delta。 */
+/**
+ * 根数组已有空子类型，父子都注册 delta listener；子类型插 hi。父子计数各为 1，父事件为非空 Delta。
+ * 未直接比较父 Delta 的 modify 结构，也未注册 observeDeep 作对照。
+ */
 export const testRdtDeltaBubblesLikeObserveDeep = () => {
   const ydoc = new Y.Doc()
   const yarray = ydoc.get('arr')
@@ -355,7 +374,9 @@ export const testRdtDeltaBubblesLikeObserveDeep = () => {
   t.assert(captured !== null && !captured.isEmpty())
 }
 
-/** 验证 `delta` getter 返回可复用的深层缓存；后续嵌套修改原地 apply，缓存身份不变且等于新鲜渲染。 */
+/**
+ * 文本已有 hello 且已取得活 delta 对象；数组另有含 a 的子类型并取得父缓存；文本追加 world，子类型追加 b。两组缓存身份都不变，内容与全量深层渲染相同；文本还独立匹配 hello world。
+ */
 export const testRdtDeltaCacheMaintenance = () => {
   const ydoc = new Y.Doc()
   const ytext = ydoc.get('text')
@@ -380,7 +401,9 @@ export const testRdtDeltaCacheMaintenance = () => {
   t.assert(yarray.delta.equals(yarray.toDeltaDeep()))
 }
 
-/** 验证 `clearCache()` 丢弃已维护深层 Delta，下一次 getter 创建身份不同但内容相同的新缓存。 */
+/**
+ * hello 文本的 delta 已物化；clearCache 后再次读取 getter。内部引用先为 null，新缓存对象身份不同且内容仍为 hello。
+ */
 export const testRdtClearCache = () => {
   const ydoc = new Y.Doc()
   const ytext = ydoc.get('text')
@@ -394,7 +417,10 @@ export const testRdtClearCache = () => {
   t.assert(d2.equals(delta.create().insert('hello').done()))
 }
 
-/** 验证 `useRenderer` 重渲染已维护缓存、只在 delta 通道发出视图差异，并把缓存更新为新视图。 */
+/**
+ * 当前 hello 加空格已删除基线 world，普通视图 delta 已物化并注册 listener；切换到显示旧 world 的 DiffRenderer。捕获非空 delta，缓存包含带 delete 归因的 world。
+ * 未单独监视 YEvent、比较事件完整内容或检查其 origin。
+ */
 export const testRdtUseRendererEmitsDiff = () => {
   const ydoc = new Y.Doc()
   const ytext = ydoc.get('text')
@@ -415,7 +441,9 @@ export const testRdtUseRendererEmitsDiff = () => {
   t.assert(ytext.delta.equals(delta.create().insert('hello ').insert('world', null, { delete: [] }).done()))
 }
 
-/** 验证 YType 在运行时通过 lib0 `$rdt.check`，普通对象和 null 不通过。 */
+/**
+ * 准备一个集成根类型、一个未集成 Y.Type、普通对象与 null；逐个调用 lib0 $rdt.check。两种 YType 通过，普通对象和 null 不通过。
+ */
 export const testRdtConformsToRdtSchema = () => {
   t.assert($rdt.check(new Y.Doc().get()))
   t.assert($rdt.check(new Y.Type()))
@@ -424,7 +452,8 @@ export const testRdtConformsToRdtSchema = () => {
 }
 
 /**
- * 收集根类型及其所有未删除的子列表/属性 YType 后代。
+ * 按当前类型的 toArray 视图收集子列表 YType，按普通存活属性视图收集属性 YType，逐层广度展开。
+ * 根装有 Renderer 时可能把删除子类型纳入候选；子类型并不自动继承根 Renderer，因此这不是统一 Renderer 的整树遍历。
  *
  * @param {Y.Type<any>} root - 遍历起点。
  * @return {Array<Y.Type<any>>} 广度展开的类型数组。
@@ -442,7 +471,9 @@ const collectTypes = root => {
 }
 
 /**
- * 在根树中随机选择一个类型并执行一次插入、删除、格式或属性变更。
+ * 从 collectTypes 的当前候选中随机选一个类型，执行一次文本/嵌套插入、删除、bold 或属性变更。
+ * 索引使用目标自己的原始 length；空目标的删除/格式分支不执行，已删除子类型无默认 Renderer 的写入也可被静默丢弃。
+ * 本 helper 无断言，调用方逐轮比较缓存与全量渲染。
  *
  * @param {prng.PRNG} gen - 确定性随机源。
  * @param {Y.Type<any>} root - 随机变更树根。
@@ -479,7 +510,8 @@ const applyRandomYTypeOp = (gen, root) => {
 }
 
 /**
- * 模糊验证：每次随机树变更后，每一层类型的增量 `delta` 缓存必须等于全量深层渲染。
+ * 新文档空根树与测试 PRNG；300 轮随机选择树中类型作文本/嵌套插入、删除、bold 修改或属性编辑。每轮收集到的类型 delta 都等于新深层渲染。
+ * 新类型第一次读 getter 是全量物化；存续类型的后续编辑才检验已建立缓存的增量维护。
  *
  * @param {t.TestCase} tc
  */
@@ -494,9 +526,8 @@ export const testRdtDeltaFuzz = tc => {
 }
 
 /**
- * 在两个同步建议副本上模糊验证 DiffRenderer 缓存收敛。
- *
- * 每个副本对自己的固定基线做 diff；无自定义 attrs 时插入/删除统一呈现 `{insert:[]}`/`{delete:[]}`，因此纯靠 delta 事件维护的缓存应跨副本一致，并等于各自全量深层渲染。
+ * 两副本已同步 shared baseline content，各根绑定对自己固定克隆的 DiffRenderer；300 轮任选一端随机编辑后排空消息。两端 delta 每轮相等，第一端还等于自己的新深层渲染。
+ * 未额外比较第二端缓存与其全量渲染；首次读取仍会物化，后续轮次维护缓存。
  *
  * @param {t.TestCase} tc
  */
@@ -519,15 +550,14 @@ export const testRdtDeltaSuggestionConvergence = tc => {
 }
 
 /**
- * 固定 seed=1 回归：DiffRenderer 下移除格式后，增量缓存必须等于全量渲染。
- *
- * 历史缺陷位于 `toDelta` 的 ContentFormat change 模式：只清除格式值，却未显式清除格式 attribution，导致未格式化区间残留 `{format:{bold:[]}}`，第 35 轮漂移。修复要求 change/diff retain 发出 `{format:{<key>:null}}`。
+ * 两个同步副本已有 shared baseline content，各有固定基线 DiffRenderer，使用 seed=1；40 轮随机树编辑，每轮双向交换增量更新并读取第一端缓存。每轮第一端 delta 与新深层渲染相等。
+ * 格式移除需要同时清格式值和逐键归因；循环包含多种操作，不声称每一轮都发生取消格式。
  */
 export const testRdtFormatRemovalDrift = () => {
   const gen = prng.create(1) // 固定 seed 保证复现。
   const docs = [new Y.Doc(), new Y.Doc()]
   const [d0, d1] = docs
-  /** 双向交换增量 update，令两个副本收敛。 */
+  /** 先把 d0 相对 d1 状态向量的缺失更新应用到 d1，再把 d1 相对更新后的 d0 的缺失事实传回；同步写入也触发各自 Renderer 监听。 */
   const sync = () => {
     Y.applyUpdate(d1, Y.encodeStateAsUpdate(d0, Y.encodeStateVector(d1)))
     Y.applyUpdate(d0, Y.encodeStateAsUpdate(d1, Y.encodeStateVector(d0)))
@@ -552,9 +582,8 @@ export const testRdtFormatRemovalDrift = () => {
 }
 
 /**
- * 最小回归：先加粗全文、取消 `cd`、再重新加粗时，删除临时 `bold:null` marker 不得使增量缓存漂移。
- *
- * 删除 marker 在 change render 中出现 `attrs==null`，此时必须保留而非清空 attribution 上下文；全量渲染会看到最终 attributed `bold:true` marker，结果应为全文 bold 且带 `{format:{bold:[]}}`。
+ * abcdef 相对未格式化克隆做 diff，缓存已物化；全文加粗、取消 cd、再给 cd 加粗。初值明确匹配 abcdef，最后缓存等于全量渲染。
+ * 同键建议范围仍打开时，删除临时清除标记不应误清环境归因。此断言比较增量缓存与全量渲染，不独立规定最终每个格式值或归因字段。
  */
 export const testRdtFormatRebold = () => {
   const doc = new Y.Doc()
@@ -577,9 +606,8 @@ export const testRdtFormatRebold = () => {
 }
 
 /**
- * 最小回归：在 bold 文本中插入嵌套类型，不得让缓存中的 embed 残留伪造的 `{format:{bold:null}}` attribution。
- *
- * Yjs 会用 `[bold:null] <embed> [bold:true]` 让 embed 不继承 bold。change render 中 fresh ContentType 不应继承仅供 retain 清除上下文的 null leaf；全量 insert render 只包含 embed 的 `{insert:[]}`。该用例锁定 insert 与 retain attribution 上下文必须区分的边界。
+ * ab 相对未格式化基线做 diff，缓存已物化；把 ab 加粗后在中间插入无格式空子类型。初值明确匹配 ab，最后缓存等于全量渲染。
+ * 插入的完整格式先关闭 bold 再恢复，fresh insert 不能继承仅供旧内容 retain 清理的 null 归因。此断言比较增量缓存与全量渲染，不独立规定最终每个格式值或归因字段。
  */
 export const testRdtFormatEmbedInBold = () => {
   const doc = new Y.Doc()
@@ -600,9 +628,8 @@ export const testRdtFormatEmbedInBold = () => {
 }
 
 /**
- * 最小回归：先格式化字符再删除时，缓存不得在删除建议上残留 bold 值与 `{format:{bold:[]}}`。
- *
- * 删除会同时清理两侧格式 marker；change render 必须用 `changedFormats` 发出 `bold→null`，并为真正移除格式的删除 marker 显式发 `{format:{<key>:null}}`。最终只保留 `{delete:[]}`，与全量渲染一致。
+ * 字符 a 相对未格式化基线做 diff，缓存已物化；给 a 加粗后删除 a。初值匹配 a，最后缓存等于全量渲染。
+ * 格式墓碑清理须同时反映 changedFormats 与格式归因范围结束。此断言比较增量缓存与全量渲染，不独立规定最终每个格式值或归因字段。
  */
 export const testRdtFormatDeleteFormatted = () => {
   const doc = new Y.Doc()
@@ -622,7 +649,9 @@ export const testRdtFormatDeleteFormatted = () => {
   t.assert(cached.equals(fresh), 'maintained .delta drifted from toDelta({ deep: true }) after format+delete')
 }
 
-/** 基线验证：平面内容、嵌套子类型和持续编辑中，缓存同时等于显式预期 Delta 与全量深层渲染。 */
+/**
+ * 普通空根先写 hello 和 k=v，开始读取缓存；在末尾插子类型、子内写 world/!，再删根首字符。初值匹配显式文本/属性 Delta，后续父子缓存均等于全量渲染，子值还明确匹配 world!。
+ */
 export const testRdtDeltaSanity = () => {
   const ydoc = new Y.Doc()
   const root = ydoc.get('root')
@@ -643,7 +672,9 @@ export const testRdtDeltaSanity = () => {
   t.assert(child.delta.equals(delta.create().insert('world!').done()))
 }
 
-/** 基线验证：自定义 attribution DiffRenderer 下，缓存包含预期作者标记并等于全量 attributed 深层渲染。 */
+/**
+ * 空克隆作基线，文档记录本地 update 的作者 ID 到内容映射；插 hello 后以该映射安装 DiffRenderer。缓存明确为带本 clientID insert 归因的 hello，并等于全量渲染。
+ */
 export const testRdtDeltaAttributionSanity = () => {
   const ydoc = new Y.Doc()
   const root = ydoc.get('root')
@@ -664,9 +695,8 @@ export const testRdtDeltaAttributionSanity = () => {
 }
 
 /**
- * 回归验证：accepting renderer 跨建议删除区间格式化后，缓存不得残留 `{format:{code:[]}}`。
- *
- * suggestionMode=false 会把格式提交到基线，因此全量 diff 不含格式 attribution；change render 也必须最终去归因。该场景同样可由两个固定模式建议副本复现。
+ * 关闭 GC 的基线/建议文档含 hello world 段落，根绑定 renderer 并物化缓存；建议模式删 llo 加空格，切接受模式后跨仍显示的范围设置 code 格式。最后维护的 delta 与新一次 toDelta(deep:true) 相等。
+ * 接受模式把变更同步到基线，格式归因修正还须更新现有缓存。此断言比较增量缓存与全量渲染，不独立规定最终每个格式值或归因字段。
  */
 export const testRdtFormatAcrossSuggestionDeletedDrift = () => {
   const doc = new Y.Doc({ gc: false })
@@ -694,13 +724,13 @@ export const testRdtFormatAcrossSuggestionDeletedDrift = () => {
 }
 
 /**
- * 创建“基线文档 + 建议文档 + hello world 段落”的删除父节点测试 fixture。
+ * 创建关闭 GC、固定 clientID 的基线/建议文档与 hello world 段落，并建立跟踪两文档的 DiffRenderer。
  *
- * clientID 固定，因为同位置 Item/marker 次序依赖 clientID 比较；关键用例会覆盖两种顺序。可选把 DiffRenderer 安装到建议根类型。
+ * 先建立 Renderer 再向基线写段落，使建议文档通过监听获得初值；多数调用用两种 clientID 顺序检查同位置边界次序。
  *
  * @param {number} baseClientID - 基线 clientID。
  * @param {number} sdocClientID - 建议文档 clientID。
- * @param {boolean} useRootRenderer - 是否在根类型启用 renderer。
+ * @param {boolean} [useRootRenderer] - 默认在建议根绑定 renderer；false 用于根普通视图、子类型自带 Renderer 的对照。
  * @return {{doc:Y.Doc,sdoc:Y.Doc,renderer:Y.DiffRenderer,ytype:Y.Type}} fixture。
  */
 const createSuggestionPair = (baseClientID, sdocClientID, useRootRenderer = true) => {
@@ -718,9 +748,8 @@ const createSuggestionPair = (baseClientID, sdocClientID, useRootRenderer = true
 }
 
 /**
- * 验证基线远端插入建议删除段落内部时，变化穿过 tombstone 冒泡到根 RDT。
- *
- * 新内容集成后随父项自动删除，位于 `insertSet∩deleteSet`，但 renderer 已归因；`itemsToRender` 必须包含 `I∩D∩renderer.attributed`，以 fresh insert 形式显示并保持缓存等于全量渲染。
+ * 两种 clientID 顺序（基线/建议为 1/2 与 2/1）各建关闭 GC 的 hello world 段落，根绑定 DiffRenderer 并物化缓存；建议删除整个段落后，基线在段落内部索引2插 XY。两种顺序下建议删除和远端编辑各触发一次根 delta，远端事件非空，新渲染含 XY 且缓存相等。
+ * 新ID集成到已删除父项后自动删除，仍需保留已归因的 insertSet∩deleteSet 部分。
  */
 export const testRdtDeltaThroughDeletedParent = () => {
   for (const [baseClientID, sdocClientID] of [[1, 2], [2, 1]]) {
@@ -751,7 +780,10 @@ export const testRdtDeltaThroughDeletedParent = () => {
   }
 }
 
-/** 验证向建议删除段落插入完整嵌套类型时，ContentType mode 3 把自动删除但已归因的子树渲染为 deep fresh insert。 */
+/**
+ * 两种 clientID 顺序（基线/建议为 1/2 与 2/1）各建关闭 GC 的 hello world 段落，根绑定 DiffRenderer 并物化缓存；建议删整个段落后，基线在其内部插含 fresh 文本的新段落子类型。远端编辑每种顺序触发一次根 delta，全量 JSON 含 fresh，缓存等于全量渲染。
+ * 新 ContentType 从未进入消费方，fresh mode 应深层 insert 而非 retain 旧节点。
+ */
 export const testRdtDeltaFreshTypeThroughDeletedParent = () => {
   for (const [baseClientID, sdocClientID] of [[1, 2], [2, 1]]) {
     const { doc, ytype } = createSuggestionPair(baseClientID, sdocClientID)
@@ -777,7 +809,10 @@ export const testRdtDeltaFreshTypeThroughDeletedParent = () => {
   }
 }
 
-/** 验证同事务建议插入后立即删除的内容完全不可见，`insertSet∩deleteSet` 不得泄漏到缓存。 */
+/**
+ * 两种 clientID 顺序（基线/建议为 1/2 与 2/1）各建关闭 GC 的 hello world 段落，根绑定 DiffRenderer 并物化缓存；建议文档同事务在子段落索引2插 zz 后删同两字符。两种顺序下全量 JSON 不含 zz，缓存与其相等。
+ * 同事务新增又删且没有可显示归因时，不应把交集ID送入消费方状态。
+ */
 export const testRdtDeltaSuggestedInsertThenDeleteInvisible = () => {
   for (const [baseClientID, sdocClientID] of [[1, 2], [2, 1]]) {
     const { sdoc, ytype } = createSuggestionPair(baseClientID, sdocClientID)
@@ -800,9 +835,8 @@ export const testRdtDeltaSuggestedInsertThenDeleteInvisible = () => {
 }
 
 /**
- * 验证 mode 3 freshness 必须按 ID 子区间判断，不能按合并后的整个 Item 起点判断。
- *
- * 外层 delta observer 创建嵌套事务；外层 cleanup 在嵌套事件渲染前把 fresh 插入+删除范围合并进旧左邻居。若只检查合并 Item 首 ID，会把 fresh 范围误渲染为 delete 并删坏缓存。
+ * 基线 client1 的 XY 已同步到 client2 建议根，缓存已物化；建议插 a 的 delta callback 中只反应一次：新事务在 a 后插 b 再删 ab。callback 确实反应，最终缓存等于全量渲染。
+ * 外层 cleanup 可先合并相邻删除 Item；fresh 判定必须按本次插入ID子区间，而非合并 Item 首ID。
  */
 export const testRdtDeltaFreshRangeAfterItemMerge = () => {
   const doc = new Y.Doc({ gc: false })
@@ -837,7 +871,8 @@ export const testRdtDeltaFreshRangeAfterItemMerge = () => {
 }
 
 /**
- * 断言 lib0 RDT “完全回退 apply”契约：文档未变化、缓存仍一致，且 `before.apply(d).apply(fix)` 回到实际状态。
+ * 比较完整渲染状态未变化、当前缓存一致，并验证预期状态依次应用 d/fix 后回到实际状态。
+ * 使用 cloneDeep 与 final/move 应用，避免修改输入快照；只比较渲染状态，不断言内部结构或 ID 集完全未变。
  *
  * @param {any} ytype - 已物化 delta 缓存的目标类型。
  * @param {any} before - apply 前的深层渲染。
@@ -856,7 +891,10 @@ const assertRevertedApply = (ytype, before, d, fix) => {
   t.assert(delta.diff(roundTrip, fresh).isEmpty(), 'the fix round-trips the expected state back to the actual state')
 }
 
-/** 验证修改建议删除节点时不落地任何内容：返回嵌套变化的逆操作、不发 delta，并保持文档与缓存不变。 */
+/**
+ * 两种 clientID 顺序（基线/建议为 1/2 与 2/1）各建关闭 GC 的 hello world 段落，根绑定 DiffRenderer 并物化缓存；建议删除父段落后，再对它 modify(retain2+insert XY)。fix 明确为嵌套 retain2+delete2，未发 delta、未写 XY，assertRevertedApply 检查实际状态与 inverse 往返。
+ * 修改仍显示的软删除节点进入 applyDelta 保护分支，不执行文档写入。
+ */
 export const testRdtApplyDeltaModifyIntoTombstoneReturnsInverse = () => {
   for (const [baseClientID, sdocClientID] of [[1, 2], [2, 1]]) {
     const { ytype } = createSuggestionPair(baseClientID, sdocClientID)
@@ -875,7 +913,10 @@ export const testRdtApplyDeltaModifyIntoTombstoneReturnsInverse = () => {
   }
 }
 
-/** 验证删除 tombstone 内内容时，fix 从渲染基线重插被删范围，并恢复调用方原先看到的 delete attribution。 */
+/**
+ * 两种 clientID 顺序（基线/建议为 1/2 与 2/1）各建关闭 GC 的 hello world 段落，根绑定 DiffRenderer 并物化缓存；建议删父段落后，尝试 modify 内 retain2+delete4。fix 非空，其 JSON 含 llo 加空格及 delete 归因；实际状态不变，预期状态加 fix 可回到实际。
+ * 重插来自渲染基线，必须保留调用方看到的删除归因。
+ */
 export const testRdtApplyDeltaDeleteInsideTombstoneInverse = () => {
   for (const [baseClientID, sdocClientID] of [[1, 2], [2, 1]]) {
     const { ytype } = createSuggestionPair(baseClientID, sdocClientID)
@@ -892,7 +933,10 @@ export const testRdtApplyDeltaDeleteInsideTombstoneInverse = () => {
   }
 }
 
-/** 验证格式化 tombstone 内容不会创建 marker，返回 fix 会把格式键恢复为基线值（未格式化区间为 `{bold:null}`）。 */
+/**
+ * 两种 clientID 顺序（基线/建议为 1/2 与 2/1）各建关闭 GC 的 hello world 段落，根绑定 DiffRenderer 并物化缓存；建议删父段落后，尝试给内部四字符设置 bold。fix 明确为嵌套 retain1+retain4(bold:null)，实际状态不变且 inverse 往返正确。
+ * 只比较渲染状态，没有直接统计是否创建内部 marker。
+ */
 export const testRdtApplyDeltaFormatInsideTombstoneInverse = () => {
   for (const [baseClientID, sdocClientID] of [[1, 2], [2, 1]]) {
     const { ytype } = createSuggestionPair(baseClientID, sdocClientID)
@@ -908,9 +952,8 @@ export const testRdtApplyDeltaFormatInsideTombstoneInverse = () => {
 }
 
 /**
- * 验证 tombstone 节点上的 `modify.format` 同样不落地，fix 恢复节点此前格式值。
- *
- * 此前值必须在 cursor 走到节点后从格式上下文读取，才能计入遍历起点与节点间的 live 格式 marker。
+ * 两种 clientID 顺序各建关闭 GC 的基线/建议文档，根绑定 DiffRenderer 并物化缓存；树有 aa、bb 两段，基线两段都带 align=x；建议删除第二段，再尝试以 modify.format 把它改为 align=y。fix 为 retain1+modify(空Delta,align=x)，实际状态及 inverse 往返保持一致。
+ * 恢复值须在游标走过节点前的活 align 标记后读取。
  */
 export const testRdtApplyDeltaNodeFormatOnTombstoneInverse = () => {
   for (const [baseClientID, sdocClientID] of [[1, 2], [2, 1]]) {
@@ -939,9 +982,8 @@ export const testRdtApplyDeltaNodeFormatOnTombstoneInverse = () => {
 }
 
 /**
- * 验证同一 Delta 可同时含已应用与被回退操作：live 内容修改落地并只发一次事件，tombstone modify 单独返回 fix。
- *
- * fix 的 retain padding 必须按调用方预期空间计算，包括该 Delta 更早插入的内容。
+ * 两种 clientID 顺序各建关闭 GC 的基线/建议文档，根绑定 DiffRenderer 并物化缓存；树有 aa、hello world、cc，建议删中间段；一个 Delta 头插 nn，越过 aa，分别对删除中段插 XY、存活尾段插 ZZ。恰发一次 delta；nn/ZZ 已落地而 XY 没有，fix 为 retain2+嵌套delete2，缓存相等。
+ * fix 用调用方预期输出坐标，padding 包含本 Delta 更早新增的 nn 节点。
  */
 export const testRdtApplyDeltaMixedFixCoordinates = () => {
   for (const [baseClientID, sdocClientID] of [[1, 2], [2, 1]]) {
@@ -978,9 +1020,8 @@ export const testRdtApplyDeltaMixedFixCoordinates = () => {
 }
 
 /**
- * 验证 `modifyAttr` 可通过 renderer 感知查找定位仍显示的已删除 Map 值，不落地并以 modifyAttr 包装逆操作。
- *
- * 历史实现使用看不到删除项的 `typeMapGet`，会触发 `unexpectedCase`。
+ * 两种 clientID 顺序各建关闭 GC 的基线/建议文档，根绑定 DiffRenderer 并物化缓存；map 的 title 属性是含 hi 的子类型；建议删除 title 后，再以 modifyAttr 给该值插 X。fix 为 modifyAttr(title,delete1)，不抛错；实际状态不变且 inverse 往返正确。
+ * Renderer 查找能定位仍显示的删除属性值，普通 typeMapGet 看不到它。
  */
 export const testRdtApplyDeltaModifyAttrOnDeletedMapValue = () => {
   for (const [baseClientID, sdocClientID] of [[1, 2], [2, 1]]) {
@@ -1005,7 +1046,10 @@ export const testRdtApplyDeltaModifyAttrOnDeletedMapValue = () => {
   }
 }
 
-/** 验证普通删除且无 renderer 接管的不可见类型维持静默丢弃语义：applyDelta 返回 null，文档不变。 */
+/**
+ * 关闭 GC 的普通文档含 hello 段落，已保存子类型引用；普通删除段落后，直接对子类型 retain2+insert XY。返回 null，根完整深层状态仍为空。
+ * 根为空的断言未单独读取已删除子类型内部结构。
+ */
 export const testRdtApplyDeltaInvisibleDeletedSilentNull = () => {
   const doc = new Y.Doc({ gc: false })
   doc.clientID = 1
@@ -1018,7 +1062,10 @@ export const testRdtApplyDeltaInvisibleDeletedSilentNull = () => {
   t.assert(root.toDelta({ deep: true }).isEmpty(), 'nothing was applied')
 }
 
-/** 验证直接修改“已删除但由 renderer 显示”的类型时，顶层守卫返回相对渲染状态的逆操作；无 renderer 时仍静默返回 null。 */
+/**
+ * 两种 clientID 顺序（基线/建议为 1/2 与 2/1）各建关闭 GC 的 hello world 段落，根绑定 DiffRenderer 并物化缓存；保存子引用并建议删父段，先无 Renderer、再显式有 Renderer 尝试对子类型插 XY。无 Renderer 返回 null；显式传入返回 retain2+delete2 inverse，根状态/缓存不变，子层 inverse 往返正确。
+ * 根的默认 Renderer 不会自动成为子类型默认 Renderer。
+ */
 export const testRdtApplyDeltaDirectGuardOnDeletedType = () => {
   for (const [baseClientID, sdocClientID] of [[1, 2], [2, 1]]) {
     const { ytype, renderer } = createSuggestionPair(baseClientID, sdocClientID)
@@ -1043,7 +1090,10 @@ export const testRdtApplyDeltaDirectGuardOnDeletedType = () => {
   }
 }
 
-/** 验证 live 子节点之后的 tombstone 孙节点返回嵌套 fix，父级按位置逐层包装为 `modify(modify(inverse))`。 */
+/**
+ * 两种 clientID 顺序各建关闭 GC 的基线/建议文档，根绑定 DiffRenderer 并物化缓存；活段落内含 ww 嵌套节点；只建议删除孙节点，再由根 modify→modify 尝试在孙节点插 X。fix 明确是双层 modify 包裹 delete1，实际状态不变且往返正确。
+ * 父级按输入节点位置逐层包装子 fix，活父存在不解除孙节点删除保护。
+ */
 export const testRdtApplyDeltaNestedTombstoneFixBubbles = () => {
   for (const [baseClientID, sdocClientID] of [[1, 2], [2, 1]]) {
     const doc = new Y.Doc({ gc: false })
@@ -1074,9 +1124,8 @@ export const testRdtApplyDeltaNestedTombstoneFixBubbles = () => {
 }
 
 /**
- * 锁定普通 delete 跨 tombstone 的既有语义：对 live 内容做建议删除、记录 attributed 范围，但不返回 fix。
- *
- * 这是当前由下游修复的已知空隙；测试确保未来改变该行为时必须显式处理。
+ * 两种 clientID 顺序各建关闭 GC 的基线/建议文档，根绑定 DiffRenderer 并物化缓存；树含 aa、hello world、cc，中段已建议删除；普通 delete(3) 跨两个存活段落与仍显示的中段。返回 null，最终缓存与全量渲染相等。
+ * 普通 delete 记录 attributedDeletes 元数据但不创建 modify inverse；本用例未直接读取元数据。
  */
 export const testRdtApplyDeltaPureDeleteOverTombstoneNoFix = () => {
   for (const [baseClientID, sdocClientID] of [[1, 2], [2, 1]]) {
@@ -1102,9 +1151,8 @@ export const testRdtApplyDeltaPureDeleteOverTombstoneNoFix = () => {
 }
 
 /**
- * 验证 delete 在 attributed-deleted chunk 中间结束时会按消费边界切分 Item。
- *
- * 若不切分，cursor 会越过整块，使同一 Delta 后续 modify 错位并返回另一个节点内容的 fix。
+ * 两种 clientID 顺序各建关闭 GC 的基线/建议文档，根绑定 DiffRenderer 并物化缓存；基线 abc 后有 nA=kk、nB=qqq，建议已删 bc 和两节点；从 b 开始删一字符、retain c，再 modify 删除 nA 内两个字符。fix 含 kk、不含 qq，实际渲染无变化，缓存相等。
+ * 消费在归因删除片段中间结束时须切 Item，否则游标会错过 c 并选到 nB。
  */
 export const testRdtApplyDeltaDeleteMidStruckChunkKeepsCursorSync = () => {
   for (const [baseClientID, sdocClientID] of [[1, 2], [2, 1]]) {
@@ -1136,9 +1184,8 @@ export const testRdtApplyDeltaDeleteMidStruckChunkKeepsCursorSync = () => {
 }
 
 /**
- * 验证仍显示的建议删除属性值内部变化会重新发出完整 `setAttr`。
- *
- * 删除值没有 modifyAttr 路径；当值类型出现在 modified 集合中时，change render 必须用幂等完整替换刷新缓存，否则所有 RDT 消费者永久陈旧。
+ * 两种 clientID 顺序各建关闭 GC 的基线/建议文档，根绑定 DiffRenderer 并物化缓存；title 子类型含 hi，建议已删该属性；基线在仍显示的删除属性值末尾插 XY。每种顺序根 delta 恰发一次，全量 JSON 含 XY，缓存相等。
+ * 删除值内部变化需用完整带归因 setAttr 刷新，变化型 modifyAttr 不能作为该旧值替换。
  */
 export const testRdtDeltaThroughDeletedAttrValue = () => {
   for (const [baseClientID, sdocClientID] of [[1, 2], [2, 1]]) {
@@ -1165,7 +1212,10 @@ export const testRdtDeltaThroughDeletedAttrValue = () => {
   }
 }
 
-/** 验证基线远端格式化建议删除段落内部时，根 delta 发出一次且 fresh-deleted 格式 marker 走 retain 路径，缓存等于全量渲染。 */
+/**
+ * 两种 clientID 顺序（基线/建议为 1/2 与 2/1）各建关闭 GC 的 hello world 段落，根绑定 DiffRenderer 并物化缓存；建议删整个段落后，基线给内部四字符设置 bold。根 delta 各触发一次，最终缓存等于全量渲染。
+ * 新格式标记集成到删除父项后仍按格式状态机 retain 路径解释，fresh 状态参与范围清理。
+ */
 export const testRdtDeltaFormatThroughDeletedParent = () => {
   for (const [baseClientID, sdocClientID] of [[1, 2], [2, 1]]) {
     const { doc, ytype } = createSuggestionPair(baseClientID, sdocClientID)
@@ -1186,9 +1236,8 @@ export const testRdtDeltaFormatThroughDeletedParent = () => {
 }
 
 /**
- * 验证基础 renderer 下不可见删除子树的远端变化不发空 delta，也不触发根 v1 observe，但会通知存活祖先的 observeDeep。
- *
- * 事务仍通过删除父项登记 changedParentTypes；最终 Delta 为空时只抑制 delta 通道。
+ * 两个关闭 GC 的普通文档已同步段落，Q 根已物化缓存并注册三个观察通道；Q 普通删除段落后，P 在段内插 XY，再把 P 更新应用到 Q。自身删除发根 delta/浅事件；远端内部修改只使 observeDeep 加1，delta/浅事件为0，缓存相等。
+ * 祖先仍登记深层变化，但空可见 Delta 抑制 delta 通道。
  */
 export const testRdtNoDeltaThroughDeletedParentPlainDoc = () => {
   const docP = new Y.Doc({ gc: false })
@@ -1223,15 +1272,14 @@ export const testRdtNoDeltaThroughDeletedParentPlainDoc = () => {
 }
 
 /**
- * 验证已删除类型拥有自身 renderer 时仍会因 tombstone 可见而触发 observe/delta 并维护缓存。
- *
- * 上层基础 renderer 看不到该内部变化，因此不得发空 delta。
+ * fixture 根用普通视图，子段落单独绑定 DiffRenderer，父子缓存都已物化；根建议删除段落，再由基线格式化其内部。根只为自身删除发一次delta；子delta在远端格式后加1，浅observer累计至少1次，两级缓存相等。
+ * 浅observer只检验总次数>=1，没有单独隔离远端格式的浅通知。
  */
 export const testRdtDeletedTypeWithOwnRendererFires = () => {
   const { doc, renderer, ytype } = createSuggestionPair(1, 2, false)
   const parB = /** @type {any} */ (ytype.get(0))
   parB.useRenderer(renderer)
-  t.assert(parB.delta != null) // 物化已删除类型的 renderer 缓存。
+  t.assert(parB.delta != null) // 段落删除前先物化其 Renderer 缓存，随后检验删除及远端编辑后的维护。
   t.assert(ytype.delta != null) // 根缓存使用基础 renderer。
   let parFired = 0
   let parObserved = 0
@@ -1253,7 +1301,10 @@ export const testRdtDeletedTypeWithOwnRendererFires = () => {
   t.assert(ytype.delta.equals(ytype.toDelta({ deep: true })), 'root cache stays equal to a fresh render')
 }
 
-/** 验证类型 scope UndoManager 能从 changedParentTypes 看见 tombstone 子树事务，但最终仍由 origin 门禁决定是否捕获。 */
+/**
+ * 两个普通文档已同步段落，Q 根建 UndoManager；Q 本地删段落后，P 在其内部插 XY，再以未跟踪 remote-origin 同步。本地删除后 undoStack 为1，远端编辑后仍为1。
+ * 此处只断言未新增捕获，不单独证明 scope 匹配过程或远端变更在已跟踪 origin 下会入栈。
+ */
 export const testRdtDeletedSubtreeUndoScope = () => {
   const docP = new Y.Doc({ gc: false })
   docP.clientID = 5
@@ -1274,9 +1325,8 @@ export const testRdtDeletedSubtreeUndoScope = () => {
 }
 
 /**
- * 回归验证 accepting renderer 插入已提交子节点时，缓存不得保留 change render 的临时 `{insert:[]}`。
- *
- * 节点已同步到基线且附近无建议内容，全量 diff 应无 attribution。该“删尾 + 插节点”结构对应 ProseMirror block split；同时覆盖直接 accepting 插入与先建议插入后 acceptAll 两个入口。
+ * 两组关闭 GC 的基线/建议文档各有 base para，建议根都先物化缓存；第一组接受模式直接插 plain；第二组建议模式插 sugg 后 acceptAll。第一组基线明确含 plain、全量无 attribution 且缓存相等；第二组接受前后缓存各等于全量渲染。
+ * 第二组未单独断言最终归因字段缺失，去归因应按深层ID范围修复。
  */
 export const testRdtAcceptingNodeInsertCacheDrift = () => {
   const doc = new Y.Doc({ gc: false })
@@ -1318,9 +1368,8 @@ export const testRdtAcceptingNodeInsertCacheDrift = () => {
 }
 
 /**
- * 从消费者事件流角度回归 accepting 节点插入：组合全部 delta 后不得仍把 committed 子树显示成建议。
- *
- * 写入可能先发节点及后代带 `{insert:[]}` 的 insert render，再发去归因修正。修正可以让初次事件直接无归因，也可递归清除所有后代；契约只要求最终事件组合收敛到无归因全量渲染。
+ * 接受模式 fixture 已有 base para，composed 从完整状态克隆并监听所有 delta；追加 plain，再追加 blockquote→paragraph(deep) 的多层节点。两次最终新渲染及 composed 都无 attribution，事件顺序组合与新渲染相等。
+ * 检查 settled 组合结果，不限定初次 insert 是否临时带归因或修正事件数量。
  */
 export const testRdtAcceptingNodeInsertRenderedAsSuggestion = () => {
   const doc = new Y.Doc({ gc: false })
@@ -1355,9 +1404,8 @@ export const testRdtAcceptingNodeInsertRenderedAsSuggestion = () => {
 }
 
 /**
- * 验证去归因修复按 ID 范围精确生效，不能无条件清空整个已接受节点子树。
- *
- * 仅接受节点自身 ID 后，空段落提交到基线，但文本后代仍是待处理建议；修复必须清除节点 attribution、保留后代 `{insert:[]}`，并维持缓存等于全量渲染。
+ * 基线已有 base para，建议根物化缓存；建议插新段落 x，再在其中追加 Q，然后仅选择该节点自身 ID 接受。基线出现第二段落，合并父 insert 无归因，子内容仍有 insert 归因，缓存等于全量渲染。
+ * 这个具体选择保留子建议；不把 acceptChanges 一般描述为绝不扩展范围的精确ID过滤。
  */
 export const testRdtPartialAcceptKeepsPendingChildSuggestions = () => {
   const doc = new Y.Doc({ gc: false })
@@ -1393,9 +1441,8 @@ export const testRdtPartialAcceptKeepsPendingChildSuggestions = () => {
 }
 
 /**
- * 回归验证 `isRangeEndClear`：无归因 marker 关闭同键 attributed range 时，必须发该键 attribution clear。
- *
- * 场景来自 y-prosemirror seed 54321：建议 strong 覆盖 `a`，基线 strong 覆盖 `abc`，再在建议 span 之后、基线格式范围内部插入 `x`。历史缓存让尾部 `c` 残留 `{format:{strong:[]}}`，全量渲染则已提交无归因。插入位于建议边界或格式末端不会触发，故内部位置是关键条件。
+ * 关闭 GC 的 base0/sugg1 已有 abc，建议根物化缓存；建议 strong 覆盖 a，基线 strong 覆盖 abc，再在 b/c 间基线插 x。最后维护的 delta 与新一次 toDelta(deep:true) 相等。
+ * 无归因恢复标记关闭同键范围时，retain 需逐键清除旧格式归因。此断言比较增量缓存与全量渲染，不独立规定最终每个格式值或归因字段。
  */
 export const testRdtBaseInsertIntoOverlappingFormatRangeCacheDrift = () => {
   const base = new Y.Doc({ gc: false })
@@ -1425,9 +1472,8 @@ export const testRdtBaseInsertIntoOverlappingFormatRangeCacheDrift = () => {
 }
 
 /**
- * 回归验证 attribution install gate 必须安装“全部为 null-clear leaf”的上下文副本。
- *
- * em/strong 两个建议格式重叠时，环境副本含逐键 null clear；旧空值判断丢弃无归因 close marker 的键删除。随后在 em 范围内部建议插入 `x` 会把陈旧 `{format:{strong:[]}}` 刷入尾部缓存。clientID 次序是关键：base > sugg 时复现。
+ * 关闭 GC 的 base1/sugg0 已有 abcd，建议根物化缓存；建议 em 覆盖 ab、strong 覆盖 abcd；基线 strong 覆盖 ab，再在建议端索引1插 x。最后维护的 delta 与新一次 toDelta(deep:true) 相等。
+ * 双键上下文即使只剩 null 清理叶，也须安装副本使后续 retain 清理生效。此断言比较增量缓存与全量渲染，不独立规定最终每个格式值或归因字段。
  */
 export const testRdtSuggestedInsertUnderTwoKeySuggestedFormatsCacheDrift = () => {
   const base = new Y.Doc({ gc: false })
@@ -1458,9 +1504,8 @@ export const testRdtSuggestedInsertUnderTwoKeySuggestedFormatsCacheDrift = () =>
 }
 
 /**
- * 回归验证双键建议格式下的“带格式基线插入”同样安装全 null-leaf 上下文。
- *
- * 建议 em 覆盖 `ab`、strong 覆盖 `a`；基线 em 只覆盖 `a`，再在上下文前插入带另一个建议键 strong 的 `x`。旧缓存会让尾部 `b` 残留 `{format:{em:[]}}`。插入键、位置、覆盖范围及 base > sugg 的 clientID 次序均为关键条件，区别于普通插入同类用例。
+ * 关闭 GC 的 base1/sugg0 已有 ab，建议根物化缓存；建议 em 覆盖 ab、strong 覆盖 a；基线 em 覆盖 a，再头插带 strong 的 x。最后维护的 delta 与新一次 toDelta(deep:true) 相等。
+ * 带格式基线 insert 会重扫双键归因范围，清理不能因上下文叶均为 null 而被丢弃。此断言比较增量缓存与全量渲染，不独立规定最终每个格式值或归因字段。
  */
 export const testRdtFormattedBaseInsertUnderTwoKeySuggestedFormatsCacheDrift = () => {
   const base = new Y.Doc({ gc: false })
@@ -1477,7 +1522,7 @@ export const testRdtFormattedBaseInsertUnderTwoKeySuggestedFormatsCacheDrift = (
   // 两个建议格式重叠，em 范围长于 strong。
   st.applyDelta(delta.create().retain(2, { em: {} }).done())
   st.applyDelta(delta.create().retain(1, { strong: {} }).done())
-  // 基线 em 仅覆盖 `a`，未覆盖完整建议范围；尾部治理状态潜在陈旧但暂未显现。
+  // 基线 em 仅覆盖 `a`，未覆盖完整建议范围；后续插入会再次扫描 `b` 前的格式归因上下文。
   bt.applyDelta(delta.create().retain(1, { em: {} }).done())
   // 在上下文前插入带另一建议键 strong 的基线内容，触发重扫。
   bt.applyDelta(delta.create().insert('x', { strong: {} }).done())
@@ -1491,9 +1536,8 @@ export const testRdtFormattedBaseInsertUnderTwoKeySuggestedFormatsCacheDrift = (
 }
 
 /**
- * 回归验证 `previousFormats` 跟踪：基线格式范围末端落在同键建议格式 span 内部时，不得把格式泄漏到后一字符。
- *
- * fuzz seed 711/4935 均化简为四步：`b` 已有 em，追加两个 `x`，建议 em 跨过基线格式末端，再让基线 em 只覆盖前三字符。历史缓存把尾部 `x` 错误格式化；此处是格式值漂移而非 attribution 漂移。预存格式、两个边界字符、同键与操作顺序均为必要条件。
+ * 关闭 GC 的 base0/sugg1 已有 ab，建议根物化缓存；基线给 b 设 em 后追加 xx；建议给 xx 设 em，再让基线 em 覆盖 abx。最后维护的 delta 与新一次 toDelta(deep:true) 相等。
+ * 基线末端落在建议 xx 区间内部，previousFormats 必须按旧消费方控制值计算格式差。此断言比较增量缓存与全量渲染，不独立规定最终每个格式值或归因字段。
  */
 export const testRdtBaseFormatEndingInsideSuggestedFormatRangeFormatValueCacheDrift = () => {
   const base = new Y.Doc({ gc: false })
@@ -1525,9 +1569,8 @@ export const testRdtBaseFormatEndingInsideSuggestedFormatRangeFormatValueCacheDr
 }
 
 /**
- * 回归验证 `isDeletedFormatClear` 的开放 attributed-range 守卫：建议移除被覆盖的基线格式时不得丢失 removal attribution。
- *
- * 基线 em 覆盖 `ab`，建议先把 `b` 的 em 覆盖为不同值，再设 null。缓存必须像全量渲染一样保留 `b` 的 `{format:{em:[]}}`。基线范围越过目标字符及“先不同值覆盖”是关键条件；两种 clientID 次序均稳定复现。
+ * 关闭 GC 的 base0/sugg1 已有 ab，建议根物化缓存；基线 em 覆盖 ab；建议把 b 的 em 改为 {x:1} 后再清除。最后维护的 delta 与新一次 toDelta(deep:true) 相等。
+ * 删除旧标记时同键归因范围仍可开放，不能把取消格式建议的来源误清。此断言比较增量缓存与全量渲染，不独立规定最终每个格式值或归因字段。
  */
 export const testRdtSuggestedRemovalOfOverriddenBaseFormatCacheDrift = () => {
   const base = new Y.Doc({ gc: false })
@@ -1557,9 +1600,8 @@ export const testRdtSuggestedRemovalOfOverriddenBaseFormatCacheDrift = () => {
 }
 
 /**
- * 回归验证分两步从左到右建议取消同一基线格式时，两段都保留 unformat attribution。
- *
- * lifecycle fuzz 的 clearCache 并非必要条件；核心场景是基线一次格式化 `ab`，再分别取消 `a`、`b`。旧缓存丢失第二步 `b` 的 `{format:{em:[]}}`。两步顺序和基线单次覆盖整段是关键，格式键、值与 clientID 次序不关键。
+ * 关闭 GC 的 base0/sugg1 已有 ab，建议根物化缓存；基线一次设 em，建议从左到右分两步分别取消 a/b 的 em。最后维护的 delta 与新一次 toDelta(deep:true) 相等。
+ * 第二步可能删除第一步的恢复标记，取消格式来源仍由当前建议范围决定。此断言比较增量缓存与全量渲染，不独立规定最终每个格式值或归因字段。
  */
 export const testRdtStagedSuggestedUnformatOfBaseFormatCacheDrift = () => {
   const base = new Y.Doc({ gc: false })
@@ -1589,9 +1631,8 @@ export const testRdtStagedSuggestedUnformatOfBaseFormatCacheDrift = () => {
 }
 
 /**
- * 回归验证 acceptAll 对“相邻且同键同值”的已提交/建议格式去归因。
- *
- * 初始 `a` 已提交 strong，邻接 `b` 普通；建议把 `b` 设为相同 strong 后 acceptAll。`currentFormatsAttributed` 必须识别重新暴露的 committed strong 并清除 `b` 的 `{format:{strong:[]}}`。同键、同值、邻接与 committed 在前均为关键；不同于节点插入归因泄漏。
+ * 关闭 GC 的 base0/sugg1 已有 committed strong 的 a 与普通 b，建议根物化缓存；给 b 建议相同 strong，先比较缓存，再 acceptAll。接受前后缓存都等于各自全量渲染。
+ * 恢复到已提交同键同值时需清旧格式归因；此处没有独立断言最终无 attribution。
  */
 export const testRdtAcceptAllOfSameValueSuggestedFormatCacheDrift = () => {
   const base = new Y.Doc({ gc: false })
@@ -1621,9 +1662,8 @@ export const testRdtAcceptAllOfSameValueSuggestedFormatCacheDrift = () => {
 }
 
 /**
- * 回归验证 rejectAll 后不残留已删除建议格式的 provenance。
- *
- * 建议 strong 覆盖 `a`，随后基线同键 strong 覆盖整个 `ab` 并严格越过建议范围；reject 后两字符都应是 committed strong、无 attribution。旧事件 render 让尾部 `b` 残留 `{format:{strong:[]}}`。前置缓存一致，漂移仅由 reject 触发；base < sugg 的 marker 次序为关键。
+ * 关闭 GC 的 base0/sugg1 已有 ab，建议根物化缓存；建议 strong 覆盖 a、基线 strong 覆盖 ab，先比较再 rejectAll。拒绝前后缓存都等于各自全量渲染。
+ * 同键范围恢复至基线时需清旧来源；此处没有独立检查具体归因叶缺失。
  */
 export const testRdtRejectAllOverlappingSameKeyFormatProvenanceResidual = () => {
   const base = new Y.Doc({ gc: false })
@@ -1654,9 +1694,8 @@ export const testRdtRejectAllOverlappingSameKeyFormatProvenanceResidual = () => 
 }
 
 /**
- * 回归验证 partial accept 拆开建议格式 open/close marker 对后，后续 unformat 不会把另一格式 attribution 泄漏到尾字符。
- *
- * `AB` 的 `A` 上有 em 与 strong 两个不同键建议；只接受 em close marker（clock 1），留下拆分 marker 对。accept 当下仍一致，随后取消 em 才会暴露潜在状态。修复要求安装全 null-leaf 环境副本时把 reset 键显式 clear。关键条件：接受 close 而不接受 open、存在第二个非空不同键格式、尾部字符及最终 unformat。
+ * 关闭 GC 的 base0/sugg1 已有 AB，建议根物化缓存；建议 A 有 em/strong，选择 clock1 的 em 关闭标记接受，再取消 A 的 em。接受后和取消后缓存均等于新渲染。
+ * 选关闭而未选打开标记会拆开这对建议边界；不同键的 null 清理仍需传播。此断言比较增量缓存与全量渲染，不独立规定最终每个格式值或归因字段。
  */
 export const testRdtSplitFormatMarkerPairPartialAcceptThenUnformatCacheDrift = () => {
   const base = new Y.Doc({ gc: false })
@@ -1688,9 +1727,8 @@ export const testRdtSplitFormatMarkerPairPartialAcceptThenUnformatCacheDrift = (
 }
 
 /**
- * 回归验证 partial accept 跳过 unformat open marker 后，后续不同键格式变化不会在邻接字符留下陈旧 attribution。
- *
- * 基线 strong 覆盖 `abc`；`b` 上建议 strong:null（clock 0/1）和 em（clock 2/3）；只接受 clock 1 的 restore marker。accept 当下仍一致，随后移除 em 才会暴露尾部 `c` 的伪 `{format:{strong:[]}}`。partial 范围必须排除 clock 0、第二格式必须先存在且不同键、基线范围必须跨过 `b` 两侧。
+ * 关闭 GC 的 base0/sugg1 已有 abc，基线 strong 覆盖三字符，建议根物化缓存；建议取消 b 的 strong 并加 em，只接受 clock1 恢复标记，再取消 b 的 em。接受前、接受后及最终缓存均等于对应新渲染。
+ * 此选择排除 clock0 的取消格式打开标记；后续另一键变化重扫环境归因。此断言比较增量缓存与全量渲染，不独立规定最终每个格式值或归因字段。
  */
 export const testRdtPartialAcceptSkippingUnformatOpenMarkerCacheDrift = () => {
   const base = new Y.Doc({ gc: false })
@@ -1726,9 +1764,8 @@ export const testRdtPartialAcceptSkippingUnformatOpenMarkerCacheDrift = () => {
 }
 
 /**
- * 回归验证建议整块删除段落后，基线对内部文本的局部 unformat 会更新嵌套 tombstone 缓存。
- *
- * y-prosemirror seeds 143/2/18 均化简为：段落 `ab` 被建议整节点删除，基线 strong 覆盖两字符，再只清除尾部 `b`。mode-0 fresh 格式片段必须携带 fresh，使 reset-to-previous marker 发逐键 clear；最终 `a` 保留 format attribution，`b` 只保留 delete attribution。整块删除、基线 provenance、移除方向和尾部局部范围为关键。
+ * 关闭 GC 的 base0/sugg1 根有 ab 段落，建议缓存已物化并删除整段；基线给段内 ab 设 strong，先比较，再只取消 b 的 strong。局部取消前后建议缓存均等于对应新渲染。
+ * 新格式标记在删除父项内仍属 fresh，范围恢复需逐键清理，不能让 b 继承 a 的来源。此断言比较增量缓存与全量渲染，不独立规定最终每个格式值或归因字段。
  */
 export const testRdtBaseUnformatInsideBlockDeletedParagraphCacheDrift = () => {
   const base = new Y.Doc({ gc: false })
@@ -1759,9 +1796,8 @@ export const testRdtBaseUnformatInsideBlockDeletedParagraphCacheDrift = () => {
 }
 
 /**
- * 回归验证建议删除整段后，基线格式 clear 在同键格式 run 内部结束时不会丢失。
- *
- * y-prosemirror seed 103 可化简为：段落 `ab` 初始 em，整节点建议删除，基线只清除尾部 `b`。fresh 格式片段必须传播 `c.fresh`，让 change render 发 clear，而非把环境 `{format:{em:[]}}` 重新盖满整段。整节点 tombstone、clear 方向及原格式范围跨过目标字符为关键；键值与 clientID 次序不关键。
+ * 关闭 GC 的 base0/sugg1 根有初始 em 的 ab 段落，建议缓存已物化；建议删整个段落，先比较，再由基线仅取消尾部 b 的 em。删除后及最终缓存均等于对应新渲染。
+ * 清除从原 em 范围内部开始，终点是该两字符范围末尾；未覆盖终点严格处于范围内部的场景。fresh 格式片段需传播范围清理。此断言比较增量缓存与全量渲染，不独立规定最终每个格式值或归因字段。
  */
 export const testRdtBaseFormatClearInsideSuggestionDeletedParagraphCacheDrift = () => {
   const base = new Y.Doc({ gc: false })
@@ -1779,7 +1815,7 @@ export const testRdtBaseFormatClearInsideSuggestionDeletedParagraphCacheDrift = 
   // 建议删除整段，继续作为 attributed tombstone 显示。
   st.applyDelta(delta.create().delete(1).done())
   t.assert(st.delta.equals(st.toDelta({ deep: true })), 'cache consistent after the suggestion delete')
-  // 基线只清除 `b` 的 em；clear 末端位于原 em run 与 tombstone 内部。
+  // 基线只清除尾部 b 的 em：起点在原 em run 内部，终点恰为该 run 末尾；整个节点仍是可见 tombstone。
   bt.applyDelta(delta.create().modify(delta.create().retain(1).retain(1, { em: null })).done())
   const cached = st.delta
   const fresh = st.toDelta({ deep: true })
@@ -1791,11 +1827,8 @@ export const testRdtBaseFormatClearInsideSuggestionDeletedParagraphCacheDrift = 
 }
 
 /**
- * 验证 AttributionsRenderer 只突出 state1→state2 且在 state3 仍活跃的变更：已撤回插入退出，新删除保持 delete attribution。
- *
- * Given：`hella → hello! → hello world` 三个可见状态，再把当前内容替换为 `42`。
- * When：以 state3 可见 inserts 作为 renderedContent，并取 `(state2-state1)∩state3` attribution。
- * Then：只把 `a` 标为删除、`o` 标为插入，其余 state3 内容正常显示。
+ * 关闭 GC 的文本记录 hella、hello!、hello world 三状态，再把当前全文改为42；把 state2−state1 与 state3 分通道求交作为归因，以 state3 活ID为 renderedContent。输出 hell、带delete的a、带insert的o、普通 world；已撤回 ! 和当前42不显示。
+ * state3.inserts只含当时未删除ID，deletes仍保留删除事实；插入/删除通道分别相交。
  *
  * @param {t.TestCase} _tc
  */

@@ -73,6 +73,13 @@ if (__DEV__) {
   // 记录已经输出过生命周期警告的组件类型，跨批次继续去重。
   const didWarnAboutUnsafeLifecycles = new Set<mixed>();
 
+  /**
+   * DEV 渲染时按组件类型收集旧生命周期警告，已输出的类型不再入队。
+   * 普通旧名称在非 StrictMode 中也检查，UNSAFE_ 名称仅检查 StrictLegacyMode；
+   * 兼容库显式抑制的普通旧名称不会入队。这里不立即输出，以便按名称聚合。
+   * @param fiber 提供类型、模式和开发组件栈的当前类组件。
+   * @param instance 用于检查各生命周期方法及兼容库抑制标记的类实例。
+   */
   ReactStrictModeWarnings.recordUnsafeLifecycleWarnings = (
     fiber: Fiber,
     instance: any,
@@ -126,6 +133,10 @@ if (__DEV__) {
     }
   };
 
+  /**
+   * DEV 提交时消费六组生命周期警告：先收集排序用名称、登记已警告类型并清空队列，
+   * 再输出 UNSAFE_ 错误与普通旧名称警告。因此输出阶段抛错也不会恢复这批队列。
+   */
   ReactStrictModeWarnings.flushPendingUnsafeLifecycleWarnings = () => {
     // 第一遍收集并去重组件名称，同时清空本批次队列。
     const componentWillMountUniqueNames = new Set<string>();
@@ -302,6 +313,11 @@ if (__DEV__) {
   // 记录已经输出过遗留 Context 警告的组件类型，跨批次继续去重。
   const didWarnAboutLegacyContext = new Set<mixed>();
 
+  /**
+   * DEV 中把使用旧 Context API 的类组件归入最外层 StrictMode 根的警告批次。
+   * contextTypes、childContextTypes 或 getChildContext 任一存在即可记录；
+   * 已输出过的类型跳过，缺少 StrictMode 根则报告内部错误并返回。
+   */
   ReactStrictModeWarnings.recordLegacyContextWarning = (
     fiber: Fiber,
     instance: any,
@@ -335,6 +351,10 @@ if (__DEV__) {
     }
   };
 
+  /**
+   * DEV 中逐 StrictMode 根聚合旧 Context 组件名称，在首个组件的开发栈下输出警告。
+   * 同时登记跨批次类型去重；本函数不清空根到组件数组的 Map，丢弃批次由 discard 负责。
+   */
   ReactStrictModeWarnings.flushLegacyContextWarning = () => {
     (pendingLegacyContextWarning as any as FiberToFiberComponentsMap).forEach(
       (fiberArray: FiberArray, strictRoot) => {
@@ -365,6 +385,7 @@ if (__DEV__) {
     );
   };
 
+  /** 丢弃当前渲染积累的生命周期与旧 Context 警告；保留跨批次的已警告类型集合。 */
   ReactStrictModeWarnings.discardPendingWarnings = () => {
     pendingComponentWillMountWarnings = [];
     pendingUNSAFE_ComponentWillMountWarnings = [];

@@ -77,6 +77,7 @@ import {runWithFiberInDEV} from './ReactCurrentFiber';
 
 // 栈上参与当前 hydration Context 的最深 Fiber；它可能是已匹配节点，也可能是插入树。
 let hydrationParentFiber: null | Fiber = null;
+// 当前父级中尚未认领的服务端候选；宿主 begin 下沉，complete 弹父后推进 sibling。
 let nextHydratableInstance: null | HydratableInstance = null;
 let isHydrating: boolean = false;
 
@@ -89,6 +90,7 @@ let hydrationDiffRootDEV: null | HydrationDiffNode = null;
 // 当前边界 hydration 尝试期间抛出的错误。
 let hydrationErrors: Array<CapturedValue<mixed>> | null = null;
 
+// 宿主匹配能否应用容器/singleton 的宽松跳过规则；进入普通实例或边界后关闭。
 let rootOrSingletonContext = false;
 
 /**
@@ -96,6 +98,8 @@ let rootOrSingletonContext = false;
  *
  * 当前深度优先渲染保证共享祖先通常是 siblings 最后一项，可 O(1) 复用；同时维护
  * 到 mismatch 叶子的最短距离，供最终格式化折叠无意义链路。
+ * @param fiber 正在 render 的工作 Fiber；按 return 链建立根到差异位置的路径。
+ * @param distanceFromLeaf 实际差异位置从 0 开始，递归到每层父级加 1；复用时取较小值。
  */
 function buildHydrationDiffNode(
   fiber: Fiber,
@@ -164,6 +168,7 @@ export function markDidThrowWhileHydratingDEV() {
 
 /**
  * 从 HostRoot 开始 hydration：把游标指向容器首个可复用节点并清空本轮错误/diff。
+ * beginWork 仅在仍 dehydrated 的根调用；不支持 hydration 时返回 false 且不重置模块状态。
  */
 function enterHydrationState(fiber: Fiber): boolean {
   // $FlowFixMe[constant-condition]
@@ -237,7 +242,7 @@ function reenterHydrationStateFromDehydratedSuspenseInstance(
 }
 
 /**
- * 记录某客户端 Fiber 未找到可复用宿主节点，并把被拒候选加入服务端删除 tail。
+ * 记录某客户端 Fiber 未找到可复用宿主节点，并把被拒候选加入 DEV 差异树的 serverTail，供诊断显示。
  * 已有挂起/错误时跳过，因为缺失数据可能让该 mismatch 成为假阳性。
  */
 function warnNonHydratedInstance(
@@ -421,6 +426,8 @@ export const HydrationMismatchException: mixed = new Error(
 /**
  * 终止当前 hydration：消费本次 DEV diff、构造可恢复诊断并抛出内部哨兵异常。
  * 调度器捕获后会改走客户端渲染，真正的错误在恢复/提交路径统一报告。
+ * fiber 用于捕获诊断栈，fromText 仅选择错误文案中的 text/HTML，不改变恢复策略。
+ * 先排入可恢复 Error、再抛共享哨兵；throwException 识别哨兵以避免额外包装重复报告。
  */
 function throwOnHydrationMismatch(fiber: Fiber, fromText: boolean = false) {
   let diff = '';
@@ -829,6 +836,9 @@ function popToNextHostParent(fiber: Fiber): void {
  *
  * 插入树完成时只重入 sibling；正常 hydration 则先检查未被客户端消费的服务端 tail，
  * 再按 Suspense、Activity、singleton 或普通宿主节点的边界规则越过整个实例区间。
+ * completeWork 传入刚完成的工作 Fiber；只有它等于 hydrationParentFiber 才能弹出，
+ * 中间复合组件完成不会移动宿主游标。发现不允许残留的 tail 时抛 mismatch，
+ * 此函数不直接删除服务端节点，重建/删除交给随后客户端渲染与提交处理。
  */
 function popHydrationState(fiber: Fiber): boolean {
   // $FlowFixMe[constant-condition]
@@ -926,7 +936,7 @@ function warnIfUnhydratedTailNodes(fiber: Fiber) {
   }
 }
 
-/** 在离开根/边界时清空 hydration 游标与 DEV 挂起标记。 */
+/** 清空 hydration 游标与 DEV 挂起标记；不清 hydrationErrors/diff，恢复报告与 DEV 警告另有消费入口。 */
 function resetHydrationState(): void {
   // $FlowFixMe[constant-condition]
   if (!supportsHydration) {

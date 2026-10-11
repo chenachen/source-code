@@ -1,0 +1,4628 @@
+{
+  "manifest": {
+    "date": "2026-10-11",
+    "mode": "注释与逐测试场景复核",
+    "packages": [
+      "shared",
+      "scheduler",
+      "react",
+      "react-reconciler",
+      "react-dom-bindings",
+      "react-dom"
+    ],
+    "files": [
+      {
+        "file": "react/packages/shared/CheckStringCoercion.js",
+        "package": "shared",
+        "bytes": 6457,
+        "sha256": "5ea0c609b6a1577fbca33525c6df7e7c2688dd4b39d8c7791e9eada65afcda41",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/shared/ConsolePatchingDev.js",
+        "package": "shared",
+        "bytes": 2926,
+        "sha256": "5443c36d4ec01d7b7911fc68bb797339360791475f74856eec4697f2446e89b3",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/shared/DefaultPrepareStackTrace.js",
+        "package": "shared",
+        "bytes": 380,
+        "sha256": "4d348cbd819c7961924c15ccaf82a722b6e5ca3e9361535464ff1c122e4ecb92",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/shared/DefaultPrepareStackTraceV8.js",
+        "package": "shared",
+        "bytes": 765,
+        "sha256": "1ec205768e287841bb6500d1b903d74520c6121367332c1e0dc67a5a75adaa7e",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/shared/ExecutionEnvironment.js",
+        "package": "shared",
+        "bytes": 485,
+        "sha256": "7289cced063a9fd685387a2d181a2749f484bb9ed246c4f93b0b82e54f52ed50",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/shared/ReactComponentInfoStack.js",
+        "package": "shared",
+        "bytes": 1907,
+        "sha256": "7cd76b6f1537b4a03656b93220d72118870e47818ee488dbbb76d09a99419f9c",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/shared/ReactComponentStackFrame.js",
+        "package": "shared",
+        "bytes": 11816,
+        "sha256": "3880c7fe117f00ec5a186ce8d8c9ea513de29d9d48e8fec432bba30e8bea718a",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/shared/ReactDOMFragmentRefShared.js",
+        "package": "shared",
+        "bytes": 2450,
+        "sha256": "cd5c21e4abd3346a0ac840ff084f8afcb5aac26751b344b42e955ede3a56714c",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/shared/ReactDOMSharedInternals.js",
+        "package": "shared",
+        "bytes": 477,
+        "sha256": "dd1559999abdc16ded0190bf4b9a70d16be40278fa7f5765efc4e1fecffaaf29",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/shared/ReactElementType.js",
+        "package": "shared",
+        "bytes": 1597,
+        "sha256": "271f2c2e690b10b4f22dabfa0b6dd1272fb654e74410de01fcbb6d95915efce4",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/shared/ReactFeatureFlags.js",
+        "package": "shared",
+        "bytes": 15327,
+        "sha256": "a198d1457d91dc9ddaa3779d268d788f81abfea868a6a1672c514ad906cfaba9",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/shared/ReactFlightPropertyAccess.js",
+        "package": "shared",
+        "bytes": 503,
+        "sha256": "0f2e9ca219f68b2922357c873c646ed2b087f1ecad49ace2a1ab293282397eff",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/shared/ReactIODescription.js",
+        "package": "shared",
+        "bytes": 3079,
+        "sha256": "783fddaf8025f22b1906552fb0ae7d2b9d74dec7dac0e2b87856ee4a3828f187",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/shared/ReactInstanceMap.js",
+        "package": "shared",
+        "bytes": 868,
+        "sha256": "e2e84c13d19b4ad8419833717a0c0a5fe043559dbbfff03d6cae5dea5e7fa42f",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/shared/ReactOwnerStackFrames.js",
+        "package": "shared",
+        "bytes": 1652,
+        "sha256": "07f0c3d1eeeba02f04fd87097ac722a5611134b59162158d1e45d38ea60bed1f",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/shared/ReactOwnerStackReset.js",
+        "package": "shared",
+        "bytes": 1546,
+        "sha256": "369b377ca0f0d35e9e0a53f572a20379d30686e8cc4d6caaa317f0688d643a87",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/shared/ReactPerformanceTrackProperties.js",
+        "package": "shared",
+        "bytes": 17714,
+        "sha256": "e0b187317c7a017c5aa627cd0a0a3577e0a40b3274ddfc1f1ed22a1b589a5d25",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/shared/ReactRecoverable.js",
+        "package": "shared",
+        "bytes": 561,
+        "sha256": "b68d72a29897f61fa95301ed858fb53b010c6573b6a355d16d202223785aa2ce",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/shared/ReactSerializationErrors.js",
+        "package": "shared",
+        "bytes": 11453,
+        "sha256": "2b0d9292a2326e963ebe57bb37da3e91779be66166a30df29464ebe9879fcc0e",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/shared/ReactSharedInternals.js",
+        "package": "shared",
+        "bytes": 463,
+        "sha256": "59691a6fe30f015d02786f85bfa2146a1024306ada166818d32660c2de936c7a",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/shared/ReactSymbols.js",
+        "package": "shared",
+        "bytes": 4765,
+        "sha256": "86e5c69823c203e3d96d8be9fc72c370ffdb6bdef4fcf6de1915745059c3d6b3",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/shared/ReactTypes.js",
+        "package": "shared",
+        "bytes": 24711,
+        "sha256": "fa7b63c050b4eb7bef32bf5b9460823ec52b5b7847f469683d4ff19b6b50d9c7",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/shared/ReactVersion.js",
+        "package": "shared",
+        "bytes": 747,
+        "sha256": "b72033819b6eb13ef2c1fdfc354e17b90ddb6c5da364ea0b97174b4eb8ac06e3",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/shared/__tests__/ReactDOMFrameScheduling-test.js",
+        "package": "shared",
+        "bytes": 1110,
+        "sha256": "1ec2bcfc1ed3146c1ff7e124e7f0b18bcfc1c24bb2485a7c9e4e58641f4d7eb4",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/shared/__tests__/ReactError-test.internal.js",
+        "package": "shared",
+        "bytes": 2805,
+        "sha256": "0ef867ea2fab4b35c2716a98a92d6365d71750d244b5b67045bd898eeefe30d3",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/shared/__tests__/ReactErrorProd-test.internal.js",
+        "package": "shared",
+        "bytes": 1767,
+        "sha256": "4affe515030338f2d77d743ab8479a383269c8f712a549c4b8321b4ba6969541",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/shared/__tests__/ReactSymbols-test.internal.js",
+        "package": "shared",
+        "bytes": 1118,
+        "sha256": "9c187f8d4acb2c685dcceab61f40ef7bccce4940c7fcd953a561e759d05a90dc",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/shared/__tests__/normalizeConsoleFormat-test.internal.js",
+        "package": "shared",
+        "bytes": 1940,
+        "sha256": "3e77bd4d9a468135e59d67b6a62a5e4a5726ccb41c66b9354533839970f88177",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/shared/assign.js",
+        "package": "shared",
+        "bytes": 340,
+        "sha256": "c4e0c9a78288d12d98ae43e10834b85109e80efa73aeedf0b2276fb38daf8c99",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/shared/binaryToComparableString.js",
+        "package": "shared",
+        "bytes": 695,
+        "sha256": "9a7f59a2ec9be3d6b715e91aef80aaff3db94b472bd37b4db69a9dbd379710ce",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/shared/enqueueTask.js",
+        "package": "shared",
+        "bytes": 2071,
+        "sha256": "8c4ee1f03206ae53891f3c1d448b6a09998d434759133ad0efa6f5015b7d12a4",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/shared/forks/DefaultPrepareStackTrace.dom-edge.js",
+        "package": "shared",
+        "bytes": 259,
+        "sha256": "8b23632501f4a391301a9f23bce3d5c0e92279076598e995f503788ae778bc6d",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/shared/forks/DefaultPrepareStackTrace.dom-node.js",
+        "package": "shared",
+        "bytes": 259,
+        "sha256": "8b23632501f4a391301a9f23bce3d5c0e92279076598e995f503788ae778bc6d",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/shared/forks/DefaultPrepareStackTrace.markup.js",
+        "package": "shared",
+        "bytes": 259,
+        "sha256": "8b23632501f4a391301a9f23bce3d5c0e92279076598e995f503788ae778bc6d",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/shared/forks/ReactFeatureFlags.eslint-plugin.www.js",
+        "package": "shared",
+        "bytes": 1024,
+        "sha256": "1d8716caa5dd1f2d05aedce1d093c7e1d81c3f090a54c071b1e9cc9377e1762a",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/shared/forks/ReactFeatureFlags.native-fb-dynamic.js",
+        "package": "shared",
+        "bytes": 1820,
+        "sha256": "a15599763146dac3e881344fbec36f96bc7e43e9a4cd52608e1ff9c0bfc7340e",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/shared/forks/ReactFeatureFlags.native-fb.js",
+        "package": "shared",
+        "bytes": 9972,
+        "sha256": "8825ae6b2ec624fae88a8f3ddfbbe6aa4f9e7c4c9cdfa038d87aaa91de27b992",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/shared/forks/ReactFeatureFlags.native-oss.js",
+        "package": "shared",
+        "bytes": 9564,
+        "sha256": "8b17efda314b4404e255a76b3e8394a1743f1ed9bf26737122c3744fbae0bc05",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/shared/forks/ReactFeatureFlags.readonly.js",
+        "package": "shared",
+        "bytes": 707,
+        "sha256": "f80fcb526cab59b5e0a379276c954842b21e274dea30970c53427d4617a3cac0",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/shared/forks/ReactFeatureFlags.test-renderer.js",
+        "package": "shared",
+        "bytes": 9409,
+        "sha256": "571219ce223fb90badcc7cb796d69ca69e072bd9898b305c106b29aa056cdefb",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/shared/forks/ReactFeatureFlags.test-renderer.native-fb.js",
+        "package": "shared",
+        "bytes": 8465,
+        "sha256": "dfa024a6a979cb7dc7b9237c097ae3e5dd8992e7a25649cf82d39830275e5729",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/shared/forks/ReactFeatureFlags.test-renderer.www.js",
+        "package": "shared",
+        "bytes": 9134,
+        "sha256": "f378258c055b5015d11fae580fe86f1cc7013cc898fc8ee6e278cc415d056ba9",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/shared/forks/ReactFeatureFlags.www-dynamic.js",
+        "package": "shared",
+        "bytes": 3819,
+        "sha256": "aaf62ab78f7eb2740dc6b7fbf44a001467be7efd525d063529a1d0b5ea090ff2",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/shared/forks/ReactFeatureFlags.www.js",
+        "package": "shared",
+        "bytes": 9750,
+        "sha256": "00a4d46e303ea2d4864b4a53a507d7add62e6c8c90d63015e35017d7d0978207",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/shared/formatProdErrorMessage.js",
+        "package": "shared",
+        "bytes": 997,
+        "sha256": "85ddf142861b1bc3b01689b3b4bfdb06d0cb32a6ded0a2bef0ffd6967535fd12",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/shared/getComponentNameFromType.js",
+        "package": "shared",
+        "bytes": 4492,
+        "sha256": "ccf70e4807e6c8013f32f8397d60685ed0e21bacae34d5200bd071005ac9c0fb",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/shared/getPrototypeOf.js",
+        "package": "shared",
+        "bytes": 373,
+        "sha256": "5addb544ce60f4814c2294d77ef22d685c60fc3b8ce12c896163ac715ba0fbdb",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/shared/hasOwnProperty.js",
+        "package": "shared",
+        "bytes": 412,
+        "sha256": "a0b3bec297066e2abcef5c130d6e878fe63d9057b777e4c968f4308595de2037",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/shared/isArray.js",
+        "package": "shared",
+        "bytes": 675,
+        "sha256": "2808601ef561ccd6f31eb4891ce669485ead65296b87ffe88bb6320b6f18e1f2",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/shared/noop.js",
+        "package": "shared",
+        "bytes": 294,
+        "sha256": "1a1e34a63f18bdb3e88936ae9c5f144faa246af044459c520dc6c81fbb488de4",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/shared/normalizeConsoleFormat.js",
+        "package": "shared",
+        "bytes": 1751,
+        "sha256": "c12070fd0bcc9f2c0fbbb01d23a810f9d15bc2074b5f200335784bbc8b5726b7",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/shared/objectIs.js",
+        "package": "shared",
+        "bytes": 874,
+        "sha256": "fd90621b806bd0cffed2ff6a0f71d3b69bd6eb1467c25aa5695b9c0cacb0226b",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/shared/reportGlobalError.js",
+        "package": "shared",
+        "bytes": 1856,
+        "sha256": "f5edc375d8cd4b93f04b33d611fdc7b0a8081a9521e247eb810776c3c1d8cf5b",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/shared/shallowEqual.js",
+        "package": "shared",
+        "bytes": 1358,
+        "sha256": "0ae514f14e26698d106bbf8c9d6398ff4cb4b57795cd3aca21e16ccfe21f817c",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/scheduler/index.js",
+        "package": "scheduler",
+        "bytes": 352,
+        "sha256": "36951ed922fef5f2059d367ac7ec9d5f9f4f6af3e1a9a6ef2cfdb106d05d85b4",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/scheduler/index.native.js",
+        "package": "scheduler",
+        "bytes": 371,
+        "sha256": "6045146d2c9abad6c19f8cda6b475febddaa24ce4c2a3d6bd0c985fd2c6258ab",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/scheduler/npm/index.js",
+        "package": "scheduler",
+        "bytes": 310,
+        "sha256": "c847dd383239449d6bbdcaa454930e45a6806c7f60fb6a7b72f6cba5d200c063",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/scheduler/npm/index.native.js",
+        "package": "scheduler",
+        "bytes": 280,
+        "sha256": "2fe643d9c547659d5a05b6128d994caa2dda4792c14118a30cb988671e79a039",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/scheduler/npm/unstable_mock.js",
+        "package": "scheduler",
+        "bytes": 301,
+        "sha256": "d4b455a0018f400c5f9c8de2bc401943f9abdea21af62f7157ce1be42e3c4129",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/scheduler/npm/unstable_post_task.js",
+        "package": "scheduler",
+        "bytes": 322,
+        "sha256": "5f660998e256b74385d6a22dbb90abf24edabbf31b583a6942fe83cdf942ad1e",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/scheduler/src/SchedulerFeatureFlags.js",
+        "package": "scheduler",
+        "bytes": 1199,
+        "sha256": "169aa41796786154507f3914c521a7bb6459622ca55c19cd7ff201489fbd4f32",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/scheduler/src/SchedulerMinHeap.js",
+        "package": "scheduler",
+        "bytes": 3658,
+        "sha256": "f1338743621ff7e7afa65f8de580ff29c1d42ffbaae8ceeec00b2f47e11d2711",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/scheduler/src/SchedulerPriorities.js",
+        "package": "scheduler",
+        "bytes": 1197,
+        "sha256": "0554347c8966c4f315ff26e0993e2668a5d44835546b9320fece632c757602bd",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/scheduler/src/SchedulerProfiling.js",
+        "package": "scheduler",
+        "bytes": 7540,
+        "sha256": "71ea4f03aeb1848ecbd56fb71bf0e95cc513a6d16ee1bfb3c953f7d6758766a7",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/scheduler/src/__tests__/Scheduler-test.js",
+        "package": "scheduler",
+        "bytes": 15325,
+        "sha256": "3deb8f268742651ec9b21004763444f4f05ef9c3aed8b6c81600b8722cf0f957",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/scheduler/src/__tests__/SchedulerMock-test.js",
+        "package": "scheduler",
+        "bytes": 32620,
+        "sha256": "33332a38cf0facd4570344bcb21109a0ac7626d3b53d3ec35fa5a546124fb9f2",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/scheduler/src/__tests__/SchedulerPostTask-test.js",
+        "package": "scheduler",
+        "bytes": 17534,
+        "sha256": "e45645ae32f79d9004c92c7da1ff792f89c8e853953c44e520e231b10b8e8379",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/scheduler/src/__tests__/SchedulerProfiling-test.js",
+        "package": "scheduler",
+        "bytes": 21485,
+        "sha256": "26902515144b3e93d10ec9ea9ad4955d12dfeb2e7fe7160a5391a56543203be8",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/scheduler/src/__tests__/SchedulerSetImmediate-test.js",
+        "package": "scheduler",
+        "bytes": 13667,
+        "sha256": "fbb8a01ae7d19d8fdea66a18e48e4f032ed20ef4daaf428f9507c0764e9296d5",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/scheduler/src/__tests__/SchedulerSetTimeout-test.js",
+        "package": "scheduler",
+        "bytes": 6021,
+        "sha256": "76a39625209903098d1cce638c5ddd30d9a94417b8087eae404fa2252396e865",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/scheduler/src/forks/Scheduler.js",
+        "package": "scheduler",
+        "bytes": 24936,
+        "sha256": "1e8713fcf1f501405de9085f9e5e7e82cb6fda437568dc434c8a88ba68f1dab3",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/scheduler/src/forks/SchedulerFeatureFlags.native-fb.js",
+        "package": "scheduler",
+        "bytes": 1016,
+        "sha256": "be6468af1a0ffc14d924a2fdd7fc0a32b1addbd7e0190aaf38a84c97f70794a9",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/scheduler/src/forks/SchedulerFeatureFlags.www-dynamic.js",
+        "package": "scheduler",
+        "bytes": 532,
+        "sha256": "10492c9b6dfe9a75a04a820402055b1f428f6a283c8efa9fe0750e350fe46bca",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/scheduler/src/forks/SchedulerFeatureFlags.www.js",
+        "package": "scheduler",
+        "bytes": 1188,
+        "sha256": "04350241aa4a7950eca3523855c3355fdd4b569a1859f805eb3b1291e140fda2",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/scheduler/src/forks/SchedulerMock.js",
+        "package": "scheduler",
+        "bytes": 24854,
+        "sha256": "627d059609e4dbcd219cbc5da8c585ed672b83d7d372e422b5b45ad4100a64f0",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/scheduler/src/forks/SchedulerNative.js",
+        "package": "scheduler",
+        "bytes": 6825,
+        "sha256": "df509330d787ed2c6544bad97b3740231827432e91d6f8b6b3db4c53083412ec",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/scheduler/src/forks/SchedulerPostTask.js",
+        "package": "scheduler",
+        "bytes": 9099,
+        "sha256": "25bf9464fe8fe7d9c3ebd4b47fb94445564ab4af548e2ab7b085fb80fd8fae0e",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/scheduler/unstable_mock.js",
+        "package": "scheduler",
+        "bytes": 346,
+        "sha256": "fdb29cfa5f2c30e5f4b0af6d92a1ef0e5263c056db9f9143d27e98f3dfd21324",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/scheduler/unstable_post_task.js",
+        "package": "scheduler",
+        "bytes": 344,
+        "sha256": "e512399c032b1b1ee24a9abdaf3d38c0d35b5661129d3b8374cc5b02f9cf7ce5",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react/compiler-runtime.js",
+        "package": "react",
+        "bytes": 316,
+        "sha256": "1211c1bc09cf6f08d45974d693233cb35997e08333723931b2ca7271dec1ef68",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react/index.development.js",
+        "package": "react",
+        "bytes": 2680,
+        "sha256": "6fc8e05d07025a2fcd4f707deed71445c8df561f596afb1ef11b651e63bb59c4",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react/index.experimental.development.js",
+        "package": "react",
+        "bytes": 1804,
+        "sha256": "43f34c9f584bf11b1577a25bea72d9d5a34fe09a3f80c90504d35220646176f3",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react/index.experimental.js",
+        "package": "react",
+        "bytes": 1717,
+        "sha256": "c1ec9d0ad7dad9e11a6164bcf0f0a808424a4fe5a3411d34a5978a76b03115e9",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react/index.fb.js",
+        "package": "react",
+        "bytes": 1969,
+        "sha256": "e7cd7c2fd6a05e77b7d0c0554304e097497b5a333a4001bc88c6952d6cbb8968",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react/index.js",
+        "package": "react",
+        "bytes": 2754,
+        "sha256": "db7da9fa2d68f8ca5863f92e2ec328e9cf535f260dae4b68e647059a8299f9f8",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react/index.stable.development.js",
+        "package": "react",
+        "bytes": 1180,
+        "sha256": "196a12f6436e0504e88eb5fd9700070476d27c863373b63c86df376794cec9ea",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react/index.stable.js",
+        "package": "react",
+        "bytes": 1054,
+        "sha256": "3dc322d733aa3b5e1374fdbbca3cee42a5e954e6ac2ddc8c32425c624898740c",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react/jsx-dev-runtime.js",
+        "package": "react",
+        "bytes": 333,
+        "sha256": "09219ecd23cd2588abb8275a6a24b8bbac3176a8c03222b1da05e61bcf3d1097",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react/jsx-dev-runtime.react-server.js",
+        "package": "react",
+        "bytes": 346,
+        "sha256": "a124edbbcd73ee79ee4c078559364db2b9aeeec1d15bc62af9780d6dffba8521",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react/jsx-runtime.js",
+        "package": "react",
+        "bytes": 335,
+        "sha256": "9a1d6400a34e9230ad568166e84e27909b2b57862bb30cfc5d7fa1f6e0da6337",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react/jsx-runtime.react-server.js",
+        "package": "react",
+        "bytes": 348,
+        "sha256": "2da3351faca36727d11209c7f1524c47242644d3d729299fc5c0e01853763782",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react/npm/compiler-runtime.js",
+        "package": "react",
+        "bytes": 516,
+        "sha256": "770b2a91819861a3c92b4c816f3066614808b4938701ccc78b214dc2ee378001",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react/npm/index.js",
+        "package": "react",
+        "bytes": 283,
+        "sha256": "fdc4d36c5bc91ebe5e76641a2db84f8517a7cb6400750c88e098729121f5311d",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react/npm/jsx-dev-runtime.js",
+        "package": "react",
+        "bytes": 324,
+        "sha256": "ae68a85822ea2920c646213e765bf365c07352ab52374f98ab13fe94d593680b",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react/npm/jsx-dev-runtime.react-server.js",
+        "package": "react",
+        "bytes": 327,
+        "sha256": "e0ce7b690342200ad33b053792a610d863c232eac3fcbfc7adf1db32cbe68861",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react/npm/jsx-runtime.js",
+        "package": "react",
+        "bytes": 281,
+        "sha256": "2bc7639be48d4532724864bc7067602578866ce2aadee86ce92e779232661805",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react/npm/jsx-runtime.react-server.js",
+        "package": "react",
+        "bytes": 315,
+        "sha256": "0ba24fb6efa6ec2e0a2aef26219e7504ec8db4351257575feb0ab8b395743555",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react/npm/react.react-server.js",
+        "package": "react",
+        "bytes": 294,
+        "sha256": "3c53f43016e00a44f82e8341bc21e1dc9009d49c989dfe374d1ea023da02ac6a",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react/npm/unstable-cache.js",
+        "package": "react",
+        "bytes": 306,
+        "sha256": "79dbf2b63e4791f2bbe830017cd0937d3ba45c68f28b3502d54dd6fac46c3fce",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react/react.react-server.js",
+        "package": "react",
+        "bytes": 304,
+        "sha256": "de6d1dcb1ce1b8a0d8c6c2ab7cf1b9946a7aa50605f36dd4e3a139760dc372ab",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react/src/BadMapPolyfill.js",
+        "package": "react",
+        "bytes": 679,
+        "sha256": "6942ba34d36fb2588d27f7e71076317084a0e9475326f4dc4ab210cf2dda2fa9",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react/src/ReactAct.js",
+        "package": "react",
+        "bytes": 14926,
+        "sha256": "fd4d9e5ca02d2ea0cbabc905b68b5bcfcd56939f1e1d9c20470c8026116bfac7",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react/src/ReactBaseClasses.js",
+        "package": "react",
+        "bytes": 4745,
+        "sha256": "c8e2fb8fdc01813a9a463459986687f2e037b2a1c2175e998fa64a22f89e3168",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react/src/ReactCacheClient.js",
+        "package": "react",
+        "bytes": 1591,
+        "sha256": "1445ea74461017e6de60f9206101299bf80a337ad3ac7380633eae765f8105a6",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react/src/ReactCacheImpl.js",
+        "package": "react",
+        "bytes": 6534,
+        "sha256": "26583359d8c2cc98e291a69f9ffb290877f17f86c63a6e6fb9bd3de2e8f1a345",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react/src/ReactCacheServer.js",
+        "package": "react",
+        "bytes": 362,
+        "sha256": "adce683081afe8ed988ae19ffc1e1476110e8dcf4e589df5621007068ac0ed32",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react/src/ReactChildren.js",
+        "package": "react",
+        "bytes": 16271,
+        "sha256": "52ac667b4df85b3c873097e5eec134056fb5e775e1412974e0bc5ba5f772ce16",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react/src/ReactClient.js",
+        "package": "react",
+        "bytes": 3658,
+        "sha256": "d70081eaf17cc0043eb31b61000b47521a50e33755c844309a3611544c43cd2f",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react/src/ReactCompilerRuntime.js",
+        "package": "react",
+        "bytes": 332,
+        "sha256": "f436b5742e2cbeb6c3c8448bc1b199381cbaeb4ef32eeeef7513ab9b0563b6d7",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react/src/ReactContext.js",
+        "package": "react",
+        "bytes": 1641,
+        "sha256": "017b0374282dea5f3121d3db0761266f217b36336920d8ae2240c092bb802541",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react/src/ReactCreateRef.js",
+        "package": "react",
+        "bytes": 608,
+        "sha256": "3353c473ee13c76d62dc4f1ff397edcb7b91bb7ef7f19f42a21eac399cd0b856",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react/src/ReactForwardRef.js",
+        "package": "react",
+        "bytes": 2825,
+        "sha256": "74fbcaf2ea40a49d229bf9747c029c4d6b0e31caa4d5e005a535211783f2f4cf",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react/src/ReactHooks.js",
+        "package": "react",
+        "bytes": 9449,
+        "sha256": "df97c8edc446f8a9d230d9b45329e292cb48cc72b285fa88e718f39745bbda18",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react/src/ReactLazy.js",
+        "package": "react",
+        "bytes": 12545,
+        "sha256": "b9270f37bbc8014b8c72d72a43af56a75aa88f96971959173f50889a403d730f",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react/src/ReactMemo.js",
+        "package": "react",
+        "bytes": 1892,
+        "sha256": "fbced46717e58db06a44563fdc3f82b6f98fe34e58c39828b8019839a81ed3ef",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react/src/ReactNoopUpdateQueue.js",
+        "package": "react",
+        "bytes": 3399,
+        "sha256": "82f9e5ed880af9f541e6a0b34592af9ac4fc5cae7dcf3d482604e304ef205d21",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react/src/ReactOwnerStack.js",
+        "package": "react",
+        "bytes": 739,
+        "sha256": "0262e1294c7e23fbfa6b376fa1a7c23df26300a841e237657b0cfd9dfa25fe88",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react/src/ReactServer.experimental.development.js",
+        "package": "react",
+        "bytes": 2303,
+        "sha256": "258a3f4ae24d792464b37d001b9d6c47bc0bdd703ad8c004039db752c5c79037",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react/src/ReactServer.experimental.js",
+        "package": "react",
+        "bytes": 2178,
+        "sha256": "a34a0a3fee9add244fb16d3331c015aae0176b0386aa5ee754ea859acd39d3dc",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react/src/ReactServer.fb.js",
+        "package": "react",
+        "bytes": 2042,
+        "sha256": "f7dbfd3e3c2f9bcca936ce58af2ba25b7b422dd970dfdb1665f45f7ed6085145",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react/src/ReactServer.js",
+        "package": "react",
+        "bytes": 1745,
+        "sha256": "fc0c83239e9fa5f7f8ba69e5317ecd63eac3a37fe6503a768ca387a7ce6a29e0",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react/src/ReactSharedInternalsClient.js",
+        "package": "react",
+        "bytes": 3948,
+        "sha256": "e99f3003cbca0d9e919cca8c8743df947d875e92b3bc72ee356bc99a96f47700",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react/src/ReactSharedInternalsServer.js",
+        "package": "react",
+        "bytes": 2874,
+        "sha256": "e3b20db951eccf3d1fd900cfb142c8537a2f681fdeea3914a2bac172e44dbbfd",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react/src/ReactStartTransition.js",
+        "package": "react",
+        "bytes": 8099,
+        "sha256": "82d843010f6b6ee1801f3823d12bdd324c7439d042ef996fadb657c32bf547bb",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react/src/ReactTaint.js",
+        "package": "react",
+        "bytes": 5516,
+        "sha256": "2d7bb17c927060409eebef6cf9474ab6f3ce3d4e4942888cd6ba9c38f6579caf",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react/src/ReactTaintRegistry.js",
+        "package": "react",
+        "bytes": 1711,
+        "sha256": "0a892b4002ff94c45d168c8ca8296a42d27a91af56003aa29f3a515b1997c2ad",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react/src/ReactTransitionType.js",
+        "package": "react",
+        "bytes": 2171,
+        "sha256": "29b81fd6c3b0e329f12ca7798b8debf9ee982021f8a348fd14abe6debb230498",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react/src/__tests__/React-hooks-arity.js",
+        "package": "react",
+        "bytes": 1082,
+        "sha256": "ebcf708a0b1e4ced75b2fca7a1575f0b2a7f51893334bf04f3ac65d2c618a51f",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react/src/__tests__/ReactChildren-test.js",
+        "package": "react",
+        "bytes": 38645,
+        "sha256": "56efa003cf5379c65d9af5c847ec9e8f9225760cf1f324c14e5cffb2143830b7",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react/src/__tests__/ReactClassEquivalence-test.js",
+        "package": "react",
+        "bytes": 2478,
+        "sha256": "65232521e0cb7f0777c163cfeb0faad8f4ac1b58d69ee93f6c9f82161fe13260",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react/src/__tests__/ReactCoffeeScriptClass-test.coffee",
+        "package": "react",
+        "bytes": 25345,
+        "sha256": "58770936820db3a745c30623139fd936b287f8b1db179dca9aaf52ac09b90153",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react/src/__tests__/ReactContextValidator-test.js",
+        "package": "react",
+        "bytes": 21701,
+        "sha256": "9950e7e7ad6b0fb312e6f591ae0817bac234dca91c773368f8c3ff0a88d95c84",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react/src/__tests__/ReactCreateElement-test.js",
+        "package": "react",
+        "bytes": 13794,
+        "sha256": "0136e8caa1d08d8ab6b83d3c10eb9df6ee245235867edae83bee21f7e02b5b8c",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react/src/__tests__/ReactCreateRef-test.js",
+        "package": "react",
+        "bytes": 1579,
+        "sha256": "102b5e4b1bd221ac331c8c98801683ea287fc18b92facc341ed48824eba1a56e",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react/src/__tests__/ReactES6Class-test.js",
+        "package": "react",
+        "bytes": 19840,
+        "sha256": "d503117541f88e81c1d9b56a05cc1c91594fea4c91c76dee4ab1876e178ae291",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react/src/__tests__/ReactElementClone-test.js",
+        "package": "react",
+        "bytes": 10763,
+        "sha256": "cb248452b821953518dd25b590d51722c502661e4b3ee6731d6655c870729add",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react/src/__tests__/ReactElementValidator-test.internal.js",
+        "package": "react",
+        "bytes": 19963,
+        "sha256": "6a24d6f2a8c3e54e8ac07d506079fbfa92c6f94d05adab5ebcc8efcb6ff1d510",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react/src/__tests__/ReactJSXElementValidator-test.js",
+        "package": "react",
+        "bytes": 9701,
+        "sha256": "2907e8f8c995802307dd2eb8978b5ebda6a52bbfc901a71a070e6f18dd7ef0ec",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react/src/__tests__/ReactJSXRuntime-test.js",
+        "package": "react",
+        "bytes": 12014,
+        "sha256": "080f2a2d01ecf6491983374e3f6a3bda05d8f0aa628294e85ab4388db644443d",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react/src/__tests__/ReactJSXTransformIntegration-test.js",
+        "package": "react",
+        "bytes": 7866,
+        "sha256": "3479850251f112bd50e356d1030bedf9d21c7583af319972635816ed995af920",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react/src/__tests__/ReactMismatchedVersions-test.js",
+        "package": "react",
+        "bytes": 5636,
+        "sha256": "c3937d3822ef53ecd7b1d272074f46e30a92dfc90b5939eef90146eef3e3bdb7",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react/src/__tests__/ReactProfiler-test.internal.js",
+        "package": "react",
+        "bytes": 71798,
+        "sha256": "3a86315d56a20474cee88fee456da797f57ed4320bebb8d995a30d6345f94431",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react/src/__tests__/ReactProfilerComponent-test.internal.js",
+        "package": "react",
+        "bytes": 4431,
+        "sha256": "4fdbf0087a769e5978a07743d2ea02602daf5fb1bda18951f89b0763d14bc383",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react/src/__tests__/ReactProfilerDevToolsIntegration-test.internal.js",
+        "package": "react",
+        "bytes": 5838,
+        "sha256": "ddb59c51a732b1f587f4f2a1dc6ba3505a550cf6cd9dc5f671f8978eb0f8db35",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react/src/__tests__/ReactPureComponent-test.js",
+        "package": "react",
+        "bytes": 4243,
+        "sha256": "9ecf2c4db9187cd1417298e2efc7424281b33abee5024a00707942ee909d0e86",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react/src/__tests__/ReactStartTransition-test.js",
+        "package": "react",
+        "bytes": 2637,
+        "sha256": "40c4ce2571a147704c3954808bb8eeb1ddd623b7b4b6095b9482af64984c699e",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react/src/__tests__/ReactStrictMode-test.internal.js",
+        "package": "react",
+        "bytes": 4722,
+        "sha256": "c29a1e4fb1f2bdb1d9b0b852d8d46f2dadb5e14fdbe5f25b81789f3a2c83abf6",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react/src/__tests__/ReactStrictMode-test.js",
+        "package": "react",
+        "bytes": 37464,
+        "sha256": "1c090035b299a4a07ae4098f5cefb0e08770896ac2622052dd34c3716791d99e",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react/src/__tests__/ReactTypeScriptClass-test.ts",
+        "package": "react",
+        "bytes": 29987,
+        "sha256": "ebfffd6bcb7d375d4460bf716c9dfc8b164aedb2fd3eb92b4e7496d204de0952",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react/src/__tests__/ReactVersion-test.js",
+        "package": "react",
+        "bytes": 845,
+        "sha256": "abddc2245917ae4c22c7128b15c9db1e4da344fc81533589bc9145fefd39cf30",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react/src/__tests__/createReactClassIntegration-test.js",
+        "package": "react",
+        "bytes": 30766,
+        "sha256": "e9c41c61146ebc4667b6ab9bf02eb9955964cdf0b4e1b9fd4dd4f9b7b2e1fc12",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react/src/__tests__/forwardRef-test.internal.js",
+        "package": "react",
+        "bytes": 5855,
+        "sha256": "df02123520a058d1be1ee541624a52f718251ceac21e131c46fdd0432ab2bd55",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react/src/__tests__/forwardRef-test.js",
+        "package": "react",
+        "bytes": 12609,
+        "sha256": "6139ed4045acedada24b4b6a0d0e47701b57c06ffd4292119035cdaca547cc68",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react/src/__tests__/onlyChild-test.js",
+        "package": "react",
+        "bytes": 1930,
+        "sha256": "22302a92444efbdfe99d072be9486f5f1f3925531a4679e45a5d2ade6183c9a1",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react/src/__tests__/testDefinitions/PropTypes.d.ts",
+        "package": "react",
+        "bytes": 473,
+        "sha256": "55a1970b662c5146767d2f7beb76bd9f735fe2518bd30403a3533d1a975ffea8",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react/src/__tests__/testDefinitions/React.d.ts",
+        "package": "react",
+        "bytes": 1425,
+        "sha256": "b4e69f88a24ade2196fca3f7c80f27c887ce86f652e53ab3970eeac312d1307a",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react/src/__tests__/testDefinitions/ReactDOM.d.ts",
+        "package": "react",
+        "bytes": 817,
+        "sha256": "db1e317270799d5ae1c89409f3fdbf3f66d166798de59d70d8806c8d1b32fa78",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react/src/__tests__/testDefinitions/ReactDOMClient.d.ts",
+        "package": "react",
+        "bytes": 653,
+        "sha256": "d46728d1020c592c51d816cbaa22f53ceedc0659595d284cf6b7089af14311ba",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react/src/__tests__/testDefinitions/ReactInternalAct.d.ts",
+        "package": "react",
+        "bytes": 517,
+        "sha256": "b12b5845ed8a395fa818ad60ea52ed2ad3db2040032426c99327ad8b89013375",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react/src/jsx/ReactJSX.js",
+        "package": "react",
+        "bytes": 1141,
+        "sha256": "12c38d9e1620a4363a636820e295802c0c2960aa52cc03607ba29b670a8e78f0",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react/src/jsx/ReactJSXElement.js",
+        "package": "react",
+        "bytes": 29666,
+        "sha256": "d159813009505acc8afa1a02206b39246cef81e43ba2c101358a736002e1a17f",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react/src/jsx/ReactJSXServer.js",
+        "package": "react",
+        "bytes": 1096,
+        "sha256": "e2fd790bcce88fff1d20522d390fbad354f23e022364b3956563075f2d6ec382",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/constants.js",
+        "package": "react-reconciler",
+        "bytes": 373,
+        "sha256": "852e7821893ed91f7464a0419fc597d453f62880744bc12eb328b50b40c7a088",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/index.js",
+        "package": "react-reconciler",
+        "bytes": 876,
+        "sha256": "cc94025feddb2d3eab4134479e0f3f7bf9255404d680d03dd54eff71881181a5",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/npm/constants.js",
+        "package": "react-reconciler",
+        "bytes": 330,
+        "sha256": "b94b26c92c4a426d0373edafea47a2c159fb672fe11a6a600996182dc488505a",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/npm/index.js",
+        "package": "react-reconciler",
+        "bytes": 323,
+        "sha256": "3530dcec8ab625349e51b501236fe765ae0c935fab904f34690f899e42249385",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/npm/reflection.js",
+        "package": "react-reconciler",
+        "bytes": 313,
+        "sha256": "267e1131d4297701dd0d0584c32d7fab6cad756a47702a81963d7def8faeb970",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/reflection.js",
+        "package": "react-reconciler",
+        "bytes": 344,
+        "sha256": "942680209775b2e4735e4ac6bc659062c246a1eaef9f370ff062f2f4e4f2d5b3",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactCapturedValue.js",
+        "package": "react-reconciler",
+        "bytes": 2524,
+        "sha256": "4f08caab677530b153f1a8bca08884c78f2f7919422c6fd2477daafabbc91993",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactChildFiber.js",
+        "package": "react-reconciler",
+        "bytes": 74514,
+        "sha256": "be00e97720d17a36e97e08f00c5c747f27a188c471b6b71657dfefbf59c8c1ce",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactCurrentFiber.js",
+        "package": "react-reconciler",
+        "bytes": 3596,
+        "sha256": "118a426d01abd70fad878ef1bb02370b986a0fea46dded8249c127abeb9e3b23",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactEventPriorities.js",
+        "package": "react-reconciler",
+        "bytes": 2871,
+        "sha256": "908625195d2df2f59a47264170af92f3b8129837ac4d190a57f7072648208037",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiber.js",
+        "package": "react-reconciler",
+        "bytes": 31431,
+        "sha256": "1716995259b4bd3863d58dcc1802998a788685c72c076a85e14cdadea1926bdf",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberAct.js",
+        "package": "react-reconciler",
+        "bytes": 2243,
+        "sha256": "1f82847c200094e6322c687f0c169648865cb21bfab53530cfdff3dc923c6a01",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberActivityComponent.js",
+        "package": "react-reconciler",
+        "bytes": 1032,
+        "sha256": "427ca1b7a96ae6f88ff3ea35e048f02b6be055e08cb0494265cc64e35128a8ac",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberApplyGesture.js",
+        "package": "react-reconciler",
+        "bytes": 48407,
+        "sha256": "1858f4a1697f8c0730d708d4064a66d56e26df77ec95f46029d06820d905fdf5",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberAsyncAction.js",
+        "package": "react-reconciler",
+        "bytes": 10236,
+        "sha256": "32f2e77bca2822291ccbab1ca77219855a4f99ccbded3b3919acf794c31df2f3",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberAsyncDispatcher.js",
+        "package": "react-reconciler",
+        "bytes": 1459,
+        "sha256": "e27c7a890495661fc9925e465bf2415f6dd94ec208c257dd3fed183533ba5c33",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberBeginWork.js",
+        "package": "react-reconciler",
+        "bytes": 147257,
+        "sha256": "be78cddb1257d54cda98c92dd686065a8931f828386e8f82cad66fd2a58fe638",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberCacheComponent.js",
+        "package": "react-reconciler",
+        "bytes": 4877,
+        "sha256": "097c06c1f25c7fc140dae4190f2227f437349979036ac1067340bd76509ffc2c",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberCallUserSpace.js",
+        "package": "react-reconciler",
+        "bytes": 8920,
+        "sha256": "cb92baff41d1e92be3b2fb9aa15d2787edf75920c0917a317a5f894f1d90e55a",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberClassComponent.js",
+        "package": "react-reconciler",
+        "bytes": 43643,
+        "sha256": "eddd14a5fb1222a77a200ca3288f4c1788f359d9e6e146813cace1551dcc8779",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberClassUpdateQueue.js",
+        "package": "react-reconciler",
+        "bytes": 25860,
+        "sha256": "cad162ed7fdfcd7015ddc7cfda23d2e585ea4b90ee490bd9519bcc8cc324639d",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberCommitEffects.js",
+        "package": "react-reconciler",
+        "bytes": 35382,
+        "sha256": "e9576903f9c80c601f04bb2d4bf42cf657ad91493ab3a49cb1c06b2cba32fd7c",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberCommitHostEffects.js",
+        "package": "react-reconciler",
+        "bytes": 26202,
+        "sha256": "da271fd5f0437d46e26bc43be1ca0a52730437f9d11fcdefa743d5cef31d8962",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberCommitViewTransitions.js",
+        "package": "react-reconciler",
+        "bytes": 40198,
+        "sha256": "b1409be3e08ad8daf527b13e6ca896243a3ce91c1d86dbe41a12118a0fddd965",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberCommitWork.js",
+        "package": "react-reconciler",
+        "bytes": 184569,
+        "sha256": "d06925c15c182ffd3a5ab2e1821fe0df9ccf0be42181184ff0bc3a849e5ebbac",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberCompleteWork.js",
+        "package": "react-reconciler",
+        "bytes": 71823,
+        "sha256": "59ce5789cd4a1040be2296f2fe0efbb304b4349ade4c3e5e70d7c092d633c819",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberComponentStack.js",
+        "package": "react-reconciler",
+        "bytes": 7795,
+        "sha256": "88788e828c748c68a1f69e7b2c465120bd51a69b36c6ac7f2aa8ba1bac5332da",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberConcurrentUpdates.js",
+        "package": "react-reconciler",
+        "bytes": 11196,
+        "sha256": "e14a36a782c83ceaeb65635c77f23031533da618049f477b31eaf55e96447294",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberConfig.js",
+        "package": "react-reconciler",
+        "bytes": 605,
+        "sha256": "76fcf7b41172098b6680263187090bd69c2ee4067810a1df501c6dff72b63189",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberConfigWithNoHydration.js",
+        "package": "react-reconciler",
+        "bytes": 5919,
+        "sha256": "2b7b1014b20db016b5d1969fe71494a1c9352121424deef5c5241ead535ced5b",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberConfigWithNoMicrotasks.js",
+        "package": "react-reconciler",
+        "bytes": 890,
+        "sha256": "a3963a828c177a6a83f3151b2a2dffbbd239a93ddaf93d0a24eeba600206648f",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberConfigWithNoMutation.js",
+        "package": "react-reconciler",
+        "bytes": 2525,
+        "sha256": "8526fb4f98b3b045852f5ef0ef6fd5f6b8a17e4ea39b6ebaddc24f0b59d12e42",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberConfigWithNoPersistence.js",
+        "package": "react-reconciler",
+        "bytes": 1440,
+        "sha256": "00500b87455338dc813ab274e33954a26435f3f00a235f96d178e86e4b4efe4b",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberConfigWithNoResources.js",
+        "package": "react-reconciler",
+        "bytes": 2164,
+        "sha256": "c40571a1d3aaa9ea1264ee91aad6ad0bbb8e2d8845bf625ca62d6e40cee2e435",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberConfigWithNoScopes.js",
+        "package": "react-reconciler",
+        "bytes": 784,
+        "sha256": "7f4798e195b229346587f080687a5cfc98101415e2b37099a300248ebd01990d",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberConfigWithNoSingletons.js",
+        "package": "react-reconciler",
+        "bytes": 1251,
+        "sha256": "10be2f1fb86289cba4edc6f392ea471aa7d61fe3b15370ea87af1aad521814ad",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberConfigWithNoTestSelectors.js",
+        "package": "react-reconciler",
+        "bytes": 1358,
+        "sha256": "246dcaa35dd9180a113e4e9f3d66676f2309e15e0e62ceb9feca270efee02bd6",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberConfigWithNoViewTransition.js",
+        "package": "react-reconciler",
+        "bytes": 2672,
+        "sha256": "854081fbfa89d1e624f10423079598d1eff4ad545822e6d8f024cbcc6f9218d7",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberDevToolsHook.js",
+        "package": "react-reconciler",
+        "bytes": 16543,
+        "sha256": "188654963d3f97cc7aabf2391d07ccffd53afa29a59e06f630211a8f91f408f2",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberDuplicateViewTransitions.js",
+        "package": "react-reconciler",
+        "bytes": 3454,
+        "sha256": "36980e376bd2d9dc972181ac84cb77082ece673f1587f821057d839aae1992f7",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberErrorLogger.js",
+        "package": "react-reconciler",
+        "bytes": 8075,
+        "sha256": "5556fbd2b9e1d332d27c03c2a9f0ff44cf7e11f85bd2da8d626574cedbb6352f",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberFlags.js",
+        "package": "react-reconciler",
+        "bytes": 10739,
+        "sha256": "41d683b055af872a14b92490cdf07e83944d38de45c90e06ba2a94b72f2a9552",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberGestureScheduler.js",
+        "package": "react-reconciler",
+        "bytes": 10342,
+        "sha256": "6c76b6e80e5b20a61a8a21b9a2e69d2df1a405d45c0995c038d1c347daf717d0",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberHiddenContext.js",
+        "package": "react-reconciler",
+        "bytes": 2895,
+        "sha256": "f5b8caf1ca18750c35341403882c4690a07ab33d08555141777ee12469073fdf",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberHooks.js",
+        "package": "react-reconciler",
+        "bytes": 198024,
+        "sha256": "d140c264031082640fb36280b9abab7e5cc3aa4fa145609afa912983d55a1ee2",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberHostContext.js",
+        "package": "react-reconciler",
+        "bytes": 6529,
+        "sha256": "442c19af91c9dba63b0e875febc5ec282a0ae6e125d85a6704bd302cda0496f1",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberHotReloading.js",
+        "package": "react-reconciler",
+        "bytes": 10741,
+        "sha256": "acfaf24e720b08ce32d3a56015f41cc9d3161a07648f58cedf46817d121a25f7",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberHydrationContext.js",
+        "package": "react-reconciler",
+        "bytes": 35959,
+        "sha256": "ba663779d1f7ef38be04dca7401201e02d97500cd6802883f839c727ba110a4a",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberHydrationDiffs.js",
+        "package": "react-reconciler",
+        "bytes": 23028,
+        "sha256": "3c03d0c5e779177d32152e18bad4a48d0afd4b52567800efcf8ec57e77460d69",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberLane.js",
+        "package": "react-reconciler",
+        "bytes": 46221,
+        "sha256": "2a0bd7145bbf5972e784fe628d5563ef9f0fa407459da2c154095fbbdc03c564",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberLegacyContext.js",
+        "package": "react-reconciler",
+        "bytes": 11240,
+        "sha256": "516ed6dc102883bbfd8286c1f36447870c68c9c2fd62e9231354e91d36e165d6",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberMutationTracking.js",
+        "package": "react-reconciler",
+        "bytes": 1968,
+        "sha256": "a8e3267b4312fad0546d3ad8c7d6dea99f76e6a87bbd00dd6ed1903cdd67b190",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberNewContext.js",
+        "package": "react-reconciler",
+        "bytes": 21181,
+        "sha256": "92b900f228c0240e34b595df304d0ecfae24802b26c76d8f3113575692934243",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberOffscreenComponent.js",
+        "package": "react-reconciler",
+        "bytes": 3478,
+        "sha256": "e7ea593cd345c9324c13ab8c74f4a350160938f21716b008da0010c6cfea1969",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberPerformanceTrack.js",
+        "package": "react-reconciler",
+        "bytes": 48416,
+        "sha256": "e3c82185c2d565d8f379a9613a9295bce5a38000ce720777e9faae7550312a36",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberReconciler.js",
+        "package": "react-reconciler",
+        "bytes": 30709,
+        "sha256": "5acff5c0b063d3cfaf4972d9437d2323d76f0797b555643ded43e0475a7a4be9",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberRoot.js",
+        "package": "react-reconciler",
+        "bytes": 8544,
+        "sha256": "7e16eb7569083cb050a733982b12718af0128309deb1879e7299dc7886cddebc",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberRootScheduler.js",
+        "package": "react-reconciler",
+        "bytes": 25727,
+        "sha256": "b3930415cece950ba15254f1b67d40f61e108ec54d0021c500f0bae63319bf4f",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberScope.js",
+        "package": "react-reconciler",
+        "bytes": 6828,
+        "sha256": "43e20a5e55af7866e5d3bb4ac46a3e9aef0e6be04db32cb2049e12b0e73381db",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberShellHydration.js",
+        "package": "react-reconciler",
+        "bytes": 647,
+        "sha256": "6e86607b4e6befe07d3f64cc1190a951d79491b43fa30a94be59990a56355701",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberStack.js",
+        "package": "react-reconciler",
+        "bytes": 1913,
+        "sha256": "08dcd866e97e5f042a7c0c67ca7930a74c5919c2bc388e51c7c03ce2bfb47e7c",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberSuspenseComponent.js",
+        "package": "react-reconciler",
+        "bytes": 3977,
+        "sha256": "38d3fedb3255352eb8a4ca65ffa6a9dfa49ae1130d692b5ee6ca73093ac38122",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberSuspenseContext.js",
+        "package": "react-reconciler",
+        "bytes": 9661,
+        "sha256": "b94bf53453cf502616deed5f473e05fdcf74c5ace96ee1fd24ac7e0ed5f43393",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberThenable.js",
+        "package": "react-reconciler",
+        "bytes": 19262,
+        "sha256": "9c2995295a6f498adc6ac2dcfa6757ac482181d2353103c3dd121e92e36d4697",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberThrow.js",
+        "package": "react-reconciler",
+        "bytes": 25424,
+        "sha256": "875cbf894cbd548bc684dc13fa282f55e02d781342dda361151d6b0e535c233d",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberTracingMarkerComponent.js",
+        "package": "react-reconciler",
+        "bytes": 11470,
+        "sha256": "2474bde58b28daf3e98eeea97ad27ad1c33f6c547b088bbf84f0780f6ea317a8",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberTransition.js",
+        "package": "react-reconciler",
+        "bytes": 12100,
+        "sha256": "be95c9bb170f44b38abe13b212c47836a5dfdf85836c881348a46a7b7c2718bd",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberTransitionTypes.js",
+        "package": "react-reconciler",
+        "bytes": 2486,
+        "sha256": "21a8b3630618ddb4babed94b2e5a0f8f116c52a095149b189edf9ea36777d497",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberTreeContext.js",
+        "package": "react-reconciler",
+        "bytes": 10178,
+        "sha256": "29872bfaa1983725008f874a9552911e13c0908d06ec033fe2f6d677dc8449f8",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberTreeReflection.js",
+        "package": "react-reconciler",
+        "bytes": 22203,
+        "sha256": "45f89a9e00384244e48e7c02525128d44d06d6c0583196911741ceac143cabd0",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberUnwindWork.js",
+        "package": "react-reconciler",
+        "bytes": 11319,
+        "sha256": "d05571954bff6999444fa140def5705c314207bf5ee08ca6ea0c8b70c92acfcf",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberViewTransitionComponent.js",
+        "package": "react-reconciler",
+        "bytes": 3539,
+        "sha256": "add7be603f58c8e4a609f0aa4531b4027bed08e7d71fdda4a5d79868d5e2d3ee",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactFiberWorkLoop.js",
+        "package": "react-reconciler",
+        "bytes": 194434,
+        "sha256": "f4b4d32331433de289fbbb329d065e3f4df3f49d2ee49fade939cf3ae365677b",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactHookEffectTags.js",
+        "package": "react-reconciler",
+        "bytes": 1139,
+        "sha256": "a0313b8ed24beaa35b627ae398f604e6deb5805658ae851ab16a78935d0cb269",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactInternalTypes.js",
+        "package": "react-reconciler",
+        "bytes": 21783,
+        "sha256": "2b6fde34038b0ccd6b3413fc35bcd64d92cf9eb795891128b684b995f59e94ac",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactPortal.js",
+        "package": "react-reconciler",
+        "bytes": 1415,
+        "sha256": "499f56aa4d8924f8ff6d559fcc7fa88a4a27c67d19cb7a60d5a845fdf85cbbbe",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactPostPaintCallback.js",
+        "package": "react-reconciler",
+        "bytes": 1024,
+        "sha256": "e5f0b306c49700d7a9568b65b9a7173d5b7af917cc3b37803ea6c1862a9179ea",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactProfilerTimer.js",
+        "package": "react-reconciler",
+        "bytes": 27328,
+        "sha256": "55e1f9356cf511467187a87b2d919a44aea90782c88c44406c51fdf2d5b6744f",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactReconcilerConstants.js",
+        "package": "react-reconciler",
+        "bytes": 614,
+        "sha256": "605820d167457e19f2b15540ede7466c0e999c7b814a3af90547a184a5f679bd",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactRootTags.js",
+        "package": "react-reconciler",
+        "bytes": 491,
+        "sha256": "41d386b3e8fa41ed12e959022fda8d4984e537661c6d67b3ae798da5e38f4b55",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactStrictModeWarnings.js",
+        "package": "react-reconciler",
+        "bytes": 14954,
+        "sha256": "ebc2f9772c0eb90675e802a2a85b7e8dd79badce5af754246dbbd44a410b1109",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactTestSelectors.js",
+        "package": "react-reconciler",
+        "bytes": 19704,
+        "sha256": "e46191ce15bcdba71b7af030b3b69d35c549a236676c31d8c87bcc5a2579158a",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactTypeOfMode.js",
+        "package": "react-reconciler",
+        "bytes": 1395,
+        "sha256": "919e42a0db880de90d289cfced8227640a1cc5c5122e4750bd12b158e0f8f29a",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/ReactWorkTags.js",
+        "package": "react-reconciler",
+        "bytes": 4006,
+        "sha256": "4740e2c2109199b9464408a4a64be17c6b455868615694ff4b171949634316ba",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/Scheduler.js",
+        "package": "react-reconciler",
+        "bytes": 2557,
+        "sha256": "9124a9afbc910920cc995c23fd7cf2cbb94cb24643f1d46eb391ab66d422c4a5",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__mocks__/scheduler/tracing.js",
+        "package": "react-reconciler",
+        "bytes": 362,
+        "sha256": "76bc2c8353824d06ff267964d0d2e9b0b9d1e74a3bb61606c84ed2378be28f38",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/Activity-test.js",
+        "package": "react-reconciler",
+        "bytes": 56132,
+        "sha256": "6542b72a3298350bf6c50574ce10c271b5d6f714176a79e2c6559352c04d3340",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ActivityErrorHandling-test.js",
+        "package": "react-reconciler",
+        "bytes": 3870,
+        "sha256": "6b98e036abcd019df1e18c56b8f384e5718d83dd30e204bfe7afc5612efd0380",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ActivityLegacySuspense-test.js",
+        "package": "react-reconciler",
+        "bytes": 19356,
+        "sha256": "df80e036d1ce319d731fe0b9fca6d89d7fac8ba7b9182d494df17f732d70e8b2",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ActivityReactServer-test.js",
+        "package": "react-reconciler",
+        "bytes": 2392,
+        "sha256": "06782688a92bcca26613262670a3f2f22311ca8b23979899f5f99cdf1829a138",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ActivityStrictMode-test.js",
+        "package": "react-reconciler",
+        "bytes": 10787,
+        "sha256": "47e5fea64439bc22f8686c7817fc175b24d361f350f8cc639bd5fc05a3a40912",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ActivitySuspense-test.js",
+        "package": "react-reconciler",
+        "bytes": 18940,
+        "sha256": "0196c3acd7c53f0e2f0187800bf5a24d28516a609171837f10d653bceff3b0bd",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ErrorBoundaryReconciliation-test.internal.js",
+        "package": "react-reconciler",
+        "bytes": 4709,
+        "sha256": "f4c688eba61fc7c3702bb701f6ccb44a9ef3609b5b5d1bc9013dbc2af3eca472",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactActWarnings-test.js",
+        "package": "react-reconciler",
+        "bytes": 17445,
+        "sha256": "4c21b59b40855f23934ca7dea53c501070aa58a64b885584a0a60f4e5244c5ed",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactAsyncActions-test.js",
+        "package": "react-reconciler",
+        "bytes": 63916,
+        "sha256": "9441d0e25836e5ae52b34fd4e78351b27902ae8d1b655726669ee07501c0d913",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactBatching-test.internal.js",
+        "package": "react-reconciler",
+        "bytes": 6364,
+        "sha256": "5d58182a303127cb285a78977c042af363f391d5cbf3e6b49d58b63292ba9f1c",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactCPUSuspense-test.js",
+        "package": "react-reconciler",
+        "bytes": 9104,
+        "sha256": "12fe48873ba0836e1625e0899f04f996250339e16121c6827b80c05f5e81aeb1",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactCache-test.js",
+        "package": "react-reconciler",
+        "bytes": 11648,
+        "sha256": "9997f865d45cd113aa9c92b4c0737275b36a854827db7da7ef56cb519533a854",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactClassComponentPropResolution-test.js",
+        "package": "react-reconciler",
+        "bytes": 5699,
+        "sha256": "739b6a191278220b3f486bc70c0bc1d69175393584c8537ddda9f3f11a8b8444",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactClassSetStateCallback-test.js",
+        "package": "react-reconciler",
+        "bytes": 2220,
+        "sha256": "ac9231c9758b91db40072c9f58c494113c7d3b9e5cd1b89c43d0ccd4c878b88e",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactConcurrentErrorRecovery-test.js",
+        "package": "react-reconciler",
+        "bytes": 16855,
+        "sha256": "6d67c8d857dcf7f291d68395b086935abbc0784accc8303141137a8509fa16ed",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactConditionalUseWarning-test.js",
+        "package": "react-reconciler",
+        "bytes": 5359,
+        "sha256": "5bea113967528d67a8cfd457f6ceb172c5ddc8f94cbc785d00b67cb346fe8f9f",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactConfigurableErrorLogging-test.js",
+        "package": "react-reconciler",
+        "bytes": 9028,
+        "sha256": "8fcdc9bd1d7401333c95a288d41d640ebabba6cf09a07991214f566bb463f306",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactContextPropagation-test.js",
+        "package": "react-reconciler",
+        "bytes": 48003,
+        "sha256": "601c74793a93d49ba3783573c611f0c8cbf004dd63847d2e407039452b9a68af",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactDefaultTransitionIndicator-test.js",
+        "package": "react-reconciler",
+        "bytes": 16496,
+        "sha256": "60201dd613c09f0785d27628345af0778df42fcdc22530686b6620f43e2f7ba0",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactDeferredValue-test.js",
+        "package": "react-reconciler",
+        "bytes": 43189,
+        "sha256": "4aa870a4e2b66f296c7e3d7ca1ed9cac7e43f0eaf8c4d268bb7609407d25c2bf",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactEffectOrdering-test.js",
+        "package": "react-reconciler",
+        "bytes": 3614,
+        "sha256": "b14059aa906eb9ef8c0f585ba764c77791b26acc7c3e73e4ff2b3786ec93b236",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactErrorStacks-test.js",
+        "package": "react-reconciler",
+        "bytes": 13358,
+        "sha256": "59cc97c910d5a65618e33191ffbff96edf041907f2bef92fec0baf6514fd1539",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactExpiration-test.js",
+        "package": "react-reconciler",
+        "bytes": 29683,
+        "sha256": "07eff8a1cd50e668255b30f1979c2ed89fdce3e562295596cf88fe39d79dca71",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactFiberHostContext-test.internal.js",
+        "package": "react-reconciler",
+        "bytes": 6688,
+        "sha256": "2a19a47a41587737fa0c076cdc595adc4c56da6833fe3e97d4d94877284571ad",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactFiberRefs-test.js",
+        "package": "react-reconciler",
+        "bytes": 7601,
+        "sha256": "aee6f40c2a4c312db07d438a9057d9f48e0ee2038459658e1bed35f09e702d1b",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactFlushSync-test.js",
+        "package": "react-reconciler",
+        "bytes": 14378,
+        "sha256": "491b2b40ab0bebd2e74cc6501d42cc66c2c1c9c06dde28102d1a466a563d5250",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactFlushSyncNoAggregateError-test.js",
+        "package": "react-reconciler",
+        "bytes": 5840,
+        "sha256": "34ba4712c6d3858fb0fe47016be94d130eb89e65b09a947e23770d946da46f31",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactFragment-test.js",
+        "package": "react-reconciler",
+        "bytes": 31729,
+        "sha256": "99ff63530a5ef4044de908617de79f5d544a5c6d37e8ce8e7631b484d46942c6",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactHooks-test.internal.js",
+        "package": "react-reconciler",
+        "bytes": 86602,
+        "sha256": "81c763832a9ef5121b7ea0f80cdccac7da00ec00f2f6b8f553efd41b9875ed21",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactHooksWithNoopRenderer-test.js",
+        "package": "react-reconciler",
+        "bytes": 169808,
+        "sha256": "b4870b71309f8fa59c01bb64777c79f60e38445afb5960518e50b8038c043d71",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactIncremental-test.js",
+        "package": "react-reconciler",
+        "bytes": 125776,
+        "sha256": "68c5d301676acb26e70fbd0205b9579eef6ff16df5e35084095195b6da9922ba",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactIncrementalErrorHandling-test.internal.js",
+        "package": "react-reconciler",
+        "bytes": 66503,
+        "sha256": "f3c773b8f2d4631fd46011b132652aa17e7a9deed72e1100b8304f085d20cf0f",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactIncrementalErrorLogging-test.js",
+        "package": "react-reconciler",
+        "bytes": 13981,
+        "sha256": "f5078d613a28e41cb9172aa24d45dc3f279e524fe13785342fa5eef316069ddf",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactIncrementalErrorReplay-test.js",
+        "package": "react-reconciler",
+        "bytes": 2736,
+        "sha256": "c09dda4dba41f94b0a68feabed5d32c78b6a950fedaf2d6bb4ac2d2e78efb965",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactIncrementalReflection-test.js",
+        "package": "react-reconciler",
+        "bytes": 7566,
+        "sha256": "572a5aa83cf2e55980da7634c0ff27ae04a15e4ae94beca91486fe279e52151a",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactIncrementalScheduling-test.js",
+        "package": "react-reconciler",
+        "bytes": 14259,
+        "sha256": "a390ba79e1ba94bc8e203d8d06f5389ca8d311edca0d9e9f7b2aeff885419897",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactIncrementalSideEffects-test.js",
+        "package": "react-reconciler",
+        "bytes": 45830,
+        "sha256": "7220dbc0a31eeba61972921f49bff3f2d0cb1242bfe8c17430bdb4c2cabd27f3",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactIncrementalUpdates-test.js",
+        "package": "react-reconciler",
+        "bytes": 26498,
+        "sha256": "092c39fc607b8c2c0e324790f2c0cf06e849b5053d90296fe893fc9fd6c7f138",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactIncrementalUpdatesMinimalism-test.js",
+        "package": "react-reconciler",
+        "bytes": 5811,
+        "sha256": "5c27c73dc7806e9dd0c0b02edfbc85e7cf6702ae940585f29de36b9f74f03310",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactInterleavedUpdates-test.js",
+        "package": "react-reconciler",
+        "bytes": 4875,
+        "sha256": "fa6bf4f25bd2c09c043c6dbe55b26684dfe66bfeae9d0ba78cf428a094902e7d",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactIsomorphicAct-test.js",
+        "package": "react-reconciler",
+        "bytes": 13877,
+        "sha256": "9c1b6125997924de2281d0f9c389226c38d26550447a063fcaf7b7cb7fe20834",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactLazy-test.internal.js",
+        "package": "react-reconciler",
+        "bytes": 81780,
+        "sha256": "a988c1e08169153e288ca25d9dda055f5a7b5a3680f6553b88b784496454a1f9",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactMemo-test.js",
+        "package": "react-reconciler",
+        "bytes": 23413,
+        "sha256": "926512325474f26edf4e1522797701f32a455a41481101e151c665fc57b83dd3",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactNewContext-test.js",
+        "package": "react-reconciler",
+        "bytes": 79203,
+        "sha256": "3d4210a8ce98054c9ac5ff0ef54999abf09adf18291c08bac15802d0a272e11a",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactNoopRendererAct-test.js",
+        "package": "react-reconciler",
+        "bytes": 2831,
+        "sha256": "cb139b1c025f2737f15927235cc0741ad9120234318783b10b68726eaf5ebde2",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactOwnerStacks-test.js",
+        "package": "react-reconciler",
+        "bytes": 15137,
+        "sha256": "7d7b0f0358c315a54f780ecf04b2518f0f4914e7d617581b79e274c314d5182e",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactPerformanceTrack-test.js",
+        "package": "react-reconciler",
+        "bytes": 18671,
+        "sha256": "d54c6223a78cccfa778564d30ff329e18ba358d4988a071164b9fa8cb4943e89",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactPersistent-test.js",
+        "package": "react-reconciler",
+        "bytes": 9906,
+        "sha256": "04f973d0e40e12a6edcede6919880ae25e1b1c9ed317a5de80837b7f7e88d8ca",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactPersistentUpdatesMinimalism-test.js",
+        "package": "react-reconciler",
+        "bytes": 6094,
+        "sha256": "5c746a4586ca444db4e95e1b07a051e6095f2c7091e1b97ab8b864dd347a3db9",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactSchedulerIntegration-test.js",
+        "package": "react-reconciler",
+        "bytes": 15748,
+        "sha256": "a1614a2d728b680b5f3656bd9267f9b79782d2391c7a8af2885cd67d9406db85",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactScope-test.internal.js",
+        "package": "react-reconciler",
+        "bytes": 23334,
+        "sha256": "0b8640160c71e224fc9a092250abcc6b2d08b4475bad5947be4cfbb910a76613",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactSiblingPrerendering-test.js",
+        "package": "react-reconciler",
+        "bytes": 19237,
+        "sha256": "27e71dc4e4e6c1600a90b6c795845e59bdec4b0464a30d853344d39a24329120",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactSubtreeFlagsWarning-test.js",
+        "package": "react-reconciler",
+        "bytes": 6322,
+        "sha256": "cd8e2f9fe7295c3428e76ff64f12dc979babf08acab05fc7eb52432e0cd17582",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactSuspense-test.internal.js",
+        "package": "react-reconciler",
+        "bytes": 52066,
+        "sha256": "11856d99951539dc8ff074f1d7a8a895765c66f761be241e6b75fcbd22e3f6d0",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactSuspenseCallback-test.js",
+        "package": "react-reconciler",
+        "bytes": 9174,
+        "sha256": "084a9d8988e73199d09f5028053a02e208375e344090a9d1c5b1326358505344",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactSuspenseEffectsSemantics-test.js",
+        "package": "react-reconciler",
+        "bytes": 127563,
+        "sha256": "b4d1eabd3875b44a3e36b9020291f23b11258081be094c536d1bf0083bebc44a",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactSuspenseEffectsSemanticsDOM-test.js",
+        "package": "react-reconciler",
+        "bytes": 21469,
+        "sha256": "34c1e2fa6abdf7b707bc977df1da8d9f91763c2ee4fcad2cc4c19166b3aed35a",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactSuspenseFallback-test.js",
+        "package": "react-reconciler",
+        "bytes": 8579,
+        "sha256": "3468460bcd8a3badfe9d8c17824c5b19550aa304ee8fa93843a24ee3b82075b5",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactSuspenseFuzz-test.internal.js",
+        "package": "react-reconciler",
+        "bytes": 18023,
+        "sha256": "a1df693edfda84e3e1ef4fe16962a449e9fd9552ecad3793ab39b14b85ce3904",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactSuspenseList-test.js",
+        "package": "react-reconciler",
+        "bytes": 98223,
+        "sha256": "4ac2ecb4a9084fd4d74f579d10a20ef78f40fbbcdda4e2f47af1d212fd4f9d32",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactSuspensePlaceholder-test.internal.js",
+        "package": "react-reconciler",
+        "bytes": 22730,
+        "sha256": "a64a3c0bedbe955ee815908e7183e78301203c89c1adfc5ddf73dc71dce5e2b1",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactSuspenseWithNoopRenderer-test.js",
+        "package": "react-reconciler",
+        "bytes": 127947,
+        "sha256": "5c73f47876179cc38e6c2dfd559c37b641b23b0a8a75d02feb1e6cd7cf1280f9",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactSuspenseyCommitPhase-test.js",
+        "package": "react-reconciler",
+        "bytes": 22447,
+        "sha256": "63f4d6be99454f1217e2db1131c88143452c832d3fafe9f3728232b855d92b59",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactTopLevelFragment-test.js",
+        "package": "react-reconciler",
+        "bytes": 6294,
+        "sha256": "e6c45ff3b004835a03a897c2f88eb33c8fbb1097406cd9416c85426babd1a4c7",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactTopLevelText-test.js",
+        "package": "react-reconciler",
+        "bytes": 2631,
+        "sha256": "a2a1833ffcfa154a66963858bbdc55b136a2c62b7f6eb252550e6758cd3a586d",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactTransition-test.js",
+        "package": "react-reconciler",
+        "bytes": 41348,
+        "sha256": "4134610e93f82db18ee2100d9e5388fdf810dff8c30ba6ba4f7d9550d7377fdd",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactTransitionTracing-test.js",
+        "package": "react-reconciler",
+        "bytes": 98731,
+        "sha256": "2aae0ba4213036053aaedfde94a594378aa8757d471e151852109d0a755afd0a",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactUpdatePriority-test.js",
+        "package": "react-reconciler",
+        "bytes": 6138,
+        "sha256": "9815373b6c40438d70f0254bd017684cd73d93e45326fc61bcf806fd0097da59",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactUpdaters-test.internal.js",
+        "package": "react-reconciler",
+        "bytes": 18979,
+        "sha256": "bc28f65f91408bd974e18c422344d02230823bee33d167aee6b307c2abd31ce7",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ReactUse-test.js",
+        "package": "react-reconciler",
+        "bytes": 99283,
+        "sha256": "f969dba11274eac998795a659aa1f8d420f66638ebd2fb8b5b86f025934d0e21",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/StrictEffectsMode-test.js",
+        "package": "react-reconciler",
+        "bytes": 33732,
+        "sha256": "4cc7621d21b0aab6a75e61119707422b730d81c2737587098bbb661078af2255",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/StrictEffectsModeDefaults-test.internal.js",
+        "package": "react-reconciler",
+        "bytes": 28736,
+        "sha256": "2ba2aef6cd7ec13ec778466676fe76c47f9d7f4096b13a72a443d0c62c439eff",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/ViewTransitionReactServer-test.js",
+        "package": "react-reconciler",
+        "bytes": 2348,
+        "sha256": "c23628ff551af0730f71ee7bc8a7d3226c8bcc0589511c5d0596bc93eae9cd1b",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/useEffectEvent-test.js",
+        "package": "react-reconciler",
+        "bytes": 45176,
+        "sha256": "af391c5cefd15c8a4d177dc0780a09f6b399ba5fc39f6799eeb79994d92c5446",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/useMemoCache-test.js",
+        "package": "react-reconciler",
+        "bytes": 24287,
+        "sha256": "2134b570d878421d9e84a113dff593f1a9ce20e73b167038fdeaed10651631d9",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/useRef-test.internal.js",
+        "package": "react-reconciler",
+        "bytes": 9667,
+        "sha256": "c51c41ad69a6a0a3e4adb69f6f8a95e324ccbab704993338bc0d80df1913ee07",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/useSyncExternalStore-test.js",
+        "package": "react-reconciler",
+        "bytes": 22137,
+        "sha256": "d33357e7522bb73f37514daabee136c4ccfca29bb20f08baadadc7820f92e8d8",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/clz32.js",
+        "package": "react-reconciler",
+        "bytes": 1140,
+        "sha256": "033d499abcf976b7c0a5bb423a10d3a4346da250c64271d7c4ea7b20fef3e5b3",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/forks/ReactFiberConfig.art.js",
+        "package": "react-reconciler",
+        "bytes": 321,
+        "sha256": "29d420061a562693df7eb459c9a1379ed41a8213ab87c7265163fb3ff98cd46e",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/forks/ReactFiberConfig.custom.js",
+        "package": "react-reconciler",
+        "bytes": 26009,
+        "sha256": "e346080992b2a0f1ac4936e696f5ae39f618f7a2038a3ac6f891c3970179c7a2",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/forks/ReactFiberConfig.dom.js",
+        "package": "react-reconciler",
+        "bytes": 337,
+        "sha256": "a840ba265c6c362c08734e8e7de926b45e3b3aa959b18ddc3b5843f96c20aab1",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/forks/ReactFiberConfig.fabric.js",
+        "package": "react-reconciler",
+        "bytes": 334,
+        "sha256": "b9bde37d01829e8748676eae36d960a32ced6dfa7a71691b09ca83459f898287",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/forks/ReactFiberConfig.markup.js",
+        "package": "react-reconciler",
+        "bytes": 677,
+        "sha256": "3c276516d6fecdb89689eb7144d3ad485f975b6d3dceb021ba08d54731da39f3",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/forks/ReactFiberConfig.noop.js",
+        "package": "react-reconciler",
+        "bytes": 25501,
+        "sha256": "78da09f355502c88bc7974e287800d214c6211ebfbc7e841da7e751a1fc2918e",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/forks/ReactFiberConfig.test.js",
+        "package": "react-reconciler",
+        "bytes": 334,
+        "sha256": "1e9822e3a1099f11a4c57dd5d81792301e2fc56417b679af07641f201d931268",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/getComponentNameFromFiber.js",
+        "package": "react-reconciler",
+        "bytes": 5803,
+        "sha256": "828fe08185d4a0407f5825bb672a2f9ff49ab0e9adffe6b5816de4be674ff334",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/client/CSSPropertyOperations.js",
+        "package": "react-dom-bindings",
+        "bytes": 8376,
+        "sha256": "480845c86bfdbfe6b61215ada07afcdd55599f0c0838ffe01007f78df45a3fe5",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/client/CSSShorthandProperty.js",
+        "package": "react-dom-bindings",
+        "bytes": 7729,
+        "sha256": "939459e10bc321e5c05bc5d1599cfab9b56b3c08a67335fd0c30303abaebc9ad",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/client/DOMAccessibilityRoles.js",
+        "package": "react-dom-bindings",
+        "bytes": 3803,
+        "sha256": "372b319fd7fff206db52711c4ea7aaf647ff859f5c5069e78f6363ff53c72713",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/client/DOMNamespaces.js",
+        "package": "react-dom-bindings",
+        "bytes": 448,
+        "sha256": "0438841549bf8570b4dade138ce576465c9a132870ee2eace7c0a7e743c19661",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/client/DOMPropertyOperations.js",
+        "package": "react-dom-bindings",
+        "bytes": 7050,
+        "sha256": "483f560d87fc714ff593f18a86a5984539271c4ab5dbbfb7e111ceb6854b6247",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/client/HTMLNodeType.js",
+        "package": "react-dom-bindings",
+        "bytes": 704,
+        "sha256": "0bb5b2f25a86d3a4324db810a92e38cf4d4e734176407efea9d3380c0917d8de",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/client/ReactDOMComponent.js",
+        "package": "react-dom-bindings",
+        "bytes": 111374,
+        "sha256": "30b1975a1c3b825b2e3b6433207ffbcb7881e7947dbfd0de402dfdebdfcc85c0",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/client/ReactDOMComponentTree.js",
+        "package": "react-dom-bindings",
+        "bytes": 15318,
+        "sha256": "f726991a0804633105bc20c614824264605f8c06a87399188a4a85d7ebe75f7a",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/client/ReactDOMContainer.js",
+        "package": "react-dom-bindings",
+        "bytes": 888,
+        "sha256": "2d4daeab13c1e4472a4b96635667e635cef34dc5175294479702bd185b651871",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/client/ReactDOMEventHandle.js",
+        "package": "react-dom-bindings",
+        "bytes": 5554,
+        "sha256": "10616ab14cdc29a186e906c35db91bdb8ae47302166ca44bd9ddbedc46de498d",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/client/ReactDOMEventHandleTypes.js",
+        "package": "react-dom-bindings",
+        "bytes": 962,
+        "sha256": "63d67c7e32142d9b3a85cca48f39fcd8525e6a9fb755c06bc805a7d975df3bc2",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/client/ReactDOMInput.js",
+        "package": "react-dom-bindings",
+        "bytes": 17367,
+        "sha256": "4d3da7f7dfb864caa6f82f7a63bce42320b002591dde33da2bf2e4349c70410e",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/client/ReactDOMOption.js",
+        "package": "react-dom-bindings",
+        "bytes": 2079,
+        "sha256": "825c8f4ba59225d8d7d2abe2a44b45fbc7b2d2d89d9c906ca10c15e7daaa49f1",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/client/ReactDOMSelect.js",
+        "package": "react-dom-bindings",
+        "bytes": 8050,
+        "sha256": "2b403081033994d97bb5cddaacdf31385887fbd25fda018583e6466cde01f866",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/client/ReactDOMSelection.js",
+        "package": "react-dom-bindings",
+        "bytes": 5675,
+        "sha256": "cc543d2439356db19de7492cd511de3032cc76c45aa60657aeec4498364732da",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/client/ReactDOMSrcObject.js",
+        "package": "react-dom-bindings",
+        "bytes": 1108,
+        "sha256": "5d090e3a7cb1eff9996111ded0eb373564a08a1f18534653d9409dbf9ff9c8a4",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/client/ReactDOMTextarea.js",
+        "package": "react-dom-bindings",
+        "bytes": 5842,
+        "sha256": "0993eb7f1edc2ebd19c9f3edadf0568f251d106cc7ebb1b7ccf3cd8e3693b079",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/client/ReactDOMUpdatePriority.js",
+        "package": "react-dom-bindings",
+        "bytes": 1944,
+        "sha256": "40944d927faa8e856b824b2884e1e4544dc727fb0620f26816f4bb4c19854794",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/client/ReactFiberConfigDOM.js",
+        "package": "react-dom-bindings",
+        "bytes": 271443,
+        "sha256": "bf8df5a8475d288f8273ad19346ad1601a6986927d4ed1c2e038caada3037d4f",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/client/ReactInputSelection.js",
+        "package": "react-dom-bindings",
+        "bytes": 5809,
+        "sha256": "067a8298af41c7cb8f5383a30eb881ab2631fd4d83730843cc1a213c75baa02f",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/client/ToStringValue.js",
+        "package": "react-dom-bindings",
+        "bytes": 1401,
+        "sha256": "626d523f43a42ef3e28391443e9479e7e69f51894c92f89f6190a9f6efb727e5",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/client/escapeSelectorAttributeValueInsideDoubleQuotes.js",
+        "package": "react-dom-bindings",
+        "bytes": 789,
+        "sha256": "88c77d45829fb17afbe27f25dc9deb25f6fccfac387d0a2886956fd9ab263783",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/client/estimateBandwidth.js",
+        "package": "react-dom-bindings",
+        "bytes": 3698,
+        "sha256": "9e33eeabccf40dab1603b5aa5852729599df850284b3929fad27e9f8f405b0a7",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/client/getActiveElement.js",
+        "package": "react-dom-bindings",
+        "bytes": 578,
+        "sha256": "eb5d6ff6ebd04fb2d4a95777a4441a3b41fc14a543e3d278178f869bc4c8dfb8",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/client/getNodeForCharacterOffset.js",
+        "package": "react-dom-bindings",
+        "bytes": 1599,
+        "sha256": "011793df83dea9db1e3d2a5b4d44134616b7ae7afdb944b748ad9b431778f010",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/client/inputValueTracking.js",
+        "package": "react-dom-bindings",
+        "bytes": 6393,
+        "sha256": "838c7fa05a811054fb55ef119c2fed89344d19efa771c6de34d5f5fea815a814",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/client/setTextContent.js",
+        "package": "react-dom-bindings",
+        "bytes": 871,
+        "sha256": "e23898c49c9f4368791f1b11950d8db54cb9419bda13331557885aa4a033710b",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/client/validateDOMNesting.js",
+        "package": "react-dom-bindings",
+        "bytes": 18944,
+        "sha256": "cf84e4ef89598e65a46d33a4e2521b5861564b84da02b0b1ace2332bb31e192e",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/events/CurrentReplayingEvent.js",
+        "package": "react-dom-bindings",
+        "bytes": 1423,
+        "sha256": "e2f085a6ab0aaf4566ac3b24196b4385b74695c32eb396c8fef8b6ba77fd4741",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/events/DOMEventNames.js",
+        "package": "react-dom-bindings",
+        "bytes": 3493,
+        "sha256": "29f9a0ebd49c612876a68f2045c7b58bc38272d9b4fff6ee5ed498bc8f2b568a",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/events/DOMEventProperties.js",
+        "package": "react-dom-bindings",
+        "bytes": 4001,
+        "sha256": "e0f63474bd26b222740a05e89797415eb4ea048936e4d69e0e19523d96c013d5",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/events/DOMPluginEventSystem.js",
+        "package": "react-dom-bindings",
+        "bytes": 32621,
+        "sha256": "a54e36e6322f88c600b24a4b668171b9d15c00a77a23c7ed2a2a757d9fe98d40",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/events/EventListener.js",
+        "package": "react-dom-bindings",
+        "bytes": 1684,
+        "sha256": "8ef3b5232cea4575f432c1605c9884ae338c5c3b6d01dfc96e33087e0f7f3dba",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/events/EventRegistry.js",
+        "package": "react-dom-bindings",
+        "bytes": 2633,
+        "sha256": "0c869b07545f194bf36187b977cc2ac4b7286087feae8ac485702c54ff723911",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/events/EventSystemFlags.js",
+        "package": "react-dom-bindings",
+        "bytes": 1514,
+        "sha256": "1633bb0cc05afd36e5dca10dd10f5b52d3df9fe14bbe01bf20ead3836f61487b",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/events/FallbackCompositionState.js",
+        "package": "react-dom-bindings",
+        "bytes": 1759,
+        "sha256": "f4a69657ff9510570c73c8a2abfedae44684bf9cad50b37cd525bb1f8a221b7e",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/events/PluginModuleType.js",
+        "package": "react-dom-bindings",
+        "bytes": 490,
+        "sha256": "8d232972f0979e810cdddd2f647389b938d4e5d00771ce498edc3987ecd49d5d",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/events/ReactDOMControlledComponent.js",
+        "package": "react-dom-bindings",
+        "bytes": 2214,
+        "sha256": "254757e53dfabd017c5cccc0b5893967e68fdf73ad4a8f57c49141c7b9c79ca2",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/events/ReactDOMEventListener.js",
+        "package": "react-dom-bindings",
+        "bytes": 13207,
+        "sha256": "e78b25534b2276507a7d65aca75e25c4b72469ea9cd406afcba53650ade8f15b",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/events/ReactDOMEventReplaying.js",
+        "package": "react-dom-bindings",
+        "bytes": 25494,
+        "sha256": "0592b964f02af2a0f4265e678152cfd67d2bab97c91364d98523db5c942cc9f2",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/events/ReactDOMUpdateBatching.js",
+        "package": "react-dom-bindings",
+        "bytes": 2372,
+        "sha256": "1e5abfb257aa06bd7265bd52bddae8a2748bf06dda6bfff22ba3bb2884148c92",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/events/ReactSyntheticEventType.js",
+        "package": "react-dom-bindings",
+        "bytes": 2605,
+        "sha256": "8dd94b6ca610f687958c131479dcc1717609a55a75e8fec546359da2fc23bbbb",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/events/SyntheticEvent.js",
+        "package": "react-dom-bindings",
+        "bytes": 24534,
+        "sha256": "043b57ef2687dd7c9e2ded87174653c11cab174540377201d400a49f5f37ee4e",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/events/TopLevelEventTypes.js",
+        "package": "react-dom-bindings",
+        "bytes": 1765,
+        "sha256": "d38334c73be700ac06058ce85bda8fbd636aa465cb0d41c272fe78c4c0f6c5d8",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/events/checkPassiveEvents.js",
+        "package": "react-dom-bindings",
+        "bytes": 1065,
+        "sha256": "2238e689f14afe87a1827c4ca74abb96fd280e713088245872e077f07b781b80",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/events/forks/EventListener-www.js",
+        "package": "react-dom-bindings",
+        "bytes": 2096,
+        "sha256": "9bea8a8f3b923b36f33f69c42ee07274f4a343aa548e5120828338ff37ef9dae",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/events/getEventCharCode.js",
+        "package": "react-dom-bindings",
+        "bytes": 1523,
+        "sha256": "c8e2cf707ec17cae46d67ff6ff3d0815e853d60b7f0a88f729ee0e92ed800a10",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/events/getEventTarget.js",
+        "package": "react-dom-bindings",
+        "bytes": 1145,
+        "sha256": "47c87f8806ce32bfb6671ed1a6756d06197b3d5849dde621a4ce02d35a2a5745",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/events/getListener.js",
+        "package": "react-dom-bindings",
+        "bytes": 2345,
+        "sha256": "e833b8f5b5090a22b6eb0027e207513a4346face7e192dfd138f2bccf64e3e11",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/events/getVendorPrefixedEventName.js",
+        "package": "react-dom-bindings",
+        "bytes": 3189,
+        "sha256": "3a4bdbc183ed540554784403024ca16233252a280ad7dd726cf5a835b4fd83fe",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/events/isEventSupported.js",
+        "package": "react-dom-bindings",
+        "bytes": 1221,
+        "sha256": "03047cfbbd19ad38ed4e383082ff1f9dd44c6e520343a2ce6388c36bba689056",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/events/isTextInputElement.js",
+        "package": "react-dom-bindings",
+        "bytes": 1267,
+        "sha256": "6bec24a5e7573ba1fbfb7a2f198310a04db4fdb7e0b206f9fda8b1a3a514a991",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/events/plugins/BeforeInputEventPlugin.js",
+        "package": "react-dom-bindings",
+        "bytes": 14460,
+        "sha256": "abe65d8a323b3efe8a2fb1fdab13522f75f370ad79f0b71fd1e7a2977ec2705e",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/events/plugins/ChangeEventPlugin.js",
+        "package": "react-dom-bindings",
+        "bytes": 10871,
+        "sha256": "403a5ea6b20dfa8ead5dbc2912538d082f08457e78f44c8626cbdfe779ff5ae7",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/events/plugins/EnterLeaveEventPlugin.js",
+        "package": "react-dom-bindings",
+        "bytes": 5827,
+        "sha256": "55b910927c6a5bfa302a672d1d0f9dc4f4d05da14aa31e6a8214362986c58d8e",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/events/plugins/FormActionEventPlugin.js",
+        "package": "react-dom-bindings",
+        "bytes": 6421,
+        "sha256": "f253c78d6c12de814eeb7dd544f880c6b5a60db489e7e31d52564d2e58940de8",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/events/plugins/ScrollEndEventPlugin.js",
+        "package": "react-dom-bindings",
+        "bytes": 6746,
+        "sha256": "4ae3d01860fbf9ba3ad7df9e151dc5162a69902cd2dac908175f2e253074dd11",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/events/plugins/SelectEventPlugin.js",
+        "package": "react-dom-bindings",
+        "bytes": 6940,
+        "sha256": "dc03d95ee4d2b65cdddb177cbd61a5a35f695ecfd8d48428cf7a9d523176e4de",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/events/plugins/SimpleEventPlugin.js",
+        "package": "react-dom-bindings",
+        "bytes": 7094,
+        "sha256": "32ab4e38d42a86271ef8de0450e34571d857aecce4076f05bcf6fe61300f7429",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/server/ReactDOMFlightServerHostDispatcher.js",
+        "package": "react-dom-bindings",
+        "bytes": 7942,
+        "sha256": "08963ca438e50d45ee4531d30041188c99adee0ebdf73c353805e15d85ce03b4",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/server/ReactDOMLegacyServerStreamConfig.js",
+        "package": "react-dom-bindings",
+        "bytes": 3974,
+        "sha256": "9cf2b934088805c2c845befa95840c3be859f8213bacc5f6d0fe972f02791488",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/server/ReactDOMServerExternalRuntime.js",
+        "package": "react-dom-bindings",
+        "bytes": 3830,
+        "sha256": "dd9cf1ebf7ded5c4478ff4358ed65434d6c2f7aa1a13eb19ffef4fc25e9761c2",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/server/ReactFizzConfigDOM.js",
+        "package": "react-dom-bindings",
+        "bytes": 260162,
+        "sha256": "a8744b38ccdb1aeca46895f07a30f4e5a1eb3a1ff4dfe51e243135ec5c999e9b",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/server/ReactFizzConfigDOMLegacy.js",
+        "package": "react-dom-bindings",
+        "bytes": 12904,
+        "sha256": "3071ba407e112f5ff6d8e1fbcbe353a9e315f252700788a519f28c597bb8d3de",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/server/ReactFlightServerConfigDOM.js",
+        "package": "react-dom-bindings",
+        "bytes": 7285,
+        "sha256": "23b9a408f18f9120c6b485827d691b65a36ecf3d1039fe857716911862dd2a6a",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/server/escapeTextForBrowser.js",
+        "package": "react-dom-bindings",
+        "bytes": 3442,
+        "sha256": "78e35b781baa14a2ee993f841861a631060024c9c504ff98a7d9eac96c0f45ae",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/server/fizz-instruction-set/ReactDOMFizzInlineClientRenderBoundary.js",
+        "package": "react-dom-bindings",
+        "bytes": 244,
+        "sha256": "9c1ea206d05a2823cda339de2cd4706635cf989f07dfea9438caec5334216571",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/server/fizz-instruction-set/ReactDOMFizzInlineCompleteBoundary.js",
+        "package": "react-dom-bindings",
+        "bytes": 418,
+        "sha256": "eb1fe0e2855f372c60827fb8ad3aa1ddd62085a701559250c201f4b892d8d671",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/server/fizz-instruction-set/ReactDOMFizzInlineCompleteBoundaryUpgradeToViewTransitions.js",
+        "package": "react-dom-bindings",
+        "bytes": 460,
+        "sha256": "d4c1719c5652ff371568b2d3fa697696a265f3feeb684595f0a42b839460b9b5",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/server/fizz-instruction-set/ReactDOMFizzInlineCompleteBoundaryWithStyles.js",
+        "package": "react-dom-bindings",
+        "bytes": 327,
+        "sha256": "8d0f746f95983df0efd3d66045566f7febc974df157ed203eb663c40aac28083",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/server/fizz-instruction-set/ReactDOMFizzInlineCompleteSegment.js",
+        "package": "react-dom-bindings",
+        "bytes": 234,
+        "sha256": "7c520a4d0e97298f268a6f88f7d4b47fc09e238a715347ea7c263320b5b71820",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/server/fizz-instruction-set/ReactDOMFizzInlineFormReplaying.js",
+        "package": "react-dom-bindings",
+        "bytes": 359,
+        "sha256": "fc542ac7e34ad07d7df4d57d6a2989ff6113ede2ec8ece41715670e48d77e213",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/server/fizz-instruction-set/ReactDOMFizzInlineShellTime.js",
+        "package": "react-dom-bindings",
+        "bytes": 185,
+        "sha256": "47ab199f050b38753f3fe9f7929c1e45a1cea4523d931953c3281c63bd6a33a6",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/server/fizz-instruction-set/ReactDOMFizzInstructionSetExternalRuntime.js",
+        "package": "react-dom-bindings",
+        "bytes": 1387,
+        "sha256": "27a7c87e6a38955eca97bb7dbdd1c93e5b7877a6e37635cf2b8477492bf2e43c",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/server/fizz-instruction-set/ReactDOMFizzInstructionSetShared.js",
+        "package": "react-dom-bindings",
+        "bytes": 26489,
+        "sha256": "333b371fd8b954891e0f9420037717372590c100ee3b6b3ddf33c9a51d99d0ee",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/shared/ReactControlledValuePropTypes.js",
+        "package": "react-dom-bindings",
+        "bytes": 2054,
+        "sha256": "c27d88af6bc6f496242cf0781ce44a121855002c38ff4906b2fef5fccc991853",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/shared/ReactDOMFormActions.js",
+        "package": "react-dom-bindings",
+        "bytes": 3784,
+        "sha256": "f150268f458818684bd2cb14fad8dfa431b90ea9b005407772db3d157822652d",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/shared/ReactDOMInvalidARIAHook.js",
+        "package": "react-dom-bindings",
+        "bytes": 3578,
+        "sha256": "001e85b03c107e69376e409deb3b477ca67fa71abc92f3a7c768d8c2cc5583a0",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/shared/ReactDOMNullInputValuePropHook.js",
+        "package": "react-dom-bindings",
+        "bytes": 1333,
+        "sha256": "83d011ae258e8445925771a887b51480ed8cda3a4c4eb44e57f3ced8f975fe32",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/shared/ReactDOMResourceValidation.js",
+        "package": "react-dom-bindings",
+        "bytes": 3137,
+        "sha256": "b15da1dec7d486ce1f7ee29eaccc6483f82fe6ecd8af08244686b0f069986086",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/shared/ReactDOMUnknownPropertyHook.js",
+        "package": "react-dom-bindings",
+        "bytes": 12708,
+        "sha256": "30a6d35b27ed6173e57721529b788b0d0e3c1e28d042be163412b00d739a53f4",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/shared/ReactFlightClientConfigDOM.js",
+        "package": "react-dom-bindings",
+        "bytes": 4365,
+        "sha256": "5214c9d012f700370ce19fa17fa2b8489af4f2840b3def4985c8bb1a7a22872e",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/shared/crossOriginStrings.js",
+        "package": "react-dom-bindings",
+        "bytes": 1162,
+        "sha256": "4064a7eb5bd3480b510766b9fdfd42861eb86c886e163d91b867572681272104",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/shared/getAttributeAlias.js",
+        "package": "react-dom-bindings",
+        "bytes": 3674,
+        "sha256": "0c63ec64b64bde2a6641131ce52e27f2588c33ac4db1fb6ce134ce6e22ad554a",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/shared/hyphenateStyleName.js",
+        "package": "react-dom-bindings",
+        "bytes": 979,
+        "sha256": "0ba7eeae1e5f12c6f7a5fbfad5839e5bde92195b6d4806948470972c938be118",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/shared/isAttributeNameSafe.js",
+        "package": "react-dom-bindings",
+        "bytes": 2089,
+        "sha256": "f04e0784c72dc07d3b303b59bca30b23d6a6db10f9ea39ad258e9201b7cce9dc",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/shared/isCustomElement.js",
+        "package": "react-dom-bindings",
+        "bytes": 1025,
+        "sha256": "4709eaf48695ed0e64acafd227f5d0cb3bd4a479631ce27247fcc7228f7884d7",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/shared/isUnitlessNumber.js",
+        "package": "react-dom-bindings",
+        "bytes": 1855,
+        "sha256": "d2addfe30a33b015eb293d0ffe9f32cbc71c53aa5331a8d081b32e31c8ad4809",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/shared/possibleStandardNames.js",
+        "package": "react-dom-bindings",
+        "bytes": 14041,
+        "sha256": "1d343ae1e68dc16b0f2e0224c614652b41a2652ec673d78156a2f3eaa9abd653",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/shared/sanitizeURL.js",
+        "package": "react-dom-bindings",
+        "bytes": 1588,
+        "sha256": "1ce47b969bb04411fd617349a6efee302e71fdb444685e2dfe292cc4bdb8c269",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/shared/validAriaProperties.js",
+        "package": "react-dom-bindings",
+        "bytes": 1739,
+        "sha256": "19d6c96b4fae470871a39b1b0659644194abc43054a6d2bd64a75e3ef6753418",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/shared/warnValidStyle.js",
+        "package": "react-dom-bindings",
+        "bytes": 4212,
+        "sha256": "329ab12168c5a2ba8b3bf73372aac83415f0eb9831c5a5d00f6fc7099bd27680",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/client.js",
+        "package": "react-dom",
+        "bytes": 401,
+        "sha256": "df78420e057da8f1637e59df585a2f5b0af5b30bef65405a789a4a8f48d3b886",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/index.js",
+        "package": "react-dom",
+        "bytes": 699,
+        "sha256": "8dd6fb485cd389d72b236d4a5237b6bee9c763a09bf105f34a8754f41ae2a4d7",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/npm/client.js",
+        "package": "react-dom",
+        "bytes": 1318,
+        "sha256": "2ae9d6fecda5c757a7051698deb9a047875f191bdd828395b4a55616e916d808",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/npm/client.react-server.js",
+        "package": "react-dom",
+        "bytes": 204,
+        "sha256": "27821beb270469d20a14a0d33890e4199b5c2f97c89d0dc99cc3ae0942acbe3a",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/npm/index.js",
+        "package": "react-dom",
+        "bytes": 1312,
+        "sha256": "6cdc90f6e55c777a0e6b3f953104155ab6eb94e394b1c8f720d8f3275381d029",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/npm/profiling.js",
+        "package": "react-dom",
+        "bytes": 1336,
+        "sha256": "c0703cc65754b9561bd6c3eb93ce5c5feb6b847ebb930298be54cad5cd105c95",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/npm/profiling.react-server.js",
+        "package": "react-dom",
+        "bytes": 204,
+        "sha256": "47153dd49a018017b9381df94874a7b6c7ee10644db34de8d86565b10441ad5c",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/npm/react-dom.react-server.js",
+        "package": "react-dom",
+        "bytes": 330,
+        "sha256": "5331ab33c79ae3aa1a86c808695638168b0475abed34e6c0a4f39bdcd72df43d",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/npm/server.browser.js",
+        "package": "react-dom",
+        "bytes": 678,
+        "sha256": "8984aa68d205638c266aba8971ba80cc8f5c1c5b08c05e07e2db78c8d4aafe6f",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/npm/server.bun.js",
+        "package": "react-dom",
+        "bytes": 768,
+        "sha256": "891fdcf4bed809905e27813afb534413a1e50a1ebfe0bdf1c98cbe5240ca31ff",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/npm/server.edge.js",
+        "package": "react-dom",
+        "bytes": 655,
+        "sha256": "dfcda16dc8953ab86b248ca2883db65820ec728fdcbf2c9f37f9ec548782b371",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/npm/server.js",
+        "package": "react-dom",
+        "bytes": 174,
+        "sha256": "a4d08895e38a9d738010996847e7b2396177960a76f767c13ebc57ef27025d77",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/npm/server.node.js",
+        "package": "react-dom",
+        "bytes": 773,
+        "sha256": "63ede191f52ca6f7fcbe8ca2b16882f831e1a4bb08d062e7020d20b132797a09",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/npm/server.react-server.js",
+        "package": "react-dom",
+        "bytes": 206,
+        "sha256": "a77562055dab16a522604f716792d30618882952746411e0410fa3348f45a385",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/npm/static.browser.js",
+        "package": "react-dom",
+        "bytes": 395,
+        "sha256": "1507d88babf2dd43711863227f6456167ac74f8a4a345a867b0116d838833eca",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/npm/static.edge.js",
+        "package": "react-dom",
+        "bytes": 384,
+        "sha256": "197b5cc389ff68f586ed3e3a2e9c6f237f3c9d464588fce619326ed58962c939",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/npm/static.js",
+        "package": "react-dom",
+        "bytes": 161,
+        "sha256": "a515150b72d6cb668945fd73c8865916c3b06fcc2b29aad323f16c103e435a77",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/npm/static.node.js",
+        "package": "react-dom",
+        "bytes": 547,
+        "sha256": "0c902bf3e3df77ae91eee0ad677040d8fdf39a564b91f853c2cdaa651c495b4a",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/npm/static.react-server.js",
+        "package": "react-dom",
+        "bytes": 188,
+        "sha256": "f99ea7dff928b5729f5d0d877020a961169eb9de4cc92e7da44daaf8cbb23d7f",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/npm/test-utils.js",
+        "package": "react-dom",
+        "bytes": 303,
+        "sha256": "1c79fe3305104b594cd1149995819fea3be1d7d87ff0565dbe55f00077f0f18f",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/npm/unstable_testing.js",
+        "package": "react-dom",
+        "bytes": 1352,
+        "sha256": "334fdca7b9f9878ef0b0a871f218c17217dde959ab2e5b66cb2d22b854e6149e",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/npm/unstable_testing.react-server.js",
+        "package": "react-dom",
+        "bytes": 203,
+        "sha256": "753aabc77b66011b8b50cbb683f55185c5c2fb53b45aa0def6f7b027b087d0b1",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/profiling.js",
+        "package": "react-dom",
+        "bytes": 375,
+        "sha256": "57918d273fdb0e1909c255347b2c6a4e8062355aebb851b66c416bd7a5654257",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/server.browser.js",
+        "package": "react-dom",
+        "bytes": 1384,
+        "sha256": "936d98a03a1ad83cbbcbd4fbb558e8a11f1f852d45564f4667a08a7c0018474a",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/server.bun.js",
+        "package": "react-dom",
+        "bytes": 1665,
+        "sha256": "f2a2346430d106c08a71fd0c3f5d66f88e68c9e8e0918877e2f912963ad2237b",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/server.edge.js",
+        "package": "react-dom",
+        "bytes": 1286,
+        "sha256": "0e22126f4e136e188909955f62bc0cf57464fa8da0e7e702ae5267485db34413",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/server.js",
+        "package": "react-dom",
+        "bytes": 357,
+        "sha256": "ea453244aee2bb9687d337498c7a7bc49708a2c3eea0443f67f8bf4e60e210f8",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/server.node.js",
+        "package": "react-dom",
+        "bytes": 1768,
+        "sha256": "74839c486b9eed0d838af36df8f01847887249de498ae82bb0e7f5c1b3efa761",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/src/ReactDOMFB.js",
+        "package": "react-dom",
+        "bytes": 1142,
+        "sha256": "fb99480644524001329d48a4b3818956296eac30d1cfb5081d8649ee679c253d",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/src/ReactDOMFB.modern.js",
+        "package": "react-dom",
+        "bytes": 899,
+        "sha256": "aed3646c1bea3b4a366ae4dd7f677afe5ea120022d9378a56cd52370f4927404",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/src/ReactDOMReactServer.js",
+        "package": "react-dom",
+        "bytes": 651,
+        "sha256": "e2cba66b4083a846c7d88ba92b71b8acefce8f9772101d799c6e74e4db2ff7c2",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/src/ReactDOMSharedInternals.js",
+        "package": "react-dom",
+        "bytes": 2261,
+        "sha256": "35c5182c8fa8459f8379b734f8cfb0d14b7dfe853acf10c8fdf2210a7b81df89",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/src/ReactDOMSharedInternalsFB.js",
+        "package": "react-dom",
+        "bytes": 1707,
+        "sha256": "74dd8e1140f2385cc5a69c15f5448f8eabb7f9e474690540c02a188a259224d1",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/src/ReactDOMTestingFB.js",
+        "package": "react-dom",
+        "bytes": 629,
+        "sha256": "5762081914f4dccf72dc8984cc3dc1f333fc4d3c820e1c170b039d85043bc32a",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/src/ReactDOMTestingFB.modern.js",
+        "package": "react-dom",
+        "bytes": 636,
+        "sha256": "7b28aa12d66a5b509d2a072fcfb0f38700efbceecd02a19f5fa306d8f63b419d",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/CSSPropertyOperations-test.js",
+        "package": "react-dom",
+        "bytes": 8433,
+        "sha256": "4ef4ef60f1dfeafea52186bab4f5223f0027c8bc8b51f0923de2c03a13bc6611",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/DOMPropertyOperations-test.js",
+        "package": "react-dom",
+        "bytes": 58227,
+        "sha256": "eaf3676cdd2fa851d05199d32a5d0c60ec58fdb9a1f590111c7f3c66bd49ded2",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/InvalidEventListeners-test.js",
+        "package": "react-dom",
+        "bytes": 2636,
+        "sha256": "e2c84109b8eda1c7a9989b2bb4a8849c4bbc0ec573fa987212823cdb9d83dcd5",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactBrowserEventEmitter-test.js",
+        "package": "react-dom",
+        "bytes": 10004,
+        "sha256": "2c45adbc40404db66adf3ad7b26e38e77846b3f9e49752acf4efa2936a33e0b5",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactChildReconciler-test.js",
+        "package": "react-dom",
+        "bytes": 6025,
+        "sha256": "91f1a9c12cda9900bb3b87da6eb7516fd65a35bb4b27e326bff2934e01b79f06",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactClassComponentPropResolutionFizz-test.js",
+        "package": "react-dom",
+        "bytes": 2723,
+        "sha256": "4bc9cf731ac1d6874f759c6b50bf93bb70a9b4ff123328293f72cb5d9f77787b",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactComponent-test.js",
+        "package": "react-dom",
+        "bytes": 20440,
+        "sha256": "f932f57893971be9598c3e961c522f4510add6aa238ae734385c386b5f489e94",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactComponentLifeCycle-test.js",
+        "package": "react-dom",
+        "bytes": 55423,
+        "sha256": "47d8f84c1408dbeade8fe81f7f040548931fc5d2fddf0701cba15603890e1742",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactCompositeComponent-test.js",
+        "package": "react-dom",
+        "bytes": 38517,
+        "sha256": "3560b8b1f7ff0e44f2148c16583e79a31dbd026759d944f081d84f3fa29bd5a3",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactCompositeComponentDOMMinimalism-test.js",
+        "package": "react-dom",
+        "bytes": 2545,
+        "sha256": "f179844a9fa717c1f845d293ad2a2586ce5d065c4e9655f8f409ff271158dcb9",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactCompositeComponentNestedState-test.js",
+        "package": "react-dom",
+        "bytes": 3613,
+        "sha256": "d22b75f6df3005f7ec544296630705af28d5977b9e8855eb15a76707ad5f1d36",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactCompositeComponentState-test.js",
+        "package": "react-dom",
+        "bytes": 17523,
+        "sha256": "bbf46e6dae720472fe6d2229bdaa4274eed8aee32318c5692a48427913156f21",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOM-test.js",
+        "package": "react-dom",
+        "bytes": 32311,
+        "sha256": "fd79c64fc39906d8e1c90f93eeaf4b2f18c9b90c628413b2d0a50868a87ecd7d",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMActivity-test.js",
+        "package": "react-dom",
+        "bytes": 15711,
+        "sha256": "5102c947e93ce5fe29e7014b9b27793dcdba58d16696e8e1fa7f5401b1558a9d",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMAttribute-test.js",
+        "package": "react-dom",
+        "bytes": 7683,
+        "sha256": "36113e7c3a09a8d4bc59601711a13e24ddf082b9bddd78fc603b2a01261f4559",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMBrowser-test.js",
+        "package": "react-dom",
+        "bytes": 1128,
+        "sha256": "381f0e42cb22a1b462cec3fff7fb7d432534d36b7ce8e214c28ad980cb273c08",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMComponent-test.js",
+        "package": "react-dom",
+        "bytes": 129648,
+        "sha256": "1e77f109bfbb34f8378f602883b76b9370769d171fffc4dcde29352add41a58d",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMComponentTree-test.js",
+        "package": "react-dom",
+        "bytes": 5714,
+        "sha256": "d3e731600dc50e400845100b242b2c1c2674473b194e48369ef240751587726a",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMConsoleErrorReporting-test.js",
+        "package": "react-dom",
+        "bytes": 14678,
+        "sha256": "93cb318725fa22d6792bf88c164aa1bff91340c7974f3c789a6f447aa6288eae",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMConsoleErrorReportingLegacy-test.js",
+        "package": "react-dom",
+        "bytes": 16553,
+        "sha256": "0cee1e2e1e8137ce1acc69a5b858678a5d702f1449c3d631aef94db00b29e1da",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMEventListener-test.js",
+        "package": "react-dom",
+        "bytes": 39966,
+        "sha256": "6a3dd1a5d7c19864824b0308aaa69e8c80800b3896c6b3c0cfb760e0d57ccb97",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMEventPropagation-test.js",
+        "package": "react-dom",
+        "bytes": 82622,
+        "sha256": "5717e3c1862fe85011be68ca8e0448e49ca5d5ac8dd25188da7a0cb808d6873e",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMFiber-test.js",
+        "package": "react-dom",
+        "bytes": 37239,
+        "sha256": "daa2e34b573c197764acb232b3bab287d7f42c8f27c1a9865b411a4ecfc8b87d",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMFiberAsync-test.js",
+        "package": "react-dom",
+        "bytes": 26399,
+        "sha256": "55a9197e402a2034e5f16d4d35be1681d75935026c2ae66875a782ad39d3272f",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMFizzDeferredValue-test.js",
+        "package": "react-dom",
+        "bytes": 5303,
+        "sha256": "a92f9419a84059880268649cc465418eca8029c93babcfa81b0729af7e5d70ca",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMFizzForm-test.js",
+        "package": "react-dom",
+        "bytes": 24389,
+        "sha256": "cc329f56a265f5c138288b2d46cf46780380bfc08d92d340ebe1e242247fa8e3",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMFizzServer-test.js",
+        "package": "react-dom",
+        "bytes": 285303,
+        "sha256": "08269017b38f703635118429308486de0b2e96bba62379e54bf5b198a0263e52",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMFizzServerBrowser-test.js",
+        "package": "react-dom",
+        "bytes": 18147,
+        "sha256": "f690b088bf49a9070c006c8e9c84d5f121a2e49f13e21cd917c3989e76ffc277",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMFizzServerEdge-test.js",
+        "package": "react-dom",
+        "bytes": 5970,
+        "sha256": "b904f3b9d9857911bdfd7474184b04cc50972af1731de0c3031e6e267e037d13",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMFizzServerNode-test.js",
+        "package": "react-dom",
+        "bytes": 22195,
+        "sha256": "9fe43b981d36f53ae362b4b04abcf982d6d13feed7917a1af229347d2aaaea15",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMFizzShellHydration-test.js",
+        "package": "react-dom",
+        "bytes": 22783,
+        "sha256": "bf57c30ed6f01b8f53e497193d4769d2954627f3fe6c6e6d3b14cf99a971b68c",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMFizzStatic-test.js",
+        "package": "react-dom",
+        "bytes": 10779,
+        "sha256": "906e9c65d13a5f497279e7c7570e2e05481ea0e8e9bd1457fcd60650532427cc",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMFizzStaticBrowser-test.js",
+        "package": "react-dom",
+        "bytes": 37683,
+        "sha256": "d06016788915e2058041a7ce26a4e4d1c42281f6e50bd895139448ded85a42b4",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMFizzStaticNode-test.js",
+        "package": "react-dom",
+        "bytes": 15282,
+        "sha256": "e01a42a622b01cee1cca357794b061c850d645d2367b51e6280ca4e623e0596d",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMFizzSuppressHydrationWarning-test.js",
+        "package": "react-dom",
+        "bytes": 18641,
+        "sha256": "475fdff5171867af21d6784e654346716b89667e35ad68529e7bd4b7565e0ec7",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMFizzSuspenseList-test.js",
+        "package": "react-dom",
+        "bytes": 23867,
+        "sha256": "32e66c7e7ba3e4d1a6336a7caf8932cc499e77bc2b7f9a861feb79e5acfbea6b",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMFizzViewTransition-test.js",
+        "package": "react-dom",
+        "bytes": 21288,
+        "sha256": "fa02175f431cb059f0b33688a7ab53e5e78d1efd03c577e100004ad4803e58ac",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMFloat-test.js",
+        "package": "react-dom",
+        "bytes": 315316,
+        "sha256": "f03c4a06a4462c9b9ccf5c3effde821f240c32fe5e1608a2b594f3c2d6b92d03",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMForm-test.js",
+        "package": "react-dom",
+        "bytes": 72995,
+        "sha256": "1232d620edd183275a834e3e42cec444bd423d2c454e6628ddb9dd94dbefedbc",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMFragmentRefs-test.js",
+        "package": "react-dom",
+        "bytes": 91584,
+        "sha256": "bd642c0ab38f33ce26857156106bca3922e0bd72222fc297a9a6827cc3b557b7",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMFragmentRefsDocument-test.js",
+        "package": "react-dom",
+        "bytes": 8076,
+        "sha256": "ae0935745159ffd6afd22c8b31838238988f57acdd0a47defea1989ed76bacae",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMHooks-test.js",
+        "package": "react-dom",
+        "bytes": 5144,
+        "sha256": "51bce93dcc6b5a7e8784f4eaa468237802db90eaa8387f8f8a95289f8b06a7fd",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMHostComponentTransitions-test.js",
+        "package": "react-dom",
+        "bytes": 4055,
+        "sha256": "40c665b45616faf4a7b5106c0a2a457899e78755fc0b52e4734cc73ecadaa667",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMHydrationDiff-test.js",
+        "package": "react-dom",
+        "bytes": 64479,
+        "sha256": "41f28af95a6446a864671d664bba17f4ae19b9efb91f0e99c425f6bd304e3435",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMIframe-test.js",
+        "package": "react-dom",
+        "bytes": 1024,
+        "sha256": "70f8e7f7c65903387ce8a8fa226fe8a42d2179da2c6c612d8321e454cbee8767",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMImageLoad-test.internal.js",
+        "package": "react-dom",
+        "bytes": 19504,
+        "sha256": "d23342084ed06f428418b7a60e162e59a42cbfbed82ae00004785f8a2d44d83c",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMInReactServer-test.js",
+        "package": "react-dom",
+        "bytes": 537,
+        "sha256": "5b5d124cd496c38a822fe0b68b49a56ea741132d24e25cd0748a0f983d02db5d",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMInput-test.js",
+        "package": "react-dom",
+        "bytes": 101791,
+        "sha256": "c8a5013865e59323bb401a2cedd90e5e086d21582195bc740180b87fdf8cad3b",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMInvalidARIAHook-test.js",
+        "package": "react-dom",
+        "bytes": 3766,
+        "sha256": "9188fe4fe6b2dd1020051c920dbdec87ab0082e6caee48dd99d0215891adc560",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMLegacyComponentTree-test.internal.js",
+        "package": "react-dom",
+        "bytes": 1948,
+        "sha256": "f7a96ce33eecbdbf2468f7cd47f28da02b8194e445233636098e390f6721269a",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMLegacyFiber-test.js",
+        "package": "react-dom",
+        "bytes": 42393,
+        "sha256": "325a4d9d8873b6db19d03bea8d37e01307f5b57c72f7ca17b4f5d052706198d5",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMLegacyFloat-test.js",
+        "package": "react-dom",
+        "bytes": 986,
+        "sha256": "6f58b1a0fe5da5f5d30e9cec24504c9deb9caf5e8114ec5c3a86a400a43e46c8",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMNativeEventHeuristic-test.js",
+        "package": "react-dom",
+        "bytes": 12044,
+        "sha256": "b87168c40f0cd0019ea688db854ceb85472f605e2fae96cc964b88753851901e",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMNestedEvents-test.js",
+        "package": "react-dom",
+        "bytes": 2178,
+        "sha256": "12db932b3d58ed175477e39386be721a89bd65112556475eae2ae1a6bacb0c08",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMOption-test.js",
+        "package": "react-dom",
+        "bytes": 8552,
+        "sha256": "8e8dbe4a6b15fffa30059bd54e0a6428d949414a32542a4f6c48db43a5da80d8",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMRoot-test.js",
+        "package": "react-dom",
+        "bytes": 13569,
+        "sha256": "c932a1fdfbf3a786b8a85de0d664638230f10fc2b1d44dd753b0b33ede46a26c",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMSVG-test.js",
+        "package": "react-dom",
+        "bytes": 7331,
+        "sha256": "3595a1185ebda92c3a77b552d39717c7b74c4cce7ecc46dc08ed08be130dc788",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMSafariMicrotaskBug-test.js",
+        "package": "react-dom",
+        "bytes": 3438,
+        "sha256": "8c8c8cddb6c2f00025c1704f711398b4027ef5489ad23287ec516d96143e4e3e",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMSelect-test.js",
+        "package": "react-dom",
+        "bytes": 61184,
+        "sha256": "a9428038513929a5bcb909271e5793199d3c761d0283fc6f3f539a6c1c253610",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMSelection-test.internal.js",
+        "package": "react-dom",
+        "bytes": 5413,
+        "sha256": "b6cb5d61e4929f627332c515e6eb8900f46398c962b95ca0866aa3b2b958acbc",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMServerIntegrationAttributes-test.js",
+        "package": "react-dom",
+        "bytes": 30498,
+        "sha256": "7eca01e2ebe208b51cea59e63934d3836021a10333a7d29ded4e040208b4ea24",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMServerIntegrationBasic-test.js",
+        "package": "react-dom",
+        "bytes": 5257,
+        "sha256": "997371d57f95caf243aae7384e6978e071802e5b1d6b6c45e3fc1f427ee52982",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMServerIntegrationCheckbox-test.js",
+        "package": "react-dom",
+        "bytes": 3432,
+        "sha256": "4d4d37dab36d7486018ee8ec2f9fdb7075d76303baa2cf855933852eff2dec28",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMServerIntegrationClassContextType-test.js",
+        "package": "react-dom",
+        "bytes": 8390,
+        "sha256": "31bf3bb2ee7413202cdf2fea010bcbf2935be55ca409cf49c63629d3229166d3",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMServerIntegrationElements-test.js",
+        "package": "react-dom",
+        "bytes": 35552,
+        "sha256": "90442e771e20197ac84952f55897e9a9185637ce87bddaacf109b1021903e750",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMServerIntegrationFragment-test.js",
+        "package": "react-dom",
+        "bytes": 3292,
+        "sha256": "6cd8298a41e1f304b37a4459be5d64424122c9a9eb3fbfb77e72a877cd8bc9de",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMServerIntegrationHooks-test.js",
+        "package": "react-dom",
+        "bytes": 27546,
+        "sha256": "e5b5186cc283047f78f315915a78e0620705ff5331aff85ad3082f4bd3e9047e",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMServerIntegrationInput-test.js",
+        "package": "react-dom",
+        "bytes": 3447,
+        "sha256": "4ad33fde8de46df70291fde294f322099736cf51ce39516638613741f6e526ba",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMServerIntegrationLegacyContext-test.js",
+        "package": "react-dom",
+        "bytes": 10558,
+        "sha256": "7eca9c6f78257abbd8a5ef3475e6d60037f8549487b04b024bdd334140ec449d",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMServerIntegrationLegacyContextDisabled-test.internal.js",
+        "package": "react-dom",
+        "bytes": 4626,
+        "sha256": "92119794137484689d5e9b481b14010f6ea1b2f16c1aad1afe2c848ac10963c0",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMServerIntegrationModes-test.js",
+        "package": "react-dom",
+        "bytes": 3519,
+        "sha256": "26161d0cea630ea93bcde2a8be7d7da3c037b847f41b1d97b9773a113d396d04",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMServerIntegrationNewContext-test.js",
+        "package": "react-dom",
+        "bytes": 10198,
+        "sha256": "645c79dd9c1454d7546b467c3848cd8d84eb9f37303a74f70adecbee0a2bfc44",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMServerIntegrationObject-test.js",
+        "package": "react-dom",
+        "bytes": 1888,
+        "sha256": "842389c8a4d394b4ad225a5e4be5dc2b2abaa8d04b44d408f043021f75adc31e",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMServerIntegrationReconnecting-test.js",
+        "package": "react-dom",
+        "bytes": 13853,
+        "sha256": "938131c048975ca0d0140e3e3391acd48033571bd5a562889e0275bcf3751ba2",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMServerIntegrationRefs-test.js",
+        "package": "react-dom",
+        "bytes": 2531,
+        "sha256": "e77723a79d6374fbbe177215e6d7c59aae204180344c93b4333f940a3d075215",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMServerIntegrationSelect-test.js",
+        "package": "react-dom",
+        "bytes": 7922,
+        "sha256": "6c4974a5058cd7219b50c8ceffd93726037f0c574098b987f46d4b39dd94a37a",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMServerIntegrationSpecialTypes-test.js",
+        "package": "react-dom",
+        "bytes": 4179,
+        "sha256": "75261196196a73a3b6fde5433a0bdedfcba620c1b84a81046dded0d27a2b93f6",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMServerIntegrationTextarea-test.js",
+        "package": "react-dom",
+        "bytes": 3875,
+        "sha256": "1ac16ddcda2470d484102712d926c126a3363db981935d9e5153f7e59b930f1b",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMServerIntegrationUntrustedURL-test.js",
+        "package": "react-dom",
+        "bytes": 8303,
+        "sha256": "8e3b99cf1c62a6eb701ada22f82524d073cada9d8667e2820db9ffff94e6befe",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMServerIntegrationUserInteraction-test.js",
+        "package": "react-dom",
+        "bytes": 13691,
+        "sha256": "14230e66798be8d9a74221f6af3f91d7365cea03178865a3c35bbee3189365b7",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMServerLifecycles-test.js",
+        "package": "react-dom",
+        "bytes": 10888,
+        "sha256": "9cc6ad1925c4bd5e0abfde3e771be4bb463a025e9fe6a277ea531afa4f6c6c9c",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMServerPartialHydration-test.internal.js",
+        "package": "react-dom",
+        "bytes": 119657,
+        "sha256": "7e317979c80f172ae28184db4907d9e5efa4f7fbfba740c59247fb23ab884421",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMServerPartialHydrationActivity-test.internal.js",
+        "package": "react-dom",
+        "bytes": 83583,
+        "sha256": "45000218e03cc558d501300efa12ca63f413f98a81897fabfd28d20568d6266a",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMServerSelectiveHydration-test.internal.js",
+        "package": "react-dom",
+        "bytes": 51653,
+        "sha256": "9ebc119d91cb43f641fc16fb6871733c0715bede341b92c08bc53361f05fc160",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMServerSelectiveHydrationActivity-test.internal.js",
+        "package": "react-dom",
+        "bytes": 41622,
+        "sha256": "478cd0ee8065fd945c88bacda1640cdc63c2363a56300abac25dd4e2f68b9e54",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMServerSuspense-test.internal.js",
+        "package": "react-dom",
+        "bytes": 6120,
+        "sha256": "c51d6ee72431b7da2bb30412938577b4accaaf11eae49c05135c54b54f43d76f",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMShorthandCSSPropertyCollision-test.js",
+        "package": "react-dom",
+        "bytes": 6104,
+        "sha256": "531d589b2b7669389457a58ab3f973201a6c0281d6c7d7bf8f1b670593e3fee8",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMSingletonComponents-test.js",
+        "package": "react-dom",
+        "bytes": 37306,
+        "sha256": "6d129941f96933a8ed03c1b2e72d57d342d1fdc221d2fca4f955b82e1a8219f5",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMSrcObject-test.js",
+        "package": "react-dom",
+        "bytes": 7326,
+        "sha256": "9a938528a76a4ca4bf1543b9e685e4ae705426ddfc67215d0bd4201adb5d541d",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMSuspensePlaceholder-test.js",
+        "package": "react-dom",
+        "bytes": 8925,
+        "sha256": "73f898caf324b930e255cada133ca278a22215f286864c23b4e434b85c83644c",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMTestSelectors-test.js",
+        "package": "react-dom",
+        "bytes": 39257,
+        "sha256": "9eccec3f97465652467e61d1293e2a67a58f649c8f75a8e726b571f5430b0eb5",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMTextComponent-test.js",
+        "package": "react-dom",
+        "bytes": 8544,
+        "sha256": "8d19d759e7a7b20ab8557b7c8475a6efb2d5c0b4a9aae2362f24619f9f714e10",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMTextarea-test.js",
+        "package": "react-dom",
+        "bytes": 35401,
+        "sha256": "413600e905fa277e07e8323dcc77f7854bddc03a5c139f959498555ad403a9df",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMUseId-test.js",
+        "package": "react-dom",
+        "bytes": 23334,
+        "sha256": "ca0c7e234fc44d0496af4401f6dcc8da68325ef0a48e58ec37278ef5d17d4916",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMViewTransition-test.js",
+        "package": "react-dom",
+        "bytes": 37086,
+        "sha256": "3da31638c94f963f6ca9550c8f2dcade71821b14c755a3046aa66677eb103f42",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactDOMserverIntegrationProgress-test.js",
+        "package": "react-dom",
+        "bytes": 1699,
+        "sha256": "df159588def386e2e8fcac59de48f9ea7c4ca33ae7219a03df65055ad0e7a73d",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactEmptyComponent-test.js",
+        "package": "react-dom",
+        "bytes": 10737,
+        "sha256": "0b1311e099d77954d10ef447c180be6558b03b39bb52588b4ed84a73b92c0e8f",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactErrorBoundaries-test.internal.js",
+        "package": "react-dom",
+        "bytes": 94355,
+        "sha256": "32f386bcc4841df14a724b3de634da2b5936c64e7b884a7482d392b7ea95b97e",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactErrorBoundariesHooks-test.internal.js",
+        "package": "react-dom",
+        "bytes": 1629,
+        "sha256": "da5fd64216bef5793a3431905d47af81db291fb62eeeca86ccf0bb8d65d0c613",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactErrorLoggingRecovery-test.js",
+        "package": "react-dom",
+        "bytes": 2131,
+        "sha256": "f5784f8f26e7cd45eaf5483d49f952831d71d9e0cabe2763d94aabdc50204945",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactEventIndependence-test.js",
+        "package": "react-dom",
+        "bytes": 2383,
+        "sha256": "50b4de371ae052e10fc09f0a6cd1194bcc585504ea2d5ec5fa9c47c482e6dd4c",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactFunctionComponent-test.js",
+        "package": "react-dom",
+        "bytes": 8105,
+        "sha256": "9e71f9bc8374ebab5919dcc4598131c8bdc9c8c885ccd9ac06a4b361c3540078",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactIdentity-test.js",
+        "package": "react-dom",
+        "bytes": 8927,
+        "sha256": "bfb1a91f10057e465fa5d0105a5eea53e5e685831d847ad7a639d1597ecdd531",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactLegacyCompositeComponent-test.js",
+        "package": "react-dom",
+        "bytes": 26448,
+        "sha256": "1b7a86a70418da518fae40e311a2ed86f954333af64d6cbe76475f628d6f21fe",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactLegacyContextDisabled-test.internal.js",
+        "package": "react-dom",
+        "bytes": 7397,
+        "sha256": "ad379655fc0546f4384e91a75ddb28cfdaf3853ad286da1489d94a808ec58371",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactLegacyErrorBoundaries-test.internal.js",
+        "package": "react-dom",
+        "bytes": 73775,
+        "sha256": "3441e1b47974e64b87b4a5c71a15f5995ab4934042c7ec3aeeaec483e6351bf8",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactLegacyMount-test.js",
+        "package": "react-dom",
+        "bytes": 14898,
+        "sha256": "4ccd0a6ef0676f572da3ad61c07e0807ee62c982a2ba08341ca67b029a48f4f9",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactLegacyRootWarnings-test.js",
+        "package": "react-dom",
+        "bytes": 707,
+        "sha256": "adffc048237481727da8a91147a28a72a3849c09e0a7b653000125e586d6ad56",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactLegacyUpdates-test.js",
+        "package": "react-dom",
+        "bytes": 43977,
+        "sha256": "29ef0e93559e57eec80285cd0354f7bc2c27529471d0fe138ed957239d1e638d",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactMockedComponent-test.js",
+        "package": "react-dom",
+        "bytes": 1550,
+        "sha256": "e03591bdffe11f3e0516016728151d21418d2dd1ecf1ac468981103c1081e8dc",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactMountDestruction-test.js",
+        "package": "react-dom",
+        "bytes": 3480,
+        "sha256": "267117a6e22ca685a1c69dfbd9d3a61199440609897f14b20be7c2cfd76a9a25",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactMultiChild-test.js",
+        "package": "react-dom",
+        "bytes": 15823,
+        "sha256": "f9b36d09696cdc0be030770b9e9bda08243b2651a6ed25175af95deeb8505776",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactMultiChildReconcile-test.js",
+        "package": "react-dom",
+        "bytes": 24652,
+        "sha256": "58292fc993836a4ec0947f8f230c17d0f5fe85d5addb9bf9d3a06bad1acb200c",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactMultiChildText-test.js",
+        "package": "react-dom",
+        "bytes": 7460,
+        "sha256": "8d6fbd95f213b3335a73351eb4b638bc425764b85b1b2d932de1a0e43a9cc1ab",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactRenderDocument-test.js",
+        "package": "react-dom",
+        "bytes": 9605,
+        "sha256": "2efa2cefc5f0f0f2c4725777e2d9ee410b66874ed4efca0b46c7a7b17ee1fe99",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactServerRendering-test.js",
+        "package": "react-dom",
+        "bytes": 31741,
+        "sha256": "ac1cdf4d4ac0e444fe9129ab29e6c295fc956211112d7e498f7aaf1e4442054c",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactServerRenderingBrowser-test.js",
+        "package": "react-dom",
+        "bytes": 1295,
+        "sha256": "a2ec1f1dfc13d5a05d9b33a1c6d325dea5ef8d6d8208a7a0b2b74e2109a1df48",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactServerRenderingHydration-test.js",
+        "package": "react-dom",
+        "bytes": 28375,
+        "sha256": "f58511c956101ba9c14dbe62b79695bb5ac0f2daabd1e410875c410b0b3e681c",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactStartTransitionMultipleRenderers-test.js",
+        "package": "react-dom",
+        "bytes": 4088,
+        "sha256": "cad5e9fe17227bb96d22b4eeab9029769a4cfdf2c3b61ac6a6c586faba760861",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactTestUtilsAct-test.js",
+        "package": "react-dom",
+        "bytes": 22108,
+        "sha256": "70d2c390ad77a56367d191619ca932e2c7b58a0fc0ca083898fc37d8f0b28a47",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactTestUtilsActUnmockedScheduler-test.js",
+        "package": "react-dom",
+        "bytes": 4688,
+        "sha256": "b045fdafa1f70c5d10c0bbbd93a23d1cf7a2d56da5b40810b29cbe775d6443ff",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactTreeTraversal-test.js",
+        "package": "react-dom",
+        "bytes": 8682,
+        "sha256": "f0ed85e41d5fa70fcde7e6637163e4f2fc879443d4250f1d873e943a408836b3",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactUpdates-test.js",
+        "package": "react-dom",
+        "bytes": 60325,
+        "sha256": "7d60bda27ce42c8af07000afb25d248085a9850062c73b7e15105c0842d5a92c",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/ReactWrongReturnPointer-test.js",
+        "package": "react-dom",
+        "bytes": 5164,
+        "sha256": "c539b1fd96b2f9119f5093923aef0fc82d0b2e52ae32b076945751279af48f8d",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/escapeTextForBrowser-test.js",
+        "package": "react-dom",
+        "bytes": 2165,
+        "sha256": "4a18731ae030de47d9d36b2468f01aa07a19fa7b9fc6ed40b1d830f201982646",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/findDOMNodeFB-test.js",
+        "package": "react-dom",
+        "bytes": 5320,
+        "sha256": "64f3c98f2b50d3cc7cd9f793d26f1d519bcdcb2268bf56e8f38aef0158124599",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/quoteAttributeValueForBrowser-test.js",
+        "package": "react-dom",
+        "bytes": 2306,
+        "sha256": "6024b8cd0d392978c78a1a8189eb7d3965ae76a189db689df549007e0e82817e",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/refs-destruction-test.js",
+        "package": "react-dom",
+        "bytes": 4644,
+        "sha256": "922219d7b0ac051d1aba90f2c0b30055f9792908f05e564205429f96ebc4d0a0",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/refs-test.js",
+        "package": "react-dom",
+        "bytes": 15278,
+        "sha256": "87019cae5bba3d5488e0bf9326bd75a32371d0f5da34a4f983fbf246eb8baa6a",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/refsLegacy-test.js",
+        "package": "react-dom",
+        "bytes": 2807,
+        "sha256": "ed315ff5aa9b0ae87d44364bd4241f76eaa347e1c32b2f23e1ef932771efb897",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/utils/IntersectionMocks.js",
+        "package": "react-dom",
+        "bytes": 3666,
+        "sha256": "e0ef3f41a8008cd24132ed1f4acff7cf3120d4e02b229967dd0facc42893a88c",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/utils/ReactDOMServerIntegrationTestUtils.js",
+        "package": "react-dom",
+        "bytes": 12916,
+        "sha256": "3adc998cc3a28a34963b7f5fb3cbf49f0d9317482d5db15708bda7aa9df3347f",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/__tests__/validateDOMNesting-test.js",
+        "package": "react-dom",
+        "bytes": 6346,
+        "sha256": "0e332c512220668d30e578eeb856be87f0605952dde658f8f843ed6b3e33d9a3",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/client/ReactDOMClient.js",
+        "package": "react-dom",
+        "bytes": 3123,
+        "sha256": "d6dcd8886e8ba52fc9320c50c45c1dba1546a354935b0000d427e993e697a4e7",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/src/client/ReactDOMClientFB.js",
+        "package": "react-dom",
+        "bytes": 7153,
+        "sha256": "2b7b580ce44d6fd1ceca04a543319ae07056b5e9f9206b93f80a410da4e6e84c",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/src/client/ReactDOMDefaultTransitionIndicator.js",
+        "package": "react-dom",
+        "bytes": 4068,
+        "sha256": "5c4b6ea2ec32dfb3b6529390263d8744e2c98e86d1a6f82a1070c3a540beb75b",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/src/client/ReactDOMRoot.js",
+        "package": "react-dom",
+        "bytes": 16167,
+        "sha256": "25c731ca399c5bc4ed1e3cdded36a204f38f2b1b189c847f3aee7730a20dc7fd",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/src/client/ReactDOMRootFB.js",
+        "package": "react-dom",
+        "bytes": 17717,
+        "sha256": "28a0e8e25af0023bf2645eec5307770a7a6735efe644bd3e9a1cc7ea91174982",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/src/client/__mocks__/ReactFiberErrorDialog.js",
+        "package": "react-dom",
+        "bytes": 344,
+        "sha256": "ce780bce6e141534a576a3797f3203473318a553976e7889e8265ee0a37e9449",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/src/client/__tests__/dangerouslySetInnerHTML-test.js",
+        "package": "react-dom",
+        "bytes": 853,
+        "sha256": "fde6009ad85f098001b5ebe87891665338f0d3ae2cd616932f7f0ce68c3985d5",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/client/__tests__/getNodeForCharacterOffset-test.js",
+        "package": "react-dom",
+        "bytes": 2340,
+        "sha256": "b8d7ce5535b80326084dd7cde8a893b279fabbea09bc7f484b649289e219613c",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/client/__tests__/trustedTypes-test.internal.js",
+        "package": "react-dom",
+        "bytes": 9373,
+        "sha256": "43691cdfbc0ef1033270fa61020cc388eab6cd9ea91b2981a8d29061a1dafd2b",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/events/__tests__/DOMPluginEventSystem-test.internal.js",
+        "package": "react-dom",
+        "bytes": 118855,
+        "sha256": "23407f079e953b255099bfe5145cd6b729a61b20397f7f68aac841fddc900e63",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/events/__tests__/SyntheticClipboardEvent-test.js",
+        "package": "react-dom",
+        "bytes": 3710,
+        "sha256": "90b772cba97b9b11421c2b98fbcb4d744eb36f87ceef1cb488f66d73c3f3ed0e",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/events/__tests__/SyntheticEvent-test.js",
+        "package": "react-dom",
+        "bytes": 3049,
+        "sha256": "b456684021cdd0ad613db90f5d150d8d0128f9b1e7b7b05725528c4277cb3639",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/events/__tests__/SyntheticFocusEvent-test.js",
+        "package": "react-dom",
+        "bytes": 1991,
+        "sha256": "cd1a89726814f5d5d08f295ba822fd55d73173b4ba2b07bfd4cb93ebdab75411",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/events/__tests__/SyntheticKeyboardEvent-test.js",
+        "package": "react-dom",
+        "bytes": 16231,
+        "sha256": "e49c1c693b14509a195523afa39a3d9d0c2a18e9c1457eb00f2ff716d7f0bd0d",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/events/__tests__/SyntheticMouseEvent-test.js",
+        "package": "react-dom",
+        "bytes": 3912,
+        "sha256": "a2c79e4998406a9507775dfdf5a1e225a929e7e21e18f2a8a8375937513defdb",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/events/__tests__/SyntheticWheelEvent-test.js",
+        "package": "react-dom",
+        "bytes": 2962,
+        "sha256": "d58f019219e01a0f0d7d69e285f8b4174990cf478c326a8b9433bbd8a51f4c0b",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/events/__tests__/getEventKey-test.js",
+        "package": "react-dom",
+        "bytes": 4845,
+        "sha256": "82adb20a7f42f673ba8e6048f8d887dab99bae8cb316df7c0ac7bede119adc1a",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/events/plugins/__tests__/BeforeInputEventPlugin-test.js",
+        "package": "react-dom",
+        "bytes": 28416,
+        "sha256": "b246205d116dc1029970e7f00b296b5c198320bbd2442d876130cc7de85665cb",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/events/plugins/__tests__/ChangeEventPlugin-test.js",
+        "package": "react-dom",
+        "bytes": 26769,
+        "sha256": "2739ccf9f60577d652fde57129a624f6b70d0458753809e90cb49d01ce09bc4b",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/events/plugins/__tests__/EnterLeaveEventPlugin-test.js",
+        "package": "react-dom",
+        "bytes": 8574,
+        "sha256": "5f0f7d881bd3c2be3313821fa894c036188def32989fca52b838fbae962f94c3",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/events/plugins/__tests__/SelectEventPlugin-test.js",
+        "package": "react-dom",
+        "bytes": 6382,
+        "sha256": "d606c1a2d9bda8504eb63ebea168743c7ace0531f9dd3f5a8cbd245feebbf61b",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/events/plugins/__tests__/SimpleEventPlugin-test.js",
+        "package": "react-dom",
+        "bytes": 17687,
+        "sha256": "a76d7c1a73d8aa937b8faf6d39a440ba0b270cea1da4b9b70c53be78a2f99be2",
+        "role": "test"
+      },
+      {
+        "file": "react/packages/react-dom/src/server/ReactDOMFizzServerBrowser.js",
+        "package": "react-dom",
+        "bytes": 10985,
+        "sha256": "47ec93f3d9ee30fcaf4e3fd6ec15da8bbe625d51e7f6c059d63702875e4cb486",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/src/server/ReactDOMFizzServerBun.js",
+        "package": "react-dom",
+        "bytes": 7319,
+        "sha256": "0708fafdf54073e8e44418b824ff23dcd71daf6ad758baf07ffe3462702e59d1",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/src/server/ReactDOMFizzServerEdge.js",
+        "package": "react-dom",
+        "bytes": 10974,
+        "sha256": "0b97c69d9410aa5d70e33af37f6341a33984a2806c4d22f2e898960dacb554cc",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/src/server/ReactDOMFizzServerNode.js",
+        "package": "react-dom",
+        "bytes": 19674,
+        "sha256": "1a6d31d636352a11938b0ba6d1b83b6e94c879ed343007c62e839671e6379458",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/src/server/ReactDOMFizzStaticBrowser.js",
+        "package": "react-dom",
+        "bytes": 9721,
+        "sha256": "ac767fb7dd417395035563ce13e6e240d7a493041df203cfe75e4b5df72fa990",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/src/server/ReactDOMFizzStaticEdge.js",
+        "package": "react-dom",
+        "bytes": 9594,
+        "sha256": "a798c74e48909e3e856a76e2cf47c84246387278efc6f5b3dd05a8168278a734",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/src/server/ReactDOMFizzStaticNode.js",
+        "package": "react-dom",
+        "bytes": 17445,
+        "sha256": "575a7fb6812812e6bca85ce8a12cee5b41d4301f8c5f7a6bfc9e8416a75188cd",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/src/server/ReactDOMLegacyServerBrowser.js",
+        "package": "react-dom",
+        "bytes": 1789,
+        "sha256": "1c4d74ba26329cd53eeb1253acf6288451ac1d16d1d67626b5907e3a6242b7cc",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/src/server/ReactDOMLegacyServerImpl.js",
+        "package": "react-dom",
+        "bytes": 3388,
+        "sha256": "7d54babc4bc8106b338cf4b49005c1a79e40c1ebd7d257b4b62de759735f7190",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/src/server/ReactDOMLegacyServerNode.js",
+        "package": "react-dom",
+        "bytes": 1781,
+        "sha256": "f812336cea4de699fd977e97879174153b84b4b130ec6a2aee11b5d6787ff79f",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/src/server/react-dom-server.browser.js",
+        "package": "react-dom",
+        "bytes": 449,
+        "sha256": "2da4e42a3415e838a11b149c4f07939f2c2bef5be31b66b8c6d21e3e4a73a93c",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/src/server/react-dom-server.browser.stable.js",
+        "package": "react-dom",
+        "bytes": 479,
+        "sha256": "2608f62776f82cbe679aa3d001d5f9506e1e6a6ad6db3fd28e60bba44c1a4bce",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/src/server/react-dom-server.bun.js",
+        "package": "react-dom",
+        "bytes": 604,
+        "sha256": "f1714b3524c51bd2300495764ab63fd85394cd03d3770ae647e0bf643be206d3",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/src/server/react-dom-server.bun.stable.js",
+        "package": "react-dom",
+        "bytes": 622,
+        "sha256": "4f0c45f1152a53170fa372f4bcde2cf114415aa3e7b21ec8dd07e8d303cba93d",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/src/server/react-dom-server.edge.js",
+        "package": "react-dom",
+        "bytes": 439,
+        "sha256": "f5ec89dfe8f4b41531699d70fc603bf13bf795794706dfa5cc032c19bfad1a4f",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/src/server/react-dom-server.edge.stable.js",
+        "package": "react-dom",
+        "bytes": 454,
+        "sha256": "b320962e5eac7758f9bcd09f7342e372af19430bb00611576260529f8406f2e9",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/src/server/react-dom-server.node.js",
+        "package": "react-dom",
+        "bytes": 504,
+        "sha256": "6bc17499a6e82122fa0d88de376d36507c0026b4c502f6fadda9b35bc0acd90f",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/src/server/react-dom-server.node.stable.js",
+        "package": "react-dom",
+        "bytes": 572,
+        "sha256": "de91669fe5ab9a21a536d00e95f513cff08c1d1b8a4dbf13081b0bcf0dd4f401",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/src/shared/ReactDOM.js",
+        "package": "react-dom",
+        "bytes": 2821,
+        "sha256": "ea9da74e594e33413a8f19dc7384ef57a97f7b812cac91d29b65d5bcbcb7f057",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/src/shared/ReactDOMBrowser.js",
+        "package": "react-dom",
+        "bytes": 1207,
+        "sha256": "f8e06f816ad38bd7b6fd57a713b7ff87c23e385833e75666bfae8e8616e102a6",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/src/shared/ReactDOMFloat.js",
+        "package": "react-dom",
+        "bytes": 15094,
+        "sha256": "e5e2f4c224c7415902d33400b368be66291f12ad66b58d3189b1c29d45419bb2",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/src/shared/ReactDOMFlushSync.js",
+        "package": "react-dom",
+        "bytes": 2883,
+        "sha256": "8a34063d6e626e1d36d8672926485f35fb8ee980a8f2999f9a16b0cd08862b33",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/src/shared/ReactDOMTypes.js",
+        "package": "react-dom",
+        "bytes": 7022,
+        "sha256": "03e5210ca3ed2b47533b8e0ad20cd4ed94502df05f2dc4daf77e036cf0756efd",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/src/shared/ensureCorrectIsomorphicReactVersion.js",
+        "package": "react-dom",
+        "bytes": 1074,
+        "sha256": "76d0a74f8a8648fd50a3624fe4d68d7b5c02c5609e4f86f42a4f4336bb8ef98d",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/src/test-utils/FizzTestUtils.js",
+        "package": "react-dom",
+        "bytes": 6760,
+        "sha256": "51600adff903c2680328740ed6f5164d2b51495e39c1cb350a7797122ce020ce",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/src/test-utils/ReactTestUtils.js",
+        "package": "react-dom",
+        "bytes": 929,
+        "sha256": "e08f4b25805194d1539c42e366791b21247f566833ea86516d200c864af8a31b",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/static.browser.js",
+        "package": "react-dom",
+        "bytes": 434,
+        "sha256": "c38833a4d92c5dce4dd9782de89580ed0c450114b07bcc59358a9c3acfa78cec",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/static.edge.js",
+        "package": "react-dom",
+        "bytes": 401,
+        "sha256": "e2f7d1618ebc419478cd915699d358f5e019c54b5417262b300b0446975b475c",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/static.js",
+        "package": "react-dom",
+        "bytes": 350,
+        "sha256": "77f127d6e66e01c17bd68e6fd94044e9dda6037f877dbff33d0b823b29208048",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/static.node.js",
+        "package": "react-dom",
+        "bytes": 1321,
+        "sha256": "f933b568d0af83750428c17280125c6611509bab4818e032836f11a90c6d46e8",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/test-utils.js",
+        "package": "react-dom",
+        "bytes": 344,
+        "sha256": "a490905b92a7ab808bebe6c69431aa3ec52e522d3f1a15cdd69aeb6329488efe",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/unstable_server-external-runtime.js",
+        "package": "react-dom",
+        "bytes": 394,
+        "sha256": "5dee769343782f5dfce5c3bde6a08e0cbb0a5eef7d09de8093c32a41b6db8b17",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/unstable_testing.experimental.js",
+        "package": "react-dom",
+        "bytes": 631,
+        "sha256": "cfa195945e84682316df16aca2ba0d739c9483173c957db916a94864e35eaa33",
+        "role": "source"
+      },
+      {
+        "file": "react/packages/react-dom/unstable_testing.js",
+        "package": "react-dom",
+        "bytes": 310,
+        "sha256": "003a7b9453de5960684e0e060b27e9664935f5e9c8fb44cc9ef101941acf6e40",
+        "role": "source"
+      }
+    ],
+    "exclusions": [
+      {
+        "file": "react/packages/scheduler/npm/umd/scheduler.development.js",
+        "reason": "legacy UMD 预构建产物"
+      },
+      {
+        "file": "react/packages/scheduler/npm/umd/scheduler.production.min.js",
+        "reason": "legacy UMD 预构建产物"
+      },
+      {
+        "file": "react/packages/scheduler/npm/umd/scheduler.profiling.min.js",
+        "reason": "legacy UMD 预构建产物"
+      },
+      {
+        "file": "react/packages/react-dom-bindings/src/server/fizz-instruction-set/ReactDOMFizzInstructionSetInlineCodeStrings.js",
+        "reason": "Fizz 生成的内联代码字符串"
+      },
+      {
+        "file": "react/packages/react/src/__tests__/__snapshots__/ReactProfilerComponent-test.internal.js.snap",
+        "reason": "Jest 生成快照"
+      },
+      {
+        "file": "react/packages/react-reconciler/src/__tests__/__snapshots__/ReactHooks-test.internal.js.snap",
+        "reason": "Jest 生成快照"
+      }
+    ],
+    "shareHashes": {
+      "share/react/01-shared.html": "265fe548e6743ab0f9af9942886e3e69a6c2d433800fab12926e473e048e4f1e",
+      "share/react/14-commit-effects.html": "22de3ca161cad5a73b4dc978c4a71cedba754bbc7301a6d69e2ee4453645f20e",
+      "share/react/09-evidence.html": "f42845ebaf5d1c3cd87a409c2c53fde269d3f77d5c2b94d1067a6232edff8f47",
+      "share/react/index.html": "555b6d1abf24ce38af5fe44a1f5ed9e42598becd6a92b7e9f06fb5d8d8e6fae4",
+      "share/react/16-end-to-end-source.html": "30660d5276826af83bd6820cfd26b2c082aed39477611bc0b049a5e7fd17525f",
+      "share/react/13-hooks-state-machine.html": "257d8e9cbde5427d9172d51d244fc9aa05d796d1ccd2a62fd9a1750de8457177",
+      "share/react/10-fiber-object-model.html": "d6a9929a2746e890f3c70f93c8218163ab195e34fbceeebf0152898d651c950d",
+      "share/react/15-events-hydration.html": "c994ace050963541d30482f8afefc05677a53747d76ff182c72a3ab0ac10d41d",
+      "share/react/12-child-reconciliation.html": "856e41eb254928ae696e99fc836572ff4010b351b8307c98c1fa337fcc8f3b12",
+      "share/react/04-reconciler-render.html": "bc27fdd07de6fc245ff679bfdd9051acd47a80f7e875338252c1358c5e7793f3",
+      "share/react/06-dom-bindings.html": "1408809ea6c809db963179424733328efa3e26b92da1868bb726696a5a546e85",
+      "share/react/07-react-dom.html": "1f8ef1c466f82a5ce1ec6515c95256fc313071149d479f8166a47c5a5de6de16",
+      "share/react/05-reconciler-commit.html": "973061f6cc53e1ad868dad8668a83b8eac6f72460ae3a8100f4be54860bfb602",
+      "share/react/11-update-queues-lanes.html": "87807afcffbdb3807743168b10daaed4117599b459ce858f5f637ff5bd9cfeab",
+      "share/react/03-react.html": "af2f747ce9994d2af93938b3f627e4d60e92bab955db65449d8d298b366c089a",
+      "share/react/08-end-to-end.html": "c1280e6d865c30717857b67e2c8e4dc5e5e7e7927db46523412a190d1e1463cb",
+      "share/react/00-task-baseline.md": "2f7676f19b1f228b96b9086e6abcd6e3c4af922133e426129c11f083bf9be4b2",
+      "share/react/17-suspense-retry.html": "3f81717bf7ef6886851edb6dbdb8028073e57d7c8d8e011d47de42e1990d359a",
+      "share/react/02-scheduler.html": "592da2948b1ed745b60ca8c215d55f89724e194116fdd9c35a7531c11a13dead",
+      "share/react/client-rendering-19.3.0/index.html": "70dca63904baaadf4604f1d765b82248534523f74fdc98a02b54f99490e052ef",
+      "share/react/assets/guide.css": "8afc2c53877f4af88fee3692185ad3ac9b80e73d1da9ab30ace2449f7fbca110",
+      "share/react/assets/engineering-diagrams.css": "c98253c39e8920d75c94582d73b114189e79d0b3fbc481118629feeb68b547ff"
+    }
+  },
+  "finalCheck": {
+    "branch": "main",
+    "head": "3c0d7e3bb22c02e9d136b1627b119ea857b9bb9d",
+    "worktreeEntries": 2048,
+    "articles": 22,
+    "articleDrift": [],
+    "diffCheck": "passed",
+    "articlesUnchanged": true,
+    "finalReadOnlyBranch": "main",
+    "finalReadOnlyHead": "3c0d7e3bb22c02e9d136b1627b119ea857b9bb9d",
+    "sourceScopeHasNul": false
+  }
+}

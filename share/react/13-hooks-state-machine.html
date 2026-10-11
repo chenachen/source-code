@@ -6,6 +6,7 @@
   <meta name="description" content="React 19.3 Hooks 源码状态机深挖：dispatcher、位置链、state queue、eager bailout、baseQueue Lane rebase、render-phase update 与 Effect 清理。" />
   <title>13 · Hooks：位置链、更新队列与 Effect 生命周期</title>
   <link rel="stylesheet" href="assets/guide.css?v=1" />
+  <link rel="stylesheet" href="assets/engineering-diagrams.css" />
 </head>
 <body>
   <header class="topbar"><div class="topbar-inner">
@@ -20,20 +21,20 @@
   <div class="layout">
     <main>
       <p class="eyebrow">13 · State machine lab / ReactFiberHooks</p>
-      <h1>Hooks 不是数组魔法，而是三套 dispatcher 驱动的位置状态机</h1>
+      <h1>Hooks：dispatcher 怎样读取位置链、重放状态并登记 Effect</h1>
       <p class="lede">公开 <code>useState</code> 只转发到当前 dispatcher。reconciler 在函数组件求值前安装 mount、update 或 rerender 实现；每次 Hook 调用推进同一条位置链。state 更新进入带 Lane 的环形队列，低优先级项被保留并在未来 rebase；Effect 则进入另一条提交队列，render 只登记，commit 才 create 或 cleanup。</p>
       <div class="meta"><span class="pill">react-reconciler 0.34.0</span><span class="pill">React 19.3.0</span><span class="pill">dispatcher 三态</span><span class="pill">Lane rebase</span><span class="pill">Effect commit/cleanup</span></div>
 
       <section id="contract"><h2>证据边界</h2>
         <div class="grid three">
           <article class="card"><span class="number">REAL · CONTIGUOUS</span><h3>当前版本连续原码</h3><p>每个源码块都链接当前文件。截取函数局部时明确写“连续节选”，不把删节内容伪装成完整函数。</p></article>
-          <article class="card"><span class="number">REAL · GWT</span><h3>仓库测试断言</h3><p>测试证明 eager 空日志、Lane 重放结果、render-phase 收敛、删除 cleanup；没执行这些测试，不把静态阅读称为本次测试通过。</p></article>
+          <article class="card"><span class="number">REAL · GWT</span><h3>仓库测试断言</h3><p>测试断言对应 eager 空日志、Lane 重放结果、render-phase 收敛与删除 cleanup。</p></article>
           <article class="card"><span class="number">TEACHING TRACE</span><h3>手工状态推演</h3><p>对象图、队列表和伪代码由真实源码分支推得，但不是仓库原码，也不是可运行 Demo。</p></article>
         </div>
       </section>
 
       <section id="exact-anchors"><h2>逐字连续原码核验锚点</h2>
-        <p>下面片段逐字取自当前仓库，区间内不删除注释、Flow 标注或控制分支。后文较长的“删节源码”用于讲机制；这里负责把关键状态写入钉回真实实现。</p>
+        <p>以下连续片段展示 dispatcher、队列和 Effect 的关键状态写入；后文再展开调用条件与执行过程。</p>
         <figure class="source"><figcaption><span>连续原码 · renderWithHooks 选择 mount / update dispatcher</span><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">ReactFiberHooks.js</a></figcaption><pre>  // 只有至少使用一个有状态 Hook 时，memoizedState 才能区分挂载与更新。
   // context 等无状态 Hook 不进入 memoizedState，因此挂载和更新时它都可能为 null。
   if (__DEV__) {
@@ -72,12 +73,12 @@
   return hook;</pre></figure>
         <figure class="source"><figcaption><span>连续原码 · dispatchSetState eager 相等快路径</span><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">ReactFiberHooks.js</a></figcaption><pre>          const currentState: S = queue.lastRenderedState as any;
           const eagerState = lastRenderedReducer(currentState, action);
-          // 把 eager 状态及其计算事实存入更新；进入渲染时若 reducer 未变，可直接使用而无需再次调用。
+          // 保存 eager 结果；updateReducerImpl 处理到该更新时直接复用，不再调用 reducer。
           update.hasEagerState = true;
           update.eagerState = eagerState;
           if (is(eagerState, currentState)) {
-            // 快路径：无需安排 React 重渲染即可退出。若组件随后因其他原因重渲染且 reducer 已变化，
-            // 仍可能需要 rebase 此更新。
+            // 状态相等时不安排这次渲染，但仍保留更新。若之后有更高优先级工作插队，
+            // 该更新可能进入 baseQueue，后续重放必须保留它在原序列中的位置。
             // TODO：此情况下是否仍需纠缠 transition？
             enqueueConcurrentHookUpdateAndEagerlyBailout(fiber, queue, update);
             return false;
@@ -183,7 +184,7 @@
         <div class="table-wrap"><table><thead><tr><th>容器</th><th>挂在哪里</th><th>节点</th><th>职责</th><th>是否跨 current/WIP 共享</th></tr></thead><tbody>
           <tr><td>Hook 位置链</td><td><code>FunctionComponent Fiber.memoizedState</code></td><td><code>Hook.next</code></td><td>第 1、2、3…次位置型 Hook 调用的状态槽</td><td>节点会克隆；字段以 current 为基线</td></tr>
           <tr><td>state pending 环</td><td><code>Hook.queue.pending</code></td><td><code>Update.next</code></td><td>全局并发缓冲已转移、尚未并入基线的更新</td><td><strong>queue 对象共享</strong>；普通 dispatch 先暂存，render 前再接入该环</td></tr>
-          <tr><td>state base 环</td><td><code>Hook.baseQueue</code></td><td><code>Update.next</code></td><td>因 Lane 跳过、未来必须按原顺序重放的更新</td><td>作为 Hook 快照字段克隆到 WIP</td></tr>
+          <tr><td>state base 环</td><td><code>Hook.baseQueue</code></td><td><code>Update.next</code></td><td>因 Lane 跳过、未来必须按原顺序重放的更新</td><td>克隆 Hook 节点时复用环尾指针；更新节点仍共享</td></tr>
           <tr><td>Effect 环</td><td><code>Fiber.updateQueue.lastEffect</code></td><td><code>Effect.next</code></td><td>本函数组件 layout/passive/insertion Effect 的提交工作</td><td>每次 render 为 WIP 重建；EffectInstance 可跨版本共享 cleanup</td></tr>
         </tbody></table></div>
         <div class="callout"><p><strong>两个容易混淆的字段：</strong>函数组件 Fiber 的 <code>memoizedState</code> 是 Hook 链表头，不是某个 useState 的值；Fiber 的 <code>updateQueue</code> 主要装 Effect 等组件级提交数据，而每个 state Hook 自己还有 <code>hook.queue</code>。</p></div>
@@ -235,7 +236,7 @@ useState: rerenderState,</pre></figure>
         <div class="table-wrap"><table><thead><tr><th>dispatcher</th><th>进入条件</th><th>state 行为</th><th>Effect 行为</th><th>退出</th></tr></thead><tbody>
           <tr><td>Mount</td><td>没有可更新的 current Hook 链</td><td>创建 Hook、初始 state、queue 与绑定 dispatch</td><td>创建 Effect，标 HookHasEffect 与 Fiber flags</td><td>组件返回；finish 恢复 ContextOnlyDispatcher</td></tr>
           <tr><td>Update</td><td>current 有有状态 Hook 链</td><td>按位置克隆 current Hook，合并 pending/baseQueue，按 renderLanes 重放</td><td>比较 deps；相等则不加 HookHasEffect</td><td>保存 WIP 链，检查少调用 Hook</td></tr>
-          <tr><td>Rerender</td><td>同一次函数求值中发生 render-phase update，或 DEV Strict 额外 pass</td><td>复用刚建的 WIP Hook，消费 render-phase pending 环，不再检查 Lane</td><td>沿 WIP 链重新登记</td><td>直到没有新 render-phase update，最多 25 次</td></tr>
+          <tr><td>Rerender</td><td>同一次函数求值中发生 render-phase update，或 DEV Strict 额外 pass</td><td>复用刚建的 WIP Hook，消费 render-phase pending 环，不再检查 Lane</td><td>沿 WIP 链重新登记</td><td>直到没有新 render-phase update；每次额外循环最多 25 个 pass</td></tr>
         </tbody></table></div>
         <p>生产选择依赖 <code>current.memoizedState</code>，所以只用不分配状态节点的 Hook 时存在形状边界；DEV 额外用 <code>_debugHookTypes</code> 区分并校验。这里的“mount/update”是 Hook 实现阶段，不等于组件是否拥有一个 current Fiber 的唯一判断。</p>
       </section>
@@ -291,7 +292,7 @@ useState: rerenderState,</pre></figure>
         <p><span class="pill">TEACHING TRACE</span> 上一轮是 <code>#1 useState(count) → #2 useRef(node) → #3 useEffect</code>。若本轮条件分支跳过 #1，第一次位置调用会拿到 old #1，却按 useRef 解释；后续 queue/type 形状错位。React 不是读取变量名纠正，而是用 DEV hook type 序列报警、在更多/更少 Hook 时抛错。</p>
         <div class="table-wrap"><table><thead><tr><th>违规</th><th>源码检测点</th><th>结果</th></tr></thead><tbody>
           <tr><td>更新时多调用一个位置型 Hook</td><td><code>nextCurrentHook === null</code></td><td>抛 <code>Rendered more hooks...</code></td></tr>
-          <tr><td>更新时提前 return，少调用 Hook</td><td><code>finishRenderingHooks</code> 发现 <code>currentHook.next !== null</code></td><td>抛 <code>Rendered fewer hooks...</code></td></tr>
+          <tr><td>更新时提前 return，少调用 Hook</td><td><code>finishRenderingHooks</code> 在已读取 current Hook 后，发现 <code>currentHook.next !== null</code></td><td>抛 <code>Rendered fewer hooks...</code></td></tr>
           <tr><td>数量相同但种类/顺序变化</td><td>DEV <code>hookTypesDev</code> 逐项比较</td><td>打印 Hook 顺序差异；运行结果不受保证</td></tr>
           <tr><td>组件函数外调用普通 Hook</td><td><code>ContextOnlyDispatcher</code> 将方法映射到 <code>throwInvalidHookError</code></td><td>invalid hook call</td></tr>
           <tr><td>Hook 回调内嵌套调用 Hook</td><td>DEV InvalidNestedHooksDispatcher</td><td>规则警告</td></tr>
@@ -345,7 +346,7 @@ useState: rerenderState,</pre></figure>
       <section id="dispatch"><h2>dispatch：先选 Lane，再尝试 eager 快路径</h2>
         <p>普通事件 dispatch 不会立刻改写 <code>queue.pending</code>。<code>enqueueConcurrentHookUpdate</code> 先把 Fiber、queue、Update、Lane 四元组暂存到模块级
         <code>concurrentQueues</code>；进入 render 前，<code>finishQueueingConcurrentUpdates</code> 才把它接入各 Hook 的 pending 环，并把 Lane 沿 return 路径传播到 root。
-        这样 render 中途收到的更新不会立即改动当前正在遍历的父链。只有“组件渲染自己时又 setState”的 render-phase 分支会直接写本组件 <code>queue.pending</code>。</p>
+        这样 render 中途收到的更新不会立即改动当前正在遍历的父链。空闲时 eager bailout helper 会立即调用 <code>finishQueueingConcurrentUpdates</code>，因此“先暂存”不保证 <code>queue.pending</code> 会一直为空。另有“组件渲染自己时又 setState”的 render-phase 分支会直接写本组件 <code>queue.pending</code>。</p>
         <figure class="source"><figcaption><span>连续原码 · ReactFiberConcurrentUpdates.js · 缓冲转移到 Hook pending 环</span><a href="../../react/packages/react-reconciler/src/ReactFiberConcurrentUpdates.js">打开完整函数</a></figcaption><pre>    // $FlowFixMe[invalid-compare]
     if (queue !== null &amp;&amp; update !== null) {
       const pending = queue.pending;
@@ -405,9 +406,9 @@ if (isRenderPhaseUpdate(fiber)) {
   }
 }
 return false;</pre></figure>
-        <div class="callout warn"><p><strong>eager bailout 不是丢弃 update。</strong><code>enqueueConcurrentHookUpdateAndEagerlyBailout</code> 仍保存更新，以便组件因别的原因 render、reducer 已变化时 rebase。它只是在当前 Fiber 与 alternate 都没有待处理 Lane、eager 结果按 <code>Object.is</code> 相同时不安排本次 render。</p></div>
+        <div class="callout warn"><p><strong>eager bailout 仍保留 update。</strong><code>enqueueConcurrentHookUpdateAndEagerlyBailout</code> 仍保存更新，使随后其他 Lane 插队时能够按原顺序 rebase。它只是在当前 Fiber 与 alternate 都没有待处理 Lane、eager 结果按 <code>Object.is</code> 相同时不安排本次 render。</p></div>
         <div class="table-wrap"><table><thead><tr><th>派发输入</th><th>eager 结果</th><th>当次调度</th><th>update 去向</th></tr></thead><tbody>
-          <tr><td><code>setCount(1)</code>，当前 1，队列可 eager</td><td>1，与当前相同</td><td>不调度；函数组件可完全不进入 render</td><td>仍入并发队列，保留 rebase 语义</td></tr>
+          <tr><td><code>setCount(1)</code>，当前 1，队列可 eager</td><td>1，与当前相同</td><td>不调度；函数组件可完全不进入 render</td><td>仍入队保留 rebase 语义；空闲时 helper 会立即转入 pending 环</td></tr>
           <tr><td><code>setCount(2)</code>，当前 1，队列可 eager</td><td>2，不同</td><td>按 Lane 调度 root</td><td>先入全局并发缓冲；转移后携 <code>hasEagerState/eagerState</code> 进入 pending，render 可免算 reducer</td></tr>
           <tr><td>Fiber 任一版本已有 Lane</td><td>不走 eager</td><td>正常入队调度</td><td>先暂存再转移到 pending；render 按完整顺序求值，避免脱离队列上下文</td></tr>
           <tr><td>当前函数组件 render 内派发自己</td><td>不走普通并发队列</td><td>标记额外 render pass</td><td>进入 render-phase pending 环</td></tr>
@@ -415,7 +416,7 @@ return false;</pre></figure>
       </section>
 
       <section id="base-queue"><h2>baseQueue：低优先级可以跳过，但不能从历史中消失</h2>
-        <p><code>updateReducerImpl</code> 先用 O(1) 指针交换把 <code>queue.pending</code> 环并入 <code>baseQueue</code>，再从 <code>baseState</code> 顺序重放。某项 Lane 不在本轮 <code>renderLanes</code> 中就克隆保留；它之后已经执行的普通高优先更新，也必须以 <code>NoLane</code> 克隆到新 baseQueue，未来重放才能保持原始顺序。</p>
+        <p><code>updateReducerImpl</code> 先用 O(1) 指针交换把 <code>queue.pending</code> 环并入 <code>baseQueue</code>，合并后的环尾先写回 <code>current.baseQueue</code>，然后清空共享的 <code>queue.pending</code>：本次 WIP 若中止，下次仍能从 current 找回这些更新。随后从 <code>baseState</code> 顺序重放。某项 Lane 不在本轮 <code>renderLanes</code> 中就克隆保留；它之后已经执行的普通高优先更新，也必须以 <code>NoLane</code> 克隆到新 baseQueue，未来重放才能保持原始顺序。</p>
         <figure class="source"><figcaption><span>删节源码 · pending 合并与普通 Lane 跳过（高级分支删除）</span><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">打开完整 updateReducerImpl</a></figcaption><pre>let baseQueue = hook.baseQueue;
 const pendingQueue = queue.pending;
 if (pendingQueue !== null) {
@@ -463,7 +464,7 @@ do {
     );
     markSkippedUpdateLanes(updateLane);
   }</pre></figure>
-        <div class="callout warn"><p><strong>上块是机制聚焦型删节，不是逐字连续原码。</strong>真实函数在 Lane 判断中还处理 Offscreen 隐藏更新、GestureLane、乐观 <code>revertLane</code> 与 async action 纠缠；这里保留普通 state 主线并删除了这些条件分支。完整实现必须点链接核验。</p></div>
+        <div class="callout warn"><p><strong>上块省略了高级 Hook 分支。</strong>真实函数在 Lane 判断中还处理 Offscreen 隐藏更新、GestureLane、乐观 <code>revertLane</code> 与 async action 纠缠；这里保留普通 state 主线并删除了这些条件分支。普通 <code>useState</code> 的 action 在这里仍按原队列顺序处理；<code>useReducer</code> 派发不预计算 eagerState，而在 render 时调用当前 reducer。</p></div>
         <figure class="source"><figcaption><span>删节源码 · 已有跳过项时克隆后续普通更新（两段机制拼接）</span><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">打开完整 updateReducerImpl</a></figcaption><pre>if (revertLane === NoLane) {
   if (newBaseQueueLast !== null) {
     const clone: Update&lt;S, A&gt; = {
@@ -490,13 +491,27 @@ if (update.hasEagerState) {
 
       <section id="lane-trace"><h2>真实输入手推：1，先 ×100，再同步 +5</h2>
         <p><span class="pill">TEACHING TRACE</span> 输入来自仓库测试：初始 state 1；Transition 更新 T：<code>n =&gt; n * 100</code>；冲刷前插入 Sync 更新 S：<code>n =&gt; n + 5</code>。</p>
+        <figure class="engineering-diagram" data-diagram="engineering-hooks-rebase-queue-136105">
+          <div class="diagram-scroll">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 1305" role="img" aria-labelledby="engineering-hooks-rebase-queue-136105-title engineering-hooks-rebase-queue-136105-desc" style="min-width:840px">
+              <title id="engineering-hooks-rebase-queue-136105-title">Hooks 共享队列与 Lane rebase：1 到 6 再到 105</title>
+              <desc id="engineering-hooks-rebase-queue-136105-desc">current 与 WIP 的 Hook 节点不同，queue 共享。两个原更新形成 pending 环；旧 base 非空时拼接原环；本例旧 base 为空。Sync render 将环写回 current.baseQueue 后清 pending，跳过的 Transition 更新和其后已执行的 Sync 更新复制到新 base 环。Sync commit 为6，Transition 重放得到105。</desc>
+              <defs><marker id="engineering-hooks-rebase-queue-136105-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#526273"/></marker></defs>
+              <text class="d-label" x="25" y="30" text-anchor="start" font-size="18"><tspan x="25" dy="0">同一个 useState 位置：先 T（Transition ×100），再 S（Sync +5）</tspan></text><rect class="d-node" x="25" y="80" width="255" height="115" rx="12"/><text class="d-label" x="152.5" y="117.5" text-anchor="middle" font-size="18"><tspan x="152.5" dy="0">current Hook</tspan><tspan x="152.5" dy="26">memoizedState = 1</tspan><tspan x="152.5" dy="26">baseState = 1</tspan></text><rect class="d-node" x="25" y="260" width="255" height="115" rx="12"/><text class="d-label" x="152.5" y="297.5" text-anchor="middle" font-size="18"><tspan x="152.5" dy="0">WIP Hook（另一个节点）</tspan><tspan x="152.5" dy="26">memoizedState = 1</tspan><tspan x="152.5" dy="26">baseState = 1</tspan></text><path class="d-edge" d="M 150 195 V 260" marker-end="url(#engineering-hooks-rebase-queue-136105-arrow)"/><text class="d-label" x="170" y="230" text-anchor="start" font-size="18"><tspan x="170" dy="0">克隆 Hook</tspan></text><rect class="d-state" x="455" y="80" width="360" height="295" rx="12"/><text class="d-label" x="635.0" y="115" text-anchor="middle"><tspan x="635.0">同一个 queue 对象</tspan></text><text class="d-label" x="635.0" y="350" text-anchor="middle"><tspan x="635.0">pending 尾为 S；S.next = T</tspan></text><path class="d-edge" d="M 280 120 H 455" marker-end="url(#engineering-hooks-rebase-queue-136105-arrow)"/><text class="d-label" x="360" y="105" text-anchor="middle" font-size="18"><tspan x="360" dy="0">queue</tspan></text><path class="d-edge" d="M 280 315 H 455" marker-end="url(#engineering-hooks-rebase-queue-136105-arrow)"/><text class="d-label" x="365" y="300" text-anchor="middle" font-size="18"><tspan x="365" dy="0">queue</tspan></text><rect class="d-node" x="480" y="180" width="130" height="92" rx="12"/><text class="d-label" x="545.0" y="206.0" text-anchor="middle" font-size="18"><tspan x="545.0" dy="0">T</tspan><tspan x="545.0" dy="26">Transition</tspan><tspan x="545.0" dy="26">×100</tspan></text><rect class="d-node" x="650" y="180" width="130" height="92" rx="12"/><text class="d-label" x="715.0" y="206.0" text-anchor="middle" font-size="18"><tspan x="715.0" dy="0">S</tspan><tspan x="715.0" dy="26">Sync</tspan><tspan x="715.0" dy="26">+5</tspan></text><path class="d-edge" d="M 610 224 H 650" marker-end="url(#engineering-hooks-rebase-queue-136105-arrow)"/><path class="d-edge" d="M 715 272 V 295 H 545 V 272" marker-end="url(#engineering-hooks-rebase-queue-136105-arrow)"/><text class="d-label" x="635" y="165" text-anchor="middle" font-size="18"><tspan x="635" dy="0">Update.next 环</tspan></text><text class="d-label" x="25" y="420" text-anchor="start" font-size="18"><tspan x="25" dy="0">Sync render 先合并：本例旧 baseQueue 为空，不新建原 Update</tspan></text><rect class="d-node" x="25" y="445" width="310" height="125" rx="12"/><text class="d-label" x="180.0" y="487.5" text-anchor="middle" font-size="18"><tspan x="180.0" dy="0">队列合并前</tspan><tspan x="180.0" dy="26">Hook.baseQueue = null</tspan><tspan x="180.0" dy="26">queue.pending = S</tspan></text><path class="d-edge" d="M 335 508 H 455" marker-end="url(#engineering-hooks-rebase-queue-136105-arrow)"/><text class="d-label" x="397" y="485" text-anchor="middle" font-size="18"><tspan x="397" dy="0">接管原环</tspan></text><rect class="d-state" x="455" y="445" width="360" height="125" rx="12"/><text class="d-label" x="635.0" y="487.5" text-anchor="middle" font-size="18"><tspan x="635.0" dy="0">current.baseQueue = S</tspan><tspan x="635.0" dy="26">WIP 的局部 baseQueue = S</tspan><tspan x="635.0" dy="26">queue.pending = null</tspan></text><rect class="d-condition" x="25" y="590" width="790" height="211" rx="12"/><text class="d-label" x="420" y="625" text-anchor="middle"><tspan x="420" dy="0">合并分支：若旧 base 环非空，只改两个尾节点的 next</tspan></text><rect class="d-node" x="40" y="645" width="145" height="80" rx="12"/><text class="d-label" x="112.5" y="678" text-anchor="middle"><tspan x="112.5" dy="0">B₁</tspan><tspan x="112.5" dy="26">旧 base 首</tspan></text><rect class="d-node" x="230" y="645" width="145" height="80" rx="12"/><text class="d-label" x="302.5" y="678" text-anchor="middle"><tspan x="302.5" dy="0">B 尾</tspan><tspan x="302.5" dy="26">旧 base 尾</tspan></text><rect class="d-node" x="455" y="645" width="145" height="80" rx="12"/><text class="d-label" x="527.5" y="678" text-anchor="middle"><tspan x="527.5" dy="0">T</tspan><tspan x="527.5" dy="26">pending 首</tspan></text><rect class="d-node" x="655" y="645" width="145" height="80" rx="12"/><text class="d-label" x="727.5" y="678" text-anchor="middle"><tspan x="727.5" dy="0">S</tspan><tspan x="727.5" dy="26">pending 尾</tspan></text><path class="d-edge" d="M 185 685 H 230" marker-end="url(#engineering-hooks-rebase-queue-136105-arrow)"/><path class="d-edge" d="M 375 685 H 455" marker-end="url(#engineering-hooks-rebase-queue-136105-arrow)"/><path class="d-edge" d="M 600 685 H 655" marker-end="url(#engineering-hooks-rebase-queue-136105-arrow)"/><path class="d-edge" d="M 727 725 V 750 H 112 V 725" marker-end="url(#engineering-hooks-rebase-queue-136105-arrow)"/><text class="d-label" x="420" y="783" text-anchor="middle"><tspan x="420" dy="0">合并后：从 B₁ 沿 next 走完旧 base，再走 T、S，回到 B₁</tspan></text><g transform="translate(0 240)"><text class="d-label" x="40" y="615" text-anchor="start" font-size="18"><tspan x="40" dy="0">按 renderLanes = Sync 筛选：跳过 T；执行 S 得 6</tspan></text><rect class="d-node" x="25" y="640" width="320" height="235" rx="12"/><text class="d-label" x="185.0" y="678" text-anchor="middle"><tspan x="185.0">current 尚未发布新状态</tspan></text><text class="d-label" x="185.0" y="857" text-anchor="middle"><tspan x="185.0">原环继续承载未提交历史</tspan></text><rect class="d-node" x="40" y="716" width="135" height="86" rx="12"/><text class="d-label" x="107.5" y="752.0" text-anchor="middle" font-size="18"><tspan x="107.5" dy="0">T</tspan><tspan x="107.5" dy="26">Transition</tspan></text><rect class="d-node" x="195" y="716" width="135" height="86" rx="12"/><text class="d-label" x="262.5" y="752.0" text-anchor="middle" font-size="18"><tspan x="262.5" dy="0">S</tspan><tspan x="262.5" dy="26">Sync</tspan></text><path class="d-edge" d="M 175 758 H 195" marker-end="url(#engineering-hooks-rebase-queue-136105-arrow)"/><path class="d-edge" d="M 262 802 V 827 H 107 V 802" marker-end="url(#engineering-hooks-rebase-queue-136105-arrow)"/><path class="d-edge" d="M 345 750 H 470" marker-end="url(#engineering-hooks-rebase-queue-136105-arrow)"/><text class="d-label" x="406" y="705" text-anchor="middle" font-size="18"><tspan x="406" dy="0">重放并复制</tspan><tspan x="406" dy="26">新 Update</tspan></text><rect class="d-state" x="470" y="640" width="345" height="235" rx="12"/><text class="d-label" x="642.5" y="678" text-anchor="middle" font-size="18"><tspan x="642.5" dy="0">WIP：state = 6；baseState = 1</tspan></text><text class="d-label" x="642.5" y="857" text-anchor="middle" font-size="18"><tspan x="642.5" dy="0">新 baseQueue 尾为 S′</tspan></text><rect class="d-node" x="485" y="716" width="135" height="86" rx="12"/><text class="d-label" x="552.5" y="752.0" text-anchor="middle" font-size="18"><tspan x="552.5" dy="0">T′（跳过项）</tspan><tspan x="552.5" dy="26">Transition</tspan></text><rect class="d-node" x="660" y="716" width="135" height="86" rx="12"/><text class="d-label" x="727.5" y="752.0" text-anchor="middle" font-size="18"><tspan x="727.5" dy="0">S′（已执行）</tspan><tspan x="727.5" dy="26">NoLane</tspan></text><path class="d-edge" d="M 620 758 H 660" marker-end="url(#engineering-hooks-rebase-queue-136105-arrow)"/><path class="d-edge" d="M 727 802 V 827 H 552 V 802" marker-end="url(#engineering-hooks-rebase-queue-136105-arrow)"/><text class="d-label" x="25" y="917" text-anchor="start" font-size="18"><tspan x="25" dy="0">Sync commit 发布 6；随后 Transition render 从 baseState = 1 重放克隆环</tspan></text><rect class="d-state" x="25" y="940" width="160" height="95" rx="12"/><text class="d-label" x="105.0" y="980.5" text-anchor="middle" font-size="18"><tspan x="105.0" dy="0">current / DOM</tspan><tspan x="105.0" dy="26">6</tspan></text><rect class="d-node" x="240" y="940" width="350" height="95" rx="12"/><text class="d-label" x="415.0" y="967.5" text-anchor="middle" font-size="18"><tspan x="415.0" dy="0">1 → T′ → 100 → S′ → 105</tspan><tspan x="415.0" dy="26">T′ 可复用 eagerState = 100</tspan><tspan x="415.0" dy="26">NoLane 项也会执行</tspan></text><rect class="d-state" x="645" y="940" width="170" height="95" rx="12"/><text class="d-label" x="730.0" y="967.5" text-anchor="middle" font-size="18"><tspan x="730.0" dy="0">下次 commit</tspan><tspan x="730.0" dy="26">current / DOM</tspan><tspan x="730.0" dy="26">105</tspan></text><path class="d-edge" d="M 185 987 H 240" marker-end="url(#engineering-hooks-rebase-queue-136105-arrow)"/><path class="d-edge" d="M 590 987 H 645" marker-end="url(#engineering-hooks-rebase-queue-136105-arrow)"/>
+</g>
+            </svg>
+          </div>
+          <figcaption>同一仓库例子：Hook 克隆只复制 queue 指针；空 base 直接接管 pending，非空分支拼接原 Update 的环（B₁、B 尾用两个旧节点示意）。rebase 会创建新的 Update。T′ 保留 Transition Lane，S′ 改为 NoLane。合并先写回 current，保护中止后的历史；memoizedState=6 仍须等 Sync commit 才发布。实线为同步指针或处理关系。</figcaption>
+        </figure>
         <div class="table-wrap"><table><thead><tr><th>阶段</th><th>renderLanes</th><th>读取顺序</th><th>newState</th><th>新 baseState / baseQueue</th><th>可见提交</th></tr></thead><tbody>
           <tr><td>挂载后</td><td>—</td><td>无更新</td><td>1</td><td><code>baseState=1</code>；空</td><td>1</td></tr>
           <tr><td>两次 dispatch 且并发缓冲已转移</td><td>尚未 render</td><td>pending 环：T(Transition) → S(Sync)</td><td>仍 1</td><td>等待并入</td><td>1</td></tr>
           <tr><td>Sync render：遇 T</td><td>Sync</td><td>T Lane 不包含于本轮，跳过并克隆</td><td>1</td><td><code>newBaseState=1</code>；[T]</td><td>尚未 commit</td></tr>
-          <tr><td>Sync render：遇 S</td><td>Sync</td><td>S 可执行：1+5=6；因前面有跳过项，再克隆 S 为 NoLane</td><td>6</td><td><code>baseState=1</code>；[T, S(NoLane)]</td><td><strong>6</strong></td></tr>
+          <tr><td>Sync render：遇 S</td><td>Sync</td><td>S 可执行：1+5=6；因前面有跳过项，再克隆 S 为 NoLane</td><td>6</td><td><code>baseState=1</code>；[T, S(NoLane)]</td><td>仍显示 1；尚未 commit</td></tr>
+          <tr><td>Sync commit</td><td>—</td><td>提交本轮完成的树</td><td>6</td><td><code>baseState=1</code>；[T, S(NoLane)]</td><td><strong>6</strong></td></tr>
           <tr><td>Transition render：重放 T</td><td>Transition</td><td>从 baseState 1 开始；T 得 100（可复用 eagerState）</td><td>100</td><td>正在消费旧 baseQueue</td><td>仍显示 6</td></tr>
-          <tr><td>Transition render：重放 S</td><td>Transition</td><td>NoLane 是所有 Lane 集合的子集；100+5</td><td>105</td><td>无跳过项：baseQueue 清空，baseState=105</td><td><strong>105</strong></td></tr>
+          <tr><td>Transition render：重放 S</td><td>Transition</td><td>NoLane 是所有 Lane 集合的子集；100+5</td><td>105</td><td>无跳过项：baseQueue 清空，baseState=105</td><td>仍显示 6；尚未 commit</td></tr>
+          <tr><td>Transition commit</td><td>—</td><td>提交重放后的完成树</td><td>105</td><td><code>baseState=105</code>；空</td><td><strong>105</strong></td></tr>
         </tbody></table></div>
         <div class="callout"><p><strong>为什么必须复制 S？</strong>如果只保留被跳过的 T，未来从 1 应用 T 会得到 100，已经提交过的 +5 将丢失。把 S 以 NoLane 放在 T 后，未来任何 rebase 都按原事件顺序得到 105。</p></div>
 
@@ -618,7 +633,7 @@ return children;</pre></figure>
           <tr><td>失败边界</td><td>若每次无条件 setState，另一个真实测试断言 Too many re-renders</td><td>RE_RENDER_LIMIT = 25 防止无限循环</td></tr>
         </tbody></table></div>
         <figure class="source"><figcaption><span>连续测试原码 · render-phase 更新重复到状态收敛</span><a href="../../react/packages/react-reconciler/src/__tests__/ReactHooksWithNoopRenderer-test.js">ReactHooksWithNoopRenderer-test.js</a></figcaption><pre>    it('keeps restarting until there are no more new updates', async () =&gt; {
-      /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“渲染期间安排 Hook 更新，确认重渲染合并、收敛上限及跨组件诊断”场景。 */
+      /** 维护计数状态，并记录渲染或 Effect。 */
       function Counter({row: newRow}) {
         const [count, setCount] = useState(0);
         if (count &lt; 3) {
@@ -635,7 +650,7 @@ return children;</pre></figure>
       </section>
 
       <section id="effects"><h2>Effect：render 建环，commit 才 create / destroy</h2>
-        <p>Effect Hook 节点的 <code>memoizedState</code> 指向 Effect；所有 Effect 还被 O(1) 追加到 <code>FunctionComponentUpdateQueue.lastEffect</code> 环。mount 总是带 <code>HookHasEffect</code>；update 的 deps 按 <code>Object.is</code> 逐项相等时仍登记 Effect 节点，但不带 HookHasEffect，因此本次 commit 不运行。</p>
+        <p>Effect Hook 节点的 <code>memoizedState</code> 指向 Effect；所有 Effect 还被 O(1) 追加到 <code>FunctionComponentUpdateQueue.lastEffect</code> 环。mount 总是带 <code>HookHasEffect</code>；update 的 deps 按 <code>Object.is</code> 逐项相等时仍登记 Effect 节点，但不带 HookHasEffect，因此普通更新 commit 不执行该节点的 create/cleanup；Offscreen 重连与 DEV Strict Effects 可另走挂载路径。</p>
         <figure class="source"><figcaption><span>删节源码 · pushEffectImpl（Flow 标注与注释简化）</span><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">打开完整文件</a></figcaption><pre><span class="kw">function</span> <span class="fn">pushEffectImpl</span>(effect: Effect): Effect {
   let componentUpdateQueue = currentlyRenderingFiber.updateQueue;
   if (componentUpdateQueue === null) {
@@ -772,7 +787,7 @@ assertLog([<span class="str">'Unmount layout B'</span>, <span class="str">'Unmou
           <li><strong>render 路由。</strong>函数组件进入 <code>renderWithHooks</code>，安装 Update dispatcher；每次 Hook 调用同步推进 current/WIP 两个位置游标。</li>
           <li><strong>状态计算。</strong>pending 合并到 baseQueue；本轮 Lane 可处理的 action 更新 memoizedState，跳过项和其后的已执行项构成新 rebase 基线。</li>
           <li><strong>组件输出。</strong>组件继续同步执行并返回 children，reconciler 再协调 child Fiber、complete 并汇总 flags。只有本轮实际调用了 Effect Hook 才会登记 Effect 环/flags；state queue 与 Effect queue 并不互相依赖。</li>
-          <li><strong>同轮重渲染分支。</strong>组件 render 内更新自己时，不离开当前组件；Rerender dispatcher 从链头重跑，直至稳定或达到 25 次上限。</li>
+          <li><strong>同轮重渲染分支。</strong>组件 render 内更新自己时，不离开当前组件；Rerender dispatcher 从链头重跑，直至稳定；额外 rerender 循环最多执行 25 个 pass，首次组件求值不计入。</li>
           <li><strong>提交。</strong>state 本身没有独立“提交回调”。组件输出产生 Fiber/DOM flags；Effect create/cleanup 由 commit 各阶段遍历组件 Effect 环执行，错误走 commit-phase 捕获。</li>
           <li><strong>清理。</strong>组件删除时，child deletion 找到其子树；对应 EffectInstance 的 destroy 被清槽后安全调用。render 被放弃时则清掉仅本轮有效的 render-phase update，不执行尚未提交的 Effect create。</li>
         </ol>
@@ -825,7 +840,7 @@ commit:
           <tr><td>Lane 跳过后按序 rebase</td><td><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">updateReducerImpl</a></td><td><a href="../../react/packages/react-reconciler/src/__tests__/ReactHooks-test.internal.js">can rebase on top of a previously skipped update</a></td><td>主测试覆盖普通 state 的 Transition/Sync 组合</td></tr>
           <tr><td>Effect 登记与 cleanup</td><td><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">pushEffectImpl / updateEffectImpl</a>；<a href="../../react/packages/react-reconciler/src/ReactFiberCommitEffects.js">commitHookEffectList*</a></td><td><a href="../../react/packages/react-reconciler/src/__tests__/ReactHooksWithNoopRenderer-test.js">deleted sibling effect regression</a></td><td>测试覆盖 layout/passive 删除清理；未穷举 Offscreen/Suspense 重连</td></tr>
         </tbody></table></div>
-        <p>本页为静态源码与测试证据教程，未在本轮执行 Jest。逻辑源码未修改；测试片段描述“仓库断言内容”，不是“本轮已跑通过”。</p>
+        <p>实现与测试的对应关系见表中符号及链接。</p>
       </section>
 
       <section id="questions"><h2>读完应能回答</h2><ul class="qa">

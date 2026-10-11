@@ -10,6 +10,7 @@ import type { Environment } from '../../environment'
 /**
  * 创建与 Vite Server 同进程执行模块的开发 Environment。
  * 缺省补齐服务器端 HotChannel 并开启 HMR；Runner 仍保持惰性，首次读取 `runner` 才创建。
+ * 缺省 transport/hot 直接写入传入的 context，再交给 Environment 构造器。
  */
 export function createRunnableDevEnvironment(
   name: string,

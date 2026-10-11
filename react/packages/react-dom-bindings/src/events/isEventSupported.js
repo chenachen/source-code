@@ -21,7 +21,7 @@ import {canUseDOM} from 'shared/ExecutionEnvironment';
  * @internal
  * @license Modernizr 3.0.0pre (Custom Build) | MIT
  */
-/** isEventSupported 判断在 DOM 环境中检测指定原生事件是否受支持的前置条件；返回值用于在热路径提前跳过不适用分支。 */
+/** 检测 onXxx 是否存在，必要时用临时元素 attribute 回退探测；无 DOM 环境返回 false。 */
 function isEventSupported(eventNameSuffix: string): boolean {
   if (!canUseDOM) {
     return false;

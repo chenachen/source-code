@@ -21,15 +21,14 @@
   <div class="layout">
     <main>
       <p class="eyebrow">03 · Public description layer</p>
-      <h1>react：把用户意图压成可协调的描述</h1>
+      <h1>react：创建元素，连接 renderer 协议</h1>
       <p class="lede">
         <code>packages/react</code> 创建元素、Context、ref、lazy/memo 包装和 Hooks 门面。
         它定义“用户写下什么”，却不保存组件实例的 hook 链、不选择 Lane，也不触碰 DOM。
       </p>
       <div class="meta">
         <span class="pill">React 19.3.0</span><span class="pill">83 个目标文件</span>
-        <span class="pill">Flow 963 / 963</span><span class="pill">TypeScript 135 / 135</span>
-        <span class="pill">CoffeeScript 99 / 99</span>
+        <span class="pill">元素工厂 / dispatcher / 类型描述符</span>
       </div>
 
       <section id="boundary">
@@ -57,28 +56,43 @@
       </section>
 
       <section id="element">
-        <h2>元素工厂：身份稳定，开发信息可裁剪</h2>
+        <h2>元素工厂：key 与 props 分开，ref 保留在 props 中</h2>
         <p>
-          JSX 工厂先抽取保留字段，复制普通 props，处理 children/key，再交给内部 <code>ReactElement</code>。
-          生产记录保留 renderer 所需字段；开发记录额外保存 owner、debug stack/task、key 校验状态并冻结形状。
+          自动 JSX 工厂从独立参数或配置对象提取 <code>key</code>，再交给内部 <code>ReactElement</code>。
+          配置对象没有 <code>key</code> 字段时，<code>jsx</code> 直接把它用作 props；存在该字段时才复制其余属性。
+          <code>createElement</code> 可由用户手工调用，因此始终创建新 props 对象，并把位置参数中的 children 写进去。
+          生产记录保留 renderer 所需字段；开发记录额外保存 owner、debug stack/task 与 key 校验状态。
           两者都依靠 shared 的 <code>REACT_ELEMENT_TYPE</code> 品牌字段，而不是 <code>instanceof</code>。
         </p>
-        <figure class="source"><figcaption><span>删节源码 · ReactJSXElement.js · 元素核心形状</span><a href="../../react/packages/react/src/jsx/ReactJSXElement.js">打开文件</a></figcaption><pre><span class="kw">function</span> <span class="fn">ReactElement</span>(type, key, props, owner, debugStack, debugTask) {
-  <span class="kw">const</span> ref = props.ref !== undefined ? props.ref : null;
-  <span class="kw">const</span> element = {
-    $$typeof: REACT_ELEMENT_TYPE,
-    type,
-    key,
-    ref,
-    props,
-  };
+        <figure class="source"><figcaption><span>删节源码 · ReactJSXElement.js · ReactElement，保留生产分支</span><a href="../../react/packages/react/src/jsx/ReactJSXElement.js">打开文件</a></figcaption><pre><span class="kw">function</span> <span class="fn">ReactElement</span>(type, key, props, owner, debugStack, debugTask) {
+  <span class="kw">const</span> refProp = props.ref;
+  <span class="kw">const</span> ref = refProp !== undefined ? refProp : null;
+  <span class="kw">let</span> element;
+  <span class="kw">if</span> (__DEV__) {
+    <span class="cm">// DEV 元素形状省略，见下文。</span>
+  } <span class="kw">else</span> {
+    element = {
+      $$typeof: REACT_ELEMENT_TYPE,
+      type,
+      key,
+      ref,
+      props,
+    };
+  }
+  <span class="cm">// DEV 的 _store、调试字段与浅冻结步骤省略。</span>
   <span class="kw">return</span> element;
 }</pre></figure>
-        <div class="callout warn"><p><strong>不要把摘录当逐字完整实现：</strong>上面折叠了 DEV 分支。
-        真实源码中 DEV 的 <code>ref</code> 兼容 getter、<code>_owner</code> 与冻结逻辑很重要；链接可直接核验。</p></div>
+        <p>
+          DEV 元素保存 <code>_owner</code>，便于 key 警告指出创建者。非空 <code>element.ref</code> 是不可枚举的兼容 getter，
+          读取会提示改用 <code>props.ref</code>；空 ref 则直接定义为不可枚举的 <code>null</code>。
+          支持 <code>Object.freeze</code> 时，元素与 props 被浅冻结；key 校验状态放在仍可修改的 <code>_store.validated</code> 中。
+          生产分支不执行冻结。
+        </p>
         <p>
           <code>key</code> 只在同一父节点的 children 协调中表达身份；它不会自动成为 props，也不保证跨父节点搬迁时复用。
-          <code>ref</code> 在当前版本以 <code>props.ref</code> 为事实来源，元素上的兼容读取路径正处于迁移边界。
+          <code>ref</code> 在当前版本是普通 prop；公开工厂还保留 <code>element.ref</code> 的兼容读取形式。
+          <code>cloneElement</code> 先浅复制旧 props，再覆盖新字段；未传位置 children 时保留旧 children，传一个 <code>undefined</code> 则覆盖为空值。
+          新 ref 为 <code>undefined</code> 时保留旧 ref，而 <code>null</code> 会清空它。
         </p>
       </section>
 
@@ -86,19 +100,25 @@
         <h2>Children：扁平遍历同时重写身份路径</h2>
         <p>
           <a href="../../react/packages/react/src/ReactChildren.js">ReactChildren.js</a> 处理单元素、数组、iterator、thenable 与 lazy，
-          递归生成稳定的 key path。<code>map</code> 不只是数组 map：回调返回数组时还会继续展开，并把用户 key 与原路径组合，
-          让 reconciler 能在扁平结果中保留身份线索。
+          递归生成包含层级信息的 key path。<code>map</code> 不只是数组 map：回调返回数组时还会继续展开；返回 ReactElement 时，
+          它会把原 child 路径与映射结果新增的 key 组合。没有显式 key 的层级仍依赖索引，移动位置会改变路径。
         </p>
         <div class="table-wrap"><table>
           <thead><tr><th>输入</th><th>遍历语义</th><th>容易误判之处</th></tr></thead>
           <tbody>
-            <tr><td>null / boolean</td><td>按空 child 处理，回调位置仍按实现规则计数</td><td>不是可见文本节点</td></tr>
+            <tr><td>null / undefined / boolean</td><td>集合里的空值按叶子计数，回调接收 null；最外层 null/undefined 直接返回</td><td><code>count([null, false])</code> 为 2，<code>count(null)</code> 为 0</td></tr>
             <tr><td>string / number / bigint</td><td>作为叶子交给回调</td><td>转换成 DOM 文本发生在 Host renderer</td></tr>
-            <tr><td>ReactElement / Portal</td><td>按一个叶子处理并组合 key</td><td>此处不展开组件返回值</td></tr>
-            <tr><td>Array / Iterable</td><td>递归展开；开发态检查 key</td><td>Map entries 有专门警告，不是通用 children 形状</td></tr>
+            <tr><td>ReactElement / Portal</td><td>按一个叶子调用回调；映射结果是 ReactElement 时重写 key</td><td>Portal 原样保留；此处不展开组件返回值或 Fragment 内部 children</td></tr>
+            <tr><td>Array / Iterable</td><td>递归展开；映射会保留缺 key 的校验信息，交给 renderer 报警</td><td>Map 风格 entries 会输出不支持警告，之后仍按 iterable 遍历</td></tr>
             <tr><td>Thenable / Lazy</td><td>按可用状态解包或抛出以挂起</td><td>恢复与 Suspense 重试属于 reconciler</td></tr>
           </tbody>
         </table></div>
+        <p>
+          例如 <code>Children.map([&lt;i key="a" /&gt;], () =&gt; &lt;b key="b" /&gt;)</code> 的结果 key 是 <code>b/.$a</code>：
+          <code>b/</code> 保留回调新增的 key，<code>.$a</code> 保留输入元素路径。
+          <code>toArray</code> 沿用映射遍历，但会过滤空值，所以同一输入的“叶子计数”与最终数组长度可以不同。
+          <code>Children.only</code> 检查参数本身是否是一个 ReactElement；只含一个元素的数组仍会抛错。
+        </p>
       </section>
 
       <section id="hooks">
@@ -106,7 +126,9 @@
         <p>
           公共 <code>useState</code> 只读取 <code>ReactSharedInternals.H</code> 并转发。
           reconciler 在执行函数组件之前安装 mount、update 或 rerender dispatcher，执行后恢复为防误用 dispatcher。
-          因此 Hooks 顺序规则不是语法偏好：位置就是当前 Fiber 单向 hook 链的寻址协议。
+          <code>useState</code>、<code>useEffect</code> 等按调用位置消费当前 Fiber 的单向 Hook 链，因而必须保持顺序。
+          <code>useContext</code> 不占这个链表槽位，但仍受普通 Hook 的调用顺序规则约束；<code>use</code> 则允许条件调用。
+          公开 API 名称与 Fiber 状态槽并非一一对应。
         </p>
         <figure class="source"><figcaption><span>删节源码 · ReactHooks.js · 公开门面</span><a href="../../react/packages/react/src/ReactHooks.js">打开文件</a></figcaption><pre><span class="kw">function</span> <span class="fn">resolveDispatcher</span>() {
   <span class="kw">const</span> dispatcher = ReactSharedInternals.H;
@@ -129,32 +151,45 @@
       <section id="types">
         <h2>Context、memo 与 lazy：给 reconciler 的分派提示</h2>
         <div class="grid three">
-          <article class="card"><span class="number">CONTEXT</span><h3>双 renderer 值槽</h3><p><code>createContext</code> 建立带品牌的对象和当前值槽；Provider 入栈/出栈、依赖传播与 Lane 标记由 reconciler 完成。</p></article>
+          <article class="card"><span class="number">CONTEXT</span><h3>双 renderer 值槽</h3><p><code>createContext</code> 用默认值初始化两套槽；renderer 按 <code>isPrimaryRenderer</code> 选一套。<code>Provider</code> 指向 Context 自身，<code>Consumer._context</code> 也指回它；值栈与传播由 reconciler 完成。</p></article>
           <article class="card"><span class="number">MEMO</span><h3>比较策略包装</h3><p><code>memo(type, compare)</code> 保存目标与可选比较器。是否 bailout 还取决于 ref、context、Lane 与内部状态，不是单独一次浅比较。</p></article>
-          <article class="card"><span class="number">LAZY</span><h3>有状态模块 payload</h3><p>initializer 把 Uninitialized → Pending → Resolved/Rejected；挂起时抛出 thenable，失败时重抛原因，重试由 Suspense 管线接管。</p></article>
+          <article class="card"><span class="number">LAZY</span><h3>有状态模块 payload</h3><p>首次解析时调用加载器。订阅后尚未落定才进入 Pending；同步兑现或拒绝可直接进入终态。Pending 抛 thenable 以挂起，Rejected 抛原因交给错误处理，Resolved 返回模块默认导出。</p></article>
         </div>
+        <p>
+          同一个 lazy 描述符共享同一 payload。加载器或 <code>then</code> 订阅在落定前同步抛错时，payload 仍是 Uninitialized，
+          下次解析会重新启动；thenable 回调一旦登记 Rejected，无论同步或异步拒绝都被缓存，后续读取重抛同一原因。
+          因此 Suspense 的数据等待与错误边界的错误恢复是两条不同路径。
+        </p>
       </section>
 
       <section id="transition">
         <h2>Transition：标注更新来源，不替它完成调度</h2>
         <p>
-          <code>startTransition</code> 暂存当前 transition 对象、降低更新优先级边界并调用用户 scope；异步返回值会被纳入完成/错误跟踪。
-          随后真正的 state dispatch 仍需 reconciler 请求 Lane、入队并调度 root。React 包提供上下文，Lane 纠缠、pending 状态和 tracing 则跨入 reconciler。
+          <code>startTransition</code> 保存旧 <code>ReactSharedInternals.T</code>，安装新 transition 对象并立即同步执行用户 scope。
+          scope 返回后，renderer 的 <code>S</code> 钩子立即取得返回值；若它是 thenable，reconciler 把它登记为异步 action，
+          React 公共包也订阅拒绝并报告全局错误。<code>finally</code> 随同步调用栈恢复旧 T，既不等待 thenable，也不返回这个 Promise。
+          此函数自身不设置 Lane；scope 内的 state dispatch 读取 T，才由 reconciler 选择 transition Lane、入队并调度 root。
+        </p>
+        <p>
+          <code>await</code> 后执行代码时，公共包的 T 已恢复，因此这时的 setter 要再次放进 <code>startTransition</code> 才能取得 transition Lane。
+          异步 action 的等待与 Lane 纠缠继续由 reconciler 跟踪；<code>useTransition</code> 的 pending 状态也保存在对应 Fiber Hook 中。
+          <code>addTransitionType</code> 找不到当前 T 时会另建隐式 transition，它不会恢复原先的同步调用栈。
         </p>
       </section>
 
       <section id="evidence">
         <h2>测试证据怎样读</h2>
         <div class="table-wrap"><table>
-          <thead><tr><th>机制</th><th>代表文件</th><th>证明</th><th>不证明</th></tr></thead>
+          <thead><tr><th>机制</th><th>代表文件</th><th>具体场景与断言</th></tr></thead>
           <tbody>
-            <tr><td>元素形状与 key/ref 诊断</td><td><a href="../../react/packages/react/src/__tests__/ReactCreateElement-test.js">ReactCreateElement-test.js</a></td><td>开发/生产可见行为与警告边界</td><td>不证明 Fiber 一定复用</td></tr>
-            <tr><td>children 遍历与 key 组合</td><td><a href="../../react/packages/react/src/__tests__/ReactChildren-test.js">ReactChildren-test.js</a></td><td>数组、iterator、映射展开与错误</td><td>不执行 DOM 协调</td></tr>
-            <tr><td>lazy payload 状态与渲染衔接</td><td><a href="../../react/packages/react-reconciler/src/__tests__/ReactLazy-test.internal.js">ReactLazy-test.internal.js</a></td><td>thenable resolve/reject、缓存与 renderer 衔接</td><td>单个场景不覆盖全部 Suspense commit 行为</td></tr>
-            <tr><td>Context 公开形状</td><td><a href="../../react/packages/react/src/__tests__/ReactContextValidator-test.js">ReactContextValidator-test.js</a></td><td>Consumer/Provider 使用与诊断</td><td>传播算法在 reconciler</td></tr>
+            <tr><td>元素形状与 key/ref</td><td><a href="../../react/packages/react/src/__tests__/ReactCreateElement-test.js">ReactCreateElement-test.js</a>、<a href="../../react/packages/react/src/__tests__/ReactElementClone-test.js">ReactElementClone-test.js</a></td><td>key 从 props 中移除，ref 留在 props；克隆时 undefined ref 保留旧值，null ref 清空。</td></tr>
+            <tr><td>children 遍历与 key 组合</td><td><a href="../../react/packages/react/src/__tests__/ReactChildren-test.js">ReactChildren-test.js</a></td><td>空值计入嵌套叶子数量；toArray 过滤空值；连续 map 与回调返回数组时组合 key。</td></tr>
+            <tr><td>lazy 状态与渲染</td><td><a href="../../react/packages/react-reconciler/src/__tests__/ReactLazy-test.internal.js">ReactLazy-test.internal.js</a></td><td>同步兑现不显示 Suspense fallback；同步拒绝直接进入 ErrorBoundary；Promise 拒绝后重抛原始错误。</td></tr>
+            <tr><td>Context 校验</td><td><a href="../../react/packages/react/src/__tests__/ReactContextValidator-test.js">ReactContextValidator-test.js</a></td><td>class contextType 必须指向 createContext 返回的对象；旧 contextTypes 分支由 disableLegacyContext 控制。</td></tr>
+            <tr><td>PureComponent 浅比较</td><td><a href="../../react/packages/react/src/__tests__/ReactPureComponent-test.js">ReactPureComponent-test.js</a></td><td>setState 产生新对象但字段浅相等时仍跳过 render；字段改变后才读到之前原地修改的数组内容。</td></tr>
           </tbody>
         </table></div>
-        <p>本包 Flow、TypeScript 声明与 CoffeeScript 兼容测试均做了语言对应的声明覆盖和去注释语义等价检查；运行机制继续在下一页进入 Fiber。</p>
+        <p>这些用例把公开 API 的输入、结果与 renderer 行为连起来；下一页从根更新进入 Fiber 的 render 过程。</p>
       </section>
 
       <section id="deep"><h2>继续深挖：公开 Hook 如何落到 Fiber 状态</h2><div class="grid">

@@ -9,7 +9,7 @@
 
 import {checkFormFieldValueStringCoercion} from 'shared/CheckStringCoercion';
 
-/** `ToStringValue` 定义在写入 DOM 前完成受控值的安全字符串强制转换使用的数据契约；字段共同限定所有权、生命周期与跨模块传递边界。 */
+/** 已经通过表单值检查、允许执行字符串连接的值品牌类型。 */
 export opaque type ToStringValue =
   | boolean
   | number
@@ -19,17 +19,15 @@ export opaque type ToStringValue =
   | null
   | void;
 
-//Flow 不允许对大多数非字符串类型进行字符串连接。要使用
-//针对这个限制，我们使用一种只能通过...获得的不透明类型
-//首先通过 getToStringValue 传递该值。
-/** `toString` 执行该模块的单一职责，并把副作用限制在当前 DOM/Fiber 边界；用于在写入 DOM 前完成受控值的安全字符串强制转换。 */
+// 不透明类型要求值先经 getToStringValue 检查，再允许字符串连接。
+/** 将 getToStringValue 处理后的值通过字符串连接转为 DOM 表单文本。 */
 export function toString(value: ToStringValue): string {
   //强制安全检查在 getToStringValue() 中执行。
   // eslint-disable-next-line react-internal/safe-string-coercion
   return '' + (value as any);
 }
 
-/** `getToStringValue` 查询并返回所需值；缺失或不适用时走显式回退；用于在写入 DOM 前完成受控值的安全字符串强制转换。 */
+/** 保留允许的基本值与对象，开发期检查对象转换；function/symbol 回退为空字符串。 */
 export function getToStringValue(value: mixed): ToStringValue {
   switch (typeof value) {
     case 'bigint':

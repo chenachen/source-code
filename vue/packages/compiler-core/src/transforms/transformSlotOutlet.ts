@@ -18,6 +18,7 @@ import { processExpression } from './transformExpression'
 /**
  * 把 `<slot>` 出口转换为 `renderSlot($slots, name, props, fallback, ...)` 调用。
  * 尾部可选参数按实际需要裁剪，避免每个插槽都生成多余 `undefined`。
+ * 在进入阶段创建调用；fallback 保存 children 节点引用，随后递归遍历仍会补齐它们的 codegenNode。
  */
 export const transformSlotOutlet: NodeTransform = (node, context) => {
   if (isSlotOutlet(node)) {
@@ -68,6 +69,8 @@ interface SlotOutletProcessResult {
 /**
  * 从 `<slot>` 中提取名称，其余属性通过通用 buildProps 生成传给插槽函数的 props。
  * 自定义运行时指令无法合理作用于插槽出口，因此发现后报错。
+ * 静态 name 与静态参数的 :name 不传入 props；其他静态属性名/绑定参数原地驼峰化。
+ * 无值普通属性不进入 props。返回式 onError 会保留已构造的 slotProps，调用方仍继续生成出口。
  */
 export function processSlotOutlet(
   node: SlotOutletNode,

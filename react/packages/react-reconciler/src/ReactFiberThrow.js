@@ -95,6 +95,10 @@ import {callComponentDidCatchInDEV} from './ReactFiberCallUserSpace';
  *
  * 更新把根元素设为 `null` 以卸载故障树，并在提交回调中通过根配置的错误处理器
  * 报告原始值与组件栈。DevTools 依赖 payload 的 `element` 字段名。
+ *
+ * @param root 提供 onUncaughtError 的故障根。
+ * @param errorInfo 已捕获的原始抛出值、源 Fiber 与组件栈，提交时无需重新取栈。
+ * @param lane 本次恢复更新使用的单个 lane，由调用方从 render lanes 中选取。
  */
 function createRootErrorUpdate(
   root: FiberRoot,
@@ -106,6 +110,7 @@ function createRootErrorUpdate(
   update.tag = CaptureUpdate;
   // 注意：React DevTools 当前依赖该属性名必须是 `element`。
   update.payload = {element: null};
+  /** 根卸载更新提交后报告原始错误；DEV 临时切到故障 Fiber，使错误处理器中的 owner 栈对应源组件。 */
   update.callback = () => {
     if (__DEV__) {
       runWithFiberInDEV(errorInfo.source, logUncaughtError, root, errorInfo);
@@ -129,6 +134,12 @@ function createClassErrorUpdate(lane: Lane): Update<mixed> {
  * `getDerivedStateFromError` 负责生成恢复状态，`componentDidCatch` 负责提交后通知；
  * 两者最终都会经统一日志通道报告捕获信息。仅实现旧式 `componentDidCatch` 的边界
  * 还会参与本批次失败去重，并必须自行调用 `setState` 才能展示后备 UI。
+ *
+ * payload 在更新队列计算恢复 state 时调用，callback 在提交时调用；同时实现两个
+ * API 时，componentDidCatch 分支覆盖前面的 callback，避免重复报告同一捕获。
+ * @param update 已设 CaptureUpdate 的可变记录；这里只填 payload 与 callback，不入队。
+ * @param fiber 将接住错误的类组件边界，其 type 提供静态 API，stateNode 提供实例 API。
+ * @param errorInfo 故障后代的抛出值和诊断栈，不是边界自身的错误。
  */
 function initializeClassErrorUpdate(
   update: Update<mixed>,
@@ -139,9 +150,11 @@ function initializeClassErrorUpdate(
   const getDerivedStateFromError = fiber.type.getDerivedStateFromError;
   if (typeof getDerivedStateFromError === 'function') {
     const error = errorInfo.value;
+    /** 队列处理 CaptureUpdate 时向静态错误 API 传入原始值，返回待合并的恢复状态。 */
     update.payload = () => {
       return getDerivedStateFromError(error);
     };
+    /** 仅静态恢复 API 的提交通知：登记热刷新失败边界，然后调用根的 onCaughtError。 */
     update.callback = () => {
       if (__DEV__) {
         markFailedErrorBoundaryForHotReloading(fiber);
@@ -162,6 +175,7 @@ function initializeClassErrorUpdate(
 
   const inst = fiber.stateNode;
   if (inst !== null && typeof inst.componentDidCatch === 'function') {
+    /** 由 commitCallbacks 以边界实例为 this 调用；先报告错误，再执行 componentDidCatch。旧式边界记录失败去重，用户回调抛错交由提交阶段错误捕获处理。 */
     // $FlowFixMe[missing-this-annot]
     update.callback = function callback() {
       if (__DEV__) {
@@ -216,6 +230,8 @@ function initializeClassErrorUpdate(
  * 由于本轮没有访问挂起组件的子树，需要显式传播父 Context 变化，确保重试能进入
  * 后代。遗留模式的函数类 Fiber 还要把 memoizedState、updateQueue 与 lanes 恢复
  * 到渲染前版本；普通错误不需要这一步，因为它会在两次提交之间直接重试。
+ * @param sourceFiber 本次尚未完成的工作 Fiber；alternate 是恢复 Hook 状态的已提交版本。
+ * @param rootRenderLanes 用于父 Context 变化向延后子树传播的当前渲染 lanes。
  */
 function resetSuspendedComponent(sourceFiber: Fiber, rootRenderLanes: Lanes) {
   const currentSourceFiber = sourceFiber.alternate;
@@ -258,6 +274,8 @@ function resetSuspendedComponent(sourceFiber: Fiber, rootRenderLanes: Lanes) {
  * 边界内部 Offscreen 包装层的特殊情况改走退栈重渲染。并发模式统一设置
  * `ShouldCapture`，让工作循环在退栈后以 fallback 再渲染边界。
  *
+ * sourceFiber 是挂起位置，returnFiber 用来识别尚未进入内容的边界特殊情况；
+ * rootRenderLanes 写到并发边界上以保证第二遍参与当前渲染。root 在此实现中未读取。
  * @returns 负责捕获的边界；返回类型保留空值以匹配调用链约定。
  */
 function markSuspenseBoundaryShouldCapture(
@@ -319,32 +337,10 @@ function markSuspenseBoundaryShouldCapture(
     }
     return suspenseBoundary;
   }
-  // 已确认边界位于并发模式树，继续常规挂起路径。
-  //
-  // 后续由分散在工作循环各处的启发式规则决定本轮渲染是完成、重启，还是挂起提交。
-  //
-  // 第一原则：若根完成时会挂起，那么收到可能解除挂起的更新或 ping 时也应重启，
-  // 反之亦然。挂起的意义就是为提交前重启保留机会，只在已经挂起的时间窗里重启
-  // 会让行为不一致。
-  //
-  // 过度重启又会饿死中间 loading 状态，因此必须用启发式规则选择时机。
-
-  // Suspense 启发式规则：
-  //
-  // 若没有 Promise 被抛出，或相同 fallback 已经显示，则不挂起/重启。
-  //
-  // 新 Suspense 树初次渲染触发 fallback 时也不挂起/重启，以尽快展示初始 loading。
-  //
-  // 遇到从内容退回 fallback 等“Delayed”情况时总是挂起/重启；此处适用 Transition，
-  // 没有 Transition 时改用 JND 阈值。
-  //
-  // 已显示 fallback 的树被重试后，如果更深层仍会显示 fallback，则以全树上次展示
-  // fallback 的时间为起点挂起/重启 500ms。这样把渐进 loading 节流为稳定的提交
-  // 序列，也给渲染一次提前到达完整状态的机会。
-  //
-  // 批处理造成歧义时优先级依次为：1）delayed；2）initial render；3）retry。
-  //
-  // 目标是避免强制提交 busy 状态，同时让新的初始 loading 尽快提交。
+  // 并发路径先标记捕获，退栈后重渲染边界；是否提交本次 fallback 由工作循环决定。
+  // shell 中挂起会请求延迟提交；已可见内容的 Transition 可继续保留上一屏。
+  // 仅 RetryLane 驱动的候选提交还受最近 fallback 提交时间的 300ms 节流窗口约束，
+  // 若有其他可运行 lane，工作循环可先处理它们。这里不负责设置计时器或提交宿主树。
   suspenseBoundary.flags |= ShouldCapture;
   // TODO: begin 阶段现已用 DidCapture 防止过早 bailout，这项 lane 赋值可能可删除。
   suspenseBoundary.lanes = rootRenderLanes;
@@ -354,10 +350,15 @@ function markSuspenseBoundaryShouldCapture(
 /**
  * 处理 render 阶段从组件抛出的 Wakeable 或普通错误。
  *
- * Wakeable 会让最近的 Suspense/Activity/Offscreen 边界进入 fallback，并登记 retry
- * 或 ping；普通错误会在 hydration 时优先切到客户端渲染，否则向上寻找 HostRoot
+ * Wakeable 会标记最近的捕获边界并登记 retry/ping：Suspense 可构造 fallback，
+ * Activity 可保留 dehydrated 状态，隐藏 Offscreen 则放弃本次预渲染；普通错误会在 hydration 时优先切到客户端渲染，否则向上寻找 HostRoot
  * 或类组件 Error Boundary 安排 CaptureUpdate。隐藏 Offscreen 中的错误只中止预渲染，
  * 不允许泄漏到可见 UI。
+ *
+ * @param sourceFiber 抛出位置的工作 Fiber，先标记 Incomplete，错误栈也从它生成。
+ * @param returnFiber 捕获搜索的起点，故障组件不能捕获自己的 render 错误。
+ * @param value 原始抛出值；这里只把非 null 对象且 then 可调用的值识别为 Wakeable。
+ * @param rootRenderLanes 当前整根渲染的 lanes，用于 ping 去重和恢复更新选 lane。
  *
  * @returns 只有连父 Fiber 都不存在的不可恢复根错误才返回 `true`，通知工作循环 panic。
  */
@@ -431,8 +432,8 @@ function throwException(
             );
             // 重试监听器：
             //
-            // fallback 提交后需挂另一类监听器；它会在 Wakeable 解决时更新 Suspense
-            // 边界，退出 fallback 状态。
+            // fallback 提交后需挂边界 retry 监听器；Wakeable settle 时安排边界再渲染。
+            // 若仍有资源未就绪，重试仍可继续显示 fallback。
             //
             // 先把 Wakeable 存在边界 Fiber 上，供 commit 阶段读取。
             //
@@ -498,7 +499,7 @@ function throwException(
             'is a bug in React.',
         );
       } else {
-        // 没找到边界；只要不是同步更新，就可以保持挂起并等待更多数据。
+        // 没找到边界；由根模式决定等待还是转成错误，不以当前更新是否同步为判断条件。
 
         if (disableLegacyMode || root.tag === ConcurrentRoot) {
           // 并发根允许在没有 Suspense 边界时挂起；它会无限等待且不提交。

@@ -35,6 +35,8 @@ import { SSRErrorCodes, createSSRCompilerError } from './errors'
  * SSR 与客户端产物结构完全不同：多个相邻元素/文本可合并进一次 `_push(`template`)`，
  * 无需每个元素各建 VNode。因此先保留第一遍得到的结构/表达式信息，再由本遍统一生成
  * 字符串缓冲、条件和循环语句，最后交给 core codegen。
+ * ast.codegenNode 被替换为根语句体；原 ast.helpers 按导出来源分流为 helpers/ssrHelpers。
+ * 已经完成的表达式改写在本遍保留，不再把每个输出表达式当模板重新解析。
  */
 export function ssrCodegenTransform(
   ast: RootNode,
@@ -86,7 +88,7 @@ export interface SSRTransformContext {
   helpers: Set<symbol>
   /** 插槽函数是否需要接收并向下传递 `_scopeId`。 */
   withSlotScopeId: boolean
-  /** SSR 转换错误处理器。 */
+  /** 用户 onError 或默认抛错函数；收集模式不会把无效 AST 自动修复为合法节点。 */
   onError: (error: CompilerError) => void
   /** 登记并返回一个 SSR helper。 */
   helper<T extends symbol>(name: T): T
@@ -96,7 +98,11 @@ export interface SSRTransformContext {
   pushStatement(statement: IfStatement | CallExpression): void
 }
 
-/** 创建 SSR 输出上下文，并把相邻字符串片段自动合并进同一 `_push` template literal。 */
+/**
+ * 创建一个独立语句体及其字符串编译缓冲。
+ * helpers 可与父上下文共享，但 body/currentString 必须独立，否则不同条件/插槽函数体
+ * 的片段会串入同一 _push。currentString 是 JS AST TemplateLiteral，不是运行时 SSRBuffer。
+ */
 function createSSRTransformContext(
   root: RootNode,
   options: CompilerOptions,
@@ -170,6 +176,11 @@ interface Container {
 /**
  * 按模板顺序把 children 转为 SSR 字符串片段或 JS 语句。
  * 多根 Fragment 用 `<!--[-->...<!--]-->` 标记边界，供客户端 hydration 精确认领。
+ * @param parent - 第一遍结构转换后的节点容器；按其 children 顺序输出。
+ * @param asFragment - 是否为当前容器本身添加一对边界注释。
+ * @param disableNestedFragments - 传给当前层 If/For 的展平选项，供 Transition 系列使用；
+ * 普通元素递归会按自己的容器规则处理，不是对所有后代的全局开关。
+ * @param disableComment - 当前层跳过模板注释并抑制无 else 的条件占位，不删除 AST。
  */
 export function processChildren(
   parent: Container,

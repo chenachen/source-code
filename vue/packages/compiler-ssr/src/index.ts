@@ -35,6 +35,12 @@ import { ssrInjectCssVars } from './transforms/ssrInjectCssVars'
  * 第一遍复用 compiler-core 的解析/结构与表达式转换，收集 SSR 专用元数据；第二遍
  * ssrCodegenTransform 把模板 AST 转为 `_push()` 字符串输出语句。SSR 不需要客户端
  * patch 优化，因此关闭 handler cache/static hoist，并始终前缀标识符以避免 with 作用域。
+ * 第一遍的 exit 依赖后代元数据完整，第二遍再顺序生成控制流，不能提前把整个树直接
+ * 拼成 HTML。编译过程同步；异步组件、Suspense 的等待发生在生成代码执行及 buffer 展开时。
+ *
+ * @param source - 模板字符串或调用方拥有的 RootNode；后者会原位转换。
+ * @param options - 用户 transforms/错误回调等；DOM parserOptions 与 SSR 强制选项在此覆盖。
+ * @returns ssrRender 代码、已转换 AST 与可选 map；不返回渲染后的 HTML。
  */
 export function compile(
   source: string | RootNode,

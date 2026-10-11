@@ -8,7 +8,7 @@ import { DevEnvironment } from '../../server/environment'
 import { normalizePath } from '../../utils'
 
 /**
- * 阅读目标：验证旧版 `server.ssrLoadModule()` 如何复用 RunnableDevEnvironment
+ * SSR 加载夹具目录，所有最小开发服务器以它为 root。用例核对旧版 `server.ssrLoadModule()` 如何复用 RunnableDevEnvironment
  * 与 Module Runner。重点观察错误实例缓存、虚拟模块失效、Node `import.meta` 对齐、
  * re-export 冲突和非 runnable 环境的友好报错。
  */
@@ -228,7 +228,8 @@ test('can access nodejs global', async () => {
 // 当前 Rolldown 没有设置从 Oxc 传入的错误属性。
 /**
  * 场景：SSR 加载 TS/JS 入口或其依赖时遇到语法错误。
- * 验证目标：错误实例、消息、代码框、ID 与结构化位置经路径归一化后匹配快照。
+ * 预期目标：四个入口/依赖 × TS/JS 夹具的错误实例、消息、代码框、ID 与结构化位置经路径归一化后匹配快照。
+ * 状态：当前 test.skip，因 Rolldown/Oxc 错误字段差异未执行此验证。
  */
 test.skip('parse error', async () => {
   const server = await createDevServer()
@@ -399,6 +400,7 @@ test('throws when ssr environment is not runnable', async () => {
     environments: {
       ssr: {
         dev: {
+          /** 构造无 runner 的 DevEnvironment，触发旧 SSR API 的 runnable 环境检查。 */
           createEnvironment: (name, config) =>
             new DevEnvironment(name, config, { hot: false }),
         },

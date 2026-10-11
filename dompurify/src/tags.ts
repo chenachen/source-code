@@ -261,7 +261,7 @@ export const svgDisallowed = freeze([
  *
  * @remarks
  * 上游由默认配置和 `USE_PROFILES.mathMl` 读取；下游参与允许表及 MathML 命名空间
- * 分类。启用配置档时核心还会合并 XML 属性目录和 MathML 文本集成点。
+ * 分类。启用配置档时核心还会合并 XML 属性目录；MathML 文本集成点由独立配置控制。
  */
 export const mathMl = freeze([
   'math',

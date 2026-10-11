@@ -9,27 +9,20 @@
 
 'use strict';
 
-/** `React`：保存当前测试场景复用的夹具、状态或回调。 */
+/** 构造带style对象的宿主与类包装树，供SSR和客户端样式路径对比。 */
 const React = require('react');
-/** `ReactDOMClient`：保存当前测试场景复用的夹具、状态或回调。 */
+/** 创建客户端根以检查style属性写入和DEV样式校验。 */
 const ReactDOMClient = require('react-dom/client');
-/** `ReactDOMServer`：保存当前测试场景复用的夹具、状态或回调。 */
+/** 用renderToString检查名称连字符化、单位与空style序列化。 */
 const ReactDOMServer = require('react-dom/server');
-/** `act`：保存当前测试场景复用的夹具、状态或回调。 */
+/** 等待客户端样式提交后检查DOM与诊断。 */
 const act = require('internal-test-utils').act;
-/** `assertConsoleErrorDev`：保存当前测试场景复用的夹具、状态或回调。 */
+/** 匹配非法名称、末尾分号、NaN/Infinity的诊断及组件栈。 */
 const assertConsoleErrorDev =
   require('internal-test-utils').assertConsoleErrorDev;
 
 describe('CSSPropertyOperations', () => {
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「should automatically append `px` to relevant styles」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言连接 ReactDOM 公开入口、ReactDOMRoot 根生命周期及 DOM 提交结果。
-   */
+  /** SSR的style含left=0、margin=16、opacity=.5及padding字符串4px；输出应为0无单位、16px、.5无单位和原4px，验证只给非零且非unitless的数字补px。 */
   it('should automatically append `px` to relevant styles', () => {
     const styles = {
       left: 0,
@@ -42,7 +35,7 @@ describe('CSSPropertyOperations', () => {
     expect(html).toContain('"left:0;margin:16px;opacity:0.5;padding:4px"');
   });
 
-  /** 测试场景：验证「should trim values」描述的渲染、交互或错误处理结果。 */
+  /** SSR中left/right值为两侧带空格的字符串；HTML应含去空格的16/4，验证字符串样式trim但不再补单位。 */
   it('should trim values', () => {
     const styles = {
       left: '16 ',
@@ -54,7 +47,7 @@ describe('CSSPropertyOperations', () => {
     expect(html).toContain('"left:16;opacity:0.5;right:4"');
   });
 
-  /** 测试场景：验证「should not append `px` to styles that might need a number」描述的渲染、交互或错误处理结果。 */
+  /** SSR中flex=0、opacity=.5；HTML应保持纯数字，验证unitless属性映射。 */
   it('should not append `px` to styles that might need a number', () => {
     const styles = {
       flex: 0,
@@ -65,7 +58,7 @@ describe('CSSPropertyOperations', () => {
     expect(html).toContain('"flex:0;opacity:0.5"');
   });
 
-  /** 测试场景：验证「should create vendor-prefixed markup correctly」描述的渲染、交互或错误处理结果。 */
+  /** SSR传msTransition和MozTransition；属性名应为-ms-transition/-moz-transition，验证厂商前缀连字符化。 */
   it('should create vendor-prefixed markup correctly', () => {
     const styles = {
       msTransition: 'none',
@@ -76,7 +69,7 @@ describe('CSSPropertyOperations', () => {
     expect(html).toContain('"-ms-transition:none;-moz-transition:none"');
   });
 
-  /** 测试场景：验证「should not hyphenate custom CSS property」描述的渲染、交互或错误处理结果。 */
+  /** SSR传--someColor自定义属性；大小写名称与颜色值保持原样，验证CSS变量不走普通名称连字符化。 */
   it('should not hyphenate custom CSS property', () => {
     const styles = {
       '--someColor': '#000000',
@@ -86,7 +79,7 @@ describe('CSSPropertyOperations', () => {
     expect(html).toContain('"--someColor:#000000"');
   });
 
-  /** 测试场景：验证「should set style attribute when styles exist」描述的渲染、交互或错误处理结果。 */
+  /** 客户端挂载有backgroundColor/display样式的div；innerHTML应存在style attribute，验证有可用值时DOM输出样式。 */
   it('should set style attribute when styles exist', async () => {
     const styles = {
       backgroundColor: '#000',
@@ -102,7 +95,7 @@ describe('CSSPropertyOperations', () => {
     expect(/style=".*"/.test(container.innerHTML)).toBe(true);
   });
 
-  /** 测试场景：验证「should not set style attribute when no styles exist」描述的渲染、交互或错误处理结果。 */
+  /** SSR传两个值均null的style对象；HTML不应有style attribute，验证空序列化结果省略属性。 */
   it('should not set style attribute when no styles exist', () => {
     const styles = {
       backgroundColor: null,
@@ -113,14 +106,14 @@ describe('CSSPropertyOperations', () => {
     expect(/style=/.test(html)).toBe(false);
   });
 
-  /** 测试场景：验证「should warn when using hyphenated style names」描述的渲染、交互或错误处理结果。 */
+  /** Comp首次输出background-color带连字符的style键；DEV应建议backgroundColor并含Comp栈，验证样式名诊断。 */
   it('should warn when using hyphenated style names', async () => {
-    /** `Comp`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 类fixture 输出带连字符background-color，触发首次样式名称诊断。 */
     class Comp extends React.Component {
-      /** `Comp.displayName`：记录测试夹具在当前场景中的状态。 */
+      /** 固定组件诊断名称为Comp，让各style警告栈可预测。 */
       static displayName = 'Comp';
 
-      /** `Comp.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 输出带连字符background-color，触发首次样式名称诊断。 */
       render() {
         return <div style={{'background-color': 'crimson'}} />;
       }
@@ -138,14 +131,14 @@ describe('CSSPropertyOperations', () => {
     ]);
   });
 
-  /** 测试场景：验证「should warn when updating hyphenated style names」描述的渲染、交互或错误处理结果。 */
+  /** Comp先无style再更新-ms-transform/-webkit-transform；DEV分别建议msTransform/WebkitTransform，验证更新添加属性同样校验。 */
   it('should warn when updating hyphenated style names', async () => {
-    /** `Comp`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 类fixture 把props.style透传宿主div，首轮无style而更新后出现非法前缀键。 */
     class Comp extends React.Component {
-      /** `Comp.displayName`：记录测试夹具在当前场景中的状态。 */
+      /** 固定组件诊断名称为Comp，让各style警告栈可预测。 */
       static displayName = 'Comp';
 
-      /** `Comp.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 把props.style透传宿主div，首轮无style而更新后出现非法前缀键。 */
       render() {
         return <div style={this.props.style} />;
       }
@@ -173,14 +166,14 @@ describe('CSSPropertyOperations', () => {
     ]);
   });
 
-  /** 测试场景：验证「warns when miscapitalizing vendored style names」描述的渲染、交互或错误处理结果。 */
+  /** Comp传msTransform/oTransform/webkitTransform；仅后两者诊断并建议大写O/Webkit，验证ms前缀例外。 */
   it('warns when miscapitalizing vendored style names', async () => {
-    /** `Comp`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 类fixture 输出ms/o/webkit三个前缀键，验证ms合法而其余大小写错误。 */
     class Comp extends React.Component {
-      /** `Comp.displayName`：记录测试夹具在当前场景中的状态。 */
+      /** 固定组件诊断名称为Comp，让各style警告栈可预测。 */
       static displayName = 'Comp';
 
-      /** `Comp.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 输出ms/o/webkit三个前缀键，验证ms合法而其余大小写错误。 */
       render() {
         return (
           <div
@@ -200,7 +193,7 @@ describe('CSSPropertyOperations', () => {
       root.render(<Comp />);
     });
     assertConsoleErrorDev([
-      // 转换已经正确了,不应该警告
+      // msTransform 的小写 ms 前缀合法，不应警告；这里只检查 oTransform 与 webkitTransform。
       'Unsupported vendor-prefixed style property oTransform. ' +
         'Did you mean OTransform?' +
         '\n    in div (at **)' +
@@ -212,14 +205,14 @@ describe('CSSPropertyOperations', () => {
     ]);
   });
 
-  /** 测试场景：验证「should warn about style having a trailing semicolon」描述的渲染、交互或错误处理结果。 */
+  /** style含fontFamily、url(foo;bar)、blue;及red;空白；只末尾分号两值诊断，验证URL内部的分号并不违规。 */
   it('should warn about style having a trailing semicolon', async () => {
-    /** `Comp`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 类fixture 输出含URL内部与值末尾分号的样式，区分真正非法结尾。 */
     class Comp extends React.Component {
-      /** `Comp.displayName`：记录测试夹具在当前场景中的状态。 */
+      /** 固定组件诊断名称为Comp，让各style警告栈可预测。 */
       static displayName = 'Comp';
 
-      /** `Comp.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 输出含URL内部与值末尾分号的样式，区分真正非法结尾。 */
       render() {
         return (
           <div
@@ -251,14 +244,14 @@ describe('CSSPropertyOperations', () => {
     ]);
   });
 
-  /** 测试场景：验证「should warn about style containing a NaN value」描述的渲染、交互或错误处理结果。 */
+  /** Comp.fontSize=NaN；DEV应给无效fontSize诊断并含组件栈，验证非有限数字校验。 */
   it('should warn about style containing a NaN value', async () => {
-    /** `Comp`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 类fixture 输出fontSize=NaN，触发非有限数值诊断。 */
     class Comp extends React.Component {
-      /** `Comp.displayName`：记录测试夹具在当前场景中的状态。 */
+      /** 固定组件诊断名称为Comp，让各style警告栈可预测。 */
       static displayName = 'Comp';
 
-      /** `Comp.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 输出fontSize=NaN，触发非有限数值诊断。 */
       render() {
         return <div style={{fontSize: NaN}} />;
       }
@@ -276,11 +269,11 @@ describe('CSSPropertyOperations', () => {
     ]);
   });
 
-  /** 测试场景：验证「should not warn when setting CSS custom properties」描述的渲染、交互或错误处理结果。 */
+  /** Comp同时传--foo-primary与backgroundColor为red；act完成且无未消费诊断，验证CSS变量名称不触发普通连字符名警告。 */
   it('should not warn when setting CSS custom properties', async () => {
-    /** `Comp`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 类fixture 同时输出CSS变量--foo-primary与普通backgroundColor，验证变量合法。 */
     class Comp extends React.Component {
-      /** `Comp.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 同时输出CSS变量--foo-primary与普通backgroundColor，验证变量合法。 */
       render() {
         return <div style={{'--foo-primary': 'red', backgroundColor: 'red'}} />;
       }
@@ -293,14 +286,14 @@ describe('CSSPropertyOperations', () => {
     });
   });
 
-  /** 测试场景：验证「should warn about style containing an Infinity value」描述的渲染、交互或错误处理结果。 */
+  /** Comp.fontSize=1/0；DEV应给Infinity无效诊断，验证无穷大样式。 */
   it('should warn about style containing an Infinity value', async () => {
-    /** `Comp`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 类fixture 输出fontSize=Infinity，触发无穷大样式诊断。 */
     class Comp extends React.Component {
-      /** `Comp.displayName`：记录测试夹具在当前场景中的状态。 */
+      /** 固定组件诊断名称为Comp，让各style警告栈可预测。 */
       static displayName = 'Comp';
 
-      /** `Comp.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 输出fontSize=Infinity，触发无穷大样式诊断。 */
       render() {
         return <div style={{fontSize: 1 / 0}} />;
       }
@@ -318,11 +311,11 @@ describe('CSSPropertyOperations', () => {
     ]);
   });
 
-  /** 测试场景：验证「should not add units to CSS custom properties」描述的渲染、交互或错误处理结果。 */
+  /** 客户端CSS变量--foo的输入为字符串5；getPropertyValue仍5，验证变量值不补单位；本例没有用数字5。 */
   it('should not add units to CSS custom properties', async () => {
-    /** `Comp`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 类fixture 输出CSS变量--foo的字符串5，检查原值不补px。 */
     class Comp extends React.Component {
-      /** `Comp.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 输出CSS变量--foo的字符串5，检查原值不补px。 */
       render() {
         return <div style={{'--foo': '5'}} />;
       }

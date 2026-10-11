@@ -150,7 +150,7 @@ describe('optimizer-scan:script-test', () => {
 /**
  * 场景：JSX automatic runtime 会在转换阶段隐式注入 `jsx-runtime` 导入。
  * 机制：扫描阶段使用与真实转换一致的 JSX 配置，提前把运行时包纳入优化结果。
- * 验证目标：首次请求 JSX 模块时不再发现新依赖，从而避免优化器二次运行和模块失效。
+ * 验证目标：实际导入 JSX 前后复用同一模块对象且只执行一次，观察没有因晚发现 runtime 而失效。
  */
 test('scan jsx-runtime', async (ctx) => {
   const server = await createServer({
@@ -188,10 +188,10 @@ test('scan jsx-runtime', async (ctx) => {
   // 第一个模块请求到来前，后台扫描应已经完成。
   await server.environments.ssr.depsOptimizer?.scanProcessing
 
-  // 导入任意文件，提交首轮优化结果。
+  // 发起真实导入，启动请求爬取；首轮提交由 optimizer 的 crawl-end 协调。
   await runner.import('./entry-no-jsx.js')
 
-  // 再导入 JSX：扫描若完整，就不会触发重跑，并且两次导入复用同一模块实例。
+  // 两次导入 JSX 复用实例且执行计数为 1，检查晚发现依赖没有使它重新执行。
   const mod1 = await runner.import('./entry-jsx.js')
   const mod2 = await runner.import('./entry-jsx.js')
   expect((globalThis as any).__test_scan_jsx_runtime).toBe(1)
@@ -275,9 +275,9 @@ test('top-level input is used as the entry for dep scanning', async (ctx) => {
 })
 
 /**
- * 场景：顶层 input 是插件提供的虚拟 ID。
+ * 场景：顶层 input 是插件提供的虚拟 ID，resolveId 将它映射到真实 entry.js。
  * 机制：扫描入口也经过插件容器的 `resolveId`，再从解析出的真实文件开始遍历。
- * 验证目标：扫描阶段与正常请求阶段共享解析语义，不漏掉虚拟入口中的依赖。
+ * 验证目标：插件解析后的入口通过物理文件过滤，扫描该文件后 vue 进入 deps。
  */
 test('top-level input can be resolved by a plugin for dep scanning', async (ctx) => {
   const root = path.join(import.meta.dirname, 'fixtures', 'input-option')

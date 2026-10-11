@@ -31,7 +31,7 @@ export const ssrTransformShow: DirectiveTransform = (dir, node, context) => {
               createSimpleExpression(`none`, true),
             ),
           ]),
-          false /* no newline */,
+          false /* 表达式不换行 */,
         ),
       ),
     ],

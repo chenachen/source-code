@@ -12,7 +12,7 @@ import { ErrorOverlay, cspNonce, overlayId } from './overlay'
 // @ts-expect-error 这是 Vite 内部虚拟模块，由服务端注入。
 import '@vite/env'
 
-// 下列常量由 HMR 插件在提供 client runtime 时注入。
+/** 服务端注入的公开 base，供模块更新、资源替换和页面路径比较使用。 */
 declare const __BASE__: string
 /** 服务端日志展示的 HTTP host，用于连接失败诊断。 */
 declare const __SERVER_HOST__: string
@@ -26,7 +26,7 @@ declare const __HMR_PORT__: number | null
 declare const __HMR_DIRECT_TARGET__: string
 /** HMR WebSocket 路径前缀。 */
 declare const __HMR_BASE__: string
-/** WebSocket 保活与断线判断使用的毫秒间隔。 */
+/** WebSocket 定时 ping 保活使用的毫秒间隔。 */
 declare const __HMR_TIMEOUT__: number
 /** 是否在浏览器中展示编译错误 overlay。 */
 declare const __HMR_ENABLE_OVERLAY__: boolean
@@ -40,7 +40,7 @@ console.debug('[vite] connecting...')
 /** 当前 client runtime URL，用于推导未显式配置的连接地址。 */
 const importMetaUrl = new URL(import.meta.url)
 
-// 优先使用服务端显式配置，缺省值再从当前 client URL 推断。
+/** 服务端展示用的 HTTP 地址；只写入连接失败诊断，不作为 WebSocket 目标。 */
 const serverHost = __SERVER_HOST__
 /** 最终 HMR WebSocket 协议。 */
 const socketProtocol =
@@ -66,6 +66,7 @@ const forwardConsole = __SERVER_FORWARD_CONSOLE__
 export const transport = normalizeModuleRunnerTransport(
   (() => {
     let wsTransport = createWebSocketModuleRunnerTransport({
+      /** 创建携带会话 token 和 vite-hmr 子协议的首次代理连接。 */
       createConnection: () =>
         new WebSocket(
           `${socketProtocol}://${socketHost}?token=${wsToken}`,
@@ -75,7 +76,10 @@ export const transport = normalizeModuleRunnerTransport(
     })
 
     return {
-      /** 首连失败且未显式配置端口时，尝试绕过代理直连开发服务器。 */
+      /**
+       * 首连失败且未显式配置端口时，尝试绕过代理直连开发服务器。
+       * 回退失败仅打印诊断并返回；显式端口分支则把初次连接错误继续抛给上层。
+       */
       async connect(handlers) {
         try {
           await wsTransport.connect(handlers)
@@ -83,6 +87,7 @@ export const transport = normalizeModuleRunnerTransport(
           // 仅端口来自推断且从未连通时尝试直连，避免显式配置出错后静默连接到另一地址。
           if (!hmrPort) {
             wsTransport = createWebSocketModuleRunnerTransport({
+              /** 使用服务端注入的直连目标重建 WebSocket，保留原 token 和子协议。 */
               createConnection: () =>
                 new WebSocket(
                   `${socketProtocol}://${directSocketHost}?token=${wsToken}`,
@@ -131,6 +136,7 @@ export const transport = normalizeModuleRunnerTransport(
   })(),
 )
 
+/** 页面即将卸载时置位，让断线消息跳过服务器重启轮询。 */
 let willUnload = false
 if (typeof window !== 'undefined') {
   // define 可能在 worker 中伪造 window；可选链避免访问不存在的 DOM API（#19307）。
@@ -146,6 +152,7 @@ function cleanUrl(pathname: string): string {
   return url.pathname + url.search
 }
 
+/** 页面尚未完成首次普通更新时为 true，用于初载错误后的整页重载决策。 */
 let isFirstUpdate = true
 /** 正等待替代资源加载完成的旧 stylesheet link 集合。 */
 const outdatedLinkTags = new WeakSet<HTMLLinkElement>()
@@ -169,10 +176,16 @@ export const pageReload = debounceReload(20)
 /** 普通按模块 HMR 的共享客户端状态机。 */
 const hmrClient = new HMRClient(
   {
+    /** 把模块更新失败交给浏览器错误通道，保留原错误对象。 */
     error: (err) => console.error('[vite]', err),
+    /** 输出普通 HMR 的接受、失效和更新诊断。 */
     debug: (...msg) => console.debug('[vite]', ...msg),
   },
   transport,
+  /**
+   * 以时间戳和必要的 import 查询重新导入 acceptedPath，返回新 namespace。
+   * 循环传播中的导入失败额外安排整页重载；该 Promise 仍然拒绝，由 HMRClient 记录失败。
+   */
   async function importUpdatedModule({
     acceptedPath,
     timestamp,
@@ -381,7 +394,7 @@ function hasErrorOverlay() {
   return document.querySelectorAll(overlayId).length
 }
 
-/** 连接断开后轮询 vite-ping；可用 SharedWorker 合并同源多窗口的轮询。 */
+/** 连接断开后轮询 vite-ping；可用时把本窗口探测放进 SharedWorker，由窗口可见性控制重试。 */
 function waitForSuccessfulPing(socketUrl: string) {
   if (typeof SharedWorker === 'undefined') {
     const visibilityManager: VisibilityManager = {
@@ -453,7 +466,7 @@ type VisibilityManager = {
   listeners: Set<(newVisibility: DocumentVisibilityState) => void>
 }
 
-/** SharedWorker 主函数：共享重连探测，并由可见窗口状态控制轮询频率。 */
+/** SharedWorker 主函数：每个连接端口建立自己的可见性状态与重连探测循环。 */
 function pingWorkerContentMain(socketUrl: string) {
   self.addEventListener('connect', (_event) => {
     const event = _event as MessageEvent
@@ -503,7 +516,7 @@ function pingWorkerContentMain(socketUrl: string) {
   })
 }
 
-/** 页面可见时按间隔探测；隐藏时暂停网络轮询，恢复可见后再继续。 */
+/** 先尝试一次探测；失败后按间隔重试，窗口隐藏时暂停后续尝试，恢复可见后继续。 */
 async function waitForSuccessfulPingInternal(
   socketUrl: string,
   visibilityManager: VisibilityManager,

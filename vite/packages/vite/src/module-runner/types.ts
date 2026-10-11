@@ -28,7 +28,7 @@ export type { DefineImportMetadata, SSRImportMetadata }
 export interface ModuleRunnerImportMeta {
   /** 当前模块的规范 file URL。 */
   url: string
-  /** 服务端静态替换后的公开环境变量视图。 */
+  /** 环境变量类型视图；默认运行时对象是抛错代理，实际字段由服务端静态替换。 */
   env: ImportMetaEnv
   /** 启用 HMR 时惰性创建的模块热更新上下文。 */
   hot?: ViteHotContext
@@ -121,8 +121,8 @@ export interface ModuleRunnerOptions {
    */
   transport: ModuleRunnerTransport
   /**
-   * 配置 sourcemap 拦截方式。若 `process.setSourceMapsEnabled` 可用则优先使用 `node`；
-   * 否则默认通过 `prepareStackTrace` 覆盖 `Error.prepareStackTrace`。
+   * 配置 sourcemap 拦截方式。ModuleRunner 默认通过 `prepareStackTrace` 拦截堆栈；
+   * Node 服务端工厂 `createServerModuleRunner` 会按宿主能力优先选择 `node`。
    * 也可传入对象，定义如何读取未经过 Vite 处理的文件内容及 sourcemap。
    */
   sourcemapInterceptor?:

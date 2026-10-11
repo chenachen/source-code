@@ -506,6 +506,7 @@ a:hover {
 .prose p,
 .prose li {
   color: var(--text);
+  overflow-wrap: anywhere;
 }
 
 .prose p {
@@ -762,6 +763,124 @@ code {
   border-radius: var(--radius);
   background: var(--surface);
   box-shadow: var(--shadow);
+}
+
+.engineering-diagram {
+  min-width: 0;
+  margin: 28px 0;
+  padding: 18px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.engineering-diagram > figcaption {
+  margin-bottom: 12px;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 750;
+  line-height: 1.5;
+}
+
+.diagram-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.diagram-toolbar button,
+.diagram-toolbar a {
+  display: inline-flex;
+  min-height: 36px;
+  padding: 6px 10px;
+  align-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: var(--surface-soft);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.diagram-toolbar button:hover,
+.diagram-toolbar a:hover {
+  border-color: var(--brand);
+  color: var(--brand-strong);
+}
+
+.diagram-scale {
+  min-width: 42px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.diagram-viewport {
+  max-width: 100%;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #f8fafc;
+  overscroll-behavior: contain;
+}
+
+.diagram-canvas {
+  max-width: none;
+}
+
+.diagram-canvas > svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.engineering-diagram .diagram-hint {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+body.diagram-is-expanded {
+  overflow: hidden;
+}
+
+body.diagram-is-expanded::after {
+  position: fixed;
+  z-index: 999;
+  inset: 0;
+  background: rgb(0 0 0 / 65%);
+  content: '';
+}
+
+.engineering-diagram.is-expanded {
+  position: fixed;
+  z-index: 1000;
+  inset: 16px;
+  display: flex;
+  margin: 0;
+  flex-direction: column;
+  box-shadow: var(--shadow);
+}
+
+.engineering-diagram.is-expanded .diagram-viewport {
+  min-height: 0;
+  flex: 1;
+}
+
+@media (max-width: 700px) {
+  .engineering-diagram {
+    padding: 12px;
+  }
+
+  .engineering-diagram.is-expanded {
+    inset: 6px;
+  }
 }
 
 .flow-caption {

@@ -61,15 +61,15 @@ interface ScriptAssetsUrl {
   url: string
 }
 
-/** 解析 HTML 代理模块 ID 中的文件哈希、索引与扩展名。 */
+/** 匹配 HTML 代理模块的查询结构与扩展名，并提取片段索引。 */
 const htmlProxyRE =
   /[?&]html-proxy=?(?:&inline-css)?(?:&style-attr)?&index=(\d+)\.(?:js|css)$/
 /** 识别 HTML 内联内容代理请求。 */
 const isHtmlProxyRE = /[?&]html-proxy\b/
 
-/** 识别要求返回内联 CSS 文本的内部查询参数。 */
+/** 识别 HTML 内联 CSS 的转换占位符，用 hash 与片段序号读取转换结果。 */
 const inlineCSSRE = /__VITE_INLINE_CSS__([a-z\d]{8}_\d+)__/g
-// 前方不允许普通 `.`，避免把属性访问误认成动态 import；但允许 `...` 展开运算符。
+/** 定位经典脚本的字面量动态 import；排除普通属性访问 `.import()`，允许 `...import()`。 */
 const inlineImportRE =
   /(?<!(?<!\.\.)\.)\bimport\s*\(("(?:[^"]|(?<=\\)")*"|'(?:[^']|(?<=\\)')*')\)/dg
 /** 识别 HTML 与 HTM 入口文件。 */
@@ -83,10 +83,10 @@ const importMapRE =
 /** 定位 HTML 中 `type="module"` 的脚本标签。 */
 const moduleScriptRE =
   /[ \t]*<script[^>]*type\s*=\s*(?:"module"|'module'|module)[^>]*>/i
-/** 定位 HTML 中现有 modulepreload 链接，避免重复注入。 */
+/** 定位现有 modulepreload 链接，确保 import map 放在首次模块预加载前。 */
 const modulePreloadLinkRE =
   /[ \t]*<link[^>]*rel\s*=\s*(?:"modulepreload"|'modulepreload'|modulepreload)[\s\S]*?>/i
-/** 定位 import map 结束标签，使模块脚本可插入其后。 */
+/** 定位首个模块脚本或 modulepreload，作为 import map 前移的插入位置。 */
 const importMapAppendRE = new RegExp(
   [moduleScriptRE, modulePreloadLinkRE].map((r) => r.source).join('|'),
   'i',
@@ -105,9 +105,9 @@ export const htmlProxyMap: WeakMap<
   Map<
     string,
     {
-      /** 转换后代码。 */
+      /** 从 HTML 提取的原始内联代码，load 后继续交给插件 transform。 */
       code: string
-      /** 与转换后代码对应的 sourcemap。 */
+      /** 原始片段到 HTML 文件位置的 sourcemap。 */
       map?: SourceMapInput
     }[]
   >
@@ -140,7 +140,7 @@ export function htmlInlineProxyPlugin(config: ResolvedConfig): Plugin {
 
     load: {
       filter: { id: isHtmlProxyRE },
-      /** 从当前环境的 HTML 代理缓存读取内联模块转换结果。 */
+      /** 从当前 config 共享的代理缓存读取原始片段，后续 transform 再执行语言/CSS 插件。 */
       handler(id) {
         const proxyMatch = htmlProxyRE.exec(id)
         if (proxyMatch) {
@@ -166,9 +166,9 @@ export function addToHTMLProxyCache(
   filePath: string,
   index: number,
   result: {
-    /** 内联代理经过插件管线转换后的模块代码。 */
-    code: string;
-    /** 转换结果对应的可选 sourcemap。 */
+    /** 从 HTML 提取、等待插件管线转换的原始代码。 */
+    code: string
+    /** 原始片段到 HTML 位置的可选 sourcemap。 */
     map?: SourceMapInput
   },
 ): void {
@@ -189,10 +189,10 @@ export function addToHTMLProxyTransformResult(
   htmlProxyResult.set(hash, code)
 }
 
-// 这些 `<link rel>` 资源不应在构建时内联。集合未列入：
-// - `shortcut`：只适用于 IE < 9，应使用 `icon`；
-// - `mask-icon`：Safari 12 起弃用；
-// - `apple-touch-icon-precomposed`：只适用于 iOS < 7。
+/**
+ * icon、移动端启动资源与 manifest 链接强制保留独立文件，不受 assetsInlineLimit 内联。
+ * rel 先按 HTML 空白拆分和小写化，再与此集合比较。
+ */
 const noInlineLinkRels = new Set([
   'icon',
   'apple-touch-icon',
@@ -250,6 +250,7 @@ export async function traverseHtml(
   const ast = parse(html, {
     scriptingEnabled: false, // 解析 `<noscript>` 内部节点。
     sourceCodeLocationInfo: true,
+    /** 把 parse5 错误按本插件的容忍规则过滤，并按错误码记录一次警告。 */
     onParseError: (e: ParserError) => {
       handleParseError(e, ErrorCodes, html, filePath, warnings)
     },
@@ -399,8 +400,8 @@ function handleParseError(
 
 /**
  * 深度优先收集 chunk 及其静态依赖的 CSS，保证“依赖 CSS 在前、入口 CSS 在后”。
- * 缓存保存未按当前入口过滤的完整子图结果；返回值再用本轮 seenCss 去重，避免共享依赖从另一个
- * 入口读取缓存时丢失 CSS（#21298/#22017）。
+ * 缓存保存未按 seenCss 过滤的收集结果，避免无环共享依赖从另一入口读缓存时丢失 CSS
+ * （#21298/#22017）。seenChunks 会截断环回边，因此环内节点缓存不一定含全部可达 CSS。
  */
 export function getCssFilesForChunk(
   chunk: OutputChunk,
@@ -421,7 +422,7 @@ export function getCssFilesForChunk(
     return additionals
   }
 
-  // allFiles 用于跨入口缓存完整子图；filteredFiles 只返回本轮尚未输出的 CSS。
+  // allFiles 缓存未按 seenCss 过滤的结果；filteredFiles 只返回本轮尚未输出的 CSS。
   const allFiles: string[] = []
   const filteredFiles: string[] = []
   chunk.imports.forEach((file) => {
@@ -483,7 +484,7 @@ export function buildHtmlPlugin(config: ResolvedConfig): Plugin {
   return {
     name: 'vite:build-html',
 
-    /** 构建 HTML 转换只对客户端消费者启用。 */
+    /** HTML 入口转换用于所有 bundled Environment，包含 build 与 bundled dev。 */
     applyToEnvironment(environment) {
       return environment.config.isBundled
     },
@@ -1169,9 +1170,9 @@ export function parseRelAttr(attr: string): string[] {
 export function findNeedTransformStyleAttribute(
   node: DefaultTreeAdapterMap['element'],
 ):
-  {
+  | {
       /** 需要进入 CSS 资源管线的 style 属性。 */
-      attr: Token.Attribute;
+      attr: Token.Attribute
       /** 该属性在 HTML 原文中的可选位置。 */
       location?: Token.Location
     }
@@ -1245,7 +1246,7 @@ export interface IndexHtmlTransformContext {
   filename: string
   /** 仅开发态提供，用于访问模块图、HMR 与配置。 */
   server?: ViteDevServer
-  /** 仅构建 generateBundle 阶段提供。 */
+  /** bundled 管线的 generateBundle 阶段提供，包括 bundled dev。 */
   bundle?: OutputBundle
   /** 当前 HTML 对应入口 chunk，若入口不存在则为空。 */
   chunk?: OutputChunk
@@ -1298,7 +1299,7 @@ export function preImportMapHook(
 
 /**
  * 把用户 import map 移到首个 module script/modulepreload 之前；构建启用 chunk import map 时，
- * 再注入打包器生成的 import map，并保证它拥有优先解析顺序。
+ * 再把打包器生成的 import map 插入首个模块资源前；已有用户 map 会排在生成 map 前。
  */
 export function postImportMapHook(
   config: ResolvedConfig,
@@ -1346,7 +1347,7 @@ export function postImportMapHook(
             : decoder.decode(importMap.source),
       })
       if (importMapAppendRE.test(html)) {
-        // 生成的 chunk import map 放在用户 map 前，确保占位 chunk 映射优先生效。
+        // 此时用户 map 已在首个模块资源前；再插入生成 map，顺序为用户 map、生成 map、模块资源。
         html = html.replace(
           importMapAppendRE,
           (match) => `${importMapHtml}\n${match}`,
@@ -1509,7 +1510,10 @@ export function resolveHtmlTransforms(
   return [preHooks, normalHooks, postHooks]
 }
 
-// https://developer.mozilla.org/en-US/docs/Web/HTML/Element/head#see_also
+/**
+ * HTML hook 注入 head 时允许的标签集合，开发阶段用来提示错误 injectTo 位置。
+ * @see https://developer.mozilla.org/en-US/docs/Web/HTML/Element/head#see_also
+ */
 const elementsAllowedInHead = new Set([
   'title',
   'base',
@@ -1648,7 +1652,7 @@ const bodyPrependInjectRE = /([ \t]*)<body[^>]*>/i
 /** 定位 doctype 后方，作为文档缺少容器标签时的前置插入点。 */
 const doctypePrependInjectRE = /<!doctype html>/i
 
-/** 把标签序列注入 head 尾部；缺少 head 时按 body/html 层级回退。 */
+/** 按 prepend 选择 head 首部或尾部注入；缺少对应容器时使用文档回退位置。 */
 function injectToHead(
   html: string,
   tags: HtmlTagDescriptor[],
@@ -1685,7 +1689,7 @@ function injectToHead(
   return prependInjectFallback(html, tags)
 }
 
-/** 把标签序列注入 body 尾部；缺少 body 时回退到 html 或文档末尾。 */
+/** 按 prepend 选择 body 首部或尾部注入；前置缺容器时向文档首部回退，追加时向尾部回退。 */
 function injectToBody(
   html: string,
   tags: HtmlTagDescriptor[],
@@ -1798,7 +1802,7 @@ export function getImportMapFilename(
   return 'importmap.json'
 }
 
-/** 按 base 与相对路径模式计算 import map 中资源的基准 URL。 */
+/** 读取原生 chunk import map 的 baseUrl，未指定时使用 `/`。 */
 function getImportMapBaseUrl(options: ResolvedEnvironmentOptions): string {
   const chunkImportMap =
     options.build.rolldownOptions.experimental?.chunkImportMap
@@ -1810,7 +1814,7 @@ function getImportMapBaseUrl(options: ResolvedEnvironmentOptions): string {
 
 /**
  * 从 bundle 读取并解析 chunk import map asset；不存在时返回 undefined。
- * mapping 会去掉 base，得到“占位文件名 → 真实文件名”，供 HTML 资源替换使用。
+ * mapping 按 baseUrl 长度截去键和值的前缀，供 CSS 和动态 import 的输出图分析反查真实 chunk。
  */
 export function getImportMap(
   bundle: OutputBundle,
@@ -1824,7 +1828,7 @@ export function getImportMap(
         /** 裸模块标识到目标 URL 的映射。 */
         imports: Record<string, string>
       }
-      /** 去掉 base 的 import map 条目（占位文件名 → 真实文件名）。 */
+      /** 按 baseUrl 长度截去键和值前缀的条目（占位文件名 → 真实文件名）。 */
       mapping: Record<string, string>
     }
   | undefined {

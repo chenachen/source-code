@@ -77,6 +77,7 @@ export function renderSlot(
         `function. You need to mark this component with $dynamic-slots in the ` +
         `parent template.`,
     )
+    /** SSR push 插槽误用于客户端时提供空内容，使后续判空/fallback 路径仍可完成 block 清理。 */
     slot = () => []
   }
 

@@ -13,6 +13,12 @@ import {REACT_MEMO_TYPE} from 'shared/ReactSymbols';
  * 创建带可选 props 比较器的 memo 组件类型描述。
  *
  * @remarks 是否跳过渲染由 reconciler 决定；此处只封装类型、比较器和 DEV 名称。
+ * @param type - 待包装的组件类型，保留原引用而不调用组件或复制静态属性。
+ * @param compare - 可选旧/新 props 比较器，true 表示 props 可复用；undefined 规范为 null
+ * 以请求 renderer 默认浅比较。ref、Context 和已调度更新仍由 renderer 另外判断。
+ * @returns 新的 REACT_MEMO_TYPE 描述对象，不缓存某次组件调用的返回值。
+ * @remarks DEV 空类型仅报错仍返回对象，其他无效类型也不在此全面验证。displayName
+ * setter 可改写无名内部 type 的 name/displayName；已命名类型保留自身名字。
  */
 export function memo<Props>(
   type: React$ElementType,

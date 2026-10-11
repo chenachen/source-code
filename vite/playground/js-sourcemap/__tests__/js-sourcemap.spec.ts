@@ -18,11 +18,19 @@ import {
   serverLogs,
 } from '~utils'
 
+/** 匹配正则元字符，用于把待搜索符号转成字面量匹配。 */
 const escapeRegexRE = /[-/\\^$*+?.()|[\]{}]/g
+/** 转义正则元字符，使变量名或文件名能安全拼入测试匹配式。
+ * @param str 待转义文本。
+ * @returns 作为正则字面内容的字符串。 */
 function escapeRegex(str: string): string {
   return str.replace(escapeRegexRE, '\\$&')
 }
 
+/** 请求入口并提取含指定依赖片段的改写导入 URL，确认它位于 deps 后再请求其 JS。
+ * @param entry 相对页面的入口请求路径。
+ * @param depIdFragment 目标依赖 URL 中的识别片段。
+ * @returns 优化依赖响应文本；导入匹配或优化目录缺失会使断言失败。 */
 async function getDepJs(entry: string, depIdFragment: string) {
   const res = await page.request.get(new URL(entry, page.url()).href)
   const js = await res.text()
@@ -38,6 +46,9 @@ async function getDepJs(entry: string, depIdFragment: string) {
   return depRes.text()
 }
 
+/** 定位生成代码的 console.log 参数，用 trace-mapping 回查原位置，要求 inline map 指向 x 的第 6 行第 16 列。
+ * @param depJs 转換后的依赖 JS。
+ * @param generatedName 转换后日志参数的符号名。 */
 function expectConsoleLogArgumentMapsToOriginalX(
   depJs: string,
   generatedName: string,
@@ -69,20 +80,22 @@ function expectConsoleLogArgumentMapsToOriginalX(
   })
 }
 
+/** 轮询 HTML 的 script 标签并排除 bundledDevClient，要求唯一入口；请求入口及其外置 map，确认 map 响应为 200。
+ * @returns 入口 JS 文本与解析后的 map 对象。 */
 async function getServedEntryChunk() {
   const srcMatches = await vi.waitFor(
     async () => {
       const html = await (await page.request.get(page.url())).text()
       const matches = [...html.matchAll(/<script[^>]* src="([^"]+)"/g)]
-        // the server also injects its client runtime as a script tag (vitejs/vite#23161)
+        // 服务器还注入 client runtime 的 script 标签（vitejs/vite#23161）。
         .filter(([, src]) => !src.endsWith('/bundledDevClient.mjs'))
       expect(matches.length).toBeGreaterThan(0)
       return matches
     },
     { timeout: 10_000 },
   )
-  // every bundled-dev check reads the map of this one chunk. Fail here and now
-  // if the dev bundle ever starts splitting the entry into more chunks.
+  // bundled dev 场景共用这一个入口 chunk 的 map；
+  // 若入口以后拆成多个 script，此处立即失败，提示辅助函数需同步更新。
   expect(srcMatches).toHaveLength(1)
   const entryUrl = new URL(srcMatches[0][1], page.url())
   const js = await (await page.request.get(entryUrl.href)).text()
@@ -93,6 +106,10 @@ async function getServedEntryChunk() {
   return { js, map: await mapRes.json() }
 }
 
+/** 按完整或末段文件名查来源索引，断言该来源的 sourcesContent 与输入字节完全相同。
+ * @param map 入口 map 对象。
+ * @param fileName 目标源文件名。
+ * @param content 预期原始内容。 */
 function expectMapHasSource(map: any, fileName: string, content: string) {
   const index = map.sources.findIndex(
     (source: string) => source === fileName || source.endsWith(`/${fileName}`),
@@ -104,7 +121,12 @@ function expectMapHasSource(map: any, fileName: string, content: string) {
   expect(map.sourcesContent[index]).toBe(content)
 }
 
-// check the mapping of a variable
+// 检查生成变量初始化位置回映到原声明的位置。
+/** 定位生成 var 初始化的变量名起点，断言回映到指定文件第 1 行第 13 列。
+ * @param js 生成代码。
+ * @param map 对应映射。
+ * @param name 原变量名及其初始化字符串。
+ * @param fileName 原始来源文件名。 */
 function expectVarInitMapsBackToExportConst(
   js: string,
   map: any,
@@ -127,6 +149,7 @@ function expectVarInitMapsBackToExportConst(
 }
 
 if (!isBuild) {
+  /** 仅 dev 检查 foo.js 映射：普通 dev 请求源 URL 后对照完整快照，bundled dev 读取唯一入口 chunk 并核对来源字节及 foo 初始化回映到原第 1 行第 13 列。 */
   test('js', async () => {
     if (isBundledDev) {
       const { js, map } = await getServedEntryChunk()
@@ -155,7 +178,8 @@ if (!isBuild) {
     `)
   })
 
-  // bundled dev does not inject fallback sourcemap, so this test is irrelevant
+  // bundled dev 不注入 fallback map，因此跳过此场景。
+  /** 仅普通 dev 执行，bundled dev 跳过不适用的 fallback map 场景；请求插件带 inline map 的 JS，确认原映射注释保留且只有一份 map，再对照快照。 */
   test.skipIf(isBundledDev)(
     'js with inline sourcemap injected by a plugin',
     async () => {
@@ -184,6 +208,7 @@ if (!isBuild) {
     },
   )
 
+  /** 仅 dev 检查 bar.ts 的转换映射：普通 dev 请求 TS 后对照完整快照，bundled dev 读取入口 chunk 并核对原始字节及 bar 初始化回映到第 1 行第 13 列。 */
   test('ts', async () => {
     if (isBundledDev) {
       const { js, map } = await getServedEntryChunk()
@@ -212,8 +237,9 @@ if (!isBuild) {
     `)
   })
 
-  // This test is for the import-analysis plugin (#14232), which does not run
-  // in bundled dev.
+  // 此场景针对 importAnalysis 插件（#14232），
+  // bundled dev 不运行该插件，因此跳过。
+  /** 仅普通 dev 执行，bundled dev 跳过 importAnalysis 场景；请求多行导入的 TS 并对照映射快照，覆盖 CJS 导入改写与前置变量的偏移。 */
   test.skipIf(isBundledDev)('multiline import', async () => {
     const res = await page.request.get(
       new URL('./with-multiline-import.ts', page.url()).href,
@@ -243,17 +269,19 @@ if (!isBuild) {
     `)
   })
 
+  /** 仅 dev 遍历服务器日志，确认 JS sourcemap 未报告缺失源文件。 */
   test('should not output missing source file warning', () => {
     serverLogs.forEach((log) => {
       expect(log).not.toMatch(/Sourcemap for .+ points to missing source files/)
     })
   })
 
+  /** 仅 dev 加载含恶意 map 路径的依赖，确认 sourcesContent 无 defineConfig 文本；普通 dev 逐模块请求，bundled dev 读取整个入口 map 并确认两恶意依赖的来源存在。 */
   test('should not leak file contents via sourcemap path traversal in node_modules', async () => {
     if (isBundledDev) {
-      // bundled-dev does not parse input sourcemaps,
-      // it copies them as the input source as a whole into `sourcesContent`,
-      // whereas unbundled-dev extracts the input sourcemaps
+      // bundled dev 不解析输入文件自带的 source map，
+      // sourcesContent 保留含原映射注释的整份输入内容；
+      // 普通 dev 则提取并使用输入的 source map。
       const { map } = await getServedEntryChunk()
       expect(map.sources).toContainEqual(
         expect.stringContaining('test-dep-malicious-sourcemap'),
@@ -271,7 +299,7 @@ if (!isBuild) {
       new URL('./malicious-import.js', page.url()).href,
     )
     const js = await res.text()
-    // Find the rewritten import URL for the malicious dep
+    // 从改写后的 import 中找到恶意依赖 URL。
     const depUrlMatch = js.match(/from\s+"([^"]*malicious-sourcemap[^"]*)"/)
     expect(depUrlMatch).toBeTruthy()
     const depUrl = depUrlMatch![1]
@@ -284,9 +312,10 @@ if (!isBuild) {
     )
   })
 
-  // bundled dev has no dep optimizer by design, so `/node_modules/.vite/deps/`
-  // does not exist. The dep is still bundled, and the test above scans the
-  // whole map, so the no-leak check still covers it.
+  // bundled dev 不使用依赖优化器，没有 /node_modules/.vite/deps/ 路径；
+  // 该依赖仍进入 bundle，上面的测试读取整个入口 map，
+  // 因此它的 sourcesContent 也在泄漏检查范围内。
+  /** 仅普通 dev 执行，bundled dev 无优化目录而跳过；跟随优化依赖 URL、确认 .vite/deps 与 inline map，再检查 sourcesContent 无 defineConfig 文本。 */
   test.skipIf(isBundledDev)(
     'should not leak file contents via sourcemap path traversal in optimized deps',
     async () => {
@@ -294,11 +323,11 @@ if (!isBuild) {
         new URL('./optimized-malicious-import.js', page.url()).href,
       )
       const js = await res.text()
-      // Find the rewritten import URL for the optimized malicious dep
+      // 找到优化后恶意依赖的改写导入 URL。
       const depUrlMatch = js.match(/from\s+"([^"]*optimized-malicious[^"]*)"/)
       expect(depUrlMatch).toBeTruthy()
       const depUrl = depUrlMatch![1]
-      // Ensure the dep was actually optimized (served from .vite/deps)
+      // 用 .vite/deps 路径确认请求的是优化产物。
       expect(depUrl).toContain('.vite/deps')
       const depRes = await page.request.get(new URL(depUrl, page.url()).href)
       const depJs = await depRes.text()
@@ -313,8 +342,9 @@ if (!isBuild) {
     },
   )
 
-  // bundled dev: these cases only apply with the dep optimizer. The test
-  // plugins act on `/deps/` URLs, which do not exist under bundled dev.
+  // 这些插件只处理依赖优化器生成的 /deps/ URL；
+  // bundled dev 无该路径，因此跳过这些场景。
+  /** 仅普通 dev 执行，bundled dev 无依赖优化而跳过；获取 Babel 改写后的依赖，核对 _x 构造器文本及 inline map，要求日志参数回映到原 x 的第 6 行第 16 列。 */
   test.skipIf(isBundledDev)(
     'babel-transformed downleveled optimized dep maps to the correct original name',
     async () => {
@@ -330,6 +360,7 @@ if (!isBuild) {
     },
   )
 
+  /** 仅普通 dev 执行，bundled dev 无依赖优化而跳过；获取 Oxc 改写后的依赖，核对带 $$$ 的符号与 inline map，要求日志参数回映到原 x 的第 6 行第 16 列。 */
   test.skipIf(isBundledDev)(
     'oxc-transformed downleveled optimized dep maps to the correct original name',
     async () => {
@@ -347,12 +378,14 @@ if (!isBuild) {
 }
 
 describe.runIf(isBuild)('build tests', () => {
+  /** 仅构建模式逐条检查日志，确认没有 Sourcemap is likely to be incorrect 警告。 */
   test('should not output sourcemap warning (#4939)', () => {
     serverLogs.forEach((log) => {
       expect(log).not.toMatch('Sourcemap is likely to be incorrect')
     })
   })
 
+  /** 仅构建模式读取动态入口及 map，对照 preload 依赖注入后的 mappings/sourcesContent 快照，并确认映射 URL 仍位于最后一行。 */
   test('sourcemap is correct when preload information is injected', async () => {
     const js = findAssetFile(/after-preload-dynamic-[-\w]{8}\.js$/)
     const map = findAssetFile(/after-preload-dynamic-[-\w]{8}\.js\.map/)
@@ -376,12 +409,13 @@ describe.runIf(isBuild)('build tests', () => {
           visualization: "https://evanw.github.io/source-map-visualization/#MTU1MgBjb25zdCBfX3ZpdGVfX21hcERlcHM9KGksbT1fX3ZpdGVfX21hcERlcHMsZD0obS5mfHwobS5mPVsiYXNzZXRzL2R5bmFtaWMtZm9vLUJ3aFpUa3RCLmpzIiwiYXNzZXRzL2R5bmFtaWMtZm9vLURzcUtSckV5LmNzcyJdKSkpPT5pLm1hcChpPT5kW2ldKTsKdmFyIGU9ZnVuY3Rpb24oZSl7cmV0dXJuYC9gK2V9LHQ9e30sbj1mdW5jdGlvbihuLHIsaSl7bGV0IGE9UHJvbWlzZS5yZXNvbHZlKCk7aWYociYmci5sZW5ndGg+MCl7bGV0IG49ZG9jdW1lbnQuZ2V0RWxlbWVudHNCeVRhZ05hbWUoYGxpbmtgKSxvPWRvY3VtZW50LnF1ZXJ5U2VsZWN0b3IoYG1ldGFbcHJvcGVydHk9Y3NwLW5vbmNlXWApLHM9bz8ubm9uY2V8fG8/LmdldEF0dHJpYnV0ZShgbm9uY2VgKTtmdW5jdGlvbiBjKGUpe3JldHVybiBQcm9taXNlLmFsbChlLm1hcChlPT5Qcm9taXNlLnJlc29sdmUoZSkudGhlbihlPT4oe3N0YXR1czpgZnVsZmlsbGVkYCx2YWx1ZTplfSksZT0+KHtzdGF0dXM6YHJlamVjdGVkYCxyZWFzb246ZX0pKSkpfWZ1bmN0aW9uIGwoZSl7cmV0dXJuIGltcG9ydC5tZXRhLnJlc29sdmU/aW1wb3J0Lm1ldGEucmVzb2x2ZShlKTpuZXcgVVJMKGUsaW1wb3J0Lm1ldGEudXJsKS5ocmVmfWE9YyhyLm1hcChyPT57aWYocj1lKHIsaSkscj1sKHIpLHIgaW4gdClyZXR1cm47dFtyXT0hMDtsZXQgYT1yLmVuZHNXaXRoKGAuY3NzYCk7Zm9yKGxldCBlPW4ubGVuZ3RoLTE7ZT49MDtlLS0pe2xldCB0PW5bZV07aWYodC5ocmVmPT09ciYmKCFhfHx0LnJlbD09PWBzdHlsZXNoZWV0YCkpcmV0dXJufWxldCBvPWRvY3VtZW50LmNyZWF0ZUVsZW1lbnQoYGxpbmtgKTtpZihvLnJlbD1hP2BzdHlsZXNoZWV0YDpgbW9kdWxlcHJlbG9hZGAsYXx8KG8uYXM9YHNjcmlwdGApLG8uY3Jvc3NPcmlnaW49YGAsby5ocmVmPXIscyYmby5zZXRBdHRyaWJ1dGUoYG5vbmNlYCxzKSxkb2N1bWVudC5oZWFkLmFwcGVuZENoaWxkKG8pLGEpcmV0dXJuIG5ldyBQcm9taXNlKChlLHQpPT57by5hZGRFdmVudExpc3RlbmVyKGBsb2FkYCxlKSxvLmFkZEV2ZW50TGlzdGVuZXIoYGVycm9yYCwoKT0+dChFcnJvcihgVW5hYmxlIHRvIHByZWxvYWQgQ1NTIGZvciAke3J9YCkpKX0pfSkpfWZ1bmN0aW9uIG8oZSl7bGV0IHQ9bmV3IEV2ZW50KGB2aXRlOnByZWxvYWRFcnJvcmAse2NhbmNlbGFibGU6ITB9KTtpZih0LnBheWxvYWQ9ZSx3aW5kb3cuZGlzcGF0Y2hFdmVudCh0KSwhdC5kZWZhdWx0UHJldmVudGVkKXRocm93IGV9cmV0dXJuIGEudGhlbihlPT57Zm9yKGxldCB0IG9mIGV8fFtdKXQuc3RhdHVzPT09YHJlamVjdGVkYCYmbyh0LnJlYXNvbik7cmV0dXJuIG4oKS5jYXRjaChvKX0pfTtuKCgpPT5pbXBvcnQoYC4vZHluYW1pYy1mb28tQndoWlRrdEIuanNgKSxfX3ZpdGVfX21hcERlcHMoWzAsMV0pKSxjb25zb2xlLmxvZyhgYWZ0ZXIgcHJlbG9hZCBkeW5hbWljYCk7ZXhwb3J0e24gYXMgdH07Ci8vIyBkZWJ1Z0lkPTM3MTI5NGZhLWUxOTQtNDQ5OS05NmE4LWVlN2JiYThjZDY5NgovLyMgc291cmNlTWFwcGluZ1VSTD1hZnRlci1wcmVsb2FkLWR5bmFtaWMtM0VwVDY0WlEuanMubWFwMjUxAHsiZGVidWdJZCI6IjAwMDAwMDAwLTAwMDAtMDAwMC0wMDAwLTAwMDAwMDAwMDAwMCIsIm1hcHBpbmdzIjoiOzZwQ0FBQSxhQUFPLHFEQUVQLFFBQVEsSUFBSSx1QkFBdUIiLCJzb3VyY2VzIjpbIi4uLy4uL2FmdGVyLXByZWxvYWQtZHluYW1pYy5qcyJdLCJzb3VyY2VzQ29udGVudCI6WyJpbXBvcnQoJy4vZHluYW1pYy9keW5hbWljLWZvbycpXG5cbmNvbnNvbGUubG9nKCdhZnRlciBwcmVsb2FkIGR5bmFtaWMnKVxuIl0sInZlcnNpb24iOjN9"
         }
       `)
-    // verify sourcemap comment is preserved at the last line
+    // 确认外置 sourceMappingURL 注释仍位于产物末行。
     expect(js).toMatch(
       /\n\/\/# sourceMappingURL=after-preload-dynamic-[-\w]{8}\.js\.map\n?$/,
     )
   })
 
+  /** 仅构建模式逐个解析 JS map；仅当 file 字段存在时检查其为不含目录的 .js 文件名，未要求每份 map 必须带 file。 */
   test('sourcemap file field is consistent (#20853)', async () => {
     const assets = listAssets()
     const mapAssets = assets.filter((asset) => asset.endsWith('.js.map'))
@@ -399,6 +433,7 @@ describe.runIf(isBuild)('build tests', () => {
     }
   })
 
+  /** 仅构建模式读取含 hashbang 的动态入口，检查前两行为 hashbang 和 mapDeps 定义，验证注入没有越过首行 banner。 */
   test('__vite__mapDeps injected after banner', async () => {
     const js = findAssetFile(/after-preload-dynamic-hashbang-[-\w]{8}\.js$/)
     expect(js.split('\n').slice(0, 2)).toEqual([
@@ -407,11 +442,13 @@ describe.runIf(isBuild)('build tests', () => {
     ])
   })
 
+  /** 仅构建模式读取没有 preload 依赖的动态入口，确认未注入 mapDeps 文本。 */
   test('no unused __vite__mapDeps', async () => {
     const js = findAssetFile(/after-preload-dynamic-no-dep-[-\w]{8}\.js$/)
     expect(js).not.toMatch(/__vite__mapDeps/)
   })
 
+  /** 仅构建模式读取对象 define 替换后的 JS 与 map，逐项对照两层调用函数及替换位置的映射快照。 */
   test('sourcemap is correct when using object as "define" value', async () => {
     const js = findAssetFile(/with-define-object.*\.js$/)
     const map = findAssetFile(/with-define-object.*\.js\.map/)
@@ -446,6 +483,7 @@ describe.runIf(isBuild)('build tests', () => {
       `)
   })
 
+  /** 仅构建套件启动独立 Node 脚本；脚本实际创建 middleware dev 服务并 fix SSR stacktrace，要求 errorInner 回到 TS 第 7 行第 9 列，子进程必须成功退出。 */
   test('correct sourcemap during ssr dev when using object as "define" value', async () => {
     const execFileAsync = promisify(execFile)
     await execFileAsync('node', ['test-ssr-dev.js'], {
@@ -453,7 +491,11 @@ describe.runIf(isBuild)('build tests', () => {
     })
   })
 
+  /** 仅构建模式遍历有外置 map 的 JS，提取其 debugId 并与对应 map.debugId 相等；没有配套 map 的 JS 会跳过。 */
   test('source and sourcemap contain matching debug IDs', () => {
+    /** 提取行式 debugId 注释中的十六进制及连字符标识；没有匹配时返回 undefined。
+     * @param input 构建 JS 文本。
+     * @returns 找到的 debug ID。 */
     function getDebugIdFromString(input: string): string | undefined {
       const match = input.match(/\/\/# debugId=([a-fA-F0-9-]+)/)
       return match ? match[1] : undefined

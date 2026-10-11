@@ -28,6 +28,7 @@ let shouldYield;
 // postTask 变体依赖实验性的浏览器 Scheduler API。本套件 mock `postTask`、`yield`、`TaskController`
 // 和错误上报 timer，以显式排空任务并验证优先级映射、continuation、取消与错误隔离，不依赖真实浏览器时序。
 describe('SchedulerPostTask', () => {
+  // postTask mock 在 require 前安装，以使模块捕获本例的宿主 API 与虚拟时钟。
   beforeEach(() => {
     jest.resetModules();
     jest.mock('scheduler', () =>
@@ -83,6 +84,10 @@ describe('SchedulerPostTask', () => {
     };
 
     // `SchedulerPostTask.runTask()` 仅用该 timer 将 Promise 链中的异常转移到普通 browser task 上报。
+    /**
+     * 同步执行错误上报 timer 的 cb，并把重抛错误转为日志，便于断言两任务间的错误位置。
+     * 此替身不模拟真实 timer 延迟，只覆盖 runTask 的错误转交及后续任务隔离。
+     */
     window.setTimeout = cb => {
       try {
         cb();
@@ -261,7 +266,7 @@ describe('SchedulerPostTask', () => {
     runtime.assertLog(['Task 1 Fired', 'Continuation']);
   });
 
-  /** 场景：两个 Normal callback 各自映射为独立 `user-visible` postTask，并按 mock 队列顺序执行。 */
+  /** 入队 A/B 两个 Normal callback 后 flushTasks，日志要求两个 user-visible postTask 各触发一次并按 A/B 排列，验证独立 native 任务安排。 */
   it('multiple tasks', () => {
     scheduleCallback(NormalPriority, () => {
       runtime.log('A');
@@ -279,6 +284,7 @@ describe('SchedulerPostTask', () => {
 
   /**
    * 场景：取消尚未触发的 postTask 会通过 `TaskController.abort()` 从 native 队列删除它，callback 不执行。
+   * scheduleCallback 返回 handle 后先 cancel，再 flushTasks；空日志证明已安排的 A 没有触发。
    * 对应源码：`unstable_cancelCallback()` 与被抑制的 `handleAbortError()`。
    */
   it('cancels tasks', () => {
@@ -314,7 +320,7 @@ describe('SchedulerPostTask', () => {
     runtime.assertLog(['Task 0 Fired', 'Error: Oops!', 'Task 1 Fired', 'Yay']);
   });
 
-  /** 场景：native task queue 正常排空后，后续 callback 仍可创建新 id 并被下一批排空。 */
+  /** 先 flush A 排空 native 队列，再入队并 flush B，日志要求新 task id 1 正常触发，验证正常完成后可以重复安排。 */
   it('schedule new task after queue has emptied', () => {
     scheduleCallback(NormalPriority, () => {
       runtime.log('A');
@@ -332,7 +338,7 @@ describe('SchedulerPostTask', () => {
     runtime.assertLog(['Task 1 Fired', 'B']);
   });
 
-  /** 场景：取消当前唯一 native task 后队列为空；新 callback 仍能通过新 controller 正常安排并执行。 */
+  /** 取消唯一 A 并 flush 得到空日志，再入队/flush B；新 controller 的 task id 1 执行 B，验证取消不影响后续安排。 */
   it('schedule new task after a cancellation', () => {
     const handle = scheduleCallback(NormalPriority, () => {
       runtime.log('A');
@@ -471,7 +477,7 @@ describe('SchedulerPostTask', () => {
       runtime.assertLog(['Task 1 Fired', 'Continuation']);
     });
 
-    /** 场景：即使时间片仍有余额，缺少 `scheduler.yield` 时 continuation 也必须由新 postTask 隔离执行。 */
+    /** 删除 scheduler.yield 后，Normal callback 在时钟 0 且 shouldYield=false 时返回续函数；两次 flush 日志分别要求原任务与续任务，验证 fallback 也隔离宿主批次。 */
     it('yielding continues in a new task regardless of how much time is remaining', () => {
       scheduleCallback(NormalPriority, () => {
         runtime.log('Original Task');

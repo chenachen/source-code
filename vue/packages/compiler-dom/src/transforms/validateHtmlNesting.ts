@@ -7,7 +7,8 @@ import {
 import { isValidHTMLNesting } from '../htmlNesting'
 
 /**
- * 开发期检查原生 HTML 父子标签是否合法。
+ * 开发期按规则矩阵检查原生元素的直接父子标签。
+ * 这里只传入 tag 字符串，不扫描任意祖先，也不按 namespace 排除 SVG。
  * 非法结构会被浏览器 parser 自动重排，使 SSR 字符串解析出的 DOM 与客户端 VNode 树
  * 不一致，因此这里以编译警告提前指出潜在 hydration 错误。
  */

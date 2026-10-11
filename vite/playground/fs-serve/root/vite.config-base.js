@@ -4,6 +4,7 @@ import svgVirtualModulePlugin from './svgVirtualModulePlugin.ts'
 import matrixTestResultPlugin from './matrixTestResultPlugin.ts'
 import { getWindows83ShortNameForDotEnv } from './windows83Filename.ts'
 
+/** 文件服务矩阵的非根 URL 前缀，同时作为配置 base 与页面 define 值。 */
 const BASE = '/base/'
 
 export default defineConfig({

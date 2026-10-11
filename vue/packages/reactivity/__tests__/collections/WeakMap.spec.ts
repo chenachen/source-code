@@ -2,7 +2,10 @@ import { effect, isReactive, reactive, toRaw } from '../../src'
 
 describe('reactivity/collections', () => {
   describe('WeakMap', () => {
-    // 场景：对 WeakMap 创建响应式代理；验证代理仍通过 WeakMap 的 instanceof 检查。
+    /**
+     * 把空 WeakMap 转为 reactive，再检查原实例和代理的 instanceof 与响应式标记。
+     * 代理仍是 WeakMap 实例且具有响应式标记，验证弱集合代理保留继承关系。
+     */
     test('instanceof', () => {
       const original = new WeakMap()
       const observed = reactive(original)
@@ -11,7 +14,10 @@ describe('reactivity/collections', () => {
       expect(observed).toBeInstanceOf(WeakMap)
     })
 
-    // 场景：读取后新增、修改和删除 WeakMap 键；验证相关 effect 按变化重新执行。
+    /**
+     * effect 用普通对象键 get 空 reactive WeakMap，随后新增值、改值、删除。
+     * 记录 undefined→value→value2→undefined，验证弱集合对象键的 ADD/SET/DELETE 通知。
+     */
     it('should observe mutations', () => {
       let dummy
       const key = {}
@@ -29,7 +35,10 @@ describe('reactivity/collections', () => {
       expect(dummy).toBe(undefined)
     })
 
-    // 场景：使用响应式对象作为 WeakMap 键进行修改；验证 proxy/raw 键身份均能命中依赖。
+    /**
+     * effect 用 reactive 对象键 get 空 reactive WeakMap，再以同一键 set 对象代理值和 delete。
+     * 记录 undefined→原值代理→undefined，验证对象代理键读写兼容及深层 value 包装。
+     */
     it('should observe mutations with observed value as key', () => {
       let dummy
       const key = reactive({})
@@ -46,7 +55,10 @@ describe('reactivity/collections', () => {
       expect(dummy).toBe(undefined)
     })
 
-    // 场景：给 WeakMap 实例添加普通自定义属性；验证集合响应式不会追踪这些额外属性。
+    /**
+     * effect 读取 reactive WeakMap 上不存在的 customProp，再写入字符串。
+     * 记录保持 undefined，验证弱集合 handler 不追踪额外对象属性。
+     */
     it('should not observe custom property mutations', () => {
       let dummy
       const map: any = reactive(new WeakMap())
@@ -57,7 +69,10 @@ describe('reactivity/collections', () => {
       expect(dummy).toBe(undefined)
     })
 
-    // 场景：重复写入相同 WeakMap 值或删除不存在的键；验证无实际变化时不触发 effect。
+    /**
+     * spy effect get 一个对象键，依次新增 undefined、改字符串、同值重设、删除、重复删除。
+     * 新增 undefined 会增加一次计数，只有有效改值/删除继续增加，总计 4，验证存在性变化不同于同值写入。
+     */
     it('should not observe non value changing mutations', () => {
       let dummy
       const key = {}
@@ -84,7 +99,10 @@ describe('reactivity/collections', () => {
       expect(mapSpy).toHaveBeenCalledTimes(4)
     })
 
-    // 场景：绕过代理直接读取原始 WeakMap；验证 raw 操作不会建立响应式依赖。
+    /**
+     * effect 经 toRaw(map).get 读取对象键，再通过代理 set/delete。
+     * 记录始终 undefined，验证原生 WeakMap get 不建立代理依赖。
+     */
     it('should not observe raw data', () => {
       let dummy
       const key = {}
@@ -98,7 +116,10 @@ describe('reactivity/collections', () => {
       expect(dummy).toBe(undefined)
     })
 
-    // 场景：向响应式 WeakMap 写入代理键和值；验证原集合不会被不必要的代理身份污染。
+    /**
+     * 向深 reactive WeakMap 的普通对象键写入一个普通 reactive 对象值。
+     * 原 WeakMap 的值等于 toRaw(value) 且不同于代理，验证深集合 value 保存 raw；本例键本来就是 raw。
+     */
     it('should not pollute original Map with Proxies', () => {
       const map = new WeakMap()
       const observed = reactive(map)
@@ -109,7 +130,10 @@ describe('reactivity/collections', () => {
       expect(map.get(key)).toBe(toRaw(value))
     })
 
-    // 场景：从响应式 WeakMap 读取对象值；验证返回对象会转换成响应式代理。
+    /**
+     * 空 reactive WeakMap 用普通对象键保存普通对象值，再 get。
+     * 返回对象被代理且 toRaw 等于输入值，验证弱集合对象 value 的惰性深层转换。
+     */
     it('should return observable versions of contained values', () => {
       const observed = reactive(new WeakMap())
       const key = {}
@@ -120,7 +144,10 @@ describe('reactivity/collections', () => {
       expect(toRaw(wrapped)).toBe(value)
     })
 
-    // 场景：effect 读取 WeakMap 值的嵌套字段；验证嵌套对象变化仍能触发更新。
+    /**
+     * reactive WeakMap 预存 { a: 1 }，effect 经 get 读取 a，再通过返回对象修改 a=2。
+     * 记录变为 2，验证弱集合 get 返回的对象代理能建立嵌套字段依赖。
+     */
     it('should observed nested data', () => {
       const observed = reactive(new WeakMap())
       const key = {}
@@ -133,7 +160,10 @@ describe('reactivity/collections', () => {
       expect(dummy).toBe(2)
     })
 
-    // 场景：WeakMap 某键的旧值和新值都是 NaN；验证 Object.is 语义下不产生重复触发。
+    /**
+     * 原生 WeakMap 预存 NaN，spy effect 直接 get 原生对象，再把同键值写成 NaN。
+     * spy 始终一次，因为此夹具从未创建代理或登记依赖；本例不能用于证明 reactive 的 Object.is 去重。
+     */
     it('should not be trigger when the value and the old value both are NaN', () => {
       const map = new WeakMap()
       const key = {}
@@ -143,7 +173,10 @@ describe('reactivity/collections', () => {
       map.set(key, NaN)
       expect(mapSpy).toHaveBeenCalledTimes(1)
     })
-    // 场景：调用响应式 WeakMap.set；验证链式调用返回响应式代理而非原始 WeakMap。
+    /**
+     * 空 reactive WeakMap 执行 set({},'a') 并保存返回值。
+     * 返回值等于集合代理自身，验证链式 set 约定保留代理 receiver。
+     */
     it('should return proxy from WeakMap.set call', () => {
       const map = reactive(new WeakMap())
       const result = map.set({}, 'a')

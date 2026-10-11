@@ -8,7 +8,13 @@
 /** 以“组件名.调用名”为键去重未挂载更新警告。 */
 const didWarnStateUpdateForUnmountedComponent = {};
 
-/** 对未挂载实例的更新调用发出一次警告，并保持操作为 no-op。 */
+/**
+ * 对默认 no-op updater 上的调用按“组件名.方法名”发出一次 DEV 警告。
+ * @param publicInstance - 由 Component/PureComponent 构造且尚未注入真实 updater 的实例。
+ * @param callerName - 此队列固定传入 setState/replaceState/forceUpdate，而非透传入口附带名称。
+ * @remarks 同名类共享去重键，模块缓存持续保留警告记录；不按实例或 Fiber 保存更新，
+ * 也不检测实例实际是否曾经挂载。生产路径无警告副作用，callback 不会被执行。
+ */
 function warnNoop(publicInstance, callerName) {
   if (__DEV__) {
     const constructor = publicInstance.constructor;
@@ -51,7 +57,7 @@ const ReactNoopUpdateQueue = {
    *
    * @param {ReactClass} publicInstance - 被请求更新的实例。
    * @param {?function} callback - 因无更新而不会执行的回调。
-   * @param {?string} callerName - 公共 API 调用名。
+   * @param {?string} callerName - 兼容 updater 协议的调用名；当前实现忽略并使用固定方法名。
    * @internal
    */
   enqueueForceUpdate: function (publicInstance, callback, callerName) {
@@ -64,7 +70,7 @@ const ReactNoopUpdateQueue = {
    * @param {ReactClass} publicInstance - 被请求更新的实例。
    * @param {object} completeState - 不会入队的新状态。
    * @param {?function} callback - 因无更新而不会执行的回调。
-   * @param {?string} callerName - 公共 API 调用名。
+   * @param {?string} callerName - 兼容 updater 协议的调用名；当前实现忽略并使用固定方法名。
    * @internal
    */
   enqueueReplaceState: function (
@@ -79,13 +85,13 @@ const ReactNoopUpdateQueue = {
   /**
    * 拒绝为未挂载实例合并局部状态，并通过 `warnNoop` 报告调用。
    *
-   * @remarks 真正队列提供对内部 `_pendingState` 的浅合并；默认队列不持有该状态。
-   * TODO：评估公开 pendingState 或停止在合并中依赖它。
+   * @remarks 默认队列不持有状态。挂载后的 reconciler 把更新存入 Fiber.updateQueue，
+   * 在 render 阶段依次计算状态补丁并与前一状态浅合并。
    *
    * @param {ReactClass} publicInstance - 被请求更新的实例。
    * @param {object} partialState - 不会入队的局部状态。
    * @param {?function} callback - 因无更新而不会执行的回调。
-   * @param {?string} callerName - 公共 API 调用名。
+   * @param {?string} callerName - 兼容 updater 协议的调用名；当前实现忽略并使用固定方法名。
    * @internal
    */
   enqueueSetState: function (

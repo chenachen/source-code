@@ -31,14 +31,8 @@ describe('ReactDOMComponentTree', () => {
   });
 
   // @gate !disableLegacyMode
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「finds instance of node that is attempted to be unmounted」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言连接 ReactDOM 公开入口、ReactDOMRoot 根生命周期及 DOM 提交结果。
-   */
+
+  /** legacy render 返回的是已渲染的宿主 div，把该 div 错当容器传给 unmountComponentAtNode；DEV 应指出它不是顶层容器，验证 DOM→Fiber 缓存可以识别传错的 React 根节点。 */
   it('finds instance of node that is attempted to be unmounted', () => {
     const component = <div />;
     const node = ReactDOM.render(<div>{component}</div>, container);
@@ -52,7 +46,8 @@ describe('ReactDOMComponentTree', () => {
   });
 
   // @gate !disableLegacyMode
-  /** 测试场景：验证「finds instance from node to stop rendering over other react rendered components」描述的渲染、交互或错误处理结果。 */
+
+  /** 先在外容器渲染带 span 的 div，再把返回 div 当新根容器渲染另一棵树；DEV 应警告正在替换 React 管理的 children，验证节点实例缓存能区分已有树内部节点和独立容器。 */
   it('finds instance from node to stop rendering over other react rendered components', () => {
     const component = (
       <div>

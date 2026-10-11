@@ -12,7 +12,7 @@
 
 1. URL、resolved ID 和 file 为什么是三种身份，分别在哪些索引中使用？
 2. 两个相同 URL 的并发请求怎样共享 Promise，失效穿插其中时为何必须开新请求？
-3. 为什么 load 成功后才创建模块图节点，而 resolve 成功不能立即入图？
+3. 请求首次 load 成功后为何才确保节点？import analysis 为依赖预建节点又有什么不同？
 4. transformResult、ETag、pending request 和 HTTP 304 分别是哪一层缓存？
 5. 硬失效与软失效保存、清除哪些状态，失效为什么需要向 importer 传播？
 6. client 软失效为什么只改 import 时间戳，SSR 又为什么连代码都不用改？
@@ -28,7 +28,7 @@
 5. `invalidateModule()` 与 `handleModuleSoftInvalidation()`：理解 HMR 快路径。
 6. `sourcemap.ts`：理解转换产物如何补源码、标记 ignoreList 和防止越界读取。
 7. `mixedModuleGraph.ts`：最后看 Environment API 迁移期的旧接口兼容，不要先被代理代码打断主线。
-8. 三份测试：用最小场景复盘扩展名推断、resolved ID 去重、双图兼容和包根边界。
+8. `transformRequest.spec.ts`、`moduleGraph.spec.ts` 与 `sourcemap.spec.ts`：复盘扩展名推断、ID 去重、双图兼容和包根边界。
 
 ## 一次 HTTP 模块请求
 
@@ -51,8 +51,8 @@ GET /src/main.ts?t=...
 ```
 
 `Sec-Fetch-Dest: document` 的请求必须继续交给 HTML/static fallback。若把导航请求误当 JS，服务器
-会返回转换后的模块代码而不是页面。响应追加 `Vary: Sec-Fetch-Dest`，保证代理缓存不会把文档与
-模块响应混为一份。
+会返回转换后的模块代码而不是页面。缓存快路径放行 document 请求时追加
+`Vary: Sec-Fetch-Dest`，让该文档响应的缓存区分请求目的。
 
 ### CSS 为什么有两个 URL 身份
 
@@ -72,7 +72,7 @@ import './style.css'       → JS 模块，运行时注入样式
 ```text
 依赖优化仍在处理 / 旧优化产物    → 504，等待页面用新版本重试
 普通模块不存在                  → 交给下游，最终通常 404
-资源 ID 被 server.fs 拒绝       → 403
+资源 ID 被 server.fs 拒绝       → 可读文件返回 403，不存在路径交给下游
 可恢复服务器已经关闭            → 504，客户端连接新实例
 真正的插件/转换异常              → next(error)，由错误中间件格式化
 ```
@@ -101,8 +101,8 @@ EnvironmentModuleGraph 因此维护不同索引：
 `/x.js`，第二个 URL 只登记到同一节点，而不是复制 meta、importers 和失效状态。这一竞态/去重
 边界的历史修复见 [PR #9759](https://github.com/vitejs/vite/pull/9759)。
 
-未解析 URL 的查找本身也是异步操作。图用 `unresolvedUrlToModuleMap` 暂存 Promise，让并发调用
-共享一次 resolve；Promise 完成后移除临时项。它与 transform 的 pending request 类似，但前者
+未解析 URL 的查找本身也是异步操作。`_ensureEntryFromUrl()` 用 `_unresolvedUrlToModuleMap` 缓存 Promise，让同 URL 的并发入图
+共享一次 resolve；成功后把该项替换为节点，后续查找仍可直接复用。它与 transform 的 pending request 类似，但前者
 只合并“URL 对应哪个节点”，后者合并完整加载和转换。
 
 ## 四层缓存不能混为一谈
@@ -139,6 +139,32 @@ ModuleNode 保存。这样失败 Promise 不会永久污染后续请求。
 旧调用者仍可收到旧结果；关键是旧结果不能覆盖新缓存。`loadAndTransform()` 完成时再次比较开始
 时间与 `lastInvalidationTimestamp`，只有较新的请求能写 transformResult。
 
+下面沿同一个已入图 URL 观察两个请求。非 HMR 失效先清节点结果并写入失效时间；它没有删除
+pending，旧请求也继续运行。请求 2 发现旧时间戳后才释放 P1 的槽位，再递归取得新时间戳、建立 P2。
+若图中节点尚不存在，源码会直接复用 pending；图示选择已有节点的失效分支。
+
+![同 URL 的两个请求跨过失效事件时，pending 槽位与模块缓存各自怎样变化](diagrams/08-pending-race.svg)
+
+图中 `cleared1` 与 `cleared2` 是各请求 `clearCache` 闭包的变量，不在 pending 记录中。P1 的 abort
+第一次删除槽位并置 `cleared1=true`；P2 随后占用该 URL。P1 结束时，旧 finally 因这个标志跳过再次
+删除，所以 P2 能继续被后续请求复用。源码没有进行“Map 当前值是否仍是 P1”的身份比较。
+
+这一清理条件来自 `transformRequest.ts` 的 `transformRequest()`（源码摘录）：
+
+```ts
+let cleared = false
+const clearCache = () => {
+  if (!cleared) {
+    environment._pendingRequests.delete(url)
+    cleared = true
+  }
+}
+```
+
+`abort` 和 finally 共用这个函数。与此同时，写缓存仍需满足“请求开始时间严格晚于节点最近失效
+时间”：P1 的结果返回原调用者，但不能缓存；P2 只有在完成时仍新鲜才写入结果。图中没有再次失效，
+所以 P2 通过检查，最后由自己的 finally 清掉槽位。
+
 这套双重保护分别覆盖历史上的模块图竞态、过期结果写缓存、失效后继续复用 pending request：
 [PR #5470](https://github.com/vitejs/vite/pull/5470)、
 [PR #7254](https://github.com/vitejs/vite/pull/7254)、
@@ -166,20 +192,24 @@ pluginContainer.load(id)
 二进制、虚拟模块和特殊 query 应由插件拥有；文件系统回退只负责普通文本。publicDir 文件构建时
 原样复制，不经过插件转换，因此源码 import 它不是“路径碰巧找不到”，而是违反资源模型。
 
-### 3. load 成功后才入图
+### 3. 首次请求 load 成功后确保节点
 
-resolve 只说明“它可能对应这个 ID”，不证明插件能 load。若在 load 前建节点，API 路由、缺失
-文件和被下游中间件处理的 URL 都会污染图。入图后再执行 transform，import analysis 等插件才能
-把依赖边写回已存在节点。
+`loadAndTransform()` 在拿到 code 后才为尚无节点的请求调用 `_ensureEntryFromUrl()`，避免仅凭
+resolve 结果就把未加载的 API/缺失 URL 登记为本次转换模块。节点先于 transform 建立，import
+analysis 才能把当前模块的依赖边写回图中。
+
+这不是“图中所有节点都已 load”的保证：import analysis 的 `updateModuleInfo()` 会先为依赖
+调用 `ensureEntryFromUrl()`，即使浏览器还未请求它们。图既保存已转换模块，也保存已发现的依赖身份。
 
 ### 4. transform 与 Source Map 规范化
 
 插件 transform 串行传递 code、map 和 moduleType。插件未声明类型时，Vite 从已知扩展名推断
-非 JS 类型；无扩展名继续留空。字符串 map 解析成对象，缺失 map 保留 null，空 mappings 则是
+非 JS 类型；无扩展名继续留空。推断函数不剥离 query，`file.ts?raw` 不会被当作末尾为 `ts`。
+字符串 map 解析成对象，缺失 map 保留 null，空 mappings 则是
 显式“无需 fallback”的结果。
 
-client 结果生成弱 ETag；启用 `moduleRunnerTransform` 的 server Environment 还要通过
-`ssrTransform()` 改写成 Module Runner 协议。最后只有未在处理中失效的结果才写图缓存。
+`moduleRunnerTransform` 关闭时结果生成弱 ETag；开启时通过 `ssrTransform()` 改写成 Module
+Runner 协议。默认 client 与 server 分别采用这两条分支，配置也可以显式覆盖。最后只有未在处理中失效的结果才写图缓存。
 
 ## 模块图怎样维护依赖边
 
@@ -190,14 +220,25 @@ client 结果生成弱 ETag；启用 `moduleRunnerTransform` 的 server Environm
 每个新依赖.importers += 当前模块
 每个已移除依赖.importers -= 当前模块
 当前模块.acceptedHmrDeps / acceptedHmrExports / isSelfAccepting = 新 HMR 元数据
-返回不再被任何模块引用的依赖集合
+返回本次移除且已没有 importer 的旧依赖集合
 ```
+
+三个索引和依赖边引用的是同一批节点。下图先把 URL、ID、file 的查找入口连接到节点 A，再对照
+一次依赖改写前后的关系：`main.ts` 不再导入 `old.ts`，改为导入 `next.ts`。
+
+![同一 Environment 内共享节点的三种索引，以及依赖改写前后的正向和反向边](diagrams/08-module-graph.svg)
+
+更新时，`updateModuleInfo()` 先给新依赖 C 的 `importers` 加入 A，再把 A 的 `importedModules`
+替换为新集合，并从已移除的 B 上删除 A。图中 B 没有其他 importer，因此它进入返回的
+`noLongerImported` 集合；此方法没有把 B 从 URL、ID 或 file 索引中删除。R 与 A 的 file 相同，
+但 R 的 resolved ID 带 query，所以它仍是另一个节点。
 
 只维护 `A.importedModules` 而不维护 `B.importers`，文件变化时就无法向上寻找受影响边界。删除文件
 时还要清理它作为 importer 留在依赖节点中的反向引用，避免悬挂边。
 
 CSS 分析过程中可能只有文件依赖、尚无浏览器 URL，`createFileOnlyEntry()` 会创建 asset 节点。
-后续真实 URL 到来时仍可按 file 找到它；这类节点不能被错误当成可直接请求的 JS/CSS 模块。
+它只进入 `fileToModulesMap`，没有 resolved ID，也不进入 URL/ID 索引；后续正常请求仍会建立
+自己的节点。文件变化通过 file 索引同时找到这些节点，asset 节点本身不提供可直接返回的转换结果。
 
 ## 硬失效与软失效
 
@@ -207,10 +248,13 @@ CSS 分析过程中可能只有文件依赖、尚无浏览器 URL，`createFileO
 | 硬失效 | 标记 `HARD_INVALIDATED`，清结果/ETag/错误       | 完整 load + transform          |
 | 软失效 | 把旧 `transformResult` 移入 `invalidationState` | 复用旧代码并修补 import 时间戳 |
 
-失效时先清 `transformResult`、SSR 执行错误和 ETag 反向索引，再更新单调时间。传播到 importer 时：
+失效会清 `transformResult`、旧 SSR 执行结果/错误和 ETag 反向索引。非 HMR 失效更新
+`lastInvalidationTimestamp`，阻止较早启动的请求写缓存；HMR 传播更新 `lastHMRTimestamp`，
+供浏览器 import URL 的 `?t=` 使用，并复位运行时 invalidate 的去重标记。传播到 importer 时：
 
 - 显式失效的根模块必须硬失效；
-- importer 若只是依赖版本变化，可软失效；
+- importer 声明 accept 该依赖时停止传播；其余 JS importer 的静态 import 边可以软失效；
+- 依赖已经通过软失效向上传播时，其他 JS importer 也可继续软失效；非静态硬失效边走完整转换；
 - 同一轮传播中，硬失效可以把先前的软失效升级；
 - `seen` 防止循环依赖无限递归，但升级判断必须发生在提前返回之前；
 - 直接 CSS 请求不能按 JS import 语法重写，需走硬失效边界
@@ -218,8 +262,8 @@ CSS 分析过程中可能只有文件依赖、尚无浏览器 URL，`createFileO
 
 软失效是 HMR 性能优化（[PR #14654](https://github.com/vitejs/vite/pull/14654)）：模块本身源码没变，
 无需重跑整条插件管线。client 用 `es-module-lexer` 扫描旧转换结果，对已更新依赖写入新的 `?t=`；
-静态直接 import 还可触发预热。替换只改变 URL 字符，不改变行结构，因此旧 Source Map 可沿用，
-但 code 对应的 ETag 必须重算。
+静态直接 import 还可触发预热。实现保留旧 map，避免为仅改变依赖 URL 的模块重跑转换；URL 长度变化仍会改变该行后续字符列，
+这里没有重新生成精确列映射。code 对应的 ETag 必须重算。
 
 SSR 不靠浏览器 query 破缓存，Module Runner 管理执行缓存，所以直接复用旧 transformResult。无论
 client 还是 SSR，修补结束都再次做时间戳新鲜度检查，防止修补过程中发生第二次失效。
@@ -228,19 +272,19 @@ client 还是 SSR，修补结束都再次做时间戳新鲜度检查，防止修
 
 Source Map 处理分四类：
 
-1. 从源码尾部读取 inline/external map，并用等长空白移除引用，保持行列稳定；
+1. 从源码的 Source Map 引用读取 inline/external map，并用等长空白移除引用，保持行列稳定；
 2. 对缺失的 `sourcesContent` 并行读取原源码；
 3. 根据 `server.sourcemapIgnoreList` 合并 `x_google_ignoreList`；
 4. 响应 `.map` 请求或把 map 以内联 data URL 附加到 JS/CSS。
 
 第三方 map 不能被当作可信文件读取清单。若转换文件在 node_modules，Vite 先找最近的普通包或
-`@scope/pkg` 根；外部 map 文件和每个 source 都必须仍位于该包内。否则恶意依赖可用
+`@scope/pkg` 根；外部 map 文件和需要补读的 source 路径都必须仍位于该包内。否则恶意依赖可用
 `../../.env` 一类路径把宿主文件读进 `sourcesContent` 并发送给浏览器。这个边界见
 [PR #22158](https://github.com/vitejs/vite/pull/22158)。嵌套 node_modules 必须取最后一段，才能
 限制到真正产出 map 的内层包。
 
-找不到普通 source 只告警，不让模块转换失败；虚拟 source 则根本不尝试磁盘读取。可调试性是
-附加能力，不能改变应用能否运行。
+补读普通 source 的文件读取失败会记录告警，虚拟 source 则不尝试磁盘读取。这种容错限于
+补读流程；畸形 URI 的解码错误或用户 `sourcemapIgnoreList` 回调抛错仍可能使转换失败。
 
 ## Mixed ModuleGraph 兼容层
 
@@ -256,8 +300,9 @@ idToModuleMap / fileToModulesMap     → 一张 Map
 
 - ModuleNode 同时持有可选 `_clientModule` 与 `_ssrModule`；
 - 相同 URL/ID 的双环境节点合成一个包装实例；
-- Set/Map 代理遍历两边并按逻辑模块去重；
-- 旧 `ssr?: boolean` 参数把调用路由到对应环境图；
+- importers/importedModules 返回合并 Set；单端依赖集合与索引 Map 使用兼容读取对象；
+- ensureEntryFromUrl/resolveUrl/updateModuleTransformResult 的旧 `ssr?: boolean` 选择对应图，
+  getModuleByUrl 则忽略该参数、并行查两图；
 - `DualWeakMap` 以一对底层节点缓存包装对象，保证同一输入始终返回同一实例。
 
 稳定实例很重要：插件可能用节点作 Set/Map key 或比较引用。只保证字段相等仍会破坏插件，相关
@@ -274,8 +319,8 @@ idToModuleMap / fileToModulesMap     → 一张 Map
 | backward compatibility       | 双图节点、Set 遍历和失效保持旧 API     | `mixedModuleGraph.ts`         |
 | node_modules 包根表驱动      | 普通/scope/嵌套/Windows 安全边界       | `getNodeModulesPackageRoot()` |
 
-这些用例不是主链的端到端演示，而是锁定最容易在重构时破坏的身份与边界条件。主链应从源码
-状态机阅读，用例用于反证自己的理解。
+模块类型用例固定扩展名查表结果；图用例直接构造节点、依赖和错误状态，分别验证失效清理、
+resolved ID 复用与兼容视图。下面把这些状态连接到一次具体模块请求。
 
 ## 关键源码证据
 
@@ -291,15 +336,11 @@ const pending = environment._pendingRequests.get(url)
 if (pending) {
   return environment.moduleGraph.getModuleByUrl(url).then((module) => {
     if (!module || pending.timestamp > module.lastInvalidationTimestamp) {
-      // The pending request is still valid, we can safely reuse its result
+      // 在途请求开始于最近一次失效之后，可安全共享同一 Promise。
       return pending.request
     } else {
-      // Request 1 for module A     (pending.timestamp)
-      // Invalidate module A        (module.lastInvalidationTimestamp)
-      // Request 2 for module A     (timestamp)
-
-      // First request has been invalidated, abort it to clear the cache,
-      // then perform a new doTransform.
+      // 时序：请求 1 → 模块失效 → 请求 2。请求 1 已过期，先清除其 pending 槽位，再让请求 2
+      // 建立新的 transform；abort 只停止复用，不强行取消正在执行的插件 Promise。
       pending.abort()
       return transformRequest(environment, url, options)
     }
@@ -307,8 +348,58 @@ if (pending) {
 }
 ```
 
-同 URL 的请求通常复用 pending Promise；若模块在该请求开始后已失效，则中止旧工作并递归重跑。
+同 URL 的请求通常复用 pending Promise；若模块在该请求开始后已失效，则释放旧 pending 槽位
+并递归建立新请求。旧插件 hook 继续执行，原调用者仍等待它；写缓存时另做时间戳检查。
 因此并发去重不能只按 URL 缓存，还必须和模块图的失效时间比较。
+
+成功入图后，原始 URL 索引保留节点，见 `moduleGraph.ts` 的 `_ensureEntryFromUrl()`（源码摘录，
+省略节点初始化和 file 索引写入）：
+
+```ts
+const modPromise = (async () => {
+  const [url, resolvedId, meta] = await this._resolveUrl(rawUrl, resolved)
+  mod = this.idToModuleMap.get(resolvedId)
+  // 新 ID 创建节点；已有 ID 复用，并补登记 URL。
+  // 此处省略两个分支的实现。
+  this._setUnresolvedUrlToModule(rawUrl, mod)
+  return mod
+})()
+this._setUnresolvedUrlToModule(rawUrl, modPromise)
+return modPromise
+```
+
+`rawUrl → Promise → ModuleNode` 是这个索引的变化；`pending request → 删除槽位` 则是转换请求索引
+的变化。两者合并的任务与保留时长都不同。
+
+失效时间和 importer 分支来自同文件 `invalidateModule()`（源码摘录，省略状态合并、seen 与清理）：
+
+```ts
+if (isHmr) {
+  mod.lastHMRTimestamp = timestamp
+  mod.lastHMRInvalidationReceived = false
+} else {
+  mod.lastInvalidationTimestamp = timestamp
+}
+```
+
+```ts
+const shouldSoftInvalidateImporter =
+  (importer.staticImportedUrls?.has(mod.url) || softInvalidate) &&
+  importer.type === 'js'
+this.invalidateModule(
+  importer,
+  seen,
+  timestamp,
+  isHmr,
+  shouldSoftInvalidateImporter,
+)
+```
+
+例如 `main.js` 静态导入 `data.js`，未 accept 该依赖，但 main 自身接受 HMR。data 内容变化时，watcher 的 onFileChange
+把 data 硬失效、main 软失效，并写入两者的 lastInvalidationTimestamp；HMR 更新随后写入依赖的
+lastHMRTimestamp。下一次 main 请求消费旧结果，只把 data 的 import URL 改成带新 `?t=` 的 URL，
+重算 ETag 后写回 main 缓存。若 main 是通过 watch 文件而非静态 import 依赖 data，根节点的硬失效
+会把 main 也硬失效；下次请求必须重新 load 和 transform。
 
 ## 建议断点
 
@@ -323,16 +414,15 @@ if (pending) {
 7. `handleModuleSoftInvalidation`：观察依赖 URL 的 `?t=` 与 ETag 更新。
 
 并发竞态可在 load hook 中手工挂起 Promise：发请求 A，修改文件触发失效，再发请求 B。正确结果
-是 B 不复用 A，且 A 即使最后完成也不能写回模块缓存。这个实验用来验证思路即可；纯注释修改
-本身不需要重复执行测试套件。
+是 B 不复用 A，且 A 即使最后完成也不能写回模块缓存。它对应两处检查：pending 复用前比较时间戳，转换完成后再次比较时间戳。
 
 ## 复盘题
 
 1. 为什么清掉 pending request 还不够，写 transformResult 前仍要比较时间戳？
 2. 如果只用 URL 作为唯一索引，alias 或虚拟 URL 会制造什么重复状态？
 3. 为什么直接 CSS 的 ETag 判断晚于普通模块的快速 304？
-4. load 失败的 URL 若提前入图，会怎样影响 HMR、404 与后续中间件？
-5. 软失效为什么能保留 Source Map，却不能保留旧 ETag？
+4. 请求 load 成功前不主动入图，为何不妨碍 import analysis 先为依赖建立节点？
+5. 软失效为什么重新计算 ETag、保留旧 map？URL 长度变化影响哪种调试精度？
 6. 环形依赖中，`seen` 判断放在软→硬升级之前会发生什么？
 7. 为什么 sourcemap 的 source 读取边界是 package root，而不只是 node_modules root？
 8. Mixed ModuleGraph 若每次访问都创建新包装节点，会破坏哪些插件代码？

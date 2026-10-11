@@ -15,7 +15,7 @@ import module from 'node:module'
 // 时不需要它们，也应避免改变用户进程的全局错误处理行为。
 if (!import.meta.url.includes('node_modules')) {
   if (!process.env.DEBUG_DISABLE_SOURCE_MAP) {
-    // 仅用于开发 Vite；最低支持版本之外的 Node.js 内置 API 由该条件保护。
+    // 在源码仓库启动时启用，让错误栈定位到原始源码。
     // eslint-disable-next-line n/no-unsupported-features/node-builtins
     process.setSourceMapsEnabled(true)
   }

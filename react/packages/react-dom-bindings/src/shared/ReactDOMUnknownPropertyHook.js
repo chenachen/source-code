@@ -162,7 +162,7 @@ function validateProperty(tagName, name, value, eventRegistry) {
         return true;
       }
     } else if (name !== lowerCasedName) {
-      // 未知属性应使用小写，因为服务端渲染最终也会按小写输出。
+      // 未知 prop 带大写时给出自定义属性的小写拼写建议。
       console.error(
         'React does not recognize the `%s` prop on a DOM element. If you ' +
           'intentionally want it to appear in the DOM as a custom ' +
@@ -239,7 +239,7 @@ function validateProperty(tagName, name, value, eventRegistry) {
             // 这些布尔属性允许直接接收 boolean。
             return true;
           }
-          // fallthrough
+          // 未列入允许 boolean 的属性，继续走通用警告分支。
           default: {
             const prefix = name.toLowerCase().slice(0, 5);
             if (prefix === 'data-' || prefix === 'aria-') {

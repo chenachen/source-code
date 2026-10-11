@@ -35,8 +35,11 @@ const isKeyboardEvent = /*@__PURE__*/ makeMap(`onkeyup,onkeydown,onkeypress`)
 
 /**
  * 把修饰符分为按键守卫、通用运行时守卫和事件监听选项三组。
- * 动态事件名无法在编译期判断 left/right 的含义，因此同时放入按键与非按键组，让运行时
- * 根据实际事件类型得到正确结果。
+ * 动态事件名下 left/right 同时进入两组，最终生成外层 withKeys、内层 withModifiers。
+ * withKeys 要求事件带 key，没有 key 的普通鼠标事件会直接返回，不会退回鼠标按键判断。
+ * 三组分别保留各自在原 modifiers 中的顺序；stop/prevent 等有先后副作用，不能排序。
+ * @param key - core 已生成的静态 onXxx 或动态事件键，不是模板中的原始事件名。
+ * @returns 三组字符串，调用方据此改键名、包 handler；此处不修改 handler 或 props。
  */
 const resolveModifiers = (
   key: ExpressionNode,
@@ -121,6 +124,8 @@ const transformClick = (key: ExpressionNode, event: string) => {
  *
  * 通用修饰符包装 `withModifiers`，按键修饰符包装 `withKeys`，监听选项则追加到事件属性名
  * （如 `onClickOnceCapture`），供 runtime-dom 注册原生监听器时读取。
+ * DOM augmentor 在 core 完成表达式处理后、handler 缓存前运行，所以缓存的是含守卫的
+ * 整体回调。无 modifiers 时原样返回 core 结果，不重复登记额外 helper。
  */
 export const transformOn: DirectiveTransform = (dir, node, context) => {
   return baseTransform(dir, node, context, baseResult => {

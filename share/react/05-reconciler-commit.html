@@ -1,37 +1,38 @@
 <!doctype html><html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="description" content="react-reconciler commit 阶段指南：before mutation、mutation、current 切换、layout、passive、错误隔离与删除清理。" />
-<title>05 · reconciler：commit 副作用</title><link rel="stylesheet" href="assets/guide.css?v=1" /></head><body>
+<title>05 · reconciler：commit 副作用</title><link rel="stylesheet" href="assets/guide.css?v=1" /><link rel="stylesheet" href="assets/engineering-diagrams.css?v=1" /></head><body>
 <header class="topbar"><div class="topbar-inner"><a class="brand" href="index.html">React 六包源码指南</a><nav class="pager" aria-label="页面导航">
 <a href="index.html">地图</a><a href="01-shared.html">shared</a><a href="02-scheduler.html">scheduler</a><a href="03-react.html">react</a>
 <a href="04-reconciler-render.html">render</a><a aria-current="page" href="05-reconciler-commit.html">commit</a><a href="06-dom-bindings.html">bindings</a>
 <a href="07-react-dom.html">react-dom</a><a href="08-end-to-end.html">主线</a><a href="09-evidence.html">证据</a></nav></div></header>
-<div class="layout"><main><p class="eyebrow">05 · Fiber engine / commit</p><h1>reconciler：把 finishedWork 变成唯一现实</h1>
+<div class="layout"><main><p class="eyebrow">05 · Fiber engine / commit</p><h1>reconciler：把 finishedWork 提交到宿主树</h1>
 <p class="lede">commit 不再决定组件“应该渲染什么”。它按 flags 遍历 finishedWork，先保存修改前快照，再执行宿主 mutation，
 切换 current，最后运行能观察新宿主树的 layout 与后续 passive effects。</p>
-<div class="meta"><span class="pill">同步关键区</span><span class="pill">flags 驱动遍历</span><span class="pill">HostConfig 边界</span><span class="pill">passive 延后</span></div>
+<div class="meta"><span class="pill">同步关键区</span><span class="pill">flags 驱动遍历</span><span class="pill">HostConfig 边界</span><span class="pill">passive 单独冲刷</span></div>
 
 <section id="contract"><h2>为什么 commit 不能像 render 一样任意中断</h2><div class="grid three">
-<article class="card"><span class="number">CONSISTENCY</span><h3>用户只能看到旧树或新树</h3><p>mutation 中途长时间让出会暴露一半更新的 DOM、ref 与生命周期状态。</p></article>
+<article class="card"><span class="number">CONSISTENCY</span><h3>可见提交不由 Scheduler 分段</h3><p>普通 mutation 与 layout 在同一段同步工作中完成。若中途让出浏览器任务，会把一半更新的 DOM、ref 与生命周期状态暴露到页面。</p></article>
 <article class="card"><span class="number">ORDER</span><h3>每类 effect 有固定观察窗口</h3><p>snapshot 读旧宿主树；layout 读新宿主树；passive 不阻塞当前可见提交。</p></article>
 <article class="card"><span class="number">OWNERSHIP</span><h3>current 切换是逻辑提交点</h3><p>它晚于 mutation、早于 layout，使卸载读旧 current，挂载/更新读新 current。</p></article></div>
-<div class="callout warn"><p><strong>“原子”是框架观察语义，不是数据库事务：</strong>DOM API、用户生命周期或 ref 回调仍可能抛错。
-React 捕获并调度最近错误边界或根错误处理，但不会回滚已经完成的浏览器 mutation。</p></div></section>
+<div class="callout warn"><p><strong>同步完成仍有中间观察窗口：</strong>mutation 中的 cleanup/ref 回调可能看到部分 DOM 已更新，而 current 仍是旧树。
+用户代码抛错后，React 记录边界或根的恢复更新，已完成的宿主操作不会回滚。</p></div></section>
 
-<section id="pipeline"><h2>阶段状态机</h2><div class="chain" aria-label="commit 阶段">
-<div class="node">before mutation<small>snapshot / blur</small></div><span class="arrow">→</span><div class="node">mutation<small>DOM / detach ref</small></div>
-<span class="arrow">→</span><div class="node">root.current<small>切换树身份</small></div><span class="arrow">→</span><div class="node">layout<small>lifecycle / ref</small></div>
-<span class="arrow">→</span><div class="node">paint opportunity<small>requestPaint</small></div><span class="arrow">→</span><div class="node">passive<small>useEffect</small></div></div>
+<section id="pipeline"><h2>阶段状态机</h2><figure class="engineering-diagram" data-diagram="commit05-passive-branches"><div class="diagram-scroll" style="padding:8px"><svg xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="commit05-passive-branches-title commit05-passive-branches-desc" viewBox="0 0 840 955" width="840" height="955" style="min-width:840px;width:840px;max-width:none">
+<title id="commit05-passive-branches-title">普通commit的passive收尾分支</title><desc id="commit05-passive-branches-desc">before mutation读取旧DOM。mutation后切current，layout连接新ref和effect。flushSpawnedWork请求paint机会。无passive直接释放池；有passive且现代根包含SyncLane或SyncHydrationLane则当前任务冲刷，否则默认由已安排的Scheduler回调冲刷。两条路径都先全树unmount再mount，最后释放池。新render或layout同步工作可提前冲刷，不保证paint先执行。</desc>
+<defs><marker id="commit05-passive-branches-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/></marker></defs>
+<text class="d-label" x="420" y="31" text-anchor="middle" font-size="18"><tspan x="420" dy="0">普通 DOM mutation 路径：阶段结束后，passive 怎样冲刷？</tspan></text><rect class="d-node" x="40" y="72" width="310" height="86" rx="10"/><text class="d-label" x="195.0" y="109.0" text-anchor="middle" font-size="18"><tspan x="195.0" dy="0">before-mutation</tspan><tspan x="195.0" dy="24">snapshot 读取旧 DOM</tspan></text><rect class="d-node" x="430" y="72" width="365" height="86" rx="10"/><text class="d-label" x="612.5" y="109.0" text-anchor="middle" font-size="18"><tspan x="612.5" dy="0">mutation → current 切换 → layout</tspan><tspan x="612.5" dy="24">DOM 完成后才连接新 ref / layout</tspan></text><path class="d-edge" d="M350 115 H430" marker-end="url(#commit05-passive-branches-arrow)"/><rect class="d-node" x="245" y="209" width="360" height="84" rx="10"/><text class="d-label" x="425.0" y="245.0" text-anchor="middle" font-size="18"><tspan x="425.0" dy="0">flushSpawnedWork</tspan><tspan x="425.0" dy="24">requestPaint 只请求绘制机会</tspan></text><path class="d-edge" d="M613 158 V179 H425 V209" marker-end="url(#commit05-passive-branches-arrow)"/><rect class="d-condition" x="245" y="341" width="360" height="80" rx="10"/><text class="d-label" x="425.0" y="375.0" text-anchor="middle" font-size="18"><tspan x="425.0" dy="0">本轮有 passive 工作？</tspan><tspan x="425.0" dy="24">flags / subtreeFlags / profiling</tspan></text><path class="d-edge" d="M425 293 V341" marker-end="url(#commit05-passive-branches-arrow)"/><rect class="d-state" x="40" y="480" width="310" height="82" rx="10"/><text class="d-label" x="195.0" y="515.0" text-anchor="middle" font-size="18"><tspan x="195.0" dy="0">无 passive：直接释放</tspan><tspan x="195.0" dy="24">root pooled cache</tspan></text><rect class="d-condition" x="430" y="467" width="365" height="108" rx="10"/><text class="d-label" x="612.5" y="503.0" text-anchor="middle" font-size="18"><tspan x="612.5" dy="0">现代根，并且 committed lanes</tspan><tspan x="612.5" dy="24">含 SyncLane 或</tspan><tspan x="612.5" dy="24">SyncHydrationLane？</tspan></text><path class="d-edge" d="M245 381 H195 V480" marker-end="url(#commit05-passive-branches-arrow)"/><text class="d-muted" x="213" y="447" text-anchor="middle" font-size="18"><tspan x="213" dy="0">否</tspan></text><path class="d-edge" d="M605 381 H613 V467" marker-end="url(#commit05-passive-branches-arrow)"/><text class="d-muted" x="633" y="438" text-anchor="middle" font-size="18"><tspan x="633" dy="0">是</tspan></text><rect class="d-node" x="40" y="627" width="310" height="82" rx="10"/><text class="d-label" x="195.0" y="662.0" text-anchor="middle" font-size="18"><tspan x="195.0" dy="0">当前任务直接调用</tspan><tspan x="195.0" dy="24">flushPendingEffects</tspan></text><rect class="d-node" x="430" y="627" width="365" height="82" rx="10"/><text class="d-label" x="612.5" y="662.0" text-anchor="middle" font-size="18"><tspan x="612.5" dy="0">默认由已安排的 Normal</tspan><tspan x="612.5" dy="24">Scheduler callback 冲刷</tspan></text><path class="d-edge" d="M430 521 H370 V598 H195 V627" marker-end="url(#commit05-passive-branches-arrow)"/><text class="d-muted" x="372" y="579" text-anchor="middle" font-size="18"><tspan x="372" dy="0">是</tspan></text><path class="d-edge d-async" d="M613 575 V627" marker-end="url(#commit05-passive-branches-arrow)"/><text class="d-muted" x="635" y="608" text-anchor="middle" font-size="18"><tspan x="635" dy="0">否</tspan></text><rect class="d-node" x="245" y="771" width="360" height="86" rx="10"/><text class="d-label" x="425.0" y="808.0" text-anchor="middle" font-size="18"><tspan x="425.0" dy="0">passive 全树 unmount → mount</tspan><tspan x="425.0" dy="24">最后释放 root pooled cache</tspan></text><path class="d-edge" d="M195 709 V741 H335 V771" marker-end="url(#commit05-passive-branches-arrow)"/><path class="d-edge d-async" d="M613 709 V741 H515 V771" marker-end="url(#commit05-passive-branches-arrow)"/><text class="d-muted" x="420" y="904" text-anchor="middle" font-size="18"><tspan x="420" dy="0">新 render 前的待办冲刷、layout 派生同步工作也可提前执行 passive。</tspan><tspan x="420" dy="24">此图不以 paint 作为同步/异步分支条件。</tspan></text>
+</svg></div><figcaption>图 05-1 · 概要保留在本页；<a href="14-commit-effects.html#demo-tree">14 页泳道图</a>展开具体回调顺序。这里展示普通 DOM mutation 路径的默认收尾，View Transition 的宿主回调驱动见下文入口说明。虚线表示调度/后续遍历，不表示一定发生在 paint 后。</figcaption></figure>
 <div class="table-wrap"><table><thead><tr><th>阶段</th><th>典型工作</th><th>读到的 current / DOM</th><th>主要 flags</th></tr></thead><tbody>
 <tr><td>before mutation</td><td>getSnapshotBeforeUpdate、失焦前处理</td><td>旧 current，DOM 尚未修改</td><td>Snapshot、BeforeMutationMask</td></tr>
 <tr><td>mutation</td><td>Placement、Deletion、属性/文本更新、可见性、insertion effect</td><td>旧 current，DOM 正变成新树</td><td>Placement、Update、ChildDeletion、MutationMask</td></tr>
 <tr><td>current 切换</td><td><code>root.current = finishedWork</code></td><td>新 current，DOM 已 mutation</td><td>不是 Fiber flag</td></tr>
-<tr><td>layout</td><td>layout effect、class didMount/didUpdate、ref attach、host mount</td><td>新 current 与新 DOM</td><td>Layout、Ref、LayoutMask</td></tr>
-<tr><td>passive</td><td>先 passive unmount，再 passive mount；缓存释放与 nested update</td><td>通常已给过 paint 机会</td><td>Passive、PassiveMask</td></tr>
+<tr><td>layout</td><td>layout effect、class didMount/didUpdate、ref attach、host mount</td><td>新 current 与新 DOM</td><td>Update、Callback、Ref、LayoutMask</td></tr>
+<tr><td>passive</td><td>先 passive unmount，再 passive mount；缓存释放与 nested update</td><td>新 current 与新 DOM；可在 paint 前执行</td><td>Passive、PassiveMask</td></tr>
 </tbody></table></div></section>
 
 <section id="entry"><h2>commitRoot 先把根状态收口</h2><p><code>commitRoot</code> 计算 remaining lanes，合并 render 期间并发进入的更新，调用 <code>markRootFinished</code>，
 清理 callback 状态，并在真正 effect 前安排可能存在的 passive flush。然后才进入 before-mutation 与 pending-effects 状态机。</p>
-<figure class="source"><figcaption><span>删节源码 · ReactFiberWorkLoop.js · mutation 与 current 切换</span><a href="../../react/packages/react-reconciler/src/ReactFiberWorkLoop.js">打开文件</a></figcaption><pre><span class="kw">function</span> <span class="fn">flushMutationEffects</span>() {
+<figure class="source"><figcaption><span>教程伪代码（不可执行）·控制流示意 · ReactFiberWorkLoop.js · 省略阶段与 flags 检查</span><a href="../../react/packages/react-reconciler/src/ReactFiberWorkLoop.js">打开文件</a></figcaption><pre><span class="kw">function</span> <span class="fn">flushMutationEffects</span>() {
   commitMutationEffects(root, finishedWork, lanes);
   resetAfterCommit(root.containerInfo);
 
@@ -49,17 +50,19 @@ React 捕获并调度最近错误边界或根错误处理，但不会回滚已�
 <tr><td>Placement</td><td>找 host parent 与稳定 host sibling，递归插入新 host descendants</td><td>insertBefore / appendChild 对应 HostConfig</td></tr>
 <tr><td>HostComponent Update</td><td>取得 old/new props，调用 <code>commitHostUpdate</code></td><td><code>commitUpdate</code> → updateProperties</td></tr>
 <tr><td>HostText Update</td><td>比较文本并提交</td><td><code>commitTextUpdate</code> 写 nodeValue</td></tr>
-<tr><td>Deletion</td><td>先卸载 effect/ref/生命周期，定位最近 host parent 并删除顶层 host 子树</td><td>removeChild / removeChildFromContainer</td></tr>
+<tr><td>Deletion</td><td>先定位最近 host parent，再卸载同步 effect/ref/生命周期并移除顶层 host 子树</td><td>removeChild / removeChildFromContainer</td></tr>
 <tr><td>Offscreen visibility</td><td>递归隐藏/显示宿主 descendants，维护 effect reconnect 语义</td><td>hideInstance / unhideInstance 等</td></tr>
 </tbody></table></div>
 <div class="callout"><p><strong>为什么删除不是简单 <code>parent.removeChild</code>：</strong>删除子树中可能有 portal、class、hook effect、ref、cache 与隐藏边界。
 reconciler 必须先按 Fiber 语义清理，再让 HostConfig 移除正确宿主根。</p></div></section>
 
 <section id="effects"><h2>effect 顺序：先清旧，再装新</h2>
-<p>每个 effect 节点持有环形 effect list。layout 更新通常先执行上一次 destroy，再执行本次 create；passive 也分 unmount 与 mount 遍历，
-确保同一提交的旧订阅先解除。Deletion 的 passive 清理可能等到后续 passive 阶段，但 Fiber/DOM 关联会在安全窗口断开以便 GC 与事件查询不再误认。</p>
+<p>函数组件的 <code>updateQueue.lastEffect</code> 指向环形 effect 链尾，每个 effect 通过 <code>next</code> 连接。
+普通更新先在 mutation 执行变化项的 layout destroy，再在 layout 执行 create；passive 则先完成整树 unmount，再开始 mount。
+依赖未变的 effect 缺少 <code>HookHasEffect</code>，普通更新不拆装；删除会按 effect 类型清理全部已连接项。
+删除 mutation 只断开删除树根部的 <code>return</code>，为 passive 清理保留子树关系，passive 后才清理其余 Fiber 字段和 DOM 内部关联。</p>
 <div class="grid"><article class="card"><span class="number">LAYOUT</span><h3>同步观察新布局</h3><p><code>useLayoutEffect</code>、class didMount/didUpdate 与 ref attach 在 paint 前执行；其中同步更新可能让 passive 被提前冲刷。</p></article>
-<article class="card"><span class="number">PASSIVE</span><h3>默认不阻塞当前提交</h3><p><code>useEffect</code> 由 Normal Scheduler callback 或后续强制 flush 运行；它可以产生新更新，因此有 nested passive update 保护。</p></article></div></section>
+<article class="card"><span class="number">PASSIVE</span><h3>默认不阻塞当前提交</h3><p><code>useEffect</code> 通常由 Normal Scheduler callback 冲刷。现代根提交包含 SyncLane 时，提交末尾会在当前任务冲刷；新 render 前或同步更新也可能提前冲刷。它可以产生新更新，因此另有 nested passive update 计数。</p></article></div></section>
 
 <section id="refs"><h2>ref：detach 与 attach 分属不同观察窗口</h2><p>更新 ref 时，旧 ref 在 mutation 路径 detach，新的 ref 在 layout attach。
 对象 ref 写入 <code>current</code>；函数 ref 返回的 cleanup 会被保存，下一次 detach 优先调用 cleanup，否则以 null 调用 ref。
@@ -67,13 +70,14 @@ reconciler 必须先按 Fiber 语义清理，再让 HostConfig 移除正确宿�
 
 <section id="errors"><h2>错误隔离：继续遍历，但不假装回滚</h2><ol class="state-list">
 <li><strong>捕获。</strong>生命周期、effect、ref 或 HostConfig 调用抛错时，safe wrapper 记录 source Fiber。</li>
-<li><strong>定位。</strong>沿 return 寻找 class error boundary 或 HostRoot。</li>
+<li><strong>定位。</strong>从调用者传入的最近已挂载祖先寻找 class error boundary 或 HostRoot；删除树内已卸载边界不能接管清理错误。</li>
 <li><strong>排队。</strong>构造 capture update，选择 SyncLane 并重新调度根。</li>
-<li><strong>继续。</strong>当前 commit 尽量完成其余必要清理，避免宿主树永久卡在半阶段状态。</li>
+<li><strong>继续。</strong>cleanup 逐项捕获，失败后仍能清理其余项；create 的 catch 包住同一 Fiber 整条 effect 链，失败会跳过该链剩余 create，外层继续其他 Fiber。</li>
 <li><strong>恢复。</strong>下一轮 render 产生 fallback 或根级空树；已发生的 mutation 不被事务式撤销。</li></ol></section>
 
-<section id="passive"><h2>passive 结束后，根才真正释放本轮缓存</h2><p><code>flushPassiveEffects</code> 降到不高于 DefaultEventPriority，清空 pending root 指针，再执行 passive unmount/mount。
-组件在 effect 中已有机会 retain 所需 cache 后，root pooled cache 才按 remaining lanes 释放。若 effect 调度同步工作，循环会继续 flush，直到没有待处理 passive/sync work。</p></section>
+<section id="passive"><h2>passive 与根缓存怎样收尾</h2><p><code>flushPassiveEffects</code> 把事件优先级设为不高于 DefaultEventPriority，保存本轮 root/lanes，清空 pending 引用，再执行 passive unmount/mount。
+组件有机会 retain 所需 cache 后，外层 finally 按 remaining lanes 释放 root pooled cache；本轮没有 passive 工作时，<code>flushSpawnedWork</code> 直接释放该池。
+若 effect 调度同步工作，<code>flushPassiveEffectsImpl</code> 末尾冲刷同步根；新提交可能再产生 passive，下一次 commit 入口会先处理这些待办。</p></section>
 
 <section id="evidence"><h2>测试证据索引</h2><div class="table-wrap"><table><thead><tr><th>机制</th><th>代表测试</th><th>观察点</th></tr></thead><tbody>
 <tr><td>mutation/layout/passive 顺序</td><td><a href="../../react/packages/react-reconciler/src/__tests__/ReactHooksWithNoopRenderer-test.js">ReactHooksWithNoopRenderer-test.js</a></td><td>create/destroy 日志与 flush 边界</td></tr>

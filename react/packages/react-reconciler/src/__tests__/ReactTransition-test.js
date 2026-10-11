@@ -190,7 +190,7 @@ describe('ReactTransition', () => {
   /**
    * 场景（Given–When–Then）：给定 `useTransition` 的 start 在输入事件外调用；当显示 Async 的
    * transition 挂起；那么先提交 Pending 与旧内容，资源完成后清除 pending 并显示 Async。
-   * 对应机制：hook 的 pending 同步队列与 transition lane 不依赖事件上下文。
+   * 对应机制：Hook 先以较高优先级设置 pending，再将完成状态与目标内容放入 transition；入口不要求输入事件。
    */
   // @gate enableLegacyCache
   it('isPending works even if called from outside an input event', async () => {
@@ -199,6 +199,7 @@ describe('ReactTransition', () => {
     function App() {
       const [show, setShow] = useState(false);
       const [isPending, _start] = useTransition();
+      /** 经此 Hook 的 start 把 show 置 true，先显示 pending，再尝试 Async 内容。 */
       start = () => _start(() => setShow(true));
       return (
         <Suspense fallback={<Text text="Loading..." />}>
@@ -236,7 +237,7 @@ describe('ReactTransition', () => {
 
   /**
    * 场景（Given–When–Then）：给定 A/B 各自拥有 update queue 与独立 Suspense 边界；当两个
-   * transition 先后挂起、B 再先完成；那么并行模式可先提交 B，传统模式因纠缠等 A 后整体提交。
+   * transition 先后挂起、B 再先完成；那么并行模式可先提交 B，非并行模式合选 pending transition lanes，等 A 后整体提交。
    * 验证机制：逐次 resolve 后核对 pending 标记和两个边界的可见输出。
    */
   // @gate enableLegacyCache
@@ -405,8 +406,8 @@ describe('ReactTransition', () => {
 
   /**
    * 场景（Given–When–Then）：给定 A/B 虽有不同 update queue、却共享同一 Suspense 边界；
-   * 当 B 先完成而 A 仍挂起；那么边界层面仍受 A 阻塞，最终 A 完成后两者一致提交。
-   * 对应机制：共享边界的 retry/可见性约束叠加 transition 纠缠。
+   * 当 B 先完成而 A 仍挂起；那么并行模式可提交 B1 并保留 A0/Pending A，非并行模式保留 A0/B0。
+   * A 完成后两种模式都得到 A1/B1；共享边界本身不保证所有 transition 必须一起提交。
    */
   // @gate enableLegacyCache
   it('when multiple transitions update different queues, but suspend the same boundary, they do entangle', async () => {
@@ -521,7 +522,7 @@ describe('ReactTransition', () => {
       </>,
     );
 
-    // 先完成 B，但共享边界仍受 A 阻塞。
+    // 先完成 B；并行模式允许 B1 单独提交，非并行模式仍保留两份旧内容。
     await act(() => {
       resolveText('B: 1');
     });
@@ -579,7 +580,8 @@ describe('ReactTransition', () => {
         const [isContentPending, startContentChange] = useTransition();
         const [label, setLabel] = useState('A');
         const [contents, setContents] = useState('A');
-        update = value => {
+        /** 离散更新 label，同时以 transition 更新 contents；旧内容在新目标挂起时保留。 */
+      update = value => {
           ReactNoop.discreteUpdates(() => {
             setLabel(value);
             startContentChange(() => {
@@ -707,7 +709,8 @@ describe('ReactTransition', () => {
         };
         /** 暴露离散+transition 组合更新器，并渲染 pending 标签与异步内容。 */
         render() {
-          update = value => {
+          /** 离散更新类 state.label，transition 更新同一类队列的 contents，以两字段差异显示 pending。 */
+        update = value => {
             ReactNoop.discreteUpdates(() => {
               this.setState({label: value});
               startTransition(() => {
@@ -1070,7 +1073,7 @@ describe('ReactTransition', () => {
 
   /**
    * 场景（Given–When–Then）：给定旧 refresh 已越过根 begin phase，随后根收到交错的新 transition；
-   * 当旧工作在 Async 挂起；那么本时间片结束前放弃旧剩余 C1，并切换提交完整 A2/B2/C2。
+   * 当旧工作在 Async 挂起；那么下次工作循环重入时放弃旧剩余 C1，并切换提交完整 A2/B2/C2。
    * 对应机制：已完成 beginWork 的父 Fiber 接收 interleaved update 后触发根级中断。
    */
   // @gate enableLegacyCache
@@ -1146,8 +1149,10 @@ describe('ReactTransition', () => {
     function App() {
       const [normalPri, setNormalPri] = useState(0);
       const [transitionPri, setTransitionPri] = useState(0);
+      /** 在 transition 中增加计数，与普通计数更新比较开始前选 lane 和在途续跑的区别。 */
       updateTransitionPri = () =>
         startTransition(() => setTransitionPri(n => n + 1));
+      /** 普通入口增加 normal 计数；调用位置决定它是在 transition 开始前还是时间片之间到达。 */
       updateNormalPri = () => setNormalPri(n => n + 1);
 
       useLayoutEffect(() => {
@@ -1205,7 +1210,9 @@ describe('ReactTransition', () => {
       const [transitionPri, setTransitionPri] = useState(false);
       const [normalPri, setNormalPri] = useState(0);
 
+      /** transition 打开 Async 分支，制造保持旧内容的挂起更新。 */
       updateTransitionPri = () => startTransition(() => setTransitionPri(true));
+      /** 普通入口增加 normal 计数；调用位置决定它是在 transition 开始前还是时间片之间到达。 */
       updateNormalPri = () => setNormalPri(n => n + 1);
 
       useLayoutEffect(() => {
@@ -1275,8 +1282,10 @@ describe('ReactTransition', () => {
     function App() {
       const [transitionPri, setTransitionPri] = useState(0);
       const [normalPri, setNormalPri] = useState(0);
+      /** 在 transition 中增加计数，与普通计数更新比较开始前选 lane 和在途续跑的区别。 */
       updateTransitionPri = () =>
         startTransition(() => setTransitionPri(n => n + 1));
+      /** 普通入口增加 normal 计数；调用位置决定它是在 transition 开始前还是时间片之间到达。 */
       updateNormalPri = () => setNormalPri(n => n + 1);
 
       useLayoutEffect(() => {
@@ -1336,6 +1345,7 @@ describe('ReactTransition', () => {
       const [isPendingB, startTransitionB] = useTransition();
       const [state, setState] = useState(0);
 
+      /** 嵌套两个 Hook 的 start，再更新 state=1；分别跟踪两份 pending 的设置与完成。 */
       update = function () {
         startTransitionA(() => {
           startTransitionB(() => {

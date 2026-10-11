@@ -114,6 +114,7 @@ describe('useMemoCache()', () => {
 
       // `n` 原样传给子组件，作为元素缓存的失效因子。
       const [n, setN] = useState(0);
+      /** 只增加无关的 n，重渲染组件而保持编译缓存的 x 输入不变。 */
       forceUpdate = () => setN(a => a + 1);
 
       const c_0 = x !== cache[0];
@@ -140,7 +141,7 @@ describe('useMemoCache()', () => {
     }
     let data;
     /** 记录收到的 `data` 引用，并通过 mock 调用次数暴露子组件是否重新执行。 */
-    const Text = jest.fn(function Text(props) {
+    const Text = jest.fn(/** 记录子组件本次接收的 data 身份并返回对应文本，调用次数与缓存身份分开断言。 */ function Text(props) {
       data = props.data;
       return data.text;
     });
@@ -222,7 +223,7 @@ describe('useMemoCache()', () => {
     }
     let data;
     /** 捕获 `data` 引用并输出最终 `n`，同时观察组件执行次数。 */
-    const Text = jest.fn(function Text(props) {
+    const Text = jest.fn(/** 记录子组件本次接收的 data 身份并返回对应文本，调用次数与缓存身份分开断言。 */ function Text(props) {
       data = props.data;
       return `${data.text} (n=${props.n})`;
     });
@@ -298,7 +299,7 @@ describe('useMemoCache()', () => {
     }
     let data;
     /** 捕获每次恢复渲染收到的 `data` 引用，并输出当前 `n`。 */
-    const Text = jest.fn(function Text(props) {
+    const Text = jest.fn(/** 记录子组件本次接收的 data 身份并返回对应文本，调用次数与缓存身份分开断言。 */ function Text(props) {
       data = props.data;
       return `${data.text} (n=${props.n})`;
     });
@@ -360,6 +361,7 @@ describe('useMemoCache()', () => {
 
       // `n` 原样传给子组件，作为元素缓存的失效因子。
       const [n, setN] = useState(0);
+      /** 只增加无关的 n，重渲染组件而保持编译缓存的 x 输入不变。 */
       forceUpdate = () => setN(a => a + 1);
       const c_n = n !== cache[1];
       cache[1] = n;
@@ -392,7 +394,7 @@ describe('useMemoCache()', () => {
     }
     let data;
     /** 记录自定义 Hook 返回的对象引用，并暴露最终文本与调用次数。 */
-    const Text = jest.fn(function Text(props) {
+    const Text = jest.fn(/** 记录子组件本次接收的 data 身份并返回对应文本，调用次数与缓存身份分开断言。 */ function Text(props) {
       data = props.data;
       return data.text;
     });
@@ -676,7 +678,7 @@ describe('useMemoCache()', () => {
   /**
    * Given：memo 结果被写入 state，组件仅在结果引用变化时执行渲染阶段 setState。
    * When：分别用编译器 memo cache 产物和标准 `useMemo` 挂载组件。
-   * Then：两种实现都稳定提交一次结果，不因每轮生成新引用而无限重渲染。
+   * Then：两种实现都稳定产出结果，不因每轮生成新引用而无限重渲染。
    *
    * 验证机制：`act` 必须正常收敛，并断言两个独立根都输出 `<div>2</div>`。
    * 对应源码：`useMemoCache()` 的槽位持久化与 `renderWithHooksAgain()` 的重渲染上限路径。
@@ -705,8 +707,7 @@ describe('useMemoCache()', () => {
 
     /** 把指定 memo Hook 包装为会在引用变化时同步 state 的回归测试组件。 */
     function makeComponent(hook) {
-      /** 比较 memo 结果与上一状态，仅在身份变化时安排渲染阶段更新。 */
-      return function Component({value}) {
+      return /** 比较 memo 结果与上一状态，仅在身份变化时安排渲染阶段更新，并输出稳定数组内容。 */ function Component({value}) {
         const state = hook(value);
         const [prevState, setPrevState] = useState(null);
         if (state !== prevState) {

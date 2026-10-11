@@ -20,11 +20,11 @@
           <h1>页面看起来一样，为什么还可能是错的</h1>
           <p class="article-lead">
             Runtime 测试不只比较最终
-            HTML。它还要证明原节点被复用、组件状态没有串位、回调顺序正确，而且一次报错不会让后续更新永远停止。
+            HTML。它还要验证节点复用、组件状态归属、回调顺序，以及具体异常路径的清理与后续恢复。
           </p>
           <div class="hero-meta">
-            <span>结果、身份、顺序、恢复</span
-            ><span>runtime-test + jsdom</span><span>Vitest</span>
+            <span>结果、身份、顺序、恢复</span><span>runtime-test + jsdom</span
+            ><span>Vitest</span>
           </div>
         </div>
 
@@ -32,15 +32,17 @@
           <h2>两个页面截图相同，内部可能完全不同</h2>
           <div class="before-after">
             <div class="plain-section">
-              <span class="scene-label">正确更新</span>
+              <span class="scene-label">身份复用</span>
               <p>
-                旧输入框节点被移动到新位置。焦点、选区、用户正在输入的内容都保留。
+                复用原输入框可保持节点身份与当前
+                value。焦点、选区是否保留还取决于宿主移动操作；本版 DOM 使用
+                insertBefore，移动焦点节点可能失焦。
               </p>
             </div>
             <div class="plain-section">
-              <span class="scene-label">错误更新</span>
+              <span class="scene-label">节点重建</span>
               <p>
-                删除旧输入框，再创建一个看起来相同的新节点。截图一样，但光标和输入状态丢了。
+                删除旧输入框，再创建外观相同的新节点，节点身份已经变化；未同步到应用状态的输入内容可能丢失。
               </p>
             </div>
           </div>
@@ -65,18 +67,22 @@
           <div class="plain-section">
             <span class="scene-label">还有第四类：失败后恢复</span>
             <p>
-              一次 render
-              或事件处理器抛错后，队列标志要被清理，当前组件上下文要恢复，下一次正常状态变化仍然可以更新页面。
+              对
+              render、事件或调度任务的错误，分别检查上下文恢复、队列标志清理与下一次更新。
+              主 job 的 finally 会清理 QUEUED；裸 post
+              回调继续外抛时可能中断后续状态清理，不能把主队列用例推广到所有异常。
             </p>
           </div>
           <h3>测试用例就是一句完整的产品规则</h3>
           <p>
-            <strong>给定：</strong>一个有焦点的 keyed
-            输入框；<strong>当：</strong>列表顺序变化；<strong>那么：</strong>输入框移动到新位置，但仍是原节点并保持焦点。
+            <strong>给定：</strong>一组 keyed
+            输入框；<strong>当：</strong>列表顺序变化；<strong>那么：</strong>同
+            key、同 type 的输入框仍复用原节点，当前 value
+            保留。焦点与选区是独立的浏览器行为，不能由节点身份断言推出。
           </p>
           <div class="reader-check">
             <strong>这比“Diff 应该工作”更有价值。</strong
-            >它说明用户场景、动作、最终结果和必须保留的隐藏状态。
+            >它说明用户场景、动作和必须保持的节点身份。交互状态应另用浏览器断言核对。
           </div>
         </section>
 
@@ -178,10 +184,11 @@
         <section class="article-section prose" id="runtime-test">
           <h2>runtime-test：把宿主平台变成可观察内存树</h2>
           <p>
-            runtime-test 实现与 DOM 等价的 RendererOptions，但节点只是
+            runtime-test 实现 core 所需的内存宿主 RendererOptions，节点是
             JavaScript 对象：Element 保存 tag、props 与 children，Text 保存
             text，insert/remove 修改数组关系。这样 core 算法可在 Node
-            环境中测试，也能精确观察操作。
+            环境中测试，并观察提交操作；焦点、真实事件冒泡和浏览器样式行为由 DOM
+            或 E2E 测试验证。
           </p>
           <pre><code>// 概念化的测试宿主节点
 interface TestElement {
@@ -203,9 +210,11 @@ expect(root.children[1]).toBe(before)</code></pre>
               判断复用，而非只比较相同字符串。
             </li>
             <li>
-              可通过 spy 或自定义 host instrumentation 记录<strong>操作</strong>：
-              区分 insert 是 mount 还是 move，并统计 remove 次数；runtime-test
-              默认公开的是内存树，不是通用操作录像器。
+              内置<strong>操作记录</strong>：render 前调用
+              <code>resetOps()</code>， 之后用
+              <code>dumpOps()</code> 取得并清空记录。已挂载节点移动记为
+              INSERT，内部脱离旧父级不另记
+              REMOVE；结合旧节点身份区分挂载与移动。
             </li>
             <li>
               可构造 <strong>非 DOM 平台</strong>：证明 core 不意外依赖
@@ -324,7 +333,7 @@ function toSpan(content: any) {
 const inner = (c: TestElement) =&gt; serializeInner(c)</code></pre>
           <pre
             data-source-file="vue/packages/runtime-core/__tests__/rendererChildren.spec.ts"
-          ><code>// 测试组：renderer 的 keyed children diff、移动与复用。
+          ><code>// renderer 的 keyed children diff、移动与复用。
 describe('renderer: keyed children', () =&gt; {
   let root: TestElement
   let elm: TestElement
@@ -368,8 +377,8 @@ describe('renderer: keyed children', () =&gt; {
             </p>
             <p>
               <strong>Mechanism：</strong>尾部 key=4 先同步，中段建立 key
-              map；旧 key=1 的新下标破坏单调性，触发 LIS，只移动不在 LIS 中的
-              key=1。
+              map；旧 key=1 将最大新下标设为 2，随后 key=2 映到
+              0，检测出逆序并计算 LIS，最终只移动不在 LIS 中的 key=1。
             </p>
             <p>
               <strong>Source：</strong
@@ -398,9 +407,9 @@ describe('renderer: keyed children', () =&gt; {
         if (nextChild.key != null) {
           if (__DEV__ &amp;&amp; keyToNewIndexMap.has(nextChild.key)) {
             warn(
-              &#96;Duplicate keys found during update:&#96;,
+              `Duplicate keys found during update:`,
               JSON.stringify(nextChild.key),
-              &#96;Make sure keys are unique.&#96;,
+              `Make sure keys are unique.`,
             )
           }
           keyToNewIndexMap.set(nextChild.key, i)
@@ -414,7 +423,7 @@ describe('renderer: keyed children', () =&gt; {
       let moved = false
       // 新下标不再单调递增即说明至少一个复用节点需要移动。
       let maxNewIndexSoFar = 0
-      // &#96;newIndexToOldIndexMap&#96; 按新中段位置保存旧下标 + 1。0 专门表示新节点没有旧节点，
+      // `newIndexToOldIndexMap` 按新中段位置保存旧下标 + 1。0 专门表示新节点没有旧节点，
       // 同一数组随后也作为最长递增子序列输入，找出无需移动的最大稳定集合。
       const newIndexToOldIndexMap = new Array(toBePatched)
       for (i = 0; i &lt; toBePatched; i++) newIndexToOldIndexMap[i] = 0
@@ -430,7 +439,7 @@ describe('renderer: keyed children', () =&gt; {
         if (prevChild.key != null) {
           newIndex = keyToNewIndexMap.get(prevChild.key)
         } else {
-          // 无 key 节点只能线性寻找尚未占用、type 相同的新节点。
+          // 无 key 节点线性寻找尚未占用、type 相同且同样无 key 的新节点。
           for (j = s2; j &lt;= e2; j++) {
             if (
               newIndexToOldIndexMap[j - s2] === 0 &amp;&amp;
@@ -496,7 +505,8 @@ describe('renderer: keyed children', () =&gt; {
             optimized,
           )
         } else if (moved) {
-          // 完全逆序可能没有可保留序列；其他情况仅移动不属于 LIS 的节点。
+          // j &lt; 0 表示 LIS 中可保留的位置已处理完；其余不在 LIS 的节点需要移动。
+          // 非空的完全逆序复用序列仍有长度为 1 的 LIS，可保留一个节点。
           if (j &lt; 0 || i !== increasingNewIndexSequence[j]) {
             move(nextChild, container, anchor, MoveType.REORDER)
           } else {
@@ -742,7 +752,8 @@ pnpm build</code></pre>
           </div>
           <div class="callout">
             文件数和用例数会随提交变化，不把它们当成质量指标。固定在 Vue 3.5.41
-            复核时，请记录实际命令、Node 版本、通过/跳过数量和失败日志；本页更关心每条
+            复核时，请记录实际命令、Node
+            版本、通过/跳过数量和失败日志；本页更关心每条
             测试是否明确观察结果、节点身份、回调顺序或错误后的恢复。
           </div>
         </section>
@@ -851,8 +862,8 @@ pnpm build</code></pre>
         <section class="article-section prose" id="evidence-matrix">
           <h2>每条测试结论去哪里核对</h2>
           <p class="source-note">
-            固定版本实跑：Node v24.5.0，<code>rendererChildren.spec.ts</code> 整文件
-            38 tests passed。
+            固定版本实跑：Node v24.5.0，<code>rendererChildren.spec.ts</code>
+            整文件 38 tests passed。
           </p>
           <div class="table-wrap">
             <table>
@@ -896,19 +907,43 @@ pnpm build</code></pre>
                   <td><a href="#keyed-proof">异常与清理分支</a></td>
                 </tr>
                 <tr>
-                  <td>主队列 job 抛错后仍能再次入队；nextTick 收到 flush 错误</td>
-                  <td><code>scheduler.ts · flushJobs</code> 的主队列 <code>try/finally</code></td>
                   <td>
-                    <code>scheduler.spec.ts · jobs can be re-queued after an error</code>；
+                    主队列 job 抛错后仍能再次入队；nextTick 收到 flush 错误
+                  </td>
+                  <td>
+                    <code>scheduler.ts · flushJobs</code> 的主队列
+                    <code>try/finally</code>
+                  </td>
+                  <td>
+                    <code
+                      >scheduler.spec.ts · jobs can be re-queued after an
+                      error</code
+                    >；
                     <code>nextTick should capture scheduler flush errors</code>
                   </td>
-                  <td><a href="scheduler.html#scheduler-source-proof">主队列恢复与边界</a></td>
+                  <td>
+                    <a href="scheduler.html#scheduler-source-proof"
+                      >主队列恢复与边界</a
+                    >
+                  </td>
                 </tr>
                 <tr>
                   <td>水合前用户已在文本框输入</td>
-                  <td><code>runtime-dom/directives/vModel.ts · vModelText</code> 的 created/mounted 保护</td>
-                  <td><code>hydration.spec.ts · preserves text entered before v-model hydration</code></td>
-                  <td><a href="runtime-dom.html#v-model-flow">DOM → model → VNode → DOM</a></td>
+                  <td>
+                    <code>runtime-dom/directives/vModel.ts · vModelText</code>
+                    的 created/mounted 保护
+                  </td>
+                  <td>
+                    <code
+                      >hydration.spec.ts · preserves text entered before v-model
+                      hydration</code
+                    >
+                  </td>
+                  <td>
+                    <a href="runtime-dom.html#v-model-flow"
+                      >DOM → model → VNode → DOM</a
+                    >
+                  </td>
                 </tr>
               </tbody>
             </table>

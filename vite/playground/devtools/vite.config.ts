@@ -1,4 +1,4 @@
-// no test exists, this should be tested manually
+// 此 DevTools 示例没有自动化用例，供手工检查。
 
 import { defineConfig } from 'vite'
 

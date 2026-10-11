@@ -9,14 +9,14 @@ import { copyDir, emptyDir, normalizePath } from '../utils'
 import { withTrailingSlash } from '../../shared/utils'
 
 /**
- * 在每个 Environment 首次 renderStart 前清理输出目录并复制 publicDir。
+ * 在每个 Environment 首次 write=true 的 renderStart 中清理输出目录并复制 publicDir。
  * watchChange 会解除本轮标记，使下一次 watch 重建重新执行清理策略。
  */
 export function prepareOutDirPlugin(): Plugin {
   const rendered = new Set<Environment>()
   return {
     name: 'vite:prepare-out-dir',
-    /** 监听模式检测到文件变化时，允许下一次 writeBundle 再次清理输出目录。 */
+    /** 文件变化时撤销本环境已准备标记，使下一次写盘构建的 renderStart 重新准备目录。 */
     watchChange() {
       rendered.delete(this.environment)
     },

@@ -14,14 +14,18 @@ let ReactDOMClient;
 let ReactDOMServer;
 let act;
 
-/** `util`：保存当前测试场景复用的夹具、状态或回调。 */
+/** Node util 模块，用 format 按 console.error 的格式串与参数还原快照消息；也用于缺少 owner stack 时的失败说明。 */
 const util = require('util');
-/** `realConsoleError`：保存当前测试场景复用的夹具、状态或回调。 */
+
+/** 保存本套件安装 mock 前的 console.error；afterEach 无论场景结果都还原该引用，避免跨用例污染。 */
 const realConsoleError = console.error;
 
-/** `errorHandler`：封装当前用例复用的操作、回调或断言步骤。 */
+/**
+ * 作为 window error 的空用户监听器注册，使测试显式接收浏览器错误事件并通过 console.error mock 检查诊断；自身不转发消息、不调用 preventDefault。afterEach 移除同一函数引用。
+ * @returns undefined。
+ */
 function errorHandler() {
-  // 转向 console.error 但不要失败测试
+  // 空用户 error 监听器；诊断由本套件的 console.error mock 收集。
 }
 
 describe('ReactDOMServerHydration', () => {
@@ -56,7 +60,11 @@ describe('ReactDOMServerHydration', () => {
     console.error = realConsoleError;
   });
 
-  /** `normalizeCodeLocInfo`：封装当前用例复用的操作、回调或断言步骤。 */
+  /**
+   * 只对字符串把 at/in 栈帧中的路径、行号等位置统一成 (at **)，保留组件名；其他类型原样返回，避免环境路径干扰快照。
+   * @param str - 待规范化的字符串或其他消息参数。
+   * @returns 规范化字符串或原值。
+   */
   function normalizeCodeLocInfo(str) {
     return typeof str === 'string'
       ? str.replace(/\n +(?:at|in) ([\S]+)[^\n]*/g, function (m, name) {
@@ -65,7 +73,12 @@ describe('ReactDOMServerHydration', () => {
       : str;
   }
 
-  /** `formatMessage`：封装当前用例复用的操作、回调或断言步骤。 */
+  /**
+   * 按 console.error 调用索引读取同步采集的 owner stack；缺少对应记录立即抛错，避免误配。Error 消息另行呈现 cause（若为 Error）；格式串参数则规范化末项栈信息后由 util.format 拼接，最后附 Owner Stack。
+   * @param args - 某一次 console.error 的参数数组。
+   * @param index - 该调用在 mock.calls 中的索引。
+   * @returns 用于快照的完整消息字符串。
+   */
   function formatMessage(args, index) {
     const ownerStack = ownerStacks[index];
 
@@ -105,12 +118,19 @@ describe('ReactDOMServerHydration', () => {
     );
   }
 
-  /** `formatConsoleErrors`：封装当前用例复用的操作、回调或断言步骤。 */
+  /**
+   * 将全部 console.error 调用按索引交给 formatMessage，保留和 ownerStacks 的一一对应，再过滤假值。
+   * @returns 诊断字符串数组；配对缺失时由 formatMessage 抛错。
+   */
   function formatConsoleErrors() {
     return console.error.mock.calls.map(formatMessage).filter(Boolean);
   }
 
-  /** `testMismatch`：封装当前用例复用的操作、回调或断言步骤。 */
+  /**
+   * 先用 false 标志 renderToString 并放入 container，再在同步 act 中用 true 标志 hydrateRoot；收集格式化诊断作为断言输入，不额外比较最终 DOM。beforeEach 重置日志并建容器，afterEach 恢复 mock/监听器并移除容器。
+   * @param Mismatch - 根据 isClient 产生两端测试输入的组件。
+   * @returns 当前 console.error 的格式化消息数组。
+   */
   function testMismatch(Mismatch) {
     const htmlString = ReactDOMServer.renderToString(
       <Mismatch isClient={false} />,
@@ -123,17 +143,16 @@ describe('ReactDOMServerHydration', () => {
   }
 
   describe('text mismatch', () => {
+    /** Given：main 的服务端文本为 server，客户端为 client；When：DEV 门控下，先以 isClient=false 服务端输出，再用 isClient=true hydration；Then：日志快照为 text mismatch，差异 +client/-server，Owner Stack 从 main 指向 Mismatch。目的：验证文本差异和错误拥有者。 */
     // @gate __DEV__
-    /**
-     * 代表场景（Given–When–Then）：
-     * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-     * When 执行「warns when client and server render different text」描述的渲染或交互；
-     * Then 通过本用例的 DOM、日志或调度断言确认行为。
-     *
-     * 验证机制：断言对应 ReactDOMRoot.hydrateRoot 的容器认领与事件重放路径。
-     */
+
     it('warns when client and server render different text', () => {
-      /** `Mismatch`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /**
+       * 在 parent/main 层级只改变 server/client 文本，让差异拥有者定位到 main。
+       * @param props - isClient 选择客户端 true 或服务端 false 输入。
+       * @returns 本用例用于服务端输出和客户端 hydration 的元素树。
+       */
       function Mismatch({isClient}) {
         return (
           <div className="parent">
@@ -167,11 +186,17 @@ describe('ReactDOMServerHydration', () => {
           ]
         `);
     });
+    /** Given：两段文本都包含 nbsp 实体，仅 client/server 后缀不同；标题 checksum 是历史名称；When：DEV 门控下，先以 isClient=false 服务端输出，再用 isClient=true hydration；Then：快照保留解析后的不换行空格，并显示 client/server 文本差异与 div 拥有者。目的：验证错误显示实体解析后的文本，此输入没有 checksum 计算。 */
 
     // @gate __DEV__
-    /** 测试场景：验证「warns when escaping on a checksum mismatch」描述的渲染、交互或错误处理结果。 */
+
     it('warns when escaping on a checksum mismatch', () => {
-      /** `Mismatch`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /**
+       * 返回包含同一 nbsp 实体的两段文本，只按 isClient 改后缀；测试的是实体解析后的消息文字。
+       * @param props - isClient 选择客户端 true 或服务端 false 输入。
+       * @returns 本用例用于服务端输出和客户端 hydration 的元素树。
+       */
       function Mismatch({isClient}) {
         if (isClient) {
           return (
@@ -210,11 +235,17 @@ describe('ReactDOMServerHydration', () => {
         `);
       /* eslint-enable no-irregular-whitespace */
     });
+    /** Given：main 的 __html 分别为 span server/client；When：DEV 门控下，先以 isClient=false 服务端输出，再用 isClient=true hydration；Then：属性告警快照展示 dangerouslySetInnerHTML 对象的 __html 差异，Owner Stack 从 main 开始。目的：验证内联 HTML 差异采用属性告警格式。 */
 
     // @gate __DEV__
-    /** 测试场景：验证「warns when client and server render different html」描述的渲染、交互或错误处理结果。 */
+
     it('warns when client and server render different html', () => {
-      /** `Mismatch`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /**
+       * 保持 main 结构，只改变 dangerouslySetInnerHTML.__html 中 span 的文字，触发属性级诊断。
+       * @param props - isClient 选择客户端 true 或服务端 false 输入。
+       * @returns 本用例用于服务端输出和客户端 hydration 的元素树。
+       */
       function Mismatch({isClient}) {
         return (
           <div className="parent">
@@ -262,10 +293,16 @@ describe('ReactDOMServerHydration', () => {
   });
 
   describe('attribute mismatch', () => {
+    /** Given：main 的 className 从 child server 变为 child client，dir 从 rtl 变为 ltr；When：DEV 门控下，先以 isClient=false 服务端输出，再用 isClient=true hydration；Then：单个告警快照同时显示两个属性的正负差异与 main 拥有者。目的：验证多个属性差异聚合。 */
     // @gate __DEV__
-    /** 测试场景：验证「warns when client and server render different attributes」描述的渲染、交互或错误处理结果。 */
+
     it('warns when client and server render different attributes', () => {
-      /** `Mismatch`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /**
+       * 同时改变 main 的 className 和 dir，让多个属性差异汇入同一消息。
+       * @param props - isClient 选择客户端 true 或服务端 false 输入。
+       * @returns 本用例用于服务端输出和客户端 hydration 的元素树。
+       */
       function Mismatch({isClient}) {
         return (
           <div className="parent">
@@ -305,11 +342,17 @@ describe('ReactDOMServerHydration', () => {
         ]
       `);
     });
+    /** Given：服务端没有 tabIndex/dir，客户端提供 1/ltr；When：DEV 门控下，先以 isClient=false 服务端输出，再用 isClient=true hydration；Then：快照显示 +tabIndex={1}/-tabIndex={null} 与 +dir=ltr/-dir={null}。目的：验证客户端额外属性与服务端缺省值的显示。 */
 
     // @gate __DEV__
-    /** 测试场景：验证「warns when client renders extra attributes」描述的渲染、交互或错误处理结果。 */
+
     it('warns when client renders extra attributes', () => {
-      /** `Mismatch`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /**
+       * 仅客户端提供 tabIndex=1 与 dir=ltr；服务端 null 不输出这两个属性。
+       * @param props - isClient 选择客户端 true 或服务端 false 输入。
+       * @returns 本用例用于服务端输出和客户端 hydration 的元素树。
+       */
       function Mismatch({isClient}) {
         return (
           <div className="parent">
@@ -351,11 +394,17 @@ describe('ReactDOMServerHydration', () => {
         ]
       `);
     });
+    /** Given：服务端提供 tabIndex=1、dir=rtl，客户端均为 null；When：DEV 门控下，先以 isClient=false 服务端输出，再用 isClient=true hydration；Then：快照以服务端字符串 tabIndex=1/dir=rtl 对比客户端 null。目的：验证服务端额外属性的值类型与删除显示。 */
 
     // @gate __DEV__
-    /** 测试场景：验证「warns when server renders extra attributes」描述的渲染、交互或错误处理结果。 */
+
     it('warns when server renders extra attributes', () => {
-      /** `Mismatch`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /**
+       * 仅服务端提供 tabIndex=1 与 dir=rtl；客户端 null 用于缺失属性对比。
+       * @param props - isClient 选择客户端 true 或服务端 false 输入。
+       * @returns 本用例用于服务端输出和客户端 hydration 的元素树。
+       */
       function Mismatch({isClient}) {
         return (
           <div className="parent">
@@ -397,11 +446,17 @@ describe('ReactDOMServerHydration', () => {
         ]
       `);
     });
+    /** Given：服务端只有 dir=rtl，客户端只有 tabIndex=1；When：DEV 门控下，先以 isClient=false 服务端输出，再用 isClient=true hydration；Then：同一快照列出新增 tabIndex 和缺失 dir。目的：验证两端各自额外属性可以共同展示。 */
 
     // @gate __DEV__
-    /** 测试场景：验证「warns when both client and server render extra attributes」描述的渲染、交互或错误处理结果。 */
+
     it('warns when both client and server render extra attributes', () => {
-      /** `Mismatch`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /**
+       * 客户端只提供 tabIndex，服务端只提供 dir，覆盖两端各自新增属性。
+       * @param props - isClient 选择客户端 true 或服务端 false 输入。
+       * @returns 本用例用于服务端输出和客户端 hydration 的元素树。
+       */
       function Mismatch({isClient}) {
         return (
           <div className="parent">
@@ -443,11 +498,17 @@ describe('ReactDOMServerHydration', () => {
         ]
       `);
     });
+    /** Given：服务端 opacity=0，客户端 opacity=1；When：DEV 门控下，先以 isClient=false 服务端输出，再用 isClient=true hydration；Then：快照将客户端数字 1 与 DOM 读取的服务端字符串 0 放在 style 对象差异中。目的：验证 style 差异的读取与展示形式。 */
 
     // @gate __DEV__
-    /** 测试场景：验证「warns when client and server render different styles」描述的渲染、交互或错误处理结果。 */
+
     it('warns when client and server render different styles', () => {
-      /** `Mismatch`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /**
+       * 把 opacity 从服务端数字 0 改成客户端数字 1；诊断需区分客户端对象值与服务端 DOM 属性读取值。
+       * @param props - isClient 选择客户端 true 或服务端 false 输入。
+       * @returns 本用例用于服务端输出和客户端 hydration 的元素树。
+       */
       function Mismatch({isClient}) {
         return (
           <div className="parent">
@@ -488,31 +549,53 @@ describe('ReactDOMServerHydration', () => {
         ]
       `);
     });
+    /** Given：Left/Middle/Right 三个分支的 className 都变化，Left 另有 Indirection；When：DEV 门控下，先以 isClient=false 服务端输出，再用 isClient=true hydration；Then：一条属性告警包含三个差异，Owner Stack 为 div→LeftMismatch→LeftIndirection→App。目的：验证聚合错误的拥有者选取深度优先遇到的首个差异 Fiber。 */
 
     // @gate __DEV__
-    /** 测试场景：验证「picks the DFS-first Fiber as the error Owner」描述的渲染、交互或错误处理结果。 */
+
     it('picks the DFS-first Fiber as the error Owner', () => {
-      /** `LeftMismatch`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /**
+       * 左侧 div 的 className 按两端变化，提供深度优先首次属性差异。
+       * @param props - isClient 选择客户端 true 或服务端 false 输入。
+       * @returns 本用例用于服务端输出和客户端 hydration 的元素树。
+       */
       function LeftMismatch({isClient}) {
         return <div className={isClient ? 'client' : 'server'} />;
       }
 
-      /** `LeftIndirection`：封装当前用例复用的操作、回调或断言步骤。 */
+      /**
+       * 透传 isClient 到 LeftMismatch，增加首个差异节点的组件拥有者层级。
+       * @param props - isClient 选择客户端 true 或服务端 false 输入。
+       * @returns 本用例用于服务端输出和客户端 hydration 的元素树。
+       */
       function LeftIndirection({isClient}) {
         return <LeftMismatch isClient={isClient} />;
       }
 
-      /** `MiddleMismatch`：封装当前用例复用的操作、回调或断言步骤。 */
+      /**
+       * 中间 span 同样改变 className，让聚合消息有第二个差异但不成为错误拥有者。
+       * @param props - isClient 选择客户端 true 或服务端 false 输入。
+       * @returns 本用例用于服务端输出和客户端 hydration 的元素树。
+       */
       function MiddleMismatch({isClient}) {
         return <span className={isClient ? 'client' : 'server'} />;
       }
 
-      /** `RightMisMatch`：封装当前用例复用的操作、回调或断言步骤。 */
+      /**
+       * 右侧 p 改变 className，提供第三个聚合差异。
+       * @param props - isClient 选择客户端 true 或服务端 false 输入。
+       * @returns 本用例用于服务端输出和客户端 hydration 的元素树。
+       */
       function RightMisMatch({isClient}) {
         return <p className={isClient ? 'client' : 'server'} />;
       }
 
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+      /**
+       * 按 LeftIndirection、MiddleMismatch、RightMisMatch 的顺序返回兄弟分支，使首个深度优先差异的拥有者可确定。
+       * @param props - isClient 选择客户端 true 或服务端 false 输入。
+       * @returns 本用例用于服务端输出和客户端 hydration 的元素树。
+       */
       function App({isClient}) {
         return (
           <>
@@ -565,7 +648,11 @@ describe('ReactDOMServerHydration', () => {
 
     describe('nonce', () => {
       // nonce 属于 HTMLOrSVGElement；覆盖若干通过 getValueForAttribute 水合属性的宿主标签。
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /**
+       * 生成固定 r4nd0m nonce 的脚本、样式、资源、媒体、表单与自定义元素；忽略 testMismatch 传入的 isClient，保证两端 nonce 相同。
+       * @returns nonce 属性匹配的 div 树。
+       */
       function App() {
         return (
           <div>
@@ -587,9 +674,10 @@ describe('ReactDOMServerHydration', () => {
           </div>
         );
       }
+      /** Given：各类标签 nonce 相同；mock getAttribute 对 nonce 返回空串、其他属性按原方法读取；When：DEV 门控下，先以 isClient=false 服务端输出，再用 isClient=true hydration；Then：显式断言 script.getAttribute 为空而 .nonce 为 r4nd0m，随后 testMismatch 返回空日志数组。目的：验证 CSP 隐藏内容属性时仍可通过 nonce property 匹配。 */
 
       // @gate __DEV__
-      /** 测试场景：验证「does not warn when nonce matches and CSP hides getAttribute」描述的渲染、交互或错误处理结果。 */
+
       it('does not warn when nonce matches and CSP hides getAttribute', () => {
         // 启用 CSP 时，浏览器会隐藏 nonce 内容属性：getAttribute("nonce") 返回空字符串，但 `.nonce`
         // 仍可读取。JSDOM 未实现该行为，因此在此场景中模拟它。
@@ -615,9 +703,10 @@ describe('ReactDOMServerHydration', () => {
 
         expect(testMismatch(App)).toEqual([]);
       });
+      /** Given：相同 nonce 的各类标签采用未模拟隐藏的 getAttribute；When：DEV 门控下，先以 isClient=false 服务端输出，再用 isClient=true hydration；Then：script 内容属性和 .nonce 均为 r4nd0m，testMismatch 返回空日志数组。目的：验证正常 nonce 属性匹配不告警。 */
 
       // @gate __DEV__
-      /** 测试场景：验证「does not warn when nonce matches without CSP hiding」描述的渲染、交互或错误处理结果。 */
+
       it('does not warn when nonce matches without CSP hiding', () => {
         const htmlString = ReactDOMServer.renderToString(<App />);
         container.innerHTML = htmlString;
@@ -633,10 +722,16 @@ describe('ReactDOMServerHydration', () => {
 
   describe('extra nodes on the client', () => {
     describe('extra elements on the client', () => {
+      /** Given：服务端 parent 为空，客户端多出唯一 main；When：DEV 门控下，先以 isClient=false 服务端输出，再用 isClient=true hydration；Then：快照 +main className=only，Owner Stack 从 main 开始。目的：验证客户端唯一元素缺失时的差异。 */
       // @gate __DEV__
-      /** 测试场景：验证「warns when client renders an extra element as only child」描述的渲染、交互或错误处理结果。 */
+
       it('warns when client renders an extra element as only child', () => {
-        /** `Mismatch`：封装当前用例复用的操作、回调或断言步骤。 */
+
+        /**
+         * 仅客户端在空 parent 中加入唯一 main。
+         * @param props - isClient 选择客户端 true 或服务端 false 输入。
+         * @returns 本用例用于服务端输出和客户端 hydration 的元素树。
+         */
         function Mismatch({isClient}) {
           return (
             <div className="parent">
@@ -668,11 +763,17 @@ describe('ReactDOMServerHydration', () => {
           ]
         `);
       });
+      /** Given：服务端有 main/footer，客户端在其前加入 header；When：DEV 门控下，先以 isClient=false 服务端输出，再用 isClient=true hydration；Then：快照 +header/-main 后省略剩余内容，拥有者为 header。目的：验证客户端首部插入导致首次位置不匹配。 */
 
       // @gate __DEV__
-      /** 测试场景：验证「warns when client renders an extra element in the beginning」描述的渲染、交互或错误处理结果。 */
+
       it('warns when client renders an extra element in the beginning', () => {
-        /** `Mismatch`：封装当前用例复用的操作、回调或断言步骤。 */
+
+        /**
+         * 仅客户端在已有 main/footer 前加入 header。
+         * @param props - isClient 选择客户端 true 或服务端 false 输入。
+         * @returns 本用例用于服务端输出和客户端 hydration 的元素树。
+         */
         function Mismatch({isClient}) {
           return (
             <div className="parent">
@@ -708,11 +809,17 @@ describe('ReactDOMServerHydration', () => {
           ]
         `);
       });
+      /** Given：服务端有 header/footer，客户端在两者间加入 main；When：DEV 门控下，先以 isClient=false 服务端输出，再用 isClient=true hydration；Then：快照保留 header，并显示 +main/-footer，拥有者为 main。目的：验证客户端中间插入的首次差异。 */
 
       // @gate __DEV__
-      /** 测试场景：验证「warns when client renders an extra element in the middle」描述的渲染、交互或错误处理结果。 */
+
       it('warns when client renders an extra element in the middle', () => {
-        /** `Mismatch`：封装当前用例复用的操作、回调或断言步骤。 */
+
+        /**
+         * 仅客户端在 header/footer 中间加入 main。
+         * @param props - isClient 选择客户端 true 或服务端 false 输入。
+         * @returns 本用例用于服务端输出和客户端 hydration 的元素树。
+         */
         function Mismatch({isClient}) {
           return (
             <div className="parent">
@@ -749,11 +856,17 @@ describe('ReactDOMServerHydration', () => {
           ]
         `);
       });
+      /** Given：服务端有 header/main，客户端末尾增加 footer；When：DEV 门控下，先以 isClient=false 服务端输出，再用 isClient=true hydration；Then：快照 +footer，拥有者为 footer。目的：验证客户端尾部额外元素。 */
 
       // @gate __DEV__
-      /** 测试场景：验证「warns when client renders an extra element in the end」描述的渲染、交互或错误处理结果。 */
+
       it('warns when client renders an extra element in the end', () => {
-        /** `Mismatch`：封装当前用例复用的操作、回调或断言步骤。 */
+
+        /**
+         * 仅客户端在已有 header/main 后加入 footer。
+         * @param props - isClient 选择客户端 true 或服务端 false 输入。
+         * @returns 本用例用于服务端输出和客户端 hydration 的元素树。
+         */
         function Mismatch({isClient}) {
           return (
             <div className="parent">
@@ -792,10 +905,16 @@ describe('ReactDOMServerHydration', () => {
     });
 
     describe('extra text nodes on the client', () => {
+      /** Given：服务端 parent 为空，客户端唯一文本为 only；When：DEV 门控下，先以 isClient=false 服务端输出，再用 isClient=true hydration；Then：text mismatch 快照显示 +only 与服务端空文本，拥有者为 div。目的：验证直接文本内容路径的缺失差异。 */
       // @gate __DEV__
-      /** 测试场景：验证「warns when client renders an extra text node as only child」描述的渲染、交互或错误处理结果。 */
+
       it('warns when client renders an extra text node as only child', () => {
-        /** `Mismatch`：封装当前用例复用的操作、回调或断言步骤。 */
+
+        /**
+         * 仅客户端向空 parent 提供直接文本 only。
+         * @param props - isClient 选择客户端 true 或服务端 false 输入。
+         * @returns 本用例用于服务端输出和客户端 hydration 的元素树。
+         */
         function Mismatch({isClient}) {
           return <div className="parent">{isClient && 'only'}</div>;
         }
@@ -824,11 +943,17 @@ describe('ReactDOMServerHydration', () => {
             ]
           `);
       });
+      /** Given：标题为 beginning，但实际客户端 second 文本位于 header 与 footer 之间；When：DEV 门控下，先以 isClient=false 服务端输出，再用 isClient=true hydration；Then：HTML mismatch 快照显示 +second/-footer，拥有者为 div。目的：按真实输入验证中间文本插入，避免由标题误推位置。 */
 
       // @gate __DEV__
-      /** 测试场景：验证「warns when client renders an extra text node in the beginning」描述的渲染、交互或错误处理结果。 */
+
       it('warns when client renders an extra text node in the beginning', () => {
-        /** `Mismatch`：封装当前用例复用的操作、回调或断言步骤。 */
+
+        /**
+         * 仅客户端在 header/footer 之间加入 second；实际是中间位置，虽然测试标题为 beginning。
+         * @param props - isClient 选择客户端 true 或服务端 false 输入。
+         * @returns 本用例用于服务端输出和客户端 hydration 的元素树。
+         */
         function Mismatch({isClient}) {
           return (
             <div className="parent">
@@ -865,11 +990,17 @@ describe('ReactDOMServerHydration', () => {
           ]
         `);
       });
+      /** Given：标题为 middle，但实际客户端 first 文本位于 main/footer 之前；When：DEV 门控下，先以 isClient=false 服务端输出，再用 isClient=true hydration；Then：HTML mismatch 快照显示 +first/-main，拥有者为 div。目的：按真实输入验证首部文本插入。 */
 
       // @gate __DEV__
-      /** 测试场景：验证「warns when client renders an extra text node in the middle」描述的渲染、交互或错误处理结果。 */
+
       it('warns when client renders an extra text node in the middle', () => {
-        /** `Mismatch`：封装当前用例复用的操作、回调或断言步骤。 */
+
+        /**
+         * 仅客户端在 main/footer 之前加入 first；实际是首部位置，虽然标题为 middle。
+         * @param props - isClient 选择客户端 true 或服务端 false 输入。
+         * @returns 本用例用于服务端输出和客户端 hydration 的元素树。
+         */
         function Mismatch({isClient}) {
           return (
             <div className="parent">
@@ -905,11 +1036,17 @@ describe('ReactDOMServerHydration', () => {
           ]
         `);
       });
+      /** Given：服务端已有 header/main，客户端在末尾加入 third 文本；When：DEV 门控下，先以 isClient=false 服务端输出，再用 isClient=true hydration；Then：快照保留已有元素并显示 +third，拥有者为 div。目的：验证尾部文本插入的显示。 */
 
       // @gate __DEV__
-      /** 测试场景：验证「warns when client renders an extra text node in the end」描述的渲染、交互或错误处理结果。 */
+
       it('warns when client renders an extra text node in the end', () => {
-        /** `Mismatch`：封装当前用例复用的操作、回调或断言步骤。 */
+
+        /**
+         * 仅客户端在 header/main 之后加入尾部文本 third。
+         * @param props - isClient 选择客户端 true 或服务端 false 输入。
+         * @returns 本用例用于服务端输出和客户端 hydration 的元素树。
+         */
         function Mismatch({isClient}) {
           return (
             <div className="parent">
@@ -950,10 +1087,16 @@ describe('ReactDOMServerHydration', () => {
 
   describe('extra nodes on the server', () => {
     describe('extra elements on the server', () => {
+      /** Given：服务端 parent 唯一子元素为 main，客户端 parent 为空；When：DEV 门控下，先以 isClient=false 服务端输出，再用 isClient=true hydration；Then：HTML mismatch 快照显示 -main，拥有者为 div。目的：验证服务端唯一额外元素。 */
       // @gate __DEV__
-      /** 测试场景：验证「warns when server renders an extra element as only child」描述的渲染、交互或错误处理结果。 */
+
       it('warns when server renders an extra element as only child', () => {
-        /** `Mismatch`：封装当前用例复用的操作、回调或断言步骤。 */
+
+        /**
+         * 仅服务端在 parent 中保留唯一 main。
+         * @param props - isClient 选择客户端 true 或服务端 false 输入。
+         * @returns 本用例用于服务端输出和客户端 hydration 的元素树。
+         */
         function Mismatch({isClient}) {
           return (
             <div className="parent">
@@ -985,11 +1128,17 @@ describe('ReactDOMServerHydration', () => {
           ]
         `);
       });
+      /** Given：服务端在 main/footer 前另有 header，客户端省略 header；When：DEV 门控下，先以 isClient=false 服务端输出，再用 isClient=true hydration；Then：快照 +main/-header 并省略后续内容，拥有者为 main。目的：验证服务端首部元素导致后续匹配错位。 */
 
       // @gate __DEV__
-      /** 测试场景：验证「warns when server renders an extra element in the beginning」描述的渲染、交互或错误处理结果。 */
+
       it('warns when server renders an extra element in the beginning', () => {
-        /** `Mismatch`：封装当前用例复用的操作、回调或断言步骤。 */
+
+        /**
+         * 仅服务端在 main/footer 前加入 header。
+         * @param props - isClient 选择客户端 true 或服务端 false 输入。
+         * @returns 本用例用于服务端输出和客户端 hydration 的元素树。
+         */
         function Mismatch({isClient}) {
           return (
             <div className="parent">
@@ -1025,11 +1174,17 @@ describe('ReactDOMServerHydration', () => {
           ]
         `);
       });
+      /** Given：服务端在 header/footer 间另有 main，客户端省略 main；When：DEV 门控下，先以 isClient=false 服务端输出，再用 isClient=true hydration；Then：快照保留 header，显示 +footer/-main，拥有者为 footer。目的：验证服务端中间元素的首次差异。 */
 
       // @gate __DEV__
-      /** 测试场景：验证「warns when server renders an extra element in the middle」描述的渲染、交互或错误处理结果。 */
+
       it('warns when server renders an extra element in the middle', () => {
-        /** `Mismatch`：封装当前用例复用的操作、回调或断言步骤。 */
+
+        /**
+         * 仅服务端在 header/footer 之间加入 main。
+         * @param props - isClient 选择客户端 true 或服务端 false 输入。
+         * @returns 本用例用于服务端输出和客户端 hydration 的元素树。
+         */
         function Mismatch({isClient}) {
           return (
             <div className="parent">
@@ -1065,11 +1220,17 @@ describe('ReactDOMServerHydration', () => {
           ]
         `);
       });
+      /** Given：服务端在 header/main 后另有 footer，客户端省略 footer；When：DEV 门控下，先以 isClient=false 服务端输出，再用 isClient=true hydration；Then：快照显示 -footer，拥有者为 div。目的：验证未消费的服务端尾元素。 */
 
       // @gate __DEV__
-      /** 测试场景：验证「warns when server renders an extra element in the end」描述的渲染、交互或错误处理结果。 */
+
       it('warns when server renders an extra element in the end', () => {
-        /** `Mismatch`：封装当前用例复用的操作、回调或断言步骤。 */
+
+        /**
+         * 仅服务端在 header/main 后加入 footer。
+         * @param props - isClient 选择客户端 true 或服务端 false 输入。
+         * @returns 本用例用于服务端输出和客户端 hydration 的元素树。
+         */
         function Mismatch({isClient}) {
           return (
             <div className="parent">
@@ -1106,10 +1267,16 @@ describe('ReactDOMServerHydration', () => {
     });
 
     describe('extra text nodes on the server', () => {
+      /** Given：服务端 parent 唯一子节点是 only 文本，客户端为空；When：DEV 门控下，先以 isClient=false 服务端输出，再用 isClient=true hydration；Then：HTML mismatch 快照显示 -only，拥有者为 div。目的：验证服务端额外直接文本的尾节点诊断。 */
       // @gate __DEV__
-      /** 测试场景：验证「warns when server renders an extra text node as only child」描述的渲染、交互或错误处理结果。 */
+
       it('warns when server renders an extra text node as only child', () => {
-        /** `Mismatch`：封装当前用例复用的操作、回调或断言步骤。 */
+
+        /**
+         * 仅服务端向 parent 提供唯一文本 only；客户端空树留下多余服务端文本。
+         * @param props - isClient 选择客户端 true 或服务端 false 输入。
+         * @returns 本用例用于服务端输出和客户端 hydration 的元素树。
+         */
         function Mismatch({isClient}) {
           return <div className="parent">{!isClient && 'only'}</div>;
         }
@@ -1137,11 +1304,17 @@ describe('ReactDOMServerHydration', () => {
           ]
         `);
       });
+      /** Given：服务端在 main/footer 前有 first 文本，客户端省略；When：DEV 门控下，先以 isClient=false 服务端输出，再用 isClient=true hydration；Then：快照 +main/-first 并省略剩余内容，拥有者为 main。目的：验证服务端首部文本与客户端元素冲突。 */
 
       // @gate __DEV__
-      /** 测试场景：验证「warns when server renders an extra text node in the beginning」描述的渲染、交互或错误处理结果。 */
+
       it('warns when server renders an extra text node in the beginning', () => {
-        /** `Mismatch`：封装当前用例复用的操作、回调或断言步骤。 */
+
+        /**
+         * 仅服务端在 main/footer 前加入 first 文本。
+         * @param props - isClient 选择客户端 true 或服务端 false 输入。
+         * @returns 本用例用于服务端输出和客户端 hydration 的元素树。
+         */
         function Mismatch({isClient}) {
           return (
             <div className="parent">
@@ -1177,11 +1350,17 @@ describe('ReactDOMServerHydration', () => {
           ]
         `);
       });
+      /** Given：服务端在 header/footer 间有 second 文本，客户端省略；When：DEV 门控下，先以 isClient=false 服务端输出，再用 isClient=true hydration；Then：快照保留 header，显示 +footer/-second，拥有者为 footer。目的：验证服务端中间文本的差异。 */
 
       // @gate __DEV__
-      /** 测试场景：验证「warns when server renders an extra text node in the middle」描述的渲染、交互或错误处理结果。 */
+
       it('warns when server renders an extra text node in the middle', () => {
-        /** `Mismatch`：封装当前用例复用的操作、回调或断言步骤。 */
+
+        /**
+         * 仅服务端在 header/footer 间加入 second 文本。
+         * @param props - isClient 选择客户端 true 或服务端 false 输入。
+         * @returns 本用例用于服务端输出和客户端 hydration 的元素树。
+         */
         function Mismatch({isClient}) {
           return (
             <div className="parent">
@@ -1217,11 +1396,17 @@ describe('ReactDOMServerHydration', () => {
           ]
         `);
       });
+      /** Given：服务端在 header/main 后有 third 文本，客户端省略；When：DEV 门控下，先以 isClient=false 服务端输出，再用 isClient=true hydration；Then：快照显示 -third，拥有者为 div。目的：验证服务端尾部额外文本。 */
 
       // @gate __DEV__
-      /** 测试场景：验证「warns when server renders an extra text node in the end」描述的渲染、交互或错误处理结果。 */
+
       it('warns when server renders an extra text node in the end', () => {
-        /** `Mismatch`：封装当前用例复用的操作、回调或断言步骤。 */
+
+        /**
+         * 仅服务端在 header/main 后加入 third 文本。
+         * @param props - isClient 选择客户端 true 或服务端 false 输入。
+         * @returns 本用例用于服务端输出和客户端 hydration 的元素树。
+         */
         function Mismatch({isClient}) {
           return (
             <div className="parent">
@@ -1260,15 +1445,25 @@ describe('ReactDOMServerHydration', () => {
 
   describe('special nodes', () => {
     describe('Suspense', () => {
-      /** `Never`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /**
+       * 每次调用抛出新建且从不 resolve 的 Promise，迫使对应 Suspense 进入 fallback；用例没有恢复此 Promise 的协议。
+       * @returns 不返回；始终挂起。
+       */
       function Never() {
         throw new Promise(resolve => {});
       }
+      /** Given：服务端 parent 为空，客户端加入已完成主内容的 Suspense/main；When：DEV 门控下，先以 isClient=false 服务端输出，再用 isClient=true hydration；Then：快照显示 +Suspense fallback=p，拥有者为 Suspense。目的：验证客户端额外完成边界以边界节点表示。 */
 
       // @gate __DEV__
-      /** 测试场景：验证「warns when client renders an extra Suspense node in content mode」描述的渲染、交互或错误处理结果。 */
+
       it('warns when client renders an extra Suspense node in content mode', () => {
-        /** `Mismatch`：封装当前用例复用的操作、回调或断言步骤。 */
+
+        /**
+         * 仅客户端加入包含就绪 main 的 Suspense，服务端 parent 为空。
+         * @param props - isClient 选择客户端 true 或服务端 false 输入。
+         * @returns 本用例用于服务端输出和客户端 hydration 的元素树。
+         */
         function Mismatch({isClient}) {
           return (
             <div className="parent">
@@ -1304,11 +1499,17 @@ describe('ReactDOMServerHydration', () => {
           ]
         `);
       });
+      /** Given：服务端包含已完成 Suspense/main，客户端 parent 为空；When：DEV 门控下，先以 isClient=false 服务端输出，再用 isClient=true hydration；Then：快照显示 -Suspense，拥有者为 div。目的：验证服务端额外完成边界的尾节点显示。 */
 
       // @gate __DEV__
-      /** 测试场景：验证「warns when server renders an extra Suspense node in content mode」描述的渲染、交互或错误处理结果。 */
+
       it('warns when server renders an extra Suspense node in content mode', () => {
-        /** `Mismatch`：封装当前用例复用的操作、回调或断言步骤。 */
+
+        /**
+         * 仅服务端加入包含就绪 main 的 Suspense，客户端 parent 为空。
+         * @param props - isClient 选择客户端 true 或服务端 false 输入。
+         * @returns 本用例用于服务端输出和客户端 hydration 的元素树。
+         */
         function Mismatch({isClient}) {
           return (
             <div className="parent">
@@ -1344,11 +1545,17 @@ describe('ReactDOMServerHydration', () => {
           ]
         `);
       });
+      /** Given：客户端额外 Suspense 内有 main 和永久挂起 Never，服务端没有边界；When：DEV 门控下，先以 isClient=false 服务端输出，再用 isClient=true hydration；Then：快照仍显示 +Suspense fallback=p，拥有者为 Suspense。目的：验证挂起边界插入的诊断定位在边界层。 */
 
       // @gate __DEV__
-      /** 测试场景：验证「warns when client renders an extra Suspense node in fallback mode」描述的渲染、交互或错误处理结果。 */
+
       it('warns when client renders an extra Suspense node in fallback mode', () => {
-        /** `Mismatch`：封装当前用例复用的操作、回调或断言步骤。 */
+
+        /**
+         * 仅客户端加入 main/Never 边界，Never 永久挂起，使额外边界采用 fallback。
+         * @param props - isClient 选择客户端 true 或服务端 false 输入。
+         * @returns 本用例用于服务端输出和客户端 hydration 的元素树。
+         */
         function Mismatch({isClient}) {
           return (
             <div className="parent">
@@ -1361,7 +1568,7 @@ describe('ReactDOMServerHydration', () => {
             </div>
           );
         }
-        // TODO：这条消息似乎没有提供任何有用细节。
+        // 差异定位在额外 Suspense 边界；此快照没有展开其内部 fallback。
         expect(testMismatch(Mismatch)).toMatchInlineSnapshot(`
           [
             "Caught [Hydration failed because the server rendered HTML didn't match the client. As a result this tree will be regenerated on the client. This can happen if a SSR-ed Client Component used:
@@ -1386,11 +1593,17 @@ describe('ReactDOMServerHydration', () => {
           ]
         `);
       });
+      /** Given：仅服务端 Suspense 含永久挂起 Never，renderToString 输出 fallback；When：DEV 门控下，先以 isClient=false 服务端输出，再用 isClient=true hydration；Then：当前快照显示 -Suspense，拥有者为 div，没有 template 差异行。目的：验证服务端 fallback 边界的删除诊断，以当前快照为准。 */
 
       // @gate __DEV__
-      /** 测试场景：验证「warns when server renders an extra Suspense node in fallback mode」描述的渲染、交互或错误处理结果。 */
+
       it('warns when server renders an extra Suspense node in fallback mode', () => {
-        /** `Mismatch`：封装当前用例复用的操作、回调或断言步骤。 */
+
+        /**
+         * 仅服务端加入 main/Never 边界；renderToString 不能等待它，服务端输出 fallback 与中止信息。
+         * @param props - isClient 选择客户端 true 或服务端 false 输入。
+         * @returns 本用例用于服务端输出和客户端 hydration 的元素树。
+         */
         function Mismatch({isClient}) {
           return (
             <div className="parent">
@@ -1404,9 +1617,7 @@ describe('ReactDOMServerHydration', () => {
           );
         }
 
-        // TODO：把 Fizz 错误发送到客户端的改动，会在客户端渲染的 Suspense 边界中插入 template。
-        // 这里会泄漏进快照，因为该边界看起来像尚未 hydration 的尾节点，而 template 是首个匹配项。
-        // 将来为客户端渲染的 Suspense 边界增加特殊处理后，此测试可能还会变化。
+        // 当前诊断将服务端额外 fallback 边界显示为 -Suspense；下方快照没有 template 差异行。
         expect(testMismatch(Mismatch)).toMatchInlineSnapshot(`
           [
             "Caught [Hydration failed because the server rendered HTML didn't match the client. As a result this tree will be regenerated on the client. This can happen if a SSR-ed Client Component used:
@@ -1431,11 +1642,17 @@ describe('ReactDOMServerHydration', () => {
           ]
         `);
       });
+      /** Given：已完成 Suspense 内服务端有 header/footer，客户端中间增加 main；When：DEV 门控下，先以 isClient=false 服务端输出，再用 isClient=true hydration；Then：快照在边界内显示 +main/-footer，拥有者为 main。目的：验证边界主内容的中间插入诊断。 */
 
       // @gate __DEV__
-      /** 测试场景：验证「warns when client renders an extra node inside Suspense content」描述的渲染、交互或错误处理结果。 */
+
       it('warns when client renders an extra node inside Suspense content', () => {
-        /** `Mismatch`：封装当前用例复用的操作、回调或断言步骤。 */
+
+        /**
+         * 两端都有已完成 Suspense；客户端在其 header/footer 间额外插入 main。
+         * @param props - isClient 选择客户端 true 或服务端 false 输入。
+         * @returns 本用例用于服务端输出和客户端 hydration 的元素树。
+         */
         function Mismatch({isClient}) {
           return (
             <div className="parent">
@@ -1475,11 +1692,17 @@ describe('ReactDOMServerHydration', () => {
           ]
         `);
       });
+      /** Given：已完成 Suspense 内服务端有 header/main/footer，客户端省略 main；When：DEV 门控下，先以 isClient=false 服务端输出，再用 isClient=true hydration；Then：快照在边界内显示 +footer/-main，拥有者为 footer。目的：验证边界主内容的服务端额外节点诊断。 */
 
       // @gate __DEV__
-      /** 测试场景：验证「warns when server renders an extra node inside Suspense content」描述的渲染、交互或错误处理结果。 */
+
       it('warns when server renders an extra node inside Suspense content', () => {
-        /** `Mismatch`：封装当前用例复用的操作、回调或断言步骤。 */
+
+        /**
+         * 两端都有已完成 Suspense；仅服务端在其 header/footer 间额外插入 main。
+         * @param props - isClient 选择客户端 true 或服务端 false 输入。
+         * @returns 本用例用于服务端输出和客户端 hydration 的元素树。
+         */
         function Mismatch({isClient}) {
           return (
             <div className="parent">
@@ -1518,11 +1741,17 @@ describe('ReactDOMServerHydration', () => {
           ]
         `);
       });
+      /** Given：两端 Never 均挂起，客户端 fallback 在 Loading p 后多一个 br；When：DEV 门控下，先以 isClient=false 服务端输出，再用 isClient=true hydration；Then：快照仅为 renderToString 不支持等待 Suspense 导致切换客户端渲染的错误，Owner Stack 为 null。目的：验证真实诊断为服务端挂起中止，没有 fallback br 差异快照。 */
 
       // @gate __DEV__
-      /** 测试场景：验证「warns when client renders an extra node inside Suspense fallback」描述的渲染、交互或错误处理结果。 */
+
       it('warns when client renders an extra node inside Suspense fallback', () => {
-        /** `Mismatch`：封装当前用例复用的操作、回调或断言步骤。 */
+
+        /**
+         * 两端主内容均含 Never 并挂起；只有客户端 fallback 多 br，实际错误快照来自 renderToString 的挂起中止。
+         * @param props - isClient 选择客户端 true 或服务端 false 输入。
+         * @returns 本用例用于服务端输出和客户端 hydration 的元素树。
+         */
         function Mismatch({isClient}) {
           return (
             <div className="parent">
@@ -1549,11 +1778,17 @@ describe('ReactDOMServerHydration', () => {
           ]
         `);
       });
+      /** Given：两端 Never 均挂起，仅服务端 fallback 在 Loading p 后多 br；When：DEV 门控下，先以 isClient=false 服务端输出，再用 isClient=true hydration；Then：快照同样为 renderToString 挂起中止并切换客户端渲染的错误，Owner Stack 为 null。目的：验证该场景没有单独输出 fallback 节点差异。 */
 
       // @gate __DEV__
-      /** 测试场景：验证「warns when server renders an extra node inside Suspense fallback」描述的渲染、交互或错误处理结果。 */
+
       it('warns when server renders an extra node inside Suspense fallback', () => {
-        /** `Mismatch`：封装当前用例复用的操作、回调或断言步骤。 */
+
+        /**
+         * 两端主内容均含 Never；只有服务端 fallback 多 br，客户端接管时快照检查中止错误而非 br 差异。
+         * @param props - isClient 选择客户端 true 或服务端 false 输入。
+         * @returns 本用例用于服务端输出和客户端 hydration 的元素树。
+         */
         function Mismatch({isClient}) {
           return (
             <div className="parent">
@@ -1583,10 +1818,16 @@ describe('ReactDOMServerHydration', () => {
     });
 
     describe('Fragment', () => {
+      /** Given：服务端 parent 为空，客户端增加无包装 Fragment 的 header/main/footer；When：DEV 门控下，先以 isClient=false 服务端输出，再用 isClient=true hydration；Then：快照 +header 并省略后续兄弟，拥有者为 header。目的：验证 Fragment 差异落在实际宿主元素而非包装节点。 */
       // @gate __DEV__
-      /** 测试场景：验证「warns when client renders an extra Fragment node」描述的渲染、交互或错误处理结果。 */
+
       it('warns when client renders an extra Fragment node', () => {
-        /** `Mismatch`：封装当前用例复用的操作、回调或断言步骤。 */
+
+        /**
+         * 仅客户端加入含 header/main/footer 的 Fragment；没有对应 DOM 包装节点。
+         * @param props - isClient 选择客户端 true 或服务端 false 输入。
+         * @returns 本用例用于服务端输出和客户端 hydration 的元素树。
+         */
         function Mismatch({isClient}) {
           return (
             <div className="parent">
@@ -1625,11 +1866,17 @@ describe('ReactDOMServerHydration', () => {
           ]
         `);
       });
+      /** Given：仅服务端 Fragment 含 header/main/footer，客户端 parent 为空；When：DEV 门控下，先以 isClient=false 服务端输出，再用 isClient=true hydration；Then：快照逐行 -header/-main/-footer，拥有者为 div。目的：验证 Fragment 的多个尾节点删除展示。 */
 
       // @gate __DEV__
-      /** 测试场景：验证「warns when server renders an extra Fragment node」描述的渲染、交互或错误处理结果。 */
+
       it('warns when server renders an extra Fragment node', () => {
-        /** `Mismatch`：封装当前用例复用的操作、回调或断言步骤。 */
+
+        /**
+         * 仅服务端加入含 header/main/footer 的 Fragment，形成三个服务端尾节点。
+         * @param props - isClient 选择客户端 true 或服务端 false 输入。
+         * @returns 本用例用于服务端输出和客户端 hydration 的元素树。
+         */
         function Mismatch({isClient}) {
           return (
             <div className="parent">
@@ -1673,15 +1920,24 @@ describe('ReactDOMServerHydration', () => {
   });
 
   describe('misc cases', () => {
+    /** Given：客户端 ProfileSettings 与服务端 MediaSettings 共享 input 和 Panel；仅 profile Panel 多 footer；When：DEV 门控下，先以 isClient=false 服务端输出，再用 isClient=true hydration；Then：快照沿 ProfileSettings→Panel 展示 +footer，Owner Stack 为 footer→Panel→ProfileSettings→Mismatch。目的：验证深层客户端额外节点的组件路径。 */
     // @gate __DEV__
-    /** 测试场景：验证「warns when client renders an extra node deeper in the tree」描述的渲染、交互或错误处理结果。 */
+
     it('warns when client renders an extra node deeper in the tree', () => {
-      /** `Mismatch`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /**
+       * 客户端返回 ProfileSettings、服务端返回 MediaSettings，保持上层 DOM 相似但制造 Panel 深处差异。
+       * @param props - isClient 选择客户端 true 或服务端 false 输入。
+       * @returns 本用例用于服务端输出和客户端 hydration 的元素树。
+       */
       function Mismatch({isClient}) {
         return isClient ? <ProfileSettings /> : <MediaSettings />;
       }
 
-      /** `ProfileSettings`：封装当前用例复用的操作、回调或断言步骤。 */
+      /**
+       * 提供客户端 profile 页面，固定 input 后放 type=profile 的 Panel；该轮 Panel 会额外返回 footer。
+       * @returns parent div。
+       */
       function ProfileSettings() {
         return (
           <div className="parent">
@@ -1691,7 +1947,10 @@ describe('ReactDOMServerHydration', () => {
         );
       }
 
-      /** `MediaSettings`：封装当前用例复用的操作、回调或断言步骤。 */
+      /**
+       * 提供服务端 media 页面，固定 input 后放 type=media 的 Panel；该轮 Panel 没有 footer。
+       * @returns parent div。
+       */
       function MediaSettings() {
         return (
           <div className="parent">
@@ -1701,7 +1960,11 @@ describe('ReactDOMServerHydration', () => {
         );
       }
 
-      /** `Panel`：封装当前用例复用的操作、回调或断言步骤。 */
+      /**
+       * 总是返回 header/main，仅 profile 时补 footer，使额外节点位于组件深处。
+       * @param props - type 为 profile 或 media。
+       * @returns 无 DOM 包装的 Fragment。
+       */
       function Panel({type}) {
         return (
           <>
@@ -1743,16 +2006,25 @@ describe('ReactDOMServerHydration', () => {
         ]
       `);
     });
+    /** Given：客户端 ProfileSettings 与服务端 MediaSettings 共用 Panel；仅 media Panel 多 footer；When：DEV 门控下，先以 isClient=false 服务端输出，再用 isClient=true hydration；Then：快照在 parent div 下显示 -footer，Owner Stack 为 div→ProfileSettings→Mismatch。目的：验证深层服务端尾节点的诊断不虚构已缺失组件拥有者。 */
 
     // @gate __DEV__
-    /** 测试场景：验证「warns when server renders an extra node deeper in the tree」描述的渲染、交互或错误处理结果。 */
+
     it('warns when server renders an extra node deeper in the tree', () => {
-      /** `Mismatch`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /**
+       * 客户端 profile 与服务端 media 页面分别走同名 Panel，以服务端多余 footer 覆盖尾节点差异。
+       * @param props - isClient 选择客户端 true 或服务端 false 输入。
+       * @returns 本用例用于服务端输出和客户端 hydration 的元素树。
+       */
       function Mismatch({isClient}) {
         return isClient ? <ProfileSettings /> : <MediaSettings />;
       }
 
-      /** `ProfileSettings`：封装当前用例复用的操作、回调或断言步骤。 */
+      /**
+       * 构造客户端 profile 页面，Panel 在这一用例中不返回 footer。
+       * @returns input 与 Panel 所在的 parent div。
+       */
       function ProfileSettings() {
         return (
           <div className="parent">
@@ -1762,7 +2034,10 @@ describe('ReactDOMServerHydration', () => {
         );
       }
 
-      /** `MediaSettings`：封装当前用例复用的操作、回调或断言步骤。 */
+      /**
+       * 构造服务端 media 页面，Panel 在这一用例中返回额外 footer。
+       * @returns input 与 Panel 所在的 parent div。
+       */
       function MediaSettings() {
         return (
           <div className="parent">
@@ -1772,7 +2047,11 @@ describe('ReactDOMServerHydration', () => {
         );
       }
 
-      /** `Panel`：封装当前用例复用的操作、回调或断言步骤。 */
+      /**
+       * 总是返回 header/main，仅非 profile 时补 footer；与前一用例条件相反，制造服务端尾节点。
+       * @param props - type 为 profile 或 media。
+       * @returns 无 DOM 包装的 Fragment。
+       */
       function Panel({type}) {
         return (
           <>

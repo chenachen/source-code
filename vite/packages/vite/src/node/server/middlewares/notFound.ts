@@ -1,8 +1,8 @@
 import type { Connect } from '#dep-types/connect'
 
-/** 独立服务器中所有业务中间件均未处理请求时，给出空 404 终止普通请求链。 */
+/** 在 spa/mpa appType 的普通中间件都未处理请求时返回空 404；middleware mode 同样挂载。 */
 export function notFoundMiddleware(): Connect.NextHandleFunction {
-  // 保留命名函数；`DEBUG=connect:dispatcher` 会把名称显示在调度日志中。
+  /** 以空正文结束未被前序中间件处理的请求，状态码为404。 */
   return function vite404Middleware(_, res) {
     res.statusCode = 404
     res.end()

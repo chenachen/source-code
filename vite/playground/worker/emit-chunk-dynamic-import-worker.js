@@ -6,5 +6,5 @@ import('./modules/module0').then((module) => {
   })
 })
 
-// for sourcemap
+// 为 source map 检查保留可定位的日志语句。
 console.log('emit-chunk-dynamic-import-worker.js')

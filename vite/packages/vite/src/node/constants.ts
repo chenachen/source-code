@@ -9,11 +9,10 @@ const { version } = JSON.parse(
 )
 
 /**
- * Vite 会主动调度的 Rolldown/Rollup 钩子集合。
+ * 构建侧 injectEnvironment 为插件钩子包装 Environment 上下文时使用的名称表。
  *
- * 这里不是完整的 Rollup 钩子清单：被注释的钩子要么由底层打包器处理，
- * 要么尚未接入 Vite 的插件容器。集中维护该列表，可以让插件容器、构建环境
- * 和类型层对“哪些钩子由 Vite 负责”保持一致。
+ * resolveId/load/transform 有专门的包装分支；其余命中此表的钩子使用通用包装器，
+ * 执行仍交给底层打包器。dev pluginContainer 另行实现其支持的钩子，不按此表调度。
  */
 export const ROLLUP_HOOKS: RollupPluginHooks[] = [
   'options',
@@ -100,13 +99,13 @@ export const DEFAULT_EXTENSIONS: string[] = [
 ]
 
 /**
- * 2025-05-01 被 Baseline Widely Available 覆盖的浏览器版本。
+ * 2026-01-01 的 Baseline Widely Available 浏览器目标。
  *
- * Vite 以此作为默认 esbuild 转译目标，并只在主版本发布时提升，避免次版本升级
- * 意外改变产物兼容范围。该值由 `pnpm generate-target` 生成，不应手工猜测。
+ * build 默认目标由此展开，供 Oxc/Rolldown 及相关 CSS、依赖优化步骤使用。数组沿用
+ * esbuild 兼容的目标记法，由 `pnpm generate-target` 按主版本基线生成。
  *
  * iOS 与 Safari 目标需要同时列出，因为 esbuild 将它们视为独立平台。参见
- * #21193（引入 Baseline 目标）与 #21342（补齐 iOS 目标）的兼容场景。
+ * #21193（更新默认浏览器目标）与 #21342（补齐 iOS 目标）。
  */
 export const ESBUILD_BASELINE_WIDELY_AVAILABLE_TARGET: string[] = [
   'chrome111',
@@ -248,7 +247,7 @@ export const wildcardHosts: Set<string> = new Set([
   '0000:0000:0000:0000:0000:0000:0000:0000',
 ])
 
-/** 开发服务器与预览服务器的默认端口。 */
+/** 开发服务器未配置端口时使用 5173；预览服务器另用 DEFAULT_PREVIEW_PORT。 */
 export const DEFAULT_DEV_PORT = 5173
 
 /** 生产构建预览服务器未配置端口时使用 4173。 */
@@ -257,9 +256,7 @@ export const DEFAULT_PREVIEW_PORT = 4173
 /** 构建时将资源内联为 data URL 的默认上限，单位为字节。 */
 export const DEFAULT_ASSETS_INLINE_LIMIT = 4096
 
-// 默认 CORS 只放行回环来源：RFC 6761 规定必然解析到回环地址的 localhost
-// 子域、IPv4 127.0.0.1 与 IPv6 ::1；协议和端口可变，但不会泛化到任意主机。
-// 这是 #19249 收紧默认来源时要守住的安全边界。
+/** 匹配默认允许的 HTTP/HTTPS CORS 来源：localhost 及子域、127.0.0.1、[::1] 和可选端口。 */
 export const defaultAllowedOrigins: RegExp =
   /^https?:\/\/(?:(?:[^:]+\.)?localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/
 

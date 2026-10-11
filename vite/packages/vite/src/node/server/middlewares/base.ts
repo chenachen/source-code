@@ -13,7 +13,7 @@ export function baseMiddleware(
   rawBase: string,
   middlewareMode: boolean,
 ): Connect.NextHandleFunction {
-  // 保留命名函数；`DEBUG=connect:dispatcher` 会把名称显示在调度日志中。
+  /** 匹配 base 时裁剪 req.url；独立模式处理根重定向和 base 外 404，其余交给 next。 */
   return function viteBaseMiddleware(req, res, next) {
     const url = req.url!
     const pathname = cleanUrl(url)

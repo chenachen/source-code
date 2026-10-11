@@ -506,6 +506,7 @@ a:hover {
 .prose p,
 .prose li {
   color: var(--text);
+  overflow-wrap: anywhere;
 }
 
 .prose p {
@@ -762,6 +763,124 @@ code {
   border-radius: var(--radius);
   background: var(--surface);
   box-shadow: var(--shadow);
+}
+
+.engineering-diagram {
+  min-width: 0;
+  margin: 28px 0;
+  padding: 18px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.engineering-diagram > figcaption {
+  margin-bottom: 12px;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 750;
+  line-height: 1.5;
+}
+
+.diagram-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.diagram-toolbar button,
+.diagram-toolbar a {
+  display: inline-flex;
+  min-height: 36px;
+  padding: 6px 10px;
+  align-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: var(--surface-soft);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.diagram-toolbar button:hover,
+.diagram-toolbar a:hover {
+  border-color: var(--brand);
+  color: var(--brand-strong);
+}
+
+.diagram-scale {
+  min-width: 42px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.diagram-viewport {
+  max-width: 100%;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #f8fafc;
+  overscroll-behavior: contain;
+}
+
+.diagram-canvas {
+  max-width: none;
+}
+
+.diagram-canvas > svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.engineering-diagram .diagram-hint {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+body.diagram-is-expanded {
+  overflow: hidden;
+}
+
+body.diagram-is-expanded::after {
+  position: fixed;
+  z-index: 999;
+  inset: 0;
+  background: rgb(0 0 0 / 65%);
+  content: '';
+}
+
+.engineering-diagram.is-expanded {
+  position: fixed;
+  z-index: 1000;
+  inset: 16px;
+  display: flex;
+  margin: 0;
+  flex-direction: column;
+  box-shadow: var(--shadow);
+}
+
+.engineering-diagram.is-expanded .diagram-viewport {
+  min-height: 0;
+  flex: 1;
+}
+
+@media (max-width: 700px) {
+  .engineering-diagram {
+    padding: 12px;
+  }
+
+  .engineering-diagram.is-expanded {
+    inset: 6px;
+  }
 }
 
 .flow-caption {
@@ -1363,13 +1482,13 @@ code {
     break-inside: avoid;
   }
 }
-</style><script>(function(){try{var t=localStorage.getItem("vite-guide-theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(_){}})();</script></head><body><a class="skip-link" href="#article-start">跳到正文</a><div class="reading-progress" aria-hidden="true"><span data-reading-progress></span></div><header class="topbar"><div class="topbar-inner"><button class="icon-button nav-toggle" type="button" data-nav-toggle aria-expanded="false" aria-label="打开模块导航">☰</button><a class="brand" href="index.html"><span class="brand-mark">V</span><span class="brand-text">Vite 源码解剖</span></a><span class="topbar-path">启动与配置 / 01 CLI 与启动</span><div class="topbar-actions"><button class="icon-button" type="button" data-theme-toggle aria-label="切换主题">◐</button></div></div></header><div class="page-grid"><nav class="site-nav" aria-label="模块导航"><a class="nav-home" href="index.html"><span>⌂</span><span>阅读总览</span></a><section class="nav-group"><h2 class="nav-group-title">全景</h2><ul class="nav-list"><li><a href="00-system-map-and-end-to-end.html"><span class="nav-code">00</span><span>系统全景与请求链</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">启动与配置</h2><ul class="nav-list"><li><a href="01-cli-and-startup.html" aria-current="page"><span class="nav-code">01</span><span>CLI 与启动</span></a></li><li><a href="02a-env-loading.html"><span class="nav-code">02A</span><span>环境文件加载</span></a></li><li><a href="02b-config-resolution.html"><span class="nav-code">02B</span><span>配置加载与解析</span></a></li><li><a href="02c-define-client-injection-and-json.html"><span class="nav-code">02C</span><span>Define、注入与 JSON</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">开发服务器核心</h2><ul class="nav-list"><li><a href="03-plugin-system.html"><span class="nav-code">03</span><span>插件体系</span></a></li><li><a href="04-dev-server-lifecycle.html"><span class="nav-code">04</span><span>Dev Server 生命周期</span></a></li><li><a href="05-environment-api.html"><span class="nav-code">05</span><span>Environment API</span></a></li><li><a href="06-middleware-request-pipeline.html"><span class="nav-code">06</span><span>中间件与请求入口</span></a></li><li><a href="07-module-resolution.html"><span class="nav-code">07</span><span>模块解析</span></a></li><li><a href="08-transform-and-module-graph.html"><span class="nav-code">08</span><span>Transform 与模块图</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">转换与增量更新</h2><ul class="nav-list"><li><a href="09-html-transform.html"><span class="nav-code">09</span><span>HTML 转换</span></a></li><li><a href="10-import-analysis.html"><span class="nav-code">10</span><span>Import Analysis</span></a></li><li><a href="11-dependency-pre-bundling.html"><span class="nav-code">11</span><span>依赖预构建</span></a></li><li><a href="12-hmr.html"><span class="nav-code">12</span><span>HMR</span></a></li><li><a href="12b-bundled-dev.html"><span class="nav-code">12B</span><span>Bundled Dev</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">资源管线</h2><ul class="nav-list"><li><a href="13a-css-pipeline.html"><span class="nav-code">13A</span><span>CSS 管线</span></a></li><li><a href="13b-asset-worker-wasm.html"><span class="nav-code">13B</span><span>Asset、Worker、Wasm</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">生产构建</h2><ul class="nav-list"><li><a href="14a-build-orchestration.html"><span class="nav-code">14A</span><span>生产构建编排</span></a></li><li><a href="14b-build-output-and-preload.html"><span class="nav-code">14B</span><span>Preload 与构建输出</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">SSR 与运行时</h2><ul class="nav-list"><li><a href="15a-ssr-transform-and-loading.html"><span class="nav-code">15A</span><span>SSR 变换与加载</span></a></li><li><a href="15b-module-runner.html"><span class="nav-code">15B</span><span>Module Runner</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">公共边界</h2><ul class="nav-list"><li><a href="16-public-api-diagnostics-and-types.html"><span class="nav-code">16</span><span>公共 API 与类型</span></a></li></ul></section></nav><main class="article" id="article-start"><header class="article-hero"><div class="eyebrow"><span class="pill">01</span><span>启动与配置</span></div><h1>01. CLI 与启动链路</h1><p class="lede">CLI 负责尽早处理进程参数、把命令转成 InlineConfig，再把控制权交给 Node API。</p><div class="hero-meta"><span>证据基线：v8.2.1</span><span>commit <code>421615865dad</code></span><span>约 5 分钟</span><a href="../../vite/reading-guides/01-cli-and-startup.md">查看 Markdown 原稿</a></div></header><section class="focus-card" aria-label="阅读重点与边界"><div><h2>本页重点</h2><p>CLI 负责尽早处理进程参数、把命令转成 InlineConfig，再把控制权交给 Node API。</p></div><div class="boundary"><h3>推导边界</h3><p>这里解释命令分派，不把 CLI 当成配置解析器或 HTTP Server 本体。</p></div></section><aside class="evidence-note"><h3>证据口径</h3><p>正文保留目标版本中的真实源码、状态说明与代表性测试映射。测试源码用于锁定设计契约；本轮没有执行测试命令。</p></aside><article class="prose"><h2 id="阅读目标"><a class="heading-anchor" href="#%E9%98%85%E8%AF%BB%E7%9B%AE%E6%A0%87" aria-label="链接到本节">#</a>阅读目标</h2>
+</style><script>(function(){try{var t=localStorage.getItem("vite-guide-theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(_){}})();</script></head><body><a class="skip-link" href="#article-start">跳到正文</a><div class="reading-progress" aria-hidden="true"><span data-reading-progress></span></div><header class="topbar"><div class="topbar-inner"><button class="icon-button nav-toggle" type="button" data-nav-toggle aria-expanded="false" aria-label="打开模块导航">☰</button><a class="brand" href="index.html"><span class="brand-mark">V</span><span class="brand-text">Vite 源码解剖</span></a><span class="topbar-path">启动与配置 / 01 CLI 与启动</span><div class="topbar-actions"><button class="icon-button" type="button" data-theme-toggle aria-label="切换主题">◐</button></div></div></header><div class="page-grid"><nav class="site-nav" aria-label="模块导航"><a class="nav-home" href="index.html"><span>⌂</span><span>阅读总览</span></a><section class="nav-group"><h2 class="nav-group-title">全景</h2><ul class="nav-list"><li><a href="00-system-map-and-end-to-end.html"><span class="nav-code">00</span><span>系统全景与请求链</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">启动与配置</h2><ul class="nav-list"><li><a href="01-cli-and-startup.html" aria-current="page"><span class="nav-code">01</span><span>CLI 与启动</span></a></li><li><a href="02a-env-loading.html"><span class="nav-code">02A</span><span>环境文件加载</span></a></li><li><a href="02b-config-resolution.html"><span class="nav-code">02B</span><span>配置加载与解析</span></a></li><li><a href="02c-define-client-injection-and-json.html"><span class="nav-code">02C</span><span>Define、注入与 JSON</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">开发服务器核心</h2><ul class="nav-list"><li><a href="03-plugin-system.html"><span class="nav-code">03</span><span>插件体系</span></a></li><li><a href="04-dev-server-lifecycle.html"><span class="nav-code">04</span><span>Dev Server 生命周期</span></a></li><li><a href="05-environment-api.html"><span class="nav-code">05</span><span>Environment API</span></a></li><li><a href="06-middleware-request-pipeline.html"><span class="nav-code">06</span><span>中间件与请求入口</span></a></li><li><a href="07-module-resolution.html"><span class="nav-code">07</span><span>模块解析</span></a></li><li><a href="08-transform-and-module-graph.html"><span class="nav-code">08</span><span>Transform 与模块图</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">转换与增量更新</h2><ul class="nav-list"><li><a href="09-html-transform.html"><span class="nav-code">09</span><span>HTML 转换</span></a></li><li><a href="10-import-analysis.html"><span class="nav-code">10</span><span>Import Analysis</span></a></li><li><a href="11-dependency-pre-bundling.html"><span class="nav-code">11</span><span>依赖预构建</span></a></li><li><a href="12-hmr.html"><span class="nav-code">12</span><span>HMR</span></a></li><li><a href="12b-bundled-dev.html"><span class="nav-code">12B</span><span>Bundled Dev</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">资源管线</h2><ul class="nav-list"><li><a href="13a-css-pipeline.html"><span class="nav-code">13A</span><span>CSS 管线</span></a></li><li><a href="13b-asset-worker-wasm.html"><span class="nav-code">13B</span><span>Asset、Worker、Wasm</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">生产构建</h2><ul class="nav-list"><li><a href="14a-build-orchestration.html"><span class="nav-code">14A</span><span>生产构建编排</span></a></li><li><a href="14b-build-output-and-preload.html"><span class="nav-code">14B</span><span>Preload 与构建输出</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">SSR 与运行时</h2><ul class="nav-list"><li><a href="15a-ssr-transform-and-loading.html"><span class="nav-code">15A</span><span>SSR 变换与加载</span></a></li><li><a href="15b-module-runner.html"><span class="nav-code">15B</span><span>Module Runner</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">公共边界</h2><ul class="nav-list"><li><a href="16-public-api-diagnostics-and-types.html"><span class="nav-code">16</span><span>公共 API 与类型</span></a></li></ul></section></nav><main class="article" id="article-start"><header class="article-hero"><div class="eyebrow"><span class="pill">01</span><span>启动与配置</span></div><h1>01. CLI 与启动链路</h1><p class="lede">CLI 负责尽早处理进程参数、把命令转成 InlineConfig，再把控制权交给 Node API。</p><div class="hero-meta"><span>证据基线：v8.2.1</span><span>commit <code>421615865dad</code></span><span>约 6 分钟</span><a href="../../vite/reading-guides/01-cli-and-startup.md">查看 Markdown 原稿</a></div></header><aside class="boundary-note" aria-label="阅读范围"><p>CLI 整理 InlineConfig；配置解析、组件创建和端口监听由 Node API 接续完成。</p></aside><article class="prose"><h2 id="阅读目标"><a class="heading-anchor" href="#%E9%98%85%E8%AF%BB%E7%9B%AE%E6%A0%87" aria-label="链接到本节">#</a>阅读目标</h2>
 <p>本模块只解决一个问题：终端中的 <code>vite</code>、<code>vite build</code>、<code>vite optimize</code>、
 <code>vite preview</code> 怎样进入对应 Node API。</p>
 <p>读完应能区分两个层次：</p>
 <ul>
-<li><code>bin/vite.js</code> 是前置引导层：必须在加载其他 Vite 模块前设置调试环境、启动 CPU
-Profiler、记录启动时间并启用 Node.js 编译缓存。</li>
+<li><code>bin/vite.js</code> 是前置引导层：在加载 CLI 主模块前记录启动时间，按参数设置调试环境、
+启动 CPU Profiler，并尝试启用 Node.js 编译缓存。</li>
 <li><code>src/node/cli.ts</code> 是命令分发层：注册参数，把 CLI 值整理成 <code>InlineConfig</code>，然后调用
 <code>createServer()</code>、<code>createBuilder()</code>、<code>optimizeDeps()</code> 或 <code>preview()</code>。</li>
 </ul>
@@ -1390,14 +1509,16 @@ Profiler、记录启动时间并启用 Node.js 编译缓存。</li>
             ├─ optimize→ resolveConfig() → optimizeDeps()
             └─ preview → preview()
 </code></pre></figure><p>开发源码位于 <code>src/node/cli.ts</code>，发布前会被打包成 <code>dist/node/cli.js</code>。bin 入口导入后者，
-因此不能把源码路径和运行时产物路径误认为两套 CLI。</p>
+它们是同一 CLI 在开发与发布时的文件形式。</p>
 <h2 id="关键对象"><a class="heading-anchor" href="#%E5%85%B3%E9%94%AE%E5%AF%B9%E8%B1%A1" aria-label="链接到本节">#</a>关键对象</h2>
 <h3 id="global-vitestarttime"><a class="heading-anchor" href="#global-vitestarttime" aria-label="链接到本节">#</a><code>global.__vite_start_time</code></h3>
-<p>入口执行第一时间记录。Dev Server 成功监听后，<code>cli.ts</code> 用它计算包含模块加载、配置解析
+<p>引导入口记录启动时间。Dev Server 成功监听后，<code>cli.ts</code> 用它计算包含 CLI 模块加载、配置解析
 和服务器创建在内的总启动耗时。若只在 <code>createServer()</code> 内开始计时，会漏掉 CLI 前置成本。</p>
 <h3 id="global-viteprofilesession"><a class="heading-anchor" href="#global-viteprofilesession" aria-label="链接到本节">#</a><code>global.__vite_profile_session</code></h3>
 <p><code>--profile</code> 模式必须先启动 V8 Inspector，再加载 CLI 主模块，否则采样会漏掉模块求值和
 配置加载。会话通过全局变量跨越 bin 与打包后的 CLI chunk。</p>
+<p>开发服务器随后提供 <code>p</code> 快捷键：停止时写出 <code>.cpuprofile</code> 并清空当前会话引用，再次开始时
+创建新会话。build 和 preview 在正常完成后停止入口采样；optimize action 没有对应的结束调用。</p>
 <h3 id="globalclioptions"><a class="heading-anchor" href="#globalclioptions" aria-label="链接到本节">#</a><code>GlobalCLIOptions</code></h3>
 <p>cac 返回的参数既含全局字段，也含命令专属字段。<code>cleanGlobalCLIOptions()</code> 将两者拆开：</p>
 <figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">--mode staging       → InlineConfig.mode
@@ -1407,6 +1528,8 @@ Profiler、记录启动时间并启用 Node.js 编译缓存。</li>
 </code></pre></figure><p>若不清理，全局字段会错误进入 <code>server</code>/<code>build</code> 子配置；若不转换，字符串和布尔 CLI 值
 又可能覆盖 Node API 需要的结构化配置。</p>
 <h2 id="容易忽略的场景"><a class="heading-anchor" href="#%E5%AE%B9%E6%98%93%E5%BF%BD%E7%95%A5%E7%9A%84%E5%9C%BA%E6%99%AF" aria-label="链接到本节">#</a>容易忽略的场景</h2>
+<p>CLI 启动时会检查 Node 版本；不满足 <code>20.19+</code>、<code>22.12+</code> 或更高主版本时打印警告，然后继续
+解析命令。后续能否完成取决于运行时是否提供实际调用的 API。</p>
 <h3 id="调试参数必须提前处理"><a class="heading-anchor" href="#%E8%B0%83%E8%AF%95%E5%8F%82%E6%95%B0%E5%BF%85%E9%A1%BB%E6%8F%90%E5%89%8D%E5%A4%84%E7%90%86" aria-label="链接到本节">#</a>调试参数必须提前处理</h3>
 <p>Vite 模块在首次加载时创建带命名空间的调试函数。因此 <code>DEBUG</code> 必须早于
 <code>import('../dist/node/cli.js')</code> 设置。已有 <code>DEBUG</code> 还需合并，不能覆盖其他工具的调试
@@ -1434,6 +1557,8 @@ Profiler、记录启动时间并启用 Node.js 编译缓存。</li>
 <p>CLI 的 <code>--watch</code> 是 boolean，构建 API 的 <code>watch</code> 是对象。显式传入时应转换成 <code>{}</code>；
 未传入时应保持 <code>undefined</code>，让配置文件中的 <code>build.watch</code> 正常参与后续合并。相关修复：
 <a href="https://github.com/vitejs/vite/pull/18390" target="_blank" rel="noreferrer noopener">PR #18390</a>。</p>
+<p>转换成 <code>{}</code> 后，<code>mergeConfig()</code> 会继续保留文件中 watch 对象的具体字段。CLI 不直接覆盖
+整份监听配置。<code>--app</code> 则放到顶层 <code>builder: {}</code>，不能混进 <code>build</code> 子对象。</p>
 <h2 id="测试怎样证明链路"><a class="heading-anchor" href="#%E6%B5%8B%E8%AF%95%E6%80%8E%E6%A0%B7%E8%AF%81%E6%98%8E%E9%93%BE%E8%B7%AF" aria-label="链接到本节">#</a>测试怎样证明链路</h2>
 <p><code>playground/cli/__tests__/serve.ts</code> 不使用默认 E2E 启动器，而是创建真实子进程：</p>
 <figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">Serve 模式：vite --port &lt;port&gt; --strict-port
@@ -1466,8 +1591,20 @@ try {
       bundledDev: options.experimentalBundle,
     },
   })
-</code></pre></figure><p>这段代码确认两件事：server 实现到 action 才动态导入；CLI 参数先清除全局选项，再作为
-<code>InlineConfig</code> 进入 <code>createServer()</code>。因此启动语义的分界点不是参数解析，而是这次异步调用。</p>
+  // 后续 HTTP 检查、监听和日志处理省略。
+} catch (e) {
+  const logger = createLogger(options.logLevel)
+  logger.error(colors.red(`error when starting dev server:\n${inspect(e)}`), {
+    error: e,
+  })
+  await stopProfiler(logger.info)
+  process.exit(1)
+}
+</code></pre></figure><p>dev action 在选中开发命令后取得 <code>createServer()</code>，再把整理好的 <code>InlineConfig</code> 交给它。
+服务器对象创建后还要 <code>await server.listen()</code>，HTTP 监听成功后才打印 ready 横幅、URL 和快捷键。
+创建或监听失败时，catch 输出错误、停止活动采样，然后以退出码 1 结束进程。</p>
+<p>这里的动态 import 是命令分发写法。CLI 还静态导入了 <code>createBuilder()</code>，它经 <code>build.ts</code>、
+<code>config.ts</code> 依赖服务器模块；模块加载成本应按整个依赖图理解。</p>
 <h2 id="推荐断点"><a class="heading-anchor" href="#%E6%8E%A8%E8%8D%90%E6%96%AD%E7%82%B9" aria-label="链接到本节">#</a>推荐断点</h2>
 <ol>
 <li><code>packages/vite/bin/vite.js</code> 的 <code>start()</code>。</li>
@@ -1558,6 +1695,80 @@ try {
   updateProgress()
   window.addEventListener('scroll', updateProgress, { passive: true })
   window.addEventListener('resize', updateProgress)
+
+  var expandedDiagram = null
+
+  function closeDiagram() {
+    if (!expandedDiagram) return
+    var figure = expandedDiagram
+    var button = figure.querySelector('[data-diagram-action="expand"]')
+    figure.classList.remove('is-expanded')
+    figure.removeAttribute('role')
+    figure.removeAttribute('aria-modal')
+    body.classList.remove('diagram-is-expanded')
+    button.setAttribute('aria-expanded', 'false')
+    button.textContent = '展开图示'
+    expandedDiagram = null
+    button.focus()
+  }
+
+  document.querySelectorAll('.engineering-diagram').forEach(function (figure) {
+    var viewport = figure.querySelector('.diagram-viewport')
+    var canvas = figure.querySelector('.diagram-canvas')
+    var output = figure.querySelector('.diagram-scale')
+    var width = Number(figure.getAttribute('data-diagram-width'))
+    var scale = 1
+
+    function setScale(next) {
+      scale = Math.min(2, Math.max(0.15, next))
+      canvas.style.width = width * scale + 'px'
+      output.textContent = Math.round(scale * 100) + '%'
+    }
+
+    figure.querySelectorAll('[data-diagram-action]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        var action = button.getAttribute('data-diagram-action')
+        if (action === 'in') setScale(scale * 1.2)
+        if (action === 'out') setScale(scale / 1.2)
+        if (action === 'fit') setScale(viewport.clientWidth / width)
+        if (action === 'reset') setScale(1)
+        if (action === 'expand') {
+          if (expandedDiagram === figure) {
+            closeDiagram()
+            return
+          }
+          closeDiagram()
+          expandedDiagram = figure
+          figure.classList.add('is-expanded')
+          figure.setAttribute('role', 'dialog')
+          figure.setAttribute('aria-modal', 'true')
+          body.classList.add('diagram-is-expanded')
+          button.setAttribute('aria-expanded', 'true')
+          button.textContent = '收起图示'
+          button.focus()
+        }
+      })
+    })
+  })
+
+  document.addEventListener('keydown', function (event) {
+    if (!expandedDiagram) return
+    if (event.key === 'Escape') closeDiagram()
+    if (event.key === 'Tab') {
+      var controls = Array.from(
+        expandedDiagram.querySelectorAll('button, a, [tabindex="0"]'),
+      )
+      var first = controls[0]
+      var last = controls[controls.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+  })
 
   document.querySelectorAll('.copy-code').forEach(function (button) {
     button.addEventListener('click', async function () {

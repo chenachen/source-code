@@ -23,7 +23,7 @@ import {
 
 import {describeDiff} from 'react-reconciler/src/ReactFiberHydrationDiffs';
 
-/** `describeAncestors` 执行宿主属性处理步骤，并把副作用限制在当前 DOM 节点；用于依据 HTML 解析器规则维护祖先上下文并报告会改变解析树的非法嵌套。 */
+/** 构造 hydration diff 风格的祖先片段，用于非法嵌套警告。 */
 function describeAncestors(
   ancestor: Fiber,
   child: Fiber,
@@ -63,45 +63,41 @@ type Info = {
   /** 祖先宿主标签名。 */
   tag: string
 };
-/** `AncestorInfoDev` 定义依据 HTML 解析器规则维护祖先上下文并报告会改变解析树的非法嵌套的数据契约；字段共同约束状态所有权与分支边界。 */
+/** 开发期沿宿主标签传递的 HTML 解析器作用域快照。 */
 export type AncestorInfoDev = {
-  /** `AncestorInfoDev.current` 表示跨校验或提交步骤传递的受限状态；只在所属契约的生命周期内有效。 */
+  /** 当前最内层宿主标签记录。 */
   current: ?Info,
 
-  /** `AncestorInfoDev.formTag` 表示当前或祖先 HTML 标签名；只在所属契约的生命周期内有效。 */
+  /** 当前作用域内尚未闭合的 form 标签。 */
   formTag: ?Info,
-  /** `AncestorInfoDev.aTagInScope` 表示当前或祖先 HTML 标签名；只在所属契约的生命周期内有效。 */
+  /** 当前 in-scope 的 a，遇到作用域边界清空。 */
   aTagInScope: ?Info,
-  /** `AncestorInfoDev.buttonTagInScope` 表示当前或祖先 HTML 标签名；只在所属契约的生命周期内有效。 */
+  /** 当前 in-scope 的 button，遇到作用域边界清空。 */
   buttonTagInScope: ?Info,
-  /** `AncestorInfoDev.nobrTagInScope` 表示当前或祖先 HTML 标签名；只在所属契约的生命周期内有效。 */
+  /** 当前 in-scope 的 nobr。 */
   nobrTagInScope: ?Info,
-  /** `AncestorInfoDev.pTagInButtonScope` 表示当前或祖先 HTML 标签名；只在所属契约的生命周期内有效。 */
+  /** button scope 内可能被新标签隐式闭合的 p。 */
   pTagInButtonScope: ?Info,
 
-  /** `AncestorInfoDev.listItemTagAutoclosing` 表示当前或祖先 HTML 标签名；只在所属契约的生命周期内有效。 */
+  /** 会被新的 li 起始标签隐式关闭的祖先 li。 */
   listItemTagAutoclosing: ?Info,
-  /** `AncestorInfoDev.dlItemTagAutoclosing` 表示当前或祖先 HTML 标签名；只在所属契约的生命周期内有效。 */
+  /** 会被新的 dd/dt 起始标签隐式关闭的祖先 dd/dt。 */
   dlItemTagAutoclosing: ?Info,
 
-  //<head> 或 <body>
+  /** 遇到Document/html清空，再记随后首个普通标签；用于判断当前是否有普通宿主容器，区别根级可提升标签与普通后代范围。 */
   containerTagInScope: ?Info,
-  /** `AncestorInfoDev.implicitRootScope` 表示影响解析模式的最近作用域标签；只在所属契约的生命周期内有效。 */
+  /** Document、html、body 的根作用域，允许解析器隐式插入 head/body；进入普通后代后关闭。 */
   implicitRootScope: boolean,
 };
 
 //此验证代码是基于 HTML5 解析规范编写的：
 //https://html.spec.whatwg.org/multipage/syntax.html#has-an-element-in-scope
 //
-//注意：这并不能捕捉所有无效的嵌套，也没有尝试去捕捉（因为它是
-//不清楚这样做能提供什么实际好处；相反，我们只警告
-//对于解析器给出的解析树与 React 不同的情况
-//预期的。例如，<b><div></div></b> 是无效的，但我们不发出警告
-//因为它仍然能够正确解析；我们会对其他情况如嵌套发出警告
-//<p> 标签，其中第二个元素的开头隐式地关闭了
-//首先，造成了混乱的局面。
+// 只警告会使浏览器解析树偏离 React 树的嵌套，例如第二个 <p> 会隐式闭合第一个。
+// <b><div></div></b> 虽不符合内容模型，但解析后结构仍相同，因此此处不警告。
 
 //https://html.spec.whatwg.org/multipage/syntax.html#special
+/** HTML 解析器的特殊标签名单，用来截断 li/dd/dt 隐式闭合祖先的搜索作用域。 */
 const specialTags = [
   'address',
   'applet',
@@ -189,6 +185,7 @@ const specialTags = [
 ];
 
 //https://html.spec.whatwg.org/multipage/syntax.html#has-an-element-in-scope
+/** 遇到这些标签时清空 a/button/nobr 的 in-scope 祖先记录，按解析器作用域限制嵌套检查。 */
 const inScopeTags = [
   'applet',
   'caption',
@@ -201,17 +198,18 @@ const inScopeTags = [
   'template',
 
   //https://html.spec.whatwg.org/multipage/syntax.html#html-integration-point
-  //待办事项：在此按命名空间区分 —— 对于 <title>，包括在此
-  //偏向于更少的警告
+  // TODO：按命名空间区分；当前将 title 计入作用域边界，会减少嵌套警告。
   'foreignObject',
   'desc',
   'title',
 ];
 
 //https://html.spec.whatwg.org/multipage/syntax.html#has-an-element-in-button-scope
+/** button scope 比普通 scope 多一个 button 边界，决定 p 是否会被后代标签隐式闭合。 */
 const buttonScopeTags = __DEV__ ? inScopeTags.concat(['button']) : [];
 
 //https://html.spec.whatwg.org/multipage/syntax.html#generate-implied-end-tags
+/** 可由解析器隐式结束的标签；rp/rt 出现于这些父标签下会产生与 React 子树不同的结构。 */
 const impliedEndTags = [
   'dd',
   'dt',
@@ -223,7 +221,7 @@ const impliedEndTags = [
   'rt',
 ];
 
-/** `emptyAncestorInfoDev` 保存依据 HTML 解析器规则维护祖先上下文并报告会改变解析树的非法嵌套所需的共享映射、集合或模块级状态；生命周期覆盖当前 renderer。 */
+/** 新根使用的空祖先作用域快照。 */
 const emptyAncestorInfoDev: AncestorInfoDev = {
   current: null,
 
@@ -240,7 +238,7 @@ const emptyAncestorInfoDev: AncestorInfoDev = {
   implicitRootScope: false,
 };
 
-/** `updatedAncestorInfoDev` 同步 DOM/Fiber 状态，并维持提交前后快照一致；用于依据 HTML 解析器规则维护祖先上下文并报告会改变解析树的非法嵌套。 */
+/** 复制祖先快照，按新标签清理 HTML 解析作用域并登记可隐式闭合的祖先。 */
 function updatedAncestorInfoDev(
   oldInfo: null | AncestorInfoDev,
   tag: string,
@@ -303,8 +301,8 @@ function updatedAncestorInfoDev(
       oldInfo === null &&
       (tag === '#document' || tag === 'html' || tag === 'body')
     ) {
-      //虽然 <head> 也是单例，但我们不想支持这样的语义
-      //你可以通过将主体渲染为单例来避免头部，这样我们就像对待普通作用域一样对待它
+      // Document/html/body 可作为隐式根作用域；head 仍使用专门的内容规则，
+      // 不允许把任意正文内容当成 head 下的隐式 body。
       ancestorInfo.implicitRootScope = true;
     } else if (ancestorInfo.implicitRootScope === true) {
       ancestorInfo.implicitRootScope = false;
@@ -316,15 +314,13 @@ function updatedAncestorInfoDev(
   }
 }
 
-/**
- * 返回是否
- */
+/** 判断直接父子标签是否符合此验证器的解析规则，包含隐式根作用域的例外。 */
 function isTagValidWithParent(
   tag: string,
   parentTag: ?string,
   implicitRootScope: boolean,
 ): boolean {
-  //首先，让我们检查一下我们是否处于异常解析模式...
+  // 先处理 select、table、head 等具有专用解析规则的父标签。
   switch (parentTag) {
     //https://html.spec.whatwg.org/multipage/syntax.html#parsing-main-inselect
     case 'select':
@@ -338,8 +334,7 @@ function isTagValidWithParent(
       );
     case 'optgroup':
       return tag === 'option' || tag === '#text';
-    //严格来说，看到 <option> 并不意味着我们处于 <select>
-    //但是
+    // 即使 option 不在 select 内，此验证器也只允许它直接包含文本。
     case 'option':
       return tag === '#text';
     //https://html.spec.whatwg.org/multipage/syntax.html#parsing-main-intd
@@ -417,8 +412,7 @@ function isTagValidWithParent(
       return tag === 'html';
   }
 
-  //可能是在“体内”解析模式下，所以我们只禁止标签组合
-  //解析规则导致隐式的打开或关闭被添加的地方。
+  // 其余按“in body”规则检查会隐式打开或闭合标签的组合。
   //https://html.spec.whatwg.org/multipage/syntax.html#parsing-main-inbody
   switch (tag) {
     case 'h1':
@@ -452,24 +446,18 @@ function isTagValidWithParent(
     case 'th':
     case 'thead':
     case 'tr':
-      //这些标签仅在具有特殊子元素的少数父元素中有效
-      //解析规则——如果我们在这里，那么那些都不匹配，并且
-      //所以我们只在不知道父对象是什么时才允许它，就像所有其他情况一样
-      //案件无效。
+      // 上面的专用父标签规则均未命中；这些标签仅在未知父标签时放行。
       return parentTag == null;
     case 'head':
-      //我们支持在容器为根时呈现 <head>
-      //#文档, <html>, 或 <body>。
+      // head 允许作为 Document/html/body 隐式根作用域下的节点。
       return implicitRootScope || parentTag === null;
     case 'html':
-      //当容器位于根部时，我们支持渲染 <html>
-      //#文档
+      // html 只在 Document 隐式根作用域或未知父标签下放行。
       return (
         (implicitRootScope && parentTag === '#document') || parentTag === null
       );
     case 'body':
-      //当容器为时，我们支持在根部渲染 <body>
-      //#文档 或 <html>
+      // body 允许在 Document/html 隐式根作用域或未知父标签下出现。
       return (
         (implicitRootScope &&
           (parentTag === '#document' || parentTag === 'html')) ||
@@ -480,9 +468,7 @@ function isTagValidWithParent(
   return true;
 }
 
-/**
- * 返回是否
- */
+/** 从祖先作用域快照返回会导致当前标签隐式闭合或非法嵌套的祖先；无冲突时返回 null。 */
 function findInvalidAncestorForTag(
   tag: string,
   ancestorInfo: AncestorInfoDev,
@@ -556,7 +542,7 @@ const didWarn: {
   [string]: boolean
 } = {};
 
-/** `findAncestor` 查询或比较当前宿主状态；无匹配时返回显式空结果；用于依据 HTML 解析器规则维护祖先上下文并报告会改变解析树的非法嵌套。 */
+/** 沿 Fiber.return 找指定标签的最近 HostComponent/HostHoistable/HostSingleton，供开发警告定位。 */
 function findAncestor(parent: null | Fiber, tagName: string): null | Fiber {
   while (parent) {
     switch (parent.tag) {
@@ -572,7 +558,7 @@ function findAncestor(parent: null | Fiber, tagName: string): null | Fiber {
   return null;
 }
 
-/** `validateDOMNesting` 校验输入并仅在开发环境报告违反的宿主不变量；用于依据 HTML 解析器规则维护祖先上下文并报告会改变解析树的非法嵌套。 */
+/** 开发期检查会改变 HTML 解析树的父子/祖先关系，按组合去重警告，并返回是否合法。 */
 function validateDOMNesting(
   childTag: string,
   ancestorInfo: AncestorInfoDev,
@@ -667,7 +653,7 @@ function validateDOMNesting(
   return true;
 }
 
-/** `validateTextNesting` 校验输入并仅在开发环境报告违反的宿主不变量；用于依据 HTML 解析器规则维护祖先上下文并报告会改变解析树的非法嵌套。 */
+/** 开发期检查父标签能否接受文本，区分非空白与纯空白文本的诊断。 */
 function validateTextNesting(
   childText: string,
   parentTag: string,

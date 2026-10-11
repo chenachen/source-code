@@ -18,11 +18,15 @@ if (__DEV__) {
  * 初始化类组件公共实例，并接入 renderer 提供的更新队列。
  *
  * @remarks 未挂载时使用 no-op 队列；挂载阶段 reconciler 会注入真实 updater。
+ * @param props - renderer 传入的属性快照，直接安装为实例字段，不在这里计算 state。
+ * @param context - 兼容类组件构造协议的上下文值，具体选值由 renderer 决定。
+ * @param updater - 可选 renderer 更新队列；假值使用 ReactNoopUpdateQueue。
+ * @remarks 仅建立公开实例形状；Fiber 创建、挂载判断、生命周期执行均属于 reconciler。
  */
 function Component(props, context, updater) {
   this.props = props;
   this.context = context;
-  // 若组件使用字符串 ref，renderer 会在后续阶段替换此对象。
+  // 保留类组件的 refs 容器形状；当前版本已移除字符串 ref，现代 ref 使用对象或回调。
   this.refs = emptyObject;
   // 默认队列只负责未挂载警告；真实更新队列由 renderer 注入。
   this.updater = updater || ReactNoopUpdateQueue;
@@ -34,7 +38,8 @@ Component.prototype.isReactComponent = {};
  * 把局部状态或状态计算函数交给 updater 排队。
  *
  * @remarks `this.state` 应视为不可变快照；调用可能被批处理，因而不会保证同步更新。
- * 函数式更新收到执行时最新的 state、props、context，这些值可能尚未写回实例字段。
+ * 函数式更新收到队列处理到此处的 state 与本轮 props；它们可能尚未写回实例字段。
+ * 返回的对象与前一状态浅合并，返回 `null`/`undefined` 则保持状态不变。
  *
  * @param {object|function} partialState - 待合并的局部状态，或根据最新状态计算它的函数。
  * @param {?function} callback - 实际提交更新后调用的回调。
@@ -59,8 +64,8 @@ Component.prototype.setState = function (partialState, callback) {
 /**
  * 绕过 `shouldComponentUpdate` 请求一次强制更新。
  *
- * @remarks 适用于 React 状态之外的深层数据已变化、且当前不在 DOM 事务中的场景；
- * 生命周期更新钩子仍会执行。
+ * @remarks updater 仍按正常更新路径排队；它跳过更新判定，不会让 DOM 立即同步变化。
+ * 本轮发生提交时，更新后的生命周期与 callback 仍按提交顺序执行。
  *
  * @param {?function} callback - 更新提交完成后的回调。
  * @final
@@ -113,11 +118,16 @@ ComponentDummy.prototype = Component.prototype;
 
 /**
  * 初始化 PureComponent 公共实例；浅比较能力由原型标记通知 reconciler。
+ * @param props - 初始属性快照，原样保存。
+ * @param context - renderer 选择的构造上下文。
+ * @param updater - renderer 队列或默认 no-op 队列，与 Component 的实例字段协议一致。
+ * @remarks 这里不执行浅比较；reconciler 识别 isPureReactComponent 后选择默认比较。
+ * 用户提供 shouldComponentUpdate 时仍由 renderer 的方法优先分支处理。
  */
 function PureComponent(props, context, updater) {
   this.props = props;
   this.context = context;
-  // 若组件使用字符串 ref，renderer 会在后续阶段替换此对象。
+  // 保留类组件的 refs 容器形状；当前版本已移除字符串 ref，现代 ref 使用对象或回调。
   this.refs = emptyObject;
   this.updater = updater || ReactNoopUpdateQueue;
 }

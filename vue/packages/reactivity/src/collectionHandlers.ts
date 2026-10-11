@@ -47,6 +47,8 @@ const getProto = <T extends CollectionTypes>(v: T): any =>
  * @param method 原生迭代方法。
  * @param isReadonly 是否创建只读插桩。
  * @param isShallow 是否直接返回原始键和值。
+ * @returns 保持原生迭代状态的包装方法；创建时收集迭代 Dep，next 时才转换单项，
+ * 结束结果不包装。readonly 外层不直接 track，但内层 reactive 的原生入口仍可追踪。
  */
 function createIterableMethod(
   method: string | symbol,
@@ -134,7 +136,9 @@ function createInstrumentations(
      * 读取 Map/WeakMap 中的值，同时兼容 key 的原始身份和代理身份。
      *
      * issue #1772：`readonly(reactive(map))` 需要返回“既响应式又只读”的值，故最终
-     * 取值走内层 `target.get()`，再按外层模式包装，不能只从最原始 Map 取值。
+     * 取值走内层 target.get，再按外层模式包装，不能只从最原始 Map 取值。
+     * 先尝试传入 key，未命中才尝试 rawKey；查询 raw key 不会遍历反查代理 key。
+     * 不存在时返回 undefined，可变集合仍建立缺失 key 的 Dep，供以后 ADD 通知。
      */
     get(this: MapTypes, key: unknown) {
       // #1772：保留内层 reactive Map 的读取链，再给结果增加 readonly 约束。
@@ -161,7 +165,10 @@ function createInstrumentations(
         target.get(key)
       }
     },
-    /** 读取集合大小；任意新增、删除、清空以及 Map 值迭代变化都订阅 ITERATE_KEY。 */
+    /**
+     * 读取 size 时，可变模式订阅 ITERATE_KEY。新增、删除、非空清空都会通知它；
+     * Map 已有键换值也会通知此依赖，不要求 size 数值发生变化。
+     */
     get size() {
       const target = (this as unknown as IterableCollections)[ReactiveFlags.RAW]
       !readonly && track(toRaw(target), TrackOpTypes.ITERATE, ITERATE_KEY)
@@ -210,8 +217,10 @@ function createInstrumentations(
         }
       : {
           /**
-           * 向 Set/WeakSet 添加成员。深层模式通常存 raw 值；浅层值和只读值保留身份。
-           * 写入前同时检查可能的 proxy/raw 形态，避免同一对象被重复加入。
+           * 向 Set/WeakSet 添加成员。浅层集合保存传入值；深层集合仅在
+           * `isShallow(value)` 与 `isReadonly(value)` 均为 false 时存 raw 值。
+           * 写入前检查拟存身份、传入身份及原始身份，避免这些已知身份对应的重复添加；
+           * 不会从原始对象反查集合中其他代理身份。
            */
           add(this: SetTypes, value: unknown) {
             const target = toRaw(this)
@@ -236,7 +245,8 @@ function createInstrumentations(
           },
           /**
            * 设置 Map/WeakMap 键值。已有 key 优先沿用其当前身份；找不到才尝试 raw key。
-           * 新键触发 ADD，已有键且值实际变化触发 SET。
+           * 新键触发 ADD，已有键且值按 Object.is 实际变化触发 SET。深层写入普通代理
+           * value 存 raw，浅层／只读 value 则保留；key 身份判断与 value 转换彼此独立。
            */
           set(this: MapTypes, key: unknown, value: unknown) {
             if (!shallow && !isShallow(value) && !isReadonly(value)) {
@@ -316,7 +326,8 @@ function createInstrumentations(
     Symbol.iterator,
   ] as const
 
-  // 四种迭代方法共享相同依赖规则，只在产出值形态上由 method 判断是否为键值对。
+  // 四种迭代方法共用创建逻辑；Map.keys 单独订阅 MAP_KEY_ITERATE_KEY，
+  // 其余方法订阅 ITERATE_KEY，并按产出形态包装值。
   iteratorMethods.forEach(method => {
     instrumentations[method] = createIterableMethod(method, readonly, shallow)
   })
@@ -328,7 +339,9 @@ function createInstrumentations(
  * 创建集合代理唯一需要的 `get` 陷阱。
  *
  * 若 key 在插桩表中且原集合也确实支持该成员，则返回插桩；否则回退到原集合属性。
- * “原集合也支持”可避免 WeakMap 意外暴露 `size`、迭代器等不属于它的 API。
+ * “原集合也支持”可避免 WeakMap 意外暴露 size、迭代器等不属于它的 API。
+ * 插桩表按只读／深浅模式创建并由返回的闭包共享；只替代受支持的成员，用户额外属性
+ * 仍由 Reflect.get 返回。内部 RAW 直接返回本层 target，toRaw 再逐层还原。
  */
 function createInstrumentationGetter(isReadonly: boolean, shallow: boolean) {
   const instrumentations = createInstrumentations(isReadonly, shallow)

@@ -1,10 +1,8 @@
-// this is automatically detected by playground/vitestSetup.ts and will replace
-// the default e2e test serve behavior
-
-// The server is started in the test, so we need to have a custom serve
-// function or a default server will be created
+// 各用例自行启动服务器；custom serve 阻止 harness 再启动默认服务器。
+/** 给 harness 返回空生命周期对象，实际服务器由 withBuild/withServe 控制。 */
 export async function serve() {
   return {
+    /** 此启动器没有创建服务器，清理立即完成。 */
     close: () => Promise.resolve(),
   }
 }

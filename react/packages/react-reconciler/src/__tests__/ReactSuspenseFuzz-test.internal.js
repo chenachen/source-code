@@ -45,7 +45,7 @@ describe('ReactSuspenseFuzz', () => {
    * 创建一套彼此隔离的随机树生成器和可控异步渲染基元。
    *
    * 状态：`pendingTasks` 跟踪计时器任务，`cache` 保存文本对应的值或 thenable；
-   * 每次基准渲染前都会同时清空二者，避免不同渲染模式互相污染。
+   * 每种渲染模式开始前重建二者；任务结束依赖测试 act 冲刷计时器，pendingTasks 仅登记任务，没有独立的清空断言。
    */
   function createFuzzer() {
     const {useState, useContext, useLayoutEffect} = React;
@@ -241,7 +241,7 @@ describe('ReactSuspenseFuzz', () => {
      * 在元素预算内递归生成文本、重挂载容器和 Suspense 边界的随机组合。
      *
      * 边界：每创建一个真实节点都递减 `remainingElements`；单层最多三个子节点，
-     * 根层不限制兄弟数，因此随机递归仍会因全局预算耗尽而终止。
+     * 根层不限制兄弟数；容器/文本/边界消耗全局预算。return 分支可加入 null 而不消耗预算，生成停止依赖随机序列最终选择耗预算节点。
      */
     function generateTestCase(rand, numberOfElements) {
       let remainingElements = numberOfElements;
@@ -353,7 +353,7 @@ describe('ReactSuspenseFuzz', () => {
   }
 
   /**
-   * 场景（Given–When–Then）：给定会重挂载的容器和会先后两次挂起的文本；当分别执行
+   * 场景（Given–When–Then）：给定 150ms 后重挂载的容器、初次延迟 2000ms 且挂载后 100ms 更新并延迟 200ms 的 Hi 文本；当分别执行
    * 预加载、并发挂起及可用的旧模式渲染；那么三者最终宿主树必须完全一致。
    * 对应机制：`Container` 的 key 重置、`Text` 的 thenable 缓存与 `testResolvedOutput`。
    */
@@ -372,7 +372,7 @@ describe('ReactSuspenseFuzz', () => {
   });
 
   /**
-   * 场景（Given–When–Then）：给定由固定 `SEED` 生成的 250 棵、每棵预算 12 个元素的
+   * 场景（Given–When–Then）：给定由`SEED`（环境覆盖或默认 default）生成的 250 棵、每棵预算 12 个元素的
    * 随机树；当每棵树依次经过基准与挂起渲染；那么所有最终输出相等，失败时打印种子
    * 和树结构以便精确复现。对应机制：`generateTestCase` 与 `testResolvedOutput`。
    */

@@ -93,7 +93,7 @@ export type MicroAppWindowDataType = {
   __MICRO_APP_UMD_MODE__: boolean,
   /** 当前是否处于预渲染阶段。 */
   __MICRO_APP_PRE_RENDER__: boolean
-  /** 静态应用对外暴露的状态字符串。 */
+  /** 子应用对外暴露的生命周期状态字符串。 */
   __MICRO_APP_STATE__: string
   /** 当前子应用专属的数据中心与路由入口。 */
   microApp: EventCenterForMicroApp,
@@ -115,11 +115,12 @@ export type proxyWindow = WindowProxy & MicroAppWindowDataType
 const { createMicroEventSource, clearMicroEventSource } = useMicroEventSource()
 
 /**
- * 基于 `with(proxyWindow)` 与 Proxy 实现的子应用沙箱。
+ * 通过独立窗口目标与 Proxy 实现子应用的全局作用域。
  *
- * 写操作优先落到独立 `microAppWindow`，读取按 scope/escape 规则回退到主窗口；生命周期还统一管理
- * DOM/History 全局补丁、路由状态、网络 API 和事件副作用快照。静态计数用于让共享补丁只在第一个
- * 沙箱启动时安装、最后一个沙箱停止时释放。
+ * 普通脚本放进 `with(microAppWindow)`，常用全局变量在该作用域取值并作为内层函数参数传入。
+ * 显式窗口读写经过 Proxy，按 scope/escape 规则选择独立目标或主窗口；生命周期还统一管理
+ * DOM/History 全局补丁、路由状态、网络 API 和事件副作用快照。globalEnv.activeSandbox 跨两类沙箱
+ * 控制共享补丁首装末卸；本类 activeCount 只控制 with 嵌套环境的初始化入口。
  */
 export default class WithSandBox extends BaseSandbox implements WithSandBoxInterface {
   /** 当前处于 active 状态的 with 沙箱数量。 */
@@ -138,7 +139,10 @@ export default class WithSandBox extends BaseSandbox implements WithSandBoxInter
   public microAppWindow = new CustomWindow() as MicroAppWindowType
 
   /**
-   * 创建 with 沙箱并异步完成路由、窗口、文档及静态全局补丁。
+   * 同步建立路由、窗口、文档及静态元数据，并提供已完成的就绪 Promise。
+   *
+   * `patchWith` 的 Promise executor 立即执行补丁；上游 mount 仍通过 `sandboxReady.then` 进入下一微任务，
+   * 与需要等待 iframe 文档重建的挂载入口使用同一约定。
    *
    * @param appName 子应用名称。
    * @param url 子应用入口 URL。
@@ -152,7 +156,7 @@ export default class WithSandBox extends BaseSandbox implements WithSandBoxInter
       this.patchRouter(appName, url, this.microAppWindow)
       // 构造窗口 Proxy 并接管全局事件、定时器等副作用。
       this.windowEffect = patchWindow(appName, this.microAppWindow, this)
-      // 构造 document Proxy，并把 DOM 创建与查询限定到当前子应用。
+      // 构造 document Proxy；创建时标记节点，查询还需 start 安装的全局 Document 补丁配合。
       this.documentEffect = patchDocument(appName, this.microAppWindow, this)
       // 复制依赖原生描述符语义的 self/top/parent 等窗口别名。
       this.setMappingPropertiesWithRawDescriptor(this.microAppWindow)
@@ -167,6 +171,7 @@ export default class WithSandBox extends BaseSandbox implements WithSandBoxInter
    *
    * `active` 是引用计数的前置保护：同一实例重复 start 不得再次递增两个计数。`globalEnv.activeSandbox`
    * 跨沙箱类型保护 DOM/History 补丁，`WithSandBox.activeCount` 则只统计 with 沙箱的嵌套应用环境。
+   * 上游已通过 sandboxReady；active 在初始化路由前设为 true，后续同步步骤若抛错不自动回滚。
    *
    * @param umdMode 是否复用 UMD 生命周期与全局变量。
    * @param baseroute 子应用路由基址。
@@ -197,9 +202,9 @@ export default class WithSandBox extends BaseSandbox implements WithSandBoxInter
     /* --- 内存路由阶段结束 --- */
 
     /**
-     * 默认模式重渲染必须恢复到首次执行前的全局环境：脚本可能改写注入键，而 stop 会删除它们，
-     * 所以每次重新启动都要初始化。UMD 模式在 stop 时保留全局键，跳过可避免覆盖应用持久状态；
-     * 首次 start 必然走默认模式，因此不会漏初始化。
+     * 默认模式每次重新执行脚本前，都重建 eval/Image 的覆盖槽、请求包装器和 scopeProperties 占位。
+     * UMD 重挂载沿用已有全局值与包装器；UMD 模式要等首次脚本导出 mount/unmount 后才被识别，
+     * 因此首次 start 已完成这一步初始化。
      */
     if (!umdMode) {
       this.initGlobalKeysWhenStart(
@@ -227,11 +232,11 @@ export default class WithSandBox extends BaseSandbox implements WithSandBoxInter
   /**
    * 停止沙箱，记录或清空副作用快照，并按引用计数释放共享补丁。
    *
-   * `active` 保证 stop 与 start 成对，避免计数降到负数。普通卸载会清理临时全局键；UMD 软卸载保留
+   * 对正常完成的 start，`active` 使重复 stop 不再递减计数。普通卸载会清理临时全局键；UMD 软卸载保留
    * 可复用状态，只有 destroy 才执行彻底清理。
    *
    * @param umdMode 是否处于 UMD 复用模式。
-   * @param keepRouteState 是否保留浏览器 URL 中的子应用路由。
+   * @param keepRouteState 是否保留内部 microLocation；浏览器中的应用路径与 state 仍会移除。
    * @param destroy 是否彻底销毁并删除缓存资源。
    * @param clearData 是否清除主、子应用间的数据。
    */
@@ -245,17 +250,17 @@ export default class WithSandBox extends BaseSandbox implements WithSandBoxInter
     this.recordAndReleaseEffect({ umdMode, clearData, destroy }, !umdMode || destroy)
 
     /* --- 内存路由阶段开始 --- */
-    // 按 keepRouteState 决定恢复或保留浏览器 URL 与 history.state。
+    // keepRouteState 决定是否重置内部 location；浏览器侧应用路由仍由清理函数移除。
     this.clearRouteState(keepRouteState)
 
-    // 使用 start 阶段保存的解除函数，避免遗留 popstate 监听器。
+    // 解除 start 阶段注册的 popstate 监听器；已经排入的路由宏任务不由此函数取消。
     this.removeHistoryListener?.()
     /* --- 内存路由阶段结束 --- */
 
     /**
-     * 注入键与逃生键必须在副作用释放后删除：初始目标对象上已有但运行期被重写的键也会进入集合，
-     * 若过早删除会让清理逻辑读不到依赖。UMD 模式保留全局键；默认模式还必须删除 mount/unmount
-     * 等钩子，防止下一次加载误复用旧生命周期。
+     * 副作用释放后再删除运行期登记的键，清理过程仍可读取窗口上的应用身份和数据中心。
+     * injectedKeys 收集新增键、从主窗口复制的键及显式赋值的作用域键；并非所有被重写的初始键。
+     * UMD 软卸载保留这些值。默认模式或 destroy 还清空捕获的生命周期函数，保留的访问器下次可重新捕获。
      */
     if (!umdMode || destroy) {
       clearMicroEventSource(this.microAppWindow.__MICRO_APP_NAME__)
@@ -323,10 +328,10 @@ export default class WithSandBox extends BaseSandbox implements WithSandBoxInter
   }
 
   /**
-   * 在释放全局事件、定时器和数据监听前，按生命周期语义记录或丢弃副作用快照。
+   * 在释放全局副作用前，按生命周期语义记录或丢弃事件、onclick 和数据监听快照。
    *
    * 普通/UMD 卸载、keep-alive 隐藏与预渲染完成都会进入这里；可恢复场景记录快照，彻底销毁或
-   * 默认模式则先清空旧快照，避免下一次挂载恢复已经失效的资源。
+   * 默认模式 stop 传 preventRecord=true，先清空旧快照，避免下一次挂载恢复已经失效的资源。
    *
    * @param options 清理数据、预渲染、keep-alive、UMD 与销毁选项。
    * @param preventRecord 是否禁止记录并改为清空已有快照。
@@ -357,7 +362,8 @@ export default class WithSandBox extends BaseSandbox implements WithSandBoxInter
   /**
    * 记录窗口、文档与数据中心的可恢复副作用。
    *
-   * 在首次执行 UMD mount、隐藏 keep-alive 应用或完成预渲染后调用；各子钩子负责合并重复记录。
+   * UMD 软卸载时记录 unmount 钩子执行后仍登记的监听器；隐藏 keep-alive 或完成预渲染时也会记录。
+   * 各子钩子合并重复记录；定时器没有快照，是否继续运行由 releaseGlobalEffect 的模式决定。
    */
   public recordEffectSnapshot (): void {
     this.windowEffect.record()
@@ -365,7 +371,7 @@ export default class WithSandBox extends BaseSandbox implements WithSandBoxInter
     recordDataCenterSnapshot(this.microAppWindow.microApp)
   }
 
-  /** 在重新挂载 UMD/keep-alive 应用前重建全部副作用，并由各钩子清空已消费快照。 */
+  /** 在 UMD 重挂载、keep-alive 显示或预渲染转挂载时恢复已记录的监听器，并清空已消费快照。 */
   public rebuildEffectSnapshot (): void {
     this.windowEffect.rebuild()
     this.documentEffect.rebuild()
@@ -375,8 +381,10 @@ export default class WithSandBox extends BaseSandbox implements WithSandBoxInter
   /**
    * 释放窗口事件、定时器、文档事件与数据监听。
    *
-   * 默认模式且非 keep-alive/预渲染时会连 on 属性一起清除；可恢复模式只移除当前真实绑定，保留快照。
-   * `destroy` 始终走最彻底清理，`clearData` 额外删除主应用和子应用两侧的数据缓存。
+   * 普通默认卸载或 destroy 同时终止定时器；UMD 软卸载、keep-alive 隐藏和预渲染保留定时器运行。
+   * 窗口 release 不清空通用 on* 属性；document.onclick 由文档钩子单独移除，其他文档 on* 赋值仍作用于
+   * 主文档。`clearData` 额外删除主应用和子应用两侧的数据缓存。
+   * 事件登记清空不代表原目标全部解除：release 未匹配 capture=true，scope 事件也按当前容器重新选目标。
    *
    * @param umdMode 是否处于 UMD 复用模式。
    * @param clearData 是否清除通信数据。
@@ -391,7 +399,7 @@ export default class WithSandBox extends BaseSandbox implements WithSandBoxInter
     keepAlive = false,
     destroy = false,
   }: releaseGlobalEffectParams): void {
-    // 只有不可恢复的默认模式或 destroy 才允许窗口钩子清除 on* 属性值。
+    // 该布尔值控制定时器清理；窗口事件监听器在所有模式下都执行释放。
     this.windowEffect.release((!umdMode && !keepAlive && !isPrerender) || destroy)
     this.documentEffect.release()
     this.microAppWindow.microApp?.clearDataListener()
@@ -517,8 +525,8 @@ export default class WithSandBox extends BaseSandbox implements WithSandBoxInter
   /**
    * 每次默认模式 start 时重建可变全局能力。
    *
-   * 自有属性判断同时覆盖目标对象和主窗口；随后补回 eval/Image、请求 API 与强制作用域键，确保
-   * 上次 stop 删除注入键后重新挂载仍与首次运行一致。
+   * hasOwnProperty 合并目标对象与主窗口；随后重新定义 eval/Image、请求 API 与强制作用域键，
+   * 让默认模式重执行脚本时使用本轮包装器与覆盖槽。
    *
    * @param appName 子应用名称。
    * @param url 子应用入口 URL。
@@ -531,6 +539,7 @@ export default class WithSandBox extends BaseSandbox implements WithSandBoxInter
     microAppWindow: microAppWindowType,
     disablePatchRequest: boolean,
   ): void {
+    /** 合并隔离窗口和宿主的自有键存在性；不采用 Proxy has 对 scopeProperties 的屏蔽规则。 */
     microAppWindow.hasOwnProperty = (key: PropertyKey) => rawHasOwnProperty.call(microAppWindow, key) || rawHasOwnProperty.call(globalEnv.rawWindow, key)
     this.setHijackProperty(appName, microAppWindow)
     if (!disablePatchRequest) this.patchRequestApi(appName, url, microAppWindow)
@@ -557,6 +566,7 @@ export default class WithSandBox extends BaseSandbox implements WithSandBoxInter
           throttleDeferForSetAppName(appName)
           return modifiedEval || globalEnv.rawWindow.eval
         },
+        /** 保存本轮 eval 覆盖值；getter 使用逻辑或，写入假值后仍会读取宿主 eval。 */
         set: (value) => {
           modifiedEval = value
         },
@@ -569,6 +579,7 @@ export default class WithSandBox extends BaseSandbox implements WithSandBoxInter
           throttleDeferForSetAppName(appName)
           return modifiedImage || globalEnv.ImageProxy
         },
+        /** 保存本轮 Image 覆盖值；写入假值会由 getter 回退到带应用标记的 ImageProxy。 */
         set: (value) => {
           modifiedImage = value
         },
@@ -632,10 +643,10 @@ export default class WithSandBox extends BaseSandbox implements WithSandBoxInter
   }
 
   /**
-   * 把插件声明的作用域键预置到 Proxy 目标，阻止 `with(microAppWindow)` 对裸标识符回退到主窗口。
+   * 把作用域键预置到窗口目标，阻止 `with(microAppWindow)` 对裸标识符回退到主窗口。
    *
-   * `Symbol.unscopables` 无法约束尚不存在的键，因此即使值为 undefined 也要创建自有属性。例如
-   * `if (!xxx) {}` 应只观察子应用作用域；显式 `window.xxx` 已经过 proxyWindow，不依赖此机制。
+   * with 使用独立目标而非 proxyWindow，其标识符查找不会进入 Proxy 的 has 陷阱；即使值为 undefined
+   * 也要先创建属性，才能遮住主窗口同名键。显式 `window.xxx` 则由 Proxy 的 get 陷阱按作用域名单处理。
    *
    * @param microAppWindow 子应用窗口目标对象。
    */
@@ -665,6 +676,7 @@ export default class WithSandBox extends BaseSandbox implements WithSandBoxInter
         get () {
           return microLocation
         },
+        /** location 整体赋值遵循宿主真实导航语义，虚拟 location 的字段赋值则由路由模块处理。 */
         set: (value) => {
           globalEnv.rawWindow.location = value
         },
@@ -681,7 +693,8 @@ export default class WithSandBox extends BaseSandbox implements WithSandBoxInter
   }
 
   /**
-   * 初始化子应用内存路由，并把默认页面写入浏览器 URL 状态。
+   * 以浏览器已有的应用路径恢复内部路由；无已有路径时才采用当前地址或 defaultPage。
+   * pure 模式保留内部路由，其余模式再把应用路径与 state 附着到浏览器。
    *
    * @param defaultPage 首次进入时的默认页面。
    */
@@ -696,7 +709,7 @@ export default class WithSandBox extends BaseSandbox implements WithSandBoxInter
   /**
    * 停止时从浏览器 URL 清理子应用路由状态。
    *
-   * @param keepRouteState 是否保留当前路由以便后续恢复。
+   * @param keepRouteState 是否保留内部 location；不阻止浏览器侧应用路由清理。
    */
   private clearRouteState (keepRouteState: boolean): void {
     clearRouteStateFromURL(
@@ -743,8 +756,8 @@ export default class WithSandBox extends BaseSandbox implements WithSandBoxInter
   /**
    * 劫持 `mount`、`unmount` 与 `micro-app-${appName}` 三种 UMD 导出形式。
    *
-   * 只在沙箱 active 且首次收到合法函数/对象时上报，避免脚本重复赋值触发生命周期二次注册；返回的
-   * 清理函数只丢弃闭包引用，属性本身由 stop 阶段的注入键清理负责删除。
+   * 每个导出槽只在 active 且首次收到合法值时接受赋值。mount、unmount 先后到达时回调会分别上报，
+   * 上游等两者都为函数才切换 UMD 模式。返回的清理函数只清空闭包槽位；访问器本身仍可用于下一轮捕获。
    *
    * @param appName 子应用名称。
    * @param microAppWindow 子应用窗口目标对象。
@@ -760,7 +773,9 @@ export default class WithSandBox extends BaseSandbox implements WithSandBoxInter
     rawDefineProperties(microAppWindow, {
       mount: {
         configurable: true,
+        /** 返回首次有效赋值捕获的 mount，UMD 软卸载后保留。 */
         get: () => mount,
+        /** 仅活动期间捕获首个函数；成对校验交给 CreateApp 的 handleUmdHooks。 */
         set: (value) => {
           if (this.active && isFunction(value) && !mount) {
             handleUmdHooks(mount = value, unmount)
@@ -769,7 +784,9 @@ export default class WithSandBox extends BaseSandbox implements WithSandBoxInter
       },
       unmount: {
         configurable: true,
+        /** 返回首次有效赋值捕获的 unmount。 */
         get: () => unmount,
+        /** 仅活动期间捕获首个函数，后续重赋值不替换现有生命周期引用。 */
         set: (value) => {
           if (this.active && isFunction(value) && !unmount) {
             handleUmdHooks(mount, unmount = value)
@@ -778,7 +795,9 @@ export default class WithSandBox extends BaseSandbox implements WithSandBoxInter
       },
       [`micro-app-${appName}`]: {
         configurable: true,
+        /** 返回按约定 micro-app-应用名捕获的库对象，不读取旧 library 属性指定的名称。 */
         get: () => microAppLibrary,
+        /** 仅活动期间首次普通对象赋值提交其 mount/unmount，钩子是否有效由上游判断。 */
         set: (value) => {
           if (this.active && isPlainObject(value) && !microAppLibrary) {
             microAppLibrary = value
@@ -794,7 +813,7 @@ export default class WithSandBox extends BaseSandbox implements WithSandBoxInter
   }
 
   /**
-   * 更新静态应用对外暴露的状态字符串。
+   * 更新子应用对外暴露的生命周期状态字符串。
    *
    * @param state 新状态。
    */

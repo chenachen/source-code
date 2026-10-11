@@ -15,7 +15,7 @@
  * @param {object} nativeEvent 原生浏览器事件。
  * @return {number} 归一化后的 `charCode`。
  */
-/** getEventCharCode 查询并返回归一化键盘 charCode，过滤不可打印键并兼容回车差异所需状态；无匹配时使用 null/默认值而不修改事件队列。 */
+/** 归一化可打印 charCode 与 Enter；其他不可打印键返回 0。 */
 function getEventCharCode(nativeEvent: KeyboardEvent): number {
   let charCode;
   const keyCode = nativeEvent.keyCode;

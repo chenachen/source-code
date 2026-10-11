@@ -19,7 +19,7 @@ jest.useRealTimers();
 
 global.IS_REACT_ACT_ENVIRONMENT = true;
 
-/** `sleep`：封装当前用例复用的操作、回调或断言步骤。 */
+/** 用当前计时器安排 promise 在 period 毫秒后解决 true；真实与 fake timers 用例分别负责推进时间。 */
 function sleep(period) {
   return new Promise(resolve => {
     setTimeout(() => {
@@ -34,7 +34,8 @@ describe('React.act()', () => {
   });
 
   let root = null;
-  /** `renderConcurrent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+  /** 为传入 dom 新建并保存根，开发用 act 包住 render；生产直接调度，用于复用同一套测试入口。 */
   const renderConcurrent = (el, dom) => {
     root = ReactDOMClient.createRoot(dom);
     if (__DEV__) {
@@ -44,7 +45,7 @@ describe('React.act()', () => {
     }
   };
 
-  /** `unmountConcurrent`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 卸载当前保存的根后清 null；开发以 act 刷清理，参数 dom 不用于选择根。 */
   const unmountConcurrent = _dom => {
     if (__DEV__) {
       act(() => {
@@ -61,7 +62,7 @@ describe('React.act()', () => {
     }
   };
 
-  /** `rerenderConcurrent`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 对已保存根在 act 内更新，不另建根；可能被外层 act 嵌套。 */
   const rerenderConcurrent = el => {
     act(() => root.render(el));
   };
@@ -69,21 +70,16 @@ describe('React.act()', () => {
   runActTests(renderConcurrent, unmountConcurrent, rerenderConcurrent);
 
   describe('unacted effects', () => {
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 挂载一个空 passive effect，检验合法 act scope 不触发测试警告。 */
     function App() {
       React.useEffect(() => {}, []);
       return null;
     }
 
     // @gate __DEV__
-    /**
-     * 代表场景（Given–When–Then）：
-     * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-     * When 执行「does not warn」描述的渲染或交互；
-     * Then 通过本用例的 DOM、日志或调度断言确认行为。
-     *
-     * 验证机制：断言覆盖 ReactTestUtils.act 到 React.act 的兼容转发与调度冲刷。
-     */
+
+    /** 开发环境创建根并在同步 act 内渲染含空 effect 的 App；没有额外警告断言，框架的 console 检查约束该合法作用域不报警。 */
     it('does not warn', () => {
       root = ReactDOMClient.createRoot(document.createElement('div'));
       act(() => root.render(<App />));
@@ -91,7 +87,7 @@ describe('React.act()', () => {
   });
 });
 
-/** `runActTests`：封装当前用例复用的操作、回调或断言步骤。 */
+/** 按给定挂载/卸载/更新函数注册并发根 act 测试，setup 每例重载模块和容器，cleanup 卸载后移除容器。 */
 function runActTests(render, unmount, rerender) {
   describe('concurrent render', () => {
     beforeEach(() => {
@@ -116,9 +112,11 @@ function runActTests(render, unmount, rerender) {
 
     describe('sync', () => {
       // @gate __DEV__
-      /** 测试场景：验证「can use act to flush effects」描述的渲染、交互或错误处理结果。 */
+
+      /** 同步 act 渲染 App，其 passive effect 记录 100；离开 act 后日志已有 100，验证 effect 刷新。 */
       it('can use act to flush effects', () => {
-        /** `runActTests.App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+        /** effect 记录 100，供同步 act 退出时检查被动队列。 */
         function App() {
           React.useEffect(() => {
             Scheduler.log(100);
@@ -134,9 +132,11 @@ function runActTests(render, unmount, rerender) {
       });
 
       // @gate __DEV__
-      /** 测试场景：验证「flushes effects on every call」描述的渲染、交互或错误处理结果。 */
+
+      /** 按钮初始计数 0，单次异步 act 中点三次、之后两次分别 act；effect 日志为 0/3/4/5且 DOM 为 5，验证同 scope 批量更新与每轮 effect。 */
       it('flushes effects on every call', async () => {
-        /** `runActTests.App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+        /** 按钮保存计数，点击函数更新累加，effect 记录每次已提交计数。 */
         function App() {
           const [ctr, setCtr] = React.useState(0);
           React.useEffect(() => {
@@ -154,7 +154,8 @@ function runActTests(render, unmount, rerender) {
         });
         assertLog([0]);
         const button = container.querySelector('#button');
-        /** `runActTests.click`：封装当前用例复用的操作、回调或断言步骤。 */
+
+        /** 在当前按钮派发冒泡 MouseEvent，不直接调用 React handler。 */
         function click() {
           button.dispatchEvent(new MouseEvent('click', {bubbles: true}));
         }
@@ -174,9 +175,11 @@ function runActTests(render, unmount, rerender) {
       });
 
       // @gate __DEV__
-      /** 测试场景：验证「should keep flushing effects until they're done」描述的渲染、交互或错误处理结果。 */
+
+      /** effect 在 count<5 时继续加一；同步 act 返回时 DOM 已为 5，验证继续处理 effect 产生的更新直至稳定。 */
       it("should keep flushing effects until they're done", () => {
-        /** `runActTests.App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+        /** effect 在 count<5 时继续排加一更新，使 act 必须刷多轮。 */
         function App() {
           const [ctr, setCtr] = React.useState(0);
           React.useEffect(() => {
@@ -195,9 +198,11 @@ function runActTests(render, unmount, rerender) {
       });
 
       // @gate __DEV__
-      /** 测试场景：验证「should flush effects only on exiting the outermost act」描述的渲染、交互或错误处理结果。 */
+
+      /** 嵌套 act 内挂载记录 0 的 effect，内层退出时日志为空，最外层退出后为 0；验证只有最外层刷新队列。 */
       it('should flush effects only on exiting the outermost act', () => {
-        /** `runActTests.App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+        /** 仅 effect 记录 0，比较嵌套 scope 内与最外 scope 退出后。 */
         function App() {
           React.useEffect(() => {
             Scheduler.log(0);
@@ -217,10 +222,12 @@ function runActTests(render, unmount, rerender) {
       });
 
       // @gate __DEV__
-      /** 测试场景：验证「warns if a setState is called outside of act(...)」描述的渲染、交互或错误处理结果。 */
+
+      /** 在 act 内挂载并暴露 setter，scope 外 setValue(1)；开发构建报告 App 更新未包 act，验证测试环境警告。 */
       it('warns if a setState is called outside of act(...)', () => {
         let setValue = null;
-        /** `runActTests.App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+        /** 暴露当前 useState setter，让测试从 act 外触发警告。 */
         function App() {
           const [value, _setValue] = React.useState(0);
           setValue = _setValue;
@@ -249,10 +256,12 @@ function runActTests(render, unmount, rerender) {
       });
 
       // @gate __DEV__
-      /** 测试场景：验证「warns if a setState is called outside of act(...) after a component threw」描述的渲染、交互或错误处理结果。 */
+
+      /** 第一次 App render 因缺省值抛错，随后合法值恢复；scope 外 setter 仍报 act 警告，验证错误未关闭环境检查。 */
       it('warns if a setState is called outside of act(...) after a component threw', () => {
         let setValue = null;
-        /** `runActTests.App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+        /** 缺 defaultValue 时抛错，否则暴露 setter，检验 act 错误恢复后检查仍有效。 */
         function App({defaultValue}) {
           if (defaultValue === undefined) {
             throw new Error('some error');
@@ -290,10 +299,12 @@ function runActTests(render, unmount, rerender) {
       });
 
       // @gate __DEV__
-      /** 测试场景：验证「does not warn if IS_REACT_ACT_ENVIRONMENT is set to false」描述的渲染、交互或错误处理结果。 */
+
+      /** 先 scope 外更新报错，临时 IS_REACT_ACT_ENVIRONMENT=false 时同类更新不警告，finally 恢复后再次警告；验证每次更新读取当前 flag。 */
       it('does not warn if IS_REACT_ACT_ENVIRONMENT is set to false', () => {
         let setState;
-        /** `runActTests.App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+        /** 暴露 setter 给环境 flag 切换，输出当前 state。 */
         function App() {
           const [state, _setState] = React.useState(0);
           setState = _setState;
@@ -358,9 +369,11 @@ function runActTests(render, unmount, rerender) {
         });
 
         // @gate __DEV__
-        /** 测试场景：验证「lets a ticker update」描述的渲染、交互或错误处理结果。 */
+
+        /** fake timers 下 effect 安排 200ms 更新并带清理，单独 act 中 runAllTimers 后 DOM 为 1；验证定时回调更新刷到提交。 */
         it('lets a ticker update', () => {
-          /** `runActTests.App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** effect 安排 200ms 后设 1，卸载清 timer，供 fake timers 手动推进。 */
           function App() {
             const [toggle, setToggle] = React.useState(0);
             React.useEffect(() => {
@@ -383,9 +396,11 @@ function runActTests(render, unmount, rerender) {
         });
 
         // @gate __DEV__
-        /** 测试场景：验证「can use the async version to catch microtasks」描述的渲染、交互或错误处理结果。 */
+
+        /** effect 用 sleep(200).then 更新，fake timers 的 runAllTimers 置于异步 act；退出后 DOM 为 1，验证还会处理 timer 后的 promise 微任务。 */
         it('can use the async version to catch microtasks', async () => {
-          /** `runActTests.App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** effect 等 sleep promise 再更新，供异步 act 同时刷 timer 与微任务。 */
           function App() {
             const [toggle, setToggle] = React.useState(0);
             React.useEffect(() => {
@@ -406,13 +421,16 @@ function runActTests(render, unmount, rerender) {
         });
 
         // @gate __DEV__
-        /** 测试场景：验证「can handle cascading promises with fake timers」描述的渲染、交互或错误处理结果。 */
+
+        /** fake timers 环境中 effect 每轮 await null 后加一，依赖 Math.min(state,4) 限制五轮；异步 act 返回时 DOM 为 5，覆盖纯微任务级联。 */
         it('can handle cascading promises with fake timers', async () => {
           // 此组件触发一个 effect；effect 等待一个 tick 后设置 state，并重复 5 次。
-          /** `runActTests.App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 用 min(state,4) 依赖控制五次 effect/ticker 更新，即使 fake timers 也靠微任务推进。 */
           function App() {
             const [state, setState] = React.useState(0);
-            /** `App.ticker`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /** 等待一个微任务后函数式加一，保留每轮当前 state 的累积。 */
             async function ticker() {
               await null;
               setState(x => x + 1);
@@ -432,9 +450,11 @@ function runActTests(render, unmount, rerender) {
         });
 
         // @gate __DEV__
-        /** 测试场景：验证「flushes immediate re-renders with act」描述的渲染、交互或错误处理结果。 */
+
+        /** effect 首轮立即设置 1并安排到 2的定时器；首次 act 内先 runAllTimers 时 effect 尚未安装，返回仅为 1，下一 act 推进 timer 才为 2。 */
         it('flushes immediate re-renders with act', () => {
-          /** `runActTests.App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 首个 effect 立即从 0改1，每轮设置到2的 timer并清前一个 timer，区分 effect 刷新与时间推进。 */
           function App() {
             const [ctr, setCtr] = React.useState(0);
             React.useEffect(() => {
@@ -466,12 +486,15 @@ function runActTests(render, unmount, rerender) {
 
     describe('asynchronous tests', () => {
       // @gate __DEV__
-      /** 测试场景：验证「works with timeouts」描述的渲染、交互或错误处理结果。 */
+
+      /** 真实计时器 effect 安排 50ms 更新，先 act 后 DOM 0，再异步 act 等 100ms；DOM 1，验证显式等待 timer 后刷新。 */
       it('works with timeouts', async () => {
-        /** `runActTests.App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+        /** 初始 0，在挂载 effect 启动真实 timer，输出当前计数。 */
         function App() {
           const [ctr, setCtr] = React.useState(0);
-          /** `App.doSomething`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 安排 50ms 后 setCtr(1)，不自行推进真实时间。 */
           function doSomething() {
             setTimeout(() => {
               setCtr(1);
@@ -496,12 +519,15 @@ function runActTests(render, unmount, rerender) {
       });
 
       // @gate __DEV__
-      /** 测试场景：验证「flushes microtasks before exiting (async function)」描述的渲染、交互或错误处理结果。 */
+
+      /** effect 的 async 函数连续 await null 三次再设置 1；await 异步 callback 的 act 后 DOM 已为 1，验证多级微任务 drain。 */
       it('flushes microtasks before exiting (async function)', async () => {
-        /** `runActTests.App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+        /** 挂载 effect 调用三层 await 的更新函数，输出计数。 */
         function App() {
           const [ctr, setCtr] = React.useState(0);
-          /** `App.someAsyncFunction`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 连续三次 await null 后设置 1，制造多级微任务队列。 */
           async function someAsyncFunction() {
             // 队列一系列 Promise，确保它们全部执行完毕。
             await null;
@@ -522,13 +548,16 @@ function runActTests(render, unmount, rerender) {
       });
 
       // @gate __DEV__
-      /** 测试场景：验证「flushes microtasks before exiting (sync function)」描述的渲染、交互或错误处理结果。 */
+
+      /** 同样三层微任务更新，但 act callback 为同步函数仍 await 返回 thenable；DOM 为 1，验证等待 act 结果可继续刷异步队列。 */
       it('flushes microtasks before exiting (sync function)', async () => {
         // 如上一次测试一样。 但是传递给 `act` 的回调函数不是异步函数。
-        /** `runActTests.App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+        /** 同样三层微任务更新 fixture，区别外层 act callback 的同步形式。 */
         function App() {
           const [ctr, setCtr] = React.useState(0);
-          /** `App.someAsyncFunction`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 经三次 await 再设置 1，供等待同步 act 返回结果的路径刷新。 */
           async function someAsyncFunction() {
             // 队列一系列 Promise，确保它们全部执行完毕。
             await null;
@@ -549,7 +578,8 @@ function runActTests(render, unmount, rerender) {
       });
 
       // @gate __DEV__
-      /** 测试场景：验证「warns if you do not await an act call」描述的渲染、交互或错误处理结果。 */
+
+      /** 调用 act(async()=>{}) 却不 await，sleep(0) 后 console.error 一次包含未等待提示；验证延迟检测非 await 异步 scope。 */
       it('warns if you do not await an act call', async () => {
         spyOnDevAndProd(console, 'error').mockImplementation(() => {});
         act(async () => {});
@@ -564,7 +594,8 @@ function runActTests(render, unmount, rerender) {
       });
 
       // @gate __DEV__
-      /** 测试场景：验证「warns if you try to interleave multiple act calls」描述的渲染、交互或错误处理结果。 */
+
+      /** 同时启动分别等 50/100ms 的两个 act，Promise.all 等待后再等一轮；console.error 两次重叠提示，验证异步 scope 不能交错关闭。 */
       it('warns if you try to interleave multiple act calls', async () => {
         spyOnDevAndProd(console, 'error').mockImplementation(() => {});
 
@@ -590,12 +621,15 @@ function runActTests(render, unmount, rerender) {
       });
 
       // @gate __DEV__
-      /** 测试场景：验证「async commits and effects are guaranteed to be flushed」描述的渲染、交互或错误处理结果。 */
+
+      /** 挂载 effect await null 后设 state=1，另 effect 记录每次 state；await act 后日志 0/1且 DOM 1，验证异步更新的提交与 effect 都完成。 */
       it('async commits and effects are guaranteed to be flushed', async () => {
-        /** `runActTests.App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+        /** 一个 effect 做异步更新，另一个记录已提交 state，联合验证微任务/提交/effect。 */
         function App() {
           const [state, setState] = React.useState(0);
-          /** `App.something`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** await 一个微任务后设置 state=1。 */
           async function something() {
             await null;
             setState(1);
@@ -619,13 +653,16 @@ function runActTests(render, unmount, rerender) {
       });
 
       // @gate __DEV__
-      /** 测试场景：验证「can handle cascading promises」描述的渲染、交互或错误处理结果。 */
+
+      /** effect 日志并 await null 加一，依赖 min(state,4)；act 后日志 0到4、DOM 5，验证第五次更新后依赖不再变化而停止级联。 */
       it('can handle cascading promises', async () => {
         // 此组件触发一个 effect；effect 等待一个 tick 后设置 state，并重复 5 次。
-        /** `runActTests.App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+        /** 记录 state 后启动 ticker，以 min(state,4) 依赖停止第六轮 effect。 */
         function App() {
           const [state, setState] = React.useState(0);
-          /** `App.ticker`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 微任务后函数式加一，覆盖跨 effect 的连续更新。 */
           async function ticker() {
             await null;
             setState(x => x + 1);
@@ -648,7 +685,8 @@ function runActTests(render, unmount, rerender) {
 
     describe('error propagation', () => {
       // @gate __DEV__
-      /** 测试场景：验证「propagates errors - sync」描述的渲染、交互或错误处理结果。 */
+
+      /** 同步 act callback 直接抛 some error，外层 catch 得到同类 Error 和 message；验证同步传播。 */
       it('propagates errors - sync', () => {
         let err;
         try {
@@ -664,9 +702,11 @@ function runActTests(render, unmount, rerender) {
       });
 
       // @gate __DEV__
-      /** 测试场景：验证「should propagate errors from effects - sync」描述的渲染、交互或错误处理结果。 */
+
+      /** App passive effect 抛 oh no，同步 act 刷新时向外抛该错误；验证 effect 错误也从 scope 传播。 */
       it('should propagate errors from effects - sync', () => {
-        /** `runActTests.App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+        /** passive effect 抛 oh no，供同步 act 刷新错误传播。 */
         function App() {
           React.useEffect(() => {
             throw new Error('oh no');
@@ -688,7 +728,8 @@ function runActTests(render, unmount, rerender) {
       });
 
       // @gate __DEV__
-      /** 测试场景：验证「propagates errors - async」描述的渲染、交互或错误处理结果。 */
+
+      /** 异步 act 等 100ms 后 callback 抛 some error，await 在外层捕获 Error；验证异步拒绝传播。 */
       it('propagates errors - async', async () => {
         let err;
         try {
@@ -705,9 +746,11 @@ function runActTests(render, unmount, rerender) {
       });
 
       // @gate __DEV__
-      /** 测试场景：验证「should cleanup after errors - sync」描述的渲染、交互或错误处理结果。 */
+
+      /** 同步 act callback 先抛 oh no，finally 再启动合法 act 挂载 App；effect 仍记录 oh yes，验证错误后 scope 清理允许再用。 */
       it('should cleanup after errors - sync', () => {
-        /** `runActTests.App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+        /** 在先前 scope 抛错后合法挂载并记录 oh yes，验证新 scope 可用。 */
         function App() {
           React.useEffect(() => {
             Scheduler.log('oh yes');
@@ -733,11 +776,14 @@ function runActTests(render, unmount, rerender) {
       });
 
       // @gate __DEV__
-      /** 测试场景：验证「should cleanup after errors - async」描述的渲染、交互或错误处理结果。 */
+
+      /** 异步 act 等后抛 oh no，finally 再 await 合法 act；App effect 的微任务日志 oh yes出现，验证异步错误后队列与深度恢复。 */
       it('should cleanup after errors - async', async () => {
-        /** `runActTests.App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+        /** effect 启动异步日志，验证前一异步 scope 失败后微任务仍被刷。 */
         function App() {
-          /** `App.somethingAsync`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 经过一个微任务再记录 oh yes。 */
           async function somethingAsync() {
             await null;
             Scheduler.log('oh yes');
@@ -772,7 +818,8 @@ function runActTests(render, unmount, rerender) {
         // TODO：开始使用 testing build 后移除 __DEV__ 检查。
 
         // @gate __DEV__
-        /** 测试场景：验证「triggers fallbacks if available」描述的渲染、交互或错误处理结果。 */
+
+        /** 开发实验构建先显示 content，普通更新挂起会显示 spinner，切回后 transition 挂起不显示 spinner；promise 解决输出 was suspended，验证 act 遵循普通与过渡更新的 fallback 策略。 */
         it('triggers fallbacks if available', async () => {
           let resolved = false;
           let resolve;
@@ -780,7 +827,7 @@ function runActTests(render, unmount, rerender) {
             resolve = _resolve;
           });
 
-          /** `runActTests.Suspends`：封装当前用例复用的操作、回调或断言步骤。 */
+          /** resolved 前抛共享 promise，完成后输出 was suspended。 */
           function Suspends() {
             if (resolved) {
               return 'was suspended';
@@ -788,7 +835,7 @@ function runActTests(render, unmount, rerender) {
             throw promise;
           }
 
-          /** `runActTests.App`：封装当前用例复用的操作、回调或断言步骤。 */
+          /** 按 suspend 选择可能挂起的子组件或 content，固定 spinner fallback用于观察不同优先级策略。 */
           function App(props) {
             return (
               <React.Suspense
@@ -824,7 +871,7 @@ function runActTests(render, unmount, rerender) {
             });
           });
 
-          // 在并发模式下，刷新过渡将无限期延迟。
+          // transition 可以保留已提交 content，等待 promise；此处断言没有展示新的 spinner。
           expect(document.querySelector('[data-test-id=spinner]')).toBeNull();
 
           // 兑现 Promise。

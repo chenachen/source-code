@@ -29,21 +29,16 @@ describe('ReactDOMNestedEvents', () => {
     assertLog = InternalTestUtils.assertLog;
   });
 
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「nested event dispatches should not cause updates to flush」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：事件断言连接 DOMPluginEventSystem 的委托、合成与传播路径。
-   */
+  /** 按钮初始两个状态都为 false；click handler 同步调用 focus 并分别安排点击/聚焦更新。focus 返回后的日志仍应看到两项 false，最外层 act 完成后两项均为 true，验证嵌套原生派发不会提前冲刷事件批次。 */
   it('nested event dispatches should not cause updates to flush', async () => {
     const buttonRef = React.createRef(null);
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 用两项状态把外层 click 和内层 focus 的提交时机显示在同一个按钮上。 */
     function App() {
       const [isClicked, setIsClicked] = useState(false);
       const [isFocused, setIsFocused] = useState(false);
-      /** `App.onClick`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /** 安排点击状态、同步触发 focus，然后读取旧 DOM 日志；该读取位置验证嵌套事件没有结束外层批次。 */
       const onClick = () => {
         setIsClicked(true);
         const el = buttonRef.current;
@@ -52,7 +47,8 @@ describe('ReactDOMNestedEvents', () => {
         // 包裹 focus 调用，两项更新才会在这里同步提交。
         Scheduler.log('Value right after focus call: ' + el.innerHTML);
       };
-      /** `App.onFocus`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /** 仅安排聚焦状态，让其与外层点击更新一起在事件批次结束后提交。 */
       const onFocus = () => {
         setIsFocused(true);
       };

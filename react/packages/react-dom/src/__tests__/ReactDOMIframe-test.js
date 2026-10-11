@@ -20,14 +20,7 @@ describe('ReactDOMIframe', () => {
     act = require('internal-test-utils').act;
   });
 
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「should trigger load events」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言连接 ReactDOM 公开入口、ReactDOMRoot 根生命周期及 DOM 提交结果。
-   */
+  /** 先渲染带 onLoad spy 的 iframe，再向 iframe 派发 bubbles=false 的 load；spy 应被调用，验证目标直接安装的加载监听能接住不冒泡事件。 */
   it('should trigger load events', async () => {
     const onLoadSpy = jest.fn();
     const container = document.createElement('div');

@@ -49,7 +49,9 @@ export class EffectScope {
   // TODO：启用 isolatedDeclarations 后改用 ReactiveFlags.SKIP。
 
   /**
-   * @param detached 是否创建独立作用域。为 `false` 时会自动挂到当前活动作用域下。
+   * 建立父子归属，但不立即切换 activeEffectScope；run/on 才启用收集上下文。
+   *
+   * @param detached 是否创建独立作用域。为 false 时会自动挂到当前活动作用域下。
    */
   constructor(public detached = false) {
     if (!detached && activeEffectScope) {
@@ -75,7 +77,8 @@ export class EffectScope {
   /**
    * 暂停当前作用域、所有子作用域及直接拥有的 effect。
    *
-   * 暂停期间触发的 effect 不会丢失，而是进入待恢复队列；调用 `resume()` 后执行。
+   * 暂停期间触发的 effect 进入待恢复队列；`resume()` 后合并为一次补触发，
+   * 再按各 effect 的调度方式执行。
    * 遍历前复制子作用域数组，避免暂停钩子间接修改原数组导致漏处理。
    */
   pause(): void {
@@ -122,6 +125,8 @@ export class EffectScope {
    * 在当前作用域上下文中执行函数，使函数内新建的 effect 自动归属本作用域。
    *
    * `finally` 保证用户函数抛错时也会恢复外层作用域。已停止的作用域不再执行函数。
+   * 自动归属只覆盖 fn 的同步执行段；fn 返回 Promise 时立即恢复外层作用域，await 后
+   * 创建的 effect 不会自动归入此作用域，需要再用 `run()` 包住创建步骤。
    *
    * @param fn 要在作用域中执行的函数。
    * @returns 函数返回值；作用域失活时返回 `undefined`。
@@ -143,9 +148,10 @@ export class EffectScope {
   /** `on()` 前的活动作用域，用于退出时恢复；链表结构也支持异步交错修正。 */
   prevScope: EffectScope | undefined
   /**
-   * 手动把当前实例设为活动作用域。仅供非独立作用域使用。
+   * 供运行时核心手动把当前实例设为活动作用域。
    *
    * 嵌套调用通过 `_on` 计数；只有从 0 变为 1 时才保存并替换全局作用域。
+   * detached 只影响父子归属，不妨碍 on/off 切换活动上下文。
    *
    * @internal
    */
@@ -157,7 +163,7 @@ export class EffectScope {
   }
 
   /**
-   * 结束一次手动启用并在最外层 `off()` 时恢复此前作用域。仅供非独立作用域使用。
+   * 结束一次手动启用并在最外层 `off()` 时恢复此前作用域，detached 作用域同样适用。
    *
    * @internal
    */
@@ -188,6 +194,10 @@ export class EffectScope {
    *
    * 非独立作用域还会从父作用域数组中移除。删除采用“末项填洞”，避免普通
    * `splice()` 的 O(n) 移动；被换入的末项同步更新 `index`。
+   *
+   * 先置 _active=false，防止停止期间新建的 effect 继续归属本作用域；直接 effect、
+   * 用户清理、子作用域按此顺序处理。清理回调同步执行，不等待 Promise，也不逐个
+   * 捕获异常；某项抛错会中断剩余清理，且本作用域已经失活，不能靠再次 stop 重试。
    *
    * @param fromParent 是否由父作用域递归停止；为 `true` 时父数组正统一清空，
    * 无需让每个子作用域再单独删除自己。
@@ -229,7 +239,9 @@ export class EffectScope {
 }
 
 /**
- * 创建可捕获内部响应式副作用（如 computed、watch）的作用域，以便统一销毁。
+ * 创建收集内部 ReactiveEffect（如 effect、watch）的作用域，以便统一暂停、恢复和停止。
+ * computed 本身不登记到 scope.effects；停止读取它的 effect/watch 后，它失去这些自动
+ * 消费者，但仍可通过读取 `.value` 重新求值。
  * 详细场景参见对应的
  * {@link https://github.com/vuejs/rfcs/blob/master/active-rfcs/0041-reactivity-effect-scope.md | RFC}。
  *
@@ -252,6 +264,9 @@ export function getCurrentScope(): EffectScope | undefined {
 
 /**
  * 向当前活动作用域登记销毁回调，作用域停止时执行。
+ *
+ * 注册只检查当前作用域是否存在，不检查 active；失活作用域已经完成 stop 时，
+ * 新登记的清理不会因为再次 stop 自动执行。回调必须在有效的生命周期中登记。
  *
  * @param fn 清理函数。
  * @param failSilently 没有活动作用域时是否静默忽略；默认在开发模式发出警告。

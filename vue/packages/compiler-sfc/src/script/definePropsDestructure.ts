@@ -26,7 +26,7 @@ import { DEFINE_PROPS } from './defineProps'
 
 /**
  * 解析 `const { foo: local, bar = 1, ...rest } = defineProps()`。
- * 记录公共名、局部别名和默认值；嵌套/计算键因无法稳定映射回 `__props` 而禁止。
+ * 记录公共名、局部别名和默认值；不支持嵌套解构或动态计算键，字符串/数字字面量计算键可解析。
  */
 export function processPropsDestructure(
   ctx: ScriptCompileContext,
@@ -104,6 +104,10 @@ type Scope = Record<string, boolean>
  *
  * 转换器自行模拟 JS 的函数/块/var 作用域，避免重写同名局部变量；同时禁止写入只读 prop，
  * 并诊断 `watch(foo)` / `toRef(foo)` 这类传值后丢失响应性的用法，要求改传 getter。
+ * rootScope 的 true 表示 prop，进入子作用域后同名本地绑定登记 false；查找到最近项即
+ * 决定是否重写。先预收集函数级 var，再逐块登记 let/const，保证声明前引用也遵循遮蔽。
+ * excludedIds 保存声明位置及扫描时不应改写的标识符对象，避免把 pattern 本身变成属性访问。
+ * 所有 MagicString 修改仍基于原 AST 偏移；退出函数、块、循环与 catch 时弹栈恢复外层判断。
  */
 export function transformDestructuredProps(
   ctx: ScriptCompileContext,
@@ -200,7 +204,7 @@ export function transformDestructuredProps(
         isRoot && decl.init && isCallOf(unwrapTSNode(decl.init), 'defineProps')
       for (const id of extractIdentifiers(decl.id)) {
         if (isDefineProps) {
-          // 根 defineProps 解构已由 knownProps 标为 true；这里只排除声明位置，不能覆盖其值。
+          // 根 defineProps 解构已在 rootScope 标为 true；这里只排除声明位置，不能覆盖其值。
           excludedIds.add(id)
         } else {
           registerLocalBinding(id, scope)
@@ -244,7 +248,11 @@ export function transformDestructuredProps(
     })
   }
 
-  /** 把一个确认引用 prop 的标识符改写为属性访问，并拒绝赋值/自增。 */
+  /**
+   * 把已确认的 prop 引用映射回公开键；对象简写需补出原局部键再替换其值。
+   * 直接 AssignmentExpression 左侧或 UpdateExpression 会报只读错误；这项检查并非
+   * 对任意嵌套解构写入模式的完整分析。非标识符公开键由 genPropsAccessExp 使用方括号。
+   */
   function rewriteId(id: Identifier, parent: Node, parentStack: Node[]) {
     if (
       (parent.type === 'AssignmentExpression' && id === parent.left) ||

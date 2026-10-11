@@ -13,7 +13,7 @@ import type {AnyNativeEvent} from '../events/PluginModuleType';
 
 let currentReplayingEvent = null;
 
-/** setReplayingEvent 更新维护当前正在重放的原生事件哨兵，防止 replay 路径递归处理同一事件的模块状态或 DOM 状态；重复调用需保持队列顺序与恢复幂等性。 */
+/** 登记当前重放的原生事件；配对的 reset 在本轮原生 dispatch 之后清除哨兵。 */
 export function setReplayingEvent(event: AnyNativeEvent): void {
   if (__DEV__) {
     if (currentReplayingEvent !== null) {
@@ -26,7 +26,7 @@ export function setReplayingEvent(event: AnyNativeEvent): void {
   currentReplayingEvent = event;
 }
 
-/** resetReplayingEvent 更新维护当前正在重放的原生事件哨兵，防止 replay 路径递归处理同一事件的模块状态或 DOM 状态；重复调用需保持队列顺序与恢复幂等性。 */
+/** 结束本轮重放并清空原生事件哨兵。 */
 export function resetReplayingEvent(): void {
   if (__DEV__) {
     if (currentReplayingEvent === null) {
@@ -39,7 +39,7 @@ export function resetReplayingEvent(): void {
   currentReplayingEvent = null;
 }
 
-/** isReplayingEvent 判断维护当前正在重放的原生事件哨兵，防止 replay 路径递归处理同一事件的前置条件；返回值用于在热路径提前跳过不适用分支。 */
+/** 按对象身份判断事件是否为当前正在重放的克隆。 */
 export function isReplayingEvent(event: AnyNativeEvent): boolean {
   return event === currentReplayingEvent;
 }

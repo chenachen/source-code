@@ -114,7 +114,7 @@ function wwwOnCaughtError(
   errorInfo: {
     /** 错误发生位置对应的组件栈。 */
     +componentStack?: ?string,
-    /** 实际捕获错误的边界组件类型。 */
+    /** 实际捕获错误的边界组件实例。 */
     +errorBoundary?: ?component(),
   },
 ): void {
@@ -179,6 +179,7 @@ export function hydrateRoot(
 let topLevelUpdateWarnings;
 
 if (__DEV__) {
+  /** 检查 legacy 容器内容是否被外部移走，或传入节点是否已经持有另一棵 React 树的内部宿主节点。 */
   topLevelUpdateWarnings = (container: Container) => {
     if (container._reactRootContainer && container.nodeType !== COMMENT_NODE) {
       const hostInstance = findHostInstanceWithNoPortals(
@@ -244,6 +245,7 @@ function legacyCreateRootFromDOMContainer(
   if (isHydrationContainer) {
     if (typeof callback === 'function') {
       const originalCallback = callback;
+      /** hydration 提交后读取公开根实例作为 this，原样调用用户 callback；root 在后续冲刷前已创建。 */
       callback = function () {
         const instance = getPublicRootInstance(root);
         originalCallback.call(instance);
@@ -285,6 +287,7 @@ function legacyCreateRootFromDOMContainer(
 
     if (typeof callback === 'function') {
       const originalCallback = callback;
+      /** 首次普通 legacy 提交后以公开根实例作为 this 调用用户 callback，而不是以容器作为 this。 */
       callback = function () {
         const instance = getPublicRootInstance(root);
         originalCallback.call(instance);
@@ -366,6 +369,7 @@ function legacyRenderSubtreeIntoContainer(
     root = maybeRoot;
     if (typeof callback === 'function') {
       const originalCallback = callback;
+      /** 复用根更新的提交回调，每次从当前根读取公开实例，使 this 对应更新后的根输出。 */
       callback = function () {
         const instance = getPublicRootInstance(root);
         originalCallback.call(instance);

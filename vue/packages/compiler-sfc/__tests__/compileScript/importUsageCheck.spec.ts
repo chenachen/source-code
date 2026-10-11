@@ -4,9 +4,10 @@
  */
 import { assertCode, compileSFCScript as compile } from '../utils'
 
-// 开发模式会把 setup() 中声明的绑定作为对象返回。TypeScript 的类型导入没有
-// 运行时值，因此编译器必须结合模板中的实际使用情况，决定哪些导入需要返回。
+// 非 inline 模式返回 setup 绑定对象。type-only import 不进入返回对象；TS 模式下，
+// 值 import 是否返回由模板使用分析决定，避免暴露只用于类型或完全未用的导入。
 
+// 导入 PascalCase/kebab-case/小写组件及仅作类型的 FooBar；模板标签决定 getter 返回集合，普通文本与大小写不匹配不计为使用。
 test('components', () => {
   const { content } = compile(`
     <script setup lang="ts">
@@ -31,6 +32,7 @@ test('components', () => {
   assertCode(content)
 })
 
+// 导入 vMyDir 并在模板使用 v-my-dir；指令名还原为脚本绑定，非内联 setup 返回其 getter。
 test('directive', () => {
   const { content } = compile(`
     <script setup lang="ts">
@@ -44,6 +46,7 @@ test('directive', () => {
   assertCode(content)
 })
 
+// 动态插槽/属性参数、模板字符串参数与同名 v-bind 简写读取导入；收集表达式根标识符，静态 unused 属性名不计入返回集合。
 test('dynamic arguments', () => {
   const { content } = compile(`
     <script setup lang="ts">
@@ -66,6 +69,7 @@ test('dynamic arguments', () => {
 })
 
 // https://github.com/vuejs/core/issues/4599
+// class 条件表达式调用 bar，style 读取 baz；两项值导入均返回 getter，模板表达式使用不会被字符串分支掩盖。
 test('attribute expressions', () => {
   const { content } = compile(`
     <script setup lang="ts">
@@ -82,6 +86,7 @@ test('attribute expressions', () => {
   assertCode(content)
 })
 
+// 插值使用 x/x$y，绑定使用 z，y 仅出现在字符串或 yy 子串；按标识符匹配，只返回三个实际读取的导入。
 test('vue interpolations', () => {
   const { content } = compile(`
   <script setup lang="ts">
@@ -101,6 +106,7 @@ test('vue interpolations', () => {
 })
 
 // #4340：模板 JS 的模板字符串插值会读取导入，扫描时不能把整段反引号内容当普通字符串跳过。
+// JS 模板字符串插值读取 VAR/VAR3，VAR2 仅是文本；只返回插值中的导入，不能按整段字符串子串匹配。
 test('js template string interpolations', () => {
   const { content } = compile(`
     <script setup lang="ts">
@@ -118,6 +124,7 @@ test('js template string interpolations', () => {
 })
 
 // 边界场景：组件恰好是模板中的最后一个标签。
+// Last 是模板最后一个自闭合标签；遍历末尾节点仍能记录导入并与 FooBaz 一同返回。
 test('last tag', () => {
   const { content } = compile(`
     <script setup lang="ts">
@@ -134,6 +141,7 @@ test('last tag', () => {
   assertCode(content)
 })
 
+// 模板包含 as、泛型调用、slot/v-for 类型注解与值 Baz；类型位置不计运行时导入，只返回 Baz 和本地 a/b。
 test('TS annotations', () => {
   const { content } = compile(`
     <script setup lang="ts">
@@ -153,9 +161,9 @@ test('TS annotations', () => {
   assertCode(content)
 })
 
-// vuejs/vue#12591：v-on 内联语句中的调用参数属于模板读取，应保留对应导入。
+// vuejs/vue#12591：含分号的 v-on 内联语句应能完成模板 import 分析，不抛解析错误。
+// v-on 内联语句包含尾部分号；执行编译应正常完成，确认事件语句解析模式不会按单表达式误报。
 test('v-on inline statement', () => {
-  // 不完整模板也不应让导入使用情况检查抛错。
   compile(`
   <script setup lang="ts">
     import { foo } from './foo'
@@ -166,6 +174,7 @@ test('v-on inline statement', () => {
   `)
 })
 
+// 静态 ref 指向 foo/bar，另有空 ref 和 Baz 组件；ref 名计作导入使用，空字符串不产生绑定。
 test('template ref', () => {
   const { content } = compile(`
     <script setup lang="ts">
@@ -184,6 +193,7 @@ test('template ref', () => {
 })
 
 // https://github.com/nuxt/nuxt/issues/22416
+// 模板读取 Foo.Bar.Baz；只有 Foo 是根值标识符，Bar/Baz 属性名不计作独立导入。
 test('property access', () => {
   const { content } = compile(`
     <script setup lang="ts">
@@ -197,6 +207,7 @@ test('property access', () => {
   assertCode(content)
 })
 
+// v-bind 展开 Foo.Bar.Baz；spread 中同样只记录根导入 Foo，避免返回属性名对应的未用导入。
 test('spread operator', () => {
   const { content } = compile(`
     <script setup lang="ts">
@@ -210,6 +221,7 @@ test('spread operator', () => {
   assertCode(content)
 })
 
+// 成员访问点号两边有空格；Babel 标识符遍历仍只收集 Foo，结果不依赖文本紧邻。
 test('property access (whitespace)', () => {
   const { content } = compile(`
     <script setup lang="ts">
@@ -224,6 +236,7 @@ test('property access (whitespace)', () => {
 })
 
 // #9974：`Foo.Bar` namespace/dot 组件标签应把根标识符 Foo 计为模板使用。
+// namespace import Foo 用作 Foo.Bar 标签；组件解析记录根 Foo，setup 以 getter 暴露该模块绑定。
 test('namespace / dot component usage', () => {
   const { content } = compile(`
     <script setup lang="ts">
@@ -237,6 +250,7 @@ test('namespace / dot component usage', () => {
   assertCode(content)
 })
 
+// 显式传 templateParseOptions:{} 编译 x 插值；初始模板分析 AST 可复用，仍返回 x getter。
 test('check when has explicit parse options', () => {
   const { content } = compile(
     `
@@ -254,6 +268,7 @@ test('check when has explicit parse options', () => {
 })
 
 // #11745：kebab-case 的同名 v-bind 简写要还原 camelCase 脚本绑定，避免误删导入。
+// 导入 fooBar，在模板用 :foo-bar 同名简写；camelize 后识别实际脚本绑定，避免漏掉需要返回的导入。
 test('shorthand binding w/ kebab-case', () => {
   const { content } = compile(
     `

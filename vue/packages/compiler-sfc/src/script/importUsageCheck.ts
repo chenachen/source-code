@@ -37,11 +37,11 @@ export function isImportUsed(
 type TemplateAnalysisResult = {
   /** 模板读取或引用的全部脚本标识符；轻量 v-model 分析时省略。 */
   usedIds?: Set<string>
-  /** 简单 `v-model="id"` 的写入目标，用于 defineModel 优化。 */
+  /** 简单 v-model 写入目标，用于 reactive const 声明降级及生成可写模板路径。 */
   vModelIds: Set<string>
 }
 
-/** 按 template 内容缓存标识符分析，避免 HMR/多阶段编译重复遍历 AST。 */
+/** 按 template.content 缓存分析；不包含 filename/parser 选项，改变这些条件时需调用方失效。 */
 export const templateAnalysisCache:
   | Map<string, TemplateAnalysisResult>
   | LRUCache<string, TemplateAnalysisResult> =
@@ -65,7 +65,8 @@ function resolveTemplateUsedIdentifiers(
 
 /**
  * 解析干净模板 AST 并收集 script import 使用信息。
- * collectUsedIds=false 是 defineModel 所需的轻量路径，只查找简单 v-model 目标。
+ * collectUsedIds=false 是 reactive const 降级所需的轻量路径，只查找简单 v-model 目标。
+ * 轻量缓存不能满足完整 import 分析：之后 collectUsedIds=true 会重算并替换同内容项。
  */
 function resolveTemplateAnalysisResult(
   sfc: SFCDescriptor,

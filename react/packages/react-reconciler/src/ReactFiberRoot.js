@@ -41,13 +41,13 @@ import {initializeUpdateQueue} from './ReactFiberClassUpdateQueue';
 import {LegacyRoot, ConcurrentRoot} from './ReactRootTags';
 import {createCache, retainCache} from './ReactFiberCacheComponent';
 
-/** HostRoot Fiber 的 memoizedState；描述当前提交元素、hydration 状态与主 cache。 */
+/** HostRoot Fiber 的 memoizedState；current 保存已提交基线，WIP 保存本轮候选元素、hydration 状态与主 cache。 */
 export type RootState = {
-  /** 当前 root 已提交、下一次协调作为旧输入的 React children。 */
+  /** 该版 HostRoot 的 React children；处理根队列后，WIP 会写入本轮候选 element。 */
   element: any,
   /** root 是否仍以服务端宿主树作为 hydration 起点。 */
   isDehydrated: boolean,
-  /** 当前已提交树提供给 cache 边界与 `use` 的根 cache。 */
+  /** 该版 HostRoot 向后代 cache 边界与 `use` 提供的根 cache。 */
   cache: Cache,
 };
 
@@ -101,7 +101,7 @@ function FiberRootNode(
   this.entangledLanes = NoLanes;
   this.entanglements = createLaneMap(NoLanes);
 
-  // hidden subtree 的 update 按 Lane 暂存，恢复可见时再接回正常队列。
+  // 按原 Lane 登记 hidden subtree 的 update 引用；更新仍在组件队列中，Lane 完成时清除其 Offscreen 标记。
   this.hiddenUpdates = createLaneMap(null);
 
   this.identifierPrefix = identifierPrefix;

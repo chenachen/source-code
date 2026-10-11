@@ -38,7 +38,7 @@ import {
 
 /**
  * 启用静态 HTML 字符串化的收益阈值。
- * 小静态树保留普通 hoist 更省代码；节点或带绑定元素达到阈值后，innerHTML 批量创建更划算。
+ * 小静态树保留普通 VNode 缓存；节点或带属性元素达到阈值后，启用 innerHTML 批量创建。
  */
 export enum StringifyThresholds {
   /** 静态块内带属性/绑定的元素数量阈值。 */
@@ -58,19 +58,24 @@ type StringifiableNode = PlainElementNode | TextCallNode
 const expReplaceRE = /__VUE_EXP_START__(.*?)__VUE_EXP_END__/g
 
 /**
- * 将达到收益阈值的连续静态提升节点合并为字符串化静态 VNode，例如：
+ * 将达到收益阈值的连续静态缓存节点合并为字符串化静态 VNode，例如：
  *
  * ```js
- * const _hoisted_1 = createStaticVNode(`<div class="foo">bar</div>`)
+ * _cache[0] || (_cache[0] = createStaticVNode(`<div class="foo">bar</div>`, 1))
  * ```
  *
  * 一个 static VNode 可包含多个连续元素/文本，称为一个 chunk。runtime-dom 会在隐藏容器
  * 中通过 innerHTML 一次创建整段内容，再把所有节点插到目标位置。调用中还要携带顶层
  * DOM 节点数，水合时才能知道该 static VNode 应认领多少现有节点。
  *
- * 算法扫描含 hoist 节点的 children，持续收集最大连续可字符串化区间；遇到动态或不安全
- * 节点时结算。chunk 的第一个 hoist 被替换成 createStaticVNode，其余已合并项会从 children
- * 和缓存表中删除。此优化只在 Node.js 编译器执行。
+ * 算法扫描 cacheStatic 处理后的 children，持续收集最大连续可字符串化区间；遇到动态或
+ * 未通过检查的节点时结算。子节点分别缓存时，复用第一个缓存槽并删除其余合并项及缓存槽；
+ * 父数组整体缓存时，直接以 createStaticVNode 调用替换数组内的区间。仅 Node.js 构建启用。
+ *
+ * @param children - cacheStatic 已分析的原位 children 列表，可能同时是父级缓存数组的值。
+ * @param context - 持有 helper 引用与缓存槽；合并会更新 cached 和后续缓存索引。
+ * @param parent - 用于区分父数组整体缓存与子节点分别缓存，两种路径不能混用。
+ * @returns 不返回新树；splice 缩短原列表，当前循环需按 deleteCount 回退下标。
  */
 export const stringifyStatic: HoistTransform = (children, context, parent) => {
   // 插槽内容由消费方决定渲染上下文和作用域，不能安全地在声明方合并成静态 DOM。
@@ -91,7 +96,12 @@ export const stringifyStatic: HoistTransform = (children, context, parent) => {
   /** 当前正在累积的连续可字符串化节点。 */
   const currentChunk: StringifiableNode[] = []
 
-  /** 达到阈值时结算当前 chunk，并返回从 children 中合并删除的节点数量。 */
+  /**
+   * 结算不包含 currentIndex 处隔断节点的连续区间。
+   * currentIndex 指向区间之后的位置（结束扫描时为原列表长度）；返回被合并的顶层项数
+   * 减一，供外层修正游标。阈值计的是整个子树规模，staticCount 则只计 chunk 顶层项。
+   * 本函数不清空计数器/chunk，循环调用方在结算后统一重置，尾部结算无需再扫描。
+   */
   const stringifyCurrentChunk = (currentIndex: number): number => {
     if (
       nc >= StringifyThresholds.NODE_COUNT ||
@@ -102,7 +112,8 @@ export const stringifyStatic: HoistTransform = (children, context, parent) => {
         JSON.stringify(
           currentChunk.map(node => stringifyNode(node, context)).join(''),
         ).replace(expReplaceRE, `" + $1 + "`),
-        // 第二个参数是该静态 VNode 插入/水合时覆盖的顶层 DOM 节点数量。
+        // 第二个参数写入 VNode.staticCount，水合时据此认领已有的顶层 DOM 节点。
+        // 首次插入返回实际 el/anchor，后续移动和删除沿这两个端点确定范围。
         String(currentChunk.length),
       ])
 
@@ -148,7 +159,7 @@ export const stringifyStatic: HoistTransform = (children, context, parent) => {
     const child = children[i]
     const isCached = isParentCached || getCachedNode(child)
     if (isCached) {
-      // 能进入缓存意味着类型已由静态提升阶段收窄为候选元素或文本调用。
+      // 静态缓存阶段提供候选元素或文本调用，具体能否序列化仍需后续检查。
       const result = analyzeNode(child as StringifiableNode)
       if (result) {
         // 累加候选节点内部规模，继续扩展当前连续 chunk。
@@ -169,7 +180,7 @@ export const stringifyStatic: HoistTransform = (children, context, parent) => {
   stringifyCurrentChunk(i)
 }
 
-/** 若节点是静态提升阶段生成的缓存元素/文本，则返回其 CacheExpression。 */
+/** 若节点是 cacheStatic 生成的缓存元素/文本，则返回其 CacheExpression。 */
 const getCachedNode = (
   node: TemplateChildNode,
 ): CacheExpression | undefined => {
@@ -210,7 +221,8 @@ const isNonStringifiable = /*@__PURE__*/ makeMap(
 /**
  * 分析一个缓存节点能否字符串化，并计算其规模。
  *
- * @returns `false` 表示含不安全属性或运行时常量；否则返回 `[节点数, 带绑定元素数]`
+ * @returns `false` 表示候选不满足当前字符串化条件；否则返回 `[节点数, 带绑定元素数]`
+ * 递归只读检查候选，不求值表达式。退出后丢弃累计值，因此检查失败时无需回滚计数。
  */
 function analyzeNode(node: StringifiableNode): [number, number] | false {
   if (node.type === NodeTypes.ELEMENT && isNonStringifiable(node.tag)) {
@@ -229,14 +241,15 @@ function analyzeNode(node: StringifiableNode): [number, number] | false {
   let nc = 1 // 当前根元素本身计一个节点
   let ec = node.props.length > 0 ? 1 : 0 // 有 props 的根元素计一个绑定元素
   let bailed = false
-  /** 标记当前候选不可安全字符串化，并返回便于递归短路的 false。 */
+  /** 记录当前候选未通过字符串化检查，并返回便于递归短路的 false。 */
   const bail = (): false => {
     bailed = true
     return false
   }
 
   // TODO：继续覆盖 innerHTML 与逐节点创建结果不同的结构；最常见的是 `<p>` 内嵌
-  // 非 phrasing-content，浏览器会自动闭合 `<p>`。目前通过其他结构校验和保守退出兜底。
+  // 非 phrasing-content，浏览器会自动闭合 `<p>`。validateHtmlNesting 只给开发期警告，
+  // 不会阻止这里字符串化；当前退出规则尚未覆盖这一情况。
   /** 递归检查属性和常量级别，同时累计后代规模。 */
   function walk(node: ElementNode): boolean {
     const isOptionTag = node.tag === 'option' && node.ns === Namespaces.HTML
@@ -266,7 +279,8 @@ function analyzeNode(node: StringifiableNode): [number, number] | false {
           return bail()
         }
         // `<option :value="1">` 的 property 值是 number，而 HTML 属性只能得到 string，
-        // 会改变表单选择比较语义，因此不能字符串化非字符串常量 value。
+        // 会改变表单选择比较语义。当前对非静态 value 表达式统一退出，连 `:value="'one'"`
+        // 这样的字符串常量绑定也包括在内；普通 `value="1"` 属性可以字符串化。
         if (
           isOptionTag &&
           isStaticArgOf(p.arg, 'value') &&
@@ -296,7 +310,7 @@ function analyzeNode(node: StringifiableNode): [number, number] | false {
   return walk(node) ? [nc, ec] : false
 }
 
-/** 把一个已证明安全的静态 AST 节点序列化为 HTML 片段。 */
+/** 把一个通过当前字符串化检查的静态 AST 节点序列化为 HTML 片段。 */
 function stringifyNode(
   node: string | TemplateChildNode,
   context: TransformContext,
@@ -410,11 +424,13 @@ function stringifyElement(
 }
 
 /**
- * 在编译期求值已被常量分析确认安全的表达式。
+ * 在编译期求值已通过常量分析和字符串化检查的表达式。
  *
- * __UNSAFE__：实现使用 `new Function`，因此明确标记供安全审查。这里理论上只会收到
- * `{{ 1 }}`、`{{ 'foo' }}` 等常量；常量分析遇到可调用结构和危险括号形式会提前退出，
- * 具体边界见 compiler-core 的 transformExpression。
+ * __UNSAFE__：这里使用 `new Function` 执行表达式。候选由 compiler-core 的 constType
+ * 和 analyzeNode 筛选，但这不是统一排除函数调用的规则；没有外部标识符的
+ * `(() => 'x')()` 也可能被标为 CAN_STRINGIFY，并在这里执行。
+ * 返回值不保证在运行时是 string：简单表达式可求得数组/对象/布尔值，由调用方进行
+ * class/style 规范化、展示字符串化或 HTML 转义。求值异常直接向编译调用方传播。
  */
 function evaluateConstant(exp: ExpressionNode): string {
   if (exp.type === NodeTypes.SIMPLE_EXPRESSION) {

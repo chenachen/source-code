@@ -9,6 +9,7 @@
     />
     <title>Vue Compiler 源码专题指南</title>
     <link rel="stylesheet" href="assets/styles.css" />
+    <link rel="stylesheet" href="assets/diagrams.css" />
   </head>
   <body>
     <a class="skip-link" href="#content">跳到正文</a>
@@ -121,32 +122,464 @@
             提供 Parse → Transform → Generate 骨架与共享 AST。
           </div>
 
-          <div class="diagram" aria-label="Vue Compiler 总体调用关系">
-            <p class="diagram-title">从单文件组件到两个渲染目标</p>
-            <div class="branch">
-              <div class="flow-node primary">
-                <strong>Single File Component</strong
-                ><small>template + script setup + style</small>
-              </div>
-              <div class="branch-lines" aria-hidden="true">↗<br />→<br />↘</div>
-              <div class="branch-targets">
-                <div class="branch-target">
-                  <strong>Script 分支</strong>
-                  <p>compiler-sfc：宏处理、类型解析、绑定分类、setup 组装。</p>
-                </div>
-                <div class="branch-target">
-                  <strong>Template 分支</strong>
-                  <p>
-                    compiler-dom / ssr → compiler-core：解析、转换、代码生成。
-                  </p>
-                </div>
-                <div class="branch-target">
-                  <strong>Style 分支</strong>
-                  <p>compiler-sfc：预处理、CSS vars、scoped、CSS Modules。</p>
-                </div>
-              </div>
+          <figure class="engineering-diagram" id="compiler-overview">
+            <div
+              class="engineering-scroll"
+              tabindex="0"
+              aria-label="SFC 编译关系图，可横向滚动"
+            >
+              <svg
+                viewBox="0 0 960 1140"
+                role="img"
+                aria-labelledby="compiler-overview-title compiler-overview-desc"
+              >
+                <title id="compiler-overview-title">
+                  SFC 描述对象、独立编译入口与两个模板目标
+                </title>
+                <desc id="compiler-overview-desc">
+                  调用者调用 parse，将 Vue 文件解析为 descriptor，再分别调用
+                  compileScript、compileTemplate 和 compileStyle。虚线表示源码、
+                  结果与元数据传递：调用者提供组件 id，并将 script 返回的
+                  bindings 转交给模板编译选项。实线表示函数调用：模板入口按 ssr
+                  选项调用 DOM 或 SSR 编译器；二者复用 compiler-core，分别生成
+                  render 与 ssrRender。
+                </desc>
+                <defs>
+                  <marker
+                    id="compiler-overview-arrow"
+                    viewBox="0 0 10 10"
+                    refX="9"
+                    refY="5"
+                    markerWidth="7"
+                    markerHeight="7"
+                    orient="auto-start-reverse"
+                  >
+                    <path d="M 0 0 L 10 5 L 0 10 Z" />
+                  </marker>
+                </defs>
+
+                <rect
+                  class="eng-lane"
+                  x="28"
+                  y="20"
+                  width="904"
+                  height="212"
+                  rx="12"
+                />
+                <rect
+                  class="eng-lane"
+                  x="28"
+                  y="252"
+                  width="904"
+                  height="510"
+                  rx="12"
+                />
+                <rect
+                  class="eng-lane"
+                  x="28"
+                  y="784"
+                  width="904"
+                  height="340"
+                  rx="12"
+                />
+                <text class="eng-lane-title" x="48" y="51">
+                  解析层：源码 → 描述对象
+                </text>
+                <rect
+                  class="eng-node"
+                  x="55"
+                  y="84"
+                  width="190"
+                  height="80"
+                  rx="10"
+                />
+                <text class="eng-label" x="150" y="116" text-anchor="middle">
+                  .vue 源码
+                </text>
+                <text class="eng-small" x="150" y="142" text-anchor="middle">
+                  template / script / style
+                </text>
+                <rect
+                  class="eng-node primary"
+                  x="325"
+                  y="84"
+                  width="300"
+                  height="80"
+                  rx="10"
+                />
+                <text class="eng-label" x="475" y="116" text-anchor="middle">
+                  compiler-sfc
+                </text>
+                <text class="eng-code" x="475" y="142" text-anchor="middle">
+                  parse(source)
+                </text>
+                <rect
+                  class="eng-node amber"
+                  x="705"
+                  y="84"
+                  width="190"
+                  height="80"
+                  rx="10"
+                />
+                <text class="eng-label" x="800" y="116" text-anchor="middle">
+                  SFCDescriptor
+                </text>
+                <text class="eng-small" x="800" y="142" text-anchor="middle">
+                  script / template / styles[]
+                </text>
+                <path
+                  class="eng-edge eng-dashed"
+                  d="M245 124 H325"
+                  marker-end="url(#compiler-overview-arrow)"
+                />
+                <text class="eng-code" x="285" y="112" text-anchor="middle">
+                  source
+                </text>
+                <path
+                  class="eng-edge eng-dashed"
+                  d="M625 124 H705"
+                  marker-end="url(#compiler-overview-arrow)"
+                />
+                <text class="eng-small" x="665" y="112" text-anchor="middle">
+                  返回
+                </text>
+
+                <text class="eng-lane-title" x="48" y="280">
+                  独立编译：调用与输入分别连线
+                </text>
+                <rect
+                  class="eng-node primary"
+                  x="315"
+                  y="306"
+                  width="330"
+                  height="92"
+                  rx="10"
+                />
+                <text class="eng-label" x="480" y="336" text-anchor="middle">
+                  显式调用者（构建工具等）
+                </text>
+                <text class="eng-small" x="480" y="358" text-anchor="middle">
+                  选择 blocks，提供同一组件 id
+                </text>
+                <text class="eng-small" x="480" y="380" text-anchor="middle">
+                  转交 bindings → bindingMetadata
+                </text>
+                <path
+                  class="eng-edge"
+                  d="M475 306 V164"
+                  marker-end="url(#compiler-overview-arrow)"
+                />
+                <text class="eng-code" x="486" y="208">调用 parse()</text>
+                <path
+                  class="eng-edge eng-dashed"
+                  d="M895 124 H918 V286 H659 V350 H645"
+                  marker-end="url(#compiler-overview-arrow)"
+                />
+                <text class="eng-code" x="738" y="275">descriptor</text>
+
+                <path
+                  class="eng-edge"
+                  d="M480 398 V426 H75 V514"
+                  marker-end="url(#compiler-overview-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M480 426 H378 V514"
+                  marker-end="url(#compiler-overview-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M480 426 H681 V514"
+                  marker-end="url(#compiler-overview-arrow)"
+                />
+                <text class="eng-small" x="85" y="451">调用</text>
+                <text class="eng-small" x="388" y="451">调用</text>
+                <text class="eng-small" x="691" y="451">调用</text>
+                <path
+                  class="eng-edge eng-dashed"
+                  d="M315 365 H31 V467 H888 V514"
+                  marker-end="url(#compiler-overview-arrow)"
+                />
+                <path
+                  class="eng-edge eng-dashed"
+                  d="M278 467 V514"
+                  marker-end="url(#compiler-overview-arrow)"
+                />
+                <path
+                  class="eng-edge eng-dashed"
+                  d="M586 467 V514"
+                  marker-end="url(#compiler-overview-arrow)"
+                />
+                <text class="eng-code" x="177" y="494" text-anchor="middle">
+                  descriptor + id
+                </text>
+                <text class="eng-code" x="480" y="494" text-anchor="middle">
+                  source + id + bindings
+                </text>
+                <text class="eng-code" x="783" y="494" text-anchor="middle">
+                  source + id / scoped
+                </text>
+
+                <rect
+                  class="eng-node amber"
+                  x="54"
+                  y="514"
+                  width="246"
+                  height="102"
+                  rx="10"
+                />
+                <text class="eng-label" x="177" y="543" text-anchor="middle">
+                  compiler-sfc
+                </text>
+                <text class="eng-code" x="177" y="566" text-anchor="middle">
+                  compileScript()
+                </text>
+                <text class="eng-small" x="177" y="593" text-anchor="middle">
+                  宏 / setup / CSS vars
+                </text>
+                <rect
+                  class="eng-node primary"
+                  x="357"
+                  y="514"
+                  width="246"
+                  height="102"
+                  rx="10"
+                />
+                <text class="eng-label" x="480" y="543" text-anchor="middle">
+                  compiler-sfc
+                </text>
+                <text class="eng-code" x="480" y="566" text-anchor="middle">
+                  compileTemplate()
+                </text>
+                <text class="eng-small" x="480" y="593" text-anchor="middle">
+                  平台选择 / 资产 URL / 映射
+                </text>
+                <rect
+                  class="eng-node violet"
+                  x="660"
+                  y="514"
+                  width="246"
+                  height="102"
+                  rx="10"
+                />
+                <text class="eng-label" x="783" y="543" text-anchor="middle">
+                  compiler-sfc
+                </text>
+                <text class="eng-code" x="783" y="566" text-anchor="middle">
+                  compileStyle()
+                </text>
+                <text class="eng-small" x="783" y="593" text-anchor="middle">
+                  PostCSS / scoped / CSS vars
+                </text>
+
+                <path
+                  class="eng-edge eng-dashed"
+                  d="M177 616 V669"
+                  marker-end="url(#compiler-overview-arrow)"
+                />
+                <path
+                  class="eng-edge eng-dashed"
+                  d="M783 616 V669"
+                  marker-end="url(#compiler-overview-arrow)"
+                />
+                <text class="eng-small" x="189" y="652">返回</text>
+                <text class="eng-small" x="795" y="652">返回</text>
+                <rect
+                  class="eng-node amber"
+                  x="54"
+                  y="669"
+                  width="246"
+                  height="85"
+                  rx="10"
+                />
+                <text class="eng-label" x="177" y="696" text-anchor="middle">
+                  Script 产物
+                </text>
+                <text class="eng-code" x="177" y="720" text-anchor="middle">
+                  content + bindings
+                </text>
+                <text class="eng-small" x="177" y="742" text-anchor="middle">
+                  CSS vars 使用短 id
+                </text>
+                <rect
+                  class="eng-node violet"
+                  x="660"
+                  y="669"
+                  width="246"
+                  height="85"
+                  rx="10"
+                />
+                <text class="eng-label" x="783" y="696" text-anchor="middle">
+                  Style 产物
+                </text>
+                <text class="eng-code" x="783" y="720" text-anchor="middle">
+                  CSS + source map
+                </text>
+                <text class="eng-small" x="783" y="742" text-anchor="middle">
+                  v-bind() / scoped 使用 id
+                </text>
+                <path
+                  class="eng-edge eng-dashed"
+                  d="M54 706 H18 V322 H315"
+                  marker-end="url(#compiler-overview-arrow)"
+                />
+                <text class="eng-small" x="46" y="310">
+                  bindings（调用者转交）
+                </text>
+
+                <path
+                  class="eng-edge"
+                  d="M480 616 V689"
+                  marker-end="url(#compiler-overview-arrow)"
+                />
+                <polygon
+                  class="eng-decision"
+                  points="480,689 521,718 480,747 439,718"
+                />
+                <text class="eng-code" x="480" y="723" text-anchor="middle">
+                  ssr?
+                </text>
+                <path
+                  class="eng-edge"
+                  d="M439 718 H327 V842"
+                  marker-end="url(#compiler-overview-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M521 718 H633 V842"
+                  marker-end="url(#compiler-overview-arrow)"
+                />
+                <text class="eng-code" x="278" y="837">false</text>
+                <text class="eng-code" x="641" y="837">true</text>
+
+                <text class="eng-lane-title" x="48" y="814">
+                  模板目标：复用 core，生成不同函数
+                </text>
+                <rect
+                  class="eng-node blue"
+                  x="187"
+                  y="842"
+                  width="280"
+                  height="104"
+                  rx="10"
+                />
+                <text class="eng-label" x="327" y="871" text-anchor="middle">
+                  compiler-dom
+                </text>
+                <text class="eng-code" x="327" y="895" text-anchor="middle">
+                  compile()
+                </text>
+                <text class="eng-small" x="327" y="924" text-anchor="middle">
+                  DOM transforms → baseCompile
+                </text>
+                <rect
+                  class="eng-node violet"
+                  x="493"
+                  y="842"
+                  width="280"
+                  height="104"
+                  rx="10"
+                />
+                <text class="eng-label" x="633" y="871" text-anchor="middle">
+                  compiler-ssr
+                </text>
+                <text class="eng-code" x="633" y="895" text-anchor="middle">
+                  compile()
+                </text>
+                <text class="eng-code" x="633" y="918" text-anchor="middle">
+                  baseParse → transform
+                </text>
+                <text class="eng-code" x="633" y="938" text-anchor="middle">
+                  ssrCodegenTransform → generate
+                </text>
+
+                <path
+                  class="eng-edge"
+                  d="M375 946 V985 H425 V1021"
+                  marker-end="url(#compiler-overview-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M585 946 V985 H535 V1021"
+                  marker-end="url(#compiler-overview-arrow)"
+                />
+                <text class="eng-small" x="334" y="1003">调用 core</text>
+                <text class="eng-small" x="567" y="1003">调用 core</text>
+                <rect
+                  class="eng-node primary"
+                  x="324"
+                  y="1021"
+                  width="312"
+                  height="95"
+                  rx="10"
+                />
+                <text class="eng-label" x="480" y="1050" text-anchor="middle">
+                  compiler-core
+                </text>
+                <text class="eng-code" x="480" y="1076" text-anchor="middle">
+                  AST / parse / transform / generate
+                </text>
+                <text class="eng-small" x="480" y="1100" text-anchor="middle">
+                  DOM 与 SSR 共用基础机制
+                </text>
+                <path
+                  class="eng-edge eng-dashed"
+                  d="M187 895 H161 V1018"
+                  marker-end="url(#compiler-overview-arrow)"
+                />
+                <path
+                  class="eng-edge eng-dashed"
+                  d="M773 895 H800 V1018"
+                  marker-end="url(#compiler-overview-arrow)"
+                />
+                <text class="eng-small" x="93" y="986">生成代码</text>
+                <text class="eng-small" x="812" y="986">生成代码</text>
+                <rect
+                  class="eng-node blue"
+                  x="44"
+                  y="1018"
+                  width="234"
+                  height="91"
+                  rx="10"
+                />
+                <text class="eng-label" x="161" y="1046" text-anchor="middle">
+                  render()
+                </text>
+                <text class="eng-small" x="161" y="1076" text-anchor="middle">
+                  VNode / block / PatchFlags
+                </text>
+                <rect
+                  class="eng-node violet"
+                  x="682"
+                  y="1018"
+                  width="234"
+                  height="91"
+                  rx="10"
+                />
+                <text class="eng-label" x="799" y="1046" text-anchor="middle">
+                  ssrRender()
+                </text>
+                <text class="eng-small" x="799" y="1076" text-anchor="middle">
+                  HTML / push / SSR helpers
+                </text>
+              </svg>
             </div>
-          </div>
+            <figcaption>
+              <strong>图例：</strong>实线表示函数调用；虚线表示
+              source、descriptor、 bindings、id
+              与编译结果的传递。图示为分别编译三个 block 的默认路径：
+              <code>parse()</code> 返回描述对象，调用者再分别调用各入口，并把
+              script 结果的 <code>bindings</code> 放入模板选项的
+              <code>compilerOptions.bindingMetadata</code>。 同一组件的
+              <code>id</code> 由调用者提供：script 写入 CSS vars，template 为
+              scoped 设置 scopeId，并为 SSR 处理 CSS vars，style 重写 CSS
+              v-bind() 与 scoped 选择器。<code>inlineTemplate: true</code>
+              时，script 入口会显式调用 模板编译；该路径见
+              <a href="sfc.html">SFC 模块页</a>。 SSR 复用 DOM 的 parserOptions
+              与 core 的基础函数，再加入自己的 codegen transform；图中的 render
+              / ssrRender 表示独立函数产物。
+            </figcaption>
+          </figure>
 
           <div class="grid-3">
             <article class="card green">
@@ -442,7 +875,7 @@
             </div>
             <div class="step">
               <h3><a href="evolution.html">演进与设计</a></h3>
-              <p>从本地 Git 里程碑和 issue 类型理解架构为何变成今天这样。</p>
+              <p>从 Vue 上游提交和 issue 类型理解编译器各阶段如何演进。</p>
             </div>
             <div class="step">
               <h3><a href="lab.html">实验与术语</a></h3>
@@ -498,8 +931,8 @@
 
           <div class="callout warn">
             <strong>版本说明：</strong>本专题以当前仓库 Vue 3.5.41
-            为基线。历史页面记录的是本地 Git
-            中可核对的演进节点；阅读其他分支时，应以该分支源码与测试为准。
+            为基线。演进页链接到 vuejs/core 的上游提交；当前项目保存源码快照，
+            未附这些上游 Git 对象。阅读其他版本时，以对应源码与测试为准。
           </div>
         </section>
 

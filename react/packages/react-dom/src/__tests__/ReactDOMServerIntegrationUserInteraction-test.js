@@ -9,14 +9,14 @@
 
 'use strict';
 
-/** `ReactDOMServerIntegrationUtils`：保存当前测试场景复用的夹具、状态或回调。 */
+/** 加载三客户端模式与服务端/水合工具，对照挂载后输入与水合前输入。 */
 const ReactDOMServerIntegrationUtils = require('./utils/ReactDOMServerIntegrationTestUtils');
 
 let React;
 let ReactDOMClient;
 let ReactDOMServer;
 
-/** `initModules`：封装当前用例复用的操作、回调或断言步骤。 */
+/** 重置React/两DOM入口和诊断缓存，返回helper当前模块实例。 */
 function initModules() {
   // 重置警告缓存。
   jest.resetModules();
@@ -24,14 +24,14 @@ function initModules() {
   ReactDOMClient = require('react-dom/client');
   ReactDOMServer = require('react-dom/server');
 
-  // 让他们可以帮助.
+  // 返回当前DOM入口供helper渲染与模块重置使用。
   return {
     ReactDOMClient,
     ReactDOMServer,
   };
 }
 
-/** `{resetModules, itClientRenders, renderIntoDom, serverRender}`：保存当前测试场景复用的夹具、状态或回调。 */
+/** 获取三客户端模式包装和显式serverRender/renderIntoDom，后者第三参数true执行水合。 */
 const {resetModules, itClientRenders, renderIntoDom, serverRender} =
   ReactDOMServerIntegrationUtils(initModules);
 
@@ -40,32 +40,38 @@ describe('ReactDOMServerIntegrationUserInteraction', () => {
 
   beforeEach(() => {
     resetModules();
+    /** 受控input类，state跟随用户value并可在挂载期级联更新。 */
     ControlledInput = class extends React.Component {
-      /** `defaultProps`：记录测试夹具在当前场景中的状态。 */
+
+      /** 缺省type=text、初始Hello；range case显式覆盖type/initialValue。 */
       static defaultProps = {
         type: 'text',
         initialValue: 'Hello',
       };
-      /** `constructor`：初始化测试夹具实例及其状态。 */
+
+      /** 以当前props.initialValue初始化受控value，保持text/range起点差异。 */
       constructor() {
         super(...arguments);
         this.state = {value: this.props.initialValue};
       }
-      /** `handleChange`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 先通知外部onChange计数，再从事件目标value写本地state。 */
       handleChange(event) {
         if (this.props.onChange) {
           this.props.onChange(event);
         }
         this.setState({value: event.target.value});
       }
-      /** `componentDidMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** cascade时挂载后setState增加字段，不直接改value，测试用户输入同步后再render。 */
       componentDidMount() {
         if (this.props.cascade) {
     // hydration 一开始就触发 cascading render，从而重新渲染 input。
           this.setState({cascade: true});
         }
       }
-      /** `render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 以state.value控制input，绑定handleChange保存实例this。 */
       render() {
         return (
           <input
@@ -76,27 +82,32 @@ describe('ReactDOMServerIntegrationUserInteraction', () => {
         );
       }
     };
+    /** 受控textarea类，初Hello并可在水合挂载期级联。 */
     ControlledTextArea = class extends React.Component {
-      /** `constructor`：初始化测试夹具实例及其状态。 */
+
+      /** 初始化value=Hello；本fixture不从props取初值。 */
       constructor() {
         super();
         this.state = {value: 'Hello'};
       }
-      /** `handleChange`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 先调用外部回调，再用target.value更新textarea状态。 */
       handleChange(event) {
         if (this.props.onChange) {
           this.props.onChange(event);
         }
         this.setState({value: event.target.value});
       }
-      /** `componentDidMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** cascade时触发额外提交，检查水合前用户文字是否仍保留。 */
       componentDidMount() {
         if (this.props.cascade) {
           // 立即在hydrate后触发递归渲染，这将重新渲染textarea。
           this.setState({cascade: true});
         }
       }
-      /** `render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 以state.value控制textarea并绑定change处理器。 */
       render() {
         return (
           <textarea
@@ -106,27 +117,32 @@ describe('ReactDOMServerIntegrationUserInteraction', () => {
         );
       }
     };
+    /** 受控checkbox类，用state.value作为checked而非文本value。 */
     ControlledCheckbox = class extends React.Component {
-      /** `constructor`：初始化测试夹具实例及其状态。 */
+
+      /** 初始化checked状态true，水合前测试手动改false。 */
       constructor() {
         super();
         this.state = {value: true};
       }
-      /** `handleChange`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 先外部计数，再读取target.checked更新布尔state。 */
       handleChange(event) {
         if (this.props.onChange) {
           this.props.onChange(event);
         }
         this.setState({value: event.target.checked});
       }
-      /** `componentDidMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** cascade时只加状态字段触发再次render，检验checked保持。 */
       componentDidMount() {
         if (this.props.cascade) {
           // 立即在hydrate后触发递归渲染，重新渲染复选框。
           this.setState({cascade: true});
         }
       }
-      /** `render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 固定type=checkbox并绑定受控checked/change。 */
       render() {
         return (
           <input
@@ -137,27 +153,32 @@ describe('ReactDOMServerIntegrationUserInteraction', () => {
         );
       }
     };
+    /** 受控select类，提供Hello/Goodbye两个明确option值。 */
     ControlledSelect = class extends React.Component {
-      /** `constructor`：初始化测试夹具实例及其状态。 */
+
+      /** 初始化选中Hello，用于原生change和预水合选择。 */
       constructor() {
         super();
         this.state = {value: 'Hello'};
       }
-      /** `handleChange`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 外部change计数后从target.value更新选择状态。 */
       handleChange(event) {
         if (this.props.onChange) {
           this.props.onChange(event);
         }
         this.setState({value: event.target.value});
       }
-      /** `componentDidMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** cascade触发额外render，不直接改选择value。 */
       componentDidMount() {
         if (this.props.cascade) {
           // 立即在hydrate后触发递归渲染，重新渲染select。
           this.setState({cascade: true});
         }
       }
-      /** `render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** state.value控制两option select，验证用户选择能同步回state。 */
       render() {
         return (
           <select
@@ -176,6 +197,7 @@ describe('ReactDOMServerIntegrationUserInteraction', () => {
   });
 
   describe('user interaction with controlled inputs', function () {
+    /** 三种客户端模式挂受控text input初Hello，绕过实例value tracker用原型setter改Goodbye后派input；change一次且值Goodbye，验证真实用户值变化检测与受控state更新。 */
     itClientRenders('a controlled text input', async render => {
       const setUntrackedValue = Object.getOwnPropertyDescriptor(
         HTMLInputElement.prototype,
@@ -204,6 +226,7 @@ describe('ReactDOMServerIntegrationUserInteraction', () => {
       }
     });
 
+    /** 三客户端模式受控textarea初Hello，原型setter改Goodbye再input；change一次且值保留，验证textarea追踪变化。 */
     itClientRenders('a controlled textarea', async render => {
       const setUntrackedValue = Object.getOwnPropertyDescriptor(
         HTMLTextAreaElement.prototype,
@@ -232,6 +255,7 @@ describe('ReactDOMServerIntegrationUserInteraction', () => {
       }
     });
 
+    /** 三客户端模式受控checkbox初checked=true，原生click翻转；change一次且false，验证checkbox使用checked与click提取。 */
     itClientRenders('a controlled checkbox', async render => {
       let changeCount = 0;
       const e = await render(
@@ -254,6 +278,7 @@ describe('ReactDOMServerIntegrationUserInteraction', () => {
       }
     });
 
+    /** 三客户端模式select初Hello，原型setter选Goodbye再change；change一次且新值保留，验证选择事件写受控state。 */
     itClientRenders('a controlled select', async render => {
       const setUntrackedValue = Object.getOwnPropertyDescriptor(
         HTMLSelectElement.prototype,
@@ -286,9 +311,9 @@ describe('ReactDOMServerIntegrationUserInteraction', () => {
   });
 
   describe('user interaction with inputs before client render', function () {
-    // 渲染元素，并在客户端代码开始渲染前修改其值，以模拟用户在 ReactDOM.render 调用前就与服务端
-    // 渲染的表单交互；客户端渲染不得覆盖用户已经做出的修改。
-    /** `testUserInteractionBeforeClientRender`：封装当前用例复用的操作、回调或断言步骤。 */
+    // 先SSR并改字段值，再以renderIntoDom的hydrate模式认领，模拟水合开始前用户已编辑字段。
+
+    /** 先SSR取得字段并校验initialValue，再直接改valueKey模拟用户操作；重置模块后在原parent以hydrate模式认领，断言同一字段身份及changedValue保留。valueKey默认value，checkbox改checked；不派原生事件。 */
     const testUserInteractionBeforeClientRender = async (
       element,
       initialValue = 'Hello',
@@ -311,18 +336,11 @@ describe('ReactDOMServerIntegrationUserInteraction', () => {
       expect(clientField[valueKey]).toBe(changedValue);
     };
 
-    /**
-     * 代表场景（Given–When–Then）：
-     * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-     * When 执行「should not blow away user-entered text on successful reconnect to an uncontrolled input」描述的渲染或交互；
-     * Then 通过本用例的 DOM、日志或调度断言确认行为。
-     *
-     * 验证机制：断言覆盖 react-dom 的服务端流适配层；完整 Fizz 状态机位于 react-server。
-     */
+    /** SSR非受控text input defaultValue=Hello，水合前属性值改Goodbye；helper确认同DOM节点且Goodbye保留，验证认领不抹用户预先输入。 */
     it('should not blow away user-entered text on successful reconnect to an uncontrolled input', () =>
       testUserInteractionBeforeClientRender(<input defaultValue="Hello" />));
 
-    /** 测试场景：验证「should not blow away user-entered text on successful reconnect to a controlled input」描述的渲染、交互或错误处理结果。 */
+    /** SSR受控input初Hello，水合前Goodbye；身份/值保留，HydrationChangeEvent开时change一次、关时0，验证预水合输入的事件同步分支。 */
     it('should not blow away user-entered text on successful reconnect to a controlled input', async () => {
       let changeCount = 0;
       await testUserInteractionBeforeClientRender(
@@ -333,7 +351,7 @@ describe('ReactDOMServerIntegrationUserInteraction', () => {
       );
     });
 
-    /** 测试场景：验证「should not blow away user-interaction on successful reconnect to an uncontrolled range input」描述的渲染、交互或错误处理结果。 */
+    /** 旧标题range但实际input.type=text，SSR defaultValue=.5改1后水合；身份和值1保留，验证文本数字字符串输入，不能当range类型覆盖。 */
     it('should not blow away user-interaction on successful reconnect to an uncontrolled range input', () =>
       testUserInteractionBeforeClientRender(
         <input type="text" defaultValue="0.5" />,
@@ -341,7 +359,7 @@ describe('ReactDOMServerIntegrationUserInteraction', () => {
         '1',
       ));
 
-    /** 测试场景：验证「should not blow away user-interaction on successful reconnect to a controlled range input」描述的渲染、交互或错误处理结果。 */
+    /** 受控range初.25水合前改1；身份/值1保持，hydration change开为1关为0，验证range用户变化。 */
     it('should not blow away user-interaction on successful reconnect to a controlled range input', async () => {
       let changeCount = 0;
       await testUserInteractionBeforeClientRender(
@@ -358,7 +376,7 @@ describe('ReactDOMServerIntegrationUserInteraction', () => {
       );
     });
 
-    /** 测试场景：验证「should not blow away user-entered text on successful reconnect to an uncontrolled checkbox」描述的渲染、交互或错误处理结果。 */
+    /** 非受控checkbox defaultChecked=true水合前checked=false；helper确认节点和值保持，验证checked与value分开的认领路径。 */
     it('should not blow away user-entered text on successful reconnect to an uncontrolled checkbox', () =>
       testUserInteractionBeforeClientRender(
         <input type="checkbox" defaultChecked={true} />,
@@ -367,7 +385,7 @@ describe('ReactDOMServerIntegrationUserInteraction', () => {
         'checked',
       ));
 
-    /** 测试场景：验证「should not blow away user-entered text on successful reconnect to a controlled checkbox」描述的渲染、交互或错误处理结果。 */
+    /** 受控checkbox初true水合前false；节点与false保留，change次数按开关1/0，验证checked变化的水合事件。 */
     it('should not blow away user-entered text on successful reconnect to a controlled checkbox', async () => {
       let changeCount = 0;
       await testUserInteractionBeforeClientRender(
@@ -382,12 +400,14 @@ describe('ReactDOMServerIntegrationUserInteraction', () => {
     });
 
     // @gate enableHydrationChangeEvent
-    /** 测试场景：验证「should not blow away user-entered text on successful reconnect to an uncontrolled textarea」描述的渲染、交互或错误处理结果。 */
+
+    /** 仅HydrationChangeEvent开启时执行：非受控textarea Hello水合前Goodbye，认领保持身份和用户文字，验证textarea预输入保留。 */
     it('should not blow away user-entered text on successful reconnect to an uncontrolled textarea', () =>
       testUserInteractionBeforeClientRender(<textarea defaultValue="Hello" />));
 
     // @gate enableHydrationChangeEvent
-    /** 测试场景：验证「should not blow away user-entered text on successful reconnect to a controlled textarea」描述的渲染、交互或错误处理结果。 */
+
+    /** 仅HydrationChangeEvent开启时：受控textarea Hello预先Goodbye，认领保持值且change一次，验证状态通过水合变化事件同步。 */
     it('should not blow away user-entered text on successful reconnect to a controlled textarea', async () => {
       let changeCount = 0;
       await testUserInteractionBeforeClientRender(
@@ -396,7 +416,7 @@ describe('ReactDOMServerIntegrationUserInteraction', () => {
       expect(changeCount).toBe(1);
     });
 
-    /** 测试场景：验证「should not blow away user-selected value on successful reconnect to an uncontrolled select」描述的渲染、交互或错误处理结果。 */
+    /** 非受控select默认Hello、水合前选Goodbye；节点与选择值保持，验证select认领不重置用户选择。 */
     it('should not blow away user-selected value on successful reconnect to an uncontrolled select', () =>
       testUserInteractionBeforeClientRender(
         <select defaultValue="Hello">
@@ -409,7 +429,7 @@ describe('ReactDOMServerIntegrationUserInteraction', () => {
         </select>,
       ));
 
-    /** 测试场景：验证「should not blow away user-selected value on successful reconnect to an controlled select」描述的渲染、交互或错误处理结果。 */
+    /** 受控select初Hello预先选Goodbye；节点和值保持，change按开关1/0，验证选择状态水合变化事件。 */
     it('should not blow away user-selected value on successful reconnect to an controlled select', async () => {
       let changeCount = 0;
       await testUserInteractionBeforeClientRender(
@@ -421,7 +441,8 @@ describe('ReactDOMServerIntegrationUserInteraction', () => {
     });
 
     // @gate enableHydrationChangeEvent
-    /** 测试场景：验证「should not blow away user-entered text cascading hydration to a controlled input」描述的渲染、交互或错误处理结果。 */
+
+    /** 仅HydrationChangeEvent开启：受控input预先Goodbye且componentDidMount触发cascade更新；同节点和值仍Goodbye且change一次，验证挂载级联不冲掉用户输入。 */
     it('should not blow away user-entered text cascading hydration to a controlled input', async () => {
       let changeCount = 0;
       await testUserInteractionBeforeClientRender(
@@ -431,7 +452,8 @@ describe('ReactDOMServerIntegrationUserInteraction', () => {
     });
 
     // @gate enableHydrationChangeEvent
-    /** 测试场景：验证「should not blow away user-interaction cascading hydration to a controlled range input」描述的渲染、交互或错误处理结果。 */
+
+    /** 仅HydrationChangeEvent开启：受控range .25预先1且挂载级联；身份和值1保持、change一次，验证range级联水合。 */
     it('should not blow away user-interaction cascading hydration to a controlled range input', async () => {
       let changeCount = 0;
       await testUserInteractionBeforeClientRender(
@@ -448,7 +470,8 @@ describe('ReactDOMServerIntegrationUserInteraction', () => {
     });
 
     // @gate enableHydrationChangeEvent
-    /** 测试场景：验证「should not blow away user-entered text cascading hydration to a controlled checkbox」描述的渲染、交互或错误处理结果。 */
+
+    /** 仅HydrationChangeEvent开启：受控checkbox预先false且挂载级联；身份和false保持、change一次，验证checked级联水合。 */
     it('should not blow away user-entered text cascading hydration to a controlled checkbox', async () => {
       let changeCount = 0;
       await testUserInteractionBeforeClientRender(
@@ -461,7 +484,8 @@ describe('ReactDOMServerIntegrationUserInteraction', () => {
     });
 
     // @gate enableHydrationChangeEvent
-    /** 测试场景：验证「should not blow away user-entered text cascading hydration to a controlled textarea」描述的渲染、交互或错误处理结果。 */
+
+    /** 仅HydrationChangeEvent开启：受控textarea预先Goodbye且挂载级联；身份/文字保持且change一次，验证textarea级联水合。 */
     it('should not blow away user-entered text cascading hydration to a controlled textarea', async () => {
       let changeCount = 0;
       await testUserInteractionBeforeClientRender(
@@ -471,7 +495,8 @@ describe('ReactDOMServerIntegrationUserInteraction', () => {
     });
 
     // @gate enableHydrationChangeEvent
-    /** 测试场景：验证「should not blow away user-selected value cascading hydration to an controlled select」描述的渲染、交互或错误处理结果。 */
+
+    /** 仅HydrationChangeEvent开启：受控select预选Goodbye且挂载级联；身份/选择保持且change一次，验证select级联水合。 */
     it('should not blow away user-selected value cascading hydration to an controlled select', async () => {
       let changeCount = 0;
       await testUserInteractionBeforeClientRender(

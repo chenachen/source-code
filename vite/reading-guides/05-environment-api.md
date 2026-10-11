@@ -4,8 +4,8 @@
 
 ## 阅读边界
 
-本节研究 Vite 怎样把“一台开发服务器”拆成多个运行目标，以及每个目标如何拥有独立配置、
-插件、模块图、依赖优化器和运行时通信。模块图的内部数据结构、transform 细节、HMR 传播算法
+本节研究 Vite 怎样把“一台开发服务器”拆成多个运行目标，以及每个目标如何持有自己的配置视图、
+插件上下文和模块图，并接入依赖优化器和运行时通信。模块图的内部数据结构、transform 细节、HMR 传播算法
 留给后续章节；生产构建的 `BuildEnvironment` 留给生产构建章节。
 
 读完应能回答：
@@ -48,7 +48,7 @@ server.environments.ssr.transformRequest(url)
 server.environments.edge.transformRequest(url)
 ```
 
-Environment 本身已经确定上下文，不需要每个 API 再接受 `ssr` 参数。每个实例持有：
+Environment 本身已经确定上下文，不需要每个 API 再接受 `ssr` 参数。每个开发实例持有（依赖优化器可禁用或由框架注入，client 的 WebSocket 由顶层服务器提供）：
 
 ```text
 Environment
@@ -67,6 +67,8 @@ client/ssr 的迁移兼容门面。阅读新实现时应直接进入具体 Envir
 ## 配置的三层结构
 
 ### 用户输入
+
+下面示意配置结构；自定义工厂的实现省略。
 
 ```ts
 export default {
@@ -147,7 +149,7 @@ PartialEnvironment
 
 `UnknownEnvironment` 的意义就是阻止“除了 build 都是 dev”的封闭世界假设。
 
-## `DevEnvironment` 的独占状态
+## `DevEnvironment` 持有的状态
 
 构造函数依次建立：
 
@@ -158,8 +160,8 @@ PartialEnvironment
 5. 标准化 HotChannel，并注册 fetchModule/getBuiltins/invalidate 消息；
 6. 按配置创建显式或自动发现依赖优化器。
 
-插件容器没有在构造函数中创建，因为它要异步执行 Environment 插件派生和 `options` hook。
-这部分由 `init()` 完成。`pluginContainer` getter 在 init 前主动报错，把错误生命周期访问暴露在
+Environment 插件列表已在配置解析时派生；插件容器仍需异步执行 `options` hook，
+因此由 `init()` 创建，而非在同步构造函数中创建。`pluginContainer` getter 在 init 前主动报错，把错误生命周期访问暴露在
 最近的位置。
 
 每个模块图的 resolve 回调绑定自己的插件容器，因此相同 URL 可以在 client、ssr、edge 中
@@ -167,24 +169,28 @@ PartialEnvironment
 
 ## 三阶段生命周期
 
-### `init()`：装配，不启动外部工作
+### `init()`：创建插件容器
 
-`init()` 幂等创建插件容器，并接收 watcher。重启时还能得到 `previousInstance`；自定义子类只有
-确认旧实例来自同一类/同一工厂后才应迁移状态。
+`init()` 接收共享 watcher，异步创建插件容器并完成 `options` hook。`_initiated` 在异步创建前
+置位，防止重复进入；顶层服务器等待首次 init 完成后才继续装配。重启还传入 `previousInstance`，
+默认实现不迁移它；自定义子类可在确认实例来源后迁移自己的状态。
 
-入口在插件容器 `buildStart` 前通过 `_registerInputsAsSafeModules()` 解析并加入 fs 安全集合。
+输入登记属于容器 `buildStart()` 的收尾：先等待符合条件的插件 `buildStart` hook，再通过
+`_registerInputsAsSafeModules()` 解析入口，把非 external 的绝对路径加入顶层共享的
+`safeModulePaths`。它并非在 `init()` 中完成，也不是每个 Environment 的独立安全集合。
 解析必须带 `scan: true`，否则会形成：
 
 ```text
 dependency scan 触发首次 buildStart
-→ buildStart 解析 input
+→ buildStart 完成插件 hooks 后解析 input
 → 普通 resolve 等待 dependency scan
 → dependency scan 等待 buildStart
 → 死锁
 ```
 
-默认 `index.html` 不存在是合法库/中间件场景，可静默忽略；用户显式声明 input 时，解析失败
-必须暴露。[PR #23101](https://github.com/vitejs/vite/pull/23101) 让顶层 input 同样经过插件解析。
+未声明 input 时，回退 `index.html` 的解析异常被忽略；用户显式声明 input 时，解析器抛出的异常
+继续向上传递。解析返回空或 external 时均不登记安全路径。插件 `buildStart` 错误发生在回退
+解析之前，始终向上传递。顶层 input 同样经过插件解析（源码中的 #23101）。
 
 ### `listen()`：启动与预热
 
@@ -205,7 +211,7 @@ newEnvironment.init({ previousInstance })
 
 ### `close()`：等待而不是只发出停止信号
 
-关闭时先置 `_closing`，取消首轮爬取检测，再并行等待：
+关闭时先置 `_closing`，使 recoverable 环境的转换检查拒绝后续工作；停止首轮爬取完成检测，再并行等待：
 
 ```text
 bundledDev.close() 或 pluginContainer.close()
@@ -215,7 +221,7 @@ depsOptimizer.close()
 ```
 
 顶层 `WebSocketServer` 可能被多个 Environment 共享，不能由单个实例关闭；它由 Dev Server
-统一释放。自定义 HotChannel 是 Environment 独占资源，必须在这里关闭。所有分支使用
+统一释放。自定义 HotChannel 由所属 Environment 在这里关闭。所有分支使用
 `allSettled()`，单个插件清理失败不能制造其他资源泄漏。
 
 ## transform、warmup 与首轮爬取
@@ -240,8 +246,8 @@ WebSocket 不能借这个字段绕过 `/@fs/` 边界。该安全修复见
 
 ### 原始 `DevEnvironment`
 
-只提供 transform、模块图和 HotChannel 原语。框架/运行时集成者自行定义怎样执行模块、怎样
-把请求和结果跨边界传输，能力最底层也最灵活。
+提供 transform、fetchModule、模块图和 HotChannel 等开发能力。框架/运行时集成者自行定义
+模块执行器和应用请求处理器，并安排跨运行时的请求与结果传输。
 
 ### `RunnableDevEnvironment`
 
@@ -268,10 +274,11 @@ Runner 惰性创建并缓存：未使用 SSR 执行时不修改进程 Source Map
 → Response
 ```
 
-它只承诺标准 Fetch `Request`/`Response`，因此可以把处理放到无法与 Vite 共进程的运行时，
-也更接近 Worker/Edge 的生产请求模型。代价是任意函数、类实例不能直接跨边界。
+它把应用请求入口限定为标准 Fetch `Request`/`Response`。框架提供的 `handleRequest` 可以再把请求
+转交独立 Worker/Edge 运行时；本类只调用处理器，不实现进程通信或序列化。这个 API 返回 Response，
+不会像 `runner.import()` 那样直接返回模块导出的函数、类实例。
 
-工厂先检查全局 Request/Response 和 handleRequest；dispatch 时再用 `instanceof` 检查输入输出，
+工厂先检查全局 Request/Response 是否存在和 handleRequest 是否提供；dispatch 时再用 `instanceof` 检查输入输出，
 尽早发现 polyfill/realm 不一致或错误返回普通对象。该实验接口来自
 [PR #19664](https://github.com/vitejs/vite/pull/19664)。
 
@@ -280,6 +287,8 @@ Runner 惰性创建并缓存：未使用 SSR 执行时不修改进程 Source Map
 同一个插件实例会跨 Environment 调用 hook：
 
 ```ts
+import { perEnvironmentState } from 'vite'
+
 const getState = perEnvironmentState(() => ({ transformed: 0 }))
 
 export default {
@@ -297,7 +306,7 @@ export default {
 - Environment 不可达后，WeakMap 不阻止回收；
 - 必须用 `stateMap.has(environment)` 判断是否初始化。
 
-最后一点很容易写错。若用 `if (!stateMap.get(environment))`，合法的 `false`、`0`、`''` 会在
+若用 `if (!stateMap.get(environment))`，合法的 `false`、`0`、`''` 会在
 每次 hook 调用时重新初始化；[PR #22715](https://github.com/vitejs/vite/pull/22715) 就修复了
 这个 falsy 状态缓存问题。
 
@@ -318,7 +327,7 @@ conditions，并从四条路径读取同一个条件导出包：
 
 ## 关键源码证据
 
-目标版本源码摘录，来源：`packages/vite/src/node/baseEnvironment.ts`，`BaseEnvironment`
+目标版本源码摘录，来源：`packages/vite/src/node/baseEnvironment.ts`，`PartialEnvironment`
 构造函数：
 
 ```ts
@@ -339,7 +348,40 @@ this.config = new Proxy(
 ```
 
 Environment 配置不是深拷贝：环境覆盖项优先，未覆盖字段回退顶层配置，`logger` 则绑定环境
-包装器。这是“三层配置视图”的真实读路径，也意味着顶层与环境对象仍共享生命周期。
+包装器。这个代理只定制属性读取，不做深拷贝，也没有阻止写入的 trap；因此它不是不可变配置，
+嵌套对象仍共享原配置引用。
+
+输入登记的调用时机来自 `server/pluginContainer.ts` 的 `buildStart()`（源码摘录，省略 hooks
+收集与门闩）：
+
+```ts
+this._buildStartPromise = (async () => {
+  await hookPromise
+  if (this.environment.mode === 'dev') {
+    await this.environment._registerInputsAsSafeModules()
+  }
+})()
+await this._buildStartPromise
+```
+
+`hookPromise` 失败时不会进入输入登记；默认 `index.html` 的解析容错只在后续登记方法内部生效。
+`dev.spec.ts` 的“fallback inputs 不吞 buildStart 错误”用例，正是区分这两个失败阶段。
+
+状态隔离来自 `environment.ts` 的 `perEnvironmentState()`（源码摘录）：
+
+```ts
+const stateMap = new WeakMap<Environment, State>()
+return function (context: PluginContext) {
+  const { environment } = context
+  if (!stateMap.has(environment)) {
+    stateMap.set(environment, initial(environment))
+  }
+  return stateMap.get(environment)!
+}
+```
+
+例如初始化返回 `0`，第一次调用写入 Environment 实例对应的槽位，第二次 `has()` 仍为 true。
+同名重启后传入新实例，则新建另一个槽位；名称相同不等于缓存 key 相同。
 
 ## 建议断点
 

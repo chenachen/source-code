@@ -33,7 +33,7 @@ describe('ReactConcurrentErrorRecovery', () => {
   });
 
   /**
-   * 创建带版本号的可控文本 cache；记录可在 pending/resolved/rejected 间单向转换并唤醒全部 ping。
+   * 创建带版本号的可控文本 cache；缺失记录直接创建 resolved/rejected，或从 pending 转到相应终态；终态不再改写，通知前先写状态和值。
    * 若 seededCache 存在则先消费它，用于首次 render 前预置数据。
    */
   function createTextCache() {
@@ -373,7 +373,7 @@ describe('ReactConcurrentErrorRecovery', () => {
     assertLog(['Suspend! [Async]']);
     expect(root).toMatchRenderedOutput(null);
 
-    // 即使外包 ErrorBoundary 也应如此；对照非 Transition 场景，后者的无边界挂起会转成可捕获错误。
+    // 外包 ErrorBoundary 后仍等待该 thenable；挂起不调用错误边界，资源解决后才提交 Async。
     await act(() => {
       startTransition(() => {
         root.render(
@@ -395,7 +395,7 @@ describe('ReactConcurrentErrorRecovery', () => {
   });
 
   /**
-   * Given shell Transition 同时含无边界挂起与边界内抛错；When 以两种遍历顺序 render 后再 resolve；
+   * Given shell Transition 同时含无边界挂起与边界内抛错；When 连续两次以相同 AsyncText→ErrorBoundary 顺序 render 后再 resolve；
    * Then 两次都保持空旧屏，不提前提交错误；异步数据就绪后同步恢复并显示错误 fallback。
    * 验证机制：预热/恢复日志与根输出；对应 shell suspension、错误边界恢复和 retry 提交原子性。
    */
@@ -453,7 +453,7 @@ describe('ReactConcurrentErrorRecovery', () => {
       // render 已挂起，因此错误状态尚未提交。
       expect(root).toMatchRenderedOutput(null);
 
-      // 再验证相反遍历顺序：先抛错后挂起。
+      // 再用同样的子节点顺序排入第二次转换；本体仍是先 AsyncText 后错误分支，没有反转遍历顺序。
       await act(() => {
         startTransition(() => {
           root.render(

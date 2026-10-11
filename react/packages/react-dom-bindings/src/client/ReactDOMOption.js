@@ -17,7 +17,7 @@ let didWarnInvalidInnerHTML = false;
  * 实现了一个 <option> 主机组件，当设置 `selected` 时发出警告。
  */
 
-/** `validateOptionProps` 校验输入并在开发环境报告不满足的不变量；用于校验并更新 option 的文本和值。 */
+/** 开发期检查无 value 的 option 子内容能否推导字符串值，并警告显式 selected。 */
 export function validateOptionProps(element: Element, props: Object) {
   if (__DEV__) {
     //如果没有提供值，那么子项必须是简单的。

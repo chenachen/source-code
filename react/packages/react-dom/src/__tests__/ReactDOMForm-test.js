@@ -11,10 +11,11 @@
 
 global.IS_REACT_ACT_ENVIRONMENT = true;
 
-// 当前 JSDOM 版本尚未实现事件派发，因此这里提供 polyfill。
+// JSDOM 的 FormData 构造器不会派发 formdata 事件；这里补上该事件供提交测试使用。
+/** 保存环境原生FormData构造器；模块级polyfill只补jsdom未派发的formdata事件，保留原构造数据规则。 */
 const NativeFormData = global.FormData;
-/** `FormDataPolyfill`：封装当前用例复用的操作、回调或断言步骤。 */
-const FormDataPolyfill = function FormData(form, submitter) {
+/** FormData构造器包装绑定；用原生form/submitter构造数据后派不可取消且冒泡的formdata，再返回可被监听器改写的同一对象。 */
+const FormDataPolyfill = /** 保留函数名FormData的包装构造器；接收form与可选submitter，返回原生FormData对象而非this，供事件插件和测试共用。 */ function FormData(form, submitter) {
   const formData = new NativeFormData(form, submitter);
   const formDataEvent = new Event('formdata', {
     bubbles: true,
@@ -72,6 +73,7 @@ describe('ReactDOMForm', () => {
 
     if (__VARIANT__) {
       const originalConsoleError = console.error;
+      /** 接收error及其余console参数；variant调用旧useFormState时只过滤API改名提示，其余转发捕获的原console.error，避免掩盖测试预期诊断。 */
       console.error = (error, ...args) => {
         if (
           typeof error !== 'string' ||
@@ -87,7 +89,7 @@ describe('ReactDOMForm', () => {
     }
   });
 
-  /** `resolveText`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 按text键把缓存从缺失或pending改resolved并保存文本；pending时逐个唤醒注册pings，使等待action或Suspense重试继续。 */
   function resolveText(text) {
     const record = textCache.get(text);
     if (record === undefined) {
@@ -104,7 +106,7 @@ describe('ReactDOMForm', () => {
     }
   }
 
-  /** `readText`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 读取text缓存；resolved返回文本，pending记录Suspend并抛thenable，rejected抛错误；缺失时创建可唤醒thenable后抛出，模拟资源挂起。 */
   function readText(text) {
     const record = textCache.get(text);
     if (record !== undefined) {
@@ -121,7 +123,7 @@ describe('ReactDOMForm', () => {
       Scheduler.log(`Suspend! [${text}]`);
       const thenable = {
         pings: [],
-        /** `readText.then`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 接收resolve回调；pending时加入pings，已解决时用微任务传回文本，避免同步兑现造成重入；resolveText统一唤醒。 */
         then(resolve) {
           if (newRecord.status === 'pending') {
             thenable.pings.push(resolve);
@@ -141,13 +143,13 @@ describe('ReactDOMForm', () => {
     }
   }
 
-  /** `getText`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 获取text对应异步值而不主动抛挂起；缺失创建thenable，pending返回它，resolved/rejected返回兑现/拒绝Promise，供await或use消费。 */
   function getText(text) {
     const record = textCache.get(text);
     if (record === undefined) {
       const thenable = {
         pings: [],
-        /** `getText.then`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 给getText生成的thenable注册resolve；未完成时缓存回调，完成后微任务回传newRecord.value，供action等待资源。 */
         then(resolve) {
           if (newRecord.status === 'pending') {
             thenable.pings.push(resolve);
@@ -174,13 +176,13 @@ describe('ReactDOMForm', () => {
     }
   }
 
-  /** `Text`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 接收text，写Scheduler日志并返回同一文本；把render发生与DOM最终内容分别作为可观察证据。 */
   function Text({text}) {
     Scheduler.log(text);
     return text;
   }
 
-  /** `AsyncText`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 接收text先readText；仅资源解决后记日志并返回文本，pending时抛thenable让最近Suspense处理。 */
   function AsyncText({text}) {
     readText(text);
     Scheduler.log(text);
@@ -191,7 +193,7 @@ describe('ReactDOMForm', () => {
     document.body.removeChild(container);
   });
 
-  /** `submit`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 异步模拟提交指定form或submitter，等待act处理；派可取消冒泡submit并附submitter，取消后返回，否则读取formaction/action并用Navigate错误模拟非javascript默认导航。 */
   async function submit(submitter) {
     await act(() => {
       const form = submitter.form || submitter;
@@ -215,19 +217,12 @@ describe('ReactDOMForm', () => {
     });
   }
 
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「should allow passing a function to form action」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言连接表单宿主状态、ReactDOMSharedInternals 与提交后受控值恢复路径。
-   */
+  /** 给定form函数action和foo=bar的非受控input，提交后更新action再提交；断言保存foo为bar再bar2，验证FormData传入与最新action替换。 */
   it('should allow passing a function to form action', async () => {
     const ref = React.createRef();
     let foo;
 
-    /** `action`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 接收提交FormData，把foo字段保存到外部foo，返回undefined；用于证明函数action收到非受控字段。 */
     function action(formData) {
       foo = formData.get('foo');
     }
@@ -247,7 +242,7 @@ describe('ReactDOMForm', () => {
 
     // 尝试更新 action。
 
-    /** `action2`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 读取FormData.foo加后缀2并保存，无返回状态；用差异证明更新后的action实际被调用。 */
     function action2(formData) {
       foo = formData.get('foo') + '2';
     }
@@ -265,7 +260,7 @@ describe('ReactDOMForm', () => {
     expect(foo).toBe('bar2');
   });
 
-  /** 测试场景：验证「should allow passing a function to an input/button formAction」描述的渲染、交互或错误处理结果。 */
+  /** 给定form根action及input/button各自函数formAction，逐个提交后替换两处理器再提交；断言保存/删除分别读Hello再Hello2且根action未调用，验证submitter优先。 */
   it('should allow passing a function to an input/button formAction', async () => {
     const inputRef = React.createRef();
     const buttonRef = React.createRef();
@@ -273,17 +268,17 @@ describe('ReactDOMForm', () => {
     let savedTitle = null;
     let deletedTitle = null;
 
-    /** `action`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 接收FormData但只标记rootActionCalled；它是submitter覆盖时不应运行的form根action。 */
     function action(formData) {
       rootActionCalled = true;
     }
 
-    /** `saveItem`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 把FormData.title保存到savedTitle，不改deletedTitle，隔离input submitter的处理分支。 */
     function saveItem(formData) {
       savedTitle = formData.get('title');
     }
 
-    /** `deleteItem`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 把FormData.title保存到deletedTitle，不改savedTitle，隔离button submitter分支。 */
     function deleteItem(formData) {
       deletedTitle = formData.get('title');
     }
@@ -321,12 +316,12 @@ describe('ReactDOMForm', () => {
 
     // 尝试更新各个 action。
 
-    /** `saveItem2`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 读取title并加后缀2保存，用于验证input formAction更新后的实现。 */
     function saveItem2(formData) {
       savedTitle = formData.get('title') + '2';
     }
 
-    /** `deleteItem2`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 读取title并加后缀2保存，用于验证button formAction更新后的实现。 */
     function deleteItem2(formData) {
       deletedTitle = formData.get('title') + '2';
     }
@@ -363,12 +358,12 @@ describe('ReactDOMForm', () => {
     expect(rootActionCalled).toBe(false);
   });
 
-  /** 测试场景：验证「should allow preventing default to block the action」描述的渲染、交互或错误处理结果。 */
+  /** 给定函数action与onSubmit.preventDefault，提交表单；断言actionCalled=false，验证取消默认事件阻止内建action。 */
   it('should allow preventing default to block the action', async () => {
     const ref = React.createRef();
     let actionCalled = false;
 
-    /** `action`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 接收FormData后标记actionCalled；preventDefault测试用false终态证明该action未执行。 */
     function action(formData) {
       actionCalled = true;
     }
@@ -387,16 +382,16 @@ describe('ReactDOMForm', () => {
     expect(actionCalled).toBe(false);
   });
 
-  /** 测试场景：验证「should submit the inner of nested forms」描述的渲染、交互或错误处理结果。 */
+  /** 给定无效HTML的嵌套form及内外data字段，提交内表单；断言嵌套警告、结果innerinner，验证仅内层action读取内FormData。 */
   it('should submit the inner of nested forms', async () => {
     const ref = React.createRef();
     let data;
 
-    /** `outerAction`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 读取data字段加outer并保存；非法嵌套表单中若错误选外action，会产生可识别结果。 */
     function outerAction(formData) {
       data = formData.get('data') + 'outer';
     }
-    /** `innerAction`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 读取内FormData.data并加inner保存；innerinner证明内表单及内action同时被选中。 */
     function innerAction(formData) {
       data = formData.get('data') + 'inner';
     }
@@ -428,19 +423,19 @@ describe('ReactDOMForm', () => {
     expect(data).toBe('innerinner');
   });
 
-  /** 测试场景：验证「should submit once if one root is nested inside the other」描述的渲染、交互或错误处理结果。 */
+  /** 给定内根容器放在外form中，提交内form；断言submit冒泡到外div、外action0次内action1次，验证跨根事件不重复调用form action。 */
   it('should submit once if one root is nested inside the other', async () => {
     const ref = React.createRef();
     let outerCalled = 0;
     let innerCalled = 0;
     let bubbledSubmit = false;
 
-    /** `outerAction`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 递增外action次数；内根提交时预期不运行，用于检测跨根双调用。 */
     function outerAction(formData) {
       outerCalled++;
     }
 
-    /** `innerAction`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 递增内action次数；内根提交预期仅一次，即使submit向外冒泡。 */
     function innerAction(formData) {
       innerCalled++;
     }
@@ -474,19 +469,19 @@ describe('ReactDOMForm', () => {
     expect(innerCalled).toBe(1);
   });
 
-  /** 测试场景：验证「should submit once if a portal is nested inside its own root」描述的渲染、交互或错误处理结果。 */
+  /** 给定portal form宿主插入其根内另一form，提交portal；断言冒泡存在但仅内action一次，验证portal逻辑路径与DOM嵌套不会双提交。 */
   it('should submit once if a portal is nested inside its own root', async () => {
     const ref = React.createRef();
     let outerCalled = 0;
     let innerCalled = 0;
     let bubbledSubmit = false;
 
-    /** `outerAction`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 递增外form action次数；portal内form提交时预期为0，用于区分DOM嵌套与有效action归属。 */
     function outerAction(formData) {
       outerCalled++;
     }
 
-    /** `innerAction`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 递增portal内action次数，预期一次；外层onSubmit仍可观察事件冒泡。 */
     function innerAction(formData) {
       innerCalled++;
     }
@@ -520,7 +515,7 @@ describe('ReactDOMForm', () => {
     expect(innerCalled).toBe(1);
   });
 
-  /** 测试场景：验证「can read the clicked button in the formdata event」描述的渲染、交互或错误处理结果。 */
+  /** 给定多个submitter及formdata监听按delete删除title，依次提交input/button/外部关联button/image；断言button为delete/edit/outside，title相应null或hello，image无button但坐标0/0，验证提交者数据与formdata改写。 */
   it('can read the clicked button in the formdata event', async () => {
     const inputRef = React.createRef();
     const buttonRef = React.createRef();
@@ -531,7 +526,7 @@ describe('ReactDOMForm', () => {
     let buttonY;
     let title;
 
-    /** `action`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 从FormData保存button、button.x/y及title；分辨各种submitter以及formdata监听删除title后的结果。 */
     function action(formData) {
       button = formData.get('button');
       buttonX = formData.get('button.x');
@@ -573,7 +568,7 @@ describe('ReactDOMForm', () => {
     });
 
     container.addEventListener('formdata', e => {
-      // 以某种方式在 formdata 事件中处理。
+      // 根据提交按钮的值删除 title，验证 formdata 监听器修改后的数据传给 action。
       if (e.formData.get('button') === 'delete') {
         e.formData.delete('title');
       }
@@ -602,13 +597,13 @@ describe('ReactDOMForm', () => {
     expect(title).toBe('hello');
   });
 
-  /** 测试场景：验证「excludes the submitter name when the submitter is a function action」描述的渲染、交互或错误处理结果。 */
+  /** 给定带name的input/button使用函数formAction，提交两者；断言name用法警告、FormData.button都null且type恢复原状态，验证React保留submitter编码字段。 */
   it('excludes the submitter name when the submitter is a function action', async () => {
     const inputRef = React.createRef();
     const buttonRef = React.createRef();
     let button;
 
-    /** `action`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 读取button字段保存；函数formAction占用name编码，本例预期字段不进入用户FormData。 */
     function action(formData) {
       // 函数形式的 action 不能控制 name，因为它可能由服务端控制；必须确保该 name 不会进入 FormData。
       button = formData.get('button');
@@ -655,12 +650,12 @@ describe('ReactDOMForm', () => {
     expect(buttonRef.current.getAttribute('type')).toBe(null);
   });
 
-  /** 测试场景：验证「allows a non-function formaction to override a function one」描述的渲染、交互或错误处理结果。 */
+  /** 给定form函数action但submit input用URL formAction，提交；捕获模拟Navigate错误且根action未调用，验证字符串覆盖函数并走默认导航。 */
   it('allows a non-function formaction to override a function one', async () => {
     const ref = React.createRef();
     let actionCalled = false;
 
-    /** `action`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 只标记form action是否调用；URL submitter覆盖应使该标记保持false。 */
     function action(formData) {
       actionCalled = true;
     }
@@ -688,11 +683,11 @@ describe('ReactDOMForm', () => {
     expect(actionCalled).toBe(false);
   });
 
-  /** 测试场景：验证「allows a non-react html formaction to be invoked」描述的渲染、交互或错误处理结果。 */
+  /** 给定form函数action与原始HTML插入的URL formAction input，提交；断言Navigate到指定URL、根action未调用，验证非React管理的submitter属性也参与默认行为。 */
   it('allows a non-react html formaction to be invoked', async () => {
     let actionCalled = false;
 
-    /** `action`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 只标记根form action；原始HTML submitter提供URL时应走默认导航，不进入本函数。 */
     function action(formData) {
       actionCalled = true;
     }
@@ -725,17 +720,17 @@ describe('ReactDOMForm', () => {
     expect(actionCalled).toBe(false);
   });
 
-  /** 测试场景：验证「form actions are transitions」描述的渲染、交互或错误处理结果。 */
+  /** 给定Initial资源已就绪且form action更新到未就绪Updated，提交；断言Pending...Initial保留旧内容，资源完成后Updated，验证内建action为transition。 */
   it('form actions are transitions', async () => {
     const formRef = React.createRef();
 
-    /** `Status`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 读取祖先form的pending；pending返回可记录Pending...的Text，否则返回null，显示transition等待窗口。 */
     function Status() {
       const {pending} = useFormStatus();
       return pending ? <Text text="Pending..." /> : null;
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 保存Initial字符串state；返回action更新Updated、Status和Suspense AsyncText，使未就绪新资源验证旧内容保留。 */
     function App() {
       const [state, setState] = useState('Initial');
       return (
@@ -764,17 +759,17 @@ describe('ReactDOMForm', () => {
     expect(container.textContent).toBe('Updated');
   });
 
-  /** 测试场景：验证「multiple form actions」描述的渲染、交互或错误处理结果。 */
+  /** 给定Count0就绪且action自增，连续两次提交并分别完成Count1/2资源；断言每轮pending保留前值、结束后1/2，验证多轮独立表单transition。 */
   it('multiple form actions', async () => {
     const formRef = React.createRef();
 
-    /** `Status`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 读取pending并返回Pending...或null；为两轮Count transition观测起止。 */
     function Status() {
       const {pending} = useFormStatus();
       return pending ? <Text text="Pending..." /> : null;
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 保存数字count初值0，action使用函数state更新加1；AsyncText按Count字符串资源挂起，分辨每轮提交。 */
     function App() {
       const [state, setState] = useState(0);
       return (
@@ -812,17 +807,17 @@ describe('ReactDOMForm', () => {
     expect(container.textContent).toBe('Count: 2');
   });
 
-  /** 测试场景：验证「form actions can be asynchronous」描述的渲染、交互或错误处理结果。 */
+  /** 给定异步action先等Wait再transition更新Updated，提交并分步兑现；断言启动、pending及挂起日志，等待期间保留Initial，Updated就绪后提交，验证异步action与后续渲染共同决定完成。 */
   it('form actions can be asynchronous', async () => {
     const formRef = React.createRef();
 
-    /** `Status`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 读取异步form action的pending，pending显示Text；覆盖action await和后续资源渲染两段等待。 */
     function Status() {
       const {pending} = useFormStatus();
       return pending ? <Text text="Pending..." /> : null;
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 保存Initial状态；async action先等Wait，再用startTransition设Updated，返回含Status/Suspense的form以保留旧内容。 */
     function App() {
       const [state, setState] = useState('Initial');
       return (
@@ -859,17 +854,17 @@ describe('ReactDOMForm', () => {
     expect(container.textContent).toBe('Updated');
   });
 
-  /** 测试场景：验证「sync errors in form actions can be captured by an error boundary」描述的渲染、交互或错误处理结果。 */
+  /** 给定ErrorBoundary包住同步抛Oh no!的form action，提交；断言两次错误文本render日志及DOM=Oh no!，验证action错误转交边界。 */
   it('sync errors in form actions can be captured by an error boundary', async () => {
-    /** `ErrorBoundary`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 捕获同步form action错误的类边界；error初始null，错误后返回message文本而非原children。 */
     class ErrorBoundary extends React.Component {
-      /** `ErrorBoundary.state`：记录测试夹具在当前场景中的状态。 */
+      /** 保存捕获error，null表示继续渲染children；message作为DOM恢复结果。 */
       state = {error: null};
-      /** `ErrorBoundary.getDerivedStateFromError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 接收捕获error并返回新state片段，不直接改实例或DOM。 */
       static getDerivedStateFromError(error) {
         return {error};
       }
-      /** `ErrorBoundary.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 根据error返回Text(message)或children，日志用于识别边界恢复render。 */
       render() {
         if (this.state.error !== null) {
           return <Text text={this.state.error.message} />;
@@ -880,7 +875,7 @@ describe('ReactDOMForm', () => {
 
     const formRef = React.createRef();
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 返回由ErrorBoundary包住的form；action同步抛Oh no!，正常子内容为Everything is fine。 */
     function App() {
       return (
         <ErrorBoundary>
@@ -905,17 +900,17 @@ describe('ReactDOMForm', () => {
     expect(container.textContent).toBe('Oh no!');
   });
 
-  /** 测试场景：验证「async errors in form actions can be captured by an error boundary」描述的渲染、交互或错误处理结果。 */
+  /** 给定异步action等待Wait后抛Oh no!，提交时内容保持Everything is fine；兑现后断言错误fallback文本与日志，验证Promise拒绝转交边界。 */
   it('async errors in form actions can be captured by an error boundary', async () => {
-    /** `ErrorBoundary`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 捕获异步action拒绝的类边界，保留原children直到error进入状态，然后显示message。 */
     class ErrorBoundary extends React.Component {
-      /** `ErrorBoundary.state`：记录测试夹具在当前场景中的状态。 */
+      /** error初始null；异步action拒绝后更新为错误对象用于fallback。 */
       state = {error: null};
-      /** `ErrorBoundary.getDerivedStateFromError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 把捕获error返回为state片段，使后续render读取message。 */
       static getDerivedStateFromError(error) {
         return {error};
       }
-      /** `ErrorBoundary.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 无error时返回children，有error时返回带message日志的Text。 */
       render() {
         if (this.state.error !== null) {
           return <Text text={this.state.error.message} />;
@@ -926,7 +921,7 @@ describe('ReactDOMForm', () => {
 
     const formRef = React.createRef();
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 返回等待Wait后抛Oh no!的async form action及正常Text，区分提交启动与异步拒绝时点。 */
     function App() {
       return (
         <ErrorBoundary>
@@ -957,11 +952,11 @@ describe('ReactDOMForm', () => {
     expect(container.textContent).toBe('Oh no!');
   });
 
-  /** 测试场景：验证「useFormStatus reads the status of a pending form action」描述的渲染、交互或错误处理结果。 */
+  /** 给定myAction异步等待及foo=bar input，提交；断言pending状态包含action名、foo=bar、method=get，完成后恢复No pending action，验证useFormStatus整组提交数据。 */
   it('useFormStatus reads the status of a pending form action', async () => {
     const formRef = React.createRef();
 
-    /** `Status`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 读取pending/data/action/method；无待办显示No pending action，有待办读取foo及action.name构造文本，验证祖先form提供的整组状态。 */
     function Status() {
       const {pending, data, action, method} = useFormStatus();
       if (!pending) {
@@ -976,14 +971,14 @@ describe('ReactDOMForm', () => {
       }
     }
 
-    /** `myAction`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 记录异步action起止并等待Wait资源，无state返回值；useFormStatus应在等待期间暴露该函数及提交数据。 */
     async function myAction() {
       Scheduler.log('Async action started');
       await getText('Wait');
       Scheduler.log('Async action finished');
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 返回myAction form、foo=bar默认input和Status；formRef让测试通过实际提交入口激活pending。 */
     function App() {
       return (
         <form action={myAction} ref={formRef}>
@@ -1011,14 +1006,14 @@ describe('ReactDOMForm', () => {
     assertLog(['Async action finished', 'No pending action']);
   });
 
-  /** 测试场景：验证「should error if submitting a form manually」描述的渲染、交互或错误处理结果。 */
+  /** 给定函数action但onSubmit阻止后强制执行DOM action中的javascript，提交；断言result仍null且捕获unexpectedly submitted消息，验证手动form.submit式调用的保护脚本。 */
   it('should error if submitting a form manually', async () => {
     const ref = React.createRef();
 
     let error = null;
     let result = null;
 
-    /** `emulateForceSubmit`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 模拟绕过submit事件的强制导航：读取formaction/action，非javascript抛Navigate，javascript用Function执行并捕获error/result到外部变量；供保护脚本测试。 */
     function emulateForceSubmit(submitter) {
       const form = submitter.form || submitter;
       const action =
@@ -1058,10 +1053,10 @@ describe('ReactDOMForm', () => {
     );
   });
 
-  /** 测试场景：验证「useActionState updates state asynchronously and queues multiple actions」描述的渲染、交互或错误处理结果。 */
+  /** 给定useActionState初值0和逐次等待的增减action，transition内排增/增/减/增；断言仅首动作立即启动，依次兑现后后续按1→4启动、无中间提交，最后DOM=2，验证串行队列及纠缠。 */
   it('useActionState updates state asynchronously and queues multiple actions', async () => {
     let actionCounter = 0;
-    /** `action`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 接收上个state和increment/decrement payload，递增启动计数并等待编号Wait；按类型返回新state，串行队列每项可被单独兑现。 */
     async function action(state, type) {
       actionCounter++;
 
@@ -1079,7 +1074,7 @@ describe('ReactDOMForm', () => {
     }
 
     let dispatch;
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 注册初值0的useActionState，导出dispatch并按isPending返回Pending加state文本，观察排队期间不提交中间值。 */
     function App() {
       const [state, _dispatch, isPending] = useActionState(action, 0);
       dispatch = _dispatch;
@@ -1116,10 +1111,10 @@ describe('ReactDOMForm', () => {
     expect(container.textContent).toBe('2');
   });
 
-  /** 测试场景：验证「useActionState supports inline actions」描述的渲染、交互或错误处理结果。 */
+  /** 给定内联异步action按stepSize累加，先step1派发再改step10派发；断言日志Pending0→1、Pending1→11，验证后续dispatch采用最新闭包。 */
   it('useActionState supports inline actions', async () => {
     let increment;
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 接收stepSize并注册内联async action，对prevState加本轮闭包步长；导出dispatch并返回pending/state文本。 */
     function App({stepSize}) {
       const [state, dispatch, isPending] = useActionState(async prevState => {
         return prevState + stepSize;
@@ -1147,9 +1142,9 @@ describe('ReactDOMForm', () => {
     assertLog(['Pending 1', '11']);
   });
 
-  /** 测试场景：验证「useActionState: dispatch throws if called during render」描述的渲染、交互或错误处理结果。 */
+  /** 给定App在render调用useActionState dispatch，挂载并waitForThrow；断言Cannot update action state while rendering，验证禁止render阶段派发。 */
   it('useActionState: dispatch throws if called during render', async () => {
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 注册action后在render立即dispatch，刻意触发禁止render派发错误；下面的Text只有不抛错时才可返回。 */
     function App() {
       const [state, dispatch, isPending] = useActionState(async () => {}, 0);
       dispatch();
@@ -1164,10 +1159,10 @@ describe('ReactDOMForm', () => {
     });
   });
 
-  /** 测试场景：验证「useActionState: queues multiple actions and runs them in order」描述的渲染、交互或错误处理结果。 */
+  /** 给定初值A与等待目标资源的action，transition排B/C/D并依次兑现；断言仅首dispatch显示Pending A，最后日志与DOM均D，验证顺序执行和最终批次提交。 */
   it('useActionState: queues multiple actions and runs them in order', async () => {
     let action;
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 注册等待payload对应资源的async action、初值A；导出dispatch并显示pending/state，检查B/C/D串行排队最终提交D。 */
     function App() {
       const [state, dispatch, isPending] = useActionState(
         async (s, a) => await getText(a),
@@ -1197,13 +1192,13 @@ describe('ReactDOMForm', () => {
     expect(container.textContent).toBe('D');
   });
 
-  /** 测试场景：验证「当前参数化场景」描述的渲染、交互或错误处理结果。 */
+  /** 给定旧action闭包不会抛错，排两个异步action后将prop切为会抛错；旧两项完成仍输出Second action，新Third action拒绝Oops!，验证队列记录派发时实现。 */
   it(
     'useActionState: when calling a queued action, uses the implementation ' +
       'that was current at the time it was dispatched, not the most recent one',
     async () => {
       let action;
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 接收throwIfActionIsDispatched，把该prop封入内联action；action等待payload或抛Oops，导出dispatch并显示pending，用于比较派发时实现与最新闭包。 */
       function App({throwIfActionIsDispatched}) {
         const [state, dispatch, isPending] = useActionState(async (s, a) => {
           if (throwIfActionIsDispatched) {
@@ -1241,10 +1236,10 @@ describe('ReactDOMForm', () => {
     },
   );
 
-  /** 测试场景：验证「useActionState: works if action is sync」描述的渲染、交互或错误处理结果。 */
+  /** 给定同步内联action按stepSize累加，step1派发后改step10再派发；断言0→Pending0→1→Pending1→11，验证同步action也遵循pending状态及最新实现。 */
   it('useActionState: works if action is sync', async () => {
     let increment;
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 接收stepSize并以同步action累计prevState；导出dispatch，返回pending/state，验证同步返回值也通过action状态机制。 */
     function App({stepSize}) {
       const [state, dispatch, isPending] = useActionState(prevState => {
         return prevState + stepSize;
@@ -1272,10 +1267,10 @@ describe('ReactDOMForm', () => {
     assertLog(['Pending 1', '11']);
   });
 
-  /** 测试场景：验证「useActionState: can mix sync and async actions」描述的渲染、交互或错误处理结果。 */
+  /** 给定action直接返回payload，交替排thenable B、字符串C、thenable D、字符串E；兑现B/D后断言最终E且无中间日志，验证同步与异步结果可串行混合。 */
   it('useActionState: can mix sync and async actions', async () => {
     let action;
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 初值A，action直接返回payload字符串或thenable；导出dispatch并显示pending/state，构造混合同步/异步结果队列。 */
     function App() {
       const [state, dispatch, isPending] = useActionState((s, a) => a, 'A');
       action = dispatch;
@@ -1301,17 +1296,17 @@ describe('ReactDOMForm', () => {
     expect(container.textContent).toBe('E');
   });
 
-  /** 测试场景：验证「useActionState: error handling (sync action)」描述的渲染、交互或错误处理结果。 */
+  /** 给定边界包住同步action且感叹号payload会抛错，transition派Oops!；断言先Pending A再两次fallback日志、DOM错误文本，验证同步action错误状态。 */
   it('useActionState: error handling (sync action)', async () => {
-    /** `ErrorBoundary`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 捕获同步useActionState错误的边界，错误后用Caught an error文本代替children。 */
     class ErrorBoundary extends React.Component {
-      /** `ErrorBoundary.state`：记录测试夹具在当前场景中的状态。 */
+      /** error初始null，捕获后持有action错误对象供fallback读取。 */
       state = {error: null};
-      /** `ErrorBoundary.getDerivedStateFromError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 返回捕获error的state片段，交由React应用恢复状态。 */
       static getDerivedStateFromError(error) {
         return {error};
       }
-      /** `ErrorBoundary.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 无error返回children，有error返回包含message的Text，供日志与DOM断言。 */
       render() {
         if (this.state.error !== null) {
           return <Text text={'Caught an error: ' + this.state.error.message} />;
@@ -1321,7 +1316,7 @@ describe('ReactDOMForm', () => {
     }
 
     let action;
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 注册遇感叹号payload就抛错的同步action，初值A；导出dispatch并返回pending/state，验证错误从action进入边界。 */
     function App() {
       const [state, dispatch, isPending] = useActionState((s, a) => {
         if (a.endsWith('!')) {
@@ -1355,17 +1350,17 @@ describe('ReactDOMForm', () => {
     expect(container.textContent).toBe('Caught an error: Oops!');
   });
 
-  /** 测试场景：验证「useActionState: error handling (async action)」描述的渲染、交互或错误处理结果。 */
+  /** 给定边界包住等待资源后检查感叹号的action，派Oops!并兑现；断言等待时Pending A，完成后fallback与DOM错误，验证异步拒绝恢复。 */
   it('useActionState: error handling (async action)', async () => {
-    /** `ErrorBoundary`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 捕获异步useActionState拒绝的边界，保留children直到等待资源后的错误进入状态。 */
     class ErrorBoundary extends React.Component {
-      /** `ErrorBoundary.state`：记录测试夹具在当前场景中的状态。 */
+      /** 以null标识无错误，异步拒绝后保存error用于fallback。 */
       state = {error: null};
-      /** `ErrorBoundary.getDerivedStateFromError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 返回error state片段，使异步action拒绝进入后续render。 */
       static getDerivedStateFromError(error) {
         return {error};
       }
-      /** `ErrorBoundary.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 错误时输出Caught an error与message，否则children；区分pending阶段与恢复终态。 */
       render() {
         if (this.state.error !== null) {
           return <Text text={'Caught an error: ' + this.state.error.message} />;
@@ -1375,7 +1370,7 @@ describe('ReactDOMForm', () => {
     }
 
     let action;
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 注册await getText(payload)后遇感叹号抛错的action，初值A；导出dispatch并显示pending/state。 */
     function App() {
       const [state, dispatch, isPending] = useActionState(async (s, a) => {
         const text = await getText(a);
@@ -1407,17 +1402,17 @@ describe('ReactDOMForm', () => {
     expect(container.textContent).toBe('Caught an error: Oops!');
   });
 
-  /** 测试场景：验证「useActionState: when an action errors, subsequent actions are canceled」描述的渲染、交互或错误处理结果。 */
+  /** 给定首action等待后抛错，随后排另一项；首项失败后断言仅边界fallback、后续无Start日志，失败后再dispatch也无日志，验证队列错误取消与失效。 */
   it('useActionState: when an action errors, subsequent actions are canceled', async () => {
-    /** `ErrorBoundary`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 队列错误取消测试的边界；首action错误后卸载原App并展示错误文本。 */
     class ErrorBoundary extends React.Component {
-      /** `ErrorBoundary.state`：记录测试夹具在当前场景中的状态。 */
+      /** 保存首action错误，null时App仍可显示初始或pending状态。 */
       state = {error: null};
-      /** `ErrorBoundary.getDerivedStateFromError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 返回捕获error供类状态恢复，不运行后续排队action。 */
       static getDerivedStateFromError(error) {
         return {error};
       }
-      /** `ErrorBoundary.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 根据error返回Caught an error文本或children，用于核对取消后稳定fallback。 */
       render() {
         if (this.state.error !== null) {
           return <Text text={'Caught an error: ' + this.state.error.message} />;
@@ -1427,7 +1422,7 @@ describe('ReactDOMForm', () => {
     }
 
     let action;
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 注册记录Start action并等待payload的async action；感叹号结果抛错，否则返回文本，导出dispatch用于失败前后继续排队。 */
     function App() {
       const [state, dispatch, isPending] = useActionState(async (s, a) => {
         Scheduler.log('Start action: ' + a);
@@ -1459,7 +1454,7 @@ describe('ReactDOMForm', () => {
     await act(() => startTransition(() => action('Should never run')));
     assertLog([]);
 
-    // 第一次 dispatch 会更新 pending 状态。
+    // 解除 action 的挂起后抛错，组件转入错误边界；已排队的后续 action 不再执行。
     await act(() => resolveText('Oops!'));
     assertLog(['Caught an error: Oops!', 'Caught an error: Oops!']);
     expect(container.textContent).toBe('Caught an error: Oops!');
@@ -1472,10 +1467,10 @@ describe('ReactDOMForm', () => {
     expect(container.textContent).toBe('Caught an error: Oops!');
   });
 
-  /** 测试场景：验证「useActionState works in StrictMode」描述的渲染、交互或错误处理结果。 */
+  /** 给定StrictMode下的异步累加action，transition派increment并兑现Wait1；断言action启动一次、Pending0后1，验证严格模式不会重复执行action副作用。 */
   it('useActionState works in StrictMode', async () => {
     let actionCounter = 0;
-    /** `action`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** StrictMode夹具中的异步累加action；按启动计数等待Wait，再按type返回state±1，启动日志用于检查副作用不重复。 */
     async function action(state, type) {
       actionCounter++;
 
@@ -1493,7 +1488,7 @@ describe('ReactDOMForm', () => {
     }
 
     let dispatch;
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 在StrictMode内注册初值0的action并导出dispatch，返回pending/state文本；计数副作用由action而非render持有。 */
     function App() {
       const [state, _dispatch, isPending] = useActionState(action, 0);
       dispatch = _dispatch;
@@ -1521,10 +1516,10 @@ describe('ReactDOMForm', () => {
     expect(container.textContent).toBe('1');
   });
 
-  /** 测试场景：验证「useActionState does not wrap action in a transition unless dispatch is in a transition」描述的渲染、交互或错误处理结果。 */
+  /** 给定useActionState更新驱动AsyncText，先在transition外派发再在内派发；断言外部提交Loading...，内部挂起时保留Count1，资源就绪后Count2，验证dispatch上下文决定fallback提交。 */
   it('useActionState does not wrap action in a transition unless dispatch is in a transition', async () => {
     let dispatch;
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 注册使用闭包state加1的同步action，导出dispatch并返回AsyncText；是否包transition决定新资源挂起时fallback是否提交。 */
     function App() {
       const [state, _dispatch] = useActionState(() => {
         return state + 1;
@@ -1564,7 +1559,7 @@ describe('ReactDOMForm', () => {
     assertLog(['Count: 1']);
     expect(container.textContent).toBe('Count: 1');
 
-    // 现在在 transition 内派发；这次不会触发 loading 状态。
+    // 在 transition 内派发后，重试渲染仍会记录 Loading...，但不会提交 fallback；已显示的 Count: 1 会保留到数据就绪。
     await act(() => startTransition(() => dispatch()));
     assertLog(['Count: 1', 'Suspend! [Count: 2]', 'Loading...']);
     expect(container.textContent).toBe('Count: 1');
@@ -1574,10 +1569,10 @@ describe('ReactDOMForm', () => {
     expect(container.textContent).toBe('Count: 2');
   });
 
-  /** 测试场景：验证「useActionState warns if async action is dispatched outside of a transition」描述的渲染、交互或错误处理结果。 */
+  /** 给定异步action驱动AsyncText，直接在transition外dispatch；断言DEV上下文警告、Count1挂起日志但DOM保留Count0，验证错误调用提示；未兑现Count1。 */
   it('useActionState warns if async action is dispatched outside of a transition', async () => {
     let dispatch;
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 注册async action返回闭包state+1，导出dispatch并返回AsyncText；在transition外调用构造DEV提示及新资源挂起。 */
     function App() {
       const [state, _dispatch] = useActionState(async () => {
         return state + 1;
@@ -1612,13 +1607,13 @@ describe('ReactDOMForm', () => {
     expect(container.textContent).toBe('Count: 0');
   });
 
-  /** 测试场景：验证「uncontrolled form inputs are reset after the action completes」描述的渲染、交互或错误处理结果。 */
+  /** 给定use读取username资源并提供非受控input，用户写带空白的AcdLite并提交；Wait完成后新资源仍挂起，断言脏值和旧文本保留，acdlite就绪后值与文本更新，验证自动reset等待新defaultValue提交。 */
   it('uncontrolled form inputs are reset after the action completes', async () => {
     const formRef = React.createRef();
     const inputRef = React.createRef();
     const divRef = React.createRef();
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 接收promiseForUsername并用use读取；返回非受控默认username表单。async action读取/规范化提交数据、等Wait再transition重渲染新资源，重置需等待新defaultValue提交。 */
     function App({promiseForUsername}) {
       // 让这里挂起，以模拟 RSC 流式传输。
       const username = use(promiseForUsername);
@@ -1688,14 +1683,14 @@ describe('ReactDOMForm', () => {
     expect(divRef.current.textContent).toEqual('Current username: acdlite');
   });
 
-  /** 测试场景：验证「should fire onReset on automatic form reset」描述的渲染、交互或错误处理结果。 */
+  /** 给定受控amount和onReset手动设回0，先setValue=3后提交异步action；断言等待时3、完成后0，验证自动表单reset会触发onReset并由用户更新受控state。 */
   it('should fire onReset on automatic form reset', async () => {
     const formRef = React.createRef();
     const inputRef = React.createRef();
 
     let setValue;
     const defaultValue = 0;
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 保存受控amount state并导出setter，返回异步等待的form及onReset设回默认0；onChange同步事件当前值，使自动reset可通过用户state更新观察。 */
     function App({promiseForUsername}) {
       const [value, _setValue] = useState(defaultValue);
       setValue = _setValue;
@@ -1741,7 +1736,7 @@ describe('ReactDOMForm', () => {
     expect(inputRef.current.value).toEqual('0');
   });
 
-  /** 测试场景：验证「requestFormReset schedules a form reset after transition completes」描述的渲染、交互或错误处理结果。 */
+  /** 给定无内建action的非受控form，用户transition读取/规范化数据并requestFormReset；等待新username挂起时断言脏值保留，资源就绪后acdlite，验证显式reset与transition提交绑定。 */
   it('requestFormReset schedules a form reset after transition completes', async () => {
     // 此测试与上一个相同，区别是表单由 userspace action 更新，而不是内置 form action。
 
@@ -1749,7 +1744,7 @@ describe('ReactDOMForm', () => {
     const inputRef = React.createRef();
     const divRef = React.createRef();
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 接收username Promise并读取后返回无内建action的form、默认input和Text；外部userspace transition显式requestFormReset，隔离reset请求与提交事件。 */
     function App({promiseForUsername}) {
       // 让这里挂起，以模拟 RSC 流式传输。
       const username = use(promiseForUsername);
@@ -1821,13 +1816,13 @@ describe('ReactDOMForm', () => {
     expect(divRef.current.textContent).toEqual('Current username: acdlite');
   });
 
-  /** 测试场景：验证「parallel form submissions do not throw」描述的渲染、交互或错误处理结果。 */
+  /** 给定首次action等待外部resolver，requestSubmit后pending期间再次requestSubmit并兑现首项；两步各断言一个Action日志且act成功，验证并行表单提交不抛错。 */
   it('parallel form submissions do not throw', async () => {
     const formRef = React.createRef();
     let resolve = null;
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 返回action为submitForm的form并连接formRef；通过浏览器requestSubmit测试两次真实提交入口。 */
     function App() {
-      /** `App.submitForm`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 记录Action；只有resolver未设置时创建并等待Promise，把res保存供第二次提交时兑现；后续调用可立即完成。 */
       async function submitForm() {
         Scheduler.log('Action');
         if (!resolve) {
@@ -1855,7 +1850,7 @@ describe('ReactDOMForm', () => {
     assertLog(['Action']);
   });
 
-  /** 测试场景：验证「当前参数化场景」描述的渲染、交互或错误处理结果。 */
+  /** 给定input在form外通过form=myform关联，transition请求reset并异步更新默认username；断言等待保留脏值与旧内容、就绪后acdlite，验证reset覆盖关联元素而非只后代。 */
   it(
     'requestFormReset works with inputs that are not descendants ' +
       'of the form element',
@@ -1866,7 +1861,7 @@ describe('ReactDOMForm', () => {
       const inputRef = React.createRef();
       const divRef = React.createRef();
 
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 接收username Promise，用use读取后返回空form及通过form属性关联的外部input；Text显示资源值，检验reset包含非后代控件。 */
       function App({promiseForUsername}) {
         // 让这里挂起，以模拟 RSC 流式传输。
         const username = use(promiseForUsername);
@@ -1943,12 +1938,12 @@ describe('ReactDOMForm', () => {
     },
   );
 
-  /** 测试场景：验证「reset multiple forms in the same transition」描述的渲染、交互或错误处理结果。 */
+  /** 给定两个form的默认A1/B1，用户写带空白A2/B2，同一transition对两form请求reset并更新资源；断言挂起时两脏值保留，资源同时完成后A2/B2，验证多表单重置共享提交完成边界。 */
   it('reset multiple forms in the same transition', async () => {
     const formRefA = React.createRef();
     const formRefB = React.createRef();
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 接收A/B两Promise并use读取；返回两个独立form默认input，令同一transition必须等两资源更新后再重置。 */
     function App({promiseForA, promiseForB}) {
       // 让这些内容挂起，以模拟 RSC 流式传输。
       const a = use(promiseForA);
@@ -2030,7 +2025,7 @@ describe('ReactDOMForm', () => {
     expect(formRefB.current.elements.inputName.value).toBe('B2');
   });
 
-  /** 测试场景：验证「requestFormReset throws if the form is not managed by React」描述的渲染、交互或错误处理结果。 */
+  /** 给定原始innerHTML表单及脏输入，调用requestFormReset；断言Invalid form element且值未变，随后原生form.reset清空，验证API要求React管理。 */
   it('requestFormReset throws if the form is not managed by React', async () => {
     container.innerHTML = `
       <form id="myform">
@@ -2052,7 +2047,7 @@ describe('ReactDOMForm', () => {
     expect(input.value).toBe('');
   });
 
-  /** 测试场景：验证「requestFormReset throws on a non-form DOM element」描述的渲染、交互或错误处理结果。 */
+  /** 给定React管理的div=Hi，调用requestFormReset(div)；断言Invalid form element，验证仅form宿主可重置。 */
   it('requestFormReset throws on a non-form DOM element', async () => {
     const root = ReactDOMClient.createRoot(container);
     const ref = React.createRef();
@@ -2063,12 +2058,12 @@ describe('ReactDOMForm', () => {
     expect(() => requestFormReset(div)).toThrow('Invalid form element.');
   });
 
-  /** 测试场景：验证「warns if requestFormReset is called outside of a transition」描述的渲染、交互或错误处理结果。 */
+  /** 给定脏非受控input，异步transition在await Wait1后直接请求reset再等Wait2；兑现Wait1后断言上下文警告且值已回Initial，验证await后需重新包transition；Wait2本例未兑现。 */
   it('warns if requestFormReset is called outside of a transition', async () => {
     const formRef = React.createRef();
     const inputRef = React.createRef();
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 返回默认Initial的非受控input表单并保存refs；外部action在await后requestFormReset，用于观察同步重置与上下文警告。 */
     function App() {
       return (
         <form ref={formRef}>
@@ -2083,14 +2078,14 @@ describe('ReactDOMForm', () => {
     // 修改未受控 input，使其 DOM 值进入 dirty 状态。
     inputRef.current.value = '  Updated  ';
 
-    // 触发一个异步操作，该操作更新并重置两个表单。
+    // 启动异步 action；等待第一次 await 结束后再请求重置这个表单。
     await act(() => {
       startTransition(async () => {
         Scheduler.log('Action started');
         await getText('Wait 1');
         Scheduler.log('Request form reset');
 
-        // 这发生在一次 `await` 之后，且未包在 startTransition 中，因此会同步调度，而不会随 transition 调度。这几乎肯定是错误用法，所以开发环境会记录警告。
+        // await 后 transition 上下文已退出；此处没有再包 startTransition，requestFormReset 会同步调度并在开发环境警告。
         requestFormReset(formRef.current);
 
         await getText('Wait 2');
@@ -2112,9 +2107,9 @@ describe('ReactDOMForm', () => {
     expect(inputRef.current.value).toBe('Initial');
   });
 
-  /** 测试场景：验证「regression: submitter's formAction prop is coerced correctly before checking if it exists」描述的渲染、交互或错误处理结果。 */
+  /** 给定button formAction先函数再null、Symbol、true、URL，逐次提交；断言函数优先，空或过滤值回退form action，Symbol警告、URL模拟导航，验证先coerce再决定覆盖。 */
   it("regression: submitter's formAction prop is coerced correctly before checking if it exists", async () => {
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 接收submitterAction，返回函数form action及带该覆盖prop的submit button；日志区分过滤值回退与函数/URL优先。 */
     function App({submitterAction}) {
       return (
         <form action={() => Scheduler.log('Form action')}>
@@ -2163,22 +2158,22 @@ describe('ReactDOMForm', () => {
     );
   });
 
-  /** 测试场景：验证「当前参数化场景」描述的渲染、交互或错误处理结果。 */
+  /** 给定onSubmit.preventDefault且useTransition启动异步更新，用户写Updated提交后再改输入；断言表单pending激活、完成后输出Updated而输入保留后写值，验证手动transition状态不自动reset。 */
   it(
     'useFormStatus is activated if startTransition is called ' +
       'inside preventDefault-ed submit event',
     async () => {
-      /** `Output`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 接收value并读取form pending，返回value或带pending后缀的Text，观察preventDefault内transition提供的form状态。 */
       function Output({value}) {
         const {pending} = useFormStatus();
         return <Text text={pending ? `${value} (pending...)` : value} />;
       }
 
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 接收value，useTransition提供startFormTransition；返回关联input、Output及onSubmit，input默认值随新props变化但无自动reset。 */
       function App({value}) {
         const [, startFormTransition] = useTransition();
 
-        /** `App.onSubmit`：封装当前用例复用的操作、回调或断言步骤。 */
+        /** 接收submit事件先preventDefault，在form transition同步区读search值；等待Wait后再包startTransition重渲染新App，pending激活但没有请求reset。 */
         function onSubmit(event) {
           event.preventDefault();
           startFormTransition(async () => {
@@ -2233,9 +2228,9 @@ describe('ReactDOMForm', () => {
     },
   );
 
-  /** 测试场景：验证「useFormStatus is not activated if startTransition is not called」描述的渲染、交互或错误处理结果。 */
+  /** 给定preventDefault的普通async onSubmit且未用transition启动handler，提交等待Wait；断言状态不pending、完成后输出Updated且输入保留后写值，验证普通异步事件不会激活form状态/reset。 */
   it('useFormStatus is not activated if startTransition is not called', async () => {
-    /** `Output`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 接收value并读取pending；若意外pending会输出不可达提示，否则正常Text，专门检测普通async事件是否误激活form状态。 */
     function Output({value}) {
       const {pending} = useFormStatus();
 
@@ -2250,9 +2245,9 @@ describe('ReactDOMForm', () => {
       );
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 接收value，返回普通async onSubmit、非受控input与Output；此handler开始时没有transition上下文。 */
     function App({value}) {
-      /** `App.onSubmit`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 接收submit事件先取消默认行为，读取search并await Wait；完成后只给root.render包transition，不能倒推提交开始时form pending已激活。 */
       async function onSubmit(event) {
         event.preventDefault();
         const updatedValue = event.target.elements.search.value;
@@ -2305,19 +2300,19 @@ describe('ReactDOMForm', () => {
     expect(inputRef.current.value).toBe('Updated again after submission');
   });
 
-  /** 测试场景：验证「useFormStatus is not activated if event is not preventDefault-ed」描述的渲染、交互或错误处理结果。 */
+  /** 给定onSubmit启动transition但未preventDefault，提交；断言模拟导航拒绝、日志Action started与Initial且状态不pending，验证未取消默认提交不关联useFormStatus。 */
   it('useFormStatus is not activated if event is not preventDefault-ed', async () => {
-    /** `Output`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 接收value并读取pending，显示后缀用于观察未preventDefault事件不会关联form状态。 */
     function Output({value}) {
       const {pending} = useFormStatus();
       return <Text text={pending ? `${value} (pending...)` : value} />;
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 接收value并用useTransition启动器构造onSubmit；返回表单input和Output，刻意保留默认提交行为。 */
     function App({value}) {
       const [, startFormTransition] = useTransition();
 
-      /** `App.onSubmit`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 接收事件但不preventDefault；启动async transition读search并等待，完成后root.render新App；提交助手因此仍模拟默认导航。 */
       function onSubmit(event) {
         // 此事件未调用 preventDefault，因此会执行默认表单提交，useFormStatus 也不会激活。
         startFormTransition(async () => {
@@ -2363,9 +2358,9 @@ describe('ReactDOMForm', () => {
     expect(outputRef.current.textContent).toBe('Initial');
   });
 
-  /** 测试场景：验证「useFormStatus coerces the value of the "action" prop」描述的渲染、交互或错误处理结果。 */
+  /** 给定preventDefault且空transition用于激活status，逐次传Symbol/true/URL/函数/对象action；断言pending action依次null/null/原字符串/原函数/按TrustedTypes开关保留对象或转字符串，验证状态读取使用同样coercion。 */
   it('useFormStatus coerces the value of the "action" prop', async () => {
-    /** `Status`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 读取pending及action，pending时记录action并返回Pending，否则Not pending；直接比较coercion后状态值身份。 */
     function Status() {
       const {pending, action} = useFormStatus();
 
@@ -2377,11 +2372,11 @@ describe('ReactDOMForm', () => {
       }
     }
 
-    /** `Form`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 接收action并返回使用该prop的form和Status；useTransition仅用于在preventDefault事件内激活状态，不执行action本身。 */
     function Form({action}) {
       const [, startFormTransition] = useTransition();
 
-      /** `Form.onSubmit`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 取消默认submit并启动空async transition，使useFormStatus进入pending窗口以观察传入action的规范化值。 */
       function onSubmit(event) {
         event.preventDefault();
         // 安排一个空的操作，只是为了触发待处理的状态。
@@ -2420,16 +2415,16 @@ describe('ReactDOMForm', () => {
     assertLog(['https://react.dev']);
 
     // Function 原样传递。
-    /** `actionFn`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 空函数action身份夹具，无副作用与返回值；submit被用户取消，status日志应保留该函数对象身份。 */
     const actionFn = () => {};
     await act(() => root.render(<Form action={actionFn} />));
     await submit(formRef.current);
     assertLog([actionFn]);
 
     // 除非启用 Trusted Types，否则其他值都会调用 toString。
-    /** `MyAction`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 可字符串化action对象夹具；TrustedTypes开关决定status保留对象还是使用toString结果。 */
     class MyAction {
-      /** `MyAction.toString`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 返回stringified action，供非TrustedTypes路径的action值转换断言。 */
       toString() {
         return 'stringified action';
       }
@@ -2445,31 +2440,33 @@ describe('ReactDOMForm', () => {
     );
   });
 
-  /** 测试场景：验证「form actions should retain status when nested state changes」描述的渲染、交互或错误处理结果。 */
+  /** 给定目标form永不完成action及旁边独立form，提交目标后分别自增两status内部counter；断言目标pending保持true且旁边保持false，验证嵌套state更新不会覆盖表单状态或跨form串扰。 */
   it('form actions should retain status when nested state changes', async () => {
     const formRef = React.createRef();
 
     let rerenderUnrelatedStatus;
-    /** `UnrelatedStatus`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 读取旁边form pending及自身counter，导出自增函数并记录两者；本函数不返回内容，验证局部state不会读取目标form状态。 */
     function UnrelatedStatus() {
       const {pending} = useFormStatus();
       const [counter, setCounter] = useState(0);
+      /** 把无关status的counter加1，不更新form action；供日志核对pending仍false。 */
       rerenderUnrelatedStatus = () => setCounter(n => n + 1);
       Scheduler.log(`[unrelated form] pending: ${pending}, state: ${counter}`);
     }
 
     let rerenderTargetStatus;
-    /** `TargetStatus`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 读取目标form pending及局部counter，导出自增函数并记录状态；即使counter更新，目标form action仍pending。 */
     function TargetStatus() {
       const {pending} = useFormStatus();
       const [counter, setCounter] = useState(0);
       Scheduler.log(`[target form] pending: ${pending}, state: ${counter}`);
+      /** 仅递增目标status局部counter，测试期待form pending保持true。 */
       rerenderTargetStatus = () => setCounter(n => n + 1);
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 返回目标form与旁边无action form，各有独立status后代；目标action永不兑现，固定待办窗口以测试局部更新。 */
     function App() {
-      /** `App.action`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 返回永不兑现Promise的async action；只用于持续pending，不调用resolver或提交完成，避免状态窗口在测试中消失。 */
       async function action() {
         return new Promise(resolve => {
           // 永不兑现。

@@ -56,7 +56,7 @@ const unitlessNumbers = new Set([
   'strokeOpacity',
   'strokeWidth',
   'MozAnimationIterationCount', // 已知厂商前缀属性。
-  'MozBoxFlex', // TODO：现代代码不应再使用这些属性，后续可移除。
+  'MozBoxFlex', // 保留旧厂商前缀属性的无 px 规则。
   'MozBoxFlexGroup',
   'MozLineClamp',
   'msAnimationIterationCount',

@@ -72,7 +72,7 @@ export const SuspenseException: mixed = new Error(
     "call the promise's `.catch` method and pass the result to `use`.",
 );
 
-/** 提交期 Suspensey 资源需要切换 fallback 时抛出的内部占位异常。 */
+/** complete 阶段发现宿主资源未就绪时抛出的内部占位异常，用于决定是否回退或等待提交。 */
 export const SuspenseyCommitException: mixed = new Error(
   'Suspense Exception: This is not a real error, and should not leak into ' +
     "userspace. If you're seeing this, it's likely a bug in React.",
@@ -103,9 +103,9 @@ export const noopSuspenseyCommitThenable = {
   },
 };
 
-/** 首次挂起时创建组件级 ThenableState，后续挂起会复用相同槽位。 */
+/** 首次跟踪 thenable 时创建槽位状态；挂起重放可继续复用此前记录的对象。 */
 export function createThenableState(): ThenableState {
-  // ThenableState 在组件首次挂起时创建，后续挂起继续复用。
+  // useThenable 与 child 协调器首次读取 thenable 时创建状态，即使该对象已 fulfilled 也会创建。
   if (__DEV__) {
     return {
       didWarnAboutUncachedPromise: false,
@@ -139,9 +139,14 @@ export function clearUseWarnings() {
 /**
  * 读取并同步解包当前 `use` 槽位对应的 Thenable。
  *
- * 同一索引始终复用首次记录的 Thenable，保证幂等组件重渲染得到稳定依赖；未知状态
- * 的 Thenable 会被附加 pending/fulfilled/rejected 插桩。未落定时把真实对象保存到
+ * 同一跟踪状态的相同索引复用首次记录的 Thenable。没有字符串 status 的对象会被
+ * 附加 pending/fulfilled/rejected 插桩；已有字符串 status 的对象保留外部插桩。未落定时把真实对象保存到
  * 模块旁路并抛出 SuspenseException，让工作循环接管而不把 Promise 泄漏给用户代码。
+ * @param thenableState 本次组件/child 序列可在挂起重放中复用的槽位状态。
+ * @param thenable 当前代码提供的对象；同槽位更换对象时仍消费首次记录的那个。
+ * @param index 调用者递增的使用序号，决定重放时与哪个旧 Thenable 对齐。
+ * @param fiber DEV 首次挂载条件式 use 诊断的 Fiber；child 解包可传 null。
+ * @returns 已完成值；拒绝时抛原始原因，未完成时抛内部 Suspense 占位异常。
  */
 export function trackUsedThenable<T>(
   thenableState: ThenableState,
@@ -328,7 +333,7 @@ export function trackUsedThenable<T>(
   }
 }
 
-/** 让提交阶段按 Suspensey 资源挂起，并把空 Thenable 交给 throwException。 */
+/** 在 complete 阶段中断未就绪宿主资源的处理；工作循环取出空 Thenable，必要时交给 throwException 切到回退路径。 */
 export function suspendCommit(): void {
   // 这层间接调用只为把 noopSuspenseyCommitThenable 传给 throwException。
   // TODO: 从 throwException 中拆出 Thenable 类型判断。
@@ -421,8 +426,8 @@ export function checkIfUseWrappedInAsyncCatch(rejectedReason: any) {
 }
 
 /**
- * 比较两个 Fiber 是否在各自树中拥有相同 tag/type/key/index 祖先路径。
- * HostRoot 还必须指向同一个根实例，避免跨根把结构相似路径视为同一调用位置。
+ * 沿祖先链核对 tag/type/key/index，直到遇到同一个 Fiber 对象才接受为同一调用位置。
+ * HostRoot 的根实例不同立即拒绝；只拥有相同字段但没有共同 Fiber 祖先的两条路径也拒绝。
  */
 function areSameKeyPath(a: Fiber, b: Fiber): boolean {
   if (a === b) {

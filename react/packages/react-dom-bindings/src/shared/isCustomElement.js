@@ -16,7 +16,7 @@ function isCustomElement(tagName: string, props: Object): boolean {
     return false;
   }
   switch (tagName) {
-    // 这些名称由 SVG 与 MathML 保留；列表预计不会增长，比在多处追踪命名空间更直接。
+    // 排除由 SVG 与 MathML 保留、同样包含连字符的内建标签名。
     // https://html.spec.whatwg.org/multipage/custom-elements.html#custom-elements-core-concepts
     case 'annotation-xml':
     case 'color-profile':

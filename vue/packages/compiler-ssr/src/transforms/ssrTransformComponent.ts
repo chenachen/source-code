@@ -79,7 +79,7 @@ interface WIPSlotEntry {
   fn: FunctionExpression
   /** 插槽的原始模板子节点。 */
   children: TemplateChildNode[]
-  /** 未传 `_push` 时返回普通 VNode 的客户端 fallback 分支。 */
+  /** 未传 `_push` 时返回普通 VNode 的 fallback；SSR 中的 render-function 子组件也会走此分支。 */
   vnodeBranch: ReturnStatement
 }
 
@@ -93,6 +93,9 @@ const componentTypeMap = new WeakMap<
  * SSR 组件第一遍转换：解析组件、构造 props 和半成品 slot 函数。
  * 第二遍会为每个 slot 补齐“SSR 字符串分支 + 普通 VNode fallback 分支”。fallback 必不可少，
  * 因为 render-function 子组件调用传入 slot 时可能不提供 `_push`，期望得到 VNode 数组。
+ * enter 阶段克隆未被后代 SSR 转换改写的 children，exit 阶段在原树作用域内分别构造
+ * VNode/SSR slots，并按 buildSlots 的同一遍历次序配对。WeakMap 以组件 AST 为键保留
+ * 中间状态，离开编译树后可被回收；不属于按模板文本复用产物的编译缓存。
  */
 export const ssrTransformComponent: NodeTransform = (node, context) => {
   if (
@@ -102,7 +105,7 @@ export const ssrTransformComponent: NodeTransform = (node, context) => {
     return
   }
 
-  const component = resolveComponentType(node, context, true /* ssr */)
+  const component = resolveComponentType(node, context, true /* SSR 模式 */)
   const isDynamicComponent =
     isObject(component) && component.callee === RESOLVE_DYNAMIC_COMPONENT
   componentTypeMap.set(node, component)
@@ -203,6 +206,9 @@ export const ssrTransformComponent: NodeTransform = (node, context) => {
 /**
  * SSR 第二遍完成 slot 双分支并输出组件/内置组件调用。
  * slot 函数根据是否收到第二参数 `_push` 判断调用来自 SSR helper 还是普通 render 函数。
+ * @param node - 第一遍已登记 componentTypeMap、可能有 ssrCodegenNode/wipMap 的组件节点。
+ * @param context - 当前输出函数体；此函数会中断连续字符串并写入独立 helper 调用。
+ * @param parent - 当前模板容器或 WIP_SLOT 容器，用于透明组件插槽的空字符串占位。
  */
 export function ssrProcessComponent(
   node: ComponentNode,
@@ -237,14 +243,14 @@ export function ssrProcessComponent(
     const wipEntries = wipMap.get(node) || []
     for (let i = 0; i < wipEntries.length; i++) {
       const { fn, vnodeBranch } = wipEntries[i]
-      // `_push` 只有 ssrRenderSlot 调用时才存在：存在走字符串输出，否则返回普通 VNode。
+      // ssrRenderSlot/ssrRenderSlotInner 调用时传入 `_push`：存在走 SSR 输出，否则返回 VNode。
       fn.body = createIfStatement(
         createSimpleExpression(`_push`, false),
         processChildrenAsStatement(
           wipEntries[i],
           context,
           false,
-          true /* withSlotScopeId */,
+          true /* 传递插槽作用域 ID */,
         ),
         vnodeBranch,
       )
@@ -256,7 +262,8 @@ export function ssrProcessComponent(
     }
 
     if (typeof component === 'string') {
-      // 静态组件 helper 返回字符串片段，交给当前 `_push`。
+      // 静态组件 helper 返回 SSRBuffer 或 Promise<SSRBuffer>，独立交给 `_push` 保留输出顺序；
+      // 不能并进字符串插值，最终展开阶段才将子 buffer 解析为 HTML。
       context.pushStatement(
         createCallExpression(`_push`, [node.ssrCodegenNode]),
       )
@@ -287,6 +294,8 @@ const vnodeDirectiveTransforms = {
 /**
  * 将单个 slot children 用客户端管线编译为 ReturnStatement fallback。
  * wrapper template 会带回原 v-slot 参数与 v-for，确保子转换正确识别局部作用域。
+ * 返回的 VNode 数组仅来自克隆 children；真实 SSR children 继续由第二遍使用。
+ * 外部自定义转换也会在此子管线执行，不能假设一个插件对 slot 只访问一次。
  */
 function createVNodeSlotBranch(
   slotProps: ExpressionNode | undefined,
@@ -379,8 +388,8 @@ function subTransform(
 }
 
 /**
- * 深克隆数组和普通对象 AST；symbol、函数等非普通对象保持引用。
- * 用于隔离 VNode fallback 的原位转换，不需要处理循环结构。
+ * 递归复制数组及 isPlainObject 判定为 `[object Object]` 的对象；其他值按原值保留。
+ * 用于隔离 VNode fallback 的原位转换，只面向无环 AST，不复制对象原型。
  */
 function clone(v: any): any {
   if (isArray(v)) {

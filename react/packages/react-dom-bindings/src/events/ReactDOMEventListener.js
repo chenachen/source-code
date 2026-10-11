@@ -70,17 +70,17 @@ let _enabled: boolean = true;
 
 // FB 构建会导出该入口，供旧 FB layer 基础设施使用。
 // 希望移除该兼容入口，但目前无法确认是否安全。
-/** setEnabled 更新创建带优先级的原生 listener wrapper，解析阻塞 Fiber 并选择 dispatch/hydration 路径的模块状态或 DOM 状态；重复调用需保持队列顺序与恢复幂等性。 */
+/** 切换事件派发总开关；HostConfig 在 DOM mutation 期间临时关闭它。 */
 export function setEnabled(enabled: ?boolean): void {
   _enabled = !!enabled;
 }
 
-/** isEnabled 判断创建带优先级的原生 listener wrapper，解析阻塞 Fiber 并选择 dispatch/hydration 路径的前置条件；返回值用于在热路径提前跳过不适用分支。 */
+/** 读取事件派发总开关。 */
 export function isEnabled(): boolean {
   return _enabled;
 }
 
-/** createEventListenerWrapper 为创建带优先级的原生 listener wrapper，解析阻塞 Fiber 并选择 dispatch/hydration 路径创建封装对象；生成值保留原生事件身份并携带必要调度上下文。 */
+/** 绑定原生事件名、flags 和容器，返回不额外设置优先级的 dispatch wrapper。 */
 export function createEventListenerWrapper(
   targetContainer: EventTarget,
   domEventName: DOMEventName,
@@ -94,7 +94,7 @@ export function createEventListenerWrapper(
   );
 }
 
-/** createEventListenerWrapperWithPriority 为创建带优先级的原生 listener wrapper，解析阻塞 Fiber 并选择 dispatch/hydration 路径创建封装对象；生成值保留原生事件身份并携带必要调度上下文。 */
+/** 按事件类别选择离散、连续或普通 dispatch wrapper，再绑定 listener 的固定参数。 */
 export function createEventListenerWrapperWithPriority(
   targetContainer: EventTarget,
   domEventName: DOMEventName,
@@ -122,7 +122,7 @@ export function createEventListenerWrapperWithPriority(
   );
 }
 
-/** dispatchDiscreteEvent 推进创建带优先级的原生 listener wrapper，解析阻塞 Fiber 并选择 dispatch/hydration 路径的分发或重放状态机；阻塞时保留事件，解除后按原优先级继续。 */
+/** 暂时清空 Transition 并设置离散更新优先级；dispatch 后在 finally 还原上下文。 */
 function dispatchDiscreteEvent(
   domEventName: DOMEventName,
   eventSystemFlags: EventSystemFlags,
@@ -141,7 +141,7 @@ function dispatchDiscreteEvent(
   }
 }
 
-/** dispatchContinuousEvent 推进创建带优先级的原生 listener wrapper，解析阻塞 Fiber 并选择 dispatch/hydration 路径的分发或重放状态机；阻塞时保留事件，解除后按原优先级继续。 */
+/** 暂时清空 Transition 并设置连续更新优先级；dispatch 后在 finally 还原上下文。 */
 function dispatchContinuousEvent(
   domEventName: DOMEventName,
   eventSystemFlags: EventSystemFlags,
@@ -160,7 +160,16 @@ function dispatchContinuousEvent(
   }
 }
 
-/** dispatchEvent 推进创建带优先级的原生 listener wrapper，解析阻塞 Fiber 并选择 dispatch/hydration 路径的分发或重放状态机；阻塞时保留事件，解除后按原优先级继续。 */
+/**
+ * 原生监听器的公共派发入口：先定位尚未水合的根或 Suspense/Activity 标记。
+ * 无阻塞时按当前 Fiber 提取插件事件，并清掉对应连续事件的旧记录。可重放的连续
+ * 类别保存最新原生事件并停止传播；这个分类与更新优先级不是同一张表。
+ * 需要水合的离散事件仅在 capture 阶段同步尝试：每次重新查 blocker，允许依次
+ * 解开嵌套边界；同一 blocker 未前进则退出并停止传播，成功则派发原始事件。
+ * 其余受阻事件以 null Fiber 进入插件系统，不在这里建立离散事件队列。
+ * @param eventSystemFlags 当前原生监听器的 capture、非委托等派发方式。
+ * @param targetContainer 安装该监听器的根、Portal 容器或 EventTarget。
+ */
 export function dispatchEvent(
   domEventName: DOMEventName,
   eventSystemFlags: EventSystemFlags,
@@ -241,7 +250,7 @@ export function dispatchEvent(
   );
 }
 
-/** findInstanceBlockingEvent 查询并返回创建带优先级的原生 listener wrapper，解析阻塞 Fiber 并选择 dispatch/hydration 路径所需状态；无匹配时使用 null/默认值而不修改事件队列。 */
+/** 归一化原生 target，再返回阻塞 DOM 对象；可派发 Fiber 另写入 return_targetInst。 */
 export function findInstanceBlockingEvent(
   nativeEvent: AnyNativeEvent,
 ): null | Container | SuspenseInstance | ActivityInstance {
@@ -249,11 +258,12 @@ export function findInstanceBlockingEvent(
   return findInstanceBlockingTarget(nativeEventTarget);
 }
 
+/** blocker 查询的伴随返回值；每次查询先清空，仅无阻塞且已提交的目标才能写入 Fiber。 */
 export let return_targetInst: null | Fiber = null;
 
 // 若事件受阻，返回 SuspenseInstance、ActivityInstance 或 Container。
 // 上方 return_targetInst 字段在概念上也是返回值的一部分。
-/** findInstanceBlockingTarget 查询并返回创建带优先级的原生 listener wrapper，解析阻塞 Fiber 并选择 dispatch/hydration 路径所需状态；无匹配时使用 null/默认值而不修改事件队列。 */
+/** 清空 return_targetInst，检查最近 mounted Fiber；返回脱水根/边界 blocker，否则写入可派发的 target Fiber。 */
 export function findInstanceBlockingTarget(
   targetNode: Node,
 ): null | Container | SuspenseInstance | ActivityInstance {
@@ -273,34 +283,25 @@ export function findInstanceBlockingTarget(
       if (tag === SuspenseComponent) {
         const instance = getSuspenseInstanceFromFiber(nearestMounted);
         if (instance !== null) {
-          // 把事件加入稍后重放的队列，并中止本轮分发，避免
-          // 同一事件经过事件系统分发两次。
-          // TODO：若这是队列中的首个离散事件，应为该边界调度更高
-          // 优先级。
+          // 只返回 blocker；dispatchEvent 再按事件类别决定同步 hydration 或排队。
           return instance;
         }
-        // 理论上不应进入此分支；虽然内部状态异常，但为避免阻塞
-        // 整个系统，仍不带 target 分发事件。
+        // 最近 mounted Fiber 是边界，但没有可用的脱水标记；不带 target 继续分发。
         // TODO：补充警告。
         targetInst = null;
       } else if (tag === ActivityComponent) {
         const instance = getActivityInstanceFromFiber(nearestMounted);
         if (instance !== null) {
-          // 把事件加入稍后重放的队列，并中止本轮分发，避免
-          // 同一事件经过事件系统分发两次。
-          // TODO：若这是队列中的首个离散事件，应为该边界调度更高
-          // 优先级。
+          // 只返回 blocker；dispatchEvent 再按事件类别决定同步 hydration 或排队。
           return instance;
         }
-        // 理论上不应进入此分支；虽然内部状态异常，但为避免阻塞
-        // 整个系统，仍不带 target 分发事件。
+        // 最近 mounted Fiber 是边界，但没有可用的脱水标记；不带 target 继续分发。
         // TODO：补充警告。
         targetInst = null;
       } else if (tag === HostRoot) {
         const root: FiberRoot = nearestMounted.stateNode;
         if (isRootDehydrated(root)) {
-          // 若重放期间发生此情况，说明状态异常，并可能阻塞
-          // 整个系统。
+          // 根尚未完成 hydration，容器本身是需要等待的 blocker。
           return getContainerFromFiber(nearestMounted);
         }
         targetInst = null;
@@ -318,7 +319,7 @@ export function findInstanceBlockingTarget(
   return null;
 }
 
-/** getEventPriority 查询并返回创建带优先级的原生 listener wrapper，解析阻塞 Fiber 并选择 dispatch/hydration 路径所需状态；无匹配时使用 null/默认值而不修改事件队列。 */
+/** 把原生事件映射为更新优先级；message 根据当前 Scheduler 上下文映射，其余未列出的事件取 Default。 */
 export function getEventPriority(domEventName: DOMEventName): EventPriority {
   switch (domEventName) {
     // 以下事件由 SimpleEventPlugin 使用：

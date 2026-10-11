@@ -225,7 +225,7 @@ describe('build', () => {
     assertOutputHashContentChange(result[0], result[1])
   })
 
-  /** 场景：两个目录各有同名 index.css 入口；验证目标：manifest 分别以完整源路径登记两个入口，不交叉复用资产。 */
+  /** 场景：两个目录各有同名 index.css 入口；构建后核对 manifest 的两个完整源路径都标为 isEntry；本例未比较两条记录的 file 字段。 */
   test('css entries with the same basename should not cross-link manifest assets', async () => {
     const root = resolve(dirname, 'fixtures/css-entry-same-basename')
     const result = (await build({
@@ -253,7 +253,7 @@ describe('build', () => {
     })
   })
 
-  /** 场景：大型 JSON 的 stringify 与 namedExports 取各组合且入口未使用其值；验证目标：产物不含数组或对象中的大字符串，证明 tree-shaking 生效。 */
+  /** 大型对象和数组 JSON 的 stringify=true/false/auto 分别搭配 namedExports=true/false；入口未使用导入值，六种配置的产物都应排除大字符串标记。 */
   test.for([
     [true, true],
     [true, false],
@@ -566,6 +566,7 @@ describe('resolveLibFilename', () => {
   test('custom filename function', () => {
     const filename = resolveLibFilename(
       {
+        /** 返回携带 format 的显式文件名，验证字符串结果不再经过扩展名推导。 */
         fileName: (format) => `custom-filename-function.${format}.js`,
         entry: 'mylib.js',
       },
@@ -592,7 +593,7 @@ describe('resolveLibFilename', () => {
     expect(filename).toBe('custom-filename.mjs')
   })
 
-  /** 场景：未配置 fileName 且 package.json 有名称；验证目标：库 CSS/JS 命名基于包名 mylib。 */
+  /** 场景：未配置 fileName 且 package.json 有名称；验证目标：库 JS 文件名基于包名 mylib。 */
   test('package name as filename', () => {
     const filename = resolveLibFilename(
       {
@@ -705,6 +706,7 @@ describe('resolveLibFilename', () => {
         entryA: 'entryA.js',
         entryB: 'entryB.js',
       },
+      /** 用 entryAlias 与 format 区分多入口输出，验证回调参数准确传入。 */
       fileName: (format, entryAlias) =>
         `custom-filename-function.${entryAlias}.${format}.js`,
     }
@@ -768,6 +770,7 @@ describe('resolveLibFilename', () => {
   test('multiple entries as array: custom filename function', () => {
     const libOptions: LibraryOptions = {
       entry: ['entryA.js', 'entryB.js'],
+      /** 用 entryAlias 与 format 区分多入口输出，验证回调参数准确传入。 */
       fileName: (format, entryAlias) =>
         `custom-filename-function.${entryAlias}.${format}.js`,
     }
@@ -988,7 +991,7 @@ describe('resolveBuildOutputs', () => {
     expect((result as RolldownOutput).output[0].code).not.toContain('preload')
   })
 
-  /** 场景：SSR 构建提供自定义 modulePreload 配置；验证目标：服务端 chunk 仍不包含浏览器 preload 代码。 */
+  /** 场景：名为 custom 的 Environment 设置 build.ssr=true；构建其动态导入入口后，服务端 chunk 仍不包含浏览器 preload 代码。 */
   test('ssr custom', async () => {
     const builder = await createBuilder({
       root: resolve(dirname, 'fixtures/dynamic-import'),
@@ -1038,7 +1041,7 @@ test('default sharedConfigBuild true on build api', async () => {
   expect(counter).toBe(1)
 })
 
-/** 场景：四个环境分别配置 minify，且 sharedPlugins 开关取两值；验证目标：客户端/自定义压成单行，SSR 与未压缩环境保持八行。 */
+/** for 的两行分别开启/关闭 sharedPlugins；每行依次构建默认 client、默认 SSR、显式 minify=true 的 custom1 与 minify=false 的 custom2，同一入口输出行数应为 [1,8,1,8]，验证插件是否共享不影响各环境压缩配置。 */
 test.for([true, false])(
   'minify per environment (builder.sharedPlugins: %s)',
   async (sharedPlugins) => {
@@ -1235,7 +1238,7 @@ test('chunkImportMap is emitted for SSR when enabled', async () => {
   )
 })
 
-/** 场景：chunkImportMap=false 且存在同名普通资产；验证目标：插件不额外发射 importmap.json。 */
+/** chunkImportMap=false 且 emitAssets=false 时，插件主动发射的同名普通 importmap.json 资产也被移除。 */
 test('importmap named asset is not emitted when chunkImportMap is false', async () => {
   const root = resolve(dirname, 'fixtures/shared-plugins/chunk-import-map')
   const builder = await createBuilder({
@@ -1280,7 +1283,7 @@ test('importmap named asset is not emitted when chunkImportMap is false', async 
   )
 })
 
-/** 场景：多个环境共享同一份配置实例；验证目标：各环境解析出的 emitAssets 与输出目录仍相互独立。 */
+/** sharedConfigBuild=true 且 client/ssr/custom 各设 emitAssets:true 与不同 outDir；先核对三个解析值，再 buildApp 检查三个输出目录都含 CSS。 */
 test('sharedConfigBuild and emitAssets', async () => {
   const root = resolve(dirname, 'fixtures/shared-config-build/emitAssets')
   const builder = await createBuilder({
@@ -1498,7 +1501,7 @@ describe('onRollupLog', () => {
     ).rejects.toThrowError(/Rolldown failed to resolve import/)
   })
 
-  /** 场景：Rolldown 报告已知动态导入表达式警告；验证目标：Vite 不把该可预期警告写入 logger。 */
+  /** 动态导入变量插件分别报告 Unsupported expression 与 statically analyzed 两种消息；调用日志适配器后 warn 均不得被调用。 */
   test.each([[`Unsupported expression`], [`statically analyzed`]])(
     'should ignore dynamic import warnings (%s)',
     async (message: string) => {
@@ -1514,7 +1517,7 @@ describe('onRollupLog', () => {
     },
   )
 
-  /** 场景：日志代码属于 Vite 明确忽略的构建警告集合；验证目标：logger 调用次数保持为零。 */
+  /** 分别以 CIRCULAR_DEPENDENCY 与 THIS_IS_UNDEFINED 两种 code 调用日志适配器；warn 调用次数应均为零。 */
   test.each([[`CIRCULAR_DEPENDENCY`], [`THIS_IS_UNDEFINED`]])(
     'should ignore some warnings (%s)',
     async (code: string) => {
@@ -1531,7 +1534,7 @@ describe('onRollupLog', () => {
   )
 })
 
-/** 场景：watch 首轮 manifest 含 entry 与 dep，随后删除入口对 dep 的引用并重建；验证目标：第二轮清单移除 dep.js 旧记录。 */
+/** 同一 Environment 连续执行两次构建，第二次删除动态 import 后，manifest 不再含 dep.js 旧记录。 */
 test('watch rebuild manifest', async (ctx) => {
   // 不启动长期 watcher，而是复用同一 Environment 连续构建两次，模拟重建时 manifest
   // 状态必须清空：删除动态 import 后，旧 dep key 不得残留。

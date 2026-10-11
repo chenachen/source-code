@@ -35,10 +35,10 @@ export const DiscreteEventPriority: EventPriority = SyncLane;
 export const ContinuousEventPriority: EventPriority = InputContinuousLane;
 /** 不属于离散/连续输入的普通事件更新。 */
 export const DefaultEventPriority: EventPriority = DefaultLane;
-/** 不影响当前交互、只在空闲机会处理的事件更新。 */
+/** 最低事件更新优先级；选中的工作映射到 Scheduler IdlePriority 的普通 host callback。 */
 export const IdleEventPriority: EventPriority = IdleLane;
 
-/** 返回两者中更紧急的非零事件优先级；数值更小的 Lane 位更高。 */
+/** a 非零且比 b 更紧急时返回 a，否则返回 b；b 为 NoEventPriority 时保留零。 */
 export function higherEventPriority(
   a: EventPriority,
   b: EventPriority,
@@ -46,7 +46,7 @@ export function higherEventPriority(
   return a !== 0 && a < b ? a : b;
 }
 
-/** 返回两者中更不紧急的事件优先级；NoEventPriority 作为最低有效上下文保留。 */
+/** a 为 NoEventPriority 或比 b 更不紧急时返回 a，否则返回 b；零表示没有已设置的上下文。 */
 export function lowerEventPriority(
   a: EventPriority,
   b: EventPriority,

@@ -1,9 +1,10 @@
 /**
- * `defineExpose` 宏场景：确认调用被改写为 setup 的 expose 参数并禁止重复调用，同时保证
- * 未调用时生成 `expose()`，使 script setup 组件默认保持封闭。
+ * `defineExpose` 宏场景：确认调用被改写为 setup 的 expose 参数，并验证普通 script 位于
+ * script setup 后时仍能正确合并。
  */
 import { assertCode, compileSFCScript as compile } from '../utils'
 
+// 输入 defineExpose({ foo: 123 })；编译后删除宏名并注入 expose 参数，原调用转为 __expose，确认显式暴露路径。
 test('defineExpose()', () => {
   const { content } = compile(`
 <script setup>
@@ -19,6 +20,7 @@ defineExpose({ foo: 123 })
   expect(content).toMatch(/\b__expose\(\{ foo: 123 \}\)/)
 })
 
+// 把无结尾换行的普通 script 放在 setup 后，setup 中含 import；assertCode 检查移动与合并后仍是合法模块并匹配快照。
 test('<script> after <script setup> the script content not end with `\\n`', () => {
   const { content } = compile(`
   <script setup>

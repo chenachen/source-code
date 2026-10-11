@@ -38,7 +38,8 @@ export function ssrProcessFor(
     context,
     needFragmentWrapper,
   )
-  // v-for 的项数运行时才知道，整个列表默认总是一个 Fragment；父级已提供边界时可关闭嵌套。
+  // 整个列表默认是 Fragment。Transition/TransitionGroup 展平直接 children 时会禁用这里的
+  // 边界；普通嵌套列表仍各自保留 Fragment，不能仅因祖先已有边界就省略。
   if (!disableNestedFragments) {
     context.pushStringPart(`<!--[-->`)
   }

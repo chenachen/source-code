@@ -33,10 +33,13 @@ function createEventName (appName: string, fromBaseApp: boolean): string {
  */
 class EventCenterForGlobal {
   /**
-   * 订阅全局数据，并可立即回放稳定的缓存值。
+   * 订阅全局数据，并可按事件中心的队列状态同步回放当前缓存值。
+   *
+   * 子应用实例先在函数上写归属/回放标记，再由 on 校验回调；传 null 等无法写属性的值
+   * 可能在校验前同步抛错。基座实例没有 appName，不经过这一步标记。
    *
    * @param cb - 全局数据监听器。
-   * @param autoTrigger - 首次绑定时是否回放非空缓存；默认不回放。
+   * @param autoTrigger - 是否同步回放非空缓存；当前待调度队列有不同新值时跳过，默认不回放。
    */
   addGlobalDataListener (cb: CallableFunctionForInteract, autoTrigger?: boolean): void {
     const appName = (this as any).appName
@@ -61,7 +64,7 @@ class EventCenterForGlobal {
    * 合并并异步分发全局数据。
    *
    * @param data - 写入全局通道的局部数据对象。
-   * @param nextStep - 本批数据完成通知后接收监听器返回值的回调。
+   * @param nextStep - 本批发生通知后接收监听器真值返回数组的回调；没有真值时接收 undefined。
    * @param force - 是否跳过浅比较、强制通知。
    */
   setGlobalData (
@@ -89,14 +92,14 @@ class EventCenterForGlobal {
   }
 
   /**
-   * 返回最近一次提交的全局数据；通道尚未创建时返回 `null`。
+   * 返回全局通道当前数据引用；新通道首次发送立即可读，后续合并待微任务提交，未建通道返回 null。
    */
   getGlobalData (): Record<PropertyKey, unknown> | null {
     return eventCenter.getData('global')
   }
 
   /**
-   * 清空全局数据缓存，但保留所有监听器。
+   * 清空全局通道当前数据，保留监听器和待提交批次；此方法不取消排队更新。
    */
   clearGlobalData (): void {
     eventCenter.clearData('global')
@@ -106,7 +109,8 @@ class EventCenterForGlobal {
    * 清理当前调用方拥有的全部全局数据监听器。
    *
    * @remarks
-   * 子应用实例只删除带相同 `__APP_NAME__` 的回调；基座实例只删除未标记应用名的回调，避免相互越权清理。
+   * 子应用实例只删除带相同 `__APP_NAME__` 的回调；基座实例只删除未标记应用名的回调。归属写在
+   * 函数对象上，同一个函数被不同子应用复用时，其标记会被后一次登记覆盖。
    */
   clearGlobalDataListener (): void {
     const appName = (this as any).appName
@@ -131,7 +135,7 @@ export class EventCenterForBaseApp extends EventCenterForGlobal {
    *
    * @param appName - 子应用名。
    * @param cb - 数据监听器。
-   * @param autoTrigger - 首次绑定时是否回放非空缓存；默认不回放。
+   * @param autoTrigger - 是否同步回放非空缓存；当前待调度队列有不同新值时跳过，默认不回放。
    */
   addDataListener (appName: string, cb: CallableFunction, autoTrigger?: boolean): void {
     eventCenter.on(createEventName(formatAppName(appName), false), cb, autoTrigger)
@@ -148,7 +152,7 @@ export class EventCenterForBaseApp extends EventCenterForGlobal {
   }
 
   /**
-   * 查询指定应用方向上最近提交的数据。
+   * 查询指定应用方向的当前数据引用；新通道首次发送立即可读，后续更新待微任务提交。
    *
    * @param appName - 子应用名。
    * @param fromBaseApp - 为真读取基座发往子应用的数据；默认读取子应用发往基座的数据。
@@ -162,7 +166,7 @@ export class EventCenterForBaseApp extends EventCenterForGlobal {
    *
    * @param appName - 目标子应用名。
    * @param data - 写入该应用通道的局部数据对象。
-   * @param nextStep - 本批数据完成通知后的回调。
+   * @param nextStep - 本批发生通知后的回调，接收监听器真值返回数组或 undefined；同值更新不调用。
    * @param force - 是否跳过浅比较、强制通知。
    */
   setData (
@@ -189,7 +193,7 @@ export class EventCenterForBaseApp extends EventCenterForGlobal {
   }
 
   /**
-   * 清空指定应用方向的数据缓存。
+   * 清空指定方向的当前数据；监听器和待提交批次保留，排队更新仍可能写回数据。
    *
    * @param appName - 子应用名。
    * @param fromBaseApp - 为真清除基座发往子应用的数据；默认值为真。
@@ -212,6 +216,11 @@ export class EventCenterForBaseApp extends EventCenterForGlobal {
    *
    * @remarks
    * 只有旧通道存在时才移动；新通道同名记录会被旧记录覆盖，随后删除旧键。
+   * 这里只改 eventList 的键，不迁移已排队的 queue/recordStep；待提交期间改名可能使 process
+   * 仍按旧名称读取已不存在的记录。相同新旧名称也会先 set 再 delete，并非无操作。
+   *
+   * @param newAppName - 格式化后用于接收基座数据的新应用名。
+   * @param oldAppName - 格式化后用于查找原下行通道的应用名。
    */
   changeEventAppName (newAppName: string, oldAppName: string): void {
     const newEventName = createEventName(formatAppName(newAppName), true)
@@ -245,8 +254,11 @@ export class EventCenterForMicroApp extends EventCenterForGlobal {
   /**
    * 监听基座发往当前子应用的数据。
    *
+   * 先在回调引用上记录回放配置，再进入事件中心校验；无效的 null/undefined 回调会在
+   * 属性赋值时抛错，不能把后面的 on 日志校验视为这层 API 的统一错误出口。
+   *
    * @param cb - 数据监听器；会记录自动回放配置供 UMD 恢复使用。
-   * @param autoTrigger - 首次绑定时是否回放非空缓存；默认不回放。
+   * @param autoTrigger - 是否同步回放非空缓存；当前待调度队列有不同新值时跳过，默认不回放。
    */
   addDataListener (cb: CallableFunctionForInteract, autoTrigger?: boolean): void {
     cb.__AUTO_TRIGGER__ = autoTrigger
@@ -263,7 +275,7 @@ export class EventCenterForMicroApp extends EventCenterForGlobal {
   }
 
   /**
-   * 查询当前应用指定方向上最近提交的数据。
+   * 查询当前应用指定方向的数据引用；新通道首次发送立即可读，后续更新待微任务提交。
    *
    * @param fromBaseApp - 为真读取基座发来的数据；默认值为真。
    */
@@ -272,10 +284,10 @@ export class EventCenterForMicroApp extends EventCenterForGlobal {
   }
 
   /**
-   * 合并并异步发送数据到基座，同时在应用根容器派发 `datachange`。
+   * 合并数据并在微任务中通知基座；本批发生通知且应用仍有容器时，再派发 `datachange`。
    *
    * @param data - 写入上行通道的局部数据对象。
-   * @param nextStep - 本批数据完成通知后的回调。
+   * @param nextStep - 监听器及可选 datachange 执行后的回调，接收监听器真值返回数组或 undefined。
    * @param force - 是否跳过浅比较、强制通知。
    */
   dispatch (data: Record<PropertyKey, unknown>, nextStep?: CallableFunction, force?: boolean): void {
@@ -306,7 +318,7 @@ export class EventCenterForMicroApp extends EventCenterForGlobal {
   }
 
   /**
-   * 清空当前应用指定方向的数据缓存。
+   * 清空指定方向的当前数据；监听器和待提交批次保留，排队更新仍可能写回数据。
    *
    * @param fromBaseApp - 为真清除基座发来的数据；默认清除子应用发往基座的数据。
    */
@@ -327,6 +339,8 @@ export class EventCenterForMicroApp extends EventCenterForGlobal {
  *
  * @remarks
  * 预渲染卸载、keep-alive 与手动 UMD 流程可能重复记录，因此先复制旧集合再补入当前仍绑定的监听器，避免丢失先前快照。
+ * 快照只复制函数引用；数据、待提交批次和回调函数上的 __AUTO_TRIGGER__ 配置仍在共享对象上，
+ * 本函数也不解绑监听器，释放动作由沙箱的副作用清理阶段执行。
  *
  * @param microAppEventCenter - 当前子应用的数据中心实例。
  */
@@ -359,7 +373,9 @@ export function recordDataCenterSnapshot (microAppEventCenter: EventCenterForMic
  * 重挂载前把 UMD 快照中的监听器重新绑定到共享事件中心。
  *
  * @remarks
- * 每个监听器沿用原始自动回放配置；恢复完成后立即删除快照，防止后续重复绑定。
+ * 每个监听器沿用原始自动回放配置；恢复完成后删除已消费快照，下一次记录从当前监听器重新建立。
+ * addDataListener/addGlobalDataListener 的自动回放可在此同步触发，不等待 DOM 恢复或挂载完成；
+ * 同步回调抛错会中断循环，末尾的 reset 也不会执行。
  *
  * @param microAppEventCenter - 当前子应用的数据中心实例。
  */
@@ -380,6 +396,8 @@ export function rebuildDataCenterSnapshot (microAppEventCenter: EventCenterForMi
 
 /**
  * 删除子应用数据中心上的 UMD 监听器快照。
+ *
+ * 不解绑已恢复监听器，也不清除事件中心的数据或待提交队列。
  *
  * @param microAppEventCenter - 当前子应用的数据中心实例。
  */

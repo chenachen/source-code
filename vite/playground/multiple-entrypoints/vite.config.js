@@ -1,6 +1,7 @@
 import { resolve } from 'node:path'
 import { defineConfig } from 'vite'
 
+/** 25 个 JS 入口与 HTML 输入的共同路径基准，配置严格保留每个入口公开导出。 */
 const dirname = import.meta.dirname
 
 export default defineConfig({

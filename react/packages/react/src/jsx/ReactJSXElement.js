@@ -29,7 +29,11 @@ const createTask =
       console.createTask
     : () => null;
 
-/** 根据元素类型生成开发工具任务名，同时避免为 Lazy 类型提前执行初始化器。 */
+/**
+ * 为 console.createTask 生成元素类型标签；Fragment 为 <>、lazy 为 <...>，不调用 lazy._init。
+ * @param type 待显示的宿主/函数/包装类型。
+ * @returns 带尖括号的名称或未知占位。普通名称解析错误被捕获；lazy 品牌检查在 try 外，其 getter 错误仍可传播。
+ */
 function getTaskName(type) {
   if (type === REACT_FRAGMENT_TYPE) {
     return '<>';
@@ -50,7 +54,9 @@ function getTaskName(type) {
   }
 }
 
-/** 从当前异步 dispatcher 读取创建元素的 owner；没有 renderer 上下文时返回空。 */
+/**
+ * 读取创建元素时异步 dispatcher 的 owner，供 ReactElement._owner 诊断；不是当前宿主父级。DEV 无 dispatcher 返回 null，生产直接 null；dispatcher.getOwner 错误原样传播，不缓存 owner。
+ */
 function getOwner() {
   if (__DEV__) {
     const dispatcher = ReactSharedInternals.A;
@@ -107,7 +113,11 @@ if (__DEV__) {
   unknownOwnerDebugTask = createTask(getTaskName(UnknownOwner));
 }
 
-/** 判断配置是否显式提供有效 ref，并过滤 React 自己安装的警告 getter。 */
+/**
+ * 检查 config.ref 是否不是 undefined，供 cloneElement 决定 owner 是否转移；null 也是显式有效值。
+ * @param config 非空配置对象；DEV 自有属性若是 React 警告 getter 则不读它。
+ * @returns ref 是否提供；继承的 ref 也可被读取，用户 getter/proxy 异常不捕获。
+ */
 function hasValidRef(config) {
   if (__DEV__) {
     if (hasOwnProperty.call(config, 'ref')) {
@@ -120,7 +130,11 @@ function hasValidRef(config) {
   return config.ref !== undefined;
 }
 
-/** 判断配置是否显式提供有效 key，并过滤 React 自己安装的警告 getter。 */
+/**
+ * 检查 config.key 是否不是 undefined，供工厂提取身份；null/空字符串仍是提供的值。
+ * @param config 非空配置对象；DEV 过滤自有的 React 特殊 prop 警告 getter。
+ * @returns key 是否提供；继承属性和用户 getter 可参与读取，异常直接传播。
+ */
 function hasValidKey(config) {
   if (__DEV__) {
     if (hasOwnProperty.call(config, 'key')) {
@@ -134,11 +148,14 @@ function hasValidKey(config) {
 }
 
 /**
- * 在 props 上安装开发态 `key` 警告 getter；key 属于元素身份，不应被组件当作普通 prop 读取。
+ * 在 DEV 的 props 上安装不可枚举、可配置的 key getter，阻止组件把元素身份当普通 prop。
+ * @param props 即将交给 element 的配置对象；可能就是 JSX 调用者传入的 config。
+ * @param displayName 首次告警使用的组件/宿主标签。
+ * @returns 无结果；getter 返回 undefined，模块级布尔使所有类型合计只告警一次。属性安装失败不捕获，生产无操作。
  */
 function defineKeyPropWarningGetter(props, displayName) {
   if (__DEV__) {
-    /** 首次读取 `props.key` 时报告特殊 prop 误用。 */
+    /** key 访问器：第一次读取置模块去重标记并输出 displayName 诊断，每次均返回 undefined；不是读取 element.key 的代理。 */
     const warnAboutAccessingKey = function () {
       if (!specialPropKeyWarningShown) {
         specialPropKeyWarningShown = true;
@@ -159,7 +176,9 @@ function defineKeyPropWarningGetter(props, displayName) {
   }
 }
 
-/** 兼容读取旧 `element.ref`，按组件去重报告弃用，并把未定义 ref 归一为 `null`。 */
+/**
+ * 以 element 为 this 兼容读取旧 ref；权威来源是 this.props.ref。DEV 按解析出的组件名去重（同名类型共享槽），undefined 归一为 null，其余值原样返回。名称/props getter 或 console 异常直接传播；生产不会安装此 getter，函数直接调用也无返回值。
+ */
 function elementRefGetterWithDeprecationWarning() {
   if (__DEV__) {
     const componentName = getComponentNameFromType(this.type);
@@ -179,17 +198,18 @@ function elementRefGetterWithDeprecationWarning() {
 }
 
 /**
- * 创建不可变 ReactElement 记录的内部工厂。
- *
- * 它不再采用类模式，不能通过 `new` 调用，`instanceof` 也无效；应比较 `$$typeof` 与
- * `Symbol.for('react.transitional.element')` 来判断 ReactElement。开发构建另外安装校验、
- * owner 与调试字段，并冻结公开形状；生产构建只保留 renderer 所需字段。
- *
- * @internal
+ * 由 JSX、createElement、克隆器共同构造带 $$typeof 品牌的普通对象，renderer 消费 type/key/props。
+ * @param type 宿主标签、组件函数或 React 包装类型；此层不验证 renderer 是否接受。
+ * @param key 已提取/编码的元素身份（通常 string/null，实验开关可为 optimistic Symbol）。
+ * @param props 非空 props 对象，ref 保留为普通字段；这里不深复制，读取其 getter 可抛错。
+ * @param owner DEV 创建者，供 key 诊断和 owner 栈；生产不存。
+ * @param debugStack DEV 已采样 Error 或复用的未知栈，归属于元素创建位置。
+ * @param debugTask DEV console task，供异步调试关联；此函数不结束/清理任务。
+ * @returns 新 element；无 ref 的兼容字段为 null，DEV 有 ref 时安装弃用 getter。
+ * DEV 浅冻结 element/props，嵌套数据仍共享；_store 是独立可变对象，validated 可更新。_debugInfo 等字段在 freeze 前设置，冻结后不能再改；生产不冻结也无调试字段。
  */
 function ReactElement(type, key, props, owner, debugStack, debugTask) {
-  // `props.ref` 是唯一事实来源，忽略旧签名可能传入的独立 ref。`element.ref` 只为读取时的
-  // 弃用兼容而存在，后续版本可连同旧参数一起删除。
+  // ref 从普通 prop 读取；element.ref 保留旧读取协议，DEV 的非空 ref getter 会报告弃用。
   const refProp = props.ref;
 
   // 为兼容旧元素形状，把未定义 ref 归一为 `null`。
@@ -288,22 +308,18 @@ function ReactElement(type, key, props, owner, debugStack, debugTask) {
 }
 
 /**
- * 自动 JSX transform 在生产语义下调用的元素工厂（RFC 107）。
- *
- * 它从编译器提供的新配置对象中提取 key；未展开 key 时可直接复用配置对象，减少一次复制。
- * 规范背景：https://github.com/reactjs/rfcs/pull/107
- *
- * @param type 元素类型。
- * @param config 编译器生成的 props 配置对象。
- * @param maybeKey 独立传入的静态 key，优先级低于配置中的有效 key。
- * @returns 新建的 ReactElement。
+ * 自动 JSX 生产签名工厂，接收编译器每次新建的 config；生成 element，不挂载、不解析 lazy、不填 defaultProps。
+ * @param type 原元素类型，具体合法性由 renderer 检查。
+ * @param config 非空 props 配置，未含 key 时直接复用为 props；含（包括继承）key 时 for-in 复制除 key 外的可枚举字段，ref 不删除。
+ * @param maybeKey 独立传入的 key，先采用它，再由有效 config.key 覆盖；字符串化可执行用户转换并抛错。
+ * @returns 新 ReactElement；复用 config 时 DEV ReactElement 还会浅冻结调用者该对象。
+ * 实验 optimistic 分支中本函数的 config-key 判断仍检查 maybeKey===REACT_OPTIMISTIC_KEY；因此与 jsxDEVImpl 检查 config.key 的分支不完全相同，不能把两者的所有 Symbol 输入概括为一致。
  */
 export function jsxProd(type, config, maybeKey) {
   let key = null;
 
-  // 当前仍允许通过展开 props 带入 key，与显式 key 并存时会产生优先级歧义（例如两种展开
-  // 顺序）。在彻底弃用 key 展开前，除 `<div {...props} key="Hi" />` 外统一走 jsxDEV；
-  // 该特例仍无法区分显式 `undefined` 与未声明 key。
+  // 先采用编译器独立传入的 key，再让 config 中的有效 key 覆盖它。静态 key 位于 spread
+  // 之后且需保持属性顺序时，转换器可改用 createElement；本工厂本身不重建该源码顺序。
   if (maybeKey !== undefined) {
     if (enableOptimisticKey && maybeKey === REACT_OPTIMISTIC_KEY) {
       key = REACT_OPTIMISTIC_KEY;
@@ -349,10 +365,9 @@ export function jsxProd(type, config, maybeKey) {
 }
 
 /**
- * 开发构建中实现生产 `jsx` 签名的动态 children 适配器。
- *
- * `jsxDEV` 不会在生产运行，但开发环境必须接受第三方依赖预编译出的生产 `jsx/jsxs` 调用，
- * 才能继续提供校验告警。仅开发态允许多一层调用；生产实现不采用此模式，以免增加栈帧。
+ * 开发构建接受已预编译的生产 jsx(type,config,maybeKey) 调用，固定 isStaticChildren=false 后委派 jsxDEVImpl。
+ * type/config/maybeKey 分别是元素类型、非空编译 props 和独立 key；返回 DEV element，生产直接调用此适配器返回 undefined。
+ * 每次创建消耗最近 owner 栈采样计数，额度内新建 Error/task，耗尽后共享未知栈/task；计数窗口由外部机制重置。本层临时修改 Error.stackTraceLimit 后普通赋值恢复，没有 finally；Error 构造异常可打断恢复。
  */
 export function jsxProdSignatureRunningInDevWithDynamicChildren(
   type,
@@ -391,8 +406,9 @@ export function jsxProdSignatureRunningInDevWithDynamicChildren(
 }
 
 /**
- * 开发构建中实现生产 `jsxs` 签名的静态 children 适配器。
- * 静态标记让 `jsxDEVImpl` 逐项校验并冻结编译器生成的 children 数组。
+ * 开发构建接受预编译的 jsxs(type,config,maybeKey)，固定 isStaticChildren=true 后委派 jsxDEVImpl。
+ * type/config/maybeKey 是元素类型、非空编译 props 和独立 key；静态 children 必须是数组，将逐叶标记并浅冻结数组。返回 DEV element，生产直接调用此适配器返回 undefined。
+ * 按 owner 栈额度采样或复用未知 Error/task；Error.stackTraceLimit 的临时设置仅在普通路径恢复，没有 finally。只标记静态位置，不展开 iterable 或启动 lazy。
  */
 export function jsxProdSignatureRunningInDevWithStaticChildren(
   type,
@@ -433,15 +449,13 @@ export function jsxProdSignatureRunningInDevWithStaticChildren(
 const didWarnAboutKeySpread = {};
 
 /**
- * 自动 JSX transform 的开发入口（RFC 107），采集 owner 栈后委托统一实现。
- *
- * 规范背景：https://github.com/reactjs/rfcs/pull/107
- *
- * @param type 元素类型。
- * @param config 编译器生成的 props 配置对象。
- * @param maybeKey 独立传入的静态 key。
- * @param isStaticChildren children 是否由编译器判定为静态数组。
- * @returns 带开发态校验与调试信息的 ReactElement。
+ * 自动 JSX 开发编译入口，采样 owner 调试栈后委派 jsxDEVImpl。
+ * @param type 元素类型，由 renderer 验证合法性。
+ * @param config 非空编译器 props，可能被复用、装 key getter 和浅冻结。
+ * @param maybeKey 独立 key，普通情况下低于有效 config.key。
+ * @param isStaticChildren 静态数组标记；false 表示动态 children。
+ * @returns DEV element；生产直接调用此函数会委派到无返回值的 DEV 实现。
+ * recent owner 计数先递增，额度外共享未知 Error/task；临时 stackTraceLimit 普通路径恢复但无 finally。错误原样传播；本层不调 renderer、不执行组件或 lazy。
  */
 export function jsxDEV(type, config, maybeKey, isStaticChildren) {
   const trackActualOwner =
@@ -472,10 +486,15 @@ export function jsxDEV(type, config, maybeKey, isStaticChildren) {
 }
 
 /**
- * 执行开发 JSX 的 children/key 校验、props 归一化与元素创建。
- *
- * 无效元素类型的错误由 renderer 报告，因为只有具体 renderer 知道可接受类型；这里仍完成
- * 与类型无关的 key 校验，保证修复类型后不会掩盖下一层问题。
+ * 统一开发 JSX 的 key、静态 children、props 复制与 owner 记录；具体 type 合法性留给 renderer，避免工厂抢先用不完整类型集合报错。
+ * @param type 原元素类型。
+ * @param config 非空编译 props；无 key 属性时直接复用，有 key 时 for-in 复制可枚举非 key 字段（可含继承字段）。
+ * @param maybeKey 独立 key，先采用再由有效 config.key 覆盖；optimistic Symbol 由各输入自身判定。
+ * @param isStaticChildren 静态 children 数组标记；为真但非数组只告警，不拒绝创建。
+ * @param debugStack 创建位置采样 Error 或共享未知栈。
+ * @param debugTask console task 或共享未知任务，不在本函数清理。
+ * @returns DEV element；生产无操作、返回 undefined。
+ * 静态数组逐项标记 validated 后冻结；动态值只标记直接 element，不展开数组/iterator/lazy。config 自有 key 按组件名和其余键形状去重告警；非空 key 才安装特殊 prop getter。无 defaultProps 合并；props/品牌 getter、字符串转换和调试调用异常直接传播。
  */
 function jsxDEVImpl(
   type,
@@ -542,8 +561,7 @@ function jsxDEVImpl(
 
     let key = null;
 
-    // 当前仍允许通过展开 props 带入 key，与显式 key 并存时会产生优先级歧义。弃用过渡期除
-    // `<div {...props} key="Hi" />` 外统一走 jsxDEV；该特例仍无法区分显式 `undefined`。
+    // 普通 key 先取独立参数再由 config 覆盖；optimistic 分支此处看 config.key，生产 jsxProd 的对应分支仍看 maybeKey。
     if (maybeKey !== undefined) {
       if (enableOptimisticKey && maybeKey === REACT_OPTIMISTIC_KEY) {
         key = REACT_OPTIMISTIC_KEY;
@@ -598,11 +616,12 @@ function jsxDEVImpl(
 }
 
 /**
- * 创建并返回给定类型的 ReactElement。
- *
- * 与编译器专用 `jsx` 不同，此 API 可手工调用，因此总是复制配置对象；同时支持可变数量 children、
- * `defaultProps` 与旧 JSX transform 诊断。
- * 参考：https://reactjs.org/docs/react-api.html#createelement
+ * 公开经典工厂，从 type/config 和可变 children 参数生成新的 ReactElement；与 JSX 工厂不同，每次建独立 props 对象。
+ * @param type 原元素类型；此层不检查 renderer 接受的类型，不调用函数或 lazy。
+ * @param config 可空输入，仅复制自有可枚举字段；提取 key，过滤旧 __self/__source，ref 作为普通 prop 保留。
+ * @param children 第三个起的位置参数：没有参数保留 config.children，一个（包括 null/undefined）直接覆盖，多个变新数组且 DEV 浅冻结。
+ * @returns 新 element；type.defaultProps 只填 undefined 字段，用户 getter/转换异常直接传播。
+ * DEV 静态位置只标记直接 element，后续 renderer 再检查动态列表；旧 transform 提示依据 __self 存在且无 key，并全模块只告警一次。owner采样额度外共享未知调试数据；stackTraceLimit 临时设置无 finally。
  */
 export function createElement(type, config, children) {
   if (__DEV__) {
@@ -731,8 +750,10 @@ export function createElement(type, config, children) {
 }
 
 /**
- * 只替换元素 key，并继承 props、owner、调试信息与开发态 key 校验状态。
- * `React.Children` 用它在展平/映射后重写身份而不改变元素载荷。
+ * Children 展平/映射时只替换 element.key，生成新外壳并复用原 props、type、DEV owner 和创建调试栈/task。
+ * @param oldElement 已知 element；不重新验证品牌，读取其字段/getter 可抛错。
+ * @param newKey 调用者已编码的映射路径，本层不字符串化或执行 key 合法性检查。
+ * @returns 新 element，DEV 若旧 _store 存在则复制 validated 值；_store 本身新建且与旧对象分离，props 仍共享。
  */
 export function cloneAndReplaceKey(oldElement, newKey) {
   const clonedElement = ReactElement(
@@ -753,10 +774,12 @@ export function cloneAndReplaceKey(oldElement, newKey) {
 }
 
 /**
- * 以现有元素为起点，合并配置与 children 后返回新的 ReactElement。
- *
- * 新 key/ref 会改变对应身份或 owner，其余 props 覆盖原值；调试栈仍指向原元素创建位置。
- * 参考：https://reactjs.org/docs/react-api.html#cloneelement
+ * 公开克隆工厂，浅复制旧 props 并按 config/位置 children 合并；type 与创建 debugStack/task 保留，生成新外壳不挂载。
+ * @param element 旧 element；只显式拒绝 null/undefined，其余无效形状可能在字段读取中失败，不先用 isValidElement 过滤。
+ * @param config 可空配置，仅复制自有可枚举非 key/__self/__source 字段；undefined ref 被视为省略，自有 null ref 则显式覆盖且 DEV owner 改为当前创建者；继承的有效 ref 也会触发 owner 转移，但复制只取自有字段。
+ * @param children 第三个起的位置参数：省略保留旧 children，一个（含 undefined）覆盖，多个变新数组，此处不显式冻结 childArray。
+ * @returns 新 element，key 省略时沿用，有效新 key 替换；不重新按 defaultProps 填入 config 的 undefined。
+ * 先创建外壳再标记位置 children 的 validated，可能共享并修改子元素 _store；字段 getter/用户转换异常直接传播，不回滚已触发的用户副作用。
  */
 export function cloneElement(element, config, children) {
   if (element === null || element === undefined) {
@@ -797,8 +820,8 @@ export function cloneElement(element, config, children) {
         hasOwnProperty.call(config, propName) &&
         // 跳过属于元素身份而非组件 props 的保留名称。
         propName !== 'key' &&
-        // `__self`/`__source` 仍被开发态告警和调试信息依赖，暂时过滤而不复制。自动 JSX runtime
-        // 通过独立参数传递它们；长期目标是完全解除依赖，以便从 Fiber 内部字段删除。
+        // 与经典 createElement 保持兼容，过滤旧 transform 的调试字段；自动 JSX runtime
+        // 通过独立参数传入调试信息，其 props 中同名字段可以作为普通属性。
         propName !== '__self' &&
         propName !== '__source' &&
         // `cloneElement` 把值为 `undefined` 的 ref 视作未提供，保留旧 ref；这是历史兼容语义。
@@ -838,13 +861,9 @@ export function cloneElement(element, config, children) {
 }
 
 /**
- * 标记静态位置中的元素已经通过 key 校验。
- *
- * 静态 JSX 位置不需要显式 key；数组/动态位置则由后续 renderer 依据该标记决定是否告警。
- * 已兑现 Lazy 会把标记传递给其元素值，未兑现 Lazy 则记录在自身 store 上。
- *
- * @internal
- * @param node 静态传入的任意 React 子节点。
+ * 标记直接处于静态位置的 element 已合法（_store.validated=1），供 renderer 对动态列表决定是否告警；不是遍历并报告全部缺 key 的校验器。
+ * @param node 任意 child；数组/iterable 不在此展开。lazy 若 payload.status=fulfilled 则标记其已兑现 element，否则仅在自身有 _store 时标记。
+ * @returns 无结果，生产无操作；不调用 lazy._init/then，不提前加载。只用品牌识别，伪 lazy 缺 _payload 或用户 getter 错误可抛出；元素冻结但 _store 仍可变。
  */
 function validateChildKeys(node) {
   if (__DEV__) {
@@ -866,11 +885,9 @@ function validateChildKeys(node) {
 }
 
 /**
- * 通过对象形状与品牌字段验证值是否为 ReactElement。
- * 参考：https://reactjs.org/docs/react-api.html#isvalidelement
- *
- * @param object 待检查的任意值。
- * @returns 值是否为当前协议的 ReactElement。
+ * 只通过非 null object 和 $$typeof 品牌判断当前 ReactElement 协议，不验证 type/props/key 完整性或所属 renderer。
+ * @param object 任意待查值，函数和 null 返回 false；对象品牌 getter/proxy 错误可传播。
+ * @returns 是否带当前品牌；手写含同一品牌的对象也能通过。
  * @final
  */
 export function isValidElement(object) {
@@ -881,7 +898,11 @@ export function isValidElement(object) {
   );
 }
 
-/** 通过对象形状与品牌字段判断值是否为 React Lazy 类型描述符。 */
+/**
+ * 只通过非 null object 和 $$typeof 品牌判断 lazy 描述形状，不检查 _payload/_init 是否存在，不执行初始化。
+ * @param object 任意待查值；品牌 getter/proxy 错误可传播。
+ * @returns 是否带 REACT_LAZY_TYPE 品牌；不能据此认定后续 payload 读取一定安全。
+ */
 export function isLazyType(object) {
   return (
     typeof object === 'object' &&

@@ -1,7 +1,7 @@
 import path from 'node:path'
 import { defineConfig } from 'vite'
 
-// Check that helpers injection is properly constrained
+// 独立 IIFE 构建验证 helper 注入不会改写构造器字符串。
 
 export default defineConfig({
   build: {

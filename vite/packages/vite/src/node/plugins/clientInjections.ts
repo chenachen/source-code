@@ -46,7 +46,7 @@ export function clientInjectionsPlugin(config: ResolvedConfig): Plugin {
     applyToEnvironment(environment) {
       return !environment.config.isBundled
     },
-    /** 等待主机名解析完成，并生成本轮构建稳定复用的客户端配置替换器。 */
+    /** 等待主机名解析完成，生成当前开发服务器复用的客户端配置替换器。 */
     async buildStart() {
       // hostname 解析可能异步，统一在 buildStart 完成后生成稳定替换闭包。
       injectConfigValues = await createClientConfigValueReplacer(config)

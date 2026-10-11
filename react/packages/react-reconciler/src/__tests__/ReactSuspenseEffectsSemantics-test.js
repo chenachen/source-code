@@ -46,6 +46,7 @@ describe('ReactSuspenseEffectsSemantics', () => {
     caches = [];
     seededCache = null;
 
+    /** 捕获本套场景的提交阶段错误，下一轮 setState 恢复为 props.fallback。 */
     ErrorBoundary = class extends React.Component {
       /** 保存提交阶段捕获的副作用错误。 */
       state = {error: null};
@@ -1253,7 +1254,7 @@ describe('ReactSuspenseEffectsSemantics', () => {
         </>,
       );
 
-      // 只挂起内层；仅销毁内层 effects。
+      // 只挂起内层；仅销毁内层 layout effects，insertion/passive 保持连接。
       await act(() => {
         ReactNoop.render(
           <App innerChildren={<AsyncText text="InnerAsync_1" />} />,
@@ -1280,7 +1281,7 @@ describe('ReactSuspenseEffectsSemantics', () => {
         </>,
       );
 
-      // 再挂起外层；销毁外层和当前内层 fallback effects，并避免重复销毁已隐藏内容。
+      // 再挂起外层；销毁外层和当前内层 fallback 的 layout effects，并避免重复销毁已隐藏内容。
       await act(() => {
         ReactNoop.render(
           <App
@@ -1420,7 +1421,7 @@ describe('ReactSuspenseEffectsSemantics', () => {
         </>,
       );
 
-      // 再挂起外层；当前整棵可见主树的 effects 都应断开。
+      // 再挂起外层；当前整棵可见主树的 layout effects 都应断开。
       await act(() => {
         ReactNoop.render(
           <App
@@ -1588,7 +1589,7 @@ describe('ReactSuspenseEffectsSemantics', () => {
 
     /**
      * 场景（Given–When–Then）：给定内外边界均隐藏各自主树；当两个资源在同一 act 中完成；
-     * 那么一次提交同时揭示所有嵌套宿主节点并恢复两层 effects。
+     * 那么日志记录两层 layout 恢复，最终输出揭示全部嵌套宿主节点。
      * 对应机制：合并 ping 后从外边界完成一致的 visibility mutation。
      */
     // @gate enableLegacyCache
@@ -2823,7 +2824,7 @@ describe('ReactSuspenseEffectsSemantics', () => {
     });
 
     /**
-     * 场景（Given–When–Then）：给定单个 Suspender 先读取 A、A 完成后又改读 B；当两次连续挂起；
+     * 场景（Given–When–Then）：给定单个 Suspender 先读取 A、解析 A 前把读取目标改成 B；当两次连续挂起；
      * 那么边界 layout effects 只首次销毁，直到 B 完成才一次重建。
      * 对应机制：同一组件多次 retry 仍复用已隐藏 Offscreen 状态。
      */
@@ -3365,7 +3366,7 @@ describe('ReactSuspenseEffectsSemantics', () => {
      */
     // @gate enableLegacyCache
     it('should be cleared and reset for function components with useImperativeHandle', async () => {
-      /** 通过 imperative handle 为对象/callback ref 创建稳定的命令对象。 */
+      /** 通过 imperative handle 为对象/callback ref 创建空对象；每次 layout 重新挂载都会创建新对象。 */
       const FunctionComponent = React.forwardRef((props, ref) => {
         Scheduler.log('FunctionComponent render');
         React.useImperativeHandle(

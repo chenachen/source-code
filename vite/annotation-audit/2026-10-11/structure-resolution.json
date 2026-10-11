@@ -1,0 +1,794 @@
+[
+  {
+    "id": "vite/packages/create-vite/src/index.ts#field#eslint",
+    "file": "vite/packages/create-vite/src/index.ts",
+    "rawStatus": "missing",
+    "resolution": "识别差异已人工核对",
+    "reason": "当前声明前已有中文 TSDoc；标准脚本把工具指令或含工具名称的说明判为 directive，或漏取内联声明前注释。保留工具指令位置，以独立 commentText 与人工逐声明复核确认覆盖。",
+    "reviewedComment": "/** 仅 React 模板可用，选择 ESLint 替换默认 Oxlint。 */"
+  },
+  {
+    "id": "vite/packages/create-vite/src/index.ts#constant#helpMessage",
+    "file": "vite/packages/create-vite/src/index.ts",
+    "rawStatus": "missing",
+    "resolution": "识别差异已人工核对",
+    "reason": "当前声明前已有中文 TSDoc；标准脚本把工具指令或含工具名称的说明判为 directive，或漏取内联声明前注释。保留工具指令位置，以独立 commentText 与人工逐声明复核确认覆盖。",
+    "reviewedComment": "/** CLI 帮助原文，模板列表使用终端颜色函数生成；只有 --help 路径输出。 */\n// prettier-ignore"
+  },
+  {
+    "id": "vite/packages/create-vite/src/index.ts#function#setupEslint",
+    "file": "vite/packages/create-vite/src/index.ts",
+    "rawStatus": "missing",
+    "resolution": "识别差异已人工核对",
+    "reason": "当前声明前已有中文 TSDoc；标准脚本把工具指令或含工具名称的说明判为 directive，或漏取内联声明前注释。保留工具指令位置，以独立 commentText 与人工逐声明复核确认覆盖。",
+    "reviewedComment": "/** 把已生成 React 模板的 Oxlint 配置和依赖换成 ESLint，写对应 JS/TS flat config、更新 lint 脚本与 README；保留生成文本原文。 */"
+  },
+  {
+    "id": "vite/packages/plugin-legacy/src/index.ts#field#viteLegacyPlugin.modern",
+    "file": "vite/packages/plugin-legacy/src/index.ts",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "每个 chunk 的 modern/legacy 集合由字段名与 Set<string> 类型区分，输出收集表块注释已说明分组和合并时序。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/packages/plugin-legacy/src/index.ts#field#viteLegacyPlugin.legacy",
+    "file": "vite/packages/plugin-legacy/src/index.ts",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "每个 chunk 的 modern/legacy 集合由字段名与 Set<string> 类型区分，输出收集表块注释已说明分组和合并时序。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/packages/plugin-legacy/src/index.ts#field#recordAndRemovePolyfillBabelPlugin.types",
+    "file": "vite/packages/plugin-legacy/src/index.ts",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "此匿名参数字段仅约束 Babel 注入的 types 对象类型；工厂头说明了其 AST 用途。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/packages/vite/bin/openChrome.js#function#run",
+    "file": "vite/packages/vite/bin/openChrome.js",
+    "rawStatus": "missing",
+    "resolution": "识别差异已人工核对",
+    "reason": "当前声明前已有中文 TSDoc；标准脚本把工具指令或含工具名称的说明判为 directive，或漏取内联声明前注释。保留工具指令位置，以独立 commentText 与人工逐声明复核确认覆盖。",
+    "reviewedComment": "/*\nCopyright (c) 2015-present, Facebook, Inc.\n\nThis source code is licensed under the MIT license found in the\nLICENSE file at\nhttps://github.com/react/create-react-app/blob/main/LICENSE\n*/\n/* global Application */\n/**\n * JXA 入口：在指定 Chromium 应用中复用或创建用于开发地址的标签页。\n * `osascript` 会把命令行参数作为数组传入此约定名称的函数。\n */\n// eslint-disable-next-line @typescript-eslint/no-unused-vars"
+  },
+  {
+    "id": "vite/packages/vite/rolldown.config.ts#constant#dirname",
+    "file": "vite/packages/vite/rolldown.config.ts",
+    "rawStatus": "missing",
+    "resolution": "识别差异已人工核对",
+    "reason": "当前声明前已有中文 TSDoc；标准脚本把工具指令或含工具名称的说明判为 directive，或漏取内联声明前注释。保留工具指令位置，以独立 commentText 与人工逐声明复核确认覆盖。",
+    "reviewedComment": "/** 当前 Vite 包的构建配置目录，用于定位源码、dist 与许可证文件。 */\n// eslint-disable-next-line n/no-unsupported-features/node-builtins"
+  },
+  {
+    "id": "vite/packages/vite/src/node/__tests__/plugins/importGlob/fixture-a/index.ts#constant#basicWithObjectKeys",
+    "file": "vite/packages/vite/src/node/__tests__/plugins/importGlob/fixture-a/index.ts",
+    "rawStatus": "missing",
+    "resolution": "识别差异已人工核对",
+    "reason": "当前声明前已有中文 TSDoc；标准脚本把工具指令或含工具名称的说明判为 directive，或漏取内联声明前注释。保留工具指令位置，以独立 commentText 与人工逐声明复核确认覆盖。",
+    "reviewedComment": "/** 对 lazy glob 只取键，验证只生成路径对象而无需加载工厂。 */\n// prettier-ignore"
+  },
+  {
+    "id": "vite/packages/vite/src/node/__tests__/plugins/importGlob/fixture-a/index.ts#constant#basicWithObjectValues",
+    "file": "vite/packages/vite/src/node/__tests__/plugins/importGlob/fixture-a/index.ts",
+    "rawStatus": "missing",
+    "resolution": "识别差异已人工核对",
+    "reason": "当前声明前已有中文 TSDoc；标准脚本把工具指令或含工具名称的说明判为 directive，或漏取内联声明前注释。保留工具指令位置，以独立 commentText 与人工逐声明复核确认覆盖。",
+    "reviewedComment": "/** 对 lazy glob 只取值，验证可省略路径键而保留加载工厂。 */\n// prettier-ignore"
+  },
+  {
+    "id": "vite/packages/vite/src/node/__tests__/runnerImport.spec.ts#constant#isTypeStrippingSupported",
+    "file": "vite/packages/vite/src/node/__tests__/runnerImport.spec.ts",
+    "rawStatus": "missing",
+    "resolution": "识别差异已人工核对",
+    "reason": "当前声明前已有中文 TSDoc；标准脚本把工具指令或含工具名称的说明判为 directive，或漏取内联声明前注释。保留工具指令位置，以独立 commentText 与人工逐声明复核确认覆盖。",
+    "reviewedComment": "/** Node 原生类型剥离可用性；仅在不支持时断言 bundle loader 无法加载外部 .ts。 */\n// eslint-disable-next-line n/no-unsupported-features/node-builtins"
+  },
+  {
+    "id": "vite/packages/vite/src/node/__tests_dts__/typeOptions.ts#interface#TypeOptions1",
+    "file": "vite/packages/vite/src/node/__tests_dts__/typeOptions.ts",
+    "rawStatus": "missing",
+    "resolution": "识别差异已人工核对",
+    "reason": "当前声明前已有中文 TSDoc；标准脚本把工具指令或含工具名称的说明判为 directive，或漏取内联声明前注释。保留工具指令位置，以独立 commentText 与人工逐声明复核确认覆盖。",
+    "reviewedComment": "/** 空选项基线：不应误启用 strictImportMetaEnv。 */\n// eslint-disable-next-line @typescript-eslint/no-empty-object-type"
+  },
+  {
+    "id": "vite/packages/vite/src/node/optimizer/pluginConverter.ts#method#convertEsbuildPluginToRolldownPlugin.setup",
+    "file": "vite/packages/vite/src/node/optimizer/pluginConverter.ts",
+    "rawStatus": "missing",
+    "resolution": "识别差异已人工核对",
+    "reason": "当前声明前已有中文 TSDoc；标准脚本把工具指令或含工具名称的说明判为 directive，或漏取内联声明前注释。保留工具指令位置，以独立 commentText 与人工逐声明复核确认覆盖。",
+    "reviewedComment": "/** 只向 esbuild 插件暴露同链插件名，不重复运行其 setup。 */\n// eslint-disable-next-line @typescript-eslint/no-empty-function"
+  },
+  {
+    "id": "vite/packages/vite/src/node/plugins/css.ts#enum#PureCssLang",
+    "file": "vite/packages/vite/src/node/plugins/css.ts",
+    "rawStatus": "missing",
+    "resolution": "识别差异已人工核对",
+    "reason": "当前声明前已有中文 TSDoc；标准脚本把工具指令或含工具名称的说明判为 directive，或漏取内联声明前注释。保留工具指令位置，以独立 commentText 与人工逐声明复核确认覆盖。",
+    "reviewedComment": "/** 列出纯 CSS 语言分支，供统一的 CssLang 类型包含 `.css` 后缀。 */\n// eslint-disable-next-line @typescript-eslint/no-unused-vars -- bug in typescript-eslint"
+  },
+  {
+    "id": "vite/packages/vite/src/node/plugins/css.ts#constant#cssImageSetRE",
+    "file": "vite/packages/vite/src/node/plugins/css.ts",
+    "rawStatus": "missing",
+    "resolution": "识别差异已人工核对",
+    "reason": "当前声明前已有中文 TSDoc；标准脚本把工具指令或含工具名称的说明判为 directive，或漏取内联声明前注释。保留工具指令位置，以独立 commentText 与人工逐声明复核确认覆盖。",
+    "reviewedComment": "// 假设 CSS 函数名不会超过 256 个字符，限制前瞻范围以避免灾难性回溯。\n/** 提取 image-set 参数及其中的单层函数；嵌套函数名匹配限制为 256 字符。 */\n// eslint-disable-next-line regexp/no-unused-capturing-group -- doesn't detect asyncReplace usage"
+  },
+  {
+    "id": "vite/packages/vite/src/node/server/pluginContainer.ts#getter#BasicMinimalPluginContext.pluginName",
+    "file": "vite/packages/vite/src/node/server/pluginContainer.ts",
+    "rawStatus": "missing",
+    "resolution": "识别差异已人工核对",
+    "reason": "当前声明前已有中文 TSDoc；标准脚本把工具指令或含工具名称的说明判为 directive，或漏取内联声明前注释。保留工具指令位置，以独立 commentText 与人工逐声明复核确认覆盖。",
+    "reviewedComment": "// FIXME：全局上下文尚无单一插件归属，未来应提供更精确的 pluginName。\n/** 最小全局上下文没有可靠插件归属，按兼容协议返回空名称。 */\n// eslint-disable-next-line @typescript-eslint/class-literal-property-style"
+  },
+  {
+    "id": "vite/packages/vite/src/node/ssr/__tests__/fixtures/bundled-with-sourcemaps/bundle.js#function#covered$1",
+    "file": "vite/packages/vite/src/node/ssr/__tests__/fixtures/bundled-with-sourcemaps/bundle.js",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "ssrTransform.spec.ts 读取预生成多源 map；本文件是 map 的生成代码或 sourcesContent 对应原源码，保留原字节维持既有映射关系。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/packages/vite/src/node/ssr/__tests__/fixtures/bundled-with-sourcemaps/bundle.js#function#uncovered$1",
+    "file": "vite/packages/vite/src/node/ssr/__tests__/fixtures/bundled-with-sourcemaps/bundle.js",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "ssrTransform.spec.ts 读取预生成多源 map；本文件是 map 的生成代码或 sourcesContent 对应原源码，保留原字节维持既有映射关系。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/packages/vite/src/node/ssr/__tests__/fixtures/bundled-with-sourcemaps/bundle.js#function#covered",
+    "file": "vite/packages/vite/src/node/ssr/__tests__/fixtures/bundled-with-sourcemaps/bundle.js",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "ssrTransform.spec.ts 读取预生成多源 map；本文件是 map 的生成代码或 sourcesContent 对应原源码，保留原字节维持既有映射关系。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/packages/vite/src/node/ssr/__tests__/fixtures/bundled-with-sourcemaps/bundle.js#function#uncovered",
+    "file": "vite/packages/vite/src/node/ssr/__tests__/fixtures/bundled-with-sourcemaps/bundle.js",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "ssrTransform.spec.ts 读取预生成多源 map；本文件是 map 的生成代码或 sourcesContent 对应原源码，保留原字节维持既有映射关系。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/packages/vite/src/node/ssr/__tests__/fixtures/multi-source-sourcemaps/dist.js#function#entrypoint",
+    "file": "vite/packages/vite/src/node/ssr/__tests__/fixtures/multi-source-sourcemaps/dist.js",
+    "rawStatus": "needs-tsdoc",
+    "resolution": "具体声明豁免",
+    "reason": "ssrTransform.spec.ts 读取预生成多源 map；本文件是 map 的生成代码或 sourcesContent 对应原源码，保留原字节维持既有映射关系。",
+    "reviewedComment": "// entrypoint.js"
+  },
+  {
+    "id": "vite/packages/vite/src/node/ssr/__tests__/fixtures/multi-source-sourcemaps/entrypoint.js#function#entrypoint",
+    "file": "vite/packages/vite/src/node/ssr/__tests__/fixtures/multi-source-sourcemaps/entrypoint.js",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "ssrTransform.spec.ts 读取预生成多源 map；本文件是 map 的生成代码或 sourcesContent 对应原源码，保留原字节维持既有映射关系。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/packages/vite/src/node/ssr/runtime/__tests__/fixtures/cyclic/entry.js#function#importAction",
+    "file": "vite/packages/vite/src/node/ssr/runtime/__tests__/fixtures/cyclic/entry.js",
+    "rawStatus": "missing",
+    "resolution": "识别差异已人工核对",
+    "reason": "当前声明前已有中文 TSDoc；标准脚本把工具指令或含工具名称的说明判为 directive，或漏取内联声明前注释。保留工具指令位置，以独立 commentText 与人工逐声明复核确认覆盖。",
+    "reviewedComment": "/** 按调用方给出的 ID 动态导入模块；@vite-ignore 保留运行时解析路径。 */"
+  },
+  {
+    "id": "vite/packages/vite/src/node/ssr/runtime/__tests__/fixtures/has-error-deep.ts#function#crash",
+    "file": "vite/packages/vite/src/node/ssr/runtime/__tests__/fixtures/has-error-deep.ts",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "server-source-maps.spec.ts 对本文件的错误堆栈使用固定行列断言；保留所有声明、原注释和源码字节，避免注释改变映射目标。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/packages/vite/src/node/ssr/runtime/__tests__/fixtures/has-error-deep.ts#function#main",
+    "file": "vite/packages/vite/src/node/ssr/runtime/__tests__/fixtures/has-error-deep.ts",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "server-source-maps.spec.ts 对本文件的错误堆栈使用固定行列断言；保留所有声明、原注释和源码字节，避免注释改变映射目标。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/packages/vite/src/node/ssr/runtime/__tests__/fixtures/has-error-toplevel-dep.js#function#crash",
+    "file": "vite/packages/vite/src/node/ssr/runtime/__tests__/fixtures/has-error-toplevel-dep.js",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "server-source-maps.spec.ts 对本文件的错误堆栈使用固定行列断言；保留所有声明、原注释和源码字节，避免注释改变映射目标。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/packages/vite/src/node/ssr/runtime/__tests__/fixtures/pre-source-mapped-file.js#function#testStack",
+    "file": "vite/packages/vite/src/node/ssr/runtime/__tests__/fixtures/pre-source-mapped-file.js",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "server-source-maps.spec.ts 使用预生成内联 map 映射到虚拟 transpiled-inline.ts；JS 行列必须与已有 mappings 对应，保留原字节。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/packages/vite/src/node/ssr/runtime/__tests__/fixtures/pre-source-mapped-file.js#function#innerTestStack",
+    "file": "vite/packages/vite/src/node/ssr/runtime/__tests__/fixtures/pre-source-mapped-file.js",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "server-source-maps.spec.ts 使用预生成内联 map 映射到虚拟 transpiled-inline.ts；JS 行列必须与已有 mappings 对应，保留原字节。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/packages/vite/src/node/ssr/runtime/__tests__/fixtures/simple.js#constant#test",
+    "file": "vite/packages/vite/src/node/ssr/runtime/__tests__/fixtures/simple.js",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "runtime-utils.spec.ts 的 ?raw 导入对完整源码使用 inline snapshot；保留原字节及 HMR accept 行。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/packages/vite/src/node/ssr/runtime/__tests__/fixtures/string-literal-sourcemap.ts#constant#text",
+    "file": "vite/packages/vite/src/node/ssr/runtime/__tests__/fixtures/string-literal-sourcemap.ts",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "server-source-maps.spec.ts 对本文件的错误堆栈使用固定行列断言；保留所有声明、原注释和源码字节，避免注释改变映射目标。",
+    "reviewedComment": "// This file contains sourceMappingURL pattern in string literals\n// which should not crash the module runner"
+  },
+  {
+    "id": "vite/packages/vite/src/node/ssr/runtime/__tests__/fixtures/string-literal-sourcemap.ts#function#getMessage",
+    "file": "vite/packages/vite/src/node/ssr/runtime/__tests__/fixtures/string-literal-sourcemap.ts",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "server-source-maps.spec.ts 对本文件的错误堆栈使用固定行列断言；保留所有声明、原注释和源码字节，避免注释改变映射目标。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/packages/vite/src/node/ssr/runtime/__tests__/fixtures/string-literal-sourcemap.ts#function#throwError",
+    "file": "vite/packages/vite/src/node/ssr/runtime/__tests__/fixtures/string-literal-sourcemap.ts",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "server-source-maps.spec.ts 对本文件的错误堆栈使用固定行列断言；保留所有声明、原注释和源码字节，避免注释改变映射目标。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/packages/vite/src/node/ssr/runtime/__tests__/fixtures/throws-error-method.ts#interface#Foo",
+    "file": "vite/packages/vite/src/node/ssr/runtime/__tests__/fixtures/throws-error-method.ts",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "server-source-maps.spec.ts 对本文件的错误堆栈使用固定行列断言；保留所有声明、原注释和源码字节，避免注释改变映射目标。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/packages/vite/src/node/ssr/runtime/__tests__/fixtures/throws-error-method.ts#field#Foo.bar",
+    "file": "vite/packages/vite/src/node/ssr/runtime/__tests__/fixtures/throws-error-method.ts",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "server-source-maps.spec.ts 对本文件的错误堆栈使用固定行列断言；保留所有声明、原注释和源码字节，避免注释改变映射目标。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/packages/vite/src/node/ssr/runtime/__tests__/fixtures/throws-error-method.ts#function#throwError",
+    "file": "vite/packages/vite/src/node/ssr/runtime/__tests__/fixtures/throws-error-method.ts",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "server-source-maps.spec.ts 对本文件的错误堆栈使用固定行列断言；保留所有声明、原注释和源码字节，避免注释改变映射目标。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/packages/vite/src/node/utils.ts#constant#invalidUrlPathCharRE",
+    "file": "vite/packages/vite/src/node/utils.ts",
+    "rawStatus": "missing",
+    "resolution": "识别差异已人工核对",
+    "reason": "当前声明前已有中文 TSDoc；标准脚本把工具指令或含工具名称的说明判为 directive，或漏取内联声明前注释。保留工具指令位置，以独立 commentText 与人工逐声明复核确认覆盖。",
+    "reviewedComment": "/** 匹配文件名中必须编码的控制字符及 Rollup 非法路径字符，防止扁平化 ID 冲突。 */\n// eslint-disable-next-line no-control-regex"
+  },
+  {
+    "id": "vite/packages/vite/src/shared/hmr.ts#method#HMRContext.decline",
+    "file": "vite/packages/vite/src/shared/hmr.ts",
+    "rawStatus": "missing",
+    "resolution": "识别差异已人工核对",
+    "reason": "当前声明前已有中文 TSDoc；标准脚本把工具指令或含工具名称的说明判为 directive，或漏取内联声明前注释。保留工具指令位置，以独立 commentText 与人工逐声明复核确认覆盖。",
+    "reviewedComment": "/** 为兼容旧 API 保留的无操作方法（#11036）。 */\n// eslint-disable-next-line @typescript-eslint/no-empty-function"
+  },
+  {
+    "id": "vite/packages/vite/src/shared/moduleRunnerTransport.ts#field#createConnection",
+    "file": "vite/packages/vite/src/shared/moduleRunnerTransport.ts",
+    "rawStatus": "missing",
+    "resolution": "识别差异已人工核对",
+    "reason": "当前声明前已有中文 TSDoc；标准脚本把工具指令或含工具名称的说明判为 directive，或漏取内联声明前注释。保留工具指令位置，以独立 commentText 与人工逐声明复核确认覆盖。",
+    "reviewedComment": "/** 每次 connect 创建新的 WebSocket，便于宿主决定 URL、认证与实现。 */\n// eslint-disable-next-line n/no-unsupported-features/node-builtins -- 由宿主提供实现"
+  },
+  {
+    "id": "vite/packages/vite/src/shared/utils.ts#constant#AsyncFunction",
+    "file": "vite/packages/vite/src/shared/utils.ts",
+    "rawStatus": "missing",
+    "resolution": "识别差异已人工核对",
+    "reason": "当前声明前已有中文 TSDoc；标准脚本把工具指令或含工具名称的说明判为 directive，或漏取内联声明前注释。保留工具指令位置，以独立 commentText 与人工逐声明复核确认覆盖。",
+    "reviewedComment": "/** 当前 realm 的 AsyncFunction 构造器，由 evaluator 延迟实例化可执行函数。 */\n// eslint-disable-next-line @typescript-eslint/no-empty-function"
+  },
+  {
+    "id": "vite/packages/vite/types/customEvent.d.ts#field#WebSocketConnectionPayload.webSocket",
+    "file": "vite/packages/vite/types/customEvent.d.ts",
+    "rawStatus": "missing",
+    "resolution": "识别差异已人工核对",
+    "reason": "当前声明前已有中文 TSDoc；标准脚本把工具指令或含工具名称的说明判为 directive，或漏取内联声明前注释。保留工具指令位置，以独立 commentText 与人工逐声明复核确认覆盖。",
+    "reviewedComment": "/**\n   * @experimental\n   * 实验性暴露底层 WebSocket 实例。\n   */\n// eslint-disable-next-line n/no-unsupported-features/node-builtins"
+  },
+  {
+    "id": "vite/packages/vite/types/importGlob.d.ts#interface#Worker",
+    "file": "vite/packages/vite/types/importGlob.d.ts",
+    "rawStatus": "missing",
+    "resolution": "识别差异已人工核对",
+    "reason": "当前声明前已有中文 TSDoc；标准脚本把工具指令或含工具名称的说明判为 directive，或漏取内联声明前注释。保留工具指令位置，以独立 commentText 与人工逐声明复核确认覆盖。",
+    "reviewedComment": "/** DOM 库缺席时供 glob worker 查询返回值使用的可合并空壳。 */\n// eslint-disable-next-line @typescript-eslint/no-empty-object-type"
+  },
+  {
+    "id": "vite/packages/vite/types/importMeta.d.ts#interface#ViteTypeOptions",
+    "file": "vite/packages/vite/types/importMeta.d.ts",
+    "rawStatus": "missing",
+    "resolution": "识别差异已人工核对",
+    "reason": "当前声明前已有中文 TSDoc；标准脚本把工具指令或含工具名称的说明判为 directive，或漏取内联声明前注释。保留工具指令位置，以独立 commentText 与人工逐声明复核确认覆盖。",
+    "reviewedComment": "// 本文件通过声明合并扩展内置 ImportMeta，因此不能包含任何顶层 import；否则会变成\n// 外部模块，下面的接口也就不再进入全局作用域。\n// <https://www.typescriptlang.org/docs/handbook/declaration-merging.html#module-augmentation>\n// ViteTypeOptions 是留给用户声明合并的类型开关，行为由 __tests_dts__/typeOptions.ts\n// 验证；添加 strictImportMetaEnv 键后，ImportMetaEnv 不再允许任意环境变量名。\n/** 用户可通过声明合并加入类型开关；`strictImportMetaEnv` 会关闭环境变量索引兜底。 */\n// eslint-disable-next-line @typescript-eslint/no-empty-object-type -- 刻意允许用户扩展"
+  },
+  {
+    "id": "vite/packages/vite/types/internal/cssPreprocessorOptions.d.ts#interface#HTMLLinkElement",
+    "file": "vite/packages/vite/types/internal/cssPreprocessorOptions.d.ts",
+    "rawStatus": "missing",
+    "resolution": "识别差异已人工核对",
+    "reason": "当前声明前已有中文 TSDoc；标准脚本把工具指令或含工具名称的说明判为 directive，或漏取内联声明前注释。保留工具指令位置，以独立 commentText 与人工逐声明复核确认覆盖。",
+    "reviewedComment": "// Less 类型间接引用浏览器 HTMLLinkElement；Vite 的 Node 类型环境需提供空壳兼容。\n/** DOM 库缺席时满足 Less 声明依赖的可合并空壳。 */\n// eslint-disable-next-line @typescript-eslint/no-empty-object-type"
+  },
+  {
+    "id": "vite/playground/assets/static/raw.mts#function#foobar",
+    "file": "vite/playground/assets/static/raw.mts",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "assets.spec.ts 的 public MTS fetch 断言匹配整段源文本（export default function foobar 开头）；插入 TSDoc 会改变 HTTP 原文快照，保留文件原字节。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/playground/assets/static/raw.ts#function#other",
+    "file": "vite/playground/assets/static/raw.ts",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "assets.spec.ts 的 public TS fetch 断言匹配整段源文本（export default function other 开头）；插入 TSDoc 会改变 HTTP 原文快照，保留文件原字节。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/playground/dynamic-import/nested/index.js#constant#arr",
+    "file": "vite/playground/dynamic-import/nested/index.js",
+    "rawStatus": "missing",
+    "resolution": "识别差异已人工核对",
+    "reason": "当前声明前已有中文 TSDoc；标准脚本把工具指令或含工具名称的说明判为 directive，或漏取内联声明前注释。保留工具指令位置，以独立 commentText 与人工逐声明复核确认覆盖。",
+    "reviewedComment": "// 全动态导入：运行时拼接 URL，由 vite-ignore 保留原导入表达式。\n/** 全动态 URL 场景的文件名数组，仅取首项 qux.js；import 使用 vite-ignore 避开候选改写。 */"
+  },
+  {
+    "id": "vite/playground/dynamic-import/nested/index.js#function-variable#other",
+    "file": "vite/playground/dynamic-import/nested/index.js",
+    "rawStatus": "missing",
+    "resolution": "识别差异已人工核对",
+    "reason": "当前声明前已有中文 TSDoc；标准脚本把工具指令或含工具名称的说明判为 directive，或漏取内联声明前注释。保留工具指令位置，以独立 commentText 与人工逐声明复核确认覆盖。",
+    "reviewedComment": "/** 与动态 import 默认值并列声明的空箭头函数，用于覆盖分析器读取多声明语法，不产生输出。 */"
+  },
+  {
+    "id": "vite/playground/dynamic-import/vite.config.js#method#writeBundle",
+    "file": "vite/playground/dynamic-import/vite.config.js",
+    "rawStatus": "missing",
+    "resolution": "识别差异已人工核对",
+    "reason": "当前声明前已有中文 TSDoc；标准脚本把工具指令或含工具名称的说明判为 directive，或漏取内联声明前注释。保留工具指令位置，以独立 commentText 与人工逐声明复核确认覆盖。",
+    "reviewedComment": "/** 构建写出后把被 vite-ignore 引用的 qux、mxd JS/JSON 原样复制到 dist，供无法静态改写的运行时 URL 请求。 */"
+  },
+  {
+    "id": "vite/playground/external/public/slash@3.0.0.js#function-variable#A",
+    "file": "vite/playground/external/public/slash@3.0.0.js",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "第三方 esm.sh/esbuild 生成的 slash 3 public bundle；逐句读取 vendored esm.sh/esbuild slash3：A 初始化 CJS exports，E/u/o/c 构造 getter 与默认导出互操作，_.exports 实现 Windows 反斜杠转换；作为无网络 public import-map 目标保留生成字节。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/playground/external/public/slash@3.0.0.js#function-variable#E",
+    "file": "vite/playground/external/public/slash@3.0.0.js",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "第三方 esm.sh/esbuild 生成的 slash 3 public bundle；逐句读取 vendored esm.sh/esbuild slash3：A 初始化 CJS exports，E/u/o/c 构造 getter 与默认导出互操作，_.exports 实现 Windows 反斜杠转换；作为无网络 public import-map 目标保留生成字节。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/playground/external/public/slash@3.0.0.js#function-variable#u",
+    "file": "vite/playground/external/public/slash@3.0.0.js",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "第三方 esm.sh/esbuild 生成的 slash 3 public bundle；逐句读取 vendored esm.sh/esbuild slash3：A 初始化 CJS exports，E/u/o/c 构造 getter 与默认导出互操作，_.exports 实现 Windows 反斜杠转换；作为无网络 public import-map 目标保留生成字节。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/playground/external/public/slash@3.0.0.js#function-variable#o",
+    "file": "vite/playground/external/public/slash@3.0.0.js",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "第三方 esm.sh/esbuild 生成的 slash 3 public bundle；逐句读取 vendored esm.sh/esbuild slash3：A 初始化 CJS exports，E/u/o/c 构造 getter 与默认导出互操作，_.exports 实现 Windows 反斜杠转换；作为无网络 public import-map 目标保留生成字节。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/playground/external/public/slash@3.0.0.js#function-variable#c",
+    "file": "vite/playground/external/public/slash@3.0.0.js",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "第三方 esm.sh/esbuild 生成的 slash 3 public bundle；逐句读取 vendored esm.sh/esbuild slash3：A 初始化 CJS exports，E/u/o/c 构造 getter 与默认导出互操作，_.exports 实现 Windows 反斜杠转换；作为无网络 public import-map 目标保留生成字节。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/playground/forward-console/fixtures/throw-dep/index.js#function#throwDepError",
+    "file": "vite/playground/forward-console/fixtures/throw-dep/index.js",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "forward-console dependency stack 固定依赖 index.js:2:8；throwDepError 的抛错行与代码原字节保持。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/playground/forward-console/src/main.ts#type#SomePadding",
+    "file": "vite/playground/forward-console/src/main.ts",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "forward-console 的 unhandled error/rejection/dependency stack 断言固定 main.ts:30:8、34:17、38:2 及调用点8/14/22和code frame原文；此声明在同一字节敏感输入中，保留全部源码字节。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/playground/forward-console/src/main.ts#field#SomePadding.here",
+    "file": "vite/playground/forward-console/src/main.ts",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "forward-console 的 unhandled error/rejection/dependency stack 断言固定 main.ts:30:8、34:17、38:2 及调用点8/14/22和code frame原文；此声明在同一字节敏感输入中，保留全部源码字节。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/playground/forward-console/src/main.ts#type#AnotherPadding",
+    "file": "vite/playground/forward-console/src/main.ts",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "forward-console 的 unhandled error/rejection/dependency stack 断言固定 main.ts:30:8、34:17、38:2 及调用点8/14/22和code frame原文；此声明在同一字节敏感输入中，保留全部源码字节。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/playground/forward-console/src/main.ts#field#AnotherPadding.there",
+    "file": "vite/playground/forward-console/src/main.ts",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "forward-console 的 unhandled error/rejection/dependency stack 断言固定 main.ts:30:8、34:17、38:2 及调用点8/14/22和code frame原文；此声明在同一字节敏感输入中，保留全部源码字节。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/playground/forward-console/src/main.ts#function#testError",
+    "file": "vite/playground/forward-console/src/main.ts",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "forward-console 的 unhandled error/rejection/dependency stack 断言固定 main.ts:30:8、34:17、38:2 及调用点8/14/22和code frame原文；此声明在同一字节敏感输入中，保留全部源码字节。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/playground/forward-console/src/main.ts#function#testUnhandledRejection",
+    "file": "vite/playground/forward-console/src/main.ts",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "forward-console 的 unhandled error/rejection/dependency stack 断言固定 main.ts:30:8、34:17、38:2 及调用点8/14/22和code frame原文；此声明在同一字节敏感输入中，保留全部源码字节。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/playground/forward-console/src/main.ts#function#testDepError",
+    "file": "vite/playground/forward-console/src/main.ts",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "forward-console 的 unhandled error/rejection/dependency stack 断言固定 main.ts:30:8、34:17、38:2 及调用点8/14/22和code frame原文；此声明在同一字节敏感输入中，保留全部源码字节。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/playground/forward-console/src/main.ts#function#testConsoleError",
+    "file": "vite/playground/forward-console/src/main.ts",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "forward-console 的 unhandled error/rejection/dependency stack 断言固定 main.ts:30:8、34:17、38:2 及调用点8/14/22和code frame原文；此声明在同一字节敏感输入中，保留全部源码字节。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/playground/hmr-ssr/counter/index.ts#function#neverCalled",
+    "file": "vite/playground/hmr-ssr/counter/index.ts",
+    "rawStatus": "missing",
+    "resolution": "识别差异已人工核对",
+    "reason": "当前声明前已有中文 TSDoc；标准脚本把工具指令或含工具名称的说明判为 directive，或漏取内联声明前注释。保留工具指令位置，以独立 commentText 与人工逐声明复核确认覆盖。",
+    "reviewedComment": "/** 刻意保持不调用的动态导入分支，使依赖进入分析候选但未加载；测试修改该依赖时检查是否刷新。 */\n// @ts-expect-error not used but this is to test that it works"
+  },
+  {
+    "id": "vite/playground/hmr-ssr/soft-invalidation/index.js#constant#msg",
+    "file": "vite/playground/hmr-ssr/soft-invalidation/index.js",
+    "rawStatus": "missing",
+    "resolution": "识别差异已人工核对",
+    "reason": "当前声明前已有中文 TSDoc；标准脚本把工具指令或含工具名称的说明判为 directive，或漏取内联声明前注释。保留工具指令位置，以独立 commentText 与人工逐声明复核确认覆盖。",
+    "reviewedComment": "/** 把插件转换次数与依赖值拼到输出，用于区别依赖变动时软失效复用与自身变动时重新转换。 */\n// @ts-expect-error global"
+  },
+  {
+    "id": "vite/playground/hmr/soft-invalidation/index.js#constant#msg",
+    "file": "vite/playground/hmr/soft-invalidation/index.js",
+    "rawStatus": "missing",
+    "resolution": "识别差异已人工核对",
+    "reason": "当前声明前已有中文 TSDoc；标准脚本把工具指令或含工具名称的说明判为 directive，或漏取内联声明前注释。保留工具指令位置，以独立 commentText 与人工逐声明复核确认覆盖。",
+    "reviewedComment": "/** 把插件转换次数与依赖值拼到输出，用于区别依赖变动时软失效复用与自身变动时重新转换。 */\n// @ts-expect-error global"
+  },
+  {
+    "id": "vite/playground/js-sourcemap/bar.ts#constant#bar",
+    "file": "vite/playground/js-sourcemap/bar.ts",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "bar 初始化回映被 spec 明确断言为第 1 行第 13 列，并保存 sourcesContent 完整快照，保留原字节。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/playground/js-sourcemap/dep-class-field-sourcemap-babel/index.js#function-variable#x",
+    "file": "vite/playground/js-sourcemap/dep-class-field-sourcemap-babel/index.js",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "Babel 二次转换测试固定断言 console.log 的原始参数 x 为第 6 行第 16 列；保留 x/C/prop/constructor 的字节和坐标。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/playground/js-sourcemap/dep-class-field-sourcemap-babel/index.js#class#C",
+    "file": "vite/playground/js-sourcemap/dep-class-field-sourcemap-babel/index.js",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "Babel 二次转换测试固定断言 console.log 的原始参数 x 为第 6 行第 16 列；保留 x/C/prop/constructor 的字节和坐标。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/playground/js-sourcemap/dep-class-field-sourcemap-babel/index.js#field#C.prop",
+    "file": "vite/playground/js-sourcemap/dep-class-field-sourcemap-babel/index.js",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "Babel 二次转换测试固定断言 console.log 的原始参数 x 为第 6 行第 16 列；保留 x/C/prop/constructor 的字节和坐标。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/playground/js-sourcemap/dep-class-field-sourcemap-babel/index.js#constructor#C.constructor",
+    "file": "vite/playground/js-sourcemap/dep-class-field-sourcemap-babel/index.js",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "Babel 二次转换测试固定断言 console.log 的原始参数 x 为第 6 行第 16 列；保留 x/C/prop/constructor 的字节和坐标。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/playground/js-sourcemap/dep-class-field-sourcemap-oxc/index.js#function-variable#x",
+    "file": "vite/playground/js-sourcemap/dep-class-field-sourcemap-oxc/index.js",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "Oxc 二次转换测试固定断言 console.log 的原始参数 x 为第 6 行第 16 列；保留 x/C/prop/constructor 的字节和坐标。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/playground/js-sourcemap/dep-class-field-sourcemap-oxc/index.js#class#C",
+    "file": "vite/playground/js-sourcemap/dep-class-field-sourcemap-oxc/index.js",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "Oxc 二次转换测试固定断言 console.log 的原始参数 x 为第 6 行第 16 列；保留 x/C/prop/constructor 的字节和坐标。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/playground/js-sourcemap/dep-class-field-sourcemap-oxc/index.js#field#C.prop",
+    "file": "vite/playground/js-sourcemap/dep-class-field-sourcemap-oxc/index.js",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "Oxc 二次转换测试固定断言 console.log 的原始参数 x 为第 6 行第 16 列；保留 x/C/prop/constructor 的字节和坐标。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/playground/js-sourcemap/dep-class-field-sourcemap-oxc/index.js#constructor#C.constructor",
+    "file": "vite/playground/js-sourcemap/dep-class-field-sourcemap-oxc/index.js",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "Oxc 二次转换测试固定断言 console.log 的原始参数 x 为第 6 行第 16 列；保留 x/C/prop/constructor 的字节和坐标。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/playground/js-sourcemap/dep-malicious-sourcemap/index.js#constant#malicious",
+    "file": "vite/playground/js-sourcemap/dep-malicious-sourcemap/index.js",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "已有 inline map 的 AAAA 映射指向首行导出，并故意通过 sources 相对越界；增加头注释会使预计算输入 map 失真，保留原字节。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/playground/js-sourcemap/dep-optimized-malicious/index.js#constant#optimizedMalicious",
+    "file": "vite/playground/js-sourcemap/dep-optimized-malicious/index.js",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "已有 inline map 的 AAAA 映射对应原始首行；优化器恶意路径测试依赖该预计算产物，保留原字节。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/playground/js-sourcemap/foo-with-sourcemap.js#constant#foo",
+    "file": "vite/playground/js-sourcemap/foo-with-sourcemap.js",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "foo-with-sourcemap-plugin 的固定 inline map 与 spec 可视化快照对应此单行输入，保留原字节。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/playground/js-sourcemap/foo.js#constant#foo",
+    "file": "vite/playground/js-sourcemap/foo.js",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "spec 固定断言第 1 行第 13 列并保存完整 input/map 快照；保留原字节。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/playground/js-sourcemap/with-define-object-ssr.ts#function#error",
+    "file": "vite/playground/js-sourcemap/with-define-object-ssr.ts",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "test-ssr-dev.js 明确断言 errorInner 堆栈为 7:9；error/errorInner 及 @ts-expect-error 的位置须保留。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/playground/js-sourcemap/with-define-object-ssr.ts#function#errorInner",
+    "file": "vite/playground/js-sourcemap/with-define-object-ssr.ts",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "test-ssr-dev.js 明确断言 errorInner 堆栈为 7:9；error/errorInner 及 @ts-expect-error 的位置须保留。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/playground/js-sourcemap/with-define-object.ts#function#main",
+    "file": "vite/playground/js-sourcemap/with-define-object.ts",
+    "rawStatus": "needs-tsdoc",
+    "resolution": "具体声明豁免",
+    "reason": "对象 define 构建测试保存完整 sourcesContent 与 mappings 快照；main/mainInner 及原英文注释皆为快照输入，保留原字节。",
+    "reviewedComment": "// test complicated stack since broken sourcemap\n// might still look correct with a simple case"
+  },
+  {
+    "id": "vite/playground/js-sourcemap/with-define-object.ts#function#mainInner",
+    "file": "vite/playground/js-sourcemap/with-define-object.ts",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "对象 define 构建测试保存完整 sourcesContent 与 mappings 快照；main/mainInner 及原英文注释皆为快照输入，保留原字节。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/playground/optimize-deps/dep-cjs-browser-field-bare/internal.js#constant#events",
+    "file": "vite/playground/optimize-deps/dep-cjs-browser-field-bare/internal.js",
+    "rawStatus": "missing",
+    "resolution": "识别差异已人工核对",
+    "reason": "当前声明前已有中文 TSDoc；标准脚本把工具指令或含工具名称的说明判为 directive，或漏取内联声明前注释。保留工具指令位置，以独立 commentText 与人工逐声明复核确认覆盖。",
+    "reviewedComment": "/** 故意不带 node: 前缀加载 events，由 browser mapping 改为含 foo 的 shim。 */\n// eslint-disable-next-line n/prefer-node-protocol"
+  },
+  {
+    "id": "vite/playground/optimize-deps/dep-cjs-with-external-deps/index.js#constant#externalResult",
+    "file": "vite/playground/optimize-deps/dep-cjs-with-external-deps/index.js",
+    "rawStatus": "missing",
+    "resolution": "识别差异已人工核对",
+    "reason": "当前声明前已有中文 TSDoc；标准脚本把工具指令或含工具名称的说明判为 directive，或漏取内联声明前注释。保留工具指令位置，以独立 commentText 与人工逐声明复核确认覆盖。",
+    "reviewedComment": "/** 检查外部依赖 namespace 是否拥有 foo 自有属性，产出 ok/error 标记。 */\n// eslint-disable-next-line no-prototype-builtins"
+  },
+  {
+    "id": "vite/playground/optimize-deps/dep-with-builtin-module-cjs/index.js#constant#fs",
+    "file": "vite/playground/optimize-deps/dep-with-builtin-module-cjs/index.js",
+    "rawStatus": "missing",
+    "resolution": "识别差异已人工核对",
+    "reason": "当前声明前已有中文 TSDoc；标准脚本把工具指令或含工具名称的说明判为 directive，或漏取内联声明前注释。保留工具指令位置，以独立 commentText 与人工逐声明复核确认覆盖。",
+    "reviewedComment": "// 故意省略 node: 前缀，覆盖裸内置模块导入的浏览器外部化。\n/** 故意不带 node: 前缀 require fs，浏览器外部化代理会在实际属性访问时报错。 */\n// eslint-disable-next-line n/prefer-node-protocol"
+  },
+  {
+    "id": "vite/playground/optimize-deps/dep-with-builtin-module-cjs/index.js#constant#path",
+    "file": "vite/playground/optimize-deps/dep-with-builtin-module-cjs/index.js",
+    "rawStatus": "missing",
+    "resolution": "识别差异已人工核对",
+    "reason": "当前声明前已有中文 TSDoc；标准脚本把工具指令或含工具名称的说明判为 directive，或漏取内联声明前注释。保留工具指令位置，以独立 commentText 与人工逐声明复核确认覆盖。",
+    "reviewedComment": "/** 故意不带 node: 前缀 require path，后续 join 访问验证浏览器外部化诊断。 */\n// eslint-disable-next-line n/prefer-node-protocol"
+  },
+  {
+    "id": "vite/playground/ssr-html/public/slash@3.0.0.js#function-variable#A",
+    "file": "vite/playground/ssr-html/public/slash@3.0.0.js",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "复制自 esm.sh 的第三方压缩分发产物，作为本地 HTTP network-imports 输入使用；保留生产包原字节、标识符与导出包装，不在压缩产物中插入声明注释。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/playground/ssr-html/public/slash@3.0.0.js#function-variable#E",
+    "file": "vite/playground/ssr-html/public/slash@3.0.0.js",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "复制自 esm.sh 的第三方压缩分发产物，作为本地 HTTP network-imports 输入使用；保留生产包原字节、标识符与导出包装，不在压缩产物中插入声明注释。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/playground/ssr-html/public/slash@3.0.0.js#function-variable#u",
+    "file": "vite/playground/ssr-html/public/slash@3.0.0.js",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "复制自 esm.sh 的第三方压缩分发产物，作为本地 HTTP network-imports 输入使用；保留生产包原字节、标识符与导出包装，不在压缩产物中插入声明注释。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/playground/ssr-html/public/slash@3.0.0.js#function-variable#o",
+    "file": "vite/playground/ssr-html/public/slash@3.0.0.js",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "复制自 esm.sh 的第三方压缩分发产物，作为本地 HTTP network-imports 输入使用；保留生产包原字节、标识符与导出包装，不在压缩产物中插入声明注释。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/playground/ssr-html/public/slash@3.0.0.js#function-variable#c",
+    "file": "vite/playground/ssr-html/public/slash@3.0.0.js",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "复制自 esm.sh 的第三方压缩分发产物，作为本地 HTTP network-imports 输入使用；保留生产包原字节、标识符与导出包装，不在压缩产物中插入声明注释。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/playground/ssr-html/src/error-js.js#function#error",
+    "file": "vite/playground/ssr-html/src/error-js.js",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "ssr-html.spec.ts 的 JS/TS×Node sourcemaps 开关循环逐行匹配 Module.error 的源位置 2:9；插入注释会改变固定行号，保留原字节。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/playground/ssr-html/src/error-ts.ts#function#error",
+    "file": "vite/playground/ssr-html/src/error-ts.ts",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "ssr-html.spec.ts 的 JS/TS×Node sourcemaps 开关循环逐行匹配 Module.error 的源位置 2:9；插入注释会改变固定行号，保留原字节。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/playground/ssr-html/src/has-error-deep.ts#function#crash",
+    "file": "vite/playground/ssr-html/src/has-error-deep.ts",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "test-stacktrace-runtime.js 断言堆栈包含 has-error-deep.ts:6:3；crash 与 main 共同提供固定行号输入，保留原字节。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/playground/ssr-html/src/has-error-deep.ts#function#main",
+    "file": "vite/playground/ssr-html/src/has-error-deep.ts",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "test-stacktrace-runtime.js 断言堆栈包含 has-error-deep.ts:6:3；crash 与 main 共同提供固定行号输入，保留原字节。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/playground/worker/my-worker.ts#constant#metaUrl",
+    "file": "vite/playground/worker/my-worker.ts",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "worker/iife 的 env-injected map inline snapshot 固定 my-worker.ts mappings 与可视化内嵌 sourcesContent；此声明位于该完整字节输入，保留源码原行列和全部字节。",
+    "reviewedComment": ""
+  },
+  {
+    "id": "vite/playground/worker/worker/main-classic.js#function#text",
+    "file": "vite/playground/worker/worker/main-classic.js",
+    "rawStatus": "missing",
+    "resolution": "识别差异已人工核对",
+    "reason": "当前声明前已有中文 TSDoc；标准脚本把工具指令或含工具名称的说明判为 directive，或漏取内联声明前注释。保留工具指令位置，以独立 commentText 与人工逐声明复核确认覆盖。",
+    "reviewedComment": "/** 按选择器展示classic普通/共享worker消息。\n * @param el 输出节点。\n * @param text 结果文本。 */\n// prettier-ignore"
+  },
+  {
+    "id": "vite/playground/worker/worker/main-module.js#constant#workerOptions",
+    "file": "vite/playground/worker/worker/main-module.js",
+    "rawStatus": "missing",
+    "resolution": "识别差异已人工核对",
+    "reason": "当前声明前已有中文 TSDoc；标准脚本把工具指令或含工具名称的说明判为 directive，或漏取内联声明前注释。保留工具指令位置，以独立 commentText 与人工逐声明复核确认覆盖。",
+    "reviewedComment": "/** 传给三种URL Worker的动态选项对象，vite-ignore标记允许其跳过静态选项求值。 */"
+  },
+  {
+    "id": "vite/scripts/releaseUtils.ts#field#run.stdio",
+    "file": "vite/scripts/releaseUtils.ts",
+    "rawStatus": "missing",
+    "resolution": "具体声明豁免",
+    "reason": "Execa options 的显式 stdio: inherit 字面量已完整表达默认继承输入输出；run 头说明 options 可覆盖此默认值。",
+    "reviewedComment": ""
+  }
+]

@@ -1,6 +1,6 @@
 /**
- * 测试阅读说明：本文件验证 `runtime-core/apiCreateApp` 的运行时行为。
- * “测试组”概括共享前置条件，“测试场景”说明当前输入、边界或历史回归目标；具体预期以断言为准。
+ * 通过 runtime-test 宿主节点挂载 App，检查插件、注册表、注入上下文和配置的实际作用。
+ * 卸载、重复挂载及错误配置用例分别核对宿主输出、调用次数或开发警告。
  */
 import {
   type Plugin,
@@ -21,9 +21,9 @@ import {
   withDirectives,
 } from '@vue/runtime-test'
 
-// 测试组：createApp 的挂载、上下文、插件、配置、资源注册与卸载行为。
+// createApp 的挂载、上下文、插件、配置、资源注册与卸载行为。
 describe('api: createApp', () => {
-  // 测试场景：app.mount 创建根组件实例、设置容器关联并防止重复挂载。
+  // 挂载根 props 并检查宿主输出；同容器另挂 App 和同 App 再次 mount 分别触发警告。
   test('mount', () => {
     const Comp = defineComponent({
       props: {
@@ -31,6 +31,9 @@ describe('api: createApp', () => {
           default: 0,
         },
       },
+      /**
+       * 返回渲染闭包，执行时产出 `props.count`。
+       */
       setup(props) {
         return () => props.count
       },
@@ -39,26 +42,26 @@ describe('api: createApp', () => {
     const root1 = nodeOps.createElement('div')
     createApp(Comp).mount(root1)
     expect(serializeInner(root1)).toBe(`0`)
-    //#5571 mount multiple apps to the same host element
+    //#5571：另一 App 再次挂到同一容器时给出警告。
     createApp(Comp).mount(root1)
     expect(
       `There is already an app instance mounted on the host container`,
     ).toHaveBeenWarned()
 
-    // mount with props
+    // 挂载时传入根 props，覆盖 count 默认值。
     const root2 = nodeOps.createElement('div')
     const app2 = createApp(Comp, { count: 1 })
     app2.mount(root2)
     expect(serializeInner(root2)).toBe(`1`)
 
-    // remount warning
+    // 同一 App 再次挂载时警告，新容器仍为空。
     const root3 = nodeOps.createElement('div')
     app2.mount(root3)
     expect(serializeInner(root3)).toBe(``)
     expect(`already been mounted`).toHaveBeenWarned()
   })
 
-  // 测试场景：app.unmount 清理根组件、容器引用和应用级副作用。
+  // 未挂载时 unmount 会警告；挂载后 unmount 清空根组件的宿主输出。
   test('unmount', () => {
     const Comp = defineComponent({
       props: {
@@ -66,6 +69,9 @@ describe('api: createApp', () => {
           default: 0,
         },
       },
+      /**
+       * 返回渲染闭包，执行时产出 `props.count`。
+       */
       setup(props) {
         return () => props.count
       },
@@ -74,7 +80,7 @@ describe('api: createApp', () => {
     const root = nodeOps.createElement('div')
     const app = createApp(Comp)
 
-    // warning
+    // 尚未挂载，卸载调用应给出警告。
     app.unmount()
     expect(`that is not mounted`).toHaveBeenWarned()
 
@@ -84,17 +90,23 @@ describe('api: createApp', () => {
     expect(serializeInner(root)).toBe(``)
   })
 
-  // 测试场景：app.provide 让整棵应用组件树注入应用级依赖。
+  // app.provide 作为注入根，根组件 provide 覆盖同名值，并检查缺失键和重复提供警告。
   test('provide', () => {
     const Root = {
+      /**
+       * 调用 `provide('foo', 3)` 完成本例的初始化登记或读取；返回渲染闭包，执行时产出 `h(Child)`。
+       */
       setup() {
-        // test override
+        // 根组件 provide 遮蔽 app.provide 的同名值。
         provide('foo', 3)
         return () => h(Child)
       },
     }
 
     const Child = {
+      /**
+       * 调用 `inject('foo')`、`inject('bar')`、`inject('__proto__')` 完成本例的初始化登记或读取；返回渲染闭包，执行时产出 `` `${foo},${bar}` ``。
+       */
       setup() {
         const foo = inject('foo')
         const bar = inject('bar')
@@ -120,14 +132,20 @@ describe('api: createApp', () => {
     expect(`App already provides property with key "bar".`).toHaveBeenWarned()
   })
 
-  // 测试场景：runWithContext 临时激活应用上下文，使组件外部也能使用 inject。
+  // runWithContext 优先使用当前 App 的 provides，嵌套调用后恢复外层与组件外上下文。
   test('runWithContext', () => {
     const app = createApp({
+      /**
+       * 调用 `provide('foo', 'should not be seen')`、`createApp({ setup() { provide('foo', 'foo from child'); }, })` 完成本例的初始化登记或读取；返回渲染闭包，执行时产出 `h('div')`。
+       */
       setup() {
         provide('foo', 'should not be seen')
 
-        // nested createApp
+        // 在外层 setup 内创建另一应用，检查 runWithContext 优先选当前 App。
         const childApp = createApp({
+          /**
+           * 调用 `provide('foo', 'foo from child')` 完成本例的初始化登记或读取。
+           */
           setup() {
             provide('foo', 'foo from child')
           },
@@ -152,23 +170,29 @@ describe('api: createApp', () => {
       }),
     ).toBe(1)
 
-    // ensure the context is restored
+    // runWithContext 返回后恢复组件外状态，inject 再次调用应警告。
     inject('foo')
     expect('inject() can only be used inside setup').toHaveBeenWarned()
   })
 
-  // 测试场景：app.component 注册、查询和覆盖全局组件。
+  // 全局组件可注册、查询和覆盖；组件局部注册优先于同名全局注册。
   test('component', () => {
     const Root = {
-      // local override
+      // 局部同名资源应覆盖应用全局注册。
       components: {
+        /**
+         * 返回 `'barbaz-local!'`。
+         */
         BarBaz: () => 'barbaz-local!',
       },
+      /**
+       * 返回渲染闭包，执行时产出 `h('div', [h(FooBar), h(BarBaz)])`。
+       */
       setup() {
-        // resolve in setup
+        // setup 执行期间按当前实例解析资源。
         const FooBar = resolveComponent('foo-bar')
         return () => {
-          // resolve in render
+          // render 执行期间按渲染实例解析资源。
           const BarBaz = resolveComponent('bar-baz')
           return h('div', [h(FooBar), h(BarBaz)])
         }
@@ -177,6 +201,9 @@ describe('api: createApp', () => {
 
     const app = createApp(Root)
 
+    /**
+     * 返回 `'foobar!'`。
+     */
     const FooBar = () => 'foobar!'
     app.component('FooBar', FooBar)
     expect(app.component('FooBar')).toBe(FooBar)
@@ -193,22 +220,25 @@ describe('api: createApp', () => {
     expect(serializeInner(root)).toBe(`<div>foobar!barbaz-local!</div>`)
   })
 
-  // 测试场景：app.directive 注册、查询和覆盖全局指令。
+  // 全局指令可注册、查询和覆盖；局部同名指令优先，并检查内置指令名警告。
   test('directive', () => {
     const spy1 = vi.fn()
     const spy2 = vi.fn()
     const spy3 = vi.fn()
 
     const Root = {
-      // local override
+      // 局部同名资源应覆盖应用全局注册。
       directives: {
         BarBaz: { mounted: spy3 },
       },
+      /**
+       * 返回渲染闭包，执行时产出 `withDirectives(h('div'), [[FooBar], [BarBaz]])`。
+       */
       setup() {
-        // resolve in setup
+        // setup 执行期间按当前实例解析资源。
         const FooBar = resolveDirective('foo-bar')
         return () => {
-          // resolve in render
+          // render 执行期间按渲染实例解析资源。
           const BarBaz = resolveDirective('bar-baz')
           return withDirectives(h('div'), [[FooBar], [BarBaz]])
         }
@@ -244,57 +274,87 @@ describe('api: createApp', () => {
     ).toHaveBeenWarned()
   })
 
-  // 测试场景：app.mixin 把全局 mixin 合并到应用中的组件选项。
+  // 全局 mixin 合并数据与钩子，钩子先于组件自身执行，重复安装同一 mixin 会警告。
   test('mixin', () => {
     const calls: string[] = []
     const mixinA = {
+      /**
+       * 建立每实例初始 data：`{ a: 1, }`。
+       */
       data() {
         return {
           a: 1,
         }
       },
+      /**
+       * 在 created 阶段执行 `calls.push('mixinA created')`、`expect(this.a).toBe(1)`、`expect(this.a)`。
+       */
       created(this: any) {
         calls.push('mixinA created')
         expect(this.a).toBe(1)
         expect(this.b).toBe(2)
         expect(this.c).toBe(3)
       },
+      /**
+       * 在 mounted 阶段执行 `calls.push('mixinA mounted')`。
+       */
       mounted() {
         calls.push('mixinA mounted')
       },
     }
     const mixinB = {
       name: 'mixinB',
+      /**
+       * 建立每实例初始 data：`{ b: 2, }`。
+       */
       data() {
         return {
           b: 2,
         }
       },
+      /**
+       * 在 created 阶段执行 `calls.push('mixinB created')`、`expect(this.a).toBe(1)`、`expect(this.a)`。
+       */
       created(this: any) {
         calls.push('mixinB created')
         expect(this.a).toBe(1)
         expect(this.b).toBe(2)
         expect(this.c).toBe(3)
       },
+      /**
+       * 在 mounted 阶段执行 `calls.push('mixinB mounted')`。
+       */
       mounted() {
         calls.push('mixinB mounted')
       },
     }
     const Comp = {
+      /**
+       * 建立每实例初始 data：`{ c: 3, }`。
+       */
       data() {
         return {
           c: 3,
         }
       },
+      /**
+       * 在 created 阶段执行 `calls.push('comp created')`、`expect(this.a).toBe(1)`、`expect(this.a)`。
+       */
       created(this: any) {
         calls.push('comp created')
         expect(this.a).toBe(1)
         expect(this.b).toBe(2)
         expect(this.c).toBe(3)
       },
+      /**
+       * 在 mounted 阶段执行 `calls.push('comp mounted')`。
+       */
       mounted() {
         calls.push('comp mounted')
       },
+      /**
+       * 渲染结果为 `` `${this.a}${this.b}${this.c}` ``。
+       */
       render(this: any) {
         return `${this.a}${this.b}${this.c}`
       },
@@ -327,14 +387,26 @@ describe('api: createApp', () => {
     ])
   })
 
-  // 测试场景：app.use 安装函数或对象插件，并按插件身份去重。
+  // 函数插件和 install 对象按身份去重；无效插件会警告。
   test('use', () => {
+    /**
+     * 返回 `app.provide('foo', 1)`。
+     */
     const PluginA: Plugin = app => app.provide('foo', 1)
     const PluginB: Plugin = {
+      /**
+       * 返回 `app.provide('bar', arg1 + arg2)`。
+       */
       install: (app, arg1, arg2) => app.provide('bar', arg1 + arg2),
     }
+    /**
+     * 带静态 install 的类插件夹具；app.use 按对象插件协议调用类的静态方法，不实例化此类。
+     */
     class PluginC {
       someProperty = {}
+      /**
+       * 通过闭包中的 app 提供 baz=2；本用例检查类也可被 app.use 接受，输出只使用 foo/bar。
+       */
       static install() {
         app.provide('baz', 2)
       }
@@ -342,6 +414,9 @@ describe('api: createApp', () => {
     const PluginD: any = undefined
 
     const Root = {
+      /**
+       * 调用 `inject('foo')`、`inject('bar')` 完成本例的初始化登记或读取；返回渲染闭包，执行时产出 `` `${foo},${bar}` ``。
+       */
       setup() {
         const foo = inject('foo')
         const bar = inject('bar')
@@ -370,14 +445,20 @@ describe('api: createApp', () => {
     ).toHaveBeenWarnedTimes(1)
   })
 
-  // 测试场景：app.onUnmount 登记的清理函数在应用卸载时执行一次。
+  // 同一个清理函数登记三次，app.unmount 按三条登记分别调用它。
   test('onUnmount', () => {
     const cleanup = vi.fn().mockName('plugin cleanup')
+    /**
+     * 执行 `app.provide('foo', 1)`、`app.onUnmount(cleanup)`。
+     */
     const PluginA: Plugin = app => {
       app.provide('foo', 1)
       app.onUnmount(cleanup)
     }
     const PluginB: Plugin = {
+      /**
+       * 执行 `app.provide('bar', arg1 + arg2)`、`app.onUnmount(cleanup)`。
+       */
       install: (app, arg1, arg2) => {
         app.provide('bar', arg1 + arg2)
         app.onUnmount(cleanup)
@@ -385,6 +466,9 @@ describe('api: createApp', () => {
     }
 
     const app = createApp({
+      /**
+       * 渲染结果为 `` `Test` ``。
+       */
       render: () => `Test`,
     })
     app.use(PluginA)
@@ -393,7 +477,7 @@ describe('api: createApp', () => {
     const root = nodeOps.createElement('div')
     app.mount(root)
 
-    //also can be added after mount
+    //清理函数也允许在挂载后登记。
     app.onUnmount(cleanup)
 
     app.unmount()
@@ -401,7 +485,7 @@ describe('api: createApp', () => {
     expect(cleanup).toHaveBeenCalledTimes(3)
   })
 
-  // 测试场景：app.config.errorHandler 接收组件树中未被捕获的运行时错误。
+  // 组件 render 抛错后，errorHandler 收到原错误、公共实例和 render function 阶段说明。
   test('config.errorHandler', () => {
     const error = new Error()
     const count = ref(0)
@@ -413,12 +497,18 @@ describe('api: createApp', () => {
     })
 
     const Root = {
+      /**
+       * 返回 `count` 作为后续渲染可读的绑定。
+       */
       setup() {
         const count = ref(0)
         return {
           count,
         }
       },
+      /**
+       * 渲染时抛出 `error`，让错误处理断言观察该阶段。
+       */
       render() {
         throw error
       },
@@ -430,7 +520,7 @@ describe('api: createApp', () => {
     expect(handler).toHaveBeenCalled()
   })
 
-  // 测试场景：app.config.warnHandler 接收开发期警告及组件追踪信息。
+  // 组件缺少 render 时，warnHandler 收到警告、公共实例和组件追踪。
   test('config.warnHandler', () => {
     let ctx: any
     const handler = vi.fn((msg, instance, trace) => {
@@ -441,6 +531,9 @@ describe('api: createApp', () => {
 
     const Root = {
       name: 'Hello',
+      /**
+       * 调用 `getCurrentInstance()` 完成本例的初始化登记或读取；把 `ctx` 写入本例的状态或观察变量。
+       */
       setup() {
         ctx = getCurrentInstance()
       },
@@ -452,14 +545,17 @@ describe('api: createApp', () => {
     expect(handler).toHaveBeenCalledTimes(1)
   })
 
-  // 测试组：app.config.isNativeTag 的配置、调用方式和只读约束。
+  // 应用配置参与组件保留名检查，指令名另按 Vue 内置指令检查。
   describe('config.isNativeTag', () => {
     const isNativeTag = vi.fn(tag => tag === 'div')
 
-    // 测试场景：app.component 使用组件自身 name 作为省略显式名称时的注册 key。
+    // 组件 name 命中 isNativeTag 时，挂载会警告该名称是原生标签保留名。
     test('Component.name', () => {
       const Root = {
         name: 'div',
+        /**
+         * 渲染结果为 `null`。
+         */
         render() {
           return null
         },
@@ -478,12 +574,18 @@ describe('api: createApp', () => {
       ).toHaveBeenWarned()
     })
 
-    // 测试场景：app.component 注册的组件可以包含并解析自己的局部 components。
+    // 局部 components 使用 isNativeTag 识别的原生标签名时会警告。
     test('Component.components', () => {
       const Root = {
         components: {
+          /**
+           * 返回 `'div'`。
+           */
           div: () => 'div',
         },
+        /**
+         * 渲染结果为 `null`。
+         */
         render() {
           return null
         },
@@ -501,12 +603,18 @@ describe('api: createApp', () => {
       ).toHaveBeenWarned()
     })
 
-    // 测试场景：app.component 注册的组件可以包含并解析自己的局部 directives。
+    // 局部 directives 使用 Vue 内置指令名 bind 时会警告。
     test('Component.directives', () => {
       const Root = {
         directives: {
+          /**
+           * 空 bind 夹具，保留本例的选项/回调形状；函数自身不产生副作用。
+           */
           bind: () => {},
         },
+        /**
+         * 渲染结果为 `null`。
+         */
         render() {
           return null
         },
@@ -519,9 +627,12 @@ describe('api: createApp', () => {
       ).toHaveBeenWarned()
     })
 
-    // 测试场景：使用app.component注册。
+    // app.component 注册的名称命中 isNativeTag 时会警告。
     test('register using app.component', () => {
       const app = createApp({
+        /**
+         * 空渲染占位，让组件完成本例所需的初始化，断言读取状态或诊断结果。
+         */
         render() {},
       })
 
@@ -538,14 +649,20 @@ describe('api: createApp', () => {
     })
   })
 
-  // 测试场景：config.optionMergeStrategies 自定义 Options API 字段的合并方式。
+  // 自定义合并策略按全局 mixin、extends、局部 mixin、组件自身的顺序合并字段。
   test('config.optionMergeStrategies', () => {
     let merged: string
     const App = defineComponent({
+      /**
+       * 空渲染占位，让组件完成本例所需的初始化，断言读取状态或诊断结果。
+       */
       render() {},
       mixins: [{ foo: 'mixin' }],
       extends: { foo: 'extends' },
       foo: 'local',
+      /**
+       * 在 beforeCreate 阶段写入 `merged` 供后续观察或触发更新。
+       */
       beforeCreate() {
         merged = this.$options.foo
       },
@@ -555,15 +672,21 @@ describe('api: createApp', () => {
     app.mixin({
       foo: 'global',
     })
+    /**
+     * 把前后来源的 foo 串成逗号文本，保留合并顺序，供最终 global,extends,mixin,local 输出断言。
+     */
     app.config.optionMergeStrategies.foo = (a, b) => (a ? `${a},` : ``) + b
 
     app.mount(nodeOps.createElement('div'))
     expect(merged!).toBe('global,extends,mixin,local')
   })
 
-  // 测试场景：app.config.globalProperties 为应用内组件公共实例提供全局属性。
+  // 应用的 globalProperties 字段可通过组件公共实例读取并渲染。
   test('config.globalProperties', () => {
     const app = createApp({
+      /**
+       * 渲染结果为 `this.foo`。
+       */
       render() {
         return this.foo
       },
@@ -574,12 +697,15 @@ describe('api: createApp', () => {
     expect(serializeInner(root)).toBe('hello')
   })
 
-  // 测试场景：config.throwUnhandledErrorInProduction 控制生产环境未处理错误是否继续抛出。
+  // 生产环境开启 throwUnhandledErrorInProduction 后，未处理 setup 错误继续抛出。
   test('config.throwUnhandledErrorInProduction', () => {
     __DEV__ = false
     try {
       const err = new Error()
       const app = createApp({
+        /**
+         * 在 setup 中故意抛出 `err`，供本例检查初始化错误传播。
+         */
         setup() {
           throw err
         },
@@ -592,14 +718,20 @@ describe('api: createApp', () => {
     }
   })
 
-  // 测试场景：返回属性“_”不应覆盖“ctx._”，__isScriptSetup：false。
+  // 普通 setup 返回保留名 _ 会警告，模板 ref 仍可正常挂载。
   test('return property "_" should not overwrite "ctx._", __isScriptSetup: false', () => {
     const Comp = defineComponent({
+      /**
+       * 返回 ref 值的保留名 _，故意触发普通 setup 返回键的警告；render 仍创建 input 模板 ref，检查内部 ctx._ 没有被覆盖。
+       */
       setup() {
         return {
           _: ref(0), // return property "_" should not overwrite "ctx._"
         }
       },
+      /**
+       * 渲染结果为 `h('input', { ref: 'input', })`。
+       */
       render() {
         return h('input', {
           ref: 'input',
@@ -615,15 +747,21 @@ describe('api: createApp', () => {
     ).toHaveBeenWarned()
   })
 
-  // 测试场景：返回属性“_”不应覆盖“ctx._”，__isScriptSetup：true。
+  // 模拟 script setup 返回 _ 后，读取 $refs 不触发内部上下文损坏错误。
   test('return property "_" should not overwrite "ctx._", __isScriptSetup: true', () => {
     const Comp = defineComponent({
+      /**
+       * 返回 _ 与模拟的 __isScriptSetup 标记；结合 input 模板 ref，检查 script setup 绑定不会覆盖内部 ctx._。
+       */
       setup() {
         return {
-          _: ref(0), // return property "_" should not overwrite "ctx._"
+          _: ref(0), // setup 返回的 _ 不应覆盖 ctx._ 的内部实例链接。
           __isScriptSetup: true, // mock __isScriptSetup = true
         }
       },
+      /**
+       * 渲染结果为 `h('input', { ref: 'input', })`。
+       */
       render() {
         return h('input', {
           ref: 'input',
@@ -634,7 +772,7 @@ describe('api: createApp', () => {
     const root1 = nodeOps.createElement('div')
     const app = createApp(Comp).mount(root1)
 
-    // trigger
+    // 读取 $refs，触发公开代理查找。
     app.$refs.input
 
     expect(
@@ -643,10 +781,13 @@ describe('api: createApp', () => {
   })
 
   // #10005
-  // 测试场景：嵌套 createApp 上的齐平顺序边缘情况。
+  // mounted 中修改状态并嵌套挂载另一个 App，post watcher 仍在第二次 render 后执行。
   test('flush order edge case on nested createApp', async () => {
     const order: string[] = []
     const App = defineComponent({
+      /**
+       * 调用 `watch(message, () => { order.push('post watcher'); }, { flush: 'post' })`、`onMounted(() => { message.value = 'm2'; createApp(() => '').mount(nodeOps.createElement('div')); })` 完成本例的初始化登记或读取；返回渲染闭包，执行时产出 `h('div', [message.value])`。
+       */
       setup(props) {
         const message = ref('m1')
         watch(
@@ -673,22 +814,30 @@ describe('api: createApp', () => {
   })
 
   // #14215
-  // 测试场景：卸载新应用程序不应触发其他应用程序的watcher。
+  // 先卸载旧应用的子组件，再卸载新应用；旧子组件已停止的 watcher 不被触发。
   test("unmount new app should not trigger other app's watcher", async () => {
     const compWatcherTriggerFn = vi.fn()
     const data = ref(true)
     const foo = ref('')
 
+    /**
+     * 创建并挂载独立应用，返回仅卸载该应用的 destroy；用于复现另一应用的同步 render/unmount 与旧组件 watcher 排队的交互。
+     */
     const createNewApp = () => {
-      const app = createApp({ render: () => h('new app') })
+      const app = createApp({
+        /** 渲染结果为 `h('new app')`。 */ render: () => h('new app')
+      })
       const wrapper = nodeOps.createElement('div')
       app.mount(wrapper)
-      return function destroy() {
+      return /** 卸载刚创建的新应用，触发 renderer 的同步收尾；外层计数断言观察旧组件 watcher 不被错误执行。 */ function destroy() {
         app.unmount()
       }
     }
 
     const Comp = defineComponent({
+      /**
+       * 调用 `watch(() => foo.value, compWatcherTriggerFn)` 完成本例的初始化登记或读取；返回渲染闭包，执行时产出 `h('div', 'comp')`。
+       */
       setup() {
         watch(() => foo.value, compWatcherTriggerFn)
         return () => h('div', 'comp')
@@ -696,6 +845,9 @@ describe('api: createApp', () => {
     })
 
     const App = defineComponent({
+      /**
+       * 返回渲染闭包，执行时产出 `(data.value ? h(Comp) : null)`。
+       */
       setup() {
         return () => (data.value ? h(Comp) : null)
       },
@@ -713,6 +865,6 @@ describe('api: createApp', () => {
     expect(compWatcherTriggerFn).toBeCalledTimes(0)
   })
 
-  // config.compilerOptions is tested in packages/vue since it is only
-  // supported in the full build.
+  // config.compilerOptions 需要完整版模板编译器，其用例位于 packages/vue。
+  // runtime-test 的此组用例不执行运行时模板编译。
 })

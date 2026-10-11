@@ -89,7 +89,7 @@ function patternToCodeFilter(pattern: string | RegExp): PluginFilter {
 
 /**
  * 组合多条 include/exclude：任一 exclude 命中立即拒绝；否则任一 include 命中才接受。
- * 没有 include 时默认接受所有未被排除的输入；两侧都为空则不创建过滤函数。
+ * include 缺省或为空数组时，接受所有未被排除的输入；两侧都为 undefined 才不创建函数。
  */
 function createFilter(
   exclude: Array<PluginFilter> | undefined,
@@ -179,7 +179,7 @@ export function createFilterForTransform(
   const codeFilterFn = createCodeFilter(codeFilter)
   const moduleTypeFilterFn = createModuleTypeFilter(moduleTypeFilter)
   return (id, code, moduleType) => {
-    // 先检查最便宜的 moduleType，再检查 ID，最后才扫描可能很长的源码字符串。
+    // 先判断模块类型是否在列表中，再匹配 ID；前两项失败就无需继续匹配源码。
     let fallback = moduleTypeFilterFn?.(moduleType) ?? true
     if (!fallback) {
       return false

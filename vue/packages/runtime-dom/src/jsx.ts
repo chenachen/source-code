@@ -248,10 +248,12 @@ export interface AriaAttributes {
 }
 
 // Vue 的 style 规范化支持嵌套数组。
+/** Vue 样式绑定输入：假值忽略，字符串为 cssText，对象为 CSS 属性，数组可递归嵌套交由 normalizeStyle 展平。 */
 export type StyleValue =
   false | null | undefined | string | CSSProperties | Array<StyleValue>
 
 // 支持原生 `class` attribute。
+/** Vue 类名绑定输入：字符串、按真值选键的对象、递归数组和被忽略的假值，由 normalizeClass 合并。 */
 export type ClassValue =
   false | null | undefined | string | Record<string, any> | Array<ClassValue>
 
@@ -278,7 +280,7 @@ export interface HTMLAttributes extends AriaAttributes, EventHandlers<Events> {
     | 'send'
     | undefined
   /**
-   * @deprecated Use `enterkeyhint` instead.
+   * @deprecated 请使用 `enterkeyhint`。
    */
   enterKeyHint?: HTMLAttributes['enterkeyhint']
   hidden?: Booleanish | '' | 'hidden' | 'until-found' | undefined
@@ -297,7 +299,7 @@ export interface HTMLAttributes extends AriaAttributes, EventHandlers<Events> {
   // WAI-ARIA 无障碍字段。
   role?: string | undefined
 
-  // RDFa attributes。
+  // RDFa属性。
   about?: string | undefined
   datatype?: string | undefined
   inlist?: any
@@ -645,7 +647,8 @@ export interface InputHTMLAttributes extends HTMLAttributes {
   autocomplete?: InputAutoCompleteAttribute | undefined
   autofocus?: Booleanish | undefined
   capture?: boolean | 'user' | 'environment' | undefined // https://www.w3.org/tr/html-media-capture/#the-capture-attribute
-  checked?: Booleanish | any[] | Set<any> | undefined // for IDE v-model multi-checkbox support
+  /** 为 IDE 多 checkbox 的 v-model 类型提示放宽到 Array/Set；运行时 checked 仍由指令计算为布尔。 */
+  checked?: Booleanish | any[] | Set<any> | undefined // 为 IDE 的 v-model 多复选框类型提示接受集合。
   crossorigin?: string | undefined
   disabled?: Booleanish | undefined
   form?: string | undefined
@@ -671,7 +674,8 @@ export interface InputHTMLAttributes extends HTMLAttributes {
   src?: string | undefined
   step?: Numberish | undefined
   type?: InputTypeHTMLAttribute | undefined
-  value?: any // we support :value to be bound to anything w/ v-model
+  /** 允许 v-model/:value 保存任意原始值；DOM 字符串 value 之外由 _value 保留对象供 model 比较。 */
+  value?: any // v-model 的 :value 可保存任意原始值，运行时由 _value 与 DOM 字符串分开。
   width?: Numberish | undefined
   onCancel?: ((payload: Event) => void) | undefined
 }
@@ -792,7 +796,8 @@ export interface OptionHTMLAttributes extends HTMLAttributes {
   disabled?: Booleanish | undefined
   label?: string | undefined
   selected?: Booleanish | undefined
-  value?: any // we support :value to be bound to anything w/ v-model
+  /** 允许 v-model/:value 保存任意原始值；DOM 字符串 value 之外由 _value 保留对象供 model 比较。 */
+  value?: any // v-model 的 :value 可保存任意原始值，运行时由 _value 与 DOM 字符串分开。
 }
 
 /** `<output>` 元素专用 JSX attributes。 */
@@ -839,7 +844,8 @@ export interface SelectHTMLAttributes extends HTMLAttributes {
   name?: string | undefined
   required?: Booleanish | undefined
   size?: Numberish | undefined
-  value?: any // we support :value to be bound to anything w/ v-model
+  /** 允许 v-model/:value 保存任意原始值；DOM 字符串 value 之外由 _value 保留对象供 model 比较。 */
+  value?: any // v-model 的 :value 可保存任意原始值，运行时由 _value 与 DOM 字符串分开。
 }
 
 /** `<source>` 元素专用 JSX attributes。 */

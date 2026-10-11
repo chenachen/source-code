@@ -137,6 +137,7 @@ if (__DEV__) {
  *
  * 构造时只建立固定对象形状与中性状态；type、stateNode、lanes 等由具体 createFiberFrom* 路径写入。
  * current/work-in-progress 双缓冲通过 alternate 连接，不在构造器中递归创建。
+ * tag 决定各阶段分派，key 用于同级身份匹配，pendingProps 是本轮待消费输入，mode 继承父子树运行模式。
  */
 function FiberNode(
   this: $FlowFixMe,
@@ -433,8 +434,9 @@ export function createWorkInProgress(current: Fiber, pendingProps: any): Fiber {
 /**
  * 把一次未完成 render 的 work-in-progress 恢复到第二次 pass 可用的起点。
  *
- * 未配对 current 的新 Fiber 回到 createFiber 初值；已有 alternate 的 Fiber 回到
- * createWorkInProgress 克隆值。Placement 与静态 flags 保留，因为它们来自协调/跨轮事实。
+ * 无 alternate 的新 Fiber 清除首次尝试产生的 child/state/queue，并恢复 renderLanes；
+ * 已有 alternate 的 Fiber 从 current 恢复可重用状态。pendingProps、结构位置与 ref 由父级协调确定，
+ * 这里保留；Placement 与静态 flags 同样保留。实际耗时继续累计，基准耗时按有无 current 恢复。
  */
 export function resetWorkInProgress(
   workInProgress: Fiber,
@@ -547,6 +549,8 @@ export function createHostRootFiber(
  *
  * 函数/class/宿主字符串走直接分类；React 特殊 Symbol 与 $$typeof 描述对象走协议分派；
  * 非法类型创建 Throw Fiber，让错误在 child 的 begin 阶段抛出并保留 JSX owner/stack 归因。
+ * type 保存在 elementType 作为协调身份，type 字段保存解析实现（lazy 暂为空）；
+ * key 是同级身份，mode 是继承环境，lanes 标记首次 render 范围，owner 仅供开发错误归因。
  */
 export function createFiberFromTypeAndProps(
   type: any, // React$ElementType

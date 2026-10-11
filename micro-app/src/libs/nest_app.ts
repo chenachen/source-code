@@ -6,6 +6,8 @@ import { getRootContainer } from '../libs/utils'
  *
  * @remarks
  * 先移除自身监听，避免清理 DOM 时再次进入；非 UMD 环境随后清空共享实例表，UMD 环境则保留实例供再次挂载。
+ * 只遍历本 bundle 的 Map，且有 container 才能取宿主并调用 disconnectedCallback；
+ * 后者仍自行选择 keep-alive 隐藏或普通卸载。本函数不等待内层 UMD Promise，清表只移除索引。
  */
 function unmountNestedApp (): void {
   releaseUnmountOfNestedApp()
@@ -18,7 +20,7 @@ function unmountNestedApp (): void {
   !window.__MICRO_APP_UMD_MODE__ && AppManager.getInstance().clear()
 }
 
-/** 在子应用环境中移除已有卸载监听，保证重复初始化不会累积处理器。 */
+/** 在子应用代理 window 上移除本函数引用；主应用环境无上层 unmount，直接跳过。 */
 function releaseUnmountOfNestedApp (): void {
   if (window.__MICRO_APP_ENVIRONMENT__) {
     window.removeEventListener('unmount', unmountNestedApp, false)
@@ -30,6 +32,7 @@ function releaseUnmountOfNestedApp (): void {
  *
  * @remarks
  * 沙箱向子应用 window 派发 `unmount` 时会触发清理；注册前先释放旧监听，使本函数可重复调用。
+ * With 沙箱首个 start 调用此入口，监听上层子应用窗口；普通基座没有环境标记，不建立级联。
  */
 export function initEnvOfNestedApp (): void {
   if (window.__MICRO_APP_ENVIRONMENT__) {

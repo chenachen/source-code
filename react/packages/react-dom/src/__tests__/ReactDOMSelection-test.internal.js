@@ -28,7 +28,8 @@ describe('ReactDOMSelection', () => {
 
 // 用于比较正确性的简单实现。React 的旧实现使用 DOM Range 对象，可通过以下地址手动测试：
 // https://gist.github.com/sophiebits/2e6d571f4f10f33b62ea138a6e9c265c
-  /** `simpleModernOffsetsFromPoints`：封装当前用例复用的操作、回调或断言步骤。 */
+
+  /** 递归深度优先累计 Text UTF16 长度；Text 偏移加长度、Element 偏移定位 childNodes 间隙，用作随机测试的独立参照实现。 */
   function simpleModernOffsetsFromPoints(
     outerNode,
     anchorNode,
@@ -40,7 +41,7 @@ describe('ReactDOMSelection', () => {
     let end;
     let length = 0;
 
-    /** `simpleModernOffsetsFromPoints.traverse`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 逐子节点递归，并在每个元素子节点边界与文本内部记录 anchor/focus 的累计偏移。 */
     function traverse(node) {
       if (node.nodeType === Node.TEXT_NODE) {
         if (node === anchorNode) {
@@ -76,7 +77,8 @@ describe('ReactDOMSelection', () => {
   }
 
   // 复杂示例源自一个真实的 DOM 树。 包含各种各样的东西。
-  /** `getFixture`：封装当前用例复用的操作、回调或断言步骤。 */
+
+  /** 提交含空 div、深层嵌套、相邻插值 Text 的固定 27 元素树，返回宿主根以枚举所有选择点。 */
   async function getFixture() {
     const container = document.createElement('div');
     const root = ReactDOMClient.createRoot(container);
@@ -130,14 +132,7 @@ describe('ReactDOMSelection', () => {
     return container.firstChild;
   }
 
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「returns correctly for base case」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言连接表单宿主状态、ReactDOMSharedInternals 与提交后受控值恢复路径。
-   */
+  /** 对空 div 使用自身作为 anchor/focus 且两个子节点偏移均为 0；生产 helper 与递归参照都应返回 start=0/end=0，验证无文本的基线选择区。 */
   it('returns correctly for base case', () => {
     const node = document.createElement('div');
     expect(getModernOffsetsFromPoints(node, node, 0, node, 0)).toEqual({
@@ -150,7 +145,7 @@ describe('ReactDOMSelection', () => {
     });
   });
 
-  /** 测试场景：验证「returns correctly for fuzz test」描述的渲染、交互或错误处理结果。 */
+  /** fixture 含 27 元素、补文本后共 41 节点；随机生成 2000 组合法节点与节点内偏移，比较生产遍历和简单递归的结果，任意不等即带节点索引抛错，验证嵌套、空节点、元素边界与 Text 字符偏移组合。 */
   it('returns correctly for fuzz test', async () => {
     const fixtureRoot = await getFixture();
     const allNodes = [fixtureRoot].concat(
@@ -165,11 +160,12 @@ describe('ReactDOMSelection', () => {
     });
     expect(allNodes.length).toBe(41);
 
-    /** `randomNode`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 从固定 41 节点数组均匀随机取一个 anchor 或 focus 候选，包含元素与 Text。 */
     function randomNode() {
       return allNodes[(Math.random() * allNodes.length) | 0];
     }
-    /** `randomOffset`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 在 Text 字符长度或 Element 子节点数量的闭区间 0..length 生成偏移，包含节点末端边界。 */
     function randomOffset(node) {
       return (
         (Math.random() *

@@ -3,8 +3,10 @@ import { createServer } from 'vite'
 import { expect, test } from 'vitest'
 import { getColor, isServe, page, ports } from '~utils'
 
+/** 场景：仅开发执行：同端口先启 blue-app，再关闭换 green-app 并等待自动reload；核对前者a蓝/b黑、后者a黑/b绿，检查按root选择PostCSS配置且没有复用旧结果。 */
 test.runIf(isServe)('postcss config', async () => {
   const port = ports['css/postcss-caching']
+  /** 以指定 app root 使用同一端口启动服务器，分别读取各自 PostCSS 配置。 */
   const startServer = async (root) => {
     const server = await createServer({
       root,
@@ -14,7 +16,7 @@ test.runIf(isServe)('postcss config', async () => {
         strictPort: true,
       },
       build: {
-        // skip transpilation during tests to make it faster
+        // 目标为 esnext，测试聚焦 PostCSS 配置而无需语法降级。
         target: 'esnext',
       },
     })
@@ -39,12 +41,12 @@ test.runIf(isServe)('postcss config', async () => {
     const blueB = await page.$('.postcss-b')
     expect(await getColor(blueB)).toBe('black')
 
-    // wait for hmr connection because: if server stops before connection, auto reload does not happen
+    // 先等 HMR 连接；已连接的 client 才能在服务器关闭/重启后触发自动 reload。
     await hmrConnectionPromise
     await blueApp.close()
     blueApp = null
 
-    const loadPromise = page.waitForEvent('load') // wait for server restart auto reload
+    const loadPromise = page.waitForEvent('load') // 等待 client 对新服务器的自动 reload
     greenApp = await startServer(greenAppDir)
     await loadPromise
 

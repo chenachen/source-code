@@ -58,7 +58,7 @@ export const canHydrateTextInstance = shim;
 export const canHydrateActivityInstance = shim;
 /** 判断既有宿主标记能否匹配当前 Suspense 边界的占位。 */
 export const canHydrateSuspenseInstance = shim;
-/** 认领宿主元素并计算需补交属性差异的占位。 */
+/** 为已认领宿主元素绑定 props 并报告 hydration 是否成功的占位。 */
 export const hydrateInstance = shim;
 /** 认领宿主文本并判断内容是否需修正的占位。 */
 export const hydrateTextInstance = shim;

@@ -27,7 +27,7 @@ export const findIndexSS = (structs, clock) => {
   if (midclock === clock) {
     return right
   }
-  // 比例 pivot 只在目标分布接近均匀时可能首轮命中；失败后仍按区间中点二分，其收益尚待验证。
+  // 按 clock 比例估计首次 pivot；未命中后按剩余索引区间中点继续二分。
   let midindex = math.floor((clock / (midclock + mid.length - 1)) * right) // 按时钟比例选首次 pivot。
   while (left <= right) {
     mid = structs[midindex]
@@ -49,6 +49,8 @@ export const findIndexSS = (structs, clock) => {
 /**
  * 返回以目标 clock 起始的结构索引；若 clock 落在结构中间，先原地切分。
  *
+ * 会原位改变 structs 的分段但不改变 ID 覆盖；返回可立即访问的起始索引。目标 clock 必须确实被数组覆盖。
+ *
  * @param {Transaction?} transaction - 可选事务，用于登记切分后待合并结构。
  * @param {Array<Item|GC|Skip>} structs - 同一 client 的结构数组。
  * @param {number} clock - 期望成为结构起点的 clock。
@@ -68,6 +70,8 @@ export const findIndexCleanStart = (transaction, structs, clock) => {
  *
  * 前置条件：ID 已存在于 store；调用方必须先做 state 检查，否则会抛出内部错误。
  *
+ * 类型标注沿用 Item，但运行时也可能返回 GC 或 Skip；方法按 ID 定位，不检查结构类别。
+ *
  * @param {Transaction} transaction
  * @param {ID} id
  * @return {Item}
@@ -83,7 +87,9 @@ export const getItemCleanStart = (transaction, id) => {
 /**
  * 取得以给定 ID 结束的 Item，必要时在 ID 后切分原结构。
  *
- * 前置条件：ID 已存在于 store；返回结构的最后一个 clock 必定等于 `id.clock`。
+ * 前置条件：ID 已存在于 store；返回 Item 的最后一个 clock 等于 `id.clock`。
+ *
+ * 只有 Item 会在 ID 后切分；GC/Skip 原样返回，其末 clock 可能大于请求 ID。返回值的 Item 类型标注不执行运行时检查。
  *
  * @param {Transaction} transaction
  * @param {StructStore} store
@@ -122,6 +128,8 @@ export const replaceStruct = (tr, struct, newStruct) => {
 /**
  * 遍历精确覆盖指定半开 clock 区间的结构，并在两端必要处切分。
  *
+ * 已知范围两端须在数组覆盖内；回调看到切分后的原存储对象。回调抛错时此前切分和回调变更已保留。
+ *
  * @param {Transaction} transaction
  * @param {Array<Item|GC>} structs
  * @param {number} clockStart - 包含的起始 clock。
@@ -147,14 +155,15 @@ export const iterateStructs = (transaction, structs, clockStart, len, f) => {
 }
 
 /**
- * 不切分结构地遍历指定 clock 区间，并用 offset/len 标出每个结构实际命中的片段。
+ * 不切分结构地遍历指定 clock 区间，并标出每个结构内的命中边界。
  *
- * WHY：只读编码等路径无需改变 store；回调必须遵守片段边界，不能把整块内容误当成目标区间。
+ * 回调的 `offset` 是左边界，第三参数虽名为 `len`，实际是相对结构起点的右边界；
+ * 命中长度为 `len - offset`。例如结构覆盖 [0, 10)、请求 [3, 7) 时，回调收到 (struct, 3, 7)。
  *
  * @param {Array<Item|GC>} structs
  * @param {number} clockStart - 包含的起始 clock。
  * @param {number} len - 目标区间长度。
- * @param {(struct: GC|Item|Skip, offset:number, len:number)=>void} f - 接收原结构、结构内偏移与命中长度。
+ * @param {(struct: GC|Item|Skip, offset:number, len:number)=>void} f - 接收原结构及结构内半开区间 `[offset, len)`。
  *
  * @function
  */
@@ -178,6 +187,8 @@ export const iterateStructsWithoutSplits = (structs, clockStart, len, f) => {
  * 在 `diff` 处把任意 Item/GC/Skip 切成左右结构，并返回右半段。
  *
  * 有事务时把右半段加入 `_mergeStructs`，允许 cleanup 在临时边界不再需要时重新合并。
+ * diff 是严格位于结构内部的左段 clock 长度；此函数只返回右段，不把它插入 store 数组，数组拼接由调用方负责。
+ *
  * @param {Transaction?} transaction
  * @param {Item|GC|Skip} leftStruct
  * @param {number} diff
@@ -212,7 +223,7 @@ export const nextID = transaction => {
 /**
  * 把已存在类型登记为直接变更；若其承载 Item 正在本事务中新增，则跳过类型自身事件。
  *
- * WHY：新子树的内部状态属于“插入该子树”的一个原子结果，再对其子类型发 change 会重复描述同一修改。
+ * 新子树的内部状态由父类型的插入事件一起描述，因此不再为本事务新增的类型单独登记 change。
  *
  * @param {Transaction} transaction
  * @param {YType} type
@@ -258,9 +269,12 @@ export const tryToMergeWithLefts = (structs, pos) => {
 }
 
 /**
- * 扫描给定删除区间，把允许回收且未被 `keep` 固定的已删除 Item 转为 GC。
+ * 扫描给定删除区间，回收允许回收且未被 `keep` 固定的已删除 Item 载荷。
  *
- * 逆序处理删除区间，避免后续压缩相关工作遗漏更右侧结构；实际结构合并由 `tryMerge` 负责。
+ * `Item.gc(tr, false)` 保留当前 Item 的 ID 与锚点，并将内容换为 `ContentDeleted`；
+ * 嵌套内容回收时，已被回收父项内的子结构可替换为 GC。实际相邻合并由 `tryMerge` 负责。
+ *
+ * 此处不会按 ds 边界切分 Item；任何与范围相交且满足条件的 Item 都按整体回收，精确边界需调用方预先切分。
  *
  * @param {Transaction} tr - 提供 store 与 GC 变更记录的事务。
  * @param {IdSet} ds - 待尝试回收的删除 ID 区间。
@@ -333,6 +347,8 @@ export const tryGc = (tr, idset, gcFilter) => {
  *
  * 先向右越过删除/非 countable 项找到内容边界，再向左扫描间隙；每个键只保留最靠右、最终生效的格式项。
  *
+ * cleanupFormatting 关闭时返回 0；启用时完成删除后不显式返回数量，实际为 undefined。删除同时登记 transaction.cleanUps。
+ *
  * @param {Transaction} transaction - 接收清理删除记录的事务。
  * @param {Item | null} item - 删除位置附近的起始项。
  */
@@ -379,6 +395,8 @@ export const updateCurrentFormats = (currentFormats, { key, value }) => {
  * 删除字符串内容后清理间隙内被覆盖或与起点上下文等价的格式项。
  *
  * 不变量：`startFormats` 表示间隙左侧状态，`endFormats` 表示右侧最终生效项；删除 `curr` 之前的格式时同步修正 `currFormats`，让调用方后续扫描仍看到正确上下文。
+ *
+ * 格式值按引用/严格相等比较，未做对象深比较；每次删除会同时加入 deleteSet 与 cleanUps，返回本次清理个数。
  *
  * @param {Transaction} transaction
  * @param {Item} start

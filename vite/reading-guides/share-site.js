@@ -74,6 +74,80 @@
   window.addEventListener('scroll', updateProgress, { passive: true })
   window.addEventListener('resize', updateProgress)
 
+  var expandedDiagram = null
+
+  function closeDiagram() {
+    if (!expandedDiagram) return
+    var figure = expandedDiagram
+    var button = figure.querySelector('[data-diagram-action="expand"]')
+    figure.classList.remove('is-expanded')
+    figure.removeAttribute('role')
+    figure.removeAttribute('aria-modal')
+    body.classList.remove('diagram-is-expanded')
+    button.setAttribute('aria-expanded', 'false')
+    button.textContent = '展开图示'
+    expandedDiagram = null
+    button.focus()
+  }
+
+  document.querySelectorAll('.engineering-diagram').forEach(function (figure) {
+    var viewport = figure.querySelector('.diagram-viewport')
+    var canvas = figure.querySelector('.diagram-canvas')
+    var output = figure.querySelector('.diagram-scale')
+    var width = Number(figure.getAttribute('data-diagram-width'))
+    var scale = 1
+
+    function setScale(next) {
+      scale = Math.min(2, Math.max(0.15, next))
+      canvas.style.width = width * scale + 'px'
+      output.textContent = Math.round(scale * 100) + '%'
+    }
+
+    figure.querySelectorAll('[data-diagram-action]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        var action = button.getAttribute('data-diagram-action')
+        if (action === 'in') setScale(scale * 1.2)
+        if (action === 'out') setScale(scale / 1.2)
+        if (action === 'fit') setScale(viewport.clientWidth / width)
+        if (action === 'reset') setScale(1)
+        if (action === 'expand') {
+          if (expandedDiagram === figure) {
+            closeDiagram()
+            return
+          }
+          closeDiagram()
+          expandedDiagram = figure
+          figure.classList.add('is-expanded')
+          figure.setAttribute('role', 'dialog')
+          figure.setAttribute('aria-modal', 'true')
+          body.classList.add('diagram-is-expanded')
+          button.setAttribute('aria-expanded', 'true')
+          button.textContent = '收起图示'
+          button.focus()
+        }
+      })
+    })
+  })
+
+  document.addEventListener('keydown', function (event) {
+    if (!expandedDiagram) return
+    if (event.key === 'Escape') closeDiagram()
+    if (event.key === 'Tab') {
+      var controls = Array.from(
+        expandedDiagram.querySelectorAll('button, a, [tabindex="0"]'),
+      )
+      var first = controls[0]
+      var last = controls[controls.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+  })
+
   document.querySelectorAll('.copy-code').forEach(function (button) {
     button.addEventListener('click', async function () {
       var code = button.closest('.code-card').querySelector('code')

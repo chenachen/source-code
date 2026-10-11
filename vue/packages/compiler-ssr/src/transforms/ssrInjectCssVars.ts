@@ -11,7 +11,8 @@ import {
 
 /**
  * 把一次 render 求得的 `_cssVars` 作为无参数 v-bind 注入每个可能的组件根。
- * 只处理根级元素/组件及其 v-if/Suspense 分支；v-for 单项由循环上下文处理，避免重复注入。
+ * 只处理根级元素/组件及其 v-if/Suspense 分支。根 v-for 已转换为 ForNode，不接受注入；
+ * 循环单项的 parent 也不是 RootNode，不会在这里补注入。
  */
 export const ssrInjectCssVars: NodeTransform = (node, context) => {
   if (!context.ssrCssVars) {

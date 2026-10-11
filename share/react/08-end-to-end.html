@@ -1,20 +1,58 @@
 <!doctype html><html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="description" content="React 六包端到端调用链：createRoot 初次挂载、click 触发 state 更新、Scheduler 时间片、Fiber render/commit、DOM 事件与 hydration 重放。" />
-<title>08 · 端到端：六包控制权接力</title><link rel="stylesheet" href="assets/guide.css?v=1" /></head><body>
+<title>08 · 端到端：六包控制权接力</title><link rel="stylesheet" href="assets/guide.css?v=1" /><link rel="stylesheet" href="assets/engineering-diagrams.css?v=1" /></head><body>
 <header class="topbar"><div class="topbar-inner"><a class="brand" href="index.html">React 六包源码指南</a><nav class="pager" aria-label="页面导航">
 <a href="index.html">地图</a><a href="01-shared.html">shared</a><a href="02-scheduler.html">scheduler</a><a href="03-react.html">react</a>
 <a href="04-reconciler-render.html">render</a><a href="05-reconciler-commit.html">commit</a><a href="06-dom-bindings.html">bindings</a>
 <a href="07-react-dom.html">react-dom</a><a aria-current="page" href="08-end-to-end.html">主线</a><a href="09-evidence.html">证据</a></nav></div></header>
 <div class="layout"><main><p class="eyebrow">08 · Control-flow walkthrough</p><h1>六包接力：从一次 click 到文本改变</h1>
-<p class="lede">下面不再按包讲解，而是追踪 <code>&lt;button onClick={() =&gt; setCount(c =&gt; c + 1)}&gt;</code>：
+<p class="lede">本页追踪 <code>&lt;button onClick={() =&gt; setCount(c =&gt; c + 1)}&gt;</code>：
 谁创建记录、谁持有状态、谁选择时间、谁改 DOM，以及发生挂起或 hydration 阻塞时从哪里分叉。</p>
 <div class="meta"><span class="pill">公开 API → Host mutation</span><span class="pill">对象所有权</span><span class="pill">客户端更新</span><span class="pill">hydration 分支</span></div>
 
 <section id="legend"><h2>先记住六包不是线性依赖顺序</h2><p>页面阅读顺序是 foundation → engine → adapter；真实调用会往返：react-dom 调 reconciler，reconciler 调 bindings，
-reconciler 又把 host callback 交给 scheduler，事件从 bindings 回到 reconciler。shared 则像协议层，被所有方向读取。</p>
-<div class="chain" aria-label="运行时交互图"><div class="node">react<small>元素 / hooks facade</small></div><span class="arrow">→</span>
-<div class="node">react-dom<small>root 入口</small></div><span class="arrow">→</span><div class="node">reconciler<small>Fiber / Lane</small></div><span class="arrow">↔</span>
-<div class="node">scheduler<small>host callback</small></div><span class="arrow">↔</span><div class="node">DOM bindings<small>DOM / event</small></div></div>
+RootScheduler 为非同步工作建立 Scheduler task，事件从 bindings 回到 reconciler。shared 则像协议层，被所有方向读取。</p>
+<figure class="engineering-diagram" data-diagram="08-runtime-callbacks" style="--diagram-min-width:860px">
+<div class="diagram-scroll"><svg viewBox="0 0 860 1068" role="img" aria-labelledby="08-runtime-callbacks-title 08-runtime-callbacks-desc">
+<title id="08-runtime-callbacks-title">六包的调用返程与根微任务执行分叉</title>
+<desc id="08-runtime-callbacks-desc">react-dom 的 root 入口与 DOM bindings 的事件派发把更新送到 reconciler。根微任务选择 lanes；可执行 Sync 工作直接在微任务冲刷，不建立 Scheduler task，非同步工作安排 task 后由回调返回 reconciler。commit 调用 bindings 的 HostConfig 方法修改 DOM并返回。</desc>
+<defs><marker id="08-runtime-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#507476" /></marker></defs>
+<rect class="d-lane" x="15" y="16" width="270" height="1035" rx="12" />
+<rect class="d-lane" x="315" y="16" width="290" height="1035" rx="12" />
+<rect class="d-lane" x="625" y="16" width="220" height="1035" rx="12" />
+<text class="d-label" x="30" y="49"><tspan x="30" dy="0">入口 / DOM bindings</tspan></text>
+<text class="d-label" x="335" y="49"><tspan x="335" dy="0">reconciler</tspan></text>
+<text class="d-label" x="640" y="49"><tspan x="640" dy="0">Scheduler</tspan></text>
+<rect class="d-node" x="30" y="85" width="245" height="110" rx="10" /><text class="d-label" x="44" y="114"><tspan x="44" dy="0">react-dom · root 入口</tspan><tspan x="44" dy="25">root.render(element)</tspan><tspan x="44" dy="25">调用 updateContainer</tspan></text>
+<rect class="d-node" x="30" y="260" width="245" height="110" rx="10" /><text class="d-label" x="44" y="289"><tspan x="44" dy="0">bindings · 根事件 listener</tspan><tspan x="44" dy="25">click wrapper / 插件派发</tspan><tspan x="44" dy="25">onClick → setCount(action)</tspan></text>
+<rect class="d-state" x="335" y="160" width="260" height="150" rx="10" /><text class="d-label" x="349" y="189"><tspan x="349" dy="0">reconciler · 更新入口</tspan><tspan x="349" dy="25">HostRoot / Hook queue</tspan><tspan x="349" dy="25">requestUpdateLane</tspan><tspan x="349" dy="25">scheduleUpdateOnFiber</tspan></text>
+<path class="d-edge" d="M275 140 H305 V203 H335" marker-end="url(#08-runtime-arrow)" />
+<text class="d-muted" x="280" y="129"><tspan x="280" dy="0">根更新</tspan></text>
+<path class="d-edge" d="M275 315 H305 V267 H335" marker-end="url(#08-runtime-arrow)" />
+<text class="d-muted" x="280" y="344"><tspan x="280" dy="0">Hook 更新</tspan></text>
+<path class="d-edge d-async" d="M465 310 V365" marker-end="url(#08-runtime-arrow)" />
+<text class="d-muted" x="480" y="341"><tspan x="480" dy="0">调用栈结束后</tspan></text>
+<rect class="d-state" x="335" y="365" width="260" height="120" rx="10" /><text class="d-label" x="349" y="394"><tspan x="349" dy="0">RootScheduler · 根微任务</tspan><tspan x="349" dy="25">去重安排 root microtask</tspan><tspan x="349" dy="25">选择可执行 nextLanes</tspan></text>
+<path class="d-edge" d="M465 485 V535" marker-end="url(#08-runtime-arrow)" />
+<rect class="d-condition" x="335" y="535" width="260" height="100" rx="10" /><text class="d-label" x="349" y="564"><tspan x="349" dy="0">本次执行路径</tspan><tspan x="349" dy="25">SyncLane / 非同步 lanes</tspan></text>
+<rect class="d-node" x="630" y="540" width="200" height="130" rx="10" /><text class="d-label" x="644" y="569"><tspan x="644" dy="0">Scheduler task</tspan><tspan x="644" dy="25">持有 root callback</tspan><tspan x="644" dy="25">callback /</tspan><tspan x="644" dy="25">continuation</tspan></text>
+<path class="d-edge" d="M595 580 H630" marker-end="url(#08-runtime-arrow)" />
+<text class="d-muted" x="640" y="518"><tspan x="640" dy="0">非同步 → 建 task</tspan></text>
+<path class="d-edge" d="M395 635 V735" marker-end="url(#08-runtime-arrow)" />
+<text class="d-muted" x="412" y="686"><tspan x="412" dy="0">Sync：直接冲刷</tspan></text>
+<text class="d-muted" x="412" y="711"><tspan x="412" dy="0">callbackNode=null</tspan></text>
+<path class="d-edge d-async" d="M730 670 V700 H613 V805 H595" marker-end="url(#08-runtime-arrow)" />
+<text class="d-muted" x="640" y="725"><tspan x="640" dy="0">任务执行回调</tspan></text>
+<rect class="d-state" x="335" y="735" width="260" height="140" rx="10" /><text class="d-label" x="349" y="764"><tspan x="349" dy="0">reconciler · 根工作</tspan><tspan x="349" dy="25">Sync：微任务内 flush</tspan><tspan x="349" dy="25">非同步：task callback 调用</tspan><tspan x="349" dy="25">render → complete</tspan></text>
+<path class="d-edge" d="M520 875 V920" marker-end="url(#08-runtime-arrow)" />
+<rect class="d-state" x="335" y="920" width="260" height="115" rx="10" /><text class="d-label" x="349" y="949"><tspan x="349" dy="0">reconciler · commit</tspan><tspan x="349" dy="25">消费 flags</tspan><tspan x="349" dy="25">mutation 后发布 current</tspan></text>
+<rect class="d-node" x="30" y="920" width="245" height="115" rx="10" /><text class="d-label" x="44" y="949"><tspan x="44" dy="0">bindings · DOM HostConfig</tspan><tspan x="44" dy="25">append / update / remove</tspan><tspan x="44" dy="25">改 DOM 与 props cache</tspan></text>
+<path class="d-edge" d="M390 920 V902 H155 V920" marker-end="url(#08-runtime-arrow)" />
+<text class="d-muted" x="180" y="891"><tspan x="180" dy="0">调用 host 方法</tspan></text>
+<path class="d-edge" d="M275 1008 H335" marker-end="url(#08-runtime-arrow)" />
+<text class="d-muted" x="286" y="995"><tspan x="286" dy="0">返回</tspan></text>
+</svg></div>
+<figcaption><strong>实线是调用，虚线跨异步边界。</strong>bindings 的事件处理进入 reconciler；commit 再调用 bindings 的 HostConfig。RootScheduler 管根与 lanes，Scheduler 持有异步 task；SyncLane 工作在根微任务中直接冲刷，<code>callbackNode=null</code>。react 提供元素描述和 Hooks facade，shared 提供贯穿各方向的协议。</figcaption></figure>
 <p><code>shared</code> 的 symbols、types、flags、internals 与错误工具贯穿所有节点，故不画成只经过一次的箭头。</p></section>
 
 <section id="setup"><h2>示例与初始对象</h2><figure class="source"><figcaption><span>推演用业务代码</span><span>非仓库源码</span></figcaption><pre><span class="kw">function</span> <span class="fn">Counter</span>() {
@@ -36,7 +74,7 @@ root.render(&lt;Counter /&gt;);</pre></figure>
 <li><strong>react · 描述。</strong>JSX 工厂创建 Counter element；shared Symbol 将它标成可被 renderer 识别的元素记录。</li>
 <li><strong>react-dom · 入口。</strong>createRoot 已校验 container、创建 FiberRoot、标记容器并安装根事件监听；root.render 把 element 交给 updateContainer。</li>
 <li><strong>reconciler · 入队。</strong>HostRoot 得到包含 <code>{element}</code> 的 Update 与 Lane；scheduleUpdateOnFiber 标记 pendingLanes 并安排根。</li>
-<li><strong>scheduler · 获得 CPU。</strong>非同步根工作被映射为 priority callback；Scheduler 在 host task 中调用 performWorkOnRoot，时间片边界可 yield。</li>
+<li><strong>scheduler · 获得 CPU。</strong>普通脚本中的首次更新选 DefaultLane，RootScheduler 创建 Normal-priority callback。当前 DefaultLane 是 blocking lane，因此 host task 内走 renderRootSync；Transition 等非 blocking、未过期工作才可在 Fiber 单元间让出。</li>
 <li><strong>reconciler · begin。</strong>HostRoot 消费 update queue，协调 Counter；renderWithHooks 安装 mount dispatcher，useState 建 hook；Counter 返回 button element。</li>
 <li><strong>reconciler · complete。</strong>HostComponent completeWork 调 DOM HostConfig 创建 button、缓存 Fiber/props、设置文本与初始属性，再冒泡 Placement 等 flags。</li>
 <li><strong>reconciler → bindings · commit。</strong>mutation 找 container 并 append button；current 切换；layout/ref 执行；根监听器早已存在，无需每个 button 单独装 onClick。</li>
@@ -48,48 +86,41 @@ root.render(&lt;Counter /&gt;);</pre></figure>
 <li><strong>原生输入。</strong>浏览器把 click 交给 root 容器 listener，不直接调用 JSX 中的函数。</li>
 <li><strong>事件优先级。</strong>ReactDOMEventListener 识别 click 为 discrete，临时设置 DiscreteEventPriority。</li>
 <li><strong>定位。</strong>通过 DOM 节点缓存找到 button 的 HostComponent Fiber；确认它没有被 hydration 边界阻塞。</li>
-<li><strong>提取。</strong>SimpleEventPlugin 建 SyntheticMouseEvent，沿 Fiber return 链累积 onClick capture/bubble listeners。</li>
-<li><strong>批量派发。</strong>DOMPluginEventSystem 在 batchedUpdates 中按顺序调用 handler；handler 执行 <code>setCount</code>。</li>
+<li><strong>提取。</strong>SimpleEventPlugin 建 SyntheticMouseEvent，沿 Fiber return 链收集本次 capture 或 bubble 阶段的 listener；原生事件的两个阶段分别进入插件派发。</li>
+<li><strong>批量派发。</strong>每次根原生 capture/bubble listener 分别进入 batchedUpdates，插件按该阶段顺序调用 handler；本例 bubble handler 执行 <code>setCount</code>。</li>
 <li><strong>恢复表单。</strong>派发结束时，如有受控表单节点被浏览器临时改变，统一 restore committed state；本例没有额外恢复。</li>
 </ol></section>
 
-<section id="state"><h2>C. setCount：dispatch 闭包把 action 送回原 Fiber queue</h2><div class="chain" aria-label="state dispatch 链">
-<div class="node">dispatchSetState<small>fiber + queue + action</small></div><span class="arrow">→</span><div class="node">requestUpdateLane<small>离散事件上下文</small></div>
-<span class="arrow">→</span><div class="node">enqueueConcurrentHookUpdate<small>环形 queue</small></div><span class="arrow">→</span><div class="node">scheduleUpdateOnFiber<small>root.pendingLanes</small></div>
-<span class="arrow">→</span><div class="node">microtask / callback<small>批末调度</small></div></div>
-<p>action 是函数 <code>c =&gt; c + 1</code>，不会在 React 公共包中求值。reconciler 的 basicStateReducer 在 render 重放队列时用前一 state 调它。
-若可做 eager state 且结果与当前值 Object.is 相同，可能快速 bailout；本例结果 1，因此根被调度。</p></section>
+<section id="state"><h2>C. setCount：dispatch 闭包把 action 送回原 Fiber queue</h2><p>调度与队列结构见 <a href="11-update-queues-lanes.html#whole-chain">11 · Update Queue / Lane</a> 与 <a href="13-hooks-state-machine.html#lane-trace">13 · Hook 更新与重基线</a>；这里沿同一 Counter 继续追 action 的求值。</p>
+<p>action 是函数 <code>c =&gt; c + 1</code>，求值由 reconciler 负责。Fiber 及 alternate 都无待处理 lane 时，dispatch 可先用 basicStateReducer 算 eagerState；本例从 0 算得 1，仍需调度。render 处理队列时复用这个 eager 结果，后续 action 再接着前一 state 计算。结果与当前值 Object.is 相同的 eager 更新保留在队列中，但本次不安排根工作。</p></section>
 
 <section id="update"><h2>D. 更新 render：旧树提供基线，新树记录差异</h2><ol class="state-list">
 <li><strong>选择 lanes。</strong>RootScheduler 取最高优先 pending lanes；离散同步工作通常在当前事件后的微任务边界 flush。</li>
 <li><strong>准备 WIP。</strong>从 <code>root.current</code> 的 alternate 创建/复用 WIP，保留旧 Fiber 作为比较基线。</li>
 <li><strong>执行 Counter。</strong>update dispatcher 克隆旧 hook，按 Lane 重放 queue：0 → 1；返回同 type/key 的 button element。</li>
-<li><strong>协调。</strong>Counter 与 button Fiber 均可复用；文本 child 从 0 变 1，HostText 或 HostComponent 路径获得 Update flag。</li>
+<li><strong>协调。</strong>Counter 与 button Fiber 均可复用；本例 button 的 children 是单个数字，shouldSetTextContent 让 HostComponent 直接管理文本，不创建 HostText Fiber；props 变化会使 HostComponent 获得 Update。</li>
 <li><strong>完成。</strong>completeWork 不把 button 重新插入，只汇总更新 flags；若其他 props 相同，onClick 函数身份变化仍会进入 props 提交/缓存更新路径。</li>
-<li><strong>提交。</strong>commitTextUpdate 写 nodeValue 或属性路径更新文本；DOM props cache 更新为本轮 props；root.current 指向完成树。</li>
+<li><strong>提交。</strong>commitUpdate 调 updateProperties，把 button 文本写成 1，并刷新 DOM props cache；mutation 完成后 root.current 指向完成树。</li>
 </ol></section>
 
-<section id="yield"><h2>如果本轮很大：Scheduler 在哪里能切开，哪里不能</h2><div class="table-wrap"><table><thead><tr><th>位置</th><th>能否让出</th><th>原因</th></tr></thead><tbody>
+<section id="yield"><h2>并发 render 在哪里能让出，哪里不能</h2><p>下面的 render 让出点适用于未过期、非 blocking lane 的并发循环。本例首次 DefaultLane 更新走 renderRootSync，点击的 SyncLane 也同步完成；工作量大本身不会开启时间切片。</p><div class="table-wrap"><table><thead><tr><th>位置</th><th>能否让出</th><th>原因</th></tr></thead><tbody>
 <tr><td>两个 performUnitOfWork 之间</td><td>可以</td><td>WIP 尚未成为 current，也未写入可见宿主树</td></tr>
 <tr><td>用户组件函数执行到一半</td><td>不可以强制中断</td><td>JavaScript callback 必须主动返回；Scheduler 不是线程抢占器</td></tr>
 <tr><td>beginWork 返回 child 后</td><td>下一次循环边界可以</td><td>workInProgress 指针保存恢复位置</td></tr>
-<tr><td>mutation commit 中间</td><td>通常不可以</td><td>需保持宿主树与 current 切换的观察一致性</td></tr>
-<tr><td>layout 与 passive 之间</td><td>可以给 paint/host task 机会</td><td>新 DOM 与 current 已一致，passive 不要求阻塞可见提交</td></tr>
+<tr><td>mutation commit 中间</td><td>不进行时间切片</td><td>本轮 mutation 连续完成，随后发布 current 并执行 layout</td></tr>
+<tr><td>layout 与 passive 之间</td><td>取决于提交 lanes</td><td>一般可另行调度；SyncLane 的 passive 会在当前任务中冲刷，不能保证先 paint</td></tr>
 </tbody></table></div></section>
 
-<section id="hydration"><h2>E. hydration 事件：click 与连续事件从 blocker 后分叉</h2><ol class="state-list">
-<li><strong>共同入口。</strong>原生事件到达根 wrapper；若 target Fiber 对应 dehydrated Suspense 或未完成 HostRoot，<code>attemptToDispatchEvent</code> 返回 blocker，不先调用组件 handler。</li>
+<section id="hydration"><h2>E. hydration 事件：click 与可重放事件从 blocker 后分叉</h2><ol class="state-list">
+<li><strong>共同入口。</strong>原生事件到达根 wrapper；若 target Fiber 对应 dehydrated Suspense 或未完成 HostRoot，<code>findInstanceBlockingEvent</code> 返回 blocker，不先调用组件 handler。</li>
 <li><strong>离散 click 分支。</strong>capture 阶段的 click 会尝试同步 hydration 并重新 lookup；若成功，立刻走正常插件派发。</li>
-<li><strong>click 仍阻塞。</strong>当前实现停止这次原生传播并返回；它<strong>不会</strong>进入下面的通用连续事件 replay 槽，因此不能承诺 commit 后补发这次 click。</li>
+<li><strong>click 仍阻塞。</strong>当前实现停止这次原生传播并返回；click 不写入连续事件 replay 槽，也没有留给 commit 后补发的记录。</li>
 <li><strong>受支持连续事件分支。</strong>focus/drag/mouse/pointer 等把 native event、flags、container 与 blocker 保存到对应槽；同类后续事件按连续状态语义合并最新目标。</li>
 <li><strong>提交解锁连续槽。</strong>hydration/client-render commit 调 <code>retryIfBlockedOn</code>；只解锁匹配 blocker，随后重新定位最新 Fiber 与 latest props。</li>
 <li><strong>重放或清理。</strong>已可用则 clone 原生事件并重新走根 listener；仍阻塞则换 blocker 等待；mouseout、节点失效或边界被替换时按槽规则清除，而非调用陈旧 handler。</li>
 </ol><div class="callout warn"><p><strong>这条链解释了为什么 hydration 与事件不能分开读：</strong>事件系统不仅合成浏览器事件，还是 selective hydration 的外部优先级入口。</p></div></section>
 
-<section id="suspend"><h2>F. 分叉：Counter 更新时挂起</h2><div class="chain" aria-label="Suspense 分叉">
-<div class="node">render 抛 thenable<small>resource 未就绪</small></div><span class="arrow">→</span><div class="node">捕获边界<small>fallback / retain content</small></div>
-<span class="arrow">→</span><div class="node">root suspended lanes<small>ping cache</small></div><span class="arrow">→</span><div class="node">thenable settle<small>mark pinged</small></div>
-<span class="arrow">→</span><div class="node">重新 render<small>旧 current 仍是基线</small></div></div>
+<section id="suspend"><h2>F. 分叉：Counter 更新时挂起</h2><p>挂起、保留已显示内容和提交 fallback 的分叉见 <a href="17-suspense-retry.html#full-chain">17 · Suspense 挂起与重试</a>的工程图；此处关注它怎样重新进入本页调度管线。</p>
 <p>Scheduler 不等待 Promise；它只在 React 安排 callback 时执行函数。thenable listener 属于 reconciler，resolve 后再把根送回调度管线。
 若 fallback 被提交，DOM bindings 负责隐藏/显示或插入相应宿主子树；effect reconnect 由 commit 语义处理。</p></section>
 
@@ -111,7 +142,7 @@ passive 窗口再运行 passive destroy、彻底 detach Fiber，并清 DOM→Fib
 <tr><td>待处理根优先级</td><td>FiberRoot lanes</td><td>映射成 Scheduler callback priority</td><td>markRootFinished 或取消/重排</td></tr>
 <tr><td>host callback Task</td><td>Scheduler heap</td><td>callback 闭包指向 FiberRoot 工作</td><td>完成、取消节点到堆顶、或 continuation 完成</td></tr>
 <tr><td>DOM 节点</td><td>浏览器 DOM tree</td><td>节点缓存 Fiber 与最新 props</td><td>删除/卸载时清关联并 remove</td></tr>
-<tr><td>合成事件 dispatch queue</td><td>单次 DOM 事件派发</td><td>listeners 来自 Fiber/DOM props cache</td><td>batch 派发结束</td></tr>
+<tr><td>合成事件 dispatch queue</td><td>当前根 listener 的插件派发</td><td>listeners 来自 Fiber/DOM props cache</td><td>batch 派发结束</td></tr>
 <tr><td>ReactElement</td><td>调用方或更新/props 临时引用</td><td>shared symbol 品牌</td><td>不再被树/queue/用户引用即可 GC</td></tr>
 </tbody></table></div></section>
 
@@ -120,7 +151,7 @@ passive 窗口再运行 passive destroy、彻底 detach Fiber，并清 DOM→Fib
 <article class="card"><span class="number">DOM / EVENT</span><h3>先查 bindings</h3><p>看属性类别、controlled restore、DOM↔Fiber cache、插件与 hydration blocker；入口错误再上溯 react-dom。</p></article>
 <article class="card"><span class="number">STREAM / SSR</span><h3>先划清三层</h3><p>I/O 适配查 react-dom；HTML 格式查 bindings；request/task/Suspense segment 查范围外 react-server。</p></article></div></section>
 
-<section id="source-proof"><h2>从概览进入可核验源码主线</h2><div class="callout"><p><strong>本页只负责全局地图：</strong>业务 Counter 是教程代码，步骤也刻意压缩。要验证每个状态写入、异常和测试断言，继续阅读
+<section id="source-proof"><h2>从概览进入可核验源码主线</h2><div class="callout"><p><strong>本页将同一更新串起六包。</strong>业务 Counter 是教程代码；具体队列字段与断言在
 <a href="16-end-to-end-source.html">16 · 三次 click 为什么只提交 count=3</a>（随后两次独立 click 才到 DOM 5）；Fiber、Lane、协调、Hooks、commit、事件分别由 10–15 页展开，挂起与重试由 <a href="17-suspense-retry.html">17 · Suspense retry</a> 单独推演。</p></div>
 <div class="chain" aria-label="v2 深挖阅读顺序"><div class="node"><a href="10-fiber-object-model.html">Fiber 对象</a></div><span class="arrow">→</span><div class="node"><a href="11-update-queues-lanes.html">Queue / Lane</a></div><span class="arrow">→</span>
 <div class="node"><a href="12-child-reconciliation.html">协调</a></div><span class="arrow">→</span><div class="node"><a href="13-hooks-state-machine.html">Hooks</a></div><span class="arrow">→</span>

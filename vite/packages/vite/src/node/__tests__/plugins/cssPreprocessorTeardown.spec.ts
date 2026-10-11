@@ -48,8 +48,7 @@ describe('css preprocessor worker teardown', () => {
         scssPath,
       )
     } catch {
-      // 转换后优化器可能抛出 ERR_OUTDATED_OPTIMIZED_DEP；本用例只要求 SCSS
-      // 处理器已经启动，因此该错误与关闭行为无关。
+      // 转换异常在此被忽略；后续仍要求观察到 Sass 子进程，再检查 close 后全部退出。
     }
 
     expect(runningSassWorkers().length).toBeGreaterThan(0)

@@ -1,6 +1,5 @@
-// test dynamic import to cjs deps
-// mostly ensuring consistency between dev server behavior and build behavior
-// of @rollup/plugin-commonjs
+// 动态导入多种 CJS 依赖，将 default/namespace 互操作与 React hooks 的运行结果写入页面。
+// 同一 fixture 供开发预构建与生产构建测试使用。
 ;(async () => {
   const { useState } = await import('react')
   const React = (await import('react')).default
@@ -37,12 +36,14 @@
     cjsWithEsModuleFlag.default.info,
   )
 
+  /** 渲染可点击计数按钮，验证 CommonJS 默认/具名导入得到可用 React hooks。 */
   function App() {
     const [count, setCount] = useState(0)
 
     return React.createElement(
       'button',
       {
+        /** 将本次渲染捕获的 count 加一，供浏览器点击后观察导入 hooks 正常工作。 */
         onClick() {
           setCount(count + 1)
         },
@@ -55,6 +56,7 @@
     React.createElement(App),
   )
 
+  /** 把互操作检查结果写入指定 DOM 节点，供浏览器测试读取。 */
   function text(el, text) {
     document.querySelector(el).textContent = text
   }

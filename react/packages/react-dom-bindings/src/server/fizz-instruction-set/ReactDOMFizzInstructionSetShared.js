@@ -38,7 +38,10 @@ const TARGET_VANITY_METRIC = 2300;
 
 /**
  * 揭示一批已完成边界：删除 fallback、搬入流式内容并把起始标记改为已完成。
- * 嵌套边界通过注释深度计数跳过，已被客户端渲染或取消的条目安全忽略。
+ * batch按[id template,隐藏内容容器]成对排列；先分离内容容器，再从template起删除fallback，
+ * 按Suspense/Activity注释深度找到外层结束标记，搬入内容并将起点改为完成。
+ * 目标template已无parent时跳过；内容容器无parent只省略分离，仍可搬其持有的子级。
+ * _reactRetry通过rAF通知hydration重试，本批处理后length=0以复用数组。
  */
 export function revealCompletedBoundaries(batch) {
   window['$RT'] = performance.now();
@@ -47,7 +50,7 @@ export function revealCompletedBoundaries(batch) {
     const contentNode = batch[i + 1];
     if (contentNode.parentNode === null) {
       // 客户端水合失败可能已删除流 segment，服务端也可能在发出完成指令后取消它；
-      // 两种情况都可安全忽略。
+      // 两种情况都不需再次remove；后续若目标仍存在，仍会使用该容器持有的子级。
     } else {
       // 现在可分离内容；内部边界后续完成时会在目标位置找到对应标记。
       contentNode.parentNode.removeChild(contentNode);
@@ -107,7 +110,12 @@ export function revealCompletedBoundaries(batch) {
 
 /**
  * 在揭示完成边界前收集 enter/exit/share/update 元素，并用浏览器 ViewTransition 包装提交。
- * 不支持 API、没有可动画元素或发生异常时立即退回普通揭示；已有 transition 时排队等待。
+ * 已有transition时等finished.finally再把原batch交全局$RV，避免两批并行快照。
+ * restoreQueue以[element,旧name,旧class]三元组保存临时样式；share先配名再设exit/enter，
+ * update只处理未加入队列的元素。update回调先reveal再强制布局并等待字体/可视未完成图片，
+ * 等待Promise与500ms/指标剩余预算竞速；图片load/error均视为等待结束，不决定边界错误。
+ * 同步准备异常/无动画元素走普通揭示；异步ready/finished在各自finally中处理恢复/释放，
+ * 本实现不在catch里逆序回滚已经设置的名称，也未取消竞速余下timer或移除图片监听。
  */
 export function revealCompletedBoundariesWithViewTransitions(
   revealBoundaries,
@@ -303,7 +311,7 @@ export function revealCompletedBoundariesWithViewTransitions(
           const blockingPromises = [
             // 强制布局以触发字体加载；保留实际值以防压缩器删除读取。
             document.documentElement.clientHeight,
-            // 揭示前等待字体完成加载。
+            // 已搬入内容并触发布局；等待字体就绪后才允许 ViewTransition 拍摄新状态。
             document.fonts.ready,
           ];
           for (let i = 0; i < suspenseyImages.length; i++) {
@@ -344,7 +352,7 @@ export function revealCompletedBoundariesWithViewTransitions(
         types: [], // TODO：为 Suspense 揭示增加固定类型。
       }));
       transition.ready.finally(() => {
-        // 恢复所有临时名称/类别；逆序处理重复元素，使最早记录的原值最终生效。
+        // 逆序回写临时名称/类别；当前类别回写读取的是名称槽（i + 1），并非记录类别的 i + 2 槽。
         for (let i = restoreQueue.length - 3; i >= 0; i -= 3) {
           const element = restoreQueue[i];
           const elementStyle = element.style;
@@ -384,7 +392,7 @@ export function clientRenderBoundary(
   errorStack,
   errorComponentStack,
 ) {
-  // 定位 fallback 的首个元素。
+  // 定位待定边界起始注释后的 ID template。
   const suspenseIdNode = document.getElementById(suspenseBoundaryID);
   if (!suspenseIdNode) {
     // 用户已离开这棵树，例如父级已完成水合。
@@ -394,7 +402,7 @@ export function clientRenderBoundary(
   const suspenseNode = suspenseIdNode.previousSibling;
   // 标记为需要客户端渲染。
   suspenseNode.data = SUSPENSE_FALLBACK_START_DATA;
-  // 把错误元数据写入首个兄弟元素，供客户端诊断。
+  // 把错误元数据写入该 template 的 dataset，供客户端诊断。
   const dataset = suspenseIdNode.dataset;
   if (errorDigest != null) dataset['dgst'] = errorDigest;
   if (errorMsg) dataset['msg'] = errorMsg;
@@ -407,7 +415,10 @@ export function clientRenderBoundary(
 }
 
 /**
- * 将完成的边界与其流式内容加入揭示批次，并依据首帧/上次提交时间安排节流刷新。
+ * contentID找不到直接返回；边界template已移除则删除孤立内容容器。两者存在时
+ * 将起点从pending改为queued，再把[template,content]追加到全局$RB。
+ * 只有数组长度变2的首对安排刷新：无$RT用rAF，有$RT用timer；后续条目合并入同一数组。
+ * 延迟按上次reveal时间300ms或接近目标指标时的剩余预算计算，非正值仍交timer。
  */
 export function completeBoundary(suspenseBoundaryID, contentID) {
   const contentNodeOuter = document.getElementById(contentID);
@@ -416,7 +427,7 @@ export function completeBoundary(suspenseBoundaryID, contentID) {
     return;
   }
 
-  // 定位 fallback 的首个元素。
+  // 定位待定边界起始注释后的 ID template。
   const suspenseIdNodeOuter = document.getElementById(suspenseBoundaryID);
   if (!suspenseIdNodeOuter) {
     // 此边界永不会揭示，可立即删除内容；正常路径则保留到揭示，以便其中嵌套边界先完成。
@@ -454,8 +465,12 @@ export function completeBoundary(suspenseBoundaryID, contentID) {
 }
 
 /**
- * 提升边界依赖的 link/style 资源，等待当前媒体条件下的样式表后再完成或客户端降级。
- * 资源按 href 去重、按 precedence 插入，并复用全局加载 Promise。
+ * stylesheetDescriptors按[href,precedence,属性名,属性值,...]描述外部样式；$RM按href
+ * 缓存已插入link，precedences保存每组最后节点，使同precedence追加、首组按遇到顺序排布。
+ * 已有link只在其_p仍为Promise且media当前匹配时等待；新link先安装load/error再插入，
+ * 两种结果都清空_p，后续复用不再等待且不重新请求；本实现不保存失败状态或重试。
+ * 第二遍提升现有media="not all"的匹配link/style并移除media。依赖全成功交$RC排揭示，
+ * 任一拒绝交$RX标为客户端恢复；这些动作不在此函数卸载已插入的资源。
  */
 export function completeBoundaryWithStyles(
   suspenseBoundaryID,
@@ -466,7 +481,7 @@ export function completeBoundaryWithStyles(
   const thisDocument = document;
   let lastResource, node;
 
-  // 用现有资源初始化 precedence 链，并收集待提升的 style 标签。
+  // 用现有资源初始化precedence链；media=not all的匹配link/style另收集待提升。
   const nodes = thisDocument.querySelectorAll(
     'link[data-precedence],style[data-precedence]',
   );
@@ -499,7 +514,7 @@ export function completeBoundaryWithStyles(
       // 遍历样式表描述符：新资源负责构造，已存在资源只检查是否仍是依赖。
       const stylesheetDescriptor = stylesheetDescriptors[i++];
       if (!stylesheetDescriptor) {
-        // 描述符耗尽后进入 <style> 模式。
+        // 描述符耗尽后进入先前收集的media=not all资源提升模式。
         sheetMode = false;
         i = 0;
         continue;
@@ -539,7 +554,7 @@ export function completeBoundaryWithStyles(
         continue;
       }
     } else {
-      // <style> 模式提升尚未处理且带 data-precedence 的内联样式标签。
+      // 提升尚未处理的data-precedence资源；此前查询同时包括link/style。
       resourceEl = styleTagsToHoist[i++];
       if (!resourceEl) {
         // 全部 style 标签处理完毕。
@@ -550,7 +565,7 @@ export function completeBoundaryWithStyles(
       resourceEl.removeAttribute('media');
     }
 
-    // resourceEl 是新建的 stylesheet link，或需要提升的 style 标签。
+    // resourceEl为新建stylesheet link或第二遍待提升的既有link/style。
     const prior = precedences.get(precedence) || lastResource;
     if (prior === lastResource) {
       lastResource = resourceEl;
@@ -579,7 +594,7 @@ export function completeBoundaryWithStyles(
   );
 }
 
-/** 把已完成 segment 的所有子节点搬到占位符前，并删除临时容器与占位符。 */
+/** containerID/placeholderID必须找到仍有parent的容器与占位符；先摘容器、再按首子级顺序逐个insertBefore到占位符前，最后摘占位符。此指令无边界完成路径的缺节点跳过门，协议节点缺失会抛DOM访问错误。 */
 export function completeSegment(containerID, placeholderID) {
   const segmentContainer = document.getElementById(containerID);
   const placeholderNode = document.getElementById(placeholderID);
@@ -602,12 +617,12 @@ const EXPECTED_FORM_ACTION_URL =
   "javascript:throw new Error('React form unexpectedly submitted.')";
 
 /**
- * 在 React 事件系统之前捕获函数表单提交，快照化 FormData 并按根节点顺序排队供水合重放。
+ * 在 window 冒泡阶段接收函数表单提交，快照化 FormData 并按文档内顺序排队供水合重放。
  * 普通 URL action、已被更早监听器阻止的提交直接放行。
  */
 export function listenToFormSubmissionsForReplaying() {
-  // 全局重放队列保证 action 按序执行。监听器位于 React 监听器之前；React 处理时若
-  // preventDefault，本监听器也不会错误入队。React 最高只监听 document，所以挂在 window 即可。
+  // 队列按提交顺序保存记录。window 冒泡监听器晚于 React 在根容器/document 的处理；
+  // React 已 preventDefault 时直接返回，尚未接管的占位 action 才进入重放队列。
   // eslint-disable-next-line no-restricted-globals
   addEventListener('submit', event => {
     if (event.defaultPrevented) {
@@ -642,7 +657,7 @@ export function listenToFormSubmissionsForReplaying() {
     // 排队供稍后重放。页面上多个 React 可共享此字段，因为前一个实例会对后一个实例
     // preventDefault；凡使用相同 javascript: 占位值的 React 版本都共享该协议，故数组
     // 可能已存在。队列挂在表单根节点这一共享环境上下文，以保存顺序并在水合时取回；
-    // 没有 ownerDocument 时表单自身即为文档。
+    // 没有ownerDocument时以表单自身承载共享队列字段。
     const root = form.ownerDocument || form;
     (root['$$reactFormReplay'] = root['$$reactFormReplay'] || []).push(
       form,

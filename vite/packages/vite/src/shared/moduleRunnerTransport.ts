@@ -67,7 +67,8 @@ function reviveInvokeError(e: any) {
 
 /**
  * 将 transport 统一成 `invoke(name, args)`：已有原生 invoke 时只适配包结构；否则
- * 在 custom HMR payload 上实现 request/response RPC、超时、断连拒绝和发送失败传播。
+ * 在 custom HMR payload 上实现 request/response RPC、超时、主动 disconnect 时拒绝和发送失败传播。
+ * RPC Map 属于本包装实例，原生 invoke 分支直接使用宿主返回的 result/error，不建立关联表。
  */
 const createInvokeableTransport = (
   transport: ModuleRunnerTransport,
@@ -147,9 +148,12 @@ const createInvokeableTransport = (
         onDisconnection,
       })
     },
-    /** 拒绝全部 pending RPC 后断开底层 transport。 */
+    /**
+     * 拒绝并移除全部 pending RPC，再交给底层断连；不是意外 close 的自动处理器。
+     * 此处不逐项取消超时计时器，已拒绝 Promise 的后续 timeout reject 不再改变结果。
+     */
     disconnect() {
-      // 底层断开后所有 pending RPC 都不可能再收到响应，立即拒绝避免永久悬挂。
+      // 主动调用此包装层的 disconnect 时拒绝 pending RPC；意外断连回调本身不清理这张表。
       rpcPromises.forEach((promise) => {
         promise.reject(
           new Error(
@@ -164,7 +168,11 @@ const createInvokeableTransport = (
     send(data) {
       return transport.send!(data)
     },
-    /** 创建关联 ID、超时与发送失败处理后等待 RPC 响应。 */
+    /**
+     * 发送带随机 ID 的请求，随后登记响应 Promise 与可选超时；底层响应需异步回到 onMessage。
+     * 同步 send 抛错发生在关联表建立前；异步发送拒绝、超时及远端错误进入等待 Promise 的失败出口。
+     * 等待失败恢复为附有 Runner 本地边界的 Error，正常响应则清计时器并删除表项。
+     */
     async invoke<T extends keyof InvokeMethods>(
       name: T,
       data: Parameters<InvokeMethods[T]>,
@@ -235,8 +243,10 @@ export interface NormalizedModuleRunnerTransport {
 /**
  * 归一化 transport 生命周期，并禁止连接建立前发送消息。
  *
- * 并发 connect 共享同一个 connectingPromise；disconnect 会等待连接完成后再关闭，
- * 避免底层 socket 处于半连接状态时被重复操作。
+ * 并发 connect 共享同一个 connectingPromise；send/invoke 可等待正在建立的连接。
+ * disconnect 在 isConnected=false 时直接返回，首次 connect 尚未完成时不会等待或取消它。
+ * connectingPromise 仅在成功 await 后清空；连接拒绝时它仍指向同一失败结果，后续调用继续等待该结果。
+ * 意外断连只复位 isConnected，既不拒绝 pending RPC，也不使后续显式 disconnect 越过未连接检查。
  */
 export const normalizeModuleRunnerTransport = (
   transport: ModuleRunnerTransport,
@@ -260,8 +270,9 @@ export const normalizeModuleRunnerTransport = (
             }
 
             const maybePromise = invokeableTransport.connect!({
+              /** 使用调用方的消息处理器；未提供时安装空回调，仍满足 transport 的连接接口。 */
               onMessage: onMessage ?? (() => {}),
-              /** 让下一次 connect 可以重新建立底层连接。 */
+              /** 允许下次 connect 重连；此回调只复位连接状态，不清理 pending RPC。 */
               onDisconnection() {
                 isConnected = false
               },
@@ -277,7 +288,7 @@ export const normalizeModuleRunnerTransport = (
       : {}),
     ...(invokeableTransport.disconnect
       ? {
-          /** 等待在途连接完成后再关闭，避免半连接资源泄漏。 */
+          /** 已连接时关闭 transport；尚未连接或正在首次连接时直接返回。 */
           async disconnect() {
             if (!isConnected) return
             if (connectingPromise) {
@@ -327,8 +338,10 @@ export class SendBeforeConnectError extends Error {
 
 /**
  * 创建基于标准 WebSocket 的 Runner transport。
- * 连接成功/断开会合成 Vite custom 事件；定时 ping 防止 nginx、Docker 等代理回收
- * 空闲 HMR WebSocket。
+ * 连接成功会合成 Vite custom 事件；等待 open 的分支同时注册后续 close 通知。定时 ping
+ * 维持空闲 HMR WebSocket 的活动，避免代理因闲置超时回收它。
+ * factory 若直接返回已 OPEN 的 socket，会跳过等待 open/注册 close 的分支；消息监听仍安装。
+ * disconnect 只清保活计时器并关闭最近保存的 socket，RPC 与上层连接标志由归一化层处理。
  */
 export const createWebSocketModuleRunnerTransport = (options: {
   /** 每次 connect 创建新的 WebSocket，便于宿主决定 URL、认证与实现。 */

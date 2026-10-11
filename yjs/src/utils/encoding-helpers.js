@@ -17,6 +17,8 @@ import { writeIdSet } from './ids.js'
  * 前置条件：`idranges` 非空，且每个范围都与该客户端结构区间相交；调用方先按
  * `StructStore` 状态构造这些范围。
  *
+ * idranges 应规范化为正长度、递增且互不相邻的范围；记录数按原范围数量计入 Skip，若某范围完全落在数组外被跳过，头部计数与 indexRanges 会失配。
+ *
  * @param {UpdateEncoderV1 | UpdateEncoderV2} encoder
  * @param {Array<GC|Item|Skip>} structs 指定客户端的全部有序结构。
  * @param {number} client
@@ -76,14 +78,14 @@ export const writeStructs = (encoder, structs, client, idranges) => {
 /**
  * 按 ID 集从结构存储写出插入结构段。
  *
- * 客户端数量直接取集合键数；client ID 降序能改善接收侧并发冲突扫描。调用方须
+ * 客户端数量直接取集合键数，各客户端段按 client ID 降序写出。调用方须
  * 保证集合中的每个客户端在存储中存在。
+ *
+ * 集合范围还必须实际与客户端结构相交；此函数不滤掉不存在的客户端，也不把 Skip 当作可见插入内容。
  *
  * @param {UpdateEncoderV1 | UpdateEncoderV2} encoder
  * @param {StructStore} store
  * @param {IdSet} idset
- *
- * @todo 当前会写出每个选中区间覆盖的完整结构切片。
  *
  * @private
  * @function
@@ -91,7 +93,7 @@ export const writeStructs = (encoder, structs, client, idranges) => {
 export const writeStructsFromIdSet = (encoder, store, idset) => {
   // 写入携带结构的客户端数量。
   encoding.writeVarUint(encoder.restEncoder, idset.clients.size)
-  // 高 client ID 优先，降低并发位置解析成本。
+  // 按 client ID 降序写出各客户端段。
   array.from(idset.clients.entries()).sort((a, b) => b[0] - a[0]).forEach(([client, ids]) => {
     const idRanges = ids.getIds()
     const structs = /** @type {Array<GC|Item>} */ (store.clients.get(client))

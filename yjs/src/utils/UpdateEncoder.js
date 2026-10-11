@@ -5,6 +5,7 @@ import * as encoding from 'lib0/encoding'
 export class IdSetEncoderV1 {
   /** 创建承载全部字段的基础编码器。 */
   constructor () {
+    /** V1 的全部字段按调用顺序写入此流；完整更新还会在结构段后追加删除集。 */
     this.restEncoder = encoding.createEncoder()
   }
 
@@ -107,6 +108,8 @@ export class UpdateEncoderV1 extends IdSetEncoderV1 {
   /**
    * 写入结构或内容长度。
    *
+   * 长度单位由内容类型决定：字符串用 UTF-16 code unit，数组用元素数，单值用 1；不是编码字节数。
+   *
    * @param {number} len
    */
   writeLen (len) {
@@ -154,7 +157,9 @@ export class UpdateEncoderV1 extends IdSetEncoderV1 {
 export class IdSetEncoderV2 {
   /** 初始化通用字节流与当前客户端的差分游标。 */
   constructor () {
-    this.restEncoder = encoding.createEncoder() // 承载未使用专用列压缩的其余字段。
+    /** ID 集差分字段及更新头、any、binary 等通用尾流；完整 V2 更新在九个专用列后直接追加它。 */
+    this.restEncoder = encoding.createEncoder()
+    /** 当前客户端上一范围的排他末 clock；writeClock 后暂存起点，再由 writeLen 推进。 */
     this.dsCurrVal = 0
   }
 
@@ -170,6 +175,8 @@ export class IdSetEncoderV2 {
 
   /**
    * 写入相对上一个区间末端的起始时钟差值。
+   *
+   * clock 必须不小于上一范围末端，按每客户端排序后的半开区间调用；写入 clock 后还需 writeIdSetLen 推进末端。
    *
    * @param {number} clock
    */
@@ -219,14 +226,23 @@ export class UpdateEncoderV2 extends IdSetEncoderV2 {
      * @type {number}
      */
     this.keyClock = 0
+    /** 格式键引用号的有符号差分/RLE 列；当前编码器为每次写键递增新编号。 */
     this.keyClockEncoder = new encoding.IntDiffOptRleEncoder()
+    /** 结构 client 和左右锚点 client 共用的无符号 RLE 列，读取顺序须与写入一致。 */
     this.clientEncoder = new encoding.UintOptRleEncoder()
+    /** 左锚点绝对 clock 的有符号差分/RLE 列，与右 clock 独立维护差分状态。 */
     this.leftClockEncoder = new encoding.IntDiffOptRleEncoder()
+    /** 右锚点绝对 clock 的有符号差分/RLE 列，与左 clock 独立维护差分状态。 */
     this.rightClockEncoder = new encoding.IntDiffOptRleEncoder()
+    /** 结构 info 字节的 RLE 列，低五位为内容/结构引用，高三位描述锚点与 parentSub。 */
     this.infoEncoder = new encoding.RleEncoder(encoding.writeUint8)
+    /** 字符串内容、根键、属性键等共享的字符串列；按消费次序拆分长度。 */
     this.stringEncoder = new encoding.StringEncoder()
+    /** 父引用种类的字节 RLE 列，1 为根键、0 为父 Item ID。 */
     this.parentInfoEncoder = new encoding.RleEncoder(encoding.writeUint8)
+    /** 嵌套类型引用号的无符号 RLE 列；与内容引用号 info 分属不同字段。 */
     this.typeRefEncoder = new encoding.UintOptRleEncoder()
+    /** GC/数组等长度的无符号 RLE 列，值表示逻辑 clock 数。 */
     this.lenEncoder = new encoding.UintOptRleEncoder()
   }
 
@@ -235,6 +251,8 @@ export class UpdateEncoderV2 extends IdSetEncoderV2 {
    *
    * 前九列均带长度前缀；`restEncoder` 故意不带外层长度并占据余下全部字节，
    * 解码器依赖这一边界。
+   * 此方法封装当前缓存，不重置各编码列；同一实例仍保留字段历史，应为独立更新创建独立编码器。
+   *
    */
   toUint8Array () {
     const encoder = encoding.createEncoder()
@@ -320,6 +338,8 @@ export class UpdateEncoderV2 extends IdSetEncoderV2 {
 
   /**
    * 写入结构或内容长度 RLE 列。
+   *
+   * 长度单位沿用结构 clock，不是压缩列字节数；字符串长度与 StringEncoder 内部字节/长度表示不可混用。
    *
    * @param {number} len
    */

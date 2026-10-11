@@ -53,7 +53,7 @@ describe('import and resolveId', () => {
 
   /**
    * 场景：与上例相同，但先执行内部 resolve，再由 Runner import。
-   * 验证目标：反向顺序仍分别命中 module/default，证明入口缓存键包含 conditions 等解析选项。
+   * 验证目标：反向顺序仍分别命中 module/default，验证内部与运行时条件选择不因先后顺序互相污染。
    */
   test('resolveId first', async () => {
     const { server, runner } = await createTestServer()
@@ -244,7 +244,7 @@ describe('file url', () => {
     /** 场景：目标 Environment 显式清空 builtins 并解析未知自定义协议；验证目标：resolver 不擅自接管，返回未解析结果。 */
     test('non declared builtin', async () => {
       const resolved = await run({
-        builtins: [/* empty */],
+        builtins: [/* 显式空数组 */],
         idToResolve: 'my-env:custom-builtin',
       })
       expect(resolved).toBeNull()
@@ -254,7 +254,7 @@ describe('file url', () => {
     test('non declared node builtin', async () => {
       await expect(
         run({
-          builtins: [/* empty */],
+          builtins: [/* 显式空数组 */],
           idToResolve: 'node:fs',
         }),
       ).rejects.toThrowError(

@@ -38,15 +38,16 @@ import {
 } from '../runtimeHelpers'
 
 /**
- * 从根开始执行静态分析，把稳定 VNode、文本和 props 放入实例渲染缓存。
- * 根单元素本身不能缓存：组件 fallthrough attrs 可能每次渲染改变并需要合并到根元素。
+ * 从根开始执行静态分析：稳定 VNode 和文本进入实例渲染缓存；动态元素中稳定的
+ * props 对象及 dynamicProps 名单可提升到 render 外。
+ * 单元素根保留 VNodeCall，随后由 createRootCodegen 转为 block，作为静态子树的更新边界。
  */
 export function cacheStatic(root: RootNode, context: TransformContext): void {
   walk(
     root,
     undefined,
     context,
-    // 单元素根可能接收父组件透传 attrs，只禁止缓存该根本身，仍继续分析其后代。
+    // 单元素根保留为 block 更新边界，仍继续缓存其静态后代。
     !!getSingleElementRoot(root),
   )
 }
@@ -66,6 +67,9 @@ export function getSingleElementRoot(
 /**
  * 深度优先分析父节点 children，收集可缓存节点，并在全部 children 都静态时优先缓存整个数组。
  * 数组级缓存比逐 VNode 缓存少 `_cache` 槽和条件表达式，也适用于组件默认/具名插槽返回值。
+ * doNotHoistNode 保护单根及结构分支的唯一子节点；它仍递归优化后代。整棵子树已经缓存时
+ * 直接 continue，避免再次分配后代缓存槽。parent 只用于定位具名 slot 的组件父节点。
+ * inFor 在本实现中仅向下传递，不改变缓存决策；缓存数组统一设置 needArraySpread。
  */
 function walk(
   node: ParentNode,
@@ -259,7 +263,10 @@ function walk(
 
 /**
  * 计算模板节点的最低静态等级。
- * 元素的结果取自身 props、原始 v-bind 表达式和所有 children 的最小值，并缓存递归结果。
+ * 原生元素的结果取生成 props、原始 v-bind 表达式和 children 的最小值，并在 context
+ * 的 WeakMap 中缓存。组件、结构节点及多数 block 立即返回 NOT_CONSTANT；表达式直接读
+ * constType，缓存表达式为 CAN_CACHE。静态 svg/foreignObject/math 且没有任何指令时，
+ * 本分析还会将其 VNodeCall 降为普通 VNode，并同步调整 helper 引用计数。
  */
 export function getConstantType(
   node: TemplateChildNode | SimpleExpressionNode | CacheExpression,
@@ -331,10 +338,10 @@ export function getConstantType(
           }
         }
 
-        // 走到这里的 block 通常是 svg/foreignObject/math。完全静态且无自定义指令时没有动态后代，
+        // 走到这里的 block 通常是 svg/foreignObject/math。完全静态且没有任何指令时没有动态后代，
         // 可降级为普通 VNode，并同步撤销/登记 helper，减少 openBlock 开销。
         if (codegenNode.isBlock) {
-          // 自定义指令可能在运行时产生更新，必须保留 block。
+          // 此分支保守排除所有 DIRECTIVE；包括 v-bind，并不限于自定义指令。
           for (let i = 0; i < node.props.length; i++) {
             const p = node.props[i]
             if (p.type === NodeTypes.DIRECTIVE) {
@@ -404,7 +411,8 @@ const allowHoistedHelperSet = new Set([
 ])
 
 /**
- * 递归检查允许提升的 helper 调用，静态等级由最内层参数决定。
+ * 仅识别白名单 Symbol helper，沿第一个参数递归读取 simple expression 的常量等级。
+ * 不接受任意函数、对象 AST 或 compound 参数；其余形态返回 NOT_CONSTANT。
  */
 function getConstantTypeOfHelperCall(
   value: CallExpression,
@@ -426,7 +434,11 @@ function getConstantTypeOfHelperCall(
   return ConstantTypes.NOT_CONSTANT
 }
 
-/** 计算元素最终生成 props 对象的静态等级。 */
+/**
+ * 计算生成对象 props 的键和值的最低常量等级；值只支持 simple expression 或白名单 helper。
+ * 无 props 或非对象形态保留初始 CAN_STRINGIFY，不表示已经分析任意调用/整体绑定；
+ * 外层 getConstantType 还结合 patchFlag、原始绑定与 children 判断能否缓存。
+ */
 function getGeneratedPropsConstantType(
   node: PlainElementNode,
   context: TransformContext,

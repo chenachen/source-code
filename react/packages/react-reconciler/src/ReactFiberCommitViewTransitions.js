@@ -699,7 +699,7 @@ export function commitBeforeUpdateViewTransition(
   current: Fiber,
   finishedWork: Fiber,
 ): void {
-  // 此函数在 snapshot 对 current 调用；mutation 阶段再为 finishedWork 应用新名称。
+  // before-mutation 记录 current 的旧名称与测量；layout 后的 after-mutation 再测量新树并应用新名称。
   const oldProps: ViewTransitionProps = current.memoizedProps;
   const oldName = getViewTransitionName(oldProps, current.stateNode);
   const newProps: ViewTransitionProps = finishedWork.memoizedProps;
@@ -784,7 +784,8 @@ function restorePairedViewTransitions(parent: Fiber): void {
 }
 
 /**
- * enter/exit/share 结束或取消后，恢复当前边界、parent enter/exit 与所有命名配对的宿主名称。
+ * 在快照完成后的 passive 收尾或取消路径中恢复 enter/exit/share 宿主名称与配对。
+ * 此时宿主动画可以仍在运行；名称恢复不需要等到动画 finished。
  */
 export function restoreEnterOrExitViewTransitions(fiber: Fiber): void {
   if (fiber.tag === ViewTransitionComponent) {
@@ -806,7 +807,7 @@ export function restoreEnterOrExitViewTransitions(fiber: Fiber): void {
   }
 }
 
-/** update 动画结束后同时恢复 current 旧侧与 finishedWork 新侧的宿主名称。 */
+/** passive 收尾时恢复 update 两侧的宿主名称；浏览器已取得过渡快照，动画仍可继续。 */
 export function restoreUpdateViewTransition(
   current: Fiber,
   finishedWork: Fiber,
@@ -841,6 +842,13 @@ export function restoreNestedViewTransitions(changedParent: Fiber): void {
 
 /**
  * 重置宿主下标并测量 ViewTransition 的新旧终端实例，返回是否有任一状态位于 viewport。
+ * @param parentViewTransition 接收 Update/AffectedParentLayout 标记的完成 Fiber。
+ * @param child 本次待测量的宿主子树；普通提交来自新树，gesture 路径来自当前树。
+ * @param newName 新快照使用的边界名称；多个宿主实例按遍历下标追加后缀。
+ * @param oldName 可取消项恢复时使用的旧快照名称。
+ * @param className 已解析具体过渡类型后的宿主 class。
+ * @param previousMeasurements 旧快照/gesture clone 的测量数组，按位置而非实例身份对齐。
+ * @param stopAtNestedViewTransitions 是否把嵌套边界留给自身处理，只上冒其父布局影响。
  */
 export function measureViewTransitionHostInstances(
   parentViewTransition: Fiber,

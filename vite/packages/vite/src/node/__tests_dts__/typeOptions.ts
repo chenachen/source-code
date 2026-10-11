@@ -1,5 +1,4 @@
-// 场景：用户通过声明合并向 `ViteTypeOptions` 添加严格模式标记。
-// 目标：只有精确的 strictImportMetaEnv 键能启用行为，空接口或无关键不能误开启。
+// 声明合并必须加入精确的 strictImportMetaEnv 键，才能关闭任意环境字段索引。
 import type { ExpectFalse, ExpectTrue } from '@type-challenges/utils'
 
 /** 空选项基线：不应误启用 strictImportMetaEnv。 */

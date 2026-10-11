@@ -32,7 +32,7 @@ import {
 } from '../DOMPluginEventSystem';
 import isCustomElement from '../../shared/isCustomElement';
 
-/** registerEvents 管理针对 input/select/checkbox 等元素选择变更检测策略并合成 onChange的注册/监听边界；避免同一容器重复安装或遗漏 capture 配置。 */
+/** 登记 onChange 两阶段名称及 change/input/click/focus 等原生依赖。 */
 function registerEvents() {
   registerTwoPhaseEvent('onChange', [
     'change',
@@ -46,7 +46,7 @@ function registerEvents() {
   ]);
 }
 
-/** createAndAccumulateChangeEvent 为针对 input/select/checkbox 等元素选择变更检测策略并合成 onChange创建封装对象；生成值保留原生事件身份并携带必要调度上下文。 */
+/** 先登记受控恢复目标，再累积两阶段 onChange listeners；有 listener 时创建 change 合成事件。 */
 function createAndAccumulateChangeEvent(
   dispatchQueue: DispatchQueue,
   inst: null | Fiber,
@@ -76,7 +76,7 @@ let activeElementInst = null;
 /**
  * 处理 `change` 事件。
  */
-/** shouldUseChangeEvent 判断针对 input/select/checkbox 等元素选择变更检测策略并合成 onChange的前置条件；返回值用于在热路径提前跳过不适用分支。 */
+/** select 与 file input 使用原生 change 路径。 */
 function shouldUseChangeEvent(elem: Instance | TextInstance) {
   const nodeName = elem.nodeName && elem.nodeName.toLowerCase();
   return (
@@ -85,7 +85,7 @@ function shouldUseChangeEvent(elem: Instance | TextInstance) {
   );
 }
 
-/** manualDispatchChangeEvent 执行针对 input/select/checkbox 等元素选择变更检测策略并合成 onChange的核心步骤；输入来自原生事件/Fiber，输出保持插件分发与调度边界。 */
+/** 旧 IE 的 change/propertychange 不冒泡时，手动创建 onChange 队列并在 batch 中执行。 */
 function manualDispatchChangeEvent(nativeEvent: AnyNativeEvent) {
   const dispatchQueue: DispatchQueue = [];
   createAndAccumulateChangeEvent(
@@ -109,12 +109,12 @@ function manualDispatchChangeEvent(nativeEvent: AnyNativeEvent) {
   batchedUpdates(runEventInBatch, dispatchQueue);
 }
 
-/** runEventInBatch 执行针对 input/select/checkbox 等元素选择变更检测策略并合成 onChange的核心步骤；输入来自原生事件/Fiber，输出保持插件分发与调度边界。 */
+/** 用 bubble 方向处理已累积好两阶段顺序的 onChange 队列。 */
 function runEventInBatch(dispatchQueue: DispatchQueue) {
   processDispatchQueue(dispatchQueue, 0);
 }
 
-/** getInstIfValueChanged 查询并返回针对 input/select/checkbox 等元素选择变更检测策略并合成 onChange所需状态；无匹配时使用 null/默认值而不修改事件队列。 */
+/** 比较 DOM 与值 tracker，发生变化时更新基线并返回目标 Fiber，否则返回 undefined。 */
 function getInstIfValueChanged(targetInst: Object) {
   const targetNode = getNodeFromInstance(targetInst);
   if (updateValueIfChanged(targetNode as any as HTMLInputElement)) {
@@ -122,7 +122,7 @@ function getInstIfValueChanged(targetInst: Object) {
   }
 }
 
-/** getTargetInstForChangeEvent 查询并返回针对 input/select/checkbox 等元素选择变更检测策略并合成 onChange所需状态；无匹配时使用 null/默认值而不修改事件队列。 */
+/** 原生 change 到达时返回该控件 Fiber。 */
 function getTargetInstForChangeEvent(
   domEventName: DOMEventName,
   targetInst: null | Fiber,
@@ -148,7 +148,7 @@ if (canUseDOM) {
  * IE9 及更早版本：开始跟踪目标元素的 propertychange，并覆盖 value 属性，
  * 以区分用户输入与 JavaScript 写值。
  */
-/** startWatchingForValueChange 执行针对 input/select/checkbox 等元素选择变更检测策略并合成 onChange的核心步骤；输入来自原生事件/Fiber，输出保持插件分发与调度边界。 */
+/** 记录旧 IE 活动输入控件与 Fiber，并安装 onpropertychange 监听。 */
 function startWatchingForValueChange(
   target: Instance | TextInstance,
   targetInst: null | Fiber,
@@ -161,7 +161,7 @@ function startWatchingForValueChange(
 /**
  * IE9 及更早版本：移除当前跟踪元素上的监听器。
  */
-/** stopWatchingForValueChange 执行针对 input/select/checkbox 等元素选择变更检测策略并合成 onChange的核心步骤；输入来自原生事件/Fiber，输出保持插件分发与调度边界。 */
+/** 移除旧 IE 活动控件的 onpropertychange 监听并清空活动引用。 */
 function stopWatchingForValueChange() {
   if (!activeElement) {
     return;
@@ -175,7 +175,7 @@ function stopWatchingForValueChange() {
  * IE9 及更早版本：处理 propertychange；活动元素值变化时发送 `change`。
  */
 // $FlowFixMe[missing-local-annot]
-/** handlePropertyChange 执行针对 input/select/checkbox 等元素选择变更检测策略并合成 onChange的核心步骤；输入来自原生事件/Fiber，输出保持插件分发与调度边界。 */
+/** 旧 IE 的 value propertychange 确认 tracker 变化后手动派发 onChange。 */
 function handlePropertyChange(nativeEvent) {
   if (nativeEvent.propertyName !== 'value') {
     return;
@@ -185,7 +185,7 @@ function handlePropertyChange(nativeEvent) {
   }
 }
 
-/** handleEventsForInputEventPolyfill 执行针对 input/select/checkbox 等元素选择变更检测策略并合成 onChange的核心步骤；输入来自原生事件/Fiber，输出保持插件分发与调度边界。 */
+/** focusin 开始跟踪旧 IE 输入；focusout 停止跟踪。 */
 function handleEventsForInputEventPolyfill(
   domEventName: DOMEventName,
   target: Instance | TextInstance,
@@ -198,7 +198,7 @@ function handleEventsForInputEventPolyfill(
     // 值变化时转发事件。
     // 无论哪种事件，若值由 JavaScript 修改，都不应调用 handler；
     // 因此重定义 `.value` setter，同步更新
-    // activeElementValue，从而忽略程序化变更。
+    // value tracker 的闭包基线，从而忽略程序化变更。
     //
     // stopWatching() 理论上是 noop，但仍调用以防
     // 此前遗漏了 blur。
@@ -210,7 +210,7 @@ function handleEventsForInputEventPolyfill(
 }
 
 // 仅用于 IE8 与 IE9。
-/** getTargetInstForInputEventPolyfill 查询并返回针对 input/select/checkbox 等元素选择变更检测策略并合成 onChange所需状态；无匹配时使用 null/默认值而不修改事件队列。 */
+/** selectionchange/keydown/keyup 时比较活动输入值，弥补旧 IE 删除文本不触发 input。 */
 function getTargetInstForInputEventPolyfill(
   domEventName: DOMEventName,
   targetInst: null | Fiber,
@@ -237,7 +237,7 @@ function getTargetInstForInputEventPolyfill(
 /**
  * 处理 `click` 事件。
  */
-/** shouldUseClickEvent 判断针对 input/select/checkbox 等元素选择变更检测策略并合成 onChange的前置条件；返回值用于在热路径提前跳过不适用分支。 */
+/** checkbox/radio 使用 click 检测 checked 变化。 */
 function shouldUseClickEvent(elem: any) {
   // 使用 `click` 检测 checkbox/radio 的值变化。
   // 该方案跨浏览器可靠，而 IE8 的 `change` 要到
@@ -250,7 +250,7 @@ function shouldUseClickEvent(elem: any) {
   );
 }
 
-/** getTargetInstForClickEvent 查询并返回针对 input/select/checkbox 等元素选择变更检测策略并合成 onChange所需状态；无匹配时使用 null/默认值而不修改事件队列。 */
+/** 原生 click 后仅在 tracker 检测到值变动时返回目标 Fiber。 */
 function getTargetInstForClickEvent(
   domEventName: DOMEventName,
   targetInst: null | Fiber,
@@ -260,7 +260,7 @@ function getTargetInstForClickEvent(
   }
 }
 
-/** getTargetInstForInputOrChangeEvent 查询并返回针对 input/select/checkbox 等元素选择变更检测策略并合成 onChange所需状态；无匹配时使用 null/默认值而不修改事件队列。 */
+/** 原生 input/change 后仅在 tracker 检测到值变动时返回目标 Fiber。 */
 function getTargetInstForInputOrChangeEvent(
   domEventName: DOMEventName,
   targetInst: null | Fiber,
@@ -279,7 +279,12 @@ function getTargetInstForInputOrChangeEvent(
  * - textarea 元素
  * - select 元素
  */
-/** extractEvents 从原生事件和 Fiber 路径收集针对 input/select/checkbox 等元素选择变更检测策略并合成 onChange所需数据；只生成满足插件条件的 listener/event。 */
+/**
+ * 按节点类型和环境能力选择 change、input/value tracker、checkbox/radio click 或旧 IE
+ * 轮询路径；自定义元素直接接受 change。检测到变化先登记受控值恢复，再收集两阶段
+ * onChange；没有变化时仍处理旧 IE focusin/out，以安装或移除 propertychange 监听。
+ * 本入口不在 number input blur 时写 defaultValue；输入框属性同步由控件更新代码负责。
+ */
 function extractEvents(
   dispatchQueue: DispatchQueue,
   domEventName: DOMEventName,

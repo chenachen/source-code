@@ -55,7 +55,7 @@ describe('ReactUpdatePriority', () => {
       ReactNoop.flushSync(() => {
         root.render(<App />);
       });
-      // 同步提交此时尚未进入被动 effect，因此不应包含 effect 内的更新。
+      // 当前断言只观察到初始渲染；effect 安排的 state 更新尚未提交。
       assertLog([1]);
     });
     assertLog([2]);
@@ -82,7 +82,7 @@ describe('ReactUpdatePriority', () => {
       ReactNoop.idleUpdates(() => {
         root.render(<App />);
       });
-      // 同步提交此时尚未进入被动 effect，因此不应包含 effect 内的更新。
+      // 当前断言只观察到初始渲染；effect 安排的 state 更新尚未提交。
       await waitForPaint(['Idle: 1, Default: 1']);
 
       // 另安排一次默认优先级更新，与闲置更新形成竞争。
@@ -113,7 +113,7 @@ describe('ReactUpdatePriority', () => {
     assertLog(['Idle: 2, Default: 2']);
   });
 
-  /** Given–When–Then：Given transition 正分片渲染 counter=2；When 连续事件优先级插入隐藏更新；Then隐藏更新抢占并提交，恢复的 transition 因子树已隐藏而成为无操作。通过中断前日志与最终输出验证 lanes 的优先级选择。 */
+  /** Given transition 正分片渲染 counter=2；When 连续事件优先级插入 isHidden=true；Then隐藏更新抢占并提交，transition 重放后 App 仍返回 hidden 文本。通过 A2 后两次 hidden 日志与最终输出验证 lane 抢占，后一次渲染仍处理状态队列而不改变可见内容。 */
   it('continuous updates should interrupt transitions', async () => {
     const root = ReactNoop.createRoot();
 
@@ -156,8 +156,7 @@ describe('ReactUpdatePriority', () => {
       // 隐藏更新具有连续事件优先级，应抢占
       // 正在进行的 transition。
       '(hidden)',
-      // transition 恢复时子树已经隐藏，因此该轮成为无操作，
-      // 但仍会经过 App 并记录隐藏输出。
+      // transition 恢复时仍执行 App 并处理 counter 更新；isHidden 已为 true，输出继续为 hidden。
       '(hidden)',
     ]);
     expect(root).toMatchRenderedOutput('(hidden)');

@@ -164,7 +164,7 @@ export function getNodeAssetAttributes(
   }
 
   const actions: HtmlAssetAttribute[] = []
-  /** 统一执行空值、filter 与 location 检查，并记录后续重写动作。 */
+  /** 跳过空值和 filter 拒绝的属性，取 parse5 源码位置并记录重写动作。 */
   function handleAttributeKey(
     key: string,
     type: 'src' | 'srcset',
@@ -187,7 +187,7 @@ export function getNodeAssetAttributes(
     )
   }
 
-  // 用户规则独立追加；其 filter 不得覆盖或放宽默认 meta 等规则（#21412）。
+  // 用户规则按自身 filter 独立追加；默认规则仍使用原 filter，可同时处理默认跳过的属性（#21412）。
   if (additional) {
     additional.srcAttributes?.forEach((key) =>
       handleAttributeKey(key, 'src', additional.filter),

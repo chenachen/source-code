@@ -2,24 +2,23 @@
 
 > **证据基线**：Vite `v8.2.1`，commit `421615865dad3ed39137d17281814fc78a41246c`。本文所有源码、测试与行为结论均限定于该版本。
 
-[多页面分享版 HTML](../../share/vite/index.html) 提供总览与 23 个重点模块页；每页均可离线阅读，
-并保留源码、测试证据、推导边界及前后篇导航。
+[多页面分享版 HTML](../../share/vite/index.html) 提供总览与 23 个模块页；每页均可离线阅读，
+包含源码、状态说明、测试用例和前后篇导航。
 
 本目录按“源码注释 → 测试场景注释 → 静态审计 → 原理总结”组织。源码目录结构只用于
 定位文件，学习模块按运行链路划分，避免读完单个目录却无法串起完整流程。
 
-## 深挖进展
+## 重点链路
 
-以下四条事务已经提升到同一证据口径：多段决定性源码摘录、一个真实完整测试、
-Given–When–Then–Mechanism–Source、端到端图、状态/清理表和章节证据矩阵。
+以下链路用同一组输入串起源码、状态变化、失败处理和测试断言，适合在总览之后深入阅读：
 
 1. [依赖优化器：scanner、真实 crawl、批次 Promise、目录换代与 504/404](./11-dependency-pre-bundling.md)
 2. [普通 HMR：watcher、模块图传播、浏览器提交与 invalidate 第二轮](./12-hmr.md)
 3. [Bundled Dev：Rolldown 增量整包、内存输出、执行图与 reload 门闩](./12b-bundled-dev.md)
 4. [生产构建控制面](./14a-build-orchestration.md) → [产物与 preload 数据面](./14b-build-output-and-preload.md)
 
-其余章节仍是机制级深入阅读，不据此宣称 Vite 全仓库已经逐条闭环；后续优先补 HTML 管线与
-SSR/Module Runner 的同等级真实用例。
+HTML、SSR 与 Module Runner 章节继续解释入口转换、获取协议和求值缓存，帮助把开发请求延伸到
+页面入口与服务端执行。
 
 ## 注释约定
 
@@ -72,31 +71,31 @@ PluginContainer 测试闭环。后续章节再分别展开各子系统，不把�
 
 ## 章节证据索引
 
-| 章节 | 决定性源码 | 代表性测试证据 |
-|---|---|---|
-| 00 | `node/cli.ts`、`server/index.ts`、`server/middlewares/transform.ts`、`server/transformRequest.ts` | `server/__tests__/pluginContainer.spec.ts` |
-| 01 | `node/cli.ts`、`node/server/index.ts` | `playground/cli/__tests__` |
-| 02A | `node/env.ts::loadEnv` | `node/__tests__/env.spec.ts` |
-| 02B | `node/config.ts::resolveConfig/loadConfigFromFile` | `node/__tests__/config.spec.ts` |
-| 02C | `plugins/define.ts`、`clientInjections.ts`、`json.ts` | 对应 plugin tests 与 define/json playground |
-| 03 | `node/plugin.ts`、`server/pluginContainer.ts` | `server/__tests__/pluginContainer.spec.ts`、`plugins/hooks.spec.ts` |
-| 04 | `server/index.ts::_createServer/initServer/restart/close` | `node/__tests__/dev.spec.ts`、watcher tests |
-| 05 | `environment.ts`、`baseEnvironment.ts`、`server/environment.ts` | `environment.spec.ts`、Module Runner runtime tests |
-| 06 | `server/middlewares/*` | middleware tests、HTML/fs-serve playground |
-| 07 | `plugins/resolve.ts`、`node/packages.ts` | `resolve.spec.ts`、optimizer resolve tests |
-| 08 | `server/transformRequest.ts`、`moduleGraph.ts` | transformRequest 与 moduleGraph tests |
-| 09 | `node/plugins/html.ts`、`middlewares/indexHtml.ts` | `html.spec.ts`、indexHtml middleware tests |
-| 10 | `plugins/importAnalysis.ts`、`importMetaGlob.ts` | import/importGlob tests、dynamic-import playground |
-| 11 | `optimizer/index.ts`、`scan.ts`、`rolldownDepPlugin.ts` | optimizer tests、scan tests |
-| 12 | `server/hmr.ts`、`client/client.ts`、`shared/hmr.ts` | server HMR tests、HMR playground |
-| 12B | `server/bundledDev.ts`、`client/bundledDevHmrClient.ts`、内存/lazy 中间件 | `hmr-full-bundle-mode` playground、build hook 回归测试 |
-| 13A | `plugins/css.ts` | CSS plugin tests 与 CSS playground |
-| 13B | `plugins/asset.ts`、`worker.ts`、`wasm.ts` | 对应 plugin tests 与 asset/worker playground |
-| 14A | `node/build.ts::createBuilder/buildEnvironment` | `node/__tests__/build.spec.ts` |
-| 14B | `importAnalysisBuild.ts`、manifest/report/minify plugins | 对应 plugin tests 与 build snapshots |
-| 15A | `ssr/ssrTransform.ts`、`ssrModuleLoader.ts` | SSR transform/load/stacktrace tests |
-| 15B | `module-runner/runner.ts`、`evaluatedModules.ts` | Module Runner runtime/HMR/sourcemap tests |
-| 16 | `node/index.ts`、`logger.ts`、公共 `.d.ts` | logger、公开类型与 DTS tests |
+| 章节 | 决定性源码                                                                                        | 代表性测试证据                                                      |
+| ---- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| 00   | `node/cli.ts`、`server/index.ts`、`server/middlewares/transform.ts`、`server/transformRequest.ts` | `server/__tests__/pluginContainer.spec.ts`                          |
+| 01   | `node/cli.ts`、`node/server/index.ts`                                                             | `playground/cli/__tests__`                                          |
+| 02A  | `node/env.ts::loadEnv`                                                                            | `node/__tests__/env.spec.ts`                                        |
+| 02B  | `node/config.ts::resolveConfig/loadConfigFromFile`                                                | `node/__tests__/config.spec.ts`                                     |
+| 02C  | `plugins/define.ts`、`clientInjections.ts`、`json.ts`                                             | 对应 plugin tests 与 define/json playground                         |
+| 03   | `node/plugin.ts`、`server/pluginContainer.ts`                                                     | `server/__tests__/pluginContainer.spec.ts`、`plugins/hooks.spec.ts` |
+| 04   | `server/index.ts::_createServer/initServer/restart/close`                                         | `node/__tests__/dev.spec.ts`、watcher tests                         |
+| 05   | `environment.ts`、`baseEnvironment.ts`、`server/environment.ts`                                   | `environment.spec.ts`、Module Runner runtime tests                  |
+| 06   | `server/middlewares/*`                                                                            | middleware tests、HTML/fs-serve playground                          |
+| 07   | `plugins/resolve.ts`、`node/packages.ts`                                                          | `resolve.spec.ts`、optimizer resolve tests                          |
+| 08   | `server/transformRequest.ts`、`moduleGraph.ts`                                                    | transformRequest 与 moduleGraph tests                               |
+| 09   | `node/plugins/html.ts`、`middlewares/indexHtml.ts`                                                | `html.spec.ts`、indexHtml middleware tests                          |
+| 10   | `plugins/importAnalysis.ts`、`importMetaGlob.ts`                                                  | import/importGlob tests、dynamic-import playground                  |
+| 11   | `optimizer/index.ts`、`scan.ts`、`rolldownDepPlugin.ts`                                           | optimizer tests、scan tests                                         |
+| 12   | `server/hmr.ts`、`client/client.ts`、`shared/hmr.ts`                                              | server HMR tests、HMR playground                                    |
+| 12B  | `server/bundledDev.ts`、`client/bundledDevHmrClient.ts`、内存/lazy 中间件                         | `hmr-full-bundle-mode` playground、build hook 回归测试              |
+| 13A  | `plugins/css.ts`                                                                                  | CSS plugin tests 与 CSS playground                                  |
+| 13B  | `plugins/asset.ts`、`worker.ts`、`wasm.ts`                                                        | 对应 plugin tests 与 asset/worker playground                        |
+| 14A  | `node/build.ts::createBuilder/buildEnvironment`                                                   | `node/__tests__/build.spec.ts`                                      |
+| 14B  | `importAnalysisBuild.ts`、manifest/report/minify plugins                                          | 对应 plugin tests 与 build snapshots                                |
+| 15A  | `ssr/ssrTransform.ts`、`ssrModuleLoader.ts`                                                       | SSR transform/load/stacktrace tests                                 |
+| 15B  | `module-runner/runner.ts`、`evaluatedModules.ts`                                                  | Module Runner runtime/HMR/sourcemap tests                           |
+| 16   | `node/index.ts`、`logger.ts`、公共 `.d.ts`                                                        | logger、公开类型与 DTS tests                                        |
 
 `preview`、日志、快捷键、Source Map 等横切能力放入最相关主模块；最后一章再解释
 公共出口与内联依赖声明的维护边界，避免为了工具函数打断主调用链。

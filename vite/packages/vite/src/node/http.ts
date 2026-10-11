@@ -19,7 +19,7 @@ export interface CommonServerOptions {
   /** 端口占用时是否立即失败，而不是自动递增。 */
   strictPort?: boolean
   /**
-   * 监听 IP/主机；`0.0.0.0` 或 true 暴露所有 IPv4 地址，包括 LAN/公网接口。
+   * 监听 IP/主机；`0.0.0.0` 监听所有 IPv4 接口；true 让 Node 使用通配监听地址，是否覆盖双栈取决于系统。
    */
   host?: string | boolean
   /**
@@ -83,11 +83,11 @@ export interface CorsOptions {
         origin: string | undefined,
         cb: (err: Error, origins: CorsOrigin) => void,
       ) => void)
-  /** `Access-Control-Allow-Methods`。 */
+  /** `Access-Control-Allow-Methods` 的值，声明跨源请求允许使用的 HTTP 方法。 */
   methods?: string | string[]
-  /** `Access-Control-Allow-Headers`。 */
+  /** `Access-Control-Allow-Headers` 的值，声明跨源请求允许发送的 header。 */
   allowedHeaders?: string | string[]
-  /** `Access-Control-Expose-Headers`。 */
+  /** `Access-Control-Expose-Headers` 的值，声明浏览器可向调用方暴露的响应 header。 */
   exposedHeaders?: string | string[]
   /** 是否允许携带凭据。 */
   credentials?: boolean
@@ -159,7 +159,7 @@ async function getAvailableEphemeralPort(
   specifiedHost: string | undefined,
 ): Promise<number | null> {
   for (let attempt = 0; attempt < 3; attempt++) {
-    // 传 0 请求新候选；OS 通常每轮返回不同端口，少数平台不保证，但三轮已覆盖常见竞态。
+    // 每轮先传 0 请求候选，再在其他接口探测这个具体端口；最多尝试三轮。
     let port = 0
     let available = true
     for (const host of [...wildcardHosts, specifiedHost]) {
@@ -253,8 +253,9 @@ const MAX_PORT = 65535
 /**
  * 为 HTTP Server 选择并绑定端口。
  *
- * port=0 先找所有目标接口共用的 OS 临时端口；普通端口先检查 wildcard 冲突。strictPort
- * 仍直接尝试指定 host，因为 wildcard 被占用不代表某个独立 IP 一定无法绑定（#22150）；
+ * port=0 用临时 TCP Server 找所有目标接口共用的候选端口，真实 HTTP Server 只绑定指定
+ * host。普通端口先检查 wildcard 冲突；strictPort 即使预检占用也尝试指定 host，因为
+ * wildcard 被占用不代表某个独立 IP 一定无法绑定（#22150）；
  * 非 strictPort 遇占用依次递增到 65535。只有 EADDRINUSE 触发换端口，其他错误原样抛出。
  */
 export async function httpServerStart(

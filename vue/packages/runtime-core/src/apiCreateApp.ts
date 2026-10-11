@@ -45,6 +45,9 @@ export interface App<HostElement = any> {
     plugin: Plugin<Options>,
     ...options: NoInfer<Options>
   ): this
+  /**
+   * 安装使用单个配置值的插件；配置类型由插件泛型约束，返回当前 App 以支持链式调用。
+   */
   use<Options>(plugin: Plugin<Options>, options: NoInfer<Options>): this
 
   /** 注册只作用于本应用的全局 mixin。 */
@@ -122,6 +125,9 @@ export interface App<HostElement = any> {
 
   /** @internal 仅 Vue 2 兼容构建：查询或注册过滤器。 */
   filter?(name: string): Function | undefined
+  /**
+   * Vue 2 兼容入口：以名称注册过滤器，返回当前 App；普通 Vue 3 构建没有此方法。
+   */
   filter?(name: string, filter: Function): this
 
   /** @internal Vue 3 兼容层创建根实例的入口。 */
@@ -166,7 +172,8 @@ export interface AppConfig {
   isCustomElement?: (tag: string) => boolean
 
   /**
-   * 是否在 computed getter 递归触发自身时发出警告，用于定位 getter 中写入其依赖的循环。
+   * 开发环境保留的递归 computed 诊断开关。runtime-core 会把它写入
+   * `computed._warnRecursive`，本版响应式实现没有消费该字段的警告分支。
    */
   warnRecursiveComputed?: boolean
 
@@ -188,10 +195,25 @@ export interface AppConfig {
 export interface AppContext {
   /** 反向指向应用实例，供开发工具识别。 */
   app: App
+  /**
+   * 所有组件共享的本应用配置对象。
+   */
   config: AppConfig
+  /**
+   * 本应用全局 mixin 列表，参与 Options/props/emits 规范化。
+   */
   mixins: ComponentOptions[]
+  /**
+   * 全局组件名到定义的注册表，资源解析在本地查找失败后读取。
+   */
   components: Record<string, Component>
+  /**
+   * 本应用全局指令注册表。
+   */
   directives: Record<string, Directive>
+  /**
+   * 应用注入根，组件 provides 原型链从这里继承。
+   */
   provides: Record<string | symbol, any>
 
   /** @internal 合并/规范化组件选项缓存，受本应用 mixin 和合并策略影响。 */
@@ -213,6 +235,9 @@ type PluginInstallFunction<Options = any[]> = Options extends unknown[]
 
 /** 以 `{ install(app, ...options) }` 对象形式声明的插件。 */
 export type ObjectPlugin<Options = any[]> = {
+  /**
+   * app.use 调用的插件入口；接收本 App 和插件选项，安装返回值不会被 App API 等待。
+   */
   install: PluginInstallFunction<Options>
 }
 /** 直接以函数安装、也可附带 install 属性的插件。 */
@@ -271,7 +296,10 @@ export function createAppAPI<HostElement>(
   render: RootRenderFunction<HostElement>,
   hydrate?: RootHydrateFunction,
 ): CreateAppFunction<HostElement> {
-  return function createApp(rootComponent, rootProps = null) {
+  return /** 为一次 createApp 调用分配独立 context、插件去重集合与清理队列；对象根组件浅克隆，非法根 props 改为 null。返回供平台包装的 App 对象。 */ function createApp(
+    rootComponent,
+    rootProps = null
+  ) {
     // 对象式根组件会被 App 写入/缓存少量内部信息；浅克隆可避免同一组件定义创建
     // 多个 App 时共享可变根定义。函数/类组件本身不能这样克隆。
     if (!isFunction(rootComponent)) {
@@ -301,10 +329,16 @@ export function createAppAPI<HostElement>(
 
       version,
 
+      /**
+       * 返回本 AppContext 的同一配置对象，使插件与组件读取一致的应用配置。
+       */
       get config() {
         return context.config
       },
 
+      /**
+       * 拒绝替换整个 config 对象，开发环境给出逐字段修改提示；保持所有组件和插件持有的配置引用稳定。
+       */
       set config(v) {
         // 替换整个对象会使组件已持有的 context.config 失效；只能逐项修改以保持引用稳定。
         if (__DEV__) {
@@ -314,6 +348,9 @@ export function createAppAPI<HostElement>(
         }
       },
 
+      /**
+       * 按插件对象/函数身份去重并同步执行 install；登记先于执行，因此插件递归安装自身也会被拦截。返回当前 App。
+       */
       use(plugin: Plugin, ...options: any[]) {
         // 先登记再调用 install，插件内部递归 app.use(自身) 时也不会无限循环。
         if (installedPlugins.has(plugin)) {
@@ -333,6 +370,9 @@ export function createAppAPI<HostElement>(
         return app
       },
 
+      /**
+       * 把尚未登记的全局 mixin 加入本应用列表；依赖 Options API 构建开关，重复对象会警告。返回当前 App。
+       */
       mixin(mixin: ComponentOptions) {
         if (__FEATURE_OPTIONS_API__) {
           if (!context.mixins.includes(mixin)) {
@@ -349,6 +389,9 @@ export function createAppAPI<HostElement>(
         return app
       },
 
+      /**
+       * 仅传名称时查询本应用全局组件；传组件时校验名称、覆盖登记并返回 App。同名局部组件的优先级由资源解析器决定。
+       */
       component(name: string, component?: Component): any {
         if (__DEV__) {
           validateComponentName(name, context.config)
@@ -363,6 +406,9 @@ export function createAppAPI<HostElement>(
         return app
       },
 
+      /**
+       * 仅传名称时查询全局指令；传指令时检查内置保留名、覆盖登记并返回 App，注册表按应用隔离。
+       */
       directive(name: string, directive?: Directive) {
         if (__DEV__) {
           validateDirectiveName(name)
@@ -378,6 +424,9 @@ export function createAppAPI<HostElement>(
         return app
       },
 
+      /**
+       * 首次挂载创建根 VNode 并写入 appContext，再交给注入的 render/hydrate；成功后记录容器并返回根公开实例。isHydrate 请求水合，但没有 hydrate 时回退 render；namespace 的布尔值兼容旧 svg 参数。isMounted 不在 unmount 后复位，同一 App 不能重挂。
+       */
       mount(
         rootContainer: HostElement,
         isHydrate?: boolean,
@@ -406,6 +455,9 @@ export function createAppAPI<HostElement>(
           // HMR 根重载必须 clone VNode 并清空 el，强制 renderer 当作新树处理；
           // 若沿用 hydration DOM 引用，热更新可能错误跳过根节点重建。
           if (__DEV__) {
+            /**
+             * 开发环境 HMR 根重载：克隆根 VNode 并清空 el 后重新 render，避免沿用水合 DOM 引用；仍复用本 AppContext。
+             */
             context.reload = () => {
               const cloned = cloneVNode(vnode)
               // 热更新不走 hydration。
@@ -441,6 +493,9 @@ export function createAppAPI<HostElement>(
         }
       },
 
+      /**
+       * 追加 App 卸载清理函数；不按函数身份去重，挂载前后都可登记，开发环境只检查传入值是否为函数。
+       */
       onUnmount(cleanupFn: () => void) {
         if (__DEV__ && typeof cleanupFn !== 'function') {
           warn(
@@ -451,9 +506,13 @@ export function createAppAPI<HostElement>(
         pluginCleanupFns.push(cleanupFn)
       },
 
+      /**
+       * 先通过组件错误管道执行登记的 App 清理，再调用 render(null) 卸载根树并删除容器标记。清理 Promise 不会被等待；同步错误若被重抛会中止后续步骤。
+       */
       unmount() {
         if (isMounted) {
-          // 插件资源应先清理，再卸载组件树；错误走统一处理，单个清理失败不阻止后续项。
+          // 先调用 App 清理函数，再卸载组件树。同步错误若经错误管道重新抛出，会中止
+          // 后续清理与卸载；返回 Promise 的清理函数不会被等待，其 rejection 另行报告。
           callWithAsyncErrorHandling(
             pluginCleanupFns,
             app._instance,
@@ -470,6 +529,9 @@ export function createAppAPI<HostElement>(
         }
       },
 
+      /**
+       * 把字符串或 Symbol 键写入本应用 provides 并返回 App；组件 inject 从应用根读取它，同名写入覆盖旧值，开发环境分别提示自身重复与继承值遮蔽。
+       */
       provide(key, value) {
         if (__DEV__ && (key as string | symbol) in context.provides) {
           if (hasOwn(context.provides, key as string | symbol)) {
@@ -492,6 +554,9 @@ export function createAppAPI<HostElement>(
         return app
       },
 
+      /**
+       * 在同步调用 fn 期间设置 currentApp，让 inject 优先读取此 App 的 provides；返回 fn 的原结果，并在 finally 中恢复嵌套调用前的 App。异步延续不继承上下文。
+       */
       runWithContext(fn) {
         // 用 try/finally 恢复嵌套调用前的 App；即使用户函数抛错，也不能污染后续 inject。
         const lastApp = currentApp

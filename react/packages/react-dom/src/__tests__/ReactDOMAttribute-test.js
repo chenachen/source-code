@@ -9,8 +9,9 @@
 
 'use strict';
 
-// 修复 JSDOM。 setAttribute 应该在无法隐式转换为字符串的东西上抛出错误。
+/** 保存补丁前的Element.setAttribute；包装方法先以默认hint强制转换value，再委托原方法，重现jsdom缺失的转换失败行为；本文件未自动恢复此补丁。 */
 const setAttribute = Element.prototype.setAttribute;
+/** 以原setAttribute为接收者方法调用，但先用字符串连接强制转换value，让jsdom与DOM属性的隐式转换失败行为一致；该补丁在此文件不自动恢复。 */
 Element.prototype.setAttribute = function (name, value) {
   // eslint-disable-next-line react-internal/safe-string-coercion
   return setAttribute.call(this, name, '' + value);
@@ -31,7 +32,7 @@ describe('ReactDOM unknown attribute', () => {
       require('internal-test-utils').assertConsoleErrorDev;
   });
 
-  /** `testUnknownAttributeRemoval`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 先把unknown设为something，更新为givenValue后检查hasAttribute=false；验证无效/缺失值清除已存在attribute。 */
   async function testUnknownAttributeRemoval(givenValue) {
     const el = document.createElement('div');
     const root = ReactDOMClient.createRoot(el);
@@ -49,7 +50,7 @@ describe('ReactDOM unknown attribute', () => {
     expect(el.firstChild.hasAttribute('unknown')).toBe(false);
   }
 
-  /** `testUnknownAttributeAssignment`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 先挂载unknown字符串，再更新givenValue并比对expectedDOMValue；分离初始化与更新属性路径。 */
   async function testUnknownAttributeAssignment(givenValue, expectedDOMValue) {
     const el = document.createElement('div');
     const root = ReactDOMClient.createRoot(el);
@@ -68,20 +69,13 @@ describe('ReactDOM unknown attribute', () => {
   }
 
   describe('unknown attributes', () => {
-    /**
-     * 代表场景（Given–When–Then）：
-     * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-     * When 执行「removes values null and undefined」描述的渲染或交互；
-     * Then 通过本用例的 DOM、日志或调度断言确认行为。
-     *
-     * 验证机制：断言连接 DOM host 属性写入与提交路径。
-     */
+    /** 先挂载unknown=something再分别更新为null/undefined；attribute都应删除，验证缺值路径移除旧属性。 */
     it('removes values null and undefined', async () => {
       await testUnknownAttributeRemoval(null);
       await testUnknownAttributeRemoval(undefined);
     });
 
-    /** 测试场景：验证「changes values true, false to null, and also warns once」描述的渲染、交互或错误处理结果。 */
+    /** 先挂载unknown字符串，再更新true并消费非布尔属性诊断，接着false；两个getAttribute均null且后者不再诊断，验证布尔无效值移除与按属性去重警告。 */
     it('changes values true, false to null, and also warns once', async () => {
       await testUnknownAttributeAssignment(true, null);
       assertConsoleErrorDev([
@@ -93,7 +87,7 @@ describe('ReactDOM unknown attribute', () => {
       await testUnknownAttributeAssignment(false, null);
     });
 
-    /** 测试场景：验证「removes unknown attributes that were rendered but are now missing」描述的渲染、交互或错误处理结果。 */
+    /** unknown=something挂载后在下一次props中省略；attribute应不存在，验证diff旧属性清理。 */
     it('removes unknown attributes that were rendered but are now missing', async () => {
       const el = document.createElement('div');
       const root = ReactDOMClient.createRoot(el);
@@ -111,7 +105,7 @@ describe('ReactDOM unknown attribute', () => {
       expect(el.firstChild.hasAttribute('unknown')).toBe(false);
     });
 
-    /** 测试场景：验证「removes new boolean props」描述的渲染、交互或错误处理结果。 */
+    /** 首次传已知布尔inert=true；getAttribute应为空字符串，验证布尔存在形式；本例标题虽称移除，断言实际覆盖true的属性添加。 */
     it('removes new boolean props', async () => {
       const el = document.createElement('div');
       const root = ReactDOMClient.createRoot(el);
@@ -123,7 +117,7 @@ describe('ReactDOM unknown attribute', () => {
       expect(el.firstChild.getAttribute('inert')).toBe(true ? '' : null);
     });
 
-    /** 测试场景：验证「warns once for empty strings in new boolean props」描述的渲染、交互或错误处理结果。 */
+    /** 连续两次传inert空字符串；首次诊断且无attribute，再次不重复诊断，验证空字符串被视false及警告去重。 */
     it('warns once for empty strings in new boolean props', async () => {
       const el = document.createElement('div');
       const root = ReactDOMClient.createRoot(el);
@@ -147,12 +141,12 @@ describe('ReactDOM unknown attribute', () => {
       });
     });
 
-    /** 测试场景：验证「passes through strings」描述的渲染、交互或错误处理结果。 */
+    /** unknown初始为something后更新为a string；DOMattribute保留原文本，验证未知属性字符串透传。 */
     it('passes through strings', async () => {
       await testUnknownAttributeAssignment('a string', 'a string');
     });
 
-    /** 测试场景：验证「coerces numbers to strings」描述的渲染、交互或错误处理结果。 */
+    /** unknown依次以0/-1/42/9000.99单独更新；属性分别为对应字符串，验证数字强制字符串化。 */
     it('coerces numbers to strings', async () => {
       await testUnknownAttributeAssignment(0, '0');
       await testUnknownAttributeAssignment(-1, '-1');
@@ -160,7 +154,7 @@ describe('ReactDOM unknown attribute', () => {
       await testUnknownAttributeAssignment(9000.99, '9000.99');
     });
 
-    /** 测试场景：验证「coerces NaN to strings and warns」描述的渲染、交互或错误处理结果。 */
+    /** unknown更新为NaN；DOM为NaN字符串并给NaN诊断，验证异常数值仍序列化。 */
     it('coerces NaN to strings and warns', async () => {
       await testUnknownAttributeAssignment(NaN, 'NaN');
       assertConsoleErrorDev([
@@ -170,10 +164,10 @@ describe('ReactDOM unknown attribute', () => {
       ]);
     });
 
-    /** 测试场景：验证「coerces objects to strings and warns」描述的渲染、交互或错误处理结果。 */
+    /** unknown更新为普通对象和自定义toString对象；DOM分别为[object Object]和lol，验证对象字符串化；此例无预期console诊断断言。 */
     it('coerces objects to strings and warns', async () => {
       const lol = {
-        /** `toString`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 返回lol作为对象的自定义DOM字符串表示，区别于默认[object Object]。 */
         toString() {
           return 'lol';
         },
@@ -183,22 +177,22 @@ describe('ReactDOM unknown attribute', () => {
       await testUnknownAttributeAssignment(lol, 'lol');
     });
 
-    /** 测试场景：验证「throws with Temporal-like objects」描述的渲染、交互或错误处理结果。 */
+    /** TemporalLike.valueOf抛TypeError但toString可成功；更新unknown应拒绝prod message且DEV提示不支持类型，验证采用字符串连接触发默认hint而不偷偷改为显式toString。 */
     it('throws with Temporal-like objects', async () => {
-      /** `TemporalLike`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+      /** 模拟Temporal默认原始值转换会抛错但显式文本转换可成功的对象，供React属性安全转换诊断。 */
       class TemporalLike {
-        /** `TemporalLike.valueOf`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 默认hint的字符串连接先调用此方法并抛prod message，暴露框架应保留的转换错误。 */
         valueOf() {
         // 此处抛错符合 ECMAScript “Temporal” 日期/时间 API 的行为。
         // 参见 https://tc39.es/proposal-temporal/docs/plaindate.html#valueOf
           throw new TypeError('prod message');
         }
-        /** `TemporalLike.toString`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 返回2020-01-01，说明对象并非完全不能输出文本，失败来自默认转换策略。 */
         toString() {
           return '2020-01-01';
         }
       }
-      /** `test`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 把TemporalLike实例传入属性更新辅助器，返回其异步拒绝供错误断言。 */
       const test = () =>
         testUnknownAttributeAssignment(new TemporalLike(), null);
 
@@ -210,7 +204,7 @@ describe('ReactDOM unknown attribute', () => {
       ]);
     });
 
-    /** 测试场景：验证「removes symbols and warns」描述的渲染、交互或错误处理结果。 */
+    /** unknown从字符串更新Symbol(foo)；属性删除并诊断无效值，验证symbol不进入DOM强制转换。 */
     it('removes symbols and warns', async () => {
       await testUnknownAttributeRemoval(Symbol('foo'));
       assertConsoleErrorDev([
@@ -221,9 +215,9 @@ describe('ReactDOM unknown attribute', () => {
       ]);
     });
 
-    /** 测试场景：验证「removes functions and warns」描述的渲染、交互或错误处理结果。 */
+    /** unknown从字符串更新空函数；属性删除并诊断无效值，验证函数不是未知DOM属性的可序列化输入。 */
     it('removes functions and warns', async () => {
-      await testUnknownAttributeRemoval(function someFunction() {});
+      await testUnknownAttributeRemoval(/** 作为未知属性的函数值输入，空函数无需执行；预期更新将此不可序列化值移除。 */ function someFunction() {});
       assertConsoleErrorDev([
         'Invalid value for prop `unknown` on <div> tag. Either remove ' +
           'it from the element, or pass a string or number value to ' +
@@ -233,7 +227,7 @@ describe('ReactDOM unknown attribute', () => {
       ]);
     });
 
-    /** 测试场景：验证「allows camelCase unknown attributes and warns」描述的渲染、交互或错误处理结果。 */
+    /** 挂载helloWorld=something；DEV建议小写未知属性，DOM仍能以helloworld读取该值，验证诊断与HTML属性名规范化可同时发生。 */
     it('allows camelCase unknown attributes and warns', async () => {
       const el = document.createElement('div');
 

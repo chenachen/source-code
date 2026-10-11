@@ -1,8 +1,8 @@
 import { seal } from './utils.js';
 
-/** 匹配完整或残缺 Mustache 表达式，供 `SAFE_FOR_TEMPLATES` 擦除模板语法。 */
+/** 从 `{{` 起删到末尾，或从开头删到最后一个 `}}`，兼顾完整与残缺 Mustache 边界。 */
 export const MUSTACHE_EXPR = seal(/{{[\w\W]*|^[\w\W]*}}/g);
-/** 匹配完整或残缺 ERB 表达式，按 Mustache 之后的固定顺序执行擦除。 */
+/** 从 `<%` 起删到末尾，或从开头删到最后一个 `%>`；在 Mustache 清理之后执行。 */
 export const ERB_EXPR = seal(/<%[\w\W]*|^[\w\W]*%>/g);
 /** 匹配模板字面量插值起点至字符串末尾，防止残缺的 `${...}` 进入模板引擎。 */
 export const TMPLIT_EXPR = seal(/\${[\w\W]*/g);
@@ -14,12 +14,14 @@ export const ARIA_ATTR = seal(/^aria-[\-\w]+$/); // eslint-disable-line no-usele
  * 默认 URI 策略：允许相对值，以及 `http`、`https`、`ftp`、`ftps`、`mailto`、
  * `tel`、`callto`、`sms`、`cid`、`xmpp`、`matrix` 协议。
  *
- * @remarks 调用方提供合法 `ALLOWED_URI_REGEXP` 时，核心会用配置值替换此默认表达式。
+ * @remarks
+ * 只用于需要 URI 校验的已允许属性；URI-safe、自动允许的 data/aria 和额外自定义元素
+ * 属性走其他分支。调用方正则通过 `isRegex()` 空串探测时替换它；匹配前移除 `ATTR_WHITESPACE`。
  */
 export const IS_ALLOWED_URI = seal(
   /^(?:(?:(?:f|ht)tps?|mailto|tel|callto|sms|cid|xmpp|matrix):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i // eslint-disable-line no-useless-escape
 );
-/** 在允许未知协议时仍拒绝 `data:` 及名称以 `script` 结尾的脚本协议。 */
+/** 未知协议回退分支拒绝 `data:` 与 `\w+script:`，例如 `javascript:`、`vbscript:`。 */
 export const IS_SCRIPT_OR_DATA = seal(/^(?:\w+script|data):/i);
 /** 匹配 URI 中可隐藏协议边界的 ASCII 控制符及 Unicode 空白；协议检查前统一移除。 */
 export const ATTR_WHITESPACE = seal(
@@ -37,7 +39,7 @@ export const CUSTOM_ELEMENT = seal(/^[a-z][.\w]*(-[.\w]+)+$/i);
  */
 export const ELEMENT_MARKUP_PROBE = seal(/<[/\w!]/g);
 /**
- * 探测注释数据中的潜在标记，供 `SAFE_FOR_XML` 评论节点检查和原地净化预处理使用。
+ * 探测注释数据中的潜在标记，供 `SAFE_FOR_XML` 注释节点检查和原地净化预处理使用。
  *
  * @remarks 与元素探针相同，共享实例的游标由 `unapply()` 在每次测试前重置。
  */

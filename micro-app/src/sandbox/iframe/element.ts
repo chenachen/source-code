@@ -203,7 +203,7 @@ function patchIframeNode (
     // return rootNode
   }
 
-  /** 克隆节点后继承当前应用归属，确保后续插入仍进入同一容器。 */
+  /** 克隆后只标记返回的根节点；deep 子树的每个后代不在此递归标记，完整静态树标记由 patchElementTree 负责。 */
   microRootNode.prototype.cloneNode = function cloneNode (deep?: boolean): Node {
     const clonedNode = rawMicroCloneNode.call(this, deep)
     return updateElementInfo(clonedNode, appName)
@@ -216,7 +216,7 @@ function patchIframeNode (
     get () {
       return rawInnerHTMLDesc.get?.call(this)
     },
-    /** 写入后标记新生成的全部元素子节点，使其纳入后续 DOM 桥接。 */
+    /** 写入后标记直接元素子节点，使其纳入后续 DOM 桥接；此处不递归遍历更深后代。 */
     set (code: string) {
       rawInnerHTMLDesc.set?.call(this, code)
       Array.from(this.children).forEach((child) => {
@@ -249,6 +249,7 @@ function patchIframeNode (
  *
  * @remarks
  * 同时覆盖 `setAttribute()` 和常见资源属性 setter；锚点可由外部 resolver 接管，哈希锚点保持原值。
+ * setAttribute 分支对 srcset 整串调用 CompletionPath，不逐项解析候选 URL；属性 setter 白名单仅含下方四项。
  */
 function patchIframeAttribute (url: string, microAppWindow: microAppWindowType, appName: string): void {
   const microRootElement = microAppWindow.Element
@@ -303,9 +304,11 @@ function patchIframeAttribute (url: string, microAppWindow: microAppWindowType, 
     rawDefineProperty(target, attr, {
       enumerable,
       configurable,
+      /** 用节点自身作接收者调用原始资源属性 getter，保留该 realm 的属性语义。 */
       get: function () {
         return get?.call(this)
       },
+      /** 相对资源值先按子应用入口补全，再交给原始 setter；缺少 setter 时不写入。 */
       set: function (value) {
         set?.call(this, CompletionPath(value, url))
       },

@@ -9,7 +9,7 @@ const fixturesDir = resolve(import.meta.dirname, 'fixtures')
 /**
  * 场景：同一 `?worker&url` 分别进入客户端和 SSR 构建。
  * 机制：从两个入口 chunk 提取 worker 资产 URL，比较由内容决定的文件名。
- * 验证目标：两种构建必须引用同一个 worker 产物，避免重复文件与 hydration 路径分歧。
+ * 验证目标：两种入口代码引用的 worker 文件名（含 hash）一致。
  */
 test('?worker&url should produce the same hash in client and SSR builds', async () => {
   const root = resolve(fixturesDir, 'worker-url')

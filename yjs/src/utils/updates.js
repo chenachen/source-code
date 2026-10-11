@@ -37,6 +37,8 @@ import { Skip } from '../structs/Skip.js'
  * 并根据 info 还原 Skip、Item 或 GC。它只构建结构对象，不解析因果依赖或应用
  * 删除集。
  *
+ * 完全消费结构段后才保证 decoder 到删除集起点；提前停止迭代时不能直接读取尾部 ID 集。
+ *
  * @param {UpdateDecoderV1 | UpdateDecoderV2} decoder
  */
 function * lazyStructReaderGenerator (decoder) {
@@ -88,16 +90,22 @@ export class LazyStructReader {
   /**
    * 创建惰性生成器并预取首个结构。
    *
+   * filterSkips=true 只影响游标可见项，Skip 仍被解码并推进各客户端绝对 clock；不修改任何 Doc。
+   *
    * @param {UpdateDecoderV1 | UpdateDecoderV2} decoder
    * @param {boolean} filterSkips
    */
   constructor (decoder, filterSkips) {
+    /** 持有并消费同一 decoder 的生成器，按记录长度累计各 client 绝对 clock。 */
     this.gen = lazyStructReaderGenerator(decoder)
     /**
+     * 当前预取结构；耗尽时为 null，且底层 decoder 处于删除集起点。
      * @type {null | Item | Skip | GC}
      */
     this.curr = null
+    /** 保留的兼容字段；当前 next 实现不维护它，应以 curr===null 判断结束。 */
     this.done = false
+    /** 是否把解码到的 Skip 对调用方隐藏。 */
     this.filterSkips = filterSkips
     this.next()
   }
@@ -152,6 +160,8 @@ export const decodeUpdate = (update) => decodeUpdateV2(update, UpdateDecoderV1)
  * 把指定版本更新解码为结构数组与 IdSet，不解析因果依赖。
  *
  * 结构读取结束后，同一 decoder 已准确停在删除集起点。
+ * 返回 {structs, ds}；包含 Item、GC、Skip 的解码对象及删除 ID 集。对象未挂入 Doc，可供检查或转换。
+ *
  * @param {Uint8Array} update
  * @param {typeof UpdateDecoderV2 | typeof UpdateDecoderV1} [YDecoder]
  *
@@ -182,9 +192,13 @@ export class LazyStructWriter {
    * @param {UpdateEncoderV1 | UpdateEncoderV2} encoder
    */
   constructor (encoder) {
+    /** 当前已开始片段的 client，written=0 时该值还不表示有效片段。 */
     this.currClient = 0
+    /** 保留字段，当前写入路径直接把首 clock 写入 restEncoder，未读取此值。 */
     this.startClock = 0
+    /** 当前 client 片段已写记录数，含 Skip，flush 后归零。 */
     this.written = 0
+    /** 共用目标编码器；flush 只替换其通用流，V2 各专用列保持连续。 */
     this.encoder = encoder
     /**
      * 已完成客户端的结构数与 restEncoder 片段。
@@ -310,11 +324,13 @@ export const createContentIdsFromUpdateV2 = (update, YDecoder = UpdateDecoderV2)
 export const createContentIdsFromUpdate = update => createContentIdsFromUpdateV2(update, UpdateDecoderV1)
 
 /**
- * 无副作用地取得任意结构从偏移开始的右侧切片。
+ * 取得结构从偏移开始的右侧切片，不将返回结构接入文档。
  *
  * GC/Skip 只重算 ID 与长度；Item 复用父上下文与右锚点，并切分内容。它不修复
- * 文档链、不登记事务，且 `Content.splice()` 会修改传入 Item 的内容，因此只允许
+ * 文档链、不登记事务；`Content.splice()` 会截短传入 Item 的内容而不更新其 `length`，因此只允许
  * 用于已解码、尚未集成的惰性编码结构。
+ *
+ * diff 表示从左端排除的 clock 数，返回范围为 [left.id.clock+diff, 原末端)；不是剩余长度或字节偏移。调用方需保证边界合法。
  *
  * @param {Item | GC | Skip} left
  * @param {number} diff
@@ -364,6 +380,8 @@ const flushLazyStructWriter = lazyWriter => {
  * client 变化前先 flush；每个新客户端片段先写 client 与切片后的起始时钟，再写
  * 结构正文。调用方必须按客户端成组且时钟有序地提供结构。
  *
+ * offset/offsetEnd 分别从原结构左/右排除的 clock 数；Skip.write 不接受右侧裁剪，调用方需先把 Skip 长度限定好。
+ *
  * @param {LazyStructWriter} lazyWriter
  * @param {Item | GC | Skip} struct
  * @param {number} offset
@@ -389,6 +407,8 @@ export const writeStructToLazyStructWriter = (lazyWriter, struct, offset, offset
  *
  * 调用后底层 UpdateEncoder 仍可继续写删除集；这正是更新“结构段后接删除集”的
  * 协议边界。
+ *
+ * 只应在一轮结构写入末尾调用一次；clientStructs 缓存不清空，重复调用会再写同一批片段。
  *
  * @param {LazyStructWriter} lazyWriter
  */
@@ -423,6 +443,8 @@ export const finishLazyStructWriting = (lazyWriter) => {
  * 惰性 reader/writer 避免集成 Doc；`blockTransformer` 可改写每个解码结构。转换
  * 完成后同一输入 decoder 位于删除集起点，故能用目标编码器重新写出。
  *
+ * 回调逐个接触未集成结构并可原位改写；异常立即中断编码，不返回半成品，也不对输入字节创建事务。
+ *
  * @param {Uint8Array} update
  * @param {function(Item|GC|Skip):Item|GC|Skip} blockTransformer
  * @param {typeof UpdateDecoderV2 | typeof UpdateDecoderV1} YDecoder
@@ -446,9 +468,9 @@ export const convertUpdateFormat = (update, blockTransformer, YDecoder, YEncoder
  * 控制更新脱敏时是否改写格式、子文档与类型/键名称。
  *
  * @typedef {Object} ObfuscatorOptions
- * @property {boolean} [ObfuscatorOptions.formatting=true]
- * @property {boolean} [ObfuscatorOptions.subdocs=true]
- * @property {boolean} [ObfuscatorOptions.name=true] 是否脱敏 nodeName / hookName。
+ * @property {boolean} [ObfuscatorOptions.formatting=true] 是否替换 ContentFormat 的键和值；null 仍保留为格式取消标记。
+ * @property {boolean} [ObfuscatorOptions.subdocs=true] 是否替换 ContentDoc.guid 并清空其 opts；false 保留子文档元信息。
+ * @property {boolean} [ObfuscatorOptions.name=true] 是否替换 ContentType.type.name；Item.parentSub 键名始终替换，不受此开关控制。
  */
 
 /**
@@ -456,6 +478,8 @@ export const convertUpdateFormat = (update, blockTransformer, YDecoder, YEncoder
  *
  * 同一原键/名称/格式值通过缓存映射到同一占位值，保留相等关系与结构形态；每个
  * Item 使用单调序号生成替代内容。GC、Skip 与 ContentDeleted 原样返回。
+ *
+ * 返回的闭包原位改写 Item 内容；每个转换批次独立缓存映射。ContentString 保持 UTF-16 长度，ContentBinary 替换为单字节但仍只占一个 clock。
  *
  * @param {ObfuscatorOptions} obfuscator
  */

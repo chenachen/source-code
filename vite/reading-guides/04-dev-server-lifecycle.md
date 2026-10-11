@@ -40,18 +40,18 @@ createServer(inlineConfig)
    ├─ 并行创建并 init 所有 Environment
    ├─ 建立旧 moduleGraph/pluginContainer 兼容门面
    ├─ 注册 watcher 事件与中间件栈
-   ├─ initServer：插件 buildStart + configureServer 后置钩子
-   └─ 返回 ViteDevServer（尚未占用端口）
+   ├─ 建立 initServer 门闩；普通模式包装原生 listen，middleware mode 立即初始化
+   └─ 返回 ViteDevServer（普通模式尚未绑定 HTTP；middleware mode 已启动 Environment）
 
 server.listen()
 ├─ resolveHostname()
-├─ startServer() → httpServerStart()
-├─ listening 前先写入 resolvedUrls
-├─ Environment.listen(server)
+├─ startServer() → httpServerStart() → 原生 listen 包装器
+│  └─ initServer：client buildStart → Environment.listen → HTTP bind
+├─ listening 事件先计算 resolvedUrls，再执行普通事件 listener
 └─ 首次启动且配置 open 时打开浏览器
 
 server.close()
-└─ 共享同一个 close Promise
+└─ 共享同一个关闭任务
    └─ watcher / WebSocket / Environment / HTTP / SSR runner 并行关闭
 
 server.restart()
@@ -72,8 +72,9 @@ server.restart()
 ### 1. 配置与一次性归属
 
 传入普通 `InlineConfig` 时先以 `serve` command 解析；传入 `ResolvedConfig` 时直接复用。
-`usedConfigs` 防止同一个已解析配置对象同时属于两个 Server，因为其中的插件实例、缓存与
-Environment 配置都带有生命周期状态。
+`usedConfigs` 让同一个已解析配置对象只能用于创建一次 Server，因为其中的插件实例、缓存与
+Environment 配置都带有生命周期状态。关闭不会从这个 WeakSet 删除配置；即使旧服务器已关闭，
+也不能把同一个 `ResolvedConfig` 再用于创建新服务器。
 
 开发服务器是长运行交互进程，所以关闭任务缓存：网络响应和 HMR 无法像纯构建产物一样从
 缓存安全重放。
@@ -90,22 +91,22 @@ HTTP/HTTPS Server
 WebSocket Server
 ```
 
-middleware mode 只创建 Connect 和 Environment，不创建/监听 HTTP Server。宿主应用通过
+middleware mode 创建 Connect、watcher、WebSocket 和 Environment，但顶层 httpServer 为 null。宿主应用通过
 `app.use(vite.middlewares)` 接管网络入口；因此 `listen()`、`printUrls()` 在此模式没有意义。
 WebSocket 仍会按 HMR 配置连接已有宿主或独立 HMR Server。
 
 `resolveHttpServer()` 的选择规则：
 
 - 无 HTTPS：HTTP/1 Server。
-- HTTPS 且未配置 proxy：允许 HTTP/2，并启用 HTTP/1 fallback。
-- HTTPS 且配置 proxy：使用 HTTPS/HTTP1，避免代理与 HTTP/2 兼容问题。
-- HTTP/2 的 session 与 stream 错误显式吞掉，避免客户端重置连接导致未处理异常
-  （[PR #21024](https://github.com/vitejs/vite/pull/21024)）。
+- 有 HTTPS：创建 HTTP/2 Secure Server，并启用 HTTP/1 fallback；proxy 不改变这个选择。
+- HTTP/2 提高 session 内存和 stream reset 限额，减少大量模块请求触发协议限制的情况
+  （源码中的 #21024）。
 
 ### 3. 文件监听
 
-watcher 不只监听 `root`：配置文件依赖、当前 mode 的 env 文件、位于 root 外的 publicDir 都
-要显式加入。输出目录、缓存目录和 `.git` 被忽略，防止构建产物或依赖缓存反向触发开发更新。
+普通开发模式监听 `root`，并显式加入配置文件依赖、当前 mode 的 env 文件和扫描成功的 publicDir。
+完整打包开发模式不把整个 root 加入 Chokidar。缓存目录、node_modules 和 `.git` 始终忽略；只有
+会被构建清空的输出目录才加入忽略规则，避免构建产物反向触发开发更新。
 
 `server.watch: null` 不返回 `null`，而是创建接口完整的 `NoopWatcher`。这样插件、Environment
 和关闭流程仍可无条件调用 `add()`、`on()`、`close()`，不用把“是否启用 watcher”的分支扩散
@@ -115,8 +116,8 @@ watcher 的 create/delete/update 最终都会：
 
 1. 检查 tsconfig 变化；
 2. 通知各 Environment 的插件容器；
-3. 更新 public 文件索引或模块图；
-4. 进入 HMR 主流程。
+3. 创建/删除事件更新 public 文件索引；删除事件断开节点作为 importer 的反向边，内容更新使转换缓存失效；
+4. HMR 未关闭时进入更新流程。
 
 public 文件新建时还要删除同路径已转换模块的 ETag 索引，否则请求可能命中旧 transform 缓存，
 违反 public 文件优先规则。
@@ -132,20 +133,32 @@ public 文件新建时还要删除同路径已转换模块的 ETag 索引，否�
 
 ### 5. 插件初始化门闩
 
-`initServer()` 用 Promise 缓存初始化，避免并发请求或 `listen()` 重复执行：
+`configureServer` 前置钩子、内部中间件和后置钩子都在 `_createServer()` 中执行。后置钩子按
+收集顺序调用，位于 HTML 响应中间件之前；它们不属于 `initServer()`。
+
+`initServer()` 缓存初始化任务，避免原生 `listen()` 因端口回退或并发调用重复启动资源：
 
 ```text
-client.pluginContainer.buildStart()
-→ configureServer 前置钩子已在装配过程中执行
-→ 安装内部中间件
-→ 执行 configureServer 返回的后置钩子（逆序）
+普通模式：server.listen() → startServer() → 包装后的 httpServer.listen()
+                                      └─ initServer(true)
+middleware mode：_createServer() → initServer(false)
+
+initServer：普通开发模式先 await client.pluginContainer.buildStart()
+           → onListen 或 options.listen 为 true 时 await 所有 Environment.listen(server)
+           → 标记 serverInited
 ```
 
-client Environment 会提前 `buildStart`，因为它承担浏览器请求和兼容 API 的默认入口；其他
-Environment 保持首次请求时惰性启动，避免没有 SSR/自定义环境请求时支付初始化成本。
+普通模式在真实 HTTP bind 前初始化；公开 `createServer()` 的 middleware mode 在返回前初始化。
+重启构造使用 `options.listen: false`，middleware mode 此时只启动 client buildStart，等旧资源
+关闭后再启动新 Environment。完整打包开发模式跳过这里的 client buildStart，由 bundle 管线启动。
+
+client 容器先启动；其他容器首次进入 `resolveId()` 时，若尚未启动，会调用 `buildStart()` 并等待
+其完成。scan 或 warmup 也可能通过这条解析路径提前触发启动。直接调用 `load()`、`transform()`
+不会触发这个门禁，调用方需先 `await pluginContainer.buildStart()`。容器启动后是否实际调用每个插件的 `buildStart`，仍由 Environment 名称和
+`perEnvironmentStartEndDuringDev` 开关决定。
 
 `dev.spec.ts` 中的用例证明：`build.lib` 不应泄漏为开发态 Rolldown input；显式 Environment
-input 可以预标为 safe module；入口缺少 `index.html` 只静默跳过，但插件 `buildStart` 错误不能
+input 可以预标为 safe module；默认 `index.html` 解析异常会静默跳过，但插件 `buildStart` 错误不能
 被同一个 fallback 吞掉。
 
 ## 监听与端口选择
@@ -166,17 +179,19 @@ input 可以预标为 safe module；入口缺少 `index.html` 只静默跳过，
 
 ```text
 port === 0
-  → 先在第一个 host 让 OS 分配随机端口
-  → 其余 host 绑定同一个真实端口
+  → 用临时 TCP Server 在首个 wildcard 上请求 OS 分配端口
+  → 依次探测其他 wildcard 与配置 host，每次探测后关闭临时 Server
+  → 最多换三个候选；找到后真实 HTTP Server 只绑定配置 host 一次
 
 strictPort === true
-  → 直接尝试目标 host:port
+  → 仍先探测 wildcard，但即使探测显示占用也尝试目标 host:port
+  → 真实绑定成功且 wildcard 占用时发出警告
   → 冲突立即失败，不扫描后续端口
 
 strictPort === false
   → concrete host 监听前先探测通配地址上的冲突
   → 仅 EADDRINUSE 可以让端口 +1
-  → 在所有候选 host 上成功后返回该端口
+  → 真实 HTTP Server 在配置 host 上绑定成功后返回端口
 ```
 
 `port: 0` 必须让多地址共用同一个 OS 随机端口，而不是各分配一个端口
@@ -185,9 +200,10 @@ strictPort === false
 [PR #21381](https://github.com/vitejs/vite/pull/21381)、
 [PR #22150](https://github.com/vitejs/vite/pull/22150) 固化。
 
-只有 `EADDRINUSE` 表示“换端口可恢复”；权限、地址非法等错误必须直接抛出，不能伪装成端口
-扫描（[PR #21642](https://github.com/vitejs/vite/pull/21642)）。每次探测都要成对解绑
-`error`/`listening` listener，避免多 host、多端口重试累积监听器
+临时探测只把 `EADDRINUSE` 视为占用，IPv6 不可用、权限等其他错误不阻塞候选；真实 HTTP bind
+则把非 `EADDRINUSE` 错误直接抛出（[PR #21642](https://github.com/vitejs/vite/pull/21642)）。
+端口 0 的候选在探测后若被抢占，真实 bind 直接报占用，不递增或重新分配。
+每次真实绑定都成对解绑 `error`/`listening` listener，避免端口重试累积监听器
 （[PR #21451](https://github.com/vitejs/vite/pull/21451)）。
 
 重启时 `startServer()` 记录“配置端口”和“上次真实端口”。若配置没变，就优先复用上次经过
@@ -210,7 +226,7 @@ close Promise 门闩
 └─ SSR compat ModuleRunner.close()
 ```
 
-第一次调用建立 `closeServerPromise`，之后全部返回同一个 Promise，防止双重释放
+第一次调用建立 `closeServerPromise`，之后全部等待同一个关闭任务，防止双重释放
 （[PR #19204](https://github.com/vitejs/vite/pull/19204)）。互不依赖的资源使用
 `Promise.allSettled()`：某个插件清理失败不能阻止 watcher、socket 和其他 Environment 退出。
 
@@ -237,14 +253,14 @@ sass-embedded worker，`server.close()` 返回时 worker 必须已经退出。�
    （[PR #15166](https://github.com/vitejs/vite/pull/15166)）。
 6. `_setInternalServer()` 重绑新方法的闭包；传给 `configureServer` 的 reflex Proxy 也始终
    反射当前内部 Server。
-7. 普通模式重新 listen；middleware mode 只调用各 Environment 的 `listen(server)`。
+7. 普通模式重新 listen；middleware mode 在新实例的 client 容器初始化后，只调用各 Environment 的 `listen(server)`。
 
 `restartServerWithUrls()` 只有在配置端口、host 或 DNS 地址顺序变化时重新打印 URL，减少无意义
 日志。`resolvedUrls` 在关闭后归零，重新 listening 后再生成，不能跨实例当作永久配置读取。
 
 ## 预览服务器是独立装配链，不是开发服务器换 mode
 
-`preview()` 解析 production 配置并服务 `build.outDir`，但不会创建 ModuleGraph、执行按请求 transform
+`preview()` 解析 production 配置并服务 `environments.client.build.outDir`，但不会创建 ModuleGraph、执行按请求 transform
 或启用 HMR。它复用 HTTP、代理、CORS、host 校验和地址打印基础设施，形成另一条中间件链：
 
 ```text
@@ -273,9 +289,10 @@ resolveConfig(serve, production, isPreview=true)
   仍在 publicDir 内，不能让 `/../` 穿越边界。
 - `searchRoot.ts` 识别 pnpm/lerna、package.json workspaces 和 Deno workspace；没有标记时退回最近包根，
   该结果参与默认 `server.fs.allow`。
-- `warmup.ts` 后台展开显式文件与 glob。HTML 走 `transformIndexHtml` 以连带预转换入口，其他文件走
-  Environment warmupRequest；root 外普通模块编码成 `/@fs/`，root 外 HTML 则忽略。
-- `openBrowser.ts` 在 macOS 优先用 JXA 复用已运行 Chromium 的目标/空白标签，失败后无条件降级到
+- `warmup.ts` 后台展开当前 Environment 的 `dev.warmup`。HTML 走 `transformIndexHtml` 以连带预转换
+  入口，其他文件走 Environment warmupRequest；相对 root 的路径以 `.` 开头时，模块使用 `/@fs/`，
+  HTML 被忽略，所以 root 外 HTML 和 root 内点开头 HTML 都不预热。
+- `openBrowser.ts` 在 macOS 优先用 JXA 复用已运行 Chromium 中 URL 包含目标地址的标签或空白标签，失败后无条件降级到
   `open` 包；`BROWSER=none` 禁用，`.js` 值则作为用户 Node 脚本执行。
 - `logger.ts` 用级别阈值、WeakSet 错误去重与 `warnOnce` 控制噪声；只有可交互 TTY 才清屏折叠连续
   相同消息。网络 URL 标签与网卡名按索引对齐，超长标签截断（#22830）。
@@ -327,8 +344,7 @@ export async function _createServer(
     previousForceOptimizeOnRestart?: boolean
   },
 ): Promise<ViteDevServer> {
-  // The dev server is a long-running, interactive process whose outputs
-  // (network responses, HMR updates) cannot be replayed from a cache.
+  // Dev Server 是长运行交互进程，网络响应/HMR 更新无法从任务缓存安全重放。
   disableCache()
 
   const config = isResolvedConfig(inlineConfig)
@@ -340,8 +356,53 @@ export async function _createServer(
   }
 ```
 
-公开入口只确定“需要监听”，实际装配进入 `_createServer()`；已解析配置具有一次性 server
-归属，重复复用会在创建任何长生命周期资源前失败。
+这里的 `listen: true` 控制初始化时是否启动 Environment 的监听生命周期，不会直接绑定 HTTP
+端口。已解析配置具有一次性 server 归属，重复复用会在创建长生命周期资源前失败。
+
+同文件 `initServer()` 的决定性分支（源码摘录，省略门闩与收尾赋值）：
+
+```ts
+if (!config.experimental.bundledDev) {
+  await environments.client.pluginContainer.buildStart()
+}
+
+if (onListen || options.listen) {
+  await Promise.all(Object.values(environments).map((e) => e.listen(server)))
+}
+```
+
+普通模式的 HTTP listen 包装器传入 `onListen: true`，所以真实绑定前一定启动 Environment。
+middleware mode 没有 HTTP listen，传入 false；公开创建的 options.listen 为 true，重启构造则为
+false，分别对应“返回前启动通道”和“旧服务关闭后才启动通道”。
+
+关闭和重启保持公开中间件引用的实现也在同文件（源码摘录，两处独立代码块）：
+
+```ts
+await Promise.allSettled([
+  watcher.close(),
+  ws.close(),
+  Promise.allSettled(
+    Object.values(server.environments).map((environment) =>
+      environment.close(),
+    ),
+  ),
+  closeHttpServer(),
+  server._ssrCompatModuleRunner?.close(),
+])
+```
+
+```ts
+const middlewares = server.middlewares
+newServer._configServerPort = server._configServerPort
+newServer._currentServerPort = server._currentServerPort
+Object.assign(server, newServer)
+middlewares.stack = newServer.middlewares.stack
+server.middlewares = middlewares
+newServer._setInternalServer(server)
+```
+
+关闭先等待各资源 settle；重启在此之后搬入新字段、替换旧 Connect 的 stack，并把新闭包指回
+旧公开对象。浏览器 URL 的端口记忆和宿主 `app.use(vite.middlewares)` 的对象身份因此都能保留。
 
 ## 建议断点
 
@@ -360,7 +421,7 @@ export async function _createServer(
 2. 为什么关闭流程适合 `allSettled()`，初始化流程却常用 `Promise.all()`？
 3. 为什么重启必须先构造新实例再关闭旧实例？如果顺序反过来，配置错误时会怎样？
 4. 为什么只 `Object.assign()` 还不够，必须单独保留 Connect 并重绑闭包？
-5. strictPort 为何不能先探测通配地址后再决定是否失败？
+5. strictPort 为何在通配地址预检显示占用后仍尝试绑定具体 host？
 6. NoopWatcher 相比在每个调用点判断 `watcher !== null`，减少了哪类复杂度？
 7. preview 为什么不能直接复用开发服务器的 ModuleGraph 和 transform 中间件？
 8. publicDir 扫描因符号链接失败后，为何是退回 stat，而不是让服务器启动失败？

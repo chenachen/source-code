@@ -48,6 +48,12 @@ export const DOMDirectiveTransforms: Record<string, DirectiveTransform> = {
  *
  * 在 compiler-core 的平台无关管线前注入 HTML/SVG/MathML 解析规则，在转换阶段追加
  * DOM 指令，并在 Node.js 构建中把较大的静态树序列化为 `createStaticVNode()`。
+ * 用户节点转换排在 DOM 转换之后；同名用户指令转换覆盖默认项。这里创建新的 options
+ * 对象，但传入 RootNode 时 baseCompile 会原位转换该树，不提供 AST 隔离。
+ *
+ * @param src - 原始模板或已经解析、尚待转换的根树。
+ * @param options - 调用方解析/转换/生成选项；错误是否抛出取决于 onError。
+ * @returns AST、render 代码及可选 source map；API 本身同步，不执行生成的 render。
  */
 export function compile(
   src: string | RootNode,
@@ -73,7 +79,10 @@ export function compile(
   )
 }
 
-/** 使用 DOM 平台规则只解析模板，返回 AST，不执行转换与代码生成。 */
+/**
+ * 使用 DOM 平台规则解析模板；调用方 options 最后合并，可选择 SFC 等解析模式。
+ * 返回可交给 compile 的新 RootNode。默认错误回调抛出；收集错误不会自动开始转换。
+ */
 export function parse(template: string, options: ParserOptions = {}): RootNode {
   return baseParse(template, extend({}, parserOptions, options))
 }

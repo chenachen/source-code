@@ -42,6 +42,8 @@ type LoadHandler = (this: PluginContext, id: string) => MaybePromise<LoadResult>
 /**
  * 把 optimizeDeps.esbuildOptions.plugins 的常用 setup/onStart/onResolve/onLoad/onEnd/onDispose 子集
  * 适配为 Rolldown plugin。未实现的 PluginBuild 属性通过 Proxy 明确抛错，避免静默产生错误语义。
+ * 生命周期回调在此直接调用，不等待其返回的 Promise；resolve/load 回调则会 await，
+ * 接受 watchFiles，遇到 warnings、watchDirs 或缺少所需结果字段时明确失败。
  */
 export function convertEsbuildPluginToRolldownPlugin(
   esbuildPlugin: esbuild.Plugin,
@@ -139,7 +141,7 @@ export function convertEsbuildPluginToRolldownPlugin(
   const usedNamespaces = new Set<string>()
   return {
     name: esbuildPlugin.name,
-    /** 在 Rolldown options 阶段运行一次 esbuild setup 并收集回调。 */
+    /** 在 Rolldown options 阶段执行 esbuild setup 并收集回调；此 hook 本身没有重复调用保护。 */
     async options(inputOptions) {
       await setup(
         inputOptions.plugins as RolldownPluginOption[],

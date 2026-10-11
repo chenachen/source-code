@@ -147,7 +147,7 @@ describe('the dev server', () => {
 
   /**
    * 场景：SSR 的 buildStart 钩子自身抛错，同时入口采用 index.html 回退。
-   * 验证目标：只能忽略“找不到回退入口”，不能吞掉插件生命周期错误。
+   * 验证目标：回退入口解析可以忽略异常，但更早执行的插件 buildStart 异常必须向上传递。
    */
   test('does not ignore buildStart errors while resolving fallback inputs', async () => {
     server = await createServer({

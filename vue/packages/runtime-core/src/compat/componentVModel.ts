@@ -67,7 +67,10 @@ export function convertLegacyVModelProps(vnode: VNode): void {
   }
 }
 
-/** 递归应用 mixin 中的 model 选项，复现 Vue 2 选项合并后的最终 prop/event。 */
+/**
+ * 按 mixins 列表依次覆盖目标 model，再递归每个 mixin 的内部 mixins，后写字段胜出。
+ * 调用方以 comp.model 为目标时会原地修改该对象；此处不合并 extends 或全局 mixin。
+ */
 function applyModelFromMixins(model: any, mixins?: ComponentOptions[]) {
   if (mixins) {
     mixins.forEach(m => {

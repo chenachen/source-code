@@ -144,7 +144,7 @@ function processImg(props: Object, formatContext: FormatContext): void {
   }
 }
 
-/** 根据 link rel 把 preload/modulepreload/stylesheet 转换为 Flight 资源提示。 */
+/** 仅在noscript作用域外、无itemProp且rel/href为非空字符串时处理资源link；preload保留as及图片/媒体选项，modulepreload走模块提示，stylesheet先发style preload，不创建DOM或声明preinit样式。 */
 function processLink(props: Object, formatContext: FormatContext): void {
   const noscriptTagInScope = formatContext & NOSCRIPT_SCOPE;
   const rel = props.rel;
@@ -201,7 +201,9 @@ function processLink(props: Object, formatContext: FormatContext): void {
 
 /**
  * 处理子元素的资源副作用并推进 picture/noscript 位掩码作用域。
- * 其他标签继承父上下文，img/link 只发提示而不改变上下文。
+ * 其他标签继承父上下文，img/link只发提示而不改变上下文。
+ * parentContext是祖先作用域；picture/noscript进入子级时按位OR，返回值由上游递归保存/恢复，
+ * 此模块没有全局作用域栈，也不会在兄弟访问时永久累积位。
  */
 export function getChildFormatContext(
   parentContext: FormatContext,

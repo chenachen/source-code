@@ -1,20 +1,23 @@
-// this is automatically detected by playground/vitestSetup.ts and will replace
-// the default e2e test serve behavior
+// harness使用此custom启动器，运行fixture的SSR后端。
 
 import path from 'node:path'
 import kill from 'kill-port'
 import { ports, rootDir } from '~utils'
 
+/** 当前SSR后端的独占HTTP端口。 */
 export const port = ports['ssr-webworker']
 
-export async function serve(): Promise<{ close(): Promise<void> }> {
+/** 所有矩阵先构建SSR worker入口，再用fixture worker.js创建Miniflare实例。 */
+export async function serve(): Promise<{
+  /** 供 harness teardown 调用，Promise 在 Miniflare 实例释放后完成。 */
+  close(): Promise<void>
+}> {
   await kill(port)
 
-  // we build first, regardless of whether it's prod/build mode
-  // because Vite doesn't support the concept of a "webworker server"
+  // 此custom后端运行构建好的worker产物，开发矩阵也先构建。
   const { build } = await import('vite')
 
-  // worker build
+  // SSR worker输出到dist/worker。
   await build({
     root: rootDir,
     logLevel: 'silent',
@@ -29,7 +32,7 @@ export async function serve(): Promise<{ close(): Promise<void> }> {
   const { mf } = await createServer(port)
 
   return {
-    // for test teardown
+    /** 释放Miniflare实例及其模拟worker服务。 */
     async close() {
       await mf.dispose()
     },

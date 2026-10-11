@@ -15,6 +15,7 @@ describe('ReactAsyncActions', () => {
   beforeEach(() => {
     jest.resetModules();
 
+    /** 将全局 startTransition 捕获的错误转成 reportError 日志，区分 Hook 错误边界与非 Hook 上报路径。 */
     global.reportError = error => {
       Scheduler.log('reportError: ' + error.message);
     };
@@ -319,7 +320,7 @@ describe('ReactAsyncActions', () => {
       </>,
     );
 
-    // 这里安排 B 更新，但 action scope 尚未结束，因此不开始渲染。
+    // 这里安排 B 更新，但 action scope 尚未结束；队列读取共享 action thenable 后挂起，组件不会输出 B1。
     await act(() => resolveText('Wait before updating B'));
     assertLog([]);
     expect(root).toMatchRenderedOutput(
@@ -781,6 +782,7 @@ describe('ReactAsyncActions', () => {
       const [optimisticCartSize, setOptimisticCartSize] =
         useOptimistic(savedCartSize);
 
+      /** 开始等待服务器确认的 action；先写乐观长度，再由 submitNewItem 更新 canonical cart。 */
       addItemToCart = item => {
         startTransition(async () => {
           setOptimisticCartSize(n => n + 1);
@@ -836,7 +838,7 @@ describe('ReactAsyncActions', () => {
 
     // B 仍 pending 时，C 通过 action 外渠道加入 canonical cart。
     serverCart = [...serverCart, 'C'];
-    // NOTE：目前所有 transition 会纠缠、尚不支持并行，因此这里用同步更新；支持并行后可调整。
+    // C 用 flushSync 进入独立紧急 lane，保证 B 的 async action 尚未结束时就更新 passthrough；transition 更新会受到当前 action scope 的纠缠约束。
     ReactNoop.flushSync(() => root.render(<App cart={serverCart} />));
     assertLog([
       'Pending: true',
@@ -933,8 +935,8 @@ describe('ReactAsyncActions', () => {
    * 对应机制：render-phase update 重放时保留 optimistic base/pending queues。
    */
   it('regression: useOptimistic during setState-in-render', async () => {
-    // 针对特定内部路径：首个 hook 为有 pending update 的 useOptimistic，后续 hook 又触发
-    // render-phase state update；若实现细节改变，可重新评估该用例。
+    // 首个 Hook 已有 pending optimistic update，后续 state Hook 又触发 render-phase 更新；
+    // rerender 必须在新 passthrough 上重放乐观队列，而不是忽略这个首槽。
 
     let setOptimisticState;
     let startTransition;
@@ -999,6 +1001,7 @@ describe('ReactAsyncActions', () => {
         },
       );
 
+      /** 开始等待服务器确认的 action；先写乐观长度，再由 submitNewItem 更新 canonical cart。 */
       addItemToCart = item => {
         startTransition(async () => {
           addToOptimisticCart(item);
@@ -1059,7 +1062,7 @@ describe('ReactAsyncActions', () => {
 
     // B 仍 pending 时，C 通过 action 外渠道加入 canonical cart。
     serverCart = [...serverCart, 'C'];
-    // NOTE：目前所有 transition 会纠缠、尚不支持并行，因此这里用同步更新；支持并行后可调整。
+    // C 用 flushSync 进入独立紧急 lane，保证 B 的 async action 尚未结束时就更新 passthrough；transition 更新会受到当前 action scope 的纠缠约束。
     ReactNoop.flushSync(() => root.render(<App cart={serverCart} />));
     assertLog([
       'Increment optimistic cart size for B',
@@ -1130,6 +1133,7 @@ describe('ReactAsyncActions', () => {
         setCount(2);
       }
 
+      /** action 先乐观加一，等待资源后用独立 transition 提交 canonical 加一；render-phase 校正会重放乐观 reducer。 */
       increment = () =>
         startTransition(async () => {
           setOptimisticCount(n => n + 1);
@@ -1577,6 +1581,7 @@ describe('ReactAsyncActions', () => {
         state = {text: 'A'};
         /** 暴露 setState 适配器并显示当前文本。 */
         render() {
+          /** 把文本值适配为类 setState payload，供同一 action 的 B/C 与之后普通 D 更新使用。 */
           setText = text => this.setState({text});
           return (
             <span>
@@ -1734,7 +1739,7 @@ describe('ReactAsyncActions', () => {
 
   /**
    * 场景（Given–When–Then）：给定非 hook `React.startTransition` action 在 await 前更新 B、后更新 C；
-   * 当 action 未完成；那么 B 被阻塞，结束后 B/C 同批只提交 C。
+   * 当 action 未完成；那么等待期间 B 被阻塞，结束后只观察到 C。await 后的 root.render(C) 未再包 startTransition，本例不证明其请求 lane 仍是 transition。
    * 对应机制：全局 startTransition 也创建 async action scope 并纠缠其更新。
    */
   it('React.startTransition supports async actions', async () => {
@@ -1828,14 +1833,13 @@ describe('ReactAsyncActions', () => {
   /**
    * 场景（Given–When–Then）：给定 React.startTransition action 在首个 await 之前没有任何更新，
    * await 后才发出乐观 Updated；当 action 继续等待；那么该更新仍归属外层 scope、不被立即回退，
-   * 最终 canonical 到达后正常替换。对应机制：异步上下文跨首次空间隙传播。
+   * 最终 canonical 到达后正常替换。对应机制：首个 await 后仍有全局 pending action scope，乐观派发从中取得 revertLane。
    */
   it(
     'regression: updates in an action passed to React.startTransition are batched ' +
       'even if there were no updates before the first await',
     async () => {
-      // 旧版同构 startTransition 的复杂实现曾遗漏此路径；现在它直接组合各 reconciler 实例的
-      // startTransition，因此更不易再次分叉。
+      // 同构 startTransition 调用 shared.onStartTransition，把回调结果交给 renderer 的 async action 纠缠逻辑；即使首个 await 前没有更新，pending scope 也必须存在。
       const startTransition = React.startTransition;
 
       let setOptimisticText;

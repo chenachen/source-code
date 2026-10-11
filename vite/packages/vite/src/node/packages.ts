@@ -247,7 +247,7 @@ export function loadPackageData(pkgPath: string): PackageData {
   return pkg
 }
 
-/** 组合所有会改变 exports/main/扩展名入口选择的解析选项，防止跨 Environment 误复用。 */
+/** 用请求、import/require、条件、扩展名和入口字段区分包入口缓存槽位。 */
 function getResolveCacheKey(key: string, options: InternalResolveOptions) {
   return [
     key,
@@ -290,6 +290,7 @@ export function watchPackageDataPlugin(packageCache: PackageCache): Plugin {
   let watchFile = watchFileStub
 
   const setPackageData = packageCache.set.bind(packageCache)
+  /** 保存包数据前，为首次遇到的非 node_modules 包登记 package.json 监听；保留 Map.set 的返回值。 */
   packageCache.set = (id, pkg) => {
     if (!isInNodeModules(pkg.dir) && !watchedDirs.has(pkg.dir)) {
       watchedDirs.add(pkg.dir)

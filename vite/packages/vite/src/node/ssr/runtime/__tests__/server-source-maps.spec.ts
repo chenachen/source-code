@@ -130,7 +130,9 @@ describe('module runner initialization', async () => {
     )!
     Object.defineProperty(Object.prototype, 'constructor', {
       configurable: true,
+      /** 保持 constructor 读取值不变，仅模拟继承属性不能写入的状态。 */
       get: () => original.value,
+      /** 在 CallSite 克隆尝试写入 constructor 时抛错，模拟冻结 Object.prototype。 */
       set: () => {
         throw new TypeError(
           `Cannot assign to read only property 'constructor' of object '#<Object>'`,
@@ -185,7 +187,7 @@ describe('module runner initialization', async () => {
 
   /**
    * 场景：模块字符串字面量包含伪造且无效的 sourceMappingURL 文本，随后模块函数抛错。
-   * 验证目标：扫描器不把字符串内容当 map 注释，字符串原样返回且真实堆栈仍映射到 11:9。
+   * 验证目标：字符串原样返回；文件尾的最终 Vite map 覆盖此前伪标记，堆栈仍映射到 11:9。
    */
   it('should not crash when sourceMappingURL pattern appears in string literals', async ({
     runner,

@@ -53,6 +53,9 @@ describe('compiler: integration tests', () => {
     return res
   }
 
+  /**
+   * 编译含绑定、插值、if/else 和 for 的模板，启用 sourceMap 并使用函数模式；生成代码保持 with 上下文访问，映射保留 foo.vue 与原模板。逐个查询属性、调用及循环别名的位置，确认非前缀模式按表达式起点定位，循环局部变量仍映射到自己的源码位置。
+   */
   test('function mode', () => {
     const { code, map } = compile(source, {
       sourceMap: true,
@@ -116,6 +119,9 @@ describe('compiler: integration tests', () => {
     ).toMatchObject(getPositionInCode(source, `value + index`))
   })
 
+  /**
+   * 对同一模板显式开启 prefixIdentifiers；自由变量改写为 _ctx 访问，value/index 仍是循环局部变量。除代码快照和源文件信息外，逐个反查成员访问与复合表达式的映射，确认表达式拆分后可定位 baz 等独立标识符。
+   */
   test('function mode w/ prefixIdentifiers: true', () => {
     const { code, map } = compile(source, {
       sourceMap: true,
@@ -193,6 +199,9 @@ describe('compiler: integration tests', () => {
     ).toMatchObject(getPositionInCode(source, `value + index`))
   })
 
+  /**
+   * 以模块模式编译同一模板并生成 sourceMap；模块自动启用标识符前缀，代码快照检查 helper 导入与 render 导出。逐个反查 _ctx 访问、成员名和循环别名，验证模块包装没有破坏表达式的源码位置。
+   */
   test('module mode', () => {
     const { code, map } = compile(source, {
       mode: 'module',

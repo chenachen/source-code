@@ -48,49 +48,30 @@ const warnRuntimeUsage = (method: string) =>
   )
 
 /**
- * Vue `<script setup>` 编译宏：声明组件 props。参数形式与组件 `props` 选项一致。
- *
- * 运行时声明示例：
- * ```js
- * // 数组语法
- * const props = defineProps(['foo', 'bar'])
- * // 对象语法
- * const props = defineProps({
- *   foo: String,
- *   bar: {
- *     type: Number,
- *     required: true
- *   }
- * })
- * ```
- *
- * 等价的纯类型声明：
- * ```ts
- * // 编译器会生成等价的运行时 props 声明
- * const props = defineProps<{
- *   foo?: string
- *   bar: number
- * }>()
- * ```
- *
- * @see {@link https://vuejs.org/api/sfc-script-setup.html#defineprops-defineemits}
- *
- * 只能在 `<script setup>` 中使用，输出时会被编译掉，不应真的在运行时调用。
+ * 数组形式 props 宏重载：名称联合变为可选只读键；调用由 SFC 编译器消除。
  */
-// 重载 1：数组形式的运行时 props。
 export function defineProps<PropNames extends string = string>(
   props: PropNames[],
 ): Prettify<Readonly<{ [key in PropNames]?: any }>>
 // 重载 2：对象形式的运行时 props，可推导类型、required 与 default。
+/**
+ * 对象形式 props 宏重载：根据构造器、required、default 推导组件内部只读 props。
+ */
 export function defineProps<
   PP extends ComponentObjectPropsOptions = ComponentObjectPropsOptions,
 >(props: PP): Prettify<Readonly<ExtractPropTypes<PP>>>
 // 重载 3：纯类型声明，LooseRequired 让类型解析阶段能统一检查所有键。
+/**
+ * 纯类型 props 宏重载：LooseRequired 保留所有键供解析，BooleanKey 单独标记隐式布尔默认值。
+ */
 export function defineProps<TypeProps>(): DefineProps<
   LooseRequired<TypeProps>,
   BooleanKey<TypeProps>
 >
 // 运行时兜底；正常编译产物不会保留该调用。
+/**
+ * 运行时误用兜底：开发环境提示宏应编译消除，返回 null 类型占位，不建立 props 声明。
+ */
 export function defineProps() {
   if (__DEV__) {
     warnRuntimeUsage(`defineProps`)
@@ -113,42 +94,29 @@ type BooleanKey<T, K extends keyof T = keyof T> = K extends any
   : never
 
 /**
- * Vue `<script setup>` 编译宏：声明组件可触发的事件，参数与 `emits` 选项一致。
- *
- * 运行时声明示例：
- * ```js
- * const emit = defineEmits(['change', 'update'])
- * ```
- *
- * 纯类型声明示例：
- * ```ts
- * const emit = defineEmits<{
- *   // <事件名>: <参数元组>
- *   change: []
- *   update: [value: number] // named tuple syntax
- * }>()
- *
- * emit('change')
- * emit('update', 1)
- * ```
- *
- * 只能在 `<script setup>` 中使用，输出时会被编译掉，不应在运行时调用。
- *
- * @see {@link https://vuejs.org/api/sfc-script-setup.html#defineprops-defineemits}
+ * 事件名数组宏重载：生成接受该事件名联合的 emit 签名，SFC 编译后调用消失。
  */
-// 重载 1：事件名数组。
 export function defineEmits<EE extends string = string>(
   emitOptions: EE[],
 ): EmitFn<EE[]>
+/**
+ * 对象 emits 宏重载：从每个事件的校验器/参数元组推导 emit 的参数列表。
+ */
 export function defineEmits<E extends EmitsOptions = EmitsOptions>(
   emitOptions: E,
 ): EmitFn<E>
+/**
+ * 纯类型 emits 宏重载：函数签名直接保留，事件名到参数元组的映射转为重载交叉类型。
+ */
 export function defineEmits<T extends ComponentTypeEmits>(): T extends (
   ...args: any[]
 ) => any
   ? T
   : ShortEmits<T>
 // 运行时兜底；正常编译产物不会保留该调用。
+/**
+ * 运行时误用兜底：只给出 compiler-hint 警告并返回 null，不注册事件监听或 emits。
+ */
 export function defineEmits() {
   if (__DEV__) {
     warnRuntimeUsage(`defineEmits`)
@@ -311,21 +279,33 @@ export function defineModel<T, M extends PropertyKey = string, G = T, S = T>(
     ({ default: DefineModelDefault<T> } | { required: true }),
 ): ModelRef<T, M, G, S>
 
+/**
+ * 可省略选项的默认 modelValue 重载：父级可能未传值，因此读取/写入类型包含 undefined。
+ */
 export function defineModel<T, M extends PropertyKey = string, G = T, S = T>(
   options?: DefineModelRuntimeOptions<T, G, S>,
 ): ModelRef<T | undefined, M, G | undefined, S | undefined>
 
+/**
+ * 具名 model 重载：name 选择 prop/update 事件名，default 或 required:true 使返回值类型确定存在。
+ */
 export function defineModel<T, M extends PropertyKey = string, G = T, S = T>(
   name: string,
   options: DefineModelRuntimeOptions<T, G, S> &
     ({ default: DefineModelDefault<T> } | { required: true }),
 ): ModelRef<T, M, G, S>
 
+/**
+ * 具名可选 model 重载：允许缺失的父级值，并独立保留 getter/setter 转换类型与修饰符键。
+ */
 export function defineModel<T, M extends PropertyKey = string, G = T, S = T>(
   name: string,
   options?: DefineModelRuntimeOptions<T, G, S>,
 ): ModelRef<T | undefined, M, G | undefined, S | undefined>
 
+/**
+ * 运行时误用兜底：仅提示宏必须被 SFC 编译器消除；真正 model ref 由编译产物调用 useModel 创建。
+ */
 export function defineModel(): any {
   if (__DEV__) {
     warnRuntimeUsage('defineModel')
@@ -493,9 +473,11 @@ export function mergeModels(
 }
 
 /**
- * @internal 为 `const { a, ...rest } = defineProps()` 创建剩余属性代理。
- * 每个键使用 getter 回读原 props，保证父级更新后 `rest.x` 仍是最新值，而不是解构
- * 当时的静态快照。
+ * 为编译器 props 解构的 rest 创建按键 getter 对象。
+ *
+ * @param props 当前实例 props 映射，每次读取保留键都回读此对象
+ * @param excludedKeys 已显式解构的键，创建时不写入 rest
+ * @returns 可枚举 getter 对象；父级修改已有值后读取仍是新值，创建后新增键不会自动加入。
  */
 export function createPropsRestProxy(
   props: any,
@@ -506,6 +488,9 @@ export function createPropsRestProxy(
     if (!excludedKeys.includes(key)) {
       Object.defineProperty(ret, key, {
         enumerable: true,
+        /**
+         * 每次读取 rest 的保留键都回读原 props，父组件更新后仍得到最新值；键集合在创建代理时确定，不动态加入后续新增键。
+         */
         get: () => props[key],
       })
     }
@@ -547,6 +532,9 @@ export function withAsyncContext(getAwaitable: () => any): [any, () => void] {
     setInSSRSetupState(false)
   }
 
+  /**
+   * 恢复捕获的组件实例并开启它的 effect scope；SSR 时同步恢复 setup 标志。这里只恢复 ctx，避免并发组件错误恢复兄弟实例。
+   */
   const restore = () => {
     setCurrentInstance(ctx)
     if (inSSRSetup) {
@@ -557,6 +545,9 @@ export function withAsyncContext(getAwaitable: () => any): [any, () => void] {
   // 不能恢复调用前捕获的 prev：并发 async setup 中它可能属于兄弟组件，恢复会造成
   // 跨组件上下文泄漏。这里只需平衡 setCurrentInstance(ctx) 打开的 effect scope，
   // 再为用户后续微任务清空全局 currentInstance。
+  /**
+   * 在用户 await continuation 之后平衡 ctx.scope 的开启并清空当前实例；若其他实例已活动，先关闭 ctx 的遗留 scope，再清理活动窗口。SSR 标志也复位。
+   */
   const cleanup = () => {
     if (getCurrentInstance() !== ctx) ctx.scope.off()
     unsetCurrentInstance()

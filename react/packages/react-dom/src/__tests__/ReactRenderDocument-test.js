@@ -17,7 +17,7 @@ let act;
 let Scheduler;
 let assertLog;
 
-/** `getTestDocument`：封装当前用例复用的操作、回调或断言步骤。 */
+/** 创建独立HTMLDocument并以open/write/close解析给定markup；缺省输入提供meta/title的最小文档，DOM结构由HTML parser补齐。 */
 function getTestDocument(markup) {
   const doc = document.implementation.createHTMLDocument('');
   doc.open();
@@ -29,7 +29,7 @@ function getTestDocument(markup) {
   return doc;
 }
 
-/** `normalizeError`：封装当前用例复用的操作、回调或断言步骤。 */
+/** 仅保留第一个句号之前及该句号，或无句号时原消息，避免后续解释变化影响恢复错误断言。 */
 function normalizeError(msg) {
   // 将第一个句子作为基础，以便更容易地进行断言。
   const idx = msg.indexOf('.');
@@ -53,18 +53,11 @@ describe('rendering React components at document', () => {
   });
 
   describe('with new explicit hydration API', () => {
-    /**
-     * 代表场景（Given–When–Then）：
-     * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-     * When 执行「should be able to adopt server markup」描述的渲染或交互；
-     * Then 通过本用例的 DOM、日志或调度断言确认行为。
-     *
-     * 验证机制：断言覆盖 react-dom 的服务端流适配层；完整 Fizz 状态机位于 react-server。
-     */
+    /** SSR完整html/head/body的Root(world)，hydrateRoot(Document)后更新moon；文字更新且body对象身份保持，legacy字符串无DOCTYPE/rel=expect，验证文档单例认领与后续更新。 */
     it('should be able to adopt server markup', async () => {
-      /** `Root`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+      /** world/moon文本可更新的完整文档类，验证Document单例复用。 */
       class Root extends React.Component {
-        /** `Root.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 输出固定html/head/title与按hello变化的body，隔离文字更新。 */
         render() {
           return (
             <html>
@@ -97,11 +90,11 @@ describe('rendering React components at document', () => {
       expect(body === testDocument.body).toBe(true);
     });
 
-    /** 测试场景：验证「should be able to unmount component from document node, but leaves singleton nodes intact」描述的渲染、交互或错误处理结果。 */
+    /** SSR完整文档并hydrateRoot后unmount；html/head/body对象均保留，head/body内容清空，验证Document单例不会随React子树删除。 */
     it('should be able to unmount component from document node, but leaves singleton nodes intact', async () => {
-      /** `Root`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+      /** 输出完整Hello文档供水合后卸载，保存单例身份。 */
       class Root extends React.Component {
-        /** `Root.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 固定html/head/title/body，卸载应只清其子内容。 */
         render() {
           return (
             <html>
@@ -126,8 +119,7 @@ describe('rendering React components at document', () => {
       const originalHead = testDocument.head;
       const originalBody = testDocument.body;
 
-      // 当卸载时，除了 HTML 的单例节点外，一切都被移除。 头部 `<body>` 和 `<html>` 是 HTML 文档的根
-      // 元素。它们是文档的主体部分，包含所有其他 HTML 元素。
+      // 卸载会清理 React 的内容，但复用的 html、head、body 单例节点仍留在文档中。
       root.unmount();
       expect(testDocument.firstChild).toBe(originalDocEl);
       expect(testDocument.head).toBe(originalHead);
@@ -136,11 +128,11 @@ describe('rendering React components at document', () => {
       expect(originalHead.innerHTML).toBe('');
     });
 
-    /** 测试场景：验证「should not be able to switch root constructors」描述的渲染、交互或错误处理结果。 */
+    /** SSR Component后水合，再root.render不同类Component2；body从Hello变Goodbye，验证当前实现允许更换根组件类型；旧标题并不反映实际断言。 */
     it('should not be able to switch root constructors', async () => {
-      /** `Component`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+      /** 初始Hello完整文档类，随后被另一组件类型替换。 */
       class Component extends React.Component {
-        /** `Component.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 固定Hello body，作为类型切换前内容。 */
         render() {
           return (
             <html>
@@ -153,9 +145,9 @@ describe('rendering React components at document', () => {
         }
       }
 
-      /** `Component2`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+      /** 另一独立类输出Goodbye但单例标签结构相同。 */
       class Component2 extends React.Component {
-        /** `Component2.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 替换后输出Goodbye body，用于证明当前支持根类型变化。 */
         render() {
           return (
             <html>
@@ -185,11 +177,11 @@ describe('rendering React components at document', () => {
       expect(testDocument.body.innerHTML).toBe('Goodbye world');
     });
 
-    /** 测试场景：验证「should be able to mount into document」描述的渲染、交互或错误处理结果。 */
+    /** SSR Component(text=Hello)后hydrateRoot(Document)；body文字正确，验证显式Document容器水合。 */
     it('should be able to mount into document', async () => {
-      /** `Component`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+      /** 完整文档fixture，从text props生成body供显式水合。 */
       class Component extends React.Component {
-        /** `Component.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 固定单例标签并透传text，只检查服务端认领成功。 */
         render() {
           return (
             <html>
@@ -217,14 +209,14 @@ describe('rendering React components at document', () => {
       expect(testDocument.body.innerHTML).toBe('Hello world');
     });
 
-    /** 测试场景：验证「cannot render over an existing text child at the root」描述的渲染、交互或错误处理结果。 */
+    /** 容器直接Text potato，却水合div/parsnip；flushSync报告HTML不匹配并最终文字parsnip，验证根形状错配退回客户端构建。 */
     it('cannot render over an existing text child at the root', async () => {
       const container = document.createElement('div');
       container.textContent = 'potato';
 
       ReactDOM.flushSync(() => {
         ReactDOMClient.hydrateRoot(container, <div>parsnip</div>, {
-          /** `onRecoverableError`：封装当前用例复用的操作、回调或断言步骤。 */
+          /** 把主错误及可选cause的首句写Scheduler日志，比较形状/文本错配恢复；回调只记录，不自行重建DOM。 */
           onRecoverableError: error => {
             Scheduler.log(
               'onRecoverableError: ' + normalizeError(error.message),
@@ -240,11 +232,11 @@ describe('rendering React components at document', () => {
         "onRecoverableError: Hydration failed because the server rendered HTML didn't match the client.",
       ]);
 
-      // 这造成了可悲的双重文本案例.
+      // 原服务端根是Text而客户端要求div；恢复后只留下客户端parsnip。
       expect(container.textContent).toBe('parsnip');
     });
 
-    /** 测试场景：验证「renders over an existing nested text child without throwing」描述的渲染、交互或错误处理结果。 */
+    /** 容器已有div内Text potato，却水合div/div/parsnip；flushSync报告HTML不匹配而不抛未处理错误、最终parsnip，验证嵌套元素形状恢复。 */
     it('renders over an existing nested text child without throwing', async () => {
       const container = document.createElement('div');
       const wrapper = document.createElement('div');
@@ -257,7 +249,7 @@ describe('rendering React components at document', () => {
             <div>parsnip</div>
           </div>,
           {
-            /** `onRecoverableError`：封装当前用例复用的操作、回调或断言步骤。 */
+            /** 把主错误及可选cause的首句写Scheduler日志，比较形状/文本错配恢复；回调只记录，不自行重建DOM。 */
             onRecoverableError: error => {
               Scheduler.log(
                 'onRecoverableError: ' + normalizeError(error.message),
@@ -276,11 +268,11 @@ describe('rendering React components at document', () => {
       expect(container.textContent).toBe('parsnip');
     });
 
-    /** 测试场景：验证「should give helpful errors on state desync」描述的渲染、交互或错误处理结果。 */
+    /** SSR完整文档body为Goodbye，客户端同结构为Hello；flushSync给文本不匹配恢复消息并替换body内容，验证文档文本错配。 */
     it('should give helpful errors on state desync', async () => {
-      /** `Component`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+      /** 同结构但服务端与客户端text不同的完整文档类。 */
       class Component extends React.Component {
-        /** `Component.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** body透传text，使测试仅制造文本不匹配。 */
         render() {
           return (
             <html>
@@ -303,7 +295,7 @@ describe('rendering React components at document', () => {
           testDocument,
           <Component text="Hello world" />,
           {
-            /** `onRecoverableError`：封装当前用例复用的操作、回调或断言步骤。 */
+            /** 把主错误及可选cause的首句写Scheduler日志，比较形状/文本错配恢复；回调只记录，不自行重建DOM。 */
             onRecoverableError: error => {
               Scheduler.log(
                 'onRecoverableError: ' + normalizeError(error.message),
@@ -322,13 +314,13 @@ describe('rendering React components at document', () => {
       expect(testDocument.body.innerHTML).toBe('Hello world');
     });
 
-    /** 测试场景：验证「should render w/ no markup to full document」描述的渲染、交互或错误处理结果。 */
+    /** 默认测试Document有meta/title但空body，水合完整Hello文档；title作为可提升资源不导致首个错误，报告body HTML错配并恢复Hello，验证singleton/hoistable搜索与恢复。 */
     it('should render w/ no markup to full document', async () => {
       const testDocument = getTestDocument();
 
-      /** `Component`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+      /** 从默认空body文档水合的完整文档类。 */
       class Component extends React.Component {
-        /** `Component.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 输出Hello body及可提升title，区分title认领与body错配。 */
         render() {
           return (
             <html>
@@ -347,7 +339,7 @@ describe('rendering React components at document', () => {
           testDocument,
           <Component text="Hello world" />,
           {
-            /** `onRecoverableError`：封装当前用例复用的操作、回调或断言步骤。 */
+            /** 把主错误及可选cause的首句写Scheduler日志，比较形状/文本错配恢复；回调只记录，不自行重建DOM。 */
             onRecoverableError: error => {
               Scheduler.log(
                 'onRecoverableError: ' + normalizeError(error.message),

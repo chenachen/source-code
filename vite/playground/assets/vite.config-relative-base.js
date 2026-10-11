@@ -3,7 +3,7 @@ import baseConfig from './vite.config.js'
 
 export default defineConfig(({ isPreview }) => ({
   ...baseConfig,
-  base: !isPreview ? './' : '/relative-base/', // relative base to make dist portable
+  base: !isPreview ? './' : '/relative-base/', // 相对 base 使产物可移动；preview 改用指定挂载前缀。
   build: {
     ...baseConfig.build,
     outDir: 'dist/relative-base',

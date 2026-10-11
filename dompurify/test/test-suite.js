@@ -1,21 +1,19 @@
 /*
  * DOMPurify 测试套件。
  *
- * 套件按 QUnit module 组织。module 把相关测试聚合，使失败能快速缩小排查范围；同一 module
- * 内按声明顺序从上到下执行，但不保证跨 module 顺序。因此，依赖兄弟用例前后状态的步骤必须
- * 放在同一 module 内（例如 hook 污染模块用 beforeEach/afterEach 隔离实例）。
+ * 套件按 QUnit module 聚合相关测试。需要比较连续调用的状态时，把这些调用放在同一个
+ * QUnit.test 内；跨用例的配置与 hooks 由用例自行清理，或由 module 的生命周期回调隔离。
  *
  * 约定：
  *   - `var` 仅用于 UMD 包装和确实依赖提升的用例局部变量；其余声明使用 const/let。
- *   - QUnit.test 主体使用箭头函数；只有 hook 需要独立 `this` 绑定时才用 `function () {}`。
+ *   - QUnit.test 主体通常使用箭头函数；需要读取 DOMPurify 绑定的 `this` 时，hook 使用普通函数。
  *   - 序列化结果因引擎（jsdom/Chromium/Firefox/WebKit）而异时，数组形式的
  *     assert.contains([...]) 表示完整可接受结果集合。注意 runner 的实现是
  *     `expected.indexOf(actual) > -1`：当 expected 是字符串时会退化为子串匹配，空输出也会
  *     命中任意字符串。因此标量 fixture 只能作为宽松回归信号，严格机制结论须结合 assert.equal
  *     或下方真实 DOM sink 测试。
  *
- * 已公开编号的安全回归会在标题中标注 CVE/GHSA；相邻注释解释被阻断的攻击原语。不得删除这些
- * 注释：其中若干问题没有其他机制文档。
+ * 部分安全回归在标题中标注 CVE/GHSA；相邻注释解释输入形状、清理路径与断言范围。
  */
 
 (function (global, factory) {
@@ -30,13 +28,14 @@
   /**
    * 向当前 QUnit 环境注册跨 jsdom 与真实浏览器复用的 DOMPurify 机制测试。
    *
-   * 状态：多数用例共享传入实例；凡修改持久配置或 hooks 的用例必须在结束时清理，安全回归
-   * 模块则在 beforeEach/afterEach 中创建隔离实例。
+   * 状态：多数用例共享传入实例。修改持久配置或 hooks 的用例在结束时清理；allowlist 污染
+   * 模块在 beforeEach 创建独立实例，afterEach 清除该实例的 hooks 与持久配置。
    *
    * @param DOMPurify - 当前构建绑定到目标 window 后的实例/工厂。
    * @param window - 提供 DOM、计时器和 XSS 探针的目标 realm。
    * @param sanitizationTestCases - 带 payload/expected 的完整序列化 fixture。
    * @param xssTestCases - 从 fixture 中筛出的含 alert 载荷，用于真实插入 sink。
+   * @returns {void} 只注册模块、测试和回调；测试执行由 QUnit 调度。
    */
   return function testSuite(
     DOMPurify,
@@ -48,10 +47,14 @@
     const jQuery = window.jQuery;
 
     // =======================================================================
-    // 数据驱动清洗测试。fixture 与 runner 同处 `test/fixtures/...`，让源码、dist 和压缩构建
-    // 复用同一语料，不复制攻击样本。
+    // 数据驱动清洗测试。runner 从 `test/fixtures/expect.mjs` 读取语料并传入本套件，
+    // 不同待测构建复用相同 payload/expected。
     // =======================================================================
 
+    /**
+     * runner 将 expect.mjs 的全部数据传入 sanitizationTestCases；
+     * 循环给每条默认清洗注册结果匹配测试，数组候选与标量匹配语义见文件头。
+     */
     QUnit.module('Sanitization (data-driven)');
 
     /**
@@ -59,11 +62,16 @@
      * When：以默认配置执行 `sanitize()`。
      * Then：实际输出命中 fixture 期望。
      *
-     * 验证机制：覆盖完整 223 条语料；标量 expected 受 runner 子串语义限制，故安全性还由
-     * 下方真实 sink 测试与显式严格断言补证。
+     * 验证机制：为传入的每条 fixture 注册测试；数组 expected 做完整结果匹配，标量 expected
+     * 做子串匹配。含 alert 的语料还会进入下方 DOM 插入测试。
      * 对应源码：`sanitize()` 的默认配置、DOM 遍历和字符串序列化主链。
      */
     sanitizationTestCases.forEach((testCase) => {
+      /**
+       * 逐条取 fixture 的 payload，以默认配置净化并交给 assert.contains。
+       * 数组 expected 要求命中完整候选，标量 expected 只做子串匹配；
+       * 此定义由语料循环注册，不共享前一条输入的结果。
+       */
       QUnit.test(`sanitization[${testCase.title}]`, (assert) => {
         assert.contains(
           DOMPurify.sanitize(testCase.payload),
@@ -74,20 +82,30 @@
     });
 
     // =======================================================================
-    // XSS 测试断言清洗后的输出绝不调用 alert()。三组 runner 覆盖实际常见的插入 sink：
+    // XSS 测试观察清洗输出插入 DOM 后是否调用 alert()。三组模块覆盖常见的插入 sink：
     // 原生 innerHTML、jQuery.html() 和 document.write()。document.write() 单独存在，是因为
     // 内容经解析器入口注入时，Firefox 与 Chromium 历史上存在行为差异。
     //
     // Given：每条 payload 含 alert，并已把 window.alert 替换为 xssed 探针。
-    // When：清洗后分别进入三类真实 DOM sink，并等待异步事件一个 tick。
-    // Then：xssed 始终不为 true，之后清理 DOM 与探针状态。
-    // 验证机制：验证“序列化字符串重新解析后仍惰性”，而非仅做输出子串比较。
+    // When：清洗后进入 DOM sink。innerHTML 与 jQuery 用例等待 100ms 后检查；iframe 用例
+    // 在 document.write() 返回后立即检查，随后删除 iframe。
+    // Then：检查时 xssed 不为 true，之后清理 DOM 与探针状态。
+    // 验证机制：观察重新解析和插入后的执行结果；iframe 的检查覆盖 write 期间的同步执行。
     // 对应源码：`sanitize()` 元素/属性清洗与最终序列化。
     // =======================================================================
 
+    /**
+     * 对筛出的含 alert 语料执行原生 innerHTML 插入；
+     * 每例等待 100ms 并清空 fixture/探针，观察该 sink 的执行窗口。
+     */
     QUnit.module('XSS — native innerHTML');
 
     xssTestCases.forEach((testCase) => {
+      /**
+       * 将每条含 alert 的 fixture 默认净化后赋给 qunit-fixture.innerHTML。
+       * 等待 100ms 检查 xssed 未置 true，再清空容器和探针；
+       * 验证当前插入路径中的同步及等待窗口内的事件执行。
+       */
       QUnit.test(`xss[${testCase.title}]`, (assert) => {
         document.getElementById('qunit-fixture').innerHTML = DOMPurify.sanitize(
           testCase.payload
@@ -102,9 +120,18 @@
       });
     });
 
+    /**
+     * 同组语料经 jQuery.html 重解析并等待 100ms；
+     * 库由 runner 注入到当前 window，结束后清场。
+     */
     QUnit.module('XSS — jQuery.html()');
 
     xssTestCases.forEach((testCase) => {
+      /**
+       * 将同组 alert 语料默认净化后经 jQuery.html 插入。
+       * 100ms 后检查 xssed、清空节点并复位；
+       * 目标是观察 jQuery 重解析后的执行结果。
+       */
       QUnit.test(`xss[${testCase.title}]`, (assert) => {
         jQuery('#qunit-fixture').html(DOMPurify.sanitize(testCase.payload));
         const done = assert.async();
@@ -117,9 +144,19 @@
       });
     });
 
+    /**
+     * 同组语料分别使用新 iframe 的 document.write；
+     * 在 write 返回后立即检查顶层探针，再删除 iframe。
+     */
     QUnit.module('XSS — iframe document.write()');
 
     xssTestCases.forEach((testCase) => {
+      /**
+       * 每条 alert 语料使用新 about:blank iframe，在 onload 中先安装顶层探针再 document.write 清洗
+       * 结果。
+       * write 返回后立即检查 xssed，删除 iframe；
+       * 覆盖 write 期间的同步执行。
+       */
       QUnit.test(`xss[${testCase.title}]`, (assert) => {
         const done = assert.async();
         const iframe = document.createElement('iframe');
@@ -142,10 +179,16 @@
       });
     });
 
-    // 探针自检：给 iframe-write detector 一段真实恶意载荷时必须触发 alert()。若本测试不再触发，
-    // 上方 XSS — iframe document.write() 模块即失去负向检测能力，绿灯不能再证明输出安全。
+    // 探针自检：直接写入内联 script，确认 iframe 内的同步 alert 会设置父窗口的 xssed。
+    /**
+     * 直接写入脚本使探针触发，验证 document.write 测试的检测器和父窗口状态联通。
+     */
     QUnit.module('XSS — detector self-test');
 
+    /**
+     * 不经过 sanitize，直接向新 iframe 写入调用 alert 的 script。
+     * 要求父窗口探针同步置 true，随后复位并删除 iframe，用于验证上组 write 检测器确实能捕捉脚本执行。
+     */
     QUnit.test(
       'iframe document.write() with raw payload triggers detector',
       (assert) => {
@@ -175,15 +218,15 @@
     // 配置：KEEP_CONTENT、ALLOWED_TAGS、ALLOWED_ATTR。
     // =======================================================================
 
+    /**
+     * 对照允许集合及 KEEP_CONTENT 开关；
+     * 严格字符串结果区分删除包装、提升内容与丢弃子树。
+     */
     QUnit.module('Config — KEEP_CONTENT, ALLOWED_TAGS, ALLOWED_ATTR');
 
     /**
-     * Given：iframe 不在默认 allowlist，且显式关闭 KEEP_CONTENT。
-     * When：清洗包含文本子节点的 iframe。
-     * Then：元素和其内容都被丢弃，返回空字符串。
-     *
-     * 验证机制：精确输出证明不是“只移除标签并提升子节点”。
-     * 对应源码：`_sanitizeDisallowedNode()` 的 KEEP_CONTENT=false 分支。
+     * iframe 默认被拒绝，同时显式关闭 KEEP_CONTENT。
+     * 净化含 Hello 的 iframe 后严格要求空字符串，确认标签被丢弃时文本也未提升。
      */
     QUnit.test(
       'KEEP_CONTENT=false drops content of stripped tags',
@@ -195,6 +238,11 @@
       }
     );
 
+    /**
+     * 只放行 b/q 标签和 style 属性，输入外层 a 含文本与两种子元素。
+     * 开启 KEEP_CONTENT 后要求保留文本、允许标签及 style，删除 a 包装和 class；
+     * 候选仅容纳 CSS 序列化差别。
+     */
     QUnit.test(
       'KEEP_CONTENT=true preserves content inside ALLOWED_TAGS / ALLOWED_ATTR',
       (assert) => {
@@ -215,6 +263,10 @@
       }
     );
 
+    /**
+     * 外层 a 不在指定标签集合中，虽然内部 b/q 被放行，但关闭 KEEP_CONTENT。
+     * 两组输入均要求空结果，确认被拒绝祖先会连同允许的后代一起丢弃。
+     */
     QUnit.test(
       'KEEP_CONTENT=false drops content even when surrounding tags are allowed',
       (assert) => {
@@ -239,6 +291,10 @@
       }
     );
 
+    /**
+     * 输入 form 包住名为 parentNode 的 input，仅放行 input 并保留内容。
+     * 要求结果为无 name 的 input，同时观察标签提升与 clobbering 名称过滤。
+     */
     QUnit.test(
       'KEEP_CONTENT preserves descendants when only the parent is allowed',
       (assert) => {
@@ -256,8 +312,16 @@
     // 配置：ALLOW_SELF_CLOSE_IN_ATTR。
     // =======================================================================
 
+    /**
+     * 相同含自闭合标记的 class 分别开关限制；
+     * URI 属性保留作为对照，候选容纳属性值转义。
+     */
     QUnit.module('Config — ALLOW_SELF_CLOSE_IN_ATTR');
 
+    /**
+     * class 值含自闭合 br 片段，显式关闭 ALLOW_SELF_CLOSE_IN_ATTR。
+     * 要求整条 class 删除、正常 href 保留，定位属性自闭合片段检查。
+     */
     QUnit.test('ALLOW_SELF_CLOSE_IN_ATTR=false strips attribute', (assert) => {
       assert.equal(
         DOMPurify.sanitize('<a href="#" class="foo <br/>">abc</a>', {
@@ -267,6 +331,10 @@
       );
     });
 
+    /**
+     * 同样的 class 值开启 ALLOW_SELF_CLOSE_IN_ATTR。
+     * 允许候选保留原片段或转义尖括号，确认该开关允许属性值通过自闭合片段检查。
+     */
     QUnit.test('ALLOW_SELF_CLOSE_IN_ATTR=true keeps attribute', (assert) => {
       assert.contains(
         DOMPurify.sanitize('<a href="#" class="foo <br/>">abc</a>', {
@@ -283,15 +351,22 @@
     // Declarative Partial Updates：patch 指令属性。
     // https://github.com/WICG/declarative-partial-updates/blob/main/patching-explainer.md
     //
-    // `<template for="...">` 会按 id/marker 名把内容传送或范围替换进既有元素；patchsrc 会拉取
-    // 远程标记，对 CSP 等价于脚本加载能力。patch 在连接/流式阶段生效，晚于解析期 sanitizer
-    // 对离线 fragment 的处理，因此这些链接不能进入清洗输出。PI 范围 marker 已由
-    // `_isUnsafeNode` 删除；属性删除受 SAFE_FOR_XML 控制。每个用例创建新实例，避免先前
-    // setConfig 的持久状态跳过 `_parseConfig()`、吞掉本次调用配置。
+    // 这些用例检查 patch 关联标记的删除规则：SAFE_FOR_XML 默认开启时，patchsrc 总被拒绝，
+    // for 只在 label/output 上保留；processing instruction 由 `_isUnsafeNode` 始终删除。
+    // 测试断言清洗后的字符串，不触发远程获取、模板传送或流式更新。每个用例创建新实例，
+    // 避免此前 setConfig 使 sanitize 跳过 `_parseConfig()`、忽略本次配置。
     // =======================================================================
 
+    /**
+     * 每例用新实例检查 SAFE_FOR_XML 的 for/patchsrc/指令规则；
+     * 字符串断言不触发网络获取或局部更新。
+     */
     QUnit.module('Declarative partial updates');
 
+    /**
+     * 新实例净化 div/section 上的 for 属性。
+     * 要求文本和标签保留而 for 消失，观察 SAFE_FOR_XML 下非 label/output 的关联标记删除。
+     */
     QUnit.test(
       'for teleport directive is stripped on non-label/output',
       (assert) => {
@@ -307,6 +382,10 @@
       }
     );
 
+    /**
+     * 新实例分别净化 label 与显式放行的 output。
+     * 要求两者的 for 原值保留，覆盖关联标记规则的合法标签例外。
+     */
     QUnit.test('for is preserved on label and output', (assert) => {
       const purify = DOMPurify(window);
       assert.equal(
@@ -321,6 +400,10 @@
       );
     });
 
+    /**
+     * 新实例显式放行 template，输入带 for 关联和 b 内容。
+     * 候选容纳模板保留、内容裁剪或空输出，但都不带 for，目标是切断模板来源标记。
+     */
     QUnit.test(
       'template[for] loses its patch directive when template is allowed',
       (assert) => {
@@ -335,6 +418,10 @@
       }
     );
 
+    /**
+     * 新实例通过 ADD_ATTR 显式允许 patchsrc。
+     * 严格输出仍不含该属性，确认 SAFE_FOR_XML 的拒绝规则先于属性允许集合。
+     */
     QUnit.test('patchsrc is stripped even when explicitly added', (assert) => {
       const purify = DOMPurify(window);
       assert.equal(
@@ -345,6 +432,10 @@
       );
     });
 
+    /**
+     * 将 start/end 与 marker 指令放进普通列表和 section。
+     * 要求指令消失而文本、li 顺序保留，覆盖解析成 PI 或标记注释后被元素阶段清理的结果。
+     */
     QUnit.test('processing-instruction range markers are removed', (assert) => {
       const purify = DOMPurify(window);
       assert.equal(
@@ -357,6 +448,10 @@
       );
     });
 
+    /**
+     * 新实例关闭 SAFE_FOR_XML，分别测试普通 for 与显式允许的 patchsrc。
+     * 严格结果保留两属性，确认关闭结构属性拒绝规则后的配置行为。
+     */
     QUnit.test(
       'SAFE_FOR_XML=false is the escape hatch for patch attributes',
       (assert) => {
@@ -379,8 +474,16 @@
     // 配置：ALLOW_DATA_ATTR。
     // =======================================================================
 
+    /**
+     * 以合法、畸形及禁止的 data 名称比较自动准入；
+     * 候选容纳部分引擎名称/顺序差异。
+     */
     QUnit.module('Config — ALLOW_DATA_ATTR');
 
+    /**
+     * 属性名 data-abc 后混入引号，即使允许 data 属性也应被删除。
+     * 严格输出只留下 href 与文本，覆盖 DATA_ATTR 对畸形名称的拒绝。
+     */
     QUnit.test('malformed data- attribute is stripped regardless', (assert) => {
       assert.equal(
         DOMPurify.sanitize('<a href="#" data-abc"="foo">abc</a>', {
@@ -390,6 +493,10 @@
       );
     });
 
+    /**
+     * 正常 data-abc 配合 ALLOW_DATA_ATTR=false。
+     * 输出须删除 data 属性而保留链接，确认自动 data 名称准入可关闭。
+     */
     QUnit.test('ALLOW_DATA_ATTR=false strips data-* attributes', (assert) => {
       assert.equal(
         DOMPurify.sanitize('<a href="#" data-abc="foo">abc</a>', {
@@ -399,6 +506,11 @@
       );
     });
 
+    /**
+     * 使用 data-abc 与含数字连字符的 data-abc-1-2-3。
+     * 开启 data 准入后两者均保留；
+     * 候选只放宽属性顺序，检查合法名称模式。
+     */
     QUnit.test(
       'ALLOW_DATA_ATTR=true keeps well-formed data-* attributes',
       (assert) => {
@@ -423,17 +535,21 @@
       }
     );
 
+    /**
+     * 输入包含引号、äöü、中点及 µ 的 data 名称。
+     * 分别断言删除或允许候选，检查 DATA_ATTR 字符范围，并容纳引擎对中点属性的差异。
+     */
     QUnit.test(
       'ALLOW_DATA_ATTR with empty / non-ASCII names — name-validity rules apply',
       (assert) => {
-        // `data-` 后为空：拒绝。
+        // 这里的属性名包含引号，不符合 DATA_ATTR，因而被删除。
         assert.equal(
           DOMPurify.sanitize('<a href="#" data-""="foo">abc</a>', {
             ALLOW_DATA_ATTR: true,
           }),
           '<a href="#">abc</a>'
         );
-        // Latin-1 字母：遵循 HTML 规范的引擎接受。
+        // ä/ö/ü 在 DATA_ATTR 接受的字符范围内。
         assert.contains(
           DOMPurify.sanitize('<a href="#" data-äöü="foo">abc</a>', {
             ALLOW_DATA_ATTR: true,
@@ -443,8 +559,7 @@
             '<a data-äöü="foo" href="#">abc</a>',
           ]
         );
-        // 中点/组合附加符的接受情况依引擎而异；IE11/旧 Edge 抛 InvalidCharacterError，
-        // 现代引擎接受。
+        // 中点通过 DATA_ATTR；候选结果同时容纳浏览器保留或拒绝该属性的情况。
         assert.contains(
           DOMPurify.sanitize('<a href="#" data-\u00B7._="foo">abc</a>', {
             ALLOW_DATA_ATTR: true,
@@ -455,7 +570,7 @@
             '<a href="#" data-·._="foo">abc</a>',
           ]
         );
-        // µ（micro sign，U+00B5）不属于规范定义的名称字符集。
+        // µ（U+00B5）不在 DOMPurify 的 DATA_ATTR 字符范围内。
         assert.equal(
           DOMPurify.sanitize('<a href="#" data-\u00B5="foo">abc</a>', {
             ALLOW_DATA_ATTR: true,
@@ -465,6 +580,10 @@
       }
     );
 
+    /**
+     * 对 data-evil 指定 FORBID_ATTR，分别省略和开启 ALLOW_DATA_ATTR。
+     * 两次都严格删除该属性，确认禁止集合优先于自动 data 准入。
+     */
     QUnit.test(
       'FORBID_ATTR overrides ALLOW_DATA_ATTR for the named attribute',
       (assert) => {
@@ -489,8 +608,16 @@
     // 函数形式仍有独立约束：权限不能跨调用泄漏，函数返回 true 后 URI 值仍须继续校验。
     // =======================================================================
 
+    /**
+     * 数组与谓词分别扩展标签/属性，再跨调用检查配置复位；
+     * 属性名称准入与 URI 值规则分别解释。
+     */
     QUnit.module('Config — ADD_TAGS & ADD_ATTR');
 
+    /**
+     * 用 ADD_TAGS 数组放行 my-component。
+     * 要求完整元素和文本保留，确认增加标签不会只留下文本。
+     */
     QUnit.test('ADD_TAGS as string array', (assert) => {
       assert.equal(
         DOMPurify.sanitize('<my-component>abc</my-component>', {
@@ -500,6 +627,10 @@
       );
     });
 
+    /**
+     * 只把 my-component 加入标签集合，未增加 my-attr。
+     * 要求自定义元素保留但属性消失，区分标签与属性权限。
+     */
     QUnit.test(
       'ADD_TAGS without matching ADD_ATTR strips the custom attr',
       (assert) => {
@@ -512,6 +643,10 @@
       }
     );
 
+    /**
+     * 分别把 my-component 与 my-attr 加入允许集合。
+     * 严格输出同时保留元素、属性与文本，覆盖两类配置组合。
+     */
     QUnit.test('ADD_TAGS + ADD_ATTR keeps both', (assert) => {
       assert.equal(
         DOMPurify.sanitize('<my-component my-attr="foo">abc</my-component>', {
@@ -522,6 +657,10 @@
       );
     });
 
+    /**
+     * ADD_TAGS 谓词分别允许 apple/banana 或 allowed，且关闭 KEEP_CONTENT。
+     * 严格结果只保留谓词命中的完整子树，拒绝标签的文字也丢弃。
+     */
     QUnit.test('ADD_TAGS as function selectively allows tags', (assert) => {
       assert.equal(
         DOMPurify.sanitize(
@@ -542,6 +681,10 @@
       );
     });
 
+    /**
+     * ADD_TAGS 谓词按 item 前缀选择标签，关闭 KEEP_CONTENT。
+     * 要求 item1/item2 保留、other 连内容删除，验证名称驱动的函数准入。
+     */
     QUnit.test('ADD_TAGS as function supports pattern matching', (assert) => {
       assert.equal(
         DOMPurify.sanitize(
@@ -555,6 +698,10 @@
       );
     });
 
+    /**
+     * 两个自定义标签分别携带两种属性，ADD_ATTR 读取属性名与标签名。
+     * 严格结果每个标签仅保留所属属性，验证谓词第二参数参与决定。
+     */
     QUnit.test(
       'ADD_ATTR as function receives (attrName, tagName) for tag-specific validation',
       (assert) => {
@@ -577,6 +724,10 @@
       }
     );
 
+    /**
+     * 普通 div 带 custom-attr，ADD_ATTR 同时匹配 div 与该名称。
+     * 输出保留新增属性，确认函数型属性准入适用于内建元素。
+     */
     QUnit.test('ADD_ATTR as function works on built-in tags', (assert) => {
       assert.equal(
         DOMPurify.sanitize('<div custom-attr="test">content</div>', {
@@ -586,6 +737,10 @@
       );
     });
 
+    /**
+     * 放行 one 标签后，属性谓词只认可 attribute-one。
+     * 严格结果删除 forbidden、保留命中属性，覆盖谓词拒绝的名称路径。
+     */
     QUnit.test(
       'ADD_ATTR as function rejecting returns the default',
       (assert) => {
@@ -599,9 +754,13 @@
       }
     );
 
+    /**
+     * href 已在默认名称集合中，本输入不会调用 ADD_ATTR 谓词。
+     * 配置该谓词后仍要求 javascript: 被删、https: 保留，实际检查默认 href 的 URI 校验。
+     */
     QUnit.test('ADD_ATTR function must not bypass URI validation', (assert) => {
-      // ADD_ATTR 返回 true 只放行“属性名”；href 等 URI 属性的值仍须通过 IS_ALLOWED_URI。
-      // 否则函数形式会成为永久 javascript: 绕过。
+      // href 已在默认属性集合中，名称准入会短路，不调用此处的 ADD_ATTR 谓词。
+      // 本例检查同时配置谓词时，href 仍走值校验：拒绝 javascript:，保留 https:。
       assert.ok(
         DOMPurify.sanitize('<a href="javascript:alert(1)">x</a>', {
           ADD_ATTR: (attr) => attr === 'href',
@@ -617,6 +776,10 @@
       );
     });
 
+    /**
+     * 先用始终为真的 ADD_TAGS 谓词净化，再切换数组配置和默认配置。
+     * 后两次都不允许 iframe/object/embed，验证函数准入状态在配置重解析时清除。
+     */
     QUnit.test(
       'ADD_TAGS function does not leak permissiveness into subsequent array-based calls',
       (assert) => {
@@ -645,6 +808,10 @@
       }
     );
 
+    /**
+     * 先安装始终为真的 ADD_ATTR 谓词，再以数组与默认配置清洗 javascript: 链接。
+     * 后续输出都不含危险协议，检查函数配置不会跨调用留存。
+     */
     QUnit.test(
       'ADD_ATTR function does not leak permissiveness into subsequent array-based calls',
       (assert) => {
@@ -674,8 +841,16 @@
     // 配置：FORBID_CONTENTS / ADD_FORBID_CONTENTS。
     // =======================================================================
 
+    /**
+     * 三个禁止包装标签区分默认禁内容、显式替换与追加；
+     * 严格结果检验哪些后代可提升。
+     */
     QUnit.module('Config — FORBID_CONTENTS / ADD_FORBID_CONTENTS');
 
+    /**
+     * 同时禁止 div/p 标签，但只把 p 加入 FORBID_CONTENTS。
+     * 严格结果提升 div 内的 b、丢弃 p 的 b，区分删除标签时是否保留内容。
+     */
     QUnit.test(
       'FORBID_CONTENTS + FORBID_TAGS drops content of named ancestors',
       (assert) => {
@@ -689,6 +864,10 @@
       }
     );
 
+    /**
+     * FORBID_CONTENTS 指定 p，再以 ADD_FORBID_CONTENTS 增加 a，三种包装标签都被禁止。
+     * 要求仅 div 的内容提升，确认追加集合与显式集合共同生效。
+     */
     QUnit.test(
       'ADD_FORBID_CONTENTS extends the FORBID_CONTENTS set',
       (assert) => {
@@ -706,6 +885,10 @@
       }
     );
 
+    /**
+     * 只用 ADD_FORBID_CONTENTS 增加 p，同时禁止 script/p/a。
+     * 要求 script 默认禁内容规则仍在、p 内容丢弃、a 内 i 提升，验证追加不会覆盖默认集合。
+     */
     QUnit.test('ADD_FORBID_CONTENTS preserves the default set', (assert) => {
       assert.equal(
         DOMPurify.sanitize(
@@ -721,8 +904,16 @@
     // 行为现在无条件生效；以下用例固定此结果，使遗留默认被意外移除时立即暴露。
     // =======================================================================
 
+    /**
+     * 历史 SAFE_FOR_JQUERY 已无配置分支；
+     * 这些默认输出保留 raw-text/模板的解析回归形状。
+     */
     QUnit.module('Config — SAFE_FOR_JQUERY (legacy / secure by default)');
 
+    /**
+     * option 内的 style 文本包含 img/onerror 形状。
+     * 默认净化后只保留前方 a 与空 option，检查这组 raw-text/选择控件边界的清理结果。
+     */
     QUnit.test('style inside option is stripped', (assert) => {
       assert.equal(
         DOMPurify.sanitize(
@@ -732,6 +923,10 @@
       );
     });
 
+    /**
+     * option/style 闭合边界交错，内部带危险 img。
+     * 候选只有空 option 或空字符串，检查解析修复后攻击子树不进入结果。
+     */
     QUnit.test('cross-boundary style + img inside option', (assert) => {
       assert.contains(
         DOMPurify.sanitize(
@@ -741,6 +936,10 @@
       );
     });
 
+    /**
+     * option 中嵌 iframe，闭合 select 后拼入 script。
+     * 候选只有空 option 或空字符串，覆盖不允许容器内容的丢弃。
+     */
     QUnit.test('iframe + script inside option', (assert) => {
       assert.contains(
         DOMPurify.sanitize(
@@ -750,6 +949,10 @@
       );
     });
 
+    /**
+     * b 内嵌两个 style 起始标签，其中一个使用自闭合写法。
+     * 要求输出为空 b，检查危险 raw-text 结构整体删除。
+     */
     QUnit.test('nested style tags with self-closing form', (assert) => {
       assert.equal(
         DOMPurify.sanitize('<b><style><style/><img src=xx: onerror=alert(1)>'),
@@ -757,6 +960,10 @@
       );
     });
 
+    /**
+     * 分别净化带前后文本的 template 与独立 template。
+     * 候选允许模板/内容按引擎被保留或裁剪，检查当前解析环境的序列化形状。
+     */
     QUnit.test('template element preservation varies by engine', (assert) => {
       assert.contains(DOMPurify.sanitize('1<template><s>000</s></template>2'), [
         '1<template><s>000</s></template>2',
@@ -769,6 +976,10 @@
       ]);
     });
 
+    /**
+     * i 内含已编码的 amp 与小于号。
+     * 严格输出保持实体层数，确认解析后再次序列化不会额外解码成标记。
+     */
     QUnit.test(
       'entity round-trip — github.com/cure53/DOMPurify/issues/283',
       (assert) => {
@@ -784,8 +995,16 @@
     // 等 marker，防止模板引擎在清洗完成后再次插值攻击者表达式。
     // =======================================================================
 
+    /**
+     * 模板模式处理文本、属性、连续及跨节点表达式，并关闭自动 data 准入；
+     * 严格结果与真实 DOM 结果分开比较。
+     */
     QUnit.module('Config — SAFE_FOR_TEMPLATES');
 
+    /**
+     * a 文本含 Mustache，style 含 ERB 表达式。
+     * 开启 SAFE_FOR_TEMPLATES 后要求相应内容替换为空格，检查文本与 raw-text 的模板清理。
+     */
     QUnit.test(
       'strips template markers from mixed text and style content',
       (assert) => {
@@ -799,6 +1018,10 @@
       }
     );
 
+    /**
+     * a 带 data-bind 表达式，开启 SAFE_FOR_TEMPLATES。
+     * 要求属性消失，目标是该模式关闭自动 data 属性准入。
+     */
     QUnit.test(
       'strips data-bind expressions even when not data-attributes',
       (assert) => {
@@ -811,6 +1034,10 @@
       }
     );
 
+    /**
+     * 对无害 data 属性组合两组 SAFE_FOR_TEMPLATES/ALLOW_DATA_ATTR 配置。
+     * 两次都要求删除，确认模板模式优先关闭 data 准入，显式关闭也生效。
+     */
     QUnit.test(
       'does not bring back stripped attributes via ALLOW_DATA_ATTR',
       (assert) => {
@@ -831,6 +1058,10 @@
       }
     );
 
+    /**
+     * 同一文本或 style 中放连续、间隔的多个模板表达式。
+     * 严格结果显示从起始边界到末尾的贪婪清理，普通子元素仍保留。
+     */
     QUnit.test(
       'strips multiple template markers in the same node',
       (assert) => {
@@ -851,6 +1082,10 @@
       }
     );
 
+    /**
+     * 嵌套或残缺 Mustache/ERB 边界，并有跨 b 的片段。
+     * 逐组严格比较空格与剩余标签，覆盖不平衡表达式的清理范围。
+     */
     QUnit.test(
       'greedy matching: nested and unbalanced markers scrub fully',
       (assert) => {
@@ -878,6 +1113,10 @@
       }
     );
 
+    /**
+     * Mustache 中夹有 script 与可能 clobber 的 form。
+     * 候选容纳 form 的引擎差异，目标是剥除表达式文本并删除事件处理器。
+     */
     QUnit.test(
       'scrubs expressions that contain stripped subtrees',
       (assert) => {
@@ -902,6 +1141,10 @@
       }
     );
 
+    /**
+     * ERB 起止边界跨 a/b/style 子树，内部还含 Mustache 关闭片段。
+     * 严格输出比较每个剩余节点，检查多轮模板清理与跨序列化边界清理。
+     */
     QUnit.test(
       'handles cross-boundary <% ... %> spanning subtrees',
       (assert) => {
@@ -915,6 +1158,10 @@
       }
     );
 
+    /**
+     * href 以多余的 Mustache 闭合符开头，后接 javascript:。
+     * 开启模板模式后要求 href 删除，检查清理后值仍须通过 URI 校验。
+     */
     QUnit.test(
       'scrubbed attribute values cannot reintroduce javascript:',
       (assert) => {
@@ -927,6 +1174,10 @@
       }
     );
 
+    /**
+     * 分别把模板表达式放进 class、裸字符串及未知标签拆开的文本。
+     * 要求 class 替换为空格、字符串整体净化为空格，覆盖属性与最终字符串清理。
+     */
     QUnit.test(
       'attribute and bare-string markers are also scrubbed',
       (assert) => {
@@ -947,12 +1198,16 @@
       }
     );
 
+    /**
+     * 在真实 div 中用不允许的 foo 拆开 Mustache 字符。
+     * IN_PLACE 后检查原树不再含完整表达式或 constructor，后者确认表达式主体也被清除。
+     */
     QUnit.test(
       'CVE-2026-41239: IN_PLACE strips boundary-spanning Mustache expressions',
       (assert) => {
-        // sanitizer 遍历时按单个文本节点清理，会漏掉被待删除 foreign 元素拆在两侧的
+        // sanitizer 遍历时按单个文本节点清理，会漏掉被待删除 foo 元素拆在两侧的
         // `{{...}}`：当时相邻节点各只有一个 `{` 或 `}`，要求 `{{`/`}}` 的 MUSTACHE_EXPR
-        // 无法命中。foreign 元素删除后文本节点相邻，normalize() 会把它们合为完整表达式，
+        // 无法命中。foo 元素删除后文本节点相邻，normalize() 会把它们合为完整表达式，
         // 模板框架挂载时即可插值。最终 scrub 先 normalize()，再遍历合并后的字符数据，因而能
         // 捕获跨边界表达式。
         const dirty = document.createElement('div');
@@ -973,6 +1228,10 @@
       }
     );
 
+    /**
+     * 在 div 中用 foo 拆开 $ 与 {danger}。
+     * IN_PLACE 后不应留下完整插值形状，检查提升后相邻文本经 normalize 和最终 scrub 清理。
+     */
     QUnit.test(
       'CVE-2026-41239: IN_PLACE strips boundary-spanning template-literal expressions',
       (assert) => {
@@ -992,6 +1251,10 @@
       }
     );
 
+    /**
+     * 字符串输入以 foo 拆开 Mustache，请求 DOM fragment 后接到容器。
+     * 检查容器序列化中表达式消失，覆盖 DOM 返回路径的最终 scrub。
+     */
     QUnit.test(
       'CVE-2026-41239: RETURN_DOM_FRAGMENT path also scrubs joined expressions',
       (assert) => {
@@ -1013,12 +1276,16 @@
       }
     );
 
+    /**
+     * 三种 href 分别含完整、未闭合与多余闭合 Mustache 边界，后面带危险协议。
+     * 严格结果均删除 href，验证贪婪模板清理与 URI 校验的顺序。
+     */
     QUnit.test(
       'greedy-scrub of stray close marker prevents URL bypass',
       (assert) => {
-        // 清除 `{{}}` 后，惰性正则会残留 `}}`；IS_ALLOWED_URI 的 `[^a-z]` 分支会接受任意
-        // 非字母开头，残留字符因而可掩护危险 URL。贪婪正则从 `{{` 清到字符串末尾，不留下
-        // 可用 URL。
+        // MUSTACHE_EXPR 从 `{{` 清到字符串末尾，或从字符串开头清到最后一个 `}}`。
+        // 因而残缺或多余的边界不能残留在 javascript: 前，借 IS_ALLOWED_URI 的
+        // `[^a-z]` 分支掩盖协议。本组同时覆盖开边界、闭边界与完整表达式后的危险 URL。
         const cfg = { SAFE_FOR_TEMPLATES: true };
         assert.equal(
           DOMPurify.sanitize('<a href="{{}}javascript:alert(1)">x</a>', cfg),
@@ -1042,8 +1309,15 @@
     // 配置：SANITIZE_DOM。
     // =======================================================================
 
+    /**
+     * 对照 SANITIZE_DOM 开关及 document/form 冲突名称，候选容纳具名属性实现对结构的影响。
+     */
     QUnit.module('Config — SANITIZE_DOM');
 
+    /**
+     * 图片的 name 分别冲突 implementation/createNodeIterator/getElementById。
+     * 开启 SANITIZE_DOM 后严格只保留 src，检查 document/form 成员碰撞过滤。
+     */
     QUnit.test('strips names that would clobber document.* APIs', (assert) => {
       assert.equal(
         DOMPurify.sanitize('<img src="x" name="implementation">', {
@@ -1065,6 +1339,10 @@
       );
     });
 
+    /**
+     * 关闭 SANITIZE_DOM，图片 name 与 getElementById 同名。
+     * 严格输出保留该 name，定位命名属性检查的关闭分支。
+     */
     QUnit.test(
       'SANITIZE_DOM=false leaves clobbering names intact',
       (assert) => {
@@ -1077,6 +1355,10 @@
       }
     );
 
+    /**
+     * a 的 id 为 location，开启 SANITIZE_DOM。
+     * 要求 href/文本保留、id 消失，检查名称与文档成员碰撞的拒绝。
+     */
     QUnit.test(
       'strips ids that would clobber window.location etc.',
       (assert) => {
@@ -1089,6 +1371,10 @@
       }
     );
 
+    /**
+     * form 内 input 名为 attributes，分别开关 SANITIZE_DOM。
+     * 候选容纳整棵 form 删除或 input/name 裁剪，观察引擎 clobbering 与库策略组合结果。
+     */
     QUnit.test(
       'form-input "attributes" name handling differs by engine',
       (assert) => {
@@ -1110,12 +1396,20 @@
     );
 
     // =======================================================================
-    // 配置：SANITIZE_NAMED_PROPS。为 id/name 属性添加 `user-content-` 前缀，防止它们
-    // clobber 预定义 window 全局或 document.* 查询结果。
+    // 配置：SANITIZE_NAMED_PROPS。为未带前缀的 id/name 添加 `user-content-`，
+    // 避免原始名称与 document/form 成员碰撞；已有该前缀的值保持不变。
     // =======================================================================
 
+    /**
+     * 为 id/name 加命名前缀，检查层级、重复值与二次净化幂等；
+     * 该模式不执行 id 去重。
+     */
     QUnit.module('Config — SANITIZE_NAMED_PROPS');
 
+    /**
+     * a 带普通 id=x，开启 SANITIZE_NAMED_PROPS。
+     * 严格要求 user-content-x，检查 id 命名空间前缀写回。
+     */
     QUnit.test('id is prefixed with user-content-', (assert) => {
       assert.equal(
         DOMPurify.sanitize('<a id="x"></a>', { SANITIZE_NAMED_PROPS: true }),
@@ -1123,6 +1417,10 @@
       );
     });
 
+    /**
+     * form 与子 input 各带 id，开启命名前缀。
+     * 严格要求两个层级都加前缀，验证属性遍历覆盖后代。
+     */
     QUnit.test('nested form + input ids are both prefixed', (assert) => {
       assert.equal(
         DOMPurify.sanitize('<form id="x"><input id="y"></form>', {
@@ -1132,6 +1430,10 @@
       );
     });
 
+    /**
+     * 两个兄弟 a 使用重复 id=x。
+     * 严格要求两者都加同一前缀，确认该配置做名称隔离而非去重。
+     */
     QUnit.test('duplicate ids on siblings are both prefixed', (assert) => {
       assert.equal(
         DOMPurify.sanitize('<a id="x"></a><a id="x"></a>', {
@@ -1141,6 +1443,10 @@
       );
     });
 
+    /**
+     * 普通、已带前缀、空值及嵌套 id/name 连续净化两次。
+     * 逐项要求二次输出等于一次，验证前缀检查保持净化幂等。
+     */
     QUnit.test('SANITIZE_NAMED_PROPS is idempotent', (assert) => {
       const cfg = { SANITIZE_NAMED_PROPS: true };
       const inputs = [
@@ -1162,6 +1468,10 @@
       });
     });
 
+    /**
+     * id/name 已以 user-content- 开头。
+     * 分别严格要求原值不变，确认不会重复增加前缀。
+     */
     QUnit.test('does not double-prefix already-prefixed values', (assert) => {
       const cfg = { SANITIZE_NAMED_PROPS: true };
       assert.equal(
@@ -1180,8 +1490,16 @@
     // 配置：WHOLE_DOCUMENT。
     // =======================================================================
 
+    /**
+     * 改变返回根选择并比较 head/body、doctype 输出；
+     * 严格字符串检查完整文档包装。
+     */
     QUnit.module('Config — WHOLE_DOCUMENT');
 
+    /**
+     * 相同纯文本分别开关 WHOLE_DOCUMENT。
+     * 要求普通模式返回文本，完整模式返回 html/head/body 包装，检查纯文本快速返回条件。
+     */
     QUnit.test('text payload', (assert) => {
       assert.equal(DOMPurify.sanitize('123', { WHOLE_DOCUMENT: false }), '123');
       assert.equal(
@@ -1190,6 +1508,10 @@
       );
     });
 
+    /**
+     * 独立 style 输入分别开关 WHOLE_DOCUMENT。
+     * 要求 body 模式为空，完整模式保留 head 中 style，区分解析位置与遍历根。
+     */
     QUnit.test('<style> is head-only without WHOLE_DOCUMENT', (assert) => {
       assert.equal(
         DOMPurify.sanitize('<style>*{color:red}</style>', {
@@ -1205,6 +1527,10 @@
       );
     });
 
+    /**
+     * 文本在 style 之前，使解析器进入 body。
+     * 两种返回模式都保留 style，完整模式多文档包装，检查输入位置对解析结构的影响。
+     */
     QUnit.test('text + <style> interleave', (assert) => {
       assert.equal(
         DOMPurify.sanitize('123<style>*{color:red}</style>', {
@@ -1220,6 +1546,10 @@
       );
     });
 
+    /**
+     * 完整文档含 doctype，分别省略和增加 !doctype 标签权限。
+     * 严格结果只在显式允许时带 doctype，定位完整文档序列化分支。
+     */
     QUnit.test(
       'doctype is stripped unless ADD_TAGS includes !doctype',
       (assert) => {
@@ -1243,15 +1573,15 @@
     // 配置：RETURN_DOM / RETURN_DOM_FRAGMENT。
     // =======================================================================
 
+    /**
+     * 请求 DOM 而非字符串，比较 body/html、ownerDocument 与模板属性；
+     * 文档深导入条件用纯文本隔离检查。
+     */
     QUnit.module('Config — RETURN_DOM');
 
     /**
-     * Given：同一 HTML 分别不含和含有 `<script>`。
-     * When：以 RETURN_DOM 清洗。
-     * Then：返回 `<body>` 元素，安全结构保留且 script 被删除。
-     *
-     * 验证机制：直接比较返回 DOM 的 outerHTML，联合证明返回类型形状和清洗副作用。
-     * 对应源码：`sanitize()` 的 RETURN_DOM 返回分支。
+     * 两组 a/b 输入分别无 script 与含 script，请求 RETURN_DOM。
+     * 严格比较 body.outerHTML，联合检查返回容器形状与 script 子树删除。
      */
     QUnit.test('returns sanitized body element', (assert) => {
       assert.equal(
@@ -1267,6 +1597,10 @@
       );
     });
 
+    /**
+     * 与前例相同输入同时请求 RETURN_DOM 和 WHOLE_DOCUMENT。
+     * 要求 html/head/body 结构且无 script，确认完整文档模式选择 html 根。
+     */
     QUnit.test(
       'RETURN_DOM + WHOLE_DOCUMENT returns sanitized html element',
       (assert) => {
@@ -1287,6 +1621,10 @@
       }
     );
 
+    /**
+     * 纯文本配合 RETURN_DOM。
+     * 要求 body 包装文本，验证此配置阻止普通文本的字符串快速返回。
+     */
     QUnit.test('plain text payload returns body wrapper', (assert) => {
       assert.equal(
         DOMPurify.sanitize('123', { RETURN_DOM: true }).outerHTML,
@@ -1294,12 +1632,17 @@
       );
     });
 
+    /**
+     * 纯文本分别请求 DOM/fragment，并开关 shadowroot 属性权限。
+     * ownerDocument 断言区分隔离文档与原始文档的深导入；
+     * 此例未构造 shadow tree。
+     */
     QUnit.test(
       'shadowroot attribute toggles owner-document selection',
       (assert) => {
-        // ADD_ATTR 未放行 `shadowroot` 时，返回 DOM 属于与活动页面隔离的 document，防止宿主
-        // document 上的 clobbering 状态影响结果。放行 `shadowroot` 表示调用方主动选择返回
-        // 当前 document 中可承载 declarative shadow root 的节点。
+        // 默认返回隔离文档中的 DOM。ALLOWED_ATTR 包含 shadowroot 或 shadowrootmode 时，
+        // 返回分支通过原始 document 的 importNode 深克隆结果，ownerDocument 因而变成 document。
+        // 这里用纯文本确认文档选择，未构造或断言 shadow root。
         assert.notEqual(
           DOMPurify.sanitize('123', { RETURN_DOM: true }).ownerDocument,
           document
@@ -1326,6 +1669,10 @@
       }
     );
 
+    /**
+     * 字符串中 template 带旧 shadowroot 属性和危险图片。
+     * RETURN_DOM 的 outerHTML 要求模板保留、shadowroot/onerror 删除，检查模板内容与属性清理。
+     */
     QUnit.test('declarative shadowroot template is neutralised', (assert) => {
       const xss =
         '<body><div><template shadowroot=open>' +
@@ -1337,15 +1684,15 @@
       );
     });
 
+    /**
+     * 请求 fragment 并尝试 id=createDocumentFragment 名称碰撞；
+     * 断言只检查类型、所有权与首文本。
+     */
     QUnit.module('Config — RETURN_DOM_FRAGMENT');
 
     /**
-     * Given：文本加一个以 `createDocumentFragment` 为 id 的图片。
-     * When：分别在默认 SANITIZE_DOM 和显式关闭它时请求 RETURN_DOM_FRAGMENT。
-     * Then：返回 nodeType=11 的隔离 fragment，文本保留，clobbering id 不进入结果。
-     *
-     * 验证机制：节点类型、ownerDocument 与首文本节点三项断言覆盖 fragment 构造和所有权。
-     * 对应源码：`sanitize()` 的 RETURN_DOM_FRAGMENT 分支及 fragment 模式预处理。
+     * 文本后图片 id 与 createDocumentFragment 同名，分别开关 SANITIZE_DOM。
+     * 只断言 fragment 类型、隔离文档与首文本，验证缓存创建方法仍能构造结果。
      */
     QUnit.test('returns DocumentFragment with sanitized contents', (assert) => {
       let fragment = DOMPurify.sanitize(
@@ -1356,7 +1703,8 @@
       assert.notEqual(fragment.ownerDocument, document);
       assert.equal(fragment.firstChild && fragment.firstChild.nodeValue, 'foo');
 
-      // 再关闭 SANITIZE_DOM，证明 fragment 模式预处理仍会删除该 clobbering id。
+      // 关闭 SANITIZE_DOM 后，仍使用缓存的 createDocumentFragment 方法构造结果；
+      // 这三项断言检查 fragment 的类型、所属文档与文本，不检查图片的 id。
       fragment = DOMPurify.sanitize('foo<img id="createDocumentFragment">', {
         RETURN_DOM_FRAGMENT: true,
         SANITIZE_DOM: false,
@@ -1372,15 +1720,15 @@
     // 必须显式遍历。
     // =======================================================================
 
+    /**
+     * 真实 DOM 原地清洗，检查引用、禁止根、shadow、失败清理及 hook 分离原节点；
+     * 多种能力分支在各例说明。
+     */
     QUnit.module('Config — IN_PLACE');
 
     /**
-     * Given：离线 `<a>` 节点带 javascript: href。
-     * When：以 IN_PLACE 清洗。
-     * Then：返回值与输入引用相同，危险 href 已清空。
-     *
-     * 验证机制：引用恒等和属性结果联合证明“原地清洗”，排除返回安全副本但原对象仍危险。
-     * 对应源码：`sanitize()` 的 inPlace 判定、遍历和原对象返回分支。
+     * detached a 带 javascript: href，以 IN_PLACE 净化。
+     * 返回值必须与输入引用相同且 href 清空，确认真实原节点被修改。
      */
     QUnit.test('returns the input node, mutated', (assert) => {
       const dirty = document.createElement('a');
@@ -1390,6 +1738,10 @@
       assert.equal(dirty.href, '', 'still sanitizes the dangerous href');
     });
 
+    /**
+     * 以 script 元素为 IN_PLACE 根，并带 data: src。
+     * 要求抛错，检查不允许根标签不能通过删除包装继续返回。
+     */
     QUnit.test(
       'throws when the root node tag is itself disallowed (script)',
       (assert) => {
@@ -1399,6 +1751,10 @@
       }
     );
 
+    /**
+     * 以 iframe 元素为 IN_PLACE 根，带 javascript: src。
+     * 要求抛错，覆盖另一种默认被拒绝的根标签。
+     */
     QUnit.test(
       'throws when the root node tag is itself disallowed (iframe)',
       (assert) => {
@@ -1408,6 +1764,10 @@
       }
     );
 
+    /**
+     * div 的 open shadow root 含危险 href 和无 src 的 onerror 图片。
+     * IN_PLACE 后要求两元素仍在且危险属性消失，验证 attached-root 显式预扫。
+     */
     QUnit.test(
       'sanitizes attached open shadow root on the root host',
       (assert) => {
@@ -1440,6 +1800,10 @@
       }
     );
 
+    /**
+     * section 的 shadow root 中还嵌一个带 shadow 的 div。
+     * 要求最深链接保留并删除 href，检查嵌套 attached roots 的发现与净化。
+     */
     QUnit.test('sanitizes nested shadow roots', (assert) => {
       const outer = document.createElement('section');
       const outerShadow = outer.attachShadow({ mode: 'open' });
@@ -1460,6 +1824,10 @@
       window.xssed = false;
     });
 
+    /**
+     * 先用 importNode 探测 clonable shadow 支持，再对带该 root 的 DOM 输入请求 RETURN_DOM。
+     * 要求返回副本有 shadow，存活链接/图片的危险属性已删除。
+     */
     QUnit.test(
       'RETURN_DOM with DOM input sanitizes clonable shadow root',
       (assert) => {
@@ -1519,6 +1887,10 @@
       }
     );
 
+    /**
+     * 同样先探测 clonable 能力，再请求 DOM fragment。
+     * 检查片段中的克隆 host 有 shadow，链接若保留则 href 已删除，覆盖副本预扫与 fragment 返回。
+     */
     QUnit.test(
       'RETURN_DOM_FRAGMENT with DOM input sanitizes clonable shadow root',
       (assert) => {
@@ -1567,6 +1939,11 @@
       }
     );
 
+    /**
+     * form 根内具名控件为 nodeName/attributes，带 onclick。
+     * 发生实际遮蔽时要求抛错；
+     * 未发生时要求原地返回不含事件，区分环境能力。
+     */
     QUnit.test('handles DOM-clobbered nodeName safely', (assert) => {
       const root = document.createElement('form');
       root.innerHTML =
@@ -1589,25 +1966,31 @@
       }
     });
 
+    /**
+     * 活动 form 的 own ownerDocument getter 被强制改为 input。
+     * IN_PLACE 后即使抛错，原 img 引用也必须无 onerror，验证缓存文档读取及失败清理。
+     */
     QUnit.test(
       'IN_PLACE: a clobbered ownerDocument does not skip the fail-closed scrub',
       (assert) => {
-        // HTMLFormElement 具有 [LegacyOverrideBuiltIns]：子节点
-        // `<input name="ownerDocument">`（或外部 form-associated input）会遮蔽
-        // Node.prototype.ownerDocument，使直接读取 form.ownerDocument 返回该 input。旧 iterator
-        // 通过 `createNodeIterator.call(root.ownerDocument, ...)` 创建，因而在 fail-closed 屏障前
-        // 抛 "Illegal invocation"，把仍带 handler 的后代留在调用方活动树中。jsdom/happy-dom
-        // 不实现 form named getter 覆盖，所以此处用 own accessor 忠实复现：原型 getter 被实例
-        // accessor 遮蔽，正是 [LegacyOverrideBuiltIns] 暴露的形状。
+        // 若直接读取 root.ownerDocument 得到 input，createNodeIterator.call(input, ...)
+        // 会因接收者不是 Document 抛错。此处用实例 accessor 强制构造这种读取结果，
+        // 不依赖引擎是否允许 form 的具名控件遮蔽 ownerDocument。
+        // 当前 `_createNodeIterator` 通过缓存的 Node.prototype getter 读取真实 Document；
+        // iterator 创建和主遍历还位于 IN_PLACE 异常屏障内，异常时先清理原树再传播。
         const root = document.createElement('form');
         const img = document.createElement('img');
-        img.setAttribute('onerror', 'alert(1)'); // no src: assert the attr, not a load
+        img.setAttribute('onerror', 'alert(1)'); // 不设 src；检查属性结果，不等待加载。
         root.appendChild(img);
         document.body.appendChild(root);
 
         const fake = document.createElement('input');
         Object.defineProperty(root, 'ownerDocument', {
-          /** 模拟 named-property clobber 后返回攻击者节点的 ownerDocument getter。 */
+          /**
+           * 强制普通 ownerDocument 读取返回伪 input，独立于引擎的表单命名遮蔽能力。
+           * 缓存 Node 原型 getter 仍可读取真实文档；前置断言验证本 getter 已装到根上。
+           * @returns {HTMLInputElement} 用于模拟错误接收者的节点。
+           */
           get() {
             return fake;
           },
@@ -1637,6 +2020,11 @@
       }
     );
 
+    /**
+     * 活动 form 用 name=ownerDocument 控件尝试自然遮蔽，并含危险 img。
+     * 无论环境是否真的遮蔽，清洗后原树都不含 onerror；
+     * 随后移除根。
+     */
     QUnit.test(
       'IN_PLACE: form with a natural ownerDocument-clobbering child stays safe',
       (assert) => {
@@ -1676,6 +2064,10 @@
     // 并污染 window.xssed。
     // =====================================================================
 
+    /**
+     * 已连接的自定义元素在断开回调中移除相邻包装节点，尾部图片保留引用。
+     * IN_PLACE 正常或异常退出后原图片都须无 onerror，观察重入变更后的清理。
+     */
     QUnit.test(
       'mid-walk abort de-arms the detached tail (custom-element reaction)',
       (assert) => {
@@ -1691,7 +2083,11 @@
             'inplace-abort-surgeon',
             /** 删除相邻 wrapper，模拟 custom-element reaction 在遍历中改变父子关系。 */
             class extends window.HTMLElement {
-              /** 元素断开时移除 wrapper，使后续 sanitizer 删除动作遇到 parentless 节点。 */
+              /**
+               * 元素从已连接文档断开时移除测试 wrapper，尝试制造遍历期间的结构竞争。
+               * 外层将根连接 document 后清洗，尾图片原引用用来检查中断或正常退出后的属性。
+               * @returns {void}
+               */
               disconnectedCallback() {
                 const w = document.querySelector('inplace-abort-wrapper');
                 if (w) {
@@ -1732,6 +2128,10 @@
       }
     );
 
+    /**
+     * 已连接 div 被 FORBID_TAGS 显式拒绝，后代 img 带 onerror。
+     * 要求入口抛错，同时原 img 引用的属性已删，验证拒绝根前先中和后代。
+     */
     QUnit.test(
       'forbidden-root preflight throw de-arms live descendants',
       (assert) => {
@@ -1763,6 +2163,11 @@
       }
     );
 
+    /**
+     * 活动 form 根可能被 nodeName/childNodes 控件遮蔽，另有 img。
+     * 实际遮蔽时要求抛错且原 img 无 onerror；
+     * 否则正常清洗也要满足同一属性结果。
+     */
     QUnit.test(
       'clobbered-form preflight throw de-arms live descendants',
       (assert) => {
@@ -1803,13 +2208,17 @@
       }
     );
 
+    /**
+     * 先 setConfig 持久开启 IN_PLACE，连续清洗 DOM、字符串、DOM。
+     * 两次 DOM 都必须返回同一对象且删除 onerror，验证中间字符串调用不关闭持久标志。
+     */
     QUnit.test(
       'setConfig({IN_PLACE}) is not disabled by an intervening string call (REPORT-2)',
       (assert) => {
         DOMPurify.setConfig({ IN_PLACE: true });
         try {
           const div1 = document.createElement('div');
-          div1.innerHTML = '<img onerror="alert(1)">'; // no src: avoid a load
+          div1.innerHTML = '<img onerror="alert(1)">'; // 不设 src，避免资源加载。
           const ret1 = DOMPurify.sanitize(div1);
           assert.equal(ret1, div1, 'baseline: returns the same node');
           assert.notOk(
@@ -1838,6 +2247,11 @@
       }
     );
 
+    /**
+     * detached style 文本可在重新解析时闭合并引出 img。
+     * IN_PLACE 接受抛错；
+     * 若返回则重解析不得有 sink，且 removed 记录不能声称删除仍危险的根。
+     */
     QUnit.test(
       'a kill-decision on a detached IN_PLACE root is not a silent no-op (REPORT-3)',
       (assert) => {
@@ -1845,7 +2259,7 @@
         // parentless 根，因此必须中和节点或抛错，不能一面在 DOMPurify.removed 记录“已删除”，
         // 一面原样把危险节点交还调用方。
         const style = document.createElement('style');
-        style.textContent = '</style><img onerror=alert(1)>'; // no src
+        style.textContent = '</style><img onerror=alert(1)>'; // 不设 src。
         let ret = null;
         try {
           ret = DOMPurify.sanitize(style, { IN_PLACE: true });
@@ -1884,6 +2298,10 @@
       { hook: 'uponSanitizeElement', label: 'uponSanitizeElement' },
       { hook: 'beforeSanitizeElements', label: 'beforeSanitizeElements' },
     ].forEach(({ hook, label }) => {
+      /**
+       * 对 before 与 upon 两种元素 hook 分别生成测试，hook 删除 section，事先保存其 img 引用。
+       * 返回树无该子树且原 img 无 onerror，随后重解析并清理 hook。
+       */
       QUnit.test(
         'IN_PLACE: ' +
           label +
@@ -1934,8 +2352,15 @@
     // 配置：FORBID_TAGS / FORBID_ATTR。
     // =======================================================================
 
+    /**
+     * 对标签/属性禁止集合做命中、不命中及追加冲突对照，严格比较最终清洗结构。
+     */
     QUnit.module('Config — FORBID_TAGS / FORBID_ATTR');
 
+    /**
+     * 在 a 内禁止默认允许的 b，未关闭 KEEP_CONTENT。
+     * 严格结果删除 b 包装、保留两段文本，检查标签禁止后的内容提升。
+     */
     QUnit.test(
       'FORBID_TAGS removes the named tag, keeps content by default',
       (assert) => {
@@ -1946,6 +2371,10 @@
       }
     );
 
+    /**
+     * 同时禁止嵌套的 a/b，内部还有默认拒绝的 script。
+     * 严格结果只剩三段普通文本，确认提升后的后代继续净化而脚本内容丢弃。
+     */
     QUnit.test(
       'FORBID_TAGS list applies recursively to nested matches',
       (assert) => {
@@ -1959,6 +2388,10 @@
       }
     );
 
+    /**
+     * 输入只含 a/b，FORBID_TAGS 却指定 c。
+     * 严格结果不变，检查禁止集合未命中时不会影响其他标签。
+     */
     QUnit.test('unrecognised forbid entries are no-ops', (assert) => {
       assert.equal(
         DOMPurify.sanitize('<a>123<b>456</b></a>', { FORBID_TAGS: ['c'] }),
@@ -1966,6 +2399,10 @@
       );
     });
 
+    /**
+     * 显式禁止 b/script，输入还保留 a 包装。
+     * 严格结果保留 a 和普通文字，丢弃脚本文本，区分普通禁止标签与默认禁内容标签。
+     */
     QUnit.test('FORBID_TAGS interacts with script removal', (assert) => {
       assert.equal(
         DOMPurify.sanitize('<a>123<b>456<script>alert(1)</script></b></a>789', {
@@ -1975,6 +2412,10 @@
       );
     });
 
+    /**
+     * 同一配置同时 ADD_TAGS 与 FORBID_TAGS 指定 b。
+     * 严格结果只保留 b 的文字，检查禁止集合优先于追加允许集合。
+     */
     QUnit.test('FORBID_TAGS wins over ADD_TAGS for the same tag', (assert) => {
       assert.equal(
         DOMPurify.sanitize('<a>123<b>456</b></a>', {
@@ -1985,6 +2426,11 @@
       );
     });
 
+    /**
+     * 两组输入在 a/b 上带 x/y，并夹入 script。
+     * 指定 FORBID_ATTR 后严格输出删除这些属性、保留 class 及普通文本；
+     * x/y 本来也未默认允许，此断言观察最终过滤结果。
+     */
     QUnit.test('FORBID_ATTR drops the named attribute', (assert) => {
       assert.equal(
         DOMPurify.sanitize('<a x="1">123<b>456</b></a>', {
@@ -2001,6 +2447,10 @@
       );
     });
 
+    /**
+     * b 上重复写 y，a 上也带 y，配置禁止 y。
+     * 严格输出不带任何 y，检查解析器处理重复属性后各节点的最终清理结果。
+     */
     QUnit.test(
       'repeated attribute name appears once after FORBID_ATTR',
       (assert) => {
@@ -2013,6 +2463,11 @@
       }
     );
 
+    /**
+     * b 上的 x 与 script 上的 y 均被指定禁止。
+     * 严格结果留下无 x 的 b、丢弃 script；
+     * 实际可见断言检查存活 b 的属性及脚本子树删除。
+     */
     QUnit.test(
       'FORBID_ATTR applies inside disallowed-tag content too',
       (assert) => {
@@ -2030,8 +2485,17 @@
     // 配置：CUSTOM_ELEMENT_HANDLING。
     // =======================================================================
 
+    /**
+     * 自定义名称检查、is 处理、原型字段、保留名称与后置 hook 组合；
+     * 每例明示配置及实际属性结果。
+     */
     QUnit.module('Config — CUSTOM_ELEMENT_HANDLING');
 
+    /**
+     * foo-bar 带 baz/forbidden，div 带 is=foo-baz。
+     * 正则分别允许 foo- 标签与 baz 属性并开启定制内建元素；
+     * 严格结果保留 baz/is、删除 forbidden。
+     */
     QUnit.test('regex tag/attr checks + customized built-ins', (assert) => {
       assert.equal(
         DOMPurify.sanitize(
@@ -2048,6 +2512,10 @@
       );
     });
 
+    /**
+     * 沿用 foo- 与 baz 准入，但关闭定制内建元素。
+     * 严格结果保留自主元素和 baz，将 div 的 is 写为空值，检查字符串返回时的 is 特殊处理。
+     */
     QUnit.test('allowCustomizedBuiltInElements=false drops is=', (assert) => {
       assert.equal(
         DOMPurify.sanitize(
@@ -2064,6 +2532,10 @@
       );
     });
 
+    /**
+     * 标签正则只匹配 -bar 结尾，属性正则允许全部名称。
+     * foo-bar 的两属性保留，foo-baz 不获 is 权限而写为空值，区分两种自定义元素名称。
+     */
     QUnit.test('tagNameCheck anchored to end of name', (assert) => {
       assert.equal(
         DOMPurify.sanitize(
@@ -2080,6 +2552,10 @@
       );
     });
 
+    /**
+     * 以函数替代标签/属性正则，连续测试 foo- 与 -bar 两种匹配。
+     * 严格输出分别保留或清空 is，并删除 forbidden，验证函数返回值参与准入。
+     */
     QUnit.test('function-based tag/attr checks', (assert) => {
       assert.equal(
         DOMPurify.sanitize(
@@ -2109,6 +2585,10 @@
       );
     });
 
+    /**
+     * my-paragraph 经标签正则放行，内建 span 带默认允许的 slot。
+     * 严格结构不变，检查自定义包装与正常插槽属性能共同保留。
+     */
     QUnit.test('slot attribute on custom element is preserved', (assert) => {
       assert.equal(
         DOMPurify.sanitize(
@@ -2119,6 +2599,11 @@
       );
     });
 
+    /**
+     * 空输入配置三个 CUSTOM_ELEMENT_HANDLING 字段为 null。
+     * 调用完成后断言 true，仅检查配置解析不抛错；
+     * 未测试任何自定义节点的输出。
+     */
     QUnit.test('null config values do not throw', (assert) => {
       DOMPurify.sanitize('', {
         CUSTOM_ELEMENT_HANDLING: {
@@ -2130,6 +2615,10 @@
       assert.ok(true);
     });
 
+    /**
+     * CUSTOM_ELEMENT_HANDLING 放在配置原型的抛错 getter 上。
+     * 默认净化 foo-bar 应只剩文字，未抛错同时表明继承 getter 未读取。
+     */
     QUnit.test('inherited top-level config is ignored', (assert) => {
       const proto = {};
       Object.defineProperty(proto, 'CUSTOM_ELEMENT_HANDLING', {
@@ -2143,6 +2632,10 @@
       );
     });
 
+    /**
+     * 配置对象自身有 CUSTOM_ELEMENT_HANDLING，其 tagNameCheck 仅在原型上。
+     * 严格结果删除 foo-bar 包装，检查嵌套配置也只采纳自有字段。
+     */
     QUnit.test('inherited nested config is ignored', (assert) => {
       const inherited = Object.create({ tagNameCheck: /-/u });
       assert.equal(
@@ -2153,6 +2646,10 @@
       );
     });
 
+    /**
+     * 嵌套 tagNameCheck 是原型上的抛错 getter，输入纯文本。
+     * 严格返回 abc 且不抛错，定位嵌套继承属性读取的规避。
+     */
     QUnit.test('inherited nested getters are ignored', (assert) => {
       const proto = {};
       Object.defineProperty(proto, 'tagNameCheck', {
@@ -2168,6 +2665,10 @@
       );
     });
 
+    /**
+     * 先用自定义标签规则清洗 foo-bar，再省略配置清洗同一输入。
+     * 第二次严格只剩文字，检查单次规则不会泄漏到下一次默认调用。
+     */
     QUnit.test('does not leak into subsequent default calls', (assert) => {
       DOMPurify.sanitize('<foo-bar>abc</foo-bar>', {
         CUSTOM_ELEMENT_HANDLING: { tagNameCheck: /-/u },
@@ -2175,6 +2676,10 @@
       assert.equal(DOMPurify.sanitize('<foo-bar>abc</foo-bar>'), 'abc');
     });
 
+    /**
+     * 两个自定义元素携带两种属性，函数按第二参数 tagName 选择名称。
+     * 严格结果每个元素仅留对应属性，验证属性检查接收当前标签名。
+     */
     QUnit.test('attributeNameCheck receives tagName parameter', (assert) => {
       assert.equal(
         DOMPurify.sanitize(
@@ -2200,6 +2705,10 @@
       );
     });
 
+    /**
+     * 对八个规范保留的连字符名称循环构造 onclick 输入，并提供最宽松自定义规则。
+     * 所有输出都不得出现 on* 属性，检查这些名称不能借自定义元素权限保留 handler。
+     */
     QUnit.test(
       'rejects all spec-reserved element names regardless of permissive checks',
       (assert) => {
@@ -2234,6 +2743,10 @@
       }
     );
 
+    /**
+     * HTML 输入 FONT-FACE 大写并带 onclick，使用宽松自定义规则。
+     * 输出不得出现 on* 属性，覆盖 HTML 解析器转小写后的保留名称排除。
+     */
     QUnit.test('reserved-name check is case-insensitive (HTML)', (assert) => {
       // HTML 解析器会把大写输入转成小写；reserved-name 检查必须在转换后仍生效。
       const permissive = {
@@ -2252,6 +2765,10 @@
       );
     });
 
+    /**
+     * XHTML 模式保留五种混合大小写名称，均带 onclick。
+     * 逐个断言输出无 on* 属性，覆盖 XML 解析下大小写不敏感的保留名称排除。
+     */
     QUnit.test('reserved-name check is case-insensitive (XHTML)', (assert) => {
       // application/xhtml+xml 模式保留标签大小写；reserved-name 检查必须忽略大小写，防止
       // `<Annotation-XML>` 等绕过 basic-custom-element 排除规则。
@@ -2287,6 +2804,10 @@
     // GHSA-c2j3-45gr-mqc4 回归：由 CUSTOM_ELEMENT_HANDLING 保留的 custom element 必须像普通
     // allowlisted 元素一样执行 afterSanitizeElements，避免叠加在该 hook 上的安全策略对保留的
     // custom element 静默失效。
+    /**
+     * 注册 afterSanitizeElements 收集名称，清洗允许的 x-keep 与普通 div。
+     * 名单须同时包含两者，随后移除 hook，检查保留自定义元素也触发后置元素 hook。
+     */
     QUnit.test(
       'afterSanitizeElements fires on kept custom elements',
       (assert) => {
@@ -2308,6 +2829,10 @@
       }
     );
 
+    /**
+     * 后置元素 hook 删除 data-bio，输入普通 div 与放行的 x-bio。
+     * 严格结果两个元素都无该属性，说明同一用户策略作用于两类存活节点。
+     */
     QUnit.test(
       'afterSanitizeElements policy applies uniformly to custom elements',
       (assert) => {
@@ -2325,6 +2850,10 @@
       }
     );
 
+    /**
+     * 后置元素 hook 主动删除已准入的 x-evil，兄弟 x-ok 同样被放行。
+     * 严格结果仅保留 x-ok 子树，检查 hook 的直接 DOM 修改进入结果。
+     */
     QUnit.test(
       'afterSanitizeElements can remove a kept custom element',
       (assert) => {
@@ -2341,6 +2870,10 @@
       }
     );
 
+    /**
+     * 只放行 x-a 标签，给它 onclick/javascript: href，并嵌危险 img。
+     * 输出同时不得含三种危险片段，检查标签准入之后属性和后代仍执行净化。
+     */
     QUnit.test(
       'kept custom element attributes are still sanitized (contract intact)',
       (assert) => {
@@ -2358,8 +2891,15 @@
     // 配置：ALLOW_ARIA_ATTR（#198）。
     // =======================================================================
 
+    /**
+     * 合法与非 ASCII ARIA 名称分别开关自动准入，比较名称模式和配置限制。
+     */
     QUnit.module('Config — ALLOW_ARIA_ATTR');
 
+    /**
+     * a 带合法 aria-abc，显式开启 ARIA 准入。
+     * 完整候选要求属性与 href 都保留，只容纳属性顺序差异，检查名称模式的允许分支。
+     */
     QUnit.test(
       'ALLOW_ARIA_ATTR=true preserves well-formed aria-*',
       (assert) => {
@@ -2375,6 +2915,10 @@
       }
     );
 
+    /**
+     * aria-aöü 含非 ASCII 字符，仍开启 ARIA 准入。
+     * 严格输出删除此属性而保留 href，检查名称模式不会被开关放宽。
+     */
     QUnit.test('rejects non-ASCII aria- names even when allowed', (assert) => {
       assert.equal(
         DOMPurify.sanitize('<a href="#" aria-aöü="foo">abc</a>', {
@@ -2384,6 +2928,10 @@
       );
     });
 
+    /**
+     * 关闭 ARIA 准入，分别输入合法与非 ASCII aria 名称。
+     * 两次严格结果都仅留 href，验证合法名称的自动准入可关闭。
+     */
     QUnit.test(
       'ALLOW_ARIA_ATTR=false strips even well-formed aria-*',
       (assert) => {
@@ -2406,8 +2954,16 @@
     // 配置：USE_PROFILES。
     // =======================================================================
 
+    /**
+     * HTML/SVG/filter/MathML profile 重建允许集合；
+     * 候选记录引擎裁剪，再用追加与禁止配置约束输出。
+     */
     QUnit.module('Config — USE_PROFILES');
 
+    /**
+     * 相同 h1 输入分别关闭、开启 html profile。
+     * 严格结果分别只剩文字与完整 h1，检查 profile 构建的标签允许集合。
+     */
     QUnit.test('html profile toggle', (assert) => {
       assert.equal(
         DOMPurify.sanitize('<h1>HELLO</h1>', { USE_PROFILES: { html: false } }),
@@ -2419,6 +2975,10 @@
       );
     });
 
+    /**
+     * 组合 html/mathMl profile 清洗 h1 与空或带 mi 的 math。
+     * 候选始终保留 h1，并容纳环境裁剪 MathML 的形状，检查组合 profile 的可接受输出。
+     */
     QUnit.test('html + mathMl combined profile', (assert) => {
       assert.contains(
         DOMPurify.sanitize('<h1>HELLO</h1><math></math>', {
@@ -2438,6 +2998,10 @@
       );
     });
 
+    /**
+     * 在 html/mathMl profile 上分别禁止 mi 和 class。
+     * 完整候选都不含被禁止项，同时容纳 MathML 被环境裁剪，检查禁止集合继续约束 profile。
+     */
     QUnit.test('FORBID_TAGS / FORBID_ATTR refine profile output', (assert) => {
       assert.contains(
         DOMPurify.sanitize('<h1>HELLO</h1><math><mi></mi></math>', {
@@ -2459,6 +3023,10 @@
       );
     });
 
+    /**
+     * 三次 USE_PROFILES 分别是未知字段对象、数字和空数组。
+     * h1 输入严格都只剩文字，检查未启用有效 profile 时的标签集合行为。
+     */
     QUnit.test(
       'unknown / non-object profile entries strip everything',
       (assert) => {
@@ -2479,6 +3047,11 @@
       }
     );
 
+    /**
+     * 只开启 svg profile，输入 svg/rect 与 height。
+     * 候选容纳完整 SVG、XML 序列化、空根乃至空输出，记录各环境接受形状；
+     * 未强制所有环境保留 rect。
+     */
     QUnit.test('svg profile keeps SVG elements', (assert) => {
       assert.contains(
         DOMPurify.sanitize('<svg><rect height="50"></rect></svg>', {
@@ -2493,6 +3066,10 @@
       );
     });
 
+    /**
+     * 开启 svgFilters 并追加 svg 标签，输入 feBlend 的 in/mode。
+     * 候选容纳名称大小写、XML 自闭合及子节点裁剪，检查过滤器 profile 与容器追加的组合。
+     */
     QUnit.test('svgFilters profile keeps SVG filter primitives', (assert) => {
       assert.contains(
         DOMPurify.sanitize(
@@ -2511,6 +3088,11 @@
       );
     });
 
+    /**
+     * svg profile 输入 SVG style 的普通 fill CSS。
+     * 候选容纳 style 保留或 SVG 裁剪；
+     * 检查解析与序列化形状，CSS 内容本身未进行规则解析。
+     */
     QUnit.test('svg <style> content survives', (assert) => {
       assert.contains(
         DOMPurify.sanitize(
@@ -2526,6 +3108,10 @@
       );
     });
 
+    /**
+     * SVG text 与 HTML span 都关闭 KEEP_CONTENT。
+     * SVG 接受环境裁剪候选，HTML 严格保留 span/文字，后者说明该选项不删除允许元素的内容。
+     */
     QUnit.test('svg <text> survives even with KEEP_CONTENT=false', (assert) => {
       assert.contains(
         DOMPurify.sanitize('<svg><text>SEE ME</text></svg>', {
@@ -2539,7 +3125,8 @@
           '<svg xmlns="http://www.w3.org/2000/svg" />',
         ]
       );
-      // 对照：html profile 保留 `<span>` 内容；除非 KEEP_CONTENT 要求丢弃，否则 wrapper 也保留。
+      // span 属于 html profile 的允许标签，元素与文本都保留；KEEP_CONTENT=false
+      // 只影响被拒绝元素的后代，不会删除允许的 span 内容。
       assert.equal(
         DOMPurify.sanitize('<span>SEE ME</span>', {
           USE_PROFILES: { html: true },
@@ -2549,6 +3136,10 @@
       );
     });
 
+    /**
+     * svg profile 上追加 div 标签或 keep 属性。
+     * div 必须完整保留，SVG 候选允许附加属性或空输出，检查 profile 允许集合可继续扩展。
+     */
     QUnit.test('ADD_TAGS / ADD_ATTR extend profile allowlists', (assert) => {
       assert.equal(
         DOMPurify.sanitize('<div></div>', {
@@ -2570,6 +3161,10 @@
       );
     });
 
+    /**
+     * USE_PROFILES 是配置原型上的抛错 getter。
+     * 严格保留默认 h1 且不抛错，检查顶层继承配置不会读取。
+     */
     QUnit.test('inherited top-level USE_PROFILES is ignored', (assert) => {
       const proto = {};
       Object.defineProperty(proto, 'USE_PROFILES', {
@@ -2583,6 +3178,10 @@
       );
     });
 
+    /**
+     * USE_PROFILES 对象只从原型继承 html=true。
+     * 严格结果去掉 h1 包装，检查继承 profile 标志不参与启用。
+     */
     QUnit.test('inherited profile flags are ignored', (assert) => {
       const inherited = Object.create({ html: true });
       assert.equal(
@@ -2591,6 +3190,10 @@
       );
     });
 
+    /**
+     * 先关闭 html profile 清洗 h1，再默认清洗相同输入。
+     * 第二次严格保留 h1，确认 profile 集合按新调用配置重建。
+     */
     QUnit.test('does not leak into subsequent default calls', (assert) => {
       DOMPurify.sanitize('<h1>HELLO</h1>', {
         USE_PROFILES: { html: false },
@@ -2602,8 +3205,15 @@
     // 配置：ALLOWED_URI_REGEXP / ADD_URI_SAFE_ATTR / ALLOW_UNKNOWN_PROTOCOLS。
     // =======================================================================
 
+    /**
+     * 自定义 URI 正则逐项判定协议，再检查跨调用恢复与 global RegExp 游标复位。
+     */
     QUnit.module('Config — ALLOWED_URI_REGEXP');
 
+    /**
+     * 自定义 URI 正则循环检查 https/http、blob 与 mailto。
+     * 前两项保留 src，后两项删除 URI 属性，严格逐项比较正则约束后的结果。
+     */
     QUnit.test('custom regex filters URI-bearing attributes', (assert) => {
       const tests = [
         {
@@ -2632,6 +3242,10 @@
       });
     });
 
+    /**
+     * 先默认清洗 different.com，再用 test.com 正则，最后重新默认清洗。
+     * 首尾输出相同，检查上一调用的 URI 正则不会被后续默认调用复用。
+     */
     QUnit.test('ALLOWED_URI_REGEXP is not cached across calls', (assert) => {
       const dirty = '<img src="https://different.com">';
       const expected = '<img src="https://different.com">';
@@ -2648,6 +3262,10 @@
       assert.equal(DOMPurify.sanitize(dirty), expected);
     });
 
+    /**
+     * 一个输入含两个 blob src 与 epub href，URI 正则带 g/i。
+     * 严格保留三个 URI 并删除 epub:type，检查每次正则测试复位 lastIndex。
+     */
     QUnit.test(
       'ALLOWED_URI_REGEXP with /g flag does not lose state',
       (assert) => {
@@ -2669,8 +3287,16 @@
       }
     );
 
+    /**
+     * URI-safe 属性在名称准入后豁免协议检查；
+     * 连续调用区分追加默认集合和当次扩展。
+     */
     QUnit.module('Config — ADD_URI_SAFE_ATTR');
 
+    /**
+     * typeof 的 bla:h 值不符合默认 URI 规则，但名称被 ALLOWED_ATTR 放行且加入 URI-safe 集合。
+     * 严格保留该属性，检查 URI 检查豁免。
+     */
     QUnit.test(
       'ALLOW_DATA_ATTR + ADD_URI_SAFE_ATTR exempts attribute from URI check',
       (assert) => {
@@ -2684,6 +3310,10 @@
       }
     );
 
+    /**
+     * 先以 ADD_URI_SAFE_ATTR 允许 typeof=bla:h，再仅放行名称。
+     * 第二次严格删除属性，检查单次 URI-safe 扩展不会跨调用保留。
+     */
     QUnit.test(
       'URI safe additions do not persist across calls (#327)',
       (assert) => {
@@ -2702,6 +3332,10 @@
       }
     );
 
+    /**
+     * 先把 poster 加入 URI-safe 集合，style 同时使用默认豁免。
+     * 首次候选保留两者，默认重试只留 style，验证追加保留默认项且不泄漏 poster 权限。
+     */
     QUnit.test(
       'URI safe additions do not overwrite defaults (#366)',
       (assert) => {
@@ -2724,8 +3358,15 @@
       }
     );
 
+    /**
+     * 可选未知协议接受 spotify/cid，但仍拒绝 javascript 与事件名称，并单独检查 data URI 标签权限。
+     */
     QUnit.module('Config — ALLOW_UNKNOWN_PROTOCOLS');
 
+    /**
+     * 开启未知协议，输入 spotify 链接包住 cid 图片。
+     * 严格结构不变，检查可选协议分支接受这两类未默认允许的方案。
+     */
     QUnit.test('opt-in allows custom schemes', (assert) => {
       const dirty =
         '<div><a href="spotify:track:12345"><img src="cid:1234567"></a></div>';
@@ -2735,6 +3376,10 @@
       );
     });
 
+    /**
+     * 同样开启未知协议，链接改用 javascript:，图片仍为 cid。
+     * 严格结果仅删除 href，检查危险协议排除优先于未知协议放行。
+     */
     QUnit.test(
       'javascript: is still blocked under ALLOW_UNKNOWN_PROTOCOLS',
       (assert) => {
@@ -2748,6 +3393,10 @@
       }
     );
 
+    /**
+     * 开启未知协议但输入 onFoo 属性。
+     * 严格结果只保留 p/文字，确认 URI 协议选项不会扩大事件属性名称准入。
+     */
     QUnit.test(
       'regression #166: onFoo is dropped under ALLOW_UNKNOWN_PROTOCOLS',
       (assert) => {
@@ -2760,6 +3409,10 @@
       }
     );
 
+    /**
+     * 默认清洗 a 的 data:image href。
+     * 严格结果保留文字、删除 href，检查 a 不在默认 data URI 标签集合中。
+     */
     QUnit.test('data: URIs blocked by default in <a href>', (assert) => {
       const clean = DOMPurify.sanitize(
         '<a href="data:image/gif;base64,123">icon.gif</a>'
@@ -2767,6 +3420,11 @@
       assert.equal(clean, '<a>icon.gif</a>');
     });
 
+    /**
+     * 同一链接把 a 加入 ADD_DATA_URI_TAGS。
+     * 严格结果保留 data URI，检查按标签追加 data 协议权限；
+     * 配置中的 b 未在输入中出现。
+     */
     QUnit.test(
       'ADD_DATA_URI_TAGS allows data: URIs on listed tags',
       (assert) => {
@@ -2782,16 +3440,15 @@
     // 配置：NAMESPACE / ALLOWED_NAMESPACES。
     // =======================================================================
 
+    /**
+     * 默认 namespace、根配置、自定义 XML namespace 与跨调用恢复矩阵；
+     * 返回候选记录解析/序列化差异。
+     */
     QUnit.module('Config — NAMESPACE / ALLOWED_NAMESPACES');
 
     /**
-     * Given：SVG、MathML 与 HTML 节点按合法/非法 integration point 混合嵌套。
-     * When：使用默认 namespace 配置清洗。
-     * Then：只保留解析器规范允许的跨 namespace 组合，非法 foreign-content 子树被删除。
-     *
-     * 验证机制：同一矩阵覆盖 SVG→HTML、MathML→HTML、SVG↔MathML 与 parser 修复形状；
-     * expected 数组仅吸收序列化差异，所有候选都满足同一安全不变量。
-     * 对应源码：`_checkValidNamespace()` 及 SVG/MathML/HTML 三个 namespace 检查函数。
+     * 七组 SVG/MathML 嵌套 HTML 或互相嵌套，覆盖 desc/mi 等边界。
+     * 逐组完整候选区分保留、删除与引擎裁剪，检查已知外来命名空间的嵌套约束。
      */
     QUnit.test(
       'namespaces are enforced for known foreign content',
@@ -2853,6 +3510,10 @@
       }
     );
 
+    /**
+     * polyline/mi 分别置于 SVG、MathML、HTML 根命名空间。
+     * 候选在对应空间允许元素或环境裁剪，错误空间严格为空，检查 NAMESPACE 对解析根及名称空间验证的影响。
+     */
     QUnit.test('NAMESPACE pins the root namespace', (assert) => {
       const tests = [
         {
@@ -2898,12 +3559,8 @@
     });
 
     /**
-     * Given：XHTML/XML 中含默认拒绝的 custom namespace、前缀 namespace 和危险子节点。
-     * When：逐步扩展 ALLOWED_NAMESPACES，并组合 ALLOWED_TAGS/FORBID_TAGS。
-     * Then：只保留同时通过 namespace 与标签策略的节点；FORBID_TAGS 始终优先。
-     *
-     * 验证机制：默认拒绝、单根、多层、单前缀、多前缀及 forbid 覆盖形成递进对照。
-     * 对应源码：`_parseConfig()` 的 ALLOWED_NAMESPACES 集合和 `_checkValidNamespace()` XML 分支。
+     * XHTML 输入使用自定义根、子节点及多组前缀命名空间。
+     * 逐组配置标签与命名空间集合，候选比较保留结构、拒绝未准入空间和禁止标签，并容纳 XML 自闭合形式。
      */
     QUnit.test(
       'ALLOWED_NAMESPACES allow-lists custom XML namespaces',
@@ -3018,6 +3675,10 @@
       }
     );
 
+    /**
+     * NAMESPACE 是配置原型的抛错 getter，输入 polyline。
+     * 严格结果按默认 HTML 删除标签且不抛错，检查继承字段不被读取。
+     */
     QUnit.test('inherited top-level NAMESPACE config is ignored', (assert) => {
       const proto = {};
       Object.defineProperty(proto, 'NAMESPACE', {
@@ -3034,6 +3695,10 @@
       );
     });
 
+    /**
+     * NAMESPACE 分别给会抛错的 toString 对象及可用时的 Symbol。
+     * polyline 严格输出为空且不触发对象转换，检查非字符串字段被忽略并使用 HTML 默认值。
+     */
     QUnit.test('non-string NAMESPACE values are rejected', (assert) => {
       const hostile = {
         toString: () => {
@@ -3058,6 +3723,10 @@
       }
     });
 
+    /**
+     * 先以 SVG namespace 净化 polyline，再默认清洗同一输入。
+     * 后者严格为空，确认单次根命名空间不会泄漏到默认调用。
+     */
     QUnit.test(
       'NAMESPACE does not leak into subsequent default calls',
       (assert) => {
@@ -3071,6 +3740,11 @@
       }
     );
 
+    /**
+     * 两层配置原型分别提供 HTML/MathML integration-point 抛错 getter。
+     * 纯文本严格返回 HELLO，检查继承字段不读取；
+     * 输入未穿越任何 integration point。
+     */
     QUnit.test('inherited integration-point config is ignored', (assert) => {
       const htmlProto = {};
       Object.defineProperty(htmlProto, 'HTML_INTEGRATION_POINTS', {
@@ -3092,10 +3766,14 @@
       );
     });
 
+    /**
+     * 先在 SVG namespace 清洗 br，再省略 namespace。
+     * 首次允许空或 br，后者必须为 br，确认非持久配置后恢复 HTML 根规则。
+     */
     QUnit.test(
       'namespace defaults back to HTML after foreign use',
       (assert) => {
-        // 文档化行为：每次调用独立解析 namespace，不复用上次状态。
+        // 未启用 setConfig 时，每次调用重新解析配置；省略 NAMESPACE 会恢复默认 HTML namespace。
         assert.contains(
           DOMPurify.sanitize('<br>', {
             NAMESPACE: 'http://www.w3.org/2000/svg',
@@ -3106,6 +3784,10 @@
       }
     );
 
+    /**
+     * 先以 SVG namespace 净化空串，再清洗 polyline。
+     * 空串严格为空，后续命中 SVG 序列化候选或环境裁剪，检查空输入不破坏下次根解析。
+     */
     QUnit.test(
       'non-HTML input after empty input still resolves correctly',
       (assert) => {
@@ -3127,6 +3809,10 @@
       }
     );
 
+    /**
+     * 在 SVG、MathML、HTML 及默认根下循环净化空串与残缺注释。
+     * 候选只接受空或原残片，检查无有效树/畸形解析的返回结果。
+     */
     QUnit.test('invalid XML payload variants', (assert) => {
       const tests = [
         {
@@ -3171,8 +3857,17 @@
     // 配置：PARSER_MEDIA_TYPE。
     // =======================================================================
 
+    /**
+     * HTML 与精确 XHTML 媒体类型改变大小写和根包装；
+     * 测试允许集合与含冒号 data 名称。
+     */
     QUnit.module('Config — PARSER_MEDIA_TYPE');
 
+    /**
+     * 相同大写 A/TITLE 输入遍历多种媒体类型，并比较完整文档模式。
+     * 只有精确 application/xhtml+xml 启用 XML 大小写语义；
+     * 候选展示标签拒绝、属性保留与序列化差异。
+     */
     QUnit.test('case folding follows parser type', (assert) => {
       // HTML 模式把标签和属性转小写；XHTML 保留大小写。
       const tests = [
@@ -3235,6 +3930,10 @@
       });
     });
 
+    /**
+     * XHTML 输入 CustomTag 同带 CustomAttr/customattr，允许集合指定大小写。
+     * 候选要求 CustomTag 与 CustomAttr 保留，并容纳历史属性序列化差异，检查 XML 模式名称配置。
+     */
     QUnit.test(
       'PARSER_MEDIA_TYPE + ALLOWED_TAGS/ATTR preserves XHTML case',
       (assert) => {
@@ -3257,6 +3956,10 @@
       }
     );
 
+    /**
+     * XHTML SVG 中 data-slonser 前缀映射到 xlink，href 值为 javascript:。
+     * 完整候选保留 SVG/文字而删除声明及危险属性，检查含冒号名称不能冒用普通 data-* 准入。
+     */
     QUnit.test(
       'namespaced data-* attributes handled in XML modes',
       (assert) => {
@@ -3284,8 +3987,16 @@
     // 配置：FORCE_BODY（#199）。
     // =======================================================================
 
+    /**
+     * FORCE_BODY 哨兵影响 head-only 元素位置；
+     * 与前导空白、明确脚本准入分别对照。
+     */
     QUnit.module('Config — FORCE_BODY');
 
+    /**
+     * 独立 style 配合 FORCE_BODY=true。
+     * 严格结果保留 style，检查哨兵使原本可进入 head 的元素出现在清洗 body 中。
+     */
     QUnit.test('forces <style> into body when FORCE_BODY=true', (assert) => {
       assert.equal(
         DOMPurify.sanitize('<style>123</style>', { FORCE_BODY: true }),
@@ -3293,6 +4004,10 @@
       );
     });
 
+    /**
+     * 独立 script 同时 FORCE_BODY 与 ADD_TAGS 放行。
+     * 严格保留 script/文本，检查强制解析位置与明确脚本权限组合。
+     */
     QUnit.test(
       'forces <script> into body when allowed + FORCE_BODY=true',
       (assert) => {
@@ -3306,6 +4021,10 @@
       }
     );
 
+    /**
+     * 纯文本前有一个空格，开启 FORCE_BODY。
+     * 严格保留空格，检查强制 body 路径中的前导空白。
+     */
     QUnit.test('FORCE_BODY preserves leading whitespace', (assert) => {
       assert.equal(
         DOMPurify.sanitize(' AAAAA', { FORCE_BODY: true }),
@@ -3313,6 +4032,10 @@
       );
     });
 
+    /**
+     * 空格后跟 b，显式关闭 FORCE_BODY。
+     * 严格结果保留空格及 b，检查普通解析后的前导空白补回。
+     */
     QUnit.test(
       'leading whitespace preserved even without FORCE_BODY',
       (assert) => {
@@ -3323,6 +4046,10 @@
       }
     );
 
+    /**
+     * 独立 style 关闭 FORCE_BODY，未请求完整文档。
+     * 严格输出为空，检查 head 中元素不进入 body 模式返回值。
+     */
     QUnit.test(
       'without FORCE_BODY, head-only elements end in head and are stripped',
       (assert) => {
@@ -3337,18 +4064,31 @@
     // 配置：RETURN_TRUSTED_TYPE。
     // =======================================================================
 
+    /**
+     * 普通标记切换 Trusted Type 输出标志，仅检查 typeof；
+     * 真实品牌及策略记录由独立引导套件另测。
+     */
     QUnit.module('Config — RETURN_TRUSTED_TYPE');
 
+    /**
+     * 普通 b 输入开启 RETURN_TRUSTED_TYPE。
+     * 只检查 typeof 命中候选，说明可用策略产物或字符串回退；
+     * 未执行 TrustedHTML 品牌或策略调用次数检查。
+     */
     QUnit.test('return type varies by engine when true', (assert) => {
       const clean = DOMPurify.sanitize('<b>hello goodbye</b>', {
         RETURN_TRUSTED_TYPE: true,
       });
-      // 支持 TT 的浏览器返回 TrustedHTML；jsdom 和无该 API 的引擎回退普通字符串。
-      // 这里只是跨引擎 smoke test：`typeof` 无法证明具体 TrustedHTML 品牌，严格对象身份由
-      // bootstrap-test-suite.js 的独立 realm StringWrapper 用例作证。
+      // 活动策略创建成功时，请求 Trusted Type 会返回其 createHTML 产物；
+      // 无可用策略时返回字符串。这里检查 typeof；bootstrap 套件另用 StringWrapper
+      // 验证 stub 的对象返回值，两者都未执行真实 TrustedHTML 品牌检查。
       assert.contains(typeof clean, ['TrustedHTML', 'string', 'object']);
     });
 
+    /**
+     * 普通 b 输入显式关闭 RETURN_TRUSTED_TYPE。
+     * typeof 必须为 string，检查请求字符串输出的类型。
+     */
     QUnit.test('RETURN_TRUSTED_TYPE=false returns string', (assert) => {
       const clean = DOMPurify.sanitize('<b>hello goodbye</b>', {
         RETURN_TRUSTED_TYPE: false,
@@ -3356,6 +4096,10 @@
       assert.equal(typeof clean, 'string');
     });
 
+    /**
+     * 普通 b 输入省略 Trusted Type 标志。
+     * typeof 必须为 string，检查默认返回类型。
+     */
     QUnit.test('default (no flag) returns string', (assert) => {
       const clean = DOMPurify.sanitize('<b>hello goodbye</b>');
       assert.equal(typeof clean, 'string');
@@ -3365,8 +4109,15 @@
     // 输入处理与 API 表面。
     // =======================================================================
 
+    /**
+     * 数组/对象先转字符串再净化，伪 nodeType 对象不能据其字段进入 DOM 遍历。
+     */
     QUnit.module('Input handling');
 
+    /**
+     * 单项与多项数组输入先发生 JavaScript 字符串转换。
+     * 严格输出显示单项正常清洗、多项插入逗号成为 src 值，检查实际数组转换而非无分隔拼接。
+     */
     QUnit.test('array input is joined before sanitization', (assert) => {
       assert.equal(
         DOMPurify.sanitize(['<a>123<b>456</b></a>']),
@@ -3378,6 +4129,10 @@
       );
     });
 
+    /**
+     * 普通对象的 toString 返回 b/script。
+     * 严格结果只留 b，检查非节点先转字符串再进入标记净化。
+     */
     QUnit.test('non-node objects with toString are stringified', (assert) => {
       assert.strictEqual(
         DOMPurify.sanitize({
@@ -3387,6 +4142,10 @@
       );
     });
 
+    /**
+     * 普通对象伪造 nodeType/nodeName/ownerDocument。
+     * 只要求 sanitize 返回字符串，检查节点品牌读取拒绝伪造对象并走字符串路径。
+     */
     QUnit.test(
       'plain objects with nodeType are not treated as nodes',
       (assert) => {
@@ -3396,12 +4155,23 @@
       }
     );
 
+    /**
+     * 检查能力标志及工厂依赖形状，并在初始化后插入具名污染节点，验证缓存方法与输出。
+     */
     QUnit.module('API — isSupported and constructor variants');
 
+    /**
+     * 读取当前实例 isSupported。
+     * typeof 严格为 boolean，验证能力标志的公开类型，未检查该环境具体支持状态。
+     */
     QUnit.test('isSupported is a boolean', (assert) => {
       assert.equal(typeof DOMPurify.isSupported, 'boolean');
     });
 
+    /**
+     * 分别传 null、空对象、伪文档、缺 Element 和有效 window 形状创建实例。
+     * 逐项检查 version、isSupported 与 sanitize 是否存在，覆盖工厂初始化的依赖检查。
+     */
     QUnit.test('DOMPurify accepts a custom or null window', (assert) => {
       // 工厂需防御缺失 window/document：返回 isSupported=false 且不提供 sanitize() 的 stub。
       assert.strictEqual(typeof DOMPurify(null).version, 'string');
@@ -3459,11 +4229,16 @@
       assert.strictEqual(typeof DOMPurify(window).sanitize, 'function');
     });
 
+    /**
+     * 在实例创建后插入与 document 成员同名的图片。
+     * 清洗纯文本、请求导入 DOM、清洗 id=body；
+     * 严格检查文本、ownerDocument 与 id 删除，finally 先移除污染节点。
+     */
     QUnit.test(
       'document clobbering after instantiation does not break sanitize()',
       (assert) => {
-        // 注入会 clobber document.implementation、createNodeIterator、importNode、createElement
-        // 的冲突 id；DOMPurify 内缓存的原生引用必须不受影响。
+        // 插入与 document 成员同名的 id，检查实例创建时缓存的解析/导入方法仍能工作。
+        // 各 id 是否实际遮蔽成员取决于引擎；输出与 ownerDocument 断言在插入后执行。
         const evilNode = document.createElement('div');
         evilNode.innerHTML =
           '<img id="implementation"><img id="createNodeIterator">' +
@@ -3488,15 +4263,15 @@
       }
     );
 
+    /**
+     * 同一 foobar 输入先默认、再持久放行、再清除配置；
+     * 连续严格结果展示状态生命周期。
+     */
     QUnit.module('API — setConfig / clearConfig');
 
     /**
-     * Given：`<foobar>` 默认不允许。
-     * When：先默认清洗，再 setConfig 放行，最后 clearConfig 后重试。
-     * Then：输出依次为仅文本、完整 foobar、仅文本。
-     *
-     * 验证机制：同一输入三阶段严格相等，证明持久配置生效且 clearConfig 真正恢复默认。
-     * 对应源码：`setConfig()` 捕获集合与 `clearConfig()` 重置持久状态。
+     * foobar 默认只剩文字，setConfig 后完整保留，clearConfig 后再只剩文字。
+     * 三次严格结果验证配置持久安装与清除。
      */
     QUnit.test('persistent config is applied then cleared', (assert) => {
       const dirty = '<foobar>abc</foobar>';
@@ -3511,33 +4286,53 @@
     // DOMPurify.removed：记录被删除的节点与属性。
     // =======================================================================
 
+    /**
+     * 每次 sanitize 重置 removed，分别记录事件、脚本和模板清理数量；
+     * 计数包含属性与节点记录。
+     */
     QUnit.module('DOMPurify.removed');
 
+    /**
+     * 输入 SVG filter 并带 onload，净化后只检查 removed.length 为 1 或 2。
+     * 记录允许的删除数量差异，其中包含属性记录，未断言删除项都是元素。
+     */
     QUnit.test(
       'removed contains one element for SVG filter primitive',
       (assert) => {
         DOMPurify.sanitize(
           '<svg onload=alert(1)><filter><feGaussianBlur /></filter></svg>'
         );
-        assert.contains(DOMPurify.removed.length, [1, 2]); // IE removes two
+        assert.contains(DOMPurify.removed.length, [1, 2]); // 旧 IE 可能记录两项删除。
       }
     );
 
+    /**
+     * 在前例加 script，净化后 removed.length 为 2 或 3。
+     * 检查脚本和危险属性等删除的合计数量，并容纳旧引擎额外删除。
+     */
     QUnit.test(
       'removed contains two elements for script + svg combo',
       (assert) => {
         DOMPurify.sanitize(
           '1<script>alert(1)</script><svg onload=alert(1)><filter><feGaussianBlur /></filter></svg>'
         );
-        assert.contains(DOMPurify.removed.length, [2, 3]); // IE removes three
+        assert.contains(DOMPurify.removed.length, [2, 3]); // 旧 IE 可能记录三项删除。
       }
     );
 
+    /**
+     * img 的 onerror 被默认删除。
+     * removed.length 严格为 1，检查单个属性删除写入本次记录。
+     */
     QUnit.test('removed counts attribute removal', (assert) => {
       DOMPurify.sanitize('<img src=x onerror="alert(1)">');
       assert.equal(DOMPurify.removed.length, 1);
     });
 
+    /**
+     * 完整文档模式下 a 文本含一个 Mustache 表达式并开启模板清理。
+     * removed.length 为 1，检查一个文本清理记录。
+     */
     QUnit.test(
       'removed counts template-expression scrubs (single)',
       (assert) => {
@@ -3549,6 +4344,10 @@
       }
     );
 
+    /**
+     * a/b 各含 Mustache 表达式，完整文档与模板清理开启。
+     * removed.length 为 2，检查不同文本节点各自记录清理。
+     */
     QUnit.test(
       'removed counts template-expression scrubs (multiple)',
       (assert) => {
@@ -3560,6 +4359,10 @@
       }
     );
 
+    /**
+     * img width 含 Mustache 表达式。
+     * 模板清理后 removed.length 为 1，检查属性值清理/删除的记录数量。
+     */
     QUnit.test('removed counts attribute-level template scrubs', (assert) => {
       DOMPurify.sanitize('<img src=1 width="{{123}}">', {
         WHOLE_DOCUMENT: true,
@@ -3568,6 +4371,10 @@
       assert.equal(DOMPurify.removed.length, 1);
     });
 
+    /**
+     * option/iframe/select/script 交错的畸形输入。
+     * 净化后 removed.length 严格为 1，记录此解析环境下整棵拒绝子树的清理数量。
+     */
     QUnit.test('removed counts mXSS-style nested invalid markup', (assert) => {
       DOMPurify.sanitize(
         '<option><iframe></select><b><script>alert(1)</script>'
@@ -3575,6 +4382,10 @@
       assert.equal(DOMPurify.removed.length, 1);
     });
 
+    /**
+     * 连续默认净化允许的 a 与无事件 img。
+     * 两次 removed.length 均为 0，检查无删除时空记录及每次调用复位。
+     */
     QUnit.test('removed is empty when all input is permitted', (assert) => {
       DOMPurify.sanitize('<a>123</a>');
       assert.equal(DOMPurify.removed.length, 0);
@@ -3583,6 +4394,10 @@
       assert.equal(DOMPurify.removed.length, 0);
     });
 
+    /**
+     * 纯文本在完整文档模式下分别开启和省略模板清理。
+     * 两次 removed.length 为 0，检查无表达式时不会记为删除。
+     */
     QUnit.test(
       'removed is empty for clean input under SAFE_FOR_TEMPLATES',
       (assert) => {
@@ -3597,8 +4412,15 @@
       }
     );
 
+    /**
+     * 真实 td 输入分别返回字符串和 body DOM，比较输入节点包装与返回容器。
+     */
     QUnit.module('API — sanitizing element nodes directly');
 
+    /**
+     * 输入真实 td 节点，使用默认字符串返回。
+     * 严格得到 td.outerHTML 形状，检查 DOM 输入经导入后保留输入元素包装。
+     */
     QUnit.test('sanitizing an element returns its outerHTML', (assert) => {
       assert.equal(
         DOMPurify.sanitize(document.createElement('td')),
@@ -3606,6 +4428,10 @@
       );
     });
 
+    /**
+     * 同样输入 td 并请求 RETURN_DOM。
+     * 严格检查 body.outerHTML 包住 td，验证 DOM 返回的容器形状。
+     */
     QUnit.test(
       'sanitizing an element with RETURN_DOM returns wrapped body',
       (assert) => {
@@ -3617,11 +4443,19 @@
     );
 
     // =======================================================================
-    // Hooks。
+    // 扩展 hook。
     // =======================================================================
 
+    /**
+     * hook 可分离节点、扩展集合、修改属性并按函数身份删除；
+     * 后置/追加 data 属性断言只检查最终存在。
+     */
     QUnit.module('Hooks — addHook / removeHook');
 
+    /**
+     * upon 元素 hook 主动分离 foreignObject，配置原本放行它。
+     * 输出只剩 svg/switch 且 removed 不认领该元素，检查 hook 分离被当作已移除并正常继续。
+     */
     QUnit.test(
       'uponSanitizeElement hook may detach the current node; it is treated as removed (issue #469 pattern, foreignObject filtering)',
       (assert) => {
@@ -3652,6 +4486,10 @@
       }
     );
 
+    /**
+     * before 元素 hook 分离 article，兄弟 i 不动。
+     * 严格结果仅留 div/i，检查前置 hook 删除当前子树后的遍历输出。
+     */
     QUnit.test(
       'beforeSanitizeElements hook may detach the current node; it is treated as removed',
       (assert) => {
@@ -3669,12 +4507,8 @@
     );
 
     /**
-     * Given：默认不允许 custom tag/attr，且输入同时含 iframe、onload 和自定义名称。
-     * When：element/attribute hooks 只扩展带连字符的 tag 与 attr allowlist。
-     * Then：is-custom 与 super-custom 当次保留，iframe 和 onload 仍被删除。
-     *
-     * 验证机制：单个精确输出同时证明 hook 可扩展 allowlist、普通危险项仍走后续校验。
-     * 对应源码：`_executeHooks()`、`_sanitizeElements()` 与 `_sanitizeAttributes()`。
+     * 两种 upon hook 给连字符标签/属性扩展当次允许集合。
+     * 输入 iframe 与 is-custom/onload/super-custom，严格结果仅放行自定义结构和属性，随后清理注册。
      */
     QUnit.test(
       'hook can add allowed tags / attributes on the fly',
@@ -3707,9 +4541,13 @@
       }
     );
 
+    /**
+     * upon 属性 hook 对 type=file 的 input 设置 keepAttr=false。
+     * 只有 nodejs runner 调用并严格检查无 type；
+     * 浏览器分支零断言，最终均清理 hook。
+     */
     QUnit.test('hookEvent.keepAttr=false removes attribute', (assert) => {
-      // 通过 hook flag 删除 input[type=file] 是文档化 escape hatch；attribute walker 会对触发
-      // 当前 hook 的属性执行 `data.keepAttr=false`。
+      // hook 在 input 的 type 属性上把 keepAttr 设为 false；属性遍历读取该标志并删除 type。
       DOMPurify.addHook('uponSanitizeAttribute', (node, data) => {
         if (
           node.nodeName == 'INPUT' &&
@@ -3721,8 +4559,7 @@
       });
       const dirty = '<input type="file" />';
       const modified = '<input>';
-      // 此严格断言仅在 Node（jsdom）运行；浏览器解析器在 innerHTML 序列化时重排属性，会使
-      // strict equal 不稳定。引入该回归用例时真正需要固定的是 Node 路径。
+      // 此用例只在 window.name 为 nodejs 的 runner 中断言输出；浏览器分支不执行清洗断言。
       if (window.name == 'nodejs') {
         assert.equal(DOMPurify.sanitize(dirty), modified);
       } else {
@@ -3731,6 +4568,10 @@
       DOMPurify.removeHooks('uponSanitizeAttribute');
     });
 
+    /**
+     * 后置属性 hook 把 class 改成 world。
+     * 移除后恢复原值，返回的函数重新注册后再次改值，三次结果验证 removeHook 的可重用函数返回。
+     */
     QUnit.test('removeHook returns the hook function', (assert) => {
       const entryPoint = 'afterSanitizeAttributes';
       const dirty = '<div class="hello"></div>';
@@ -3750,6 +4591,10 @@
       DOMPurify.removeHook(entryPoint);
     });
 
+    /**
+     * 注册 first/second/third 三个 class hook，按函数身份移除中间项。
+     * 首次返回 second、再删返回 undefined，输出顺序只含 first/third，检查定点删除与链顺序。
+     */
     QUnit.test(
       'removeHook can target a specific hook in the chain',
       (assert) => {
@@ -3757,11 +4602,23 @@
         const dirty = '<div class="original"></div>';
         const expected = '<div class="original first third"></div>';
 
-        /** 在 hook chain 中追加 `first`，用于验证保留顺序。 */
+        /**
+         * 给当前元素 classList 追加 first；只用于本例 afterSanitizeAttributes 链。
+         * @param {Element} node 正在分发属性后置 hook 的元素。
+         * @returns {void} 原位修改 class，返回值不参与净化决策。
+         */
         const firstHook = (node) => node.classList.add('first');
-        /** 在 hook chain 中追加 `second`，随后应被按函数身份定点删除。 */
+        /**
+         * 给当前元素追加 second，随后按此函数身份从 hook 链删除。
+         * @param {Element} node 当前元素。
+         * @returns {void} 删除回调后该 class 不再出现在测试输出中。
+         */
         const secondHook = (node) => node.classList.add('second');
-        /** 在 hook chain 中追加 `third`，用于证明删除中间项不截断后续 hook。 */
+        /**
+         * 给当前元素追加 third，验证删除中间回调后后续 hook 仍按顺序执行。
+         * @param {Element} node 当前元素。
+         * @returns {void} 原位修改 class。
+         */
         const thirdHook = (node) => node.classList.add('third');
 
         DOMPurify.addHook(entryPoint, firstHook);
@@ -3789,6 +4646,11 @@
       }
     );
 
+    /**
+     * 后置属性 hook 给 a 追加 data 属性。
+     * 严格输出保留新增项，检查属性遍历后直接修改进入结果；
+     * 这个默认允许的 data 属性未构成危险值再校验探针。
+     */
     QUnit.test(
       'attributes added in afterSanitizeAttributes are not re-validated',
       (assert) => {
@@ -3809,12 +4671,16 @@
       }
     );
 
+    /**
+     * upon 属性 hook 检查 href 时追加 data 属性。
+     * 严格输出保留新增项，与倒序初始长度遍历相符；
+     * 默认 data 准入意味着此断言本身不区分是否再校验。
+     */
     QUnit.test(
       'attributes added in uponSanitizeAttribute after current index escape validation',
       (assert) => {
         // 属性按初始 length 快照倒序遍历。hook 调用 setAttribute() 会把新属性追加到列表末尾，
-        // 位于递减 index 已越过的一侧，因此不会再次校验。这是刻意的 hook escape hatch：
-        // 用户用它强制属性值；重新校验会破坏该用例。
+        // 位于递减 index 已越过的一侧，因此不进入本轮校验。hook 作者需负责自己新增的属性值。
         DOMPurify.addHook('uponSanitizeAttribute', (node, hookEvent) => {
           if (hookEvent.attrName === 'href') {
             try {
@@ -3838,25 +4704,36 @@
     // Hooks：allowlist 污染（GHSA-XXXX-XXXX-XXXX）。
     //
     // 3.4.7 之前，传给 hook 的 data.allowedTags/data.allowedAttributes 直接引用活动 allowlist。
-    // 未显式提供 cfg.ALLOWED_TAGS 时，该集合就是模块级 DEFAULT_ALLOWED_TAGS 常量。hook 写入
+    // 未显式提供 cfg.ALLOWED_TAGS 时，该集合可能直接引用实例的 DEFAULT_ALLOWED_TAGS。hook 写入
     //     data.allowedTags['script'] = true
     // 会永久扩展默认值，直到重新创建 DOMPurify 实例。
     //
-    // 修复：注册 uponSanitize* hook 时为当前调用克隆 allowlist。调用内扩展继续生效；下次默认
-    // 配置调用重新绑定到未修改的默认集合。
+    // 当前 sanitize 在遍历前为已注册的 upon hooks 克隆 allowlist；before hook 临时注册 upon
+    // hook 时，`_forkSharedAllowlist` 在事件暴露集合前补做克隆。addHook 本身只追加回调。
+    // 修改副本会影响当前节点与本次后续遍历；下一次默认调用重新绑定未修改的实例默认集合。
     // =======================================================================
 
+    /**
+     * beforeEach 给每例新实例，afterEach 清 hook/配置；
+     * 一例内连续调用观察污染，同例 setConfig 路径检验每轮集合复制。
+     */
     QUnit.module('Hooks — allowlist pollution (GHSA-XXXX)', function (hooks) {
       let purify;
+      /** 每例创建独立实例；同一测试内的连续调用仍复用它，以观察集合隔离。 */
       hooks.beforeEach(() => {
         // 每个测试使用独立实例，因为目标缺陷正是跨调用污染。
         purify = DOMPurify(window);
       });
+      /** 清除该例实例的 hook 和持久配置，结束测试中的可变状态。 */
       hooks.afterEach(() => {
         purify.removeAllHooks();
         purify.clearConfig();
       });
 
+      /**
+       * 隔离实例先默认净化 SVG script 与 a onclick。
+       * 两次严格删除危险项，建立后续 hook 状态测试的默认基线。
+       */
       QUnit.test(
         'baseline: <script> and onclick are stripped by default',
         (assert) => {
@@ -3871,6 +4748,10 @@
         }
       );
 
+      /**
+       * 隔离实例的 upon hook 修改当次标签与属性集合。
+       * 严格保留 is-custom/super-custom 完整输入，验证 hook 仍能扩展本轮准入。
+       */
       QUnit.test('in-call widening via hook still works', (assert) => {
         // 对照上方文档化的 hook-widening API。修复把默认集合的克隆交给 hook；修改克隆仍会为
         // 本次剩余遍历扩展 allowlist。
@@ -3890,12 +4771,8 @@
       });
 
       /**
-       * Given：element hook 无条件把 script 写入 exposed allowedTags。
-       * When：先在 hook 存在时清洗，再删除全部 hooks、clearConfig 后重试。
-       * Then：第一次按文档允许调用内 script；第二次恢复默认并删除 script。
-       *
-       * 验证机制：同一实例的前后对照证明扩展作用域只限单次调用，不是重建实例造成恢复。
-       * 对应源码：`_forkSharedAllowlist()` 与 `sanitize()` 调用前 clone guard。
+       * 不带条件的元素 hook 放行 script，首次严格保留。
+       * 移除所有 hook 并清配置后严格删除 script，检查集合修改不会污染下一默认调用。
        */
       QUnit.test(
         'unguarded element hook does not poison subsequent default-config calls',
@@ -3920,6 +4797,10 @@
         }
       );
 
+      /**
+       * 不带条件的属性 hook 放行 onclick，首次要求片段存在。
+       * 清 hook/配置后严格输出无 onclick，检查属性集合修改不会跨调用留存。
+       */
       QUnit.test(
         'unguarded attribute hook does not poison subsequent default-config calls',
         (assert) => {
@@ -3942,6 +4823,10 @@
         }
       );
 
+      /**
+       * 先让一个实例的 hook 放行 SVG script，再创建新实例。
+       * 新实例严格删除 script，检查默认集合修改不会跨实例共享。
+       */
       QUnit.test('pollution does not cross instance boundaries', (assert) => {
         purify.addHook('uponSanitizeElement', (node, data) => {
           data.allowedTags['script'] = true;
@@ -3956,6 +4841,10 @@
         );
       });
 
+      /**
+       * 只读元素 hook 观察默认集合是否有 script，须为 false。
+       * 移除 hook/配置后脚本仍严格删除，检查读取公开集合后的默认行为。
+       */
       QUnit.test('read-only hook does not poison defaults', (assert) => {
         let sawScriptKey;
         purify.addHook('uponSanitizeElement', (node, data) => {
@@ -3981,6 +4870,10 @@
         );
       });
 
+      /**
+       * hook 在十次普通 div 调用中添加 script/iframe/object 权限。
+       * 清 hook/配置后逐项严格拒绝三种标签，检查多次当次集合修改不累积到默认状态。
+       */
       QUnit.test(
         'multiple polluting calls do not accumulate state',
         (assert) => {
@@ -4006,6 +4899,11 @@
         }
       );
 
+      /**
+       * 显式 ALLOWED_TAGS 只含 svg，hook 再允许 script。
+       * 该次须出现 script；
+       * 清 hook/配置后的默认调用严格删除，检查显式集合路径仍支持当次扩展。
+       */
       QUnit.test(
         'explicit-cfg path is unaffected by hook mutation in other calls',
         (assert) => {
@@ -4039,17 +4937,13 @@
       // -------------------------------------------------------------------
       // 持久配置路径（setConfig）。原修复位于 `_parseConfig()` 内；setConfig 执行后 sanitize()
       // 会跳过该函数，导致这些场景未受保护：hook 写 data.allowedAttributes 会修改实例生命周期
-      // 共用的 allowlist，并跨元素、跨调用泄漏。现在两类配置路径都在每次 sanitize() 时应用
-      // clone guard。（GHSA-cmwh-pvxp-8882）
+      // 共用的 allowlist，使调用内扩展跨调用泄漏。现在两类配置路径都在每次 sanitize() 时应用
+      // 每调用克隆保护（GHSA-cmwh-pvxp-8882）。
       // -------------------------------------------------------------------
 
       /**
-       * Given：setConfig 持久放行 img/src，条件 hook 仅对 data-trusted 元素扩展 onerror。
-       * When：先清洗 trusted 元素，再多次清洗普通攻击输入。
-       * Then：扩展只在首个调用内生效，后续每次都精确输出 `<img src="x">`。
-       *
-       * 验证机制：跨调用加重复循环，证明 shared set 未被一次 hook 写入污染或累积克隆状态。
-       * 对应源码：`sanitize()` 恢复 SET_CONFIG_ALLOWED_ATTR 后执行每调用 clone guard。
+       * setConfig 持久仅允许 img/src，hook 在 data-trusted 节点扩展 onerror。
+       * 首次属性保留，后续及五次重复普通输入严格删事件，检查每轮从持久配置复制集合。
        */
       QUnit.test(
         'setConfig: attribute hook does not poison later calls',
@@ -4064,7 +4958,7 @@
             }
           });
 
-          // trusted 元素只为自己的调用扩展 onerror。
+          // data-trusted 元素在当前调用的 allowlist 副本上扩展 onerror；扩展也影响同次调用的后续节点。
           assert.ok(
             purify
               .sanitize('<img data-trusted="1" src="x" onerror="ok()">')
@@ -4090,6 +4984,11 @@
         }
       );
 
+      /**
+       * setConfig 只允许 span，hook 在 trusted span 上追加 img。
+       * 执行该输入后，下一普通 img 严格为空；
+       * 验证持久标签配置未被 hook 污染，首次输出未断言。
+       */
       QUnit.test(
         'setConfig: element hook does not poison later calls',
         (assert) => {
@@ -4114,6 +5013,11 @@
         }
       );
 
+      /**
+       * 持久 img/src 配置先经 trusted hook 扩展属性，再 clearConfig。
+       * 普通 img 严格只留 src，检查清配置后的默认集合；
+       * hook 仍注册但该节点不触发扩展。
+       */
       QUnit.test('setConfig: clearConfig restores a clean state', (assert) => {
         purify.setConfig({ ALLOWED_TAGS: ['img'], ALLOWED_ATTR: ['src'] });
         purify.addHook('uponSanitizeAttribute', (node, data) => {
@@ -4141,16 +5045,24 @@
     //   1. `_sanitizeAttachedShadowRoots()` 必须进入每个 `<template>` 的 .content
     //      DocumentFragment，并继续查找其中的 attached shadow root。
     //
-    //   2. `_sanitizeShadowDOM()` 遍历以 ShadowRoot 为根的 TreeWalker；walker 不进入内部
+    //   2. `_sanitizeShadowDOM()` 遍历以 fragment 为根的 NodeIterator；iterator 不进入内部
     //      `<template>.content`，也不会自动暴露 host 上的 attached shadow root。递归必须显式
     //      检查两者。
     //
-    // 测试覆盖 `{plain, in-template, nested-template, wrapper, alternating}` ×
-    // `{带 shadow 的 host, cloneNode 时复制的 clonable shadow}` 对称矩阵。
+    // 测试覆盖 template 内的 shadow host、shadow 内的 template、嵌套 template、
+    // 外层 wrapper 与两者交替嵌套；另在支持 clonable 的引擎中测试两个 clonable host 场景。
     // =======================================================================
 
+    /**
+     * 模板片段与 open shadow 交替嵌套，直接清洗原对象；
+     * clonable 能力探针和正式 IN_PLACE 断言分开。
+     */
     QUnit.module('Hooks — shadow roots inside <template>.content');
 
+    /**
+     * template.content 中的 div 有 open shadow，内放 javascript: 链接。
+     * IN_PLACE 后链接必须存活且 href=null，检查模板片段与 attached root 的组合递归。
+     */
     QUnit.test(
       'shadow root attached to host inside template.content',
       (assert) => {
@@ -4175,11 +5087,16 @@
       }
     );
 
+    /**
+     * 先用 importNode 探测 clonable shadow 支持，再原地清洗模板内容中的原 host。
+     * 存活链接必须无 href，也接受整体删除；
+     * 正式断言未执行模板 clone/stamp。
+     */
     QUnit.test(
       'clonable shadow root inside template.content survives stamping',
       (assert) => {
-        // template.content 使用时会被克隆；其中的 clonable shadow root 既要活过 clone，
-        // 又必须继续被原地清洗。
+        // 前置探针用 importNode 确认引擎支持克隆 clonable shadow root；
+        // 正式 payload 直接以 IN_PLACE 清洗模板中的原 host，不执行模板 stamping 或 clone。
         let supportsClonable = false;
         try {
           const probe = document.createElement('div');
@@ -4213,6 +5130,10 @@
       }
     );
 
+    /**
+     * section 的 shadow 内嵌 template，危险链接位于 content。
+     * IN_PLACE 后链接存活且无 href，检查从 attached root 进入模板片段的递归。
+     */
     QUnit.test('template inside shadow root (symmetric case)', (assert) => {
       // 上述场景镜像：外层容器带 shadow root，危险载荷位于该 shadow 内的 template；
       // `_sanitizeShadowDOM()` 必须进入 template。
@@ -4243,6 +5164,10 @@
       window.xssed = false;
     });
 
+    /**
+     * 两层 template.content 嵌套，最深链接带 javascript:。
+     * IN_PLACE 后保留链接并删除 href，检查逐层显式进入模板片段。
+     */
     QUnit.test(
       'nested templates: <template><template><a href=javascript:></template></template>',
       (assert) => {
@@ -4265,6 +5190,10 @@
       }
     );
 
+    /**
+     * section 包 template，其 content 中 host 带 shadow 链接。
+     * IN_PLACE 后最深链接须存活且 href=null，检查普通树、模板、attached root 连续下降。
+     */
     QUnit.test('wrapper > template > shadow descent', (assert) => {
       const wrapper = document.createElement('section');
       const tpl = document.createElement('template');
@@ -4284,6 +5213,10 @@
       window.xssed = false;
     });
 
+    /**
+     * outer shadow 包 template，模板内容 host 再带 shadow。
+     * IN_PLACE 后最深链接存活且 href=null，检查两类独立子树交替递归。
+     */
     QUnit.test('shadow > template > shadow alternating descent', (assert) => {
       const outer = document.createElement('section');
       const outerShadow = outer.attachShadow({ mode: 'open' });
@@ -4304,6 +5237,11 @@
       window.xssed = false;
     });
 
+    /**
+     * 能力探针确认 clonable 后构造两层模板及深处 shadow。
+     * 正式 IN_PLACE 检查存活链接无 href，接受删除；
+     * 未实际将清洗模板克隆到活动文档。
+     */
     QUnit.test(
       'deep clonable shadow stamped from nested templates',
       (assert) => {
@@ -4352,21 +5290,20 @@
     // 必须在这些提升节点到达消费者前捕获它们。
     // =======================================================================
 
+    /**
+     * 比较合法 HTML/MathML 与畸形外来内容/raw-text，主要检查字符串危险片段；
+     * jQuery 例额外同步插入。
+     */
     QUnit.module('Regression — mXSS');
 
     /**
-     * Given：Chrome 77 披露中的 SVG/HTML 错误嵌套 mXSS 载荷。
-     * When：执行默认清洗。
-     * Then：输出中不可能同时存在可执行 img 与 onerror。
-     *
-     * 验证机制：本用例只证明静态输出缺少攻击二元组；真正 reparse 后不执行由文件顶部三类
-     * XSS sink 模块对同类 alert fixture 补证。
-     * 对应源码：`_isUnsafeNode()` 的 namespace-confusion canary 与 `_checkValidNamespace()`。
+     * SVG/style/a id 的闭合边界交错，夹入 img/onerror。
+     * 默认净化结果不得同时含两个片段，检查该变异输入的字符串结果，未再次插入执行。
      */
     QUnit.test(
       'Chrome 77+ SVG/HTML mXSS round-trip is neutralised',
       (assert) => {
-        // 变体来自 Chrome 77 原始披露；解析器曾在重新插入时把此类 mXSS 原语“修复”为脚本执行。
+        // style 的闭合边界与 a 的 id 值交错，检查清洗结果是否仍保留 img/onerror 组合。
         const dirty =
           '<svg></p><style><a id="</style><img src=1 onerror=alert(1)>"></svg>';
         const clean = DOMPurify.sanitize(dirty);
@@ -4377,6 +5314,10 @@
       }
     );
 
+    /**
+     * 先严格保留普通 HTML 与合法 math/mi，再清洗 math/table/mglyph/style 变体。
+     * 危险结果不得同时含 img/onerror，检查合法结构保留与畸形结构中和。
+     */
     QUnit.test(
       'less-aggressive mXSS handling preserves valid HTML (#369)',
       (assert) => {
@@ -4386,9 +5327,7 @@
           DOMPurify.sanitize('<p>Hello<b> World</b></p>'),
           '<p>Hello<b> World</b></p>'
         );
-        // 不含 HTML void element 的普通 MathML 可完整 round-trip。`<math>` 中的 `<br>` 会在
-        // DOMPurify 看见前就被 HTML parser foster-parent 到 foreign content 外，因此此处用
-        // `<mn>/<mi>/<mo>` 保持在 foreign content 内。
+        // `<mi>` 让这段 MathML 保持合法嵌套；下方严格比较允许的完整序列化结果。
         assert.equal(
           DOMPurify.sanitize('<a><math><mi>x</mi></math></a>'),
           '<a><math><mi>x</mi></math></a>'
@@ -4404,10 +5343,14 @@
       }
     );
 
+    /**
+     * MathML annotation-xml 的 text/html 边界内嵌 xmp/raw-text 攻击。
+     * 默认结果不得含 onerror，检查这组 HTML integration point 输入的清理结果。
+     */
     QUnit.test('text-integration-points: math + xmp', (assert) => {
-      // 带 `<annotation-xml encoding="text/html">` 的 `<math>` 是 text integration point：
-      // 子节点虽处于 foreign content，仍按 HTML 解析。`<xmp>` 是另一遗留纯文本元素；两者必须
-      // 使用正确解析模式，避免错误嵌套形成 mXSS。
+      // `annotation-xml[encoding="text/html"]` 是 HTML integration point，子节点按 HTML
+      // 规则解析；它与 mi/mtext 等 MathML text integration point 是两类入口。
+      // xmp 的 raw-text 内容含攻击标记，本例检查默认清洗结果中 onerror 已消失。
       const xss =
         '<math><annotation-xml encoding="text/html"><xmp><img src=x onerror=alert(1)></xmp></annotation-xml></math>';
       const clean = DOMPurify.sanitize(xss);
@@ -4417,6 +5360,10 @@
       );
     });
 
+    /**
+     * SVG foreignObject 的 HTML 边界内嵌 xmp 与危险 img。
+     * 默认结果不得含 onerror，检查这组外来内容切换后的清理结果。
+     */
     QUnit.test('text-integration-points: svg + xmp', (assert) => {
       const xss =
         '<svg><foreignobject><xmp><img src=x onerror=alert(1)></xmp></foreignobject></svg>';
@@ -4427,9 +5374,14 @@
       );
     });
 
+    /**
+     * 存在 jQuery 时将默认清洗的危险 img 经 html() 再解析，立即检查 xssed=false 并删除容器。
+     * 缺库跳过；
+     * 该定义只观察同步插入，未等待图片事件。
+     */
     QUnit.test('jQuery v3.0+ html() insecure behaviour', (assert) => {
-      // jQuery.html() 额外解析会引入 mXSS 窗口；DOMPurify 输出经 jQuery parser 重新插入时
-      // 仍必须安全。
+      // 用 jQuery.html() 重新解析默认清洗后的图片，并立即检查 xssed；
+      // 等待异步图片事件的用例位于文件顶部的 XSS — jQuery.html() 模块。
       if (!jQuery) {
         assert.ok(true, 'jQuery not present, skipping');
         return;
@@ -4446,13 +5398,20 @@
     // 回归：noembed / noscript ALLOW_TAGS 绕过。
     // =======================================================================
 
+    /**
+     * fallback raw-text、表格解析及非 ASCII 标签输入，分别检查片段、固定耗时和真实属性列表。
+     */
     QUnit.module('Regression — noembed / noscript / table');
 
+    /**
+     * noscript 中 title 属性含闭合 noscript 与危险 img。
+     * 默认清洗后不得含 onerror，检查 scripting flag 与属性/文本解析差异下的最终结果。
+     */
     QUnit.test(
       'noscript content is not parsed when scripting is disabled',
       (assert) => {
-        // 服务端渲染/jsdom 禁用 scripting，因此 `<noscript>` 内容按 HTML 而非文本解析；攻击者
-        // 曾可用 noscript 包裹 payload 形成绕过。
+        // noscript 的解析形状受文档 scripting flag 影响。这里把包含闭合 noscript 与图片的
+        // 片段放进 title，检查默认清洗输出不会留下 onerror；默认标签规则会删除 noscript。
         const dirty =
           '<noscript><p title="</noscript><img src=x onerror=alert(1)>">';
         const clean = DOMPurify.sanitize(dirty);
@@ -4463,6 +5422,10 @@
       }
     );
 
+    /**
+     * noembed raw-text 内放危险 img。
+     * 默认输出不得含 onerror，检查默认拒绝容器和内容后的字符串结果。
+     */
     QUnit.test('noembed content is not parsed as raw HTML', (assert) => {
       const dirty = '<noembed><img src=x onerror=alert(1)></noembed>';
       const clean = DOMPurify.sanitize(dirty);
@@ -4472,9 +5435,14 @@
       );
     });
 
+    /**
+     * 重复 200 个 table 起始标签，计时默认 sanitize。
+     * 要求耗时小于 3 秒，作为固定输入的回归阈值；
+     * 断言未测多种规模的渐近复杂度。
+     */
     QUnit.test('table parsing does not cause O(n²) blowup (#365)', (assert) => {
-      // Issue #365：N 层嵌套 `<table>` 曾因每层重设上一层父节点产生 O(N²) 工作；修复限制
-      // foster-parenting 递归。
+      // 重复 table 起始标签交给浏览器解析器修复，DOMPurify 再遍历所得树。
+      // 此处固定 200 个标签在 3 秒内完成，作为该输入的耗时回归检查。
       let payload = '';
       for (let i = 0; i < 200; i++) payload += '<table>';
       const start = Date.now();
@@ -4486,6 +5454,10 @@
       );
     });
 
+    /**
+     * table 中插入 script，交由解析器修复。
+     * 默认结果不得含 script 起始片段，检查表格解析后脚本仍被删除。
+     */
     QUnit.test(
       'table foster-parenting does not leak script (#365 part 2)',
       (assert) => {
@@ -4498,10 +5470,14 @@
       }
     );
 
+    /**
+     * 以非 ASCII İ 开头的伪 img 输入被 HTML 当文本处理。
+     * 清洗结果再经 innerHTML 解析，逐个真实属性检查无 on*，区分惰性文字和活动事件属性。
+     */
     QUnit.test('Unicode-named tags are removed', (assert) => {
-      // 名称含非 ASCII 字符的标签不是合法 HTML 元素，默认 allowlist 必须阻止它们进入结果树。
-      // 对未知标记，库会把整个标签 HTML 编码回惰性文本；若只在字符串中搜 `onerror`，会命中
-      // `&lt;...onerror...&gt;` 编码形式并造成假阴性，因此必须检查重新解析后的活动树。
+      // `<İmg ...>` 的起始字符不满足 HTML 标签打开状态的 ASCII 字母条件，解析器把它当作文本；
+      // DOMPurify 序列化时会转义尖括号。字符串中仍可出现 onerror 字样，
+      // 因而重新解析结果，检查真实元素的属性列表是否包含 on*。
       const dirty = '<\u0130mg src=x onerror=alert(1)>';
       const clean = DOMPurify.sanitize(dirty);
       const wrapper = document.createElement('div');
@@ -4521,17 +5497,25 @@
     });
 
     // =======================================================================
-    // 回归：selectedcontent（Chrome 130+）— CVE，3.4.4 → 3.4.5。
+    // 回归：selectedcontent。模块名保留 3.4.5 回归标签，以下说明对应当前实现。
     //
-    // `<selectedcontent>` 会把选中 `<option>` 的 subtree 镜像到自身子节点。镜像发生在清洗之后，
-    // 只检查静态标记的 sanitizer 会漏掉引擎稍后克隆进入的脚本 payload。
+    // 支持可定制 select 的引擎会把已选 option 的内容复制到 selectedcontent。
+    // 默认 allowlist 不含 selectedcontent，且 FORBID_CONTENTS 含该名称，删除时整棵内容一起丢弃。
     //
-    // 修复：默认禁止 `<selectedcontent>`，仅显式 opt-in 才允许。opt-in 时采用
-    // refresh-after-sanitize：先让引擎填充镜像，再重新遍历 subtree。
+    // ADD_TAGS 可显式放行该标签，保留后按普通节点接受遍历；实现没有名为
+    // refresh-after-sanitize 的后置刷新流程。下面的 live-DOM 用例同步检查插入后可见的镜像内容。
     // =======================================================================
 
+    /**
+     * selectedcontent 默认拒绝与显式放行对照；
+     * 接口/解析探针控制分支，同步镜像检查不等待更新。
+     */
     QUnit.module('Regression — selectedcontent (3.4.5)');
 
+    /**
+     * select/option 中危险 img 与 selectedcontent 并存。
+     * 默认结果同时不得含 selectedcontent/onerror，检查默认元素拒绝与危险属性过滤。
+     */
     QUnit.test('default config removes <selectedcontent>', (assert) => {
       const dirty =
         '<select><option><img src=x onerror=alert(1)></option><selectedcontent></selectedcontent></select>';
@@ -4546,11 +5530,16 @@
       );
     });
 
+    /**
+     * 仅在 HTMLSelectedContentElement 接口存在时放行 selectedcontent，并把清洗结果连接文档。
+     * 立即读取镜像 innerHTML 检查无 onerror，再删除容器；
+     * 未等待后续刷新。
+     */
     QUnit.test(
       'refresh-after-sanitize covers post-clone mirror payload',
       (assert) => {
-        // 即使配置允许 selectedcontent，post-sanitize refresh 也应捕获克隆进入的 subtree。
-        // 仅在实现该镜像的真实浏览器运行。
+        // 标题沿用历史回归名称。本例显式放行 selectedcontent，将输出连接到 document 后
+        // 立即检查该元素的 innerHTML 是否包含 onerror；仅在接口存在时运行。
         if (typeof window.HTMLSelectedContentElement === 'undefined') {
           assert.ok(
             true,
@@ -4566,7 +5555,7 @@
         });
         document.body.appendChild(wrapper);
         window.xssed = false;
-        // 给引擎一个 tick 填充镜像。
+        // 同步读取当前可见的镜像结果。
         const sc = wrapper.querySelector('selectedcontent');
         const stillEvil = sc && /onerror/i.test(sc.innerHTML);
         document.body.removeChild(wrapper);
@@ -4574,13 +5563,17 @@
       }
     );
 
+    /**
+     * 先探测 select 内是否保留 selectedcontent，再以 ADD_TAGS 清洗安全文字。
+     * 支持时要求输出含元素起始标签，检查显式准入；
+     * 未断言文字镜像更新。
+     */
     QUnit.test(
       'ADD_TAGS opt-in preserves <selectedcontent> with safe content',
       (assert) => {
         // 前置条件：引擎在 `<select>` 内解析时必须把 `<selectedcontent>` 保留为活动元素；这比
-        // 独立解析严格。传统 HTML parser 仅允许 option/optgroup 成为 select 子节点，并把其他
-        // 元素 foster-parent 到外部；实现 v130+ form-controls 更新的引擎才把 selectedcontent
-        // 加入合法子节点，jsdom 与旧浏览器没有。故必须在真实使用位置探测，不能只放进 div。
+        // 独立解析严格。传统 select 解析规则会忽略很多其他标签；该探针直接确认当前引擎
+        // 是否把 selectedcontent 保留在 select 内，再运行 opt-in 保留断言。
         const probe = document.createElement('div');
         probe.innerHTML =
           '<select><selectedcontent></selectedcontent></select>';
@@ -4606,9 +5599,13 @@
       }
     );
 
+    /**
+     * 循环净化 optgroup 图片、option iframe/srcdoc 与 SVG/onload 三种输入。
+     * 逐项检查输出无危险片段，实际没有活动 DOM 插入或事件等待。
+     */
     QUnit.test('generalized trigger variants (live-DOM check)', (assert) => {
-      // 披露中的变体：嵌套 option group、optgroup 内 option、多个 selectedcontent，均应收敛为
-      // 安全输出。
+      // 三组输入分别在 option/optgroup 中放入图片、iframe 与 SVG，检查输出不存在
+      // onerror、srcdoc 或 onload。
       const variants = [
         '<select><optgroup><option><img src=x onerror=alert(1)></option></optgroup><selectedcontent></selectedcontent></select>',
         '<select><option><iframe srcdoc="<script>alert(1)</script>"></iframe></option><selectedcontent></selectedcontent></select>',
@@ -4626,13 +5623,16 @@
     // =======================================================================
     // 回归：Finding #1（clobbered form 根使 `_forceRemove` 产生 DoS）。
     //
-    // 内部 `_forceRemove()` 通过 parentNode 分离节点；若 form.parentNode 被子节点
-    // `<input name="parentNode">` clobber，会产生无限循环或让 sanitizer 崩溃的异常。
+    // 表单具名控件可遮蔽净化过程读取的 DOM 成员。下方字符串输入包含八种 HTML/XHTML
+    // 形状，检查每次调用在 2 秒内返回字符串或抛错。
     //
-    // 修复在主遍历前提前拒绝 clobbered form 根，iterator 因而不会带不可遍历的父链进入
-    // `_forceRemove()`。测试覆盖报告列出的八种不同 clobbering 形状。
+    // 字符串先解析到隔离文档，再由 `_isClobbered` 检查遍历中的 form；触发检查时删除该元素。
+    // parent/child 结构读取使用缓存 getter。IN_PLACE 的根预检属于另一条路径。
     // =======================================================================
 
+    /**
+     * 八组字符串 form 名称遮蔽数据循环生成测试，接受返回或抛错并限时 2 秒，检查此组调用终止。
+     */
     QUnit.module('Regression — Finding #1 (clobbered form DoS)');
 
     [
@@ -4671,6 +5671,10 @@
         html: '<form><input name="parentNode"></form>',
       },
     ].forEach((c) => {
+      /**
+       * 八种 DoS 数据通过循环分别注册测试，启用未知协议并按数据切媒体类型。
+       * 允许抛错，要求每次小于 2 秒且结果为字符串，检查终止时间而非内容安全。
+       */
       QUnit.test(`DoS payload variant: ${c.name}`, (assert) => {
         const opts = { ALLOW_UNKNOWN_PROTOCOLS: true };
         if (c.mediaType) opts.PARSER_MEDIA_TYPE = c.mediaType;
@@ -4679,7 +5683,7 @@
         try {
           clean = DOMPurify.sanitize(c.html, opts);
         } catch (e) {
-          // 可以抛错；此处唯一要求是“不挂起”。
+          // 接受抛错；下面仍检查该调用是否在 2 秒内完成。
           clean = '<threw/>';
         }
         const elapsed = Date.now() - start;
@@ -4698,13 +5702,21 @@
     // 回归：Finding #2（删除 `</style>` 导致属性逃逸）。
     // =======================================================================
 
+    /**
+     * style 字符串中的闭合标签会结束 HTML raw-text；
+     * 输出检查形成的 img 事件已删除。
+     */
     QUnit.module('Regression — Finding #2 (attribute breakout)');
 
+    /**
+     * style 的 CSS 字符串含真实闭合 style 与 img/onerror。
+     * 默认输出不得含 onerror，检查 HTML raw-text 边界后形成的节点处理。
+     */
     QUnit.test(
       '</style> embedded in attribute does not escape style context',
       (assert) => {
-        // 旧 style 内容删除正则过于激进，会吞掉属性值内的 `</style>`，使后续标记按原始 HTML
-        // 重新解析。
+        // HTML 的 style 是 raw-text 元素：CSS 字符串中的 `</style>` 也会结束元素，
+        // 后面的 img 因而可成为真实节点。净化流程必须删除它的 onerror。
         const dirty =
           '<style>a[href="</style><img src=x onerror=alert(1)>"]{}</style>';
         const clean = DOMPurify.sanitize(dirty);
@@ -4718,12 +5730,18 @@
     // =======================================================================
     // 回归：Finding #3（informational）。
     //
-    // 为完整性记录：该 finding 被判定为 scope 外；消费者通过属性 setter 插入 HTML 输出前必须
-    // 自行编码。下方单测证明 DOMPurify 输出本身不是载体。
+    // 清洗图片后通过 innerHTML 重解析，再检查序列化结果中 onerror 没有恢复。
     // =======================================================================
 
+    /**
+     * 普通危险图片默认清洗后再 innerHTML 解析，检查事件属性片段不再生成。
+     */
     QUnit.module('Regression — Finding #3 (informational)');
 
+    /**
+     * 默认清洗危险 img，再用 innerHTML 解析结果。
+     * 容器序列化不得含 onerror，检查此普通图片输入的重解析形状。
+     */
     QUnit.test(
       'output, re-inserted via innerHTML, does not regain its payload',
       (assert) => {
@@ -4741,12 +5759,21 @@
     // =======================================================================
     // 回归：Finding #4（外部 `form=` 关联）。
     //
-    // `<input form="formid">` 可把 form element 关联到 DOM ancestry 外的 form。sanitizer 必须
-    // 把 `form=` 识别为同 document 引用，并删除或限定其作用域。
+    // `<input form="formid">` 可关联同一 document 中、位于祖先链之外的 form。
+    // 默认属性 allowlist 不含 form，所以这里的 HTML/XHTML 输入都会删除该属性。
     // =======================================================================
 
+    /**
+     * HTML/XHTML 的外部 form 关联场景；
+     * 断言只查 input form 属性删除。
+     */
     QUnit.module('Regression — Finding #4 (external form= association)');
 
+    /**
+     * 外部 input 用 form=evil 关联带危险 action 的 form。
+     * 默认 HTML 输出不得含 form="evil"，检查关联属性删除；
+     * 危险 action 未单独断言。
+     */
     QUnit.test('form= attribute is stripped from inputs (HTML)', (assert) => {
       const dirty =
         '<form id="evil" action="javascript:alert(1)"></form><input form="evil" type="submit">';
@@ -4757,6 +5784,10 @@
       );
     });
 
+    /**
+     * 同一外部关联场景改为 XHTML、自闭合并声明 HTML namespace。
+     * 输出不得含 form="evil"，检查 XML 路径的属性结果。
+     */
     QUnit.test('form= attribute is stripped from inputs (XHTML)', (assert) => {
       const dirty =
         '<form xmlns="http://www.w3.org/1999/xhtml" id="evil" action="javascript:alert(1)"/><input xmlns="http://www.w3.org/1999/xhtml" form="evil" type="submit"/>';
@@ -4776,8 +5807,16 @@
     // round-trip 后会执行；测试逐阶段确认安全性。
     // =======================================================================
 
+    /**
+     * style 闭合与实体解码分别走字符串、fragment 与插入路径；
+     * XHTML 边界例等待 50ms 检查探针。
+     */
     QUnit.module('Regression — style + XHTML + RETURN_DOM_FRAGMENT round-trip');
 
+    /**
+     * style 的 CSS URL 引号中放闭合 style 与 img/onerror。
+     * 默认字符串结果不得含 onerror，检查 raw-text 退出后危险属性消失。
+     */
     QUnit.test('string sanitize is safe', (assert) => {
       const dirty =
         '<style>a{background:url("</style><img src=x onerror=alert(1)>")}</style>';
@@ -4785,6 +5824,10 @@
       assert.ok(!/onerror/i.test(clean), 'string mode neutralises: ' + clean);
     });
 
+    /**
+     * 同一 style 输入先净化为字符串，再净化为 fragment，深导入到 div。
+     * 序列化无 onerror，检查两次解析及 DOM 返回后的属性结果。
+     */
     QUnit.test(
       'round-trip (string → DOM fragment → innerHTML) is safe',
       (assert) => {
@@ -4803,6 +5846,11 @@
       }
     );
 
+    /**
+     * 同一 style 输入净化后以原生 innerHTML 连接 body。
+     * 立即读取 xssed 并移除容器，要求未触发；
+     * 覆盖同步插入窗口。
+     */
     QUnit.test(
       'native innerHTML application of clean output does not XSS',
       (assert) => {
@@ -4820,16 +5868,20 @@
       }
     );
 
+    /**
+     * 实体编码闭合 style 与 img 后再有真实 a 子元素。
+     * 默认字符串须无 img/onerror；
+     * XHTML fragment 重新序列化为 HTML 后等待 50ms，探针不得触发，检查 XML 到 HTML 边界。
+     */
     QUnit.test(
       'bypass (#1150): entity-encoded </style> + XHTML + RETURN_DOM_FRAGMENT',
       (assert) => {
-        // 源码侧检查会删除实体解码后文本含 `</style>` 再接标记的 `<style>`。下方 payload 依赖：
-        //   1. XHTML 解析：`<style>` 文本不是 raw-text 模式，`&lt;`/`&gt;` 会解码为尖括号；
-        //   2. RETURN_DOM_FRAGMENT：序列化器交还 DOM，跳过原本会 normalize 的字符串级预处理。
-        // 若无源码侧检查，解码后的 `<img>` 会在消费者侧逃出 `<style>` 并触发 onerror。
+        // XHTML 将 style 内实体解码为尖括号，并把 `<a>` 解析为真实子元素。HTML namespace
+        // 的 style 一旦含元素子节点，`_isUnsafeNode` 就删除整棵 style。这里请求 DOM fragment，
+        // 再把它序列化后送入 HTML parser；实体解码所得的闭合 style 与 img 因而是关键边界。
         //
-        // 同时确认字符串输出干净、活动 round-trip 不触发 window.xssed。异步等待不可省略：
-        // alert()/onerror 可能在 innerHTML 返回后的 microtask 才触发。
+        // 同时检查默认字符串输出，并在 XHTML fragment 重插入后等待 50ms，
+        // 让图片加载错误等异步事件有机会触发 xssed 探针。
         const payload =
           '<style>&lt;/style&gt;&lt;img src=x onerror=alert(1)&gt;<a></a></style>';
 
@@ -4884,16 +5936,24 @@
     // =======================================================================
     // 回归：跨 realm 清洗（GHSA-4w3q-35jp-p934）。
     //
-    // 修复前：不同 document/realm 的节点作为 IN_PLACE 输入时，sanitizer 用本地 realm document
-    // 构造 NodeIterator，却遍历 foreign tree。iterator 会静默跳过 foreign-realm 子节点，
-    // 留下危险内容。
+    // realm 绑定的 `instanceof Node` 会把 iframe 节点误判为普通对象并字符串化，
+    // IN_PLACE 因而没有修改调用方继续持有的原节点。
     //
-    // 修复：每调用 helper（`_withForeignRealmDoc`）识别 foreign ownerDocument，并在遍历前
-    // adopt/import subtree。下方覆盖报告列出的 c1-c4 四类配置和 spoofed object 识别探针。
+    // 当前 `_isNode` 用缓存的 Node.prototype.nodeType getter 读取真实内部状态，接受 foreign Node，
+    // 拒绝只有 nodeType 字段的伪对象。IN_PLACE 直接遍历原节点；`_createNodeIterator` 从缓存
+    // ownerDocument getter 取得该根的真实文档。下方覆盖 iframe 节点与伪对象输入。
     // =======================================================================
 
+    /**
+     * iframe 节点与伪对象对照；
+     * 跨 realm 原地修改、模板、open shadow 及遮蔽根按实际断言解释。
+     */
     QUnit.module('Regression — cross-realm sanitization (GHSA-4w3q-35jp-p934)');
 
+    /**
+     * 新 iframe 提供 foreign-realm a，href 为 javascript:。
+     * IN_PLACE 后直接读取原链接 href=null，finally 移除 iframe，检查跨 realm 节点品牌与遍历。
+     */
     QUnit.test(
       'IN_PLACE with foreign-realm DOM input is sanitized',
       (assert) => {
@@ -4915,6 +5975,10 @@
       }
     );
 
+    /**
+     * 对象 toString 返回带 onerror 的 img。
+     * 要求返回字符串且无事件片段，检查非节点转换后的标记仍被净化。
+     */
     QUnit.test(
       'string input with non-node object is rejected (c1)',
       (assert) => {
@@ -4929,6 +5993,10 @@
       }
     );
 
+    /**
+     * 普通对象伪造节点字段与 innerHTML，但未自定义 toString。
+     * 输出必须为字符串且无 onerror，检查伪字段不会让 innerHTML 成为待遍历 DOM。
+     */
     QUnit.test(
       'plain object with nodeType is not treated as DOM (c2)',
       (assert) => {
@@ -4950,9 +6018,15 @@
       }
     );
 
+    /**
+     * 伪节点对象同时请求 IN_PLACE。
+     * 接受抛错；
+     * 返回对象时仅扫描其自有 attributes，字符串时排除 handler 语法。
+     * 当前实现走对象字符串转换，未修改伪 innerHTML。
+     */
     QUnit.test('IN_PLACE with spoofed nodeType is contained (c3)', (assert) => {
-      // 被测不变量是“spoofed object 不能把标记走私进 IN_PLACE”。库可以抛错、字符串化后清洗，
-      // 或原样返回 spoof；只要伪造 innerHTML 永不变成带 on-handler 的活动元素，三者都可接受。
+      // 该伪对象无法通过缓存 nodeType getter，当前实现将其转为 `[object Object]`；
+      // IN_PLACE 只对真实 Node 生效，因此伪造 innerHTML 不作为待清洗 DOM。
       const fake = {
         nodeType: 1,
         nodeName: 'DIV',
@@ -4966,8 +6040,7 @@
         assert.ok(true, 'threw on spoofed input (acceptable outcome)');
         return;
       }
-      // 任何返回值都不能成为携带 payload 的可解析 DOM：字符串化后检查；若返回 Element，
-      // 则直接检查属性。
+      // 字符串结果检查事件属性语法；对象分支只检查返回对象自己的 attributes。
       if (out && typeof out === 'object' && out.nodeType === 1) {
         const attrs = out.attributes || [];
         let hasHandler = false;
@@ -4984,6 +6057,10 @@
       }
     });
 
+    /**
+     * foreign form 以 nodeName/parentNode 控件尝试遮蔽成员，未含事件载荷。
+     * 接受抛错或完成，字符串分支仅排除 on* 语法，检查该输入的处理完成。
+     */
     QUnit.test('foreign-realm clobbered form is recognised (c4)', (assert) => {
       const iframe = document.createElement('iframe');
       document.body.appendChild(iframe);
@@ -4991,7 +6068,8 @@
         const foreignDoc = iframe.contentDocument;
         const form = foreignDoc.createElement('form');
         form.innerHTML = '<input name="nodeName"><input name="parentNode">';
-        // 可接受行为：抛错（优先）或返回不含 on-handler 的已清洗字符串；原始 DoS 是无限循环。
+        // 引擎支持表单具名属性遮蔽时，当前 IN_PLACE 预检会抛错；否则按普通根遍历。
+        // 本输入没有事件载荷，断言检查调用完成及字符串结果中的事件属性语法。
         let out;
         try {
           out = DOMPurify.sanitize(form, { IN_PLACE: true });
@@ -5008,6 +6086,10 @@
       }
     });
 
+    /**
+     * foreign template.content 装入 javascript: 链接。
+     * IN_PLACE 后原 content 首节点 href=null，检查 foreign 文档及模板独立片段的遍历。
+     */
     QUnit.test('foreign-realm template.content is walked', (assert) => {
       // cross-realm 修复还覆盖 `<template>.content`；它拥有与 host document 不同的
       // ownerDocument。
@@ -5026,6 +6108,10 @@
       }
     });
 
+    /**
+     * foreign div 的 open shadow 含危险 href 链接。
+     * 原地净化后链接必须存在且 href=null，检查跨 realm attached root。
+     */
     QUnit.test('foreign-realm attached shadow root is walked', (assert) => {
       const iframe = document.createElement('iframe');
       document.body.appendChild(iframe);
@@ -5043,6 +6129,11 @@
       }
     });
 
+    /**
+     * foreign evil 根属于禁止 namespace，但 evil 标签本身也未准入。
+     * 接受抛错或空属性根；
+     * 当前在根标签预检先拒绝，未单独触发 namespace 分支证明。
+     */
     QUnit.test(
       'elements in forbidden namespaces are removed (cross-realm)',
       (assert) => {
@@ -5060,7 +6151,8 @@
               'http://www.w3.org/1998/Math/MathML',
             ],
           });
-          // forbidden namespace 元素应变为惰性（无子节点、无属性）；实现也可以对根抛错。
+          // evil 本身不在标签 allowlist，当前实现会先在根标签预检中清空并抛错。
+          // 若调用返回，此断言只要求根属性为空。
           assert.ok(
             root.attributes.length === 0,
             'forbidden-namespace root has no attributes'
@@ -5081,6 +6173,9 @@
     // 在抛错与安全继续之间选择。
     // =======================================================================
 
+    /**
+     * 一次 env 探针记录 form/shadow/setHTMLUnsafe 能力，后续案例以它决定跳过或检查抛错/属性结果。
+     */
     QUnit.module('DOM clobbering — shadow-root traversal');
 
     // 每个测试 session 只探测一次环境能力。
@@ -5112,6 +6207,10 @@
       return result;
     })();
 
+    /**
+     * 能力探针确认 form 遮蔽后，根带 childNodes/parentNode 控件与 onclick。
+     * 接受抛错，正常返回则序列化无 handler，检查该环境下的遮蔽根处理。
+     */
     QUnit.test('clobbered childNodes is recognised', (assert) => {
       if (!env.formClobbering) {
         assert.ok(true, 'engine does not clobber form properties; skipping');
@@ -5132,11 +6231,16 @@
       assert.ok(!/on\w+=/i.test(result.outerHTML || ''));
     });
 
+    /**
+     * form 中名为 childNodes 的 select 具有数字 length，另有 onclick 控件。
+     * IN_PLACE 接受抛错或事件已删，检查这种伪 NodeList 形状不能留活动处理器。
+     */
     QUnit.test(
       '<select name="childNodes"> with length-as-number does not defeat typing probe',
       (assert) => {
         // 旧 clobbering 检查只做 `typeof x === 'object'`，可被 childNodes clobber 成 `<select>`
-        // 绕过，因为 select.length 是 number。现检查显式加入 nodeType 和构造器身份。
+        // 绕过，因为 select.length 是 number。当前检查把直接 childNodes 与缓存 getter
+        // 返回的真实 NodeList 作引用比较，并比较直接 nodeType 与缓存 getter 的数值。
         const root = document.createElement('form');
         root.innerHTML =
           '<select name="childNodes">' +
@@ -5162,6 +6266,11 @@
       }
     );
 
+    /**
+     * 可净化 shadow 的环境下，form 同时带 childNodes select 与含危险链接的 child shadow。
+     * 接受抛错；
+     * 正常返回时存活链接须无 href，检查复合路径。
+     */
     QUnit.test('shadow root nested under select-clobbered form', (assert) => {
       if (!env.shadowSanitization) {
         assert.ok(
@@ -5199,6 +6308,10 @@
       }
     });
 
+    /**
+     * 支持 setHTMLUnsafe 时先实例化声明式 open shadow，再 IN_PLACE 清洗 host。
+     * 存活 shadow 链接须无 href，也接受结构删除，检查已生成 attached root 的清理。
+     */
     QUnit.test('setHTMLUnsafe + IN_PLACE declarative shadow', (assert) => {
       if (!env.setHTMLUnsafe) {
         assert.ok(true, 'setHTMLUnsafe not available; skipping');
@@ -5211,7 +6324,8 @@
           '</template></div>'
       );
       DOMPurify.sanitize(host, { IN_PLACE: true });
-      // declarative shadow root 要么实例化并被遍历，要么 template 被删除；两者都消除 payload。
+      // setHTMLUnsafe 已实例化的 open shadow root 由 attached-root 预扫处理。
+      // 这里定位 shadow 内链接；找到时要求 href 已删除，未找到时接受链接或结构被移除。
       const liveA = host.firstChild
         ? host.firstChild.shadowRoot
           ? host.firstChild.shadowRoot.querySelector('#poc')
@@ -5229,26 +6343,24 @@
     // GHSA-r47g-fvhr-h676：拒绝 parentless clobbered form。
     //
     // 修复前 sanitizer 会对属性被 clobber 的 form 调 `_forceRemove(form)` 尝试“删除”。form 是根，
-    // parentNode 同时为 null 且被 clobber，函数静默无操作返回，把带危险 handler 的原 form
+    // parentless 根无法再从树中分离，旧删除流程会空操作返回，把带危险 handler 的原 form
     // 交还调用方。
     //
-    // 修复在 preamble 加入 parentless clobbered root guard，于遍历前抛错。抛错本身是契约，
-    // 调用方不得忽略。
+    // 当前 IN_PLACE 预检对 clobbered 根先清理子树并清空根，再于遍历前抛错；
+    // attached 与 detached 根都执行这项检查。
     // =======================================================================
 
+    /**
+     * detached clobbered form 根先拒绝，div 包住的 form 作为后代处理；
+     * 候选名称只要求至少一个实际抛错。
+     */
     QUnit.module(
       'Regression — GHSA-r47g-fvhr-h676 (parent-less clobbered form)'
     );
 
     /**
-     * Given：detached form 根含 `<input name="nodeName" onmouseover>`，且当前引擎实现 form
-     * named-property clobbering。
-     * When：以 IN_PLACE 清洗。
-     * Then：抛出描述 clobbered/forbidden/invalid 的错误，绝不能静默返回原根。
-     *
-     * 验证机制：先探测真实引擎能力，再匹配 fail-closed 异常；jsdom 跳过，动态证明依赖
-     * Playwright Chromium 运行。
-     * 对应源码：`sanitize()` 的 IN_PLACE `_isClobbered()` preflight 与 `_neutralizeRoot()`。
+     * 支持 form 遮蔽时构造 detached form 根，控件名 nodeName 且带事件。
+     * 严格要求匹配错误消息的抛错，检查入口拒绝被遮蔽根。
      */
     QUnit.test('parent-less clobbered form root throws', (assert) => {
       if (!env.formClobbering) {
@@ -5264,6 +6376,11 @@
       );
     });
 
+    /**
+     * 支持 form 遮蔽时遍历七种控件名，记录抛错与未抛错。
+     * 所有捕获值须为 Error，且至少一项抛错；
+     * 未要求七项全抛错，也未检查未抛错项的输出。
+     */
     QUnit.test(
       'all clobbering-name variants trigger preamble throw',
       (assert) => {
@@ -5271,21 +6388,9 @@
           assert.ok(true, 'engine does not clobber form properties; skipping');
           return;
         }
-        // 哪些属性名会触发库的防御抛错由两个独立因素决定，测试不能预先静态断定：
-        //
-        //   1. 引擎行为：并非每个名称都能通过 HTMLFormElement named-property access 被
-        //      clobber。Chromium 当前会 clobber nodeName/nodeType/attributes/childNodes，
-        //      但 parentNode/firstChild/children 仍是不可遮蔽的 prototype getter；其他引擎不同。
-        //
-        //   2. 库策略：`_isClobbered()` 只检查一组对自身遍历有结构危险的属性。集合外名称即使
-        //      能被 clobber，也不会触发该 guard。
-        //
-        // 从外部预测两者交集很脆弱，先前静态探针都在某个引擎失败。稳健做法是直接问库：该名称
-        // 是否抛错。若抛，它属于实际 guarded 集，异常成为跨版本契约；若不抛，只能断言库未因它
-        // 发生故障。
-        //
-        // 断言两个不变量：候选列表至少一个名称实际受 guard（否则整套防御已回归）；每个受 guard
-        // 名称都必须抛 Error，不能静默返回 clobbered form，后者正是 GHSA-r47g-fvhr-h676 原语。
+        // 引擎对各名称的具名属性遮蔽行为不同，`_isClobbered` 也只检查净化依赖的成员。
+        // 本例逐个记录实际抛错的名称，要求至少一个候选抛错，且捕获值为 Error。
+        // 未抛错的名称只记录到 ungrarded，未进一步检查清洗内容。
         const candidates = [
           'nodeName',
           'nodeType',
@@ -5327,11 +6432,15 @@
       }
     );
 
+    /**
+     * 支持 form 遮蔽时以 div 为 IN_PLACE 根，内含 nodeName 表单控件与事件。
+     * 允许抛错，正常完成要求原 div 无 onmouseover，区分后代表单与入口根。
+     */
     QUnit.test(
       'parented clobbered form is still sanitized normally',
       (assert) => {
-        // 抛错的回归对照：不是 iteration root 的 clobbered form 仍须原地清洗并删除危险属性；
-        // throw 契约只针对根级 clobbering。
+        // div 是本次遍历根，clobbered form 是它的后代：主元素流程可删除 form，
+        // 原树根不会在入口的 form clobber 预检中被拒绝。
         if (!env.formClobbering) {
           assert.ok(true, 'engine does not clobber form properties; skipping');
           return;
@@ -5345,8 +6454,7 @@
         } catch (_) {
           threw = true;
         }
-        // wrapper-rooted 遍历要么删除 on-handler（及可能的 form），要么引擎把嵌套 form 当作
-        // iteration scope 并抛错；两者都保护消费者，唯一禁止结果是“带 onmouseover 返回”。
+        // 断言接受异常退出；正常返回时要求 wrapper 序列化结果不含 onmouseover。
         assert.ok(
           threw || !/onmouseover/i.test(wrapper.outerHTML),
           'parented clobbered form is either thrown on or cleaned: ' +
@@ -5359,8 +6467,15 @@
     // 回归保护：普通 attached 与嵌套 shadow root。
     // =======================================================================
 
+    /**
+     * 复用 shadow 能力探针，检查一层及嵌套 open shadow 的安全文本仍保留。
+     */
     QUnit.module('Regression — ordinary attached shadow roots');
 
+    /**
+     * 支持 shadow 净化时，div shadow 中只有安全 p。
+     * IN_PLACE 后 p.textContent 严格为 hello，检查安全 attached root 内容保留。
+     */
     QUnit.test('shadow root with safe content is preserved', (assert) => {
       if (!env.shadowSanitization) {
         assert.ok(
@@ -5375,6 +6490,10 @@
       assert.equal(host.shadowRoot.querySelector('p').textContent, 'hello');
     });
 
+    /**
+     * 两层 attached shadow 中最深 span 只有 safe。
+     * 支持时原地净化后深层文本严格保留，检查嵌套 roots 的无害内容。
+     */
     QUnit.test(
       'nested attached shadow roots preserve safe content',
       (assert) => {
@@ -5402,15 +6521,24 @@
     // =======================================================================
     // GHSA-hpcv-96wg-7vj8：cross-realm IN_PLACE 后续修复。
     //
-    // GHSA-4w3q-35jp-p934 关闭 iterator mismatch 原语后仍有残余：foreign-realm helper 本身
-    // 必须像 local-realm 路径一样识别 clobbered form 与 template.content。以下测试把本地覆盖
-    // 复制到跨 realm 边界。
+    // 接受 foreign Node 只是第一步：元素、form 与 DocumentFragment 的后续识别也须跨 realm。
+    // 当前实现用缓存 nodeType/nodeName getter 与属性 getter，代替 realm 绑定的 instanceof，
+    // 使 template.content、open shadow root 和 form clobber 检查进入同一净化流程。
     // =======================================================================
 
+    /**
+     * 复用能力探针，在 iframe 内再次检查 template、form 与 open shadow；
+     * 历史 helper 名称不代表当前实现。
+     */
     QUnit.module(
       'Regression — GHSA-hpcv-96wg-7vj8 (cross-realm IN_PLACE follow-up)'
     );
 
+    /**
+     * iframe 的 template.content 含危险 img，直接原地清洗。
+     * 图片若存活须无 onerror，允许整体删除；
+     * 标题中的历史 helper 不存在于当前实现。
+     */
     QUnit.test(
       '_withForeignRealmDoc helper handles foreign template.content',
       (assert) => {
@@ -5436,6 +6564,10 @@
       }
     );
 
+    /**
+     * 本地能力探针确认 form 遮蔽后，在 iframe 构造同名控件和 onmouseover。
+     * 接受抛错或原 form 无事件，检查 foreign 根的对应结果。
+     */
     QUnit.test(
       'foreign clobbered form is recognised via capability probe',
       (assert) => {
@@ -5467,6 +6599,10 @@
       }
     );
 
+    /**
+     * 支持 shadow 净化时，iframe 内 host shadow 带危险链接。
+     * IN_PLACE 后链接存活且 href=null，检查跨 realm attached-root 路径。
+     */
     QUnit.test(
       'foreign attached shadow root is walked end-to-end',
       (assert) => {
@@ -5494,6 +6630,11 @@
       }
     );
 
+    /**
+     * foreign evil-elem 根在自定义 namespace 且带 onmouseover。
+     * 接受抛错或事件删除；
+     * 当前标签预检先拒绝未准入标签，断言未隔离命名空间规则。
+     */
     QUnit.test(
       'foreign element in forbidden namespace is neutralised',
       (assert) => {
@@ -5526,16 +6667,24 @@
       }
     );
 
+    /**
+     * 三例模板片段放入相邻未闭合插值文本；
+     * 断言只排除完整表达式，说明结构可访问与正则边界。
+     */
     QUnit.module('Regression — template.content traversal bypass');
 
+    /**
+     * 相邻 $ 与未闭合 {constructor... 文本放在 template.content，请求 RETURN_DOM 与模板清理。
+     * 只排除含闭合 } 的表达式；
+     * 输入本来未闭合，此断言不足以单独验证 scrub。
+     */
     QUnit.test(
       'RETURN_DOM scrubs boundary-spanning expressions inside template.content',
       (assert) => {
-        // `_scrubTemplateExpressions()` 使用以输出 body 为根的 NodeIterator。按 DOM 规范，
-        // NodeIterator 不进入 `<template>.content`；它是普通 child-node tree 外的独立
-        // DocumentFragment。template 内被删除的 foreign 元素会在 content 留下相邻文本碎片
-        // `$` 与 `{...}`，单独都不匹配 TMPLIT_EXPR，却会在 normalize() 后合为完整 `${...}`。
-        // 修复显式递归每个 template.content，与 `_sanitizeShadowDOM()` 已用方法一致。
+        // NodeIterator 不进入独立的 template.content DocumentFragment，最终模板清理须显式递归。
+        // 本例直接创建相邻的 `$` 与未闭合 `{constructor...` 文本节点，没有插入待删除元素。
+        // `_scrubTemplateExpressions` 对 fragment 先 normalize，再用 TMPLIT_EXPR 贪婪清理
+        // 合并后的未闭合 `${` 片段。下方正则断言只检测含闭合 `}` 的完整表达式形状。
         const dirty = document.createElement('div');
         const tmpl = document.createElement('template');
         tmpl.content.appendChild(document.createTextNode('$'));
@@ -5559,6 +6708,11 @@
       }
     );
 
+    /**
+     * 同一未闭合文本放在 template.content，改用 IN_PLACE。
+     * normalize 后只排除完整 ${...} 形状，记录原地返回路径；
+     * 未检查实际主体文字是否清除。
+     */
     QUnit.test(
       'IN_PLACE scrubs boundary-spanning expressions inside template.content',
       (assert) => {
@@ -5587,6 +6741,11 @@
       }
     );
 
+    /**
+     * 两层模板的最深 content 含同一未闭合片段，请求 DOM 返回。
+     * 定位最深片段并排除完整表达式，检查可访问结构；
+     * 正则同样未匹配原输入。
+     */
     QUnit.test('scrub recurses into nested template.content', (assert) => {
       // `<template>` 内再嵌 `<template>` 会产生两个嵌套 DocumentFragment，平面 NodeIterator
       // 都看不见；递归修复必须逐层进入。
@@ -5616,20 +6775,23 @@
     });
 
     // =======================================================================
-    // DOM clobbering 完整矩阵（roundhouse）。
+    // DOM clobbering 候选矩阵（roundhouse）。
     //
-    // 对 clobber carrier 标记与 DOMPurify 读取节点时依赖的属性/方法名做完整笛卡尔积 tripwire。
+    // 对下方候选名称与四种 carrier 标记做笛卡尔积，并检查清洗后的 sink 痕迹。
     // carrier 使用 `<form>`：其 named/id 子节点通过 LegacyOverrideBuiltIns 遮蔽 built-in，
     // 这是 sanitizer 必须承受的元素级 clobbering 向量。
     //
-    // 此 override 是真实浏览器行为；jsdom 未实现，所以这些测试在 jsdom 会因没有发生 clobber
-    // 而平凡通过，只有 Chromium（Playwright）运行具备真实检测力。首个断言报告当前引擎是否
-    // 激活 override，避免把绿色 jsdom 结果误认为动态 clobber 覆盖。
+    // 首个断言消息记录当前引擎是否发生 built-in 遮蔽；该断言本身总为 true。
+    // 没有遮蔽能力时，矩阵仍检查普通输入的清洗结果；有遮蔽能力时才同时覆盖具名控件干扰。
     // =======================================================================
 
+    /**
+     * 定义候选名称、四种载体和两个 sink 扫描器；
+     * 字符串路径逐项及合并检查，IN_PLACE 根接受抛错或无 sink 返回。
+     */
     QUnit.module('DOM clobbering — comprehensive matrix');
 
-    // DOMPurify 或下游消费者会从节点读取的名称；遮蔽其中任一项都可能成为攻击杠杆。
+    // 候选涵盖身份、内容、导航、属性与方法；各名称能否被具名控件遮蔽取决于引擎。
     const CLOBBER_NAMES = [
       // 身份与类型。
       'nodeName',
@@ -5710,9 +6872,19 @@
       '<script>window.__clob=1</script>' +
       '<div onclick="window.__clob=1">z</div>';
 
-    /** 判断序列化字符串是否仍含事件、script 或 javascript: sink。 */
+    /**
+     * 用文本正则检查此矩阵指定的事件属性、script 起始标记或 javascript: 字样。
+     * 正则可命中惰性文本，因此与下方重新解析检查一起作为矩阵失败条件。
+     * @param {string} s sanitize 返回的序列化结果。
+     * @returns {boolean} 任一指定语法痕迹出现时为 true。
+     */
     const clobberHasSink = (s) => /\son\w+\s*=|<script|javascript:/i.test(s);
-    /** 重新解析输出并查找活动事件属性或 script 元素，补足纯字符串检查。 */
+    /**
+     * 用 DOMParser 重新解析清洗输出，定位带 onerror/onload/onclick 的元素或 script。
+     * 仅查询这三种事件名称，没有遍历模板片段、shadow 或查找危险 URL。
+     * @param {string} s 清洗输出。
+     * @returns {Element | null} 首个匹配节点；调用方按真值判断是否发现 sink。
+     */
     const clobberReparseSink = (s) =>
       new window.DOMParser()
         .parseFromString(s, 'text/html')
@@ -5722,11 +6894,12 @@
      * 为一个候选 built-in 名称生成 name/id、重复控件集合和 form-name 四类 clobber carrier。
      *
      * @param name - 要尝试遮蔽的 DOM 属性或方法名。
+     * @returns {string[]} 四组 form 标记，每组带相同的惰性 sink 组合。
      */
     const clobberPayloads = (name) => [
       '<form><input name="' + name + '">' + CLOBBER_SINKS + '</form>',
       '<form><input id="' + name + '">' + CLOBBER_SINKS + '</form>',
-      // 两个同名控件会生成 RadioNodeList/HTMLCollection clobber。
+      // 在支持表单具名访问的引擎中，两个匹配控件可使该名称返回 RadioNodeList。
       '<form><input name="' +
         name +
         '"><input name="' +
@@ -5737,6 +6910,11 @@
       '<form name="' + name + '">' + CLOBBER_SINKS + '</form>',
     ];
 
+    /**
+     * 每个 CLOBBER_NAMES 名称配四种载体，分别及合并默认清洗。
+     * 两种 sink 扫描不得有发现，__clob 必须为 0；
+     * 能力记录仅报告遮蔽，矩阵断言检查净化输出。
+     */
     QUnit.test(
       'no clobbering combination defeats sanitization (string path)',
       (assert) => {
@@ -5791,6 +6969,11 @@
       }
     );
 
+    /**
+     * 每个名称构造 detached form 根，带事件、javascript: 链接等惰性载荷。
+     * 接受抛错，正常返回须无 sink，且 __clob=0；
+     * 未挂载或主动派发事件。
+     */
     QUnit.test(
       'clobbered IN_PLACE roots throw or sanitize safely',
       (assert) => {
@@ -5847,10 +7030,18 @@
     // 其排队 error/load 事件会在页面 scope 执行存活的 on*，而返回树看似完全干净。修复改为提升
     // original 节点本身，使 walker 在持有排队事件的同一节点上删除 handler。无 wrapper 的直接
     // handler 原本就能中和；这些测试固定“一个 wrapper 不能再翻转该保证”。
+    /**
+     * 拒绝包装下先保存原图片引用，再清洗；
+     * 属性断言覆盖已分离原节点，一例等待 data 图片加载事件。
+     */
     QUnit.module(
       'Security — IN_PLACE hoisted-content neutralisation (audit-5)'
     );
 
+    /**
+     * x-wrap 中危险 img 先保存原引用及 handler 前置断言，再 IN_PLACE。
+     * 原引用和返回树均无 onerror，额外扫描存活图片，覆盖被分离原节点的中和。
+     */
     QUnit.test(
       'wrapped on*-handler original is scrubbed, not just its clone',
       (assert) => {
@@ -5877,8 +7068,7 @@
           /onerror/i.test(root.innerHTML),
           'returned tree is free of the handler'
         );
-        // 任何位置存活的 `<img>` 都不能保留 handler，防止树内安全 clone 掩盖 armed detached
-        // original。
+        // 再检查返回树中的全部图片；前面的 original 引用断言另覆盖已经离树的原图片。
         const imgs = root.querySelectorAll('img');
         let armed = 0;
         imgs.forEach((img) => {
@@ -5888,6 +7078,10 @@
       }
     );
 
+    /**
+     * 两层拒绝包装包住同时带 onerror/onload 的图片。
+     * 原地净化后原图片引用两属性都空，返回树也无片段，检查嵌套提升/删除的原节点处理。
+     */
     QUnit.test(
       'nested disallowed wrappers around a handler are fully scrubbed',
       (assert) => {
@@ -5914,6 +7108,11 @@
       }
     );
 
+    /**
+     * 把包在拒绝元素中的 data 图片连接 qunit-fixture，再 IN_PLACE。
+     * 等待 100ms 要求 xssed 未置 true并清场，观察加载事件；
+     * 不加载资源的 runner 无执行触发。
+     */
     QUnit.test(
       'wrapped handler does not execute after IN_PLACE sanitize',
       (assert) => {
@@ -5941,17 +7140,17 @@
       }
     );
 
+    /**
+     * 拒绝包装内的 form 用三个具名控件遮蔽属性/方法，危险图片保留原引用。
+     * 原地净化后原 img 与返回树均无事件，检查遮蔽表单与包装提升组合。
+     */
     QUnit.test(
       'handler stripping is not defeated by a clobbering <form> sibling',
       (assert) => {
-        // Given：被丢弃的原始子树含有一个 <form>，其具名子节点可遮蔽
-        // removeAttribute、attributes 与 childNodes。
-        // When：IN_PLACE 与 KEEP_CONTENT 将原节点提升回遍历序列后继续净化。
-        // Then：真正承载事件处理器的 <img> 仍会被访问，onerror 必须被删除。
-        // Mechanism：提升逻辑读取缓存的 Node.prototype getter；表单的具名属性
-        // 无法改写这些原型访问器，因此常规 allowlist 属性阶段不会被 clobber 隐藏。
-        // Source：purify.ts 的 _forceRemove、_sanitizeElements 与
-        // _sanitizeAttributes。
+        // x-wrap 删除时，KEEP_CONTENT 用缓存 getter 取得并提升原 form。
+        // 引擎若把具名控件暴露为 form 的 removeAttribute/attributes/childNodes，
+        // `_isClobbered` 会删除整棵 form；成功收尾再中和 removed 记录中的原 img。
+        // 未发生遮蔽时，img 进入普通属性净化。两条路径都要求原图片的 onerror 被删除。
         const root = document.createElement('div');
         root.innerHTML =
           '<x-wrap><form>' +
@@ -5977,26 +7176,24 @@
     // 安全回归——第三轮攻防（selectedcontent 镜像、异常屏障、深树 fail-open）。
     // 对应审计项 7–11。
     // =======================================================================
-    // Chromium 148+ 与 WebKit 26.4+ 会为可定制 <select> 镜像
-    // <selectedcontent>：UA 把已选 <option> 的子树（含 on* 处理器）克隆进去；
-    // 删除操作一旦改变当前 option/selectedcontent，甚至在 DOMPurify 的惰性
-    // DOMParser 文档中也会同步重新镜像。完整镜像级联（F1 无限循环、F6 二次方
-    // 输出、F3 重新镜像绕过）只能在这些引擎复现；下列测试固定所有引擎都应满足的
-    // 结构保证。异常屏障（F2）与深树（F4）测试则可在任意环境运行。
+    // selectedcontent 用例检查默认删除时不提升内容；它们把该元素放在 div 中，
+    // 不依赖 select 的真实镜像行为。后两例分别检查 detached 树的清洗结果，
+    // 以及 DOM API 构造的 5000 层树能否完成 IN_PLACE。
+    /**
+     * 分别检查 selectedcontent 内容丢弃、detached 自定义元素最终结果、5000 层 DOM 完成；
+     * 三种验证目标不合并。
+     */
     QUnit.module(
       'Security — campaign-3 (selectedcontent / barrier / deep tree)'
     );
 
+    /**
+     * div 中 selectedcontent 包住危险图片与普通 b。
+     * 默认清洗严格只剩空 div，另排除图片/事件，证明禁内容规则丢弃整棵子树而非提升。
+     */
     QUnit.test(
       'C3-F1/F6: <selectedcontent> is removed without hoisting its content',
       (assert) => {
-        // Given：<selectedcontent> 内含带 onerror 的镜像候选子树。
-        // When：默认 KEEP_CONTENT 路径删除该元素。
-        // Then：其内容整体丢弃，不提升 <img> 或事件处理器。
-        // Mechanism：旧路径会把引擎镜像出的子节点提升回树，触发下一个镜像目标，
-        // 造成无限重新镜像与二次方放大；selectedcontent 进入 FORBID_CONTENTS 后，
-        // _forceRemove 直接丢弃镜像副本并截断级联。原始 option 会独立接受净化。
-        // Source：purify.ts 的 FORBID_CONTENTS 与 _forceRemove。
         const clean = DOMPurify.sanitize(
           '<div><selectedcontent><img src=x onerror=alert(1)>' +
             '<b>copy</b></selectedcontent></div>'
@@ -6011,14 +7208,13 @@
       }
     );
 
+    /**
+     * selectedcontent 内只有安全 span，但显式 KEEP_CONTENT=true。
+     * 严格为空，检查 FORBID_CONTENTS 仍阻止普通后代提升。
+     */
     QUnit.test(
       'C3-F1: selectedcontent content drop survives the KEEP_CONTENT path',
       (assert) => {
-        // Given：显式启用默认且曾有风险的 KEEP_CONTENT 模式。
-        // When：删除含普通子节点的 <selectedcontent>。
-        // Then：FORBID_CONTENTS 优先级仍高于内容提升，输出必须为空。
-        // Mechanism：_forceRemove 在提升前先检查 FORBID_CONTENTS。
-        // Source：purify.ts 的 _forceRemove。
         const clean = DOMPurify.sanitize(
           '<selectedcontent><span>x</span></selectedcontent>',
           { KEEP_CONTENT: true }
@@ -6027,27 +7223,31 @@
       }
     );
 
+    /**
+     * 注册断开反应类后在 detached div 中放该元素和三个 sink。
+     * 允许 sanitize 抛错，最终根无事件/危险 URI；
+     * 根未连接文档，标准断开回调不由此移除触发。
+     */
     QUnit.test(
       'C3-F2: custom-element mid-walk abort leaves no surviving handler',
       (assert) => {
-        // Given：页面注册的自定义元素在 disconnectedCallback 中移除当前包装节点，
-        // 包装节点之后还放有事件处理器与 javascript: URL。
-        // When：IN_PLACE 遍历中的 _forceRemove 遭遇无父节点保护并可能中途抛错。
-        // Then：无论调用是否继续抛错，调用方的活动树都不能留下可执行载荷。
-        // Mechanism：异常屏障在遍历异常时中和原地根节点，避免调用中断后把尚未访问的
-        // 后续节点以未净化状态暴露给调用方。
-        // Source：purify.ts 的 sanitize IN_PLACE 异常清理路径与 _forceRemove。
+        // 此例注册断开回调，但 root 未连接到 document；标准 disconnectedCallback 不会因
+        // 这棵 detached 树的移除触发。下方断言检查最终根中没有事件属性或 javascript: URL。
+        // 前面 mid-walk abort 用例把根连接到 document，再观察回调变更和异常清理；
+        // 对应实现是 sanitize 的 IN_PLACE 异常屏障与 `_neutralizeRoot`。
         if (typeof window.customElements === 'undefined') {
           assert.ok(true, 'no custom elements in this environment; skipping');
           return;
         }
         if (!window.customElements.get('x-surgeon-c3')) {
           /**
-           * 在断开连接反应中模拟页面脚本篡改净化器正在遍历的祖先结构。
+           * 定义断开反应载体，回调查找文档中的 x-wrap-c3 并尝试删除。
+           * 本例根始终离线，因此标准断开反应没有由这次清洗触发。
            */
           class XSurgeonC3 extends window.HTMLElement {
             /**
-             * 元素被移除时同步拆除测试包装节点，制造遍历期间的父节点竞争。
+             * 在元素从已连接文档断开时查找并删除包装节点。
+             * 这里保留回调形状；当前 detached 场景的断言检查最终根属性结果。
              *
              * @returns {void}
              */
@@ -6080,17 +7280,14 @@
       }
     );
 
+    /**
+     * DOM API 构造深度 5000 的 div 链，浅层图片带 onerror。
+     * IN_PLACE 不得抛错且图片属性必须删除；
+     * 树未挂载或序列化，检查深预扫后的完成结果。
+     */
     QUnit.test(
       'C3-F4: deep DOM-built tree sanitizes in place without failing open',
       (assert) => {
-        // Given：用 DOM API 构造深度 5000 的树，并在浅层节点放置 onerror；DOM API
-        // 不受解析器深度上限约束，该深度会击穿旧递归（Chromium 约 4500 层）。
-        // When：以 IN_PLACE 模式执行入口预扫描 _sanitizeAttachedShadowRoots。
-        // Then：调用不得栈溢出，浅层处理器必须被删除。
-        // Mechanism：入口预扫描现改为迭代遍历；旧实现每个子节点递归一次，会在实际净化
-        // 前抛错并留下 0% 净化的活动树。测试不挂载也不序列化该树，以隔离引擎自身的
-        // 深渲染或序列化递归。
-        // Source：purify.ts 的 _sanitizeAttachedShadowRoots 与 IN_PLACE 入口路径。
         const DEPTH = 5000;
         const root = document.createElement('div');
         const img = document.createElement('img');
@@ -6125,29 +7322,53 @@
     // 两者；带 toString 的对象还验证强制转换生成的标记仍须经过净化。
     // =======================================================================
 
+    /**
+     * 数字、布尔、可用时 bigint/Symbol、函数与 toString 对象检查 stringifyValue/lookupGetter
+     * 的转换结果。
+     */
     QUnit.module('Coverage - input coercion');
 
+    /**
+     * 数字 123 作为输入默认净化。
+     * 严格得到字符串 123，检查非字符串输入转换。
+     */
     QUnit.test('coerces a number input', (assert) => {
       assert.equal(DOMPurify.sanitize(123), '123');
     });
 
+    /**
+     * 布尔 true 作为输入默认净化。
+     * 严格得到字符串 true，检查布尔转换。
+     */
     QUnit.test('coerces a boolean input', (assert) => {
       assert.equal(DOMPurify.sanitize(true), 'true');
     });
 
     if (typeof BigInt !== 'undefined') {
+      /**
+       * 仅在 BigInt 可用时注册，用 BigInt(42) 输入。
+       * 严格得到字符串 42，检查 bigint 转换分支。
+       */
       QUnit.test('coerces a bigint input', (assert) => {
         assert.equal(DOMPurify.sanitize(BigInt(42)), '42');
       });
     }
 
     if (typeof Symbol !== 'undefined') {
+      /**
+       * 仅在 Symbol 可用时注册，用 Symbol('x') 输入。
+       * 输出须以 Symbol( 开头，检查显式符号转换而非隐式连接报错。
+       */
       QUnit.test('coerces a symbol input', (assert) => {
         const out = DOMPurify.sanitize(Symbol('x'));
         assert.equal(out.indexOf('Symbol('), 0, `got: ${out}`);
       });
     }
 
+    /**
+     * 以具名空函数 demo 为输入。
+     * 输出须包含 demo，检查函数源码字符串转换，未要求跨引擎完全相同的源码排版。
+     */
     QUnit.test('coerces a function input', (assert) => {
       /**
        * 为函数输入提供可辨识名称，使 stringifyValue 的函数分支可被断言。
@@ -6156,6 +7377,10 @@
       assert.ok(out.indexOf('demo') > -1, `got: ${out}`);
     });
 
+    /**
+     * 对象 toString 返回安全 b 与危险 img。
+     * 输出须含完整 b、不得有 onerror，验证转换结果继续进入主净化链。
+     */
     QUnit.test('coerced toString() markup is still sanitized', (assert) => {
       const dirty = {
         /**
@@ -6172,6 +7397,10 @@
       assert.ok(out.indexOf('<b>x</b>') > -1, `got: ${out}`);
     });
 
+    /**
+     * 对象 toString 故意返回数字 42。
+     * 严格输出为 [object Number]，检查非字符串返回值转用对象标签的回退。
+     */
     QUnit.test(
       'coerces an object whose toString returns a non-string',
       (assert) => {
@@ -6189,6 +7418,10 @@
       }
     );
 
+    /**
+     * null 原型对象没有 toString。
+     * 严格输出 [object Null]，检查 getter 查找失败返回 null 后的对象标签回退。
+     */
     QUnit.test(
       'coerces a null-prototype object (lookupGetter fallback)',
       (assert) => {
@@ -6206,8 +7439,17 @@
     // 执行的 null 填洞逻辑。
     // =======================================================================
 
+    /**
+     * 非数组 ADD_TAGS 与稀疏数组检查调用完成及合法标签保留；
+     * 未直接断言内部集合/填洞值。
+     */
     QUnit.module('Coverage - config set construction');
 
+    /**
+     * ADD_TAGS 给字符串，输入普通 div。
+     * 仅要求调用完成且输出含 x，检查此配置形状的处理；
+     * 未验证完整标签集合或新增准入。
+     */
     QUnit.test('ADD_TAGS given a non-array is handled safely', (assert) => {
       const out = DOMPurify.sanitize('<div>x</div>', {
         ADD_TAGS: 'notanarray',
@@ -6215,6 +7457,11 @@
       assert.ok(out.indexOf('x') > -1, `got: ${out}`);
     });
 
+    /**
+     * ADD_TAGS 数组含空洞与数字，另有 custom-a/custom-b。
+     * 结果须包含两名称，检查数组清理后合法项仍准入；
+     * 未断言空洞或数字项的最终集合值。
+     */
     QUnit.test('ADD_TAGS with a hole and a non-string element', (assert) => {
       const tags = ['custom-a'];
       tags[2] = 'custom-b'; // 索引 1 是空洞，cleanArray 会以 null 填补
@@ -6230,20 +7477,23 @@
     });
 
     // =======================================================================
-    // 覆盖——数据驱动标记套件未触达的可达分支
+    // 公开 API、配置与 hook 的补充用例
     //
     // 覆盖公开 API（isValidAttribute、addHook 保护）、用户提供的
     // TRUSTED_TYPES_POLICY 配置路径（含其重入保护，#1422 / GHSA-vxr8-fq34-vvx9）、
-    // forceKeepAttr/keepAttr hook 决策、noscript/noembed fallback-mXSS 保护，
-    // 以及若干配置排列。
+    // forceKeepAttr/keepAttr hook 决策，以及若干配置排列与结构输出。
     //
-    // 隔离：afterEach 清除配置与 hooks，避免持久 Trusted Types 策略及新增 hook
-    // 泄漏到套件其余部分。
+    // 隔离：afterEach 清除持久配置、调用方 Trusted Types 策略与 hooks，
+    // 下一次调用重新解析默认配置；内部默认 Trusted Types 策略缓存仍属于该实例。
     // =======================================================================
 
+    /**
+     * beforeEach 清持久配置，afterEach 再清配置与 hooks；
+     * 覆盖公开属性检查、hook 决策、策略接口和配置排列，各例按实际断言说明。
+     */
     QUnit.module('Coverage - reachable branches', {
       /**
-       * 每个覆盖用例前清除持久配置，建立独立的默认配置基线。
+       * 每个用例前退出持久配置；随后 sanitize/isValidAttribute 会重新解析配置。
        *
        * @returns {void}
        */
@@ -6251,7 +7501,7 @@
         DOMPurify.clearConfig();
       },
       /**
-       * 每个覆盖用例后同时移除 hooks 与持久配置，阻断跨用例状态污染。
+       * 每个用例后移除 hooks 与持久配置，同时解除调用方 Trusted Types 策略。
        *
        * @returns {void}
        */
@@ -6261,20 +7511,37 @@
       },
     });
 
+    /**
+     * 直接调用 isValidAttribute 检查安全 href 与 onclick。
+     * 分别要求 true/false，验证公开名称和值检查接口，无 DOM 写回操作。
+     */
     QUnit.test('isValidAttribute accepts and rejects', (assert) => {
       assert.ok(DOMPurify.isValidAttribute('a', 'href', 'https://example.com'));
       assert.notOk(DOMPurify.isValidAttribute('a', 'onclick', 'alert(1)'));
     });
 
+    /**
+     * 向 upon 元素入口注册 null，再净化安全 b。
+     * 严格结果保持 b，检查非函数 hook 被忽略。
+     */
     QUnit.test('addHook ignores a non-function', (assert) => {
       DOMPurify.addHook('uponSanitizeElement', null);
       assert.equal(DOMPurify.sanitize('<b>x</b>'), '<b>x</b>');
     });
 
+    /**
+     * 安全 b 输入配 null 配置。
+     * 严格保持 b，检查配置归一化为空配置。
+     */
     QUnit.test('null config is treated as empty config', (assert) => {
       assert.equal(DOMPurify.sanitize('<b>x</b>', null), '<b>x</b>');
     });
 
+    /**
+     * 完整 html/head/body/p 输入开启 WHOLE_DOCUMENT。
+     * 只要求输出含 p，验证内容保留；
+     * 本断言未严格检查文档包装结构。
+     */
     QUnit.test('WHOLE_DOCUMENT keeps the document structure', (assert) => {
       const out = DOMPurify.sanitize(
         '<html><head></head><body><p>x</p></body></html>',
@@ -6283,6 +7550,10 @@
       assert.ok(out.indexOf('<p>x</p>') > -1, `got: ${out}`);
     });
 
+    /**
+     * 独立 template 带危险 img，默认输出不含 onerror。
+     * 独立模板可被解析进 head 而不返回，故此断言未单独证明模板 content 遍历。
+     */
     QUnit.test('template content is sanitized', (assert) => {
       const out = DOMPurify.sanitize(
         '<template><img src=x onerror=alert(1)></template>'
@@ -6290,9 +7561,16 @@
       assert.equal(out.indexOf('onerror'), -1, `onerror survived: ${out}`);
     });
 
+    /**
+     * SVG a 的安全 xlink:href 值未改变。
+     * 只要求结果含 svg，未断言属性存在；
+     * 当前无需写回，因此未覆盖 setAttributeNS 调用。
+     */
     QUnit.test(
       'namespaced SVG attribute is written via setAttributeNS',
       (assert) => {
+        // 这里的 xlink:href 值未改变，不触发 `_setAttributeValue` 写回；
+        // 下方只检查输出包含 svg。setAttributeNS 用于需写回的 namespaced 属性。
         const out = DOMPurify.sanitize(
           '<svg><a xlink:href="https://x"></a></svg>'
         );
@@ -6300,6 +7578,10 @@
       }
     );
 
+    /**
+     * noscript/noembed 内仅安全文字，默认净化后排除 onerror。
+     * 输入本来没有事件，该断言未检查容器是否删除。
+     */
     QUnit.test(
       'noscript/noembed fallback-mXSS guard removes the element',
       (assert) => {
@@ -6310,6 +7592,10 @@
       }
     );
 
+    /**
+     * upon 属性 hook 一律设置 forceKeepAttr=true，a 带默认拒绝的 onclick。
+     * 输出须出现 onclick，检查 hook 跳过常规属性拒绝。
+     */
     QUnit.test(
       'uponSanitizeAttribute forceKeepAttr keeps a disallowed attribute',
       (assert) => {
@@ -6321,6 +7607,10 @@
       }
     );
 
+    /**
+     * upon 属性 hook 一律 keepAttr=false，a 带安全 href。
+     * 输出不得含 href，检查 hook 主动删除允许属性。
+     */
     QUnit.test(
       'uponSanitizeAttribute keepAttr=false drops an allowed attribute',
       (assert) => {
@@ -6334,14 +7624,14 @@
 
     // ---- 用户提供的 TRUSTED_TYPES_POLICY 配置 ----
 
+    /**
+     * 调用方提供两个恒等策略函数并请求 Trusted Type。
+     * String(out) 严格为净化 b，检查接受策略后的内容结果；
+     * 恒等返回未单独证明签名次数或对象品牌。
+     */
     QUnit.test(
       'TRUSTED_TYPES_POLICY signs output through the policy',
       (assert) => {
-        // Given：调用方提供同时实现 createHTML 与 createScriptURL 的策略对象。
-        // When：sanitize 开启 RETURN_TRUSTED_TYPE。
-        // Then：净化后的标记必须经该策略签名，并保持等价字符串内容。
-        // Mechanism：_parseConfig 校验策略接口，返回阶段调用 trustedTypesPolicy.createHTML。
-        // Source：purify.ts 的 _parseConfig 与 sanitize 返回分支。
         /**
          * 最小用户 Trusted Types 策略；两个函数值属性保持输入不变，以隔离签名路径。
          *
@@ -6357,6 +7647,10 @@
       }
     );
 
+    /**
+     * 策略仅有 createScriptURL，输入文本。
+     * 要求错误消息含 createHTML，检查缺失接口在配置阶段被拒绝。
+     */
     QUnit.test('TRUSTED_TYPES_POLICY without createHTML throws', (assert) => {
       assert.throws(
         () =>
@@ -6367,6 +7661,10 @@
       );
     });
 
+    /**
+     * 策略仅有 createHTML，输入文本。
+     * 要求错误消息含 createScriptURL，检查另一必需接口。
+     */
     QUnit.test(
       'TRUSTED_TYPES_POLICY without createScriptURL throws',
       (assert) => {
@@ -6380,6 +7678,10 @@
       }
     );
 
+    /**
+     * 显式 TRUSTED_TYPES_POLICY=null，清洗安全 b。
+     * 严格输出 b 字符串，检查该次关闭策略后的内容。
+     */
     QUnit.test('TRUSTED_TYPES_POLICY null opts out for the call', (assert) => {
       assert.equal(
         DOMPurify.sanitize('<b>x</b>', { TRUSTED_TYPES_POLICY: null }),
@@ -6387,6 +7689,10 @@
       );
     });
 
+    /**
+     * 策略 createHTML 递归调用同一净化器。
+     * 要求外层调用抛错，检查签名期间的重入阻断，未限制具体错误类型或消息。
+     */
     QUnit.test(
       'a circular TRUSTED_TYPES_POLICY is rejected by the re-entrancy guard',
       (assert) => {
@@ -6413,11 +7719,20 @@
 
     // ---- 配置排列 ----
 
+    /**
+     * setConfig 仅允许 b，随后净化 b/i。
+     * 严格保留 b 并提升 i 文字，检查持久标签配置应用。
+     */
     QUnit.test('setConfig applies persistent configuration', (assert) => {
       DOMPurify.setConfig({ ALLOWED_TAGS: ['b'] });
       assert.equal(DOMPurify.sanitize('<b>x</b><i>y</i>'), '<b>x</b>y');
     });
 
+    /**
+     * a 带 data-x，同时把它加入 ADD_ATTR 数组。
+     * 只要求属性出现；
+     * 默认 data-* 已准入，该输入未单独证明追加名称的必要性。
+     */
     QUnit.test('ADD_ATTR given an array allows the attribute', (assert) => {
       const out = DOMPurify.sanitize('<a data-x="1">y</a>', {
         ADD_ATTR: ['data-x'],
@@ -6425,6 +7740,11 @@
       assert.ok(out.indexOf('data-x') > -1, `got: ${out}`);
     });
 
+    /**
+     * 提供两种 integration-point 对象，输入仅普通 div。
+     * 要求输出含 x，检查配置被接受；
+     * 输入未穿越外来命名空间边界。
+     */
     QUnit.test('integration-point objects are accepted', (assert) => {
       const out = DOMPurify.sanitize('<div>x</div>', {
         MATHML_TEXT_INTEGRATION_POINTS: { mtext: true },
@@ -6433,6 +7753,10 @@
       assert.ok(out.indexOf('x') > -1, `got: ${out}`);
     });
 
+    /**
+     * FORBID_CONTENTS 指定 span，但输入 span 仍是允许标签。
+     * 只要求 div 保留，禁内容规则未在允许 span 上执行，未证明默认集合隔离。
+     */
     QUnit.test(
       'FORBID_CONTENTS clones before mutating the default',
       (assert) => {
@@ -6443,11 +7767,17 @@
       }
     );
 
+    /**
+     * 显式放行 noscript/noembed，输入仅安全文字。
+     * 只排除输入本无的 onerror，记录配置调用；
+     * 未断言 fallback 标签或子树被删除。
+     */
     QUnit.test(
       'allowed noscript with a fallback-mXSS payload is removed',
       (assert) => {
-        // fallback-mXSS 保护只检查已通过 allowlist 的
-        // noscript/noembed/noframes，因此测试必须先显式放行这些标签。
+        // fallback-tag 检查位于标签准入之后，因此显式放行 noscript/noembed。
+        // 检查匹配其 innerHTML 中的闭合 fallback 标签；当前断言只查 onerror 字样，
+        // 该输入自身没有 onerror，未检查标签是否被删除。
         const out = DOMPurify.sanitize(
           '<noscript><noembed>x</noembed></noscript>',
           { ADD_TAGS: ['noscript', 'noembed'] }
@@ -6456,6 +7786,10 @@
       }
     );
 
+    /**
+     * 真实 div 带危险 img，执行 IN_PLACE。
+     * 返回引用须等于 div，存活图片不得有 onerror，也接受图片删除，检查原节点返回与属性结果。
+     */
     QUnit.test('IN_PLACE sanitizes and returns the passed node', (assert) => {
       const el = document.createElement('div');
       el.innerHTML = '<img src=x onerror=alert(1)>';
@@ -6469,27 +7803,25 @@
     });
 
     /* =====================================================================
-     * 声明式局部更新（WICG/declarative-partial-updates）+ setHTMLUnsafe / 声明式
-     * shadow DOM + streaming。
+     * 声明式局部更新标记、声明式 shadow DOM 与 setHTMLUnsafe 重解析。
      *
-     * 实测结果（Chrome 150，见 test/declarative-patch-probe-v{2,3,4}.html）：
-     * `<template for>` 与 `<?marker>` 的链接会在 DOMPurify.sanitize() 自己解析时
-     * 展开，因此遍历器能看到并净化完整物化的树，包括传送进 MathML/SVG 集成点的
-     * 节点。以下测试固定所有环境都应满足的关键不变量：无论运行引擎是否展开链接，
-     * 净化输出都不得携带可执行内容。
-     *   - Chrome 150（支持该特性）：解析时展开模板 -> 遍历已展开节点 -> 输出无处理器。
-     *   - jsdom / 旧引擎（不展开）：在 template.content 内净化武装节点 -> 输出无处理器。
-     * 任一路径回归（解析时展开不再净化，或 template.content 递归损坏）都会使测试失败。
+     * payload 组合 template/marker、MathML/SVG 集成点与危险属性。sanitize 后先通过 innerHTML
+     * 重解析，再扫描普通子节点、template.content 与可访问的 open shadow root，要求没有
+     * on* 属性、script 或指定 URL 属性上的 javascript:/vbscript:。
      *
-     * 这里断言静态输出中的所有可达位置（含 template.content 与已激活 shadow root）
-     * 均无 on* 处理器、script 或 js: URL，而不等待真实 onerror 触发；这样结果确定、
-     * 与引擎无关且没有异步抖动。probe HTML 用于人工覆盖真实执行。
+     * 解析后已在普通树中的节点走主遍历；保留在 template.content 的节点走 fragment 净化。
+     * 这些用例观察当前引擎的输出形状，不执行 streaming 操作，也不等待事件处理器运行。
      * ===================================================================== */
+    /**
+     * 定义 sink 扫描器进入普通树、template.content 与 open shadow；
+     * template/marker/DSD 输入净化后重解析，检查输出，无流式驱动。
+     */
     QUnit.module('Config — declarative partial updates / streaming');
 
     /**
-     * 收集从序列化字符串重新解析后可达的全部可执行痕迹；遍历会进入
-     * `<template>.content` 与所有已激活的 shadowRoot。
+     * 收集测试指定的可执行痕迹，进入普通子树、template.content 与可访问的 open shadow。
+     * 每个元素检查全部 on* 属性、script 名称和 href/src/xlink:href 上的 java/vbscript 协议。
+     * 这里不触发事件、不获取资源；结果是属性/标签扫描记录而非运行日志。
      *
      * @param {Node} root 待审计的 DOM 根节点。
      * @returns {string[]} 可执行标签、处理器属性或脚本 URL 的定位描述。
@@ -6498,6 +7830,7 @@
       const findings = [];
       /**
        * 递归访问普通子节点、模板内容与 shadow root，并累计可执行痕迹。
+       * template/shadow 不在普通 childNodes 中，故单独进入；findings 由外层函数持有。
        *
        * @param {Node | null | undefined} node 当前访问节点。
        * @returns {void}
@@ -6526,6 +7859,7 @@
     };
     /**
      * 将净化字符串放入 HTML 解析汇点，再扫描重解析后树中的可执行痕迹。
+     * holder 保持离线，检查的是重新解析的结构；实际事件执行由其他插入用例观察。
      *
      * @param {string} html 待重解析的 HTML。
      * @returns {string[]} 重解析后发现的可执行痕迹。
@@ -6536,22 +7870,20 @@
       return _executableFindings(holder);
     };
 
+    /**
+     * 七组 marker/template 链携带 handler/script/危险 URI 或外来内容。
+     * 默认净化后重解析，扫描普通树、template.content 与可访问 shadow 须无 sink；
+     * 未单独断言局部更新实际展开。
+     */
     QUnit.test(
       'parse-time template expansion neutralizes weaponized payloads',
       (assert) => {
-        // Given：多组 template/marker 链接把处理器、script、javascript: URL
-        // 或 namespace 混淆载荷送入普通 HTML、MathML 与 SVG 集成点。
-        // When：sanitize 所用解析器在支持的引擎中展开链接，或在旧引擎中保留模板内容。
-        // Then：把输出重新送入 HTML 汇点后，所有路径的可执行痕迹集合都必须为空。
-        // Mechanism：解析时展开的节点进入常规树遍历；未展开节点则由模板内容递归净化。
-        // Source：purify.ts 的 sanitize 解析、_sanitizeElements、
-        // _sanitizeAttributes 与模板/shadow DOM 遍历路径。
         /**
          * 构造 marker 目标与声明式模板来源之间的最小链接。
          *
          * @param {string} id marker 与 template for 共用的标识符。
          * @param {string} content 模板内的武装内容。
-         * @returns {string} 可触发声明式局部更新的标记。
+         * @returns {string} 用于测试声明式局部更新解析的标记。
          */
         const link = (id, content) =>
           `<div><?marker name="${id}"></div>` +
@@ -6587,6 +7919,11 @@
       }
     );
 
+    /**
+     * 构造 4/6/8 个 marker/template 链，每段含 96 个 b，尾端放 MathML/style 载荷。
+     * 输出重解析扫描须无 sink；
+     * 未测实际树深度或解析器深度上限。
+     */
     QUnit.test(
       'chained-template depth build (PoC1 shape) neutralizes at the parser depth cap',
       (assert) => {
@@ -6619,6 +7956,10 @@
       }
     );
 
+    /**
+     * 声明式 shadow 模板含 img 事件与危险 href。
+     * 默认输出须无 shadowrootmode，重解析扫描也无 sink，检查声明属性删除与模板内容净化。
+     */
     QUnit.test(
       'declarative shadow DOM: shadowrootmode stripped by default, content sanitized',
       (assert) => {
@@ -6640,6 +7981,10 @@
       }
     );
 
+    /**
+     * 同一模板显式允许 shadowrootmode，内容含危险 img。
+     * 只检查重解析扫描无 sink，未断言属性保留或 shadow 实际激活。
+     */
     QUnit.test(
       'declarative shadow DOM: ADD_ATTR shadowrootmode still sanitizes shadow content',
       (assert) => {
@@ -6648,8 +7993,7 @@
           '<img src=x onerror=alert(1)>' +
           '</template></section>';
         const out = DOMPurify.sanitize(dirty, { ADD_ATTR: ['shadowrootmode'] });
-        // 调用方显式 opt-in 后该属性可被保留，但它即将激活的内容仍必须净化，
-        // 不得留下任何处理器。
+        // 本例只扫描重解析结构；没有断言 shadowrootmode 保留或实际 shadow 激活。
         assert.deepEqual(
           _findingsFromHTML(out),
           [],
@@ -6658,6 +8002,11 @@
       }
     );
 
+    /**
+     * 支持 setHTMLUnsafe 时将默认清洗的声明式 shadow 输入经它再解析。
+     * 扫描普通树/模板/open shadow 须无 sink，检查此插入结果；
+     * 默认 mode 删除后通常没有 shadow 激活。
+     */
     QUnit.test(
       'sanitized output stays inert when reparsed via setHTMLUnsafe',
       (assert) => {
@@ -6671,11 +8020,9 @@
           '</template></section>';
         const out = DOMPurify.sanitize(dirty);
         const host = document.createElement('div');
-        // Given：净化输出含声明式 shadow DOM 结构，原始输入带 onerror。
-        // When：setHTMLUnsafe 跳过自身净化并激活声明式 shadow DOM。
-        // Then：激活后的普通树与 shadow root 都不得出现可执行痕迹。
-        // Mechanism：安全性必须来自 sanitize 已处理模板内容，而非汇点的二次净化。
-        // Source：purify.ts 的模板内容遍历；浏览器 Element.setHTMLUnsafe 汇点语义。
+        // 原输入有 shadowrootmode 与 onerror；默认清洗会删除 shadowrootmode，并处理模板内容。
+        // setHTMLUnsafe 默认不再净化输入。本例扫描重解析后的普通树、模板与可访问 shadow root；
+        // 默认属性被删除后，这段 template 通常不会激活声明式 shadow root。
         host.setHTMLUnsafe(out);
         assert.deepEqual(
           _executableFindings(host),

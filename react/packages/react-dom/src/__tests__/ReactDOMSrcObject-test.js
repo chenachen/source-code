@@ -44,14 +44,7 @@ describe('ReactDOMSrcObject', () => {
   });
 
   // @gate enableSrcObject
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「can render a Blob as an img src」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言连接 DOM host 属性写入与提交路径。
-   */
+  /** 特性开启时将 Blob 直接传 img.src；提交后 DOM src 应以 blob: 开头，验证客户端创建对象 URL 的支持标签路径。 */
   it('can render a Blob as an img src', async () => {
     const root = ReactDOMClient.createRoot(container);
     const ref = React.createRef();
@@ -65,7 +58,7 @@ describe('ReactDOMSrcObject', () => {
   });
 
   // @gate enableSrcObject
-  /** 测试场景：验证「can render a Blob as a picture img src」描述的渲染、交互或错误处理结果。 */
+  /** 同一 Blob 放在 picture 内部 img.src；结果仍是 blob: URL，验证 picture 父级不妨碍支持的 img 路径。 */
   it('can render a Blob as a picture img src', async () => {
     const root = ReactDOMClient.createRoot(container);
     const ref = React.createRef();
@@ -83,7 +76,7 @@ describe('ReactDOMSrcObject', () => {
   });
 
   // @gate enableSrcObject
-  /** 测试场景：验证「can render a Blob as a video and audio src」描述的渲染、交互或错误处理结果。 */
+  /** 同一 Blob 分别传 video.src 与 audio.src；两个宿主 src 都应为 blob:，验证媒体元素直接 src 的对象 URL 支持。 */
   it('can render a Blob as a video and audio src', async () => {
     const root = ReactDOMClient.createRoot(container);
     const videoRef = React.createRef();
@@ -104,7 +97,7 @@ describe('ReactDOMSrcObject', () => {
   });
 
   // @gate enableSrcObject || !__DEV__
-  /** 测试场景：验证「warn when rendering a Blob as a source src of a video, audio or picture element」描述的渲染、交互或错误处理结果。 */
+  /** 把 Blob 传给 video/audio/picture 的 source 子元素；DEV 各报一次不支持诊断，三个 src 均不是 blob: 而包含字符串化后的 [object%20Blob]，验证对象值未在 source 上走对象 URL。 */
   it('warn when rendering a Blob as a source src of a video, audio or picture element', async () => {
     const root = ReactDOMClient.createRoot(container);
     const videoRef = React.createRef();
@@ -141,14 +134,14 @@ describe('ReactDOMSrcObject', () => {
         '\n    in source (at **)',
     ]);
     expect(videoRef.current.firstChild.src).not.toMatch(/^blob:/);
-    expect(videoRef.current.firstChild.src).toContain('[object%20Blob]'); // : 编辑
+    expect(videoRef.current.firstChild.src).toContain('[object%20Blob]'); // source 不走对象 URL 支持路径；属性字符串经 JSDOM URL 规范化后把空格编码为 %20。
     expect(audioRef.current.firstChild.src).not.toMatch(/^blob:/);
-    expect(audioRef.current.firstChild.src).toContain('[object%20Blob]'); // : 编辑
+    expect(audioRef.current.firstChild.src).toContain('[object%20Blob]'); // source 不走对象 URL 支持路径；属性字符串经 JSDOM URL 规范化后把空格编码为 %20。
     expect(pictureRef.current.firstChild.src).not.toMatch(/^blob:/);
-    expect(pictureRef.current.firstChild.src).toContain('[object%20Blob]'); // : 编辑
+    expect(pictureRef.current.firstChild.src).toContain('[object%20Blob]'); // source 不走对象 URL 支持路径；属性字符串经 JSDOM URL 规范化后把空格编码为 %20。
   });
 
-  /** `readContent`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 连续读取 Web Stream Uint8Array 到 done，按 UTF8 合成完整 HTML，供 data URL 与 hydration 输入检查。 */
   async function readContent(stream) {
     const reader = stream.getReader();
     let content = '';
@@ -162,7 +155,7 @@ describe('ReactDOMSrcObject', () => {
   }
 
   // @gate enableSrcObject
-  /** 测试场景：验证「can SSR a Blob as an img src」描述的渲染、交互或错误处理结果。 */
+  /** SSR 使用 image/jpeg Blob 且内容字节的 base64 为 ReactURL；img src 应为该 data URL，同 Blob hydration 后仍保持 data URL，验证服务器字节编码及客户端认领时不改成 blob URL。 */
   it('can SSR a Blob as an img src', async () => {
     const blob = new Blob([new Uint8Array([69, 230, 156, 181, 68, 75])], {
       type: 'image/jpeg',
@@ -170,7 +163,7 @@ describe('ReactDOMSrcObject', () => {
 
     const ref = React.createRef();
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 在服务器与客户端复用同一个 Blob/ref 的 img 树，隔离 hydration 是否保留 SSR data URL。 */
     function App() {
       return <img src={blob} ref={ref} />;
     }
@@ -188,7 +181,7 @@ describe('ReactDOMSrcObject', () => {
   });
 
   // @gate enableSrcObject
-  /** 测试场景：验证「errors in DEV when mismatching a Blob during hydration」描述的渲染、交互或错误处理结果。 */
+  /** 服务器 Blob 内容对应 ReactURL，客户端 Blob 少最后一个字节；hydration 的 DEV 属性差异应指出 Blob 与服务器 data URL 不一致，但 DOM 保留服务器 data URL，验证 mismatch 只诊断而不修补 src。 */
   it('errors in DEV when mismatching a Blob during hydration', async () => {
     const blob = new Blob([new Uint8Array([69, 230, 156, 181, 68, 75])], {
       type: 'image/jpeg',
@@ -229,7 +222,7 @@ describe('ReactDOMSrcObject', () => {
         '\n    in img (at **)',
     ]);
 
-    // 保留原始代码。
+    // data URL 直接保留，不改成 blob URL。
     expect(container.firstChild.src).toBe('data:image/jpeg;base64,ReactURL');
   });
 });

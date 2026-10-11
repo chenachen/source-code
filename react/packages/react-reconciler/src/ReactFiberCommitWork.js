@@ -326,7 +326,7 @@ let inUpdateViewTransition: boolean = false;
 let rootViewTransitionAffected: boolean = false;
 let rootViewTransitionNameCanceled: boolean = false;
 
-/** 判断当前 Fiber 是否位于本次刚完成 hydration 的 Activity/Suspense 父边界。 */
+/** 判断所传边界本次是否脱离 dehydrated 状态，供挂载性能日志区分水合与插入。Activity 比较非空→空状态，Suspense 检查旧 dehydrated 实例消失；HostRoot 还排除 ForceClientRender。参数就是待判定边界的 current/WIP，不在函数内向父级搜索。 */
 function isHydratingParent(current: Fiber, finishedWork: Fiber): boolean {
   if (finishedWork.tag === ActivityComponent) {
     const prevState: ActivityState | null = current.memoizedState;
@@ -350,7 +350,7 @@ function isHydratingParent(current: Fiber, finishedWork: Fiber): boolean {
   }
 }
 
-/** 提交前置阶段入口：捕获焦点/selection、处理 snapshot 与 ViewTransition 测量前工作。 */
+/** WorkLoop 在宿主 mutation 前调用的入口：prepareForCommit 保存宿主焦点/selection，随后遍历 snapshot、Effect Event 实现发布与旧 ViewTransition 测量。committedLanes 决定是否扩展过渡遍历；正常返回后清空焦点 Fiber 与 appearing 配对集合，宿主 resetAfterCommit 属于后续 mutation 收尾。 */
 export function commitBeforeMutationEffects(
   root: FiberRoot,
   firstChild: Fiber,
@@ -382,7 +382,7 @@ function commitBeforeMutationEffects_begin(isViewTransitionEligible: boolean) {
   while (nextEffect !== null) {
     const fiber = nextEffect;
 
-    // 此阶段只服务于 beforeActiveInstanceBlur；未启用时直接跳过整轮遍历。
+    // 删除侧遍历用于焦点 blur 或 ViewTransition 退出快照；二者都未启用时跳过 deletions，普通 snapshot 遍历仍继续。
     if (enableCreateEventHandleAPI || isViewTransitionEligible) {
       // TODO：也应通过标志检查包住这里，避免无效遍历。
       const deletions = fiber.deletions;
@@ -477,7 +477,7 @@ function commitBeforeMutationEffects_complete(
   }
 }
 
-/** 按 WorkTag 提交单 Fiber 的 getSnapshotBeforeUpdate、root 清容器与焦点相关前置效果。 */
+/** 在宿主变更前处理单 Fiber：类 Snapshot 读取旧宿主布局，根 Snapshot 可清容器；Effect Event 仅在未启用 mutation-phase 实验时发布 ref.impl。符合过渡 lanes 时准备旧 ViewTransition 名称；焦点 blur 检查仅由 EventHandle 开关启用。 */
 function commitBeforeMutationEffectsOnFiber(
   finishedWork: Fiber,
   isViewTransitionEligible: boolean,
@@ -572,7 +572,7 @@ function commitBeforeMutationEffectsOnFiber(
   }
 }
 
-/** 删除前扫描宿主焦点实例及 ViewTransition enter/exit 信息。 */
+/** 宿主删除前检查该删除树是否包含焦点，必要时安排 before/after blur；符合 ViewTransition lanes 时记录删除侧退出快照，出现侧由其他遍历收集。 */
 function commitBeforeMutationEffectsDeletion(
   deletion: Fiber,
   isViewTransitionEligible: boolean,
@@ -590,7 +590,7 @@ function commitBeforeMutationEffectsDeletion(
   }
 }
 
-/** 按 WorkTag 挂载 layout effect、调用 class 生命周期/ref，并处理 hydration 回调与 Profiler。 */
+/** 宿主 mutation 完成且根 current 已切换后，按 tag 提交布局工作。通常先处理 child，再创建 Hook layout effect、调用类生命周期/更新回调及附加 ref；现代隐藏 Offscreen 跳过布局，重新出现边界改走全量重挂载以恢复此前销毁的 effect。committedLanes 传给子遍历，不在这里选择新渲染优先级。 */
 function commitLayoutEffectOnFiber(
   finishedRoot: FiberRoot,
   current: Fiber | null,
@@ -918,7 +918,7 @@ function commitLayoutEffectOnFiber(
   popComponentEffectDidSpawnUpdate(prevEffectDidSpawnUpdate);
 }
 
-/** 根提交终止时把待完成 Transition 标记为 aborted，并安排 tracing 回调。 */
+/** 删除待处理子树时给根 incompleteTransitions 中匹配项追加 abort，并移除 deletedOffscreenInstance 对应的 pending boundary。abort 是追踪未完成原因，不取消调度或根提交；根完成遍历之后不会为已 abort 项排入 complete 回调。 */
 function abortRootTransitions(
   root: FiberRoot,
   abort: TransitionAbort,
@@ -954,7 +954,7 @@ function abortRootTransitions(
   }
 }
 
-/** marker 子树删除/隐藏时终止其仍 pending 的 Transition，并更新 marker 状态。 */
+/** 为 marker 中与 deletedTransitions 相交的项记录同一个 abort 对象，首次 abort 排入 marker incomplete 回调。只有 marker 留在已挂载树且删除的 Offscreen 原本 pending 时，才移除该 boundary 并排入 progress；不立即调用用户回调，也不改变更新 lanes。 */
 function abortTracingMarkerTransitions(
   abortedFiber: Fiber,
   abort: TransitionAbort,
@@ -1011,7 +1011,7 @@ function abortTracingMarkerTransitions(
   }
 }
 
-/** 删除 Fiber 时沿父 marker 集合撤销其关联 Transition 与 pending boundary。 */
+/** 沿 abortedFiber.return 依次更新 TracingMarker 和 HostRoot 的未完成追踪。删除树自身与 nearestMountedAncestor 分开调用，因此 isInDeletedTree 决定是否允许幸存 marker 的 progress；不修改 Fiber 父链或取消实际更新。 */
 function abortParentMarkerTransitionsForDeletedFiber(
   abortedFiber: Fiber,
   abort: TransitionAbort,
@@ -1053,7 +1053,7 @@ function abortParentMarkerTransitionsForDeletedFiber(
   }
 }
 
-/** Offscreen 可见性提交后更新 Transition/marker pending boundary，并触发 progress/complete 回调。 */
+/** passive 阶段比较 Offscreen current/WIP 的隐藏状态，以稳定 stateNode 为 pendingBoundaries 的键。可见→隐藏加入，隐藏→可见移除并排入 progress；marker 无剩余边界且未 abort 时排入 complete 后清空追踪。这里只收集待派发回调，根 transition 完成另由 HostRoot passive 处理。 */
 function commitTransitionProgress(offscreenFiber: Fiber) {
   if (enableTransitionTracing) {
     // 此函数维护根或 tracing marker 的 pendingBoundaries 映射。
@@ -1340,7 +1340,7 @@ function detachFiberAfterEffects(fiber: Fiber) {
 let hostParent: Instance | Container | null = null;
 let hostParentIsContainer: boolean = false;
 
-/** 定位最近宿主父节点，递归卸载删除子树、移除宿主实例，最后清理 Fiber 引用。 */
+/** mutation 阶段从 returnFiber 查找最近宿主父实例/容器，再卸载删除树的 ref、insertion/layout effect 与类生命周期。每个宿主分支只移除最外层节点，Portal 切换移除容器；最后仅断开删除根及 alternate 的 return，保留 child/sibling 供 passive 清理。 */
 function commitDeletionEffects(
   root: FiberRoot,
   returnFiber: Fiber,
@@ -1439,7 +1439,7 @@ function recursivelyTraverseDeletionEffects(
   }
 }
 
-/** 按 WorkTag 提交单删除 Fiber 的 ref/effect/lifecycle/context/宿主移除与 tracing 清理。 */
+/** 先通知 DevTools，再按 tag 处理删除树。函数 insertion 清理始终执行，layout/ref/cWU 对此前已隐藏的现代 Offscreen 后代跳过；宿主移除与资源释放发生在 mutation，用户 passive 清理和 cache/tracing 删除记录留到后续 passive 阶段。nearestMountedAncestor 用于把清理错误交给仍挂载的错误边界。 */
 function commitDeletionEffectsOnFiber(
   finishedRoot: FiberRoot,
   nearestMountedAncestor: Fiber,
@@ -1784,7 +1784,7 @@ function commitDeletionEffectsOnFiber(
   popComponentEffectDidSpawnUpdate(prevEffectDidSpawnUpdate);
 }
 
-/** Suspense 显示 fallback 后调用其 suspenseCallback，并传入 retry queue thenable 集合。 */
+/** Suspense 显示 fallback 后调用其 suspenseCallback，并传入 retry queue thenable 集合的新副本。 */
 function commitSuspenseCallback(finishedWork: Fiber) {
   // TODO：删除此功能；DEV 功能目前无法正确覆盖它。
   const newState: SuspenseState | null = finishedWork.memoizedState;
@@ -1877,7 +1877,7 @@ function commitSuspenseHydrationCallbacks(
   }
 }
 
-/** 获取或创建 Suspense/Offscreen retry thenable 缓存，确保每个 wakeable 只订阅一次。 */
+/** 按 Activity/Suspense/SuspenseList 的 stateNode 或 Offscreen 实例的 _retryCache 获取边界级 wakeable 集合；优先 WeakSet，缺少时使用 Set。监听去重针对该边界与该 wakeable，resolveRetryWakeable 在结算重试时从集合删除它，之后仍可重新订阅。 */
 function getRetryCache(finishedWork: Fiber) {
   // TODO：统一重试缓存接口，避免像这里一样按 tag 分派。
   switch (finishedWork.tag) {
@@ -1908,7 +1908,7 @@ function getRetryCache(finishedWork: Fiber) {
   }
 }
 
-/** 为 commit 阶段收集的 wakeable 注册 resolve/reject ping，并写入 retry cache 去重。 */
+/** mutation 中把已提交边界的 RetryQueue 转为结算监听：先加入边界 retryCache，再以同一个回调订阅 then 的 resolve/reject，避免同步结算重入时重复订阅。回调仅请求边界重试，不保证直接成功或立刻提交；失败 thenable 仍会进入渲染错误处理。 */
 function attachSuspenseRetryListeners(
   finishedWork: Fiber,
   wakeables: RetryQueue,
@@ -1917,7 +1917,7 @@ function attachSuspenseRetryListeners(
   // 在其解决后让 React 尝试以超时前的主内容状态重新渲染边界。
   const retryCache = getRetryCache(finishedWork);
   wakeables.forEach(wakeable => {
-    // 以边界 Fiber 作为记忆化键，避免重复注册监听器。
+    // retryCache 属于边界实例，以 wakeable 对象作为集合键，避免该边界重复注册监听器。
     if (!retryCache.has(wakeable)) {
       retryCache.add(wakeable);
 
@@ -1957,7 +1957,7 @@ function isSuspenseBoundaryBeingHidden(
   return false;
 }
 
-/** mutation 阶段入口：提交删除、Placement、宿主更新、ref detach、可见性与资源变更。 */
+/** WorkLoop 的 mutation 入口：设置提交根/lanes 供 retry 与 updater 追踪，重置过渡变更上下文和性能计时，再按 Fiber 提交宿主/同步 effect 变更。正常结束清空 inProgress；宿主 resetAfterCommit 和 root.current 切换由外层 WorkLoop 完成。 */
 export function commitMutationEffects(
   root: FiberRoot,
   finishedWork: Fiber,
@@ -2003,7 +2003,7 @@ function recursivelyTraverseMutationEffects(
 
 let currentHoistableRoot: HoistableRoot | null = null;
 
-/** 按 WorkTag 提交单 Fiber 的 reconciliation 与宿主 mutation，并递归相关子树。 */
+/** 按 tag 提交当前 Fiber 的 mutation。多数分支先删除旧 child、递归新 child，再消费 Placement 与自身更新；函数组件更新 insertion effect 后销毁旧 layout effect，类隐藏回调暂存。Offscreen 以隐藏上下文避免重复布局卸载，HostRoot 等所有 defaultValue 变更结束后统一重置 form。 */
 function commitMutationEffectsOnFiber(
   finishedWork: Fiber,
   root: FiberRoot,
@@ -2201,8 +2201,8 @@ function commitMutationEffectsOnFiber(
         if (flags & Update) {
           const instance: Instance = finishedWork.stateNode;
           if (instance != null) {
-            // 提交此前准备好的工作。水合会复用更新路径，但把 oldProps 当作 newProps；
-            // 此时真正的变更包含在 updatePayload 中。
+            // 将 old/new props 交给 HostConfig，宿主层决定实际属性变更。
+            // 没有 current 的水合/首挂路径以 newProps 作为旧值基线。
             const newProps = finishedWork.memoizedProps;
             const oldProps =
               current !== null ? current.memoizedProps : newProps;
@@ -2250,7 +2250,7 @@ function commitMutationEffectsOnFiber(
           }
 
           const newText: string = finishedWork.memoizedProps;
-          // 水合复用更新路径，但把 oldProps 当作 newProps；此时真正的变更包含在 updatePayload 中。
+          // 无 current 时以 newText 作为旧值；HostConfig 最终负责写入文本。
           const oldText: string =
             current !== null ? current.memoizedProps : newText;
 
@@ -2712,7 +2712,7 @@ function commitReconciliationEffects(
   }
 }
 
-/** 遍历 NeedsFormReset 子树，重置本次 action 提交涉及的宿主 form。 */
+/** 仅沿 subtreeFlags 含 FormReset 的分支后序查找表单；HostRoot 在整树宿主属性更新完成后调用，保证 reset 使用最新 defaultValue。FormReset 位由不同 tag 复用，实际 reset 还必须检查 HostComponent。 */
 function recursivelyResetForms(parentFiber: Fiber) {
   if (parentFiber.subtreeFlags & FormReset) {
     let child = parentFiber.child;
@@ -2732,7 +2732,7 @@ function resetFormOnFiber(fiber: Fiber) {
   }
 }
 
-/** mutation 之后、layout 之前入口：重置 form，并处理 ViewTransition/手势相关后置 mutation。 */
+/** ViewTransition 的新布局测量入口，由 WorkLoop 在 layout effects 之后、spawned-work 收尾前调用。关闭 ViewTransition 时返回；过渡提交的外层时序保证测量先于 passive 名称恢复。这里只测量/安排事件，不选择同步或异步调度。 */
 export function commitAfterMutationEffects(
   root: FiberRoot,
   finishedWork: Fiber,
@@ -2901,7 +2901,7 @@ function commitAfterMutationEffectsOnFiber(
   }
 }
 
-/** layout 阶段入口：挂载 layout/insertion 结果、class 生命周期、ref 与宿主 mount 回调。 */
+/** layout 阶段入口：创建 layout effect、调用 class 生命周期、附加 ref 与宿主 mount 回调。 */
 export function commitLayoutEffects(
   finishedWork: Fiber,
   root: FiberRoot,
@@ -2919,7 +2919,7 @@ export function commitLayoutEffects(
   inProgressRoot = null;
 }
 
-/** 遍历含 LayoutMask 的 child，并按遍历标志选择 WIP/singleton effect。 */
+/** 仅沿 subtreeFlags 含 LayoutMask 的 child 遍历布局工作，各 child 使用自己的 alternate。此普通路径没有 layoutEffectTraversalFlags 参数；重新出现时是否包含 WIP/singleton 工作由另一个 reappear 遍历控制。 */
 function recursivelyTraverseLayoutEffects(
   root: FiberRoot,
   parentFiber: Fiber,
@@ -2942,7 +2942,7 @@ export function disappearLayoutEffectsForDEVValidation(finishedWork: Fiber) {
   }
 }
 
-/** Offscreen 隐藏时递归卸载 layout effect、class componentDidMount/ref 与 singleton。 */
+/** Offscreen 消失时先清理本节点 layout/ref、调用 componentWillUnmount，再递归后代；保留 Fiber 与状态。 */
 function disappearLayoutEffects(
   finishedWork: Fiber,
   layoutEffectTraversalFlags: LayoutEffectTraversalFlags,
@@ -3086,7 +3086,7 @@ function disappearLayoutEffects(
   popComponentEffectDidSpawnUpdate(prevEffectDidSpawnUpdate);
 }
 
-/** 遍历隐藏子树并执行 disappearLayoutEffects，维护 offscreen 隐藏上下文。 */
+/** 依次对全部 child 调用 disappearLayoutEffects，父组件清理已经由调用方执行。遍历标志仅控制 singleton release；是否跳过已隐藏的嵌套 Offscreen 由单 Fiber 分支决定，本函数不修改全局隐藏上下文。 */
 function recursivelyTraverseDisappearLayoutEffects(
   parentFiber: Fiber,
   layoutEffectTraversalFlags: LayoutEffectTraversalFlags,
@@ -3115,7 +3115,7 @@ export function reappearLayoutEffectsForDEVValidation(
   }
 }
 
-/** Offscreen 重现时递归挂载 layout effect、class 生命周期/ref 与 singleton。 */
+/** 恢复 Offscreen 可见子树此前断开的布局工作，先 child 后父：Hook 使用 HookLayout 而不要求 HasEffect，类重新 didMount 并提交隐藏时暂存的回调/ref。IncludeWorkInProgressEffects 另控制本轮 Callback、宿主首次 mount 与 Profiler/hydration 通知，避免在复用节点上重消费动态 flags。 */
 function reappearLayoutEffects(
   finishedRoot: FiberRoot,
   current: Fiber | null,
@@ -3396,8 +3396,8 @@ function commitOffscreenPassiveMountEffects(
   ) {
     nextCache = finishedWork.memoizedState.cachePool.pool;
   }
-  // 保留或释放待处理（已挂起）节点使用的缓存。这里只有未挂起且可见时才会到达；
-  // 内容挂起或隐藏时，由父 Suspense 组件执行保留或释放（参见上方分支）。
+  // 比较两侧隐藏状态保存的 cachePool；隐藏树断开用户 passive effects 后，
+  // atomic passive 遍历仍会到这里更新引用计数。先 retain 新池，再 release 旧池。
   if (nextCache !== previousCache) {
     if (nextCache != null) {
       retainCache(nextCache);
@@ -3485,10 +3485,9 @@ function commitCachePassiveMountEffect(
   }
 }
 
-/** TracingMarker passive 阶段提交 marker 实例与 transitions 的完成回调。 */
+/** marker passive 阶段在 transitions 非空且 pendingBoundaries 尚未建立时排入 marker complete，并清空该实例追踪字段。这代表它没有待解决的已提交 Suspense boundary；不添加 start 回调，也不在这里执行用户 callback。 */
 function commitTracingMarkerPassiveMountEffect(finishedWork: Fiber) {
-  // 取得渲染期间发起的 transition，并为每项添加开始回调。
-  // 只有 tracing marker 首次挂载且没有 Suspense 子节点时才调用这里。
+  // marker 初次提交或重新连接时检查其 transition 是否仍有待处理 boundary；满足下面条件才排入完成回调。
   const instance = finishedWork.stateNode;
   if (instance.transitions !== null && instance.pendingBoundaries === null) {
     addMarkerCompleteCallbackToPendingTransition(
@@ -3579,7 +3578,7 @@ function recursivelyTraversePassiveMountEffects(
 
 let inHydratedSubtree = false;
 
-/** 按 WorkTag 挂载单 Fiber passive effect，处理 Offscreen reconnect、cache 与 tracing。 */
+/** passive mount 阶段按 tag 处理 child 后父的 Hook 创建、cache 引用变化与追踪回调收集。现代隐藏 Offscreen 若 passive 已断开，仅走 atomic cache/性能遍历；可见且断开时全量 reconnect。Suspense 的 primary 隐藏可保留 connected，因此隐藏不等于所有 useEffect 一律销毁。endTime 为性能日志的兄弟/根完成边界，单位与 Scheduler.now 一致。 */
 function commitPassiveMountOnFiber(
   finishedRoot: FiberRoot,
   finishedWork: Fiber,
@@ -4210,7 +4209,7 @@ function recursivelyTraverseReconnectPassiveEffects(
   }
 }
 
-/** 重新连接单 Fiber 的 passive effect，并按 tag 递归/处理 cache、tracing 与 Profiler。 */
+/** Offscreen 重新连接时全量创建 HookPassive effect，不要求 HasEffect，使此前断开的旧 effect 也恢复。includeWorkInProgressEffects 只控制本轮 cache、marker 等动态标志工作；隐藏且断开的嵌套现代 Offscreen 保持断开并执行 atomic 部分，可见实例先设置 connected 位再访问后代。 */
 export function reconnectPassiveEffects(
   finishedRoot: FiberRoot,
   finishedWork: Fiber,
@@ -4471,7 +4470,7 @@ function recursivelyTraverseAtomicPassiveEffects(
   }
 }
 
-/** 提交不能因 Offscreen 隐藏而延后的 atomic passive 效果（如 cache 引用）。 */
+/** 遍历常规 passive 已断开的隐藏子树，只处理 Offscreen/Cache 的引用计数与必要的性能日志，不创建用户 useEffect。其他 tag 只递归；因此该路径也不派发普通 marker 完成或 ViewTransition 用户事件。 */
 function commitAtomicPassiveEffects(
   finishedRoot: FiberRoot,
   finishedWork: Fiber,
@@ -4564,7 +4563,7 @@ export function commitPassiveUnmountEffects(finishedWork: Fiber): void {
 // MaySuspendCommit 与 ShouldSuspendCommit 还包含命名 ViewTransition，
 // 以便访问它们并收集正在出现的配对。
 let suspenseyCommitFlag: Flags = ShouldSuspendCommit;
-/** 在提交可挂起资源前遍历 ShouldSuspendCommit 标志并累积宿主等待项。 */
+/** 提交前收集宿主等待依赖并重置 appearing ViewTransition 名单；普通路径以 ShouldSuspendCommit 剪枝，重现 Offscreen 子树暂改 MaySuspendCommit 访问所有新近可见实例。suspendedState 属于宿主一次待提交资源集合，等待/取消和真正提交由 WorkLoop/HostConfig 协作完成。 */
 export function accumulateSuspenseyCommit(
   finishedWork: Fiber,
   committedLanes: Lanes,
@@ -4578,7 +4577,7 @@ export function accumulateSuspenseyCommit(
   );
 }
 
-/** 遍历含 suspensey commit 标志的 child，并为视图 transition 切换掩码。 */
+/** 仅沿 subtreeFlags 含当前 suspenseyCommitFlag 的 child 收集提交依赖；当前掩码由 Offscreen 重新出现分支临时扩为 MaySuspendCommit 并恢复。本函数不改变掩码或直接等待 Promise。 */
 function recursivelyAccumulateSuspenseyCommit(
   parentFiber: Fiber,
   committedLanes: Lanes,
@@ -4710,8 +4709,7 @@ function accumulateSuspenseyCommitOnFiber(
           if (name != null && name !== 'auto') {
             // 这是正在挂载或重新出现的命名 ViewTransition；加入映射，以便稍后与删除项配对。
             const state: ViewTransitionState = fiber.stateNode;
-            // 重置配对，以防先前提交最终未恢复实例。该情况现在理论上不会发生，
-            // 但仍作防御性处理；后续可考虑增加不变量检查。
+            // 本轮出现的命名边界从无配对开始，随后 before-mutation 再与删除边界配对。
             state.paired = null;
             trackAppearingViewTransition(name, state);
           }
@@ -4740,7 +4738,7 @@ function detachAlternateSiblings(parentFiber: Fiber) {
   // 某个 Fiber 已从当前父 Fiber 删除，但仍在先前（alternate）父 Fiber 的子链表中。
   // 由于子节点采用链表，仍存活的较早兄弟节点会通过 alternate 连接到已删除 Fiber：
   //
-  //   live fiber --alternate--> previous live fiber --sibling--> deleted
+  // 当前存活 Fiber --alternate--> 上一版存活 Fiber --sibling--> 已删除 Fiber
   //   fiber
   //
   // 尚未删除的节点不能断开 alternate，但可以断开 sibling 与 child 指针。
@@ -4808,7 +4806,7 @@ function recursivelyTraversePassiveUnmountEffects(parentFiber: Fiber): void {
   }
 }
 
-/** 按 WorkTag 卸载单 Fiber 的 passive effect，并处理 Offscreen 断连与 cache/tracing。 */
+/** 更新时通常先卸载 child，再清理当前 Fiber 中 HookPassive|HasEffect。隐藏且已连接的 Offscreen 仅在直接父节点不是 Suspense 时断连全树；Suspense primary 为兼容性保留连接。删除树通过 deletions 另走父先子的完整卸载，不与更新顺序混用。 */
 function commitPassiveUnmountOnFiber(finishedWork: Fiber): void {
   const prevEffectStart = pushComponentEffectStart();
   const prevEffectDuration = pushComponentEffectDuration();
@@ -4846,7 +4844,7 @@ function commitPassiveUnmountOnFiber(finishedWork: Fiber): void {
 
       if (enableProfilerTimer && enableProfilerCommitHooks) {
         const profilerInstance = finishedWork.stateNode;
-        // 将布局副作用耗时传播给最近的上级 Profiler。
+        // 将 passive 副作用耗时传播给最近的上级 Profiler。
         // 到下一次渲染前不要重置这些值，确保 DevTools 有机会读取。
         profilerInstance.passiveEffectDuration += bubbleNestedEffectDurations(
           prevProfilerEffectDuration,
@@ -4974,7 +4972,7 @@ function recursivelyTraverseDisconnectPassiveEffects(parentFiber: Fiber): void {
   }
 }
 
-/** 断开单 Fiber passive effect；对 Offscreen/LegacyHidden 避免重复处理已隐藏后代。 */
+/** Offscreen 断连路径按父先子卸载全部 HookPassive，不要求 HasEffect；到嵌套 Offscreen 时仅 connected 实例继续并清掉该位。其余 tag 递归，不特别判断 LegacyHidden.memoizedState，也不销毁 Fiber、组件状态或宿主节点。 */
 export function disconnectPassiveEffect(finishedWork: Fiber): void {
   const prevEffectStart = pushComponentEffectStart();
   const prevEffectDuration = pushComponentEffectDuration();
@@ -5060,7 +5058,7 @@ function commitPassiveUnmountEffectsInsideOfDeletedTree_begin(
   }
 }
 
-/** 删除子树后序回溯：记录 profiler 时间、断开 Fiber，再转 sibling/parent。 */
+/** 删除 passive 遍历的后序回溯：先保存 sibling/return，再调用 detachFiberAfterEffects 清空当前与 alternate 引用，最后转向兄弟或父节点。到 deletedSubtreeRoot 结束，避免跨入幸存树；此函数不统计 Profiler 耗时，计时由外层和单 Fiber 清理负责。 */
 function commitPassiveUnmountEffectsInsideOfDeletedTree_complete(
   deletedSubtreeRoot: Fiber,
 ) {
@@ -5086,7 +5084,7 @@ function commitPassiveUnmountEffectsInsideOfDeletedTree_complete(
   }
 }
 
-/** 按 WorkTag 卸载删除树单 Fiber 的 passive effect 与 cache/tracing 资源。 */
+/** 删除树的父先子 passive 工作：函数清理全部 HookPassive，CacheComponent release；Suspense/marker 向删除侧与幸存祖先记录追踪 abort。Offscreen 当前实现对 cachePool.pool 调用 retainCache，不能解释为 release；完整引用断开随后在回溯阶段执行。nearestMountedAncestor 接收清理错误，不依赖已断开的删除根 return。 */
 function commitPassiveUnmountInsideDeletedTreeOnFiber(
   current: Fiber,
   nearestMountedAncestor: Fiber | null,
@@ -5120,8 +5118,8 @@ function commitPassiveUnmountInsideDeletedTreeOnFiber(
         current.memoizedState.cachePool !== null
       ) {
         const cache: Cache = current.memoizedState.cachePool.pool;
-        // 保留或释放待处理（已挂起）节点使用的缓存。这里只有未挂起且可见时才会到达；
-        // 内容挂起或隐藏时，由父 Suspense 组件执行保留或释放（参见上方分支）。
+        // 当前删除分支对隐藏状态中保存的 cachePool.pool 调用 retainCache。
+        // cachePool 替换时的 retain/release 另由 commitOffscreenPassiveMountEffects 处理。
         if (cache != null) {
           retainCache(cache);
         }

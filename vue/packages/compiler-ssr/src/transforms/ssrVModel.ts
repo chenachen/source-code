@@ -29,6 +29,10 @@ import type { DirectiveTransformResult } from '../../../compiler-core/src/transf
  *
  * input 根据 type 生成 value/checked，textarea 把值放进转义文本 children，select 递归给
  * 匹配 option 添加 selected。服务端无 DOM directive 生命周期，所有初始状态必须显式输出。
+ * 原生路径不生成 onUpdate 监听器，也不挂载客户端 model 指令。select 在自身 exit 中
+ * 修改已完成子元素的 ssrCodegenNode；仅为没有静态 selected 属性的 option 追加条件。
+ * 静态文本 input 检查重复 value，动态 type 交 helper 判断；无显式 type 的完整 v-bind
+ * 由 ssrTransformElement 合并最终 props 后补 model。错误默认抛出，收集模式可能保留空结果。
  */
 export const ssrTransformModel: DirectiveTransform = (dir, node, context) => {
   const model = dir.exp!
@@ -60,8 +64,10 @@ export const ssrTransformModel: DirectiveTransform = (dir, node, context) => {
   }
 
   /**
-   * 为没有显式 selected 的 option 注入选择条件。
+   * 为没有静态 selected 属性的 option 注入选择条件。
    * 多选数组使用 looseContain，单值使用 looseEqual，以匹配客户端 v-model 宽松比较语义。
+   * 静态 selected 属性保留自身输出；绑定形式 :selected 仍会追加模型条件。无 value 时
+   * findValueBinding 返回 null，以 null 参与模型比较。
    */
   function processOption(plainNode: PlainElementNode) {
     if (plainNode.tag === 'option') {
@@ -84,7 +90,7 @@ export const ssrTransformModel: DirectiveTransform = (dir, node, context) => {
             ]),
             createSimpleExpression(' selected', true),
             createSimpleExpression('', true),
-            false /* no newline */,
+            false /* 表达式不换行 */,
           ),
         )
       }

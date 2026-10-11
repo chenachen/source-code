@@ -43,7 +43,7 @@ describe('ReactSuspenseList', () => {
     assertConsoleErrorDev = InternalTestUtils.assertConsoleErrorDev;
   });
 
-  /** Text 同步记录并输出文本，作为提交顺序与宿主内容的稳定观测点。 */
+  /** Text 同步记录并输出文本，区分 render 访问顺序与宿主最终内容。 */
   function Text(props) {
     Scheduler.log(props.text);
     return <span>{props.text}</span>;
@@ -52,7 +52,7 @@ describe('ReactSuspenseList', () => {
   /** createAsyncText 创建拥有独立 resolved 状态和 Promise 的行组件，并暴露显式 resolve 入口。 */
   function createAsyncText(text) {
     let resolved = false;
-    /** 异步文本组件在资源未解决时抛出共享 Promise，解决后输出对应行；`resolve` 只允许推进一次。 */
+    /** 资源未解决时抛出同一个 Promise，解决后输出对应行；重复调用 resolve 由 Promise 的终态规则忽略。 */
     const Component = function () {
       if (!resolved) {
         Scheduler.log('Suspend! [' + text + ']');
@@ -61,6 +61,7 @@ describe('ReactSuspenseList', () => {
       return <Text text={text} />;
     };
     const promise = new Promise(resolve => {
+      /** 先标记资源完成再兑现 Promise，使 ping 后的重试可同步读取该行。 */
       Component.resolve = function () {
         resolved = true;
         return resolve();
@@ -69,17 +70,10 @@ describe('ReactSuspenseList', () => {
     return Component;
   }
 
-  /**
-   * Given：已构造边界树、资源状态和调度检查点，用于传入非法、大小写错误或拼写错误的 revealOrder，确认开发态给出精确修正建议。
-   * When：渲染包含该非法配置或 children 形状的列表。
-   * Then：传入非法、大小写错误或拼写错误的 revealOrder，确认开发态给出精确修正建议。
-   *
-   * 验证机制：控制台断言限定开发态诊断。
-   * 对应源码：`validateRevealOrder()`、`validateTailOptions()` 与 children 结构校验。
-   */
+  /** revealOrder=something 的单个边界在开发态报告四种可用取值；断言完整警告及 Foo 栈，覆盖未知配置诊断。 */
   // @gate enableSuspenseList
   it('warns if an unsupported revealOrder option is used', async () => {
-    /** Foo 组织当前 Suspense/SuspenseList 边界、资源行与更新入口，服务于“传入非法、大小写错误或拼写错误的 revealOrder，确认开发态给出精确修正建议”场景。 */
+    /** 提供未知 revealOrder 的单边界，触发取值诊断。 */
     function Foo() {
       return (
         <SuspenseList revealOrder="something">
@@ -99,17 +93,10 @@ describe('ReactSuspenseList', () => {
     ]);
   });
 
-  /**
-   * Given：已构造边界树、资源状态和调度检查点，用于传入非法、大小写错误或拼写错误的 revealOrder，确认开发态给出精确修正建议。
-   * When：渲染包含该非法配置或 children 形状的列表。
-   * Then：传入非法、大小写错误或拼写错误的 revealOrder，确认开发态给出精确修正建议。
-   *
-   * 验证机制：控制台断言限定开发态诊断。
-   * 对应源码：`validateRevealOrder()`、`validateTailOptions()` 与 children 结构校验。
-   */
+  /** 输入大写 TOGETHER；渲染后开发态建议小写 together，断言精确字符串及组件栈。 */
   // @gate enableSuspenseList
   it('warns if a upper case revealOrder option is used', async () => {
-    /** Foo 组织当前 Suspense/SuspenseList 边界、资源行与更新入口，服务于“传入非法、大小写错误或拼写错误的 revealOrder，确认开发态给出精确修正建议”场景。 */
+    /** 提供大写 TOGETHER，触发大小写修正建议。 */
     function Foo() {
       return (
         <SuspenseList revealOrder="TOGETHER">
@@ -129,17 +116,10 @@ describe('ReactSuspenseList', () => {
     ]);
   });
 
-  /**
-   * Given：已构造边界树、资源状态和调度检查点，用于传入非法、大小写错误或拼写错误的 revealOrder，确认开发态给出精确修正建议。
-   * When：渲染包含该非法配置或 children 形状的列表。
-   * Then：传入非法、大小写错误或拼写错误的 revealOrder，确认开发态给出精确修正建议。
-   *
-   * 验证机制：控制台断言限定开发态诊断。
-   * 对应源码：`validateRevealOrder()`、`validateTailOptions()` 与 children 结构校验。
-   */
+  /** 输入 forward；开发态指出缺少 -s 并建议 forwards，验证拼写纠错而非一般未知配置。 */
   // @gate enableSuspenseList
   it('warns if a misspelled revealOrder option is used', async () => {
-    /** Foo 组织当前 Suspense/SuspenseList 边界、资源行与更新入口，服务于“传入非法、大小写错误或拼写错误的 revealOrder，确认开发态给出精确修正建议”场景。 */
+    /** 提供缺少 s 后缀的 forward，触发拼写诊断。 */
     function Foo() {
       return (
         <SuspenseList revealOrder="forward">
@@ -160,17 +140,10 @@ describe('ReactSuspenseList', () => {
     ]);
   });
 
-  /**
-   * Given：已构造边界树、资源状态和调度检查点，用于向有序 SuspenseList 传入无法形成多行协调的 children 形状，确认结构诊断。
-   * When：渲染包含该非法配置或 children 形状的列表。
-   * Then：向有序 SuspenseList 传入无法形成多行协调的 children 形状，确认结构诊断。
-   *
-   * 验证机制：调度日志和分段等待锁定 yield、ping 与重试顺序，控制台断言限定开发态诊断。
-   * 对应源码：`validateRevealOrder()`、`validateTailOptions()` 与 children 结构校验。
-   */
+  /** forwards/visible 先依次接收 undefined、null、false，均无警告；再接收单个 Suspense 元素时警告缺少多行，验证空 children 与单行的区别。 */
   // @gate enableSuspenseList
   it('warns if a single element is passed to a "forwards" list', async () => {
-    /** Foo 组织当前 Suspense/SuspenseList 边界、资源行与更新入口，服务于“向有序 SuspenseList 传入无法形成多行协调的 children 形状，确认结构诊断”场景。 */
+    /** 把 children 原样放入 forwards/visible 列表，区分空值和单个元素。 */
     function Foo({children}) {
       return (
         <SuspenseList revealOrder="forwards" tail="visible">
@@ -207,17 +180,10 @@ describe('ReactSuspenseList', () => {
     ]);
   });
 
-  /**
-   * Given：已构造边界树、资源状态和调度检查点，用于向有序 SuspenseList 传入无法形成多行协调的 children 形状，确认结构诊断。
-   * When：渲染包含该非法配置或 children 形状的列表。
-   * Then：向有序 SuspenseList 传入无法形成多行协调的 children 形状，确认结构诊断。
-   *
-   * 验证机制：控制台断言限定开发态诊断。
-   * 对应源码：`validateRevealOrder()`、`validateTailOptions()` 与 children 结构校验。
-   */
+  /** unstable_legacy-backwards/visible 收到一个内部为空数组的 Fragment；仍按单行形状警告，验证 Fragment 不自动成为多行输入。 */
   // @gate enableSuspenseList
   it('warns if a single fragment is passed to a "backwards" list', async () => {
-    /** Foo 组织当前 Suspense/SuspenseList 边界、资源行与更新入口，服务于“向有序 SuspenseList 传入无法形成多行协调的 children 形状，确认结构诊断”场景。 */
+    /** 以一个含空数组的 Fragment 作为 legacy-backwards 列表唯一行。 */
     function Foo() {
       return (
         <SuspenseList revealOrder="unstable_legacy-backwards" tail="visible">
@@ -238,17 +204,10 @@ describe('ReactSuspenseList', () => {
     ]);
   });
 
-  /**
-   * Given：已构造边界树、资源状态和调度检查点，用于向有序 SuspenseList 传入无法形成多行协调的 children 形状，确认结构诊断。
-   * When：渲染包含该非法配置或 children 形状的列表。
-   * Then：向有序 SuspenseList 传入无法形成多行协调的 children 形状，确认结构诊断。
-   *
-   * 验证机制：控制台断言限定开发态诊断。
-   * 对应源码：`validateRevealOrder()`、`validateTailOptions()` 与 children 结构校验。
-   */
+  /** forwards/visible 的第一行是 items.map 得到的 A/B 数组，第二行是 div Tail；开发态指出 row #0 的嵌套数组并建议再包一层 SuspenseList。 */
   // @gate enableSuspenseList
   it('warns if a nested array is passed to a "forwards" list', async () => {
-    /** Foo 组织当前 Suspense/SuspenseList 边界、资源行与更新入口，服务于“向有序 SuspenseList 传入无法形成多行协调的 children 形状，确认结构诊断”场景。 */
+    /** 把 A/B 的 map 数组与 Tail 同时作为直接 children，制造嵌套数组行。 */
     function Foo({items}) {
       return (
         <SuspenseList revealOrder="forwards" tail="visible">
@@ -276,21 +235,14 @@ describe('ReactSuspenseList', () => {
     ]);
   });
 
-  /**
-   * Given：已构造边界树、资源状态和调度检查点，用于按不同解决顺序唤醒行，确认 forwards 只从头部连续揭示已就绪内容。
-   * When：执行挂起、fallback 提交以及用例指定的更新或恢复步骤。
-   * Then：按不同解决顺序唤醒行，确认 forwards 只从头部连续揭示已就绪内容。
-   *
-   * 验证机制：调度日志和分段等待锁定 yield、ping 与重试顺序，宿主输出断言区分主内容、隐藏内容和 fallback。
-   * 对应源码：`updateSuspenseListComponent()`、`findFirstSuspended()` 与列表第二遍完成逻辑。
-   */
+  /** 省略 revealOrder 和 tail，A/B/C 初始待决；按 A→B→C 解析并推进 500ms 后依次显示 A、AB、ABC，初始为 null。验证默认 forwards 配合默认 hidden tail，不提交加载占位。 */
   // @gate enableSuspenseList
   it('behaves as revealOrder=forwards by default', async () => {
     const A = createAsyncText('A');
     const B = createAsyncText('B');
     const C = createAsyncText('C');
 
-    /** Foo 组织当前 Suspense/SuspenseList 边界、资源行与更新入口，服务于“按不同解决顺序唤醒行，确认 forwards 只从头部连续揭示已就绪内容”场景。 */
+    /** 省略列表配置，放置 A/B/C 三个可挂起行以验证两个默认值。 */
     function Foo() {
       return (
         <SuspenseList>
@@ -317,7 +269,6 @@ describe('ReactSuspenseList', () => {
 
     await waitForAll(['A', 'Suspend! [B]', 'Loading B']);
 
-    // 该步骤让目标内容挂起，用于检查 unwind、fallback 选择和后续重试。
     jest.advanceTimersByTime(500);
 
     expect(ReactNoop).toMatchRenderedOutput(<span>A</span>);
@@ -325,7 +276,6 @@ describe('ReactSuspenseList', () => {
     await act(() => B.resolve());
     assertLog(['B', 'Suspend! [C]', 'Loading C']);
 
-    // 该步骤让目标内容挂起，用于检查 unwind、fallback 选择和后续重试。
     jest.advanceTimersByTime(500);
 
     expect(ReactNoop).toMatchRenderedOutput(
@@ -347,21 +297,14 @@ describe('ReactSuspenseList', () => {
     );
   });
 
-  /**
-   * Given：已构造边界树、资源状态和调度检查点，用于让多行分别挂起和解决，确认 independent 模式不互相阻塞。
-   * When：执行挂起、fallback 提交以及用例指定的更新或恢复步骤。
-   * Then：让多行分别挂起和解决，确认 independent 模式不互相阻塞。
-   *
-   * 验证机制：调度日志和分段等待锁定 yield、ping 与重试顺序，宿主输出断言区分主内容、隐藏内容和 fallback。
-   * 对应源码：`updateSuspenseListComponent()`、`findFirstSuspended()` 与列表第二遍完成逻辑。
-   */
+  /** independent 三行先预解 A，再解析 C、B；输出依次 A/Loading B/Loading C、A/Loading B/C、ABC。alwaysThrottleRetries 改变重试日志，已完成 C 不等待 B。 */
   // @gate enableSuspenseList
   it('shows content independently with revealOrder="independent"', async () => {
     const A = createAsyncText('A');
     const B = createAsyncText('B');
     const C = createAsyncText('C');
 
-    /** Foo 组织当前 Suspense/SuspenseList 边界、资源行与更新入口，服务于“让多行分别挂起和解决，确认 independent 模式不互相阻塞”场景。 */
+    /** 把 A/B/C 放入 independent 列表，各行使用自己的加载占位。 */
     function Foo() {
       return (
         <SuspenseList revealOrder="independent">
@@ -428,21 +371,14 @@ describe('ReactSuspenseList', () => {
     );
   });
 
-  /**
-   * Given：已构造边界树、资源状态和调度检查点，用于让多行分别挂起和解决，确认 independent 模式不互相阻塞。
-   * When：执行挂起、fallback 提交以及用例指定的更新或恢复步骤。
-   * Then：让多行分别挂起和解决，确认 independent 模式不互相阻塞。
-   *
-   * 验证机制：调度日志和分段等待锁定 yield、ping 与重试顺序，宿主输出断言区分主内容、隐藏内容和 fallback。
-   * 对应源码：`updateSuspenseListComponent()`、`findFirstSuspended()` 与列表第二遍完成逻辑。
-   */
+  /** legacy 同步根虽指定 together，预解 A 后仍显示 B/C 各自 fallback；先解析 C 再 B，可分别揭示。验证旧模式不采用并发 together 协调。 */
   // @gate enableSuspenseList && !disableLegacyMode
   it('shows content independently in legacy mode regardless of option', async () => {
     const A = createAsyncText('A');
     const B = createAsyncText('B');
     const C = createAsyncText('C');
 
-    /** Foo 组织当前 Suspense/SuspenseList 边界、资源行与更新入口，服务于“让多行分别挂起和解决，确认 independent 模式不互相阻塞”场景。 */
+    /** 在 together 列表中放置三行，由旧同步根检查独立揭示行为。 */
     function Foo() {
       return (
         <SuspenseList revealOrder="together">
@@ -502,21 +438,14 @@ describe('ReactSuspenseList', () => {
     );
   });
 
-  /**
-   * Given：已构造边界树、资源状态和调度检查点，用于让多行或嵌套列表分批解决，确认 together 模式只在全部就绪后一次揭示。
-   * When：按用例顺序解决资源并冲刷 ping 触发的重试。
-   * Then：让多行或嵌套列表分批解决，确认 together 模式只在全部就绪后一次揭示。
-   *
-   * 验证机制：调度日志和分段等待锁定 yield、ping 与重试顺序，宿主输出断言区分主内容、隐藏内容和 fallback。
-   * 对应源码：`updateSuspenseListComponent()`、`findFirstSuspended()` 与列表第二遍完成逻辑。
-   */
+  /** together 三行仅 A 预先完成；初始全显示 fallback，B 完成也保持三个 fallback，C 完成后输出 ABC，验证完成行也受组内待决行约束。 */
   // @gate enableSuspenseList
   it('displays all "together"', async () => {
     const A = createAsyncText('A');
     const B = createAsyncText('B');
     const C = createAsyncText('C');
 
-    /** Foo 组织当前 Suspense/SuspenseList 边界、资源行与更新入口，服务于“让多行或嵌套列表分批解决，确认 together 模式只在全部就绪后一次揭示”场景。 */
+    /** 在 together 列表中放置 A/B/C，观察整组 fallback 与最终内容。 */
     function Foo() {
       return (
         <SuspenseList revealOrder="together">
@@ -579,21 +508,14 @@ describe('ReactSuspenseList', () => {
     );
   });
 
-  /**
-   * Given：已构造边界树、资源状态和调度检查点，用于让多行或嵌套列表分批解决，确认 together 模式只在全部就绪后一次揭示。
-   * When：按用例顺序解决资源并冲刷 ping 触发的重试。
-   * Then：让多行或嵌套列表分批解决，确认 together 模式只在全部就绪后一次揭示。
-   *
-   * 验证机制：调度日志和分段等待锁定 yield、ping 与重试顺序，宿主输出断言区分主内容、隐藏内容和 fallback。
-   * 对应源码：`updateSuspenseListComponent()`、`findFirstSuspended()` 与列表第二遍完成逻辑。
-   */
+  /** together 的两个直接 div 行分别包含 A/B 和 C 的边界；仅 A 预解时三个 fallback 都显示，B 完成仍保持，C 完成后在原 div 结构中输出 ABC。验证 findFirstSuspended 穿透宿主后代。 */
   // @gate enableSuspenseList
   it('displays all "together" even when nested as siblings', async () => {
     const A = createAsyncText('A');
     const B = createAsyncText('B');
     const C = createAsyncText('C');
 
-    /** Foo 组织当前 Suspense/SuspenseList 边界、资源行与更新入口，服务于“让多行或嵌套列表分批解决，确认 together 模式只在全部就绪后一次揭示”场景。 */
+    /** 用两个 div 将 A/B 与 C 分成直接行，检查宿主后代边界的协调。 */
     function Foo() {
       return (
         <SuspenseList revealOrder="together">
@@ -672,21 +594,14 @@ describe('ReactSuspenseList', () => {
     );
   });
 
-  /**
-   * Given：已构造边界树、资源状态和调度检查点，用于让多行或嵌套列表分批解决，确认 together 模式只在全部就绪后一次揭示。
-   * When：按用例顺序解决资源并冲刷 ping 触发的重试。
-   * Then：让多行或嵌套列表分批解决，确认 together 模式只在全部就绪后一次揭示。
-   *
-   * 验证机制：调度日志和分段等待锁定 yield、ping 与重试顺序，宿主输出断言区分主内容、隐藏内容和 fallback。
-   * 对应源码：`updateSuspenseListComponent()`、`findFirstSuspended()` 与列表第二遍完成逻辑。
-   */
+  /** 外层 together 包含 A 行和内层 together 的 B/C；预解 A/B 而 C 待决时仍显示三份 fallback，解析 C 后显示 ABC，验证嵌套列表的挂起状态向外汇总。 */
   // @gate enableSuspenseList
   it('displays all "together" in nested SuspenseLists', async () => {
     const A = createAsyncText('A');
     const B = createAsyncText('B');
     const C = createAsyncText('C');
 
-    /** Foo 组织当前 Suspense/SuspenseList 边界、资源行与更新入口，服务于“让多行或嵌套列表分批解决，确认 together 模式只在全部就绪后一次揭示”场景。 */
+    /** 把 B/C together 列表作为外层 together 的第二行，第一行为 A。 */
     function Foo() {
       return (
         <SuspenseList revealOrder="together">
@@ -742,21 +657,14 @@ describe('ReactSuspenseList', () => {
     );
   });
 
-  /**
-   * Given：已构造边界树、资源状态和调度检查点，用于让多行或嵌套列表分批解决，确认 together 模式只在全部就绪后一次揭示。
-   * When：按用例顺序解决资源并冲刷 ping 触发的重试。
-   * Then：让多行或嵌套列表分批解决，确认 together 模式只在全部就绪后一次揭示。
-   *
-   * 验证机制：调度日志和分段等待锁定 yield、ping 与重试顺序，宿主输出断言区分主内容、隐藏内容和 fallback。
-   * 对应源码：`updateSuspenseListComponent()`、`findFirstSuspended()` 与列表第二遍完成逻辑。
-   */
+  /** 外层 together 的第二行是 independent 的 B/C；A/B 已完成而 C 待决时三行仍被外层强制 fallback，解析 C 后显示 ABC。验证内层 independent 不消除外层组约束。 */
   // @gate enableSuspenseList
   it('displays all "together" in nested SuspenseLists where the inner is "independent"', async () => {
     const A = createAsyncText('A');
     const B = createAsyncText('B');
     const C = createAsyncText('C');
 
-    /** Foo 组织当前 Suspense/SuspenseList 边界、资源行与更新入口，服务于“让多行或嵌套列表分批解决，确认 together 模式只在全部就绪后一次揭示”场景。 */
+    /** 让外层 together 包含 A 与 B/C independent 列表。 */
     function Foo() {
       return (
         <SuspenseList revealOrder="together">
@@ -810,14 +718,7 @@ describe('ReactSuspenseList', () => {
     );
   });
 
-  /**
-   * Given：已构造边界树、资源状态和调度检查点，用于让多行或嵌套列表分批解决，确认 together 模式只在全部就绪后一次揭示。
-   * When：按用例顺序解决资源并冲刷 ping 触发的重试。
-   * Then：让多行或嵌套列表分批解决，确认 together 模式只在全部就绪后一次揭示。
-   *
-   * 验证机制：调度日志和分段等待锁定 yield、ping 与重试顺序，宿主输出断言区分主内容、隐藏内容和 fallback。
-   * 对应源码：`updateSuspenseListComponent()`、`findFirstSuspended()` 与列表第二遍完成逻辑。
-   */
+  /** step=0 先显示 A/B 的 fallback，再解析 B 得到 AB；step=1 换成 C/D，其中 C 预解，仍显示两份新 fallback，解析 D 得到 CD。验证 together 在替换行时重新协调新组。 */
   // @gate enableSuspenseList
   it('displays all "together" during an update', async () => {
     const A = createAsyncText('A');
@@ -825,7 +726,7 @@ describe('ReactSuspenseList', () => {
     const C = createAsyncText('C');
     const D = createAsyncText('D');
 
-    /** Foo 组织当前 Suspense/SuspenseList 边界、资源行与更新入口，服务于“让多行或嵌套列表分批解决，确认 together 模式只在全部就绪后一次揭示”场景。 */
+    /** 依据 step 在 A/B 与 C/D 两组边界之间切换。 */
     function Foo({step}) {
       return (
         <SuspenseList revealOrder="together">
@@ -853,7 +754,6 @@ describe('ReactSuspenseList', () => {
       );
     }
 
-    // 检查挂载、生命周期或 Effect 只在对应提交阶段执行。
     await A.resolve();
     ReactNoop.render(<Foo step={0} />);
     await waitForAll([
@@ -878,7 +778,6 @@ describe('ReactSuspenseList', () => {
       </>,
     );
 
-    // 安排目标状态更新，并检查它在挂起、重试和提交之间不会丢失。
     await C.resolve();
     ReactNoop.render(<Foo step={1} />);
     await waitForAll([
@@ -904,21 +803,14 @@ describe('ReactSuspenseList', () => {
     );
   });
 
-  /**
-   * Given：已构造边界树、资源状态和调度检查点，用于驱动 SuspenseList 行的挂起、解决与提交，确认列表协调策略。
-   * When：执行挂起、fallback 提交以及用例指定的更新或恢复步骤。
-   * Then：驱动 SuspenseList 行的挂起、解决与提交，确认列表协调策略。
-   *
-   * 验证机制：调度日志和分段等待锁定 yield、ping 与重试顺序，宿主输出断言区分主内容、隐藏内容和 fallback。
-   * 对应源码：`updateSuspenseListComponent()`、`findFirstSuspended()` 与列表第二遍完成逻辑。
-   */
+  /** A/B/C 均标记 avoidThisFallback：初挂 A 待决时显示外层 Loading；A 完成后追加 B/C 时保留 A 并使用其加载占位，B 单独完成仍等待 C。验证避让标记受当前可见 shell 条件约束。 */
   // @gate enableSuspenseList && enableSuspenseAvoidThisFallback
   it('avoided boundaries can be coordinate with SuspenseList', async () => {
     const A = createAsyncText('A');
     const B = createAsyncText('B');
     const C = createAsyncText('C');
 
-    /** Foo 组织当前 Suspense/SuspenseList 边界、资源行与更新入口，服务于“驱动 SuspenseList 行的挂起、解决与提交，确认列表协调策略”场景。 */
+    /** 外包 Loading 边界，内层 together 各行标记 avoidThisFallback，并可追加 B/C。 */
     function Foo({showMore}) {
       return (
         <Suspense fallback={<Text text="Loading" />}>
@@ -963,7 +855,6 @@ describe('ReactSuspenseList', () => {
 
     expect(ReactNoop).toMatchRenderedOutput(<span>A</span>);
 
-    // 安排目标状态更新，并检查它在挂起、重试和提交之间不会丢失。
     ReactNoop.render(<Foo showMore={true} />);
 
     await waitForAll([
@@ -977,10 +868,8 @@ describe('ReactSuspenseList', () => {
       'Loading C',
     ]);
 
-    // 推进或等待指定时间窗口，观察 Suspense 的节流、超时与恢复时机。
     jest.advanceTimersByTime(500);
 
-    // 检查当前时刻应显示或保留的 fallback，避免主内容与占位错误切换。
     expect(ReactNoop).toMatchRenderedOutput(
       <>
         <span>A</span>
@@ -992,7 +881,6 @@ describe('ReactSuspenseList', () => {
     await act(() => B.resolve());
     assertLog(['B', 'Suspend! [C]']);
 
-    // 推进或等待指定时间窗口，观察 Suspense 的节流、超时与恢复时机。
     expect(ReactNoop).toMatchRenderedOutput(
       <>
         <span>A</span>
@@ -1013,21 +901,14 @@ describe('ReactSuspenseList', () => {
     );
   });
 
-  /**
-   * Given：已构造边界树、资源状态和调度检查点，用于驱动 SuspenseList 行的挂起、解决与提交，确认列表协调策略。
-   * When：执行挂起、fallback 提交以及用例指定的更新或恢复步骤。
-   * Then：驱动 SuspenseList 行的挂起、解决与提交，确认列表协调策略。
-   *
-   * 验证机制：调度日志和分段等待锁定 yield、ping 与重试顺序，宿主输出断言区分主内容、隐藏内容和 fallback。
-   * 对应源码：`updateSuspenseListComponent()`、`findFirstSuspended()` 与列表第二遍完成逻辑。
-   */
+  /** together 各边界没有 fallback：A 初挂待决时输出 null，A 完成后追加 B/C 保留 A，B 完成不单独出现，C 完成后输出 ABC。验证省略 fallback 的行仍参与组协调。 */
   // @gate enableSuspenseList
   it('boundaries without fallbacks can be coordinate with SuspenseList', async () => {
     const A = createAsyncText('A');
     const B = createAsyncText('B');
     const C = createAsyncText('C');
 
-    /** Foo 组织当前 Suspense/SuspenseList 边界、资源行与更新入口，服务于“驱动 SuspenseList 行的挂起、解决与提交，确认列表协调策略”场景。 */
+    /** 外包 Loading 边界，内层 together 行省略 fallback 并可追加 B/C。 */
     function Foo({showMore}) {
       return (
         <Suspense fallback={<Text text="Loading" />}>
@@ -1064,7 +945,6 @@ describe('ReactSuspenseList', () => {
 
     expect(ReactNoop).toMatchRenderedOutput(<span>A</span>);
 
-    // 安排目标状态更新，并检查它在挂起、重试和提交之间不会丢失。
     ReactNoop.render(<Foo showMore={true} />);
 
     await waitForAll([
@@ -1077,16 +957,13 @@ describe('ReactSuspenseList', () => {
       // 该检查点预期为空值，不应提交可见行。
     ]);
 
-    // 推进或等待指定时间窗口，观察 Suspense 的节流、超时与恢复时机。
     jest.advanceTimersByTime(500);
 
-    // 检查当前时刻应显示或保留的 fallback，避免主内容与占位错误切换。
     expect(ReactNoop).toMatchRenderedOutput(<span>A</span>);
 
     await act(() => B.resolve());
     assertLog(['B', 'Suspend! [C]']);
 
-    // 推进或等待指定时间窗口，观察 Suspense 的节流、超时与恢复时机。
     expect(ReactNoop).toMatchRenderedOutput(<span>A</span>);
 
     await act(() => C.resolve());
@@ -1101,21 +978,14 @@ describe('ReactSuspenseList', () => {
     );
   });
 
-  /**
-   * Given：已构造边界树、资源状态和调度检查点，用于按不同解决顺序唤醒行，确认 forwards 只从头部连续揭示已就绪内容。
-   * When：按用例顺序解决资源并冲刷 ping 触发的重试。
-   * Then：按不同解决顺序唤醒行，确认 forwards 只从头部连续揭示已就绪内容。
-   *
-   * 验证机制：调度日志和分段等待锁定 yield、ping 与重试顺序，宿主输出断言区分主内容、隐藏内容和 fallback。
-   * 对应源码：`updateSuspenseListComponent()`、`findFirstSuspended()` 与列表第二遍完成逻辑。
-   */
+  /** forwards/visible 三行先预解 C；初始仍全为 fallback，A 完成显示 A 和 B/C fallback，B 完成才同时显示 B/C。验证后方已完成 C 不能越过待决 B。 */
   // @gate enableSuspenseList
   it('displays each items in "forwards" order', async () => {
     const A = createAsyncText('A');
     const B = createAsyncText('B');
     const C = createAsyncText('C');
 
-    /** Foo 组织当前 Suspense/SuspenseList 边界、资源行与更新入口，服务于“按不同解决顺序唤醒行，确认 forwards 只从头部连续揭示已就绪内容”场景。 */
+    /** 用 forwards/visible 的 A/B/C 检查后方预解 C 是否被前行阻塞。 */
     function Foo() {
       return (
         <SuspenseList revealOrder="forwards" tail="visible">
@@ -1176,21 +1046,14 @@ describe('ReactSuspenseList', () => {
     );
   });
 
-  /**
-   * Given：已构造边界树、资源状态和调度检查点，用于按不同解决顺序唤醒行，确认 backwards 从尾部向前连续揭示。
-   * When：按用例顺序解决资源并冲刷 ping 触发的重试。
-   * Then：按不同解决顺序唤醒行，确认 backwards 从尾部向前连续揭示。
-   *
-   * 验证机制：调度日志和分段等待锁定 yield、ping 与重试顺序，宿主输出断言区分主内容、隐藏内容和 fallback。
-   * 对应源码：`updateSuspenseListComponent()`、`findFirstSuspended()` 与列表第二遍完成逻辑。
-   */
+  /** backwards/visible 输入行序为 C/B/A，预解 A；初始全 fallback，解析 C 后仅 C 可见，解析 B 后宿主输出 ABC。验证此新 backwards 选项反转呈现行序，与 legacy 选项区分。 */
   // @gate enableSuspenseList
   it('displays each items in "backwards" order', async () => {
     const A = createAsyncText('A');
     const B = createAsyncText('B');
     const C = createAsyncText('C');
 
-    /** Foo 组织当前 Suspense/SuspenseList 边界、资源行与更新入口，服务于“按不同解决顺序唤醒行，确认 backwards 从尾部向前连续揭示”场景。 */
+    /** 按 C/B/A 输入给 backwards/visible，检查渲染与宿主排列的反向关系。 */
     function Foo() {
       return (
         <SuspenseList revealOrder="backwards" tail="visible">
@@ -1256,21 +1119,14 @@ describe('ReactSuspenseList', () => {
     );
   });
 
-  /**
-   * Given：已构造边界树、资源状态和调度检查点，用于按不同解决顺序唤醒行，确认 backwards 从尾部向前连续揭示。
-   * When：按用例顺序解决资源并冲刷 ping 触发的重试。
-   * Then：按不同解决顺序唤醒行，确认 backwards 从尾部向前连续揭示。
-   *
-   * 验证机制：调度日志和分段等待锁定 yield、ping 与重试顺序，宿主输出断言区分主内容、隐藏内容和 fallback。
-   * 对应源码：`updateSuspenseListComponent()`、`findFirstSuspended()` 与列表第二遍完成逻辑。
-   */
+  /** unstable_legacy-backwards 输入 A/B/C，预解 A；从 C 向前协调，C 完成先显示 C，B 完成后输出 ABC。验证旧选项保留输入宿主顺序，仅反向处理 tail。 */
   // @gate enableSuspenseList
   it('displays each items in "backwards" order (legacy)', async () => {
     const A = createAsyncText('A');
     const B = createAsyncText('B');
     const C = createAsyncText('C');
 
-    /** Foo 组织当前 Suspense/SuspenseList 边界、资源行与更新入口，服务于“按不同解决顺序唤醒行，确认 backwards 从尾部向前连续揭示”场景。 */
+    /** 按 A/B/C 输入 legacy-backwards/visible，检查从尾部揭示而保留宿主次序。 */
     function Foo() {
       return (
         <SuspenseList revealOrder="unstable_legacy-backwards" tail="visible">
@@ -1336,14 +1192,7 @@ describe('ReactSuspenseList', () => {
     );
   });
 
-  /**
-   * Given：已构造边界树、资源状态和调度检查点，用于让多行或嵌套列表分批解决，确认 together 模式只在全部就绪后一次揭示。
-   * When：按用例顺序解决资源并冲刷 ping 触发的重试。
-   * Then：让多行或嵌套列表分批解决，确认 together 模式只在全部就绪后一次揭示。
-   *
-   * 验证机制：调度日志和分段等待锁定 yield、ping 与重试顺序，宿主输出断言区分主内容、隐藏内容和 fallback。
-   * 对应源码：`updateSuspenseListComponent()`、`findFirstSuspended()` 与列表第二遍完成逻辑。
-   */
+  /** 已显示 B/D 后插入 A/C/E/F；A 单独完成仍等待 head 内 C，C 完成后揭示 ABCD，再逐行揭示 E/F；最后删成 DEF。验证最后已显示行前的 head 成组处理，之后 tail 按 forwards 推进。 */
   // @gate enableSuspenseList
   it('displays added row at the top "together" and the bottom in "forwards" order', async () => {
     const A = createAsyncText('A');
@@ -1353,7 +1202,7 @@ describe('ReactSuspenseList', () => {
     const E = createAsyncText('E');
     const F = createAsyncText('F');
 
-    /** Foo 组织当前 Suspense/SuspenseList 边界、资源行与更新入口，服务于“让多行或嵌套列表分批解决，确认 together 模式只在全部就绪后一次揭示”场景。 */
+    /** 按 items 的稳定 key 生成 forwards/visible 行，支持 head 插入、tail 追加和删除。 */
     function Foo({items}) {
       return (
         <SuspenseList revealOrder="forwards" tail="visible">
@@ -1430,7 +1279,6 @@ describe('ReactSuspenseList', () => {
     await act(() => A.resolve());
     assertLog(['A', 'Suspend! [C]']);
 
-    // 推进 thenable 资源状态并触发 ping，随后观察边界重试与已提交内容。
     expect(ReactNoop).toMatchRenderedOutput(
       <>
         <span>Loading A</span>
@@ -1451,7 +1299,6 @@ describe('ReactSuspenseList', () => {
       'Suspend! [E]',
     ]);
 
-    // 推进 thenable 资源状态并触发 ping，随后观察边界重试与已提交内容。
     expect(ReactNoop).toMatchRenderedOutput(
       <>
         <span>A</span>
@@ -1471,7 +1318,6 @@ describe('ReactSuspenseList', () => {
       'Suspend! [F]',
     ]);
 
-    // 推进 thenable 资源状态并触发 ping，随后观察边界重试与已提交内容。
     expect(ReactNoop).toMatchRenderedOutput(
       <>
         <span>A</span>
@@ -1496,7 +1342,6 @@ describe('ReactSuspenseList', () => {
       </>,
     );
 
-    // 删除目标子树并检查真实卸载清理；隐藏或未提交工作不得误触发。
     ReactNoop.render(
       <Foo
         items={[
@@ -1518,14 +1363,7 @@ describe('ReactSuspenseList', () => {
     );
   });
 
-  /**
-   * Given：已构造边界树、资源状态和调度检查点，用于让多行或嵌套列表分批解决，确认 together 模式只在全部就绪后一次揭示。
-   * When：按用例顺序解决资源并冲刷 ping 触发的重试。
-   * Then：让多行或嵌套列表分批解决，确认 together 模式只在全部就绪后一次揭示。
-   *
-   * 验证机制：调度日志和分段等待锁定 yield、ping 与重试顺序，宿主输出断言区分主内容、隐藏内容和 fallback。
-   * 对应源码：`updateSuspenseListComponent()`、`findFirstSuspended()` 与列表第二遍完成逻辑。
-   */
+  /** legacy-backwards 先显示六个同步行，再把 A/B/D/F 换成待决组件；F 完成仍等待 head 内 D，D 完成才揭示 DEF，之后 B、A 反向推进。验证反向 head 与 tail 分割而非所有行逐项独立提交。 */
   // @gate enableSuspenseList
   it('displays added row at the top "together" and the bottom in "backwards" order', async () => {
     const A = createAsyncText('A');
@@ -1533,7 +1371,7 @@ describe('ReactSuspenseList', () => {
     const D = createAsyncText('D');
     const F = createAsyncText('F');
 
-    /** createSyncText 作为“让多行或嵌套列表分批解决，确认 together 模式只在全部就绪后一次揭示”场景的测试 fixture，暴露对应渲染、资源或调度行为。 */
+    /** 返回同步文本行组件，作为异步行重排时的已就绪对照。 */
     function createSyncText(text) {
       return function () {
         return <Text text={text} />;
@@ -1547,7 +1385,7 @@ describe('ReactSuspenseList', () => {
     const Es = createSyncText('E');
     const Fs = createSyncText('F');
 
-    /** Foo 组织当前 Suspense/SuspenseList 边界、资源行与更新入口，服务于“让多行或嵌套列表分批解决，确认 together 模式只在全部就绪后一次揭示”场景。 */
+    /** 按 items 生成 legacy-backwards/visible 行，并以同步与异步组件替换同 key 内容。 */
     function Foo({items}) {
       return (
         <SuspenseList revealOrder="unstable_legacy-backwards" tail="visible">
@@ -1560,7 +1398,6 @@ describe('ReactSuspenseList', () => {
       );
     }
 
-    // 该步骤让目标内容挂起，用于检查 unwind、fallback 选择和后续重试。
     ReactNoop.render(
       <Foo
         items={[
@@ -1585,7 +1422,6 @@ describe('ReactSuspenseList', () => {
       </>,
     );
 
-    // 该步骤让目标内容挂起，用于检查 unwind、fallback 选择和后续重试。
     ReactNoop.render(
       <Foo
         items={[
@@ -1625,7 +1461,6 @@ describe('ReactSuspenseList', () => {
       'Suspend! [F]',
     ]);
 
-    // 推进或等待指定时间窗口，观察 Suspense 的节流、超时与恢复时机。
     jest.advanceTimersByTime(500);
 
     expect(ReactNoop).toMatchRenderedOutput(
@@ -1647,7 +1482,6 @@ describe('ReactSuspenseList', () => {
 
     await waitForAll(['Suspend! [D]', 'F']);
 
-    // 推进 thenable 资源状态并触发 ping，随后观察边界重试与已提交内容。
     expect(ReactNoop).toMatchRenderedOutput(
       <>
         <span hidden={true}>A</span>
@@ -1672,7 +1506,6 @@ describe('ReactSuspenseList', () => {
       'Suspend! [B]',
     ]);
 
-    // 推进 thenable 资源状态并触发 ping，随后观察边界重试与已提交内容。
     expect(ReactNoop).toMatchRenderedOutput(
       <>
         <span hidden={true}>A</span>
@@ -1694,7 +1527,6 @@ describe('ReactSuspenseList', () => {
       'Suspend! [A]',
     ]);
 
-    // 推进 thenable 资源状态并触发 ping，随后观察边界重试与已提交内容。
     expect(ReactNoop).toMatchRenderedOutput(
       <>
         <span hidden={true}>A</span>
@@ -1722,17 +1554,10 @@ describe('ReactSuspenseList', () => {
     );
   });
 
-  /**
-   * Given：已构造边界树、资源状态和调度检查点，用于制造高 CPU 行和两阶段渲染，确认超时后切换 fallback 并逐步提交昂贵内容。
-   * When：推进虚拟时间、消耗 CPU 预算并继续冲刷渲染。
-   * Then：制造高 CPU 行和两阶段渲染，确认超时后切换 fallback 并逐步提交昂贵内容。
-   *
-   * 验证机制：调度日志和分段等待锁定 yield、ping 与重试顺序，宿主输出断言区分主内容、隐藏内容和 fallback。
-   * 对应源码：`updateSuspenseListComponent()`、`completeWork()` 与 `cutOffTailIfNeeded()`。
-   */
+  /** 三行均同步：transition 渲染 A 后推进 200ms、B 后再推进 300ms；此时仍未提交，随后先提交 AB/Loading C，再完成 ABC。验证 CPU 预算也能触发 tail fallback，不需要 Promise 挂起。 */
   // @gate enableSuspenseList
   it('switches to rendering fallbacks if the tail takes long CPU time', async () => {
-    /** Foo 组织当前 Suspense/SuspenseList 边界、资源行与更新入口，服务于“制造高 CPU 行和两阶段渲染，确认超时后切换 fallback 并逐步提交昂贵内容”场景。 */
+    /** 在 forwards/visible 列表中放置三个同步 Text，预算由测试在让出点推进。 */
     function Foo() {
       return (
         <SuspenseList revealOrder="forwards" tail="visible">
@@ -1749,7 +1574,6 @@ describe('ReactSuspenseList', () => {
       );
     }
 
-    // 该步骤让目标内容挂起，用于检查 unwind、fallback 选择和后续重试。
     await act(async () => {
       React.startTransition(() => {
         ReactNoop.render(<Foo />);
@@ -1768,7 +1592,6 @@ describe('ReactSuspenseList', () => {
       // 尽管已投入渲染时间，当前仍没有可安全提交的内容。
       expect(ReactNoop).toMatchRenderedOutput(null);
 
-      // 推进或等待指定时间窗口，观察 Suspense 的节流、超时与恢复时机。
       await waitFor([
         'Loading C',
         'C', // 分段冲刷或让出调度工作，以锁定当前渲染检查点。
@@ -1782,7 +1605,6 @@ describe('ReactSuspenseList', () => {
         </>,
       );
     });
-    // 推进或等待指定时间窗口，观察 Suspense 的节流、超时与恢复时机。
     assertLog([]);
     expect(ReactNoop).toMatchRenderedOutput(
       <>
@@ -1793,21 +1615,14 @@ describe('ReactSuspenseList', () => {
     );
   });
 
-  /**
-   * Given：已构造边界树、资源状态和调度检查点，用于向 collapsed tail 插入或逐步解决多行，确认同一时刻最多保留一个加载占位。
-   * When：执行挂起、fallback 提交以及用例指定的更新或恢复步骤。
-   * Then：向 collapsed tail 插入或逐步解决多行，确认同一时刻最多保留一个加载占位。
-   *
-   * 验证机制：调度日志和分段等待锁定 yield、ping 与重试顺序，宿主输出断言区分主内容、隐藏内容和 fallback。
-   * 对应源码：`updateSuspenseListComponent()`、`completeWork()` 与 `cutOffTailIfNeeded()`。
-   */
+  /** collapsed 三个待决新行按 A→B→C 解析；可见结果依次 Loading A、A/Loading B、AB/Loading C、ABC，验证新 tail 同时只保留一份占位。 */
   // @gate enableSuspenseList
   it('only shows one loading state at a time for "collapsed" tail insertions', async () => {
     const A = createAsyncText('A');
     const B = createAsyncText('B');
     const C = createAsyncText('C');
 
-    /** Foo 组织当前 Suspense/SuspenseList 边界、资源行与更新入口，服务于“向 collapsed tail 插入或逐步解决多行，确认同一时刻最多保留一个加载占位”场景。 */
+    /** 把三个新异步行置于 forwards/collapsed，检查占位随进度向后移动。 */
     function Foo() {
       return (
         <SuspenseList revealOrder="forwards" tail="collapsed">
@@ -1839,7 +1654,6 @@ describe('ReactSuspenseList', () => {
 
     await waitForAll(['A', 'Suspend! [B]', 'Loading B']);
 
-    // 该步骤让目标内容挂起，用于检查 unwind、fallback 选择和后续重试。
     jest.advanceTimersByTime(500);
 
     expect(ReactNoop).toMatchRenderedOutput(
@@ -1853,7 +1667,6 @@ describe('ReactSuspenseList', () => {
 
     await waitForAll(['B', 'Suspend! [C]', 'Loading C']);
 
-    // 该步骤让目标内容挂起，用于检查 unwind、fallback 选择和后续重试。
     jest.advanceTimersByTime(500);
 
     expect(ReactNoop).toMatchRenderedOutput(
@@ -1876,21 +1689,14 @@ describe('ReactSuspenseList', () => {
     );
   });
 
-  /**
-   * Given：已构造边界树、资源状态和调度检查点，用于在 hidden tail 中插入、解决或重新挂起行，确认未就绪尾部被裁剪且已提交行保持。
-   * When：执行挂起、fallback 提交以及用例指定的更新或恢复步骤。
-   * Then：在 hidden tail 中插入、解决或重新挂起行，确认未就绪尾部被裁剪且已提交行保持。
-   *
-   * 验证机制：调度日志和分段等待锁定 yield、ping 与重试顺序，宿主输出断言区分主内容、隐藏内容和 fallback。
-   * 对应源码：`updateSuspenseListComponent()`、`completeWork()` 与 `cutOffTailIfNeeded()`。
-   */
+  /** forwards 省略 tail：初始 A 待决输出 null，解析 A/B 后分别只显示 A/AB，最后 ABC。验证省略 tail 等于 hidden，而非 visible 或 collapsed。 */
   // @gate enableSuspenseList
   it('behaves as tail=hidden if no tail option is specified', async () => {
     const A = createAsyncText('A');
     const B = createAsyncText('B');
     const C = createAsyncText('C');
 
-    /** Foo 组织当前 Suspense/SuspenseList 边界、资源行与更新入口，服务于“在 hidden tail 中插入、解决或重新挂起行，确认未就绪尾部被裁剪且已提交行保持”场景。 */
+    /** 仅设置 forwards，三行各有 fallback 以验证默认 tail 会裁剪占位。 */
     function Foo() {
       return (
         <SuspenseList revealOrder="forwards">
@@ -1917,7 +1723,6 @@ describe('ReactSuspenseList', () => {
 
     await waitForAll(['A', 'Suspend! [B]', 'Loading B']);
 
-    // 该步骤让目标内容挂起，用于检查 unwind、fallback 选择和后续重试。
     jest.advanceTimersByTime(500);
 
     expect(ReactNoop).toMatchRenderedOutput(<span>A</span>);
@@ -1925,7 +1730,6 @@ describe('ReactSuspenseList', () => {
     await act(() => B.resolve());
     assertLog(['B', 'Suspend! [C]', 'Loading C']);
 
-    // 该步骤让目标内容挂起，用于检查 unwind、fallback 选择和后续重试。
     jest.advanceTimersByTime(500);
 
     expect(ReactNoop).toMatchRenderedOutput(
@@ -1947,17 +1751,10 @@ describe('ReactSuspenseList', () => {
     );
   });
 
-  /**
-   * Given：已构造边界树、资源状态和调度检查点，用于把非法 tail 或不适用的 tail 与 revealOrder 组合，确认开发态拒绝配置。
-   * When：渲染包含该非法配置或 children 形状的列表。
-   * Then：把非法 tail 或不适用的 tail 与 revealOrder 组合，确认开发态拒绝配置。
-   *
-   * 验证机制：控制台断言限定开发态诊断。
-   * 对应源码：`updateSuspenseListComponent()`、`completeWork()` 与 `cutOffTailIfNeeded()`。
-   */
+  /** 输入 forwards 配合 tail=collapse；开发态警告并列出 visible/collapsed/hidden，检查非法 tail 的精确建议。 */
   // @gate enableSuspenseList
   it('warns if an unsupported tail option is used', async () => {
-    /** Foo 组织当前 Suspense/SuspenseList 边界、资源行与更新入口，服务于“把非法 tail 或不适用的 tail 与 revealOrder 组合，确认开发态拒绝配置”场景。 */
+    /** 为 forwards 两行设置拼错的 collapse，触发 tail 诊断。 */
     function Foo() {
       return (
         <SuspenseList revealOrder="forwards" tail="collapse">
@@ -1978,17 +1775,10 @@ describe('ReactSuspenseList', () => {
     ]);
   });
 
-  /**
-   * Given：已构造边界树、资源状态和调度检查点，用于把非法 tail 或不适用的 tail 与 revealOrder 组合，确认开发态拒绝配置。
-   * When：渲染包含该非法配置或 children 形状的列表。
-   * Then：把非法 tail 或不适用的 tail 与 revealOrder 组合，确认开发态拒绝配置。
-   *
-   * 验证机制：控制台断言限定开发态诊断。
-   * 对应源码：`updateSuspenseListComponent()`、`completeWork()` 与 `cutOffTailIfNeeded()`。
-   */
+  /** 输入 together 配合 collapsed；开发态警告 tail 仅适用于有序选项，并建议 forwards。只验证配置告警，不断言渲染被拒绝。 */
   // @gate enableSuspenseList
   it('warns if a tail option is used with "together"', async () => {
-    /** Foo 组织当前 Suspense/SuspenseList 边界、资源行与更新入口，服务于“把非法 tail 或不适用的 tail 与 revealOrder 组合，确认开发态拒绝配置”场景。 */
+    /** 为 together 单行配置 collapsed，触发不适用组合的警告。 */
     function Foo() {
       return (
         <SuspenseList revealOrder="together" tail="collapsed">
@@ -2009,17 +1799,10 @@ describe('ReactSuspenseList', () => {
     ]);
   });
 
-  /**
-   * Given：已构造边界树、资源状态和调度检查点，用于制造高 CPU 行和两阶段渲染，确认超时后切换 fallback 并逐步提交昂贵内容。
-   * When：推进虚拟时间、消耗 CPU 预算并继续冲刷渲染。
-   * Then：制造高 CPU 行和两阶段渲染，确认超时后切换 fallback 并逐步提交昂贵内容。
-   *
-   * 验证机制：调度日志和分段等待锁定 yield、ping 与重试顺序，宿主输出断言区分主内容、隐藏内容和 fallback。
-   * 对应源码：`updateSuspenseListComponent()`、`completeWork()` 与 `cutOffTailIfNeeded()`。
-   */
+  /** 四行同步 Text 放在 collapsed 中；A 后推进 200ms、B 后推进 300ms，先得到 AB/Loading C，随后完成 ABCD。验证 CPU 预算结束时仍保留一份新 tail 占位。 */
   // @gate enableSuspenseList
   it('renders one "collapsed" fallback even if CPU time elapsed', async () => {
-    /** Foo 组织当前 Suspense/SuspenseList 边界、资源行与更新入口，服务于“制造高 CPU 行和两阶段渲染，确认超时后切换 fallback 并逐步提交昂贵内容”场景。 */
+    /** 在 forwards/collapsed 列表放置四个同步行，比较预算 fallback 与下一轮内容。 */
     function Foo() {
       return (
         <SuspenseList revealOrder="forwards" tail="collapsed">
@@ -2039,7 +1822,6 @@ describe('ReactSuspenseList', () => {
       );
     }
 
-    // 该步骤让目标内容挂起，用于检查 unwind、fallback 选择和后续重试。
     await act(async () => {
       React.startTransition(() => {
         ReactNoop.render(<Foo />);
@@ -2058,7 +1840,6 @@ describe('ReactSuspenseList', () => {
       // 尽管已投入渲染时间，当前仍没有可安全提交的内容。
       expect(ReactNoop).toMatchRenderedOutput(null);
 
-      // 推进或等待指定时间窗口，观察 Suspense 的节流、超时与恢复时机。
       await waitFor([
         'Loading C',
         'C', // 分段冲刷或让出调度工作，以锁定当前渲染检查点。
@@ -2072,7 +1853,6 @@ describe('ReactSuspenseList', () => {
         </>,
       );
     });
-    // 推进或等待指定时间窗口，观察 Suspense 的节流、超时与恢复时机。
     assertLog(['D']);
     expect(ReactNoop).toMatchRenderedOutput(
       <>
@@ -2084,14 +1864,7 @@ describe('ReactSuspenseList', () => {
     );
   });
 
-  /**
-   * Given：已构造边界树、资源状态和调度检查点，用于驱动 SuspenseList 行的挂起、解决与提交，确认列表协调策略。
-   * When：执行挂起、fallback 提交以及用例指定的更新或恢复步骤。
-   * Then：驱动 SuspenseList 行的挂起、解决与提交，确认列表协调策略。
-   *
-   * 验证机制：调度日志和分段等待锁定 yield、ping 与重试顺序，宿主输出断言区分主内容、隐藏内容和 fallback。
-   * 对应源码：`updateSuspenseListComponent()`、`findFirstSuspended()` 与列表第二遍完成逻辑。
-   */
+  /** collapsed 已显示 A/D 后插入 B/C/E/F；head 中 B/C 的两份占位同时保留，tail 仅显示 Loading E。B 完成仍等 C，之后揭示 BCE 并把唯一 tail 占位移到 F。验证 collapsed 不裁剪已显示区间内插入行。 */
   // @gate enableSuspenseList
   it('adding to the middle does not collapse insertions (forwards)', async () => {
     const A = createAsyncText('A');
@@ -2101,7 +1874,7 @@ describe('ReactSuspenseList', () => {
     const E = createAsyncText('E');
     const F = createAsyncText('F');
 
-    /** Foo 组织当前 Suspense/SuspenseList 边界、资源行与更新入口，服务于“驱动 SuspenseList 行的挂起、解决与提交，确认列表协调策略”场景。 */
+    /** 按 key 生成 forwards/collapsed 行，A/D 之间插入 B/C、末尾追加 E/F。 */
     function Foo({items}) {
       return (
         <SuspenseList revealOrder="forwards" tail="collapsed">
@@ -2128,7 +1901,6 @@ describe('ReactSuspenseList', () => {
 
     await waitForAll(['A', 'D']);
 
-    // 完成或检查本轮提交，区分已完成工作与仅渲染未提交的内容。
     expect(ReactNoop).toMatchRenderedOutput(
       <>
         <span>A</span>
@@ -2164,7 +1936,6 @@ describe('ReactSuspenseList', () => {
       'Loading E',
     ]);
 
-    // 检查 SuspenseList 当前行、揭示顺序与 tail 裁剪状态。
     expect(ReactNoop).toMatchRenderedOutput(
       <>
         <span>A</span>
@@ -2179,7 +1950,6 @@ describe('ReactSuspenseList', () => {
 
     await waitForAll(['B', 'Suspend! [C]']);
 
-    // 该步骤让目标内容挂起，用于检查 unwind、fallback 选择和后续重试。
     jest.advanceTimersByTime(500);
 
     // 该行仍被后续未就绪行阻塞，不能提前揭示。
@@ -2229,14 +1999,7 @@ describe('ReactSuspenseList', () => {
     );
   });
 
-  /**
-   * Given：已构造边界树、资源状态和调度检查点，用于驱动 SuspenseList 行的挂起、解决与提交，确认列表协调策略。
-   * When：执行挂起、fallback 提交以及用例指定的更新或恢复步骤。
-   * Then：驱动 SuspenseList 行的挂起、解决与提交，确认列表协调策略。
-   *
-   * 验证机制：调度日志和分段等待锁定 yield、ping 与重试顺序，宿主输出断言区分主内容、隐藏内容和 fallback。
-   * 对应源码：`updateSuspenseListComponent()`、`findFirstSuspended()` 与列表第二遍完成逻辑。
-   */
+  /** legacy-backwards/collapsed 已显示 C/F 后插入 A/B/D/E；head 的 D/E 占位均保留，反向 tail 只显示 Loading B。D 完成仍等 E，随后推进到 Loading A，最后 ABCDEF。验证反向中部插入不被 collapsed 合并掉。 */
   // @gate enableSuspenseList
   it('adding to the middle does not collapse insertions (backwards)', async () => {
     const A = createAsyncText('A');
@@ -2246,7 +2009,7 @@ describe('ReactSuspenseList', () => {
     const E = createAsyncText('E');
     const F = createAsyncText('F');
 
-    /** Foo 组织当前 Suspense/SuspenseList 边界、资源行与更新入口，服务于“驱动 SuspenseList 行的挂起、解决与提交，确认列表协调策略”场景。 */
+    /** 按 key 生成 legacy-backwards/collapsed 行，C/F 之间插入 D/E、前面追加 A/B。 */
     function Foo({items}) {
       return (
         <SuspenseList revealOrder="unstable_legacy-backwards" tail="collapsed">
@@ -2273,7 +2036,6 @@ describe('ReactSuspenseList', () => {
 
     await waitForAll(['F', 'C']);
 
-    // 完成或检查本轮提交，区分已完成工作与仅渲染未提交的内容。
     expect(ReactNoop).toMatchRenderedOutput(
       <>
         <span>C</span>
@@ -2309,7 +2071,6 @@ describe('ReactSuspenseList', () => {
       'Loading B',
     ]);
 
-    // 检查 SuspenseList 当前行、揭示顺序与 tail 裁剪状态。
     expect(ReactNoop).toMatchRenderedOutput(
       <>
         <span>Loading B</span>
@@ -2324,7 +2085,6 @@ describe('ReactSuspenseList', () => {
 
     await waitForAll(['D', 'Suspend! [E]']);
 
-    // 该步骤让目标内容挂起，用于检查 unwind、fallback 选择和后续重试。
     jest.advanceTimersByTime(500);
 
     // 该行仍被后续未就绪行阻塞，不能提前揭示。
@@ -2379,14 +2139,7 @@ describe('ReactSuspenseList', () => {
     );
   });
 
-  /**
-   * Given：已构造边界树、资源状态和调度检查点，用于驱动 SuspenseList 行的挂起、解决与提交，确认列表协调策略。
-   * When：执行挂起、fallback 提交以及用例指定的更新或恢复步骤。
-   * Then：驱动 SuspenseList 行的挂起、解决与提交，确认列表协调策略。
-   *
-   * 验证机制：调度日志和分段等待锁定 yield、ping 与重试顺序，宿主输出断言区分主内容、隐藏内容和 fallback。
-   * 对应源码：`updateSuspenseListComponent()`、`completeWork()` 与 `cutOffTailIfNeeded()`。
-   */
+  /** collapsed 先显示 A 与同步 D；插入 B/C/E/F 并把 D 改成异步后，D 的旧宿主节点隐藏但保留，B 完成可先出现。验证已提交行转入 fallback 后仍界定 tail，和未挂载 head 插入的成组等待不同。 */
   // @gate enableSuspenseList
   it('adding to the middle of committed tail does not collapse insertions', async () => {
     const A = createAsyncText('A');
@@ -2396,12 +2149,12 @@ describe('ReactSuspenseList', () => {
     const E = createAsyncText('E');
     const F = createAsyncText('F');
 
-    /** SyncD 构造可挂起、可更新或高成本的内容行，并把执行进度写入调度日志。 */
+    /** 固定输出同步 D，作为稍后同 key 改用异步 D 时保留的旧主树。 */
     function SyncD() {
       return <Text text="D" />;
     }
 
-    /** Foo 组织当前 Suspense/SuspenseList 边界、资源行与更新入口，服务于“驱动 SuspenseList 行的挂起、解决与提交，确认列表协调策略”场景。 */
+    /** 按 key 生成 forwards/collapsed 行，允许把已显示同步 D 替换为异步 D。 */
     function Foo({items}) {
       return (
         <SuspenseList revealOrder="forwards" tail="collapsed">
@@ -2427,7 +2180,6 @@ describe('ReactSuspenseList', () => {
 
     await waitForAll(['A', 'D']);
 
-    // 完成或检查本轮提交，区分已完成工作与仅渲染未提交的内容。
     expect(ReactNoop).toMatchRenderedOutput(
       <>
         <span>A</span>
@@ -2467,10 +2219,8 @@ describe('ReactSuspenseList', () => {
       'Suspend! [B]',
     ]);
 
-    // 该步骤让目标内容挂起，用于检查 unwind、fallback 选择和后续重试。
     jest.advanceTimersByTime(500);
 
-    // 该步骤让目标内容挂起，用于检查 unwind、fallback 选择和后续重试。
     expect(ReactNoop).toMatchRenderedOutput(
       <>
         <span>A</span>
@@ -2490,10 +2240,8 @@ describe('ReactSuspenseList', () => {
       ...(!gate('alwaysThrottleRetries') ? ['Suspend! [C]'] : []),
     ]);
 
-    // 该步骤让目标内容挂起，用于检查 unwind、fallback 选择和后续重试。
     jest.advanceTimersByTime(500);
 
-    // 检查 SuspenseList 当前行、揭示顺序与 tail 裁剪状态。
     expect(ReactNoop).toMatchRenderedOutput(
       <>
         <span>A</span>
@@ -2542,21 +2290,14 @@ describe('ReactSuspenseList', () => {
     );
   });
 
-  /**
-   * Given：已构造边界树、资源状态和调度检查点，用于在 hidden tail 中插入、解决或重新挂起行，确认未就绪尾部被裁剪且已提交行保持。
-   * When：执行挂起、fallback 提交以及用例指定的更新或恢复步骤。
-   * Then：在 hidden tail 中插入、解决或重新挂起行，确认未就绪尾部被裁剪且已提交行保持。
-   *
-   * 验证机制：调度日志和分段等待锁定 yield、ping 与重试顺序，宿主输出断言区分主内容、隐藏内容和 fallback。
-   * 对应源码：`updateSuspenseListComponent()`、`completeWork()` 与 `cutOffTailIfNeeded()`。
-   */
+  /** 显式 hidden 的 A/B/C 都待决；逐一解析得到 null→A→AB→ABC，加载 Text 虽被渲染却不成为可见输出。验证初挂 tail 的 fallback 被裁剪。 */
   // @gate enableSuspenseList
   it('only shows no initial loading state "hidden" tail insertions', async () => {
     const A = createAsyncText('A');
     const B = createAsyncText('B');
     const C = createAsyncText('C');
 
-    /** Foo 组织当前 Suspense/SuspenseList 边界、资源行与更新入口，服务于“在 hidden tail 中插入、解决或重新挂起行，确认未就绪尾部被裁剪且已提交行保持”场景。 */
+    /** 显式设置 forwards/hidden，三行自带 fallback 用于观察渲染与提交差别。 */
     function Foo() {
       return (
         <SuspenseList revealOrder="forwards" tail="hidden">
@@ -2583,7 +2324,6 @@ describe('ReactSuspenseList', () => {
 
     await waitForAll(['A', 'Suspend! [B]', 'Loading B']);
 
-    // 该步骤让目标内容挂起，用于检查 unwind、fallback 选择和后续重试。
     jest.advanceTimersByTime(500);
 
     expect(ReactNoop).toMatchRenderedOutput(<span>A</span>);
@@ -2591,7 +2331,6 @@ describe('ReactSuspenseList', () => {
     await act(() => B.resolve());
     assertLog(['B', 'Suspend! [C]', 'Loading C']);
 
-    // 该步骤让目标内容挂起，用于检查 unwind、fallback 选择和后续重试。
     jest.advanceTimersByTime(500);
 
     expect(ReactNoop).toMatchRenderedOutput(
@@ -2613,21 +2352,14 @@ describe('ReactSuspenseList', () => {
     );
   });
 
-  /**
-   * Given：已构造边界树、资源状态和调度检查点，用于在 hidden tail 中插入、解决或重新挂起行，确认未就绪尾部被裁剪且已提交行保持。
-   * When：按用例顺序解决资源并冲刷 ping 触发的重试。
-   * Then：在 hidden tail 中插入、解决或重新挂起行，确认未就绪尾部被裁剪且已提交行保持。
-   *
-   * 验证机制：调度日志和分段等待锁定 yield、ping 与重试顺序，宿主输出断言区分主内容、隐藏内容和 fallback。
-   * 对应源码：`updateSuspenseListComponent()`、`completeWork()` 与 `cutOffTailIfNeeded()`。
-   */
+  /** hidden 的直接行是 div/A、B、C，没有逐行边界，外包 Loading root；初始输出 null，解析 A/B/C 后逐项出现，外层 fallback 不阻止已完成前缀的揭示。 */
   // @gate enableSuspenseList
   it('reveals "hidden" rows one by one without suspense boundaries', async () => {
     const A = createAsyncText('A');
     const B = createAsyncText('B');
     const C = createAsyncText('C');
 
-    /** Foo 组织当前 Suspense/SuspenseList 边界、资源行与更新入口，服务于“在 hidden tail 中插入、解决或重新挂起行，确认未就绪尾部被裁剪且已提交行保持”场景。 */
+    /** 让 hidden 列表直接包含异步行，A 额外包在 div 下以检查宿主结构。 */
     function Foo() {
       return (
         <SuspenseList revealOrder="forwards" tail="hidden">
@@ -2648,7 +2380,6 @@ describe('ReactSuspenseList', () => {
 
     await waitForAll(['Suspend! [A]']);
 
-    // 检查 SuspenseList 当前行、揭示顺序与 tail 裁剪状态。
     expect(ReactNoop).toMatchRenderedOutput(null);
 
     await act(() => A.resolve());
@@ -2663,7 +2394,6 @@ describe('ReactSuspenseList', () => {
     await act(() => B.resolve());
     assertLog(['B', 'Suspend! [C]']);
 
-    // 该步骤让目标内容挂起，用于检查 unwind、fallback 选择和后续重试。
     jest.advanceTimersByTime(500);
 
     expect(ReactNoop).toMatchRenderedOutput(
@@ -2689,30 +2419,22 @@ describe('ReactSuspenseList', () => {
     );
   });
 
-  /**
-   * Given：已构造边界树、资源状态和调度检查点，用于在 hidden tail 中插入、解决或重新挂起行，确认未就绪尾部被裁剪且已提交行保持。
-   * When：执行挂起、fallback 提交以及用例指定的更新或恢复步骤。
-   * Then：在 hidden tail 中插入、解决或重新挂起行，确认未就绪尾部被裁剪且已提交行保持。
-   *
-   * 验证机制：调度日志和分段等待锁定 yield、ping 与重试顺序，宿主输出断言区分主内容、隐藏内容和 fallback。
-   * 对应源码：`updateSuspenseListComponent()`、`completeWork()` 与 `cutOffTailIfNeeded()`。
-   */
+  /** visible 先挂载 A 和仍显示 fallback 的 C，MountCount=1；换成 hidden 并在 C 前插入待决 B 时 C fallback 仍保留，解析 B/C 后为 ABC且 count 仍为1。验证已挂载 tail 行不被裁剪重挂载。 */
   // @gate enableSuspenseList
   it('preserves already mounted rows when a new hidden on is inserted in the tail', async () => {
     const B = createAsyncText('B');
     const C = createAsyncText('C');
 
     let count = 0;
-    /** MountCount 作为“在 hidden tail 中插入、解决或重新挂起行，确认未就绪尾部被裁剪且已提交行保持”场景的测试 fixture，暴露对应渲染、资源或调度行为。 */
+    /** 在 layout mount 增加计数，检测 tail 行是否错误重挂载。 */
     function MountCount({children}) {
-      // 检查挂载、生命周期或 Effect 只在对应提交阶段执行。
       React.useLayoutEffect(() => {
         count++;
       }, []);
       return children;
     }
 
-    /** Foo 组织当前 Suspense/SuspenseList 边界、资源行与更新入口，服务于“在 hidden tail 中插入、解决或重新挂起行，确认未就绪尾部被裁剪且已提交行保持”场景。 */
+    /** 随 insert 从 visible 切到 hidden，并在 MountCount 包装的 C 前插入 B。 */
     function Foo({insert}) {
       return (
         <SuspenseList
@@ -2776,21 +2498,14 @@ describe('ReactSuspenseList', () => {
     );
   });
 
-  /**
-   * Given：已构造边界树、资源状态和调度检查点，用于向 collapsed tail 插入或逐步解决多行，确认同一时刻最多保留一个加载占位。
-   * When：按用例顺序解决资源并冲刷 ping 触发的重试。
-   * Then：向 collapsed tail 插入或逐步解决多行，确认同一时刻最多保留一个加载占位。
-   *
-   * 验证机制：调度日志和分段等待锁定 yield、ping 与重试顺序，宿主输出断言区分主内容、隐藏内容和 fallback。
-   * 对应源码：`updateSuspenseListComponent()`、`completeWork()` 与 `cutOffTailIfNeeded()`。
-   */
+  /** collapsed 直接 A/C 没有边界，只有 B 自带 fallback，外包 Loading root；A 待决显示 root fallback，A 完成显示 A/Loading B，B 完成仍被 C 阻塞，C 完成才显示 ABC。验证无边界行的挂起向外传播。 */
   // @gate enableSuspenseList
   it('reveals "collapsed" rows one by one after the first without boundaries', async () => {
     const A = createAsyncText('A');
     const B = createAsyncText('B');
     const C = createAsyncText('C');
 
-    /** Foo 组织当前 Suspense/SuspenseList 边界、资源行与更新入口，服务于“向 collapsed tail 插入或逐步解决多行，确认同一时刻最多保留一个加载占位”场景。 */
+    /** 将直接异步 A、带边界 B、直接异步 C 混合在 collapsed 列表中。 */
     function Foo() {
       return (
         <SuspenseList revealOrder="forwards" tail="collapsed">
@@ -2812,17 +2527,14 @@ describe('ReactSuspenseList', () => {
       await waitForAll(['Suspend! [A]', 'Suspend! [A]']);
     });
 
-    // 检查 SuspenseList 当前行、揭示顺序与 tail 裁剪状态。
     expect(ReactNoop).toMatchRenderedOutput('Loading root');
 
     await A.resolve();
 
     await waitForAll(['A', 'Suspend! [B]', 'Loading B']);
 
-    // 该步骤让目标内容挂起，用于检查 unwind、fallback 选择和后续重试。
     jest.advanceTimersByTime(500);
 
-    // 检查当前时刻应显示或保留的 fallback，避免主内容与占位错误切换。
     expect(ReactNoop).toMatchRenderedOutput(
       <>
         <span>A</span>
@@ -2833,10 +2545,8 @@ describe('ReactSuspenseList', () => {
     await act(() => B.resolve());
     assertLog(['B', 'Suspend! [C]', 'B', 'Suspend! [C]']);
 
-    // 该步骤让目标内容挂起，用于检查 unwind、fallback 选择和后续重试。
     jest.advanceTimersByTime(500);
 
-    // 该步骤让目标内容挂起，用于检查 unwind、fallback 选择和后续重试。
     expect(ReactNoop).toMatchRenderedOutput(
       <>
         <span>A</span>
@@ -2856,19 +2566,12 @@ describe('ReactSuspenseList', () => {
     );
   });
 
-  /**
-   * Given：已构造边界树、资源状态和调度检查点，用于逐层解决嵌套 forwards 列表，确认内外列表最终都能完成恢复。
-   * When：按用例顺序解决资源并冲刷 ping 触发的重试。
-   * Then：逐层解决嵌套 forwards 列表，确认内外列表最终都能完成恢复。
-   *
-   * 验证机制：调度日志和分段等待锁定 yield、ping 与重试顺序，宿主输出断言区分主内容、隐藏内容和 fallback。
-   * 对应源码：`updateSuspenseListComponent()`、`findFirstSuspended()` 与列表第二遍完成逻辑。
-   */
+  /** 外层 together 包含 inner forwards/visible 的 ABC 与 D；B 待决时所有四行显示 fallback，解析 B 后输出 ABCD，验证内层列表的挂起标记在 retry 中清除。 */
   // @gate enableSuspenseList
   it('eventually resolves a nested forwards suspense list', async () => {
     const B = createAsyncText('B');
 
-    /** Foo 组织当前 Suspense/SuspenseList 边界、资源行与更新入口，服务于“逐层解决嵌套 forwards 列表，确认内外列表最终都能完成恢复”场景。 */
+    /** 用 outer together 组合内层 ABC forwards/visible 与独立 D 行。 */
     function Foo() {
       return (
         <SuspenseList revealOrder="together">
@@ -2898,7 +2601,6 @@ describe('ReactSuspenseList', () => {
       'Loading B',
       'Loading C',
       'D',
-      // 推进或等待指定时间窗口，观察 Suspense 的节流、超时与恢复时机。
       'Loading A',
       'Loading B',
       'Loading C',
@@ -2927,19 +2629,12 @@ describe('ReactSuspenseList', () => {
     );
   });
 
-  /**
-   * Given：已构造边界树、资源状态和调度检查点，用于在 hidden tail 中插入、解决或重新挂起行，确认未就绪尾部被裁剪且已提交行保持。
-   * When：按用例顺序解决资源并冲刷 ping 触发的重试。
-   * Then：在 hidden tail 中插入、解决或重新挂起行，确认未就绪尾部被裁剪且已提交行保持。
-   *
-   * 验证机制：调度日志和分段等待锁定 yield、ping 与重试顺序，宿主输出断言区分主内容、隐藏内容和 fallback。
-   * 对应源码：`updateSuspenseListComponent()`、`completeWork()` 与 `cutOffTailIfNeeded()`。
-   */
+  /** outer together 含 inner forwards/hidden 的 A/B 及 C；B 待决时 hidden 内层裁剪自身内容，外层只留下 Loading C，解析 B 后输出 ABC。验证嵌套 hidden tail 能最终恢复。 */
   // @gate enableSuspenseList
   it('eventually resolves a nested forwards suspense list with a hidden tail', async () => {
     const B = createAsyncText('B');
 
-    /** Foo 组织当前 Suspense/SuspenseList 边界、资源行与更新入口，服务于“在 hidden tail 中插入、解决或重新挂起行，确认未就绪尾部被裁剪且已提交行保持”场景。 */
+    /** 用 outer together 组合 A/B hidden 列表与同步 C 边界。 */
     function Foo() {
       return (
         <SuspenseList revealOrder="together">
@@ -2976,19 +2671,12 @@ describe('ReactSuspenseList', () => {
     );
   });
 
-  /**
-   * Given：已构造边界树、资源状态和调度检查点，用于在 hidden tail 中插入、解决或重新挂起行，确认未就绪尾部被裁剪且已提交行保持。
-   * When：按用例顺序解决资源并冲刷 ping 触发的重试。
-   * Then：在 hidden tail 中插入、解决或重新挂起行，确认未就绪尾部被裁剪且已提交行保持。
-   *
-   * 验证机制：调度日志和分段等待锁定 yield、ping 与重试顺序，宿主输出断言区分主内容、隐藏内容和 fallback。
-   * 对应源码：`updateSuspenseListComponent()`、`completeWork()` 与 `cutOffTailIfNeeded()`。
-   */
+  /** 两层 forwards：内层 hidden 原先只有 A，外层还有 C；追加待决 B 时保持 AC，B 完成后为 ABC。验证已显示 A/C 不受新增 hidden tail 阻塞。 */
   // @gate enableSuspenseList
   it('eventually resolves two nested forwards suspense lists with a hidden tail', async () => {
     const B = createAsyncText('B');
 
-    /** Foo 组织当前 Suspense/SuspenseList 边界、资源行与更新入口，服务于“在 hidden tail 中插入、解决或重新挂起行，确认未就绪尾部被裁剪且已提交行保持”场景。 */
+    /** 内层 hidden 依据 showB 追加 B，外层 forwards/visible 保留 C。 */
     function Foo({showB}) {
       return (
         <SuspenseList revealOrder="forwards" tail="visible">
@@ -3020,7 +2708,6 @@ describe('ReactSuspenseList', () => {
       </>,
     );
 
-    // 检查 SuspenseList 当前行、揭示顺序与 tail 裁剪状态。
     ReactNoop.render(<Foo showB={true} />);
 
     await waitForAll(['A', 'Suspend! [B]', 'Loading B', 'C', 'A', 'C']);
@@ -3044,25 +2731,18 @@ describe('ReactSuspenseList', () => {
     );
   });
 
-  /**
-   * Given：已构造边界树、资源状态和调度检查点，用于列表相邻区域发生无关更新，确认 SuspenseList 协调不会阻塞普通兄弟工作。
-   * When：执行挂起、fallback 提交以及用例指定的更新或恢复步骤。
-   * Then：列表相邻区域发生无关更新，确认 SuspenseList 协调不会阻塞普通兄弟工作。
-   *
-   * 验证机制：调度日志和分段等待锁定 yield、ping 与重试顺序，宿主输出断言区分主内容、隐藏内容和 fallback。
-   * 对应源码：`updateSuspenseListComponent()`、`findFirstSuspended()` 与列表第二遍完成逻辑。
-   */
+  /** 列表 A/B 已显示且相邻 state 为 -；只将相邻 state 改成 C，日志只有 C、列表输出保持 A/B。验证无关子树更新可通过列表 bailout。 */
   // @gate enableSuspenseList
   it('can do unrelated adjacent updates', async () => {
     let updateAdjacent;
-    /** Adjacent 作为“列表相邻区域发生无关更新，确认 SuspenseList 协调不会阻塞普通兄弟工作”场景的测试 fixture，暴露对应渲染、资源或调度行为。 */
+    /** 暴露列表相邻文本的更新器，检查 SuspenseList 不阻塞这条独立更新。 */
     function Adjacent() {
       const [text, setText] = React.useState('-');
       updateAdjacent = setText;
       return <Text text={text} />;
     }
 
-    /** Foo 组织当前 Suspense/SuspenseList 边界、资源行与更新入口，服务于“列表相邻区域发生无关更新，确认 SuspenseList 协调不会阻塞普通兄弟工作”场景。 */
+    /** 在 div 中并排放置静态 A/B 列表和有状态 Adjacent。 */
     function Foo() {
       return (
         <div>
@@ -3087,7 +2767,6 @@ describe('ReactSuspenseList', () => {
       </div>,
     );
 
-    // 检查 SuspenseList 当前行、揭示顺序与 tail 裁剪状态。
     await act(() => updateAdjacent('C'));
 
     assertLog(['C']);
@@ -3101,21 +2780,14 @@ describe('ReactSuspenseList', () => {
     );
   });
 
-  /**
-   * Given：已构造边界树、资源状态和调度检查点，用于在 hidden tail 中插入、解决或重新挂起行，确认未就绪尾部被裁剪且已提交行保持。
-   * When：执行挂起、fallback 提交以及用例指定的更新或恢复步骤。
-   * Then：在 hidden tail 中插入、解决或重新挂起行，确认未就绪尾部被裁剪且已提交行保持。
-   *
-   * 验证机制：调度日志和分段等待锁定 yield、ping 与重试顺序，宿主输出断言区分主内容、隐藏内容和 fallback。
-   * 对应源码：`updateSuspenseListComponent()`、`completeWork()` 与 `cutOffTailIfNeeded()`。
-   */
+  /** hidden 列表已显示 A/Sync B；B 自身 state 切到异步后显示 Loading B，父列表更新仍保留它，解析资源后显示 AB 且 setter 身份不变。验证 hidden 只裁剪新行，不删除已挂载行状态。 */
   // @gate enableSuspenseList
   it('is able to re-suspend the last rows during an update with hidden', async () => {
     const AsyncB = createAsyncText('B');
 
     let setAsyncB;
 
-    /** B 作为“在 hidden tail 中插入、解决或重新挂起行，确认未就绪尾部被裁剪且已提交行保持”场景的测试 fixture，暴露对应渲染、资源或调度行为。 */
+    /** 暴露 setAsyncB，在同步文本与含 AsyncB 的边界之间切换。 */
     function B() {
       const [shouldBeAsync, setAsync] = React.useState(false);
       setAsyncB = setAsync;
@@ -3129,7 +2801,7 @@ describe('ReactSuspenseList', () => {
       );
     }
 
-    /** Foo 组织当前 Suspense/SuspenseList 边界、资源行与更新入口，服务于“在 hidden tail 中插入、解决或重新挂起行，确认未就绪尾部被裁剪且已提交行保持”场景。 */
+    /** 让 B 在同步文本和异步边界之间切换，并把父更新 prop 传入同一 key。 */
     function Foo({updateList}) {
       return (
         <SuspenseList revealOrder="forwards" tail="hidden">
@@ -3154,13 +2826,11 @@ describe('ReactSuspenseList', () => {
 
     const previousInst = setAsyncB;
 
-    // 该步骤让目标内容挂起，用于检查 unwind、fallback 选择和后续重试。
     await act(() => setAsyncB(true));
 
     assertLog([
       'Suspend! [B]',
       'Loading B',
-      // 推进或等待指定时间窗口，观察 Suspense 的节流、超时与恢复时机。
       'Loading B',
     ]);
 
@@ -3171,7 +2841,6 @@ describe('ReactSuspenseList', () => {
       </>,
     );
 
-    // 推进 thenable 资源状态并触发 ping，随后观察边界重试与已提交内容。
     await act(() => ReactNoop.render(<Foo updateList={true} />));
 
     assertLog([
@@ -3199,18 +2868,10 @@ describe('ReactSuspenseList', () => {
       </>,
     );
 
-    // 检查挂载、生命周期或 Effect 只在对应提交阶段执行。
     expect(previousInst).toBe(setAsyncB);
   });
 
-  /**
-   * Given：已构造边界树、资源状态和调度检查点，用于以更高优先级更新打断部分完成的列表，再恢复原工作，确认渲染进度可续接。
-   * When：启动低优先级渲染，再以更高优先级工作或 ping 打断。
-   * Then：以更高优先级更新打断部分完成的列表，再恢复原工作，确认渲染进度可续接。
-   *
-   * 验证机制：调度日志和分段等待锁定 yield、ping 与重试顺序，宿主输出断言区分主内容、隐藏内容和 fallback。
-   * 对应源码：`updateSuspenseListComponent()`、`findFirstSuspended()` 与列表第二遍完成逻辑。
-   */
+  /** transition 追加 B/C/D 后在 B/C 日志处暂停；flushSync 使首行读取待决 A并显示 Loading A，低优先级重试保持该输出；A 解析后出现 ABCD。验证打断后更新队列和列表 render state 能重建完成。 */
   // @gate enableSuspenseList
   it('is able to interrupt a partially rendered tree and continue later', async () => {
     const AsyncA = createAsyncText('A');
@@ -3218,14 +2879,14 @@ describe('ReactSuspenseList', () => {
     let updateLowPri;
     let updateHighPri;
 
-    /** Bar 作为层级 fixture 暴露 unwind、兄弟遍历或边界传播顺序，服务于“以更高优先级更新打断部分完成的列表，再恢复原工作，确认渲染进度可续接”场景。 */
+    /** 保存高优先级开关，打开后读取 AsyncA；独立于父 Foo 的低优先级追加更新。 */
     function Bar() {
       const [highPriState, setHighPriState] = React.useState(false);
       updateHighPri = setHighPriState;
       return highPriState ? <AsyncA /> : null;
     }
 
-    /** Foo 组织当前 Suspense/SuspenseList 边界、资源行与更新入口，服务于“以更高优先级更新打断部分完成的列表，再恢复原工作，确认渲染进度可续接”场景。 */
+    /** Foo 的 state 追加 B/C/D，Bar 的独立 state 切换首行是否读取 AsyncA。 */
     function Foo() {
       const [lowPriState, setLowPriState] = React.useState(false);
       updateLowPri = setLowPriState;
@@ -3256,14 +2917,11 @@ describe('ReactSuspenseList', () => {
       // 分段冲刷或让出调度工作，以锁定当前渲染检查点。
       await waitFor(['B', 'C']);
 
-      // 安排不同优先级或 transition 工作，检查中断、续接与队列保留。
       ReactNoop.flushSync(() => updateHighPri(true));
 
-      // 执行并检查当前渲染步骤，区分主树、兄弟预热与 fallback 路径。
       assertLog([
         'Suspend! [A]',
         'Loading A',
-        // 执行并检查当前渲染步骤，区分主树、兄弟预热与 fallback 路径。
         'Suspend! [A]',
         'Loading A',
       ]);
@@ -3292,28 +2950,21 @@ describe('ReactSuspenseList', () => {
     );
   });
 
-  /**
-   * Given：已构造边界树、资源状态和调度检查点，用于让多行或嵌套列表分批解决，确认 together 模式只在全部就绪后一次揭示。
-   * When：执行挂起、fallback 提交以及用例指定的更新或恢复步骤。
-   * Then：让多行或嵌套列表分批解决，确认 together 模式只在全部就绪后一次揭示。
-   *
-   * 验证机制：调度日志和分段等待锁定 yield、ping 与重试顺序，宿主输出断言区分主内容、隐藏内容和 fallback。
-   * 对应源码：`updateSuspenseListComponent()`、`findFirstSuspended()` 与列表第二遍完成逻辑。
-   */
+  /** together 两行各经过一个只透传 children 的类；预解 A 而 B 待决时两份 fallback，解析 B并重渲染后输出 AB。验证第二遍协调可恢复类后代，不测试实例 state 或生命周期。 */
   // @gate enableSuspenseList
   it('can resume class components when revealed together', async () => {
     const A = createAsyncText('A');
     const B = createAsyncText('B');
 
-    /** 定义 ClassComponent 类 fixture，在“让多行或嵌套列表分批解决，确认 together 模式只在全部就绪后一次揭示”场景中暴露实例 state 与提交生命周期。 */
+    /** 只透传 children 的类行包装器，验证列表第二遍协调可恢复类后代。 */
     class ClassComponent extends React.Component {
-      /** 渲染 ClassComponent.render 的当前实例状态；若资源未就绪，抛出 thenable 让最近 Suspense 接管。 */
+      /** 直接返回同一 props.children，不定义 state 或生命周期日志。 */
       render() {
         return this.props.children;
       }
     }
 
-    /** Foo 组织当前 Suspense/SuspenseList 边界、资源行与更新入口，服务于“让多行或嵌套列表分批解决，确认 together 模式只在全部就绪后一次揭示”场景。 */
+    /** 外层 Suspense 内的 together 两行分别经由透传 ClassComponent 包装。 */
     function Foo() {
       return (
         <Suspense fallback={<Text text="Loading" />}>
@@ -3366,17 +3017,10 @@ describe('ReactSuspenseList', () => {
     );
   });
 
-  /**
-   * Given：已构造边界树、资源状态和调度检查点，用于制造高 CPU 行和两阶段渲染，确认超时后切换 fallback 并逐步提交昂贵内容。
-   * When：推进虚拟时间、消耗 CPU 预算并继续冲刷渲染。
-   * Then：制造高 CPU 行和两阶段渲染，确认超时后切换 fallback 并逐步提交昂贵内容。
-   *
-   * 验证机制：调度日志和分段等待锁定 yield、ping 与重试顺序，宿主输出断言区分主内容、隐藏内容和 fallback。
-   * 对应源码：`updateSuspenseListComponent()`、`completeWork()` 与 `cutOffTailIfNeeded()`。
-   */
+  /** hidden 三行各模拟 600ms CPU，其中 A/B 首次 layout 把 pass 从0改成1；检查点依次 A、AB、ABC。验证预算分段揭示与 layout 发出的更新能够在 tail 协调中继续完成。 */
   // @gate enableSuspenseList
   it('should be able to progressively show CPU expensive rows with two pass rendering', async () => {
-    /** TwoPass 首遍安排状态更新、次遍输出稳定内容，用于验证 SuspenseList 两阶段渲染。 */
+    /** 初次 render 输出 First Pass；只有 layout 提交后才 setPass(1)，下一轮输出 text。 */
     function TwoPass({text}) {
       const [pass, setPass] = React.useState(0);
       React.useLayoutEffect(() => {
@@ -3392,7 +3036,7 @@ describe('ReactSuspenseList', () => {
       return children;
     }
 
-    /** App 组织当前 Suspense/SuspenseList 边界、资源行与更新入口，服务于“制造高 CPU 行和两阶段渲染，确认超时后切换 fallback 并逐步提交昂贵内容”场景。 */
+    /** 以三个 600ms Sleep 包装行，A/B 还经过 layout 二次渲染组件，tail 为 hidden。 */
     function App() {
       Scheduler.log('App');
       return (
@@ -3439,17 +3083,10 @@ describe('ReactSuspenseList', () => {
     );
   });
 
-  /**
-   * Given：已构造边界树、资源状态和调度检查点，用于制造高 CPU 行和两阶段渲染，确认超时后切换 fallback 并逐步提交昂贵内容。
-   * When：执行挂起、fallback 提交以及用例指定的更新或恢复步骤。
-   * Then：制造高 CPU 行和两阶段渲染，确认超时后切换 fallback 并逐步提交昂贵内容。
-   *
-   * 验证机制：调度日志和分段等待锁定 yield、ping 与重试顺序，宿主输出断言区分主内容、隐藏内容和 fallback。
-   * 对应源码：`updateSuspenseListComponent()`、`findFirstSuspended()` 与列表第二遍完成逻辑。
-   */
+  /** visible 三行各模拟 600ms CPU且 A/B 在 layout 中改 pass；第一阶段显示 A/Loading B/Loading C，再 AB/Loading C，最后 ABC。验证渐进提交保留可见 tail fallback。 */
   // @gate enableSuspenseList
   it('should be able to progressively show rows with two pass rendering and visible', async () => {
-    /** TwoPass 首遍安排状态更新、次遍输出稳定内容，用于验证 SuspenseList 两阶段渲染。 */
+    /** 初次 render 输出 First Pass；只有 layout 提交后才 setPass(1)，下一轮输出 text。 */
     function TwoPass({text}) {
       const [pass, setPass] = React.useState(0);
       React.useLayoutEffect(() => {
@@ -3465,7 +3102,7 @@ describe('ReactSuspenseList', () => {
       return children;
     }
 
-    /** App 组织当前 Suspense/SuspenseList 边界、资源行与更新入口，服务于“制造高 CPU 行和两阶段渲染，确认超时后切换 fallback 并逐步提交昂贵内容”场景。 */
+    /** 以三个 600ms Sleep 包装边界，A/B 经过 layout 二次渲染组件，tail 为 visible。 */
     function App() {
       Scheduler.log('App');
       return (
@@ -3528,21 +3165,14 @@ describe('ReactSuspenseList', () => {
     );
   });
 
-  /**
-   * Given：已构造边界树、资源状态和调度检查点，用于在 Profiler 中挂起并恢复列表，确认 actualDuration 只累计真实执行时间。
-   * When：执行挂起、fallback 提交以及用例指定的更新或恢复步骤。
-   * Then：在 Profiler 中挂起并恢复列表，确认 actualDuration 只累计真实执行时间。
-   *
-   * 验证机制：调度日志和分段等待锁定 yield、ping 与重试顺序，宿主输出断言区分主内容、隐藏内容和 fallback，Profiler 时长断言验证实际执行成本。
-   * 对应源码：`updateSuspenseListComponent()`、`findFirstSuspended()` 与列表第二遍完成逻辑。
-   */
+  /** Profiler 包住 Sleep=1/4/5/12ms 的行及3ms fallback；先挂 C、改同步 C、追加待决 D再解析 C。精确核对每阶段 callback 次数及 actual/base duration 的 alwaysThrottleRetries 分支，避免把丢弃或后台工作算成固定一次提交。 */
   // @gate enableProfilerTimer
   // @gate enableSuspenseList
   it('counts the actual duration when profiling a SuspenseList', async () => {
     // Profiler 回调参数顺序为 id、phase、actualDuration、treeBaseDuration。
     const onRender = jest.fn();
 
-    /** Fallback 保存当前场景跨步骤调用的函数入口。 */
+    /** 记录 Fallback并模拟3ms渲染耗时，作为Profiler的可见占位与耗时对照。 */
     const Fallback = () => {
       Scheduler.log('Fallback');
       Scheduler.unstable_advanceTime(3);
@@ -3556,13 +3186,13 @@ describe('ReactSuspenseList', () => {
     await A.resolve();
     await B.resolve();
 
-    /** Sleep 消耗指定 CPU 时间，迫使 SuspenseList 跨越渲染预算并进入第二遍协调。 */
+    /** 按 time 推进模拟时钟，再返回 children；Profiler 用各行的不同耗时核对 actualDuration 与 treeBaseDuration。 */
     function Sleep({time, children}) {
       Scheduler.unstable_advanceTime(time);
       return children;
     }
 
-    /** App 组织当前 Suspense/SuspenseList 边界、资源行与更新入口，服务于“在 Profiler 中挂起并恢复列表，确认 actualDuration 只累计真实执行时间”场景。 */
+    /** Profiler 内按 addRow/suspendTail 添加 D或切换 C 的挂起状态，各行模拟不同耗时。 */
     function App({addRow, suspendTail}) {
       Scheduler.log('App');
       return (
@@ -3615,11 +3245,10 @@ describe('ReactSuspenseList', () => {
       gate('alwaysThrottleRetries') ? 1 : 2,
     );
 
-    // 推进或等待指定时间窗口，观察 Suspense 的节流、超时与恢复时机。
 
-    // `actualDuration`：本次提交的实际渲染耗时。
+    // `actualDuration`：本次提交的render 尝试中累计到该提交的耗时（ms），包含被挂起的读取前工作。
     expect(onRender.mock.calls[0][2]).toBe(1 + 4 + 5 + 3);
-    // `treeBaseDuration`：不使用 memo 时整棵树的基准耗时。
+    // `treeBaseDuration`：已提交子树保存的各节点最近一次基础耗时总和（ms）；不是所有尝试的耗时总和。
     expect(onRender.mock.calls[0][3]).toBe(1 + 4 + 3);
 
     ReactNoop.render(<App suspendTail={false} />);
@@ -3637,11 +3266,11 @@ describe('ReactSuspenseList', () => {
       gate('alwaysThrottleRetries') ? 2 : 3,
     );
 
-    // `actualDuration`：本次提交的实际渲染耗时。
+    // `actualDuration`：本次提交的render 尝试中累计到该提交的耗时（ms），包含被挂起的读取前工作。
     expect(onRender.mock.calls[1][2]).toBe(
       gate('alwaysThrottleRetries') ? 1 + 4 + 5 : 5,
     );
-    // `treeBaseDuration`：不使用 memo 时整棵树的基准耗时。
+    // `treeBaseDuration`：已提交子树保存的各节点最近一次基础耗时总和（ms）；不是所有尝试的耗时总和。
     expect(onRender.mock.calls[1][3]).toBe(
       gate('alwaysThrottleRetries') ? 1 + 4 + 5 : 8,
     );
@@ -3654,18 +3283,15 @@ describe('ReactSuspenseList', () => {
       'B',
       'Suspend! [C]',
       'Fallback',
-      // 检查 SuspenseList 当前行、揭示顺序与 tail 裁剪状态。
       'A',
       'B',
       'Suspend! [C]',
       'Fallback',
-      // 检查 SuspenseList 当前行、揭示顺序与 tail 裁剪状态。
       'Fallback',
       // 执行预热渲染，不把该遍结果作为最终提交。
       'Suspend! [C]',
     ]);
 
-    // 推进或等待指定时间窗口，观察 Suspense 的节流、超时与恢复时机。
     jest.advanceTimersByTime(1000);
 
     expect(ReactNoop).toMatchRenderedOutput(
@@ -3681,13 +3307,12 @@ describe('ReactSuspenseList', () => {
       gate('alwaysThrottleRetries') ? 4 : 5,
     );
 
-    // 推进或等待指定时间窗口，观察 Suspense 的节流、超时与恢复时机。
 
-    // `actualDuration`：本次提交的实际渲染耗时。
+    // `actualDuration`：本次提交的render 尝试中累计到该提交的耗时（ms），包含被挂起的读取前工作。
     expect(onRender.mock.calls[2][2]).toBe(
       gate('alwaysThrottleRetries') ? (1 + 4 + 5 + 3) * 2 + 3 : 10,
     );
-    // `treeBaseDuration`：不使用 memo 时整棵树的基准耗时。
+    // `treeBaseDuration`：已提交子树保存的各节点最近一次基础耗时总和（ms）；不是所有尝试的耗时总和。
     expect(onRender.mock.calls[2][3]).toBe(
       gate('alwaysThrottleRetries') ? 1 + 4 + 3 + 3 : 10,
     );
@@ -3712,33 +3337,27 @@ describe('ReactSuspenseList', () => {
       gate('alwaysThrottleRetries') ? 6 : 7,
     );
 
-    // `actualDuration`：本次提交的实际渲染耗时。
+    // `actualDuration`：本次提交的render 尝试中累计到该提交的耗时（ms），包含被挂起的读取前工作。
     expect(onRender.mock.calls[5][2]).toBe(
       gate('alwaysThrottleRetries') ? 12 : 17,
     );
-    // `treeBaseDuration`：不使用 memo 时整棵树的基准耗时。
+    // `treeBaseDuration`：已提交子树保存的各节点最近一次基础耗时总和（ms）；不是所有尝试的耗时总和。
     expect(onRender.mock.calls[5][3]).toBe(1 + 4 + 5 + 3);
   });
 
-  /**
-   * Given：已构造边界树、资源状态和调度检查点，用于父层 memo 提前退出时更新列表内部状态，确认 Suspense 更新仍向外传播。
-   * When：执行挂起、fallback 提交以及用例指定的更新或恢复步骤。
-   * Then：父层 memo 提前退出时更新列表内部状态，确认 Suspense 更新仍向外传播。
-   *
-   * 验证机制：调度日志和分段等待锁定 yield、ping 与重试顺序，宿主输出断言区分主内容、隐藏内容和 fallback。
-   * 对应源码：`updateSuspenseListComponent()`、`findFirstSuspended()` 与列表第二遍完成逻辑。
-   */
+  /** forwards/visible 每个边界上包四层 memo透传；预解 C仍全 fallback，解析 A得到 A与B/C占位，解析 B得到 ABC。验证列表强制 fallback 的传播不会被多层 memo bailout 截断。 */
   // @gate enableSuspenseList
   it('propagates despite a memo bailout', async () => {
     const A = createAsyncText('A');
     const B = createAsyncText('B');
     const C = createAsyncText('C');
 
+    /** 透传 children 的 memo 包装器；retry 时 props 不变，验证列表上下文仍可传播到边界。 */
     const Bailout = React.memo(({children}) => {
       return children;
     });
 
-    /** Foo 组织当前 Suspense/SuspenseList 边界、资源行与更新入口，服务于“父层 memo 提前退出时更新列表内部状态，确认 Suspense 更新仍向外传播”场景。 */
+    /** 每行边界外加四层 Bailout，检查 SuspenseList 上下文传播跨越 memo 层。 */
     function Foo() {
       // 必须在 Suspense 父级之上提前退出，才能复现该传播边界。
       return (
@@ -3822,14 +3441,7 @@ describe('ReactSuspenseList', () => {
     );
   });
 
-  /**
-   * Given：已构造边界树、资源状态和调度检查点，用于构造嵌套边界回归，确认 SuspenseList 只强制直接子层进入 fallback。
-   * When：执行挂起、fallback 提交以及用例指定的更新或恢复步骤。
-   * Then：构造嵌套边界回归，确认 SuspenseList 只强制直接子层进入 fallback。
-   *
-   * 验证机制：调度日志和分段等待锁定 yield、ping 与重试顺序，宿主输出断言区分主内容、隐藏内容和 fallback。
-   * 对应源码：`updateSuspenseListComponent()`、`findFirstSuspended()` 与列表第二遍完成逻辑。
-   */
+  /** 初始显示 B1/C；更新插入待决 A和新 D，同时将 B 换成含同步 B2 的内层边界。输出 Loading A/B2/C/Loading D，解析 A后为 A/B2/C/D；内层抛错 fallback 从未执行。验证强制 fallback 只作用于目标边界层。 */
   // @gate enableSuspenseList
   it(
     'regression test: SuspenseList should never force boundaries deeper than ' +
@@ -3837,12 +3449,12 @@ describe('ReactSuspenseList', () => {
     async () => {
       const A = createAsyncText('A');
 
-      /** UnreachableFallback 输出可识别 fallback，并记录其挂载或意外到达情况。 */
+      /** 一旦执行立即抛错，作为不应被列表强制到达的内层 fallback 哨兵。 */
       function UnreachableFallback() {
         throw new Error('Should never be thrown!');
       }
 
-      /** Repro 组织当前 Suspense/SuspenseList 边界、资源行与更新入口，服务于“构造嵌套边界回归，确认 SuspenseList 只强制直接子层进入 fallback”场景。 */
+      /** 按 update 插入 A/D并将 B1 换成嵌套同步 B2，内层 fallback 是抛错哨兵。 */
       function Repro({update}) {
         return (
           <SuspenseList revealOrder="forwards" tail="visible">
@@ -3872,7 +3484,6 @@ describe('ReactSuspenseList', () => {
         );
       }
 
-      // 检查 SuspenseList 当前行、揭示顺序与 tail 裁剪状态。
       const root = ReactNoop.createRoot();
       await act(() => root.render(<Repro update={false} />));
       assertLog(['B1', 'C']);
@@ -3883,25 +3494,19 @@ describe('ReactSuspenseList', () => {
         </>,
       );
 
-      // 该步骤让目标内容挂起，用于检查 unwind、fallback 选择和后续重试。
       await act(() => root.render(<Repro update={true} />));
       assertLog([
-        // 该步骤让目标内容挂起，用于检查 unwind、fallback 选择和后续重试。
         'Suspend! [A]',
         'Loading A...',
         'B2',
         'C',
 
-        // 推进或等待指定时间窗口，观察 Suspense 的节流、超时与恢复时机。
         //
-        // 检查当前时刻应显示或保留的 fallback，避免主内容与占位错误切换。
         //
-        // 回归场景：复现历史缺陷并锁定修复后的 Suspense 调度或提交不变量。
         'Loading A...',
         'B2',
         'C',
 
-        // 检查当前时刻应显示或保留的 fallback，避免主内容与占位错误切换。
         'Loading D...',
       ]);
       expect(root).toMatchRenderedOutput(
@@ -3913,7 +3518,6 @@ describe('ReactSuspenseList', () => {
         </>,
       );
 
-      // 检查当前时刻应显示或保留的 fallback，避免主内容与占位错误切换。
       await act(() => A.resolve());
       assertLog(['A', 'D']);
       expect(root).toMatchRenderedOutput(
@@ -3927,22 +3531,15 @@ describe('ReactSuspenseList', () => {
     },
   );
 
-  /**
-   * Given：已构造边界树、资源状态和调度检查点，用于按不同解决顺序唤醒行，确认 forwards 只从头部连续揭示已就绪内容。
-   * When：渲染包含该非法配置或 children 形状的列表。
-   * Then：按不同解决顺序唤醒行，确认 forwards 只从头部连续揭示已就绪内容。
-   *
-   * 验证机制：控制台断言限定开发态诊断。
-   * 对应源码：`validateRevealOrder()`、`validateTailOptions()` 与 children 结构校验。
-   */
+  /** forwards 直接收到 yield A/B 的 async generator 组件；transition 渲染后断言 generator列表诊断、async客户端组件诊断和未缓存Promise诊断，不断言最终输出。 */
   // @gate enableSuspenseList && enableAsyncIterableChildren
   it('warns for async generator components in "forwards" order', async () => {
-    /** Generator 作为“按不同解决顺序唤醒行，确认 forwards 只从头部连续揭示已就绪内容”场景的测试 fixture，暴露对应渲染、资源或调度行为。 */
+    /** 生成 A/B 的 async generator 组件，用于检查 SuspenseList 对 generator 组件的开发诊断。 */
     async function* Generator() {
       yield 'A';
       yield 'B';
     }
-    /** Foo 组织当前 Suspense/SuspenseList 边界、资源行与更新入口，服务于“按不同解决顺序唤醒行，确认 forwards 只从头部连续揭示已就绪内容”场景。 */
+    /** 将 async generator 组件作为 forwards 的唯一直接行，触发结构及async诊断。 */
     function Foo() {
       return (
         <SuspenseList revealOrder="forwards" tail="visible">
@@ -3967,7 +3564,6 @@ describe('ReactSuspenseList', () => {
         "This error is often caused by accidentally adding `'use client'` " +
         'to a module that was originally written for the server.\n' +
         '    in Foo (at **)',
-      // 该步骤应产生并校验对应的开发态告警。
       'A component was suspended by an uncached promise. ' +
         'Creating promises inside a Client Component or hook is not yet supported, ' +
         'except via a Suspense-compatible library or framework.\n' +
@@ -3975,20 +3571,12 @@ describe('ReactSuspenseList', () => {
     ]);
   });
 
-  /**
-   * Given：已构造边界树、资源状态和调度检查点，用于按不同解决顺序唤醒行，确认 forwards 只从头部连续揭示已就绪内容。
-   * When：按用例顺序解决资源并冲刷 ping 触发的重试。
-   * Then：按不同解决顺序唤醒行，确认 forwards 只从头部连续揭示已就绪内容。
-   *
-   * 验证机制：调度日志和分段等待锁定 yield、ping 与重试顺序，宿主输出断言区分主内容、隐藏内容和 fallback，控制台断言限定开发态诊断。
-   * 对应源码：`updateSuspenseListComponent()`、`findFirstSuspended()` 与列表第二遍完成逻辑。
-   */
+  /** forwards/visible 直接消费 yield ASlot/BSlot 的 async iterable；A待决时两份占位，解析A后 A/Loading B，解析B后 AB，每阶段断言迭代 Promise 未缓存告警。验证异步迭代产生的行遵守有序协调。 */
   // @gate enableSuspenseList && enableAsyncIterableChildren
   it('can display async iterable in "forwards" order', async () => {
     const A = createAsyncText('A');
     const B = createAsyncText('B');
 
-    // 执行并检查当前渲染步骤，区分主树、兄弟预热与 fallback 路径。
     const ASlot = (
       <Suspense key="A" fallback={<Text text="Loading A" />}>
         <A />
@@ -4002,14 +3590,14 @@ describe('ReactSuspenseList', () => {
     );
 
     const iterable = {
-      /** Symbol.asyncIterator 返回异步 iterable 自身，供 SuspenseList 逐项拉取并保持迭代身份。 */
+      /** 每次调用创建异步生成器，依次产出下面两个列表项。 */
       async *[Symbol.asyncIterator]() {
         yield ASlot;
         yield BSlot;
       },
     };
 
-    /** Foo 组织当前 Suspense/SuspenseList 边界、资源行与更新入口，服务于“按不同解决顺序唤醒行，确认 forwards 只从头部连续揭示已就绪内容”场景。 */
+    /** 把异步 iterable 作为全部 children，依次产出稳定 keyed A/B边界元素。 */
     function Foo() {
       return (
         <SuspenseList revealOrder="forwards" tail="visible">
@@ -4033,7 +3621,6 @@ describe('ReactSuspenseList', () => {
     ]);
 
     assertConsoleErrorDev([
-      // 该步骤应产生并校验对应的开发态告警。
       'A component was suspended by an uncached promise. ' +
         'Creating promises inside a Client Component or hook is not yet supported, ' +
         'except via a Suspense-compatible library or framework.\n' +
@@ -4057,7 +3644,6 @@ describe('ReactSuspenseList', () => {
     assertLog(['A', 'Suspend! [B]', 'Suspend! [B]']);
 
     assertConsoleErrorDev([
-      // 该步骤应产生并校验对应的开发态告警。
       'A component was suspended by an uncached promise. ' +
         'Creating promises inside a Client Component or hook is not yet supported, ' +
         'except via a Suspense-compatible library or framework.\n' +
@@ -4081,7 +3667,6 @@ describe('ReactSuspenseList', () => {
     assertLog(['B']);
 
     assertConsoleErrorDev([
-      // 该步骤应产生并校验对应的开发态告警。
       'A component was suspended by an uncached promise. ' +
         'Creating promises inside a Client Component or hook is not yet supported, ' +
         'except via a Suspense-compatible library or framework.\n' +
@@ -4097,17 +3682,10 @@ describe('ReactSuspenseList', () => {
     );
   });
 
-  /**
-   * Given：已构造边界树、资源状态和调度检查点，用于流式消费 async iterable 行，确认 forwards 顺序提交并拒绝嵌套 iterable。
-   * When：渲染包含该非法配置或 children 形状的列表。
-   * Then：流式消费 async iterable 行，确认 forwards 顺序提交并拒绝嵌套 iterable。
-   *
-   * 验证机制：控制台断言限定开发态诊断。
-   * 对应源码：`validateRevealOrder()`、`validateTailOptions()` 与 children 结构校验。
-   */
+  /** forwards/visible 的 row #0是 yield A/B边界的 async iterable，后面还有 div Tail；transition 后警告嵌套async iterable并建议包额外SuspenseList，同时报告未缓存Promise。 */
   // @gate enableSuspenseList && enableAsyncIterableChildren
   it('warns if a nested async iterable is passed to a "forwards" list', async () => {
-    /** Foo 组织当前 Suspense/SuspenseList 边界、资源行与更新入口，服务于“流式消费 async iterable 行，确认 forwards 顺序提交并拒绝嵌套 iterable”场景。 */
+    /** 把 items async iterable 与 Tail 并列，制造嵌套迭代行而非顶层全部children。 */
     function Foo({items}) {
       return (
         <SuspenseList revealOrder="forwards" tail="visible">
@@ -4118,7 +3696,7 @@ describe('ReactSuspenseList', () => {
     }
 
     const iterable = {
-      /** Symbol.asyncIterator 返回异步 iterable 自身，供 SuspenseList 逐项拉取并保持迭代身份。 */
+      /** 每次调用创建异步生成器，依次产出下面两个列表项。 */
       async *[Symbol.asyncIterator]() {
         yield (
           <Suspense key={'A'} fallback="Loading">
@@ -4146,7 +3724,6 @@ describe('ReactSuspenseList', () => {
         '</SuspenseList>' +
         '\n    in SuspenseList (at **)' +
         '\n    in Foo (at **)',
-      // 该步骤应产生并校验对应的开发态告警。
       'A component was suspended by an uncached promise. ' +
         'Creating promises inside a Client Component or hook is not yet supported, ' +
         'except via a Suspense-compatible library or framework.\n' +

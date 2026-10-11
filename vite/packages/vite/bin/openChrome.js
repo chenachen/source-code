@@ -24,7 +24,7 @@ function run(argv) {
     app.Window().make()
   }
 
-  // 优先级 1：找到已打开目标地址的标签页，切换到该页并刷新，保留调试上下文。
+  // 优先级 1：找到 URL 包含目标地址的标签页，切换到该页并刷新。
   const found = lookupTabWithUrl(urlToOpen, app)
   if (found) {
     found.targetWindow.activeTabIndex = found.targetTabIndex

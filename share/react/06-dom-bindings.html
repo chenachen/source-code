@@ -1,17 +1,17 @@
 <!doctype html><html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="description" content="react-dom-bindings 19.3.0 源码指南：DOM HostConfig、属性与表单、事件插件、hydration 和 Fizz DOM 格式适配。" />
-<title>06 · react-dom-bindings：浏览器宿主实现</title><link rel="stylesheet" href="assets/guide.css?v=1" /></head><body>
+<title>06 · react-dom-bindings：浏览器宿主实现</title><link rel="stylesheet" href="assets/guide.css?v=1" /><link rel="stylesheet" href="assets/engineering-diagrams.css?v=1" /></head><body>
 <header class="topbar"><div class="topbar-inner"><a class="brand" href="index.html">React 六包源码指南</a><nav class="pager" aria-label="页面导航">
 <a href="index.html">地图</a><a href="01-shared.html">shared</a><a href="02-scheduler.html">scheduler</a><a href="03-react.html">react</a>
 <a href="04-reconciler-render.html">render</a><a href="05-reconciler-commit.html">commit</a><a aria-current="page" href="06-dom-bindings.html">bindings</a>
 <a href="07-react-dom.html">react-dom</a><a href="08-end-to-end.html">主线</a><a href="09-evidence.html">证据</a></nav></div></header>
-<div class="layout"><main><p class="eyebrow">06 · DOM host implementation</p><h1>DOM bindings：把抽象 effect 翻译成浏览器语义</h1>
+<div class="layout"><main><p class="eyebrow">06 · DOM host implementation</p><h1>DOM bindings：创建节点、提交变化、处理浏览器事件</h1>
 <p class="lede"><code>packages/react-dom-bindings</code> 是 DOM renderer 的实现层：client HostConfig 创建与提交节点，events 建立委托与插件派发，
 server HostConfig 把 Fizz 输出格式化成 HTML/指令流，shared 保存两端共用规范化规则。</p>
 <div class="meta"><span class="pill">React 19.3.0</span><span class="pill">92 个手写 JS 目标</span><span class="pill">client 28</span><span class="pill">events 31</span><span class="pill">server 16</span><span class="pill">shared 17</span></div>
 
 <section id="boundary"><h2>它在两个引擎与浏览器之间</h2><div class="grid three">
-<article class="card"><span class="number">CLIENT HOST CONFIG</span><h3>服务 Fiber commit</h3><p>实现 create/append/update/remove、selection、hydration、resources、visibility 与 View Transition 能力。</p></article>
+<article class="card"><span class="number">CLIENT HOST CONFIG</span><h3>服务 Fiber render 与 commit</h3><p>实现 create/append/update/remove、selection、hydration、resources、visibility 与 View Transition 能力。</p></article>
 <article class="card"><span class="number">EVENT SYSTEM</span><h3>把 DOM 输入还原成 Fiber 路径</h3><p>根委托监听、事件优先级、hydration 阻塞、插件提取与两阶段 listener 累积都在这里。</p></article>
 <article class="card"><span class="number">SERVER HOST CONFIG</span><h3>服务 Fizz 格式化</h3><p>把标签/属性/资源与指令编码为 chunk；请求、task、Suspense 状态机属于范围外的 react-server。</p></article></div>
 <div class="callout"><p><strong>与 react-dom 的区别：</strong>react-dom 管公开入口与环境适配；bindings 管浏览器机制。
@@ -19,10 +19,11 @@ server HostConfig 把 Fizz 输出格式化成 HTML/指令流，shared 保存两�
 
 <section id="client"><h2>Client HostConfig：一次节点从创建到提交</h2><ol class="state-list">
 <li><strong>上下文。</strong><code>getRootHostContext/getChildHostContext</code> 传播 HTML/SVG/MathML namespace，并在 DEV 维护 DOM nesting 祖先信息。</li>
-<li><strong>创建。</strong><code>createInstance</code> 选择 createElement/createElementNS，缓存 Fiber 指针与最新 props，设置初始属性；script 使用不可执行创建路径。</li>
+<li><strong>创建。</strong><code>createInstance</code> 选择 createElement/createElementNS，缓存 Fiber 指针与 props；<code>finalizeInitialChildren</code> 在新子节点组装后设置初始属性，整个过程仍属于 render 的 complete 阶段。script 使用不可执行创建路径。</li>
 <li><strong>离线组树。</strong><code>appendInitialChild</code> 把新宿主 descendants 组装到尚未进入 container 的父节点。</li>
 <li><strong>提交准备。</strong><code>prepareForCommit</code> 保存 selection/active instance 并暂时关闭事件；mutation 后 <code>resetAfterCommit</code> 恢复。</li>
 <li><strong>写入。</strong><code>appendChild/insertBefore/removeChild/commitUpdate/commitTextUpdate</code> 执行 reconciler 已确定的动作。</li></ol>
+<figure class="engineering-diagram" data-diagram="dom-host-cache-phases" style="--diagram-min-width:820px"><div class="diagram-scroll"><svg viewBox="0 0 820 715" width="820" height="715" role="img" aria-labelledby="dom-host-cache-phases-title dom-host-cache-phases-desc" xmlns="http://www.w3.org/2000/svg"><title id="dom-host-cache-phases-title">宿主对象关联与 render、mutation、layout 阶段</title><desc id="dom-host-cache-phases-desc">HostComponent Fiber 的 stateNode 指向 DOM 元素；DOM 的实例关联反查 Fiber，独立 props 缓存供事件读取。首次挂载在 complete 阶段创建和设置属性；提交时插入，更新分支才执行 commitUpdate 并刷新 props；layout 按需要聚焦或启动图片加载。</desc><defs><marker id="dom-host-cache-phases-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#507476" /></marker></defs><text x="20" y="26" class="d-label" text-anchor="start"><tspan x="20" dy="0">对象关系：实例 identity 与最新 props 是两条独立关联</tspan></text><rect x="20" y="60" width="220" height="130" rx="12" class="d-node" /><text x="130.0" y="119.0" class="d-label" text-anchor="middle"><tspan x="130.0" dy="0">HostComponent Fiber</tspan><tspan x="130.0" dy="24">stateNode → DOM</tspan></text><rect x="315" y="60" width="245" height="130" rx="12" class="d-node" /><text x="437.5" y="107.0" class="d-label" text-anchor="middle"><tspan x="437.5" dy="0">DOM 元素</tspan><tspan x="437.5" dy="24">实例关联</tspan><tspan x="437.5" dy="24">独立 props 关联</tspan></text><rect x="640" y="60" width="160" height="130" rx="12" class="d-state" /><text x="720.0" y="119.0" class="d-label" text-anchor="middle"><tspan x="720.0" dy="0">最新 props</tspan><tspan x="720.0" dy="24">{onClick, …}</tspan></text><path d="M 240 104 H 315" class="d-edge" marker-end="url(#dom-host-cache-phases-arrow)" /><text x="278" y="92" class="d-muted" text-anchor="middle"><tspan x="278" dy="0">stateNode</tspan></text><path d="M 315 158 H 240" class="d-edge" marker-end="url(#dom-host-cache-phases-arrow)" /><text x="278" y="146" class="d-muted" text-anchor="middle"><tspan x="278" dy="0">反查 Fiber</tspan></text><path d="M 560 125 H 640" class="d-edge" marker-end="url(#dom-host-cache-phases-arrow)" /><text x="600" y="113" class="d-muted" text-anchor="middle"><tspan x="600" dy="0">props</tspan></text><text x="410" y="224" class="d-muted" text-anchor="middle"><tspan x="410" dy="0">实例与 props 可存于 DOM 字段或可选 WeakMap；getListener 读取 props 缓存。</tspan></text><rect x="20" y="257" width="780" height="130" rx="12" class="d-lane" /><text x="36" y="286" class="d-label" text-anchor="start"><tspan x="36" dy="0">Render</tspan><tspan x="36" dy="24">complete 阶段</tspan></text><rect x="205" y="275" width="175" height="88" rx="12" class="d-node" /><text x="292.5" y="313.0" class="d-label" text-anchor="middle"><tspan x="292.5" dy="0">createInstance</tspan><tspan x="292.5" dy="24">创建并登记关联</tspan></text><rect x="410" y="275" width="175" height="88" rx="12" class="d-node" /><text x="497.5" y="313.0" class="d-label" text-anchor="middle"><tspan x="497.5" dy="0">appendInitialChild</tspan><tspan x="497.5" dy="24">离线组装子节点</tspan></text><rect x="615" y="275" width="165" height="88" rx="12" class="d-node" /><text x="697.5" y="313.0" class="d-label" text-anchor="middle"><tspan x="697.5" dy="0">finalizeInitial</tspan><tspan x="697.5" dy="24">Children：初始属性</tspan></text><path d="M 380 319 H 410" class="d-edge" marker-end="url(#dom-host-cache-phases-arrow)" /><path d="M 585 319 H 615" class="d-edge" marker-end="url(#dom-host-cache-phases-arrow)" /><path d="M 697 387 V 425" class="d-edge" marker-end="url(#dom-host-cache-phases-arrow)" /><text x="688" y="413" class="d-muted" text-anchor="end"><tspan x="688" dy="0">接受本次完成的树</tspan></text><rect x="20" y="425" width="780" height="150" rx="12" class="d-lane" /><text x="36" y="454" class="d-label" text-anchor="start"><tspan x="36" dy="0">Commit</tspan><tspan x="36" dy="24">mutation</tspan></text><rect x="205" y="442" width="575" height="115" rx="12" class="d-node" /><text x="492.5" y="481.5" class="d-label" text-anchor="middle"><tspan x="492.5" dy="0">prepareForCommit → mutation → resetAfterCommit</tspan><tspan x="492.5" dy="24">挂载：Placement 插入 DOM；更新：commitUpdate</tspan><tspan x="492.5" dy="24">更新分支：写 DOM 属性，再刷新同一节点的 props 缓存</tspan></text><path d="M 697 575 V 613" class="d-edge" marker-end="url(#dom-host-cache-phases-arrow)" /><text x="688" y="602" class="d-muted" text-anchor="end"><tspan x="688" dy="0">root.current 切到新树</tspan></text><rect x="20" y="613" width="780" height="82" rx="12" class="d-lane" /><text x="36" y="644" class="d-label" text-anchor="start"><tspan x="36" dy="0">Commit</tspan><tspan x="36" dy="24">layout</tspan></text><rect x="205" y="625" width="575" height="58" rx="12" class="d-state" /><text x="492.5" y="660.0" class="d-label" text-anchor="middle"><tspan x="492.5" dy="0">commitMount（仅需要时）：autoFocus 或 img 加载</tspan></text></svg></div><figcaption><strong>对象图与阶段边界。</strong>上半图解释 DOM → Fiber 与 DOM → props 两类查询；下半图区分首次挂载、已挂载更新和 layout。事件读取节点上的最新 props 缓存，初始属性设置属于 complete，commitUpdate 属于 mutation。这里展示普通 HostComponent，资源 hoistable 的创建另走 beginWork。</figcaption></figure>
 <figure class="source"><figcaption><span>删节源码 · ReactFiberConfigDOM.js · 属性提交</span><a href="../../react/packages/react-dom-bindings/src/client/ReactFiberConfigDOM.js">打开文件</a></figcaption><pre><span class="kw">export function</span> <span class="fn">commitUpdate</span>(domElement, type, oldProps, newProps, fiber) {
   updateProperties(domElement, type, oldProps, newProps);
   <span class="cm">// 事件系统随后必须读取本次提交的 handler。</span>
@@ -42,46 +43,49 @@ server HostConfig 把 Fizz 输出格式化成 HTML/指令流，shared 保存两�
 <a href="../../react/packages/react-dom-bindings/src/client/ReactDOMInput.js">ReactDOMInput.js</a>、ReactDOMSelect/Textarea 分别维护表单不变量。
 事件结束后 controlled state restore 会把浏览器临时值重新对齐 committed props。</p></section>
 
-<section id="events"><h2>事件：一份根监听器，多套插件语义</h2><div class="chain" aria-label="DOM 事件管线">
+<section id="events"><h2>事件：每个根安装一组监听，插件转换事件语义</h2><div class="chain" aria-label="DOM 事件管线">
 <div class="node">原生 listener<small>root / document</small></div><span class="arrow">→</span><div class="node">priority wrapper<small>discrete / continuous</small></div>
 <span class="arrow">→</span><div class="node">target Fiber<small>DOM ↔ Fiber cache</small></div><span class="arrow">→</span><div class="node">plugin extract<small>SyntheticEvent</small></div>
 <span class="arrow">→</span><div class="node">capture / bubble<small>batched dispatch</small></div></div>
-<p><code>listenToAllSupportedEvents</code> 对同一容器用随机 marker 去重，大多数事件同时安装 capture/bubble；不冒泡事件走 non-delegated 集合，
+<p><code>listenToAllSupportedEvents</code> 对同一容器用随机 marker 去重，大多数事件同时安装 capture/bubble；nonDelegatedEvents 内的事件在具体元素上监听 bubble，根仍监听 capture，
 <code>selectionchange</code> 单独绑定 document。Portal 自有监听器，但派发时会沿 Fiber root/portal 边界找与当前 container 对应的祖先，避免重复冒泡。</p>
-<figure class="source"><figcaption><span>删节源码 · DOMPluginEventSystem.js · 根监听去重</span><a href="../../react/packages/react-dom-bindings/src/events/DOMPluginEventSystem.js">打开文件</a></figcaption><pre><span class="kw">export function</span> <span class="fn">listenToAllSupportedEvents</span>(rootContainer) {
+<figure class="source"><figcaption><span>教程伪代码（不可执行） · DOMPluginEventSystem.js · 根监听去重</span><a href="../../react/packages/react-dom-bindings/src/events/DOMPluginEventSystem.js">打开文件</a></figcaption><pre><span class="kw">export function</span> <span class="fn">listenToAllSupportedEvents</span>(rootContainer) {
   <span class="kw">if</span> (!rootContainer[listeningMarker]) {
     rootContainer[listeningMarker] = <span class="kw">true</span>;
     allNativeEvents.forEach(name =&gt; {
-      <span class="kw">if</span> (!nonDelegatedEvents.has(name)) listenToNativeEvent(name, <span class="kw">false</span>, rootContainer);
-      listenToNativeEvent(name, <span class="kw">true</span>, rootContainer);
+      <span class="kw">if</span> (name !== <span class="str">'selectionchange'</span>) {
+        <span class="kw">if</span> (!nonDelegatedEvents.has(name)) listenToNativeEvent(name, <span class="kw">false</span>, rootContainer);
+        listenToNativeEvent(name, <span class="kw">true</span>, rootContainer);
+      }
     });
+    <span class="cm">// 省略：在 ownerDocument 单独去重安装 selectionchange。</span>
   }
 }</pre></figure></section>
 
-<section id="plugins"><h2>插件不是浏览器 polyfill，而是 React 事件语义层</h2>
+<section id="plugins"><h2>插件：从原生输入得到 React 事件</h2>
 <div class="table-wrap"><table><thead><tr><th>插件</th><th>输入</th><th>输出/职责</th></tr></thead><tbody>
 <tr><td>SimpleEventPlugin</td><td>click、key、pointer、mouse 等映射</td><td>选择 SyntheticEvent 子类，过滤浏览器特殊值</td></tr>
 <tr><td>ChangeEventPlugin</td><td>change/input/click/focusout</td><td>跨控件归一 onChange，并安排 controlled restore</td></tr>
 <tr><td>EnterLeaveEventPlugin</td><td>mouseover/out、pointerover/out</td><td>根据 from/to Fiber 合成 enter/leave 路径</td></tr>
 <tr><td>BeforeInputEventPlugin</td><td>composition、keypress、textInput</td><td>归一 composition/beforeInput 字符数据</td></tr>
 <tr><td>FormActionEventPlugin</td><td>submit</td><td>解析 action、FormData 与 transition/action 状态</td></tr>
-</tbody></table></div><p>插件先把 listener/合成事件加入 dispatchQueue，之后统一按 capture 逆序、bubble 正序执行。
-handler 触发的更新在 batchedUpdates 边界内归并，结束时再恢复受控组件状态。</p></section>
+</tbody></table></div><p>SimpleEventPlugin 按原生 capture/bubble 阶段分别累积；Change、Select、BeforeInput 则只在普通 bubble 路径提取，一次把 capture 回调放到列表前端、bubble 回调追加到末尾。dispatchQueue 再执行这些已排好的列表。
+最外 <code>batchedUpdates</code> 结束时，若有受控恢复目标，先冲刷同步更新，再按最终 props 恢复控件。</p></section>
 
 <section id="hydration"><h2>Hydration：匹配既有 DOM，同时保留事件因果顺序</h2><ol class="state-list">
 <li><strong>进入。</strong>hydration root 保留 initial children，HostRoot 进入 hydration state。</li><li><strong>匹配。</strong>begin/complete 路径用 canHydrate*、hydrateInstance/Text 寻找并校验既有节点。</li>
-<li><strong>差异。</strong>可恢复差异在 DEV 汇总警告；结构无法匹配时抛 HydrationMismatch 并切客户端重建路径。</li>
+<li><strong>差异。</strong>普通属性差异在 DEV 记入诊断表，通常不改写该属性；不兼容的文本或结构交给 reconciler 的 mismatch 路径，放弃受影响边界并客户端重建。</li>
 <li><strong>阻塞事件。</strong>若 native target 位于尚未 hydration 的边界，离散事件可尝试同步 hydration；连续事件按类型排队/合并。</li>
-<li><strong>重放。</strong>边界提交后 retryIfBlockedOn 清除 blocker，以原事件优先级重新派发。</li></ol>
+<li><strong>重放。</strong>边界提交后 retryIfBlockedOn 解锁匹配的连续槽；重放时重新查 blocker，克隆原生事件经 DOM 派发，由 listener 按事件类别设置更新优先级。同步 hydration 仍受阻的离散 click 不进入该连续队列。</li></ol>
 <div class="callout warn"><p><strong>属性差异不会一概“自动修好”：</strong>hydration 的安全目标是连接 server DOM 与 Fiber；某些不匹配只在 DEV 报告，
 结构性不匹配则放弃该边界。不要把 hydration 描述成普通 client diff。</p></div></section>
 
-<section id="server"><h2>Server HostConfig：只解释格式，不冒充 Fizz 引擎</h2><p><a href="../../react/packages/react-dom-bindings/src/server/ReactFizzConfigDOM.js">ReactFizzConfigDOM.js</a> 定义
+<section id="server"><h2>Server HostConfig：HTML 与恢复指令的编码层</h2><p><a href="../../react/packages/react-dom-bindings/src/server/ReactFizzConfigDOM.js">ReactFizzConfigDOM.js</a> 定义
 <code>createResumableState/createRenderState</code>、标签/文本序列化、资源 hoist/preload、Suspense 指令与 destination 写出。
 但 <code>createRequest/startWork/abort/resume</code> 的任务状态机来自 <code>packages/react-server</code>，不在本次范围。</p>
 <div class="table-wrap"><table><thead><tr><th>bindings 负责</th><th>react-server 负责（范围外）</th></tr></thead><tbody>
 <tr><td>HTML escaping、标签与属性格式</td><td>遍历 React tree、创建 request/task/segment</td></tr><tr><td>DOM resource hint 与 hoist 规则</td><td>Suspense 边界完成、错误与 abort 状态</td></tr>
-<tr><td>客户端恢复指令的 DOM 编码</td><td>何时把哪些 completed queue 交给 destination</td></tr><tr><td>Node/Web destination 写出协议适配</td><td>工作调度与 request 生命周期</td></tr>
+<tr><td>客户端恢复指令的 DOM 编码</td><td>何时把哪些 completed queue 交给 destination</td></tr><tr><td>按 DOM 格式调用已注入的 chunk 写出函数</td><td>工作调度、背压处理与 request 生命周期</td></tr>
 </tbody></table></div><p>生成文件 <code>ReactDOMFizzInstructionSetInlineCodeStrings.js</code> 由构建脚本产生，明确不作为手写注释目标。</p></section>
 
 <section id="evidence"><h2>源码与验证证据</h2><ul class="qa"><li><a href="../../react/packages/react-dom-bindings/src/client/ReactFiberConfigDOM.js">ReactFiberConfigDOM.js</a>：HostConfig 能力总表及 client/commit/hydration 主干。</li>

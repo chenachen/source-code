@@ -50,7 +50,9 @@ export type WatchSource<T = any> = Ref<T, any> | ComputedRef<T> | (() => T)
 
 /**
  * `watch(source, callback)` 的回调签名。
- * `oldValue` 首次立即执行时为 `undefined`；多数据源首次立即执行时为空数组。
+ * oldValue 首次立即执行时为 undefined；非空多数据源首次立即执行时为空数组。
+ * 空数据源数组也可通过 immediate 触发，其旧值仍为最初的空数组。deep watch 的
+ * 新旧值可指向同一对象，不能据此声称这里创建了修改前的深拷贝。
  */
 export type WatchCallback<V = any, OV = any> = (
   value: V,
@@ -63,7 +65,7 @@ export type OnCleanup = (cleanupFn: () => void) => void
 
 /** 底层 watch 配置；运行时核心会在此基础上增加 flush 等调度语义。 */
 export interface WatchOptions<Immediate = boolean> extends DebuggerOptions {
-  /** 是否在建立旧值后立即执行一次回调。 */
+  /** 是否在创建 watcher 时立即调用回调；首次旧值单来源为 undefined，多来源为空数组。 */
   immediate?: Immediate
   /** 是否递归读取数据源；数字表示最大遍历层数。 */
   deep?: boolean | number
@@ -95,7 +97,7 @@ export interface WatchOptions<Immediate = boolean> extends DebuggerOptions {
 export type WatchStopHandle = () => void
 
 /**
- * watch 返回句柄：直接调用等价于 `stop()`，还可暂停并在恢复时补执行遗漏的变化。
+ * watch 返回句柄：直接调用等价于 `stop()`；暂停期间的触发在恢复时合并为一次补调度。
  */
 export interface WatchHandle extends WatchStopHandle {
   /** 暂停调度，但保留依赖与期间的触发记录。 */
@@ -107,8 +109,8 @@ export interface WatchHandle extends WatchStopHandle {
 }
 
 /**
- * 尚未取得旧值的哨兵。不能直接用 `undefined`，因为数据源的真实初值也可能是 undefined，
- * 而 `immediate` 回调仍需正确区分“首次调用”和“已有旧值 undefined”。
+ * 尚未取得旧值的哨兵，与数据源的真实值（包括 undefined）分开表示。
+ * 首次 immediate 回调把它转为 undefined 或空数组，之后 oldValue 保存上轮 getter 的结果。
  */
 const INITIAL_WATCHER_VALUE = {}
 
@@ -135,6 +137,9 @@ export function getCurrentWatcher(): ReactiveEffect<any> | undefined {
  *
  * 与 `onEffectCleanup` 的单函数字段不同，一个 watcher 可登记多个清理函数。常用于取消
  * 上一轮尚未完成的请求、定时器或事件监听，避免过期异步结果覆盖新状态。
+ * 默认 owner 依赖同步执行中的 `activeWatcher`；用户回调返回 Promise 时也会立即恢复
+ * 外层 watcher，因此 await 后调用不会自动关联。回调参数 `onCleanup` 则已绑定所属
+ * effect，不依赖当前 `activeWatcher`。
  *
  * @param cleanupFn 要关联到 watcher 的清理函数。
  * @param failSilently 为 `true` 时，无活动 watcher 也不发出警告。
@@ -159,6 +164,10 @@ export function onWatcherCleanup(
 
 /**
  * 创建 watcher：跟踪数据源，在有效变化时执行回调或重新执行 watchEffect。
+ *
+ * 默认调度同步；只有注入 scheduler 才把 job 的执行时机交给宿主，底层自身不创建队列。
+ * 回调中的普通读取不切换 activeSub，因此不作为该 watcher 的 source 依赖收集；
+ * watchEffect 的同步函数体才在 effect.run 的追踪上下文内。用户 Promise 不被等待。
  *
  * 支持单个 Ref/getter/响应式对象、多个数据源数组，以及无回调的 effect 函数。响应式
  * 对象默认深遍历；getter 默认只比较返回值。此函数是平台无关底层实现，组件队列时机、
@@ -295,9 +304,13 @@ export function watch(
 
   /**
    * 调度器真正执行的 watcher 任务：先做活动/脏检查，再求新值、清理上一轮并调用回调。
+   *
+   * @param immediateFirstRun 首次强制执行标记，绕过脏检查和回调的新旧比较；调度器
+   * 对后续通知调用 job 时不应把普通更新误标为首次。deep/forceTrigger 可在同引用下
+   * 仍调用回调，oldValue 保留引用而非深拷贝；调用前保存新值以支持同步递归调度。
    */
   const job = (immediateFirstRun?: boolean) => {
-    // 已停止无需执行；非首次且依赖版本没变时跳过昂贵 getter/深比较。
+    // 已停止无需执行；非首次且依赖版本未变化时，跳过 watch getter 求值和后续回调判定。
     if (
       !(effect.flags & EffectFlags.ACTIVE) ||
       (!effect.dirty && !immediateFirstRun)
@@ -359,12 +372,14 @@ export function watch(
     ? () => scheduler(job, false)
     : (job as EffectScheduler)
 
-  /** 把回调内的清理注册固定绑定到当前 effect，避免异步/嵌套 watcher 串错归属。 */
+  /** 回调参数 onCleanup 固定绑定当前 effect；嵌套调用或 await 后登记也不依赖 activeWatcher。 */
   boundCleanup = fn => onWatcherCleanup(fn, false, effect)
 
   /**
    * 执行当前 watcher 的全部清理并删除记录；下一轮注册时会创建新数组。
-   * 同一函数也挂到 `effect.onStop`，因此重跑与永久停止共享完全相同的清理语义。
+   * 同一函数也挂到 effect.onStop，因此重跑与永久停止共用此入口。
+   * cleanupMap.delete 在用户清理之后：无 call 注入时，某个清理抛错会中断后续清理
+   * 和删除记录，不保证全部执行。call 注入时，逐项错误处理与是否吞错由宿主决定。
    */
   cleanup = effect.onStop = () => {
     const cleanups = cleanupMap.get(effect)
@@ -440,7 +455,7 @@ export function traverse(
       traverse(value[i], depth, seen)
     }
   } else if (isSet(value) || isMap(value)) {
-    // Map 键的身份通常不应被递归代理/解包；深度观察关注可能变化的 value/Set 成员。
+    // Map 只递归 value，Set 递归成员；Map 键对象的内部字段不纳入这次深遍历依赖。
     value.forEach((v: any) => {
       traverse(v, depth, seen)
     })

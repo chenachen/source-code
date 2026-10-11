@@ -94,7 +94,7 @@ export async function createModuleRunnerTester(
       hmr: {
         logger: false,
       },
-      // don't override by default so Vitest source maps are correct
+      // 默认不安装 sourcemap interceptor，保留 Vitest 自己的堆栈映射。
       sourcemapInterceptor: false,
       ...runnerConfig,
     })

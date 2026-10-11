@@ -40,30 +40,30 @@ import {enableScopeAPI} from 'shared/ReactFeatureFlags';
 
 import {enableInternalInstanceMap} from 'shared/ReactFeatureFlags';
 
-/** `randomKey` 保存维护 DOM 节点、Fiber、根容器和当前 props 的双向关联所需的共享索引、配置或模块级状态；生命周期覆盖当前 renderer。 */
+/** 本 React 副本的随机后缀，隔离同一 DOM 上不同副本的内部字段。 */
 const randomKey = Math.random().toString(36).slice(2);
-/** `internalInstanceKey` 保存维护 DOM 节点、Fiber、根容器和当前 props 的双向关联所需的共享索引、配置或模块级状态；生命周期覆盖当前 renderer。 */
+/** DOM 节点上的 Host/边界 Fiber 关联键。 */
 const internalInstanceKey = '__reactFiber$' + randomKey;
-/** `internalPropsKey` 保存维护 DOM 节点、Fiber、根容器和当前 props 的双向关联所需的共享索引、配置或模块级状态；生命周期覆盖当前 renderer。 */
+/** DOM 节点上的最新 props 缓存键；事件读取它而不是 Fiber.memoizedProps。 */
 const internalPropsKey = '__reactProps$' + randomKey;
-/** `internalContainerInstanceKey` 保存维护 DOM 节点、Fiber、根容器和当前 props 的双向关联所需的共享索引、配置或模块级状态；生命周期覆盖当前 renderer。 */
+/** 容器上的 HostRoot Fiber 标记键。 */
 const internalContainerInstanceKey = '__reactContainer$' + randomKey;
-/** `internalEventHandlersKey` 保存维护 DOM 节点、Fiber、根容器和当前 props 的双向关联所需的共享索引、配置或模块级状态；生命周期覆盖当前 renderer。 */
+/** 节点已安装的原生事件名/阶段 Set 的键；节点复用时仍保留。 */
 const internalEventHandlersKey = '__reactEvents$' + randomKey;
-/** `internalEventHandlerListenersKey` 保存维护 DOM 节点、Fiber、根容器和当前 props 的双向关联所需的共享索引、配置或模块级状态；生命周期覆盖当前 renderer。 */
+/** EventTarget 上 createEventHandle listener 集合的键。 */
 const internalEventHandlerListenersKey = '__reactListeners$' + randomKey;
-/** `internalEventHandlesSetKey` 保存维护 DOM 节点、Fiber、根容器和当前 props 的双向关联所需的共享索引、配置或模块级状态；生命周期覆盖当前 renderer。 */
+/** 目标已经使用过的 event handle 身份集合键，避免同一句柄重复注册。 */
 const internalEventHandlesSetKey = '__reactHandles$' + randomKey;
-/** `internalRootNodeResourcesKey` 保存维护 DOM 节点、Fiber、根容器和当前 props 的双向关联所需的共享索引、配置或模块级状态；生命周期覆盖当前 renderer。 */
+/** Document/ShadowRoot 上 stylesheet 与 script 资源缓存的键。 */
 const internalRootNodeResourcesKey = '__reactResources$' + randomKey;
-/** `internalHoistableMarker` 保存维护 DOM 节点、Fiber、根容器和当前 props 的双向关联所需的共享索引、配置或模块级状态；生命周期覆盖当前 renderer。 */
+/** 标记该节点由 React hoistable/resource 路径管理的键。 */
 const internalHoistableMarker = '__reactMarker$' + randomKey;
-/** `internalScrollTimer` 保存维护 DOM 节点、Fiber、根容器和当前 props 的双向关联所需的共享索引、配置或模块级状态；生命周期覆盖当前 renderer。 */
+/** 目标上 scrollend debounce 计时器的键。 */
 const internalScrollTimer = '__reactScroll$' + randomKey;
-/** `internalLoadPendingKey` 保存维护 DOM 节点、Fiber、根容器和当前 props 的双向关联所需的共享索引、配置或模块级状态；生命周期覆盖当前 renderer。 */
+/** 节点上等待重放 load 的标记键。 */
 const internalLoadPendingKey = '__reactLoad$' + randomKey;
 
-/** `InstanceUnion` 定义维护 DOM 节点、Fiber、根容器和当前 props 的双向关联的数据契约；字段共同约束所有权、生命周期与跨模块传递边界。 */
+/** 实例映射允许关联的 DOM、文本、边界与 Scope 对象。 */
 type InstanceUnion =
   | Instance
   | TextInstance
@@ -72,18 +72,18 @@ type InstanceUnion =
   | ReactScopeInstance
   | Container;
 
-/** `PossiblyWeakMap` 保存维护 DOM 节点、Fiber、根容器和当前 props 的双向关联所需的共享索引、配置或模块级状态；生命周期覆盖当前 renderer。 */
+/** 优先 WeakMap，环境缺失时回退 Map；用于可选的 Fiber/props 外部映射。 */
 const PossiblyWeakMap = typeof WeakMap === 'function' ? WeakMap : Map;
-/** `internalInstanceMap` 保存维护 DOM 节点、Fiber、根容器和当前 props 的双向关联所需的共享索引、配置或模块级状态；生命周期覆盖当前 renderer。 */
+/** 可选的实例到 Fiber 映射；删除实例时清除关联。 */
 const internalInstanceMap:
   | WeakMap<InstanceUnion, Fiber>
   | Map<InstanceUnion, Fiber> = new PossiblyWeakMap();
-/** `internalPropsMap` 保存维护 DOM 节点、Fiber、根容器和当前 props 的双向关联所需的共享索引、配置或模块级状态；生命周期覆盖当前 renderer。 */
+/** 可选的实例到最新 props 映射，供事件 handler 查询。 */
 const internalPropsMap:
   | WeakMap<InstanceUnion, Props>
   | Map<InstanceUnion, Props> = new PossiblyWeakMap();
 
-/** `detachDeletedInstance` 更新关联或宿主状态，使后续读取看到一致快照；用于维护 DOM 节点、Fiber、根容器和当前 props 的双向关联。 */
+/** 清除已删除实例的 Fiber、props 和 event-handle 关联；保留原生 listener Set，避免节点复用时重复安装。 */
 export function detachDeletedInstance(node: Instance): void {
   //不要删除事件监听器集合。它跟踪的本地事件监听器
   //保持附着在节点上，所以这种记账需要持续
@@ -107,7 +107,7 @@ export function detachDeletedInstance(node: Instance): void {
   delete (node as any)[internalEventHandlesSetKey];
 }
 
-/** `precacheFiberNode` 更新关联或宿主状态，使后续读取看到一致快照；用于维护 DOM 节点、Fiber、根容器和当前 props 的双向关联。 */
+/** 把 Host/边界 Fiber 写入实例映射或 DOM 字段，供事件和 hydration 反向查找。 */
 export function precacheFiberNode(
   hostInst: Fiber,
   node:
@@ -127,33 +127,30 @@ export function precacheFiberNode(
   (node as any)[internalInstanceKey] = hostInst;
 }
 
-/** `markContainerAsRoot` 更新关联或宿主状态，使后续读取看到一致快照；用于维护 DOM 节点、Fiber、根容器和当前 props 的双向关联。 */
+/** 在容器上登记 HostRoot Fiber。 */
 export function markContainerAsRoot(hostRoot: Fiber, node: Container): void {
   // $FlowFixMe[prop-missing]
   node[internalContainerInstanceKey] = hostRoot;
 }
 
-/** `unmarkContainerAsRoot` 完成该模块的宿主边界操作；用于维护 DOM 节点、Fiber、根容器和当前 props 的双向关联。 */
+/** 释放容器的根标记；原生根 listener 由容器去重标记继续保留。 */
 export function unmarkContainerAsRoot(node: Container): void {
   // $FlowFixMe[prop-missing]
   node[internalContainerInstanceKey] = null;
 }
 
-/** `isContainerMarkedAsRoot` 判断适用条件并返回只读结果；用于维护 DOM 节点、Fiber、根容器和当前 props 的双向关联。 */
+/** 检查容器是否仍登记为某个 React 根。 */
 export function isContainerMarkedAsRoot(node: Container): boolean {
   // $FlowFixMe[prop-missing]
   return !!node[internalContainerInstanceKey];
 }
 
-//给定一个 DOM 节点，返回最近的 HostComponent 或 HostText fiber 祖先。
-//如果目标节点是已水化或尚未渲染的子树的一部分，那么
-//这也可能返回一个 SuspenseComponent、ActivityComponent 或 HostRoot 到
-//指出那一点。
-//从概念上讲，HostRoot fiber 是 Container 节点的子节点。所以如果你
-//将容器节点作为 targetNode，你实际上不会得到
-//返回 HostRoot。要到达 HostRoot，你需要经过它的一个子节点。
-//同样的道理也适用于悬念和活动边界。
-/** `getClosestInstanceFromNode` 查询所需宿主值；无匹配时走显式回退；用于维护 DOM 节点、Fiber、根容器和当前 props 的双向关联。 */
+/**
+ * 从事件目标反查最近 React Fiber；先取直接关联，再沿 DOM 父链检查根和未 hydration 边界。
+ * 父节点同时属于外层宿主和内层根时优先内层 HostRoot，使其能阻塞尚未 hydration 的事件。
+ * HostRoot 容器标记只在父链读取，target 本身为容器时不会命中它自己的 HostRoot。
+ * 返回值还需由事件入口检查 mounted/dehydrated 状态，本函数不决定是否可派发。
+ */
 export function getClosestInstanceFromNode(targetNode: Node): null | Fiber {
   let targetInst: void | Fiber;
   if (enableInternalInstanceMap) {
@@ -162,21 +159,14 @@ export function getClosestInstanceFromNode(targetNode: Node): null | Fiber {
     targetInst = (targetNode as any)[internalInstanceKey];
   }
   if (targetInst) {
-    //不要在这里返回 HostRoot、SuspenseComponent 或 ActivityComponent。
+    // 直接目标已有实例关联，无需再搜索根或未 hydration 的边界。
     return targetInst;
   }
-  //如果直接的事件目标不是 React 拥有的 DOM 节点，我们需要查看
-  //查看它的某个父节点是否是 React 拥有的 DOM 节点。
+  // 未关联的目标可能是用户插入的节点，也可能属于尚未 hydration 的服务端子树。
   let parentNode = targetNode.parentNode;
   while (parentNode) {
-    //我们将检查这是否是可能包含内容的容器根
-    //未来的 React 节点。我们需要先检查这个，因为
-    //如果我们是一个已脱水容器的子元素，我们需要先
-    //在去寻找父容器之前先找到内部容器
-    //实例。请注意，我们不会检查 targetNode 上的此字段
-    //本身因为纤维在概念上位于容器之间
-    //节点和第一个子节点。它并没有包围容器节点。
-    //如果它不是容器，则继续检查它是否为宿主实例。
+    // 先查父节点自己的 HostRoot，再查它作为外层根宿主实例的关联，
+    // 使尚未 hydration 的嵌套根优先成为 blocker。
     if (enableInternalInstanceMap) {
       targetInst =
         (parentNode as any)[internalContainerInstanceKey] ||
@@ -200,18 +190,11 @@ export function getClosestInstanceFromNode(targetNode: Node): null | Fiber {
         targetInst.child !== null ||
         (alternate !== null && alternate.child !== null)
       ) {
-        //接下来我们需要弄清楚跳过的节点是否是
-        //嵌套在一个脱水的边界内，如果是的话，是哪个。
+        // 子树存在 Fiber 时，检查跳过的 DOM 是否在尚未 hydration 的边界中。
         let hydrationInstance = getParentHydrationBoundary(targetNode);
         while (hydrationInstance !== null) {
-          //我们发现了一个挂起实例。这意味着我们还没有
-          //还没有给它补水。即使我们把评论留在
-          //DOM 在水合之后，并且 DOM 中存在边界
-          //那可能已经被水合了，我们就找不到它们了
-          //通过这个通道，因为如果目标是水合的，它会
-          //它上面有一个 internalInstanceKey。
-          //让我们获取与 SuspenseComponent 关联的 fiber
-          //作为最深的实例。
+          // 读取边界注释关联的 Suspense/Activity Fiber。已 hydration 的宿主目标
+          // 通常在函数入口就命中实例，不会走到这条边界搜索路径。
           const targetFiber = enableInternalInstanceMap
             ? internalInstanceMap.get(hydrationInstance)
             : // $FlowFixMe[prop-missing]
@@ -219,14 +202,9 @@ export function getClosestInstanceFromNode(targetNode: Node): null | Fiber {
           if (targetFiber) {
             return targetFiber;
           }
-          //如果我们在评论中找不到 Fiber，可能是因为
-          //我们还没有去给它补水。可能还会有一个
-          //父边界没有高于这个边界，所以我们需要查找
-          //已知的最外层。
+          // 内层注释尚无 Fiber 时，继续找更外层、已被 React 认领的边界。
           hydrationInstance = getParentHydrationBoundary(hydrationInstance);
-          //如果我们找不到一个，那么这应该意味着父母
-          //宿主组件尚未被水合。我们可以返回它
-          //下面因为它之后会在 isMounted 检查时退出。
+          // 没有已关联边界时回退父实例；事件入口还会检查 mounted/hydration 状态。
         }
       }
       return targetInst;
@@ -238,7 +216,7 @@ export function getClosestInstanceFromNode(targetNode: Node): null | Fiber {
 }
 
 /**
- * 给定一个 DOM 节点，返回 ReactDOMComponent 或 ReactDOMTextComponent 实例，如果该节点不是由此 React 渲染的，则返回 null。
+ * 读取节点直接关联的宿主、Suspense/Activity 或 HostRoot Fiber；无关联或 tag 不受支持时返回 null。
  */
 export function getInstanceFromNode(node: Node): Fiber | null {
   let inst: void | null | Fiber;
@@ -271,7 +249,7 @@ export function getInstanceFromNode(node: Node): Fiber | null {
 }
 
 /**
- * 给定一个 ReactDOMComponent 或 ReactDOMTextComponent，返回对应的 DOM 节点。
+ * 返回 HostComponent/HostHoistable/HostSingleton/HostText Fiber 的 stateNode；其他 tag 抛错。
  */
 export function getNodeFromInstance(inst: Fiber): Instance | TextInstance {
   const tag = inst.tag;
@@ -281,17 +259,15 @@ export function getNodeFromInstance(inst: Fiber): Instance | TextInstance {
     tag === HostSingleton ||
     tag === HostText
   ) {
-    //在 Fiber 中，这现在只是状态节点。我们假设它将会是
-    //一个宿主组件或宿主文本。
+    // 这些宿主 tag 的 stateNode 就是对应 DOM 元素或 Text。
     return inst.stateNode;
   }
 
-  //没有这个第一个不变量，传递一个非 DOM 组件会触发下一个
-  //针对缺失父项的不变式，这非常令人困惑。
+  // 此 API 不沿组件树寻找 DOM；传入非宿主 Fiber 直接拒绝。
   throw new Error('getNodeFromInstance: Invalid argument.');
 }
 
-/** `getFiberCurrentPropsFromNode` 查询所需宿主值；无匹配时走显式回退；用于维护 DOM 节点、Fiber、根容器和当前 props 的双向关联。 */
+/** 读取 DOM 实例上的最新 props；没有关联时返回 null。 */
 export function getFiberCurrentPropsFromNode(
   node:
     | Container
@@ -306,7 +282,7 @@ export function getFiberCurrentPropsFromNode(
   return (node as any)[internalPropsKey] || null;
 }
 
-/** `updateFiberProps` 更新关联或宿主状态，使后续读取看到一致快照；用于维护 DOM 节点、Fiber、根容器和当前 props 的双向关联。 */
+/** 替换实例的 props 缓存，使随后派发读取本次提交的 handler。 */
 export function updateFiberProps(node: Instance, props: Props): void {
   if (enableInternalInstanceMap) {
     internalPropsMap.set(node, props);
@@ -315,7 +291,7 @@ export function updateFiberProps(node: Instance, props: Props): void {
   (node as any)[internalPropsKey] = props;
 }
 
-/** `getEventListenerSet` 查询所需宿主值；无匹配时走显式回退；用于维护 DOM 节点、Fiber、根容器和当前 props 的双向关联。 */
+/** 取得节点原生监听去重 Set；首次读取时创建并缓存空 Set。 */
 export function getEventListenerSet(node: EventTarget): Set<string> {
   let elementListenerSet: Set<string> | void = (node as any)[
     internalEventHandlersKey
@@ -326,7 +302,7 @@ export function getEventListenerSet(node: EventTarget): Set<string> {
   return elementListenerSet;
 }
 
-/** `getFiberFromScopeInstance` 查询所需宿主值；无匹配时走显式回退；用于维护 DOM 节点、Fiber、根容器和当前 props 的双向关联。 */
+/** 读取 Scope 实例关联的 Fiber，供 Scope API 定位 React 树。 */
 export function getFiberFromScopeInstance(
   scope: ReactScopeInstance,
 ): null | Fiber {
@@ -339,7 +315,7 @@ export function getFiberFromScopeInstance(
   return null;
 }
 
-/** `setEventHandlerListeners` 更新关联或宿主状态，使后续读取看到一致快照；用于维护 DOM 节点、Fiber、根容器和当前 props 的双向关联。 */
+/** 替换 EventTarget 的 createEventHandle listener 集合。 */
 export function setEventHandlerListeners(
   scope: EventTarget | ReactScopeInstance,
   listeners: Set<ReactDOMEventHandleListener>,
@@ -347,14 +323,14 @@ export function setEventHandlerListeners(
   (scope as any)[internalEventHandlerListenersKey] = listeners;
 }
 
-/** `getEventHandlerListeners` 查询所需宿主值；无匹配时走显式回退；用于维护 DOM 节点、Fiber、根容器和当前 props 的双向关联。 */
+/** 读取 EventTarget 的 event-handle listener 集合；未登记时返回 null。 */
 export function getEventHandlerListeners(
   scope: EventTarget | ReactScopeInstance,
 ): null | Set<ReactDOMEventHandleListener> {
   return (scope as any)[internalEventHandlerListenersKey] || null;
 }
 
-/** `addEventHandleToTarget` 登记目标并保持现有监听器或宿主顺序；用于维护 DOM 节点、Fiber、根容器和当前 props 的双向关联。 */
+/** 将句柄身份加入目标的已注册集合，首次使用时创建集合。 */
 export function addEventHandleToTarget(
   target: EventTarget | ReactScopeInstance,
   eventHandle: ReactDOMEventHandle,
@@ -366,7 +342,7 @@ export function addEventHandleToTarget(
   eventHandles.add(eventHandle);
 }
 
-/** `doesTargetHaveEventHandle` 完成该模块的宿主边界操作；用于维护 DOM 节点、Fiber、根容器和当前 props 的双向关联。 */
+/** 按句柄身份检查目标是否已注册该 event handle。 */
 export function doesTargetHaveEventHandle(
   target: EventTarget | ReactScopeInstance,
   eventHandle: ReactDOMEventHandle,
@@ -378,7 +354,7 @@ export function doesTargetHaveEventHandle(
   return eventHandles.has(eventHandle);
 }
 
-/** `getResourcesFromRoot` 查询所需宿主值；无匹配时走显式回退；用于维护 DOM 节点、Fiber、根容器和当前 props 的双向关联。 */
+/** 取得或创建该 Document/ShadowRoot 的 stylesheet 与 script 资源缓存。 */
 export function getResourcesFromRoot(root: HoistableRoot): RootResources {
   let resources = (root as any)[internalRootNodeResourcesKey];
   if (!resources) {
@@ -390,47 +366,47 @@ export function getResourcesFromRoot(root: HoistableRoot): RootResources {
   return resources;
 }
 
-/** `isMarkedHoistable` 判断适用条件并返回只读结果；用于维护 DOM 节点、Fiber、根容器和当前 props 的双向关联。 */
+/** 检查节点是否被标记为 React 管理的 hoistable。 */
 export function isMarkedHoistable(node: Node): boolean {
   return !!(node as any)[internalHoistableMarker];
 }
 
-/** `markNodeAsHoistable` 更新关联或宿主状态，使后续读取看到一致快照；用于维护 DOM 节点、Fiber、根容器和当前 props 的双向关联。 */
+/** 标记节点由 hoistable 路径管理。 */
 export function markNodeAsHoistable(node: Node) {
   (node as any)[internalHoistableMarker] = true;
 }
 
-/** `getScrollEndTimer` 查询所需宿主值；无匹配时走显式回退；用于维护 DOM 节点、Fiber、根容器和当前 props 的双向关联。 */
+/** 读取目标当前 scrollend debounce 计时器。 */
 export function getScrollEndTimer(node: EventTarget): ?TimeoutID {
   return (node as any)[internalScrollTimer];
 }
 
-/** `setScrollEndTimer` 更新关联或宿主状态，使后续读取看到一致快照；用于维护 DOM 节点、Fiber、根容器和当前 props 的双向关联。 */
+/** 保存目标当前 scrollend debounce 计时器。 */
 export function setScrollEndTimer(node: EventTarget, timer: TimeoutID): void {
   (node as any)[internalScrollTimer] = timer;
 }
 
-/** `clearScrollEndTimer` 清理对应状态，重复清理保持安全；用于维护 DOM 节点、Fiber、根容器和当前 props 的双向关联。 */
+/** 把目标的 scrollend 计时器记录清空；实际 clearTimeout 由调用方完成。 */
 export function clearScrollEndTimer(node: EventTarget): void {
   (node as any)[internalScrollTimer] = undefined;
 }
 
-/** `markNodeAsPendingLoad` 更新关联或宿主状态，使后续读取看到一致快照；用于维护 DOM 节点、Fiber、根容器和当前 props 的双向关联。 */
+/** 标记节点仍有待处理的 load。 */
 export function markNodeAsPendingLoad(node: Node): void {
   (node as any)[internalLoadPendingKey] = true;
 }
 
-/** `clearPendingLoadOnNode` 清理对应状态，重复清理保持安全；用于维护 DOM 节点、Fiber、根容器和当前 props 的双向关联。 */
+/** 清除节点的待处理 load 标记。 */
 export function clearPendingLoadOnNode(node: Node): void {
   (node as any)[internalLoadPendingKey] = undefined;
 }
 
-/** `isNodePendingLoad` 判断适用条件并返回只读结果；用于维护 DOM 节点、Fiber、根容器和当前 props 的双向关联。 */
+/** 检查节点是否仍标记为等待 load。 */
 export function isNodePendingLoad(node: Node): boolean {
   return (node as any)[internalLoadPendingKey] === true;
 }
 
-/** `isOwnedInstance` 判断适用条件并返回只读结果；用于维护 DOM 节点、Fiber、根容器和当前 props 的双向关联。 */
+/** 检查节点是否关联当前 React 副本的 Fiber，或被当前副本标记为 hoistable。 */
 export function isOwnedInstance(node: Node): boolean {
   if (enableInternalInstanceMap) {
     return !!(

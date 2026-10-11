@@ -6,13 +6,14 @@ import microApp from '../..'
 declare global {
   /** 资源路径补全断言为通用 HTMLElement 补充 src/href 测试字段。 */
   interface HTMLElement {
-    /** img/iframe 等元素补全后的资源地址。 */
+    /** 资源路径测试读取的 src 字段；是否补全仍由具体静态/动态处理分支决定。 */
     src: string
     /** anchor/link 等元素补全后的资源地址。 */
     href: string
   }
 }
 
+/** 当前默认 Jest testMatch 未纳入本文件，需显式选择才会发现这些场景。 */
 describe('source index', () => {
   let appCon: Element
   beforeAll(() => {
@@ -26,6 +27,7 @@ describe('source index', () => {
       plugins: {
         global: [
           {
+            /** 以文件名后缀排除全局 link3/script3，使入口提取只登记其余资源。 */
             excludeChecker: (url) => ['link3.css', 'script3.js'].some(item => url.endsWith(item)),
             /** 全局 HTML 插件原样返回源码，覆盖有效插件选择分支。 */
             processHtml (code, _url, _options) {
@@ -39,6 +41,7 @@ describe('source index', () => {
         modules: {
           'test-app2': [
             {
+              /** 为 test-app2 额外排除 link4/script4，验证应用插件在全局排除之外继续参与判断。 */
               excludeChecker: (url) => ['link4.css', 'script4.js'].some(item => url.endsWith(item))
             }
           ],
@@ -50,7 +53,7 @@ describe('source index', () => {
           'test-app4': 'invalid plugin' as any,
           'test-app8': [
             {
-              /** 模块 HTML 插件替换标记文本，证明应用级配置优先并实际执行。 */
+              /** 应用级 HTML 插件在全局插件之后替换标记文本，mounted 时用替换后的 id 断言结果。 */
               processHtml (code, _url, _options) {
                 return code.replace('app', 'app-replaced')
               }
@@ -66,7 +69,13 @@ describe('source index', () => {
     return releaseAllEffect()
   })
 
-  // 带有exclude属性的dom需要被忽略
+  /**
+   * 以 disableScopecss 挂载 element-config，
+   * 配置全局排除 link3/script3 和 app2 专属排除 link4/script4；
+   * mounted 后核对 exclude 与插件排除节点已移除及静态地址数。CSS 应保留三个不同地址；
+   * 脚本只剩 common/global.js 与 script2.js，重复地址被 Set 去重，
+   * 原 size=3 断言与当前 fixture/rc.32 不符。
+   */
   test('exclude dom should be ignore', async () => {
     const microAppElement2 = document.createElement('micro-app')
     microAppElement2.setAttribute('name', 'test-app2')
@@ -94,7 +103,11 @@ describe('source index', () => {
     })
   })
 
-  // 支持text类型入口文件
+  /**
+   * 把 element-config/index.txt 当入口挂载，等待 mounted 后查询静态资源集合。
+   * 文本仍按 HTML 解析，exclude 脚本与样式被移除，仅保留一个有效外链 CSS，脚本集合为空；
+   * 验证加载器不要求入口必须带 .html。
+   */
   test('support text file as index', async () => {
     const microAppElement3 = document.createElement('micro-app')
     microAppElement3.setAttribute('name', 'test-app3')
@@ -111,7 +124,10 @@ describe('source index', () => {
     })
   })
 
-  // html 没有head或body标签则报错
+  /**
+   * 分别挂载缺 head 与缺 body 的原始 HTML，先插入元素再绑定 error，各等待 200ms。
+   * 应记录明确的缺容器日志并派发宿主 error，验证格式化后的 micro-app-head/body 是提取阶段必需的结构。
+   */
   test('no head or no body element in html', async () => {
     const microAppElement4 = document.createElement('micro-app')
     microAppElement4.setAttribute('name', 'test-app4')
@@ -148,7 +164,11 @@ describe('source index', () => {
     expect(nobodyErrorHandle).toBeCalledWith(expect.any(CustomEvent))
   })
 
-  // 补全html中的img, 但iframe、a不做处理
+  /**
+   * 挂载含 img、iframe、a 的 ssr-render HTML，等待 mounted 后读原始属性。
+   * 静态 img.src 应补为子应用 origin 的绝对地址，iframe.src 与 a.href 保持原输入；
+   * 验证静态提取的补址标签范围，与动态节点补址不同。
+   */
   test('completion path of img/iframe/a in html', async () => {
     const microAppElement6 = document.createElement('micro-app')
     microAppElement6.setAttribute('name', 'test-app6')
@@ -166,7 +186,10 @@ describe('source index', () => {
     })
   })
 
-  // 返回一个空的html
+  /**
+   * 用字节为空的 empty.html 挂载应用，等待 100ms 后观察最后一条日志。应报告 html is empty，
+   * 验证加载器的空响应分支；本例未断言 error 事件或最终应用状态。
+   */
   test('test empty html', async () => {
     const microAppElement7 = document.createElement('micro-app')
     microAppElement7.setAttribute('name', 'test-app7')
@@ -182,7 +205,11 @@ describe('source index', () => {
     })
   })
 
-  // 会执行 processHtml 函数
+  /**
+   * 给 app8 配置应用级 processHtml，把输入中的 app 替换为 app-replaced，
+   * 再挂载 process-html fixture。mounted 后应能查到替换后的 id，验证全局原样插件之后运行应用插件，
+   * 且插件输出进入 DOM 提取。
+   */
   test('executor processHtml plugin', async () => {
     const microAppElement8 = document.createElement('micro-app')
     microAppElement8.setAttribute('name', 'test-app8')

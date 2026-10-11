@@ -50,7 +50,7 @@
         </div>
         <div class="callout">
           <p><strong>不负责：</strong>shared 不持有 FiberRoot、不决定 Lane、不安排 host callback，也不执行 DOM mutation。
-          它提供“词汇、约束和小型无状态工具”，生命周期仍由消费方拥有。</p>
+          它提供类型标记、跨包约束和工具；部分诊断工具持有缓存、计数器或临时全局状态，运行上下文由调用方建立与恢复。</p>
         </div>
       </section>
 
@@ -74,8 +74,9 @@
         <h2>身份协议：为什么不是字符串常量</h2>
         <p>
           元素记录只是普通 JavaScript 对象。若仅凭字段猜测，用户对象可能被误判；若每份 bundle 创建局部 Symbol，
-          多副本 React 又不能互认。<code>Symbol.for</code> 在同一 realm 的全局注册表中复用身份，字符串名称同时成为
-          renderer 与 DevTools 的跨包约定。
+          多副本 React 又不能互认。<code>Symbol.for</code> 根据字符串名称复用全局注册表中的身份，名称同时成为
+          renderer 与 DevTools 的跨包约定。ECMAScript 将这份注册表放在 agent 上：同一 agent 内的多个 realm
+          可以共享它。进程或 worker 之间传递元素则还需要独立的传输协议。
         </p>
         <figure class="source">
           <figcaption><span>删节源码 · ReactSymbols.js</span><a href="../../react/packages/shared/ReactSymbols.js">打开文件</a></figcaption>
@@ -87,7 +88,7 @@
         </figure>
         <p>
           这里的“不变量”是<strong>每种语义一个唯一标记</strong>。仓库测试遍历全部导出，以 Symbol 值建立反向 Map；
-          一旦两个名称碰撞就立即抛错。这证明的是分派身份唯一，并不证明每个实验类型在所有构建中都可公开使用。
+          一旦两个名称碰撞就立即抛错。具体类型能否由公开入口创建，还取决于对应构建的导出和 feature flag。
         </p>
         <figure class="source">
           <figcaption><span>连续测试原码 · ReactSymbols-test.internal.js</span><a href="../../react/packages/shared/__tests__/ReactSymbols-test.internal.js">打开测试</a></figcaption>
@@ -98,7 +99,7 @@
 
         <h3>iterator 是同一协议层的兼容例子</h3>
         <p>
-          <code>getIteratorFn</code> 先拒绝 null/primitive，再读取标准 <code>Symbol.iterator</code> 或早期
+          <code>getIteratorFn</code> 只接受非 null 对象，再读取标准 <code>Symbol.iterator</code> 或早期
           <code>@@iterator</code>。它返回“工厂函数”而非直接开始遍历，所以 children 消费者仍拥有调用时机、异常与迭代器清理。
         </p>
       </section>
@@ -112,19 +113,21 @@
               <tr><td>ReactElement</td><td>react JSX/element 工厂</td><td>用户树、props/children 引用；被协调后可丢弃</td><td>定义形状与 <code>$$typeof</code> 身份</td></tr>
               <tr><td>ReactPortal</td><td>react-dom portal 入口</td><td>更新树持有到删除</td><td>定义目标容器与实现字段的共享形状</td></tr>
               <tr><td>ReactContext</td><td><code>createContext</code></td><td>模块/应用通常长生命周期持有</td><td>定义 Provider/Consumer 与 renderer value 槽</td></tr>
-              <tr><td>ReactCache</td><td>reconciler cache 路径</td><td>root/边界 retain-release 管理</td><td>定义 data map、refCount 与 abort controller 契约</td></tr>
-              <tr><td>Transition</td><td>startTransition / reconciler</td><td>一次异步动作组</td><td>定义 name、startTime、types 等跨层元数据</td></tr>
+              <tr><td>Thenable / Wakeable</td><td>应用、数据源或 renderer</td><td>异步读取与 Suspense 重试路径持有</td><td>定义状态和值字段，区分读取结果与重试通知</td></tr>
+              <tr><td>StartTransitionOptions</td><td>startTransition 调用方</td><td>用于本次调用的诊断配置</td><td>定义可选 name；Transition 运行时对象由 react/reconciler 另行创建</td></tr>
             </tbody>
           </table>
         </div>
         <p>
           Flow exact object、variance 与 opaque type 是源码契约的一部分，但浏览器不会执行它们。
-          因此“字段存在于 <code>ReactTypes.js</code>”不能单独证明运行时一定写入；还要回到创建函数与消费函数核验。
+          例如 <code>ReactContext</code> 的两组 value 槽由 <code>createContext</code> 初始化；reconciler
+          根据 renderer 类型读取其中一组，在进入 Provider 时保存旧值、写入新值，离开时再恢复。
+          类型描述字段形状，创建与消费代码决定它何时生效。
         </p>
       </section>
 
       <section id="bridges">
-        <h2>私有桥：减少全局状态，而不是消除耦合</h2>
+        <h2>私有桥：跨包共享同一份上下文</h2>
         <h3>ReactSharedInternals</h3>
         <p>
           shared 从公开 <code>react</code> 包取出刻意命名为不可公开依赖的 internals 对象。hooks facade 读取当前 dispatcher、
@@ -141,7 +144,9 @@
         <h3>ReactInstanceMap</h3>
         <p>
           class component 的公开实例需要让 <code>setState</code> 等入口回到当前 Fiber。实现没有维护额外 Map，
-          而是在实例的 <code>_reactInternals</code> 字段上直接安装引用：实例自己决定可达性，renderer 在挂载/切换时负责更新。
+          而是在实例的 <code>_reactInternals</code> 字段上直接安装引用。class 实例构造完成后，reconciler
+          将它关联到当时的 work-in-progress Fiber；后续更新通过该 Fiber 及其 alternate 找到组件和根，
+          不会在每次 current/work-in-progress 切换时重写这个字段。
         </p>
         <figure class="source">
           <figcaption><span>删节源码 · ReactInstanceMap.js</span><a href="../../react/packages/shared/ReactInstanceMap.js">打开文件</a></figcaption>
@@ -186,7 +191,8 @@
         <p>
           fork 差异必须与消费点一起解释：<code>enableObjectFiber</code> 改变 Fiber 的创建表示，
           <code>enableRetryLaneExpiration</code> 改变饥饿恢复策略，<code>enableViewTransition</code> 打开跨 reconciler/DOM 的整条机制。
-          只看 true/false 无法推导用户可观察行为。
+          例如 retry lane 默认不设过期时间；开启 <code>enableRetryLaneExpiration</code> 后，root
+          调度扫描会为它计算 <code>当前时间 + retryLaneExpirationMs</code> 的期限，并在等待超时后标记为 expired。
         </p>
       </section>
 
@@ -195,7 +201,7 @@
         <p>
           生产热路径常用 <code>'' + value</code>；Symbol、Temporal 或自定义 primitive conversion 可能在这里抛错。
           开发构建先探测 coercion，打印“值被当作 key/attribute/CSS 等”的上下文，再执行同样表达式抛出，
-          于是调用栈仍指向真实 React 入口，而不是被一个替代转换吞掉。
+          失败值通常再次抛出相同的转换错误，栈中也保留调用 helper 的 React 入口。
         </p>
         <figure class="source">
           <figcaption><span>删节源码 · CheckStringCoercion.js</span><a href="../../react/packages/shared/CheckStringCoercion.js">打开文件</a></figcaption>
@@ -213,8 +219,8 @@
 }</pre>
         </figure>
         <p>
-          代价是开发环境会做一次额外探测，但生产分支可被 <code>__DEV__</code> 消除。错误字符串本身保持英文，
-          因为它是测试与错误解码链的可观察契约；中文注释解释机制而不改字符串。
+          成功值在开发环境多经历一次探测；失败值先被探测，再在日志后重放转换。若对象的转换方法有副作用，
+          这些调用都会执行该方法。生产构建移除 <code>__DEV__</code> 检查，只保留消费方原有的字符串转换。
         </p>
       </section>
 
@@ -225,7 +231,7 @@
           <li><strong>开发探测。</strong>React JSX 工厂在真正拼接前调用 shared 的 <code>checkKeyStringCoercion</code>。</li>
           <li><strong>上下文日志。</strong>helper 输出“不支持的 key 类型”和类型名，说明失败发生在哪个用途。</li>
           <li><strong>原语义重放。</strong><code>testStringCoercion</code> 执行 <code>'' + value</code>，异常沿 JSX 入口栈传播。</li>
-          <li><strong>生产边界。</strong><code>__DEV__</code> 探测被移除，真正的 <code>'' + value</code> 仍保持相同行为与成本模型。</li>
+          <li><strong>生产边界。</strong><code>__DEV__</code> 探测被移除，JSX 工厂直接执行 <code>'' + value</code>；Symbol key 仍会在这一步抛错。</li>
         </ol>
         <figure class="source">
           <figcaption><span>删节源码（跨包消费点）· ReactJSXElement.js</span><a href="../../react/packages/react/src/jsx/ReactJSXElement.js">打开文件</a></figcaption>
@@ -240,11 +246,11 @@ key = <span class="str">''</span> + maybeKey;</pre>
         <h2>证据表与适用边界</h2>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>结论</th><th>源码证据</th><th>测试证据</th><th>证明边界</th></tr></thead>
+            <thead><tr><th>结论</th><th>源码证据</th><th>测试证据</th><th>适用条件</th></tr></thead>
             <tbody>
-              <tr><td>类型标记必须唯一</td><td>ReactSymbols exports</td><td><a href="../../react/packages/shared/__tests__/ReactSymbols-test.internal.js">ReactSymbols-test</a></td><td>证明当前导出无碰撞，不证明跨 realm 对象共享 Symbol 注册表</td></tr>
-              <tr><td>生产错误用代码与 URL 编码参数</td><td><a href="../../react/packages/shared/formatProdErrorMessage.js">formatProdErrorMessage.js</a></td><td><a href="../../react/packages/shared/__tests__/ReactError-test.internal.js">ReactError-test</a></td><td>gate 只在 production 非 source 构建运行</td></tr>
-              <tr><td>console format 保留/补齐 specifier</td><td><a href="../../react/packages/shared/normalizeConsoleFormat.js">normalizeConsoleFormat.js</a></td><td><a href="../../react/packages/shared/__tests__/normalizeConsoleFormat-test.internal.js">normalizeConsoleFormat-test</a></td><td>覆盖仓库支持的 specifier，不替代浏览器 console 兼容测试</td></tr>
+              <tr><td>类型标记必须唯一</td><td>ReactSymbols exports</td><td><a href="../../react/packages/shared/__tests__/ReactSymbols-test.internal.js">ReactSymbols-test</a></td><td>检查当前模块的导出值无碰撞；注册表按 agent 共享</td></tr>
+              <tr><td>生产错误用代码与 URL 编码参数</td><td><a href="../../react/packages/shared/formatProdErrorMessage.js">formatProdErrorMessage.js</a></td><td><a href="../../react/packages/shared/__tests__/ReactErrorProd-test.internal.js">ReactErrorProd-test</a></td><td>直接核对格式器返回值；ReactError 的 container 用例另在 production 非 source 构建验证替换</td></tr>
+              <tr><td>console format 保留/补齐 specifier</td><td><a href="../../react/packages/shared/normalizeConsoleFormat.js">normalizeConsoleFormat.js</a></td><td><a href="../../react/packages/shared/__tests__/normalizeConsoleFormat-test.internal.js">normalizeConsoleFormat-test</a></td><td>识别 %O、%c、%d、%f、%i、%o、%s；其余转义保留</td></tr>
               <tr><td>公开实例能回到内部 Fiber</td><td>ReactInstanceMap get/set</td><td>由 class component/reconciler 集成测试间接覆盖</td><td>私有字段名不是公共 API</td></tr>
             </tbody>
           </table>
@@ -258,7 +264,7 @@ key = <span class="str">''</span> + maybeKey;</pre>
       <section id="questions">
         <h2>检查理解</h2>
         <ul class="qa">
-          <li>为什么 <code>Symbol.for</code> 能解决同 realm 的多包身份问题，却不等于跨 realm 序列化协议？</li>
+          <li>为什么 <code>Symbol.for</code> 能让共享注册表的多份 bundle 复用标记，而进程或 worker 间仍需传输协议？</li>
           <li>为什么 Flow 字段表不能单独证明运行时字段一定被写入？</li>
           <li>静态 flags 对死代码消除有什么帮助，动态 <code>__VARIANT__</code> 又为什么只限特定构建？</li>
           <li>字符串 coercion helper 为什么不能改用 <code>String(value)</code> 后吞掉原异常？</li>
@@ -269,7 +275,7 @@ key = <span class="str">''</span> + maybeKey;</pre>
         <a href="index.html">← 返回阅读地图</a>
         <a href="02-scheduler.html">下一页：scheduler 时间与任务 →</a>
       </div>
-      <footer><p>源码摘录来自当前仓库快照；测试是仓库证据索引，本次纯注释/文档工作不以“重跑成功”扩大保证。</p></footer>
+      <footer><p>本页对应 React 19.3.0 源码快照；下一页进入 Scheduler 的任务队列与 host 调度。</p></footer>
     </main>
 
     <aside class="toc" aria-label="本页目录">

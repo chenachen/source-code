@@ -11,15 +11,15 @@
  * 表示节点类型的 HTML nodeType 值
  */
 
-/** `ELEMENT_NODE` 是集中声明 DOM nodeType 数值协议使用的稳定协议值；必须与浏览器约定一致。 */
+/** Element 的 DOM nodeType 值。 */
 export const ELEMENT_NODE = 1;
-/** `TEXT_NODE` 是集中声明 DOM nodeType 数值协议使用的稳定协议值；必须与浏览器约定一致。 */
+/** Text 的 DOM nodeType 值。 */
 export const TEXT_NODE = 3;
-/** `COMMENT_NODE` 是集中声明 DOM nodeType 数值协议使用的稳定协议值；必须与浏览器约定一致。 */
+/** Comment 的 DOM nodeType 值。 */
 export const COMMENT_NODE = 8;
-/** `DOCUMENT_NODE` 是集中声明 DOM nodeType 数值协议使用的稳定协议值；必须与浏览器约定一致。 */
+/** Document 的 DOM nodeType 值。 */
 export const DOCUMENT_NODE = 9;
-/** `DOCUMENT_TYPE_NODE` 是集中声明 DOM nodeType 数值协议使用的稳定协议值；必须与浏览器约定一致。 */
+/** DocumentType 的 DOM nodeType 值。 */
 export const DOCUMENT_TYPE_NODE = 10;
-/** `DOCUMENT_FRAGMENT_NODE` 是集中声明 DOM nodeType 数值协议使用的稳定协议值；必须与浏览器约定一致。 */
+/** DocumentFragment 的 DOM nodeType 值。 */
 export const DOCUMENT_FRAGMENT_NODE = 11;

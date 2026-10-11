@@ -9,6 +9,7 @@
     />
     <title>DOM 平台层 · Vue Runtime 内核解剖</title>
     <link rel="stylesheet" href="assets/styles.css" />
+    <link rel="stylesheet" href="assets/engineering-diagrams.css" />
   </head>
   <body data-current="runtime-dom.html">
     <header data-site-header></header>
@@ -212,7 +213,8 @@ function ensureHydrationRenderer() {
                   <td>挂载前旧 DOM</td>
                   <td>
                     只有 Element（<code>nodeType === 1</code
-                    >）会先清空；ShadowRoot 不在此分支
+                    >）会先清空；ShadowRoot 保留已有节点，包括 Custom Element 在
+                    mount 前注入的 style
                   </td>
                   <td>保留并以 hydration 模式复用</td>
                 </tr>
@@ -267,7 +269,7 @@ function ensureHydrationRenderer() {
       }
     }
 
-    // 客户端 mount 不复用旧内容，先清空；ShadowRoot 无 textContent 特判需要。
+    // 只清空 Element；保留 ShadowRoot 已有节点，包括 Custom Element 在 mount 前注入的 style。
     if (container.nodeType === 1) {
       container.textContent = ''
     }
@@ -297,10 +299,11 @@ function ensureHydrationRenderer() {
             <p>
               <strong>挂载标记：</strong
               ><code
-                >directives/vCloak.spec.ts · should remove v-cloak after
-                compilation</code
+                >directives/vCloak.spec.ts · should be removed after
+                compile</code
               >
-              同时断言移除 <code>v-cloak</code> 和写入 <code>data-v-app</code>。
+              该用例断言挂载后移除 <code>v-cloak</code>；<code>data-v-app</code>
+              由 <code>index.ts</code> 的 Element 分支写入。
             </p>
           </div>
           <div class="source-links">
@@ -455,14 +458,14 @@ function ensureHydrationRenderer() {
             <div class="diagram-title">STATIC CONTENT · TWO PATHS</div>
             <div class="branch-grid">
               <div class="layer-node">
-                <strong>首次 / 缓存兄弟链失效</strong
+                <strong>无 start / 多根 start 无兄弟</strong
                 ><small
                   >template.innerHTML 解析 → 拆 SVG/MathML wrapper → 插入
                   Fragment</small
                 >
               </div>
               <div class="layer-node emphasis">
-                <strong>start…end 仍可达</strong
+                <strong>单节点 / start 有 nextSibling</strong
                 ><small>沿 nextSibling 逐个深克隆 → 插到同一 anchor 前</small>
               </div>
             </div>
@@ -485,8 +488,8 @@ function ensureHydrationRenderer() {
               ><code>  insertStaticContent(content, parent, anchor, namespace, start, end) {
     // 插入前结构：&lt;parent&gt; before | first ... last | anchor &lt;/parent&gt;。
     const before = anchor ? anchor.previousSibling : parent.lastChild
-    // #5308：缓存 clone 仅在单根，或起点仍能沿 nextSibling 走到终点时安全。若缓存节点
-    // 已脱离原父级且是多根，兄弟链信息丢失，只能重新解析静态字符串。
+    // #5308：单节点或 start 仍有 nextSibling 时走克隆；多根缓存被逐个移除、
+    // start 已无兄弟时重新解析。这里不预检 end 可达，调用方需保留缓存范围的首尾关系。
     if (start &amp;&amp; (start === end || start.nextSibling)) {
       // 沿缓存范围逐个深克隆并插入，原缓存节点保持不动供下一次复用。
       while (true) {
@@ -525,8 +528,10 @@ function ensureHydrationRenderer() {
           </details>
           <div class="test-proof">
             <p>
-              <strong>基本 DOM：</strong><code>nodeOps.spec.ts</code> 覆盖无
-              anchor 追加、带 anchor 插入、已有节点移动和已脱离节点删除。
+              <strong>基本 DOM：</strong><code>nodeOps.spec.ts</code> 验证
+              select 初始化、自定义元素创建和静态内容插入。基本 insert/remove
+              行为见 <code>nodeOps.ts</code> 对 <code>insertBefore</code> 与
+              <code>removeChild</code> 的调用。
             </p>
             <p>
               <strong>静态范围：</strong>同文件的
@@ -535,8 +540,10 @@ function ensureHydrationRenderer() {
               move/unmount。
             </p>
             <p>
-              <strong>失败保护：</strong
-              >缓存多根节点脱离原父级、兄弟链断开时不盲目克隆，回退到重新解析字符串。
+              <strong>缓存条件：</strong>单节点或 start 仍有 nextSibling
+              就走克隆；多根缓存被逐个移除、start
+              已无兄弟时才重新解析。这里不预先遍历检查 end
+              可达，调用方需保留缓存范围的首尾关系。
             </p>
           </div>
         </section>
@@ -550,67 +557,389 @@ function ensureHydrationRenderer() {
             <code>onUpdate:modelValue</code> 看起来也是
             <code>onXxx</code>，却必须留给 v-model，而不能注册成浏览器事件。
           </p>
-          <div
-            class="diagram"
-            role="img"
-            aria-label="patchProp 从 key 分类到浏览器 property 或 attribute 的完整分支"
-          >
-            <div class="diagram-title">PATCH PROP · ORDERED DISPATCH</div>
-            <div class="flow-list">
-              <div class="flow-step">
-                <span>01</span><strong>class / style</strong
-                ><small
-                  >分别进入 patchClass / patchStyle，保护 Transition 与 v-show
-                  的私有状态。</small
-                >
-              </div>
-              <div class="flow-step">
-                <span>02</span><strong>isOn(key)</strong
-                ><small
-                  >model listener 跳过；其余 onXxx 进入 patchEvent。</small
-                >
-              </div>
-              <div class="flow-step">
-                <span>03</span><strong>.prop / ^attr</strong
-                ><small
-                  >点前缀强制 property；尖号前缀强制
-                  attribute，并先剥前缀。</small
-                >
-              </div>
-              <div class="flow-step">
-                <span>04</span><strong>shouldSetAsProp</strong
-                ><small
-                  >结合 namespace、tag、key 和 value 类型，决定能否安全写
-                  <code>el[key]</code>。</small
-                >
-              </div>
-              <div class="flow-step">
-                <span>05</span><strong>Vue Custom Element</strong
-                ><small
-                  >声明 prop 或异步定义的非字符串/大写 key，camelize 后写元素
-                  property。</small
-                >
-              </div>
-              <div class="flow-step">
-                <span>06</span><strong>attribute fallback</strong
-                ><small
-                  >保存 checkbox 原始 true/false value，再处理
-                  xlink、布尔属性和删除。</small
-                >
-              </div>
+          <figure class="eng-diagram" id="dom-patch-prop-flow">
+            <div
+              class="eng-scroll"
+              tabindex="0"
+              aria-label="工程图，可横向滚动"
+            >
+              <svg
+                class="eng-svg"
+                id="dom-patch-prop-flow-svg"
+                viewBox="0 0 1240 1330"
+                style="--diagram-width: 1240px"
+                role="img"
+                aria-labelledby="dom-patch-prop-flow-title dom-patch-prop-flow-desc"
+              >
+                <title id="dom-patch-prop-flow-title">
+                  patchProp 的实际分支决策
+                </title>
+                <desc id="dom-patch-prop-flow-desc">
+                  先判断 class、style 和事件；事件中的 model listener
+                  不注册。点前缀进入 DOM property，尖号前缀跳过通用 property
+                  判断但仍检查 Vue Custom Element。普通 DOM property
+                  的表单键随后同步 attribute。其余键走 attribute。
+                </desc>
+                <defs>
+                  <marker
+                    id="dom-patch-prop-flow-arrow"
+                    viewBox="0 0 10 10"
+                    refX="9"
+                    refY="5"
+                    markerWidth="7"
+                    markerHeight="7"
+                    orient="auto-start-reverse"
+                  >
+                    <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--brand)" />
+                  </marker>
+                </defs>
+                <text class="eng-heading" x="30" y="32" text-anchor="start">
+                  <tspan x="30" dy="0">
+                    patchProp：专用模块优先，普通键再决定 property / attribute
+                  </tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 320 112 V 150"
+                  marker-end="url(#dom-patch-prop-flow-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 430 200 H 560 V 158 H 700"
+                  marker-end="url(#dom-patch-prop-flow-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 430 200 H 560 V 275 H 700"
+                  marker-end="url(#dom-patch-prop-flow-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 320 250 V 340"
+                  marker-end="url(#dom-patch-prop-flow-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 460 390 H 675"
+                  marker-end="url(#dom-patch-prop-flow-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 925 390 H 1005"
+                  marker-end="url(#dom-patch-prop-flow-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 800 440 V 488"
+                  marker-end="url(#dom-patch-prop-flow-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 320 440 V 570"
+                  marker-end="url(#dom-patch-prop-flow-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 450 620 H 620 V 816 H 700"
+                  marker-end="url(#dom-patch-prop-flow-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 190 620 H 40 V 1000 H 150"
+                  marker-end="url(#dom-patch-prop-flow-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 320 670 V 760"
+                  marker-end="url(#dom-patch-prop-flow-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 460 810 H 700"
+                  marker-end="url(#dom-patch-prop-flow-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 320 860 V 940"
+                  marker-end="url(#dom-patch-prop-flow-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 880 856 V 895"
+                  marker-end="url(#dom-patch-prop-flow-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 1030 945 H 1090"
+                  marker-end="url(#dom-patch-prop-flow-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 880 995 V 1045"
+                  marker-end="url(#dom-patch-prop-flow-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 490 1000 H 600 V 1158 H 700"
+                  marker-end="url(#dom-patch-prop-flow-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 320 1060 V 1180"
+                  marker-end="url(#dom-patch-prop-flow-arrow)"
+                />
+                <rect
+                  class="eng-node"
+                  x="190"
+                  y="55"
+                  width="260"
+                  height="57"
+                  rx="12"
+                />
+                <text class="eng-label" x="320" y="89" text-anchor="middle">
+                  <tspan x="320" dy="0">patchProp(el, key, …)</tspan>
+                </text>
+                <polygon
+                  class="eng-decision"
+                  points="320,150.0 430.0,200 320,250.0 210.0,200"
+                />
+                <text class="eng-label" x="320" y="205" text-anchor="middle">
+                  <tspan x="320" dy="0">key 名称</tspan>
+                </text>
+                <rect
+                  class="eng-node"
+                  x="700"
+                  y="120"
+                  width="330"
+                  height="76"
+                  rx="12"
+                />
+                <text class="eng-label" x="865" y="152" text-anchor="middle">
+                  <tspan x="865" dy="0">patchClass(el, next, isSVG)</tspan>
+                  <tspan x="865" dy="23">合并临时 class → 写入</tspan>
+                </text>
+                <rect
+                  class="eng-node"
+                  x="700"
+                  y="237"
+                  width="330"
+                  height="76"
+                  rx="12"
+                />
+                <text class="eng-label" x="865" y="269" text-anchor="middle">
+                  <tspan x="865" dy="0">patchStyle(el, prev, next)</tspan>
+                  <tspan x="865" dy="23">清旧字段 → 写样式</tspan>
+                </text>
+                <polygon
+                  class="eng-decision"
+                  points="320,340.0 460.0,390 320,440.0 180.0,390"
+                />
+                <text class="eng-label" x="320" y="395" text-anchor="middle">
+                  <tspan x="320" dy="0">isOn(key) ?</tspan>
+                </text>
+                <polygon
+                  class="eng-decision"
+                  points="800,340.0 925.0,390 800,440.0 675.0,390"
+                />
+                <text class="eng-label" x="800" y="384" text-anchor="middle">
+                  <tspan x="800" dy="0">isModelListener</tspan>
+                  <tspan x="800" dy="23">(key) ?</tspan>
+                </text>
+                <rect
+                  class="eng-note"
+                  x="1005"
+                  y="355"
+                  width="200"
+                  height="72"
+                  rx="12"
+                />
+                <text class="eng-label" x="1105" y="383" text-anchor="middle">
+                  <tspan x="1105" dy="0">跳过 DOM 监听</tspan>
+                  <tspan x="1105" dy="23">由 v-model 消费</tspan>
+                </text>
+                <rect
+                  class="eng-node"
+                  x="660"
+                  y="488"
+                  width="280"
+                  height="70"
+                  rx="12"
+                />
+                <text class="eng-label" x="800" y="517" text-anchor="middle">
+                  <tspan x="800" dy="0">patchEvent(el, key, …)</tspan>
+                  <tspan x="800" dy="23">新增 / 替换 / 移除</tspan>
+                </text>
+                <polygon
+                  class="eng-decision"
+                  points="320,570.0 450.0,620 320,670.0 190.0,620"
+                />
+                <text class="eng-label" x="320" y="625" text-anchor="middle">
+                  <tspan x="320" dy="0">key 首字符</tspan>
+                </text>
+                <rect
+                  class="eng-note"
+                  x="65"
+                  y="700"
+                  width="205"
+                  height="91"
+                  rx="12"
+                />
+                <text class="eng-small" x="167" y="726" text-anchor="middle">
+                  <tspan x="167" dy="0">剥掉 ^ 前缀</tspan>
+                  <tspan x="167" dy="23">跳过通用 property 判断</tspan>
+                  <tspan x="167" dy="23">继续 VueCE 检查</tspan>
+                </text>
+                <polygon
+                  class="eng-decision"
+                  points="320,760.0 460.0,810 320,860.0 180.0,810"
+                />
+                <text class="eng-label" x="320" y="804" text-anchor="middle">
+                  <tspan x="320" dy="0">shouldSetAsProp</tspan>
+                  <tspan x="320" dy="23">(el, key, next, isSVG) ?</tspan>
+                </text>
+                <rect
+                  class="eng-node"
+                  x="700"
+                  y="776"
+                  width="360"
+                  height="80"
+                  rx="12"
+                />
+                <text class="eng-label" x="880" y="810" text-anchor="middle">
+                  <tspan x="880" dy="0">patchDOMProp(el, key, next)</tspan>
+                  <tspan x="880" dy="23">保留 value 原值 / 修正空值</tspan>
+                </text>
+                <polygon
+                  class="eng-decision"
+                  points="880,895.0 1030.0,945 880,995.0 730.0,945"
+                />
+                <text class="eng-small" x="880" y="936" text-anchor="middle">
+                  <tspan x="880" dy="0">非自定义标签，且 key 是</tspan>
+                  <tspan x="880" dy="23">value / checked / selected ?</tspan>
+                </text>
+                <rect
+                  class="eng-note"
+                  x="1090"
+                  y="918"
+                  width="105"
+                  height="55"
+                  rx="12"
+                />
+                <text class="eng-label" x="1142" y="951" text-anchor="middle">
+                  <tspan x="1142" dy="0">结束</tspan>
+                </text>
+                <rect
+                  class="eng-node"
+                  x="730"
+                  y="1045"
+                  width="300"
+                  height="68"
+                  rx="12"
+                />
+                <text class="eng-small" x="880" y="1072" text-anchor="middle">
+                  <tspan x="880" dy="0">再 patchAttr 同步表单 attribute</tspan>
+                  <tspan x="880" dy="23">供 reset 等场景读取</tspan>
+                </text>
+                <polygon
+                  class="eng-decision"
+                  points="320,940.0 490.0,1000 320,1060.0 150.0,1000"
+                />
+                <text class="eng-label" x="320" y="980" text-anchor="middle">
+                  <tspan x="320" dy="0">_isVueCE 且</tspan>
+                  <tspan x="320" dy="23">声明 prop / 异步定义接受此键 ?</tspan>
+                </text>
+                <rect
+                  class="eng-node"
+                  x="700"
+                  y="1118"
+                  width="360"
+                  height="80"
+                  rx="12"
+                />
+                <text class="eng-small" x="880" y="1150" text-anchor="middle">
+                  <tspan x="880" dy="0">
+                    patchDOMProp(el, camelize(key), …)
+                  </tspan>
+                  <tspan x="880" dy="23">原始 key 作为 attrName 参数传入</tspan>
+                </text>
+                <rect
+                  class="eng-node"
+                  x="130"
+                  y="1180"
+                  width="380"
+                  height="88"
+                  rx="12"
+                />
+                <text class="eng-label" x="320" y="1212" text-anchor="middle">
+                  <tspan x="320" dy="0">
+                    缓存 true-value / false-value 原值
+                  </tspan>
+                  <tspan x="320" dy="23">patchAttr：xlink / 布尔 / 删除</tspan>
+                </text>
+                <text class="eng-small" x="610" y="146" text-anchor="middle">
+                  <tspan x="610" dy="0">class</tspan>
+                </text>
+                <text class="eng-small" x="610" y="264" text-anchor="middle">
+                  <tspan x="610" dy="0">style</tspan>
+                </text>
+                <text class="eng-small" x="350" y="293" text-anchor="start">
+                  <tspan x="350" dy="0">其他</tspan>
+                </text>
+                <text class="eng-small" x="567" y="377" text-anchor="middle">
+                  <tspan x="567" dy="0">是</tspan>
+                </text>
+                <text class="eng-small" x="965" y="377" text-anchor="middle">
+                  <tspan x="965" dy="0">是</tspan>
+                </text>
+                <text class="eng-small" x="825" y="470" text-anchor="middle">
+                  <tspan x="825" dy="0">否</tspan>
+                </text>
+                <text class="eng-small" x="350" y="501" text-anchor="start">
+                  <tspan x="350" dy="0">否</tspan>
+                </text>
+                <text class="eng-small" x="540" y="606" text-anchor="middle">
+                  <tspan x="540" dy="0">. 剥前缀</tspan>
+                </text>
+                <text class="eng-small" x="107" y="606" text-anchor="middle">
+                  <tspan x="107" dy="0">^</tspan>
+                </text>
+                <text class="eng-small" x="351" y="713" text-anchor="start">
+                  <tspan x="351" dy="0">其他</tspan>
+                </text>
+                <text class="eng-small" x="575" y="797" text-anchor="middle">
+                  <tspan x="575" dy="0">是</tspan>
+                </text>
+                <text class="eng-small" x="349" y="904" text-anchor="start">
+                  <tspan x="349" dy="0">否</tspan>
+                </text>
+                <text class="eng-small" x="1050" y="932" text-anchor="middle">
+                  <tspan x="1050" dy="0">否</tspan>
+                </text>
+                <text class="eng-small" x="905" y="1023" text-anchor="middle">
+                  <tspan x="905" dy="0">是</tspan>
+                </text>
+                <text class="eng-small" x="555" y="987" text-anchor="middle">
+                  <tspan x="555" dy="0">是</tspan>
+                </text>
+                <text class="eng-small" x="350" y="1120" text-anchor="start">
+                  <tspan x="350" dy="0">否</tspan>
+                </text>
+                <text class="eng-small" x="30" y="1300" text-anchor="start">
+                  <tspan x="30" dy="0">
+                    VueCE 条件：声明该 prop，或异步定义 +（大写 key / nextValue
+                    不是字符串）。
+                  </tspan>
+                </text>
+              </svg>
             </div>
-            <div class="layer-flow">
-              <div class="layer-node">
-                <strong>DOM property</strong
-                ><small>patchDOMProp → el[key] = value</small>
-              </div>
-              <div class="diagram-arrow">或</div>
-              <div class="layer-node emphasis">
-                <strong>DOM attribute</strong
-                ><small>patchAttr → set/removeAttribute(NS)</small>
-              </div>
-            </div>
-          </div>
+            <figcaption>
+              实线表示同一次
+              <code>patchProp</code> 调用的分支；命中专用模块后结束。本地
+              <code>patchProp.ts</code> 的 <code>^</code> 分支仅跳过通用
+              property 判断，后续 Vue Custom Element 条件仍可能把它写成
+              property。
+            </figcaption>
+          </figure>
           <h3>三个相似名字，走三条不同的路</h3>
           <div class="table-wrap">
             <table>
@@ -790,8 +1119,11 @@ function ensureHydrationRenderer() {
           <h3>property 分支：真正写值前还要做类型和表单修正</h3>
           <p>
             <code>value</code> 是最特殊的一条：DOM 只保留字符串，Vue 另存
-            <code>_value</code> 保存对象或数字原值；checkbox 没有 value 时，null
-            要恢复浏览器默认 <code>"on"</code>。普通原生元素的
+            <code>_value</code> 保存对象或数字原值，供 v-model
+            读回。选中比较由控件和 model
+            类型决定：Array、单选路径可用宽松比较，Set 路径使用
+            <code>Set.has</code>。checkbox 没有 value 时，null 要恢复浏览器默认
+            <code>"on"</code>。普通原生元素的
             <code>value / checked / selected</code>
             写完 property 后还同步 attribute，以便表单 reset 找回初始状态。
           </p>
@@ -837,7 +1169,8 @@ function ensureHydrationRenderer() {
     if (value == null) {
       el.removeAttribute(key)
     }
-    // DOM value 必然字符串化；`_value` 保留原始对象/数字供 v-model 严格取值比较。
+    // DOM value 会字符串化；`_value` 保留原始绑定值供 v-model 读回。
+    // 选中比较由控件与 model 类型决定：Array/单选可用宽松比较，Set 使用 Set.has。
     el._value = value
     return
   }</code></pre>
@@ -922,7 +1255,7 @@ function ensureHydrationRenderer() {
             <p>
               <strong>innerHTML 清理：</strong
               ><code>patchProps.spec.ts · innerHTML unmount prev children</code>
-              证明切换 sink 时旧 VNode 子树的卸载钩子仍会执行；从 sink 改回
+              断言切换到 innerHTML 时旧子组件的 onUnmounted 被调用；从 sink 改回
               children 时，core 先用
               <code>hostSetElementText(el, '')</code> 清空。
             </p>
@@ -1116,8 +1449,9 @@ function ensureHydrationRenderer() {
             </p>
             <p>
               <strong>style fallback：</strong
-              ><code>patchStyle.spec.ts · multiple values</code> 断言同一
-              property 的数组值按顺序尝试。
+              ><code>patchStyle.spec.ts · multiple values</code>
+              断言数组样式的最终值为 flex；按序写入见
+              <code>setStyle</code> 的数组分支。
             </p>
             <p>
               <strong>字符串切对象：</strong
@@ -1127,10 +1461,11 @@ function ensureHydrationRenderer() {
             <p>
               <strong>原生 resize：</strong
               ><code
-                >should preserve textarea resize style if values are
-                unchanged</code
+                >should preserve textarea resize dimensions while reapplying
+                unrelated unchanged object styles</code
               >
-              直接模拟用户拖拽后的 DOM width/height。
+              断言用户调整后的 DOM width/height 保留，同时声明式 display
+              被重新应用。
             </p>
           </div>
           <div class="source-links">
@@ -1175,8 +1510,12 @@ function invoker(event) {
 existingInvoker.value = nextHandler</code></pre>
           <h3>时间戳保护解决什么场景</h3>
           <p>
-            一个事件冒泡过程中，父组件更新可能在父节点上新注册同类监听器。如果新监听器立即收到正在传播的“旧事件”，就违反了浏览器直觉。invoker
-            记录安装时刻，事件也带时间戳；比安装更早的事件不会触发新监听器。
+            子监听器可能在一次冒泡中触发更新，并新增父监听器。事件第一次进入 Vue
+            invoker 时，Vue 写入 <code>Date.now()</code> 作为
+            <code>_vts</code> 并继续执行。之后同一事件进入其他 invoker，若
+            <code>_vts &lt;= invoker.attached</code>
+            就跳过，防止新父监听器接收同一次事件。这里使用首次经 Vue
+            处理的时刻，不使用浏览器 <code>event.timeStamp</code>。
           </p>
           <h3>更多边界</h3>
           <ul>
@@ -1615,8 +1954,10 @@ function setDisplay(el: VShowElement, value: unknown): void {
             </p>
             <p>
               <strong>过渡：</strong>同文件的
-              <code>with Transition</code> 用例证明隐藏要等 leave
-              完成，显示会恢复最新绑定 display。
+              <code>with Transition</code> 用例验证隐藏状态不会被 style
+              更新覆盖，随后显示时恢复 display。等待 leave 回调后隐藏，由
+              <code>vShow.updated</code>
+              的离场分支实现；该用例没有执行这条离场路径。
             </p>
           </div>
           <div class="source-links">
@@ -1655,29 +1996,535 @@ function setDisplay(el: VShowElement, value: unknown): void {
 
         <section class="article-section prose" id="transition-dom">
           <h2>DOM Transition：从抽象 hook 到 CSS 帧</h2>
-          <div class="sequence">
-            <div class="sequence-item">
-              <strong>beforeEnter</strong><br />添加
-              <code>*-enter-from</code> 和 <code>*-enter-active</code>。
-            </div>
-            <div class="sequence-item">
-              <strong>nextFrame</strong><br />双 requestAnimationFrame 后移除
-              from，添加 to，让浏览器先提交初态再产生过渡。
-            </div>
-            <div class="sequence-item">
-              <strong>whenTransitionEnds</strong><br />读取 computed style，计算
-              transition/animation 的最大 delay + duration，并监听结束事件。
-            </div>
-            <div class="sequence-item">
-              <strong>finish</strong><br />清除 class，调用 core 传入的
-              done，使插入/删除状态机继续。
-            </div>
-          </div>
           <p>
-            显式 duration 是兜底与控制手段；若 CSS
-            中多个属性时长不同，实现取最大 timeout，并校验 end
-            事件数量。用户过早取消、节点被卸载或 enter/leave
-            相互打断时，回调必须保证只结束一次。
+            <code>resolveTransitionProps</code> 先选择是否包装 CSS
+            hook。下图展示所选 hook 被 core 调用后的自动结束、用户 done
+            与取消路径。
+          </p>
+          <figure class="eng-diagram" id="dom-transition-lanes">
+            <div
+              class="eng-scroll"
+              tabindex="0"
+              aria-label="工程图，可横向滚动"
+            >
+              <svg
+                class="eng-svg"
+                id="dom-transition-lanes-svg"
+                viewBox="0 0 1420 1460"
+                style="--diagram-width: 1420px"
+                role="img"
+                aria-labelledby="dom-transition-lanes-title dom-transition-lanes-desc"
+              >
+                <title id="dom-transition-lanes-title">
+                  DOM Transition 跨角色时序与完成分支
+                </title>
+                <desc id="dom-transition-lanes-desc">
+                  core 建立幂等完成器。CSS 开启时先设置起态、调用用户 hook
+                  并安排两个 requestAnimationFrame，再切换 class。声明 done 的
+                  hook 由用户完成；其他 hook 按显式 duration 或 CSS
+                  结束事件与兜底 timer 完成。css false 直接使用 core 的 hook
+                  规则。用户 resolve 直接调用 finish，不经过浏览器的代次
+                  guard；显式 duration 和 CSS 事件或兜底计时器仍经过
+                  resolveIfNotStale。enter 取消清 to、active，leave 取消清
+                  from、to、active，然后调用对应用户取消 hook，不调用 after
+                  hook。
+                </desc>
+                <defs>
+                  <marker
+                    id="dom-transition-lanes-arrow"
+                    viewBox="0 0 10 10"
+                    refX="9"
+                    refY="5"
+                    markerWidth="7"
+                    markerHeight="7"
+                    orient="auto-start-reverse"
+                  >
+                    <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--brand)" />
+                  </marker>
+                </defs>
+                <text class="eng-heading" x="30" y="30" text-anchor="start">
+                  <tspan x="30" dy="0">
+                    过渡结束的四个参与者：core、DOM 包装、浏览器与用户 hook
+                  </tspan>
+                </text>
+                <rect
+                  class="eng-lane"
+                  x="20"
+                  y="60"
+                  width="240"
+                  height="1220"
+                  rx="12"
+                />
+                <text class="eng-heading" x="140.0" y="91" text-anchor="middle">
+                  <tspan x="140.0" dy="0">BaseTransition / core</tspan>
+                </text>
+                <rect
+                  class="eng-lane"
+                  x="280"
+                  y="60"
+                  width="440"
+                  height="1220"
+                  rx="12"
+                />
+                <text class="eng-heading" x="500.0" y="91" text-anchor="middle">
+                  <tspan x="500.0" dy="0">runtime-dom</tspan>
+                </text>
+                <rect
+                  class="eng-lane"
+                  x="740"
+                  y="60"
+                  width="300"
+                  height="1220"
+                  rx="12"
+                />
+                <text class="eng-heading" x="890.0" y="91" text-anchor="middle">
+                  <tspan x="890.0" dy="0">浏览器</tspan>
+                </text>
+                <rect
+                  class="eng-lane"
+                  x="1060"
+                  y="60"
+                  width="310"
+                  height="1220"
+                  rx="12"
+                />
+                <text
+                  class="eng-heading"
+                  x="1215.0"
+                  y="91"
+                  text-anchor="middle"
+                >
+                  <tspan x="1215.0" dy="0">用户 hook</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 235 168 H 345"
+                  marker-end="url(#dom-transition-lanes-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 655 168 H 1080"
+                  marker-end="url(#dom-transition-lanes-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 500 218 V 270"
+                  marker-end="url(#dom-transition-lanes-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 690 320 H 1080"
+                  marker-end="url(#dom-transition-lanes-arrow)"
+                />
+                <path
+                  class="eng-async"
+                  d="M 500 365 V 390 H 890 V 410"
+                  marker-end="url(#dom-transition-lanes-arrow)"
+                />
+                <path
+                  class="eng-async"
+                  d="M 890 470 V 505"
+                  marker-end="url(#dom-transition-lanes-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 770 535 H 500 V 585"
+                  marker-end="url(#dom-transition-lanes-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 500 660 V 695"
+                  marker-end="url(#dom-transition-lanes-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 670 740 H 1080"
+                  marker-end="url(#dom-transition-lanes-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 500 785 V 840"
+                  marker-end="url(#dom-transition-lanes-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 660 885 H 770"
+                  marker-end="url(#dom-transition-lanes-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 500 930 V 960"
+                  marker-end="url(#dom-transition-lanes-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 690 1005 H 770"
+                  marker-end="url(#dom-transition-lanes-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 500 1050 V 1090"
+                  marker-end="url(#dom-transition-lanes-arrow)"
+                />
+                <path
+                  class="eng-async"
+                  d="M 1010 885 H 1040 V 1130 H 1010"
+                  marker-end="url(#dom-transition-lanes-arrow)"
+                />
+                <path
+                  class="eng-async"
+                  d="M 890 1045 V 1090"
+                  marker-end="url(#dom-transition-lanes-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 770 1130 H 690"
+                  marker-end="url(#dom-transition-lanes-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 310 1130 H 255 V 1220 H 235"
+                  marker-end="url(#dom-transition-lanes-arrow)"
+                />
+                <path
+                  class="eng-async"
+                  d="M 1350 335 H 1368 V 1188 H 650 V 1175"
+                  marker-end="url(#dom-transition-lanes-arrow)"
+                />
+                <path
+                  class="eng-async"
+                  d="M 1350 745 H 1368"
+                  marker-end="url(#dom-transition-lanes-arrow)"
+                />
+                <path
+                  class="eng-async"
+                  d="M 1350 168 H 1400 V 1220 H 235"
+                  marker-end="url(#dom-transition-lanes-arrow)"
+                />
+                <rect
+                  class="eng-node"
+                  x="45"
+                  y="115"
+                  width="190"
+                  height="100"
+                  rx="12"
+                />
+                <text class="eng-small" x="140" y="144" text-anchor="middle">
+                  <tspan x="140" dy="0">入场：beforeEnter</tspan>
+                  <tspan x="140" dy="23">插入后 enter</tspan>
+                  <tspan x="140" dy="23">离场：leave</tspan>
+                </text>
+                <polygon
+                  class="eng-decision"
+                  points="500,118.0 655.0,168 500,218.0 345.0,168"
+                />
+                <text class="eng-label" x="500" y="172" text-anchor="middle">
+                  <tspan x="500" dy="0">css === false ?</tspan>
+                </text>
+                <rect
+                  class="eng-node"
+                  x="1080"
+                  y="118"
+                  width="270"
+                  height="100"
+                  rx="12"
+                />
+                <text class="eng-small" x="1215" y="144" text-anchor="middle">
+                  <tspan x="1215" dy="0">仅保留 baseProps hook</tspan>
+                  <tspan x="1215" dy="23">无 done 参数：core 立即完成</tspan>
+                  <tspan x="1215" dy="23">有 done 参数：用户调用 done</tspan>
+                </text>
+                <rect
+                  class="eng-node"
+                  x="310"
+                  y="270"
+                  width="380"
+                  height="95"
+                  rx="12"
+                />
+                <text class="eng-small" x="500" y="298" text-anchor="middle">
+                  <tspan x="500" dy="0">
+                    CSS 起态：入场在 beforeEnter 设置
+                  </tspan>
+                  <tspan x="500" dy="23">enter：from + active</tspan>
+                  <tspan x="500" dy="23">
+                    leave：from + active，并强制 reflow
+                  </tspan>
+                </text>
+                <rect
+                  class="eng-node"
+                  x="1080"
+                  y="298"
+                  width="270"
+                  height="75"
+                  rx="12"
+                />
+                <text class="eng-small" x="1215" y="327" text-anchor="middle">
+                  <tspan x="1215" dy="0">用户 hook(el, resolve)</tspan>
+                  <tspan x="1215" dy="23">resolve 可在任意时刻调用</tspan>
+                </text>
+                <rect
+                  class="eng-node"
+                  x="770"
+                  y="410"
+                  width="240"
+                  height="60"
+                  rx="12"
+                />
+                <text class="eng-label" x="890" y="445" text-anchor="middle">
+                  <tspan x="890" dy="0">requestAnimationFrame ①</tspan>
+                </text>
+                <rect
+                  class="eng-node"
+                  x="770"
+                  y="505"
+                  width="240"
+                  height="60"
+                  rx="12"
+                />
+                <text class="eng-label" x="890" y="540" text-anchor="middle">
+                  <tspan x="890" dy="0">requestAnimationFrame ②</tspan>
+                </text>
+                <rect
+                  class="eng-node"
+                  x="320"
+                  y="585"
+                  width="360"
+                  height="75"
+                  rx="12"
+                />
+                <text class="eng-label" x="500" y="615" text-anchor="middle">
+                  <tspan x="500" dy="0">移除 from，添加 to</tspan>
+                  <tspan x="500" dy="23">leave 先检查 _isLeaving</tspan>
+                </text>
+                <polygon
+                  class="eng-decision"
+                  points="500,695.0 670.0,740 500,785.0 330.0,740"
+                />
+                <text class="eng-label" x="500" y="744" text-anchor="middle">
+                  <tspan x="500" dy="0">hook 声明第二个 done ?</tspan>
+                </text>
+                <rect
+                  class="eng-note"
+                  x="1080"
+                  y="700"
+                  width="270"
+                  height="100"
+                  rx="12"
+                />
+                <text class="eng-small" x="1215" y="730" text-anchor="middle">
+                  <tspan x="1215" dy="0">等待用户 resolve</tspan>
+                  <tspan x="1215" dy="23">不启用 duration / CSS 检测</tspan>
+                  <tspan x="1215" dy="23">
+                    不会因 hook 返回 Promise 自动结束
+                  </tspan>
+                </text>
+                <polygon
+                  class="eng-decision"
+                  points="500,840.0 660.0,885 500,930.0 340.0,885"
+                />
+                <text class="eng-label" x="500" y="890" text-anchor="middle">
+                  <tspan x="500" dy="0">有显式 duration ?</tspan>
+                </text>
+                <rect
+                  class="eng-node"
+                  x="770"
+                  y="848"
+                  width="240"
+                  height="75"
+                  rx="12"
+                />
+                <text class="eng-small" x="890" y="878" text-anchor="middle">
+                  <tspan x="890" dy="0">setTimeout(duration)</tspan>
+                  <tspan x="890" dy="23">跳过 CSS 结束事件</tspan>
+                </text>
+                <rect
+                  class="eng-node"
+                  x="310"
+                  y="960"
+                  width="380"
+                  height="90"
+                  rx="12"
+                />
+                <text class="eng-small" x="500" y="988" text-anchor="middle">
+                  <tspan x="500" dy="0">getTransitionInfo</tspan>
+                  <tspan x="500" dy="23">读取 type / timeout / propCount</tspan>
+                  <tspan x="500" dy="23">无 type：立即 resolve</tspan>
+                </text>
+                <rect
+                  class="eng-node"
+                  x="770"
+                  y="970"
+                  width="240"
+                  height="75"
+                  rx="12"
+                />
+                <text class="eng-small" x="890" y="999" text-anchor="middle">
+                  <tspan x="890" dy="0">end 数量达到 propCount</tspan>
+                  <tspan x="890" dy="23">或 timeout + 1ms 兜底</tspan>
+                </text>
+                <rect
+                  class="eng-note"
+                  x="770"
+                  y="1090"
+                  width="240"
+                  height="80"
+                  rx="12"
+                />
+                <text class="eng-small" x="890" y="1120" text-anchor="middle">
+                  <tspan x="890" dy="0">resolveIfNotStale</tspan>
+                  <tspan x="890" dy="23">_endId 一致才 resolve</tspan>
+                </text>
+                <rect
+                  class="eng-node"
+                  x="310"
+                  y="1090"
+                  width="380"
+                  height="85"
+                  rx="12"
+                />
+                <text class="eng-label" x="500" y="1120" text-anchor="middle">
+                  <tspan x="500" dy="0">finishEnter / finishLeave</tspan>
+                  <tspan x="500" dy="23">清理 CSS class → 调用 core done</tspan>
+                </text>
+                <rect
+                  class="eng-node"
+                  x="45"
+                  y="1180"
+                  width="190"
+                  height="80"
+                  rx="12"
+                />
+                <text class="eng-small" x="140" y="1207" text-anchor="middle">
+                  <tspan x="140" dy="0">幂等结算</tspan>
+                  <tspan x="140" dy="23">正常：afterHook</tspan>
+                  <tspan x="140" dy="23">leave 调用 remove</tspan>
+                </text>
+                <text class="eng-small" x="825" y="150" text-anchor="middle">
+                  <tspan x="825" dy="0">是：不管理 CSS / duration</tspan>
+                </text>
+                <text class="eng-small" x="530" y="247" text-anchor="middle">
+                  <tspan x="530" dy="0">否</tspan>
+                </text>
+                <text class="eng-small" x="915" y="305" text-anchor="middle">
+                  <tspan x="915" dy="0">enter 在插入后；leave 同次调用</tspan>
+                </text>
+                <text class="eng-small" x="683" y="381" text-anchor="middle">
+                  <tspan x="683" dy="0">nextFrame：双帧</tspan>
+                </text>
+                <text class="eng-small" x="898" y="720" text-anchor="middle">
+                  <tspan x="898" dy="0">是</tspan>
+                </text>
+                <text class="eng-small" x="530" y="812" text-anchor="middle">
+                  <tspan x="530" dy="0">否：自动结束</tspan>
+                </text>
+                <text class="eng-small" x="715" y="870" text-anchor="middle">
+                  <tspan x="715" dy="0">是</tspan>
+                </text>
+                <text class="eng-small" x="532" y="950" text-anchor="middle">
+                  <tspan x="532" dy="0">否</tspan>
+                </text>
+                <text class="eng-small" x="730" y="992" text-anchor="middle">
+                  <tspan x="730" dy="0">有 type</tspan>
+                </text>
+                <text class="eng-small" x="555" y="1074" text-anchor="middle">
+                  <tspan x="555" dy="0">无 type</tspan>
+                </text>
+                <text class="eng-small" x="1190" y="1063" text-anchor="middle">
+                  <tspan x="1190" dy="0">用户调用 resolve</tspan>
+                </text>
+                <text class="eng-small" x="970" y="1201" text-anchor="middle">
+                  <tspan x="970" dy="0">css:false 的 done 直接交给 core</tspan>
+                </text>
+                <line
+                  class="eng-divider"
+                  x1="30"
+                  y1="1305"
+                  x2="1390"
+                  y2="1305"
+                />
+                <text class="eng-heading" x="30" y="1330" text-anchor="start">
+                  <tspan x="30" dy="0">取消：与正常结束分开结算</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 285 1389 H 330"
+                  marker-end="url(#dom-transition-lanes-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 700 1389 H 1060"
+                  marker-end="url(#dom-transition-lanes-arrow)"
+                />
+                <rect
+                  class="eng-state"
+                  x="45"
+                  y="1350"
+                  width="240"
+                  height="80"
+                  rx="12"
+                />
+                <text class="eng-label" x="165" y="1380" text-anchor="middle">
+                  <tspan x="165" dy="0">反向切换</tspan>
+                  <tspan x="165" dy="23">调用元素 callback(true)</tspan>
+                </text>
+                <rect
+                  class="eng-state"
+                  x="330"
+                  y="1350"
+                  width="370"
+                  height="80"
+                  rx="12"
+                />
+                <text class="eng-small" x="515" y="1376" text-anchor="middle">
+                  <tspan x="515" dy="0">enter 取消：清 to / active</tspan>
+                  <tspan x="515" dy="23">
+                    leave 取消：清 from / to / active
+                  </tspan>
+                  <tspan x="515" dy="23">再调用对应用户 cancelHook</tspan>
+                </text>
+                <rect
+                  class="eng-state"
+                  x="1060"
+                  y="1350"
+                  width="300"
+                  height="80"
+                  rx="12"
+                />
+                <text class="eng-small" x="1210" y="1377" text-anchor="middle">
+                  <tspan x="1210" dy="0">用户 cancelHook</tspan>
+                  <tspan x="1210" dy="23">不调用对应 afterHook</tspan>
+                </text>
+              </svg>
+            </div>
+            <figcaption>
+              实线为调用或条件分支，虚线为帧、事件、计时器或用户稍后完成。依据
+              <code
+                >Transition.ts · resolveTransitionProps / nextFrame /
+                whenTransitionEnds</code
+              >
+              与 core
+              <code>BaseTransition.ts · resolveTransitionHooks</code>；入场先在
+              <code>beforeEnter</code> 设置 CSS 起态，插入后才调用
+              <code>enter</code>；两阶段在图中合并呈现。leave 的 reflow 和
+              <code>_isLeaving</code> 检查单独标出。显式 duration 与 CSS
+              结束事件/兜底共用 <code>_endId</code> 保护；用户 resolve 直接进入
+              finish，绕过该 guard。已结算的 core 回调由
+              <code>called</code> 防止重复完成。enter 取消不在取消回调中移除
+              from，而是标记 <code>_enterCancelled = true</code> 并清
+              to/active；from 仍由双帧回调移除。leave 取消清
+              from/to/active，并设置
+              <code>_isLeaving = false</code>。两者随后调用对应用户 cancelHook。
+            </figcaption>
+          </figure>
+          <p>
+            用户 hook 声明第二个 <code>done</code> 参数时，由用户调用 done
+            结束；Vue 不再自动检测 CSS，也不使用 duration
+            自动结束。自动路径中，显式 duration 直接计时，跳过 CSS
+            结束事件；未给 duration
+            时才读取计算样式、等待对应数量的结束事件，并以最大 delay + duration
+            + 1ms 兜底。<code>css: false</code> 跳过 DOM CSS 管理。取消或
+            enter/leave 相互打断时，完成回调仍须保持幂等。
           </p>
           <pre
             data-source-file="vue/packages/runtime-dom/src/components/Transition.ts"
@@ -1698,11 +2545,12 @@ function setDisplay(el: VShowElement, value: unknown): void {
               >，leave 也走对称序列。
             </p>
             <p>
-              <strong>取消路径：</strong><code>onEnterCancelled</code> 固定
-              enter 被打断时的 class 清理和用户 hook；<code
-                >Transition.spec.ts</code
-              >
-              的单元测试还覆盖手写 duration 与结束事件。
+              <strong>取消与显式控制：</strong>同一 E2E 文件的
+              <code>onEnterCancelled</code> 验证 enter 被打断时的 class
+              清理和用户 hook；<code>events with arguments</code> 验证用户调用
+              done；<code>explicit durations</code>
+              测试组验证显式时长。结束事件和 timeout 分支见
+              <code>Transition.ts · whenTransitionEnds</code>。
             </p>
           </div>
           <div class="source-links">
@@ -1746,16 +2594,17 @@ function setDisplay(el: VShowElement, value: unknown): void {
                 <tr>
                   <td><strong>constructor</strong></td>
                   <td>
-                    建立根节点，保存定义与初始 props，接住升级前已经写在实例上的
-                    property
+                    建立根节点，保存定义与 initialProps；已有自有 property
+                    此时仍留在元素上
                   </td>
                   <td>元素可能在定义前已拥有自有 property</td>
                 </tr>
                 <tr>
                   <td><strong>connectedCallback</strong></td>
                   <td>
-                    解析同步/异步定义、读取已有 attributes、启动
-                    observer、创建组件实例
+                    读取已有 attributes、启动
+                    observer，解析同步/异步定义；定义解析后先接管声明
+                    property、安装实例访问器和准备样式，再 mount 组件
                   </td>
                   <td>连接后定义仍可能是异步组件</td>
                 </tr>
@@ -1790,6 +2639,186 @@ function setDisplay(el: VShowElement, value: unknown): void {
             都继续使用。只有复查仍断开，才停止 observer、卸载 app、清空组件与
             Teleport target 引用。
           </p>
+          <figure class="eng-diagram" id="dom-ce-reconnect">
+            <div
+              class="eng-scroll"
+              tabindex="0"
+              aria-label="工程图，可横向滚动"
+            >
+              <svg
+                class="eng-svg"
+                id="dom-ce-reconnect-svg"
+                viewBox="0 0 1100 625"
+                style="--diagram-width: 1100px"
+                role="img"
+                aria-labelledby="dom-ce-reconnect-title dom-ce-reconnect-desc"
+              >
+                <title id="dom-ce-reconnect-title">
+                  Custom Element 断开后的微任务复查
+                </title>
+                <desc id="dom-ce-reconnect-desc">
+                  已挂载元素断开后设置 connected 为 false，并把卸载检查排入
+                  nextTick。若检查前重连，connectedCallback 改为
+                  true，保留已有实例。检查执行时，只有仍断开才停止
+                  MutationObserver 并卸载 app。排队回调本身没有取消。
+                </desc>
+                <defs>
+                  <marker
+                    id="dom-ce-reconnect-arrow"
+                    viewBox="0 0 10 10"
+                    refX="9"
+                    refY="5"
+                    markerWidth="7"
+                    markerHeight="7"
+                    orient="auto-start-reverse"
+                  >
+                    <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--brand)" />
+                  </marker>
+                </defs>
+                <text class="eng-heading" x="35" y="35" text-anchor="start">
+                  <tspan x="35" dy="0">
+                    已挂载 Custom Element：移动时保留，真正移除时卸载
+                  </tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 400 182 H 650"
+                  marker-end="url(#dom-ce-reconnect-arrow)"
+                />
+                <path
+                  class="eng-async"
+                  d="M 840 225 V 315"
+                  marker-end="url(#dom-ce-reconnect-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 650 208 H 545 V 260 H 265 V 290"
+                  marker-end="url(#dom-ce-reconnect-arrow)"
+                />
+                <path
+                  class="eng-async"
+                  d="M 470 331 H 580 V 270 H 840 V 315"
+                  marker-end="url(#dom-ce-reconnect-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 690 360 H 615 V 542 H 470"
+                  marker-end="url(#dom-ce-reconnect-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 840 405 V 495"
+                  marker-end="url(#dom-ce-reconnect-arrow)"
+                />
+                <rect
+                  class="eng-state"
+                  x="50"
+                  y="140"
+                  width="350"
+                  height="85"
+                  rx="12"
+                />
+                <text class="eng-label" x="225" y="170" text-anchor="middle">
+                  <tspan x="225" dy="0">已连接</tspan>
+                  <tspan x="225" dy="23">
+                    _connected = true；instance 在用
+                  </tspan>
+                </text>
+                <rect
+                  class="eng-state"
+                  x="650"
+                  y="140"
+                  width="380"
+                  height="85"
+                  rx="12"
+                />
+                <text class="eng-label" x="840" y="170" text-anchor="middle">
+                  <tspan x="840" dy="0">待复查</tspan>
+                  <tspan x="840" dy="23">
+                    _connected = false；排入 nextTick
+                  </tspan>
+                </text>
+                <rect
+                  class="eng-note"
+                  x="60"
+                  y="290"
+                  width="410"
+                  height="85"
+                  rx="12"
+                />
+                <text class="eng-small" x="265" y="318" text-anchor="middle">
+                  <tspan x="265" dy="0">复查前再次 connectedCallback</tspan>
+                  <tspan x="265" dy="23">
+                    _connected = true；已有 instance 继续复用
+                  </tspan>
+                  <tspan x="265" dy="23">已排队的卸载回调仍会执行</tspan>
+                </text>
+                <polygon
+                  class="eng-decision"
+                  points="840,315.0 990.0,360 840,405.0 690.0,360"
+                />
+                <text class="eng-label" x="840" y="364" text-anchor="middle">
+                  <tspan x="840" dy="0">!_connected 仍为 true ?</tspan>
+                </text>
+                <rect
+                  class="eng-state"
+                  x="60"
+                  y="495"
+                  width="410"
+                  height="95"
+                  rx="12"
+                />
+                <text class="eng-label" x="265" y="527" text-anchor="middle">
+                  <tspan x="265" dy="0">跳过卸载</tspan>
+                  <tspan x="265" dy="23">
+                    保留 app / instance / MutationObserver
+                  </tspan>
+                </text>
+                <rect
+                  class="eng-state"
+                  x="650"
+                  y="495"
+                  width="380"
+                  height="95"
+                  rx="12"
+                />
+                <text class="eng-small" x="840" y="523" text-anchor="middle">
+                  <tspan x="840" dy="0">真正清理</tspan>
+                  <tspan x="840" dy="23">断开 observer，unmount app</tspan>
+                  <tspan x="840" dy="23">
+                    清空 instance / Teleport target 引用
+                  </tspan>
+                </text>
+                <text class="eng-small" x="525" y="157" text-anchor="middle">
+                  <tspan x="525" dy="0">disconnectedCallback</tspan>
+                </text>
+                <text class="eng-small" x="873" y="258" text-anchor="middle">
+                  <tspan x="873" dy="0">nextTick 复查</tspan>
+                </text>
+                <text class="eng-small" x="442" y="245" text-anchor="middle">
+                  <tspan x="442" dy="0">期间重新连接</tspan>
+                </text>
+                <text class="eng-small" x="689" y="254" text-anchor="middle">
+                  <tspan x="689" dy="0">读取最新 _connected</tspan>
+                </text>
+                <text class="eng-small" x="563" y="436" text-anchor="middle">
+                  <tspan x="563" dy="0">否：已重连</tspan>
+                </text>
+                <text class="eng-small" x="899" y="456" text-anchor="middle">
+                  <tspan x="899" dy="0">是：仍断开</tspan>
+                </text>
+              </svg>
+            </div>
+            <figcaption>
+              图聚焦已有组件实例的移动与移除；首次连接的定义解析、property
+              接管和样式准备见上表。依据
+              <code
+                >apiCustomElement.ts · connectedCallback /
+                disconnectedCallback</code
+              >：复查读的是最新 <code>_connected</code>，不是取消 nextTick
+              任务。
+            </figcaption>
+          </figure>
           <details class="source-layer">
             <summary>连续源码：断开复查与 attribute mutation 分派</summary>
             <div>
@@ -1903,8 +2932,9 @@ function setDisplay(el: VShowElement, value: unknown): void {
           <p>
             组件 <code>emit('myEvent', ...args)</code> 会派发原名
             <code>myEvent</code>，还会再派发 kebab-case 的
-            <code>my-event</code>。第一个参数若是普通 对象，其字段也会合入
-            CustomEvent 初始化选项；所有参数仍放在 <code>detail</code> 数组中。
+            <code>my-event</code>。默认 <code>detail</code> 是全部 emit
+            参数组成的数组。第一个参数若是普通对象，其字段会覆盖 CustomEvent
+            初始化选项；首参自带 <code>detail</code> 时，该值会替换默认数组。
           </p>
           <div class="test-proof">
             <p>
@@ -2056,7 +3086,7 @@ export const unsafeToTrustedHTML: (value: string) =&gt; TrustedHTML | string =
             <p>
               <strong>逻辑清理：</strong
               ><code>patchProps.spec.ts · innerHTML unmount prev children</code>
-              证明浏览器替换 HTML 的同时，旧组件/指令子树仍走 Vue 卸载。
+              断言切换到 innerHTML 时旧子组件的 onUnmounted 被调用。
             </p>
           </div>
           <div class="source-links">
@@ -2203,34 +3233,151 @@ const timeout = () =&gt; new Promise(r =&gt; setTimeout(r))</code></pre>
   }
 }</code></pre>
 
-          <h3>3. 同一用例的状态图</h3>
-          <div
-            class="diagram"
-            role="img"
-            aria-label="onClick invoker 从首次绑定到替换和解绑的完整状态图"
-          >
-            <div class="diagram-title">ONE ELEMENT · ONE onClick SLOT</div>
-            <div class="layer-flow">
-              <div class="layer-node">
-                <strong>S0 空</strong><small>el._vei[onClick] 不存在</small>
-              </div>
-              <div class="diagram-arrow">→ add</div>
-              <div class="layer-node">
-                <strong>S1 旧值</strong
-                ><small>DOM listener = invoker；value = prevFn</small>
-              </div>
-              <div class="diagram-arrow">→ patch</div>
-              <div class="layer-node emphasis">
-                <strong>S2 新值</strong
-                ><small>listener 身份不变；value = nextFn</small>
-              </div>
-              <div class="diagram-arrow">→ null</div>
-              <div class="layer-node">
-                <strong>S3 清理</strong
-                ><small>removeEventListener；缓存 = undefined</small>
-              </div>
+          <h3>3. 一个 rawName 槽位的状态图</h3>
+          <figure class="eng-diagram" id="dom-invoker-states">
+            <div
+              class="eng-scroll"
+              tabindex="0"
+              aria-label="工程图，可横向滚动"
+            >
+              <svg
+                class="eng-svg"
+                id="dom-invoker-states-svg"
+                viewBox="0 0 1120 620"
+                style="--diagram-width: 1120px"
+                role="img"
+                aria-labelledby="dom-invoker-states-title dom-invoker-states-desc"
+              >
+                <title id="dom-invoker-states-title">
+                  事件 Invoker 创建、更新与移除状态图
+                </title>
+                <desc id="dom-invoker-states-desc">
+                  空槽位收到有效的新值时创建稳定 invoker
+                  并注册。已绑定槽位更新时只换 value。清空新值时使用该 invoker
+                  移除 DOM listener 并清空缓存。无缓存且新值为空不做监听器操作。
+                </desc>
+                <defs>
+                  <marker
+                    id="dom-invoker-states-arrow"
+                    viewBox="0 0 10 10"
+                    refX="9"
+                    refY="5"
+                    markerWidth="7"
+                    markerHeight="7"
+                    orient="auto-start-reverse"
+                  >
+                    <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--brand)" />
+                  </marker>
+                </defs>
+                <text class="eng-heading" x="35" y="34" text-anchor="start">
+                  <tspan x="35" dy="0">
+                    一个元素 × 一个 rawName 槽位：DOM listener 的身份保持稳定
+                  </tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 330 274 H 690"
+                  marker-end="url(#dom-invoker-states-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 790 220 V 120 H 1000 V 220"
+                  marker-end="url(#dom-invoker-states-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 885 335 V 405 H 195 V 335"
+                  marker-end="url(#dom-invoker-states-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 120 220 V 153 H 265 V 220"
+                  marker-end="url(#dom-invoker-states-arrow)"
+                />
+                <rect
+                  class="eng-state"
+                  x="55"
+                  y="220"
+                  width="275"
+                  height="115"
+                  rx="12"
+                />
+                <text class="eng-small" x="192" y="249" text-anchor="middle">
+                  <tspan x="192" dy="0">空槽位</tspan>
+                  <tspan x="192" dy="23">没有 invoker / 缓存为 undefined</tspan>
+                  <tspan x="192" dy="23">没有对应 DOM listener</tspan>
+                </text>
+                <rect
+                  class="eng-state"
+                  x="690"
+                  y="220"
+                  width="380"
+                  height="115"
+                  rx="12"
+                />
+                <text class="eng-label" x="880" y="250" text-anchor="middle">
+                  <tspan x="880" dy="0">已绑定</tspan>
+                  <tspan x="880" dy="23">DOM listener = 同一个 invoker</tspan>
+                  <tspan x="880" dy="23">value = 当前处理器</tspan>
+                </text>
+                <text class="eng-small" x="510" y="226" text-anchor="middle">
+                  <tspan x="510" dy="0">nextValue truthy，无缓存</tspan>
+                  <tspan x="510" dy="23">
+                    createInvoker → addEventListener
+                  </tspan>
+                </text>
+                <text class="eng-small" x="894" y="75" text-anchor="middle">
+                  <tspan x="894" dy="0">nextValue truthy，缓存命中</tspan>
+                  <tspan x="894" dy="23">
+                    只替换 invoker.value；不重新注册
+                  </tspan>
+                </text>
+                <text class="eng-small" x="194" y="105" text-anchor="middle">
+                  <tspan x="194" dy="0">nextValue falsy，无缓存</tspan>
+                  <tspan x="194" dy="23">不新增、不移除</tspan>
+                </text>
+                <text class="eng-small" x="545" y="380" text-anchor="middle">
+                  <tspan x="545" dy="0">nextValue falsy，缓存命中</tspan>
+                </text>
+                <text class="eng-small" x="545" y="446" text-anchor="middle">
+                  <tspan x="545" dy="0">
+                    removeEventListener(name, invoker, options)；缓存设为
+                    undefined
+                  </tspan>
+                </text>
+                <rect
+                  class="eng-note"
+                  x="55"
+                  y="491"
+                  width="1015"
+                  height="97"
+                  rx="12"
+                />
+                <text class="eng-small" x="562" y="521" text-anchor="middle">
+                  <tspan x="562" dy="0">
+                    浏览器派发事件时：先做 _vts 保护，再读取 invoker.value
+                    调用当前处理器。
+                  </tspan>
+                  <tspan x="562" dy="23">
+                    rawName 是缓存键；options 后缀改变会进入另一个槽位。
+                  </tspan>
+                  <tspan x="562" dy="23">
+                    处理器数组先复制快照，stopImmediatePropagation
+                    可以阻止后续处理器。
+                  </tspan>
+                </text>
+              </svg>
             </div>
-          </div>
+            <figcaption>
+              源码：<code>modules/events.ts · patchEvent / createInvoker</code
+              >。箭头条件使用实现中的 truthy/falsy 判断；同名 prop 更新保留
+              invoker 身份；移除后再次传入有效值会重新创建 invoker。
+            </figcaption>
+          </figure>
+          <p>
+            <code>veiKey</code> 是模块私有 Symbol；<code>el[veiKey]</code>
+            保存以 rawName 为键的 invoker 表。
+          </p>
           <ol>
             <li>
               <strong>首次绑定：</strong>解析 <code>onClick</code> 与
@@ -2295,18 +3442,16 @@ pnpm vitest packages/runtime-dom/__tests__/nodeOps.spec.ts</code></pre>
         <section class="article-section prose" id="evidence-matrix">
           <h2>每个 DOM 分支去哪里核对</h2>
           <p class="source-note">
-            “连续源码”代码块可逐字回到本地 Vue 3.5.41
-            文件；测试列给出保护这条行为的具体
-            case，不把一个大测试文件笼统当作所有结论的证明。
+            下表列出本地实现与相关用例；行为超出用例断言时，注明对应实现分支。
           </p>
           <div class="table-wrap">
             <table>
               <thead>
                 <tr>
-                  <th>用例</th>
+                  <th>行为</th>
                   <th>对应源码</th>
                   <th>仓库测试</th>
-                  <th>同用例图</th>
+                  <th>对应图示</th>
                 </tr>
               </thead>
               <tbody>
@@ -2318,9 +3463,12 @@ pnpm vitest packages/runtime-dom/__tests__/nodeOps.spec.ts</code></pre>
                   </td>
                   <td>
                     <code>createApp.spec.ts · mount to SVG container</code
-                    >；<code>vCloak.spec.ts</code>；<code
-                      >vue/index.spec.ts · innerHTML as template</code
-                    >
+                    >；<code
+                      >vCloak.spec.ts · should be removed after compile</code
+                    >；<code
+                      >vue/index.spec.ts · should support using element
+                      innerHTML as template</code
+                    >。水合参数封装见 <code>index.ts · createSSRApp</code>
                   </td>
                   <td><a href="#composition">host port → browser sink</a></td>
                 </tr>
@@ -2331,15 +3479,18 @@ pnpm vitest packages/runtime-dom/__tests__/nodeOps.spec.ts</code></pre>
                     <code>Teleport.ts</code>
                   </td>
                   <td>
-                    <code>nodeOps.spec.ts</code> 的 insert/remove；<code
+                    <code>nodeOps.spec.ts</code> 验证节点创建；<code
                       >rendererStaticNode.spec.ts</code
                     >
-                    的 move/unmount
+                    验证静态范围 move/unmount。Fragment/Teleport 锚点见 core
+                    实现
                   </td>
                   <td><a href="#nodeops">三类锚点对照</a></td>
                 </tr>
                 <tr>
-                  <td>静态 HTML 首次解析与缓存范围克隆</td>
+                  <td>
+                    静态 HTML 首次解析与缓存范围克隆（单节点或 start 有兄弟）
+                  </td>
                   <td><code>nodeOps.ts · insertStaticContent</code></td>
                   <td>
                     <code>nodeOps.spec.ts</code> · fresh / anchor / cached / SVG
@@ -2358,7 +3509,9 @@ pnpm vitest packages/runtime-dom/__tests__/nodeOps.spec.ts</code></pre>
                       >patchProps.spec.ts · force patch as prop/attribute</code
                     >；<code>patchEvents.spec.ts · native onclick</code>
                   </td>
-                  <td><a href="#patch-prop">patchProp 分支树</a></td>
+                  <td>
+                    <a href="#dom-patch-prop-flow">patchProp 条件决策图</a>
+                  </td>
                 </tr>
                 <tr>
                   <td>DOM property 的 value、空值与 setter 失败</td>
@@ -2389,7 +3542,11 @@ pnpm vitest packages/runtime-dom/__tests__/nodeOps.spec.ts</code></pre>
                     <code>patchClass.spec.ts · transition class</code>；<code
                       >patchStyle.spec.ts · multiple values</code
                     >
-                    / <code>preserve textarea resize</code>
+                    /
+                    <code
+                      >should preserve textarea resize dimensions while
+                      reapplying unrelated unchanged object styles</code
+                    >
                   </td>
                   <td><a href="#class-style">class/style 状态协调</a></td>
                 </tr>
@@ -2404,8 +3561,8 @@ pnpm vitest packages/runtime-dom/__tests__/nodeOps.spec.ts</code></pre>
                     <code>should unassign event handler</code>
                   </td>
                   <td>
-                    <a href="#event-proof"
-                      >S0 空 → S1 旧值 → S2 新值 → S3 清理</a
+                    <a href="#dom-invoker-states"
+                      >空槽位 ⇄ 稳定 invoker；更新为自循环</a
                     >
                   </td>
                 </tr>
@@ -2418,7 +3575,10 @@ pnpm vitest packages/runtime-dom/__tests__/nodeOps.spec.ts</code></pre>
                   <td>
                     <code>vModel.spec.ts · text input</code> /
                     <code>composition session</code> /
-                    <code>current Array/Set type</code>；core hydration case
+                    <code>current Array/Set type</code>；<code
+                      >runtime-core/hydration.spec.ts · preserves text entered
+                      before v-model hydration</code
+                    >
                   </td>
                   <td><a href="#v-model-flow">v-model 双向状态流</a></td>
                 </tr>
@@ -2430,32 +3590,45 @@ pnpm vitest packages/runtime-dom/__tests__/nodeOps.spec.ts</code></pre>
                   </td>
                   <td>
                     <code>vShow.spec.ts · respect display</code> /
-                    <code>style updated</code> / <code>with Transition</code>
+                    <code>style updated</code> /
+                    <code>with Transition</code>（隐藏中更新 style
+                    后显示）。等待 leave 完成后隐藏见 <code>vShow.updated</code>
                   </td>
                   <td><a href="#v-show-flow">display 所有权状态图</a></td>
                 </tr>
                 <tr>
-                  <td>CSS enter/leave 帧切换与取消</td>
+                  <td>CSS enter/leave 帧切换、取消与 done/duration 控制</td>
                   <td><code>components/Transition.ts</code></td>
                   <td>
                     <code>vue/e2e/Transition.spec.ts · basic transition</code> /
-                    <code>onEnterCancelled</code>
+                    <code>onEnterCancelled</code> /
+                    <code>events with arguments</code> /
+                    <code>explicit durations</code>
                   </td>
-                  <td><a href="#transition-dom">四阶段序列</a></td>
+                  <td>
+                    <a href="#dom-transition-lanes">四角色时序与结束分支</a>
+                  </td>
                 </tr>
                 <tr>
-                  <td>Custom Element attribute/prop、移动和事件</td>
                   <td>
-                    <code>apiCustomElement.ts · _processMutations</code> /
-                    <code>_setProp</code> / <code>disconnectedCallback</code>
+                    Custom Element
+                    attribute/property、连接后接管已有值、移动和事件
+                  </td>
+                  <td>
+                    <code>apiCustomElement.ts · _resolveDef/_resolveProps</code>
+                    / <code>_processMutations</code> / <code>_setProp</code> /
+                    <code>disconnectedCallback</code>
                   </td>
                   <td>
                     <code>customElement.spec.ts · props via attribute</code> /
                     <code>avoid prematurely disconnecting...</code> /
-                    <code>case transform...</code>
+                    <code>case transform...</code> /
+                    <code>handling properties set before upgrading</code> /
+                    <code>emit with options</code>。首参 detail 覆盖见
+                    <code>dispatch</code> 的合并顺序
                   </td>
                   <td>
-                    <a href="#custom-elements">MutationObserver 状态说明</a>
+                    <a href="#dom-ce-reconnect">连接 / 断开后的微任务复查</a>
                   </td>
                 </tr>
                 <tr>

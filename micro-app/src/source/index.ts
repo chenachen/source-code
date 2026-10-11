@@ -23,7 +23,8 @@ import globalEnv from '../libs/global_env'
  * 扫描已解析入口中的资源元素，并完成静态资源登记或预处理。
  *
  * link/script 会交给各自提取器；内联 style 的 CSS 隔离可进入 fiber 队列；图片地址在
- * 插入真实容器前补全。标记为 `exclude` 的资源由注释节点占位，`ignore` 资源保留原生行为。
+ * 插入真实容器前补全。标记为 `exclude` 的资源由注释节点占位，`ignore` 资源保留节点、跳过
+ * 框架转换；其中由 DOMParser 解析出的静态 script 不会因保留节点就执行。
  *
  * @param body - 包含入口后代节点的解析容器。
  * @param app - 持有资源集合、隔离配置和入口基址的应用实例。
@@ -81,8 +82,10 @@ function flatBodyChildren(
  * 把规范化 HTML 转成应用 DOM，并启动样式与脚本两条资源加载链。
  *
  * 入口必须同时含 `micro-app-head` 和 `micro-app-body`。样式链与脚本链各调用一次
- * `app.onLoad()`；`CreateApp` 以两次完成信号作为全部资源就绪门禁。link 下载与内联
- * style 隔离并行，最终按“内联 style → 外链 style”顺序落地，避免长网络等待阻塞解析。
+ * `app.onLoad()`；`CreateApp.loadSourceLevel` 收齐两次信号后保存 DOM 并继续挂载。这里表示
+ * 样式处理与挂载前脚本抓取已结算，失败项也计入完成，defer/async 通常留到挂载时下载。
+ * fiber 模式中 link 下载与内联 style 隔离并行，外链 style 的转换等待内联 style 队列结束；
+ * 外链仍替换各自占位节点，保持入口中的样式位置。
  *
  * @param htmlStr - 已经过插件处理并改写容器标签的 HTML 字符串。
  * @param app - 接收 DOM、资源集合和完成信号的应用实例。

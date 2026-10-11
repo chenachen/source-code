@@ -2,11 +2,9 @@ import { type ComputedRefImpl, computed as _computed } from '@vue/reactivity'
 import { getCurrentInstance, isInSSRComponentSetup } from './component'
 
 /**
- * 运行时核心层对响应式 `computed()` 的薄封装。
+ * 运行时核心层对响应式 computed 的封装，公开签名与 @vue/reactivity 一致。
  *
- * 它把“当前是否处于 SSR 组件 setup”传给响应式层：SSR 单次渲染不需要客户端式的
- * 跨 effect 缓存语义。开发环境还会读取应用配置，把递归 computed 的诊断开关写入
- * 具体实现；公开签名仍与 `@vue/reactivity` 完全一致。
+ * 将 isInSSRComponentSetup 传给底层实例：SSR 仍复用全局版本缓存，只跳过逐依赖版本/无依赖快路径，并且不安装调试钩子。开发环境还将应用 warnRecursiveComputed 配置写入 _warnRecursive；本版响应式实现未消费该字段发出警告。返回尚未求值的 computed ref。
  */
 export const computed: typeof _computed = (
   getterOrOptions: any,

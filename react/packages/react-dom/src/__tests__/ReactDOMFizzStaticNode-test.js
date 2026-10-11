@@ -14,7 +14,7 @@ let React;
 let ReactDOMFizzStatic;
 let Suspense;
 
-/** `normalizeCodeLocInfo`：封装当前用例复用的操作、回调或断言步骤。 */
+/** 把栈行at/in统一为in、去函数名前缀与源码位置，含数字位置时用at **，稳定组件/owner栈快照。 */
 function normalizeCodeLocInfo(str) {
   return (
     str &&
@@ -28,7 +28,7 @@ function normalizeCodeLocInfo(str) {
   );
 }
 
-/** `ignoreListStack`：封装当前用例复用的操作、回调或断言步骤。 */
+/** 只保留含本文件__filename的owner栈行，用于移除库栈；空输入原样返回。 */
 function ignoreListStack(str) {
   if (!str) {
     return str;
@@ -54,17 +54,19 @@ describe('ReactDOMFizzStaticNode', () => {
   });
 
   const theError = new Error('This is an error');
-  /** `Throw`：封装当前用例复用的操作、回调或断言步骤。 */
+
+  /** 抛同一theError对象，供检查错误身份和单次报告。 */
   function Throw() {
     throw theError;
   }
   const theInfinitePromise = new Promise(() => {});
-  /** `InfiniteSuspend`：封装当前用例复用的操作、回调或断言步骤。 */
+
+  /** 抛永不解决的共享Promise，让静态任务只能通过取消结束。 */
   function InfiniteSuspend() {
     throw theInfinitePromise;
   }
 
-  /** `readContent`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 订阅Node流data拼UTF8，error拒绝，end返回全部文字；单Chunk独立Buffer解码，不实现跨Chunk增量Decoder。 */
   function readContent(readable) {
     return new Promise((resolve, reject) => {
       let content = '';
@@ -78,7 +80,7 @@ describe('ReactDOMFizzStaticNode', () => {
     });
   }
 
-  /** `readContentWeb`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** getReader串行读Web流直到done并逐块UTF8拼接；read拒绝自然向上，未releaseLock或主动取消。 */
   async function readContentWeb(stream) {
     const reader = stream.getReader();
     let content = '';
@@ -91,14 +93,7 @@ describe('ReactDOMFizzStaticNode', () => {
     }
   }
 
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「should call prerenderToNodeStream」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言覆盖 react-dom 的服务端流适配层；完整 Fizz 状态机位于 react-server。
-   */
+  /** Node静态入口prerenderToNodeStream渲染div/hello world；完整读Node prelude后快照相同HTML，验证公开入口返回可消费Readable。 */
   it('should call prerenderToNodeStream', async () => {
     const result = await ReactDOMFizzStatic.prerenderToNodeStream(
       <div>hello world</div>,
@@ -107,14 +102,14 @@ describe('ReactDOMFizzStaticNode', () => {
     expect(prelude).toMatchInlineSnapshot(`"<div>hello world</div>"`);
   });
 
-  /** 测试场景：验证「should suppport web streams」描述的渲染、交互或错误处理结果。 */
+  /** Node环境的prerender Web入口渲染同div；用getReader读到done后HTML快照相同，验证Node也暴露Web流桥接。 */
   it('should suppport web streams', async () => {
     const result = await ReactDOMFizzStatic.prerender(<div>hello world</div>);
     const prelude = await readContentWeb(result.prelude);
     expect(prelude).toMatchInlineSnapshot(`"<div>hello world</div>"`);
   });
 
-  /** 测试场景：验证「should emit DOCTYPE at the root of the document」描述的渲染、交互或错误处理结果。 */
+  /** 静态完整html/body文档；prelude有DOCTYPE及补head，blocking-render开关另加expect link与_R_ template，验证文档前导/闭合和构建差异。 */
   it('should emit DOCTYPE at the root of the document', async () => {
     const result = await ReactDOMFizzStatic.prerenderToNodeStream(
       <html>
@@ -133,7 +128,7 @@ describe('ReactDOMFizzStaticNode', () => {
     }
   });
 
-  /** 测试场景：验证「should emit bootstrap script src at the end」描述的渲染、交互或错误处理结果。 */
+  /** 静态div带内联bootstrap、经典init.js与模块init.mjs；快照先两种preload，再div、内联INIT、两async脚本，验证bootstrap前导提示与末尾执行标签顺序。 */
   it('should emit bootstrap script src at the end', async () => {
     const result = await ReactDOMFizzStatic.prerenderToNodeStream(
       <div>hello world</div>,
@@ -149,12 +144,13 @@ describe('ReactDOMFizzStaticNode', () => {
     );
   });
 
-  /** 测试场景：验证「emits all HTML as one unit」描述的渲染、交互或错误处理结果。 */
+  /** Wait首次挂起，先跑定时器再置hasLoaded并resolve；静态结果完整读只含Done边界、无Loading，验证等待全体内容后一次提供prelude，不在未完成时发shell。 */
   it('emits all HTML as one unit', async () => {
     let hasLoaded = false;
     let resolve;
     const promise = new Promise(r => (resolve = r));
-    /** `Wait`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 未hasLoaded就抛本例Promise，置true后返回Done，控制静态all-ready时点。 */
     function Wait() {
       if (!hasLoaded) {
         throw promise;
@@ -180,7 +176,7 @@ describe('ReactDOMFizzStaticNode', () => {
     expect(prelude).toMatchInlineSnapshot(`"<div><!--$-->Done<!--/$--></div>"`);
   });
 
-  /** 测试场景：验证「should reject the promise when an error is thrown at the root」描述的渲染、交互或错误处理结果。 */
+  /** 根div子Throw抛共享theError且无Suspense；外Promise拒绝同对象、onError同对象一次，验证根致命错误。 */
   it('should reject the promise when an error is thrown at the root', async () => {
     const reportedErrors = [];
     let caughtError = null;
@@ -190,7 +186,8 @@ describe('ReactDOMFizzStaticNode', () => {
           <Throw />
         </div>,
         {
-          /** `onError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+          /** 收集根致命错误原对象，外Promise也应拒绝同对象。 */
           onError(x) {
             reportedErrors.push(x);
           },
@@ -203,7 +200,7 @@ describe('ReactDOMFizzStaticNode', () => {
     expect(reportedErrors).toEqual([theError]);
   });
 
-  /** 测试场景：验证「should reject the promise when an error is thrown inside a fallback」描述的渲染、交互或错误处理结果。 */
+  /** Suspense内容永远挂起但fallback Throw；外Promise拒绝theError且onError一次，验证shell fallback自身失败也是致命错误。 */
   it('should reject the promise when an error is thrown inside a fallback', async () => {
     const reportedErrors = [];
     let caughtError = null;
@@ -215,7 +212,8 @@ describe('ReactDOMFizzStaticNode', () => {
           </Suspense>
         </div>,
         {
-          /** `onError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+          /** 收集fallback致命错误原对象，确认不是内容永久挂起本身。 */
           onError(x) {
             reportedErrors.push(x);
           },
@@ -228,7 +226,7 @@ describe('ReactDOMFizzStaticNode', () => {
     expect(reportedErrors).toEqual([theError]);
   });
 
-  /** 测试场景：验证「should not error the stream when an error is thrown inside suspense boundary」描述的渲染、交互或错误处理结果。 */
+  /** Suspense内容Throw、fallback Loading成功；静态Promise成功且prelude可读含Loading，onError一次，验证边界内失败转fallback不破坏流。 */
   it('should not error the stream when an error is thrown inside suspense boundary', async () => {
     const reportedErrors = [];
     const result = await ReactDOMFizzStatic.prerenderToNodeStream(
@@ -238,7 +236,8 @@ describe('ReactDOMFizzStaticNode', () => {
         </Suspense>
       </div>,
       {
-        /** `onError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 记录边界内容错误原对象，不抛新错，静态结果仍可用fallback。 */
         onError(x) {
           reportedErrors.push(x);
         },
@@ -250,7 +249,7 @@ describe('ReactDOMFizzStaticNode', () => {
     expect(reportedErrors).toEqual([theError]);
   });
 
-  /** 测试场景：验证「should be able to complete by aborting even if the promise never resolves」描述的渲染、交互或错误处理结果。 */
+  /** 完成shell的Suspense永久等待，默认AbortController.abort后结果成功含Loading，错误message为默认abort原因，验证取消剩余任务可完成静态结果。 */
   it('should be able to complete by aborting even if the promise never resolves', async () => {
     const errors = [];
     const controller = new AbortController();
@@ -262,7 +261,8 @@ describe('ReactDOMFizzStaticNode', () => {
       </div>,
       {
         signal: controller.signal,
-        /** `onError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 提取默认abort错误message，每未完成任务报告一次。 */
         onError(x) {
           errors.push(x.message);
         },
@@ -282,7 +282,7 @@ describe('ReactDOMFizzStaticNode', () => {
     expect(errors).toEqual(['This operation was aborted']);
   });
 
-  /** 测试场景：验证「should resolve an empty shell if aborting before the shell is complete」描述的渲染、交互或错误处理结果。 */
+  /** 根永久挂起且无Suspense shell，abort自定义Error；Promise成功、prelude空且报告原因，验证静态halt允许无完整shell时返回空结果。 */
   it('should resolve an empty shell if aborting before the shell is complete', async () => {
     const errors = [];
     const controller = new AbortController();
@@ -292,7 +292,8 @@ describe('ReactDOMFizzStaticNode', () => {
       </div>,
       {
         signal: controller.signal,
-        /** `onError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 记录根shell未完成的自定义取消message，结果允许空prelude。 */
         onError(x) {
           errors.push(x.message);
         },
@@ -318,11 +319,12 @@ describe('ReactDOMFizzStaticNode', () => {
     expect(content).toBe('');
   });
 
-  /** 测试场景：验证「should be able to abort before something suspends」描述的渲染、交互或错误处理结果。 */
+  /** App在返回Suspense之前abort()；结果空、默认原因一次，验证渲染期间取消截断后续挂起内容。 */
   it('should be able to abort before something suspends', async () => {
     const errors = [];
     const controller = new AbortController();
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 先同步abort再返回含永久挂起内容的Suspense，测试取消早于实际读Promise。 */
     function App() {
       controller.abort();
       return (
@@ -337,7 +339,8 @@ describe('ReactDOMFizzStaticNode', () => {
       </div>,
       {
         signal: controller.signal,
-        /** `onError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 记录渲染中默认abort原因，结果不继续建shell。 */
         onError(x) {
           errors.push(x.message);
         },
@@ -351,12 +354,13 @@ describe('ReactDOMFizzStaticNode', () => {
     expect(content).toBe('');
   });
 
-  /** 测试场景：验证「reports the abort reason if a task suspends after aborting a prerender」描述的渲染、交互或错误处理结果。 */
+  /** App先abort(Error reason)再use永不完成Promise；报告原abort reason且空prelude，验证同任务取消后挂起不能覆盖原因。 */
   it('reports the abort reason if a task suspends after aborting a prerender', async () => {
     const promise = new Promise(() => {});
     const errors = [];
     const controller = new AbortController();
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 先abort自定义Error再use永久Promise，同任务挂起不能换掉取消原因。 */
     function App() {
       controller.abort(new Error('abort reason'));
       React.use(promise);
@@ -365,7 +369,8 @@ describe('ReactDOMFizzStaticNode', () => {
 
     const resultPromise = ReactDOMFizzStatic.prerenderToNodeStream(<App />, {
       signal: controller.signal,
-      /** `onError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 保存同任务取消报告的message。 */
       onError(error) {
         errors.push(error.message);
       },
@@ -378,7 +383,7 @@ describe('ReactDOMFizzStaticNode', () => {
     expect(await readContent(result.prelude)).toBe('');
   });
 
-  /** 测试场景：验证「should resolve with an empty prelude if passing an already aborted signal」描述的渲染、交互或错误处理结果。 */
+  /** 调用前signal已abort(Error)；即使有可用fallback仍结果成功为空，错误保留自定义原因，验证已取消请求不继续CPU构建shell。 */
   it('should resolve with an empty prelude if passing an already aborted signal', async () => {
     const errors = [];
     const controller = new AbortController();
@@ -393,7 +398,8 @@ describe('ReactDOMFizzStaticNode', () => {
       </div>,
       {
         signal: controller.signal,
-        /** `onError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 保存调用前已取消signal的原因，检查空结果而非抛拒绝。 */
         onError(x) {
           errors.push(x.message);
         },
@@ -416,14 +422,16 @@ describe('ReactDOMFizzStaticNode', () => {
     expect(content).toBe('');
   });
 
-  /** 测试场景：验证「supports custom abort reasons with a string」描述的渲染、交互或错误处理结果。 */
+  /** 两个Suspense分别永久Wait，signal.abort字符串foobar；onError原字符串两次且结果成功，验证每个未完成任务保留非Error取消原因，未检查prelude内容。 */
   it('supports custom abort reasons with a string', async () => {
     const promise = new Promise(r => {});
-    /** `Wait`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 两个边界共用Wait，各自抛同一个永久Promise。 */
     function Wait() {
       throw promise;
     }
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 用p/span两个独立Suspense包Wait，取消应报告两份任务原因。 */
     function App() {
       return (
         <div>
@@ -445,7 +453,8 @@ describe('ReactDOMFizzStaticNode', () => {
     const controller = new AbortController();
     const resultPromise = ReactDOMFizzStatic.prerenderToNodeStream(<App />, {
       signal: controller.signal,
-      /** `onError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 保存原字符串取消值并返回digest；本例只断言报告值，不读取digest标记。 */
       onError(x) {
         errors.push(x);
         return 'a digest';
@@ -462,14 +471,16 @@ describe('ReactDOMFizzStaticNode', () => {
     expect(errors).toEqual(['foobar', 'foobar']);
   });
 
-  /** 测试场景：验证「supports custom abort reasons with an Error」描述的渲染、交互或错误处理结果。 */
+  /** 同两边界，但abort Error uh oh；onError提取message两次，验证Error原因按任务分别报告。 */
   it('supports custom abort reasons with an Error', async () => {
     const promise = new Promise(r => {});
-    /** `Wait`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** Error取消场景的永久挂起Wait，两个边界共享同Promise。 */
     function Wait() {
       throw promise;
     }
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 构造两独立边界以比较Error原因分别上报。 */
     function App() {
       return (
         <div>
@@ -491,7 +502,8 @@ describe('ReactDOMFizzStaticNode', () => {
     const controller = new AbortController();
     const resultPromise = ReactDOMFizzStatic.prerenderToNodeStream(<App />, {
       signal: controller.signal,
-      /** `onError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 记录取消Error.message并返回digest，确保原Error不被替换成默认原因。 */
       onError(x) {
         errors.push(x.message);
         return 'a digest';
@@ -508,19 +520,21 @@ describe('ReactDOMFizzStaticNode', () => {
     expect(errors).toEqual(['uh oh', 'uh oh']);
   });
 
-  /** 测试场景：验证「uses a rejection reason when an abort listener rejects pending work before the abort finishes」描述的渲染、交互或错误处理结果。 */
+  /** 两边界use rejectedPromise/haltedPromise，abort监听同时reject前者；最终错误顺序rejected during abort、abort reason，验证已拒绝任务采用自身原因而未完成另一任务采用取消原因。 */
   it('uses a rejection reason when an abort listener rejects pending work before the abort finishes', async () => {
     let reject;
     const rejectedPromise = new Promise((resolve, rejectPromise) => {
       reject = rejectPromise;
     });
     const haltedPromise = new Promise(() => {});
-    /** `RejectedWait`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** use可被abort监听reject的Promise，最终采用自身拒绝原因。 */
     function RejectedWait() {
       React.use(rejectedPromise);
       return null;
     }
-    /** `HaltedWait`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** use仍永久pending的Promise，最终采用abort原因。 */
     function HaltedWait() {
       React.use(haltedPromise);
       return null;
@@ -539,7 +553,8 @@ describe('ReactDOMFizzStaticNode', () => {
       </>,
       {
         signal: controller.signal,
-        /** `onError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 按到达顺序保存两种错误message，不统一重写原因。 */
         onError(error) {
           errors.push(error.message);
         },
@@ -569,7 +584,7 @@ describe('ReactDOMFizzStaticNode', () => {
       jest.useFakeTimers();
     });
 
-    /** 测试场景：验证「includes the suspended call site when aborting in the same rendering task」描述的渲染、交互或错误处理结果。 */
+    /** 真定时器下AbortAndSuspend同任务abort后use永久Promise；错误reason与空prelude正确，DEV组件栈含挂起调用点/App，ownerStack受asyncDebug开关影响、PROD为null，验证取消挂起诊断位置。 */
     it('includes the suspended call site when aborting in the same rendering task', async () => {
       const promise = new Promise(() => {});
       const controller = new AbortController();
@@ -577,14 +592,14 @@ describe('ReactDOMFizzStaticNode', () => {
       let componentStack;
       let ownerStack;
 
-      /** `AbortAndSuspend`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 在同一个render任务先abort再use挂起，诊断栈应指向此调用site。 */
       function AbortAndSuspend() {
         controller.abort(new Error('abort reason'));
         React.use(promise);
         return null;
       }
 
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 返回AbortAndSuspend，为组件/owner栈提供上层App。 */
       function App() {
         return <AbortAndSuspend />;
       }
@@ -593,7 +608,8 @@ describe('ReactDOMFizzStaticNode', () => {
         <App />,
         {
           signal: controller.signal,
-          /** `onError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+          /** 保存原错误、errorInfo.componentStack及DEV captureOwnerStack，PROD明确null；回调不恢复渲染。 */
           onError(error, errorInfo) {
             caughtError = error;
             componentStack = errorInfo.componentStack;

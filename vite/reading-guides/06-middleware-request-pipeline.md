@@ -30,7 +30,8 @@
 
 ## 中间件总顺序
 
-开发服务器在 `initServer()` 期间按下列顺序装配 Connect：
+开发服务器在 `_createServer()` 中按下列顺序装配 Connect；`initServer()` 随后负责插件和
+Environment 的启动：
 
 ```text
 request
@@ -40,20 +41,18 @@ request
 ├─ CORS
 ├─ Host validation（HTTP）
 ├─ 用户 configureServer 前置中间件
-├─ cached transform 快路径
+├─ cached transform 快路径（普通模式）
 ├─ proxy
 ├─ base 剥离/重定向
 ├─ open-in-editor
 ├─ HMR ping
 ├─ publicDir 原样文件
-├─ bundledDev lazy/memory files
-├─ transform
-├─ /@fs/ 静态文件
-├─ root 静态文件
-├─ HTML fallback
-├─ configureServer 后置中间件（逆序）
-├─ index.html transform
-├─ 404（仅独立模式）
+├─ bundledDev：lazy bundling → memory files
+│  或普通模式：transform → /@fs/ 静态文件 → root 静态文件
+├─ HTML fallback（spa/mpa）
+├─ configureServer 后置中间件（按钩子收集顺序）
+├─ index.html transform（spa/mpa）
+├─ 404（与 HTML fallback/transform 一样，仅 spa/mpa appType）
 └─ error middleware
 ```
 
@@ -69,6 +68,26 @@ Connect 是线性责任链：中间件若写完响应就停止，否则调用 `n
 - HTML fallback 在静态/transform 后：只有前面都未命中的页面导航才应改写；
 - configureServer 后置钩子在 index.html 前：插件仍能提供自定义 HTML；
 - error 最后：任意前置层都能通过 `next(err)` 汇聚到同一响应。
+
+## 一次模块请求怎样跨层
+
+以普通开发模式、`base: '/'` 下浏览器发出的 `GET /src/main.ts` 为例，HTTP 中间件把模块请求
+交给 `server.environments.client`。这个 Environment 持有自己的 PluginContainer 与 ModuleGraph：
+前者执行插件钩子，后者保存模块身份、转换结果和依赖关系。下图把这些对象放在不同泳道，向下
+阅读时间；标有 `await` 的连线表示调用方等待该步完成，再进入下一步。
+
+![普通开发模式下 /src/main.ts 从 HTTP 入口到插件转换、模块图更新与响应出口的跨层时序](diagrams/06-request-sequence.svg)
+
+入口 ETag 命中会直接返回 304，尚未进入转换管线。未命中时，请求按 Connect 注册顺序继续；
+前面的 proxy、public 等层没有接管，才到 `transformMiddleware`。进入 Environment 后，
+同 URL 的新鲜在途 Promise 可以复用，URL/ID 对应节点的转换缓存也可以复用；这些路径都汇入
+结果返回线。真正需要重做时，才执行 resolve、load 与串行 transform。Import Analysis 在
+transform 内解析导入、确保依赖节点存在，并更新正向依赖、反向 importer 边和 HMR 接受信息。
+
+转换结果只在开始时间晚于最近一次失效时间时写入缓存；本次创建的请求无论成功还是拒绝，
+都会经过 `finally` 清理自己的 pending 槽位。随后 HTTP 层用 `send()` 完成响应，或按错误类型
+选择下放路由、访问拒绝、换代响应及 `next(err)`。图中的缓存和插件步骤在第 08、10 章展开；
+CSS、Source Map、proxy、public 与安全旁路的条件则见本章各节。
 
 ## 第一层：拒绝不可信请求形状
 
@@ -103,14 +122,14 @@ Host validation 根据 `server.allowedHosts` 拒绝未知 Host，并把以下显
 解析失败只跳过自动加入，不阻止启动（[#19241](https://github.com/vitejs/vite/pull/19241)）。
 
 底层 Host 校验器收到冻结的 allowedHosts 副本，可缓存结果且不受调用方后续改数组影响。该安全
-边界由 Vite 的 DNS rebinding 修复引入；HTTPS 已用证书绑定可信主机，所以顶层装配不会重复
-添加同类 Host 中间件。
+边界由 Vite 的 DNS rebinding 修复引入；HTTPS 装配分支依赖 TLS 证书校验，跳过这层 HTTP
+Host 中间件。
 
 ### CORS 与 Host 不是同一件事
 
 CORS 决定浏览器脚本能否读取跨 origin HTTP 响应；Host validation 决定服务器是否接受请求
 目标主机。非浏览器客户端不受 CORS 约束，所以不能用 CORS 代替 Host 校验。HMR WebSocket
-还要结合 Host、Origin 和一次性 token，形成独立握手边界。
+还要结合 Host、Origin 和当前配置的 token，形成独立握手边界。
 
 fs-serve 的 cross-origin 场景分别从浏览器和 Node 发请求，就是为了覆盖这些机制而不是把它们
 误当成一个开关。
@@ -126,8 +145,8 @@ fs-serve 的 cross-origin 场景分别从浏览器和 Node 发请求，就是为
 '/api': 'http://localhost:3000'
 ```
 
-会规范化为 `{ target, changeOrigin: true }`。底层 http-proxy 会修改选项，所以 Vite 保存浅拷贝，
-让后续 bypass/rewrite 看到稳定用户配置。
+会规范化为 `{ target, changeOrigin: true }`。底层 http-proxy 会修改选项，所以 Vite 保存当前顶层选项的浅拷贝，
+供后续 bypass/rewrite 路径使用；嵌套配置仍共享引用。
 
 ### HTTP bypass 状态机
 
@@ -176,7 +195,8 @@ WS 上游常检查 Origin。`rewriteWsOrigin` 可把它改为 target origin，�
 ```
 
 它不会修改响应代码中的公开 import URL；生成 URL 的插件仍读取 config.base。base-conflict 用例
-正是防止“入口剥离 base”误演化成“输出也丢 base”。
+把 base 设为绝对磁盘路径的首段，再让虚拟模块导入真实绝对路径，验证 import analysis 不会
+仅因路径以 base 开头就把它误认为已添加公开 base 的 URL。
 
 独立服务器访问 `/` 或 `/index.html` 时 302 到 base，并保留查询部分。访问 base 外路径时：
 
@@ -198,7 +218,7 @@ public 文件不经过 transform，URL 直接相对公开根提供。为避免�
 
 - `?import` 模块请求；
 - `/@fs/`、Vite client 等内部 URL；
-- `?url`、`?raw` 等需要插件转换的资源查询。
+- `?url` 资源查询；`?raw` 通常还带 `?import`，因而同样进入转换管线。单独的 `?raw` 不在此层的跳过条件中。
 
 例如 `/public-file.js?url` 应得到“URL 字符串模块”，而不是文件 JS 原文。这个边界见
 [PR #17915](https://github.com/vitejs/vite/pull/17915)。
@@ -228,11 +248,12 @@ monorepo 链接包可能位于 root 外，又引用其旁边的资源。Vite 把
 
 ### 为什么检查放在 sirv 内
 
-请求 URL 不是最终磁盘文件：目录可能映射到 index、符号链接可能指向别处、编码/alias 会改变
-路径。安全检查如果只发生在请求进入 sirv 前，校验路径可能不是最终读取路径。
+请求 URL 不是最终候选文件路径：目录可能映射到 index，编码、点段和 alias 也会改变路径。
+安全检查如果只发生在请求进入 sirv 前，校验路径可能不是最终读取路径。
 
-`sirvOptions.shouldServe(filePath)` 收到 sirv 已解析出的真实候选文件，再调用
-`checkLoadingAccess()`。这条修复见 [PR #19965](https://github.com/vitejs/vite/pull/19965)。
+`sirvOptions.shouldServe(filePath)` 收到 sirv 经拼接和规范化后的候选绝对路径，再调用
+`checkLoadingAccess()`。该版本 sirv 使用 `stat`，没有把符号链接解析成 `realpath` 再交给校验器；
+这里的边界基于候选路径。检查后移见 [PR #19965](https://github.com/vitejs/vite/pull/19965)。
 
 ### 判定优先级
 
@@ -240,7 +261,7 @@ monorepo 链接包可能位于 root 外，又引用其旁边的资源。Vite 把
 server.fs.strict === false
   → allowed
 
-Windows 路径含 ~ 或盘符之外的 :
+Windows 路径含 ~，或任意平台路径含盘符之外的 :
   → denied
 
 fsDenyGlob(filePath 去尾斜杠) 命中
@@ -249,7 +270,7 @@ fsDenyGlob(filePath 去尾斜杠) 命中
 safeModulePaths 命中
   → allowed
 
-任一 fs.allow 是同路径或真实父目录
+任一 fs.allow 是同路径或按目录分隔符划分的父目录
   → allowed
 
 否则
@@ -268,7 +289,8 @@ NTFS/Windows 有两类普通 POSIX 思维看不到的别名：
 - 8.3 短文件名：`.env` 可能通过 `ENV~1` 访问；
 - Alternate Data Stream：`.env::$DATA` 可指向同一默认数据流。
 
-strict 模式因此拒绝包含 `~` 的路径，以及盘符之外仍含 `:` 的路径。修复背景见
+strict 模式在 Windows 拒绝包含 `~` 的路径；冒号检查则在所有平台执行，只豁免 Windows
+路径开头的盘符冒号。修复背景见
 [PR #22572](https://github.com/vitejs/vite/pull/22572)。这是略偏保守的策略：牺牲少量合法文件名，
 换取 deny 无法被文件系统别名绕过。
 
@@ -282,8 +304,8 @@ Node 读取 `/foo.png/` 可能仍落到 `/foo.png`，所以 deny 匹配前还要
 
 ```text
 isFileLoadingAllowed(path) → allowed
-否则 isFileReadable(path) → denied（存在但无权读取）
-否则 → fallback（不存在，继续 next）
+否则 isFileReadable(path) → denied（磁盘可读，但不被 Vite 允许）
+否则 → fallback（无可读文件，继续 next）
 ```
 
 这条三态判定防止 Vite 过度拒绝未知路由（[PR #20410](https://github.com/vitejs/vite/pull/20410)）。
@@ -319,7 +341,7 @@ transform 得到内容后，`send()` 统一处理：
 2. 默认生成弱 ETag，If-None-Match 相等则返回 304；
 3. 写入 MIME、`Cache-Control: no-cache`、ETag 与用户 headers；
 4. 对 JS/CSS 注入真实 Source Map；
-5. JS 没有 map 时生成 identity fallback map；已有内联 map 或明确空 mappings 时跳过；
+5. JS 没有可用 map 时生成 fallback map；已有 sourceMappingURL 注释或明确空 mappings 时跳过；
 6. HEAD 返回与 GET 一致的状态/headers，但不发送 body。
 
 fallback map 修复了浏览器断点无法对齐的问题
@@ -329,15 +351,17 @@ fallback map 修复了浏览器断点无法对齐的问题
 
 ### 404 与 Error
 
-独立模式的 `notFoundMiddleware()` 在所有普通中间件都 next 后返回空 404。middleware mode 不
-安装它，宿主应用还有机会处理路由。
+`appType: 'spa'` 或 `'mpa'` 会安装 `notFoundMiddleware()`，普通中间件都 next 后返回空 404；
+middleware mode 同样如此。`appType: 'custom'` 不安装 HTML fallback、HTML 响应和这层 404，
+宿主应用可以在 Vite 之后接管路由。
 
 `errorMiddleware()` 必须保留四个形参；Connect 用函数 arity 判断它是错误中间件。错误会：
 
 - 过滤/格式化后写入终端；
 - 通过 client HotChannel 推给已打开页面的 ErrorOverlay；
 - 独立模式返回能动态加载 Overlay 的 500 HTML；若 Overlay 自身加载失败，退回纯 DOM 错误页；
-- middleware mode 可 `next()` 给宿主错误处理器。
+- middleware mode 记录并推送错误后调用无参数 `next()`，把响应权交回宿主后续普通中间件；
+  原错误没有通过 `next(err)` 传给宿主错误处理器。
 
 `prepareError()` 只复制 message、stack、id、frame、plugin、loc 等必要字段，避免 PostCSS 等插件
 挂载的完整对象导致序列化过大或失败，并移除终端控制字符。
@@ -349,7 +373,7 @@ fallback map 修复了浏览器断点无法对齐的问题
 | `hostCheck.spec.ts`     | 四类显式 host/origin 自动加入允许列表                    |
 | `static.spec.ts`        | 父目录判断不能被相似字符串前缀绕过                       |
 | `proxy-bypass`          | false、async、throw、上游失败的四条代理分支              |
-| `base-conflict`         | 请求入口剥离 base 不应删除输出 import 的 base            |
+| `base-conflict`         | 绝对磁盘路径与 base 前缀冲突时仍正确生成 import URL      |
 | `fs-serve` matrix       | root 与 `/@fs/` 在 allow/deny/query/特殊路径下行为一致   |
 | `fs-serve` raw request  | `#`、点段、反斜杠和 Source Map 穿越在 URL 规范化前被覆盖 |
 | `fs-serve` cross origin | CORS、Host、WS Origin/token 是不同安全层                 |
@@ -362,9 +386,7 @@ fs-serve 矩阵同时检查正常 JSON/虚拟模块可用。安全测试若只�
 目标版本源码摘录，来源：`packages/vite/src/node/server/index.ts`，`_createServer()` 的中间件装配：
 
 ```ts
-// serve static files under /public
-// this applies before the transform middleware so that these files are served
-// as-is without transforms.
+// public 文件必须位于 transform 前，确保原样提供且不进入插件转换。
 if (publicDir) {
   middlewares.use(servePublicMiddleware(server, publicFiles))
 }
@@ -373,10 +395,10 @@ if (config.experimental.bundledDev) {
   middlewares.use(triggerLazyBundlingMiddleware(server))
   middlewares.use(memoryFilesMiddleware(server))
 } else {
-  // main transform middleware
+  // 普通开发模式的模块转换主入口。
   middlewares.use(transformMiddleware(server))
 
-  // serve static files
+  // /@fs/ 与 root 静态文件在 transform 未处理时兜底。
   middlewares.use(serveRawFsMiddleware(server))
   middlewares.use(serveStaticMiddleware(server))
 }
@@ -384,6 +406,37 @@ if (config.experimental.bundledDev) {
 
 Connect 的注册顺序就是请求控制流：public 资源先原样返回；bundled-dev 改走内存文件；普通开发
 模式先尝试模块转换，只有未处理请求才回退到 `/@fs/` 与 root 静态文件。
+
+允许与拒绝之间还有“交给下游”的第三种结果。`middlewares/static.ts` 的 `checkLoadingAccess()`
+直接表达这个区别（源码摘录）：
+
+```ts
+if (isFileLoadingAllowed(config, slash(path))) {
+  return 'allowed'
+}
+if (isFileReadable(path)) {
+  return 'denied'
+}
+return 'fallback'
+```
+
+例如 fs.allow 只包含 `/app/src`：`/app/secret.txt` 可读但不在允许范围，得到 denied 并返回 403；
+`/api/users` 没有对应可读文件，得到 fallback，后续宿主中间件仍可回答 API 请求。
+
+`middlewares/error.ts` 的最后一层同样按具体条件决定响应权（源码摘录，省略 500 HTML 正文）：
+
+```ts
+logError(server, err)
+if (allowNext) {
+  next()
+} else {
+  res.statusCode = 500
+  // 这里继续生成包含 ErrorOverlay 的 HTML 并结束响应。
+}
+```
+
+middleware mode 把 allowNext 设为 true。错误已经在 Vite 终端和页面通道报告，随后用无参数 next()
+恢复普通责任链；独立模式则由 Vite 结束 500 响应。
 
 ## 建议断点
 

@@ -1,7 +1,7 @@
 import barJson from 'virtual:/bar.json'
 import fooJson from './foo.json'
 
-// 'TRANSFORM_COUNT' is injected by the transform plugin
+// transform 插件注入转换计数，页面显示该值以观察重新转换。
 document.getElementById('transform-count').innerHTML = TRANSFORM_COUNT
 
 document.getElementById('module-type-json-pre').innerHTML =
@@ -14,6 +14,6 @@ document.getElementById('module-type-json-virtual-pre').innerHTML =
 document.getElementById('module-type-json-virtual-post').innerHTML =
   barJson.moduleTypePost
 
-// 'LAZY_HOOK_FILTER_CONTENT' is replaced by lazy-hook-filter plugin
+// lazy-hook-filter 插件替换下方占位字符串。
 document.getElementById('lazy-hook-filter').innerHTML =
   'LAZY_HOOK_FILTER_CONTENT'

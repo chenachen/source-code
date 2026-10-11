@@ -4,5 +4,5 @@ try {
   document.querySelector('.injected-import-in-optimized-dep').textContent =
     getInjectedMsg()
 } catch {
-  // the import is only injected in dev where the dep optimizer runs
+  // 仅开发态优化依赖请求会被注入 import，构建态允许此调用失败。
 }

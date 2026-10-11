@@ -11,13 +11,13 @@ export interface LicenseEntry {
   name: string
   /** 包版本。 */
   version: string
-  /** package.json `license` 字段中的 SPDX 标识。 */
+  /** 去除首尾空白后的 package.json `license` 字段值。 */
   identifier?: string
   /** 许可证文件全文。 */
   text?: string
 }
 
-/** 定义许可证输出文件名，以及将条目渲染为文本的回调。 */
+/** 定义许可证输出文件名；扩展名决定 JSON 或 Markdown 格式。 */
 export interface LicenseOptions {
   /**
    * 相对输出目录的许可证文件名；以 `.json` 结尾时输出原始 JSON metadata。
@@ -27,11 +27,12 @@ export interface LicenseOptions {
   fileName: string
 }
 
-/** 保存许可证插件的默认文件名与文本渲染格式。 */
+/** 保存许可证插件的默认 Markdown 文件名。 */
 const licenseConfigDefaults = Object.freeze({
   fileName: '.vite/license.md',
 } satisfies LicenseOptions)
 
+/** package 根目录下许可证文件的候选名前缀；findLicenseFile 按目录枚举顺序取首个匹配项。 */
 // https://github.com/npm/npm-packlist/blob/53b2a4f42b7fef0f63e8f26a3ea4692e23a58fed/lib/index.js#L284-L286
 const licenseFiles = [/^license/i, /^licence/i, /^copying/i]
 
@@ -43,7 +44,7 @@ export function licensePlugin(): Plugin {
   return {
     name: 'vite:license',
 
-    /** 遍历 bundle 模块许可证信息，去重排序后按用户渲染器发射清单文件。 */
+    /** 遍历 bundle 的依赖包许可证，去重排序后按文件扩展名发射 JSON 或 Markdown。 */
     generateBundle(_, bundle) {
       const licenseOption = this.environment.config.build.license
       if (licenseOption === false) return
@@ -71,7 +72,7 @@ export function licensePlugin(): Plugin {
           const key = `${name}@${version}`
           if (licenses[key]) continue
 
-          // 首次出现时同时读取 SPDX 字段与约定命名的许可证文件。
+          // 首次出现时同时读取 license 字段与约定命名的许可证文件。
           const entry: LicenseEntry = { name, version }
           if (license) {
             entry.identifier = license.trim()

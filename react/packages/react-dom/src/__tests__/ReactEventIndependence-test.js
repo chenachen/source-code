@@ -22,14 +22,7 @@ describe('ReactEventIndependence', () => {
     act = require('internal-test-utils').act;
   });
 
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「does not crash with other react inside」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：事件断言连接 DOMPluginEventSystem 的委托、合成与传播路径。
-   */
+  /** 带 onClick 的宿主 div 内用 innerHTML 注入旧 data-reactid 标记；点击该 div 应累计一次，验证不属于当前 Fiber 的旧标记不会破坏本实例事件派发。 */
   it('does not crash with other react inside', async () => {
     let clicks = 0;
     const container = document.createElement('div');
@@ -54,7 +47,7 @@ describe('ReactEventIndependence', () => {
     }
   });
 
-  /** 测试场景：验证「does not crash with other react outside」描述的渲染、交互或错误处理结果。 */
+  /** 在根容器自身加入旧 data-reactid 标记后渲染并点击内部按钮；点击计数应为 1，验证外部旧 React 标记不干扰当前根监听器。 */
   it('does not crash with other react outside', async () => {
     let clicks = 0;
     const outer = document.createElement('div');
@@ -72,7 +65,7 @@ describe('ReactEventIndependence', () => {
     }
   });
 
-  /** 测试场景：验证「does not when event fired on unmounted tree」描述的渲染、交互或错误处理结果。 */
+  /** 保留已渲染按钮引用，卸载整根后再点击该按钮；计数应保持 0，验证已卸载 Fiber 不再作为合成事件派发目标。 */
   it('does not when event fired on unmounted tree', async () => {
     let clicks = 0;
     const container = document.createElement('div');

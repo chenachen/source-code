@@ -21,7 +21,7 @@ export class YEvent {
     /** 事件最初创建于此类型；冒泡期间保持不变。
      * @type {import('../ytype.js').YType<DConf>} */
     this.target = target
-    /** 当前调用 observer 的冒泡目标；可与 `target` 不同。
+    /** 初始化为 `target`；当前通知路径为祖先另选或创建事件，不通过重写此字段冒泡。
      * @type {YType<any>} */
     this.currentTarget = target
     /** 触发事件的事务，提供 insert/delete 集合与 origin。
@@ -52,11 +52,11 @@ export class YEvent {
   }
 
   /**
-   * 判断结构是否在本事务 deleteSet 中。
+   * 判断结构的起始 ID 是否在本事务 deleteSet 中。
    *
-   * 与结构最终 `deleted` 状态不同，本方法对“同一事务内先插入再删除”的结构也返回 `true`。
+   * 它描述本事务是否删除了该 ID：此前已删除的结构不在本事务 deleteSet 中；本事务先插入再删除的结构则在其中。
    *
-   * @param {AbstractStruct} struct
+   * @param {AbstractStruct} struct - 检查 `struct.id`，不对跨区间结构逐 ID 证明全部新增/删除。
    * @return {boolean}
    */
   deletes (struct) {
@@ -64,11 +64,11 @@ export class YEvent {
   }
 
   /**
-   * 判断结构是否在本事务 insertSet 中。
+   * 判断结构的起始 ID 是否在本事务 insertSet 中。
    *
    * 即使结构同一事务内随后被删除，本方法仍返回 `true`，用于描述事务动作而非最终可见性。
    *
-   * @param {AbstractStruct} struct
+   * @param {AbstractStruct} struct - 检查 `struct.id`，不对跨区间结构逐 ID 证明全部新增/删除。
    * @return {boolean}
    */
   adds (struct) {
@@ -129,7 +129,7 @@ export class YEvent {
   }
 
   /**
-   * 惰性计算并缓存当前类型的浅层 Quill Delta 变化。
+   * 惰性计算并完成当前类型的浅层 lib0 Delta，随后缓存结果。
    *
    * @type {Delta<import('../ytype.js').DeltaConfDeltaToYType<DConf>>} 当前类型的 Delta。
    * @public
@@ -139,7 +139,7 @@ export class YEvent {
   }
 
   /**
-   * 惰性计算并缓存包含后代 `modify` 链的深层 Delta。
+   * 惰性计算并缓存包含后代 `modify` 链的深层 Delta 构建器；这里不调用 `done()`。
    *
    * @type {Delta<DConf>} 当前类型的深层 Delta。
    * @public
@@ -155,16 +155,14 @@ export class YEvent {
  * Map-like 父项使用 `parentSub`；序列父项先构造相对位置再按指定 renderer 解析，以使路径索引与调用方看到的内容一致。
  *
  * @example
- *   // `child` 可通过 `type.get(path[0]).get(path[1])..` 访问。
- *   const path = type.getPathTo(child)
- *   // 假设 `type instanceof YArray`
- *   console.log(path) // 结果可能为 [2, 'key1']
- *   child === type.get(path[0]).get(path[1])
+ *   const path = getPathTo(type, child)
+ *   // 若路径为 [2, 'key1']：数字用列表 get，字符串用属性 getAttr。
+ *   child === type.get(path[0]).getAttr(path[1])
  *
- * @param {YType} parent - 路径起点。
+ * @param {YType} parent - 已集成且确为 child 祖先的路径起点；本函数不验证亲缘关系。
  * @param {YType} child - 目标后代。
- * @param {AbstractRenderer?} renderer - 决定删除/归因内容是否计入序列索引。
- * @return {Array<string|number>} 从父到子的访问路径。
+ * @param {AbstractRenderer?} [renderer] - 决定删除/归因内容是否计入序列索引；默认 `null`。
+ * @return {Array<string|number>} 从父到子的访问路径；两者相同时为空。若 parent 不是祖先，实际返回到 child 根节点的路径。
  *
  * @private
  * @function

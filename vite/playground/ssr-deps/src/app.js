@@ -18,7 +18,7 @@ import virtualMessage from '@vitejs/test-pkg-exports/virtual'
 import moduleConditionMessage from '@vitejs/test-module-condition'
 import '@vitejs/test-css-lib'
 
-// This import will set a 'Hello World!" message in the nested-external non-entry dependency
+// 此副作用导入向嵌套外部依赖写入 Hello World!，后续读取用于核对共享状态。
 import '@vitejs/test-non-optimized-with-nested-external'
 
 import * as optimizedWithNestedExternal from '@vitejs/test-optimized-with-nested-external'
@@ -30,6 +30,7 @@ setMessage('Hello World!')
 import externalUsingExternalEntry from '@vitejs/test-external-using-external-entry'
 import isomorphicModuleMessage from 'virtual:isomorphic-module'
 
+/** 调用各类 CommonJS、转发、预优化、虚拟及 external 导出并拼接 SSR 段落；先写共享外部消息，再读取嵌套依赖结果，同时执行 bcrypt 与目录内文件读取，供页面测试逐项核对互操作。 */
 export async function render(url, rootDir) {
   let html = ''
 
@@ -41,7 +42,7 @@ export async function render(url, rootDir) {
 
   html += `\n<p class="primitive-export-message">message from primitive export: ${primitiveExport}</p>`
 
-  // `.default()` as incorrectly packaged
+  // 这个包的默认导入仍是含 default 的对象，需要再调用 .default()。
   const tsDefaultExportMessage = tsDefaultExport.default()
   html += `\n<p class="ts-default-export-message">message from ts-default-export: ${tsDefaultExportMessage}</p>`
 

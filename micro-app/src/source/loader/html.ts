@@ -16,7 +16,7 @@ export interface IHTMLLoader {
  * 原生 `head/body` 改写为 micro-app 的隔离容器，供资源提取器继续处理。
  */
 export class HTMLLoader implements IHTMLLoader {
-  /** 进程内共享实例，避免为每个子应用重复创建无状态加载器。 */
+  /** 当前框架模块的共享实例，避免为每个子应用重复创建；另载 bundle 可拥有独立副本。 */
   private static instance: HTMLLoader;
 
   /** 获取共享加载器，并在第一次调用时延迟创建。 */
@@ -30,9 +30,12 @@ export class HTMLLoader implements IHTMLLoader {
   /**
    * 加载应用入口并完成 HTML 级插件处理与容器改写。
    *
-   * JS 入口会合成只含脚本的最小 HTML；普通入口通过 `fetchSource()` 禁用 HTTP 缓存。
+   * JS 入口会合成只含脚本的最小 HTML；普通入口给 `fetchSource()` 传入 `cache: 'no-cache'`，
+   * 原生 fetch 按此选项重新验证缓存，自定义抓取器自行处理该选项。
    * 空响应走应用渲染错误通道；抓取、插件转换或成功回调抛出的 Promise 链异常统一走
    * `onLoadError()`，两类失败都不会继续正常完成路径。
+   * htmlUrl 优先用 ssrUrl；是否为 JS 只看 pathname 的 .js 扩展名。自定义 fetch 在建立
+   * htmlPromise 时同步抛错不属于后面的 Promise catch，插件与 successCb 则在 then 内执行。
    *
    * @param app - 正在加载资源的应用实例。
    * @param successCb - 接收规范化 HTML 字符串与应用实例的下游资源提取回调。

@@ -73,6 +73,8 @@ const rawChildrenMap = new WeakMap<
  * 静态属性尽量直接拼字符串；class/style/布尔/动态属性调用专用转义 helper；无参数 v-bind、
  * 动态键或自定义指令可能覆盖前面属性时，退化为 mergeProps + ssrRenderAttrs 全量路径。
  * 子节点和结束标签留给第二遍 {@link ssrProcessElement}。
+ * 转换延迟到 exit：select v-model 需要 option 的开始标签已经构建，静态 style 转换也已
+ * 改写 props。函数修改 props 顺序、children 和 ssrCodegenNode，供后续父转换与第二遍消费。
  */
 export const ssrTransformElement: NodeTransform = (node, context) => {
   if (
@@ -112,9 +114,9 @@ export const ssrTransformElement: NodeTransform = (node, context) => {
         node,
         context,
         node.props,
-        false /* isComponent */,
-        false /* isDynamicComponent */,
-        true /* ssr */,
+        false /* 按组件处理 props */,
+        false /* 不按动态组件处理 */,
+        true /* SSR 模式 */,
       )
       if (props || directives.length) {
         const mergedProps = buildSSRProps(props, directives, context)
@@ -299,7 +301,7 @@ export const ssrTransformElement: NodeTransform = (node, context) => {
                         ),
                         createSimpleExpression(' ' + attrName, true),
                         createSimpleExpression('', true),
-                        false /* no newline */,
+                        false /* 表达式不换行 */,
                       ),
                     )
                   } else if (attrName === 'hidden') {
@@ -380,6 +382,8 @@ export const ssrTransformElement: NodeTransform = (node, context) => {
 /**
  * 合并普通 props 与自定义指令 `getSSRProps` 结果，生成 SSR 可消费的 props 表达式。
  * 已是 mergeProps 调用时复用其参数，避免嵌套 mergeProps。
+ * directives 的运行时结果追加在普通 props 之后，后者可能被覆盖；返回调用表达式，
+ * 并不在编译器中执行 getSSRProps。调用方保证 props 或 directives 至少有一项。
  */
 export function buildSSRProps(
   props: PropsExpression | undefined,
@@ -476,6 +480,8 @@ function hasContentOverrideDirective(node: PlainElementNode): boolean {
 /**
  * SSR 第二遍输出第一遍生成的开始标签、slot scopeId、内容与结束标签。
  * void tag 不输出结束标签；rawChildrenMap 中的覆盖内容优先于普通 children。
+ * 调用时第一遍必须已经写入 ssrCodegenNode。此处只追加编译期字符串/表达式片段；
+ * 插槽 _scopeId 在闭合开始标签前插入，与元素本身 scopeId 同时生效。
  */
 export function ssrProcessElement(
   node: PlainElementNode,

@@ -20,7 +20,7 @@ const debug = createDebugger('vite:sourcemap', {
 
 /**
  * 从 node_modules 内文件路径提取其包根。scope 包会保留 `@scope/pkg` 两段；不在 node_modules
- * 时返回 undefined。该边界用于防止第三方 Source Map 读取包目录外的宿主文件。
+ * 时返回 undefined。调用方用这个文本路径边界检查第三方 map 的 source/map 引用。
  */
 export function getNodeModulesPackageRoot(
   filePath: string,
@@ -45,8 +45,8 @@ export function getNodeModulesPackageRoot(
 }
 
 /**
- * 不应尝试从磁盘补 sourcesContent 的虚拟 source。标准虚拟模块以 null byte 开头，另兼容
- * esbuildDepPlugin 使用的特殊前缀。
+ * 不应尝试从磁盘补 sourcesContent 的虚拟 source：匹配任意位置的 null byte，
+ * 以及 dep:/browser-external:/virtual: 前缀。
  */
 const virtualSourceRE = /^(?:dep:|browser-external:|virtual:)|\0/
 
@@ -74,8 +74,8 @@ async function computeSourceRoute(map: SourceMapLike, file: string) {
 
 /**
  * 为缺失的 sourcesContent 并行读取源码。
- * 对 node_modules map，读取范围严格限制在所属包根，防止恶意包通过 `../../.env` 一类 source
- * 引用窃取宿主文件；缺失文件只告警，不让 transform 失败。
+ * 对 node_modules map，先检查规范化后的候选路径是否位于所属包根；此处未对每个 source
+ * 取 realpath。readFile 失败会留下 null 并告警，decodeURI 等前置步骤的异常仍会向上传播。
  */
 export async function injectSourcesContent(
   map: SourceMapLike,
@@ -104,7 +104,7 @@ export async function injectSourcesContent(
           if (sourceRoot) {
             resolvedSourcePath = path.resolve(sourceRoot, resolvedSourcePath)
           }
-          // 第三方 package Source Map 不能越过包根指向宿主敏感文件。
+          // 检查解析后的文本路径是否越过包根，拒绝 ../ 等造成的路径越界。
           if (packageRoot) {
             const resolvedSourcePathNormalized = normalizePath(
               path.resolve(resolvedSourcePath),
@@ -216,7 +216,8 @@ export function applySourcemapIgnoreList(
 }
 
 /**
- * 从源码末尾提取内联或外部 Source Map，并用空白替换引用注释以保持行列位置稳定。
+ * 从源码提取内联或外部 Source Map。只用空白替换外部 map 文件引用注释，保留行列位置；
+ * 内联 data URL 注释不会被 mapFileCommentRegex 替换。
  */
 export function extractSourcemapFromFile(
   code: string,
@@ -224,7 +225,7 @@ export function extractSourcemapFromFile(
   logger: Logger,
 ):
   | {
-      /** 用等长空白替换 Source Map 引用注释后的源码。 */
+      /** 用等长空白替换外部 map 文件引用注释后的源码，内联引用保留。 */
       code: string
       /** 从内联 data URL 或外部 map 文件解析出的映射。 */
       map: SourceMap
@@ -247,7 +248,7 @@ export function extractSourcemapFromFile(
 }
 
 /**
- * 创建 convert-source-map 的外部 map 读取器；node_modules 文件引用的 map 也必须留在所属包根。
+ * 创建外部 map 读取器；node_modules 引用先检查解析后的文本路径是否位于所属包根。
  */
 function createConvertSourceMapReadMap(
   originalFileName: string,

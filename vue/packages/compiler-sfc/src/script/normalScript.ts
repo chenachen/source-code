@@ -12,8 +12,8 @@ export const normalScriptDefaultVar = `__default__`
  * 处理没有 script setup 的普通 `<script>`。
  *
  * 分析 Options API 模板绑定；需要注入 CSS vars 或 `genDefaultAs` 时把 default export 改为
- * 局部变量，包装 setup 后再按调用方要求导出。自定义 Babel 语法解析失败时保守返回原块，
- * 让上层自定义工具继续处理。
+ * 局部变量，包装 setup 后再按调用方要求导出。Babel 解析已在 ScriptCompileContext 中完成；
+ * 解析失败会直接抛错，此处仅在后续绑定分析或代码改写异常时返回原块。
  */
 export function processNormalScript(
   ctx: ScriptCompileContext,
@@ -54,7 +54,7 @@ export function processNormalScript(
       scriptAst: scriptAst.body,
     }
   } catch (e: any) {
-    // 用户可能使用未配置给 compiler-sfc 的自定义 Babel 语法；静默回退，避免破坏原脚本。
+    // 上下文已完成 Babel 解析；后续绑定分析、默认导出或 CSS vars 改写异常时返回原块。
     return script
   }
 }

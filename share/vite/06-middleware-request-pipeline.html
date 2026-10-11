@@ -506,6 +506,7 @@ a:hover {
 .prose p,
 .prose li {
   color: var(--text);
+  overflow-wrap: anywhere;
 }
 
 .prose p {
@@ -762,6 +763,124 @@ code {
   border-radius: var(--radius);
   background: var(--surface);
   box-shadow: var(--shadow);
+}
+
+.engineering-diagram {
+  min-width: 0;
+  margin: 28px 0;
+  padding: 18px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.engineering-diagram > figcaption {
+  margin-bottom: 12px;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 750;
+  line-height: 1.5;
+}
+
+.diagram-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.diagram-toolbar button,
+.diagram-toolbar a {
+  display: inline-flex;
+  min-height: 36px;
+  padding: 6px 10px;
+  align-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: var(--surface-soft);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.diagram-toolbar button:hover,
+.diagram-toolbar a:hover {
+  border-color: var(--brand);
+  color: var(--brand-strong);
+}
+
+.diagram-scale {
+  min-width: 42px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.diagram-viewport {
+  max-width: 100%;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #f8fafc;
+  overscroll-behavior: contain;
+}
+
+.diagram-canvas {
+  max-width: none;
+}
+
+.diagram-canvas > svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.engineering-diagram .diagram-hint {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+body.diagram-is-expanded {
+  overflow: hidden;
+}
+
+body.diagram-is-expanded::after {
+  position: fixed;
+  z-index: 999;
+  inset: 0;
+  background: rgb(0 0 0 / 65%);
+  content: '';
+}
+
+.engineering-diagram.is-expanded {
+  position: fixed;
+  z-index: 1000;
+  inset: 16px;
+  display: flex;
+  margin: 0;
+  flex-direction: column;
+  box-shadow: var(--shadow);
+}
+
+.engineering-diagram.is-expanded .diagram-viewport {
+  min-height: 0;
+  flex: 1;
+}
+
+@media (max-width: 700px) {
+  .engineering-diagram {
+    padding: 12px;
+  }
+
+  .engineering-diagram.is-expanded {
+    inset: 6px;
+  }
 }
 
 .flow-caption {
@@ -1363,7 +1482,7 @@ code {
     break-inside: avoid;
   }
 }
-</style><script>(function(){try{var t=localStorage.getItem("vite-guide-theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(_){}})();</script></head><body><a class="skip-link" href="#article-start">跳到正文</a><div class="reading-progress" aria-hidden="true"><span data-reading-progress></span></div><header class="topbar"><div class="topbar-inner"><button class="icon-button nav-toggle" type="button" data-nav-toggle aria-expanded="false" aria-label="打开模块导航">☰</button><a class="brand" href="index.html"><span class="brand-mark">V</span><span class="brand-text">Vite 源码解剖</span></a><span class="topbar-path">开发服务器核心 / 06 中间件与请求入口</span><div class="topbar-actions"><button class="icon-button" type="button" data-theme-toggle aria-label="切换主题">◐</button></div></div></header><div class="page-grid"><nav class="site-nav" aria-label="模块导航"><a class="nav-home" href="index.html"><span>⌂</span><span>阅读总览</span></a><section class="nav-group"><h2 class="nav-group-title">全景</h2><ul class="nav-list"><li><a href="00-system-map-and-end-to-end.html"><span class="nav-code">00</span><span>系统全景与请求链</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">启动与配置</h2><ul class="nav-list"><li><a href="01-cli-and-startup.html"><span class="nav-code">01</span><span>CLI 与启动</span></a></li><li><a href="02a-env-loading.html"><span class="nav-code">02A</span><span>环境文件加载</span></a></li><li><a href="02b-config-resolution.html"><span class="nav-code">02B</span><span>配置加载与解析</span></a></li><li><a href="02c-define-client-injection-and-json.html"><span class="nav-code">02C</span><span>Define、注入与 JSON</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">开发服务器核心</h2><ul class="nav-list"><li><a href="03-plugin-system.html"><span class="nav-code">03</span><span>插件体系</span></a></li><li><a href="04-dev-server-lifecycle.html"><span class="nav-code">04</span><span>Dev Server 生命周期</span></a></li><li><a href="05-environment-api.html"><span class="nav-code">05</span><span>Environment API</span></a></li><li><a href="06-middleware-request-pipeline.html" aria-current="page"><span class="nav-code">06</span><span>中间件与请求入口</span></a></li><li><a href="07-module-resolution.html"><span class="nav-code">07</span><span>模块解析</span></a></li><li><a href="08-transform-and-module-graph.html"><span class="nav-code">08</span><span>Transform 与模块图</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">转换与增量更新</h2><ul class="nav-list"><li><a href="09-html-transform.html"><span class="nav-code">09</span><span>HTML 转换</span></a></li><li><a href="10-import-analysis.html"><span class="nav-code">10</span><span>Import Analysis</span></a></li><li><a href="11-dependency-pre-bundling.html"><span class="nav-code">11</span><span>依赖预构建</span></a></li><li><a href="12-hmr.html"><span class="nav-code">12</span><span>HMR</span></a></li><li><a href="12b-bundled-dev.html"><span class="nav-code">12B</span><span>Bundled Dev</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">资源管线</h2><ul class="nav-list"><li><a href="13a-css-pipeline.html"><span class="nav-code">13A</span><span>CSS 管线</span></a></li><li><a href="13b-asset-worker-wasm.html"><span class="nav-code">13B</span><span>Asset、Worker、Wasm</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">生产构建</h2><ul class="nav-list"><li><a href="14a-build-orchestration.html"><span class="nav-code">14A</span><span>生产构建编排</span></a></li><li><a href="14b-build-output-and-preload.html"><span class="nav-code">14B</span><span>Preload 与构建输出</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">SSR 与运行时</h2><ul class="nav-list"><li><a href="15a-ssr-transform-and-loading.html"><span class="nav-code">15A</span><span>SSR 变换与加载</span></a></li><li><a href="15b-module-runner.html"><span class="nav-code">15B</span><span>Module Runner</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">公共边界</h2><ul class="nav-list"><li><a href="16-public-api-diagnostics-and-types.html"><span class="nav-code">16</span><span>公共 API 与类型</span></a></li></ul></section></nav><main class="article" id="article-start"><header class="article-hero"><div class="eyebrow"><span class="pill">06</span><span>开发服务器核心</span></div><h1>06. 中间件与请求入口</h1><p class="lede">Connect 注册顺序就是请求语义：校验、代理、public、transform、static、HTML 与 error。</p><div class="hero-meta"><span>证据基线：v8.2.1</span><span>commit <code>421615865dad</code></span><span>约 13 分钟</span><a href="../../vite/reading-guides/06-middleware-request-pipeline.md">查看 Markdown 原稿</a></div></header><section class="focus-card" aria-label="阅读重点与边界"><div><h2>本页重点</h2><p>Connect 注册顺序就是请求语义：校验、代理、public、transform、static、HTML 与 error。</p></div><div class="boundary"><h3>推导边界</h3><p>Host、CORS、server.fs 和 WebSocket token 是不同安全边界，不能压成一个开关。</p></div></section><aside class="evidence-note"><h3>证据口径</h3><p>正文保留目标版本中的真实源码、状态说明与代表性测试映射。测试源码用于锁定设计契约；本轮没有执行测试命令。</p></aside><article class="prose"><h2 id="阅读边界"><a class="heading-anchor" href="#%E9%98%85%E8%AF%BB%E8%BE%B9%E7%95%8C" aria-label="链接到本节">#</a>阅读边界</h2>
+</style><script>(function(){try{var t=localStorage.getItem("vite-guide-theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(_){}})();</script></head><body><a class="skip-link" href="#article-start">跳到正文</a><div class="reading-progress" aria-hidden="true"><span data-reading-progress></span></div><header class="topbar"><div class="topbar-inner"><button class="icon-button nav-toggle" type="button" data-nav-toggle aria-expanded="false" aria-label="打开模块导航">☰</button><a class="brand" href="index.html"><span class="brand-mark">V</span><span class="brand-text">Vite 源码解剖</span></a><span class="topbar-path">开发服务器核心 / 06 中间件与请求入口</span><div class="topbar-actions"><button class="icon-button" type="button" data-theme-toggle aria-label="切换主题">◐</button></div></div></header><div class="page-grid"><nav class="site-nav" aria-label="模块导航"><a class="nav-home" href="index.html"><span>⌂</span><span>阅读总览</span></a><section class="nav-group"><h2 class="nav-group-title">全景</h2><ul class="nav-list"><li><a href="00-system-map-and-end-to-end.html"><span class="nav-code">00</span><span>系统全景与请求链</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">启动与配置</h2><ul class="nav-list"><li><a href="01-cli-and-startup.html"><span class="nav-code">01</span><span>CLI 与启动</span></a></li><li><a href="02a-env-loading.html"><span class="nav-code">02A</span><span>环境文件加载</span></a></li><li><a href="02b-config-resolution.html"><span class="nav-code">02B</span><span>配置加载与解析</span></a></li><li><a href="02c-define-client-injection-and-json.html"><span class="nav-code">02C</span><span>Define、注入与 JSON</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">开发服务器核心</h2><ul class="nav-list"><li><a href="03-plugin-system.html"><span class="nav-code">03</span><span>插件体系</span></a></li><li><a href="04-dev-server-lifecycle.html"><span class="nav-code">04</span><span>Dev Server 生命周期</span></a></li><li><a href="05-environment-api.html"><span class="nav-code">05</span><span>Environment API</span></a></li><li><a href="06-middleware-request-pipeline.html" aria-current="page"><span class="nav-code">06</span><span>中间件与请求入口</span></a></li><li><a href="07-module-resolution.html"><span class="nav-code">07</span><span>模块解析</span></a></li><li><a href="08-transform-and-module-graph.html"><span class="nav-code">08</span><span>Transform 与模块图</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">转换与增量更新</h2><ul class="nav-list"><li><a href="09-html-transform.html"><span class="nav-code">09</span><span>HTML 转换</span></a></li><li><a href="10-import-analysis.html"><span class="nav-code">10</span><span>Import Analysis</span></a></li><li><a href="11-dependency-pre-bundling.html"><span class="nav-code">11</span><span>依赖预构建</span></a></li><li><a href="12-hmr.html"><span class="nav-code">12</span><span>HMR</span></a></li><li><a href="12b-bundled-dev.html"><span class="nav-code">12B</span><span>Bundled Dev</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">资源管线</h2><ul class="nav-list"><li><a href="13a-css-pipeline.html"><span class="nav-code">13A</span><span>CSS 管线</span></a></li><li><a href="13b-asset-worker-wasm.html"><span class="nav-code">13B</span><span>Asset、Worker、Wasm</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">生产构建</h2><ul class="nav-list"><li><a href="14a-build-orchestration.html"><span class="nav-code">14A</span><span>生产构建编排</span></a></li><li><a href="14b-build-output-and-preload.html"><span class="nav-code">14B</span><span>Preload 与构建输出</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">SSR 与运行时</h2><ul class="nav-list"><li><a href="15a-ssr-transform-and-loading.html"><span class="nav-code">15A</span><span>SSR 变换与加载</span></a></li><li><a href="15b-module-runner.html"><span class="nav-code">15B</span><span>Module Runner</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">公共边界</h2><ul class="nav-list"><li><a href="16-public-api-diagnostics-and-types.html"><span class="nav-code">16</span><span>公共 API 与类型</span></a></li></ul></section></nav><main class="article" id="article-start"><header class="article-hero"><div class="eyebrow"><span class="pill">06</span><span>开发服务器核心</span></div><h1>06. 中间件与请求入口</h1><p class="lede">Connect 注册顺序就是请求语义：校验、代理、public、transform、static、HTML 与 error。</p><div class="hero-meta"><span>证据基线：v8.2.1</span><span>commit <code>421615865dad</code></span><span>约 15 分钟</span><a href="../../vite/reading-guides/06-middleware-request-pipeline.md">查看 Markdown 原稿</a></div></header><aside class="boundary-note" aria-label="阅读范围"><p>Host、CORS、server.fs 与 WebSocket token 分别检查请求主机、来源、文件访问和热通道连接。</p></aside><article class="prose"><h2 id="阅读边界"><a class="heading-anchor" href="#%E9%98%85%E8%AF%BB%E8%BE%B9%E7%95%8C" aria-label="链接到本节">#</a>阅读边界</h2>
 <p>本节研究一个 HTTP 请求怎样被分流到代理、静态文件、HTML 或模块转换，以及安全检查为何必须
 位于特定顺序。<code>transformMiddleware</code> 只看到交接边界，内部 resolve/load/transform 留到第 08
 章；<code>indexHtmlMiddleware</code> 的标签转换留到第 09 章。</p>
@@ -1388,7 +1507,8 @@ code {
 <li>host/static 单元用例与 proxy/base/fs-serve playground：用场景复盘顺序约束。</li>
 </ol>
 <h2 id="中间件总顺序"><a class="heading-anchor" href="#%E4%B8%AD%E9%97%B4%E4%BB%B6%E6%80%BB%E9%A1%BA%E5%BA%8F" aria-label="链接到本节">#</a>中间件总顺序</h2>
-<p>开发服务器在 <code>initServer()</code> 期间按下列顺序装配 Connect：</p>
+<p>开发服务器在 <code>_createServer()</code> 中按下列顺序装配 Connect；<code>initServer()</code> 随后负责插件和
+Environment 的启动：</p>
 <figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">request
 │
 ├─ time（仅 DEBUG）
@@ -1396,20 +1516,18 @@ code {
 ├─ CORS
 ├─ Host validation（HTTP）
 ├─ 用户 configureServer 前置中间件
-├─ cached transform 快路径
+├─ cached transform 快路径（普通模式）
 ├─ proxy
 ├─ base 剥离/重定向
 ├─ open-in-editor
 ├─ HMR ping
 ├─ publicDir 原样文件
-├─ bundledDev lazy/memory files
-├─ transform
-├─ /@fs/ 静态文件
-├─ root 静态文件
-├─ HTML fallback
-├─ configureServer 后置中间件（逆序）
-├─ index.html transform
-├─ 404（仅独立模式）
+├─ bundledDev：lazy bundling → memory files
+│  或普通模式：transform → /@fs/ 静态文件 → root 静态文件
+├─ HTML fallback（spa/mpa）
+├─ configureServer 后置中间件（按钩子收集顺序）
+├─ index.html transform（spa/mpa）
+├─ 404（与 HTML fallback/transform 一样，仅 spa/mpa appType）
 └─ error middleware
 </code></pre></figure><p>Connect 是线性责任链：中间件若写完响应就停止，否则调用 <code>next()</code>；带错误参数的
 <code>next(err)</code> 会跳到四参数错误中间件。因此这里的顺序不是组织偏好，而是安全和路由契约。</p>
@@ -1423,6 +1541,392 @@ code {
 <li>configureServer 后置钩子在 index.html 前：插件仍能提供自定义 HTML；</li>
 <li>error 最后：任意前置层都能通过 <code>next(err)</code> 汇聚到同一响应。</li>
 </ul>
+<h2 id="一次模块请求怎样跨层"><a class="heading-anchor" href="#%E4%B8%80%E6%AC%A1%E6%A8%A1%E5%9D%97%E8%AF%B7%E6%B1%82%E6%80%8E%E6%A0%B7%E8%B7%A8%E5%B1%82" aria-label="链接到本节">#</a>一次模块请求怎样跨层</h2>
+<p>以普通开发模式、<code>base: '/'</code> 下浏览器发出的 <code>GET /src/main.ts</code> 为例，HTTP 中间件把模块请求
+交给 <code>server.environments.client</code>。这个 Environment 持有自己的 PluginContainer 与 ModuleGraph：
+前者执行插件钩子，后者保存模块身份、转换结果和依赖关系。下图把这些对象放在不同泳道，向下
+阅读时间；标有 <code>await</code> 的连线表示调用方等待该步完成，再进入下一步。</p>
+<figure class="engineering-diagram" data-diagram-width="1160" aria-labelledby="diagram-06-request-sequence-caption"><figcaption id="diagram-06-request-sequence-caption">普通开发模式下 /src/main.ts 从 HTTP 入口到插件转换、模块图更新与响应出口的跨层时序</figcaption><div class="diagram-toolbar" role="group" aria-label="图示查看"><button type="button" data-diagram-action="out" aria-label="缩小图示">−</button><output class="diagram-scale" aria-live="polite">100%</output><button type="button" data-diagram-action="in" aria-label="放大图示">＋</button><button type="button" data-diagram-action="fit">适应宽度</button><button type="button" data-diagram-action="reset">原尺寸</button><button type="button" data-diagram-action="expand" aria-expanded="false">展开图示</button><a href="diagrams/06-request-sequence.svg" target="_blank" rel="noopener">独立 SVG</a></div><div class="diagram-viewport" tabindex="0" role="region" aria-label="普通开发模式下 /src/main.ts 从 HTTP 入口到插件转换、模块图更新与响应出口的跨层时序，可滚动图示"><div class="diagram-canvas" style="width:1160px"><svg xmlns="http://www.w3.org/2000/svg" width="1160" height="2760" viewBox="0 0 1160 2760" role="img" aria-labelledby="diagram-06-request-sequence-title diagram-06-request-sequence-desc">
+<title id="diagram-06-request-sequence-title">Vite 8.2.1：普通 dev 请求 /src/main.ts 的跨层时序</title>
+<desc id="diagram-06-request-sequence-desc">浏览器经过 HTTP Connect 中间件，入口 ETag 命中直接返回 304。未命中且路由未接管时，client Environment 检查同 URL 在途 Promise 新鲜度和 URL、ID 两级模块缓存。未复用时经 PluginContainer resolve、load、transform；Import Analysis 解析导入，确保依赖节点并更新 ModuleGraph 正向依赖、反向 importer 与 HMR 接受边。新鲜转换结果写入缓存和 client ETag 索引；创建请求的 Promise finally 清理 pending。HTTP 层 send 返回 JavaScript，拒绝则汇入 middleware catch，按条件下放路由、拒绝访问或进入错误响应。</desc>
+<defs>
+<marker id="diagram-06-request-sequence-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0L8 4L0 8Z" fill="#285ca5"/></marker>
+<marker id="diagram-06-request-sequence-green" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0L8 4L0 8Z" fill="#14766e"/></marker>
+<marker id="diagram-06-request-sequence-red" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0L8 4L0 8Z" fill="#b34242"/></marker>
+</defs><g font-family="-apple-system,BlinkMacSystemFont,Segoe UI,PingFang SC,Microsoft YaHei,sans-serif">
+<rect width="1160" height="2760" fill="#fbfcfe"/>
+<text x="40" y="43" text-anchor="start" fill="#172b46" font-size="28" font-weight="700">
+<tspan x="40" dy="0">一次 /src/main.ts 请求，五层怎样接力</tspan>
+</text>
+<text x="40" y="77" text-anchor="start" fill="#172b46" font-size="18" font-weight="400">
+<tspan x="40" dy="0">Vite v8.2.1 · 普通 dev（bundledDev 关闭）· base: / · GET 模块请求</tspan>
+</text>
+<text x="40" y="109" text-anchor="start" fill="#172b46" font-size="17" font-weight="400">
+<tspan x="40" dy="0">向下为时间。实线：调用/控制流；虚线：返回/结果复用；红线：拒绝。await 标明等待边界。</tspan>
+</text>
+<text x="40" y="139" text-anchor="start" fill="#52647c" font-size="17" font-weight="400">
+<tspan x="40" dy="0">图中前置层未接管 /src/main.ts；proxy、public、CSS、Source Map 等旁路条件见第 06 章正文。</tspan>
+</text>
+<rect x="425" y="727" width="705" height="235" rx="12" fill="#f0f5fc" stroke="#d7e2f0"/>
+<text x="43" y="754" text-anchor="start" fill="#172b46" font-size="18" font-weight="600">
+<tspan x="43" dy="0">① 同 URL 在途 Promise</tspan>
+<tspan x="43" dy="23">先判新鲜度</tspan>
+</text>
+<rect x="425" y="975" width="705" height="356" rx="12" fill="#f0f5fc" stroke="#d7e2f0"/>
+<text x="43" y="1002" text-anchor="start" fill="#172b46" font-size="18" font-weight="600">
+<tspan x="43" dy="0">② URL / ID 两级身份</tspan>
+<tspan x="43" dy="23">转换缓存先于真实处理</tspan>
+</text>
+<rect x="425" y="1340" width="705" height="630" rx="12" fill="#f0f5fc" stroke="#d7e2f0"/>
+<text x="43" y="1367" text-anchor="start" fill="#172b46" font-size="18" font-weight="600">
+<tspan x="43" dy="0">③ load 成功后入图</tspan>
+<tspan x="43" dy="23">串行执行 transform</tspan>
+</text>
+<rect x="425" y="1970" width="705" height="362" rx="12" fill="#f0f5fc" stroke="#d7e2f0"/>
+<text x="43" y="1997" text-anchor="start" fill="#172b46" font-size="18" font-weight="600">
+<tspan x="43" dy="0">④ 结果新鲜度</tspan>
+<tspan x="43" dy="23">写缓存；settle 清 pending</tspan>
+</text>
+<path d="M95 232V2600" fill="none" stroke="#cad5e3" stroke-width="2" stroke-dasharray="7 5"/>
+<path d="M315 232V2600" fill="none" stroke="#cad5e3" stroke-width="2" stroke-dasharray="7 5"/>
+<path d="M570 232V2600" fill="none" stroke="#cad5e3" stroke-width="2" stroke-dasharray="7 5"/>
+<path d="M815 232V2600" fill="none" stroke="#cad5e3" stroke-width="2" stroke-dasharray="7 5"/>
+<path d="M1055 232V2600" fill="none" stroke="#cad5e3" stroke-width="2" stroke-dasharray="7 5"/>
+<rect x="40" y="165" width="110" height="62" rx="10" fill="#e7effa" stroke="#aebfd8" stroke-width="1.5"/>
+<text x="95.0" y="189" text-anchor="middle" fill="#172b46" font-size="18" font-weight="400">
+<tspan x="95.0" dy="0">浏览器</tspan>
+</text>
+<rect x="190" y="165" width="250" height="62" rx="10" fill="#e7effa" stroke="#aebfd8" stroke-width="1.5"/>
+<text x="315.0" y="189" text-anchor="middle" fill="#172b46" font-size="18" font-weight="400">
+<tspan x="315.0" dy="0">HTTP / Connect</tspan>
+<tspan x="315.0" dy="23">按注册顺序分派</tspan>
+</text>
+<rect x="445" y="165" width="250" height="62" rx="10" fill="#e7effa" stroke="#aebfd8" stroke-width="1.5"/>
+<text x="570.0" y="189" text-anchor="middle" fill="#172b46" font-size="18" font-weight="400">
+<tspan x="570.0" dy="0">client Environment</tspan>
+<tspan x="570.0" dy="23">请求处理与复用</tspan>
+</text>
+<rect x="690" y="165" width="250" height="62" rx="10" fill="#e7effa" stroke="#aebfd8" stroke-width="1.5"/>
+<text x="815.0" y="189" text-anchor="middle" fill="#172b46" font-size="18" font-weight="400">
+<tspan x="815.0" dy="0">PluginContainer</tspan>
+<tspan x="815.0" dy="23">插件钩子执行器</tspan>
+</text>
+<rect x="950" y="165" width="185" height="62" rx="10" fill="#e7effa" stroke="#aebfd8" stroke-width="1.5"/>
+<text x="1042.5" y="189" text-anchor="middle" fill="#172b46" font-size="18" font-weight="400">
+<tspan x="1042.5" dy="0">ModuleGraph</tspan>
+<tspan x="1042.5" dy="23">模块 / 依赖状态</tspan>
+</text>
+<path d="M95 247H315" fill="none" stroke="#285ca5" stroke-width="2" marker-end="url(#diagram-06-request-sequence-arrow)"/>
+<text x="205.0" y="237" text-anchor="middle" fill="#285ca5" font-size="17" font-weight="400">
+<tspan x="205.0" dy="0">GET /src/main.ts</tspan>
+</text>
+<path d="M315 247V269" fill="none" stroke="#285ca5" stroke-width="2" marker-end="url(#diagram-06-request-sequence-arrow)"/>
+<rect x="185" y="269" width="550" height="59" rx="10" fill="#fff" stroke="#bac9dc" stroke-width="1.5"/>
+<text x="199" y="293" text-anchor="start" fill="#172b46" font-size="17" font-weight="400">
+<tspan x="199" dy="0">request-target → CORS → HTTP Host → configureServer 前置</tspan>
+<tspan x="199" dy="23">未拒绝 / 未接管，继续 next()；可选层及总顺序见正文</tspan>
+</text>
+<path d="M315 328V361" fill="none" stroke="#285ca5" stroke-width="2" marker-end="url(#diagram-06-request-sequence-arrow)"/>
+<path d="M315 361H1055" fill="none" stroke="#285ca5" stroke-width="2" marker-end="url(#diagram-06-request-sequence-arrow)"/>
+<text x="685.0" y="351" text-anchor="middle" fill="#285ca5" font-size="17" font-weight="400">
+<tspan x="685.0" dy="0">有 If-None-Match → getModuleByEtag()（同步查询）</tspan>
+</text>
+<path d="M1055 390H315" fill="none" stroke="#14766e" stroke-width="2" stroke-dasharray="7 5" marker-end="url(#diagram-06-request-sequence-green)"/>
+<text x="685.0" y="380" text-anchor="middle" fill="#14766e" font-size="17" font-weight="400">
+<tspan x="685.0" dy="0">候选节点及 transformResult.etag</tspan>
+</text>
+<path d="M315 390V416H440" fill="none" stroke="#285ca5" stroke-width="2" marker-end="url(#diagram-06-request-sequence-arrow)"/>
+<rect x="440" y="404" width="650" height="58" rx="10" fill="#fff" stroke="#bac9dc" stroke-width="1.5"/>
+<text x="454" y="428" text-anchor="start" fill="#172b46" font-size="17" font-weight="400">
+<tspan x="454" dy="0">ETag 相等 ∧ mod.url === req.url ∧ 非 CSS？</tspan>
+<tspan x="454" dy="23">cachedTransformMiddleware 的入口快路径</tspan>
+</text>
+<path d="M440 443H315V487H95" fill="none" stroke="#14766e" stroke-width="2" stroke-dasharray="7 5" marker-end="url(#diagram-06-request-sequence-green)"/>
+<text x="205" y="478" text-anchor="middle" fill="#14766e" font-size="17" font-weight="400">
+<tspan x="205" dy="0">是 → 304，结束响应</tspan>
+</text>
+<path d="M570 462V515H315V530" fill="none" stroke="#285ca5" stroke-width="2" marker-end="url(#diagram-06-request-sequence-arrow)"/>
+<text x="595" y="501" text-anchor="start" fill="#172b46" font-size="17" font-weight="400">
+<tspan x="595" dy="0">否 → next()</tspan>
+</text>
+<path d="M315 328H165V515H315" fill="none" stroke="#285ca5" stroke-width="2" marker-end="url(#diagram-06-request-sequence-arrow)"/>
+<text x="155" y="427" text-anchor="end" fill="#172b46" font-size="17" font-weight="400">
+<tspan x="155" dy="0">无请求 ETag</tspan>
+<tspan x="155" dy="23">直接 next()</tspan>
+</text>
+<rect x="185" y="530" width="720" height="58" rx="10" fill="#fff" stroke="#bac9dc" stroke-width="1.5"/>
+<text x="199" y="554" text-anchor="start" fill="#172b46" font-size="17" font-weight="400">
+<tspan x="199" dy="0">继续按序：proxy → base → editor → HMR ping → public</tspan>
+<tspan x="199" dy="23">本例前置层均未接管；base 为 /，不注册 baseMiddleware</tspan>
+</text>
+<path d="M315 588V611" fill="none" stroke="#285ca5" stroke-width="2" marker-end="url(#diagram-06-request-sequence-arrow)"/>
+<rect x="185" y="611" width="440" height="80" rx="10" fill="#fff" stroke="#bac9dc" stroke-width="1.5"/>
+<text x="199" y="635" text-anchor="start" fill="#172b46" font-size="17" font-weight="400">
+<tspan x="199" dy="0">transformMiddleware：GET / 非文档 / JS 请求 ✓</tspan>
+<tspan x="199" dy="23">去 ?t= → decodeURI → 去 ?import → unwrapId</tspan>
+<tspan x="199" dy="23">main.ts 进入模块管线</tspan>
+</text>
+<path d="M625 650H740" fill="none" stroke="#285ca5" stroke-width="2" marker-end="url(#diagram-06-request-sequence-arrow)"/>
+<text x="682.5" y="640" text-anchor="middle" fill="#285ca5" font-size="17" font-weight="400">
+<tspan x="682.5" dy="0">不符合入口</tspan>
+</text>
+<rect x="740" y="620" width="385" height="62" rx="10" fill="#f8fafc" stroke="#bac9dc" stroke-width="1.5"/>
+<text x="754" y="644" text-anchor="start" fill="#172b46" font-size="17" font-weight="400">
+<tspan x="754" dy="0">next() → 后续 /@fs/、root 静态、</tspan>
+<tspan x="754" dy="23">HTML / 用户路由 / 404；条件见正文</tspan>
+</text>
+<path d="M315 691V712H570V772" fill="none" stroke="#285ca5" stroke-width="2" marker-end="url(#diagram-06-request-sequence-arrow)"/>
+<text x="360" y="703" text-anchor="start" fill="#172b46" font-size="17" font-weight="400">
+<tspan x="360" dy="0">await environment.transformRequest(url)</tspan>
+</text>
+<path d="M315 691H346V2430H660V2570H690V2608H710" fill="none" stroke="#b34242" stroke-width="2" stroke-dasharray="7 5" marker-end="url(#diagram-06-request-sequence-red)"/>
+<text x="338" y="844" text-anchor="end" fill="#b34242" font-size="16" font-weight="400">
+<tspan x="338" dy="0">前置错误 / 共享检查拒绝</tspan>
+<tspan x="338" dy="23">直接汇入 catch</tspan>
+</text>
+<rect x="440" y="772" width="260" height="54" rx="10" fill="#fff" stroke="#bac9dc" stroke-width="1.5"/>
+<text x="454" y="796" text-anchor="start" fill="#172b46" font-size="17" font-weight="400">
+<tspan x="454" dy="0">记录开始时间 timestamp</tspan>
+<tspan x="454" dy="23">去 ?t= 后查同 URL pending</tspan>
+</text>
+<path d="M700 814H1055" fill="none" stroke="#285ca5" stroke-width="2" marker-end="url(#diagram-06-request-sequence-arrow)"/>
+<text x="877.5" y="804" text-anchor="middle" fill="#285ca5" font-size="17" font-weight="400">
+<tspan x="877.5" dy="0">有 → await getModuleByUrl</tspan>
+</text>
+<path d="M1055 850H570" fill="none" stroke="#14766e" stroke-width="2" stroke-dasharray="7 5" marker-end="url(#diagram-06-request-sequence-green)"/>
+<text x="812.5" y="840" text-anchor="middle" fill="#14766e" font-size="17" font-weight="400">
+<tspan x="812.5" dy="0">返回模块 / 无模块</tspan>
+</text>
+<path d="M570 850H346" fill="none" stroke="#b34242" stroke-width="2" stroke-dasharray="7 5" marker-end="url(#diagram-06-request-sequence-red)"/>
+<path d="M570 850V888H630" fill="none" stroke="#285ca5" stroke-width="2" marker-end="url(#diagram-06-request-sequence-arrow)"/>
+<rect x="630" y="870" width="480" height="59" rx="10" fill="#fff" stroke="#bac9dc" stroke-width="1.5"/>
+<text x="644" y="894" text-anchor="start" fill="#172b46" font-size="17" font-weight="400">
+<tspan x="644" dy="0">无模块，或 pending.timestamp &gt; 最近失效时间</tspan>
+<tspan x="644" dy="23">成立：await pending.request（共享同一 Promise）</tspan>
+</text>
+<path d="M630 906H407V2404H440" fill="none" stroke="#14766e" stroke-width="2" stroke-dasharray="7 5" marker-end="url(#diagram-06-request-sequence-green)"/>
+<text x="338" y="1180" text-anchor="end" fill="#14766e" font-size="17" font-weight="400">
+<tspan x="338" dy="0">已有 pending 复用</tspan>
+</text>
+<path d="M815 929V949H570V826" fill="none" stroke="#285ca5" stroke-width="2" marker-end="url(#diagram-06-request-sequence-arrow)"/>
+<text x="820" y="978" text-anchor="middle" fill="#172b46" font-size="17" font-weight="400">
+<tspan x="820" dy="0">否则：abort 清槽再进入；不取消 hooks</tspan>
+</text>
+<path d="M440 797H426V970H570V1015" fill="none" stroke="#285ca5" stroke-width="2" marker-end="url(#diagram-06-request-sequence-arrow)"/>
+<text x="442" y="1000" text-anchor="start" fill="#172b46" font-size="17" font-weight="400">
+<tspan x="442" dy="0">无 pending → 启动新的 doTransform Promise</tspan>
+</text>
+<rect x="440" y="1015" width="650" height="54" rx="10" fill="#fff" stroke="#bac9dc" stroke-width="1.5"/>
+<text x="454" y="1039" text-anchor="start" fill="#172b46" font-size="17" font-weight="400">
+<tspan x="454" dy="0">doTransform 首次查 URL 已发起；在首个 await 暂停期间登记 pending</tspan>
+<tspan x="454" dy="23">_pendingRequests.set(url, …)；创建者在 settle 后执行 finally(clearCache)</tspan>
+</text>
+<path d="M570 1098H1055" fill="none" stroke="#285ca5" stroke-width="2" marker-end="url(#diagram-06-request-sequence-arrow)"/>
+<text x="812.5" y="1088" text-anchor="middle" fill="#285ca5" font-size="17" font-weight="400">
+<tspan x="812.5" dy="0">await URL 节点查询结果（查询已在 doTransform 开始时发起）</tspan>
+</text>
+<path d="M1055 1127H570" fill="none" stroke="#14766e" stroke-width="2" stroke-dasharray="7 5" marker-end="url(#diagram-06-request-sequence-green)"/>
+<text x="812.5" y="1117" text-anchor="middle" fill="#14766e" font-size="17" font-weight="400">
+<tspan x="812.5" dy="0">已有节点 → await 软失效修补 / 读取 transformResult</tspan>
+</text>
+<path d="M570 1127V1143" fill="none" stroke="#285ca5" stroke-width="2" marker-end="url(#diagram-06-request-sequence-arrow)"/>
+<rect x="440" y="1143" width="310" height="54" rx="10" fill="#fff" stroke="#bac9dc" stroke-width="1.5"/>
+<text x="454" y="1167" text-anchor="start" fill="#172b46" font-size="17" font-weight="400">
+<tspan x="454" dy="0">URL 级结果可复用？</tspan>
+<tspan x="454" dy="23">是：返回；否：继续检查 ID</tspan>
+</text>
+<path d="M440 1174H419V2330H440" fill="none" stroke="#14766e" stroke-width="2" stroke-dasharray="7 5" marker-end="url(#diagram-06-request-sequence-green)"/>
+<path d="M570 1197V1220H815" fill="none" stroke="#285ca5" stroke-width="2" marker-end="url(#diagram-06-request-sequence-arrow)"/>
+<text x="705" y="1210" text-anchor="middle" fill="#172b46" font-size="17" font-weight="400">
+<tspan x="705" dy="0">URL 无节点才 await resolveId(url)</tspan>
+</text>
+<path d="M815 1248H570" fill="none" stroke="#14766e" stroke-width="2" stroke-dasharray="7 5" marker-end="url(#diagram-06-request-sequence-green)"/>
+<text x="692.5" y="1238" text-anchor="middle" fill="#14766e" font-size="17" font-weight="400">
+<tspan x="692.5" dy="0">resolved ID</tspan>
+</text>
+<path d="M550 1197V1260H570" fill="none" stroke="#285ca5" stroke-width="2" marker-end="url(#diagram-06-request-sequence-arrow)"/>
+<text x="532" y="1232" text-anchor="end" fill="#172b46" font-size="17" font-weight="400">
+<tspan x="532" dy="0">已有节点：</tspan>
+<tspan x="532" dy="23">沿用 mod.id</tspan>
+</text>
+<path d="M570 1280H1055" fill="none" stroke="#285ca5" stroke-width="2" marker-end="url(#diagram-06-request-sequence-arrow)"/>
+<text x="812.5" y="1270" text-anchor="middle" fill="#285ca5" font-size="17" font-weight="400">
+<tspan x="812.5" dy="0">getModuleById(id)；若已存在，await 补 URL 索引并再查缓存</tspan>
+</text>
+<rect x="440" y="1296" width="650" height="54" rx="10" fill="#fff" stroke="#bac9dc" stroke-width="1.5"/>
+<text x="454" y="1320" text-anchor="start" fill="#172b46" font-size="17" font-weight="400">
+<tspan x="454" dy="0">ID 级结果可复用 → 返回；仍未得到结果 → loadAndTransform</tspan>
+</text>
+<path d="M440 1327H419" fill="none" stroke="#14766e" stroke-width="2" stroke-dasharray="7 5" marker-end="url(#diagram-06-request-sequence-green)"/>
+<path d="M570 1350V1380H815" fill="none" stroke="#285ca5" stroke-width="2" marker-end="url(#diagram-06-request-sequence-arrow)"/>
+<text x="675" y="1370" text-anchor="middle" fill="#172b46" font-size="17" font-weight="400">
+<tspan x="675" dy="0">await load(id)</tspan>
+</text>
+<path d="M815 1409H570" fill="none" stroke="#14766e" stroke-width="2" stroke-dasharray="7 5" marker-end="url(#diagram-06-request-sequence-green)"/>
+<text x="692.5" y="1399" text-anchor="middle" fill="#14766e" font-size="17" font-weight="400">
+<tspan x="692.5" dy="0">hookFirst：首个非空结果</tspan>
+</text>
+<rect x="440" y="1425" width="650" height="79" rx="10" fill="#fff" stroke="#bac9dc" stroke-width="1.5"/>
+<text x="454" y="1449" text-anchor="start" fill="#172b46" font-size="17" font-weight="400">
+<tspan x="454" dy="0">所有 load hook 为空 → fs 允许时 await readFile(file, UTF-8)</tspan>
+<tspan x="454" dy="23">本例读取 /项目/src/main.ts；插件给出源码则跳过文件回退</tspan>
+<tspan x="454" dy="23">仍无源码 → ERR_LOAD_URL；拒绝出口最终交回 next()</tspan>
+</text>
+<path d="M570 1535H1055" fill="none" stroke="#285ca5" stroke-width="2" marker-end="url(#diagram-06-request-sequence-arrow)"/>
+<text x="812.5" y="1525" text-anchor="middle" fill="#285ca5" font-size="17" font-weight="400">
+<tspan x="812.5" dy="0">load 成功且尚无节点 → await _ensureEntryFromUrl</tspan>
+</text>
+<path d="M1055 1563H570" fill="none" stroke="#14766e" stroke-width="2" stroke-dasharray="7 5" marker-end="url(#diagram-06-request-sequence-green)"/>
+<text x="812.5" y="1553" text-anchor="middle" fill="#14766e" font-size="17" font-weight="400">
+<tspan x="812.5" dy="0">main 节点存在，登记 URL / ID / file 索引</tspan>
+</text>
+<path d="M570 1597H815" fill="none" stroke="#285ca5" stroke-width="2" marker-end="url(#diagram-06-request-sequence-arrow)"/>
+<text x="690" y="1587" text-anchor="middle" fill="#285ca5" font-size="17" font-weight="400">
+<tspan x="690" dy="0">await transform(code, id, { inMap, moduleType })</tspan>
+</text>
+<rect x="690" y="1615" width="250" height="54" rx="10" fill="#fff" stroke="#bac9dc" stroke-width="1.5"/>
+<text x="704" y="1639" text-anchor="start" fill="#172b46" font-size="17" font-weight="400">
+<tspan x="704" dy="0">transform hooks 串行</tspan>
+<tspan x="704" dy="23">code / map 依次传递</tspan>
+</text>
+<path d="M815 1669V1690" fill="none" stroke="#285ca5" stroke-width="2" marker-end="url(#diagram-06-request-sequence-arrow)"/>
+<rect x="690" y="1690" width="250" height="54" rx="10" fill="#fff" stroke="#bac9dc" stroke-width="1.5"/>
+<text x="704" y="1714" text-anchor="start" fill="#172b46" font-size="17" font-weight="400">
+<tspan x="704" dy="0">其中：importAnalysis</tspan>
+<tspan x="704" dy="23">分析 import / HMR accept</tspan>
+</text>
+<path d="M815 1744H873V1770H815" fill="none" stroke="#285ca5" stroke-width="2" marker-end="url(#diagram-06-request-sequence-arrow)"/>
+<text x="655" y="1760" text-anchor="middle" fill="#172b46" font-size="17" font-weight="400">
+<tspan x="655" dy="0">await this.resolve</tspan>
+<tspan x="655" dy="23">(specifier, importer)</tspan>
+</text>
+<path d="M815 1800H1055" fill="none" stroke="#285ca5" stroke-width="2" marker-end="url(#diagram-06-request-sequence-arrow)"/>
+<text x="870" y="1790" text-anchor="middle" fill="#285ca5" font-size="17" font-weight="400">
+<tspan x="870" dy="0">依赖尚未入图 → await ensure</tspan>
+</text>
+<path d="M1055 1829H815" fill="none" stroke="#14766e" stroke-width="2" stroke-dasharray="7 5" marker-end="url(#diagram-06-request-sequence-green)"/>
+<text x="935.0" y="1819" text-anchor="middle" fill="#14766e" font-size="17" font-weight="400">
+<tspan x="935.0" dy="0">依赖节点可供登记</tspan>
+</text>
+<path d="M815 1857H1055" fill="none" stroke="#285ca5" stroke-width="2" marker-end="url(#diagram-06-request-sequence-arrow)"/>
+<text x="932" y="1847" text-anchor="middle" fill="#285ca5" font-size="17" font-weight="400">
+<tspan x="932" dy="0">await updateModuleInfo</tspan>
+</text>
+<rect x="875" y="1875" width="250" height="103" rx="10" fill="#e8f5f1" stroke="#8dc0b3" stroke-width="1.5"/>
+<text x="889" y="1899" text-anchor="start" fill="#172b46" font-size="17" font-weight="400">
+<tspan x="889" dy="0">main 的正向依赖更新</tspan>
+<tspan x="889" dy="23">dep.importers 加入 main</tspan>
+<tspan x="889" dy="23">移除消失 import 的反向边</tspan>
+<tspan x="889" dy="23">写 HMR 接受信息 / 静态边</tspan>
+</text>
+<path d="M1055 1999H815" fill="none" stroke="#14766e" stroke-width="2" stroke-dasharray="7 5" marker-end="url(#diagram-06-request-sequence-green)"/>
+<text x="870" y="1989" text-anchor="middle" fill="#14766e" font-size="17" font-weight="400">
+<tspan x="870" dy="0">返回孤立的旧依赖，必要时 prune</tspan>
+</text>
+<path d="M815 2028H570" fill="none" stroke="#14766e" stroke-width="2" stroke-dasharray="7 5" marker-end="url(#diagram-06-request-sequence-green)"/>
+<text x="692.5" y="2018" text-anchor="middle" fill="#14766e" font-size="17" font-weight="400">
+<tspan x="692.5" dy="0">全部 transform 完成 → code / map</tspan>
+</text>
+<rect x="440" y="2050" width="650" height="54" rx="10" fill="#fff" stroke="#bac9dc" stroke-width="1.5"/>
+<text x="454" y="2074" text-anchor="start" fill="#172b46" font-size="17" font-weight="400">
+<tspan x="454" dy="0">规范化 Source Map；client result = { code, map, etag }</tspan>
+<tspan x="454" dy="23">本例使用弱 ETag；Module Runner 转换分支见第 08 章</tspan>
+</text>
+<rect x="440" y="2122" width="460" height="54" rx="10" fill="#fff" stroke="#bac9dc" stroke-width="1.5"/>
+<text x="454" y="2146" text-anchor="start" fill="#172b46" font-size="17" font-weight="400">
+<tspan x="454" dy="0">timestamp &gt; mod.lastInvalidationTimestamp？</tspan>
+<tspan x="454" dy="23">只有开始于最近失效之后的结果才写缓存</tspan>
+</text>
+<path d="M900 2149H1055V2188" fill="none" stroke="#285ca5" stroke-width="2" marker-end="url(#diagram-06-request-sequence-arrow)"/>
+<text x="975" y="2138" text-anchor="middle" fill="#172b46" font-size="17" font-weight="400">
+<tspan x="975" dy="0">是</tspan>
+</text>
+<rect x="915" y="2188" width="210" height="58" rx="10" fill="#e8f5f1" stroke="#8dc0b3" stroke-width="1.5"/>
+<text x="929" y="2212" text-anchor="start" fill="#172b46" font-size="17" font-weight="400">
+<tspan x="929" dy="0">写 transformResult</tspan>
+<tspan x="929" dy="23">更新 client ETag 索引</tspan>
+</text>
+<path d="M570 2176V2300" fill="none" stroke="#285ca5" stroke-width="2" marker-end="url(#diagram-06-request-sequence-arrow)"/>
+<rect x="451" y="2211" width="180" height="56" fill="#f0f5fc"/>
+<text x="465" y="2230" text-anchor="start" fill="#172b46" font-size="17" font-weight="400">
+<tspan x="465" dy="0">否：跳过缓存写入</tspan>
+<tspan x="465" dy="23">仍返回本次结果</tspan>
+</text>
+<path d="M1055 2246V2270H570" fill="none" stroke="#14766e" stroke-width="2" stroke-dasharray="7 5" marker-end="url(#diagram-06-request-sequence-green)"/>
+<rect x="440" y="2300" width="650" height="58" rx="10" fill="#fff" stroke="#bac9dc" stroke-width="1.5"/>
+<text x="454" y="2324" text-anchor="start" fill="#172b46" font-size="17" font-weight="400">
+<tspan x="454" dy="0">本次创建的 Promise settle → finally(clearCache)</tspan>
+<tspan x="454" dy="23">abort 已清过槽位时不再删；成功 / 拒绝都清本次 pending</tspan>
+</text>
+<text x="338" y="2284" text-anchor="end" fill="#14766e" font-size="16" font-weight="400">
+<tspan x="338" dy="0">URL / ID 缓存返回</tspan>
+<tspan x="338" dy="23">仍走本次 finally</tspan>
+</text>
+<path d="M570 2358V2380" fill="none" stroke="#285ca5" stroke-width="2" marker-end="url(#diagram-06-request-sequence-arrow)"/>
+<rect x="440" y="2380" width="480" height="48" rx="10" fill="#e8f5f1" stroke="#8dc0b3" stroke-width="1.5"/>
+<text x="454" y="2404" text-anchor="start" fill="#172b46" font-size="17" font-weight="400">
+<tspan x="454" dy="0">R：返回复用 / 本次 Promise 的结果或拒绝</tspan>
+</text>
+<path d="M570 2458H315" fill="none" stroke="#14766e" stroke-width="2" stroke-dasharray="7 5" marker-end="url(#diagram-06-request-sequence-green)"/>
+<text x="440" y="2448" text-anchor="middle" fill="#14766e" font-size="17" font-weight="400">
+<tspan x="440" dy="0">fulfilled → result(code, map, etag)</tspan>
+</text>
+<rect x="185" y="2475" width="460" height="78" rx="10" fill="#fff" stroke="#bac9dc" stroke-width="1.5"/>
+<text x="199" y="2499" text-anchor="start" fill="#172b46" font-size="17" font-weight="400">
+<tspan x="199" dy="0">send() 再次验证 If-None-Match</tspan>
+<tspan x="199" dy="23">相等 → 304；否则 → 200 JavaScript</tspan>
+<tspan x="199" dy="23">no-cache、ETag 与 Source Map</tspan>
+</text>
+<path d="M315 2580H95" fill="none" stroke="#14766e" stroke-width="2" stroke-dasharray="7 5" marker-end="url(#diagram-06-request-sequence-green)"/>
+<text x="205.0" y="2570" text-anchor="middle" fill="#14766e" font-size="17" font-weight="400">
+<tspan x="205.0" dy="0">响应结束</tspan>
+</text>
+<path d="M920 2404H1140V2592H755" fill="none" stroke="#b34242" stroke-width="2" stroke-dasharray="7 5" marker-end="url(#diagram-06-request-sequence-red)"/>
+<text x="1085" y="2578" text-anchor="end" fill="#b34242" font-size="16" font-weight="400">
+<tspan x="1085" dy="0">新建请求先 finally；复用拒绝直接 catch</tspan>
+</text>
+<rect x="710" y="2592" width="415" height="79" rx="10" fill="#fff4f2" stroke="#d59a94" stroke-width="1.5"/>
+<text x="724" y="2616" text-anchor="start" fill="#172b46" font-size="16" font-weight="400">
+<tspan x="724" dy="0">middleware catch（错误出口）</tspan>
+<tspan x="724" dy="23">ERR_LOAD_URL → next()；访问拒绝 → 403 / next()</tspan>
+<tspan x="724" dy="23">换代 / 关闭 → 504；其他 → next(err)</tspan>
+</text>
+<rect x="185" y="2592" width="420" height="79" rx="10" fill="#fff4f2" stroke="#d59a94" stroke-width="1.5"/>
+<text x="199" y="2616" text-anchor="start" fill="#172b46" font-size="16" font-weight="400">
+<tspan x="199" dy="0">errorMiddleware：日志 + client overlay</tspan>
+<tspan x="199" dy="23">独立模式 → 500 HTML</tspan>
+<tspan x="199" dy="23">middleware mode → next() 交回宿主</tspan>
+</text>
+<path d="M710 2630H605" fill="none" stroke="#b34242" stroke-width="2" stroke-dasharray="7 5" marker-end="url(#diagram-06-request-sequence-red)"/>
+<text x="655" y="2620" text-anchor="middle" fill="#b34242" font-size="17" font-weight="400">
+<tspan x="655" dy="0">next(err)</tspan>
+</text>
+<path d="M1125 2612H1133V655H1125" fill="none" stroke="#285ca5" stroke-width="2" marker-end="url(#diagram-06-request-sequence-arrow)"/>
+<text x="1117" y="2538" text-anchor="end" fill="#285ca5" font-size="16" font-weight="400">
+<tspan x="1117" dy="0">next() → 沿边线回到路由下放出口</tspan>
+</text>
+<path d="M185 2630H95" fill="none" stroke="#b34242" stroke-width="2" stroke-dasharray="7 5" marker-end="url(#diagram-06-request-sequence-red)"/>
+<text x="45" y="2689" text-anchor="start" fill="#172b46" font-size="16" font-weight="400">
+<tspan x="45" dy="0">响应 / 宿主路由</tspan>
+</text>
+<path d="M930 2671V2709H95" fill="none" stroke="#b34242" stroke-width="2" stroke-dasharray="7 5" marker-end="url(#diagram-06-request-sequence-red)"/>
+<text x="565" y="2698" text-anchor="middle" fill="#b34242" font-size="16" font-weight="400">
+<tspan x="565" dy="0">403 / 504 分支直接结束响应；完整错误条件见本章正文</tspan>
+</text>
+<text x="40" y="2740" text-anchor="start" fill="#52647c" font-size="16" font-weight="400">
+<tspan x="40" dy="0">源码：server/index.ts · middlewares/transform.ts · transformRequest.ts · plugins/importAnalysis.ts · moduleGraph.ts</tspan>
+</text>
+</g></svg>
+</div></div><p class="diagram-hint">可横向滚动；适应宽度看全图，原尺寸读节点。</p></figure>
+<p>入口 ETag 命中会直接返回 304，尚未进入转换管线。未命中时，请求按 Connect 注册顺序继续；
+前面的 proxy、public 等层没有接管，才到 <code>transformMiddleware</code>。进入 Environment 后，
+同 URL 的新鲜在途 Promise 可以复用，URL/ID 对应节点的转换缓存也可以复用；这些路径都汇入
+结果返回线。真正需要重做时，才执行 resolve、load 与串行 transform。Import Analysis 在
+transform 内解析导入、确保依赖节点存在，并更新正向依赖、反向 importer 边和 HMR 接受信息。</p>
+<p>转换结果只在开始时间晚于最近一次失效时间时写入缓存；本次创建的请求无论成功还是拒绝，
+都会经过 <code>finally</code> 清理自己的 pending 槽位。随后 HTTP 层用 <code>send()</code> 完成响应，或按错误类型
+选择下放路由、访问拒绝、换代响应及 <code>next(err)</code>。图中的缓存和插件步骤在第 08、10 章展开；
+CSS、Source Map、proxy、public 与安全旁路的条件则见本章各节。</p>
 <h2 id="第一层-拒绝不可信请求形状"><a class="heading-anchor" href="#%E7%AC%AC%E4%B8%80%E5%B1%82-%E6%8B%92%E7%BB%9D%E4%B8%8D%E5%8F%AF%E4%BF%A1%E8%AF%B7%E6%B1%82%E5%BD%A2%E7%8A%B6" aria-label="链接到本节">#</a>第一层：拒绝不可信请求形状</h2>
 <h3 id="request-target-中的"><a class="heading-anchor" href="#request-target-%E4%B8%AD%E7%9A%84" aria-label="链接到本节">#</a>request-target 中的 <code>#</code></h3>
 <p>HTTP fragment 不会发送给服务器，HTTP/1.1 和 HTTP/2 的 request-target 都不允许 <code>#</code>。但
@@ -1445,12 +1949,12 @@ Node 会接收手写 TCP 请求中的 <code>#</code>，而 Vite 的 URL 清洗�
 <p>这些配置已经表示用户期望 Vite 响应该主机，无需重复声明。origin 可能是框架占位字符串，URL
 解析失败只跳过自动加入，不阻止启动（<a href="https://github.com/vitejs/vite/pull/19241" target="_blank" rel="noreferrer noopener">#19241</a>）。</p>
 <p>底层 Host 校验器收到冻结的 allowedHosts 副本，可缓存结果且不受调用方后续改数组影响。该安全
-边界由 Vite 的 DNS rebinding 修复引入；HTTPS 已用证书绑定可信主机，所以顶层装配不会重复
-添加同类 Host 中间件。</p>
+边界由 Vite 的 DNS rebinding 修复引入；HTTPS 装配分支依赖 TLS 证书校验，跳过这层 HTTP
+Host 中间件。</p>
 <h3 id="cors-与-host-不是同一件事"><a class="heading-anchor" href="#cors-%E4%B8%8E-host-%E4%B8%8D%E6%98%AF%E5%90%8C%E4%B8%80%E4%BB%B6%E4%BA%8B" aria-label="链接到本节">#</a>CORS 与 Host 不是同一件事</h3>
 <p>CORS 决定浏览器脚本能否读取跨 origin HTTP 响应；Host validation 决定服务器是否接受请求
 目标主机。非浏览器客户端不受 CORS 约束，所以不能用 CORS 代替 Host 校验。HMR WebSocket
-还要结合 Host、Origin 和一次性 token，形成独立握手边界。</p>
+还要结合 Host、Origin 和当前配置的 token，形成独立握手边界。</p>
 <p>fs-serve 的 cross-origin 场景分别从浏览器和 Node 发请求，就是为了覆盖这些机制而不是把它们
 误当成一个开关。</p>
 <h2 id="proxy-请求离开-vite-的分流点"><a class="heading-anchor" href="#proxy-%E8%AF%B7%E6%B1%82%E7%A6%BB%E5%BC%80-vite-%E7%9A%84%E5%88%86%E6%B5%81%E7%82%B9" aria-label="链接到本节">#</a>proxy：请求离开 Vite 的分流点</h2>
@@ -1458,8 +1962,8 @@ Node 会接收手写 TCP 请求中的 <code>#</code>，而 Vite 的 URL 清洗�
 匹配。对象枚举顺序决定首个命中项。</p>
 <p>字符串简写：</p>
 <figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">&#039;/api&#039;: &#039;http://localhost:3000&#039;
-</code></pre></figure><p>会规范化为 <code>{ target, changeOrigin: true }</code>。底层 http-proxy 会修改选项，所以 Vite 保存浅拷贝，
-让后续 bypass/rewrite 看到稳定用户配置。</p>
+</code></pre></figure><p>会规范化为 <code>{ target, changeOrigin: true }</code>。底层 http-proxy 会修改选项，所以 Vite 保存当前顶层选项的浅拷贝，
+供后续 bypass/rewrite 路径使用；嵌套配置仍共享引用。</p>
 <h3 id="http-bypass-状态机"><a class="heading-anchor" href="#http-bypass-%E7%8A%B6%E6%80%81%E6%9C%BA" aria-label="链接到本节">#</a>HTTP bypass 状态机</h3>
 <figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">bypass(req, res, options)
 ├─ string
@@ -1494,7 +1998,8 @@ false 直接 404 的契约见 <a href="https://github.com/vitejs/vite/pull/14579
 → req.url 改为 /src/main.ts
 → 后续中间件统一按无 base URL 工作
 </code></pre></figure><p>它不会修改响应代码中的公开 import URL；生成 URL 的插件仍读取 config.base。base-conflict 用例
-正是防止“入口剥离 base”误演化成“输出也丢 base”。</p>
+把 base 设为绝对磁盘路径的首段，再让虚拟模块导入真实绝对路径，验证 import analysis 不会
+仅因路径以 base 开头就把它误认为已添加公开 base 的 URL。</p>
 <p>独立服务器访问 <code>/</code> 或 <code>/index.html</code> 时 302 到 base，并保留查询部分。访问 base 外路径时：</p>
 <ul>
 <li>Accept 包含 HTML：404 HTML，提供可点击的建议地址；</li>
@@ -1511,7 +2016,7 @@ false 直接 404 的契约见 <a href="https://github.com/vitejs/vite/pull/14579
 <ul>
 <li><code>?import</code> 模块请求；</li>
 <li><code>/@fs/</code>、Vite client 等内部 URL；</li>
-<li><code>?url</code>、<code>?raw</code> 等需要插件转换的资源查询。</li>
+<li><code>?url</code> 资源查询；<code>?raw</code> 通常还带 <code>?import</code>，因而同样进入转换管线。单独的 <code>?raw</code> 不在此层的跳过条件中。</li>
 </ul>
 <p>例如 <code>/public-file.js?url</code> 应得到“URL 字符串模块”，而不是文件 JS 原文。这个边界见
 <a href="https://github.com/vitejs/vite/pull/17915" target="_blank" rel="noreferrer noopener">PR #17915</a>。</p>
@@ -1533,15 +2038,16 @@ false 直接 404 的契约见 <a href="https://github.com/vitejs/vite/pull/14579
 都进入相同 <code>server.fs</code> 安全判定。</p>
 <h2 id="server-fs-文件访问算法"><a class="heading-anchor" href="#server-fs-%E6%96%87%E4%BB%B6%E8%AE%BF%E9%97%AE%E7%AE%97%E6%B3%95" aria-label="链接到本节">#</a><code>server.fs</code> 文件访问算法</h2>
 <h3 id="为什么检查放在-sirv-内"><a class="heading-anchor" href="#%E4%B8%BA%E4%BB%80%E4%B9%88%E6%A3%80%E6%9F%A5%E6%94%BE%E5%9C%A8-sirv-%E5%86%85" aria-label="链接到本节">#</a>为什么检查放在 sirv 内</h3>
-<p>请求 URL 不是最终磁盘文件：目录可能映射到 index、符号链接可能指向别处、编码/alias 会改变
-路径。安全检查如果只发生在请求进入 sirv 前，校验路径可能不是最终读取路径。</p>
-<p><code>sirvOptions.shouldServe(filePath)</code> 收到 sirv 已解析出的真实候选文件，再调用
-<code>checkLoadingAccess()</code>。这条修复见 <a href="https://github.com/vitejs/vite/pull/19965" target="_blank" rel="noreferrer noopener">PR #19965</a>。</p>
+<p>请求 URL 不是最终候选文件路径：目录可能映射到 index，编码、点段和 alias 也会改变路径。
+安全检查如果只发生在请求进入 sirv 前，校验路径可能不是最终读取路径。</p>
+<p><code>sirvOptions.shouldServe(filePath)</code> 收到 sirv 经拼接和规范化后的候选绝对路径，再调用
+<code>checkLoadingAccess()</code>。该版本 sirv 使用 <code>stat</code>，没有把符号链接解析成 <code>realpath</code> 再交给校验器；
+这里的边界基于候选路径。检查后移见 <a href="https://github.com/vitejs/vite/pull/19965" target="_blank" rel="noreferrer noopener">PR #19965</a>。</p>
 <h3 id="判定优先级"><a class="heading-anchor" href="#%E5%88%A4%E5%AE%9A%E4%BC%98%E5%85%88%E7%BA%A7" aria-label="链接到本节">#</a>判定优先级</h3>
 <figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">server.fs.strict === false
   → allowed
 
-Windows 路径含 ~ 或盘符之外的 :
+Windows 路径含 ~，或任意平台路径含盘符之外的 :
   → denied
 
 fsDenyGlob(filePath 去尾斜杠) 命中
@@ -1550,7 +2056,7 @@ fsDenyGlob(filePath 去尾斜杠) 命中
 safeModulePaths 命中
   → allowed
 
-任一 fs.allow 是同路径或真实父目录
+任一 fs.allow 是同路径或按目录分隔符划分的父目录
   → allowed
 
 否则
@@ -1564,7 +2070,8 @@ safeModulePaths 命中
 <li>8.3 短文件名：<code>.env</code> 可能通过 <code>ENV~1</code> 访问；</li>
 <li>Alternate Data Stream：<code>.env::$DATA</code> 可指向同一默认数据流。</li>
 </ul>
-<p>strict 模式因此拒绝包含 <code>~</code> 的路径，以及盘符之外仍含 <code>:</code> 的路径。修复背景见
+<p>strict 模式在 Windows 拒绝包含 <code>~</code> 的路径；冒号检查则在所有平台执行，只豁免 Windows
+路径开头的盘符冒号。修复背景见
 <a href="https://github.com/vitejs/vite/pull/22572" target="_blank" rel="noreferrer noopener">PR #22572</a>。这是略偏保守的策略：牺牲少量合法文件名，
 换取 deny 无法被文件系统别名绕过。</p>
 <p>Node 读取 <code>/foo.png/</code> 可能仍落到 <code>/foo.png</code>，所以 deny 匹配前还要移除尾斜杠
@@ -1573,8 +2080,8 @@ safeModulePaths 命中
 <p>不在 allow list 的路径不能一律返回 403：<code>/api/users</code> 很可能根本不是文件，而是后续用户
 中间件处理的 API。</p>
 <figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">isFileLoadingAllowed(path) → allowed
-否则 isFileReadable(path) → denied（存在但无权读取）
-否则 → fallback（不存在，继续 next）
+否则 isFileReadable(path) → denied（磁盘可读，但不被 Vite 允许）
+否则 → fallback（无可读文件，继续 next）
 </code></pre></figure><p>这条三态判定防止 Vite 过度拒绝未知路由（<a href="https://github.com/vitejs/vite/pull/20410" target="_blank" rel="noreferrer noopener">PR #20410</a>）。
 真实 denied 返回转义后的 403 HTML，并在终端一次性打印 allow 配置提示；fallback 最终可能由
 API、HTML fallback 或 404 接管。</p>
@@ -1598,7 +2105,7 @@ configureServer 后置中间件能在 index.html 前提供自定义响应。</p>
 <li>默认生成弱 ETag，If-None-Match 相等则返回 304；</li>
 <li>写入 MIME、<code>Cache-Control: no-cache</code>、ETag 与用户 headers；</li>
 <li>对 JS/CSS 注入真实 Source Map；</li>
-<li>JS 没有 map 时生成 identity fallback map；已有内联 map 或明确空 mappings 时跳过；</li>
+<li>JS 没有可用 map 时生成 fallback map；已有 sourceMappingURL 注释或明确空 mappings 时跳过；</li>
 <li>HEAD 返回与 GET 一致的状态/headers，但不发送 body。</li>
 </ol>
 <p>fallback map 修复了浏览器断点无法对齐的问题
@@ -1606,14 +2113,16 @@ configureServer 后置中间件能在 index.html 前提供自定义响应。</p>
 （<a href="https://github.com/vitejs/vite/pull/14370" target="_blank" rel="noreferrer noopener">PR #14370</a>）。HEAD 的响应头/状态契约由
 <a href="https://github.com/vitejs/vite/pull/20421" target="_blank" rel="noreferrer noopener">PR #20421</a> 固化。</p>
 <h3 id="404-与-error"><a class="heading-anchor" href="#404-%E4%B8%8E-error" aria-label="链接到本节">#</a>404 与 Error</h3>
-<p>独立模式的 <code>notFoundMiddleware()</code> 在所有普通中间件都 next 后返回空 404。middleware mode 不
-安装它，宿主应用还有机会处理路由。</p>
+<p><code>appType: 'spa'</code> 或 <code>'mpa'</code> 会安装 <code>notFoundMiddleware()</code>，普通中间件都 next 后返回空 404；
+middleware mode 同样如此。<code>appType: 'custom'</code> 不安装 HTML fallback、HTML 响应和这层 404，
+宿主应用可以在 Vite 之后接管路由。</p>
 <p><code>errorMiddleware()</code> 必须保留四个形参；Connect 用函数 arity 判断它是错误中间件。错误会：</p>
 <ul>
 <li>过滤/格式化后写入终端；</li>
 <li>通过 client HotChannel 推给已打开页面的 ErrorOverlay；</li>
 <li>独立模式返回能动态加载 Overlay 的 500 HTML；若 Overlay 自身加载失败，退回纯 DOM 错误页；</li>
-<li>middleware mode 可 <code>next()</code> 给宿主错误处理器。</li>
+<li>middleware mode 记录并推送错误后调用无参数 <code>next()</code>，把响应权交回宿主后续普通中间件；
+原错误没有通过 <code>next(err)</code> 传给宿主错误处理器。</li>
 </ul>
 <p><code>prepareError()</code> 只复制 message、stack、id、frame、plugin、loc 等必要字段，避免 PostCSS 等插件
 挂载的完整对象导致序列化过大或失败，并移除终端控制字符。</p>
@@ -1640,7 +2149,7 @@ configureServer 后置中间件能在 index.html 前提供自定义响应。</p>
 </tr>
 <tr>
 <td><code>base-conflict</code></td>
-<td>请求入口剥离 base 不应删除输出 import 的 base</td>
+<td>绝对磁盘路径与 base 前缀冲突时仍正确生成 import URL</td>
 </tr>
 <tr>
 <td><code>fs-serve</code> matrix</td>
@@ -1660,9 +2169,7 @@ configureServer 后置中间件能在 index.html 前提供自定义响应。</p>
 “全部请求都坏了”误认为成功；放行场景是必要的反证。</p>
 <h2 id="关键源码证据"><a class="heading-anchor" href="#%E5%85%B3%E9%94%AE%E6%BA%90%E7%A0%81%E8%AF%81%E6%8D%AE" aria-label="链接到本节">#</a>关键源码证据</h2>
 <p>目标版本源码摘录，来源：<code>packages/vite/src/node/server/index.ts</code>，<code>_createServer()</code> 的中间件装配：</p>
-<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">// serve static files under /public
-// this applies before the transform middleware so that these files are served
-// as-is without transforms.
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">// public 文件必须位于 transform 前，确保原样提供且不进入插件转换。
 if (publicDir) {
   middlewares.use(servePublicMiddleware(server, publicFiles))
 }
@@ -1671,15 +2178,36 @@ if (config.experimental.bundledDev) {
   middlewares.use(triggerLazyBundlingMiddleware(server))
   middlewares.use(memoryFilesMiddleware(server))
 } else {
-  // main transform middleware
+  // 普通开发模式的模块转换主入口。
   middlewares.use(transformMiddleware(server))
 
-  // serve static files
+  // /@fs/ 与 root 静态文件在 transform 未处理时兜底。
   middlewares.use(serveRawFsMiddleware(server))
   middlewares.use(serveStaticMiddleware(server))
 }
 </code></pre></figure><p>Connect 的注册顺序就是请求控制流：public 资源先原样返回；bundled-dev 改走内存文件；普通开发
 模式先尝试模块转换，只有未处理请求才回退到 <code>/@fs/</code> 与 root 静态文件。</p>
+<p>允许与拒绝之间还有“交给下游”的第三种结果。<code>middlewares/static.ts</code> 的 <code>checkLoadingAccess()</code>
+直接表达这个区别（源码摘录）：</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">if (isFileLoadingAllowed(config, slash(path))) {
+  return &#039;allowed&#039;
+}
+if (isFileReadable(path)) {
+  return &#039;denied&#039;
+}
+return &#039;fallback&#039;
+</code></pre></figure><p>例如 fs.allow 只包含 <code>/app/src</code>：<code>/app/secret.txt</code> 可读但不在允许范围，得到 denied 并返回 403；
+<code>/api/users</code> 没有对应可读文件，得到 fallback，后续宿主中间件仍可回答 API 请求。</p>
+<p><code>middlewares/error.ts</code> 的最后一层同样按具体条件决定响应权（源码摘录，省略 500 HTML 正文）：</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">logError(server, err)
+if (allowNext) {
+  next()
+} else {
+  res.statusCode = 500
+  // 这里继续生成包含 ErrorOverlay 的 HTML 并结束响应。
+}
+</code></pre></figure><p>middleware mode 把 allowNext 设为 true。错误已经在 Vite 终端和页面通道报告，随后用无参数 next()
+恢复普通责任链；独立模式则由 Vite 结束 500 响应。</p>
 <h2 id="建议断点"><a class="heading-anchor" href="#%E5%BB%BA%E8%AE%AE%E6%96%AD%E7%82%B9" aria-label="链接到本节">#</a>建议断点</h2>
 <ol>
 <li><code>server/index.ts</code> 第一个 <code>middlewares.use()</code>：单步观察 Connect 怎样寻找下一个 handler。</li>
@@ -1700,7 +2228,7 @@ if (config.experimental.bundledDev) {
 <li>不存在且不允许的路径若直接返回 403，会破坏哪些宿主 API/SPA 场景？</li>
 <li>Error middleware 少写一个未使用形参，为什么会导致 Connect 不再把错误交给它？</li>
 </ol>
-</article><nav class="article-pager" aria-label="前后篇"><a class="pager-link previous" href="05-environment-api.html"><span class="pager-label">上一篇 · 05</span><span class="pager-title">Environment API</span></a><a class="pager-link next" href="07-module-resolution.html"><span class="pager-label">下一篇 · 07</span><span class="pager-title">模块解析</span></a></nav><footer class="site-footer">Vite v8.2.1 源码阅读站 · 所有机制结论限定于 commit 421615865dad3ed39137d17281814fc78a41246c。</footer></main><aside class="page-toc" aria-label="页内目录"><h2 class="toc-title">本页目录</h2><ol class="toc-list"><li class="depth-2"><a href="#%E9%98%85%E8%AF%BB%E8%BE%B9%E7%95%8C">阅读边界</a></li><li class="depth-2"><a href="#%E6%8E%A8%E8%8D%90%E9%98%85%E8%AF%BB%E9%A1%BA%E5%BA%8F">推荐阅读顺序</a></li><li class="depth-2"><a href="#%E4%B8%AD%E9%97%B4%E4%BB%B6%E6%80%BB%E9%A1%BA%E5%BA%8F">中间件总顺序</a></li><li class="depth-2"><a href="#%E7%AC%AC%E4%B8%80%E5%B1%82-%E6%8B%92%E7%BB%9D%E4%B8%8D%E5%8F%AF%E4%BF%A1%E8%AF%B7%E6%B1%82%E5%BD%A2%E7%8A%B6">第一层：拒绝不可信请求形状</a></li><li class="depth-3"><a href="#request-target-%E4%B8%AD%E7%9A%84">request-target 中的 #</a></li><li class="depth-3"><a href="#host-%E4%B8%8E-dns-rebinding">Host 与 DNS rebinding</a></li><li class="depth-3"><a href="#cors-%E4%B8%8E-host-%E4%B8%8D%E6%98%AF%E5%90%8C%E4%B8%80%E4%BB%B6%E4%BA%8B">CORS 与 Host 不是同一件事</a></li><li class="depth-2"><a href="#proxy-%E8%AF%B7%E6%B1%82%E7%A6%BB%E5%BC%80-vite-%E7%9A%84%E5%88%86%E6%B5%81%E7%82%B9">proxy：请求离开 Vite 的分流点</a></li><li class="depth-3"><a href="#http-bypass-%E7%8A%B6%E6%80%81%E6%9C%BA">HTTP bypass 状态机</a></li><li class="depth-3"><a href="#websocket-bypass">WebSocket bypass</a></li><li class="depth-2"><a href="#base-%E5%85%AC%E5%BC%80-url-%E4%B8%8E%E5%86%85%E9%83%A8-url-%E7%9A%84%E8%BE%B9%E7%95%8C">base：公开 URL 与内部 URL 的边界</a></li><li class="depth-2"><a href="#%E4%B8%89%E6%9D%A1%E9%9D%99%E6%80%81%E6%96%87%E4%BB%B6%E5%85%A5%E5%8F%A3">三条静态文件入口</a></li><li class="depth-3"><a href="#publicdir">publicDir</a></li><li class="depth-3"><a href="#%E9%A1%B9%E7%9B%AE-root">项目 root</a></li><li class="depth-3"><a href="#fs">/@fs/</a></li><li class="depth-2"><a href="#server-fs-%E6%96%87%E4%BB%B6%E8%AE%BF%E9%97%AE%E7%AE%97%E6%B3%95">server.fs 文件访问算法</a></li><li class="depth-3"><a href="#%E4%B8%BA%E4%BB%80%E4%B9%88%E6%A3%80%E6%9F%A5%E6%94%BE%E5%9C%A8-sirv-%E5%86%85">为什么检查放在 sirv 内</a></li><li class="depth-3"><a href="#%E5%88%A4%E5%AE%9A%E4%BC%98%E5%85%88%E7%BA%A7">判定优先级</a></li><li class="depth-3"><a href="#windows-%E7%89%B9%E6%AE%8A%E8%B7%AF%E5%BE%84">Windows 特殊路径</a></li><li class="depth-3"><a href="#denied-%E4%B8%8E-fallback">denied 与 fallback</a></li><li class="depth-2"><a href="#html-fallback-%E5%8F%AA%E8%B4%9F%E8%B4%A3%E6%94%B9%E5%86%99">HTML fallback 只负责改写</a></li><li class="depth-2"><a href="#%E6%AD%A3%E5%B8%B8%E5%93%8D%E5%BA%94-404-%E4%B8%8E%E9%94%99%E8%AF%AF%E5%93%8D%E5%BA%94">正常响应、404 与错误响应</a></li><li class="depth-3"><a href="#send">send()</a></li><li class="depth-3"><a href="#404-%E4%B8%8E-error">404 与 Error</a></li><li class="depth-2"><a href="#%E7%94%A8%E4%BE%8B%E6%80%8E%E6%A0%B7%E6%98%A0%E5%B0%84%E6%BA%90%E7%A0%81">用例怎样映射源码</a></li><li class="depth-2"><a href="#%E5%85%B3%E9%94%AE%E6%BA%90%E7%A0%81%E8%AF%81%E6%8D%AE">关键源码证据</a></li><li class="depth-2"><a href="#%E5%BB%BA%E8%AE%AE%E6%96%AD%E7%82%B9">建议断点</a></li><li class="depth-2"><a href="#%E5%A4%8D%E7%9B%98%E9%A2%98">复盘题</a></li></ol></aside></div><script>;(function () {
+</article><nav class="article-pager" aria-label="前后篇"><a class="pager-link previous" href="05-environment-api.html"><span class="pager-label">上一篇 · 05</span><span class="pager-title">Environment API</span></a><a class="pager-link next" href="07-module-resolution.html"><span class="pager-label">下一篇 · 07</span><span class="pager-title">模块解析</span></a></nav><footer class="site-footer">Vite v8.2.1 源码阅读站 · 所有机制结论限定于 commit 421615865dad3ed39137d17281814fc78a41246c。</footer></main><aside class="page-toc" aria-label="页内目录"><h2 class="toc-title">本页目录</h2><ol class="toc-list"><li class="depth-2"><a href="#%E9%98%85%E8%AF%BB%E8%BE%B9%E7%95%8C">阅读边界</a></li><li class="depth-2"><a href="#%E6%8E%A8%E8%8D%90%E9%98%85%E8%AF%BB%E9%A1%BA%E5%BA%8F">推荐阅读顺序</a></li><li class="depth-2"><a href="#%E4%B8%AD%E9%97%B4%E4%BB%B6%E6%80%BB%E9%A1%BA%E5%BA%8F">中间件总顺序</a></li><li class="depth-2"><a href="#%E4%B8%80%E6%AC%A1%E6%A8%A1%E5%9D%97%E8%AF%B7%E6%B1%82%E6%80%8E%E6%A0%B7%E8%B7%A8%E5%B1%82">一次模块请求怎样跨层</a></li><li class="depth-2"><a href="#%E7%AC%AC%E4%B8%80%E5%B1%82-%E6%8B%92%E7%BB%9D%E4%B8%8D%E5%8F%AF%E4%BF%A1%E8%AF%B7%E6%B1%82%E5%BD%A2%E7%8A%B6">第一层：拒绝不可信请求形状</a></li><li class="depth-3"><a href="#request-target-%E4%B8%AD%E7%9A%84">request-target 中的 #</a></li><li class="depth-3"><a href="#host-%E4%B8%8E-dns-rebinding">Host 与 DNS rebinding</a></li><li class="depth-3"><a href="#cors-%E4%B8%8E-host-%E4%B8%8D%E6%98%AF%E5%90%8C%E4%B8%80%E4%BB%B6%E4%BA%8B">CORS 与 Host 不是同一件事</a></li><li class="depth-2"><a href="#proxy-%E8%AF%B7%E6%B1%82%E7%A6%BB%E5%BC%80-vite-%E7%9A%84%E5%88%86%E6%B5%81%E7%82%B9">proxy：请求离开 Vite 的分流点</a></li><li class="depth-3"><a href="#http-bypass-%E7%8A%B6%E6%80%81%E6%9C%BA">HTTP bypass 状态机</a></li><li class="depth-3"><a href="#websocket-bypass">WebSocket bypass</a></li><li class="depth-2"><a href="#base-%E5%85%AC%E5%BC%80-url-%E4%B8%8E%E5%86%85%E9%83%A8-url-%E7%9A%84%E8%BE%B9%E7%95%8C">base：公开 URL 与内部 URL 的边界</a></li><li class="depth-2"><a href="#%E4%B8%89%E6%9D%A1%E9%9D%99%E6%80%81%E6%96%87%E4%BB%B6%E5%85%A5%E5%8F%A3">三条静态文件入口</a></li><li class="depth-3"><a href="#publicdir">publicDir</a></li><li class="depth-3"><a href="#%E9%A1%B9%E7%9B%AE-root">项目 root</a></li><li class="depth-3"><a href="#fs">/@fs/</a></li><li class="depth-2"><a href="#server-fs-%E6%96%87%E4%BB%B6%E8%AE%BF%E9%97%AE%E7%AE%97%E6%B3%95">server.fs 文件访问算法</a></li><li class="depth-3"><a href="#%E4%B8%BA%E4%BB%80%E4%B9%88%E6%A3%80%E6%9F%A5%E6%94%BE%E5%9C%A8-sirv-%E5%86%85">为什么检查放在 sirv 内</a></li><li class="depth-3"><a href="#%E5%88%A4%E5%AE%9A%E4%BC%98%E5%85%88%E7%BA%A7">判定优先级</a></li><li class="depth-3"><a href="#windows-%E7%89%B9%E6%AE%8A%E8%B7%AF%E5%BE%84">Windows 特殊路径</a></li><li class="depth-3"><a href="#denied-%E4%B8%8E-fallback">denied 与 fallback</a></li><li class="depth-2"><a href="#html-fallback-%E5%8F%AA%E8%B4%9F%E8%B4%A3%E6%94%B9%E5%86%99">HTML fallback 只负责改写</a></li><li class="depth-2"><a href="#%E6%AD%A3%E5%B8%B8%E5%93%8D%E5%BA%94-404-%E4%B8%8E%E9%94%99%E8%AF%AF%E5%93%8D%E5%BA%94">正常响应、404 与错误响应</a></li><li class="depth-3"><a href="#send">send()</a></li><li class="depth-3"><a href="#404-%E4%B8%8E-error">404 与 Error</a></li><li class="depth-2"><a href="#%E7%94%A8%E4%BE%8B%E6%80%8E%E6%A0%B7%E6%98%A0%E5%B0%84%E6%BA%90%E7%A0%81">用例怎样映射源码</a></li><li class="depth-2"><a href="#%E5%85%B3%E9%94%AE%E6%BA%90%E7%A0%81%E8%AF%81%E6%8D%AE">关键源码证据</a></li><li class="depth-2"><a href="#%E5%BB%BA%E8%AE%AE%E6%96%AD%E7%82%B9">建议断点</a></li><li class="depth-2"><a href="#%E5%A4%8D%E7%9B%98%E9%A2%98">复盘题</a></li></ol></aside></div><script>;(function () {
   'use strict'
 
   var root = document.documentElement
@@ -1775,6 +2303,80 @@ if (config.experimental.bundledDev) {
   updateProgress()
   window.addEventListener('scroll', updateProgress, { passive: true })
   window.addEventListener('resize', updateProgress)
+
+  var expandedDiagram = null
+
+  function closeDiagram() {
+    if (!expandedDiagram) return
+    var figure = expandedDiagram
+    var button = figure.querySelector('[data-diagram-action="expand"]')
+    figure.classList.remove('is-expanded')
+    figure.removeAttribute('role')
+    figure.removeAttribute('aria-modal')
+    body.classList.remove('diagram-is-expanded')
+    button.setAttribute('aria-expanded', 'false')
+    button.textContent = '展开图示'
+    expandedDiagram = null
+    button.focus()
+  }
+
+  document.querySelectorAll('.engineering-diagram').forEach(function (figure) {
+    var viewport = figure.querySelector('.diagram-viewport')
+    var canvas = figure.querySelector('.diagram-canvas')
+    var output = figure.querySelector('.diagram-scale')
+    var width = Number(figure.getAttribute('data-diagram-width'))
+    var scale = 1
+
+    function setScale(next) {
+      scale = Math.min(2, Math.max(0.15, next))
+      canvas.style.width = width * scale + 'px'
+      output.textContent = Math.round(scale * 100) + '%'
+    }
+
+    figure.querySelectorAll('[data-diagram-action]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        var action = button.getAttribute('data-diagram-action')
+        if (action === 'in') setScale(scale * 1.2)
+        if (action === 'out') setScale(scale / 1.2)
+        if (action === 'fit') setScale(viewport.clientWidth / width)
+        if (action === 'reset') setScale(1)
+        if (action === 'expand') {
+          if (expandedDiagram === figure) {
+            closeDiagram()
+            return
+          }
+          closeDiagram()
+          expandedDiagram = figure
+          figure.classList.add('is-expanded')
+          figure.setAttribute('role', 'dialog')
+          figure.setAttribute('aria-modal', 'true')
+          body.classList.add('diagram-is-expanded')
+          button.setAttribute('aria-expanded', 'true')
+          button.textContent = '收起图示'
+          button.focus()
+        }
+      })
+    })
+  })
+
+  document.addEventListener('keydown', function (event) {
+    if (!expandedDiagram) return
+    if (event.key === 'Escape') closeDiagram()
+    if (event.key === 'Tab') {
+      var controls = Array.from(
+        expandedDiagram.querySelectorAll('button, a, [tabindex="0"]'),
+      )
+      var first = controls[0]
+      var last = controls[controls.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+  })
 
   document.querySelectorAll('.copy-code').forEach(function (button) {
     button.addEventListener('click', async function () {

@@ -19,16 +19,12 @@ import {queueChangeEvent} from '../events/ReactDOMEventReplaying';
 let didWarnValDefaultVal = false;
 
 /**
- * 实现一个 <textarea> 主机组件，该组件允许设置 `value` 和 `defaultValue`。这不同于传统的 DOM API，因为 value 通常是以 PCDATA 子元素的形式设置的。
- *
- * 如果未提供 `value`（或为 null/undefined），用户对 value 的操作将触发对该元素的更新。
- *
- * 如果提供了 `value`（且不为 null/undefined），渲染的元素将不会触发元素的更新。相反，必须更改 `value` 属性，渲染的元素才会被更新。
- *
- * 渲染的元素将初始化为空值，或者使用指定的 `defaultValue` 属性，或者使用子内容（已弃用）进行初始化。
+ * textarea 使用 value/defaultValue，而非把文本作为独立子 Fiber 管理。
+ * value 非 null 时为受控模式，浏览器编辑在事件结束后按最终 props 恢复。
+ * 初值按 value、defaultValue、旧 children、空字符串的优先级决定；children 用法已不推荐。
  */
 
-/** `validateTextareaProps` 校验输入并在开发环境报告不满足的不变量；用于初始化并同步 textarea 的受控值和默认内容。 */
+/** 开发期警告 value/defaultValue 冲突，以及直接 children 的旧用法。 */
 export function validateTextareaProps(element: Element, props: Object) {
   if (__DEV__) {
     if (
@@ -56,7 +52,7 @@ export function validateTextareaProps(element: Element, props: Object) {
   }
 }
 
-/** `updateTextarea` 更新对应关联或宿主状态，并保持后续读取看到一致快照；用于初始化并同步 textarea 的受控值和默认内容。 */
+/** 受控 value 转字符串后仅在变化时写入，避免丢失选区；随后同步 defaultValue。 */
 export function updateTextarea(
   element: Element,
   value: ?string,
@@ -86,7 +82,7 @@ export function updateTextarea(
   }
 }
 
-/** `initTextarea` 执行该模块的单一职责，并把副作用限制在当前 DOM/Fiber 边界；用于初始化并同步 textarea 的受控值和默认内容。 */
+/** 按 value、defaultValue、旧 children、空字符串优先级确定初值，写 defaultValue 并从有效 textContent 初始化 value。 */
 export function initTextarea(
   element: Element,
   value: ?string,
@@ -127,8 +123,7 @@ export function initTextarea(
   const stringValue = getToStringValue(initialValue);
   node.defaultValue = stringValue as any; //这将被转换为字符串。
 
-  //这是在 postMount 中，因为我们需要访问 DOM 节点，而这是不可以的
-  //可在组件挂载后使用。
+  // 初始属性写入已提供 DOM 节点；读取 textContent 时仍处于离线组树阶段。
   const textContent = node.textContent;
 
   //只有当 textContent 等于预期时才设置 node.value
@@ -146,7 +141,7 @@ export function initTextarea(
   track(element as any);
 }
 
-/** `hydrateTextarea` 执行该模块的单一职责，并把副作用限制在当前 DOM/Fiber 边界；用于初始化并同步 textarea 的受控值和默认内容。 */
+/** 保留当前 DOM value，用初始 props 建立 tracker 基线，检测到编辑则排队 hydration change。 */
 export function hydrateTextarea(
   element: Element,
   value: ?string,
@@ -160,9 +155,7 @@ export function hydrateTextarea(
     }
     initialValue = defaultValue;
   }
-  //跟踪我们最后观察到的值，也就是已水合的值，所以
-  //任何触发的更改事件都会在实际对象上触发 onChange
-  //当前值。
+  // 以初始 props 建立 tracker 基线，再与保留的 DOM 用户输入比较。
   const stringValue = toString(getToStringValue(initialValue));
   const changed = trackHydrated(node as any, stringValue, false);
   if (changed) {
@@ -172,7 +165,7 @@ export function hydrateTextarea(
   }
 }
 
-/** `restoreControlledTextareaState` 更新对应关联或宿主状态，并保持后续读取看到一致快照；用于初始化并同步 textarea 的受控值和默认内容。 */
+/** 按最新 props 调用 updateTextarea，恢复受控 value。 */
 export function restoreControlledTextareaState(
   element: Element,
   props: Object,

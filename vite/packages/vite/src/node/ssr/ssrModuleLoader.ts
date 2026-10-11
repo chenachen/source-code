@@ -43,7 +43,7 @@ export async function ssrLoadModule(
   )
 }
 
-/** 确保模块图入口存在，复用缓存错误/runner，并把结果与错误回写 ModuleNode。 */
+/** 确保图入口存在并复用缓存错误；求值结果回写由 SSRCompatModuleRunner 完成，失败在此记录。 */
 async function instantiateModule(
   url: string,
   runner: ModuleRunner,
@@ -105,7 +105,7 @@ class SSRCompatModuleRunner extends ModuleRunner {
     callstack: string[],
   ): Promise<any> {
     const id = mod.meta && 'id' in mod.meta && mod.meta.id
-    // external module 没有 serverId，直接走 ModuleRunner 的原生 external import。
+    // 元信息未带 ID 时保留原 URL，交给基类执行；正常 Runner 会先补齐规范 ID。
     if (!id) {
       return super.directRequest(url, mod, callstack)
     }
@@ -113,6 +113,7 @@ class SSRCompatModuleRunner extends ModuleRunner {
     const viteMod = this.environment.moduleGraph.getModuleById(id)
 
     if (!viteMod) {
+      // external 等没有 server 图节点的模块仍可求值，但没有兼容字段可回写。
       return super.directRequest(id, mod, callstack)
     }
 

@@ -27,14 +27,18 @@ describe('ReactDOMConsoleErrorReporting', () => {
     const InternalTestUtils = require('internal-test-utils');
     waitForThrow = InternalTestUtils.waitForThrow;
 
+    /** 提交 render/layout/passive 错误时展示错误消息的边界，供区别 caught 与 window error 报告。 */
     ErrorBoundary = class extends React.Component {
-      /** `state`：记录测试夹具在当前场景中的状态。 */
+
+      /** 保存已捕获错误；null 时允许正常 children 渲染。 */
       state = {error: null};
-      /** `getDerivedStateFromError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 把错误映射进边界状态，让下一次 render 选择错误 UI。 */
       static getDerivedStateFromError(error) {
         return {error};
       }
-      /** `render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 错误时输出 Caught 标题，否则透传子树。 */
       render() {
         if (this.state.error) {
           return <h1>Caught: {this.state.error.message}</h1>;
@@ -42,6 +46,7 @@ describe('ReactDOMConsoleErrorReporting', () => {
         return this.props.children;
       }
     };
+    /** 提供 OK 标题，用于每例错误后验证根还能正常更新。 */
     NoError = function () {
       return <h1>OK</h1>;
     };
@@ -61,16 +66,11 @@ describe('ReactDOMConsoleErrorReporting', () => {
 
   describe('ReactDOM.render', () => {
     // @gate !disableLegacyMode
-    /**
-     * 代表场景（Given–When–Then）：
-     * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-     * When 执行「logs errors during event handlers」描述的渲染或交互；
-     * Then 通过本用例的 DOM、日志或调度断言确认行为。
-     *
-     * 验证机制：断言连接 ReactDOM 公开入口、ReactDOMRoot 根生命周期及 DOM 提交结果。
-     */
+
+    /** legacy 根按钮 onClick 抛 Boom，act 拒绝且 window 收到一次 error；开发 console.error 仅含旧 API 警告，随后渲染 OK 验证错误未污染下次更新。 */
     it('logs errors during event handlers', async () => {
-      /** `Foo`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /** 返回点击处理器会抛 Boom 的按钮，触发浏览器事件报告路径。 */
       function Foo() {
         return (
           <button
@@ -146,9 +146,11 @@ describe('ReactDOMConsoleErrorReporting', () => {
     });
 
     // @gate !disableLegacyMode
-    /** 测试场景：验证「logs render errors without an error boundary」描述的渲染、交互或错误处理结果。 */
+
+    /** legacy 根无边界的 Foo 在 render 抛 Boom，act 拒绝并触发 window error；开发 console.warn 提供边界建议、console.error 仅旧 API 警告，后续 OK 更新成功。 */
     it('logs render errors without an error boundary', async () => {
-      /** `Foo`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /** 在 render 立即抛 Boom，验证无边界的 legacy 根错误报告。 */
       function Foo() {
         throw Error('Boom');
       }
@@ -217,9 +219,11 @@ describe('ReactDOMConsoleErrorReporting', () => {
     });
 
     // @gate !disableLegacyMode
-    /** 测试场景：验证「logs render errors with an error boundary」描述的渲染、交互或错误处理结果。 */
+
+    /** legacy 根 ErrorBoundary 捕获 Foo 的 render 错误，无 window error 或 warn；console.error 报被捕获错误（开发另有旧 API 提示），替换成 OK 后恢复。 */
     it('logs render errors with an error boundary', async () => {
-      /** `Foo`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /** 在边界子 render 抛 Boom，验证错误被边界捕获的报告路径。 */
       function Foo() {
         throw Error('Boom');
       }
@@ -233,7 +237,7 @@ describe('ReactDOMConsoleErrorReporting', () => {
         );
       });
 
-      // 顶层错误已被 `try/catch` 捕获，因此不会看到 error event。
+      // 错误由 ErrorBoundary 捕获并走 caught error 报告，不触发 window error。
       expect(windowOnError).not.toBeCalled();
       expect(console.warn).not.toBeCalled();
 
@@ -294,9 +298,11 @@ describe('ReactDOMConsoleErrorReporting', () => {
     });
 
     // @gate !disableLegacyMode
-    /** 测试场景：验证「logs layout effect errors without an error boundary」描述的渲染、交互或错误处理结果。 */
+
+    /** 无边界 Foo 的 layout effect 抛 Boom，挂载 act 拒绝并报告 window error；开发 warn 建议加边界，随后 OK 挂载不再报告该错误。 */
     it('logs layout effect errors without an error boundary', async () => {
-      /** `Foo`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /** 在 layout effect 抛 Boom，覆盖无边界提交阶段错误。 */
       function Foo() {
         React.useLayoutEffect(() => {
           throw Error('Boom');
@@ -370,9 +376,11 @@ describe('ReactDOMConsoleErrorReporting', () => {
     });
 
     // @gate !disableLegacyMode
-    /** 测试场景：验证「logs layout effect errors with an error boundary」描述的渲染、交互或错误处理结果。 */
+
+    /** ErrorBoundary 包住 layout effect 抛 Boom 的 Foo，提交错误进入边界而不触发 window error；开发/生产分别验证带栈或原错误的 console.error，并确认 OK 更新可恢复。 */
     it('logs layout effect errors with an error boundary', async () => {
-      /** `Foo`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /** 在 layout effect 抛 Boom，覆盖边界捕获提交错误。 */
       function Foo() {
         React.useLayoutEffect(() => {
           throw Error('Boom');
@@ -389,7 +397,7 @@ describe('ReactDOMConsoleErrorReporting', () => {
         );
       });
 
-      // 顶层错误已被 `try/catch` 捕获，因此不会看到 error event。
+      // 错误由 ErrorBoundary 捕获并走 caught error 报告，不触发 window error。
       expect(windowOnError).not.toBeCalled();
       expect(console.warn).not.toBeCalled();
 
@@ -450,9 +458,11 @@ describe('ReactDOMConsoleErrorReporting', () => {
     });
 
     // @gate !disableLegacyMode
-    /** 测试场景：验证「logs passive effect errors without an error boundary」描述的渲染、交互或错误处理结果。 */
+
+    /** 无边界 Foo 的 passive effect 抛 Boom，等待后台错误再检查 window error；开发 warn 有边界建议，清空 spy 后 OK 更新无残留错误，覆盖被动提交的报告路径。 */
     it('logs passive effect errors without an error boundary', async () => {
-      /** `Foo`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /** 在 passive effect 抛 Boom，让 waitForThrow 观察后台错误报告。 */
       function Foo() {
         React.useEffect(() => {
           throw Error('Boom');
@@ -465,7 +475,7 @@ describe('ReactDOMConsoleErrorReporting', () => {
         await waitForThrow('Boom');
       });
 
-      // 顶层错误已被 `try/catch` 捕获，因此不会看到 error event。
+      // 无边界 passive 错误走 uncaught 报告，下面应收到一次 window error。
       expect(windowOnError.mock.calls).toEqual([
         [
           expect.objectContaining({
@@ -524,9 +534,11 @@ describe('ReactDOMConsoleErrorReporting', () => {
     });
 
     // @gate !disableLegacyMode
-    /** 测试场景：验证「logs passive effect errors with an error boundary」描述的渲染、交互或错误处理结果。 */
+
+    /** ErrorBoundary 包住 passive effect 抛 Boom 的 Foo，act 完成边界恢复且无 window error/warn；console.error 包含被捕获错误，随后用 OK 替换并检查恢复。 */
     it('logs passive effect errors with an error boundary', async () => {
-      /** `Foo`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /** 在 passive effect 抛 Boom，由父错误边界恢复子树。 */
       function Foo() {
         React.useEffect(() => {
           throw Error('Boom');
@@ -543,7 +555,7 @@ describe('ReactDOMConsoleErrorReporting', () => {
         );
       });
 
-      // 顶层错误已被 `try/catch` 捕获，因此不会看到 error event。
+      // 错误由 ErrorBoundary 捕获并走 caught error 报告，不触发 window error。
       expect(windowOnError).not.toBeCalled();
       expect(console.warn).not.toBeCalled();
 

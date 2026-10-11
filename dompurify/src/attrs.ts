@@ -134,8 +134,8 @@ export const html = freeze([
  *
  * @remarks
  * 上游由默认配置、`USE_PROFILES.svg` 和 `USE_PROFILES.svgFilters` 读取；下游参与
- * 属性名允许判断。目录只决定属性名是否进入候选集合，属性值仍须通过 URI、命名空间
- * 及结构安全检查。
+ * 属性名允许判断。目录只决定属性名是否进入候选集合；值按其类别接受 URI 或 URI-safe
+ * 判定，逐属性流程还会执行结构安全检查。
  */
 export const svg = freeze([
   'accent-height',
@@ -402,7 +402,7 @@ export const mathMl = freeze([
  *
  * @remarks
  * 核心不会把它当成独立配置档；默认配置及 SVG、SVG Filter、MathML 配置档会将其与
- * 对应属性目录合并。属性值和命名空间仍由后续安全检查约束。
+ * 对应属性目录合并。列入目录只允许属性名，属性值仍按逐属性规则判断。
  */
 export const xml = freeze([
   'xlink:href',

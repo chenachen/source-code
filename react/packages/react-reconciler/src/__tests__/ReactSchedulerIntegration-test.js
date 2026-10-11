@@ -25,7 +25,7 @@ let waitFor;
 
 /** 覆盖 React 提交与 Scheduler 的 passive、paint、idle 优先级交互。 */
 describe('ReactSchedulerIntegration', () => {
-  /** 重置模块并绑定真实 mock Scheduler 的优先级、paint 与分片冲刷工具。 */
+  /** 重置模块并绑定 scheduler/unstable_mock 的优先级、paint 与分片冲刷工具。 */
   beforeEach(() => {
     jest.resetModules();
 
@@ -102,7 +102,7 @@ describe('ReactSchedulerIntegration', () => {
     ]);
   });
 
-  /** Given–When–Then：Given A/B/C 已排在 React transition 任务前，D/E 在 React 开始后才插入；When 只冲刷到下一次 paint；Then React 提交 Update 后主动请求 paint，D/E 留到 paint 之后。通过分段 Scheduler 日志和根输出验证 requestPaint 集成。 */
+  /** Given–When–Then：Given A/B/C 已排在 React transition 任务前，D/E 在 A 已执行、React callback 已排队但尚未渲染时插入；When 只冲刷到下一次 paint；Then React 提交 Update 后主动请求 paint，D/E 留到 paint 之后。通过分段 Scheduler 日志和根输出验证 requestPaint 集成。 */
   it('requests a paint after committing', async () => {
     const scheduleCallback = Scheduler.unstable_scheduleCallback;
 
@@ -244,22 +244,21 @@ describe(
       );
     });
 
-  /** Given–When–Then：Given组件在渲染中推进时间并 requestPaint，复现过期任务上 shouldYield 曾返回 true 的真实条件；When公共 API 连续推进两个 paint；Then渲染能够完成而不在 work loop 与 Scheduler 间死循环。通过 act 正常返回验证修复。 */
+  /** Given–When–Then：Given组件在 render 中两次推进 mock 时间并 requestPaint；When连续等待两个 mock paint 检查点；Then act 正常返回，没有陷入历史上的过期任务让出死循环。此用例没有记录 shouldYield 调用或断言最终输出；下一例用包装器检查具体调用顺序。 */
     it('using public APIs to trigger real world scenario', async () => {
       // 此用例复现：React 的 Scheduler 任务已经超时，
       // 但 `shouldYield` 仍返回 true；旧缺陷会让 React
       // 进入 work loop 后立即把控制权交回 Scheduler，
       // 从而形成死循环。
       //
-      // 下一用例覆盖相同条件；区别在于本用例只使用公共 API，
-      // 下一用例则 mock `shouldYield`
-      // 以精确观察调用时机。
-      /** 透明返回文本；公共 API 回归只关心能否结束，不依赖内部日志。 */
+      // 本例通过 mock 时钟与 requestPaint 构造回归场景；
+      // 下一例另包装 shouldYield，直接记录是否调用。
+      /** 透明返回文本；此回归以 act 能返回为断言，不记录渲染日志。 */
       function Text({text}) {
         return text;
       }
 
-      /** 在文本之间插入两次时间推进触发器，纯公共 API 复现历史 Scheduler 条件。 */
+      /** 在文本之间插入两次 mock 时间推进和 requestPaint，构造历史回归的输入。 */
       function App({step}) {
         return (
           <>
@@ -272,7 +271,7 @@ describe(
         );
       }
 
-      /** 推进虚拟时间并请求 paint，制造“任务已过期但 shouldYield 为 true”的旧版 Scheduler 状态。 */
+      /** 推进虚拟时间并请求 paint；旧 Scheduler 曾在过期任务上继续返回 shouldYield=true。 */
       function TriggerErstwhileSchedulerBug() {
         // 推进时间并请求 paint 会触发 Scheduler 曾有的缺陷：
         // 当前任务虽已过期，`shouldYield` 仍返回 true。
@@ -345,7 +344,7 @@ describe(
 
 /** 验证 act 使用专用队列耗尽策略，不信任 Scheduler.shouldYield 的测试替身。 */
 describe('`act` bypasses Scheduler methods completely,', () => {
-  /** shouldYield 调用计数上限；若 act 未绕过它，测试会确定性抛错而非永久挂起。 */
+  /** shouldYield 调用计数保护；超过阈值时抛错，避免持续让出造成测试挂起。 */
   let infiniteLoopGuard;
 
   /** 安装始终让出的 Scheduler 包装与死循环保护，构造 act 的对抗性环境。 */
@@ -383,7 +382,7 @@ describe('`act` bypasses Scheduler methods completely,', () => {
     jest.mock('scheduler', () => jest.requireActual('scheduler/unstable_mock'));
   });
 
-  /** Given–When–Then：Given mock shouldYield 永远返回 true 且带死循环保护；When public act 内启动 transition 渲染 A/B/C；Then act 绕过 Scheduler.shouldYield 并完整提交。通过未触发保护错误与最终根输出验证测试环境专用工作循环。 */
+  /** Given–When–Then：Given mock shouldYield 永远返回 true 且带死循环保护；When public act 内启动 transition 渲染 A/B/C；Then act 返回且最终输出完整 ABC，没有触发保护错误。实现的 DEV actQueue 分支直接调用 workLoopSync；本例未单独断言 shouldYield 调用次数为零。 */
   // @gate __DEV__
   it('inside `act`, does not call `shouldYield`, even during a concurrent render', async () => {
     /** 返回三个宿主兄弟，验证 act 即使面对永远让出也会完整提交。 */

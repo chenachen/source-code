@@ -23,6 +23,7 @@ let assertConsoleWarnDev;
 
 describe('ReactStrictMode', () => {
   beforeEach(() => {
+    // 每例重置React/DOM/server及断言工具；其余describe另重新加载并初始化自己的日志/spy，隔离严格诊断类型缓存。
     jest.resetModules();
     React = require('react');
     ReactDOM = require('react-dom');
@@ -38,15 +39,9 @@ describe('ReactStrictMode', () => {
     useReducer = React.useReducer;
   });
 
-  /**
-   * Given：已建立该文件所需的 renderer、容器与测试夹具。
-   * When：执行“should appear in the client component stack”场景的唯一关键操作。
-   * Then：断言 StrictMode 的重复调用、生命周期与日志诊断契约 的可观察结果。
-   *
-   * 验证机制：同时观察返回值、渲染输出或诊断信息，证明结果来自目标分支。
-   */
+  /** StrictMode 包 Foo，Foo 输出非法 ariaTypo div，客户端 act 挂载要求诊断栈为 div/Foo；期望中没有 StrictMode 帧，验证透明边界下真实组件定位。 */
   it('should appear in the client component stack', async () => {
-    /** 实现“should appear in the client component stack”场景所需的“Foo”测试夹具行为。 */
+    /** 返回带非法 ariaTypo 的 div，在 client/SSR 路径触发宿主属性诊断，供 StrictMode 透明栈帧检查。 */
     function Foo() {
       return <div ariaTypo="" />;
     }
@@ -68,12 +63,9 @@ describe('ReactStrictMode', () => {
     ]);
   });
 
-  /**
-   * 场景：“should appear in the SSR component stack”。
-   * 机制：验证StrictMode 的重复调用、生命周期与日志诊断契约，锁定可观察结果与失败边界。
-   */
+  /** StrictMode 包同样非法 ariaTypo 的 Foo，以 renderToString 同步 SSR；诊断栈为 div/Foo，没有 StrictMode 帧，验证服务端同一定位。 */
   it('should appear in the SSR component stack', () => {
-    /** 实现“should appear in the SSR component stack”场景所需的“Foo”测试夹具行为。 */
+    /** 返回带非法 ariaTypo 的 div，在 client/SSR 路径触发宿主属性诊断，供 StrictMode 透明栈帧检查。 */
     function Foo() {
       return <div ariaTypo="" />;
     }
@@ -93,45 +85,42 @@ describe('ReactStrictMode', () => {
 
   // @gate __DEV__
   // @gate !disableLegacyMode
-  /**
-   * 场景：“should invoke only precommit lifecycle methods twice in legacy roots”。
-   * 机制：验证StrictMode 的重复调用、生命周期与日志诊断契约，锁定可观察结果与失败边界。
-   */
+  /** 仅 DEV且旧根开启时运行：旧 ReactDOM.render 挂 Strict class，挂载构造/派生/render双调用而 didMount一次；SCU=true更新双派生/SCU/render、didUpdate一次，SCU=false仅双派生/SCU，验证提交前检查与提交钩子区分。 */
   it('should invoke only precommit lifecycle methods twice in legacy roots', async () => {
     let log = [];
     let shouldComponentUpdate = false;
-    /** 作为“should invoke only precommit lifecycle methods twice in legacy roots”场景的组件夹具，隔离待验证的 React 行为。 */
+    /** 记录构造、派生、SCU、render及提交钩子的 class；外部 shouldComponentUpdate 控制更新允许/跳过，供旧根双试算对照。 */
     class ClassComponent extends React.Component {
-      /** 保存“should invoke only precommit lifecycle methods twice in legacy roots”场景用于驱动更新或错误回退的组件状态。 */
+      /** 空对象初值，避免派生状态形状告警，让日志只反映 Strict 检查。 */
       state = {};
-      /** 根据新属性派生“should invoke only precommit lifecycle methods twice in legacy roots”场景的状态，用于验证静态生命周期语义。 */
+      /** 记录派生调用并返回 null 不改状态；存在该API使旧不安全生命周期不参与。 */
       static getDerivedStateFromProps() {
         log.push('getDerivedStateFromProps');
         return null;
       }
-      /** 初始化“should invoke only precommit lifecycle methods twice in legacy roots”场景所需的实例状态与观测记录。 */
+      /** 把 props 交给基类并记录 constructor，供DEV两次构造与生产单次比较。 */
       constructor(props) {
         super(props);
         log.push('constructor');
       }
-      /** 记录“should invoke only precommit lifecycle methods twice in legacy roots”场景的挂载提交，并执行仅在挂载后有效的观测。 */
+      /** 记录挂载提交阶段；旧根的 Strict 双试算后本例期望仅一次此钩子。 */
       componentDidMount() {
         log.push('componentDidMount');
       }
-      /** 记录“should invoke only precommit lifecycle methods twice in legacy roots”场景的更新提交，供生命周期顺序断言使用。 */
+      /** 记录成功更新的提交阶段，供与双派生/SCU/render试算区分。 */
       componentDidUpdate() {
         log.push('componentDidUpdate');
       }
-      /** 记录并清理“should invoke only precommit lifecycle methods twice in legacy roots”场景的卸载副作用。 */
+      /** 记录卸载提交阶段；本例主断言没有主动卸载此实例，保留fixture完整性。 */
       componentWillUnmount() {
         log.push('componentWillUnmount');
       }
-      /** 决定“should invoke only precommit lifecycle methods twice in legacy roots”场景是否继续协调，并让测试验证跳过更新的边界。 */
+      /** 记录SCU并返回外部开关，控制同树更新是否执行render/提交更新钩子。 */
       shouldComponentUpdate() {
         log.push('shouldComponentUpdate');
         return shouldComponentUpdate;
       }
-      /** 渲染“should invoke only precommit lifecycle methods twice in legacy roots”场景所需的元素树，使断言能够观察协调与提交结果。 */
+      /** 记录render后返回null，不输出宿主；供允许更新与SCU跳过的日志对照。 */
       render() {
         log.push('render');
         return null;
@@ -193,19 +182,16 @@ describe('ReactStrictMode', () => {
     ]);
   });
 
-  /**
-   * 场景：“should invoke setState callbacks twice”。
-   * 机制：验证StrictMode 的重复调用、生命周期与日志诊断契约，锁定可观察结果与失败边界。
-   */
+  /** 初始 class state.count=1，Strict root 中调用函数式 setState并统计 updater；DEV两次、生产一次，但提交 count=2，验证重复计算不叠加状态。题名 callback 实际是 updater，无提交 callback 参数。 */
   it('should invoke setState callbacks twice', async () => {
     let instance;
-    /** 作为“should invoke setState callbacks twice”场景的组件夹具，隔离待验证的 React 行为。 */
+    /** 初始count=1且render暴露实例的class，供函数式setState重复检查后最终只加一的断言。 */
     class ClassComponent extends React.Component {
-      /** 保存“should invoke setState callbacks twice”场景用于驱动更新或错误回退的组件状态。 */
+      /** 初始count=1，两个updater试算都应基于该先前值，而提交结果为2。 */
       state = {
         count: 1,
       };
-      /** 渲染“should invoke setState callbacks twice”场景所需的元素树，使断言能够观察协调与提交结果。 */
+      /** 保存this到instance后返回null，便于用例直接调用setState和读提交state。 */
       render() {
         instance = this;
         return null;
@@ -239,14 +225,11 @@ describe('ReactStrictMode', () => {
   });
 
   // @gate __DEV__
-  /**
-   * 场景：“double invokes useState and useReducer initializers functions”。
-   * 机制：验证StrictMode 的重复调用、生命周期与日志诊断契约，锁定可观察结果与失败边界。
-   */
+  /** 仅 DEV：Strict App 的 useState惰性初值1、useReducer第三参数初值2各记日志两次，宿主最终文本3，验证初始化器重复检查。 */
   it('double invokes useState and useReducer initializers functions', async () => {
     const log = [];
 
-    /** 作为“double invokes useState and useReducer initializers functions”场景的函数夹具，返回待协调内容或触发目标行为。 */
+    /** 调用useState/reducer惰性初始函数记录1/2两种计算，再返回3；不使用返回state驱动文本，仅观察初始化次数。 */
     function App() {
       React.useState(() => {
         log.push('Compute initial state count: 1');
@@ -284,17 +267,14 @@ describe('ReactStrictMode', () => {
   });
 
   // @gate !disableLegacyMode
-  /**
-   * 场景：“should invoke only precommit lifecycle methods twice in DEV legacy roots”。
-   * 机制：验证StrictMode 的重复调用、生命周期与日志诊断契约，锁定可观察结果与失败边界。
-   */
+  /** 旧根开启：Root 返回 Strict class，挂载及 SCU=true/false两更新比较 DEV双提交前调用、生产单次，提交钩子均一次，验证构建差异。 */
   it('should invoke only precommit lifecycle methods twice in DEV legacy roots', async () => {
     const {StrictMode} = React;
 
     let log = [];
     let shouldComponentUpdate = false;
 
-    /** 作为“should invoke only precommit lifecycle methods twice in DEV legacy roots”场景的函数夹具，返回待协调内容或触发目标行为。 */
+    /** 返回StrictMode包ClassComponent，为旧根DEV/生产生命周期比较提供函数祖先。 */
     function Root() {
       return (
         <StrictMode>
@@ -303,38 +283,38 @@ describe('ReactStrictMode', () => {
       );
     }
 
-    /** 作为“should invoke only precommit lifecycle methods twice in DEV legacy roots”场景的组件夹具，隔离待验证的 React 行为。 */
+    /** 记录构造、派生、SCU、render及提交钩子的 class；外部 shouldComponentUpdate 控制更新允许/跳过，供旧根双试算对照。 */
     class ClassComponent extends React.Component {
-      /** 保存“should invoke only precommit lifecycle methods twice in DEV legacy roots”场景用于驱动更新或错误回退的组件状态。 */
+      /** 空对象初值，避免派生状态形状告警，让日志只反映 Strict 检查。 */
       state = {};
-      /** 根据新属性派生“should invoke only precommit lifecycle methods twice in DEV legacy roots”场景的状态，用于验证静态生命周期语义。 */
+      /** 记录派生调用并返回 null 不改状态；存在该API使旧不安全生命周期不参与。 */
       static getDerivedStateFromProps() {
         log.push('getDerivedStateFromProps');
         return null;
       }
-      /** 初始化“should invoke only precommit lifecycle methods twice in DEV legacy roots”场景所需的实例状态与观测记录。 */
+      /** 把 props 交给基类并记录 constructor，供DEV两次构造与生产单次比较。 */
       constructor(props) {
         super(props);
         log.push('constructor');
       }
-      /** 记录“should invoke only precommit lifecycle methods twice in DEV legacy roots”场景的挂载提交，并执行仅在挂载后有效的观测。 */
+      /** 记录挂载提交阶段；旧根的 Strict 双试算后本例期望仅一次此钩子。 */
       componentDidMount() {
         log.push('componentDidMount');
       }
-      /** 记录“should invoke only precommit lifecycle methods twice in DEV legacy roots”场景的更新提交，供生命周期顺序断言使用。 */
+      /** 记录成功更新的提交阶段，供与双派生/SCU/render试算区分。 */
       componentDidUpdate() {
         log.push('componentDidUpdate');
       }
-      /** 记录并清理“should invoke only precommit lifecycle methods twice in DEV legacy roots”场景的卸载副作用。 */
+      /** 记录卸载提交阶段；本例主断言没有主动卸载此实例，保留fixture完整性。 */
       componentWillUnmount() {
         log.push('componentWillUnmount');
       }
-      /** 决定“should invoke only precommit lifecycle methods twice in DEV legacy roots”场景是否继续协调，并让测试验证跳过更新的边界。 */
+      /** 记录SCU并返回外部开关，控制同树更新是否执行render/提交更新钩子。 */
       shouldComponentUpdate() {
         log.push('shouldComponentUpdate');
         return shouldComponentUpdate;
       }
-      /** 渲染“should invoke only precommit lifecycle methods twice in DEV legacy roots”场景所需的元素树，使断言能够观察协调与提交结果。 */
+      /** 记录render后返回null，不输出宿主；供允许更新与SCU跳过的日志对照。 */
       render() {
         log.push('render');
         return null;
@@ -405,21 +385,18 @@ describe('ReactStrictMode', () => {
     }
   });
 
-  /**
-   * 场景：“should invoke setState callbacks twice in DEV”。
-   * 机制：验证StrictMode 的重复调用、生命周期与日志诊断契约，锁定可观察结果与失败边界。
-   */
+  /** 解构 StrictMode 后重复 class 函数式 setState场景，updater次数DEV2/生产1且state.count=2，验证两次试算同基准。实际仍未传提交callback。 */
   it('should invoke setState callbacks twice in DEV', async () => {
     const {StrictMode} = React;
 
     let instance;
-    /** 作为“should invoke setState callbacks twice in DEV”场景的组件夹具，隔离待验证的 React 行为。 */
+    /** 初始count=1且render暴露实例的class，供函数式setState重复检查后最终只加一的断言。 */
     class ClassComponent extends React.Component {
-      /** 保存“should invoke setState callbacks twice in DEV”场景用于驱动更新或错误回退的组件状态。 */
+      /** 初始count=1，两个updater试算都应基于该先前值，而提交结果为2。 */
       state = {
         count: 1,
       };
-      /** 渲染“should invoke setState callbacks twice in DEV”场景所需的元素树，使断言能够观察协调与提交结果。 */
+      /** 保存this到instance后返回null，便于用例直接调用setState和读提交state。 */
       render() {
         instance = this;
         return null;
@@ -453,14 +430,11 @@ describe('ReactStrictMode', () => {
   });
 
   // @gate __DEV__
-  /**
-   * 场景：“double invokes useMemo functions”。
-   * 机制：验证StrictMode 的重复调用、生命周期与日志诊断契约，锁定可观察结果与失败边界。
-   */
+  /** 仅 DEV：useMemo把text变大写，hello初挂与goodbye更新分别计算两次，宿主HELLO/GOODBYE，验证依赖变化的计算重复检查。 */
   it('double invokes useMemo functions', async () => {
     let log = [];
 
-    /** 作为“double invokes useMemo functions”场景的函数夹具，返回待协调内容或触发目标行为。 */
+    /** 以text作useMemo依赖，计算大写字符串并记日志，返回该字符串；供挂载与依赖变更两阶段双计算检查。 */
     function Uppercased({text}) {
       return useMemo(() => {
         const uppercased = text.toUpperCase();
@@ -504,13 +478,10 @@ describe('ReactStrictMode', () => {
   });
 
   // @gate __DEV__
-  /**
-   * 场景：“double invokes useMemo functions with first result”。
-   * 机制：验证StrictMode 的重复调用、生命周期与日志诊断契约，锁定可观察结果与失败边界。
-   */
+  /** 仅 DEV：useMemo返回新对象，hello初挂及goodbye更新各计算两次、两个render结果对象严格同引用，验证丢弃第二次试算值并复用第一次记忆化结果。 */
   it('double invokes useMemo functions with first result', async () => {
     let log = [];
-    /** 作为“double invokes useMemo functions with first result”场景的函数夹具，返回待协调内容或触发目标行为。 */
+    /** memo计算返回{uppercased}，render再将实际记忆结果对象记入log并输出字段；供两个render严格引用比较。 */
     function Uppercased({text}) {
       const memoizedResult = useMemo(() => {
         const uppercased = text.toUpperCase();
@@ -569,15 +540,12 @@ describe('ReactStrictMode', () => {
   });
 
   // @gate __DEV__
-  /**
-   * 场景：“double invokes setState updater functions”。
-   * 机制：验证StrictMode 的重复调用、生命周期与日志诊断契约，锁定可观察结果与失败边界。
-   */
+  /** 仅 DEV：Hook初值0，外部setCount函数式返回1并记日志；输出变1而计算日志两次，验证Hook updater重复检查。 */
   it('double invokes setState updater functions', async () => {
     const log = [];
 
     let setCount;
-    /** 作为“double invokes setState updater functions”场景的函数夹具，返回待协调内容或触发目标行为。 */
+    /** useState(0)并把setter暴露给外部setCount，返回count文本，供函数式Hook updater次数检查。 */
     function App() {
       const [count, _setCount] = useState(0);
       setCount = _setCount;
@@ -607,21 +575,18 @@ describe('ReactStrictMode', () => {
   });
 
   // @gate __DEV__
-  /**
-   * 场景：“double invokes reducer functions”。
-   * 机制：验证StrictMode 的重复调用、生命周期与日志诊断契约，锁定可观察结果与失败边界。
-   */
+  /** 仅 DEV：useReducer初值0，外部dispatch(1)；reducer日志两次且宿主1，验证动作计算重复而状态不累积。 */
   it('double invokes reducer functions', async () => {
     const log = [];
 
-    /** 根据测试动作计算下一状态，用于验证 StrictMode 下 reducer 调用语义。 */
+    /** 记录action并原样返回为下一state；prevState未用，供同动作两次试算而输出只更新一次的检查。 */
     function reducer(prevState, action) {
       log.push('Compute new state: ' + action);
       return action;
     }
 
     let dispatch;
-    /** 作为“double invokes reducer functions”场景的函数夹具，返回待协调内容或触发目标行为。 */
+    /** useReducer(reducer,0)并把dispatch暴露外部，返回count文本，供动作计算次数检查。 */
     function App() {
       const [count, _dispatch] = useReducer(reducer, 0);
       dispatch = _dispatch;
@@ -657,12 +622,9 @@ describe('Concurrent Mode', () => {
     act = require('internal-test-utils').act;
   });
 
-  /**
-   * 场景：“should warn about unsafe legacy lifecycle methods anywhere in a StrictMode tree”。
-   * 机制：验证StrictMode 的重复调用、生命周期与日志诊断契约，锁定可观察结果与失败边界。
-   */
+  /** StrictRoot 内App有不安全mount/update，深层Foo重复及Bar有receive；首次按钩子名聚合类型且Bar/Foo排序去重，之后换到非Strict App完成无新预期诊断，验证范围和类型去重。 */
   it('should warn about unsafe legacy lifecycle methods anywhere in a StrictMode tree', async () => {
-    /** 作为“should warn about unsafe legacy lifecycle methods anywhere in a StrictMode tree”场景的函数夹具，返回待协调内容或触发目标行为。 */
+    /** 把App整个复杂后代树放进StrictMode，供深层UNSAFE钩子聚合。 */
     function StrictRoot() {
       return (
         <React.StrictMode>
@@ -670,13 +632,13 @@ describe('Concurrent Mode', () => {
         </React.StrictMode>
       );
     }
-    /** 作为“should warn about unsafe legacy lifecycle methods anywhere in a StrictMode tree”场景的组件夹具，隔离待验证的 React 行为。 */
+    /** 包含UNSAFE mount/update并渲染Wrapper→Foo及Bar/Foo兄弟，构造不同深度与重复类型诊断。 */
     class App extends React.Component {
-      /** 记录“should warn about unsafe legacy lifecycle methods anywhere in a StrictMode tree”场景的旧版挂载前生命周期调用。 */
+      /** 空不安全钩子仅靠方法存在触发Strict诊断；无状态/日志副作用。 */
       UNSAFE_componentWillMount() {}
-      /** 记录“should warn about unsafe legacy lifecycle methods anywhere in a StrictMode tree”场景的旧版更新前生命周期调用。 */
+      /** 空不安全钩子仅靠方法存在触发Strict诊断；无状态/日志副作用。 */
       UNSAFE_componentWillUpdate() {}
-      /** 渲染“should warn about unsafe legacy lifecycle methods anywhere in a StrictMode tree”场景所需的元素树，使断言能够观察协调与提交结果。 */
+      /** 构造Wrapper中的Foo和兄弟Bar/Foo，验证Strict深层扫描及同类型警告去重。 */
       render() {
         return (
           <div>
@@ -691,24 +653,24 @@ describe('Concurrent Mode', () => {
         );
       }
     }
-    /** 作为“should warn about unsafe legacy lifecycle methods anywhere in a StrictMode tree”场景的函数夹具，返回待协调内容或触发目标行为。 */
+    /** 把children包div，给Foo增加普通函数/宿主层级，检查严格标记仍传播。 */
     function Wrapper({children}) {
       return <div>{children}</div>;
     }
-    /** 作为“should warn about unsafe legacy lifecycle methods anywhere in a StrictMode tree”场景的组件夹具，隔离待验证的 React 行为。 */
+    /** 带空UNSAFE接收props方法的叶class，供Strict警告按方法名合并并按类型去重。 */
     class Foo extends React.Component {
-      /** 记录“should warn about unsafe legacy lifecycle methods anywhere in a StrictMode tree”场景接收新属性时的旧版生命周期调用。 */
+      /** 空UNSAFE接收钩子，以存在性触发Strict诊断，本体不读nextProps或修改state。 */
       UNSAFE_componentWillReceiveProps() {}
-      /** 渲染“should warn about unsafe legacy lifecycle methods anywhere in a StrictMode tree”场景所需的元素树，使断言能够观察协调与提交结果。 */
+      /** 返回null，让不安全生命周期名称诊断不受宿主输出或其它错误干扰。 */
       render() {
         return null;
       }
     }
-    /** 作为“should warn about unsafe legacy lifecycle methods anywhere in a StrictMode tree”场景的组件夹具，隔离待验证的 React 行为。 */
+    /** 带空UNSAFE接收props方法的叶class，供Strict警告按方法名合并并按类型去重。 */
     class Bar extends React.Component {
-      /** 记录“should warn about unsafe legacy lifecycle methods anywhere in a StrictMode tree”场景接收新属性时的旧版生命周期调用。 */
+      /** 空UNSAFE接收钩子，以存在性触发Strict诊断，本体不读nextProps或修改state。 */
       UNSAFE_componentWillReceiveProps() {}
-      /** 渲染“should warn about unsafe legacy lifecycle methods anywhere in a StrictMode tree”场景所需的元素树，使断言能够观察协调与提交结果。 */
+      /** 返回null，让不安全生命周期名称诊断不受宿主输出或其它错误干扰。 */
       render() {
         return null;
       }
@@ -740,12 +702,9 @@ Please update the following components: App`,
     await act(() => root.render(<App />));
   });
 
-  /**
-   * 场景：“should coalesce warnings by lifecycle name”。
-   * 机制：验证StrictMode 的重复调用、生命周期与日志诊断契约，锁定可观察结果与失败边界。
-   */
+  /** Strict App的UNSAFE钩子、Parent旧名三钩子及Child UNSAFE receive并存；首次分别error聚合UNSAFE、warn聚合旧名，重复渲染无新预期诊断，验证诊断通道分开。 */
   it('should coalesce warnings by lifecycle name', async () => {
-    /** 作为“should coalesce warnings by lifecycle name”场景的函数夹具，返回待协调内容或触发目标行为。 */
+    /** 将App→Parent→Child放进Strict，供UNSAFE error与旧名warn两通道聚合。 */
     function StrictRoot() {
       return (
         <React.StrictMode>
@@ -753,35 +712,35 @@ Please update the following components: App`,
         </React.StrictMode>
       );
     }
-    /** 作为“should coalesce warnings by lifecycle name”场景的组件夹具，隔离待验证的 React 行为。 */
+    /** 带UNSAFE mount/update并返回Parent，供不安全钩子与旧名钩子的聚合区分。 */
     class App extends React.Component {
-      /** 记录“should coalesce warnings by lifecycle name”场景的旧版挂载前生命周期调用。 */
+      /** 空不安全钩子仅靠方法存在触发Strict诊断；无状态/日志副作用。 */
       UNSAFE_componentWillMount() {}
-      /** 记录“should coalesce warnings by lifecycle name”场景的旧版更新前生命周期调用。 */
+      /** 空不安全钩子仅靠方法存在触发Strict诊断；无状态/日志副作用。 */
       UNSAFE_componentWillUpdate() {}
-      /** 渲染“should coalesce warnings by lifecycle name”场景所需的元素树，使断言能够观察协调与提交结果。 */
+      /** 返回旧名生命周期Parent，再由它渲染UNSAFE Child，形成诊断链。 */
       render() {
         return <Parent />;
       }
     }
-    /** 作为“should coalesce warnings by lifecycle name”场景的组件夹具，隔离待验证的 React 行为。 */
+    /** 带三个旧名生命周期的中间类，供console.warn改名建议，与UNSAFE error分开。 */
     class Parent extends React.Component {
-      /** 实现“should coalesce warnings by lifecycle name”场景所需的“componentWillMount”测试夹具行为。 */
+      /** 空旧名钩子，以方法存在触发改名建议；无初始化、更新或订阅副作用。 */
       componentWillMount() {}
-      /** 实现“should coalesce warnings by lifecycle name”场景所需的“componentWillUpdate”测试夹具行为。 */
+      /** 空旧名钩子，以方法存在触发改名建议；无初始化、更新或订阅副作用。 */
       componentWillUpdate() {}
-      /** 实现“should coalesce warnings by lifecycle name”场景所需的“componentWillReceiveProps”测试夹具行为。 */
+      /** 空旧名钩子，以方法存在触发改名建议；无初始化、更新或订阅副作用。 */
       componentWillReceiveProps() {}
-      /** 渲染“should coalesce warnings by lifecycle name”场景所需的元素树，使断言能够观察协调与提交结果。 */
+      /** 返回UNSAFE接收props的Child，构造同时存在旧名与新前缀的诊断树。 */
       render() {
         return <Child />;
       }
     }
-    /** 作为“should coalesce warnings by lifecycle name”场景的组件夹具，隔离待验证的 React 行为。 */
+    /** 带UNSAFE接收props的叶类，位于旧名Parent下，供Strict error聚合。 */
     class Child extends React.Component {
-      /** 记录“should coalesce warnings by lifecycle name”场景接收新属性时的旧版生命周期调用。 */
+      /** 空UNSAFE接收钩子，作为Child类型的Strict诊断输入。 */
       UNSAFE_componentWillReceiveProps() {}
-      /** 渲染“should coalesce warnings by lifecycle name”场景所需的元素树，使断言能够观察协调与提交结果。 */
+      /** 返回null，让不安全生命周期名称诊断不受宿主输出或其它错误干扰。 */
       render() {
         return null;
       }
@@ -834,29 +793,26 @@ Please update the following components: Parent`,
     await act(() => root.render(<StrictRoot />));
   });
 
-  /**
-   * 场景：“should warn about components not present during the initial render”。
-   * 机制：验证StrictMode 的重复调用、生命周期与日志诊断契约，锁定可观察结果与失败边界。
-   */
+  /** StrictRoot 首先只挂Foo、再切Bar，各首次报UNSAFE mount诊断，随后来回切不重复；验证后出现的新类型仍会检查且按类型缓存。 */
   it('should warn about components not present during the initial render', async () => {
-    /** 作为“should warn about components not present during the initial render”场景的函数夹具，返回待协调内容或触发目标行为。 */
+    /** 按foo prop切换StrictMode内的Foo/Bar类型，让后出现类型也进入初挂诊断。 */
     function StrictRoot({foo}) {
       return <React.StrictMode>{foo ? <Foo /> : <Bar />}</React.StrictMode>;
     }
-    /** 作为“should warn about components not present during the initial render”场景的组件夹具，隔离待验证的 React 行为。 */
+    /** 带空UNSAFE mount的互斥叶类，供来回切换类型时首次诊断与缓存去重。 */
     class Foo extends React.Component {
-      /** 记录“should warn about components not present during the initial render”场景的旧版挂载前生命周期调用。 */
+      /** 空UNSAFE初挂方法，以存在性触发首次类型诊断。 */
       UNSAFE_componentWillMount() {}
-      /** 渲染“should warn about components not present during the initial render”场景所需的元素树，使断言能够观察协调与提交结果。 */
+      /** 返回null，让不安全生命周期名称诊断不受宿主输出或其它错误干扰。 */
       render() {
         return null;
       }
     }
-    /** 作为“should warn about components not present during the initial render”场景的组件夹具，隔离待验证的 React 行为。 */
+    /** 带空UNSAFE mount的互斥叶类，供来回切换类型时首次诊断与缓存去重。 */
     class Bar extends React.Component {
-      /** 记录“should warn about components not present during the initial render”场景的旧版挂载前生命周期调用。 */
+      /** 空UNSAFE初挂方法，以存在性触发首次类型诊断。 */
       UNSAFE_componentWillMount() {}
-      /** 渲染“should warn about components not present during the initial render”场景所需的元素树，使断言能够观察协调与提交结果。 */
+      /** 返回null，让不安全生命周期名称诊断不受宿主输出或其它错误干扰。 */
       render() {
         return null;
       }
@@ -885,22 +841,19 @@ Please update the following components: Parent`,
     await act(() => root.render(<StrictRoot foo={false} />));
   });
 
-  /**
-   * 场景：“当前测试”。
-   * 机制：验证StrictMode 的重复调用、生命周期与日志诊断契约，锁定可观察结果与失败边界。
-   */
+  /** 非Strict SyncRoot 自身有三UNSAFE钩子，内部Strict边界下Wrapper的Foo/Bar只有receive；诊断仅列Bar/Foo，重复渲染无新预期诊断，验证严格范围不向祖先扩散。 */
   it('should also warn inside of "strict" mode trees', async () => {
     const {StrictMode} = React;
 
-    /** 作为“should warn about components not present during the initial render”场景的组件夹具，隔离待验证的 React 行为。 */
+    /** 非Strict祖先自身声明三UNSAFE钩子，仅后代Wrapper放入Strict，供范围不向祖先传播的检查。 */
     class SyncRoot extends React.Component {
-      /** 记录“should warn about components not present during the initial render”场景的旧版挂载前生命周期调用。 */
+      /** 空UNSAFE钩子位于严格边界之外，本例Strict error期望不包含SyncRoot。 */
       UNSAFE_componentWillMount() {}
-      /** 记录“should warn about components not present during the initial render”场景的旧版更新前生命周期调用。 */
+      /** 空UNSAFE钩子位于严格边界之外，本例Strict error期望不包含SyncRoot。 */
       UNSAFE_componentWillUpdate() {}
-      /** 记录“should warn about components not present during the initial render”场景接收新属性时的旧版生命周期调用。 */
+      /** 空UNSAFE钩子位于严格边界之外，本例Strict error期望不包含SyncRoot。 */
       UNSAFE_componentWillReceiveProps() {}
-      /** 渲染“should warn about components not present during the initial render”场景所需的元素树，使断言能够观察协调与提交结果。 */
+      /** 仅把Wrapper放入StrictMode，保留SyncRoot自身为普通模式祖先。 */
       render() {
         return (
           <StrictMode>
@@ -909,7 +862,7 @@ Please update the following components: Parent`,
         );
       }
     }
-    /** 作为“should warn about components not present during the initial render”场景的函数夹具，返回待协调内容或触发目标行为。 */
+    /** 渲染Bar/Foo两叶到div；children形参未用，供内部Strict范围诊断。 */
     function Wrapper({children}) {
       return (
         <div>
@@ -918,20 +871,20 @@ Please update the following components: Parent`,
         </div>
       );
     }
-    /** 作为“should warn about components not present during the initial render”场景的组件夹具，隔离待验证的 React 行为。 */
+    /** 在SyncRoot内部Strict边界下的UNSAFE接收props叶类，供只警告后代类型。 */
     class Foo extends React.Component {
-      /** 记录“should warn about components not present during the initial render”场景接收新属性时的旧版生命周期调用。 */
+      /** 空UNSAFE接收钩子，以存在性触发Strict诊断，本体不读nextProps或修改state。 */
       UNSAFE_componentWillReceiveProps() {}
-      /** 渲染“should warn about components not present during the initial render”场景所需的元素树，使断言能够观察协调与提交结果。 */
+      /** 返回null，让不安全生命周期名称诊断不受宿主输出或其它错误干扰。 */
       render() {
         return null;
       }
     }
-    /** 作为“should warn about components not present during the initial render”场景的组件夹具，隔离待验证的 React 行为。 */
+    /** 在SyncRoot内部Strict边界下的UNSAFE接收props叶类，供只警告后代类型。 */
     class Bar extends React.Component {
-      /** 记录“should warn about components not present during the initial render”场景接收新属性时的旧版生命周期调用。 */
+      /** 空UNSAFE接收钩子，以存在性触发Strict诊断，本体不读nextProps或修改state。 */
       UNSAFE_componentWillReceiveProps() {}
-      /** 渲染“should warn about components not present during the initial render”场景所需的元素树，使断言能够观察协调与提交结果。 */
+      /** 返回null，让不安全生命周期名称诊断不受宿主输出或其它错误干扰。 */
       render() {
         return null;
       }
@@ -969,14 +922,11 @@ describe('symbol checks', () => {
     act = require('internal-test-utils').act;
   });
 
-  /**
-   * 场景：“should switch from StrictMode to a Fragment and reset state”。
-   * 机制：验证StrictMode 的重复调用、生命周期与日志诊断契约，锁定可观察结果与失败边界。
-   */
+  /** Parent先Strict再Fragment，子state从0且每轮gDSFP+1；两次输出均count1，验证边界类型替换导致子重挂重置state。 */
   it('should switch from StrictMode to a Fragment and reset state', async () => {
     const {Fragment, StrictMode} = React;
 
-    /** 实现“should switch from StrictMode to a Fragment and reset state”场景所需的“ParentComponent”测试夹具行为。 */
+    /** 按useFragment选择Fragment或StrictMode包同一ChildComponent；改变包装type检查子state重置。 */
     function ParentComponent({useFragment}) {
       return useFragment ? (
         <Fragment>
@@ -989,19 +939,19 @@ describe('symbol checks', () => {
       );
     }
 
-    /** 作为“should switch from StrictMode to a Fragment and reset state”场景的组件夹具，隔离待验证的 React 行为。 */
+    /** 初始count=0，每轮派生+1并输出文本的类，供包装类型替换与稳定更新的state身份检查。 */
     class ChildComponent extends React.Component {
-      /** 保存“should switch from StrictMode to a Fragment and reset state”场景用于驱动更新或错误回退的组件状态。 */
+      /** count=0初始值；重挂重新从0开始，复用实例更新则从已有计数继续。 */
       state = {
         count: 0,
       };
-      /** 根据新属性派生“should switch from StrictMode to a Fragment and reset state”场景的状态，用于验证静态生命周期语义。 */
+      /** 返回prevState.count+1的补丁，nextProps未用；重复试算不应把第一次结果作为第二次输入。 */
       static getDerivedStateFromProps(nextProps, prevState) {
         return {
           count: prevState.count + 1,
         };
       }
-      /** 渲染“should switch from StrictMode to a Fragment and reset state”场景所需的元素树，使断言能够观察协调与提交结果。 */
+      /** 返回count:<当前state>文本，作为重挂重置或更新保留的可观察证据。 */
       render() {
         return `count:${this.state.count}`;
       }
@@ -1019,14 +969,11 @@ describe('symbol checks', () => {
     expect(container.textContent).toBe('count:1');
   });
 
-  /**
-   * 场景：“should switch from a Fragment to StrictMode and reset state”。
-   * 机制：验证StrictMode 的重复调用、生命周期与日志诊断契约，锁定可观察结果与失败边界。
-   */
+  /** Parent先Fragment再Strict，子每轮gDSFP+1；两次均count1，验证反向边界替换同样重置state。 */
   it('should switch from a Fragment to StrictMode and reset state', async () => {
     const {Fragment, StrictMode} = React;
 
-    /** 实现“should switch from a Fragment to StrictMode and reset state”场景所需的“ParentComponent”测试夹具行为。 */
+    /** 按useFragment选择Fragment或StrictMode包同一ChildComponent；改变包装type检查子state重置。 */
     function ParentComponent({useFragment}) {
       return useFragment ? (
         <Fragment>
@@ -1039,19 +986,19 @@ describe('symbol checks', () => {
       );
     }
 
-    /** 作为“should switch from a Fragment to StrictMode and reset state”场景的组件夹具，隔离待验证的 React 行为。 */
+    /** 初始count=0，每轮派生+1并输出文本的类，供包装类型替换与稳定更新的state身份检查。 */
     class ChildComponent extends React.Component {
-      /** 保存“should switch from a Fragment to StrictMode and reset state”场景用于驱动更新或错误回退的组件状态。 */
+      /** count=0初始值；重挂重新从0开始，复用实例更新则从已有计数继续。 */
       state = {
         count: 0,
       };
-      /** 根据新属性派生“should switch from a Fragment to StrictMode and reset state”场景的状态，用于验证静态生命周期语义。 */
+      /** 返回prevState.count+1的补丁，nextProps未用；重复试算不应把第一次结果作为第二次输入。 */
       static getDerivedStateFromProps(nextProps, prevState) {
         return {
           count: prevState.count + 1,
         };
       }
-      /** 渲染“should switch from a Fragment to StrictMode and reset state”场景所需的元素树，使断言能够观察协调与提交结果。 */
+      /** 返回count:<当前state>文本，作为重挂重置或更新保留的可观察证据。 */
       render() {
         return `count:${this.state.count}`;
       }
@@ -1069,14 +1016,11 @@ describe('symbol checks', () => {
     expect(container.textContent).toBe('count:1');
   });
 
-  /**
-   * 场景：“should update with StrictMode without losing state”。
-   * 机制：验证StrictMode 的重复调用、生命周期与日志诊断契约，锁定可观察结果与失败边界。
-   */
+  /** 两次均保持Strict边界与子类型，子gDSFP每轮+1，输出count1→count2，验证稳定边界保留子state。 */
   it('should update with StrictMode without losing state', async () => {
     const {StrictMode} = React;
 
-    /** 实现“should update with StrictMode without losing state”场景所需的“ParentComponent”测试夹具行为。 */
+    /** 每次保持StrictMode包同一ChildComponent类型，供稳定边界state保留对照。 */
     function ParentComponent() {
       return (
         <StrictMode>
@@ -1085,19 +1029,19 @@ describe('symbol checks', () => {
       );
     }
 
-    /** 作为“should update with StrictMode without losing state”场景的组件夹具，隔离待验证的 React 行为。 */
+    /** 初始count=0，每轮派生+1并输出文本的类，供包装类型替换与稳定更新的state身份检查。 */
     class ChildComponent extends React.Component {
-      /** 保存“should update with StrictMode without losing state”场景用于驱动更新或错误回退的组件状态。 */
+      /** count=0初始值；重挂重新从0开始，复用实例更新则从已有计数继续。 */
       state = {
         count: 0,
       };
-      /** 根据新属性派生“should update with StrictMode without losing state”场景的状态，用于验证静态生命周期语义。 */
+      /** 返回prevState.count+1的补丁，nextProps未用；重复试算不应把第一次结果作为第二次输入。 */
       static getDerivedStateFromProps(nextProps, prevState) {
         return {
           count: prevState.count + 1,
         };
       }
-      /** 渲染“should update with StrictMode without losing state”场景所需的元素树，使断言能够观察协调与提交结果。 */
+      /** 返回count:<当前state>文本，作为重挂重置或更新保留的可观察证据。 */
       render() {
         return `count:${this.state.count}`;
       }
@@ -1130,19 +1074,16 @@ describe('context legacy', () => {
   });
 
   // @gate !disableLegacyContext || !__DEV__
-  /**
-   * 场景：“should warn if the legacy context API have been used in strict mode”。
-   * 机制：验证StrictMode 的重复调用、生命周期与日志诊断契约，锁定可观察结果与失败边界。
-   */
+  /** 门控允许旧Context时，Strict树包含旧提供者和类/函数消费者；首次要求三个迁移诊断及按名称聚合的Strict诊断，重复挂同树无新预期诊断，验证接口迁移提醒与去重。 */
   it('should warn if the legacy context API have been used in strict mode', async () => {
-    /** 作为“should warn if the legacy context API have been used in strict mode”场景的组件夹具，隔离待验证的 React 行为。 */
+    /** 旧Context提供者输出color并渲染类/函数两消费者，供Strict迁移诊断聚合。 */
     class LegacyContextProvider extends React.Component {
-      /** 向后代提供“should warn if the legacy context API have been used in strict mode”场景使用的旧版上下文值。 */
+      /** 返回color=purple，配合childContextTypes声明提供旧上下文。 */
       getChildContext() {
         return {color: 'purple'};
       }
 
-      /** 渲染“should warn if the legacy context API have been used in strict mode”场景所需的元素树，使断言能够观察协调与提交结果。 */
+      /** 输出两种旧Context消费者到div，诊断应分别建议类/函数迁移API。 */
       render() {
         return (
           <div>
@@ -1153,7 +1094,7 @@ describe('context legacy', () => {
       }
     }
 
-    /** 实现“should warn if the legacy context API have been used in strict mode”场景所需的“FunctionalLegacyContextConsumer”测试夹具行为。 */
+    /** 返回null的函数消费者，随后挂contextTypes.color，供函数旧Context迁移诊断。 */
     function FunctionalLegacyContextConsumer() {
       return null;
     }
@@ -1162,9 +1103,9 @@ describe('context legacy', () => {
       color: PropTypes.string,
     };
 
-    /** 作为“should warn if the legacy context API have been used in strict mode”场景的组件夹具，隔离待验证的 React 行为。 */
+    /** 返回null的类消费者，随后挂contextTypes.color，供类旧Context迁移诊断。 */
     class LegacyContextConsumer extends React.Component {
-      /** 渲染“should warn if the legacy context API have been used in strict mode”场景所需的元素树，使断言能够观察协调与提交结果。 */
+      /** 返回null，不消费color数值，本例只观察旧Context声明诊断。 */
       render() {
         return null;
       }
@@ -1172,9 +1113,9 @@ describe('context legacy', () => {
 
     const {StrictMode} = React;
 
-    /** 作为“should warn if the legacy context API have been used in strict mode”场景的组件夹具，隔离待验证的 React 行为。 */
+    /** 普通外层class把提供者放进StrictMode，供所有迁移诊断owner栈归属。 */
     class Root extends React.Component {
-      /** 渲染“should warn if the legacy context API have been used in strict mode”场景所需的元素树，使断言能够观察协调与提交结果。 */
+      /** 返回div→StrictMode→LegacyContextProvider，建立提供者与消费者诊断链。 */
       render() {
         return (
           <div>
@@ -1238,7 +1179,7 @@ describe('context legacy', () => {
       ReactDOMClient = require('react-dom/client');
       act = require('internal-test-utils').act;
 
-    // 以下用例专门验证 `console.log` 的 StrictMode 转发与去重行为。
+    // 以下spy专门统计Strict双调用日志不被屏蔽；每条实际log都保留，不对用户日志去重。
       spyOnDevAndProd(console, 'log').mockImplementation(() => {});
     });
 
@@ -1246,15 +1187,12 @@ describe('context legacy', () => {
       console.log.mockRestore();
     });
 
-    /**
-     * 场景：“does not disable logs for class double render”。
-     * 机制：验证StrictMode 的重复调用、生命周期与日志诊断契约，锁定可观察结果与失败边界。
-     */
+    /** Strict Foo class render计数并console.log，初挂DEV2/生产1且spy捕获foo1，验证重复render日志不会屏蔽。 */
     it('does not disable logs for class double render', async () => {
       let count = 0;
-      /** 作为“does not disable logs for class double render”场景的组件夹具，隔离待验证的 React 行为。 */
+      /** 每次render计数并log的class，供Strict重复render日志不被屏蔽。 */
       class Foo extends React.Component {
-        /** 渲染“does not disable logs for class double render”场景所需的元素树，使断言能够观察协调与提交结果。 */
+        /** 每次计数并输出foo <次数>日志，返回null，供render次数与spy次数一致性。 */
         render() {
           count++;
           console.log('foo ' + count);
@@ -1277,21 +1215,18 @@ describe('context legacy', () => {
       expect(console.log).toBeCalledWith('foo 1');
     });
 
-    /**
-     * 场景：“does not disable logs for class double ctor”。
-     * 机制：验证StrictMode 的重复调用、生命周期与日志诊断契约，锁定可观察结果与失败边界。
-     */
+    /** Strict Foo constructor计数并console.log、render为null，初挂DEV2/生产1且保留foo1，验证重复构造日志不会屏蔽。 */
     it('does not disable logs for class double ctor', async () => {
       let count = 0;
-      /** 作为“does not disable logs for class double ctor”场景的组件夹具，隔离待验证的 React 行为。 */
+      /** 构造器计数并log的class，供Strict重复构造日志不被屏蔽。 */
       class Foo extends React.Component {
-        /** 初始化“does not disable logs for class double ctor”场景所需的实例状态与观测记录。 */
+        /** super(props)后计数/log构造次数，供DEV重复构造日志检查。 */
         constructor(props) {
           super(props);
           count++;
           console.log('foo ' + count);
         }
-        /** 渲染“does not disable logs for class double ctor”场景所需的元素树，使断言能够观察协调与提交结果。 */
+        /** 返回null，不写日志，让spy次数仅来自构造、gDSFP或SCU目标阶段。 */
         render() {
           return null;
         }
@@ -1312,23 +1247,20 @@ describe('context legacy', () => {
       expect(console.log).toBeCalledWith('foo 1');
     });
 
-    /**
-     * 场景：“does not disable logs for class double getDerivedStateFromProps”。
-     * 机制：验证StrictMode 的重复调用、生命周期与日志诊断契约，锁定可观察结果与失败边界。
-     */
+    /** Strict Foo初始空state，静态gDSFP计数/log并返回空补丁，DEV2/生产1且保留foo1，验证派生检查日志不会屏蔽。 */
     it('does not disable logs for class double getDerivedStateFromProps', async () => {
       let count = 0;
-      /** 作为“does not disable logs for class double getDerivedStateFromProps”场景的组件夹具，隔离待验证的 React 行为。 */
+      /** 静态gDSFP计数并log的class，供Strict重复派生日志不被屏蔽。 */
       class Foo extends React.Component {
-        /** 保存“does not disable logs for class double getDerivedStateFromProps”场景用于驱动更新或错误回退的组件状态。 */
+        /** 空初始state，给派生、更新判定或函数式setState场景稳定对象形状。 */
         state = {};
-        /** 根据新属性派生“does not disable logs for class double getDerivedStateFromProps”场景的状态，用于验证静态生命周期语义。 */
+        /** 计数/log并返回空补丁，供派生函数重复检查；不实际改变任何state字段。 */
         static getDerivedStateFromProps() {
           count++;
           console.log('foo ' + count);
           return {};
         }
-        /** 渲染“does not disable logs for class double getDerivedStateFromProps”场景所需的元素树，使断言能够观察协调与提交结果。 */
+        /** 返回null，不写日志，让spy次数仅来自构造、gDSFP或SCU目标阶段。 */
         render() {
           return null;
         }
@@ -1349,23 +1281,20 @@ describe('context legacy', () => {
       expect(console.log).toBeCalledWith('foo 1');
     });
 
-    /**
-     * 场景：“does not disable logs for class double shouldComponentUpdate”。
-     * 机制：验证StrictMode 的重复调用、生命周期与日志诊断契约，锁定可观察结果与失败边界。
-     */
+    /** Strict Foo初挂后同树更新，SCU计数/log返回truthy空对象，DEV2/生产1且foo1可见；验证SCU重复检查日志，不是boolean返回类型检查。 */
     it('does not disable logs for class double shouldComponentUpdate', async () => {
       let count = 0;
-      /** 作为“does not disable logs for class double shouldComponentUpdate”场景的组件夹具，隔离待验证的 React 行为。 */
+      /** SCU计数并log的class，供Strict同树更新检查日志不被屏蔽。 */
       class Foo extends React.Component {
-        /** 保存“does not disable logs for class double shouldComponentUpdate”场景用于驱动更新或错误回退的组件状态。 */
+        /** 空初始state，给派生、更新判定或函数式setState场景稳定对象形状。 */
         state = {};
-        /** 决定“does not disable logs for class double shouldComponentUpdate”场景是否继续协调，并让测试验证跳过更新的边界。 */
+        /** 计数/log并返回truthy空对象，使更新继续；本例检查日志次数，没有boolean返回类型断言。 */
         shouldComponentUpdate() {
           count++;
           console.log('foo ' + count);
           return {};
         }
-        /** 渲染“does not disable logs for class double shouldComponentUpdate”场景所需的元素树，使断言能够观察协调与提交结果。 */
+        /** 返回null，不写日志，让spy次数仅来自构造、gDSFP或SCU目标阶段。 */
         render() {
           return null;
         }
@@ -1394,18 +1323,15 @@ describe('context legacy', () => {
       expect(console.log).toBeCalledWith('foo 1');
     });
 
-    /**
-     * 场景：“does not disable logs for class state updaters”。
-     * 机制：验证StrictMode 的重复调用、生命周期与日志诊断契约，锁定可观察结果与失败边界。
-     */
+    /** Strict class ref探针取得实例后函数式setState计数/log返回空补丁，DEV2/生产1且foo1可见，验证updater日志不会屏蔽。 */
     it('does not disable logs for class state updaters', async () => {
       let inst;
       let count = 0;
-      /** 作为“does not disable logs for class state updaters”场景的组件夹具，隔离待验证的 React 行为。 */
+      /** render暴露inst的class，供外部函数式setState计算时日志检查。 */
       class Foo extends React.Component {
-        /** 保存“does not disable logs for class state updaters”场景用于驱动更新或错误回退的组件状态。 */
+        /** 空初始state，给派生、更新判定或函数式setState场景稳定对象形状。 */
         state = {};
-        /** 渲染“does not disable logs for class state updaters”场景所需的元素树，使断言能够观察协调与提交结果。 */
+        /** 保存this到inst后返回null，供用例在flush作用域调用函数式setState。 */
         render() {
           inst = this;
           return null;
@@ -1435,13 +1361,10 @@ describe('context legacy', () => {
       expect(console.log).toBeCalledWith('foo 1');
     });
 
-    /**
-     * 场景：“does not disable logs for function double render”。
-     * 机制：验证StrictMode 的重复调用、生命周期与日志诊断契约，锁定可观察结果与失败边界。
-     */
+    /** Strict函数Foo render计数/log返回null，DEV2/生产1且foo1可见，验证函数重复render日志不会屏蔽。 */
     it('does not disable logs for function double render', async () => {
       let count = 0;
-      /** 实现“does not disable logs for function double render”场景所需的“Foo”测试夹具行为。 */
+      /** 每次函数render计数/log并返回null，供DEV重复render与生产单render对照。 */
       function Foo() {
         count++;
         console.log('foo ' + count);
@@ -1463,14 +1386,11 @@ describe('context legacy', () => {
       expect(console.log).toBeCalledWith('foo 1');
     });
 
-    /**
-     * 场景：“does not disable logs for effect double invoke”。
-     * 机制：验证StrictMode 的重复调用、生命周期与日志诊断契约，锁定可观察结果与失败边界。
-     */
+    /** Strict函数effect setup/cleanup分别计数/log，初挂DEV setup2/cleanup1/总log3、生产setup1/cleanup0/log1；首setup及DEV cleanup均可见，验证严格effect重放保留日志。 */
     it('does not disable logs for effect double invoke', async () => {
       let create = 0;
       let cleanup = 0;
-      /** 实现“does not disable logs for effect double invoke”场景所需的“Foo”测试夹具行为。 */
+      /** useEffect setup/返回cleanup分别计数/log，输出null；供Strict初挂setup→cleanup→setup重放日志。 */
       function Foo() {
         React.useEffect(() => {
           create++;

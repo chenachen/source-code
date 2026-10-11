@@ -122,8 +122,8 @@ describe('createIdFilter', () => {
 
   for (const filter of filters) {
     /**
-     * 场景：当前 inputFilter 形式被编译后逐项匹配 cases。
-     * 验证目标：无配置返回 undefined；其余过滤器严格遵循 include/exclude 与路径规范化。
+     * 当前 inputFilter 形式被编译后逐项匹配 cases。
+     * 无配置返回 undefined；其余过滤器严格遵循 include/exclude 与路径规范化。
      */
     test(`${util.inspect(filter.inputFilter)}`, () => {
       const idFilter = createIdFilter(filter.inputFilter, '')
@@ -223,8 +223,8 @@ describe('createCodeFilter', () => {
 
   for (const filter of filters) {
     /**
-     * 场景：当前源码过滤描述匹配多段 code。
-     * 验证目标：无配置不创建函数；exclude 优先，include 缺省时接受未排除源码。
+     * 当前源码过滤描述匹配多段 code。
+     * 无配置不创建函数；exclude 优先，include 缺省时接受未排除源码。
      */
     test(`${util.inspect(filter.inputFilter)}`, () => {
       const codeFilter = createCodeFilter(filter.inputFilter)
@@ -251,7 +251,7 @@ describe('createFilterForTransform', () => {
       codeFilter: StringFilter | undefined,
       moduleTypeFilter?: ModuleTypeFilter | undefined,
     ]
-    /** 每组过滤器对应的输入样本；undefined 表示插件不应生成 codeFilter。 */
+    /** 每组过滤器对应的输入样本；undefined 表示不应生成联合 transform filter。 */
     cases:
       | {
           /** 送入 transform 过滤器的模块 ID。 */
@@ -343,8 +343,8 @@ describe('createFilterForTransform', () => {
 
   for (const filter of filters) {
     /**
-     * 场景：当前 `[id, code, moduleType]` 过滤器组合处理多组模块输入。
-     * 验证目标：全部缺省返回 undefined；任一条件拒绝即整体拒绝，全部通过才调用 handler。
+     * 当前 `[id, code, moduleType]` 过滤器组合处理多组模块输入。
+     * 全部缺省返回 undefined；任一条件拒绝即整体拒绝，全部通过才返回 true。
      */
     test(`${util.inspect(filter.inputFilter)}`, () => {
       const [idFilter, codeFilter, moduleTypeFilter] = filter.inputFilter

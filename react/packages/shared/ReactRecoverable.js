@@ -11,7 +11,7 @@
  * 表示“有意切换到客户端渲染”的保留 digest。
  *
  * @remarks
- * 空 digest 在其他路径会被当作“未提供”，这里利用该保留值区分主动恢复，同时不占用
- * 用户空间可选择的非空 digest。
+ * Fizz 用空串标记主动交给客户端继续渲染的边界；hydrate 时仍转向客户端，但不为此
+ * 生成普通服务端失败的 recoverable error。未提供 digest 的 null/undefined 不等于此标记。
  */
 export const REACT_RECOVERABLE_DIGEST = '';

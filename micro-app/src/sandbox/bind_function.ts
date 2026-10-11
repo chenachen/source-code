@@ -8,7 +8,7 @@ import {
 } from '../libs/utils'
 
 /**
- * 判断函数是否已由原生 `bind` 绑定，并把检测结果缓存到函数自身。
+ * 根据函数名和自有 prototype 形态识别 bind 产物，并把检测结果缓存到函数自身。
  *
  * WHY：代理 window/document 会频繁读取同一原生方法；缓存可避免反复解析函数名和原型，
  * 同时阻止已经绑定的函数被再次绑定到错误目标。
@@ -22,9 +22,10 @@ function isBoundedFunction (value: CallableFunction & {
 }
 
 /**
- * 判断函数是否可作为构造器，并复用写在函数对象上的检测结果。
+ * 用 isConstructor 的函数形态规则识别构造器，并缓存识别结果。
  *
- * 构造器不得绑定到原生目标，否则 `new`、原型链和 `instanceof` 语义会改变。
+ * 被识别为构造器的函数保持原引用，使子应用仍取得原构造器与其 prototype。
+ * 这是绑定策略的启发式判断，不是对所有函数执行 new 的语言级可构造性检测。
  */
 function isConstructorFunction (value: FunctionConstructor & {
   /** 已完成构造器检测时保存的布尔结果。 */
@@ -39,10 +40,11 @@ function isConstructorFunction (value: FunctionConstructor & {
  * 将从代理读取的可调用原生方法绑定回真实宿主，并按宿主类别缓存包装函数。
  *
  * @remarks
- * 普通函数绑定后会复制可枚举静态属性，并保留自有 `prototype` 描述符；构造器、
- * 已绑定函数、无 `bind` 的 Safari 特殊宿主对象以及非函数均原样返回。
- * 缓存键包含 `WINDOW`、`DOCUMENT`、`LOCATION` 等调用方类别，避免同一函数绑定到
- * 不同原生目标时错误复用。
+ * 普通函数绑定后复制可枚举属性；有自有 prototype 时复制其值并定义可写、可配置的非枚举属性。
+ * 被识别的构造器、已绑定函数、无 bind 的 Safari 特殊宿主对象以及非函数均原样返回。
+ * 缓存按原函数和 `WINDOW`、`DOCUMENT`、`LOCATION` 等类别区分，不包含 rawTarget 身份；
+ * 同一函数以同一类别再次读取时，会沿用第一次绑定的目标。
+ * 分类和绑定缓存都直接写在原函数对象上，沙箱 stop 不删除；多个沙箱读取同一宿主方法会复用它。
  *
  * @param value - 从代理目标读取的候选值。
  * @param rawTarget - 方法真正执行时应使用的 `this`。

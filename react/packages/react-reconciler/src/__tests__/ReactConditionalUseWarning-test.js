@@ -16,7 +16,7 @@ let use;
 let Suspense;
 let startTransition;
 
-/** 覆盖 use(thenable) 在挂起前后条件调用不一致时的开发警告及合法无条件调用对照。 */
+/** 覆盖缓存命中后跳过先前挂起的 use(thenable) 读取所产生的开发警告；一般条件分支可以调用 use。 */
 describe('conditional use warning', () => {
   /** 重置模块并绑定 use、Suspense、transition 与日志工具，隔离 thenable 追踪状态。 */
   beforeEach(() => {
@@ -32,12 +32,13 @@ describe('conditional use warning', () => {
     startTransition = React.startTransition;
   });
 
-  /** Given Async 首次 use(promise) 挂起，promise 解决后因外部 cache 分支跳过 use；When transition 重试并再次普通渲染；Then开发模式只报告一次 conditional-use 错误。通过 Suspense 输出、Error 对象和去重次数验证 useThenable 的调用一致性检查。 */
+  /** Given Async 首次 use(promise) 挂起，promise 解决后因外部 cache 分支跳过 use；When transition 重试并再次普通渲染；Then开发模式只报告一次 conditional-use 错误。通过 Suspense 输出、Error 对象和去重次数验证完成挂起重放时对缺失 use 读取的检查。 */
   // @gate __DEV__ && enableConditionalUseWarning
   it('warns if use(promise) is called conditionally based on a cache', async () => {
     let cachedValue;
     let resolve;
     const promise = new Promise(r => {
+      /** 先写外部缓存再解决 Promise，让挂起重试命中缓存并跳过此前的 use 调用。 */
       resolve = value => {
         cachedValue = value;
         r(value);
@@ -50,7 +51,7 @@ describe('conditional use warning', () => {
       return text;
     }
 
-    /** cache 未命中时调用 use 挂起，命中后绕过 use；刻意制造两次 render 的 Hook/thenable 调用不一致。 */
+    /** cache 未命中时调用 use 挂起，命中后绕过 use；刻意在挂起重放完成时省略先前的 thenable 读取。 */
     function Async() {
       if (cachedValue !== undefined) {
         return <Text text={cachedValue} />;

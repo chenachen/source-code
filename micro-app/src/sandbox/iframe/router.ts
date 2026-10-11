@@ -21,6 +21,7 @@ import globalEnv from '../../libs/global_env'
  *
  * @remarks
  * iframe 的真实地址用于建立同源空壳，不能直接代表子应用路由。这里先保存原生 `replaceState`，再把 history 方法替换为微路由实现；随后以 `prevent` 模式初始化 iframe location，最后返回供 window 代理暴露的 location。
+ * 真实 iframe location 仍保持宿主同源；proxyLocation 的读取呈现子应用 origin（native 模式按协议显示宿主 origin）。
  *
  * @param appName - 路由所属应用名。
  * @param url - 子应用入口地址。

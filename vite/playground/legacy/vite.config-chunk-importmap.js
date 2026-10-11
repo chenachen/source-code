@@ -11,8 +11,8 @@ export default defineConfig({
     chunkImportMap: true,
   },
 
-  // for tests, remove `<script type="module">` tags and remove `nomodule`
-  // attrs so that we run the legacy bundle instead.
+  // 测试在构建后改写 HTML，强制当前浏览器执行 legacy 分支。
+  /** 构建完成后改写 HTML：移除现代模块脚本并去掉 nomodule，使测试浏览器执行 legacy 分支及 chunk import map 产物。 */
   __test__() {
     const indexPath = path.resolve(
       import.meta.dirname,

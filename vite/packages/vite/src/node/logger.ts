@@ -13,15 +13,15 @@ export type LogLevel = LogType | 'silent'
 /**
  * Vite 内部与插件共享的最小日志接口。
  *
- * `hasWarned` 用于在流程末尾决定是否提示警告；`hasErrorLogged` 则防止同一个
- * 错误对象被不同层级重复打印。
+ * `hasWarned` 记录是否调用过警告/错误方法；调用方可先查询 `hasErrorLogged`，
+ * 再决定是否打印同一个错误对象。`error()` 本身不会按对象身份跳过输出。
  */
 export interface Logger {
   /** 输出普通运行信息。 */
   info(msg: string, options?: LogOptions): void
   /** 输出警告并把 hasWarned 置为 true。 */
   warn(msg: string, options?: LogOptions): void
-  /** 同一完整文本在当前 logger 生命周期内只输出一次。 */
+  /** 同一完整文本只尝试输出一次；被级别过滤的首次调用也会登记。 */
   warnOnce(msg: string, options?: LogOptions): void
   /** 输出错误并按需登记原始错误对象。 */
   error(msg: string, options?: LogErrorOptions): void
@@ -29,7 +29,7 @@ export interface Logger {
   clearScreen(type: LogType): void
   /** 判断同一错误对象是否已交给 logger 输出。 */
   hasErrorLogged(error: Error | RollupError): boolean
-  /** 当前 logger 生命周期是否曾输出 warn/error。 */
+  /** 是否调用过 warn/warnOnce/error；即使级别过滤了输出也会置为 true。 */
   hasWarned: boolean
 }
 
@@ -45,7 +45,7 @@ export interface LogOptions {
 
 /** 错误日志在普通格式选项之外携带的去重身份。 */
 export interface LogErrorOptions extends LogOptions {
-  /** 将错误对象登记为“已经输出”，供上层避免二次打印。 */
+  /** 错误登记使用的对象身份；默认 logger 仅在当前级别允许输出时登记。 */
   error?: Error | RollupError | null
 }
 
@@ -80,7 +80,7 @@ export interface LoggerOptions {
   allowClearScreen?: boolean
   /** 完全接管日志行为的自定义实现；存在时忽略其余选项。 */
   customLogger?: Logger
-  /** 注入输出目标，便于宿主环境接管 console；默认使用 globalThis.console。 */
+  /** 注入日志输出目标；清屏仍操作全局 console 与 process.stdout。 */
   console?: Console
 }
 
@@ -98,10 +98,11 @@ function getTimeFormatter() {
 }
 
 /**
- * 创建带级别过滤、重复消息折叠、一次性警告和错误去重能力的 Vite logger。
+ * 创建带级别过滤、重复消息折叠、一次性警告和错误登记能力的 Vite logger。
  *
  * 可交互终端中，连续相同日志会清屏后更新为 `(xN)`；CI、管道输出或禁用清屏
- * 时则逐条保留，确保机器日志完整。`console` 注入支持嵌入式宿主（#18379）。
+ * 时采用追加输出。`warnOnce` 仍按文本过滤，错误身份去重由调用方查询后决定。
+ * `console` 注入支持嵌入式宿主（#18379）。
  */
 export function createLogger(
   level: LogLevel = 'info',
@@ -111,7 +112,7 @@ export function createLogger(
     return options.customLogger
   }
 
-  // WeakSet 既以对象身份去重，又不会因日志系统持有引用而延长错误对象生命周期。
+  // 登记实际获准输出的错误对象，供 hasErrorLogged 查询；弱引用不延长错误生命周期。
   const loggedErrors = new WeakSet<Error | RollupError>()
   const {
     prefix = '[vite]',
@@ -121,6 +122,7 @@ export function createLogger(
   const thresh = LogLevels[level]
   const canClearScreen =
     allowClearScreen && process.stdout.isTTY && !process.env.CI
+  /** 可交互且获准清屏时委托终端清理，其余输出环境使用空操作。 */
   const clear = canClearScreen ? clearScreen : () => {}
 
   /** 只负责表现层格式化，不改变级别判断或错误登记。 */

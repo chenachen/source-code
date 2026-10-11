@@ -119,7 +119,10 @@ export type Attrs = Data & AllowedAttrs
  * declare const instance: ComponentInstance<typeof MyComp>
  * ```
  */
-export type ComponentInstance<T> = T extends { new (): ComponentPublicInstance }
+export type ComponentInstance<T> = T extends {
+  /** 构造器组件的类型判别签名；匹配时使用 InstanceType 提取公开实例，不在运行时调用构造器。 */
+  new (): ComponentPublicInstance
+}
   ? InstanceType<T>
   : T extends FunctionalComponent<infer Props, infer Emits>
     ? ComponentPublicInstance<Props, {}, {}, {}, {}, ShortEmitsToObject<Emits>>
@@ -131,9 +134,9 @@ export type ComponentInstance<T> = T extends { new (): ComponentPublicInstance }
           infer M
         >
       ? PropsOrInstance extends { $props: unknown }
-        ? // T is returned by `defineComponent()`
+        ? // T 是 defineComponent 返回类型。
           PropsOrInstance
-        : // NOTE we override Props/RawBindings/D to make sure is not `unknown`
+        : // 把未推导出的 Props/RawBindings/D 的 unknown 替换为空对象，保持可用实例类型。
           ComponentPublicInstance<
             unknown extends PropsOrInstance ? {} : PropsOrInstance,
             unknown extends RawBindings ? {} : RawBindings,
@@ -221,21 +224,48 @@ export interface FunctionalComponent<
   EE extends EmitsOptions = ShortEmitsToObject<E>,
 > extends ComponentInternalOptions {
   // 返回 any 是刻意的：TypeScript 才会把该函数接受为合法 JSX Element 构造器。
+  /**
+   * 函数式组件调用协议：接收 props 与 attrs/slots/emit 上下文，返回渲染内容；没有有状态 this 或 expose 上下文。
+   */
   (
     props: P & EmitsToProps<EE>,
     ctx: Omit<SetupContext<EE, IfAny<S, {}, SlotsType<S>>>, 'expose'>,
   ): any
+  /**
+   * 运行时 props 声明；存在时把声明输入与 attrs 分开，不存在时 props 与 attrs 复用对象。
+   */
   props?: ComponentPropsOptions<P>
+  /**
+   * 事件声明，用于 emit 校验及监听器从 attrs 排除。
+   */
   emits?: EE | (keyof EE)[]
+  /**
+   * 函数式组件插槽的纯类型声明，不决定运行时 slot 内容。
+   */
   slots?: IfAny<S, Slots, SlotsType<S>>
+  /**
+   * 关闭自动 attrs 透传的组件选项。
+   */
   inheritAttrs?: boolean
+  /**
+   * 函数式组件展示名，formatComponentName 优先于函数 name 使用。
+   */
   displayName?: string
+  /**
+   * 旧组件适配能力的局部兼容开关。
+   */
   compatConfig?: CompatConfig
 }
 
 /** 由类包装的 Vue 组件；真实 options 存放于 `__vccOpts`。 */
 export interface ClassComponent {
+  /**
+   * 类组件公开实例的构造签名，真实组件选项由同一对象的 __vccOpts 提供给运行时。
+   */
   new (...args: any[]): ComponentPublicInstance<any, any, any, any, any>
+  /**
+   * 类包装器携带的真实组件 options，VNode 创建时解包此字段。
+   */
   __vccOpts: ComponentOptions
 }
 
@@ -283,9 +313,21 @@ export type SetupContext<
   S extends SlotsType = {},
 > = E extends any
   ? {
+      /**
+       * 未被运行时 props/emits 声明消费的输入，读取通过代理追踪整组变化。
+       */
       attrs: Attrs
+      /**
+       * 标准化插槽函数表；开发代理用于读取追踪和 HMR。
+       */
       slots: UnwrapSlotsType<S>
+      /**
+       * 发送当前组件事件的类型化函数，监听器从当前 VNode props 读取。
+       */
       emit: EmitFn<E>
+      /**
+       * 登记外部组件 ref 可访问的对象；不改变内部 render/setup 对状态的访问。
+       */
       expose: <Exposed extends Record<string, any> = Record<string, any>>(
         exposed?: Exposed,
       ) => void
@@ -294,6 +336,9 @@ export type SetupContext<
 
 /** 编译器生成渲染函数的内部调用签名；额外参数绕过公开代理属性查找。 @internal */
 export type InternalRenderFunction = {
+  /**
+   * 编译 render 的内部调用协议：ctx 与 renderCache 之外直接接收各绑定分区，返回待 normalizeVNode 的根内容。
+   */
   (
     ctx: ComponentPublicInstance,
     cache: ComponentInternalInstance['renderCache'],
@@ -319,10 +364,25 @@ export type InternalRenderFunction = {
  * 生命周期和 Suspense。部分字段虽属内部实现，仍暴露给高级库与 devtools 使用。
  */
 export interface ComponentInternalInstance {
+  /**
+   * 组件唯一编号，父先创建因此用于父子主队列排序。
+   */
   uid: number
+  /**
+   * 组件定义对象或函数，保存渲染与输入声明。
+   */
   type: ConcreteComponent
+  /**
+   * 渲染器传入的内部父实例；函数式组件也保留在此链。
+   */
   parent: ComponentInternalInstance | null
+  /**
+   * 整棵组件树的内部根实例，创建时从 parent 继承。
+   */
   root: ComponentInternalInstance
+  /**
+   * 继承父级或根 VNode 的应用上下文，提供资源与规范化缓存。
+   */
   appContext: AppContext
   /** 父级虚拟 DOM 树中代表当前组件的 VNode。 */
   vnode: VNode
@@ -347,7 +407,8 @@ export interface ComponentInternalInstance {
    */
   ids: [string, number, number]
   /**
-   * @internal 收集组件关联的 watch/computed 等响应式副作用，卸载时统一停止。
+   * 组件专用 detached effect scope，收集 render effect、watch 和用户 effect，卸载时统一停止。computed 本身不登记为 ReactiveEffect；其订阅链随读取它的 effect 停止而清理。
+   * @internal
    */
   scope: EffectScope
   /** @internal 公共代理属性来源缓存，避免每次访问重复执行 hasOwnProperty。 */
@@ -379,10 +440,19 @@ export interface ComponentInternalInstance {
   // 以下字段仅有状态组件使用 --------------------------------------------------
 
   // 作为 Options API `this` 和模板 ref 值的主公共代理。
+  /**
+   * 有状态组件的公开 this 代理，Options API 和模板经它读取状态；函数式组件不创建此代理。
+   */
   proxy: ComponentPublicInstance | null
 
   // expose() 声明的原始属性及其自动解包公共代理。
+  /**
+   * expose 登记的原始对外对象；getComponentPublicInstance 后续构造 exposeProxy 并自动解包其中的 ref。
+   */
   exposed: Record<string, any> | null
+  /**
+   * 首次对外取得暴露实例时创建并缓存的 proxyRefs 代理，同时允许读取内置 $ 属性。
+   */
   exposeProxy: Record<string, any> | null
 
   /**
@@ -396,11 +466,29 @@ export interface ComponentInternalInstance {
   ctx: Data
 
   // 组件运行时状态。
+  /**
+   * Options data 的响应式对象；无 data 时使用共享空对象。
+   */
   data: Data
+  /**
+   * 声明输入的浅响应式映射；SSR/函数式组件使用普通映射。
+   */
   props: Data
+  /**
+   * 未被 props/emits 消费的输入，原地更新并用空键手动通知依赖。
+   */
   attrs: Data
+  /**
+   * 标准化插槽函数映射，更新时保留对象引用并清理失效键。
+   */
   slots: InternalSlots
+  /**
+   * 模板 ref 名到宿主节点/组件公开实例的集合，由 renderer 分阶段赋值。
+   */
   refs: Data
+  /**
+   * 创建实例后绑定到本实例的事件发送器，SetupContext/$emit 共用。
+   */
   emit: EmitFn
 
   /** @internal 记录组件 `.once` 事件是否已触发，防止重复调用。 */
@@ -426,62 +514,85 @@ export interface ComponentInternalInstance {
   asyncResolved: boolean
 
   // 生命周期状态与钩子数组。
+  /**
+   * 首次 render effect 完成挂载后置 true；卸载不将它复位。
+   */
   isMounted: boolean
+  /**
+   * 卸载完成的 post 阶段置 true，拦截迟到的组件事件/异步依赖。
+   */
   isUnmounted: boolean
+  /**
+   * KeepAlive 停用状态，由缓存激活/停用协议切换。
+   */
   isDeactivated: boolean
   /**
+   * beforeCreate 的内部生命周期键类型占位。Options API 初始化实际通过 callHook 同步执行 options.beforeCreate，不将它登记为 renderer 消费的实例钩子数组。
    * @internal
    */
   [LifecycleHooks.BEFORE_CREATE]: LifecycleHook
   /**
+   * created 的内部生命周期键类型占位。状态选项初始化完成后，applyOptions 直接 callHook(options.created)，不经 renderer 的挂载 post 队列。
    * @internal
    */
   [LifecycleHooks.CREATED]: LifecycleHook
   /**
+   * 内部包装钩子数组：首次 render 前调用；以生命周期短键存储，由渲染器/服务端渲染器消费。
    * @internal
    */
   [LifecycleHooks.BEFORE_MOUNT]: LifecycleHook
   /**
+   * 内部包装钩子数组：首次子树提交后排入 post 阶段；以生命周期短键存储，由渲染器/服务端渲染器消费。
    * @internal
    */
   [LifecycleHooks.MOUNTED]: LifecycleHook
   /**
+   * 内部包装钩子数组：更新 render/patch 前同步调用；以生命周期短键存储，由渲染器/服务端渲染器消费。
    * @internal
    */
   [LifecycleHooks.BEFORE_UPDATE]: LifecycleHook
   /**
+   * 内部包装钩子数组：更新子树提交后排入 post 阶段；以生命周期短键存储，由渲染器/服务端渲染器消费。
    * @internal
    */
   [LifecycleHooks.UPDATED]: LifecycleHook
   /**
+   * 内部包装钩子数组：停止 scope 和卸载子树前调用；以生命周期短键存储，由渲染器/服务端渲染器消费。
    * @internal
    */
   [LifecycleHooks.BEFORE_UNMOUNT]: LifecycleHook
   /**
+   * 内部包装钩子数组：子树卸载后排入 post 阶段；以生命周期短键存储，由渲染器/服务端渲染器消费。
    * @internal
    */
   [LifecycleHooks.UNMOUNTED]: LifecycleHook
   /**
+   * 内部包装钩子数组：开发渲染依赖收集时调用；以生命周期短键存储，由渲染器/服务端渲染器消费。
    * @internal
    */
   [LifecycleHooks.RENDER_TRACKED]: LifecycleHook
   /**
+   * 内部包装钩子数组：开发渲染依赖触发时调用；以生命周期短键存储，由渲染器/服务端渲染器消费。
    * @internal
    */
   [LifecycleHooks.RENDER_TRIGGERED]: LifecycleHook
   /**
+   * 内部包装钩子数组：KeepAlive 激活分支后调用；以生命周期短键存储，由渲染器/服务端渲染器消费。
    * @internal
    */
   [LifecycleHooks.ACTIVATED]: LifecycleHook
   /**
+   * 内部包装钩子数组：KeepAlive 移入缓存后调用；以生命周期短键存储，由渲染器/服务端渲染器消费。
    * @internal
    */
   [LifecycleHooks.DEACTIVATED]: LifecycleHook
   /**
+   * 内部包装钩子数组：后代错误向祖先传播时调用；以生命周期短键存储，由渲染器/服务端渲染器消费。
    * @internal
    */
   [LifecycleHooks.ERROR_CAPTURED]: LifecycleHook
   /**
+   * 内部包装钩子数组：SSR 渲染前等待执行；以生命周期短键存储，由渲染器/服务端渲染器消费。
    * @internal
    */
   [LifecycleHooks.SERVER_PREFETCH]: LifecycleHook<() => Promise<unknown>>
@@ -653,6 +764,9 @@ if (__SSR__) {
   /** 多份 SSR runtime 之间广播当前实例或 SSR setup 状态的 setter 签名。 */
   type Setter = (v: any) => void
   const g = getGlobalThis()
+  /**
+   * 向全局 key 对应的 setter 数组注册本 runtime 的回调，并返回广播函数；多副本时逐个同步 currentInstance/SSR 标志，单副本时直接调用。模块加载本身会写入全局注册表。
+   */
   const registerGlobalSetter = (key: string, setter: Setter) => {
     let setters: Setter[]
     if (!(setters = g[key])) setters = g[key] = []
@@ -673,9 +787,15 @@ if (__SSR__) {
     v => (isInSSRComponentSetup = v),
   )
 } else {
+  /**
+   * 非 SSR 构建直接替换本 runtime 的 currentInstance，不经过全局多副本广播。
+   */
   internalSetCurrentInstance = i => {
     currentInstance = i
   }
+  /**
+   * 非 SSR 构建直接写入本 runtime 的 setup 标志，保持与 SSR 广播设置器相同的调用接口。
+   */
   setInSSRSetupState = v => {
     isInSSRComponentSetup = v
   }
@@ -750,7 +870,9 @@ export function setupComponent(
 }
 
 /**
- * 创建公开代理并执行有状态组件 setup，处理同步返回、async setup 与 Suspense 注册。
+ * 初始化有状态组件的公开代理和访问来源缓存，再执行用户 setup。调用时临时激活实例/scope并暂停外层依赖追踪；同步调用结束后先恢复，再解释返回值。
+ *
+ * 同步返回交给 handleSetupResult；SSR async setup 返回供 server-renderer 等待的 Promise。客户端只保存 asyncDep 并暂停初始化，Suspense 的 registerDep 由 renderer 在外层调用，合法 resolve 后才补 setup 结果与 render effect。无边界时开发环境警告。
  */
 function setupStatefulComponent(
   instance: ComponentInternalInstance,
@@ -915,6 +1037,9 @@ let installWithProxy: (i: ComponentInternalInstance) => void
  */
 export function registerRuntimeCompiler(_compile: any): void {
   compile = _compile
+  /**
+   * 仅为带 _rc 标记的运行时编译 render 安装 with 专用公开代理，预编译 render 继续复用普通代理。
+   */
   installWithProxy = i => {
     if (i.render!._rc) {
       i.withProxy = new Proxy(i.ctx, RuntimeCompiledPublicInstanceProxyHandlers)
@@ -1020,7 +1145,7 @@ export function finishComponentSetup(
               ? ` Use "vue.esm-browser.js" instead.`
               : __GLOBAL__
                 ? ` Use "vue.global.js" instead.`
-                : ``) /* should not happen */,
+                : ``) /* 其余构建类型无附加提示 */,
       )
       /* v8 ignore stop */
     } else {
@@ -1032,21 +1157,33 @@ export function finishComponentSetup(
 /** setupContext.attrs 的只读代理：读取会追踪整组 attrs 变化，开发环境拒绝写入。 */
 const attrsProxyHandlers = __DEV__
   ? {
+      /**
+       * 开发 attrs 读取入口：标记显式消费 attrs，并以空键收集整组 attrs 变化依赖，再返回该属性值。
+       */
       get(target: Data, key: string) {
         markAttrsAccessed()
         track(target, TrackOpTypes.GET, '')
         return target[key]
       },
+      /**
+       * 开发环境拒绝写入 setupContext.attrs 并警告；返回 false，让 Proxy 保持只读语义。
+       */
       set() {
         warn(`setupContext.attrs is readonly.`)
         return false
       },
+      /**
+       * 开发环境拒绝删除 setupContext.attrs 的键并警告，返回 false。
+       */
       deleteProperty() {
         warn(`setupContext.attrs is readonly.`)
         return false
       },
     }
   : {
+      /**
+       * 生产 attrs 读取入口：追踪整组 attrs 的空键通知，再返回原属性值；不额外运行开发消费标记。
+       */
       get(target: Data, key: string) {
         track(target, TrackOpTypes.GET, '')
         return target[key]
@@ -1056,6 +1193,9 @@ const attrsProxyHandlers = __DEV__
 /** 开发环境 slots 代理：读取 slot 时追踪 `$slots`，便于 HMR/诊断触发更新。 */
 function getSlotsProxy(instance: ComponentInternalInstance): Slots {
   return new Proxy(instance.slots, {
+    /**
+     * 开发环境读取 slot 时追踪实例 $slots；updateSlots 的 HMR trigger 可据此通知正在渲染的 effect。
+     */
     get(target, key: string) {
       track(instance, TrackOpTypes.GET, '$slots')
       return target[key]
@@ -1066,12 +1206,16 @@ function getSlotsProxy(instance: ComponentInternalInstance): Slots {
 /**
  * 创建 setup 第二参数 `{ attrs, slots, emit, expose }`。
  *
- * 开发环境用 getter 惰性创建代理并冻结外层对象，既能警告误写，也允许 test-utils 在
- * 内部替换 instance 字段后 getter 读取最新值；生产环境使用更少包装。
+ * 开发环境冻结外层对象，attrs/slots getter 首次访问时创建并缓存代理；后续原地更新
+ * 对象可由代理读到，整体替换 instance.attrs/slots 不会改换已缓存代理的 target。
+ * emit getter 返回转发到当前 instance.emit 的函数；生产环境使用更少包装。
  */
 export function createSetupContext(
   instance: ComponentInternalInstance,
 ): SetupContext {
+  /**
+   * 记录父级组件 ref 可访问的对象；未传/空值转为空对象，开发环境诊断重复调用及数组、Ref、函数输入。重复调用仍覆盖 exposed，警告不会阻止赋值。
+   */
   const expose: SetupContext['expose'] = exposed => {
     if (__DEV__) {
       if (instance.exposed) {
@@ -1097,19 +1241,28 @@ export function createSetupContext(
   }
 
   if (__DEV__) {
-    // 开发用 getter，兼容 test-utils 替换 instance.attrs/slots；生产代码不应这样覆盖。
+    // attrs/slots 的代理惰性创建后复用；emit 在调用时读取当前 instance.emit。
     let attrsProxy: Attrs
     let slotsProxy: Slots
     return Object.freeze({
+      /**
+       * 首次访问创建 instance.attrs 的只读追踪代理并缓存；后续原地更新可见，整体替换 attrs 对象不会改换已缓存 target。
+       */
       get attrs() {
         return (
           attrsProxy ||
           (attrsProxy = new Proxy(instance.attrs, attrsProxyHandlers) as Attrs)
         )
       },
+      /**
+       * 首次访问创建开发 slots 代理并缓存，随后返回同一代理；实例 slots 按映射原地更新。
+       */
       get slots() {
         return slotsProxy || (slotsProxy = getSlotsProxy(instance))
       },
+      /**
+       * 返回在调用时读取 instance.emit 的转发函数，支持实例 emit 被后续接管；getter 每次访问会生成新闭包。
+       */
       get emit() {
         return (event: string, ...args: any[]) => instance.emit(event, ...args)
       },
@@ -1136,6 +1289,9 @@ export function getComponentPublicInstance(
     return (
       instance.exposeProxy ||
       (instance.exposeProxy = new Proxy(proxyRefs(markRaw(instance.exposed)), {
+        /**
+         * 暴露代理先读取 exposed 自身/原型链字段，并由 proxyRefs 解包；没有该键才回退 $el 等 publicPropertiesMap，未公开的 setup/data 不参与查找。
+         */
         get(target, key: string) {
           if (key in target) {
             return target[key]
@@ -1143,6 +1299,9 @@ export function getComponentPublicInstance(
             return publicPropertiesMap[key](instance)
           }
         },
+        /**
+         * 暴露代理的 in 检查只包含 exposed 与内置公共属性，不把未暴露的完整 this 成员当作存在。
+         */
         has(target, key: string) {
           return key in target || key in publicPropertiesMap
         },
@@ -1189,6 +1348,9 @@ export function formatComponentName(
 
   if (!name && instance) {
     // 从注册表按组件值反查 key；兼容未声明 name 的局部/全局对象组件。
+    /**
+     * 按组件值身份反查注册表中的名称，返回首个匹配键；调用方依次检查自身、父组件及全局注册表。
+     */
     const inferFromRegistry = (
       registry: Record<string, any> | undefined | null,
     ) => {

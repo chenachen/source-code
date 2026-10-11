@@ -83,7 +83,7 @@ export enum DeprecationTypes {
   // watch 与 props 默认值行为
   /** watch 数组时，数组原地变更也触发未声明 deep 的 watcher。 */
   WATCH_ARRAY = 'WATCH_ARRAY',
-  /** prop 默认值工厂把组件实例绑定为 `this`。 */
+  /** prop 默认值工厂以受限代理作为 `this`，兼容读取 $options、当前 props 与自身 inject。 */
   PROPS_DEFAULT_THIS = 'PROPS_DEFAULT_THIS',
 
   // 模板事件与自定义指令
@@ -125,7 +125,9 @@ export enum DeprecationTypes {
 
 /** 单项弃用警告的消息生成器和可选迁移文档地址。 */
 type DeprecationData = {
+  /** 静态提示或接收调用现场参数的提示工厂；其返回值会进入运行时控制台。 */
   message: string | ((...args: any[]) => string)
+  /** 可选迁移文档地址，在同一次警告后追加显示。 */
   link?: string
 }
 
@@ -216,6 +218,7 @@ export const deprecationData: Record<DeprecationTypes, DeprecationData> = {
   },
 
   [DeprecationTypes.CONFIG_IGNORED_ELEMENTS]: {
+    /** 按 runtime-only/完整构建分别提示 ignoredElements 的编译器配置入口。 */
     message: () => {
       let msg = `config.ignoredElements has been removed.`
       if (isRuntimeOnly()) {
@@ -267,6 +270,7 @@ export const deprecationData: Record<DeprecationTypes, DeprecationData> = {
   },
 
   [DeprecationTypes.INSTANCE_EVENT_HOOKS]: {
+    /** 把实际 hook: 事件名改写进 vue: 生命周期迁移提示。 */
     message: event =>
       `"${event}" lifecycle events are no longer supported. From templates, ` +
       `use the "vue:" prefix instead of "hook:". For example, @${event} ` +
@@ -298,6 +302,7 @@ export const deprecationData: Record<DeprecationTypes, DeprecationData> = {
   },
 
   [DeprecationTypes.INSTANCE_ATTRS_CLASS_STYLE]: {
+    /** 在 class/style 透传差异提示中加入组件名，缺失时显示 Anonymous。 */
     message: componentName =>
       `Component <${
         componentName || 'Anonymous'
@@ -320,6 +325,7 @@ export const deprecationData: Record<DeprecationTypes, DeprecationData> = {
   },
 
   [DeprecationTypes.OPTIONS_DATA_MERGE]: {
+    /** 把真实冲突 data 键写入深合并转浅合并的提示。 */
     message: (key: string) =>
       `Detected conflicting key "${key}" when merging data option values. ` +
       `In Vue 3, data keys are merged shallowly and will override one another.`,
@@ -345,6 +351,7 @@ export const deprecationData: Record<DeprecationTypes, DeprecationData> = {
   },
 
   [DeprecationTypes.PROPS_DEFAULT_THIS]: {
+    /** 把实际 prop 名写入默认值工厂 this 的弃用提示。 */
     message: (key: string) =>
       `props default value function no longer has access to "this". The compat ` +
       `build only offers access to this.$options.` +
@@ -353,6 +360,7 @@ export const deprecationData: Record<DeprecationTypes, DeprecationData> = {
   },
 
   [DeprecationTypes.CUSTOM_DIR]: {
+    /** 同时显示旧指令钩子与当前映射的新钩子，指明迁移目标。 */
     message: (legacyHook: string, newHook: string) =>
       `Custom directive hook "${legacyHook}" has been removed. ` +
       `Use "${newHook}" instead.`,
@@ -367,6 +375,7 @@ export const deprecationData: Record<DeprecationTypes, DeprecationData> = {
   },
 
   [DeprecationTypes.ATTR_FALSE_VALUE]: {
+    /** 用实际 attribute 名提示 false 的移除/字符串化行为差异。 */
     message: (name: string) =>
       `Attribute "${name}" with v-bind value \`false\` will render ` +
       `${name}="false" instead of removing it in Vue 3. To remove the attribute, ` +
@@ -377,6 +386,7 @@ export const deprecationData: Record<DeprecationTypes, DeprecationData> = {
   },
 
   [DeprecationTypes.ATTR_ENUMERATED_COERCION]: {
+    /** 比较输入值与旧转换结果，生成枚举 attribute 的具体迁移提示。 */
     message: (name: string, value: any, coerced: string) =>
       `Enumerated attribute "${name}" with v-bind value \`${value}\` will ` +
       `${
@@ -405,6 +415,7 @@ export const deprecationData: Record<DeprecationTypes, DeprecationData> = {
   },
 
   [DeprecationTypes.COMPONENT_ASYNC]: {
+    /** 从异步组件定义取得名称并提示使用 defineAsyncComponent。 */
     message: (comp: any) => {
       const name = getComponentName(comp)
       return (
@@ -423,6 +434,7 @@ export const deprecationData: Record<DeprecationTypes, DeprecationData> = {
   },
 
   [DeprecationTypes.COMPONENT_FUNCTIONAL]: {
+    /** 从旧函数式组件选项取得名称，提示改用函数组件及异步工厂迁移顺序。 */
     message: (comp: any) => {
       const name = getComponentName(comp)
       return (
@@ -439,6 +451,7 @@ export const deprecationData: Record<DeprecationTypes, DeprecationData> = {
   },
 
   [DeprecationTypes.COMPONENT_V_MODEL]: {
+    /** 区别已声明 modelValue 的组件与仍使用旧协议的组件，生成针对性的开关提示。 */
     message: (comp: ComponentOptions) => {
       const configMsg =
         `opt-in to ` +
@@ -481,6 +494,7 @@ export const deprecationData: Record<DeprecationTypes, DeprecationData> = {
   },
 
   [DeprecationTypes.PRIVATE_APIS]: {
+    /** 把旧私有 API 名加入弃用消息，供依赖库迁移定位。 */
     message: name =>
       `"${name}" is a Vue 2 private API that no longer exists in Vue 3. ` +
       `If you are seeing this warning only due to a dependency, you can ` +
@@ -570,6 +584,7 @@ export function warnDeprecation(
 export type CompatConfig = Partial<
   Record<DeprecationTypes, boolean | 'suppress-warning'>
 > & {
+  /** 全局或按组件决定旧行为默认开启/关闭；单项显式配置仍可覆盖该模式。 */
   MODE?: 2 | 3 | ((comp: Component | null) => 2 | 3)
 }
 

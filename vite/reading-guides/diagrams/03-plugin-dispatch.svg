@@ -1,0 +1,226 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="1660" viewBox="0 0 1100 1660" class="pd-svg" role="img" aria-labelledby="plugin-dispatch-title plugin-dispatch-desc">
+  <title id="plugin-dispatch-title">开发态插件容器的排序、短路、转换接力与并行边界</title>
+  <desc id="plugin-dispatch-desc">上图用三个示例用户插件说明 enforce 决定整体相对位置，transform.order 决定该钩子的独立顺序。中图分别展开 resolveId 的 truthy 短路与 load 的非 null 短路，并把 transform 的代码接力和 Source Map 累积画成两条路径。下图根据 object-hooks 测试展示 plugin1 完成后才执行 sequential plugin2，再同时启动 plugin3 和 plugin4，最后等待本批次完成。图中省略内置插件；请求示例假定过滤通过，异步调度展示成功路径。</desc>
+  <defs>
+    <marker id="plugin-dispatch-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 Z" fill="#52677d"/>
+    </marker>
+    <style>
+      .pd-svg text { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; fill: #19334d; font-size: 17px; }
+      .pd-title { font-size: 26px; font-weight: 700; }
+      .pd-heading { font-size: 21px; font-weight: 700; }
+      .pd-small { font-size: 16px; }
+      .pd-mono { font-family: ui-monospace, "SFMono-Regular", Consolas, "PingFang SC", "Microsoft YaHei", monospace; font-size: 16px; }
+      .pd-center { text-anchor: middle; }
+      .pd-panel { fill: #fff; stroke: #b8c7d5; stroke-width: 1.5; }
+      .pd-node { fill: #edf4fb; stroke: #8da8c0; stroke-width: 1.5; }
+      .pd-pre { fill: #e9f4eb; stroke: #82a98c; stroke-width: 1.5; }
+      .pd-post { fill: #fff1df; stroke: #bf9b68; stroke-width: 1.5; }
+      .pd-decision { fill: #fff7e9; stroke: #bf9b68; stroke-width: 1.5; }
+      .pd-result { fill: #e9f4eb; stroke: #82a98c; stroke-width: 1.5; }
+      .pd-edge { fill: none; stroke: #52677d; stroke-width: 2; marker-end: url(#plugin-dispatch-arrow); }
+      .pd-bus { fill: none; stroke: #52677d; stroke-width: 2; }
+      .pd-relative { fill: none; stroke: #52677d; stroke-width: 2; stroke-dasharray: 5 4; marker-end: url(#plugin-dispatch-arrow); }
+      .pd-map-edge { fill: none; stroke: #52677d; stroke-width: 2; stroke-dasharray: 5 4; marker-end: url(#plugin-dispatch-arrow); }
+    </style>
+  </defs>
+  <rect width="1100" height="1660" fill="#f5f7fa"/>
+  <text x="36" y="40" class="pd-title">开发态 EnvironmentPluginContainer 如何调度插件</text>
+  <text x="36" y="68">Vite v8.2.1 · 先选择该 hook 的有序插件，再按 hook 的返回值和并行规则调度</text>
+
+  <!-- 一：整体位置与单个 hook 的排序是两次不同的操作。 -->
+  <rect x="24" y="90" width="1052" height="408" rx="14" class="pd-panel"/>
+  <text x="44" y="122" class="pd-heading">1. 插件对象保持不变，每个 hook 取得自己的顺序</text>
+  <text x="44" y="149">示例声明：[pC, pB, pA]。按 enforce 分组后，三个用户插件的相对次序如下。</text>
+  <text x="44" y="171" class="pd-small">内置插件已省略，虚线表示相对次序；实际流水线中仍有内置插件穿插其间。</text>
+
+  <rect x="52" y="188" width="284" height="118" rx="9" class="pd-pre"/>
+  <text x="70" y="215" class="pd-heading">pA</text>
+  <text x="70" y="240" class="pd-mono">enforce: 'pre'</text>
+  <text x="70" y="266">transform：普通函数</text>
+  <text x="70" y="290" class="pd-small">resolveId / load：普通函数</text>
+
+  <rect x="408" y="188" width="284" height="118" rx="9" class="pd-node"/>
+  <text x="426" y="215" class="pd-heading">pB</text>
+  <text x="426" y="240">enforce 未设置（normal）</text>
+  <text x="426" y="266" class="pd-mono">transform.order: 'pre'</text>
+  <text x="426" y="290" class="pd-small">resolveId / load：普通函数</text>
+
+  <rect x="764" y="188" width="284" height="118" rx="9" class="pd-post"/>
+  <text x="782" y="215" class="pd-heading">pC</text>
+  <text x="782" y="240" class="pd-mono">enforce: 'post'</text>
+  <text x="782" y="266" class="pd-mono">transform.order: 'post'</text>
+  <text x="782" y="290" class="pd-small">resolveId / load：普通函数</text>
+  <path d="M336 247 H408" class="pd-relative"/>
+  <path d="M692 247 H764" class="pd-relative"/>
+
+  <rect x="330" y="332" width="440" height="46" rx="9" class="pd-node"/>
+  <text x="550" y="360" class="pd-mono pd-center">getSortedPlugins('transform')</text>
+  <path d="M194 306 V355 H330" class="pd-edge"/>
+  <path d="M550 306 V332" class="pd-edge"/>
+  <path d="M906 306 V355 H770" class="pd-edge"/>
+  <path d="M550 378 V395 M194 395 H906" class="pd-bus"/>
+  <path d="M194 395 V415" class="pd-edge"/>
+  <path d="M550 395 V415" class="pd-edge"/>
+  <path d="M906 395 V415" class="pd-edge"/>
+  <rect x="52" y="415" width="284" height="52" rx="9" class="pd-pre"/>
+  <rect x="408" y="415" width="284" height="52" rx="9" class="pd-node"/>
+  <rect x="764" y="415" width="284" height="52" rx="9" class="pd-post"/>
+  <text x="194" y="447" class="pd-center">第 1 个：pB / order: pre</text>
+  <text x="550" y="447" class="pd-center">第 2 个：pA / order 未设置</text>
+  <text x="906" y="447" class="pd-center">第 3 个：pC / order: post</text>
+  <path d="M336 441 H408" class="pd-relative"/>
+  <path d="M692 441 H764" class="pd-relative"/>
+  <text x="44" y="487" class="pd-small">同一 order 组保留基础列表中的相对次序；resolveId / load 在本例仍是 pA → pB → pC。</text>
+
+  <!-- 二：分别展开 first-result 的继续、短路、耗尽，以及 transform 的两条状态路径。 -->
+  <rect x="24" y="518" width="1052" height="742" rx="14" class="pd-panel"/>
+  <text x="44" y="550" class="pd-heading">2. resolveId / load 找到结果就返回；transform 逐个接力</text>
+  <text x="44" y="577">请求示例假定三个插件都实现对应 hook，过滤通过、容器开启，且没有递归跳过项。</text>
+
+  <rect x="44" y="594" width="496" height="362" rx="10" fill="#f8fafc" stroke="#c7d3df"/>
+  <text x="64" y="624" class="pd-heading">resolveId</text>
+  <rect x="68" y="647" width="146" height="62" rx="8" class="pd-node"/>
+  <text x="141" y="672" class="pd-center">调用下一插件</text>
+  <text x="141" y="695" class="pd-mono pd-center">resolveId</text>
+  <path d="M330 636 L412 678 L330 720 L248 678 Z" class="pd-decision"/>
+  <text x="330" y="674" class="pd-center pd-small">result</text>
+  <text x="330" y="697" class="pd-center pd-small">为 truthy？</text>
+  <rect x="432" y="647" width="92" height="62" rx="8" class="pd-result"/>
+  <text x="478" y="672" class="pd-center pd-small">停止遍历</text>
+  <text x="478" y="695" class="pd-center pd-small">提取 id</text>
+  <path d="M214 678 H248" class="pd-edge"/>
+  <path d="M412 678 H432" class="pd-edge"/>
+  <text x="414" y="647" class="pd-small">是</text>
+  <path d="M478 709 V725" class="pd-edge"/>
+  <path d="M478 725 L522 765 L478 805 L434 765 Z" class="pd-decision"/>
+  <text x="478" y="761" class="pd-center pd-small">id 为</text>
+  <text x="478" y="783" class="pd-center pd-small">truthy？</text>
+  <path d="M434 765 H417 V873 H405" class="pd-edge"/>
+  <text x="417" y="753" class="pd-small">否</text>
+  <path d="M478 805 V829" class="pd-edge"/>
+  <text x="490" y="821" class="pd-small">是</text>
+  <rect x="432" y="829" width="92" height="67" rx="8" class="pd-result"/>
+  <text x="478" y="855" class="pd-center pd-small">处理 id</text>
+  <text x="478" y="878" class="pd-center pd-small">返回结果</text>
+  <path d="M330 720 V752" class="pd-edge"/>
+  <text x="343" y="742" class="pd-small">否</text>
+  <path d="M330 752 L400 790 L330 828 L260 790 Z" class="pd-decision"/>
+  <text x="330" y="796" class="pd-center pd-small">还有插件？</text>
+  <path d="M260 790 H141 V709" class="pd-edge"/>
+  <text x="194" y="779" class="pd-small">是</text>
+  <path d="M330 828 V851" class="pd-edge"/>
+  <text x="343" y="844" class="pd-small">否</text>
+  <rect x="255" y="851" width="150" height="45" rx="8" class="pd-node"/>
+  <text x="330" y="879" class="pd-center">返回 null</text>
+  <text x="64" y="923" class="pd-small">null / undefined / false / '' 都进入“继续”分支。</text>
+  <text x="64" y="946" class="pd-small">truthy 对象先短路，再按其中的 id 处理最终结果。</text>
+
+  <rect x="560" y="594" width="496" height="362" rx="10" fill="#f8fafc" stroke="#c7d3df"/>
+  <text x="580" y="624" class="pd-heading">load</text>
+  <rect x="584" y="647" width="146" height="62" rx="8" class="pd-node"/>
+  <text x="657" y="672" class="pd-center">调用下一插件</text>
+  <text x="657" y="695" class="pd-mono pd-center">load</text>
+  <path d="M846 636 L928 678 L846 720 L764 678 Z" class="pd-decision"/>
+  <text x="846" y="674" class="pd-mono pd-center">result</text>
+  <text x="846" y="697" class="pd-mono pd-center">!= null ?</text>
+  <rect x="948" y="647" width="92" height="62" rx="8" class="pd-result"/>
+  <text x="994" y="672" class="pd-center pd-small">停止遍历</text>
+  <text x="994" y="695" class="pd-center pd-small">返回结果</text>
+  <path d="M730 678 H764" class="pd-edge"/>
+  <path d="M928 678 H948" class="pd-edge"/>
+  <text x="930" y="647" class="pd-small">是</text>
+  <path d="M846 720 V752" class="pd-edge"/>
+  <text x="859" y="742" class="pd-small">否</text>
+  <path d="M846 752 L916 790 L846 828 L776 790 Z" class="pd-decision"/>
+  <text x="846" y="796" class="pd-center pd-small">还有插件？</text>
+  <path d="M776 790 H657 V709" class="pd-edge"/>
+  <text x="710" y="779" class="pd-small">是</text>
+  <path d="M846 828 V851" class="pd-edge"/>
+  <text x="859" y="844" class="pd-small">否</text>
+  <rect x="771" y="851" width="150" height="45" rx="8" class="pd-node"/>
+  <text x="846" y="879" class="pd-center">返回 null</text>
+  <text x="580" y="923" class="pd-small">null / undefined 继续；空字符串 '' 也是有效结果。</text>
+  <text x="580" y="946" class="pd-small">对象结果含 meta 且模块已入图时，才浅合并 meta。</text>
+
+  <text x="44" y="992" class="pd-heading">transform：每次 await 后，更新当前 code / moduleType</text>
+  <text x="44" y="1018" class="pd-small">下面展开对象结果同时提供 code 和 truthy map 的路径；map 单独入链，最后合成。</text>
+  <rect x="52" y="1042" width="150" height="78" rx="8" class="pd-node"/>
+  <text x="127" y="1074" class="pd-center">初始 code₀</text>
+  <text x="127" y="1098" class="pd-center pd-small">moduleType₀</text>
+  <rect x="256" y="1042" width="180" height="78" rx="8" class="pd-pre"/>
+  <text x="346" y="1070" class="pd-center">pB.transform</text>
+  <text x="346" y="1096" class="pd-center pd-small">返回 code₁ / map₁</text>
+  <rect x="490" y="1042" width="180" height="78" rx="8" class="pd-node"/>
+  <text x="580" y="1070" class="pd-center">pA.transform</text>
+  <text x="580" y="1096" class="pd-center pd-small">返回 code₂ / map₂</text>
+  <rect x="724" y="1042" width="180" height="78" rx="8" class="pd-post"/>
+  <text x="814" y="1070" class="pd-center">pC.transform</text>
+  <text x="814" y="1096" class="pd-center pd-small">返回 code₃ / map₃</text>
+  <rect x="958" y="1042" width="90" height="78" rx="8" class="pd-result"/>
+  <text x="1003" y="1074" class="pd-center">最终</text>
+  <text x="1003" y="1098" class="pd-center">code₃</text>
+  <path d="M202 1081 H256" class="pd-edge"/>
+  <path d="M436 1081 H490" class="pd-edge"/>
+  <path d="M670 1081 H724" class="pd-edge"/>
+  <path d="M904 1081 H958" class="pd-edge"/>
+  <text x="229" y="1107" class="pd-center pd-small">code₀</text>
+  <text x="463" y="1107" class="pd-center pd-small">code₁</text>
+  <text x="697" y="1107" class="pd-center pd-small">code₂</text>
+  <path d="M346 1120 V1173" class="pd-map-edge"/>
+  <path d="M580 1120 V1173" class="pd-map-edge"/>
+  <path d="M814 1120 V1147 H730 V1173" class="pd-map-edge"/>
+  <text x="358" y="1150" class="pd-small">map₁</text>
+  <text x="592" y="1150" class="pd-small">map₂</text>
+  <text x="827" y="1150" class="pd-small">map₃</text>
+  <rect x="52" y="1173" width="150" height="46" rx="8" class="pd-node"/>
+  <text x="127" y="1202" class="pd-center">初始 inMap</text>
+  <path d="M202 1196 H244" class="pd-map-edge"/>
+  <rect x="244" y="1173" width="554" height="46" rx="8" class="pd-node"/>
+  <text x="521" y="1202" class="pd-center pd-small">ctx.sourcemapChain：inMap → map₁ → map₂ → map₃</text>
+  <path d="M798 1196 H850" class="pd-edge"/>
+  <rect x="850" y="1173" width="198" height="46" rx="8" class="pd-result"/>
+  <text x="949" y="1202" class="pd-center">最终合成 map</text>
+  <text x="44" y="1245" class="pd-small">handler 收到 code、id、options；moduleType 可由对象结果更新。null / undefined / '' 沿用当前状态。</text>
+
+  <!-- 三：真实 object-hooks 测试中的并发与 sequential 等待边界。 -->
+  <rect x="24" y="1280" width="1052" height="352" rx="14" class="pd-panel"/>
+  <text x="44" y="1312" class="pd-heading">3. buildStart：sequential 等待前一批，也阻止下一批提前启动</text>
+  <text x="44" y="1339" class="pd-small">真实 object-hooks 测试：四个 buildStart 都未设置 order，按 plugin1 → plugin2 → plugin3 → plugin4 遍历。</text>
+  <rect x="52" y="1374" width="165" height="88" rx="9" class="pd-node"/>
+  <text x="134" y="1400" class="pd-center">plugin1</text>
+  <text x="134" y="1424" class="pd-center pd-small">await 100 ms</text>
+  <text x="134" y="1448" class="pd-center pd-small">完成：count → 1</text>
+  <rect x="252" y="1386" width="140" height="64" rx="9" class="pd-node"/>
+  <text x="322" y="1412" class="pd-center pd-small">等待批次 1</text>
+  <text x="322" y="1436" class="pd-mono pd-center">Promise.all</text>
+  <path d="M217 1418 H252" class="pd-edge"/>
+    <rect x="421" y="1357" width="202" height="144" rx="11" fill="#fff8ed" stroke="#bf9b68" stroke-dasharray="5 4"/>
+  <rect x="437" y="1374" width="170" height="88" rx="9" class="pd-post"/>
+  <text x="522" y="1398" class="pd-center">plugin2</text>
+  <text x="522" y="1420" class="pd-center pd-small">入口断言 count = 1</text>
+  <text x="522" y="1442" class="pd-center pd-small">await 后 count → 2</text>
+  <text x="522" y="1485" class="pd-mono pd-center">sequential: true</text>
+  <path d="M392 1418 H437" class="pd-edge"/>
+
+  <rect x="682" y="1367" width="164" height="72" rx="9" class="pd-node"/>
+  <text x="764" y="1391" class="pd-center">plugin3</text>
+  <text x="764" y="1413" class="pd-center pd-small">入口断言 count = 2</text>
+  <text x="764" y="1434" class="pd-center pd-small">await 后 count → 3</text>
+  <rect x="682" y="1470" width="164" height="60" rx="9" class="pd-node"/>
+  <text x="764" y="1495" class="pd-center">plugin4</text>
+  <text x="764" y="1517" class="pd-center pd-small">入口断言 count = 2</text>
+  <path d="M607 1418 H646 M646 1403 V1500" class="pd-bus"/>
+  <path d="M646 1403 H682" class="pd-edge"/>
+  <path d="M646 1500 H682" class="pd-edge"/>
+  <text x="650" y="1457" class="pd-small">启动下一批</text>
+  <path d="M846 1403 H878 M846 1500 H878 M878 1403 V1500" class="pd-bus"/>
+  <path d="M878 1450 H909" class="pd-edge"/>
+  <rect x="909" y="1413" width="139" height="76" rx="9" class="pd-result"/>
+  <text x="978" y="1438" class="pd-center pd-small">等待批次 2</text>
+  <text x="978" y="1461" class="pd-mono pd-center">Promise.all</text>
+  <text x="978" y="1482" class="pd-center pd-small">hook 调度完成</text>
+  <text x="44" y="1565" class="pd-small">普通 handler 在遍历时立即调用；异步拒绝在 Promise.all 等待边界观察，已发起任务继续。</text>
+  <text x="44" y="1591" class="pd-small">等待边界发现拒绝后不再启动后续批次；同步抛错会当场终止启动。sequential 的 handler 自身也被 await。</text>
+  <text x="44" y="1617" class="pd-small">buildStart 完成 hook 调度后，开发环境还会登记输入的 safeModulePaths，然后才完成启动。</text>
+</svg>

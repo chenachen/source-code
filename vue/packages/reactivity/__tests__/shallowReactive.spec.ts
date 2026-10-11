@@ -10,13 +10,19 @@ import { effect } from '../src/effect'
 import { type Ref, isRef, ref } from '../src/ref'
 
 describe('shallowReactive', () => {
-  // 场景：浅响应式对象包含普通嵌套对象；验证嵌套值不会被递归转换为响应式代理。
+  /**
+   * 浅响应式对象 n 保存普通 { foo: 1 }，读取 n 后检查代理标记。
+   * isReactive(n) 为 false，验证根层代理不递归转换普通嵌套值。
+   */
   test('should not make non-reactive properties reactive', () => {
     const props = shallowReactive({ n: { foo: 1 } })
     expect(isReactive(props.n)).toBe(false)
   })
 
-  // 场景：浅响应式对象接收已有响应式值；验证读取时仍保留原响应式代理身份。
+  /**
+   * 浅响应式对象 n 起初是一个 reactive 对象，再将 n 替换为另一个 reactive 对象。
+   * 读取 n 仍为响应式，验证浅层写入与读取保留已有代理模式。
+   */
   test('should keep reactive properties reactive', () => {
     const props: any = shallowReactive({ n: reactive({ foo: 1 }) })
     props.n = reactive({ foo: 2 })
@@ -24,7 +30,10 @@ describe('shallowReactive', () => {
   })
 
   // #2843
-  // 场景：同一原始对象分别创建浅层和深层代理；验证两种模式可共存且各自缓存。
+  /**
+   * 同一 raw 含 foo 对象，分别创建 shallowReactive 与 reactive 两个入口。
+   * 代理引用不同，浅入口 foo 非响应式而深入口 foo 响应式，验证深浅缓存与读取策略分离。
+   */
   test('should allow shallow and normal reactive for same target', () => {
     const original = { foo: {} }
     const shallowProxy = shallowReactive(original)
@@ -34,14 +43,20 @@ describe('shallowReactive', () => {
     expect(isReactive(reactiveProxy.foo)).toBe(true)
   })
 
-  // 场景：检查浅层与深层响应式值；验证 isShallow 只识别浅层代理。
+  /**
+   * 对 shallowReactive({}) 和 shallowReadonly({}) 调用 isShallow。
+   * 两项均为 true，验证两个浅层普通对象代理的标记；本例未检查深代理或集合。
+   */
   test('isShallow', () => {
     expect(isShallow(shallowReactive({}))).toBe(true)
     expect(isShallow(shallowReadonly({}))).toBe(true)
   })
 
   // #5271
-  // 场景：深层响应式对象重新写入浅层代理；验证浅层边界不会在重设后丢失。
+  /**
+   * 深 reactive 对象 foo 起初保存 shallowReactive({ bar: {} })，再替换为新浅代理。
+   * 替换前后 foo 保持浅标记、bar 非响应式，验证深层对象 set/get 保留浅对象代理身份。
+   */
   test('should respect shallow reactive nested inside reactive on reset', () => {
     const r = reactive({ foo: shallowReactive({ bar: {} }) })
     expect(isShallow(r.foo)).toBe(true)
@@ -53,7 +68,10 @@ describe('shallowReactive', () => {
   })
 
   // vuejs/vue#12597
-  // 场景：浅响应式对象根属性保存 Ref；验证读取属性时保留 Ref 而不自动解包。
+  /**
+   * 浅响应式对象根属性 bar 保存 ref(123)，读取 bar 和 bar.value。
+   * bar 仍是 Ref 且 value 为 123，验证浅 getter 不自动解包根属性 Ref。
+   */
   test('should not unwrap refs', () => {
     const foo = shallowReactive({
       bar: ref(123),
@@ -63,10 +81,16 @@ describe('shallowReactive', () => {
   })
 
   // vuejs/vue#12688
-  // 场景：给浅响应式对象中原为 Ref 的属性赋普通值；验证替换槽位而非修改 ref.value。
+  /**
+   * 浅响应式对象 bar 起初保存 ref(123)，再直接给 bar 赋数值 234。
+   * 槽位变成 234，而原 Ref.value 仍为 123，验证浅 set 替换槽位而不向旧 Ref 转发赋值。
+   */
   test('should not mutate refs', () => {
     const original = ref(123)
-    const foo = shallowReactive<{ bar: Ref<number> | number }>({
+    const foo = shallowReactive<{
+      /** 允许 Ref 与普通数值交替保存的浅层槽位，供断言普通赋值替换槽位而不修改旧 Ref.value。 */ bar:
+        Ref<number> | number
+    }>({
       bar: original,
     })
     expect(foo.bar).toBe(original)
@@ -75,7 +99,10 @@ describe('shallowReactive', () => {
     expect(original.value).toBe(123)
   })
 
-  // 场景：同一目标同时存在浅/深代理并被嵌套访问；验证访问结果遵守各自转换深度。
+  /**
+   * 同一 raw 已有浅、深两个代理，再将这两个代理分别放进深 reactive 对象。
+   * 读回引用各等于原浅/深代理，验证嵌套访问不会将同 target 的两种输入模式混为一项。
+   */
   test('should respect shallow/deep versions of same target on access', () => {
     const original = {}
     const shallow = shallowReactive(original)
@@ -86,7 +113,10 @@ describe('shallowReactive', () => {
   })
 
   describe('collections', () => {
-    // 场景：对 Map 创建浅响应式代理；验证集合本身具备响应式身份和根层追踪能力。
+    /**
+     * 空 shallowReactive Set 的 size 被 effect 读取，随后 add、delete 同一对象。
+     * 记录 0→1→0，验证浅模式仅限制成员转换，集合自身的结构依赖仍响应变化。
+     */
     test('should be reactive', () => {
       const shallowSet = shallowReactive(new Set())
       const a = {}
@@ -105,7 +135,10 @@ describe('shallowReactive', () => {
       expect(size).toBe(0)
     })
 
-    // 场景：迭代浅响应式 Map 中的对象值；验证产出值不会被递归代理。
+    /**
+     * 空浅响应式 Set 加入普通对象，再用展开迭代取首项。
+     * 产出成员非响应式，验证 Set 默认迭代在浅模式返回原值。
+     */
     test('should not observe when iterating', () => {
       const shallowSet = shallowReactive(new Set())
       const a = {}
@@ -115,7 +148,10 @@ describe('shallowReactive', () => {
       expect(isReactive(spreadA)).toBe(false)
     })
 
-    // 场景：通过 get 读取浅响应式 Map 的对象值；验证返回原值而非响应式代理。
+    /**
+     * 空浅响应式 Map 用字符串键保存普通对象，再 get 该键。
+     * 返回值非响应式，验证浅集合 get 不深层包装新写入的值。
+     */
     test('should not get reactive entry', () => {
       const shallowMap = shallowReactive(new Map())
       const a = {}
@@ -126,7 +162,10 @@ describe('shallowReactive', () => {
       expect(isReactive(shallowMap.get(key))).toBe(false)
     })
 
-    // 场景：通过浅响应式 Map.forEach 读取对象值；验证回调参数保持浅层语义。
+    /**
+     * 空浅响应式 Set 加入普通对象，再 forEach 检查回调成员。
+     * 成员非响应式，验证 forEach 的浅模式回调参数保持原值。
+     */
     test('should not get reactive on foreach', () => {
       const shallowSet = shallowReactive(new Set())
       const a = {}
@@ -135,7 +174,10 @@ describe('shallowReactive', () => {
       shallowSet.forEach(x => expect(isReactive(x)).toBe(false))
     })
 
-    // 场景：向浅响应式 Map 写入已有响应式对象；验证写入和读取都保留该代理身份。
+    /**
+     * 浅响应式 Map 初始键和后续 set 的键都保存同一个 reactive 对象。
+     * get 两个键都返回响应式值，验证浅模式保留已有代理，不因初始/后续写入而还原为 raw。
+     */
     test('Setting a reactive object on a shallowReactive map', () => {
       const msg = ref('ads')
       const bar = reactive({ msg })
@@ -146,7 +188,10 @@ describe('shallowReactive', () => {
       expect(isReactive(foo.get('foo1'))).toBe(true)
     })
 
-    // 场景：向浅响应式 Set 添加已有响应式对象；验证集合不会把成员还原为 raw。
+    /**
+     * 浅响应式 Set 起初保存一个 reactive 对象，再添加另一个 reactive 对象。
+     * forEach 的两个成员均响应式，验证浅集合成员写入与迭代保留已有代理。
+     */
     test('Setting a reactive object on a shallowReactive set', () => {
       const msg = ref(1)
       const bar = reactive({ msg })
@@ -161,7 +206,10 @@ describe('shallowReactive', () => {
     })
 
     // #1210
-    // 场景：对浅响应式 Map 执行对象展开式读取；验证 onTrack 收到正确遍历事件。
+    /**
+     * effect 配置 onTrack，调用 Array.from 收集空浅响应式 Set。
+     * 结果为空数组且 onTrack 被调用，验证此处实际发生的是集合迭代依赖追踪。
+     */
     test('onTrack on called on objectSpread', () => {
       const onTrackFn = vi.fn()
       const shallowSet = shallowReactive(new Set())
@@ -181,7 +229,10 @@ describe('shallowReactive', () => {
   })
 
   describe('array', () => {
-    // 场景：对 Set 创建浅响应式代理；验证集合自身仍可被 effect 追踪。
+    /**
+     * 空浅响应式数组的 length 被 effect 读取，随后 push 普通对象再 pop。
+     * 记录 0→1→0，验证浅数组自身的长度变化仍能触发依赖。
+     */
     test('should be reactive', () => {
       const shallowArray = shallowReactive<unknown[]>([])
       const a = {}
@@ -200,7 +251,10 @@ describe('shallowReactive', () => {
       expect(size).toBe(0)
     })
 
-    // 场景：迭代浅响应式 Set 的对象成员；验证成员不会被递归转换。
+    /**
+     * 向空浅响应式数组 push 普通对象，再用展开迭代取首项。
+     * 元素非响应式，验证浅数组的迭代出口不递归包装对象。
+     */
     test('should not observe when iterating', () => {
       const shallowArray = shallowReactive<object[]>([])
       const a = {}
@@ -210,7 +264,10 @@ describe('shallowReactive', () => {
       expect(isReactive(spreadA)).toBe(false)
     })
 
-    // 场景：对浅响应式 Set 执行对象展开式读取；验证 onTrack 的遍历事件正确。
+    /**
+     * effect 配置 onTrack，调用 Array.from 收集空浅响应式数组。
+     * 结果为空数组且 onTrack 被调用，验证数组迭代仍建立依赖。
+     */
     test('onTrack on called on objectSpread', () => {
       const onTrackFn = vi.fn()
       const shallowArray = shallowReactive([])

@@ -366,7 +366,7 @@ function isFragmentInstanceHostParent(fiber: Fiber): boolean {
 
 /**
  * 向前搜索同一宿主父级下首个稳定、非 Placement 的宿主 sibling，作为 insertBefore 锚点。
- * 连续插入会反复越过待放置子树，最坏产生指数搜索；TODO：设计更高效的 sibling 索引。
+ * 连续插入会重复扫描同一批待放置子树，增加搜索成本；TODO：设计更高效的 sibling 索引。
  */
 function getHostSibling(fiber: Fiber): ?Instance {
   let node: Fiber = fiber;
@@ -422,6 +422,8 @@ function getHostSibling(fiber: Fiber): ?Instance {
  * 把 Placement 子树的终端宿主节点插入 Root/Portal Container。
  * Portal 自行提交而跳过；singleton scope 会接管后代插入父级；FragmentInstance 同步登记
  * 直属宿主 child。
+ * before 是同容器中稳定宿主 sibling 的实例，null 表示追加；复合 Fiber 递归展开，
+ * 宿主 Fiber 插入后即停止，因为其内部 child 已在 complete 阶段组装。
  */
 function insertOrAppendPlacementNodeIntoContainer(
   node: Fiber,
@@ -484,8 +486,9 @@ function insertOrAppendPlacementNodeIntoContainer(
 }
 
 /**
- * 把 Placement 子树的终端宿主节点插入普通宿主 Instance；规则与 Container 版本相同，
- * 但使用 appendChild/insertBefore 宿主接口。
+ * 把 Placement 子树的终端宿主节点插入普通宿主 Instance，使用 appendChild/insertBefore。
+ * 与 Container 版本都跳过 Portal、在宿主节点处停止；进入 singleton scope 时本版本
+ * 只切换 parent，保留传入 before，Container 版本则同时把 before 置空。
  */
 function insertOrAppendPlacementNode(
   node: Fiber,
@@ -544,6 +547,9 @@ function insertOrAppendPlacementNode(
 /**
  * 查找 Placement Fiber 的宿主父级与稳定 sibling 锚点，再递归插入全部终端宿主节点。
  * 同时收集到最近宿主边界为止的 FragmentInstance；mutation 关闭时仅维护其不可变归属。
+ * finishedWork 是已标 Placement 的工作子树；该标记也可能代表移动已有实例，不必新建。
+ * 若宿主父级尚有 ContentReset，先清空旧直接文本并清标记，再插入 child，避免后续
+ * 父级 reset 删除刚插入的内容。此函数不清 Placement，消费标记由外层 commitReconciliationEffects 完成。
  */
 function commitPlacement(finishedWork: Fiber): void {
   // 递归把全部终端宿主节点插入父级。
@@ -649,6 +655,7 @@ function commitPlacement(finishedWork: Fiber): void {
 /**
  * 非 mutation 渲染器中递归登记 Placement 子树与祖先 FragmentInstance 的归属。
  * singleton/宿主节点作为终端 child，Portal 属另一宿主树而跳过。
+ * 当前终端判断不包含 HostText，因此该辅助路径不会登记文本实例，即使文本 ref 开关开启。
  */
 function commitImmutablePlacementNodeToFragmentInstances(
   finishedWork: Fiber,
@@ -687,7 +694,7 @@ function commitImmutablePlacementNodeToFragmentInstances(
   }
 }
 
-/** 用 DEV Fiber 上下文安全执行宿主 Placement，错误不会中断其余 mutation effect。 */
+/** 执行宿主 Placement，DEV 附带 Fiber 上下文；一次插入抛错会中止该子树余下插入，不回滚已完成 mutation。捕获后安排边界恢复，使外层提交仍可处理其它 effect。 */
 export function commitHostPlacement(finishedWork: Fiber) {
   try {
     if (__DEV__) {
@@ -700,7 +707,7 @@ export function commitHostPlacement(finishedWork: Fiber) {
   }
 }
 
-/** 从 Root/Portal Container 删除宿主 child，记录 mutation 并捕获宿主错误。 */
+/** 从 Root/Portal Container 删除宿主 child并记录 mutation；deletedFiber 提供故障栈，nearestMountedAncestor 是仍保留的捕获搜索起点，不能沿已删除子树寻找错误边界。 */
 export function commitHostRemoveChildFromContainer(
   deletedFiber: Fiber,
   nearestMountedAncestor: Fiber,
@@ -724,7 +731,7 @@ export function commitHostRemoveChildFromContainer(
   }
 }
 
-/** 从普通宿主 Instance 删除宿主 child，记录 mutation 并捕获宿主错误。 */
+/** 从普通宿主 Instance 删除宿主 child并记录 mutation；宿主删除失败仍从 nearestMountedAncestor 搜索存活错误边界，不回滚已执行的其它删除。 */
 export function commitHostRemoveChild(
   deletedFiber: Fiber,
   nearestMountedAncestor: Fiber,
@@ -748,7 +755,7 @@ export function commitHostRemoveChild(
   }
 }
 
-/** 持久化模式提交 Root.pendingChildren，用新 ChildSet 原子替换容器内容。 */
+/** 持久化模式提交 Root.pendingChildren，以一次 HostConfig replaceContainerChildren 调用替换容器内容；宿主具体替换与错误行为由 renderer 定义。 */
 export function commitHostRootContainerChildren(
   root: FiberRoot,
   finishedWork: Fiber,
@@ -862,14 +869,15 @@ export function commitHostHydratedSuspense(
 }
 
 /**
- * 首次挂载 HostSingleton 时从宿主环境取得唯一实例，并写入初始属性/所有权。
+ * 首次挂载 HostSingleton 时认领 complete 阶段已经解析的 stateNode，写入初始属性/所有权。
+ * 此处调用 acquireSingletonInstance，不创建或重新解析唯一实例。
  */
 export function commitHostSingletonAcquisition(finishedWork: Fiber) {
   const singleton = finishedWork.stateNode;
   const props = finishedWork.memoizedProps;
 
   try {
-    // 新挂载：取得 DOM singleton 并设置初始属性。
+    // 新挂载：认领已解析的 singleton 并设置初始属性。
     if (__DEV__) {
       runWithFiberInDEV(
         finishedWork,
@@ -892,7 +900,7 @@ export function commitHostSingletonAcquisition(finishedWork: Fiber) {
   }
 }
 
-/** 卸载 HostSingleton 时释放宿主所有权并恢复 HostConfig 管理的原始状态。 */
+/** 卸载 HostSingleton 时让 HostConfig 释放所有权/属性；不删除唯一实例。这里没有局部 catch，宿主错误交给外层删除提交路径捕获。 */
 export function commitHostSingletonRelease(releasingWork: Fiber) {
   if (__DEV__) {
     runWithFiberInDEV(

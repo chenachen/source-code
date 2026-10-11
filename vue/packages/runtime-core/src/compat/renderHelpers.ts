@@ -27,8 +27,9 @@ function toObject(arr: Array<any>): Object {
 
 /**
  * Vue 2 `_b`：实现无参数 `v-bind="value"` 的 data 合并。
- * 保留 key/ref 等保留 props，合并 class/style，其余键写入 data.attrs；`.sync` 模式
- * 还生成 `update:key` 监听器，把子组件更新写回原 value 对象。
+ * 保留 key/ref 等保留 props，class 用 normalizeClass 合并，其余键写入 data.attrs。
+ * 当前 style 分支也调用 normalizeClass，会把样式对象转为键名字符串，无法保留 CSS
+ * 属性值；`.sync` 模式生成 `update:key` 监听器，把子组件更新写回原 value 对象。
  */
 export function legacyBindObjectProps(
   data: any,
@@ -57,6 +58,7 @@ export function legacyBindObjectProps(
 
           if (isSync) {
             const on = data.on || (data.on = {})
+            /** 旧 .sync 的回调把子组件传出的新值写回原绑定对象，闭包保留本次属性 key。 */
             on[`update:${key}`] = function ($event: any) {
               value[key] = $event
             }
@@ -90,7 +92,9 @@ export function legacyRenderSlot(
 /** Vue 2 编译器 `_u` 生成的可递归 scoped slot 描述数组。 */
 type LegacyScopedSlotsData = Array<
   | {
+      /** 旧 scoped slot 名，映射时复制到 Vue 3 的 name 字段。 */
       key: string
+      /** 插槽执行函数，转换描述时保留原引用与参数协议。 */
       fn: Function
     }
   | LegacyScopedSlotsData

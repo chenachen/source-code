@@ -1,0 +1,9 @@
+{
+  "outsideIncludedScopeChanges": [],
+  "bomMismatches": [],
+  "symlink": {
+    "file": "vite/playground/preserve-symlinks/module-a/linked.js",
+    "isSymbolicLink": true,
+    "target": "./src/index.js"
+  }
+}

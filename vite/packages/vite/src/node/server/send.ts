@@ -92,7 +92,7 @@ export function send(
   // https://github.com/vitejs/vite/pull/13514#issuecomment-1592431496
   else if (type === 'js' && (!map || map.mappings !== '')) {
     const code = content.toString()
-    // 代码已有内联 Source Map 时视为上游正确产物，避免重复注入（#14370）。
+    // 代码已有 sourceMappingURL 注释时跳过 fallback，避免重复注入（#14370）。
     if (convertSourceMap.mapFileCommentRegex.test(code)) {
       debug?.(`Skipped injecting fallback sourcemap for ${req.url}`)
     } else {

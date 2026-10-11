@@ -28,7 +28,7 @@ let waitForAll;
 let waitFor;
 let assertLog;
 
-/** `PhaseMarkers`：封装当前用例复用的操作、回调或断言步骤。 */
+/** 渲染记start，父layout/passive分别记last，作为后代效应之后的阶段标记，不自动派load。 */
 function PhaseMarkers({children}) {
   Scheduler.log('render start');
   React.useLayoutEffect(() => {
@@ -40,7 +40,7 @@ function PhaseMarkers({children}) {
   return children;
 }
 
-/** `last`：封装当前用例复用的操作、回调或断言步骤。 */
+/** 返回数组最后项或空数组undefined；非数组抛错，images收集顺序代表各次宿主创建。 */
 function last(arr) {
   if (Array.isArray(arr)) {
     if (arr.length) {
@@ -51,7 +51,7 @@ function last(arr) {
   throw new Error('last was passed something that was not an array');
 }
 
-/** `Text`：封装当前用例复用的操作、回调或断言步骤。 */
+/** 记录并返回props.text，供Yield后的渲染进度定位。 */
 function Text(props) {
   Scheduler.log(props.text);
   return props.text;
@@ -73,21 +73,21 @@ function Text(props) {
 //   }
 // }
 
-/** `Img`：封装当前用例复用的操作、回调或断言步骤。 */
+/** 默认src为default，记录后只把src/onLoad传img；useImageLoader/ref参数在此fixture未使用，不实现网络加载器。 */
 function Img({src: maybeSrc, onLoad, useImageLoader, ref}) {
   const src = maybeSrc || 'default';
   Scheduler.log('Img ' + src);
   return <img src={src} onLoad={onLoad} />;
 }
 
-/** `Yield`：封装当前用例复用的操作、回调或断言步骤。 */
+/** 记Yield并向mock Scheduler请求paint，允许过渡工作在此暂停，返回null无宿主。 */
 function Yield() {
   Scheduler.log('Yield');
   Scheduler.unstable_requestPaint();
   return null;
 }
 
-/** `loadImage`：封装当前用例复用的操作、回调或断言步骤。 */
+/** 手动创建不冒泡load，先清测试标记__needsDispatch再dispatch；不是触发真正网络读取或React队列重放。 */
 function loadImage(element) {
   const event = new Event('load');
   element.__needsDispatch = false;
@@ -109,11 +109,13 @@ describe('ReactDOMImageLoad', () => {
     waitFor = InternalTestUtils.waitFor;
     assertLog = InternalTestUtils.assertLog;
 
+    /** 合成onLoad记录提交后target的当前src attribute，与原生spy日志对照。 */
     onLoadSpy = jest.fn(reactEvent => {
       const src = reactEvent.target.getAttribute('src');
       Scheduler.log('onLoadSpy [' + src + ']');
     });
 
+    /** 每个img直接原生load监听，记录当前src；即使尚未提交/已经卸载也可能记录，不能等同合成派发。 */
     actualLoadSpy = jest.fn(nativeEvent => {
       const src = nativeEvent.target.getAttribute('src');
       Scheduler.log('actualLoadSpy [' + src + ']');
@@ -172,6 +174,7 @@ describe('ReactDOMImageLoad', () => {
     images = [];
 
     originalCreateElement = document.createElement;
+    /** 代理document.createElement；img创建时加原生load spy并入images，其它标签直接透传；afterEach恢复方法。 */
     document.createElement = function createElement(tagName, options) {
       const element = originalCreateElement.call(document, tagName, options);
       if (tagName === 'img') {
@@ -187,11 +190,13 @@ describe('ReactDOMImageLoad', () => {
     );
 
     Object.defineProperty(HTMLImageElement.prototype, 'src', {
-      /** `get`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** patched src getter直接读attribute，故此多数case没有原生绝对URL规范化。 */
       get() {
         return this.getAttribute('src');
       },
-      /** `set`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** patched setter记录load triggered、设__needsDispatch并setAttribute；标记潜在新加载，必须由case手动loadImage才产生事件。 */
       set(value) {
         Scheduler.log('load triggered');
         this.__needsDispatch = true;
@@ -209,14 +214,7 @@ describe('ReactDOMImageLoad', () => {
     );
   });
 
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「captures the load event if it happens before commit phase and replays it between layout and passive effects」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言连接 ReactDOM 公开入口、ReactDOMRoot 根生命周期及 DOM 提交结果。
-   */
+  /** 过渡render到Img/Yield暂停时手动load：仅原生spy。commitMount重写src后__needsDispatch=true，layout/passive已完成再手动第二次load才onLoad；验证重新触发原生加载，不证明首事件被保存在React replay队列或自动在effect间派发。 */
   it('captures the load event if it happens before commit phase and replays it between layout and passive effects', async function () {
     const container = document.createElement('div');
     const root = ReactDOMClient.createRoot(container);
@@ -248,7 +246,7 @@ describe('ReactDOMImageLoad', () => {
     expect(onLoadSpy).toHaveBeenCalled();
   });
 
-  /** 测试场景：验证「captures the load event if it happens after commit phase and replays it」描述的渲染、交互或错误处理结果。 */
+  /** 过渡挂载完成layout但passive尚未执行时手动load；原生与合成spy立即各一次，再passive日志且needsDispatch=false，验证已提交目标可在effect间正常分发。 */
   it('captures the load event if it happens after commit phase and replays it', async function () {
     const container = document.createElement('div');
     const root = ReactDOMClient.createRoot(container);
@@ -276,12 +274,12 @@ describe('ReactDOMImageLoad', () => {
     expect(onLoadSpy).toHaveBeenCalledTimes(1);
   });
 
-  /** 测试场景：验证「replays the last load event when more than one fire before the end of the layout phase completes」描述的渲染、交互或错误处理结果。 */
+  /** Img初a预commit load仅原生，layout setSrc b触发级联同步提交；DOM图片对象仍一个，两个layout/passive轮后手动load得到b合成一次，验证原事件没有导致旧a合成派发且最新src被读取。 */
   it('replays the last load event when more than one fire before the end of the layout phase completes', async function () {
     const container = document.createElement('div');
     const root = ReactDOMClient.createRoot(container);
 
-    /** `Base`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 持有src初a，布局子UpdateSrc改b；宿主类型/位置不变用于检查同img复用。 */
     function Base() {
       const [src, setSrc] = React.useState('a');
       return (
@@ -293,7 +291,7 @@ describe('ReactDOMImageLoad', () => {
       );
     }
 
-    /** `UpdateSrc`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 首次layout设src b，触发同步级联更新，不直接派load。 */
     function UpdateSrc({setSrc}) {
       React.useLayoutEffect(() => {
         setSrc('b');
@@ -326,7 +324,7 @@ describe('ReactDOMImageLoad', () => {
     expect(onLoadSpy).toHaveBeenCalledTimes(1);
   });
 
-  /** 测试场景：验证「replays load events that happen in passive phase after the passive phase.」描述的渲染、交互或错误处理结果。 */
+  /** 初挂所有layout/passive完成后才手动load；原生/合成各一次，验证已完成提交后的普通派发；旧标题passive phase实际不是在effect内部派事件。 */
   it('replays load events that happen in passive phase after the passive phase.', async function () {
     const container = document.createElement('div');
     const root = ReactDOMClient.createRoot(container);
@@ -350,12 +348,12 @@ describe('ReactDOMImageLoad', () => {
     expect(onLoadSpy).toHaveBeenCalledTimes(1);
   });
 
-  /** 测试场景：验证「captures and suppresses the load event if it happens before passive effects and a cascading update causes the img to be removed」描述的渲染、交互或错误处理结果。 */
+  /** 预commit load仅原生，ChildSuppressing.layout把子树删除；随后旧img再手动load仍仅原生、React spy零次，验证已脱离挂载树的目标不再合成派发。 */
   it('captures and suppresses the load event if it happens before passive effects and a cascading update causes the img to be removed', async function () {
     const container = document.createElement('div');
     const root = ReactDOMClient.createRoot(container);
 
-    /** `ChildSuppressing`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 初显示children，首次layout设false删除它们，测试旧img事件不再归有效树。 */
     function ChildSuppressing({children}) {
       const [showChildren, update] = React.useState(true);
       React.useLayoutEffect(() => {
@@ -391,18 +389,18 @@ describe('ReactDOMImageLoad', () => {
     expect(onLoadSpy).not.toHaveBeenCalled();
   });
 
-  /** 测试场景：验证「captures and suppresses the load event if it happens before passive effects and a cascading update causes the img to be removed, alternate」描述的渲染、交互或错误处理结果。 */
+  /** 同删除场景改用Switch render prop与兄弟UpdateSwitchInLayout；两提交日志后旧img手动load仅原生、合成零，验证级联删除与包装层不同仍正确。 */
   it('captures and suppresses the load event if it happens before passive effects and a cascading update causes the img to be removed, alternate', async function () {
     const container = document.createElement('div');
     const root = ReactDOMClient.createRoot(container);
 
-    /** `Switch`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 状态render-prop包装，暴露当前shouldShow与setter给内部兄弟布局更新。 */
     function Switch({children}) {
       const [shouldShow, updateShow] = React.useState(true);
       return children(shouldShow, updateShow);
     }
 
-    /** `UpdateSwitchInLayout`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 首次layout设show=false，删除兄弟img而保留PhaseMarkers观察第二提交。 */
     function UpdateSwitchInLayout({updateShow}) {
       React.useLayoutEffect(() => {
         updateShow(false);
@@ -460,6 +458,7 @@ describe('ReactDOMImageLoad', () => {
     expect(onLoadSpy).not.toHaveBeenCalled();
   });
 
+  /** 以下Suspense/AsyncText场景整体以行注释保存，没有注册it、当前不执行；原草稿欲验证恢复后新img加载及effect时序，不能算本轮运行证据。 */
   // eslint-disable-next-line jest/no-commented-out-tests
   // it('captures the load event if it happens in a suspended subtree and replays it between layout and passive effects on resumption', async function() {
   //   function SuspendingWithImage() {
@@ -491,19 +490,19 @@ describe('ReactDOMImageLoad', () => {
   //   expect(Scheduler).toHaveYielded(['actualLoadSpy [default]']);
   //   expect(onLoadSpy).not.toHaveBeenCalled();
 
-  //   // Flush some of the time
+  //   // 该已注释场景先推进部分定时器时间。
   //   jest.advanceTimersByTime(50);
-  //   // Still nothing...
+  //   // 此时挂起内容仍未完成。
   //   expect(Scheduler).toFlushWithoutYielding();
 
-  //   // Flush the promise completely
+  //   // 再推进定时器到Promise完成。
   //   jest.advanceTimersByTime(50);
-  //   // Renders successfully
+  //   // 完成后应该记录成功结果。
   //   expect(Scheduler).toHaveYielded(['Promise resolved [A]']);
 
   //   expect(Scheduler).toFlushAndYieldThrough([
   //     'A',
-  //     // img was recreated on unsuspended tree causing new load event
+  //     // 恢复后重新创建img，需再次派原生load。
   //     'render start',
   //     'Img default',
   //     'last layout',
@@ -523,12 +522,12 @@ describe('ReactDOMImageLoad', () => {
   //   expect(onLoadSpy).toHaveBeenCalledTimes(1);
   // });
 
-  /** 测试场景：验证「correctly replays the last img load even when a yield + update causes the host element to change」描述的渲染、交互或错误处理结果。 */
+  /** 过渡src a在Yield暂停且load仅原生，flushSync srcAlt b丢弃旧未提交宿主并新建第二img；新b手动load有合成，随后原过渡队列重基继续渲染b，验证抢占后只已提交新目标有效。 */
   it('correctly replays the last img load even when a yield + update causes the host element to change', async function () {
     let externalSetSrc = null;
     let externalSetSrcAlt = null;
 
-    /** `Base`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 分别持有过渡src与同步srcAlt，后者优先；外部setter用于抢占未提交img。 */
     function Base() {
       const [src, setSrc] = React.useState(null);
       const [srcAlt, setSrcAlt] = React.useState(null);
@@ -537,7 +536,7 @@ describe('ReactDOMImageLoad', () => {
       return srcAlt || src ? <YieldingWithImage src={srcAlt || src} /> : null;
     }
 
-    /** `YieldingWithImage`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 输出Img/Yield/Text并在passive记Committed，识别旧过渡被同步b抢占后的新宿主。 */
     function YieldingWithImage({src}) {
       Scheduler.log('YieldingWithImage');
       React.useEffect(() => {
@@ -582,11 +581,11 @@ describe('ReactDOMImageLoad', () => {
     loadImage(img);
 
     assertLog(['actualLoadSpy [b]', 'onLoadSpy [b]']);
-    // 为什么这里又有一个更新？
+    // 同步b抢占之后，先前过渡队列仍要重基完成；srcAlt优先，追加一轮仍输出b。
     await waitForAll(['YieldingWithImage', 'Img b', 'Yield', 'b', 'Committed']);
   });
 
-  /** 测试场景：验证「preserves the src property / attribute when triggering a potential new load event」描述的渲染、交互或错误处理结果。 */
+  /** 恢复原生src descriptor，预commit记录property绝对URL/attribute相对值，提交后分别同各自旧值，验证commitMount重触发加载不把attribute改成已规范化property；未断言property等于attribute。 */
   it('preserves the src property / attribute when triggering a potential new load event', async () => {
     // 该测试覆盖 https://github.com/mui/material-ui/pull/31263 发现的回归：重置 src 属性曾导致其值
     // 从相对地址变为完整地址。
@@ -622,12 +621,12 @@ describe('ReactDOMImageLoad', () => {
     const commitSrcProperty = img.src;
     const commitSrcAttr = img.getAttribute('src');
 
-    // 确保 attribute 与 property 一致。
+    // 分别比较提交前后property和attribute；相对attribute可与绝对property不同。
     expect(renderSrcProperty).toBe(commitSrcProperty);
     expect(renderSrcAttr).toBe(commitSrcAttr);
   });
 
-  /** 测试场景：验证「captures the load event for Blob sources if it happens before commit phase」描述的渲染、交互或错误处理结果。 */
+  /** Blob作为Img.src，在patched setter下文本为[object Blob]；预commit手动load仅原生，提交重写src后再手动load才合成，验证该输入形状的挂载时序，不测data URL/Blob读取。 */
   it('captures the load event for Blob sources if it happens before commit phase', async function () {
     const container = document.createElement('div');
     const root = ReactDOMClient.createRoot(container);
@@ -661,7 +660,7 @@ describe('ReactDOMImageLoad', () => {
     expect(onLoadSpy).toHaveBeenCalled();
   });
 
-  /** 测试场景：验证「captures the load event for Blob sources if it happens after commit phase and replays it」描述的渲染、交互或错误处理结果。 */
+  /** Blob输入同patch环境，layout后passive前手动load；原生与合成一次、passive后needsDispatch=false，验证已提交Blob输入目标派发。 */
   it('captures the load event for Blob sources if it happens after commit phase and replays it', async function () {
     const container = document.createElement('div');
     const root = ReactDOMClient.createRoot(container);

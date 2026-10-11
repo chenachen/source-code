@@ -64,16 +64,16 @@ export function createMicroRouter (appName: string, url: string): MicroRouter {
 }
 
 /**
- * 在沙箱启动或 keep-alive 应用重新显示时，恢复微应用路由与浏览器地址的对应关系。
+ * 在沙箱启动时，恢复微应用路由与浏览器地址的对应关系。
  *
  * @remarks
  * 若浏览器已携带该应用路径，则以浏览器记录恢复内存 location；`pure` 模式只借该记录完成一次恢复，
- * 随后立即移除外部路径。若没有记录，则反向把当前或默认 location 写入浏览器。此二选一规则避免旧的
- * 浏览器状态被应用初始地址覆盖。
+ * 随后立即移除外部记录。若没有记录，则按当前或默认 location 初始化，非 pure 模式再写入浏览器。
+ * 浏览器已有路径优先于应用初始地址，恢复时不会被默认页覆盖。
  *
  * @param appName - 待初始化的微应用名称。
  * @param microLocation - 沙箱持有且需要原地更新的 location 对象。
- * @param defaultPage - 可选的首次展示页，只有浏览器没有既存路径时生效。
+ * @param defaultPage - 可选默认页，只有本次初始化时浏览器没有既存路径才生效。
  */
 export function initRouteStateWithURL (
   appName: string,
@@ -95,8 +95,9 @@ export function initRouteStateWithURL (
  * 按当前微应用 location 初始化浏览器 URL 与路由状态。
  *
  * @remarks
- * 用于沙箱启动和 keep-alive 应用重新显示。默认页先以 `prevent` 模式更新内存 location；非 `pure`
+ * 用于沙箱启动，以及 search 模式 keep-alive 应用重新显示。默认页先以 `prevent` 模式更新内存 location；非 `pure`
  * 模式随后原子写入路径与应用级 state。地址完成后才触发导航守卫，使守卫读取到的是已提交的新状态。
+ * 此初始化写入的应用业务 state 为 null；保留 microLocation 或重新显示并不在这里恢复旧业务 state。
  *
  * @param appName - 待同步的微应用名称。
  * @param microLocation - 作为浏览器路由信息来源的 location 对象。
@@ -122,11 +123,11 @@ export function updateBrowserURLWithLocation (
 }
 
 /**
- * 在应用停止或隐藏时清理浏览器中的路径与 state，并按配置决定是否重置内存 location。
+ * 在沙箱停止时清理宿主路由记录，并按配置决定是否重置内部 location。
  *
  * @remarks
- * `keepRouteState` 只保护微应用内部 location；非 `pure` 模式写入浏览器的路由信息仍会移除，防止已
- * 隐藏应用继续占用基座地址。自定义原生路由模式使用浏览器路径，不由这里重置为入口地址。
+ * `keepRouteState` 只决定是否重置内部 location；非 `pure` 模式仍清理应用 state，`search` 还会删除
+ * 应用查询参数。自定义原生模式的可见路径由基座共享，不在这里重置；所有模式都会删除 router.current。
  *
  * @param appName - 待清理的微应用名称。
  * @param url - 微应用入口地址，作为未保留状态时的重置目标。
@@ -139,7 +140,7 @@ export function clearRouteStateFromURL (
   microLocation: MicroLocation,
   keepRouteState: boolean,
 ): void {
-  // TODO：评估 `keep-router-state` 是否需要更高优先级或移除；当前它不保护浏览器侧路由记录。
+  // 保留内部位置与清理宿主记录是两步；keepRouteState 不跳过下面的宿主清理。
   if (!keepRouteState && !isRouterModeCustom(appName)) {
     const { pathname, search, hash } = createURL(url)
     updateMicroLocation(appName, pathname + search + hash, microLocation, 'prevent')
@@ -152,11 +153,11 @@ export function clearRouteStateFromURL (
 }
 
 /**
- * 从浏览器 URL 与 `history.state` 同时移除指定应用的路由信息。
+ * 删除应用 history.state，并在 search 模式下移除 URL 中的应用查询参数。
  *
  * @remarks
- * 沙箱停止或 keep-alive 应用隐藏时调用。通过一次 `replaceState` 式附加操作提交清理结果，不新增历史
- * 条目；其他应用及基座自己的 state 由底层合并函数保留。
+ * 沙箱停止、search 模式 keep-alive 隐藏，或 pure 初始化消费一次性记录时调用。通过 replaceState
+ * 提交清理结果，不新增历史条目；其他应用及基座自己的 state 由底层合并函数保留。
  *
  * @param appName - 待从浏览器路由记录中移除的微应用名称。
  */

@@ -28,6 +28,9 @@ import { AppManager } from '../app_manager'
 export class BaseSandbox implements BaseSandboxType {
   /**
    * 初始化应用身份与资源基准地址，并按运行环境补入 React 热更新兼容属性。
+   *
+   * @param appName - 注册表和副作用登记共用的应用名；后续不随宿主容器迁移改变。
+   * @param url - 应用入口地址，供请求补全及首次路由初始化使用。
    */
   constructor (appName: string, url: string) {
     this.appName = appName
@@ -40,7 +43,7 @@ export class BaseSandbox implements BaseSandboxType {
     'location',
   ]
 
-  /** 允许从微应用代理窗口静态逃逸到宿主窗口的共享运行时属性。 */
+  /** 宿主尚无同名键时，允许代理赋值同步到宿主的共享运行时属性。 */
   public staticEscapeProperties: PropertyKey[] = [
     'System',
     '__cjsWrapper',
@@ -65,27 +68,28 @@ export class BaseSandbox implements BaseSandboxType {
   public scopeProperties: PropertyKey[] = Array.from(this.staticScopeProperties)
   /** 运行期允许逃逸到宿主窗口的动态属性集合。 */
   public escapeProperties: PropertyKey[] = []
-  /** 本轮运行中新写入代理窗口的键，用于停止或卸载时定向清除。 */
+  /** 运行期新增、从宿主复制或显式赋值的作用域键，用于默认卸载或销毁时定向清除。 */
   public injectedKeys = new Set<PropertyKey>()
-  /** 已实际逃逸到宿主窗口的键；卸载时必须清除以免污染后续应用。 */
+  /** 逃逸赋值时宿主原先不存在的键；默认卸载或销毁时删除，宿主已有键的旧值不会在这里备份恢复。 */
   public escapeKeys = new Set<PropertyKey>()
-  /** 沙箱初始化完成信号，供依赖代理环境的后续阶段等待。 */
+  /** 沙箱初始化完成信号；就绪只表示代理可用，仍需上游 mount 调用 start 才进入 active。 */
   public sandboxReady!: Promise<void>
-  /** 默认模式停止时移除并重置 UMD 挂载/卸载钩子的清理函数。 */
+  /** 默认模式停止或销毁时清空 UMD 导出槽位；函数自身不删除导出访问器。 */
   public clearHijackUmdHooks!: () => void
 
   /**
-   * 在开发环境按宿主/子应用组合调整 React 错误覆盖层与热更新属性的隔离策略。
+   * 在开发环境向静态名单追加 React 错误覆盖层与热更新属性。
    *
    * @remarks
-   * 非 React 宿主需要允许子应用 hook 逃逸；React 宿主已有 hook 时则改为子应用内隔离，避免双方
-   * 复用同一全局热更新状态。
+   * hook 进入 staticEscapeProperties，Proxy 只有在宿主尚无同名键时才把它写到宿主。
+   * 宿主已有 hook 时还会追加 staticScopeProperties；但 scopeProperties 已在字段初始化时复制，
+   * 此处追加不会自动进入实际用于 Proxy 判断的动态作用域名单。
    */
   private injectReactHMRProperty (): void {
     if (__DEV__) {
       // 非 React 宿主中的 React 子应用需要把错误覆盖层 hook 暴露给真实窗口。
       this.staticEscapeProperties.push('__REACT_ERROR_OVERLAY_GLOBAL_HOOK__')
-      // React 宿主已声明 hook 时，子应用必须在自己的代理窗口内维护 hook 与注入标记。
+      // React 宿主已声明 hook 时追加静态作用域候选；动态 scopeProperties 不随此赋值同步。
       if (globalEnv.rawWindow.__REACT_ERROR_OVERLAY_GLOBAL_HOOK__) {
         this.staticScopeProperties = this.staticScopeProperties.concat([
           '__REACT_ERROR_OVERLAY_GLOBAL_HOOK__',
@@ -97,12 +101,7 @@ export class BaseSandbox implements BaseSandboxType {
 }
 
 /**
- * 为沙箱自定义窗口保留独立原型锚点，供具体实现承载隔离后的窗口成员。
- *
- * TODO：
- *  1、将class Adapter去掉，改为CustomWindow，或者让CustomWindow继承Adapter
- *  2、with沙箱中的常量放入CustomWindow，虽然和iframe沙箱不一致，但更合理
- * 修改时机：在iframe沙箱支持插件后再修改
+ * with 沙箱窗口目标的空类；各实例拥有独立属性，原型上不预置浏览器 Window 成员。
  */
 export class CustomWindow {}
 
@@ -114,11 +113,12 @@ export function fixBabelPolyfill6 (): void {
 }
 
 /**
- * 在开发环境临时切换 React 错误覆盖层 hook，修复基座与子应用均由 CRA 创建时的热更新冲突。
+ * 在开发环境临时切换 React 错误覆盖层 hook。
  *
  * @remarks
- * 子应用执行期间把宿主 hook 替换为子应用 hook，并在微任务中恢复。WHY：覆盖层只需跨越当前同步
- * 执行边界；延迟恢复既让本轮热更新命中正确实例，又不让子应用 hook 长期污染宿主。
+ * source/patch 在子应用追加 iframe 节点前调用；宿主与子应用都已有 hook 时，临时让宿主读取子应用 hook。
+ * 下一微任务恢复原引用，因而这次替换只跨越当前同步执行片段。
+ * 此函数只切换宿主 hook 引用，不创建热更新实例，也不等待 iframe 加载结束。
  *
  * @see https://github.com/jd-opensource/micro-app/issues/382
  */
@@ -147,6 +147,7 @@ export function patchElementTree (
 ): void {
   const children = Array.from(container.childNodes)
 
+  // 先取得静态子节点快照，再后序标记；updateElementInfo 自身只处理一个节点，不负责递归。
   children.length && children.forEach((child) => {
     patchElementTree(child, appName)
   })
@@ -173,11 +174,7 @@ export function updateElementInfo <T> (node: T, appName: string | null): T {
     !node.__PURE_ELEMENT__ &&
     !getPreventSetState()
   ) {
-    /**
-     * TODO：
-     *  1. 测试baseURI和ownerDocument在with沙箱中是否正确
-     *    经过验证with沙箱不能重写ownerDocument，否则react点击事件会触发两次
-    */
+    // 两种沙箱都标记应用归属；with 保留浏览器原有 ownerDocument，只有 iframe 分支覆写文档视图。
     const props: {[kye:string]:any} = {
       __MICRO_APP_NAME__: {
         configurable: true,
@@ -222,11 +219,13 @@ export function updateElementInfo <T> (node: T, appName: string | null): T {
           baseURI: {
             configurable: true,
             enumerable: true,
+            /** 动态读取子应用 location，使路由变化后节点的相对地址基准也随之更新。 */
             get: () => proxyWindow.location.href,
           },
           ownerDocument: {
             configurable: true,
             enumerable: true,
+            /** 业务节点暴露子应用文档；文档自身的 ownerDocument 按原生语义返回 null。 */
             get: () => node !== proxyWindow.document ? proxyWindow.document : null,
           },
           parentNode: getIframeParentNodeDesc(

@@ -38,7 +38,7 @@ function createCursor<T>(defaultValue: T): StackCursor<T> {
 /**
  * 恢复 cursor 在对应 push 前的值并释放栈槽。
  *
- * 开发构建校验 LIFO Fiber 身份；错误只报告而不继续越界破坏栈。
+ * 空栈时报告错误并返回；开发构建还校验 LIFO Fiber 身份，失配时警告后仍弹出当前槽。
  */
 function pop<T>(cursor: StackCursor<T>, fiber: Fiber): void {
   if (index < 0) {

@@ -20,6 +20,7 @@ text(
 import inlineMod from './inline.module.css?inline'
 text('.modules-inline', inlineMod)
 
+/** 把 CSS Modules 映射或 inline CSS 文本写到页面，供 Lightning CSS 测试观察转换结果。 */
 function text(el, text) {
   document.querySelector(el).textContent = text
 }

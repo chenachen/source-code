@@ -23,7 +23,7 @@ export enum LifecycleHooks {
   UNMOUNTED = 'um',
   /** 被 `KeepAlive` 移出活动树之后。 */
   DEACTIVATED = 'da',
-  /** 被 `KeepAlive` 从缓存重新移入活动树之后。 */
+  /** KeepAlive 子树首次挂载完成，或从缓存重新进入活动树之后。 */
   ACTIVATED = 'a',
   /** 渲染 effect 被依赖触发时的开发调试钩子。 */
   RENDER_TRIGGERED = 'rtg',

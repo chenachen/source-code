@@ -9,10 +9,10 @@ import {
   processChildren,
 } from '../ssrCodegenTransform'
 
-/** 第一遍记录每个 Transition 是否启用 appear，供第二遍决定 SSR 包装。 */
+/** 第一遍记录模板是否声明 appear 属性，供第二遍决定是否生成 template 包装。 */
 const wipMap = new WeakMap<ComponentNode, Boolean>()
 
-/** 第一遍读取静态/动态 appear 属性是否存在。 */
+/** 第一遍只检查静态/动态 appear 属性是否存在，不求动态表达式的布尔值。 */
 export function ssrTransformTransition(
   node: ComponentNode,
   context: TransformContext,
@@ -26,7 +26,8 @@ export function ssrTransformTransition(
 /**
  * 第二遍输出 Transition children。
  * #5351：运行时 Transition 会过滤注释，SSR 也必须删除，否则 hydration 子节点索引错位。
- * appear 模式额外输出 `<template>`，让客户端首次水合时能对现有节点执行 appear 过渡。
+ * 模板声明 appear 或 :appear 时额外输出 `<template>`；客户端取出其内容后，根据运行时
+ * appear 值决定是否执行出现过渡，再用内容节点替换外层 template。
  */
 export function ssrProcessTransition(
   node: ComponentNode,

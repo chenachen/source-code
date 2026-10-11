@@ -24,14 +24,15 @@ import {
  * Asset 集成用例矩阵。
  *
  * 场景横跨 JS 导入、HTML/CSS URL、public、查询参数、内联阈值、SVG 片段与
- * `new URL(..., import.meta.url)`；同一断言会在 dev、bundled-dev 和 build 下
- * 运行，以确认它们虽然产物形态不同，但浏览器最终观察到的 URL 与内容一致。
+ * `new URL(..., import.meta.url)`；按 dev、bundled-dev 和 build 的条件分别检查
+ * 源路径、带 hash 的产物或 data URI，以及浏览器最终内容。
  */
+/** 非内联 PNG 的匹配模式：bundled 取 base+assets 哈希名，普通 dev 取 nested 源路径。 */
 const assetMatch = isBundled
   ? /\/foo\/bar\/assets\/asset-[-\w]{8}\.png/
   : '/foo/bar/nested/asset.png'
 
-/** 含方括号文件名在 build 中编码/哈希后的 URL，开发态则保留源路径。 */
+/** 含方括号文件名在 bundled 模式使用带 hash 的 URL，unbundled dev 保留源路径。 */
 const encodedAssetMatch = isBundled
   ? /\/foo\/bar\/assets\/asset_small_-[-\w]{8}\.png/
   : '/foo/bar/nested/asset[small].png'
@@ -49,20 +50,14 @@ const fetchPath = (p: string) => {
 // bundled-dev 会把 `?url` CSS 导入变成 data URI，并跳过 CSS 流水线；其中的
 // `url()` 因而保留失效的原相对路径并产生 404（#22863）。缺陷修复后该用例无需
 // 改断言即可恢复，所以这里只针对 bundled-dev 临时跳过。
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “msg”。
- * 验证目标：“msg” 不应匹配 “'404'”，从而确认静态命中、SPA fallback 与 MIME 分支按 Accept/路径语义工作。
- */
+/** 浏览器日志不含 404；bundled dev 的 CSS?url 缺陷使该模式跳过。 */
 test.skipIf(isBundledDev)('should have no 404s', () => {
   browserLogs.forEach((msg) => {
     expect(msg).not.toMatch('404')
   })
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “serverLogs”。
- * 验证目标：“serverLogs” 应严格深度等于 “expect.not.arrayContaining([ expect.stringMatching(/VITE_ASSET__.*?didn't resolve at build time/), ])”，从而确认JS/CSS/HTML 资产入口在 dev 与 build 中保持一致的公开 URL 语义。
- */
+/** build 日志不出现 image-set 中资产占位符未解析的警告。 */
 test.runIf(isBuild)(
   'should not warn about VITE_ASSET tokens in image-set',
   async () => {
@@ -74,10 +69,7 @@ test.runIf(isBuild)(
   },
 )
 
-/**
- * 场景：在当前 playground 中，请求 “fetchPath('icon.png')”，然后请求 “fetchPath('ICON.png')”。
- * 验证目标：“(await fetchPath('icon.png')).headers.get('Content-Type')” 应等于 “'image/png'”；“iconPngResult.headers.get('Content-Type')” 应等于 “'text/html'”，从而确认静态命中、SPA fallback 与 MIME 分支按 Accept/路径语义工作。
- */
+/** 错误大小写未命中静态文件；这里带 HTML Accept，因此返回 SPA fallback 的 200 HTML。 */
 test('should get a 404 when using incorrect case', async () => {
   expect((await fetchPath('icon.png')).headers.get('Content-Type')).toBe(
     'image/png',
@@ -94,19 +86,13 @@ test('should get a 404 when using incorrect case', async () => {
   expect(barResult.status).toBe(200)
 })
 
-/**
- * 场景：在当前 playground 中，请求 “fetchPath('doesnt-exist.html')”。
- * 验证目标：“(await fetchPath('doesnt-exist.html')).status” 应等于 “200”，从而确认静态命中、SPA fallback 与 MIME 分支按 Accept/路径语义工作。
- */
+/** 不存在的 HTML 导航路径回退到 index.html，状态码为 200。 */
 test('should fallback to index.html when accessing non-existent html file', async () => {
   expect((await fetchPath('doesnt-exist.html')).status).toBe(200)
 })
 
 describe.runIf(isServe)('outside base', () => {
-  /**
-   * 场景：在 “'outside base'” 中，请求 “fetch(new URL('/baz', viteTestUrl), { headers: { Accept: 'text/html,* /*' }, })”。
-   * 验证目标：“res.status” 应等于 “404”；“res.headers.get('Content-Type')” 应等于 “'text/html'”，从而确认静态命中、SPA fallback 与 MIME 分支按 Accept/路径语义工作。
-   */
+  /** dev 请求 base 外路径并接受 HTML 时，返回 404 HTML 提示。 */
   test('should get a 404 with html', async () => {
     const res = await fetch(new URL('/baz', viteTestUrl), {
       headers: { Accept: 'text/html,*/*' },
@@ -115,10 +101,7 @@ describe.runIf(isServe)('outside base', () => {
     expect(res.headers.get('Content-Type')).toBe('text/html')
   })
 
-  /**
-   * 场景：在 “'outside base'” 中，请求 “fetch(new URL('/baz', viteTestUrl))”。
-   * 验证目标：“res.status” 应等于 “404”；“res.headers.get('Content-Type')” 应等于 “'text/plain'”，从而确认静态命中、SPA fallback 与 MIME 分支按 Accept/路径语义工作。
-   */
+  /** dev 请求 base 外路径且不声明 HTML Accept 时，返回 404 纯文本提示。 */
   test('should get a 404 with text', async () => {
     const res = await fetch(new URL('/baz', viteTestUrl))
     expect(res.status).toBe(404)
@@ -127,10 +110,7 @@ describe.runIf(isServe)('outside base', () => {
 })
 
 describe('injected scripts', () => {
-  /**
-   * 场景：在 “'injected scripts'” 中，加载用例 fixture 并观察 “hasClient”。
-   * 验证目标：“hasClient” 应为假；“hasClient” 应为真，从而确认JS/CSS/HTML 资产入口在 dev 与 build 中保持一致的公开 URL 语义。
-   */
+  /** unbundled dev HTML 显式注入 @vite/client script；bundled 模式没有这条标签。 */
   test('@vite/client', async () => {
     const hasClient = await page.$(
       'script[type="module"][src="/foo/bar/@vite/client"]',
@@ -142,10 +122,7 @@ describe('injected scripts', () => {
     }
   })
 
-  /**
-   * 场景：在 “'injected scripts'” 中，加载用例 fixture 并观察 “hasHtmlProxy”。
-   * 验证目标：“hasHtmlProxy” 应为假；“hasHtmlProxy” 应为真，从而确认JS/CSS/HTML 资产入口在 dev 与 build 中保持一致的公开 URL 语义。
-   */
+  /** unbundled dev 的内联模块使用 html-proxy script URL；bundled 模式没有这条标签。 */
   test('html-proxy', async () => {
     const hasHtmlProxy = await page.$(
       'script[type="module"][src^="/foo/bar/index.html?html-proxy"]',
@@ -159,27 +136,18 @@ describe('injected scripts', () => {
 })
 
 describe('raw references from /public', () => {
-  /**
-   * 场景：在 “'raw references from /public'” 中，加载用例 fixture 并观察 “await page.textContent('.raw-js')”。
-   * 验证目标：“await page.textContent('.raw-js')” 应匹配 “'[success]'”，从而确认publicDir 资源绕过转换后仍保留正确 base 和内容。
-   */
+  /** public 目录的原始脚本加载后写入 success 文本。 */
   test('load raw js from /public', async () => {
     expect(await page.textContent('.raw-js')).toMatch('[success]')
   })
 
-  /**
-   * 场景：在 “'raw references from /public'” 中，加载用例 fixture 并观察 “await getColor('.raw-css')”。
-   * 验证目标：“await getColor('.raw-css')” 应等于 “'red'”，从而确认publicDir 资源绕过转换后仍保留正确 base 和内容。
-   */
+  /** public 目录的原始 CSS 链接加载后呈现 red。 */
   test('load raw css from /public', async () => {
     expect(await getColor('.raw-css')).toBe('red')
   })
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “await page.textContent('.import-expression')”。
- * 验证目标：“await page.textContent('.import-expression')” 应匹配 “'[success][success]'”，从而确认JS/CSS/HTML 资产入口在 dev 与 build 中保持一致的公开 URL 语义。
- */
+/** 普通 script 中的两个动态 import 都执行并写入 success 文本。 */
 test('import-expression from simple script', async () => {
   expect(await page.textContent('.import-expression')).toMatch(
     '[success][success]',
@@ -188,34 +156,22 @@ test('import-expression from simple script', async () => {
 
 describe('asset imports from js', () => {
   // 验证相对、根绝对与 public 资产最终都导出浏览器可访问的 URL。
-  /**
-   * 场景：在 “'asset imports from js'” 中，加载用例 fixture 并观察 “await page.textContent('.asset-import-relative')”。
-   * 验证目标：“await page.textContent('.asset-import-relative')” 应匹配 “assetMatch”，从而确认JS/CSS/HTML 资产入口在 dev 与 build 中保持一致的公开 URL 语义。
-   */
+  /** 相对路径引用的 PNG 在 bundled 模式使用带 hash 的资产 URL，unbundled dev 使用源路径。 */
   test('relative', async () => {
     expect(await page.textContent('.asset-import-relative')).toMatch(assetMatch)
   })
 
-  /**
-   * 场景：在 “'asset imports from js'” 中，加载用例 fixture 并观察 “await page.textContent('.asset-import-absolute')”。
-   * 验证目标：“await page.textContent('.asset-import-absolute')” 应匹配 “assetMatch”，从而确认JS/CSS/HTML 资产入口在 dev 与 build 中保持一致的公开 URL 语义。
-   */
+  /** 根绝对路径引用的 PNG 与相对引用解析到相同资产 URL。 */
   test('absolute', async () => {
     expect(await page.textContent('.asset-import-absolute')).toMatch(assetMatch)
   })
 
-  /**
-   * 场景：在 “'asset imports from js'” 中，加载用例 fixture 并观察 “await page.textContent('.public-import')”。
-   * 验证目标：“await page.textContent('.public-import')” 应匹配 “iconMatch”，从而确认publicDir 资源绕过转换后仍保留正确 base 和内容。
-   */
+  /** public PNG 的 URL 拼接 base，保持稳定文件名。 */
   test('from /public', async () => {
     expect(await page.textContent('.public-import')).toMatch(iconMatch)
   })
 
-  /**
-   * 场景：在 “'asset imports from js'” 中，加载用例 fixture 并观察 “await page.textContent('.public-json-import')”。
-   * 验证目标：导出 URL 必须为 `/foo/bar/foo.json`，fetch 到的原文仍是包含 `"foo": "bar"` 的格式化 JSON，确认 publicDir JSON 未经过模块转换。
-   */
+  /** public JSON 的 ?url 导入使用稳定 URL；fetch 结果保持原始格式化文本。 */
   test('from /public (json)', async () => {
     expect(await page.textContent('.public-json-import')).toMatch(
       '/foo/bar/foo.json',
@@ -229,10 +185,7 @@ describe('asset imports from js', () => {
       `)
   })
 
-  /**
-   * 场景：在 “'asset imports from js'” 中，加载用例 fixture 并观察 “await page.textContent('.public-js-import')”。
-   * 验证目标：导出 URL 为 `/foo/bar/raw.js`，响应保留给 `.raw-js` 写入 success 文本的原始脚本且 MIME 为 `text/javascript`，确认 public JS 原样服务。
-   */
+  /** public JS 的 ?url 导入使用稳定 URL；fetch 结果保持原脚本与 JavaScript MIME。 */
   test('from /public (js)', async () => {
     expect(await page.textContent('.public-js-import')).toMatch(
       '/foo/bar/raw.js',
@@ -248,10 +201,7 @@ describe('asset imports from js', () => {
     )
   })
 
-  /**
-   * 场景：在 “'asset imports from js'” 中，加载用例 fixture 并观察 “await page.textContent('.public-ts-import')”。
-   * 验证目标：导出 URL 为 `/foo/bar/raw.ts`，响应仍含返回 `1 + 2` 的 TypeScript 原文；dev 还应使用 JavaScript MIME，确认 public TS 未被编译。
-   */
+  /** public TS 的 ?url 导入返回源文本；只在 serve 模式断言 JavaScript MIME。 */
   test('from /public (ts)', async () => {
     expect(await page.textContent('.public-ts-import')).toMatch(
       '/foo/bar/raw.ts',
@@ -263,7 +213,7 @@ describe('asset imports from js', () => {
       }
       "
     `)
-    // preview server 使用者应自行配置 `.ts` 文件的 MIME 类型。
+    // 此处只在 serve 下断言 MIME；preview 不承诺与 dev 相同的 TypeScript MIME。
     if (isServe) {
       expect(await page.textContent('.public-ts-import-content-type')).toMatch(
         'text/javascript',
@@ -271,10 +221,7 @@ describe('asset imports from js', () => {
     }
   })
 
-  /**
-   * 场景：在 “'asset imports from js'” 中，加载用例 fixture 并观察 “await page.textContent('.public-mts-import')”。
-   * 验证目标：导出 URL 为 `/foo/bar/raw.mts`，响应仍含 `foobar` 与 `1 + 2` 的原文；dev 使用 JavaScript MIME，确认 `.mts` 也按 public 原样提供。
-   */
+  /** public MTS 的 ?url 导入返回源文本；只在 serve 模式断言 JavaScript MIME。 */
   test('from /public (mts)', async () => {
     expect(await page.textContent('.public-mts-import')).toMatch(
       '/foo/bar/raw.mts',
@@ -286,7 +233,7 @@ describe('asset imports from js', () => {
       }
       "
     `)
-    // preview server 使用者应自行配置 `.ts` 文件的 MIME 类型。
+    // 此处只在 serve 下断言 MIME；preview 不承诺与 dev 相同的 MTS MIME。
     if (isServe) {
       expect(await page.textContent('.public-mts-import-content-type')).toMatch(
         'text/javascript',
@@ -296,10 +243,7 @@ describe('asset imports from js', () => {
 })
 
 describe('css url() references', () => {
-  /**
-   * 场景：在 “'css url() references'” 中，加载用例 fixture 并观察 “await page.evaluate(() => { return (document as any).fonts.check('700 32px Inter') })”。
-   * 验证目标：“await page.evaluate(() => { return (document as any).fonts.check('700 32px Inter') })” 应等于 “true”，从而确认JS/CSS/HTML 资产入口在 dev 与 build 中保持一致的公开 URL 语义。
-   */
+  /** 场景：CSS 使用 Inter 字体；浏览器调用 fonts.check(700 32px Inter)，核对结果为 true。 */
   test('fonts', async () => {
     expect(
       await page.evaluate(() => {
@@ -308,26 +252,17 @@ describe('css url() references', () => {
     ).toBe(true)
   })
 
-  /**
-   * 场景：在 “'css url() references'” 中，加载用例 fixture 并观察 “await getBg('.css-url-relative')”。
-   * 验证目标：“await getBg('.css-url-relative')” 应匹配 “assetMatch”，从而确认JS/CSS/HTML 资产入口在 dev 与 build 中保持一致的公开 URL 语义。
-   */
+  /** 相对路径引用的 PNG 在 bundled 模式使用带 hash 的资产 URL，unbundled dev 使用源路径。 */
   test('relative', async () => {
     expect(await getBg('.css-url-relative')).toMatch(assetMatch)
   })
 
-  /**
-   * 场景：在 “'css url() references'” 中，加载用例 fixture 并观察 “await getBg('.css-url-encoded')”。
-   * 验证目标：“await getBg('.css-url-encoded')” 应匹配 “encodedAssetMatch”，从而确认JS/CSS/HTML 资产入口在 dev 与 build 中保持一致的公开 URL 语义。
-   */
+  /** 含方括号的 PNG 路径在 bundled 模式转为带 hash 文件名，unbundled dev 保留源路径。 */
   test('encoded', async () => {
     expect(await getBg('.css-url-encoded')).toMatch(encodedAssetMatch)
   })
 
-  /**
-   * 场景：在 “'css url() references'” 中，加载用例 fixture 并观察 “s”。
-   * 验证目标：“s” 应匹配 “assetMatch”，从而确认JS/CSS/HTML 资产入口在 dev 与 build 中保持一致的公开 URL 语义。
-   */
+  /** image-set 的相对 PNG 候选都解析到预期资产 URL。 */
   test('image-set relative', async () => {
     const imageSet = await getBg('.css-image-set-relative')
     imageSet.split(', ').forEach((s) => {
@@ -335,10 +270,7 @@ describe('css url() references', () => {
     })
   })
 
-  /**
-   * 场景：在 “'css url() references'” 中，加载用例 fixture 并观察 “s”。
-   * 验证目标：“s” 应匹配 “assetMatch”，从而确认JS/CSS/HTML 资产入口在 dev 与 build 中保持一致的公开 URL 语义。
-   */
+  /** image-set 直接字符串候选也经过资产 URL 改写。 */
   test('image-set without the url() call', async () => {
     const imageSet = await getBg('.css-image-set-without-url-call')
     imageSet.split(', ').forEach((s) => {
@@ -346,10 +278,7 @@ describe('css url() references', () => {
     })
   })
 
-  /**
-   * 场景：在 “'css url() references'” 中，加载用例 fixture 并观察 “s”。
-   * 验证目标：“s” 应匹配 “assetMatch”，从而确认JS/CSS/HTML 资产入口在 dev 与 build 中保持一致的公开 URL 语义。
-   */
+  /** image-set 中 CSS 变量最终指向处理后的 PNG URL。 */
   test('image-set with var', async () => {
     const imageSet = await getBg('.css-image-set-with-var')
     imageSet.split(', ').forEach((s) => {
@@ -357,10 +286,7 @@ describe('css url() references', () => {
     })
   })
 
-  /**
-   * 场景：在 “'css url() references'” 中，加载用例 fixture 并观察 “s”。
-   * 验证目标：“s” 应匹配 “assetMatch”，从而确认JS/CSS/HTML 资产入口在 dev 与 build 中保持一致的公开 URL 语义。
-   */
+  /** image-set 混用 url() 与 var() 时，各候选都指向处理后的 PNG URL。 */
   test('image-set with mix', async () => {
     const imageSet = await getBg('.css-image-set-mix-url-var')
     imageSet.split(', ').forEach((s) => {
@@ -368,28 +294,19 @@ describe('css url() references', () => {
     })
   })
 
-  /**
-   * 场景：在 “'css url() references'” 中，加载用例 fixture 并观察 “imageSet”。
-   * 验证目标：“imageSet” 应包含 “'image-set(url("data:image/png;base64,'”，从而确认资源内联阈值与 data URI 编码分支正确。
-   */
+  /** 已有 PNG data URI 在 image-set 中保持。 */
   test('image-set with base64', async () => {
     const imageSet = await getBg('.css-image-set-base64')
     expect(imageSet).toContain('image-set(url("data:image/png;base64,')
   })
 
-  /**
-   * 场景：在 “'css url() references'” 中，加载用例 fixture 并观察 “imageSet”。
-   * 验证目标：“imageSet” 应包含 “'image-set(url("data:image/png;base64,'”，从而确认JS/CSS/HTML 资产入口在 dev 与 build 中保持一致的公开 URL 语义。
-   */
+  /** image-set 混用渐变与 data URI 时，已有 PNG data URI 保持。 */
   test('image-set with gradient', async () => {
     const imageSet = await getBg('.css-image-set-gradient')
     expect(imageSet).toContain('image-set(url("data:image/png;base64,')
   })
 
-  /**
-   * 场景：在 “'css url() references'” 中，加载用例 fixture 并观察 “s”。
-   * 验证目标：“s” 应匹配 “assetMatch”，从而确认JS/CSS/HTML 资产入口在 dev 与 build 中保持一致的公开 URL 语义。
-   */
+  /** image-set 同时含类型与密度描述符时，各图片候选仍解析为资产 URL。 */
   test('image-set with multiple descriptor', async () => {
     const imageSet = await getBg('.css-image-set-multiple-descriptor')
     imageSet.split(', ').forEach((s) => {
@@ -397,10 +314,7 @@ describe('css url() references', () => {
     })
   })
 
-  /**
-   * 场景：在 “'css url() references'” 中，加载用例 fixture 并观察 “s”。
-   * 验证目标：“s” 应匹配 “assetMatch”，从而确认资源内联阈值与 data URI 编码分支正确。
-   */
+  /** style 属性中的多描述符 image-set 同样经过资产 URL 改写。 */
   test('image-set with multiple descriptor as inline style', async () => {
     const imageSet = await getBg(
       '.css-image-set-multiple-descriptor-inline-style',
@@ -410,43 +324,28 @@ describe('css url() references', () => {
     })
   })
 
-  /**
-   * 场景：在 “'css url() references'” 中，加载用例 fixture 并观察 “imageSet”。
-   * 验证目标：“imageSet” 应匹配 “assetMatch”，从而确认JS/CSS/HTML 资产入口在 dev 与 build 中保持一致的公开 URL 语义。
-   */
+  /** 同一声明混用 image-set 与 url() 时，背景中含预期 PNG 资产 URL。 */
   test('image-set and url exist at the same time.', async () => {
     const imageSet = await getBg('.image-set-and-url-exsiting-at-same-time')
     expect(imageSet).toMatch(assetMatch)
   })
 
-  /**
-   * 场景：在 “'css url() references'” 中，加载用例 fixture 并观察 “await getBg('.css-url-relative-at-imported')”。
-   * 验证目标：“await getBg('.css-url-relative-at-imported')” 应匹配 “assetMatch”，从而确认JS/CSS/HTML 资产入口在 dev 与 build 中保持一致的公开 URL 语义。
-   */
+  /** 导入 CSS 内的相对 URL 按被导入文件位置解析。 */
   test('relative in @import', async () => {
     expect(await getBg('.css-url-relative-at-imported')).toMatch(assetMatch)
   })
 
-  /**
-   * 场景：在 “'css url() references'” 中，加载用例 fixture 并观察 “await getBg('.css-url-absolute')”。
-   * 验证目标：“await getBg('.css-url-absolute')” 应匹配 “assetMatch”，从而确认JS/CSS/HTML 资产入口在 dev 与 build 中保持一致的公开 URL 语义。
-   */
+  /** 根绝对路径引用的 PNG 与相对引用解析到相同资产 URL。 */
   test('absolute', async () => {
     expect(await getBg('.css-url-absolute')).toMatch(assetMatch)
   })
 
-  /**
-   * 场景：在 “'css url() references'” 中，加载用例 fixture 并观察 “await getBg('.css-url-public')”。
-   * 验证目标：“await getBg('.css-url-public')” 应匹配 “iconMatch”，从而确认publicDir 资源绕过转换后仍保留正确 base 和内容。
-   */
+  /** public PNG 的 URL 拼接 base，保持稳定文件名。 */
   test('from /public', async () => {
     expect(await getBg('.css-url-public')).toMatch(iconMatch)
   })
 
-  /**
-   * 场景：在 “'css url() references'” 中，加载用例 fixture 并观察 “await getBg('.css-url-base64-inline')”。
-   * 验证目标：“await getBg('.css-url-base64-inline')” 应匹配 “match”；“await getBg('.css-url-quotes-base64-inline')” 应匹配 “match”，从而确认资源内联阈值与 data URI 编码分支正确。
-   */
+  /** 小 PNG 在 bundled 模式内联；unbundled dev 返回源路径，带/不带引号结果一致。 */
   test('base64 inline', async () => {
     const match = isBundled
       ? `data:image/png;base64`
@@ -455,10 +354,7 @@ describe('css url() references', () => {
     expect(await getBg('.css-url-quotes-base64-inline')).toMatch(match)
   })
 
-  /**
-   * 场景：在 “'css url() references'” 中，加载用例 fixture 并观察 “href”。
-   * 验证目标：“href” 应匹配 “isBundled ? /\/foo\/bar\/assets\/favicon-[-\w]{8}\.ico/ : 'favicon.ico'”；“manifestHref” 应匹配 “isBundled ? /\/foo\/bar\/assets\/manifest-[-\w]{8}\.json/ : 'manifest.json'”，从而确认资源内联阈值与 data URI 编码分支正确。
-   */
+  /** favicon 与 manifest 链接在 bundled 模式输出文件 URL，保持浏览器可请求的链接。 */
   test('no base64 inline for icon and manifest links', async () => {
     const iconEl = await page.$(`link.ico`)
     const href = await iconEl.getAttribute('href')
@@ -475,39 +371,27 @@ describe('css url() references', () => {
     )
   })
 
-  /**
-   * 场景：在 “'css url() references'” 中，加载用例 fixture 并观察 “bg”。
-   * 验证目标：“bg” 应匹配 “assetMatch”；“bg” 应匹配 “iconMatch”，从而确认JS/CSS/HTML 资产入口在 dev 与 build 中保持一致的公开 URL 语义。
-   */
+  /** 同一 CSS 声明内的普通资产和 public 资产 URL 都被正确改写。 */
   test('multiple urls on the same line', async () => {
     const bg = await getBg('.css-url-same-line')
     expect(bg).toMatch(assetMatch)
     expect(bg).toMatch(iconMatch)
   })
 
-  /**
-   * 场景：在 “'css url() references'” 中，加载用例 fixture 并观察 “bg”。
-   * 验证目标：“bg” 应匹配 “assetMatch”，从而确认JS/CSS/HTML 资产入口在 dev 与 build 中保持一致的公开 URL 语义。
-   */
+  /** CSS URL 的 alias 解析到与相对引用相同的 PNG。 */
   test('aliased', async () => {
     const bg = await getBg('.css-url-aliased')
     expect(bg).toMatch(assetMatch)
   })
 
-  /**
-   * 场景：在 “'css url() references'” 中，加载用例 fixture 并观察 “await getBg('.css-url-preinlined-svg')”。
-   * 验证目标：“await getBg('.css-url-preinlined-svg')” 应匹配 “/data:image\/svg\+xml,.+/”，从而确认资源内联阈值与 data URI 编码分支正确。
-   */
+  /** 已有 SVG data URI 保持内联形式。 */
   test('preinlined SVG', async () => {
     expect(await getBg('.css-url-preinlined-svg')).toMatch(
       /data:image\/svg\+xml,.+/,
     )
   })
 
-  /**
-   * 场景：在 “'css url() references'” 中，加载用例 fixture 并观察 “css”。
-   * 验证目标：“css” 应匹配 “'woff2?#iefix'”；“css” 不应匹配 “'../icon.png'”，从而确认JS/CSS/HTML 资产入口在 dev 与 build 中保持一致的公开 URL 语义。
-   */
+  /** build CSS 保留字体 query/hash，并把 public 路径改为带 base 的 URL。 */
   test.runIf(isBuild)('generated paths in CSS', () => {
     const css = findAssetFile(/index-[-\w]{8}\.css$/, 'foo')
 
@@ -518,10 +402,7 @@ describe('css url() references', () => {
     expect(css).not.toMatch(`../icon.png`)
   })
 
-  /**
-   * 场景：在 “'css url() references'” 中，修改 “editFile('nested/fragment-bg-hmr.svg', (code) => code.replace('fill="blue"', 'fill="red"'), )”。
-   * 验证目标：“bg” 应匹配 “/data:image\/svg\+xml,.+/”；“bg” 应包含 “'blue'”，从而确认SVG 编码、fragment 与 query/hash 后缀在 URL 重写中不丢失。
-   */
+  /** 小 SVG 的 CSS 背景使用 data URI；serve 编辑 SVG 后检查背景内容更新。 */
   test('url() with svg', async () => {
     const bg = await getBg('.css-url-svg')
     expect(bg).toMatch(/data:image\/svg\+xml,.+/)
@@ -536,10 +417,7 @@ describe('css url() references', () => {
     }
   })
 
-  /**
-   * 场景：在 “'css url() references'” 中，加载用例 fixture 并观察 “await getBg('.css-image-set-svg')”。
-   * 验证目标：“await getBg('.css-image-set-svg')” 应匹配 “/data:image\/svg\+xml,.+/”，从而确认SVG 编码、fragment 与 query/hash 后缀在 URL 重写中不丢失。
-   */
+  /** image-set 中的小 SVG 同样使用 data URI。 */
   test('image-set() with svg', async () => {
     expect(await getBg('.css-image-set-svg')).toMatch(/data:image\/svg\+xml,.+/)
   })
@@ -547,10 +425,7 @@ describe('css url() references', () => {
   // bundled-dev 把 `?url` CSS 变成 data URI，而 build 始终输出 CSS 文件；
   // 因此 CSS 内的 SVG 从未进入处理流水线，既不会内联，也不会添加 base。
   // 根因同下方 `?url import on css`：`?url` 导入跳过 CSS 流水线（#22863）。
-  /**
-   * 场景：在 “'css url() references'” 中，修改 “editFile('nested/fragment-bg-hmr2.svg', (code) => code.replace('fill="blue"', 'fill="red"'), )”。
-   * 验证目标：“bg” 应匹配 “/data:image\/svg\+xml,.+/”；“bg” 应包含 “'blue'”，从而确认SVG 编码、fragment 与 query/hash 后缀在 URL 重写中不丢失。
-   */
+  /** 场景：CSS?url 链接中的小 SVG 背景初始 data URI 为蓝；bundledDev skip。serve 编辑第二 SVG 后仅轮询另一 .css-url-svg 元素为红，没有验证 .css-url-svg-in-url 本身更新。 */
   test.skipIf(isBundledDev)('url() with svg in .css?url', async () => {
     const bg = await getBg('.css-url-svg-in-url')
     expect(bg).toMatch(/data:image\/svg\+xml,.+/)
@@ -565,10 +440,7 @@ describe('css url() references', () => {
     }
   })
 
-  /**
-   * 场景：在 “'css url() references'” 中，修改 “editFile('nested/donuts-large.svg', (code) => code.replace('fill="blue"', 'fill="red"'), )”。
-   * 验证目标：“getBg('.css-url-non-inline-hmr')” 不应等于 “bg”，从而确认资源内联阈值与 data URI 编码分支正确。
-   */
+  /** serve 修改外置 SVG 后，CSS 背景 URL 发生变化。 */
   test.runIf(isServe)('non inlined url() HMR', async () => {
     const bg = await getBg('.css-url-non-inline-hmr')
     editFile('nested/donuts-large.svg', (code) =>
@@ -579,10 +451,7 @@ describe('css url() references', () => {
 })
 
 describe('image', () => {
-  /**
-   * 场景：在 “'image'” 中，加载用例 fixture 并观察 “src”。
-   * 验证目标：“src” 应匹配 “isBundled ? /\/foo\/bar\/assets\/html-only-asset-[-\w]{8}\.jpg/ : /\/foo\/bar\/nested\/html-only-asset.j…”，从而确认JS/CSS/HTML 资产入口在 dev 与 build 中保持一致的公开 URL 语义。
-   */
+  /** HTML 独占图片在 bundled 模式生成带 hash URL，unbundled dev 使用源路径。 */
   test('src', async () => {
     const img = await page.$('.img-src')
     const src = await img.getAttribute('src')
@@ -593,10 +462,7 @@ describe('image', () => {
     )
   })
 
-  /**
-   * 场景：在 “'image'” 中，加载用例 fixture 并观察 “src”。
-   * 验证目标：“src” 应匹配 “isBundled ? /^data:image\/svg\+xml,%3csvg/ : /\/foo\/bar\/nested\/inlined.svg/”，从而确认资源内联阈值与 data URI 编码分支正确。
-   */
+  /** HTML 小 SVG 在 bundled 模式内联为 data URI，unbundled dev 使用源路径。 */
   test('src inline', async () => {
     const img = await page.$('.img-src-inline')
     const src = await img.getAttribute('src')
@@ -607,10 +473,7 @@ describe('image', () => {
     )
   })
 
-  /**
-   * 场景：在 “'image'” 中，加载用例 fixture 并观察 “s”。
-   * 验证目标：“s” 应匹配 “isBundled ? /\/foo\/bar\/assets\/asset-[-\w]{8}\.png \dx/ : /\/foo\/bar\/nested\/asset.png \dx/”，从而确认JS/CSS/HTML 资产入口在 dev 与 build 中保持一致的公开 URL 语义。
-   */
+  /** srcset 的每个本地候选都改写 URL，同时保留密度描述符。 */
   test('srcset', async () => {
     const img = await page.$('.img-src-set')
     const srcset = await img.getAttribute('srcset')
@@ -623,10 +486,7 @@ describe('image', () => {
     })
   })
 
-  /**
-   * 场景：在 “'image'” 中，加载用例 fixture 并观察 “s”。
-   * 验证目标：“s” 应匹配 “/\/foo\/bar\/icon\.png \dx/”，从而确认publicDir 资源绕过转换后仍保留正确 base 和内容。
-   */
+  /** public srcset 候选拼接 base，同时保留密度描述符。 */
   test('srcset (public)', async () => {
     const img = await page.$('.img-src-set-public')
     const srcset = await img.getAttribute('srcset')
@@ -635,10 +495,7 @@ describe('image', () => {
     })
   })
 
-  /**
-   * 场景：在 “'image'” 中，加载用例 fixture 并观察 “srcs[1]”。
-   * 验证目标：“srcs[1]” 应匹配 “isBundled ? /\/foo\/bar\/assets\/asset-[-\w]{8}\.png \dx/ : /\/foo\/bar\/nested\/asset.png \dx/”，从而确认JS/CSS/HTML 资产入口在 dev 与 build 中保持一致的公开 URL 语义。
-   */
+  /** 混合远程与本地 srcset 时，本地候选仍按资产规则改写。 */
   test('srcset (mixed)', async () => {
     const img = await page.$('.img-src-set-mixed')
     const srcset = await img.getAttribute('srcset')
@@ -652,10 +509,7 @@ describe('image', () => {
 })
 
 describe('meta', () => {
-  /**
-   * 场景：在 “'meta'” 中，加载用例 fixture 并观察 “content”。
-   * 验证目标：“content” 应匹配 “isBundled ? /\/foo\/bar\/assets\/asset-\w{8}\.png/ : /\/foo\/bar\/nested\/asset.png/”，从而确认JS/CSS/HTML 资产入口在 dev 与 build 中保持一致的公开 URL 语义。
-   */
+  /** og:image 的 content 属性按 HTML 资产规则改写 PNG URL。 */
   test('og image', async () => {
     const meta = await page.$('.meta-og-image')
     const content = await meta.getAttribute('content')
@@ -670,28 +524,19 @@ describe('meta', () => {
 describe('svg fragments', () => {
   // 404 已由总用例检查，这里只确认 URL 尾部保留 #fragment；bundled-dev 当前会
   // 从哈希资产 URL 丢失该后缀（#23028）。
-  /**
-   * 场景：在 “'svg fragments'” 中，加载用例 fixture 并观察 “await img.getAttribute('src')”。
-   * 验证目标：“await img.getAttribute('src')” 应匹配 “/svg#icon-clock-view$/”，从而确认SVG 编码、fragment 与 query/hash 后缀在 URL 重写中不丢失。
-   */
+  /** HTML SVG 引用保留 #icon-clock-view 片段；bundled dev 因后缀丢失跳过。 */
   test.skipIf(isBundledDev)('img url', async () => {
     const img = await page.$('.svg-frag-img')
     expect(await img.getAttribute('src')).toMatch(/svg#icon-clock-view$/)
   })
 
   // bundled-dev：#fragment 丢失，原因同 `img url`。
-  /**
-   * 场景：在 “'svg fragments'” 中，加载用例 fixture 并观察 “await getBg('.icon')”。
-   * 验证目标：“await getBg('.icon')” 应匹配 “/svg#icon-clock-view"\)$/”，从而确认SVG 编码、fragment 与 query/hash 后缀在 URL 重写中不丢失。
-   */
+  /** CSS SVG 引用保留 #icon-clock-view 片段；bundled dev 因后缀丢失跳过。 */
   test.skipIf(isBundledDev)('via css url()', async () => {
     expect(await getBg('.icon')).toMatch(/svg#icon-clock-view"\)$/)
   })
 
-  /**
-   * 场景：在 “'svg fragments'” 中，加载用例 fixture 并观察 “await img.getAttribute('src')”。
-   * 验证目标：“await img.getAttribute('src')” 应匹配 “/^data:image\/svg\+xml,%3c.*%3e#icon-heart-view$/”，从而确认SVG 编码、fragment 与 query/hash 后缀在 URL 重写中不丢失。
-   */
+  /** JS 导入 SVG 后手动追加片段，检查 data URI 两端编码与 #icon-heart-view。 */
   test('from js import', async () => {
     const img = await page.$('.svg-frag-import')
     expect(await img.getAttribute('src')).toMatch(
@@ -701,10 +546,7 @@ describe('svg fragments', () => {
   })
 
   // bundled-dev：#fragment 丢失，原因同 `img url`。
-  /**
-   * 场景：在 “'svg fragments'” 中，加载用例 fixture 并观察 “await getBg('.icon-clock-alias')”。
-   * 验证目标：“await getBg('.icon-clock-alias')” 应匹配 “/\.svg#icon-clock-view"\)$/”，从而确认SVG 编码、fragment 与 query/hash 后缀在 URL 重写中不丢失。
-   */
+  /** 别名 SVG URL 改写后保留片段；bundled dev 因后缀丢失跳过。 */
   test.skipIf(isBundledDev)('url with an alias', async () => {
     expect(await getBg('.icon-clock-alias')).toMatch(
       /\.svg#icon-clock-view"\)$/,
@@ -712,30 +554,21 @@ describe('svg fragments', () => {
   })
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “await page.textContent('.unknown-ext')”。
- * 验证目标：“await page.textContent('.unknown-ext')” 应匹配 “isBundled ? 'data:application/octet-stream;' : '/nested/foo.unknown'”，从而确认JS/CSS/HTML 资产入口在 dev 与 build 中保持一致的公开 URL 语义。
- */
+/** assetsInclude 纳入未知扩展名：bundled 模式使用 octet-stream data URI，unbundled dev 返回路径。 */
 test('Unknown extension assets import', async () => {
   expect(await page.textContent('.unknown-ext')).toMatch(
     isBundled ? 'data:application/octet-stream;' : '/nested/foo.unknown',
   )
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “await page.textContent('.unknown-ext-inline')”。
- * 验证目标：“await page.textContent('.unknown-ext-inline')” 应匹配 “'data:application/octet-stream;'”，从而确认资源内联阈值与 data URI 编码分支正确。
- */
+/** 未知扩展名配合 ?inline 显式生成 octet-stream data URI。 */
 test('Unknown extension assets import with ?inline', async () => {
   expect(await page.textContent('.unknown-ext-inline')).toMatch(
     'data:application/octet-stream;',
   )
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “await page.textContent('.relative-path-assets-include')”。
- * 验证目标：“await page.textContent('.relative-path-assets-include')” 应匹配 “isBundled ? 'data:application/octet-stream;' : '/nested/relative-path.custom'”，从而确认JS/CSS/HTML 资产入口在 dev 与 build 中保持一致的公开 URL 语义。
- */
+/** 相对路径 assetsInclude 规则命中自定义扩展名，按对应模式返回 data URI 或路径。 */
 test('Asset matched by a relative path in assetsInclude import', async () => {
   expect(await page.textContent('.relative-path-assets-include')).toMatch(
     isBundled
@@ -744,20 +577,14 @@ test('Asset matched by a relative path in assetsInclude import', async () => {
   )
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “await page.textContent('.relative-path-assets-include-inline')”。
- * 验证目标：“await page.textContent('.relative-path-assets-include-inline')” 应匹配 “'data:application/octet-stream;'”，从而确认资源内联阈值与 data URI 编码分支正确。
- */
+/** 相对路径 assetsInclude 命中的文件配合 ?inline 显式内联。 */
 test('Asset matched by a relative path in assetsInclude import with ?inline', async () => {
   expect(
     await page.textContent('.relative-path-assets-include-inline'),
   ).toMatch('data:application/octet-stream;')
 })
 
-/**
- * 场景：在当前 playground 中，修改 “editFile('nested/partial.html', (code) => code.replace('<div>partial</div>', '<div>partial updated</div>…”。
- * 验证目标：“await page.textContent('.raw')” 应匹配 “'SVG'”；“await page.textContent('.raw-html')” 应等于 “'<div>partial</div>\n'”，从而确认JS/CSS/HTML 资产入口在 dev 与 build 中保持一致的公开 URL 语义。
- */
+/** ?raw 导出原文本；dev 编辑 HTML 文本后，接受回调更新页面内容。 */
 test('?raw import', async () => {
   // `?raw` 导出文件文本；开发模式还应把原文件纳入模块图并触发 HMR。
   expect(await page.textContent('.raw')).toMatch('SVG')
@@ -784,10 +611,7 @@ test('?raw import', async () => {
   }
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “await page.textContent('.no-inline-svg')”。
- * 验证目标：“await page.textContent('.no-inline-svg')” 应匹配 “isBundled ? /\/foo\/bar\/assets\/fragment-[-\w]{8}\.svg/ : '/foo/bar/nested/fragment.svg?no-inline'”，从而确认资源内联阈值与 data URI 编码分支正确。
- */
+/** ?no-inline 禁止 SVG 内联，bundled 模式导出外置资产 URL。 */
 test('?no-inline svg import', async () => {
   expect(await page.textContent('.no-inline-svg')).toMatch(
     isBundled
@@ -797,10 +621,7 @@ test('?no-inline svg import', async () => {
 })
 
 // bundled-dev 当前会丢失哈希资产 URL 的查询后缀，而 build 会保留 `?foo=bar`（#23028）。
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “await page.textContent('.no-inline-svg-mp')”。
- * 验证目标：“await page.textContent('.no-inline-svg-mp')” 应匹配 “isBundled ? /\/foo\/bar\/assets\/fragment-[-\w]{8}\.svg\?foo=bar/ : '/foo/bar/nested/fragment.svg?no-inl…”，从而确认资源内联阈值与 data URI 编码分支正确。
- */
+/** ?no-inline 被消费后，build 外置 SVG URL 保留自定义 ?foo=bar 后缀。 */
 test.skipIf(isBundledDev)(
   '?no-inline svg import -- multiple postfix',
   async () => {
@@ -812,40 +633,28 @@ test.skipIf(isBundledDev)(
   },
 )
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “await page.textContent('.inline-png')”。
- * 验证目标：“await page.textContent('.inline-png')” 应匹配 “/^data:image\/png;base64,/”，从而确认资源内联阈值与 data URI 编码分支正确。
- */
+/** ?inline 显式将 PNG 导出为 base64 data URI。 */
 test('?inline png import', async () => {
   expect(await page.textContent('.inline-png')).toMatch(
     /^data:image\/png;base64,/,
   )
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “await page.textContent('.inline-public-png')”。
- * 验证目标：“await page.textContent('.inline-public-png')” 应匹配 “/^data:image\/png;base64,/”，从而确认publicDir 资源绕过转换后仍保留正确 base 和内容。
- */
+/** public PNG 配合 ?inline 读取文件内容并导出 data URI。 */
 test('?inline public png import', async () => {
   expect(await page.textContent('.inline-public-png')).toMatch(
     /^data:image\/png;base64,/,
   )
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “await page.textContent('.inline-public-json')”。
- * 验证目标：“await page.textContent('.inline-public-json')” 应匹配 “/^data:application\/json;base64,/”，从而确认publicDir 资源绕过转换后仍保留正确 base 和内容。
- */
+/** public JSON 配合 ?url&inline 导出 JSON MIME 的 base64 data URI。 */
 test('?inline public json import', async () => {
   expect(await page.textContent('.inline-public-json')).toMatch(
     /^data:application\/json;base64,/,
   )
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “await page.textContent('.url')”。
- * 验证目标：“await page.textContent('.url')” 应匹配 “isBundled ? 'data:text/javascript;base64,${Buffer.from(src).toString('base64')}' : '/foo/bar/foo.js'”，从而确认JS/CSS/HTML 资产入口在 dev 与 build 中保持一致的公开 URL 语义。
- */
+/** JS 配合 ?url 作为资产处理：bundled 小文件内联原文，unbundled dev 返回路径。 */
 test('?url import', async () => {
   // `?url` 强制按资产 URL 导入；小文件在构建中仍可受内联策略影响。
   const src = readFile('foo.js')
@@ -859,10 +668,7 @@ test('?url import', async () => {
 // bundled-dev 当前把 `?url` CSS 变成 data URI，build 则始终输出 CSS 文件
 //（#22863）。修复后应与 build 采用相同 URL 形态，届时移除 skip，并把下面的
 // `isBuild` 改为 `isBundled`。
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “txt”。
- * 验证目标：“txt” 应匹配 “isBuild ? /\/foo\/bar\/assets\/icons-[-\w]{8}\.css/ : '/foo/bar/css/icons.css'”，从而确认JS/CSS/HTML 资产入口在 dev 与 build 中保持一致的公开 URL 语义。
- */
+/** build 的 CSS?url 返回抽取后的 CSS 文件 URL，unbundled dev 返回源路径；bundled dev 跳过。 */
 test.skipIf(isBundledDev)('?url import on css', async () => {
   const txt = await page.textContent('.url-css')
   expect(txt).toMatch(
@@ -873,10 +679,7 @@ test.skipIf(isBundledDev)('?url import on css', async () => {
 })
 
 describe('unicode url', () => {
-  /**
-   * 场景：在 “'unicode url'” 中，加载用例 fixture 并观察 “await page.textContent('.unicode-url')”。
-   * 验证目标：“await page.textContent('.unicode-url')” 应匹配 “isBundled ? 'data:text/javascript;base64,${Buffer.from(src).toString('base64')}' : encodeURI('/foo/bar/テ…”，从而确认JS/CSS/HTML 资产入口在 dev 与 build 中保持一致的公开 URL 语义。
-   */
+  /** Unicode/空格文件名的 ?url 导入：unbundled dev 编码源路径，bundled 模式内联原文本。 */
   test('from js import', async () => {
     const src = readFile('テスト-測試-white space.js')
     expect(await page.textContent('.unicode-url')).toMatch(
@@ -888,20 +691,14 @@ describe('unicode url', () => {
 })
 
 describe.runIf(isBuild)('encodeURI', () => {
-  /**
-   * 场景：在 “'encodeURI'” 中，加载用例 fixture 并观察 “await img.getAttribute('src')”。
-   * 验证目标：“await img.getAttribute('src')” 应匹配 “/^data:image\/png;base64,/”，从而确认JS/CSS/HTML 资产入口在 dev 与 build 中保持一致的公开 URL 语义。
-   */
+  /** build 能识别 HTML 中预编码的 Unicode/空格图片路径，并内联 PNG。 */
   test('img src with encodeURI', async () => {
     const img = await page.$('.encodeURI')
     expect(await img.getAttribute('src')).toMatch(/^data:image\/png;base64,/)
   })
 })
 
-/**
- * 场景：在当前 playground 中，修改 “editFile('import-meta-url/img.png', null, (_oldContent) => { oldContent = _oldContent return newContent …”，然后修改 “editFile('import-meta-url/img.png', null, (_) => oldContent)”。
- * 验证目标：“await page.textContent('.import-meta-url')” 应匹配 “imgMatch”；“page.textContent('.import-meta-url')” 应匹配 “imgMatch”，从而确认new URL(..., import.meta.url) 的静态分析与运行时回退正确。
- */
+/** 静态 new URL 引用进入资产处理；serve 替换/恢复图片后检查页面重载及 URL。 */
 test('new URL(..., import.meta.url)', async () => {
   // 静态 URL 在构建中进入资产图；开发时源文件变化应使页面重载并重新解析 URL。
   const imgMatch = isBundled
@@ -917,42 +714,33 @@ test('new URL(..., import.meta.url)', async () => {
       oldContent = _oldContent
       return newContent
     })
-    await loadPromise // expect reload
+    await loadPromise // 预期样式变更引发整页重载。
     await expect
       .poll(() => page.textContent('.import-meta-url'))
       .toMatch(imgMatch)
 
     const loadPromise2 = page.waitForEvent('load')
     editFile('import-meta-url/img.png', null, (_) => oldContent)
-    await loadPromise2 // expect reload
+    await loadPromise2 // 预期样式变更引发整页重载。
     await expect
       .poll(() => page.textContent('.import-meta-url'))
       .toMatch(imgMatch)
   }
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “await page.textContent('.import-meta-url-dep')”。
- * 验证目标：“await page.textContent('.import-meta-url-dep')” 应匹配 “assetMatch”，从而确认new URL(..., import.meta.url) 的静态分析与运行时回退正确。
- */
+/** new URL 中的 alias 解析到对应 PNG 资产。 */
 test('new URL("@/...", import.meta.url)', async () => {
   expect(await page.textContent('.import-meta-url-dep')).toMatch(assetMatch)
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “await page.textContent('.import-meta-url-base-path')”。
- * 验证目标：“await page.textContent('.import-meta-url-base-path')” 应匹配 “iconMatch”，从而确认new URL(..., import.meta.url) 的静态分析与运行时回退正确。
- */
+/** new URL 中的 public 根路径经处理后拼接 base。 */
 test('new URL("/...", import.meta.url)', async () => {
   expect(await page.textContent('.import-meta-url-base-path')).toMatch(
     iconMatch,
   )
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “await img.getAttribute('src')”。
- * 验证目标：“await img.getAttribute('src')” 应匹配 “/^data:image\/png;base64,/”；“await page.textContent('.import-meta-url-data-uri')” 应匹配 “/^data:image\/png;base64,/”，从而确认new URL(..., import.meta.url) 的静态分析与运行时回退正确。
- */
+/** 已有 data URI 的 new URL 保持内联形式。 */
 test('new URL("data:...", import.meta.url)', async () => {
   const img = await page.$('.import-meta-url-data-uri-img')
   expect(await img.getAttribute('src')).toMatch(/^data:image\/png;base64,/)
@@ -961,10 +749,7 @@ test('new URL("data:...", import.meta.url)', async () => {
   )
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “await page.textContent('.import-meta-url-without-extension')”。
- * 验证目标：“await page.textContent('.import-meta-url-without-extension')” 应匹配 “isBundled ? 'data:text/javascript' : 'nested/test.js'”；“await page.textContent('.import-meta-url-content-without-extension')” 应包含 “'export default class'”，从而确认new URL(..., import.meta.url) 的静态分析与运行时回退正确。
- */
+/** new URL 省略扩展名时解析到 test.js；fetch 到的文本仍含原 class 声明。 */
 test('new URL(..., import.meta.url) without extension', async () => {
   expect(await page.textContent('.import-meta-url-without-extension')).toMatch(
     isBundled ? 'data:text/javascript' : 'nested/test.js',
@@ -974,10 +759,7 @@ test('new URL(..., import.meta.url) without extension', async () => {
   ).toContain('export default class')
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “await page.textContent('.dynamic-import-meta-url-1')”。
- * 验证目标：“await page.textContent('.dynamic-import-meta-url-1')” 应匹配 “isBundled ? 'data:image/png;base64' : '/foo/bar/nested/icon.png'”；“await page.textContent('.dynamic-import-meta-url-2')” 应匹配 “assetMatch”，从而确认new URL(..., import.meta.url) 的静态分析与运行时回退正确。
- */
+/** 带静态相对前缀的动态模板生成 eager glob，分别取得小 PNG、大 PNG 与 JS 资产 URL。 */
 test('new URL(`${dynamic}`, import.meta.url)', async () => {
   // 动态模板被改写成 eager glob，分别覆盖内联图片、外置图片与 JS 资产。
   expect(await page.textContent('.dynamic-import-meta-url-1')).toMatch(
@@ -992,10 +774,7 @@ test('new URL(`${dynamic}`, import.meta.url)', async () => {
 })
 
 // bundled-dev：`?abc` 后缀丢失，原因同 `?no-inline svg import -- multiple postfix`。
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “await page.textContent('.dynamic-import-meta-url-1-query')”。
- * 验证目标：“await page.textContent('.dynamic-import-meta-url-1-query')” 应匹配 “isBundled ? 'data:image/png;base64' : '/foo/bar/nested/icon.png?abc'”；“await page.textContent('.dynamic-import-meta-url-2-query')” 应匹配 “isBundled ? /\/foo\/bar\/assets\/asset-[-\w]{8}\.png\?abc/ : '/foo/bar/nested/asset.png?abc'”，从而确认new URL(..., import.meta.url) 的静态分析与运行时回退正确。
- */
+/** 动态模板的外置 PNG URL 保留 ?abc；小 PNG 仍可内联。 */
 test.skipIf(isBundledDev)(
   'new URL(`./${dynamic}?abc`, import.meta.url)',
   async () => {
@@ -1011,10 +790,7 @@ test.skipIf(isBundledDev)(
 )
 
 // bundled-dev：`?abc` 后缀丢失，原因同 `?no-inline svg import -- multiple postfix`。
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “await page.textContent('.dynamic-import-meta-url-1-ternary')”。
- * 验证目标：“await page.textContent('.dynamic-import-meta-url-1-ternary')” 应匹配 “isBundled ? 'data:image/png;base64' : '/foo/bar/nested/icon.png?abc'”；“await page.textContent('.dynamic-import-meta-url-2-ternary')” 应匹配 “isBundled ? /\/foo\/bar\/assets\/asset-[-\w]{8}\.png\?abc/ : '/foo/bar/nested/asset.png?abc'”，从而确认new URL(..., import.meta.url) 的静态分析与运行时回退正确。
- */
+/** 模板插值含条件表达式时，仍按运行时选择取得资产 URL，外置 PNG 保留 query。 */
 test.skipIf(isBundledDev)(
   'new URL(`./${1 === 0 ? static : dynamic}?abc`, import.meta.url)',
   async () => {
@@ -1033,12 +809,9 @@ test.skipIf(isBundledDev)(
   },
 )
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “await page.textContent('.non-existent-import-meta-url')”。
- * 验证目标：忽略标记后的 URL 必须按当前脚本基址在浏览器运行时解析，serverLogs 不得出现 `doesn't exist at build time`，确认插件没有尝试静态解析不存在文件。
- */
+/** 忽略的不存在 URL 由浏览器按脚本基址求值；日志不出现构建时文件不存在警告。 */
 test("new URL(/* @vite-ignore */ 'non-existent', import.meta.url)", async () => {
-  // 内联 script 会先抽成独立模块，因此基准 URL 是生成的脚本文件而非 HTML 源码。
+  // bundled 模式以生成脚本为基址；unbundled dev 的 html-proxy 仍处于 HTML 所在目录。
   const importMetaUrl = new URL(
     isBundled ? '/foo/bar/assets/index.js' : '/foo/bar/index.html',
     page.url(),
@@ -1051,10 +824,7 @@ test("new URL(/* @vite-ignore */ 'non-existent', import.meta.url)", async () => 
   )
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “await page.textContent('.import-meta-url-multiline')”。
- * 验证目标：“await page.textContent('.import-meta-url-multiline')” 应匹配 “assetMatch”，从而确认new URL(..., import.meta.url) 的静态分析与运行时回退正确。
- */
+/** 跨行 new URL 表达式同样解析到 PNG 资产。 */
 test('new URL(..., import.meta.url) (multiline)', async () => {
   const assetMatch = isBundled
     ? /\/foo\/bar\/assets\/asset-[-\w]{8}\.png/
@@ -1065,10 +835,7 @@ test('new URL(..., import.meta.url) (multiline)', async () => {
   )
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “entry.css”。
- * 验证目标：“entry.css” 应包含 “'assets/${file}'”；“entry.assets” 应包含 “'assets/${file}'”，从而确认构建资产图和 manifest 文件映射完整。
- */
+/** build manifest 的入口记录包含输出 CSS 和非 JS 资产；CSS?url 文件单独排除。 */
 test.runIf(isBuild)('manifest', async () => {
   const manifest = readManifest('foo')
   const entry = manifest['index.html']
@@ -1085,10 +852,7 @@ test.runIf(isBuild)('manifest', async () => {
 })
 
 describe.runIf(isBuild)('css and assets in css in build watch', () => {
-  /**
-   * 场景：在 “'css and assets in css in build watch'” 中，修改 “editFile('index.html', (code) => code.replace('Assets', 'assets2'))”，然后等待重建 “notifyRebuildComplete(watcher)”。
-   * 验证目标：“cssFile” 不应等于 “''”；“cssFile” 不应匹配 “/undefined/”，从而确认JS/CSS/HTML 资产入口在 dev 与 build 中保持一致的公开 URL 语义。
-   */
+  /** build watch 编辑 HTML 后，入口 CSS 仍存在且不含 undefined。 */
   test('css will not be lost and css does not contain undefined', async () => {
     editFile('index.html', (code) => code.replace('Assets', 'assets2'))
     await notifyRebuildComplete(watcher)
@@ -1097,10 +861,7 @@ describe.runIf(isBuild)('css and assets in css in build watch', () => {
     expect(cssFile).not.toMatch(/undefined/)
   })
 
-  /**
-   * 场景：在 “'css and assets in css in build watch'” 中，修改 “editFile('asset/update.js', (code) => code.replace('hello', 'world2'))”，然后等待重建 “notifyRebuildComplete(watcher)”。
-   * 验证目标：“page.textContent('.update-content')” 应等于 “'hello'”；“oldMainJsFiles.length” 应等于 “1”，从而确认资源变更会使旧产物失效并传播到浏览器。
-   */
+  /** build watch 改变入口依赖后，页面重载看到新文本，旧 hash 文件消失且新入口仍只有一份。 */
   test('old file is removed when the content changes', async () => {
     await expect.poll(() => page.textContent('.update-content')).toBe('hello')
 
@@ -1122,10 +883,7 @@ describe.runIf(isBuild)('css and assets in css in build watch', () => {
     expect(newMainJsFiles.length).toBe(1)
   })
 
-  /**
-   * 场景：在 “'css and assets in css in build watch'” 中，修改 “editFile('css/foo.module.css', (code) => code.replace('red', 'blue'))”，然后等待重建 “notifyRebuildComplete(watcher)”。
-   * 验证目标：“await getColor('#foo')” 应等于 “'red'”；“await getColor('#foo')” 应等于 “'blue'”，从而确认JS/CSS/HTML 资产入口在 dev 与 build 中保持一致的公开 URL 语义。
-   */
+  /** build watch 修改 CSS Modules 后，重载页面呈现新颜色。 */
   test('import module.css', async () => {
     expect(await getColor('#foo')).toBe('red')
     editFile('css/foo.module.css', (code) => code.replace('red', 'blue'))
@@ -1134,10 +892,7 @@ describe.runIf(isBuild)('css and assets in css in build watch', () => {
     expect(await getColor('#foo')).toBe('blue')
   })
 
-  /**
-   * 场景：在 “'css and assets in css in build watch'” 中，修改 “editFile('static/foo.txt', (code) => code.replace('foo', 'zoo2'))”，然后等待重建 “notifyRebuildComplete(watcher)”。
-   * 验证目标：“await page.textContent('.raw-query')” 应等于 “'foo'”；“await page.textContent('.raw-query')” 应等于 “'zoo2'”，从而确认JS/CSS/HTML 资产入口在 dev 与 build 中保持一致的公开 URL 语义。
-   */
+  /** build watch 修改 ?raw 来源后，重载页面呈现新文本。 */
   test('import with raw query', async () => {
     expect(await page.textContent('.raw-query')).toBe('foo')
     editFile('static/foo.txt', (code) => code.replace('foo', 'zoo2'))
@@ -1147,10 +902,7 @@ describe.runIf(isBuild)('css and assets in css in build watch', () => {
   })
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “await getBg('.inline-style')”。
- * 验证目标：“await getBg('.inline-style')” 应匹配 “assetMatch”；“await getBg('.style-url-assets')” 应匹配 “assetMatch”，从而确认资源内联阈值与 data URI 编码分支正确。
- */
+/** HTML style 属性与 style 标签中的普通资产 URL 都经过改写。 */
 test('inline style test', async () => {
   expect(await getBg('.inline-style')).toMatch(assetMatch)
   expect(await getBg('.style-url-assets')).toMatch(assetMatch)
@@ -1158,10 +910,7 @@ test('inline style test', async () => {
 
 if (!isBuild) {
   // bundled-dev：修改内联 `<style>` 通过 @import 引入的 CSS 不会触发更新或重载（#23028）。
-  /**
-   * 场景：在当前 playground 中，修改 “editFile('./css/import.css', (code) => code.replace('#0088ff', '#00ff88 '))”。
-   * 验证目标：“getColor('.import-css')” 应等于 “'rgb(0, 136, 255)'”；“getColor('.import-css')” 应等于 “'rgb(0, 255, 136)'”，从而确认资源变更会使旧产物失效并传播到浏览器。
-   */
+  /** unbundled dev 编辑 HTML style 的 @import 依赖后，等待页面 load 并检查新颜色。 */
   test.skipIf(isBundledDev)('@import in html style tag hmr', async () => {
     await expect.poll(() => getColor('.import-css')).toBe('rgb(0, 136, 255)')
     const loadPromise = page.waitForEvent('load')
@@ -1171,10 +920,7 @@ if (!isBuild) {
   })
 }
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “await page.textContent('.obj-import-express')”。
- * 验证目标：“await page.textContent('.obj-import-express')” 应匹配 “'ignore object import prop'”；“await page.textContent('.string-import-express')” 应匹配 “'no load'”，从而确认JS/CSS/HTML 资产入口在 dev 与 build 中保持一致的公开 URL 语义。
- */
+/** 对象 import 方法和含 import 文本的字符串不会被当成动态导入执行。 */
 test('html import word boundary', async () => {
   expect(await page.textContent('.obj-import-express')).toMatch(
     'ignore object import prop',
@@ -1182,44 +928,29 @@ test('html import word boundary', async () => {
   expect(await page.textContent('.string-import-express')).toMatch('no load')
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “await page.textContent('.relative-js')”。
- * 验证目标：“await page.textContent('.relative-js')” 应匹配 “'hello'”；“await getColor('.relative-css')” 应匹配 “'red'”，从而确认JS/CSS/HTML 资产入口在 dev 与 build 中保持一致的公开 URL 语义。
- */
+/** HTML 中相对 script/link 路径都能加载并产生预期文本/颜色。 */
 test('relative path in html asset', async () => {
   expect(await page.textContent('.relative-js')).toMatch('hello')
   expect(await getColor('.relative-css')).toMatch('red')
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “await getBg('.style-public-assets')”。
- * 验证目标：“await getBg('.style-public-assets')” 应包含 “iconMatch”，从而确认publicDir 资源绕过转换后仍保留正确 base 和内容。
- */
+/** style 标签中的 public URL 拼接 base。 */
 test('url() contains file in publicDir, in <style> tag', async () => {
   expect(await getBg('.style-public-assets')).toContain(iconMatch)
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “await getBg('.inline-style-public')”。
- * 验证目标：“await getBg('.inline-style-public')” 应包含 “iconMatch”，从而确认publicDir 资源绕过转换后仍保留正确 base 和内容。
- */
+/** style 属性中的 public URL 拼接 base。 */
 test('url() contains file in publicDir, as inline style', async () => {
   expect(await getBg('.inline-style-public')).toContain(iconMatch)
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “await link.getAttribute('href')”。
- * 验证目标：“await link.getAttribute('href')” 应等于 “'data:,'”，从而确认JS/CSS/HTML 资产入口在 dev 与 build 中保持一致的公开 URL 语义。
- */
+/** HTML 中已有的 data:, 链接保持原值。 */
 test('should not rewrite non-relative urls in html', async () => {
   const link = page.locator('.data-href')
   expect(await link.getAttribute('href')).toBe('data:,')
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “indexHtml”。
- * 验证目标：“indexHtml” 应匹配 “/<img class="noscript" src="\/foo\/bar\/assets\/asset-[-\w]+\.png" \/>/”，从而确认JS/CSS/HTML 资产入口在 dev 与 build 中保持一致的公开 URL 语义。
- */
+/** build 直接检查 HTML，noscript 内图片也改写为带 hash 的资产 URL。 */
 test.runIf(isBuild)('assets inside <noscript> is rewrote', async () => {
   const indexHtml = readFile('./dist/foo/index.html')
   expect(indexHtml).toMatch(
@@ -1227,10 +958,7 @@ test.runIf(isBuild)('assets inside <noscript> is rewrote', async () => {
   )
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “indexHtml”。
- * 验证目标：“indexHtml” 应匹配 “/<img class="template" src="\/foo\/bar\/assets\/asset-[-\w]+\.png" \/>/”，从而确认JS/CSS/HTML 资产入口在 dev 与 build 中保持一致的公开 URL 语义。
- */
+/** build 直接检查 HTML，template 内图片也改写为带 hash 的资产 URL。 */
 test.runIf(isBuild)('assets inside <template> is rewrote', async () => {
   const indexHtml = readFile('./dist/foo/index.html')
   expect(indexHtml).toMatch(

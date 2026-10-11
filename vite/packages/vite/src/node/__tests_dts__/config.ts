@@ -11,8 +11,7 @@ import {
 } from '../config'
 import { mergeConfig } from '../utils'
 
-// 场景：defineConfig 接收对象、Promise、同步/异步函数及联合返回值。
-// 目标：验证各重载保留输入的精确配置形态，而不是一律退化为 UserConfigExport。
+/** 对象输入的 defineConfig 重载保留 UserConfig，供 cases1 的精确类型断言比较。 */
 const configObjectDefined = defineConfig({})
 /** Promise 配置重载应保留 `Promise<UserConfig>`，供下方精确类型断言使用。 */
 const configObjectPromiseDefined = defineConfig(Promise.resolve({}))
@@ -39,8 +38,7 @@ export type cases1 = [
 ]
 
 defineConfig({
-  // 场景：对象字面量配置。
-  // 目标：合法字面量无需 `as const`，且 excess-property checking 能拒绝未知顶层项。
+  // 对象字面量接受合法项，并通过 excess-property checking 拒绝未知顶层项。
   base: '',
   build: {
     minify: 'oxc', // 对象重载应自动保留字符串字面量。
@@ -48,6 +46,7 @@ defineConfig({
   server: {
     proxy: {
       '/test': {
+        /** 以 false 的上下文推导验证对象配置可直接写代理 bypass 回调。 */
         bypass: () => false,
       },
     },
@@ -56,8 +55,7 @@ defineConfig({
   unknownProperty: 1,
 })
 
-// 场景：同步函数返回配置。
-// 目标：嵌套字段仍受约束；同时记录 TS 当前无法检查返回对象顶层多余字段的限制。
+// 同步函数的返回值约束嵌套字段；返回对象顶层多余字段不触发这组重载的检查。
 defineConfig(() => ({
   base: '',
   build: {
@@ -66,7 +64,8 @@ defineConfig(() => ({
   server: {
     proxy: {
       '/test': {
-        bypass: () => false as const, // 同样记录回调字面量需要 as const 的推导限制。
+        /** 显式保留 false 字面量，使同步函数返回的代理配置满足 bypass 返回类型。 */
+        bypass: () => false as const,
       },
     },
   },
@@ -81,7 +80,7 @@ defineConfig(() => ({
   },
 }))
 
-// 场景：异步函数返回配置；验证结论应与同步函数保持一致。
+// 异步函数返回配置，与同步函数一样约束嵌套字段。
 defineConfig(async () => ({
   base: '',
   build: {
@@ -90,6 +89,7 @@ defineConfig(async () => ({
   server: {
     proxy: {
       '/test': {
+        /** 显式保留 false 字面量，使异步函数返回的代理配置满足 bypass 返回类型。 */
         bypass: () => false as const,
       },
     },
@@ -105,7 +105,7 @@ defineConfig(async () => ({
   },
 }))
 
-// 场景：mergeConfig 只接受已物化配置对象，不接受仍需执行的配置函数。
+// mergeConfig 接受配置对象，不接受仍需执行的配置函数。
 mergeConfig(defineConfig({}), defineConfig({}))
 mergeConfig(
   // @ts-expect-error

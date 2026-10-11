@@ -1,6 +1,7 @@
 import type { Plugin } from 'vite'
 import escapeHtml from 'escape-html'
 
+/** 文件服务矩阵的场景 ID 列表；每项生成普通 URL 与 /@fs/ 两列的状态、路径和响应正文节点。 */
 const testIds = [
   'safe',
   'safe-query',
@@ -36,9 +37,11 @@ const testIds = [
   'unsafe-dotenv-83-short-name',
 ]
 
+/** 创建结果展示插件，给页面矩阵脚本和测试提供一致的 DOM 查询节点。 */
 export default function matrixTestResultPlugin(): Plugin {
   return {
     name: 'matrix-test-result',
+    /** 用场景列表生成 summary/contents 表格和展示样式，替换 HTML 占位标记；插值 ID 经 escapeHtml。 */
     transformIndexHtml(html) {
       const summary = `
 <h1>FS Serve Matrix Test Summary</h1>

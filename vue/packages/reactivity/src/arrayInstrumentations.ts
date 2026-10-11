@@ -15,8 +15,9 @@ import { isArray } from '@vue/shared'
 /**
  * 收集数组迭代依赖，并返回适合只读类方法使用的数组。
  *
- * - 深层响应式数组：复制原始数组，并把每个元素转换成响应式值；
- * - 非响应式或浅层响应式数组：直接返回原始数组。
+ * - 普通数组（toRaw 后与输入相同）：原样返回，不收集依赖；
+ * - 代理数组：先收集 ARRAY_ITERATE_KEY，浅层输入返回 raw，其余对 raw.map(toReactive)；
+ *   返回的是新数组，元素按 toReactive 转换。本助手自身不加外层 readonly 约束。
  *
  * 数组方法在原始数组上执行，可避免逐个索引触发代理 `get`；统一订阅
  * `ARRAY_ITERATE_KEY` 又能在任意数字索引变化时正确更新。
@@ -85,7 +86,7 @@ export const arrayInstrumentations: Record<string | symbol, Function> = <any>{
     })
   },
 
-  /** 检查是否所有元素满足条件；回调收到与代理模式一致的元素和数组。 */
+  /** 检查是否所有元素满足条件；回调元素按当前深浅模式包装。 */
   every(
     fn: (item: unknown, index: number, array: unknown[]) => unknown,
     thisArg?: unknown,
@@ -157,7 +158,7 @@ export const arrayInstrumentations: Record<string | symbol, Function> = <any>{
 
   // flat/flatMap 也可受益于 ARRAY_ITERATE_KEY，但嵌套展开涉及多层数组，插桩并不直接。
 
-  /** 遍历全部元素；回调第三参数保持响应式数组代理身份。 */
+  /** 遍历全部元素；元素包装和回调数组参数的替换条件由 `apply()` 处理。 */
   forEach(
     fn: (item: unknown, index: number, array: unknown[]) => unknown,
     thisArg?: unknown,
@@ -187,7 +188,7 @@ export const arrayInstrumentations: Record<string | symbol, Function> = <any>{
     return searchProxy(this, 'lastIndexOf', args)
   },
 
-  /** 映射全部元素；回调读取由统一数组迭代依赖负责触发。 */
+  /** 映射元素；数组内容由迭代 Dep 追踪，回调读取元素的对象字段仍各自收集属性 Dep。 */
   map(
     fn: (item: unknown, index: number, array: unknown[]) => unknown,
     thisArg?: unknown,
@@ -238,7 +239,7 @@ export const arrayInstrumentations: Record<string | symbol, Function> = <any>{
 
   // slice 可统一订阅 ARRAY_ITERATE_KEY，但更理想的是只追踪切片区间，暂不插桩。
 
-  /** 检查是否存在满足条件的元素；回调收到与代理模式一致的参数。 */
+  /** 检查是否存在满足条件的元素；回调元素按当前深浅模式包装。 */
   some(
     fn: (item: unknown, index: number, array: unknown[]) => unknown,
     thisArg?: unknown,
@@ -299,6 +300,7 @@ function iterator(
 ) {
   const arr = shallowReadArray(self)
   const iter = (arr[method] as any)() as IterableIterator<unknown> & {
+    /** 原始 next 方法；覆写 iter.next 后仍通过它推进同一个原生迭代器。 */
     _next: IterableIterator<unknown>['next']
   }
   if (arr !== self && !isShallow(self)) {
@@ -326,8 +328,10 @@ const arrayProto = Array.prototype
 /**
  * 执行可能读取全部元素的回调类数组方法，如 `map`、`filter`、`find`。
  *
- * 方法在原始数组上运行以避免逐索引追踪，但回调收到的元素和第三参数仍保持调用者
- * 所见的代理语义；必要时还包装方法返回值。
+ * 方法在原始数组上运行以避免逐索引追踪。深层模式包装回调元素，并以 self 作为
+ * 第三参数；浅层模式保留元素，仅在 fn.length > 2 时把第三参数替换为 self。
+ * 默认参数或 rest 参数可能使 fn.length 不满足此条件，此时第三参数仍是 raw 数组。
+ * 方法返回值按当前深浅模式和方法约定包装。
  *
  * issue #11759 场景：Array 子类或用户扩展数组可能覆盖 `map` 等方法，其参数顺序和
  * 含义不再遵循原生规范。此时不能套用 Vue 的原生方法包装，必须用原始 `arguments`
@@ -360,7 +364,7 @@ function apply(
         return fn.call(this, toWrapped(self, item), index, self)
       }
     } else if (fn.length > 2) {
-      // 浅层代理无需包装元素，但显式接收第三参数的回调仍应拿到代理数组。
+      // 浅层代理无需包装元素；fn.length > 2 时才将回调第三参数替换为代理数组。
       wrappedFn = function (this: unknown, item, index) {
         return fn.call(this, item, index, self)
       }
@@ -375,6 +379,8 @@ function apply(
  *
  * 未传初始累加值时，原生 reduce 会把首个数组元素直接作为 `acc`，它不会经过 item
  * 包装路径，因此首次回调前需额外包装；单元素数组甚至不会调用回调，返回前仍要包装。
+ * 深层模式以 self 作为回调第四参数；浅层模式仅在 fn.length > 3 时替换该参数，
+ * 否则回调取得 raw 数组。默认参数或 rest 参数会影响 fn.length 的判断。
  */
 function reduce(
   self: unknown[],
@@ -437,7 +443,10 @@ function searchProxy(
  * issue #2137 场景：两个 effect 分别执行 `arr.push(...)`。原生 push 会先读取 length；
  * 若把该读取记为 effect 依赖，一个 effect 改 length 会触发另一个，另一个 push 又反向
  * 触发，形成无限循环。暂停追踪可避免“写方法的内部读取”成为业务依赖；批处理则让
- * 多个索引/length 写入完成后统一通知，观察者不会看到中间状态。
+ * 多个索引/length 写入完成后统一通知，观察者不会在各索引写入之间执行。
+ *
+ * 原生方法以 self 为 this，写操作仍经过代理陷阱；只有内部读取被暂停追踪。
+ * 本实现未使用 try/finally：原生写方法或批结束调度抛错时，resetTracking 不保证执行。
  */
 function noTracking(
   self: unknown[],

@@ -20,11 +20,11 @@ interface ImportMetaEnv extends Record<ImportMetaEnvFallbackKey, any> {
   BASE_URL: string
   /** 当前运行模式名称。 */
   MODE: string
-  /** 当前构建或开发会话是否运行于开发模式。 */
+  /** config.isProduction 的反值，与 MODE 的自定义名称独立。 */
   DEV: boolean
-  /** 当前构建或开发会话是否运行于生产模式。 */
+  /** config.isProduction 的值，由 NODE_ENV 等配置解析结果决定。 */
   PROD: boolean
-  /** 当前模块是否在服务端渲染环境中执行。 */
+  /** 当前转换环境的 consumer 是否为 server。 */
   SSR: boolean
 }
 
@@ -39,6 +39,6 @@ interface ImportMeta {
   /** 经 Vite 静态替换或运行时注入的环境变量。 */
   readonly env: ImportMetaEnv
 
-  /** 在构建时展开 glob 匹配并生成导入表的宏函数。 */
+  /** 在开发/构建源码转换时展开 glob 匹配并生成导入表的宏函数。 */
   glob: import('./importGlob.js').ImportGlobFunction
 }

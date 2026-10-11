@@ -11,57 +11,57 @@
 import type {Fiber} from 'react-reconciler/src/ReactInternalTypes';
 import type {DOMEventName} from './DOMEventNames';
 
-/** DispatchConfig 定义 Flow 数据形状，用于集中声明 React 合成事件及 native event 的 Flow 类型边界；类型边界阻止插件、原生事件与 Fiber 状态混用。 */
+/** 事件插件的旧注册配置类型，描述原生依赖和 React handler 名称。 */
 export type DispatchConfig = {
-  /** DispatchConfig.dependencies 描述集中声明 React 合成事件及 native event 的 Flow 类型边界的数据字段；该字段限定跨插件、队列或原生事件传递的状态边界。 */
+  /** 产生此事件的原生事件名列表。 */
   dependencies?: Array<DOMEventName>,
-  /** DispatchConfig.phasedRegistrationNames 描述集中声明 React 合成事件及 native event 的 Flow 类型边界的数据字段；该字段限定跨插件、队列或原生事件传递的状态边界。 */
+  /** 分别对应捕获与冒泡的 React handler 名称。 */
   phasedRegistrationNames: {
-    /** DispatchConfig.bubbled 描述集中声明 React 合成事件及 native event 的 Flow 类型边界的数据字段；该字段限定跨插件、队列或原生事件传递的状态边界。 */
+    /** 冒泡阶段 React handler 名。 */
     bubbled: null | string,
-    /** DispatchConfig.captured 描述集中声明 React 合成事件及 native event 的 Flow 类型边界的数据字段；该字段限定跨插件、队列或原生事件传递的状态边界。 */
+    /** 捕获阶段 React handler 名。 */
     captured: null | string,
   },
-  /** DispatchConfig.registrationName 描述集中声明 React 合成事件及 native event 的 Flow 类型边界的数据字段；该字段限定跨插件、队列或原生事件传递的状态边界。 */
+  /** 直接注册的 React handler 名。 */
   registrationName?: string,
 };
 
-/** BaseSyntheticEvent 定义 Flow 数据形状，用于集中声明 React 合成事件及 native event 的 Flow 类型边界；类型边界阻止插件、原生事件与 Fiber 状态混用。 */
+/** 合成事件共享字段；派发时临时设置 currentTarget。 */
 type BaseSyntheticEvent = {
-  /** BaseSyntheticEvent.isPersistent 是集中声明 React 合成事件及 native event 的 Flow 类型边界的可调用属性；它在读取或归一化该字段时保持宿主事件语义。 */
+  /** 现代 DOM 实现恒为 true，事件不放回池中。 */
   isPersistent: () => boolean,
-  /** BaseSyntheticEvent.isPropagationStopped 是集中声明 React 合成事件及 native event 的 Flow 类型边界的可调用属性；它在读取或归一化该字段时保持宿主事件语义。 */
+  /** 读取 stopPropagation 改变的传播停止状态。 */
   isPropagationStopped: () => boolean,
-  /** BaseSyntheticEvent._dispatchInstances 描述集中声明 React 合成事件及 native event 的 Flow 类型边界的数据字段；该字段限定跨插件、队列或原生事件传递的状态边界。 */
+  /** 旧事件派发字段，表示对应的 Fiber 身份。 */
   _dispatchInstances?: null | Array<Fiber | null> | Fiber,
-  /** BaseSyntheticEvent._dispatchListeners 描述集中声明 React 合成事件及 native event 的 Flow 类型边界的数据字段；该字段限定跨插件、队列或原生事件传递的状态边界。 */
+  /** 旧事件派发字段，表示待调用回调。 */
   _dispatchListeners?: null | Array<Function> | Function,
-  /** BaseSyntheticEvent._targetInst 描述集中声明 React 合成事件及 native event 的 Flow 类型边界的数据字段；该字段限定跨插件、队列或原生事件传递的状态边界。 */
+  /** 创建合成事件时记录的目标 Fiber，可为 null。 */
   _targetInst: Fiber,
-  /** BaseSyntheticEvent.nativeEvent 描述集中声明 React 合成事件及 native event 的 Flow 类型边界的数据字段；该字段限定跨插件、队列或原生事件传递的状态边界。 */
+  /** 合成事件所包装的原生浏览器事件。 */
   nativeEvent: Event,
-  /** BaseSyntheticEvent.target 描述集中声明 React 合成事件及 native event 的 Flow 类型边界的数据字段；该字段限定跨插件、队列或原生事件传递的状态边界。 */
+  /** 原生 target 经 getEventTarget 归一化后的目标。 */
   target?: mixed,
-  /** BaseSyntheticEvent.relatedTarget 描述集中声明 React 合成事件及 native event 的 Flow 类型边界的数据字段；该字段限定跨插件、队列或原生事件传递的状态边界。 */
+  /** 进入/离开等事件的关联目标。 */
   relatedTarget?: mixed,
-  /** BaseSyntheticEvent.type 描述集中声明 React 合成事件及 native event 的 Flow 类型边界的数据字段；该字段限定跨插件、队列或原生事件传递的状态边界。 */
+  /** 对用户暴露的合成事件类型，可与原生类型不同。 */
   type: string,
-  /** BaseSyntheticEvent.currentTarget 描述集中声明 React 合成事件及 native event 的 Flow 类型边界的数据字段；该字段限定跨插件、队列或原生事件传递的状态边界。 */
+  /** 当前 handler 对应的宿主目标；调用结束后清空。 */
   currentTarget: null | EventTarget,
 };
 
-/** KnownReactSyntheticEvent 定义 Flow 数据形状，用于集中声明 React 合成事件及 native event 的 Flow 类型边界；类型边界阻止插件、原生事件与 Fiber 状态混用。 */
+/** 具有已知 React on* 注册名称的合成事件。 */
 export type KnownReactSyntheticEvent = BaseSyntheticEvent & {
-  /** KnownReactSyntheticEvent._reactName 描述集中声明 React 合成事件及 native event 的 Flow 类型边界的数据字段；该字段限定跨插件、队列或原生事件传递的状态边界。 */
+  /** 此合成事件对应的 React on* 注册名。 */
   _reactName: string,
 };
-/** UnknownReactSyntheticEvent 定义 Flow 数据形状，用于集中声明 React 合成事件及 native event 的 Flow 类型边界；类型边界阻止插件、原生事件与 Fiber 状态混用。 */
+/** 只通过 createEventHandle 等内部路径派发、没有 React on* 名的合成事件。 */
 export type UnknownReactSyntheticEvent = BaseSyntheticEvent & {
-  /** UnknownReactSyntheticEvent._reactName 描述集中声明 React 合成事件及 native event 的 Flow 类型边界的数据字段；该字段限定跨插件、队列或原生事件传递的状态边界。 */
+  /** 无 React on* 名称的事件固定为 null。 */
   _reactName: null,
 };
 
-/** ReactSyntheticEvent 定义 Flow 数据形状，用于集中声明 React 合成事件及 native event 的 Flow 类型边界；类型边界阻止插件、原生事件与 Fiber 状态混用。 */
+/** 已知与未知注册名的合成事件联合。 */
 export type ReactSyntheticEvent =
   | KnownReactSyntheticEvent
   | UnknownReactSyntheticEvent;

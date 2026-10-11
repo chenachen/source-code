@@ -1,0 +1,264 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1160" height="2000" viewBox="0 0 1160 2000" role="img" aria-labelledby="rc-title rc-desc">
+<title id="rc-title">循环导入与 Module Runner 缓存状态</title>
+<desc id="rc-desc">同一 cyclic2/test1 夹具的对象依赖图和状态迁移。index 先导入已完成的 dep1，再导入 dep2；dep2 导回正在求值的 index，拿到已建 getter 的部分 namespace 后读取 dep1.ok。临时元信息 Promise 按 URL 去重并删除；求值 Promise 按 id 持久保存。成功与失败都将 evaluated 置 true。后续导入先握手：cache:true 复用原求值 Promise；invalidate:true 先清状态，再写本次响应 meta 并启动新 Promise。HMR 本地失效后，下次导入回到元信息请求入口。</desc>
+<defs>
+  <marker id="rc-blue-arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 Z" fill="#2563eb"/></marker>
+  <marker id="rc-green-arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 Z" fill="#0f766e"/></marker>
+  <marker id="rc-amber-arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 Z" fill="#b45309"/></marker>
+  <marker id="rc-gray-arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 Z" fill="#64748b"/></marker>
+</defs>
+<style>
+.rc-title { font: 700 30px -apple-system, BlinkMacSystemFont, "Noto Sans CJK SC", "Microsoft YaHei", sans-serif; fill: #172033; }
+.rc-section { font: 700 24px -apple-system, BlinkMacSystemFont, "Noto Sans CJK SC", "Microsoft YaHei", sans-serif; fill: #172033; }
+.rc-text { font-family: -apple-system, BlinkMacSystemFont, "Noto Sans CJK SC", "Microsoft YaHei", sans-serif; fill: #253247; }
+.rc-code { font-family: "SFMono-Regular", Consolas, "Noto Sans Mono CJK SC", "Microsoft YaHei", monospace; fill: #253247; }
+.rc-line { fill: none; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+</style>
+
+<rect width="1160" height="2000" fill="#fbfcfe"/>
+<text class="rc-title" x="40" y="49">循环导入如何绕开等待，又保留求值缓存</text>
+<text class="rc-text" x="40" y="85" font-size="20" text-anchor="start">
+<tspan x="40" dy="0">输入固定为 cyclic2/test1：真正的环是 index → dep2 → index。</tspan>
+</text>
+<rect x="32" y="120" width="1096" height="440" rx="12" fill="#f5f8fc" stroke="#bac8da" stroke-width="1.5"/>
+<rect x="430" y="155" width="300" height="113" rx="12" fill="#eff6ff" stroke="#9db3d4" stroke-width="1.5"/>
+<text class="rc-text" x="580.0" y="185" font-size="20" text-anchor="middle" font-weight="650">
+<tspan x="580.0" dy="0">index.js</tspan>
+</text>
+<text class="rc-text" x="580.0" y="213" font-size="18" text-anchor="middle">
+<tspan x="580.0" dy="0">import / re-export dep1、dep2</tspan>
+<tspan x="580.0" dy="25">Pindex 等待依赖完成</tspan>
+</text>
+<rect x="60" y="366" width="360" height="107" rx="12" fill="#f0fdfa" stroke="#9ccbc3" stroke-width="1.5"/>
+<text class="rc-text" x="240.0" y="396" font-size="20" text-anchor="middle" font-weight="650">
+<tspan x="240.0" dy="0">dep1.js</tspan>
+</text>
+<text class="rc-text" x="240.0" y="424" font-size="18" text-anchor="middle">
+<tspan x="240.0" dy="0">export const dep1 = { ok: true }</tspan>
+<tspan x="240.0" dy="25">先完成；getter 已能取到 dep1</tspan>
+</text>
+<rect x="750" y="366" width="360" height="133" rx="12" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>
+<text class="rc-text" x="930.0" y="396" font-size="20" text-anchor="middle" font-weight="650">
+<tspan x="930.0" dy="0">dep2.js</tspan>
+</text>
+<text class="rc-text" x="930.0" y="424" font-size="17" text-anchor="middle">
+<tspan x="930.0" dy="0">import { dep1 } from './index.js'</tspan>
+<tspan x="930.0" dy="25">export const dep2 = { ok: dep1.ok }</tspan>
+<tspan x="930.0" dy="25">读取已初始化的 dep1.ok → true</tspan>
+</text>
+<path class="rc-line" d="M500 268 V306 H240 V366" stroke="#2563eb" marker-end="url(#rc-blue-arrow)"/>
+<text class="rc-text" x="239" y="340" font-size="18" text-anchor="middle">
+<tspan x="239" dy="0">① 先 await dep1，完成后再继续</tspan>
+</text>
+<path class="rc-line" d="M660 268 V307 H930 V366" stroke="#2563eb" marker-end="url(#rc-blue-arrow)"/>
+<text class="rc-text" x="850" y="341" font-size="18" text-anchor="middle">
+<tspan x="850" dy="0">② 再 await dep2</tspan>
+</text>
+<path class="rc-line" d="M1110 410 H1120 V192 H730" stroke="#2563eb" marker-end="url(#rc-blue-arrow)"/>
+<text class="rc-text" x="921" y="174" font-size="18" text-anchor="middle">
+<tspan x="921" dy="0">③ dep2 再请求 index</tspan>
+</text>
+<path class="rc-line" d="M730 249 H1055 V366" stroke="#0f766e" marker-end="url(#rc-green-arrow)" stroke-dasharray="7 6"/>
+<text class="rc-text" x="902" y="281" font-size="17" text-anchor="middle" style="fill:#0f766e">
+<tspan x="902" dy="0">命中当前栈：立即返回部分 exports</tspan>
+</text>
+<text class="rc-text" x="50" y="526" font-size="18" text-anchor="start">
+<tspan x="50" dy="0">index 已注册 getter，但仍在求值；dep2 得到部分 namespace 后可读取已经完成的 dep1。</tspan>
+</text>
+<text class="rc-text" x="50" y="550" font-size="18" text-anchor="start">
+<tspan x="50" dy="0">dep2 完成 → index 完成。返回部分 namespace 不会把 Pindex 提前兑现，也不会置 evaluated=true。</tspan>
+</text>
+<text class="rc-section" x="40" y="607">临时元信息请求与持久求值状态</text>
+<rect x="50" y="637" width="450" height="123" rx="12" fill="#eff6ff" stroke="#9db3d4" stroke-width="1.5"/>
+<text class="rc-text" x="275.0" y="667" font-size="20" text-anchor="middle" font-weight="650">
+<tspan x="275.0" dy="0">按 URL：临时请求 Promise</tspan>
+</text>
+<text class="rc-text" x="275.0" y="695" font-size="18" text-anchor="middle">
+<tspan x="275.0" dy="0">concurrentModuleNodePromises</tspan>
+<tspan x="275.0" dy="25">并发复用；finally delete(url)</tspan>
+<tspan x="275.0" dy="25">响应中的 meta 写入长期节点</tspan>
+</text>
+<rect x="660" y="637" width="450" height="123" rx="12" fill="#f0fdfa" stroke="#9ccbc3" stroke-width="1.5"/>
+<text class="rc-text" x="885.0" y="667" font-size="20" text-anchor="middle" font-weight="650">
+<tspan x="885.0" dy="0">按 id：EvaluatedModuleNode</tspan>
+</text>
+<text class="rc-text" x="885.0" y="695" font-size="18" text-anchor="middle">
+<tspan x="885.0" dy="0">meta / exports / promise / evaluated</tspan>
+<tspan x="885.0" dy="25">imports / importers / map</tspan>
+<tspan x="885.0" dy="25">求值 Promise 完成后仍保留</tspan>
+</text>
+<path class="rc-line" d="M500 694 H660" stroke="#64748b" marker-end="url(#rc-gray-arrow)"/>
+<text class="rc-text" x="580" y="683" font-size="18" text-anchor="middle">
+<tspan x="580" dy="0">归入节点</tspan>
+</text>
+<path class="rc-line" d="M850 760 V783 H660 V811" stroke="#64748b" marker-end="url(#rc-gray-arrow)"/>
+<rect x="435" y="811" width="290" height="113" rx="12" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>
+<text class="rc-text" x="580.0" y="841" font-size="20" text-anchor="middle" font-weight="650">
+<tspan x="580.0" dy="0">等待本轮求值</tspan>
+</text>
+<text class="rc-text" x="580.0" y="869" font-size="17" text-anchor="middle">
+<tspan x="580.0" dy="0">meta 已取到；promise 未建立</tspan>
+<tspan x="580.0" dy="25">evaluated=false；exports 未建立</tspan>
+</text>
+<path class="rc-line" d="M580 924 V980" stroke="#2563eb" marker-end="url(#rc-blue-arrow)"/>
+<text class="rc-code" x="585" y="957" font-size="18" text-anchor="start">
+<tspan x="585" dy="0">directRequest()</tspan>
+</text>
+<rect x="425" y="980" width="310" height="134" rx="12" fill="#eff6ff" stroke="#9db3d4" stroke-width="1.5"/>
+<text class="rc-text" x="580.0" y="1010" font-size="20" text-anchor="middle" font-weight="650">
+<tspan x="580.0" dy="0">正在求值</tspan>
+</text>
+<text class="rc-text" x="580.0" y="1038" font-size="17" text-anchor="middle">
+<tspan x="580.0" dy="0">promise = Pindex；evaluated=false</tspan>
+<tspan x="580.0" dy="25">exports 先建，再执行协议代码</tspan>
+<tspan x="580.0" dy="25">export getter 随代码注册</tspan>
+</text>
+<path d="M195 985 L315 1045 L195 1105 L75 1045 Z" fill="#fff7ed" stroke="#d9a968" stroke-width="1.5"/>
+<path class="rc-line" d="M425 1045 H315" stroke="#64748b" marker-end="url(#rc-gray-arrow)"/>
+<text class="rc-text" x="195" y="1034" font-size="17" text-anchor="middle">
+<tspan x="195" dy="0">再次请求该节点</tspan>
+</text>
+<text class="rc-text" x="195" y="1062" font-size="16" text-anchor="middle">
+<tspan x="195" dy="0">栈 / imports 图成环？</tspan>
+</text>
+<path class="rc-line" d="M195 1105 V1190" stroke="#0f766e" marker-end="url(#rc-green-arrow)"/>
+<text class="rc-text" x="215" y="1150" font-size="18" text-anchor="start" style="fill:#0f766e">
+<tspan x="215" dy="0">是</tspan>
+</text>
+<rect x="50" y="1190" width="310" height="94" rx="12" fill="#f0fdfa" stroke="#9ccbc3" stroke-width="1.5"/>
+<text class="rc-text" x="205.0" y="1220" font-size="20" text-anchor="middle" font-weight="650">
+<tspan x="205.0" dy="0">返回部分 namespace</tspan>
+</text>
+<text class="rc-text" x="205.0" y="1248" font-size="17" text-anchor="middle">
+<tspan x="205.0" dy="0">不 await P；不改 evaluated</tspan>
+<tspan x="205.0" dy="25">dep2 继续，原 Pindex 继续推进</tspan>
+</text>
+<path class="rc-line" d="M315 1045 H377 V1161 H580 V1190" stroke="#64748b" marker-end="url(#rc-gray-arrow)"/>
+<text class="rc-text" x="353" y="1105" font-size="18" text-anchor="start">
+<tspan x="353" dy="0">否</tspan>
+</text>
+<rect x="425" y="1190" width="310" height="94" rx="12" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>
+<text class="rc-text" x="580.0" y="1220" font-size="20" text-anchor="middle" font-weight="650">
+<tspan x="580.0" dy="0">等待同一个 P</tspan>
+</text>
+<text class="rc-text" x="580.0" y="1248" font-size="18" text-anchor="middle">
+<tspan x="580.0" dy="0">无环并发复用求值</tspan>
+<tspan x="580.0" dy="25">完成时得到相同结果或错误</tspan>
+</text>
+<rect x="810" y="796" width="310" height="113" rx="12" fill="#f0fdfa" stroke="#9ccbc3" stroke-width="1.5"/>
+<text class="rc-text" x="965.0" y="826" font-size="20" text-anchor="middle" font-weight="650">
+<tspan x="965.0" dy="0">成功结束</tspan>
+</text>
+<text class="rc-text" x="965.0" y="854" font-size="17" text-anchor="middle">
+<tspan x="965.0" dy="0">默认 evaluator 先 seal(exports)</tspan>
+<tspan x="965.0" dy="25">P fulfilled(namespace)</tspan>
+<tspan x="965.0" dy="25">finally: evaluated=true</tspan>
+</text>
+<rect x="810" y="945" width="310" height="113" rx="12" fill="#fff7ed" stroke="#d9a968" stroke-width="1.5"/>
+<text class="rc-text" x="965.0" y="975" font-size="20" text-anchor="middle" font-weight="650">
+<tspan x="965.0" dy="0">失败结束</tspan>
+</text>
+<text class="rc-text" x="965.0" y="1003" font-size="17" text-anchor="middle">
+<tspan x="965.0" dy="0">P rejected(Error E)</tspan>
+<tspan x="965.0" dy="25">finally: evaluated=true</tspan>
+<tspan x="965.0" dy="25">失败 Promise 保留同一个 E</tspan>
+</text>
+<path class="rc-line" d="M735 990 H790 V852 H810" stroke="#0f766e" marker-end="url(#rc-green-arrow)"/>
+<path class="rc-line" d="M735 1082 H760 V1002 H810" stroke="#b45309" marker-end="url(#rc-amber-arrow)"/>
+<rect x="810" y="1150" width="310" height="132" rx="12" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>
+<text class="rc-text" x="965.0" y="1180" font-size="20" text-anchor="middle" font-weight="650">
+<tspan x="965.0" dy="0">完成状态继续保留</tspan>
+</text>
+<text class="rc-text" x="965.0" y="1208" font-size="17" text-anchor="middle">
+<tspan x="965.0" dy="0">evaluated=true；原 P 仍在节点上</tspan>
+<tspan x="965.0" dy="25">P fulfilled / rejected(Error E)</tspan>
+<tspan x="965.0" dy="25">等待下一次请求或本地失效</tspan>
+</text>
+<path class="rc-line" d="M1120 852 H1140 V1126 H965 V1150" stroke="#0f766e" marker-end="url(#rc-green-arrow)" stroke-dasharray="7 6"/>
+<path class="rc-line" d="M965 1058 V1150" stroke="#b45309" marker-end="url(#rc-amber-arrow)" stroke-dasharray="7 6"/>
+<path class="rc-line" d="M580 1284 V1306" stroke="#64748b" marker-end="url(#rc-gray-arrow)" stroke-dasharray="7 6"/>
+<rect x="425" y="1306" width="310" height="85" rx="12" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>
+<text class="rc-text" x="580.0" y="1336" font-size="20" text-anchor="middle" font-weight="650">
+<tspan x="580.0" dy="0">本次请求结束</tspan>
+</text>
+<text class="rc-text" x="580.0" y="1364" font-size="17" text-anchor="middle">
+<tspan x="580.0" dy="0">返回 namespace / 抛出 E</tspan>
+</text>
+<text class="rc-section" x="60" y="1324">后续导入与失效</text>
+<rect x="50" y="1360" width="310" height="113" rx="12" fill="#fff7ed" stroke="#d9a968" stroke-width="1.5"/>
+<text class="rc-text" x="205.0" y="1390" font-size="20" text-anchor="middle" font-weight="650">
+<tspan x="205.0" dy="0">本地 HMR 失效</tspan>
+</text>
+<text class="rc-text" x="205.0" y="1418" font-size="17" text-anchor="middle">
+<tspan x="205.0" dy="0">invalidateModule 清旧状态</tspan>
+<tspan x="205.0" dy="25">清 meta；下次导入重新 fetch</tspan>
+</text>
+<path class="rc-line" d="M810 1274 H770 V1418 H360" stroke="#b45309" marker-end="url(#rc-amber-arrow)"/>
+<text class="rc-text" x="779" y="1385" font-size="17" text-anchor="start" style="fill:#b45309">
+<tspan x="779" dy="0">HMR</tspan>
+</text>
+<path class="rc-line" d="M115 1473 V1540 H40 V620 H275 V637" stroke="#b45309" marker-end="url(#rc-amber-arrow)"/>
+<text class="rc-text" x="125" y="1506" font-size="17" text-anchor="start" style="fill:#b45309">
+<tspan x="125" dy="0">下次导入重新取 meta</tspan>
+</text>
+<rect x="425" y="1440" width="310" height="115" rx="12" fill="#eff6ff" stroke="#9db3d4" stroke-width="1.5"/>
+<text class="rc-text" x="580.0" y="1470" font-size="20" text-anchor="middle" font-weight="650">
+<tspan x="580.0" dy="0">后续导入：先缓存握手</tspan>
+</text>
+<text class="rc-text" x="580.0" y="1498" font-size="17" text-anchor="middle">
+<tspan x="580.0" dy="0">getModuleInformation(url)</tspan>
+<tspan x="580.0" dy="25">await fetchModule(cached:!!meta)</tspan>
+</text>
+<path class="rc-line" d="M965 1282 V1494 H735" stroke="#64748b" marker-end="url(#rc-gray-arrow)"/>
+<text class="rc-code" x="976" y="1350" font-size="17" text-anchor="start">
+<tspan x="976" dy="0">下一次 import(url)</tspan>
+</text>
+<path class="rc-line" d="M500 1555 V1593 H285 V1630" stroke="#0f766e" marker-end="url(#rc-green-arrow)"/>
+<text class="rc-code" x="285" y="1583" font-size="18" text-anchor="middle" style="fill:#0f766e">
+<tspan x="285" dy="0">{ cache:true }</tspan>
+</text>
+<rect x="50" y="1630" width="470" height="123" rx="12" fill="#f0fdfa" stroke="#9ccbc3" stroke-width="1.5"/>
+<text class="rc-text" x="285.0" y="1660" font-size="20" text-anchor="middle" font-weight="650">
+<tspan x="285.0" dy="0">复用已有求值 Promise</tspan>
+</text>
+<text class="rc-text" x="285.0" y="1688" font-size="17" text-anchor="middle">
+<tspan x="285.0" dy="0">保留旧 meta / exports / P</tspan>
+<tspan x="285.0" dy="25">evaluated=true：直接 await 原 P</tspan>
+<tspan x="285.0" dy="25">返回 namespace / 抛出同一个 E</tspan>
+</text>
+<path class="rc-line" d="M660 1555 V1593 H890 V1630" stroke="#b45309" marker-end="url(#rc-amber-arrow)"/>
+<text class="rc-code" x="890" y="1583" font-size="17" text-anchor="middle" style="fill:#b45309">
+<tspan x="890" dy="0">code + invalidate:true</tspan>
+</text>
+<rect x="660" y="1630" width="460" height="123" rx="12" fill="#fff7ed" stroke="#d9a968" stroke-width="1.5"/>
+<text class="rc-text" x="890.0" y="1660" font-size="20" text-anchor="middle" font-weight="650">
+<tspan x="890.0" dy="0">清旧状态 → 写本次 meta</tspan>
+</text>
+<text class="rc-text" x="890.0" y="1688" font-size="17" text-anchor="middle">
+<tspan x="890.0" dy="0">清 meta / map / promise / exports / imports</tspan>
+<tspan x="890.0" dy="25">evaluated=false；保留 importers</tspan>
+<tspan x="890.0" dy="25">再 module.meta = fetchedModule</tspan>
+</text>
+<path class="rc-line" d="M890 1753 V1784" stroke="#b45309" marker-end="url(#rc-amber-arrow)"/>
+<text class="rc-text" x="902" y="1777" font-size="16" text-anchor="start" style="fill:#b45309">
+<tspan x="902" dy="0">使用本次响应</tspan>
+</text>
+<rect x="660" y="1784" width="460" height="113" rx="12" fill="#eff6ff" stroke="#9db3d4" stroke-width="1.5"/>
+<text class="rc-text" x="890.0" y="1814" font-size="20" text-anchor="middle" font-weight="650">
+<tspan x="890.0" dy="0">本次 cachedRequest()</tspan>
+</text>
+<text class="rc-text" x="890.0" y="1842" font-size="17" text-anchor="middle">
+<tspan x="890.0" dy="0">无 promise → directRequest()，登记新 P</tspan>
+<tspan x="890.0" dy="25">exports 先建；执行本次响应的代码</tspan>
+</text>
+<path class="rc-line" d="M660 1840 H20 V960 H580 V980" stroke="#2563eb" marker-end="url(#rc-blue-arrow)"/>
+<text class="rc-text" x="43" y="1815" font-size="18" text-anchor="start" style="fill:#2563eb">
+<tspan x="43" dy="0">直接进入新的求值 Promise</tspan>
+</text>
+<text class="rc-text" x="40" y="1950" font-size="20" text-anchor="start">
+<tspan x="40" dy="0">evaluated=true 包含失败；节点失效前，已完成的 Promise 保留结果或同一 Error。</tspan>
+</text>
+<text class="rc-text" x="40" y="1982" font-size="16" text-anchor="start" style="fill:#526079">
+<tspan x="40" dy="0">源码：runner.ts::getModuleInformation/cachedRequest/directRequest · evaluatedModules.ts::invalidateModule</tspan>
+</text>
+</svg>

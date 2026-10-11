@@ -11,10 +11,13 @@ import is from './objectIs';
 import hasOwnProperty from './hasOwnProperty';
 
 /**
- * 比较两个值的第一层自有可枚举字段。
+ * 比较两个值的第一层自有可枚举字符串字段；Symbol key 不在 Object.keys 的结果中。
  *
  * @returns 两值由 `Object.is` 直接相等，或拥有相同 key 且每个字段都由 `Object.is`
  * 相等时返回 true；不递归比较嵌套对象。
+ * @param objA - PureComponent 或 memo 等调用方提供的旧 props/state 候选值。
+ * @param objB - 本次候选值；引用相同时立即通过，嵌套引用改变则浅比较失败。
+ * @remarks 不检查原型身份，不枚举 Symbol/非枚举键；字段读取可触发 getter，异常不被吞掉。
  */
 function shallowEqual(objA: mixed, objB: mixed): boolean {
   if (is(objA, objB)) {

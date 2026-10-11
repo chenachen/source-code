@@ -44,7 +44,7 @@ describe('ReactDOMSuspensePlaceholder', () => {
     document.body.removeChild(container);
   });
 
-  /** `resolveText`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 缓存未读key时直接存resolved记录；已有pending则先改状态/值再同步触发所有ping，让重试读到已完成状态，不清空回调数组。 */
   function resolveText(text) {
     const record = textCache.get(text);
     if (record === undefined) {
@@ -61,7 +61,7 @@ describe('ReactDOMSuspensePlaceholder', () => {
     }
   }
 
-  /** `readText`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 按文本key读缓存：resolved返回文字、rejected抛原因、pending记录Suspend并抛同thenable；初读创建含pings的pending记录后抛出。 */
   function readText(text) {
     const record = textCache.get(text);
     if (record !== undefined) {
@@ -78,7 +78,8 @@ describe('ReactDOMSuspensePlaceholder', () => {
       Scheduler.log(`Suspend! [${text}]`);
       const thenable = {
         pings: [],
-        /** `readText.then`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** pending时收集ping；已完成时用Promise微任务通知记录值，使晚订阅者也能重试。 */
         then(resolve) {
           if (newRecord.status === 'pending') {
             thenable.pings.push(resolve);
@@ -98,13 +99,13 @@ describe('ReactDOMSuspensePlaceholder', () => {
     }
   }
 
-  /** `Text`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 记录同步文字渲染并原样返回text，日志用于区分预热与最终重渲染。 */
   function Text({text}) {
     Scheduler.log(text);
     return text;
   }
 
-  /** `AsyncText`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 先读可能挂起的缓存，只有成功后才记录text并返回文字。 */
   function AsyncText({text}) {
     readText(text);
     Scheduler.log(text);
@@ -112,21 +113,16 @@ describe('ReactDOMSuspensePlaceholder', () => {
   }
 
   // @gate !disableLegacyMode
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「hides and unhides timed out DOM elements in legacy roots」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言连接 ReactDOM 公开入口、ReactDOMRoot 根生命周期及 DOM 提交结果。
-   */
+
+  /** legacy根Suspense含A/B异步/C三个div，C原display:inline；B挂起时全none，resolve后A/B为block、C恢复inline，仅B重渲染日志，验证隐藏保留DOM并恢复prop样式。 */
   it('hides and unhides timed out DOM elements in legacy roots', async () => {
     const divs = [
       React.createRef(null),
       React.createRef(null),
       React.createRef(null),
     ];
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 三div在同一legacy Suspense内，B异步、C显式inline，用ref检查隐藏和恢复后的计算样式。 */
     function App() {
       return (
         <Suspense fallback={<Text text="Loading..." />}>
@@ -158,9 +154,10 @@ describe('ReactDOMSuspensePlaceholder', () => {
     assertLog(['B']);
   });
 
-  /** 测试场景：验证「hides and unhides timed out text nodes」描述的渲染、交互或错误处理结果。 */
+  /** 并发根Suspense三个文本A/B/C且B待定；先只显示Loading并记录预热尝试，resolve后ABC，验证未完成内容不提前可见且文本揭示完整。 */
   it('hides and unhides timed out text nodes', async () => {
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 三个文本共享并发Suspense，B挂起，fallback为可记录的Loading，检查内容揭示及预热日志。 */
     function App() {
       return (
         <Suspense fallback={<Text text="Loading..." />}>
@@ -193,7 +190,8 @@ describe('ReactDOMSuspensePlaceholder', () => {
   });
 
   // @gate !disableLegacyMode
-  /** 测试场景：验证「当前参数化场景」描述的渲染、交互或错误处理结果。 */
+
+  /** legacy根已显示fallback，Sibling由display:none更新inline而Async仍挂起；两span继续none，resolve后Sibling inline且Async可见，验证隐藏边界内样式更新后再次隐藏并按最新prop恢复。 */
   it(
     'in legacy roots, re-hides children if their display is updated ' +
       'but the boundary is still showing the fallback',
@@ -201,7 +199,8 @@ describe('ReactDOMSuspensePlaceholder', () => {
       const {useState} = React;
 
       let setIsVisible;
-      /** `Sibling`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /** 用本地isVisible控制span的none/inline，并把setState暴露给测试，在隐藏边界内更新style。 */
       function Sibling({children}) {
         const [isVisible, _setIsVisible] = useState(false);
         setIsVisible = _setIsVisible;
@@ -212,7 +211,7 @@ describe('ReactDOMSuspensePlaceholder', () => {
         );
       }
 
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** Sibling与异步span共用legacy边界，验证尚挂起时覆盖样式更新。 */
       function App() {
         return (
           <Suspense fallback={<Text text="Loading..." />}>
@@ -233,7 +232,7 @@ describe('ReactDOMSuspensePlaceholder', () => {
       );
       assertLog(['Suspend! [Async]', 'Loading...']);
 
-      // 更新内联 display 样式；它位于隐藏的 fallback 中，因此会被覆盖。
+      // 更新仍隐藏的主内容span，其inline prop会写入DOM后被边界隐藏逻辑再设none。
       await act(() => setIsVisible(true));
       expect(container.innerHTML).toEqual(
         '<span style="display: none;">Sibling</span><span style=' +
@@ -251,14 +250,16 @@ describe('ReactDOMSuspensePlaceholder', () => {
 
   // 针对 https://github.com/facebook/react/issues/14188 的回归测试。
   // @gate !disableLegacyMode
-  /** 测试场景：验证「can call findDOMNode() in a suspended component commit phase in legacy roots」描述的渲染、交互或错误处理结果。 */
+
+  /** legacy根两个Child生命周期调用findDOMNode，按钮使Lazy首次挂起；初次cDM两次、点击后cDU两次且不崩溃，验证挂起提交期间宿主查找。本例await Lazy对象不是等待其Promise本体。 */
   it('can call findDOMNode() in a suspended component commit phase in legacy roots', async () => {
     const log = [];
     const Lazy = React.lazy(
       () =>
         new Promise(resolve =>
           resolve({
-            /** `default`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+            /** Lazy Promise成功后使用的默认组件，返回lazy文本。 */
             default() {
               return 'lazy';
             },
@@ -266,36 +267,43 @@ describe('ReactDOMSuspensePlaceholder', () => {
         ),
     );
 
-    /** `Child`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 两个宿主文字Child在legacy边界内，生命周期调用findDOMNode并按id记录先后。 */
     class Child extends React.Component {
-      /** `Child.componentDidMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 挂载记录cDM和id，然后执行宿主查找，验证正常提交查找。 */
       componentDidMount() {
         log.push('cDM ' + this.props.id);
         findDOMNode(this);
       }
-      /** `Child.componentDidUpdate`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 更新记录cDU和id，然后在挂起相关提交中执行宿主查找。 */
       componentDidUpdate() {
         log.push('cDU ' + this.props.id);
         findDOMNode(this);
       }
-      /** `Child.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 返回child文字，令findDOMNode可解析到HostText。 */
       render() {
         return 'child';
       }
     }
 
     const buttonRef = React.createRef();
-    /** `App`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+
+    /** 按钮更新suspend后加入Lazy，其余Child保持原类型和位置。 */
     class App extends React.Component {
-      /** `App.state`：记录测试夹具在当前场景中的状态。 */
+
+      /** 初始不渲染Lazy，首次点击才使边界挂起。 */
       state = {
         suspend: false,
       };
-      /** `App.handleClick`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /** 设suspend=true，把懒组件加入已有内容的更新。 */
       handleClick = () => {
         this.setState({suspend: true});
       };
-      /** `App.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 输出两个Child、按钮及条件Lazy，保留前后Child用于更新生命周期断言。 */
       render() {
         return (
           <React.Suspense fallback="Loading">
@@ -321,10 +329,12 @@ describe('ReactDOMSuspensePlaceholder', () => {
   });
 
   // 针对 https://github.com/facebook/react/issues/14188 的回归测试。
-  /** 测试场景：验证「can call legacy findDOMNode() in a suspended component commit phase (#2)」描述的渲染、交互或错误处理结果。 */
+
+  /** 并发根Suspend仅首次抛已解决Promise、Child渲染null；act完成后cDM，再重渲染cDU，两次findDOMNode均不崩溃，验证无宿主子级且经历挂起的提交查找。 */
   it('can call legacy findDOMNode() in a suspended component commit phase (#2)', async () => {
     let suspendOnce = Promise.resolve();
-    /** `Suspend`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 第一次取走已解决Promise并抛出；随后返回null，构造仅一次挂起且可立刻重试的输入。 */
     function Suspend() {
       if (suspendOnce) {
         const promise = suspendOnce;
@@ -335,27 +345,29 @@ describe('ReactDOMSuspensePlaceholder', () => {
     }
 
     const log = [];
-    /** `Child`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+
+    /** 没有宿主输出的Child，生命周期仍调用内部findDOMNode。 */
     class Child extends React.Component {
-      /** `Child.componentDidMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 记录cDM再查找宿主，空渲染应安全返回。 */
       componentDidMount() {
         log.push('cDM');
         findDOMNode(this);
       }
 
-      /** `Child.componentDidUpdate`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 记录cDU再查找宿主，验证重试后更新仍安全。 */
       componentDidUpdate() {
         log.push('cDU');
         findDOMNode(this);
       }
 
-      /** `Child.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 返回null，使查找路径必须处理无HostComponent/HostText。 */
       render() {
         return null;
       }
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 把一次挂起fixture和空Child放到并发Suspense，act内完成重试后检查生命周期。 */
     function App() {
       return (
         <Suspense fallback="Loading">

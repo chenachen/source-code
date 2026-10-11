@@ -15,16 +15,16 @@ import * as array from 'lib0/array'
  * 抽象一组版本一致的更新、状态向量与差分操作，供同一断言覆盖 V1/V2。
  *
  * @typedef {Object} Enc
- * @property {function(Array<Uint8Array<ArrayBuffer>>):Uint8Array<ArrayBuffer>} Enc.mergeUpdates
- * @property {function(Y.Doc):Uint8Array<ArrayBuffer>} Enc.encodeStateAsUpdate
- * @property {function(Y.Doc, Uint8Array):void} Enc.applyUpdate
- * @property {function(Uint8Array):void} Enc.logUpdate
- * @property {function(Uint8Array):{deletes:Y.IdSet,inserts:Y.IdSet}} Enc.readUpdateToContentIds
- * @property {function(Y.Doc):Uint8Array<ArrayBuffer>} Enc.encodeStateVector
- * @property {function(Uint8Array):Uint8Array<ArrayBuffer>} Enc.encodeStateVectorFromUpdate
- * @property {'update'|'updateV2'} Enc.updateEventName
- * @property {string} Enc.description
- * @property {function(Uint8Array<ArrayBuffer>, Uint8Array<ArrayBuffer>):Uint8Array<ArrayBuffer>} Enc.diffUpdate
+ * @property {function(Array<Uint8Array<ArrayBuffer>>):Uint8Array<ArrayBuffer>} Enc.mergeUpdates 合并同一适配器线格式的更新字节，Doc 参照路径则逐条集成后重新编码。
+ * @property {function(Y.Doc):Uint8Array<ArrayBuffer>} Enc.encodeStateAsUpdate 把文档全量可同步状态编码为适配器的更新线格式。
+ * @property {function(Y.Doc, Uint8Array):void} Enc.applyUpdate 把适配器的更新字节应用到目标 Doc，触发集成与 pending 处理。
+ * @property {function(Uint8Array):void} Enc.logUpdate 按适配器版本解码更新并打印结构/删除集，供调试。
+ * @property {function(Uint8Array):{deletes:Y.IdSet,inserts:Y.IdSet}} Enc.readUpdateToContentIds 从字节提取非 Skip 插入区间与删除集，不创建 Doc。
+ * @property {function(Y.Doc):Uint8Array<ArrayBuffer>} Enc.encodeStateVector 从 Doc 的连续已知前缀生成通用状态向量字节。
+ * @property {function(Uint8Array):Uint8Array<ArrayBuffer>} Enc.encodeStateVectorFromUpdate 仅从该更新结构段推导连续前缀，非零起点与 Skip 会截断计数。
+ * @property {'update'|'updateV2'} Enc.updateEventName 监听产生本适配器更新字节的事件，V1 为 update，V2/Doc 为 updateV2。
+ * @property {string} Enc.description 日志中的适配器名称，标识当前循环采用的实现。
+ * @property {function(Uint8Array<ArrayBuffer>, Uint8Array<ArrayBuffer>):Uint8Array<ArrayBuffer>} Enc.diffUpdate 按目标状态向量裁出结构后缀并保留完整删除集；Doc 路径先集成再编码。
  */
 
 /**
@@ -71,6 +71,12 @@ const encV2 = {
  * @type {Enc}
  */
 const encDoc = {
+  /**
+   * 在 gc=false 的新 Doc 中逐条应用 V2 更新，再导出全量 V2 状态。
+   *
+   * @param {Array<Uint8Array<ArrayBuffer>>} updates 同版本更新，顺序可包含重复或因果缺依赖。
+   * @return {Uint8Array<ArrayBuffer>} 包含已集成结构、完整删除集及剩余 pending 的 V2 更新。
+   */
   mergeUpdates: (updates) => {
     const ydoc = new Y.Doc({ gc: false })
     updates.forEach(update => {
@@ -88,9 +94,11 @@ const encDoc = {
   description: 'Merge via Y.Doc',
   /**
    * 通过 Doc 应用更新，再按目标状态向量编码差分。
+   * 输入和输出都为 V2；状态向量仍使用通用 client/clock 编码。新文档保留删除载荷，作为字节级 diffUpdate 的集成后参照路径。
    *
-   * @param {Uint8Array} update
-   * @param {Uint8Array} sv
+   * @param {Uint8Array} update - 待集成的 V2 更新字节，允许携带删除集与缺依赖结构。
+   * @param {Uint8Array} sv - 消费方已有连续前缀的编码状态向量。
+   * @return {Uint8Array} V2 差分更新；省略消费方已具备的连续前缀，仍携带删除事实及未解决的 pending。
    */
   diffUpdate: (update, sv) => {
     const ydoc = new Y.Doc({ gc: false })
@@ -104,9 +112,11 @@ const encoders = [encV1, encV2, encDoc]
 
 /**
  * 编码所有用户文档、合并更新并应用到一个新文档。
+ * 将同步后的多副本状态汇总为一份目标，供同一组场景比较 V1、V2 与 Doc 参照合并器；不会修改传入用户。
  *
- * @param {Array<Y.Doc>} users
- * @param {Enc} enc
+ * @param {Array<Y.Doc>} users - 夹具中的副本，逐个编码其完整结构与删除事实。
+ * @param {Enc} enc - 同一线格式的编码、合并和应用函数集合。
+ * @return {Y.Doc} 接收合并结果的新文档；调用方断言它与夹具最终内容一致。
  */
 const fromUpdates = (users, enc) => {
   const updates = users.map(user =>
@@ -122,7 +132,7 @@ const fromUpdates = (users, enc) => {
  * When：分别用 V1、V2 与 Doc 参照路径合并各用户全量更新。
  * Then：新文档数组均等于已经收敛的源文档。
  *
- * 验证机制：同一语义断言跨三条独立合并路径，覆盖并发 Item 排序与去重。
+ * 验证机制：同一并发场景覆盖两种线格式的 BlockSet 合并及 Doc 应用后再编码，比较可见数组结果。
  *
  * @param {t.TestCase} tc
  */
@@ -175,11 +185,12 @@ export const testKeyEncoding = tc => {
 /**
  * 对一组至少四条更新构造完整、重叠、重复和含 Skip 的多种合并排列。
  *
- * 每种结果都验证文档状态、由更新推导的状态向量、逐前缀 diff 的插入/删除元数据
- * 与首尾时钟边界。`hasDeletes` 控制 Doc 参照路径因事务结构合并导致的字节差异。
+ * 每种结果都验证文档状态、由更新推导的状态向量与插入范围的首尾时钟。V2 和 Doc
+ * 参照路径还比较逐前缀 diff 的插入元数据及补齐删除后的更新字节；含删除时跳过
+ * Doc 参照路径的字节比较，因为应用事务可合并结构、改变等价更新的分段。
  *
  * @param {Y.Doc} ydoc
- * @param {Array<Uint8Array<ArrayBuffer>>} updates - expecting at least 4 updates
+ * @param {Array<Uint8Array<ArrayBuffer>>} updates - 至少四条更新。
  * @param {Enc} enc
  * @param {boolean} hasDeletes
  */
@@ -188,7 +199,7 @@ const checkUpdateCases = (ydoc, updates, enc, hasDeletes) => {
   // 场景 1：直接合并全部更新。
   cases.push(enc.mergeUpdates(updates))
 
-  // 场景 2：合并两组边界重叠的更新。
+  // 场景 2：先分别合并首两条与剩余更新，再合并两组结果。
   cases.push(enc.mergeUpdates([
     enc.mergeUpdates(updates.slice(2)),
     enc.mergeUpdates(updates.slice(0, 2))
@@ -263,6 +274,8 @@ const checkUpdateCases = (ydoc, updates, enc, hasDeletes) => {
 /**
  * 验证四次纯插入更新在所有编码/参照路径和所有重叠排列下合并收敛。
  *
+ * 初始：gc=false 的空数组，每个适配器各自监听其 update 事件。触发：四次首部插入 1/2/3/4，再执行 checkUpdateCases 的五种分组。预期：各合并结果为 [4,3,2,1]，状态向量及所述元数据/差分断言通过。
+ *
  * @param {t.TestCase} _tc
  */
 export const testMergeUpdates1 = _tc => {
@@ -282,6 +295,8 @@ export const testMergeUpdates1 = _tc => {
 
 /**
  * 验证交错插入与删除更新在所有编码/参照路径和重叠排列下合并收敛。
+ *
+ * 初始：gc=false 的空数组。触发：插入 [1,2]、删除 2、插入 [3,4]、删除 [4,1]，再执行五种合并分组。预期：结果为 [3]，删除集保留；带删除的 Doc 参照路径跳过差分字节相等断言。
  *
  * @param {t.TestCase} _tc
  */
@@ -303,7 +318,9 @@ export const testMergeUpdates2 = _tc => {
 /**
  * 基准化 100 个 client、每个 100 次插入的直接更新合并与 Doc 应用合并。
  *
- * 用例只记录耗时，不设性能阈值；同时覆盖大量客户端段与高重复结构。
+ * 用例记录 10,000 条插入更新的合并与逐条应用耗时，不设置性能阈值。
+ *
+ * 初始：同一 gc=false 文档依次改用 clientID 0..99。触发：每个 client 追加 100 个元素，三种适配器分别计时合并和逐条应用。目标：观察 10,000 条唯一插入更新的耗时；未检查接收结果或设置通过阈值。
  *
  * @param {t.TestCase} _tc
  */
@@ -339,8 +356,10 @@ export const testMergeUpdatesStressTest = _tc => {
  * When：每补一批更新后重新编码全量状态，最终补齐所有结构。
  * Then：待处理结构恢复集成，最终文本为确定的 `nenor`。
  *
- * 验证机制：真实经过 `pendingStructs.missing`、更新合并与递归重试链，证明乱序依赖
- * 不会丢结构或重复应用。
+ * 验证机制：固定乱序路径经过 `pendingStructs.missing`、更新合并与递归重试链，
+ * 最后文本断言检查这组输入能补齐并得到正确顺序。
+ *
+ * 实际断言只比较最后文本；missing 水位、pending 清空、重试次数与中间文档状态没有独立断言，机制路径由乱序输入和源码调用链确定。
  *
  * @param {t.TestCase} _tc
  */
@@ -391,10 +410,12 @@ export const testMergePendingUpdates = _tc => {
 /**
  * Given：包含富文本、重复映射属性、任意数组值、嵌套类型与子文档的更新。
  * When：调用 `obfuscateUpdate()` 并应用脱敏结果。
- * Then：结构数量、格式形态和类型类别保留，所有敏感值、键、名称与 GUID 被替换。
+ * Then：所断言的格式/数组形态和类型类别保留，选定载荷、键、名称与 GUID 被替换。
  *
  * 验证机制：分别检查每种 Content 类型的可观察结果，证明脱敏转换保留 CRDT 元数据
  * 但改写用户载荷。
+ *
+ * 断言覆盖所列字符串/数值、键名、类型名及 GUID 的替换，并比较格式/元素类别数量；不比较所有原始字段，也不是匿名性保证。
  *
  * @param {t.TestCase} _tc
  */
@@ -447,7 +468,10 @@ export const testObfuscateUpdates = _tc => {
 }
 
 /**
- * 验证按文档第一阶段 ContentIds 筛选完整更新时，可提取并应用被选中的属性版本。
+ * 记录属性第一次写入后的 ContentIds，再从二次写入后的完整更新中筛选并应用到新文档。
+ * 当前断言只检查源文档属性 `k` 为真值，没有检查接收文档的属性版本。
+ * 初始：源属性 k 从 1 改成 2，选择集在第一次写入后记录。触发：对全量更新求交集并应用到 y1。实际预期：唯一断言只要求源 k 为真值；没有断言 y1，因此无法验证所选历史版本恢复结果。
+ *
  */
 export const testIntersectDoc = () => {
   const ydoc = new Y.Doc()

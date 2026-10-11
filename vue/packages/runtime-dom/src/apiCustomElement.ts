@@ -48,6 +48,7 @@ const REMOVAL = {}
 
 /** `defineCustomElement()` 返回的原生自定义元素构造器类型。 */
 export type VueElementConstructor<P = {}> = {
+  /** 接收连接前初始 props，创建可注册 HTMLElement 子类实例，并以 P 暴露声明 prop 类型。 */
   new (initialProps?: Record<string, any>): VueElement & P
 }
 
@@ -69,22 +70,27 @@ export interface CustomElementOptions {
 // 应与 defineComponent 保持同步，差异仅在返回 VueElementConstructor 和额外 DOM 选项。
 
 // 重载 1：直接 setup 函数，props 可用数组或对象声明。
+/** setup 函数重载：用 prop 名数组声明输入，并把 Props 推导为元素 property 类型。 */
 export function defineCustomElement<Props, RawBindings = object>(
   setup: (props: Props, ctx: SetupContext) => RawBindings | RenderFunction,
   options?: Pick<ComponentOptions, 'name' | 'inheritAttrs' | 'emits'> &
     CustomElementOptions & {
+      /** 重载中的运行时 prop 声明；数组列名，对象提供类型校验/默认值，返回元素 property 类型据此推导。 */
       props?: (keyof Props)[]
     },
 ): VueElementConstructor<Props>
+/** setup 函数重载：接受对象 prop 声明，在返回元素构造器中保留 Props 类型。 */
 export function defineCustomElement<Props, RawBindings = object>(
   setup: (props: Props, ctx: SetupContext) => RawBindings | RenderFunction,
   options?: Pick<ComponentOptions, 'name' | 'inheritAttrs' | 'emits'> &
     CustomElementOptions & {
+      /** 重载中的运行时 prop 声明；数组列名，对象提供类型校验/默认值，返回元素 property 类型据此推导。 */
       props?: ComponentObjectPropsOptions<Props>
     },
 ): VueElementConstructor<Props>
 
 // 重载 2：完整 options 对象，从运行时声明和 emits 推导元素 property 类型。
+/** 完整 Options API 重载：从 props/emits/mixins/slots 推导元素 property 与组件 this，并接收 DOM 自定义元素配置。 */
 export function defineCustomElement<
   // props 推导。
   RuntimePropsOptions extends ComponentObjectPropsOptions =
@@ -116,6 +122,7 @@ export function defineCustomElement<
   ResolvedProps = InferredProps & EmitsToProps<RuntimeEmitsOptions>,
 >(
   options: CustomElementOptions & {
+    /** 重载中的运行时 prop 声明；数组列名，对象提供类型校验/默认值，返回元素 property 类型据此推导。 */
     props?: (RuntimePropsOptions & ThisType<void>) | PropsKeys[]
   } & ComponentOptionsBase<
       ResolvedProps,
@@ -160,9 +167,13 @@ export function defineCustomElement<
 ): VueElementConstructor<ResolvedProps>
 
 // 重载 3：接受 defineComponent 返回的虚拟构造器并提取其 props。
+/** 已有 defineComponent 虚拟构造器重载：提取其声明 props，返回相应 VueElement 构造器。 */
 export function defineCustomElement<
   // 理论上应为 ComponentPublicInstanceConstructor；这里用等价结构避免额外导出依赖。
-  T extends { new (...args: any[]): ComponentPublicInstance<any> },
+  T extends {
+    /** 读取 defineComponent 返回值的公共实例结构以提取 props；此重载不执行构造。 */
+    new (...args: any[]): ComponentPublicInstance<any>
+  },
 >(
   options: T,
   extraOptions?: CustomElementOptions,
@@ -183,8 +194,11 @@ export function defineCustomElement(
 ): VueElementConstructor {
   let Comp = defineComponent(options, extraOptions) as any
   if (isPlainObject(Comp)) Comp = extend({}, Comp, extraOptions)
+  /** 为本组件生成的可注册元素子类；静态 def 共享组件定义，元素实例状态由 VueElement 管理。 */
   class VueCustomElement extends VueElement {
+    /** 本次 defineCustomElement 标准化后的组件定义，供静态读取与实例构造共用。 */
     static def = Comp
+    /** 把初始 props 和可选 SSR 应用工厂传给 VueElement，绑定本构造器的共享组件定义。 */
     constructor(initialProps?: Record<string, any>) {
       super(Comp, initialProps, _createApp)
     }
@@ -264,6 +278,7 @@ export class VueElement
   /** light DOM 模式连接时取出的原始 slot 内容。 */
   private _slots?: Record<string, Node[]>
 
+  /** 建立元素 mount 容器；SSR 工厂复用已有声明式 ShadowRoot，其余按配置创建 open ShadowRoot 或使用 light DOM；尚不 mount 组件。 */
   constructor(
     /** 组件定义可能是 AsyncWrapper；解析后 `_def` 会替换成内部真实组件。 */
     private _def: InnerComponentDef,
@@ -412,6 +427,7 @@ export class VueElement
 
     this._ob.observe(this, { attributes: true })
 
+    /** 定义解析后的准备/挂载闭包：清 pending，转换 Number props、建立 property 访问器、注入 ShadowRoot 样式，再 mount。异步定义路径在调用前已把 _def 替换为内部组件。 */
     const resolve = (def: InnerComponentDef, isAsync = false) => {
       this._resolved = true
       this._pendingResolve = undefined
@@ -485,6 +501,7 @@ export class VueElement
         // expose 到自定义元素的属性只读。
         Object.defineProperty(this, key, {
           // 与组件公共实例一致，读取时自动解包 ref。
+          /** 把组件 expose 属性投射为元素只读 getter，读取时 unref，保持公开暴露值随 ref 更新。 */
           get: () => unref(exposed[key]),
         })
       } else if (__DEV__) {
@@ -494,9 +511,8 @@ export class VueElement
   }
 
   /**
-   * 为声明 props 安装 HTMLElement property getter/setter，并接管 upgrade 前自有属性。
-   * 浏览器自定义元素常在 definition 注册前就被脚本赋 property；upgrade 后必须把这些值
-   * 移入 `_props`，否则原自有属性会遮蔽原型访问器。
+   * 定义解析后，先把 upgrade/连接前写入的声明 prop 存入 `_props`，
+   * 再在元素实例上用 getter/setter 替换同名自有 property，后续读写进入更新与反射流程。
    */
   private _resolveProps(def: InnerComponentDef) {
     const { props } = def
@@ -518,9 +534,11 @@ export class VueElement
         )
       }
       Object.defineProperty(this, key, {
+        /** 声明 prop 的元素 property getter，返回 _props 中原始值。 */
         get(this: VueElement) {
           return this._getProp(key)
         },
+        /** 声明 prop 的 property setter；反射到 attribute，批量 patch 中只标记 dirty，否则允许立即更新组件。 */
         set(this: VueElement, val) {
           this._setProp(key, val, true, !this._patching)
         },
@@ -610,12 +628,14 @@ export class VueElement
     }
     const vnode = createVNode(this._def, extend(baseProps, this._props))
     if (!this._instance) {
+      /** 首次创建内部组件实例时把 ce 双向绑定，安装 HMR 重载与 emit→CustomEvent 转换，并接入最近自定义元素父上下文。 */
       vnode.ce = instance => {
         this._instance = instance
         instance.ce = this
         instance.isCE = true // vue-i18n 等库的历史兼容检测字段。
         // HMR 重载样式后重建实例 VNode，避免旧组件/样式状态残留。
         if (__DEV__) {
+          /** HMR 删除自身旧样式和锚点，应用新样式，清 _instance 后重建根 VNode，使实例/样式回到当前定义。 */
           instance.ceReload = newStyles => {
             // 自身样式始终整组替换；子样式锚点也需失效。
             if (this._styles) {
@@ -629,6 +649,7 @@ export class VueElement
           }
         }
 
+        /** 把组件 emit 转成 CustomEvent；detail 默认是参数数组，首参数为普通对象时可提供 bubbles/composed 等事件选项。 */
         const dispatch = (event: string, args: any[]) => {
           this.dispatchEvent(
             new CustomEvent(
@@ -641,6 +662,7 @@ export class VueElement
         }
 
         // 组件 emit 转换为原生 CustomEvent，让非 Vue 消费者可 addEventListener。
+        /** 以原事件名和不同的 kebab-case 名分别分发 CustomEvent，参数数组放入 detail，兼容模板和原生监听者。 */
         instance.emit = (event: string, ...args: any[]) => {
           // 同时分发原名与 kebab-case，匹配 Vue 模板事件大小写兼容行为。
           dispatch(event, args)

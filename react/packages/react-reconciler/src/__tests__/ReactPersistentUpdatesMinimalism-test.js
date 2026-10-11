@@ -92,7 +92,7 @@ describe('ReactPersistentUpdatesMinimalism', () => {
     });
   });
 
-  /** Given 仅 Child 自身 setState，而祖先与两侧 Leaf 不变；When 局部更新后再执行一次顶层重渲染；Then局部轮只克隆目标子树，顶层轮才遍历整棵宿主树。通过逐路径 hostCloneCounter 验证子树标记与 bailout 边界。 */
+  /** Given Child 的 name=Batman，而祖先组件与两侧 Leaf 没有自身更新；When 局部 setState(Robin)，随后顶层重渲染；Then持久化局部轮克隆目标路径及宿主祖先共 5 个实例，顶层轮克隆 10 个。通过 hostCloneCounter 验证祖先组件可 bailout，但组装新宿主树仍需克隆祖先实例。 */
   it('should not diff parents of setState targets', async () => {
     let childInst;
 

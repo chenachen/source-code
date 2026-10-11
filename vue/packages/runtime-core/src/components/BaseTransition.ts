@@ -50,24 +50,36 @@ export interface BaseTransitionProps<HostElement = RendererElement> {
   // 为 true 时，过渡只切换显示/隐藏状态，不真正插入或移除元素。
   // 渲染器仍会把过渡钩子注入 VNode，但不会按普通卸载流程调用它们；
   // v-show 一类自定义指令会在切换 display 时主动调用这些钩子。
+  /** 显示/隐藏由调用方控制的过渡标记（例如v-show）：渲染器不自动入场/移除，调用方主动调用transition hooks并在leave完成后隐藏。 */
   persisted?: boolean
 
   // 这里使用驼峰命名，便于渲染函数和 JSX 传参；模板中的
   // @before-enter 会在编译后转换为 onBeforeEnter。
+  /** 普通入场前的用户钩子，接收尚未插入的宿主元素；首次挂载不开appear时跳过。 */
   onBeforeEnter?: Hook<(el: HostElement) => void>
+  /** 入场钩子；声明 done 参数时必须主动调用，未接收 done 则由 core 自动结算。 */
   onEnter?: Hook<(el: HostElement, done: () => void) => void>
+  /** 入场自然完成后调用；取消时改调 onEnterCancelled。 */
   onAfterEnter?: Hook<(el: HostElement) => void>
+  /** 同一宿主元素反向离场时调用，区别于自然完成。 */
   onEnterCancelled?: Hook<(el: HostElement) => void>
   // 离场阶段
+  /** 普通离场开始前的用户钩子，接收仍在宿主树中的元素。 */
   onBeforeLeave?: Hook<(el: HostElement) => void>
+  /** 离场钩子，done 最终触发移除；声明第二参数表示手动控制完成。 */
   onLeave?: Hook<(el: HostElement, done: () => void) => void>
+  /** 自然离场完成且 remove 已执行后调用。 */
   onAfterLeave?: Hook<(el: HostElement) => void>
   /** 仅持久化过渡（如 v-show）会发生离场取消。 */
   onLeaveCancelled?: Hook<(el: HostElement) => void>
   // 首次渲染（appear）阶段；未提供时可回退到对应的 enter 钩子
+  /** 首次入场前的用户钩子；appear=true时优先使用，未提供则回退onBeforeEnter。 */
   onBeforeAppear?: Hook<(el: HostElement) => void>
+  /** 首次入场钩子，未提供时回退 onEnter，done 控制规则相同。 */
   onAppear?: Hook<(el: HostElement, done: () => void) => void>
+  /** 首次入场自然完成回调，未设置回退 onAfterEnter。 */
   onAfterAppear?: Hook<(el: HostElement) => void>
+  /** 首次入场被打断回调，未设置回退 onEnterCancelled。 */
   onAppearCancelled?: Hook<(el: HostElement) => void>
 }
 
@@ -76,19 +88,28 @@ export interface BaseTransitionProps<HostElement = RendererElement> {
  * 渲染器只依赖这个协议，因此不需要知道 CSS、JavaScript 动画或具体宿主平台。
  */
 export interface TransitionHooks<HostElement = RendererElement> {
+  /** 解析时保存的切换模式，用于 renderer/Suspense 协调延迟进入。 */
   mode: BaseTransitionProps['mode']
+  /** 由 v-show 等指令控制显示的持久化过渡；renderer 不按插入/移除路径调用。 */
   persisted: boolean
+  /** 宿主插入/显示前准备入场，取消旧离场并清理同 type/key 的旧副本。 */
   beforeEnter(el: HostElement): void
+  /** 宿主进入后启动钩子，创建幂等 done 并在完成时释放 in-out 延迟离场。 */
   enter(el: HostElement): void
+  /** 启动离场并最终调用 remove；整体卸载直接移除，反向切换可取消。 */
   leave(el: HostElement, remove: () => void): void
+  /** 为新 VNode 重建独立过渡闭包，避免 Suspense 分支共享回调状态。 */
   clone(vnode: VNode): TransitionHooks<HostElement>
   // 以下钩子只在特定 mode 下动态安装。
+  /** out-in 旧分支结束后继续新分支渲染/移动的内部钩子。 */
   afterLeave?(): void
+  /** in-out 模式截住旧树移除；保存 earlyRemove 并把正常 delayedLeave 交给新树入场完成器。 */
   delayLeave?(
     el: HostElement,
     earlyRemove: () => void,
     delayedLeave: () => void,
   ): void
+  /** 新树入场完成时调用，开始之前暂缓的旧树离场。 */
   delayedLeave?(): void
 }
 
@@ -113,6 +134,7 @@ export interface TransitionState {
   isUnmounting: boolean
   // 按 VNode 类型和 key 记录尚未结束离场的节点。若相同类型、相同 key 的
   // 新节点开始入场，可立即移除旧副本，避免页面短暂存在两个逻辑相同的节点。
+  /** 按VNode类型分组、再按字符串key索引的离场节点记录；同type/key重新入场时找到旧副本并提前结束移除，完成回调清理自己的记录。 */
   leavingVNodes: Map<any, Record<string, VNode>>
 }
 
@@ -120,7 +142,9 @@ export interface TransitionState {
 export interface TransitionElement {
   // 持久化模式（如 v-show）会反复切换同一个元素。若上一次动画尚未结束就
   // 反向切换，必须先调用并清除待处理回调，否则两个动画会同时修改元素状态。
+  /** 当前元素的入场完成/取消回调；离场开始可调用它取消旧入场，回调完成后清空以保证重复done无效。 */
   [enterCbKey]?: PendingCallback
+  /** 元素上可取消且幂等的离场完成器，remove 与离场缓存清理在其中执行。 */
   [leaveCbKey]?: PendingCallback
 }
 
@@ -152,17 +176,17 @@ export const BaseTransitionPropsValidators: Record<string, any> = {
   mode: String,
   appear: Boolean,
   persisted: Boolean,
-  // enter
+  // 普通入场钩子。
   onBeforeEnter: TransitionHookValidator,
   onEnter: TransitionHookValidator,
   onAfterEnter: TransitionHookValidator,
   onEnterCancelled: TransitionHookValidator,
-  // leave
+  // 普通离场钩子。
   onBeforeLeave: TransitionHookValidator,
   onLeave: TransitionHookValidator,
   onAfterLeave: TransitionHookValidator,
   onLeaveCancelled: TransitionHookValidator,
-  // appear
+  // 首次入场钩子。
   onBeforeAppear: TransitionHookValidator,
   onAppear: TransitionHookValidator,
   onAfterAppear: TransitionHookValidator,
@@ -186,6 +210,7 @@ const BaseTransitionImpl: ComponentOptions = {
 
   props: BaseTransitionPropsValidators,
 
+  /** 把单个默认插槽节点与前次内部子树比较，安装新旧过渡钩子，并按 out-in/in-out 协调占位、延迟离场和 KeepAlive 外壳。 */
   setup(props: BaseTransitionProps, { slots }: SetupContext) {
     const instance = getCurrentInstance()!
     const state = useTransitionState()
@@ -237,7 +262,7 @@ const BaseTransitionImpl: ComponentOptions = {
         state,
         instance,
         // #11061：Suspense 等分支会 clone 过渡钩子。克隆后必须把闭包中的
-        // enterHooks 指向新对象，否则 in-out 模式会把 delayedLeave 写到旧钩子上，
+        // 普通入场钩子。Hooks 指向新对象，否则 in-out 模式会把 delayedLeave 写到旧钩子上，
         // 新分支入场完成后便无法启动旧分支的离场。
         hooks => (enterHooks = hooks),
       )
@@ -268,6 +293,7 @@ const BaseTransitionImpl: ComponentOptions = {
         if (mode === 'out-in' && innerChild.type !== Comment) {
           state.isLeaving = true
           // 返回占位节点，并在旧节点离场完成时排队更新。
+          /** out-in 旧树离场后清 isLeaving，未销毁时触发组件更新，再删除自身与旧分支引用，允许下一轮挂新树。 */
           leavingHooks.afterLeave = () => {
             state.isLeaving = false
             // #6835：不能再以“effect 是否 active”判断能否更新，因为组件被 KeepAlive
@@ -280,6 +306,7 @@ const BaseTransitionImpl: ComponentOptions = {
           }
           return emptyPlaceholder(child)
         } else if (mode === 'in-out' && innerChild.type !== Comment) {
+          /** in-out 延迟旧树移除；登记离场缓存和 earlyRemove，并把正常启动离场交给新树 enter 完成。 */
           leavingHooks.delayLeave = (
             el: TransitionElement,
             earlyRemove,
@@ -292,12 +319,14 @@ const BaseTransitionImpl: ComponentOptions = {
             leavingVNodesCache[String(oldInnerChild!.key)] = oldInnerChild!
             // in-out：新节点先入场，旧节点延迟离场。若等待期间又切换一次，
             // earlyRemove 可立即清走旧节点；正常路径则由 delayedLeave 启动离场。
+            /** 等待新树入场期间被再次切换时提前移除旧树，并清元素回调、delayedLeave 与旧 VNode 引用。 */
             el[leaveCbKey] = () => {
               earlyRemove()
               el[leaveCbKey] = undefined
               delete enterHooks.delayedLeave
               oldInnerChild = undefined
             }
+            /** 新树入场结束后启动旧树离场，随后删除延迟钩子和旧分支引用。 */
             enterHooks.delayedLeave = () => {
               delayedLeave()
               delete enterHooks.delayedLeave
@@ -354,9 +383,13 @@ function findNonCommentChild(children: VNode[]): VNode {
  * 显式写出构造签名还能避免生成的 d.ts 出现难以阅读的内联 `import()` 类型。
  */
 export const BaseTransition = BaseTransitionImpl as unknown as {
+  /** 仅供 h/TSX 推导 BaseTransition props/slots 的虚拟构造签名。 */
   new (): {
+    /** 平台无关过渡配置，运行时对象通过 props 校验消费。 */
     $props: BaseTransitionProps<any>
+    /** 单根默认插槽的公共类型协议。 */
     $slots: {
+      /** 返回待过渡的 VNode 列表；实现会提取唯一有效非注释节点。 */
       default(): VNode[]
     }
   }
@@ -414,6 +447,7 @@ export function resolveTransitionHooks(
   const leavingVNodesCache = getLeavingNodesForType(state, vnode)
 
   // 所有用户代码都经过统一错误处理，这样异常能进入组件 errorCaptured/app handler。
+  /** 在组件上下文调用单个/数组用户钩子，异常交给 TRANSITION_HOOK 错误通道。 */
   const callHook: TransitionHookCaller = (hook, args) => {
     hook &&
       callWithAsyncErrorHandling(
@@ -445,6 +479,7 @@ export function resolveTransitionHooks(
   const hooks: TransitionHooks<TransitionElement> = {
     mode,
     persisted,
+    /** 按 mounted/appear 选择用户起态钩子；取消同元素旧 leave，强制完成同 type/key 旧副本后再准备入场。 */
     beforeEnter(el) {
       let hook = onBeforeEnter
       if (!state.isMounted) {
@@ -456,7 +491,7 @@ export function resolveTransitionHooks(
       }
       // v-show 操作同一个元素：开始入场前先取消尚未完成的离场。
       if (el[leaveCbKey]) {
-        el[leaveCbKey](true /* cancelled */)
+        el[leaveCbKey](true /* 取消 */)
       }
       // v-if 可能创建相同 type/key 的新元素：旧副本若仍在离场，必须提前真正移除；
       // 此处不是“取消离场”，因此不传 cancelled，仍会触发 onAfterLeave。
@@ -466,12 +501,13 @@ export function resolveTransitionHooks(
         isSameVNodeType(vnode, leavingVNode) &&
         (leavingVNode.el as TransitionElement)[leaveCbKey]
       ) {
-        // force early removal (not cancelled)
+        // 同 type/key 的旧副本提前完成移除，按 afterLeave 结算。
         ;(leavingVNode.el as TransitionElement)[leaveCbKey]!()
       }
       callHook(hook, [el])
     },
 
+    /** 跳过仍在离场缓存中的同 VNode（HMR 除外），创建幂等完成器；自然/取消分别通知，结束后启动 delayedLeave 并清空 enter 回调。 */
     enter(el) {
       // 同一个 VNode 已进入离场缓存时，普通更新不得又启动入场；HMR 替换树是例外，
       // 因为开发态需要让重载后的节点恢复到正确显示状态。
@@ -490,6 +526,7 @@ export function resolveTransitionHooks(
       }
       let called = false
       // 将幂等完成器挂在元素上，使 leave/v-show 能中断尚未完成的 enter。
+      /** 幂等入场完成器：区分自然/取消回调，启动 in-out 延迟离场，最后释放元素回调。 */
       el[enterCbKey] = (cancelled?) => {
         if (called) return
         called = true
@@ -512,10 +549,11 @@ export function resolveTransitionHooks(
       }
     },
 
+    /** 取消尚未完成的 enter；整体卸载立即 remove，否则把 VNode 登记到离场缓存并用幂等 done 执行 remove、钩子和缓存清理。 */
     leave(el, remove) {
       const key = String(vnode.key)
       if (el[enterCbKey]) {
-        el[enterCbKey](true /* cancelled */)
+        el[enterCbKey](true /* 取消 */)
       }
       if (state.isUnmounting) {
         // 整棵组件树卸载时无需等待动画，否则父容器可能已删除而回调仍悬空。
@@ -523,6 +561,7 @@ export function resolveTransitionHooks(
       }
       callHook(onBeforeLeave, [el])
       let called = false
+      /** 幂等离场完成器：先执行 remove，再调用自然/取消钩子，清元素回调并只删除仍属于本 VNode 的离场缓存。 */
       el[leaveCbKey] = (cancelled?) => {
         if (called) return
         called = true
@@ -546,6 +585,7 @@ export function resolveTransitionHooks(
       }
     },
 
+    /** 对新 VNode 重新解析钩子并通知 postClone，使 in-out 闭包引用跟随新对象。 */
     clone(vnode) {
       // 每个克隆分支需要独立回调状态，不能共享同一个 hooks 对象。
       const hooks = resolveTransitionHooks(

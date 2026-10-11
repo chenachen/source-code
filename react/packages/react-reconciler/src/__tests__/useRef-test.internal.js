@@ -10,7 +10,7 @@
 
 'use strict';
 
-/** 验证 `useRef` 对象的初始化、跨渲染身份以及开发态安全访问边界。 */
+/** 验证 `useRef` 对象的初始化、跨渲染身份，以及 Effect 与渲染外读写示例。 */
 describe('useRef', () => {
   let React;
   let ReactNoop;
@@ -63,8 +63,7 @@ describe('useRef', () => {
     function useDebouncedCallback(callback, ms, inputs) {
       const timeoutID = useRef(-1);
       useEffect(() => {
-        /** 卸载时清除尚未触发的定时器，防止 fixture 离开树后继续回调。 */
-        return function unmount() {
+        return /** 卸载时清除尚未触发的定时器，防止 fixture 离开树后继续回调。 */ function unmount() {
           clearTimeout(timeoutID.current);
         };
       }, []);
@@ -188,7 +187,7 @@ describe('useRef', () => {
      * Then：两轮渲染都不产生 ref 访问告警。
      *
      * 验证机制：开发态测试环境会把意外告警提升为失败，第二轮更新覆盖已初始化分支。
-     * 对应源码：ref 访问校验允许可证明只发生一次的惰性初始化模式。
+     * 对应源码：`mountRef()` 创建普通 current 对象，`updateRef()` 复用它；本版本没有运行时 ref 读写校验。
      */
     it('should not warn about lazy init during render', async () => {
       /** 在渲染中按 `null`/`undefined` 哨兵各执行一次 ref 惰性初始化。 */
@@ -238,11 +237,11 @@ describe('useRef', () => {
 
     /**
      * Given：ref 初值为 `123`，布局与被动 Effect 依次读取并改写它。
-     * When：提交组件并显式冲刷被动 Effect。
+     * When：提交组件，由 act 冲刷布局与被动 Effect，再调用一次 flushPassiveEffects。
      * Then：两个 Effect 都观察到前一阶段提交的值，且不产生访问告警。
      *
      * 验证机制：逐次断言 `123 → 456 → 789`，同时覆盖布局阶段与被动阶段。
-     * 对应源码：ref 的开发态访问检查只限制渲染过程，不限制 Effect 回调。
+     * 对应源码：ref 是普通对象；layout 与 passive Effect 按提交阶段依次修改同一 current 槽。
      */
     it('should not warn about reads or writes within effect', async () => {
       /** 在 Layout Effect 和 Passive Effect 中串联读取、写入同一个 ref。 */
@@ -273,8 +272,8 @@ describe('useRef', () => {
      * When：在渲染阶段之外读取、改写并再次读取 `current`。
      * Then：值从 `123` 更新为 `456`，且不产生开发态告警。
      *
-     * 验证机制：提交前后值断言证明访问发生在稳定 ref 上，而非重新创建的对象。
-     * 对应源码：ref 访问校验的渲染阶段边界。
+     * 验证机制：挂载后的两次读取断言 123→456；本用例没有再次 render 来单独验证跨 render 身份。
+     * 对应源码：`mountRef()` 返回普通 current 对象，渲染外可直接读写该字段。
      */
     it('should not warn about reads or writes outside of render phase (e.g. event handler)', async () => {
       let ref;

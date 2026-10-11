@@ -34,7 +34,7 @@ describe('ReactCache', () => {
     __unmockReact();
   });
 
-  /** Given–When–Then：Given cache wrapper 接收字符串、null、对象、同/异对象、Symbol 与 NaN 的多参数组合；When经多次 Flight server render 调用；Then相同参数序列复用结果，顺序、参数个数或对象身份变化产生不同结果。通过 Same/Flipped/Fewer/More 输出验证参数 trie 的 Object.is/WeakMap 分支。 */
+  /** Given–When–Then：Given cache wrapper 接收字符串、null、对象、同/异对象、Symbol 与 NaN 的多参数组合；When在每次 Flight server render 的缓存域内重复调用；Then相同参数序列复用结果，顺序、参数个数或对象身份变化产生不同结果。通过 Same/Flipped/Fewer/More 输出验证参数 trie 的 Map（原始值按 SameValueZero）与 WeakMap（对象按身份）分支。 */
   it('cache objects and primitive arguments and a mix of them', async () => {
     /** 按 a/b 参数序列缓存其类型描述；返回对象身份用于检测命中与分叉。 */
     const types = cache((a, b) => ({a: typeof a, b: typeof b}));
@@ -182,6 +182,7 @@ describe('ReactCache', () => {
 
   /** Given–When–Then：Given被 cache 包装的函数按参数抛出 Error；When参数 1 调用两次、参数 2 调用一次；Then前两次捕获同一 Error 对象，参数 2 得到不同对象。通过引用相等验证异常结果也被 memoize。 */
   it('cached functions that throw should cache the error', async () => {
+    /** 每个未命中的参数 v 新建并抛 Error；cache 应按相同参数缓存该异常对象。 */
     const throws = cache(v => {
       throw new Error(v);
     });

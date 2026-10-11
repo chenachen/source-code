@@ -107,7 +107,7 @@ describe('ReactSuspenseFallback', () => {
 
       const thenable = {
         pings: [],
-        /** pending 时登记 ping，已结束则用微任务通知，保持 thenable 的异步回调边界。 */
+        /** pending 时登记 ping，后续 resolve/reject 会同步广播；已落定后的新订阅则在微任务通知。 */
         then(resolve) {
           if (newRecord.status === 'pending') {
             thenable.pings.push(resolve);

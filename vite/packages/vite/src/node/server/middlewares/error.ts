@@ -66,7 +66,7 @@ export function logError(server: ViteDevServer, err: RollupError): void {
 
 /**
  * Connect 最末端错误处理器。独立模式返回可自举 ErrorOverlay 的 500 HTML；middleware mode
- * 可设置 allowNext，把响应权交给宿主错误处理中间件。
+ * 使用 allowNext，把响应权交给宿主后续中间件；无参数 next() 不继续传递原错误。
  */
 export function errorMiddleware(
   server: ViteDevServer,
@@ -74,6 +74,7 @@ export function errorMiddleware(
 ): Connect.ErrorHandleFunction {
   // 必须保留四个形参，Connect 以函数 arity 区分普通/错误中间件；同时保留命名函数供
   // `DEBUG=connect:dispatcher` 显示。
+  /** 先记录并推送错误；allowNext 时不带错误推进宿主栈，否则结束为含 overlay 的 500 页面。 */
   return function viteErrorMiddleware(err: RollupError, _req, res, next) {
     logError(server, err)
 

@@ -13,6 +13,7 @@ import logo from './logo.svg'
 import logoNoInline from './logo-no-inline.svg'
 import { msg as softInvalidationMsg } from './soft-invalidation'
 
+/** 入口初始导出数值一；两个自身接受回调消费新实例的导出，dispose 记录旧值。 */
 export const foo = 1
 text('.app', foo)
 text('.dep', depFoo)
@@ -22,6 +23,7 @@ text('.soft-invalidation', softInvalidationMsg)
 setImgSrc('#logo', logo)
 setImgSrc('#logo-no-inline', logoNoInline)
 
+/** 把触发虚拟计数事件的函数放入共享状态，runner 测试可直接调用。 */
 globalThis.__HMR__['virtual:increment'] = () => {
   if (import.meta.hot) {
     import.meta.hot.send('virtual:increment')
@@ -37,6 +39,10 @@ if (import.meta.hot) {
     log('(self-accepting 2) foo is now:', foo)
   })
 
+  /** 打印单/多依赖接受回调收到的新值，并更新直接与嵌套依赖的输出。
+   * @param type 回调种类的日志标签。
+   * @param newFoo 新直接依赖值。
+   * @param newNestedFoo 新嵌套依赖值。 */
   const handleDep = (type, newFoo, newNestedFoo) => {
     log(`(${type}) foo is now: ${newFoo}`)
     log(`(${type}) nested foo is now: ${newNestedFoo}`)
@@ -96,26 +102,37 @@ if (import.meta.hot) {
 
   import.meta.hot.on('custom:remove', removeCb)
 
-  // send custom event to server to calculate 1 + 2
+  // 发出自定义事件，让服务端计算 1 + 2 并返回结果。
   import.meta.hot.send('custom:remote-add', { a: 1, b: 2 })
   import.meta.hot.on('custom:remote-add-result', ({ result }) => {
     text('.custom-communication', result)
   })
 }
 
+/** 写入给定输出位置；浏览器版本查 DOM 设置 textContent，SSR 版本委托共享状态写入函数。
+ * @param el 选择器或共享状态键。
+ * @param text 待显示值。 */
 function text(el, text) {
   hmr(el, text)
 }
 
+/** 更新图片来源；浏览器设置 img.src，SSR 只在共享槽位记录 URL。
+ * @param el 图片选择器或槽位。
+ * @param src 新资源 URL。 */
 function setImgSrc(el, src) {
   hmr(el, src)
 }
 
+/** 把首次自定义移除事件的消息写到输出，再用同一函数身份 off 退订。
+ * @param payload 事件消息对象。 */
 function removeCb({ msg }) {
   text('.toRemove', msg)
   import.meta.hot.off('custom:remove', removeCb)
 }
 
+/** 把输入值转成字符串并写到共享状态，让 runner 测试在无 DOM 的环境读输出。
+ * @param key 状态键。
+ * @param value 待序列化值。 */
 function hmr(key: string, value: unknown) {
   ;(globalThis.__HMR__ as any)[key] = String(value)
 }

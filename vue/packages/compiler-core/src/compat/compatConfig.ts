@@ -125,6 +125,7 @@ function getCompatValue(
 
 /**
  * 判断兼容特性是否启用：MODE 3 仅显式 true 启用；MODE 2 默认启用，显式 false 才关闭。
+ * suppress-warning 仅影响警告；它在 MODE 2 下仍启用旧行为，在 MODE 3 下不等同于 true。
  */
 export function isCompatEnabled(
   key: CompilerDeprecationTypes,

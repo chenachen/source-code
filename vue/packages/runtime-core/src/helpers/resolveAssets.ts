@@ -72,12 +72,12 @@ function resolveAsset(
   warnMissing?: boolean,
   maybeSelfReference?: boolean,
 ): ConcreteComponent | undefined
-// 重载 2：指令。
+/** 指令注册表重载，返回指令定义而非组件的标签名回退。 */
 function resolveAsset(
   type: typeof DIRECTIVES,
   name: string,
 ): Directive | undefined
-// 重载 3：仅兼容构建的过滤器。
+/** 兼容过滤器重载，未找到时返回 undefined，由调用方处理。 */
 function resolveAsset(type: typeof FILTERS, name: string): Function | undefined
 /**
  * 按名称解析当前渲染实例可见的组件、指令或过滤器。

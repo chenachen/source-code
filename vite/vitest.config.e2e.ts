@@ -1,13 +1,15 @@
 import { resolve } from 'node:path'
 import { defaultExclude, defineConfig } from 'vitest/config'
 
+/** VITE_TEST_BUILD 非空时走 build + preview，用同一组 e2e 断言检查构建产物。 */
 const isBuild = !!process.env.VITE_TEST_BUILD
+/** 只有非 build 运行才可强制 bundled-dev；该模式仍属于 serve 测试。 */
 const isBundledDev = !isBuild && !!process.env.VITE_TEST_BUNDLED_DEV
 
-// Spec files that do not pass yet with `experimental.bundledDev` forced on
-// (`pnpm run test-serve-bundled`) — remove entries as bundled dev gains
-// support (vitejs/vite#23028). A file where only a few cases fail is not
-// listed here; those cases are marked `test.skipIf(isBundledDev)` instead.
+/**
+ * 强制 bundled-dev 时整文件排除的尚未支持场景（vitejs/vite#23028）；不能把它们计为已通过。
+ * 仅部分用例不支持的 spec 保持入选，并在用例上通过 test.skipIf(isBundledDev) 控制。
+ */
 const bundledDevExclude = [
   './playground/assets/__tests__/runtime-base/assets-runtime-base.spec.ts',
   './playground/backend-integration/__tests__/backend-integration.spec.ts',
@@ -32,6 +34,7 @@ const bundledDevExclude = [
   './playground/worker/__tests__/relative-base/worker-relative-base.spec.ts',
 ]
 
+/** 单个测试/hook 的毫秒超时：Playwright 调试时无限，CI 50 秒，本地 30 秒。 */
 const timeout = process.env.PWDEBUG ? Infinity : process.env.CI ? 50000 : 30000
 
 export default defineConfig({
@@ -47,7 +50,7 @@ export default defineConfig({
       ...(isBundledDev ? bundledDevExclude : []),
       ...(isBuild
         ? [
-            './playground/object-hooks/**/*.spec.[tj]s', // object hook sequential
+            './playground/object-hooks/**/*.spec.[tj]s', // 插件对象 hook 的运行顺序仅在 serve 中验证。
           ]
         : []),
       ...defaultExclude,
@@ -58,7 +61,7 @@ export default defineConfig({
     hookTimeout: timeout,
     reporters: 'dot',
     deps: {
-      // Prevent Vitest from running the workspace packages in Vite's SSR runtime
+      // 防止 Vitest 把工作区 packages 放进自身的 Vite SSR 转换运行时。
       moduleDirectories: ['node_modules', 'packages'],
     },
     expect: {

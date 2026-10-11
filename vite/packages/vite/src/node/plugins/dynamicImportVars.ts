@@ -140,7 +140,7 @@ export async function transformDynamicImport(
   glob: string
   /** 用于还原运行时导入路径的规范化模式。 */
   pattern: string
-  /** 用户源码中的原始动态导入模式，供错误与代码生成保留语义。 */
+  /** 去掉 query、相对 importer 规范化后的运行时查表路径，保留模板表达式。 */
   rawPattern: string
 } | null> {
   if (importSource[1] !== '.' && importSource[1] !== '/') {
@@ -205,7 +205,7 @@ export function dynamicImportVarsPlugin(config: ResolvedConfig): Plugin {
   return {
     name: 'vite:dynamic-import-vars',
 
-    /** 变量动态导入转换只对客户端消费者启用。 */
+    /** bundled 环境使用原生插件；其他 client/server 环境继续使用本地转换。 */
     applyToEnvironment(environment) {
       if (environment.config.isBundled) {
         const { include, exclude } =
@@ -234,7 +234,7 @@ export function dynamicImportVarsPlugin(config: ResolvedConfig): Plugin {
 
     load: {
       filter: { id: exactRegex(dynamicImportHelperId) },
-      /** 返回动态导入辅助运行时代码，负责按路径深度匹配模块。 */
+      /** 返回辅助运行时代码；按完整路径查表，未命中时用路径段数补充错误提示。 */
       handler(_id) {
         return `export default ${dynamicImportHelper.toString()}`
       },
@@ -279,7 +279,7 @@ export function dynamicImportVarsPlugin(config: ResolvedConfig): Plugin {
           } = imports[index]
 
           if (dynamicIndex === -1 || source[start] !== '`') {
-            // 仅处理模板字面量动态 import；普通字面量由 importAnalysis，其他表达式保留并警告。
+            // 仅处理模板字面量动态 import；普通字面量和其他表达式在此保留，由后续导入分析处理。
             continue
           }
 

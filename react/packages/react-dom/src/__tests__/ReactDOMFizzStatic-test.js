@@ -62,10 +62,10 @@ describe('ReactDOMFizzStatic', () => {
     });
   });
 
-  /** `act`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 执行callback并等一次setImmediate，再把本轮UTF8 buffer解析/搬入JSDOM；若流error则抛记录原因。该工具假定本例已形成完整片段，不等待所有任意异步任务；克隆SCRIPT使内联协议执行。 */
   async function act(callback) {
     await callback();
-    // 等待一次事件循环的轮询。 这假设我们已经将所有东西都冲刷了。
+    // 只等一次setImmediate，让本例当前安排的流工作产生完整片段；这不是任意异步任务完成信号。
     await new Promise(resolve => {
       setImmediate(resolve);
     });
@@ -95,7 +95,7 @@ describe('ReactDOMFizzStatic', () => {
     }
   }
 
-  /** `getVisibleChildren`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 递归重建断言用React树，过滤无type的script、template、hidden/aria-hidden属性存在及rel=expect且blocking=render节点；冒号id也省略。它是测试投影，不计算CSS可见性。 */
   function getVisibleChildren(element) {
     const children = [];
     let node = element.firstChild;
@@ -107,7 +107,7 @@ describe('ReactDOMFizzStatic', () => {
           node.tagName !== 'template' &&
           !node.hasAttribute('hidden') &&
           !node.hasAttribute('aria-hidden') &&
-          // 忽略渲染阻塞，期望
+          // 忽略rel=expect且blocking=render的协议link，不把它计入可见投影。
           (node.getAttribute('rel') !== 'expect' ||
             node.getAttribute('blocking') !== 'render')
         ) {
@@ -138,7 +138,7 @@ describe('ReactDOMFizzStatic', () => {
         : children;
   }
 
-  /** `resolveText`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 先改pending记录为resolved再同步通知pings，或未读key直接存resolved，供静态任务结束。 */
   function resolveText(text) {
     const record = textCache.get(text);
     if (record === undefined) {
@@ -155,7 +155,7 @@ describe('ReactDOMFizzStatic', () => {
     }
   }
 
-  /*
+  /* 此rejectText草稿被整体注释，不在当前测试运行中执行。
   function rejectText(text, error) {
     const record = textCache.get(text);
     if (record === undefined) {
@@ -173,7 +173,7 @@ describe('ReactDOMFizzStatic', () => {
   }
   */
 
-  /** `readText`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 按文本缓存返回resolved或抛pending/rejected；初读创建收集pings的thenable并抛出，让Fizz等待。 */
   function readText(text) {
     const record = textCache.get(text);
     if (record !== undefined) {
@@ -188,7 +188,8 @@ describe('ReactDOMFizzStatic', () => {
     } else {
       const thenable = {
         pings: [],
-        /** `readText.then`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** pending收集resolve，已完成通过Promise微任务通知，支持晚订阅重试。 */
         then(resolve) {
           if (newRecord.status === 'pending') {
             thenable.pings.push(resolve);
@@ -208,26 +209,20 @@ describe('ReactDOMFizzStatic', () => {
     }
   }
 
-  /** `Text`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 同步文字fixture，直接返回text。 */
   function Text({text}) {
     return text;
   }
 
-  /** `AsyncText`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 读取可能挂起的缓存，返回完成text，作为静态Suspense内容。 */
   function AsyncText({text}) {
     return readText(text);
   }
 
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「should render a fully static document, send it and then hydrate it」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言覆盖 react-dom 的服务端流适配层；完整 Fizz 状态机位于 react-server。
-   */
+  /** 静态Node prerender的Suspense等Hello，先resolve再await结果；postponed=null、prelude管道显示Hello，随后hydrate仍相同，验证完整静态内容可认领。 */
   it('should render a fully static document, send it and then hydrate it', async () => {
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** div内Suspense等待Hello，fallback Loading用于证明prelude只输出完成内容。 */
     function App() {
       return (
         <div>
@@ -258,7 +253,7 @@ describe('ReactDOMFizzStatic', () => {
     expect(getVisibleChildren(container)).toEqual(<div>Hello</div>);
   });
 
-  /** 测试场景：验证「should support importMap option」描述的渲染、交互或错误处理结果。 */
+  /** 完整文档prerender带importMap对象；管道解析后保留type=importmap脚本JSON和hello文字，验证配置importMap在前导输出。 */
   it('should support importMap option', async () => {
     const importMap = {
       foo: 'path/to/foo.js',
@@ -279,15 +274,16 @@ describe('ReactDOMFizzStatic', () => {
     ]);
   });
 
-  /** 测试场景：验证「supports onHeaders」描述的渲染、交互或错误处理结果。 */
+  /** App显式preload高优先级image和font并给onHeaders；返回描述符Link按font再image顺序，prelude可见仅hello，验证早期资源走响应头而不重复可见元素。 */
   it('supports onHeaders', async () => {
     let headers;
-    /** `onHeaders`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 保存静态Node onHeaders收到的原描述符，供检查Link字段与顺序。 */
     function onHeaders(x) {
       headers = x;
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 发高image/font preload并输出完整hello文档，资源应进入早期响应头。 */
     function App() {
       ReactDOM.preload('image', {as: 'image', fetchPriority: 'high'});
       ReactDOM.preload('font', {as: 'font'});
@@ -316,16 +312,17 @@ describe('ReactDOMFizzStatic', () => {
     expect(getVisibleChildren(container)).toEqual('hello');
   });
 
-  /** 测试场景：验证「will prerender Suspense fallbacks before children」描述的渲染、交互或错误处理结果。 */
+  /** 嵌套Suspense所有内容同步，用Indirection记录fallback/content；顺序为外fallback、两内fallback、两内容，但prelude只两内容，验证prerender先探索fallback而非实际输出它们。 */
   it('will prerender Suspense fallbacks before children', async () => {
     const values = [];
-    /** `Indirection`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 记录children被探索的顺序后透传，不影响内容结构。 */
     function Indirection({children}) {
       values.push(children);
       return children;
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 外层与两个内层Suspense的fallback/content都经Indirection，比较探索顺序和最终输出。 */
     function App() {
       return (
         <div>
@@ -381,10 +378,11 @@ describe('ReactDOMFizzStatic', () => {
     );
   });
 
-  /** 测试场景：验证「will halt a prerender when aborting with an error during a render」描述的渲染、交互或错误处理结果。 */
+  /** App渲染中同步abort(sync)；静态结果仍可管道，onError仅sync且没有可见内容，验证取消中止预渲染而不发未完成shell。 */
   it('will halt a prerender when aborting with an error during a render', async () => {
     const controller = new AbortController();
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 渲染期间同步abort(sync)再返回div，此返回内容不应发到prelude。 */
     function App() {
       controller.abort('sync');
       return <div>hello world</div>;
@@ -393,7 +391,8 @@ describe('ReactDOMFizzStatic', () => {
     const errors = [];
     const result = await ReactDOMFizzStatic.prerenderToNodeStream(<App />, {
       signal: controller.signal,
-      /** `onError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 收集同步取消原因，保留原输入sync供错误断言。 */
       onError(error) {
         errors.push(error);
       },
@@ -405,12 +404,13 @@ describe('ReactDOMFizzStatic', () => {
     expect(getVisibleChildren(container)).toEqual(undefined);
   });
 
-  /** 测试场景：验证「will halt a prerender when aborting with an error in a microtask」描述的渲染、交互或错误处理结果。 */
+  /** App use未解决Promise，微任务abort(async)；onError仅async且prelude无可见内容，验证异步取消唤醒等待并结束静态请求。 */
   it('will halt a prerender when aborting with an error in a microtask', async () => {
     const errors = [];
 
     const controller = new AbortController();
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** use一个永不解决Promise并在微任务abort(async)，制造异步中止静态等待。 */
     function App() {
       React.use(
         new Promise(() => {
@@ -425,7 +425,8 @@ describe('ReactDOMFizzStatic', () => {
     errors.length = 0;
     const result = await ReactDOMFizzStatic.prerenderToNodeStream(<App />, {
       signal: controller.signal,
-      /** `onError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 收集异步取消原因，预期唯一async，不自行恢复内容。 */
       onError(error) {
         errors.push(error);
       },

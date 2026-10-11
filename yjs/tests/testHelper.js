@@ -80,19 +80,22 @@ const useV2Encoding = () => {
  */
 export class TestYInstance extends Y.Doc {
   /**
-   * 注册到测试连接器，监听本地 update 并编码为 sync 消息，最后建立连接。
+   * 注册到测试连接器，记录全部 update；将 origin 非连接器的 update 编码广播，最后建立连接。
    *
    * @param {TestConnector} testConnector - 负责调度消息的连接器。
    * @param {number} clientID - 稳定测试用户编号；实际 Yjs clientID 由 fixture 随后设置。
    */
   constructor (testConnector, clientID) {
     super()
-    this.userID = clientID // 仅作测试日志用户编号，不替代 Y.Doc.clientID。
+    /** 稳定测试日志用户编号；不替代 Y.Doc.clientID，后者由 init 设置为用户索引。 */
+    this.userID = clientID
     /**
+     * 调度当前实例的共享连接器；同时作为远端应用更新的事务 origin。
      * @type {TestConnector}
      */
     this.tc = testConnector
     /**
+     * 按发送者分开的 FIFO 接收队列；跨发送者顺序由连接器 PRNG 选择。
      * @type {Map<TestYInstance, Array<Uint8Array>>}
      */
     this.receiving = new Map()
@@ -112,7 +115,7 @@ export class TestYInstance extends Y.Doc {
     this.connect()
   }
 
-  /** 断开连接并丢弃所有尚未投递消息，模拟网络中断。 */
+  /** 从在线集合移除并清空本实例的接收队列；其他实例已排队的消息仍保留。 */
   disconnect () {
     this.receiving = new Map()
     this.tc.onlineConns.delete(this)
@@ -165,14 +168,17 @@ export class TestConnector {
    */
   constructor (gen) {
     /**
+     * 所有已创建实例，包括断线实例；reconnectAll 从这里恢复连接。
      * @type {Set<TestYInstance>}
      */
     this.allConns = new Set()
     /**
+     * 当前在线实例；广播和消息投递仅从此集合选择。
      * @type {Set<TestYInstance>}
      */
     this.onlineConns = new Set()
     /**
+     * 共享 seeded PRNG，网络选择与模型随机操作沿用同一随机序列，便于按 seed 复现。
      * @type {prng.PRNG}
      */
     this.prng = gen
@@ -191,7 +197,7 @@ export class TestConnector {
   /**
    * 随机选择在线接收者、发送者队列及其首条消息，解码处理并把协议回复重新排队。
    *
-   * 单次只投递一条，测试因而能穷举不同网络交错；无待投递消息时返回 false。
+   * 单次只投递一条，seeded PRNG 可复现不同网络交错；每个发送者队列内仍按 FIFO 处理。无在线待收消息时返回 false。
    *
    * @return {boolean} 是否实际处理了一条消息。
    */
@@ -210,10 +216,10 @@ export class TestConnector {
       }
       const encoder = encoding.createEncoder()
       // console.log('receive (' + sender.userID + '->' + receiver.userID + '):\n', syncProtocol.stringifySyncMessage(decoding.createDecoder(m), receiver))
-      // 以 connector 为 origin 处理消息，避免生成的 SyncStep2/update 经文档监听器自动广播；协议回复只发回原发送者。
+      // 应用远端 update 时使用 connector origin，文档监听器因此不再广播；SyncStep1 的协议回复单独发回原发送者。
       syncProtocol.readSyncMessage(decoding.createDecoder(m), encoder, /** @type {any} */ (receiver), receiver.tc)
       if (encoding.length(encoder) > 0) {
-        // 将协议回复排入原发送者队列。
+        // 即使原发送者此刻离线，也把回复放入其接收队列；flush 只选择在线接收者。
         sender._receive(encoding.toUint8Array(encoder), receiver)
       }
       return true
@@ -287,9 +293,13 @@ export class TestConnector {
 }
 
 /**
- * 创建指定数量的互联测试文档和标准根类型，并在返回前完成首次同步。
+ * 创建指定数量的互联测试文档和 array/map/xml/text 四个根类型，clientID 固定为用户索引。
+ * 先完成首次握手同步，再调用每用户的 fixture 回调。
+ * fixture 回调产生的新消息不会在返回前再次排空。
  *
  * 编码版本由测试 PRNG 选择；fixture 建立后重置为 V1，避免全局状态泄漏到后续用例。
+ *
+ * 返回属性按实际 users 数量创建，array0 等快捷引用并不保证在 users<对应索引+1 时存在。同步协议当前使用 V1；PRNG 请求 V2 的分支仍回退 V1。
  *
  * @template T
  * @param {t.TestCase} tc - 提供 PRNG 的测试上下文。
@@ -331,6 +341,8 @@ export const init = (tc, { users = 5 } = {}, initTestObject) => {
 
 /**
  * 逐 client、clock、len 断言两个 IdSet 的规范区间完全相等。
+ *
+ * 读取双方 getIds 会触发原位规范化；此 helper 比较覆盖边界，不区分 Item、GC、Skip 或可见载荷。
  *
  * @param {Y.IdSet} idSet1 - 左集合。
  * @param {Y.IdSet} idSet2 - 右集合。
@@ -374,7 +386,8 @@ const _idmapAttrsHas = (attrs, attr) => {
 export const _idmapAttrsEqual = (a, b) => a.length === b.length && a.every(v => _idmapAttrsHas(b, v))
 
 /**
- * 校验 IdMap 每个区间属性都在 attrs/attrsH 索引中，并重建副本确认分段可复制。
+ * 校验 IdMap 每个区间属性都在 attrs/attrsH 索引中，再按每个属性重复 add 重建副本，比较分段数量。
+ * 空属性区间不进入属性循环，因此不会被重建；此 helper 的断言不能用作空属性范围的完整验证。
  *
  * @template T
  * @param {Y.IdMap<T>} idmap
@@ -396,6 +409,8 @@ export const validateIdMap = idmap => {
 
 /**
  * 逐 client、区间与属性集合断言两个 IdMap 相等，并分别执行内部索引一致性校验。
+ *
+ * 属性比较按 hash 忽略顺序，并调用 validateIdMap 检查两侧索引；哈希碰撞或重复属性出现次数不是此比较的独立检查项。
  *
  * @template T
  * @param {Y.IdMap<T>} idmap1
@@ -420,10 +435,12 @@ export const compareIdmaps = (idmap1, idmap2) => {
 /**
  * 生成带重叠/空洞的随机 IdSet，供区间算法性质测试。
  *
+ * clockStart 随机区间含 clockRange 端点，len 上限为 clockRange-clockStart；零长 add 被忽略。末尾可随机删 client 键，抽到不存在的编号也只执行空操作。
+ *
  * @param {prng.PRNG} gen - 确定性随机源。
  * @param {number} clients - client 数量。
  * @param {number} clockRange - 每个 client 的排他最大 clock。
- * @return {Y.IdSet} 规范化后的随机集合。
+ * @return {Y.IdSet} 延迟规范化的随机集合；本函数不调用 getIds，可能仍含无序或重叠范围。
  */
 export const createRandomIdSet = (gen, clients, clockRange) => {
   const maxOpLen = 5
@@ -442,7 +459,9 @@ export const createRandomIdSet = (gen, clients, clockRange) => {
 }
 
 /**
- * 生成带随机属性组合的 IdMap，并报告编码体积。
+ * 生成带随机属性组合的 IdMap，并通过 encodeIdMap 规范化范围、报告编码体积。
+ * 每轮至少构造一个属性定义；attrChoices 为空时选择结果为 undefined，仍写入空名称属性，
+ * 因此传入 [] 并不生成 attrs=[] 的范围。
  *
  * @template T
  * @param {prng.PRNG} gen - 确定性随机源。
@@ -474,11 +493,12 @@ export const createRandomIdMap = (gen, clients, clockRange, attrChoices) => {
 }
 
 /**
- * 建立同步屏障后，从各用户 update 历史重建合并文档，并比较可见内容、state vector、delete set、store 与 snapshot。
+ * 建立同步屏障后，从各用户 update 历史重建合并文档，断言可见内容、state vector、结构布局、snapshot 与各 store.ds 一致。
+ * 循环中的 equalIdSets 返回值未作断言；删除一致性实际还由 snapshot 字节与最后的 compareIdSets 检查。
  *
- * 该函数同时证明网络副本收敛和 `mergeUpdates` 重建结果收敛；最后销毁全部实例。
+ * 网络副本和 mergeUpdates 重建文档一起参与收敛断言；最后销毁数组中全部文档。追加的重建文档不会从 users 数组移除。
  *
- * @param {Array<TestYInstance>} users - 待收敛检查的副本；函数会临时追加重建文档。
+ * @param {Array<TestYInstance>} users - 待检查副本；函数会追加重建文档并销毁全部实例。
  */
 export const compare = users => {
   users.forEach(u => u.connect())
@@ -540,7 +560,8 @@ export const compare = users => {
 export const compareItemIDs = (a, b) => a === b || (a !== null && b != null && Y.compareIDs(a.id, b.id))
 
 /**
- * 深度比较两个 StructStore 的结构类型、ID、删除状态、长度、邻接来源与双向链连接。
+ * 比较两个 StructStore 的结构类型、ID、删除状态、长度、邻接来源与双向链连接。
+ * 不直接比较 Item.content、parent、keep、redone 或 store.skips；可见载荷由 compare 的类型值比较承担。
  *
  * @param {StructStore} ss1 - 左 store。
  * @param {StructStore} ss2 - 右 store。
@@ -594,13 +615,17 @@ export const compareStructStores = (ss1, ss2) => {
  */
 
 /**
- * 在随机用户上交错执行变更、消息投递与断线重连，结束时调用 `compare()` 验证全副本收敛。
+ * 在五个固定 clientID 用户上交错执行变更、消息投递与断线重连，结束时调用 `compare()` 重连并验证全副本收敛。
+ * 每轮先抽取网络分支，再必定选一个用户执行一个 mods 变更；各网络概率是逐个 if/else 条件的随机抽样，不能相加视作一次抽样阈值。
+ *
+ * iterations=0 时仅建立 fixture 并执行 compare，未触发 mods；空 mods 在正轮次没有有效候选，不构成任何模型变更覆盖。
  *
  * @template T
  * @param {t.TestCase} tc - 提供 seeded PRNG 的测试上下文。
- * @param {Array<function(Y.Doc,prng.PRNG,T):void>} mods - 可随机选择的模型变更。
+ * @param {Array<function(Y.Doc,prng.PRNG,T):void>} mods - 非空的模型变更候选；传入的函数修改选中用户与其 fixture。
  * @param {number} iterations - 交错次数。
  * @param {InitTestObjectCallback<T>} [initTestObject] - 每用户附加 fixture 工厂。
+ * @return {ApplyRandomTestsResult} 完整 fixture；compare 已销毁 users 内文档，并追加了合并重建的文档。
  */
 export const applyRandomTests = (tc, mods, iterations, initTestObject) => {
   const gen = tc.prng
@@ -615,7 +640,7 @@ export const applyRandomTests = (tc, mods, iterations, initTestObject) => {
         testConnector.reconnectRandom()
       }
     } else if (prng.int32(gen, 0, 100) <= 1) {
-      // 小概率建立中途同步屏障。
+      // 小概率排空在线实例的接收队列；离线实例此时不重连。
       testConnector.flushAllMessages()
     } else if (prng.int32(gen, 0, 100) <= 50) {
       // 常态只投递一条随机消息，扩大因果交错空间。

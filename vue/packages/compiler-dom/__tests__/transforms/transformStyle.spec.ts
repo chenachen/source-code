@@ -1,6 +1,6 @@
 /**
- * 静态 style 属性转换场景：把 CSS 文本解析为对象表达式，验证多声明、CSS 变量、分号/括号
- * 等边界，同时保证动态 `:style` 不被当作静态文本重写。
+ * 验证静态 style Attribute 改为 bind:style 对象，并与 transformBind/transformElement
+ * 协作生成无 STYLE 标志的 props。
  */
 import {
   type CompilerOptions,
@@ -31,6 +31,9 @@ function transformWithStyleTransform(
 }
 
 describe('compiler: style transform', () => {
+  /**
+   * 场景：只安装 transformStyle 解析 color:red 静态属性，断言该 Attribute 原位变为静态 style 参数加对象表达式的 v-bind，验证节点层改写而非运行时解析 CSS。
+   */
   test('should transform into directive node', () => {
     const { node } = transformWithStyleTransform(`<div style="color: red"/>`)
     expect(node.props[0]).toMatchObject({
@@ -49,6 +52,9 @@ describe('compiler: style transform', () => {
     })
   })
 
+  /**
+   * 场景：同一静态 style 再串联 transformElement 与 transformBind，断言 codegen props 保存 JSON 对象且无 STYLE patchFlag，验证 CAN_STRINGIFY 常量不进入动态样式更新协议。
+   */
   test('working with v-bind transform', () => {
     const { node } = transformWithStyleTransform(`<div style="color: red"/>`, {
       nodeTransforms: [transformStyle, transformElement],

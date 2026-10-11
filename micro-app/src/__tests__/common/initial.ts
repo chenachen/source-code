@@ -3,6 +3,7 @@ import '@webcomponents/webcomponentsjs/custom-elements-es5-adapter'
 import { setCurrentAppName, defer } from '../../libs/utils'
 /** 测试用静态资源服务器模块；各集成用例按端口复用同一进程接口。 */
 const liveServer = require('../../../scripts/test_server')
+// 让 fixture 请求使用 Node fetch；真实计时器使空闲调度兼容函数、资源回调与测试等待遵循实际任务队列。
 global.fetch = require('node-fetch')
 jest.useRealTimers()
 
@@ -12,7 +13,7 @@ declare global {
     /** SSR 场景最终解析出的 HTML 地址。 */
     ssrUrl: string
   }
-  /** keep-alive demo 脚本写入的全局测试观察点。 */
+  /** 宿主测试安装的观察函数；keep-alive demo 的状态监听调用它，不自行创建 mock。 */
   interface Window {
     /** 接收子应用侧 `beforeshow`、`aftershow`、`afterhidden` 状态。 */
     keepAliveListener: (...rest: any[]) => void
@@ -40,7 +41,13 @@ export const ports = {
   custom_proxy_document: 9016,
 }
 
-/** 启动资源服务器，并在提供端口时覆盖当前监听配置。 */
+/**
+ * 让当前套件通过独立端口访问 `demos` 下的原始 HTML/CSS/JS 响应。
+ *
+ * `liveServer.params` 是模块共享配置；传入端口时直接改写它再调用 start，并不等待
+ * 网络就绪 Promise。各集成套件在 beforeAll 中调用，在 afterAll 中 shutdown。
+ * @param port - `ports` 中分给当前套件的监听端口；省略时沿用服务器现有配置。
+ */
 export function startServer (port?: number): void {
   if (typeof port === 'number') {
     liveServer.params.port = port
@@ -58,12 +65,19 @@ export const jestConsoleWarn = jest.fn()
 /** 收集框架错误及其完整参数的 Jest mock。 */
 export const jestConsoleError = jest.fn()
 
-/** 把全局警告/错误输出重定向到可断言的 Jest mock。 */
+/**
+ * 用转发函数替换 console.warn/error，使框架日志的完整参数进入同一组 Jest mock。
+ *
+ * 本方法不清除历史调用；Jest clearMocks/beforeEach 决定断言的记录窗口，不能把一次
+ * `toHaveBeenCalled()` 自动解释为当前操作新增日志。releaseConsole 负责恢复原引用。
+ */
 export function rewriteConsole (): void {
+  /** 将警告参数原样转给 jestConsoleWarn，不向真实终端重复输出。 */
   global.console.warn = function warn(...rests: any[]) {
     // rawWarn.call(global.console, ...rests)
     jestConsoleWarn(...rests)
   }
+  /** 将错误参数原样转给 jestConsoleError，供用例核对错误类型和应用名。 */
   global.console.error = function error(...rests: any[]) {
     // rawError.call(global.console, ...rests)
     jestConsoleError(...rests)
@@ -78,7 +92,13 @@ export function releaseConsole (): void {
   global.console.error = rawError
 }
 
-/** 重建每个集成套件依赖的基座样式、全局函数和应用容器。 */
+/**
+ * 构造宿主与子应用可互相区分的 DOM、样式和函数观察点。
+ *
+ * 宿主 `.test-color` 为绿色，demo 同名规则可验证 CSS 作用域；testBindFunction 的
+ * prototype 与静态 abc 供绑定函数属性保留测试使用，document.onclick 与子应用点击
+ * 处理器形成对照。#app-container 是所有宿主元素的插入点；body 会整体重建。
+ */
 export function initDocument (): void {
   const baseStyle = document.createElement('style')
   baseStyle.id = 'base-app-style'
@@ -108,7 +128,10 @@ export function initDocument (): void {
   `
 }
 
-/** 启动指定端口服务器、重写 console，并初始化基座 DOM。 */
+/**
+ * 集成套件的统一前置环境：先启动 fixture 服务，再捕获日志，最后构造基座 DOM。
+ * @param port - 当前套件的 fixture 服务端口；只负责初始化，不调用 microApp.start。
+ */
 export function commonStartEffect (port?: number): void {
   startServer(port)
   rewriteConsole()
@@ -116,16 +139,18 @@ export function commonStartEffect (port?: number): void {
 }
 
 /**
- * 卸载测试创建的全部元素，等待动态资源任务收尾，再关闭服务器并恢复 console。
+ * 清空 #app-container 以触发其中元素的断开流程，延迟 200ms 后关闭服务器并恢复 console。
+ * 延时为动态资源回调留出执行时间；它不等待各应用的异步卸载 Promise。
+ * 实例 Map、远程资源缓存与日志 mock 记录也不在此清空，后续场景须按各自准备步骤判断。
  *
  * @returns 所有延迟清理完成后结算为 `true`。
  */
 export function releaseAllEffect (): Promise<boolean> {
-  // 所有test结束后，jest会自动清空document及其内容，从而导致出错，所以要主动卸载所有应用
+  // 在 Jest 清空 document 前先触发容器内元素的断开回调。
   document.querySelector('#app-container')!.innerHTML = ''
 
   return new Promise((resolve) => {
-    // 处理动态添加的资源
+    // 给动态资源回调留出 200ms，然后关闭测试服务器。
     setTimeout(() => {
       liveServer.shutdown()
       releaseConsole()
@@ -135,8 +160,9 @@ export function releaseAllEffect (): Promise<boolean> {
 }
 
 /**
- * 绑定应用
- * @param appName 应用名称
+ * 临时设置动态 DOM 操作归属的应用名，并在下一微任务清空。
+ * 同一同步任务内创建的节点会读到该名字；不保留到后续异步任务。
+ * @param appName - 本次同步 DOM 操作所属应用。
  */
 export function setAppName (appName: string): void {
   setCurrentAppName(appName)

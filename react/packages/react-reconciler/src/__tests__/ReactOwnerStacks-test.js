@@ -111,7 +111,7 @@ describe('ReactOwnerStacks', () => {
     );
   });
 
-  /** Given–When–Then：Given调用发生在 render 前和一次提交后；When直接执行 captureOwnerStack；Then两次都返回 null。验证 owner 栈只在开发 render 上下文中可用。 */
+  /** Given–When–Then：Given调用发生在 render 前和一次提交后；When直接执行 captureOwnerStack；Then两次都返回 null。验证这两个组件执行之外的调用没有当前 Fiber，因而返回 null。 */
   it('returns null outside of render', async () => {
     // 难以用 gate 表达：部分生产构建仍保留 captureOwnerStack，但只返回 null。
     if (__DEV__) {
@@ -125,7 +125,7 @@ describe('ReactOwnerStacks', () => {
     }
   });
 
-  /** Given–When–Then：Given大量兄弟创建调用点直到 ownerStackLimit；When立即重渲染、再推进 1001ms 后第三次渲染；Then variant 在截断后返回 UnknownOwner，时间窗口重置后重新允许捕获。通过栈值和零残留 timer 验证限流与定时重置。 */
+  /** Given–When–Then：Given大量兄弟创建调用点直到 ownerStackLimit；When立即重渲染、再推进 1001ms 后第三次渲染；Then variant 在截断后返回 UnknownOwner，时间窗口重置后重新允许捕获。通过栈值和零残留 timer 验证限流与下一轮渲染入口处的按时钟检查重置。 */
   // @gate __DEV__
   it('cuts off at the owner stack limit', async () => {
     /** 生成指定数量的无输出兄弟，再依次渲染两个捕获点以跨过 ownerStackLimit。 */
@@ -342,8 +342,7 @@ describe('ReactOwnerStacks', () => {
       pendingTimers: 0,
       stackOne: '\n    in App (at **)',
       stackTwo: __VARIANT__
-        ? // Fiber 只有开始新 render 才重置额度；
-          // 此处只是 ping 后续跑。
+        ? // 本例只是挂起任务续跑，没有重新进入额度重置入口。
           '\n    in UnknownOwner (at **)' + '\n    in UnknownOwner (at **)'
         : // 非 variant 构建不会达到该上限。
           '\n    in OwnerStackDelayed (at **)' + '\n    in App (at **)',
@@ -441,8 +440,7 @@ describe('ReactOwnerStacks', () => {
       pendingTimers: 0,
       stackOne: '\n    in App (at **)',
       stackTwo: __VARIANT__
-        ? // Fiber 只有开始新 render 才重置额度；
-          // 此处只是 ping 后续跑。
+        ? // 本例只是挂起任务续跑，没有重新进入额度重置入口。
           '\n    in UnknownOwner (at **)' + '\n    in UnknownOwner (at **)'
         : // 非 variant 构建不会达到该上限。
           '\n    in OwnerStackDelayed (at **)' + '\n    in App (at **)',

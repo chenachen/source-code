@@ -5,15 +5,16 @@ import * as error from 'lib0/error'
 /**
  * 标识一个客户端逻辑时钟上的唯一位置。
  *
- * 不变量：同一客户端的结构按 `clock` 连续排列；结构 ID 指向区间首位，区间内
- * 其余位置由 `clock + offset` 推导。
+ * `clock` 是该客户端创建内容时累计占用的时钟位置，不是时间戳或可见索引。
+ * 结构 ID 指向区间首位，区间内其余位置由 `clock + offset` 推导；删除不重排 ID。
+ * 格式标记等不计可见长度的结构也占用逻辑时钟，所以 ID 范围长度不能直接当作当前文本长度。
  */
 export class ID {
   /**
    * 创建客户端与逻辑时钟组成的地址。
    *
-   * @param {number} client 客户端标识。
-   * @param {number} clock 该客户端内连续递增的逻辑时钟。
+   * @param {number} client 写入者的数值标识，决定 StructStore 的客户端分组。
+   * @param {number} clock 该客户端的非负逻辑位置；文本按 UTF-16 单位、列表按元素占用位置。
    */
   constructor (client, clock) {
     /**
@@ -22,7 +23,7 @@ export class ID {
      */
     this.client = client
     /**
-     * 客户端内唯一且连续的逻辑时钟。
+     * 该客户端时钟序列中的位置。
      * @type {number}
      */
     this.clock = clock
@@ -31,6 +32,8 @@ export class ID {
 
 /**
  * 按客户端与时钟比较两个可空 ID 的值相等性。
+ *
+ * 两个 null 相等；不同对象也可代表同一位置。此比较不判断内容相等、因果先后或文档中的左右顺序。
  *
  * @param {ID | null} a
  * @param {ID | null} b
@@ -41,7 +44,9 @@ export class ID {
 export const compareIDs = (a, b) => a === b || (a !== null && b !== null && a.client === b.client && a.clock === b.clock)
 
 /**
- * 创建一个 ID；集中该薄包装便于调用方表达领域含义。
+ * 创建客户端时钟地址；本函数不分配或推进客户端时钟。
+ *
+ * 调用者可用同一 client 加 clock 偏移定位复合 Item 内的一位，真正占用新时钟发生在结构集成时。
  *
  * @param {number} client
  * @param {number} clock
@@ -53,6 +58,8 @@ export const createID = (client, clock) => new ID(client, clock)
 
 /**
  * 依次写入 ID 的客户端与时钟 VarUint。
+ *
+ * 不编码区间长度或空值标记；读取方必须在相同游标位置调用 `readID()`，空锚点由外围格式另行表示。
  *
  * @param {encoding.Encoder} encoder
  * @param {ID} id
@@ -81,7 +88,7 @@ export const readID = decoder =>
  * 反向查找顶层共享类型在 `doc.share` 中的键。
  *
  * 顶层类型本身不保存键名，编码一个没有左右来源的 Item 时必须写出该键，故只能
- * 扫描 `doc.share` 恢复映射；找不到表示类型不属于当前文档，直接抛错。
+ * 扫描 `doc.share` 恢复映射；调用方必须传入已集成的顶层类型，找不到对应键时抛错。
  *
  * @param {YType<any>} type
  * @return {string}

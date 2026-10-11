@@ -21,38 +21,31 @@ describe('ReactErrorBoundariesHooks', () => {
     act = require('internal-test-utils').act;
   });
 
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「should preserve hook order if errors are caught」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言连接 ReactDOM 公开入口、ReactDOMRoot 根生命周期及 DOM 提交结果。
-   */
+  /** 同级树中一个组件在 useMemo 后抛错并由类边界接住，另一个组件持有 useState；首次恢复后再次渲染 App 应 resolve 且不抛错，验证错误退出会清理当前 Hook 上下文，不污染后续兄弟或重试的 Hook 顺序。 */
   it('should preserve hook order if errors are caught', async () => {
-    /** `ErrorThrower`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 先建立 useMemo Hook 再抛 expected，迫使渲染从已使用 Hook 的组件中断并交给上层错误边界。 */
     function ErrorThrower() {
       React.useMemo(() => undefined, []);
       throw new Error('expected');
     }
 
-    /** `StatefulComponent`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 建立独立 useState Hook 后输出兄弟文本，检测错误组件是否污染后续函数组件的 Hook 上下文。 */
     function StatefulComponent() {
       React.useState(null);
       return ' | stateful';
     }
 
-    /** `ErrorHandler`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 捕获子树错误并用本地状态切换到错误文本，为 Hook 错误退出提供可提交的恢复路径。 */
     class ErrorHandler extends React.Component {
-      /** `ErrorHandler.state`：记录测试夹具在当前场景中的状态。 */
+      /** error 初始为 null 时透传 children；捕获后保存 Error 并切换到恢复内容。 */
       state = {error: null};
 
-      /** `ErrorHandler.componentDidCatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 把捕获的 Error 写入边界 state，触发显示错误消息的恢复更新。 */
       componentDidCatch(error) {
         return this.setState({error});
       }
 
-      /** `ErrorHandler.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 未捕获错误时渲染原子树，捕获后显示 Error.message，阻止故障子组件再次执行。 */
       render() {
         if (this.state.error !== null) {
           return <p>Handled error: {this.state.error.message}</p>;
@@ -61,7 +54,7 @@ describe('ReactErrorBoundariesHooks', () => {
       }
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 把故障子树的类边界与独立有状态函数组件放在同级 Fragment 中，暴露错误退出与兄弟 Hook 隔离。 */
     function App(props) {
       return (
         <React.Fragment>

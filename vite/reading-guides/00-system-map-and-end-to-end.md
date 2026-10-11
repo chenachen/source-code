@@ -14,18 +14,19 @@ Vite 开发服务器不是“收到 URL 后调用一次编译器”，而是一�
 6. 转换结果及依赖关系写回 ModuleGraph，随后作为 HTTP 响应发送；
 7. 文件变化使图节点失效，HMR 从变更节点向 importer 传播；关闭时释放 watcher、WS、Environment 和插件资源。
 
-本章只完整串联常规开发态 JavaScript 模块请求。HTML 入口、CSS、依赖预构建、SSR、生产构建和 bundled dev 的特有分支由后续章节展开；它们不能直接套用本文所有细节。
+本章串联常规开发态 JavaScript 模块请求。HTML、CSS、依赖预构建、SSR、生产构建和 bundled dev
+各有入口与状态，后续章节分别展开。
 
 ## 核心对象地图
 
-| 对象 | 创建者 | 持有者 | 生命周期 | 关键职责 |
-|---|---|---|---|---|
-| `ResolvedConfig` | `resolveConfig()` | Dev Server 与各 Environment | 创建或重启时生成 | 固定本轮插件、路径、server 与环境配置 |
-| `ViteDevServer` | `_createServer()` | CLI 或 Node API 调用者 | `createServer()` 至 `close()` | 聚合 HTTP、WS、watcher、middlewares 和 environments |
-| `DevEnvironment` | `_createServer()` | `server.environments` | server 初始化至关闭/重启迁移 | 隔离 client/SSR 的配置、模块图、插件容器与依赖优化器 |
-| `PluginContainer` | Environment 初始化 | 对应 Environment | Environment 生命周期 | 排序并调用插件钩子，维护 hook context 与错误信息 |
-| `EnvironmentModuleGraph` | Environment 初始化 | 对应 Environment | Environment 生命周期 | 维护 URL、规范 ID、importer、依赖、失效和 transform 缓存 |
-| `ModuleNode` | ModuleGraph 按需创建 | ModuleGraph | 首次创建至 Environment 关闭；失效不会删除节点 | 保存模块身份、依赖边、HMR 接受边界和转换结果；失效时清除可重算结果 |
+| 对象                     | 创建者               | 持有者                      | 生命周期                                      | 关键职责                                                           |
+| ------------------------ | -------------------- | --------------------------- | --------------------------------------------- | ------------------------------------------------------------------ |
+| `ResolvedConfig`         | `resolveConfig()`    | Dev Server 与各 Environment | 创建或重启时生成                              | 固定本轮插件、路径、server 与环境配置                              |
+| `ViteDevServer`          | `_createServer()`    | CLI 或 Node API 调用者      | `createServer()` 至 `close()`                 | 聚合 HTTP、WS、watcher、middlewares 和 environments                |
+| `DevEnvironment`         | `_createServer()`    | `server.environments`       | server 初始化至关闭/重启迁移                  | 隔离 client/SSR 的配置、模块图、插件容器与依赖优化器               |
+| `PluginContainer`        | Environment 初始化   | 对应 Environment            | Environment 生命周期                          | 排序并调用插件钩子，维护 hook context 与错误信息                   |
+| `EnvironmentModuleGraph` | Environment 初始化   | 对应 Environment            | Environment 生命周期                          | 维护 URL、规范 ID、importer、依赖、失效和 transform 缓存           |
+| `EnvironmentModuleNode`  | ModuleGraph 按需创建 | ModuleGraph                 | 首次创建至 Environment 关闭；失效不会删除节点 | 保存模块身份、依赖边、HMR 接受边界和转换结果；失效时清除可重算结果 |
 
 关键所有权不变量：模块节点、插件上下文和转换缓存都属于某个 Environment。兼容层可以转发调用，但不能把 client 与 SSR 的状态重新混成一个全局容器。
 
@@ -79,7 +80,8 @@ try {
 
 这里有两个边界：
 
-- `createServer()` 完成对象与中间件初始化，不等于端口已监听；外部副作用发生在 `listen()`。
+- `createServer()` 已创建 watcher、热通道并装配中间件；`listen()` 再初始化开发环境并监听 HTTP 端口。
+  middleware mode 没有自建 HTTP Server，会在构造阶段完成环境初始化。
 - `httpServer` 为空是 middleware mode 的合法能力，但 CLI 不能在该模式下独立服务，所以明确失败。
 
 ## 阶段二：Server 构造并确定 Environment 所有权
@@ -125,7 +127,9 @@ export async function _createServer(
   usedConfigs.add(config)
 ```
 
-`usedConfigs` 防止同一个已解析配置同时归属两个活动 server。否则插件、logger 和缓存对象会被两个生命周期共享，关闭或重启其中一个实例时无法确定资源所有权。
+`usedConfigs` 在这里登记已用配置，防止另一 server 再使用同一对象。本版关闭时不从集合删除，
+因此关闭旧 server 后仍需重新解析配置，不能直接复用原 `ResolvedConfig`。这样可避免插件实例、logger
+和缓存对象再次被交给另一轮 server 生命周期。
 
 状态变化：
 
@@ -138,10 +142,7 @@ CSS direct 身份规范化开始，到转换响应结束。
 
 ```ts
 if (isCSSRequest(url)) {
-  if (
-    req.headers.accept?.includes('text/css') &&
-    !isDirectRequest(url)
-  ) {
+  if (req.headers.accept?.includes('text/css') && !isDirectRequest(url)) {
     url = injectQuery(url, 'direct')
   }
 
@@ -183,7 +184,11 @@ if (result) {
 
 ## 阶段四：pending、ModuleGraph 与插件管线
 
-`transformRequest()` 首先把同一 URL 的进行中请求记录到 `environment._pendingRequests`。第二个并发请求复用同一个 Promise；完成或失败后 `finally` 删除 pending 项，长期结果只保存在 `ModuleNode.transformResult`。
+`transformRequest()` 去掉 HMR 时间戳 query，以规范 URL 查 `environment._pendingRequests`。
+已有请求时，先比较它的开始时间与节点最近失效时间：请求开始于失效之后才复用；若已过期，调用
+`abort()` 删除 pending 槽位，再启动新转换。`abort()` 不取消正在执行的插件，旧调用者仍可能收到旧结果，
+但缓存写入也会检查失效时间，防止旧结果覆盖新结果。完成或失败后 `finally` 删除该请求的临时登记，
+长期结果保存在 `EnvironmentModuleNode.transformResult`。
 
 来源：`packages/vite/src/node/server/transformRequest.ts`，`doTransform()`；源码摘录：
 
@@ -247,9 +252,9 @@ URL 和规范 ID 必须分两级查图：`/@id/...`、别名 URL 或带 query �
 - `load`：返回第一个非空源码，并把 `meta`/watch file 写入模块信息；
 - `transform`：让全部匹配插件依次消费前一插件的代码与 module type。
 
-复杂度：单次冷请求的 hook 调度上界约为 `O(R + L + T)`，分别对应三个阶段中实际检查的插件数；URL/ID 图查找和 pending 查找平均为 `O(1)`。HMR 传播复杂度取决于受影响 importer 子图，而不是整个仓库；循环检测需要额外保存访问路径。
-
-替代方案是每次请求都直接从磁盘加载并执行全插件链，结构更简单，但会丢失并发合并、模块身份、依赖图、缓存和精确 HMR，因此不满足开发服务器的增量要求。
+例如 `/src/main.ts` 与另一别名 URL 最终解析为同一个 ID 时，第二个请求会补登记 URL 别名并复用
+节点结果。文件变化后仍保留这个节点及其反向依赖，只清掉需重算的结果；下一次请求重新变换，
+HMR 则沿保留的 importer 边找接受边界。
 
 ## 清理路径：资源并行收口
 
@@ -284,16 +289,16 @@ disposer 失败不会阻止其余资源释放。外部 URL 与兼容 runner 引�
 
 ## 同一请求的状态表
 
-| 变化前 | 触发动作 | 变化后 | 失败/清理 |
-|---|---|---|---|
-| 没有 server | `createServer()` | 已解析配置并创建组件 | 配置命令不匹配等前置校验在长生命周期资源创建前抛错；后续构造失败不能概括为统一自动清理 |
-| server 未监听 | `server.listen()` | HTTP 接受请求、Environment 开始工作 | 端口冲突按 `strictPort` 失败或换端口 |
-| URL 无 pending | `transformRequest(url)` | `_pendingRequests[url] = Promise` | `finally` 删除 pending，避免失败 Promise 永久缓存 |
-| ModuleGraph 无 URL 节点 | `resolveId()` | URL 映射到规范 ID/ModuleNode | 无插件解析时回退原 URL，后续 load 仍可能失败 |
-| 节点无结果 | `load → transform` | `transformResult`、依赖边与 meta 写回节点 | 插件错误补充 plugin/id/代码帧后抛给中间件 |
-| HTTP 尚未结束 | `send()` | code、ETag、map 与缓存头写入响应 | 优化器换代/处理中映射为 504；访问拒绝映射为 403 |
-| 文件未变化 | watcher event | 节点失效并向 importer 传播 | 无 HMR 接受边界时 full reload |
-| server 活动 | `server.close()` | watcher、WS、Environment、插件资源释放 | close 设计为可重复等待，避免并发关闭遗漏资源 |
+| 变化前                  | 触发动作                | 变化后                                    | 失败/清理                                                                              |
+| ----------------------- | ----------------------- | ----------------------------------------- | -------------------------------------------------------------------------------------- |
+| 没有 server             | `createServer()`        | 已解析配置并创建组件                      | 配置命令不匹配等前置校验在长生命周期资源创建前抛错；后续构造失败不能概括为统一自动清理 |
+| server 未监听           | `server.listen()`       | HTTP 接受请求、Environment 开始工作       | 端口冲突按 `strictPort` 失败或换端口                                                   |
+| URL 无 pending          | `transformRequest(url)` | `_pendingRequests[url] = Promise`         | `finally` 删除 pending，避免失败 Promise 永久缓存                                      |
+| ModuleGraph 无 URL 节点 | `resolveId()`           | URL 映射到规范 ID/ModuleNode              | 无插件解析时回退原 URL，后续 load 仍可能失败                                           |
+| 节点无结果              | `load → transform`      | `transformResult`、依赖边与 meta 写回节点 | 插件错误补充 plugin/id/代码帧后抛给中间件                                              |
+| HTTP 尚未结束           | `send()`                | code、ETag、map 与缓存头写入响应          | 优化器换代/处理中映射为 504；访问拒绝映射为 403                                        |
+| 文件未变化              | watcher event           | 节点失效并向 importer 传播                | 无 HMR 接受边界时 full reload                                                          |
+| server 活动             | `server.close()`        | watcher、WS、Environment、插件资源释放    | close 设计为可重复等待，避免并发关闭遗漏资源                                           |
 
 ## 完整执行流程图
 
@@ -308,19 +313,19 @@ flowchart TD
   F --> F1{"cachedTransformMiddleware：非 CSS ETag 命中?"}
   F1 -- "是" --> H1["304 + res.end()"]
   F1 -- "否" --> G["transformMiddleware"]
-  G --> H{"CSS direct ETag 命中?"}
+  G --> H{"CSS 对应身份的 ETag 命中?"}
   H -- "是" --> H1
   H -- "否" --> I["environment.transformRequest(url)"]
-  I --> J{"pending Promise 存在?"}
+  I --> J{"pending 存在且开始于最近失效之后?"}
   J -- "是" --> J1["等待并复用同一 Promise"]
-  J -- "否" --> K["登记 pending Promise"]
+  J -- "否" --> K["释放过期 pending；登记新请求"]
   J1 --> Q
   K --> L{"ModuleGraph 缓存有效?"}
   L -- "是" --> Q["返回 transformResult"]
-  L -- "否" --> M["PluginContainer.resolveId"]
+  L -- "否" --> M["URL 节点尚无 ID 时 resolveId；再查 ID 缓存"]
   M --> N["PluginContainer.load"]
   N --> O["PluginContainer.transform"]
-  O --> P["写回 ModuleNode 结果、meta 与依赖边"]
+  O --> P["更新依赖边；请求未过期时缓存结果"]
   P --> Q
   Q --> R["finally 删除 pending"]
   R --> S["send code + ETag + map"]
@@ -336,7 +341,7 @@ flowchart TD
   S --> T{"文件随后变化?"}
   T -- "否" --> U["缓存等待下一请求"]
   T -- "是" --> V["失效节点并传播 HMR"]
-  V --> W{"找到接受边界?"}
+  V --> W{"传播未遇死端且找到接受边界?"}
   W -- "是" --> W1["发送 update payload"]
   W -- "否" --> W2["发送 full-reload"]
   U --> Z["server.close() 时释放全部资源"]
@@ -348,7 +353,9 @@ flowchart TD
 
 ## 真实测试闭环：meta 如何跨钩子推进
 
-选择仓库测试 `packages/vite/src/node/server/__tests__/pluginContainer.spec.ts` 的 `can pass metadata between hooks`。它不启动真实端口，而是隔离请求链中最关键的 `resolve → load → transform → PluginContainer close hooks`，因此失败时能直接定位 PluginContainer 或 ModuleGraph，而不是受浏览器和网络噪声影响。它不证明 HTTP、watcher、HotChannel、optimizer 或整个 Environment 的资源释放。
+选择仓库测试 `packages/vite/src/node/server/__tests__/pluginContainer.spec.ts` 的
+`can pass metadata between hooks`。测试创建 client Environment，显式推进
+`resolve → load → transform → close`，观察下一阶段读取到的模块 meta。
 
 下面由目标版本三个逐字源码片段重排而成：文件 import、文件末尾夹具、测试本体。只移动夹具位置并
 省略无关测试；测试逻辑、输入和断言未改写。
@@ -443,27 +450,27 @@ When：先 `ensureEntryFromUrl()` 触发解析，再显式执行 `load()`、`tra
 
 Then：解析、加载、转换三个对象结果中的 `meta` 依次浅合并为 `{x:1} → {x:2} → {x:3}`，后续 hook 总能读到前一阶段状态；容器关闭时执行插件关闭钩子。
 
-Mechanism：断言既检查 `ModuleNode.meta`，也检查插件各阶段读取到的快照；这排除了“返回值正确但 ModuleGraph 未更新”的假阳性。最后显式 `close()` 只覆盖 PluginContainer 等待在途 hook、执行 `buildEnd`/`closeBundle` 的边界，不代表整个 Server 资源清理。
+Mechanism：解析后先检查节点 meta，再记录 load、transform、buildEnd 读到的值，确认返回结果已写入
+共享模块信息。最后的 `{x:3}` 来自 buildEnd，表明容器 close 已执行该关闭钩子。
 
 Source：`EnvironmentModuleGraph._ensureEntryFromUrl()`、`PluginContainer.resolveId()`、`load()` 中的 `_updateModuleInfo()`、`transform()` 和 `close()`。
 
 ## 章节—源码—测试证据表
 
-| 机制 | 决定性源码 | 代表性测试 |
-|---|---|---|
-| CLI/Server 启动 | `cli.ts` action、`server/index.ts::_createServer` | `node/__tests__/dev.spec.ts` |
-| 配置与 Environment | `config.ts::resolveConfig`、`server/index.ts` | `node/__tests__/config.spec.ts`、Environment 测试 |
-| 中间件路由 | `middlewares/transform.ts::transformMiddleware` | middleware 与 playground 请求测试 |
-| resolve/load/transform | `server/pluginContainer.ts::PluginContainer` | `server/__tests__/pluginContainer.spec.ts` |
-| pending 与转换缓存 | `server/transformRequest.ts` | `server/__tests__/transformRequest.spec.ts`、ModuleGraph 测试 |
-| HMR 传播 | `server/hmr.ts::updateModules` | `server/__tests__/hmr.spec.ts`、HMR playground |
-| 关闭与重启 | `server/index.ts::close/restart` | watcher、restart 与资源 teardown 测试 |
+| 机制                   | 决定性源码                                        | 代表性测试                                                    |
+| ---------------------- | ------------------------------------------------- | ------------------------------------------------------------- |
+| CLI/Server 启动        | `cli.ts` action、`server/index.ts::_createServer` | `node/__tests__/dev.spec.ts`                                  |
+| 配置与 Environment     | `config.ts::resolveConfig`、`server/index.ts`     | `node/__tests__/config.spec.ts`、Environment 测试             |
+| 中间件路由             | `middlewares/transform.ts::transformMiddleware`   | middleware 与 playground 请求测试                             |
+| resolve/load/transform | `server/pluginContainer.ts::PluginContainer`      | `server/__tests__/pluginContainer.spec.ts`                    |
+| pending 与转换缓存     | `server/transformRequest.ts`                      | `server/__tests__/transformRequest.spec.ts`、ModuleGraph 测试 |
+| HMR 传播               | `server/hmr.ts::updateModules`                    | `server/__tests__/hmr.spec.ts`、HMR playground                |
+| 关闭与重启             | `server/index.ts::close/restart`                  | watcher、restart 与资源 teardown 测试                         |
 
-## 结论、边界与继续阅读
+## 继续阅读
 
-这条链路的核心不是某个转译器，而是三层状态协作：pending Promise 合并当前并发，ModuleGraph 保存跨请求增量状态，Environment 隔离不同运行目标。PluginContainer 是状态与用户插件之间的调度边界；中间件负责把其结果翻译成 HTTP 语义。
-
-本文未完整展开 HTML hook、CSS 预处理、依赖扫描/目录换代、SSR Module Runner、生产构建和 bundled dev。继续阅读时应分别跟随 README 中对应章节，不能把开发态缓存规则直接推导为生产构建保证。
+请求进入中间件后，pending 管当前并发，ModuleGraph 保存跨请求状态，Environment 隔离运行目标。
+接下来可沿第 08、10、12 章深入缓存、依赖边和 HMR，或从第 15A 章转入服务端求值链。
 
 ## 复盘题
 

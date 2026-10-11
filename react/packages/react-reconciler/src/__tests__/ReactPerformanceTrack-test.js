@@ -34,6 +34,7 @@ describe('ReactPerformanceTracks', () => {
       }),
       configurable: true,
     });
+    /** 为缺少原生 console.timeStamp 的 Node 环境安装空函数，随后 spy 捕获性能轨道参数；此赋值本身不保存日志。 */
     console.timeStamp = () => {};
     jest.spyOn(console, 'timeStamp').mockImplementation(() => {});
 
@@ -46,7 +47,7 @@ describe('ReactPerformanceTracks', () => {
     useEffect = React.useEffect;
   });
 
-  /** 过滤注册轨道本身的 timeStamp 调用，只返回真实组件 span；读取后总会清空 mock。 */
+  /** 按起止时间过滤轨道注册的 timeStamp 调用，保留 Scheduler 与 Components 的 span；读取后清空 mock。 */
   function getConsoleTimestampEntries() {
     try {
       return console.timeStamp.mock.calls.filter(call => {
@@ -60,10 +61,10 @@ describe('ReactPerformanceTracks', () => {
     }
   }
 
-  /** Given–When–Then：Given App effect 依赖 items，更新传入内容近似但引用不同的数组；When组件各耗时 10ms；Then performance measure 的 Changed Props 展示数组差异提示与精确 21–31 时间。通过 measure detail 验证深相等诊断。 */
+  /** Given–When–Then：Given items 从 [one,two] 更新为追加字符串 4 的数组；When App 每次 render 推进 10ms；Then 21–31 的 measure 记录 Changed Props、Array 与新增索引 2。当前 body 的前后数组内容不同，断言验证新增字段摘要。 */
   // @gate __DEV__ && enableComponentPerformanceTrack
   it('shows a hint if an update is triggered by a deeply equal object', async () => {
-    /** 推进固定 10ms 并把目标 prop 放入 effect 依赖，确保性能轨道记录一次可控更新。 */
+    /** 每次 render 推进 10ms，并注册依赖对应 prop 的空 effect，提供固定耗时夹具。 */
     const App = function App({items}) {
       Scheduler.unstable_advanceTime(10);
       useEffect(() => {}, [items]);
@@ -122,10 +123,10 @@ describe('ReactPerformanceTracks', () => {
     ]);
   });
 
-  /** Given–When–Then：Given 1000 项数组更新为 1001 项；When性能追踪尝试生成 prop diff；Then超过 100 属性后停止枚举并输出前后对象过宽提示。通过 properties 文本验证 diff 成本上限。 */
+  /** Given–When–Then：Given 1000 项数组更新为 1001 项；When性能追踪生成 prop diff；Then发现前后数组宽度超过限制后停止深入比较，并输出前后对象超过 100 属性的提示。properties 断言验证宽对象的摘要。 */
   // @gate __DEV__ && enableComponentPerformanceTrack
   it('bails out of diffing wide arrays', async () => {
-    /** 推进固定 10ms 并把目标 prop 放入 effect 依赖，确保性能轨道记录一次可控更新。 */
+    /** 每次 render 推进 10ms，并注册依赖对应 prop 的空 effect，提供固定耗时夹具。 */
     const App = function App({items}) {
       Scheduler.unstable_advanceTime(10);
       React.useEffect(() => {}, [items]);
@@ -194,7 +195,7 @@ describe('ReactPerformanceTracks', () => {
   /** Given–When–Then：Given data.buffer 从 null 变为 1000 长度 Uint8Array；When记录 App 更新；Then diff 只显示 buffer 类型/长度，不展开每个索引。通过 measure properties 验证 typed data 摘要。 */
   // @gate __DEV__ && enableComponentPerformanceTrack
   it('does not show all properties of wide objects', async () => {
-    /** 推进固定 10ms 并把目标 prop 放入 effect 依赖，确保性能轨道记录一次可控更新。 */
+    /** render 推进 10ms；实际传入 data，故 items 始终为 undefined。轨道比较 data，无须 effect 依赖变化。 */
     const App = function App({items}) {
       Scheduler.unstable_advanceTime(10);
       React.useEffect(() => {}, [items]);
@@ -258,7 +259,7 @@ describe('ReactPerformanceTracks', () => {
   /** Given–When–Then：Given buffer 从 Uint8Array(0) 变 Float32Array(1000)；When组件更新；Then追踪只报告类型和长度，避免逐项枚举冻结 render。通过精确 properties 验证 #36200。 */
   // @gate __DEV__ && enableComponentPerformanceTrack
   it('shows the type and length of typed arrays instead of enumerating them', async () => {
-    /** 推进固定 10ms 并把目标 prop 放入 effect 依赖，确保性能轨道记录一次可控更新。 */
+    /** 每次 render 推进 10ms，并注册依赖对应 prop 的空 effect，提供固定耗时夹具。 */
     const App = function App({buffer}) {
       Scheduler.unstable_advanceTime(10);
       React.useEffect(() => {}, [buffer]);
@@ -417,7 +418,7 @@ describe('ReactPerformanceTracks', () => {
   /** Given–When–Then：Given深层 numbers 从 [1n] 变 [2n]；When生成 prop diff；Then追踪不因 BigInt 序列化抛错，并将前后值概括为 Array。通过嵌套 properties 验证安全格式化。 */
   // @gate __DEV__ && enableComponentPerformanceTrack
   it('can handle bigint in arrays', async () => {
-    /** 推进固定 10ms 并把目标 prop 放入 effect 依赖，确保性能轨道记录一次可控更新。 */
+    /** render 推进 10ms；实际传入 data，numbers 依赖保持 undefined。嵌套 BigInt diff 来自轨道的 props 比较。 */
     const App = function App({numbers}) {
       Scheduler.unstable_advanceTime(10);
       React.useEffect(() => {}, [numbers]);
@@ -502,7 +503,7 @@ describe('ReactPerformanceTracks', () => {
   /** Given–When–Then：Given仿 HTMLIFrameElement 的 container 文本从 foo 变 bar，opaque contentWindow 禁止任意属性读取；When生成深层 diff；Then只访问允许字段、报告 iframe 内容变化，并识别另一个 window 深相等但引用不同。通过未抛代理错误与 properties 验证 DOM-like 特判。 */
   // @gate __DEV__ && enableComponentPerformanceTrack
   it('diffs HTML-like objects', async () => {
-    /** 推进固定 10ms 并把目标 prop 放入 effect 依赖，确保性能轨道记录一次可控更新。 */
+    /** 每次 render 推进 10ms，并注册依赖对应 prop 的空 effect，提供固定耗时夹具。 */
     const App = function App({container}) {
       Scheduler.unstable_advanceTime(10);
       React.useEffect(() => {}, [container]);
@@ -513,7 +514,7 @@ describe('ReactPerformanceTracks', () => {
     /** 用 Proxy 拒绝任意属性读取，检测 prop diff 是否越界遍历 Window。 */
     const createOpaqueOriginWindow = () => {
       return new Proxy(new Window(), {
-        /** 只允许读取 Symbol.toStringTag；其他 named property 访问立即报错。 */
+        /** 只允许读取 Symbol.toStringTag（本 Window 没有定义它，结果为 undefined）；其他 named property 访问立即报错。 */
         get(target, prop) {
           if (prop === Symbol.toStringTag) {
             return target[Symbol.toStringTag];

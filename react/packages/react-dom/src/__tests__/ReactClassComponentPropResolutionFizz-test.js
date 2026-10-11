@@ -42,7 +42,7 @@ describe('ReactClassComponentPropResolutionFizz', () => {
     document.body.removeChild(container);
   });
 
-  /** `readIntoContainer`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 逐块读取 Web Stream 字节到完成，再解析临时 DOM 并执行 Fizz 脚本，将服务器输出安装到测试容器。 */
   async function readIntoContainer(stream) {
     const reader = stream.getReader();
     let result = '';
@@ -58,38 +58,35 @@ describe('ReactClassComponentPropResolutionFizz', () => {
     insertNodesAndExecuteScripts(temp, container, null);
   }
 
-  /** `Text`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 记录收到的文本后原样返回，使 render 阶段 props 键集合可按执行顺序比较。 */
   function Text({text}) {
     Scheduler.log(text);
     return text;
   }
 
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「resolves ref and default props before calling lifecycle methods」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言覆盖 react-dom 的服务端流适配层；完整 Fizz 状态机位于 react-server。
-   */
+  /** 带 ref 和缺省 default prop 的类组件通过浏览器 Fizz 流 SSR；读完整流并执行注入脚本后，constructor/willMount/render 日志都只含 text, default，验证调用生命周期之前已补默认值并移除特殊 ref。 */
   it('resolves ref and default props before calling lifecycle methods', async () => {
-    /** `getPropKeys`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 保留 Object.keys 的顺序并用逗号连接，将特殊 ref 是否泄露和 default 是否补齐变成生命周期日志。 */
     function getPropKeys(props) {
       return Object.keys(props).join(', ');
     }
 
-    /** `Component`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 同时记录构造、willMount 与 render 的 props，检查 Fizz 在进入各生命周期前完成默认值和特殊 ref 处理。 */
     class Component extends React.Component {
-      /** `Component.constructor`：初始化测试夹具实例及其状态。 */
+
+      /** 接收处理后的 props 并初始化父类，再记录键集合，覆盖最早的用户生命周期观察点。 */
       constructor(props) {
         super(props);
         Scheduler.log('constructor: ' + getPropKeys(props));
       }
-      /** `Component.UNSAFE_componentWillMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 读取实例 props 的键集合，与 constructor 日志比较，检测生命周期之间是否改变参数形状。 */
       UNSAFE_componentWillMount() {
         Scheduler.log('componentWillMount: ' + getPropKeys(this.props));
       }
-      /** `Component.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 把当前 props 键集合交给 Text 记录并输出，覆盖服务器渲染入口的最终用户观察点。 */
       render() {
         return <Text text={'render: ' + getPropKeys(this.props)} />;
       }

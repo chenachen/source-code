@@ -24,23 +24,16 @@ describe('ReactServerRenderingBrowser', () => {
     ReactDOMServerBrowser = require('react-dom/server.browser');
   });
 
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「returns the same results as react-dom/server」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言覆盖 react-dom 的服务端流适配层；完整 Fizz 状态机位于 react-server。
-   */
+  /** 分别隔离加载 server 与 server.browser bundle，对含函数组件和类组件的同一 Greeting 树执行 renderToString 与 renderToStaticMarkup；两种入口的对应字符串必须相等，验证浏览器同步 SSR 编码与通用入口一致。 */
   it('returns the same results as react-dom/server', () => {
-    /** `Nice`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 提供 Greeting 内部的类组件叶节点，使两个 SSR 入口同时覆盖类组件渲染。 */
     class Nice extends React.Component {
-      /** `Nice.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 输出固定 h2 文本，作为跨 bundle SSR 字符串相等比较的一部分。 */
       render() {
         return <h2>I am feeling very good today, thanks, how are you?</h2>;
       }
     }
-    /** `Greeting`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 组合 h1 与 Nice 类组件，向两个同步 SSR 编码入口提供完全相同的树。 */
     function Greeting() {
       return (
         <div>

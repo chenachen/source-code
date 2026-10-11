@@ -44,7 +44,7 @@ describe('act warnings', () => {
     assertConsoleErrorDev = InternalTestUtils.assertConsoleErrorDev;
   });
 
-  /** 创建版本化文本 cache，支持 resolve/reject 并向所有 Suspense ping 广播状态变化。 */
+  /** 创建版本化文本 cache；pending 终结时先更新记录再同步通知登记的 ping，已 resolved/rejected 的记录不再改写。 */
   function createTextCache() {
     const data = new Map();
     const version = caches.length + 1;
@@ -164,7 +164,7 @@ describe('act warnings', () => {
     }
   }
 
-  /** Given–When–Then：Given同一 Hook setter 分别在 act 环境标志 undefined/true/false 下裸调用；When每次冲刷根；Then仅 true 发出未包裹 act 的警告。通过三次输出与控制台断言验证 isLegacyActEnvironment/并发测试环境门禁。 */
+  /** Given–When–Then：Given同一 Hook setter 分别在 act 环境标志 undefined/true/false 下裸调用；When每次冲刷根；Then仅 true 发出未包裹 act 的警告。通过三次输出与控制台断言验证 isConcurrentActEnvironment 的并发测试环境门禁。 */
   it('warns about unwrapped updates only if environment flag is enabled', async () => {
     let setState;
     /** 暴露 Hook setter 并渲染 state，作为不同 act 环境标志下的更新探针。 */
@@ -324,7 +324,7 @@ describe('act warnings', () => {
     });
   });
 
-  /** Given–When–Then：Given act 环境已启用且 App 已挂载；When在 act 外使用 flushSync 更新 Hook state；Then即使宿主同步提交仍发出未包裹警告。通过日志、输出和警告验证同步 lane 也可能产生异步后续工作。 */
+  /** Given–When–Then：Given act 环境已启用且 App 已挂载；When在 act 外使用 flushSync 更新 Hook state；Then即使宿主同步提交仍发出未包裹警告。通过日志、输出和警告验证 flushSync 并不豁免 act 环境检查；本例没有额外异步工作断言。 */
   // @gate __DEV__
   it('warns even if update is synchronous', async () => {
     let setState;
@@ -364,7 +364,7 @@ describe('act warnings', () => {
     });
   });
 
-  /** Given–When–Then：Given act 内初次挂起并已提交 Loading fallback；When act 外解决资源触发 retry；Then报告资源解决未包裹 act，且预热分支按 gate 产生对应次数。通过控制台数组验证已显示 fallback 的 retry 路径。 */
+  /** Given–When–Then：Given act 内初次挂起并已提交 Loading fallback；When act 外解决资源触发 retry；Then报告资源解决未包裹 act，本例预热和已提交边界的注册路径共产生两条警告。通过控制台数组验证已显示 fallback 的 retry 路径。 */
   // @gate __DEV__
   // @gate enableLegacyCache
   it('warns if Suspense retry is not wrapped', async () => {

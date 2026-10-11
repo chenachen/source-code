@@ -16,10 +16,10 @@ import {
 /**
  * 在关闭客户端缓存时返回不记忆结果的调用包装器。
  *
- * @remarks 客户端（非 Server Components 环境）暂不提供 `cache` 语义。API 仍存在，
- * 使共享组件能在服务端使用请求级缓存而不至于在客户端缺少导出；调用方必须意识到行为差异。
+ * @remarks `disableClientCache` 开启时，每次调用都执行原函数；关闭时改用 `ReactCacheImpl`，
+ * 由 renderer 的 dispatcher 提供缓存域。两端保留同一个 API，便于共享模块导入。
  * 包装器仍与服务端版本一样产生新函数引用，不保留 `displayName` 等额外属性，且函数长度为 0，
- * 从而避免应用依赖两端不一致的偶然细节。
+ * 这些包装器形状与服务端实现一致。
  */
 function noopCache<A: Iterable<mixed>, T>(fn: (...A) => T): (...A) => T {
   return function () {

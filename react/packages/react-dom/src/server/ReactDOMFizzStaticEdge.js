@@ -37,7 +37,7 @@ import {
 import {ensureCorrectIsomorphicReactVersion} from '../shared/ensureCorrectIsomorphicReactVersion';
 ensureCorrectIsomorphicReactVersion();
 
-/** 可统一配置 nonce，也可分别配置脚本与样式 nonce。 */
+/** 字符串仅配置脚本nonce；对象分别配置script/style，字符串不配置样式nonce。 */
 type NonceOption =
   | string
   | {
@@ -59,7 +59,7 @@ type Options = {
   bootstrapScripts?: Array<string | BootstrapScriptDescriptor>,
   /** 需要生成 module script 标签的启动资源。 */
   bootstrapModules?: Array<string | BootstrapScriptDescriptor>,
-  /** Fizz 渐进输出采用的目标 chunk 大小。 */
+  /** 决定已完成 Suspense 边界是否单独输出的字节阈值；不是流中每个 chunk 的固定大小。 */
   progressiveChunkSize?: number,
   /** 调用方用于取消预渲染请求的信号。 */
   signal?: AbortSignal,
@@ -73,7 +73,7 @@ type Options = {
   importMap?: ImportMap,
   /** 在开始正文前接收协议生成的 HTTP headers。 */
   onHeaders?: (headers: Headers) => void,
-  /** 允许 Fizz 收集的 headers 总长度上限。 */
+  /** Link 提示头的 UTF-16 码元预算；不等同于 HTTP 头 UTF-8 字节数。 */
   maxHeadersLength?: number,
 };
 
@@ -88,7 +88,10 @@ type StaticResult = {
 /**
  * 等待全部可预渲染内容就绪，再返回 Edge 字节流与 postponed state。
  * 本文件只负责 Web Streams/DOM host config 适配；完整 Fizz 预渲染状态机位于范围外的
- * `react-server`。静态 bootstrap 不兼容 nonce，因此创建 render state 时明确传空。
+ * `react-server`。onAllReady后才交付prelude流与延期快照，字节写出仍等pull，不代表下游已读完。
+ * fatal在交付前拒绝外层Promise；流cancel先stopFlowing再abort。signal已中止立即abort，
+ * 否则注册一次监听，只在abort触发后移除，本适配器正常完成时不另清理signal监听。
+ * 静态bootstrap不传nonce，createRenderState明确收到undefined而非运行时校验选项。
  */
 function prerender(
   children: ReactNodeList,
@@ -166,7 +169,7 @@ function prerender(
       if (signal.aborted) {
         abort(request, (signal as any).reason);
       } else {
-        /** 只处理一次 abort，并立即注销监听器，避免 request 被信号长期引用。 */
+        /** 信号触发 abort 后移除本监听器，避免同一监听器再次中止请求。 */
         const listener = () => {
           abort(request, (signal as any).reason);
           signal.removeEventListener('abort', listener);
@@ -192,7 +195,10 @@ type ResumeOptions = {
 
 /**
  * 从 postponed state 继续预渲染，并返回新的前奏流与可能仍延期的状态。
- * 静态恢复复用已序列化 resumable state，且继续禁止 nonce，保证 bootstrap 字节可复用。
+ * 从postponedState取resumableState并创建新renderState，请求核心继续先前保留的任务；
+ * 本入口只读取signal/onError/onBrowserBailout，不重选identifierPrefix/namespace或bootstrap。
+ * nonce始终传undefined；类型Omit限制选项，但函数未对多余运行时字段抛错。
+ * onAllReady交付新延期快照及尚需pull消费的流，cancel/abort顺序与首次prerender一致。
  */
 function resumeAndPrerender(
   children: ReactNodeList,
@@ -247,7 +253,7 @@ function resumeAndPrerender(
       if (signal.aborted) {
         abort(request, (signal as any).reason);
       } else {
-        /** 只处理一次 abort，并立即注销监听器，避免恢复 request 被信号长期引用。 */
+        /** 信号触发 abort 后移除本监听器，避免同一监听器再次中止恢复请求。 */
         const listener = () => {
           abort(request, (signal as any).reason);
           signal.removeEventListener('abort', listener);

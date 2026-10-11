@@ -26,7 +26,14 @@ const ENTRIES_ARRAY = 3;
 /** DevTools 单层最多展示 100 个字段；更宽对象既难读也可能阻塞页面。 */
 const OBJECT_WIDTH_LIMIT = 100;
 
-/** 在宽度上限内判断数组应内联、按 entries 展开还是作为复杂对象处理。 */
+/**
+ * 检查前 100 项，为数组选择空、原始值、entries 或复杂对象的显示路径。
+ *
+ * @param array - 待显示数组；尾部超过宽度预算的元素不参与分类。
+ * @returns 四种内部标签之一；原始值和 entries 混合时退回复杂对象显示。
+ * @remarks 长于 50 字符的字符串、bigint、函数和非 entry 对象需要逐项显示；
+ * undefined、symbol 等仍走 JSON.stringify 路径，其数组项会显示为 null。
+ */
 function getArrayKind(array: Object): 0 | 1 | 2 | 3 {
   let kind: 0 | 1 | 2 | 3 = EMPTY_ARRAY;
   for (let i = 0; i < array.length && i < OBJECT_WIDTH_LIMIT; i++) {
@@ -65,6 +72,12 @@ function getArrayKind(array: Object): 0 | 1 | 2 | 3 {
  *
  * @remarks 忽略 `_` 开头内部字段并限制单层宽度；TypedArray/DataView 不枚举，避免为
  * 数百万索引物化 key 而卡住页面。
+ * @param object - 当前展开层的对象，仅读取 enumerable 自有字段。
+ * @param properties - 调用方持有的输出行数组，函数直接追加而不创建新结果。
+ * @param indent - 当前显示深度，每层使用两个不换行空格。
+ * @param prefix - 普通行或 diff 的前缀；递归时继续传给值格式化器。
+ * @remarks 第 100 个有效字段后追加宽度提示，即使对象恰好只有 100 个字段。
+ * 读取 getter 的异常继续传播；这里没有通用安全序列化或循环引用表。
  */
 export function addObjectToProperties(
   object: Object,
@@ -98,7 +111,11 @@ export function addObjectToProperties(
   }
 }
 
-/** 安全读取 ReactElement 标记；跨源 opaque window 不允许直接点取属性。 */
+/**
+ * 先确认 $$typeof 是自有属性，再读取元素标记，避免无字段跨源 window 的直接取值。
+ * @param value - 当前待识别对象；代理的 in、own-property 和 getter 操作仍可能抛错。
+ * @returns 自有标记值；没有自有标记时为 undefined，不据此认定对象安全可枚举。
+ */
 function readReactElementTypeof(value: Object): mixed {
   // 先用 `in` 与 own-property 检查，避免直接访问 opaque origin window 的 `$$typeof`。
   return '$$typeof' in value && hasOwnProperty.call(value, '$$typeof')
@@ -109,8 +126,15 @@ function readReactElementTypeof(value: Object): mixed {
 /**
  * 把任意值格式化为 DevTools 性能轨道使用的属性行。
  *
- * @remarks JSX、Promise、数组和普通对象按各自结构处理；递归深度与宽度受限，长字符串
- * 截断。函数和对象只显示足以定位变化的摘要，不执行用户 getter。
+ * @remarks JSX、Promise、数组和普通对象按各自结构处理；普通对象只在 indent < 3 时
+ * 展开，长字符串截断。数组分类、entries 展开和 JSX 使用各自宽度预算；entries
+ * 分支并不受普通对象的 indent < 3 限制，不能把该深度预算当作通用循环引用保护。
+ * 直接读取字段可能触发 getter，异常继续传播。
+ * @param propertyName - 当前输出行的字段名或数组索引文本。
+ * @param value - 待显示值；Promise 只读已标记的 status/value/reason，不 await 或订阅。
+ * @param properties - 共享输出行数组；fulfilled/rejected Promise 会改写刚追加的首行摘要。
+ * @param indent - 当前层级，决定普通对象是否继续展开及行首缩进。
+ * @param prefix - 增删等行前缀；普通值递归保留此前缀。
  */
 export function addValueToProperties(
   propertyName: string,
@@ -127,7 +151,7 @@ export function addValueToProperties(
         break;
       } else {
         if (readReactElementTypeof(value) === REACT_ELEMENT_TYPE) {
-          // JSX 在浅层展开 key/props，深层或仅 children 时使用紧凑标签摘要。
+          // JSX 在 indent < 3 时用紧凑标签；更深层若有 key 或非 children props 才展开。
           const typeName = getComponentNameFromType(value.type) || '\u2026';
           const key = value.key;
           const props: any = value.props;
@@ -338,9 +362,15 @@ const UNCHANGED = '\u2007\xa0';
 /**
  * 递归比较前后对象并追加适合性能轨道的紧凑 diff。
  *
- * @returns 值在受检深度内是否深度相等；引用不同但深度相等会给出 memoization 提示。
- * @remarks 单层字段超过上限时停止；顶层 children 与同 type/key 元素只记为变化，不重复
- * 展开会在其他轨道出现的子树 props。
+ * @returns 在受检字段与深度内是否未发现差异。函数源码相同时也视为相同摘要；这不比较闭包捕获值。
+ * @param prev - 上次记录的 props 或嵌套对象，不会被函数写入。
+ * @param next - 本次记录对象；比较 enumerable 字段，包含继承字段。
+ * @param properties - 追加增删行和保留容器行的共享输出数组。
+ * @param indent - 0 表示顶层 props；到 3 时只输出前后摘要。
+ * @remarks 字段预算的判断为 checked > 100，所以最多检查 101 个字段；再遇到字段才
+ * 停止并返回 false。顶层 children 与同 type/key 元素只记为变化，不重复展开会在
+ * 其他轨道出现的子树 props。此结果是显示摘要的相等性，不是 React bailout 判据；
+ * 属性 getter、代理和 Function.toString 抛错不会在此吞掉。
  */
 export function addObjectDiffToProperties(
   prev: Object,
@@ -464,7 +494,7 @@ export function addObjectDiffToProperties(
           // $FlowFixMe[method-unbinding]
           const nextSrc = Function.prototype.toString.call(nextValue);
           if (prevSrc === nextSrc) {
-            // 源码、名称和 arity 都相同，通常是每次 render 新建了等价 closure。
+            // 源码、名称和 arity 都相同，提示调用方检查重复创建的 closure；捕获值仍可能不同。
             let desc;
             if (nextValue.name === '') {
               desc = '() => {}';

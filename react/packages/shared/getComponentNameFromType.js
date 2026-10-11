@@ -33,7 +33,12 @@ import {
 } from './ReactFeatureFlags';
 
 // 与 `react-reconciler/getComponentNameFromFiber` 保持同步。
-/** 为 memo/forwardRef 等包装类型组合外层名称与内部函数显示名。 */
+/**
+ * 为 forwardRef 诊断组合包装名与内部函数显示名。
+ * @param outerType - 包装描述对象；其 displayName 为真时优先返回。
+ * @param innerType - 内部 render 函数，依次选择 displayName、name。
+ * @param wrapperName - 包装标签，如 ForwardRef；内部无名时直接返回该标签。
+ */
 function getWrappedName(
   outerType: mixed,
   innerType: any,
@@ -61,6 +66,11 @@ const REACT_CLIENT_REFERENCE = Symbol.for('react.client.reference');
  *
  * @remarks reconciler 已拥有 Fiber 时应优先使用 `getComponentNameFromFiber()`，因为它
  * 能处理更多 tag 上下文；lazy 初始化失败和未知客户端引用在此返回 `null`。
+ * @param type - 元素公开类型、宿主字符串或 React 特殊标记，不是 Fiber 实例。
+ * @returns 可用的显示名称；无名称、未知标记或 lazy 抛错时返回 null。
+ * @remarks lazy._init 可能启动加载或改变 payload，并非纯粹读取名称；该分支捕获
+ * thenable/错误，其他 getter 及包装字段读取异常仍向调用方传播。类型名没有缓存，
+ * 后续修改 displayName 可改变结果。DEV 中传入带数值 tag 的对象会先报告内部误用。
  */
 export default function getComponentNameFromType(type: mixed): string | null {
   if (type == null) {
@@ -94,7 +104,8 @@ export default function getComponentNameFromType(type: mixed): string | null {
       if (enableViewTransition) {
         return 'ViewTransition';
       }
-    // 未启用 View Transition 时继续匹配后续类型。
+    // 此处没有 break：ViewTransition 关闭时会落入 TracingMarker 分支；若追踪开关
+    // 同时开启，按当前控制流返回 TracingMarker，否则最终返回 null。
     case REACT_TRACING_MARKER_TYPE:
       if (enableTransitionTracing) {
         return 'TracingMarker';

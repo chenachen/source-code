@@ -101,7 +101,7 @@ describe('runTransform', () => {
       `)
   })
 
-  /** 场景：对 CJS 包执行 export * 或 export * as；验证目标：改写返回 undefined，并为不可静态枚举导出记录警告。 */
+  /** export * 与 export * as 都返回 undefined；只有两次 export * 发警告，带 namespace 别名的形式不进入警告分支。 */
   test('export all specifier', () => {
     expect(
       runTransformCjsImport('export * from "react"', false),

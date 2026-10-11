@@ -20,7 +20,12 @@ import { markAsyncBoundary } from './helpers/useId'
 import { type HydrationStrategy, forEachElement } from './hydrationStrategies'
 
 /** 异步加载器既可直接返回组件，也可返回以 `default` 导出的 ES module 命名空间。 */
-export type AsyncComponentResolveResult<T = Component> = T | { default: T }
+export type AsyncComponentResolveResult<T = Component> =
+   T
+  | {
+      /** ES module 命名空间中的真实组件；load 在识别模块标记后解包。 */
+      default: T
+    }
 
 /** 异步组件加载函数；每次重试都应返回一个新的 Promise。 */
 export type AsyncComponentLoader<T = any> = () => Promise<
@@ -41,7 +46,7 @@ export interface AsyncComponentOptions<T = any> {
   timeout?: number
   /** 是否让最近的 Suspense 边界接管异步依赖，默认开启。 */
   suspensible?: boolean
-  /** SSR 水合时的延迟激活策略，如可见、空闲或交互后再加载并水合。 */
+  /** SSR 懒水合策略；loader 完成后注册，在可见、空闲或交互时认领内部组件 DOM。 */
   hydrate?: HydrationStrategy
   /** 自定义失败策略，可按尝试次数选择重试或最终失败。 */
   onError?: (
@@ -61,12 +66,16 @@ export const isAsyncWrapper = (i: ComponentInternalInstance | VNode): boolean =>
  * 定义一个按需加载的组件包装器。
  *
  * 包装器会在所有实例之间缓存“进行中的请求”和“已解析组件”，避免同一组件并发加载。
- * 在 Suspense/SSR 中直接返回 Promise，让上层边界控制 fallback；普通客户端模式则用
- * ref 驱动 loading/error/loaded 三态。可选水合策略还能让服务端 HTML 先保持静态，
- * 直到空闲、可见或发生交互时才下载组件并绑定事件。
+ * 在客户端 Suspense 中返回 Promise，让边界收集依赖并控制 fallback；SSR 则等待
+ * 真实组件解析后输出内容。普通客户端模式用 ref 驱动 loading/error/loaded 三态。
+ * 懒水合仍会先加载组件，loader 完成后才注册策略；条件满足时认领内部组件的 SSR DOM
+ * 并绑定事件，因此推迟的是内部组件水合，不是模块下载。
  */
 export function defineAsyncComponent<
-  T extends Component = { new (): ComponentPublicInstance },
+  T extends Component = {
+    /** 用于默认泛型推导的组件公共实例构造协议，不在此执行实例化。 */
+    new (): ComponentPublicInstance
+  },
 >(source: AsyncComponentLoader<T> | AsyncComponentOptions<T>): T {
   if (isFunction(source)) {
     source = { loader: source }
@@ -113,7 +122,9 @@ export function defineAsyncComponent<
             err = err instanceof Error ? err : new Error(String(err))
             if (userOnError) {
               return new Promise((resolve, reject) => {
+                /** 重新发起共享 loader，并用其 Promise 结算当前错误处理 Promise，使失败请求跟随重试结果。 */
                 const userRetry = () => resolve(retry())
+                /** 以标准化 Error 拒绝当前错误处理 Promise，结束用户重试决策。 */
                 const userFail = () => reject(err)
                 userOnError(err, userRetry, userFail, retries + 1)
               })
@@ -152,12 +163,14 @@ export function defineAsyncComponent<
 
     __asyncLoader: load,
 
+    /** 异步包装器的懒水合入口：loader 完成后才注册策略；策略触发时检查等待期间是否更新/脱离，再认领 SSR DOM，并把可选清理注册到 beforeUnmount。 */
     __asyncHydrate(el, instance, hydrate) {
       // 延迟水合等待期间组件可能已被父级 patch 或节点已被移除。两种情况下都不能再
       // 用旧 SSR DOM 执行 hydrate，否则会覆盖新状态或操作脱离文档的节点。
       const wasConnected = el.isConnected
       let patched = false
       ;(instance.bu || (instance.bu = [])).push(() => (patched = true))
+      /** 策略触发后的最终水合闸门；等待期间已 patch 或节点脱离则跳过旧 SSR DOM，否则执行传入 hydrate。 */
       const performHydrate = () => {
         // 组件已在延迟期间更新，说明客户端渲染已接管，跳过过期水合。
         if (patched) {
@@ -191,10 +204,12 @@ export function defineAsyncComponent<
       }
     },
 
+    /** 同步暴露共享已解析组件，供 KeepAlive 名称匹配和其他实例快速渲染。 */
     get __asyncResolved() {
       return resolvedComp
     },
 
+    /** 先建立异步 ID 边界。已解析直接渲染；Suspense/SSR 返回共享加载 Promise；普通客户端建立 loaded/error/delayed，卸载时清定时器，并拒绝卸载后的状态/错误回调。 */
     setup() {
       const instance = currentInstance!
       // 异步恢复顺序可能在 SSR 与客户端不同，为 `useId()` 切换独立编号命名空间。
@@ -205,6 +220,7 @@ export function defineAsyncComponent<
         return () => createInnerComp(resolvedComp!, instance)
       }
 
+      /** 清空共享请求后把 loader/timeout 错误交给组件错误通道；存在 errorComponent 时不以开发重抛中断降级 UI。 */
       const onError = (err: Error) => {
         pendingRequest = null
         handleError(

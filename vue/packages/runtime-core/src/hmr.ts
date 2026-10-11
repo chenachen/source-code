@@ -36,8 +36,11 @@ export const hmrDirtyComponents: Map<
 
 /** SFC 工具链通过全局对象调用的 HMR 运行时协议。 */
 export interface HMRRuntime {
+  /** 按 SFC id 登记初始定义，重复登记不覆盖现有热状态。 */
   createRecord: typeof createRecord
+  /** 仅更换 render 并清理 renderCache，保留已挂载实例的状态。 */
   rerender: typeof rerender
+  /** 同步新组件选项、撤销规范化缓存并触发实例替换。 */
   reload: typeof reload
 }
 
@@ -169,8 +172,8 @@ function reload(id: string, newComp: HMRComponent): void {
       instance.ceReload((newComp as any).styles)
       dirtyInstances.delete(instance)
     } else if (instance.parent) {
-      // 普通子组件通过父组件重渲染进入 renderer 替换流程。放入 scheduler 可把同一
-      // 父级下多个热更新实例合并成一次 render。
+      // 普通子组件把父更新延后到主队列，再通过 renderer 替换旧实例。每次入队都是新
+      // 闭包；先前父更新若已卸载本实例，下面的 DISPOSED 检查会跳过后续闭包。
       queueJob(() => {
         // vite-plugin-vue#599：排队期间实例可能已卸载，disposed job 不再更新。
         if (!(instance.job.flags! & SchedulerJobFlags.DISPOSED)) {

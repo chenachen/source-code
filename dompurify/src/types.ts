@@ -10,6 +10,11 @@ import type { Config } from './config';
  * @remarks
  * 包默认导出是一个已绑定当前全局环境的实例，同时可把 `WindowLike` 作为参数再次调用，
  * 创建隔离到另一 realm 的实例。方法共享该实例的持久配置与 hook 状态。
+ * `sanitize()` 重载按传入配置的类型选择签名，实际返回由生效配置决定；`setConfig()` 可使
+ * 单次配置失效。组合返回模式依次优先选择真实节点的 `IN_PLACE`、`RETURN_DOM_FRAGMENT`、
+ * `RETURN_DOM`、有活动策略的 `RETURN_TRUSTED_TYPE`，其余返回字符串。
+ * 传给 hook 的配置快照只在支持冻结时冻结顶层，嵌套数组仍复用调用方引用；活动允许表
+ * 通过事件对象单独暴露，修改这些表的成员才会改变本次遍历中的允许规则。
  */
 export interface DOMPurify {
   /**
@@ -26,14 +31,16 @@ export interface DOMPurify {
   version: string;
 
   /**
-   * 最近一次 `sanitize()` 记录的已移除元素或属性。
+   * 最近一次进入净化流程后记录的节点或属性删除决策。
    *
-   * @remarks 每次净化开始时重置；没有移除项时为空数组。记录用于观察结果，不参与允许决策。
+   * @remarks
+   * 配置解析和允许表隔离成功后重置；更早的输入异常、不支持早退或配置异常保留旧记录。
+   * 文本模板清理也会记录修改前的克隆；hook 自行删除的节点不会登记，因此它不是完整变更日志。
    */
   removed: Array<RemovedElement | RemovedAttribute>;
 
   /**
-   * 当前 realm 是否具备完整净化流程所需的 DOM 能力。
+   * 当前 realm 是否通过 DOM 净化所需的基础能力检查。
    *
    * @remarks 由实例创建时捕获的原生 API 计算，不随单次配置变化。
    */
@@ -49,16 +56,16 @@ export interface DOMPurify {
   /**
    * 清除实例级持久配置，使后续调用重新采用单次配置或默认值。
    *
-   * @remarks 同时清空持久允许表快照；不会移除已注册 hook。
+   * @remarks 同时清空持久允许表快照，解除调用方 Trusted Types 策略；已注册 hook 保留。
    */
   clearConfig(): void;
 
   /**
    * 净化字符串或 DOM 节点，并在请求且平台支持时返回 `TrustedHTML`。
    *
-   * @param dirty - 待解析的字符串或待复制净化的 DOM 节点。
+   * @param dirty - 待解析的字符串或待净化的 DOM 节点。
    * @param cfg - `RETURN_TRUSTED_TYPE` 明确为 `true` 的单次配置。
-   * @returns 经当前 Trusted Types 策略签名的净化结果。
+   * @returns 没有更优先的 DOM 返回模式时，用活动策略签名；没有活动策略时仍为字符串。
    */
   sanitize(
     dirty: string | Node,
@@ -70,11 +77,11 @@ export interface DOMPurify {
   ): TrustedHTML;
 
   /**
-   * 直接净化传入 DOM 节点并返回同一路径上的 DOM 结果。
+   * 直接净化传入 DOM 节点并返回输入对象本身。
    *
    * @param dirty - 允许原地处理的 DOM 节点。
    * @param cfg - `IN_PLACE` 明确为 `true` 的单次配置。
-   * @returns 原地净化后的 DOM 节点。
+   * @returns 原地净化后的同一节点；根不允许原地处理或遍历中止时触发根属性和普通子树清理并抛错。
    */
   sanitize(
     dirty: Node,
@@ -90,7 +97,7 @@ export interface DOMPurify {
    *
    * @param dirty - 待解析的字符串或待复制净化的 DOM 节点。
    * @param cfg - `RETURN_DOM` 明确为 `true` 的单次配置。
-   * @returns 通常为 `HTMLBodyElement`、完整文档模式下为文档元素的净化节点。
+   * @returns 字符串输入通常得到 `HTMLBodyElement`，完整文档模式得到文档元素；更优先模式见接口说明。
    */
   sanitize(
     dirty: string | Node,
@@ -106,7 +113,7 @@ export interface DOMPurify {
    *
    * @param dirty - 待解析的字符串或待复制净化的 DOM 节点。
    * @param cfg - `RETURN_DOM_FRAGMENT` 明确为 `true` 的单次配置。
-   * @returns 包含净化后子树的文档片段。
+   * @returns 包含净化后子树的新文档片段；真实节点的原地返回模式优先。
    */
   sanitize(
     dirty: string | Node,
@@ -118,22 +125,24 @@ export interface DOMPurify {
   ): DocumentFragment;
 
   /**
-   * 使用默认字符串返回模式净化字符串或 DOM 节点。
+   * 使用可选配置净化字符串或 DOM 节点；没有专用返回模式时返回字符串。
    *
    * @param dirty - 待解析的字符串或待复制净化的 DOM 节点。
    * @param cfg - 可选单次配置；实例已调用 `setConfig()` 时不会采用该值。
-   * @returns 序列化后的安全字符串。
+   * @returns 默认返回净化后的字符串；持久配置或非字面量配置可选择其他运行时返回模式。
    */
   sanitize(dirty: string | Node, cfg?: Config): string;
 
   /**
    * 按当前策略检查给定元素上的属性名和值是否可保留。
    *
-   * @remarks 已设置持久配置时复用该配置，否则使用默认配置；不会修改 DOM。
+   * @remarks
+   * 仅在配置尚未建立或被 `clearConfig()` 清除时加载默认配置；否则复用最近一次 `sanitize()`
+   * 或 `setConfig()` 的状态，包括上次 hook 对活动允许表的修改。不会修改 DOM，也不执行属性 hook。
    * @param tag - 属性所属元素的标签名。
    * @param attr - 属性名。
    * @param value - 待检查属性值。
-   * @returns 名称和取值均满足当前策略时为 `true`。
+   * @returns 单个属性通过当前准入分支时为 `true`；不执行完整的元素、属性遍历和写回流程。
    */
   isValidAttribute(tag: string, attr: string, value: string): boolean;
 
@@ -146,9 +155,9 @@ export interface DOMPurify {
   addHook(entryPoint: BasicHookName, hookFunction: NodeHook): void;
 
   /**
-   * 注册接收 `Element` 的属性净化前后 hook。
+   * 注册属性净化前后 hook；公开类型将当前节点标为 `Element`。
    *
-   * @param entryPoint - 属性净化前或后阶段名称。
+   * @param entryPoint - 属性净化前或后阶段；前置阶段实际也会收到没有属性集合的非元素节点。
    * @param hookFunction - 按注册顺序追加到该阶段数组的回调。
    */
   addHook(entryPoint: ElementHookName, hookFunction: ElementHook): void;
@@ -260,11 +269,11 @@ export interface DOMPurify {
 }
 
 /**
- * DOMPurify 从净化树中移除元素时写入 `removed` 的诊断记录。
+ * DOMPurify 删除节点或清理文本模板片段时写入 `removed` 的诊断记录。
  */
 export interface RemovedElement {
   /**
-   * 被移除的节点；部分失败关闭路径会保存其克隆，以免后续 DOM 变化覆盖现场。
+   * 通常为选中删除的原节点；文本模板清理记录修改前的克隆，原文本节点可以继续保留。
    */
   element: Node;
 }
@@ -289,7 +298,7 @@ type BasicHookName =
   | 'beforeSanitizeElements'
   | 'afterSanitizeElements'
   | 'uponSanitizeShadowNode';
-/** 使用 `Element` 且不携带事件数据的属性遍历阶段名称。 */
+/** 公开回调类型使用 `Element`、不携带事件数据的属性遍历阶段名称。 */
 type ElementHookName = 'beforeSanitizeAttributes' | 'afterSanitizeAttributes';
 /** 使用 `DocumentFragment` 且不携带事件数据的 Shadow DOM 阶段名称。 */
 type DocumentFragmentHookName =
@@ -318,7 +327,7 @@ export interface HooksMap {
   uponSanitizeShadowNode: NodeHook[];
   /** Shadow DOM 文档片段递归净化完成后执行的 hook。 */
   afterSanitizeShadowDOM: DocumentFragmentHook[];
-  /** 当前元素的属性数组开始处理前执行的 hook。 */
+  /** 属性存在性检查前执行；实际也会接收 Text、Comment 等没有属性集合的节点。 */
   beforeSanitizeAttributes: ElementHook[];
   /** 当前元素的全部属性处理完成后执行的 hook。 */
   afterSanitizeAttributes: ElementHook[];
@@ -347,7 +356,7 @@ export type HookName =
  *
  * @param currentNode - 当前遍历节点。
  * @param hookEvent - 此类阶段固定为 `null`。
- * @param config - 本次净化使用的已解析配置引用。
+ * @param config - 本次净化的配置快照；活动查询表另保存在实例闭包中。
  */
 export type NodeHook = (
   this: DOMPurify,
@@ -358,10 +367,11 @@ export type NodeHook = (
 
 /**
  * 属性遍历前后 hook；以当前 DOMPurify 实例为 `this`，不提供可变事件对象。
+ * 前置阶段在检查属性集合前执行，运行时也可能传入非元素节点；读取元素 API 前需检查节点类型。
  *
- * @param currentNode - 正在处理属性的元素。
+ * @param currentNode - 当前遍历节点；前置阶段可能收到非元素节点。
  * @param hookEvent - 此类阶段固定为 `null`。
- * @param config - 本次净化使用的已解析配置引用。
+ * @param config - 本次净化的配置快照；活动查询表另保存在实例闭包中。
  */
 export type ElementHook = (
   this: DOMPurify,
@@ -375,7 +385,7 @@ export type ElementHook = (
  *
  * @param currentNode - 正在递归处理的文档片段。
  * @param hookEvent - 此类阶段固定为 `null`。
- * @param config - 本次净化使用的已解析配置引用。
+ * @param config - 本次净化的配置快照；活动查询表另保存在实例闭包中。
  */
 export type DocumentFragmentHook = (
   this: DOMPurify,
@@ -389,7 +399,7 @@ export type DocumentFragmentHook = (
  *
  * @param currentNode - 正在执行元素检查的节点。
  * @param hookEvent - 当前规范化标签名与活动标签允许表。
- * @param config - 本次净化使用的已解析配置引用。
+ * @param config - 本次净化的配置快照；修改允许规则应操作 `hookEvent.allowedTags` 的成员。
  */
 export type UponSanitizeElementHook = (
   this: DOMPurify,
@@ -402,8 +412,8 @@ export type UponSanitizeElementHook = (
  * 逐属性决策 hook，可修改属性值、普通保留决定或显式强制保留决定。
  *
  * @param currentNode - 当前属性所属元素。
- * @param hookEvent - 每个属性处理前重置并复用的可变事件对象。
- * @param config - 本次净化使用的已解析配置引用。
+ * @param hookEvent - 同一元素内逐属性重置并复用的可变事件对象，不应保存为某个属性的独立快照。
+ * @param config - 本次净化的配置快照；修改允许规则应操作 `hookEvent.allowedAttributes` 的成员。
  */
 export type UponSanitizeAttributeHook = (
   this: DOMPurify,
@@ -414,23 +424,26 @@ export type UponSanitizeAttributeHook = (
 
 /** 传给 `uponSanitizeElement` hook 的当前元素决策上下文。 */
 export interface UponSanitizeElementHookEvent {
-  /** 按当前解析模式规范化后的标签名。 */
+  /** 按当前解析模式规范化后的标签名；改写此字段不会改变正在检查的节点名称。 */
   tagName: string;
-  /** 本次净化使用的活动标签允许表；核心暴露前会与共享默认表解除引用。 */
+  /** 本次调用的活动标签允许表；修改成员影响当前及后续节点，替换该字段不会替换核心表。 */
   allowedTags: Record<string, boolean>;
 }
 
-/** 传给 `uponSanitizeAttribute` hook、并在每个属性开始前重置的可变决策上下文。 */
+/** 同一元素的属性处理共用此事件对象，名称、值与保留开关在每个属性开始前重置。 */
 export interface UponSanitizeAttributeHookEvent {
-  /** 按当前解析模式规范化后的属性名。 */
+  /** 按当前解析模式规范化后的属性名；改写此字段不会重命名原属性。 */
   attrName: string;
-  /** 当前属性值；hook 写入的新值会进入后续模板、URI 与结构安全检查。 */
+  /** 除 `value` 属性外已去除首尾空白；hook 改写值进入后续检查，普通保留路径才会写回。 */
   attrValue: string;
-  /** 普通保留开关；设为 `false` 会在后续检查前移除属性。 */
+  /** 普通保留开关；`forceKeepAttr` 未生效且前置检查通过时，`false` 会移除属性。 */
   keepAttr: boolean;
-  /** 本次净化使用的活动属性允许表；核心暴露前会与共享默认表解除引用。 */
+  /** 本次调用的活动属性允许表；修改成员影响当前及后续属性，替换该字段不会替换核心表。 */
   allowedAttributes: Record<string, boolean>;
-  /** 显式强制保留开关；真值会跳过后续普通允许及属性值检查，调用方须自行保证安全。 */
+  /**
+   * 真值跳过其后的禁止表、URI、模板清理、Trusted Types 和写回，保留原属性而非 `attrValue` 新值。
+   * 此前的 named-props 前缀、XML 边界和 `attributeName=href` 屏障仍先执行，可能已删除属性。
+   */
   forceKeepAttr: boolean | undefined;
 }
 

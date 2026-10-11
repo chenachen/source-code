@@ -14,6 +14,7 @@ import type {
 import type { ModuleRunnerTransport } from '../../../shared/moduleRunnerTransport'
 
 /**
+ * 同进程 server Runner 的配置，沿用缓存和 sourcemap 选项，并由工厂提供 transport。
  * @experimental
  */
 export interface ServerModuleRunnerOptions extends Omit<
@@ -46,10 +47,12 @@ function createHMROptions(
   if (!('api' in environment.hot)) return false
 
   const defaultLogger: ModuleRunnerHmr['logger'] = {
+    /** 将 Runner 调试参数合成一行，使用当前 Environment 的带时间戳 info 日志。 */
     debug: (...msg) =>
       environment.logger.info(msg.join(' '), {
         timestamp: true,
       }),
+    /** 将错误摘要交给当前 Environment logger，保留其标签和时间戳策略。 */
     error: (err) =>
       environment.logger.error(
         err instanceof Error ? err.message : String(err),
@@ -98,6 +101,7 @@ export const createServerModuleRunnerTransport = (options: {
   channel: NormalizedServerHotChannel
 }): ModuleRunnerTransport => {
   const hmrClient: HotChannelClient = {
+    /** 供服务端 listener 回复 custom 消息；经 channel.send 推送给运行端。 */
     send: (payload: HotPayload) => {
       if (payload.type !== 'custom') {
         throw new Error(

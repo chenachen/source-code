@@ -15,6 +15,7 @@ export default defineConfig(({ isPreview }) => ({
     }),
     {
       name: 'remove crossorigin attribute',
+      /** post 阶段移除 crossorigin 属性，与页面自带的外部 SystemJS 配合执行仅 legacy、无插件 polyfill 输出。 */
       transformIndexHtml: (html) => html.replaceAll('crossorigin', ''),
       enforce: 'post',
     },

@@ -11,8 +11,14 @@
  * 为开发期异步 I/O 记录提取短而稳定的可读描述。
  *
  * @remarks
- * 优先读取 URL、命令、id 或 name；自定义 `toString` 只有长度适中且不像默认对象标签时
- * 才采用。任何 getter 或字符串化异常都被吞掉，诊断代码不能影响应用执行。
+ * 对象依次选择 url、href、src、currentSrc、command、request.url、response.url、id、name；
+ * 前面的字段一旦匹配便遮住后面的字段。5～500 字符限制只用于字符串输入和最后的
+ * 自定义 `toString`，URL、名称和 Error.message 不受此长度限制。函数只取 name，
+ * 数字和 bigint 直接转为文本，其余原始值返回空串；生产构建一律返回空串。
+ * 访问 getter 或执行字符串化可能产生用户副作用，任何异常都被吞掉并返回空串。
+ *
+ * @param value - I/O 记录关联的资源、参数或结果；这里提取显示标签，不序列化对象。
+ * @returns 开发工具可显示的描述；无法识别、过长或读取失败时为空串。
  */
 export function getIODescription(value: mixed): string {
   if (!__DEV__) {

@@ -45,19 +45,19 @@ type Callback = boolean => ?Callback;
  * 字段与生产 `Scheduler` 保持一致，使同一调度算法和 profiling 记录可在确定性 host 上复用。
  */
 type Task = {
-  // 单调任务编号；相同排序键时维持 FIFO。
+  /** 单调任务编号；相同排序键时维持 FIFO。 */
   id: number,
-  // 待执行回调；`null` 表示已取消或当前运行片段已取出。
+  /** 待执行回调；执行前先置空，取消、完成或抛错后也保持 `null`，直到节点被移除。 */
   callback: Callback | null,
-  // 任务的 Scheduler 优先级。
+  /** 任务的 Scheduler 优先级。 */
   priorityLevel: PriorityLevel,
-  // 最早可进入 ready queue 的虚拟绝对时间，单位为毫秒。
+  /** 最早可进入 ready queue 的虚拟绝对时间，单位为毫秒。 */
   startTime: number,
-  // 任务视为超时的虚拟绝对时间。
+  /** 任务视为超时的虚拟绝对时间。 */
   expirationTime: number,
-  // timer queue 使用开始时间，task queue 使用过期时间。
+  /** timer queue 使用开始时间，task queue 使用过期时间。 */
   sortIndex: number,
-  // profiling 构建中表示任务是否已记录为 ready。
+  /** profiling 构建中表示任务是否已记录为 ready。 */
   isQueued?: boolean,
 };
 
@@ -66,7 +66,7 @@ type Task = {
 // 0b111111111111111111111111111111
 var maxSigned31BitInt = 1073741823;
 
-// Immediate 任务的过期预算，负值使其创建时立即过期。
+// Immediate 任务的过期预算，负值使其进入 ready queue 时已过期；delay 仍决定最早运行时间。
 var IMMEDIATE_PRIORITY_TIMEOUT = -1;
 // UserBlocking 任务的虚拟过期预算，单位为毫秒。
 var USER_BLOCKING_PRIORITY_TIMEOUT = 250;
@@ -92,7 +92,7 @@ var currentPriorityLevel: PriorityLevel = NormalPriority;
 // work loop 运行期间置为 true，防止新增任务重入虚拟 host callback。
 var isPerformingWork = false;
 
-// 虚拟 host callback/timeout 是否已登记，避免重复登记。
+// callback 登记状态；timeout 标记在 scheduleCallback 登记 timer 时设置，触发或 flush 接管时清除。
 var isHostCallbackScheduled = false;
 var isHostTimeoutScheduled = false;
 
@@ -220,7 +220,14 @@ function flushWork(hasTimeRemaining: boolean, initialTime: number) {
 /**
  * 运行 ready task，直到队列清空、测试规定的 yield 数达到或 paint 边界命中。
  *
- * 与生产实现的差异只在 host yield 可控；任务排序、取消与 continuation 语义保持一致。
+ * 任务排序、取消与 continuation 的任务身份和过期时间与生产实现一致；执行边界不同：
+ * 生产 continuation 必定结束当前 host task，mock 在非 paint 模式可于同次 flush 继续执行。
+ * @param hasTimeRemaining - helper 是否给未过期工作执行资格；flushExpired 传 false。
+ * @param initialTime - 当前虚拟毫秒时间，供 timer 迁移与 didTimeout 判断使用。
+ * @returns 是否保留 ready 工作；未来 timer 不构成继续 flush 的理由。
+ * @remarks 过期任务忽略 helper 的 yield 门限，callback 本身也可能记录多条日志后才
+ * 返回，因此期望日志数量不是强制中断点。完成时只 pop 仍在堆顶的当前节点，允许
+ * callback 内新安排的更早过期任务抢到堆顶而不被误删。
  */
 function workLoop(hasTimeRemaining: boolean, initialTime: number): boolean {
   let currentTime = initialTime;
@@ -375,12 +382,16 @@ function unstable_wrapCallback<T: (...Array<mixed>) => mixed>(callback: T): T {
  * 在虚拟时间轴创建任务，按 delay 决定进入 timer queue 或 ready queue。
  *
  * 任务过期预算与生产实现一致；host 唤醒只写入可由测试 helper 驱动的 callback 状态。
+ * @param priorityLevel - 选择固定虚拟 timeout 的级别；未知值使用 Normal 预算但记录原值。
+ * @param callback - 工作函数，参数表示已过期；返回函数保留同一 task 的身份及期限。
+ * @param options - 可选正数 delay，以当前虚拟毫秒时钟计算开始时间。
+ * @returns 可取消的原 Task handle；没有真实 timer/message 或自动执行。
  */
 function unstable_scheduleCallback(
   priorityLevel: PriorityLevel,
   callback: Callback,
   options?: {
-    // 从当前虚拟时间起延迟多久，单位为毫秒；非正数按立即任务处理。
+    /** 从当前虚拟时间起延迟多久，单位为毫秒；非正数按立即任务处理。 */
     delay: number
   },
 ): Task {
@@ -467,7 +478,12 @@ function unstable_scheduleCallback(
   return newTask;
 }
 
-/** 通过清空 callback 以 O(1) 取消任务，等待堆顶路径惰性移除节点。 */
+/**
+ * 通过清空 callback 以 O(1) 取消待执行任务，等待堆顶路径惰性移除节点。
+ * @param task - scheduleCallback 返回的 handle；保存 continuation 后仍使用同一个对象。
+ * @remarks 不中断正在执行的函数；若该函数取消自己后返回续函数，workLoop 仍会把
+ * 返回值写回 callback。已经登记的虚拟 host callback 也不会在此被撤销。
+ */
 function unstable_cancelCallback(task: Task) {
   // $FlowFixMe[constant-condition]
   if (enableProfiling) {
@@ -537,7 +553,8 @@ function forceFrameRate() {
 /**
  * 清空虚拟 host 的时间、callback、日志与 paint 状态。
  *
- * 边界：flush 期间禁止 reset，避免正在执行的循环持有被清空状态。
+ * flush 期间禁止 reset。该函数只重置虚拟 host，不清空任务堆；用例隔离依赖重新加载模块。
+ * task id、动态优先级和队列标记同样未在这里重置，不能把它当作全模块重新初始化。
  */
 function reset() {
   if (isFlushing) {
@@ -555,9 +572,10 @@ function reset() {
 }
 
 /**
- * flush 到收集指定数量 yield 值为止；应只由会检查日志的断言 helper 调用。
+ * 以指定日志数量作为 yield 检查门限；应由会检查日志的断言 helper 调用。
+ * 检查发生在任务之间或 callback 主动查询时，同一 callback 的多条日志及已过期工作可越过门限。
  *
- * finally 始终恢复计数和重入状态，任务抛错不会污染后续测试。
+ * finally 恢复日志门限与重入标记；抛错后未完成的队列和已有日志仍由后续测试操作处理。
  */
 function unstable_flushNumberOfYields(count: number): void {
   if (isFlushing) {
@@ -584,7 +602,7 @@ function unstable_flushNumberOfYields(count: number): void {
 }
 
 /**
- * flush 到 renderer 首次请求 paint 或队列清空，并保留后续工作。
+ * flush 到 paint 检查命中、callback 返回 continuation 或当前 ready queue 清空，并保留后续工作。
  *
  * @returns 固定 `false`，兼容旧测试 matcher 协议；是否有工作由内部 callback 状态表达。
  */
@@ -638,7 +656,7 @@ function unstable_flushExpired() {
 }
 
 /**
- * 同步清空所有工作但不消费/断言 yield 日志。
+ * 同步排空当前 ready 工作，但不消费或断言日志，也不推进虚拟时钟；未来 timer 仍留在延迟堆。
  *
  * @returns 是否实际执行过至少一个 host callback。
  */
@@ -678,7 +696,7 @@ function unstable_clearLog(): Array<mixed> {
 }
 
 /**
- * 清空所有工作，并要求任务执行前后都没有未断言的 yield 日志。
+ * 排空当前 ready 工作，并要求执行前后都没有未断言日志；不推进时钟执行未来 delayed task。
  *
  * WHY：防止测试漏掉中间可观察输出却仍然通过。
  */
@@ -721,6 +739,10 @@ function log(value: mixed): void {
  * 推进虚拟时钟，并在跨过最早 timeout 时同步触发其迁移逻辑。
  *
  * render replay 期间忽略推进，保证第二遍执行不会把测试时间重复累加。
+ * @param ms - 要累加到 currentMockTime 的毫秒差；这里不校验非负或有限值。
+ * @remarks 只检查一次已登记 timeout，不循环模拟期间所有 timer。调用其 callback
+ * 后无条件清空 scheduledTimeout/timeoutTime，所以 callback 中新登记的 timeout
+ * 也会被这些赋值覆盖；此 helper 的行为不能等同于完整浏览器 timer 队列。
  */
 function unstable_advanceTime(ms: number) {
   // eslint-disable-next-line react-internal/no-production-logging
@@ -770,7 +792,7 @@ export {
   setDisableYieldValue as unstable_setDisableYieldValue,
 };
 
-// profiling 构建暴露会话控制器；其他构建固定为 null。
+/** profiling 构建暴露会话控制器；其他构建固定为 null。 */
 export const unstable_Profiling: {
   /** 启动新的二进制事件记录会话。 */
   startLoggingProfilingEvents(): void,

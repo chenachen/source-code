@@ -50,7 +50,7 @@ export function ssrManifestPlugin(): Plugin {
               ssrManifest[normalizedId] ?? (ssrManifest[normalizedId] = [])
             if (!chunk.isEntry) {
               mappedChunks.push(joinUrlSegments(base, chunk.fileName))
-              // entry chunk 的 link 已写进静态 HTML；只记录非 entry chunk 的 JS/CSS，避免重复 preload。
+              // 入口 JS/CSS 由 HTML 或集成框架负责链接；这里仅为非 entry chunk 补记录。
               chunk.viteMetadata!.importedCss.forEach((file) => {
                 mappedChunks.push(joinUrlSegments(base, file))
               })
@@ -81,7 +81,7 @@ export function ssrManifestPlugin(): Plugin {
             if (imports.length) {
               for (let index = 0; index < imports.length; index++) {
                 const { s: start, e: end, n: name } = imports[index]
-                // lexer 给出源码区间；保留带引号 URL，用来相对当前 chunk 定位 bundle 文件。
+                // 对这些字面量动态 import，lexer 的区间包含引号；去引号后相对当前 chunk 定位文件。
                 const url = code.slice(start, end)
                 const deps: string[] = []
                 const ownerFilename = chunk.fileName
@@ -105,7 +105,7 @@ export function ssrManifestPlugin(): Plugin {
                   join(dirname(chunk.fileName), url.slice(1, -1)),
                 )
                 addDeps(normalizedFile)
-                // SSR transform 以模块 basename 查询动态依赖；deps 只含需额外注入的 CSS。
+                // 以动态 import 目标的 basename 登记 CSS 依赖，供 SSR 集成查询。
                 ssrManifest[basename(name!)] = deps
               }
             }

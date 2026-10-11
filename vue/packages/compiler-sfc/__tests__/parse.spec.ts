@@ -1,6 +1,6 @@
 /**
  * `.vue` 结构解析场景：切分 template/script/script setup/style/custom blocks，记录属性、位置、
- * source map、CSS vars 与 slotted 状态，并诊断重复 block、src/lang/setup 的非法组合。
+ * source map、padding 与 slotted 状态，并诊断重复 block、无入口和 functional 用法。
  */
 import { parse } from '../src'
 import {
@@ -14,6 +14,7 @@ import { SourceMapConsumer } from 'source-map-js'
 describe('compiler:sfc', () => {
   // block source map：内容行列应回指完整 `.vue`，包括空行、缩进和 CRLF。
   describe('source map', () => {
+    // SFC 前随机增加空行，包含普通/module/scoped style；分别消费三块 map，生成行加块偏移应等于完整 SFC 原行。
     test('style block', () => {
       // padding 决定 style 块内容前保留多少空行，以维持原文件行号。
       const padding = Math.round(Math.random() * 10)
@@ -75,8 +76,9 @@ font-weight: bold;
       })
     })
 
+    // 普通 script 前加入随机空行；逐映射检查 originalLine-generatedLine 等于前置行数，确认块级 map 恢复整文件位置。
     test('script block', () => {
-      // padding 决定 style 块内容前保留多少空行，以维持原文件行号。
+      // 在完整 SFC 前添加随机空行；普通 script block map 应补回这些行。
       const padding = Math.round(Math.random() * 10)
       const script = parse(
         `${'\n'.repeat(padding)}<script>\nconsole.log(1)\n }\n</script>\n`,
@@ -90,8 +92,9 @@ font-weight: bold;
       })
     })
 
+    // Pug template 具有两列公共缩进和前置空行；去缩进后 map 仍恢复原行与两列偏移。
     test('template block with lang + indent', () => {
-      // padding 决定 style 块内容前保留多少空行，以维持原文件行号。
+      // Pug 去除公共缩进后，map 应恢复 SFC 前置空行与删掉的两列缩进。
       const padding = Math.round(Math.random() * 10)
       const template = parse(
         `${'\n'.repeat(padding)}<template lang="pug">
@@ -110,6 +113,7 @@ font-weight: bold;
       })
     })
 
+    // 自定义 i18n 块前加随机空行；custom block map 应把内容行定位回完整 SFC。
     test('custom block', () => {
       const padding = Math.round(Math.random() * 10)
       const custom = parse(
@@ -125,6 +129,7 @@ font-weight: bold;
     })
   })
 
+  // 同一 SFC 分别用 false/true/line/space padding；template 保留原内容，其余块按注释行、空行或等长空格补齐前置位置。
   test('pad content', () => {
     const content = `
 <template>
@@ -187,6 +192,7 @@ h1 { color: red }
     )
   })
 
+  // template 内含换行缩进与根级自闭合 div；content 与 loc 必须覆盖完整内层文本，不能把自闭合子标签当块结束。
   test('should parse correct range for root level self closing tag', () => {
     const content = `\n  <div/>\n`
     const { descriptor } = parse(`<template>${content}</template>`)
@@ -202,6 +208,7 @@ h1 { color: red }
     })
   })
 
+  // 自闭合 template 无内容；保留模板块，起止位置同为标签后的空范围。
   test('should parse correct range for blocks with no content (self closing)', () => {
     const { descriptor } = parse(`<template/>`)
     expect(descriptor.template).toBeTruthy()
@@ -212,6 +219,7 @@ h1 { color: red }
     })
   })
 
+  // 显式空 template 开闭标签；保留模板块，起止均定位在内容起点。
   test('should parse correct range for blocks with no content (explicit)', () => {
     const { descriptor } = parse(`<template></template>`)
     expect(descriptor.template).toBeTruthy()
@@ -222,6 +230,7 @@ h1 { color: red }
     })
   })
 
+  // 分别输入自闭合或仅空白的 script/style/custom；默认 ignoreEmpty 跳过这些非模板块。
   test('should ignore other nodes with no content', () => {
     expect(parse(`<script/>`).descriptor.script).toBe(null)
     expect(parse(`<script> \n\t  </script>`).descriptor.script).toBe(null)
@@ -233,6 +242,7 @@ h1 { color: red }
     ).toBe(0)
   })
 
+  // 空 script 带 src=com；外部资源入口不能因内容为空被忽略，attrs/src 和脚本块保留。
   test('handle empty nodes with src attribute', () => {
     const { descriptor } = parse(`<script src="com"/>`)
     expect(descriptor.script).toBeTruthy()
@@ -240,11 +250,13 @@ h1 { color: red }
     expect(descriptor.script!.attrs['src']).toBe('com')
   })
 
+  // template 带外部 src；本地没有真实模板内容，因此 descriptor 不附初始模板 AST。
   test('should not expose ast on template node if has src import', () => {
     const { descriptor } = parse(`<template src="./foo.html"/>`)
     expect(descriptor.template!.ast).toBeUndefined()
   })
 
+  // ignoreEmpty:false 同时解析空普通 script 与仅换行 setup；两个块均保留，并核对各自精确 loc。
   test('ignoreEmpty: false', () => {
     const { descriptor } = parse(
       `<script></script>\n<script setup>\n</script>`,
@@ -265,6 +277,7 @@ h1 { color: red }
     })
   })
 
+  // 外层 template 含 v-if template 与多层 div；切块应保留完整嵌套内容，内部 template 不成为额外 SFC block。
   test('nested templates', () => {
     const content = `
     <template v-if="ok">ok</template>
@@ -274,6 +287,7 @@ h1 { color: red }
     expect(descriptor.template!.content).toBe(content)
   })
 
+  // template 的 lang 是空字符串；按 HTML 解析并保留嵌套模板，不产生预处理语言切块错误。
   test('treat empty lang attribute as the html', () => {
     const content = `<div><template v-if="ok">ok</template></div>`
     const { descriptor, errors } = parse(
@@ -284,6 +298,7 @@ h1 { color: red }
   })
 
   // #1120：声明 Pug 等预处理语言的 template 内容要按纯文本切块，内部 `<` 不能交给 HTML parser。
+  // Pug 内容包含比较运算小于号和 HTML 文本；作为单一原始文本节点保存，内部尖括号不交给 HTML tokenizer。
   test('template with preprocessor lang should be treated as plain text', () => {
     const content = `p(v-if="1 < 2") test <div/>`
     const { descriptor, errors } = parse(
@@ -291,11 +306,12 @@ h1 { color: red }
     )
     expect(errors.length).toBe(0)
     expect(descriptor.template!.content).toBe(content)
-    // src 指向外部文件时，当前块没有可解析的内联内容，解析器不应继续处理。
+    // Pug 内容以一个原始文本节点保存，其中的 `<` 不触发 HTML 标签解析。
     expect(descriptor.template!.ast!.children.length).toBe(1)
   })
 
   // #2566：只有 SFC 顶层 template/script/style 的 lang 会切换原始文本；普通 div 的 lang 不会。
+  // Pug template 内出现带 lang 的 div 文本；顶层预处理块仍完整读取，非 SFC 顶层元素属性不会另行切块。
   test('div lang should not be treated as plain text', () => {
     const { errors } = parse(`
     <template lang="pug">
@@ -307,6 +323,7 @@ h1 { color: red }
     expect(errors.length).toBe(0)
   })
 
+  // 分别解析无样式、普通样式及两种 scoped slotted 写法；只有 scoped 原文命中 :slotted/::v-slotted 时 descriptor.slotted 为 true。
   test('slotted detection', async () => {
     expect(parse(`<template>hi</template>`).descriptor.slotted).toBe(false)
     expect(
@@ -325,16 +342,19 @@ h1 { color: red }
     ).toBe(true)
   })
 
+  // 输入缺少闭合标签的 template；parser 通过 errors 返回一条结构诊断，调用本身不抛出。
   test('error tolerance', () => {
     const { errors } = parse(`<template>`)
     expect(errors.length).toBe(1)
   })
 
+  // 默认 compiler 解析无闭合 input 的 HTML template；DOM void-tag 规则使其合法。
   test('should parse as DOM by default', () => {
     const { errors } = parse(`<template><input></template>`)
     expect(errors.length).toBe(0)
   })
 
+  // 自定义 parser 先经 onError 报 foo 再返回空 root；结果同时收集 foo 与缺少模板/脚本入口的结构错误。
   test('custom compiler', () => {
     const { errors } = parse(`<template><input></template>`, {
       compiler: {
@@ -346,12 +366,13 @@ h1 { color: red }
       },
     })
     expect(errors.length).toBe(2)
-    // 覆盖自定义 parse 主动抛出的错误。
+    // 自定义 parser 经 onError 上报 foo，parse 将它收进 errors。
     expect(errors[0].message).toBe('foo')
     // 覆盖根据自定义 parse 返回 root 生成的结构错误。
     expect(errors[1].message).toMatch('At least one')
   })
 
+  // 自定义 foo block 含 <-& 等非 HTML 文本；原始内容保留且无模板语法错误。
   test('treat custom blocks as raw text', () => {
     const { errors, descriptor } = parse(
       `<template><input></template><foo> <-& </foo>`,
@@ -360,6 +381,7 @@ h1 { color: red }
     expect(descriptor.customBlocks[0].content).toBe(` <-& `)
   })
 
+  // 相同 hello 标签分别传相反的 isCustomElement 函数；两次解析产生 ELEMENT/COMPONENT，选项进入缓存键以避免复用不兼容 AST。
   test('should accept parser options', () => {
     const { errors, descriptor } = parse(`<template><hello/></template>`, {
       templateParseOptions: {
@@ -386,13 +408,14 @@ h1 { color: red }
     })
   })
 
-  // 警告分组：重复 block、空 block、src/setup/lang 冲突等结构问题作为 errors 返回。
+  // 结构诊断分组：重复 block、无入口和 functional 用法作为 errors 返回。
   describe('warnings', () => {
     /** 断言错误数组中至少有一条消息匹配目标诊断片段。 */
     function assertWarning(errors: Error[], msg: string) {
       expect(errors.some(e => e.message.match(msg))).toBe(true)
     }
 
+    // SFC 中连续两个 template；错误数组报告单模板限制，结构诊断由 parse 返回。
     test('should only allow single template element', () => {
       assertWarning(
         parse(`<template><div/></template><template><div/></template>`).errors,
@@ -400,6 +423,7 @@ h1 { color: red }
       )
     })
 
+    // 连续两个普通 script；错误数组报告单普通脚本限制。
     test('should only allow single script element', () => {
       assertWarning(
         parse(`<script>console.log(1)</script><script>console.log(1)</script>`)
@@ -408,6 +432,7 @@ h1 { color: red }
       )
     })
 
+    // 连续两个 script setup；错误数组报告单 setup 限制。
     test('should only allow single script setup element', () => {
       assertWarning(
         parse(
@@ -417,6 +442,7 @@ h1 { color: red }
       )
     })
 
+    // 同一 SFC 同时含普通 script 与 script setup；它们是两个独立槽位，不产生重复块错误。
     test('should not warn script & script setup', () => {
       expect(
         parse(
@@ -426,6 +452,7 @@ h1 { color: red }
     })
 
     // # 6676
+    // 输入只有裸 JS 文本；没有 template/script 入口，errors 返回至少需要一个入口的诊断。
     test('should throw error if no <template> or <script> is present', () => {
       assertWarning(
         parse(`import { ref } from 'vue'`).errors,
@@ -433,6 +460,7 @@ h1 { color: red }
       )
     })
 
+    // template 带 functional 属性；errors 返回 Vue 3 不再支持该用法的迁移诊断。
     test('should throw error if template functional is given', () => {
       assertWarning(
         parse(`<template functional></template>`).errors,

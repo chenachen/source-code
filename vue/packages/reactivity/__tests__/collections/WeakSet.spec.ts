@@ -2,7 +2,10 @@ import { effect, isReactive, reactive, toRaw } from '../../src'
 
 describe('reactivity/collections', () => {
   describe('WeakSet', () => {
-    // 场景：对 WeakSet 创建响应式代理；验证代理仍通过 WeakSet 的 instanceof 检查。
+    /**
+     * 把空 WeakSet 转为 reactive，再检查原实例和代理的 instanceof 与响应式标记。
+     * 代理仍是 WeakSet 实例且具有响应式标记，验证弱成员集合代理保留继承关系。
+     */
     it('instanceof', () => {
       const original = new WeakSet()
       const observed = reactive(original)
@@ -11,7 +14,10 @@ describe('reactivity/collections', () => {
       expect(observed).toBeInstanceOf(WeakSet)
     })
 
-    // 场景：effect 查询 WeakSet 成员后执行 add/delete；验证成员变化触发对应 effect。
+    /**
+     * effect 用普通对象查询空 reactive WeakSet，随后 add/delete 同一对象。
+     * 记录 false→true→false，验证弱集合成员变化通知 HAS 依赖。
+     */
     it('should observe mutations', () => {
       let dummy
       const value = {}
@@ -25,7 +31,10 @@ describe('reactivity/collections', () => {
       expect(dummy).toBe(false)
     })
 
-    // 场景：以响应式对象作为 WeakSet 成员修改；验证 proxy/raw 身份能对应同一成员。
+    /**
+     * effect 用 reactive 对象代理查询空 reactive WeakSet，再 add/delete 同一代理。
+     * 记录 false→true→false，验证普通深层代理成员的 raw 查询兼容。
+     */
     it('should observe mutations with observed value', () => {
       let dummy
       const value = reactive({})
@@ -39,7 +48,10 @@ describe('reactivity/collections', () => {
       expect(dummy).toBe(false)
     })
 
-    // 场景：修改 WeakSet 实例的普通自定义属性；验证集合代理不会追踪额外属性。
+    /**
+     * effect 读取 reactive WeakSet 上不存在的 customProp，再写入字符串。
+     * 记录保持 undefined，验证弱集合 handler 不追踪额外对象属性。
+     */
     it('should not observe custom property mutations', () => {
       let dummy
       const set: any = reactive(new WeakSet())
@@ -50,7 +62,10 @@ describe('reactivity/collections', () => {
       expect(dummy).toBe(undefined)
     })
 
-    // 场景：重复添加已有成员或删除不存在成员；验证集合内容未变时不触发 effect。
+    /**
+     * spy effect 查询普通对象成员，随后 add、重复 add、delete、重复 delete。
+     * 只有首次加入和有效删除增加次数，总计 3，验证不存在内容变化时不发送通知。
+     */
     it('should not observe non value changing mutations', () => {
       let dummy
       const value = {}
@@ -74,7 +89,10 @@ describe('reactivity/collections', () => {
       expect(setSpy).toHaveBeenCalledTimes(3)
     })
 
-    // 场景：直接操作原始 WeakSet；验证绕过代理的读取不会建立响应式依赖。
+    /**
+     * effect 经 toRaw(set).has 读取成员，随后通过代理 add。
+     * 记录保持 false，验证原生 WeakSet has 不建立代理依赖。
+     */
     it('should not observe raw data', () => {
       const value = {}
       let dummy
@@ -86,7 +104,10 @@ describe('reactivity/collections', () => {
       expect(dummy).toBe(false)
     })
 
-    // 场景：effect 订阅代理后直接修改原始 WeakSet；验证 raw 写入不会触发代理订阅者。
+    /**
+     * effect 通过代理 has 已订阅对象成员，随后经 toRaw(set).add 写入。
+     * 记录保持 false，验证原始写入不经过代理触发路径。
+     */
     it('should not be triggered by raw mutations', () => {
       const value = {}
       let dummy
@@ -98,7 +119,10 @@ describe('reactivity/collections', () => {
       expect(dummy).toBe(false)
     })
 
-    // 场景：向响应式 WeakSet 添加代理对象；验证原集合按预期保存原始身份。
+    /**
+     * 向深 reactive WeakSet 添加一个普通 reactive 对象代理，再从代理和原 WeakSet 查询。
+     * 代理 has 命中，原 WeakSet 不含该代理引用，验证此类深层成员写入不保存 proxy 身份。
+     */
     it('should not pollute original Set with Proxies', () => {
       const set = new WeakSet()
       const observed = reactive(set)
@@ -108,7 +132,10 @@ describe('reactivity/collections', () => {
       expect(set.has(value)).toBe(false)
     })
 
-    // 场景：调用响应式 WeakSet.add；验证链式调用返回响应式代理。
+    /**
+     * 空 reactive WeakSet 执行 add({}) 并保存返回值。
+     * 返回值等于集合代理自身，验证链式 add 约定保留代理 receiver。
+     */
     it('should return proxy from WeakSet.add call', () => {
       const set = reactive(new WeakSet())
       const result = set.add({})

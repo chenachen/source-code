@@ -1,5 +1,5 @@
 /**
- * `v-if` 场景：把相邻 if/else-if/else 合并成分支树，验证注释/空白邻接、重复 key、缺失条件
+ * `v-if` 场景：把相邻 if/else-if/else 合并成分支树，验证注释/空白邻接、重复 key、孤立 else
  * 诊断及递归三元 block 生成；issue 用例覆盖分支 key 与动态组件重建语义。
  */
 import { baseParse as parse } from '../../src/parser'
@@ -37,7 +37,11 @@ import {
 } from '../../src/runtimeHelpers'
 import { createObjectMatcher } from '../testUtils'
 
-/** 解析并运行 v-if 结构转换，返回条件分支 AST 与代码生成节点。 */
+/**
+ * 解析并运行同名 bind 简写、if、slot outlet 和元素转换，返回根及 returnIndex 指定的 child。
+ * 无自定义 onError 时断言根有 childrenLen 个 IfNode；收集式诊断场景跳过此结构断言，返回节点未必为 IfNode。
+ * node 的类型断言供正常条件场景使用，不能据此推断错误恢复后的实际节点形态。
+ */
 function parseWithIfTransform(
   template: string,
   options: CompilerOptions = {},
@@ -63,7 +67,7 @@ function parseWithIfTransform(
   return {
     root: ast,
     node: ast.children[returnIndex] as IfNode & {
-      /** 测试管线完成后必定存在的条件代码生成节点。 */
+      /** 正常 if 场景所期望的条件生成节点；错误恢复场景未必符合此类型。 */
       codegenNode: IfConditionalExpression
     },
   }
@@ -72,6 +76,9 @@ function parseWithIfTransform(
 describe('compiler: v-if', () => {
   // AST 转换：合并相邻条件指令、跳过可忽略空白/注释，并保留分支用户 key。
   describe('transform', () => {
+    /**
+     * 普通 div 带 v-if="ok"；检查被替换成一个 IfNode，其唯一分支保存条件 ok 与原 div child。
+     */
     test('basic v-if', () => {
       const { node } = parseWithIfTransform(`<div v-if="ok"/>`)
       expect(node.type).toBe(NodeTypes.IF)
@@ -84,6 +91,9 @@ describe('compiler: v-if', () => {
       expect((node.branches[0].children[0] as ElementNode).tag).toBe(`div`)
     })
 
+    /**
+     * template if 内有 div、hello、p；检查容器解包为分支的三项 children，静态文本与元素顺序保持。
+     */
     test('template v-if', () => {
       const { node } = parseWithIfTransform(
         `<template v-if="ok"><div/>hello<p/></template>`,
@@ -102,6 +112,9 @@ describe('compiler: v-if', () => {
       expect((node.branches[0].children[2] as ElementNode).tag).toBe(`p`)
     })
 
+    /**
+     * 组件 Component 带 if；检查分支 child 仍是组件，并将其 VNodeCall 升为 block。即使运行时组件名解析回退成元素，也保留条件更新边界。
+     */
     test('component v-if', () => {
       const { node } = parseWithIfTransform(`<Component v-if="ok"></Component>`)
       expect(node.type).toBe(NodeTypes.IF)
@@ -119,6 +132,9 @@ describe('compiler: v-if', () => {
       ).toBe(true)
     })
 
+    /**
+     * 相邻 div if 与 p else；检查合并为两分支，第一条件 ok，第二 condition 为 undefined，原父级不再保留独立 else 元素。
+     */
     test('v-if + v-else', () => {
       const { node } = parseWithIfTransform(`<div v-if="ok"/><p v-else/>`)
       expect(node.type).toBe(NodeTypes.IF)
@@ -137,6 +153,9 @@ describe('compiler: v-if', () => {
       expect((b2.children[0] as ElementNode).tag).toBe(`p`)
     })
 
+    /**
+     * 相邻 div if 与 p else-if；检查两分支条件分别 ok/orNot，各自保留原元素。
+     */
     test('v-if + v-else-if', () => {
       const { node } = parseWithIfTransform(
         `<div v-if="ok"/><p v-else-if="orNot"/>`,
@@ -157,6 +176,9 @@ describe('compiler: v-if', () => {
       expect((b2.children[0] as ElementNode).tag).toBe(`p`)
     })
 
+    /**
+     * if、else-if、文本 template else 三分支；检查有序合并，末分支无条件且 template 解包后保存 fine 文本。
+     */
     test('v-if + v-else-if + v-else', () => {
       const { node } = parseWithIfTransform(
         `<div v-if="ok"/><p v-else-if="orNot"/><template v-else>fine</template>`,
@@ -183,6 +205,9 @@ describe('compiler: v-if', () => {
       expect((b3.children[0] as TextNode).content).toBe(`fine`)
     })
 
+    /**
+     * 在各分支间加入 foo/bar 注释；检查分支仍相邻，开发构建将注释移到其后分支 children 开头，原序列不被破坏。
+     */
     test('comment between branches', () => {
       const { node } = parseWithIfTransform(`
         <div v-if="ok"/>
@@ -217,6 +242,9 @@ describe('compiler: v-if', () => {
       expect((b3.children[1] as TextNode).content).toBe(`fine`)
     })
 
+    /**
+     * if 条件 ok 开启前缀；检查 processIf 在通用表达式转换前主动把条件改为 _ctx.ok。
+     */
     test('should prefix v-if condition', () => {
       const { node } = parseWithIfTransform(`<div v-if="ok"/>`, {
         prefixIdentifiers: true,
@@ -228,6 +256,9 @@ describe('compiler: v-if', () => {
     })
 
     // #11321：`:key` 同名简写必须先补全表达式，再作为分支用户 key 使用。
+    /**
+     * if 元素使用裸 :key；检查 shorthand 已补出 exp key，并保存为 branch.userKey，供重复 key 检查与注入优先级使用。
+     */
     test('v-if + :key shorthand', () => {
       const { node } = parseWithIfTransform(`<div v-if="ok" :key></div>`)
       expect(node.type).toBe(NodeTypes.IF)
@@ -240,6 +271,9 @@ describe('compiler: v-if', () => {
 
   // 错误场景：缺失条件、孤立 else 与重复分支 key。
   describe('errors', () => {
+    /**
+     * 分别输入孤立 else、普通元素前驱、普通文本隔断、if 后的文本隔断及 NBSP 隔断；五次诊断都定位对应 else 元素。只有 HTML 可忽略空白/注释允许连接分支。
+     */
     test('error on v-else missing adjacent v-if', () => {
       const onError = vi.fn()
 
@@ -301,6 +335,9 @@ describe('compiler: v-if', () => {
       ])
     })
 
+    /**
+     * 分别输入孤立 else-if、普通元素/文本/NBSP 隔断以及最终 else 后再接 else-if；六次诊断定位后续元素。返回式处理器使最后的不可达分支仍被加入 branches，测试从该分支取 loc。
+     */
     test('error on v-else-if missing adjacent v-if or v-else-if', () => {
       const onError = vi.fn()
 
@@ -379,6 +416,9 @@ describe('compiler: v-if', () => {
       ])
     })
 
+    /**
+     * if 后连续写两个 else；检查第二个 else 报相邻分支错误，收集式处理器仍留下末分支供 location 对照。
+     */
     test('error on adjacent v-else', () => {
       const onError = vi.fn()
 
@@ -398,6 +438,9 @@ describe('compiler: v-if', () => {
       ])
     })
 
+    /**
+     * 分别让 if/else 使用相同动态表达式 a+1 与相同静态 key 1；检查两次 X_V_IF_SAME_KEY。静态值比较与简单动态文本比较都能发现重复身份。
+     */
     test('error on user key', () => {
       const onError = vi.fn()
       // 动态 key。
@@ -424,7 +467,10 @@ describe('compiler: v-if', () => {
 
   // 代码生成：给每个分支注入稳定 key，并构造 block 或注释占位的递归条件表达式。
   describe('codegen', () => {
-    /** 递归断言条件表达式每层 test、block 分支、key 与最终 else/注释占位。 */
+    /**
+     * 断言固定 ok 条件的三元骨架；depth >= 1 时另检查 orNot 的第二层，hasElse 选择最终 block 或注释。
+     * 此 helper 不递归任意深度，也不检查 key；每个用例另行断言标签与分支属性。
+     */
     function assertSharedCodegen(
       node: IfConditionalExpression,
       depth: number = 0,
@@ -472,6 +518,9 @@ describe('compiler: v-if', () => {
       })
     }
 
+    /**
+     * 基本 if 的 codegen；检查真分支为带 key 0 的 div block，假分支为 CREATE_COMMENT 调用，并比对生成快照。
+     */
     test('basic v-if', () => {
       const {
         root,
@@ -489,6 +538,9 @@ describe('compiler: v-if', () => {
       expect(generate(root).code).toMatchSnapshot()
     })
 
+    /**
+     * template if 有多根；检查真分支生成带 key 0 的 Fragment，保留 div/hello/p，假分支为注释占位。
+     */
     test('template v-if', () => {
       const {
         root,
@@ -511,6 +563,9 @@ describe('compiler: v-if', () => {
       expect(generate(root).code).toMatchSnapshot()
     })
 
+    /**
+     * template if 只有 slot；检查真分支直接复用 RENDER_SLOT，分支 key 0 写入第六参数，省去额外 Fragment。
+     */
     test('template v-if w/ single <slot/> child', () => {
       const {
         root,
@@ -531,6 +586,9 @@ describe('compiler: v-if', () => {
       expect(generate(root).code).toMatchSnapshot()
     })
 
+    /**
+     * 直接给 slot 加 if；检查同样复用 RENDER_SLOT，第六参数传 key 0，中间参数补齐占位。
+     */
     test('v-if on <slot/>', () => {
       const {
         root,
@@ -551,6 +609,9 @@ describe('compiler: v-if', () => {
       expect(generate(root).code).toMatchSnapshot()
     })
 
+    /**
+     * if slot 还带对象 v-bind；检查 props 保持 NORMALIZE_PROPS 调用，编译器 key 仍独立进入第六参数，不混入插槽 props。
+     */
     test('v-if on <slot/> with v-bind', () => {
       const {
         root,
@@ -578,6 +639,9 @@ describe('compiler: v-if', () => {
       expect(generate(root).code).toMatchSnapshot()
     })
 
+    /**
+     * if div 与 else p 的 codegen；检查两者都是 block，key 分别 0/1，最终 alternate 直接是 p，不保留无用注释。
+     */
     test('v-if + v-else', () => {
       const {
         root,
@@ -595,6 +659,9 @@ describe('compiler: v-if', () => {
       expect(generate(root).code).toMatchSnapshot()
     })
 
+    /**
+     * if div 与 else-if p；检查 alternate 为第二层条件表达式，两个真分支的 key 为 0/1，未命中时保留注释占位。
+     */
     test('v-if + v-else-if', () => {
       const {
         root,
@@ -613,6 +680,9 @@ describe('compiler: v-if', () => {
       expect(generate(root).code).toMatchSnapshot()
     })
 
+    /**
+     * if、else-if 与文本 template else；检查递归条件结构中 key 依次 0/1/2，末文本分支由 Fragment 承载。
+     */
     test('v-if + v-else-if + v-else', () => {
       const {
         root,
@@ -643,12 +713,15 @@ describe('compiler: v-if', () => {
       expect(generate(root).code).toMatchSnapshot()
     })
 
+    /**
+     * 两个独立相邻 if 组；检查第一组 key 0、第二组 key 1，同一父层的条件组累计前方分支数，避免身份碰撞。
+     */
     test('multiple v-if that are sibling nodes should have different keys', () => {
       const { root } = parseWithIfTransform(
         `<div v-if="ok"/><p v-if="orNot"/>`,
         {},
-        0 /* returnIndex, just give the default value */,
-        2 /* childrenLen */,
+        0 /* 使用默认返回索引 */,
+        2 /* 根条件组数量 */,
       )
 
       const ifNode = root.children[0] as IfNode & {
@@ -670,12 +743,15 @@ describe('compiler: v-if', () => {
       expect(generate(root).code).toMatchSnapshot()
     })
 
+    /**
+     * 前方 if/else 两分支，后方 if/else-if/else 三分支；检查 key 连续为 0 至 4，后组从已有分支总数开始。
+     */
     test('increasing key: v-if + v-else-if + v-else', () => {
       const { root } = parseWithIfTransform(
         `<div v-if="ok"/><p v-else/><div v-if="another"/><p v-else-if="orNot"/><p v-else/>`,
         {},
-        0 /* returnIndex, just give the default value */,
-        2 /* childrenLen */,
+        0 /* 使用默认返回索引 */,
+        2 /* 根条件组数量 */,
       )
       const ifNode = root.children[0] as IfNode & {
         /** 首个 if/else 条件组的代码生成节点。 */
@@ -709,6 +785,9 @@ describe('compiler: v-if', () => {
       expect(generate(root).code).toMatchSnapshot()
     })
 
+    /**
+     * if 元素只有对象 v-bind；检查穿透 normalize/guard 包装后生成 normalizeProps(mergeProps({key:0},obj))，注入不直接修改响应式来源。
+     */
     test('key injection (only v-bind)', () => {
       const {
         node: { codegenNode },
@@ -730,6 +809,9 @@ describe('compiler: v-if', () => {
       })
     })
 
+    /**
+     * 静态 id 出现在对象 bind 之前；检查 key 前插到 mergeProps 首个字面对象，obj 仍是后续参数。
+     */
     test('key injection (before v-bind)', () => {
       const {
         node: { codegenNode },
@@ -748,6 +830,9 @@ describe('compiler: v-if', () => {
       })
     })
 
+    /**
+     * 静态 id 出现在对象 bind 之后；检查新增 key 首对象，随后保留 obj 与 id 对象，用户覆盖顺序不改变。
+     */
     test('key injection (after v-bind)', () => {
       const {
         node: { codegenNode },
@@ -766,6 +851,9 @@ describe('compiler: v-if', () => {
       })
     })
 
+    /**
+     * if 元素带未知 v-foo；检查保留运行时 directives，并同时生成分支 key props。
+     */
     test('key injection (w/ custom directive)', () => {
       const {
         node: { codegenNode },
@@ -775,7 +863,10 @@ describe('compiler: v-if', () => {
       expect(branch1.props).toMatchObject(createObjectMatcher({ key: `[0]` }))
     })
 
-    // #6631：动态组件的 v-if 各分支要使用唯一 key，避免切换组件类型时复用错误实例。
+    // #6631：已有用户 key 的 mergeProps 首对象不能再注入编译器 key，避免重复属性声明。
+    /**
+     * if 元素已有静态 custom_key，后接对象 bind；检查首个字面对象只保留用户 key，不再插入重复编译器 key。
+     */
     test('avoid duplicate keys', () => {
       const {
         node: { codegenNode },
@@ -793,6 +884,9 @@ describe('compiler: v-if', () => {
       })
     })
 
+    /**
+     * if/else-if/else 之间只有普通空格；检查正常合并且三分支 key 为 0/1/2，空白不打断条件链。
+     */
     test('with spaces between branches', () => {
       const {
         node: { codegenNode },
@@ -814,6 +908,9 @@ describe('compiler: v-if', () => {
       })
     })
 
+    /**
+     * 外层 template if 中有嵌套 if/else 和多处注释；逐项检查 comment1/2/3/4 分别留在原子树或迁到后分支，嵌套条件组保持两分支。
+     */
     test('with comments', () => {
       const { node } = parseWithIfTransform(`
           <template v-if="ok">
@@ -861,6 +958,9 @@ describe('compiler: v-if', () => {
     })
 
     // #6843：生产模式显式开启 comments 时，注释不能打断 v-if/v-else 邻接或改变分支结构。
+    /**
+     * 临时切到生产构建并显式保留 comments，编译同一嵌套条件模板；公共 helper 验证外层仍为单 IfNode，代码生成不抛错。此用例不逐项断言生产注释位置。
+     */
     test('should parse correctly with comments: true in prod', () => {
       __DEV__ = false
       parseWithIfTransform(
@@ -882,6 +982,9 @@ describe('compiler: v-if', () => {
     })
   })
 
+  /**
+   * button 同时带对象 v-on 与 if；检查 props 为 mergeProps({key:0},toHandlers(...))，key 不进入 TO_HANDLERS 的事件名转换。
+   */
   test('v-on with v-if', () => {
     const {
       node: { codegenNode },

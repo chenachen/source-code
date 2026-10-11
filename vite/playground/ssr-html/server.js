@@ -2,8 +2,10 @@ import fs from 'node:fs'
 import path from 'node:path'
 import express from 'express'
 
+/** 读取 Vitest 标记；测试由 harness 启动服务，手动运行时才在文件末尾监听默认端口。 */
 const isTest = process.env.VITEST
 
+/** 请求时插入的两个模块脚本：内联脚本添加成功段落，外部脚本加载 src/app.js；两种来源都交给 HTML 转换处理。 */
 const DYNAMIC_SCRIPTS = `
   <script type="module">
     const p = document.createElement('p');
@@ -13,6 +15,7 @@ const DYNAMIC_SCRIPTS = `
   <script type="module" src="/src/app.js"></script>
 `
 
+/** 请求时插入的内联样式，把 h1 背景设为 blue，供 HTML/CSS 转换页面断言检查。 */
 const DYNAMIC_STYLES = `
   <style>
   h1 {
@@ -21,11 +24,13 @@ const DYNAMIC_STYLES = `
   </style>
 `
 
+/** 建立自定义 HTML 服务并注入动态脚本、样式和虚拟模块插件；目录入口用其真实 URL 转换，普通页故意传入根 URL 模拟集成方用法；favicon 返回 404，NUL 虚拟 ID 交给后续 middleware。 */
 export async function createServer(
   root = process.cwd(),
   hmrPort,
   customLogger,
 ) {
+  /** 以当前服务脚本的目录为基准解析模板路径；不随调用者传入的 Vite root 改变。 */
   const resolve = (p) => path.resolve(import.meta.dirname, p)
 
   const app = express()
@@ -41,8 +46,7 @@ export async function createServer(
     server: {
       middlewareMode: true,
       watch: {
-        // During tests we edit the files too fast and sometimes chokidar
-        // misses change events, so enforce polling for consistency
+        // 测试快速修改文件时 chokidar 可能漏掉变化，改用轮询检测。
         usePolling: true,
         interval: 100,
       },
@@ -55,11 +59,13 @@ export async function createServer(
     plugins: [
       {
         name: 'virtual-file',
+        /** 把 virtual:file 转成带 NUL 前缀的内部 ID；其他导入留给后续解析器。 */
         resolveId(id) {
           if (id === 'virtual:file') {
             return '\0virtual:file'
           }
         },
+        /** 为内部虚拟 ID 生成对真实 importedVirtual.js 的导入和转导出，形成虚拟模块继续依赖真实文件的 HMR 样例。 */
         load(id) {
           if (id === '\0virtual:file') {
             return 'import { virtual } from "/src/importedVirtual.js"; export { virtual };'
@@ -68,7 +74,7 @@ export async function createServer(
       },
     ],
   })
-  // use vite's connect instance as middleware
+  // 把 Vite 的 Connect 实例接入 Express 中间件链。
   app.use(vite.middlewares)
 
   app.use('*all', async (req, res, next) => {
@@ -98,9 +104,7 @@ export async function createServer(
         `${DYNAMIC_SCRIPTS}${DYNAMIC_STYLES}</body>`,
       )
 
-      // Force calling transformIndexHtml with url === '/', to simulate
-      // usage by ecosystem that was recommended in the SSR documentation
-      // as `const url = req.originalUrl`
+      // 故意把普通页面的 transformIndexHtml URL 固定为根路径，模拟集成方的调用方式。
       const html = await vite.transformIndexHtml('/', template)
 
       res.status(200).set({ 'Content-Type': 'text/html' }).end(html)

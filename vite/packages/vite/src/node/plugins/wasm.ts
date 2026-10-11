@@ -137,7 +137,7 @@ export const wasmHelperPlugin = (): Plugin => {
             wasmInstanceRE,
           ],
         },
-        /** 把 `?init` 请求转换为加载 wasm URL 并调用初始化辅助函数的模块。 */
+        /** 加载运行时 helper；?init 导出初始化函数，直接导入生成 instance 或 Global wrapper 胶水。 */
         async handler(id) {
           const ssr = this.environment.config.consumer === 'server'
 
@@ -197,7 +197,7 @@ ${glueCode}
         env.config.consumer === 'server'
           ? {
               filter: { code: wasmInitUrlRE },
-              /** 替换 wasm 初始化占位符，并为目标平台选择 URL 或文件实例化代码。 */
+              /** 把 SSR Wasm 占位符换成相对输出 chunk 的运行时文件 URL，并登记 importedAssets。 */
               handler(code, chunk, opts, meta) {
                 const toRelativeRuntime =
                   createToImportMetaURLBasedRelativeRuntime(
@@ -249,7 +249,7 @@ ${glueCode}
 interface WasmName {
   /** WebAssembly 导入或导出段记录的原始名称。 */
   name: string
-  /** 指示该 WebAssembly 名称是否引用可变全局值。 */
+  /** 指示该导入或导出的 kind 是否为 global，包括可变与不可变 Global。 */
   isGlobal: boolean
 }
 
@@ -309,7 +309,7 @@ function generateInstanceGlue(
   wasmInfo: WasmInfo,
   names: {
     /** 生成模块中调用的 WebAssembly 初始化函数绑定名。 */
-    initWasm: string;
+    initWasm: string
     /** 生成模块中保存 wasm 资源 URL 的绑定名。 */
     wasmUrl: string
   },
@@ -388,8 +388,8 @@ function generateInstanceGlue(
 }
 
 /**
- * 生成面向 JS 的外层模块：先重导出 instance 层，再用 `.value` 覆盖 Global 导出。
- * 这同时保留函数/内存等原始导出，并让 JS 使用者得到符合直觉的普通值。
+ * 生成面向 JS 的外层模块：先重导出 instance 层，再用初始化时读取的 `.value` 覆盖非 default Global。
+ * 函数/内存等导出保持原样；Global 值不会随实例内后续修改自动更新，default 也保持原始对象。
  */
 function generateWrapperGlue(wasmInfo: WasmInfo, instanceId: string): string {
   const instanceIdLiteral = JSON.stringify(instanceId)
@@ -459,7 +459,7 @@ function codegenSimpleObject(obj: SimpleObject): string {
 /** 判断 WebAssembly 名称能否直接作为 JavaScript 标识符输出。 */
 const VALID_JS_IDENTIFIER = /^[$_\p{ID_Start}][$\p{ID_Continue}]*$/u
 
-/** 保存不能作为裸对象属性输出的 JavaScript 保留字。 */
+/** 保存不能直接声明为 JavaScript 绑定的保留字。 */
 const RESERVED_WORDS = new Set([
   'abstract',
   'boolean',

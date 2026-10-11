@@ -76,25 +76,25 @@ import reportGlobalError from 'shared/reportGlobalError';
 
 import {runWithFiberInDEV} from 'react-reconciler/src/ReactCurrentFiber';
 
-/** DispatchListener 定义 Flow 数据形状，用于在根/portal 容器上安装监听器，选择插件并沿 Fiber 路径累积、批量分发事件；类型边界阻止插件、原生事件与 Fiber 状态混用。 */
+/** 一次 handler 调用所需的 Fiber、回调和 currentTarget。 */
 type DispatchListener = {
-  /** DispatchListener.instance 描述在根/portal 容器上安装监听器，选择插件并沿 Fiber 路径累积、批量分发事件的数据字段；该字段限定跨插件、队列或原生事件传递的状态边界。 */
+  /** 用于传播停止检查的 Fiber 身份；非 React 目标可为 null。 */
   instance: null | Fiber,
-  /** DispatchListener.listener 描述在根/portal 容器上安装监听器，选择插件并沿 Fiber 路径累积、批量分发事件的数据字段；该字段限定跨插件、队列或原生事件传递的状态边界。 */
+  /** 本次调用的 handler；从最新 props 或 event handle 集合读取。 */
   listener: Function,
-  /** DispatchListener.currentTarget 描述在根/portal 容器上安装监听器，选择插件并沿 Fiber 路径累积、批量分发事件的数据字段；该字段限定跨插件、队列或原生事件传递的状态边界。 */
+  /** 执行该 handler 时写入 SyntheticEvent.currentTarget 的宿主目标。 */
   currentTarget: EventTarget,
 };
 
-/** DispatchEntry 定义 Flow 数据形状，用于在根/portal 容器上安装监听器，选择插件并沿 Fiber 路径累积、批量分发事件；类型边界阻止插件、原生事件与 Fiber 状态混用。 */
+/** 一个合成事件及其按传播路径排列的 listener 列表。 */
 type DispatchEntry = {
-  /** DispatchEntry.event 描述在根/portal 容器上安装监听器，选择插件并沿 Fiber 路径累积、批量分发事件的数据字段；该字段限定跨插件、队列或原生事件传递的状态边界。 */
+  /** 插件创建的 SyntheticEvent，所有 listener 共享此对象的停止传播状态。 */
   event: ReactSyntheticEvent,
-  /** DispatchEntry.listeners 描述在根/portal 容器上安装监听器，选择插件并沿 Fiber 路径累积、批量分发事件的数据字段；该字段限定跨插件、队列或原生事件传递的状态边界。 */
+  /** 待调用的 handler 列表；顺序由累积方式与捕获阶段标志共同决定。 */
   listeners: Array<DispatchListener>,
 };
 
-/** DispatchQueue 定义 Flow 数据形状，用于在根/portal 容器上安装监听器，选择插件并沿 Fiber 路径累积、批量分发事件；类型边界阻止插件、原生事件与 Fiber 状态混用。 */
+/** 插件按提取顺序生成的合成事件队列。 */
 export type DispatchQueue = Array<DispatchEntry>;
 
 // TODO：移除顶层副作用。
@@ -107,7 +107,7 @@ if (enableScrollEndPolyfill) {
   ScrollEndEventPlugin.registerEvents();
 }
 
-/** extractEvents 从原生事件和 Fiber 路径收集在根/portal 容器上安装监听器，选择插件并沿 Fiber 路径累积、批量分发事件所需数据；只生成满足插件条件的 listener/event。 */
+/** 先提取基础事件，再在普通 bubble 路径运行 Change/Select 等兼容插件；ScrollEnd 另按特性开关处理 capture。 */
 function extractEvents(
   dispatchQueue: DispatchQueue,
   domEventName: DOMEventName,
@@ -117,12 +117,7 @@ function extractEvents(
   eventSystemFlags: EventSystemFlags,
   targetContainer: EventTarget,
 ) {
-  // TODO：应移除“SimpleEventPlugin”这一独立概念。
-  // 它承载事件系统的基础能力；其他
-  // 插件本质上都是 polyfill，因此该插件
-  // 应内联到核心路径，让其逻辑
-  // 直接成为事件系统核心，从而允许
-  // 发布不包含下方 polyfill 插件的 React 构建。
+  // TODO：把基础映射内联到核心，使兼容插件可从特定构建中移除。
   SimpleEventPlugin.extractEvents(
     dispatchQueue,
     domEventName,
@@ -134,23 +129,9 @@ function extractEvents(
   );
   const shouldProcessPolyfillPlugins =
     (eventSystemFlags & SHOULD_NOT_PROCESS_POLYFILL_EVENT_PLUGINS) === 0;
-  // 只有处于原生事件
-  // “bubble”阶段（即非 capture）时才处理这些事件，
-  // 因为这里仍通过模拟实现
-  // capture 阶段。这是一项折中：
-  // 理想情况下应像 SimpleEvent
-  // 插件一样直接使用正确的原生阶段，
-  // 但下方插件要么依赖
-  // 阶段模拟（EnterLeave），要么使用插件内部
-  // 状态（BeforeInput、Change、Select）。这些
-  // 模块状态使捕获阶段可能先改变
-  // 启发式条件，随后到达的
-  // bubble 事件便可能
-  // 因为状态已变化而
-  // 不再触发。虽然可以
-  // 重写全部插件以适配原生阶段，
-  // 但可能产生目前无法
-  // 预见的副作用。
+  // Change/Select/BeforeInput 等插件维护跨事件状态，只在普通 bubble 路径提取，
+  // 再自行累积 capture 与 bubble 回调；capture 重复提取会提前消费其状态。
+  // 非 React 管理 target 与 non-delegated 路径也由 flags 排除这些插件。
   if (shouldProcessPolyfillPlugins) {
     EnterLeaveEventPlugin.extractEvents(
       dispatchQueue,
@@ -212,7 +193,7 @@ function extractEvents(
 }
 
 // 以下事件必须单独绑定到媒体元素。
-/** mediaEventTypes 保存在根/portal 容器上安装监听器，选择插件并沿 Fiber 路径累积、批量分发事件所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** 需要在媒体元素上直接安装 bubble listener 的原生媒体事件。 */
 export const mediaEventTypes: Array<DOMEventName> = [
   'abort',
   'canplay',
@@ -243,7 +224,7 @@ export const mediaEventTypes: Array<DOMEventName> = [
 // 这些事件不应委托到容器，而应
 // 直接绑定真实 target，主要因为
 // 它们在 DOM 中并不稳定冒泡。
-/** nonDelegatedEvents 保存在根/portal 容器上安装监听器，选择插件并沿 Fiber 路径累积、批量分发事件所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** 不在根安装 bubble listener 的事件集合；capture 仍由根监听，bubble 由目标元素接收。 */
 export const nonDelegatedEvents: Set<DOMEventName> = new Set([
   'beforetoggle',
   'cancel',
@@ -260,7 +241,7 @@ export const nonDelegatedEvents: Set<DOMEventName> = new Set([
   ...mediaEventTypes,
 ]);
 
-/** executeDispatch 执行在根/portal 容器上安装监听器，选择插件并沿 Fiber 路径累积、批量分发事件的核心步骤；输入来自原生事件/Fiber，输出保持插件分发与调度边界。 */
+/** 设置 currentTarget 后调用 handler；错误报给全局，随后清空 currentTarget，继续处理队列。 */
 function executeDispatch(
   event: ReactSyntheticEvent,
   listener: Function,
@@ -275,7 +256,7 @@ function executeDispatch(
   event.currentTarget = null;
 }
 
-/** processDispatchQueueItemsInOrder 推进在根/portal 容器上安装监听器，选择插件并沿 Fiber 路径累积、批量分发事件的分发或重放状态机；阻塞时保留事件，解除后按原优先级继续。 */
+/** 捕获阶段逆序、冒泡阶段正序调用；跨 Fiber 时检查停止传播，同一 Fiber 的 listener 槽仍可执行。 */
 function processDispatchQueueItemsInOrder(
   event: ReactSyntheticEvent,
   dispatchListeners: Array<DispatchListener>,
@@ -323,7 +304,7 @@ function processDispatchQueueItemsInOrder(
   }
 }
 
-/** processDispatchQueue 推进在根/portal 容器上安装监听器，选择插件并沿 Fiber 路径累积、批量分发事件的分发或重放状态机；阻塞时保留事件，解除后按原优先级继续。 */
+/** 按提取顺序执行每个合成事件；当前根 listener 的 flags 决定单阶段列表的遍历方向。 */
 export function processDispatchQueue(
   dispatchQueue: DispatchQueue,
   eventSystemFlags: EventSystemFlags,
@@ -336,7 +317,7 @@ export function processDispatchQueue(
   }
 }
 
-/** dispatchEventsForPlugins 推进在根/portal 容器上安装监听器，选择插件并沿 Fiber 路径累积、批量分发事件的分发或重放状态机；阻塞时保留事件，解除后按原优先级继续。 */
+/** 从原生事件创建 dispatchQueue，再执行插件累积的 handler。 */
 function dispatchEventsForPlugins(
   domEventName: DOMEventName,
   eventSystemFlags: EventSystemFlags,
@@ -358,7 +339,7 @@ function dispatchEventsForPlugins(
   processDispatchQueue(dispatchQueue, eventSystemFlags);
 }
 
-/** listenToNonDelegatedEvent 管理在根/portal 容器上安装监听器，选择插件并沿 Fiber 路径累积、批量分发事件的注册/监听边界；避免同一容器重复安装或遗漏 capture 配置。 */
+/** 按节点上的事件名/阶段 Set 去重，给不冒泡事件安装目标 bubble listener。 */
 export function listenToNonDelegatedEvent(
   domEventName: DOMEventName,
   targetElement: Element,
@@ -389,7 +370,7 @@ export function listenToNonDelegatedEvent(
   }
 }
 
-/** listenToNativeEvent 管理在根/portal 容器上安装监听器，选择插件并沿 Fiber 路径累积、批量分发事件的注册/监听边界；避免同一容器重复安装或遗漏 capture 配置。 */
+/** 设置 capture 标志后在给定目标安装原生 listener；根监听去重由调用方负责。 */
 export function listenToNativeEvent(
   domEventName: DOMEventName,
   isCapturePhaseListener: boolean,
@@ -419,7 +400,7 @@ export function listenToNativeEvent(
 
 // 仅 createEventHandle 在
 // target 不是 DOM 元素（例如 window）时使用。
-/** listenToNativeEventForNonManagedEventTarget 管理在根/portal 容器上安装监听器，选择插件并沿 Fiber 路径累积、批量分发事件的注册/监听边界；避免同一容器重复安装或遗漏 capture 配置。 */
+/** 为 window 等非 React 目标设置 non-managed 标志，并按事件名/阶段去重安装 listener。 */
 export function listenToNativeEventForNonManagedEventTarget(
   domEventName: DOMEventName,
   isCapturePhaseListener: boolean,
@@ -445,10 +426,10 @@ export function listenToNativeEventForNonManagedEventTarget(
   }
 }
 
-/** listeningMarker 保存在根/portal 容器上安装监听器，选择插件并沿 Fiber 路径累积、批量分发事件所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** 本 React 副本写在根容器和 document 上的监听安装标记。 */
 const listeningMarker = '_reactListening' + Math.random().toString(36).slice(2);
 
-/** listenToAllSupportedEvents 管理在根/portal 容器上安装监听器，选择插件并沿 Fiber 路径累积、批量分发事件的注册/监听边界；避免同一容器重复安装或遗漏 capture 配置。 */
+/** 每个容器安装一次根 capture 与可委托 bubble listener；selectionchange 在所属 document 单独去重安装。 */
 export function listenToAllSupportedEvents(rootContainerElement: EventTarget) {
   if (!(rootContainerElement as any)[listeningMarker]) {
     (rootContainerElement as any)[listeningMarker] = true;
@@ -478,7 +459,12 @@ export function listenToAllSupportedEvents(rootContainerElement: EventTarget) {
   }
 }
 
-/** addTrappedEventListener 管理在根/portal 容器上安装监听器，选择插件并沿 Fiber 路径累积、批量分发事件的注册/监听边界；避免同一容器重复安装或遗漏 capture 配置。 */
+/**
+ * 创建绑定当前容器的优先级 wrapper，按 capture 与浏览器 passive 能力安装监听器。
+ * 支持 passive 时 touchstart/touchmove/wheel 显式设为 true，保持原 document 委托的
+ * 行为。Legacy FB 延迟 click 的监听目标改为 document，但 wrapper 仍保留原容器；
+ * 首次调用先移除自己再派发，返回的 listener 身份用于 removeEventListener。
+ */
 function addTrappedEventListener(
   targetContainer: EventTarget,
   domEventName: DOMEventName,
@@ -492,7 +478,7 @@ function addTrappedEventListener(
     eventSystemFlags,
   );
   // 若不支持 passive 选项，事件会退化为
-// 主动式 active listener。
+  // 主动式 active listener。
   let isPassiveListener: void | boolean = undefined;
   if (passiveBrowserEventsSupported) {
     // 浏览器曾进行干预，让这些事件在 document 上
@@ -533,6 +519,7 @@ function addTrappedEventListener(
   // 兼容。
   if (enableLegacyFBSupport && isDeferredListenerForLegacyFBSupport) {
     const originalListener = listener;
+    /** Legacy FB 一次性监听：先移除本次原生监听器，再保留 this 与实参调用原 wrapper。 */
     // $FlowFixMe[missing-this-annot]
     listener = function (...p) {
       removeEventListener(
@@ -578,7 +565,7 @@ function addTrappedEventListener(
   }
 }
 
-/** deferClickToDocumentForLegacyFBSupport 执行在根/portal 容器上安装监听器，选择插件并沿 Fiber 路径累积、批量分发事件的核心步骤；输入来自原生事件/Fiber，输出保持插件分发与调度边界。 */
+/** 把 legacy FB click 延迟到 document 的一次性 listener；首次调用后移除该 listener。 */
 function deferClickToDocumentForLegacyFBSupport(
   domEventName: DOMEventName,
   targetContainer: EventTarget,
@@ -596,7 +583,7 @@ function deferClickToDocumentForLegacyFBSupport(
   );
 }
 
-/** isMatchingRootContainer 判断在根/portal 容器上安装监听器，选择插件并沿 Fiber 路径累积、批量分发事件的前置条件；返回值用于在热路径提前跳过不适用分支。 */
+/** 判断 Fiber 根/Portal 容器是否匹配当前原生 listener 目标，兼容注释容器的父节点。 */
 function isMatchingRootContainer(
   grandContainer: Element,
   targetContainer: EventTarget,
@@ -609,7 +596,13 @@ function isMatchingRootContainer(
   );
 }
 
-/** dispatchEventForPluginEventSystem 推进在根/portal 容器上安装监听器，选择插件并沿 Fiber 路径累积、批量分发事件的分发或重放状态机；阻塞时保留事件，解除后按原优先级继续。 */
+/**
+ * 把一个原生事件定位到当前 listener 所属的 Fiber 根，再批量提取和派发插件事件。
+ * Portal 的 Fiber 祖先已包含当前容器时返回，避免原 Portal 传播之外再重复派发；
+ * 嵌套独立根则沿内根容器的 DOM 祖先找到外根宿主 Fiber，以它作为该根的 target。
+ * 非受管 EventTarget 和目标直接监听绕过根匹配。Legacy FB click 可先转交一次性的
+ * document listener；普通路径的 batchedUpdates 在最外层派发结束后恢复受控控件。
+ */
 export function dispatchEventForPluginEventSystem(
   domEventName: DOMEventName,
   eventSystemFlags: EventSystemFlags,
@@ -726,7 +719,7 @@ export function dispatchEventForPluginEventSystem(
   );
 }
 
-/** createDispatchListener 为在根/portal 容器上安装监听器，选择插件并沿 Fiber 路径累积、批量分发事件创建封装对象；生成值保留原生事件身份并携带必要调度上下文。 */
+/** 把 Fiber 身份、handler 和 currentTarget 组合成一条调用记录。 */
 function createDispatchListener(
   instance: null | Fiber,
   listener: Function,
@@ -739,7 +732,13 @@ function createDispatchListener(
   };
 }
 
-/** accumulateSinglePhaseListeners 从原生事件和 Fiber 路径收集在根/portal 容器上安装监听器，选择插件并沿 Fiber 路径累积、批量分发事件所需数据；只生成满足插件条件的 listener/event。 */
+/**
+ * 沿 target→root 保存本阶段的 listener，始终先保存较深节点；执行时 capture 会逆序。
+ * 同一宿主节点先保存 EventHandle 再保存 props handler，Scope 复用最近宿主节点作为
+ * currentTarget。accumulateTargetOnly 使 scroll/scrollend 的 bubble 在首个 Fiber 后停止。
+ * beforeblur 遇到待删除/隐藏的 intercept Fiber（含 alternate）时清掉此前子树列表，
+ * 让仍可用的上层监听器继续接收提交期间的通知。
+ */
 export function accumulateSinglePhaseListeners(
   targetFiber: Fiber | null,
   reactName: string | null,
@@ -862,7 +861,7 @@ export function accumulateSinglePhaseListeners(
 // 因为这些插件只在 bubble 阶段处理，
 // 因此需要累积
 // 两阶段 listener。
-/** accumulateTwoPhaseListeners 从原生事件和 Fiber 路径收集在根/portal 容器上安装监听器，选择插件并沿 Fiber 路径累积、批量分发事件所需数据；只生成满足插件条件的 listener/event。 */
+/** 供 bubble 阶段运行的插件同时收集两阶段 handler；捕获插到前端，冒泡追加，未到 HostRoot 则丢弃列表。 */
 export function accumulateTwoPhaseListeners(
   targetFiber: Fiber | null,
   reactName: string,
@@ -905,7 +904,7 @@ export function accumulateTwoPhaseListeners(
   return [];
 }
 
-/** getParent 查询并返回在根/portal 容器上安装监听器，选择插件并沿 Fiber 路径累积、批量分发事件所需状态；无匹配时使用 null/默认值而不修改事件队列。 */
+/** 沿 Fiber.return 找下一宿主 Fiber，用于计算 enter/leave 传播路径。 */
 function getParent(inst: Fiber | null): Fiber | null {
   if (inst === null) {
     return null;
@@ -925,7 +924,7 @@ function getParent(inst: Fiber | null): Fiber | null {
   return null;
 }
 
-/** accumulateEnterLeaveListenersForEvent 从原生事件和 Fiber 路径收集在根/portal 容器上安装监听器，选择插件并沿 Fiber 路径累积、批量分发事件所需数据；只生成满足插件条件的 listener/event。 */
+/** 从 from/to 向共同祖先收集 leave/enter handler；leave 按向上顺序，enter 按向下顺序执行。 */
 function accumulateEnterLeaveListenersForEvent(
   dispatchQueue: DispatchQueue,
   event: KnownReactSyntheticEvent,
@@ -981,7 +980,7 @@ function accumulateEnterLeaveListenersForEvent(
 // 该插件只在 bubble 阶段处理，
 // 因此需要累积
 // 两阶段 listener。
-/** accumulateEnterLeaveTwoPhaseListeners 从原生事件和 Fiber 路径收集在根/portal 容器上安装监听器，选择插件并沿 Fiber 路径累积、批量分发事件所需数据；只生成满足插件条件的 listener/event。 */
+/** 找 from/to 的最近共同祖先，分别累积离开旧路径和进入新路径的 handler。 */
 export function accumulateEnterLeaveTwoPhaseListeners(
   dispatchQueue: DispatchQueue,
   leaveEvent: KnownReactSyntheticEvent,
@@ -1012,7 +1011,7 @@ export function accumulateEnterLeaveTwoPhaseListeners(
   }
 }
 
-/** accumulateEventHandleNonManagedNodeListeners 从原生事件和 Fiber 路径收集在根/portal 容器上安装监听器，选择插件并沿 Fiber 路径累积、批量分发事件所需数据；只生成满足插件条件的 listener/event。 */
+/** 从非 React EventTarget 的 event-handle 集合筛选匹配事件名和 capture 选项的回调。 */
 export function accumulateEventHandleNonManagedNodeListeners(
   reactEventType: DOMEventName,
   currentTarget: EventTarget,
@@ -1033,7 +1032,7 @@ export function accumulateEventHandleNonManagedNodeListeners(
   return listeners;
 }
 
-/** getListenerSetKey 查询并返回在根/portal 容器上安装监听器，选择插件并沿 Fiber 路径累积、批量分发事件所需状态；无匹配时使用 null/默认值而不修改事件队列。 */
+/** 把事件名与 capture/bubble 阶段组合为节点监听去重键。 */
 export function getListenerSetKey(
   domEventName: DOMEventName,
   capture: boolean,

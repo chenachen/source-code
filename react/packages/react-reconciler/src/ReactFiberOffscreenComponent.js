@@ -42,8 +42,9 @@ export type OffscreenProps = {
  */
 export type OffscreenState = {
   /**
-   * 重新显示时必须纳入渲染的基础 Lane。
-   * TODO: 当前始终为 NoLanes，尚未真正参与恢复调度。
+   * 隐藏期间被跳过或因挂起而保留的渲染 lanes。
+   * deferHiddenOffscreenComponent 累积这些 lanes；恢复隐藏/可见渲染时，
+   * pushHiddenContext 把它们纳入子树的渲染范围，完成隐藏后台渲染后可清成 NoLanes。
    */
   baseLanes: Lanes,
   /** 挂起或延迟子树继续渲染时要恢复的 Cache 池。 */
@@ -65,7 +66,7 @@ type OffscreenVisibility = number;
 
 /** Offscreen 子树当前对用户可见。 */
 export const OffscreenVisible = /*                     */ 0b001;
-/** 隐藏子树的 passive effects 当前仍与外部系统连接。 */
+/** 子树的 passive effects 已连接；可见树与暂保留订阅的 Suspense 隐藏树都可置此位。 */
 export const OffscreenPassiveEffectsConnected = /*     */ 0b010;
 
 /** 提交阶段挂在 Offscreen Fiber 上的可变宿主状态。 */

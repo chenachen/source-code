@@ -9,6 +9,7 @@
     />
     <title>Diff 算法专题 · Vue Runtime 内核解剖</title>
     <link rel="stylesheet" href="assets/styles.css" />
+    <link rel="stylesheet" href="assets/engineering-diagrams.css" />
     <style>
       .array-view {
         display: flex;
@@ -90,7 +91,7 @@
             <code>hostSetElementText</code>；若强行拿它讲
             LIS，就看不到算法真正处理的输入。Diff 页因此选用 Vue 仓库真实测试
             <code>moving single child forward</code>：
-            <strong>[1,2,3,4] → [2,3,1,4]</strong>。本页从头到尾只手算这组输入，
+            <strong>[1,2,3,4] → [2,3,1,4]</strong>。本页主例手算这组输入，
             它恰好需要中段映射、乱序检测、LIS 与一次真实移动。
           </p>
           <div class="callout warm">
@@ -230,7 +231,7 @@ const inner = (c: TestElement) =&gt; serializeInner(c)</code></pre>
     ])
   })</code></pre>
           <p class="test-proof">
-                <strong>运行结果：</strong>Node 24.5.0 定向执行仓库测试
+            <strong>运行结果：</strong>Node 24.5.0 定向执行仓库测试
             <code>moving single child forward</code>，1 passed / 37 skipped。
           </p>
 
@@ -274,102 +275,623 @@ const inner = (c: TestElement) =&gt; serializeInner(c)</code></pre>
         </section>
 
         <section class="article-section prose" id="diff-execution-flow">
-          <h2>同一列表执行图：从身份收缩到一次 move</h2>
-          <div
-            class="flow"
-            role="img"
-            aria-label="keyed children 从旧序列 1 2 3 4 更新到 2 3 1 4 的完整 diff 流程"
-          >
-            <div class="flow-step">
-              <span class="flow-index">01</span
-              ><span class="flow-copy"
-                ><strong>输入旧 [1,2,3,4] / 新 [2,3,1,4]</strong
-                ><small
-                  >每个 span 的 type 相同，数字同时是 key；i=0，e1=e2=3。</small
-                ></span
-              ><span class="flow-file">rendererChildren.spec.ts</span>
+          <h2>同一列表快照：新旧 VNode 复用宿主对象，再移动一次</h2>
+          <figure class="eng-diagram" id="diff-host-identity">
+            <div
+              class="eng-scroll"
+              tabindex="0"
+              aria-label="工程图，可横向滚动"
+            >
+              <svg
+                class="eng-svg"
+                id="diff-host-identity-svg"
+                viewBox="0 0 1180 766"
+                style="--diagram-width: 1180px"
+                role="img"
+                aria-labelledby="diff-host-identity-title diff-host-identity-desc"
+              >
+                <title id="diff-host-identity-title">
+                  VNode 新旧对象与宿主复用、一次移动快照
+                </title>
+                <desc id="diff-host-identity-desc">
+                  旧VNode对象O与新VNode对象N不同，但按key匹配后指向同一宿主对象E。尾部key4同步后，中段映射为2、3、1，LIS保留key2和key3。宿主E1从开头移动到锚点E4前，最终顺序E2、E3、E1、E4。
+                </desc>
+                <defs>
+                  <marker
+                    id="diff-host-identity-arrow"
+                    viewBox="0 0 10 10"
+                    refX="9"
+                    refY="5"
+                    markerWidth="7"
+                    markerHeight="7"
+                    orient="auto"
+                  >
+                    <path d="M 0 0 L 10 5 L 0 10 Z" fill="var(--brand)" />
+                  </marker>
+                </defs>
+                <text class="eng-heading" x="600" y="32" text-anchor="middle">
+                  <tspan x="600" dy="0">
+                    同一真实用例：[1,2,3,4] → [2,3,1,4]
+                  </tspan>
+                </text>
+                <text class="eng-label" x="292" y="67" text-anchor="middle">
+                  <tspan x="292" dy="0">旧 VNode：[O1,O2,O3,O4]</tspan>
+                </text>
+                <text class="eng-small" x="292" y="91" text-anchor="middle">
+                  <tspan x="292" dy="0">
+                    新 VNode：[N2,N3,N1,N4]；N 与 O 是不同对象
+                  </tspan>
+                </text>
+                <text class="eng-label" x="917" y="67" text-anchor="middle">
+                  <tspan x="917" dy="0">
+                    宿主对象 E1 / E2 / E3 / E4 都继续使用
+                  </tspan>
+                </text>
+                <text class="eng-small" x="110" y="128" text-anchor="middle">
+                  <tspan x="110" dy="0">旧 VNode</tspan>
+                </text>
+                <text class="eng-small" x="290" y="128" text-anchor="middle">
+                  <tspan x="290" dy="0">按 key 匹配的新 VNode</tspan>
+                </text>
+                <text class="eng-small" x="470" y="128" text-anchor="middle">
+                  <tspan x="470" dy="0">共享宿主引用</tspan>
+                </text>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="25"
+                    y="147"
+                    width="160"
+                    height="65"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="105.0"
+                    y="173.0"
+                    text-anchor="middle"
+                  >
+                    <tspan x="105.0" dy="0">O1 · key=1</tspan>
+                    <tspan x="105.0" dy="23">el → E1</tspan>
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="210"
+                    y="147"
+                    width="160"
+                    height="65"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="290.0"
+                    y="173.0"
+                    text-anchor="middle"
+                  >
+                    <tspan x="290.0" dy="0">N1 · key=1</tspan>
+                    <tspan x="290.0" dy="23">el → E1</tspan>
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-state"
+                    x="395"
+                    y="147"
+                    width="160"
+                    height="65"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="475.0"
+                    y="184.5"
+                    text-anchor="middle"
+                  >
+                    <tspan x="475.0" dy="0">同一对象 E1</tspan>
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M 185 179 H 210"
+                  marker-end="url(#diff-host-identity-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 370 179 H 395"
+                  marker-end="url(#diff-host-identity-arrow)"
+                />
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="25"
+                    y="241"
+                    width="160"
+                    height="65"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="105.0"
+                    y="267.0"
+                    text-anchor="middle"
+                  >
+                    <tspan x="105.0" dy="0">O2 · key=2</tspan>
+                    <tspan x="105.0" dy="23">el → E2</tspan>
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="210"
+                    y="241"
+                    width="160"
+                    height="65"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="290.0"
+                    y="267.0"
+                    text-anchor="middle"
+                  >
+                    <tspan x="290.0" dy="0">N2 · key=2</tspan>
+                    <tspan x="290.0" dy="23">el → E2</tspan>
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-state"
+                    x="395"
+                    y="241"
+                    width="160"
+                    height="65"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="475.0"
+                    y="278.5"
+                    text-anchor="middle"
+                  >
+                    <tspan x="475.0" dy="0">同一对象 E2</tspan>
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M 185 273 H 210"
+                  marker-end="url(#diff-host-identity-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 370 273 H 395"
+                  marker-end="url(#diff-host-identity-arrow)"
+                />
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="25"
+                    y="335"
+                    width="160"
+                    height="65"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="105.0"
+                    y="361.0"
+                    text-anchor="middle"
+                  >
+                    <tspan x="105.0" dy="0">O3 · key=3</tspan>
+                    <tspan x="105.0" dy="23">el → E3</tspan>
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="210"
+                    y="335"
+                    width="160"
+                    height="65"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="290.0"
+                    y="361.0"
+                    text-anchor="middle"
+                  >
+                    <tspan x="290.0" dy="0">N3 · key=3</tspan>
+                    <tspan x="290.0" dy="23">el → E3</tspan>
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-state"
+                    x="395"
+                    y="335"
+                    width="160"
+                    height="65"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="475.0"
+                    y="372.5"
+                    text-anchor="middle"
+                  >
+                    <tspan x="475.0" dy="0">同一对象 E3</tspan>
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M 185 367 H 210"
+                  marker-end="url(#diff-host-identity-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 370 367 H 395"
+                  marker-end="url(#diff-host-identity-arrow)"
+                />
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="25"
+                    y="429"
+                    width="160"
+                    height="65"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="105.0"
+                    y="455.0"
+                    text-anchor="middle"
+                  >
+                    <tspan x="105.0" dy="0">O4 · key=4</tspan>
+                    <tspan x="105.0" dy="23">el → E4</tspan>
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="210"
+                    y="429"
+                    width="160"
+                    height="65"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="290.0"
+                    y="455.0"
+                    text-anchor="middle"
+                  >
+                    <tspan x="290.0" dy="0">N4 · key=4</tspan>
+                    <tspan x="290.0" dy="23">el → E4</tspan>
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-state"
+                    x="395"
+                    y="429"
+                    width="160"
+                    height="65"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="475.0"
+                    y="466.5"
+                    text-anchor="middle"
+                  >
+                    <tspan x="475.0" dy="0">同一对象 E4</tspan>
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M 185 461 H 210"
+                  marker-end="url(#diff-host-identity-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 370 461 H 395"
+                  marker-end="url(#diff-host-identity-arrow)"
+                />
+                <text class="eng-small" x="912" y="130" text-anchor="middle">
+                  <tspan x="912" dy="0">
+                    倒序提交前：patch 已完成，宿主顺序尚未改变
+                  </tspan>
+                </text>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="610"
+                    y="150"
+                    width="120"
+                    height="70"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="670.0"
+                    y="178.5"
+                    text-anchor="middle"
+                  >
+                    <tspan x="670.0" dy="0">key 1</tspan>
+                    <tspan x="670.0" dy="23">E1</tspan>
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="750"
+                    y="150"
+                    width="120"
+                    height="70"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="810.0"
+                    y="178.5"
+                    text-anchor="middle"
+                  >
+                    <tspan x="810.0" dy="0">key 2</tspan>
+                    <tspan x="810.0" dy="23">E2</tspan>
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="890"
+                    y="150"
+                    width="120"
+                    height="70"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="950.0"
+                    y="178.5"
+                    text-anchor="middle"
+                  >
+                    <tspan x="950.0" dy="0">key 3</tspan>
+                    <tspan x="950.0" dy="23">E3</tspan>
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-state"
+                    x="1030"
+                    y="150"
+                    width="120"
+                    height="70"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="1090.0"
+                    y="178.5"
+                    text-anchor="middle"
+                  >
+                    <tspan x="1090.0" dy="0">key 4</tspan>
+                    <tspan x="1090.0" dy="23">E4</tspan>
+                  </text>
+                </g>
+                <text class="eng-small" x="1000" y="246" text-anchor="middle">
+                  <tspan x="1000" dy="0">anchor = E4</tspan>
+                </text>
+                <text class="eng-label" x="896" y="290" text-anchor="middle">
+                  <tspan x="896" dy="0">r=2：map[2]=1，节点来自旧下标 0</tspan>
+                  <tspan x="896" dy="23">2 不在 LIS [0,1] 中 → move key1</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 670 220 V 327 H 950 V 400"
+                  marker-end="url(#diff-host-identity-arrow)"
+                />
+                <text class="eng-label" x="896" y="357" text-anchor="middle">
+                  <tspan x="896" dy="0">hostInsert(E1, div, E4)</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 1090 220 V 400"
+                  marker-end="url(#diff-host-identity-arrow)"
+                />
+                <g>
+                  <rect
+                    class="eng-state"
+                    x="610"
+                    y="400"
+                    width="120"
+                    height="70"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="670.0"
+                    y="428.5"
+                    text-anchor="middle"
+                  >
+                    <tspan x="670.0" dy="0">key 2</tspan>
+                    <tspan x="670.0" dy="23">E2</tspan>
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-state"
+                    x="750"
+                    y="400"
+                    width="120"
+                    height="70"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="810.0"
+                    y="428.5"
+                    text-anchor="middle"
+                  >
+                    <tspan x="810.0" dy="0">key 3</tspan>
+                    <tspan x="810.0" dy="23">E3</tspan>
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="890"
+                    y="400"
+                    width="120"
+                    height="70"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="950.0"
+                    y="428.5"
+                    text-anchor="middle"
+                  >
+                    <tspan x="950.0" dy="0">key 1</tspan>
+                    <tspan x="950.0" dy="23">E1</tspan>
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-state"
+                    x="1030"
+                    y="400"
+                    width="120"
+                    height="70"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="1090.0"
+                    y="428.5"
+                    text-anchor="middle"
+                  >
+                    <tspan x="1090.0" dy="0">key 4</tspan>
+                    <tspan x="1090.0" dy="23">E4</tspan>
+                  </text>
+                </g>
+                <text class="eng-label" x="908" y="501" text-anchor="middle">
+                  <tspan x="908" dy="0">
+                    提交后：[E2,E3,E1,E4]；只移动 E1 一次
+                  </tspan>
+                </text>
+                <g>
+                  <rect
+                    class="eng-note"
+                    x="25"
+                    y="553"
+                    width="530"
+                    height="106"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="290.0"
+                    y="588.0"
+                    text-anchor="middle"
+                  >
+                    <tspan x="290.0" dy="0">
+                      头同步停在 key1 ≠ key2；尾同步 patch key4
+                    </tspan>
+                    <tspan x="290.0" dy="23">
+                      未知中段：旧 [1,2,3] / 新 [2,3,1]
+                    </tspan>
+                    <tspan x="290.0" dy="23">
+                      key → 新下标：{2→0, 3→1, 1→2}
+                    </tspan>
+                  </text>
+                </g>
+                <text class="eng-heading" x="892" y="554" text-anchor="middle">
+                  <tspan x="892" dy="0">
+                    newIndexToOldIndexMap（旧下标 + 1）
+                  </tspan>
+                </text>
+                <g>
+                  <rect
+                    class="eng-state"
+                    x="655"
+                    y="577"
+                    width="140"
+                    height="76"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="725.0"
+                    y="608.5"
+                    text-anchor="middle"
+                  >
+                    <tspan x="725.0" dy="0">新位置 0 · key2</tspan>
+                    <tspan x="725.0" dy="23">映射值 2</tspan>
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-state"
+                    x="815"
+                    y="577"
+                    width="140"
+                    height="76"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="885.0"
+                    y="608.5"
+                    text-anchor="middle"
+                  >
+                    <tspan x="885.0" dy="0">新位置 1 · key3</tspan>
+                    <tspan x="885.0" dy="23">映射值 3</tspan>
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="975"
+                    y="577"
+                    width="140"
+                    height="76"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="1045.0"
+                    y="608.5"
+                    text-anchor="middle"
+                  >
+                    <tspan x="1045.0" dy="0">新位置 2 · key1</tspan>
+                    <tspan x="1045.0" dy="23">映射值 1</tspan>
+                  </text>
+                </g>
+                <text class="eng-label" x="886" y="690" text-anchor="middle">
+                  <tspan x="886" dy="0">
+                    LIS 返回位置 [0,1] → 保留 key2 / key3
+                  </tspan>
+                </text>
+                <text class="eng-heading" x="600" y="734" text-anchor="middle">
+                  <tspan x="600" dy="0">
+                    0 创建 · 0 删除 · 1 move；四个 VNode 都 patch，四个 el
+                    都复用
+                  </tspan>
+                </text>
+              </svg>
             </div>
-            <div class="flow-join"></div>
-            <div class="flow-step">
-              <span class="flow-index">02</span
-              ><span class="flow-copy"
-                ><strong>头同步立即停止</strong
-                ><small>旧 key1 ≠ 新 key2；i 仍为 0。</small></span
-              ><span class="flow-file">phase 1</span>
-            </div>
-            <div class="flow-join"></div>
-            <div class="flow-step">
-              <span class="flow-index">03</span
-              ><span class="flow-copy"
-                ><strong>尾同步复用 key4</strong
-                ><small
-                  >旧尾 key4 = 新尾 key4，先 patch；e1=e2 由 3 退到 2。</small
-                ></span
-              ><span class="flow-file">phase 2</span>
-            </div>
-            <div class="flow-join"></div>
-            <div class="flow-step">
-              <span class="flow-index">04</span
-              ><span class="flow-copy"
-                ><strong>新中段 key map</strong
-                ><small
-                  >{2→0, 3→1, 1→2}；toBePatched=3，映射初始 [0,0,0]。</small
-                ></span
-              ><span class="flow-file">phase 5.1</span>
-            </div>
-            <div class="flow-join"></div>
-            <div class="flow-step">
-              <span class="flow-index">05</span
-              ><span class="flow-copy"
-                ><strong>扫描旧 key1/key2/key3</strong
-                ><small
-                  >依次写入新位置 2/0/1，保存旧下标+1，得到
-                  [2,3,1]；第二项开始发现下降，moved=true。</small
-                ></span
-              ><span class="flow-file">phase 5.2</span>
-            </div>
-            <div class="flow-join"></div>
-            <div class="flow-step">
-              <span class="flow-index">06</span
-              ><span class="flow-copy"
-                ><strong>getSequence([2,3,1]) → [0,1]</strong
-                ><small
-                  >返回的是数组下标，不是值也不是 key；代表新中段位置 0/1 的
-                  key2/key3 可不移动。</small
-                ></span
-              ><span class="flow-file">LIS</span>
-            </div>
-            <div class="flow-join"></div>
-            <div class="flow-step">
-              <span class="flow-index">07</span
-              ><span class="flow-copy"
-                ><strong>倒序 i=2：move key1</strong
-                ><small
-                  >i=2 不在 LIS；右侧 nextIndex=3 是 key4，以 key4.el 为
-                  anchor，move key1 到它前面。</small
-                ></span
-              ><span class="flow-file">phase 5.3</span>
-            </div>
-            <div class="flow-join"></div>
-            <div class="flow-step">
-              <span class="flow-index">08</span
-              ><span class="flow-copy"
-                ><strong>倒序 i=1/0：保留 key3/key2</strong
-                ><small>依次命中 LIS 尾部，j--，不调用 move。</small></span
-              ><span class="flow-file">stable nodes</span>
-            </div>
-            <div class="flow-join"></div>
-            <div class="flow-step">
-              <span class="flow-index">09</span
-              ><span class="flow-copy"
-                ><strong>最终 [2,3,1,4]</strong
-                ><small
-                  >无新增、无删除；4 个节点都 patch，只有 key1 做一次宿主 insert
-                  移动。</small
-                ></span
-              ><span class="flow-file">assertion</span>
-            </div>
-          </div>
+            <figcaption>
+              O / N / E 是图中的身份记号：O 与 N 表示两次 render 创建的 VNode，E
+              表示同一个 TestElement 宿主对象。<code>patch</code> 把旧 el 交给新
+              VNode；<code>move</code> 改变 E1 的位置，未创建另一份
+              E1。真实用例见
+              <code>rendererChildren.spec.ts · moving single child forward</code
+              >；教程测试还逐项断言宿主对象身份。
+            </figcaption>
+          </figure>
           <h3>按数组变化再走一遍</h3>
           <ol>
             <li>先用 type+key 从两端收缩确定区，本例只锁住共同尾 key4。</li>
@@ -557,7 +1079,7 @@ const inner = (c: TestElement) =&gt; serializeInner(c)</code></pre>
     let e1 = c1.length - 1 // 旧 children 末端下标。
     let e2 = l2 - 1 // 新 children 末端下标。
 
-    // 1. 从头同步相同类型节点。
+    // 1. 从头同步 type 和 key 相同的节点。
     // (a b) c
     // (a b) d e
     while (i &lt;= e1 &amp;&amp; i &lt;= e2) {
@@ -583,7 +1105,7 @@ const inner = (c: TestElement) =&gt; serializeInner(c)</code></pre>
       i++
     }
 
-    // 2. 从尾同步相同类型节点。
+    // 2. 从尾同步 type 和 key 相同的节点。
     // a (b c)
     // d e (b c)
     while (i &lt;= e1 &amp;&amp; i &lt;= e2) {
@@ -662,7 +1184,7 @@ const inner = (c: TestElement) =&gt; serializeInner(c)</code></pre>
         if (prevChild.key != null) {
           newIndex = keyToNewIndexMap.get(prevChild.key)
         } else {
-          // 无 key 节点只能线性寻找尚未占用、type 相同的新节点。
+          // 无 key 节点线性寻找尚未占用、type 相同且同样无 key 的新节点。
           for (j = s2; j &lt;= e2; j++) {
             if (
               newIndexToOldIndexMap[j - s2] === 0 &amp;&amp;
@@ -735,7 +1257,8 @@ const inner = (c: TestElement) =&gt; serializeInner(c)</code></pre>
             optimized,
           )
         } else if (moved) {
-          // 完全逆序可能没有可保留序列；其他情况仅移动不属于 LIS 的节点。
+          // j &lt; 0 表示 LIS 中可保留的位置已处理完；其余不在 LIS 的节点需要移动。
+          // 非空的完全逆序复用序列仍有长度为 1 的 LIS，可保留一个节点。
           if (j &lt; 0 || i !== increasingNewIndexSequence[j]) {
             move(nextChild, container, anchor, MoveType.REORDER)
           } else {
@@ -792,9 +1315,16 @@ const inner = (c: TestElement) =&gt; serializeInner(c)</code></pre>
   return result
 }</code></pre>
           <p>
-            参数是旧下标+1数组，0 被忽略；返回值是原数组位置。对 [2,3,1]，result
-            先变 [0,1]，读到 1 后只把长度 1 候选尾替换成位置 2，最终回溯仍得到
-            [0,1]。
+            参数是旧下标+1数组，返回值是原数组位置；扫描时跳过值 0。对
+            [2,3,1]，result 先变 [0,1]，读到 1 后只把长度 1 候选尾替换成位置
+            2，最终回溯仍得到 [0,1]。
+          </p>
+          <p>
+            <code>result</code> 初始为 <code>[0]</code>，若输入首项为
+            0，回溯结果可能仍含 这个初始位置。例如
+            <code>getSequence([0,3,2,1])</code> 返回 <code>[0,3]</code>。
+            倒序提交先处理映射值为 0 的新增分支，因此位置 0
+            会挂载新节点，不会被当作可保留的旧节点。
           </p>
           <div class="branch-grid">
             <div class="branch">
@@ -830,21 +1360,24 @@ const inner = (c: TestElement) =&gt; serializeInner(c)</code></pre>
           </div>
         </section>
 
-        <div class="level-divider">主例到此结束 · 以下是可选练习与第二种输入</div>
+        <div class="level-divider">
+          主例到此结束 · 以下是交互练习与适用条件
+        </div>
 
         <section class="article-section prose" id="see-diff">
           <h2>可选练习：操作列表，分清四种 DOM 动作</h2>
           <p>
             如果你已经能手算上面的 <code>[1,2,3,4] → [2,3,1,4]</code>，
-            第一次阅读可以直接跳到页末测试清单。下面不再证明主例，而是换几种输入，
+            下面换几种输入，
             帮你检查“复用、移动、新建、删除”是否真的分清。
           </p>
           <p>
             下面每个任务都有一个稳定 id，也就是模板中的
-            <code>key</code
-            >。这段交互由页面里的 <code>Map + insertBefore</code> 教学模拟驱动，
-            不是在调用 Vue Renderer；它只帮你看清“复用、移动、新建、删除”分别意味着什么。
-            每项显示的 DOM 编号来自真实 <code>li</code> 对象；编号不变就表示节点没有重建。
+            <code>key</code>。这段交互由页面里的
+            <code>Map + insertBefore</code> 教学模拟驱动， 不是在调用 Vue
+            Renderer；它只帮你看清“复用、移动、新建、删除”分别意味着什么。
+            每项显示的 DOM 编号来自真实
+            <code>li</code> 对象；编号不变就表示节点没有重建。
           </p>
           <div class="demo-panel" data-diff-demo>
             <div class="demo-toolbar">
@@ -887,151 +1420,15 @@ const inner = (c: TestElement) =&gt; serializeInner(c)</code></pre>
           </p>
         </section>
 
-        <section class="article-section prose" id="plain-rules">
-          <h2>不用算法术语，也能先理解四条规则</h2>
-          <div class="sequence">
-            <div class="sequence-item">
-              <strong>先确认身份</strong><br />同一种节点且 key
-              相同，才可能是原来的任务；文字相同不代表身份相同。
-            </div>
-            <div class="sequence-item">
-              <strong>两边没变的先跳过</strong
-              ><br />列表开头和结尾经常保持不变，先处理它们，真正困难的范围会迅速缩小。
-            </div>
-            <div class="sequence-item">
-              <strong>中间按 key 找旧朋友</strong><br />新列表给出 key
-              的新位置；扫描旧列表就能知道谁消失、谁留下、谁换了位置。
-            </div>
-            <div class="sequence-item">
-              <strong>能不移动的尽量不移动</strong
-              ><br />留下的节点中，总有一批相对顺序已经正确。Vue
-              保持这批节点，移动其余节点。
-            </div>
-          </div>
-          <div class="plain-section">
-            <span class="scene-label">把列表想成重新排座位</span>
-            <p>
-              学生胸牌是
-              key。老师先确认门口和窗边没换的人；再给中间学生查新座位；找到一条已经按新顺序坐好的最长队伍，让他们不动；最后把新同学和位置不对的人从后往前安排到已有同学前面。
-            </p>
-          </div>
-          <div class="reader-check">
-            <strong>读完主线用例与源码后应能回答：</strong>key
-            用来说明身份；Diff
-            先复用、再删除/新增、最后减少移动；最长递增子序列只是寻找“最多可以不动的人”。
-          </div>
-        </section>
-
-        <section class="article-section prose" id="plain-walkthrough">
-          <h2>一个小例子先走通结果</h2>
-          <div class="before-after">
-            <div class="scene-window">
-              <div class="scene-titlebar">旧顺序</div>
-              <div class="scene-body">
-                <ul class="ui-list">
-                  <li class="ui-item">A</li>
-                  <li class="ui-item">B</li>
-                  <li class="ui-item">C</li>
-                  <li class="ui-item">D</li>
-                </ul>
-              </div>
-            </div>
-            <div class="scene-window">
-              <div class="scene-titlebar">新顺序</div>
-              <div class="scene-body">
-                <ul class="ui-list">
-                  <li class="ui-item">A</li>
-                  <li class="ui-item moved">C</li>
-                  <li class="ui-item">B</li>
-                  <li class="ui-item">D</li>
-                </ul>
-              </div>
-            </div>
-          </div>
-          <ol>
-            <li>A 在两边开头相同，直接复用。</li>
-            <li>D 在两边结尾相同，直接复用。</li>
-            <li>中间只剩旧 [B, C] 与新 [C, B]。</li>
-            <li>B、C 的 key 都存在，因此不删除也不重建。</li>
-            <li>只需移动其中一个节点，就能得到新顺序。</li>
-          </ol>
-          <p>
-            后半章要解决的，就是怎样把这五句话变成对任意长列表都可靠、且接近最少
-            DOM 移动的算法。
-          </p>
-        </section>
-
         <div class="level-divider">
-          下面是第二遍专题拆解 · 主用例与核心源码已在页首完整走通
+          主例之后：身份约束、其他 children 形态与第二组输入
         </div>
-
-        <section class="article-section prose" id="why-diff">
-          <h2>为什么 Renderer 需要专门的 Diff</h2>
-          <p>
-            每次 render 都会生成一棵新的 VNode 树。如果直接删除旧 DOM、重建新
-            DOM，界面结果可能正确，但会丢失大量运行时状态：输入框选区、滚动位置、原生元素状态、组件实例、KeepAlive
-            缓存、Transition 阶段，以及用户持有的节点引用。
-          </p>
-          <p>
-            因此 Diff 的目标不是单纯追求最少编辑距离，而是同时满足四个约束：
-          </p>
-          <div class="card-grid">
-            <article class="card">
-              <span class="card-label">IDENTITY</span>
-              <h3>身份正确</h3>
-              <p>
-                type + key 相同的 VNode 才能代表同一逻辑节点，组件实例和 DOM
-                才允许复用。
-              </p>
-            </article>
-            <article class="card">
-              <span class="card-label">ORDER</span>
-              <h3>最终顺序正确</h3>
-              <p>
-                新 children 的逻辑顺序必须映射到真实宿主顺序，包括 Fragment
-                锚点范围。
-              </p>
-            </article>
-            <article class="card">
-              <span class="card-label">MINIMAL HOST WORK</span>
-              <h3>减少宿主操作</h3>
-              <p>
-                VNode 比较很便宜，真实 DOM
-                创建、删除和移动更昂贵，应尽量复用并少 move。
-              </p>
-            </article>
-            <article class="card">
-              <span class="card-label">LIFECYCLE</span>
-              <h3>生命周期正确</h3>
-              <p>新增才 mount，消失才 unmount，移动不能触发组件重新创建。</p>
-            </article>
-          </div>
-          <div class="callout">
-            <strong>Vue 的 Diff 是带业务语义的树协调算法。</strong
-            >它比较的不只是标签字符串，还要维护组件、指令、ref、Transition、Teleport
-            和 Suspense 的运行时协议。
-          </div>
-          <div class="source-links">
-            <a
-              class="source-link"
-              href="../../../vue/packages/runtime-core/src/renderer.ts"
-              >本地：renderer.ts</a
-            >
-            <a
-              class="source-link"
-              href="../../../vue/packages/runtime-core/__tests__/rendererChildren.spec.ts"
-              >本地：rendererChildren.spec.ts</a
-            >
-            <a
-              class="source-link"
-              href="https://github.com/vuejs/core/blob/v3.5.41/packages/runtime-core/src/renderer.ts#L1804-L2033"
-              >GitHub：patchKeyedChildren</a
-            >
-          </div>
-        </section>
-
+        <span id="plain-rules"></span><span id="plain-walkthrough"></span><span id="why-diff"></span>
         <section class="article-section prose" id="identity">
-          <h2>第一原则：key 参与定义节点身份</h2>
+          <h2>复用的前提：type 与 key 一起定义身份</h2>
+          <p>主例已经走完映射、LIS 与倒序移动。下面补充它依赖的身份约束和其他输入形态。
+            保留节点身份也会保留输入框选区、组件实例和用户持有的 DOM 引用；移动不能被误做成卸载后重建。
+            Renderer 还需按 VNode 类型处理 ref、指令与内置组件协议。</p>
           <p>
             <code>isSameVNodeType(n1, n2)</code> 的核心判断是
             <code>n1.type === n2.type && n1.key === n2.key</code>。type 相同但
@@ -1090,8 +1487,10 @@ const inner = (c: TestElement) =&gt; serializeInner(c)</code></pre>
         <section class="article-section prose" id="children-shapes">
           <h2>进入 keyed diff 前，先排除简单形态</h2>
           <p>
-            <code>patchChildren</code> 先根据 shapeFlag 区分文本、数组与空
-            children。只有“旧数组 → 新数组”才需要列表 Diff。
+            <code>patchChildren</code> 先检查 KEYED_FRAGMENT / UNKEYED_FRAGMENT
+            标记，命中后直接进入对应列表算法；没有命中时，才根据 shapeFlag
+            区分文本、数组与空 children。通用路径中，只有“旧数组 →
+            新数组”才进入列表 Diff。
           </p>
           <div class="table-wrap">
             <table>
@@ -1159,241 +1558,856 @@ const inner = (c: TestElement) =&gt; serializeInner(c)</code></pre>
         </section>
 
         <section class="article-section prose" id="overview">
-          <h2>Vue 3 keyed diff 的整体思路</h2>
-          <p>
-            Vue 3 并不是简单沿用 Vue 2
-            的“四指针交叉比较”。它先同步稳定的头尾，再对中间未知区间使用 key Map
-            和最长递增子序列。
-          </p>
-          <div class="diagram">
-            <div class="diagram-title">PATCH KEYED CHILDREN · 8 PHASES</div>
-            <div class="sequence">
-              <div class="sequence-item">
-                <strong>同步头部</strong><br />从左向右 patch 连续相同节点。
-              </div>
-              <div class="sequence-item">
-                <strong>同步尾部</strong><br />从右向左 patch 连续相同节点。
-              </div>
-              <div class="sequence-item">
-                <strong>旧序列耗尽</strong><br />剩余新节点全部 mount。
-              </div>
-              <div class="sequence-item">
-                <strong>新序列耗尽</strong><br />剩余旧节点全部 unmount。
-              </div>
-              <div class="sequence-item">
-                <strong>建立 key Map</strong><br />记录未知新区间 key →
-                newIndex。
-              </div>
-              <div class="sequence-item">
-                <strong>扫描未知旧区间</strong
-                ><br />复用可匹配节点，删除不存在节点。
-              </div>
-              <div class="sequence-item">
-                <strong>计算 LIS</strong><br />只在确实 moved
-                时寻找可保持原位的最大集合。
-              </div>
-              <div class="sequence-item">
-                <strong>倒序提交</strong><br />新增缺失节点，移动不在 LIS
-                中的节点。
-              </div>
+          <h2>算法总图：按需回查分支</h2>
+          <details>
+            <summary>展开 keyed diff 的快路径、未知区间与倒序提交总图</summary>
+            <p>主例经过了未知区间分支；总图还列出旧段耗尽、新段耗尽、没有移动和新增节点的出口。</p>
+          <figure class="eng-diagram" id="diff-keyed-control">
+            <div
+              class="eng-scroll"
+              tabindex="0"
+              aria-label="工程图，可横向滚动"
+            >
+              <svg
+                class="eng-svg"
+                id="diff-keyed-control-svg"
+                viewBox="0 0 1420 2084"
+                style="--diagram-width: 1420px"
+                role="img"
+                aria-labelledby="diff-keyed-control-title diff-keyed-control-desc"
+              >
+                <title id="diff-keyed-control-title">
+                  Keyed Diff 的快路径、未知段扫描与倒序提交回路
+                </title>
+                <desc id="diff-keyed-control-desc">
+                  头尾同步各自循环。旧段耗尽挂载，新段耗尽卸载。否则建立新key表和零映射，扫描旧节点，找到位置则记录旧下标加一并patch，找不到则卸载。扫描后仅在moved时算LIS；倒序提交先处理零映射的新节点，再决定已有节点是否需要move，每轮递减索引并复用右侧锚点。
+                </desc>
+                <defs>
+                  <marker
+                    id="diff-keyed-control-arrow"
+                    viewBox="0 0 10 10"
+                    refX="9"
+                    refY="5"
+                    markerWidth="7"
+                    markerHeight="7"
+                    orient="auto"
+                  >
+                    <path d="M 0 0 L 10 5 L 0 10 Z" fill="var(--brand)" />
+                  </marker>
+                </defs>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="355"
+                    y="20"
+                    width="340"
+                    height="76"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="525.0"
+                    y="51.5"
+                    text-anchor="middle"
+                  >
+                    <tspan x="525.0" dy="0">
+                      patchKeyedChildren(c1, c2, …)
+                    </tspan>
+                    <tspan x="525.0" dy="23">
+                      i=0；e1 / e2 指向旧 / 新末尾
+                    </tspan>
+                  </text>
+                </g>
+                <g>
+                  <polygon
+                    class="eng-decision"
+                    points="525,117 715,175 525,233 335,175"
+                  />
+                  <text class="eng-label" x="525" y="169" text-anchor="middle">
+                    <tspan x="525" dy="0">两边还有节点且</tspan>
+                    <tspan x="525" dy="23">头部 type / key 相同？</tspan>
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="35"
+                    y="137"
+                    width="250"
+                    height="76"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="160.0"
+                    y="168.5"
+                    text-anchor="middle"
+                  >
+                    <tspan x="160.0" dy="0">patch(c1[i], c2[i])</tspan>
+                    <tspan x="160.0" dy="23">i++；继续头同步</tspan>
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M 525 96 V 117"
+                  marker-end="url(#diff-keyed-control-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 335 175 H 285"
+                  marker-end="url(#diff-keyed-control-arrow)"
+                />
+                <text class="eng-small" x="307" y="162" text-anchor="middle">
+                  <tspan x="307" dy="0">是</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 160 137 V 107 H 525 V 117"
+                  marker-end="url(#diff-keyed-control-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 525 233 V 270"
+                  marker-end="url(#diff-keyed-control-arrow)"
+                />
+                <text class="eng-small" x="549" y="253" text-anchor="middle">
+                  <tspan x="549" dy="0">否</tspan>
+                </text>
+                <g>
+                  <polygon
+                    class="eng-decision"
+                    points="525,270 715,328 525,386 335,328"
+                  />
+                  <text class="eng-label" x="525" y="322" text-anchor="middle">
+                    <tspan x="525" dy="0">两边还有节点且</tspan>
+                    <tspan x="525" dy="23">尾部 type / key 相同？</tspan>
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="815"
+                    y="290"
+                    width="310"
+                    height="76"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="970.0"
+                    y="321.5"
+                    text-anchor="middle"
+                  >
+                    <tspan x="970.0" dy="0">patch(c1[e1], c2[e2])</tspan>
+                    <tspan x="970.0" dy="23">e1--；e2--；继续尾同步</tspan>
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M 715 328 H 815"
+                  marker-end="url(#diff-keyed-control-arrow)"
+                />
+                <text class="eng-small" x="761" y="315" text-anchor="middle">
+                  <tspan x="761" dy="0">是</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 970 290 V 253 H 525 V 270"
+                  marker-end="url(#diff-keyed-control-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 525 386 V 426"
+                  marker-end="url(#diff-keyed-control-arrow)"
+                />
+                <text class="eng-small" x="549" y="409" text-anchor="middle">
+                  <tspan x="549" dy="0">否</tspan>
+                </text>
+                <g>
+                  <polygon
+                    class="eng-decision"
+                    points="525,426 660,476 525,526 390,476"
+                  />
+                  <text class="eng-label" x="525" y="481" text-anchor="middle">
+                    <tspan x="525" dy="0">i &gt; e1：旧段耗尽？</tspan>
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-state"
+                    x="35"
+                    y="431"
+                    width="290"
+                    height="90"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="180.0"
+                    y="458.0"
+                    text-anchor="middle"
+                  >
+                    <tspan x="180.0" dy="0">
+                      while i ≤ e2：patch(null, c2[i])
+                    </tspan>
+                    <tspan x="180.0" dy="23">
+                      anchor：共同尾部 / parentAnchor
+                    </tspan>
+                    <tspan x="180.0" dy="23">i++；完成后结束</tspan>
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M 390 476 H 325"
+                  marker-end="url(#diff-keyed-control-arrow)"
+                />
+                <text class="eng-small" x="354" y="463" text-anchor="middle">
+                  <tspan x="354" dy="0">是</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 525 526 V 560"
+                  marker-end="url(#diff-keyed-control-arrow)"
+                />
+                <text class="eng-small" x="549" y="548" text-anchor="middle">
+                  <tspan x="549" dy="0">否</tspan>
+                </text>
+                <g>
+                  <polygon
+                    class="eng-decision"
+                    points="525,560 660,610 525,660 390,610"
+                  />
+                  <text class="eng-label" x="525" y="615" text-anchor="middle">
+                    <tspan x="525" dy="0">i &gt; e2：新段耗尽？</tspan>
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-state"
+                    x="815"
+                    y="566"
+                    width="310"
+                    height="88"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="970.0"
+                    y="603.5"
+                    text-anchor="middle"
+                  >
+                    <tspan x="970.0" dy="0">
+                      while i ≤ e1：unmount(c1[i], true)
+                    </tspan>
+                    <tspan x="970.0" dy="23">i++；完成后结束</tspan>
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M 660 610 H 815"
+                  marker-end="url(#diff-keyed-control-arrow)"
+                />
+                <text class="eng-small" x="739" y="597" text-anchor="middle">
+                  <tspan x="739" dy="0">是</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 525 660 V 698"
+                  marker-end="url(#diff-keyed-control-arrow)"
+                />
+                <text class="eng-small" x="549" y="686" text-anchor="middle">
+                  <tspan x="549" dy="0">否：两边未知中段都非空</tspan>
+                </text>
+                <g>
+                  <rect
+                    class="eng-state"
+                    x="305"
+                    y="698"
+                    width="440"
+                    height="95"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="525.0"
+                    y="716"
+                    text-anchor="middle"
+                  >
+                    <tspan x="525.0" dy="0">s1=s2=i；toBePatched=e2-s2+1</tspan>
+                    <tspan x="525.0" dy="23">
+                      新 key → newIndex；映射数组全部置 0
+                    </tspan>
+                    <tspan x="525.0" dy="23">
+                      patched=0；moved=false；maxNewIndex=0
+                    </tspan>
+                    <tspan x="525.0" dy="23">旧段扫描从 i=s1 开始</tspan>
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M 525 793 V 828"
+                  marker-end="url(#diff-keyed-control-arrow)"
+                />
+                <g>
+                  <polygon
+                    class="eng-decision"
+                    points="525,828 685,881 525,934 365,881"
+                  />
+                  <text class="eng-label" x="525" y="886" text-anchor="middle">
+                    <tspan x="525" dy="0">还有旧中段节点？</tspan>
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M 685 881 H 1010 V 922"
+                  marker-end="url(#diff-keyed-control-arrow)"
+                />
+                <text class="eng-small" x="800" y="868" text-anchor="middle">
+                  <tspan x="800" dy="0">是：检查 c1[i]</tspan>
+                </text>
+                <g>
+                  <polygon
+                    class="eng-decision"
+                    points="1010,922 1185,975 1010,1028 835,975"
+                  />
+                  <text class="eng-label" x="1010" y="980" text-anchor="middle">
+                    <tspan x="1010" dy="0">patched ≥ toBePatched ?</tspan>
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="780"
+                    y="1059"
+                    width="410"
+                    height="76"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="985.0"
+                    y="1090.5"
+                    text-anchor="middle"
+                  >
+                    <tspan x="985.0" dy="0">是：unmount 这个旧节点</tspan>
+                    <tspan x="985.0" dy="23">
+                      新节点已全匹配，剩余旧项只能删除
+                    </tspan>
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M 1010 1028 V 1059"
+                  marker-end="url(#diff-keyed-control-arrow)"
+                />
+                <text class="eng-small" x="1033" y="1047" text-anchor="middle">
+                  <tspan x="1033" dy="0">是</tspan>
+                </text>
+                <g>
+                  <rect
+                    class="eng-state"
+                    x="780"
+                    y="1191"
+                    width="410"
+                    height="100"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="985.0"
+                    y="1223.0"
+                    text-anchor="middle"
+                  >
+                    <tspan x="985.0" dy="0">否：有 key 用 Map 查询新位置</tspan>
+                    <tspan x="985.0" dy="23">
+                      无 key 线性找未占用、同 type / 空 key 项
+                    </tspan>
+                    <tspan x="985.0" dy="23">
+                      newIndex = 找到的位置或 undefined
+                    </tspan>
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M 1185 975 H 1240 V 1234 H 1190"
+                  marker-end="url(#diff-keyed-control-arrow)"
+                />
+                <text class="eng-small" x="1209" y="998" text-anchor="middle">
+                  <tspan x="1209" dy="0">否</tspan>
+                </text>
+                <g>
+                  <polygon
+                    class="eng-decision"
+                    points="1010,1337 1185,1390 1010,1443 835,1390"
+                  />
+                  <text
+                    class="eng-label"
+                    x="1010"
+                    y="1395"
+                    text-anchor="middle"
+                  >
+                    <tspan x="1010" dy="0">newIndex 找到了？</tspan>
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M 1010 1291 V 1337"
+                  marker-end="url(#diff-keyed-control-arrow)"
+                />
+                <g>
+                  <rect
+                    class="eng-state"
+                    x="780"
+                    y="1510"
+                    width="410"
+                    height="110"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="985.0"
+                    y="1547.0"
+                    text-anchor="middle"
+                  >
+                    <tspan x="985.0" dy="0">是：map[newIndex-s2] = i+1</tspan>
+                    <tspan x="985.0" dy="23">
+                      newIndex &lt; max → moved=true；否则更新 max
+                    </tspan>
+                    <tspan x="985.0" dy="23">
+                      patch 旧 / 新节点；patched++
+                    </tspan>
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="1230"
+                    y="1348"
+                    width="145"
+                    height="84"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="1302.5"
+                    y="1383.5"
+                    text-anchor="middle"
+                  >
+                    <tspan x="1302.5" dy="0">否：unmount</tspan>
+                    <tspan x="1302.5" dy="23">这个旧节点</tspan>
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M 1010 1443 V 1510"
+                  marker-end="url(#diff-keyed-control-arrow)"
+                />
+                <text class="eng-small" x="1032" y="1475" text-anchor="middle">
+                  <tspan x="1032" dy="0">是</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 1185 1390 H 1230"
+                  marker-end="url(#diff-keyed-control-arrow)"
+                />
+                <text class="eng-small" x="1206" y="1378" text-anchor="middle">
+                  <tspan x="1206" dy="0">否</tspan>
+                </text>
+                <g>
+                  <rect
+                    class="eng-note"
+                    x="1230"
+                    y="1651"
+                    width="145"
+                    height="76"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="1302.5"
+                    y="1682.5"
+                    text-anchor="middle"
+                  >
+                    <tspan x="1302.5" dy="0">i++</tspan>
+                    <tspan x="1302.5" dy="23">继续扫描旧段</tspan>
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M 1190 1565 H 1302 V 1651"
+                  marker-end="url(#diff-keyed-control-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 1302 1432 V 1651"
+                  marker-end="url(#diff-keyed-control-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 1190 1097 H 1382 V 1689 H 1375"
+                  marker-end="url(#diff-keyed-control-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 1375 1689 H 1397 V 881 H 685"
+                  marker-end="url(#diff-keyed-control-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 525 934 V 975"
+                  marker-end="url(#diff-keyed-control-arrow)"
+                />
+                <text class="eng-small" x="548" y="960" text-anchor="middle">
+                  <tspan x="548" dy="0">否：旧段扫描完</tspan>
+                </text>
+                <g>
+                  <polygon
+                    class="eng-decision"
+                    points="525,975 665,1025 525,1075 385,1025"
+                  />
+                  <text class="eng-label" x="525" y="1030" text-anchor="middle">
+                    <tspan x="525" dy="0">moved ?</tspan>
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="35"
+                    y="987"
+                    width="285"
+                    height="76"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="177.5"
+                    y="1018.5"
+                    text-anchor="middle"
+                  >
+                    <tspan x="177.5" dy="0">LIS = getSequence(map)</tspan>
+                    <tspan x="177.5" dy="23">计算可保留的复用位置</tspan>
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M 385 1025 H 320"
+                  marker-end="url(#diff-keyed-control-arrow)"
+                />
+                <text class="eng-small" x="350" y="1012" text-anchor="middle">
+                  <tspan x="350" dy="0">是</tspan>
+                </text>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="365"
+                    y="1132"
+                    width="320"
+                    height="70"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="525.0"
+                    y="1160.5"
+                    text-anchor="middle"
+                  >
+                    <tspan x="525.0" dy="0">否：LIS = []</tspan>
+                    <tspan x="525.0" dy="23">
+                      无需移动，仍需处理映射中的 0
+                    </tspan>
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M 525 1075 V 1132"
+                  marker-end="url(#diff-keyed-control-arrow)"
+                />
+                <text class="eng-small" x="548" y="1105" text-anchor="middle">
+                  <tspan x="548" dy="0">否</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 177 1063 V 1226 H 525 V 1260"
+                  marker-end="url(#diff-keyed-control-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 525 1202 V 1260"
+                  marker-end="url(#diff-keyed-control-arrow)"
+                />
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="345"
+                    y="1260"
+                    width="360"
+                    height="70"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="525.0"
+                    y="1288.5"
+                    text-anchor="middle"
+                  >
+                    <tspan x="525.0" dy="0">
+                      r=toBePatched-1；j=LIS.length-1
+                    </tspan>
+                    <tspan x="525.0" dy="23">开始从新中段右侧向左提交</tspan>
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M 525 1330 V 1374"
+                  marker-end="url(#diff-keyed-control-arrow)"
+                />
+                <g>
+                  <polygon
+                    class="eng-decision"
+                    points="525,1374 675,1427 525,1480 375,1427"
+                  />
+                  <text class="eng-label" x="525" y="1432" text-anchor="middle">
+                    <tspan x="525" dy="0">r ≥ 0 ?</tspan>
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-note"
+                    x="35"
+                    y="1392"
+                    width="265"
+                    height="70"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="167.5"
+                    y="1432.0"
+                    text-anchor="middle"
+                  >
+                    <tspan x="167.5" dy="0">完成 children 更新</tspan>
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M 375 1427 H 300"
+                  marker-end="url(#diff-keyed-control-arrow)"
+                />
+                <text class="eng-small" x="337" y="1414" text-anchor="middle">
+                  <tspan x="337" dy="0">否</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 525 1480 V 1520"
+                  marker-end="url(#diff-keyed-control-arrow)"
+                />
+                <text class="eng-small" x="547" y="1505" text-anchor="middle">
+                  <tspan x="547" dy="0">是</tspan>
+                </text>
+                <g>
+                  <rect
+                    class="eng-state"
+                    x="345"
+                    y="1520"
+                    width="360"
+                    height="82"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="525.0"
+                    y="1543.0"
+                    text-anchor="middle"
+                  >
+                    <tspan x="525.0" dy="0">nextIndex=s2+r；取新节点</tspan>
+                    <tspan x="525.0" dy="23">
+                      anchor=右侧新节点 el / 异步占位
+                    </tspan>
+                    <tspan x="525.0" dy="23">最右端使用 parentAnchor</tspan>
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M 525 1602 V 1644"
+                  marker-end="url(#diff-keyed-control-arrow)"
+                />
+                <g>
+                  <polygon
+                    class="eng-decision"
+                    points="525,1644 675,1697 525,1750 375,1697"
+                  />
+                  <text class="eng-label" x="525" y="1702" text-anchor="middle">
+                    <tspan x="525" dy="0">map[r] === 0 ?</tspan>
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="35"
+                    y="1654"
+                    width="265"
+                    height="86"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="167.5"
+                    y="1690.5"
+                    text-anchor="middle"
+                  >
+                    <tspan x="167.5" dy="0">patch(null, 新节点, anchor)</tspan>
+                    <tspan x="167.5" dy="23">新增：在锚点前挂载</tspan>
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M 375 1697 H 300"
+                  marker-end="url(#diff-keyed-control-arrow)"
+                />
+                <text class="eng-small" x="337" y="1684" text-anchor="middle">
+                  <tspan x="337" dy="0">是</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 525 1750 V 1795"
+                  marker-end="url(#diff-keyed-control-arrow)"
+                />
+                <text class="eng-small" x="570" y="1775" text-anchor="middle">
+                  <tspan x="570" dy="0">否：已有旧匹配</tspan>
+                </text>
+                <g>
+                  <polygon
+                    class="eng-decision"
+                    points="525,1795 695,1850 525,1905 355,1850"
+                  />
+                  <text class="eng-label" x="525" y="1844" text-anchor="middle">
+                    <tspan x="525" dy="0">moved 且</tspan>
+                    <tspan x="525" dy="23">r 不在剩余 LIS 中？</tspan>
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="35"
+                    y="1808"
+                    width="265"
+                    height="86"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="167.5"
+                    y="1844.5"
+                    text-anchor="middle"
+                  >
+                    <tspan x="167.5" dy="0">
+                      move(新节点, anchor, REORDER)
+                    </tspan>
+                    <tspan x="167.5" dy="23">复用宿主对象，只改位置</tspan>
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M 355 1850 H 300"
+                  marker-end="url(#diff-keyed-control-arrow)"
+                />
+                <text class="eng-small" x="326" y="1837" text-anchor="middle">
+                  <tspan x="326" dy="0">是</tspan>
+                </text>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="795"
+                    y="1808"
+                    width="410"
+                    height="86"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="1000.0"
+                    y="1844.5"
+                    text-anchor="middle"
+                  >
+                    <tspan x="1000.0" dy="0">不 move</tspan>
+                    <tspan x="1000.0" dy="23">
+                      命中 LIS 则 j--；moved=false 则不读 LIS
+                    </tspan>
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M 695 1850 H 795"
+                  marker-end="url(#diff-keyed-control-arrow)"
+                />
+                <text class="eng-small" x="743" y="1837" text-anchor="middle">
+                  <tspan x="743" dy="0">否</tspan>
+                </text>
+                <g>
+                  <rect
+                    class="eng-note"
+                    x="355"
+                    y="1990"
+                    width="340"
+                    height="64"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="525.0"
+                    y="2027.0"
+                    text-anchor="middle"
+                  >
+                    <tspan x="525.0" dy="0">r--；继续倒序提交</tspan>
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M 167 1740 V 1943 H 525 V 1990"
+                  marker-end="url(#diff-keyed-control-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 167 1894 V 1943 H 525 V 1990"
+                  marker-end="url(#diff-keyed-control-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 1000 1894 V 1943 H 525 V 1990"
+                  marker-end="url(#diff-keyed-control-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 695 2022 H 746 V 1427 H 675"
+                  marker-end="url(#diff-keyed-control-arrow)"
+                />
+              </svg>
             </div>
-          </div>
-          <pre><code>// 机制伪代码：只列阶段，不是 Vue 源码
-patchKeyedChildren(c1, c2, container, parentAnchor, ...)
-  i = 0
-  e1 = c1.length - 1
-  e2 = c2.length - 1
-
-  sync from start
-  sync from end
-
-  if old exhausted: mount remaining new
-  else if new exhausted: unmount remaining old
-  else:
-    build keyToNewIndexMap
-    scan old unknown range
-    build newIndexToOldIndexMap
-    if moved: increasingNewIndexSequence = getSequence(map)
-    walk new unknown range backwards
-      mount missing nodes
-      move reused nodes not in LIS</code></pre>
+            <figcaption>
+              实线表示当前同步调用中的控制流。0
+              是“没有旧匹配”的映射哨兵，先进入挂载分支；非 0
+              才参与是否移动的判断。匹配到同 key 后，type 不同仍由 patch
+              替换节点。LIS 只减少 move，不决定身份匹配，也不替代
+              patch。右侧旧段扫描与左侧新段倒序提交是先后两轮，索引角色分别为旧位置
+              i 与新中段位置 r。源码仍用 i 表示第二轮索引，图中改记 r
+              以免混淆。对应 <code>renderer.ts · patchKeyedChildren</code>。
+            </figcaption>
+          </figure>
+          </details>
         </section>
 
         <section class="article-section prose" id="sync-ends">
-          <h2>阶段一、二：同步头尾不是双端乱猜</h2>
-          <p>
-            很多真实更新只改变列表局部。例如尾部追加、头部插入、中间替换。连续同步头尾能用
-            O(k) 成本排除大量稳定区域，并直接 patch 它们。
-          </p>
-          <div class="diagram">
-            <div class="diagram-title">EXAMPLE · STABLE EDGES</div>
-            <strong>旧 children</strong>
-            <div class="array-view">
-              <span class="array-item stable">a</span
-              ><span class="array-item stable">b</span
-              ><span class="array-item">c</span><span class="array-item">d</span
-              ><span class="array-item">e</span
-              ><span class="array-item stable">f</span
-              ><span class="array-item stable">g</span>
-            </div>
-            <strong>新 children</strong>
-            <div class="array-view">
-              <span class="array-item stable">a</span
-              ><span class="array-item stable">b</span
-              ><span class="array-item">e</span><span class="array-item">c</span
-              ><span class="array-item new">h</span
-              ><span class="array-item stable">f</span
-              ><span class="array-item stable">g</span>
-            </div>
-          </div>
-          <p>
-            a、b 从头部同步，g、f 从尾部同步。未知区间被缩小为旧
-            <code>[c,d,e]</code> 与新 <code>[e,c,h]</code>。注意：Vue 3
-            的尾部同步只比较“旧尾与新尾”，不会像 Vue 2
-            那样在这一阶段尝试旧头与新尾交叉匹配。
-          </p>
-          <h3>提前结束的两个快路径</h3>
+          <span id="unknown-range"></span><span id="lis"></span><span id="reverse-pass"></span>
+          <h2>把主例推广到其他输入时，需要保留的条件</h2>
           <ul>
-            <li>
-              若头尾同步后
-              <code>i &gt; e1</code>，旧区间耗尽：把剩余新节点插到已知 anchor
-              前。
-            </li>
-            <li>若 <code>i &gt; e2</code>，新区间耗尽：卸载剩余旧节点。</li>
+            <li>头尾同步只比较同一端的 type 与 key。旧段先耗尽就挂载剩余新项；新段先耗尽就卸载剩余旧项，不必进入中段算法。</li>
+            <li>中段的 key 表只负责寻找候选位置；同 key、不同 type 仍由 patch 替换。没有 key 的旧节点需线性寻找尚未匹配、type 相同且同样无 key 的新节点。</li>
+            <li>映射值 0 表示没有旧来源，倒序阶段先 mount；非 0 值才参与旧节点是否移动的判断。LIS 的源码和前驱回溯已在<a href="#diff-source-proof">主例源码</a>展开。</li>
+            <li>逆序处理让右侧新节点先就位，可以直接作为 anchor。最右端使用 parentAnchor；组件或异步占位的宿主锚点由 renderer 的节点协议确定。</li>
           </ul>
-          <p>只有两边都还有未知节点，才进入最复杂的中间区间处理。</p>
-        </section>
-
-        <section class="article-section prose" id="unknown-range">
-          <h2>阶段五、六：把未知区间转成索引问题</h2>
-          <h3>1. 建立 keyToNewIndexMap</h3>
-          <p>
-            Vue 先遍历新未知区间，把有 key 节点记录为
-            <code>key → newIndex</code>。开发模式还会检查重复
-            key，因为两个新节点声明同一身份会让复用关系不确定。
-          </p>
-          <pre><code>// 手算记号，不是 Vue 源码
-新未知区间 [e, c, h]
-
-keyToNewIndexMap = {
-  e → 2,
-  c → 3,
-  h → 4
-}</code></pre>
-          <h3>2. 创建 newIndexToOldIndexMap</h3>
-          <p>
-            数组长度等于待 patch 新节点数量，初始全为
-            0。值记录“该新节点对应的旧索引 + 1”。加 1 是因为旧索引 0
-            是合法值，而 0 需要保留为“没有旧节点”的哨兵。
-          </p>
-          <h3>3. 扫描旧未知区间</h3>
-          <p>
-            有 key 的旧节点通过 Map O(1) 找新索引；无 key
-            的旧节点只能在新未知区间寻找尚未匹配且 type
-            相同的节点。找不到新位置的旧节点立即 unmount；找到则
-            patch，并把旧索引写入映射。
-          </p>
-          <div class="diagram">
-            <div class="diagram-title">SCAN RESULT</div>
-            <div class="trace-row">
-              <strong>旧 c → 新索引 3</strong
-              ><span>可复用，patch(c, c)；记录到映射第二格。</span>
-            </div>
-            <div class="trace-row">
-              <strong>旧 d → 找不到</strong
-              ><span>新列表已不存在 d，立即 unmount。</span>
-            </div>
-            <div class="trace-row">
-              <strong>旧 e → 新索引 2</strong
-              ><span
-                >可复用，patch(e, e)；但新索引从 3 回退到
-                2，说明发生移动。</span
-              >
-            </div>
-            <div class="trace-row">
-              <strong>新 h → 没有旧来源</strong
-              ><span>映射保持 0，最后一阶段再 mount。</span>
-            </div>
-            <p><code>newIndexToOldIndexMap = [5, 3, 0]</code></p>
-          </div>
-          <h3>moved 如何被快速发现</h3>
-          <p>
-            扫描旧节点时记录目前见过的最大
-            newIndex。若下一个匹配节点的新索引小于最大值，说明旧节点顺序映射到新列表后不再单调递增，至少有节点要移动。没有回退则无需计算
-            LIS。
-          </p>
-        </section>
-
-        <section class="article-section prose" id="lis">
-          <h2>阶段七：最长递增子序列到底解决什么</h2>
-          <p>
-            此时算法已经知道每个旧节点的新位置，<strong
-              >Diff 的正确性已经确定</strong
-            >。LIS 只用于减少 DOM move：从 newIndexToOldIndexMap
-            找到值递增的最长子序列，这些节点在旧树中的相对顺序与新树一致，可以保持原位。
-          </p>
-          <div class="callout">
-            LIS 不是 Vue Diff
-            的全部，也不负责找新增和删除。它只在未知中间区间、确认发生移动之后，用来选择“最大的不移动集合”。
-          </div>
-          <h3>为什么忽略 0</h3>
-          <p>0 代表新节点没有旧来源，必然需要 mount，不属于可复用节点序列。</p>
-          <h3>getSequence 的 O(n log n) 思路</h3>
-          <ul>
-            <li><code>result</code> 保存不同长度递增子序列的最小尾值索引。</li>
-            <li>当前值大于 result 尾值时直接追加。</li>
-            <li>
-              否则二分查找第一个不小于当前值的位置并替换，使未来更容易延长。
-            </li>
-            <li>
-              <code>p</code> 保存前驱索引，最后从 result
-              尾部回溯出真实子序列索引。
-            </li>
-          </ul>
-          <pre><code>// 手算记号，不是 Vue 源码；输入是索引映射，不是 key 本身
-newIndexToOldIndexMap = [5, 3, 0]
-
-忽略 0 后，5 → 3 不是递增
-LIS 长度为 1，算法会保留其中一个节点原位
-其余已复用节点通过 hostInsert 移动</code></pre>
-          <p>
-            即使 LIS
-            有多个同长度答案，选择任意一个都能得到最少移动次数；具体保留哪个节点由
-            getSequence 的更新策略决定。
-          </p>
-        </section>
-
-        <section class="article-section prose" id="reverse-pass">
-          <h2>阶段八：为什么必须倒序插入和移动</h2>
-          <p>
-            新未知区间从右向左处理。当前节点的 anchor 是“新列表中的下一个节点”的
-            el；若当前已是整个 children 尾部，则使用 parentAnchor。
-          </p>
-          <pre><code>// 机制伪代码：省略参数与边界，不是 Vue 源码
-for (i = toBePatched - 1; i >= 0; i--) {
-  nextIndex = s2 + i
-  nextChild = c2[nextIndex]
-  anchor = nextIndex + 1 &lt; l2 ? c2[nextIndex + 1].el : parentAnchor
-
-  if (newIndexToOldIndexMap[i] === 0)
-    patch(null, nextChild, container, anchor) // 新增
-  else if (moved &amp;&amp; i 不在 LIS)
-    move(nextChild, container, anchor)        // 移动
-}</code></pre>
-          <p>
-            倒序的关键是：处理当前节点时，它右侧的新节点已经处于正确位置，因此
-            anchor
-            一定可靠。若从左向右，当前节点的“下一个新兄弟”可能尚未移动或挂载。
-          </p>
-          <h3>DOM move 为什么可以复用 insertBefore</h3>
-          <p>
-            对已经在 DOM 中的节点再次调用
-            <code>insertBefore(node, anchor)</code
-            >，浏览器会移动节点，而不是复制。Renderer 的
-            <code>move</code> 再根据 VNode 类型扩展这条语义：组件移动
-            subTree，Fragment 移动整个锚点范围，Teleport 与 Suspense
-            走自己的协议。
-          </p>
+          <p>DOM 中对已有节点调用 <code>insertBefore(node, anchor)</code> 会移动原对象。
+            Renderer 的 <code>move</code> 将这一动作扩展到组件 subTree、Fragment 的整个锚点范围，
+            Teleport 与 Suspense 则使用各自协议。LIS 选定不移动集合后，实际操作仍经过这些分支。</p>
         </section>
 
         <section class="article-section prose" id="walkthrough">
@@ -1502,8 +2516,7 @@ for (i = toBePatched - 1; i >= 0; i--) {
           </div>
           <div class="callout warm">
             整个过程中 a、b、c、e、f、g 的 VNode 都执行 patch 并复用原节点；d
-            才真正卸载，h 才真正创建，e
-            只执行移动。这就是身份与最少宿主操作同时成立的结果。
+            才真正卸载，h 才真正创建，e 在 patch 后移动到 c 前。
           </div>
         </section>
 
@@ -1549,8 +2562,8 @@ for (i = toBePatched - 1; i >= 0; i--) {
           </div>
           <p>
             对稳定唯一 key 的常见列表，整体可视为 O(n log n)，且 LIS 只在 moved
-            为真时计算。无 key 节点混入 keyed 列表时，为寻找相同 type
-            的未匹配节点可能出现嵌套扫描，因此稳定 key
+            为真时计算。无 key 节点混入 keyed 列表时，为寻找相同 type、同样无
+            key 的未匹配节点可能出现嵌套扫描，因此稳定 key
             同时提升语义可靠性和性能可预测性。
           </p>
         </section>
@@ -1621,8 +2634,10 @@ for (i = toBePatched - 1; i >= 0; i--) {
           <details>
             <summary>4. “没有 key 就会全部重建”</summary>
             <p>
-              无 key 列表按索引 patch 公共长度，仍会复用同位置同 type
-              节点；问题是数据重排时身份无法可靠保持。
+              编译器标成 UNKEYED_FRAGMENT 的列表按索引 patch
+              公共长度，复用同位置同 type 节点。没有该标记的数组进入通用 keyed
+              diff，无 key 节点在未知区间寻找同 type、 同样无 key
+              的未匹配节点；这种匹配仍无法保证业务数据的稳定身份。
             </p>
           </details>
           <details>
@@ -1671,9 +2686,9 @@ getSequence
 move
 unmount</code></pre>
           <div class="callout">
-            Diff 决定“本轮有哪些工作”。下一章 Scheduler
-            决定“这些工作什么时候、按什么顺序执行”。二者共同构成 Vue
-            增量更新的空间轴与时间轴。
+            Scheduler 先安排组件更新任务；任务执行时，render 生成新 VNode，Diff
+            随即比较并提交 宿主操作。mounted、updated 等后置钩子另行排入 post
+            队列。下一章继续解释任务的入队、 去重与执行顺序。
           </div>
         </section>
 
@@ -1706,8 +2721,9 @@ unmount</code></pre>
                     <code>moving single child forward</code> 测试体
                   </td>
                   <td>
-                    <a href="#diff-execution-flow">9 步 keyed diff 图</a>，图后
-                    6 步复述
+                    <a href="#diff-execution-flow"
+                      >VNode/el 复用与一次 move 快照</a
+                    >，图后 6 步复述
                   </td>
                 </tr>
               </tbody>
@@ -1728,7 +2744,7 @@ unmount</code></pre>
       <aside class="page-toc" aria-label="本页目录">
         <div class="toc-title">本页目录</div>
         <a href="#diff-case-contract">完整测试与合同</a>
-        <a href="#diff-execution-flow">同例流程图</a>
+        <a href="#diff-execution-flow">同例对象快照</a>
         <a href="#diff-hand-calculation">完整手算账本</a>
         <a href="#diff-source-proof">关键源码</a>
         <a href="#see-diff">可选交互练习</a>

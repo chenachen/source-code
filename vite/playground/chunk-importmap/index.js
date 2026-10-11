@@ -15,6 +15,7 @@ document.querySelector('.importmap').textContent = JSON.stringify(
   2,
 )
 
+/** 通过 ?worker 构造的独立 Worker，用 ping/pong 验证 import map 模式下 Worker 输出可加载。 */
 const worker = new myWorker()
 worker.postMessage('ping')
 worker.addEventListener('message', (e) => {

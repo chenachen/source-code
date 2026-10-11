@@ -34,7 +34,7 @@ export interface ParsedImportGlob {
   start: number
   /** 该片段在原始源码中的结束偏移。 */
   end: number
-  /** 调用是否直接被 Object.keys/Object.values 包裹，用于省略无用 value/key 代码。 */
+  /** 调用是否直接被 Object.keys 包裹；只生成对象键，省略实际 imports。 */
   onlyKeys: boolean
   /** 指示 glob 结果是否只需值集合而可省略键包装。 */
   onlyValues: boolean
@@ -58,7 +58,7 @@ export function importGlobPlugin(config: ResolvedConfig): Plugin {
 
   return {
     name: 'vite:import-glob',
-    /** glob 展开仅对客户端消费者启用，服务端使用其独立模块语义。 */
+    /** bundled Environment 使用原生插件；其余环境使用本地实现并记录 HMR matcher。 */
     applyToEnvironment(environment) {
       if (environment.config.isBundled) {
         return nativeImportGlobPlugin({
@@ -129,7 +129,7 @@ export function importGlobPlugin(config: ResolvedConfig): Plugin {
         }
       },
     },
-    /** 文件变化时重新匹配已记录 glob，把结果变化的模块加入热更新集合。 */
+    /** 文件新增或删除时匹配已记录 glob，把声明该 glob 的模块加入热更新集合；普通内容更新跳过。 */
     hotUpdate({ type, file, modules: oldModules }) {
       if (type === 'update') return
 
@@ -332,7 +332,7 @@ export async function parseImportGlob(
 
     const globs: string[] = []
 
-    /** 校验 glob 选项 AST 是否为可静态求值的字面量，否则抛出带位置错误。 */
+    /** 校验第一参数中的每个 pattern 是字符串或无插值模板，否则抛出带位置错误。 */
     const validateLiteral = (
       element: ESTree.Expression | ESTree.SpreadElement | null,
     ) => {
@@ -569,7 +569,7 @@ export async function transformGlobImport(
             let importQuery = options.query ?? ''
 
             if (onlyKeys) {
-              // Object.keys 不会观察 value，不生成任何真实 import，可显著减少扫描/构建工作。
+              // Object.keys 只需要枚举后的键，不生成实际 imports；文件枚举仍已在上方完成。
               objectProps.push(`${JSON.stringify(filePath)}: 0`)
               return
             }
@@ -754,7 +754,7 @@ export function getCommonBase(globsResolved: string[]): null | string {
     .filter((g) => g[0] !== '!')
     .map((glob) => {
       let { base } = picomatch.scan(glob)
-      // picomatch 对无通配符文件返回完整文件为 base；扫描 cwd 应退到其目录。
+      // basename 含点时按文件名近似判断，cwd 退到父目录；这里不读取文件系统区分文件/目录。
       if (posix.basename(base).includes('.')) base = posix.dirname(base)
 
       return base

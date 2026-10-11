@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1160 1110" role="img" aria-labelledby="title desc">
+<title id="title">模块图的三种索引与依赖边更新</title>
+<desc id="desc">在同一个 client Environment 内，URL 和 resolved ID 索引引用同一节点 A；file 索引的 Set 同时包含 A 和 raw 查询节点 R。下半部对照将 main.ts 的依赖从 old.ts 换为 next.ts 前后的 importedModules 正向边和 importers 反向边，旧边删除，新边添加；无其他 importer 的旧节点会被返回但不会在这里从索引删除。</desc>
+<defs>
+<marker id="blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563eb"/></marker>
+<marker id="purple" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#7c3aed"/></marker>
+<marker id="red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#a8333e"/></marker>
+<marker id="green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#247449"/></marker>
+<marker id="gray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#526377"/></marker>
+</defs>
+<style>.mg-text{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Noto Sans CJK SC",sans-serif;font-size:18px;fill:#14263c}.mg-code{font-family:ui-monospace,"SFMono-Regular",Consolas,"PingFang SC",monospace;font-size:16px}.mg-muted{fill:#526377}.mg-small{font-size:16px}.mg-heading{font-size:22px;font-weight:650}.mg-title{font-size:30px;font-weight:700}.mg-label{font-size:17px}.mg-blue{fill:#1d4ed8}.mg-purple{fill:#6d28d9}.mg-red{fill:#a8333e}.mg-green{fill:#247449}</style>
+<rect width="1160" height="1110" fill="#f7f9fc"/>
+<text x="36" y="46" class="mg-text mg-title" text-anchor="start">模块身份共享节点，依赖变化同时更新两条边</text>
+<text x="36" y="79" class="mg-text mg-muted" text-anchor="start">索引负责找到对象；正向边与反向边负责描述谁依赖谁。</text>
+<rect x="28" y="106" width="1104" height="373" rx="12" fill="#fff" stroke="#cbd5e1" stroke-width="1.6"/>
+<text x="50" y="137" class="mg-text mg-heading" text-anchor="start">同一个 client EnvironmentModuleGraph</text>
+<rect x="48" y="158" width="300" height="112" rx="12" fill="#edf4ff" stroke="#b4c9ef" stroke-width="1.6"/>
+<text x="66" y="187" class="mg-text mg-code" text-anchor="start">urlToModuleMap</text>
+<text x="66" y="218" class="mg-text mg-code" text-anchor="start">/src/main.ts  → A</text>
+<text x="66" y="249" class="mg-text mg-code" text-anchor="start">/entry.ts     → A</text>
+<rect x="810" y="158" width="302" height="112" rx="12" fill="#edf4ff" stroke="#b4c9ef" stroke-width="1.6"/>
+<text x="828" y="187" class="mg-text mg-code" text-anchor="start">idToModuleMap</text>
+<text x="828" y="220" class="mg-text mg-code" text-anchor="start">/project/src/main.ts</text>
+<text x="828" y="249" class="mg-text mg-code" text-anchor="start">→ A</text>
+<rect x="430" y="179" width="310" height="130" rx="12" fill="#f0edff" stroke="#c5b8ee" stroke-width="1.6"/>
+<text x="448" y="207" class="mg-text mg-code" text-anchor="start">A · EnvironmentModuleNode</text>
+<text x="448" y="239" class="mg-text mg-code" text-anchor="start">url: /src/main.ts</text>
+<text x="448" y="269" class="mg-text mg-code" text-anchor="start">id: /project/src/main.ts</text>
+<text x="448" y="293" class="mg-text mg-label" text-anchor="start">file: 同上，去掉 query</text>
+<path d="M348 210 H430" fill="none" stroke="#2563eb" stroke-width="2.6" marker-end="url(#blue)"/>
+<path d="M810 228 H740" fill="none" stroke="#2563eb" stroke-width="2.6" marker-end="url(#blue)"/>
+<rect x="48" y="313" width="340" height="114" rx="12" fill="#edf4ff" stroke="#b4c9ef" stroke-width="1.6"/>
+<text x="66" y="344" class="mg-text mg-code" text-anchor="start">fileToModulesMap</text>
+<text x="66" y="377" class="mg-text mg-code" text-anchor="start">/project/src/main.ts</text>
+<text x="66" y="406" class="mg-text mg-code" text-anchor="start">→ Set { A, R }</text>
+<path d="M388 349 C414 349 407 280 430 280" fill="none" stroke="#2563eb" stroke-width="2.6" marker-end="url(#blue)"/>
+<path d="M388 399 H762 V365 H795" fill="none" stroke="#2563eb" stroke-width="2.6" marker-end="url(#blue)"/>
+<rect x="795" y="321" width="317" height="98" rx="12" fill="#f6f3ff" stroke="#c5b8ee" stroke-width="1.6"/>
+<text x="813" y="351" class="mg-text mg-label" text-anchor="start">R · 独立的 raw 查询节点</text>
+<text x="813" y="381" class="mg-text mg-code" text-anchor="start">url: /src/main.ts?raw</text>
+<text x="813" y="406" class="mg-text mg-label" text-anchor="start">file 与 A 相同，id 带 ?raw</text>
+<text x="445" y="438" class="mg-text mg-label" text-anchor="start">三个索引保存引用，A 没有三份副本。</text>
+<text x="445" y="462" class="mg-text mg-small mg-muted" text-anchor="start">本例解析器把 /entry.ts 指向同一 ID。</text>
+<text x="36" y="522" class="mg-text mg-heading" text-anchor="start">将 main.ts 的 import 从 old.ts 改为 next.ts</text>
+<rect x="28" y="546" width="535" height="467" rx="12" fill="#fff" stroke="#cbd5e1" stroke-width="1.6"/>
+<rect x="597" y="546" width="535" height="467" rx="12" fill="#fff" stroke="#cbd5e1" stroke-width="1.6"/>
+<text x="48" y="582" class="mg-text mg-heading" text-anchor="start">更新前：A 导入 B</text>
+<text x="617" y="582" class="mg-text mg-heading" text-anchor="start">更新后：A 导入 C</text>
+<rect x="167" y="621" width="270" height="80" rx="12" fill="#f0edff" stroke="#c5b8ee" stroke-width="1.6"/>
+<text x="185" y="651" class="mg-text mg-heading" text-anchor="start">A · main.ts</text>
+<text x="185" y="680" class="mg-text mg-code" text-anchor="start">importedModules = { B }</text>
+<rect x="736" y="621" width="270" height="80" rx="12" fill="#f0edff" stroke="#c5b8ee" stroke-width="1.6"/>
+<text x="754" y="651" class="mg-text mg-heading" text-anchor="start">A · main.ts</text>
+<text x="754" y="680" class="mg-text mg-code" text-anchor="start">importedModules = { C }</text>
+<rect x="48" y="829" width="240" height="88" rx="12" fill="#edf4ff" stroke="#b4c9ef" stroke-width="1.6"/>
+<text x="64" y="861" class="mg-text mg-heading" text-anchor="start">B · old.ts</text>
+<text x="64" y="893" class="mg-text mg-code" text-anchor="start">importers = { A }</text>
+<rect x="312" y="829" width="230" height="88" rx="12" fill="#f8fafc" stroke="#d5dce6" stroke-width="1.6"/>
+<text x="328" y="861" class="mg-text mg-heading" text-anchor="start">C · next.ts</text>
+<text x="328" y="893" class="mg-text mg-code" text-anchor="start">importers = {  }</text>
+<rect x="617" y="829" width="240" height="88" rx="12" fill="#fff3f2" stroke="#e5bfc1" stroke-width="1.6"/>
+<text x="633" y="861" class="mg-text mg-heading" text-anchor="start">B · old.ts</text>
+<text x="633" y="893" class="mg-text mg-code" text-anchor="start">importers = {  }</text>
+<rect x="881" y="829" width="240" height="88" rx="12" fill="#edf4ff" stroke="#b4c9ef" stroke-width="1.6"/>
+<text x="897" y="861" class="mg-text mg-heading" text-anchor="start">C · next.ts</text>
+<text x="897" y="893" class="mg-text mg-code" text-anchor="start">importers = { A }</text>
+<path d="M232 701 C206 748 128 775 138 829" fill="none" stroke="#2563eb" stroke-width="2.6" marker-end="url(#blue)"/>
+<path d="M193 829 C204 770 301 755 307 701" fill="none" stroke="#7c3aed" stroke-width="2.6" stroke-dasharray="7 5" marker-end="url(#purple)"/>
+<text x="52" y="768" class="mg-text mg-label mg-blue" text-anchor="start">正向 imports</text>
+<text x="288" y="795" class="mg-text mg-label mg-purple" text-anchor="start">反向 importers</text>
+<text x="333" y="777" class="mg-text mg-label mg-muted" text-anchor="start">暂无依赖边</text>
+<path d="M799 701 C773 748 697 775 707 829" fill="none" stroke="#a8333e" stroke-width="2.6" stroke-dasharray="4 6" marker-end="url(#red)"/>
+<path d="M762 829 C773 770 870 755 876 701" fill="none" stroke="#a8333e" stroke-width="2.6" stroke-dasharray="4 6" marker-end="url(#red)"/>
+<text x="747" y="781" class="mg-text mg-red mg-heading" text-anchor="start">×</text>
+<text x="642" y="749" class="mg-text mg-label mg-red" text-anchor="start">旧边已删除</text>
+<path d="M918 701 C959 745 1008 773 1005 829" fill="none" stroke="#2563eb" stroke-width="2.6" marker-end="url(#blue)"/>
+<path d="M1063 829 C1080 767 978 746 977 701" fill="none" stroke="#7c3aed" stroke-width="2.6" stroke-dasharray="7 5" marker-end="url(#purple)"/>
+<rect x="963" y="733" width="111" height="27" fill="#fff"/>
+<text x="972" y="753" class="mg-text mg-label mg-blue" text-anchor="start">新正向边</text>
+<rect x="928" y="781" width="114" height="27" fill="#fff"/>
+<text x="937" y="801" class="mg-text mg-label mg-purple" text-anchor="start">新反向边</text>
+<text x="48" y="955" class="mg-text mg-label" text-anchor="start">A.importedModules 和 B.importers 互相对应。</text>
+<text x="48" y="986" class="mg-text mg-label mg-muted" text-anchor="start">图中已有 C，但它还没有导入者。</text>
+<text x="617" y="955" class="mg-text mg-label" text-anchor="start">本例 B 已无其他 importer，返回 { B }。</text>
+<text x="617" y="986" class="mg-text mg-label mg-muted" text-anchor="start">返回孤立旧节点；这里不删除 B 的索引。</text>
+<path d="M50 1045 H102" fill="none" stroke="#2563eb" stroke-width="2.6" marker-end="url(#blue)"/>
+<text x="116" y="1051" class="mg-text mg-label" text-anchor="start">importedModules：导入者 → 依赖</text>
+<path d="M560 1045 H612" fill="none" stroke="#7c3aed" stroke-width="2.6" stroke-dasharray="7 5" marker-end="url(#purple)"/>
+<text x="626" y="1051" class="mg-text mg-label" text-anchor="start">importers：依赖 → 导入者</text>
+<text x="36" y="1084" class="mg-text mg-small mg-muted" text-anchor="start">依据：moduleGraph.ts · _ensureEntryFromUrl() / updateModuleInfo()；图中 A、B、C、R 是节点引用。</text>
+</svg>

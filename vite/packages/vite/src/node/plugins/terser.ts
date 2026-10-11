@@ -38,7 +38,7 @@ function loadTerserPath(root: string) {
 
 /**
  * 以惰性 worker pool 压缩需要 Terser 的 chunk，并把 worker 错误还原为构建错误位置。
- * 含函数/nameCache 等不可结构化克隆选项时自动回退主线程。
+ * 含自定义函数时回退主线程；nameCache 也本地执行，使 Terser 修改保留在调用方对象上。
  */
 export function terserPlugin(config: ResolvedConfig): Plugin {
   const { maxWorkers, ...terserOptions } = config.build.terserOptions
@@ -57,11 +57,11 @@ export function terserPlugin(config: ResolvedConfig): Plugin {
             return (await terser.minify(code, options)) as TerserMinifyOutput
           } catch (e) {
             // Error 的附加属性不会跨 worker 传回，展开为普通对象并显式保留不可枚举 stack。
-            throw { stack: e.stack /* stack is non-enumerable */, ...e }
+            throw { stack: e.stack /* stack 不可枚举，需显式保留 */, ...e }
           }
         },
       {
-        /** name cache 自定义函数无法跨线程克隆，此时让 worker 包装器回退本地执行。 */
+        /** 自定义函数不可克隆；nameCache 必须共享原对象以保留改名结果，二者都使用本地执行。 */
         shouldUseFake(_terserPath, _code, options) {
           return !!(
             (typeof options.mangle === 'object' &&
@@ -82,7 +82,7 @@ export function terserPlugin(config: ResolvedConfig): Plugin {
   return {
     name: 'vite:terser',
 
-    /** 仅在 bundled 环境注册 Terser 渲染钩子。 */
+    /** 环境启用任意 minify 时注册插件，renderChunk 再筛选 Terser 或需要回退的 legacy 输出。 */
     applyToEnvironment(environment) {
       // 即使首选压缩器不是 Terser，plugin-legacy 仍可能要求它压缩 legacy chunk。
       return !!environment.config.build.minify

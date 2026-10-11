@@ -83,7 +83,7 @@ export interface TransformOptions {
 
 /** transformRequest 内部调用路径使用的安全检查选项。 */
 interface TransformOptionsInternal {
-  /** 是否跳过 `server.fs` 检查；只允许已由可信 transport/预热路径验证的调用。 */
+  /** 是否跳过 `server.fs` 检查；用于自定义 transport 声明和内部预热路径；预热不再执行这里的检查。 */
   skipFsCheck: boolean
 }
 
@@ -366,7 +366,8 @@ async function loadAndTransform(
   })
   const originalCode = code
   if (transformResult.code === originalCode) {
-    // 无插件修改代码，保留原字符串并在 debug 中标为 skipped。
+    // 最终代码字符串未变时保留原 code/map；即使插件仅返回新 map，此分支也不采用它。
+    // debug 日志把这次转换标为 skipped。
     debugTransform?.(
       timeFrom(transformStart) + colors.dim(` [skipped] ${prettyUrl}`),
     )
@@ -436,7 +437,7 @@ async function loadAndTransform(
     throwClosedServerError()
 
   const topLevelConfig = environment.getTopLevelConfig()
-  // server consumer 还要把 ESM 转为 Module Runner 协议；client 直接生成 ETag 响应浏览器。
+  // moduleRunnerTransform 开启时把 ESM 转为 Module Runner 协议；关闭时生成带 ETag 的转换结果。
   const result = environment.config.dev.moduleRunnerTransform
     ? await ssrTransform(code, normalizedMap, url, originalCode, {
         json: {
@@ -533,7 +534,7 @@ async function handleModuleSoftInvalidation(
       }
     }
 
-    // 时间戳替换不改变行结构，旧 Source Map 仍有效；只更新 code 与内容相关 ETag。
+    // 时间戳替换沿用旧 map，并重算内容 ETag；URL 长度变化时没有重新生成该行后续字符的列映射。
     const code = s.toString()
     result = {
       ...transformResult,
@@ -567,7 +568,8 @@ const defaultModuleTypes: Record<string, ModuleType | undefined> = {
 
 // 参考 https://github.com/rolldown/rolldown/blob/bf53a100edf1780d5a5aa41f0bc0459c5696543e/crates/rolldown/src/utils/load_source.rs#L53-L89
 /**
- * 从 ID 中每个 `.` 后的剩余字符串查找已知 ModuleType，可识别带复合后缀/query 的 Vite ID。
+ * 逐个检查 ID 中每个 `.` 后的完整剩余串，命中类型表即返回；`foo.a.ts` 可命中 ts，
+ * `foo.ts?raw` 不会自动去 query，因此不命中。
  */
 export function getModuleTypeFromId(id: string): ModuleType | undefined {
   let pos = -1

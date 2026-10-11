@@ -29,10 +29,7 @@ function match(code: string) {
 }
 
 describe('matchImportsToPreloadMarkers', () => {
-  /**
-   * 场景：无 import、单 import 和并列 import。
-   * 验证目标：输出数组与 imports 索引严格平行，每个 marker 只能被消费一次。
-   */
+  /** 输入普通赋值源码与空 import 列表；直接配对后应为空数组，不误收集任何 marker。 */
   test('returns an empty array when there are no imports', () => {
     expect(matchImportsToPreloadMarkers('const a = 1', [])).toStrictEqual([])
   })
@@ -66,7 +63,7 @@ describe('matchImportsToPreloadMarkers', () => {
     expect(match(code)).toStrictEqual([outerMarker, innerMarker])
   })
 
-  /** 场景：单个 import 的 marker 位于它之前；验证目标：反向扫描仍把二者配成同一 preload 记录。 */
+  /** 单个 import 的 marker 位于它之前；常规配对未命中后，从文件头搜索仍能找到该 marker。 */
   test('#3051: a lone import whose marker precedes it still pairs with that marker', () => {
     const code = `const x = ${preloadMarker};import('a')`
     const [marker] = markerPositions(code)

@@ -68,29 +68,41 @@ export type CompatVue = Pick<App, 'version' | 'component' | 'directive'> & {
   configureCompat: typeof configureCompat
 
   // 不追求完整构造器类型推导；这些签名主要约束内部实现，并向迁移代码显示旧 API。
+  /** 以旧 options 创建未挂载公共根实例，el 存在时再走兼容 $mount；仅给迁移代码提供构造签名。 */
   new (options?: ComponentOptions): LegacyPublicInstance
 
+  /** 迁移构建报告的 Vue 2 兼容版本与实际 Vue 3 构建版本。 */
   version: string
+  /** 单例应用的全局配置；新 App 创建时复制/继承其配置值。 */
   config: AppConfig & LegacyConfig
 
+  /** 复用 Vue 3 调度 Promise，等待当前更新批次而非浏览器绘制。 */
   nextTick: typeof nextTick
 
+  /** 向旧插件传入 Vue 构造器与展开的选项，返回 Vue 支持链式调用。 */
   use<Options extends unknown[]>(
     plugin: Plugin<Options>,
     ...options: Options
   ): CompatVue
+  /** 向旧插件传入单个选项对象的重载，仍复用全局构造器插件入口。 */
   use<Options>(plugin: Plugin<Options>, options: Options): CompatVue
 
+  /** 登记到单例 App 的全局 mixin，后续新 App 复制该列表。 */
   mixin(mixin: ComponentOptions): CompatVue
 
+  /** 从单例 App 查询全局组件定义；缺失时返回 undefined。 */
   component(name: string): Component | undefined
+  /** 登记全局组件并返回 Vue 构造器，已有 App 通过注册表原型继承可读取新项。 */
   component(name: string, component: Component): CompatVue
+  /** 查询单例 App 上的全局指令。 */
   directive<T = any, V = any>(name: string): Directive<T, V> | undefined
+  /** 登记全局指令并返回 Vue，旧生命周期由指令兼容映射处理。 */
   directive<T = any, V = any>(
     name: string,
     directive: Directive<T, V>,
   ): CompatVue
 
+  /** 完整兼容构建提供的模板编译入口；返回可交给组件选项的 render 函数。 */
   compile(template: string): RenderFunction
 
   /**
@@ -145,6 +157,7 @@ export function createCompatVue(
 ): CompatVue {
   singletonApp = createSingletonApp({})
 
+  /** 旧全局构造器入口，把 options 转交 createCompatApp；返回公共实例而非把实例保存在构造器对象。 */
   const Vue: CompatVue = (singletonCtor = function Vue(
     options: ComponentOptions = {},
   ) {
@@ -161,6 +174,7 @@ export function createCompatVue(
       !isFunction(data) &&
       softAssertCompatEnabled(DeprecationTypes.OPTIONS_DATA_FN, null)
     ) {
+      /** 把 Vue 2 对象 data 包装为工厂，保留原对象身份，兼容检查已在上层完成。 */
       options.data = () => data
     }
 
@@ -181,6 +195,7 @@ export function createCompatVue(
   Vue.version = `2.6.14-compat:${__VERSION__}`
   Vue.config = singletonApp.config
 
+  /** 调用对象 install 或函数插件，传旧 Vue 构造器并返回 Vue；此入口没有 App.use 的 installedPlugins 去重。 */
   Vue.use = (plugin: Plugin, ...options: any[]) => {
     if (plugin && isFunction(plugin.install)) {
       plugin.install(Vue as any, ...options)
@@ -190,11 +205,13 @@ export function createCompatVue(
     return Vue
   }
 
+  /** 委托单例 App 登记全局 mixin，再返回旧构造器供链式调用。 */
   Vue.mixin = m => {
     singletonApp.mixin(m)
     return Vue
   }
 
+  /** 有组件值时登记到单例全局表并返回 Vue，否则查询当前已登记定义。 */
   Vue.component = ((name: string, comp: Component) => {
     if (comp) {
       singletonApp.component(name, comp)
@@ -204,6 +221,7 @@ export function createCompatVue(
     }
   }) as any
 
+  /** 有指令值时登记到单例全局表并返回 Vue，否则查询定义；旧钩子在执行阶段再转换。 */
   Vue.directive = ((name: string, dir: Directive | LegacyDirective) => {
     if (dir) {
       singletonApp.directive(name, dir as Directive)
@@ -238,6 +256,7 @@ export function createCompatVue(
     }
 
     const Super = this
+    /** 以缓存的合并选项创建子构造器实例；传入 inlineOptions 时先复制并合并，避免修改构造器选项。 */
     function SubVue(inlineOptions?: ComponentOptions) {
       if (!inlineOptions) {
         return createCompatApp(SubVue.options, SubVue)
@@ -286,21 +305,25 @@ export function createCompatVue(
 
   Vue.extend = extendCtor.bind(Vue) as any
 
+  /** 检查 GLOBAL_SET 开关后直接写目标 key，通知由目标的响应式 Proxy 完成。 */
   Vue.set = (target, key, value) => {
     assertCompatEnabled(DeprecationTypes.GLOBAL_SET, null)
     target[key] = value
   }
 
+  /** 检查 GLOBAL_DELETE 开关后直接删除 key，不额外模拟 Vue 2 的数组索引处理。 */
   Vue.delete = (target, key) => {
     assertCompatEnabled(DeprecationTypes.GLOBAL_DELETE, null)
     delete target[key]
   }
 
+  /** 检查旧 observable 开关后返回 Vue 3 reactive 代理。 */
   Vue.observable = (target: any) => {
     assertCompatEnabled(DeprecationTypes.GLOBAL_OBSERVABLE, null)
     return reactive(target)
   }
 
+  /** 把旧全局过滤器登记/查询转给单例 App，登记返回 Vue，查询返回过滤函数。 */
   Vue.filter = ((name: string, filter?: any) => {
     if (filter) {
       singletonApp.filter!(name, filter)
@@ -314,6 +337,7 @@ export function createCompatVue(
   const util = {
     warn: __DEV__ ? warn : NOOP,
     extend,
+    /** 转发父子选项合并；存在旧 vm 参数时不传内部策略，否则显式使用 Vue 内部策略表。 */
     mergeOptions: (parent: any, child: any, vm?: ComponentPublicInstance) =>
       mergeOptions(
         parent,
@@ -323,6 +347,7 @@ export function createCompatVue(
     defineReactive,
   }
   Object.defineProperty(Vue, 'util', {
+    /** 读取 Vue.util 前检查兼容开关，返回限定的内部工具集合。 */
     get() {
       assertCompatEnabled(DeprecationTypes.GLOBAL_PRIVATE_UTIL, null)
       return util
@@ -360,6 +385,7 @@ export function installAppCompatProperties(
 /** 在 AppContext 上创建 Vue 2 filters 注册表，并安装查询/注册方法。 */
 function installFilterMethod(app: App, context: AppContext) {
   context.filters = {}
+  /** 检查 FILTERS 开关；查询返回当前表项，登记时开发态警告重复名并返回 App。 */
   app.filter = (name: string, filter?: Function): any => {
     assertCompatEnabled(DeprecationTypes.FILTERS, null)
     if (!filter) {
@@ -379,6 +405,7 @@ function installLegacyAPIs(app: App) {
   Object.defineProperties(app, {
     // prototype 映射到 app.config.globalProperties。
     prototype: {
+      /** 读取旧 prototype 时提示弃用，并返回当前 App 的 globalProperties。 */
       get() {
         __DEV__ && warnDeprecation(DeprecationTypes.GLOBAL_PROTOTYPE, null)
         return app.config.globalProperties
@@ -390,6 +417,7 @@ function installLegacyAPIs(app: App) {
     delete: { value: singletonCtor.delete },
     observable: { value: singletonCtor.observable },
     util: {
+      /** 把旧插件对 app.util 的读取转发到全局构造器，沿用其兼容检查。 */
       get() {
         return singletonCtor.util
       },
@@ -430,6 +458,7 @@ function applySingletonAppMutations(app: App) {
       !isRuntimeOnly() &&
       isArray(val)
     ) {
+      /** 把旧 ignoredElements 的字符串/正则数组转换为编译器 tag 判定函数。 */
       app.config.compilerOptions.isCustomElement = tag => {
         return val.some(v => (isString(v) ? v === tag : v.test(tag)))
       }
@@ -464,6 +493,7 @@ function applySingletonPrototype(app: App, Ctor: Function) {
   }
 }
 
+/** 把创建根实例与提交 DOM 分离，安装 $mount/$destroy 闭包并共享一次挂载状态。 */
 function installCompatMount(
   app: App,
   context: AppContext,
@@ -484,6 +514,7 @@ function installCompatMount(
 
     const hasNoRender =
       !isFunction(component) && !component.render && !component.template
+    /** 临时占位 render，允许 setup 先完成；挂载容器模板确定后替换，不输出宿主节点。 */
     const emptyRender = () => {}
 
     // 先创建并 setup 根实例，但尚不调用 renderer 挂载宿主节点。
@@ -500,6 +531,7 @@ function installCompatMount(
     // `$mount/$destroy` 实现放在 ctx，由 compat/instance.ts 的公共属性 getter 读取。
     // 兼容构建只面向 Web，这里因此直接使用 DOM API，并合并 runtime-core 与
     // runtime-dom 两层 app.mount 原本分开的逻辑。
+    /** 解析容器后提交已 setup 的根实例；缺失容器/重复挂载提前返回，成功后写 App 与容器归属。 */
     instance.ctx._compat_mount = (selectorOrEl?: string | Element) => {
       if (isMounted) {
         __DEV__ && warn(`Root instance is already mounted.`)
@@ -533,6 +565,7 @@ function installCompatMount(
 
       // HMR 重载克隆根 VNode，并清空 component 引用，防止 compat 路径复用旧实例。
       if (__DEV__) {
+        /** 克隆根 VNode 并清空 component，让兼容渲染器重建实例而非复用旧 setup 状态。 */
         context.reload = () => {
           const cloned = cloneVNode(vnode)
           // compat renderer 若保留 component，会继续使用旧根实例而无法重载脚本。
@@ -556,7 +589,7 @@ function installCompatMount(
         }
         instance.render = null
         ;(component as ComponentOptions).template = container.innerHTML
-        finishComponentSetup(instance, false, true /* skip options */)
+        finishComponentSetup(instance, false, true /* 跳过选项初始化。 */)
       }
 
       // 编译模板内容已保存，清空容器后让 renderer 创建新的根 DOM。
@@ -581,6 +614,7 @@ function installCompatMount(
       return instance.proxy!
     }
 
+    /** 已挂载根委托 render(null)；未挂载根直接调用映射钩子并停止 scope，随后清理容器归属。 */
     instance.ctx._compat_destroy = () => {
       if (isMounted) {
         // 已挂载根通过 renderer(null) 走完整卸载流程。
@@ -628,22 +662,24 @@ const methodsToPatch = [
   'reverse',
 ]
 
-/** 已为内部对象打过兼容补丁的集合，避免重复覆盖属性/数组方法。 */
+/** 补丁查询集合；当前没有登记对象，因此尚不能阻止对同一原始值重复安装补丁。 */
 const patched = new WeakSet<object>()
 
 /**
  * Vue 2 `Vue.util.defineReactive` 的迁移实现。
  * 对原对象安装 getter/setter 并使用 Vue 3 track/trigger；嵌套对象还会 reactive 化。
  * 为兼容“调用后仍直接修改原对象”的旧代码，数组变更方法代理到 reactive 数组，
- * 普通对象则递归把现有键定义成响应式访问器。
+ * 普通对象只为当前层已有键安装访问器；对象属性值用 reactive 包装，后续从访问器
+ * 读取会获得代理，并不递归改写所有原始嵌套对象。
  */
 function defineReactive(obj: any, key: string, val: any) {
   // 旧代码常在 defineReactive 之后继续持有并修改原始 val，而不是返回的 proxy；
-  // 因此需要给原数组/对象也打桥接补丁，使这些修改仍能触发 Vue 3 响应式系统。
+  // 原数组的变更方法和原对象当前层的访问器因此桥接到 Vue 3 响应式系统。
   if (isObject(val) && !isReactive(val) && !patched.has(val)) {
     const reactiveVal = reactive(val)
     if (isArray(val)) {
       methodsToPatch.forEach((m: any) => {
+        /** 把原数组的变更方法转到 reactive 数组以触发通知；此包装不返回底层数组方法结果。 */
         val[m] = (...args: any[]) => {
           Array.prototype[m].apply(reactiveVal, args)
         }
@@ -679,10 +715,12 @@ function defineReactiveSimple(obj: any, key: string, val: any) {
   Object.defineProperty(obj, key, {
     enumerable: true,
     configurable: true,
+    /** 对原对象该 key 收集 GET 依赖，再返回保存的值/嵌套代理。 */
     get() {
       track(obj, TrackOpTypes.GET, key)
       return val
     },
+    /** 保存新值并把对象转换为 reactive，随后触发原对象 key 的 SET 订阅。 */
     set(newVal) {
       val = isObject(newVal) ? reactive(newVal) : newVal
       trigger(obj, TriggerOpTypes.SET, key, newVal)

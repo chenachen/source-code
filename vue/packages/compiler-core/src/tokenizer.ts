@@ -143,7 +143,7 @@ export enum State {
   BeforeClosingTagName,
   /** 扫描结束标签名称。 */
   InClosingTagName,
-  /** 结束标签名之后等待 `>`，并诊断多余属性或 `/`。 */
+  /** 结束标签名之后忽略剩余内容，直到 `>`。 */
   AfterClosingTagName,
 
   /** 标签名或上一属性结束后，等待下一个属性名。 */
@@ -250,7 +250,9 @@ export enum QuoteType {
 /**
  * tokenizer 事件回调。
  *
- * 所有 start/end 都是源码偏移；tokenizer 不创建 AST，只把识别出的范围交给 parser。
+ * start/end 是 UTF-16 源码偏移，范围回调一般采用左闭右开；标签结束回调直接传 >
+ * 所在偏移，onattribend 的含义由 QuoteType 决定。tokenizer 不创建 AST，由 parser
+ * 负责补齐 loc、分类和 stack。回调同步执行且异常直接向外传播，无自动回滚。
  * 实体单独回调，使 parser 能拼接解码文本同时保留原实体的 location。
  */
 export interface Callbacks {
@@ -262,7 +264,7 @@ export interface Callbacks {
   /** 包含起止分隔符的插值范围。 */
   oninterpolation(start: number, endIndex: number): void
 
-  /** 报告开始标签名范围，使 parser 创建并压入元素节点。 */
+  /** 报告开始标签名范围，使 parser 创建尚未入栈的 currentOpenTag。 */
   onopentagname(start: number, endIndex: number): void
   /** 报告普通 `>`，使 parser 完成当前开始标签。 */
   onopentagend(endIndex: number): void
@@ -339,7 +341,9 @@ export const Sequences: {
  * 面向 Vue 模板的单遍字符 tokenizer。
  *
  * 状态机源自 htmlparser2，并加入插值、指令、SFC 根块和容错编辑态规则。
- * 性能关键路径只比较字符码；位置对象、AST 节点和字符串切片均由 parser 按事件创建。
+ * 热路径主要比较字符码；AST 由 parser 按事件组装，位置与切片在取 loc、识别 SFC
+ * 根标签或发送实体等边界计算。sectionStart 指向尚未回调的源码起点，index 指向当前
+ * UTF-16 字符；状态切换若已消费定界符须同步调整片段起点，实体回调还会快进 index。
  */
 export default class Tokenizer {
   /** 当前有限状态机状态。 */
@@ -387,7 +391,12 @@ export default class Tokenizer {
     }
   }
 
-  /** 复用 tokenizer 前清空全部扫描状态与自定义分隔符。 */
+  /**
+   * 重置扫描位置、文本/实体状态、换行索引和分隔符。
+   * 不清共享元素栈，也不清 inXML/inVPre、entityStart、base 匹配索引等全部字段。
+   * baseParse 清 stack 并重新设置 inXML；inVPre 依赖 parser 关闭边界，异常提前退出
+   * 可残留。sequenceIndex/delimiterIndex 在后续进入对应匹配状态时重新赋值。
+   */
   public reset(): void {
     this.state = State.Text
     this.mode = ParseMode.BASE
@@ -405,7 +414,9 @@ export default class Tokenizer {
   /**
    * 根据已记录的换行偏移生成 Position。
    *
-   * 调用只会查询已经扫描过的位置，故换行表必然完整。短模板从尾部线性查找更快；
+   * 依据已扫描的 LF 表计算行列，UTF-16 偏移为 0 起点，行列为 1 起点；查询换行符
+   * 本身仍属于上一行。parser 多数查询已扫描片段，但 lookAhead 也可能查询尚未扫描
+   * 的闭标签末尾，因此未来片段中的换行还未计入。短换行表从尾部线性查找；
    * 超过 100 个换行后改用二分，避免大文件位置计算退化为 O(n²)。
    */
   public getPos(index: number): Position {
@@ -566,7 +577,7 @@ export default class Tokenizer {
           this.index = actualIndex
         }
 
-        this.sectionStart = endOfText + 2 // Skip over the `</`
+        this.sectionStart = endOfText + 2 // 跳过闭标签前缀 </。
         this.stateInClosingTagName(c)
         this.inRCDATA = false
         return
@@ -772,7 +783,10 @@ export default class Tokenizer {
     }
   }
 
-  /** 闭标签名后忽略所有内容直到 `>`；非法属性由 parser 的闭标签规则诊断。 */
+  /**
+   * 闭标签名后忽略剩余内容直到 `>`；当前实现不报告 END_TAG_WITH_ATTRIBUTES
+   * 或 END_TAG_WITH_TRAILING_SOLIDUS。
+   */
   private stateAfterClosingTagName(c: number): void {
     if (c === CharCodes.Gt) {
       this.state = State.Text
@@ -924,7 +938,10 @@ export default class Tokenizer {
     }
   }
 
-  /** 完成属性名回调，并重新消费终止字符以决定是否存在值。 */
+  /**
+   * 在属性名终点记录 sectionStart，先通知 parser 查重，再用同一字符进入 AfterAttrName。
+   * 后者识别 = 或发送 NoValue；主循环尚未自增，故不能丢弃当前 >、/ 或下个属性首字符。
+   */
   private handleAttrNameEnd(c: number): void {
     this.sectionStart = this.index
     this.state = State.AfterAttrName
@@ -1124,7 +1141,8 @@ export default class Tokenizer {
   /**
    * 单遍扫描输入，并按当前状态调用对应处理函数。
    *
-   * switch 分支按命中频率排列，Text、插值、RCDATA 等热状态靠前，减少大模板中的分支成本。
+   * Text、插值、RCDATA 等常见状态排列在 switch 前部；每轮处理器结束后统一 index++，
+   * 处理器可以重消费同一字符或快进 index，快进路径必须自行补记跨过的 LF。
    * 扫描结束后先发送尚未提交的文本/属性片段，再完成实体和 EOF 处理。
    */
   public parse(input: string): void {

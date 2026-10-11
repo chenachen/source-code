@@ -62,7 +62,7 @@ function batchedUpdates<A, R>(fn: (a: A) => R, a: A): R {
  * 校验目标容器后创建 DOM Portal 描述符，交由 reconciler 在独立宿主容器提交 children。
  *
  * @param children Portal 子树。
- * @param container 接收宿主节点的 Element 或 DocumentFragment。
+ * @param container 接收宿主节点的宿主容器；运行时校验也接受 Document，旧构建还可接受指定注释容器。
  * @param key Portal 在同级集合中的可选身份。
  */
 function createPortal(

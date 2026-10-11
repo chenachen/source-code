@@ -75,7 +75,9 @@ type Keys = Set<CacheKey>
  * 双向约定避免渲染器直接导入组件实现，从而保持 tree-shaking。
  */
 export interface KeepAliveContext extends ComponentRenderContext {
+  /** renderer 注入的 patch/move/unmount 与宿主操作，供缓存恢复和真正淘汰使用。 */
   renderer: RendererInternals
+  /** 渲染器缓存命中入口：恢复宿主位置、patch 最新 VNode，再排队 activated。 */
   activate: (
     vnode: VNode,
     container: RendererElement,
@@ -83,6 +85,7 @@ export interface KeepAliveContext extends ComponentRenderContext {
     namespace: ElementNamespace,
     optimized: boolean,
   ) => void
+  /** 渲染器离开保活分支入口：移入 storage，不停止组件作用域，再排队 deactivated。 */
   deactivate: (vnode: VNode) => void
 }
 
@@ -109,6 +112,7 @@ const KeepAliveImpl: ComponentOptions = {
     max: [String, Number],
   },
 
+  /** 为当前 KeepAlive 建立 cache、LRU keys 与离屏容器，并回填 renderer 激活协议。render 只选择 key/复用引用，mounted/updated 缓存最终子树；筛选更新和自身卸载各自清理缓存。 */
   setup(props: KeepAliveProps, { slots }: SetupContext) {
     const instance = getCurrentInstance()!
     // 具体 renderer 把内部方法放进 ctx，KeepAlive 再在 ctx 上实现 activate/deactivate。
@@ -147,6 +151,7 @@ const KeepAliveImpl: ComponentOptions = {
 
     // 缓存命中：把旧 DOM 搬回目标容器，再用新 VNode patch 缓存实例，确保停用期间
     // 父级传入的新 props/slots 仍能生效。生命周期统一延迟到渲染提交之后执行。
+    /** 缓存命中时先移动已有子树，再 patch 最新 props/slots；post 回调先清 isDeactivated 再触发 activated/VNode mounted，不创建新实例。 */
     sharedContext.activate = (
       vnode,
       container,
@@ -185,6 +190,7 @@ const KeepAliveImpl: ComponentOptions = {
       }
     }
 
+    /** 取消未提交 mounted/activated，将同一子树移入 storage；post 调 deactivated/VNode unmounted 后才标记 isDeactivated，组件作用域继续保留。 */
     sharedContext.deactivate = (vnode: VNode) => {
       const instance = vnode.component!
       // 停用前取消尚未提交的 mounted/activated 钩子，避免组件搬走后又错误触发。
@@ -419,10 +425,15 @@ const decorate = (t: typeof KeepAliveImpl) => {
 export const KeepAlive = (__COMPAT__
   ? /*@__PURE__*/ decorate(KeepAliveImpl)
   : KeepAliveImpl) as any as {
+  /** 供 renderer 分派的内置字面量标记，避免静态引用组件实现。 */
   __isKeepAlive: true
+  /** h/TSX 的虚拟构造协议，描述 props 与默认插槽，不实际构造实例。 */
   new (): {
+    /** VNode 通用属性与 KeepAlive 筛选/容量参数的交集。 */
     $props: VNodeProps & KeepAliveProps
+    /** 公开默认插槽类型，运行时只缓存单个有状态组件/Suspense。 */
     $slots: {
+      /** 返回候选子节点列表；多根运行时透传且开发警告。 */
       default(): VNode[]
     }
   }
@@ -468,12 +479,18 @@ export function onDeactivated(
  * 外层仍停用时误触发；同一包装器被缓存，也让调度器可以按函数引用去重。
  */
 function registerKeepAliveHook(
-  hook: Function & { __wdc?: Function },
+  hook: Function & {
+    /** 带祖先停用检查的用户钩子包装缓存，维持多处注入时的稳定函数身份。 */
+    __wdc?: Function
+  },
   type: LifecycleHooks,
   target: ComponentInternalInstance | null = currentInstance,
 ) {
   // 缓存“带停用检查”的包装器（__wdc = with deactivation check），使同一用户钩子
   // 多处注入时仍保持稳定引用，调度器才能正确去重。
+  /**
+   * 调用前沿目标 parent 链检查停用状态；任一祖先停用便返回，否则调用原钩子。包装缓存维持多处注入身份。
+   */
   const wrappedHook =
     hook.__wdc ||
     (hook.__wdc = () => {
@@ -506,12 +523,15 @@ function registerKeepAliveHook(
  * `injectHook` 会再包一层错误处理，所以清理时必须保存并删除其返回的包装函数。
  */
 function injectToKeepAliveRoot(
-  hook: Function & { __weh?: Function },
+  hook: Function & {
+    /** 生命周期错误处理包装缓存；injectHook 返回的包装引用用于卸载时移除。 */
+    __weh?: Function
+  },
   type: LifecycleHooks,
   target: ComponentInternalInstance,
   keepAliveRoot: ComponentInternalInstance,
 ) {
-  const injected = injectHook(type, hook, keepAliveRoot, true /* prepend */)
+  const injected = injectHook(type, hook, keepAliveRoot, true /* 前置 */)
   onUnmounted(() => {
     remove(keepAliveRoot[type]!, injected)
   }, target)

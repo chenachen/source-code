@@ -63,7 +63,7 @@ export function defineElement (tagName: string): void {
     private cacheData: Record<PropertyKey, unknown> | null = null
     /** 当前元素经历的连接代次；每次连接单调递增。 */
     private connectedCount = 0
-    /** 记录各连接代次是否仍有效，供异步挂载任务淘汰过期连接。 */
+    /** 记录各连接代次是否仍有效，供连接微任务淘汰已断开的代次；断开写 false，当前代码不删除旧条目。 */
     private connectStateMap: Map<number, boolean> = new Map()
     /** 规范化后的应用名，同时决定数据中心通道名。 */
     private _appName = ''
@@ -122,6 +122,8 @@ export function defineElement (tagName: string): void {
      * 先执行当前实例的断开流程，再用同一元素重新连接应用。
      *
      * Promise 等待 `mounted` 或 `aftershow`，因此普通重挂载和 keep-alive 恢复共用同一完成边界。
+     * callback 由实际卸载/隐藏路径调用；若当前实例不存在、已经卸载或隐藏，handleDisconnected
+     * 会直接返回而不续接连接，本 Promise 也没有 error 生命周期的失败结算分支。
      *
      * @param destroy - 是否在重载前彻底销毁旧实例与缓存。
      * @returns 新实例挂载或旧 keep-alive 实例恢复显示后为 `true`。
@@ -167,6 +169,11 @@ export function defineElement (tagName: string): void {
      *
      * 首次赋值立即尝试连接；已连接元素的更新推迟到同一异步任务，确保 name 与 url
      * 同时变化时只比较、卸载和重建一次。
+     * 未连接时可直接改规范化字段；name 确定时先把 cacheData 下发到新通道，再触发 appName
+     * setter 迁移订阅。这里的 _oldVal 未参与决策，异步更新读取元素最终属性值。
+     * @param attr - 浏览器观察到变化的 name 或 url。
+     * @param _oldVal - 浏览器提供的旧属性值；当前实现忽略它。
+     * @param newVal - 当前属性值；空值被 legalAttribute 拒绝。
      */
     public attributeChangedCallback (attr: ObservedAttrName, _oldVal: string, newVal: string): void {
       if (
@@ -220,7 +227,7 @@ export function defineElement (tagName: string): void {
     }
 
     /**
-     * 首次连接时按同名实例状态决定显示、复用、替换或创建。
+     * 连接时按同名实例状态决定显示、复用、替换或创建。
      *
      * 正在运行的同名实例不可替换；已隐藏且 URL 一致的 keep-alive 实例直接恢复；
      * 已卸载或兼容的预取实例可复用；其他非活跃实例由新实例替换。
@@ -277,8 +284,10 @@ export function defineElement (tagName: string): void {
     /**
      * 在元素初始化后统一处理 name/url 的变更。
      *
-     * 新名称若对应活跃实例则回滚属性；否则按“同名改 URL”“切换到 keep-alive 名称”
-     * 或普通名称切换选择销毁、隐藏或卸载旧实例，再执行属性迁移。
+     * 新名称若对应运行中的普通实例则回滚属性；否则同名改 URL 会销毁旧实例，
+     * 改名称时按当前元素的 keep-alive 配置隐藏或卸载旧实例，再执行属性迁移。
+     * 同一栈里的多次 setAttribute 只排一次本回调，并在执行时读取最终值；改回原值不重建。
+     * 新名称冲突时回写旧 name；非法 URL 保留 DOM 属性原文本但不更新 appUrl，便于下次修正。
      */
     private handleAttributeUpdate = (): void => {
       this.isWaiting = false
@@ -342,7 +351,7 @@ export function defineElement (tagName: string): void {
       /**
        * `oldApp` 存在时，它的名称等于新的 `this.appName`。需要覆盖五类组合：
        * 1. 名称未变：当前实例已卸载，入口 URL 必然变化；
-       * 2. 名称变化：目标实例只能是预取或已卸载；URL 相同则复用，否则替换；
+       * 2. 名称变化：目标实例是预取或已卸载时，入口与 SSR 地址均相同则复用，否则替换；
        * 3. 入口 URL 不同但 SSR 实际页面相同；
        * 4. 入口 URL 相同但 SSR 实际页面不同，此时名称必然变化；
        * 5. 目标实例处于 keep-alive 隐藏态，此时名称必然变化。
@@ -398,6 +407,8 @@ export function defineElement (tagName: string): void {
      * 收集 `data-*` 属性并创建新 `CreateApp`，必要时先销毁同名旧实例。
      *
      * 预渲染实例必须走完整异步卸载，普通预取/已卸载实例可直接清缓存并替换。
+     * 每次新建读取当前元素属性，ShadowRoot 优先作为容器；data-* 仅供 iframe 透传。
+     * 新构造器自行写入 appInstanceMap，旧对象的外部引用不会因 Map 替换而自动失效。
      */
     private handleCreateApp (): void {
       const attrs: Record<string, string> = {}
@@ -422,10 +433,9 @@ export function defineElement (tagName: string): void {
       })
 
       /**
-       * 同名旧实例若存在，只可能是三类可替换状态：
-       * 1. URL 不同的已卸载实例；
-       * 2. 核心配置不同、尚未预渲染的预取实例；
-       * 3. 核心配置不同的预渲染实例。
+       * 调用方已筛掉运行中和隐藏的名称冲突。剩下的旧实例可能已卸载，
+       * 或仍由预取流程持有；URL/SSR 页面或核心配置不兼容时会走替换。
+       * 预渲染实例可能已有 active 沙箱，必须先卸载；其余实例直接删除缓存和注册。
        */
       const oldApp = appInstanceMap.get(this.appName)
       if (oldApp) {
@@ -477,7 +487,7 @@ export function defineElement (tagName: string): void {
     /**
      * 将元素侧卸载策略交给当前 `CreateApp`，并清除元素上的沙箱应用名标记。
      *
-     * @param destroy - 是否删除实例与资源缓存；元素兼容属性也可强制开启。
+     * @param destroy - 是否删除实例与内联脚本缓存；元素兼容属性也可强制开启。
      * @param unmountcb - 应用卸载及清理完成后的回调。
      */
     public unmount (destroy?: boolean, unmountcb?: CallableFunction): void {
@@ -503,7 +513,7 @@ export function defineElement (tagName: string): void {
 
     /** DOM 重新连接时异步恢复隐藏实例，避免与当前连接回调堆栈交叠。 */
     private handleShowKeepAliveApp (app: AppInterface): void {
-      // 必须异步：当前元素尚处于浏览器的连接生命周期回调中。
+      // 与复用挂载一样延后执行，使恢复 DOM 与本轮元素连接处理分开。
       defer(() => app.showKeepAliveApp(this.shadowRoot ?? this))
     }
 
@@ -556,7 +566,7 @@ export function defineElement (tagName: string): void {
     /**
      * 比较预取实例与元素最终使用的样式隔离、沙箱及 iframe 三项核心配置。
      *
-     * 只有这些执行环境配置一致时，预取实例才能安全复用。
+     * `handleConnected()` 复用预取实例时要求三项一致；属性更新路径当前只比较 URL/SSR。
      */
     private sameCoreOptions (app: AppInterface): boolean {
       return (
@@ -588,8 +598,9 @@ export function defineElement (tagName: string): void {
     /**
      * 根据 SSR 与路由配置计算实际 HTML 请求地址，并在退出 SSR 时清空旧值。
      *
-     * 关闭内存路由时使用基座当前路径；否则优先读取浏览器 URL 中保存的子应用路径，
-     * 缺失时再回退到默认页面。
+     * 此版本仍按旧配置分支：`disable-memory-router` 或驼峰 `disableSandbox` 开启时
+     * 拼接基座 pathname/search；否则从浏览器 URL 恢复子应用路径，缺失时回退到默认页。
+     * 此处未统一使用 `useSandbox()`，所以连字符 `disable-sandbox` 不会触发前一分支。
      */
     private updateSsrUrl (baseUrl: string): void {
       if (this.getDisposeResult('ssr')) {
@@ -641,7 +652,10 @@ export function defineElement (tagName: string): void {
     /**
      * 扩展元素 `setAttribute`：对象型 `data` 走数据中心，其余属性仍调用原生实现。
      *
-     * 数据仅复制自有普通键，并过滤 `__` 前缀内部字段，避免把框架标记传给子应用。
+     * 数据通过 `[object Object]` 标签检查，类实例也可能满足；复制自有字符串键并过滤
+     * `__` 前缀内部字段，避免把框架标记传给子应用。
+     * getOwnPropertyNames 包括不可枚举字符串键，不包含 Symbol；值是浅复制，嵌套对象仍共享。
+     * `[object Object]` 字符串作为 React 属性序列化产物被静默忽略，其余非对象值发警告。
      *
      * @param key - 属性名。
      * @param value - 属性值；`data` 分支要求普通对象。
@@ -669,7 +683,7 @@ export function defineElement (tagName: string): void {
      *
      * 元素属性优先；其次读取全局固定值或按应用名计算的函数；非法值统一回退为 0。
      *
-     * @returns 非负约束由调用方负责，本方法仅保证返回可解析数字或 0。
+     * @returns `parseInt` 得到的整数，缺失或无法解析时为 0；负值也会原样返回。
      */
     public getRouterEventDelay (): number {
       let delay = parseInt(this.getAttribute('router-event-delay') as string)
@@ -702,7 +716,7 @@ export function defineElement (tagName: string): void {
       return null
     }
 
-    /** 更新应用名时同步迁移数据中心事件通道，避免名称变化后遗留旧订阅。 */
+    /** 名称不同才迁移基座数据监听集合，再更新内部名称；迁移的是回调集合，不合并或迁移旧通道的数据值。 */
     set appName(value: string) {
       if (value !== this._appName) {
         microApp.changeEventAppName(value, this._appName)

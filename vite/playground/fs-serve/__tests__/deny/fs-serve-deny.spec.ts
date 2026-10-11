@@ -16,6 +16,7 @@ describe.runIf(isServe)('main', () => {
       urlPath: '/src/deny/.deny?.svg?import',
     },
   ]) {
+    /** 仅 dev 按六行路径请求 deny 目录：普通文件、点文件、raw、url、import+raw 与伪装 SVG 查询都应返回 403。 */
     test(`**/deny/** should deny ${name}`, async () => {
       const res = await page.request.fetch(new URL(urlPath, viteTestUrl).href)
       expect(res.status()).toBe(403)

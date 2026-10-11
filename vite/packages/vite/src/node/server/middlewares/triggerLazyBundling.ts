@@ -17,6 +17,7 @@ export function triggerLazyBundlingMiddleware(
     )
   }
 
+  /** 解析lazy请求的模块/客户端身份；无结果时next，有结果时发送JS并在finish登记交付。 */
   return async function viteTriggerLazyBundlingMiddleware(req, res, next) {
     if (!req.url?.startsWith('/@vite/lazy?')) {
       return next()
@@ -38,7 +39,7 @@ export function triggerLazyBundlingMiddleware(
     }
 
     res!.setHeader('Content-Type', 'application/javascript')
-    // 客户端实际收到触发脚本后，bundledDev 才能安全清理相应交付状态。
+    // 响应交给底层发送后登记交付；finish 不确认客户端实际接收或执行。
     res!.on('finish', () => bundledDev.markPayloadDelivered(result.filename))
     return res!.end(result.code)
   }

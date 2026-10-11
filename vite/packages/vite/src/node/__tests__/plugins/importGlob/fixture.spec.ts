@@ -5,15 +5,11 @@ import { transformGlobImport } from '../../../plugins/importMetaGlob'
 import { transformWithOxc } from '../../../plugins/oxc'
 
 describe('fixture', async () => {
-  /**
-   * 场景：真实 fixture 同时覆盖 eager/lazy、named import、query、base、Object.keys/values 与虚拟模块。
-   * 目标：固定完整生成代码、换行稳定性、虚拟模块绝对 pattern 约束和 query 扩展名恢复。
-   * 机制：先走 Oxc 得到实际上游代码，再调用 transformGlobImport 做结果快照。
-   */
+  /** 此 fixture 不模拟 alias；resolver 原样返回 ID，让真实磁盘 pattern 决定枚举结果。 */
   const resolveId = (id: string) => id
   const root = import.meta.dirname
 
-  /** 场景：fixture 覆盖 eager、lazy、负 pattern 与查询选项；验证目标：转换代码和匹配文件集合符合快照。 */
+  /** fixture 覆盖 eager、lazy、负 pattern 与查询选项；快照核对完整生成代码中的路径和 import 形态。 */
   it('transform', async () => {
     const id = resolve(import.meta.dirname, './fixture-a/index.ts')
     const code = (await transformWithOxc(await fs.readFile(id, 'utf-8'), id))
@@ -24,7 +20,7 @@ describe('fixture', async () => {
     ).toMatchSnapshot()
   })
 
-  /** 场景：glob 调用跨多行且转换会插入导入；验证目标：输出保持原源码行数，sourcemap 行定位不漂移。 */
+  /** 比较单行与三行 glob 调用的输出行数；展开时补回原调用换行，后续代码的行位置保持不变。 */
   it('preserve line count', async () => {
     /** 转换给定 glob 源码并返回输出行数，直接检查 sourcemap 行定位前提。 */
     const getTransformedLineCount = async (code: string) =>
@@ -44,7 +40,7 @@ describe('fixture', async () => {
     ).toBe(3)
   })
 
-  /** 场景：importer 与匹配项包含虚拟模块 ID；验证目标：resolver 参与 glob 展开并生成可加载虚拟导入。 */
+  /** 虚拟 importer 没有磁盘目录；root pattern 或显式 base 可枚举真实文件，相对 pattern 无 base 时拒绝。 */
   it('virtual modules', async () => {
     const root = resolve(import.meta.dirname, './fixture-a')
     const code = [

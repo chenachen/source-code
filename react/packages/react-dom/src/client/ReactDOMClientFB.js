@@ -156,7 +156,7 @@ export {
   runWithPriority as unstable_runWithPriority,
 };
 
-// 必须与 ReactTestUtils.js 保持同序；使用数组是为了获得更好的压缩结果。
+// FB 兼容工具按固定位置读取这六个事件内部槽；数组保留紧凑协议，不能随意调整顺序。
 Internals.Events /* Events */ = [
   getInstanceFromNode,
   getNodeFromInstance,

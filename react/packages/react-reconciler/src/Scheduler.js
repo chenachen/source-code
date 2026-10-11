@@ -19,12 +19,12 @@ export const cancelCallback = Scheduler.unstable_cancelCallback;
 export const shouldYield = Scheduler.unstable_shouldYield;
 /** 通知 Scheduler renderer 已产生需要尽快绘制的更新。 */
 export const requestPaint = Scheduler.unstable_requestPaint;
-/** 读取 Scheduler 使用的单调时间源。 */
+/** 读取 Scheduler 的相对毫秒时间；优先 performance.now，缺失时用 Date.now 减模块初始时间。 */
 export const now = Scheduler.unstable_now;
 /** 读取当前 Scheduler 动态优先级上下文。 */
 export const getCurrentPriorityLevel =
   Scheduler.unstable_getCurrentPriorityLevel;
-/** 必须尽快运行、创建时即视为过期的 Scheduler 优先级。 */
+/** 使用负超时预算的 Scheduler 优先级；无 delay 时创建即过期，有 delay 时先等 startTime。 */
 export const ImmediatePriority = Scheduler.unstable_ImmediatePriority;
 /** 面向用户输入反馈的 Scheduler 优先级。 */
 export const UserBlockingPriority = Scheduler.unstable_UserBlockingPriority;
@@ -32,7 +32,7 @@ export const UserBlockingPriority = Scheduler.unstable_UserBlockingPriority;
 export const NormalPriority = Scheduler.unstable_NormalPriority;
 /** 可延后后台工作的 Scheduler 优先级。 */
 export const LowPriority = Scheduler.unstable_LowPriority;
-/** 只在空闲机会处理的 Scheduler 优先级。 */
+/** 队列中最低档的 Scheduler 优先级，使用极长过期预算；仍由普通 host callback 执行。 */
 export const IdlePriority = Scheduler.unstable_IdlePriority;
 /** reconciler 传给 Scheduler 的可 continuation 回调形状。 */
 export type SchedulerCallback = (isSync: boolean) => SchedulerCallback | null;

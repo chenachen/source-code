@@ -14,23 +14,28 @@ let ReactDOMClient;
 let act;
 
 let idCallOrder;
-/** `recordID`：封装当前用例复用的操作、回调或断言步骤。 */
+
+/** 把节点或名称按调用顺序记录到当前case数组，比较合成冒泡次序。 */
 const recordID = function (id) {
   idCallOrder.push(id);
 };
-/** `recordIDAndStopPropagation`：封装当前用例复用的操作、回调或断言步骤。 */
+
+/** 先记录id再调用合成stopPropagation，让后续祖先监听不执行。 */
 const recordIDAndStopPropagation = function (id, event) {
   recordID(id);
   event.stopPropagation();
 };
-/** `recordIDAndReturnFalse`：封装当前用例复用的操作、回调或断言步骤。 */
+
+/** 记录id但仅return false，作为不会自动停止合成传播的对照。 */
 const recordIDAndReturnFalse = function (id, event) {
   recordID(id);
   return false;
 };
-/** `LISTENER`：保存当前测试场景复用的夹具、状态或回调。 */
+
+/** 每次setup清空的历史监听mock；本文件当前场景未把它安装到树。 */
 const LISTENER = jest.fn();
-/** `ON_CLICK_KEY`：保存当前测试场景复用的夹具、状态或回调。 */
+
+/** 统一使用onClick props键，putListener通过重渲染更新真实监听props。 */
 const ON_CLICK_KEY = 'onClick';
 
 let GRANDPARENT;
@@ -44,8 +49,7 @@ let deleteAllListeners;
 
 let container;
 
-// 这项测试是以一种奇怪的方式写的,因为它以前使用了内部. 我们应该重新写,但我们将保留它,以获得更
-// 多的报道.
+// 沿用按DOM节点身份指定监听的测试接口；实际通过props字典与root.render安装/删除监听。
 describe('ReactBrowserEventEmitter', () => {
   beforeEach(() => {
     jest.resetModules();
@@ -62,14 +66,15 @@ describe('ReactBrowserEventEmitter', () => {
     let CHILD_PROPS = {};
     let BUTTON_PROPS = {};
 
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 输出child宿主div并记录DOM ref，props含监听且随包装组件透传。 */
     function Child(props) {
       return <div ref={c => (CHILD = c)} {...props} />;
     }
 
-    /** `ChildWrapper`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** Pure包装让祖先独立更新时子级可能跳过render，测试当前祖先监听仍更新。 */
     class ChildWrapper extends React.PureComponent {
-      /** `ChildWrapper.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 透传自身props给Child，不添加额外DOM祖先。 */
       render() {
         return <Child {...this.props} />;
       }
@@ -77,6 +82,7 @@ describe('ReactBrowserEventEmitter', () => {
 
     const root = ReactDOMClient.createRoot(container);
 
+    /** 在act中渲染固定三层树及disabled按钮，读取各节点ref；事件注册由props变更触发而非内部注册表。 */
     renderTree = async function () {
       await act(() => {
         root.render(
@@ -94,6 +100,7 @@ describe('ReactBrowserEventEmitter', () => {
       });
     };
 
+    /** 按DOM身份修改对应层的props字典后await renderTree提交，替换同eventName的监听。 */
     putListener = async function (node, eventName, listener) {
       switch (node) {
         case CHILD:
@@ -113,6 +120,7 @@ describe('ReactBrowserEventEmitter', () => {
       await renderTree();
     };
 
+    /** 按DOM身份将对应props字典换成空对象并提交，使该层监听移除；不直接拆除根原生事件监听。 */
     deleteAllListeners = async function (node) {
       switch (node) {
         case CHILD:
@@ -139,14 +147,7 @@ describe('ReactBrowserEventEmitter', () => {
     container = null;
   });
 
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「should bubble simply」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：事件断言连接 DOMPluginEventSystem 的委托、合成与传播路径。
-   */
+  /** CHILD/PARENT/GRANDPARENT先经props重渲染安装click监听；CHILD.click后记录依次为这三DOM对象，验证合成冒泡按内到外。 */
   it('should bubble simply', async () => {
     await renderTree();
     await putListener(CHILD, ON_CLICK_KEY, recordID.bind(null, CHILD));
@@ -165,7 +166,7 @@ describe('ReactBrowserEventEmitter', () => {
     expect(idCallOrder[2]).toBe(GRANDPARENT);
   });
 
-  /** 测试场景：验证「should bubble to the right handler after an update」描述的渲染、交互或错误处理结果。 */
+  /** 首轮child点击记录三层名称，再只换grandparent handler且Pure子树可跳过render；下次记录UPDATED_GRANDPARENT，验证派发读取当前祖先props。 */
   it('should bubble to the right handler after an update', async () => {
     await renderTree();
     await putListener(
@@ -195,7 +196,7 @@ describe('ReactBrowserEventEmitter', () => {
     expect(idCallOrder).toEqual(['CHILD', 'PARENT', 'UPDATED_GRANDPARENT']);
   });
 
-  /** 测试场景：验证「should continue bubbling if an error is thrown」描述的渲染、交互或错误处理结果。 */
+  /** parent click记录后抛Handler interrupted，child/grandparent仍有监听；三层均执行且window error只一次含原Error，验证单监听错误不中止队列，finally清理原生error监听。 */
   it('should continue bubbling if an error is thrown', async () => {
     await renderTree();
     await putListener(CHILD, ON_CLICK_KEY, recordID.bind(null, CHILD));
@@ -230,7 +231,7 @@ describe('ReactBrowserEventEmitter', () => {
     }
   });
 
-  /** 测试场景：验证「should set currentTarget」描述的渲染、交互或错误处理结果。 */
+  /** 三层监听各断言event.currentTarget等于自身；CHILD点击仍三层顺序执行，验证每次调用前设置当前目标而非一直使用原target。 */
   it('should set currentTarget', async () => {
     await renderTree();
     await putListener(CHILD, ON_CLICK_KEY, function (event) {
@@ -254,7 +255,7 @@ describe('ReactBrowserEventEmitter', () => {
     expect(idCallOrder[2]).toBe(GRANDPARENT);
   });
 
-  /** 测试场景：验证「should support stopPropagation()」描述的渲染、交互或错误处理结果。 */
+  /** parent监听调用stopPropagation；child→parent后停止，grandparent不执行，验证冒泡途中截断。 */
   it('should support stopPropagation()', async () => {
     await renderTree();
     await putListener(CHILD, ON_CLICK_KEY, recordID.bind(null, CHILD));
@@ -276,14 +277,15 @@ describe('ReactBrowserEventEmitter', () => {
     expect(idCallOrder[1]).toBe(PARENT);
   });
 
-  /** 测试场景：验证「should support overriding .isPropagationStopped()」描述的渲染、交互或错误处理结果。 */
+  /** parent只把合成isPropagationStopped改为返回true，未调用原生stop；child→parent后停止，验证分发检查合成谓词。 */
   it('should support overriding .isPropagationStopped()', async () => {
     await renderTree();
       // 这种处理并不理想；参见 D4504876。
     await putListener(CHILD, ON_CLICK_KEY, recordID.bind(null, CHILD));
     await putListener(PARENT, ON_CLICK_KEY, function (e) {
       recordID(PARENT, e);
-      // 这样就能阻止React ,但避免触摸原生事件
+      // 只改合成传播谓词，分发器会停止后续React监听；本例没有修改原生传播。
+      /** 将本次合成事件传播停止谓词替换为true，不改原生事件，测试队列仅依合成标志停止。 */
       e.isPropagationStopped = () => true;
     });
     await putListener(
@@ -299,7 +301,7 @@ describe('ReactBrowserEventEmitter', () => {
     expect(idCallOrder[1]).toBe(PARENT);
   });
 
-  /** 测试场景：验证「should stop after first dispatch if stopPropagation」描述的渲染、交互或错误处理结果。 */
+  /** child第一监听即stopPropagation；只有child记录，验证目标处理器就能截断后续祖先。 */
   it('should stop after first dispatch if stopPropagation', async () => {
     await renderTree();
     await putListener(
@@ -320,7 +322,7 @@ describe('ReactBrowserEventEmitter', () => {
     expect(idCallOrder[0]).toBe(CHILD);
   });
 
-  /** 测试场景：验证「should not stopPropagation if false is returned」描述的渲染、交互或错误处理结果。 */
+  /** child仅return false；仍child→parent→grandparent三次，验证返回值不等于stopPropagation。 */
   it('should not stopPropagation if false is returned', async () => {
     await renderTree();
     await putListener(
@@ -349,11 +351,12 @@ describe('ReactBrowserEventEmitter', () => {
    * 进行处理。 我们需要小心不要调用这些新的监听器。
    */
 
-  /** 测试场景：验证「should invoke handlers that were removed while bubbling」描述的渲染、交互或错误处理结果。 */
+  /** child异步handler更新props删除parent监听；本次点击parent仍一次，验证本次派发已收集监听列表，随后删除不改变快照。 */
   it('should invoke handlers that were removed while bubbling', async () => {
     await renderTree();
     const handleParentClick = jest.fn();
-    /** `handleChildClick`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 点击中删除parent props监听并等待提交，本次事件的已收集监听列表应仍包含原parent handler。 */
     const handleChildClick = async function (event) {
       await deleteAllListeners(PARENT);
     };
@@ -365,11 +368,12 @@ describe('ReactBrowserEventEmitter', () => {
     expect(handleParentClick).toHaveBeenCalledTimes(1);
   });
 
-  /** 测试场景：验证「should not invoke newly inserted handlers while bubbling」描述的渲染、交互或错误处理结果。 */
+  /** child异步handler给原本无监听parent新增click；本次parent零次，验证更新新增监听不会插入已收集的队列。 */
   it('should not invoke newly inserted handlers while bubbling', async () => {
     await renderTree();
     const handleParentClick = jest.fn();
-    /** `handleChildClick`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 点击中新增parent props监听，本次事件已有列表不能因此补入新handler。 */
     const handleChildClick = async function (event) {
       await putListener(PARENT, ON_CLICK_KEY, handleParentClick);
     };

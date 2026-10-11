@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="DOMPurify 3.4.13 / commit 8cc5ae1 源码机制、调用链、安全边界与测试证据教程"
+      content="本地 DOMPurify 3.4.13 源码机制、调用链、配置边界与测试解读"
     />
-    <title>DOMPurify 源码机制指南 · 8cc5ae1</title>
+    <title>DOMPurify 源码机制指南 · 3.4.13</title>
     <style>
       :root {
         color-scheme: light dark;
@@ -70,10 +70,10 @@
           system-ui,
           -apple-system,
           BlinkMacSystemFont,
-          'Segoe UI',
-          'PingFang SC',
-          'Hiragino Sans GB',
-          'Microsoft YaHei',
+          "Segoe UI",
+          "PingFang SC",
+          "Hiragino Sans GB",
+          "Microsoft YaHei",
           sans-serif;
       }
 
@@ -85,7 +85,7 @@
       code,
       pre {
         font-family:
-          'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+          "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
       }
 
       code {
@@ -310,9 +310,94 @@
 
       .diagram svg {
         display: block;
-        min-width: 760px;
+        min-width: 980px;
         width: 100%;
         height: auto;
+      }
+
+      .engineering-figure {
+        margin: 2rem 0;
+        min-width: 0;
+      }
+
+      .engineering-figure > figcaption {
+        color: var(--accent);
+        font-size: 1rem;
+        line-height: 1.5;
+      }
+
+      .engineering-diagram {
+        max-width: 100%;
+        overscroll-behavior-x: contain;
+      }
+
+      .engineering-diagram:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 3px;
+      }
+
+      .engineering-diagram svg {
+        width: var(--diagram-width, 1000px);
+        min-width: var(--diagram-width, 1000px);
+        max-width: none;
+      }
+
+      .engineering-diagram svg text {
+        font-size: 16px;
+      }
+
+      .engineering-diagram svg .small {
+        font-size: 13px;
+      }
+
+      .diagram .box-muted {
+        fill: var(--surface-2);
+        stroke: var(--line);
+        stroke-width: 1.5;
+      }
+
+      .diagram .box-remove {
+        fill: var(--warn-soft);
+        stroke: var(--accent-2);
+        stroke-width: 1.5;
+      }
+
+      .diagram .decision {
+        fill: var(--surface);
+        stroke: var(--accent);
+        stroke-width: 1.5;
+      }
+
+      .diagram .edge-special {
+        stroke: var(--accent);
+        stroke-dasharray: 7 5;
+      }
+
+      .diagram .edge-remove {
+        stroke: var(--accent-2);
+        stroke-dasharray: 5 4;
+      }
+
+      .viz-caption {
+        color: var(--muted);
+        font-size: 0.9rem;
+        line-height: 1.7;
+      }
+
+      .viz-two-column {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 502px), 1fr));
+        gap: 1rem;
+      }
+
+      .viz-two-column > * {
+        min-width: 0;
+      }
+
+      @media (max-width: 720px) {
+        .viz-two-column {
+          grid-template-columns: 1fr;
+        }
       }
 
       .diagram .box {
@@ -431,7 +516,7 @@
         width: 1px;
         height: 0.63rem;
         background: var(--line);
-        content: '';
+        content: "";
       }
 
       table {
@@ -598,18 +683,18 @@
       <p class="eyebrow">Source-guided security engineering</p>
       <h1>DOMPurify 如何把“不可信字符串”变成可用 DOM</h1>
       <p class="lede">
-        从真实入口沿着配置快照、DOM 解析、双阶段过滤、命名空间检查、Shadow DOM
-        递归和失败关闭一路追到底。所有结论固定到本地源码、测试或 Git
-        历史；推断会显式标注。
+        一段包含脚本、事件属性与 SVG 的字符串，怎样经过解析、节点过滤和序列化，
+        变成可交给页面使用的结果？本文沿本地 3.4.13 实现走完这条调用链，
+        再解释配置、hooks、Shadow DOM 与原地修改怎样影响它。
       </p>
       <div class="meta-grid">
         <div class="meta">
-          <b>证据版本</b>
-          <span>commit 8cc5ae1 · 2026-08-09</span>
+          <b>源码位置</b>
+          <span>本项目 dompurify/src</span>
         </div>
         <div class="meta">
           <b>包版本</b>
-          <span>package 3.4.13 · 非 exact tag</span>
+          <span>package.json / dist：3.4.13</span>
         </div>
         <div class="meta">
           <b>阅读范围</b>
@@ -622,9 +707,9 @@
       <nav class="toc" aria-label="文章目录">
         <strong>目录</strong>
         <a href="#verdict">01 · 先说结论</a>
-        <a href="#scope">02 · 范围与门禁</a>
+        <a href="#scope">02 · 版本与范围</a>
         <a href="#map">03 · 模块地图</a>
-        <a href="#evolution">04 · 设计演进</a>
+        <a href="#evolution">04 · 设计约束</a>
         <a href="#objects">05 · 核心对象</a>
         <a href="#modules">06 · 分模块机制</a>
         <a href="#pipeline">07 · 完整调用链</a>
@@ -640,107 +725,83 @@
       <main>
         <section id="verdict">
           <p class="kicker">01 · Verdict</p>
-          <h2>DOMPurify 不是“正则替换器”，而是一台受约束的 DOM 解释器</h2>
+          <h2>先解析为 DOM，再按策略清理</h2>
           <div class="summary">
             <strong>一句话机制：</strong>
-            它先让浏览器解析器把攻击者字符串物化为真实节点，再用实例闭包里的策略状态按
-            “元素结构 → 元素许可 → namespace → 属性分支链”
-            顺序筛选，最后按字符串、 DOM、Fragment 或原地修改模式返回。对
-            IN_PLACE，只有进入根预检后的失败关闭分支才会中和活树后重抛；更早的配置/TT
-            初始化异常不会触碰输入。配置放行的 basic custom element
-            会在元素许可阶段提前返回，刻意跳过 namespace/fallback
-            检查；属性也不是所有分支都执行 URI 值校验。
+            字符串先由 DOM
+            解析器生成节点。遍历时先执行结构与元素检查，再处理属性；
+            常规获准元素还会校验命名空间。最终返回字符串、DOM 或 Fragment。
+            <code>IN_PLACE</code> 则直接清理传入节点并返回同一引用。
           </div>
           <p>
-            设计核心不是某一条 allowlist，而是多层不变量叠加：缓存原生 getter
-            规避 DOM clobbering；配置克隆冻结规避原型污染；namespace
-            转换规则规避解析差异导致的 mXSS；hook allowlist
-            每调用分叉规避跨调用污染；Trusted Types policy
-            有重入守卫和生命周期复位；NodeIterator 不进入的 template/shadow
-            子树由显式遍历补齐。
+            标签获准后仍需检查它与父节点的命名空间关系，否则 SVG、MathML 与 HTML
+            的解析差异可能在重新插入页面时改变标记含义，这类问题称为 mutation
+            XSS （mXSS）。属性也按分支处理：<code>href</code> 等值要检查协议，
+            <code>data-*</code> 等分支则按属性名接受。后文会逐一说明这些条件。
           </p>
           <p>
-            最重要的理解：<strong
-              >hook 和调用者提供的 Trusted Types policy 都是受信任扩展点</strong
-            >。 DOMPurify 保护的是“不可信标记”，不是恶意配置或恶意 hook。
+            <strong
+              >配置函数、hooks 和调用者提供的 Trusted Types policy
+              都是受信任扩展点。</strong
+            >
+            它们能扩大允许集合、保留属性或改写输出；使用这些能力时，调用者要负责其规则。
           </p>
         </section>
 
         <section id="scope">
           <p class="kicker">02 · Scope</p>
-          <h2>版本、范围与完成门禁</h2>
+          <h2>版本与阅读范围</h2>
           <table>
             <thead>
               <tr>
                 <th>项目</th>
                 <th>本教程采用值</th>
-                <th>为什么</th>
+                <th>对应内容</th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <td>仓库状态</td>
+                <td>源码版本</td>
                 <td>
-                  基线 <code>main = origin/main</code>，HEAD
-                  <code>8cc5ae1388587f7a08cc099ff2a5e985f85d77c5</code
-                  >；当前工作区含本次注释与教程改动
+                  <code>package.json</code> 与现有 dist 自报 <code>3.4.13</code>
                 </td>
-                <td>区分审计基线、未提交文档改动与已发布 tag。</td>
-              </tr>
-              <tr>
-                <td>版本标签</td>
-                <td>
-                  <code>package.json = 3.4.13</code>；<code
-                    >git describe = 3.3.3-256-g8cc5ae1</code
-                  >
-                </td>
-                <td>HEAD 没有 exact tag，所以本文不称它为“3.4.13 tag”。</td>
+                <td>本文解释本项目保存的实现。</td>
               </tr>
               <tr>
                 <td>包含</td>
                 <td>
-                  <code>src/*.ts</code>、核心 QUnit/fuzz
-                  测试、package/rollup/type verification
+                  <a href="../../dompurify/src/purify.ts">src/purify.ts</a>、
+                  <code>utils/tags/attrs/regexp/config/types</code>
                 </td>
-                <td>覆盖公开契约、运行时主线、测试证据与分发入口。</td>
+                <td>公开契约、配置状态、节点清理与返回模式。</td>
               </tr>
               <tr>
-                <td>排除</td>
+                <td>测试与分发</td>
                 <td>
-                  <code>dist</code> 生成代码、网站/演示、legacy runner、fixture
-                  数据逐条解释
+                  <a href="../../dompurify/test/test-suite.js"
+                    >核心 QUnit 测试</a
+                  >、 bootstrap、fuzz、package、Rollup 与 TypeScript fixtures
                 </td>
                 <td>
-                  生成物仅校验出口；运行器和海量样本不属于 sanitizer 决策核心。
+                  测试怎样观察行为，以及同一入口怎样生成运行时和类型产物。
                 </td>
-              </tr>
-              <tr>
-                <td>编辑授权</td>
-                <td>只改解释性注释；新增本单 HTML</td>
-                <td>不触碰运行语义、测试断言或构建逻辑。</td>
               </tr>
             </tbody>
           </table>
           <p>
-            完成门禁：声明级注释审计未分类缺口为零；源码/测试/教程术语一致；关键章节均有真实源码摘录；
-            主调用链含入口、状态变化、异常/清理、返回和测试映射；HTML
-            离线、锚点、代码块和窄屏布局通过检查。
-          </p>
-          <div class="summary">
-            <strong>最终声明覆盖：</strong>扫描 12 个文件、309 个声明；119
-            项“已翻译扩写”，190 项“新补充”，已有且充分 0，明确豁免 0，未分类
-            0。完整逐声明分类见
+            源码摘录保留当前控制流，删节处会标明；属性决策骨架另标为伪代码。
+            需要按声明定位中文注释时，可查
             <a href="./dompurify-comment-coverage.json"
               >dompurify-comment-coverage.json</a
             >。
-          </div>
+          </p>
         </section>
 
         <section id="map">
           <p class="kicker">03 · Map</p>
-          <h2>模块不是按文件平铺，而是按信任边界分层</h2>
+          <h2>策略、原语与主调用链怎样配合</h2>
           <div class="diagram" role="img" aria-label="DOMPurify 模块依赖图">
-            <svg viewBox="0 0 980 430">
+            <svg viewBox="0 0 980 430" style="--diagram-width: 980px">
               <defs>
                 <marker
                   id="arrow"
@@ -847,9 +908,9 @@
                 marker-end="url(#arrow)"
               ></line>
               <line
-                x1="687"
+                x1="758"
                 y1="76"
-                x2="758"
+                x2="687"
                 y2="76"
                 marker-end="url(#arrow)"
               ></line>
@@ -874,15 +935,13 @@
                 y2="120"
                 marker-end="url(#arrow)"
               ></line>
-              <line
-                x1="490"
-                y1="330"
-                x2="490"
-                y2="272"
-                marker-end="url(#arrow)"
-              ></line>
+              <path d="M610 330 H655 V126" marker-end="url(#arrow)"></path>
             </svg>
           </div>
+          <p class="muted">
+            策略数据与缓存原语供运行时使用；types/config 提供 TypeScript 契约，
+            类型导入在构建后消失。底部测试箭头表示对主实现的观察与断言。
+          </p>
           <div class="cards">
             <article class="card">
               <h3>先读契约</h3>
@@ -910,58 +969,54 @@
 
         <section id="evolution">
           <p class="kicker">04 · Evolution</p>
-          <h2>当前实现是十多年回归约束叠出来的</h2>
+          <h2>几个直接影响当前实现的约束</h2>
           <p>
-            下表仅列本地 Git 历史能直接证明的节点；commit
-            标题较笼统时，只把它作为“该机制在此出现/被测试”的证据，
-            不臆测作者动机。
+            清理一棵 DOM 树，需要同时处理解析关系、可变配置和节点所有权。
+            下表把这些问题与实现中的处理位置对应起来。
           </p>
           <table>
             <thead>
               <tr>
-                <th>日期 / commit</th>
-                <th>可验证变化</th>
-                <th>今天留下的设计约束</th>
+                <th>问题</th>
+                <th>处理位置</th>
+                <th>产生的行为</th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <td>2014-03-31 · <code>3b53105</code></td>
-                <td>修 clobber bypass，加入内容保留相关处理与测试。</td>
-                <td>“删标签但保留子内容”必须与安全清理同时成立。</td>
+                <td>不允许的容器中仍有可保留内容</td>
+                <td><code>_sanitizeDisallowedNode</code></td>
+                <td>KEEP_CONTENT 上移原 children，后续继续清理这些节点。</td>
               </tr>
               <tr>
-                <td>2019-09 · <code>300bd5b</code> / <code>6d6aabd</code></td>
-                <td>加入 Trusted return 与 Chrome 77 mXSS 测试。</td>
-                <td>返回类型和 parser round-trip 都是安全契约的一部分。</td>
+                <td>相同标签名可能属于不同命名空间</td>
+                <td><code>_checkValidNamespace</code></td>
+                <td>名称通过 allowlist 后，还要检查父子 namespace 关系。</td>
               </tr>
               <tr>
-                <td>2020-12-22 · <code>03f8597</code></td>
-                <td>把新 bypass 语料加入测试。</td>
-                <td>namespace confusion 不能只靠标签名 allowlist。</td>
+                <td>Form 的命名子元素可能遮蔽 DOM 成员</td>
+                <td>缓存 getter、<code>_isClobbered</code></td>
+                <td>读取真实结构，并拒绝关键成员被遮蔽的 form。</td>
               </tr>
               <tr>
-                <td>2022-11-08 · <code>c2c1b11</code></td>
-                <td>引入 <code>ALLOWED_NAMESPACES</code> 实验。</td>
-                <td>命名空间成为显式配置维度。</td>
-              </tr>
-              <tr>
-                <td>2026-05 · <code>7996f1d</code> / <code>88d8420</code></td>
-                <td>加强 IN_PLACE clobber 检查；hook 暴露 allowlist。</td>
-                <td>活树要 fail-closed；可写 hook state 必须按调用隔离。</td>
-              </tr>
-              <tr>
-                <td>2026-06 · <code>fcc50f0</code> / <code>011bc3b</code></td>
-                <td>修 TT policy 生命周期；clone guard 覆盖 setConfig。</td>
-                <td>持久配置与逐调用配置不能出现安全语义分叉。</td>
-              </tr>
-              <tr>
-                <td>2026-08-09 · <code>8cc5ae1</code></td>
+                <td>Hook 能直接写允许集合</td>
+                <td><code>_forkSharedAllowlist</code></td>
                 <td>
-                  允许 SVG <code>pointer-events</code> /
-                  <code>vector-effect</code> presentation attrs。
+                  暴露共享集合前克隆；本次扩写不会污染下一次 sanitize 的基线。
                 </td>
-                <td>当前 HEAD 与本文证据基线。</td>
+              </tr>
+              <tr>
+                <td>IN_PLACE 清理中途失败时，调用者仍持有原树</td>
+                <td><code>sanitize</code> 主遍历的 catch</td>
+                <td>先中和 root 与 removed 中的元素子树，再重抛错误。</td>
+              </tr>
+              <tr>
+                <td>调用者的 TT policy 会成为实例活动状态</td>
+                <td><code>_parseConfig</code>、<code>clearConfig</code></td>
+                <td>
+                  显式 null 关闭当前包装；clearConfig
+                  解除调用者策略并保留内部缓存。
+                </td>
               </tr>
             </tbody>
           </table>
@@ -969,7 +1024,7 @@
 
         <section id="objects">
           <p class="kicker">05 · Objects</p>
-          <h2>先认清五类状态，才不会把函数列表当架构</h2>
+          <h2>一次清理涉及六类状态</h2>
           <div class="object-grid">
             <article class="object">
               <h3>DOMPurify 实例</h3>
@@ -1030,7 +1085,7 @@
 
         <section id="modules">
           <p class="kicker">06 · Modules</p>
-          <h2>分模块理解：每层只承担一种失败模式</h2>
+          <h2>从基础工具走到节点清理</h2>
 
           <h3>6.1 <code>utils.ts</code>：缓存原生能力，绕开被污染的对象表面</h3>
           <p>
@@ -1060,8 +1115,11 @@
 }</code></pre>
           </div>
           <p>
-            正则实例被模块级共享，部分带 <code>/g</code>；每次调用前清零
-            <code>lastIndex</code> 是其可复用不变量。<code>addToSet</code>
+            内置正则由模块共享，部分带 <code>/g</code>；包装器在同 realm
+            的正则调用前清零
+            <code>lastIndex</code>，使重复测试从字符串开头开始。<code
+              >addToSet</code
+            >
             尽量把查找表原型设为 null； <code>cleanArray</code> 把稀疏槽补成 own
             <code>null</code>，防止读取
             <code>Array.prototype</code> 上的数字键。<code>clone</code>
@@ -1092,55 +1150,67 @@
               <tr>
                 <td><code>MUSTACHE_EXPR / ERB_EXPR / TMPLIT_EXPR</code></td>
                 <td>模板 scrub</td>
-                <td>清除跨节点拼接后才形成的表达式。</td>
+                <td>
+                  替换完整或残缺模板语法；调用点包括单节点、属性及返回前处理。
+                </td>
               </tr>
               <tr>
                 <td><code>DATA_ATTR / ARIA_ATTR</code></td>
                 <td>属性名准入</td>
-                <td>
-                  名称语义被视为值惰性；命中后直接放行，不进入后续 URI 值检查。
-                </td>
+                <td>按属性名前缀接受，不进入后续 URI 值检查。</td>
               </tr>
               <tr>
                 <td><code>IS_ALLOWED_URI</code></td>
                 <td>URI 值准入</td>
                 <td>
-                  默认 scheme 含 <code>matrix:</code>；配置文档旧示例曾漂移。
+                  接受相对值与 http、https、mailto、matrix 等明确列出的协议。
                 </td>
               </tr>
               <tr>
                 <td><code>ELEMENT_MARKUP_PROBE</code></td>
                 <td>mXSS canary</td>
                 <td>
-                  文本/序列化含 markup，但 DOM 没有真实 element child
-                  时视为结构不一致。
+                  SAFE_FOR_XML 开启时，节点有 children、没有真实 element child，
+                  且 textContent 与 innerHTML 都含标记起始字符，就判为危险结构。
                 </td>
               </tr>
               <tr>
                 <td><code>FALLBACK_TAG_CLOSE</code></td>
-                <td>raw-text fallback</td>
-                <td>阻断老 parser 对 noscript/noembed/noframes 的修复差异。</td>
+                <td>noscript/noembed/noframes 检查</td>
+                <td>
+                  这些元素即使被配置放行，内容命中对应闭合标记仍会整棵删除。
+                </td>
               </tr>
             </tbody>
           </table>
 
           <h3>
             6.3 <code>config.ts</code> +
-            <code>_parseConfig()</code>：把用户输入变成封闭策略快照
+            <code>_parseConfig()</code>：建立本次使用的策略
           </h3>
           <p>
-            配置先做类型回退，再 clone 为 null-prototype 对象；HTML 模式把
-            tag/attr 名小写，XHTML 保持原样。<code>USE_PROFILES</code> 重建
-            allowlist，之后再叠加 <code>ADD_*</code>；<code>FORBID_*</code>
-            在普通策略决策中优先。例外是受信任 attribute hook 的
-            <code>forceKeepAttr</code>：它在
+            顶层非对象配置先回退为 <code>{}</code>，再 clone 为 null-prototype
+            对象； 集合选项只接受自有数组。HTML 模式把 tag/attr 名小写，XHTML
+            保持原样。 <code>USE_PROFILES</code> 重建 allowlist，之后再叠加
+            <code>ADD_*</code>。 普通名称决策先检查
+            <code>FORBID_*</code>；配置归一有一个特例： 允许
+            <code>table</code> 会补入 <code>tbody</code>，并删除
+            <code>FORBID_TAGS.tbody</code>，以保留解析器补出的表格容器。 受信任
+            attribute hook 的 <code>forceKeepAttr</code>：它在
             <code>_isValidAttribute</code> 前继续到下一属性，能绕过
             <code>FORBID_ATTR</code>
             及之后的常规检查；after hook 新增属性也不会复检。
-            <code>SAFE_FOR_TEMPLATES</code> 强制关闭 data attr，<code
+            <code>SAFE_FOR_TEMPLATES</code> 关闭 data-* 自动准入，显式
+            ALLOWED_ATTR/ADD_ATTR 接受的 data 属性仍能通过普通分支。<code
               >RETURN_DOM_FRAGMENT</code
             >
             隐含 <code>RETURN_DOM</code>。
+          </p>
+          <p>
+            <code>CONFIG</code> 是提供给 hook 的配置对象，冻结只作用于顶层，
+            它与实际允许集合是两套对象。clone
+            会复用数组、函数和正则引用；数组填洞，
+            以及随后名称规范化，都可能原位修改调用方数组。因此这里的配置快照并非深度不可变。
           </p>
           <div class="source">
             <div class="source-label">
@@ -1188,6 +1258,12 @@ if (RETURN_DOM_FRAGMENT) {
             写入污染下一次调用。<code>clearConfig</code> 同时清掉 caller Trusted
             Types policy。
           </p>
+          <p>
+            <code>isValidAttribute</code> 直接读取当前活动策略：没有 setConfig
+            时， 也会复用最近一次 sanitize 的配置和 hook 改过的允许集合。 只有
+            CONFIG 为空（包括 clearConfig 后）才先建立默认配置；它不会重新执行
+            hooks 或元素检查。
+          </p>
 
           <h3>6.4 元素阶段：结构威胁先于普通 allowlist</h3>
           <p>
@@ -1198,6 +1274,441 @@ if (RETURN_DOM_FRAGMENT) {
             <code>CUSTOM_ELEMENT_HANDLING</code> 接受的非 allowlisted basic
             custom element 会补发 after hook 后提前返回，刻意跳过
             namespace/fallback。
+          </p>
+          <figure class="engineering-figure" id="dp-element-decision">
+            <figcaption>
+              元素决策：结构威胁先于名称准入；custom 策略有自己的提前出口。
+            </figcaption>
+            <div
+              class="diagram engineering-diagram"
+              tabindex="0"
+              role="region"
+              aria-label="元素决策：结构威胁先于名称准入；custom 策略有自己的提前出口。"
+              style="--diagram-width: 1140px"
+            >
+              <svg
+                viewBox="0 0 1140 1555"
+                width="1140"
+                role="img"
+                aria-labelledby="dp-element-flow-title dp-element-flow-desc"
+                style="--diagram-width: 1140px"
+              >
+                <title id="dp-element-flow-title">
+                  元素阶段：删除、detach 与 custom 早退分别结束在哪里
+                </title>
+                <desc id="dp-element-flow-desc">
+                  从 before hook 开始，先检查 detach 和 clobber，再触发 upon
+                  hook、再次检查 detach、检查结构威胁和名称。普通名称继续
+                  namespace、fallback 与模板文本处理；custom 策略接受时补发
+                  after hook 后提前返回。删除分支记录 removed，hook detach
+                  不记录。此图只结束元素函数，主 walk 随后仍运行属性与 fragment
+                  阶段。
+                </desc>
+                <defs>
+                  <marker
+                    id="dp-element-flow-arrow"
+                    markerWidth="9"
+                    markerHeight="9"
+                    refX="8"
+                    refY="3"
+                    orient="auto"
+                  >
+                    <path class="marker-arrow" d="M0,0 L0,6 L9,3 z"></path>
+                  </marker>
+                </defs>
+                <text x="545" y="30" text-anchor="middle">
+                  _sanitizeElements(currentNode, root) · 同步
+                </text>
+                <rect
+                  class="box-accent"
+                  x="295"
+                  y="65"
+                  width="500"
+                  height="70"
+                  rx="12"
+                ></rect>
+                <text x="545.0" y="105.0" text-anchor="middle">
+                  beforeSanitizeElements hook
+                </text>
+                <polygon
+                  class="box"
+                  points="545.0,175 800,220.0 545.0,265 290,220.0"
+                ></polygon>
+                <text x="545.0" y="225.0" text-anchor="middle">
+                  当前是非根节点，且已无父节点？
+                </text>
+                <path
+                  d="M545 135 V175"
+                  marker-end="url(#dp-element-flow-arrow)"
+                ></path>
+                <rect
+                  class="box"
+                  x="855"
+                  y="165"
+                  width="270"
+                  height="110"
+                  rx="12"
+                ></rect>
+                <text x="990.0" y="200.0" text-anchor="middle">
+                  IN_PLACE 时中和普通后代
+                </text>
+                <text x="990.0" y="225.0" text-anchor="middle">
+                  return true
+                </text>
+                <text x="990.0" y="250.0" text-anchor="middle">
+                  不记 removed；无 after hook
+                </text>
+                <path
+                  d="M800 220 H855"
+                  marker-end="url(#dp-element-flow-arrow)"
+                ></path>
+                <text class="small" x="827" y="207" text-anchor="middle">
+                  是
+                </text>
+                <polygon
+                  class="box"
+                  points="545.0,305 800,347.5 545.0,390 290,347.5"
+                ></polygon>
+                <text x="545.0" y="352.5" text-anchor="middle">
+                  _isClobbered(currentNode)？
+                </text>
+                <path
+                  d="M545 265 V305"
+                  marker-end="url(#dp-element-flow-arrow)"
+                ></path>
+                <text class="small" x="563" y="293" text-anchor="middle">
+                  否
+                </text>
+                <rect
+                  class="box"
+                  x="15"
+                  y="300"
+                  width="235"
+                  height="95"
+                  rx="12"
+                ></rect>
+                <text x="132.5" y="340.0" text-anchor="middle">
+                  _forceRemove；return true
+                </text>
+                <text x="132.5" y="365.0" text-anchor="middle">
+                  记 removed；无 after hook
+                </text>
+                <path
+                  d="M290 347.5 H250"
+                  marker-end="url(#dp-element-flow-arrow)"
+                ></path>
+                <text class="small" x="270" y="335" text-anchor="middle">
+                  是
+                </text>
+                <rect
+                  class="box-accent"
+                  x="295"
+                  y="430"
+                  width="500"
+                  height="90"
+                  rx="12"
+                ></rect>
+                <text x="545.0" y="467.5" text-anchor="middle">
+                  规范化 tagName；按需 clone allowlist
+                </text>
+                <text x="545.0" y="492.5" text-anchor="middle">
+                  uponSanitizeElement hook
+                </text>
+                <path
+                  d="M545 390 V430"
+                  marker-end="url(#dp-element-flow-arrow)"
+                ></path>
+                <text class="small" x="563" y="418" text-anchor="middle">
+                  否
+                </text>
+                <polygon
+                  class="box"
+                  points="545.0,565 800,610.0 545.0,655 290,610.0"
+                ></polygon>
+                <text x="545.0" y="615.0" text-anchor="middle">
+                  hook 后，非根节点已无父节点？
+                </text>
+                <path
+                  d="M545 520 V565"
+                  marker-end="url(#dp-element-flow-arrow)"
+                ></path>
+                <rect
+                  class="box"
+                  x="855"
+                  y="555"
+                  width="270"
+                  height="110"
+                  rx="12"
+                ></rect>
+                <text x="990.0" y="590.0" text-anchor="middle">
+                  IN_PLACE 时中和普通后代
+                </text>
+                <text x="990.0" y="615.0" text-anchor="middle">
+                  return true
+                </text>
+                <text x="990.0" y="640.0" text-anchor="middle">
+                  不记 removed；无 after hook
+                </text>
+                <path
+                  d="M800 610 H855"
+                  marker-end="url(#dp-element-flow-arrow)"
+                ></path>
+                <text class="small" x="827" y="597" text-anchor="middle">
+                  是
+                </text>
+                <polygon
+                  class="box"
+                  points="545.0,700 800,752.5 545.0,805 290,752.5"
+                ></polygon>
+                <text x="545.0" y="745.0" text-anchor="middle">
+                  _isUnsafeNode 命中？
+                </text>
+                <text x="545.0" y="770.0" text-anchor="middle">
+                  mXSS / style / PI / comment
+                </text>
+                <path
+                  d="M545 655 V700"
+                  marker-end="url(#dp-element-flow-arrow)"
+                ></path>
+                <text class="small" x="563" y="685" text-anchor="middle">
+                  否
+                </text>
+                <rect
+                  class="box"
+                  x="15"
+                  y="707"
+                  width="235"
+                  height="95"
+                  rx="12"
+                ></rect>
+                <text x="132.5" y="747.0" text-anchor="middle">
+                  _forceRemove；return true
+                </text>
+                <text x="132.5" y="772.0" text-anchor="middle">
+                  记 removed；无 after hook
+                </text>
+                <path
+                  d="M290 752.5 H250"
+                  marker-end="url(#dp-element-flow-arrow)"
+                ></path>
+                <text class="small" x="270" y="740" text-anchor="middle">
+                  是
+                </text>
+                <polygon
+                  class="box"
+                  points="545.0,845 800,897.5 545.0,950 290,897.5"
+                ></polygon>
+                <text x="545.0" y="890.0" text-anchor="middle">
+                  FORBID_TAGS 命中，或
+                </text>
+                <text x="545.0" y="915.0" text-anchor="middle">
+                  ALLOWED_TAGS / ADD_TAGS 不接受？
+                </text>
+                <path
+                  d="M545 805 V845"
+                  marker-end="url(#dp-element-flow-arrow)"
+                ></path>
+                <text class="small" x="563" y="832" text-anchor="middle">
+                  否
+                </text>
+                <polygon
+                  class="box"
+                  points="990.0,832 1125,897.0 990.0,962 855,897.0"
+                ></polygon>
+                <text x="990.0" y="877.0" text-anchor="middle">
+                  非 FORBID？
+                </text>
+                <text x="990.0" y="902.0" text-anchor="middle">
+                  basic custom？
+                </text>
+                <text x="990.0" y="927.0" text-anchor="middle">
+                  tagNameCheck 接受？
+                </text>
+                <path
+                  d="M800 897.5 H855"
+                  marker-end="url(#dp-element-flow-arrow)"
+                ></path>
+                <text class="small" x="827" y="885" text-anchor="middle">
+                  是
+                </text>
+                <rect
+                  class="box-accent"
+                  x="855"
+                  y="1020"
+                  width="270"
+                  height="105"
+                  rx="12"
+                ></rect>
+                <text x="990.0" y="1052.5" text-anchor="middle">
+                  afterSanitizeElements hook
+                </text>
+                <text x="990.0" y="1077.5" text-anchor="middle">
+                  return false
+                </text>
+                <text x="990.0" y="1102.5" text-anchor="middle">
+                  跳过 namespace / fallback
+                </text>
+                <path
+                  d="M990 962 V1020"
+                  marker-end="url(#dp-element-flow-arrow)"
+                ></path>
+                <text class="small" x="1008" y="998" text-anchor="middle">
+                  是
+                </text>
+                <rect
+                  class="box"
+                  x="855"
+                  y="1280"
+                  width="270"
+                  height="130"
+                  rx="12"
+                ></rect>
+                <text x="990.0" y="1325.0" text-anchor="middle">
+                  按 KEEP_CONTENT 条件提升内容
+                </text>
+                <text x="990.0" y="1350.0" text-anchor="middle">
+                  _forceRemove；return true
+                </text>
+                <text x="990.0" y="1375.0" text-anchor="middle">
+                  记 removed；无 after hook
+                </text>
+                <path
+                  d="M1125 897 H1135 V1258 H990 V1280"
+                  marker-end="url(#dp-element-flow-arrow)"
+                ></path>
+                <text class="small" x="1120" y="1244" text-anchor="middle">
+                  否
+                </text>
+                <polygon
+                  class="box"
+                  points="545.0,1065 800,1115.0 545.0,1165 290,1115.0"
+                ></polygon>
+                <text x="545.0" y="1120.0" text-anchor="middle">
+                  当前为 Element，且 namespace 无效？
+                </text>
+                <path
+                  d="M545 950 V1065"
+                  marker-end="url(#dp-element-flow-arrow)"
+                ></path>
+                <text class="small" x="633" y="1006" text-anchor="middle">
+                  否：名称已允许
+                </text>
+                <rect
+                  class="box"
+                  x="15"
+                  y="1065"
+                  width="235"
+                  height="95"
+                  rx="12"
+                ></rect>
+                <text x="132.5" y="1105.0" text-anchor="middle">
+                  _forceRemove；return true
+                </text>
+                <text x="132.5" y="1130.0" text-anchor="middle">
+                  记 removed；无 after hook
+                </text>
+                <path
+                  d="M290 1115 H250"
+                  marker-end="url(#dp-element-flow-arrow)"
+                ></path>
+                <text class="small" x="270" y="1102" text-anchor="middle">
+                  是
+                </text>
+                <polygon
+                  class="box"
+                  points="545.0,1200 800,1250.0 545.0,1300 290,1250.0"
+                ></polygon>
+                <text x="545.0" y="1242.5" text-anchor="middle">
+                  noscript / noembed / noframes
+                </text>
+                <text x="545.0" y="1267.5" text-anchor="middle">
+                  含 FALLBACK_TAG_CLOSE 片段？
+                </text>
+                <path
+                  d="M545 1165 V1200"
+                  marker-end="url(#dp-element-flow-arrow)"
+                ></path>
+                <text class="small" x="563" y="1187" text-anchor="middle">
+                  否
+                </text>
+                <rect
+                  class="box"
+                  x="15"
+                  y="1203"
+                  width="235"
+                  height="95"
+                  rx="12"
+                ></rect>
+                <text x="132.5" y="1243.0" text-anchor="middle">
+                  _forceRemove；return true
+                </text>
+                <text x="132.5" y="1268.0" text-anchor="middle">
+                  记 removed；无 after hook
+                </text>
+                <path
+                  d="M290 1250 H250"
+                  marker-end="url(#dp-element-flow-arrow)"
+                ></path>
+                <text class="small" x="270" y="1237" text-anchor="middle">
+                  是
+                </text>
+                <rect
+                  class="box"
+                  x="295"
+                  y="1335"
+                  width="500"
+                  height="70"
+                  rx="12"
+                ></rect>
+                <text x="545.0" y="1362.5" text-anchor="middle">
+                  SAFE_FOR_TEMPLATES + Text：替换模板文本
+                </text>
+                <text x="545.0" y="1387.5" text-anchor="middle">
+                  文本变化时，removed 记录其旧快照
+                </text>
+                <path
+                  d="M545 1300 V1335"
+                  marker-end="url(#dp-element-flow-arrow)"
+                ></path>
+                <text class="small" x="563" y="1323" text-anchor="middle">
+                  否
+                </text>
+                <rect
+                  class="box-accent"
+                  x="295"
+                  y="1440"
+                  width="500"
+                  height="80"
+                  rx="12"
+                ></rect>
+                <text x="545.0" y="1472.5" text-anchor="middle">
+                  afterSanitizeElements hook
+                </text>
+                <text x="545.0" y="1497.5" text-anchor="middle">
+                  return false
+                </text>
+                <path
+                  d="M545 1405 V1440"
+                  marker-end="url(#dp-element-flow-arrow)"
+                ></path>
+              </svg>
+            </div>
+          </figure>
+          <p>
+            图中的 <code>true</code>/<code>false</code> 只结束
+            <code>_sanitizeElements</code>。主 walk
+            不读取这个返回值来跳过后续阶段，仍调用属性清洗并处理可访问的
+            fragment。hook 主动 detach 与
+            <code>_forceRemove</code> 都能结束元素检查，但只有后者写入
+            <code>removed</code>；<code>IN_PLACE</code> 的 detach
+            分支还会立即中和该节点的普通后代。
+          </p>
+          <p>
+            <code>_isUnsafeNode</code> 的 mXSS 探针、HTML style 子元素和危险
+            comment 受 <code>SAFE_FOR_XML</code> 控制，PI
+            无条件拒绝。右下方的内容提升须同时满足
+            <code>KEEP_CONTENT &amp;&amp; !FORBID_CONTENTS[tag]</code
+            >，并且节点有父级；普通节点移动原 children，walk root 则插入深副本。
           </p>
           <div class="source">
             <div class="source-label">
@@ -1221,19 +1732,456 @@ if (currentNode.nodeType === NODE_TYPE.processingInstruction) {
 }</code></pre>
           </div>
           <p>
-            仅当
+            对名称被拒绝的节点，只有
             <code>KEEP_CONTENT &amp;&amp; !FORBID_CONTENTS[tag]</code>
-            时，删除标签才把原 children 移到父级，而不是逐层 deep
-            clone：复杂度从嵌套删除时可能的 O(n²) 降到近似
-            O(n)，也确保已有排队事件的原节点继续进入清理链。只有删除 walk root
-            时 clone children，因为结果从 root 子树序列化。<code
+            且节点有父级时，才会上移内容。普通节点从尾到头把原 children
+            插到当前节点后面，再删除容器，
+            因而保留顺序，也让携带监听器或已排队事件的原对象继续进入清理链。
+            删除 walk root 时改为插入 children 的深副本：原 children 留在 root
+            中， 继续接受遍历，最终仍从这个 root 取返回内容。<code
               >selectedcontent</code
             >
-            等默认 <code>FORBID_CONTENTS</code>
-            会整棵丢弃，避免 UA 镜像重填导致循环与输出放大。
+            等标签在默认
+            <code>FORBID_CONTENTS</code> 中，名称被拒绝时连同内容丢弃。
           </p>
 
           <h3>6.5 属性阶段：分支顺序决定是否进入 URI 值校验</h3>
+          <figure class="engineering-figure" id="dp-attribute-decision">
+            <figcaption>
+              属性决策 A：先画清逐属性循环，再展开名称与值的准入。
+            </figcaption>
+            <div
+              class="diagram engineering-diagram"
+              tabindex="0"
+              role="region"
+              aria-label="属性决策 A：先画清逐属性循环，再展开名称与值的准入。"
+              style="--diagram-width: 1170px"
+            >
+              <svg
+                viewBox="0 0 1170 1655"
+                width="1170"
+                role="img"
+                aria-labelledby="dp-attribute-loop-title dp-attribute-loop-desc"
+                style="--diagram-width: 1170px"
+              >
+                <title id="dp-attribute-loop-title">
+                  逐属性清洗：前置屏障、forceKeepAttr 与反向遍历回环
+                </title>
+                <desc id="dp-attribute-loop-desc">
+                  before hook 后检查 attributes 与 clobber；初始化 live
+                  属性表并反向遍历。upon hook 后先处理 named-props 和
+                  XML/animation 硬屏障，随后 forceKeepAttr 可直接
+                  continue。普通路径依次通过 keep、自闭合、模板、属性准入、TT
+                  与必要写回。所有 continue 回到 while(l--)；遍历结束触发 after
+                  hook。
+                </desc>
+                <defs>
+                  <marker
+                    id="dp-attribute-loop-arrow"
+                    markerWidth="9"
+                    markerHeight="9"
+                    refX="8"
+                    refY="3"
+                    orient="auto"
+                  >
+                    <path class="marker-arrow" d="M0,0 L0,6 L9,3 z"></path>
+                  </marker>
+                </defs>
+                <text x="400" y="30" text-anchor="middle">
+                  _sanitizeAttributes(currentNode) · 同步
+                </text>
+                <rect
+                  class="box-accent"
+                  x="150"
+                  y="60"
+                  width="500"
+                  height="65"
+                  rx="12"
+                ></rect>
+                <text x="400.0" y="97.5" text-anchor="middle">
+                  beforeSanitizeAttributes hook
+                </text>
+                <polygon
+                  class="box"
+                  points="400.0,160 655,202.5 400.0,245 145,202.5"
+                ></polygon>
+                <text x="400.0" y="207.5" text-anchor="middle">
+                  没有 attributes，或节点 clobbered？
+                </text>
+                <path
+                  d="M400 125 V160"
+                  marker-end="url(#dp-attribute-loop-arrow)"
+                ></path>
+                <rect
+                  class="box"
+                  x="850"
+                  y="157"
+                  width="270"
+                  height="95"
+                  rx="12"
+                ></rect>
+                <text x="985.0" y="197.0" text-anchor="middle">return</text>
+                <text x="985.0" y="222.0" text-anchor="middle">
+                  不触发 after 属性 hook
+                </text>
+                <path
+                  d="M655 202.5 H850"
+                  marker-end="url(#dp-attribute-loop-arrow)"
+                ></path>
+                <text class="small" x="735" y="188" text-anchor="middle">
+                  是
+                </text>
+                <rect
+                  class="box"
+                  x="150"
+                  y="280"
+                  width="500"
+                  height="65"
+                  rx="12"
+                ></rect>
+                <text x="400.0" y="317.5" text-anchor="middle">
+                  按需 clone ALLOWED_ATTR；l = attributes.length
+                </text>
+                <path
+                  d="M400 245 V280"
+                  marker-end="url(#dp-attribute-loop-arrow)"
+                ></path>
+                <text class="small" x="418" y="266" text-anchor="middle">
+                  否
+                </text>
+                <polygon
+                  class="box"
+                  points="400.0,375 655,417.5 400.0,460 145,417.5"
+                ></polygon>
+                <text x="400.0" y="422.5" text-anchor="middle">
+                  while (l--)：仍有当前属性？
+                </text>
+                <path
+                  d="M400 345 V375"
+                  marker-end="url(#dp-attribute-loop-arrow)"
+                ></path>
+                <rect
+                  class="box-accent"
+                  x="850"
+                  y="367"
+                  width="270"
+                  height="105"
+                  rx="12"
+                ></rect>
+                <text x="985.0" y="399.5" text-anchor="middle">
+                  afterSanitizeAttributes hook
+                </text>
+                <text x="985.0" y="424.5" text-anchor="middle">return</text>
+                <text x="985.0" y="449.5" text-anchor="middle">
+                  新增属性不再复检
+                </text>
+                <path
+                  d="M655 417.5 H850"
+                  marker-end="url(#dp-attribute-loop-arrow)"
+                ></path>
+                <text class="small" x="735" y="402" text-anchor="middle">
+                  否
+                </text>
+                <rect
+                  class="box-accent"
+                  x="150"
+                  y="505"
+                  width="500"
+                  height="80"
+                  rx="12"
+                ></rect>
+                <text x="400.0" y="537.5" text-anchor="middle">
+                  保存 initValue；trim（原名 value 除外）
+                </text>
+                <text x="400.0" y="562.5" text-anchor="middle">
+                  重置事件对象 → uponSanitizeAttribute
+                </text>
+                <path
+                  d="M400 460 V505"
+                  marker-end="url(#dp-attribute-loop-arrow)"
+                ></path>
+                <text class="small" x="418" y="491" text-anchor="middle">
+                  是
+                </text>
+                <polygon
+                  class="box"
+                  points="400.0,620 655,670.0 400.0,720 145,670.0"
+                ></polygon>
+                <text x="400.0" y="662.5" text-anchor="middle">
+                  SANITIZE_NAMED_PROPS 开启，且
+                </text>
+                <text x="400.0" y="687.5" text-anchor="middle">
+                  id/name 的 value 尚无前缀？
+                </text>
+                <path
+                  d="M400 585 V620"
+                  marker-end="url(#dp-attribute-loop-arrow)"
+                ></path>
+                <rect
+                  class="box"
+                  x="850"
+                  y="619"
+                  width="270"
+                  height="100"
+                  rx="12"
+                ></rect>
+                <text x="985.0" y="649.0" text-anchor="middle">
+                  _removeAttribute：先删旧属性
+                </text>
+                <text x="985.0" y="674.0" text-anchor="middle">
+                  value 加 user-content- 前缀
+                </text>
+                <text x="985.0" y="699.0" text-anchor="middle">
+                  新值留待统一写回
+                </text>
+                <path
+                  d="M655 670 H850"
+                  marker-end="url(#dp-attribute-loop-arrow)"
+                ></path>
+                <text class="small" x="735" y="656" text-anchor="middle">
+                  是
+                </text>
+                <path
+                  d="M985 719 V744 H400 V755"
+                  marker-end="url(#dp-attribute-loop-arrow)"
+                ></path>
+                <polygon
+                  class="box"
+                  points="400.0,755 655,805.0 400.0,855 145,805.0"
+                ></polygon>
+                <text x="400.0" y="797.5" text-anchor="middle">
+                  SAFE_FOR_XML 且含危险片段，或
+                </text>
+                <text x="400.0" y="822.5" text-anchor="middle">
+                  attributeName 指向 href？
+                </text>
+                <path
+                  d="M400 720 V755"
+                  marker-end="url(#dp-attribute-loop-arrow)"
+                ></path>
+                <text class="small" x="418" y="743" text-anchor="middle">
+                  否
+                </text>
+                <rect
+                  class="box"
+                  x="850"
+                  y="757"
+                  width="270"
+                  height="95"
+                  rx="12"
+                ></rect>
+                <text x="985.0" y="797.0" text-anchor="middle">
+                  _removeAttribute
+                </text>
+                <text x="985.0" y="822.0" text-anchor="middle">
+                  本属性结束 → 回环
+                </text>
+                <path
+                  d="M655 805 H850"
+                  marker-end="url(#dp-attribute-loop-arrow)"
+                ></path>
+                <text class="small" x="735" y="791" text-anchor="middle">
+                  命中
+                </text>
+                <polygon
+                  class="box"
+                  points="400.0,885 655,927.5 400.0,970 145,927.5"
+                ></polygon>
+                <text x="400.0" y="932.5" text-anchor="middle">
+                  hookEvent.forceKeepAttr 为真？
+                </text>
+                <path
+                  d="M400 855 V885"
+                  marker-end="url(#dp-attribute-loop-arrow)"
+                ></path>
+                <text class="small" x="418" y="873" text-anchor="middle">
+                  否
+                </text>
+                <rect
+                  class="box-accent"
+                  x="850"
+                  y="882"
+                  width="270"
+                  height="105"
+                  rx="12"
+                ></rect>
+                <text x="985.0" y="914.5" text-anchor="middle">
+                  保留此刻 DOM 状态 → 回环
+                </text>
+                <text x="985.0" y="939.5" text-anchor="middle">
+                  不写 hookEvent.attrValue
+                </text>
+                <text x="985.0" y="964.5" text-anchor="middle">
+                  不再做准入、TT 或写回
+                </text>
+                <path
+                  d="M655 927.5 H850"
+                  marker-end="url(#dp-attribute-loop-arrow)"
+                ></path>
+                <text class="small" x="735" y="913" text-anchor="middle">
+                  是
+                </text>
+                <polygon
+                  class="box"
+                  points="400.0,1008 655,1060.5 400.0,1113 145,1060.5"
+                ></polygon>
+                <text x="400.0" y="1053.0" text-anchor="middle">
+                  keepAttr=false，或禁自闭合时
+                </text>
+                <text x="400.0" y="1078.0" text-anchor="middle">
+                  value 含 SELF_CLOSING_TAG？
+                </text>
+                <path
+                  d="M400 970 V1008"
+                  marker-end="url(#dp-attribute-loop-arrow)"
+                ></path>
+                <text class="small" x="418" y="994" text-anchor="middle">
+                  否
+                </text>
+                <rect
+                  class="box"
+                  x="850"
+                  y="1013"
+                  width="270"
+                  height="95"
+                  rx="12"
+                ></rect>
+                <text x="985.0" y="1053.0" text-anchor="middle">
+                  _removeAttribute
+                </text>
+                <text x="985.0" y="1078.0" text-anchor="middle">
+                  本属性结束 → 回环
+                </text>
+                <path
+                  d="M655 1060.5 H850"
+                  marker-end="url(#dp-attribute-loop-arrow)"
+                ></path>
+                <text class="small" x="735" y="1046" text-anchor="middle">
+                  是
+                </text>
+                <rect
+                  class="box"
+                  x="150"
+                  y="1150"
+                  width="500"
+                  height="65"
+                  rx="12"
+                ></rect>
+                <text x="400.0" y="1187.5" text-anchor="middle">
+                  SAFE_FOR_TEMPLATES：先替换属性模板表达式
+                </text>
+                <path
+                  d="M400 1113 V1150"
+                  marker-end="url(#dp-attribute-loop-arrow)"
+                ></path>
+                <text class="small" x="418" y="1137" text-anchor="middle">
+                  否
+                </text>
+                <polygon
+                  class="box"
+                  points="400.0,1245 655,1287.5 400.0,1330 145,1287.5"
+                ></polygon>
+                <text x="400.0" y="1292.5" text-anchor="middle">
+                  A · _isValidAttribute(tag, name, value)？
+                </text>
+                <path
+                  d="M400 1215 V1245"
+                  marker-end="url(#dp-attribute-loop-arrow)"
+                ></path>
+                <rect
+                  class="box"
+                  x="850"
+                  y="1240"
+                  width="270"
+                  height="95"
+                  rx="12"
+                ></rect>
+                <text x="985.0" y="1280.0" text-anchor="middle">
+                  _removeAttribute
+                </text>
+                <text x="985.0" y="1305.0" text-anchor="middle">
+                  本属性结束 → 回环
+                </text>
+                <path
+                  d="M655 1287.5 H850"
+                  marker-end="url(#dp-attribute-loop-arrow)"
+                ></path>
+                <text class="small" x="735" y="1273" text-anchor="middle">
+                  false
+                </text>
+                <rect
+                  class="box"
+                  x="150"
+                  y="1370"
+                  width="500"
+                  height="65"
+                  rx="12"
+                ></rect>
+                <text x="400.0" y="1407.5" text-anchor="middle">
+                  按浏览器 sink 类型进行 Trusted Types 包装
+                </text>
+                <path
+                  d="M400 1330 V1370"
+                  marker-end="url(#dp-attribute-loop-arrow)"
+                ></path>
+                <text class="small" x="418" y="1357" text-anchor="middle">
+                  true
+                </text>
+                <polygon
+                  class="box"
+                  points="400.0,1475 655,1517.5 400.0,1560 145,1517.5"
+                ></polygon>
+                <text x="400.0" y="1522.5" text-anchor="middle">
+                  处理后的 value !== initValue？
+                </text>
+                <path
+                  d="M400 1435 V1475"
+                  marker-end="url(#dp-attribute-loop-arrow)"
+                ></path>
+                <rect
+                  class="box"
+                  x="850"
+                  y="1455"
+                  width="270"
+                  height="120"
+                  rx="12"
+                ></rect>
+                <text x="985.0" y="1495.0" text-anchor="middle">
+                  _setAttributeValue 后回环
+                </text>
+                <text x="985.0" y="1520.0" text-anchor="middle">
+                  setAttribute / setAttributeNS
+                </text>
+                <text x="985.0" y="1545.0" text-anchor="middle">
+                  写入抛错删属性；clobber 删元素
+                </text>
+                <path
+                  d="M655 1517.5 H850"
+                  marker-end="url(#dp-attribute-loop-arrow)"
+                ></path>
+                <text class="small" x="735" y="1504" text-anchor="middle">
+                  是
+                </text>
+                <path d="M1120 804 H1140"></path>
+                <path d="M1120 934 H1140"></path>
+                <path d="M1120 1061 H1140"></path>
+                <path d="M1120 1287 H1140"></path>
+                <path d="M1120 1518 H1140"></path>
+                <path d="M400 1560 V1595 H1140"></path>
+                <text class="small" x="450" y="1585" text-anchor="middle">
+                  否
+                </text>
+                <path
+                  d="M1140 804 V1610 H80 V417.5 H145"
+                  marker-end="url(#dp-attribute-loop-arrow)"
+                ></path>
+                <text class="small" x="625" y="1638" text-anchor="middle">
+                  每个 continue / 本属性完成都回到 l--；从 live NamedNodeMap
+                  的尾部向前遍历。
+                </text>
+              </svg>
+            </div>
+          </figure>
           <div class="source">
             <div class="source-label">
               <span
@@ -1242,6 +2190,18 @@ if (currentNode.nodeType === NODE_TYPE.processingInstruction) {
               <button class="copy" type="button">复制</button>
             </div>
             <pre><code>if (FORBID_ATTR[lcName]) {
+  return false;
+}
+
+if (SAFE_FOR_XML &amp;&amp; lcName === 'patchsrc') {
+  return false;
+}
+if (SAFE_FOR_XML &amp;&amp; lcName === 'for' &amp;&amp;
+    lcTag !== 'label' &amp;&amp; lcTag !== 'output') {
+  return false;
+}
+if (SANITIZE_DOM &amp;&amp; (lcName === 'id' || lcName === 'name') &amp;&amp;
+    (value in document || value in formElement)) {
   return false;
 }
 
@@ -1282,45 +2242,654 @@ if (ALLOW_DATA_ATTR && regExpTest(DATA_ATTR, lcName)) {
 
 return true;</code></pre>
           </div>
+          <figure class="engineering-figure" id="dp-attribute-admission">
+            <figcaption>
+              属性决策 A 展开：data / aria / custom 直通，普通允许名称才进入后续
+              URI 分支。
+            </figcaption>
+            <div
+              class="diagram engineering-diagram"
+              tabindex="0"
+              role="region"
+              aria-label="属性决策 A 展开：data / aria / custom 直通，普通允许名称才进入后续 URI 分支。"
+              style="--diagram-width: 1140px"
+            >
+              <svg
+                viewBox="0 0 1140 1550"
+                width="1140"
+                role="img"
+                aria-labelledby="dp-attribute-validity-title dp-attribute-validity-desc"
+                style="--diagram-width: 1140px"
+              >
+                <title id="dp-attribute-validity-title">
+                  属性决策 A 展开：哪些分支绕过 URI，哪些检查值
+                </title>
+                <desc id="dp-attribute-validity-desc">
+                  FORBID_ATTR、SAFE_FOR_XML linkage 与 DOM clobbering
+                  优先拒绝；先计算 nameIsPermitted，再检查 data、aria、名称与
+                  custom。data、aria 与非 allowlisted custom
+                  策略直接接受；普通允许名称按 URI-safe、URI正则、data
+                  URI、unknown protocol 与空值依次判断。
+                </desc>
+                <defs>
+                  <marker
+                    id="dp-attribute-validity-arrow"
+                    markerWidth="9"
+                    markerHeight="9"
+                    refX="8"
+                    refY="3"
+                    orient="auto"
+                  >
+                    <path class="marker-arrow" d="M0,0 L0,6 L9,3 z"></path>
+                  </marker>
+                </defs>
+                <text x="545" y="30" text-anchor="middle">
+                  A · _isValidAttribute(lcTag, lcName, value)
+                </text>
+                <polygon
+                  class="box"
+                  points="545.0,75 800,130.0 545.0,185 290,130.0"
+                ></polygon>
+                <text x="545.0" y="122.5" text-anchor="middle">
+                  FORBID_ATTR / XML 关联规则 /
+                </text>
+                <text x="545.0" y="147.5" text-anchor="middle">
+                  id/name 的 DOM 遮蔽规则命中？
+                </text>
+                <rect
+                  class="box"
+                  x="855"
+                  y="83"
+                  width="270"
+                  height="90"
+                  rx="12"
+                ></rect>
+                <text x="990.0" y="120.5" text-anchor="middle">
+                  return false
+                </text>
+                <text x="990.0" y="145.5" text-anchor="middle">
+                  拒绝优先于全部放行分支
+                </text>
+                <path
+                  d="M800 130 H855"
+                  marker-end="url(#dp-attribute-validity-arrow)"
+                ></path>
+                <text class="small" x="827" y="116" text-anchor="middle">
+                  是
+                </text>
+                <rect
+                  class="box"
+                  x="295"
+                  y="225"
+                  width="500"
+                  height="75"
+                  rx="12"
+                ></rect>
+                <text x="545.0" y="255.0" text-anchor="middle">
+                  先计算 nameIsPermitted
+                </text>
+                <text x="545.0" y="280.0" text-anchor="middle">
+                  ALLOWED_ATTR / ADD_ATTR(attributeCheck)
+                </text>
+                <path
+                  d="M545 185 V225"
+                  marker-end="url(#dp-attribute-validity-arrow)"
+                ></path>
+                <text class="small" x="563" y="212" text-anchor="middle">
+                  否
+                </text>
+                <polygon
+                  class="box"
+                  points="545.0,335 800,380.0 545.0,425 290,380.0"
+                ></polygon>
+                <text x="545.0" y="385.0" text-anchor="middle">
+                  ALLOW_DATA_ATTR 且名称匹配 DATA_ATTR？
+                </text>
+                <path
+                  d="M545 300 V335"
+                  marker-end="url(#dp-attribute-validity-arrow)"
+                ></path>
+                <polygon
+                  class="box"
+                  points="545.0,465 800,510.0 545.0,555 290,510.0"
+                ></polygon>
+                <text x="545.0" y="515.0" text-anchor="middle">
+                  ALLOW_ARIA_ATTR 且名称匹配 ARIA_ATTR？
+                </text>
+                <path
+                  d="M545 425 V465"
+                  marker-end="url(#dp-attribute-validity-arrow)"
+                ></path>
+                <text class="small" x="563" y="451" text-anchor="middle">
+                  否
+                </text>
+                <polygon
+                  class="box"
+                  points="545.0,595 800,640.0 545.0,685 290,640.0"
+                ></polygon>
+                <text x="545.0" y="645.0" text-anchor="middle">
+                  nameIsPermitted？
+                </text>
+                <path
+                  d="M545 555 V595"
+                  marker-end="url(#dp-attribute-validity-arrow)"
+                ></path>
+                <text class="small" x="563" y="581" text-anchor="middle">
+                  否
+                </text>
+                <polygon
+                  class="box"
+                  points="990.0,574 1125,639.0 990.0,704 855,639.0"
+                ></polygon>
+                <text x="990.0" y="631.5" text-anchor="middle">
+                  custom 属性策略通过，
+                </text>
+                <text x="990.0" y="656.5" text-anchor="middle">
+                  或 is 策略通过？
+                </text>
+                <path
+                  d="M800 640 H855"
+                  marker-end="url(#dp-attribute-validity-arrow)"
+                ></path>
+                <text class="small" x="827" y="626" text-anchor="middle">
+                  否
+                </text>
+                <rect
+                  class="box-accent"
+                  x="855"
+                  y="770"
+                  width="270"
+                  height="95"
+                  rx="12"
+                ></rect>
+                <text x="990.0" y="810.0" text-anchor="middle">
+                  return true
+                </text>
+                <text x="990.0" y="835.0" text-anchor="middle">
+                  此分支不进入通用 URI 校验
+                </text>
+                <path
+                  d="M990 704 V770"
+                  marker-end="url(#dp-attribute-validity-arrow)"
+                ></path>
+                <text class="small" x="1008" y="750" text-anchor="middle">
+                  是
+                </text>
+                <rect
+                  class="box"
+                  x="855"
+                  y="960"
+                  width="270"
+                  height="85"
+                  rx="12"
+                ></rect>
+                <text x="990.0" y="995.0" text-anchor="middle">
+                  return false
+                </text>
+                <text x="990.0" y="1020.0" text-anchor="middle">
+                  custom 策略也不接受
+                </text>
+                <path
+                  d="M1125 639 H1135 V931 H990 V960"
+                  marker-end="url(#dp-attribute-validity-arrow)"
+                ></path>
+                <text class="small" x="1120" y="916" text-anchor="middle">
+                  否
+                </text>
+                <polygon
+                  class="box"
+                  points="545.0,725 800,770.0 545.0,815 290,770.0"
+                ></polygon>
+                <text x="545.0" y="775.0" text-anchor="middle">
+                  URI_SAFE_ATTRIBUTES[lcName]？
+                </text>
+                <path
+                  d="M545 685 V725"
+                  marker-end="url(#dp-attribute-validity-arrow)"
+                ></path>
+                <text class="small" x="630" y="709" text-anchor="middle">
+                  是：普通名称分支
+                </text>
+                <polygon
+                  class="box"
+                  points="545.0,855 800,900.0 545.0,945 290,900.0"
+                ></polygon>
+                <text x="545.0" y="905.0" text-anchor="middle">
+                  IS_ALLOWED_URI 接受去 URI 空白后的值？
+                </text>
+                <path
+                  d="M545 815 V855"
+                  marker-end="url(#dp-attribute-validity-arrow)"
+                ></path>
+                <text class="small" x="563" y="841" text-anchor="middle">
+                  否
+                </text>
+                <polygon
+                  class="box"
+                  points="545.0,985 800,1040.0 545.0,1095 290,1040.0"
+                ></polygon>
+                <text x="545.0" y="1032.5" text-anchor="middle">
+                  src / href / xlink:href，且非 script；
+                </text>
+                <text x="545.0" y="1057.5" text-anchor="middle">
+                  data: 开头，标签在 DATA_URI_TAGS？
+                </text>
+                <path
+                  d="M545 945 V985"
+                  marker-end="url(#dp-attribute-validity-arrow)"
+                ></path>
+                <text class="small" x="563" y="971" text-anchor="middle">
+                  否
+                </text>
+                <polygon
+                  class="box"
+                  points="545.0,1135 800,1185.0 545.0,1235 290,1185.0"
+                ></polygon>
+                <text x="545.0" y="1177.5" text-anchor="middle">
+                  ALLOW_UNKNOWN_PROTOCOLS，且
+                </text>
+                <text x="545.0" y="1202.5" text-anchor="middle">
+                  !IS_SCRIPT_OR_DATA(去 URI 空白值)？
+                </text>
+                <path
+                  d="M545 1095 V1135"
+                  marker-end="url(#dp-attribute-validity-arrow)"
+                ></path>
+                <text class="small" x="563" y="1121" text-anchor="middle">
+                  否
+                </text>
+                <polygon
+                  class="box"
+                  points="545.0,1275 800,1320.0 545.0,1365 290,1320.0"
+                ></polygon>
+                <text x="545.0" y="1325.0" text-anchor="middle">
+                  value 为空字符串？
+                </text>
+                <path
+                  d="M545 1235 V1275"
+                  marker-end="url(#dp-attribute-validity-arrow)"
+                ></path>
+                <text class="small" x="563" y="1261" text-anchor="middle">
+                  否
+                </text>
+                <rect
+                  class="box"
+                  x="295"
+                  y="1430"
+                  width="500"
+                  height="75"
+                  rx="12"
+                ></rect>
+                <text x="545.0" y="1472.5" text-anchor="middle">
+                  return false：其余非空值全部拒绝
+                </text>
+                <path
+                  d="M545 1365 V1430"
+                  marker-end="url(#dp-attribute-validity-arrow)"
+                ></path>
+                <text class="small" x="563" y="1402" text-anchor="middle">
+                  否
+                </text>
+                <path d="M290 380 H250"></path>
+                <text class="small" x="176" y="367" text-anchor="middle">
+                  是：直接接受
+                </text>
+                <path d="M290 510 H250"></path>
+                <text class="small" x="176" y="497" text-anchor="middle">
+                  是：直接接受
+                </text>
+                <path d="M290 770 H250"></path>
+                <text class="small" x="176" y="757" text-anchor="middle">
+                  是
+                </text>
+                <path d="M290 900 H250"></path>
+                <text class="small" x="176" y="887" text-anchor="middle">
+                  是
+                </text>
+                <path d="M290 1040 H250"></path>
+                <text class="small" x="176" y="1027" text-anchor="middle">
+                  是
+                </text>
+                <path d="M290 1185 H250"></path>
+                <text class="small" x="176" y="1172" text-anchor="middle">
+                  是
+                </text>
+                <path d="M290 1320 H250"></path>
+                <text class="small" x="176" y="1307" text-anchor="middle">
+                  是
+                </text>
+                <path
+                  d="M250 380 V1428"
+                  marker-end="url(#dp-attribute-validity-arrow)"
+                ></path>
+                <rect
+                  class="box-accent"
+                  x="15"
+                  y="1440"
+                  width="270"
+                  height="75"
+                  rx="12"
+                ></rect>
+                <text x="150.0" y="1482.5" text-anchor="middle">
+                  return true：属性可继续 TT / 写回
+                </text>
+                <path
+                  d="M250 1428 V1440"
+                  marker-end="url(#dp-attribute-validity-arrow)"
+                ></path>
+              </svg>
+            </div>
+          </figure>
+          <p class="viz-caption">
+            图 A 中，<code>nameIsPermitted</code> 在 data/aria 检查前计算；<code
+              >ALLOWED_ATTR</code
+            >
+            已接受名称时短路 <code>ADD_ATTR</code> 谓词。custom 属性分支要求
+            basic custom 标签、<code>tagNameCheck</code> 与
+            <code>attributeNameCheck</code> 都接受；<code>is</code> 分支要求允许
+            customized built-in，且
+            <code>tagNameCheck</code> 接受属性值。空值是最后一条放行规则。图 A
+            返回 true 后仍要回到上图执行 TT/写回。
+          </p>
           <p>
-            <code>ADD_ATTR: () =&gt; true</code> 进入普通 name-permitted
-            分支，只放开名字，不自动允许 <code>javascript:</code>；URI
-            型值仍要校验。 但 data-*、aria-*，以及由
-            <code>CUSTOM_ELEMENT_HANDLING.attributeNameCheck</code>
-            接受的非 allowlisted custom-element 属性会直接通过，不进入 URI
-            检查。属性表反向遍历 live <code>NamedNodeMap</code>；未
-            <code>forceKeepAttr</code>
-            的值仍先经历相应结构/模板分支。<code>forceKeepAttr</code> 与 after
-            hook 新增属性属于受信任绕过能力。若 custom element
-            会把自定义属性解释为 URL 或代码 sink，调用者必须让
-            <code>attributeNameCheck</code> 只收窄可接受的属性名，并拒绝这类
-            sink 名称；若必须保留名称，则应由受信任的
-            <code>uponSanitizeAttribute</code> hook 根据 <code>attrValue</code>
-            拒绝或改写值。
+            属性表从尾到头遍历 live <code>NamedNodeMap</code>，避免删除后跳项。
+            <code>uponSanitizeAttribute</code> 先拿到 trim 后的值（名为 value 的属性不 trim）；
+            随后处理 named-props 前缀、XML 危险标记和 SVG animation 的 attributeName/href 检查。
+          </p>
+          <p>
+            <code>forceKeepAttr</code> 在这些处理之后才生效：它直接进入下一属性，保留当前 DOM 状态，
+            不写回 hook 修改的 <code>attrValue</code>。若前缀处理已删除旧属性，也不会重新写回。
+            其余属性继续经过 keepAttr、自闭合标记和模板表达式处理，再进入名称与 URI 准入。
+          </p>
+          <p>
+            普通名称获准不等于任意值获准。<code>ADD_ATTR: () =&gt; true</code> 只放开名称，
+            不会自动允许 <code>javascript:</code>；但 URI 正则也接受普通 token，
+            因而它可以放行 <code>onerror="alert(1)"</code>，不能充当事件属性过滤器。
+            data-*、aria-*，以及由 <code>CUSTOM_ELEMENT_HANDLING.attributeNameCheck</code>
+            接受的非 allowlisted custom-element 属性会直接通过，不进入通用 URI 检查。
+          </p>
+          <p>
+            正常准入后，属性继续经过 Trusted Types 包装，并在值发生变化时写回。
+            遍历结束才执行 after hook，它新增的属性不会复检。
+            若 custom element 把某属性解释为 URL 或代码 sink，<code>attributeNameCheck</code>
+            应拒绝该名称；必须保留时，由受信任的 <code>uponSanitizeAttribute</code>
+            hook 根据 <code>attrValue</code> 拒绝或改写其值。
           </p>
 
           <h3>6.6 Shadow DOM 与 template：补齐 NodeIterator 看不到的树</h3>
           <p>
             标准 NodeIterator 不进入 <code>template.content</code> 或 attached
-            shadow roots。DOMPurify 对 template fragment 递归；attached-root
-            入口发现预扫使用显式 heap stack，因此 light DOM 深度不会在这一步消耗
-            JS 调用栈。实际 LIFO 顺序为：shadow 子树发现 → shadow 清理 →
-            template.content → light DOM children。剩余
-            <code>_sanitizeShadowDOM</code> 对嵌套 template/shadow
-            仍有递归调用，这部分不享受同一深度保证。
+            shadow roots，所以主遍历遇到 content fragment 时调用
+            <code>_sanitizeShadowDOM</code>，在 fragment
+            中重新执行元素与属性清理。 DOM-copy 和 IN_PLACE
+            路径还会在主遍历前调用
+            <code>_sanitizeAttachedShadowRoots</code>：它用显式栈搜索普通
+            children、 template.content 和可由 <code>shadowRoot</code> getter
+            读取的根，closed root 不可见。
+          </p>
+          <p>
+            对同时有这些分支的节点，LIFO 栈先搜索 shadow 内的宿主并清理其根，
+            再清理当前 shadow，随后搜索 template.content，最后搜索普通
+            children。 这里的搜索任务只负责发现 attached roots；template
+            内容本身的逐节点清理由 fragment
+            遍历承担。显式栈避免搜索普通深树时递归，但 fragment 清理仍会递归进入
+            嵌套 template/shadow，嵌套深度仍会受 JS 调用栈限制。
           </p>
 
-          <h3>6.7 Trusted Types：签名不是过滤，policy 生命周期才是关键</h3>
+          <figure class="engineering-figure" id="tree-access">
+            <figcaption>
+              <strong>主树与独立片段：为什么一个 NodeIterator 不够</strong>
+            </figcaption>
+            <div
+              class="diagram engineering-diagram"
+              role="region"
+              aria-label="主树与独立片段：为什么一个 NodeIterator 不够，可横向滚动"
+              tabindex="0"
+            >
+              <svg
+                role="img"
+                aria-labelledby="tree-access-title tree-access-desc"
+                viewBox="0 0 1000 704"
+                style="--diagram-width: 1000px"
+              >
+                <title id="tree-access-title">
+                  template 与 shadow 的对象树和访问边界
+                </title>
+                <desc id="tree-access-desc">
+                  主NodeIterator沿childNodes进入template宿主和shadow宿主，但不跨content或shadowRoot属性。template内容由独立片段遍历；DOM-copy及IN_PLACE另预扫可访问的attached
+                  shadow roots。
+                </desc>
+                <defs>
+                  <marker
+                    id="tree-access-arrow"
+                    markerWidth="9"
+                    markerHeight="9"
+                    refX="8"
+                    refY="3"
+                    orient="auto"
+                  >
+                    <path class="marker-arrow" d="M0,0 L0,6 L9,3 z" />
+                  </marker>
+                </defs>
+                <text class="" x="32" y="28">
+                  哪些节点属于主迭代器的树，哪些需要另开片段遍历？
+                </text>
+                <rect
+                  class="box-accent"
+                  x="375"
+                  y="55"
+                  width="250"
+                  height="70"
+                  rx="12"
+                />
+                <text x="393" y="83" style="font-size: 16px">
+                  div · IN_PLACE 输入根
+                </text>
+                <text x="393" y="107" style="font-size: 16px">
+                  主 NodeIterator 从这里开始
+                </text>
+                <rect
+                  class="box"
+                  x="45"
+                  y="200"
+                  width="270"
+                  height="70"
+                  rx="12"
+                />
+                <text x="63" y="228" style="font-size: 16px">template</text>
+                <text x="63" y="252" style="font-size: 16px">
+                  普通元素：主迭代器可见
+                </text>
+                <rect
+                  class="box"
+                  x="375"
+                  y="200"
+                  width="270"
+                  height="70"
+                  rx="12"
+                />
+                <text x="393" y="228" style="font-size: 16px">
+                  div · open shadow 宿主
+                </text>
+                <text x="393" y="252" style="font-size: 16px">
+                  普通元素：主迭代器可见
+                </text>
+                <rect
+                  class="box"
+                  x="715"
+                  y="200"
+                  width="245"
+                  height="70"
+                  rx="12"
+                />
+                <text x="733" y="228" style="font-size: 16px">
+                  img · light child
+                </text>
+                <text x="733" y="252" style="font-size: 16px">
+                  主迭代器可见
+                </text>
+                <rect
+                  class="box-accent"
+                  x="45"
+                  y="370"
+                  width="270"
+                  height="76"
+                  rx="12"
+                />
+                <text x="63" y="398" style="font-size: 16px">
+                  template.content
+                </text>
+                <text x="63" y="422" style="font-size: 16px">
+                  独立 DocumentFragment
+                </text>
+                <rect
+                  class="box-accent"
+                  x="375"
+                  y="370"
+                  width="300"
+                  height="76"
+                  rx="12"
+                />
+                <text x="393" y="398" style="font-size: 16px">
+                  宿主.shadowRoot
+                </text>
+                <text x="393" y="422" style="font-size: 16px">
+                  open ShadowRoot
+                </text>
+                <rect
+                  class="box"
+                  x="715"
+                  y="370"
+                  width="245"
+                  height="70"
+                  rx="12"
+                />
+                <text x="733" y="398" style="font-size: 16px">
+                  p · 宿主的 light child
+                </text>
+                <text x="733" y="422" style="font-size: 16px">
+                  主迭代器继续进入
+                </text>
+                <rect
+                  class="box"
+                  x="45"
+                  y="530"
+                  width="270"
+                  height="70"
+                  rx="12"
+                />
+                <text x="63" y="558" style="font-size: 16px">
+                  img · template 内容
+                </text>
+                <text x="63" y="582" style="font-size: 16px">
+                  由片段的迭代器处理
+                </text>
+                <rect
+                  class="box"
+                  x="375"
+                  y="530"
+                  width="300"
+                  height="70"
+                  rx="12"
+                />
+                <text x="393" y="558" style="font-size: 16px">
+                  script · shadow 内容
+                </text>
+                <text x="393" y="582" style="font-size: 16px">
+                  由片段的迭代器处理
+                </text>
+                <rect
+                  class="box-muted"
+                  x="715"
+                  y="530"
+                  width="245"
+                  height="96"
+                  rx="12"
+                />
+                <text x="733" y="558" style="font-size: 15px">
+                  若宿主改为 closed：
+                </text>
+                <text x="733" y="582" style="font-size: 15px">
+                  shadowRoot getter 为 null
+                </text>
+                <text x="733" y="606" style="font-size: 15px">
+                  attached-root 预扫看不到
+                </text>
+                <path
+                  class=""
+                  d="M500 125 V162 H180 V200"
+                  marker-end="url(#tree-access-arrow)"
+                />
+                <path
+                  class=""
+                  d="M500 162 H837 V200"
+                  marker-end="url(#tree-access-arrow)"
+                />
+                <path
+                  class=""
+                  d="M500 162 V200"
+                  marker-end="url(#tree-access-arrow)"
+                />
+                <text class="small" x="533" y="152">childNodes</text>
+                <path
+                  class="edge-special"
+                  d="M180 270 V370"
+                  marker-end="url(#tree-access-arrow)"
+                />
+                <text class="small" x="205" y="324">content 属性</text>
+                <path
+                  class="edge-special"
+                  d="M525 270 V370"
+                  marker-end="url(#tree-access-arrow)"
+                />
+                <text class="small" x="550" y="324">shadowRoot getter</text>
+                <path
+                  class=""
+                  d="M525 270 V300 H837 V370"
+                  marker-end="url(#tree-access-arrow)"
+                />
+                <text class="small" x="698" y="292">childNodes</text>
+                <path
+                  class=""
+                  d="M180 446 V530"
+                  marker-end="url(#tree-access-arrow)"
+                />
+                <path
+                  class=""
+                  d="M525 446 V530"
+                  marker-end="url(#tree-access-arrow)"
+                />
+                <text class="small" x="205" y="495">片段内部 childNodes</text>
+                <text class="small" x="550" y="495">片段内部 childNodes</text>
+                <text class="small" x="32" y="672">
+                  实线：childNodes 关系；虚线：通向独立片段的属性关系。
+                </text>
+              </svg>
+            </div>
+            <p class="viz-caption">
+              这里按 <code>IN_PLACE</code> 画出输入与 walk 根；DOM-copy 的普通
+              div 副本外还会包一层隔离 body，访问边界相同。主循环遇到
+              <code>template.content</code> 后调用
+              <code>_sanitizeShadowDOM</code>；DOM-copy/IN_PLACE
+              在主循环前还扫描可访问的 attached
+              roots。图中的虚线是对象引用，不是普通子节点边。<code
+                >_neutralizeRoot</code
+              >
+              与
+              <code>_neutralizeSubtree</code>
+              只沿实线清理；返回前模板合并也不会进入 attached shadow。
+            </p>
+          </figure>
+          <h3>6.7 Trusted Types：包装值与管理 policy 状态</h3>
           <p>
             内部 policy 的 <code>createHTML</code>/<code>createScriptURL</code>
-            是 identity，本身不提供净化：<code>createHTML</code> 既会在
+            原样返回输入，本身不提供净化：<code>createHTML</code> 既会在
             parse/walk 前包装 dirty
             解析输入，也会包装最终输出；属性值则在相应准入分支后按 sink
             类型包装。安全来自随后/此前的 DOM
-            与属性策略，而不是“已签名”这一事实。共享重入计数器阻止 caller policy
-            回调再次调用 <code>sanitize</code> 导致无限递归；<code
-              >finally</code
-            >
+            与属性策略。两个包装函数共用重入计数器：policy 回调尚未退出时，
+            再次触发 HTML 或 ScriptURL 包装会抛错，阻断策略递归； 它不是
+            sanitize 入口处的通用重入检查。<code>finally</code>
             保证失败也恢复计数。 caller policy
             能改写最终值，因此本身是信任边界。
           </p>
@@ -1335,12 +2904,12 @@ return true;</code></pre>
             <tbody>
               <tr>
                 <td>提供 caller policy</td>
-                <td>校验两个方法后激活，并用它签名内部空值。</td>
-                <td>初始化签名失败时恢复先前 policy，再重抛。</td>
+                <td>校验两个方法后激活，并用它包装内部空值。</td>
+                <td>初始化包装失败时恢复先前 policy，再重抛。</td>
               </tr>
               <tr>
                 <td><code>null</code></td>
-                <td>本次明确不签名，也不创建内部 policy。</td>
+                <td>解析到此配置时关闭活动包装，也不创建内部 policy。</td>
                 <td>
                   丢弃此前 caller policy；下一次 absent 配置可恢复内部默认。
                 </td>
@@ -1354,13 +2923,284 @@ return true;</code></pre>
               </tr>
               <tr>
                 <td><code>clearConfig()</code></td>
-                <td>恢复已缓存的内部默认 policy，清空签名空值。</td>
+                <td>恢复已缓存的内部默认 policy，重置内部空值。</td>
                 <td>
                   caller policy 不再污染后续默认输出；内部 policy 不重复创建。
                 </td>
               </tr>
             </tbody>
           </table>
+          <figure class="engineering-figure" id="tt-lifecycle">
+            <figcaption>
+              <strong>活动策略与内部缓存是两份状态</strong>
+            </figcaption>
+            <div
+              class="diagram engineering-diagram"
+              role="region"
+              aria-label="活动策略与内部缓存是两份状态，可横向滚动"
+              tabindex="0"
+            >
+              <svg
+                role="img"
+                aria-labelledby="tt-policy-state-title tt-policy-state-desc"
+                viewBox="0 0 920 738"
+                style="--diagram-width: 920px"
+              >
+                <title id="tt-policy-state-title">
+                  Trusted Types 活动策略状态图
+                </title>
+                <desc id="tt-policy-state-desc">
+                  缺省配置复用活动内部或调用者策略；无活动策略时惰性读取内部默认缓存。有效调用者策略初始化成功后激活，显式null关闭活动策略。
+                </desc>
+                <defs>
+                  <marker
+                    id="tt-policy-state-arrow"
+                    markerWidth="9"
+                    markerHeight="9"
+                    refX="8"
+                    refY="3"
+                    orient="auto"
+                  >
+                    <path class="marker-arrow" d="M0,0 L0,6 L9,3 z" />
+                  </marker>
+                </defs>
+                <text class="" x="30" y="28">
+                  活动策略：只画 _parseConfig 实际执行时的状态转移
+                </text>
+                <rect
+                  class="box-accent"
+                  x="40"
+                  y="130"
+                  width="290"
+                  height="108"
+                  rx="12"
+                />
+                <text x="58" y="158" style="font-size: 16px">
+                  内部策略 P 活动
+                </text>
+                <text x="58" y="182" style="font-size: 16px">
+                  trustedTypesPolicy = P
+                </text>
+                <text x="58" y="206" style="font-size: 16px">
+                  内部缓存仍保存 P
+                </text>
+                <rect
+                  class="box-accent"
+                  x="570"
+                  y="130"
+                  width="290"
+                  height="108"
+                  rx="12"
+                />
+                <text x="588" y="158" style="font-size: 16px">
+                  调用者策略 Q 活动
+                </text>
+                <text x="588" y="182" style="font-size: 16px">
+                  trustedTypesPolicy = Q
+                </text>
+                <text x="588" y="206" style="font-size: 16px">
+                  不覆盖内部默认缓存
+                </text>
+                <rect
+                  class="box"
+                  x="310"
+                  y="505"
+                  width="280"
+                  height="108"
+                  rx="12"
+                />
+                <text x="328" y="533" style="font-size: 16px">
+                  没有活动策略
+                </text>
+                <text x="328" y="557" style="font-size: 16px">
+                  trustedTypesPolicy = undefined
+                </text>
+                <text x="328" y="581" style="font-size: 16px">
+                  当前包装使用普通字符串
+                </text>
+                <path
+                  class=""
+                  d="M90 130 V76 H260 V130"
+                  marker-end="url(#tt-policy-state-arrow)"
+                />
+                <text class="small" x="100" y="62">字段缺省：复用 P</text>
+                <path
+                  class=""
+                  d="M625 130 V76 H800 V130"
+                  marker-end="url(#tt-policy-state-arrow)"
+                />
+                <text class="small" x="635" y="62">字段缺省：复用 Q</text>
+                <text class="small" x="585" y="104">
+                  有效新 Q 初始化成功后替换当前 Q
+                </text>
+                <path
+                  class=""
+                  d="M330 180 H570"
+                  marker-end="url(#tt-policy-state-arrow)"
+                />
+                <text class="small" x="355" y="164">提供 Q，初始化成功</text>
+                <path
+                  class=""
+                  d="M590 555 H715 V238"
+                  marker-end="url(#tt-policy-state-arrow)"
+                />
+                <text class="small" x="731" y="430">提供 Q</text>
+                <text class="small" x="731" y="452">初始化成功</text>
+                <path
+                  class="edge-remove"
+                  d="M180 238 V385 H450 V505"
+                  marker-end="url(#tt-policy-state-arrow)"
+                />
+                <text class="small" x="88" y="340">显式 null</text>
+                <path
+                  class="edge-remove"
+                  d="M825 238 V463 H550 V505"
+                  marker-end="url(#tt-policy-state-arrow)"
+                />
+                <text class="small" x="838" y="370">显式 null</text>
+                <path
+                  class=""
+                  d="M310 555 H43 V286 H125 V238"
+                  marker-end="url(#tt-policy-state-arrow)"
+                />
+                <text class="small" x="58" y="472">字段缺省</text>
+                <text class="small" x="58" y="494">默认缓存返回 P</text>
+                <path
+                  class=""
+                  d="M397 613 V664 H570 V613"
+                  marker-end="url(#tt-policy-state-arrow)"
+                />
+                <text class="small" x="305" y="700">
+                  显式 null，或缺省时默认策略不可用：仍无活动策略
+                </text></svg
+              ><svg
+                role="img"
+                aria-labelledby="tt-cache-reset-title tt-cache-reset-desc"
+                viewBox="0 0 920 658"
+                style="--diagram-width: 920px"
+              >
+                <title id="tt-cache-reset-title">
+                  clearConfig与内部策略缓存的关系
+                </title>
+                <desc id="tt-cache-reset-desc">
+                  clearConfig恢复缓存中的内部默认策略，缓存可能是undefined；该操作不重新创建默认策略。默认解析成功、失败或不支持都只尝试一次。
+                </desc>
+                <defs>
+                  <marker
+                    id="tt-cache-reset-arrow"
+                    markerWidth="9"
+                    markerHeight="9"
+                    refX="8"
+                    refY="3"
+                    orient="auto"
+                  >
+                    <path class="marker-arrow" d="M0,0 L0,6 L9,3 z" />
+                  </marker>
+                </defs>
+                <text class="" x="30" y="28">
+                  clearConfig 解除调用者策略，但保留内部默认缓存
+                </text>
+                <rect
+                  class="box"
+                  x="250"
+                  y="62"
+                  width="420"
+                  height="78"
+                  rx="12"
+                />
+                <text x="268" y="90" style="font-size: 16px">
+                  从任意活动状态调用 clearConfig()
+                </text>
+                <text x="268" y="114" style="font-size: 16px">
+                  解除持久配置，emptyHTML 还原为空串
+                </text>
+                <rect
+                  class="box"
+                  x="290"
+                  y="205"
+                  width="340"
+                  height="82"
+                  rx="12"
+                />
+                <text x="308" y="233" style="font-size: 16px">
+                  读取 defaultTrustedTypesPolicy
+                </text>
+                <text x="308" y="257" style="font-size: 16px">
+                  这里不创建、不重新解析默认策略
+                </text>
+                <path
+                  class=""
+                  d="M460 140 V205"
+                  marker-end="url(#tt-cache-reset-arrow)"
+                />
+                <path
+                  class=""
+                  d="M290 247 H183 V365"
+                  marker-end="url(#tt-cache-reset-arrow)"
+                />
+                <text class="small" x="190" y="235">缓存是 P</text>
+                <path
+                  class=""
+                  d="M630 247 H735 V365"
+                  marker-end="url(#tt-cache-reset-arrow)"
+                />
+                <text class="small" x="674" y="235">缓存是 undefined</text>
+                <rect
+                  class="box-accent"
+                  x="35"
+                  y="365"
+                  width="300"
+                  height="82"
+                  rx="12"
+                />
+                <text x="53" y="393" style="font-size: 16px">
+                  活动策略恢复为 P
+                </text>
+                <text x="53" y="417" style="font-size: 16px">
+                  下次缺省配置继续复用 P
+                </text>
+                <rect
+                  class="box"
+                  x="585"
+                  y="365"
+                  width="300"
+                  height="82"
+                  rx="12"
+                />
+                <text x="603" y="393" style="font-size: 16px">
+                  活动策略为 undefined
+                </text>
+                <text x="603" y="417" style="font-size: 16px">
+                  下次缺省配置读取默认缓存
+                </text>
+                <rect
+                  class="box-muted"
+                  x="160"
+                  y="520"
+                  width="600"
+                  height="106"
+                  rx="12"
+                />
+                <text x="178" y="548" style="font-size: 16px">
+                  内部缓存只解析一次：未解析 → 已解析(P 或 undefined)
+                </text>
+                <text x="178" y="572" style="font-size: 16px">
+                  无 TT 支持或创建失败也会标为已解析。
+                </text>
+                <text x="178" y="596" style="font-size: 16px">
+                  null 与 clearConfig 都不会清空这份解析结果。
+                </text>
+              </svg>
+            </div>
+            <p class="viz-caption">
+              上图中的 Q 转移要求两个方法有效，且
+              <code>createHTML('')</code>
+              初始化成功；初始化抛错时活动策略回到原状态。下图说明
+              <code>clearConfig()</code> 怎样使用内部缓存。持久
+              <code>setConfig</code> 生效时，<code>sanitize</code>
+              跳过逐调用配置解析，所以一次字符串调用不会自行切换这些状态。
+            </p>
+          </figure>
         </section>
 
         <section id="pipeline">
@@ -1368,8 +3208,10 @@ return true;</code></pre>
           <h2><code>sanitize()</code> 的完整同步调用链</h2>
           <div class="pipeline">
             <div class="stage" data-step="1">
-              <strong>归一输入</strong>：空值变哨兵；非 string/non-Node 经安全
-              stringify；不支持 DOM 时在配置和 removed 重置前原样退化。
+              <strong>归一输入</strong>：falsy 值变空输入哨兵；非 string、非
+              Node 经 stringify。若实例已安装 sanitize 但 isSupported 为 false，
+              就在配置和 removed 重置前返回归一后的值；完全缺少 DOM 的工厂只提供
+              isSupported 等基础字段。
             </div>
             <div class="stage" data-step="2">
               <strong>解析配置</strong>：逐调用
@@ -1378,21 +3220,26 @@ return true;</code></pre>
               隔离后才重置 removed。
             </div>
             <div class="stage" data-step="3">
-              <strong>选择输入路径</strong
-              >：纯文本满足条件时快速返回；其余为字符串 parse、DOM deep import
-              或 IN_PLACE 原对象。IN_PLACE 先在
-              <code>SAFE_FOR_XML</code> 门控下断开 declarative-patch
-              linkage，再做 forbidden/clobber 根预检。
+              <strong>选择输入路径</strong>：字符串不含 <code>&lt;</code>，且
+              RETURN_DOM、SAFE_FOR_TEMPLATES、WHOLE_DOCUMENT
+              均关闭时快速返回。其余为字符串 parse、DOM deep import 或 IN_PLACE
+              原对象。 IN_PLACE 在 SAFE_FOR_XML 开启时先遍历普通
+              childNodes，删除 PI、含 markup 的注释、 patchsrc 与非 label/output
+              元素的 for，再做 forbidden/clobber 根预检。
             </div>
             <div class="stage" data-step="4">
               <strong>补 shadow 盲区</strong>：DOM-copy/IN_PLACE 先扫描 attached
               shadow roots；string 路径不做该预扫。字符串 parse
-              无根时按返回模式给 <code>null</code>、空 TrustedHTML 或空串。
+              无根时按返回模式给 <code>null</code>、<code>emptyHTML</code>
+              或空串。
             </div>
             <div class="stage" data-step="5">
               <strong>NodeIterator 双阶段</strong>：每个节点先
               <code>_sanitizeElements</code>，再
-              <code>_sanitizeAttributes</code>。
+              <code>_sanitizeAttributes</code>。迭代包括元素、文本、注释、PI 与
+              CDATA； 没有 attributes 的节点仍会执行
+              beforeSanitizeAttributes，然后提前返回。
+              主循环不按元素阶段的返回值跳过属性或 template 处理。
             </div>
             <div class="stage" data-step="6">
               <strong>主 walk 异常屏障</strong>：IN_PLACE 主循环异常 → 清空 live
@@ -1400,8 +3247,10 @@ return true;</code></pre>
               预扫错误只中和 root。
             </div>
             <div class="stage" data-step="7">
-              <strong>按模式返回</strong>：原引用、DOM/Fragment、string 或
-              TrustedHTML；模板模式再做终局字符 scrub。
+              <strong>按模式返回</strong>：IN_PLACE 先清理 removed
+              中的元素子树，再返回原引用； DOM/Fragment
+              返回节点，字符串路径序列化。模板模式在返回前补清理，
+              RETURN_TRUSTED_TYPE 则在有活动 policy 时包装字符串。
             </div>
           </div>
           <div class="source">
@@ -1435,6 +3284,21 @@ return true;</code></pre>
   throw error;
 }</code></pre>
           </div>
+          <p>
+            创建主迭代器之前，<code>body &amp;&amp; FORCE_BODY</code>
+            会触发首子节点删除。 常规字符串片段中，这个节点是 _initDocument
+            添加的 remove 哨兵； WHOLE_DOCUMENT 或 DOM-copy
+            组合选出的根不同，firstChild 未必是该哨兵。
+          </p>
+          <p>
+            <code>RETURN_DOM</code> 默认返回隔离文档中的 walk 根。
+            <code>RETURN_DOM_FRAGMENT</code> 把该根的 children 移入新 Fragment；
+            WHOLE_DOCUMENT 选中 html 根时，移入的是 head/body。 若允许集合含
+            shadowroot 或 shadowrootmode，结果还会被 importNode
+            导入调用者原文档。 字符串模式则按 WHOLE_DOCUMENT 选择 outerHTML 或
+            innerHTML；只有同时允许 <code>!doctype</code>、解析文档存在 doctype
+            且名称匹配 html 时，才在前面补出 doctype。
+          </p>
           <table>
             <thead>
               <tr>
@@ -1460,7 +3324,7 @@ return true;</code></pre>
               <tr>
                 <td>IN_PLACE tree</td>
                 <td>caller live tree</td>
-                <td>walk 成功</td>
+                <td>walk 与返回前处理成功</td>
                 <td>原对象已清理并返回</td>
               </tr>
               <tr>
@@ -1509,7 +3373,7 @@ return true;</code></pre>
                   <td>IN_PLACE forbidden/clobbered root</td>
                   <td><code>_neutralizeRoot</code> 后抛描述性 TypeError。</td>
                   <td>
-                    patch-linkage 预扫已先执行；没有 removed-subtree 后扫。
+                    普通 childNodes 预处理已先执行；没有 removed-subtree 后扫。
                   </td>
                 </tr>
                 <tr>
@@ -1524,16 +3388,25 @@ return true;</code></pre>
                 </tr>
                 <tr>
                   <td>字符串解析无根</td>
-                  <td>按模式返回 <code>null</code>、空 TrustedHTML 或空串。</td>
+                  <td>
+                    按模式返回 <code>null</code>、emptyHTML 或空串；无活动
+                    policy 时 emptyHTML 也是空串。
+                  </td>
                   <td>不进入 NodeIterator。</td>
+                </tr>
+                <tr>
+                  <td>IN_PLACE 返回前 removed 后扫 / 模板 scrub 异常</td>
+                  <td>错误外抛，原树可能已被修改。</td>
+                  <td>发生在主 walk catch 之外，不再自动清空 root。</td>
                 </tr>
               </tbody>
             </table>
           </div>
           <p class="muted">
-            <code>_neutralizePatchLinkage</code> 只能关闭 sanitize 开始后的 live
-            linkage；无法撤销调用前已经发生的 declarative patch 副作用。关闭
-            <code>SAFE_FOR_XML</code> 也会关闭这道预扫。
+            <code>_neutralizePatchLinkage</code> 只遍历普通 childNodes， 不进入
+            template.content 或 shadow；关闭 SAFE_FOR_XML 会跳过这道预处理。
+            对已连接节点，sanitize
+            修改的是当前树，调用前已发生的浏览器副作用不会被撤销。
           </p>
         </section>
 
@@ -1541,10 +3414,11 @@ return true;</code></pre>
           <p class="kicker">08 · Deep dive</p>
           <h2>四个最容易读错的算法</h2>
 
-          <h3>8.1 Namespace 转换：tag allowlist 通过后仍可能被杀</h3>
+          <h3>8.1 Namespace 转换：名称获准后为何仍会删除</h3>
           <p>
-            输入是当前元素的 namespace/tag 与父节点 namespace/tag；输出是“规范
-            parser 是否可能生成此关系”。 HTML→SVG 只能经
+            输入是当前元素与父节点的
+            namespace/tag，函数判断这对父子关系是否满足当前策略。 HTML→SVG
+            只能经
             <code>&lt;svg&gt;</code>，HTML→MathML 只能经
             <code>&lt;math&gt;</code>；SVG/MathML→HTML 只允许 integration
             points。对实际进入 <code>_checkValidNamespace</code> 的节点，自定义
@@ -1555,7 +3429,9 @@ return true;</code></pre>
           </p>
           <div class="source">
             <div class="source-label">
-              <span>源码摘录 · src/purify.ts · _checkValidNamespace()</span>
+              <span
+                >源码摘录（删节）· src/purify.ts · _checkValidNamespace()</span
+              >
               <button class="copy" type="button">复制</button>
             </div>
             <pre><code>if (!ALLOWED_NAMESPACES[element.namespaceURI]) {
@@ -1582,7 +3458,7 @@ if (element.namespaceURI === HTML_NAMESPACE) {
             <code>ALL_SVG_TAGS</code> 验证 <code>g</code>。
           </p>
 
-          <h3>8.2 Hook allowlist copy-on-write：封住动态安装的时间缝</h3>
+          <h3>8.2 Hook allowlist：暴露共享集合前再检查一次</h3>
           <p>
             sanitize 开始时只要已有 upon hook 就 clone。但 before hook 可以在
             walk 中才安装 upon hook；所以元素/属性真正暴露 allowlist 前还要调用
@@ -1591,50 +3467,1306 @@ if (element.namespaceURI === HTML_NAMESPACE) {
             时保持原引用，既防污染又允许同调用内多节点共享 hook 修改。
           </p>
 
-          <h3>8.3 DOM clobbering：比较“直接读”与“缓存 getter 读”</h3>
+          <figure class="engineering-figure" id="hook-call-lanes">
+            <figcaption>
+              Hook 的执行位置与 allowlist
+              作用域：同一调用能扩写，下次调用从哪里重来？
+            </figcaption>
+            <p>
+              主图对应 <code>test/test-suite.js</code> 的真实测试
+              <code>setConfig: element hook does not poison later calls</code
+              >：测试先持久允许 <code>span</code>，注册
+              <code>uponSanitizeElement</code>；回调发现当前节点的
+              <code>data-trusted="1"</code> 时，写入
+              <code>data.allowedTags.img = true</code>。第一次输入为
+              <code
+                >&lt;span data-trusted="1"&gt;&lt;img
+                src="x"&gt;&lt;/span&gt;</code
+              >，第二次输入为
+              <code>&lt;img src="x" onerror="alert(1)"&gt;</code>。
+            </p>
+            <div
+              class="diagram engineering-diagram"
+              tabindex="0"
+              role="region"
+              aria-label="可横向滚动的两次同步 sanitize 时序图"
+            >
+              <svg
+                width="1100"
+                viewBox="0 0 1100 1420"
+                role="img"
+                aria-labelledby="hook-call-scope-title hook-call-scope-desc"
+                style="--diagram-width: 1100px"
+              >
+                <title id="hook-call-scope-title">
+                  同一实例两次同步清洗：Hook 扩写为何不跨调用
+                </title>
+                <desc id="hook-call-scope-desc">
+                  四个泳道分别为应用测试、DOMPurify 主遍历、应用注册的
+                  uponSanitizeElement 回调、闭包中的 allowlist
+                  绑定。时间从上向下。第一调用的 SPAN hook 把 img 加入调用副本
+                  C1，后续 IMG 得以保留。第二调用先从 pristine B 恢复并生成
+                  C2；IMG 没有 data-trusted，不获扩写，因此删除。所有 hook
+                  通过函数直接同步调用，虚线为返回。
+                </desc>
+                <defs>
+                  <marker
+                    id="hook-sync-arrow"
+                    markerWidth="9"
+                    markerHeight="9"
+                    refX="8"
+                    refY="3"
+                    orient="auto"
+                  >
+                    <path class="marker-arrow" d="M0,0 L0,6 L9,3 z"></path>
+                  </marker>
+                </defs>
+                <rect
+                  class="box-accent"
+                  x="25"
+                  y="20"
+                  width="190"
+                  height="54"
+                  rx="9"
+                ></rect>
+                <text
+                  x="120"
+                  y="53"
+                  text-anchor="middle"
+                  style="font-size: 16px"
+                >
+                  应用 / 测试
+                </text>
+                <line
+                  x1="120"
+                  y1="74"
+                  x2="120"
+                  y2="1380"
+                  stroke-dasharray="4 7"
+                ></line>
+                <rect
+                  class="box-accent"
+                  x="270"
+                  y="20"
+                  width="240"
+                  height="54"
+                  rx="9"
+                ></rect>
+                <text
+                  x="390"
+                  y="53"
+                  text-anchor="middle"
+                  style="font-size: 16px"
+                >
+                  DOMPurify / 主遍历
+                </text>
+                <line
+                  x1="390"
+                  y1="74"
+                  x2="390"
+                  y2="1380"
+                  stroke-dasharray="4 7"
+                ></line>
+                <rect
+                  class="box-accent"
+                  x="555"
+                  y="20"
+                  width="240"
+                  height="54"
+                  rx="9"
+                ></rect>
+                <text
+                  x="675"
+                  y="53"
+                  text-anchor="middle"
+                  style="font-size: 16px"
+                >
+                  应用的 upon 回调
+                </text>
+                <line
+                  x1="675"
+                  y1="74"
+                  x2="675"
+                  y2="1380"
+                  stroke-dasharray="4 7"
+                ></line>
+                <rect
+                  class="box-accent"
+                  x="842"
+                  y="20"
+                  width="243"
+                  height="54"
+                  rx="9"
+                ></rect>
+                <text
+                  x="970"
+                  y="53"
+                  text-anchor="middle"
+                  style="font-size: 16px"
+                >
+                  闭包 allowlist 绑定
+                </text>
+                <line
+                  x1="970"
+                  y1="74"
+                  x2="970"
+                  y2="1380"
+                  stroke-dasharray="4 7"
+                ></line>
+                <line
+                  x1="120"
+                  y1="120"
+                  x2="390"
+                  y2="120"
+                  marker-end="url(#hook-sync-arrow)"
+                ></line>
+                <text
+                  x="255.0"
+                  y="109"
+                  text-anchor="middle"
+                  style="font-size: 15px"
+                >
+                  setConfig(span / 空属性表)
+                </text>
+                <line
+                  x1="390"
+                  y1="175"
+                  x2="970"
+                  y2="175"
+                  marker-end="url(#hook-sync-arrow)"
+                ></line>
+                <text
+                  x="680.0"
+                  y="164"
+                  text-anchor="middle"
+                  style="font-size: 15px"
+                >
+                  捕获 SET_CONFIG_ALLOWED_TAGS = B
+                </text>
+                <rect
+                  class="box"
+                  x="842"
+                  y="190"
+                  width="243"
+                  height="60"
+                  rx="9"
+                ></rect>
+                <text
+                  x="858"
+                  y="215"
+                  text-anchor="start"
+                  style="font-size: 16px"
+                >
+                  B = {span, #text}
+                </text>
+                <text
+                  x="858"
+                  y="238"
+                  text-anchor="start"
+                  style="font-size: 13.5px; fill: var(--muted)"
+                >
+                  #text 由 KEEP_CONTENT 加入
+                </text>
+                <line
+                  x1="120"
+                  y1="278"
+                  x2="390"
+                  y2="278"
+                  marker-end="url(#hook-sync-arrow)"
+                ></line>
+                <text
+                  x="255.0"
+                  y="267"
+                  text-anchor="middle"
+                  style="font-size: 15px"
+                >
+                  addHook(uponSanitizeElement)
+                </text>
+                <text
+                  x="410"
+                  y="306"
+                  text-anchor="start"
+                  style="font-size: 13.5px; fill: var(--muted)"
+                >
+                  只登记回调；此时尚未执行
+                </text>
+                <text
+                  x="25"
+                  y="350"
+                  text-anchor="start"
+                  style="font-size: 16px"
+                >
+                  第一次调用 · trusted SPAN 内有 IMG
+                </text>
+                <line
+                  x1="120"
+                  y1="382"
+                  x2="390"
+                  y2="382"
+                  marker-end="url(#hook-sync-arrow)"
+                ></line>
+                <text
+                  x="255.0"
+                  y="371"
+                  text-anchor="middle"
+                  style="font-size: 15px"
+                >
+                  sanitize(trusted)
+                </text>
+                <line
+                  x1="390"
+                  y1="431"
+                  x2="970"
+                  y2="431"
+                  marker-end="url(#hook-sync-arrow)"
+                ></line>
+                <text
+                  x="680.0"
+                  y="420"
+                  text-anchor="middle"
+                  style="font-size: 15px"
+                >
+                  恢复 B；已存在 upon → 入口 clone
+                </text>
+                <rect
+                  class="box-accent"
+                  x="842"
+                  y="447"
+                  width="243"
+                  height="58"
+                  rx="9"
+                ></rect>
+                <text
+                  x="858"
+                  y="472"
+                  text-anchor="start"
+                  style="font-size: 16px"
+                >
+                  ALLOWED_TAGS = C₁
+                </text>
+                <text
+                  x="858"
+                  y="494"
+                  text-anchor="start"
+                  style="font-size: 13.5px; fill: var(--muted)"
+                >
+                  C₁ = clone(B)，起初无 img
+                </text>
+                <rect
+                  class="box"
+                  x="245"
+                  y="455"
+                  width="285"
+                  height="64"
+                  rx="9"
+                ></rect>
+                <text
+                  x="260"
+                  y="480"
+                  text-anchor="start"
+                  style="font-size: 13.5px; fill: var(--muted)"
+                >
+                  先处理 BODY：upon 不扩写
+                </text>
+                <text
+                  x="260"
+                  y="503"
+                  text-anchor="start"
+                  style="font-size: 13.5px; fill: var(--muted)"
+                >
+                  根删除后仍遍历/序列化其内容
+                </text>
+                <text
+                  x="270"
+                  y="550"
+                  text-anchor="start"
+                  style="font-size: 13.5px; fill: var(--muted)"
+                >
+                  SPAN 的 before 阶段：本例无回调
+                </text>
+                <line
+                  x1="390"
+                  y1="584"
+                  x2="675"
+                  y2="584"
+                  marker-end="url(#hook-sync-arrow)"
+                ></line>
+                <text
+                  x="532.5"
+                  y="573"
+                  text-anchor="middle"
+                  style="font-size: 15px"
+                >
+                  upon(SPAN, allowedTags: C₁)
+                </text>
+                <text
+                  x="690"
+                  y="610"
+                  text-anchor="start"
+                  style="font-size: 13.5px; fill: var(--muted)"
+                >
+                  读取 data-trusted=&quot;1&quot;
+                </text>
+                <line
+                  x1="675"
+                  y1="651"
+                  x2="970"
+                  y2="651"
+                  marker-end="url(#hook-sync-arrow)"
+                ></line>
+                <text
+                  x="822.5"
+                  y="640"
+                  text-anchor="middle"
+                  style="font-size: 15px"
+                >
+                  C₁.img = true
+                </text>
+                <rect
+                  class="box-accent"
+                  x="842"
+                  y="667"
+                  width="243"
+                  height="56"
+                  rx="9"
+                ></rect>
+                <text
+                  x="858"
+                  y="691"
+                  text-anchor="start"
+                  style="font-size: 16px"
+                >
+                  C₁ = {span, #text, img}
+                </text>
+                <text
+                  x="858"
+                  y="713"
+                  text-anchor="start"
+                  style="font-size: 13.5px; fill: var(--muted)"
+                >
+                  B 保持 {span, #text}
+                </text>
+                <line
+                  x1="675"
+                  y1="747"
+                  x2="390"
+                  y2="747"
+                  marker-end="url(#hook-sync-arrow)"
+                  stroke-dasharray="6 5"
+                ></line>
+                <text
+                  x="532.5"
+                  y="736"
+                  text-anchor="middle"
+                  style="font-size: 15px"
+                >
+                  同步返回
+                </text>
+                <text
+                  x="270"
+                  y="777"
+                  text-anchor="start"
+                  style="font-size: 13.5px; fill: var(--muted)"
+                >
+                  SPAN 判定通过 → after 空 → 属性阶段
+                </text>
+                <line
+                  x1="390"
+                  y1="827"
+                  x2="675"
+                  y2="827"
+                  marker-end="url(#hook-sync-arrow)"
+                ></line>
+                <text
+                  x="532.5"
+                  y="816"
+                  text-anchor="middle"
+                  style="font-size: 15px"
+                >
+                  upon(IMG)：没有 marker，不再扩写
+                </text>
+                <line
+                  x1="675"
+                  y1="865"
+                  x2="390"
+                  y2="865"
+                  marker-end="url(#hook-sync-arrow)"
+                  stroke-dasharray="6 5"
+                ></line>
+                <text
+                  x="532.5"
+                  y="854"
+                  text-anchor="middle"
+                  style="font-size: 15px"
+                >
+                  同步返回
+                </text>
+                <line
+                  x1="390"
+                  y1="906"
+                  x2="970"
+                  y2="906"
+                  marker-end="url(#hook-sync-arrow)"
+                ></line>
+                <text
+                  x="680.0"
+                  y="895"
+                  text-anchor="middle"
+                  style="font-size: 15px"
+                >
+                  后续 IMG 读同一个 C₁：img 已允许
+                </text>
+                <text
+                  x="270"
+                  y="937"
+                  text-anchor="start"
+                  style="font-size: 13.5px; fill: var(--muted)"
+                >
+                  IMG 保留 → after 空 → 属性阶段删 src
+                </text>
+                <line
+                  x1="390"
+                  y1="980"
+                  x2="120"
+                  y2="980"
+                  marker-end="url(#hook-sync-arrow)"
+                  stroke-dasharray="6 5"
+                ></line>
+                <text
+                  x="255.0"
+                  y="969"
+                  text-anchor="middle"
+                  style="font-size: 15px"
+                >
+                  返回清洗后的字符串
+                </text>
+                <text
+                  x="25"
+                  y="1009"
+                  text-anchor="start"
+                  style="font-size: 15px"
+                >
+                  &lt;span
+                  data-trusted=&quot;1&quot;&gt;&lt;img&gt;&lt;/span&gt;
+                </text>
+                <line
+                  x1="25"
+                  y1="1032"
+                  x2="1085"
+                  y2="1032"
+                  stroke-dasharray="3 6"
+                ></line>
+                <text
+                  x="25"
+                  y="1068"
+                  text-anchor="start"
+                  style="font-size: 16px"
+                >
+                  第二次调用 · IMG 没有 data-trusted
+                </text>
+                <line
+                  x1="120"
+                  y1="1100"
+                  x2="390"
+                  y2="1100"
+                  marker-end="url(#hook-sync-arrow)"
+                ></line>
+                <text
+                  x="255.0"
+                  y="1089"
+                  text-anchor="middle"
+                  style="font-size: 15px"
+                >
+                  sanitize(untrusted)
+                </text>
+                <line
+                  x1="390"
+                  y1="1146"
+                  x2="970"
+                  y2="1146"
+                  marker-end="url(#hook-sync-arrow)"
+                ></line>
+                <text
+                  x="680.0"
+                  y="1135"
+                  text-anchor="middle"
+                  style="font-size: 15px"
+                >
+                  再次恢复 B；入口 clone → 新 C₂
+                </text>
+                <rect
+                  class="box"
+                  x="842"
+                  y="1160"
+                  width="243"
+                  height="55"
+                  rx="9"
+                ></rect>
+                <text
+                  x="858"
+                  y="1184"
+                  text-anchor="start"
+                  style="font-size: 16px"
+                >
+                  C₂ = {span, #text}
+                </text>
+                <text
+                  x="858"
+                  y="1207"
+                  text-anchor="start"
+                  style="font-size: 13.5px; fill: var(--muted)"
+                >
+                  未继承 C₁.img
+                </text>
+                <line
+                  x1="390"
+                  y1="1234"
+                  x2="675"
+                  y2="1234"
+                  marker-end="url(#hook-sync-arrow)"
+                ></line>
+                <text
+                  x="532.5"
+                  y="1223"
+                  text-anchor="middle"
+                  style="font-size: 15px"
+                >
+                  upon(IMG)：条件不成立，不扩写
+                </text>
+                <line
+                  x1="675"
+                  y1="1270"
+                  x2="390"
+                  y2="1270"
+                  marker-end="url(#hook-sync-arrow)"
+                  stroke-dasharray="6 5"
+                ></line>
+                <text
+                  x="532.5"
+                  y="1259"
+                  text-anchor="middle"
+                  style="font-size: 15px"
+                >
+                  同步返回
+                </text>
+                <text
+                  x="270"
+                  y="1310"
+                  text-anchor="start"
+                  style="font-size: 13.5px; fill: var(--muted)"
+                >
+                  IMG 不允许 → 删除；不执行该元素 after
+                </text>
+                <text
+                  x="270"
+                  y="1336"
+                  text-anchor="start"
+                  style="font-size: 13.5px; fill: var(--muted)"
+                >
+                  主遍历仍调用 _sanitizeAttributes(IMG)
+                </text>
+                <line
+                  x1="390"
+                  y1="1372"
+                  x2="120"
+                  y2="1372"
+                  marker-end="url(#hook-sync-arrow)"
+                  stroke-dasharray="6 5"
+                ></line>
+                <text
+                  x="255"
+                  y="1361"
+                  text-anchor="middle"
+                  style="font-size: 15px"
+                >
+                  同步返回空字符串
+                </text>
+              </svg>
+            </div>
+            <p class="muted">
+              时间从上到下；实线为同步调用或读取/写入，虚线为同步返回。<code
+                >_executeHooks</code
+              >
+              用
+              <code>hook.call(DOMPurify, node, data, CONFIG)</code>
+              直接执行回调，图中没有异步边界。这个测试没有注册 before/after
+              回调，因此相关阶段的数组为空；保留元素仍经过 after
+              阶段，删除元素提前返回时跳过它。
+            </p>
+            <p>
+              第一次扩写的是调用副本 <code>C₁</code>，不是 pristine 绑定
+              <code>B</code>；SPAN 的修改也影响同次遍历的后续 IMG。第二次
+              <code>sanitize</code> 先恢复 <code>B</code>，再创建未含 IMG 的
+              <code>C₂</code>，所以即使 upon 回调仍注册，缺少 marker 的 IMG
+              仍被删除。这里的属性允许表为空，但默认
+              <code>ALLOW_DATA_ATTR</code> 仍允许
+              <code>data-trusted</code>；<code>src</code> 则被属性阶段删除。
+            </p>
+            <p>
+              上面的测试在调用前就注册 upon。另一种时序是应用先登记
+              <code>beforeSanitizeElements</code>，该回调首次遇到 SPAN 时才用
+              <code>addHook</code> 安装同一个 upon 扩写回调；入口检查先看到空的
+              upon 数组。下面沿用同一个 trusted
+              SPAN，展开当前源码支持的动态注册分支：
+            </p>
+            <div
+              class="diagram engineering-diagram"
+              tabindex="0"
+              role="region"
+              aria-label="可横向滚动的 before 动态安装 upon 时序图"
+            >
+              <svg
+                width="1100"
+                viewBox="0 0 1100 545"
+                role="img"
+                aria-labelledby="hook-late-registration-title hook-late-registration-desc"
+                style="--diagram-width: 1100px"
+              >
+                <title id="hook-late-registration-title">
+                  before 临时登记 upon：为何还需要暴露前再检查
+                </title>
+                <desc id="hook-late-registration-desc">
+                  这部分展示当前实现支持的另一种注册时机，并非上方测试原样代码。调用入口没有
+                  upon hook，before 回调同步调用 addHook。before
+                  返回后，元素事件公开 allowlist 前，forkSharedAllowlist
+                  检查共享引用并克隆；随后立即执行新登记的 upon 回调。
+                </desc>
+                <defs>
+                  <marker
+                    id="hook-late-arrow"
+                    markerWidth="9"
+                    markerHeight="9"
+                    refX="8"
+                    refY="3"
+                    orient="auto"
+                  >
+                    <path class="marker-arrow" d="M0,0 L0,6 L9,3 z"></path>
+                  </marker>
+                </defs>
+                <rect
+                  class="box-accent"
+                  x="90"
+                  y="20"
+                  width="290"
+                  height="54"
+                  rx="9"
+                ></rect>
+                <text
+                  x="235"
+                  y="53"
+                  text-anchor="middle"
+                  style="font-size: 16px"
+                >
+                  DOMPurify / 主遍历
+                </text>
+                <line
+                  x1="235"
+                  y1="74"
+                  x2="235"
+                  y2="510"
+                  stroke-dasharray="4 7"
+                ></line>
+                <rect
+                  class="box-accent"
+                  x="490"
+                  y="20"
+                  width="250"
+                  height="54"
+                  rx="9"
+                ></rect>
+                <text
+                  x="615"
+                  y="53"
+                  text-anchor="middle"
+                  style="font-size: 16px"
+                >
+                  应用的 before 回调
+                </text>
+                <line
+                  x1="615"
+                  y1="74"
+                  x2="615"
+                  y2="510"
+                  stroke-dasharray="4 7"
+                ></line>
+                <rect
+                  class="box-accent"
+                  x="845"
+                  y="20"
+                  width="240"
+                  height="54"
+                  rx="9"
+                ></rect>
+                <text
+                  x="970"
+                  y="53"
+                  text-anchor="middle"
+                  style="font-size: 16px"
+                >
+                  新登记的 upon 回调
+                </text>
+                <line
+                  x1="970"
+                  y1="74"
+                  x2="970"
+                  y2="510"
+                  stroke-dasharray="4 7"
+                ></line>
+                <text
+                  x="105"
+                  y="109"
+                  text-anchor="start"
+                  style="font-size: 14px"
+                >
+                  入口 upon 数量 = 0，ALLOWED_TAGS 暂仍指向 B
+                </text>
+                <line
+                  x1="235"
+                  y1="159"
+                  x2="615"
+                  y2="159"
+                  marker-end="url(#hook-late-arrow)"
+                ></line>
+                <text
+                  x="425.0"
+                  y="148"
+                  text-anchor="middle"
+                  style="font-size: 15px"
+                >
+                  同步调用 before(SPAN)
+                </text>
+                <line
+                  x1="615"
+                  y1="211"
+                  x2="235"
+                  y2="211"
+                  marker-end="url(#hook-late-arrow)"
+                ></line>
+                <text
+                  x="425.0"
+                  y="200"
+                  text-anchor="middle"
+                  style="font-size: 15px"
+                >
+                  回调调用 addHook，登记 upon
+                </text>
+                <line
+                  x1="615"
+                  y1="261"
+                  x2="235"
+                  y2="261"
+                  marker-end="url(#hook-late-arrow)"
+                  stroke-dasharray="6 5"
+                ></line>
+                <text
+                  x="425.0"
+                  y="250"
+                  text-anchor="middle"
+                  style="font-size: 15px"
+                >
+                  before 同步返回
+                </text>
+                <rect
+                  class="box-accent"
+                  x="70"
+                  y="290"
+                  width="330"
+                  height="75"
+                  rx="9"
+                ></rect>
+                <text
+                  x="88"
+                  y="316"
+                  text-anchor="start"
+                  style="font-size: 16px"
+                >
+                  事件暴露前：_forkSharedAllowlist
+                </text>
+                <text
+                  x="88"
+                  y="340"
+                  text-anchor="start"
+                  style="font-size: 14px"
+                >
+                  新 upon 已存在，且 ALLOWED_TAGS === B
+                </text>
+                <text
+                  x="88"
+                  y="360"
+                  text-anchor="start"
+                  style="font-size: 14px"
+                >
+                  因此 clone(B) → 调用副本 C
+                </text>
+                <line
+                  x1="235"
+                  y1="412"
+                  x2="970"
+                  y2="412"
+                  marker-end="url(#hook-late-arrow)"
+                ></line>
+                <text
+                  x="602.5"
+                  y="401"
+                  text-anchor="middle"
+                  style="font-size: 15px"
+                >
+                  立即调用新 upon(SPAN, allowedTags: C)
+                </text>
+                <text
+                  x="845"
+                  y="446"
+                  text-anchor="start"
+                  style="font-size: 14px"
+                >
+                  回调可写 C.img = true
+                </text>
+                <line
+                  x1="970"
+                  y1="485"
+                  x2="235"
+                  y2="485"
+                  marker-end="url(#hook-late-arrow)"
+                  stroke-dasharray="6 5"
+                ></line>
+                <text
+                  x="602.5"
+                  y="474"
+                  text-anchor="middle"
+                  style="font-size: 15px"
+                >
+                  同步返回；随后元素判定读取 C
+                </text>
+                <text
+                  x="105"
+                  y="529"
+                  text-anchor="start"
+                  style="font-size: 14px"
+                >
+                  新 upon 在本节点同步执行；本次后续节点同样读 C，下一次
+                  sanitize 再从 B 恢复。
+                </text>
+              </svg>
+            </div>
+            <p>
+              <code>_forkSharedAllowlist</code> 位于 before 返回后、upon
+              事件公开引用之前。当前集合仍指向默认集合或 setConfig 基线时才
+              clone；已经是调用副本时返回原引用，因而同次遍历里的多个节点仍共享扩写结果。动态注册只改变何时需要分叉，不改变下次调用恢复
+              pristine 的规则。
+            </p>
+          </figure>
+
+          <h3>8.3 DOM clobbering：怎样发现 form 成员被遮蔽</h3>
           <p>
             HTMLFormElement 的命名属性可能让
             <code>form.attributes</code> 指向名为 attributes 的 child。<code
               >_isClobbered</code
             >
-            将直接属性与缓存 <code>Node/Element.prototype</code> getter
-            的结果比较；两者不同即认为被遮蔽。 这比
-            <code>typeof</code> 探针更强，因为 select 等 named child
-            自己也可能有 <code>length</code>，伪装成集合。
+            先通过缓存 nodeName getter 识别 form，再对关键成员做检查。
+            大部分成员检查类型，例如 removeChild
+            必须是函数；attributes、nodeType、childNodes 则与缓存 getter
+            的结果比较。childNodes 不能只检查 length： 名为 childNodes 的 select
+            自己就有数值 length，却不是原节点的 NodeList。
           </p>
 
-          <h3>8.4 IN_PLACE fail-closed：不能回滚，就把活树清空</h3>
+          <h3>8.4 IN_PLACE fail-closed：主遍历失败后的处理</h3>
           <p>
             Custom Element reaction 或 hook 可以在同步 walk
-            中修改树，使迭代/删除抛错。 DOMPurify
-            无法可靠恢复先前结构，也不能继续遍历已变形树；选择先去掉整个 root
-            的危险属性和 children，再重抛原错误。<code>_neutralizeSubtree</code>
-            只按属性名 allowlist 取消 removed subtree 的事件
-            handler，并不是第二次完整 sanitize。
+            中修改树，使迭代/删除抛错。 DOMPurify 的 catch
+            不恢复旧结构，而是调用 <code>_neutralizeRoot</code>， 先沿普通
+            children 删除非允许属性，再移除根的 children 和全部根属性； removed
+            中已脱离的元素子树也会再过一遍 <code>_neutralizeSubtree</code>。
+            后者只按 ALLOWED_ATTR 删属性名，保留允许属性的值，不再做 URI 检查，
+            也不进入 template.content 或 shadow。随后重抛原错误。
           </p>
+          <figure
+            class="diagram"
+            aria-labelledby="inplace-failure-title inplace-failure-caption"
+            tabindex="0"
+          >
+            <svg
+              viewBox="0 0 980 890"
+              role="img"
+              aria-labelledby="inplace-failure-title inplace-failure-desc"
+              style="min-width: 980px; --diagram-width: 980px"
+            >
+              <title id="inplace-failure-title">
+                IN_PLACE：异常发生在哪个阶段，决定哪些节点会被中和
+              </title>
+              <desc id="inplace-failure-desc">
+                两条泳道展示同一次同步调用。根预检拒绝和 attached shadow
+                预扫异常只调用 neutralizeRoot；主 walk 的 catch
+                还处理中途脱离原树的 removed 元素子树；返回前的 removed
+                后扫与模板 scrub 位于主 catch 外，异常直接传播。
+              </desc>
+              <defs>
+                <marker
+                  id="inplace-failure-arrow"
+                  markerWidth="9"
+                  markerHeight="9"
+                  refX="8"
+                  refY="3"
+                  orient="auto"
+                >
+                  <path class="marker-arrow" d="M0,0 L0,6 L9,3 z"></path>
+                </marker>
+              </defs>
+              <style>
+                #inplace-failure-normal-title,
+                #inplace-failure-error-title {
+                  font-size: 16px;
+                  font-weight: 700;
+                }
+                .inplace-failure-label {
+                  font-size: 15px !important;
+                }
+                .inplace-failure-small {
+                  font-size: 13px !important;
+                }
+              </style>
+              <rect
+                class="box"
+                x="24"
+                y="60"
+                width="428"
+                height="798"
+                rx="12"
+                style="fill: none; stroke-dasharray: 5 5"
+              ></rect>
+              <rect
+                class="box"
+                x="542"
+                y="60"
+                width="414"
+                height="798"
+                rx="12"
+                style="fill: none; stroke-dasharray: 5 5"
+              ></rect>
+              <text id="inplace-failure-normal-title" x="40" y="34">
+                正常调用：从上到下同步执行
+              </text>
+              <text id="inplace-failure-error-title" x="560" y="34">
+                异常处理：处理后立即离开调用
+              </text>
+
+              <rect
+                class="box-accent"
+                x="44"
+                y="80"
+                width="388"
+                height="76"
+                rx="10"
+              ></rect>
+              <text class="inplace-failure-label" x="62" y="107">
+                进入 IN_PLACE 路径
+              </text>
+              <text class="small inplace-failure-small" x="62" y="130">
+                配置成功，removed = []；dirty 为 Node
+              </text>
+              <text class="small inplace-failure-small" x="62" y="148">
+                后续直接修改调用者持有的同一个节点
+              </text>
+
+              <rect
+                class="box"
+                x="44"
+                y="188"
+                width="388"
+                height="130"
+                rx="10"
+              ></rect>
+              <text class="inplace-failure-label" x="62" y="215">
+                ① 普通子树预处理 → 根预检
+              </text>
+              <text class="small inplace-failure-small" x="62" y="239">
+                SAFE_FOR_XML 开启：先去掉 patch 关联
+              </text>
+              <text class="small inplace-failure-small" x="62" y="259">
+                只沿普通 childNodes，不进入 content/shadow
+              </text>
+              <text class="small inplace-failure-small" x="62" y="283">
+                再检查根的标签 allow/forbid 与 clobber
+              </text>
+              <text class="small inplace-failure-small" x="62" y="303">
+                根不能作为普通 child 删除，拒绝时走右侧
+              </text>
+              <rect
+                class="box"
+                x="562"
+                y="205"
+                width="374"
+                height="104"
+                rx="10"
+              ></rect>
+              <text class="inplace-failure-label" x="580" y="234">
+                _neutralizeRoot(dirty)
+              </text>
+              <text class="small inplace-failure-small" x="580" y="258">
+                随后抛 forbidden/clobbered 根的 TypeError
+              </text>
+              <text class="small inplace-failure-small" x="580" y="282">
+                不执行 removed 元素子树后扫
+              </text>
+
+              <rect
+                class="box"
+                x="44"
+                y="354"
+                width="388"
+                height="96"
+                rx="10"
+              ></rect>
+              <text class="inplace-failure-label" x="62" y="381">
+                ② attached shadow 预扫
+              </text>
+              <text class="small inplace-failure-small" x="62" y="405">
+                _sanitizeAttachedShadowRoots(dirty)
+              </text>
+              <text class="small inplace-failure-small" x="62" y="428">
+                独立 try/catch；先净化可读取的 attached roots
+              </text>
+              <rect
+                class="box"
+                x="562"
+                y="355"
+                width="374"
+                height="96"
+                rx="10"
+              ></rect>
+              <text class="inplace-failure-label" x="580" y="382">
+                _neutralizeRoot(dirty)
+              </text>
+              <text class="small inplace-failure-small" x="580" y="406">
+                随后重抛原错误
+              </text>
+              <text class="small inplace-failure-small" x="580" y="430">
+                不执行 removed 元素子树后扫
+              </text>
+
+              <rect
+                class="box-accent"
+                x="34"
+                y="483"
+                width="408"
+                height="170"
+                rx="12"
+                style="fill: none; stroke-dasharray: 7 4"
+              ></rect>
+              <text class="small inplace-failure-small" x="51" y="506">
+                主 walk 的 try/catch 边界
+              </text>
+              <rect
+                class="box-accent"
+                x="44"
+                y="522"
+                width="388"
+                height="111"
+                rx="10"
+              ></rect>
+              <text class="inplace-failure-label" x="62" y="549">
+                ③ 创建 iterator → 逐节点循环
+              </text>
+              <text class="small inplace-failure-small" x="62" y="573">
+                nextNode → 元素判定 → 属性判定
+              </text>
+              <text class="small inplace-failure-small" x="62" y="597">
+                有 template.content 则递归 fragment 清理
+              </text>
+              <text class="small inplace-failure-small" x="62" y="620">
+                创建、迭代、hook、fragment 异常均在此接住
+              </text>
+              <rect
+                class="box-accent"
+                x="562"
+                y="505"
+                width="374"
+                height="133"
+                rx="10"
+              ></rect>
+              <text class="inplace-failure-label" x="580" y="533">
+                _neutralizeRoot(dirty)
+              </text>
+              <text class="small inplace-failure-small" x="580" y="557">
+                再遍历 removed 中每个 entry.element
+              </text>
+              <text class="small inplace-failure-small" x="580" y="579">
+                → _neutralizeSubtree(entry.element)
+              </text>
+              <text class="small inplace-failure-small" x="580" y="602">
+                覆盖已 detach、从 dirty 无法再访问的原子树
+              </text>
+              <text class="small inplace-failure-small" x="580" y="623">
+                随后重抛原错误
+              </text>
+
+              <rect
+                class="box"
+                x="44"
+                y="699"
+                width="388"
+                height="96"
+                rx="10"
+              ></rect>
+              <text class="inplace-failure-label" x="62" y="726">
+                ④ 返回前处理（主 catch 外）
+              </text>
+              <text class="small inplace-failure-small" x="62" y="750">
+                removed 中元素子树 → _neutralizeSubtree
+              </text>
+              <text class="small inplace-failure-small" x="62" y="774">
+                SAFE_FOR_TEMPLATES 开启 → 模板 scrub
+              </text>
+              <rect
+                class="box"
+                x="562"
+                y="705"
+                width="374"
+                height="90"
+                rx="10"
+              ></rect>
+              <text class="inplace-failure-label" x="580" y="734">
+                直接传播错误
+              </text>
+              <text class="small inplace-failure-small" x="580" y="758">
+                原树可能已被修改；不再中和 root
+              </text>
+              <text class="small inplace-failure-small" x="580" y="781">
+                不进入上方主 walk 的 catch
+              </text>
+
+              <rect
+                class="box-accent"
+                x="94"
+                y="824"
+                width="288"
+                height="44"
+                rx="10"
+              ></rect>
+              <text class="inplace-failure-label" x="126" y="852">
+                返回 dirty：同一引用，树已修改
+              </text>
+
+              <line
+                x1="238"
+                y1="156"
+                x2="238"
+                y2="186"
+                marker-end="url(#inplace-failure-arrow)"
+              ></line>
+              <line
+                x1="238"
+                y1="318"
+                x2="238"
+                y2="352"
+                marker-end="url(#inplace-failure-arrow)"
+              ></line>
+              <text class="small inplace-failure-small" x="252" y="339">
+                根通过
+              </text>
+              <line
+                x1="238"
+                y1="450"
+                x2="238"
+                y2="520"
+                marker-end="url(#inplace-failure-arrow)"
+              ></line>
+              <text class="small inplace-failure-small" x="252" y="474">
+                预扫成功
+              </text>
+              <line
+                x1="238"
+                y1="633"
+                x2="238"
+                y2="697"
+                marker-end="url(#inplace-failure-arrow)"
+              ></line>
+              <text class="small inplace-failure-small" x="252" y="679">
+                walk 完成
+              </text>
+              <line
+                x1="238"
+                y1="795"
+                x2="238"
+                y2="822"
+                marker-end="url(#inplace-failure-arrow)"
+              ></line>
+
+              <path
+                d="M432 252 H560"
+                stroke-dasharray="6 4"
+                marker-end="url(#inplace-failure-arrow)"
+              ></path>
+              <text class="small inplace-failure-small" x="465" y="243">
+                拒绝根
+              </text>
+              <path
+                d="M432 400 H560"
+                stroke-dasharray="6 4"
+                marker-end="url(#inplace-failure-arrow)"
+              ></path>
+              <text class="small inplace-failure-small" x="472" y="391">
+                抛错
+              </text>
+              <path
+                d="M432 575 H560"
+                stroke-dasharray="6 4"
+                marker-end="url(#inplace-failure-arrow)"
+              ></path>
+              <text class="small inplace-failure-small" x="472" y="566">
+                抛错
+              </text>
+              <path
+                d="M432 750 H560"
+                stroke-dasharray="6 4"
+                marker-end="url(#inplace-failure-arrow)"
+              ></path>
+              <text class="small inplace-failure-small" x="472" y="741">
+                抛错
+              </text>
+            </svg>
+            <figcaption id="inplace-failure-caption">
+              例如一个 hook 只在标记节点上抛错：标记节点位于预扫的 shadow
+              内时走②，位于主树时走③；只有③会追加
+              <code>removed</code> 元素子树后扫。
+              <code>_neutralizeRoot</code> 先沿普通
+              <code>childNodes</code> 清除非允许属性名，再尝试移除根的普通
+              children 和全部根属性；单项删除失败会被忽略。
+              <code>_neutralizeSubtree</code> 只按属性名称集合剥离，不重新运行
+              URI 值检查或 hook。两者均不进入 <code>template.content</code> 或
+              attached shadow roots。 主 walk 的 catch 因此需要单独读取
+              <code>removed</code
+              >，才能触达此前已移出原树、调用者可能仍持有引用的元素子树。
+            </figcaption>
+          </figure>
+
           <div class="warning">
-            <strong>边界：</strong>IN_PLACE 不可逆地修改 caller
-            对象。对已连接且攻击者可并发影响的 live DOM， sanitize
-            开始前已经发生的浏览器副作用无法被撤销；源码注释也明确保留此
-            caveat。
+            <strong>返回前模板处理：</strong>主 walk 成功后，SAFE_FOR_TEMPLATES
+            在 DOM/IN_PLACE 路径会 normalize
+            普通子树，将相邻文本合并，再去除模板语法，并递归处理后代
+            template.content。 字符串路径则在序列化后再次替换模板语法。 例如
+            <code>$&lt;evil&gt;&lt;/evil&gt;{x}</code> 删除空容器后形成
+            <code>${x}</code>，返回结果为一个空格。这个终局处理不进入 attached
+            shadow， 也不由 querySelectorAll 找到根 template 自身的
+            content；它在主 catch 外，抛错时不会再清空 root。
           </div>
         </section>
 
         <section id="example">
           <p class="kicker">09 · Example</p>
-          <h2>一个可执行、从输入到断言闭环的 Node 示例</h2>
+          <h2>用 Node 跑完解析、清理和返回</h2>
           <p>
             下面使用仓库真实 CJS 产物和 jsdom；与
             <code>test/jsdom-node.js</code> 的初始化方式一致。
-            前提：使用项目要求的 Node.js 20+，已在仓库运行
+            前提：使用项目要求的 Node.js 20+，已在本项目
+            <code>dompurify</code> 目录运行
             build，且依赖已安装。示例同时验证元素、URI 属性、事件属性和
             <code>DOMPurify.removed</code>。
           </p>
           <div class="source">
             <div class="source-label">
               <span
-                >教程可运行示例 · 保存为 demo.cjs 后在仓库根执行 node
-                demo.cjs</span
+                >教程可运行示例 · 保存到 dompurify/demo.cjs，在 dompurify
+                目录执行 node demo.cjs</span
               >
               <button class="copy" type="button">复制</button>
             </div>
@@ -1671,6 +4803,535 @@ console.log(clean);</code></pre>
               pointer-events="all"&gt;&lt;/circle&gt;&lt;/svg&gt;&lt;/form&gt;</code
             >， <code>removed.length = 5</code>。
           </p>
+          <figure class="engineering-figure" id="dom-tree-snapshots">
+            <figcaption>
+              同一输入的 DOM 前后快照：删掉什么，保留什么？
+            </figcaption>
+            <p>
+              上面传入的是字符串。<code>_initDocument</code>
+              在隔离文档解析它，主遍历修改这棵解析树，再序列化
+              <code>body.innerHTML</code
+              >。示例改动发生在解析树中，应用页面活树保持原样。
+            </p>
+            <div class="viz-two-column">
+              <div class="viz-panel">
+                <h4>DOMParser 解析后 · 清洗前</h4>
+                <div
+                  class="diagram engineering-diagram"
+                  tabindex="0"
+                  role="region"
+                  aria-label="可横向滚动的解析后 DOM 树"
+                >
+                  <svg
+                    width="470"
+                    viewBox="0 0 470 855"
+                    role="img"
+                    aria-labelledby="dom-parsed-title dom-parsed-desc"
+                    style="--diagram-width: 470px"
+                  >
+                    <title id="dom-parsed-title">
+                      解析后：HTML 与 SVG namespace 构成同一棵树
+                    </title>
+                    <desc id="dom-parsed-desc">
+                      箭头表示父节点到子节点。HTML 元素的 nodeName 为大写，SVG
+                      元素保持小写。文本节点没有 namespace。FORM 包含 A、svg 和
+                      SCRIPT。A 内文本为 go，svg 内为 circle，SCRIPT 内文本为
+                      alert(4)。
+                    </desc>
+                    <defs>
+                      <marker
+                        id="dom-tree-parsed-arrow"
+                        markerWidth="9"
+                        markerHeight="9"
+                        refX="8"
+                        refY="3"
+                        orient="auto"
+                      >
+                        <path class="marker-arrow" d="M0,0 L0,6 L9,3 z"></path>
+                      </marker>
+                    </defs>
+                    <path
+                      d="M40,96 V174 H60"
+                      marker-end="url(#dom-tree-parsed-arrow)"
+                    ></path>
+                    <path d="M80,205 V720"></path>
+                    <path
+                      d="M80,299 H105"
+                      marker-end="url(#dom-tree-parsed-arrow)"
+                    ></path>
+                    <path
+                      d="M80,489 H105"
+                      marker-end="url(#dom-tree-parsed-arrow)"
+                    ></path>
+                    <path
+                      d="M125,347 V403 H150"
+                      marker-end="url(#dom-tree-parsed-arrow)"
+                    ></path>
+                    <path
+                      d="M125,513 V596 H150"
+                      marker-end="url(#dom-tree-parsed-arrow)"
+                    ></path>
+                    <path
+                      d="M80,720 H105"
+                      marker-end="url(#dom-tree-parsed-arrow)"
+                    ></path>
+                    <path
+                      d="M125,743 V804 H150"
+                      marker-end="url(#dom-tree-parsed-arrow)"
+                    ></path>
+                    <rect
+                      class="box"
+                      x="20"
+                      y="50"
+                      width="430"
+                      height="46"
+                      rx="9"
+                    ></rect>
+                    <text
+                      x="36"
+                      y="78"
+                      text-anchor="start"
+                      class=""
+                      style="font-size: 16px"
+                    >
+                      BODY · HTML namespace
+                    </text>
+                    <rect
+                      class="box"
+                      x="60"
+                      y="140"
+                      width="390"
+                      height="65"
+                      rx="9"
+                    ></rect>
+                    <text
+                      x="77"
+                      y="166"
+                      text-anchor="start"
+                      class=""
+                      style="font-size: 16px"
+                    >
+                      FORM · HTML namespace
+                    </text>
+                    <text
+                      x="77"
+                      y="189"
+                      text-anchor="start"
+                      class=""
+                      style="font-size: 15px; fill: var(--accent-2)"
+                    >
+                      id=&quot;location&quot;
+                    </text>
+                    <rect
+                      class="box"
+                      x="105"
+                      y="250"
+                      width="345"
+                      height="97"
+                      rx="9"
+                    ></rect>
+                    <text
+                      x="122"
+                      y="276"
+                      text-anchor="start"
+                      class=""
+                      style="font-size: 16px"
+                    >
+                      A · HTML namespace
+                    </text>
+                    <text
+                      x="122"
+                      y="302"
+                      text-anchor="start"
+                      class=""
+                      style="font-size: 15px; fill: var(--accent-2)"
+                    >
+                      href=&quot;javascript:alert(1)&quot;
+                    </text>
+                    <text
+                      x="122"
+                      y="326"
+                      text-anchor="start"
+                      class=""
+                      style="font-size: 15px; fill: var(--accent-2)"
+                    >
+                      onclick=&quot;alert(2)&quot;
+                    </text>
+                    <rect
+                      class="box"
+                      x="150"
+                      y="380"
+                      width="300"
+                      height="46"
+                      rx="9"
+                    ></rect>
+                    <text
+                      x="166"
+                      y="408"
+                      text-anchor="start"
+                      class=""
+                      style="font-size: 16px"
+                    >
+                      #text · &quot;go&quot;
+                    </text>
+                    <rect
+                      class="box"
+                      x="105"
+                      y="465"
+                      width="345"
+                      height="48"
+                      rx="9"
+                    ></rect>
+                    <text
+                      x="122"
+                      y="494"
+                      text-anchor="start"
+                      class=""
+                      style="font-size: 16px"
+                    >
+                      svg · SVG namespace
+                    </text>
+                    <rect
+                      class="box-accent"
+                      x="150"
+                      y="553"
+                      width="300"
+                      height="86"
+                      rx="9"
+                    ></rect>
+                    <text
+                      x="166"
+                      y="579"
+                      text-anchor="start"
+                      class=""
+                      style="font-size: 16px"
+                    >
+                      circle · SVG namespace
+                    </text>
+                    <text
+                      x="166"
+                      y="605"
+                      text-anchor="start"
+                      class=""
+                      style="font-size: 15px; fill: var(--accent)"
+                    >
+                      pointer-events=&quot;all&quot;
+                    </text>
+                    <text
+                      x="166"
+                      y="626"
+                      text-anchor="start"
+                      class=""
+                      style="font-size: 15px; fill: var(--accent-2)"
+                    >
+                      onload=&quot;alert(3)&quot;
+                    </text>
+                    <rect
+                      class="box"
+                      x="105"
+                      y="695"
+                      width="345"
+                      height="48"
+                      rx="9"
+                    ></rect>
+                    <text
+                      x="122"
+                      y="724"
+                      text-anchor="start"
+                      class=""
+                      style="font-size: 16px; fill: var(--accent-2)"
+                    >
+                      SCRIPT · HTML namespace
+                    </text>
+                    <rect
+                      class="box"
+                      x="150"
+                      y="780"
+                      width="300"
+                      height="46"
+                      rx="9"
+                    ></rect>
+                    <text
+                      x="166"
+                      y="808"
+                      text-anchor="start"
+                      class=""
+                      style="font-size: 16px; fill: var(--accent-2)"
+                    >
+                      #text · &quot;alert(4)&quot;
+                    </text>
+                  </svg>
+                </div>
+              </div>
+              <div class="viz-panel">
+                <h4>清洗后 · 序列化前</h4>
+                <div
+                  class="diagram engineering-diagram"
+                  tabindex="0"
+                  role="region"
+                  aria-label="可横向滚动的清洗后 DOM 树"
+                >
+                  <svg
+                    width="470"
+                    viewBox="0 0 470 855"
+                    role="img"
+                    aria-labelledby="dom-clean-title dom-clean-desc"
+                    style="--diagram-width: 470px"
+                  >
+                    <title id="dom-clean-title">
+                      清洗后：四个属性和 SCRIPT 子树已移除
+                    </title>
+                    <desc id="dom-clean-desc">
+                      箭头表示父节点到子节点。HTML 元素的 nodeName 为大写，SVG
+                      元素保持小写。文本节点没有 namespace。清洗后仍保留
+                      FORM、A、文本 go、svg 和带 pointer-events 的
+                      circle。SCRIPT 与文本 alert(4) 已整棵移除。
+                    </desc>
+                    <defs>
+                      <marker
+                        id="dom-tree-clean-arrow"
+                        markerWidth="9"
+                        markerHeight="9"
+                        refX="8"
+                        refY="3"
+                        orient="auto"
+                      >
+                        <path class="marker-arrow" d="M0,0 L0,6 L9,3 z"></path>
+                      </marker>
+                    </defs>
+                    <path
+                      d="M40,96 V174 H60"
+                      marker-end="url(#dom-tree-clean-arrow)"
+                    ></path>
+                    <path d="M80,205 V489"></path>
+                    <path
+                      d="M80,299 H105"
+                      marker-end="url(#dom-tree-clean-arrow)"
+                    ></path>
+                    <path
+                      d="M80,489 H105"
+                      marker-end="url(#dom-tree-clean-arrow)"
+                    ></path>
+                    <path
+                      d="M125,347 V403 H150"
+                      marker-end="url(#dom-tree-clean-arrow)"
+                    ></path>
+                    <path
+                      d="M125,513 V596 H150"
+                      marker-end="url(#dom-tree-clean-arrow)"
+                    ></path>
+                    <rect
+                      class="box"
+                      x="20"
+                      y="50"
+                      width="430"
+                      height="46"
+                      rx="9"
+                    ></rect>
+                    <text
+                      x="36"
+                      y="78"
+                      text-anchor="start"
+                      class=""
+                      style="font-size: 16px"
+                    >
+                      BODY · HTML namespace
+                    </text>
+                    <rect
+                      class="box"
+                      x="60"
+                      y="140"
+                      width="390"
+                      height="65"
+                      rx="9"
+                    ></rect>
+                    <text
+                      x="77"
+                      y="166"
+                      text-anchor="start"
+                      class=""
+                      style="font-size: 16px"
+                    >
+                      FORM · HTML namespace
+                    </text>
+                    <text
+                      x="77"
+                      y="189"
+                      text-anchor="start"
+                      class="small"
+                      style="font-size: 13.5px"
+                    >
+                      id 已删除：location 遮蔽 document 成员
+                    </text>
+                    <rect
+                      class="box"
+                      x="105"
+                      y="250"
+                      width="345"
+                      height="97"
+                      rx="9"
+                    ></rect>
+                    <text
+                      x="122"
+                      y="276"
+                      text-anchor="start"
+                      class=""
+                      style="font-size: 16px"
+                    >
+                      A · HTML namespace
+                    </text>
+                    <text
+                      x="122"
+                      y="304"
+                      text-anchor="start"
+                      class="small"
+                      style="font-size: 13.5px"
+                    >
+                      onclick 名称不允许；href 的 URI 不允许
+                    </text>
+                    <text
+                      x="122"
+                      y="327"
+                      text-anchor="start"
+                      class="small"
+                      style="font-size: 13.5px"
+                    >
+                      两个属性均删除；A 仍保留
+                    </text>
+                    <rect
+                      class="box"
+                      x="150"
+                      y="380"
+                      width="300"
+                      height="46"
+                      rx="9"
+                    ></rect>
+                    <text
+                      x="166"
+                      y="408"
+                      text-anchor="start"
+                      class=""
+                      style="font-size: 16px"
+                    >
+                      #text · &quot;go&quot;
+                    </text>
+                    <rect
+                      class="box"
+                      x="105"
+                      y="465"
+                      width="345"
+                      height="48"
+                      rx="9"
+                    ></rect>
+                    <text
+                      x="122"
+                      y="494"
+                      text-anchor="start"
+                      class=""
+                      style="font-size: 16px"
+                    >
+                      svg · SVG namespace
+                    </text>
+                    <rect
+                      class="box-accent"
+                      x="150"
+                      y="553"
+                      width="300"
+                      height="86"
+                      rx="9"
+                    ></rect>
+                    <text
+                      x="166"
+                      y="579"
+                      text-anchor="start"
+                      class=""
+                      style="font-size: 16px"
+                    >
+                      circle · SVG namespace
+                    </text>
+                    <text
+                      x="166"
+                      y="605"
+                      text-anchor="start"
+                      class=""
+                      style="font-size: 15px; fill: var(--accent)"
+                    >
+                      pointer-events=&quot;all&quot;
+                    </text>
+                    <text
+                      x="166"
+                      y="626"
+                      text-anchor="start"
+                      class="small"
+                      style="font-size: 13.5px"
+                    >
+                      onload 已删除；pointer-events 保留
+                    </text>
+                    <rect
+                      class="box"
+                      x="105"
+                      y="695"
+                      width="345"
+                      height="131"
+                      rx="9"
+                      style="stroke: var(--accent-2); stroke-dasharray: 6 4"
+                    ></rect>
+                    <text
+                      x="122"
+                      y="723"
+                      text-anchor="start"
+                      class=""
+                      style="font-size: 16px; fill: var(--accent-2)"
+                    >
+                      SCRIPT 与其文本已脱离这棵树
+                    </text>
+                    <text
+                      x="122"
+                      y="752"
+                      text-anchor="start"
+                      class="small"
+                      style="font-size: 13.5px"
+                    >
+                      script 不在默认 allowlist，且位于
+                    </text>
+                    <text
+                      x="122"
+                      y="775"
+                      text-anchor="start"
+                      class="small"
+                      style="font-size: 13.5px"
+                    >
+                      FORBID_CONTENTS；alert(4) 不上移。
+                    </text>
+                    <text
+                      x="122"
+                      y="804"
+                      text-anchor="start"
+                      class="small"
+                      style="font-size: 13.5px"
+                    >
+                      此框是删除说明，不是保留节点。
+                    </text>
+                  </svg>
+                </div>
+              </div>
+            </div>
+            <p class="muted">
+              树边方向：父节点 → 子节点。HTML =
+              <code>http://www.w3.org/1999/xhtml</code>；SVG =
+              <code>http://www.w3.org/2000/svg</code>。文本节点没有
+              namespace。橙色标出待删除内容，绿色标出保留的 SVG 属性。
+            </p>
+            <p>
+              <code>removed.length = 5</code>
+              来自四条属性记录（<code>id</code>、<code>onclick</code>、<code>href</code>、<code>onload</code>）和一条元素记录（<code>SCRIPT</code>）。属性从后向前检查，所以
+              <code>onclick</code> 先于 <code>href</code> 进入日志；<code
+                >pointer-events="all"</code
+              >
+              通过名称与值检查，不记入删除日志。
+            </p>
+          </figure>
+
           <ol>
             <li>
               <code>createDOMPurify(window)</code> 捕获该 realm 的 DOM
@@ -1697,9 +5358,22 @@ console.log(clean);</code></pre>
 
         <section id="flow">
           <p class="kicker">10 · Flow</p>
-          <h2>沿同一个 Demo 的完整执行流程图</h2>
-          <div class="diagram" role="img" aria-label="完整 sanitize 执行流程">
-            <svg viewBox="0 0 980 1080">
+          <h2>Demo 主线与其他输入分支</h2>
+          <p>
+            绿色节点沿第 9 节的默认字符串输入执行；虚线连接提前返回和 Node
+            输入分支。纯文本快速返回要求不含 <code>&lt;</code>，且
+            <code>RETURN_DOM</code>、<code>SAFE_FOR_TEMPLATES</code>、<code
+              >WHOLE_DOCUMENT</code
+            >
+            均关闭。主迭代器返回节点时进入两阶段清理，无节点时退出循环。元素与属性内部的条件见
+            6.4/6.5；IN_PLACE 的独立异常区间见 8.4。
+          </p>
+          <div
+            class="diagram"
+            role="img"
+            aria-label="Demo 主线与其他输入分支流程图"
+          >
+            <svg viewBox="0 0 980 1080" style="--diagram-width: 980px">
               <defs>
                 <marker
                   id="arrow2"
@@ -1761,7 +5435,9 @@ console.log(clean);</code></pre>
                 height="80"
               ></rect>
               <text x="742" y="246">纯文本快速返回</text>
-              <text class="small" x="742" y="268">条件命中时无 walk root</text>
+              <text class="small" x="742" y="268">
+                不含 &lt;，且三个模式均关闭
+              </text>
 
               <rect
                 class="box"
@@ -1810,9 +5486,7 @@ console.log(clean);</code></pre>
                 height="76"
               ></rect>
               <text x="340" y="486">NodeIterator.nextNode()</text>
-              <text class="small" x="340" y="508">
-                还有节点？严格逐节点循环
-              </text>
+              <text class="small" x="340" y="508">nextNode() 返回节点？</text>
 
               <rect
                 class="box"
@@ -1848,7 +5522,7 @@ console.log(clean);</code></pre>
                 width="360"
                 height="76"
               ></rect>
-              <text x="340" y="832">③ template.content / shadow?</text>
+              <text x="340" y="832">③ template.content?</text>
               <text class="small" x="340" y="854">
                 有则递归清理；Demo 无 → 回到 iterator
               </text>
@@ -1861,7 +5535,7 @@ console.log(clean);</code></pre>
                 width="238"
                 height="96"
               ></rect>
-              <text x="56" y="708">任一步骤抛错</text>
+              <text x="56" y="708">遍历屏障内抛错</text>
               <text class="small" x="56" y="730">
                 string/copy：重抛，不返回部分树
               </text>
@@ -1890,7 +5564,7 @@ console.log(clean);</code></pre>
                 width="360"
                 height="34"
               ></rect>
-              <text x="340" y="1055">返回 clean；调用者断言 sink 全部消失</text>
+              <text x="340" y="1055">返回 clean；断言危险标签与属性已删除</text>
 
               <line
                 x1="490"
@@ -1899,6 +5573,11 @@ console.log(clean);</code></pre>
                 y2="110"
                 marker-end="url(#arrow2)"
               ></line>
+              <text class="small" x="175" y="307">Node 输入</text>
+              <text class="small" x="690" y="210">满足纯文本快速返回条件</text>
+              <text class="small" x="505" y="314">字符串（本例）</text>
+              <text class="small" x="690" y="317">无可用根</text>
+              <text class="small" x="505" y="558">有节点</text>
               <line
                 x1="490"
                 y1="188"
@@ -1998,15 +5677,15 @@ console.log(clean);</code></pre>
           <p>
             实线中央为 Demo 的严格顺序；虚线为其他输入/异常分支。主 walk
             异常时，字符串/copy 路径不会返回部分 body；IN_PLACE 才中和 root 与已
-            detached 的 removed 子树后重抛。Trusted return
-            只在最终序列化后多一次
-            <code>_createTrustedHTML</code>，不会跳过过滤阶段。
+            detached 的 removed 子树后重抛。Trusted return 在有活动 policy
+            时，最终序列化结果会再经
+            <code>_createTrustedHTML</code> 包装；DOM 返回分支先于这一步返回。
           </p>
         </section>
 
         <section id="tests">
           <p class="kicker">11 · Evidence</p>
-          <h2>测试证明什么，也要说明没证明什么</h2>
+          <h2>把断言与实现中的行为对应起来</h2>
           <div class="evidence-grid">
             <article class="evidence">
               <h3>主链与真实 sink</h3>
@@ -2017,7 +5696,9 @@ console.log(clean);</code></pre>
               </p>
               <p>
                 <strong>Then：</strong>自测可触发 detector，清理后
-                <code>xssed=false</code>。
+                <code>xssed !== true</code>。innerHTML/jQuery 用例等待 100ms
+                后检查， iframe write
+                在写入后立即检查；探针自检使用直接脚本执行的载荷。
               </p>
               <p class="muted">test-suite：Sanitization / XSS 三模块。</p>
             </article>
@@ -2067,7 +5748,10 @@ console.log(clean);</code></pre>
                 >internal/caller/null/clearConfig/重入组合。
               </p>
               <p>
-                <strong>Then：</strong>类型、policy 次数、错误和复位符合状态机。
+                <strong>Then：</strong>stub 包装身份、policy
+                次数、错误和复位符合状态表。 默认调用未开启 RETURN_TRUSTED_TYPE
+                时，两次 createHTML 分别处理内部空值与解析输入。 fake factory
+                用于观察调用，不提供浏览器原生 TrustedHTML 品牌。
               </p>
             </article>
             <article class="evidence">
@@ -2079,7 +5763,9 @@ console.log(clean);</code></pre>
               </p>
               <p>
                 <strong>Then：</strong
-                >nodeType、ownerDocument、引用恒等和已清理内容同时断言。
+                >各用例分别检查节点类型、ownerDocument、原引用或已清理内容。
+                Fragment 用例主要检查类型、所属文档与首文本节点；IN_PLACE
+                用例联合检查引用与属性。
               </p>
             </article>
             <article class="evidence">
@@ -2092,44 +5778,46 @@ console.log(clean);</code></pre>
                 次并自动缩减失败样本。
               </p>
               <p>
-                <strong>Then：</strong>属性 1/3 只约束“正常返回或标准异常”；2/5
-                在受限配置下证明幂等；4
-                只检查默认配置序列化结果的危险语法，不等于浏览器执行证明。
+                <strong>Then：</strong>属性 1/3 接受正常返回或
+                Error/DOMException； 2/5
+                对抽到的输入比较两次字符串输出，后者专门开启
+                SANITIZE_NAMED_PROPS。 属性 4
+                用六种正则模式检查默认输出；文本或普通属性值中的同形字符也可能命中，
+                检查器不解析 DOM，也不执行输出。
               </p>
               <p class="muted">
-                另有故意用 ADD_ATTR 放行 onerror
-                的负对照，证明语法检查器确实会报警。
+                种子通过 constantFrom 随机抽取。负对照显式放行 onerror，
+                并要求事件属性模式触发 AssertionError。
               </p>
             </article>
           </div>
           <div class="warning">
-            <strong>证据 caveat：</strong
+            <strong>fixture 匹配方式：</strong
             ><code>QUnit.assert.contains</code> 使用
             <code>expected.indexOf(actual) &gt; -1</code>。当 expected
             是字符串时，这只是子串匹配， 空 actual 甚至可命中任意非空
             expected。223 条 fixture 中 181 条是 scalar expected，
-            因而数据驱动测试不能单独称为“精确序列化证明”；必须与显式
-            <code>assert.equal</code>
-            回归和三类真实 sink 测试组合解读。
+            标量期望因此是宽松回归信号；数组期望匹配完整候选输出，
+            <code>assert.equal</code> 比较精确结果，三类 sink
+            测试则观察重新插入后的 alert 探针。
           </div>
           <details>
             <summary>mXSS “round-trip” 测试名的边界</summary>
             <p>
               <code>Chrome 77+ SVG/HTML mXSS round-trip is neutralised</code>
-              本身只检查返回字符串是否仍含可执行
-              img/onerror，并未在该测试内重新插入 DOM。
-              真正的再解析/执行证据来自 innerHTML、jQuery.html 和 document.write
-              的 alert fixture 循环。
+              的断言是输出缺少 <code>&lt;img</code> 或
+              <code>onerror</code> 子串， 该用例没有重新插入
+              DOM。innerHTML、jQuery.html 和 document.write 的 alert fixture
+              循环才实际执行重新解析与探针检查。
             </p>
           </details>
           <details>
             <summary>DOM clobbering 的运行环境边界</summary>
             <p>
               jsdom 不完整实现浏览器的 HTMLFormElement named-property clobber
-              行为，部分测试会跳过或自然钝化。这些分支需在目标真实浏览器动态运行；
-              Chromium、Firefox 与 WebKit
-              的结果分别只证明对应引擎。本文只做静态源码/测试映射，
-              不把未执行测试写成“已通过”。
+              行为，部分测试先探测 form 成员是否被遮蔽，不具备该行为时提前退出。
+              这些用例在 jsdom 中返回绿灯可能仅表示能力探测分支通过；
+              浏览器结果要结合用例是否进入遮蔽分支来判断。
             </p>
           </details>
         </section>
@@ -2148,15 +5836,19 @@ console.log(clean);</code></pre>
             <code>.d.mts</code> 与 CJS <code>.d.ts</code>。
           </p>
           <p>
-            运行时任务里 TypeScript 与 Babel 负责转换，replace 注入
-            <code>NODE_ENV</code>/<code>VERSION</code>；nodeResolve 是 Rollup
-            的模块解析 hook，不是夹在转换器之间的“编译阶段”。随后
-            <code>fix-types.js</code> 尝试为 CJS 声明追加
-            <code>export = _default</code>，最后删除临时
-            <code>dist/types</code>。
-            注意该脚本内部捕获错误后只警告、不重抛，因此
-            <code>build:fix-types</code>
-            命令成功本身不能证明声明补丁已落盘，仍应检查产物或运行类型验证。
+            运行时任务由 TypeScript 与 Babel 转换代码，nodeResolve
+            解析模块引用， replace 注入
+            <code>NODE_ENV</code>/<code>VERSION</code>。 声明任务用 dts
+            合并临时类型；CJS 任务另有 stripNamedTypeExports 正则。 随后
+            <code>fix-types.js</code> 按正则移除两种 ESM 默认导出写法，再追加
+            <code>export = _default</code>；读取或写入失败时只打印警告，让 build
+            继续。 最后删除临时 <code>dist/types</code>。
+          </p>
+          <p>
+            当前 CJS 产物仍保留 <code>export { _default as default }</code> 与
+            <code>export type { … }</code>，并追加
+            <code>export = _default</code>。
+            原因是删除命名导出与默认导出的正则没有匹配这两种独立语句。
           </p>
           <div class="source">
             <div class="source-label">
@@ -2210,15 +5902,15 @@ console.log(clean);</code></pre>
           <p>
             <code>package.exports</code> 将 import 指向 ESM +
             <code>.d.mts</code>，default 条件指向 CJS + <code>.d.ts</code>。七个
-            TypeScript fixture 覆盖 CJS、ESM、 NodeNext 和不同
-            typeRoots，但主要验证默认 import/factory/sanitize；没有独立证明所有
-            named type import 组合。
+            TypeScript fixture 覆盖 CJS、ESM、NodeNext 和不同 typeRoots： CJS 用
+            namespace import，ESM/NodeNext 用 default import，
+            每个用例都调用实例 sanitize 和工厂返回实例的 sanitize。
           </p>
         </section>
 
         <section id="boundaries">
           <p class="kicker">13 · Boundaries</p>
-          <h2>正确使用时仍需记住的边界</h2>
+          <h2>配置与输入模式怎样影响使用</h2>
           <ul>
             <li>
               DOMPurify 清理 markup，不隔离受信任 hook、配置函数或 caller
@@ -2229,17 +5921,18 @@ console.log(clean);</code></pre>
               是诊断/清理记录，不应作为“结果安全”的判据。
             </li>
             <li>
-              允许
-              <code>SAFE_FOR_XML=false</code>
-              会关闭多条结构防线；源码配置注释明确警告只适用于纯 HTML 边界。
+              <code>SAFE_FOR_XML=false</code> 会关闭 XML/mXSS
+              结构探针、相关属性值检查与 IN_PLACE 预处理；混用 SVG/MathML
+              时需要保留默认 true。
             </li>
             <li>
               IN_PLACE 改原对象且可能在失败时清空它；需要保留原树时使用
               copy/string 模式。
             </li>
             <li>
-              跨 realm Node 通过缓存 <code>nodeType</code> getter 识别，但宿主
-              DOM 实现差异仍需目标浏览器测试。
+              跨 realm Node 通过缓存 <code>nodeType</code> getter 识别，
+              IN_PLACE 仍遍历和返回原节点；DOM-copy 则净化 importNode
+              得到的副本。
             </li>
             <li>
               对进入 namespace 校验的普通节点，自定义 namespace 只在 XHTML
@@ -2247,16 +5940,15 @@ console.log(clean);</code></pre>
               会提前返回并跳过此检查。
             </li>
             <li>
-              教程固定到 commit 8cc5ae1；未来 allowlist、浏览器 parser 和
-              Trusted Types 行为可能改变。
+              attached shadow 清理只能进入 getter 可见的根。closed root 不可见，
+              三个 neutralize 辅助函数也只遍历普通 children。
             </li>
           </ul>
-          <p class="muted">
-            从当前实现推断：将 parser、策略快照和 fail-closed
-            清理放在同一同步调用中，减少了异步状态竞争； 但也意味着任何
-            hook/custom-element reaction
-            抛错会直接成为调用者可见异常。源码与测试明确支持异常传播，
-            “减少竞争”是基于同步结构的推断，不是仓库历史声明。
+          <p>
+            Hook 按注册顺序同步执行，异常会沿调用链传播；IN_PLACE
+            在前文列出的屏障中补做清理。 DOM 写回则有自己的处理：setAttribute
+            失败会删除该属性；
+            回调修改树或过滤结果时，应以实际执行顺序判断后续步骤还能看到哪些节点。
           </p>
         </section>
 
@@ -2280,7 +5972,7 @@ console.log(clean);</code></pre>
                 <td>Sanitization + 三类 XSS sink</td>
               </tr>
               <tr>
-                <td>配置为何不被污染？</td>
+                <td>Hook 允许集合为何不跨 sanitize 累积？</td>
                 <td>
                   <code>clone</code>、<code>_parseConfig</code>、<code
                     >_forkSharedAllowlist</code
@@ -2344,25 +6036,25 @@ console.log(clean);</code></pre>
 
     <footer>
       <p>
-        本文基于本地 DOMPurify commit 8cc5ae1。源码摘录为目标版本真实代码；
+        本文基于本项目保存的 DOMPurify 3.4.13 实现。源码摘录为当前实现代码；
         标注“删节”的片段仅省去与当前结论无关的分支，未改写所示控制流。
       </p>
     </footer>
 
     <script>
       (function () {
-        var progress = document.querySelector('.progress');
-        var links = Array.from(document.querySelectorAll('.toc a'));
+        var progress = document.querySelector(".progress");
+        var links = Array.from(document.querySelectorAll(".toc a"));
         var sections = links
           .map(function (link) {
-            return document.querySelector(link.getAttribute('href'));
+            return document.querySelector(link.getAttribute("href"));
           })
           .filter(Boolean);
 
         function update() {
           var max = document.documentElement.scrollHeight - window.innerHeight;
           progress.style.width =
-            (max > 0 ? (window.scrollY / max) * 100 : 0) + '%';
+            (max > 0 ? (window.scrollY / max) * 100 : 0) + "%";
 
           var active = sections[0];
           sections.forEach(function (section) {
@@ -2370,16 +6062,16 @@ console.log(clean);</code></pre>
           });
           links.forEach(function (link) {
             link.classList.toggle(
-              'active',
-              active && link.getAttribute('href') === '#' + active.id
+              "active",
+              active && link.getAttribute("href") === "#" + active.id,
             );
           });
         }
 
         function showCopyStatus(button, message) {
           var old =
-            button.getAttribute('data-copy-label') || button.textContent;
-          button.setAttribute('data-copy-label', old);
+            button.getAttribute("data-copy-label") || button.textContent;
+          button.setAttribute("data-copy-label", old);
           button.textContent = message;
           window.setTimeout(function () {
             button.textContent = old;
@@ -2387,15 +6079,15 @@ console.log(clean);</code></pre>
         }
 
         function fallbackCopy(code) {
-          var textarea = document.createElement('textarea');
+          var textarea = document.createElement("textarea");
           textarea.value = code;
-          textarea.setAttribute('readonly', '');
-          textarea.style.position = 'fixed';
-          textarea.style.opacity = '0';
+          textarea.setAttribute("readonly", "");
+          textarea.style.position = "fixed";
+          textarea.style.opacity = "0";
           document.body.append(textarea);
           textarea.select();
           try {
-            return document.execCommand('copy');
+            return document.execCommand("copy");
           } catch (error) {
             return false;
           } finally {
@@ -2403,35 +6095,35 @@ console.log(clean);</code></pre>
           }
         }
 
-        document.querySelectorAll('.copy').forEach(function (button) {
-          button.addEventListener('click', function () {
+        document.querySelectorAll(".copy").forEach(function (button) {
+          button.addEventListener("click", function () {
             var code = button
-              .closest('.source')
-              .querySelector('code').innerText;
+              .closest(".source")
+              .querySelector("code").innerText;
             Promise.resolve()
               .then(function () {
                 if (
                   navigator.clipboard &&
-                  typeof navigator.clipboard.writeText === 'function'
+                  typeof navigator.clipboard.writeText === "function"
                 ) {
                   return navigator.clipboard.writeText(code);
                 }
-                throw new Error('Clipboard API unavailable');
+                throw new Error("Clipboard API unavailable");
               })
               .then(function () {
-                showCopyStatus(button, '已复制');
+                showCopyStatus(button, "已复制");
               })
               .catch(function () {
                 showCopyStatus(
                   button,
-                  fallbackCopy(code) ? '已复制' : '复制失败'
+                  fallbackCopy(code) ? "已复制" : "复制失败",
                 );
               });
           });
         });
 
-        window.addEventListener('scroll', update, { passive: true });
-        window.addEventListener('resize', update);
+        window.addEventListener("scroll", update, { passive: true });
+        window.addEventListener("resize", update);
         update();
       })();
     </script>

@@ -4,9 +4,8 @@ import { isWindows } from '../../../shared/utils'
 
 describe('getNodeModulesPackageRoot', () => {
   /**
-   * 场景：补齐 sourcemap 的 sourcesContent 时，依赖包中的相对 source 路径只能在当前包目录内读取。
-   * 目标：准确识别普通包、scope 包、嵌套 node_modules 与 Windows 路径的最近包根；非依赖路径返回 undefined。
-   * 机制：表驱动覆盖路径边界，Windows 专属断言只在对应平台执行。
+   * 普通包、scope 包与嵌套 node_modules 路径应取最近包根；非依赖路径返回 undefined。
+   * Windows 专属断言只在对应平台执行。这组用例检查路径提取，不读取 map/source 文件。
    */
   const cases = [
     {
@@ -70,8 +69,8 @@ describe('getNodeModulesPackageRoot', () => {
 
   for (const { name, input, expected, skip } of cases) {
     /**
-     * 场景：当前表格行提供普通、scoped、嵌套、Windows 或非 node_modules 路径。
-     * 验证目标：`getNodeModulesPackageRoot(input)` 严格等于该行 expected；平台专属行按 skip 跳过。
+     * 按表行传入普通/scope/嵌套包、包根或非 node_modules 路径，提取结果应等于 expected；
+     * 两行反斜杠 Windows 路径仅在 Windows 执行，其余平台跳过，不代表验证通过。
      */
     test.skipIf(skip)(name, () => {
       expect(getNodeModulesPackageRoot(input)).toBe(expected)

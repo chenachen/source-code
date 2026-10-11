@@ -30,7 +30,7 @@ describe('ReactLegacyContextDisabled', () => {
       require('internal-test-utils').assertConsoleErrorDev;
   });
 
-  /** `formatValue`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 把null/undefined转独立文本、字符串透传、其余JSON化，让上下文空对象与缺值在DOM中可辨。 */
   function formatValue(val) {
     if (val === null) {
       return 'null';
@@ -44,60 +44,53 @@ describe('ReactLegacyContextDisabled', () => {
     return JSON.stringify(val);
   }
 
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「warns for legacy context」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言连接 ReactDOM 公开入口、ReactDOMRoot 根生命周期及 DOM 提交结果。
-   */
+  /** disableLegacyContext=true时旧Provider/类与函数contextTypes各报移除诊断；首次文本为{}undefinedundefined、更新钩子日志空，再更新得到三个空对象日志；SSR同样诊断并输出带文本分隔标记的空旧上下文，验证禁用协议不供值而保留更新生命周期调用。 */
   it('warns for legacy context', async () => {
-    /** `LegacyProvider`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 声明旧childContextTypes并提供foo=10；开关禁用旧协议，消费者应仅见空/缺失上下文。 */
     class LegacyProvider extends React.Component {
-      /** `LegacyProvider.childContextTypes`：记录测试夹具在当前场景中的状态。 */
+      /** 旧foo验证器映射，触发被移除协议的诊断。 */
       static childContextTypes = {
-        /** `LegacyProvider.foo`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 空验证器只声明旧foo键，不产生额外校验错误。 */
         foo() {},
       };
-      /** `LegacyProvider.getChildContext`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 返回旧载荷foo=10；禁用配置不应把它传给消费者。 */
       getChildContext() {
         return {foo: 10};
       }
-      /** `LegacyProvider.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 透传children，让旧消费者处在共同Provider范围。 */
       render() {
         return this.props.children;
       }
     }
 
     const lifecycleContextLog = [];
-    /** `LegacyClsConsumer`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 旧contextTypes类消费者，记录三个更新钩子的nextContext并格式化this.context。 */
     class LegacyClsConsumer extends React.Component {
-      /** `LegacyClsConsumer.contextTypes`：记录测试夹具在当前场景中的状态。 */
+      /** 声明旧foo消费协议，用于禁用诊断。 */
       static contextTypes = {
-        /** `LegacyClsConsumer.foo`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 空foo验证器，不额外报错。 */
         foo() {},
       };
-      /** `LegacyClsConsumer.shouldComponentUpdate`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 记录更新nextContext并返回true；禁用旧协议时预期空对象。 */
       shouldComponentUpdate(nextProps, nextState, nextContext) {
         lifecycleContextLog.push(nextContext);
         return true;
       }
-      /** `LegacyClsConsumer.UNSAFE_componentWillReceiveProps`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 接收新props时记录nextContext，验证禁用协议后的更新参数。 */
       UNSAFE_componentWillReceiveProps(nextProps, nextContext) {
         lifecycleContextLog.push(nextContext);
       }
-      /** `LegacyClsConsumer.UNSAFE_componentWillUpdate`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 更新前记录nextContext，和其它两个钩子组成三条有序日志。 */
       UNSAFE_componentWillUpdate(nextProps, nextState, nextContext) {
         lifecycleContextLog.push(nextContext);
       }
-      /** `LegacyClsConsumer.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 格式化this.context，旧协议禁用后输出空对象文本。 */
       render() {
         return formatValue(this.context);
       }
     }
 
-    /** `LegacyFnConsumer`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 格式化函数第二参数context，旧协议禁用后预期undefined。 */
     function LegacyFnConsumer(props, context) {
       return formatValue(context);
     }
@@ -106,7 +99,7 @@ describe('ReactLegacyContextDisabled', () => {
       foo() {}
     };
 
-    /** `RegularFn`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 未声明contextTypes但读取第二参数，验证普通函数同样收到undefined。 */
     function RegularFn(props, context) {
       return formatValue(context);
     }
@@ -180,13 +173,13 @@ describe('ReactLegacyContextDisabled', () => {
     expect(lifecycleContextLog).toEqual([{}, {}, {}]);
   });
 
-  /** 测试场景：验证「renders a tree with modern context」描述的渲染、交互或错误处理结果。 */
+  /** 禁用legacy后以现代Context提供a并用Consumer/contextType/useContext读取；挂载文本aaa、无更新日志，同值重渲染记录三个a，再改为b输出bbb并记录三个b，验证现代传递及更新钩子的nextContext不受legacy开关影响。 */
   it('renders a tree with modern context', async () => {
     const Ctx = React.createContext();
 
-    /** `Provider`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 使用现代Ctx.Provider传props.value，作为legacy禁用后仍有效的Provider。 */
     class Provider extends React.Component {
-      /** `Provider.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 把value与children交给现代Provider，供相同/变化值更新对照。 */
       render() {
         return (
           <Ctx.Provider value={this.props.value}>
@@ -196,39 +189,39 @@ describe('ReactLegacyContextDisabled', () => {
       }
     }
 
-    /** `RenderPropConsumer`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 通过Ctx.Consumer的render prop读现代上下文。 */
     class RenderPropConsumer extends React.Component {
-      /** `RenderPropConsumer.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 格式化Consumer回调value，输出当前a或b。 */
       render() {
         return <Ctx.Consumer>{value => formatValue(value)}</Ctx.Consumer>;
       }
     }
 
     const lifecycleContextLog = [];
-    /** `ContextTypeConsumer`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 用静态contextType读取现代值，并记录更新生命周期nextContext。 */
     class ContextTypeConsumer extends React.Component {
-      /** `ContextTypeConsumer.contextType`：记录测试夹具在当前场景中的状态。 */
+      /** 把this.context绑定现代Ctx，避免旧contextTypes路径。 */
       static contextType = Ctx;
-      /** `ContextTypeConsumer.shouldComponentUpdate`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 记录nextContext并允许更新，匹配当前a/b值。 */
       shouldComponentUpdate(nextProps, nextState, nextContext) {
         lifecycleContextLog.push(nextContext);
         return true;
       }
-      /** `ContextTypeConsumer.UNSAFE_componentWillReceiveProps`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 新props到来时记录nextContext，验证同值重渲染也进入钩子。 */
       UNSAFE_componentWillReceiveProps(nextProps, nextContext) {
         lifecycleContextLog.push(nextContext);
       }
-      /** `ContextTypeConsumer.UNSAFE_componentWillUpdate`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 更新前记录nextContext，形成此轮第三条上下文日志。 */
       UNSAFE_componentWillUpdate(nextProps, nextState, nextContext) {
         lifecycleContextLog.push(nextContext);
       }
-      /** `ContextTypeConsumer.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 输出格式化this.context，与其它消费方式同为a或b。 */
       render() {
         return formatValue(this.context);
       }
     }
 
-    /** `FnConsumer`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 以useContext读取现代Ctx，验证hook路径跟随Provider更新。 */
     function FnConsumer() {
       return formatValue(React.useContext(Ctx));
     }

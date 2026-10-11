@@ -22,13 +22,14 @@ import { tryFsResolve } from './resolve'
 import { hasViteIgnoreRE } from './importAnalysis'
 
 /**
- * 把 `new URL('./foo.png', import.meta.url)` 转成经 Vite 解析的开发/构建资源 URL。
+ * 匹配以 import.meta.url 为基准、首参数为字符串或模板字面量的 new URL 表达式。
+ * `d` 标志保留完整表达式与 URL 参数的源码区间，供插件从原始代码读取和替换。
  *
- * 动态模板会改写为可枚举的 import.meta.glob：
+ * 插件把匹配到的动态模板改写为可枚举的 import.meta.glob：
  * ```
  * new URL(`./dir/${name}.png`, import.meta.url)
  * // 转换为
- * import.meta.glob('./dir/**.png', { eager: true, import: 'default' })[`./dir/${name}.png`]
+ * new URL(import.meta.glob('./dir/*.png', { eager: true, import: 'default', query: '?url' })[`./dir/${name}.png`], import.meta.url)
  * ```
  */
 export const assetImportMetaUrlRE: RegExp =
@@ -36,7 +37,7 @@ export const assetImportMetaUrlRE: RegExp =
 
 /**
  * client 专用 new URL 转换插件：静态字面量复用 asset URL 协议，动态模板转 glob；不存在文件保留原
- * 表达式交给运行时，并允许 Vite 忽略标记显式跳过。
+ * URL 值交给运行时解析，并允许 Vite 忽略标记显式跳过。
  */
 export function assetImportMetaUrlPlugin(config: ResolvedConfig): Plugin {
   const { publicDir } = config

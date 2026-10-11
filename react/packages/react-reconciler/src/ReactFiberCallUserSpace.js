@@ -73,7 +73,7 @@ interface ClassInstance<R> {
 
 /** 包装类实例 render 调用并维护“正在渲染”调试状态。 */
 const callRender = {
-  /** 组件栈裁剪识别的 render 底部帧。 */
+  /** 调用 instance.render 并用 finally 恢复 isRendering；用户抛错继续交给 render 异常路径。 */
   react_stack_bottom_frame: function <R>(instance: ClassInstance<R>): R {
     const wasRendering = isRendering;
     setIsRendering(true);
@@ -95,7 +95,7 @@ export const callRenderInDEV: <R>(instance: ClassInstance<R>) => R => R =
 
 /** 捕获 componentDidMount 抛错并交给 commit 阶段错误边界。 */
 const callComponentDidMount = {
-  /** 组件栈裁剪识别的 componentDidMount 底部帧。 */
+  /** 调用挂载生命周期；抛错以 finishedWork 为故障点、其 return 为仍挂载祖先交给 commit 错误捕获。 */
   react_stack_bottom_frame: function (
     finishedWork: Fiber,
     instance: ClassInstance<any>,
@@ -121,7 +121,7 @@ export const callComponentDidMountInDEV: (
 
 /** 调用 componentDidUpdate，并把用户异常捕获为 commit 阶段错误。 */
 const callComponentDidUpdate = {
-  /** 组件栈裁剪识别的 componentDidUpdate 底部帧。 */
+  /** 传入上次 props/state 与 before-mutation snapshot；用户异常进入 finishedWork 的 commit 捕获路径。 */
   react_stack_bottom_frame: function (
     finishedWork: Fiber,
     instance: ClassInstance<any>,
@@ -153,7 +153,7 @@ export const callComponentDidUpdateInDEV: (
 
 /** 把 CapturedValue 转换成公开 componentDidCatch 参数。 */
 const callComponentDidCatch = {
-  /** 组件栈裁剪识别的 componentDidCatch 底部帧。 */
+  /** 将 value 和空串兜底的组件栈传给错误边界；此包装不 catch，回调自身错误由调用方 commit 边界处理。 */
   react_stack_bottom_frame: function (
     instance: ClassInstance<any>,
     errorInfo: CapturedValue<mixed>,
@@ -179,7 +179,7 @@ export const callComponentDidCatchInDEV: (
 
 /** 调用 componentWillUnmount，并把用户异常捕获为 commit 阶段错误。 */
 const callComponentWillUnmount = {
-  /** 组件栈裁剪识别的 componentWillUnmount 底部帧。 */
+  /** 调用删除中的实例卸载生命周期；nearestMountedAncestor 避免沿已删除边界重新寻找错误处理器。 */
   react_stack_bottom_frame: function (
     current: Fiber,
     nearestMountedAncestor: Fiber | null,
@@ -205,9 +205,9 @@ export const callComponentWillUnmountInDEV: (
     ) as any)
   : (null as any);
 
-/** 调用 passive/layout Effect create，并把返回的 destroy 存到 EffectInstance。 */
+/** 调用 Hook Effect create，并把返回的 destroy 存到 EffectInstance，供后续更新或卸载清理。 */
 const callCreate = {
-  /** 组件栈裁剪识别的 Effect create 底部帧。 */
+  /** 执行 effect.create 后保存清理值；create 抛错时不写 destroy，由外层 effect 提交路径捕获。 */
   react_stack_bottom_frame: function (
     effect: Effect,
   ): (() => void) | {...} | void | null {
@@ -227,7 +227,7 @@ export const callCreateInDEV: (effect: Effect) => (() => void) | void = __DEV__
 
 /** 调用 Effect destroy，并把用户异常捕获为 commit 阶段错误。 */
 const callDestroy = {
-  /** 组件栈裁剪识别的 Effect destroy 底部帧。 */
+  /** 同步调用清理函数；故障归于 current，并从 nearestMountedAncestor 开始寻找仍挂载的错误边界。 */
   react_stack_bottom_frame: function (
     current: Fiber,
     nearestMountedAncestor: Fiber | null,
@@ -253,7 +253,7 @@ export const callDestroyInDEV: (
 
 /** 执行 React.lazy 的 init(payload)，保留独立用户代码栈边界。 */
 const callLazyInit = {
-  /** 组件栈裁剪识别的 lazy 初始化底部帧。 */
+  /** 用 lazy._payload 调用 _init；其 thenable 或错误原样抛出，由 child/render 协调路径处理。 */
   react_stack_bottom_frame: function (lazy: LazyComponent<any, any>): any {
     const payload = lazy._payload;
     const init = lazy._init;

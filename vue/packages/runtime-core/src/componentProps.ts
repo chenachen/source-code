@@ -77,13 +77,27 @@ export type PropType<T> = PropConstructor<T> | (PropConstructor<T> | null)[]
 
 /** 能在运行时用作 prop 类型检查、同时在 TS 中推导实例类型的构造器。 */
 type PropConstructor<T = any> =
-  { new (...args: any[]): T & {} } | { (): T } | PropMethod<T>
+   {
+      /** 允许用 new 签名从运行时 prop 构造器推导实例值类型。 */
+      new (...args: any[]): T & {}
+    }
+  | {
+      /** 兼容只有调用签名的原生构造器，使其返回值参与 prop 类型推导。 */
+      (): T
+    }
+  | PropMethod<T>
 
 /** 为函数 prop 构造同时具备调用/构造签名的类型，避免把函数返回值当实例类型。 */
 type PropMethod<T, TConstructor = any> = [T] extends [
   ((...args: any) => any) | undefined,
 ] // 带参数函数 prop 也应允许非 required。
-  ? { new (): TConstructor; (): T; readonly prototype: TConstructor } // 构造 Function 风格类型。
+  ? {
+      /** 为函数 prop 提供 Function 风格构造签名，构造实例类型由 TConstructor 占位。 */
+      new (): TConstructor;
+      /** 函数 prop 的调用签名返回函数值 T，避免把业务函数自身的返回值误当作 prop 类型。 */
+      (): T;
+      readonly prototype: TConstructor
+    } // 构造 Function 风格类型。
   : never
 
 /** 组件内部一定存在的键：required、具有 default，以及缺失时转 false 的 Boolean。 */
@@ -191,7 +205,13 @@ export type ExtractDefaultPropTypes<O> = O extends object
 
 /** 加入预计算 Boolean 转换位的单个规范化 prop。 */
 type NormalizedProp = PropOptions & {
+  /**
+   * 预计算是否声明 Boolean 类型；决定缺失且无 default 时转 false。
+   */
   [BooleanFlags.shouldCast]?: boolean
+  /**
+   * 预计算 String/Boolean 顺序；为 true 时空字符串或同名属性值转 true。
+   */
   [BooleanFlags.shouldCastTrue]?: boolean
 }
 
@@ -388,9 +408,15 @@ export function updateProps(
 }
 
 /**
- * 完整遍历 rawProps，过滤保留键/emit listener，并拆入 props 与保留原大小写的 attrs。
- * Boolean/default 键先暂存原始值，等普通 prop 全写入后统一解析，使 default factory
- * 能读取同批次其他 props。
+ * 完整拆分 rawProps：过滤 key/ref/VNode hooks，声明输入写入 props，未声明且非 emits 监听器的输入写入 attrs 并保留原键。
+ *
+ * Boolean/default 键暂存原输入，普通键全部写入后按 needCastKeys 顺序解析；默认工厂能读到普通键和此前完成的转换键，不保证读到后续转换结果。
+ *
+ * @param instance 提供 props/emits 规范化声明与默认值缓存
+ * @param rawProps 父 VNode 输入，可为 null
+ * @param props 原地更新的声明 props 目标
+ * @param attrs 原地更新的未声明输入目标
+ * @returns attrs 是否新增键或改变值；删除检查和整组 trigger 由 updateProps 完成。
  */
 function setFullProps(
   instance: ComponentInternalInstance,
@@ -468,10 +494,15 @@ function setFullProps(
 }
 
 /**
- * 解析单个 prop 的 default factory 与 Boolean attribute 转换。
+ * 解析单个 prop，先处理 undefined 的 default，再处理 Boolean 转换。
  *
- * default factory 每个组件实例只执行一次并缓存引用；执行期间设置 currentInstance，
- * 允许默认工厂内部使用注入上下文。Boolean 转换遵循 HTML attribute 语义和声明类型顺序。
+ * @param options 已规范化声明，含 Boolean 类型顺序的预计算标志
+ * @param props 当前实例的原始 props；普通键已写入，其他转换键按 needCastKeys 顺序逐个解析，不保证全部已完成转换
+ * @param key camelCase 声明键
+ * @param value 本轮父级输入，显式 null 不触发 default
+ * @param instance 提供每实例 propsDefaults 缓存和默认工厂注入上下文
+ * @param isAbsent 父级是否未传该键，区别于显式传 undefined
+ * @returns 最终值；默认工厂首次需要时执行并缓存，Function 类型/skipFactory 保留函数值。自定义元素默认值同步到宿主 _setProp。缺失 Boolean 无 default 为 false，空串/同名字符串仅在 Boolean 优先时为 true。
  */
 function resolvePropValue(
   options: NormalizedProps,
@@ -556,6 +587,9 @@ export function normalizePropsOptions(
   // 先按全局 mixin → extends → 本地 mixins → 组件自身的顺序合并，后者覆盖前者。
   let hasExtends = false
   if (__FEATURE_OPTIONS_API__ && !isFunction(comp)) {
+    /**
+     * 以 asMixin 模式合并继承来源的规范化 props 和转换键；兼容构建先取 Vue 2 构造器 options，避免把构造器当声明对象。
+     */
     const extendProps = (raw: ComponentOptions) => {
       if (__COMPAT__ && isFunction(raw)) {
         raw = raw.options
@@ -743,7 +777,13 @@ const isSimpleType = /*@__PURE__*/ makeMap(
 
 /** 单构造器类型断言结果，同时携带名称供错误消息组合。 */
 type AssertionResult = {
+  /**
+   * 当前值是否通过单个构造器的类型检查。
+   */
   valid: boolean
+  /**
+   * 构造器名称，供联合类型错误消息使用。
+   */
   expectedType: string
 }
 

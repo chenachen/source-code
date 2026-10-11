@@ -17,6 +17,7 @@ export const parserOptions: ParserOptions = {
   isIgnoreNewlineTag: tag => tag === 'pre' || tag === 'textarea',
   decodeEntities: __BROWSER__ ? decodeHtmlBrowser : undefined,
 
+  /** 将两种规范拼写映射为内置组件 symbol；未匹配时让 core 按普通组件继续解析。 */
   isBuiltInComponent: tag => {
     if (tag === 'Transition' || tag === 'transition') {
       return TRANSITION
@@ -29,6 +30,9 @@ export const parserOptions: ParserOptions = {
    * 按 HTML 规范推导子元素命名空间。
    * MathML 的集成点和 SVG 的 `foreignObject/desc/title` 会重新进入 HTML；HTML 中的
    * `<svg>` / `<math>` 则分别开启对应命名空间。这会影响属性名、VNode 创建与水合。
+   * @param tag - 当前子元素的原始标签名。
+   * @param parent - 已解析的直接父元素；根元素使用 rootNamespace 而非隐含 HTML。
+   * @returns 当前节点命名空间，不改写父节点；命名空间转换须逐层向下传播。
    * @see https://html.spec.whatwg.org/multipage/parsing.html#tree-construction-dispatcher
    */
   getNamespace(tag, parent, rootNamespace) {

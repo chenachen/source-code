@@ -39,6 +39,7 @@ function compileWithAssetUrls(
 }
 
 describe('compiler sfc: transform asset url', () => {
+  // 同一模板含相对、~、~/、http、协议相对、绝对与 data 资源；快照区分模块导入和原样保留分支。
   test('transform assetUrls', () => {
     const result = compileWithAssetUrls(`
 			<img src="./logo.png"/>
@@ -57,6 +58,7 @@ describe('compiler sfc: transform asset url', () => {
    * component-compiler-utils#22：资源 URL 的 hash fragment 必须保留在 import 路径之后，
    * 重复的完整 URL 仍应复用同一 import。
    */
+  // 两个 use 引用相同 SVG #fragment 且开启 hoist；import 去重，片段在导入表达式之后拼回。
   test('support uri fragment', () => {
     const result = compileWithAssetUrls(
       '<use href="~@svg/file.svg#fragment"></use>' +
@@ -70,18 +72,20 @@ describe('compiler sfc: transform asset url', () => {
   })
 
   /** component-compiler-utils#22：只有 `~` 而没有实际路径时应容错，不能生成空模块 import。 */
+  // 资源仅有 ~ 前缀没有路径；快照确认容错处理，不生成空模块 import。
   test('support uri is empty', () => {
     const result = compileWithAssetUrls('<use href="~"></use>')
 
     expect(result.code).toMatchSnapshot()
   })
 
+  // base=/foo 下分别使用 ./、裸名、~ 和 @theme；点相对路径拼 base，裸名保留，后两类继续转 import。
   test('with explicit base', () => {
     const { code } = compileWithAssetUrls(
-      `<img src="./bar.png"></img>` + // -> /foo/bar.png
-        `<img src="bar.png"></img>` + // -> bar.png (untouched)
-        `<img src="~bar.png"></img>` + // -> still converts to import
-        `<img src="@theme/bar.png"></img>`, // -> still converts to import
+      `<img src="./bar.png"></img>` + // 拼 base 后为 /foo/bar.png。
+        `<img src="bar.png"></img>` + // 裸文件名保留，不拼 base。
+        `<img src="~bar.png"></img>` + // 模块资源仍转为 import。
+        `<img src="@theme/bar.png"></img>`, // alias 资源仍转为 import。
       {
         base: '/foo',
       },
@@ -91,6 +95,7 @@ describe('compiler sfc: transform asset url', () => {
     expect(code).toMatchSnapshot()
   })
 
+  // includeAbsolute:true 下混合相对、绝对、https 与协议相对资源；绝对本地路径也生成 import，外链仍保留。
   test('with includeAbsolute: true', () => {
     const { code } = compileWithAssetUrls(
       `<img src="./bar.png"/>` +
@@ -105,6 +110,7 @@ describe('compiler sfc: transform asset url', () => {
   })
 
   // vite#298：`href="#fragment"` 指向当前文档元素，不是构建资产，必须原样保留。
+  // SVG use 的 xlink:href 指向 #myCircle；文档片段保留为静态属性，不生成资源导入。
   test('should not transform hash fragments', () => {
     const { code } = compileWithAssetUrls(
       `<svg viewBox="0 0 10 10" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
@@ -119,6 +125,7 @@ describe('compiler sfc: transform asset url', () => {
   })
 
   // #9919：包子路径/alias 资源 URL 也要规范化为可解析 import，不能只支持相对文件路径。
+  // img src 使用 #src 和 #/src 包子路径；图片资源位置允许把它们作为模块说明符导入。
   test('should transform subpath import paths', () => {
     const { code } = compileWithAssetUrls(
       `<img src="#src/assets/vue.svg" />` +
@@ -128,6 +135,7 @@ describe('compiler sfc: transform asset url', () => {
     expect(code).toContain(`_imports_1 from '#/src/assets/vue.svg'`)
   })
 
+  // 自定义 foo.bar 含普通 hash 及带斜杠 hash；该标签未开放子路径说明符，三种值都原样保留。
   test('should not transform pure hash values for custom asset URL tags', () => {
     const { code } = compileWithAssetUrls(
       `<foo bar="#fragment" />` +
@@ -148,12 +156,14 @@ describe('compiler sfc: transform asset url', () => {
     expect(code).not.toContain(`from '#/src/assets/vue.svg'`)
   })
 
+  // 相对资源路径含非法百分号编码；解码失败保留原路径并正常生成 import。
   test('should not throw for malformed percent-encoding in asset paths', () => {
     const { code } = compileWithAssetUrls(`<img src="./foo%.png" />`)
 
     expect(code).toContain(`import _imports_0 from './foo%.png'`)
   })
 
+  // SVG image href 分别为 # 和 #myClip；两者是文档片段，即使 includeAbsolute 也不导入。
   test('should not transform hash fragments on <image>', () => {
     // `<image href="#...">` 是指向当前文档其他 SVG 元素的片段引用（类似
     // `<use>`），不是 Node.js 的包子路径导入说明符，因此不能转换成 import。
@@ -167,6 +177,7 @@ describe('compiler sfc: transform asset url', () => {
     expect(code).not.toContain(`from '#myClip'`)
   })
 
+  // img src 只有裸 #；即使图片支持包子路径，它也不构成有效说明符，保留属性。
   test('should not transform bare `#` value into an import', () => {
     // 单独的 `#` 永远不是合法模块说明符；即使标签支持包子路径导入，也必须保留原值。
     const { code } = compileWithAssetUrls(`<img src="#" />`, {
@@ -176,6 +187,7 @@ describe('compiler sfc: transform asset url', () => {
     expect(code).not.toContain(`from '#'`)
   })
 
+  // base 是含协议、端口与 /src/ 的完整 URL；快照核对相对 logo 拼接后的完整地址。
   test('should allow for full base URLs, with paths', () => {
     const { code } = compileWithAssetUrls(`<img src="./logo.png" />`, {
       base: 'http://localhost:3000/src/',
@@ -184,6 +196,7 @@ describe('compiler sfc: transform asset url', () => {
     expect(code).toMatchSnapshot()
   })
 
+  // base 是含端口但无路径的完整 URL；相对资源拼到主机根路径，协议与端口保留。
   test('should allow for full base URLs, without paths', () => {
     const { code } = compileWithAssetUrls(`<img src="./logo.png" />`, {
       base: 'http://localhost:3000',
@@ -192,6 +205,7 @@ describe('compiler sfc: transform asset url', () => {
     expect(code).toMatchSnapshot()
   })
 
+  // base 是无端口的 http 主机；相对资源拼接不要求端口存在。
   test('should allow for full base URLs, without port', () => {
     const { code } = compileWithAssetUrls(`<img src="./logo.png" />`, {
       base: 'http://localhost',
@@ -200,6 +214,7 @@ describe('compiler sfc: transform asset url', () => {
     expect(code).toMatchSnapshot()
   })
 
+  // base 为协议相对主机；输出保持双斜杠前缀并拼资源路径。
   test('should allow for full base URLs, without protocol', () => {
     const { code } = compileWithAssetUrls(`<img src="./logo.png" />`, {
       base: '//localhost',
@@ -208,6 +223,7 @@ describe('compiler sfc: transform asset url', () => {
     expect(code).toMatchSnapshot()
   })
 
+  // 大静态 div 含重复相对与绝对资源并启用 stringifyStatic；生成 static vnode，资源表达式与 import 去重仍正确。
   test('transform with stringify', () => {
     const { code } = compileWithAssetUrls(
       `<div>` +
@@ -229,6 +245,7 @@ describe('compiler sfc: transform asset url', () => {
     expect(code).toMatchSnapshot()
   })
 
+  // 绝对文件名含空格且启用字符串化；保留含空格 import，当前小块仍生成 element vnode。
   test('transform with stringify with space in absolute filename', () => {
     const { code } = compileWithAssetUrls(
       `<div><img src="/foo bar.png"/></div>`,
@@ -244,6 +261,7 @@ describe('compiler sfc: transform asset url', () => {
     expect(code).toContain(`import _imports_0 from '/foo bar.png'`)
   })
 
+  // 相对文件名含空格且启用字符串化；保留相对 import 的空格，输出 element vnode 不丢失资源表达式。
   test('transform with stringify with space in relative filename', () => {
     const { code } = compileWithAssetUrls(
       `<div><img src="./foo bar.png"/></div>`,

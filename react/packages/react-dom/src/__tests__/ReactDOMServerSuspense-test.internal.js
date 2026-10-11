@@ -29,17 +29,17 @@ describe('ReactDOMServerSuspense', () => {
     }
   });
 
-  /** `Text`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 用 div 包裹传入文本，作为内容与 fallback 的可见树断言叶节点。 */
   function Text(props) {
     return <div>{props.text}</div>;
   }
 
-  /** `AsyncText`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 始终抛永不完成的 Promise，模拟同步字符串 SSR 无法等待的边界内容；props.text 不会输出。 */
   function AsyncText(props) {
     throw new Promise(() => {});
   }
 
-  /** `getVisibleChildren`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 递归把可见元素/Text 转成 React 节点供比较；过滤脚本、模板及任何含 hidden/aria-hidden 的节点，并跳过含冒号的 id 属性。 */
   function getVisibleChildren(element) {
     const children = [];
     let node = element.firstChild;
@@ -79,14 +79,7 @@ describe('ReactDOMServerSuspense', () => {
         : children;
   }
 
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「should render the children when no promise is thrown」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言覆盖 react-dom 的服务端流适配层；完整 Fizz 状态机位于 react-server。
-   */
+  /** 同步 SSR 的 Suspense 子树只含正常 Text；解析 HTML 后可见结果应是 Children div，验证未悬挂边界输出内容而非 fallback。 */
   it('should render the children when no promise is thrown', async () => {
     const container = document.createElement('div');
     const html = ReactDOMServer.renderToString(
@@ -98,7 +91,7 @@ describe('ReactDOMServerSuspense', () => {
     expect(getVisibleChildren(container)).toEqual(<div>Children</div>);
   });
 
-  /** 测试场景：验证「should render the fallback when a promise thrown」描述的渲染、交互或错误处理结果。 */
+  /** 同步 SSR 的 Suspense 子树抛永不完成 Promise；可见 HTML 应是 Fallback div，验证 legacy 字符串入口不等待异步边界。 */
   it('should render the fallback when a promise thrown', async () => {
     const container = document.createElement('div');
     const html = ReactDOMServer.renderToString(
@@ -110,7 +103,7 @@ describe('ReactDOMServerSuspense', () => {
     expect(getVisibleChildren(container)).toEqual(<div>Fallback</div>);
   });
 
-  /** 测试场景：验证「should work with nested suspense components」描述的渲染、交互或错误处理结果。 */
+  /** 外层 Suspense 中同步 Children 与内层悬挂 AsyncText 并存；可见结果应保留同步兄弟并只替换内层为 Fallback，验证最近边界接住悬挂。 */
   it('should work with nested suspense components', async () => {
     const container = document.createElement('div');
     const html = ReactDOMServer.renderToString(
@@ -134,7 +127,8 @@ describe('ReactDOMServerSuspense', () => {
   });
 
   // @gate enableSuspenseList
-  /** 测试场景：验证「server renders a SuspenseList component and its children」描述的渲染、交互或错误处理结果。 */
+
+  /** forwards/visible SuspenseList 含两个同步边界 A/B；SSR 输出两个 div，客户端 hydration 后两个 div 身份都应不变，验证列表可串联输出并认领原节点。 */
   it('server renders a SuspenseList component and its children', async () => {
     const example = (
       <SuspenseList revealOrder="forwards" tail="visible">
@@ -167,7 +161,7 @@ describe('ReactDOMServerSuspense', () => {
     expect(divB).toBe(divB2);
   });
 
-  /** 测试场景：验证「throws when rendering a suspending component outside a Suspense node」描述的渲染、交互或错误处理结果。 */
+  /** AsyncText 位于 div 下但不在相邻空 Suspense 的内部；renderToString 应抛同步输入悬挂错误，验证兄弟边界不能捕获范围外的悬挂。 */
   it('throws when rendering a suspending component outside a Suspense node', async () => {
     expect(() => {
       ReactDOMServer.renderToString(
@@ -180,9 +174,10 @@ describe('ReactDOMServerSuspense', () => {
     }).toThrow('A component suspended while responding to synchronous input.');
   });
 
-  /** 测试场景：验证「does not get confused by throwing null」描述的渲染、交互或错误处理结果。 */
+  /** 组件抛 null 后调用 renderToString，以独立 didError 标记记录 catch；应确实捕获且原值为 null，验证 falsy 错误值不被当作无错误。 */
   it('does not get confused by throwing null', () => {
-    /** `Bad`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 抛 null 而非 Error，检测 legacy SSR 是否保留 falsy 异常值。 */
     function Bad() {
       // eslint-disable-next-line no-throw-literal
       throw null;
@@ -200,9 +195,10 @@ describe('ReactDOMServerSuspense', () => {
     expect(error).toBe(null);
   });
 
-  /** 测试场景：验证「does not get confused by throwing undefined」描述的渲染、交互或错误处理结果。 */
+  /** 组件抛 undefined 后调用 renderToString；didError 应为 true 且捕获值仍 undefined，验证异常是否发生不能用错误值 truthiness 判断。 */
   it('does not get confused by throwing undefined', () => {
-    /** `Bad`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 抛 undefined，借外层 didError 哨兵区分确实抛错与无返回值。 */
     function Bad() {
       // eslint-disable-next-line no-throw-literal
       throw undefined;
@@ -220,9 +216,10 @@ describe('ReactDOMServerSuspense', () => {
     expect(error).toBe(undefined);
   });
 
-  /** 测试场景：验证「does not get confused by throwing a primitive」描述的渲染、交互或错误处理结果。 */
+  /** 组件抛字符串 foo 后调用 renderToString；应捕获原始 foo，验证服务端错误传播不要求 Error 对象。 */
   it('does not get confused by throwing a primitive', () => {
-    /** `Bad`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 抛字符串 foo，覆盖非对象异常值的原样传播。 */
     function Bad() {
       // eslint-disable-next-line no-throw-literal
       throw 'foo';

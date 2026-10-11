@@ -1,6 +1,6 @@
 import { defineConfig } from 'vite'
 
-// Overriding the NODE_ENV set by vitest
+// 覆盖 Vitest 设定的 NODE_ENV，构造本场景所需的环境输入。
 process.env.NODE_ENV = ''
 
 export default defineConfig({
@@ -13,7 +13,7 @@ export default defineConfig({
   },
 
   build: {
-    // to make tests faster
+    // 禁用压缩，减少构建测试耗时。
     minify: false,
   },
 })

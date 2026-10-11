@@ -39,7 +39,8 @@ type LifecycleEventName = keyof lifeCyclesType
  * 向基座全局钩子和应用根容器派发同一个生命周期事件。
  *
  * @remarks
- * ShadowRoot 会先归一化为其宿主元素。全局钩子先执行，随后在元素上派发给 DOM 监听器；容器不存在时仅记录警告。
+ * ShadowRoot 会先归一化为宿主元素。全局钩子先执行，随后在元素上派发给 DOM 监听器；钩子同步抛错
+ * 会中断后续派发，容器不存在时只记录警告。
  *
  * @param element - 应用容器或其 ShadowRoot。
  * @param appName - 当前应用名。
@@ -85,7 +86,8 @@ export default function dispatchLifecyclesEvent (
  * 向子应用代理 window 派发框架内部状态事件。
  *
  * @remarks
- * `mounted`、`unmount` 在 with 沙箱中会附加应用名，避免与元素生命周期同名事件冲突；沙箱尚未创建时安全跳过。
+ * `mounted`、`unmount` 的实际事件名都会附加应用名，用于避开元素生命周期同名事件；with 沙箱的
+ * addEventListener 同步改写这两个名字，iframe 的监听器则保留传入名字。沙箱尚未创建时跳过派发。
  *
  * @param app - 目标应用实例。
  * @param eventName - mounted、unmount、appstate-change 或 statechange 等事件名。

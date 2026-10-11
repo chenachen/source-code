@@ -61,7 +61,7 @@ describe('ReactIncrementalErrorLogging', () => {
 
   /**
    * Given 类组件 constructor 在 begin phase 抛错；When Noop 并发根耗尽工作；
-   * Then uncaughtException 收到原错误，DEV 另输出建议添加错误边界的警告。
+   * Then uncaughtException 收到一条 message 为 constructor error 的错误，DEV 另输出建议添加错误边界的警告。
    * 验证机制：process listener 与 console mock；对应 ReactFiberErrorLogger 的 uncaught root 路由。
    */
   it('should log errors that occur during the begin phase', async () => {
@@ -103,7 +103,6 @@ describe('ReactIncrementalErrorLogging', () => {
           'Consider adding an error boundary to your tree ' +
             'to customize error handling behavior.',
         ),
-        // 没有 polyfill/devtools 时不会附加 component stack。
         // expect.stringMatching(
         //  new RegExp(
         //    '\\s+(in|at) ErrorThrowingComponent'
@@ -156,7 +155,6 @@ describe('ReactIncrementalErrorLogging', () => {
           'Consider adding an error boundary to your tree ' +
             'to customize error handling behavior.',
         ),
-        // 没有 polyfill/devtools 时不会附加 component stack。
         // expect.stringMatching(
         //   new RegExp(
         //     '\\s+(in|at) ErrorThrowingComponent'
@@ -224,7 +222,6 @@ describe('ReactIncrementalErrorLogging', () => {
           'React will try to recreate this component tree from scratch ' +
             'using the error boundary you provided, ErrorBoundary.',
         ),
-        // 没有 polyfill/devtools 时不会附加 component stack。
         // expect.stringMatching(
         //   new RegExp(
         //     '\\s+(in|at) ErrorThrowingComponent'
@@ -384,7 +381,6 @@ describe('ReactIncrementalErrorLogging', () => {
           'React will try to recreate this component tree from scratch ' +
             'using the error boundary you provided, ErrorBoundary.',
         ),
-        // 没有 polyfill/devtools 时不会附加 component stack。
         // expect.stringMatching(
         //   new RegExp('\\s+(in|at) Foo')
         // ),

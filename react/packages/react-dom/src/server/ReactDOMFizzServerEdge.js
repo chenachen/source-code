@@ -36,7 +36,7 @@ import {
 import {ensureCorrectIsomorphicReactVersion} from '../shared/ensureCorrectIsomorphicReactVersion';
 ensureCorrectIsomorphicReactVersion();
 
-/** 可统一配置 nonce，也可分别配置脚本与样式 nonce。 */
+/** 字符串仅配置脚本nonce；对象分别配置script/style，字符串不配置样式nonce。 */
 type NonceOption =
   | string
   | {
@@ -60,7 +60,7 @@ type Options = {
   bootstrapScripts?: Array<string | BootstrapScriptDescriptor>,
   /** 需要生成 module script 标签的启动资源。 */
   bootstrapModules?: Array<string | BootstrapScriptDescriptor>,
-  /** Fizz 渐进输出采用的目标 chunk 大小。 */
+  /** 决定已完成 Suspense 边界是否单独输出的字节阈值；不是流中每个 chunk 的固定大小。 */
   progressiveChunkSize?: number,
   /** 调用方用于取消服务端请求的信号。 */
   signal?: AbortSignal,
@@ -76,7 +76,7 @@ type Options = {
   formState?: ReactFormState<any, any> | null,
   /** 在开始正文前接收协议生成的 HTTP headers。 */
   onHeaders?: (headers: Headers) => void,
-  /** 允许 Fizz 收集的 headers 总长度上限。 */
+  /** Link 提示头的 UTF-16 码元预算；不等同于 HTTP 头 UTF-8 字节数。 */
   maxHeadersLength?: number,
 };
 
@@ -90,13 +90,13 @@ type ResumeOptions = {
   onError?: (error: mixed) => ?string,
   /** 接收恢复阶段要求浏览器接管的错误。 */
   onBrowserBailout?: (error: mixed, errorInfo: ErrorInfo) => void,
-  /** 实验性外部 DOM 指令 runtime 的资源地址或描述符。 */
+  /** 类型中保留的runtime选项；此resume不读取它，沿用postponedState的资源配置。 */
   unstable_externalRuntimeSrc?: string | BootstrapScriptDescriptor,
 };
 
 /** 带“全部内容就绪”Promise 的 Edge 字节流返回类型。 */
 type ReactDOMServerReadableStream = ReadableStream & {
-  /** 所有 Suspense 边界均完成或请求发生致命错误时结算。 */
+  /** 服务端待处理任务归零时 resolve，致命错误时 reject；不表示下游已读完全部字节。 */
   allReady: Promise<void>,
 };
 
@@ -104,8 +104,11 @@ type ReactDOMServerReadableStream = ReadableStream & {
  * 把 React 子树适配为 Edge 运行时的字节 ReadableStream。
  *
  * 本文件只把 DOM host config 与范围外 `react-server` 中的完整 Fizz 状态机接到 Web
- * Streams：shell 就绪才公开流，pull 启动写出，cancel 同时停流并 abort；`allReady`
- * 独立表示所有边界完成，因此调用者既可渐进消费也可等待完整输出。
+ * Streams：shell就绪才公开流，pull启动写出，cancel先stopFlowing再abort；allReady
+ * 独立表示服务端任务已完成，因此调用者既可渐进消费也可等待全部内容可输出。
+ * shell前失败拒绝外层Promise并消费无法取得的allReady拒绝；shell公开后，后续fatal
+ * 通过流错误及尚未结算的allReady体现，不会再次拒绝已resolve的外层Promise。
+ * signal已中止则立即abort；正常完成未在本函数移除监听器，只在abort触发后移除。
  */
 function renderToReadableStream(
   children: ReactNodeList,
@@ -192,7 +195,7 @@ function renderToReadableStream(
       if (signal.aborted) {
         abort(request, (signal as any).reason);
       } else {
-        /** 只处理一次 abort，并立即注销监听器，避免 request 被信号长期引用。 */
+        /** 信号触发 abort 后移除本监听器，避免同一监听器再次中止请求。 */
         const listener = () => {
           abort(request, (signal as any).reason);
           signal.removeEventListener('abort', listener);
@@ -206,8 +209,10 @@ function renderToReadableStream(
 
 /**
  * 从 postponed Fizz 状态恢复 Edge 字节流。
- * 恢复路径复用已序列化的 resumable/render state，不重新写 bootstrap 配置；流的背压、
- * 取消与 `allReady` 结算协议和首次渲染保持一致。
+ * 恢复路径根据已序列化的 resumableState 新建 RenderState；bootstrap 按保存字段重建，已产出 shell 的字段已清除。流的背压、
+ * 取消与allReady结算协议和首次渲染保持一致。
+ * 本入口只取nonce/signal/onError/onBrowserBailout；identifier、格式上下文与bootstrap
+ * 由postponedState恢复，不读取ResumeOptions里保留的unstable_externalRuntimeSrc。
  */
 function resume(
   children: ReactNodeList,
@@ -271,7 +276,7 @@ function resume(
       if (signal.aborted) {
         abort(request, (signal as any).reason);
       } else {
-        /** 只处理一次 abort，并立即注销监听器，避免恢复 request 被信号长期引用。 */
+        /** 信号触发 abort 后移除本监听器，避免同一监听器再次中止恢复请求。 */
         const listener = () => {
           abort(request, (signal as any).reason);
           signal.removeEventListener('abort', listener);

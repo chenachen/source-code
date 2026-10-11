@@ -7,6 +7,7 @@
 
 //从 Firefox 源代码派生的列表：
 //https://github.com/mozilla-firefox/firefox/blob/58f365ba0eb5761a182f1925e4654cc75212b8ac/layout/style/test/property_database.js
+/** 简写样式到受其覆盖的展开键；CSSPropertyOperations 用它发现更新/删除简写与保留展开值的冲突。 */
 export const shorthandToLonghand = {
   animation: [
     'animationDelay',

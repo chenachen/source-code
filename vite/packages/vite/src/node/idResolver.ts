@@ -39,7 +39,7 @@ export function createBackCompatIdResolver(
 /**
  * 创建供依赖优化器、CSS `@import` 等特殊流程使用的内部 resolver。
  *
- * 每个 PartialEnvironment 惰性创建并缓存一条只含 alias + Vite resolve 的精简插件管线；
+ * 按 PartialEnvironment 分别惰性缓存只含 alias + Vite resolve 的精简插件管线；
  * `aliasOnly` 使用另一条纯 alias 管线。它只返回 id，跳过 sideEffects 等构建元数据计算。
  */
 export function createIdResolver(

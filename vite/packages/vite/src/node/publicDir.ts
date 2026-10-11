@@ -11,16 +11,16 @@ import {
 /**
  * 每份已解析配置对应的 public 文件路径缓存。
  *
- * 使用 WeakMap 可让配置对象生命周期结束时自动释放整棵文件清单；Set 中保存
+ * WeakMap 不会因缓存键延长配置对象的生命周期；Set 中保存
  * 以 `/` 开头、相对 publicDir 的 URL 路径，用于请求热路径的 O(1) 判断。
  */
 const publicFilesMap = new WeakMap<ResolvedConfig, Set<string>>()
 
 /**
- * 启动时递归扫描 publicDir，并建立按 URL 查询的内存索引。
+ * 启动时递归扫描 publicDir 的非目录条目，并建立按 URL 查询的内存索引。
  *
- * 若扫描遇到目录符号链接，`recursiveReaddir` 无法安全保证递归边界，此时放弃
- * 缓存并让后续请求走逐文件 stat；其他 I/O 错误继续抛出，避免静默隐藏配置问题。
+ * 扫描遇到任意符号链接时放弃缓存，后续请求改用逐文件 stat。recursiveReaddir
+ * 将不存在或无读取权限的目录视为空目录，其余 I/O 错误继续向调用方抛出。
  */
 export async function initPublicFiles(
   config: ResolvedConfig,
@@ -47,10 +47,10 @@ function getPublicFiles(config: ResolvedConfig): Set<string> | undefined {
 }
 
 /**
- * 判断一个根相对请求是否精确对应 publicDir 中的普通文件，并返回规范化绝对路径。
+ * 查找根相对请求在 publicDir 中的路径，并返回规范化绝对路径。
  *
  * 有启动缓存时直接查询 Set；无缓存时拼接磁盘路径，但必须先校验结果仍位于
- * publicDir 内，阻止 `/../` 形式的路径穿越，最后再确认目标确实是文件。
+ * publicDir 内，阻止 `/../` 形式的路径穿越，最后再确认目标确实是普通文件。
  */
 export function checkPublicFile(
   url: string,

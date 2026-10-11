@@ -173,7 +173,7 @@ describe('ReactSuspenseyCommitPhase', () => {
 
   /**
    * 场景（Given–When–Then）：给定紧急初次挂载未加载 A 且有 Suspense；当提交被资源阻塞；
-   * 那么可先显示 fallback，完成后显示 A。对应机制：同步优先级与边界回退协作。
+   * 那么可先显示 fallback，完成后显示 A。对应机制：普通 root.render 的 Default 更新与宿主资源回退协作；本例未调用 flushSync。
    */
   // @gate enableSuspenseyImages
   it('suspend commit during urgent initial mount', async () => {
@@ -365,7 +365,7 @@ describe('ReactSuspenseyCommitPhase', () => {
 
   /**
    * 场景（Given–When–Then）：给定根有等待 A 的暂停提交；当另一个 transition 改渲染普通文本；
-   * 那么同优先级的新树也能取代旧提交。对应机制：新 transition 取消过期的资源等待结果。
+   * 那么新的 transition 树也能取代旧提交；测试未比较两次具体 lane。对应机制：新 transition 取消过期的资源等待结果。
    */
   // @gate enableSuspenseyImages
   it('a transition update interrupts a suspended commit', async () => {

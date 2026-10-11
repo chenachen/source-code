@@ -24,7 +24,7 @@ import {
 /**
  * Suspense 边界阻塞状态；memoizedState 为 null 表示正常显示 primary。
  * 非 null 且 dehydrated 非空表示等待 hydration，可由 HostConfig 查询 pending/fallback；
- * 非 null 且 dehydrated 为 null 表示客户端 thenable 挂起、当前显示 fallback。
+ * 非 null 且 dehydrated 为 null 表示客户端回退状态；thenable 挂起或 CPU defer 都可进入。
  */
 export type SuspenseState = {
   /** 服务端宿主 Suspense 边界；null 表示不是 dehydrated 状态。 */
@@ -43,7 +43,7 @@ export type SuspenseListRenderState = {
   isBackwards: boolean,
   /** 当前正在 render 的 tail row。 */
   rendering: null | Fiber,
-  /** 最近一行开始 render 的绝对时间，用于时间预算判断。 */
+  /** 最近一行开始 render 的 Scheduler 毫秒时间，用于与本轮截止时间比较。 */
   renderingStartTime: number,
   /** 已完成 children 链的最后一行。 */
   last: null | Fiber,
@@ -55,7 +55,7 @@ export type SuspenseListRenderState = {
   treeForkCount: number,
 };
 
-/** Suspense commit 后需登记 ping listener 的 Wakeable 去重集合。 */
+/** render 期间收集的 Wakeable 去重集合，commit 时据此登记边界 retry listener。 */
 export type RetryQueue = Set<Wakeable>;
 
 /**

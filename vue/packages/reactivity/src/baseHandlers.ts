@@ -71,6 +71,8 @@ function hasOwnProperty(this: object, key: unknown) {
  */
 class BaseReactiveHandler implements ProxyHandler<Target> {
   /**
+   * 固定该处理器的只读／深浅模式；Proxy 的 get 陷阱在每次访问时复用此配置。
+   *
    * @param _isReadonly 是否禁止写操作，并在读取嵌套对象时继续创建只读代理。
    * @param _isShallow 是否只处理根层，不解包 Ref、不递归代理嵌套对象。
    */
@@ -83,7 +85,12 @@ class BaseReactiveHandler implements ProxyHandler<Target> {
    * 拦截属性读取，依次处理内部标记、数组插桩、依赖收集、Ref 解包和嵌套代理。
    *
    * 顺序很重要：内部标记和语言内建 Symbol 不应收集依赖；浅层模式在收集根属性后
-   * 立即返回；深层模式才对 Ref/对象做惰性转换。
+   * 立即返回；深层模式才对 Ref/对象做惰性转换。readonly(raw) 本层不 track，
+   * readonly(reactive(raw)) 则可经 Reflect.get 的内层代理建立依赖。
+   *
+   * @param target 本层代理的直接目标，可为 raw 或被外层 readonly 包裹的可变代理。
+   * @param key 属性名或 Symbol；内部标记在普通读取前分流。
+   * @param receiver 本次访问的接收者，传给普通 getter 维持 this／原型语义。
    */
   get(target: Target, key: string | symbol, receiver: object): any {
     if (key === ReactiveFlags.SKIP) return target[ReactiveFlags.SKIP]
@@ -171,7 +178,7 @@ class BaseReactiveHandler implements ProxyHandler<Target> {
 
 /** 普通对象与数组的可变代理处理器，负责写入、删除、存在性检查和遍历。 */
 class MutableReactiveHandler extends BaseReactiveHandler {
-  /** @param isShallow 是否使用浅层语义。 */
+  /** 创建可变处理器并复用基类读取规则；isShallow 决定是否保留嵌套值与 Ref 身份。 */
   constructor(isShallow = false) {
     super(false, isShallow)
   }
@@ -181,7 +188,11 @@ class MutableReactiveHandler extends BaseReactiveHandler {
    *
    * 深层模式先把普通代理值还原，避免“同一原始对象的不同代理”被误判为变化。若旧值
    * 是 Ref、新值不是 Ref，则赋值被转发到 `oldRef.value`，保持对象属性里的 Ref 容器；
-   * 数组整数索引例外，数组元素需要保留显式 Ref 身份。
+   * 数组整数索引例外，数组元素需要保留显式 Ref 身份。浅层或只读新值保留其身份，
+   * 不经 toRaw 丢掉转换约束；普通深层代理新值才用于 raw 比较和存储。
+   *
+   * @returns Reflect.set 的成功结果；旧只读 Ref 分支仅警告并返回 true，不实际赋值。
+   * 通知发生在原生写入之后，且必须 target===toRaw(receiver)，以避免原型链双重触发。
    */
   set(
     target: Record<string | symbol, unknown>,
@@ -217,7 +228,8 @@ class MutableReactiveHandler extends BaseReactiveHandler {
       // 浅层模式按原样存值，不还原代理，也不对 Ref 做赋值转发。
     }
 
-    // 数组索引是否已存在可由 length O(1) 判断；对象属性需检查自有属性，原型属性不算。
+    // 数组整数键落在 length 范围内就按 SET 处理，即使该槽位是空洞；超出范围才按 ADD。
+    // 这样补齐空洞不会误报 length 增长。对象则用 hasOwn 判断自有属性，原型属性不算。
     const hadKey = isArrayWithIntegerKey
       ? Number(key) < target.length
       : hasOwn(target, key)
@@ -228,7 +240,7 @@ class MutableReactiveHandler extends BaseReactiveHandler {
       isRef(target) ? target : receiver,
     )
     // receiver 的原始对象必须就是 target 才触发。若 target 只是 receiver 原型链上的对象，
-    // 实际写入属于子对象；让子对象自己的 set 陷阱负责通知，避免原型和实例各触发一次。
+    // 实际写入属于子对象；子对象若有响应式代理，由其 set 陷阱通知，原型 target 不通知。
     if (target === toRaw(receiver) && result) {
       if (!hadKey) {
         trigger(target, TriggerOpTypes.ADD, key, value)
@@ -277,9 +289,9 @@ class MutableReactiveHandler extends BaseReactiveHandler {
   }
 }
 
-/** 普通对象与数组的只读代理处理器；读取逻辑复用基类，所有写操作均被拦截。 */
+/** 普通对象与数组的只读代理处理器；读取逻辑复用基类，赋值和删除陷阱均不修改目标。 */
 class ReadonlyReactiveHandler extends BaseReactiveHandler {
-  /** @param isShallow 是否只限制根层写入。 */
+  /** 创建只读处理器；isShallow 只保留根层保护，否则读取到的嵌套值继续只读转换。 */
   constructor(isShallow = false) {
     super(true, isShallow)
   }

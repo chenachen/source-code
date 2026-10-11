@@ -1,0 +1,152 @@
+.engineering-diagram {
+  min-width: 0;
+  margin: 1.8rem 0;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.engineering-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-color: var(--line-strong) var(--surface);
+  scrollbar-width: thin;
+}
+
+.engineering-scroll:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: -3px;
+}
+
+.engineering-diagram svg {
+  display: block;
+  width: 100%;
+  min-width: 760px;
+  height: auto;
+  font-family: inherit;
+}
+
+.engineering-diagram.compact svg {
+  min-width: 640px;
+}
+
+.engineering-diagram figcaption {
+  border-top: 1px solid var(--line);
+  background: var(--surface-soft);
+  padding: 0.85rem 1rem;
+  color: var(--muted);
+  font-size: 0.83rem;
+  line-height: 1.7;
+}
+
+.engineering-diagram figcaption strong {
+  color: var(--text);
+}
+
+.engineering-diagram .eng-node {
+  fill: var(--surface);
+  stroke: var(--line-strong);
+  stroke-width: 1.5;
+}
+
+.engineering-diagram .eng-node.primary {
+  fill: var(--green-soft);
+  stroke: var(--green);
+}
+
+.engineering-diagram .eng-node.blue {
+  fill: var(--blue-soft);
+  stroke: var(--blue);
+}
+
+.engineering-diagram .eng-node.amber,
+.engineering-diagram .eng-decision,
+.engineering-diagram .eng-decision polygon {
+  fill: var(--amber-soft);
+  stroke: var(--amber);
+  stroke-width: 1.5;
+}
+
+.engineering-diagram .eng-node.violet {
+  fill: var(--violet-soft);
+  stroke: var(--violet);
+}
+
+.engineering-diagram .eng-label,
+.engineering-diagram .eng-lane-title,
+.engineering-diagram .eng-stage {
+  fill: var(--text);
+  stroke: none;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.engineering-diagram .eng-small,
+.engineering-diagram .eng-note {
+  fill: var(--muted);
+  stroke: none;
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.engineering-diagram .eng-code {
+  fill: var(--text);
+  stroke: none;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.engineering-diagram .eng-edge {
+  fill: none;
+  stroke: var(--green);
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.engineering-diagram .eng-edge.blue {
+  stroke: var(--blue);
+}
+
+.engineering-diagram .eng-dashed {
+  stroke-dasharray: 6 5;
+}
+
+.engineering-diagram .eng-lane {
+  fill: var(--surface-soft);
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.engineering-diagram .eng-stage {
+  fill: var(--green-deep);
+}
+
+.engineering-diagram marker path {
+  fill: var(--green);
+  stroke: none;
+}
+
+@media (max-width: 820px) {
+  .engineering-diagram figcaption::after {
+    content: "图内可横向滚动查看完整分支。";
+    display: block;
+    margin-top: 0.35rem;
+    color: var(--faint);
+    font-size: 0.74rem;
+  }
+}
+
+@media print {
+  .engineering-diagram {
+    break-inside: avoid;
+  }
+
+  .engineering-diagram svg,
+  .engineering-diagram.compact svg {
+    min-width: 0;
+  }
+}

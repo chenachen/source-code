@@ -23,11 +23,7 @@ async function run(input: string) {
 }
 
 describe('parse positives', () => {
-  /**
-   * 场景：模板动态 import 可含相对层级、alias、普通 query 及 raw/url/worker 特殊资源 query。
-   * 验证目标：glob 使用解析后的可枚举 pattern，运行时 rawPattern 仍以 importer 为基准并保留 query。
-   * 机制：直接测试 transformDynamicImport 的两份输出，不混入文件枚举或浏览器执行。
-   */
+  /** 输入 ./mods/${base}.js 动态模板；转换快照应含相对 glob 与原模板查表键，核对基本变量路径推导。 */
   it('basic', async () => {
     expect(await run('`./mods/${base}.js`')).toMatchSnapshot()
   })
@@ -52,7 +48,7 @@ describe('parse positives', () => {
     expect(await run('`./mods/${base}.js?raw`')).toMatchSnapshot()
   })
 
-  /** 场景：动态导入带 url 查询模式；验证目标：解析结果生成默认 URL 导入配置。 */
+  /** ?url 进入 glob query，并指定 import:'*'，使动态导入仍返回含 default URL 的 namespace。 */
   it('with query url', async () => {
     expect(await run('`./mods/${base}.js?url`')).toMatchSnapshot()
   })
@@ -74,7 +70,7 @@ describe('parse positives', () => {
     expect(await run('`./mo?ds/${base ?? foo}.js?worker`')).toMatchSnapshot()
   })
 
-  /** 场景：相对导入含 ../ 并可能匹配当前文件；验证目标：glob 保留父目录范围和 skip-self 语义。 */
+  /** 相对导入回到当前夹具目录；快照只检查 pattern 层级，实际排除 importer 由后续 glob 枚举完成。 */
   it('with ../ and itself', async () => {
     expect(await run('`../dynamicImportVar/${name}.js`')).toMatchSnapshot()
   })

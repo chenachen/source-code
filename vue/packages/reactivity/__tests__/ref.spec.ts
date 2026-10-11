@@ -20,7 +20,9 @@ import {
 } from '../src/reactive'
 
 describe('reactivity/ref', () => {
-  // 场景：用原始值创建 Ref 并读写 value；验证 Ref 能保存和更新内部值。
+  /**
+   * 以数值 1 创建 Ref，读取为 1，再给 value 赋 2 后读为 2，验证 Ref 保存与替换值。
+   */
   it('should hold a value', () => {
     const a = ref(1)
     expect(a.value).toBe(1)
@@ -28,7 +30,9 @@ describe('reactivity/ref', () => {
     expect(a.value).toBe(2)
   })
 
-  // 场景：effect 读取 ref.value 后多次赋值；验证实际变化触发、相同值不触发。
+  /**
+   * effect 读取 Ref 初值 1；写入 2 后 dummy 为 2、spy 两次，再写同一个 2 不增加次数，验证变化通知与同值过滤。
+   */
   it('should be reactive', () => {
     const a = ref(1)
     let dummy
@@ -41,35 +45,39 @@ describe('reactivity/ref', () => {
     a.value = 2
     expect(fn).toHaveBeenCalledTimes(2)
     expect(dummy).toBe(2)
-    // same value should not trigger
+    // 相同值赋入不通知订阅者。
     a.value = 2
     expect(fn).toHaveBeenCalledTimes(2)
   })
 
-  // 场景：reactive 再包一层 Ref 并读取 value；验证只追踪 Ref.dep，不泄漏内部 _value 依赖。
+  /**
+   * 把 ref(1) 再包 reactive，effect 读取代理 value；直接写原 Ref 为 3 只新增一次调用，经代理写为 5 新增两次，总次数为四，验证内部 _value 不额外订阅，同时外层属性与 Ref 各有通知。
+   */
   it('ref wrapped in reactive should not track internal _value access', () => {
     const a = ref(1)
     const b = reactive(a)
     let dummy
     const fn = vi.fn(() => {
-      dummy = b.value // this will observe both b.value and a.value access
+      dummy = b.value // 同时订阅外层代理的 value 属性与原 Ref 的 value。
     })
     effect(fn)
     expect(fn).toHaveBeenCalledTimes(1)
     expect(dummy).toBe(1)
 
-    // mutating a.value should only trigger effect once
+    // 直接写原 Ref 只经 Ref 的通知，因此执行一次。
     a.value = 3
     expect(fn).toHaveBeenCalledTimes(2)
     expect(dummy).toBe(3)
 
-    // mutating b.value should trigger the effect twice. (once for a.value change and once for b.value change)
+    // 经外层代理写入分别经过 Ref 和代理属性的通知，因此执行两次。
     b.value = 5
     expect(fn).toHaveBeenCalledTimes(4)
     expect(dummy).toBe(5)
   })
 
-  // 场景：普通 Ref 保存对象；验证 value 被转换为深层响应式代理。
+  /**
+   * Ref 初始保存 { count: 1 }，effect 读取 value.count；只修改内部 count 为 2 就更新 dummy，验证普通 Ref 对对象进行深层响应式转换。
+   */
   it('should make nested properties reactive', () => {
     const a = ref({
       count: 1,
@@ -83,7 +91,9 @@ describe('reactivity/ref', () => {
     expect(dummy).toBe(2)
   })
 
-  // 场景：无参数创建 Ref；验证初值为 undefined 且后续赋值正常触发。
+  /**
+   * 无参数创建 Ref，effect 首次读到 undefined；给 value 赋 2 后 dummy 为 2，验证无初值 Ref 仍可建立订阅。
+   */
   it('should work without initial value', () => {
     const a = ref()
     let dummy
@@ -95,7 +105,9 @@ describe('reactivity/ref', () => {
     expect(dummy).toBe(2)
   })
 
-  // 场景：Ref 作为响应式对象属性被读取和赋值；验证自动解包与写入转发语义。
+  /**
+   * 同一 ref(1) 放入 reactive 的直接属性 a 与嵌套 b.c，effect 同时读取两处；依次自增原 Ref、obj.a、obj.b.c，两处结果依次为 2、3、4，验证读取解包与赋值转发。
+   */
   it('should work like a normal property when nested in a reactive object', () => {
     const a = ref(1)
     const obj = reactive({
@@ -113,6 +125,9 @@ describe('reactivity/ref', () => {
       dummy2 = obj.b.c
     })
 
+    /**
+     * 断言直接与嵌套两个属性解包所得 dummy 都等于给定值。
+     */
     const assertDummiesEqualTo = (val: number) =>
       [dummy1, dummy2].forEach(dummy => expect(dummy).toBe(val))
 
@@ -125,7 +140,9 @@ describe('reactivity/ref', () => {
     assertDummiesEqualTo(4)
   })
 
-  // 场景：Ref 内部类型嵌套其他 Ref；验证 TypeScript 递归解包得到最终值类型。
+  /**
+   * 把 ref(0) 再传给 ref，使用 b.value + 1；运行时类型为 number，验证 Ref 归一化后可直接使用数值类型。
+   */
   it('should unwrap nested ref in types', () => {
     const a = ref(0)
     const b = ref(a)
@@ -133,7 +150,9 @@ describe('reactivity/ref', () => {
     expect(typeof (b.value + 1)).toBe('number')
   })
 
-  // 场景：复杂对象、集合和 Promise 嵌套 Ref；验证 UnwrapRef 的深层类型映射。
+  /**
+   * 对象属性 b 保存 ref(0)，再用 ref 包装对象；c.value.b + 1 的运行时类型为 number，验证对象内 Ref 的类型解包与实际访问一致。
+   */
   it('should unwrap nested values in types', () => {
     const a = {
       b: ref(0),
@@ -144,7 +163,9 @@ describe('reactivity/ref', () => {
     expect(typeof (c.value.b + 1)).toBe('number')
   })
 
-  // 场景：数组元素类型本身是 Ref；验证响应式数组索引类型保留显式 Ref 身份。
+  /**
+   * Ref 保存 [1, ref(3)]，取出响应式数组；第一项不是 Ref、第二项仍为 Ref 且 value = 3，验证数组整数索引保留 Ref 身份。
+   */
   it('should NOT unwrap ref types nested inside arrays', () => {
     const arr = ref([1, ref(3)]).value
     expect(isRef(arr[0])).toBe(false)
@@ -152,7 +173,9 @@ describe('reactivity/ref', () => {
     expect((arr[1] as Ref).value).toBe(3)
   })
 
-  // 场景：数组对象的自定义属性保存 Ref；验证非索引属性仍按普通对象规则解包。
+  /**
+   * 数组整数索引、空字符串属性和 Symbol 属性分别存 Ref；用 ref 包装后索引仍是 Ref，自定义两项属性解包为 1、2，验证数组仅对整数索引保留 Ref。
+   */
   it('should unwrap ref types as props of arrays', () => {
     const arr = [ref(0)]
     const symbolKey = Symbol('')
@@ -166,9 +189,20 @@ describe('reactivity/ref', () => {
     expect(arrRef[symbolKey as any]).toBe(2)
   })
 
-  // 场景：元组中混合 Ref 与普通值；验证解包后仍保留元组长度和各位置精确类型。
+  /**
+   * Ref 保存包含数字、字符串、对象、函数和 Ref 的元组；分别修改或调用各位置，得到 1、11、对象 a = 2、函数结果 0、内部 Ref = 1，验证元组各位置的类型与解包规则。
+   */
   it('should keep tuple types', () => {
-    const tuple: [number, string, { a: number }, () => number, Ref<number>] = [
+    const tuple: [
+      number,
+      string,
+      {
+        /** 元组对象元素中的数值字段，递增后应保留对象位置类型。 */
+        a: number
+      },
+      () => number,
+      Ref<number>
+    ] = [
       0,
       '1',
       { a: 1 },
@@ -188,7 +222,9 @@ describe('reactivity/ref', () => {
     expect(tupleRef.value[4].value).toBe(1)
   })
 
-  // 场景：对象含 Symbol 键和 Symbol 值；验证类型解包不改写 Symbol 协议字段。
+  /**
+   * 对象以多种内建 Symbol 和一个自定义 Symbol 保存 Ref、集合或嵌套结构；ref 包装后逐键 strictEqual 原值，验证 Symbol 键访问与类型保留规则。
+   */
   it('should keep symbols', () => {
     const customSymbol = Symbol()
     const obj = {
@@ -232,13 +268,17 @@ describe('reactivity/ref', () => {
     })
   })
 
-  // 场景：unref 接收 Ref 和普通值；验证仅 Ref 被读取 value，普通值原样返回。
+  /**
+   * 分别把普通数字 1 与 ref(1) 传给 unref，两次均得到 1，验证普通值原样返回而 Ref 读取 value。
+   */
   test('unref', () => {
     expect(unref(1)).toBe(1)
     expect(unref(ref(1))).toBe(1)
   })
 
-  // 场景：shallowRef 保存对象并修改内部字段/替换根值；验证只追踪根值替换。
+  /**
+   * shallowRef 初值为 { a: 1 }，effect 读取 a；value 不为 reactive，整体替换为 { a: 2 } 后 dummy 为 2 且仍不为 reactive，验证浅 Ref 的根值订阅。
+   */
   test('shallowRef', () => {
     const sref = shallowRef({ a: 1 })
     expect(isReactive(sref.value)).toBe(false)
@@ -254,7 +294,9 @@ describe('reactivity/ref', () => {
     expect(dummy).toBe(2)
   })
 
-  // 场景：直接修改 shallowRef 内部对象后调用 triggerRef；验证可手动强制通知。
+  /**
+   * effect 读取 shallowRef 内部对象 a = 1；直接改内部 a = 2 时 dummy 不变，调用 triggerRef 后变为 2，验证浅对象变更需要显式通知。
+   */
   test('shallowRef force trigger', () => {
     const sref = shallowRef({ a: 1 })
     let dummy
@@ -264,30 +306,36 @@ describe('reactivity/ref', () => {
     expect(dummy).toBe(1)
 
     sref.value.a = 2
-    expect(dummy).toBe(1) // should not trigger yet
+    expect(dummy).toBe(1) // 此处只修改内部值，尚未显式通知订阅者。
 
-    // force trigger
+    // 显式通知读取此 shallowRef 的 effect。
     triggerRef(sref)
     expect(dummy).toBe(2)
   })
 
-  // 场景：检查 shallowRef 身份；验证 isShallow 能识别浅层 Ref。
+  /**
+   * 以对象创建 shallowRef，再用 isShallow 检查为 true，验证浅层 Ref 的身份标记。
+   */
   test('shallowRef isShallow', () => {
     expect(isShallow(shallowRef({ a: 1 }))).toBe(true)
   })
 
-  // 场景：检查普通 Ref、计算属性及普通值；验证 isRef 的运行时品牌识别。
+  /**
+   * isRef 检查普通 Ref、computed 均为真，检查数字和仅含 value 字段的普通对象为假，验证 Ref 品牌识别。
+   */
   test('isRef', () => {
     expect(isRef(ref(1))).toBe(true)
     expect(isRef(computed(() => 1))).toBe(true)
 
     expect(isRef(0)).toBe(false)
     expect(isRef(1)).toBe(false)
-    // an object that looks like a ref isn't necessarily a ref
+    // 仅有 value 字段不满足 Ref 品牌标记。
     expect(isRef({ value: 0 })).toBe(false)
   })
 
-  // 场景：把响应式对象属性转换为 Ref；验证源属性与 ref.value 双向同步和依赖共享。
+  /**
+   * 从 reactive.x = 1 创建属性 Ref，双向写入和 effect 订阅均同步；另检查已有 Ref 原样返回、普通对象可包装、普通对象的 Ref 属性写入转发及 undefined 时默认值 7，验证 toRef 的归一化和属性联动。
+   */
   test('toRef', () => {
     const a = reactive({
       x: 1,
@@ -308,26 +356,26 @@ describe('reactivity/ref', () => {
     expect(isRef(x)).toBe(true)
     expect(x.value).toBe(1)
 
-    // source -> proxy
+    // 修改源属性，属性 Ref 的读取同步变化。
     a.x = 2
     expect(x.value).toBe(2)
 
-    // proxy -> source
+    // 经属性 Ref 写入，源属性同步变化。
     x.value = 3
     expect(a.x).toBe(3)
 
-    // reactivity
+    // 订阅属性 Ref，检查源属性写入后的自动更新。
     let dummyX
     effect(() => {
       dummyX = x.value
     })
     expect(dummyX).toBe(x.value)
 
-    // mutating source should trigger effect using the proxy refs
+    // 修改源属性会通知读取属性 Ref 的 effect。
     a.x = 4
     expect(dummyX).toBe(4)
 
-    // a ref in a non-reactive object should be unwrapped
+    // 普通对象的 Ref 属性也通过属性 Ref 解包并转发读写。
     const r: any = { x: ref(1) }
     const t = toRef(r, 'x')
     expect(t.value).toBe(1)
@@ -339,7 +387,7 @@ describe('reactivity/ref', () => {
     expect(t.value).toBe(3)
     expect(r.x.value).toBe(3)
 
-    // with a default
+    // 为同一源属性创建带默认值的属性 Ref。
     const u = toRef(r, 'x', 7)
     expect(u.value).toBe(3)
 
@@ -354,7 +402,9 @@ describe('reactivity/ref', () => {
     expect(u.value).toBe(7)
   })
 
-  // 场景：对数组数字/字符串索引调用 toRef；验证属性键归一化及元素 Ref 语义。
+  /**
+   * 从响应式数组索引 1 创建属性 Ref，写入后数组同步；索引改存 Ref 后读写其 value，缺失索引默认 def 随 push 和截断变化，length Ref 可写，字符串及 Symbol 属性也能转发 Ref，验证数组属性 Ref 的各类键。
+   */
   test('toRef on array', () => {
     const a: any = reactive(['a', 'b'])
     const r = toRef(a, 1)
@@ -407,8 +457,13 @@ describe('reactivity/ref', () => {
     expect(bar.value).toBe(6)
   })
 
-  // 场景：数组数字索引 toRef 后调用 triggerRef；验证数字键转字符串后仍找到同一 Dep。
+  /**
+   * 分别以数字 0 和数组 [0] 为属性键创建响应式数组的 toRef；effect 首次调用一次，triggerRef 后两次，验证非 Symbol 键归一为字符串 0 后找到同一依赖。
+   */
   test('triggerRef on toRef created from array coerces property keys', () => {
+    /**
+     * 用给定数组属性键建立 toRef 并订阅，检查 triggerRef 新增一次执行。
+     */
     const assertTriggerRef = (key: unknown) => {
       const array = reactive(['a'])
       const first = toRef(array as any, key as any)
@@ -422,11 +477,13 @@ describe('reactivity/ref', () => {
     }
 
     assertTriggerRef(0)
-    // JS coerces non-symbol property keys like [0] to the string "0".
+    // JavaScript 会把 [0] 这样的非 Symbol 属性键转换为字符串 "0"。
     assertTriggerRef([0])
   })
 
-  // 场景：Symbol 属性 toRef 后调用 triggerRef；验证 Symbol 键身份不会被字符串化。
+  /**
+   * 响应式对象的 Symbol 键值为 a，从该键创建 toRef 并注册 effect；triggerRef 后 spy 从一次增为两次，验证通知保留 Symbol 身份。
+   */
   test('triggerRef on toRef created from symbol key preserves the symbol', () => {
     const key = Symbol()
     const object = reactive({ [key]: 'a' })
@@ -440,9 +497,14 @@ describe('reactivity/ref', () => {
     expect(fn).toHaveBeenCalledTimes(2)
   })
 
-  // 场景：为可能为 undefined 的属性 Ref 提供默认值；验证读取回退但不写回源对象。
+  /**
+   * 普通对象 x 初始为 undefined，toRef 提供默认值 1；读为 1，源改为 2 后读为 2，再改为 undefined 后回到 1，验证默认值仅在读取缺失值时回退。
+   */
   test('toRef default value', () => {
-    const a: { x: number | undefined } = { x: undefined }
+    const a: {
+      /** 可为 undefined 的源字段，读取时使用属性 Ref 的默认值。 */
+      x: number | undefined
+    } = { x: undefined }
     const x = toRef(a, 'x', 1)
     expect(x.value).toBe(1)
 
@@ -453,7 +515,9 @@ describe('reactivity/ref', () => {
     expect(x.value).toBe(1)
   })
 
-  // 场景：把 getter 归一化为 Ref；验证每次读取执行 getter、结果只读且类型正确。
+  /**
+   * 把返回 1 的 getter 传给 toRef；读取与 unref 均为 1，isRef、isReadonly 为真，强制赋 value 时抛错，验证 getter Ref 的只读归一化。
+   */
   test('toRef getter', () => {
     const x = toRef(() => 1)
     expect(x.value).toBe(1)
@@ -465,7 +529,9 @@ describe('reactivity/ref', () => {
     expect(isReadonly(x)).toBe(true)
   })
 
-  // 场景：对代理属性创建 toRef 但暂不读取；验证创建阶段不会提前触发属性 getter。
+  /**
+   * 同一 computed getter spy 放入普通、reactive、readonly、shallowReactive、shallowReadonly 对象后分别创建属性 Ref；创建不求值，逐一读取均为 5 且 getter 总计一次，验证创建惰性与计算缓存。
+   */
   test('toRef lazy evaluation of properties inside a proxy', () => {
     const fn = vi.fn(() => 5)
     const num = computed(fn)
@@ -485,10 +551,15 @@ describe('reactivity/ref', () => {
     expect(fn).toHaveBeenCalledTimes(1)
   })
 
-  // 场景：对浅响应式/浅只读对象中的 Ref 属性调用 toRef；验证显式 Ref 槽位正确转发。
+  /**
+   * shallowReactive.foo 初始为 ref(0)，其 shallowReadonly 视图创建另一属性 Ref；替换源 Ref、写入 undefined、经两种属性 Ref 赋值和移除槽位，逐步核对旧 Ref 保持 0、当前槽位与不同默认值，验证浅代理槽位转发。
+   */
   test('toRef with shallowReactive/shallowReadonly', () => {
     const r = ref(0)
-    const s1 = shallowReactive<{ foo: any }>({ foo: r })
+    const s1 = shallowReactive<{
+      /** 浅代理的可替换槽位，允许保存 Ref 或 undefined 以检查转发和默认值。 */
+      foo: any
+    }>({ foo: r })
     const t1 = toRef(s1, 'foo', 2)
     const s2 = shallowReadonly(s1)
     const t2 = toRef(s2, 'foo', 3)
@@ -540,7 +611,9 @@ describe('reactivity/ref', () => {
     expect(t2.value).toBe(3)
   })
 
-  // 场景：shallowReadonly 包裹 reactive 后创建属性 Ref；验证读取追踪与只读写入规则兼容。
+  /**
+   * shallowReadonly 包裹 reactive 的可写 computed 属性，创建 toRef 不求值；写入触发只读警告且 getter/setter 未调用，随后读取为 3、getter 一次而 setter 零次，验证外层只读限制。
+   */
   test('toRef for shallowReadonly around reactive', () => {
     const get = vi.fn(() => 3)
     const set = vi.fn()
@@ -565,7 +638,9 @@ describe('reactivity/ref', () => {
     expect(set).not.toHaveBeenCalled()
   })
 
-  // 场景：readonly 包裹 shallowReactive 后创建属性 Ref；验证多层代理的解包判断正确。
+  /**
+   * readonly 包裹 shallowReactive 的可写 computed 属性，创建 toRef 后尝试写入；出现只读警告且 getter/setter 未调用，读取为 3、getter 一次而 setter 零次，验证另一代理组合下的只读限制。
+   */
   test('toRef for readonly around shallowReactive', () => {
     const get = vi.fn(() => 3)
     const set = vi.fn()
@@ -590,7 +665,9 @@ describe('reactivity/ref', () => {
     expect(set).not.toHaveBeenCalled()
   })
 
-  // 场景：源代理自定义 get/set 且属性保存嵌套 Ref；验证 ObjectRef 始终经过代理陷阱。
+  /**
+   * shallowReactive.num 初始为 ref(2)，effect 通过属性 Ref 写入 3；替换 num 为新 ref(4) 后 effect 再写入 3，新 Ref 也为 3，验证属性 Ref 的读写始终经过源代理而非固定旧 Ref。
+   */
   test(`toRef doesn't bypass the proxy when getting/setting a nested ref`, () => {
     const r = ref(2)
     const obj = shallowReactive({ num: r })
@@ -612,7 +689,9 @@ describe('reactivity/ref', () => {
     expect(s.value).toBe(3)
   })
 
-  // 场景：把响应式对象批量转换为属性 Ref；验证键结构、双向同步和已有 Ref 处理。
+  /**
+   * 对 reactive({ x: 1, y: 2 }) 调用 toRefs；确认两项均为 Ref，源写与 Ref 写双向同步，effect 读取两项后再改源得到 4、5，验证批量属性 Ref 的响应性。
+   */
   test('toRefs', () => {
     const a = reactive({
       x: 1,
@@ -626,19 +705,19 @@ describe('reactivity/ref', () => {
     expect(x.value).toBe(1)
     expect(y.value).toBe(2)
 
-    // source -> proxy
+    // 修改源属性，属性 Ref 的读取同步变化。
     a.x = 2
     a.y = 3
     expect(x.value).toBe(2)
     expect(y.value).toBe(3)
 
-    // proxy -> source
+    // 经属性 Ref 写入，源属性同步变化。
     x.value = 3
     y.value = 4
     expect(a.x).toBe(3)
     expect(a.y).toBe(4)
 
-    // reactivity
+    // 订阅属性 Ref，检查源属性写入后的自动更新。
     let dummyX, dummyY
     effect(() => {
       dummyX = x.value
@@ -647,26 +726,32 @@ describe('reactivity/ref', () => {
     expect(dummyX).toBe(x.value)
     expect(dummyY).toBe(y.value)
 
-    // mutating source should trigger effect using the proxy refs
+    // 修改源属性会通知读取属性 Ref 的 effect。
     a.x = 4
     a.y = 5
     expect(dummyX).toBe(4)
     expect(dummyY).toBe(5)
   })
 
-  // 场景：向 toRefs 传普通对象；验证开发模式提醒源对象本身无法提供响应性。
+  /**
+   * 把普通空对象传给 toRefs；断言开发警告要求 reactive object，验证非代理对象提示。
+   */
   test('toRefs should warn on plain object', () => {
     toRefs({})
     expect(`toRefs() expects a reactive object`).toHaveBeenWarned()
   })
 
-  // 场景：向 toRefs 传普通数组；验证同样发出非代理数据源警告。
+  /**
+   * 把普通空数组传给 toRefs；断言开发警告要求 reactive object，验证非代理数组同样提示。
+   */
   test('toRefs should warn on plain array', () => {
     toRefs([])
     expect(`toRefs() expects a reactive object`).toHaveBeenWarned()
   })
 
-  // 场景：把响应式数组转换为 Ref 数组；验证长度、索引和元素双向同步。
+  /**
+   * 对 reactive([a, b, c]) 调用 toRefs；结果仍是数组，写 refs[0].value 更新源首项，写源第二项更新 refs[1]，验证数组形状与双向联动。
+   */
   test('toRefs reactive array', () => {
     const arr = reactive(['a', 'b', 'c'])
     const refs = toRefs(arr)
@@ -680,16 +765,24 @@ describe('reactivity/ref', () => {
     expect(refs[1].value).toBe('2')
   })
 
-  // 场景：自定义 Ref 手动控制 track/trigger；验证用户 getter/setter 决定依赖时机。
+  /**
+   * customRef 用 getter 调 track、setter 只保存新值和 trigger 函数；effect 初读 1，赋 2 后仍为 1，手动调用保存的 trigger 后为 2，验证用户决定通知时机。
+   */
   test('customRef', () => {
     let value = 1
     let _trigger: () => void
 
     const custom = customRef((track, trigger) => ({
+      /**
+       * 显式收集依赖并返回当前闭包值，由用户决定 customRef 的读取行为。
+       */
       get() {
         track()
         return value
       },
+      /**
+       * 只保存新值和 trigger 函数，不立即通知，供测试稍后手动触发。
+       */
       set(newValue: number) {
         value = newValue
         _trigger = trigger
@@ -705,14 +798,16 @@ describe('reactivity/ref', () => {
     expect(dummy).toBe(1)
 
     custom.value = 2
-    // should not trigger yet
+    // 此处只修改内部值，尚未显式通知订阅者。
     expect(dummy).toBe(1)
 
     _trigger!()
     expect(dummy).toBe(2)
   })
 
-  // 场景：Ref 当前值与新值是同一原始对象的代理；验证身份归一化后不误触发。
+  /**
+   * 普通 Ref 与 shallowRef 都保存同一个 reactive 对象，并分别由 effect 读取；重新赋入同一代理后两个 spy 都仅一次，验证同一代理值不会通知。
+   */
   test('should not trigger when setting value to same proxy', () => {
     const obj = reactive({ count: 0 })
 
@@ -733,7 +828,9 @@ describe('reactivity/ref', () => {
     expect(spy2).toBeCalledTimes(1)
   })
 
-  // 场景：Ref 接收浅层或只读代理；验证赋值后保留原有浅层/只读约束。
+  /**
+   * Ref 先保存原始对象，初读为对应 reactive 代理；依次赋 shallowReactive 和 readonly 代理后严格等于各自输入且不等于普通代理，验证保留浅层和只读身份。
+   */
   test('ref should preserve value shallow/readonly-ness', () => {
     const original = {}
     const r = reactive(original)
@@ -752,7 +849,9 @@ describe('reactivity/ref', () => {
     expect(a.value).not.toBe(r)
   })
 
-  // 场景：Ref 当前保存代理值，随后写入对应 raw 对象；验证视为同一值而不触发。
+  /**
+   * Ref 保存原始对象并由 effect 订阅，随后再次赋该原始对象；spy 仍一次，验证深 Ref 缓存代理时按 raw 身份过滤同值写入。
+   */
   test('should not trigger when setting the same raw object', () => {
     const obj = {}
     const r = ref(obj)
@@ -764,10 +863,15 @@ describe('reactivity/ref', () => {
     expect(spy).toHaveBeenCalledTimes(1)
   })
 
-  // 场景：toValue 接收普通值、Ref 和 getter；验证统一得到最终值并执行 getter。
+  /**
+   * 以 a = ref(1)、b = computed(a + 1)、c = getter(a + 2) 和普通值 d = 4 调用 toValue；分别得到 1、2、3、4，验证统一读取 Ref、getter 和普通值。
+   */
   test('toValue', () => {
     const a = ref(1)
     const b = computed(() => a.value + 1)
+    /**
+     * 读取 a.value 后加 2，作为 toValue 的 getter 输入。
+     */
     const c = () => a.value + 2
     const d = 4
 
@@ -777,7 +881,9 @@ describe('reactivity/ref', () => {
     expect(toValue(d)).toBe(4)
   })
 
-  // 场景：比较普通、自定义、getter 与属性 Ref；验证各实现都保存最近读取值供内部使用。
+  /**
+   * 分别创建普通 Ref、自定义 Ref、getter Ref 和属性 Ref；必要时先读取 value，再检查内部 _value 为 1、0、1、1，验证各实现保存最近读取的值缓存。
+   */
   test('ref w/ customRef w/ getterRef w/ objectRef should store value cache', () => {
     const refValue = ref(1)
     // @ts-expect-error private field
@@ -786,10 +892,16 @@ describe('reactivity/ref', () => {
     let customRefValueCache = 0
     const customRefValue = customRef((track, trigger) => {
       return {
+        /**
+         * 显式收集依赖并返回闭包值，供检查 customRef 的最近读取缓存。
+         */
         get() {
           track()
           return customRefValueCache
         },
+        /**
+         * 保存闭包值并立即通知订阅者，提供缓存检查用的 customRef 写入行为。
+         */
         set(value: number) {
           customRefValueCache = value
           trigger()

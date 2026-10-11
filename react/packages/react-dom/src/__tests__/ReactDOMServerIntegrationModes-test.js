@@ -10,14 +10,14 @@
 
 'use strict';
 
-/** `ReactDOMServerIntegrationUtils`：保存当前测试场景复用的夹具、状态或回调。 */
+/** 提供跨 SSR、客户端渲染与 hydration 的统一场景展开器；每个 render 入口返回可断言的 DOM 节点。 */
 const ReactDOMServerIntegrationUtils = require('./utils/ReactDOMServerIntegrationTestUtils');
 
 let React;
 let ReactDOMClient;
 let ReactDOMServer;
 
-/** `initModules`：封装当前用例复用的操作、回调或断言步骤。 */
+/** 重置模块及诊断缓存后重新加载 React/client/server，并把客户端和服务端入口交给集成工具；每次模式切换隔离模块级状态。 */
 function initModules() {
   // 重置警告缓存。
   jest.resetModules();
@@ -32,7 +32,7 @@ function initModules() {
   };
 }
 
-/** `{resetModules, itRenders}`：保存当前测试场景复用的夹具、状态或回调。 */
+/** 从集成工具取模式重置器和五模式测试展开器；itRenders 的每个定义复用同一场景回调。 */
 const {resetModules, itRenders} = ReactDOMServerIntegrationUtils(initModules);
 
 describe('ReactDOMServerIntegration', () => {
@@ -50,6 +50,7 @@ describe('ReactDOMServerIntegration', () => {
      * 验证机制：集成工具串联 react-dom server/client 适配边界并比较 DOM；完整 Fizz 状态机位于范围外
      * 的 `packages/react-server`。
      */
+    /** 通过 itRenders 展开到字符串 SSR、Node 流 SSR、新客户端、正确标记 hydration 和错误标记恢复；StrictMode 含一个 div；父容器首子级应为 DIV，验证模式包装无额外 DOM。 */
     itRenders('a strict mode with one child', async render => {
       const e = await render(
         <React.StrictMode>
@@ -60,12 +61,13 @@ describe('ReactDOMServerIntegration', () => {
       expect(parent.childNodes[0].tagName).toBe('DIV');
     });
 
+    /** 通过 itRenders 展开到字符串 SSR、Node 流 SSR、新客户端、正确标记 hydration 和错误标记恢复；StrictMode 含 div/span/Header/返回嵌套模式的 Footer；父容器应为 DIV/SPAN/P/H2/H3，验证模式与组件混合展开的顺序。 */
     itRenders('a strict mode with several children', async render => {
-      /** `Header`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 返回单个 header 文本的 p，为父级展开后的第三个宿主子级提供组件边界。 */
       const Header = props => {
         return <p>header</p>;
       };
-      /** `Footer`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 返回 footer 的 h2 与 about 的 h3 两个宿主节点，检测包装组件结果是否保持相邻顺序。 */
       const Footer = props => {
         return (
           <React.StrictMode>
@@ -90,6 +92,7 @@ describe('ReactDOMServerIntegration', () => {
       expect(parent.childNodes[4].tagName).toBe('H3');
     });
 
+    /** 通过 itRenders 展开到字符串 SSR、Node 流 SSR、新客户端、正确标记 hydration 和错误标记恢复；嵌套多层 StrictMode 并混入 null/false；宿主子级仅 DIV/SPAN/P，验证模式节点不占位而空子级被略过。 */
     itRenders('a nested strict mode', async render => {
       const e = await render(
         <React.StrictMode>
@@ -114,6 +117,7 @@ describe('ReactDOMServerIntegration', () => {
       expect(parent.childNodes[2].tagName).toBe('P');
     });
 
+    /** 通过 itRenders 展开到字符串 SSR、Node 流 SSR、新客户端、正确标记 hydration 和错误标记恢复；div 内仅含空 StrictMode；firstChild 应为 null，验证空模式无 DOM 输出。 */
     itRenders('an empty strict mode', async render => {
       expect(
         (

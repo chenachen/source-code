@@ -146,7 +146,8 @@ export function ensureRootIsScheduled(root: FiberRoot): void {
 }
 
 /**
- * 确保当前事件结束时会用一个 microtask 遍历所有 Root，并按各自优先级建立任务。
+ * 确保当前更新批次会尽快遍历所有 Root，并按各自优先级建立任务。
+ * 支持 microtask 的宿主在事件结束后处理；无此能力或检测到 render/commit 重入时改排 Immediate task。
  * DEV actQueue 与真实微任务分别去重，避免二者互相吞掉调度信号。
  */
 export function ensureScheduleIsScheduled(): void {
@@ -257,7 +258,7 @@ function processRootScheduleInImmediateTask() {
  * 这是唯一允许从链表移除 Root 的位置，降低更新重入造成链表损坏的风险。
  */
 function processRootScheduleInMicrotask() {
-  // 此函数始终在 microtask 中调用，不得作为同步入口。
+  // 通常从 microtask 调用；无 microtask 或需避开 render/commit 重入时由 Immediate task 回退，不能在更新入口直接同步调用。
   didScheduleMicrotask = false;
   if (__DEV__) {
     didScheduleMicrotask_act = false;
@@ -529,7 +530,7 @@ function performWorkOnRootViaSchedulerTask(
   }
 
   // 依据 Root 当前字段重新选择车道。TODO：调度 callback 时已调用 getNextLanes，理论上可
-  // 缓存在 Root；但 callback 总在 microtask 中安排，同一浏览器 task 可能更早又产生更新，
+  // 缓存在 Root；callback 通常由 microtask 安排，同一浏览器 task 可能更早又产生更新，
   // 且 Scheduler 会把多个 callback 合并进一个 macrotask，中间不让出给 microtask。
   // 后续应与 postTask 行为对齐，并在可用时直接使用 postTask。
   const workInProgressRoot = getWorkInProgressRoot();
@@ -562,8 +563,8 @@ function performWorkOnRootViaSchedulerTask(
 }
 
 /**
- * 不经 Scheduler 的 Root 同步工作入口；先冲刷 passive effects，若其改变调度则返回外层
- * 重算优先级，否则以 forceSync 进入工作循环。
+ * 不经 Scheduler 的 Root 同步工作入口；先冲刷 pending effects，只要实际冲刷过就返回外层
+ * 重算优先级，因为 effect 可能改变根工作。未冲刷时以 forceSync 进入工作循环。
  */
 function performSyncWorkOnRoot(root: FiberRoot, lanes: Lanes) {
   const didFlushPassiveEffects = flushPendingEffects();
@@ -605,8 +606,9 @@ function cancelCallback(callbackNode: mixed) {
 }
 
 /**
- * 用 actQueue、宿主 microtask 或 Scheduler Immediate task 尽快安排 Root 链表处理。
- * Safari 在 render/commit 中过早冲刷 microtask 时退回 macrotask，避免无限递归崩溃。
+ * 尽快安排 Root 链表处理：DEV act 额外加入 actQueue，宿主仍按能力安排 microtask 或 Immediate task。
+ * 两条入口依靠独立去重标记协调；若 microtask 发现仍在 render/commit 中，改排 Immediate task，
+ * 避免 Safari 等宿主提前执行微任务时递归进入工作循环。
  */
 function scheduleImmediateRootScheduleTask() {
   if (__DEV__ && ReactSharedInternals.actQueue !== null) {
@@ -651,14 +653,14 @@ function scheduleImmediateRootScheduleTask() {
  * 为当前浏览器事件申请稳定的 TransitionLane。
  *
  * 同一事件中的所有 Transition 复用缓存车道；若位于 entangled async action，则优先复用
- * action scope 车道。进入下一并发工作循环后缓存会重置，下一事件再分配新车道。
+ * action scope 车道。processRootScheduleInMicrotask 处理完该批根后重置缓存，后续更新再分配新车道。
  */
 export function requestTransitionLane(
   // 参数只用于促使调用方确认当前处于 Transition。TODO：调整 useOptimistic 后改为非空。
   transition: Transition | null,
 ): Lane {
-  // 同一事件、同一优先级的更新必须得到稳定车道；缓存事件内首次输入，并在进入并发
-  // 工作循环、确认事件已结束后重置。
+  // 同一事件、同一优先级的更新必须得到稳定车道；缓存事件内首次输入，并在
+  // processRootScheduleInMicrotask 末尾重置。
   if (currentEventTransitionLane === NoLane) {
     // 同一事件内所有 Transition 分配同一车道。
     const actionScopeLane = peekEntangledActionLane();
@@ -678,8 +680,8 @@ export function didCurrentEventScheduleTransition(): boolean {
 }
 
 /**
- * 标记当前事件的同步 loading 状态已处理，从 Root indicatorLanes 移除对应车道，并释放
- * isomorphic indicator，避免再显示重复的默认 loading UI。
+ * 标记当前事件的同步 loading 状态已处理，从 Root indicatorLanes 移除该事件车道，
+ * 并清除同构指示器的待启动需求；此处不调用已启动指示器的清理函数，其释放由根提交/Action 完成路径处理。
  */
 export function markIndicatorHandled(root: FiberRoot): void {
   if (enableDefaultTransitionIndicator) {

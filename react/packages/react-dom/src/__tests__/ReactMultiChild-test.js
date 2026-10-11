@@ -25,14 +25,8 @@ describe('ReactMultiChild', () => {
   });
 
   describe('reconciliation', () => {
-    /**
-     * 代表场景（Given–When–Then）：
-     * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-     * When 执行「should update children when possible」描述的渲染或交互；
-     * Then 通过本用例的 DOM、日志或调度断言确认行为。
-     *
-     * 验证机制：断言连接 ReactDOM 公开入口、ReactDOMRoot 根生命周期及 DOM 提交结果。
-     */
+
+    /** 同一类型 MockComponent 在同一位置连续渲染两次；只挂载一次并更新一次、未卸载，验证子 Fiber 可复用。 */
     it('should update children when possible', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -41,15 +35,19 @@ describe('ReactMultiChild', () => {
       const mockUpdate = jest.fn();
       const mockUnmount = jest.fn();
 
-      /** `MockComponent`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+      /** 用生命周期 mock 观察同位置同类型子组件的复用。 */
       class MockComponent extends React.Component {
-        /** `MockComponent.componentDidMount`：记录测试夹具在当前场景中的状态。 */
+
+        /** 记录首次挂载，供与后续更新次数比较。 */
         componentDidMount = mockMount;
-        /** `MockComponent.componentDidUpdate`：记录测试夹具在当前场景中的状态。 */
+
+        /** 记录被复用实例的更新，而非新的挂载。 */
         componentDidUpdate = mockUpdate;
-        /** `MockComponent.componentWillUnmount`：记录测试夹具在当前场景中的状态。 */
+
+        /** 记录实例删除，确保同类型更新不触发卸载。 */
         componentWillUnmount = mockUnmount;
-        /** `MockComponent.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 输出 div，保持主机结果稳定以聚焦组件身份。 */
         render() {
           return <span />;
         }
@@ -84,7 +82,7 @@ describe('ReactMultiChild', () => {
       expect(mockUnmount).toHaveBeenCalledTimes(0);
     });
 
-    /** 测试场景：验证「should replace children with different constructors」描述的渲染、交互或错误处理结果。 */
+    /** MockComponent 被同位置 span 替换，虽然最终都输出 div，原组件仍卸载；验证组件类型变化决定身份。 */
     it('should replace children with different constructors', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -92,13 +90,16 @@ describe('ReactMultiChild', () => {
       const mockMount = jest.fn();
       const mockUnmount = jest.fn();
 
-      /** `MockComponent`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+      /** 在类型替换场景中记录原组件的挂载和卸载。 */
       class MockComponent extends React.Component {
-        /** `MockComponent.componentDidMount`：记录测试夹具在当前场景中的状态。 */
+
+        /** 记录 MockComponent 的初次挂载。 */
         componentDidMount = mockMount;
-        /** `MockComponent.componentWillUnmount`：记录测试夹具在当前场景中的状态。 */
+
+        /** 记录类型变化引起的旧组件卸载。 */
         componentWillUnmount = mockUnmount;
-        /** `MockComponent.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 输出 div，使测试证明主机输出相似也不等于组件类型相同。 */
         render() {
           return <span />;
         }
@@ -130,7 +131,7 @@ describe('ReactMultiChild', () => {
       expect(mockUnmount).toHaveBeenCalledTimes(1);
     });
 
-    /** 测试场景：验证「should NOT replace children with different owners」描述的渲染、交互或错误处理结果。 */
+    /** Wrapper 从自己创建 MockComponent 改为接收外部创建的同类型 child；key 和位置不变时保留实例，验证元素 owner 变化不构成替换条件。 */
     it('should NOT replace children with different owners', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -138,21 +139,25 @@ describe('ReactMultiChild', () => {
       const mockMount = jest.fn();
       const mockUnmount = jest.fn();
 
-      /** `MockComponent`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+      /** 记录 owner 变化场景中的组件实例生命周期。 */
       class MockComponent extends React.Component {
-        /** `MockComponent.componentDidMount`：记录测试夹具在当前场景中的状态。 */
+
+        /** 记录首次挂载，确认 owner 改变没有创建第二实例。 */
         componentDidMount = mockMount;
-        /** `MockComponent.componentWillUnmount`：记录测试夹具在当前场景中的状态。 */
+
+        /** 记录卸载，确认稳定 type/key/位置允许复用。 */
         componentWillUnmount = mockUnmount;
-        /** `MockComponent.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 输出 div，将实例判据限定为生命周期。 */
         render() {
           return <span />;
         }
       }
 
-      /** `WrapperComponent`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+      /** 既能自己创建 child，也能接收外部 child 的包装组件。 */
       class WrapperComponent extends React.Component {
-        /** `WrapperComponent.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 有 props.children 时透传，否则创建 MockComponent；两路径改变元素 owner，保留同类型同位置。 */
         render() {
           return this.props.children || <MockComponent />;
         }
@@ -180,7 +185,7 @@ describe('ReactMultiChild', () => {
       expect(mockUnmount).toHaveBeenCalledTimes(0);
     });
 
-    /** 测试场景：验证「should replace children with different keys」描述的渲染、交互或错误处理结果。 */
+    /** MockComponent 的 key 从 A 改成 B；旧实例卸载、新实例挂载，验证 key 参与子节点身份。 */
     it('should replace children with different keys', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -188,13 +193,16 @@ describe('ReactMultiChild', () => {
       const mockMount = jest.fn();
       const mockUnmount = jest.fn();
 
-      /** `MockComponent`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+      /** 用挂载与卸载计数验证不同 key 的组件身份。 */
       class MockComponent extends React.Component {
-        /** `MockComponent.componentDidMount`：记录测试夹具在当前场景中的状态。 */
+
+        /** 记录每个新 key 的实例挂载。 */
         componentDidMount = mockMount;
-        /** `MockComponent.componentWillUnmount`：记录测试夹具在当前场景中的状态。 */
+
+        /** 记录旧 key 的实例删除。 */
         componentWillUnmount = mockUnmount;
-        /** `MockComponent.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 输出相同 div，排除主机输出差异对身份测试的影响。 */
         render() {
           return <span />;
         }
@@ -226,22 +234,24 @@ describe('ReactMultiChild', () => {
       expect(mockUnmount).toHaveBeenCalledTimes(1);
     });
 
-    /** 测试场景：验证「should warn for duplicated array keys with component stack info」描述的渲染、交互或错误处理结果。 */
+    /** Parent 首次传一个 key=1 的 child，更新为两个同 key child；开发构建报告重复 key，并包含实际 div/Wrapper/Parent 栈。 */
     it('should warn for duplicated array keys with component stack info', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
 
-      /** `WrapperComponent`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+      /** 把数组 children 放在 div 中，让协调器检查重复 key。 */
       class WrapperComponent extends React.Component {
-        /** `WrapperComponent.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 直接返回包含传入 children 的 div。 */
         render() {
           return <div>{this.props.children}</div>;
         }
       }
 
-      /** `Parent`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+      /** 为重复数组 key 警告提供外层组件栈。 */
       class Parent extends React.Component {
-        /** `Parent.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 通过 WrapperComponent 传递 children，保留警告的父组件路径。 */
         render() {
           return (
             <div>
@@ -267,22 +277,24 @@ describe('ReactMultiChild', () => {
       ]);
     });
 
-    /** 测试场景：验证「should warn for duplicated iterable keys with component stack info」描述的渲染、交互或错误处理结果。 */
+    /** 用每次可创建新 iterator 的自定义 iterable 提供 child，更新后两元素 key 重复；开发警告与数组情形一致，验证 iterable 也检查唯一 key。 */
     it('should warn for duplicated iterable keys with component stack info', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
 
-      /** `WrapperComponent`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+      /** 把 iterable children 放入 div，覆盖迭代子节点的 key 校验。 */
       class WrapperComponent extends React.Component {
-        /** `WrapperComponent.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 透传 iterable children 到主机父节点，不自行枚举或修改 key。 */
         render() {
           return <div>{this.props.children}</div>;
         }
       }
 
-      /** `Parent`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+      /** 给 iterable 重复 key 场景提供外层创建栈。 */
       class Parent extends React.Component {
-        /** `Parent.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 把 props.children 传给 WrapperComponent。 */
         render() {
           return (
             <div>
@@ -292,14 +304,16 @@ describe('ReactMultiChild', () => {
         }
       }
 
-      /** `createIterable`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 把数组包装为可反复遍历对象，每次 @@iterator 调用从索引零开始。 */
       function createIterable(array) {
         return {
-          /** `createIterable.@@iterator`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 创建独立 iterator，保证 React 多轮读取不会共享耗尽索引。 */
           '@@iterator': function () {
             let i = 0;
             return {
-              /** `@@iterator.next`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+              /** 按索引返回数组项，首次到数组长度时报告 done；正常消费者在该 done 后停止调用。 */
               next() {
                 const next = {
                   value: i < array.length ? array[i] : undefined,
@@ -332,11 +346,13 @@ describe('ReactMultiChild', () => {
     });
   });
 
-  /** 测试场景：验证「should warn for using maps as children with owner info」描述的渲染、交互或错误处理结果。 */
+  /** Parent 返回 Map 的 foo/bar entries；开发构建提示不支持 Map child 并给出 Parent 栈，验证不把 entry 自动当键值 React children。 */
   it('should warn for using maps as children with owner info', async () => {
-    /** `Parent`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+
+    /** 输出 Map 的类组件，触发不支持 Map children 的开发提示。 */
     class Parent extends React.Component {
-      /** `Parent.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 创建 foo/bar Map entries，不把 entry 手动转为 React 元素数组。 */
       render() {
         return (
           <div>
@@ -363,9 +379,10 @@ describe('ReactMultiChild', () => {
     ]);
   });
 
-  /** 测试场景：验证「should NOT warn for using generator functions as components」描述的渲染、交互或错误处理结果。 */
+  /** 生成器组件 Foo 本身依次 yield 两个带 key 的 h1；DOM 合成 HelloWorld 且不报生成器 child 警告，覆盖组件返回迭代结果的专门路径。 */
   it('should NOT warn for using generator functions as components', async () => {
-    /** `Foo`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 生成器组件逐次 yield 带 key 的 h1，供协调器处理组件返回的迭代结果。 */
     function* Foo() {
       yield <h1 key="1">Hello</h1>;
       yield <h1 key="2">World</h1>;
@@ -380,15 +397,16 @@ describe('ReactMultiChild', () => {
     expect(container.textContent).toBe('HelloWorld');
   });
 
-  /** 测试场景：验证「should warn for using generators as children props」描述的渲染、交互或错误处理结果。 */
+  /** Foo 将 getChildren() 生成器实例作为 div child；开发构建警告可变单次迭代器，仍输出 HelloWorld，第二轮新实例不重复警告。 */
   it('should warn for using generators as children props', async () => {
-    /** `getChildren`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 创建单次生成器实例，作为 div 的 child 与生成器组件路径区分。 */
     function* getChildren() {
       yield <h1 key="1">Hello</h1>;
       yield <h1 key="2">World</h1>;
     }
 
-    /** `Foo`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 在 div 中传入 getChildren() 实例，观察开发警告及再次渲染时去重。 */
     function Foo() {
       const children = getChildren();
       return <div>{children}</div>;
@@ -417,17 +435,20 @@ describe('ReactMultiChild', () => {
     });
   });
 
-  /** 测试场景：验证「should warn for using other types of iterators as children」描述的渲染、交互或错误处理结果。 */
+  /** Foo 返回 Symbol.iterator 返回自身、next 递增索引的单次迭代器；开发构建警告且正常输出两 h1，再渲染验证警告去重。 */
   it('should warn for using other types of iterators as children', async () => {
-    /** `Foo`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 构造 iterator 返回自身的单次 iterable，模拟耗尽不可重启的子节点来源。 */
     function Foo() {
       let i = 0;
       const iterator = {
-        /** `Symbol.iterator`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 返回同一 iterator，显式暴露单次消费性质。 */
         [Symbol.iterator]() {
           return iterator;
         },
-        /** `Foo.next`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 用递增索引先给两个 h1，再在后续调用中返回 done。 */
         next() {
           switch (i++) {
             case 0:
@@ -464,17 +485,18 @@ describe('ReactMultiChild', () => {
     });
   });
 
-  /** 测试场景：验证「should not warn for using generators in legacy iterables」描述的渲染、交互或错误处理结果。 */
+  /** 使用 @@iterator 每次创建新生成器的 iterable，连续渲染均为 HelloWorld；验证可重复遍历对象不触发单次生成器警告。 */
   it('should not warn for using generators in legacy iterables', async () => {
     const fooIterable = {
-      /** `@@iterator`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /** 每次 @@iterator 调用生成新的遍历状态，区别单次 generator 对象。 */
       '@@iterator': function* () {
         yield <h1 key="1">Hello</h1>;
         yield <h1 key="2">World</h1>;
       },
     };
 
-    /** `Foo`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 返回具有传统 @@iterator 入口的可重复遍历对象。 */
     function Foo() {
       return fooIterable;
     }
@@ -492,17 +514,18 @@ describe('ReactMultiChild', () => {
     expect(container.textContent).toBe('HelloWorld');
   });
 
-  /** 测试场景：验证「should not warn for using generators in modern iterables」描述的渲染、交互或错误处理结果。 */
+  /** 使用 Symbol.iterator 每次创建新生成器的 iterable，连续渲染均为 HelloWorld；覆盖现代迭代入口的重复遍历。 */
   it('should not warn for using generators in modern iterables', async () => {
     const fooIterable = {
-      /** `Symbol.iterator`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /** 每次 Symbol.iterator 调用生成新的遍历状态。 */
       [Symbol.iterator]: function* () {
         yield <h1 key="1">Hello</h1>;
         yield <h1 key="2">World</h1>;
       },
     };
 
-    /** `Foo`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 返回现代 Symbol.iterator iterable，验证多轮渲染不耗尽对象本身。 */
     function Foo() {
       return fooIterable;
     }
@@ -520,31 +543,36 @@ describe('ReactMultiChild', () => {
     expect(div.textContent).toBe('HelloWorld');
   });
 
-  /** 测试场景：验证「should reorder bailed-out children」描述的渲染、交互或错误处理结果。 */
+  /** 将两组预选字母字符串逐项作为 key 渲染，Letter 禁止组件更新；更新后文本仍精确匹配第二组，验证保留项移动及新旧项增删无需重跑被复用组件。 */
   it('should reorder bailed-out children', async () => {
-    /** `LetterInner`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+
+    /** 将单个字母输出到 div，供通过 key 移动保留主机节点。 */
     class LetterInner extends React.Component {
-      /** `LetterInner.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 输出当前字符，便于父容器 textContent 校验最终次序。 */
       render() {
         return <div>{this.props.char}</div>;
       }
     }
 
-    /** `Letter`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 禁止被复用实例更新的字母组件，让重排必须依赖协调移动。 */
     class Letter extends React.Component {
-      /** `Letter.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 把字母传给 LetterInner，建立可复用的主机子树。 */
       render() {
         return <LetterInner char={this.props.char} />;
       }
-      /** `Letter.shouldComponentUpdate`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 始终返回 false，保留既有子树但允许父协调器移动其位置。 */
       shouldComponentUpdate() {
         return false;
       }
     }
 
-    /** `Letters`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 把字符串映射为逐字母有 key 的 children 列表。 */
     class Letters extends React.Component {
-      /** `Letters.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 以字符作为 key 创建 Letter，使两字符串可同时覆盖移动、插入和删除。 */
       render() {
         const letters = this.props.letters.split('');
         return (
@@ -571,35 +599,41 @@ describe('ReactMultiChild', () => {
     expect(container.textContent).toBe('EHCjpdTUuiybDvhRJwZt');
   });
 
-  /** 测试场景：验证「prepares new children before unmounting old」描述的渲染、交互或错误处理结果。 */
+  /** 同 key 的 SpyA 全部替换成 SpyB，记录新 render 前置生命周期、旧卸载与新 didMount；验证新树准备在删除提交前完成，并区分 render 阶段与 DOM 提交顺序。 */
   it('prepares new children before unmounting old', async () => {
     const log = [];
 
-    /** `Spy`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 记录新组件准备与旧实例删除的阶段，用名字区分替换双方。 */
     class Spy extends React.Component {
-      /** `Spy.UNSAFE_componentWillMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 记录 render 阶段的挂载前生命周期，尚未表示 DOM 已提交。 */
       UNSAFE_componentWillMount() {
         log.push(this.props.name + ' componentWillMount');
       }
-      /** `Spy.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 记录新子树准备并返回 div，供与旧卸载先后比较。 */
       render() {
         log.push(this.props.name + ' render');
         return <div />;
       }
-      /** `Spy.componentDidMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 记录布局提交中的新实例挂载完成。 */
       componentDidMount() {
         log.push(this.props.name + ' componentDidMount');
       }
-      /** `Spy.componentWillUnmount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 记录提交删除过程中的旧实例卸载。 */
       componentWillUnmount() {
         log.push(this.props.name + ' componentWillUnmount');
       }
     }
 
-    // 它们是参考不等式的,所以即使它们有相匹配的密钥,它们也会被交换.
-    /** `SpyA`：封装当前用例复用的操作、回调或断言步骤。 */
+    // SpyA 与 SpyB 是不同的组件类型；即使 key 相同，切换类型也会卸载旧子树并挂载新子树。
+
+    /** 用独立函数类型包装 Spy，作为被替换的旧子类型。 */
     const SpyA = props => <Spy {...props} />;
-    /** `SpyB`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 用另一个函数类型包装 Spy，即使 key 相同也要求替换实例。 */
     const SpyB = props => <Spy {...props} />;
 
     const container = document.createElement('div');

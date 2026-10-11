@@ -55,7 +55,7 @@ type ComponentSelector = {
   value: component(),
 };
 
-/** `:has(...)` selector：要求当前 Fiber 后代存在完整 selector 路径。 */
+/** `:has(...)` selector：从当前 Fiber（含自身）开始，要求存在完整 selector 路径。 */
 type HasPseudoClassSelector = {
   /** HAS_PSEUDO_CLASS_TYPE 判别值。 */
   $$typeof: Type,
@@ -105,7 +105,7 @@ export function createComponentSelector(
   };
 }
 
-/** 创建要求后代存在嵌套匹配路径的 `:has` selector。 */
+/** 创建从候选 Fiber 自身开始检查嵌套路径的 `:has` selector；保存传入数组引用。 */
 export function createHasPseudoClassSelector(
   selectors: Array<Selector>,
 ): HasPseudoClassSelector {
@@ -240,7 +240,11 @@ function matchSelector(fiber: Fiber, selector: Selector): boolean {
   return false;
 }
 
-/** 把 selector 格式化为面向测试失败信息的类 CSS 文本。 */
+/**
+ * 把 selector 格式化为测试失败信息中的类 CSS 文本。
+ * 当前 :has 分支递归传入自身，未展开 value 数组；进入此分支会反复递归，
+ * 不能把它理解为可正常生成嵌套 selector 的实现。
+ */
 function selectorToString(selector: Selector): string | null {
   switch (selector.$$typeof) {
     case COMPONENT_TYPE:
@@ -260,8 +264,10 @@ function selectorToString(selector: Selector): string | null {
 }
 
 /**
- * 迭代深度优先查找完整 selector 路径；栈中交替保存 Fiber 与已匹配 selector 下标。
- * selector 可跨越中间 Fiber，隐藏宿主子树整体跳过，完成路径的末端 Fiber 被收集。
+ * 以数组队列广度优先查找完整 selector 路径；相邻两槽保存 Fiber 与已匹配 selector 下标。
+ * index 向前读、子节点追加到末尾，尽管变量名为 stack，实际不是后进先出。
+ * selector 可跨越中间 Fiber，也可在同一个 Fiber 连续匹配多个条件；隐藏宿主子树
+ * 整体跳过，完成路径的末端 Fiber 被收集，并停止继续搜索该匹配分支的后代。
  */
 function findPaths(root: Fiber, selectors: Array<Selector>): Array<Fiber> {
   const matchingFibers: Array<Fiber> = [];
@@ -385,8 +391,10 @@ export function findAllNodes(
 }
 
 /**
- * 重走 findPaths 的前缀匹配逻辑，生成“已匹配部分 / 首个未匹配部分”的诊断字符串。
- * 完整路径可达时返回 null；循环逻辑必须与 findPaths 保持同步。
+ * 遍历 selector 的部分前缀，生成“已匹配部分 / 剩余未匹配部分”的诊断字符串。
+ * maxSelectorIndex 是任一路径到达的最大前缀长度；matchedNames 汇集所有匹配，
+ * 不是一条路径的快照。这里每个 Fiber 最多推进一个 selector，与 findPaths 的
+ * while 连续匹配不同，因此同一 Fiber 满足多个条件时两者结果可能不一致。
  */
 export function getFindAllNodesFailureDescription(
   hostRoot: Instance,
@@ -555,7 +563,7 @@ export function findBoundingRects(
 }
 
 /**
- * 在匹配路径的可见子树中按深度优先顺序聚焦首个可聚焦宿主节点。
+ * 在匹配路径的可见子树中按数组队列的广度优先顺序聚焦首个可聚焦宿主节点。
  * HostConfig 决定具体 focusability；成功立即返回 true。
  */
 export function focusWithin(
@@ -623,8 +631,11 @@ export type ObserveVisibleRectsCallback = (
 ) => void;
 
 /**
- * 观察匹配节点的可见矩形，并在每次 React commit 后增量 observe/unobserve 变化目标。
+ * 观察匹配节点的可见矩形，在每次 React commit 后重新查询目标。
+ * 当前实现始终与订阅创建时的 instanceRoots 比较，并未把下一批结果写回；新增目标
+ * 可能在后续提交重复 observe，后来又移除的新目标也不属于初始 unobserve 集合。
  * disconnect 同时移除 commit hook 与宿主 observer，防止后续提交继续持有订阅。
+ * callback/options 原样交给 HostConfig；回调的异步触发与宿主错误由 observer 实现决定。
  */
 export function observeVisibleRects(
   hostRoot: Instance,
@@ -655,7 +666,7 @@ export function observeVisibleRects(
     options,
   );
 
-  /** React 改变宿主树后，重新查询并增量同步观察目标。 */
+  /** React 提交后重查目标，与创建订阅时的固定集合比较；instanceRoots 不在此回写。 */
   const commitHook = () => {
     const nextInstanceRoots = findAllNodes(hostRoot, selectors);
 

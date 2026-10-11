@@ -28,12 +28,12 @@ import {
 } from '../SyntheticEvent';
 import {accumulateTwoPhaseListeners} from '../DOMPluginEventSystem';
 
-/** END_KEYCODES 保存统一 composition、beforeInput 与 fallback 字符数据，处理 IME 和旧浏览器差异所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** fallback composition 的结束控制键编码：Tab、Enter、Esc、Space。 */
 const END_KEYCODES = [9, 13, 27, 32]; // 控制键包括 Tab、Return、Esc、Space。
-/** START_KEYCODE 保存统一 composition、beforeInput 与 fallback 字符数据，处理 IME 和旧浏览器差异所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** fallback 通过 keydown 的 IME 编码 229 识别 composition 开始。 */
 const START_KEYCODE = 229;
 
-/** canUseCompositionEvent 保存统一 composition、beforeInput 与 fallback 字符数据，处理 IME 和旧浏览器差异所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** 当前 DOM 环境是否暴露 CompositionEvent。 */
 const canUseCompositionEvent = canUseDOM && 'CompositionEvent' in window;
 
 let documentMode = null;
@@ -44,25 +44,25 @@ if (canUseDOM && 'documentMode' in document) {
 // WebKit 提供实用的 `textInput`，可直接表示
 // `beforeInput`；IE 的 `textinput` 实用性较差，
 // 因此不使用。
-/** canUseTextInputEvent 保存统一 composition、beforeInput 与 fallback 字符数据，处理 IME 和旧浏览器差异所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** 非 IE 文档模式下是否暴露 TextEvent，用于选择 textInput 字符路径。 */
 const canUseTextInputEvent =
   canUseDOM && 'TextEvent' in window && !documentMode;
 
 // IE9+ 支持 composition 事件，但原生
 // compositionend 提供的数据可能错误，例如日文表意
 // 空格（\u3000）无法正确记录。
-/** useFallbackCompositionData 是统一 composition、beforeInput 与 fallback 字符数据，处理 IME 和旧浏览器差异使用的稳定常量，避免在热路径重复分配或推导。 */
+/** 不支持原生 composition 或 IE9-11 数据不可靠时，启用文本差异回退。 */
 const useFallbackCompositionData =
   canUseDOM &&
   (!canUseCompositionEvent ||
     (documentMode && documentMode > 8 && documentMode <= 11));
 
-/** SPACEBAR_CODE 是统一 composition、beforeInput 与 fallback 字符数据，处理 IME 和旧浏览器差异使用的稳定常量，避免在热路径重复分配或推导。 */
+/** 空格的 keypress 编码 32。 */
 const SPACEBAR_CODE = 32;
-/** SPACEBAR_CHAR 是统一 composition、beforeInput 与 fallback 字符数据，处理 IME 和旧浏览器差异使用的稳定常量，避免在热路径重复分配或推导。 */
+/** 空格字符，用于过滤 keypress 后重复的 textInput。 */
 const SPACEBAR_CHAR = String.fromCharCode(SPACEBAR_CODE);
 
-/** registerEvents 管理统一 composition、beforeInput 与 fallback 字符数据，处理 IME 和旧浏览器差异的注册/监听边界；避免同一容器重复安装或遗漏 capture 配置。 */
+/** 登记 beforeInput 和 composition 的两阶段 React 名称及原生依赖，不安装 DOM listener。 */
 function registerEvents() {
   registerTwoPhaseEvent('onBeforeInput', [
     'compositionend',
@@ -103,7 +103,7 @@ let hasSpaceKeypress = false;
  * 判断原生 keypress 是否应视为命令。Firefox 会为剪切、复制、全选等命令触发 `keypress`，
  * 即使没有插入任何字符，因此必须过滤。
  */
-/** isKeypressCommand 判断统一 composition、beforeInput 与 fallback 字符数据，处理 IME 和旧浏览器差异的前置条件；返回值用于在热路径提前跳过不适用分支。 */
+/** 过滤 ctrl/alt/meta 命令组合；ctrl+alt 的 AltGr 保留为字符输入。 */
 function isKeypressCommand(nativeEvent: any) {
   return (
     (nativeEvent.ctrlKey || nativeEvent.altKey || nativeEvent.metaKey) &&
@@ -115,7 +115,7 @@ function isKeypressCommand(nativeEvent: any) {
 /**
  * 把原生顶层事件转换为 composition 事件类型。
  */
-/** getCompositionEventType 查询并返回统一 composition、beforeInput 与 fallback 字符数据，处理 IME 和旧浏览器差异所需状态；无匹配时使用 null/默认值而不修改事件队列。 */
+/** 把 compositionstart/update/end 映射到 React 注册名；其他类型没有返回值，调用者按 falsy 忽略。 */
 function getCompositionEventType(domEventName: DOMEventName) {
   switch (domEventName) {
     case 'compositionstart':
@@ -130,7 +130,7 @@ function getCompositionEventType(domEventName: DOMEventName) {
 /**
  * fallback 推断模型是否认为该事件表示 composition 开始。
  */
-/** isFallbackCompositionStart 判断统一 composition、beforeInput 与 fallback 字符数据，处理 IME 和旧浏览器差异的前置条件；返回值用于在热路径提前跳过不适用分支。 */
+/** 无原生 composition 时，用 keydown+229 判断输入法开始。 */
 function isFallbackCompositionStart(
   domEventName: DOMEventName,
   nativeEvent: any,
@@ -141,7 +141,7 @@ function isFallbackCompositionStart(
 /**
  * fallback 模式是否认为该事件表示 composition 结束。
  */
-/** isFallbackCompositionEnd 判断统一 composition、beforeInput 与 fallback 字符数据，处理 IME 和旧浏览器差异的前置条件；返回值用于在热路径提前跳过不适用分支。 */
+/** 用控制键 keyup、非229 keydown、keypress/mousedown/focusout 判断 fallback 输入法结束。 */
 function isFallbackCompositionEnd(
   domEventName: DOMEventName,
   nativeEvent: any,
@@ -171,7 +171,7 @@ function isFallbackCompositionEnd(
  * @param {object} nativeEvent 可能携带 CustomEvent detail 的原生事件。
  * @return {?string} 自定义 composition 数据；不存在时为 null。
  */
-/** getDataFromCustomEvent 查询并返回统一 composition、beforeInput 与 fallback 字符数据，处理 IME 和旧浏览器差异所需状态；无匹配时使用 null/默认值而不修改事件队列。 */
+/** 读取 Google Input Tools 的 detail.data；不存在时返回 null。 */
 function getDataFromCustomEvent(nativeEvent: any) {
   const detail = nativeEvent.detail;
   if (typeof detail === 'object' && 'data' in detail) {
@@ -188,7 +188,7 @@ function getDataFromCustomEvent(nativeEvent: any) {
  * @param {object} nativeEvent 待识别输入法区域的原生 composition 事件。
  * @return {boolean} 是否来自韩文 IME。
  */
-/** isUsingKoreanIME 判断统一 composition、beforeInput 与 fallback 字符数据，处理 IME 和旧浏览器差异的前置条件；返回值用于在热路径提前跳过不适用分支。 */
+/** 通过 locale=ko 识别应跳过文本差异 fallback 的韩文 IME。 */
 function isUsingKoreanIME(nativeEvent: any) {
   return nativeEvent.locale === 'ko';
 }
@@ -197,9 +197,9 @@ function isUsingKoreanIME(nativeEvent: any) {
 let isComposing = false;
 
 /**
-* @return {?object} 返回 SyntheticCompositionEvent。
+* composition 事件写入 dispatchQueue。
  */
-/** extractCompositionEvent 从原生事件和 Fiber 路径收集统一 composition、beforeInput 与 fallback 字符数据，处理 IME 和旧浏览器差异所需数据；只生成满足插件条件的 listener/event。 */
+/** 识别原生/fallback composition 阶段，维护 isComposing，并把字符数据与两阶段 listeners 加入队列。 */
 function extractCompositionEvent(
   dispatchQueue: DispatchQueue,
   domEventName: DOMEventName,
@@ -261,7 +261,7 @@ function extractCompositionEvent(
   }
 }
 
-/** getNativeBeforeInputChars 查询并返回统一 composition、beforeInput 与 fallback 字符数据，处理 IME 和旧浏览器差异所需状态；无匹配时使用 null/默认值而不修改事件队列。 */
+/** 从 textInput/compositionend/空格 keypress 取字符，过滤已经处理过的空格。 */
 function getNativeBeforeInputChars(
   domEventName: DOMEventName,
   nativeEvent: any,
@@ -290,9 +290,7 @@ function getNativeBeforeInputChars(
       // 记录即将写入 DOM 的字符。
       const chars = nativeEvent.data;
 
-      // 若字符为空格，认为已经在 keypress 阶段处理，
-      // 立即退出。Android Chrome
-      // 不提供 keyCode，因此也必须忽略。
+      // 仅在前面已处理空格 keypress 时过滤重复 textInput；否则保留空格字符。
       if (chars === SPACEBAR_CHAR && hasSpaceKeypress) {
         return null;
       }
@@ -308,7 +306,7 @@ function getNativeBeforeInputChars(
 /**
  * 对不支持 `textInput` 的浏览器，提取 SyntheticInputEvent 所需的字符字符串。
  */
-/** getFallbackBeforeInputChars 查询并返回统一 composition、beforeInput 与 fallback 字符数据，处理 IME 和旧浏览器差异所需状态；无匹配时使用 null/默认值而不修改事件队列。 */
+/** composition 结束时消费文本差异并 reset；普通 keypress 提取字符，paste 与命令组合不生成输入字符。 */
 function getFallbackBeforeInputChars(
   domEventName: DOMEventName,
   nativeEvent: any,
@@ -333,8 +331,7 @@ function getFallbackBeforeInputChars(
 
   switch (domEventName) {
     case 'paste':
-      // 若 keypress 后出现 paste，丢弃已缓存的输入
-      // 字符；paste 不应产生 BeforeInput。
+      // paste 不走这个字符回退路径，此分支不生成 beforeInput。
       return null;
     case 'keypress':
       /**
@@ -373,9 +370,9 @@ function getFallbackBeforeInputChars(
 /**
  * 基于原生 `textInput` 或 fallback 行为提取 `beforeInput` 的 SyntheticInputEvent。
  * 
- * @return {?object} SyntheticInputEvent。
+ * beforeInput 事件写入 dispatchQueue。
  */
-/** extractBeforeInputEvent 从原生事件和 Fiber 路径收集统一 composition、beforeInput 与 fallback 字符数据，处理 IME 和旧浏览器差异所需数据；只生成满足插件条件的 listener/event。 */
+/** 选择 textInput 或 fallback 字符路径；有字符与 listener 时创建 beforeinput 合成事件并入队。 */
 function extractBeforeInputEvent(
   dispatchQueue: DispatchQueue,
   domEventName: DOMEventName,
@@ -413,18 +410,10 @@ function extractBeforeInputEvent(
 }
 
 /**
- * 创建符合以下规范的 `onBeforeInput`：
- * http://www.w3.org/TR/2013/WD-DOM-Level-3-Events-20131105/#events-inputevents
- * 
- * 插件基于 Chrome、Safari、Opera、IE 的原生 `textInput`；它在 `onKeyPress`/`onCompositionEnd` 之后、
- * `onInput` 之前触发。
- * 
- * 浏览器尚未实现规范中的 `beforeInput`，而 `input` 也没有提供实际插入内容。
- * 因此 `textInput` 是识别写入目标节点字符的最佳可用事件。
- * 
- * 该插件还负责发出 `composition` 事件，使 `beforeInput` 与 `composition` 共用 fallback 代码。
+ * 用 textInput 与 composition/keypress 回退产生 onBeforeInput 的字符数据，
+ * 不监听原生 beforeinput；composition 与 beforeInput 共用同一份 fallback 状态。
  */
-/** extractEvents 从原生事件和 Fiber 路径收集统一 composition、beforeInput 与 fallback 字符数据，处理 IME 和旧浏览器差异所需数据；只生成满足插件条件的 listener/event。 */
+/** 先提取 composition，再提取 beforeInput，让两者共享并依次消费 fallback 状态。 */
 function extractEvents(
   dispatchQueue: DispatchQueue,
   domEventName: DOMEventName,

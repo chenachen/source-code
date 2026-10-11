@@ -95,7 +95,7 @@ if (__DEV__) {
   didWarnForNewBooleanPropsWithEmptyValue = {};
 }
 
-/** `validatePropertiesInDevelopment` 校验输入并仅在开发环境报告违反的宿主不变量；用于把 JSX props 校验、规范化并挂载、更新或 hydration 到具体 DOM 元素。 */
+/** 开发期调用 ARIA、null value 和未知 prop 校验，并检查 contentEditable 与 children 等组合。 */
 function validatePropertiesInDevelopment(type: string, props: any) {
   if (__DEV__) {
     validateARIAProperties(type, props);
@@ -119,7 +119,7 @@ function validatePropertiesInDevelopment(type: string, props: any) {
   }
 }
 
-/** `validateFormActionInDevelopment` 校验输入并仅在开发环境报告违反的宿主不变量；用于把 JSX props 校验、规范化并挂载、更新或 hydration 到具体 DOM 元素。 */
+/** 开发期检查 action/formAction 的标签与值类型，并报告函数 action 接管的 name/method/target/encType。 */
 function validateFormActionInDevelopment(
   tag: string,
   key: string,
@@ -219,7 +219,7 @@ function validateFormActionInDevelopment(
   }
 }
 
-/** `warnForPropDifference` 校验输入并仅在开发环境报告违反的宿主不变量；用于把 JSX props 校验、规范化并挂载、更新或 hydration 到具体 DOM 元素。 */
+/** 规范化后仍不同的服务端值写入 hydration 差异表；相同值不记录。 */
 function warnForPropDifference(
   propName: string,
   serverValue: mixed,
@@ -245,7 +245,7 @@ function warnForPropDifference(
   }
 }
 
-/** `hasViewTransition` 判断当前标签、属性或宿主状态是否满足分支条件，不产生提交副作用；用于把 JSX props 校验、规范化并挂载、更新或 hydration 到具体 DOM 元素。 */
+/** 检查 Fizz 生成的 vt-share/exit/enter/update 等标记，判断元素是否参与服务端 View Transition。 */
 function hasViewTransition(htmlElement: HTMLElement): boolean {
   return !!(
     htmlElement.getAttribute('vt-share') ||
@@ -258,7 +258,7 @@ function hasViewTransition(htmlElement: HTMLElement): boolean {
   );
 }
 
-/** `isExpectedViewTransitionName` 判断当前标签、属性或宿主状态是否满足分支条件，不产生提交副作用；用于把 JSX props 校验、规范化并挂载、更新或 hydration 到具体 DOM 元素。 */
+/** 识别当前过渡或 Fizz 生成的自动名称，供 hydration 忽略运行时添加的样式。 */
 function isExpectedViewTransitionName(htmlElement: HTMLElement): boolean {
   if (!hasViewTransition(htmlElement)) {
     //我们没想到会看到应用了视图转换名称。
@@ -277,7 +277,7 @@ function isExpectedViewTransitionName(htmlElement: HTMLElement): boolean {
   }
 }
 
-/** `warnForExtraAttributes` 校验输入并仅在开发环境报告违反的宿主不变量；用于把 JSX props 校验、规范化并挂载、更新或 hydration 到具体 DOM 元素。 */
+/** 把未被客户端 props 消费的服务端属性记入差异表；忽略预期的 View Transition 样式。 */
 function warnForExtraAttributes(
   domElement: Element,
   attributeNames: Set<string>,
@@ -314,7 +314,7 @@ function warnForExtraAttributes(
   }
 }
 
-/** `warnForInvalidEventListener` 校验输入并仅在开发环境报告违反的宿主不变量；用于把 JSX props 校验、规范化并挂载、更新或 hydration 到具体 DOM 元素。 */
+/** 开发期报告非函数 handler，区分 false 的常见条件渲染误用。 */
 function warnForInvalidEventListener(registrationName: string, listener: any) {
   if (__DEV__) {
     if (listener === false) {
@@ -338,7 +338,7 @@ function warnForInvalidEventListener(registrationName: string, listener: any) {
 
 //解析 HTML 并将其读回，以规范 HTML 字符串，使其
 //可以用于比较。
-/** `normalizeHTML` 执行宿主属性处理步骤，并把副作用限制在当前 DOM 节点；用于把 JSX props 校验、规范化并挂载、更新或 hydration 到具体 DOM 元素。 */
+/** 用同一 document 的临时同类元素解析 HTML，返回浏览器规范化后的 innerHTML 供 hydration 比较。 */
 function normalizeHTML(parent: Element, html: string) {
   if (__DEV__) {
     //我们本可以在这里创建一个单独的文档以避免
@@ -358,16 +358,12 @@ function normalizeHTML(parent: Element, html: string) {
   }
 }
 
-//HTML 解析将 CR 和 CRLF 规范化为 LF。
-//它也可以在属性内部将   转换为 �。
-//https://www.w3.org/TR/html5/single-page.html#preprocessing-the-input-stream
-//如果我们有不匹配，可能是由此造成的。
-//在这种情况下我们仍会修补，但不会发出警告。
+/** 匹配CR或CRLF并在水合比较时统一为LF，消除HTML解析造成的换行差异；NUL/替换字符由紧随的另一正则处理。 */
 const NORMALIZE_NEWLINES_REGEX = /\r\n?/g;
-/** `NORMALIZE_NULL_AND_REPLACEMENT_REGEX` 是把 JSX props 校验、规范化并挂载、更新或 hydration 到具体 DOM 元素使用的稳定协议值或集合；必须与浏览器解析语义一致。 */
+/** 移除 NUL 与替换字符，使 hydration 比较与 HTML 解析后的文本一致。 */
 const NORMALIZE_NULL_AND_REPLACEMENT_REGEX = /\u0000|\uFFFD/g;
 
-/** `normalizeMarkupForTextOrAttribute` 执行宿主属性处理步骤，并把副作用限制在当前 DOM 节点；用于把 JSX props 校验、规范化并挂载、更新或 hydration 到具体 DOM 元素。 */
+/** 把值转为字符串并统一换行、NUL 与替换字符，用于比较解析前后的标记。 */
 function normalizeMarkupForTextOrAttribute(markup: mixed): string {
   if (__DEV__) {
     checkHtmlStringCoercion(markup);
@@ -379,7 +375,7 @@ function normalizeMarkupForTextOrAttribute(markup: mixed): string {
     .replace(NORMALIZE_NULL_AND_REPLACEMENT_REGEX, '');
 }
 
-/** `checkForUnmatchedText` 判断当前标签、属性或宿主状态是否满足分支条件，不产生提交副作用；用于把 JSX props 校验、规范化并挂载、更新或 hydration 到具体 DOM 元素。 */
+/** 文本按 HTML 解析规则规范化后是否相同；返回值用于决定 hydration 是否失败。 */
 function checkForUnmatchedText(
   serverText: string,
   clientText: string | number | bigint,
@@ -392,7 +388,7 @@ function checkForUnmatchedText(
   return false;
 }
 
-/** `trapClickOnNonInteractiveElement` 执行宿主属性处理步骤，并把副作用限制在当前 DOM 节点；用于把 JSX props 校验、规范化并挂载、更新或 hydration 到具体 DOM 元素。 */
+/** 安装空 onclick，使移动 Safari 的非交互元素 click 能到达委托 listener。 */
 export function trapClickOnNonInteractiveElement(node: HTMLElement) {
   //Mobile Safari 无法正确触发冒泡点击事件
   //非交互元素，这意味着委托的点击监听器不会
@@ -406,19 +402,25 @@ export function trapClickOnNonInteractiveElement(node: HTMLElement) {
   node.onclick = noop;
 }
 
-/** `clearClickListener` 移除对应宿主状态，确保旧 props 不残留；用于把 JSX props 校验、规范化并挂载、更新或 hydration 到具体 DOM 元素。 */
+/** 仅在 onclick 仍为 React 的空回调时清除，保留用户替换的回调。 */
 export function clearClickListener(node: HTMLElement) {
   if (node.onclick === noop) {
     node.onclick = null;
   }
 }
 
-/** `xlinkNamespace` 保存把 JSX props 校验、规范化并挂载、更新或 hydration 到具体 DOM 元素所需的共享映射、集合或模块级状态；生命周期覆盖当前 renderer。 */
+/** 写入 xlink:* SVG 属性使用的 XML 命名空间 URI。 */
 const xlinkNamespace = 'http://www.w3.org/1999/xlink';
-/** `xmlNamespace` 保存把 JSX props 校验、规范化并挂载、更新或 hydration 到具体 DOM 元素所需的共享映射、集合或模块级状态；生命周期覆盖当前 renderer。 */
+/** 写入 xml:* 属性使用的 XML 命名空间 URI。 */
 const xmlNamespace = 'http://www.w3.org/XML/1998/namespace';
 
-/** `setProp` 同步 DOM/Fiber 状态，并维持提交前后快照一致；用于把 JSX props 校验、规范化并挂载、更新或 hydration 到具体 DOM 元素。 */
+/**
+ * 初次设置与后续 diff 共用的单 prop 写入器，按标准标签语义选择文本、样式、property 或 attribute 路径。
+ * URL 属性先过滤不支持的值并清洗 javascript:；函数 action 安装拦截提交的错误 URL，切回字符串时恢复 Fizz 接管的表单属性。
+ * 已知事件 handler 通过 props 缓存供委托派发读取；这里仅安装 scroll 等目标监听与 Safari click 兼容回调。
+ *
+ * @param prevValue - 前次提交值，供 style diff、innerHTML 比较和函数 action 转换判断使用。
+ */
 function setProp(
   domElement: Element,
   tag: string,
@@ -457,7 +459,7 @@ function setProp(
       }
       break;
     }
-    //这些是非常常见的道具，因此在开关的开头。
+    // 常见 props 放在 switch 前部处理。
     //TODO: aria-label 是一个非常常见的属性，但它允许布尔值，所以不像其他属性一样
     //但理想情况下也应该列在这个列表中。
     case 'className':
@@ -501,7 +503,7 @@ function setProp(
         } else {
           if (__DEV__) {
             try {
-              //这应该总是出错。
+              // 探测对象是否能生成 URL；成功说明对象类型受支持，但当前标签不支持这种 src 用法，需要警告。
               URL.revokeObjectURL(URL.createObjectURL(value as any));
               if (tag === 'source') {
                 console.error(
@@ -576,11 +578,9 @@ function setProp(
         validateFormActionInDevelopment(tag, key, value, props);
       }
       if (typeof value === 'function') {
-        //设置一个不会执行任何操作的 JavaScript URL。我们不期望它被调用
-        //因为我们会调用 preventDefault，但如果表单被手动提交，就可能发生
-        //如果有人在 React 获取事件之前调用 stopPropagation。
-        //如果使用 CSP 来阻止 javascript: URL 那也没问题。只是它不会显示这个
-        //错误消息，但 URL 将被记录。
+        // 正常 submit 由 FormActionEventPlugin preventDefault 后执行函数。
+        // 绕过 submit listener 的 form.submit() 或提前 stopPropagation 会落到这个抛错 URL，
+        // 提示改用 requestSubmit()/preventDefault；CSP 阻止 URL 时不会执行错误文本。
         domElement.setAttribute(
           key,
           // eslint-disable-next-line no-script-url
@@ -697,8 +697,7 @@ function setProp(
       }
       break;
     }
-    //注意：如果 `select.multiple` 已更新，`option.selected` 并未更新
-    //已通过 `removeAttribute` 禁用。我们有处理此情况的特殊逻辑。
+    // multiple 直接写 property；option.selected 的同步由 select 专用初始化/更新路径完成。
     case 'multiple': {
       (domElement as any).multiple =
         value && typeof value !== 'function' && typeof value !== 'symbol';
@@ -997,7 +996,7 @@ function setProp(
           );
         }
       }
-    //未能实现
+    // 未命中专用 prop 时走下面的普通 attribute/事件处理。
     default: {
       if (
         key.length > 2 &&
@@ -1024,7 +1023,7 @@ function setProp(
   trackHostMutation();
 }
 
-/** `setPropOnCustomElement` 同步 DOM/Fiber 状态，并维持提交前后快照一致；用于把 JSX props 校验、规范化并挂载、更新或 hydration 到具体 DOM 元素。 */
+/** 处理自定义元素的文本/style 等保留 props；其余交给 property、attribute 或原生 on* listener 路径。 */
 function setPropOnCustomElement(
   domElement: Element,
   tag: string,
@@ -1116,7 +1115,7 @@ function setPropOnCustomElement(
     case 'innerText': //属性
     case 'textContent':
       return;
-    //未能实现
+    // 其余 prop 再区分 React 已知事件与自定义 property/attribute。
     default: {
       if (registrationNameDependencies.hasOwnProperty(key)) {
         if (__DEV__ && value != null && typeof value !== 'function') {
@@ -1134,7 +1133,11 @@ function setPropOnCustomElement(
   trackHostMutation();
 }
 
-/** `setInitialProperties` 同步 DOM/Fiber 状态，并维持提交前后快照一致；用于把 JSX props 校验、规范化并挂载、更新或 hydration 到具体 DOM 元素。 */
+/**
+ * 由 DOM HostConfig 创建实例时设置初始 props 和非委托目标监听，尚未把普通新实例插入根容器。
+ * 表单值收集后交给 input/select/textarea 专用初始化；空元素拒绝 children/innerHTML。
+ * img 先设置影响请求的 crossorigin/sizes 等属性，最后写 srcSet/src，避免浏览器用中间状态发起加载。
+ */
 export function setInitialProperties(
   domElement: Element,
   tag: string,
@@ -1356,7 +1359,7 @@ export function setInitialProperties(
           }
           case 'children': {
             children = propValue;
-            //由上面的 initTextarea 处理。
+            // 由下面的 initTextarea 处理，不创建独立文本子 Fiber。
             break;
           }
           case 'dangerouslySetInnerHTML': {
@@ -1444,7 +1447,7 @@ export function setInitialProperties(
     case 'embed':
     case 'source':
     case 'link': {
-      //这些是也需要委托事件的空元素。
+      // 这些空元素需要目标上的非委托 load/error 监听，React 再模拟合成事件传播。
       listenToNonDelegatedEvent('error', domElement);
       listenToNonDelegatedEvent('load', domElement);
       //我们落入空元素的返回
@@ -1522,21 +1525,19 @@ export function setInitialProperties(
   }
 }
 
-/** `SingletonType` 定义把 JSX props 校验、规范化并挂载、更新或 hydration 到具体 DOM 元素的数据契约；字段共同约束状态所有权与分支边界。 */
+/** React 可复用的 document 单例标签：html、head、body。 */
 export type SingletonType = 'html' | 'head' | 'body';
 
-/** `emptyProps` 保存把 JSX props 校验、规范化并挂载、更新或 hydration 到具体 DOM 元素所需的共享映射、集合或模块级状态；生命周期覆盖当前 renderer。 */
+/** 清除 singleton 属性时传给 setProp 的空 props。 */
 const emptyProps = {};
 
-/** `clearSingletonProperties` 移除对应宿主状态，确保旧 props 不残留；用于把 JSX props 校验、规范化并挂载、更新或 hydration 到具体 DOM 元素。 */
+/** 把 singleton 原 props 逐项设为 null；跳过表单、媒体等普通标签专用更新分支。 */
 export function clearSingletonProperties(
   domElement: Element,
   tag: SingletonType,
   props: Object,
 ): void {
-  //这相当于更新没有标签的空属性
-  //特定标签的更新逻辑。宿主单例仅限于 html、head 和
-  //身体，所以他们总是使用这个通用路径。
+  // html/head/body 都走通用 prop 路径，可逐项清除而不触发表单控件逻辑。
   for (const propKey in props) {
     const propValue = props[propKey];
     if (props.hasOwnProperty(propKey) && propValue != null) {
@@ -1545,7 +1546,11 @@ export function clearSingletonProperties(
   }
 }
 
-/** `updateProperties` 同步 DOM/Fiber 状态，并维持提交前后快照一致；用于把 JSX props 校验、规范化并挂载、更新或 hydration 到具体 DOM 元素。 */
+/**
+ * mutation 提交按前后 props 清除已删除键并写变化值；自定义元素用 undefined 清除，标准属性用 null。
+ * input 的值、类型与 name 收集后最后调用 updateInput；select 在 option 子树 mutation 完成后重应用选择。
+ * 事件函数本身由 HostConfig 随后更新 DOM props 缓存，本函数不把委托 handler 逐个安装到元素。
+ */
 export function updateProperties(
   domElement: Element,
   tag: string,
@@ -1584,7 +1589,7 @@ export function updateProperties(
               break;
             }
             case 'value': {
-              //这是由下面的 updateWrapper 处理的。
+              // 由下面的 updateInput 处理，不能走普通 value attribute 写入。
               break;
             }
             case 'defaultValue': {
@@ -1739,7 +1744,7 @@ export function updateProperties(
         if (lastProps.hasOwnProperty(propKey) && lastProp != null) {
           switch (propKey) {
             case 'value': {
-              //这是由下面的 updateWrapper 处理的。
+              // 由下面的 updateSelect 按 option 子树最终状态处理。
               break;
             }
             //defaultValue 会被 setProp 忽略
@@ -1801,8 +1806,7 @@ export function updateProperties(
           }
         }
       }
-      //<select> 值更新需要在 <option> 子组件之后进行
-      //和解
+      // option 子树先提交，再按新的 value 选择选项。
       updateSelect(domElement, value, defaultValue, multiple, wasMultiple);
       return;
     }
@@ -2053,7 +2057,7 @@ export function updateProperties(
   }
 }
 
-/** `getPossibleStandardName` 查询或比较当前宿主状态；无匹配时返回显式空结果；用于把 JSX props 校验、规范化并挂载、更新或 hydration 到具体 DOM 元素。 */
+/** 开发期从标准名称表查询 prop 的正确大小写；生产环境返回 null。 */
 function getPossibleStandardName(propName: string): string | null {
   if (__DEV__) {
     const lowerCasedName = propName.toLowerCase();
@@ -2065,7 +2069,7 @@ function getPossibleStandardName(propName: string): string | null {
   return null;
 }
 
-/** `getPropNameFromAttributeName` 查询或比较当前宿主状态；无匹配时返回显式空结果；用于把 JSX props 校验、规范化并挂载、更新或 hydration 到具体 DOM 元素。 */
+/** 把 class/for 的 DOM 名转换为 React 的 className/htmlFor，其他名称保持原值。 */
 function getPropNameFromAttributeName(attrName: string): string {
   switch (attrName) {
     case 'class':
@@ -2078,7 +2082,7 @@ function getPropNameFromAttributeName(attrName: string): string {
   }
 }
 
-/** `getPropsFromElement` 查询或比较当前宿主状态；无匹配时返回显式空结果；用于把 JSX props 校验、规范化并挂载、更新或 hydration 到具体 DOM 元素。 */
+/** 读取 DOM attribute 和 style，生成 hydration 诊断用的服务端 props 快照。 */
 export function getPropsFromElement(domElement: Element): Object {
   const serverDifferences: {
     /** prop 名到当前 DOM 值的映射，用于反向构造开发期 props 快照。 */
@@ -2095,9 +2099,9 @@ export function getPropsFromElement(domElement: Element): Object {
   return serverDifferences;
 }
 
-/** `getStylesObjectFromElement` 查询或比较当前宿主状态；无匹配时返回显式空结果；用于把 JSX props 校验、规范化并挂载、更新或 hydration 到具体 DOM 元素。 */
+/** 读取现有 CSSStyleDeclaration 的序列化值；忽略 Fizz 运行时的预期 View Transition 名称。 */
 function getStylesObjectFromElement(domElement: Element): {
-  /** `getStylesObjectFromElement.styleName` 表示样式属性及上次提交值；只在所属契约的生命周期内有效。 */
+  /** CSS 属性名到服务端序列化样式值的映射。 */
   [styleName: string]: string,
 } {
   const serverValueInObjectForm: {
@@ -2123,7 +2127,7 @@ function getStylesObjectFromElement(domElement: Element): {
   return serverValueInObjectForm;
 }
 
-/** `diffHydratedStyles` 查询或比较当前宿主状态；无匹配时返回显式空结果；用于把 JSX props 校验、规范化并挂载、更新或 hydration 到具体 DOM 元素。 */
+/** 比较 style 字符串及其规范化结果；不匹配时把服务端样式快照记入差异表。 */
 function diffHydratedStyles(
   domElement: Element,
   value: mixed,
@@ -2175,7 +2179,7 @@ function diffHydratedStyles(
   serverDifferences.style = getStylesObjectFromElement(domElement);
 }
 
-/** `hydrateAttribute` 执行宿主属性处理步骤，并把副作用限制在当前 DOM 节点；用于把 JSX props 校验、规范化并挂载、更新或 hydration 到具体 DOM 元素。 */
+/** 按普通 attribute 规则比较服务端值与客户端 prop，把差异记入表，不改写 DOM。 */
 function hydrateAttribute(
   domElement: Element,
   propKey: string,
@@ -2222,7 +2226,7 @@ function hydrateAttribute(
   warnForPropDifference(propKey, serverValue, value, serverDifferences);
 }
 
-/** `hydrateBooleanAttribute` 执行宿主属性处理步骤，并把副作用限制在当前 DOM 节点；用于把 JSX props 校验、规范化并挂载、更新或 hydration 到具体 DOM 元素。 */
+/** 按 attribute 存在性比较布尔 prop；差异只记入 hydration 诊断表。 */
 function hydrateBooleanAttribute(
   domElement: Element,
   propKey: string,
@@ -2263,7 +2267,7 @@ function hydrateBooleanAttribute(
   warnForPropDifference(propKey, serverValue, value, serverDifferences);
 }
 
-/** `hydrateOverloadedBooleanAttribute` 执行宿主属性处理步骤，并把副作用限制在当前 DOM 节点；用于把 JSX props 校验、规范化并挂载、更新或 hydration 到具体 DOM 元素。 */
+/** 按 true 的存在性、false 的缺失性或其他字符串值比较服务端 attribute。 */
 function hydrateOverloadedBooleanAttribute(
   domElement: Element,
   propKey: string,
@@ -2319,7 +2323,7 @@ function hydrateOverloadedBooleanAttribute(
   warnForPropDifference(propKey, serverValue, value, serverDifferences);
 }
 
-/** `hydrateBooleanishAttribute` 执行宿主属性处理步骤，并把副作用限制在当前 DOM 节点；用于把 JSX props 校验、规范化并挂载、更新或 hydration 到具体 DOM 元素。 */
+/** 把允许的 boolean/字符串值与服务端 attribute 比较，不修补属性。 */
 function hydrateBooleanishAttribute(
   domElement: Element,
   propKey: string,
@@ -2363,7 +2367,7 @@ function hydrateBooleanishAttribute(
   warnForPropDifference(propKey, serverValue, value, serverDifferences);
 }
 
-/** `hydrateNumericAttribute` 执行宿主属性处理步骤，并把副作用限制在当前 DOM 节点；用于把 JSX props 校验、规范化并挂载、更新或 hydration 到具体 DOM 元素。 */
+/** 按可序列化数值规则比较服务端 attribute，NaN 与不支持的类型视为应缺失。 */
 function hydrateNumericAttribute(
   domElement: Element,
   propKey: string,
@@ -2419,7 +2423,7 @@ function hydrateNumericAttribute(
   warnForPropDifference(propKey, serverValue, value, serverDifferences);
 }
 
-/** `hydratePositiveNumericAttribute` 执行宿主属性处理步骤，并把副作用限制在当前 DOM 节点；用于把 JSX props 校验、规范化并挂载、更新或 hydration 到具体 DOM 元素。 */
+/** 按大于等于 1 的数值规则比较服务端 attribute，并记录差异。 */
 function hydratePositiveNumericAttribute(
   domElement: Element,
   propKey: string,
@@ -2475,7 +2479,7 @@ function hydratePositiveNumericAttribute(
   warnForPropDifference(propKey, serverValue, value, serverDifferences);
 }
 
-/** `hydrateSanitizedAttribute` 执行宿主属性处理步骤，并把副作用限制在当前 DOM 节点；用于把 JSX props 校验、规范化并挂载、更新或 hydration 到具体 DOM 元素。 */
+/** 把客户端 URL 经 sanitizeURL 后与服务端 attribute 比较，记录差异。 */
 function hydrateSanitizedAttribute(
   domElement: Element,
   propKey: string,
@@ -2522,7 +2526,7 @@ function hydrateSanitizedAttribute(
   warnForPropDifference(propKey, serverValue, value, serverDifferences);
 }
 
-/** `hydrateSrcObjectAttribute` 执行宿主属性处理步骤，并把副作用限制在当前 DOM 节点；用于把 JSX props 校验、规范化并挂载、更新或 hydration 到具体 DOM 元素。 */
+/** 比较对象 src 的 SSR data URL 形态；Blob 仅按 MIME 与编码长度检查。 */
 function hydrateSrcObjectAttribute(
   domElement: Element,
   value: Blob,
@@ -2559,7 +2563,7 @@ function hydrateSrcObjectAttribute(
   warnForPropDifference('src', serverValue, value, serverDifferences);
 }
 
-/** `diffHydratedCustomComponent` 查询或比较当前宿主状态；无匹配时返回显式空结果；用于把 JSX props 校验、规范化并挂载、更新或 hydration 到具体 DOM 元素。 */
+/** 按自定义元素规则消费服务端属性并记录差异；忽略 React 保留 props 与 suppressHydrationWarning 下的差异。 */
 function diffHydratedCustomComponent(
   domElement: Element,
   tag: string,
@@ -2644,7 +2648,7 @@ function diffHydratedCustomComponent(
           );
         }
         continue;
-      //未能实现
+      // className 在 SSR 上序列化为 class，单独消费这个别名。
       case 'className':
         //className 是服务器上的一个特殊处理属性，用于呈现为一个属性。
         extraAttributes.delete('class');
@@ -2689,14 +2693,12 @@ function diffHydratedCustomComponent(
   }
 }
 
-//这是我们预期如果我们提供一个函数操作时 Fizz 渲染的确切 URL 字符串。
-//我们用这个来提示补水警告。它需要与Fizz同步。也许是有道理的
-//因此作为一个共享模块。
+/** 与Fizz函数表单action的默认占位URL保持一致；水合时客户端已改为非函数而服务端仍是该值，就按原值function报告差异。自定义渐进增强URL不使用这个哨兵。 */
 const EXPECTED_FORM_ACTION_URL =
   // eslint-disable-next-line no-script-url
   "javascript:throw new Error('React form unexpectedly submitted.')";
 
-/** `diffHydratedGenericElement` 查询或比较当前宿主状态；无匹配时返回显式空结果；用于把 JSX props 校验、规范化并挂载、更新或 hydration 到具体 DOM 元素。 */
+/** 按标准标签各类 prop 规则比较服务端 DOM，并消费已识别 attribute；此路径只生成诊断。 */
 function diffHydratedGenericElement(
   domElement: Element,
   tag: string,
@@ -2833,7 +2835,7 @@ function diffHydratedGenericElement(
           } else {
             if (__DEV__) {
               try {
-                //这应该总是出错。
+                // 能创建 URL 则说明是可支持的源对象，当前标签不支持它，因而报告标签用法错误。
                 URL.revokeObjectURL(URL.createObjectURL(value as any));
                 if (tag === 'source') {
                   console.error(
@@ -3235,7 +3237,12 @@ function diffHydratedGenericElement(
   }
 }
 
-/** `hydrateProperties` 执行宿主属性处理步骤，并把副作用限制在当前 DOM 节点；用于把 JSX props 校验、规范化并挂载、更新或 hydration 到具体 DOM 元素。 */
+/**
+ * hydration 认领已有元素时连接非委托事件、click 兼容回调与表单状态，保留可复用的服务端 DOM 身份。
+ * 直接文本 children 与 textContent 不同，且未抑制、规范化后仍不同，返回 false 让 reconciler 处理 mismatch。
+ * 普通 attribute 差异由 diffHydratedProperties 另做开发期诊断；此函数不批量按客户端 props 修补它们。
+ * hydration-change 特性开启时，表单跟踪留给 commitHydratedInstance 处理。
+ */
 export function hydrateProperties(
   domElement: Element,
   tag: string,
@@ -3295,11 +3302,8 @@ export function hydrateProperties(
       //待办：确保我们检查这个是否仍未卸载，或者进行任何清理
       //必须继续，因为我们再也不会停止跟踪了。
       validateInputProps(domElement, props);
-      //对于 input 和 textarea，我们当前总是在此处设置 value 属性
-      //张贴安装以强制其偏离属性。然而，对于
-      //选项和选择我们做的事情不完全一样和选择
-      //对 DOM 状态的变化没有弹性，所以我们在这里不这样做。
-      //待办：考虑不要对输入框和文本区域这样做。
+      // 默认路径初始化 input 的默认状态和 tracker，但 isHydrating=true 保留用户的当前值。
+      // hydration-change 路径在提交时再以初始 props 建立 tracker，检测 hydration 前的编辑。
       if (!enableHydrationChangeEvent) {
         initInput(
           domElement,
@@ -3347,13 +3351,8 @@ export function hydrateProperties(
   }
 
   const children = props.children;
-  //对于文本内容的子节点，我们将其与 textContent 进行比较。这
-  //可能匹配使用时被隐藏的其他 HTML
-  //textContent。例如，“foo”将匹配“f<span>oo</span>”，但仍然
-  //满足我们的要求。我们的要求不是产生完美
-  //HTML 和属性。理想情况下我们应该保留结构，但它是
-  //如果可见内容仍然足以表明其含义，那就不需要了
-  //甚至这些节点可能连接的监听器。
+  // 直接文本 children 按总 textContent 比较，"foo" 也会接受 "f<span>oo</span>"。
+  // 这条检查判断可复用文本内容，不验证已有子节点的逐个结构或额外监听。
   //待办：如果有多个 textNode 作为子节点，则发出警告。
   //待办：我们是否应该使用 domElement.firstChild.nodeValue 来比较？
   if (
@@ -3398,7 +3397,7 @@ export function hydrateProperties(
   return true;
 }
 
-/** `diffHydratedProperties` 查询或比较当前宿主状态；无匹配时返回显式空结果；用于把 JSX props 校验、规范化并挂载、更新或 hydration 到具体 DOM 元素。 */
+/** 开发期生成服务端 props 差异表；空表返回 null，不修补普通属性。 */
 export function diffHydratedProperties(
   domElement: Element,
   tag: string,
@@ -3472,7 +3471,7 @@ export function diffHydratedProperties(
   return serverDifferences;
 }
 
-/** `hydrateText` 执行宿主属性处理步骤，并把副作用限制在当前 DOM 节点；用于把 JSX props 校验、规范化并挂载、更新或 hydration 到具体 DOM 元素。 */
+/** 检查现有 Text 与期望文本；允许抑制警告或解析规范化后相等，否则返回 false。 */
 export function hydrateText(
   textNode: Text,
   text: string,
@@ -3489,7 +3488,7 @@ export function hydrateText(
   return true;
 }
 
-/** `diffHydratedText` 查询或比较当前宿主状态；无匹配时返回显式空结果；用于把 JSX props 校验、规范化并挂载、更新或 hydration 到具体 DOM 元素。 */
+/** 开发期返回不匹配的服务端文本；原文或规范化后相等均返回 null。 */
 export function diffHydratedText(textNode: Text, text: string): null | string {
   if (textNode.nodeValue === text) {
     return null;
@@ -3504,7 +3503,7 @@ export function diffHydratedText(textNode: Text, text: string): null | string {
   return textNode.nodeValue;
 }
 
-/** `restoreControlledState` 同步 DOM/Fiber 状态，并维持提交前后快照一致；用于把 JSX props 校验、规范化并挂载、更新或 hydration 到具体 DOM 元素。 */
+/** 按 input、textarea、select 标签转发受控值恢复，使用事件批次结束后的最新 props。 */
 export function restoreControlledState(
   domElement: Element,
   tag: string,

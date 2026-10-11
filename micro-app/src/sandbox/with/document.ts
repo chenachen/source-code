@@ -108,8 +108,8 @@ function createProxyDocument (
   /**
    * 登记子应用 document 监听器，并绑定到基座原生 document。
    *
-   * TODO：继续验证 listener 是否应绑定 proxyDocument；当前函数回调中的 this 指向真实 document。
-   * with/iframe 的相似登记逻辑可抽成公共方法，同时需定义显式以其他对象为 this 调用时的兼容语义。
+   * 函数监听器由真实 document 调用，不绑定 proxyDocument；显式 call 借用此方法也仍绑定宿主文档。
+   * 登记表按事件名保存回调引用，options 附着在回调对象上，恢复时读取该值。
    */
   function addEventListener (
     type: string,
@@ -126,7 +126,7 @@ function createProxyDocument (
     rawAddEventListener.call(rawDocument, type, listener, options)
   }
 
-  /** 从登记表和基座 document 同步移除监听器。 */
+  /** 删除回调登记并按传入 options 移除基座绑定；capture 不匹配时原生绑定仍在，但登记已删除。 */
   function removeEventListener (
     type: string,
     listener: MicroEventListener,
@@ -149,7 +149,7 @@ function createProxyDocument (
    * 合并记录 document.onclick 与普通监听器，供 UMD、预渲染或 keep-alive 恢复。
    *
    * @remarks
-   * 快照可能连续记录，故保留已有 onclick 并对监听器集合取并集；普通默认模式由上游跳过记录、直接释放。
+   * 连续记录时采用当前非假值 onclick，否则保留旧槽位；监听器集合取并集。默认模式 stop 先清空快照再释放。
    */
   const record = (): void => {
     /**
@@ -168,7 +168,7 @@ function createProxyDocument (
 
   /** 重挂载前恢复 onclick 和普通监听器，并消费快照。 */
   const rebuild = (): void => {
-    // 只有当前未重新赋值时才恢复旧 onclick，避免覆盖暂停期间的新值。
+    // 当前槽位为假值时恢复旧 onclick；已设置的新函数优先。null 等假值也满足恢复条件。
     if (sstOnClickHandler && !onClickHandler) proxyDocument.onclick = sstOnClickHandler
 
     // 通过 proxyDocument API 恢复，确保登记表与真实绑定同步更新。
@@ -181,7 +181,10 @@ function createProxyDocument (
     reset()
   }
 
-  /** 从基座 document 释放 onclick 与全部已登记监听器。 */
+  /**
+   * 移除 onclick 绑定并清空文档监听器登记。
+   * 普通监听器移除时未传 options，只匹配 capture=false；capture=true 需应用自行以相同选项解除。
+   */
   const release = (): void => {
     // 清理子应用通过 document.onclick 绑定的函数。
     if (isFunction(onClickHandler)) {
@@ -200,7 +203,9 @@ function createProxyDocument (
     }
   }
 
-  /** 合并框架内置与外部自定义的 document 属性写入处理器。 */
+  /**
+   * 在本次 proxyDocument 创建时合并内置与配置 setter，同名配置优先；之后替换配置 Map 不会更新此快照。
+   */
   const genProxyDocumentProps = () => {
     // 框架内置 onclick 代理负责替换真实 click 监听器。
     const builtInProxyProps = new Map([
@@ -208,7 +213,7 @@ function createProxyDocument (
         if (isFunction(onClickHandler)) {
           rawRemoveEventListener.call(rawDocument, 'click', onClickHandler, false)
         }
-        // TODO：评估 onclick 是否应绑定 proxyDocument；当前监听器由真实 document 触发。
+        // 不改绑函数 this；真实 document 的 click 派发会调用该处理器。
         if (isFunction(value)) {
           rawAddEventListener.call(rawDocument, 'click', value, false)
         }
@@ -217,7 +222,7 @@ function createProxyDocument (
     ])
     // 外部配置可为其他 document 属性提供定制写入副作用。
     const customProxyDocumentProps = microApp.options?.customProxyDocumentProps || new Map()
-    // Map 后写覆盖前写，因此外部处理器优先于同名内置处理器。
+    // 外部同名处理器替代内置 setter；它不自动更新 onClickHandler，也不改变 Proxy 的读取分支。
     const mergedProxyDocumentProps = new Map([
       ...builtInProxyProps,
       ...customProxyDocumentProps,
@@ -228,6 +233,7 @@ function createProxyDocument (
   const mergedProxyDocumentProps = genProxyDocumentProps()
 
   const proxyDocument = new Proxy(rawDocument, {
+    /** 返回子应用创建/监听门面和独立 onclick 槽位；其余文档能力读取宿主并绑定真实 document。 */
     get: (target: Document, key: PropertyKey): unknown => {
       throttleDeferForSetAppName(appName)
       // TODO：改为与 iframe document 一致的描述符数据表，减少逐键分支。
@@ -242,6 +248,7 @@ function createProxyDocument (
       if (key === '__MICRO_APP_NAME__') return appName
       return bindFunctionToRawTarget<Document>(Reflect.get(target, key), rawDocument, 'DOCUMENT')
     },
+    /** 优先调用创建时合并的定制写入处理器；普通属性写宿主，microAppElement 仅供读取。 */
     set: (target: Document, key: PropertyKey, value: unknown): boolean => {
       if (mergedProxyDocumentProps.has(key)) {
         const proxyCallback = mergedProxyDocumentProps.get(key)
@@ -273,6 +280,7 @@ function createProxyDocument (
  *
  * @remarks
  * 自定义 `Symbol.hasInstance` 同时接受 proxyDocument、原生 Document 和显式 MicroDocument 原型链；原型代理还会把宿主方法绑定回原生 document，避免 Illegal invocation。
+ * 这层门面只代理共享原型能力，不复制一份独立 Document.prototype；经继承代理写入会影响宿主和其他 with 应用。
  */
 function createMicroDocument (appName: string, proxyDocument: Document): Function {
   const { rawDocument, rawRootDocument } = globalEnv
@@ -300,7 +308,7 @@ function createMicroDocument (appName: string, proxyDocument: Document): Functio
    * 实例方法继承则由 `MicroDocument.prototype.__proto__` 指向原生 Document.prototype 的代理。
    */
   Object.setPrototypeOf(MicroDocument, rawRootDocument)
-  // 不用 Object.create：子应用修改 Document.prototype 时，门面与 proxyDocument 必须观察到同一原型对象。
+  // 门面原型继承共享原型的 Proxy；对继承属性的写入经 set 陷阱转发到宿主 Document.prototype。
   Object.setPrototypeOf(MicroDocument.prototype, new Proxy(rawRootDocument.prototype, {
     /** 读取原型方法时绑定到原生 document，并登记当前应用执行作用域。 */
     get (target: Document, key: PropertyKey): unknown {

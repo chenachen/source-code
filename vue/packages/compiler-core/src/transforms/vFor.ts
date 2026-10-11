@@ -122,13 +122,14 @@ export const transformFor: NodeTransform = createStructuralDirectiveTransform(
         fragmentFlag,
         undefined,
         undefined,
-        true /* isBlock */,
-        !isStableFragment /* disableTracking */,
-        false /* isComponent */,
+        true /* 生成 block */,
+        !isStableFragment /* 禁用后代收集 */,
+        false /* 非组件 */,
         node.loc,
       ) as ForCodegenNode
 
-      // 源为编译期常量时，列表长度和顺序稳定；否则根据是否提供 key 选择 keyed/unkeyed
+      // 源的 constType > NOT_CONSTANT 时采用 STABLE_FRAGMENT，包括 CAN_SKIP_PATCH 的
+      // setup 常量绑定；否则根据是否提供 key 选择 keyed/unkeyed
       // diff。这一标记属于“整个列表 Fragment”，并不取代单项 VNode 自身的 patchFlag。
       return () => {
         // 子节点均已完成转换，此时组装每轮循环返回的 childBlock。
@@ -161,7 +162,7 @@ export const transformFor: NodeTransform = createStructuralDirectiveTransform(
           : isTemplate &&
               node.children.length === 1 &&
               isSlotOutlet(node.children[0])
-            ? (node.children[0] as SlotOutletNode) // api-extractor somehow fails to infer this
+            ? (node.children[0] as SlotOutletNode) // api-extractor 无法自动推导此处的插槽出口类型。
             : null
 
         if (slotOutlet) {
@@ -169,8 +170,8 @@ export const transformFor: NodeTransform = createStructuralDirectiveTransform(
           // 直接复用，避免外面再包一层无意义的 Fragment。
           childBlock = slotOutlet.codegenNode as RenderSlotCall
           if (isTemplate && keyProperty) {
-            // template 上的 key 要注入 renderSlot() 的第三个参数（slot props），这样运行时
-            // 才能按迭代项识别插槽输出。
+            // template 上的 key 经 injectProp 写入 renderSlot 的第六参数，作为输出 Fragment 的 key；
+            // 不把编译器 key 混入传给插槽函数的 props。
             injectProp(childBlock, keyProperty, context)
           }
         } else if (needFragmentWrapper) {
@@ -185,7 +186,7 @@ export const transformFor: NodeTransform = createStructuralDirectiveTransform(
             undefined,
             true,
             undefined,
-            false /* isComponent */,
+            false /* 非组件 */,
           )
         } else {
           // 单个普通元素可直接作为循环返回值。动态列表中的每项通常必须是 block，
@@ -225,8 +226,9 @@ export const transformFor: NodeTransform = createStructuralDirectiveTransform(
         }
 
         if (memo) {
-          // v-memo 的循环回调还会接收上次缓存项。key 相同且依赖数组未变化时直接复用
-          // 旧 VNode；否则生成新项、记录 memo，再由 renderList 写回编译缓存槽。
+          // 循环回调接收该位置上次缓存的 VNode。缓存仍有宿主节点 el、提供 key 时
+          // key 也相同，且 memo 依赖未变，才直接复用。卸载会清空 el，因此外层 v-if
+          // 再次打开时会创建新 VNode；新列表结果随后写回 renderList 的缓存槽。
           const loop = createFunctionExpression(
             createForLoopParams(forNode.parseResult, [
               createSimpleExpression(`_cached`),
@@ -257,7 +259,7 @@ export const transformFor: NodeTransform = createStructuralDirectiveTransform(
             createFunctionExpression(
               createForLoopParams(forNode.parseResult),
               childBlock,
-              true /* force newline */,
+              true /* 强制换行 */,
             ) as ForIteratorExpression,
           )
         }
@@ -271,6 +273,8 @@ export const transformFor: NodeTransform = createStructuralDirectiveTransform(
  *
  * 客户端与 SSR 编译器共用这一步：它负责校验表达式、建立循环别名作用域并安排
  * 退出回调；具体怎样生成客户端 VNode 或 SSR 字符串，由 `processCodegen` 注入。
+ * 返回式 onError 的缺失/畸形表达式分支不替换元素；结构包装器已移除该指令，后续转换继续处理元素。
+ * 正常退出先撤销别名与深度，再执行平台 codegen 回调；异常中断时不会把此回调当成 finally 执行。
  *
  * @returns 节点退出时执行的清理函数；表达式非法时返回 `undefined`
  */

@@ -13,6 +13,11 @@ import {REACT_FORWARD_REF_TYPE, REACT_MEMO_TYPE} from 'shared/ReactSymbols';
  * 把 `(props, ref)` render 函数封装为 reconciler 可识别的 forward-ref 类型。
  *
  * @remarks 此处验证形状并维护调试名称；ref 的解析与提交由 renderer 完成。
+ * @param render - 接收组件 props 与 renderer 转交 ref 的渲染函数，此处只保存而不调用。
+ * @returns 带 REACT_FORWARD_REF_TYPE 和 render 的新描述对象，不是已创建的 element。
+ * @remarks DEV 校验只 console.error，不拒绝构造或修正入参；无效 render 留给后续使用
+ * 路径处理。生产跳过这些诊断。DEV displayName setter 会改写匿名 render 的 name 与
+ * displayName，已命名 render 保持原名；它不改变 ref 的 attach/cleanup 生命周期。
  */
 export function forwardRef<Props, ElementType: React$ElementType>(
   render: (

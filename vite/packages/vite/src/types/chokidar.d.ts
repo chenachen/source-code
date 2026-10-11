@@ -11,7 +11,9 @@ import type * as fs from 'node:fs'
 import { EventEmitter } from 'node:events'
 import type { Matcher } from './anymatch'
 
+/** Chokidar 监听实例的公开类型，支持增删路径、读取监听集合和关闭底层监听器。 */
 export class FSWatcher extends EventEmitter implements fs.FSWatcher {
+  /** 创建或配置当前 watcher 时使用的监听选项。 */
   options: WatchOptions
 
   /**
@@ -53,11 +55,13 @@ export class FSWatcher extends EventEmitter implements fs.FSWatcher {
    */
   close(): Promise<void>
 
+  /** 监听文件/目录新增或文件变更，路径可按 cwd 相对化，stats 按选项提供。 */
   on(
     event: 'add' | 'addDir' | 'change',
     listener: (path: string, stats?: fs.Stats) => void,
   ): this
 
+  /** 统一接收新增、变更和删除事件，以首个参数区分事件类型。 */
   on(
     event: 'all',
     listener: (
@@ -85,11 +89,14 @@ export class FSWatcher extends EventEmitter implements fs.FSWatcher {
    */
   on(event: 'ready', listener: () => void): this
 
+  /** 接收文件或目录删除事件；已删除路径不再提供 stats。 */
   on(event: 'unlink' | 'unlinkDir', listener: (path: string) => void): this
 
+  /** 接受其他 EventEmitter 事件名的兼容重载，不预设回调参数形状。 */
   on(event: string, listener: (...args: any[]) => void): this
 }
 
+/** Chokidar 3.6 类型快照中的监听策略；Vite 将 server.watch 配置传给 watcher。 */
 export interface WatchOptions {
   /**
    * 是否在文件监听期间保持进程运行。fsevents 下设为 false 后，ready 之后不再发出
@@ -106,7 +113,7 @@ export interface WatchOptions {
   ignored?: Matcher
 
   /**
-   * 设为 false 时，初次扫描在 ready 前发现的匹配路径也会发出 add/addDir。
+   * false（默认）时，初次扫描在 ready 前发现的匹配路径也会发出 add/addDir；true 抑制这些初始事件。
    */
   ignoreInitial?: boolean
 
@@ -179,6 +186,7 @@ export interface WatchOptions {
   awaitWriteFinish?: AwaitWriteFinishOptions | boolean
 }
 
+/** 通过文件大小稳定时间判断写入完成，避免读取编辑器尚未写完的内容。 */
 export interface AwaitWriteFinishOptions {
   /**
    * 文件大小保持不变多久后才发出事件，单位毫秒。

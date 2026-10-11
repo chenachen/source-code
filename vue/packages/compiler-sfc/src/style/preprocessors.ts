@@ -10,7 +10,7 @@ export type StylePreprocessor = (
   options: {
     /** 透传给具体预处理器的其他配置。 */
     [key: string]: any
-    /** 编译前追加到样式源码的共享变量/混入，或动态转换函数。 */
+    /** 字符串直接前置拼接；函数接收 source/filename，其返回值替换完整预处理输入。 */
     additionalData?: string | ((source: string, filename: string) => string)
     /** 当前 SFC 文件名，供 import 解析和 source map 使用。 */
     filename: string
@@ -30,7 +30,11 @@ export interface StylePreprocessorResults {
   dependencies: string[]
 }
 
-/** SCSS 适配器，同时兼容现代 `compileString` 与旧 `renderSync` Sass API。 */
+/**
+ * SCSS 适配器：优先 compileString，否则使用 renderSync，统一 CSS、依赖与 map。
+ * Sass 模块加载和 additionalData 执行在 try 之外；编译、URL 转换与 map 合并异常才转成
+ * 空 code/errors。输入 map 存在时才请求 Sass map，并与 block → SFC 映射复合。
+ */
 const scss: StylePreprocessor = (source, map, options, load = require) => {
   const nodeSass: typeof import('sass') = load('sass')
   const { compileString, renderSync } = nodeSass
@@ -91,7 +95,10 @@ const sass: StylePreprocessor = (source, map, options, load) =>
     load,
   )
 
-/** Less 同步适配器；强制 syncImport，保证 compileStyle 同步 API 可用。 */
+/**
+ * Less 回调适配器：强制 syncImport，再立即读取回调结果，适用于同步完成的渲染实现。
+ * 回调 error 转为结果项；加载、调用 render 或合并 map 自行抛出的异常继续向外传播。
+ */
 const less: StylePreprocessor = (source, map, options, load = require) => {
   const nodeLess = load('less')
 
@@ -124,7 +131,10 @@ const less: StylePreprocessor = (source, map, options, load = require) => {
   }
 }
 
-/** Stylus 同步适配器，并收集 `@import` 依赖与可选 source map。 */
+/**
+ * Stylus 同步适配器，在 render 后收集 deps() 与可选 map；加载模块在 try 之外。
+ * 它直接使用 source，未经过 getSource，因此不会应用此接口中的 additionalData。
+ */
 const styl: StylePreprocessor = (source, map, options, load = require) => {
   const nodeStylus = load('stylus')
   try {
@@ -148,7 +158,7 @@ const styl: StylePreprocessor = (source, map, options, load = require) => {
   }
 }
 
-/** 将 additionalData 字符串/函数的结果注入实际样式源码之前。 */
+/** additionalData 字符串前置拼接；函数返回完整预处理输入，需由函数自行保留原 source。 */
 function getSource(
   source: string,
   filename: string,

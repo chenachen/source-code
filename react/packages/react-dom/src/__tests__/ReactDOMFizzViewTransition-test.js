@@ -52,8 +52,10 @@ describe('ReactDOMFizzViewTransition', () => {
     document = jsdom.window.document;
     container = document.getElementById('container');
     global.window = jsdom.window;
-    // 斯运行时间假设动画框架存在,所以我们需要填充它.
-    global.requestAnimationFrame = global.window.requestAnimationFrame = cb =>
+    // Fizz runtime 使用 requestAnimationFrame，因此为 JSDOM 补上替身。
+    global.requestAnimationFrame =
+      /** 用 setTimeout 模拟 rAF，供 Fizz reveal runtime 调度；不模拟真实浏览器动画帧与绘制。 */
+      global.window.requestAnimationFrame = cb =>
       setTimeout(cb);
 
     buffer = '';
@@ -74,7 +76,7 @@ describe('ReactDOMFizzViewTransition', () => {
     jest.restoreAllMocks();
   });
 
-  /** `serverAct`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 等待服务器一轮工作并处理完整缓冲片段，调用共享 helper 插节点并执行脚本，再运行定时器使流 reveal 指令落到 DOM。 */
   async function serverAct(callback) {
     await callback();
     // 等待一次事件循环的轮询。 这假设我们已经将所有东西都冲刷了。
@@ -95,16 +97,9 @@ describe('ReactDOMFizzViewTransition', () => {
   }
 
   // @gate enableViewTransition
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「emits annotations for view transitions」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言覆盖 react-dom 的服务端流适配层；完整 Fizz 状态机位于 react-server。
-   */
+  /** SSR 渲染默认、显式 name/class、对象 default class 与嵌套 ViewTransition；可见 DOM 精确带 vt-update/name/share 注解，再同树水合，验证服务端作用域注解。 */
   it('emits annotations for view transitions', async () => {
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 组合默认/显式/对象类配置与嵌套 VT，比较叶主机节点的服务端注解。 */
     function App() {
       return (
         <div>
@@ -147,15 +142,15 @@ describe('ReactDOMFizzViewTransition', () => {
   });
 
   // @gate enableViewTransition
-  /** 测试场景：验证「emits enter/exit annotations for view transitions inside Suspense」描述的渲染、交互或错误处理结果。 */
+  /** Suspense 主内容挂起，fallback 顶层 VT 带 exit、内层仅 update；解决为 Content 后顶层改为 enter，最后水合，验证替换双方注解方向。 */
   it('emits enter/exit annotations for view transitions inside Suspense', async () => {
     let resolve;
     const promise = new Promise(r => (resolve = r));
-    /** `Suspend`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** use 当前 promise，未解决时挂起、解决后返回提供的 React 内容；供控制流揭示时机。 */
     function Suspend() {
       return React.use(promise);
     }
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** fallback 与主内容各自位于 VT 内，制造旧节点退出、新节点进入。 */
     function App() {
       const fallback = (
         <ViewTransition>
@@ -215,15 +210,15 @@ describe('ReactDOMFizzViewTransition', () => {
   });
 
   // @gate enableViewTransition
-  /** 测试场景：验证「can emit both enter and exit on the same node」描述的渲染、交互或错误处理结果。 */
+  /** fallback 内再嵌完整 Suspense，节点同时处于 enter 和 exit 作用域；初始有 hello/goodbye 两类，解决主内容后只 hi enter，验证同节点双方向可并存。 */
   it('can emit both enter and exit on the same node', async () => {
     let resolve;
     const promise = new Promise(r => (resolve = r));
-    /** `Suspend`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** use 当前 promise，未解决时挂起、解决后返回提供的 React 内容；供控制流揭示时机。 */
     function Suspend() {
       return React.use(promise);
     }
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** fallback 还处于一个已完成的内层边界，令其节点同时继承 enter 和 exit；主内容配置另一 enter 类。 */
     function App() {
       const fallback = (
         <Suspense fallback={null}>
@@ -285,15 +280,15 @@ describe('ReactDOMFizzViewTransition', () => {
   });
 
   // @gate enableViewTransition
-  /** 测试场景：验证「emits annotations for view transitions outside Suspense」描述的渲染、交互或错误处理结果。 */
+  /** ViewTransition 放在 Suspense 外，fallback 与完成内容都继承同一自动 vt-name/share；流揭示后名称保持 R_0，验证外层作用域跨替换延续。 */
   it('emits annotations for view transitions outside Suspense', async () => {
     let resolve;
     const promise = new Promise(r => (resolve = r));
-    /** `Suspend`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** use 当前 promise，未解决时挂起、解决后返回提供的 React 内容；供控制流揭示时机。 */
     function Suspend() {
       return React.use(promise);
     }
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 将 VT 放在 Suspense 外，使 fallback 和完成树共用自动作用域名称。 */
     function App() {
       const fallback = (
         <div>
@@ -351,14 +346,14 @@ describe('ReactDOMFizzViewTransition', () => {
   });
 
   // @gate enableViewTransition && enableViewTransitionParentEnterExit
-  /** 测试场景：验证「stops the parentExit relay when an intermediate class is "none"」描述的渲染、交互或错误处理结果。 */
+  /** fallback 的退出链 A→B→C 中 B parentExit=none，另有兄弟 D opt-in；SSR 仅 D 带 nested-exit、C 无标记，验证 none 截断该分支中继。 */
   it('stops the parentExit relay when an intermediate class is "none"', async () => {
     const promise = new Promise(() => {});
-    /** `Suspend`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** use 当前 promise，未解决时挂起、解决后返回提供的 React 内容；供控制流揭示时机。 */
     function Suspend() {
       return React.use(promise);
     }
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 构造退出中继的 none 阻断分支和不受阻兄弟分支。 */
     function App() {
       const fallback = (
         <ViewTransition exit="page-exit">
@@ -409,15 +404,15 @@ describe('ReactDOMFizzViewTransition', () => {
   });
 
   // @gate enableViewTransition && enableViewTransitionParentEnterExit
-  /** 测试场景：验证「stops the parentEnter relay when an intermediate class is "none"」描述的渲染、交互或错误处理结果。 */
+  /** 异步内容入场链 B parentEnter=none、兄弟 D opt-in；流揭示后 A有 enter、D有 parent-enter、C无，再水合，验证入场中继截断。 */
   it('stops the parentEnter relay when an intermediate class is "none"', async () => {
     let resolve;
     const promise = new Promise(r => (resolve = r));
-    /** `Suspend`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** use 当前 promise，未解决时挂起、解决后返回提供的 React 内容；供控制流揭示时机。 */
     function Suspend() {
       return React.use(promise);
     }
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 主内容完成后返回入场中继的 none 阻断与正常兄弟分支。 */
     function App() {
       return (
         <div>
@@ -475,14 +470,14 @@ describe('ReactDOMFizzViewTransition', () => {
   });
 
   // @gate enableViewTransition
-  /** 测试场景：验证「breaks the parentExit relay through a ViewTransition without parentExit」描述的渲染、交互或错误处理结果。 */
+  /** 退出链中间 B 的 ViewTransition 未配置 parentExit/handler；C 即使 opt-in 也无 parent-exit，验证中间未加入中继会断链。 */
   it('breaks the parentExit relay through a ViewTransition without parentExit', async () => {
     const promise = new Promise(() => {});
-    /** `Suspend`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** use 当前 promise，未解决时挂起、解决后返回提供的 React 内容；供控制流揭示时机。 */
     function Suspend() {
       return React.use(promise);
     }
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 在退出链中插未 opt-in 的 VT，验证深层 parentExit 不跨它继承。 */
     function App() {
       const fallback = (
         <ViewTransition exit="page-exit">
@@ -526,14 +521,14 @@ describe('ReactDOMFizzViewTransition', () => {
   });
 
   // @gate enableViewTransition && enableViewTransitionParentEnterExit
-  /** 测试场景：验证「relays the parentExit chain through an "auto" parentExit」描述的渲染、交互或错误处理结果。 */
+  /** 退出链 B parentExit=auto、C nested-exit；B 自身不写 parent-exit class而 C 有标记，验证 auto 仍传递中继。 */
   it('relays the parentExit chain through an "auto" parentExit', async () => {
     const promise = new Promise(() => {});
-    /** `Suspend`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** use 当前 promise，未解决时挂起、解决后返回提供的 React 内容；供控制流揭示时机。 */
     function Suspend() {
       return React.use(promise);
     }
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 用 parentExit=auto 作为中间继承节点，保留传递但不指定自身 parent-exit class。 */
     function App() {
       const fallback = (
         <ViewTransition exit="page-exit">
@@ -562,7 +557,7 @@ describe('ReactDOMFizzViewTransition', () => {
       pipe(writable);
     });
 
-    // 一个 "auto" 父子退出事件不发出自己的注解，但仍传递给子组件。 因此，深层子元素（C）已注释。
+    // parentExit="auto" 不给自身设置 transition class，但仍向后代传递退出标记，因此 C 获得标注。
     expect(getVisibleChildren(container)).toEqual(
       <div>
         <div id="A" vt-update="auto" vt-exit="page-exit">
@@ -577,14 +572,14 @@ describe('ReactDOMFizzViewTransition', () => {
   });
 
   // @gate enableViewTransition && enableViewTransitionParentEnterExit
-  /** 测试场景：验证「relays the parentExit chain through a handler-only ViewTransition」描述的渲染、交互或错误处理结果。 */
+  /** 退出链 B 仅有 onParentExit，C 有 nested-exit；SSR B无自身 parent-exit class、C有标记，验证 handler 足以加入中继，本例不执行客户端 handler。 */
   it('relays the parentExit chain through a handler-only ViewTransition', async () => {
     const promise = new Promise(() => {});
-    /** `Suspend`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** use 当前 promise，未解决时挂起、解决后返回提供的 React 内容；供控制流揭示时机。 */
     function Suspend() {
       return React.use(promise);
     }
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 只给中间 VT 注册 onParentExit，以 handler 的存在加入退出中继。 */
     function App() {
       const fallback = (
         <ViewTransition exit="page-exit">
@@ -629,15 +624,15 @@ describe('ReactDOMFizzViewTransition', () => {
   });
 
   // @gate enableViewTransition && enableViewTransitionParentEnterExit
-  /** 测试场景：验证「relays the parentEnter chain through a handler-only ViewTransition」描述的渲染、交互或错误处理结果。 */
+  /** 入场链 B 仅有 onParentEnter，C 有 nested-enter；解决流后 C有 parent-enter，验证 handler-only 中继，不直接断言 handler 调用。 */
   it('relays the parentEnter chain through a handler-only ViewTransition', async () => {
     let resolve;
     const promise = new Promise(r => (resolve = r));
-    /** `Suspend`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** use 当前 promise，未解决时挂起、解决后返回提供的 React 内容；供控制流揭示时机。 */
     function Suspend() {
       return React.use(promise);
     }
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 只给中间 VT 注册 onParentEnter，让完成内容的深层 class 继续继承。 */
     function App() {
       return (
         <div>
@@ -683,11 +678,12 @@ describe('ReactDOMFizzViewTransition', () => {
   });
 
   // @gate enableViewTransition && enableViewTransitionParentEnterExit
-  /** 测试场景：验证「applies view-transition-name to nested parentEnter/parentExit on streaming reveal」描述的渲染、交互或错误处理结果。 */
+  /** 模拟 startViewTransition 在调用瞬间记录具名节点 class，提供非零尺寸与已就绪 fonts；流替换时分别捕获 A/C/D 的入场与 fbA/fbC/fbD 的退出类，验证多层 parent 中继在 reveal 时应用。 */
   it('applies view-transition-name to nested parentEnter/parentExit on streaming reveal', async () => {
     // reveal 启动 View Transition 的瞬间，记录每个元素所应用的 transition class；过渡一开始名称就会还原，
     // 因此必须在这里同步读取。
     const applied = new Map();
+    /** 浏览器 API 替身在 update 前扫描有 viewTransitionName 的节点并记录 class，然后同步 update；ready/finished 都已解决，不测试真实异步动画生命周期。 */
     document.startViewTransition = function (arg) {
       const update = typeof arg === 'function' ? arg : arg.update;
       container.querySelectorAll('*').forEach(el => {
@@ -701,7 +697,7 @@ describe('ReactDOMFizzViewTransition', () => {
       return {
         ready: Promise.resolve(),
         finished: Promise.resolve(),
-        /** `skipTransition`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 提供空 skipTransition 方法，满足 reveal runtime 的返回对象协议。 */
         skipTransition() {},
         types: [],
       };
@@ -717,17 +713,18 @@ describe('ReactDOMFizzViewTransition', () => {
       configurable: true,
     });
     // reveal 跳过其父元素测量为空的边界。 所以为元素提供非零的矩形。
+    /** 全局几何替身返回非零矩形，使 Fizz runtime 不把待 reveal 边界视为不可见。 */
     global.window.Element.prototype.getBoundingClientRect = function () {
       return {left: 0, top: 0, width: 100, height: 20, right: 100, bottom: 20};
     };
 
     let resolve;
     const promise = new Promise(r => (resolve = r));
-    /** `Suspend`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** use 当前 promise，未解决时挂起、解决后返回提供的 React 内容；供控制流揭示时机。 */
     function Suspend() {
       return React.use(promise);
     }
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 构造三层退出 fallback 与三层进入内容，验证 reveal 时跨多层应用各自 class。 */
     function App() {
       const fallback = (
         <ViewTransition exit="page-exit">

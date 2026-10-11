@@ -52,7 +52,7 @@ export class EnvironmentModuleNode {
   /** 最近一次新鲜的转换结果；失效时清空。 */
   transformResult: TransformResult | null = null
 
-  // ssrModule/ssrError 已迁到 Module Runner cache；待 ssrLoadModule 完全基于新 API 重写后删除。
+  /** ssrLoadModule 兼容层回写的已求值 namespace；基础 ModuleRunner 另有自己的执行缓存。 */
   ssrModule: Record<string, any> | null = null
   /** 旧 SSR loader 缓存的模块求值异常；新 Module Runner 不再依赖。 */
   ssrError: Error | null = null
@@ -82,6 +82,7 @@ export class EnvironmentModuleNode {
   staticImportedUrls?: Set<string>
 
   /**
+   * 保存环境和请求身份，直接 CSS 请求标为 css，其余初始标为 js；尚不解析 ID 或文件。
    * @param setIsSelfAccepting 传 false 可把 isSelfAccepting 留给稍后分析设置，例如 #7870。
    */
   constructor(url: string, environment: string, setIsSelfAccepting = true) {
@@ -190,8 +191,9 @@ export class EnvironmentModuleGraph {
 
   /**
    * 失效模块并递归传播到未 accept 它的 importers。
-   * 静态 JS importer 可软失效，仅在下一请求重写依赖时间戳；CSS、watch/glob 边或已硬失效链
-   * 必须完整重做。seen 同时阻止循环图无限递归。
+   * 静态 JS importer 可软失效，仅在下一请求重写依赖时间戳；直接 CSS 和由硬失效经
+   * watch/glob 等非静态边到达的 importer 必须完整重做；软失效可继续沿 JS importer
+   * 向上传播。seen 同时阻止循环图无限递归。
    */
   invalidateModule(
     mod: EnvironmentModuleNode,
@@ -266,8 +268,9 @@ export class EnvironmentModuleGraph {
   }
 
   /**
-   * 用 import analysis 的最新结果原子更新正向/反向依赖、HMR accept、binding 与静态边。
+   * 用 import analysis 的最新结果更新正向/反向依赖、HMR accept、binding 与静态边。
    * 不再被任何模块导入的旧依赖作为 Set 返回，供上层清理/处理。
+   * 解析期间就会添加 dep.importers；若某个解析失败，已写入的边不会在这里回滚。
    *
    * @param staticImportedUrls importedModules 中来自源码静态 import 的 URL 子集；缺省不影响正确性，
    * 但失效时会进行更多完整 transform。
@@ -361,7 +364,11 @@ export class EnvironmentModuleGraph {
     return this._ensureEntryFromUrl(rawUrl, setIsSelfAccepting)
   }
 
-  /** ensureEntryFromUrl 的内部版本，可复用调用方已有 resolve 结果。 @internal */
+  /**
+   * ensureEntryFromUrl 的内部版本，可复用调用方已有 resolve 结果。
+   * 原始 URL 的在途 Promise 成功后替换成节点；拒绝时没有删除槽位，同 URL 会复用该拒绝。
+   * @internal
+   */
   async _ensureEntryFromUrl(
     rawUrl: string,
     setIsSelfAccepting = true,
@@ -411,6 +418,7 @@ export class EnvironmentModuleGraph {
   /**
    * 为没有独立请求 URL 的文件创建 asset 节点，例如被 `@import` 内联的 CSS 依赖。它仍需入图，
    * 文件变化才能沿 importer 触发 HMR。
+   * 只登记 fileToModulesMap，ID 保持 null，不登记普通 URL/ID 请求索引。
    */
   createFileOnlyEntry(file: string): EnvironmentModuleNode {
     file = normalizePath(file)

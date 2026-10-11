@@ -276,7 +276,7 @@ describe('Activity Suspense', () => {
     assertLog([
       'Open',
       'Suspend! [Async]',
-      // Suspense 预热 render。
+      // fallback 被求值但尚未提交，旧 Closed/Open 内容仍保留。
       'Loading...',
     ]);
     // 延迟挂起防止已可见 Suspense 立即切换 fallback。
@@ -287,9 +287,9 @@ describe('Activity Suspense', () => {
       await resolveText('Async');
     });
     assertLog([
-      // 预热阶段继续 render 可见标签。
+      // 资源完成后重试揭示，先重新求值可见标签。
       'Open',
-      // 预热结束后提交异步文本。
+      // 异步文本本次读取成功；提交由随后宿主输出断言验证。
       'Async',
     ]);
     expect(root).toMatchRenderedOutput(
@@ -351,7 +351,7 @@ describe('Activity Suspense', () => {
     assertLog([
       'Open',
       'Suspend! [Async]',
-      // Suspense 预热 render。
+      // fallback 被求值但尚未提交，旧 Closed/Open 内容仍保留。
       'Loading...',
     ]);
     // 延迟挂起避免已可见 Suspense 切换 fallback。
@@ -396,7 +396,7 @@ describe('Activity Suspense', () => {
 
   /**
    * Given hidden Activity 已提交 Promise 文本 A；When Transition 把内部 state 更新为未解析 B；
-   * Then use() 在后台挂起且不影响前台。验证隐藏更新被分配到 Offscreen 工作路径。
+   * Then act 调用能完成而不抛错；更新之后没有日志/宿主快照或 lane 位断言，本例不直接验证 Offscreen lane 数值。
    */
   test('update that suspends inside hidden tree', async () => {
     let setText;
@@ -495,7 +495,7 @@ describe('Activity Suspense', () => {
   });
 
   /**
-   * Given visible 树正在并发切到 hidden 且 inner/outer 必须成对更新；When commit 前又发生同 lane 事件；
+   * Given visible 树正在并发切到 hidden 且 inner/outer 必须成对更新；When commit 前又发生第二组 transition 更新；
    * Then 内部更新在 render 后原子入队，揭示不产生 tearing，最终收敛到第二组值。
    * 验证机制：分片调度、effect 一致性日志与树输出；对应 hidden 祖先检测及 concurrent update queue 转移。
    */
@@ -609,7 +609,7 @@ describe('Activity Suspense', () => {
         root.render(<App show={true} />);
       });
       assertLog([
-        // Inner 有两个同 lane pending 更新，但此处只能处理第一个；错误处理第二个会与 Outer 不一致。
+        // Inner 有两组 pending transition 更新，但此处只能处理第一个；错误处理第二个会与 Outer 不一致。
         'Inner: 1',
         'Outer: 1',
         'Sibling: 1',

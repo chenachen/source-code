@@ -25,6 +25,7 @@ let SchedulerFeatureFlags;
 // 保证完全相同的事件时序。本套件 mock 实现会显式记录和触发每个 host 事件，以最少时序假设
 // 重现 yield、错误恢复、取消及浏览器输入事件等边界。
 describe('SchedulerBrowser', () => {
+  // host API 在 require 前安装；每例重置模块，强制重新捕获确定性的浏览器驱动。
   beforeEach(() => {
     jest.resetModules();
     runtime = installMockBrowserRuntime();
@@ -87,12 +88,14 @@ describe('SchedulerBrowser', () => {
     delete global.setImmediate;
 
     // fallback timer 只记录安排动作；本套件关注 message event，不主动执行 timer callback。
+    /** 仅记录 timer 安排并返回递增 id；cb/delay 不执行，当前套件不验证延迟任务。 */
     global.setTimeout = (cb, delay) => {
       const id = timerIDCounter++;
       log(`Set Timer`);
       // TODO：若新增 delayed task 用例，需保存 `cb`/`delay` 并由虚拟时钟触发；当前只观察 timer 安排动作。
       return id;
     };
+    /** 接受 Scheduler 取消的 timer id；未保存 timer callback，因此此 fixture 无操作。 */
     global.clearTimeout = id => {
       // TODO：实现上述 timer 队列后按 id 删除；当前没有 callback 会从该空实现中泄漏执行。
     };
@@ -265,7 +268,7 @@ describe('SchedulerBrowser', () => {
     runtime.assertLog(['Message Event', 'Continuation']);
   });
 
-  /** 场景：两个同优先级任务按入队顺序执行；强制逐任务 yield 配置下则分属两个 message event。 */
+  /** 入队 A/B 两个 Normal 任务后触发 message，日志要求按 A/B 顺序；逐任务 yield 配置分两轮，验证同过期时间以 id 保持 FIFO。 */
   it('multiple tasks', () => {
     scheduleCallback(NormalPriority, () => {
       runtime.log('A');
@@ -286,6 +289,8 @@ describe('SchedulerBrowser', () => {
 
   /**
    * 场景：任务 A 消耗完时间片后，B 必须留在 ready queue，并由新 post 的 message event 执行。
+   * 输入两个 Normal 任务，A 推进时钟 4999ms；两次 fireMessageEvent 的日志分别只含 A
+   * 与 B，验证未过期的 B 不会因堆中已有工作而忽略当前时间片结束。
    * 对应源码：`workLoop()` 在未过期任务且 `shouldYieldToHost()` 为 true 时返回 `hasMoreWork`。
    */
   it('multiple tasks with a yield in between', () => {
@@ -310,6 +315,8 @@ describe('SchedulerBrowser', () => {
 
   /**
    * 场景：取消唯一 ready task 后仍可消费已经 post 的 host event，但被取消 callback 不得产生副作用。
+   * scheduleCallback 返回 handle 后先 cancel，再 fireMessageEvent；日志只含宿主事件，
+   * 验证取消不撤销已 post 的 message，但会消除任务 callback 的执行。
    * 对应源码：`unstable_cancelCallback()` 将 callback 置空，`workLoop()` 到达堆顶时惰性移除。
    */
   it('cancels tasks', () => {
@@ -351,7 +358,7 @@ describe('SchedulerBrowser', () => {
     runtime.assertLog(['Message Event', 'Yay']);
   });
 
-  /** 场景：ready queue 正常排空后加入新任务，Scheduler 必须从空闲状态重新 post message。 */
+  /** 先触发 message 执行 A 排空队列，再入队 B；日志要求再次 Post Message 并执行 B，验证正常完成后的唤醒状态恢复。 */
   it('schedule new task after queue has emptied', () => {
     scheduleCallback(NormalPriority, () => {
       runtime.log('A');
@@ -369,7 +376,7 @@ describe('SchedulerBrowser', () => {
     runtime.assertLog(['Message Event', 'B']);
   });
 
-  /** 场景：取消队列唯一任务并消费空 host event 后，新任务仍能重新唤醒 Scheduler。 */
+  /** 入队 A 后取消并消费空 message，再入队 B；日志要求重新 Post Message 且只执行 B，验证取消路径也清理 host 循环状态。 */
   it('schedule new task after a cancellation', () => {
     const handle = scheduleCallback(NormalPriority, () => {
       runtime.log('A');

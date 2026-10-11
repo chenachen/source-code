@@ -2,9 +2,8 @@ import { expect, test } from 'vitest'
 import { defaultAllowedOrigins } from '../constants'
 
 /**
- * 场景：默认开发服务器 CORS 策略处理本机来源。
- * 验证目标：允许 localhost 子域、IPv4/IPv6 回环及任意端口，同时拒绝伪装的
- * localhost 后缀、非回环保留地址、文件协议和普通主机，守住 #19249 的安全边界。
+ * 默认 CORS 正则应接受表中的 localhost 子域、IPv4/IPv6 回环及带端口来源，
+ * 拒绝伪装的 localhost 后缀、非回环保留地址、文件协议和普通主机。
  */
 test('defaultAllowedOrigins', () => {
   const allowed = [

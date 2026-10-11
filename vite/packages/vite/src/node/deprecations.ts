@@ -55,11 +55,11 @@ export function isFutureDeprecationEnabled(
 
 // 当这些变更正式进入弃用周期后，可再抽象不依赖 future 开关的 warnDeprecation。
 /**
- * 按 `future.<type> = 'warn'` 的配置发出一次未来弃用警告。
+ * 按 `future.<type> = 'warn'` 的配置发出未来弃用警告。
  *
  * 消息包含替代 API、迁移文档，以及默认开启的调用栈。调用栈会过滤 Vite
  * 自身 dist 路径，让用户优先看到项目或插件的触发位置。最终通过 `warnOnce`
- * 输出，避免同一个旧 API 在高频请求路径中刷屏。
+ * 按完整消息去重；附带调用栈时，不同调用位置仍可能各输出一次。
  *
  * @param extraMessage 当前调用点需要补充的迁移上下文
  * @param stacktrace 是否附带调用栈；已知调用点足够明确时可关闭
@@ -109,9 +109,9 @@ export function warnFutureDeprecation(
 }
 
 /**
- * 在同步回调执行期间临时屏蔽 future 弃用告警，并恢复进入前的嵌套状态。
+ * 在同步回调执行期间临时屏蔽 future 弃用告警，正常返回时恢复进入前的状态。
  *
- * 该辅助函数不跨越 Promise 生命周期；调用方应只传入同步逻辑。
+ * Promise 返回后立即恢复，不等待异步工作；回调同步抛错会跳过恢复语句。
  */
 export function ignoreDeprecationWarnings<T>(fn: () => T): T {
   const before = _ignoreDeprecationWarnings

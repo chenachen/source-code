@@ -7,7 +7,7 @@
  * @flow
  */
 
-/** TopLevelType 定义 Flow 数据形状，用于声明顶层原生事件标识的 Flow 类型；类型边界阻止插件、原生事件与 Fiber 状态混用。 */
+/** 顶层 listener 接受的原生事件名联合。 */
 export type TopLevelType =
   | 'abort'
 // 在使用位置动态解析并补充厂商前缀：

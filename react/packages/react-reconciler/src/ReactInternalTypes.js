@@ -145,7 +145,7 @@ export type Fiber = {
 
   /** 本轮 render 尚待处理的输入 props；未来可按 WorkTag 收窄类型。 */
   pendingProps: any,
-  /** 生成当前已提交输出时使用的 props。 */
+  /** 本 Fiber 最近完成 beginWork 时采用的 props；current 对应已提交输出，WIP 对应候选输出。 */
   memoizedProps: any,
 
   /** class/root update queue、Hook effect 链或宿主更新负载等按标签解释的队列。 */
@@ -239,12 +239,12 @@ type BaseFiberRootProperties = {
   callbackPriority: Lane,
   /** 每个 Lane 的饥饿过期时间。 */
   expirationTimes: LaneMap<number>,
-  /** hidden subtree 按 Lane 暂存的并发 update 集合。 */
+  /** 按原 Lane 登记 hidden update 引用，供该 Lane 完成时清除更新上的 Offscreen 标记。 */
   hiddenUpdates: LaneMap<Array<ConcurrentUpdate> | null>,
 
-  /** root 尚未提交的全部 Lanes。 */
+  /** root 尚未完成的全部 Lanes。 */
   pendingLanes: Lanes,
-  /** 因等待 thenable/资源而暂停、尚未 ping 的 Lanes。 */
+  /** 尝试过且因 thenable/资源等原因挂起的 Lanes；ping 不移除它们，而把可重试子集另记在 pingedLanes。 */
   suspendedLanes: Lanes,
   /** 已收到 thenable/资源可重试信号的 Lanes。 */
   pingedLanes: Lanes,
@@ -320,7 +320,7 @@ type BaseFiberRootProperties = {
 
 /** 仅开发构建的 updater 归因，让 DevTools Profiler 显示谁安排了 commit。 */
 type UpdaterTrackingOnlyFiberRootProperties = {
-  /** 最近提交中涉及的 updater Fibers。 */
+  /** 当前 render 尝试涉及的 updater Fibers；开始尝试时从 pending Map 转入，供后续提交归因。 */
   memoizedUpdaters: Set<Fiber>,
   /** 按 Lane 暂存尚未归入提交的 updater Fibers。 */
   pendingUpdatersLaneMap: LaneMap<Set<Fiber>>,
@@ -425,9 +425,9 @@ type TransitionTracingOnlyFiberRootProperties = {
 
 /** 仅 profiler commit hooks 开启时累计的 root effect 耗时。 */
 type ProfilerCommitHooksOnlyFiberRootProperties = {
-  /** 本次 commit 同步 effects 总耗时。 */
+  /** 本次 commit 的 mutation/layout 中被计时的 effect、类生命周期与函数 ref 工作累计毫秒。 */
   effectDuration: number,
-  /** 本次 commit passive effects 总耗时。 */
+  /** 本次 commit 被计时的 passive 创建/清理累计毫秒，独立于同步 effects。 */
   passiveEffectDuration: number,
 };
 
@@ -476,14 +476,14 @@ export type Dispatcher = {
     create: () => (() => void) | void,
     deps: Array<mixed> | void | null,
   ): void,
-  /** 返回身份稳定、调用时读取最新实现的 Effect Event 函数。 */
+  /** 返回调用时读取最近提交实现的 Effect Event 函数；当前 update 实现会生成新的包装函数。 */
   useEffectEvent: <Args, F: (...Array<Args>) => mixed>(callback: F) => F,
-  /** 登记在 mutation 前 insertion 阶段创建/清理的 effect。 */
+  /** 登记在 commit mutation 遍历中同步创建/清理的 insertion effect。 */
   useInsertionEffect(
     create: () => (() => void) | void,
     deps: Array<mixed> | void | null,
   ): void,
-  /** 登记在 mutation 后 layout 阶段同步创建/清理的 effect。 */
+  /** 登记 layout effect：旧 cleanup 在 mutation 执行，新 create 在后续 layout 执行。 */
   useLayoutEffect(
     create: () => (() => void) | void,
     deps: Array<mixed> | void | null,
@@ -520,7 +520,7 @@ export type Dispatcher = {
     getSnapshot: () => T,
     getServerSnapshot?: () => T,
   ): T,
-  /** 生成对 SSR/hydration 稳定且在多 root 间不冲突的 id。 */
+  /** 生成可在 SSR/hydration 中匹配的 id；多个服务端根需使用不同且客户端匹配的 identifierPrefix。 */
   useId(): string,
   /** 返回使指定资源类型 cache 失效/刷新的函数。 */
   useCacheRefresh: () => <T>(?() => T, ?T) => void,
@@ -528,7 +528,7 @@ export type Dispatcher = {
   useMemoCache: (size: number) => Array<any>,
   /** 读取最近宿主 form transition 的 pending/data/method/action 状态。 */
   useHostTransitionStatus: () => TransitionStatus,
-  /** 在 transition 中叠加乐观 action，并在权威 passthrough 更新后回退。 */
+  /** 基于 passthrough 叠加乐观 action；处理对应 revertLane 时移除已完成 action 的乐观更新。 */
   useOptimistic: <S, A>(
     passthrough: S,
     reducer: ?(S, A) => S,

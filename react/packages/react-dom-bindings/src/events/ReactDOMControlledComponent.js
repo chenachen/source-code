@@ -19,10 +19,9 @@ import {restoreControlledState} from 'react-dom-bindings/src/client/ReactDOMComp
 let restoreTarget = null;
 let restoreQueue = null;
 
-/** restoreStateOfTarget 更新排队并恢复受控表单状态，保证事件处理后的 DOM 与 props 一致的模块状态或 DOM 状态；重复调用需保持队列顺序与恢复幂等性。 */
+/** 恢复前重新查询节点的 Fiber 和最新 props，再调用对应表单 restore；已无关联的节点跳过。 */
 function restoreStateOfTarget(target: Node) {
-  // 该 Fiber 到 DOM 的转换放在事件循环末尾执行，以确保
-  // 此处始终取得最新且正确的 Fiber。
+  // 最外事件 batch 结束且同步工作已冲刷，再查询节点关联与当前 props。
   const internalInstance = getInstanceFromNode(target);
   if (!internalInstance) {
     // Fiber 已卸载。
@@ -41,7 +40,7 @@ function restoreStateOfTarget(target: Node) {
   }
 }
 
-/** enqueueStateRestore 更新排队并恢复受控表单状态，保证事件处理后的 DOM 与 props 一致的模块状态或 DOM 状态；重复调用需保持队列顺序与恢复幂等性。 */
+/** 登记浏览器改动过的控件；首个目标单独保存，随后目标放入数组，不按节点身份去重。 */
 export function enqueueStateRestore(target: Node): void {
   if (restoreTarget) {
     if (restoreQueue) {
@@ -54,12 +53,15 @@ export function enqueueStateRestore(target: Node): void {
   }
 }
 
-/** needsStateRestore 执行排队并恢复受控表单状态，保证事件处理后的 DOM 与 props 一致的核心步骤；输入来自原生事件/Fiber，输出保持插件分发与调度边界。 */
+/** 检查最外事件批次结束时是否还有待恢复控件。 */
 export function needsStateRestore(): boolean {
   return restoreTarget !== null || restoreQueue !== null;
 }
 
-/** restoreStateIfNeeded 更新排队并恢复受控表单状态，保证事件处理后的 DOM 与 props 一致的模块状态或 DOM 状态；重复调用需保持队列顺序与恢复幂等性。 */
+/**
+ * 先取出并清空恢复队列，再按当前已提交 props 恢复各控件，使重入事件登记到下一份队列。
+ * 已卸载目标跳过；恢复抛错会向外传播，尚未遍历的旧队列目标不会重新排队。
+ */
 export function restoreStateIfNeeded() {
   if (!restoreTarget) {
     return;

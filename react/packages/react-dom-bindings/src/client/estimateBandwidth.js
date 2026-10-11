@@ -7,7 +7,7 @@
  * @flow
  */
 
-/** `isLikelyStaticResource` 判断适用条件并返回布尔结果，不写入宿主状态；用于依据 PerformanceResourceTiming 估算当前网络吞吐量。 */
+/** 按 initiatorType 筛选图片、脚本、样式等可用于带宽估算的静态资源。 */
 function isLikelyStaticResource(initiatorType: string) {
   switch (initiatorType) {
     case 'css':
@@ -23,10 +23,9 @@ function isLikelyStaticResource(initiatorType: string) {
   }
 }
 
-/** `estimateBandwidth` 查询并返回所需值；缺失或不适用时走显式回退；用于依据 PerformanceResourceTiming 估算当前网络吞吐量。 */
+/** 用 Performance 条目中的非缓存静态资源及重叠传输量估算 Mbps；不足时取 navigator.connection.downlink，再回退 5 Mbps。 */
 export default function estimateBandwidth(): number {
-  //在已知资源的情况下，估算当前下载静态资源的带宽
-  //已加载。
+  // 用已有资源下载记录估算吞吐量；不读取动态请求作为样本。
   // $FlowFixMe[method-unbinding]
   if (typeof performance.getEntriesByType === 'function') {
     let count = 0;
@@ -44,11 +43,10 @@ export default function estimateBandwidth(): number {
         !duration ||
         !isLikelyStaticResource(initiatorType)
       ) {
-        //跳过缓存的、跨源的条目以及可能动态生成的资源。
+        // transferSize 为零（缓存命中或跨源未暴露大小）、耗时为零或类型不在静态资源名单时不取样。
         continue;
       }
-      //查找任何同时正在传输的重叠条目，因为总数
-      //当时的 bps 将包括那些字节。
+      // 并行下载共享带宽，把时间窗口重叠的资源按覆盖比例计入字节总量。
       let overlappingBytes = 0;
       // $FlowFixMe[prop-missing]
       const parentEndTime: number = entry.responseEnd;
@@ -67,7 +65,7 @@ export default function estimateBandwidth(): number {
           !overlapTransferSize ||
           !isLikelyStaticResource(overlapInitiatorType)
         ) {
-          //跳过缓存的、跨源的条目以及可能动态生成的资源。
+          // 重叠资源仍须有可见传输字节且属于静态资源名单，才计入这一下载窗口。
           continue;
         }
         // $FlowFixMe[prop-missing]
@@ -79,8 +77,7 @@ export default function estimateBandwidth(): number {
               (overlapEndTime - overlapStartTime);
         overlappingBytes += overlapTransferSize * overlapFactor;
       }
-      //跳过我们已经认为重叠的任何条目。否则我们就得继续
-      //回去考虑我们当时处理的先前条目。
+      // 重叠条目已计入这一组，后续从下一组开始，避免重复计算。
       i = j - 1;
 
       const bps =
@@ -88,7 +85,7 @@ export default function estimateBandwidth(): number {
       bits += bps;
       count++;
       if (count > 10) {
-        //我们有足够的东西来得到一个平均值。
+        // 最多采用 11 组窗口的平均值，避免遍历全部历史资源。
         break;
       }
     }
@@ -107,8 +104,6 @@ export default function estimateBandwidth(): number {
     }
   }
 
-  //否则，使用默认的 5mbps 来计算启发式方法。
-  //如果所有静态资源和图片都被加载，这种情况在 Safari 中很常见
-  //跨源
+  // 没有可用条目或 Network Information 估算时，使用 5 Mbps 的启发式默认值。
   return 5;
 }

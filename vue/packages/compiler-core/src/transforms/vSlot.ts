@@ -44,8 +44,8 @@ const defaultFallback = createSimpleExpression(`undefined`, false)
  *
  * 非浏览器构建且开启 `prefixIdentifiers` 时，插槽参数（如 `{ item }`）会登记为局部
  * 标识符，避免表达式转换器把 `item` 错写为 `_ctx.item`。`vSlot` 计数用于判断一个
- * 插槽是否嵌在另一插槽中；同一节点的退出回调早于 `buildSlots()` 执行，因此只有真正
- * 的内层插槽能看到正数。
+ * 插槽是否嵌在另一插槽中。基础预设将本转换排在 transformElement 后，逆序退出时先清理
+ * 同一节点的计数再执行 buildSlots，因此后者看到的是外层插槽深度；自定义预设须保持这个顺序。
  */
 export const trackSlotScopes: NodeTransform = (node, context) => {
   if (
@@ -53,7 +53,7 @@ export const trackSlotScopes: NodeTransform = (node, context) => {
     (node.tagType === ElementTypes.COMPONENT ||
       node.tagType === ElementTypes.TEMPLATE)
   ) {
-    // 这里只关心会引入作用域参数的 v-slot；无参数插槽不需要登记标识符。
+    // 这里只关心写出参数表达式的 v-slot；没有 exp 的具名/默认插槽不需要登记标识符。
     const vSlot = findDir(node, 'slot')
     if (vSlot) {
       const slotProps = vSlot.exp
@@ -76,6 +76,7 @@ export const trackSlotScopes: NodeTransform = (node, context) => {
  *
  * 该转换器只用于非浏览器、开启 `prefixIdentifiers` 的构建；退出 template 时成对移除
  * value/key/index，避免作用域污染后续节点。
+ * 这里只维护 identifiers，不增加 scopes.vFor；循环插槽本身的动态性由 buildSlots 的 vFor 分支判定。
  */
 export const trackVForSlotScopes: NodeTransform = (node, context) => {
   let vFor
@@ -117,8 +118,8 @@ const buildClientSlotFn: SlotFnBuilder = (props, _vForExp, children, loc) =>
   createFunctionExpression(
     props,
     children,
-    false /* newline */,
-    true /* isSlot */,
+    false /* 不强制换行 */,
+    true /* 插槽函数 */,
     children.length ? children[0].loc : loc,
   )
 
@@ -128,6 +129,9 @@ const buildClientSlotFn: SlotFnBuilder = (props, _vForExp, children, loc) =>
  * `v-slot` 不作为普通 DirectiveTransform 运行，而由 `transformElement` 在构造组件
  * children 时调用。这里同时处理组件自身简写、`<template #name>`、条件插槽、循环插槽、
  * 隐式默认插槽，并计算插槽稳定性标记。
+ * 正常在元素退出阶段调用，此时子树表达式和插槽局部计数已完成处理。
+ * 返回式诊断的恢复分别是：混用时停止继续收集、重复静态名跳过后项、非法循环不添加条目；
+ * 额外默认内容报错后被忽略。动态名称不做编译期判重。
  *
  * @returns slots 代码生成表达式，以及是否含动态插槽
  */
@@ -238,7 +242,7 @@ export function buildSlots(
         ),
       )
     } else if (
-      (vElse = findDir(slotElement, /^else(?:-if)?$/, true /* allowEmpty */))
+      (vElse = findDir(slotElement, /^else(?:-if)?$/, true /* 允许无值 else */))
     ) {
       // 与普通 v-else 一样，跳过注释/空白并向前查找相邻的插槽 v-if。
       let j = i
@@ -288,7 +292,7 @@ export function buildSlots(
             createFunctionExpression(
               createForLoopParams(parseResult),
               buildDynamicSlot(slotName, slotFunction),
-              true /* force newline */,
+              true /* 强制换行 */,
             ),
           ]),
         )

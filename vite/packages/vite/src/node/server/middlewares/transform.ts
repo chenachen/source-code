@@ -56,6 +56,7 @@ function isDocumentFetchDest(req: Connect.IncomingMessage) {
 }
 
 // TODO：与 asset/CSS 插件中的 url/raw/inline query 判断合并，避免安全边界规则漂移。
+/** 识别请求资源 URL 导出的 `?url` 查询，进入文件访问检查。 */
 const urlRE = /[?&]url\b/
 /** 识别请求资源原始文本导出的 `?raw` 查询。 */
 const rawRE = /[?&]raw\b/
@@ -89,6 +90,7 @@ export function cachedTransformMiddleware(
   server: ViteDevServer,
 ): Connect.NextHandleFunction {
   // 保留命名函数；`DEBUG=connect:dispatcher` 会把名称显示在调度日志中。
+  /** 文档请求追加 Vary 后下放；非 CSS 请求仅在 ETag 与原 URL 同时命中时结束为 304。 */
   return function viteCachedTransformMiddleware(req, res, next) {
     const environment = server.environments.client
 
@@ -134,6 +136,7 @@ export function transformMiddleware(
   const publicDirInRoot = publicDir.startsWith(withTrailingSlash(root))
   const publicPath = `${publicDir.slice(root.length)}/`
 
+  /** 将 GET/HEAD 的模块或 map 请求分派到 client 环境；已知生命周期错误在此转换为 HTTP 状态。 */
   return async function viteTransformMiddleware(req, res, next) {
     const environment = server.environments.client
 

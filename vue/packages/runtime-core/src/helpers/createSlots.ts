@@ -1,8 +1,7 @@
 import { isArray } from '@vue/shared'
 import type { VNode } from '../vnode'
 
-// #6651：SSR 的 string-push 模式可能直接把内容写入缓冲区而不返回 VNode 数组，
-// 因此插槽返回值必须允许 `undefined`。
+/** #6651：SSR 插槽可直接 push 到输出缓冲而无返回值；客户端插槽则返回 VNode 数组。 */
 type SSRSlot = (...args: any[]) => VNode[] | undefined
 
 /** 编译器描述一个动态插槽分支所需的最小运行时信息。 */

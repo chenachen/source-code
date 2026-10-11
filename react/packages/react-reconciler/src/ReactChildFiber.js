@@ -144,8 +144,8 @@ if (__DEV__) {
 
   /**
    * 记录已经发出缺失或非法 key 警告的 owner。
-   * 动态 children 必须具备显式且合法的 key，协调器才能在两次更新间追踪同一 child；
-   * 该表按 owner 去重开发期警告。
+   * 显式 key 让动态 children 的身份不依赖列表位置；缺失时协调器仍可按 index 匹配，
+   * 插入与重排可能复用到不同逻辑项。该表按 owner 去重开发期警告。
    */
   ownerHasKeyUseWarning = {} as {
     /** 已发出缺失/非法 key 警告的 owner 名。 */
@@ -160,6 +160,10 @@ if (__DEV__) {
     [string]: boolean
   };
 
+  /**
+   * DEV 检查尚未验证的 Element/Portal 是否缺 key，先更新 _store.validated，
+   * 再按父 owner 名称去重并在候选 Fiber 栈中报告；静态已验证节点直接跳过。
+   */
   warnForMissingKey = (
     returnFiber: Fiber,
     workInProgress: Fiber,
@@ -524,6 +528,9 @@ function createChildReconciler(
   /**
    * 为列表 child 写入新 index，并用旧 index 与 lastPlacedIndex 判断复用节点是原位、移动还是
    * 新插入；返回新的 lastPlacedIndex。
+   * @param newFiber 本轮候选；alternate 指向旧 Fiber，其 index 提供旧列表位置。
+   * @param lastPlacedIndex 已处理且可保留相对次序的旧节点下标上界，不是新 DOM 插入位置。
+   * @param newIndex 当前新列表槽位下标，空槽也参与计数。
    */
   function placeChild(
     newFiber: Fiber,
@@ -593,7 +600,7 @@ function createChildReconciler(
     }
   }
 
-  /** 按 elementType/key/hot-reload 兼容性复用 Element Fiber，或创建新的类型实例。 */
+  /** 调用方已按 key 选定候选；此处按 elementType、hot-reload 或 lazy resolved type 兼容性复用或新建 Fiber。 */
   function updateElement(
     returnFiber: Fiber,
     current: Fiber | null,
@@ -1183,6 +1190,8 @@ function createChildReconciler(
   /**
    * 对齐数组 child：先沿 sibling 顺序线性复用；旧链耗尽则批量插入；首个 miss 后把剩余
    * current 建 Map，以 key/index 复用、移动并删除未消费项。
+   * Map 项只有实际复用（存在 alternate）才消费；同 key 不同类型创建新 Fiber 后，
+   * 旧项留到末尾删除。本阶段只构建 WIP 链与 flags，宿主插入/删除由 commit 执行。
    */
   function reconcileChildrenArray(
     returnFiber: Fiber,
@@ -1342,7 +1351,7 @@ function createChildReconciler(
     }
 
     if (shouldTrackSideEffects) {
-      // Map 中未消费的旧 child 均已删除，加入父 Fiber 的 deletion 列表。
+      // Map 中未消费的旧 child 均需删除；加入父 Fiber 的 deletions 列表，宿主删除要等 commit。
       existingChildren.forEach(child => deleteChild(returnFiber, child));
     }
 
@@ -1631,7 +1640,7 @@ function createChildReconciler(
     }
 
     if (shouldTrackSideEffects) {
-      // Map 中未消费的旧 child 均已删除，加入父 Fiber 的 deletion 列表。
+      // Map 中未消费的旧 child 均需删除；加入父 Fiber 的 deletions 列表，宿主删除要等 commit。
       existingChildren.forEach(child => deleteChild(returnFiber, child));
     }
 
@@ -1983,6 +1992,11 @@ function createChildReconciler(
   /**
    * 包装单轮 child reconciliation：初始化/清理 thenable 读取状态，透传 Suspense 控制异常，
    * 并把普通异常转换成在 child begin 阶段抛出的虚拟 Fiber。
+   * @param returnFiber 接收 child 链、deletions 与 ChildDeletion 标记的 WIP 父 Fiber。
+   * @param currentFirstChild 已提交旧树的首 child；挂载路径可为空。
+   * @param newChild 组件返回值/children，可含顶层 Fragment、迭代器或待解包的 Usable。
+   * @param lanes 本轮渲染车道，写到新 Fiber，并用于协调期间 Context 读取。
+   * 正常完成清空 ThenableState；挂起路径保留读取序列供重放，unwind 再显式丢弃。
    */
   function reconcileChildFibers(
     returnFiber: Fiber,

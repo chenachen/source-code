@@ -506,6 +506,7 @@ a:hover {
 .prose p,
 .prose li {
   color: var(--text);
+  overflow-wrap: anywhere;
 }
 
 .prose p {
@@ -762,6 +763,124 @@ code {
   border-radius: var(--radius);
   background: var(--surface);
   box-shadow: var(--shadow);
+}
+
+.engineering-diagram {
+  min-width: 0;
+  margin: 28px 0;
+  padding: 18px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.engineering-diagram > figcaption {
+  margin-bottom: 12px;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 750;
+  line-height: 1.5;
+}
+
+.diagram-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.diagram-toolbar button,
+.diagram-toolbar a {
+  display: inline-flex;
+  min-height: 36px;
+  padding: 6px 10px;
+  align-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: var(--surface-soft);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.diagram-toolbar button:hover,
+.diagram-toolbar a:hover {
+  border-color: var(--brand);
+  color: var(--brand-strong);
+}
+
+.diagram-scale {
+  min-width: 42px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.diagram-viewport {
+  max-width: 100%;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #f8fafc;
+  overscroll-behavior: contain;
+}
+
+.diagram-canvas {
+  max-width: none;
+}
+
+.diagram-canvas > svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.engineering-diagram .diagram-hint {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+body.diagram-is-expanded {
+  overflow: hidden;
+}
+
+body.diagram-is-expanded::after {
+  position: fixed;
+  z-index: 999;
+  inset: 0;
+  background: rgb(0 0 0 / 65%);
+  content: '';
+}
+
+.engineering-diagram.is-expanded {
+  position: fixed;
+  z-index: 1000;
+  inset: 16px;
+  display: flex;
+  margin: 0;
+  flex-direction: column;
+  box-shadow: var(--shadow);
+}
+
+.engineering-diagram.is-expanded .diagram-viewport {
+  min-height: 0;
+  flex: 1;
+}
+
+@media (max-width: 700px) {
+  .engineering-diagram {
+    padding: 12px;
+  }
+
+  .engineering-diagram.is-expanded {
+    inset: 6px;
+  }
 }
 
 .flow-caption {
@@ -1363,7 +1482,7 @@ code {
     break-inside: avoid;
   }
 }
-</style><script>(function(){try{var t=localStorage.getItem("vite-guide-theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(_){}})();</script></head><body><a class="skip-link" href="#article-start">跳到正文</a><div class="reading-progress" aria-hidden="true"><span data-reading-progress></span></div><header class="topbar"><div class="topbar-inner"><button class="icon-button nav-toggle" type="button" data-nav-toggle aria-expanded="false" aria-label="打开模块导航">☰</button><a class="brand" href="index.html"><span class="brand-mark">V</span><span class="brand-text">Vite 源码解剖</span></a><span class="topbar-path">SSR 与运行时 / 15A SSR 变换与加载</span><div class="topbar-actions"><button class="icon-button" type="button" data-theme-toggle aria-label="切换主题">◐</button></div></div></header><div class="page-grid"><nav class="site-nav" aria-label="模块导航"><a class="nav-home" href="index.html"><span>⌂</span><span>阅读总览</span></a><section class="nav-group"><h2 class="nav-group-title">全景</h2><ul class="nav-list"><li><a href="00-system-map-and-end-to-end.html"><span class="nav-code">00</span><span>系统全景与请求链</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">启动与配置</h2><ul class="nav-list"><li><a href="01-cli-and-startup.html"><span class="nav-code">01</span><span>CLI 与启动</span></a></li><li><a href="02a-env-loading.html"><span class="nav-code">02A</span><span>环境文件加载</span></a></li><li><a href="02b-config-resolution.html"><span class="nav-code">02B</span><span>配置加载与解析</span></a></li><li><a href="02c-define-client-injection-and-json.html"><span class="nav-code">02C</span><span>Define、注入与 JSON</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">开发服务器核心</h2><ul class="nav-list"><li><a href="03-plugin-system.html"><span class="nav-code">03</span><span>插件体系</span></a></li><li><a href="04-dev-server-lifecycle.html"><span class="nav-code">04</span><span>Dev Server 生命周期</span></a></li><li><a href="05-environment-api.html"><span class="nav-code">05</span><span>Environment API</span></a></li><li><a href="06-middleware-request-pipeline.html"><span class="nav-code">06</span><span>中间件与请求入口</span></a></li><li><a href="07-module-resolution.html"><span class="nav-code">07</span><span>模块解析</span></a></li><li><a href="08-transform-and-module-graph.html"><span class="nav-code">08</span><span>Transform 与模块图</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">转换与增量更新</h2><ul class="nav-list"><li><a href="09-html-transform.html"><span class="nav-code">09</span><span>HTML 转换</span></a></li><li><a href="10-import-analysis.html"><span class="nav-code">10</span><span>Import Analysis</span></a></li><li><a href="11-dependency-pre-bundling.html"><span class="nav-code">11</span><span>依赖预构建</span></a></li><li><a href="12-hmr.html"><span class="nav-code">12</span><span>HMR</span></a></li><li><a href="12b-bundled-dev.html"><span class="nav-code">12B</span><span>Bundled Dev</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">资源管线</h2><ul class="nav-list"><li><a href="13a-css-pipeline.html"><span class="nav-code">13A</span><span>CSS 管线</span></a></li><li><a href="13b-asset-worker-wasm.html"><span class="nav-code">13B</span><span>Asset、Worker、Wasm</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">生产构建</h2><ul class="nav-list"><li><a href="14a-build-orchestration.html"><span class="nav-code">14A</span><span>生产构建编排</span></a></li><li><a href="14b-build-output-and-preload.html"><span class="nav-code">14B</span><span>Preload 与构建输出</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">SSR 与运行时</h2><ul class="nav-list"><li><a href="15a-ssr-transform-and-loading.html" aria-current="page"><span class="nav-code">15A</span><span>SSR 变换与加载</span></a></li><li><a href="15b-module-runner.html"><span class="nav-code">15B</span><span>Module Runner</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">公共边界</h2><ul class="nav-list"><li><a href="16-public-api-diagnostics-and-types.html"><span class="nav-code">16</span><span>公共 API 与类型</span></a></li></ul></section></nav><main class="article" id="article-start"><header class="article-hero"><div class="eyebrow"><span class="pill">15A</span><span>SSR 与运行时</span></div><h1>15A. SSR 变换、加载与错误堆栈</h1><p class="lede">SSR 把 ESM 变成 Runner 协议，并在 fetchModule 边界决定 external、cache 或返回转换代码。</p><div class="hero-meta"><span>证据基线：v8.2.1</span><span>commit <code>421615865dad</code></span><span>约 10 分钟</span><a href="../../vite/reading-guides/15a-ssr-transform-and-loading.md">查看 Markdown 原稿</a></div></header><section class="focus-card" aria-label="阅读重点与边界"><div><h2>本页重点</h2><p>SSR 把 ESM 变成 Runner 协议，并在 fetchModule 边界决定 external、cache 或返回转换代码。</p></div><div class="boundary"><h3>推导边界</h3><p>SSR transform 只改写协议，不执行模块；真正求值发生在 Module Runner。</p></div></section><aside class="evidence-note"><h3>证据口径</h3><p>正文保留目标版本中的真实源码、状态说明与代表性测试映射。测试源码用于锁定设计契约；本轮没有执行测试命令。</p></aside><article class="prose"><h2 id="阅读边界"><a class="heading-anchor" href="#%E9%98%85%E8%AF%BB%E8%BE%B9%E7%95%8C" aria-label="链接到本节">#</a>阅读边界</h2>
+</style><script>(function(){try{var t=localStorage.getItem("vite-guide-theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(_){}})();</script></head><body><a class="skip-link" href="#article-start">跳到正文</a><div class="reading-progress" aria-hidden="true"><span data-reading-progress></span></div><header class="topbar"><div class="topbar-inner"><button class="icon-button nav-toggle" type="button" data-nav-toggle aria-expanded="false" aria-label="打开模块导航">☰</button><a class="brand" href="index.html"><span class="brand-mark">V</span><span class="brand-text">Vite 源码解剖</span></a><span class="topbar-path">SSR 与运行时 / 15A SSR 变换与加载</span><div class="topbar-actions"><button class="icon-button" type="button" data-theme-toggle aria-label="切换主题">◐</button></div></div></header><div class="page-grid"><nav class="site-nav" aria-label="模块导航"><a class="nav-home" href="index.html"><span>⌂</span><span>阅读总览</span></a><section class="nav-group"><h2 class="nav-group-title">全景</h2><ul class="nav-list"><li><a href="00-system-map-and-end-to-end.html"><span class="nav-code">00</span><span>系统全景与请求链</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">启动与配置</h2><ul class="nav-list"><li><a href="01-cli-and-startup.html"><span class="nav-code">01</span><span>CLI 与启动</span></a></li><li><a href="02a-env-loading.html"><span class="nav-code">02A</span><span>环境文件加载</span></a></li><li><a href="02b-config-resolution.html"><span class="nav-code">02B</span><span>配置加载与解析</span></a></li><li><a href="02c-define-client-injection-and-json.html"><span class="nav-code">02C</span><span>Define、注入与 JSON</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">开发服务器核心</h2><ul class="nav-list"><li><a href="03-plugin-system.html"><span class="nav-code">03</span><span>插件体系</span></a></li><li><a href="04-dev-server-lifecycle.html"><span class="nav-code">04</span><span>Dev Server 生命周期</span></a></li><li><a href="05-environment-api.html"><span class="nav-code">05</span><span>Environment API</span></a></li><li><a href="06-middleware-request-pipeline.html"><span class="nav-code">06</span><span>中间件与请求入口</span></a></li><li><a href="07-module-resolution.html"><span class="nav-code">07</span><span>模块解析</span></a></li><li><a href="08-transform-and-module-graph.html"><span class="nav-code">08</span><span>Transform 与模块图</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">转换与增量更新</h2><ul class="nav-list"><li><a href="09-html-transform.html"><span class="nav-code">09</span><span>HTML 转换</span></a></li><li><a href="10-import-analysis.html"><span class="nav-code">10</span><span>Import Analysis</span></a></li><li><a href="11-dependency-pre-bundling.html"><span class="nav-code">11</span><span>依赖预构建</span></a></li><li><a href="12-hmr.html"><span class="nav-code">12</span><span>HMR</span></a></li><li><a href="12b-bundled-dev.html"><span class="nav-code">12B</span><span>Bundled Dev</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">资源管线</h2><ul class="nav-list"><li><a href="13a-css-pipeline.html"><span class="nav-code">13A</span><span>CSS 管线</span></a></li><li><a href="13b-asset-worker-wasm.html"><span class="nav-code">13B</span><span>Asset、Worker、Wasm</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">生产构建</h2><ul class="nav-list"><li><a href="14a-build-orchestration.html"><span class="nav-code">14A</span><span>生产构建编排</span></a></li><li><a href="14b-build-output-and-preload.html"><span class="nav-code">14B</span><span>Preload 与构建输出</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">SSR 与运行时</h2><ul class="nav-list"><li><a href="15a-ssr-transform-and-loading.html" aria-current="page"><span class="nav-code">15A</span><span>SSR 变换与加载</span></a></li><li><a href="15b-module-runner.html"><span class="nav-code">15B</span><span>Module Runner</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">公共边界</h2><ul class="nav-list"><li><a href="16-public-api-diagnostics-and-types.html"><span class="nav-code">16</span><span>公共 API 与类型</span></a></li></ul></section></nav><main class="article" id="article-start"><header class="article-hero"><div class="eyebrow"><span class="pill">15A</span><span>SSR 与运行时</span></div><h1>15A. SSR 变换、加载与错误堆栈</h1><p class="lede">SSR 把 ESM 变成 Runner 协议，并在 fetchModule 边界决定 external、cache 或返回转换代码。</p><div class="hero-meta"><span>证据基线：v8.2.1</span><span>commit <code>421615865dad</code></span><span>约 12 分钟</span><a href="../../vite/reading-guides/15a-ssr-transform-and-loading.md">查看 Markdown 原稿</a></div></header><aside class="boundary-note" aria-label="阅读范围"><p>SSR transform 只改写协议，不执行模块；真正求值发生在 Module Runner。</p></aside><article class="prose"><h2 id="阅读边界"><a class="heading-anchor" href="#%E9%98%85%E8%AF%BB%E8%BE%B9%E7%95%8C" aria-label="链接到本节">#</a>阅读边界</h2>
 <p>本章研究开发服务器怎样把标准 ESM 变成 Module Runner 可执行的协议代码，以及旧
 <code>server.ssrLoadModule()</code> API 怎样接入这条新链路：</p>
 <figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">server.ssrLoadModule(url)
@@ -1384,8 +1503,8 @@ code {
 <li>import 为什么提升，re-export 为什么也参与同一执行顺序？</li>
 <li>export 为什么用 getter，而不是把当前值复制到对象？</li>
 <li>import 函数调用为什么改写成 <code>(0, namespace.fn)()</code>？</li>
-<li><code>class A extends Imported</code> 为什么需要临时局部绑定？</li>
-<li>作用域遍历为何先 DFS 建图，再 BFS 处理标识符？</li>
+<li>类声明的 superclass 别名在哪插入，与类表达式如何区分？</li>
+<li>作用域遍历为何先完成 DFS，再处理收集到的标识符？</li>
 <li>fetchModule 在什么情况下返回 external、cache 或 code？</li>
 <li><code>options.cached</code> 与返回值 <code>invalidate</code> 分别表达谁的缓存状态？</li>
 <li>旧 <code>ssrLoadModule</code> 怎样与新 EvaluatedModules 保持兼容？</li>
@@ -1450,9 +1569,11 @@ const value = (0, __vite_ssr_import_0__.ref)(0)
 </tr>
 </tbody>
 </table></div>
-<p>Node 目标忽略 browser 字段，webworker 目标使用它。外部依赖默认条件为 <code>node</code>、<code>module-sync</code>；不能直接套用
-客户端 browser 条件，否则“构建时解析到一个入口、运行时 Node 又加载另一个入口”。<code>resolveSSROptions()</code>
-还把顶层 <code>preserveSymlinks</code> 注入依赖优化器的 esbuildOptions，使 SSR 解析与预构建对包身份保持一致。</p>
+<p>Node 目标默认不使用 browser 字段，webworker 目标默认使用它。外部依赖默认条件为 <code>node</code>、<code>module-sync</code>。
+<code>fetchModule()</code> 用这些条件选出 file URL 后交给宿主 import；包内部后续导入仍遵守宿主自身的条件，
+所以自定义条件也需要在 Node 启动选项中保持一致。<code>resolveSSROptions()</code> 还把顶层
+<code>preserveSymlinks</code> 写入兼容字段 <code>optimizeDeps.esbuildOptions</code>；本版 Rolldown 优化器实际从
+Environment 的 <code>resolve.preserveSymlinks</code> 读取符号链接策略。</p>
 <h2 id="ssrtransform-的三阶段算法"><a class="heading-anchor" href="#ssrtransform-%E7%9A%84%E4%B8%89%E9%98%B6%E6%AE%B5%E7%AE%97%E6%B3%95" aria-label="链接到本节">#</a><code>ssrTransform</code> 的三阶段算法</h2>
 <h3 id="阶段一-提升依赖并建立绑定映射"><a class="heading-anchor" href="#%E9%98%B6%E6%AE%B5%E4%B8%80-%E6%8F%90%E5%8D%87%E4%BE%9D%E8%B5%96%E5%B9%B6%E5%BB%BA%E7%AB%8B%E7%BB%91%E5%AE%9A%E6%98%A0%E5%B0%84" aria-label="链接到本节">#</a>阶段一：提升依赖并建立绑定映射</h3>
 <p>扫描所有 import 和带 source 的 re-export：</p>
@@ -1502,8 +1623,10 @@ namespace vue
 </tbody>
 </table></div>
 <p>getter 是 live binding 的关键：导出方后续修改本地值，导入方读取时仍能看到最新值。getter 中的
-<code>try/catch</code> 兼容循环依赖的未初始化阶段，当前 Vite 会暂时返回 <code>undefined</code>。这一行为并不在所有
-边界上完全等同 Node；<code>server-runtime.spec.ts</code> 明确记录了已知差异。</p>
+<code>try/catch</code> 捕获绑定尚未初始化时的读取错误，返回 <code>undefined</code>。因此循环依赖在初始化前直接读取导出
+可能得到 <code>undefined</code>；继续读取它的属性则抛 <code>TypeError</code>。<code>server-runtime.spec.ts</code> 的
+<code>cyclic invalid 1</code>、<code>cyclic invalid 2</code> 和 <code>export default getter is hoisted</code> 分别记录这些结果，
+而 Node 在相同的未初始化绑定读取处抛 <code>ReferenceError</code>。</p>
 <p>命名导出应覆盖 <code>export *</code> 带来的同名属性。对应回归见
 <a href="https://github.com/vitejs/vite/pull/19534" target="_blank" rel="noreferrer noopener">PR #19534</a>。re-export 的执行顺序和默认导出 live binding
 分别在 <a href="https://github.com/vitejs/vite/pull/19841" target="_blank" rel="noreferrer noopener">PR #19841</a> 与
@@ -1516,10 +1639,11 @@ namespace vue
 <li><code>obj.foo</code> 的 <code>foo</code> 不是变量，<code>obj[foo]</code> 的 <code>foo</code> 才是；</li>
 <li><code>import.meta</code> 与动态 <code>import()</code> 由专门分支处理；</li>
 <li>对象简写 <code>{ foo }</code> 要展开为 <code>{ foo: namespace.foo }</code>；</li>
-<li>解构 <code>{ foo } = value</code> 中的 foo 是新绑定，不能展开。</li>
+<li>声明解构 <code>const { foo } = value</code> 中的 foo 是新绑定，不能展开；解构赋值需与声明区分。</li>
 </ul>
-<p><code>walk()</code> 先用 DFS 建立 scope map、父节点栈和待处理 Identifier，再在作用域信息完整后以 BFS 顺序
-触发回调。如果边遍历边替换，先出现的引用可能早于后方的提升声明，造成误判。</p>
+<p><code>walk()</code> 先用 DFS 建立 scope map、父节点栈并收集候选 Identifier，再按收集顺序重新检查它们。
+这不是 BFS：关键是延后判断，直到后方声明也已进入作用域表。例如函数体先读取 <code>foo</code>、后声明
+<code>var foo</code> 时，前面的引用仍属于这个函数，不能改成外层 import 的 namespace 读取。</p>
 <p>几个值得单步跟踪的边界：</p>
 <ul>
 <li><code>var</code> 找最近函数作用域，<code>let/const</code> 找最近块作用域；</li>
@@ -1539,8 +1663,8 @@ namespace vue
 <p>这个包装也影响 V8 堆栈列号。sourcemap 会把实参列表的 <code>(</code> 映回原 callee 起点，以匹配 Node。
 相关修复见 <a href="https://github.com/vitejs/vite/pull/22829" target="_blank" rel="noreferrer noopener">PR #22829</a>，测试同时覆盖空白、注释、换行和
 可选调用。</p>
-<p><code>extends</code> 是另一种特殊位置：类继承表达式与类内部名称/提升交织，转换器会在顶层语句前创建稳定的
-局部别名，再让 class 使用该别名。</p>
+<p><code>extends</code> 是另一种特殊位置：导入标识符直接作为类声明的 superclass 时，转换器会在包含该类的
+顶层语句前创建一次局部别名，再让 class 使用它。这里保留的是类声明结构，类本身仍有 TDZ。</p>
 <h2 id="sourcemap-合成"><a class="heading-anchor" href="#sourcemap-%E5%90%88%E6%88%90" aria-label="链接到本节">#</a>Sourcemap 合成</h2>
 <p>MagicString 记录本轮移动和覆盖；完成后再与上游插件 map 合成。需要注意：</p>
 <ul>
@@ -1567,8 +1691,9 @@ namespace vue
 → inlineSourceMap()
 → 返回 code/file/id/url/invalidate
 </code></pre></figure><p>Runner 请求时带 <code>cached=true</code>，且服务端也有 transformResult，服务端只回 <code>{ cache: true }</code>，避免重复
-传输代码和 base64 map。反之返回 <code>invalidate: !cached</code>，告诉 Runner：服务端本轮刚重新变换，旧求值
-状态必须失效。</p>
+传输代码和 base64 map。反之返回代码和 <code>invalidate: !cached</code>。这里的 <code>cached</code> 是调用
+transformRequest <strong>之前</strong>是否已有服务端结果；原先没有结果便要求 Runner 清掉旧求值状态，即使
+本轮转换随后与另一个请求共享了结果。</p>
 <p>两者是双向缓存握手，不应混淆：</p>
 <div class="table-scroll"><table>
 <thead>
@@ -1592,7 +1717,7 @@ namespace vue
 <tr>
 <td>invalidate</td>
 <td>server → Runner</td>
-<td>服务端刚变换，应清除旧执行状态</td>
+<td>请求前服务端无 transformResult，应清除旧执行状态</td>
 </tr>
 </tbody>
 </table></div>
@@ -1622,7 +1747,8 @@ namespace vue
 <li>写回 stack，并保留无法映射的帧。</li>
 </ol>
 <p>Vite 运行时探测 Node <code>new Function</code> wrapper 的实际行偏移，而不是按 Node 版本硬编码。
-<code>ssrFixStacktrace()</code> 还会给 Error 打一次性标记；若堆栈看起来已被其他工具改写，则避免再次错误映射。
+<code>ssrFixStacktrace()</code> 用 WeakSet 记录已处理的 Error，重复调用直接返回。若某帧扣除 wrapper 后的行列
+无效，该帧保留原样，并在 Error.message 追加已被其他工具改写的提示；其他可映射的帧仍继续处理。
 对应能力见 <a href="https://github.com/vitejs/vite/pull/21269" target="_blank" rel="noreferrer noopener">PR #21269</a>。</p>
 <p>新 Module Runner 的进程级 sourcemap 拦截器在 15B 详述；这里的函数主要服务旧兼容 API。</p>
 <h2 id="一次性-runnerimport"><a class="heading-anchor" href="#%E4%B8%80%E6%AC%A1%E6%80%A7-runnerimport" aria-label="链接到本节">#</a>一次性 <code>runnerImport</code></h2>
@@ -1656,8 +1782,8 @@ namespace vue
 </tr>
 </tbody>
 </table></div>
-<p>建议先手算四个输入，再看快照：命名 import 调用、默认具名 class、<code>export *</code> 加同名导出、局部变量遮蔽
-import。若手算结果与快照一致，主算法已经建立。</p>
+<p>这些测试分别检查转换代码、最终求值结果和错误位置；把输出快照与 Runner 断言连起来，才能看到
+协议改写怎样影响运行时读取。</p>
 <h2 id="关键源码证据"><a class="heading-anchor" href="#%E5%85%B3%E9%94%AE%E6%BA%90%E7%A0%81%E8%AF%81%E6%8D%AE" aria-label="链接到本节">#</a>关键源码证据</h2>
 <p>目标版本源码摘录，来源：<code>packages/vite/src/node/ssr/ssrTransform.ts</code>，<code>ssrTransform()</code>：</p>
 <figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">export async function ssrTransform(
@@ -1672,8 +1798,238 @@ import。若手算结果与快照一致，主算法已经建立。</p>
   }
   return ssrTransformScript(code, inMap, url, originalCode)
 }
-</code></pre></figure><p>JSON stringify 请求走结构化快速路径；其余脚本才进入 AST、live binding 与 sourcemap 重写。
+</code></pre></figure><p>调用方只在 <code>json.stringify === true &amp;&amp; json.namedExports !== true</code> 时启用此快速路径；它把 default
+export 直接赋到 exports 对象。其余输入进入 AST、live binding 与 sourcemap 重写。
 <code>fetchModule</code>/transport 得到的 transform 结果因此已经带有 runner 可执行协议，而非浏览器 ESM 原文。</p>
+<p>下面摘录 <code>defineExport()</code> 的生成动作，保留完整 getter 模板：</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">s.appendLeft(
+  fileStartIndex,
+  `${ssrExportNameKey}(${JSON.stringify(name)}, () =&gt; { try { return ${local} } catch {} });\n`,
+)
+</code></pre></figure><p>模板被插到函数体前部，注册时尚不读取本地绑定；消费者调用 getter 时才取值。以
+<code>export let count = 0; export function inc() { count++ }</code> 为例，<code>count</code> getter 每次读取当前变量，
+所以 <code>inc()</code> 后得到 1；若把 helper 改成 <code>exports.count = count</code>，既会提前触及 TDZ，也会丢掉后续更新。</p>
+<p><code>fetchModule()</code> 的缓存握手摘录（中间的转换与 map 附加见上文）：</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">const mod = await environment.moduleGraph.ensureEntryFromUrl(url)
+const cached = !!mod.transformResult
+if (options.cached &amp;&amp; cached) {
+  return { cache: true }
+}
+</code></pre></figure><p>两个标志同时为 true 才省去代码传输。服务端节点已失效时，<code>cached</code> 为 false，重新转换后返回
+<code>invalidate: true</code>，Runner 便清掉旧 namespace 和求值 Promise。</p>
+<p>用 runtime 测试中的 <code>fixtures/cyclic2/test1</code> 串起这次传输。三个文件的输入如下；真实的环是
+<code>index → dep2 → index</code>，<code>dep1</code> 本身没有回边：</p>
+<figure class="code-card"><figcaption><span>js</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-js">// index.js
+import { dep1 } from &#039;./dep1.js&#039;
+export { dep1 }
+
+import { dep2 } from &#039;./dep2.js&#039;
+export { dep2 }
+
+// dep1.js
+export const dep1 = { ok: true }
+
+// dep2.js
+import { dep1 } from &#039;./index.js&#039;
+export const dep2 = { ok: dep1.ok }
+</code></pre></figure><p>首次请求先生产 SSR 协议代码，再交给 Runner。临时的元信息请求 Promise 在响应后删除，节点上的
+求值 Promise 则保留。再次导入时，Runner 先声明自己已有 meta；服务端也保留 transformResult，才会
+返回 <code>{ cache: true }</code>。下面的时序把这次握手与第一次求值放在同一条调用链中。</p>
+<figure class="engineering-diagram" data-diagram-width="1160" aria-labelledby="diagram-15-ssr-runner-sequence-caption"><figcaption id="diagram-15-ssr-runner-sequence-caption">cyclic2/test1 从 SSR 协议生产到 Runner 求值，以及再次导入的双向缓存握手</figcaption><div class="diagram-toolbar" role="group" aria-label="图示查看"><button type="button" data-diagram-action="out" aria-label="缩小图示">−</button><output class="diagram-scale" aria-live="polite">100%</output><button type="button" data-diagram-action="in" aria-label="放大图示">＋</button><button type="button" data-diagram-action="fit">适应宽度</button><button type="button" data-diagram-action="reset">原尺寸</button><button type="button" data-diagram-action="expand" aria-expanded="false">展开图示</button><a href="diagrams/15-ssr-runner-sequence.svg" target="_blank" rel="noopener">独立 SVG</a></div><div class="diagram-viewport" tabindex="0" role="region" aria-label="cyclic2/test1 从 SSR 协议生产到 Runner 求值，以及再次导入的双向缓存握手，可滚动图示"><div class="diagram-canvas" style="width:1160px"><svg xmlns="http://www.w3.org/2000/svg" width="1160" height="1740" viewBox="0 0 1160 1740" role="img" aria-labelledby="diagram-15-ssr-runner-sequence-sr-title diagram-15-ssr-runner-sequence-sr-desc">
+<title id="diagram-15-ssr-runner-sequence-sr-title">SSR 协议如何进入 Module Runner</title>
+<desc id="diagram-15-ssr-runner-sequence-sr-desc">跨 ServerEnvironment、Transport、ModuleRunner 与 Evaluator 的时序。首次内部模块请求生产 getter 与 await import 协议代码；Runner 删除临时元信息 Promise，但保留节点求值 Promise。再次导入通过双向缓存握手决定复用旧状态或失效后重跑。输入为 cyclic2/test1：index 先求值 dep1，再求值 dep2；dep2 导回 index。</desc>
+<defs>
+  <marker id="diagram-15-ssr-runner-sequence-sr-blue-arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 Z" fill="#2563eb"/></marker>
+  <marker id="diagram-15-ssr-runner-sequence-sr-green-arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 Z" fill="#0f766e"/></marker>
+  <marker id="diagram-15-ssr-runner-sequence-sr-amber-arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 Z" fill="#b45309"/></marker>
+  <marker id="diagram-15-ssr-runner-sequence-sr-gray-arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 Z" fill="#64748b"/></marker>
+</defs>
+<style>
+.sr-title { font: 700 30px -apple-system, BlinkMacSystemFont, "Noto Sans CJK SC", "Microsoft YaHei", sans-serif; fill: #172033; }
+.sr-section { font: 700 24px -apple-system, BlinkMacSystemFont, "Noto Sans CJK SC", "Microsoft YaHei", sans-serif; fill: #172033; }
+.sr-text { font-family: -apple-system, BlinkMacSystemFont, "Noto Sans CJK SC", "Microsoft YaHei", sans-serif; fill: #253247; }
+.sr-code { font-family: "SFMono-Regular", Consolas, "Noto Sans Mono CJK SC", "Microsoft YaHei", monospace; fill: #253247; }
+.sr-line { fill: none; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+</style>
+
+<rect width="1160" height="1740" fill="#fbfcfe"/>
+<text class="sr-title" x="40" y="49">SSR 协议 → 缓存握手 → Runner 求值</text>
+<text class="sr-text" x="40" y="85" font-size="20" text-anchor="start">
+<tspan x="40" dy="0">同一输入：cyclic2/test1；index 先 dep1，后 dep2；dep2 再导入 index。</tspan>
+</text>
+<text class="sr-text" x="40" y="116" font-size="18" text-anchor="start" style="fill:#526079">
+<tspan x="40" dy="0">实线：调用 / 处理；虚线：异步响应 / 返回值。纵向表示执行先后。</tspan>
+</text>
+<rect x="58" y="145" width="224" height="73" rx="12" fill="#edf3fc" stroke="#9db3d4" stroke-width="1.5"/>
+<text class="sr-text" x="170.0" y="175" font-size="20" text-anchor="middle" font-weight="650">
+<tspan x="170.0" dy="0">ServerEnvironment</tspan>
+</text>
+<text class="sr-text" x="170.0" y="203" font-size="16" text-anchor="middle">
+<tspan x="170.0" dy="0">transformResult · 协议代码</tspan>
+</text>
+<path class="sr-line" d="M170 219 V1680" stroke="#64748b" stroke-dasharray="7 6"/>
+<rect x="328" y="145" width="224" height="73" rx="12" fill="#edf3fc" stroke="#9db3d4" stroke-width="1.5"/>
+<text class="sr-text" x="440.0" y="175" font-size="20" text-anchor="middle" font-weight="650">
+<tspan x="440.0" dy="0">Transport</tspan>
+</text>
+<text class="sr-text" x="440.0" y="203" font-size="16" text-anchor="middle">
+<tspan x="440.0" dy="0">invoke(fetchModule)</tspan>
+</text>
+<path class="sr-line" d="M440 219 V1680" stroke="#64748b" stroke-dasharray="7 6"/>
+<rect x="618" y="145" width="224" height="73" rx="12" fill="#edf3fc" stroke="#9db3d4" stroke-width="1.5"/>
+<text class="sr-text" x="730.0" y="175" font-size="20" text-anchor="middle" font-weight="650">
+<tspan x="730.0" dy="0">ModuleRunner</tspan>
+</text>
+<text class="sr-text" x="730.0" y="203" font-size="16" text-anchor="middle">
+<tspan x="730.0" dy="0">meta · Promise · exports</tspan>
+</text>
+<path class="sr-line" d="M730 219 V1680" stroke="#64748b" stroke-dasharray="7 6"/>
+<rect x="888" y="145" width="224" height="73" rx="12" fill="#edf3fc" stroke="#9db3d4" stroke-width="1.5"/>
+<text class="sr-text" x="1000.0" y="175" font-size="20" text-anchor="middle" font-weight="650">
+<tspan x="1000.0" dy="0">Evaluator</tspan>
+</text>
+<text class="sr-text" x="1000.0" y="203" font-size="16" text-anchor="middle">
+<tspan x="1000.0" dy="0">AsyncFunction · context</tspan>
+</text>
+<path class="sr-line" d="M1000 219 V1680" stroke="#64748b" stroke-dasharray="7 6"/>
+<rect x="596" y="242" width="268" height="99" rx="12" fill="#eff6ff" stroke="#cbd5e1" stroke-width="1.5"/>
+<text class="sr-text" x="730.0" y="272" font-size="20" text-anchor="middle" font-weight="650">
+<tspan x="730.0" dy="0">cachedModule(index)</tspan>
+</text>
+<text class="sr-text" x="730.0" y="300" font-size="18" text-anchor="middle">
+<tspan x="730.0" dy="0">按 URL 合并并发元信息请求</tspan>
+<tspan x="730.0" dy="25">临时 Promise；完成后删除</tspan>
+</text>
+<text class="sr-code" x="580" y="365" font-size="18" text-anchor="middle">
+<tspan x="580" dy="0">fetchModule(index, options)</tspan>
+</text>
+<text class="sr-code" x="580" y="390" font-size="17" text-anchor="middle">
+<tspan x="580" dy="0">cached:false + startOffset</tspan>
+</text>
+<path class="sr-line" d="M730 407 H440" stroke="#2563eb" marker-end="url(#diagram-15-ssr-runner-sequence-sr-blue-arrow)"/>
+<text class="sr-code" x="305" y="437" font-size="18" text-anchor="middle">
+<tspan x="305" dy="0">fetchModule(url, importer)</tspan>
+</text>
+<path class="sr-line" d="M440 451 H170" stroke="#2563eb" marker-end="url(#diagram-15-ssr-runner-sequence-sr-blue-arrow)"/>
+<rect x="36" y="464" width="268" height="141" rx="12" fill="#eff6ff" stroke="#cbd5e1" stroke-width="1.5"/>
+<text class="sr-text" x="170.0" y="494" font-size="20" text-anchor="middle" font-weight="650">
+<tspan x="170.0" dy="0">生产 internal 模块协议</tspan>
+</text>
+<text class="sr-text" x="170.0" y="522" font-size="17" text-anchor="middle">
+<tspan x="170.0" dy="0">请求前 transformResult 为空</tspan>
+<tspan x="170.0" dy="25">transformRequest → ssrTransform</tspan>
+<tspan x="170.0" dy="25">getter / await import / map</tspan>
+</text>
+<text class="sr-code" x="305" y="637" font-size="18" text-anchor="middle">
+<tspan x="305" dy="0">code / id / url / file</tspan>
+</text>
+<text class="sr-code" x="305" y="661" font-size="17" text-anchor="middle">
+<tspan x="305" dy="0">invalidate: !cached = true</tspan>
+</text>
+<path class="sr-line" d="M170 678 H440" stroke="#0f766e" marker-end="url(#diagram-15-ssr-runner-sequence-sr-green-arrow)" stroke-dasharray="7 6"/>
+<text class="sr-text" x="585" y="709" font-size="19" text-anchor="middle">
+<tspan x="585" dy="0">返回 internal 协议</tspan>
+</text>
+<path class="sr-line" d="M440 727 H730" stroke="#0f766e" marker-end="url(#diagram-15-ssr-runner-sequence-sr-green-arrow)" stroke-dasharray="7 6"/>
+<rect x="596" y="753" width="268" height="110" rx="12" fill="#eff6ff" stroke="#cbd5e1" stroke-width="1.5"/>
+<text class="sr-text" x="730.0" y="783" font-size="20" text-anchor="middle" font-weight="650">
+<tspan x="730.0" dy="0">ensureModule(id, url)</tspan>
+</text>
+<text class="sr-text" x="730.0" y="811" font-size="17" text-anchor="middle">
+<tspan x="730.0" dy="0">invalidate 旧状态，再写 meta</tspan>
+<tspan x="730.0" dy="25">元信息请求 finally 删除 URL</tspan>
+</text>
+<rect x="596" y="887" width="268" height="111" rx="12" fill="#f0fdfa" stroke="#9ccbc3" stroke-width="1.5"/>
+<text class="sr-text" x="730.0" y="917" font-size="20" text-anchor="middle" font-weight="650">
+<tspan x="730.0" dy="0">cachedRequest(index)</tspan>
+</text>
+<text class="sr-text" x="730.0" y="945" font-size="18" text-anchor="middle">
+<tspan x="730.0" dy="0">登记 mod.promise = Pindex</tspan>
+<tspan x="730.0" dy="25">执行前写入 mod.exports</tspan>
+</text>
+<text class="sr-code" x="867" y="1030" font-size="17" text-anchor="middle">
+<tspan x="867" dy="0">runInlinedModule(context, code)</tspan>
+</text>
+<path class="sr-line" d="M730 1050 H1000" stroke="#2563eb" marker-end="url(#diagram-15-ssr-runner-sequence-sr-blue-arrow)"/>
+<rect x="866" y="1074" width="268" height="127" rx="12" fill="#f0fdfa" stroke="#9ccbc3" stroke-width="1.5"/>
+<text class="sr-text" x="1000.0" y="1104" font-size="20" text-anchor="middle" font-weight="650">
+<tspan x="1000.0" dy="0">执行转换后的 index</tspan>
+</text>
+<text class="sr-text" x="1000.0" y="1132" font-size="17" text-anchor="middle">
+<tspan x="1000.0" dy="0">先注册 dep1 / dep2 getter</tspan>
+<tspan x="1000.0" dy="25">await dep1 → await dep2</tspan>
+<tspan x="1000.0" dy="25">dep2 → index：取部分 exports</tspan>
+</text>
+<text class="sr-text" x="863" y="1234" font-size="18" text-anchor="middle" style="fill:#0f766e">
+<tspan x="863" dy="0">dep2 完成 → index 完成</tspan>
+</text>
+<path class="sr-line" d="M1000 1252 H730" stroke="#0f766e" marker-end="url(#diagram-15-ssr-runner-sequence-sr-green-arrow)" stroke-dasharray="7 6"/>
+<rect x="596" y="1274" width="268" height="85" rx="12" fill="#f0fdfa" stroke="#9ccbc3" stroke-width="1.5"/>
+<text class="sr-text" x="730.0" y="1304" font-size="20" text-anchor="middle" font-weight="650">
+<tspan x="730.0" dy="0">finally: evaluated = true</tspan>
+</text>
+<text class="sr-text" x="730.0" y="1332" font-size="18" text-anchor="middle">
+<tspan x="730.0" dy="0">Pindex 保留完成结果或拒绝</tspan>
+</text>
+<rect x="32" y="1390" width="1096" height="310" rx="12" fill="#f5f7fb" stroke="#abb8cc" stroke-width="1.5"/>
+<text class="sr-section" x="50" y="1425">再次导入：先确认两端缓存，再决定是否复用求值</text>
+<text class="sr-code" x="585" y="1458" font-size="18" text-anchor="middle">
+<tspan x="585" dy="0">fetchModule(cached:true)</tspan>
+</text>
+<path class="sr-line" d="M730 1476 H440" stroke="#2563eb" marker-end="url(#diagram-15-ssr-runner-sequence-sr-blue-arrow)"/>
+<text class="sr-text" x="305" y="1508" font-size="18" text-anchor="middle">
+<tspan x="305" dy="0">Runner 声明：已有 meta</tspan>
+</text>
+<path class="sr-line" d="M440 1526 H170" stroke="#2563eb" marker-end="url(#diagram-15-ssr-runner-sequence-sr-blue-arrow)"/>
+<text class="sr-text" x="54" y="1562" font-size="18" text-anchor="start" style="fill:#0f766e">
+<tspan x="54" dy="0">服务端仍有 transformResult</tspan>
+</text>
+<text class="sr-code" x="307" y="1590" font-size="18" text-anchor="middle" style="fill:#0f766e">
+<tspan x="307" dy="0">{ cache: true }</tspan>
+</text>
+<path class="sr-line" d="M170 1603 H440" stroke="#0f766e" marker-end="url(#diagram-15-ssr-runner-sequence-sr-green-arrow)" stroke-dasharray="7 6"/>
+<text class="sr-text" x="585" y="1590" font-size="18" text-anchor="middle" style="fill:#0f766e">
+<tspan x="585" dy="0">旧 meta → 复用同一个 P</tspan>
+</text>
+<path class="sr-line" d="M440 1603 H730" stroke="#0f766e" marker-end="url(#diagram-15-ssr-runner-sequence-sr-green-arrow)" stroke-dasharray="7 6"/>
+<text class="sr-text" x="778" y="1609" font-size="17" text-anchor="start">
+<tspan x="778" dy="0">返回 namespace / 同一 Error</tspan>
+</text>
+<text class="sr-text" x="54" y="1646" font-size="18" text-anchor="start" style="fill:#b45309">
+<tspan x="54" dy="0">服务端已无 transformResult</tspan>
+</text>
+<text class="sr-code" x="307" y="1674" font-size="17" text-anchor="middle" style="fill:#b45309">
+<tspan x="307" dy="0">code + invalidate:true</tspan>
+</text>
+<path class="sr-line" d="M170 1687 H440" stroke="#b45309" marker-end="url(#diagram-15-ssr-runner-sequence-sr-amber-arrow)" stroke-dasharray="7 6"/>
+<text class="sr-text" x="585" y="1674" font-size="17" text-anchor="middle" style="fill:#b45309">
+<tspan x="585" dy="0">清旧执行状态 → 重新求值</tspan>
+</text>
+<path class="sr-line" d="M440 1687 H730" stroke="#b45309" marker-end="url(#diagram-15-ssr-runner-sequence-sr-amber-arrow)" stroke-dasharray="7 6"/>
+<text class="sr-text" x="40" y="1720" font-size="16" text-anchor="start" style="fill:#526079">
+<tspan x="40" dy="0">源码：ssr/fetchModule.ts · ssr/ssrTransform.ts · module-runner/runner.ts · esmEvaluator.ts</tspan>
+</text>
+</svg>
+</div></div><p class="diagram-hint">可横向滚动；适应宽度看全图，原尺寸读节点。</p></figure>
+<p>Evaluator 先注册 index 的导出 getter，再依次等待 dep1、dep2。dep2 导回 index 时，Runner 返回已建立的
+部分 namespace；此时 dep1 已完成，所以 dep2 能读到 <code>dep1.ok === true</code>，随后 dep2 与 index 依次完成。
+15B 的状态图继续展开这条回边如何避开互相等待，以及失败结果为什么也会保留。</p>
+<p>测试源码摘录：<code>ssrTransform.spec.ts</code> 的 <code>named import</code>，保留该用例输入与快照，省略文件级夹具。
+<code>ssrTransformSimpleCode</code> 使用相同文本作为 code/originalCode，并以 null 作为上游 map。</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">test(&#039;named import&#039;, async () =&gt; {
+  expect(
+    await ssrTransformSimpleCode(
+      `import { ref } from &#039;vue&#039;;function foo() { return ref(0) }`,
+    ),
+  ).toMatchInlineSnapshot(
+    `
+    &quot;const __vite_ssr_import_0__ = await __vite_ssr_import__(&quot;vue&quot;, {&quot;importedNames&quot;:[&quot;ref&quot;]});
+    function foo() { return (0,__vite_ssr_import_0__.ref)(0) }&quot;
+  `,
+  )
+})
+</code></pre></figure><p>这里一次确认两件事：请求带上用于外部模块校验的 <code>importedNames</code>，函数调用去掉 namespace 的隐式
+this。最终调用行为由 runtime 的 <code>this of the exported function should be undefined</code> 用例继续检查。</p>
 <h2 id="建议断点"><a class="heading-anchor" href="#%E5%BB%BA%E8%AE%AE%E6%96%AD%E7%82%B9" aria-label="链接到本节">#</a>建议断点</h2>
 <ol>
 <li><code>ssrTransformScript()</code> 的阶段一 <code>defineImport()</code>。</li>
@@ -1768,6 +2124,80 @@ import。若手算结果与快照一致，主算法已经建立。</p>
   updateProgress()
   window.addEventListener('scroll', updateProgress, { passive: true })
   window.addEventListener('resize', updateProgress)
+
+  var expandedDiagram = null
+
+  function closeDiagram() {
+    if (!expandedDiagram) return
+    var figure = expandedDiagram
+    var button = figure.querySelector('[data-diagram-action="expand"]')
+    figure.classList.remove('is-expanded')
+    figure.removeAttribute('role')
+    figure.removeAttribute('aria-modal')
+    body.classList.remove('diagram-is-expanded')
+    button.setAttribute('aria-expanded', 'false')
+    button.textContent = '展开图示'
+    expandedDiagram = null
+    button.focus()
+  }
+
+  document.querySelectorAll('.engineering-diagram').forEach(function (figure) {
+    var viewport = figure.querySelector('.diagram-viewport')
+    var canvas = figure.querySelector('.diagram-canvas')
+    var output = figure.querySelector('.diagram-scale')
+    var width = Number(figure.getAttribute('data-diagram-width'))
+    var scale = 1
+
+    function setScale(next) {
+      scale = Math.min(2, Math.max(0.15, next))
+      canvas.style.width = width * scale + 'px'
+      output.textContent = Math.round(scale * 100) + '%'
+    }
+
+    figure.querySelectorAll('[data-diagram-action]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        var action = button.getAttribute('data-diagram-action')
+        if (action === 'in') setScale(scale * 1.2)
+        if (action === 'out') setScale(scale / 1.2)
+        if (action === 'fit') setScale(viewport.clientWidth / width)
+        if (action === 'reset') setScale(1)
+        if (action === 'expand') {
+          if (expandedDiagram === figure) {
+            closeDiagram()
+            return
+          }
+          closeDiagram()
+          expandedDiagram = figure
+          figure.classList.add('is-expanded')
+          figure.setAttribute('role', 'dialog')
+          figure.setAttribute('aria-modal', 'true')
+          body.classList.add('diagram-is-expanded')
+          button.setAttribute('aria-expanded', 'true')
+          button.textContent = '收起图示'
+          button.focus()
+        }
+      })
+    })
+  })
+
+  document.addEventListener('keydown', function (event) {
+    if (!expandedDiagram) return
+    if (event.key === 'Escape') closeDiagram()
+    if (event.key === 'Tab') {
+      var controls = Array.from(
+        expandedDiagram.querySelectorAll('button, a, [tabindex="0"]'),
+      )
+      var first = controls[0]
+      var last = controls[controls.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+  })
 
   document.querySelectorAll('.copy-code').forEach(function (button) {
     button.addEventListener('click', async function () {

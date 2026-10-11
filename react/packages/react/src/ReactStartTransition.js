@@ -42,7 +42,7 @@ export type Transition = {
   ...
 };
 
-/** 异步 transition 落定时成对减少开发态嵌套计数。 */
+/** 已登记的异步 transition 落定后，减少开发态在途计数。 */
 function releaseAsyncTransition() {
   if (__DEV__) {
     ReactSharedInternals.asyncTransitions--;
@@ -53,7 +53,14 @@ function releaseAsyncTransition() {
  * 在新的 transition 上下文中同步调用作用域，并保证退出时恢复父上下文。
  *
  * 若作用域返回 Thenable，会登记落定处理与开发态异步计数；同步异常和异步拒绝都交给全局
- * 错误通道，而不会破坏上下文清理。
+ * 错误通道。renderer 钩子在 scope 返回后立即取得返回值，并按需登记异步 action；
+ * `finally` 随同步调用栈恢复 T，不等待 Promise，因此 await 后的更新要重新进入 transition。
+ * @param scope - 立即同步调用的更新作用域；返回值若为带 then 的对象则可交 renderer 纠缠 action。
+ * @param options - 可选诊断 name，仅 enableTransitionTracing 开启时读取；不指定调度 delay。
+ * @returns void，不返回 scope 结果、Promise 或取消句柄；外部读取 pending 应用 useTransition。
+ * @remarks T 只标记执行 scope 的动态上下文，不把 JavaScript 放到后台线程。同步失败
+ * 由 reportGlobalError 报给宿主，异步失败另订阅拒绝通道；宿主上报或告警本身抛错仍可
+ * 传播。DEV 异步计数先递增再订阅，不为自定义 then 多次回调/注册抛错建立额外防护。
  */
 export function startTransition(
   scope: () => void,
@@ -130,7 +137,14 @@ export function startTransition(
 /**
  * 建立必须同步启动的手势 transition，并返回 renderer 提供的结束/清理函数。
  *
- * 手势依赖实时 Timeline，故不接受异步作用域；无 renderer 钩子或发生错误时返回空清理函数。
+ * 手势要求立即启动；DEV 发现 scope 返回 Thenable 时告警，但仍继续调用 renderer 钩子。
+ * 没有 renderer 钩子或 scope/钩子抛错时返回空清理函数。特性未开启或缺少 provider 会直接抛错。
+ * @param provider - 宿主手势时间线；非 null 即接受，具体能力由 renderer 钩子解释。
+ * @param scope - 必须立即安排手势更新的作用域；返回 thenable 仅 DEV 告警，不 await。
+ * @param options - 手势 rangeStart/rangeEnd 及可选诊断 name，原样传给 renderer。
+ * @returns renderer 的结束函数；无钩子或已上报失败时回退 noop，不是动画完成 Promise。
+ * @remarks 手势建立独立 types 初值，不像普通嵌套 transition 继承父类型数组；G 钩子
+ * 接管后才启动实际宿主工作。provider 检查在 scope 前，T 在正常钩子退出或抛错后恢复。
  */
 export function startGestureTransition(
   provider: GestureProvider,
@@ -201,7 +215,7 @@ export function startGestureTransition(
 
 /**
  * 在最外层 transition 结束时检查更新规模，并清空 Fiber 集合释放开发态引用。
- * 大量更新常意味着订阅绕过 React Hooks，会破坏并发模式保证。
+ * 超过 10 个 Fiber 时提示检查是否使用了外部订阅；数量本身不能确定更新来自订阅。
  */
 function warnAboutTransitionSubscriptions(
   prevTransition: Transition | null,

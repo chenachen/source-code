@@ -1,6 +1,6 @@
 /**
- * compiler-core 测试辅助：提供 AST 类型断言、转换结果提取和生成代码快照工具。
- * 这些 helper 统一测试的解析/转换选项，避免每个用例重复搭建管线而产生比较口径差异。
+ * compiler-core 测试辅助：把简写属性对象转成 AST matcher，构造带 codegenNode 的元素 fixture，
+ * 并把位标记格式化为生成代码使用的数字与名称。这里只组装测试数据，不执行编译管线。
  */
 import {
   type ElementNode,
@@ -28,6 +28,8 @@ const bracketsRE = /^\[|\]$/g
 /**
  * 从简写对象创建 AST matcher。测试约定：非静态表达式用 `[]` 包裹，例如
  * `{ foo: '[bar]' }` 匹配 `{ foo: bar }`，`{ '[foo]': 'bar' }` 匹配 `{ [foo]: "bar" }`。
+ * 字符串值按这套约定转成 SimpleExpression matcher；非字符串值直接保留，便于嵌入调用或其他节点。
+ * 返回值只包含这些断言字段，不是可以直接交给 codegen 的完整对象 AST。
  */
 export function createObjectMatcher(obj: Record<string, any>): {
   /** 对象表达式的节点判别值。 */
@@ -55,7 +57,11 @@ export function createObjectMatcher(obj: Record<string, any>): {
   }
 }
 
-/** 创建一个挂有 VNodeCall 的最小原生元素节点，供 codegen 单元测试直接组装输入。 */
+/**
+ * 构造挂有 VNodeCall 的最小原生元素 fixture，供 codegen 测试绕过 parser/transform。
+ * 参数描述将要打印的 tag、props、children 与更新标记；模板节点自身固定为 div、空 props/children。
+ * 因而这些测试验证的是 codegenNode 的打印，不证明模板节点与输出描述之间的转换过程。
+ */
 export function createElementWithCodegen(
   tag: VNodeCall['tag'],
   props?: VNodeCall['props'],
@@ -89,7 +95,10 @@ export function createElementWithCodegen(
 
 /** 测试可格式化的 patchFlag 与 shapeFlag 数值联合。 */
 type Flags = PatchFlags | ShapeFlags
-/** 把一个或多个 flag 合并为数值，并附加与生成代码一致的可读名称注释。 */
+/**
+ * 把一个或多个 flag 合并为数值，并附加与生成代码一致的可读名称注释。
+ * 数组按位或计算组合值，但名称按输入顺序拼接；names 可换成 ShapeFlags 的名称表。
+ */
 export function genFlagText(
   flag: Flags | Flags[],
   names: {

@@ -9,11 +9,13 @@ async function createRolldownDepPluginTransform(cacheDir: string) {
     optimizeDeps: { extensions: [] },
     server: { fs: { allow: [] } },
     resolve: { builtins: [] },
+    /** 此 transform 不调用真实 resolver；提供空占位结果满足插件构造上下文。 */
     createResolver: () => ({}),
   }
 
   const mockEnvironment = {
     config: baseConfig,
+    /** 返回同一最小顶层配置，供依赖插件读取 cacheDir 等选项。 */
     getTopLevelConfig: () => baseConfig,
   } as any
 
@@ -62,7 +64,7 @@ describe('rolldownDepPlugin transform', async () => {
     `)
   })
 
-  /** 场景：new URL 参数带 Vite 的忽略标记；验证目标：依赖预构建 transform 返回 undefined，不改写该表达式。 */
+  /** 场景：new URL 参数带 @vite-ignore 标记；验证目标：依赖预构建 transform 返回 undefined，不改写该表达式。 */
   test('respects /* @vite-ignore */', async () => {
     expect(
       await transform(

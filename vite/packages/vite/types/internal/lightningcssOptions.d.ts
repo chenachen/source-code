@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
 
-// lightningcss 是可选依赖，类型入口必须允许它缺席。
-// @ts-ignore `lightningcss` 可能未安装
+// 当前 lightningcss 随 Vite dependencies 安装；这里保留类型导入的兼容抑制。
+// @ts-ignore 兼容类型依赖解析不完整的环境
 import type Lightningcss from 'lightningcss'
 
 /* eslint-enable @typescript-eslint/ban-ts-comment */

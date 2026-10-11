@@ -15,14 +15,8 @@ describe('ReactDOM.browser', () => {
   });
 
   // @gate enableBrowserAPI
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「can create browser-only content before the browser renderer is initialized」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言连接 ReactDOM 公开入口、ReactDOMRoot 根生命周期及 DOM 提交结果。
-   */
+
+  /** 先加载 react-dom 并取得 browser() 值，随后才初始化 client renderer；组件在 Suspense 内 use 该值，提交结果应直接是 Browser，验证浏览器环境承诺可在 renderer 初始化前创建并在之后消费。 */
   it('can create browser-only content before the browser renderer is initialized', async () => {
     const React = require('react');
     const ReactDOM = require('react-dom');
@@ -30,7 +24,7 @@ describe('ReactDOM.browser', () => {
     const ReactDOMClient = require('react-dom/client');
     const {act} = require('internal-test-utils');
 
-    /** `BrowserOnly`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 消费在 client renderer 初始化前创建的 browser() 值，成功时输出 Browser；外层 Suspense 用于暴露错误的待定状态。 */
     function BrowserOnly() {
       React.use(browserOnly);
       return <span>Browser</span>;

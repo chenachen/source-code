@@ -3,5 +3,4 @@ import './empty.js'
 
 export default msg
 
-// This module tests that the import order is preserved in this module's `importedUrls` property
-// as the imports can be processed in parallel
+// 两个导入可并行处理，虚拟模块加载故意较慢；importedModules 仍须保持源码导入顺序。

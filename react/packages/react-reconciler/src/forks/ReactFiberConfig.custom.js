@@ -42,7 +42,7 @@ export opaque type HydratableInstance = mixed;
 export opaque type PublicInstance = mixed;
 /** renderer 在宿主树层级间传播的上下文。 */
 export opaque type HostContext = mixed;
-/** prepare/update 阶段生成、供 commit 使用的宿主更新载荷。 */
+/** 宿主更新载荷的兼容类型占位；当前更新入口把新旧 props 直接交给 commitUpdate。 */
 export opaque type UpdatePayload = mixed;
 /** persistence renderer 构造的新容器子集。 */
 export opaque type ChildSet = mixed;
@@ -90,7 +90,7 @@ export const getRootHostContext = $$$config.getRootHostContext;
 export const getChildHostContext = $$$config.getChildHostContext;
 /** commit 前保存选择、事件或其他宿主全局状态。 */
 export const prepareForCommit = $$$config.prepareForCommit;
-/** commit 后恢复宿主全局状态。 */
+/** mutation 完成后恢复 prepareForCommit 保存的宿主状态，随后 reconciler 才切换 current 并执行 layout。 */
 export const resetAfterCommit = $$$config.resetAfterCommit;
 /** 为新的 HostComponent 创建宿主实例。 */
 export const createInstance = $$$config.createInstance;
@@ -151,7 +151,7 @@ export const shouldAttemptEagerTransition =
   $$$config.shouldAttemptEagerTransition;
 /** Fiber 删除后断开宿主实例上的内部引用。 */
 export const detachDeletedInstance = $$$config.detachDeletedInstance;
-/** 安排浏览器绘制后的回调。 */
+/** 委托 renderer 安排绘制后的回调，并以宿主报告的完成时间通知性能记录消费者。 */
 export const requestPostPaintCallback = $$$config.requestPostPaintCallback;
 /** 判断新挂载实例是否可能让 commit 等待资源。 */
 export const maySuspendCommit = $$$config.maySuspendCommit;
@@ -169,7 +169,7 @@ export const suspendInstance = $$$config.suspendInstance;
 /** 活跃 View Transition 阻塞提交时加入等待。 */
 export const suspendOnActiveViewTransition =
   $$$config.suspendOnActiveViewTransition;
-/** 返回 commit 准备完成时触发的取消/继续回调。 */
+/** 未就绪时返回订阅函数：接收继续 commit 的回调，并返回取消本次等待的函数。 */
 export const waitForCommitToBeReady = $$$config.waitForCommitToBeReady;
 /** 生成本次 commit 挂起原因，供性能与诊断使用。 */
 export const getSuspendedCommitReason = $$$config.getSuspendedCommitReason;
@@ -177,7 +177,7 @@ export const getSuspendedCommitReason = $$$config.getSuspendedCommitReason;
 export const NotPendingTransition = $$$config.NotPendingTransition;
 /** 向宿主 Transition provider 后代传播状态的内部 Context。 */
 export const HostTransitionContext = $$$config.HostTransitionContext;
-/** 提交成功后复位表单实例的 pending 状态。 */
+/** 提交表单重置请求，恢复宿主表单字段的默认值；Hook pending 状态由更新队列处理。 */
 export const resetFormInstance = $$$config.resetFormInstance;
 /** 绑定 console 调用与 renderer 环境标签。 */
 export const bindToConsole = $$$config.bindToConsole;
@@ -215,7 +215,7 @@ export const appendChildToContainer = $$$config.appendChildToContainer;
 export const commitTextUpdate = $$$config.commitTextUpdate;
 /** 新实例挂载后执行需要真实树位置的宿主操作。 */
 export const commitMount = $$$config.commitMount;
-/** 把 render 阶段计算的属性差异提交到宿主实例。 */
+/** 接收实例、类型和新旧 props，由 renderer 计算并提交属性变化。 */
 export const commitUpdate = $$$config.commitUpdate;
 /** 在指定 sibling 前插入宿主 child。 */
 export const insertBefore = $$$config.insertBefore;
@@ -350,7 +350,7 @@ export const canHydrateTextInstance = $$$config.canHydrateTextInstance;
 export const canHydrateActivityInstance = $$$config.canHydrateActivityInstance;
 /** 判断候选宿主占位能否复用为 Suspense 边界。 */
 export const canHydrateSuspenseInstance = $$$config.canHydrateSuspenseInstance;
-/** 把既有宿主实例连接到 HostComponent Fiber 并返回属性差异。 */
+/** 把既有宿主实例连接到 HostComponent Fiber，并返回是否可继续 hydration。 */
 export const hydrateInstance = $$$config.hydrateInstance;
 /** 把既有宿主文本连接到 Text Fiber 并报告内容差异。 */
 export const hydrateTextInstance = $$$config.hydrateTextInstance;

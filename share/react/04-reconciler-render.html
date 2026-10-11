@@ -4,6 +4,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="description" content="react-reconciler 0.34.0 render 阶段指南：Fiber、Root、Lane、update queue、beginWork、completeWork 与 Suspense。" />
   <title>04 · reconciler：render 候选树</title><link rel="stylesheet" href="assets/guide.css?v=1" />
+  <link rel="stylesheet" href="assets/engineering-diagrams.css" />
 </head>
 <body>
   <header class="topbar"><div class="topbar-inner"><a class="brand" href="index.html">React 六包源码指南</a><nav class="pager" aria-label="页面导航">
@@ -31,17 +32,17 @@
     <section id="update"><h2>Root Update：描述第一次获得 Lane</h2>
       <p><code>ReactDOMRoot.render</code> 调用 <code>updateContainer</code>。后者读取 HostRoot current，按执行上下文请求 Lane，
       构造 payload 为 <code>{element}</code> 的 Update，挂进 root fiber 队列，再调用 <code>scheduleUpdateOnFiber</code>。</p>
-      <figure class="source"><figcaption><span>删节源码 · ReactFiberReconciler.js · root 更新入口</span><a href="../../react/packages/react-reconciler/src/ReactFiberReconciler.js">打开文件</a></figcaption><pre><span class="kw">export function</span> <span class="fn">updateContainer</span>(element, container, parent, callback) {
+      <figure class="source"><figcaption><span>教程伪代码（不可执行）· ReactFiberReconciler.js · root 更新入口（省略类型与 DEV 信息）</span><a href="../../react/packages/react-reconciler/src/ReactFiberReconciler.js">打开文件</a></figcaption><pre><span class="kw">export function</span> <span class="fn">updateContainer</span>(element, container, parentComponent, callback) {
   <span class="kw">const</span> current = container.current;
   <span class="kw">const</span> lane = requestUpdateLane(current);
-  updateContainerImpl(current, lane, element, container, parent, callback);
+  updateContainerImpl(current, lane, element, container, parentComponent, callback);
   <span class="kw">return</span> lane;
 }</pre></figure>
       <ol class="state-list"><li><strong>选择。</strong>离散输入、transition、render-phase 或默认更新得到不同 Lane 来源。</li>
         <li><strong>入队。</strong>并发队列先暂存更新，统一收口时把环形 pending 链并入目标 queue。</li>
         <li><strong>向上。</strong>从 source Fiber 沿 return 标记 childLanes，定位 FiberRoot。</li>
         <li><strong>标根。</strong><code>markRootUpdated</code> 合并 pendingLanes，并清理与本次更新冲突的 suspended/pinged 状态。</li>
-        <li><strong>调度。</strong>root 进入全局 scheduled-root 链；同步 Lane 请求微任务，其他 Lane 映射为 Scheduler callback。</li></ol>
+        <li><strong>调度。</strong>root 进入全局 scheduled-root 链并请求微任务；微任务统一选 Lane，同步工作在末尾 flush，其他工作安排 Scheduler callback。</li></ol>
     </section>
 
     <section id="lanes"><h2>Lane 是集合代数，不是单个数字优先级</h2>
@@ -51,20 +52,20 @@
       <article class="card"><span class="number">FIBER VIEW</span><h3>lanes + childLanes</h3><p>节点自身 Lane 与子树 Lane 共同决定 beginWork 能否 bailout；只比较 props 会漏掉后代或 context 更新。</p></article></div>
     </section>
 
-    <section id="root-scheduler"><h2>RootScheduler：把很多根压成很少的 host callback</h2>
+    <section id="root-scheduler"><h2>RootScheduler：统一选择各根的工作</h2>
       <div class="chain" aria-label="root 调度链"><div class="node">scheduleUpdateOnFiber<small>mark root/lane</small></div><span class="arrow">→</span>
         <div class="node">ensureRootIsScheduled<small>scheduled roots 链</small></div><span class="arrow">→</span>
         <div class="node">microtask<small>统一检查所有根</small></div><span class="arrow">→</span>
-        <div class="node">scheduleTaskForRoot<small>复用/取消 callback</small></div><span class="arrow">→</span>
+        <div class="node">scheduleTaskForRootDuringMicrotask<small>复用/取消 callback</small></div><span class="arrow">→</span>
         <div class="node">Scheduler<small>performWorkOnRoot</small></div></div>
       <p>callbackPriority 保存的是代表本次回调的 Lane。若最高优先 Lane 未变，可复用 callback；若变化，取消旧 Scheduler task 并登记新任务。
-      同步工作不等待普通 Scheduler callback，而是在微任务末尾统一 flush，避免同一事件中重复提交。</p>
+      非 prerender 的同步工作在根调度微任务末尾统一 flush；宿主不支持微任务或需要避开 render/commit 重入时，使用 Immediate task 回退。同一事件内先完成入队与选 Lane，显式 flushSync 仍可提前提交。</p>
     </section>
 
     <section id="loop"><h2>工作循环：下钻 beginWork，回溯 completeWork</h2>
-      <figure class="source"><figcaption><span>删节源码 · ReactFiberWorkLoop.js · 单个工作单元</span><a href="../../react/packages/react-reconciler/src/ReactFiberWorkLoop.js">打开文件</a></figcaption><pre><span class="kw">function</span> <span class="fn">performUnitOfWork</span>(unitOfWork) {
+      <figure class="source"><figcaption><span>教程伪代码（不可执行）· ReactFiberWorkLoop.js · 单个工作单元（合并 DEV/profiler 分支）</span><a href="../../react/packages/react-reconciler/src/ReactFiberWorkLoop.js">打开文件</a></figcaption><pre><span class="kw">function</span> <span class="fn">performUnitOfWork</span>(unitOfWork) {
   <span class="kw">const</span> current = unitOfWork.alternate;
-  <span class="kw">const</span> next = beginWork(current, unitOfWork, renderLanes);
+  <span class="kw">const</span> next = beginWork(current, unitOfWork, entangledRenderLanes);
   unitOfWork.memoizedProps = unitOfWork.pendingProps;
   <span class="kw">if</span> (next === null) completeUnitOfWork(unitOfWork);
   <span class="kw">else</span> workInProgress = next;
@@ -73,12 +74,59 @@
       HostComponent 协调 children、Suspense 决定 primary/fallback。返回 child 表示下钻；返回 null 才开始 complete 回溯。</p>
       <p><code>completeWork</code> 对宿主节点创建/复用 instance、设置初始属性或标记更新，并向父级冒泡 subtreeFlags、lanes 与 profiler 时长。
       新建 DOM 此时通常仍在脱离文档的树中；插入真实容器要等 mutation。</p>
+      <figure class="engineering-diagram" data-diagram="r04-render-yield-resume" style="--diagram-min-width:820px">
+        <div class="diagram-scroll"><svg viewBox="0 0 820 1130" role="img" aria-labelledby="r04-render-yield-resume-title r04-render-yield-resume-desc" xmlns="http://www.w3.org/2000/svg">
+          <title id="r04-render-yield-resume-title">render 让出、恢复与重开</title>
+          <desc id="r04-render-yield-resume-desc">根先选择 lanes，再按 shouldTimeSlice 进入并发或同步循环。并发预算让出保留 WIP。下次回调重选 lanes，同一 root 和 lanes 延续指针，否则从已提交 current 重置候选栈；持久更新队列不因丢弃候选而丢失。</desc>
+          <defs><marker id="r04-render-yield-resume-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#507476"/></marker></defs>
+          <rect class="d-node" x="40" y="35" width="340" height="70" rx="12"/><text text-anchor="middle" x="210" y="63.5" style="font-size:17px"><tspan x="210" dy="0">根选择 nextLanes</tspan><tspan x="210" dy="25">未阻塞 → ping → 未 warm</tspan></text>
+          <rect class="d-state" x="480" y="35" width="300" height="70" rx="12"/><text text-anchor="middle" x="630" y="63.5" style="font-size:17px"><tspan x="630" dy="0">已提交对象保持</tspan><tspan x="630" dy="25">root.current + 持久队列</tspan></text>
+          <path class="d-edge" d="M210 105 V150" marker-end="url(#r04-render-yield-resume-arrow)"/>
+          <rect class="d-condition" x="40" y="150" width="340" height="100" rx="12"/><text text-anchor="middle" x="210" y="181" style="font-size:17px"><tspan x="210" dy="0">shouldTimeSlice？</tspan><tspan x="210" dy="25">非 force / blocking / expired</tspan><tspan x="210" dy="25">或处于 prerender</tspan></text>
+          <path class="d-edge" d="M380 200 H480" marker-end="url(#r04-render-yield-resume-arrow)"/>
+          <text class="d-label" text-anchor="middle" x="430" y="188"><tspan x="430" dy="0">否</tspan></text>
+          <rect class="d-node" x="480" y="155" width="300" height="90" rx="12"/><text text-anchor="middle" x="630" y="181" style="font-size:17px"><tspan x="630" dy="0">同步 workLoopSync</tspan><tspan x="630" dy="25">不按预算让出</tspan><tspan x="630" dy="25">完成或挂起后退出</tspan></text>
+          <path class="d-edge" d="M210 250 V315" marker-end="url(#r04-render-yield-resume-arrow)"/>
+          <text class="d-label" text-anchor="middle" x="239" y="285"><tspan x="239" dy="0">是</tspan></text>
+          <rect class="d-node" x="40" y="315" width="340" height="90" rx="12"/><text text-anchor="middle" x="210" y="341" style="font-size:17px"><tspan x="210" dy="0">并发 unit 循环</tspan><tspan x="210" dy="25">beginWork → completeWork</tspan><tspan x="210" dy="25">在 unit 之间检查预算</tspan></text>
+          <path class="d-edge" d="M210 405 V460" marker-end="url(#r04-render-yield-resume-arrow)"/>
+          <rect class="d-condition" x="40" y="460" width="340" height="85" rx="12"/><text text-anchor="middle" x="210" y="496" style="font-size:17px"><tspan x="210" dy="0">循环返回后</tspan><tspan x="210" dy="25">WIP 仍非空？</tspan></text>
+          <path class="d-edge" d="M380 502 H480" marker-end="url(#r04-render-yield-resume-arrow)"/>
+          <text class="d-label" text-anchor="middle" x="430" y="490"><tspan x="430" dy="0">否：完成</tspan></text>
+          <rect class="d-state" x="480" y="460" width="300" height="85" rx="12"/><text text-anchor="middle" x="630" y="496" style="font-size:17px"><tspan x="630" dy="0">WIP = null</tspan><tspan x="630" dy="25">候选完成 → 提交策略</tspan></text>
+          <path class="d-edge" d="M630 245 V460" marker-end="url(#r04-render-yield-resume-arrow)"/>
+          <text class="d-muted" text-anchor="middle" x="665" y="338"><tspan x="665" dy="0">完成时</tspan></text>
+          <path class="d-edge" d="M210 545 V600" marker-end="url(#r04-render-yield-resume-arrow)"/>
+          <text class="d-label" text-anchor="middle" x="236" y="575"><tspan x="236" dy="0">是</tspan></text>
+          <rect class="d-state" x="40" y="600" width="340" height="75" rx="12"/><text text-anchor="middle" x="210" y="631" style="font-size:17px"><tspan x="210" dy="0">RootInProgress</tspan><tspan x="210" dy="25">保存 workInProgress 指针</tspan></text>
+          <rect class="d-state" x="480" y="595" width="300" height="90" rx="12"/><text text-anchor="middle" x="630" y="621" style="font-size:17px"><tspan x="630" dy="0">保存 root / renderLanes</tspan><tspan x="630" dy="25">保留候选 WIP + 遍历栈</tspan><tspan x="630" dy="25">current 尚未切换</tspan></text>
+          <path class="d-edge" d="M380 637 H480"/>
+          <path class="d-edge d-async" d="M210 675 V740" marker-end="url(#r04-render-yield-resume-arrow)"/>
+          <text class="d-muted" text-anchor="middle" x="360" y="714"><tspan x="360" dy="0">宿主异步边界</tspan></text>
+          <rect class="d-node" x="40" y="740" width="340" height="90" rx="12"/><text text-anchor="middle" x="210" y="766" style="font-size:17px"><tspan x="210" dy="0">回调再次进入根</tspan><tspan x="210" dy="25">重新 getNextLanes</tspan><tspan x="210" dy="25">仍是原 callback 才续调</tspan></text>
+          <path class="d-edge" d="M210 830 V880" marker-end="url(#r04-render-yield-resume-arrow)"/>
+          <rect class="d-condition" x="40" y="880" width="340" height="85" rx="12"/><text text-anchor="middle" x="210" y="916" style="font-size:17px"><tspan x="210" dy="0">同一 root</tspan><tspan x="210" dy="25">且 renderLanes 不变？</tspan></text>
+          <path class="d-edge" d="M210 965 V1020" marker-end="url(#r04-render-yield-resume-arrow)"/>
+          <text class="d-label" text-anchor="middle" x="238" y="999"><tspan x="238" dy="0">是</tspan></text>
+          <rect class="d-state" x="40" y="1020" width="340" height="75" rx="12"/><text text-anchor="middle" x="210" y="1051" style="font-size:17px"><tspan x="210" dy="0">沿原 workInProgress 恢复</tspan><tspan x="210" dy="25">继续 unit 循环</tspan></text>
+          <path class="d-edge" d="M380 922 H480" marker-end="url(#r04-render-yield-resume-arrow)"/>
+          <text class="d-label" text-anchor="middle" x="430" y="910"><tspan x="430" dy="0">否</tspan></text>
+          <rect class="d-state" x="480" y="880" width="300" height="85" rx="12"/><text text-anchor="middle" x="630" y="903.5" style="font-size:17px"><tspan x="630" dy="0">prepareFreshStack</tspan><tspan x="630" dy="25">重置候选栈</tspan><tspan x="630" dy="25">从 root.current 重算</tspan></text>
+          <rect class="d-state" x="480" y="1020" width="300" height="75" rx="12"/><text text-anchor="middle" x="630" y="1051" style="font-size:17px"><tspan x="630" dy="0">更新仍留在持久队列</tspan><tspan x="630" dy="25">按新 renderLanes 重放</tspan></text>
+          <path class="d-edge" d="M630 965 V1020" marker-end="url(#r04-render-yield-resume-arrow)"/>
+          <path class="d-edge" d="M40 1057 H15 V360 H40" marker-end="url(#r04-render-yield-resume-arrow)"/>
+          <path class="d-edge" d="M780 922 H802 V1115 H5 V345 H40" marker-end="url(#r04-render-yield-resume-arrow)"/>
+          <text class="d-muted" text-anchor="middle" x="530" y="1110"><tspan x="530" dy="0">root / lanes 改变后重开</tspan></text>
+        </svg></div>
+        <figcaption><strong>让出保存进度，重开保留更新。</strong>本图对应 <a href="../../react/packages/react-reconciler/src/ReactFiberWorkLoop.js">performWorkOnRoot / renderRootConcurrent</a> 与 <a href="../../react/packages/react-reconciler/src/ReactFiberLane.js">getNextLanes</a>，承接上方 unit 循环与下方 RootInProgress 出口；虚线跨宿主调度边界，单个组件函数内部不会被预算检查打断。以 <a href="11-update-queues-lanes.html#priority-test">连续事件打断 transition</a> 为例，新候选 Lane 更紧急时可重开；WIP 未挂起时，不更紧急的候选及 Default 对 transition 的插入保留原 lanes。WIP 已挂起时不适用该保留条件。并发预算由开关选择 React 截止时间或 Scheduler.shouldYield；DEV act 使用同步循环。挂起后的等待、重放与 unwind 见本页 Suspense 节。</figcaption>
+      </figure>
     </section>
+
 
     <section id="reconcile"><h2>children 协调：复用由 type + key + 位置语义共同决定</h2>
       <div class="table-wrap"><table><thead><tr><th>情况</th><th>主要动作</th><th>flags / 结果</th></tr></thead><tbody>
         <tr><td>同 key、兼容 type</td><td>复用 alternate，更新 pendingProps</td><td>保留 state，后续按 Lane 决定是否深入</td></tr>
-        <tr><td>同 key、不同 type</td><td>删除旧 Fiber，创建新 Fiber</td><td>旧子树 Deletion；新节点 Placement</td></tr>
+        <tr><td>同 key、不同 type</td><td>父级记录旧 Fiber，创建新 Fiber</td><td>父级 ChildDeletion/deletions；新节点 Placement</td></tr>
         <tr><td>无 key 顺序列表</td><td>先按位置快速匹配，失配后建 Map</td><td>插入/移动可能改变局部 state 所属</td></tr>
         <tr><td>显式稳定 key 列表</td><td>Map 以 key 查旧 Fiber，并比较旧 index</td><td>能识别移动，但跨父节点仍不是同一身份域</td></tr>
         <tr><td>剩余旧 child</td><td>加入父 Fiber deletions</td><td>commit 前仍未改真实宿主树</td></tr>
@@ -91,16 +139,16 @@
       <p><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">ReactFiberHooks.js</a> 根据 current hook 是否存在安装 mount/update dispatcher。
       每次 hook 调用沿 current 链克隆或创建 WIP hook；state queue 保存 pending 更新、base queue 与最后一次 reducer/state。
       dispatch 闭包绑定 Fiber 与 queue，调用时请求 Lane；若在当前 render 内更新，会进入 render-phase 队列并有限次重渲染函数组件。</p>
-      <div class="callout warn"><p><strong>eager bailout 不是“完全没有更新”：</strong>当队列空且 reducer 可立即算出相同 state 时，更新可走快速路径；
+      <div class="callout warn"><p><strong>eager bailout 不是“完全没有更新”：</strong>当源 Fiber 与 alternate 都无待处理 Lane，且 lastRenderedReducer 可算出相同 state 时，useState 更新可走快速路径；
       但它仍必须保留足够信息，应对稍后高优先级工作或队列重放。</p></div>
     </section>
 
     <section id="suspense"><h2>挂起：抛出的 thenable 被转换成根状态</h2>
-      <ol class="state-list"><li><strong>捕获。</strong>组件读取未就绪资源并抛 thenable；work loop 找到可捕获 Suspense 边界。</li>
+      <ol class="state-list"><li><strong>捕获。</strong>组件读取未就绪资源，use 抛出内部挂起哨兵或旧代码直接抛 thenable；work loop 还原 wakeable，再决定等待重放或 unwind 到 Suspense。</li>
         <li><strong>标记。</strong>边界切换 fallback 或保留旧内容，根记录 suspended lanes；wakeable 被放进 ping cache。</li>
         <li><strong>退出。</strong>当前 render 可能完成 fallback、延迟提交、继续 prerender，或返回 RootSuspended/InProgress。</li>
         <li><strong>唤醒。</strong>thenable settle 调用 ping listener，把对应 Lane 标为 pinged 并重新安排 root。</li>
-        <li><strong>重试。</strong>新的 render 从 current 基线建立 WIP；被放弃的半成品不会写进宿主容器。</li></ol>
+        <li><strong>重试。</strong>尚未 unwind 的数据挂起可重放当前 unit；已退出或被中断时从 current 基线重建 WIP。被放弃的宿主候选不会写进已提交容器。</li></ol>
     </section>
 
     <section id="exit"><h2>render 的出口不只有“成功/失败”</h2>
@@ -133,7 +181,7 @@
       <li>一个 Fiber props 相同，为什么仍可能不能 bailout？</li><li>completeWork 创建 DOM 后，为什么用户仍看不到它？</li>
       <li>thenable resolve 之后为什么必须重新调度，而不是继续原 JavaScript 调用栈？</li></ul></section>
     <div class="next-page"><a href="03-react.html">← 上一页：react</a><a href="05-reconciler-commit.html">下一页：Fiber commit →</a></div>
-    <footer><p>render 的输出是 finishedWork 与 effect flags；下一页只讨论如何原子地把它变成宿主可见状态。</p></footer>
+    <footer><p>render 产出 finishedWork 与 effect flags；下一页说明 commit 的宿主写入、current 切换与 effect 时序。</p></footer>
   </main><aside class="toc" aria-label="本页目录"><strong>reconciler · render</strong><a href="#model">核心对象</a><a href="#update">Root Update</a>
     <a href="#lanes">Lane</a><a href="#root-scheduler">RootScheduler</a><a href="#loop">工作循环</a><a href="#reconcile">children 协调</a>
     <a href="#hooks">Hooks 状态机</a><a href="#suspense">Suspense</a><a href="#exit">退出状态</a><a href="#evidence">测试证据</a><a href="#deep">v2 深挖</a></aside>

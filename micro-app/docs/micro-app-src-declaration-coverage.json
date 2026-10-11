@@ -177,7 +177,7 @@
     {
       "id": "src/__tests__/common/initial.ts#function#releaseAllEffect",
       "file": "src/__tests__/common/initial.ts",
-      "line": 123,
+      "line": 124,
       "kind": "function",
       "symbol": "releaseAllEffect",
       "baselineStatus": "missing",
@@ -187,7 +187,7 @@
     {
       "id": "src/__tests__/common/initial.ts#function#setAppName",
       "file": "src/__tests__/common/initial.ts",
-      "line": 141,
+      "line": 143,
       "kind": "function",
       "symbol": "setAppName",
       "baselineStatus": "documented",
@@ -198,7 +198,7 @@
     {
       "id": "src/__tests__/common/initial.ts#function#clearAppName",
       "file": "src/__tests__/common/initial.ts",
-      "line": 147,
+      "line": 149,
       "kind": "function",
       "symbol": "clearAppName",
       "baselineStatus": "needs-tsdoc",
@@ -524,7 +524,7 @@
     {
       "id": "src/__tests__/interact/index.test.ts#function-variable#nextFrame",
       "file": "src/__tests__/interact/index.test.ts",
-      "line": 54,
+      "line": 55,
       "kind": "function-variable",
       "symbol": "nextFrame",
       "baselineStatus": "missing",
@@ -564,7 +564,7 @@
     {
       "id": "src/__tests__/main.test.ts#function#firstMountHandler",
       "file": "src/__tests__/main.test.ts",
-      "line": 282,
+      "line": 268,
       "kind": "function",
       "symbol": "firstMountHandler",
       "baselineStatus": "missing",
@@ -574,7 +574,7 @@
     {
       "id": "src/__tests__/main.test.ts#function#firstMountHandler@2",
       "file": "src/__tests__/main.test.ts",
-      "line": 327,
+      "line": 308,
       "kind": "function",
       "symbol": "firstMountHandler",
       "baselineStatus": "missing",
@@ -604,7 +604,7 @@
     {
       "id": "src/__tests__/sandbox/effect.test.ts#function#firstMountHandler",
       "file": "src/__tests__/sandbox/effect.test.ts",
-      "line": 72,
+      "line": 80,
       "kind": "function",
       "symbol": "firstMountHandler",
       "baselineStatus": "missing",
@@ -614,7 +614,7 @@
     {
       "id": "src/__tests__/sandbox/effect.test.ts#function-variable#boundFunc1",
       "file": "src/__tests__/sandbox/effect.test.ts",
-      "line": 106,
+      "line": 118,
       "kind": "function-variable",
       "symbol": "boundFunc1",
       "baselineStatus": "missing",
@@ -624,7 +624,7 @@
     {
       "id": "src/__tests__/sandbox/effect.test.ts#function-variable#boundFunc2",
       "file": "src/__tests__/sandbox/effect.test.ts",
-      "line": 108,
+      "line": 120,
       "kind": "function-variable",
       "symbol": "boundFunc2",
       "baselineStatus": "missing",
@@ -634,7 +634,7 @@
     {
       "id": "src/__tests__/sandbox/effect.test.ts#function-variable#boundFunc3",
       "file": "src/__tests__/sandbox/effect.test.ts",
-      "line": 110,
+      "line": 122,
       "kind": "function-variable",
       "symbol": "boundFunc3",
       "baselineStatus": "missing",
@@ -644,7 +644,7 @@
     {
       "id": "src/__tests__/sandbox/index.test.ts#interface#Window",
       "file": "src/__tests__/sandbox/index.test.ts",
-      "line": 8,
+      "line": 13,
       "kind": "interface",
       "symbol": "Window",
       "baselineStatus": "missing",
@@ -654,7 +654,7 @@
     {
       "id": "src/__tests__/sandbox/index.test.ts#field#Window.escapeProperty1",
       "file": "src/__tests__/sandbox/index.test.ts",
-      "line": 10,
+      "line": 15,
       "kind": "field",
       "symbol": "Window.escapeProperty1",
       "baselineStatus": "missing",
@@ -664,7 +664,7 @@
     {
       "id": "src/__tests__/sandbox/index.test.ts#field#Window.escapeProperty2",
       "file": "src/__tests__/sandbox/index.test.ts",
-      "line": 12,
+      "line": 17,
       "kind": "field",
       "symbol": "Window.escapeProperty2",
       "baselineStatus": "missing",
@@ -674,7 +674,7 @@
     {
       "id": "src/__tests__/sandbox/index.test.ts#field#Window.escapeProperty3",
       "file": "src/__tests__/sandbox/index.test.ts",
-      "line": 14,
+      "line": 19,
       "kind": "field",
       "symbol": "Window.escapeProperty3",
       "baselineStatus": "missing",
@@ -684,7 +684,7 @@
     {
       "id": "src/__tests__/sandbox/index.test.ts#field#Window.System",
       "file": "src/__tests__/sandbox/index.test.ts",
-      "line": 16,
+      "line": 21,
       "kind": "field",
       "symbol": "Window.System",
       "baselineStatus": "missing",
@@ -694,7 +694,7 @@
     {
       "id": "src/__tests__/sandbox/index.test.ts#field#Window.'same-key'",
       "file": "src/__tests__/sandbox/index.test.ts",
-      "line": 18,
+      "line": 23,
       "kind": "field",
       "symbol": "Window.'same-key'",
       "baselineStatus": "missing",
@@ -704,7 +704,7 @@
     {
       "id": "src/__tests__/sandbox/index.test.ts#field#Window.'__REACT_ERROR_OVERLAY_GLOBAL_HOOK__'",
       "file": "src/__tests__/sandbox/index.test.ts",
-      "line": 20,
+      "line": 25,
       "kind": "field",
       "symbol": "Window.'__REACT_ERROR_OVERLAY_GLOBAL_HOOK__'",
       "baselineStatus": "missing",
@@ -714,7 +714,7 @@
     {
       "id": "src/__tests__/sandbox/index.test.ts#field#Window.key1",
       "file": "src/__tests__/sandbox/index.test.ts",
-      "line": 22,
+      "line": 27,
       "kind": "field",
       "symbol": "Window.key1",
       "baselineStatus": "missing",
@@ -724,7 +724,7 @@
     {
       "id": "src/__tests__/sandbox/index.test.ts#field#Window.key2",
       "file": "src/__tests__/sandbox/index.test.ts",
-      "line": 24,
+      "line": 29,
       "kind": "field",
       "symbol": "Window.key2",
       "baselineStatus": "missing",
@@ -734,7 +734,7 @@
     {
       "id": "src/__tests__/sandbox/index.test.ts#field#Window.key3",
       "file": "src/__tests__/sandbox/index.test.ts",
-      "line": 26,
+      "line": 31,
       "kind": "field",
       "symbol": "Window.key3",
       "baselineStatus": "missing",
@@ -744,7 +744,7 @@
     {
       "id": "src/__tests__/sandbox/index.test.ts#field#Window._babelPolyfill",
       "file": "src/__tests__/sandbox/index.test.ts",
-      "line": 28,
+      "line": 33,
       "kind": "field",
       "symbol": "Window._babelPolyfill",
       "baselineStatus": "missing",
@@ -754,7 +754,7 @@
     {
       "id": "src/__tests__/sandbox/index.test.ts#field#Window.boundFunction",
       "file": "src/__tests__/sandbox/index.test.ts",
-      "line": 30,
+      "line": 35,
       "kind": "field",
       "symbol": "Window.boundFunction",
       "baselineStatus": "missing",
@@ -764,7 +764,7 @@
     {
       "id": "src/__tests__/sandbox/index.test.ts#function#willBind",
       "file": "src/__tests__/sandbox/index.test.ts",
-      "line": 392,
+      "line": 397,
       "kind": "function",
       "symbol": "willBind",
       "baselineStatus": "missing",
@@ -774,7 +774,7 @@
     {
       "id": "src/__tests__/sandbox/index.test.ts#method#get",
       "file": "src/__tests__/sandbox/index.test.ts",
-      "line": 422,
+      "line": 427,
       "kind": "method",
       "symbol": "get",
       "baselineStatus": "missing",
@@ -784,7 +784,7 @@
     {
       "id": "src/__tests__/sandbox/index.test.ts#method#set",
       "file": "src/__tests__/sandbox/index.test.ts",
-      "line": 426,
+      "line": 431,
       "kind": "method",
       "symbol": "set",
       "baselineStatus": "missing",
@@ -844,7 +844,7 @@
     {
       "id": "src/__tests__/source/links.test.ts#method#fetch",
       "file": "src/__tests__/source/links.test.ts",
-      "line": 14,
+      "line": 15,
       "kind": "method",
       "symbol": "fetch",
       "baselineStatus": "needs-tsdoc",
@@ -874,7 +874,7 @@
     {
       "id": "src/__tests__/source/scripts.test.ts#method#loader",
       "file": "src/__tests__/source/scripts.test.ts",
-      "line": 16,
+      "line": 17,
       "kind": "method",
       "symbol": "loader",
       "baselineStatus": "missing",
@@ -884,7 +884,7 @@
     {
       "id": "src/__tests__/source/scripts.test.ts#method#loader@2",
       "file": "src/__tests__/source/scripts.test.ts",
-      "line": 30,
+      "line": 31,
       "kind": "method",
       "symbol": "loader",
       "baselineStatus": "missing",
@@ -994,7 +994,7 @@
     {
       "id": "src/__tests__/unit/source/loader/html.test.ts#function-variable#setup",
       "file": "src/__tests__/unit/source/loader/html.test.ts",
-      "line": 16,
+      "line": 22,
       "kind": "function-variable",
       "symbol": "setup",
       "baselineStatus": "missing",
@@ -2144,7 +2144,7 @@
     {
       "id": "src/create_app.ts#method#CreateApp.onLoad",
       "file": "src/create_app.ts",
-      "line": 193,
+      "line": 194,
       "kind": "method",
       "symbol": "CreateApp.onLoad",
       "baselineStatus": "documented",
@@ -2154,7 +2154,7 @@
     {
       "id": "src/create_app.ts#method#CreateApp.onLoadError",
       "file": "src/create_app.ts",
-      "line": 238,
+      "line": 239,
       "kind": "method",
       "symbol": "CreateApp.onLoadError",
       "baselineStatus": "documented",
@@ -2164,7 +2164,7 @@
     {
       "id": "src/create_app.ts#method#CreateApp.mount",
       "file": "src/create_app.ts",
-      "line": 262,
+      "line": 263,
       "kind": "method",
       "symbol": "CreateApp.mount",
       "baselineStatus": "documented",
@@ -2174,7 +2174,7 @@
     {
       "id": "src/create_app.ts#function-variable#CreateApp.mount.nextAction",
       "file": "src/create_app.ts",
-      "line": 293,
+      "line": 294,
       "kind": "function-variable",
       "symbol": "CreateApp.mount.nextAction",
       "baselineStatus": "missing",
@@ -2184,7 +2184,7 @@
     {
       "id": "src/create_app.ts#function-variable#CreateApp.mount.dispatchBeforeMount",
       "file": "src/create_app.ts",
-      "line": 331,
+      "line": 332,
       "kind": "function-variable",
       "symbol": "CreateApp.mount.dispatchBeforeMount",
       "baselineStatus": "missing",
@@ -2194,7 +2194,7 @@
     {
       "id": "src/create_app.ts#method#CreateApp.handleMounted",
       "file": "src/create_app.ts",
-      "line": 419,
+      "line": 420,
       "kind": "method",
       "symbol": "CreateApp.handleMounted",
       "baselineStatus": "documented",
@@ -2204,7 +2204,7 @@
     {
       "id": "src/create_app.ts#function-variable#CreateApp.handleMounted.dispatchAction",
       "file": "src/create_app.ts",
-      "line": 421,
+      "line": 422,
       "kind": "function-variable",
       "symbol": "CreateApp.handleMounted.dispatchAction",
       "baselineStatus": "missing",
@@ -2214,7 +2214,7 @@
     {
       "id": "src/create_app.ts#function-variable#CreateApp.handleMounted.nextAction",
       "file": "src/create_app.ts",
-      "line": 423,
+      "line": 424,
       "kind": "function-variable",
       "symbol": "CreateApp.handleMounted.nextAction",
       "baselineStatus": "missing",
@@ -2224,7 +2224,7 @@
     {
       "id": "src/create_app.ts#method#CreateApp.actionsAfterMounted",
       "file": "src/create_app.ts",
-      "line": 450,
+      "line": 451,
       "kind": "method",
       "symbol": "CreateApp.actionsAfterMounted",
       "baselineStatus": "documented",
@@ -2234,7 +2234,7 @@
     {
       "id": "src/create_app.ts#method#CreateApp.unmount",
       "file": "src/create_app.ts",
-      "line": 502,
+      "line": 499,
       "kind": "method",
       "symbol": "CreateApp.unmount",
       "baselineStatus": "documented",
@@ -2244,7 +2244,7 @@
     {
       "id": "src/create_app.ts#method#CreateApp.handleUnmounted",
       "file": "src/create_app.ts",
-      "line": 536,
+      "line": 533,
       "kind": "method",
       "symbol": "CreateApp.handleUnmounted",
       "baselineStatus": "documented",
@@ -2254,7 +2254,7 @@
     {
       "id": "src/create_app.ts#function-variable#CreateApp.handleUnmounted.nextAction",
       "file": "src/create_app.ts",
-      "line": 558,
+      "line": 555,
       "kind": "function-variable",
       "symbol": "CreateApp.handleUnmounted.nextAction",
       "baselineStatus": "missing",
@@ -2264,7 +2264,7 @@
     {
       "id": "src/create_app.ts#method#CreateApp.actionsAfterUnmounted",
       "file": "src/create_app.ts",
-      "line": 590,
+      "line": 587,
       "kind": "method",
       "symbol": "CreateApp.actionsAfterUnmounted",
       "baselineStatus": "documented",
@@ -2274,7 +2274,7 @@
     {
       "id": "src/create_app.ts#method#CreateApp.clearOptions",
       "file": "src/create_app.ts",
-      "line": 631,
+      "line": 628,
       "kind": "method",
       "symbol": "CreateApp.clearOptions",
       "baselineStatus": "missing",
@@ -2284,7 +2284,7 @@
     {
       "id": "src/create_app.ts#method#CreateApp.actionsForCompletelyDestroy",
       "file": "src/create_app.ts",
-      "line": 657,
+      "line": 654,
       "kind": "method",
       "symbol": "CreateApp.actionsForCompletelyDestroy",
       "baselineStatus": "needs-tsdoc",
@@ -2294,7 +2294,7 @@
     {
       "id": "src/create_app.ts#method#CreateApp.hiddenKeepAliveApp",
       "file": "src/create_app.ts",
-      "line": 671,
+      "line": 668,
       "kind": "method",
       "symbol": "CreateApp.hiddenKeepAliveApp",
       "baselineStatus": "needs-tsdoc",
@@ -2304,7 +2304,7 @@
     {
       "id": "src/create_app.ts#method#CreateApp.showKeepAliveApp",
       "file": "src/create_app.ts",
-      "line": 720,
+      "line": 714,
       "kind": "method",
       "symbol": "CreateApp.showKeepAliveApp",
       "baselineStatus": "needs-tsdoc",
@@ -2314,7 +2314,7 @@
     {
       "id": "src/create_app.ts#method#CreateApp.onerror",
       "file": "src/create_app.ts",
-      "line": 775,
+      "line": 767,
       "kind": "method",
       "symbol": "CreateApp.onerror",
       "baselineStatus": "documented",
@@ -2324,7 +2324,7 @@
     {
       "id": "src/create_app.ts#method#CreateApp.parseHtmlString",
       "file": "src/create_app.ts",
-      "line": 798,
+      "line": 790,
       "kind": "method",
       "symbol": "CreateApp.parseHtmlString",
       "baselineStatus": "documented",
@@ -2334,7 +2334,7 @@
     {
       "id": "src/create_app.ts#method#CreateApp.cloneContainer",
       "file": "src/create_app.ts",
-      "line": 813,
+      "line": 805,
       "kind": "method",
       "symbol": "CreateApp.cloneContainer",
       "baselineStatus": "documented",
@@ -2344,7 +2344,7 @@
     {
       "id": "src/create_app.ts#method#CreateApp.createSandbox",
       "file": "src/create_app.ts",
-      "line": 834,
+      "line": 826,
       "kind": "method",
       "symbol": "CreateApp.createSandbox",
       "baselineStatus": "documented",
@@ -2354,7 +2354,7 @@
     {
       "id": "src/create_app.ts#method#CreateApp.setAppState",
       "file": "src/create_app.ts",
-      "line": 845,
+      "line": 837,
       "kind": "method",
       "symbol": "CreateApp.setAppState",
       "baselineStatus": "needs-tsdoc",
@@ -2364,7 +2364,7 @@
     {
       "id": "src/create_app.ts#method#CreateApp.getAppState",
       "file": "src/create_app.ts",
-      "line": 853,
+      "line": 845,
       "kind": "method",
       "symbol": "CreateApp.getAppState",
       "baselineStatus": "needs-tsdoc",
@@ -2374,7 +2374,7 @@
     {
       "id": "src/create_app.ts#method#CreateApp.setKeepAliveState",
       "file": "src/create_app.ts",
-      "line": 858,
+      "line": 850,
       "kind": "method",
       "symbol": "CreateApp.setKeepAliveState",
       "baselineStatus": "needs-tsdoc",
@@ -2384,7 +2384,7 @@
     {
       "id": "src/create_app.ts#method#CreateApp.getKeepAliveState",
       "file": "src/create_app.ts",
-      "line": 863,
+      "line": 855,
       "kind": "method",
       "symbol": "CreateApp.getKeepAliveState",
       "baselineStatus": "needs-tsdoc",
@@ -2394,7 +2394,7 @@
     {
       "id": "src/create_app.ts#method#CreateApp.isUnmounted",
       "file": "src/create_app.ts",
-      "line": 868,
+      "line": 860,
       "kind": "method",
       "symbol": "CreateApp.isUnmounted",
       "baselineStatus": "needs-tsdoc",
@@ -2404,7 +2404,7 @@
     {
       "id": "src/create_app.ts#method#CreateApp.isHidden",
       "file": "src/create_app.ts",
-      "line": 873,
+      "line": 865,
       "kind": "method",
       "symbol": "CreateApp.isHidden",
       "baselineStatus": "needs-tsdoc",
@@ -2414,7 +2414,7 @@
     {
       "id": "src/create_app.ts#method#CreateApp.getMicroAppGlobalHook",
       "file": "src/create_app.ts",
-      "line": 878,
+      "line": 870,
       "kind": "method",
       "symbol": "CreateApp.getMicroAppGlobalHook",
       "baselineStatus": "missing",
@@ -2424,7 +2424,7 @@
     {
       "id": "src/create_app.ts#method#CreateApp.querySelector",
       "file": "src/create_app.ts",
-      "line": 884,
+      "line": 876,
       "kind": "method",
       "symbol": "CreateApp.querySelector",
       "baselineStatus": "missing",
@@ -2434,7 +2434,7 @@
     {
       "id": "src/create_app.ts#method#CreateApp.querySelectorAll",
       "file": "src/create_app.ts",
-      "line": 889,
+      "line": 881,
       "kind": "method",
       "symbol": "CreateApp.querySelectorAll",
       "baselineStatus": "missing",
@@ -2444,7 +2444,7 @@
     {
       "id": "src/create_app.ts#method#CreateApp.getInlineModeState",
       "file": "src/create_app.ts",
-      "line": 902,
+      "line": 894,
       "kind": "method",
       "symbol": "CreateApp.getInlineModeState",
       "baselineStatus": "documented",
@@ -2454,7 +2454,7 @@
     {
       "id": "src/create_app.ts#function#isIframeSandbox",
       "file": "src/create_app.ts",
-      "line": 908,
+      "line": 900,
       "kind": "function",
       "symbol": "isIframeSandbox",
       "baselineStatus": "needs-tsdoc",
@@ -2514,7 +2514,7 @@
     {
       "id": "src/interact/event_center.ts#class#EventCenter",
       "file": "src/interact/event_center.ts",
-      "line": 23,
+      "line": 24,
       "kind": "class",
       "symbol": "EventCenter",
       "baselineStatus": "missing",
@@ -2524,7 +2524,7 @@
     {
       "id": "src/interact/event_center.ts#field#EventCenter.eventList",
       "file": "src/interact/event_center.ts",
-      "line": 25,
+      "line": 26,
       "kind": "field",
       "symbol": "EventCenter.eventList",
       "baselineStatus": "missing",
@@ -2534,7 +2534,7 @@
     {
       "id": "src/interact/event_center.ts#method#EventCenter.isLegalName",
       "file": "src/interact/event_center.ts",
-      "line": 28,
+      "line": 29,
       "kind": "method",
       "symbol": "EventCenter.isLegalName",
       "baselineStatus": "needs-tsdoc",
@@ -2544,7 +2544,7 @@
     {
       "id": "src/interact/event_center.ts#field#EventCenter.queue",
       "file": "src/interact/event_center.ts",
-      "line": 38,
+      "line": 39,
       "kind": "field",
       "symbol": "EventCenter.queue",
       "baselineStatus": "missing",
@@ -2554,7 +2554,7 @@
     {
       "id": "src/interact/event_center.ts#field#EventCenter.recordStep",
       "file": "src/interact/event_center.ts",
-      "line": 40,
+      "line": 41,
       "kind": "field",
       "symbol": "EventCenter.recordStep",
       "baselineStatus": "missing",
@@ -2564,7 +2564,7 @@
     {
       "id": "src/interact/event_center.ts#field#EventCenter.nextStepList",
       "file": "src/interact/event_center.ts",
-      "line": 42,
+      "line": 43,
       "kind": "field",
       "symbol": "EventCenter.nextStepList",
       "baselineStatus": "missing",
@@ -2574,7 +2574,7 @@
     {
       "id": "src/interact/event_center.ts#field#EventCenter.dispatchDataEvent",
       "file": "src/interact/event_center.ts",
-      "line": 44,
+      "line": 45,
       "kind": "field",
       "symbol": "EventCenter.dispatchDataEvent",
       "baselineStatus": "missing",
@@ -2584,7 +2584,7 @@
     {
       "id": "src/interact/event_center.ts#method#EventCenter.enqueue",
       "file": "src/interact/event_center.ts",
-      "line": 53,
+      "line": 55,
       "kind": "method",
       "symbol": "EventCenter.enqueue",
       "baselineStatus": "needs-tsdoc",
@@ -2594,7 +2594,7 @@
     {
       "id": "src/interact/event_center.ts#function-property#EventCenter.process",
       "file": "src/interact/event_center.ts",
-      "line": 78,
+      "line": 83,
       "kind": "function-property",
       "symbol": "EventCenter.process",
       "baselineStatus": "needs-tsdoc",
@@ -2604,7 +2604,7 @@
     {
       "id": "src/interact/event_center.ts#method#EventCenter.isEqual",
       "file": "src/interact/event_center.ts",
-      "line": 113,
+      "line": 119,
       "kind": "method",
       "symbol": "EventCenter.isEqual",
       "baselineStatus": "documented",
@@ -2614,7 +2614,7 @@
     {
       "id": "src/interact/event_center.ts#method#EventCenter.on",
       "file": "src/interact/event_center.ts",
-      "line": 135,
+      "line": 141,
       "kind": "method",
       "symbol": "EventCenter.on",
       "baselineStatus": "documented",
@@ -2624,7 +2624,7 @@
     {
       "id": "src/interact/event_center.ts#method#EventCenter.off",
       "file": "src/interact/event_center.ts",
-      "line": 165,
+      "line": 172,
       "kind": "method",
       "symbol": "EventCenter.off",
       "baselineStatus": "needs-tsdoc",
@@ -2634,7 +2634,7 @@
     {
       "id": "src/interact/event_center.ts#method#EventCenter.clearData",
       "file": "src/interact/event_center.ts",
-      "line": 184,
+      "line": 193,
       "kind": "method",
       "symbol": "EventCenter.clearData",
       "baselineStatus": "documented",
@@ -2644,7 +2644,7 @@
     {
       "id": "src/interact/event_center.ts#method#EventCenter.dispatch",
       "file": "src/interact/event_center.ts",
-      "line": 199,
+      "line": 209,
       "kind": "method",
       "symbol": "EventCenter.dispatch",
       "baselineStatus": "needs-tsdoc",
@@ -2654,7 +2654,7 @@
     {
       "id": "src/interact/event_center.ts#method#EventCenter.getData",
       "file": "src/interact/event_center.ts",
-      "line": 230,
+      "line": 240,
       "kind": "method",
       "symbol": "EventCenter.getData",
       "baselineStatus": "needs-tsdoc",
@@ -2754,7 +2754,7 @@
     {
       "id": "src/interact/index.ts#method#EventCenterForGlobal.clearGlobalDataListener",
       "file": "src/interact/index.ts",
-      "line": 111,
+      "line": 112,
       "kind": "method",
       "symbol": "EventCenterForGlobal.clearGlobalDataListener",
       "baselineStatus": "documented",
@@ -2764,7 +2764,7 @@
     {
       "id": "src/interact/index.ts#class#EventCenterForBaseApp",
       "file": "src/interact/index.ts",
-      "line": 128,
+      "line": 129,
       "kind": "class",
       "symbol": "EventCenterForBaseApp",
       "baselineStatus": "needs-tsdoc",
@@ -2774,7 +2774,7 @@
     {
       "id": "src/interact/index.ts#method#EventCenterForBaseApp.addDataListener",
       "file": "src/interact/index.ts",
-      "line": 136,
+      "line": 137,
       "kind": "method",
       "symbol": "EventCenterForBaseApp.addDataListener",
       "baselineStatus": "documented",
@@ -2784,7 +2784,7 @@
     {
       "id": "src/interact/index.ts#method#EventCenterForBaseApp.removeDataListener",
       "file": "src/interact/index.ts",
-      "line": 146,
+      "line": 147,
       "kind": "method",
       "symbol": "EventCenterForBaseApp.removeDataListener",
       "baselineStatus": "documented",
@@ -2794,7 +2794,7 @@
     {
       "id": "src/interact/index.ts#method#EventCenterForBaseApp.getData",
       "file": "src/interact/index.ts",
-      "line": 156,
+      "line": 157,
       "kind": "method",
       "symbol": "EventCenterForBaseApp.getData",
       "baselineStatus": "documented",
@@ -2804,7 +2804,7 @@
     {
       "id": "src/interact/index.ts#method#EventCenterForBaseApp.setData",
       "file": "src/interact/index.ts",
-      "line": 168,
+      "line": 169,
       "kind": "method",
       "symbol": "EventCenterForBaseApp.setData",
       "baselineStatus": "documented",
@@ -2814,7 +2814,7 @@
     {
       "id": "src/interact/index.ts#method#EventCenterForBaseApp.forceSetData",
       "file": "src/interact/index.ts",
-      "line": 183,
+      "line": 184,
       "kind": "method",
       "symbol": "EventCenterForBaseApp.forceSetData",
       "baselineStatus": "missing",
@@ -2824,7 +2824,7 @@
     {
       "id": "src/interact/index.ts#method#EventCenterForBaseApp.clearData",
       "file": "src/interact/index.ts",
-      "line": 197,
+      "line": 198,
       "kind": "method",
       "symbol": "EventCenterForBaseApp.clearData",
       "baselineStatus": "documented",
@@ -2834,7 +2834,7 @@
     {
       "id": "src/interact/index.ts#method#EventCenterForBaseApp.clearDataListener",
       "file": "src/interact/index.ts",
-      "line": 206,
+      "line": 207,
       "kind": "method",
       "symbol": "EventCenterForBaseApp.clearDataListener",
       "baselineStatus": "documented",
@@ -2844,7 +2844,7 @@
     {
       "id": "src/interact/index.ts#method#EventCenterForBaseApp.changeEventAppName",
       "file": "src/interact/index.ts",
-      "line": 216,
+      "line": 217,
       "kind": "method",
       "symbol": "EventCenterForBaseApp.changeEventAppName",
       "baselineStatus": "missing",
@@ -2854,7 +2854,7 @@
     {
       "id": "src/interact/index.ts#class#EventCenterForMicroApp",
       "file": "src/interact/index.ts",
-      "line": 227,
+      "line": 228,
       "kind": "class",
       "symbol": "EventCenterForMicroApp",
       "baselineStatus": "needs-tsdoc",
@@ -2864,7 +2864,7 @@
     {
       "id": "src/interact/index.ts#field#EventCenterForMicroApp.appName",
       "file": "src/interact/index.ts",
-      "line": 229,
+      "line": 230,
       "kind": "field",
       "symbol": "EventCenterForMicroApp.appName",
       "baselineStatus": "missing",
@@ -2874,7 +2874,7 @@
     {
       "id": "src/interact/index.ts#field#EventCenterForMicroApp.umdDataListeners",
       "file": "src/interact/index.ts",
-      "line": 231,
+      "line": 232,
       "kind": "field",
       "symbol": "EventCenterForMicroApp.umdDataListeners",
       "baselineStatus": "missing",
@@ -2884,7 +2884,7 @@
     {
       "id": "src/interact/index.ts#field#EventCenterForMicroApp.global",
       "file": "src/interact/index.ts",
-      "line": 233,
+      "line": 234,
       "kind": "field",
       "symbol": "EventCenterForMicroApp.global",
       "baselineStatus": "missing",
@@ -2894,7 +2894,7 @@
     {
       "id": "src/interact/index.ts#field#EventCenterForMicroApp.normal",
       "file": "src/interact/index.ts",
-      "line": 235,
+      "line": 236,
       "kind": "field",
       "symbol": "EventCenterForMicroApp.normal",
       "baselineStatus": "missing",
@@ -2904,7 +2904,7 @@
     {
       "id": "src/interact/index.ts#constructor#EventCenterForMicroApp.constructor",
       "file": "src/interact/index.ts",
-      "line": 239,
+      "line": 240,
       "kind": "constructor",
       "symbol": "EventCenterForMicroApp.constructor",
       "baselineStatus": "missing",
@@ -2914,7 +2914,7 @@
     {
       "id": "src/interact/index.ts#method#EventCenterForMicroApp.addDataListener",
       "file": "src/interact/index.ts",
-      "line": 251,
+      "line": 252,
       "kind": "method",
       "symbol": "EventCenterForMicroApp.addDataListener",
       "baselineStatus": "documented",
@@ -2924,7 +2924,7 @@
     {
       "id": "src/interact/index.ts#method#EventCenterForMicroApp.removeDataListener",
       "file": "src/interact/index.ts",
-      "line": 261,
+      "line": 262,
       "kind": "method",
       "symbol": "EventCenterForMicroApp.removeDataListener",
       "baselineStatus": "documented",
@@ -2934,7 +2934,7 @@
     {
       "id": "src/interact/index.ts#method#EventCenterForMicroApp.getData",
       "file": "src/interact/index.ts",
-      "line": 270,
+      "line": 271,
       "kind": "method",
       "symbol": "EventCenterForMicroApp.getData",
       "baselineStatus": "documented",
@@ -2944,7 +2944,7 @@
     {
       "id": "src/interact/index.ts#method#EventCenterForMicroApp.dispatch",
       "file": "src/interact/index.ts",
-      "line": 281,
+      "line": 282,
       "kind": "method",
       "symbol": "EventCenterForMicroApp.dispatch",
       "baselineStatus": "documented",
@@ -2954,7 +2954,7 @@
     {
       "id": "src/interact/index.ts#method#EventCenterForMicroApp.forceDispatch",
       "file": "src/interact/index.ts",
-      "line": 304,
+      "line": 305,
       "kind": "method",
       "symbol": "EventCenterForMicroApp.forceDispatch",
       "baselineStatus": "missing",
@@ -2964,7 +2964,7 @@
     {
       "id": "src/interact/index.ts#method#EventCenterForMicroApp.clearData",
       "file": "src/interact/index.ts",
-      "line": 313,
+      "line": 314,
       "kind": "method",
       "symbol": "EventCenterForMicroApp.clearData",
       "baselineStatus": "documented",
@@ -2974,7 +2974,7 @@
     {
       "id": "src/interact/index.ts#method#EventCenterForMicroApp.clearDataListener",
       "file": "src/interact/index.ts",
-      "line": 320,
+      "line": 321,
       "kind": "method",
       "symbol": "EventCenterForMicroApp.clearDataListener",
       "baselineStatus": "documented",
@@ -2984,7 +2984,7 @@
     {
       "id": "src/interact/index.ts#function#recordDataCenterSnapshot",
       "file": "src/interact/index.ts",
-      "line": 333,
+      "line": 334,
       "kind": "function",
       "symbol": "recordDataCenterSnapshot",
       "baselineStatus": "documented",
@@ -2994,7 +2994,7 @@
     {
       "id": "src/interact/index.ts#function#rebuildDataCenterSnapshot",
       "file": "src/interact/index.ts",
-      "line": 366,
+      "line": 367,
       "kind": "function",
       "symbol": "rebuildDataCenterSnapshot",
       "baselineStatus": "documented",
@@ -3004,7 +3004,7 @@
     {
       "id": "src/interact/index.ts#function#resetDataCenterSnapshot",
       "file": "src/interact/index.ts",
-      "line": 386,
+      "line": 387,
       "kind": "function",
       "symbol": "resetDataCenterSnapshot",
       "baselineStatus": "documented",
@@ -3054,7 +3054,7 @@
     {
       "id": "src/interact/lifecycles_event.ts#function#dispatchLifecyclesEvent",
       "file": "src/interact/lifecycles_event.ts",
-      "line": 49,
+      "line": 50,
       "kind": "function",
       "symbol": "dispatchLifecyclesEvent",
       "baselineStatus": "documented",
@@ -3064,7 +3064,7 @@
     {
       "id": "src/interact/lifecycles_event.ts#function#dispatchCustomEventToMicroApp",
       "file": "src/interact/lifecycles_event.ts",
-      "line": 94,
+      "line": 96,
       "kind": "function",
       "symbol": "dispatchCustomEventToMicroApp",
       "baselineStatus": "documented",
@@ -3874,7 +3874,7 @@
     {
       "id": "src/libs/utils.ts#function#getEffectivePath",
       "file": "src/libs/utils.ts",
-      "line": 407,
+      "line": 408,
       "kind": "function",
       "symbol": "getEffectivePath",
       "baselineStatus": "documented",
@@ -3884,7 +3884,7 @@
     {
       "id": "src/libs/utils.ts#function#CompletionPath",
       "file": "src/libs/utils.ts",
-      "line": 431,
+      "line": 432,
       "kind": "function",
       "symbol": "CompletionPath",
       "baselineStatus": "documented",
@@ -3894,7 +3894,7 @@
     {
       "id": "src/libs/utils.ts#function#getLinkFileDir",
       "file": "src/libs/utils.ts",
-      "line": 446,
+      "line": 447,
       "kind": "function",
       "symbol": "getLinkFileDir",
       "baselineStatus": "documented",
@@ -3904,7 +3904,7 @@
     {
       "id": "src/libs/utils.ts#function#promiseStream",
       "file": "src/libs/utils.ts",
-      "line": 462,
+      "line": 464,
       "kind": "function",
       "symbol": "promiseStream",
       "baselineStatus": "documented",
@@ -3914,7 +3914,7 @@
     {
       "id": "src/libs/utils.ts#function#promiseStream.isFinished",
       "file": "src/libs/utils.ts",
-      "line": 471,
+      "line": 473,
       "kind": "function",
       "symbol": "promiseStream.isFinished",
       "baselineStatus": "missing",
@@ -3924,7 +3924,7 @@
     {
       "id": "src/libs/utils.ts#function#isSupportModuleScript",
       "file": "src/libs/utils.ts",
-      "line": 492,
+      "line": 494,
       "kind": "function",
       "symbol": "isSupportModuleScript",
       "baselineStatus": "needs-tsdoc",
@@ -3934,7 +3934,7 @@
     {
       "id": "src/libs/utils.ts#function#createNonceSrc",
       "file": "src/libs/utils.ts",
-      "line": 498,
+      "line": 500,
       "kind": "function",
       "symbol": "createNonceSrc",
       "baselineStatus": "needs-tsdoc",
@@ -3944,7 +3944,7 @@
     {
       "id": "src/libs/utils.ts#function#unique",
       "file": "src/libs/utils.ts",
-      "line": 507,
+      "line": 509,
       "kind": "function",
       "symbol": "unique",
       "baselineStatus": "needs-tsdoc",
@@ -3954,7 +3954,7 @@
     {
       "id": "src/libs/utils.ts#constant#requestIdleCallback",
       "file": "src/libs/utils.ts",
-      "line": 518,
+      "line": 521,
       "kind": "constant",
       "symbol": "requestIdleCallback",
       "baselineStatus": "documented",
@@ -3964,7 +3964,7 @@
     {
       "id": "src/libs/utils.ts#method#timeRemaining",
       "file": "src/libs/utils.ts",
-      "line": 525,
+      "line": 528,
       "kind": "method",
       "symbol": "timeRemaining",
       "baselineStatus": "missing",
@@ -3974,7 +3974,7 @@
     {
       "id": "src/libs/utils.ts#function#promiseRequestIdle",
       "file": "src/libs/utils.ts",
-      "line": 537,
+      "line": 540,
       "kind": "function",
       "symbol": "promiseRequestIdle",
       "baselineStatus": "documented",
@@ -3984,7 +3984,7 @@
     {
       "id": "src/libs/utils.ts#function#setCurrentAppName",
       "file": "src/libs/utils.ts",
-      "line": 551,
+      "line": 554,
       "kind": "function",
       "symbol": "setCurrentAppName",
       "baselineStatus": "missing",
@@ -3994,7 +3994,7 @@
     {
       "id": "src/libs/utils.ts#function#getCurrentAppName",
       "file": "src/libs/utils.ts",
-      "line": 556,
+      "line": 559,
       "kind": "function",
       "symbol": "getCurrentAppName",
       "baselineStatus": "needs-tsdoc",
@@ -4004,7 +4004,7 @@
     {
       "id": "src/libs/utils.ts#function#throttleDeferForSetAppName",
       "file": "src/libs/utils.ts",
-      "line": 565,
+      "line": 568,
       "kind": "function",
       "symbol": "throttleDeferForSetAppName",
       "baselineStatus": "missing",
@@ -4014,7 +4014,7 @@
     {
       "id": "src/libs/utils.ts#function#setIframeCurrentAppName",
       "file": "src/libs/utils.ts",
-      "line": 578,
+      "line": 581,
       "kind": "function",
       "symbol": "setIframeCurrentAppName",
       "baselineStatus": "missing",
@@ -4024,7 +4024,7 @@
     {
       "id": "src/libs/utils.ts#function#getIframeCurrentAppName",
       "file": "src/libs/utils.ts",
-      "line": 583,
+      "line": 586,
       "kind": "function",
       "symbol": "getIframeCurrentAppName",
       "baselineStatus": "missing",
@@ -4034,7 +4034,7 @@
     {
       "id": "src/libs/utils.ts#function#throttleDeferForIframeAppName",
       "file": "src/libs/utils.ts",
-      "line": 588,
+      "line": 591,
       "kind": "function",
       "symbol": "throttleDeferForIframeAppName",
       "baselineStatus": "missing",
@@ -4044,7 +4044,7 @@
     {
       "id": "src/libs/utils.ts#function#getPreventSetState",
       "file": "src/libs/utils.ts",
-      "line": 601,
+      "line": 604,
       "kind": "function",
       "symbol": "getPreventSetState",
       "baselineStatus": "missing",
@@ -4054,7 +4054,7 @@
     {
       "id": "src/libs/utils.ts#function#removeDomScope",
       "file": "src/libs/utils.ts",
-      "line": 613,
+      "line": 616,
       "kind": "function",
       "symbol": "removeDomScope",
       "baselineStatus": "documented",
@@ -4064,7 +4064,7 @@
     {
       "id": "src/libs/utils.ts#function#isSafari",
       "file": "src/libs/utils.ts",
-      "line": 629,
+      "line": 632,
       "kind": "function",
       "symbol": "isSafari",
       "baselineStatus": "needs-tsdoc",
@@ -4074,7 +4074,7 @@
     {
       "id": "src/libs/utils.ts#function#pureCreateElement",
       "file": "src/libs/utils.ts",
-      "line": 638,
+      "line": 641,
       "kind": "function",
       "symbol": "pureCreateElement",
       "baselineStatus": "documented",
@@ -4084,7 +4084,7 @@
     {
       "id": "src/libs/utils.ts#function#isInvalidQuerySelectorKey",
       "file": "src/libs/utils.ts",
-      "line": 650,
+      "line": 653,
       "kind": "function",
       "symbol": "isInvalidQuerySelectorKey",
       "baselineStatus": "needs-tsdoc",
@@ -4094,7 +4094,7 @@
     {
       "id": "src/libs/utils.ts#function#isUniqueElement",
       "file": "src/libs/utils.ts",
-      "line": 656,
+      "line": 659,
       "kind": "function",
       "symbol": "isUniqueElement",
       "baselineStatus": "needs-tsdoc",
@@ -4104,7 +4104,7 @@
     {
       "id": "src/libs/utils.ts#type#RootContainer",
       "file": "src/libs/utils.ts",
-      "line": 667,
+      "line": 670,
       "kind": "type",
       "symbol": "RootContainer",
       "baselineStatus": "missing",
@@ -4114,7 +4114,7 @@
     {
       "id": "src/libs/utils.ts#function#getRootContainer",
       "file": "src/libs/utils.ts",
-      "line": 673,
+      "line": 676,
       "kind": "function",
       "symbol": "getRootContainer",
       "baselineStatus": "documented",
@@ -4124,7 +4124,7 @@
     {
       "id": "src/libs/utils.ts#function#trim",
       "file": "src/libs/utils.ts",
-      "line": 680,
+      "line": 683,
       "kind": "function",
       "symbol": "trim",
       "baselineStatus": "documented",
@@ -4134,7 +4134,7 @@
     {
       "id": "src/libs/utils.ts#function#isFireFox",
       "file": "src/libs/utils.ts",
-      "line": 685,
+      "line": 688,
       "kind": "function",
       "symbol": "isFireFox",
       "baselineStatus": "missing",
@@ -4144,7 +4144,7 @@
     {
       "id": "src/libs/utils.ts#function#parseQuery",
       "file": "src/libs/utils.ts",
-      "line": 697,
+      "line": 700,
       "kind": "function",
       "symbol": "parseQuery",
       "baselineStatus": "documented",
@@ -4154,7 +4154,7 @@
     {
       "id": "src/libs/utils.ts#function#stringifyQuery",
       "file": "src/libs/utils.ts",
-      "line": 729,
+      "line": 732,
       "kind": "function",
       "symbol": "stringifyQuery",
       "baselineStatus": "documented",
@@ -4164,7 +4164,7 @@
     {
       "id": "src/libs/utils.ts#function#useSetRecord",
       "file": "src/libs/utils.ts",
-      "line": 756,
+      "line": 759,
       "kind": "function",
       "symbol": "useSetRecord",
       "baselineStatus": "documented",
@@ -4174,7 +4174,7 @@
     {
       "id": "src/libs/utils.ts#function#useSetRecord.add",
       "file": "src/libs/utils.ts",
-      "line": 760,
+      "line": 763,
       "kind": "function",
       "symbol": "useSetRecord.add",
       "baselineStatus": "missing",
@@ -4184,7 +4184,7 @@
     {
       "id": "src/libs/utils.ts#function#useMapRecord",
       "file": "src/libs/utils.ts",
-      "line": 779,
+      "line": 783,
       "kind": "function",
       "symbol": "useMapRecord",
       "baselineStatus": "documented",
@@ -4194,7 +4194,7 @@
     {
       "id": "src/libs/utils.ts#function#useMapRecord.add",
       "file": "src/libs/utils.ts",
-      "line": 783,
+      "line": 787,
       "kind": "function",
       "symbol": "useMapRecord.add",
       "baselineStatus": "missing",
@@ -4204,7 +4204,7 @@
     {
       "id": "src/libs/utils.ts#function#getAttributes",
       "file": "src/libs/utils.ts",
-      "line": 802,
+      "line": 808,
       "kind": "function",
       "symbol": "getAttributes",
       "baselineStatus": "missing",
@@ -4214,7 +4214,7 @@
     {
       "id": "src/libs/utils.ts#function#injectFiberTask",
       "file": "src/libs/utils.ts",
-      "line": 817,
+      "line": 823,
       "kind": "function",
       "symbol": "injectFiberTask",
       "baselineStatus": "documented",
@@ -4224,7 +4224,7 @@
     {
       "id": "src/libs/utils.ts#function#serialExecFiberTasks",
       "file": "src/libs/utils.ts",
-      "line": 834,
+      "line": 840,
       "kind": "function",
       "symbol": "serialExecFiberTasks",
       "baselineStatus": "documented",
@@ -4234,7 +4234,7 @@
     {
       "id": "src/libs/utils.ts#function#isInlineScript",
       "file": "src/libs/utils.ts",
-      "line": 843,
+      "line": 849,
       "kind": "function",
       "symbol": "isInlineScript",
       "baselineStatus": "documented",
@@ -4244,7 +4244,7 @@
     {
       "id": "src/libs/utils.ts#function#execMicroAppGlobalHook",
       "file": "src/libs/utils.ts",
-      "line": 855,
+      "line": 861,
       "kind": "function",
       "symbol": "execMicroAppGlobalHook",
       "baselineStatus": "documented",
@@ -4254,7 +4254,7 @@
     {
       "id": "src/libs/utils.ts#function#clearDOM",
       "file": "src/libs/utils.ts",
-      "line": 873,
+      "line": 879,
       "kind": "function",
       "symbol": "clearDOM",
       "baselineStatus": "documented",
@@ -4264,7 +4264,7 @@
     {
       "id": "src/libs/utils.ts#function#instanceOf",
       "file": "src/libs/utils.ts",
-      "line": 884,
+      "line": 891,
       "kind": "function",
       "symbol": "instanceOf",
       "baselineStatus": "missing",
@@ -4274,7 +4274,7 @@
     {
       "id": "src/libs/utils.ts#constant#formatEventList",
       "file": "src/libs/utils.ts",
-      "line": 916,
+      "line": 914,
       "kind": "constant",
       "symbol": "formatEventList",
       "baselineStatus": "documented",
@@ -4284,7 +4284,7 @@
     {
       "id": "src/libs/utils.ts#function#formatEventType",
       "file": "src/libs/utils.ts",
-      "line": 919,
+      "line": 922,
       "kind": "function",
       "symbol": "formatEventType",
       "baselineStatus": "missing",
@@ -4294,7 +4294,7 @@
     {
       "id": "src/libs/utils.ts#function#isEmptyObject",
       "file": "src/libs/utils.ts",
-      "line": 928,
+      "line": 931,
       "kind": "function",
       "symbol": "isEmptyObject",
       "baselineStatus": "documented",
@@ -4544,7 +4544,7 @@
     {
       "id": "src/micro_app_element.ts#method#defineElement.MicroAppElement.handleMount",
       "file": "src/micro_app_element.ts",
-      "line": 449,
+      "line": 448,
       "kind": "method",
       "symbol": "defineElement.MicroAppElement.handleMount",
       "baselineStatus": "documented",
@@ -4554,7 +4554,7 @@
     {
       "id": "src/micro_app_element.ts#method#defineElement.MicroAppElement.mount",
       "file": "src/micro_app_element.ts",
-      "line": 465,
+      "line": 464,
       "kind": "method",
       "symbol": "defineElement.MicroAppElement.mount",
       "baselineStatus": "documented",
@@ -4564,7 +4564,7 @@
     {
       "id": "src/micro_app_element.ts#method#defineElement.MicroAppElement.unmount",
       "file": "src/micro_app_element.ts",
-      "line": 483,
+      "line": 482,
       "kind": "method",
       "symbol": "defineElement.MicroAppElement.unmount",
       "baselineStatus": "documented",
@@ -4574,7 +4574,7 @@
     {
       "id": "src/micro_app_element.ts#method#defineElement.MicroAppElement.handleHiddenKeepAliveApp",
       "file": "src/micro_app_element.ts",
-      "line": 497,
+      "line": 496,
       "kind": "method",
       "symbol": "defineElement.MicroAppElement.handleHiddenKeepAliveApp",
       "baselineStatus": "needs-tsdoc",
@@ -4584,7 +4584,7 @@
     {
       "id": "src/micro_app_element.ts#method#defineElement.MicroAppElement.handleShowKeepAliveApp",
       "file": "src/micro_app_element.ts",
-      "line": 505,
+      "line": 504,
       "kind": "method",
       "symbol": "defineElement.MicroAppElement.handleShowKeepAliveApp",
       "baselineStatus": "needs-tsdoc",
@@ -4594,7 +4594,7 @@
     {
       "id": "src/micro_app_element.ts#method#defineElement.MicroAppElement.getDisposeResult",
       "file": "src/micro_app_element.ts",
-      "line": 518,
+      "line": 517,
       "kind": "method",
       "symbol": "defineElement.MicroAppElement.getDisposeResult",
       "baselineStatus": "documented",
@@ -4604,7 +4604,7 @@
     {
       "id": "src/micro_app_element.ts#method#defineElement.MicroAppElement.compatibleProperties",
       "file": "src/micro_app_element.ts",
-      "line": 523,
+      "line": 522,
       "kind": "method",
       "symbol": "defineElement.MicroAppElement.compatibleProperties",
       "baselineStatus": "needs-tsdoc",
@@ -4614,7 +4614,7 @@
     {
       "id": "src/micro_app_element.ts#method#defineElement.MicroAppElement.compatibleDisableProperties",
       "file": "src/micro_app_element.ts",
-      "line": 537,
+      "line": 536,
       "kind": "method",
       "symbol": "defineElement.MicroAppElement.compatibleDisableProperties",
       "baselineStatus": "needs-tsdoc",
@@ -4624,7 +4624,7 @@
     {
       "id": "src/micro_app_element.ts#method#defineElement.MicroAppElement.useScopecss",
       "file": "src/micro_app_element.ts",
-      "line": 547,
+      "line": 546,
       "kind": "method",
       "symbol": "defineElement.MicroAppElement.useScopecss",
       "baselineStatus": "missing",
@@ -4634,7 +4634,7 @@
     {
       "id": "src/micro_app_element.ts#method#defineElement.MicroAppElement.useSandbox",
       "file": "src/micro_app_element.ts",
-      "line": 552,
+      "line": 551,
       "kind": "method",
       "symbol": "defineElement.MicroAppElement.useSandbox",
       "baselineStatus": "missing",
@@ -4644,7 +4644,7 @@
     {
       "id": "src/micro_app_element.ts#method#defineElement.MicroAppElement.sameCoreOptions",
       "file": "src/micro_app_element.ts",
-      "line": 561,
+      "line": 560,
       "kind": "method",
       "symbol": "defineElement.MicroAppElement.sameCoreOptions",
       "baselineStatus": "documented",
@@ -4654,7 +4654,7 @@
     {
       "id": "src/micro_app_element.ts#method#defineElement.MicroAppElement.getBaseRouteCompatible",
       "file": "src/micro_app_element.ts",
-      "line": 572,
+      "line": 571,
       "kind": "method",
       "symbol": "defineElement.MicroAppElement.getBaseRouteCompatible",
       "baselineStatus": "documented",
@@ -4664,7 +4664,7 @@
     {
       "id": "src/micro_app_element.ts#method#defineElement.MicroAppElement.getDestroyCompatibleResult",
       "file": "src/micro_app_element.ts",
-      "line": 577,
+      "line": 576,
       "kind": "method",
       "symbol": "defineElement.MicroAppElement.getDestroyCompatibleResult",
       "baselineStatus": "needs-tsdoc",
@@ -4674,7 +4674,7 @@
     {
       "id": "src/micro_app_element.ts#method#defineElement.MicroAppElement.getKeepAliveModeResult",
       "file": "src/micro_app_element.ts",
-      "line": 584,
+      "line": 583,
       "kind": "method",
       "symbol": "defineElement.MicroAppElement.getKeepAliveModeResult",
       "baselineStatus": "documented",
@@ -4854,7 +4854,7 @@
     {
       "id": "src/micro_app.ts#function#unmountApp",
       "file": "src/micro_app.ts",
-      "line": 93,
+      "line": 94,
       "kind": "function",
       "symbol": "unmountApp",
       "baselineStatus": "documented",
@@ -4864,7 +4864,7 @@
     {
       "id": "src/micro_app.ts#function-variable#unmountApp.unmountHandler",
       "file": "src/micro_app.ts",
-      "line": 130,
+      "line": 131,
       "kind": "function-variable",
       "symbol": "unmountApp.unmountHandler",
       "baselineStatus": "missing",
@@ -4874,7 +4874,7 @@
     {
       "id": "src/micro_app.ts#function-variable#unmountApp.afterhiddenHandler",
       "file": "src/micro_app.ts",
-      "line": 137,
+      "line": 138,
       "kind": "function-variable",
       "symbol": "unmountApp.afterhiddenHandler",
       "baselineStatus": "missing",
@@ -4884,7 +4884,7 @@
     {
       "id": "src/micro_app.ts#function#unmountAllApps",
       "file": "src/micro_app.ts",
-      "line": 196,
+      "line": 197,
       "kind": "function",
       "symbol": "unmountAllApps",
       "baselineStatus": "needs-tsdoc",
@@ -4894,7 +4894,7 @@
     {
       "id": "src/micro_app.ts#function#reload",
       "file": "src/micro_app.ts",
-      "line": 207,
+      "line": 208,
       "kind": "function",
       "symbol": "reload",
       "baselineStatus": "documented",
@@ -4904,7 +4904,7 @@
     {
       "id": "src/micro_app.ts#interface#RenderAppOptions",
       "file": "src/micro_app.ts",
-      "line": 234,
+      "line": 235,
       "kind": "interface",
       "symbol": "RenderAppOptions",
       "baselineStatus": "missing",
@@ -4914,7 +4914,7 @@
     {
       "id": "src/micro_app.ts#field#RenderAppOptions.name",
       "file": "src/micro_app.ts",
-      "line": 236,
+      "line": 237,
       "kind": "field",
       "symbol": "RenderAppOptions.name",
       "baselineStatus": "missing",
@@ -4924,7 +4924,7 @@
     {
       "id": "src/micro_app.ts#field#RenderAppOptions.url",
       "file": "src/micro_app.ts",
-      "line": 238,
+      "line": 239,
       "kind": "field",
       "symbol": "RenderAppOptions.url",
       "baselineStatus": "missing",
@@ -4934,7 +4934,7 @@
     {
       "id": "src/micro_app.ts#field#RenderAppOptions.container",
       "file": "src/micro_app.ts",
-      "line": 240,
+      "line": 241,
       "kind": "field",
       "symbol": "RenderAppOptions.container",
       "baselineStatus": "missing",
@@ -4944,7 +4944,7 @@
     {
       "id": "src/micro_app.ts#field#RenderAppOptions.baseroute",
       "file": "src/micro_app.ts",
-      "line": 242,
+      "line": 243,
       "kind": "field",
       "symbol": "RenderAppOptions.baseroute",
       "baselineStatus": "missing",
@@ -4954,7 +4954,7 @@
     {
       "id": "src/micro_app.ts#field#RenderAppOptions.'default-page'",
       "file": "src/micro_app.ts",
-      "line": 244,
+      "line": 245,
       "kind": "field",
       "symbol": "RenderAppOptions.'default-page'",
       "baselineStatus": "missing",
@@ -4964,7 +4964,7 @@
     {
       "id": "src/micro_app.ts#field#RenderAppOptions.data",
       "file": "src/micro_app.ts",
-      "line": 246,
+      "line": 247,
       "kind": "field",
       "symbol": "RenderAppOptions.data",
       "baselineStatus": "missing",
@@ -4974,7 +4974,7 @@
     {
       "id": "src/micro_app.ts#field#RenderAppOptions.onDataChange",
       "file": "src/micro_app.ts",
-      "line": 248,
+      "line": 249,
       "kind": "field",
       "symbol": "RenderAppOptions.onDataChange",
       "baselineStatus": "missing",
@@ -4984,7 +4984,7 @@
     {
       "id": "src/micro_app.ts#field#RenderAppOptions.lifeCycles",
       "file": "src/micro_app.ts",
-      "line": 250,
+      "line": 251,
       "kind": "field",
       "symbol": "RenderAppOptions.lifeCycles",
       "baselineStatus": "missing",
@@ -4994,7 +4994,7 @@
     {
       "id": "src/micro_app.ts#function#renderApp",
       "file": "src/micro_app.ts",
-      "line": 263,
+      "line": 265,
       "kind": "function",
       "symbol": "renderApp",
       "baselineStatus": "documented",
@@ -5004,7 +5004,7 @@
     {
       "id": "src/micro_app.ts#function-variable#renderApp.handleMount",
       "file": "src/micro_app.ts",
-      "line": 291,
+      "line": 293,
       "kind": "function-variable",
       "symbol": "renderApp.handleMount",
       "baselineStatus": "missing",
@@ -5014,7 +5014,7 @@
     {
       "id": "src/micro_app.ts#function-variable#renderApp.handleError",
       "file": "src/micro_app.ts",
-      "line": 297,
+      "line": 299,
       "kind": "function-variable",
       "symbol": "renderApp.handleError",
       "baselineStatus": "missing",
@@ -5024,7 +5024,7 @@
     {
       "id": "src/micro_app.ts#function-variable#renderApp.releaseListener",
       "file": "src/micro_app.ts",
-      "line": 303,
+      "line": 305,
       "kind": "function-variable",
       "symbol": "renderApp.releaseListener",
       "baselineStatus": "missing",
@@ -5034,7 +5034,7 @@
     {
       "id": "src/micro_app.ts#class#MicroApp",
       "file": "src/micro_app.ts",
-      "line": 320,
+      "line": 322,
       "kind": "class",
       "symbol": "MicroApp",
       "baselineStatus": "missing",
@@ -5044,7 +5044,7 @@
     {
       "id": "src/micro_app.ts#field#MicroApp.tagName",
       "file": "src/micro_app.ts",
-      "line": 322,
+      "line": 324,
       "kind": "field",
       "symbol": "MicroApp.tagName",
       "baselineStatus": "missing",
@@ -5054,7 +5054,7 @@
     {
       "id": "src/micro_app.ts#field#MicroApp.hasInit",
       "file": "src/micro_app.ts",
-      "line": 324,
+      "line": 326,
       "kind": "field",
       "symbol": "MicroApp.hasInit",
       "baselineStatus": "missing",
@@ -5064,7 +5064,7 @@
     {
       "id": "src/micro_app.ts#field#MicroApp.options",
       "file": "src/micro_app.ts",
-      "line": 326,
+      "line": 328,
       "kind": "field",
       "symbol": "MicroApp.options",
       "baselineStatus": "missing",
@@ -5074,7 +5074,7 @@
     {
       "id": "src/micro_app.ts#field#MicroApp.router",
       "file": "src/micro_app.ts",
-      "line": 328,
+      "line": 330,
       "kind": "field",
       "symbol": "MicroApp.router",
       "baselineStatus": "missing",
@@ -5084,7 +5084,7 @@
     {
       "id": "src/micro_app.ts#field#MicroApp.preFetch",
       "file": "src/micro_app.ts",
-      "line": 330,
+      "line": 332,
       "kind": "field",
       "symbol": "MicroApp.preFetch",
       "baselineStatus": "missing",
@@ -5094,7 +5094,7 @@
     {
       "id": "src/micro_app.ts#field#MicroApp.unmountApp",
       "file": "src/micro_app.ts",
-      "line": 332,
+      "line": 334,
       "kind": "field",
       "symbol": "MicroApp.unmountApp",
       "baselineStatus": "missing",
@@ -5104,7 +5104,7 @@
     {
       "id": "src/micro_app.ts#field#MicroApp.unmountAllApps",
       "file": "src/micro_app.ts",
-      "line": 334,
+      "line": 336,
       "kind": "field",
       "symbol": "MicroApp.unmountAllApps",
       "baselineStatus": "missing",
@@ -5114,7 +5114,7 @@
     {
       "id": "src/micro_app.ts#field#MicroApp.getActiveApps",
       "file": "src/micro_app.ts",
-      "line": 336,
+      "line": 338,
       "kind": "field",
       "symbol": "MicroApp.getActiveApps",
       "baselineStatus": "missing",
@@ -5124,7 +5124,7 @@
     {
       "id": "src/micro_app.ts#field#MicroApp.getAllApps",
       "file": "src/micro_app.ts",
-      "line": 338,
+      "line": 340,
       "kind": "field",
       "symbol": "MicroApp.getAllApps",
       "baselineStatus": "missing",
@@ -5134,7 +5134,7 @@
     {
       "id": "src/micro_app.ts#field#MicroApp.reload",
       "file": "src/micro_app.ts",
-      "line": 340,
+      "line": 342,
       "kind": "field",
       "symbol": "MicroApp.reload",
       "baselineStatus": "missing",
@@ -5144,7 +5144,7 @@
     {
       "id": "src/micro_app.ts#field#MicroApp.renderApp",
       "file": "src/micro_app.ts",
-      "line": 342,
+      "line": 344,
       "kind": "field",
       "symbol": "MicroApp.renderApp",
       "baselineStatus": "missing",
@@ -5154,7 +5154,7 @@
     {
       "id": "src/micro_app.ts#method#MicroApp.start",
       "file": "src/micro_app.ts",
-      "line": 352,
+      "line": 355,
       "kind": "method",
       "symbol": "MicroApp.start",
       "baselineStatus": "missing",
@@ -5164,7 +5164,7 @@
     {
       "id": "src/micro_app.ts#constant#microApp",
       "file": "src/micro_app.ts",
-      "line": 412,
+      "line": 415,
       "kind": "constant",
       "symbol": "microApp",
       "baselineStatus": "missing",
@@ -5204,7 +5204,7 @@
     {
       "id": "src/polyfill/jsx-custom-event.ts#function#jsxCustomEvent",
       "file": "src/polyfill/jsx-custom-event.ts",
-      "line": 26,
+      "line": 28,
       "kind": "function",
       "symbol": "jsxCustomEvent",
       "baselineStatus": "missing",
@@ -5234,7 +5234,7 @@
     {
       "id": "src/prefetch.ts#function#preFetchAction",
       "file": "src/prefetch.ts",
-      "line": 115,
+      "line": 116,
       "kind": "function",
       "symbol": "preFetchAction",
       "baselineStatus": "needs-tsdoc",
@@ -5244,7 +5244,7 @@
     {
       "id": "src/prefetch.ts#function#getGlobalAssets",
       "file": "src/prefetch.ts",
-      "line": 172,
+      "line": 169,
       "kind": "function",
       "symbol": "getGlobalAssets",
       "baselineStatus": "documented",
@@ -5254,7 +5254,7 @@
     {
       "id": "src/prefetch.ts#function#fetchGlobalResources",
       "file": "src/prefetch.ts",
-      "line": 191,
+      "line": 188,
       "kind": "function",
       "symbol": "fetchGlobalResources",
       "baselineStatus": "needs-tsdoc",
@@ -5264,7 +5264,7 @@
     {
       "id": "src/prefetch.ts#field#fetchGlobalResources.data",
       "file": "src/prefetch.ts",
-      "line": 200,
+      "line": 197,
       "kind": "field",
       "symbol": "fetchGlobalResources.data",
       "baselineStatus": "missing",
@@ -5274,7 +5274,7 @@
     {
       "id": "src/prefetch.ts#field#fetchGlobalResources.index",
       "file": "src/prefetch.ts",
-      "line": 202,
+      "line": 199,
       "kind": "field",
       "symbol": "fetchGlobalResources.index",
       "baselineStatus": "missing",
@@ -5284,7 +5284,7 @@
     {
       "id": "src/prefetch.ts#field#fetchGlobalResources.error",
       "file": "src/prefetch.ts",
-      "line": 223,
+      "line": 220,
       "kind": "field",
       "symbol": "fetchGlobalResources.error",
       "baselineStatus": "missing",
@@ -5294,7 +5294,7 @@
     {
       "id": "src/prefetch.ts#field#fetchGlobalResources.index@2",
       "file": "src/prefetch.ts",
-      "line": 225,
+      "line": 222,
       "kind": "field",
       "symbol": "fetchGlobalResources.index",
       "baselineStatus": "missing",
@@ -5454,7 +5454,7 @@
     {
       "id": "src/proxies/worker.ts#constant#WorkerProxy",
       "file": "src/proxies/worker.ts",
-      "line": 106,
+      "line": 107,
       "kind": "constant",
       "symbol": "WorkerProxy",
       "baselineStatus": "missing",
@@ -5464,7 +5464,7 @@
     {
       "id": "src/proxies/worker.ts#method#construct",
       "file": "src/proxies/worker.ts",
-      "line": 110,
+      "line": 111,
       "kind": "method",
       "symbol": "construct",
       "baselineStatus": "missing",
@@ -5604,7 +5604,7 @@
     {
       "id": "src/sandbox/adapter.ts#method#BaseSandbox.injectReactHMRProperty",
       "file": "src/sandbox/adapter.ts",
-      "line": 84,
+      "line": 85,
       "kind": "method",
       "symbol": "BaseSandbox.injectReactHMRProperty",
       "baselineStatus": "needs-tsdoc",
@@ -5614,7 +5614,7 @@
     {
       "id": "src/sandbox/adapter.ts#class#CustomWindow",
       "file": "src/sandbox/adapter.ts",
-      "line": 107,
+      "line": 103,
       "kind": "class",
       "symbol": "CustomWindow",
       "baselineStatus": "documented",
@@ -5624,7 +5624,7 @@
     {
       "id": "src/sandbox/adapter.ts#function#fixBabelPolyfill6",
       "file": "src/sandbox/adapter.ts",
-      "line": 112,
+      "line": 108,
       "kind": "function",
       "symbol": "fixBabelPolyfill6",
       "baselineStatus": "needs-tsdoc",
@@ -5634,7 +5634,7 @@
     {
       "id": "src/sandbox/adapter.ts#function#fixReactHMRConflict",
       "file": "src/sandbox/adapter.ts",
-      "line": 125,
+      "line": 121,
       "kind": "function",
       "symbol": "fixReactHMRConflict",
       "baselineStatus": "documented",
@@ -5644,7 +5644,7 @@
     {
       "id": "src/sandbox/adapter.ts#function#patchElementTree",
       "file": "src/sandbox/adapter.ts",
-      "line": 144,
+      "line": 140,
       "kind": "function",
       "symbol": "patchElementTree",
       "baselineStatus": "documented",
@@ -5654,7 +5654,7 @@
     {
       "id": "src/sandbox/adapter.ts#function#updateElementInfo",
       "file": "src/sandbox/adapter.ts",
-      "line": 168,
+      "line": 164,
       "kind": "function",
       "symbol": "updateElementInfo",
       "baselineStatus": "documented",
@@ -5664,7 +5664,7 @@
     {
       "id": "src/sandbox/adapter.ts#method#updateElementInfo.get",
       "file": "src/sandbox/adapter.ts",
-      "line": 195,
+      "line": 187,
       "kind": "method",
       "symbol": "updateElementInfo.get",
       "baselineStatus": "missing",
@@ -5674,7 +5674,7 @@
     {
       "id": "src/sandbox/adapter.ts#method#updateElementInfo.set",
       "file": "src/sandbox/adapter.ts",
-      "line": 199,
+      "line": 191,
       "kind": "method",
       "symbol": "updateElementInfo.set",
       "baselineStatus": "missing",
@@ -5684,7 +5684,7 @@
     {
       "id": "src/sandbox/adapter.ts#function#getIframeParentNodeDesc",
       "file": "src/sandbox/adapter.ts",
-      "line": 265,
+      "line": 257,
       "kind": "function",
       "symbol": "getIframeParentNodeDesc",
       "baselineStatus": "documented",
@@ -5694,7 +5694,7 @@
     {
       "id": "src/sandbox/adapter.ts#method#getIframeParentNodeDesc.get",
       "file": "src/sandbox/adapter.ts",
-      "line": 275,
+      "line": 267,
       "kind": "method",
       "symbol": "getIframeParentNodeDesc.get",
       "baselineStatus": "missing",
@@ -5724,7 +5724,7 @@
     {
       "id": "src/sandbox/bind_function.ts#function#isConstructorFunction",
       "file": "src/sandbox/bind_function.ts",
-      "line": 29,
+      "line": 30,
       "kind": "function",
       "symbol": "isConstructorFunction",
       "baselineStatus": "missing",
@@ -5734,7 +5734,7 @@
     {
       "id": "src/sandbox/bind_function.ts#field#isConstructorFunction.__MICRO_APP_IS_CONSTRUCTOR__",
       "file": "src/sandbox/bind_function.ts",
-      "line": 31,
+      "line": 32,
       "kind": "field",
       "symbol": "isConstructorFunction.__MICRO_APP_IS_CONSTRUCTOR__",
       "baselineStatus": "missing",
@@ -5744,7 +5744,7 @@
     {
       "id": "src/sandbox/bind_function.ts#function#bindFunctionToRawTarget",
       "file": "src/sandbox/bind_function.ts",
-      "line": 52,
+      "line": 53,
       "kind": "function",
       "symbol": "bindFunctionToRawTarget",
       "baselineStatus": "missing",
@@ -5794,7 +5794,7 @@
     {
       "id": "src/sandbox/iframe/document.ts#function#patchDocumentPrototype.querySelector",
       "file": "src/sandbox/iframe/document.ts",
-      "line": 208,
+      "line": 209,
       "kind": "function",
       "symbol": "patchDocumentPrototype.querySelector",
       "baselineStatus": "needs-tsdoc",
@@ -5804,7 +5804,7 @@
     {
       "id": "src/sandbox/iframe/document.ts#function#patchDocumentPrototype.querySelectorAll",
       "file": "src/sandbox/iframe/document.ts",
-      "line": 239,
+      "line": 241,
       "kind": "function",
       "symbol": "patchDocumentPrototype.querySelectorAll",
       "baselineStatus": "missing",
@@ -5814,7 +5814,7 @@
     {
       "id": "src/sandbox/iframe/document.ts#function#patchDocumentProperty",
       "file": "src/sandbox/iframe/document.ts",
-      "line": 329,
+      "line": 331,
       "kind": "function",
       "symbol": "patchDocumentProperty",
       "baselineStatus": "missing",
@@ -5824,7 +5824,7 @@
     {
       "id": "src/sandbox/iframe/document.ts#function-variable#patchDocumentProperty.getCommonDescriptor",
       "file": "src/sandbox/iframe/document.ts",
-      "line": 345,
+      "line": 347,
       "kind": "function-variable",
       "symbol": "patchDocumentProperty.getCommonDescriptor",
       "baselineStatus": "missing",
@@ -5834,7 +5834,7 @@
     {
       "id": "src/sandbox/iframe/document.ts#function-variable#patchDocumentProperty.createDescriptors",
       "file": "src/sandbox/iframe/document.ts",
-      "line": 364,
+      "line": 366,
       "kind": "function-variable",
       "symbol": "patchDocumentProperty.createDescriptors",
       "baselineStatus": "missing",
@@ -5844,7 +5844,7 @@
     {
       "id": "src/sandbox/iframe/document.ts#function#patchDocumentEffect",
       "file": "src/sandbox/iframe/document.ts",
-      "line": 434,
+      "line": 438,
       "kind": "function",
       "symbol": "patchDocumentEffect",
       "baselineStatus": "missing",
@@ -5854,7 +5854,7 @@
     {
       "id": "src/sandbox/iframe/document.ts#function#patchDocumentEffect.getEventTarget",
       "file": "src/sandbox/iframe/document.ts",
-      "line": 450,
+      "line": 454,
       "kind": "function",
       "symbol": "patchDocumentEffect.getEventTarget",
       "baselineStatus": "missing",
@@ -5864,7 +5864,7 @@
     {
       "id": "src/sandbox/iframe/document.ts#function#patchDocumentEffect.createSetterHandler",
       "file": "src/sandbox/iframe/document.ts",
-      "line": 499,
+      "line": 503,
       "kind": "function",
       "symbol": "patchDocumentEffect.createSetterHandler",
       "baselineStatus": "needs-tsdoc",
@@ -5874,7 +5874,7 @@
     {
       "id": "src/sandbox/iframe/document.ts#function-variable#patchDocumentEffect.reset",
       "file": "src/sandbox/iframe/document.ts",
-      "line": 545,
+      "line": 549,
       "kind": "function-variable",
       "symbol": "patchDocumentEffect.reset",
       "baselineStatus": "missing",
@@ -5884,7 +5884,7 @@
     {
       "id": "src/sandbox/iframe/document.ts#function-variable#patchDocumentEffect.record",
       "file": "src/sandbox/iframe/document.ts",
-      "line": 556,
+      "line": 560,
       "kind": "function-variable",
       "symbol": "patchDocumentEffect.record",
       "baselineStatus": "documented",
@@ -5894,7 +5894,7 @@
     {
       "id": "src/sandbox/iframe/document.ts#function-variable#patchDocumentEffect.rebuild",
       "file": "src/sandbox/iframe/document.ts",
-      "line": 570,
+      "line": 574,
       "kind": "function-variable",
       "symbol": "patchDocumentEffect.rebuild",
       "baselineStatus": "needs-tsdoc",
@@ -5904,7 +5904,7 @@
     {
       "id": "src/sandbox/iframe/document.ts#function-variable#patchDocumentEffect.release",
       "file": "src/sandbox/iframe/document.ts",
-      "line": 589,
+      "line": 593,
       "kind": "function-variable",
       "symbol": "patchDocumentEffect.release",
       "baselineStatus": "missing",
@@ -6244,7 +6244,7 @@
     {
       "id": "src/sandbox/iframe/index.ts#method#IframeSandbox.createIframeElement",
       "file": "src/sandbox/iframe/index.ts",
-      "line": 167,
+      "line": 168,
       "kind": "method",
       "symbol": "IframeSandbox.createIframeElement",
       "baselineStatus": "documented",
@@ -6254,7 +6254,7 @@
     {
       "id": "src/sandbox/iframe/index.ts#method#IframeSandbox.start",
       "file": "src/sandbox/iframe/index.ts",
-      "line": 209,
+      "line": 210,
       "kind": "method",
       "symbol": "IframeSandbox.start",
       "baselineStatus": "missing",
@@ -6264,7 +6264,7 @@
     {
       "id": "src/sandbox/iframe/index.ts#method#IframeSandbox.stop",
       "file": "src/sandbox/iframe/index.ts",
-      "line": 264,
+      "line": 265,
       "kind": "method",
       "symbol": "IframeSandbox.stop",
       "baselineStatus": "missing",
@@ -6274,7 +6274,7 @@
     {
       "id": "src/sandbox/iframe/index.ts#method#IframeSandbox.initStaticGlobalKeys",
       "file": "src/sandbox/iframe/index.ts",
-      "line": 312,
+      "line": 313,
       "kind": "method",
       "symbol": "IframeSandbox.initStaticGlobalKeys",
       "baselineStatus": "documented",
@@ -6284,7 +6284,7 @@
     {
       "id": "src/sandbox/iframe/index.ts#method#IframeSandbox.recordAndReleaseEffect",
       "file": "src/sandbox/iframe/index.ts",
-      "line": 347,
+      "line": 348,
       "kind": "method",
       "symbol": "IframeSandbox.recordAndReleaseEffect",
       "baselineStatus": "documented",
@@ -6294,7 +6294,7 @@
     {
       "id": "src/sandbox/iframe/index.ts#method#IframeSandbox.resetEffectSnapshot",
       "file": "src/sandbox/iframe/index.ts",
-      "line": 364,
+      "line": 365,
       "kind": "method",
       "symbol": "IframeSandbox.resetEffectSnapshot",
       "baselineStatus": "documented",
@@ -6304,7 +6304,7 @@
     {
       "id": "src/sandbox/iframe/index.ts#method#IframeSandbox.recordEffectSnapshot",
       "file": "src/sandbox/iframe/index.ts",
-      "line": 375,
+      "line": 377,
       "kind": "method",
       "symbol": "IframeSandbox.recordEffectSnapshot",
       "baselineStatus": "documented",
@@ -6314,7 +6314,7 @@
     {
       "id": "src/sandbox/iframe/index.ts#method#IframeSandbox.rebuildEffectSnapshot",
       "file": "src/sandbox/iframe/index.ts",
-      "line": 382,
+      "line": 384,
       "kind": "method",
       "symbol": "IframeSandbox.rebuildEffectSnapshot",
       "baselineStatus": "needs-tsdoc",
@@ -6324,7 +6324,7 @@
     {
       "id": "src/sandbox/iframe/index.ts#method#IframeSandbox.releaseGlobalEffect",
       "file": "src/sandbox/iframe/index.ts",
-      "line": 393,
+      "line": 398,
       "kind": "method",
       "symbol": "IframeSandbox.releaseGlobalEffect",
       "baselineStatus": "documented",
@@ -6334,7 +6334,7 @@
     {
       "id": "src/sandbox/iframe/index.ts#method#IframeSandbox.setPreRenderState",
       "file": "src/sandbox/iframe/index.ts",
-      "line": 409,
+      "line": 414,
       "kind": "method",
       "symbol": "IframeSandbox.setPreRenderState",
       "baselineStatus": "needs-tsdoc",
@@ -6344,7 +6344,7 @@
     {
       "id": "src/sandbox/iframe/index.ts#method#IframeSandbox.markUmdMode",
       "file": "src/sandbox/iframe/index.ts",
-      "line": 418,
+      "line": 423,
       "kind": "method",
       "symbol": "IframeSandbox.markUmdMode",
       "baselineStatus": "needs-tsdoc",
@@ -6354,7 +6354,7 @@
     {
       "id": "src/sandbox/iframe/index.ts#method#IframeSandbox.patchIframe",
       "file": "src/sandbox/iframe/index.ts",
-      "line": 433,
+      "line": 437,
       "kind": "method",
       "symbol": "IframeSandbox.patchIframe",
       "baselineStatus": "needs-tsdoc",
@@ -6364,7 +6364,7 @@
     {
       "id": "src/sandbox/iframe/index.ts#method#IframeSandbox.createIframeTemplate",
       "file": "src/sandbox/iframe/index.ts",
-      "line": 466,
+      "line": 470,
       "kind": "method",
       "symbol": "IframeSandbox.createIframeTemplate",
       "baselineStatus": "needs-tsdoc",
@@ -6374,7 +6374,7 @@
     {
       "id": "src/sandbox/iframe/index.ts#method#IframeSandbox.createIframeBase",
       "file": "src/sandbox/iframe/index.ts",
-      "line": 481,
+      "line": 485,
       "kind": "method",
       "symbol": "IframeSandbox.createIframeBase",
       "baselineStatus": "documented",
@@ -6384,7 +6384,7 @@
     {
       "id": "src/sandbox/iframe/index.ts#function-property#IframeSandbox.updateIframeBase",
       "file": "src/sandbox/iframe/index.ts",
-      "line": 493,
+      "line": 497,
       "kind": "function-property",
       "symbol": "IframeSandbox.updateIframeBase",
       "baselineStatus": "needs-tsdoc",
@@ -6394,7 +6394,7 @@
     {
       "id": "src/sandbox/iframe/index.ts#method#IframeSandbox.getSpecialProperties",
       "file": "src/sandbox/iframe/index.ts",
-      "line": 503,
+      "line": 507,
       "kind": "method",
       "symbol": "IframeSandbox.getSpecialProperties",
       "baselineStatus": "documented",
@@ -6404,7 +6404,7 @@
     {
       "id": "src/sandbox/iframe/index.ts#method#IframeSandbox.commonActionForSpecialProperties",
       "file": "src/sandbox/iframe/index.ts",
-      "line": 515,
+      "line": 519,
       "kind": "method",
       "symbol": "IframeSandbox.commonActionForSpecialProperties",
       "baselineStatus": "needs-tsdoc",
@@ -6414,7 +6414,7 @@
     {
       "id": "src/sandbox/iframe/index.ts#method#IframeSandbox.initRouteState",
       "file": "src/sandbox/iframe/index.ts",
-      "line": 532,
+      "line": 536,
       "kind": "method",
       "symbol": "IframeSandbox.initRouteState",
       "baselineStatus": "missing",
@@ -6424,7 +6424,7 @@
     {
       "id": "src/sandbox/iframe/index.ts#method#IframeSandbox.clearRouteState",
       "file": "src/sandbox/iframe/index.ts",
-      "line": 545,
+      "line": 549,
       "kind": "method",
       "symbol": "IframeSandbox.clearRouteState",
       "baselineStatus": "missing",
@@ -6434,7 +6434,7 @@
     {
       "id": "src/sandbox/iframe/index.ts#method#IframeSandbox.setRouteInfoForKeepAliveApp",
       "file": "src/sandbox/iframe/index.ts",
-      "line": 555,
+      "line": 559,
       "kind": "method",
       "symbol": "IframeSandbox.setRouteInfoForKeepAliveApp",
       "baselineStatus": "missing",
@@ -6444,7 +6444,7 @@
     {
       "id": "src/sandbox/iframe/index.ts#method#IframeSandbox.removeRouteInfoForKeepAliveApp",
       "file": "src/sandbox/iframe/index.ts",
-      "line": 563,
+      "line": 567,
       "kind": "method",
       "symbol": "IframeSandbox.removeRouteInfoForKeepAliveApp",
       "baselineStatus": "missing",
@@ -6454,7 +6454,7 @@
     {
       "id": "src/sandbox/iframe/index.ts#method#IframeSandbox.patchStaticElement",
       "file": "src/sandbox/iframe/index.ts",
-      "line": 572,
+      "line": 576,
       "kind": "method",
       "symbol": "IframeSandbox.patchStaticElement",
       "baselineStatus": "documented",
@@ -6464,7 +6464,7 @@
     {
       "id": "src/sandbox/iframe/index.ts#method#IframeSandbox.actionsBeforeExecScripts",
       "file": "src/sandbox/iframe/index.ts",
-      "line": 582,
+      "line": 586,
       "kind": "method",
       "symbol": "IframeSandbox.actionsBeforeExecScripts",
       "baselineStatus": "documented",
@@ -6474,7 +6474,7 @@
     {
       "id": "src/sandbox/iframe/index.ts#method#IframeSandbox.hijackUmdHooks",
       "file": "src/sandbox/iframe/index.ts",
-      "line": 598,
+      "line": 602,
       "kind": "method",
       "symbol": "IframeSandbox.hijackUmdHooks",
       "baselineStatus": "needs-tsdoc",
@@ -6484,7 +6484,7 @@
     {
       "id": "src/sandbox/iframe/index.ts#method#IframeSandbox.setStaticAppState",
       "file": "src/sandbox/iframe/index.ts",
-      "line": 645,
+      "line": 649,
       "kind": "method",
       "symbol": "IframeSandbox.setStaticAppState",
       "baselineStatus": "missing",
@@ -6634,7 +6634,7 @@
     {
       "id": "src/sandbox/iframe/window.ts#function#patchWindowProperty",
       "file": "src/sandbox/iframe/window.ts",
-      "line": 54,
+      "line": 55,
       "kind": "function",
       "symbol": "patchWindowProperty",
       "baselineStatus": "documented",
@@ -6644,7 +6644,7 @@
     {
       "id": "src/sandbox/iframe/window.ts#method#patchWindowProperty.value",
       "file": "src/sandbox/iframe/window.ts",
-      "line": 104,
+      "line": 105,
       "kind": "method",
       "symbol": "patchWindowProperty.value",
       "baselineStatus": "missing",
@@ -6654,7 +6654,7 @@
     {
       "id": "src/sandbox/iframe/window.ts#method#patchWindowProperty.get",
       "file": "src/sandbox/iframe/window.ts",
-      "line": 141,
+      "line": 142,
       "kind": "method",
       "symbol": "patchWindowProperty.get",
       "baselineStatus": "missing",
@@ -6664,7 +6664,7 @@
     {
       "id": "src/sandbox/iframe/window.ts#method#patchWindowProperty.set",
       "file": "src/sandbox/iframe/window.ts",
-      "line": 145,
+      "line": 146,
       "kind": "method",
       "symbol": "patchWindowProperty.set",
       "baselineStatus": "missing",
@@ -6674,7 +6674,7 @@
     {
       "id": "src/sandbox/iframe/window.ts#function#createProxyWindow",
       "file": "src/sandbox/iframe/window.ts",
-      "line": 158,
+      "line": 160,
       "kind": "function",
       "symbol": "createProxyWindow",
       "baselineStatus": "documented",
@@ -6684,7 +6684,7 @@
     {
       "id": "src/sandbox/iframe/window.ts#function#patchWindowEffect",
       "file": "src/sandbox/iframe/window.ts",
-      "line": 234,
+      "line": 237,
       "kind": "function",
       "symbol": "patchWindowEffect",
       "baselineStatus": "missing",
@@ -6694,7 +6694,7 @@
     {
       "id": "src/sandbox/iframe/window.ts#function#patchWindowEffect.getEventTarget",
       "file": "src/sandbox/iframe/window.ts",
-      "line": 240,
+      "line": 243,
       "kind": "function",
       "symbol": "patchWindowEffect.getEventTarget",
       "baselineStatus": "missing",
@@ -6704,7 +6704,7 @@
     {
       "id": "src/sandbox/iframe/window.ts#function-variable#patchWindowEffect.reset",
       "file": "src/sandbox/iframe/window.ts",
-      "line": 289,
+      "line": 288,
       "kind": "function-variable",
       "symbol": "patchWindowEffect.reset",
       "baselineStatus": "missing",
@@ -6714,7 +6714,7 @@
     {
       "id": "src/sandbox/iframe/window.ts#function-variable#patchWindowEffect.record",
       "file": "src/sandbox/iframe/window.ts",
-      "line": 301,
+      "line": 299,
       "kind": "function-variable",
       "symbol": "patchWindowEffect.record",
       "baselineStatus": "documented",
@@ -6724,7 +6724,7 @@
     {
       "id": "src/sandbox/iframe/window.ts#function-variable#patchWindowEffect.rebuild",
       "file": "src/sandbox/iframe/window.ts",
-      "line": 312,
+      "line": 310,
       "kind": "function-variable",
       "symbol": "patchWindowEffect.rebuild",
       "baselineStatus": "needs-tsdoc",
@@ -6734,7 +6734,7 @@
     {
       "id": "src/sandbox/iframe/window.ts#function-variable#patchWindowEffect.release",
       "file": "src/sandbox/iframe/window.ts",
-      "line": 324,
+      "line": 325,
       "kind": "function-variable",
       "symbol": "patchWindowEffect.release",
       "baselineStatus": "missing",
@@ -7024,7 +7024,7 @@
     {
       "id": "src/sandbox/router/api.ts#function#createRouterApi.createNavigationMethod",
       "file": "src/sandbox/router/api.ts",
-      "line": 173,
+      "line": 174,
       "kind": "function",
       "symbol": "createRouterApi.createNavigationMethod",
       "baselineStatus": "documented",
@@ -7034,7 +7034,7 @@
     {
       "id": "src/sandbox/router/api.ts#function#createRouterApi.createRawHistoryMethod",
       "file": "src/sandbox/router/api.ts",
-      "line": 218,
+      "line": 201,
       "kind": "function",
       "symbol": "createRouterApi.createRawHistoryMethod",
       "baselineStatus": "needs-tsdoc",
@@ -7044,7 +7044,7 @@
     {
       "id": "src/sandbox/router/api.ts#function#createRouterApi.runGuards",
       "file": "src/sandbox/router/api.ts",
-      "line": 242,
+      "line": 225,
       "kind": "function",
       "symbol": "createRouterApi.runGuards",
       "baselineStatus": "documented",
@@ -7054,7 +7054,7 @@
     {
       "id": "src/sandbox/router/api.ts#function#createRouterApi.executeNavigationGuard",
       "file": "src/sandbox/router/api.ts",
-      "line": 271,
+      "line": 254,
       "kind": "function",
       "symbol": "createRouterApi.executeNavigationGuard",
       "baselineStatus": "documented",
@@ -7064,7 +7064,7 @@
     {
       "id": "src/sandbox/router/api.ts#function#createRouterApi.clearRouterWhenUnmount",
       "file": "src/sandbox/router/api.ts",
-      "line": 288,
+      "line": 271,
       "kind": "function",
       "symbol": "createRouterApi.clearRouterWhenUnmount",
       "baselineStatus": "missing",
@@ -7074,7 +7074,7 @@
     {
       "id": "src/sandbox/router/api.ts#function#createRouterApi.commonHandlerForAttachToURL",
       "file": "src/sandbox/router/api.ts",
-      "line": 299,
+      "line": 282,
       "kind": "function",
       "symbol": "createRouterApi.commonHandlerForAttachToURL",
       "baselineStatus": "documented",
@@ -7084,7 +7084,7 @@
     {
       "id": "src/sandbox/router/api.ts#function#createRouterApi.attachToURL",
       "file": "src/sandbox/router/api.ts",
-      "line": 315,
+      "line": 298,
       "kind": "function",
       "symbol": "createRouterApi.attachToURL",
       "baselineStatus": "documented",
@@ -7094,7 +7094,7 @@
     {
       "id": "src/sandbox/router/api.ts#function#createRouterApi.attachAllToURL",
       "file": "src/sandbox/router/api.ts",
-      "line": 328,
+      "line": 311,
       "kind": "function",
       "symbol": "createRouterApi.attachAllToURL",
       "baselineStatus": "documented",
@@ -7104,7 +7104,7 @@
     {
       "id": "src/sandbox/router/api.ts#function#createRouterApi.createDefaultPageApi",
       "file": "src/sandbox/router/api.ts",
-      "line": 341,
+      "line": 324,
       "kind": "function",
       "symbol": "createRouterApi.createDefaultPageApi",
       "baselineStatus": "missing",
@@ -7114,7 +7114,7 @@
     {
       "id": "src/sandbox/router/api.ts#function#createRouterApi.createDefaultPageApi.setDefaultPage",
       "file": "src/sandbox/router/api.ts",
-      "line": 354,
+      "line": 337,
       "kind": "function",
       "symbol": "createRouterApi.createDefaultPageApi.setDefaultPage",
       "baselineStatus": "documented",
@@ -7124,7 +7124,7 @@
     {
       "id": "src/sandbox/router/api.ts#function#createRouterApi.createDefaultPageApi.removeDefaultPage",
       "file": "src/sandbox/router/api.ts",
-      "line": 373,
+      "line": 356,
       "kind": "function",
       "symbol": "createRouterApi.createDefaultPageApi.removeDefaultPage",
       "baselineStatus": "missing",
@@ -7134,7 +7134,7 @@
     {
       "id": "src/sandbox/router/api.ts#function#createRouterApi.createBaseRouterApi",
       "file": "src/sandbox/router/api.ts",
-      "line": 390,
+      "line": 373,
       "kind": "function",
       "symbol": "createRouterApi.createBaseRouterApi",
       "baselineStatus": "missing",
@@ -7144,7 +7144,7 @@
     {
       "id": "src/sandbox/router/api.ts#function#createRouterApi.createBaseRouterApi.setBaseAppRouter",
       "file": "src/sandbox/router/api.ts",
-      "line": 400,
+      "line": 383,
       "kind": "function",
       "symbol": "createRouterApi.createBaseRouterApi.setBaseAppRouter",
       "baselineStatus": "missing",
@@ -7154,7 +7154,7 @@
     {
       "id": "src/sandbox/router/api.ts#method#createRouterApi.createBaseRouterApi.setBaseAppRouter.get",
       "file": "src/sandbox/router/api.ts",
-      "line": 404,
+      "line": 387,
       "kind": "method",
       "symbol": "createRouterApi.createBaseRouterApi.setBaseAppRouter.get",
       "baselineStatus": "missing",
@@ -7164,7 +7164,7 @@
     {
       "id": "src/sandbox/router/api.ts#method#createRouterApi.createBaseRouterApi.setBaseAppRouter.set",
       "file": "src/sandbox/router/api.ts",
-      "line": 409,
+      "line": 392,
       "kind": "method",
       "symbol": "createRouterApi.createBaseRouterApi.setBaseAppRouter.set",
       "baselineStatus": "missing",
@@ -7174,7 +7174,7 @@
     {
       "id": "src/sandbox/router/api.ts#constant#{\n  router,\n  executeNavigationGuard,\n  clearRouterWhenUnmount,\n}",
       "file": "src/sandbox/router/api.ts",
-      "line": 456,
+      "line": 439,
       "kind": "constant",
       "symbol": "{\n  router,\n  executeNavigationGuard,\n  clearRouterWhenUnmount,\n}",
       "baselineStatus": "missing",
@@ -7314,7 +7314,7 @@
     {
       "id": "src/sandbox/router/core.ts#function#setMicroPathToURL",
       "file": "src/sandbox/router/core.ts",
-      "line": 193,
+      "line": 189,
       "kind": "function",
       "symbol": "setMicroPathToURL",
       "baselineStatus": "documented",
@@ -7324,7 +7324,7 @@
     {
       "id": "src/sandbox/router/core.ts#function#removeMicroPathFromURL",
       "file": "src/sandbox/router/core.ts",
-      "line": 253,
+      "line": 247,
       "kind": "function",
       "symbol": "removeMicroPathFromURL",
       "baselineStatus": "documented",
@@ -7334,7 +7334,7 @@
     {
       "id": "src/sandbox/router/core.ts#function#getQueryObjectFromURL",
       "file": "src/sandbox/router/core.ts",
-      "line": 283,
+      "line": 277,
       "kind": "function",
       "symbol": "getQueryObjectFromURL",
       "baselineStatus": "documented",
@@ -7344,7 +7344,7 @@
     {
       "id": "src/sandbox/router/core.ts#function#getNoHashMicroPathFromURL",
       "file": "src/sandbox/router/core.ts",
-      "line": 304,
+      "line": 298,
       "kind": "function",
       "symbol": "getNoHashMicroPathFromURL",
       "baselineStatus": "documented",
@@ -7354,7 +7354,7 @@
     {
       "id": "src/sandbox/router/core.ts#function#isEffectiveApp",
       "file": "src/sandbox/router/core.ts",
-      "line": 320,
+      "line": 314,
       "kind": "function",
       "symbol": "isEffectiveApp",
       "baselineStatus": "documented",
@@ -7364,7 +7364,7 @@
     {
       "id": "src/sandbox/router/core.ts#function#getRouterMode",
       "file": "src/sandbox/router/core.ts",
-      "line": 333,
+      "line": 323,
       "kind": "function",
       "symbol": "getRouterMode",
       "baselineStatus": "documented",
@@ -7374,7 +7374,7 @@
     {
       "id": "src/sandbox/router/core.ts#function#isRouterModeSearch",
       "file": "src/sandbox/router/core.ts",
-      "line": 338,
+      "line": 328,
       "kind": "function",
       "symbol": "isRouterModeSearch",
       "baselineStatus": "needs-tsdoc",
@@ -7384,7 +7384,7 @@
     {
       "id": "src/sandbox/router/core.ts#function#isRouterModeState",
       "file": "src/sandbox/router/core.ts",
-      "line": 343,
+      "line": 333,
       "kind": "function",
       "symbol": "isRouterModeState",
       "baselineStatus": "needs-tsdoc",
@@ -7394,7 +7394,7 @@
     {
       "id": "src/sandbox/router/core.ts#function#isRouterModeNative",
       "file": "src/sandbox/router/core.ts",
-      "line": 348,
+      "line": 338,
       "kind": "function",
       "symbol": "isRouterModeNative",
       "baselineStatus": "needs-tsdoc",
@@ -7404,7 +7404,7 @@
     {
       "id": "src/sandbox/router/core.ts#function#isRouterModeNativeScope",
       "file": "src/sandbox/router/core.ts",
-      "line": 353,
+      "line": 343,
       "kind": "function",
       "symbol": "isRouterModeNativeScope",
       "baselineStatus": "needs-tsdoc",
@@ -7414,7 +7414,7 @@
     {
       "id": "src/sandbox/router/core.ts#function#isRouterModePure",
       "file": "src/sandbox/router/core.ts",
-      "line": 358,
+      "line": 348,
       "kind": "function",
       "symbol": "isRouterModePure",
       "baselineStatus": "needs-tsdoc",
@@ -7424,7 +7424,7 @@
     {
       "id": "src/sandbox/router/core.ts#function#isRouterModeCustom",
       "file": "src/sandbox/router/core.ts",
-      "line": 365,
+      "line": 355,
       "kind": "function",
       "symbol": "isRouterModeCustom",
       "baselineStatus": "documented",
@@ -7434,7 +7434,7 @@
     {
       "id": "src/sandbox/router/core.ts#function#initRouterMode",
       "file": "src/sandbox/router/core.ts",
-      "line": 381,
+      "line": 371,
       "kind": "function",
       "symbol": "initRouterMode",
       "baselineStatus": "documented",
@@ -7444,7 +7444,7 @@
     {
       "id": "src/sandbox/router/event.ts#function#addHistoryListener",
       "file": "src/sandbox/router/event.ts",
-      "line": 43,
+      "line": 45,
       "kind": "function",
       "symbol": "addHistoryListener",
       "baselineStatus": "documented",
@@ -7454,7 +7454,7 @@
     {
       "id": "src/sandbox/router/event.ts#function-variable#addHistoryListener.popStateHandler",
       "file": "src/sandbox/router/event.ts",
-      "line": 48,
+      "line": 50,
       "kind": "function-variable",
       "symbol": "addHistoryListener.popStateHandler",
       "baselineStatus": "needs-tsdoc",
@@ -7464,7 +7464,7 @@
     {
       "id": "src/sandbox/router/event.ts#function#updateMicroLocationWithEvent",
       "file": "src/sandbox/router/event.ts",
-      "line": 99,
+      "line": 102,
       "kind": "function",
       "symbol": "updateMicroLocationWithEvent",
       "baselineStatus": "documented",
@@ -7474,7 +7474,7 @@
     {
       "id": "src/sandbox/router/event.ts#function#dispatchPopStateEventToMicroApp",
       "file": "src/sandbox/router/event.ts",
-      "line": 139,
+      "line": 142,
       "kind": "function",
       "symbol": "dispatchPopStateEventToMicroApp",
       "baselineStatus": "documented",
@@ -7484,7 +7484,7 @@
     {
       "id": "src/sandbox/router/event.ts#function#dispatchHashChangeEventToMicroApp",
       "file": "src/sandbox/router/event.ts",
-      "line": 177,
+      "line": 170,
       "kind": "function",
       "symbol": "dispatchHashChangeEventToMicroApp",
       "baselineStatus": "documented",
@@ -7494,7 +7494,7 @@
     {
       "id": "src/sandbox/router/event.ts#function#dispatchNativePopStateEvent",
       "file": "src/sandbox/router/event.ts",
-      "line": 204,
+      "line": 197,
       "kind": "function",
       "symbol": "dispatchNativePopStateEvent",
       "baselineStatus": "documented",
@@ -7504,7 +7504,7 @@
     {
       "id": "src/sandbox/router/event.ts#function#dispatchNativeHashChangeEvent",
       "file": "src/sandbox/router/event.ts",
-      "line": 215,
+      "line": 208,
       "kind": "function",
       "symbol": "dispatchNativeHashChangeEvent",
       "baselineStatus": "documented",
@@ -7514,7 +7514,7 @@
     {
       "id": "src/sandbox/router/event.ts#function#dispatchNativeEvent",
       "file": "src/sandbox/router/event.ts",
-      "line": 238,
+      "line": 231,
       "kind": "function",
       "symbol": "dispatchNativeEvent",
       "baselineStatus": "documented",
@@ -7524,7 +7524,7 @@
     {
       "id": "src/sandbox/router/history.ts#function#createMicroHistory",
       "file": "src/sandbox/router/history.ts",
-      "line": 60,
+      "line": 61,
       "kind": "function",
       "symbol": "createMicroHistory",
       "baselineStatus": "documented",
@@ -7534,7 +7534,7 @@
     {
       "id": "src/sandbox/router/history.ts#function#createMicroHistory.getMicroHistoryMethod",
       "file": "src/sandbox/router/history.ts",
-      "line": 69,
+      "line": 70,
       "kind": "function",
       "symbol": "createMicroHistory.getMicroHistoryMethod",
       "baselineStatus": "missing",
@@ -7544,7 +7544,7 @@
     {
       "id": "src/sandbox/router/history.ts#method#createMicroHistory.go",
       "file": "src/sandbox/router/history.ts",
-      "line": 101,
+      "line": 102,
       "kind": "method",
       "symbol": "createMicroHistory.go",
       "baselineStatus": "missing",
@@ -7554,7 +7554,7 @@
     {
       "id": "src/sandbox/router/history.ts#method#createMicroHistory.get",
       "file": "src/sandbox/router/history.ts",
-      "line": 111,
+      "line": 112,
       "kind": "method",
       "symbol": "createMicroHistory.get",
       "baselineStatus": "missing",
@@ -7564,7 +7564,7 @@
     {
       "id": "src/sandbox/router/history.ts#method#createMicroHistory.set",
       "file": "src/sandbox/router/history.ts",
-      "line": 122,
+      "line": 123,
       "kind": "method",
       "symbol": "createMicroHistory.set",
       "baselineStatus": "missing",
@@ -7574,7 +7574,7 @@
     {
       "id": "src/sandbox/router/history.ts#function#nativeHistoryNavigate",
       "file": "src/sandbox/router/history.ts",
-      "line": 148,
+      "line": 149,
       "kind": "function",
       "symbol": "nativeHistoryNavigate",
       "baselineStatus": "documented",
@@ -7584,7 +7584,7 @@
     {
       "id": "src/sandbox/router/history.ts#function#navigateWithNativeEvent",
       "file": "src/sandbox/router/history.ts",
-      "line": 176,
+      "line": 177,
       "kind": "function",
       "symbol": "navigateWithNativeEvent",
       "baselineStatus": "documented",
@@ -7594,7 +7594,7 @@
     {
       "id": "src/sandbox/router/history.ts#function#attachRouteToBrowserURL",
       "file": "src/sandbox/router/history.ts",
-      "line": 209,
+      "line": 210,
       "kind": "function",
       "symbol": "attachRouteToBrowserURL",
       "baselineStatus": "documented",
@@ -7604,7 +7604,7 @@
     {
       "id": "src/sandbox/router/history.ts#function#reWriteHistoryMethod",
       "file": "src/sandbox/router/history.ts",
-      "line": 229,
+      "line": 230,
       "kind": "function",
       "symbol": "reWriteHistoryMethod",
       "baselineStatus": "documented",
@@ -7614,7 +7614,7 @@
     {
       "id": "src/sandbox/router/history.ts#function#patchHistory",
       "file": "src/sandbox/router/history.ts",
-      "line": 299,
+      "line": 292,
       "kind": "function",
       "symbol": "patchHistory",
       "baselineStatus": "documented",
@@ -7624,7 +7624,7 @@
     {
       "id": "src/sandbox/router/history.ts#function#releasePatchHistory",
       "file": "src/sandbox/router/history.ts",
-      "line": 312,
+      "line": 305,
       "kind": "function",
       "symbol": "releasePatchHistory",
       "baselineStatus": "missing",
@@ -7734,7 +7734,7 @@
     {
       "id": "src/sandbox/router/location.ts#function#createMicroLocation.handleForPathNameAndSearch",
       "file": "src/sandbox/router/location.ts",
-      "line": 178,
+      "line": 177,
       "kind": "function",
       "symbol": "createMicroLocation.handleForPathNameAndSearch",
       "baselineStatus": "documented",
@@ -7744,7 +7744,7 @@
     {
       "id": "src/sandbox/router/location.ts#function-variable#createMicroLocation.createLocationMethod",
       "file": "src/sandbox/router/location.ts",
-      "line": 204,
+      "line": 203,
       "kind": "function-variable",
       "symbol": "createMicroLocation.createLocationMethod",
       "baselineStatus": "missing",
@@ -7754,7 +7754,7 @@
     {
       "id": "src/sandbox/router/location.ts#function-variable#createMicroLocation.reload",
       "file": "src/sandbox/router/location.ts",
-      "line": 222,
+      "line": 221,
       "kind": "function-variable",
       "symbol": "createMicroLocation.reload",
       "baselineStatus": "missing",
@@ -7764,7 +7764,7 @@
     {
       "id": "src/sandbox/router/location.ts#function#createGuardLocation",
       "file": "src/sandbox/router/location.ts",
-      "line": 348,
+      "line": 347,
       "kind": "function",
       "symbol": "createGuardLocation",
       "baselineStatus": "documented",
@@ -7774,7 +7774,7 @@
     {
       "id": "src/sandbox/router/location.ts#function#autoTriggerNavigationGuard",
       "file": "src/sandbox/router/location.ts",
-      "line": 361,
+      "line": 360,
       "kind": "function",
       "symbol": "autoTriggerNavigationGuard",
       "baselineStatus": "needs-tsdoc",
@@ -7784,7 +7784,7 @@
     {
       "id": "src/sandbox/router/location.ts#function#updateMicroLocation",
       "file": "src/sandbox/router/location.ts",
-      "line": 382,
+      "line": 381,
       "kind": "function",
       "symbol": "updateMicroLocation",
       "baselineStatus": "documented",
@@ -7994,7 +7994,7 @@
     {
       "id": "src/sandbox/scoped_css.ts#method#CSSParser.styleDeclarations",
       "file": "src/sandbox/scoped_css.ts",
-      "line": 217,
+      "line": 218,
       "kind": "method",
       "symbol": "CSSParser.styleDeclarations",
       "baselineStatus": "needs-tsdoc",
@@ -8004,7 +8004,7 @@
     {
       "id": "src/sandbox/scoped_css.ts#method#CSSParser.matchAllDeclarations",
       "file": "src/sandbox/scoped_css.ts",
-      "line": 235,
+      "line": 237,
       "kind": "method",
       "symbol": "CSSParser.matchAllDeclarations",
       "baselineStatus": "missing",
@@ -8014,7 +8014,7 @@
     {
       "id": "src/sandbox/scoped_css.ts#method#CSSParser.matchAtRule",
       "file": "src/sandbox/scoped_css.ts",
-      "line": 291,
+      "line": 293,
       "kind": "method",
       "symbol": "CSSParser.matchAtRule",
       "baselineStatus": "missing",
@@ -8024,7 +8024,7 @@
     {
       "id": "src/sandbox/scoped_css.ts#method#CSSParser.keyframesRule",
       "file": "src/sandbox/scoped_css.ts",
-      "line": 325,
+      "line": 327,
       "kind": "method",
       "symbol": "CSSParser.keyframesRule",
       "baselineStatus": "needs-tsdoc",
@@ -8034,7 +8034,7 @@
     {
       "id": "src/sandbox/scoped_css.ts#method#CSSParser.keyframeRule",
       "file": "src/sandbox/scoped_css.ts",
-      "line": 351,
+      "line": 353,
       "kind": "method",
       "symbol": "CSSParser.keyframeRule",
       "baselineStatus": "missing",
@@ -8044,7 +8044,7 @@
     {
       "id": "src/sandbox/scoped_css.ts#method#CSSParser.customMediaRule",
       "file": "src/sandbox/scoped_css.ts",
-      "line": 374,
+      "line": 376,
       "kind": "method",
       "symbol": "CSSParser.customMediaRule",
       "baselineStatus": "needs-tsdoc",
@@ -8054,7 +8054,7 @@
     {
       "id": "src/sandbox/scoped_css.ts#method#CSSParser.pageRule",
       "file": "src/sandbox/scoped_css.ts",
-      "line": 388,
+      "line": 390,
       "kind": "method",
       "symbol": "CSSParser.pageRule",
       "baselineStatus": "needs-tsdoc",
@@ -8064,7 +8064,7 @@
     {
       "id": "src/sandbox/scoped_css.ts#method#CSSParser.fontFaceRule",
       "file": "src/sandbox/scoped_css.ts",
-      "line": 405,
+      "line": 407,
       "kind": "method",
       "symbol": "CSSParser.fontFaceRule",
       "baselineStatus": "needs-tsdoc",
@@ -8074,7 +8074,7 @@
     {
       "id": "src/sandbox/scoped_css.ts#method#CSSParser.layerRule",
       "file": "src/sandbox/scoped_css.ts",
-      "line": 417,
+      "line": 419,
       "kind": "method",
       "symbol": "CSSParser.layerRule",
       "baselineStatus": "needs-tsdoc",
@@ -8084,7 +8084,7 @@
     {
       "id": "src/sandbox/scoped_css.ts#field#CSSParser.mediaRule",
       "file": "src/sandbox/scoped_css.ts",
-      "line": 441,
+      "line": 443,
       "kind": "field",
       "symbol": "CSSParser.mediaRule",
       "baselineStatus": "documented",
@@ -8094,7 +8094,7 @@
     {
       "id": "src/sandbox/scoped_css.ts#field#CSSParser.supportsRule",
       "file": "src/sandbox/scoped_css.ts",
-      "line": 443,
+      "line": 445,
       "kind": "field",
       "symbol": "CSSParser.supportsRule",
       "baselineStatus": "documented",
@@ -8104,7 +8104,7 @@
     {
       "id": "src/sandbox/scoped_css.ts#field#CSSParser.documentRule",
       "file": "src/sandbox/scoped_css.ts",
-      "line": 445,
+      "line": 447,
       "kind": "field",
       "symbol": "CSSParser.documentRule",
       "baselineStatus": "missing",
@@ -8114,7 +8114,7 @@
     {
       "id": "src/sandbox/scoped_css.ts#field#CSSParser.hostRule",
       "file": "src/sandbox/scoped_css.ts",
-      "line": 447,
+      "line": 449,
       "kind": "field",
       "symbol": "CSSParser.hostRule",
       "baselineStatus": "missing",
@@ -8124,7 +8124,7 @@
     {
       "id": "src/sandbox/scoped_css.ts#field#CSSParser.importRule",
       "file": "src/sandbox/scoped_css.ts",
-      "line": 451,
+      "line": 453,
       "kind": "field",
       "symbol": "CSSParser.importRule",
       "baselineStatus": "documented",
@@ -8134,7 +8134,7 @@
     {
       "id": "src/sandbox/scoped_css.ts#field#CSSParser.charsetRule",
       "file": "src/sandbox/scoped_css.ts",
-      "line": 453,
+      "line": 455,
       "kind": "field",
       "symbol": "CSSParser.charsetRule",
       "baselineStatus": "documented",
@@ -8144,7 +8144,7 @@
     {
       "id": "src/sandbox/scoped_css.ts#field#CSSParser.namespaceRule",
       "file": "src/sandbox/scoped_css.ts",
-      "line": 455,
+      "line": 457,
       "kind": "field",
       "symbol": "CSSParser.namespaceRule",
       "baselineStatus": "documented",
@@ -8154,7 +8154,7 @@
     {
       "id": "src/sandbox/scoped_css.ts#field#CSSParser.containerRule",
       "file": "src/sandbox/scoped_css.ts",
-      "line": 457,
+      "line": 459,
       "kind": "field",
       "symbol": "CSSParser.containerRule",
       "baselineStatus": "documented",
@@ -8164,7 +8164,7 @@
     {
       "id": "src/sandbox/scoped_css.ts#method#CSSParser.createMatcherForRuleWithChildRule",
       "file": "src/sandbox/scoped_css.ts",
-      "line": 469,
+      "line": 471,
       "kind": "method",
       "symbol": "CSSParser.createMatcherForRuleWithChildRule",
       "baselineStatus": "needs-tsdoc",
@@ -8174,7 +8174,7 @@
     {
       "id": "src/sandbox/scoped_css.ts#method#CSSParser.createMatcherForNoneBraceAtRule",
       "file": "src/sandbox/scoped_css.ts",
-      "line": 493,
+      "line": 495,
       "kind": "method",
       "symbol": "CSSParser.createMatcherForNoneBraceAtRule",
       "baselineStatus": "needs-tsdoc",
@@ -8184,7 +8184,7 @@
     {
       "id": "src/sandbox/scoped_css.ts#method#CSSParser.commonHandlerForAtRuleWithSelfRule",
       "file": "src/sandbox/scoped_css.ts",
-      "line": 508,
+      "line": 510,
       "kind": "method",
       "symbol": "CSSParser.commonHandlerForAtRuleWithSelfRule",
       "baselineStatus": "needs-tsdoc",
@@ -8194,7 +8194,7 @@
     {
       "id": "src/sandbox/scoped_css.ts#method#CSSParser.matchComments",
       "file": "src/sandbox/scoped_css.ts",
-      "line": 521,
+      "line": 523,
       "kind": "method",
       "symbol": "CSSParser.matchComments",
       "baselineStatus": "needs-tsdoc",
@@ -8204,7 +8204,7 @@
     {
       "id": "src/sandbox/scoped_css.ts#method#CSSParser.matchComment",
       "file": "src/sandbox/scoped_css.ts",
-      "line": 530,
+      "line": 532,
       "kind": "method",
       "symbol": "CSSParser.matchComment",
       "baselineStatus": "needs-tsdoc",
@@ -8214,7 +8214,7 @@
     {
       "id": "src/sandbox/scoped_css.ts#method#CSSParser.commonMatch",
       "file": "src/sandbox/scoped_css.ts",
-      "line": 584,
+      "line": 586,
       "kind": "method",
       "symbol": "CSSParser.commonMatch",
       "baselineStatus": "missing",
@@ -8224,7 +8224,7 @@
     {
       "id": "src/sandbox/scoped_css.ts#method#CSSParser.matchOpenBrace",
       "file": "src/sandbox/scoped_css.ts",
-      "line": 594,
+      "line": 596,
       "kind": "method",
       "symbol": "CSSParser.matchOpenBrace",
       "baselineStatus": "missing",
@@ -8234,7 +8234,7 @@
     {
       "id": "src/sandbox/scoped_css.ts#method#CSSParser.matchCloseBrace",
       "file": "src/sandbox/scoped_css.ts",
-      "line": 599,
+      "line": 601,
       "kind": "method",
       "symbol": "CSSParser.matchCloseBrace",
       "baselineStatus": "missing",
@@ -8244,7 +8244,7 @@
     {
       "id": "src/sandbox/scoped_css.ts#method#CSSParser.matchLeadingSpaces",
       "file": "src/sandbox/scoped_css.ts",
-      "line": 604,
+      "line": 606,
       "kind": "method",
       "symbol": "CSSParser.matchLeadingSpaces",
       "baselineStatus": "needs-tsdoc",
@@ -8254,7 +8254,7 @@
     {
       "id": "src/sandbox/scoped_css.ts#method#CSSParser.recordResult",
       "file": "src/sandbox/scoped_css.ts",
-      "line": 617,
+      "line": 619,
       "kind": "method",
       "symbol": "CSSParser.recordResult",
       "baselineStatus": "needs-tsdoc",
@@ -8264,7 +8264,7 @@
     {
       "id": "src/sandbox/scoped_css.ts#method#CSSParser.printError",
       "file": "src/sandbox/scoped_css.ts",
-      "line": 633,
+      "line": 635,
       "kind": "method",
       "symbol": "CSSParser.printError",
       "baselineStatus": "missing",
@@ -8274,7 +8274,7 @@
     {
       "id": "src/sandbox/scoped_css.ts#function#commonAction",
       "file": "src/sandbox/scoped_css.ts",
-      "line": 652,
+      "line": 656,
       "kind": "function",
       "symbol": "commonAction",
       "baselineStatus": "documented",
@@ -8284,7 +8284,7 @@
     {
       "id": "src/sandbox/scoped_css.ts#function#scopedCSS",
       "file": "src/sandbox/scoped_css.ts",
-      "line": 693,
+      "line": 697,
       "kind": "function",
       "symbol": "scopedCSS",
       "baselineStatus": "documented",
@@ -8294,7 +8294,7 @@
     {
       "id": "src/sandbox/scoped_css.ts#function-variable#scopedCSS.escapeRegExp",
       "file": "src/sandbox/scoped_css.ts",
-      "line": 709,
+      "line": 713,
       "kind": "function-variable",
       "symbol": "scopedCSS.escapeRegExp",
       "baselineStatus": "missing",
@@ -8304,7 +8304,7 @@
     {
       "id": "src/sandbox/scoped_css.ts#function#createPrefix",
       "file": "src/sandbox/scoped_css.ts",
-      "line": 754,
+      "line": 758,
       "kind": "function",
       "symbol": "createPrefix",
       "baselineStatus": "missing",
@@ -8444,7 +8444,7 @@
     {
       "id": "src/sandbox/with/document.ts#function-variable#createProxyDocument.release",
       "file": "src/sandbox/with/document.ts",
-      "line": 185,
+      "line": 188,
       "kind": "function-variable",
       "symbol": "createProxyDocument.release",
       "baselineStatus": "needs-tsdoc",
@@ -8454,7 +8454,7 @@
     {
       "id": "src/sandbox/with/document.ts#function-variable#createProxyDocument.genProxyDocumentProps",
       "file": "src/sandbox/with/document.ts",
-      "line": 204,
+      "line": 207,
       "kind": "function-variable",
       "symbol": "createProxyDocument.genProxyDocumentProps",
       "baselineStatus": "missing",
@@ -8464,7 +8464,7 @@
     {
       "id": "src/sandbox/with/document.ts#function#createMicroDocument",
       "file": "src/sandbox/with/document.ts",
-      "line": 277,
+      "line": 280,
       "kind": "function",
       "symbol": "createMicroDocument",
       "baselineStatus": "documented",
@@ -8474,7 +8474,7 @@
     {
       "id": "src/sandbox/with/document.ts#class#createMicroDocument.MicroDocument",
       "file": "src/sandbox/with/document.ts",
-      "line": 281,
+      "line": 284,
       "kind": "class",
       "symbol": "createMicroDocument.MicroDocument",
       "baselineStatus": "missing",
@@ -8484,7 +8484,7 @@
     {
       "id": "src/sandbox/with/document.ts#method#createMicroDocument.MicroDocument.[Symbol.hasInstance]",
       "file": "src/sandbox/with/document.ts",
-      "line": 283,
+      "line": 286,
       "kind": "method",
       "symbol": "createMicroDocument.MicroDocument.[Symbol.hasInstance]",
       "baselineStatus": "missing",
@@ -8494,7 +8494,7 @@
     {
       "id": "src/sandbox/with/document.ts#method#createMicroDocument.get",
       "file": "src/sandbox/with/document.ts",
-      "line": 306,
+      "line": 309,
       "kind": "method",
       "symbol": "createMicroDocument.get",
       "baselineStatus": "missing",
@@ -8504,7 +8504,7 @@
     {
       "id": "src/sandbox/with/document.ts#method#createMicroDocument.set",
       "file": "src/sandbox/with/document.ts",
-      "line": 311,
+      "line": 314,
       "kind": "method",
       "symbol": "createMicroDocument.set",
       "baselineStatus": "missing",
@@ -8684,7 +8684,7 @@
     {
       "id": "src/sandbox/with/index.ts#class#WithSandBox",
       "file": "src/sandbox/with/index.ts",
-      "line": 124,
+      "line": 125,
       "kind": "class",
       "symbol": "WithSandBox",
       "baselineStatus": "missing",
@@ -8694,7 +8694,7 @@
     {
       "id": "src/sandbox/with/index.ts#field#WithSandBox.activeCount",
       "file": "src/sandbox/with/index.ts",
-      "line": 126,
+      "line": 127,
       "kind": "field",
       "symbol": "WithSandBox.activeCount",
       "baselineStatus": "missing",
@@ -8704,7 +8704,7 @@
     {
       "id": "src/sandbox/with/index.ts#field#WithSandBox.active",
       "file": "src/sandbox/with/index.ts",
-      "line": 128,
+      "line": 129,
       "kind": "field",
       "symbol": "WithSandBox.active",
       "baselineStatus": "missing",
@@ -8714,7 +8714,7 @@
     {
       "id": "src/sandbox/with/index.ts#field#WithSandBox.windowEffect",
       "file": "src/sandbox/with/index.ts",
-      "line": 130,
+      "line": 131,
       "kind": "field",
       "symbol": "WithSandBox.windowEffect",
       "baselineStatus": "missing",
@@ -8724,7 +8724,7 @@
     {
       "id": "src/sandbox/with/index.ts#field#WithSandBox.documentEffect",
       "file": "src/sandbox/with/index.ts",
-      "line": 132,
+      "line": 133,
       "kind": "field",
       "symbol": "WithSandBox.documentEffect",
       "baselineStatus": "missing",
@@ -8734,7 +8734,7 @@
     {
       "id": "src/sandbox/with/index.ts#field#WithSandBox.removeHistoryListener",
       "file": "src/sandbox/with/index.ts",
-      "line": 134,
+      "line": 135,
       "kind": "field",
       "symbol": "WithSandBox.removeHistoryListener",
       "baselineStatus": "missing",
@@ -8744,7 +8744,7 @@
     {
       "id": "src/sandbox/with/index.ts#field#WithSandBox.proxyWindow",
       "file": "src/sandbox/with/index.ts",
-      "line": 136,
+      "line": 137,
       "kind": "field",
       "symbol": "WithSandBox.proxyWindow",
       "baselineStatus": "missing",
@@ -8754,7 +8754,7 @@
     {
       "id": "src/sandbox/with/index.ts#field#WithSandBox.microAppWindow",
       "file": "src/sandbox/with/index.ts",
-      "line": 138,
+      "line": 139,
       "kind": "field",
       "symbol": "WithSandBox.microAppWindow",
       "baselineStatus": "missing",
@@ -8764,7 +8764,7 @@
     {
       "id": "src/sandbox/with/index.ts#constructor#WithSandBox.constructor",
       "file": "src/sandbox/with/index.ts",
-      "line": 146,
+      "line": 150,
       "kind": "constructor",
       "symbol": "WithSandBox.constructor",
       "baselineStatus": "missing",
@@ -8774,7 +8774,7 @@
     {
       "id": "src/sandbox/with/index.ts#method#WithSandBox.start",
       "file": "src/sandbox/with/index.ts",
-      "line": 176,
+      "line": 180,
       "kind": "method",
       "symbol": "WithSandBox.start",
       "baselineStatus": "documented",
@@ -8784,7 +8784,7 @@
     {
       "id": "src/sandbox/with/index.ts#method#WithSandBox.stop",
       "file": "src/sandbox/with/index.ts",
-      "line": 238,
+      "line": 242,
       "kind": "method",
       "symbol": "WithSandBox.stop",
       "baselineStatus": "documented",
@@ -8794,7 +8794,7 @@
     {
       "id": "src/sandbox/with/index.ts#method#WithSandBox.initStaticGlobalKeys",
       "file": "src/sandbox/with/index.ts",
-      "line": 299,
+      "line": 303,
       "kind": "method",
       "symbol": "WithSandBox.initStaticGlobalKeys",
       "baselineStatus": "documented",
@@ -8804,7 +8804,7 @@
     {
       "id": "src/sandbox/with/index.ts#method#WithSandBox.recordAndReleaseEffect",
       "file": "src/sandbox/with/index.ts",
-      "line": 334,
+      "line": 338,
       "kind": "method",
       "symbol": "WithSandBox.recordAndReleaseEffect",
       "baselineStatus": "documented",
@@ -8814,7 +8814,7 @@
     {
       "id": "src/sandbox/with/index.ts#method#WithSandBox.resetEffectSnapshot",
       "file": "src/sandbox/with/index.ts",
-      "line": 351,
+      "line": 355,
       "kind": "method",
       "symbol": "WithSandBox.resetEffectSnapshot",
       "baselineStatus": "documented",
@@ -8824,7 +8824,7 @@
     {
       "id": "src/sandbox/with/index.ts#method#WithSandBox.recordEffectSnapshot",
       "file": "src/sandbox/with/index.ts",
-      "line": 362,
+      "line": 367,
       "kind": "method",
       "symbol": "WithSandBox.recordEffectSnapshot",
       "baselineStatus": "documented",
@@ -8834,7 +8834,7 @@
     {
       "id": "src/sandbox/with/index.ts#method#WithSandBox.rebuildEffectSnapshot",
       "file": "src/sandbox/with/index.ts",
-      "line": 369,
+      "line": 374,
       "kind": "method",
       "symbol": "WithSandBox.rebuildEffectSnapshot",
       "baselineStatus": "needs-tsdoc",
@@ -8844,7 +8844,7 @@
     {
       "id": "src/sandbox/with/index.ts#method#WithSandBox.releaseGlobalEffect",
       "file": "src/sandbox/with/index.ts",
-      "line": 387,
+      "line": 393,
       "kind": "method",
       "symbol": "WithSandBox.releaseGlobalEffect",
       "baselineStatus": "documented",
@@ -8854,7 +8854,7 @@
     {
       "id": "src/sandbox/with/index.ts#method#WithSandBox.getSpecialProperties",
       "file": "src/sandbox/with/index.ts",
-      "line": 410,
+      "line": 416,
       "kind": "method",
       "symbol": "WithSandBox.getSpecialProperties",
       "baselineStatus": "documented",
@@ -8864,7 +8864,7 @@
     {
       "id": "src/sandbox/with/index.ts#method#WithSandBox.commonActionForSpecialProperties",
       "file": "src/sandbox/with/index.ts",
-      "line": 422,
+      "line": 428,
       "kind": "method",
       "symbol": "WithSandBox.commonActionForSpecialProperties",
       "baselineStatus": "needs-tsdoc",
@@ -8874,7 +8874,7 @@
     {
       "id": "src/sandbox/with/index.ts#method#WithSandBox.setPreRenderState",
       "file": "src/sandbox/with/index.ts",
-      "line": 442,
+      "line": 448,
       "kind": "method",
       "symbol": "WithSandBox.setPreRenderState",
       "baselineStatus": "needs-tsdoc",
@@ -8884,7 +8884,7 @@
     {
       "id": "src/sandbox/with/index.ts#method#WithSandBox.markUmdMode",
       "file": "src/sandbox/with/index.ts",
-      "line": 451,
+      "line": 457,
       "kind": "method",
       "symbol": "WithSandBox.markUmdMode",
       "baselineStatus": "missing",
@@ -8894,7 +8894,7 @@
     {
       "id": "src/sandbox/with/index.ts#method#WithSandBox.patchWith",
       "file": "src/sandbox/with/index.ts",
-      "line": 460,
+      "line": 466,
       "kind": "method",
       "symbol": "WithSandBox.patchWith",
       "baselineStatus": "missing",
@@ -8904,7 +8904,7 @@
     {
       "id": "src/sandbox/with/index.ts#method#WithSandBox.setMappingPropertiesWithRawDescriptor",
       "file": "src/sandbox/with/index.ts",
-      "line": 472,
+      "line": 478,
       "kind": "method",
       "symbol": "WithSandBox.setMappingPropertiesWithRawDescriptor",
       "baselineStatus": "needs-tsdoc",
@@ -8914,7 +8914,7 @@
     {
       "id": "src/sandbox/with/index.ts#method#WithSandBox.createDescriptorForMicroAppWindow",
       "file": "src/sandbox/with/index.ts",
-      "line": 505,
+      "line": 511,
       "kind": "method",
       "symbol": "WithSandBox.createDescriptorForMicroAppWindow",
       "baselineStatus": "missing",
@@ -8924,7 +8924,7 @@
     {
       "id": "src/sandbox/with/index.ts#method#WithSandBox.initGlobalKeysWhenStart",
       "file": "src/sandbox/with/index.ts",
-      "line": 528,
+      "line": 534,
       "kind": "method",
       "symbol": "WithSandBox.initGlobalKeysWhenStart",
       "baselineStatus": "documented",
@@ -8934,7 +8934,7 @@
     {
       "id": "src/sandbox/with/index.ts#method#WithSandBox.setHijackProperty",
       "file": "src/sandbox/with/index.ts",
-      "line": 549,
+      "line": 555,
       "kind": "method",
       "symbol": "WithSandBox.setHijackProperty",
       "baselineStatus": "needs-tsdoc",
@@ -8944,7 +8944,7 @@
     {
       "id": "src/sandbox/with/index.ts#method#WithSandBox.setHijackProperty.get",
       "file": "src/sandbox/with/index.ts",
-      "line": 556,
+      "line": 562,
       "kind": "method",
       "symbol": "WithSandBox.setHijackProperty.get",
       "baselineStatus": "missing",
@@ -8954,7 +8954,7 @@
     {
       "id": "src/sandbox/with/index.ts#method#WithSandBox.setHijackProperty.get@2",
       "file": "src/sandbox/with/index.ts",
-      "line": 568,
+      "line": 574,
       "kind": "method",
       "symbol": "WithSandBox.setHijackProperty.get",
       "baselineStatus": "missing",
@@ -8964,7 +8964,7 @@
     {
       "id": "src/sandbox/with/index.ts#method#WithSandBox.patchRequestApi",
       "file": "src/sandbox/with/index.ts",
-      "line": 589,
+      "line": 595,
       "kind": "method",
       "symbol": "WithSandBox.patchRequestApi",
       "baselineStatus": "needs-tsdoc",
@@ -8974,7 +8974,7 @@
     {
       "id": "src/sandbox/with/index.ts#method#WithSandBox.patchRequestApi.get",
       "file": "src/sandbox/with/index.ts",
-      "line": 599,
+      "line": 605,
       "kind": "method",
       "symbol": "WithSandBox.patchRequestApi.get",
       "baselineStatus": "missing",
@@ -8984,7 +8984,7 @@
     {
       "id": "src/sandbox/with/index.ts#method#WithSandBox.patchRequestApi.set",
       "file": "src/sandbox/with/index.ts",
-      "line": 603,
+      "line": 609,
       "kind": "method",
       "symbol": "WithSandBox.patchRequestApi.set",
       "baselineStatus": "missing",
@@ -8994,7 +8994,7 @@
     {
       "id": "src/sandbox/with/index.ts#method#WithSandBox.patchRequestApi.get@2",
       "file": "src/sandbox/with/index.ts",
-      "line": 611,
+      "line": 617,
       "kind": "method",
       "symbol": "WithSandBox.patchRequestApi.get",
       "baselineStatus": "missing",
@@ -9004,7 +9004,7 @@
     {
       "id": "src/sandbox/with/index.ts#method#WithSandBox.patchRequestApi.set@2",
       "file": "src/sandbox/with/index.ts",
-      "line": 615,
+      "line": 621,
       "kind": "method",
       "symbol": "WithSandBox.patchRequestApi.set",
       "baselineStatus": "missing",
@@ -9014,7 +9014,7 @@
     {
       "id": "src/sandbox/with/index.ts#method#WithSandBox.patchRequestApi.get@3",
       "file": "src/sandbox/with/index.ts",
-      "line": 623,
+      "line": 629,
       "kind": "method",
       "symbol": "WithSandBox.patchRequestApi.get",
       "baselineStatus": "missing",
@@ -9024,7 +9024,7 @@
     {
       "id": "src/sandbox/with/index.ts#method#WithSandBox.patchRequestApi.set@3",
       "file": "src/sandbox/with/index.ts",
-      "line": 627,
+      "line": 633,
       "kind": "method",
       "symbol": "WithSandBox.patchRequestApi.set",
       "baselineStatus": "missing",
@@ -9034,7 +9034,7 @@
     {
       "id": "src/sandbox/with/index.ts#method#WithSandBox.setScopeProperties",
       "file": "src/sandbox/with/index.ts",
-      "line": 642,
+      "line": 648,
       "kind": "method",
       "symbol": "WithSandBox.setScopeProperties",
       "baselineStatus": "documented",
@@ -9044,7 +9044,7 @@
     {
       "id": "src/sandbox/with/index.ts#method#WithSandBox.patchRouter",
       "file": "src/sandbox/with/index.ts",
-      "line": 658,
+      "line": 664,
       "kind": "method",
       "symbol": "WithSandBox.patchRouter",
       "baselineStatus": "needs-tsdoc",
@@ -9054,7 +9054,7 @@
     {
       "id": "src/sandbox/with/index.ts#method#WithSandBox.patchRouter.get",
       "file": "src/sandbox/with/index.ts",
-      "line": 665,
+      "line": 671,
       "kind": "method",
       "symbol": "WithSandBox.patchRouter.get",
       "baselineStatus": "missing",
@@ -9064,7 +9064,7 @@
     {
       "id": "src/sandbox/with/index.ts#method#WithSandBox.patchRouter.get@2",
       "file": "src/sandbox/with/index.ts",
-      "line": 676,
+      "line": 682,
       "kind": "method",
       "symbol": "WithSandBox.patchRouter.get",
       "baselineStatus": "missing",
@@ -9074,7 +9074,7 @@
     {
       "id": "src/sandbox/with/index.ts#method#WithSandBox.initRouteState",
       "file": "src/sandbox/with/index.ts",
-      "line": 688,
+      "line": 695,
       "kind": "method",
       "symbol": "WithSandBox.initRouteState",
       "baselineStatus": "missing",
@@ -9084,7 +9084,7 @@
     {
       "id": "src/sandbox/with/index.ts#method#WithSandBox.clearRouteState",
       "file": "src/sandbox/with/index.ts",
-      "line": 701,
+      "line": 708,
       "kind": "method",
       "symbol": "WithSandBox.clearRouteState",
       "baselineStatus": "missing",
@@ -9094,7 +9094,7 @@
     {
       "id": "src/sandbox/with/index.ts#method#WithSandBox.setRouteInfoForKeepAliveApp",
       "file": "src/sandbox/with/index.ts",
-      "line": 711,
+      "line": 718,
       "kind": "method",
       "symbol": "WithSandBox.setRouteInfoForKeepAliveApp",
       "baselineStatus": "missing",
@@ -9104,7 +9104,7 @@
     {
       "id": "src/sandbox/with/index.ts#method#WithSandBox.removeRouteInfoForKeepAliveApp",
       "file": "src/sandbox/with/index.ts",
-      "line": 719,
+      "line": 726,
       "kind": "method",
       "symbol": "WithSandBox.removeRouteInfoForKeepAliveApp",
       "baselineStatus": "missing",
@@ -9114,7 +9114,7 @@
     {
       "id": "src/sandbox/with/index.ts#method#WithSandBox.patchStaticElement",
       "file": "src/sandbox/with/index.ts",
-      "line": 728,
+      "line": 735,
       "kind": "method",
       "symbol": "WithSandBox.patchStaticElement",
       "baselineStatus": "documented",
@@ -9124,7 +9124,7 @@
     {
       "id": "src/sandbox/with/index.ts#method#WithSandBox.actionsBeforeExecScripts",
       "file": "src/sandbox/with/index.ts",
-      "line": 738,
+      "line": 745,
       "kind": "method",
       "symbol": "WithSandBox.actionsBeforeExecScripts",
       "baselineStatus": "documented",
@@ -9134,7 +9134,7 @@
     {
       "id": "src/sandbox/with/index.ts#method#WithSandBox.hijackUmdHooks",
       "file": "src/sandbox/with/index.ts",
-      "line": 754,
+      "line": 761,
       "kind": "method",
       "symbol": "WithSandBox.hijackUmdHooks",
       "baselineStatus": "needs-tsdoc",
@@ -9144,7 +9144,7 @@
     {
       "id": "src/sandbox/with/index.ts#method#WithSandBox.setStaticAppState",
       "file": "src/sandbox/with/index.ts",
-      "line": 801,
+      "line": 808,
       "kind": "method",
       "symbol": "WithSandBox.setStaticAppState",
       "baselineStatus": "missing",
@@ -9174,7 +9174,7 @@
     {
       "id": "src/sandbox/with/window.ts#function#createProxyWindow",
       "file": "src/sandbox/with/window.ts",
-      "line": 87,
+      "line": 88,
       "kind": "function",
       "symbol": "createProxyWindow",
       "baselineStatus": "documented",
@@ -9184,7 +9184,7 @@
     {
       "id": "src/sandbox/with/window.ts#function#patchWindowEffect",
       "file": "src/sandbox/with/window.ts",
-      "line": 227,
+      "line": 230,
       "kind": "function",
       "symbol": "patchWindowEffect",
       "baselineStatus": "documented",
@@ -9194,7 +9194,7 @@
     {
       "id": "src/sandbox/with/window.ts#function#patchWindowEffect.getEventTarget",
       "file": "src/sandbox/with/window.ts",
-      "line": 249,
+      "line": 252,
       "kind": "function",
       "symbol": "patchWindowEffect.getEventTarget",
       "baselineStatus": "documented",
@@ -9244,7 +9244,7 @@
     {
       "id": "src/sandbox/with/window.ts#function-variable#patchWindowEffect.release",
       "file": "src/sandbox/with/window.ts",
-      "line": 372,
+      "line": 375,
       "kind": "function-variable",
       "symbol": "patchWindowEffect.release",
       "baselineStatus": "needs-tsdoc",
@@ -9264,7 +9264,7 @@
     {
       "id": "src/source/index.ts#function#flatBodyChildren",
       "file": "src/source/index.ts",
-      "line": 32,
+      "line": 33,
       "kind": "function",
       "symbol": "flatBodyChildren",
       "baselineStatus": "documented",
@@ -9274,7 +9274,7 @@
     {
       "id": "src/source/index.ts#function#extractSourceDom",
       "file": "src/source/index.ts",
-      "line": 90,
+      "line": 93,
       "kind": "function",
       "symbol": "extractSourceDom",
       "baselineStatus": "documented",
@@ -9304,7 +9304,7 @@
     {
       "id": "src/source/links.ts#function#extractLinkFromHtml",
       "file": "src/source/links.ts",
-      "line": 80,
+      "line": 81,
       "kind": "function",
       "symbol": "extractLinkFromHtml",
       "baselineStatus": "documented",
@@ -9314,7 +9314,7 @@
     {
       "id": "src/source/links.ts#function#fetchLinksFromHtml",
       "file": "src/source/links.ts",
-      "line": 145,
+      "line": 147,
       "kind": "function",
       "symbol": "fetchLinksFromHtml",
       "baselineStatus": "documented",
@@ -9324,7 +9324,7 @@
     {
       "id": "src/source/links.ts#field#fetchLinksFromHtml.data",
       "file": "src/source/links.ts",
-      "line": 161,
+      "line": 163,
       "kind": "field",
       "symbol": "fetchLinksFromHtml.data",
       "baselineStatus": "missing",
@@ -9334,7 +9334,7 @@
     {
       "id": "src/source/links.ts#field#fetchLinksFromHtml.index",
       "file": "src/source/links.ts",
-      "line": 163,
+      "line": 165,
       "kind": "field",
       "symbol": "fetchLinksFromHtml.index",
       "baselineStatus": "missing",
@@ -9344,7 +9344,7 @@
     {
       "id": "src/source/links.ts#field#fetchLinksFromHtml.error",
       "file": "src/source/links.ts",
-      "line": 173,
+      "line": 175,
       "kind": "field",
       "symbol": "fetchLinksFromHtml.error",
       "baselineStatus": "missing",
@@ -9354,7 +9354,7 @@
     {
       "id": "src/source/links.ts#field#fetchLinksFromHtml.index@2",
       "file": "src/source/links.ts",
-      "line": 175,
+      "line": 177,
       "kind": "field",
       "symbol": "fetchLinksFromHtml.index",
       "baselineStatus": "missing",
@@ -9364,7 +9364,7 @@
     {
       "id": "src/source/links.ts#function#fetchLinkSuccess",
       "file": "src/source/links.ts",
-      "line": 206,
+      "line": 208,
       "kind": "function",
       "symbol": "fetchLinkSuccess",
       "baselineStatus": "documented",
@@ -9374,7 +9374,7 @@
     {
       "id": "src/source/links.ts#function#handleConvertStyle",
       "file": "src/source/links.ts",
-      "line": 256,
+      "line": 258,
       "kind": "function",
       "symbol": "handleConvertStyle",
       "baselineStatus": "documented",
@@ -9384,7 +9384,7 @@
     {
       "id": "src/source/links.ts#function#formatDynamicLink",
       "file": "src/source/links.ts",
-      "line": 297,
+      "line": 300,
       "kind": "function",
       "symbol": "formatDynamicLink",
       "baselineStatus": "documented",
@@ -9394,7 +9394,7 @@
     {
       "id": "src/source/links.ts#function-variable#formatDynamicLink.handleDynamicLink",
       "file": "src/source/links.ts",
-      "line": 306,
+      "line": 309,
       "kind": "function-variable",
       "symbol": "formatDynamicLink.handleDynamicLink",
       "baselineStatus": "missing",
@@ -9444,7 +9444,7 @@
     {
       "id": "src/source/load_event.ts#function#dispatchOnLoadEvent",
       "file": "src/source/load_event.ts",
-      "line": 37,
+      "line": 38,
       "kind": "function",
       "symbol": "dispatchOnLoadEvent",
       "baselineStatus": "missing",
@@ -9454,7 +9454,7 @@
     {
       "id": "src/source/load_event.ts#function#dispatchOnErrorEvent",
       "file": "src/source/load_event.ts",
-      "line": 50,
+      "line": 51,
       "kind": "function",
       "symbol": "dispatchOnErrorEvent",
       "baselineStatus": "missing",
@@ -9514,7 +9514,7 @@
     {
       "id": "src/source/loader/html.ts#method#HTMLLoader.run",
       "file": "src/source/loader/html.ts",
-      "line": 40,
+      "line": 41,
       "kind": "method",
       "symbol": "HTMLLoader.run",
       "baselineStatus": "documented",
@@ -9524,7 +9524,7 @@
     {
       "id": "src/source/loader/html.ts#method#HTMLLoader.formatHTML",
       "file": "src/source/loader/html.ts",
-      "line": 68,
+      "line": 69,
       "kind": "method",
       "symbol": "HTMLLoader.formatHTML",
       "baselineStatus": "missing",
@@ -9534,7 +9534,7 @@
     {
       "id": "src/source/loader/html.ts#method#HTMLLoader.processHtml",
       "file": "src/source/loader/html.ts",
-      "line": 88,
+      "line": 89,
       "kind": "method",
       "symbol": "HTMLLoader.processHtml",
       "baselineStatus": "missing",
@@ -9584,7 +9584,7 @@
     {
       "id": "src/source/patch.ts#method#invokePrototypeMethod.get",
       "file": "src/source/patch.ts",
-      "line": 196,
+      "line": 197,
       "kind": "method",
       "symbol": "invokePrototypeMethod.get",
       "baselineStatus": "missing",
@@ -9594,7 +9594,7 @@
     {
       "id": "src/source/patch.ts#function#getHijackParent",
       "file": "src/source/patch.ts",
-      "line": 255,
+      "line": 257,
       "kind": "function",
       "symbol": "getHijackParent",
       "baselineStatus": "needs-tsdoc",
@@ -9604,7 +9604,7 @@
     {
       "id": "src/source/patch.ts#function#invokeRawMethod",
       "file": "src/source/patch.ts",
-      "line": 286,
+      "line": 288,
       "kind": "function",
       "symbol": "invokeRawMethod",
       "baselineStatus": "missing",
@@ -9614,7 +9614,7 @@
     {
       "id": "src/source/patch.ts#function#isPendMethod",
       "file": "src/source/patch.ts",
-      "line": 313,
+      "line": 315,
       "kind": "function",
       "symbol": "isPendMethod",
       "baselineStatus": "missing",
@@ -9624,7 +9624,7 @@
     {
       "id": "src/source/patch.ts#function#completePathDynamic",
       "file": "src/source/patch.ts",
-      "line": 331,
+      "line": 333,
       "kind": "function",
       "symbol": "completePathDynamic",
       "baselineStatus": "documented",
@@ -9634,7 +9634,7 @@
     {
       "id": "src/source/patch.ts#function#commonElementHandler",
       "file": "src/source/patch.ts",
-      "line": 368,
+      "line": 370,
       "kind": "function",
       "symbol": "commonElementHandler",
       "baselineStatus": "documented",
@@ -9644,7 +9644,7 @@
     {
       "id": "src/source/patch.ts#function#patchElementAndDocument",
       "file": "src/source/patch.ts",
-      "line": 410,
+      "line": 413,
       "kind": "function",
       "symbol": "patchElementAndDocument",
       "baselineStatus": "documented",
@@ -9654,7 +9654,7 @@
     {
       "id": "src/source/patch.ts#function#patchElementAndDocument.getElementQueryTarget",
       "file": "src/source/patch.ts",
-      "line": 517,
+      "line": 520,
       "kind": "function",
       "symbol": "patchElementAndDocument.getElementQueryTarget",
       "baselineStatus": "documented",
@@ -9664,7 +9664,7 @@
     {
       "id": "src/source/patch.ts#function#patchElementAndDocument.getElementQueryResult",
       "file": "src/source/patch.ts",
-      "line": 544,
+      "line": 547,
       "kind": "function",
       "symbol": "patchElementAndDocument.getElementQueryResult",
       "baselineStatus": "documented",
@@ -9674,7 +9674,7 @@
     {
       "id": "src/source/patch.ts#method#patchElementAndDocument.get",
       "file": "src/source/patch.ts",
-      "line": 679,
+      "line": 684,
       "kind": "method",
       "symbol": "patchElementAndDocument.get",
       "baselineStatus": "missing",
@@ -9684,7 +9684,7 @@
     {
       "id": "src/source/patch.ts#method#patchElementAndDocument.get@2",
       "file": "src/source/patch.ts",
-      "line": 708,
+      "line": 712,
       "kind": "method",
       "symbol": "patchElementAndDocument.get",
       "baselineStatus": "missing",
@@ -9694,7 +9694,7 @@
     {
       "id": "src/source/patch.ts#method#patchElementAndDocument.set",
       "file": "src/source/patch.ts",
-      "line": 712,
+      "line": 716,
       "kind": "method",
       "symbol": "patchElementAndDocument.set",
       "baselineStatus": "missing",
@@ -9704,7 +9704,7 @@
     {
       "id": "src/source/patch.ts#function#markElement",
       "file": "src/source/patch.ts",
-      "line": 738,
+      "line": 742,
       "kind": "function",
       "symbol": "markElement",
       "baselineStatus": "documented",
@@ -9714,7 +9714,7 @@
     {
       "id": "src/source/patch.ts#function#patchDocument",
       "file": "src/source/patch.ts",
-      "line": 748,
+      "line": 753,
       "kind": "function",
       "symbol": "patchDocument",
       "baselineStatus": "needs-tsdoc",
@@ -9724,7 +9724,7 @@
     {
       "id": "src/source/patch.ts#function#patchDocument.getBindTarget",
       "file": "src/source/patch.ts",
-      "line": 753,
+      "line": 758,
       "kind": "function",
       "symbol": "patchDocument.getBindTarget",
       "baselineStatus": "missing",
@@ -9734,7 +9734,7 @@
     {
       "id": "src/source/patch.ts#function#patchDocument.querySelector",
       "file": "src/source/patch.ts",
-      "line": 799,
+      "line": 804,
       "kind": "function",
       "symbol": "patchDocument.querySelector",
       "baselineStatus": "needs-tsdoc",
@@ -9744,7 +9744,7 @@
     {
       "id": "src/source/patch.ts#function#patchDocument.querySelectorAll",
       "file": "src/source/patch.ts",
-      "line": 816,
+      "line": 821,
       "kind": "function",
       "symbol": "patchDocument.querySelectorAll",
       "baselineStatus": "missing",
@@ -9754,7 +9754,7 @@
     {
       "id": "src/source/patch.ts#function#releasePatchDocument",
       "file": "src/source/patch.ts",
-      "line": 902,
+      "line": 907,
       "kind": "function",
       "symbol": "releasePatchDocument",
       "baselineStatus": "missing",
@@ -9764,7 +9764,7 @@
     {
       "id": "src/source/patch.ts#function#releasePatchElementAndDocument",
       "file": "src/source/patch.ts",
-      "line": 921,
+      "line": 927,
       "kind": "function",
       "symbol": "releasePatchElementAndDocument",
       "baselineStatus": "needs-tsdoc",
@@ -9774,7 +9774,7 @@
     {
       "id": "src/source/patch.ts#function#rejectMicroAppStyle",
       "file": "src/source/patch.ts",
-      "line": 950,
+      "line": 956,
       "kind": "function",
       "symbol": "rejectMicroAppStyle",
       "baselineStatus": "missing",
@@ -9934,7 +9934,7 @@
     {
       "id": "src/source/scripts.ts#function#extractScriptElement",
       "file": "src/source/scripts.ts",
-      "line": 178,
+      "line": 179,
       "kind": "function",
       "symbol": "extractScriptElement",
       "baselineStatus": "documented",
@@ -9944,7 +9944,7 @@
     {
       "id": "src/source/scripts.ts#function#getAssetsPlugins",
       "file": "src/source/scripts.ts",
-      "line": 291,
+      "line": 292,
       "kind": "function",
       "symbol": "getAssetsPlugins",
       "baselineStatus": "documented",
@@ -9954,7 +9954,7 @@
     {
       "id": "src/source/scripts.ts#function#checkExcludeUrl",
       "file": "src/source/scripts.ts",
-      "line": 306,
+      "line": 307,
       "kind": "function",
       "symbol": "checkExcludeUrl",
       "baselineStatus": "documented",
@@ -9964,7 +9964,7 @@
     {
       "id": "src/source/scripts.ts#function#checkIgnoreUrl",
       "file": "src/source/scripts.ts",
-      "line": 323,
+      "line": 324,
       "kind": "function",
       "symbol": "checkIgnoreUrl",
       "baselineStatus": "documented",
@@ -9974,7 +9974,7 @@
     {
       "id": "src/source/scripts.ts#function#fetchScriptsFromHtml",
       "file": "src/source/scripts.ts",
-      "line": 342,
+      "line": 343,
       "kind": "function",
       "symbol": "fetchScriptsFromHtml",
       "baselineStatus": "documented",
@@ -9984,7 +9984,7 @@
     {
       "id": "src/source/scripts.ts#field#fetchScriptsFromHtml.data",
       "file": "src/source/scripts.ts",
-      "line": 363,
+      "line": 364,
       "kind": "field",
       "symbol": "fetchScriptsFromHtml.data",
       "baselineStatus": "missing",
@@ -9994,7 +9994,7 @@
     {
       "id": "src/source/scripts.ts#field#fetchScriptsFromHtml.index",
       "file": "src/source/scripts.ts",
-      "line": 365,
+      "line": 366,
       "kind": "field",
       "symbol": "fetchScriptsFromHtml.index",
       "baselineStatus": "missing",
@@ -10004,7 +10004,7 @@
     {
       "id": "src/source/scripts.ts#field#fetchScriptsFromHtml.error",
       "file": "src/source/scripts.ts",
-      "line": 375,
+      "line": 376,
       "kind": "field",
       "symbol": "fetchScriptsFromHtml.error",
       "baselineStatus": "missing",
@@ -10014,7 +10014,7 @@
     {
       "id": "src/source/scripts.ts#field#fetchScriptsFromHtml.index@2",
       "file": "src/source/scripts.ts",
-      "line": 377,
+      "line": 378,
       "kind": "field",
       "symbol": "fetchScriptsFromHtml.index",
       "baselineStatus": "missing",
@@ -10024,7 +10024,7 @@
     {
       "id": "src/source/scripts.ts#function#fetchScriptSuccess",
       "file": "src/source/scripts.ts",
-      "line": 404,
+      "line": 405,
       "kind": "function",
       "symbol": "fetchScriptSuccess",
       "baselineStatus": "documented",
@@ -10034,7 +10034,7 @@
     {
       "id": "src/source/scripts.ts#function#execScripts",
       "file": "src/source/scripts.ts",
-      "line": 449,
+      "line": 453,
       "kind": "function",
       "symbol": "execScripts",
       "baselineStatus": "documented",
@@ -10044,7 +10044,7 @@
     {
       "id": "src/source/scripts.ts#field#execScripts.data",
       "file": "src/source/scripts.ts",
-      "line": 482,
+      "line": 486,
       "kind": "field",
       "symbol": "execScripts.data",
       "baselineStatus": "missing",
@@ -10054,7 +10054,7 @@
     {
       "id": "src/source/scripts.ts#field#execScripts.index",
       "file": "src/source/scripts.ts",
-      "line": 484,
+      "line": 488,
       "kind": "field",
       "symbol": "execScripts.index",
       "baselineStatus": "missing",
@@ -10064,7 +10064,7 @@
     {
       "id": "src/source/scripts.ts#field#execScripts.error",
       "file": "src/source/scripts.ts",
-      "line": 490,
+      "line": 494,
       "kind": "field",
       "symbol": "execScripts.error",
       "baselineStatus": "missing",
@@ -10074,7 +10074,7 @@
     {
       "id": "src/source/scripts.ts#field#execScripts.index@2",
       "file": "src/source/scripts.ts",
-      "line": 492,
+      "line": 496,
       "kind": "field",
       "symbol": "execScripts.index",
       "baselineStatus": "missing",
@@ -10084,7 +10084,7 @@
     {
       "id": "src/source/scripts.ts#function#runScript",
       "file": "src/source/scripts.ts",
-      "line": 547,
+      "line": 552,
       "kind": "function",
       "symbol": "runScript",
       "baselineStatus": "documented",
@@ -10094,7 +10094,7 @@
     {
       "id": "src/source/scripts.ts#function#runDynamicRemoteScript",
       "file": "src/source/scripts.ts",
-      "line": 624,
+      "line": 623,
       "kind": "function",
       "symbol": "runDynamicRemoteScript",
       "baselineStatus": "documented",
@@ -10104,7 +10104,7 @@
     {
       "id": "src/source/scripts.ts#function-variable#runDynamicRemoteScript.dispatchScriptOnLoadEvent",
       "file": "src/source/scripts.ts",
-      "line": 633,
+      "line": 632,
       "kind": "function-variable",
       "symbol": "runDynamicRemoteScript.dispatchScriptOnLoadEvent",
       "baselineStatus": "missing",
@@ -10114,7 +10114,7 @@
     {
       "id": "src/source/scripts.ts#function-variable#runDynamicRemoteScript.runDynamicScript",
       "file": "src/source/scripts.ts",
-      "line": 636,
+      "line": 635,
       "kind": "function-variable",
       "symbol": "runDynamicRemoteScript.runDynamicScript",
       "baselineStatus": "missing",
@@ -10164,7 +10164,7 @@
     {
       "id": "src/source/scripts.ts#function#bindScope",
       "file": "src/source/scripts.ts",
-      "line": 763,
+      "line": 766,
       "kind": "function",
       "symbol": "bindScope",
       "baselineStatus": "documented",
@@ -10174,7 +10174,7 @@
     {
       "id": "src/source/scripts.ts#function#actionsBeforeRunScript",
       "file": "src/source/scripts.ts",
-      "line": 784,
+      "line": 787,
       "kind": "function",
       "symbol": "actionsBeforeRunScript",
       "baselineStatus": "documented",
@@ -10184,7 +10184,7 @@
     {
       "id": "src/source/scripts.ts#function#setActiveProxyWindow",
       "file": "src/source/scripts.ts",
-      "line": 791,
+      "line": 794,
       "kind": "function",
       "symbol": "setActiveProxyWindow",
       "baselineStatus": "documented",
@@ -10194,7 +10194,7 @@
     {
       "id": "src/source/scripts.ts#function#usePlugins",
       "file": "src/source/scripts.ts",
-      "line": 806,
+      "line": 809,
       "kind": "function",
       "symbol": "usePlugins",
       "baselineStatus": "documented",
@@ -10204,7 +10204,7 @@
     {
       "id": "src/source/scripts.ts#function#processCode",
       "file": "src/source/scripts.ts",
-      "line": 815,
+      "line": 818,
       "kind": "function",
       "symbol": "processCode",
       "baselineStatus": "missing",
@@ -10354,7 +10354,7 @@
     {
       "id": "src/source/source_center.ts#function#createSourceCenter",
       "file": "src/source/source_center.ts",
-      "line": 49,
+      "line": 50,
       "kind": "function",
       "symbol": "createSourceCenter",
       "baselineStatus": "documented",
@@ -10364,7 +10364,7 @@
     {
       "id": "src/source/source_center.ts#function#createSourceCenter.createSourceHandler",
       "file": "src/source/source_center.ts",
-      "line": 55,
+      "line": 56,
       "kind": "function",
       "symbol": "createSourceCenter.createSourceHandler",
       "baselineStatus": "missing",
@@ -10374,7 +10374,7 @@
     {
       "id": "src/source/source_center.ts#method#createSourceCenter.createSourceHandler.setInfo",
       "file": "src/source/source_center.ts",
-      "line": 58,
+      "line": 59,
       "kind": "method",
       "symbol": "createSourceCenter.createSourceHandler.setInfo",
       "baselineStatus": "missing",
@@ -10384,7 +10384,7 @@
     {
       "id": "src/source/source_center.ts#method#createSourceCenter.createSourceHandler.getInfo",
       "file": "src/source/source_center.ts",
-      "line": 62,
+      "line": 63,
       "kind": "method",
       "symbol": "createSourceCenter.createSourceHandler.getInfo",
       "baselineStatus": "missing",
@@ -10394,7 +10394,7 @@
     {
       "id": "src/source/source_center.ts#method#createSourceCenter.createSourceHandler.hasInfo",
       "file": "src/source/source_center.ts",
-      "line": 66,
+      "line": 67,
       "kind": "method",
       "symbol": "createSourceCenter.createSourceHandler.hasInfo",
       "baselineStatus": "missing",
@@ -10404,7 +10404,7 @@
     {
       "id": "src/source/source_center.ts#method#createSourceCenter.createSourceHandler.deleteInfo",
       "file": "src/source/source_center.ts",
-      "line": 70,
+      "line": 71,
       "kind": "method",
       "symbol": "createSourceCenter.createSourceHandler.deleteInfo",
       "baselineStatus": "missing",
@@ -10414,13 +10414,104 @@
     {
       "id": "src/source/source_center.ts#method#createSourceCenter.deleteInlineInfo",
       "file": "src/source/source_center.ts",
-      "line": 81,
+      "line": 82,
       "kind": "method",
       "symbol": "createSourceCenter.deleteInlineInfo",
       "baselineStatus": "missing",
       "finalStatus": "documented",
       "classification": "新补充"
     }
+  ],
+  "reviewDate": "2026-10-10",
+  "reviewSummary": {
+    "productionFiles": 42,
+    "nonDemoTestFiles": 32,
+    "articles": 2,
+    "chapters": 34,
+    "declarations": 1037,
+    "unresolved": 0,
+    "diagnostics": 0,
+    "unusedExemptions": 0,
+    "classificationBasis": "保留初次注释任务分类，本次更新当前行号及覆盖状态。"
+  },
+  "reviewedFiles": [
+    "src/__tests__/common/initial.ts",
+    "src/__tests__/common/set_ssr_env.ts",
+    "src/__tests__/common/util.ts",
+    "src/__tests__/create_app.test.ts",
+    "src/__tests__/interact/index.test.ts",
+    "src/__tests__/interact/lifecycles_event.test.ts",
+    "src/__tests__/main.test.ts",
+    "src/__tests__/micro_app.test.ts",
+    "src/__tests__/micro_app_element.test.ts",
+    "src/__tests__/prefetch.test.ts",
+    "src/__tests__/sandbox/customProxyDocumentProps.test.ts",
+    "src/__tests__/sandbox/effect.test.ts",
+    "src/__tests__/sandbox/effect2.test.ts",
+    "src/__tests__/sandbox/index.test.ts",
+    "src/__tests__/source/index.test.ts",
+    "src/__tests__/source/links.test.ts",
+    "src/__tests__/source/load_event.test.ts",
+    "src/__tests__/source/patch.test.ts",
+    "src/__tests__/source/scoped_css.test.ts",
+    "src/__tests__/source/scripts.test.ts",
+    "src/__tests__/source/scripts2.test.ts",
+    "src/__tests__/source/support_module.ts",
+    "src/__tests__/ssr_env.test.ts",
+    "src/__tests__/unit/additional_util.test.ts",
+    "src/__tests__/unit/event_center.test.ts",
+    "src/__tests__/unit/lifecycles_event.test.ts",
+    "src/__tests__/unit/mocks/app.ts",
+    "src/__tests__/unit/mocks/event.ts",
+    "src/__tests__/unit/mocks/fetch.ts",
+    "src/__tests__/unit/mocks/html.ts",
+    "src/__tests__/unit/source/loader/html.test.ts",
+    "src/__tests__/unit/utils.test.ts",
+    "src/app_manager.ts",
+    "src/constants.ts",
+    "src/create_app.ts",
+    "src/index.ts",
+    "src/interact/event_center.ts",
+    "src/interact/index.ts",
+    "src/interact/lifecycles_event.ts",
+    "src/libs/global_env.ts",
+    "src/libs/nest_app.ts",
+    "src/libs/utils.ts",
+    "src/micro_app.ts",
+    "src/micro_app_element.ts",
+    "src/polyfill/jsx-custom-event.ts",
+    "src/prefetch.ts",
+    "src/proxies/worker.ts",
+    "src/sandbox/adapter.ts",
+    "src/sandbox/bind_function.ts",
+    "src/sandbox/iframe/document.ts",
+    "src/sandbox/iframe/element.ts",
+    "src/sandbox/iframe/index.ts",
+    "src/sandbox/iframe/router.ts",
+    "src/sandbox/iframe/special_key.ts",
+    "src/sandbox/iframe/window.ts",
+    "src/sandbox/request.ts",
+    "src/sandbox/router/api.ts",
+    "src/sandbox/router/core.ts",
+    "src/sandbox/router/event.ts",
+    "src/sandbox/router/history.ts",
+    "src/sandbox/router/index.ts",
+    "src/sandbox/router/location.ts",
+    "src/sandbox/scoped_css.ts",
+    "src/sandbox/with/document.ts",
+    "src/sandbox/with/index.ts",
+    "src/sandbox/with/window.ts",
+    "src/source/fetch.ts",
+    "src/source/index.ts",
+    "src/source/links.ts",
+    "src/source/load_event.ts",
+    "src/source/loader/html.ts",
+    "src/source/patch.ts",
+    "src/source/scripts.ts",
+    "src/source/source_center.ts"
+  ],
+  "articleFiles": [
+    "share/micro-app/micro-app-src-guide.html",
+    "share/micro-app/micro-app-source-code-guide.html"
   ]
 }
-

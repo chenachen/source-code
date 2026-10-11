@@ -41,7 +41,9 @@ const matchHtmlRegExp = /["'&<>]/;
 
 /**
  * 将给定 HTML 文本中的引号、与号及尖括号转换为实体。
- * 找不到特殊字符时直接返回原字符串，避免额外分配。
+ * 先以字符串连接转换输入；DEV额外检查转换错误，不捕获或替换原异常。
+ * 从首个特殊字符开始扫描，lastIndex保存未复制片段起点，只拼接间隔片段与实体；
+ * 找不到特殊字符时返回转换后的字符串，避免实体结果的额外分配。
  */
 function escapeHtml(string: string) {
   if (__DEV__) {
@@ -93,7 +95,8 @@ function escapeHtml(string: string) {
 // escape-html 派生算法到此结束。
 
 /**
- * 转义服务端输出文本以防止脚本注入。
+ * 为普通HTML文本和由调用方包上引号的属性值转义五类特殊字符。
+ * 不负责script/style原始文本或URL协议检查，这些上下文由各自编码器处理。
  * boolean/number/bigint 不可能含 HTML 特殊字符，走直接字符串化的热路径。
  */
 function escapeTextForBrowser(text: string | number | boolean): string {

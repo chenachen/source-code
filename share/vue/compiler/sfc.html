@@ -9,6 +9,7 @@
     />
     <title>compiler-sfc 详解 · Vue Compiler 指南</title>
     <link rel="stylesheet" href="assets/styles.css" />
+    <link rel="stylesheet" href="assets/diagrams.css" />
   </head>
   <body>
     <a class="skip-link" href="#content">跳到正文</a>
@@ -63,8 +64,9 @@
           <p class="lead">
             SFC 编译器把一个 .vue
             文件变成可由构建工具组装的脚本、渲染函数和样式。它既是协调器，也是
-            编译宏实现；为了从类型式 props/emits 生成运行时声明，它还实现了所需的
-            一部分 TypeScript AST 分析，并负责串联多层 source map。
+            编译宏实现；为了从类型式 props/emits
+            生成运行时声明，它还实现了所需的一部分 TypeScript AST
+            分析，并负责串联多层 source map。
           </p>
           <div class="hero-meta">
             <span>输入：完整 .vue</span
@@ -90,30 +92,37 @@
         </div>
 
         <div class="diagram" aria-label="compiler-sfc 阅读地图">
-          <p class="diagram-title">调用关系：parse 之后由上层分派三个编译分支</p>
+          <p class="diagram-title">
+            调用关系：parse 之后由上层分派三个编译分支
+          </p>
           <div class="flow">
             <div class="flow-node">
               <strong>parse</strong><small>descriptor + errors</small>
             </div>
             <div class="arrow">→</div>
             <div class="flow-node primary">
-              <strong>上层分派</strong><small>生成 id；拆出 block/options</small>
+              <strong>上层分派</strong
+              ><small>生成 id；拆出 block/options</small>
             </div>
           </div>
           <div class="branch" style="margin-top: 1rem">
             <div class="flow-node primary">
-              <strong>descriptor + id</strong><small>bindings 可从 script 再传给 template</small>
+              <strong>descriptor + id</strong
+              ><small>bindings 可从 script 再传给 template</small>
             </div>
             <div class="branch-lines" aria-hidden="true">↗<br />→<br />↘</div>
             <div class="branch-targets">
               <div class="branch-target">
-                <strong>compileScript</strong><p>宏、类型、bindings。</p>
+                <strong>compileScript</strong>
+                <p>宏、类型、bindings。</p>
               </div>
               <div class="branch-target">
-                <strong>compileTemplate</strong><p>client 或 SSR render。</p>
+                <strong>compileTemplate</strong>
+                <p>client 或 SSR render。</p>
               </div>
               <div class="branch-target">
-                <strong>compileStyle</strong><p>CSS、map、dependencies。</p>
+                <strong>compileStyle</strong>
+                <p>CSS、map、dependencies。</p>
               </div>
             </div>
           </div>
@@ -218,9 +227,11 @@
               <p>
                 key 是 <code>source + JSON.stringify(options)</code>；函数会先
                 <code>toString()</code>。<code>compiler</code> 特意只保留
-                <code>parse</code>，因为 parse 阶段不调用 compile。相同源码换
-                parser、delimiters、filename、pad 或 sourceMap，都不会误用旧
-                descriptor。命中时没有克隆，调用方若修改缓存结果，也会影响下一次命中。
+                <code>parse</code>，因为 parse 阶段不调用 compile。相同源码下，
+                delimiters、filename、pad 或 sourceMap 的值变化会产生不同 key。
+                函数只按文本进入
+                key，所以相同函数文本中的不同闭包状态不会被区分。
+                命中时没有克隆，调用方若修改缓存结果，也会影响下一次命中。
               </p>
             </article>
             <article class="code-note">
@@ -429,15 +440,16 @@ return result</code></pre>
               <h3>01 · 检查输入并建立上下文</h3>
               <p>
                 先检查普通 script 与 setup 的语言是否一致。没有 setup 时走
-                normalScript；自定义脚本语言原样交还上层。主路径再建立 Babel AST、
-                MagicString 和宏状态。
+                normalScript；自定义脚本语言原样交还上层。主路径再建立 Babel
+                AST、MagicString 和宏状态。
               </p>
             </div>
             <div class="step">
               <h3>02 · 整理 imports 与普通 script</h3>
               <p>
-                普通 script 的 import 只登记，setup import 移到模块顶层；随后去重、
-                检查局部名冲突。普通 script 的默认导出改成
+                普通 script 的 import 只登记，setup import
+                移到模块顶层；随后去重、检查局部名冲突。普通 script
+                的默认导出改成
                 <code>__default__</code>，留到最后与 setup 结果合并。
               </p>
             </div>
@@ -445,24 +457,26 @@ return result</code></pre>
               <h3>03 · 处理宏和需要作用域信息的改写</h3>
               <p>
                 扫描 setup 顶层声明，记录并消除编译宏；然后用完整作用域信息改写
-                props 解构和顶层 await，并检查会被提升到 setup 外的宏参数是否引用了
-                setup 局部变量。检查完成后才删除非脚本 block。
+                props 解构和顶层 await，并检查会被提升到 setup
+                外的宏参数是否引用了 setup 局部变量。检查完成后才删除非脚本
+                block。
               </p>
             </div>
             <div class="step">
               <h3>04 · 汇总 bindings，并读取其他 block 的信息</h3>
               <p>
-                合并 Options API、imports、普通 script、setup、props/model 的绑定分类；
-                再读取模板里的简单 v-model 目标，必要时把 reactive const 改成 let。
-                客户端 CSS <code>v-bind()</code> 也在这一步根据 style 提取结果注入脚本。
+                合并 Options API、imports、普通 script、setup、props/model
+                的绑定分类；再读取模板里的简单 v-model 目标，必要时把 reactive
+                const 改成 let。客户端 CSS <code>v-bind()</code> 也在这一步根据
+                style 提取结果注入脚本。
               </p>
             </div>
             <div class="step">
               <h3>05 · 生成 setup、组件选项和 source map</h3>
               <p>
-                非 inline 模式生成 setup 返回对象；inline 模式把
-                compileTemplate 的 render 直接放进 setup。最后合并
-                name、props、emits、用户 options 与 setup，并生成 helper import 和 map。
+                非 inline 模式生成 setup 返回对象；inline 模式把 compileTemplate
+                的 render 直接放进 setup。最后合并 name、props、emits、用户
+                options 与 setup，并生成 helper import 和 map。
               </p>
             </div>
           </div>
@@ -602,6 +616,12 @@ export default _defineComponent({
             使用位置改成 <code>__props</code>、模板可见绑定从 setup 返回或被
             inline render 捕获。
           </p>
+          <p class="source-context">
+            <code>__isScriptSetup</code> 使公开实例代理和 Options API
+            不把这些绑定当普通 setup 状态暴露或修改；独立 render 仍通过
+            <code>$setup</code> 访问它们，包括以 <code>$</code> 或
+            <code>_</code> 开头的名字。
+          </p>
 
           <div class="table-wrap">
             <table>
@@ -627,7 +647,12 @@ export default _defineComponent({
                     走 <code>processNormalScript</code>；分析 Options
                     API，必要时改写默认导出并注入 CSS vars
                   </td>
-                  <td>返回普通 <code>SFCScriptBlock</code>。</td>
+                  <td>
+                    返回普通 <code>SFCScriptBlock</code>。Babel
+                    解析在上下文构造时完成，语法错误直接
+                    throw；后续绑定分析或改写异常才由 processNormalScript 的
+                    catch 返回原块。
+                  </td>
                 </tr>
                 <tr>
                   <td>只有非 JS/TS 的普通 script</td>
@@ -723,7 +748,7 @@ export default _defineComponent({
             <p>
               这些名字无需从 Vue 导入；compiler-sfc
               在顶层识别并擦除/替换调用，把声明转换为组件 options 与 setup
-              setup 上下文参数。
+              上下文参数。
             </p>
           </div>
           <div class="table-wrap">
@@ -779,7 +804,8 @@ export default _defineComponent({
                   <td>一个运行时 options 表达式</td>
                   <td>提升并合并默认导出</td>
                   <td>
-                    不能引用 setup 局部，也不能重复声明 props/emits 等专用项。
+                    不能引用仍留在 setup 内的局部；已提升的 LITERAL_CONST
+                    可以使用。也不能重复声明 props/emits 等专用项。
                   </td>
                 </tr>
                 <tr>
@@ -904,6 +930,7 @@ export default _defineComponent({
                 此处不立即遍历后续代码，只保存 public key、local alias 和
                 default。等全部顶层声明被了解后，transformDestructuredProps
                 才能用完整作用域信息安全重写。
+                嵌套解构和动态计算键会报错；字符串或数字字面量计算键可以解析。
               </p>
             </article>
           </div>
@@ -977,9 +1004,12 @@ modelPropsDecl += `\n    ${modifierPropName}: {},`</code></pre>
           <div class="callout">
             <strong>宏参数什么时候不能捕获 setup 局部变量：</strong>会进入
             runtime props/emits/组件 options 的那一部分被提升到 setup 外，此时
-            setup 局部值尚不存在，编译器会遍历相关 AST 提前报错。defineModel 的
-            get/set 留在 setup 内传给 useModel，
-            因而源码与测试都允许它们闭包捕获局部变量；不能把限制粗暴套到宏的每个参数上。
+            setup 局部值尚不存在，编译器会遍历相关 AST
+            提前报错；已提升到模块层的
+            <code>LITERAL_CONST</code> 可以引用。defineModel
+            只对能静态拆分的对象 options 收集并检查 prop 配置；get/set 留在
+            setup 内传给 useModel，可以捕获局部变量。动态 options 不经过同样的
+            prop 选项检查，这项诊断只覆盖可静态拆分的对象配置。
           </div>
           <a
             class="source-link"
@@ -1156,8 +1186,12 @@ function checkUsage(node: Node, method: string, alias = method) {
                 </tr>
                 <tr>
                   <td>默认值是函数</td>
-                  <td>按 runtime type 决定是否工厂调用</td>
-                  <td>函数值 prop 与对象默认值工厂语义冲突。</td>
+                  <td>结合类型推导和默认值 AST 决定工厂与 skipFactory</td>
+                  <td>
+                    推导类型包含 Function
+                    时直接保留默认值；运行时式声明的函数或外部标识符默认值生成
+                    skipFactory，阻止运行时调用。其他非字面量默认值才包工厂。
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -1311,8 +1345,8 @@ function innerResolveTypeElements(
 }</code></pre>
           </figure>
           <p class="source-context">
-            这里保留缓存、作用域选择、主要节点分派和泛型实参映射；省略位置均以
-            “……”标明。它们是从同一函数中整段裁掉的分支，不是把源码改写成伪代码。
+            先选定类型节点的
+            ownerScope，再分派节点类型；遇到泛型引用时，把实参映射到声明的类型形参后递归展开。
           </p>
           <div class="code-walkthrough">
             <article class="code-note">
@@ -1344,12 +1378,14 @@ function innerResolveTypeElements(
               </p>
             </article>
             <article class="code-note">
-              <h3>读取缓存仍要重放 deps</h3>
+              <h3>缓存命中只补回 ownerScope 依赖</h3>
               <p>
-                第二次编译可以复用类型结果，但当前 SFC
-                仍必须记录它依赖了哪些外部
-                <code>.ts</code> 文件，否则这些文件变化时构建工具不会重编译该
-                SFC。
+                命中已展开的类型结果时，当前 context 会从各属性的
+                <code>_ownerScope.filename</code>
+                补回依赖，并不会重放首次展开时的整条 import 路径。例如 facade →
+                middle → leaf 的转导出链中，字段最终属于 leaf；再次编译可记录
+                facade 和 leaf，却漏掉中间的 middle。因此这条缓存路径返回的 deps
+                不能保证包含所有中间转导出文件。
               </p>
             </article>
           </div>
@@ -1429,8 +1465,12 @@ props: {
                 </tr>
                 <tr>
                   <td>工具类型</td>
-                  <td>Partial、Required、Readonly、Record</td>
-                  <td>内建识别并改变 required/key 语义。</td>
+                  <td>Partial、Required、Readonly、Pick、Omit</td>
+                  <td>
+                    内建展开 props 结构，调整 required 或筛选 key。Record
+                    仅在字段运行时类型推导中归为 Object，不作为顶层 props
+                    结构展开。
+                  </td>
                 </tr>
                 <tr>
                   <td>跨文件类型</td>
@@ -1470,43 +1510,226 @@ props: {
               ref、读取与赋值该采用哪条路径。
             </p>
           </div>
+          <figure class="engineering-diagram" id="sfc-binding-dispatch">
+            <div class="engineering-scroll" tabindex="0">
+              <svg
+                viewBox="0 0 940 650"
+                role="img"
+                aria-labelledby="sfc-binding-title sfc-binding-desc"
+              >
+                <title id="sfc-binding-title">
+                  同一份 bindings 在内联与独立模板中的读写分派
+                </title>
+                <desc id="sfc-binding-desc">
+                  沿用 App.vue 的 title prop 与 count
+                  ref。compilerOptions.inline 决定直接读取闭包中的 __props 与
+                  count.value，或通过独立 render 的 $props 与 $setup
+                  参数访问。独立模式的 setup 返回对象由 proxyRefs
+                  解包；写入普通事件值会更新原 ref.value。两种模式都拒绝把 prop
+                  title 直接用作 v-model 目标。
+                </desc>
+                <defs>
+                  <marker
+                    id="sfc-binding-arrow"
+                    markerWidth="8"
+                    markerHeight="8"
+                    refX="7"
+                    refY="4"
+                    orient="auto"
+                  >
+                    <path d="M0 0 L8 4 L0 8 Z" fill="currentColor" />
+                  </marker>
+                </defs>
+                <g class="eng-node primary">
+                  <rect x="165" y="15" width="610" height="88" rx="12" />
+                  <text class="eng-label" x="190" y="43">
+                    沿用 App.vue：title 是 prop；count = ref(0)
+                  </text>
+                  <text class="eng-code" x="190" y="69">
+                    bindings = { title: PROPS, count: SETUP_REF }
+                  </text>
+                  <text class="eng-small" x="190" y="89">
+                    同一内联 HTML 模板：读取 title/count，再比较 v-model="count"
+                    的写入
+                  </text>
+                </g>
+                <g class="eng-edge" marker-end="url(#sfc-binding-arrow)">
+                  <path d="M470 103 V125" />
+                  <path d="M350 175 H235 V275" />
+                  <path d="M590 175 H705 V275" />
+                </g>
+                <g class="eng-decision">
+                  <polygon points="470,125 590,175 470,225 350,175" />
+                  <text class="eng-code" x="470" y="170" text-anchor="middle">
+                    compilerOptions
+                  </text>
+                  <text class="eng-label" x="470" y="191" text-anchor="middle">
+                    .inline ?
+                  </text>
+                </g>
+                <text class="eng-small" x="335" y="163" text-anchor="end">
+                  true：compileScript 内部编译
+                </text>
+                <text class="eng-small" x="602" y="163">
+                  false：上层转交 bindings
+                </text>
+                <rect
+                  class="eng-lane"
+                  x="20"
+                  y="275"
+                  width="430"
+                  height="280"
+                  rx="12"
+                />
+                <rect
+                  class="eng-lane"
+                  x="490"
+                  y="275"
+                  width="430"
+                  height="280"
+                  rx="12"
+                />
+                <text class="eng-lane-title" x="45" y="307">
+                  inline template：直接使用闭包绑定
+                </text>
+                <text class="eng-lane-title" x="515" y="307">
+                  独立 render：使用渲染函数参数
+                </text>
+                <g class="eng-node blue">
+                  <rect x="45" y="326" width="380" height="127" rx="10" />
+                  <text class="eng-small" x="63" y="351">插值读取</text>
+                  <text class="eng-code" x="63" y="375">
+                    title → __props.title
+                  </text>
+                  <text class="eng-code" x="63" y="398">
+                    count → count.value
+                  </text>
+                  <text class="eng-small" x="63" y="423">
+                    v-model 更新 count
+                  </text>
+                  <text class="eng-code" x="63" y="443">
+                    count.value = $event
+                  </text>
+                </g>
+                <g class="eng-node violet">
+                  <rect x="515" y="326" width="380" height="127" rx="10" />
+                  <text class="eng-small" x="533" y="351">插值读取</text>
+                  <text class="eng-code" x="533" y="375">
+                    title → $props.title
+                  </text>
+                  <text class="eng-code" x="533" y="398">
+                    count → $setup.count
+                  </text>
+                  <text class="eng-small" x="533" y="423">
+                    v-model 更新 count
+                  </text>
+                  <text class="eng-code" x="533" y="443">
+                    $setup.count = $event
+                  </text>
+                </g>
+                <g class="eng-node">
+                  <rect x="45" y="483" width="380" height="54" rx="10" />
+                  <text class="eng-small" x="63" y="505">
+                    setup 返回 render 函数，运行时保存为 render
+                  </text>
+                  <text class="eng-code" x="63" y="525">
+                    闭包捕获 __props 与原 count ref
+                  </text>
+                  <rect x="515" y="483" width="380" height="54" rx="10" />
+                  <text class="eng-small" x="533" y="505">
+                    setup 返回 { count, … } → proxyRefs → $setup
+                  </text>
+                  <text class="eng-code" x="533" y="525">
+                    读：unref；普通值写入：oldRef.value = $event
+                  </text>
+                </g>
+                <g
+                  class="eng-edge eng-dashed"
+                  marker-end="url(#sfc-binding-arrow)"
+                >
+                  <path d="M235 483 V453" />
+                  <path d="M705 483 V453" />
+                </g>
+                <g class="eng-node amber">
+                  <rect x="20" y="577" width="900" height="54" rx="10" />
+                  <text class="eng-label" x="42" y="600">
+                    若改成 v-model="title"：两种模式都报告 X_V_MODEL_ON_PROPS
+                  </text>
+                  <text class="eng-small" x="42" y="621">
+                    compileTemplate 收集到 errors；内联调用方 compileScript
+                    随后抛出该错误。
+                  </text>
+                </g>
+              </svg>
+            </div>
+            <figcaption>
+              <strong
+                >bindings 决定编译访问路径，setup
+                的返回形态决定运行时承接方式。</strong
+              >
+              这里沿用后文 App.vue 的 title/count，增加 v-model
+              写入作比较。实线表示编译分派；虚线表示运行时怎样支持这些访问。独立
+              render 的 $setup.count 已经由 proxyRefs
+              解包，事件写入普通值时代理更新原
+              ref.value；编译器无需在这条路径再生成 .value。
+            </figcaption>
+          </figure>
+
           <div class="table-wrap">
             <table>
               <thead>
                 <tr>
                   <th>绑定类型</th>
                   <th>典型来源</th>
-                  <th>模板读取策略</th>
+                  <th>inline template</th>
+                  <th>独立 render</th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
                   <td>PROPS</td>
                   <td>defineProps 字段</td>
-                  <td>__props / $props 访问，不允许直接赋值。</td>
+                  <td>通过 __props 读取，不允许直接赋值。</td>
+                  <td>通过 $props 读取，不允许直接赋值。</td>
                 </tr>
                 <tr>
                   <td>PROPS_ALIASED</td>
                   <td><code>{ foo: localFoo }</code> 响应式 props 解构</td>
                   <td>
-                    借 <code>__propsAliases</code> 把 localFoo 还原成公共键
-                    foo。
+                    借 <code>__propsAliases</code> 把 localFoo
+                    还原为公共键，访问 <code>__props.foo</code>。
                   </td>
+                  <td>还原公共键后访问 <code>$props['foo']</code>。</td>
                 </tr>
                 <tr>
                   <td>SETUP_REF</td>
                   <td>ref()、computed()</td>
                   <td>读取/写入 .value。</td>
+                  <td>
+                    <code>$setup.name</code>，由运行时 setupState 解包与写入。
+                  </td>
                 </tr>
                 <tr>
                   <td>SETUP_MAYBE_REF</td>
                   <td>普通 const 调用结果</td>
-                  <td>读取 unref；赋值先 isRef 判断。</td>
+                  <td>
+                    读取 unref；普通赋值、更新与解构赋值直接写 .value；v-model
+                    单独生成 isRef 判断。
+                  </td>
+                  <td>
+                    <code>$setup.name</code>，由运行时 setupState 解包与写入。
+                  </td>
                 </tr>
                 <tr>
                   <td>SETUP_LET</td>
                   <td>let 绑定</td>
-                  <td>兼容 ref 与普通值两种情况。</td>
+                  <td>
+                    读取 unref；普通赋值/更新用 isRef 区分 .value
+                    与绑定本身；解构赋值直接写绑定。
+                  </td>
+                  <td>
+                    <code>$setup.name</code>，由运行时 setupState 解包与写入。
+                  </td>
                 </tr>
                 <tr>
                   <td>SETUP_REACTIVE_CONST</td>
@@ -1514,26 +1737,34 @@ props: {
                     <code>const state = reactive(...)</code>、props rest proxy
                   </td>
                   <td>
-                    对象可变、绑定通常不可替换；若直接成为 v-model 目标则降为
-                    SETUP_LET。
+                    reactive 对象内容可变，props rest 通过 getter 读取当前
+                    props。Identifier 声明的 reactive const 直接成为 v-model
+                    目标时降为 SETUP_LET；ObjectPattern 声明的 props rest proxy
+                    不经过这项降级。
+                  </td>
+                  <td>
+                    通过 <code>$setup.name</code> 访问；声明降级条件同左。
                   </td>
                 </tr>
                 <tr>
                   <td>LITERAL_CONST</td>
                   <td>字面量 const</td>
-                  <td>直接使用，可安全提升。</td>
+                  <td>直接使用；静态字面量声明可提升到模块层。</td>
+                  <td><code>$setup.name</code>。</td>
                 </tr>
                 <tr>
                   <td>SETUP_CONST</td>
                   <td>函数、稳定对象、import</td>
                   <td>直接使用，不走实例代理。</td>
+                  <td><code>$setup.name</code>。</td>
                 </tr>
                 <tr>
                   <td>OPTIONS / DATA</td>
                   <td>普通 script 的 inject/computed/methods/setup/data</td>
+                  <td>通过 <code>_ctx.name</code> 访问。</td>
                   <td>
-                    保留 Options API 身份，经组件公开实例访问；不会冒充 script
-                    setup 直连绑定。
+                    分别通过 <code>$options.name</code> /
+                    <code>$data.name</code> 访问。
                   </td>
                 </tr>
               </tbody>
@@ -1828,21 +2059,25 @@ if (inMap &amp;&amp; !inAST) {
               <p>
                 只有传入字符串且同时有 <code>inMap</code> 时，才用
                 <code>mapLines(code→block, block→SFC)</code>
-                复合并回补错误位置。若直接复用 descriptor AST，节点 location
-                本来就基于完整 .vue，编译器生成的 map 可直接使用。
+                合并映射并回补错误的行号与 offset；mapLines
+                保留模板编译器的原始列， patchErrors 也不调整错误
+                column。若直接复用 descriptor AST，节点 location 本来就基于完整
+                .vue，编译器生成的 map 可直接使用。
               </p>
             </article>
           </div>
           <div class="callout">
             <strong>错误位置回补：</strong>如果传入的是 template block
             字符串而非完整 SFC AST，编译错误 location 先相对
-            block；compileTemplate 会根据 inMap 把它平移回 .vue 文件。
+            block；compileTemplate 根据 inMap 中的源码查找模板字符串，补回 line
+            与 offset。内容紧跟
+            <code>&lt;template&gt;</code> 出现在同一行时，column 仍是 block
+            坐标，不会加上标签占用的列。
           </div>
           <div class="callout warn">
             <strong>模板预处理的 map 边界：</strong>这里的 consolidate
             适配器只返回预处理后的字符串，没有返回“Pug → HTML”之类的 source
-            map，也没有 dependencies 字段。因此不能把预处理模板描述成可靠的三层
-            map 链，更不能说 compileTemplate 会返回预处理依赖。
+            map，也没有 dependencies 字段。
             <code>inMap</code> 只能提供调用方已有的 block → SFC
             映射；缺失的语言转换映射无法凭空补出。
           </div>
@@ -1890,9 +2125,14 @@ if (inMap &amp;&amp; !inAST) {
                 </tr>
                 <tr>
                   <td>自定义 compiler 自己 throw</td>
-                  <td>异常向外传播</td>
                   <td>
-                    <code>doCompileTemplate()</code> 没有包住 compiler.compile。
+                    无预处理时向外 throw；可用预处理器分支中返回空 render 与
+                    errors
+                  </td>
+                  <td>
+                    预处理分支的外层 try
+                    同时包住预处理与后续编译；加载预处理器的 customRequire
+                    调用在 try 之外，其自身抛错仍向外传播。
                   </td>
                 </tr>
                 <tr>
@@ -1932,13 +2172,14 @@ if (inMap &amp;&amp; !inAST) {
               <h2>compileStyle：一条 PostCSS 插件管线</h2>
             </div>
             <p>
-              预处理语言先把源码变成 CSS；随后顺序是 CSS vars → 用户 PostCSS
-              plugins → trim → scoped → CSS
-              Modules。顺序来自数组操作，不是可以随意交换的功能清单。
+              预处理语言先把源码变成 CSS；随后按 CSS vars → 用户 PostCSS plugins
+              → trim → scoped → CSS Modules 注册插件。PostCSS 按 Once、
+              节点访问与 OnceExit
+              分阶段调用它们，数组顺序不表示每个插件整体先后执行。
             </p>
           </div>
           <div class="diagram" aria-label="SFC style 编译流程">
-            <p class="diagram-title">doCompileStyle(options)</p>
+            <p class="diagram-title">预处理与 PostCSS 插件注册顺序</p>
             <div class="flow nine">
               <div class="flow-node">
                 <strong>Preprocessor</strong><small>Sass / Less / Stylus</small>
@@ -2019,6 +2260,217 @@ if (options.isAsync) {
 // 读取 .css 强制 LazyResult 同步执行。
 const code = result.css</code></pre>
           </figure>
+          <figure class="engineering-diagram" id="sfc-postcss-hooks">
+            <div class="engineering-scroll" tabindex="0">
+              <svg
+                viewBox="0 0 1000 765"
+                role="img"
+                aria-labelledby="sfc-postcss-title sfc-postcss-desc"
+              >
+                <title id="sfc-postcss-title">
+                  PostCSS hook 泳道与同一份 CSS AST 的变化
+                </title>
+                <desc id="sfc-postcss-desc">
+                  同步编译 scoped card 样式。用户 Once 先看到原始 v-bind，trim
+                  Once 只调整格式。遍历 card 规则时 scoped Rule 先注入 scope
+                  selector，再访问子声明，由 cssVars Declaration
+                  改写值，然后用户 Declaration 读取改写结果。dirty
+                  节点可能再访问。所有节点处理完后 scoped OnceExit 检查
+                  keyframes，本例没有动画因而跳过改写。成功返回生成 CSS；同步
+                  hook 抛错则返回空 code 与 errors。
+                </desc>
+                <defs>
+                  <marker
+                    id="sfc-postcss-arrow"
+                    markerWidth="8"
+                    markerHeight="8"
+                    refX="7"
+                    refY="4"
+                    orient="auto"
+                  >
+                    <path d="M0 0 L8 4 L0 8 Z" fill="currentColor" />
+                  </marker>
+                </defs>
+                <g class="eng-node primary">
+                  <rect x="180" y="12" width="800" height="75" rx="12" />
+                  <text class="eng-label" x="202" y="40">
+                    同一份 CSS AST；scope id = data-v-a1b2
+                  </text>
+                  <text class="eng-code" x="202" y="65">
+                    .card { color: v-bind(theme.color) }
+                  </text>
+                </g>
+                <rect
+                  class="eng-lane"
+                  x="180"
+                  y="112"
+                  width="195"
+                  height="490"
+                  rx="10"
+                />
+                <rect
+                  class="eng-lane"
+                  x="390"
+                  y="112"
+                  width="135"
+                  height="490"
+                  rx="10"
+                />
+                <rect
+                  class="eng-lane"
+                  x="540"
+                  y="112"
+                  width="195"
+                  height="490"
+                  rx="10"
+                />
+                <rect
+                  class="eng-lane"
+                  x="750"
+                  y="112"
+                  width="230"
+                  height="490"
+                  rx="10"
+                />
+                <text class="eng-lane-title" x="194" y="139">用户插件</text>
+                <text class="eng-lane-title" x="404" y="139">trim</text>
+                <text class="eng-lane-title" x="554" y="139">cssVars</text>
+                <text class="eng-lane-title" x="764" y="139">scoped</text>
+                <g class="eng-node">
+                  <rect x="12" y="166" width="150" height="94" rx="10" />
+                  <text class="eng-stage" x="29" y="195">Once</text>
+                  <text class="eng-small" x="29" y="220">全部 Once 先执行</text>
+                  <text class="eng-small" x="29" y="243">之后才遍历节点</text>
+                  <rect x="12" y="303" width="150" height="171" rx="10" />
+                  <text class="eng-stage" x="29" y="332">节点访问</text>
+                  <text class="eng-small" x="29" y="358">
+                    先访问 .card Rule
+                  </text>
+                  <text class="eng-small" x="29" y="382">
+                    再访问子 Declaration
+                  </text>
+                  <text class="eng-small" x="29" y="414">同种节点的回调</text>
+                  <text class="eng-small" x="29" y="438">按注册顺序调用</text>
+                  <rect x="12" y="518" width="150" height="84" rx="10" />
+                  <text class="eng-stage" x="29" y="547">OnceExit</text>
+                  <text class="eng-small" x="29" y="573">遍历稳定后执行</text>
+                </g>
+                <g class="eng-node amber">
+                  <rect x="190" y="176" width="175" height="75" rx="10" />
+                  <text class="eng-label" x="202" y="201">Once 读取声明值</text>
+                  <text class="eng-code" x="202" y="228">
+                    v-bind(theme.color)
+                  </text>
+                </g>
+                <g class="eng-node">
+                  <rect x="400" y="176" width="115" height="75" rx="10" />
+                  <text class="eng-label" x="410" y="201">Once</text>
+                  <text class="eng-small" x="410" y="226">只调整 raws</text>
+                </g>
+                <text class="eng-small" x="585" y="215">无 Once</text>
+                <text class="eng-small" x="821" y="215">无 Once</text>
+                <g class="eng-node violet">
+                  <rect x="760" y="304" width="210" height="68" rx="10" />
+                  <text class="eng-label" x="775" y="329">
+                    Rule 重写 selector
+                  </text>
+                  <text class="eng-code" x="775" y="353">
+                    .card[data-v-a1b2]
+                  </text>
+                </g>
+                <g class="eng-node blue">
+                  <rect x="550" y="400" width="175" height="75" rx="10" />
+                  <text class="eng-label" x="562" y="425">
+                    Declaration 改值
+                  </text>
+                  <text class="eng-code" x="562" y="448">
+                    v-bind → var(--…)
+                  </text>
+                  <text class="eng-small" x="562" y="466">
+                    selector 保持不变
+                  </text>
+                </g>
+                <g class="eng-node amber">
+                  <rect x="190" y="400" width="175" height="75" rx="10" />
+                  <text class="eng-label" x="202" y="425">
+                    Declaration 读取
+                  </text>
+                  <text class="eng-code" x="202" y="450">
+                    已改写为 var(--…)
+                  </text>
+                </g>
+                <g class="eng-node violet">
+                  <rect x="760" y="518" width="210" height="74" rx="10" />
+                  <text class="eng-label" x="775" y="543">
+                    OnceExit 检查动画表
+                  </text>
+                  <text class="eng-small" x="775" y="567">
+                    本例 keyframes 表为空
+                  </text>
+                  <text class="eng-small" x="775" y="585">
+                    跳过 animation 改写
+                  </text>
+                </g>
+                <g class="eng-edge" marker-end="url(#sfc-postcss-arrow)">
+                  <path d="M365 214 H400" />
+                  <path d="M457 251 V280 H865 V304" />
+                  <path d="M865 372 V386 H637 V400" />
+                  <path d="M550 438 H365" />
+                  <path d="M277 475 V490 H745 V555 H760" />
+                  <path d="M865 592 V643" />
+                </g>
+                <g
+                  class="eng-edge eng-dashed"
+                  marker-end="url(#sfc-postcss-arrow)"
+                >
+                  <path d="M365 465 H470 V497 H637 V475" />
+                  <path d="M87 260 V303" />
+                  <path d="M87 474 V518" />
+                </g>
+                <g class="eng-edge eng-dashed">
+                  <path
+                    d="M12 215 H4 V688 H12"
+                    marker-end="url(#sfc-postcss-arrow)"
+                  />
+                  <path d="M12 389 H4" />
+                  <path d="M12 560 H4" />
+                </g>
+                <text class="eng-note" x="405" y="519">
+                  dirty 节点可能再次访问
+                </text>
+                <g class="eng-node primary">
+                  <rect x="180" y="643" width="800" height="94" rx="12" />
+                  <text class="eng-label" x="202" y="671">
+                    成功：读取 LazyResult.css，返回编译结果
+                  </text>
+                  <text class="eng-code" x="202" y="697">
+                    .card[data-v-a1b2] { color: var(--a1b2-theme\.color) }
+                  </text>
+                  <text class="eng-small" x="202" y="721">
+                    code / map / rawResult / errors / dependencies
+                  </text>
+                </g>
+                <g class="eng-node amber">
+                  <rect x="12" y="643" width="150" height="94" rx="10" />
+                  <text class="eng-label" x="25" y="670">任一 hook 抛错</text>
+                  <text class="eng-code" x="25" y="695">code: ''</text>
+                  <text class="eng-code" x="25" y="719">errors: [error]</text>
+                </g>
+              </svg>
+            </div>
+            <figcaption>
+              <strong
+                >插件注册顺序与 hook 阶段共同决定用户看到哪份 AST。</strong
+              >
+              本图使用同步 compileStyle、scoped: true、默认 trim，用户插件只演示
+              Once 与 Declaration 两个同步 hook；CSS Modules 需改走
+              compileStyleAsync。实线跟踪本例成功时的 hook
+              与结果；虚线表示阶段顺序、dirty 节点重访或异常退出。selector 在
+              Rule 阶段改变，声明值在 Declaration
+              阶段改变，两者不会整插件排成先后执行。
+            </figcaption>
+          </figure>
+
           <div class="code-walkthrough">
             <article class="code-note">
               <h3>预处理在 PostCSS 之前</h3>
@@ -2029,12 +2481,15 @@ const code = result.css</code></pre>
               </p>
             </article>
             <article class="code-note">
-              <h3>cssVars 插件必须最先安装</h3>
+              <h3>注册顺序与 hook 时机一起决定输入</h3>
               <p>
-                <code>v-bind(theme.color)</code> 先变成稳定的 CSS custom
-                property，用户 PostCSS 插件看到的已经是合法 CSS
-                值；trim/scoped/modules 再处理结构。注意“最先”指 PostCSS
-                阶段，预处理器仍在它之前。
+                cssVars 在 Declaration 中把
+                <code>v-bind(theme.color)</code> 改为
+                <code>var(--id-name)</code>。用户插件的 Declaration
+                注册在它之后， 因而读到改写后的值；用户 Once
+                则在节点访问之前执行，仍可能读到原始 v-bind。trim 使用
+                Once，scoped 使用 Rule/AtRule 与 OnceExit，需按 各自 hook
+                理解调用时序。
               </p>
             </article>
             <article class="code-note">
@@ -2138,10 +2593,12 @@ if (shouldInject) {
             普通 selector 把属性插到“最后一个仍属于当前组件”的节点；deep
             把边界停在参数之前；slotted 改用 <code>-s</code>，并禁止再加普通
             id；global 直接把局部分支替掉。<code>:is/:where/:has</code>中 deep
-            与普通分支混在一起时，源码还会克隆并拆开 selector，防止某个分支的
-            deep 状态污染其他分支。keyframes 则先收集这张映射：<code
-              >原名 → 原名-shortId</code
-            >，在 <code>OnceExit</code> 同步改写本 style block 内的
+            与普通分支混在一起，且当前不在 deep 上下文、伪类前无 scope
+            锚点、后有尾随 节点时，源码才克隆并拆开
+            selector，使尾随节点只在普通分支加 scope。
+            没有尾随节点时，递归改写伪类内部即可。keyframes
+            则先收集这张映射：<code>原名 → 原名-shortId</code>，在
+            <code>OnceExit</code> 同步改写本 style block 内的
             animation-name/animation；跨 style block 不共享这张映射。
           </p>
           <p class="prose">
@@ -2302,9 +2759,10 @@ return { code: code || ``, map: outMap &amp;&amp; outMap.toJSON(),
             上改写 v-bind。若
             <code>additionalData</code> 或预处理输出凭空加入新的
             <code>v-bind()</code>，style 侧会生成 custom property，但 script
-            侧列表并不知道它。同理，预处理阶段新增的 <code>:slotted()</code>
-            不会回写 <code>descriptor.slotted</code>。上层不能假设 parse
-            的汇总状态会在 compileStyle 后自动同步。
+            侧列表并不知道它。同理，预处理阶段新增的
+            <code>:slotted()</code> 不会回写
+            <code>descriptor.slotted</code>。上层不能假设 parse 的汇总状态会在
+            compileStyle 后自动同步。
           </div>
           <a
             class="source-link"
@@ -2337,9 +2795,7 @@ return { code: code || ``, map: outMap &amp;&amp; outMap.toJSON(),
               诊断线索，由 Vite/vue-loader 等调用方继续处理。
             </p>
           </div>
-          <h3 id="pipeline">
-            四个 API 怎样交接数据
-          </h3>
+          <h3 id="pipeline">四个 API 怎样交接数据</h3>
           <div class="source-result">
             <pre><code>source: App.vue
   │
@@ -2367,10 +2823,8 @@ return { code: code || ``, map: outMap &amp;&amp; outMap.toJSON(),
           </div>
           <p class="source-context">
             <code>compileScript</code> 的第一个参数是完整
-            <code>SFCDescriptor</code>；<code
-              >compileTemplate</code
-            >
-            与 <code>compileStyle</code>
+            <code>SFCDescriptor</code>；<code>compileTemplate</code> 与
+            <code>compileStyle</code>
             都只接 options。不存在一个隐藏的“compileAll(descriptor)”替调用方传
             bindings、id 和 flags。
           </p>
@@ -2380,7 +2834,9 @@ return { code: code || ``, map: outMap &amp;&amp; outMap.toJSON(),
             <figcaption class="source-caption">
               <span
                 ><strong>教程可执行示例</strong
-                ><code>同一份 App.vue 的 parse → script/template/style</code></span
+                ><code
+                  >同一份 App.vue 的 parse → script/template/style</code
+                ></span
               >
               <span class="source-version">构建器组装前</span>
             </figcaption>
@@ -2445,11 +2901,11 @@ assert.match(style.code, /var\(--a1b2-title\)/)</code></pre>
           </figure>
           <p class="source-context">
             这段代码到此只得到三个分支产物。它没有把 render 挂到组件、写入
-            <code>__scopeId</code>、加载模板生成的资源 import，也没有把 CSS 注入页面；
-            这些是上层构建插件的后续工作。后三个编译 API 使用同一个
+            <code>__scopeId</code>、加载模板生成的资源 import，也没有把 CSS
+            注入页面； 这些是上层构建插件的后续工作。后三个编译 API 使用同一个
             <code>id</code>；<code>parse()</code> 不接收这个参数。而
-            <code>scoped</code> 是从各 style block 计算或逐块传入的，不是 descriptor
-            上的汇总字段。
+            <code>scoped</code> 是从各 style block 计算或逐块传入的，不是
+            descriptor 上的汇总字段。
           </p>
           <div class="table-wrap">
             <table>
@@ -2569,7 +3025,8 @@ style content ─→ 预处理器 ─→ compileStyle/cssVarsPlugin ─→ var(-
                     script CSS vars、template scope codegen、style selector
                   </td>
                   <td>
-                    三个分支必须用同一短 id；descriptor 只在每个 style block 上保存
+                    三个分支必须用同一短 id；descriptor 只在每个 style block
+                    上保存
                     <code>scoped</code>，没有汇总后的 scoped 字段。
                   </td>
                 </tr>
@@ -2701,7 +3158,11 @@ style content ─→ 预处理器 ─→ compileStyle/cssVarsPlugin ─→ var(-
                 <tr>
                   <td>类型节点 _resolvedElements/_resolvedReference</td>
                   <td>直接挂在 Babel AST node</td>
-                  <td>有泛型实参时禁用部分缓存；命中仍重放外部 deps。</td>
+                  <td>
+                    有泛型实参时禁用部分缓存；命中按属性 _ownerScope 补
+                    deps，可能漏掉中间转导出文件，见类型解析章节的 facade →
+                    middle → leaf 示例。
+                  </td>
                 </tr>
                 <tr>
                   <td>fileToScope / fileToGlobalScope</td>
@@ -2751,7 +3212,7 @@ style content ─→ 预处理器 ─→ compileStyle/cssVarsPlugin ─→ var(-
             <pre><code>1 | &lt;template&gt;
 2 |   &lt;p&gt;{{ msg }}&lt;/p&gt;
 3 | &lt;/template&gt;
-4 | &lt;script setup&gt;
+4 | &lt;script&gt;
 5 | const msg = 'ok'
 6 | &lt;/script&gt;
 
@@ -2763,9 +3224,11 @@ Source Map API：line 从 1 开始，column 从 0 开始。</code></pre>
           <p class="source-context">
             上例先展示 parse 生成的 block → 完整 SFC 映射。compileTemplate
             走字符串输入时，可把模板编译器的“render → template string”与这层 map
-            复合；走 descriptor AST 时则直接使用完整 SFC
-            坐标。模板预处理缺少自己的转换 map，不能宣称 Pug
-            等链路也能无损复合。compileScript 的 MagicString map 从一开始就以
+            复合；走 descriptor AST 时则直接使用完整 SFC 坐标。这里的 script
+            是普通 block；script setup 不生成 parse block map，而由
+            compileScript 用完整 SFC 初始化 MagicString 并生成映射。模板预处理
+            缺少自己的语言转换 map。compileScript 的 MagicString map
+            从一开始就以
             <code>App.vue</code> 为 source。
           </p>
           <figure class="source-block">
@@ -2797,10 +3260,7 @@ Source Map API：line 从 1 开始，column 从 0 开始。</code></pre>
             ><code>shouldForceReload</code> 假设调用方已经确认 script
             未变，只比较“旧 TS/TSX setup import
             曾未被模板使用，而新模板开始使用”。这种 import
-            旧产物里可能已被裁掉，仅替换 render
-            补不回来，所以要求重载组件模块。此提交的 compiler-sfc
-            单测没有直接命中
-            <code>hmrShouldReload()</code>；这里是源码事实，不标成测试保证。
+            旧产物里可能已被裁掉，仅替换 render 补不回来，所以要求重载组件模块。
           </div>
         </section>
 
@@ -2812,9 +3272,8 @@ Source Map API：line 从 1 开始，column 从 0 开始。</code></pre>
             </div>
             <p>
               仓库里的 compileScript、compileTemplate、compileStyle
-              测试分别保护各入口内部的组装；它们没有把四个 API
-              串成一条仓库回归测试。跨入口参数怎样交接，由本文前面的可执行
-              App.vue Demo 动态核验，不把它冒充成仓库已有的集成测试。
+              测试分别保护各入口内部的组装。本文前面的可执行 App.vue Demo
+              展示四个 API 之间的参数交接；下表对应仓库各入口的具体回归断言。
             </p>
           </div>
           <h3>代表性测试怎样证明这些机制</h3>
@@ -2839,10 +3298,10 @@ Source Map API：line 从 1 开始，column 从 0 开始。</code></pre>
                     同一 <code>&lt;hello/&gt;</code>，两次传相反 isCustomElement
                   </td>
                   <td>连续调用 parse</td>
+                  <td>一次得到 ELEMENT，另一次得到 COMPONENT。</td>
                   <td>
-                    一次得到 ELEMENT，另一次得到 COMPONENT。
+                    缓存键纳入解析选项，两次调用没有复用不兼容 descriptor。
                   </td>
-                  <td>缓存键纳入解析选项，两次调用没有复用不兼容 descriptor。</td>
                   <td><code>parse.ts · parse()</code></td>
                 </tr>
                 <tr>
@@ -2858,16 +3317,21 @@ Source Map API：line 从 1 开始，column 从 0 开始。</code></pre>
                     transformed 的同一 AST
                   </td>
                   <td>清 templateAnalysisCache 后再 compileScript</td>
+                  <td>import 仍进入 setup return。</td>
                   <td>
-                    import 仍进入 setup return。
+                    清分析缓存后，<code>resolveTemplateAST()</code> 发现旧 AST
+                    已 transformed，重新解析完整 SFC；测试也证明此场景依赖显式
+                    clear。
                   </td>
                   <td>
-                    清分析缓存后，<code>resolveTemplateAST()</code> 发现旧 AST 已
-                    transformed，重新解析完整 SFC；测试也证明此场景依赖显式 clear。
-                  </td>
-                  <td>
-                    <code>script/importUsageCheck.ts · resolveTemplateAnalysisResult()</code><br />
-                    <code>template/resolveTemplateAST.ts · resolveTemplateAST()</code>
+                    <code
+                      >script/importUsageCheck.ts ·
+                      resolveTemplateAnalysisResult()</code
+                    ><br />
+                    <code
+                      >template/resolveTemplateAST.ts ·
+                      resolveTemplateAST()</code
+                    >
                   </td>
                 </tr>
                 <tr>
@@ -2901,15 +3365,20 @@ Source Map API：line 从 1 开始，column 从 0 开始。</code></pre>
                   </td>
                   <td>compile</td>
                   <td>
-                    前者 throw；后者分开生成 prop options 与 useModel 的 get/set。
+                    前者 throw；后者分开生成 prop options 与 useModel 的
+                    get/set。
                   </td>
                   <td>
-                    defineProps 的类型/运行时声明互斥；defineModel 分别记录组件选项和
-                    setup 内转换。测试只证明这些输入形状，不代表完整 TS checker。
+                    defineProps 的类型/运行时声明互斥；defineModel
+                    分别记录组件选项和 setup 内转换。
                   </td>
                   <td>
-                    <code>script/defineProps.ts · processDefineProps()</code><br />
-                    <code>script/defineModel.ts · processDefineModel()/genModelProps()</code>
+                    <code>script/defineProps.ts · processDefineProps()</code
+                    ><br />
+                    <code
+                      >script/defineModel.ts ·
+                      processDefineModel()/genModelProps()</code
+                    >
                   </td>
                 </tr>
                 <tr>
@@ -2925,7 +3394,10 @@ Source Map API：line 从 1 开始，column 从 0 开始。</code></pre>
                   <td>
                     var 所在函数范围内的同名引用没有被错误改成 prop 读取。
                   </td>
-                  <td>转换先收集函数作用域中的提升声明，再决定某个 Identifier 指向谁。</td>
+                  <td>
+                    转换先收集函数作用域中的提升声明，再决定某个 Identifier
+                    指向谁。
+                  </td>
                   <td>
                     <code
                       >script/definePropsDestructure.ts ·
@@ -2947,15 +3419,20 @@ Source Map API：line 从 1 开始，column 从 0 开始。</code></pre>
                   </td>
                   <td>compileTemplate</td>
                   <td>
-                    自定义 compiler 收到字符串；已 transformed 的默认 AST 重解析后产物恢复。
+                    自定义 compiler 收到字符串；已 transformed 的默认 AST
+                    重解析后产物恢复。
                   </td>
                   <td>
-                    自定义 compiler 先令 <code>inAST = undefined</code>；默认 AST
-                    则由 <code>resolveTemplateAST()</code> 检查 transformed 标记。
+                    自定义 compiler 先令 <code>inAST = undefined</code>；默认
+                    AST 则由 <code>resolveTemplateAST()</code> 检查 transformed
+                    标记。
                   </td>
                   <td>
                     <code>compileTemplate.ts · doCompileTemplate()</code><br />
-                    <code>template/resolveTemplateAST.ts · resolveTemplateAST()</code>
+                    <code
+                      >template/resolveTemplateAST.ts ·
+                      resolveTemplateAST()</code
+                    >
                   </td>
                 </tr>
                 <tr>
@@ -2969,11 +3446,12 @@ Source Map API：line 从 1 开始，column 从 0 开始。</code></pre>
                   <td>同名动画、CSS Modules 类、SCSS 外部 import</td>
                   <td>compileStyle / compileStyleAsync</td>
                   <td>
-                    动画名和引用同步改写；modules JSON 返回；SCSS 依赖路径被收集。
+                    动画名和引用同步改写；modules JSON 返回；SCSS
+                    依赖路径被收集。
                   </td>
                   <td>
-                    scoped 插件维护 keyframes 映射；CSS Modules 只走异步结果；预处理器
-                    把 import 列表转成 dependencies。三组测试分别作证，不能合成更宽保证。
+                    scoped 插件维护 keyframes 映射；CSS Modules
+                    只走异步结果；预处理器 把 import 列表转成 dependencies。
                   </td>
                   <td>
                     <code>style/pluginScoped.ts · scopedPlugin()</code><br />
@@ -2990,11 +3468,12 @@ Source Map API：line 从 1 开始，column 从 0 开始。</code></pre>
                   <td>const/ref/prop 三类绑定，同一表达式在 dev/prod/SSR</td>
                   <td>compileScript + compileStyle</td>
                   <td>
-                    script 与 CSS 生成同名变量；SSR 不重复注入客户端 useCssVars。
+                    script 与 CSS 生成同名变量；SSR 不重复注入客户端
+                    useCssVars。
                   </td>
                   <td>
-                    parse 提取表达式，script 与 cssVarsPlugin 用同一 id 生成名称；SSR
-                    改由模板编译接收该列表。
+                    parse 提取表达式，script 与 cssVarsPlugin 用同一 id
+                    生成名称；SSR 改由模板编译接收该列表。
                   </td>
                   <td>
                     <code
@@ -3010,24 +3489,13 @@ Source Map API：line 从 1 开始，column 从 0 开始。</code></pre>
 
           <p class="source-context">
             继续阅读时再按机制进入测试文件：结构与映射看
-            <code>parse.spec.ts</code>，脚本主链看 <code>compileScript.spec.ts</code>，
-            宏与类型分别看 <code>compileScript/define*.spec.ts</code> 和
-            <code>compileScript/resolveType.spec.ts</code>，模板、样式和 CSS vars
-            分别看同名 spec。文件清单只用于定位，不能替代上表的具体断言。
+            <code>parse.spec.ts</code>，脚本主链看
+            <code>compileScript.spec.ts</code>， 宏与类型分别看
+            <code>compileScript/define*.spec.ts</code> 和
+            <code>compileScript/resolveType.spec.ts</code>，模板、样式和 CSS
+            vars 分别看同名 spec。文件清单只用于定位，不能替代上表的具体断言。
           </p>
 
-          <div class="callout warn">
-            <strong
-              >本提交里只能由源码作证、没有 compiler-sfc
-              直接单测的边界：</strong
-            >
-            <code>hmrShouldReload()</code>；parse 对 script setup src
-            冲突的清空；compileTemplate 的 browser/global 预处理配置
-            throw、自定义 compiler throw、scoped/slotted option 转交；
-            compileStyle 的 PostCSS 同步/异步错误结果、browser Modules
-            throw、Less/Stylus、style map、用户 plugin 顺序和 PostCSS dependency
-            message。正文已把这些标成源码契约，没有伪称测试通过。
-          </div>
           <figure class="source-block">
             <figcaption class="source-caption">
               <span
@@ -3091,8 +3559,8 @@ Source Map API：line 从 1 开始，column 从 0 开始。</code></pre>
             </article>
           </div>
           <div class="callout">
-            <strong>以 defineProps 为例，相关步骤是：</strong>processDefineProps →
-            resolveTypeElements → genRuntimeProps → bindingMetadata →
+            <strong>以 defineProps 为例，相关步骤是：</strong>processDefineProps
+            → resolveTypeElements → genRuntimeProps → bindingMetadata →
             compileTemplate transformExpression → runtime props
             校验。只看宏文件会漏掉一半语义。
           </div>

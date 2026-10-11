@@ -38,24 +38,30 @@ import {getHostTransitionProvider} from './ReactFiberHostContext';
 /** 进入 Provider 前保存旧 `_currentValue` 的栈游标。 */
 const valueCursor: StackCursor<mixed> = createCursor(null);
 
+/** DEV 保存主 renderer 的旧身份哨兵，与 Provider value push/pop 配对。 */
 let rendererCursorDEV: StackCursor<Object | null>;
 if (__DEV__) {
   rendererCursorDEV = createCursor(null);
 }
+/** DEV 保存次 renderer 的旧身份哨兵，不与主 renderer 共用槽位。 */
 let renderer2CursorDEV: StackCursor<Object | null>;
 if (__DEV__) {
   renderer2CursorDEV = createCursor(null);
 }
 
+/** 当前 reconciler 模块实例的唯一 DEV 身份，用来诊断同一槽位被多个 renderer 同时使用。 */
 let rendererSigil;
 if (__DEV__) {
   // 用实例唯一哨兵检测多个 renderer 并发使用同一 Context。
   rendererSigil = {};
 }
 
+/** prepareToReadContext 设置的当前消费者；yield/异常重置后为 null，防止把外部读取归入旧 Fiber。 */
 let currentlyRenderingFiber: Fiber | null = null;
+/** 本轮消费者依赖单链表的尾节点；每次准备读取时清空。 */
 let lastContextDependency: ContextDependency<mixed> | null = null;
 
+/** DEV 仅用于警告 updater/useMemo 等内部回调读 Context，不影响实际值的读取。 */
 let isDisallowedContextReadInDEV: boolean = false;
 
 /**
@@ -532,7 +538,10 @@ export function checkIfContextChanged(
   return false;
 }
 
-/** 为当前 Fiber 开始一轮 Context 读取，重置其 work-in-progress 依赖链。 */
+/**
+ * 为当前 Fiber 开始一轮 Context 读取，清空 WIP 的 firstContext 和模块尾指针，随后按实际读取重建依赖。
+ * dependencies 已由 createWorkInProgress 浅克隆，不能改写 current 的依赖头；renderLanes 保留调用签名，此处不消费。
+ */
 export function prepareToReadContext(
   workInProgress: Fiber,
   renderLanes: Lanes,
@@ -549,7 +558,7 @@ export function prepareToReadContext(
 
 /**
  * 在当前 render Fiber 上读取 Context，并登记依赖。
- * 开发环境会拒绝在 useMemo/useReducer 等 Hook 内部回调读取，以保证读取顺序可追踪。
+ * 开发环境会警告 useMemo/useReducer 等 Hook 内部回调中的非法读取；仍返回当前值并登记依赖。
  */
 export function readContext<T>(context: ReactContext<T>): T {
   if (__DEV__) {
@@ -581,6 +590,8 @@ export function readContextDuringReconciliation<T>(
 /**
  * 读取当前 renderer 槽位并把 `{context, memoizedValue}` 追加到消费者依赖链。
  * 首项会创建 Dependencies 并设置 NeedsPropagation，使 bailout 路径仍检查父 Provider。
+ * 值以 Object.is 比较的快照形式保存，后续 checkIfContextChanged 使用它；没有当前消费者时首项读取直接抛错。
+ * 每次读取都会追加独立节点，此处不按 Context 去重；调用方须先 prepare 并在退出 render 时 reset。
  */
 function readContextForConsumer<T>(
   consumer: Fiber | null,

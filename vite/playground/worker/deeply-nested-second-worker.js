@@ -8,6 +8,7 @@ self.postMessage({
   ].join(' '),
 })
 
+/** 第二层创建的第三层 module worker，监听其消息并继续向上一层转发。 */
 const deeplyNestedThirdWorker = new Worker(
   new URL('deeply-nested-third-worker.js', import.meta.url),
   { type: 'module' },

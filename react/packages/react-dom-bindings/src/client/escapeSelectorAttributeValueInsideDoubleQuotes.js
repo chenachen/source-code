@@ -7,13 +7,9 @@
  * @flow
  */
 
-//在将用户输入传入 querySelector(All) 时，嵌入的字符串不能被修改
-//查询的语义。当我们知道...时，这个转义函数是安全使用的
-//提供的值将作为属性选择器的一部分被用双引号括起来
-//不要在其他地方使用它
-//我们转义双引号和反斜杠
+/** 匹配双引号CSS属性选择器值中的换行、双引号和反斜杠，替换为带终止空格的十六进制转义，防止值改变选择器结构；不用于完整CSS标识符。 */
 const escapeSelectorAttributeValueInsideDoubleQuotesRegex = /[\n\"\\]/g;
-/** `escapeSelectorAttributeValueInsideDoubleQuotes` 执行该模块的单一职责，并把副作用限制在当前 DOM/Fiber 边界；用于把属性值转义为双引号 CSS 选择器片段。 */
+/** 转义反斜杠、双引号与换行，只可嵌入双引号包裹的 CSS 属性选择器值。 */
 export default function escapeSelectorAttributeValueInsideDoubleQuotes(
   value: string,
 ): string {

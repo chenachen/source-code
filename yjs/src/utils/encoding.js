@@ -1,5 +1,5 @@
 /**
- * Yjs 更新、状态向量与文档快照的编解码及集成入口。
+ * Yjs 更新与状态向量的编解码及文档集成入口。
  *
  * @module encoding
  */
@@ -14,6 +14,9 @@
  * 5: 带 Embed 富文本内容的 Item
  * 6: 带 Format 富文本标记的 Item
  * 7: 带嵌套 Type 的 Item
+ * 8: 带 Any 数组内容的 Item
+ * 9: 带子文档的 Item
+ * 10: Skip（占位区间，由结构解码器单独处理）
  */
 
 import * as encoding from 'lib0/encoding'
@@ -40,11 +43,11 @@ import { writeStructs } from './encoding-helpers.js'
  * 按目标状态向量写出文档中对端尚未知的结构。
  *
  * 先过滤没有新增结构的客户端，再补入目标向量未提及的本地客户端；客户端按 ID
- * 降序写出。每个范围从目标 `nextClock` 开始，到本地连续末钟结束。
+ * 降序写出。每个范围从目标 `nextClock` 开始，到本地结构数组末钟结束，可能包含 Skip。
  *
  * @param {UpdateEncoderV1 | UpdateEncoderV2} encoder
  * @param {StructStore} store
- * @param {Map<number,number>} _sm
+ * @param {Map<number,number>} _sm 对端每客户端的连续前缀 nextClock；方法不修改输入映射。
  *
  * @private
  * @function
@@ -65,7 +68,7 @@ export const writeClientsStructs = (encoder, store, _sm) => {
   })
   // 写入携带结构的客户端数量。
   encoding.writeVarUint(encoder.restEncoder, sm.size)
-  // 高 client ID 优先，降低接收侧并发位置解析成本。
+  // 按 client ID 降序写出各客户端段。
   array.from(sm.entries()).sort((a, b) => b[0] - a[0]).forEach(([client, clock]) => {
     const structs = /** @type {Array<GC|Item>} */ (store.clients.get(client))
     const lastStruct = structs[structs.length - 1]
@@ -81,13 +84,13 @@ export const writeClientsStructs = (encoder, store, _sm) => {
  * 结构后再逐层退栈。
  *
  * 同一依赖链不会再次进入已在栈中的客户端；检测到缺失数据、自依赖或客户端环时，
- * 把该链及其剩余结构重新编码到 `pendingStructs`，并记录每个客户端最早缺失时钟。
- * 因此新更新到达后可以从精确边界恢复，而不重复集成已成功部分。
+ * 把该链及其剩余结构重新编码到 `pendingStructs`，并记录发现缺依赖时该客户端的尾钟水位。
+ * 新更新到达后先检查是否值得重试；重新读取 pending 时会排除已经集成的真实结构。
  *
  * @param {Transaction} transaction
  * @param {StructStore} store
- * @param {BlockSet} clientsStructRefs
- * @return { null | { update: Uint8Array<ArrayBuffer>, missing: Map<number,number> } }
+ * @param {BlockSet} clientsStructRefs 可消费的解码结构；推进 i，失败链的客户端会从集合移出。
+ * @return { null | { update: Uint8Array<ArrayBuffer>, missing: Map<number,number> } } null 表示本批无结构余量，否则返回只含结构的 V2 更新及重试水位。
  *
  * @private
  * @function
@@ -97,7 +100,7 @@ const integrateStructs = (transaction, store, clientsStructRefs) => {
    * @type {Array<Item | GC | Skip>}
    */
   const stack = []
-  // 从较高 client ID 开始；并发仲裁通常可减少较低 ID 结构的冲突扫描。
+  // 从较高 client ID 开始；同左右锚点的并发插入中，低 ID 项遇到已集成的高 ID 项即可结束冲突扫描。
   let clientsStructRefsIds = array.from(clientsStructRefs.clients.keys()).sort((a, b) => a - b)
   if (clientsStructRefsIds.length === 0) {
     return null
@@ -131,7 +134,9 @@ const integrateStructs = (transaction, store, clientsStructRefs) => {
   const restStructs = new StructStore()
   const missingSV = new Map()
   /**
-   * 记录指定客户端最早缺失的时钟，避免后出现的较大时钟覆盖恢复下界。
+   * 保存缺依赖客户端的尾钟水位，多次登记时取较小值，供后续更新判断是否重试。
+   *
+   * 依赖可能落在尾钟之前的 Skip，因此这个水位并不是缺失 ID 的精确 clock。
    *
    * @param {number} client
    * @param {number} clock
@@ -204,7 +209,7 @@ const integrateStructs = (transaction, store, clientsStructRefs) => {
           continue
         }
       } else {
-        // 依赖齐全；若本地连续前缀落后于结构首钟，先集成显式 Skip 保留空洞。
+        // 依赖齐全；若本地数组尾钟落后于结构首钟，先集成显式 Skip 保留空洞。
         if (offset < 0) {
           const skip = new Skip(createID(stackHead.id.client, localClock), -offset)
           skip.integrate(transaction, 0)
@@ -246,7 +251,8 @@ const integrateStructs = (transaction, store, clientsStructRefs) => {
  * 依赖，则清空旧槽并递归重试其 V2 更新。
  *
  * 更新固定先读结构段、后读删除集。`transaction.local=false` 保证观察者把它识别为
- * 远端变更。
+ * 远端变更。结构先于删除集处理，使同批删除可命中新结构；解码或集成抛错时仍
+ * 由事务 finally 清理已经发生的变更，操作不会回滚到调用前状态。
  *
  * @param {decoding.Decoder} decoder
  * @param {Doc} ydoc
@@ -257,7 +263,7 @@ const integrateStructs = (transaction, store, clientsStructRefs) => {
  */
 export const readUpdateV2 = (decoder, ydoc, transactionOrigin, structDecoder = new UpdateDecoderV2(decoder)) =>
   ydoc.transact(transaction => {
-    // 接收更新必须标记为非本地事务。
+    // 标记当前事务为非本地；若外层已有事务，嵌套调用复用它并把整个事务的 local 改为 false。
     transaction.local = false
     let retry = false
     const doc = transaction.doc
@@ -285,7 +291,7 @@ export const readUpdateV2 = (decoder, ydoc, transactionOrigin, structDecoder = n
     const restStructs = integrateStructs(transaction, store, ss)
     const pending = store.pendingStructs
     if (pending) {
-      // 本次携带缺失客户端，或本地时钟已越过缺口时，旧 pending 值得重试。
+      // 本批活动集合仍含缺失客户端，或本地尾钟超过登记水位时，旧 pending 值得重试；不保证依赖已经补齐。
       for (const [client, clock] of pending.missing) {
         if (ss.clients.has(client) || clock < store.getClock(client)) {
           retry = true
@@ -293,7 +299,7 @@ export const readUpdateV2 = (decoder, ydoc, transactionOrigin, structDecoder = n
         }
       }
       if (restStructs) {
-        // 合并本次与历史 pending，并保留每客户端最早缺失时钟。
+        // 合并本次与历史 pending，并保留每客户端较小的重试水位。
         for (const [client, clock] of restStructs.missing) {
           const mclock = pending.missing.get(client)
           if (mclock == null || mclock > clock) {
@@ -400,7 +406,8 @@ export const writeStateAsUpdate = (encoder, doc, targetStateVector = new Map()) 
  * 编码一个可直接应用的 V2 文档差分更新。
  *
  * 除当前存储外，还纳入未应用删除与因果 pending 结构；后者先按目标状态向量做差。
- * 多段结果按实际编码器版本合并，确保 V1 调用方不会混入 V2 pending 字节。
+ * 多段结果仅在编码器构造函数恰为 UpdateEncoderV1/V2 时合并；自定义子类不会
+ * 命中这两个分支，最后返回首段。标准 V1 路径会先把内部 V2 pending 转码。
  *
  * @param {Doc} doc
  * @param {Uint8Array} [encodedTargetStateVector] 接收方编码状态向量；默认空向量。
@@ -413,7 +420,7 @@ export const encodeStateAsUpdateV2 = (doc, encodedTargetStateVector = new Uint8A
   const targetStateVector = decodeStateVector(encodedTargetStateVector)
   writeStateAsUpdate(encoder, doc, targetStateVector)
   const updates = [encoder.toUint8Array()]
-  // pending 数据也是文档已知状态的一部分，快照不能遗漏。
+  // 导出的更新也携带尚未集成的 pending 数据，使其他文档可在依赖补齐后继续应用。
   if (doc.store.pendingDs) {
     updates.push(doc.store.pendingDs)
   }
@@ -467,7 +474,8 @@ export const readStateVector = decoder => {
 /**
  * 不创建 Doc，直接合并多份更新的结构段与删除集。
  *
- * BlockSet 合并会过滤重复、裁剪重叠并保留 Skip；删除集做区间并集。空输入编码空
+ * BlockSet 合并尝试过滤重复、裁剪重叠并保留 Skip；其非对称重叠裁剪限制见
+ * BlockSet.insertInto，不能把任意重叠输入的覆盖保全作为此实现的保证。删除集做区间并集。空输入编码空
  * Doc，单输入原样返回，避免无意义解码重编码。
  *
  * @param {Array<Uint8Array<ArrayBuffer>>} updates
@@ -613,7 +621,10 @@ export const writeStateVector = (encoder, sv) => {
 export const writeDocumentStateVector = (encoder, doc) => writeStateVector(encoder, getStateVector(doc.store))
 
 /**
- * 把 Doc 或状态向量 Map 编码为 V2 ID 集格式字节。
+ * 把 Doc 或状态向量 Map 编码为状态向量字节。
+ *
+ * 虽默认创建 V2 ID 集编码器，`writeStateVector()` 直接向通用流写绝对 client/clock，
+ * 不调用 ID 集的差分方法，因此结果与 V1 状态向量使用同一格式。
  *
  * @param {Doc|Map<number,number>} doc
  * @param {IdSetEncoderV1 | IdSetEncoderV2} [encoder]
@@ -643,15 +654,15 @@ export const encodeStateVector = doc => encodeStateVectorV2(doc, new IdSetEncode
 /**
  * 检查 Item 的因果依赖并解析当前左右邻与父类型。
  *
- * 若 origin、rightOrigin 或父 Item 超出本地连续时钟（或落在 Skip），返回缺失
+ * 若 origin、rightOrigin 或父 Item 超出本地结构尾钟（或落在 Skip），返回缺失
  * 依赖的 client ID，且不得继续访问可能在解析中被替换的原字段。依赖齐全时按
  * 精确边界取得邻居：若邻居/父已 GC，则把 parent 置空；否则从邻居、父 Item 或
  * 顶层键恢复真实 YType。
  *
- * @param {Item} struct
- * @param {Transaction} transaction
- * @param {StructStore} store
- * @return {null | number}
+ * @param {Item} struct 尚未集成的解码结构；依赖齐全时原位解析 parent、left/right 和锚点。
+ * @param {Transaction} transaction 邻居切分使用的事务，切分会登记待合并项。
+ * @param {StructStore} store 用尾钟与 skips 判断引用 ID 是否真的存在。
+ * @return {null | number} 第一个缺依赖的 client；非 Item 或所有引用存在时为 null，不代表 parent 仍存活。
  */
 const getMissing = (struct, transaction, store) => {
   if (struct.constructor !== Item) return null

@@ -1,4 +1,4 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#646cff"><meta name="description" content="构造、监听、关闭、重启是四个状态阶段；重启迁移公开对象，关闭等待全部资源。"><title>04. Dev Server 生命周期 · Vite 源码解剖</title><style>:root {
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#646cff"><meta name="description" content="构造、监听、关闭、重启各有状态；重启迁移公开对象，关闭并行等待各组件收尾。"><title>04. Dev Server 生命周期 · Vite 源码解剖</title><style>:root {
   color-scheme: light;
   --bg: #f4f6fb;
   --surface: #ffffff;
@@ -506,6 +506,7 @@ a:hover {
 .prose p,
 .prose li {
   color: var(--text);
+  overflow-wrap: anywhere;
 }
 
 .prose p {
@@ -762,6 +763,124 @@ code {
   border-radius: var(--radius);
   background: var(--surface);
   box-shadow: var(--shadow);
+}
+
+.engineering-diagram {
+  min-width: 0;
+  margin: 28px 0;
+  padding: 18px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.engineering-diagram > figcaption {
+  margin-bottom: 12px;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 750;
+  line-height: 1.5;
+}
+
+.diagram-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.diagram-toolbar button,
+.diagram-toolbar a {
+  display: inline-flex;
+  min-height: 36px;
+  padding: 6px 10px;
+  align-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: var(--surface-soft);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.diagram-toolbar button:hover,
+.diagram-toolbar a:hover {
+  border-color: var(--brand);
+  color: var(--brand-strong);
+}
+
+.diagram-scale {
+  min-width: 42px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.diagram-viewport {
+  max-width: 100%;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #f8fafc;
+  overscroll-behavior: contain;
+}
+
+.diagram-canvas {
+  max-width: none;
+}
+
+.diagram-canvas > svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.engineering-diagram .diagram-hint {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+body.diagram-is-expanded {
+  overflow: hidden;
+}
+
+body.diagram-is-expanded::after {
+  position: fixed;
+  z-index: 999;
+  inset: 0;
+  background: rgb(0 0 0 / 65%);
+  content: '';
+}
+
+.engineering-diagram.is-expanded {
+  position: fixed;
+  z-index: 1000;
+  inset: 16px;
+  display: flex;
+  margin: 0;
+  flex-direction: column;
+  box-shadow: var(--shadow);
+}
+
+.engineering-diagram.is-expanded .diagram-viewport {
+  min-height: 0;
+  flex: 1;
+}
+
+@media (max-width: 700px) {
+  .engineering-diagram {
+    padding: 12px;
+  }
+
+  .engineering-diagram.is-expanded {
+    inset: 6px;
+  }
 }
 
 .flow-caption {
@@ -1363,7 +1482,7 @@ code {
     break-inside: avoid;
   }
 }
-</style><script>(function(){try{var t=localStorage.getItem("vite-guide-theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(_){}})();</script></head><body><a class="skip-link" href="#article-start">跳到正文</a><div class="reading-progress" aria-hidden="true"><span data-reading-progress></span></div><header class="topbar"><div class="topbar-inner"><button class="icon-button nav-toggle" type="button" data-nav-toggle aria-expanded="false" aria-label="打开模块导航">☰</button><a class="brand" href="index.html"><span class="brand-mark">V</span><span class="brand-text">Vite 源码解剖</span></a><span class="topbar-path">开发服务器核心 / 04 Dev Server 生命周期</span><div class="topbar-actions"><button class="icon-button" type="button" data-theme-toggle aria-label="切换主题">◐</button></div></div></header><div class="page-grid"><nav class="site-nav" aria-label="模块导航"><a class="nav-home" href="index.html"><span>⌂</span><span>阅读总览</span></a><section class="nav-group"><h2 class="nav-group-title">全景</h2><ul class="nav-list"><li><a href="00-system-map-and-end-to-end.html"><span class="nav-code">00</span><span>系统全景与请求链</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">启动与配置</h2><ul class="nav-list"><li><a href="01-cli-and-startup.html"><span class="nav-code">01</span><span>CLI 与启动</span></a></li><li><a href="02a-env-loading.html"><span class="nav-code">02A</span><span>环境文件加载</span></a></li><li><a href="02b-config-resolution.html"><span class="nav-code">02B</span><span>配置加载与解析</span></a></li><li><a href="02c-define-client-injection-and-json.html"><span class="nav-code">02C</span><span>Define、注入与 JSON</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">开发服务器核心</h2><ul class="nav-list"><li><a href="03-plugin-system.html"><span class="nav-code">03</span><span>插件体系</span></a></li><li><a href="04-dev-server-lifecycle.html" aria-current="page"><span class="nav-code">04</span><span>Dev Server 生命周期</span></a></li><li><a href="05-environment-api.html"><span class="nav-code">05</span><span>Environment API</span></a></li><li><a href="06-middleware-request-pipeline.html"><span class="nav-code">06</span><span>中间件与请求入口</span></a></li><li><a href="07-module-resolution.html"><span class="nav-code">07</span><span>模块解析</span></a></li><li><a href="08-transform-and-module-graph.html"><span class="nav-code">08</span><span>Transform 与模块图</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">转换与增量更新</h2><ul class="nav-list"><li><a href="09-html-transform.html"><span class="nav-code">09</span><span>HTML 转换</span></a></li><li><a href="10-import-analysis.html"><span class="nav-code">10</span><span>Import Analysis</span></a></li><li><a href="11-dependency-pre-bundling.html"><span class="nav-code">11</span><span>依赖预构建</span></a></li><li><a href="12-hmr.html"><span class="nav-code">12</span><span>HMR</span></a></li><li><a href="12b-bundled-dev.html"><span class="nav-code">12B</span><span>Bundled Dev</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">资源管线</h2><ul class="nav-list"><li><a href="13a-css-pipeline.html"><span class="nav-code">13A</span><span>CSS 管线</span></a></li><li><a href="13b-asset-worker-wasm.html"><span class="nav-code">13B</span><span>Asset、Worker、Wasm</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">生产构建</h2><ul class="nav-list"><li><a href="14a-build-orchestration.html"><span class="nav-code">14A</span><span>生产构建编排</span></a></li><li><a href="14b-build-output-and-preload.html"><span class="nav-code">14B</span><span>Preload 与构建输出</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">SSR 与运行时</h2><ul class="nav-list"><li><a href="15a-ssr-transform-and-loading.html"><span class="nav-code">15A</span><span>SSR 变换与加载</span></a></li><li><a href="15b-module-runner.html"><span class="nav-code">15B</span><span>Module Runner</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">公共边界</h2><ul class="nav-list"><li><a href="16-public-api-diagnostics-and-types.html"><span class="nav-code">16</span><span>公共 API 与类型</span></a></li></ul></section></nav><main class="article" id="article-start"><header class="article-hero"><div class="eyebrow"><span class="pill">04</span><span>开发服务器核心</span></div><h1>04. Dev Server 生命周期</h1><p class="lede">构造、监听、关闭、重启是四个状态阶段；重启迁移公开对象，关闭等待全部资源。</p><div class="hero-meta"><span>证据基线：v8.2.1</span><span>commit <code>421615865dad</code></span><span>约 12 分钟</span><a href="../../vite/reading-guides/04-dev-server-lifecycle.md">查看 Markdown 原稿</a></div></header><section class="focus-card" aria-label="阅读重点与边界"><div><h2>本页重点</h2><p>构造、监听、关闭、重启是四个状态阶段；重启迁移公开对象，关闭等待全部资源。</p></div><div class="boundary"><h3>推导边界</h3><p>createServer 只完成装配，listen 才占端口；关闭与重启不能由构造片段推导。</p></div></section><aside class="evidence-note"><h3>证据口径</h3><p>正文保留目标版本中的真实源码、状态说明与代表性测试映射。测试源码用于锁定设计契约；本轮没有执行测试命令。</p></aside><article class="prose"><h2 id="阅读边界"><a class="heading-anchor" href="#%E9%98%85%E8%AF%BB%E8%BE%B9%E7%95%8C" aria-label="链接到本节">#</a>阅读边界</h2>
+</style><script>(function(){try{var t=localStorage.getItem("vite-guide-theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(_){}})();</script></head><body><a class="skip-link" href="#article-start">跳到正文</a><div class="reading-progress" aria-hidden="true"><span data-reading-progress></span></div><header class="topbar"><div class="topbar-inner"><button class="icon-button nav-toggle" type="button" data-nav-toggle aria-expanded="false" aria-label="打开模块导航">☰</button><a class="brand" href="index.html"><span class="brand-mark">V</span><span class="brand-text">Vite 源码解剖</span></a><span class="topbar-path">开发服务器核心 / 04 Dev Server 生命周期</span><div class="topbar-actions"><button class="icon-button" type="button" data-theme-toggle aria-label="切换主题">◐</button></div></div></header><div class="page-grid"><nav class="site-nav" aria-label="模块导航"><a class="nav-home" href="index.html"><span>⌂</span><span>阅读总览</span></a><section class="nav-group"><h2 class="nav-group-title">全景</h2><ul class="nav-list"><li><a href="00-system-map-and-end-to-end.html"><span class="nav-code">00</span><span>系统全景与请求链</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">启动与配置</h2><ul class="nav-list"><li><a href="01-cli-and-startup.html"><span class="nav-code">01</span><span>CLI 与启动</span></a></li><li><a href="02a-env-loading.html"><span class="nav-code">02A</span><span>环境文件加载</span></a></li><li><a href="02b-config-resolution.html"><span class="nav-code">02B</span><span>配置加载与解析</span></a></li><li><a href="02c-define-client-injection-and-json.html"><span class="nav-code">02C</span><span>Define、注入与 JSON</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">开发服务器核心</h2><ul class="nav-list"><li><a href="03-plugin-system.html"><span class="nav-code">03</span><span>插件体系</span></a></li><li><a href="04-dev-server-lifecycle.html" aria-current="page"><span class="nav-code">04</span><span>Dev Server 生命周期</span></a></li><li><a href="05-environment-api.html"><span class="nav-code">05</span><span>Environment API</span></a></li><li><a href="06-middleware-request-pipeline.html"><span class="nav-code">06</span><span>中间件与请求入口</span></a></li><li><a href="07-module-resolution.html"><span class="nav-code">07</span><span>模块解析</span></a></li><li><a href="08-transform-and-module-graph.html"><span class="nav-code">08</span><span>Transform 与模块图</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">转换与增量更新</h2><ul class="nav-list"><li><a href="09-html-transform.html"><span class="nav-code">09</span><span>HTML 转换</span></a></li><li><a href="10-import-analysis.html"><span class="nav-code">10</span><span>Import Analysis</span></a></li><li><a href="11-dependency-pre-bundling.html"><span class="nav-code">11</span><span>依赖预构建</span></a></li><li><a href="12-hmr.html"><span class="nav-code">12</span><span>HMR</span></a></li><li><a href="12b-bundled-dev.html"><span class="nav-code">12B</span><span>Bundled Dev</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">资源管线</h2><ul class="nav-list"><li><a href="13a-css-pipeline.html"><span class="nav-code">13A</span><span>CSS 管线</span></a></li><li><a href="13b-asset-worker-wasm.html"><span class="nav-code">13B</span><span>Asset、Worker、Wasm</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">生产构建</h2><ul class="nav-list"><li><a href="14a-build-orchestration.html"><span class="nav-code">14A</span><span>生产构建编排</span></a></li><li><a href="14b-build-output-and-preload.html"><span class="nav-code">14B</span><span>Preload 与构建输出</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">SSR 与运行时</h2><ul class="nav-list"><li><a href="15a-ssr-transform-and-loading.html"><span class="nav-code">15A</span><span>SSR 变换与加载</span></a></li><li><a href="15b-module-runner.html"><span class="nav-code">15B</span><span>Module Runner</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">公共边界</h2><ul class="nav-list"><li><a href="16-public-api-diagnostics-and-types.html"><span class="nav-code">16</span><span>公共 API 与类型</span></a></li></ul></section></nav><main class="article" id="article-start"><header class="article-hero"><div class="eyebrow"><span class="pill">04</span><span>开发服务器核心</span></div><h1>04. Dev Server 生命周期</h1><p class="lede">构造、监听、关闭、重启各有状态；重启迁移公开对象，关闭并行等待各组件收尾。</p><div class="hero-meta"><span>证据基线：v8.2.1</span><span>commit <code>421615865dad</code></span><span>约 14 分钟</span><a href="../../vite/reading-guides/04-dev-server-lifecycle.md">查看 Markdown 原稿</a></div></header><aside class="boundary-note" aria-label="阅读范围"><p>普通模式在 listen 初始化环境，middleware mode 在构造时初始化；关闭和重启各有等待门闩。</p></aside><article class="prose"><h2 id="阅读边界"><a class="heading-anchor" href="#%E9%98%85%E8%AF%BB%E8%BE%B9%E7%95%8C" aria-label="链接到本节">#</a>阅读边界</h2>
 <p>本节研究开发服务器怎样创建、监听、关闭与原地重启，以及端口、文件监听和 CLI 快捷键如何
 跨生命周期保持一致。请求经过哪些中间件、模块怎样 transform、文件变化怎样生成 HMR 更新，
 分别留给后续模块。</p>
@@ -1397,18 +1516,18 @@ code {
    ├─ 并行创建并 init 所有 Environment
    ├─ 建立旧 moduleGraph/pluginContainer 兼容门面
    ├─ 注册 watcher 事件与中间件栈
-   ├─ initServer：插件 buildStart + configureServer 后置钩子
-   └─ 返回 ViteDevServer（尚未占用端口）
+   ├─ 建立 initServer 门闩；普通模式包装原生 listen，middleware mode 立即初始化
+   └─ 返回 ViteDevServer（普通模式尚未绑定 HTTP；middleware mode 已启动 Environment）
 
 server.listen()
 ├─ resolveHostname()
-├─ startServer() → httpServerStart()
-├─ listening 前先写入 resolvedUrls
-├─ Environment.listen(server)
+├─ startServer() → httpServerStart() → 原生 listen 包装器
+│  └─ initServer：client buildStart → Environment.listen → HTTP bind
+├─ listening 事件先计算 resolvedUrls，再执行普通事件 listener
 └─ 首次启动且配置 open 时打开浏览器
 
 server.close()
-└─ 共享同一个 close Promise
+└─ 共享同一个关闭任务
    └─ watcher / WebSocket / Environment / HTTP / SSR runner 并行关闭
 
 server.restart()
@@ -1424,8 +1543,9 @@ server.restart()
 <h2 id="createserver-的装配阶段"><a class="heading-anchor" href="#createserver-%E7%9A%84%E8%A3%85%E9%85%8D%E9%98%B6%E6%AE%B5" aria-label="链接到本节">#</a><code>_createServer()</code> 的装配阶段</h2>
 <h3 id="1-配置与一次性归属"><a class="heading-anchor" href="#1-%E9%85%8D%E7%BD%AE%E4%B8%8E%E4%B8%80%E6%AC%A1%E6%80%A7%E5%BD%92%E5%B1%9E" aria-label="链接到本节">#</a>1. 配置与一次性归属</h3>
 <p>传入普通 <code>InlineConfig</code> 时先以 <code>serve</code> command 解析；传入 <code>ResolvedConfig</code> 时直接复用。
-<code>usedConfigs</code> 防止同一个已解析配置对象同时属于两个 Server，因为其中的插件实例、缓存与
-Environment 配置都带有生命周期状态。</p>
+<code>usedConfigs</code> 让同一个已解析配置对象只能用于创建一次 Server，因为其中的插件实例、缓存与
+Environment 配置都带有生命周期状态。关闭不会从这个 WeakSet 删除配置；即使旧服务器已关闭，
+也不能把同一个 <code>ResolvedConfig</code> 再用于创建新服务器。</p>
 <p>开发服务器是长运行交互进程，所以关闭任务缓存：网络响应和 HMR 无法像纯构建产物一样从
 缓存安全重放。</p>
 <h3 id="2-http-websocket-与-connect"><a class="heading-anchor" href="#2-http-websocket-%E4%B8%8E-connect" aria-label="链接到本节">#</a>2. HTTP、WebSocket 与 Connect</h3>
@@ -1435,20 +1555,20 @@ Environment 配置都带有生命周期状态。</p>
 HTTP/HTTPS Server
         ↓ upgrade / custom HMR server
 WebSocket Server
-</code></pre></figure><p>middleware mode 只创建 Connect 和 Environment，不创建/监听 HTTP Server。宿主应用通过
+</code></pre></figure><p>middleware mode 创建 Connect、watcher、WebSocket 和 Environment，但顶层 httpServer 为 null。宿主应用通过
 <code>app.use(vite.middlewares)</code> 接管网络入口；因此 <code>listen()</code>、<code>printUrls()</code> 在此模式没有意义。
 WebSocket 仍会按 HMR 配置连接已有宿主或独立 HMR Server。</p>
 <p><code>resolveHttpServer()</code> 的选择规则：</p>
 <ul>
 <li>无 HTTPS：HTTP/1 Server。</li>
-<li>HTTPS 且未配置 proxy：允许 HTTP/2，并启用 HTTP/1 fallback。</li>
-<li>HTTPS 且配置 proxy：使用 HTTPS/HTTP1，避免代理与 HTTP/2 兼容问题。</li>
-<li>HTTP/2 的 session 与 stream 错误显式吞掉，避免客户端重置连接导致未处理异常
-（<a href="https://github.com/vitejs/vite/pull/21024" target="_blank" rel="noreferrer noopener">PR #21024</a>）。</li>
+<li>有 HTTPS：创建 HTTP/2 Secure Server，并启用 HTTP/1 fallback；proxy 不改变这个选择。</li>
+<li>HTTP/2 提高 session 内存和 stream reset 限额，减少大量模块请求触发协议限制的情况
+（源码中的 #21024）。</li>
 </ul>
 <h3 id="3-文件监听"><a class="heading-anchor" href="#3-%E6%96%87%E4%BB%B6%E7%9B%91%E5%90%AC" aria-label="链接到本节">#</a>3. 文件监听</h3>
-<p>watcher 不只监听 <code>root</code>：配置文件依赖、当前 mode 的 env 文件、位于 root 外的 publicDir 都
-要显式加入。输出目录、缓存目录和 <code>.git</code> 被忽略，防止构建产物或依赖缓存反向触发开发更新。</p>
+<p>普通开发模式监听 <code>root</code>，并显式加入配置文件依赖、当前 mode 的 env 文件和扫描成功的 publicDir。
+完整打包开发模式不把整个 root 加入 Chokidar。缓存目录、node_modules 和 <code>.git</code> 始终忽略；只有
+会被构建清空的输出目录才加入忽略规则，避免构建产物反向触发开发更新。</p>
 <p><code>server.watch: null</code> 不返回 <code>null</code>，而是创建接口完整的 <code>NoopWatcher</code>。这样插件、Environment
 和关闭流程仍可无条件调用 <code>add()</code>、<code>on()</code>、<code>close()</code>，不用把“是否启用 watcher”的分支扩散
 到整条调用链。</p>
@@ -1456,8 +1576,8 @@ WebSocket 仍会按 HMR 配置连接已有宿主或独立 HMR Server。</p>
 <ol>
 <li>检查 tsconfig 变化；</li>
 <li>通知各 Environment 的插件容器；</li>
-<li>更新 public 文件索引或模块图；</li>
-<li>进入 HMR 主流程。</li>
+<li>创建/删除事件更新 public 文件索引；删除事件断开节点作为 importer 的反向边，内容更新使转换缓存失效；</li>
+<li>HMR 未关闭时进入更新流程。</li>
 </ol>
 <p>public 文件新建时还要删除同路径已转换模块的 ETag 索引，否则请求可能命中旧 transform 缓存，
 违反 public 文件优先规则。</p>
@@ -1468,15 +1588,25 @@ WebSocket 仍会按 HMR 配置连接已有宿主或独立 HMR Server。</p>
 <p>旧 API <code>server.moduleGraph</code> 与 <code>server.pluginContainer</code> 只是 client/ssr Environment 上的兼容
 门面。阅读新代码时应优先沿 <code>server.environments[name]</code> 继续追踪。</p>
 <h3 id="5-插件初始化门闩"><a class="heading-anchor" href="#5-%E6%8F%92%E4%BB%B6%E5%88%9D%E5%A7%8B%E5%8C%96%E9%97%A8%E9%97%A9" aria-label="链接到本节">#</a>5. 插件初始化门闩</h3>
-<p><code>initServer()</code> 用 Promise 缓存初始化，避免并发请求或 <code>listen()</code> 重复执行：</p>
-<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">client.pluginContainer.buildStart()
-→ configureServer 前置钩子已在装配过程中执行
-→ 安装内部中间件
-→ 执行 configureServer 返回的后置钩子（逆序）
-</code></pre></figure><p>client Environment 会提前 <code>buildStart</code>，因为它承担浏览器请求和兼容 API 的默认入口；其他
-Environment 保持首次请求时惰性启动，避免没有 SSR/自定义环境请求时支付初始化成本。</p>
+<p><code>configureServer</code> 前置钩子、内部中间件和后置钩子都在 <code>_createServer()</code> 中执行。后置钩子按
+收集顺序调用，位于 HTML 响应中间件之前；它们不属于 <code>initServer()</code>。</p>
+<p><code>initServer()</code> 缓存初始化任务，避免原生 <code>listen()</code> 因端口回退或并发调用重复启动资源：</p>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">普通模式：server.listen() → startServer() → 包装后的 httpServer.listen()
+                                      └─ initServer(true)
+middleware mode：_createServer() → initServer(false)
+
+initServer：普通开发模式先 await client.pluginContainer.buildStart()
+           → onListen 或 options.listen 为 true 时 await 所有 Environment.listen(server)
+           → 标记 serverInited
+</code></pre></figure><p>普通模式在真实 HTTP bind 前初始化；公开 <code>createServer()</code> 的 middleware mode 在返回前初始化。
+重启构造使用 <code>options.listen: false</code>，middleware mode 此时只启动 client buildStart，等旧资源
+关闭后再启动新 Environment。完整打包开发模式跳过这里的 client buildStart，由 bundle 管线启动。</p>
+<p>client 容器先启动；其他容器首次进入 <code>resolveId()</code> 时，若尚未启动，会调用 <code>buildStart()</code> 并等待
+其完成。scan 或 warmup 也可能通过这条解析路径提前触发启动。直接调用 <code>load()</code>、<code>transform()</code>
+不会触发这个门禁，调用方需先 <code>await pluginContainer.buildStart()</code>。容器启动后是否实际调用每个插件的 <code>buildStart</code>，仍由 Environment 名称和
+<code>perEnvironmentStartEndDuringDev</code> 开关决定。</p>
 <p><code>dev.spec.ts</code> 中的用例证明：<code>build.lib</code> 不应泄漏为开发态 Rolldown input；显式 Environment
-input 可以预标为 safe module；入口缺少 <code>index.html</code> 只静默跳过，但插件 <code>buildStart</code> 错误不能
+input 可以预标为 safe module；默认 <code>index.html</code> 解析异常会静默跳过，但插件 <code>buildStart</code> 错误不能
 被同一个 fallback 吞掉。</p>
 <h2 id="监听与端口选择"><a class="heading-anchor" href="#%E7%9B%91%E5%90%AC%E4%B8%8E%E7%AB%AF%E5%8F%A3%E9%80%89%E6%8B%A9" aria-label="链接到本节">#</a>监听与端口选择</h2>
 <h3 id="resolvedurls-的时序"><a class="heading-anchor" href="#resolvedurls-%E7%9A%84%E6%97%B6%E5%BA%8F" aria-label="链接到本节">#</a><code>resolvedUrls</code> 的时序</h3>
@@ -1489,25 +1619,28 @@ input 可以预标为 safe module；入口缺少 <code>index.html</code> 只静�
 <h3 id="httpserverstart-算法"><a class="heading-anchor" href="#httpserverstart-%E7%AE%97%E6%B3%95" aria-label="链接到本节">#</a><code>httpServerStart()</code> 算法</h3>
 <p>端口并不是简单地“listen 失败就 +1”：</p>
 <figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">port === 0
-  → 先在第一个 host 让 OS 分配随机端口
-  → 其余 host 绑定同一个真实端口
+  → 用临时 TCP Server 在首个 wildcard 上请求 OS 分配端口
+  → 依次探测其他 wildcard 与配置 host，每次探测后关闭临时 Server
+  → 最多换三个候选；找到后真实 HTTP Server 只绑定配置 host 一次
 
 strictPort === true
-  → 直接尝试目标 host:port
+  → 仍先探测 wildcard，但即使探测显示占用也尝试目标 host:port
+  → 真实绑定成功且 wildcard 占用时发出警告
   → 冲突立即失败，不扫描后续端口
 
 strictPort === false
   → concrete host 监听前先探测通配地址上的冲突
   → 仅 EADDRINUSE 可以让端口 +1
-  → 在所有候选 host 上成功后返回该端口
+  → 真实 HTTP Server 在配置 host 上绑定成功后返回端口
 </code></pre></figure><p><code>port: 0</code> 必须让多地址共用同一个 OS 随机端口，而不是各分配一个端口
 （<a href="https://github.com/vitejs/vite/pull/23158" target="_blank" rel="noreferrer noopener">PR #23158</a>）。具体地址和通配地址可能互相占用，
 所以要在实际绑定前预检通配地址；相关边界由
 <a href="https://github.com/vitejs/vite/pull/21381" target="_blank" rel="noreferrer noopener">PR #21381</a>、
 <a href="https://github.com/vitejs/vite/pull/22150" target="_blank" rel="noreferrer noopener">PR #22150</a> 固化。</p>
-<p>只有 <code>EADDRINUSE</code> 表示“换端口可恢复”；权限、地址非法等错误必须直接抛出，不能伪装成端口
-扫描（<a href="https://github.com/vitejs/vite/pull/21642" target="_blank" rel="noreferrer noopener">PR #21642</a>）。每次探测都要成对解绑
-<code>error</code>/<code>listening</code> listener，避免多 host、多端口重试累积监听器
+<p>临时探测只把 <code>EADDRINUSE</code> 视为占用，IPv6 不可用、权限等其他错误不阻塞候选；真实 HTTP bind
+则把非 <code>EADDRINUSE</code> 错误直接抛出（<a href="https://github.com/vitejs/vite/pull/21642" target="_blank" rel="noreferrer noopener">PR #21642</a>）。
+端口 0 的候选在探测后若被抢占，真实 bind 直接报占用，不递增或重新分配。
+每次真实绑定都成对解绑 <code>error</code>/<code>listening</code> listener，避免端口重试累积监听器
 （<a href="https://github.com/vitejs/vite/pull/21451" target="_blank" rel="noreferrer noopener">PR #21451</a>）。</p>
 <p>重启时 <code>startServer()</code> 记录“配置端口”和“上次真实端口”。若配置没变，就优先复用上次经过
 冲突回退后得到的真实端口，避免页面 URL 重启后无故跳回原配置端口
@@ -1523,7 +1656,7 @@ strictPort === false
 │  ├─ destroy 所有已跟踪 socket
 │  └─ server.close()
 └─ SSR compat ModuleRunner.close()
-</code></pre></figure><p>第一次调用建立 <code>closeServerPromise</code>，之后全部返回同一个 Promise，防止双重释放
+</code></pre></figure><p>第一次调用建立 <code>closeServerPromise</code>，之后全部等待同一个关闭任务，防止双重释放
 （<a href="https://github.com/vitejs/vite/pull/19204" target="_blank" rel="noreferrer noopener">PR #19204</a>）。互不依赖的资源使用
 <code>Promise.allSettled()</code>：某个插件清理失败不能阻止 watcher、socket 和其他 Environment 退出。</p>
 <p><code>createServerCloseFn()</code> 监听所有连接并在关闭时主动 destroy，避免 keep-alive 让 Node 的
@@ -1546,12 +1679,12 @@ sass-embedded worker，<code>server.close()</code> 返回时 worker 必须已经
 （<a href="https://github.com/vitejs/vite/pull/15166" target="_blank" rel="noreferrer noopener">PR #15166</a>）。</li>
 <li><code>_setInternalServer()</code> 重绑新方法的闭包；传给 <code>configureServer</code> 的 reflex Proxy 也始终
 反射当前内部 Server。</li>
-<li>普通模式重新 listen；middleware mode 只调用各 Environment 的 <code>listen(server)</code>。</li>
+<li>普通模式重新 listen；middleware mode 在新实例的 client 容器初始化后，只调用各 Environment 的 <code>listen(server)</code>。</li>
 </ol>
 <p><code>restartServerWithUrls()</code> 只有在配置端口、host 或 DNS 地址顺序变化时重新打印 URL，减少无意义
 日志。<code>resolvedUrls</code> 在关闭后归零，重新 listening 后再生成，不能跨实例当作永久配置读取。</p>
 <h2 id="预览服务器是独立装配链-不是开发服务器换-mode"><a class="heading-anchor" href="#%E9%A2%84%E8%A7%88%E6%9C%8D%E5%8A%A1%E5%99%A8%E6%98%AF%E7%8B%AC%E7%AB%8B%E8%A3%85%E9%85%8D%E9%93%BE-%E4%B8%8D%E6%98%AF%E5%BC%80%E5%8F%91%E6%9C%8D%E5%8A%A1%E5%99%A8%E6%8D%A2-mode" aria-label="链接到本节">#</a>预览服务器是独立装配链，不是开发服务器换 mode</h2>
-<p><code>preview()</code> 解析 production 配置并服务 <code>build.outDir</code>，但不会创建 ModuleGraph、执行按请求 transform
+<p><code>preview()</code> 解析 production 配置并服务 <code>environments.client.build.outDir</code>，但不会创建 ModuleGraph、执行按请求 transform
 或启用 HMR。它复用 HTTP、代理、CORS、host 校验和地址打印基础设施，形成另一条中间件链：</p>
 <figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">resolveConfig(serve, production, isPreview=true)
 → CORS / host check
@@ -1574,9 +1707,10 @@ sass-embedded worker，<code>server.close()</code> 返回时 worker 必须已经
 仍在 publicDir 内，不能让 <code>/../</code> 穿越边界。</li>
 <li><code>searchRoot.ts</code> 识别 pnpm/lerna、package.json workspaces 和 Deno workspace；没有标记时退回最近包根，
 该结果参与默认 <code>server.fs.allow</code>。</li>
-<li><code>warmup.ts</code> 后台展开显式文件与 glob。HTML 走 <code>transformIndexHtml</code> 以连带预转换入口，其他文件走
-Environment warmupRequest；root 外普通模块编码成 <code>/@fs/</code>，root 外 HTML 则忽略。</li>
-<li><code>openBrowser.ts</code> 在 macOS 优先用 JXA 复用已运行 Chromium 的目标/空白标签，失败后无条件降级到
+<li><code>warmup.ts</code> 后台展开当前 Environment 的 <code>dev.warmup</code>。HTML 走 <code>transformIndexHtml</code> 以连带预转换
+入口，其他文件走 Environment warmupRequest；相对 root 的路径以 <code>.</code> 开头时，模块使用 <code>/@fs/</code>，
+HTML 被忽略，所以 root 外 HTML 和 root 内点开头 HTML 都不预热。</li>
+<li><code>openBrowser.ts</code> 在 macOS 优先用 JXA 复用已运行 Chromium 中 URL 包含目标地址的标签或空白标签，失败后无条件降级到
 <code>open</code> 包；<code>BROWSER=none</code> 禁用，<code>.js</code> 值则作为用户 Node 脚本执行。</li>
 <li><code>logger.ts</code> 用级别阈值、WeakSet 错误去重与 <code>warnOnce</code> 控制噪声；只有可交互 TTY 才清屏折叠连续
 相同消息。网络 URL 标签与网卡名按索引对齐，超长标签截断（#22830）。</li>
@@ -1655,8 +1789,7 @@ export async function _createServer(
     previousForceOptimizeOnRestart?: boolean
   },
 ): Promise&lt;ViteDevServer&gt; {
-  // The dev server is a long-running, interactive process whose outputs
-  // (network responses, HMR updates) cannot be replayed from a cache.
+  // Dev Server 是长运行交互进程，网络响应/HMR 更新无法从任务缓存安全重放。
   disableCache()
 
   const config = isResolvedConfig(inlineConfig)
@@ -1666,8 +1799,40 @@ export async function _createServer(
   if (usedConfigs.has(config)) {
     throw new Error(`There is already a server associated with the config.`)
   }
-</code></pre></figure><p>公开入口只确定“需要监听”，实际装配进入 <code>_createServer()</code>；已解析配置具有一次性 server
-归属，重复复用会在创建任何长生命周期资源前失败。</p>
+</code></pre></figure><p>这里的 <code>listen: true</code> 控制初始化时是否启动 Environment 的监听生命周期，不会直接绑定 HTTP
+端口。已解析配置具有一次性 server 归属，重复复用会在创建长生命周期资源前失败。</p>
+<p>同文件 <code>initServer()</code> 的决定性分支（源码摘录，省略门闩与收尾赋值）：</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">if (!config.experimental.bundledDev) {
+  await environments.client.pluginContainer.buildStart()
+}
+
+if (onListen || options.listen) {
+  await Promise.all(Object.values(environments).map((e) =&gt; e.listen(server)))
+}
+</code></pre></figure><p>普通模式的 HTTP listen 包装器传入 <code>onListen: true</code>，所以真实绑定前一定启动 Environment。
+middleware mode 没有 HTTP listen，传入 false；公开创建的 options.listen 为 true，重启构造则为
+false，分别对应“返回前启动通道”和“旧服务关闭后才启动通道”。</p>
+<p>关闭和重启保持公开中间件引用的实现也在同文件（源码摘录，两处独立代码块）：</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">await Promise.allSettled([
+  watcher.close(),
+  ws.close(),
+  Promise.allSettled(
+    Object.values(server.environments).map((environment) =&gt;
+      environment.close(),
+    ),
+  ),
+  closeHttpServer(),
+  server._ssrCompatModuleRunner?.close(),
+])
+</code></pre></figure><figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">const middlewares = server.middlewares
+newServer._configServerPort = server._configServerPort
+newServer._currentServerPort = server._currentServerPort
+Object.assign(server, newServer)
+middlewares.stack = newServer.middlewares.stack
+server.middlewares = middlewares
+newServer._setInternalServer(server)
+</code></pre></figure><p>关闭先等待各资源 settle；重启在此之后搬入新字段、替换旧 Connect 的 stack，并把新闭包指回
+旧公开对象。浏览器 URL 的端口记忆和宿主 <code>app.use(vite.middlewares)</code> 的对象身份因此都能保留。</p>
 <h2 id="建议断点"><a class="heading-anchor" href="#%E5%BB%BA%E8%AE%AE%E6%96%AD%E7%82%B9" aria-label="链接到本节">#</a>建议断点</h2>
 <ol>
 <li><code>_createServer()</code>：观察普通模式与 middleware mode 的 <code>httpServer</code> 差异。</li>
@@ -1685,7 +1850,7 @@ export async function _createServer(
 <li>为什么关闭流程适合 <code>allSettled()</code>，初始化流程却常用 <code>Promise.all()</code>？</li>
 <li>为什么重启必须先构造新实例再关闭旧实例？如果顺序反过来，配置错误时会怎样？</li>
 <li>为什么只 <code>Object.assign()</code> 还不够，必须单独保留 Connect 并重绑闭包？</li>
-<li>strictPort 为何不能先探测通配地址后再决定是否失败？</li>
+<li>strictPort 为何在通配地址预检显示占用后仍尝试绑定具体 host？</li>
 <li>NoopWatcher 相比在每个调用点判断 <code>watcher !== null</code>，减少了哪类复杂度？</li>
 <li>preview 为什么不能直接复用开发服务器的 ModuleGraph 和 transform 中间件？</li>
 <li>publicDir 扫描因符号链接失败后，为何是退回 stat，而不是让服务器启动失败？</li>
@@ -1765,6 +1930,80 @@ export async function _createServer(
   updateProgress()
   window.addEventListener('scroll', updateProgress, { passive: true })
   window.addEventListener('resize', updateProgress)
+
+  var expandedDiagram = null
+
+  function closeDiagram() {
+    if (!expandedDiagram) return
+    var figure = expandedDiagram
+    var button = figure.querySelector('[data-diagram-action="expand"]')
+    figure.classList.remove('is-expanded')
+    figure.removeAttribute('role')
+    figure.removeAttribute('aria-modal')
+    body.classList.remove('diagram-is-expanded')
+    button.setAttribute('aria-expanded', 'false')
+    button.textContent = '展开图示'
+    expandedDiagram = null
+    button.focus()
+  }
+
+  document.querySelectorAll('.engineering-diagram').forEach(function (figure) {
+    var viewport = figure.querySelector('.diagram-viewport')
+    var canvas = figure.querySelector('.diagram-canvas')
+    var output = figure.querySelector('.diagram-scale')
+    var width = Number(figure.getAttribute('data-diagram-width'))
+    var scale = 1
+
+    function setScale(next) {
+      scale = Math.min(2, Math.max(0.15, next))
+      canvas.style.width = width * scale + 'px'
+      output.textContent = Math.round(scale * 100) + '%'
+    }
+
+    figure.querySelectorAll('[data-diagram-action]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        var action = button.getAttribute('data-diagram-action')
+        if (action === 'in') setScale(scale * 1.2)
+        if (action === 'out') setScale(scale / 1.2)
+        if (action === 'fit') setScale(viewport.clientWidth / width)
+        if (action === 'reset') setScale(1)
+        if (action === 'expand') {
+          if (expandedDiagram === figure) {
+            closeDiagram()
+            return
+          }
+          closeDiagram()
+          expandedDiagram = figure
+          figure.classList.add('is-expanded')
+          figure.setAttribute('role', 'dialog')
+          figure.setAttribute('aria-modal', 'true')
+          body.classList.add('diagram-is-expanded')
+          button.setAttribute('aria-expanded', 'true')
+          button.textContent = '收起图示'
+          button.focus()
+        }
+      })
+    })
+  })
+
+  document.addEventListener('keydown', function (event) {
+    if (!expandedDiagram) return
+    if (event.key === 'Escape') closeDiagram()
+    if (event.key === 'Tab') {
+      var controls = Array.from(
+        expandedDiagram.querySelectorAll('button, a, [tabindex="0"]'),
+      )
+      var first = controls[0]
+      var last = controls[controls.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+  })
 
   document.querySelectorAll('.copy-code').forEach(function (button) {
     button.addEventListener('click', async function () {

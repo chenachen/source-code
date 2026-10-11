@@ -30,7 +30,7 @@ describe('useEffectEvent', () => {
   let waitForThrow;
   let waitFor;
 
-  /** 每个用例重置模块，并重新绑定 Effect Event、各类 Effect、Noop 渲染器与断言工具。 */
+  /** 每个用例重新绑定 Effect Event、各类 Effect、Noop 渲染器与断言工具；此回调没有调用 resetModules。 */
   beforeEach(() => {
     React = require('react');
     ReactNoop = require('react-noop-renderer');
@@ -52,34 +52,27 @@ describe('useEffectEvent', () => {
     waitFor = InternalTestUtils.waitFor;
   });
 
-  /** 把输入同步到调度日志与宿主输出；服务于“验证 `useEffectEvent` 的提交时更新、闭包新鲜度、调用阶段限制与 Activity 集成”场景。 */
+  /** 把输入同步到调度日志与宿主输出。 */
   function Text(props) {
     Scheduler.log(props.text);
     return <span prop={props.text} />;
   }
 
-  /**
-   * Given：更新 state 和 props 后调用 Effect Event，确认函数读取最新已提交闭包所需的初始状态、更新入口与观测日志均已建立。
-   * When：完成挂载以及用例指定的后续渲染或提交步骤。
-   * Then：更新 state 和 props 后调用 Effect Event，确认函数读取最新已提交闭包。
-   *
-   * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果。
-   * 对应源码：`mountEvent()` 与 `updateEvent()` 的事件包装和闭包更新。
-   */
+  /** count=0、incrementBy=1；两次点击得 2，props 改为 10 后下一次得 12，验证共享事件 ref 读取已提交新闭包。 */
   it('memoizes basic case correctly', async () => {
-    /** 定义 IncrementButton 类 fixture，在“更新 state 和 props 后调用 Effect Event，确认函数读取最新已提交闭包”场景中暴露类生命周期、实例 ref 或错误边界。 */
+    /** 通过实例方法转调 onClick/onMouseEnter，PureComponent 渲染 Increment 日志，ref 提供测试触发入口。 */
     class IncrementButton extends React.PureComponent {
       /** IncrementButton.increment 调用当前提交版本的 Effect Event，并把领域参数转交事件闭包。 */
       increment = () => {
         this.props.onClick();
       };
-      /** 渲染 IncrementButton.render 对应的类 fixture，并把本轮状态或子树交给宿主输出断言。 */
+      /** 输出固定 Increment；render 阶段非法调用的场景在输出前转调 onClick 并抛错。 */
       render() {
         return <Text text="Increment" />;
       }
     }
 
-    /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“更新 state 和 props 后调用 Effect Event，确认函数读取最新已提交闭包”场景。 */
+    /** 维护 count；点击按已提交 incrementBy 增加，props 更新不直接改变 count。 */
     function Counter({incrementBy}) {
       const [count, updateCount] = useState(0);
       const onClick = useEffectEvent(() => updateCount(c => c + incrementBy));
@@ -145,32 +138,25 @@ describe('useEffectEvent', () => {
     );
   });
 
-  /**
-   * Given：在同一组件定义多个 Effect Event，确认各自队列与闭包互不覆盖所需的初始状态、更新入口与观测日志均已建立。
-   * When：完成挂载以及用例指定的后续渲染或提交步骤。
-   * Then：在同一组件定义多个 Effect Event，确认各自队列与闭包互不覆盖。
-   *
-   * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果。
-   * 对应源码：`mountEvent()` 与 `updateEvent()` 的事件包装和闭包更新。
-   */
+  /** count=0、incrementBy=5；调用加法事件得 5，再调用乘法事件得 25，验证两个事件实现各自保存。 */
   it('can be defined more than once', async () => {
-    /** 定义 IncrementButton 类 fixture，在“在同一组件定义多个 Effect Event，确认各自队列与闭包互不覆盖”场景中暴露类生命周期、实例 ref 或错误边界。 */
+    /** 通过实例方法转调 onClick/onMouseEnter，PureComponent 渲染 Increment 日志，ref 提供测试触发入口。 */
     class IncrementButton extends React.PureComponent {
       /** IncrementButton.increment 调用当前提交版本的 Effect Event，并把领域参数转交事件闭包。 */
       increment = () => {
         this.props.onClick();
       };
-      /** IncrementButton.multiply 封装 multiply 行为，并把结果暴露给当前场景的日志或断言。 */
+      /** 转调 onMouseEnter，使第二个 Effect Event 按最新 incrementBy 乘计数。 */
       multiply = () => {
         this.props.onMouseEnter();
       };
-      /** 渲染 IncrementButton.render 对应的类 fixture，并把本轮状态或子树交给宿主输出断言。 */
+      /** 输出固定 Increment；render 阶段非法调用的场景在输出前转调 onClick 并抛错。 */
       render() {
         return <Text text="Increment" />;
       }
     }
 
-    /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“在同一组件定义多个 Effect Event，确认各自队列与闭包互不覆盖”场景。 */
+    /** 维护 count，并用两个独立 Effect Event 分别按 incrementBy 加法和乘法更新。 */
     function Counter({incrementBy}) {
       const [count, updateCount] = useState(0);
       const onClick = useEffectEvent(() => updateCount(c => c + incrementBy));
@@ -219,34 +205,27 @@ describe('useEffectEvent', () => {
     );
   });
 
-  /**
-   * Given：通过对象方法调用 Effect Event，确认包装函数不会隐式保留调用方 `this`所需的初始状态、更新入口与观测日志均已建立。
-   * When：完成挂载以及用例指定的后续渲染或提交步骤。
-   * Then：通过对象方法调用 Effect Event，确认包装函数不会隐式保留调用方 `this`。
-   *
-   * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果。
-   * 对应源码：`mountEvent()` 与 `updateEvent()` 的事件包装和闭包更新。
-   */
+  /** hello=hej，初始问候为 Seb says hej；调用 person.greet 的事件包装器后得到 undefined says hej，验证 apply(undefined,args) 不继承 person 接收者。 */
   it('does not preserve `this` in event functions', async () => {
-    /** 定义 GreetButton 类 fixture，在“通过对象方法调用 Effect Event，确认包装函数不会隐式保留调用方 `this`”场景中暴露类生命周期、实例 ref 或错误边界。 */
+    /** 提供 greet 实例入口转调 onClick，并输出当前 hello 的按钮文本。 */
     class GreetButton extends React.PureComponent {
       /** GreetButton.greet 调用当前提交版本的 Effect Event，并把领域参数转交事件闭包。 */
       greet = () => {
         this.props.onClick();
       };
-      /** 渲染 GreetButton.render 对应的类 fixture，并把本轮状态或子树交给宿主输出断言。 */
+      /** 输出 Say 加当前 hello，以按钮日志对照事件问候语。 */
       render() {
         return <Text text={'Say ' + this.props.hello} />;
       }
     }
-    /** 作为 Greeter fixture 承载当前测试职责；服务于“通过对象方法调用 Effect Event，确认包装函数不会隐式保留调用方 `this`”场景。 */
+    /** 把依赖 this 的 person.greet 交给 Effect Event，观察包装器调用时的 this 与最新 hello。 */
     function Greeter({hello}) {
       const person = {
         /** Greeter.toString 提供可辨识的实例字符串，验证 Effect Event 不会继承调用方 `this`。 */
         toString() {
           return 'Jane';
         },
-        /** Greeter.greet 调用当前提交版本的 Effect Event，并把领域参数转交事件闭包。 */
+        /** Greeter.greet 是传给 useEffectEvent 的原始对象方法；包装器以 undefined 为 this 调用它。 */
         greet() {
           return updateGreeting(this + ' says ' + hello);
         },
@@ -282,23 +261,16 @@ describe('useEffectEvent', () => {
     );
   });
 
-  /**
-   * Given：目标组件已进入可触发开发态保护的最小运行环境。
-   * When：执行用例中的非法 Hook、参数或阶段调用。
-   * Then：在渲染阶段直接调用 Effect Event，确认开发态抛出阶段边界错误。
-   *
-   * 验证机制：调度日志精确约束执行次数与先后顺序。
-   * 对应源码：`useEffectEventImpl()` 的渲染阶段调用保护。
-   */
+  /** Counter 定义事件并传给类子组件；子组件在 render 中调用 onClick，waitForThrow 验证渲染阶段错误，Scheduler 日志为空。该检查不以 DEV 为条件。 */
   it('throws when called in render', async () => {
-    /** 定义 IncrementButton 类 fixture，在“在渲染阶段直接调用 Effect Event，确认开发态抛出阶段边界错误”场景中暴露类生命周期、实例 ref 或错误边界。 */
+    /** 通过实例方法转调 onClick/onMouseEnter，PureComponent 渲染 Increment 日志，ref 提供测试触发入口。 */
     class IncrementButton extends React.PureComponent {
       /** IncrementButton.increment 调用当前提交版本的 Effect Event，并把领域参数转交事件闭包。 */
       increment = () => {
         this.props.onClick();
       };
 
-      /** 渲染 IncrementButton.render 对应的类 fixture，并把本轮状态或子树交给宿主输出断言。 */
+      /** 输出固定 Increment；render 阶段非法调用的场景在输出前转调 onClick 并抛错。 */
       render() {
     // 此调用应抛错。
         this.props.onClick();
@@ -307,7 +279,7 @@ describe('useEffectEvent', () => {
       }
     }
 
-    /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“在渲染阶段直接调用 Effect Event，确认开发态抛出阶段边界错误”场景。 */
+    /** 定义计数事件后传给类组件；类 render 调用它必须先抛阶段错误。 */
     function Counter({incrementBy}) {
       const [count, updateCount] = useState(0);
       const onClick = useEffectEvent(() => updateCount(c => c + incrementBy));
@@ -327,28 +299,21 @@ describe('useEffectEvent', () => {
     assertLog([]);
   });
 
-  /**
-   * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-   * When：完成挂载以及用例指定的后续渲染或提交步骤。
-   * Then：事件闭包随更新变化时保持 Layout Effect 依赖稳定，同时让事件读到新值。
-   *
-   * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果。
-   * 对应源码：`mountEvent()` 与 `updateEvent()` 的事件包装和闭包更新。
-   */
+  /** layout effect 只依赖 incrementBy：初挂 1 时 count 从 0 到 2，两次点击到 4 不重跑 effect；prop 改为 10 时 effect 到 24、点击到 34，验证省略事件依赖仍读取新值。 */
   it("useLayoutEffect shouldn't re-fire when event handlers change", async () => {
-    /** 定义 IncrementButton 类 fixture，在“事件闭包随更新变化时保持 Layout Effect 依赖稳定，同时让事件读到新值”场景中暴露类生命周期、实例 ref 或错误边界。 */
+    /** 通过实例方法转调 onClick/onMouseEnter，PureComponent 渲染 Increment 日志，ref 提供测试触发入口。 */
     class IncrementButton extends React.PureComponent {
       /** IncrementButton.increment 调用当前提交版本的 Effect Event，并把领域参数转交事件闭包。 */
       increment = () => {
         this.props.onClick();
       };
-      /** 渲染 IncrementButton.render 对应的类 fixture，并把本轮状态或子树交给宿主输出断言。 */
+      /** 输出固定 Increment；render 阶段非法调用的场景在输出前转调 onClick 并抛错。 */
       render() {
         return <Text text="Increment" />;
       }
     }
 
-    /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“事件闭包随更新变化时保持 Layout Effect 依赖稳定，同时让事件读到新值”场景。 */
+    /** layout effect 仅依赖 incrementBy 并调用双倍增量，按钮无 amount 时采用当前 incrementBy。 */
     function Counter({incrementBy}) {
       const [count, updateCount] = useState(0);
       const increment = useEffectEvent(amount =>
@@ -438,28 +403,21 @@ describe('useEffectEvent', () => {
     );
   });
 
-  /**
-   * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-   * When：完成挂载以及用例指定的后续渲染或提交步骤。
-   * Then：事件闭包随更新变化时保持 Passive Effect 依赖稳定，同时让事件读到新值。
-   *
-   * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果。
-   * 对应源码：`mountEvent()` 与 `updateEvent()` 的事件包装和闭包更新。
-   */
+  /** passive effect 只依赖 incrementBy：初挂到 2，两次点击到 4 不重跑 effect；prop 改为 10 时 effect 到 24、点击到 34，验证省略事件依赖而非事件身份稳定。 */
   it("useEffect shouldn't re-fire when event handlers change", async () => {
-    /** 定义 IncrementButton 类 fixture，在“事件闭包随更新变化时保持 Passive Effect 依赖稳定，同时让事件读到新值”场景中暴露类生命周期、实例 ref 或错误边界。 */
+    /** 通过实例方法转调 onClick/onMouseEnter，PureComponent 渲染 Increment 日志，ref 提供测试触发入口。 */
     class IncrementButton extends React.PureComponent {
       /** IncrementButton.increment 调用当前提交版本的 Effect Event，并把领域参数转交事件闭包。 */
       increment = () => {
         this.props.onClick();
       };
-      /** 渲染 IncrementButton.render 对应的类 fixture，并把本轮状态或子树交给宿主输出断言。 */
+      /** 输出固定 Increment；render 阶段非法调用的场景在输出前转调 onClick 并抛错。 */
       render() {
         return <Text text="Increment" />;
       }
     }
 
-    /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“事件闭包随更新变化时保持 Passive Effect 依赖稳定，同时让事件读到新值”场景。 */
+    /** passive effect 仅依赖 incrementBy 并调用双倍增量，按钮采用当前 incrementBy。 */
     function Counter({incrementBy}) {
       const [count, updateCount] = useState(0);
       const increment = useEffectEvent(amount =>
@@ -548,28 +506,21 @@ describe('useEffectEvent', () => {
     );
   });
 
-  /**
-   * Given：自定义 Hook 返回 Effect Event，确认调用方 Effect 不因闭包变化重新订阅所需的初始状态、更新入口与观测日志均已建立。
-   * When：完成挂载以及用例指定的后续渲染或提交步骤。
-   * Then：自定义 Hook 返回 Effect Event，确认调用方 Effect 不因闭包变化重新订阅。
-   *
-   * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果。
-   * 对应源码：`mountEvent()` 与 `updateEvent()` 的事件包装和闭包更新。
-   */
+  /** useCount 返回 count 与事件；调用方 effect 仅依赖 incrementBy，初挂到 2、点击到 4、prop=10 到 24/34。验证旧包装器共享实现 ref，并未断言返回函数身份稳定。 */
   it('is stable in a custom hook', async () => {
-    /** 定义 IncrementButton 类 fixture，在“自定义 Hook 返回 Effect Event，确认调用方 Effect 不因闭包变化重新订阅”场景中暴露类生命周期、实例 ref 或错误边界。 */
+    /** 通过实例方法转调 onClick/onMouseEnter，PureComponent 渲染 Increment 日志，ref 提供测试触发入口。 */
     class IncrementButton extends React.PureComponent {
       /** IncrementButton.increment 调用当前提交版本的 Effect Event，并把领域参数转交事件闭包。 */
       increment = () => {
         this.props.onClick();
       };
-      /** 渲染 IncrementButton.render 对应的类 fixture，并把本轮状态或子树交给宿主输出断言。 */
+      /** 输出固定 Increment；render 阶段非法调用的场景在输出前转调 onClick 并抛错。 */
       render() {
         return <Text text="Increment" />;
       }
     }
 
-    /** 作为自定义 Hook 封装当前机制并向调用组件返回稳定入口；服务于“自定义 Hook 返回 Effect Event，确认调用方 Effect 不因闭包变化重新订阅”场景。 */
+    /** 返回 count 与 Effect Event；函数身份可以变化，但任一旧包装器都通过共享 ref 读取最新已提交实现。 */
     function useCount(incrementBy) {
       const [count, updateCount] = useState(0);
       const increment = useEffectEvent(amount =>
@@ -579,7 +530,7 @@ describe('useEffectEvent', () => {
       return [count, increment];
     }
 
-    /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“自定义 Hook 返回 Effect Event，确认调用方 Effect 不因闭包变化重新订阅”场景。 */
+    /** 使用自定义 useCount 的事件；passive effect 仅依赖 incrementBy，验证省略事件依赖仍读新闭包。 */
     function Counter({incrementBy}) {
       const [count, increment] = useCount(incrementBy);
 
@@ -665,16 +616,9 @@ describe('useEffectEvent', () => {
     );
   });
 
-  /**
-   * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-   * When：完成挂载以及用例指定的后续渲染或提交步骤。
-   * Then：把事件声明放在 Insertion Effect 之后，确认提交时仍先更新事件实现。
-   *
-   * 验证机制：调度日志精确约束执行次数与先后顺序。
-   * 对应源码：`useEffectEventImpl()`、`mountEvent()` 与 `updateEvent()` 的提交队列。
-   */
+  /** 事件声明在 insertion effect 之后；value 从 1 改为 2，effect 与事件日志均读本轮 value，验证提交先发布事件实现再运行 insertion create。 */
   it('is mutated before all other effects', async () => {
-    /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“把事件声明放在 Insertion Effect 之后，确认提交时仍先更新事件实现”场景。 */
+    /** 不持有 count state；insertion effect 调用后声明的事件，二者都记录当前 value。 */
     function Counter({value}) {
       useInsertionEffect(() => {
         Scheduler.log('Effect value: ' + value);
@@ -696,16 +640,9 @@ describe('useEffectEvent', () => {
     assertLog(['Effect value: 2', 'Event value: 2']);
   });
 
-  /**
-   * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-   * When：完成挂载以及用例指定的后续渲染或提交步骤。
-   * Then：交错注册事件、Insertion、Layout 与 Passive Effect，确认事件闭包先于各阶段可见。
-   *
-   * 验证机制：调度日志精确约束执行次数与先后顺序。
-   * 对应源码：`useEffectEventImpl()`、`mountEvent()` 与 `updateEvent()` 的提交队列。
-   */
+  /** 父子各注册三类 effect，count=1→2→卸载；更新的 create/cleanup 均读取新 A2/B2，删除读取最后提交值。Parent insertion cleanup 复用 Create 标签，断言保留该文字。 */
   it('fires all (interleaved) effects with useEffectEvent in correct order', async () => {
-    /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“交错注册事件、Insertion、Layout 与 Passive Effect，确认事件闭包先于各阶段可见”场景。 */
+    /** 父级三类 effect 都调用读 count 的事件，并把事件传给子级测试跨组件提交顺序。 */
     function CounterA({count}) {
       const onEvent = useEffectEvent(() => {
         return `A ${count}`;
@@ -737,7 +674,7 @@ describe('useEffectEvent', () => {
       return <CounterB count={count} onEventParent={onEvent} />;
     }
 
-    /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“交错注册事件、Insertion、Layout 与 Passive Effect，确认事件闭包先于各阶段可见”场景。 */
+    /** 子级事件先调用父事件，再拼接自己的 count，三类 effect create/cleanup 都读取该组合。 */
     function CounterB({count, onEventParent}) {
       const onEvent = useEffectEvent(() => {
         return `${onEventParent()} B ${count}`;
@@ -814,18 +751,11 @@ describe('useEffectEvent', () => {
     ]);
   });
 
-  /**
-   * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-   * When：完成挂载以及用例指定的后续渲染或提交步骤。
-   * Then：在 Activity 隐藏、更新与显示之间调用事件，确认可见提交边界决定闭包新鲜度。
-   *
-   * 验证机制：调度日志精确约束执行次数与先后顺序。
-   * 对应源码：`useEffectEventImpl()`、`mountEvent()` 与 `updateEvent()` 的提交队列。
-   */
+  /** Activity 隐藏预渲染并更新父/子 state，再揭示和隐藏；insertion 在隐藏时仍执行，layout/passive 到揭示才连接。enableViewTransition && !enableEffectEventMutationPhase 分支保留旧子闭包，其余分支读新值。 */
   it('correctly mutates effect event with Activity', async () => {
     let setState;
     let setChildState;
-    /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“在 Activity 隐藏、更新与显示之间调用事件，确认可见提交边界决定闭包新鲜度”场景。 */
+    /** 持有父 state 与 count，Activity 控制子树隐藏；父 insertion/layout 事件对照隐藏子树闭包。 */
     function CounterA({count, hideChild}) {
       const [state, _setState] = useState(1);
       setState = _setState;
@@ -856,7 +786,7 @@ describe('useEffectEvent', () => {
       );
     }
 
-    /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“在 Activity 隐藏、更新与显示之间调用事件，确认可见提交边界决定闭包新鲜度”场景。 */
+    /** 持有 childState，并在事件里拼接父事件、count、父 state 与子 state，观察隐藏提交的两种 flag 行为。 */
     function CounterB({count, state, onEventParent}) {
       const [childState, _setChildState] = useState(1);
       setChildState = _setChildState;
@@ -1063,16 +993,9 @@ describe('useEffectEvent', () => {
     ]);
   });
 
-  /**
-   * Given：把 Effect Event 放入依赖数组，确认当前实验实现不承诺稳定函数身份所需的初始状态、更新入口与观测日志均已建立。
-   * When：完成挂载以及用例指定的后续渲染或提交步骤。
-   * Then：把 Effect Event 放入依赖数组，确认当前实验实现不承诺稳定函数身份。
-   *
-   * 验证机制：显式断言联合检查状态、输出和副作用。
-   * 对应源码：`mountEvent()` 与 `updateEvent()` 的事件包装和闭包更新。
-   */
+  /** 同一事件用于两份 passive effect：依赖 [onClick] 与 [shouldRender]。true/0 初挂调用两次，true/1 更新一次，false/2 更新两次，验证事件函数身份每轮变化。 */
   it("doesn't provide a stable identity", async () => {
-    /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“把 Effect Event 放入依赖数组，确认当前实验实现不承诺稳定函数身份”场景。 */
+    /** 定义读 shouldRender/value 的事件；两份 passive effect 分别依赖事件身份与 shouldRender。 */
     function Counter({shouldRender, value}) {
       const onClick = useEffectEvent(() => {
         Scheduler.log(
@@ -1109,18 +1032,11 @@ describe('useEffectEvent', () => {
     ]);
   });
 
-  /**
-   * Given：外部事件系统长期持有处理器，更新后调用时读取最新已提交值而无需重新订阅所需的初始状态、更新入口与观测日志均已建立。
-   * When：完成挂载以及用例指定的后续渲染或提交步骤。
-   * Then：外部事件系统长期持有处理器，更新后调用时读取最新已提交值而无需重新订阅。
-   *
-   * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果。
-   * 对应源码：`mountEvent()` 与 `updateEvent()` 的事件包装和闭包更新。
-   */
+  /** 外部事件系统长期持有处理器，更新后调用时读取最新已提交值而无需重新订阅。 */
   it('event handlers always see the latest committed value', async () => {
     let committedEventHandler = null;
 
-    /** 组织当前用例的根组件、更新入口与受测 Hook；服务于“外部事件系统长期持有处理器，更新后调用时读取最新已提交值而无需重新订阅”场景。 */
+    /** 只在首次 passive create 保存事件到外部变量，cleanup 清空；后续仅更新事件共享 ref 的实现。 */
     function App({value}) {
       const event = useEffectEvent(() => {
         return 'Value seen by useEffectEvent: ' + value;
@@ -1162,21 +1078,14 @@ describe('useEffectEvent', () => {
     expect(committedEventHandler()).toBe('Value seen by useEffectEvent: 2');
   });
 
-  /**
-   * Given：按文档聊天室示例切换 room 与 theme，确认只有连接参数变化才重连所需的初始状态、更新入口与观测日志均已建立。
-   * When：完成挂载以及用例指定的后续渲染或提交步骤。
-   * Then：按文档聊天室示例切换 room 与 theme，确认只有连接参数变化才重连。
-   *
-   * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果。
-   * 对应源码：`mountEvent()` 与 `updateEvent()` 的事件包装和闭包更新。
-   */
+  /** 按文档聊天室示例切换 room 与 theme，确认只有连接参数变化才重连。 */
   it('integration: implements docs chat room example', async () => {
-    /** 创建当前用例所需的外部连接、thenable 或可控 fixture；服务于“按文档聊天室示例切换 room 与 theme，确认只有连接参数变化才重连”场景。 */
+    /** 创建只支持 connected 的连接模拟器：connect 延迟 100ms 调用已登记处理器，disconnect 取消 timer；roomId 实参未被此 fixture 消费。 */
     function createConnection() {
       let connectedCallback;
       let timeout;
       return {
-        /** createConnection.connect 模拟外部连接生命周期，向日志暴露订阅、连接或断开动作。 */
+        /** 安排 100ms timer，届时若已登记 connectedCallback 则调用；连接方法自身不写日志。 */
         connect() {
           timeout = setTimeout(() => {
             if (connectedCallback) {
@@ -1184,7 +1093,7 @@ describe('useEffectEvent', () => {
             }
           }, 100);
         },
-        /** createConnection.on 模拟外部连接生命周期，向日志暴露订阅、连接或断开动作。 */
+        /** 只接受一次 connected 订阅；重复登记或其他事件名抛错，不写日志。 */
         on(event, callback) {
           if (connectedCallback) {
             throw Error('Cannot add the handler twice.');
@@ -1194,14 +1103,14 @@ describe('useEffectEvent', () => {
           }
           connectedCallback = callback;
         },
-        /** createConnection.disconnect 模拟外部连接生命周期，向日志暴露订阅、连接或断开动作。 */
+        /** 取消 connect 的 timer；保留 callback 变量但不再发出本次完成通知。 */
         disconnect() {
           clearTimeout(timeout);
         },
       };
     }
 
-    /** 作为 ChatRoom fixture 承载当前测试职责；服务于“按文档聊天室示例切换 room 与 theme，确认只有连接参数变化才重连”场景。 */
+    /** 只按 roomId 建立连接，连接回调通过 Effect Event 读取最新 theme。 */
     function ChatRoom({roomId, theme}) {
       const onConnected = useEffectEvent(() => {
         Scheduler.log('Connected! theme: ' + theme);
@@ -1263,29 +1172,22 @@ describe('useEffectEvent', () => {
     );
   });
 
-  /**
-   * Given：按文档访问日志示例更新购物车数量，确认页面事件读取最新数量而不重跑页面 Effect所需的初始状态、更新入口与观测日志均已建立。
-   * When：完成挂载以及用例指定的后续渲染或提交步骤。
-   * Then：按文档访问日志示例更新购物车数量，确认页面事件读取最新数量而不重跑页面 Effect。
-   *
-   * 验证机制：调度日志精确约束执行次数与先后顺序。
-   * 对应源码：`mountEvent()` 与 `updateEvent()` 的事件包装和闭包更新。
-   */
+  /** 按文档访问日志示例更新购物车数量，确认页面事件读取最新数量而不重跑页面 Effect。 */
   it('integration: implements the docs logVisit example', async () => {
-    /** 定义 AddToCartButton 类 fixture，在“按文档访问日志示例更新购物车数量，确认页面事件读取最新数量而不重跑页面 Effect”场景中暴露类生命周期、实例 ref 或错误边界。 */
+    /** 提供 ref.addToCart() 转调购物车事件，并输出 Add to cart 作为重渲染日志。 */
     class AddToCartButton extends React.PureComponent {
       /** AddToCartButton.addToCart 调用当前提交版本的 Effect Event，并把领域参数转交事件闭包。 */
       addToCart = () => {
         this.props.onClick();
       };
-      /** 渲染 AddToCartButton.render 对应的类 fixture，并把本轮状态或子树交给宿主输出断言。 */
+      /** 输出固定 Add to cart，记录购物车变化带来的 render。 */
       render() {
         return <Text text="Add to cart" />;
       }
     }
     const ShoppingCartContext = createContext(null);
 
-    /** 作为 AppShell fixture 承载当前测试职责；服务于“按文档访问日志示例更新购物车数量，确认页面事件读取最新数量而不重跑页面 Effect”场景。 */
+    /** 管理购物车 items 并通过 Context 发布 items/updateItems，供访问日志事件读取。 */
     function AppShell({children}) {
       const [items, updateItems] = useState([]);
       const value = useMemo(() => ({items, updateItems}), [items, updateItems]);
@@ -1297,7 +1199,7 @@ describe('useEffectEvent', () => {
       );
     }
 
-    /** 作为 Page fixture 承载当前测试职责；服务于“按文档访问日志示例更新购物车数量，确认页面事件读取最新数量而不重跑页面 Effect”场景。 */
+    /** 只按 url 触发访问 Effect；Effect Event 在调用时读取最新购物车数量。 */
     function Page({url}) {
       const {items, updateItems} = useContext(ShoppingCartContext);
       const onClick = useEffectEvent(() => updateItems([...items, 1]));
@@ -1345,19 +1247,12 @@ describe('useEffectEvent', () => {
     assertLog(['Add to cart', 'url: /shop/2, numberOfItems: 1']);
   });
 
-  /**
-   * Given：在 memo 或 forwardRef 组件中更新 Context，确认 Effect Event 读取最新上下文所需的初始状态、更新入口与观测日志均已建立。
-   * When：完成挂载以及用例指定的后续渲染或提交步骤。
-   * Then：在 memo 或 forwardRef 组件中更新 Context，确认 Effect Event 读取最新上下文。
-   *
-   * 验证机制：调度日志精确约束执行次数与先后顺序。
-   * 对应源码：`mountEvent()` 与 `updateEvent()` 的事件包装和闭包更新。
-   */
+  /** Provider first→second，memo Consumer 因 Context 变化重渲染；首次 effect 保存的事件两次调用分别读 first/second。 */
   it('reads the latest context value in memo Components', async () => {
     const MyContext = createContext('default');
 
     let logContextValue;
-    const ContextReader = React.memo(function ContextReader() {
+    const ContextReader = React.memo(/** 读取 Context 并登记依赖；首次 effect 保存事件包装器，更新不重新保存也读取最新值。 */ function ContextReader() {
       const value = useContext(MyContext);
       Scheduler.log('ContextReader: ' + value);
       const fireLogContextValue = useEffectEvent(() => {
@@ -1369,7 +1264,7 @@ describe('useEffectEvent', () => {
       return null;
     });
 
-    /** 组织当前用例的根组件、更新入口与受测 Hook；服务于“在 memo 或 forwardRef 组件中更新 Context，确认 Effect Event 读取最新上下文”场景。 */
+    /** 用 Provider 发布 value，memo Consumer 的 Context 依赖仍触发更新。 */
     function App({value}) {
       return (
         <MyContext.Provider value={value}>
@@ -1393,19 +1288,12 @@ describe('useEffectEvent', () => {
     assertLog(['ContextReader (Effect event): second']);
   });
 
-  /**
-   * Given：在 memo 或 forwardRef 组件中更新 Context，确认 Effect Event 读取最新上下文所需的初始状态、更新入口与观测日志均已建立。
-   * When：完成挂载以及用例指定的后续渲染或提交步骤。
-   * Then：在 memo 或 forwardRef 组件中更新 Context，确认 Effect Event 读取最新上下文。
-   *
-   * 验证机制：调度日志精确约束执行次数与先后顺序。
-   * 对应源码：`mountEvent()` 与 `updateEvent()` 的事件包装和闭包更新。
-   */
+  /** Provider first→second，forwardRef Consumer 读取新 Context；首次 effect 保存的事件两次调用分别读 first/second，ref 未参与本例。 */
   it('reads the latest context value in forwardRef Components', async () => {
     const MyContext = createContext('default');
 
     let logContextValue;
-    const ContextReader = React.forwardRef(function ContextReader(props, ref) {
+    const ContextReader = React.forwardRef(/** 读取 Context；未消费 props/ref，首次 effect 保存的包装器仍须读取最新 Context 闭包。 */ function ContextReader(props, ref) {
       const value = useContext(MyContext);
       Scheduler.log('ContextReader: ' + value);
       const fireLogContextValue = useEffectEvent(() => {
@@ -1417,7 +1305,7 @@ describe('useEffectEvent', () => {
       return null;
     });
 
-    /** 组织当前用例的根组件、更新入口与受测 Hook；服务于“在 memo 或 forwardRef 组件中更新 Context，确认 Effect Event 读取最新上下文”场景。 */
+    /** 用 Provider 发布 value，forwardRef Consumer 读取 Context；本例不使用 ref。 */
     function App({value}) {
       return (
         <MyContext.Provider value={value}>
@@ -1441,16 +1329,9 @@ describe('useEffectEvent', () => {
     assertLog(['ContextReader (Effect event): second']);
   });
 
-  /**
-   * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-   * When：完成挂载以及用例指定的后续渲染或提交步骤。
-   * Then：在 Activity 隐藏、更新与显示之间调用事件，确认可见提交边界决定闭包新鲜度。
-   *
-   * 验证机制：调度日志精确约束执行次数与先后顺序。
-   * 对应源码：`useEffectEventImpl()`、`mountEvent()` 与 `updateEvent()` 的提交队列。
-   */
+  /** Activity 隐藏初挂 value=1，隐藏更新为 2，再揭示；insertion 一直执行、layout 在揭示 create。两组 flag 断言分别记录旧 1 或新 2 的事件闭包。 */
   it('effect events are fresh inside Activity', async () => {
-    /** 作为子级函数组件暴露 Hook 状态和提交日志；服务于“在 Activity 隐藏、更新与显示之间调用事件，确认可见提交边界决定闭包新鲜度”场景。 */
+    /** 记录子组件渲染与提交，供父子顺序断言使用。 */
     function Child({value}) {
       const getValue = useEffectEvent(() => {
         return value;
@@ -1472,7 +1353,7 @@ describe('useEffectEvent', () => {
       return null;
     }
 
-    /** 组织当前用例的根组件、更新入口与受测 Hook；服务于“在 Activity 隐藏、更新与显示之间调用事件，确认可见提交边界决定闭包新鲜度”场景。 */
+    /** 把 value 传入 Activity 的 Child，以 mode 切换隐藏和可见提交。 */
     function App({value, mode}) {
       return (
         <React.Activity mode={mode}>

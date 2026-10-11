@@ -154,108 +154,109 @@ export {default as rendererVersion} from 'shared/ReactVersion';
 import noop from 'shared/noop';
 import estimateBandwidth from './estimateBandwidth';
 
-/** `rendererPackageName` 保存DOM Host Config 的宿主类型、props 与协议常量所需的稳定配置、缓存或模块级状态；生命周期覆盖当前 renderer。 */
+/** `rendererPackageName` 提供给 DevTools 的 renderer 包名。 */
 export const rendererPackageName = 'react-dom';
-/** `extraDevToolsConfig` 保存DOM Host Config 的宿主类型、props 与协议常量所需的稳定配置、缓存或模块级状态；生命周期覆盖当前 renderer。 */
+/** `extraDevToolsConfig` 此 renderer 没有额外的 DevTools 检查配置。 */
 export const extraDevToolsConfig = null;
 
-/** `Type` 定义DOM Host Config 的宿主类型、props 与协议常量的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `Type` 宿主元素的标签名。 */
 export type Type = string;
-/** `Props` 定义DOM Host Config 的宿主类型、props 与协议常量的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `Props` 此 HostConfig 读取的 DOM props；未列出的属性仍可由开放对象携带。 */
 export type Props = {
-  /** `Props.autoFocus` 表示所属 Host Config 契约跨阶段传递的受限状态；仅在DOM Host Config 的宿主类型、props 与协议常量生命周期内有效。 */
+  /** `Props.autoFocus` 初次客户端挂载后是否自动聚焦；hydration 不再次自动聚焦。 */
   autoFocus?: boolean,
-  /** `Props.children` 表示由当前 Fiber 子树拥有的宿主子节点；仅在DOM Host Config 的宿主类型、props 与协议常量生命周期内有效。 */
+  /** `Props.children` React 子内容；字符串等直接文本内容可由宿主设置。 */
   children?: mixed,
-  /** `Props.disabled` 表示所属 Host Config 契约跨阶段传递的受限状态；仅在DOM Host Config 的宿主类型、props 与协议常量生命周期内有效。 */
+  /** `Props.disabled` 控件的禁用状态，也用于排除可共享的 stylesheet link。 */
   disabled?: boolean,
-  /** `Props.hidden` 表示所属 Host Config 契约跨阶段传递的受限状态；仅在DOM Host Config 的宿主类型、props 与协议常量生命周期内有效。 */
+  /** `Props.hidden` DOM hidden 属性；测试选择器据此跳过 HostComponent 子树。 */
   hidden?: boolean,
-  /** `Props.suppressHydrationWarning` 表示所属 Host Config 契约跨阶段传递的受限状态；仅在DOM Host Config 的宿主类型、props 与协议常量生命周期内有效。 */
+  /** `Props.suppressHydrationWarning` 抑制本元素属性或直接文本的 hydration 差异警告。 */
   suppressHydrationWarning?: boolean,
-  /** `Props.dangerouslySetInnerHTML` 表示所属 Host Config 契约跨阶段传递的受限状态；仅在DOM Host Config 的宿主类型、props 与协议常量生命周期内有效。 */
+  /** `Props.dangerouslySetInnerHTML` 直接写入宿主元素 HTML 的 __html 包装对象。 */
   dangerouslySetInnerHTML?: mixed,
-  /** `Props.style` 表示宿主样式或布局位置状态；仅在DOM Host Config 的宿主类型、props 与协议常量生命周期内有效。 */
+  /** `Props.style` DOM 内联样式；隐藏和 View Transition 恢复路径从这里读取当前声明值。 */
   style?: {
-    /** `Props.display` 表示宿主样式或布局位置状态；仅在DOM Host Config 的宿主类型、props 与协议常量生命周期内有效。 */
+    /** `Props.display` 当前声明的 CSS display，隐藏/解除隐藏时用于恢复。 */
     display?: string,
-    /** `Props.viewTransitionName` 表示View Transition 测量使用的几何快照；仅在DOM Host Config 的宿主类型、props 与协议常量生命周期内有效。 */
+    /** `Props.viewTransitionName` 声明的 CSS view-transition-name；临时过渡名称恢复时读取。 */
     viewTransitionName?: string,
-    /** `Props.view-transition-name` 表示View Transition 测量使用的几何快照；仅在DOM Host Config 的宿主类型、props 与协议常量生命周期内有效。 */
+    /** `Props.view-transition-name` view-transition-name 的 CSS 拼写形式。 */
     'view-transition-name'?: string,
-    /** `Props.viewTransitionClass` 表示View Transition 测量使用的几何快照；仅在DOM Host Config 的宿主类型、props 与协议常量生命周期内有效。 */
+    /** `Props.viewTransitionClass` 声明的 CSS view-transition-class，用于匹配过渡伪元素样式。 */
     viewTransitionClass?: string,
-    /** `Props.view-transition-class` 表示View Transition 测量使用的几何快照；仅在DOM Host Config 的宿主类型、props 与协议常量生命周期内有效。 */
+    /** `Props.view-transition-class` view-transition-class 的 CSS 拼写形式。 */
     'view-transition-class'?: string,
-    /** `Props.margin` 表示宿主样式或布局位置状态；仅在DOM Host Config 的宿主类型、props 与协议常量生命周期内有效。 */
+    /** `Props.margin` 声明的 CSS margin；临时 inline-block 调整恢复时读取。 */
     margin?: string,
-    /** `Props.marginTop` 表示宿主样式或布局位置状态；仅在DOM Host Config 的宿主类型、props 与协议常量生命周期内有效。 */
+    /** `Props.marginTop` 声明的 CSS margin-top。 */
     marginTop?: string,
-    /** `Props.margin-top` 表示宿主样式或布局位置状态；仅在DOM Host Config 的宿主类型、props 与协议常量生命周期内有效。 */
+    /** `Props.margin-top` margin-top 的 CSS 拼写形式。 */
     'margin-top'?: string,
-    /** `Props.marginBottom` 表示宿主样式或布局位置状态；仅在DOM Host Config 的宿主类型、props 与协议常量生命周期内有效。 */
+    /** `Props.marginBottom` 声明的 CSS margin-bottom。 */
     marginBottom?: string,
-    /** `Props.margin-bottom` 表示宿主样式或布局位置状态；仅在DOM Host Config 的宿主类型、props 与协议常量生命周期内有效。 */
+    /** `Props.margin-bottom` margin-bottom 的 CSS 拼写形式。 */
     'margin-bottom'?: string,
     ...
   },
-  /** `Props.bottom` 表示宿主样式或布局位置状态；仅在DOM Host Config 的宿主类型、props 与协议常量生命周期内有效。 */
+  /** `Props.bottom` props 类型保留的可选数值 bottom 字段。 */
   bottom?: null | number,
-  /** `Props.left` 表示宿主样式或布局位置状态；仅在DOM Host Config 的宿主类型、props 与协议常量生命周期内有效。 */
+  /** `Props.left` props 类型保留的可选数值 left 字段。 */
   left?: null | number,
-  /** `Props.right` 表示宿主样式或布局位置状态；仅在DOM Host Config 的宿主类型、props 与协议常量生命周期内有效。 */
+  /** `Props.right` props 类型保留的可选数值 right 字段。 */
   right?: null | number,
-  /** `Props.top` 表示宿主样式或布局位置状态；仅在DOM Host Config 的宿主类型、props 与协议常量生命周期内有效。 */
+  /** `Props.top` props 类型保留的可选数值 top 字段。 */
   top?: null | number,
-  /** `Props.is` 表示所属 Host Config 契约跨阶段传递的受限状态；仅在DOM Host Config 的宿主类型、props 与协议常量生命周期内有效。 */
+  /** `Props.is` 创建定制内置元素时传给 createElement 的 is 选项。 */
   is?: string,
-  /** `Props.size` 表示所属 Host Config 契约跨阶段传递的受限状态；仅在DOM Host Config 的宿主类型、props 与协议常量生命周期内有效。 */
+  /** `Props.size` select 等控件的可见尺寸；创建 select 时需在添加 option 前设置。 */
   size?: number,
-  /** `Props.value` 表示表单受控值及默认值边界；仅在DOM Host Config 的宿主类型、props 与协议常量生命周期内有效。 */
+  /** `Props.value` 表单控件当前的受控值。 */
   value?: string,
-  /** `Props.defaultValue` 表示表单受控值及默认值边界；仅在DOM Host Config 的宿主类型、props 与协议常量生命周期内有效。 */
+  /** `Props.defaultValue` 表单控件的默认值，供初始状态和原生 reset 使用。 */
   defaultValue?: string,
-  /** `Props.checked` 表示表单受控值及默认值边界；仅在DOM Host Config 的宿主类型、props 与协议常量生命周期内有效。 */
+  /** `Props.checked` input 当前的受控勾选状态。 */
   checked?: boolean,
-  /** `Props.defaultChecked` 表示表单受控值及默认值边界；仅在DOM Host Config 的宿主类型、props 与协议常量生命周期内有效。 */
+  /** `Props.defaultChecked` input 的默认勾选状态。 */
   defaultChecked?: boolean,
-  /** `Props.multiple` 表示所属 Host Config 契约跨阶段传递的受限状态；仅在DOM Host Config 的宿主类型、props 与协议常量生命周期内有效。 */
+  /** `Props.multiple` select 是否允许多选，创建时需在添加 option 前确定。 */
   multiple?: boolean,
-  /** `Props.type` 表示宿主标签、资源或事件类别；仅在DOM Host Config 的宿主类型、props 与协议常量生命周期内有效。 */
+  /** `Props.type` DOM type 属性；script 分支用它区分可执行脚本与数据块。 */
   type?: string,
-  /** `Props.src` 表示资源去重和插入排序使用的键；仅在DOM Host Config 的宿主类型、props 与协议常量生命周期内有效。 */
-  src?: string | Blob | MediaSource | MediaStream, //待办事项：响应
+  /** `Props.src` 图片、脚本等元素的来源；启用 srcObject 时也可接收 Blob 或媒体对象。 */
+  src?: string | Blob | MediaSource | MediaStream, //TODO：支持 Response。
+  /** 图片候选 URL 与像素密度/尺寸描述；创建时晚于 sizes 等请求相关属性写入。 */
   srcSet?: string,
-  /** `Props.loading` 表示资源加载、引用计数或解除挂起状态；仅在DOM Host Config 的宿主类型、props 与协议常量生命周期内有效。 */
+  /** `Props.loading` 图片 eager/lazy 加载模式；lazy 图片不参与此 HostConfig 的提交等待。 */
   loading?: 'eager' | 'lazy',
-  /** `Props.onLoad` 实现 reconciler 请求的宿主操作，并把副作用限制在当前根或实例；属于DOM Host Config 的宿主类型、props 与协议常量。 */
+  /** `Props.onLoad` 用户的加载事件回调；显式提供时图片退出自动提交等待。 */
   onLoad?: (event: any) => void,
   ...
 };
-/** `RawProps` 定义DOM Host Config 的宿主类型、props 与协议常量的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `RawProps` 尚未按宿主标签细化的原始 props。 */
 type RawProps = {
-  /** `RawProps.string` 表示所属 Host Config 契约跨阶段传递的受限状态；仅在DOM Host Config 的宿主类型、props 与协议常量生命周期内有效。 */
+  /** `RawProps.string` 其余 DOM 属性或资源选项，保留原始值。 */
   [string]: mixed,
 };
-/** `EventTargetChildElement` 定义DOM Host Config 的宿主类型、props 与协议常量的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `EventTargetChildElement` 事件目标子元素的标签与可选样式描述。 */
 export type EventTargetChildElement = {
-  /** `EventTargetChildElement.type` 表示宿主标签、资源或事件类别；仅在DOM Host Config 的宿主类型、props 与协议常量生命周期内有效。 */
+  /** `EventTargetChildElement.type` 子元素的宿主标签名。 */
   type: string,
-  /** `EventTargetChildElement.props` 表示宿主元素最近提交或待 hydration 的 props；仅在DOM Host Config 的宿主类型、props 与协议常量生命周期内有效。 */
+  /** `EventTargetChildElement.props` 子元素的可选 props，包含定位样式描述。 */
   props: null | {
-    /** `EventTargetChildElement.style` 表示宿主样式或布局位置状态；仅在DOM Host Config 的宿主类型、props 与协议常量生命周期内有效。 */
+    /** `EventTargetChildElement.style` 子元素的可选内联样式。 */
     style?: {
-      /** `EventTargetChildElement.position` 表示所属 Host Config 契约跨阶段传递的受限状态；仅在DOM Host Config 的宿主类型、props 与协议常量生命周期内有效。 */
+      /** `EventTargetChildElement.position` 子元素的 CSS 定位模式。 */
       position?: string,
-      /** `EventTargetChildElement.zIndex` 表示所属 Host Config 契约跨阶段传递的受限状态；仅在DOM Host Config 的宿主类型、props 与协议常量生命周期内有效。 */
+      /** `EventTargetChildElement.zIndex` 子元素的 CSS 层叠顺序。 */
       zIndex?: number,
-      /** `EventTargetChildElement.bottom` 表示宿主样式或布局位置状态；仅在DOM Host Config 的宿主类型、props 与协议常量生命周期内有效。 */
+      /** `EventTargetChildElement.bottom` CSS bottom 偏移。 */
       bottom?: string,
-      /** `EventTargetChildElement.left` 表示宿主样式或布局位置状态；仅在DOM Host Config 的宿主类型、props 与协议常量生命周期内有效。 */
+      /** `EventTargetChildElement.left` CSS left 偏移。 */
       left?: string,
-      /** `EventTargetChildElement.right` 表示宿主样式或布局位置状态；仅在DOM Host Config 的宿主类型、props 与协议常量生命周期内有效。 */
+      /** `EventTargetChildElement.right` CSS right 偏移。 */
       right?: string,
-      /** `EventTargetChildElement.top` 表示宿主样式或布局位置状态；仅在DOM Host Config 的宿主类型、props 与协议常量生命周期内有效。 */
+      /** `EventTargetChildElement.top` CSS top 偏移。 */
       top?: string,
       ...
     },
@@ -264,7 +265,7 @@ export type EventTargetChildElement = {
   ...
 };
 
-/** `Container` 定义DOM Host Config 的宿主类型、props 与协议常量的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `Container` 根或 Portal 的 DOM 容器；兼容旧版根的 _reactRootContainer 字段。 */
 export type Container =
   | interface extends Element {
       /** 旧版根挂载在 Element 上的 FiberRoot 引用；仅用于兼容根查找。 */
@@ -278,134 +279,134 @@ export type Container =
       /** 旧版根挂载在 DocumentFragment 上的 FiberRoot 引用。 */
       _reactRootContainer?: FiberRoot
     };
-/** `Instance` 定义DOM Host Config 的宿主类型、props 与协议常量的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `Instance` HostComponent 对应的 DOM Element。 */
 export type Instance = Element;
-/** `TextInstance` 定义DOM Host Config 的宿主类型、props 与协议常量的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `TextInstance` HostText 对应的 DOM Text 节点。 */
 export type TextInstance = Text;
 
-/** `InstanceWithFragmentHandles` 定义DOM Host Config 的宿主类型、props 与协议常量的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `InstanceWithFragmentHandles` 可记录所属 Fragment 句柄集合的宿主元素。 */
 type InstanceWithFragmentHandles = Instance & {
-  /** `InstanceWithFragmentHandles.reactFragments` 表示Fragment handle 与 Fiber 的关联身份；仅在DOM Host Config 的宿主类型、props 与协议常量生命周期内有效。 */
+  /** `InstanceWithFragmentHandles.reactFragments` 包含此元素的 Fragment 句柄集合。 */
   reactFragments?: Set<FragmentInstanceType>,
 };
-/** `HostNodeWithFragmentHandles` 定义DOM Host Config 的宿主类型、props 与协议常量的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `HostNodeWithFragmentHandles` 可记录所属 Fragment 句柄集合的元素或文本节点。 */
 type HostNodeWithFragmentHandles = (Instance | TextInstance) & {
-  /** `HostNodeWithFragmentHandles.reactFragments` 表示Fragment handle 与 Fiber 的关联身份；仅在DOM Host Config 的宿主类型、props 与协议常量生命周期内有效。 */
+  /** `HostNodeWithFragmentHandles.reactFragments` 包含此宿主节点的 Fragment 句柄集合。 */
   reactFragments?: Set<FragmentInstanceType>,
 };
 
-/** `ActivityInterface` 代表DOM Host Config 的宿主类型、props 与协议常量中的浏览器宿主对象类别；renderer 只持有引用，不自行构造其内部状态。 */
+/** `ActivityInterface` SSR Activity 边界的起始注释节点类型。 */
 declare class ActivityInterface extends Comment {}
-/** `SuspenseInterface` 代表DOM Host Config 的宿主类型、props 与协议常量中的浏览器宿主对象类别；renderer 只持有引用，不自行构造其内部状态。 */
+/** `SuspenseInterface` SSR Suspense 边界的起始注释节点，并携带 Fizz 可调用的重试入口。 */
 declare class SuspenseInterface extends Comment {
-  /** `_reactRetry` 表示边界解除阻塞后由 reconciler 注入的重试回调；仅在DOM Host Config 的宿主类型、props 与协议常量生命周期内有效。 */
+  /** `_reactRetry` 客户端注册的边界重试回调，供 Fizz 完成或显示该边界时调用。 */
   _reactRetry: void | (() => void);
 }
 
-/** `ActivityInstance` 定义DOM Host Config 的宿主类型、props 与协议常量的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `ActivityInstance` SSR Activity 起始标记的宿主表示。 */
 export type ActivityInstance = ActivityInterface;
-/** `SuspenseInstance` 定义DOM Host Config 的宿主类型、props 与协议常量的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `SuspenseInstance` SSR Suspense 起始标记的宿主表示。 */
 export type SuspenseInstance = SuspenseInterface;
 
-/** `FormStateMarkerInstance` 定义DOM Host Config 的宿主类型、props 与协议常量的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `FormStateMarkerInstance` Fizz 写出的表单 action 状态匹配注释。 */
 type FormStateMarkerInstance = Comment;
-/** `HydratableInstance` 定义DOM Host Config 的宿主类型、props 与协议常量的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `HydratableInstance` hydration 能认领的元素、文本、边界起始标记或表单状态标记。 */
 export type HydratableInstance =
   | Instance
   | TextInstance
   | ActivityInstance
   | SuspenseInstance
   | FormStateMarkerInstance;
-/** `PublicInstance` 定义DOM Host Config 的宿主类型、props 与协议常量的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `PublicInstance` 公开给宿主 ref 等调用者的原生元素或文本节点。 */
 export type PublicInstance = Element | Text;
-/** `HostContextDev` 定义DOM Host Config 的宿主类型、props 与协议常量的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `HostContextDev` 开发构建同时携带命名空间和 DOM 嵌套校验的祖先记录。 */
 export type HostContextDev = {
-  /** `HostContextDev.context` 表示所属 Host Config 契约跨阶段传递的受限状态；仅在DOM Host Config 的宿主类型、props 与协议常量生命周期内有效。 */
+  /** `HostContextDev.context` 当前 DOM 命名空间。 */
   context: HostContextProd,
-  /** `HostContextDev.ancestorInfo` 表示所属 Host Config 契约跨阶段传递的受限状态；仅在DOM Host Config 的宿主类型、props 与协议常量生命周期内有效。 */
+  /** `HostContextDev.ancestorInfo` DOM 嵌套校验需要的宿主祖先记录。 */
   ancestorInfo: AncestorInfoDev,
 };
-/** `HostContextProd` 定义DOM Host Config 的宿主类型、props 与协议常量的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `HostContextProd` 生产构建只需传递当前宿主命名空间。 */
 type HostContextProd = HostContextNamespace;
-/** `HostContext` 定义DOM Host Config 的宿主类型、props 与协议常量的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `HostContext` 创建和校验后代 DOM 节点所需的命名空间上下文。 */
 export type HostContext = HostContextDev | HostContextProd;
-/** `UpdatePayload` 定义DOM Host Config 的宿主类型、props 与协议常量的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `UpdatePayload` HostConfig 导出的更新数据类型；本文件的 commitUpdate 直接比较新旧 props。 */
 export type UpdatePayload = Array<mixed>;
-/** `ChildSet` 定义DOM Host Config 的宿主类型、props 与协议常量的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `ChildSet` DOM mutation renderer 不使用 persistence 的子节点集合。 */
 export type ChildSet = void; //未使用
-/** `TimeoutHandle` 定义DOM Host Config 的宿主类型、props 与协议常量的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `TimeoutHandle` 浏览器定时器返回的句柄。 */
 export type TimeoutHandle = TimeoutID;
-/** `NoTimeout` 定义DOM Host Config 的宿主类型、props 与协议常量的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `NoTimeout` 未安排定时器的 -1 哨兵类型。 */
 export type NoTimeout = -1;
-/** `RendererInspectionConfig` 定义DOM Host Config 的宿主类型、props 与协议常量的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `RendererInspectionConfig` 此 renderer 的额外检查配置为空对象。 */
 export type RendererInspectionConfig = $ReadOnly<{}>;
 
-/** `TransitionStatus` 定义DOM Host Config 的宿主类型、props 与协议常量的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `TransitionStatus` 宿主 form action 通过 context 暴露的 FormStatus。 */
 export type TransitionStatus = FormStatus;
 
-/** `ViewTransitionInstance` 定义DOM Host Config 的宿主类型、props 与协议常量的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `ViewTransitionInstance` 一个名称对应的四种 View Transition 伪元素操作句柄。 */
 export type ViewTransitionInstance = {
-  /** `ViewTransitionInstance.name` 表示View Transition 或伪元素定位标识；仅在DOM Host Config 的宿主类型、props 与协议常量生命周期内有效。 */
+  /** `ViewTransitionInstance.name` 快照名称，四个伪元素句柄均使用它构造选择器。 */
   name: string,
-  /** `ViewTransitionInstance.group` 表示所属 Host Config 契约跨阶段传递的受限状态；仅在DOM Host Config 的宿主类型、props 与协议常量生命周期内有效。 */
+  /** `ViewTransitionInstance.group` ::view-transition-group(name) 操作句柄。 */
   group: mixin$Animatable,
-  /** `ViewTransitionInstance.imagePair` 表示所属 Host Config 契约跨阶段传递的受限状态；仅在DOM Host Config 的宿主类型、props 与协议常量生命周期内有效。 */
+  /** `ViewTransitionInstance.imagePair` ::view-transition-image-pair(name) 操作句柄。 */
   imagePair: mixin$Animatable,
-  /** `ViewTransitionInstance.old` 表示所属 Host Config 契约跨阶段传递的受限状态；仅在DOM Host Config 的宿主类型、props 与协议常量生命周期内有效。 */
+  /** `ViewTransitionInstance.old` ::view-transition-old(name) 旧快照操作句柄。 */
   old: mixin$Animatable,
-  /** `ViewTransitionInstance.new` 表示所属 Host Config 契约跨阶段传递的受限状态；仅在DOM Host Config 的宿主类型、props 与协议常量生命周期内有效。 */
+  /** `ViewTransitionInstance.new` ::view-transition-new(name) 新快照操作句柄。 */
   new: mixin$Animatable,
 };
 
-/** `SelectionInformation` 定义DOM Host Config 的宿主类型、props 与协议常量的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `SelectionInformation` mutation 前保存的焦点元素和选择区，供 resetAfterCommit 恢复。 */
 type SelectionInformation = {
-  /** `SelectionInformation.focusedElem` 表示提交前捕获的焦点与选择区；仅在DOM Host Config 的宿主类型、props 与协议常量生命周期内有效。 */
+  /** `SelectionInformation.focusedElem` 提交前捕获的焦点元素。 */
   focusedElem: null | HTMLElement,
-  /** `SelectionInformation.selectionRange` 表示提交前捕获的焦点与选择区；仅在DOM Host Config 的宿主类型、props 与协议常量生命周期内有效。 */
+  /** `SelectionInformation.selectionRange` 该元素提交前的文本选择区。 */
   selectionRange: mixed,
 };
 
-/** `SUPPRESS_HYDRATION_WARNING` 是DOM Host Config 的宿主类型、props 与协议常量使用的稳定协议值、超时或 DOM 标记；必须与消费者约定一致。 */
+/** `SUPPRESS_HYDRATION_WARNING` 读取 props 中 suppressHydrationWarning 的属性名。 */
 const SUPPRESS_HYDRATION_WARNING = 'suppressHydrationWarning';
 
-/** `ACTIVITY_START_DATA` 是DOM Host Config 的宿主类型、props 与协议常量使用的稳定协议值、超时或 DOM 标记；必须与消费者约定一致。 */
+/** `ACTIVITY_START_DATA` Fizz Activity 边界的起始注释内容。 */
 const ACTIVITY_START_DATA = '&';
-/** `ACTIVITY_END_DATA` 是DOM Host Config 的宿主类型、props 与协议常量使用的稳定协议值、超时或 DOM 标记；必须与消费者约定一致。 */
+/** `ACTIVITY_END_DATA` Fizz Activity 边界的结束注释内容。 */
 const ACTIVITY_END_DATA = '/&';
-/** `SUSPENSE_START_DATA` 是DOM Host Config 的宿主类型、props 与协议常量使用的稳定协议值、超时或 DOM 标记；必须与消费者约定一致。 */
+/** `SUSPENSE_START_DATA` 内容已完成的 Fizz Suspense 边界起始标记。 */
 const SUSPENSE_START_DATA = '$';
-/** `SUSPENSE_END_DATA` 是DOM Host Config 的宿主类型、props 与协议常量使用的稳定协议值、超时或 DOM 标记；必须与消费者约定一致。 */
+/** `SUSPENSE_END_DATA` Fizz Suspense 边界的结束标记。 */
 const SUSPENSE_END_DATA = '/$';
-/** `SUSPENSE_PENDING_START_DATA` 是DOM Host Config 的宿主类型、props 与协议常量使用的稳定协议值、超时或 DOM 标记；必须与消费者约定一致。 */
+/** `SUSPENSE_PENDING_START_DATA` 仍等待服务器内容的 Suspense 起始标记。 */
 const SUSPENSE_PENDING_START_DATA = '$?';
-/** `SUSPENSE_QUEUED_START_DATA` 是DOM Host Config 的宿主类型、props 与协议常量使用的稳定协议值、超时或 DOM 标记；必须与消费者约定一致。 */
+/** `SUSPENSE_QUEUED_START_DATA` Fizz 已将完成内容排队等待显示的 Suspense 起始标记。 */
 const SUSPENSE_QUEUED_START_DATA = '$~';
-/** `SUSPENSE_FALLBACK_START_DATA` 是DOM Host Config 的宿主类型、props 与协议常量使用的稳定协议值、超时或 DOM 标记；必须与消费者约定一致。 */
+/** `SUSPENSE_FALLBACK_START_DATA` 服务器放弃完成、需转为客户端渲染的 Suspense 起始标记。 */
 const SUSPENSE_FALLBACK_START_DATA = '$!';
-/** `PREAMBLE_CONTRIBUTION_HTML` 是DOM Host Config 的宿主类型、props 与协议常量使用的稳定协议值、超时或 DOM 标记；必须与消费者约定一致。 */
+/** `PREAMBLE_CONTRIBUTION_HTML` 边界向文档 html 单例贡献属性的 Fizz 标记。 */
 const PREAMBLE_CONTRIBUTION_HTML = 'html';
-/** `PREAMBLE_CONTRIBUTION_BODY` 是DOM Host Config 的宿主类型、props 与协议常量使用的稳定协议值、超时或 DOM 标记；必须与消费者约定一致。 */
+/** `PREAMBLE_CONTRIBUTION_BODY` 边界向文档 body 单例贡献属性的 Fizz 标记。 */
 const PREAMBLE_CONTRIBUTION_BODY = 'body';
-/** `PREAMBLE_CONTRIBUTION_HEAD` 是DOM Host Config 的宿主类型、props 与协议常量使用的稳定协议值、超时或 DOM 标记；必须与消费者约定一致。 */
+/** `PREAMBLE_CONTRIBUTION_HEAD` 边界向文档 head 单例贡献属性或子节点的 Fizz 标记。 */
 const PREAMBLE_CONTRIBUTION_HEAD = 'head';
-/** `FORM_STATE_IS_MATCHING` 是DOM Host Config 的宿主类型、props 与协议常量使用的稳定协议值、超时或 DOM 标记；必须与消费者约定一致。 */
+/** `FORM_STATE_IS_MATCHING` 此 action 状态槽与服务器返回的表单状态匹配的标记。 */
 const FORM_STATE_IS_MATCHING = 'F!';
-/** `FORM_STATE_IS_NOT_MATCHING` 是DOM Host Config 的宿主类型、props 与协议常量使用的稳定协议值、超时或 DOM 标记；必须与消费者约定一致。 */
+/** `FORM_STATE_IS_NOT_MATCHING` 此 action 状态槽与服务器返回的表单状态不匹配的标记。 */
 const FORM_STATE_IS_NOT_MATCHING = 'F';
 
-/** `DOCUMENT_READY_STATE_LOADING` 是DOM Host Config 的宿主类型、props 与协议常量使用的稳定协议值、超时或 DOM 标记；必须与消费者约定一致。 */
+/** `DOCUMENT_READY_STATE_LOADING` 文档还在解析时的 readyState 值，用于决定是否继续等待 Fizz。 */
 const DOCUMENT_READY_STATE_LOADING = 'loading';
 
-/** `STYLE` 是DOM Host Config 的宿主类型、props 与协议常量使用的稳定协议值、超时或 DOM 标记；必须与消费者约定一致。 */
+/** `STYLE` 读取 props 中 style 对象的属性名。 */
 const STYLE = 'style';
 
-/** `HostContextNamespace` 定义DOM Host Config 的宿主类型、props 与协议常量的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `HostContextNamespace` 以 0、1、2 区分默认、SVG、MathML 宿主命名空间。 */
 opaque type HostContextNamespace = 0 | 1 | 2;
-/** `HostContextNamespaceNone` 保存DOM Host Config 的宿主类型、props 与协议常量所需的稳定配置、缓存或模块级状态；生命周期覆盖当前 renderer。 */
+/** `HostContextNamespaceNone` 默认 HTML 命名空间上下文。 */
 export const HostContextNamespaceNone: HostContextNamespace = 0;
-/** `HostContextNamespaceSvg` 保存DOM Host Config 的宿主类型、props 与协议常量所需的稳定配置、缓存或模块级状态；生命周期覆盖当前 renderer。 */
+/** `HostContextNamespaceSvg` SVG 命名空间上下文。 */
 const HostContextNamespaceSvg: HostContextNamespace = 1;
-/** `HostContextNamespaceMath` 保存DOM Host Config 的宿主类型、props 与协议常量所需的稳定配置、缓存或模块级状态；生命周期覆盖当前 renderer。 */
+/** `HostContextNamespaceMath` MathML 命名空间上下文。 */
 const HostContextNamespaceMath: HostContextNamespace = 2;
 
 let eventsEnabled: ?boolean = null;
@@ -413,7 +414,7 @@ let selectionInformation: null | SelectionInformation = null;
 
 export * from 'react-reconciler/src/ReactFiberConfigWithNoPersistence';
 
-/** `getOwnerDocumentFromRootContainer` 查询、匹配或计算所需结果；不适用时返回协议约定的空值；属于根/子宿主上下文、实例创建与调度桥接。 */
+/** `getOwnerDocumentFromRootContainer` 容器为 Document 时直接返回它，否则取 ownerDocument，确保节点创建在容器所属文档。 */
 function getOwnerDocumentFromRootContainer(
   rootContainerElement: Element | Document | DocumentFragment,
 ): Document {
@@ -422,7 +423,7 @@ function getOwnerDocumentFromRootContainer(
     : rootContainerElement.ownerDocument;
 }
 
-/** `getRootHostContext` 查询、匹配或计算所需结果；不适用时返回协议约定的空值；属于根/子宿主上下文、实例创建与调度桥接。 */
+/** `getRootHostContext` 从根容器的命名空间计算后代上下文；开发构建还初始化 DOM 祖先校验记录。 */
 export function getRootHostContext(
   rootContainerInstance: Container,
 ): HostContext {
@@ -478,7 +479,7 @@ export function getRootHostContext(
   return context;
 }
 
-/** `getOwnHostContext` 查询、匹配或计算所需结果；不适用时返回协议约定的空值；属于根/子宿主上下文、实例创建与调度桥接。 */
+/** `getOwnHostContext` 将 DOM namespaceURI 映射为默认、SVG 或 MathML 上下文。 */
 function getOwnHostContext(namespaceURI: string): HostContextNamespace {
   switch (namespaceURI) {
     case SVG_NAMESPACE:
@@ -490,7 +491,7 @@ function getOwnHostContext(namespaceURI: string): HostContextNamespace {
   }
 }
 
-/** `getChildHostContextProd` 查询、匹配或计算所需结果；不适用时返回协议约定的空值；属于根/子宿主上下文、实例创建与调度桥接。 */
+/** `getChildHostContextProd` 处理 svg/math 入口和 SVG foreignObject 出口，其余后代继承父命名空间。 */
 function getChildHostContextProd(
   parentNamespace: HostContextNamespace,
   type: string,
@@ -514,7 +515,7 @@ function getChildHostContextProd(
   return parentNamespace;
 }
 
-/** `getChildHostContext` 查询、匹配或计算所需结果；不适用时返回协议约定的空值；属于根/子宿主上下文、实例创建与调度桥接。 */
+/** `getChildHostContext` 计算后代命名空间；开发构建同时推进祖先校验记录。 */
 export function getChildHostContext(
   parentHostContext: HostContext,
   type: string,
@@ -532,12 +533,12 @@ export function getChildHostContext(
   return getChildHostContextProd(parentNamespace, type);
 }
 
-/** `getPublicInstance` 查询、匹配或计算所需结果；不适用时返回协议约定的空值；属于根/子宿主上下文、实例创建与调度桥接。 */
+/** `getPublicInstance` DOM renderer 直接将原生实例公开给 ref 等调用者。 */
 export function getPublicInstance(instance: Instance): Instance {
   return instance;
 }
 
-/** `prepareForCommit` 建立阶段边界，确保后续提交看到已准备的 DOM 状态；属于根/子宿主上下文、实例创建与调度桥接。 */
+/** `prepareForCommit` mutation 前保存焦点、选择区和事件开关，并暂停 React 事件分发；可返回当前焦点的 Fiber。 */
 export function prepareForCommit(containerInfo: Container): Object | null {
   eventsEnabled = ReactBrowserEventEmitterIsEnabled();
   selectionInformation = getSelectionInformation(containerInfo);
@@ -552,7 +553,7 @@ export function prepareForCommit(containerInfo: Container): Object | null {
   return activeInstance;
 }
 
-/** `beforeActiveInstanceBlur` 建立阶段边界，确保后续提交看到已准备的 DOM 状态；属于根/子宿主上下文、实例创建与调度桥接。 */
+/** `beforeActiveInstanceBlur` 焦点子树移除或隐藏前，临时启用事件分发并发送 beforeblur，再关闭分发。 */
 export function beforeActiveInstanceBlur(internalInstanceHandle: Object): void {
   if (enableCreateEventHandleAPI) {
     ReactBrowserEventEmitterSetEnabled(true);
@@ -564,7 +565,7 @@ export function beforeActiveInstanceBlur(internalInstanceHandle: Object): void {
   }
 }
 
-/** `afterActiveInstanceBlur` 建立阶段边界，确保后续提交看到已准备的 DOM 状态；属于根/子宿主上下文、实例创建与调度桥接。 */
+/** `afterActiveInstanceBlur` 焦点子树处理后，临时启用事件分发，在 document 上发送 afterblur，再关闭分发。 */
 export function afterActiveInstanceBlur(): void {
   if (enableCreateEventHandleAPI) {
     ReactBrowserEventEmitterSetEnabled(true);
@@ -573,7 +574,7 @@ export function afterActiveInstanceBlur(): void {
   }
 }
 
-/** `resetAfterCommit` 同步宿主状态，并保持 DOM、Fiber 与提交快照一致；属于根/子宿主上下文、实例创建与调度桥接。 */
+/** `resetAfterCommit` mutation 后、layout 前恢复选择区和原事件开关，并清空提交快照。 */
 export function resetAfterCommit(containerInfo: Container): void {
   restoreSelection(selectionInformation, containerInfo);
   ReactBrowserEventEmitterSetEnabled(eventsEnabled);
@@ -581,7 +582,7 @@ export function resetAfterCommit(containerInfo: Container): void {
   selectionInformation = null;
 }
 
-/** `createHoistableInstance` 创建宿主对象或快照，并把所有权交给当前提交阶段；属于根/子宿主上下文、实例创建与调度桥接。 */
+/** `createHoistableInstance` beginWork 创建可提升的 DOM 元素，设置初始 props 并关联 Fiber；插入由后续 commit 路径负责。 */
 export function createHoistableInstance(
   type: string,
   props: Props,
@@ -601,7 +602,7 @@ export function createHoistableInstance(
 }
 
 let didWarnScriptTags = false;
-/** `isScriptDataBlock` 判断当前宿主能力或状态分支，只读 DOM/Fiber 快照；属于根/子宿主上下文、实例创建与调度桥接。 */
+/** `isScriptDataBlock` 根据 script 的非空 type 排除 JavaScript MIME 与特殊执行类型，判断是否为数据块脚本。 */
 function isScriptDataBlock(props: Props): boolean {
   const scriptType = props.type;
   if (typeof scriptType !== 'string' || scriptType === '') {
@@ -639,9 +640,9 @@ function isScriptDataBlock(props: Props): boolean {
   //任何其他非空类型的值都表示这是一个数据块
   return true;
 }
-/** `warnedUnknownTags` 保存根/子宿主上下文、实例创建与调度桥接所需的稳定配置、缓存或模块级状态；生命周期覆盖当前 renderer。 */
+/** `warnedUnknownTags` 记录已经警告或允许的未知 HTML 标签，避免重复警告。 */
 const warnedUnknownTags: {
-  /** `key` 表示所属 Host Config 契约跨阶段传递的受限状态；仅在根/子宿主上下文、实例创建与调度桥接生命周期内有效。 */
+  /** `key` 已允许或已发出未知标签警告的标签名。 */
   [key: string]: boolean,
 } = {
   //<dialog> 有可用的 polyfill。让人们使用它。
@@ -650,7 +651,7 @@ const warnedUnknownTags: {
   webview: true,
 };
 
-/** `createInstance` 创建宿主对象或快照，并把所有权交给当前提交阶段；属于根/子宿主上下文、实例创建与调度桥接。 */
+/** `createInstance` completeWork 按命名空间创建未挂载元素并缓存 Fiber/props；通用初始属性在 finalizeInitialChildren 设置。 */
 export function createInstance(
   type: string,
   props: Props,
@@ -777,13 +778,13 @@ export function createInstance(
 
 let didWarnForClone = false;
 
-/** `cloneMutableInstance` 创建宿主对象或快照，并把所有权交给当前提交阶段；属于根/子宿主上下文、实例创建与调度桥接。 */
+/** `cloneMutableInstance` 为手势过渡克隆元素，keepChildren 决定是否深克隆；开发构建警告 video/iframe 的重复加载风险。 */
 export function cloneMutableInstance(
   instance: Instance,
   keepChildren: boolean,
 ): Instance {
   if (__DEV__) {
-    //警告问题
+    //克隆 video/iframe 可能重复加载，开发期对此发出一次警告。
     const tagName = instance.tagName;
     switch (tagName) {
       case 'VIDEO':
@@ -804,7 +805,7 @@ export function cloneMutableInstance(
   return instance.cloneNode(keepChildren);
 }
 
-/** `appendInitialChild` 登记或挂接目标，维持宿主顺序与资源引用计数；属于根/子宿主上下文、实例创建与调度桥接。 */
+/** `appendInitialChild` completeWork 将子节点组装到尚未挂载的父元素，直接使用 appendChild。 */
 export function appendInitialChild(
   parentInstance: Instance,
   child: Instance | TextInstance,
@@ -813,7 +814,7 @@ export function appendInitialChild(
   parentInstance.appendChild(child);
 }
 
-/** `finalizeInitialChildren` 建立阶段边界，确保后续提交看到已准备的 DOM 状态；属于根/子宿主上下文、实例创建与调度桥接。 */
+/** `finalizeInitialChildren` completeWork 设置初始 DOM 属性；返回 true 为 autoFocus 控件或 img 安排后续 layout 的 commitMount。 */
 export function finalizeInitialChildren(
   domElement: Instance,
   type: string,
@@ -834,7 +835,7 @@ export function finalizeInitialChildren(
   }
 }
 
-/** `finalizeHydratedChildren` 建立阶段边界，确保后续提交看到已准备的 DOM 状态；属于根/子宿主上下文、实例创建与调度桥接。 */
+/** `finalizeHydratedChildren` 开启 hydration change event 时，为表单控件和 img 标记后续 commitHydratedInstance 工作。 */
 export function finalizeHydratedChildren(
   domElement: Instance,
   type: string,
@@ -856,7 +857,7 @@ export function finalizeHydratedChildren(
   }
 }
 
-/** `shouldSetTextContent` 判断当前宿主能力或状态分支，只读 DOM/Fiber 快照；属于根/子宿主上下文、实例创建与调度桥接。 */
+/** `shouldSetTextContent` 判断内容是否由宿主直接设置，以便 reconciler 跳过普通子 Fiber 的创建。 */
 export function shouldSetTextContent(type: string, props: Props): boolean {
   return (
     type === 'textarea' ||
@@ -870,7 +871,7 @@ export function shouldSetTextContent(type: string, props: Props): boolean {
   );
 }
 
-/** `createTextInstance` 创建宿主对象或快照，并把所有权交给当前提交阶段；属于根/子宿主上下文、实例创建与调度桥接。 */
+/** `createTextInstance` completeWork 在容器所属文档创建未挂载 Text 并缓存 Fiber；开发构建先校验文本嵌套。 */
 export function createTextInstance(
   text: string,
   rootContainerInstance: Container,
@@ -895,7 +896,7 @@ export function createTextInstance(
   return textNode;
 }
 
-/** `cloneMutableTextInstance` 创建宿主对象或快照，并把所有权交给当前提交阶段；属于根/子宿主上下文、实例创建与调度桥接。 */
+/** `cloneMutableTextInstance` 为手势过渡复制 Text 节点。 */
 export function cloneMutableTextInstance(
   textInstance: TextInstance,
 ): TextInstance {
@@ -903,7 +904,7 @@ export function cloneMutableTextInstance(
 }
 
 let currentPopstateTransitionEvent: Event | null = null;
-/** `shouldAttemptEagerTransition` 判断当前宿主能力或状态分支，只读 DOM/Fiber 快照；属于根/子宿主上下文、实例创建与调度桥接。 */
+/** `shouldAttemptEagerTransition` 同一个 popstate 事件只允许一次 eager transition 尝试，并缓存事件以识别后续派生更新。 */
 export function shouldAttemptEagerTransition(): boolean {
   const event = window.event;
   if (event && event.type === 'popstate') {
@@ -923,38 +924,38 @@ export function shouldAttemptEagerTransition(): boolean {
 }
 
 let schedulerEvent: void | Event = undefined;
-/** `trackSchedulerEvent` 同步宿主状态，并保持 DOM、Fiber 与提交快照一致；属于根/子宿主上下文、实例创建与调度桥接。 */
+/** `trackSchedulerEvent` 记住进入 Scheduler 时的 window.event，后续事件查询排除这个旧事件。 */
 export function trackSchedulerEvent(): void {
   schedulerEvent = window.event;
 }
 
-/** `resolveEventType` 查询、匹配或计算所需结果；不适用时返回协议约定的空值；属于根/子宿主上下文、实例创建与调度桥接。 */
+/** `resolveEventType` 返回不同于已记录 Scheduler 事件的当前事件类型；没有新事件时返回 null。 */
 export function resolveEventType(): null | string {
   const event = window.event;
   return event && event !== schedulerEvent ? event.type : null;
 }
 
-/** `resolveEventTimeStamp` 查询、匹配或计算所需结果；不适用时返回协议约定的空值；属于根/子宿主上下文、实例创建与调度桥接。 */
+/** `resolveEventTimeStamp` 返回不同于已记录 Scheduler 事件的时间戳；没有新事件时返回 -1.1。 */
 export function resolveEventTimeStamp(): number {
   const event = window.event;
   return event && event !== schedulerEvent ? event.timeStamp : -1.1;
 }
 
-/** `isPrimaryRenderer` 保存根/子宿主上下文、实例创建与调度桥接所需的稳定配置、缓存或模块级状态；生命周期覆盖当前 renderer。 */
+/** `isPrimaryRenderer` DOM 使用 React context 的主 renderer 存储槽。 */
 export const isPrimaryRenderer = true;
-/** `warnsIfNotActing` 保存根/子宿主上下文、实例创建与调度桥接所需的稳定配置、缓存或模块级状态；生命周期覆盖当前 renderer。 */
+/** `warnsIfNotActing` 允许 reconciler 在测试更新未被 act 包裹时发出警告。 */
 export const warnsIfNotActing = true;
-//如果一个组件只是导入了 ReactDOM（例如用于 findDOMNode），这段初始化代码甚至可能在服务器环境中运行。有些环境可能没有 setTimeout 或 clearTimeout。
+/** 缓存可用的setTimeout供reconciler调度宿主延迟任务；仅导入ReactDOM也会初始化本模块，无该全局API的环境导出undefined而不在导入时抛错。 */
 export const scheduleTimeout: any =
   typeof setTimeout === 'function' ? setTimeout : (undefined as any);
-/** `cancelTimeout` 保存根/子宿主上下文、实例创建与调度桥接所需的稳定配置、缓存或模块级状态；生命周期覆盖当前 renderer。 */
+/** `cancelTimeout` 使用可用的 clearTimeout 取消宿主定时器；非浏览器环境可能没有该函数。 */
 export const cancelTimeout: any =
   typeof clearTimeout === 'function' ? clearTimeout : (undefined as any);
-/** `noTimeout` 保存根/子宿主上下文、实例创建与调度桥接所需的稳定配置、缓存或模块级状态；生命周期覆盖当前 renderer。 */
+/** `noTimeout` 表示当前没有定时器的 -1 哨兵。 */
 export const noTimeout: -1 = -1;
-/** `localPromise` 保存根/子宿主上下文、实例创建与调度桥接所需的稳定配置、缓存或模块级状态；生命周期覆盖当前 renderer。 */
+/** `localPromise` 缓存可用的 Promise 构造器，作为 queueMicrotask 的备用实现。 */
 const localPromise = typeof Promise === 'function' ? Promise : undefined;
-/** `localRequestAnimationFrame` 保存根/子宿主上下文、实例创建与调度桥接所需的稳定配置、缓存或模块级状态；生命周期覆盖当前 renderer。 */
+/** `localRequestAnimationFrame` 使用 requestAnimationFrame；不可用时退回宿主定时器。 */
 const localRequestAnimationFrame =
   typeof requestAnimationFrame === 'function'
     ? requestAnimationFrame
@@ -962,12 +963,12 @@ const localRequestAnimationFrame =
 
 export {getClosestInstanceFromNode as getInstanceFromNode};
 
-/** `preparePortalMount` 建立阶段边界，确保后续提交看到已准备的 DOM 状态；属于根/子宿主上下文、实例创建与调度桥接。 */
+/** `preparePortalMount` 为 Portal 容器安装 React 支持的事件监听器。 */
 export function preparePortalMount(portalInstance: Instance): void {
   listenToAllSupportedEvents(portalInstance);
 }
 
-/** `prepareScopeUpdate` 建立阶段边界，确保后续提交看到已准备的 DOM 状态；属于根/子宿主上下文、实例创建与调度桥接。 */
+/** `prepareScopeUpdate` 开启 Scope API 时，将 Scope 实例关联到当前 Fiber。 */
 export function prepareScopeUpdate(
   scopeInstance: ReactScopeInstance,
   internalInstanceHandle: Object,
@@ -977,7 +978,7 @@ export function prepareScopeUpdate(
   }
 }
 
-/** `getInstanceFromScope` 查询、匹配或计算所需结果；不适用时返回协议约定的空值；属于mutation 提交、节点插入移除及可见性切换。 */
+/** `getInstanceFromScope` 开启 Scope API 时读取 Scope 关联的 Fiber，否则返回 null。 */
 export function getInstanceFromScope(
   scopeInstance: ReactScopeInstance,
 ): null | Object {
@@ -990,8 +991,9 @@ export function getInstanceFromScope(
 // -------------------
 //微任务
 // -------------------
+/** reconciler 可使用宿主微任务入口安排根调度，具体备用实现由 scheduleMicrotask 决定。 */
 export const supportsMicrotasks = true;
-/** `scheduleMicrotask` 保存mutation 提交、节点插入移除及可见性切换所需的稳定配置、缓存或模块级状态；生命周期覆盖当前 renderer。 */
+/** `scheduleMicrotask` 优先 queueMicrotask，其次 Promise，最后定时器；Promise 回调错误交给下一任务重新抛出。 */
 export const scheduleMicrotask: any =
   typeof queueMicrotask === 'function'
     ? queueMicrotask
@@ -1000,7 +1002,7 @@ export const scheduleMicrotask: any =
           localPromise.resolve(null).then(callback).catch(handleErrorInNextTick)
       : scheduleTimeout; //待办：在这里确定最佳备用方案。
 
-/** `handleErrorInNextTick` 实现 reconciler 请求的宿主操作，并把副作用限制在当前根或实例；属于mutation 提交、节点插入移除及可见性切换。 */
+/** `handleErrorInNextTick` 在定时器任务中重新抛出 Promise 微任务回调的错误。 */
 function handleErrorInNextTick(error: any) {
   setTimeout(() => {
     throw error;
@@ -1008,20 +1010,20 @@ function handleErrorInNextTick(error: any) {
 }
 
 // -------------------
-//突变
+//mutation
 // -------------------
 
-/** `supportsMutation` 声明 renderer 是否支持对应 Host Config 能力；reconciler 据此选择合法分支。 */
+/** `supportsMutation` DOM 通过 mutation 提交修改现有节点。 */
 export const supportsMutation = true;
 
-/** `commitMount` 同步宿主状态，并保持 DOM、Fiber 与提交快照一致；属于mutation 提交、节点插入移除及可见性切换。 */
+/** `commitMount` 初次挂载的 layout 工作：聚焦 autoFocus 控件，或重新设置 img 的 src/srcSet 以补获加载事件。 */
 export function commitMount(
   domElement: Instance,
   type: string,
   newProps: Props,
   internalInstanceHandle: Object,
 ): void {
-  //尽管名称可能暗示其他情况，这种方法只有在挂载期间有 `Update` effect 被调度时才会触发。如果 `finalizeInitialChildren` 返回 `true`（它确实如此，以在客户端实现 `autoFocus` 属性），就会发生这种情况。但也有其他情况可能发生这种情况（例如在水合不匹配期间修补文本内容）。所以我们会再次检查这个问题。
+  //初次客户端挂载的 Update 标记来自 finalizeInitialChildren；此时节点已经插入，layout 路径调用本函数。hydration 使用单独的 commitHydratedInstance。
   switch (type) {
     case 'button':
     case 'input':
@@ -1038,7 +1040,7 @@ export function commitMount(
       }
       return;
     case 'img': {
-      //这里的技巧是分配 src 或 srcSet 属性以使浏览器发出新的加载事件。如果它还没有加载完成，它将在实际完成加载时触发。如果它已经加载，我们就错过了它，因此第二次加载仍然会是第一次执行任何相关 onLoad 属性的加载。即使我们有 srcSet，我们也更倾向于重新分配 src。原因是 Firefox 在仅分配 srcSet 时不会触发新的加载事件。Chrome 如果分配任一属性都会触发加载事件，所以我们只需要分配一个。而 Safari 根本不会触发新的加载事件，这意味着无论分配哪个属性，这种技巧实际上已经无效。如果浏览器在未来更新了这种机制，我们应该重新审视此方案。
+      //render 设置 src 时图片可能已发出 load，但节点尚未提交。这里重新赋值，给浏览器再次发出 load 的机会；优先 src，只有缺少 src 才使用 srcSet。
       if (newProps.src) {
         const src = (newProps as any).src;
         if (enableSrcObject && typeof src === 'object') {
@@ -1061,7 +1063,11 @@ export function commitMount(
   }
 }
 
-/** `commitHydratedInstance` 同步宿主状态，并保持 DOM、Fiber 与提交快照一致；属于mutation 提交、节点插入移除及可见性切换。 */
+/**
+ * hydration-change 特性开启时的 layout 工作：以初始 props 建立表单 tracker 或比较 option 选择，保留已有用户输入。
+ * 发现 DOM 与初始 props 不同时由 hydrateInput/hydrateSelect/hydrateTextarea 排队 change 事件。
+ * img 当前仅保留分支占位；不重新执行 autoFocus。
+ */
 export function commitHydratedInstance(
   domElement: Instance,
   type: string,
@@ -1101,7 +1107,7 @@ export function commitHydratedInstance(
   }
 }
 
-/** `commitUpdate` 同步宿主状态，并保持 DOM、Fiber 与提交快照一致；属于mutation 提交、节点插入移除及可见性切换。 */
+/** `commitUpdate` mutation 中比较新旧 props 并更新 DOM，随后缓存新 props 供事件系统读取。 */
 export function commitUpdate(
   domElement: Instance,
   type: string,
@@ -1116,12 +1122,20 @@ export function commitUpdate(
   updateFiberProps(domElement, newProps);
 }
 
-/** `resetTextContent` 同步宿主状态，并保持 DOM、Fiber 与提交快照一致；属于mutation 提交、节点插入移除及可见性切换。 */
+/** `resetTextContent` ContentReset 的宿主操作，清空原本由父元素直接管理的文本内容。 */
 export function resetTextContent(domElement: Instance): void {
   setTextContent(domElement, '');
 }
 
-/** `commitTextUpdate` 同步宿主状态，并保持 DOM、Fiber 与提交快照一致；属于mutation 提交、节点插入移除及可见性切换。 */
+/**
+ * 将 Text 节点的 nodeValue 直接写成第三个实参，不比较当前值也不读取 oldText。
+ * 普通 commitHostTextUpdate 以 oldText/newText 顺序调用；gesture 克隆路径实际反向传入
+ * finished/current 文本，因此该次写入取 current 文本，不能仅按调用方变量名判断结果。
+ *
+ * @param textInstance 要更新的原 Text 或克隆 Text 节点。
+ * @param oldText HostConfig 兼容参数，本 DOM 实现不消费。
+ * @param newText 实际写入 nodeValue 的第三个位置参数。
+ */
 export function commitTextUpdate(
   textInstance: TextInstance,
   oldText: string,
@@ -1130,14 +1144,14 @@ export function commitTextUpdate(
   textInstance.nodeValue = newText;
 }
 
-/** `supportsMoveBefore` 声明 renderer 是否支持对应 Host Config 能力；reconciler 据此选择合法分支。 */
+/** `supportsMoveBefore` 同时检查 feature flag 与浏览器 moveBefore 能力，决定移动已挂载节点时采用哪个 API。 */
 const supportsMoveBefore =
   // $FlowFixMe[prop-missing]: We're doing the feature detection here.
   enableMoveBefore &&
   typeof window !== 'undefined' &&
   typeof window.Element.prototype.moveBefore === 'function';
 
-/** `appendChild` 登记或挂接目标，维持宿主顺序与资源引用计数；属于mutation 提交、节点插入移除及可见性切换。 */
+/** `appendChild` mutation 中将节点放到父元素末尾；节点已有 parentNode 且支持 moveBefore 时使用移动 API。 */
 export function appendChild(
   parentInstance: Instance,
   child: Instance | TextInstance,
@@ -1150,7 +1164,7 @@ export function appendChild(
   }
 }
 
-/** `warnForReactChildrenConflict` 验证宿主不变量并构造开发期诊断，不改变生产语义；属于mutation 提交、节点插入移除及可见性切换。 */
+/** `warnForReactChildrenConflict` 开发期检查容器是否同时由 React 的文本 children 或 innerHTML 管理，并记录一次警告。 */
 function warnForReactChildrenConflict(container: Container): void {
   if (__DEV__) {
     if ((container as any).__reactWarnedAboutChildrenConflict) {
@@ -1165,7 +1179,7 @@ function warnForReactChildrenConflict(container: Container): void {
           typeof props.children === 'number'
         ) {
           (container as any).__reactWarnedAboutChildrenConflict = true;
-          //使用容器的 Fiber 运行警告，以了解指定子组件的位置。我们也可能使用 Portal。当前的执行上下文是正在添加的子组件。
+          //用容器 Fiber 的组件堆栈报告冲突；当前执行中的 Fiber 是新插入的子节点，不能指出定义容器内容的位置。
           runWithFiberInDEV(fiber, () => {
             console.error(
               'Cannot use a ref on a React element as a container to `createRoot` or `createPortal` ' +
@@ -1188,7 +1202,7 @@ function warnForReactChildrenConflict(container: Container): void {
   }
 }
 
-/** `appendChildToContainer` 登记或挂接目标，维持宿主顺序与资源引用计数；属于mutation 提交、节点插入移除及可见性切换。 */
+/** `appendChildToContainer` 将节点追加到根或 Portal；Document/html 使用 body，旧注释容器插到标记前，并为普通容器补点击冒泡兼容。 */
 export function appendChildToContainer(
   container: Container,
   child: Instance | TextInstance,
@@ -1235,7 +1249,7 @@ export function appendChildToContainer(
   }
 }
 
-/** `insertBefore` 登记或挂接目标，维持宿主顺序与资源引用计数；属于mutation 提交、节点插入移除及可见性切换。 */
+/** `insertBefore` mutation 中将节点放到宿主兄弟前，已有 parentNode 的节点可使用 moveBefore。 */
 export function insertBefore(
   parentInstance: Instance,
   child: Instance | TextInstance,
@@ -1249,7 +1263,7 @@ export function insertBefore(
   }
 }
 
-/** `insertInContainerBefore` 登记或挂接目标，维持宿主顺序与资源引用计数；属于mutation 提交、节点插入移除及可见性切换。 */
+/** `insertInContainerBefore` 解析根或 Portal 的实际父节点，再将节点插到指定宿主兄弟前。 */
 export function insertInContainerBefore(
   container: Container,
   child: Instance | TextInstance,
@@ -1279,19 +1293,19 @@ export function insertInContainerBefore(
   }
 }
 
-/** `isSingletonScope` 判断当前宿主能力或状态分支，只读 DOM/Fiber 快照；属于mutation 提交、节点插入移除及可见性切换。 */
+/** `isSingletonScope` head 单例拥有独立 hydration 游标作用域；html/body 沿用当前游标。 */
 export function isSingletonScope(type: string): boolean {
   return type === 'head';
 }
 
-/** `createEvent` 创建宿主对象或快照，并把所有权交给当前提交阶段；属于mutation 提交、节点插入移除及可见性切换。 */
+/** `createEvent` 创建并初始化 beforeblur/afterblur 使用的原生 Event。 */
 function createEvent(type: DOMEventName, bubbles: boolean): Event {
   const event = document.createEvent('Event');
   event.initEvent(type as any as string, bubbles, false);
   return event;
 }
 
-/** `dispatchBeforeDetachedBlur` 沿 Fragment 或事件边界执行 DOM 操作，限制影响范围；属于mutation 提交、节点插入移除及可见性切换。 */
+/** `dispatchBeforeDetachedBlur` 在即将失去焦点的目标上发送冒泡 beforeblur，并附上被移除子树的 Fiber 供事件系统截断传播。 */
 function dispatchBeforeDetachedBlur(
   target: HTMLElement,
   internalInstanceHandle: Object,
@@ -1305,7 +1319,7 @@ function dispatchBeforeDetachedBlur(
   }
 }
 
-/** `dispatchAfterDetachedBlur` 沿 Fragment 或事件边界执行 DOM 操作，限制影响范围；属于mutation 提交、节点插入移除及可见性切换。 */
+/** `dispatchAfterDetachedBlur` 在 document 上发送不冒泡的 afterblur，relatedTarget 指向被分离的焦点元素。 */
 function dispatchAfterDetachedBlur(target: HTMLElement): void {
   if (enableCreateEventHandleAPI) {
     const event = createEvent('afterblur', false);
@@ -1316,7 +1330,7 @@ function dispatchAfterDetachedBlur(target: HTMLElement): void {
   }
 }
 
-/** `removeChild` 清理对应宿主状态；重复或延迟清理不得破坏其他根；属于mutation 提交、节点插入移除及可见性切换。 */
+/** `removeChild` 从指定宿主父元素移除该 DOM 节点。 */
 export function removeChild(
   parentInstance: Instance,
   child: Instance | TextInstance | SuspenseInstance | ActivityInstance,
@@ -1324,7 +1338,7 @@ export function removeChild(
   parentInstance.removeChild(child);
 }
 
-/** `removeChildFromContainer` 清理对应宿主状态；重复或延迟清理不得破坏其他根；属于mutation 提交、节点插入移除及可见性切换。 */
+/** `removeChildFromContainer` 解析根或 Portal 的实际父节点，再移除该 DOM 节点。 */
 export function removeChildFromContainer(
   container: Container,
   child: Instance | TextInstance | SuspenseInstance | ActivityInstance,
@@ -1345,7 +1359,7 @@ export function removeChildFromContainer(
   parentNode.removeChild(child);
 }
 
-/** `clearHydrationBoundary` 清理对应宿主状态；重复或延迟清理不得破坏其他根；属于mutation 提交、节点插入移除及可见性切换。 */
+/** `clearHydrationBoundary` 按嵌套深度移除边界起止标记及中间兄弟节点，清理其单例贡献，并重试被边界阻塞的事件。 */
 function clearHydrationBoundary(
   parentInstance: Instance,
   hydrationInstance: SuspenseInstance | ActivityInstance,
@@ -1399,7 +1413,7 @@ function clearHydrationBoundary(
   retryIfBlockedOn(hydrationInstance);
 }
 
-/** `clearActivityBoundary` 清理对应宿主状态；重复或延迟清理不得破坏其他根；属于mutation 提交、节点插入移除及可见性切换。 */
+/** `clearActivityBoundary` 在宿主父元素中删除 Activity 的 dehydrated 标记范围。 */
 export function clearActivityBoundary(
   parentInstance: Instance,
   activityInstance: ActivityInstance,
@@ -1407,7 +1421,7 @@ export function clearActivityBoundary(
   clearHydrationBoundary(parentInstance, activityInstance);
 }
 
-/** `clearSuspenseBoundary` 清理对应宿主状态；重复或延迟清理不得破坏其他根；属于mutation 提交、节点插入移除及可见性切换。 */
+/** `clearSuspenseBoundary` 在宿主父元素中删除 Suspense 的 dehydrated 标记范围。 */
 export function clearSuspenseBoundary(
   parentInstance: Instance,
   suspenseInstance: SuspenseInstance,
@@ -1415,7 +1429,7 @@ export function clearSuspenseBoundary(
   clearHydrationBoundary(parentInstance, suspenseInstance);
 }
 
-/** `clearHydrationBoundaryFromContainer` 清理对应宿主状态；重复或延迟清理不得破坏其他根；属于mutation 提交、节点插入移除及可见性切换。 */
+/** `clearHydrationBoundaryFromContainer` 解析容器实际父节点后删除 dehydrated 范围，并重试被容器阻塞的事件。 */
 function clearHydrationBoundaryFromContainer(
   container: Container,
   hydrationInstance: SuspenseInstance | ActivityInstance,
@@ -1438,7 +1452,7 @@ function clearHydrationBoundaryFromContainer(
   retryIfBlockedOn(container);
 }
 
-/** `clearActivityBoundaryFromContainer` 清理对应宿主状态；重复或延迟清理不得破坏其他根；属于mutation 提交、节点插入移除及可见性切换。 */
+/** `clearActivityBoundaryFromContainer` 从根或 Portal 容器删除 Activity 的 dehydrated 标记范围。 */
 export function clearActivityBoundaryFromContainer(
   container: Container,
   activityInstance: ActivityInstance,
@@ -1446,7 +1460,7 @@ export function clearActivityBoundaryFromContainer(
   clearHydrationBoundaryFromContainer(container, activityInstance);
 }
 
-/** `clearSuspenseBoundaryFromContainer` 清理对应宿主状态；重复或延迟清理不得破坏其他根；属于mutation 提交、节点插入移除及可见性切换。 */
+/** `clearSuspenseBoundaryFromContainer` 从根或 Portal 容器删除 Suspense 的 dehydrated 标记范围。 */
 export function clearSuspenseBoundaryFromContainer(
   container: Container,
   suspenseInstance: SuspenseInstance,
@@ -1454,13 +1468,13 @@ export function clearSuspenseBoundaryFromContainer(
   clearHydrationBoundaryFromContainer(container, suspenseInstance);
 }
 
-/** `hideOrUnhideDehydratedBoundary` 同步宿主状态，并保持 DOM、Fiber 与提交快照一致；属于mutation 提交、节点插入移除及可见性切换。 */
+/** `hideOrUnhideDehydratedBoundary` 沿 dehydrated 范围的兄弟节点保存或恢复 display/nodeValue；以 Suspense 起止标记维护嵌套深度。 */
 function hideOrUnhideDehydratedBoundary(
   suspenseInstance: SuspenseInstance | ActivityInstance,
   isHidden: boolean,
 ) {
   let node: Node = suspenseInstance;
-  //显示此悬念边界内的所有节点。
+  //沿标记范围隐藏或恢复元素和文本；此循环以 Suspense 标记处理嵌套深度。
   let depth = 0;
   do {
     const nextNode = node.nextSibling;
@@ -1513,14 +1527,14 @@ function hideOrUnhideDehydratedBoundary(
   } while (node);
 }
 
-/** `hideDehydratedBoundary` 同步宿主状态，并保持 DOM、Fiber 与提交快照一致；属于mutation 提交、节点插入移除及可见性切换。 */
+/** `hideDehydratedBoundary` 暂存并隐藏 dehydrated Suspense 范围的元素和文本。 */
 export function hideDehydratedBoundary(
   suspenseInstance: SuspenseInstance,
 ): void {
   hideOrUnhideDehydratedBoundary(suspenseInstance, true);
 }
 
-/** `hideInstance` 同步宿主状态，并保持 DOM、Fiber 与提交快照一致；属于mutation 提交、节点插入移除及可见性切换。 */
+/** `hideInstance` mutation 中用 display:none 隐藏保留的宿主元素；支持 setProperty 时加 important。 */
 export function hideInstance(instance: Instance): void {
   //待办：这适用于所有元素类型吗？MathML 呢？我们应该将宿主上下文传递给此方法吗？
   instance = instance as any as HTMLElement;
@@ -1533,19 +1547,19 @@ export function hideInstance(instance: Instance): void {
   }
 }
 
-/** `hideTextInstance` 同步宿主状态，并保持 DOM、Fiber 与提交快照一致；属于mutation 提交、节点插入移除及可见性切换。 */
+/** `hideTextInstance` 清空保留的 Text 节点，使隐藏子树不显示文本。 */
 export function hideTextInstance(textInstance: TextInstance): void {
   textInstance.nodeValue = '';
 }
 
-/** `unhideDehydratedBoundary` 同步宿主状态，并保持 DOM、Fiber 与提交快照一致；属于mutation 提交、节点插入移除及可见性切换。 */
+/** `unhideDehydratedBoundary` 恢复 dehydrated 范围中暂存的 display 和文本内容。 */
 export function unhideDehydratedBoundary(
   dehydratedInstance: SuspenseInstance | ActivityInstance,
 ): void {
   hideOrUnhideDehydratedBoundary(dehydratedInstance, false);
 }
 
-/** `unhideInstance` 同步宿主状态，并保持 DOM、Fiber 与提交快照一致；属于mutation 提交、节点插入移除及可见性切换。 */
+/** `unhideInstance` 按当前 props.style.display 恢复元素，未指定 display 时清除 React 临时隐藏样式。 */
 export function unhideInstance(instance: Instance, props: Props): void {
   instance = instance as any as HTMLElement;
   const styleProp = props[STYLE];
@@ -1564,7 +1578,7 @@ export function unhideInstance(instance: Instance, props: Props): void {
         ('' + display).trim();
 }
 
-/** `unhideTextInstance` 同步宿主状态，并保持 DOM、Fiber 与提交快照一致；属于mutation 提交、节点插入移除及可见性切换。 */
+/** `unhideTextInstance` 将保留 Text 的 nodeValue 恢复为当前文本。 */
 export function unhideTextInstance(
   textInstance: TextInstance,
   text: string,
@@ -1572,7 +1586,7 @@ export function unhideTextInstance(
   textInstance.nodeValue = text;
 }
 
-/** `warnForBlockInsideInline` 验证宿主不变量并构造开发期诊断，不改变生产语义；属于View Transition 样式暂存、克隆与几何测量。 */
+/** `warnForBlockInsideInline` 开发期遍历 inline 元素的 DOM 后代，发现 block 子元素时警告 Safari View Transition 名称问题。 */
 function warnForBlockInsideInline(instance: HTMLElement) {
   if (__DEV__) {
     let nextNode = instance.firstChild;
@@ -1620,7 +1634,7 @@ function warnForBlockInsideInline(instance: HTMLElement) {
   }
 }
 
-/** `countClientRects` 查询、匹配或计算所需结果；不适用时返回协议约定的空值；属于View Transition 样式暂存、克隆与几何测量。 */
+/** `countClientRects` 单矩形直接计为 1；多矩形时只统计宽高均大于零的矩形。 */
 function countClientRects(rects: Array<ClientRect>): number {
   if (rects.length === 1) {
     return 1;
@@ -1636,7 +1650,7 @@ function countClientRects(rects: Array<ClientRect>): number {
   return count;
 }
 
-/** `applyViewTransitionName` 同步宿主状态，并保持 DOM、Fiber 与提交快照一致；属于View Transition 样式暂存、克隆与几何测量。 */
+/** `applyViewTransitionName` 为快照写入临时 transition name/class；单矩形 inline 元素还调整 display 和上下 margin。 */
 export function applyViewTransitionName(
   instance: Instance,
   name: string,
@@ -1660,7 +1674,7 @@ export function applyViewTransitionName(
       // $FlowFixMe[incompatible-type]
       countClientRects(rects) === 1
     ) {
-      //如果实例只有一个客户端矩形，这意味着它可以表示为 display: inline-block 或 block。这会导致布局抖动，但我们可以接受，因为内联视图过渡不常见。
+      //只有一个非空矩形时，临时改为 inline-block 或 block 以绕过 WebKit 的快照问题；这次样式写入可能触发布局计算。
       const style = instance.style;
       //如果实际上只有一个矩形，那么它很可能在单独一行上，就像一个行内块。如果有多个矩形，但除一个之外的所有矩形都是空的，这很可能是因为是一个块导致了换行。
       style.display = rects.length === 1 ? 'inline-block' : 'block';
@@ -1668,13 +1682,13 @@ export function applyViewTransitionName(
       style.marginTop = '-' + computedStyle.paddingTop;
       style.marginBottom = '-' + computedStyle.paddingBottom;
     } else {
-      //如果这个情况有阻塞，它无法轻易修复，但如果没有阻塞也没关系。因此，我们只在开发环境中警告这是一个问题。
+      //多个非空矩形无法直接改成单一块盒；仅在发现 block 后代时发出开发期警告。
       warnForBlockInsideInline(instance);
     }
   }
 }
 
-/** `restoreViewTransitionName` 同步宿主状态，并保持 DOM、Fiber 与提交快照一致；属于View Transition 样式暂存、克隆与几何测量。 */
+/** `restoreViewTransitionName` 从当前 props 恢复 transition name/class，并在临时 inline-block 分支恢复 display 和 margin。 */
 export function restoreViewTransitionName(
   instance: Instance,
   props: Props,
@@ -1741,7 +1755,7 @@ export function restoreViewTransitionName(
   }
 }
 
-/** `cancelViewTransitionName` 判断当前宿主能力或状态分支，只读 DOM/Fiber 快照；属于View Transition 样式暂存、克隆与几何测量。 */
+/** `cancelViewTransitionName` 捕获新快照前恢复元素名称，并用零时长动画隐藏已捕获的旧 group。 */
 export function cancelViewTransitionName(
   instance: Instance,
   oldName: string,
@@ -1764,7 +1778,7 @@ export function cancelViewTransitionName(
   }
 }
 
-/** `cancelRootViewTransitionName` 判断当前宿主能力或状态分支，只读 DOM/Fiber 快照；属于View Transition 样式暂存、克隆与几何测量。 */
+/** `cancelRootViewTransitionName` 未自定义根名称时关闭默认 root 快照，并将顶层过渡层缩为零，保留未动画区域的交互。 */
 export function cancelRootViewTransitionName(rootContainer: Container): void {
   const documentElement: null | HTMLElement =
     rootContainer.nodeType === DOCUMENT_NODE
@@ -1813,7 +1827,7 @@ export function cancelRootViewTransitionName(rootContainer: Container): void {
   }
 }
 
-/** `restoreRootViewTransitionName` 同步宿主状态，并保持 DOM、Fiber 与提交快照一致；属于View Transition 样式暂存、克隆与几何测量。 */
+/** `restoreRootViewTransitionName` 清除手势容器临时的 root 名称，以及 documentElement 临时的 none 名称。 */
 export function restoreRootViewTransitionName(rootContainer: Container): void {
   let containerInstance: Instance;
   if (rootContainer.nodeType === DOCUMENT_NODE) {
@@ -1849,7 +1863,7 @@ export function restoreRootViewTransitionName(rootContainer: Container): void {
   }
 }
 
-/** `getComputedTransform` 查询、匹配或计算所需结果；不适用时返回协议约定的空值；属于View Transition 样式暂存、克隆与几何测量。 */
+/** `getComputedTransform` 把 computed translate、rotate、scale 与 transform 按应用顺序合为一个 transform 字符串。 */
 function getComputedTransform(style: CSSStyleDeclaration): string {
   //获取所有简写的合并变换。
   const computedStyle: any = style;
@@ -1892,14 +1906,14 @@ function getComputedTransform(style: CSSStyleDeclaration): string {
   return transform;
 }
 
-/** `moveOutOfViewport` 同步宿主状态，并保持 DOM、Fiber 与提交快照一致；属于View Transition 样式暂存、克隆与几何测量。 */
+/** `moveOutOfViewport` 合并原变换并加入 -20000px 平移，使手势克隆仍可被捕获而不出现在可见视口。 */
 function moveOutOfViewport(
   originalStyle: CSSStyleDeclaration,
   element: HTMLElement,
 ): void {
   //应用一个变换，将整个元素安全地放置在视口外，同时仍允许它将“旧”状态渲染到快照中。
   const transform = getComputedTransform(originalStyle);
-  //清除长表单属性。
+  //清除 translate/scale/rotate 独立属性，避免与合并后的 transform 重复应用。
   // $FlowFixMe[prop-missing]
   element.style.translate = 'none';
   // $FlowFixMe[prop-missing]
@@ -1910,9 +1924,9 @@ function moveOutOfViewport(
   element.style.transform = 'translate(-20000px, -20000px) ' + transform;
 }
 
-/** `moveOldFrameIntoViewport` 同步宿主状态，并保持 DOM、Fiber 与提交快照一致；属于View Transition 样式暂存、克隆与几何测量。 */
+/** `moveOldFrameIntoViewport` 给旧关键帧的 transform 加回 20000px 平移，抵消克隆的视口外偏移。 */
 function moveOldFrameIntoViewport(keyframe: any): void {
-  //在生成的视图转换动画中，第一个帧将被偏移。
+  //补偿自动生成动画首帧的克隆偏移。
   const computedTransform: ?string = keyframe.transform;
   if (computedTransform != null) {
     let transform = computedTransform === 'none' ? '' : computedTransform;
@@ -1921,7 +1935,7 @@ function moveOldFrameIntoViewport(keyframe: any): void {
   }
 }
 
-/** `cloneRootViewTransitionContainer` 创建宿主对象或快照，并把所有权交给当前提交阶段；属于View Transition 样式暂存、克隆与几何测量。 */
+/** `cloneRootViewTransitionContainer` 浅克隆根容器，按原位置绝对定位后移出视口，插为原容器的后继兄弟并赋予 root 快照名称。 */
 export function cloneRootViewTransitionContainer(
   rootContainer: Container,
 ): Instance {
@@ -2028,7 +2042,7 @@ export function cloneRootViewTransitionContainer(
     containerInstanceStyle.transform = prevTransform;
   }
 
-  //对于这个过渡，容器将作为根。无论如何，外部的东西都不应该受到影响。这让我们可以从克隆的容器过渡到原始容器。
+  //用克隆容器承载 root 旧快照，随后将同名快照接回原始容器。
   // $FlowFixMe[prop-missing]
   clone.style.viewTransitionName = 'root';
 
@@ -2044,7 +2058,7 @@ export function cloneRootViewTransitionContainer(
   return clone;
 }
 
-/** `removeRootViewTransitionClone` 清理对应宿主状态；重复或延迟清理不得破坏其他根；属于View Transition 样式暂存、克隆与几何测量。 */
+/** `removeRootViewTransitionClone` 删除手势根克隆，并把临时 root 名称转回原容器，等待 restoreRootViewTransitionName 清除。 */
 export function removeRootViewTransitionClone(
   rootContainer: Container,
   clone: Instance,
@@ -2071,17 +2085,19 @@ export function removeRootViewTransitionClone(
   containerInstance.style.viewTransitionName = 'root';
 }
 
-/** `InstanceMeasurement` 定义View Transition 样式暂存、克隆与几何测量的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `InstanceMeasurement` View Transition 比较用的矩形、脱离文档流、裁剪和视口相交信息。 */
 export type InstanceMeasurement = {
-  /** `InstanceMeasurement.rect` 表示View Transition 测量使用的几何快照；仅在View Transition 样式暂存、克隆与几何测量生命周期内有效。 */
+  /** `InstanceMeasurement.rect` 捕获时的元素位置和尺寸。 */
   rect: ClientRect | DOMRect,
-  /** `InstanceMeasurement.abs` 表示View Transition 测量使用的几何快照；仅在View Transition 样式暂存、克隆与几何测量生命周期内有效。 */
+  /** `InstanceMeasurement.abs` position 为 absolute/fixed，表示元素脱离普通文档流。 */
   abs: boolean, //绝对定位
-  clip: boolean, //是一个裁剪父母
-  view: boolean, //在视口范围内
+  /** computed style 存在裁剪条件；新测量命中时 hasInstanceChanged 直接让该边界参与快照。 */
+  clip: boolean, //样式可能裁剪后代快照。
+  /** 捕获矩形与所属 window 视口相交；不检查被其他元素遮挡。 */
+  view: boolean, //矩形与视口相交。
 };
 
-/** `createMeasurement` 创建宿主对象或快照，并把所有权交给当前提交阶段；属于View Transition 样式暂存、克隆与几何测量。 */
+/** `createMeasurement` 将矩形与 computed style 汇总为快照，记录是否脱离文档流、可能裁剪和位于视口范围内。 */
 function createMeasurement(
   rect: ClientRect | DOMRect,
   computedStyle: CSSStyleDeclaration,
@@ -2095,7 +2111,7 @@ function createMeasurement(
       computedStyle.position === 'absolute' ||
       computedStyle.position === 'fixed',
     clip:
-      //如果一个 ViewTransition 边界充当裁剪父组，我们应该始终将其标记为动画化，如果它的子元素也这样做，以便我们可以裁剪它们。这实际上还没有任何效果，直到浏览器实现分层捕获和嵌套视图过渡。
+      //记录可能裁剪后代的样式条件，后续比较会让这样的边界参与快照过渡。
       computedStyle.clipPath !== 'none' ||
       computedStyle.overflow !== 'visible' ||
       computedStyle.filter !== 'none' ||
@@ -2111,14 +2127,14 @@ function createMeasurement(
   };
 }
 
-/** `measureInstance` 查询、匹配或计算所需结果；不适用时返回协议约定的空值；属于View Transition 样式暂存、克隆与几何测量。 */
+/** `measureInstance` 读取元素矩形与 computed style，形成 View Transition 比较快照。 */
 export function measureInstance(instance: Instance): InstanceMeasurement {
   const rect = instance.getBoundingClientRect();
   const computedStyle = getComputedStyle(instance);
   return createMeasurement(rect, computedStyle, instance);
 }
 
-/** `measureClonedInstance` 查询、匹配或计算所需结果；不适用时返回协议约定的空值；属于View Transition 样式暂存、克隆与几何测量。 */
+/** `measureClonedInstance` 测量视口外克隆，并将坐标加回 20000px 后形成比较快照。 */
 export function measureClonedInstance(instance: Instance): InstanceMeasurement {
   const measuredRect = instance.getBoundingClientRect();
   //根据将其置于视口外的平移调整 DOMRect。TODO：如果父元素也有变换，这可能不完全正确。
@@ -2132,21 +2148,21 @@ export function measureClonedInstance(instance: Instance): InstanceMeasurement {
   return createMeasurement(rect, computedStyle, instance);
 }
 
-/** `wasInstanceInViewport` 判断当前宿主能力或状态分支，只读 DOM/Fiber 快照；属于View Transition 样式暂存、克隆与几何测量。 */
+/** `wasInstanceInViewport` 读取测量时保存的视口相交结果。 */
 export function wasInstanceInViewport(
   measurement: InstanceMeasurement,
 ): boolean {
   return measurement.view;
 }
 
-/** `hasInstanceChanged` 判断当前宿主能力或状态分支，只读 DOM/Fiber 快照；属于View Transition 样式暂存、克隆与几何测量。 */
+/** `hasInstanceChanged` 裁剪边界直接判为变化，否则比较两次矩形的位置和尺寸。 */
 export function hasInstanceChanged(
   oldMeasurement: InstanceMeasurement,
   newMeasurement: InstanceMeasurement,
 ): boolean {
   //注意：在视图过渡的实例被替换的情况下，这并不保证来自同一个实例，但它仍然是相同的视图过渡实例。
   if (newMeasurement.clip) {
-    //如果我们是一个裁剪父元素，只要我们的任何子元素有动画，我们就会进行动画处理，以便我们可以裁剪它们。直到浏览器实现分层捕获和嵌套视图过渡之前，这还不会发生。
+    //新测量带有裁剪条件时直接返回 true，使该边界参与过渡以保留后代快照的裁剪。
     return true;
   }
   const oldRect = oldMeasurement.rect;
@@ -2159,7 +2175,7 @@ export function hasInstanceChanged(
   );
 }
 
-/** `hasInstanceAffectedParent` 判断当前宿主能力或状态分支，只读 DOM/Fiber 快照；属于View Transition 样式暂存、克隆与几何测量。 */
+/** `hasInstanceAffectedParent` 比较尺寸变化是否影响父布局；新旧均脱离文档流时不影响父布局。 */
 export function hasInstanceAffectedParent(
   oldMeasurement: InstanceMeasurement,
   newMeasurement: InstanceMeasurement,
@@ -2174,10 +2190,10 @@ export function hasInstanceAffectedParent(
   return oldRect.height !== newRect.height || oldRect.width !== newRect.width;
 }
 
-//在提交之前等待新字体加载的时间。屏幕会因此冻结。等待时间需要足够短，以免在新加载且速度慢时造成太大问题，同时又需要足够长，以便有机会加载字体。否则我们就是无故等待。这里的假设是你可能已经缓存了字体或之前预加载过。这个超时设置也用于在阻塞视图过渡时的 Suspense 式图片。
+/** View Transition应用mutation后等待新字体/视口图片的500ms race上限；资源完成、失败或超时都进入layout，此值不限制另行等待的navigation.finished。 */
 const SUSPENSEY_FONT_AND_IMAGE_TIMEOUT = 500;
 
-/** `customizeViewTransitionError` 验证宿主不变量并构造开发期诊断，不改变生产语义；属于View Transition/Gesture 生命周期和伪元素时间线。 */
+/** `customizeViewTransitionError` 过滤可忽略的中止或无效状态错误；开发期为部分错误补充说明，其他错误原样返回。 */
 function customizeViewTransitionError(
   error: Object,
   ignoreAbort: boolean,
@@ -2235,6 +2251,7 @@ function customizeViewTransitionError(
   return error;
 }
 
+/** 读取 documentElement.clientHeight 强制布局，触发新字体加载；把读取结果返回以保留压缩后的副作用。 */
 /**
  * @noinline
  */
@@ -2243,14 +2260,21 @@ function forceLayout(ownerDocument: Document) {
   return (ownerDocument.documentElement as any).clientHeight;
 }
 
-/** `waitForImageToLoad` 启动异步或资源阶段，并通过回调/计数器封闭完成边界；属于View Transition/Gesture 生命周期和伪元素时间线。 */
+/** `waitForImageToLoad` 将图片 load/error 事件接到等待 Promise 的 resolve，任一结果都解除等待。 */
 function waitForImageToLoad(this: HTMLImageElement, resolve: () => void) {
   //待办：一旦 https://issues.chromium.org/issues/420748301 的修复完全传播开来，在这里使用 decode() 替代 load 事件。
   this.addEventListener('load', resolve);
   this.addEventListener('error', resolve);
 }
 
-/** `startViewTransition` 启动异步或资源阶段，并通过回调/计数器封闭完成边界；属于View Transition/Gesture 生命周期和伪元素时间线。 */
+/**
+ * 启动浏览器 View Transition，把 reconciler 提交阶段接到旧/新快照捕获之间的 update 回调。
+ * mutation 后最多等 500ms 新字体与预算内视口图片，再执行 layout；提交前已存在的导航完成后执行 after-mutation。
+ * ready 收集动画并放行 spawned work，finished 清理动画和当前过渡引用并冲刷 passive。
+ * ready 拒绝或启动同步失败时，通过 reconciler 回调的阶段守卫补完 mutation/layout/spawned work，跳过动画测量。
+ *
+ * @param suspendedState - 先前提交资源收集得到的图片列表；不等待不可见图片，预算不足时撤回图片等待但保留字体等待。
+ */
 export function startViewTransition(
   suspendedState: null | SuspendedState,
   rootContainer: Container,
@@ -2271,7 +2295,7 @@ export function startViewTransition(
   try {
     // $FlowFixMe[prop-missing]
     const transition = ownerDocument.startViewTransition({
-      /** `startViewTransition.update` 同步宿主状态，并保持 DOM、Fiber 与提交快照一致；属于View Transition/Gesture 生命周期和伪元素时间线。 */
+      /** `startViewTransition.update` 先记录既有导航，再执行 mutation；按需等待新字体和视口图片后执行 layout，导航结束后执行 after-mutation。 */
       update() {
         //注意：我们在应用变更之前会先检查是否存在待处理的导航。这样我们就不会等待由此更新触发的导航。只有在此提交之前启动的导航才会被考虑。
         const ownerWindow = ownerDocument.defaultView;
@@ -2359,7 +2383,7 @@ export function startViewTransition(
 
     const viewTransitionAnimations: Array<Animation> = [];
 
-    /** `startViewTransition.readyCallback` 实现 reconciler 请求的宿主操作，并把副作用限制在当前根或实例；属于View Transition/Gesture 生命周期和伪元素时间线。 */
+    /** `startViewTransition.readyCallback` 快照就绪后收集伪元素动画，尝试移除冗余尺寸关键帧，再放行 spawned work。 */
     const readyCallback = () => {
       const documentElement: Element = ownerDocument.documentElement as any;
       //循环遍历所有视图过渡动画。
@@ -2423,7 +2447,7 @@ export function startViewTransition(
               computedStyle.width !== width ||
               computedStyle.height !== height
             ) {
-              //哎呀。结果发现伪元素有不同的宽度/高度，所以我们需要允许它被覆盖。把它加回来。
+              //伪元素基础尺寸与关键帧不同，恢复首末关键帧的宽高覆盖。
               const first = keyframes[0];
               first.width = width;
               first.height = height;
@@ -2438,7 +2462,7 @@ export function startViewTransition(
       }
       spawnedWorkCallback();
     };
-    /** `startViewTransition.handleError` 实现 reconciler 请求的宿主操作，并把副作用限制在当前根或实例；属于View Transition/Gesture 生命周期和伪元素时间线。 */
+    /** `startViewTransition.handleError` 报告未忽略的 ready 错误，并通过 reconciler 的阶段守卫补完 mutation/layout/spawned work，跳过动画测量。 */
     const handleError = (error: mixed) => {
       // $FlowFixMe[prop-missing]
       if (ownerDocument.__reactViewTransition === transition) {
@@ -2479,7 +2503,7 @@ export function startViewTransition(
     });
     return transition;
   } catch (x) {
-    //我们使用错误作为特性检测。唯一应该抛出的情况是 startViewTransition 缺失或者它不接受对象形式。其他错误都是异步的。例如，这是在 View Transitions v2 规范之前。我们只支持 View Transitions v2，否则我们会回退到不进行动画，以确保我们不会使用错误的动画映射进行动画。同步刷新剩余的工作。
+    //startViewTransition 缺失、不支持对象参数等同步失败时，补完提交阶段并回退到无动画路径。
     mutationCallback();
     layoutCallback();
     //跳过 afterMutationCallback()。我们不需要它，因为我们没有在做动画。
@@ -2487,21 +2511,21 @@ export function startViewTransition(
       finishedAnimation();
     }
     spawnedWorkCallback();
-    //跳过 passiveCallback()。生成的工作将安排一个任务。
+    //此处不直接调用 passiveCallback；spawnedWorkCallback 会按 lanes 和剩余工作安排或冲刷 passive。
     return null;
   }
 }
 
-/** `RunningViewTransition` 定义View Transition/Gesture 生命周期和伪元素时间线的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `RunningViewTransition` 浏览器运行中过渡的最小接口，供 reconciler 跳过动画或等待结束。 */
 export type RunningViewTransition = {
-  /** `RunningViewTransition.skipTransition` 约定View Transition/Gesture 生命周期和伪元素时间线暴露的可调用能力；实现必须保持 DOM/Fiber 身份与副作用边界。 */
+  /** `RunningViewTransition.skipTransition` 请求浏览器跳过当前过渡动画。 */
   skipTransition(): void,
-  /** `RunningViewTransition.finished` 表示所属 Host Config 契约跨阶段传递的受限状态；仅在View Transition/Gesture 生命周期和伪元素时间线生命周期内有效。 */
+  /** `RunningViewTransition.finished` 过渡结束的 Promise；中止时也可能拒绝。 */
   finished: Promise<void>,
   ...
 };
 
-/** `mergeTranslate` 实现 reconciler 请求的宿主操作，并把副作用限制在当前根或实例；属于View Transition/Gesture 生命周期和伪元素时间线。 */
+/** `mergeTranslate` 按坐标分量用 CSS calc 合并两个 translate；空值或 none 直接使用另一个值。 */
 function mergeTranslate(translateA: ?string, translateB: ?string): string {
   if (!translateA || translateA === 'none') {
     return translateB || '';
@@ -2529,7 +2553,7 @@ function mergeTranslate(translateA: ?string, translateB: ?string): string {
   return result;
 }
 
-/** `animateGesture` 实现 reconciler 请求的宿主操作，并把副作用限制在当前根或实例；属于View Transition/Gesture 生命周期和伪元素时间线。 */
+/** `animateGesture` 调整快照关键帧的视口偏移与尺寸，将线性动画绑定到原生或自定义手势时间线，并保存清理入口。 */
 function animateGesture(
   keyframes: any,
   targetElement: Element,
@@ -2623,7 +2647,7 @@ function animateGesture(
       //我们为过度滚动填充两个方向。
       fill: 'both', //TODO：我们是否应该改为保留填充？我们将所有手势倒放，除非我们处于反向时，这种情况下我们需要倒放倒放的手势。
       direction: reverse ? 'normal' : 'reverse',
-      //范围起点需要高于范围终点。如果顺序相反，我们将反转下面的整个动画。
+      //原生 rangeStart 需不大于 rangeEnd；反向范围交换端点，并用 direction 调整播放方向。
       rangeStart: (reverse ? rangeEnd : rangeStart) + '%',
       rangeEnd: (reverse ? rangeStart : rangeEnd) + '%',
     });
@@ -2651,7 +2675,7 @@ function animateGesture(
   }
 }
 
-/** `startGestureTransition` 启动异步或资源阶段，并通过回调/计数器封闭完成边界；属于View Transition/Gesture 生命周期和伪元素时间线。 */
+/** `startGestureTransition` 捕获手势目标快照，ready 时将浏览器动画改由手势时间线驱动；失败时仍完成 mutation 和状态恢复。 */
 export function startGestureTransition(
   suspendedState: null | SuspendedState,
   rootContainer: Container,
@@ -2680,7 +2704,7 @@ export function startGestureTransition(
     ownerDocument.__reactViewTransition = transition;
     const customTimelineCleanup: Array<() => void> = []; //清理动画在自定义时间轴中启动
     const viewTransitionAnimations: Array<Animation> = [];
-    /** `startGestureTransition.readyCallback` 实现 reconciler 请求的宿主操作，并把副作用限制在当前根或实例；属于View Transition/Gesture 生命周期和伪元素时间线。 */
+    /** `startGestureTransition.readyCallback` 收集 group/new 动画和最长时长，映射为手势范围并校正旧快照偏移，最后调用 animateCallback 恢复提交状态。 */
     const readyCallback = () => {
       const documentElement: Element = ownerDocument.documentElement as any;
       //循环遍历所有视图过渡动画。
@@ -2808,7 +2832,7 @@ export function startGestureTransition(
                 rangeStart,
                 rangeEnd,
                 false,
-                true, //我们让助手进行翻译
+                true, //由 animateGesture 补偿视口外平移。
               );
             }
           }
@@ -2826,11 +2850,12 @@ export function startGestureTransition(
       animateCallback();
     };
     //在 Chrome 中，“新的”动画在 ready 回调中尚未准备好。我们必须等待 requestAnimationFrame 才能通过 getAnimations() 观察它们。然而，在 Safari 中，这会导致闪烁，因为我们应用它们的时间太晚。待办事项：考虑为此设计一个功能检测。
+    /** Chrome 等下一帧才能查询 new 伪元素动画，其他浏览器直接执行 readyCallback，避免 Safari 延迟设置产生闪烁。 */
     const readyForAnimations =
       navigator.userAgent.indexOf('Chrome') !== -1
         ? () => requestAnimationFrame(readyCallback)
         : readyCallback;
-    /** `startGestureTransition.handleError` 实现 reconciler 请求的宿主操作，并把副作用限制在当前根或实例；属于View Transition/Gesture 生命周期和伪元素时间线。 */
+    /** `startGestureTransition.handleError` 过滤允许忽略的中止错误，并补完 mutation/animateCallback 以恢复手势提交状态。 */
     const handleError = (error: mixed) => {
       // $FlowFixMe[prop-missing]
       if (ownerDocument.__reactViewTransition === transition) {
@@ -2874,7 +2899,7 @@ export function startGestureTransition(
     });
     return transition;
   } catch (x) {
-    //我们使用错误作为特性检测。唯一应该抛出的情况是 startViewTransition 缺失或者它不接受对象形式。其他错误都是异步的。也就是说，这是在 View Transitions v2 规范之前。我们只支持 View Transitions v2，否则我们会回退到不动画，以确保不会使用错误的动画进行动画操作。运行整个序列以将状态恢复到一致状态。
+    //startViewTransition 缺失、不支持对象参数等同步失败时，补做 mutation 和 animateCallback，恢复手势提交状态。
     mutationCallback();
     animateCallback();
     if (enableProfilerTimer) {
@@ -2884,12 +2909,12 @@ export function startGestureTransition(
   }
 }
 
-/** `stopViewTransition` 清理对应宿主状态；重复或延迟清理不得破坏其他根；属于View Transition/Gesture 生命周期和伪元素时间线。 */
+/** `stopViewTransition` 调用浏览器 skipTransition，提前结束该过渡的动画。 */
 export function stopViewTransition(transition: RunningViewTransition) {
   transition.skipTransition();
 }
 
-/** `addViewTransitionFinishedListener` 登记或挂接目标，维持宿主顺序与资源引用计数；属于View Transition/Gesture 生命周期和伪元素时间线。 */
+/** `addViewTransitionFinishedListener` 在 finished Promise 成功或失败后运行结束回调。 */
 export function addViewTransitionFinishedListener(
   transition: RunningViewTransition,
   callback: () => void,
@@ -2897,17 +2922,17 @@ export function addViewTransitionFinishedListener(
   transition.finished.finally(callback);
 }
 
-/** `ViewTransitionPseudoElementType` 定义View Transition/Gesture 生命周期和伪元素时间线的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `ViewTransitionPseudoElementType` 将伪元素选择器包装为动画、动画查询和样式查询接口。 */
 interface ViewTransitionPseudoElementType extends mixin$Animatable {
-  /** `ViewTransitionPseudoElementType._scope` 表示View Transition 或伪元素定位标识；仅在View Transition/Gesture 生命周期和伪元素时间线生命周期内有效。 */
+  /** `ViewTransitionPseudoElementType._scope` 承载伪元素动画的 documentElement。 */
   _scope: HTMLElement;
-  /** `ViewTransitionPseudoElementType._selector` 表示View Transition 或伪元素定位标识；仅在View Transition/Gesture 生命周期和伪元素时间线生命周期内有效。 */
+  /** `ViewTransitionPseudoElementType._selector` 当前名称对应的完整伪元素选择器。 */
   _selector: string;
-  /** `ViewTransitionPseudoElementType.getComputedStyle` 约定View Transition/Gesture 生命周期和伪元素时间线暴露的可调用能力；实现必须保持 DOM/Fiber 身份与副作用边界。 */
+  /** `ViewTransitionPseudoElementType.getComputedStyle` 读取该伪元素的 computed style。 */
   getComputedStyle(): CSSStyleDeclaration;
 }
 
-/** `ViewTransitionPseudoElement` 实现 reconciler 请求的宿主操作，并把副作用限制在当前根或实例；属于View Transition/Gesture 生命周期和伪元素时间线。 */
+/** `ViewTransitionPseudoElement` 保存全局 documentElement 和指定名称的伪元素选择器；原型方法将操作转发到该作用域。 */
 function ViewTransitionPseudoElement(
   this: ViewTransitionPseudoElementType,
   pseudo: string,
@@ -2917,6 +2942,7 @@ function ViewTransitionPseudoElement(
   this._scope = document.documentElement as any;
   this._selector = '::view-transition-' + pseudo + '(' + name + ')';
 }
+/** 把 Animation 选项复制成对象并绑定本句柄的伪元素选择器，再转发 documentElement.animate。 */
 // $FlowFixMe[prop-missing]
 ViewTransitionPseudoElement.prototype.animate = function (
   this: ViewTransitionPseudoElementType,
@@ -2938,6 +2964,7 @@ ViewTransitionPseudoElement.prototype.animate = function (
   //待办事项：处理多个子实例。
   return this._scope.animate(keyframes, opts);
 };
+/** 查询作用域下的动画，仅返回 effect.target 和 pseudoElement 都匹配当前句柄的项。 */
 // $FlowFixMe[prop-missing]
 ViewTransitionPseudoElement.prototype.getAnimations = function (
   this: ViewTransitionPseudoElementType,
@@ -2953,9 +2980,9 @@ ViewTransitionPseudoElement.prototype.getAnimations = function (
   const result = [];
   for (let i = 0; i < animations.length; i++) {
     const effect: null | {
-      /** `target` 表示所属 Host Config 契约跨阶段传递的受限状态；仅在View Transition/Gesture 生命周期和伪元素时间线生命周期内有效。 */
+      /** `target` 该动画 effect 的目标元素，用于排除其他作用域的动画。 */
       target?: Element,
-      /** `pseudoElement` 表示所属 Host Config 契约跨阶段传递的受限状态；仅在View Transition/Gesture 生命周期和伪元素时间线生命周期内有效。 */
+      /** `pseudoElement` 该动画 effect 的伪元素选择器，用于匹配当前句柄。 */
       pseudoElement?: string,
       ...
     } = animations[i].effect as any;
@@ -2970,6 +2997,7 @@ ViewTransitionPseudoElement.prototype.getAnimations = function (
   }
   return result;
 };
+/** 读取此句柄选择器对应的伪元素 computed style，沿用创建时保存的 documentElement。 */
 // $FlowFixMe[prop-missing]
 ViewTransitionPseudoElement.prototype.getComputedStyle = function (
   this: ViewTransitionPseudoElementType,
@@ -2979,7 +3007,7 @@ ViewTransitionPseudoElement.prototype.getComputedStyle = function (
   return getComputedStyle(scope, selector);
 };
 
-/** `createViewTransitionInstance` 创建宿主对象或快照，并把所有权交给当前提交阶段；属于View Transition/Gesture 生命周期和伪元素时间线。 */
+/** `createViewTransitionInstance` 为一个名称构造 group、image-pair、old、new 四个伪元素句柄。 */
 export function createViewTransitionInstance(
   name: string,
 ): ViewTransitionInstance {
@@ -2992,18 +3020,18 @@ export function createViewTransitionInstance(
   };
 }
 
-/** `CustomTimeline` 定义View Transition/Gesture 生命周期和伪元素时间线的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `CustomTimeline` 调用者提供的手势时间线：提供当前数值并接管 Animation 的驱动。 */
 interface CustomTimeline {
-  /** `CustomTimeline.currentTime` 表示所属 Host Config 契约跨阶段传递的受限状态；仅在View Transition/Gesture 生命周期和伪元素时间线生命周期内有效。 */
+  /** `CustomTimeline.currentTime` 当前手势进度的数值，供 offset 查询读取。 */
   currentTime: number;
-  /** `CustomTimeline.animate` 约定View Transition/Gesture 生命周期和伪元素时间线暴露的可调用能力；实现必须保持 DOM/Fiber 身份与副作用边界。 */
+  /** `CustomTimeline.animate` 接管给定 Animation 的驱动，可返回结束时的清理函数。 */
   animate(animation: Animation): void | (() => void);
 }
 
-/** `GestureTimeline` 定义View Transition/Gesture 生命周期和伪元素时间线的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `GestureTimeline` 手势支持原生 AnimationTimeline 或调用者实现的 CustomTimeline。 */
 export type GestureTimeline = AnimationTimeline | CustomTimeline;
 
-/** `getCurrentGestureOffset` 查询、匹配或计算所需结果；不适用时返回协议约定的空值；属于View Transition/Gesture 生命周期和伪元素时间线。 */
+/** `getCurrentGestureOffset` 读取时间线当前数值；原生百分比时间取 value，未连接的时间线抛错。 */
 export function getCurrentGestureOffset(timeline: GestureTimeline): number {
   const time = timeline.currentTime;
   if (time === null) {
@@ -3014,68 +3042,72 @@ export function getCurrentGestureOffset(timeline: GestureTimeline): number {
   return typeof time === 'number' ? time : time.value;
 }
 
-/** `StoredEventListener` 定义View Transition/Gesture 生命周期和伪元素时间线的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `StoredEventListener` Fragment 保存的原生监听器注册记录，用于当前及后续加入的宿主子节点。 */
 type StoredEventListener = {
-  /** `StoredEventListener.type` 表示宿主标签、资源或事件类别；仅在View Transition/Gesture 生命周期和伪元素时间线生命周期内有效。 */
+  /** `StoredEventListener.type` 原生事件类型。 */
   type: string,
-  /** `StoredEventListener.listener` 表示事件监听器及其原生注册选项；仅在View Transition/Gesture 生命周期和伪元素时间线生命周期内有效。 */
+  /** `StoredEventListener.listener` 原生事件回调。 */
   listener: EventListener,
-  /** `StoredEventListener.optionsOrUseCapture` 表示所属 Host Config 契约跨阶段传递的受限状态；仅在View Transition/Gesture 生命周期和伪元素时间线生命周期内有效。 */
+  /** `StoredEventListener.optionsOrUseCapture` 传给原生监听 API 的选项；本地查找只比较 capture。 */
   optionsOrUseCapture: void | EventListenerOptionsOrUseCapture,
 };
 
-/** `FragmentInstanceType` 定义View Transition/Gesture 生命周期和伪元素时间线的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `FragmentInstanceType` Fragment ref 的虚拟句柄，按 Fiber 子树向宿主节点投射事件、焦点、观察和位置操作。 */
 export type FragmentInstanceType = {
-  /** `FragmentInstanceType._fragmentFiber` 表示Fragment handle 与 Fiber 的关联身份；仅在View Transition/Gesture 生命周期和伪元素时间线生命周期内有效。 */
+  /** `FragmentInstanceType._fragmentFiber` 当前已提交的 Fragment Fiber，作为每次子树遍历的起点。 */
   _fragmentFiber: Fiber,
-  /** `FragmentInstanceType._eventListeners` 表示事件监听器及其原生注册选项；仅在View Transition/Gesture 生命周期和伪元素时间线生命周期内有效。 */
+  /** `FragmentInstanceType._eventListeners` 登记到当前及未来宿主子节点的监听器记录。 */
   _eventListeners: null | Array<StoredEventListener>,
-  /** `FragmentInstanceType._observers` 表示绑定到 Fragment 子节点的观察器集合；仅在View Transition/Gesture 生命周期和伪元素时间线生命周期内有效。 */
+  /** `FragmentInstanceType._observers` 登记到当前及未来宿主子元素的观察器。 */
   _observers: null | Set<IntersectionObserver | ResizeObserver>,
-  /** `FragmentInstanceType.addEventListener` 约定View Transition/Gesture 生命周期和伪元素时间线暴露的可调用能力；实现必须保持 DOM/Fiber 身份与副作用边界。 */
+  /** `FragmentInstanceType.addEventListener` 保存去重后的监听器并应用到 Fragment 的宿主子节点。 */
   addEventListener(
     type: string,
     listener: EventListener,
     optionsOrUseCapture?: EventListenerOptionsOrUseCapture,
   ): void,
-  /** `FragmentInstanceType.removeEventListener` 约定Fragment handle 的事件、焦点、观察器与 DOM 顺序投影暴露的可调用能力；实现必须保持 DOM/Fiber 身份与副作用边界。 */
+  /** `FragmentInstanceType.removeEventListener` 从宿主子节点和保存记录中移除监听器。 */
   removeEventListener(
     type: string,
     listener: EventListener,
     optionsOrUseCapture?: EventListenerOptionsOrUseCapture,
   ): void,
-  /** `FragmentInstanceType.dispatchEvent` 约定Fragment handle 的事件、焦点、观察器与 DOM 顺序投影暴露的可调用能力；实现必须保持 DOM/Fiber 身份与副作用边界。 */
+  /** `FragmentInstanceType.dispatchEvent` 从宿主父节点或临时 Text 发送原生事件，使虚拟 Fragment 的监听器也能接收。 */
   dispatchEvent(event: Event): boolean,
-  /** `FragmentInstanceType.focus` 约定Fragment handle 的事件、焦点、观察器与 DOM 顺序投影暴露的可调用能力；实现必须保持 DOM/Fiber 身份与副作用边界。 */
+  /** `FragmentInstanceType.focus` 深度遍历宿主后代，聚焦第一个成功的元素。 */
   focus(focusOptions?: FocusOptions): void,
-  /** `FragmentInstanceType.focusLast` 约定Fragment handle 的事件、焦点、观察器与 DOM 顺序投影暴露的可调用能力；实现必须保持 DOM/Fiber 身份与副作用边界。 */
+  /** `FragmentInstanceType.focusLast` 反向尝试深度收集的宿主后代，聚焦最后一个可聚焦元素。 */
   focusLast(focusOptions?: FocusOptions): void,
-  /** `FragmentInstanceType.blur` 约定Fragment handle 的事件、焦点、观察器与 DOM 顺序投影暴露的可调用能力；实现必须保持 DOM/Fiber 身份与副作用边界。 */
+  /** `FragmentInstanceType.blur` 仅当当前焦点属于 Fragment 宿主子树时清除焦点。 */
   blur(): void,
-  /** `FragmentInstanceType.observeUsing` 约定Fragment handle 的事件、焦点、观察器与 DOM 顺序投影暴露的可调用能力；实现必须保持 DOM/Fiber 身份与副作用边界。 */
+  /** `FragmentInstanceType.observeUsing` 保存观察器并观察宿主子元素；文本不可观察。 */
   observeUsing(observer: IntersectionObserver | ResizeObserver): void,
-  /** `FragmentInstanceType.unobserveUsing` 约定Fragment handle 的事件、焦点、观察器与 DOM 顺序投影暴露的可调用能力；实现必须保持 DOM/Fiber 身份与副作用边界。 */
+  /** `FragmentInstanceType.unobserveUsing` 移除已登记观察器，并取消观察当前宿主子元素。 */
   unobserveUsing(observer: IntersectionObserver | ResizeObserver): void,
-  /** `FragmentInstanceType.getClientRects` 约定Fragment handle 的事件、焦点、观察器与 DOM 顺序投影暴露的可调用能力；实现必须保持 DOM/Fiber 身份与副作用边界。 */
+  /** `FragmentInstanceType.getClientRects` 收集宿主子节点的矩形；文本支持开启时使用 Range 测量。 */
   getClientRects(): Array<DOMRect>,
-  /** `FragmentInstanceType.getRootNode` 约定Fragment handle 的事件、焦点、观察器与 DOM 顺序投影暴露的可调用能力；实现必须保持 DOM/Fiber 身份与副作用边界。 */
+  /** `FragmentInstanceType.getRootNode` 返回宿主父节点的原生 getRootNode 结果；没有宿主父节点时返回句柄自身。 */
   getRootNode(getRootNodeOptions?: {
-    /** `FragmentInstanceType.composed` 表示所属 Host Config 契约跨阶段传递的受限状态；仅在Fragment handle 的事件、焦点、观察器与 DOM 顺序投影生命周期内有效。 */
+    /** `FragmentInstanceType.composed` 是否跨过 ShadowRoot，沿用原生 getRootNode 选项。 */
     composed: boolean,
   }): Document | ShadowRoot | FragmentInstanceType,
-  /** `FragmentInstanceType.compareDocumentPosition` 约定Fragment handle 的事件、焦点、观察器与 DOM 顺序投影暴露的可调用能力；实现必须保持 DOM/Fiber 身份与副作用边界。 */
+  /** `FragmentInstanceType.compareDocumentPosition` 结合 DOM 范围与 Fiber 顺序返回位置位掩码，顺序不一致时标记 implementation-specific。 */
   compareDocumentPosition(otherNode: Instance): number,
-  /** `FragmentInstanceType.scrollIntoView` 约定Fragment handle 的事件、焦点、观察器与 DOM 顺序投影暴露的可调用能力；实现必须保持 DOM/Fiber 身份与副作用边界。 */
+  /** `FragmentInstanceType.scrollIntoView` 滚动宿主子节点使 Fragment 顶部或底部对齐；空 Fragment 使用邻近宿主位置。 */
   scrollIntoView(alignToTop?: boolean): void,
 };
 
-/** `FragmentInstance` 实现 reconciler 请求的宿主操作，并把副作用限制在当前根或实例；属于Fragment handle 的事件、焦点、观察器与 DOM 顺序投影。 */
+/** `FragmentInstance` 初始化 Fragment 对应的 Fiber、监听器列表和观察器集合。 */
 function FragmentInstance(this: FragmentInstanceType, fragmentFiber: Fiber) {
   this._fragmentFiber = fragmentFiber;
   this._eventListeners = null;
   this._observers = null;
 }
 
+/**
+ * 登记 Fragment 原生 listener，并应用到当前宿主子节点；后续插入节点由 commitNewChildToFragmentInstance 补注册。
+ * 按 type、回调身份和 normalizeListenerOptions 去重；未传选项的键与显式 capture=false 的键在当前实现中不同。
+ */
 // $FlowFixMe[prop-missing]
 FragmentInstance.prototype.addEventListener = function (
   this: FragmentInstanceType,
@@ -3103,7 +3135,7 @@ FragmentInstance.prototype.addEventListener = function (
   }
   this._eventListeners = listeners;
 };
-/** `addEventListenerToChild` 登记或挂接目标，维持宿主顺序与资源引用计数；属于Fragment handle 的事件、焦点、观察器与 DOM 顺序投影。 */
+/** `addEventListenerToChild` 在遍历到的宿主子节点注册原生监听器，返回 false 让 Fragment 遍历继续。 */
 function addEventListenerToChild(
   child: Fiber,
   type: string,
@@ -3114,6 +3146,10 @@ function addEventListenerToChild(
   instance.addEventListener(type, listener, optionsOrUseCapture);
   return false;
 }
+/**
+ * 从当前宿主子节点移除 listener，再从 Fragment 登记列表删除匹配的 type/回调/capture 记录。
+ * 当前实现对未匹配的 -1 索引仍调用 splice，因此非空列表下未登记参数会删除列表末项。
+ */
 // $FlowFixMe[prop-missing]
 FragmentInstance.prototype.removeEventListener = function (
   this: FragmentInstanceType,
@@ -3144,7 +3180,7 @@ FragmentInstance.prototype.removeEventListener = function (
     }
   }
 };
-/** `removeEventListenerFromChild` 清理对应宿主状态；重复或延迟清理不得破坏其他根；属于Fragment handle 的事件、焦点、观察器与 DOM 顺序投影。 */
+/** `removeEventListenerFromChild` 从遍历到的宿主子节点移除原生监听器，返回 false 继续遍历。 */
 function removeEventListenerFromChild(
   child: Fiber,
   type: string,
@@ -3155,7 +3191,7 @@ function removeEventListenerFromChild(
   instance.removeEventListener(type, listener, optionsOrUseCapture);
   return false;
 }
-/** `normalizeListenerOptions` 实现 reconciler 请求的宿主操作，并把副作用限制在当前根或实例；属于Fragment handle 的事件、焦点、观察器与 DOM 顺序投影。 */
+/** `normalizeListenerOptions` 未传选项返回 0 键，boolean/object 按 capture 生成 c=0/c=1 键；passive/once 不参与查找。 */
 function normalizeListenerOptions(
   opts: ?EventListenerOptionsOrUseCapture,
 ): string {
@@ -3169,7 +3205,7 @@ function normalizeListenerOptions(
 
   return `c=${opts.capture ? '1' : '0'}`;
 }
-/** `indexOfEventListener` 查询、匹配或计算所需结果；不适用时返回协议约定的空值；属于Fragment handle 的事件、焦点、观察器与 DOM 顺序投影。 */
+/** `indexOfEventListener` 按事件类型、回调身份和归一化 capture 选项查找注册记录，未找到返回 -1。 */
 function indexOfEventListener(
   eventListeners: Array<StoredEventListener>,
   type: string,
@@ -3192,6 +3228,11 @@ function indexOfEventListener(
   }
   return -1;
 }
+/**
+ * 把 Fragment 的虚拟事件投射到宿主父节点；有 Fragment listener 或不冒泡时用临时 Text 作为实际 target。
+ * 临时节点先装已保存的 listener，派发后移除 listener 与节点；没有宿主父节点时直接返回 true。
+ * 返回原生 dispatchEvent 的结果，false 表示可取消事件被 preventDefault。
+ */
 // $FlowFixMe[prop-missing]
 FragmentInstance.prototype.dispatchEvent = function (
   this: FragmentInstanceType,
@@ -3232,6 +3273,7 @@ FragmentInstance.prototype.dispatchEvent = function (
     return parentHostInstance.dispatchEvent(event);
   }
 };
+/** 深度遍历 Fragment 宿主后代，直到原生 focus 实际改变焦点才停止；跳过 Text 并透传 FocusOptions。 */
 // $FlowFixMe[prop-missing]
 FragmentInstance.prototype.focus = function (
   this: FragmentInstanceType,
@@ -3243,7 +3285,7 @@ FragmentInstance.prototype.focus = function (
     focusOptions,
   );
 };
-/** `setFocusOnFiberIfFocusable` 实现 reconciler 请求的宿主操作，并把副作用限制在当前根或实例；属于Fragment handle 的事件、焦点、观察器与 DOM 顺序投影。 */
+/** `setFocusOnFiberIfFocusable` 跳过支持范围内的 HostText，尝试聚焦宿主元素；成功返回 true 让遍历停止。 */
 function setFocusOnFiberIfFocusable(
   fiber: Fiber,
   focusOptions?: FocusOptions,
@@ -3257,6 +3299,7 @@ function setFocusOnFiberIfFocusable(
   const instance = getInstanceFromHostFiber<Instance>(fiber);
   return setFocusIfFocusable(instance, focusOptions);
 }
+/** 先收集深度宿主顺序，再反向尝试 focus，保证从 Fragment 最后一个可聚焦后代开始选择。 */
 // $FlowFixMe[prop-missing]
 FragmentInstance.prototype.focusLast = function (
   this: FragmentInstanceType,
@@ -3275,11 +3318,12 @@ FragmentInstance.prototype.focusLast = function (
     }
   }
 };
-/** `collectChildren` 沿 Fragment 或事件边界执行 DOM 操作，限制影响范围；属于Fragment handle 的事件、焦点、观察器与 DOM 顺序投影。 */
+/** `collectChildren` 将遍历到的宿主 Fiber 收集进数组，返回 false 继续遍历。 */
 function collectChildren(child: Fiber, collection: Array<Fiber>): boolean {
   collection.push(child);
   return false;
 }
+/** 先用宿主父节点排除无关焦点，再查 Fragment 宿主子树；仅其元素包含 activeElement 时调用 blur。 */
 // $FlowFixMe[prop-missing]
 FragmentInstance.prototype.blur = function (this: FragmentInstanceType): void {
   //如果 activeElement 不在片段的父元素内，则提前退出
@@ -3310,7 +3354,7 @@ FragmentInstance.prototype.blur = function (this: FragmentInstanceType): void {
     activeElement,
   );
 };
-/** `blurActiveElementWithinFragment` 沿 Fragment 或事件边界执行 DOM 操作，限制影响范围；属于Fragment handle 的事件、焦点、观察器与 DOM 顺序投影。 */
+/** `blurActiveElementWithinFragment` 宿主子节点包含当前焦点时调用 blur 并停止遍历；文本节点跳过。 */
 function blurActiveElementWithinFragment(
   child: Fiber,
   activeElement: Element,
@@ -3327,6 +3371,7 @@ function blurActiveElementWithinFragment(
   }
   return false;
 }
+/** 把 observer 保存到 Fragment 并观察当前宿主元素；后续加入节点继续应用，Text 跳过，纯文本 Fragment 开发期提示不可观察。 */
 // $FlowFixMe[prop-missing]
 FragmentInstance.prototype.observeUsing = function (
   this: FragmentInstanceType,
@@ -3367,7 +3412,7 @@ FragmentInstance.prototype.observeUsing = function (
     observer,
   );
 };
-/** `observeChild` 登记或挂接目标，维持宿主顺序与资源引用计数；属于Fragment handle 的事件、焦点、观察器与 DOM 顺序投影。 */
+/** `observeChild` 让观察器观察遍历到的宿主元素，跳过不支持观察的文本节点。 */
 function observeChild(
   child: Fiber,
   observer: IntersectionObserver | ResizeObserver,
@@ -3382,6 +3427,7 @@ function observeChild(
   observer.observe(instance);
   return false;
 }
+/** 移除已登记 observer 并取消观察当前宿主元素；未登记时开发期报错，保留现有观察器集合。 */
 // $FlowFixMe[prop-missing]
 FragmentInstance.prototype.unobserveUsing = function (
   this: FragmentInstanceType,
@@ -3404,7 +3450,7 @@ FragmentInstance.prototype.unobserveUsing = function (
     );
   }
 };
-/** `unobserveChild` 清理对应宿主状态；重复或延迟清理不得破坏其他根；属于Fragment handle 的事件、焦点、观察器与 DOM 顺序投影。 */
+/** `unobserveChild` 取消观察遍历到的宿主元素，跳过文本节点。 */
 function unobserveChild(
   child: Fiber,
   observer: IntersectionObserver | ResizeObserver,
@@ -3419,6 +3465,7 @@ function unobserveChild(
   observer.unobserve(instance);
   return false;
 }
+/** 汇总 Fragment 顶层宿主子节点的矩形；支持 Text 的路径使用 Range，不为虚拟 Fragment 创建包裹元素。 */
 // $FlowFixMe[prop-missing]
 FragmentInstance.prototype.getClientRects = function (
   this: FragmentInstanceType,
@@ -3431,7 +3478,7 @@ FragmentInstance.prototype.getClientRects = function (
   );
   return rects;
 };
-/** `collectClientRects` 沿 Fragment 或事件边界执行 DOM 操作，限制影响范围；属于Fragment handle 的事件、焦点、观察器与 DOM 顺序投影。 */
+/** `collectClientRects` 收集宿主元素的 client rects；支持文本时通过 Range 取得其矩形。 */
 function collectClientRects(child: Fiber, rects: Array<DOMRect>): boolean {
   if (enableFragmentRefsTextNodes && child.tag === HostText) {
     const textNode: Text = child.stateNode;
@@ -3446,6 +3493,7 @@ function collectClientRects(child: Fiber, rects: Array<DOMRect>): boolean {
   }
   return false;
 }
+/** 转发宿主父节点的 getRootNode（可透传 composed）；没有宿主父节点时用 Fragment 句柄自身表示根。 */
 // $FlowFixMe[prop-missing]
 FragmentInstance.prototype.getRootNode = function (
   this: FragmentInstanceType,
@@ -3468,6 +3516,11 @@ FragmentInstance.prototype.getRootNode = function (
     parentHostInstance.getRootNode(getRootNodeOptions) as Document | ShadowRoot;
   return rootNode;
 };
+/**
+ * 用 Fragment 首末宿主节点定义 DOM 范围，再以 Fiber 包含/前后顺序校验结果。
+ * 空 Fragment 按附近宿主位置比较；Portal 或外部 DOM 插入使两种顺序不一致时返回 IMPLEMENTATION_SPECIFIC。
+ * 无宿主父节点或 DOM 父节点则返回 DISCONNECTED，不把虚拟句柄当成真实 DOM 节点。
+ */
 // $FlowFixMe[prop-missing]
 FragmentInstance.prototype.compareDocumentPosition = function (
   this: FragmentInstanceType,
@@ -3575,7 +3628,7 @@ FragmentInstance.prototype.compareDocumentPosition = function (
   return Node.DOCUMENT_POSITION_IMPLEMENTATION_SPECIFIC;
 };
 
-/** `validateDocumentPositionWithFiberTree` 验证宿主不变量并构造开发期诊断，不改变生产语义；属于Fragment handle 的事件、焦点、观察器与 DOM 顺序投影。 */
+/** `validateDocumentPositionWithFiberTree` 用 Fiber 包含与前后顺序校验 DOM 位置信息，供 Fragment 标出 Portal 等造成的顺序差异。 */
 function validateDocumentPositionWithFiberTree(
   documentPosition: number,
   fragmentFiber: Fiber,
@@ -3616,7 +3669,7 @@ function validateDocumentPositionWithFiberTree(
   return false;
 }
 
-/** `scrollTextNodeIntoView` 沿 Fragment 或事件边界执行 DOM 操作，限制影响范围；属于Fragment handle 的事件、焦点、观察器与 DOM 顺序投影。 */
+/** `scrollTextNodeIntoView` 以 Range 测量文本，再滚动 window 将其顶部或底部对齐视口。 */
 function scrollTextNodeIntoView(
   textNode: TextInstance,
   resolvedAlignToTop: boolean,
@@ -3631,6 +3684,11 @@ function scrollTextNodeIntoView(
 }
 
 if (enableFragmentRefsScrollIntoView) {
+  /**
+   * 依次滚动宿主子节点，alignToTop 时逆序调用让首节点最后对齐，底部对齐时顺序相反。
+   * 空 Fragment 借相邻宿主或父容器定位；Text 用 Range 测量、ShadowRoot 用 host，独立 DocumentFragment 不能滚动。
+   * 仅支持 boolean 对齐方式，传选项对象直接抛错。
+   */
   // $FlowFixMe[prop-missing]
   FragmentInstance.prototype.scrollIntoView = function (
     this: FragmentInstanceType,
@@ -3724,7 +3782,7 @@ if (enableFragmentRefsScrollIntoView) {
   };
 }
 
-/** `addFragmentHandleToFiber` 登记或挂接目标，维持宿主顺序与资源引用计数；属于Fragment handle 的事件、焦点、观察器与 DOM 顺序投影。 */
+/** `addFragmentHandleToFiber` 启用实例句柄关联时，将 Fragment 句柄登记到宿主 Fiber 的 DOM 节点。 */
 function addFragmentHandleToFiber(
   child: Fiber,
   fragmentInstance: FragmentInstanceType,
@@ -3738,7 +3796,7 @@ function addFragmentHandleToFiber(
   return false;
 }
 
-/** `addFragmentHandleToInstance` 登记或挂接目标，维持宿主顺序与资源引用计数；属于Fragment handle 的事件、焦点、观察器与 DOM 顺序投影。 */
+/** `addFragmentHandleToInstance` 将 Fragment 句柄加入 DOM 节点的 reactFragments 集合。 */
 function addFragmentHandleToInstance(
   instance: HostNodeWithFragmentHandles,
   fragmentInstance: FragmentInstanceType,
@@ -3751,7 +3809,7 @@ function addFragmentHandleToInstance(
   }
 }
 
-/** `createFragmentInstance` 创建宿主对象或快照，并把所有权交给当前提交阶段；属于Fragment handle 的事件、焦点、观察器与 DOM 顺序投影。 */
+/** `createFragmentInstance` 创建虚拟 Fragment 句柄；启用实例关联时遍历已有宿主子节点登记该句柄。 */
 export function createFragmentInstance(
   fragmentFiber: Fiber,
 ): FragmentInstanceType {
@@ -3766,7 +3824,7 @@ export function createFragmentInstance(
   return fragmentInstance;
 }
 
-/** `updateFragmentInstanceFiber` 同步宿主状态，并保持 DOM、Fiber 与提交快照一致；属于Fragment handle 的事件、焦点、观察器与 DOM 顺序投影。 */
+/** `updateFragmentInstanceFiber` 更新句柄指向的已提交 Fragment Fiber，后续方法据此遍历当前子树。 */
 export function updateFragmentInstanceFiber(
   fragmentFiber: Fiber,
   instance: FragmentInstanceType,
@@ -3774,7 +3832,7 @@ export function updateFragmentInstanceFiber(
   instance._fragmentFiber = fragmentFiber;
 }
 
-/** `commitNewChildToFragmentInstance` 同步宿主状态，并保持 DOM、Fiber 与提交快照一致；属于Fragment handle 的事件、焦点、观察器与 DOM 顺序投影。 */
+/** `commitNewChildToFragmentInstance` 将已保存监听器、观察器及 Fragment 关联应用到新宿主元素；文本节点直接跳过。 */
 export function commitNewChildToFragmentInstance(
   childInstance: InstanceWithFragmentHandles | Text,
   fragmentInstance: FragmentInstanceType,
@@ -3800,7 +3858,7 @@ export function commitNewChildToFragmentInstance(
   }
 }
 
-/** `deleteChildFromFragmentInstance` 清理对应宿主状态；重复或延迟清理不得破坏其他根；属于Fragment handle 的事件、焦点、观察器与 DOM 顺序投影。 */
+/** `deleteChildFromFragmentInstance` 从离开的宿主元素移除已保存监听器和 Fragment 关联；文本节点直接跳过。 */
 export function deleteChildFromFragmentInstance(
   childInstance: InstanceWithFragmentHandles | Text,
   fragmentInstance: FragmentInstanceType,
@@ -3823,7 +3881,7 @@ export function deleteChildFromFragmentInstance(
   }
 }
 
-/** `clearContainer` 清理对应宿主状态；重复或延迟清理不得破坏其他根；属于Fragment handle 的事件、焦点、观察器与 DOM 顺序投影。 */
+/** `clearContainer` 普通 Element 清空 textContent；Document/html/head/body 使用保留单例和资源节点的清理路径。 */
 export function clearContainer(container: Container): void {
   const nodeType = container.nodeType;
   if (nodeType === DOCUMENT_NODE) {
@@ -3842,7 +3900,7 @@ export function clearContainer(container: Container): void {
   }
 }
 
-/** `clearContainerSparingly` 清理对应宿主状态；重复或延迟清理不得破坏其他根；属于Fragment handle 的事件、焦点、观察器与 DOM 顺序投影。 */
+/** `clearContainerSparingly` 递归保留 html/head/body、script/style 与 stylesheet link，移除其余子节点并解除旧单例的 Fiber 关联。 */
 function clearContainerSparingly(container: Node) {
   let node;
   let nextNode: ?Node = container.firstChild;
@@ -3858,11 +3916,11 @@ function clearContainerSparingly(container: Node) {
       case 'BODY': {
         const element: Element = node as any;
         clearContainerSparingly(element);
-        //如果这些单例实例之前已经使用 React 渲染过，它们可能仍然保留对之前 fiber 树的引用。我们会前瞻性地将它们分离，以将它们重置到基准起始状态，因为我们无法创建新的实例。
+        //单例 DOM 会继续复用，因此解除它与旧 Fiber/props 的关联，供新树重新绑定。
         detachDeletedInstance(element);
         continue;
       }
-      //保留 script 标签是为了避免一个边缘情况的错误。通常情况下，如果脚本被插入到 DOM 中，它们会执行。然而，在流式传输时，如果一个 script 标签已经打开但尚未关闭，一些浏览器会创建并插入脚本 DOM 节点，但脚本在解析到闭合标签之前无法执行。如果在该 DOM 节点还在文档中但尚不可执行的时候，有某些操作导致 React 调用 clearContainer，这个 DOM 节点将会从文档中移除，当脚本闭合标签到达时，脚本将不会运行。目前这似乎在 Chrome/Firefox 中会发生，但在 Safari 中不会，尽管这不一定是规格化的行为，所以在未来的浏览器版本中可能会改变。虽然保留所有脚本比严格必要的要宽泛，但这是避免这个破坏性边缘情况所需的最少额外代码。
+      //保留 script，避免清除尚未解析到闭合标签、仍未执行的流式脚本节点。
       //
       //保留样式标签，因为它们可能来自第三方脚本和扩展
       case 'SCRIPT':
@@ -3883,7 +3941,7 @@ function clearContainerSparingly(container: Node) {
   return;
 }
 
-/** `clearHead` 清理对应宿主状态；重复或延迟清理不得破坏其他根；属于Fragment handle 的事件、焦点、观察器与 DOM 顺序投影。 */
+/** `clearHead` 删除 head 中非 hoistable、非 script/style/stylesheet 的节点，保留共享或外部资源。 */
 function clearHead(head: Element): void {
   let node = head.firstChild;
   while (node) {
@@ -3905,8 +3963,8 @@ function clearHead(head: Element): void {
   return;
 }
 
-//制作这个是为了我们最终可以将所有实例缓存移到提交阶段。目前，这仅用于将 fiber 和 props 关联到实例，以便为 HostSingletons 进行水化。我们需要在这里这样做的原因是我们只想在提交时进行这种绑定，因为一次只能有一个 fiber 拥有实例，并且渲染可能会失败或重新启动。
-/** `bindInstance` 同步宿主状态，并保持 DOM、Fiber 与提交快照一致；属于Fragment handle 的事件、焦点、观察器与 DOM 顺序投影。 */
+//HostSingleton 复用文档中的同一个元素。直到提交时才绑定 Fiber/props，避免失败或重启的 render 改写其当前所有者。
+/** `bindInstance` 在提交时将已有单例关联到其 Fiber 和 props，避免失败 render 抢占共享 DOM 实例。 */
 export function bindInstance(
   instance: Instance,
   props: Props,
@@ -3917,13 +3975,13 @@ export function bindInstance(
 }
 
 // -------------------
-//补水
+//hydration
 // -------------------
 
-/** `supportsHydration` 声明 renderer 是否支持对应 Host Config 能力；reconciler 据此选择合法分支。 */
+/** `supportsHydration` DOM 支持从服务器现有节点认领宿主实例。 */
 export const supportsHydration = true;
 
-/** `canHydrateInstance` 判断当前宿主能力或状态分支，只读 DOM/Fiber 快照；属于hydration 匹配、重试、差异诊断与边界推进。 */
+/** `canHydrateInstance` 按标签和资源特征寻找可认领元素；根/单例可跳过不匹配节点，普通父节点只额外容忍隐藏 input。 */
 export function canHydrateInstance(
   instance: HydratableInstance,
   type: string,
@@ -3947,7 +4005,7 @@ export function canHydrateInstance(
       }
       //在根节点或单例父节点中，我们会跳过不匹配的实例。
     } else if (!inRootOrSingleton) {
-      //比赛
+      //标签已匹配。
       if (type === 'input' && (element as any).type === 'hidden') {
         if (__DEV__) {
           checkAttributeStringCoercion(anyProps.name, 'name');
@@ -3967,20 +4025,20 @@ export function canHydrateInstance(
     } else if (isMarkedHoistable(element)) {
       //我们已经把这个声明为可提升的，但这种方式没有被水化，所以我们跳过它。
     } else {
-      //我们有一个类型正确的元素。如果我们能够明确地识别它是被提升的节点，或者我们能够猜测该节点可能被提升，或者是由第三方脚本或浏览器扩展使用某些类型的高熵属性插入的，那么我们将尝试排除它。这种技术对于像扩展在 <body> 中前置 <div> 这样的奇怪插入是会失败的，但那之前已经会出错了，而且这是一个边缘情况。
+      //根/单例允许跳过外部节点。标签相同仍需按资源标记和 href/src 等属性排除不应由普通 HostComponent 认领的候选。
       switch (type) {
         // case 'title':
         //我们假设所有标题都是可匹配的。文档中应仅有一个标题，至少在可提升的范围内，如果你是类型为 title 的 HostComponent，我们必须要么处于 <svg> 上下文中，要么该标题必须有一个 `itemProp` 属性。
         case 'meta': {
-          //唯一的方式来选择不提升元标签是给它一个 itemprop 属性。我们假设不会有第三方元标签被提前添加，接受这种情况不成立的例子，因为元标签通常只对 SSR 有作用，所以即使在我们确实绑定到一个被注入的标签的罕见情况下，运行时的影响也是最小的。
+          //普通 HostComponent 只认领带 itemprop 的 meta；其余 meta 交给 hoistable 路径。
           if (!element.hasAttribute('itemprop')) {
-            //这是一个可升降的
+            //这是可提升的 meta，交给 hoistable 路径匹配。
             break;
           }
           return element;
         }
         case 'link': {
-          //链接有多种形式，我们确实预计第三方会将它们注入 <head> / <body>。我们排除已知资源，然后使用高熵属性，如 href，这些属性几乎总是被使用，而且几乎总是唯一的，从而过滤掉不太可能匹配的情况。
+          //跳过带 precedence 的 stylesheet 资源；其他 link 用 rel/href/crossOrigin/title 筛选候选。
           const rel = element.getAttribute('rel');
           if (rel === 'stylesheet' && element.hasAttribute('data-precedence')) {
             //这是一个样式表资源
@@ -4002,15 +4060,15 @@ export function canHydrateInstance(
           return element;
         }
         case 'style': {
-          //样式很难正确匹配。我们可以排除已知资源，但除此之外，我们接受这样一个事实：由于其在文档中的位置以及它们可能包含全局样式，<head> 或 <body> 中的非提升样式标签很可能永远不会被卸载。
+          //跳过带 precedence 的 style 资源；其他 style 不比较规则文本，直接作为候选。
           if (element.hasAttribute('data-precedence')) {
-            //这是一个风格资源
+            //这是共享 style 资源。
             break;
           }
           return element;
         }
         case 'script': {
-          //脚本有点棘手，我们排除已知资源，然后类似于链接，尝试使用高熵属性来拒绝不匹配的项。脚本的一个挑战是内联脚本。我们不会尝试检查文本内容，理论上，如果第三方在 React 渲染节点之前注入了内联脚本，可能会导致后期水合错误。如果发生这种情况，回退到客户端渲染应该是无缝的，因此我们会尝试这个启发式方法，如果发现存在问题，我们会在以后重新评估。
+          //用 src/type/crossOrigin 识别不匹配的异步脚本资源并跳过；普通或内联 script 不比较其文本内容。
           const srcAttr = element.getAttribute('src');
           if (
             srcAttr !== (anyProps.src == null ? null : anyProps.src) ||
@@ -4032,7 +4090,7 @@ export function canHydrateInstance(
           return element;
         }
         default: {
-          //我们已经排除了最可能的可提升标签、第三方脚本插入的标签以及浏览器扩展插入的标签之间的不匹配情况。虽然这有可能不是正确的匹配，但这是一个不错的启发式方法，应该能在绝大多数情况下起作用。
+          //其他同标签元素不做额外属性筛选，直接作为候选。
           return element;
         }
       }
@@ -4043,11 +4101,11 @@ export function canHydrateInstance(
     }
     instance = nextInstance;
   }
-  //这是一个 Suspense 边界或文本节点，或者我们已经到了结尾。Suspense 边界从不应由第三方注入。如果我们看到一个边界，它应该被匹配，否则这就是一个水合错误。文本节点也不应由第三方注入。对于 <body>，这一点的保证性较低，但将其视为一个水合错误似乎是合理且保守的做法。
+  //遇到边界/文本，或已经没有候选元素时，返回匹配失败；不能越过这些 hydration 游标位置继续寻找同标签元素。
   return null;
 }
 
-/** `canHydrateTextInstance` 判断当前宿主能力或状态分支，只读 DOM/Fiber 快照；属于hydration 匹配、重试、差异诊断与边界推进。 */
+/** `canHydrateTextInstance` 为非空客户端文本寻找 Text 节点；普通父节点只容忍额外隐藏 input，根/单例可继续扫描。 */
 export function canHydrateTextInstance(
   instance: HydratableInstance,
   text: string,
@@ -4072,11 +4130,11 @@ export function canHydrateTextInstance(
     }
     instance = nextInstance;
   }
-  //这现在已被精炼为一个文本节点。
+  //候选已经确认为 Text。
   return instance as any as TextInstance;
 }
 
-/** `canHydrateHydrationBoundary` 判断当前宿主能力或状态分支，只读 DOM/Fiber 快照；属于hydration 匹配、重试、差异诊断与边界推进。 */
+/** `canHydrateHydrationBoundary` 寻找可认领的边界注释；普通父节点遇到非注释且非隐藏 input 时匹配失败。 */
 function canHydrateHydrationBoundary(
   instance: HydratableInstance,
   inRootOrSingleton: boolean,
@@ -4097,11 +4155,11 @@ function canHydrateHydrationBoundary(
     }
     instance = nextInstance;
   }
-  //这现在已经被改进为一个水合边界节点。
+  //候选已经确认为边界注释。
   return instance as any;
 }
 
-/** `canHydrateActivityInstance` 判断当前宿主能力或状态分支，只读 DOM/Fiber 快照；属于hydration 匹配、重试、差异诊断与边界推进。 */
+/** `canHydrateActivityInstance` 认领候选边界注释，但只接受 Activity 起始标记。 */
 export function canHydrateActivityInstance(
   instance: HydratableInstance,
   inRootOrSingleton: boolean,
@@ -4119,7 +4177,7 @@ export function canHydrateActivityInstance(
   return null;
 }
 
-/** `canHydrateSuspenseInstance` 判断当前宿主能力或状态分支，只读 DOM/Fiber 快照；属于hydration 匹配、重试、差异诊断与边界推进。 */
+/** `canHydrateSuspenseInstance` 认领非 Activity 的候选边界注释；候选已经由 hydration 游标筛选。 */
 export function canHydrateSuspenseInstance(
   instance: HydratableInstance,
   inRootOrSingleton: boolean,
@@ -4137,7 +4195,7 @@ export function canHydrateSuspenseInstance(
   return null;
 }
 
-/** `isSuspenseInstancePending` 判断当前宿主能力或状态分支，只读 DOM/Fiber 快照；属于hydration 匹配、重试、差异诊断与边界推进。 */
+/** `isSuspenseInstancePending` pending 或 queued 标记表示边界仍需等待 Fizz。 */
 export function isSuspenseInstancePending(instance: SuspenseInstance): boolean {
   return (
     instance.data === SUSPENSE_PENDING_START_DATA ||
@@ -4145,7 +4203,7 @@ export function isSuspenseInstancePending(instance: SuspenseInstance): boolean {
   );
 }
 
-/** `isSuspenseInstanceFallback` 判断当前宿主能力或状态分支，只读 DOM/Fiber 快照；属于hydration 匹配、重试、差异诊断与边界推进。 */
+/** `isSuspenseInstanceFallback` 显式 fallback，或文档已解析完却仍 pending 的边界，需要客户端渲染。 */
 export function isSuspenseInstanceFallback(
   instance: SuspenseInstance,
 ): boolean {
@@ -4156,17 +4214,17 @@ export function isSuspenseInstanceFallback(
   );
 }
 
-/** `getSuspenseInstanceFallbackErrorDetails` 查询、匹配或计算结果；不适用时返回协议约定的空值；属于hydration 匹配、重试、差异诊断与边界推进。 */
+/** `getSuspenseInstanceFallbackErrorDetails` 从起始标记后的元素 dataset 读取服务器错误摘要；详细消息与堆栈只在开发构建返回。 */
 export function getSuspenseInstanceFallbackErrorDetails(
   instance: SuspenseInstance,
 ): {
-  /** `getSuspenseInstanceFallbackErrorDetails.digest` 表示所属 Host Config 契约跨阶段传递的受限状态；仅在hydration 匹配、重试、差异诊断与边界推进生命周期内有效。 */
+  /** `getSuspenseInstanceFallbackErrorDetails.digest` 服务器错误的摘要标识 dgst。 */
   digest: ?string,
-  /** `getSuspenseInstanceFallbackErrorDetails.message` 表示所属 Host Config 契约跨阶段传递的受限状态；仅在hydration 匹配、重试、差异诊断与边界推进生命周期内有效。 */
+  /** `getSuspenseInstanceFallbackErrorDetails.message` 开发构建读取的服务器错误消息 msg。 */
   message?: string,
-  /** `getSuspenseInstanceFallbackErrorDetails.stack` 表示所属 Host Config 契约跨阶段传递的受限状态；仅在hydration 匹配、重试、差异诊断与边界推进生命周期内有效。 */
+  /** `getSuspenseInstanceFallbackErrorDetails.stack` 开发构建读取的服务器错误堆栈 stck。 */
   stack?: string,
-  /** `getSuspenseInstanceFallbackErrorDetails.componentStack` 表示所属 Host Config 契约跨阶段传递的受限状态；仅在hydration 匹配、重试、差异诊断与边界推进生命周期内有效。 */
+  /** `getSuspenseInstanceFallbackErrorDetails.componentStack` 开发构建读取的服务器组件堆栈 cstck。 */
   componentStack?: string,
 } {
   const dataset =
@@ -4196,7 +4254,7 @@ export function getSuspenseInstanceFallbackErrorDetails(
   }
 }
 
-/** `registerSuspenseInstanceRetry` 登记或挂接目标，维持宿主顺序与资源引用计数；属于hydration 匹配、重试、差异诊断与边界推进。 */
+/** `registerSuspenseInstanceRetry` 按 Fizz 边界状态立即重试、登记 _reactRetry，或同时监听 DOMContentLoaded 以结束未完成的服务器等待。 */
 export function registerSuspenseInstanceRetry(
   instance: SuspenseInstance,
   callback: () => void,
@@ -4214,7 +4272,7 @@ export function registerSuspenseInstanceRetry(
     callback();
   } else {
     //我们仍处于待处理状态，文档仍在加载中，因此我们将监听器附加到文档加载事件，并在实例上暴露重试，以便 Fizz 运行时在最终解析此边界时触发
-    /** `registerSuspenseInstanceRetry.listener` 实现 reconciler 请求的宿主操作，并把副作用限制在当前根或实例；属于hydration 匹配、重试、差异诊断与边界推进。 */
+    /** `registerSuspenseInstanceRetry.listener` 调用边界重试后移除 DOMContentLoaded 监听；也作为 _reactRetry 供 Fizz 调用。 */
     const listener = () => {
       callback();
       ownerDocument.removeEventListener('DOMContentLoaded', listener);
@@ -4224,7 +4282,7 @@ export function registerSuspenseInstanceRetry(
   }
 }
 
-/** `canHydrateFormStateMarker` 判断当前宿主能力或状态分支，只读 DOM/Fiber 快照；属于hydration 匹配、重试、差异诊断与边界推进。 */
+/** `canHydrateFormStateMarker` 寻找并认领 F!/F 表单状态注释；只有根或单例作用域可跳过其他候选节点。 */
 export function canHydrateFormStateMarker(
   instance: HydratableInstance,
   inRootOrSingleton: boolean,
@@ -4250,14 +4308,14 @@ export function canHydrateFormStateMarker(
   return null;
 }
 
-/** `isFormStateMarkerMatching` 判断当前宿主能力或状态分支，只读 DOM/Fiber 快照；属于hydration 匹配、重试、差异诊断与边界推进。 */
+/** `isFormStateMarkerMatching` 判断表单状态标记是否为匹配当前 action 状态槽的 F!。 */
 export function isFormStateMarkerMatching(
   markerInstance: FormStateMarkerInstance,
 ): boolean {
   return markerInstance.data === FORM_STATE_IS_MATCHING;
 }
 
-/** `getNextHydratable` 查询、匹配或计算结果；不适用时返回协议约定的空值；属于hydration 匹配、重试、差异诊断与边界推进。 */
+/** `getNextHydratable` 沿兄弟跳过普通注释等不可认领节点；返回元素、文本或协议起始标记，遇到边界结束标记返回 null。 */
 function getNextHydratable(node: ?Node) {
   //跳过不可水合的节点。
   for (; node != null; node = (node as any as Node).nextSibling) {
@@ -4286,21 +4344,21 @@ function getNextHydratable(node: ?Node) {
   return node as any;
 }
 
-/** `getNextHydratableSibling` 查询、匹配或计算结果；不适用时返回协议约定的空值；属于hydration 匹配、重试、差异诊断与边界推进。 */
+/** `getNextHydratableSibling` 从下一个兄弟开始寻找 hydration 候选，遵守边界结束标记。 */
 export function getNextHydratableSibling(
   instance: HydratableInstance,
 ): null | HydratableInstance {
   return getNextHydratable(instance.nextSibling);
 }
 
-/** `getFirstHydratableChild` 查询、匹配或计算结果；不适用时返回协议约定的空值；属于hydration 匹配、重试、差异诊断与边界推进。 */
+/** `getFirstHydratableChild` 从宿主元素的第一个子节点开始寻找 hydration 候选。 */
 export function getFirstHydratableChild(
   parentInstance: Instance,
 ): null | HydratableInstance {
   return getNextHydratable(parentInstance.firstChild);
 }
 
-/** `getFirstHydratableChildWithinContainer` 查询、匹配或计算结果；不适用时返回协议约定的空值；属于hydration 匹配、重试、差异诊断与边界推进。 */
+/** `getFirstHydratableChildWithinContainer` Document/html 从 body 开始，其余容器从自身首个子节点寻找 hydration 候选。 */
 export function getFirstHydratableChildWithinContainer(
   parentContainer: Container,
 ): null | HydratableInstance {
@@ -4320,14 +4378,14 @@ export function getFirstHydratableChildWithinContainer(
   return getNextHydratable(parentElement.firstChild);
 }
 
-/** `getFirstHydratableChildWithinActivityInstance` 查询、匹配或计算结果；不适用时返回协议约定的空值；属于hydration 匹配、重试、差异诊断与边界推进。 */
+/** `getFirstHydratableChildWithinActivityInstance` 从 Activity 起始注释后的兄弟寻找范围内第一个 hydration 候选。 */
 export function getFirstHydratableChildWithinActivityInstance(
   parentInstance: ActivityInstance,
 ): null | HydratableInstance {
   return getNextHydratable(parentInstance.nextSibling);
 }
 
-/** `getFirstHydratableChildWithinSuspenseInstance` 查询、匹配或计算结果；不适用时返回协议约定的空值；属于hydration 匹配、重试、差异诊断与边界推进。 */
+/** `getFirstHydratableChildWithinSuspenseInstance` 从 Suspense 起始注释后的兄弟寻找范围内第一个 hydration 候选。 */
 export function getFirstHydratableChildWithinSuspenseInstance(
   parentInstance: SuspenseInstance,
 ): null | HydratableInstance {
@@ -4338,7 +4396,7 @@ export function getFirstHydratableChildWithinSuspenseInstance(
 let previousHydratableOnEnteringScopedSingleton: null | HydratableInstance =
   null;
 
-/** `getFirstHydratableChildWithinSingleton` 查询、匹配或计算结果；不适用时返回协议约定的空值；属于hydration 匹配、重试、差异诊断与边界推进。 */
+/** `getFirstHydratableChildWithinSingleton` 进入 head 时保存外部 hydration 游标并切换到 head 子节点；其他单例沿用当前游标。 */
 export function getFirstHydratableChildWithinSingleton(
   type: string,
   singletonInstance: Instance,
@@ -4352,7 +4410,7 @@ export function getFirstHydratableChildWithinSingleton(
   }
 }
 
-/** `getNextHydratableSiblingAfterSingleton` 查询、匹配或计算结果；不适用时返回协议约定的空值；属于hydration 匹配、重试、差异诊断与边界推进。 */
+/** `getNextHydratableSiblingAfterSingleton` 退出 head 时恢复并清空外部游标；其他单例沿用当前游标。 */
 export function getNextHydratableSiblingAfterSingleton(
   type: string,
   currentHydratableInstance: null | HydratableInstance,
@@ -4367,7 +4425,7 @@ export function getNextHydratableSiblingAfterSingleton(
   }
 }
 
-/** `describeHydratableInstanceForDevWarnings` 查询、匹配或计算结果；不适用时返回协议约定的空值；属于hydration 匹配、重试、差异诊断与边界推进。 */
+/** `describeHydratableInstanceForDevWarnings` 把现有 DOM 还原为开发期 diff 展示用的标签/props、边界名称或文本。 */
 export function describeHydratableInstanceForDevWarnings(
   instance: HydratableInstance,
 ): string | {
@@ -4399,7 +4457,7 @@ export function describeHydratableInstanceForDevWarnings(
   }
 }
 
-/** `validateHydratableInstance` 验证宿主不变量并构造开发期诊断，不改变生产语义；属于hydration 匹配、重试、差异诊断与边界推进。 */
+/** `validateHydratableInstance` 开发构建返回元素嵌套是否合法，供 hydration 判定是否在此处报告匹配错误；生产构建返回 true。 */
 export function validateHydratableInstance(
   type: string,
   props: Props,
@@ -4413,7 +4471,7 @@ export function validateHydratableInstance(
   return true;
 }
 
-/** `hydrateInstance` 同步宿主状态，并保持 DOM、Fiber 与提交快照一致；属于hydration 匹配、重试、差异诊断与边界推进。 */
+/** `hydrateInstance` completeWork 将服务器元素关联到 Fiber/props，再通过 hydrateProperties 初始化监听和表单状态并检查内容匹配。 */
 export function hydrateInstance(
   instance: Instance,
   type: string,
@@ -4429,7 +4487,7 @@ export function hydrateInstance(
 }
 
 //返回服务器上不同属性的映射。
-/** `diffHydratedPropsForDevWarnings` 查询、匹配或计算结果；不适用时返回协议约定的空值；属于hydration 匹配、重试、差异诊断与边界推进。 */
+/** `diffHydratedPropsForDevWarnings` 返回服务器 DOM 与客户端 props 的差异，供开发期 hydration 警告展示。 */
 export function diffHydratedPropsForDevWarnings(
   instance: Instance,
   type: string,
@@ -4439,7 +4497,7 @@ export function diffHydratedPropsForDevWarnings(
   return diffHydratedProperties(instance, type, props, hostContext);
 }
 
-/** `validateHydratableTextInstance` 验证宿主不变量并构造开发期诊断，不改变生产语义；属于hydration 匹配、重试、差异诊断与边界推进。 */
+/** `validateHydratableTextInstance` 开发构建校验文本与宿主祖先的嵌套合法性，生产构建返回 true。 */
 export function validateHydratableTextInstance(
   text: string,
   hostContext: HostContext,
@@ -4458,7 +4516,7 @@ export function validateHydratableTextInstance(
   return true;
 }
 
-/** `hydrateTextInstance` 同步宿主状态，并保持 DOM、Fiber 与提交快照一致；属于hydration 匹配、重试、差异诊断与边界推进。 */
+/** `hydrateTextInstance` 将服务器 Text 关联到 Fiber，并通过 hydrateText 检查它与客户端文本是否匹配。 */
 export function hydrateTextInstance(
   textInstance: TextInstance,
   text: string,
@@ -4471,7 +4529,7 @@ export function hydrateTextInstance(
 }
 
 //如果服务器文本与客户端不同，则返回服务器文本。
-/** `diffHydratedTextForDevWarnings` 查询、匹配或计算结果；不适用时返回协议约定的空值；属于hydration 匹配、重试、差异诊断与边界推进。 */
+/** `diffHydratedTextForDevWarnings` 未 suppressHydrationWarning 时返回有差异的服务器文本，否则返回 null。 */
 export function diffHydratedTextForDevWarnings(
   textInstance: TextInstance,
   text: string,
@@ -4486,7 +4544,7 @@ export function diffHydratedTextForDevWarnings(
   return null;
 }
 
-/** `hydrateActivityInstance` 同步宿主状态，并保持 DOM、Fiber 与提交快照一致；属于hydration 匹配、重试、差异诊断与边界推进。 */
+/** `hydrateActivityInstance` 将服务器 Activity 起始注释关联到其 Fiber。 */
 export function hydrateActivityInstance(
   activityInstance: ActivityInstance,
   internalInstanceHandle: Object,
@@ -4494,7 +4552,7 @@ export function hydrateActivityInstance(
   precacheFiberNode(internalInstanceHandle, activityInstance);
 }
 
-/** `hydrateSuspenseInstance` 同步宿主状态，并保持 DOM、Fiber 与提交快照一致；属于hydration 匹配、重试、差异诊断与边界推进。 */
+/** `hydrateSuspenseInstance` 将服务器 Suspense 起始注释关联到其 Fiber。 */
 export function hydrateSuspenseInstance(
   suspenseInstance: SuspenseInstance,
   internalInstanceHandle: Object,
@@ -4502,7 +4560,7 @@ export function hydrateSuspenseInstance(
   precacheFiberNode(internalInstanceHandle, suspenseInstance);
 }
 
-/** `getNextHydratableInstanceAfterHydrationBoundary` 查询、匹配或计算结果；不适用时返回协议约定的空值；属于hydration 匹配、重试、差异诊断与边界推进。 */
+/** `getNextHydratableInstanceAfterHydrationBoundary` 按嵌套深度跨过整个 Activity/Suspense 标记范围，返回结束标记后的 hydration 候选。 */
 function getNextHydratableInstanceAfterHydrationBoundary(
   hydrationInstance: SuspenseInstance | ActivityInstance,
 ): null | HydratableInstance {
@@ -4534,22 +4592,22 @@ function getNextHydratableInstanceAfterHydrationBoundary(
   return null;
 }
 
-/** `getNextHydratableInstanceAfterActivityInstance` 查询、匹配或计算结果；不适用时返回协议约定的空值；属于hydration 匹配、重试、差异诊断与边界推进。 */
+/** `getNextHydratableInstanceAfterActivityInstance` 跳过 Activity 标记范围及嵌套边界，取得后续候选。 */
 export function getNextHydratableInstanceAfterActivityInstance(
   activityInstance: ActivityInstance,
 ): null | HydratableInstance {
   return getNextHydratableInstanceAfterHydrationBoundary(activityInstance);
 }
 
-/** `getNextHydratableInstanceAfterSuspenseInstance` 查询、匹配或计算结果；不适用时返回协议约定的空值；属于hydration 匹配、重试、差异诊断与边界推进。 */
+/** `getNextHydratableInstanceAfterSuspenseInstance` 跳过 Suspense 标记范围及嵌套边界，取得后续候选。 */
 export function getNextHydratableInstanceAfterSuspenseInstance(
   suspenseInstance: SuspenseInstance,
 ): null | HydratableInstance {
   return getNextHydratableInstanceAfterHydrationBoundary(suspenseInstance);
 }
 
-//如果该节点是 SuspenseInstance 的直接子节点，则返回 SuspenseInstance。即，如果其前一个兄弟节点是带有 SUSPENSE_x_START_DATA 的注释。否则，返回 null。
-/** `getParentHydrationBoundary` 查询、匹配或计算结果；不适用时返回协议约定的空值；属于hydration 匹配、重试、差异诊断与边界推进。 */
+//边界由同一 DOM 父节点下的注释范围表示；向前扫描兄弟节点，找出包住目标的最近起始标记。
+/** `getParentHydrationBoundary` 向前扫描兄弟注释并配对嵌套起止标记，找出包住该节点的 Activity/Suspense 起始标记。 */
 export function getParentHydrationBoundary(
   targetInstance: Node,
 ): null | SuspenseInstance | ActivityInstance {
@@ -4580,13 +4638,13 @@ export function getParentHydrationBoundary(
   return null;
 }
 
-/** `commitHydratedContainer` 同步宿主状态，并保持 DOM、Fiber 与提交快照一致；属于hydration 匹配、重试、差异诊断与边界推进。 */
+/** `commitHydratedContainer` 容器 hydration 提交后，重试被该容器阻塞的事件重放和显式 hydration 目标。 */
 export function commitHydratedContainer(container: Container): void {
   //如果此处的任何事件重放被阻止，请重试。
   retryIfBlockedOn(container);
 }
 
-/** `commitHydratedActivityInstance` 同步宿主状态，并保持 DOM、Fiber 与提交快照一致；属于hydration 匹配、重试、差异诊断与边界推进。 */
+/** `commitHydratedActivityInstance` Activity hydration 提交后，重试被该起始标记阻塞的事件与目标。 */
 export function commitHydratedActivityInstance(
   activityInstance: ActivityInstance,
 ): void {
@@ -4594,7 +4652,7 @@ export function commitHydratedActivityInstance(
   retryIfBlockedOn(activityInstance);
 }
 
-/** `commitHydratedSuspenseInstance` 同步宿主状态，并保持 DOM、Fiber 与提交快照一致；属于hydration 匹配、重试、差异诊断与边界推进。 */
+/** `commitHydratedSuspenseInstance` Suspense hydration 提交后，重试被该起始标记阻塞的事件与目标。 */
 export function commitHydratedSuspenseInstance(
   suspenseInstance: SuspenseInstance,
 ): void {
@@ -4602,14 +4660,14 @@ export function commitHydratedSuspenseInstance(
   retryIfBlockedOn(suspenseInstance);
 }
 
-/** `flushHydrationEvents` 实现 reconciler 请求的宿主操作，并把副作用限制在当前根或实例；属于hydration 匹配、重试、差异诊断与边界推进。 */
+/** `flushHydrationEvents` 开启 hydration change event 时，冲刷等待的表单控件 hydration 事件重放。 */
 export function flushHydrationEvents(): void {
   if (enableHydrationChangeEvent) {
     flushEventReplaying();
   }
 }
 
-/** `shouldDeleteUnhydratedTailInstances` 判断当前宿主能力或状态分支，只读 DOM/Fiber 快照；属于hydration 匹配、重试、差异诊断与边界推进。 */
+/** `shouldDeleteUnhydratedTailInstances` form/button 保留未认领的尾部节点；其他宿主父类型允许 hydration 清理尾部。 */
 export function shouldDeleteUnhydratedTailInstances(
   parentType: string,
 ): boolean {
@@ -4620,10 +4678,10 @@ export function shouldDeleteUnhydratedTailInstances(
 //测试选择器
 // -------------------
 
-/** `supportsTestSelectors` 声明 renderer 是否支持对应 Host Config 能力；reconciler 据此选择合法分支。 */
+/** `supportsTestSelectors` 提供 reconciler 测试选择器需要的 DOM 查询和观察能力。 */
 export const supportsTestSelectors = true;
 
-/** `findFiberRoot` 查询、匹配或计算结果；不适用时返回协议约定的空值；属于hydration 匹配、重试、差异诊断与边界推进。 */
+/** `findFiberRoot` 广度优先搜索元素及后代，找到根容器后返回关联的 HostRoot Fiber，供测试选择器继续遍历。 */
 export function findFiberRoot(node: Instance): null | FiberRoot {
   const stack = [node];
   let index = 0;
@@ -4637,7 +4695,7 @@ export function findFiberRoot(node: Instance): null | FiberRoot {
   return null;
 }
 
-/** `getBoundingRect` 查询、匹配或计算结果；不适用时返回协议约定的空值；属于测试选择器与可观察 DOM 状态查询。 */
+/** `getBoundingRect` 将 DOMRect 转为测试选择器使用的 x/y/width/height。 */
 export function getBoundingRect(node: Instance): BoundingRect {
   const rect = node.getBoundingClientRect();
   return {
@@ -4648,7 +4706,7 @@ export function getBoundingRect(node: Instance): BoundingRect {
   };
 }
 
-/** `matchAccessibilityRole` 查询、匹配或计算结果；不适用时返回协议约定的空值；属于测试选择器与可观察 DOM 状态查询。 */
+/** `matchAccessibilityRole` 委托 hasRole 判断元素是否具有目标无障碍角色。 */
 export function matchAccessibilityRole(node: Instance, role: string): boolean {
   if (hasRole(node, role)) {
     return true;
@@ -4657,7 +4715,7 @@ export function matchAccessibilityRole(node: Instance, role: string): boolean {
   return false;
 }
 
-/** `getTextContent` 查询、匹配或计算结果；不适用时返回协议约定的空值；属于测试选择器与可观察 DOM 状态查询。 */
+/** `getTextContent` 元素只汇总直接 Text 子节点；HostText 返回自身文本，其他 Fiber 返回 null。 */
 export function getTextContent(fiber: Fiber): string | null {
   switch (fiber.tag) {
     case HostHoistable:
@@ -4679,19 +4737,19 @@ export function getTextContent(fiber: Fiber): string | null {
   return null;
 }
 
-/** `isHiddenSubtree` 判断当前宿主能力或状态分支，只读 DOM/Fiber 快照；属于测试选择器与可观察 DOM 状态查询。 */
+/** `isHiddenSubtree` 测试选择器将 hidden=true 的 HostComponent 视为隐藏子树。 */
 export function isHiddenSubtree(fiber: Fiber): boolean {
   return fiber.tag === HostComponent && fiber.memoizedProps.hidden === true;
 }
 
-/** `setFocusIfFocusable` 实现 reconciler 请求的宿主操作，并把副作用限制在当前根或实例；属于测试选择器、singleton 与文档级宿主节点管理。 */
+/** `setFocusIfFocusable` 尝试实际聚焦元素，用 document 捕获 focus 确认成功，包含 label/shadow host 的焦点委托。 */
 export function setFocusIfFocusable(
   node: Instance,
   focusOptions?: FocusOptions,
 ): boolean {
   //确定一个元素是否可聚焦的逻辑有点复杂，而且由于我们无论如何都想实际更改焦点——我们可以直接跳过它。相反，我们只需监听“focus”事件来验证焦点是否已设置。
   //
-  //我们可以在聚焦后将该节点与 document.activeElement 进行比较，但这无法处理应用程序代码自动模糊管理焦点的情况。
+  //直接比较 activeElement 无法识别焦点事件回调里立即 blur 或重定向焦点的情况。
   const element = node as any as HTMLElement;
 
   //如果这个元素已经是活动元素，它是可聚焦的并且已经获得焦点。对它调用 .focus() 将不会有任何操作（不会触发焦点事件），所以我们在这里短路处理。
@@ -4700,7 +4758,7 @@ export function setFocusIfFocusable(
   }
 
   let didFocus = false;
-  /** `setFocusIfFocusable.handleFocus` 实现 reconciler 请求的宿主操作，并把副作用限制在当前根或实例；属于测试选择器、singleton 与文档级宿主节点管理。 */
+  /** `setFocusIfFocusable.handleFocus` 记录这次 focus 调用期间确实发生了焦点事件。 */
   const handleFocus = () => {
     didFocus = true;
   };
@@ -4717,25 +4775,25 @@ export function setFocusIfFocusable(
   return didFocus;
 }
 
-/** `RectRatio` 定义测试选择器、singleton 与文档级宿主节点管理的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `RectRatio` 测试选择器缓存的目标矩形和交叉可见比例。 */
 type RectRatio = {
-  /** `RectRatio.ratio` 表示选择器或可见性计算使用的几何快照；仅在测试选择器、singleton 与文档级宿主节点管理生命周期内有效。 */
+  /** `RectRatio.ratio` 目标的交叉可见比例。 */
   ratio: number,
-  /** `RectRatio.rect` 表示选择器或可见性计算使用的几何快照；仅在测试选择器、singleton 与文档级宿主节点管理生命周期内有效。 */
+  /** `RectRatio.rect` 目标最近一次观测到的边界矩形。 */
   rect: BoundingRect,
 };
 
-/** `setupIntersectionObserver` 实现 reconciler 请求的宿主操作，并把副作用限制在当前根或实例；属于测试选择器与可观察 DOM 状态查询。 */
+/** `setupIntersectionObserver` 观察目标元素并维护完整矩形/比例缓存；每次通知将当前所有目标快照传给 callback。 */
 export function setupIntersectionObserver(
   targets: Array<Instance>,
   callback: ObserveVisibleRectsCallback,
   options?: IntersectionObserverOptions,
 ): {
-  /** `setupIntersectionObserver.disconnect` 实现 reconciler 请求的宿主操作，并把副作用限制在当前根或实例；属于测试选择器与可观察 DOM 状态查询。 */
+  /** `setupIntersectionObserver.disconnect` 停止观察全部目标。 */
   disconnect: () => void,
-  /** `setupIntersectionObserver.observe` 登记或挂接目标，维持宿主顺序与资源引用计数；属于测试选择器与可观察 DOM 状态查询。 */
+  /** `setupIntersectionObserver.observe` 以当前矩形和零比例加入缓存，再开始观察目标。 */
   observe: (instance: Instance) => void,
-  /** `setupIntersectionObserver.unobserve` 清理对应宿主状态；重复或延迟清理不得破坏其他根；属于测试选择器与可观察 DOM 状态查询。 */
+  /** `setupIntersectionObserver.unobserve` 从缓存移除目标并停止观察它。 */
   unobserve: (instance: Instance) => void,
 } {
   const rectRatioCache: Map<Instance, RectRatio> = new Map();
@@ -4746,7 +4804,7 @@ export function setupIntersectionObserver(
     });
   });
 
-  /** `setupIntersectionObserver.handleIntersection` 实现 reconciler 请求的宿主操作，并把副作用限制在当前根或实例；属于测试选择器与可观察 DOM 状态查询。 */
+  /** `setupIntersectionObserver.handleIntersection` 更新本次通知涉及的目标快照，再向调用者报告完整缓存。 */
   const handleIntersection = (entries: Array<IntersectionObserverEntry>) => {
     entries.forEach(entry => {
       const {boundingClientRect, intersectionRatio, target} = entry;
@@ -4770,9 +4828,9 @@ export function setupIntersectionObserver(
   });
 
   return {
-    /** `setupIntersectionObserver.disconnect` 实现 reconciler 请求的宿主操作，并把副作用限制在当前根或实例；属于测试选择器与可观察 DOM 状态查询。 */
+    /** `setupIntersectionObserver.disconnect` 停止观察全部目标。 */
     disconnect: () => observer.disconnect(),
-    /** `setupIntersectionObserver.observe` 登记或挂接目标，维持宿主顺序与资源引用计数；属于测试选择器与可观察 DOM 状态查询。 */
+    /** `setupIntersectionObserver.observe` 以当前矩形和零比例加入缓存，再开始观察目标。 */
     observe: target => {
       rectRatioCache.set(target, {
         rect: getBoundingRect(target),
@@ -4780,7 +4838,7 @@ export function setupIntersectionObserver(
       });
       observer.observe(target as any);
     },
-    /** `setupIntersectionObserver.unobserve` 清理对应宿主状态；重复或延迟清理不得破坏其他根；属于测试选择器与可观察 DOM 状态查询。 */
+    /** `setupIntersectionObserver.unobserve` 从缓存移除目标并停止观察它。 */
     unobserve: target => {
       rectRatioCache.delete(target);
       observer.unobserve(target as any);
@@ -4788,7 +4846,10 @@ export function setupIntersectionObserver(
   };
 }
 
-/** `requestPostPaintCallback` 启动异步或资源阶段，并通过回调/计数器封闭完成边界；属于测试选择器与可观察 DOM 状态查询。 */
+/**
+ * 经两次 requestAnimationFrame 把回调安排到后续帧，提供第二次的帧时间戳，供提交日志归入绘制后工作。
+ * 不可用时两层调用均使用 scheduleTimeout；定时器备用路径不会生成帧时间戳。
+ */
 export function requestPostPaintCallback(callback: (time: number) => void) {
   localRequestAnimationFrame(() => {
     localRequestAnimationFrame(time => callback(time));
@@ -4799,15 +4860,15 @@ export function requestPostPaintCallback(callback: (time: number) => void) {
 //单例
 // -------------------
 
-/** `supportsSingletons` 声明 renderer 是否支持对应 Host Config 能力；reconciler 据此选择合法分支。 */
+/** `supportsSingletons` 允许 reconciler 复用文档既有的 html/head/body 单例。 */
 export const supportsSingletons = true;
 
-/** `isHostSingletonType` 判断当前宿主能力或状态分支，只读 DOM/Fiber 快照；属于document/head/body singleton 的获取、占用与释放。 */
+/** `isHostSingletonType` 将 html、head、body 识别为文档单例宿主类型。 */
 export function isHostSingletonType(type: string): boolean {
   return type === 'html' || type === 'head' || type === 'body';
 }
 
-/** `resolveSingletonInstance` 查询、匹配或计算结果；不适用时返回协议约定的空值；属于document/head/body singleton 的获取、占用与释放。 */
+/** `resolveSingletonInstance` 取得所属文档已有的 html/head/body；缺少应有元素或类型不支持时抛错。 */
 export function resolveSingletonInstance(
   type: string,
   props: Props,
@@ -4866,7 +4927,7 @@ export function resolveSingletonInstance(
   }
 }
 
-/** `acquireSingletonInstance` 登记或挂接目标，维持宿主顺序与资源引用计数；属于document/head/body singleton 的获取、占用与释放。 */
+/** `acquireSingletonInstance` mutation 中清空既有单例属性、设置当前初始 props 并绑定 Fiber；开发期检查重复占用。 */
 export function acquireSingletonInstance(
   type: string,
   props: Props,
@@ -4915,7 +4976,7 @@ export function acquireSingletonInstance(
   updateFiberProps(instance, props);
 }
 
-/** `releaseSingletonInstance` 清理对应宿主状态；重复或延迟清理不得破坏其他根；属于document/head/body singleton 的获取、占用与释放。 */
+/** `releaseSingletonInstance` 清除该 Fiber props 拥有的单例状态和关联，保留单例 DOM 本身及额外命令式属性。 */
 export function releaseSingletonInstance(
   instance: Instance,
   type: SingletonType,
@@ -4934,9 +4995,9 @@ export function releaseSingletonInstance(
   detachDeletedInstance(instance);
 }
 
-/** `clearSingletonPreambleContribution` 清理对应宿主状态；重复或延迟清理不得破坏其他根；属于document/head/body singleton 的获取、占用与释放。 */
+/** `clearSingletonPreambleContribution` dehydrated 边界只有 Fizz 贡献标记、没有 props 时清空单例全部属性并解除关联。 */
 function clearSingletonPreambleContribution(instance: Instance): void {
-  //当清理包含 Fizz 前导贡献标记的脱水边界时，此路径才会被使用。该标记告诉我们边界贡献给了哪个单例，但它不包括所贡献的属性，并且没有 HostSingleton Fiber 来提供它们。因此，我们无法区分哪些属性来自 React，哪些是由脚本或第三方以命令式方式添加的。目前，清除每个属性被视为一个可接受的边缘情况。TODO：在标记中包含所贡献的属性，以便此清理操作只删除边界拥有的属性。
+  //Fizz 标记只说明边界贡献了哪个单例，不携带属性列表，也没有 HostSingleton Fiber 的 props 可供筛选，所以这里清除全部属性。TODO：让标记携带属性信息，只清理边界贡献的属性。
   const attributes = instance.attributes;
   while (attributes.length) {
     instance.removeAttributeNode(attributes[0]);
@@ -4948,133 +5009,133 @@ function clearSingletonPreambleContribution(instance: Instance): void {
 //资源
 // -------------------
 
-/** `supportsResources` 声明 renderer 是否支持对应 Host Config 能力；reconciler 据此选择合法分支。 */
+/** `supportsResources` 允许 reconciler 管理可提升、去重的样式和脚本资源。 */
 export const supportsResources = true;
 
-/** `HoistableTagType` 定义hoistable resource 的去重、预加载、获取、挂载与释放的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `HoistableTagType` 作为普通 hoistable 实例管理的 link/meta/title 标签。 */
 type HoistableTagType = 'link' | 'meta' | 'title';
-/** `TResource` 定义hoistable resource 的去重、预加载、获取、挂载与释放的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `TResource` 共享资源记录：类别、复用 DOM、引用数及类别专属状态；引用归零不代表移除 DOM。 */
 type TResource<
   T: 'stylesheet' | 'style' | 'script' | 'void',
   S: null | {...},
 > = {
-  /** `TResource.type` 表示宿主标签、资源或事件类别；仅在hoistable resource 的去重、预加载、获取、挂载与释放生命周期内有效。 */
+  /** `TResource.type` 区分 stylesheet/style/script/void 的资源类别。 */
   type: T,
-  /** `TResource.instance` 表示DOM、资源或边界实例身份；仅在hoistable resource 的去重、预加载、获取、挂载与释放生命周期内有效。 */
+  /** `TResource.instance` 复用的 DOM 实例；尚未创建或为 void 时为 null。 */
   instance: null | Instance,
-  /** `TResource.count` 表示资源加载、引用计数或解除挂起状态；仅在hoistable resource 的去重、预加载、获取、挂载与释放生命周期内有效。 */
+  /** `TResource.count` 当前资源引用数；归零时本实现仍保留实例。 */
   count: number,
-  /** `TResource.state` 表示所属 Host Config 契约跨阶段传递的受限状态；仅在hoistable resource 的去重、预加载、获取、挂载与释放生命周期内有效。 */
+  /** `TResource.state` 类别专属状态；只有 stylesheet 需要加载与插入状态。 */
   state: S,
 };
-/** `StylesheetResource` 定义hoistable resource 的去重、预加载、获取、挂载与释放的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `StylesheetResource` 外部 stylesheet 资源，带预加载及插入状态。 */
 type StylesheetResource = TResource<'stylesheet', StylesheetState>;
-/** `StyleTagResource` 定义hoistable resource 的去重、预加载、获取、挂载与释放的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `StyleTagResource` 内联 style 资源，使用 href 标识并按 precedence 插入。 */
 type StyleTagResource = TResource<'style', null>;
-/** `StyleResource` 定义hoistable resource 的去重、预加载、获取、挂载与释放的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `StyleResource` 共享样式缓存中的内联 style 或外部 stylesheet 资源。 */
 type StyleResource = StyleTagResource | StylesheetResource;
-/** `ScriptResource` 定义hoistable resource 的去重、预加载、获取、挂载与释放的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `ScriptResource` 按 src 复用的异步脚本资源。 */
 type ScriptResource = TResource<'script', null>;
-/** `VoidResource` 定义hoistable resource 的去重、预加载、获取、挂载与释放的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `VoidResource` 不能作为实际共享资源挂载的占位记录，acquireResource 返回 null。 */
 type VoidResource = TResource<'void', null>;
-/** `Resource` 定义hoistable resource 的去重、预加载、获取、挂载与释放的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `Resource` DOM renderer 支持的共享样式、异步脚本或占位资源。 */
 export type Resource = StyleResource | ScriptResource | VoidResource;
 
-/** `LoadingState` 定义hoistable resource 的去重、预加载、获取、挂载与释放的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `LoadingState` stylesheet 的加载结果与插入状态位掩码。 */
 type LoadingState = number;
-/** `NotLoaded` 保存测试选择器、singleton 与文档级宿主节点管理所需的配置、缓存或模块级状态；生命周期覆盖当前 renderer。 */
+/** `NotLoaded` 尚无加载结果且未标记插入的零值，也用作掩码比较值。 */
 const NotLoaded = /*       */ 0b000;
-/** `Loaded` 保存测试选择器、singleton 与文档级宿主节点管理所需的配置、缓存或模块级状态；生命周期覆盖当前 renderer。 */
+/** `Loaded` 加载成功位；预加载完成也可设置此位。 */
 const Loaded = /*          */ 0b001;
-/** `Errored` 保存测试选择器、singleton 与文档级宿主节点管理所需的配置、缓存或模块级状态；生命周期覆盖当前 renderer。 */
+/** `Errored` 加载失败位；失败同样解除资源等待。 */
 const Errored = /*         */ 0b010;
-/** `Settled` 保存测试选择器、singleton 与文档级宿主节点管理所需的配置、缓存或模块级状态；生命周期覆盖当前 renderer。 */
+/** `Settled` Loaded/Errored 掩码，任一结果表示加载等待已结束。 */
 const Settled = /*         */ 0b011;
-/** `Inserted` 保存测试选择器、singleton 与文档级宿主节点管理所需的配置、缓存或模块级状态；生命周期覆盖当前 renderer。 */
+/** `Inserted` stylesheet 实例已经插入宿主树的状态位。 */
 const Inserted = /*        */ 0b100;
 
-/** `StylesheetState` 定义hoistable resource 的去重、预加载、获取、挂载与释放的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `StylesheetState` stylesheet 的加载/插入位和可复用 preload 元素。 */
 type StylesheetState = {
-  /** `StylesheetState.loading` 表示资源加载、引用计数或解除挂起状态；仅在hoistable resource 的去重、预加载、获取、挂载与释放生命周期内有效。 */
+  /** `StylesheetState.loading` Loaded/Errored/Inserted 位的组合。 */
   loading: LoadingState,
-  /** `StylesheetState.preload` 表示资源加载、引用计数或解除挂起状态；仅在hoistable resource 的去重、预加载、获取、挂载与释放生命周期内有效。 */
+  /** `StylesheetState.preload` 用于等待预加载完成的 link，未关联时为 null。 */
   preload: null | HTMLLinkElement,
 };
 
-/** `StyleTagProps` 定义hoistable resource 的去重、预加载、获取、挂载与释放的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `StyleTagProps` style 实例使用的 DOM props，将资源标识和优先级写为 data 属性。 */
 type StyleTagProps = {
-  /** `StyleTagProps.data-href` 表示资源去重和插入排序使用的键；仅在hoistable resource 的去重、预加载、获取、挂载与释放生命周期内有效。 */
+  /** `StyleTagProps.data-href` 内联样式的资源标识，供缓存和服务器 style 匹配使用。 */
   'data-href': string,
-  /** `StyleTagProps.data-precedence` 表示资源去重和插入排序使用的键；仅在hoistable resource 的去重、预加载、获取、挂载与释放生命周期内有效。 */
+  /** `StyleTagProps.data-precedence` 写入 DOM 的样式顺序组名，同组实例按插入顺序排列。 */
   'data-precedence': string,
-  /** `StyleTagProps.string` 表示所属 Host Config 契约跨阶段传递的受限状态；仅在hoistable resource 的去重、预加载、获取、挂载与释放生命周期内有效。 */
+  /** `StyleTagProps.string` 其余 DOM 属性或资源选项，保留原始值。 */
   [string]: mixed,
 };
-/** `StylesheetProps` 定义hoistable resource 的去重、预加载、获取、挂载与释放的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `StylesheetProps` 外部 stylesheet link 实例使用的 DOM props。 */
 type StylesheetProps = {
-  /** `StylesheetProps.rel` 表示所属 Host Config 契约跨阶段传递的受限状态；仅在hoistable resource 的去重、预加载、获取、挂载与释放生命周期内有效。 */
+  /** `StylesheetProps.rel` 固定为 stylesheet，声明外部样式表。 */
   rel: 'stylesheet',
-  /** `StylesheetProps.href` 表示资源去重和插入排序使用的键；仅在hoistable resource 的去重、预加载、获取、挂载与释放生命周期内有效。 */
+  /** `StylesheetProps.href` 样式表 URL，同时生成共享资源键。 */
   href: string,
-  /** `StylesheetProps.data-precedence` 表示资源去重和插入排序使用的键；仅在hoistable resource 的去重、预加载、获取、挂载与释放生命周期内有效。 */
+  /** `StylesheetProps.data-precedence` 写入 DOM 的样式顺序组名，同组实例按插入顺序排列。 */
   'data-precedence': string,
-  /** `StylesheetProps.string` 表示所属 Host Config 契约跨阶段传递的受限状态；仅在hoistable resource 的去重、预加载、获取、挂载与释放生命周期内有效。 */
+  /** `StylesheetProps.string` 其余 DOM 属性或资源选项，保留原始值。 */
   [string]: mixed,
 };
 
-/** `ScriptProps` 定义hoistable resource 的去重、预加载、获取、挂载与释放的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `ScriptProps` 可共享的异步外部脚本实例 props。 */
 type ScriptProps = {
-  /** `ScriptProps.src` 表示资源去重和插入排序使用的键；仅在hoistable resource 的去重、预加载、获取、挂载与释放生命周期内有效。 */
+  /** `ScriptProps.src` 异步脚本 URL，同时生成共享资源键。 */
   src: string,
-  /** `ScriptProps.async` 表示所属 Host Config 契约跨阶段传递的受限状态；仅在hoistable resource 的去重、预加载、获取、挂载与释放生命周期内有效。 */
+  /** `ScriptProps.async` 共享脚本必须采用异步执行。 */
   async: true,
-  /** `ScriptProps.string` 表示所属 Host Config 契约跨阶段传递的受限状态；仅在hoistable resource 的去重、预加载、获取、挂载与释放生命周期内有效。 */
+  /** `ScriptProps.string` 其余 DOM 属性或资源选项，保留原始值。 */
   [string]: mixed,
 };
 
-/** `PreloadProps` 定义hoistable resource 的去重、预加载、获取、挂载与释放的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `PreloadProps` 普通 preload link 的 DOM props。 */
 type PreloadProps = {
-  /** `PreloadProps.rel` 表示所属 Host Config 契约跨阶段传递的受限状态；仅在hoistable resource 的去重、预加载、获取、挂载与释放生命周期内有效。 */
+  /** `PreloadProps.rel` 固定为 preload。 */
   rel: 'preload',
-  /** `PreloadProps.href` 表示资源去重和插入排序使用的键；仅在hoistable resource 的去重、预加载、获取、挂载与释放生命周期内有效。 */
+  /** `PreloadProps.href` 待预加载 URL；响应式图片使用 imageSrcSet 时可省略。 */
   href: ?string,
-  /** `PreloadProps.string` 表示所属 Host Config 契约跨阶段传递的受限状态；仅在hoistable resource 的去重、预加载、获取、挂载与释放生命周期内有效。 */
+  /** `PreloadProps.string` 其余 DOM 属性或资源选项，保留原始值。 */
   [string]: mixed,
 };
-/** `PreloadModuleProps` 定义hoistable resource 的去重、预加载、获取、挂载与释放的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `PreloadModuleProps` modulepreload link 的 DOM props。 */
 type PreloadModuleProps = {
-  /** `PreloadModuleProps.rel` 表示所属 Host Config 契约跨阶段传递的受限状态；仅在hoistable resource 的去重、预加载、获取、挂载与释放生命周期内有效。 */
+  /** `PreloadModuleProps.rel` 固定为 modulepreload。 */
   rel: 'modulepreload',
-  /** `PreloadModuleProps.href` 表示资源去重和插入排序使用的键；仅在hoistable resource 的去重、预加载、获取、挂载与释放生命周期内有效。 */
+  /** `PreloadModuleProps.href` 待预加载模块的 URL。 */
   href: string,
-  /** `PreloadModuleProps.string` 表示所属 Host Config 契约跨阶段传递的受限状态；仅在hoistable resource 的去重、预加载、获取、挂载与释放生命周期内有效。 */
+  /** `PreloadModuleProps.string` 其余 DOM 属性或资源选项，保留原始值。 */
   [string]: mixed,
 };
 
-/** `RootResources` 定义hoistable resource 的去重、预加载、获取、挂载与释放的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `RootResources` HoistableRoot 上共享的样式和脚本去重缓存，不按单个 React FiberRoot 划分。 */
 export type RootResources = {
-  /** `RootResources.hoistableStyles` 表示所属 Host Config 契约跨阶段传递的受限状态；仅在hoistable resource 的去重、预加载、获取、挂载与释放生命周期内有效。 */
+  /** `RootResources.hoistableStyles` 按 href 键共享的 style/stylesheet 资源缓存。 */
   hoistableStyles: Map<string, StyleResource>,
-  /** `RootResources.hoistableScripts` 表示所属 Host Config 契约跨阶段传递的受限状态；仅在hoistable resource 的去重、预加载、获取、挂载与释放生命周期内有效。 */
+  /** `RootResources.hoistableScripts` 按 src 键共享的异步 script 资源缓存。 */
   hoistableScripts: Map<string, ScriptResource>,
 };
 
-/** `prepareToCommitHoistables` 建立阶段边界，确保后续提交看到已准备的 DOM 状态；属于hoistable resource 的去重、预加载、获取、挂载与释放。 */
+/** `prepareToCommitHoistables` 重置本次提交用于认领普通 hoistable 标签的临时 DOM 查询缓存。 */
 export function prepareToCommitHoistables() {
   tagCaches = null;
 }
 
-//全球资源集合
+/** 模块级缓存preload/preloadModule首次属性，style/script用实际资源键、其它类型用选择器键；后续真实资源补用这些属性且同键预加载去重，缓存不会随一次提交重置。 */
 const preloadPropsMap: Map<string, PreloadProps | PreloadModuleProps> =
   new Map();
-/** `preconnectsSet` 保存hoistable resource 的去重、预加载、获取、挂载与释放所需的配置、缓存或模块级状态；生命周期覆盖当前 renderer。 */
+/** `preconnectsSet` 全局记录已处理的 dns-prefetch/preconnect 选择器，避免重复插入提示。 */
 const preconnectsSet: Set<string> = new Set();
 
-/** `HoistableRoot` 定义hoistable resource 的去重、预加载、获取、挂载与释放的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `HoistableRoot` 资源共享与查询所在的 Document 或 ShadowRoot。 */
 export type HoistableRoot = Document | ShadowRoot;
 
 //IE 和旧版本 jsdom 缺少 getRootNode
-/** `getHoistableRoot` 查询、匹配或计算结果；不适用时返回协议约定的空值；属于hoistable resource 的去重、预加载、获取、挂载与释放。 */
+/** `getHoistableRoot` 优先取容器 getRootNode 的 Document/DocumentFragment；否则回退所属文档。 */
 export function getHoistableRoot(container: Container): HoistableRoot {
   // $FlowFixMe[method-unbinding]
   if (typeof container.getRootNode === 'function') {
@@ -5091,18 +5152,18 @@ export function getHoistableRoot(container: Container): HoistableRoot {
     : container.ownerDocument;
 }
 
-/** `getCurrentResourceRoot` 查询、匹配或计算结果；不适用时返回协议约定的空值；属于hoistable resource 的去重、预加载、获取、挂载与释放。 */
+/** `getCurrentResourceRoot` 从 render 当前根容器确定资源根；没有当前容器时返回 null。 */
 function getCurrentResourceRoot(): null | HoistableRoot {
   const currentContainer = getCurrentRootHostContainer();
   return currentContainer ? getHoistableRoot(currentContainer) : null;
 }
 
-/** `getDocumentFromRoot` 查询、匹配或计算结果；不适用时返回协议约定的空值；属于hoistable resource 的去重、预加载、获取、挂载与释放。 */
+/** `getDocumentFromRoot` Document 直接使用自身，ShadowRoot 使用 ownerDocument。 */
 function getDocumentFromRoot(root: HoistableRoot): Document {
   return root.ownerDocument || root;
 }
 
-/** `previousDispatcher` 保存hoistable resource 的去重、预加载、获取、挂载与释放所需的配置、缓存或模块级状态；生命周期覆盖当前 renderer。 */
+/** `previousDispatcher` 保留安装 DOM dispatcher 前的实现，使多个 ReactDOM renderer 的入口可以串联。 */
 const previousDispatcher =
   ReactDOMSharedInternals.d; /*ReactDOM当前调度器*/
 ReactDOMSharedInternals.d /*ReactDOM当前调度器*/ = {
@@ -5119,7 +5180,7 @@ ReactDOMSharedInternals.d /*ReactDOM当前调度器*/ = {
   M /*预初始化模块脚本*/: preinitModuleScript,
 };
 
-/** `flushSyncWork` 实现 reconciler 请求的宿主操作，并把副作用限制在当前根或实例；属于hoistable resource 的去重、预加载、获取、挂载与释放。 */
+/** `flushSyncWork` 先调用既有 dispatcher 再刷新当前 renderer 的全部同步根，汇总是否处于渲染中。 */
 function flushSyncWork() {
   if (disableLegacyMode) {
     const previousWasRendering = previousDispatcher.f(); /*同步刷新工作*/
@@ -5133,7 +5194,7 @@ function flushSyncWork() {
   }
 }
 
-/** `requestFormReset` 启动异步或资源阶段，并通过回调/计数器封闭完成边界；属于hoistable resource 的去重、预加载、获取、挂载与释放。 */
+/** `requestFormReset` 对当前 renderer 的 form Fiber 请求重置；其他实例交由既有 dispatcher 处理。 */
 function requestFormReset(form: HTMLFormElement) {
   const formInst = getInstanceFromNodeDOMTree(form);
   if (
@@ -5150,14 +5211,14 @@ function requestFormReset(form: HTMLFormElement) {
   }
 }
 
-//我们预计这将被内联。这是一个函数，主要用于传达我们如何解析 ReactDOM.pre*() 方法的 HoistableRoot 的特殊性质。因为我们支持在 render 之外调用这些方法，所以无法确定哪个 Document 或 ShadowRoot 是“作用域内的”，因此我们必须回退到某种通用的方法。目前我们只是引用全局的 document。这一点值得注意，因为在 ReactDOM 的其他地方，我们实际上不引用全局的 document 或 window，因为我们可能在 iframe 内进行渲染。
+/** 模块初始化时缓存全局document或null；render外的ReactDOM.pre*没有当前容器上下文而使用它，之后补装document不会改写该引用。 */
 const globalDocument = typeof document === 'undefined' ? null : document;
-/** `getGlobalDocument` 查询、匹配或计算结果；不适用时返回协议约定的空值；属于hoistable resource 的去重、预加载、获取、挂载与释放。 */
+/** `getGlobalDocument` 返回模块初始化时可用的全局 document，供 render 外的 ReactDOM.pre* 调用使用。 */
 function getGlobalDocument(): ?Document {
   return globalDocument;
 }
 
-/** `preconnectAs` 启动异步或资源阶段，并通过回调/计数器封闭完成边界；属于hoistable resource 的去重、预加载、获取、挂载与释放。 */
+/** `preconnectAs` 按 rel/href/crossOrigin 去重，在全局文档 head 插入缺失的连接提示 link。 */
 function preconnectAs(
   rel: 'preconnect' | 'dns-prefetch',
   href: string,
@@ -5185,19 +5246,19 @@ function preconnectAs(
   }
 }
 
-/** `prefetchDNS` 启动异步或资源阶段，并通过回调/计数器封闭完成边界；属于hoistable resource 的去重、预加载、获取、挂载与释放。 */
+/** `prefetchDNS` 串联既有 dispatcher，并插入去重的 dns-prefetch 提示。 */
 function prefetchDNS(href: string) {
   previousDispatcher.D(/*预取DNS*/ href);
   preconnectAs('dns-prefetch', href, null);
 }
 
-/** `preconnect` 启动异步或资源阶段，并通过回调/计数器封闭完成边界；属于hoistable resource 的去重、预加载、获取、挂载与释放。 */
+/** `preconnect` 串联既有 dispatcher，并按 crossOrigin 插入去重的 preconnect 提示。 */
 function preconnect(href: string, crossOrigin?: ?CrossOriginEnum) {
   previousDispatcher.C(/*预连接*/ href, crossOrigin);
   preconnectAs('preconnect', href, crossOrigin);
 }
 
-/** `preload` 启动异步或资源阶段，并通过回调/计数器封闭完成边界；属于hoistable resource 的去重、预加载、获取、挂载与释放。 */
+/** `preload` 串联既有 dispatcher，缓存预加载 props 并插入缺失 link；样式/脚本已有实际资源时跳过插入。 */
 function preload(href: string, as: string, options?: ?PreloadImplOptions) {
   previousDispatcher.L(/*预加载*/ href, as, options);
   const ownerDocument = getGlobalDocument();
@@ -5225,7 +5286,7 @@ function preload(href: string, as: string, options?: ?PreloadImplOptions) {
         href,
       )}"]`;
     }
-    //有些预加载根据它们的选择器进行键控。当预加载用于任意类型时，就会发生这种情况。其他预加载根据它们表示的资源键进行键控。在这里，我们确定使用哪个键来判断是否已经有预加载。
+    //style/script 复用实际资源键；其他类型使用包含 as 和 URL/响应式图片信息的选择器作为去重键。
     let key = preloadSelector;
     switch (as) {
       case 'style':
@@ -5267,7 +5328,8 @@ function preload(href: string, as: string, options?: ?PreloadImplOptions) {
         if (as === 'style') {
           //在预加载链接上存储一个加载状态。一旦完成，它会自行清理
           markNodeAsPendingLoad(instance);
-          instance.onload = instance.onerror = () => {
+          /** load/error 任一结果都清除 React pending 标记，后续资源复用可据此判断 preload 已结束。 */
+          instance.onload = /** error 与 load 共用此结束回调，错误结果也应清掉节点 pending 标记。 */ instance.onerror = () => {
             clearPendingLoadOnNode(instance);
           };
         }
@@ -5278,7 +5340,7 @@ function preload(href: string, as: string, options?: ?PreloadImplOptions) {
   }
 }
 
-/** `preloadModule` 启动异步或资源阶段，并通过回调/计数器封闭完成边界；属于hoistable resource 的去重、预加载、获取、挂载与释放。 */
+/** `preloadModule` 串联既有 dispatcher，缓存 modulepreload props 并在缺少预加载和实际脚本时插入 link。 */
 function preloadModule(href: string, options?: ?PreloadModuleImplOptions) {
   previousDispatcher.m(/*预加载模块*/ href, options);
   const ownerDocument = getGlobalDocument();
@@ -5288,7 +5350,7 @@ function preloadModule(href: string, options?: ?PreloadModuleImplOptions) {
     const preloadSelector = `link[rel="modulepreload"][as="${escapeSelectorAttributeValueInsideDoubleQuotes(
       as,
     )}"][href="${escapeSelectorAttributeValueInsideDoubleQuotes(href)}"]`;
-    //有些预加载根据它们的选择器进行键控。当预加载用于任意类型时，就会发生这种情况。其他预加载根据它们所表示的资源键进行键控。在这里，我们确定使用哪个键来判断我们是否已经有预加载。
+    //脚本和 worker/worklet 类型复用脚本资源键；其他模块类型使用完整选择器作为去重键。
     let key = preloadSelector;
     switch (as) {
       case 'audioworklet':
@@ -5334,7 +5396,7 @@ function preloadModule(href: string, options?: ?PreloadModuleImplOptions) {
   }
 }
 
-/** `preinitStyle` 启动异步或资源阶段，并通过回调/计数器封闭完成边界；属于hoistable resource 的去重、预加载、获取、挂载与释放。 */
+/** `preinitStyle` 在全局文档缓存 stylesheet 资源，复用已有 link 或立即按 precedence 创建插入并跟踪加载。 */
 function preinitStyle(
   href: string,
   precedence: ?string,
@@ -5414,7 +5476,7 @@ function preinitStyle(
   }
 }
 
-/** `preinitScript` 启动异步或资源阶段，并通过回调/计数器封闭完成边界；属于hoistable resource 的去重、预加载、获取、挂载与释放。 */
+/** `preinitScript` 在全局文档缓存异步脚本资源，复用已有 script 或继承 preload props 后创建插入。 */
 function preinitScript(src: string, options?: ?PreinitScriptOptions) {
   previousDispatcher.X(/*预初始化脚本*/ src, options);
 
@@ -5467,7 +5529,7 @@ function preinitScript(src: string, options?: ?PreinitScriptOptions) {
   }
 }
 
-/** `preinitModuleScript` 启动异步或资源阶段，并通过回调/计数器封闭完成边界；属于hoistable resource 的去重、预加载、获取、挂载与释放。 */
+/** `preinitModuleScript` 在全局文档缓存异步 module 脚本，复用已有 script 或创建插入。 */
 function preinitModuleScript(
   src: string,
   options?: ?PreinitModuleScriptOptions,
@@ -5524,30 +5586,35 @@ function preinitModuleScript(
   }
 }
 
-/** `StyleTagQualifyingProps` 定义hoistable resource 的去重、预加载、获取、挂载与释放的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `StyleTagQualifyingProps` 内联 style 成为共享资源所需的原始 href/precedence props。 */
 type StyleTagQualifyingProps = {
-  /** `StyleTagQualifyingProps.href` 表示资源去重和插入排序使用的键；仅在hoistable resource 的去重、预加载、获取、挂载与释放生命周期内有效。 */
+  /** `StyleTagQualifyingProps.href` 资源的 href 标识，用于样式缓存和 DOM 匹配。 */
   href: string,
-  /** `StyleTagQualifyingProps.precedence` 表示资源去重和插入排序使用的键；仅在hoistable resource 的去重、预加载、获取、挂载与释放生命周期内有效。 */
+  /** `StyleTagQualifyingProps.precedence` 样式顺序组名，创建 DOM 时转为 data-precedence。 */
   precedence: string,
-  /** `StyleTagQualifyingProps.string` 表示所属 Host Config 契约跨阶段传递的受限状态；仅在hoistable resource 的去重、预加载、获取、挂载与释放生命周期内有效。 */
+  /** `StyleTagQualifyingProps.string` 其余 DOM 属性或资源选项，保留原始值。 */
   [string]: mixed,
 };
 
-/** `StylesheetQualifyingProps` 定义hoistable resource 的去重、预加载、获取、挂载与释放的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `StylesheetQualifyingProps` 外部 stylesheet 成为共享资源所需的 rel/href/precedence props。 */
 type StylesheetQualifyingProps = {
-  /** `StylesheetQualifyingProps.rel` 表示所属 Host Config 契约跨阶段传递的受限状态；仅在hoistable resource 的去重、预加载、获取、挂载与释放生命周期内有效。 */
+  /** `StylesheetQualifyingProps.rel` 固定为 stylesheet。 */
   rel: 'stylesheet',
-  /** `StylesheetQualifyingProps.href` 表示资源去重和插入排序使用的键；仅在hoistable resource 的去重、预加载、获取、挂载与释放生命周期内有效。 */
+  /** `StylesheetQualifyingProps.href` 资源的 href 标识，用于样式缓存和 DOM 匹配。 */
   href: string,
-  /** `StylesheetQualifyingProps.precedence` 表示资源去重和插入排序使用的键；仅在hoistable resource 的去重、预加载、获取、挂载与释放生命周期内有效。 */
+  /** `StylesheetQualifyingProps.precedence` 样式顺序组名，创建 DOM 时转为 data-precedence。 */
   precedence: string,
-  /** `StylesheetQualifyingProps.string` 表示所属 Host Config 契约跨阶段传递的受限状态；仅在hoistable resource 的去重、预加载、获取、挂载与释放生命周期内有效。 */
+  /** `StylesheetQualifyingProps.string` 其余 DOM 属性或资源选项，保留原始值。 */
   [string]: mixed,
 };
 
-//此函数在开始工作时被调用，我们应该始终设置一个 currentDocument
-/** `getResource` 查询、匹配或计算结果；不适用时返回协议约定的空值；属于hoistable resource 的去重、预加载、获取、挂载与释放。 */
+//beginWork 调用此函数时，当前宿主根容器已经压入上下文。
+/**
+ * beginWork 按当前 Document/ShadowRoot 的 href/src 键取得共享资源记录；这里不增加提交引用数。
+ * style/script 先建 instance=null 的记录，stylesheet 还尝试复用已加载 DOM，否则启动可追踪的 preload。
+ * acquireResource 在提交时创建或认领实际节点；stylesheet 的提前等待由 suspendResource 另行收集。
+ * 当前同一 link 槽位不能在普通实例与 precedence stylesheet 资源间互转，这两种更新直接抛错。
+ */
 export function getResource(
   type: string,
   currentProps: any,
@@ -5604,7 +5671,7 @@ export function getResource(
 
         let resource = styles.get(key);
         if (!resource) {
-          //我们在上面已经断言了这一点，但 Flow 无法判断该类型是否符合
+          //上面的条件已确认 stylesheet 的 href/precedence，下面显式细化资源类型。
           const ownerDocument = getDocumentFromRoot(resourceRoot);
           resource = {
             type: 'stylesheet',
@@ -5622,9 +5689,9 @@ export function getResource(
           if (instance) {
             const loadingState: ?Promise<mixed> = (instance as any)._p;
             if (loadingState) {
-              //此实例作为边界显示的一部分被插入，尚未加载
+              //既有实例带有加载 Promise，留给 suspendResource 跟踪其完成结果。
             } else {
-              //此实例已加载
+              //没有可追踪的 Promise，按已加载且已插入处理。
               resource.instance = instance;
               resource.state.loading = Loaded | Inserted;
             }
@@ -5716,7 +5783,7 @@ export function getResource(
   }
 }
 
-/** `describeLinkForResourceErrorDEV` 查询、匹配或计算结果；不适用时返回协议约定的空值；属于hoistable resource 的去重、预加载、获取、挂载与释放。 */
+/** `describeLinkForResourceErrorDEV` 格式化 link 的 rel/href/precedence 差异，供资源类别转换错误使用。 */
 function describeLinkForResourceErrorDEV(props: any) {
   if (__DEV__) {
     let describedProps = 0;
@@ -5760,7 +5827,7 @@ function describeLinkForResourceErrorDEV(props: any) {
   return '';
 }
 
-/** `styleTagPropsFromRawProps` 实现 reconciler 请求的宿主操作，并把副作用限制在当前根或实例；属于hoistable resource 的去重、预加载、获取、挂载与释放。 */
+/** `styleTagPropsFromRawProps` 复制原始 props，把 href/precedence 转成 data-href/data-precedence 并清空原属性。 */
 function styleTagPropsFromRawProps(
   rawProps: StyleTagQualifyingProps,
 ): StyleTagProps {
@@ -5773,31 +5840,31 @@ function styleTagPropsFromRawProps(
   };
 }
 
-/** `getStyleKey` 查询、匹配或计算结果；不适用时返回协议约定的空值；属于hoistable resource 的去重、预加载、获取、挂载与释放。 */
+/** `getStyleKey` 将 href 转为经过属性转义的样式缓存键及选择器片段。 */
 function getStyleKey(href: string) {
   const limitedEscapedHref =
     escapeSelectorAttributeValueInsideDoubleQuotes(href);
   return `href="${limitedEscapedHref}"`;
 }
 
-/** `getStyleTagSelector` 查询、匹配或计算结果；不适用时返回协议约定的空值；属于测试选择器与可观察 DOM 状态查询。 */
+/** `getStyleTagSelector` 构造 data-href 词项包含目标 href 的 style 选择器。 */
 function getStyleTagSelector(href: string) {
   const limitedEscapedHref =
     escapeSelectorAttributeValueInsideDoubleQuotes(href);
   return `style[data-href~="${limitedEscapedHref}"]`;
 }
 
-/** `getStylesheetSelectorFromKey` 查询、匹配或计算结果；不适用时返回协议约定的空值；属于测试选择器与可观察 DOM 状态查询。 */
+/** `getStylesheetSelectorFromKey` 以样式键构造 rel=stylesheet 的 link 选择器。 */
 function getStylesheetSelectorFromKey(key: string) {
   return `link[rel="stylesheet"][${key}]`;
 }
 
-/** `getPreloadStylesheetSelectorFromKey` 查询、匹配或计算结果；不适用时返回协议约定的空值；属于测试选择器与可观察 DOM 状态查询。 */
+/** `getPreloadStylesheetSelectorFromKey` 以样式键构造 as=style 的 preload link 选择器。 */
 function getPreloadStylesheetSelectorFromKey(key: string) {
   return `link[rel="preload"][as="style"][${key}]`;
 }
 
-/** `stylesheetPropsFromRawProps` 实现 reconciler 请求的宿主操作，并把副作用限制在当前根或实例；属于hoistable resource 的去重、预加载、获取、挂载与释放。 */
+/** `stylesheetPropsFromRawProps` 复制原始 props，将 precedence 转为 data-precedence 并清空原属性。 */
 function stylesheetPropsFromRawProps(
   rawProps: StylesheetQualifyingProps,
 ): StylesheetProps {
@@ -5807,7 +5874,7 @@ function stylesheetPropsFromRawProps(
     precedence: null,
   };
 }
-/** `preloadStylesheet` 启动异步或资源阶段，并通过回调/计数器封闭完成边界；属于hoistable resource 的去重、预加载、获取、挂载与释放。 */
+/** `preloadStylesheet` 复用或创建样式 preload link，并用 load/error 更新资源加载位；无法跟踪的既有 preload 视为已加载。 */
 function preloadStylesheet(
   ownerDocument: Document,
   key: string,
@@ -5819,7 +5886,7 @@ function preloadStylesheet(
   );
   if (instance) {
     if (!isNodePendingLoad(instance)) {
-      //如果我们发现已经有预加载，它是通过 SSR 生成的，我们将无法跟踪实际的加载状态。目前我们将假设它已经加载完成
+      //既有 preload 没有 React 的 pending 标记，无法追踪它的实际结果；这里按已加载处理。
       state.loading = Loaded;
       return;
     } else {
@@ -5842,7 +5909,7 @@ function preloadStylesheet(
   instance.addEventListener('error', () => (state.loading |= Errored));
 }
 
-/** `preloadPropsFromStylesheet` 启动异步或资源阶段，并通过回调/计数器封闭完成边界；属于hoistable resource 的去重、预加载、获取、挂载与释放。 */
+/** `preloadPropsFromStylesheet` 从 stylesheet props 构造对应的 preload props，本函数不创建 DOM 或启动请求。 */
 function preloadPropsFromStylesheet(
   props: StylesheetQualifyingProps,
 ): PreloadProps {
@@ -5858,18 +5925,18 @@ function preloadPropsFromStylesheet(
   };
 }
 
-/** `getScriptKey` 查询、匹配或计算结果；不适用时返回协议约定的空值；属于hoistable resource 的去重、预加载、获取、挂载与释放。 */
+/** `getScriptKey` 将 src 转为经过属性转义的脚本缓存键及选择器片段。 */
 function getScriptKey(src: string): string {
   const limitedEscapedSrc = escapeSelectorAttributeValueInsideDoubleQuotes(src);
   return `[src="${limitedEscapedSrc}"]`;
 }
 
-/** `getScriptSelectorFromKey` 查询、匹配或计算结果；不适用时返回协议约定的空值；属于测试选择器与可观察 DOM 状态查询。 */
+/** `getScriptSelectorFromKey` 以脚本键构造 async 外部 script 的选择器。 */
 function getScriptSelectorFromKey(key: string): string {
   return 'script[async]' + key;
 }
 
-/** `acquireResource` 登记或挂接目标，维持宿主顺序与资源引用计数；属于hoistable resource 的去重、预加载、获取、挂载与释放。 */
+/** `acquireResource` 提交时增加资源引用数，复用或创建 DOM；为已准备但未插入的 stylesheet 补做插入。 */
 export function acquireResource(
   hoistableRoot: HoistableRoot,
   resource: Resource,
@@ -5898,14 +5965,14 @@ export function acquireResource(
         markNodeAsHoistable(instance);
         setInitialProperties(instance, 'style', styleProps);
 
-        //待办事项: `style` 没有用于跟踪插入的加载状态。我猜是因为这些不是 suspense 风格的？不确定这是否是重构味道。resource.state.loading |= Inserted;
+        //内联 style 没有 stylesheet 的加载状态位，插入后直接缓存 instance。
         insertStylesheet(instance, qualifiedProps.precedence, hoistableRoot);
         resource.instance = instance;
 
         return instance;
       }
       case 'stylesheet': {
-        //这个类型由 `getResource` 强制执行。如果我们在那里的逻辑更改了什么算作样式表资源，我们需要确保这个转换仍然合理；
+        //getResource 已确认此记录来自带 href/precedence 的 stylesheet link。
         const qualifiedProps: StylesheetQualifyingProps = props;
         const key = getStyleKey(qualifiedProps.href);
 
@@ -5943,7 +6010,7 @@ export function acquireResource(
         return instance;
       }
       case 'script': {
-        //这个类型由 `getResource` 强制执行。如果我们在那里的逻辑更改了什么算作样式表资源，我们需要确保这个转换仍然合理；
+        //getResource 已确认此记录来自带 async 和字符串 src 的 script。
         const borrowedScriptProps: ScriptProps = props;
         const key = getScriptKey(borrowedScriptProps.src);
 
@@ -5988,9 +6055,7 @@ export function acquireResource(
     //
     //其他资源类型不受影响，因为它们还没有被挂起。
     //
-    //TODO：这里略有代码异味。应考虑重构
-    // `suspendResource` 与 `acquireResource` 的协作方式；设计意图是
-    // `suspendResource` 除插入动作外，执行与 `acquireResource` 相同的工作。
+    //suspendResource 可以只准备实例而未插入；acquireResource 接手时要补做插入。
     if (
       resource.type === 'stylesheet' &&
       (resource.state.loading & Inserted) === NotLoaded
@@ -6004,12 +6069,12 @@ export function acquireResource(
   return resource.instance;
 }
 
-/** `releaseResource` 清理对应宿主状态；重复或延迟清理不得破坏其他根；属于hoistable resource 的去重、预加载、获取、挂载与释放。 */
+/** `releaseResource` 只减少资源引用数；本版不在引用归零时移除资源 DOM 或删除缓存。 */
 export function releaseResource(resource: Resource): void {
   resource.count--;
 }
 
-/** `insertStylesheet` 登记或挂接目标，维持宿主顺序与资源引用计数；属于hoistable resource 的去重、预加载、获取、挂载与释放。 */
+/** `insertStylesheet` 将样式插在同 precedence 组末尾；新组接在已有样式后，无已有样式时放到 head/ShadowRoot 首部。 */
 function insertStylesheet(
   instance: Element,
   precedence: string,
@@ -6032,7 +6097,7 @@ function insertStylesheet(
   }
 
   if (prior) {
-    //我们从文档中获取先验信息，所以我们知道它在树中。我们也知道链接不可能是最顶层的节点，所以 parentNode 必须存在。
+    //prior 来自当前资源根的 DOM 查询，直接插到它的后一个兄弟位置。
     (prior.parentNode as any as Node).insertBefore(instance, prior.nextSibling);
   } else {
     const parent =
@@ -6043,7 +6108,7 @@ function insertStylesheet(
   }
 }
 
-/** `adoptPreloadPropsForStylesheet` 实现 reconciler 请求的宿主操作，并把副作用限制在当前根或实例；属于hoistable resource 的去重、预加载、获取、挂载与释放。 */
+/** `adoptPreloadPropsForStylesheet` 将 preload 的 crossOrigin/referrerPolicy/title 补到 stylesheet 未指定的 props。 */
 function adoptPreloadPropsForStylesheet(
   stylesheetProps: StylesheetProps,
   preloadProps: PreloadProps | PreloadModuleProps,
@@ -6055,7 +6120,7 @@ function adoptPreloadPropsForStylesheet(
   if (stylesheetProps.title == null) stylesheetProps.title = preloadProps.title;
 }
 
-/** `adoptPreloadPropsForScript` 实现 reconciler 请求的宿主操作，并把副作用限制在当前根或实例；属于hoistable resource 的去重、预加载、获取、挂载与释放。 */
+/** `adoptPreloadPropsForScript` 将 preload 的 crossOrigin/referrerPolicy/integrity 补到 script 未指定的 props。 */
 function adoptPreloadPropsForScript(
   scriptProps: ScriptProps,
   preloadProps: PreloadProps | PreloadModuleProps,
@@ -6068,13 +6133,13 @@ function adoptPreloadPropsForScript(
     scriptProps.integrity = preloadProps.integrity;
 }
 
-/** `KeyedTagCache` 定义hoistable resource 的去重、预加载、获取、挂载与释放的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `KeyedTagCache` 按标签及关键属性分组的可认领 DOM 候选；标签名本身也用作已扫描哨兵键。 */
 type KeyedTagCache = Map<string, Array<Element>>;
-/** `DocumentTagCaches` 定义hoistable resource 的去重、预加载、获取、挂载与释放的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `DocumentTagCaches` 一次提交内按 Document 隔离的普通 hoistable 标签候选缓存。 */
 type DocumentTagCaches = Map<Document, KeyedTagCache>;
 let tagCaches: null | DocumentTagCaches = null;
 
-/** `hydrateHoistable` 同步宿主状态，并保持 DOM、Fiber 与提交快照一致；属于hydration 匹配、重试、差异诊断与边界推进。 */
+/** `hydrateHoistable` 提交时按属性认领未被占用的 title/link/meta；没有匹配时创建并插入 head，然后绑定 Fiber。 */
 export function hydrateHoistable(
   hoistableRoot: HoistableRoot,
   type: HoistableTagType,
@@ -6189,7 +6254,7 @@ export function hydrateHoistable(
   return instance;
 }
 
-/** `getHydratableHoistableCache` 查询、匹配或计算结果；不适用时返回协议约定的空值；属于hydration 匹配、重试、差异诊断与边界推进。 */
+/** `getHydratableHoistableCache` 为当前提交懒创建文档候选缓存，扫描未占用的同类标签；stylesheet link 和 SVG 节点排除。 */
 function getHydratableHoistableCache(
   type: HoistableTagType,
   keyAttribute: string,
@@ -6242,7 +6307,7 @@ function getHydratableHoistableCache(
   return cache;
 }
 
-/** `mountHoistable` 登记或挂接目标，维持宿主顺序与资源引用计数；属于hoistable resource 的去重、预加载、获取、挂载与释放。 */
+/** `mountHoistable` 把普通 hoistable 实例插入文档 head；title 放在已有 title 前。 */
 export function mountHoistable(
   hoistableRoot: HoistableRoot,
   type: HoistableTagType,
@@ -6255,12 +6320,12 @@ export function mountHoistable(
   );
 }
 
-/** `unmountHoistable` 清理对应宿主状态；重复或延迟清理不得破坏其他根；属于hoistable resource 的去重、预加载、获取、挂载与释放。 */
+/** `unmountHoistable` 移除普通 hoistable 实例，区别于只减引用数的共享资源释放。 */
 export function unmountHoistable(instance: Instance): void {
   (instance.parentNode as any).removeChild(instance);
 }
 
-/** `isHostHoistableType` 判断当前宿主能力或状态分支，只读 DOM/Fiber 快照；属于hoistable resource 的去重、预加载、获取、挂载与释放。 */
+/** `isHostHoistableType` 根据命名空间、itemProp 及标签 props 决定是否提升；开发期诊断缺失资源标识或不支持的监听器。 */
 export function isHostHoistableType(
   type: string,
   props: RawProps,
@@ -6270,7 +6335,7 @@ export function isHostHoistableType(
   let hostContextProd: HostContextProd;
   if (__DEV__) {
     const hostContextDev: HostContextDev = hostContext as any;
-    //只有当我们不处于主机容器上下文中时，我们才能渲染资源
+    //记录当前位置是否缺少普通宿主容器，用于下面无法提升标签的开发期诊断。
     outsideHostContainerContext =
       !hostContextDev.ancestorInfo.containerTagInScope;
     hostContextProd = hostContextDev.context;
@@ -6278,7 +6343,7 @@ export function isHostHoistableType(
     hostContextProd = hostContext as any;
   }
 
-  //全局禁止对 SVG 命名空间中的任何内容或 itemScope 内带有 itemProp 的任何内容进行提升
+  //SVG 命名空间中的元素，以及带 itemProp 的元素都保留在普通宿主树中。
   if (hostContextProd === HostContextNamespaceSvg || props.itemProp != null) {
     if (__DEV__) {
       if (
@@ -6438,12 +6503,12 @@ export function isHostHoistableType(
   return false;
 }
 
-/** `maySuspendCommit` 判断当前宿主能力或状态分支，只读 DOM/Fiber 快照；属于suspensey commit 的资源等待、超时估算与解除挂起。 */
+/** `maySuspendCommit` 启用图片或 View Transition 功能时，非 lazy、无 onLoad 且有 src 的 img 可以参与提交等待。 */
 export function maySuspendCommit(type: Type, props: Props): boolean {
   if (!enableSuspenseyImages && !enableViewTransition) {
     return false;
   }
-  //悬念感的图像是默认的，除非你选择通过 loading="lazy" 或 onLoad={...} 退出，这意味着你可以等待。
+  //非 lazy 且没有 onLoad 的图片参与自动提交等待；有 onLoad 表明应用自行处理加载。
   return (
     type === 'img' &&
     props.src != null &&
@@ -6453,7 +6518,7 @@ export function maySuspendCommit(type: Type, props: Props): boolean {
   );
 }
 
-/** `maySuspendCommitOnUpdate` 判断当前宿主能力或状态分支，只读 DOM/Fiber 快照；属于suspensey commit 的资源等待、超时估算与解除挂起。 */
+/** `maySuspendCommitOnUpdate` 图片满足等待条件且 src/srcSet 改变时，更新可以参与提交等待。 */
 export function maySuspendCommitOnUpdate(
   type: Type,
   oldProps: Props,
@@ -6465,7 +6530,7 @@ export function maySuspendCommitOnUpdate(
   );
 }
 
-/** `maySuspendCommitInSyncRender` 判断当前宿主能力或状态分支，只读 DOM/Fiber 快照；属于suspensey commit 的资源等待、超时估算与解除挂起。 */
+/** `maySuspendCommitInSyncRender` 当前实现不让同步 render 因普通宿主实例挂起。 */
 export function maySuspendCommitInSyncRender(
   type: Type,
   props: Props,
@@ -6474,7 +6539,7 @@ export function maySuspendCommitInSyncRender(
   return false;
 }
 
-/** `mayResourceSuspendCommit` 判断当前宿主能力或状态分支，只读 DOM/Fiber 快照；属于hoistable resource 的去重、预加载、获取、挂载与释放。 */
+/** `mayResourceSuspendCommit` 只有尚未标记 Inserted 的 stylesheet 资源可能阻塞提交。 */
 export function mayResourceSuspendCommit(resource: Resource): boolean {
   return (
     resource.type === 'stylesheet' &&
@@ -6482,17 +6547,17 @@ export function mayResourceSuspendCommit(resource: Resource): boolean {
   );
 }
 
-/** `preloadInstance` 启动异步或资源阶段，并通过回调/计数器封闭完成边界；属于hoistable resource 的去重、预加载、获取、挂载与释放。 */
+/** `preloadInstance` 图片请求已由设置 src 启动，此处只返回 complete；未完成返回 false，后续预提交仍可检查解码。 */
 export function preloadInstance(
   instance: Instance,
   type: Type,
   props: Props,
 ): boolean {
-  //我们不需要预加载 Suspense 风格的图像，因为一旦我们设置了 src，浏览器会提前加载它们。如果我们在这里返回 true，我们仍然会在预提交阶段收到 suspendInstance 调用，以确定我们是否仍然需要解码图像，或者图像是否已从缓存中删除。这只是避免渲染 Suspense 回退。
+  //设置 src 已经开始请求，complete 决定 render 是否因图片未加载而挂起。即使返回 true，预提交仍会调用 suspendInstance 等待 decode。
   return !!(instance as any).complete;
 }
 
-/** `preloadResource` 启动异步或资源阶段，并通过回调/计数器封闭完成边界；属于hoistable resource 的去重、预加载、获取、挂载与释放。 */
+/** `preloadResource` 只检查 stylesheet 加载结果位；尚无成功或失败结果时返回 false，其他资源返回 true。 */
 export function preloadResource(resource: Resource): boolean {
   if (
     resource.type === 'stylesheet' &&
@@ -6506,22 +6571,27 @@ export function preloadResource(resource: Resource): boolean {
   return true;
 }
 
-/** `SuspendedState` 定义suspensey commit 的资源等待、超时估算与解除挂起的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `SuspendedState` 一次预提交的 CSS/动画与图片等待计数、待插入样式和唤醒入口。 */
 export opaque type SuspendedState = {
-  /** `SuspendedState.stylesheets` 表示资源加载、引用计数或解除挂起状态；仅在hoistable resource 的去重、预加载、获取、挂载与释放生命周期内有效。 */
+  /** `SuspendedState.stylesheets` 等待按 precedence 插入的 stylesheet 及其资源根。 */
   stylesheets: null | Map<StylesheetResource, HoistableRoot>,
-  /** `SuspendedState.count` 表示资源加载、引用计数或解除挂起状态；仅在suspensey commit 的资源等待、超时估算与解除挂起生命周期内有效。 */
-  count: number, //悬念式 CSS 和活动视图转换
-  imgCount: number, //悬疑的图像正在加载
-  imgBytes: number, //我们估计需要下载的字节数
-  suspenseyImages: Array<HTMLImageElement>, //悬疑图片的实例（无论是否已加载）
-  waitingForImages: boolean, //当我们不再阻塞图像时为假
+  /** `SuspendedState.count` 未完成的 CSS/preload 和既有 View Transition 等待数。 */
+  count: number, //未完成的 CSS/preload 和已有视图过渡。
+  /** 尚未结束的 decode Promise 数；decode 拒绝也减少计数。 */
+  imgCount: number, //尚未结束的图片 decode。
+  /** 收集时未 complete 图片的启发式下载字节，用于选择 50ms 或通常图片等待上限。 */
+  imgBytes: number, //未 complete 图片的估计下载字节数。
+  /** 捕获 View Transition 新快照前再次检查的未 complete 图片列表，按视口和预算决定是否等待。 */
+  suspenseyImages: Array<HTMLImageElement>, //收集时尚未 complete 的图片；捕获快照前会再次检查。
+  /** 图片超时后置 false，使尚未结束的 decode 不再独自阻止提交；计数仍可在其完成后递减。 */
+  waitingForImages: boolean, //图片等待超时后为 false，即使 decode 尚未结束也可提交。
+  /** 收集时是否遇到当前文档已有 View Transition，供 Profiler 说明优先报告动画等待。 */
   waitingForViewTransition: boolean,
-  /** `SuspendedState.unsuspend` 表示解除阻塞后唤醒 reconciler 的幂等回调；仅在suspensey commit 的资源等待、超时估算与解除挂起生命周期内有效。 */
+  /** `SuspendedState.unsuspend` 收集时为 noop，等待时为 commit；调用或取消前设为 null 防止再次唤醒。 */
   unsuspend: null | (() => void),
 };
 
-/** `startSuspendingCommit` 启动异步或资源阶段，并通过回调/计数器封闭完成边界；属于suspensey commit 的资源等待、超时估算与解除挂起。 */
+/** `startSuspendingCommit` 初始化本次等待状态；先用 noop 唤醒入口收集资源，真正等待时再注册 commit 回调。 */
 export function startSuspendingCommit(): SuspendedState {
   return {
     stylesheets: null,
@@ -6531,12 +6601,12 @@ export function startSuspendingCommit(): SuspendedState {
     suspenseyImages: [],
     waitingForImages: true,
     waitingForViewTransition: false,
-    //当我们开始挂起时，我们使用一个 noop 函数，因为如果可能的话，我们希望 waitfor 步骤同步完成。如果不能完成，我们将返回一个函数以提供实际的解除挂起函数，当计数达到零时该函数将完成，或者如果根开始新的工作，它将被取消。
+    //收集资源时尚未注册真正的 commit 回调；同步完成只调用 noop。waitForCommitToBeReady 确认需要等待后再注册唤醒和取消入口。
     unsuspend: noop,
   };
 }
 
-/** `estimateImageBytes` 查询、匹配或计算结果；不适用时返回协议约定的空值；属于suspensey commit 的资源等待、超时估算与解除挂起。 */
+/** `estimateImageBytes` 按元素宽高、devicePixelRatio 和每像素 0.25 字节估算下载量；缺失宽高使用 100。 */
 function estimateImageBytes(instance: HTMLImageElement): number {
   const width: number = instance.width || 100;
   const height: number = instance.height || 100;
@@ -6547,7 +6617,7 @@ function estimateImageBytes(instance: HTMLImageElement): number {
   return pixelsToDownload * AVERAGE_BYTE_PER_PIXEL;
 }
 
-/** `suspendInstance` 启动异步或资源阶段，并通过回调/计数器封闭完成边界；属于suspensey commit 的资源等待、超时估算与解除挂起。 */
+/** `suspendInstance` 支持 decode 时增加图片等待数并监听成功/失败；未 complete 的图片计入字节估算和过渡候选。 */
 export function suspendInstance(
   state: SuspendedState,
   instance: Instance,
@@ -6561,9 +6631,9 @@ export function suspendInstance(
     // $FlowFixMe[prop-missing]
     typeof instance.decode === 'function'
   ) {
-    //如果这个浏览器支持 decode() API，我们就用它来暂停对图像的等待。此时加载应该已经开始，所以只需调用 decode() 就够了，它也会等待数据加载完成。
+    //支持 decode 时等待图片可解码，成功和失败都解除等待；请求已经由 src 启动。
     state.imgCount++;
-    //根据 props 中指定的宽度/高度，估算我们即将下载的字节大小。这是提前了解的最佳做法，但如果未指定，我们将回退到 100x100 像素的猜测。
+    //根据元素当前 width/height 估算未完成图片的字节量，缺失尺寸时使用 100x100；complete 的图片只等 decode，不估计下载量。
     if (!(instance as any).complete) {
       state.imgBytes += estimateImageBytes(instance as any);
       state.suspenseyImages.push(instance as any);
@@ -6574,7 +6644,7 @@ export function suspendInstance(
   }
 }
 
-/** `suspendResource` 启动异步或资源阶段，并通过回调/计数器封闭完成边界；属于hoistable resource 的去重、预加载、获取、挂载与释放。 */
+/** `suspendResource` 准备匹配 media 的 stylesheet 实例和插入队列；等待未完成 preload 或 Fizz link 的加载，但新 link 暂不插入。 */
 export function suspendResource(
   state: SuspendedState,
   hoistableRoot: HoistableRoot,
@@ -6583,7 +6653,7 @@ export function suspendResource(
 ): void {
   if (resource.type === 'stylesheet') {
     if (typeof props.media === 'string') {
-      //如果我们当前不匹配媒体，我们会避免暂停此资源，并让它在变异路径上插入
+      //media 当前不匹配时不让样式阻塞提交，后续 mutation 的 acquireResource 仍可插入它。
       if (matchMedia(props.media).matches === false) {
         return;
       }
@@ -6598,7 +6668,7 @@ export function suspendResource(
           getStylesheetSelectorFromKey(key),
         );
         if (instance) {
-          //如果此实例有加载状态，则它来自 Fizz 运行时。如果没有加载状态，则假定它已作为序言的一部分通过服务器渲染，因此是同步加载的。然而，它可能已经出错，我们仍然没有方法来检测。暂时，我们假定它已加载。
+          //既有 stylesheet 的 _p Promise 可追踪 Fizz 加载；没有此 Promise 时按已加载处理，不再增加等待数。
           const maybeLoadingState: ?Promise<mixed> = (instance as any)._p;
           if (
             maybeLoadingState !== null &&
@@ -6625,7 +6695,7 @@ export function suspendResource(
           adoptPreloadPropsForStylesheet(stylesheetProps, preloadProps);
         }
 
-        //构建并插入一个新实例
+        //先构建实例并设置属性，实际插入留给后面的样式队列。
         instance = ownerDocument.createElement('link');
         markNodeAsHoistable(instance);
         const linkInstance: HTMLLinkElement = instance as any;
@@ -6654,7 +6724,7 @@ export function suspendResource(
   }
 }
 
-/** `suspendOnActiveViewTransition` 启动异步或资源阶段，并通过回调/计数器封闭完成边界；属于suspensey commit 的资源等待、超时估算与解除挂起。 */
+/** `suspendOnActiveViewTransition` 把所属文档当前 React View Transition 的 finished 纳入提交等待，成功或失败都减少计数。 */
 export function suspendOnActiveViewTransition(
   state: SuspendedState,
   rootContainer: Container,
@@ -6674,18 +6744,24 @@ export function suspendOnActiveViewTransition(
   activeViewTransition.finished.then(ping, ping);
 }
 
-/** `SUSPENSEY_STYLESHEET_TIMEOUT` 是hoistable resource 的去重、预加载、获取、挂载与释放使用的稳定协议值、超时或 DOM 标记；必须与消费者约定一致。 */
+/** `SUSPENSEY_STYLESHEET_TIMEOUT` CSS 等待的 60 秒上限；到时插入剩余样式并放行提交。 */
 const SUSPENSEY_STYLESHEET_TIMEOUT = 60000;
 
-/** `SUSPENSEY_IMAGE_TIMEOUT` 是suspensey commit 的资源等待、超时估算与解除挂起使用的稳定协议值、超时或 DOM 标记；必须与消费者约定一致。 */
+/** `SUSPENSEY_IMAGE_TIMEOUT` 图片等待的通常上限为 800 毫秒，调用处再加 timeoutOffset。 */
 const SUSPENSEY_IMAGE_TIMEOUT = 800;
 
-/** `SUSPENSEY_IMAGE_TIME_ESTIMATE` 是suspensey commit 的资源等待、超时估算与解除挂起使用的稳定协议值、超时或 DOM 标记；必须与消费者约定一致。 */
+/** `SUSPENSEY_IMAGE_TIME_ESTIMATE` 以 500 毫秒下载预算估算图片等待是否划算，超预算则缩短实际等待。 */
 const SUSPENSEY_IMAGE_TIME_ESTIMATE = 500;
 
 let estimatedBytesWithinLimit: number = 0;
 
-/** `waitForCommitToBeReady` 启动异步或资源阶段，并通过回调/计数器封闭完成边界；属于suspensey commit 的资源等待、超时估算与解除挂起。 */
+/**
+ * 收集完资源后先插入无需继续等 preload 的样式，重新检查 count/imgCount，决定提交是否需要挂起。
+ * 需要等待则返回注册 commit 的函数：CSS/既有动画最长等 60 秒，图片通常等 800ms，下载预算超出时只等 50ms。
+ * 图片超时仅解除图片阻塞，CSS 仍需完成；总等待超时清空 unsuspend 后放行，取消函数清空入口并清掉两只定时器。
+ *
+ * @param timeoutOffset - 等待上限附加的毫秒数，由 reconciler 根据已用渲染时间等调度条件计算。
+ */
 export function waitForCommitToBeReady(
   state: SuspendedState,
   timeoutOffset: number,
@@ -6698,7 +6774,7 @@ export function waitForCommitToBeReady(
   //我们需要再次检查数量，因为插入的样式表可能导致出现需要等待的新任务。
   if (state.count > 0 || state.imgCount > 0) {
     return commit => {
-      //我们几乎从不希望在样式加载之前显示内容。但最终我们会放弃，并允许无样式的内容。因此，这个数字有些随意——足够大，以至于你只会在极端情况下达到它。TODO：弄清楚浏览器引擎在初始页面加载期间会做什么，并考虑让我们的行为与之保持一致。
+      //达到 CSS 等待上限后插入剩余样式并放行提交，即使样式尚未加载；资源后续完成时 unsuspend 已清空。
       const stylesheetTimer = setTimeout(() => {
         if (state.stylesheets) {
           insertSuspendedStylesheets(state, state.stylesheets);
@@ -6747,7 +6823,7 @@ export function waitForCommitToBeReady(
   return null;
 }
 
-/** `getSuspendedCommitReason` 查询、匹配或计算结果；不适用时返回协议约定的空值；属于suspensey commit 的资源等待、超时估算与解除挂起。 */
+/** `getSuspendedCommitReason` 根据动画、CSS 和图片等待状态生成 Profiler 的阻塞原因说明。 */
 export function getSuspendedCommitReason(
   state: SuspendedState,
   rootContainer: Container,
@@ -6770,11 +6846,11 @@ export function getSuspendedCommitReason(
   return null;
 }
 
-/** `checkIfFullyUnsuspended` 判断当前宿主能力或状态分支，只读 DOM/Fiber 快照；属于suspensey commit 的资源等待、超时估算与解除挂起。 */
+/** `checkIfFullyUnsuspended` CSS/动画计数归零且图片完成或停止等待时，插入排队样式；无需再插入时取出并清空唤醒回调。 */
 function checkIfFullyUnsuspended(state: SuspendedState) {
   if (state.count === 0 && (state.imgCount === 0 || !state.waitingForImages)) {
     if (state.stylesheets) {
-      //如果我们还没有实际插入样式表，我们现在需要在开始提交之前插入它们。我们之所以在其他所有操作完成之后才这样做，是因为我们希望在进行变更之前让所有样式表同步加载。理想情况下，新样式只会在新树上引起一次重新计算。当我们填充样式表时，我们只包括具有匹配媒体属性的样式表，因此我们会等待它们加载完毕后才实际继续。我们预计这会使计数增至零以上。
+      //先插入排队的匹配 media 样式，再等实际 stylesheet 的 load/error；插入时可能重新增加 count，所以此分支不直接调用 commit。
       insertSuspendedStylesheets(state, state.stylesheets);
     } else if (state.unsuspend) {
       const unsuspend = state.unsuspend;
@@ -6784,28 +6860,28 @@ function checkIfFullyUnsuspended(state: SuspendedState) {
   }
 }
 
-/** `onUnsuspend` 实现 reconciler 请求的宿主操作，并把副作用限制在当前根或实例；属于suspensey commit 的资源等待、超时估算与解除挂起。 */
+/** `onUnsuspend` CSS、preload 或动画完成时减少 count，再检查是否可插入样式或提交。 */
 function onUnsuspend(this: SuspendedState) {
   this.count--;
   checkIfFullyUnsuspended(this);
 }
 
-/** `onUnsuspendImg` 实现 reconciler 请求的宿主操作，并把副作用限制在当前根或实例；属于suspensey commit 的资源等待、超时估算与解除挂起。 */
+/** `onUnsuspendImg` 图片 decode 成功或失败时减少 imgCount，再检查是否可以提交。 */
 function onUnsuspendImg(this: SuspendedState) {
   this.imgCount--;
   checkIfFullyUnsuspended(this);
 }
 
-//我们使用一种类型不同于优先级的值来跟踪哪一个是最后的。这确保了不会与用户定义的优先级发生冲突。通常我们会在模块作用域中跟踪这个值，但由于优先级是按可提升根（HoistableRoot）跟踪的，我们需要将其关联到某个非全局作用域的东西，这就是为什么我们首先尝试将它与优先级映射放在一起的原因
+/** 每个资源根的临时precedence Map用null键记录所有样式组的最后节点；字符串键仍记录各组尾部，两者分开以便新组接到现有样式末尾。 */
 const LAST_PRECEDENCE = null;
 
-//这里被强制转换为非空类型，因为它在读取之前总是会被设置。重要的是，除非栈保证它存在，否则不要使用它。目前这仅在 insertSuspendedStylesheet 期间使用。
+//只在 insertSuspendedStylesheets 的同步调用期间创建并读取，批量插入后立即清空。
 let precedencesByRoot: Map<
   HoistableRoot,
   Map<string | typeof LAST_PRECEDENCE, Instance>,
 > = null as any;
 
-/** `insertSuspendedStylesheets` 登记或挂接目标，维持宿主顺序与资源引用计数；属于hoistable resource 的去重、预加载、获取、挂载与释放。 */
+/** `insertSuspendedStylesheets` 取走样式队列，取消状态则跳过；用临时 count 防止同步加载在整批插入完成前唤醒提交。 */
 function insertSuspendedStylesheets(
   state: SuspendedState,
   resources: Map<StylesheetResource, HoistableRoot>,
@@ -6829,7 +6905,7 @@ function insertSuspendedStylesheets(
   onUnsuspend.call(state);
 }
 
-/** `insertStylesheetIntoRoot` 登记或挂接目标，维持宿主顺序与资源引用计数；属于hoistable resource 的去重、预加载、获取、挂载与释放。 */
+/** `insertStylesheetIntoRoot` 按资源根的 precedence 顺序插入尚未插入的 stylesheet，登记 load/error 等待并设置 Inserted 位。 */
 function insertStylesheetIntoRoot(
   this: SuspendedState,
   root: HoistableRoot,
@@ -6873,7 +6949,7 @@ function insertStylesheetIntoRoot(
 
   //我们只在构造了实例之后才调用它，所以这里我们假设它已经存在
   const instance: HTMLLinkElement = resource.instance as any;
-  //我们将始终优先考虑样式表实例
+  //从已准备的 stylesheet 实例读取其顺序组名。
   const precedence: string = instance.getAttribute('data-precedence') as any;
 
   const prior = precedences.get(precedence) || last;
@@ -6899,9 +6975,9 @@ function insertStylesheetIntoRoot(
   resource.state.loading |= Inserted;
 }
 
-/** `NotPendingTransition` 保存suspensey commit 的资源等待、超时估算与解除挂起所需的配置、缓存或模块级状态；生命周期覆盖当前 renderer。 */
+/** `NotPendingTransition` form action 没有 pending 工作时的默认 FormStatus。 */
 export const NotPendingTransition: TransitionStatus = NotPending;
-/** `HostTransitionContext` 保存suspensey commit 的资源等待、超时估算与解除挂起所需的配置、缓存或模块级状态；生命周期覆盖当前 renderer。 */
+/** `HostTransitionContext` 向 form 后代提供 action 状态的 React context，两个 renderer 槽都初始化为 NotPending。 */
 export const HostTransitionContext: ReactContext<TransitionStatus> = {
   $$typeof: REACT_CONTEXT_TYPE,
   Provider: null as any,
@@ -6911,9 +6987,9 @@ export const HostTransitionContext: ReactContext<TransitionStatus> = {
   _threadCount: 0,
 };
 
-/** `FormInstance` 定义suspensey commit 的资源等待、超时估算与解除挂起的数据契约；字段共同约束所有权、状态迁移和跨阶段传递边界。 */
+/** `FormInstance` 宿主表单的原生 HTMLFormElement。 */
 export type FormInstance = HTMLFormElement;
-/** `resetFormInstance` 同步宿主状态，并保持 DOM、Fiber 与提交快照一致；属于suspensey commit 的资源等待、超时估算与解除挂起。 */
+/** `resetFormInstance` mutation 中临时开启 React 事件分发，调用 form.reset 后再次关闭，允许 reset 事件处理。 */
 export function resetFormInstance(form: FormInstance): void {
   ReactBrowserEventEmitterSetEnabled(true);
   form.reset();

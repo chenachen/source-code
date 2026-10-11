@@ -11,7 +11,7 @@ import type {Props} from '../client/ReactFiberConfigDOM';
 
 import {getFiberCurrentPropsFromNode} from '../client/ReactDOMComponentTree';
 
-/** isInteractive 判断从 Fiber 当前 props 读取 registration listener，并按禁用交互元素规则过滤的前置条件；返回值用于在热路径提前跳过不适用分支。 */
+/** 识别 button、input、select、textarea 四类原生交互元素。 */
 function isInteractive(tag: string): boolean {
   return (
     tag === 'button' ||
@@ -21,7 +21,7 @@ function isInteractive(tag: string): boolean {
   );
 }
 
-/** shouldPreventMouseEvent 判断从 Fiber 当前 props 读取 registration listener，并按禁用交互元素规则过滤的前置条件；返回值用于在热路径提前跳过不适用分支。 */
+/** 仅对指定鼠标 handler 过滤 disabled 的原生交互元素。 */
 function shouldPreventMouseEvent(
   name: string,
   type: string,
@@ -50,7 +50,10 @@ function shouldPreventMouseEvent(
  * @param {string} registrationName listener 名称，例如 `onClick`。
  * @return {?function} 已存储的 callback。
  */
-/** getListener 查询并返回从 Fiber 当前 props 读取 registration listener，并按禁用交互元素规则过滤所需状态；无匹配时使用 null/默认值而不修改事件队列。 */
+/**
+ * 从 Fiber.stateNode 的最新 props 缓存读取 handler，不读可能正在构建的 Fiber.memoizedProps。
+ * 无 DOM/props 关联或禁用控件的指定鼠标事件返回 null；truthy 的非函数值抛错，falsy 值由监听累积路径跳过。
+ */
 export default function getListener(
   inst: Fiber,
   registrationName: string,

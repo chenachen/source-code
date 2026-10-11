@@ -2,12 +2,12 @@ import * as Y from '../src/index.js'
 import * as t from 'lib0/testing'
 
 /**
- * 对文本每个索引和 assoc=-1/0/1 执行编码往返，并断言解析后的索引与关联方向不变。
+ * 对文本索引 0 到 length-1 和 assoc=-1/0/1 执行二进制编码往返，断言解析索引与关联方向不变；不检查末尾索引 length。
  *
  * @param {Y.Type<{text:true}>} ytext - 待穷举的文本类型。
  */
 const checkRelativePositions = ytext => {
-  // 穷举全部可见位置。
+  // 遍历每个字符之前的位置，不包含文本末尾端点。
   for (let i = 0; i < ytext.length; i++) {
     // 同时覆盖左关联、默认关联和正关联。
     for (let assoc = -1; assoc < 2; assoc++) {
@@ -22,7 +22,9 @@ const checkRelativePositions = ytext => {
 }
 
 /**
- * 验证多次在索引 0 前插入后的复杂结构分段仍可往返全部相对位置。
+ * 测试场景：空文本依次头插 1、abc、z、y、x，得到 xyzabc1。
+ * 触发操作：辅助函数穷举索引 0..6 与 assoc=-1/0/1，编码、解码并解析锚点。
+ * 预期结果：每次绝对索引与 assoc 不变；未检查末尾索引 7。
  *
  * @param {t.TestCase} _tc
  */
@@ -38,7 +40,9 @@ export const testRelativePositionCase1 = _tc => {
 }
 
 /**
- * 验证单次连续文本插入的相对位置编码/解码基线。
+ * 测试场景：空文本一次写入 abc。
+ * 触发操作：穷举索引 0..2 与三种 assoc，执行二进制往返。
+ * 预期结果：段内锚点解析为原索引与关联方向；未检查末尾索引 3。
  *
  * @param {t.TestCase} _tc
  */
@@ -50,7 +54,9 @@ export const testRelativePositionCase2 = _tc => {
 }
 
 /**
- * 验证多段头部插入形成的结构链仍保持所有绝对索引。
+ * 测试场景：空文本头插 abc、1、xyz，得到 xyz1abc。
+ * 触发操作：对多次插入形成的内容链穷举索引 0..6 与三种 assoc。
+ * 预期结果：编码往返后的索引与 assoc 一致，不涵盖末尾端点。
  *
  * @param {t.TestCase} _tc
  */
@@ -64,7 +70,9 @@ export const testRelativePositionCase3 = _tc => {
 }
 
 /**
- * 验证单字符类型的三种 assoc 解析边界。
+ * 测试场景：文本仅含字符 1。
+ * 触发操作：在索引 0 分别用 assoc=-1/0/1 编码并解析。
+ * 预期结果：三次解析均保持索引 0 和原 assoc；末尾索引 1 未测试。
  *
  * @param {t.TestCase} _tc
  */
@@ -76,7 +84,9 @@ export const testRelativePositionCase4 = _tc => {
 }
 
 /**
- * 验证两个独立头插结构的相对位置解析。
+ * 测试场景：空文本依次头插 2、1，得到 12。
+ * 触发操作：在两个字符前穷举三种 assoc，执行锚点二进制往返。
+ * 预期结果：所有解析索引与 assoc 一致。
  *
  * @param {t.TestCase} _tc
  */
@@ -89,7 +99,9 @@ export const testRelativePositionCase5 = _tc => {
 }
 
 /**
- * 验证空类型不会产生越界位置，穷举辅助函数安全返回。
+ * 测试场景：空文本长度为 0。
+ * 触发操作：调用只遍历 i<length 的辅助函数。
+ * 预期结果：循环执行零次，没有创建锚点，也没有位置断言；仅确认调用可完成。
  *
  * @param {t.TestCase} _tc
  */
@@ -100,7 +112,9 @@ export const testRelativePositionCase6 = _tc => {
 }
 
 /**
- * 回归验证 issue #657：同一内容锚点无论是否追随 redone 链，在未撤销文档上都解析为原索引。
+ * 测试场景：文本 abcde 在索引 2 创建锚点，没有 undo 历史。
+ * 触发操作：分别启用与禁用 followRedone 解析。
+ * 预期结果：两者索引均为 2；覆盖 issue #657 的无重做链基线。
  *
  * @param {t.TestCase} _tc
  */
@@ -120,11 +134,9 @@ export const testRelativePositionCase7 = _tc => {
 }
 
 /**
- * Given：在两个字符之间分别创建右关联与左关联锚点。
- * When：在该边界插入新字符。
- * Then：右关联位置随原右字符右移，左关联位置保持在插入前。
- *
- * 验证机制：分别断言索引 2 与 1，证明 assoc 决定并发插入时的黏附侧。
+ * 测试场景：文本 12，在 1|2 边界创建右关联与左关联锚点。
+ * 触发操作：在相同边界插入 x 后解析两锚点。
+ * 预期结果：右关联跟随原字符 2，索引变为 2；左关联贴住字符 1，索引保持 1。
  *
  * @param {t.TestCase} _tc
  */
@@ -143,13 +155,9 @@ export const testRelativePositionAssociationDifference = _tc => {
 }
 
 /**
- * 验证相对位置对 undo `redone` 链的本地增强解析与跨副本稳定解析差异。
- *
- * Given：锚点指向将被删除的文本，UndoManager 随后恢复该范围。
- * When：分别以 follow=true/false 在本地和同步副本解析。
- * Then：本地 follow 可回到恢复字符索引；禁用 follow 与远端副本按稳定原历史位置解析。
- *
- * 对应源码：`createAbsolutePositionFromRelativePosition()` 的 `followRedone` 分支。
+ * 测试场景：hello world 索引 1 的锚点和随后建立的 UndoManager。
+ * 触发操作：删除前六字符、undo，再把完整状态同步到新文档；分别启用/禁用 followRedone。
+ * 预期结果：删除后索引 0；本地追随 redone 得 1，禁用追随得 6；同步副本不含本地 redone 映射，两种策略均得 6。
  *
  * @param {t.TestCase} _tc
  */

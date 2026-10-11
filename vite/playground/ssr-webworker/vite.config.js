@@ -10,8 +10,7 @@ export default defineConfig({
   ssr: {
     target: 'webworker',
     noExternal: ['this-should-be-replaced-by-the-boolean'],
-    // Some webworker builds may choose to externalize node builtins as they may be implemented
-    // in the runtime, and so we can externalize it when bundling.
+    // 此 worker 运行时开启 Node 兼容，构建把 node:assert 保留为外部导入交给运行时。
     external: ['node:assert'],
     resolve: {
       conditions: [...defaultClientConditions, 'worker'],
@@ -20,6 +19,7 @@ export default defineConfig({
   plugins: [
     {
       name: '@vitejs/test-ssr-webworker/no-external',
+      /** 先返回 ssr.noExternal=true，要求 worker SSR 构建转换全部依赖；下一插件返回数组时，配置合并仍须保留布尔 true 的含义。 */
       config() {
         return {
           ssr: {
@@ -30,6 +30,7 @@ export default defineConfig({
     },
     {
       name: '@vitejs/test-ssr-webworker/no-external-array',
+      /** 再返回 ssr.noExternal 数组，与上一插件的 true 形成合并样例；最终配置应仍按全部依赖不外部化处理。 */
       config() {
         return {
           ssr: {

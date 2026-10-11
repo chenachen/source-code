@@ -16,6 +16,7 @@ describe('sfc hoist static', () => {
     })
   }
 
+  // 编译字符串、数字、布尔、null、BigInt 与无插值模板字面量；均移到输出首部并登记 LITERAL_CONST，避免每实例重复初始化。
   test('should hoist literal value', () => {
     const code = `
     const string = 'default value'
@@ -44,6 +45,7 @@ describe('sfc hoist static', () => {
     assertCode(content)
   })
 
+  // 常量初始化为纯一元、二元、条件和序列表达式；递归静态检查通过后整体提升，绑定保持 LITERAL_CONST。
   test('should hoist expressions', () => {
     const code = `
     const unary = !false
@@ -67,6 +69,7 @@ describe('sfc hoist static', () => {
     assertCode(content)
   })
 
+  // defineProps 默认值引用 setup 字符串常量；先提升该常量使模块选项可读取，默认值引用不触发作用域错误。
   test('should hoist w/ defineProps/Emits', () => {
     const hoistCode = `const defaultValue = 'default value'`
     const { content, bindings } = compile(`
@@ -89,6 +92,7 @@ describe('sfc hoist static', () => {
     assertCode(content)
   })
 
+  // 输入 let/var、正则及 undefined 引用；可变量、对象实例和标识符不满足字面量提升条件，声明留在 setup 且分类分别核对。
   test('should not hoist a variable', () => {
     const code = `
     let KEY1 = 'default value'
@@ -111,6 +115,7 @@ describe('sfc hoist static', () => {
     assertCode(content)
   })
 
+  // 常量引用构造器、数组、调用、副作用序列、动态 enum 和插值模板；逐项保留在 setup，避免提升实例依赖或副作用。
   test('should not hoist a constant initialized to a reference value', () => {
     const code = `
     const KEY1 = Boolean
@@ -142,6 +147,7 @@ describe('sfc hoist static', () => {
     assertCode(content)
   })
 
+  // 常量对象和数组即便元素都是字面量；两者会创建实例对象，因此保持 SETUP_CONST 且不提升。
   test('should not hoist a object or array', () => {
     const code = `
     const obj = { foo: 'bar' }
@@ -160,6 +166,7 @@ describe('sfc hoist static', () => {
     assertCode(content)
   })
 
+  // 箭头函数、函数声明和类声明；均保持 setup 内的 SETUP_CONST，以保留实例作用域及闭包。
   test('should not hoist a function or class', () => {
     const code = `
     const fn = () => {}
@@ -180,6 +187,7 @@ describe('sfc hoist static', () => {
     assertCode(content)
   })
 
+  // 同时存在普通 script 与 setup 的同名字面量；自动静态提升仅适用于单 setup 场景，该组合中的 setup foo 不升为 LITERAL_CONST。
   test('should enable when only script setup', () => {
     const { content, bindings } = compile(`
     <script>
@@ -195,6 +203,7 @@ describe('sfc hoist static', () => {
     assertCode(content)
   })
 
+  // 显式 hoistStatic:false 编译字符串常量；关闭优化后仍登记 SETUP_CONST，输出通过语法与快照检查。
   test('should not hoist when disabled', () => {
     const { content, bindings } = compile(
       `
@@ -210,6 +219,7 @@ describe('sfc hoist static', () => {
     assertCode(content)
   })
 
+  // 内联模板读取已提升 foo；模板直接引用 foo，无需 unref 或上下文查找。
   test('template binding access in inline mode', () => {
     const { content } = compile(
       `

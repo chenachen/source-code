@@ -57,15 +57,15 @@
 `createServer()` 后、`listen()` 前可以先 `transformRequest()`，此时优化器对象已经存在，`init()` 却还没
 执行。
 
-| 模块 | 负责 | 不负责 | 上游 → 下游 |
-| --- | --- | --- | --- |
-| `server/environment.ts` | 创建、启动、关闭 Environment 私有优化器 | 依赖发现和打包决策 | Server 生命周期 → `DepsOptimizer.init/close` |
-| `optimizer/scan.ts` | 从入口快速预测裸依赖集合 | 生成正式产物、决定 reload | entries/config/plugins → `id → src` |
-| `optimizer/optimizer.ts` | 协调 scanner、真实 crawl、批次 Promise、重跑和 reload | 具体 bundle 输出、HTTP 响应 | 发现结果/运行时 missing → `runOptimizeDeps`/metadata/HMR |
-| `optimizer/index.ts` | 元数据/hash、Rolldown 构建、临时目录与目录换代 | 决定哪轮候选应发布 | 完整依赖快照 → `DepOptimizationResult` |
-| `plugins/preAlias.ts` / `plugins/resolve.ts` | 把裸包解析到 optimized/discovered URL | 读取优化文件 | import specifier → `registerMissingImport/getOptimizedDepId` |
-| `plugins/optimizedDeps.ts` | 等待批次、校验版本、读取 code/map | 触发新一轮优化 | 优化 URL → code/map 或稳定错误码 |
-| `middlewares/transform.ts` | 把优化器错误码映射为 HTTP 504/404 | 判断优化结果新旧 | plugin error → HTTP response |
+| 模块                                         | 负责                                                  | 不负责                      | 上游 → 下游                                                  |
+| -------------------------------------------- | ----------------------------------------------------- | --------------------------- | ------------------------------------------------------------ |
+| `server/environment.ts`                      | 创建、启动、关闭 Environment 私有优化器               | 依赖发现和打包决策          | Server 生命周期 → `DepsOptimizer.init/close`                 |
+| `optimizer/scan.ts`                          | 从入口快速预测裸依赖集合                              | 生成正式产物、决定 reload   | entries/config/plugins → `id → src`                          |
+| `optimizer/optimizer.ts`                     | 协调 scanner、真实 crawl、批次 Promise、重跑和 reload | 具体 bundle 输出、HTTP 响应 | 发现结果/运行时 missing → `runOptimizeDeps`/metadata/HMR     |
+| `optimizer/index.ts`                         | 元数据/hash、Rolldown 构建、临时目录与目录换代        | 决定哪轮候选应发布          | 完整依赖快照 → `DepOptimizationResult`                       |
+| `plugins/preAlias.ts` / `plugins/resolve.ts` | 把裸包解析到 optimized/discovered URL                 | 读取优化文件                | import specifier → `registerMissingImport/getOptimizedDepId` |
+| `plugins/optimizedDeps.ts`                   | 等待批次、校验版本、读取 code/map                     | 触发新一轮优化              | 优化 URL → code/map 或稳定错误码                             |
+| `middlewares/transform.ts`                   | 把优化器错误码映射为 HTTP 504/404                     | 判断优化结果新旧            | plugin error → HTTP response                                 |
 
 `DepsOptimizer` 闭包同时持有调度标志、scanner/构建取消句柄与 discovered 批次 Promise；这些状态都不跨
 Environment 共享。
@@ -95,8 +95,9 @@ CSS/asset/worker/query         → 交给对应 Vite 插件，不进入 JS 依�
 
 ### scanner：快速预测
 
-冷启动时 `scanImports()` 创建一个轻量 `ScanEnvironment`，复用插件容器和 resolve 配置，但不允许访问
-模块图或完整 server 状态。它计算入口后调用 Rolldown，只做依赖图遍历，不生成正式产物：
+开发服务器冷启动把 `DevEnvironment` 窄化成 `devToScanEnvironment()` 视图后交给 `scanImports()`，
+复用插件容器与 resolve 配置，视图不暴露模块图或完整 server 状态。单独调用 `optimizeDeps()` 时则创建
+轻量 `ScanEnvironment`。扫描计算入口后调用 Rolldown，只遍历依赖图，不生成正式产物：
 
 ```text
 optimizeDeps.entries
@@ -200,7 +201,9 @@ scanner 在遍历前展开 glob，因此 glob 命中的文件也能贡献依赖�
 
 ### 入口解析必须复用插件与 root
 
-顶层 `input` 可能是插件提供的虚拟 ID，所以入口也要经过插件容器解析；支持该场景见
+顶层 `input` 可以先写成插件认识的虚拟 ID，再由插件解析到实际存在、可扫描的文件；入口解析后仍会
+经过 `isScannable()` 和 `fs.existsSync()` 过滤，因此这条路径要求最终落在磁盘文件。对应测试的
+`virtual:entry` 正是被映射到 fixture 的 `entry.js`；支持该场景见
 [PR #23101](https://github.com/vitejs/vite/pull/23101)。相对
 `build.rolldownOptions.input` 必须以项目 root 为基准，而不是 `process.cwd()`；回归修复见
 [PR #22769](https://github.com/vitejs/vite/pull/22769)。
@@ -262,9 +265,10 @@ exportsData  提前启动的入口导出分析 Promise
 Import Analysis，但 `optimizedDepsPlugin.load()` 在读文件前等待 `processing`。因此单个请求被精准
 阻塞，服务器其他初始化和源码转换不必等待整个依赖打包。
 
-每批新依赖共享一个 `processing` Promise。开始一轮打包时，当前 Promise 被封存进队列，新发现项绑定
-下一批 Promise。只有某次真正包含这些依赖的结果提交后，队列才统一 resolve；被丢弃的中间结果不能
-提前放行等待请求。
+每批新依赖共享一个 `processing` Promise。开始一轮打包时，当前 Promise 被封存进队列，随后发现项
+绑定下一批 Promise。正常提交会放行已封存批次；因又有 missing 而取消候选时仍保留队列，让请求等待
+更完整的重跑结果。构建失败或关闭分支也会 resolve 队列以结束等待，此时请求仍要做版本检查和文件
+读取，Promise fulfilled 本身不表示构建成功。
 
 ### 决定性源码 2：missing 先获得稳定 URL，再等待内容
 
@@ -272,10 +276,7 @@ Import Analysis，但 `optimizedDepsPlugin.load()` 在读文件前等待 `proces
 `addMissingDep()`。这是“路径先确定、文件后落盘”的真正写入点。
 
 ```ts
-function registerMissingImport(
-  id: string,
-  resolved: string,
-): OptimizedDepInfo {
+function registerMissingImport(id: string, resolved: string): OptimizedDepInfo {
   let missing = metadata.discovered[id]
   if (missing) {
     return missing
@@ -313,17 +314,17 @@ function addMissingDep(id: string, resolved: string) {
 
 ### 协调状态表
 
-| 阶段 | `initState` | `waitingForCrawlEnd` | `currentlyProcessing` | metadata 主变化 | 请求命运 |
-| --- | --- | ---: | ---: | --- | --- |
-| 构造完成、未 listen | `idle` | `false` | `false` | missing 可进 `discovered` | 得到 URL；不得抢跑 bundle |
-| 冷缓存 init | `initializing` | `true` | `true` | 重建 metadata，include 先登记 | 静态 crawl 继续收集 |
-| scanner 运行 | `initializing/initialized` | `true` | `true` | scan 结果补入 `discovered` | 候选可后台构建，默认不发布 |
-| crawl 结束、候选完整 | `initialized` | `false` | `true` | 候选交给 `runOptimizer` | 等候 commit |
-| crawl 发现漏项 | `initialized` | `false` | `true` | 候选 cancel；两边并集进入新批次 | 原批次 Promise 不提前放行 |
-| 无 reload 提交 | `initialized` | `false` | `true → false` | `discovered → optimized`；旧 hash 保留 | processing resolve，读新文件 |
-| 需 reload 且无新漏项 | `initialized` | `false` | `true → false` | 新 metadata 发布 | 模块图失效、full reload |
-| 需 reload 且又有漏项 | `initialized` | `false` | `true → false → 下一轮 true` | 当前结果 cancel，metadata 仍旧 | 接续 `registerMissingImport()` 已安排的 debounce/rerun，避免双 reload |
-| close | 任意 | 任意 | 任意 | 正式 cache 不因 close 删除 | scanner/build 取消；Environment 等待在途请求 |
+| 阶段                 | `initState`                | `waitingForCrawlEnd` |        `currentlyProcessing` | metadata 主变化                        | 请求命运                                                              |
+| -------------------- | -------------------------- | -------------------: | ---------------------------: | -------------------------------------- | --------------------------------------------------------------------- |
+| 构造完成、未 listen  | `idle`                     |              `false` |                      `false` | missing 可进 `discovered`              | 得到 URL；不得抢跑 bundle                                             |
+| 冷缓存 init          | `initializing`             |               `true` |                       `true` | 重建 metadata，include 先登记          | 静态 crawl 继续收集                                                   |
+| scanner 运行         | `initializing/initialized` |               `true` |                       `true` | scan 结果补入 `discovered`             | 候选可后台构建，默认不发布                                            |
+| crawl 结束、候选完整 | `initialized`              |              `false` |                       `true` | 候选交给 `runOptimizer`                | 等候 commit                                                           |
+| crawl 发现漏项       | `initialized`              |              `false` |                       `true` | 候选 cancel；两边并集进入新批次        | 原批次 Promise 不提前放行                                             |
+| 无 reload 提交       | `initialized`              |              `false` |               `true → false` | `discovered → optimized`；旧 hash 保留 | processing resolve，读新文件                                          |
+| 需 reload 且无新漏项 | `initialized`              |              `false` |               `true → false` | 新 metadata 发布                       | 模块图失效、full reload                                               |
+| 需 reload 且又有漏项 | `initialized`              |              `false` | `true → false → 下一轮 true` | 当前结果 cancel，metadata 仍旧         | 接续 `registerMissingImport()` 已安排的 debounce/rerun，避免双 reload |
+| close                | 任意                       |                 任意 |                         任意 | 正式 cache 不因 close 删除             | scanner/build 取消；Environment 等待在途请求                          |
 
 表里的 `currentlyProcessing` 是调度互斥，不代表 CPU 一直在打包；首轮等待 crawl 时也为 `true`，用于阻止
 普通 debounce 越过首轮协调点。
@@ -405,8 +406,7 @@ const needsInteropMismatch = findInteropMismatches(
   result.metadata.optimized,
 )
 const scannerMissedDeps = crawlDeps.some((dep) => !scanDeps.includes(dep))
-const outdatedResult =
-  needsInteropMismatch.length > 0 || scannerMissedDeps
+const outdatedResult = needsInteropMismatch.length > 0 || scannerMissedDeps
 
 if (outdatedResult) {
   result.cancel()
@@ -466,8 +466,8 @@ needsInterop 变化
 - 需要 reload，但打包期间又发现依赖：取消当前结果，接续 missing 登记时已经安排的 debounce/rerun，再打包
   更完整快照，避免连续两次 reload；这条分支不执行 `onCrawlEnd()` 的 scan∪crawl 合并代码，也不保证立即开始。
 
-最后一种分支最容易漏读：已经花时间打好的结果仍不能发布，因为它一发布就知道还要再次换代。批次
-Promise 继续等待，直到真正包含依赖的后续结果提交。
+最后一种分支最容易漏读：已经花时间打好的结果仍不能发布，因为它一发布就知道还要再次换代。已封存批次
+Promise 保持等待，后续结果正常提交或失败/关闭处理才将它放行。
 
 ### 决定性源码 5：reload 判定、无感合并与丢弃重批
 
@@ -526,7 +526,7 @@ processing 目录 → 正式 deps 目录
 
 相较“删除正式目录，再移动新目录”，两次 rename 把缓存不可用窗口压到最小，也避免请求读到半写文件。
 POSIX 使用同步 rename；Windows 的杀毒软件可能短暂锁目录，所以 `safeRename()` 对 EACCES/EPERM 重试，
-并验证目标是否已经落地。临时目录换代方案见
+只在目标路径仍不存在时再次调用 rename；目标已存在时仍按原锁冲突错误继续等待，超时后报错。临时目录换代方案见
 [PR #12622](https://github.com/vitejs/vite/pull/12622)。异常退出残留超过 24 小时的临时目录在下次启动
 异步清理，不阻塞当前冷启动。
 
@@ -649,7 +649,8 @@ if (info) {
 try {
   const [code, map] = await Promise.all([
     fsp.readFile(file, 'utf-8'),
-    fsp.readFile(`${file}.map`, 'utf-8')
+    fsp
+      .readFile(`${file}.map`, 'utf-8')
       .then((map) => JSON.parse(map))
       .catch(() => null),
   ])
@@ -662,21 +663,23 @@ try {
 }
 ```
 
-等待后必须再次比较 metadata 引用。原因：等待期间 `commitProcessing()` 可能整体替换快照；只做等待前
-校验存在 TOCTOU 窗口。错误分支也要按源码精确区分：
+等待期间 `commitProcessing()` 可能整体替换 metadata，所以放行后要用新快照再次按文件查找。这里
+比较的是所持 `info.browserHash` 与新记录，不是重新比较 URL 的原始 `?v=`。提交还会原位补全旧
+`discovered` 对象的 hash、interop，并清 `processing`，因此持有该对象的请求能看到最终信息；其他
+旧记录若已与新快照不同，则进入过期分支。具体错误条件如下：
 
-| 触发条件 | 稳定错误码 | HTTP | 含义 |
-| --- | --- | ---: | --- |
-| 请求 hash 与 `info.browserHash` 不同 | `ERR_OUTDATED_OPTIMIZED_DEP` | 504 | 旧页面请求；reload 后换 URL |
-| `info.processing` 自身 reject | `ERR_OPTIMIZE_DEPS_PROCESSING_ERROR` | 504 | 优化等待异常 |
-| 等待期间 metadata 换代且 hash 改变 | `ERR_OUTDATED_OPTIMIZED_DEP` | 504 | 等候者已落后于新快照 |
-| `readFile` 失败且 URL 带 hash、未忽略过期 | `ERR_OUTDATED_OPTIMIZED_DEP` | 504 | 优先按换代处理，不武断判文件永久缺失 |
-| `readFile` 失败且无 hash，或显式忽略过期 | `ERR_FILE_NOT_FOUND_IN_OPTIMIZED_DEP_DIR` | 404 | 真正走缺文件提示，建议检查 `exclude` |
+| 触发条件                                                       | 稳定错误码                                | HTTP | 含义                                 |
+| -------------------------------------------------------------- | ----------------------------------------- | ---: | ------------------------------------ |
+| 请求 hash 与 `info.browserHash` 不同                           | `ERR_OUTDATED_OPTIMIZED_DEP`              |  504 | 旧页面请求；reload 后换 URL          |
+| `info.processing` 自身 reject                                  | `ERR_OPTIMIZE_DEPS_PROCESSING_ERROR`      |  504 | 优化等待异常                         |
+| 等待期间 metadata 换代，原 `info.browserHash` 与新文件记录不同 | `ERR_OUTDATED_OPTIMIZED_DEP`              |  504 | 等候者所持记录已与当前快照分离       |
+| `readFile` 失败且 URL 带 hash、未忽略过期                      | `ERR_OUTDATED_OPTIMIZED_DEP`              |  504 | 优先按换代处理，不武断判文件永久缺失 |
+| `readFile` 失败且无 hash，或显式忽略过期                       | `ERR_FILE_NOT_FOUND_IN_OPTIMIZED_DEP_DIR` |  404 | 真正走缺文件提示，建议检查 `exclude` |
 
-当前 `createDepsOptimizer()` 协调代码只显式 `resolve()` 批次 Promise，没有找到主动 `reject()`；因此
-processing-error 504 是插件协议的防御分支，不能把它写成“每次 Rolldown 构建失败都会走 504”。构建
-失败在 `runOptimizer()` 自己的 catch 中记录并清 `discovered`，实际 HTTP 结果还取决于 URL/hash 与文件
-读取分支。
+`createDepsOptimizer()` 在构建失败时记录错误、resolve 已封存批次并清空 `discovered`，没有通过
+批次 Promise 拒绝请求。等候者继续走版本与文件检查：带 hash 且未忽略过期的缺文件请求返回过期
+504；无 hash 或开启 `ignoreOutdatedRequests` 时返回缺文件 404。处理错误 504 则仅在所等 Promise
+本身 reject 时产生。
 
 ## 真实完整测试：JSX runtime 扫描后的模块复用结果
 
@@ -733,12 +736,12 @@ test('scan jsx-runtime', async (ctx) => {
 
 - **Given**：SSR Environment 强制冷缓存，scanner 从 JSX 与非 JSX 两个入口开始；client 自动发现关闭，
   测试结束时关闭 server。
-- **When**：`listen()` 初始化优化器；测试等 scanner 结束，先 import 非 JSX 入口，再连续两次 import JSX
-  入口。`scanProcessing` 只证明 scanner settle，不单独证明候选已经 commit。
+- **When**：`listen()` 初始化优化器；测试等 `scanProcessing` settle，先 import 非 JSX 入口，让真实
+  request crawl 启动，再连续两次 import JSX 入口。优化文件请求仍由各自 `processing` 等待提交。
 - **Then**：fixture 的全局执行计数为 `1`，两次 import 返回同一模块对象。
-- **Mechanism / Source**：`prepareRolldownScanner()` 传播 JSX transform，`init()` 建候选，`onCrawlEnd()`
-  验收，`runOptimizer()` 发布。测试直接证明模块复用结果；“没有因 JSX runtime 再跑 optimizer”是结合这条
-  源码链得到的回归意图，测试没有直接计数 `runOptimizeDeps()`。
+- **Mechanism / Source**：`prepareRolldownScanner()` 把 JSX transform 传给扫描器，提前发现自动注入的
+  runtime；`init()` 建候选、`onCrawlEnd()` 验收、`runOptimizer()` 发布。计数与对象身份断言检查的是
+  此后 Runner 两次导入仍复用同一实例。
 
 ## 同一 Demo 的端到端流程与时间线
 
@@ -791,37 +794,35 @@ async function close() {
 }
 ```
 
-`allSettled` 保证某项取消失败不跳过其他收尾。这里没有删除已提交正式 cache，也没有发送 reload；
+`allSettled` 收集这些异步收尾的结果。scanner cancel 只置标记，`scanProcessing` 另行等待后台任务；
+预构建 cancel 等待准备阶段、设置 context 标记并删除候选目录，不中断或等待已开始的 write。这里没有
+删除已提交正式 cache，也没有发送 reload；
 Environment 的 `close()` 还会并行关闭插件/HotChannel，并等待 `_pendingRequests` settle。
 
-| 失败/取消点 | 保留什么 | 清理/后续 |
-| --- | --- | --- |
-| scanner 错误或关闭 | 当前正式 cache | 普通错误跳过本候选；`ERR_CLOSED_SERVER` 当取消处理 |
-| Rolldown build 失败，或 reload 候选又遇 missing | 当前正式 cache / metadata | 删除或取消 processing 候选；rebatch 时不提前放行旧批次 |
-| commit 已开始后异常或迟到 cancel | 正在换代的目录 | `committed` 阻止清理任务删除在途目录；中途 I/O 失败没有回滚保证 |
-| Environment close | 已提交正式 cache | 并行取消 scanner/build，关闭插件与 HotChannel，并等待在途请求 settle |
+| 失败/取消点                                     | 保留什么                  | 清理/后续                                                            |
+| ----------------------------------------------- | ------------------------- | -------------------------------------------------------------------- |
+| scanner 错误或关闭                              | 当前正式 cache            | 普通错误跳过本候选；`ERR_CLOSED_SERVER` 当取消处理                   |
+| Rolldown build 失败，或 reload 候选又遇 missing | 当前正式 cache / metadata | 删除或取消 processing 候选；rebatch 时不提前放行旧批次               |
+| commit 已开始后异常或迟到 cancel                | 正在换代的目录            | `committed` 阻止清理任务删除在途目录；中途 I/O 失败没有回滚保证      |
+| Environment close                               | 已提交正式 cache          | 并行取消 scanner/build，关闭插件与 HotChannel，并等待在途请求 settle |
 
 ## 章节—源码—测试证据表
 
-| 机制章节 | 决定性源码 | 代表性测试/fixture | 证据边界 |
-| --- | --- | --- | --- |
-| scanner 分类与入口 | `scan.ts::rolldownScanPlugin` | `scan.spec.ts` script/input/glob 组 | 证明发现集合，不证明最终提交 |
-| JSX 隐式 runtime | `scan.ts::prepareRolldownScanner` | `scan jsx-runtime` | 完整测试见上；不直接计数 optimizer run |
-| include / exports | `optimizer/resolve.ts::expandGlobIds` | `resolve.spec.ts` 的 null exports 用例 | 证明私有子路径不会被 include glob 暴露 |
-| init/crawl 协调 | `optimizer.ts::init/onCrawlEnd` | `scan jsx-runtime` | 源码证明候选验收分支 |
-| listen 前发现 | `optimizer.ts::registerMissingImport` | `discoverBeforeListen.spec.ts` | 证明 initialized 前不启动 bundle 且无错误 |
-| reload/rebatch | `optimizer.ts::runOptimizer` | optimizer/playground 组合回归 | 当前没有单测直接覆盖每个布尔组合，结论主要来自源码 |
-| Rolldown 产物与插件边界 | `index.ts::runOptimizeDeps`、`rolldownDepPlugin.ts` | `playground/optimize-deps`、`rolldownDepPlugin.spec.ts`、`pluginConverter.spec.ts` | 证明 CJS/ESM/静态资源和兼容层结果，不证明 rename 瞬时序列 |
-| 目录换代 | `index.ts::commit` | 缓存复用与 playground 间接覆盖 | 双 rename 结论来自决定性源码；不提供中途失败回滚 |
-| URL 等待/错误 | `optimizedDeps.ts::load` + transform middleware | optimize-missing-deps playground | 504/404 条件来自源码；不能由成功测试外推 |
-| close | `optimizer.ts::close`、`environment.ts::close` | `scan ignores ... mid-scan` | 证明 closed-server 扫描取消；不证明所有 OS 清理失败 |
+| 机制章节                | 决定性源码                                          | 代表性测试/fixture                                                                 | 证据边界                                                 |
+| ----------------------- | --------------------------------------------------- | ---------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| scanner 分类与入口      | `scan.ts::rolldownScanPlugin`                       | `scan.spec.ts` script/input/glob 组                                                | 检查 scanner 发现的依赖集合                              |
+| JSX 隐式 runtime        | `scan.ts::prepareRolldownScanner`                   | `scan jsx-runtime`                                                                 | 检查执行计数与两次导入的实例复用                         |
+| include / exports       | `optimizer/resolve.ts::expandGlobIds`               | `resolve.spec.ts` 的 null exports 用例                                             | 证明私有子路径不会被 include glob 暴露                   |
+| init/crawl 协调         | `optimizer.ts::init/onCrawlEnd`                     | `scan jsx-runtime`                                                                 | 源码证明候选验收分支                                     |
+| listen 前发现           | `optimizer.ts::registerMissingImport`               | `discoverBeforeListen.spec.ts`                                                     | 证明 initialized 前不启动 bundle 且无错误                |
+| reload/rebatch          | `optimizer.ts::runOptimizer`                        | optimizer/playground 组合回归                                                      | reload/rebatch 条件由源码分支给出，组合回归观察最终更新  |
+| Rolldown 产物与插件边界 | `index.ts::runOptimizeDeps`、`rolldownDepPlugin.ts` | `playground/optimize-deps`、`rolldownDepPlugin.spec.ts`、`pluginConverter.spec.ts` | 检查 CJS/ESM/静态资源和兼容层结果                        |
+| 目录换代                | `index.ts::commit`                                  | 缓存复用与 playground 间接覆盖                                                     | 双 rename 结论来自决定性源码；不提供中途失败回滚         |
+| URL 等待/错误           | `optimizedDeps.ts::load` + transform middleware     | optimize-missing-deps playground                                                   | load 错误码与 transform middleware 一起给出 504/404 条件 |
+| close                   | `optimizer.ts::close`、`environment.ts::close`      | `scan ignores ... mid-scan`                                                        | 检查 closed-server 扫描返回空结果                        |
 
-## 结论与证据边界
+## 请求等待与版本发布的联系
 
-依赖预构建的核心不是“用 Rolldown 打一次包”，而是让预测扫描、真实 crawl、请求等待与候选发布共享一套
-版本化状态机。`processing` 让单个请求等待自己的批次；`fileHash` 与 interop 决定能否无感发布；双 rename
-只保证不暴露半写目录，不构成可回滚事务。
-
-本章的完整测试直接证明 JSX 场景的执行次数与模块对象复用。optimizer 是否重跑、每个 reload/rebatch
-布尔组合、rename 中途失败以及 504/404 的所有条件，主要由决定性源码与专项测试共同限定，不能从这一条
-成功测试外推。
+发现依赖时先返回未来 URL，请求加载时再等所属批次；批次正常提交后读正式文件，失败放行后则进入
+版本或缺文件错误。`fileHash` 与 interop 决定新依赖能否沿用现有 URL，改变旧入口图时需要换代刷新。
+双 rename 发布的是完整目录，第二次移动失败仍可能留下正式路径缺失。

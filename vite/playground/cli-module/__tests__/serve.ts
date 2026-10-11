@@ -1,5 +1,4 @@
-// this is automatically detected by playground/vitestSetup.ts and will replace
-// the default e2e test serve behavior
+// vitestSetup 自动发现此 serve，以真实 CLI 子进程替换默认 E2E 启动。
 
 import { stripVTControlCharacters } from 'node:util'
 import { execaCommand } from 'execa'
@@ -13,25 +12,28 @@ import {
   viteBinPath,
 } from '~utils'
 
+/** type:module CLI 夹具的独占端口，由全局分配表提供。 */
 export const port = ports['cli-module']
 
+/** 按矩阵运行真实 CLI：build 先构建后 preview，dev 直接启动；监听地址确认后交回 close。 */
 export async function serve() {
-  // collect stdout and stderr streams from child processes here to avoid interfering with regular vitest output
+  // 把子进程输出缓存在内存，失败时再打印。
   const streams = {
     build: { out: [], err: [] },
     server: { out: [], err: [] },
   }
-  // helpers to collect streams
+  /** 持续把指定子进程 stdout/stderr 分块追加到其输出缓存。 */
   const collectStreams = (name, process) => {
     process.stdout.on('data', (d) => streams[name].out.push(d.toString()))
     process.stderr.on('data', (d) => streams[name].err.push(d.toString()))
   }
+  /** 收集 execa 拒绝值中已聚合的 stdout/stderr，补足失败诊断。 */
   const collectErrorStreams = (name, e) => {
     e.stdout && streams[name].out.push(e.stdout)
     e.stderr && streams[name].err.push(e.stderr)
   }
 
-  // helper to output stream content on error
+  /** 在启动或关闭失败时打印指定子进程的缓存输出。 */
   const printStreamsToConsole = async (name) => {
     const std = streams[name]
     if (std.out && std.out.length > 0) {
@@ -42,7 +44,7 @@ export async function serve() {
     }
   }
 
-  // only run `vite build` when needed
+  // 构建矩阵先生成 dist，开发矩阵直接启动。
   if (isBuild) {
     const buildCommand = `${viteBinPath} build`
     try {
@@ -62,7 +64,7 @@ export async function serve() {
 
   await kill(port)
 
-  // run `vite --port x` or `vite preview --port x` to start server
+  // 根据矩阵启动 dev/preview，并用 strict-port 固定浏览器访问端口。
   const viteServerArgs = ['--port', `${port}`, '--strict-port']
   if (isBuild) {
     viteServerArgs.unshift('preview')
@@ -75,7 +77,7 @@ export async function serve() {
   })
   collectStreams('server', serverProcess)
 
-  // close server helper, send SIGTERM followed by SIGKILL if needed, give up after 3sec
+  /** 请求关闭子进程并最多等待 10000ms；execa 的 forceKillAfterDelay 为 3000ms，失败时输出日志。 */
   const close = async () => {
     if (serverProcess) {
       const timeoutError = `server process still alive after 3s`
@@ -113,7 +115,7 @@ export async function serve() {
   }
 }
 
-// helper to validate that server was started on the correct port
+/** 从 CLI stdout 地址识别实际端口，拒绝错端口或超时，并在结束时移除监听。 */
 async function startedOnPort(serverProcess, port, timeout) {
   let checkPort
   const startedPromise = new Promise<void>((resolve, reject) => {
@@ -141,7 +143,7 @@ async function startedOnPort(serverProcess, port, timeout) {
   ).finally(() => serverProcess.stdout.off('data', checkPort))
 }
 
-// helper function that rejects with errorMessage if promise isn't settled within ms
+/** 将操作与 ms 超时拒绝竞速，任一结束后清除定时器。 */
 async function resolvedOrTimeout(promise, ms, errorMessage) {
   let timer
   return Promise.race([

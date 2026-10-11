@@ -247,7 +247,7 @@ export function resolveComponentType(
 
   // 1. `<component :is>` 或兼容模式原生元素 is：生成 resolveDynamicComponent。
   const isExplicitDynamic = isComponentTag(tag)
-  const isProp = findProp(node, 'is', false, true /* allow empty */)
+  const isProp = findProp(node, 'is', false, true /* 允许空值 */)
   if (isProp) {
     if (
       isExplicitDynamic ||
@@ -329,7 +329,9 @@ export function resolveComponentType(
 
 /**
  * 从 script setup 绑定中解析组件/指令引用，同时兼容 kebab、camelCase、PascalCase 名称。
- * inline 模式直接访问局部变量；非 inline 模式从 `$setup` / `$props` 参数读取。
+ * bindingMetadata 缺失或明确来自非 script setup 时不解析。const 类型直接取值；let/ref/
+ * maybe-ref 在 inline 时 unref，在非 inline 时读 `$setup`。PROPS 两种模式都先 unref，
+ * 分别读 `__props` / `$props`；此处不处理 PROPS_ALIASED 类型。
  */
 function resolveSetupReference(name: string, context: TransformContext) {
   const bindings = context.bindingMetadata
@@ -389,7 +391,12 @@ export type PropsExpression = ObjectExpression | CallExpression | ExpressionNode
  * 把元素属性/指令编译成 props 表达式，并分析运行时最小 patch 范围。
  *
  * 静态/具名绑定先聚合为对象；无参数 v-bind/v-on 切断对象片段并形成 mergeProps 参数。
- * 返回值同时携带运行时自定义指令、patchFlag、动态键名单和必须成为 block 的约束。
+ * 返回值同时携带运行时指令、patchFlag、动态键名单和必须成为 block 的约束。
+ * props 可由调用者传入筛选后的列表；isComponent 决定 class/style 与事件的分析方式，
+ * isDynamicComponent 允许组件解析为原生标签，因此仍分析事件 hydration。ssr 跳过 v-on
+ * 和客户端动态 prop 分析；归一化则另外由 context.inSSR 控制，两者由 SSR 调用者配合传入。
+ * properties 是当前连续对象片段，mergeArgs 保存已经封口的片段，保证普通模式按书写
+ * 顺序合并。错误回调返回后会继续构建其余 props，返回结果不表示输入一定无错误。
  */
 export function buildProps(
   node: ElementNode,
@@ -401,7 +408,7 @@ export function buildProps(
 ): {
   /** 合并后的 props 对象、helper 调用或提升引用。 */
   props: PropsExpression | undefined
-  /** 仍需在运行时执行的自定义指令。 */
+  /** 仍需在运行时执行的指令，含平台转换返回 needRuntime 的内置指令。 */
   directives: DirectiveNode[]
   /** 根据动态 class/style/props 等信息计算的 patch 位掩码。 */
   patchFlag: number
@@ -530,8 +537,8 @@ export function buildProps(
       if (name === 'ref') {
         hasRef = true
         pushRefVForMarker()
-        // setup 内联模式没有 setupState 名称映射，`ref="foo"` 需把实际 ref 变量传给运行时；
-        // ref_key 仍保留字符串名供 devtools/兼容行为使用。
+        // setup 内联模式把实际 ref 变量传给运行时，同时用 ref_key 保存模板中的字符串名。
+        // setRef 更新 ref.value 时，也会按这个名称同步写入组件 $refs。
         if (!__BROWSER__ && value && context.inline) {
           const binding = context.bindingMetadata[value.content]
           if (
@@ -587,7 +594,7 @@ export function buildProps(
         }
         continue
       }
-      // v-once/v-memo 已由节点级转换包装整个 codegenNode。
+      // v-once/v-memo 由各自节点级转换负责；本函数不把它们作为普通 props/运行时指令。
       if (name === 'once' || name === 'memo') {
         continue
       }

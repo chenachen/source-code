@@ -93,6 +93,9 @@ export function renderComponentRoot(
       const thisProxy =
         __DEV__ && setupState.__isScriptSetup
           ? new Proxy(proxyToUse!, {
+              /**
+               * 开发 script setup 模板误用 this 时提示应直接读取绑定，再用 Reflect 转发原公开代理访问。
+               */
               get(target, key, receiver) {
                 warn(
                   `Property '${String(
@@ -128,6 +131,9 @@ export function renderComponentRoot(
               __DEV__ ? shallowReadonly(props) : props,
               __DEV__
                 ? {
+                    /**
+                     * 函数式组件读取 context.attrs 时标记主动消费，并返回浅只读输入，抑制无法自动透传的重复警告。
+                     */
                     get attrs() {
                       markAttrsAccessed()
                       return shallowReadonly(attrs)
@@ -295,6 +301,9 @@ const getChildRoot = (vnode: VNode): [VNode, SetRootFn] => {
 
   const index = rawChildren.indexOf(childRoot)
   const dynamicIndex = dynamicChildren ? dynamicChildren.indexOf(childRoot) : -1
+  /**
+   * 把 clone 后的真实根同时写回 Fragment 的普通 children 与动态 children；原动态列表未包含此根但新根为动态节点时，追加它以保持优化 patch 可见。
+   */
   const setRoot: SetRootFn = (updatedRoot: VNode) => {
     rawChildren[index] = updatedRoot
     if (dynamicChildren) {
@@ -370,7 +379,7 @@ const filterModelListeners = (attrs: Data, props: NormalizedProps): Data => {
 const isElementRoot = (vnode: VNode) => {
   return (
     vnode.shapeFlag & (ShapeFlags.COMPONENT | ShapeFlags.ELEMENT) ||
-    vnode.type === Comment // potential v-if branch switch
+    vnode.type === Comment // v-if 占位可能在下一轮切换为元素。
   )
 }
 
@@ -378,7 +387,8 @@ const isElementRoot = (vnode: VNode) => {
  * 判断父级新 VNode 是否需要重新执行子组件 render effect。
  *
  * 优化模板按 patchFlag 只检查动态 slots/props；手写 render 无静态保证，children 默认
- * 强制更新。emit listeners 不属于组件渲染输入，单独变化不应导致子组件重渲染。
+ * 强制更新。逐项比较时忽略已声明事件监听器的值变化；完整比较仍先检查原始 props
+ * 的键数，所以新增或删除监听器可能触发子组件更新。
  */
 export function shouldUpdateComponent(
   prevVNode: VNode,
@@ -444,7 +454,7 @@ export function shouldUpdateComponent(
   return false
 }
 
-/** 完整比较 props 键集合和值，忽略只由父级消费的 emit listeners。 */
+/** 先比较原始 props 键数，再比较各键的值；值比较跳过已声明事件监听器。 */
 function hasPropsChanged(
   prevProps: Data,
   nextProps: Data,

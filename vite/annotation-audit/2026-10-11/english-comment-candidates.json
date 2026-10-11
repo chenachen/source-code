@@ -1,0 +1,3632 @@
+[
+  {
+    "owner": "assets_build",
+    "file": "vite/eslint.config.js",
+    "line": 169,
+    "text": "// in some cases using explicit letter-casing is more performant than the `i` flag"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/create-vite/src/index.ts",
+    "line": 857,
+    "text": "// renovate: datasource=npm depName=@rolldown/plugin-babel"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/create-vite/src/index.ts",
+    "line": 859,
+    "text": "// renovate: datasource=npm depName=babel-plugin-react-compiler"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/create-vite/src/index.ts",
+    "line": 861,
+    "text": "// renovate: datasource=npm depName=@babel/core"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/create-vite/src/index.ts",
+    "line": 863,
+    "text": "// renovate: datasource=npm depName=@types/babel__core"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/create-vite/src/index.ts",
+    "line": 908,
+    "text": "// renovate: datasource=npm depName=@eslint/js"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/create-vite/src/index.ts",
+    "line": 910,
+    "text": "// renovate: datasource=npm depName=eslint"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/create-vite/src/index.ts",
+    "line": 916,
+    "text": "// renovate: datasource=npm depName=globals"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/create-vite/src/index.ts",
+    "line": 918,
+    "text": "// renovate: datasource=npm depName=typescript-eslint"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/create-vite/src/index.ts",
+    "line": 921,
+    "text": "/* js */"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/create-vite/src/index.ts",
+    "line": 944,
+    "text": "/* js */"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/create-vite/src/index.ts",
+    "line": 1005,
+    "text": "/* js */"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/create-vite/src/index.ts",
+    "line": 1031,
+    "text": "/* js */"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/plugin-legacy/src/snippets.ts",
+    "line": 1,
+    "text": "// https://gist.github.com/samthor/64b114e4a4f539915a95b91ffd340acc"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/plugin-legacy/src/snippets.ts",
+    "line": 2,
+    "text": "// DO NOT ALTER THIS CONTENT"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/rolldown.config.ts",
+    "line": 102,
+    "text": "// postcss-import -> sugarss"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/rolldown.config.ts",
+    "line": 104,
+    "text": "// ws"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/rolldown.config.ts",
+    "line": 105,
+    "text": "// ws"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/rolldown.config.ts",
+    "line": 183,
+    "text": "// #region Plugins"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/rolldown.config.ts",
+    "line": 442,
+    "text": "// #endregion"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/rolldown.dts.config.ts",
+    "line": 75,
+    "text": "// Taken from https://stackoverflow.com/a/36328890"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/rolldown.dts.config.ts",
+    "line": 397,
+    "text": "// function a(foo: string, /* @internal */ bar: number, baz: boolean)"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/rolldown.dts.config.ts",
+    "line": 399,
+    "text": "// type Enum = Foo | /* @internal */ Bar | Baz"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/rollupLicensePlugin.ts",
+    "line": 20,
+    "text": "// https://github.com/rollup/rollup/blob/master/build-plugins/generate-license-file.js"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/scripts/generateTarget.ts",
+    "line": 7,
+    "text": "// https://esbuild.github.io/api/#target"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/client/overlay.ts",
+    "line": 39,
+    "text": "/*css*/"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/module-runner/evaluatedModules.ts",
+    "line": 126,
+    "text": "// https://nodejs.org/api/modules.html#built-in-modules-with-mandatory-node-prefix"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/module-runner/evaluatedModules.ts",
+    "line": 135,
+    "text": "// virtual:custom -> virtual:custom"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/module-runner/evaluatedModules.ts",
+    "line": 136,
+    "text": "// \\0custom -> \\0custom"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/module-runner/evaluatedModules.ts",
+    "line": 137,
+    "text": "// node:fs -> fs"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/module-runner/evaluatedModules.ts",
+    "line": 138,
+    "text": "// /@fs/C:/root/id.js => C:/root/id.js"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/module-runner/evaluatedModules.ts",
+    "line": 139,
+    "text": "// file:///C:/root/id.js -> C:/root/id.js"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/module-runner/importMetaResolver.ts",
+    "line": 9,
+    "text": "/* js */"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/module-runner/importMetaResolver.ts",
+    "line": 113,
+    "text": "/* js */"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/packages/vite/src/node/__tests__/plugins/css.spec.ts",
+    "line": 492,
+    "text": "// https://sass-lang.com/documentation/js-api/classes/nodepackageimporter/"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/packages/vite/src/node/__tests__/plugins/importGlob/fixture-a/index.ts",
+    "line": 99,
+    "text": "// for test: annotation contain \")\""
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/packages/vite/src/node/__tests__/plugins/importGlob/fixture-a/index.ts",
+    "line": 100,
+    "text": "/*\n   * for test: annotation contain \")\"\n   * */"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/packages/vite/src/node/__tests__/resolve.spec.ts",
+    "line": 247,
+    "text": "/* empty */"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/packages/vite/src/node/__tests__/resolve.spec.ts",
+    "line": 257,
+    "text": "/* empty */"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/packages/vite/src/node/__tests__/runnerImport.spec.ts",
+    "line": 82,
+    "text": "// const dep = await module.default();"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/packages/vite/src/node/__tests__/runnerImport.spec.ts",
+    "line": 83,
+    "text": "// expect(dep.default).toMatchInlineSnapshot(`\"ok\"`)"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/packages/vite/src/node/__tests__/scan.spec.ts",
+    "line": 113,
+    "text": "// `import typescript from 'typescript'`,"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/packages/vite/src/node/__tests__/scan.spec.ts",
+    "line": 114,
+    "text": "// import type, {foo} from 'vue'"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/packages/vite/src/node/__tests__/utils.spec.ts",
+    "line": 35,
+    "text": "// openssl req -x509 -nodes -newkey rsa:2048 -days 365 -subj \"/CN=example.org\" \\"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/packages/vite/src/node/__tests__/utils.spec.ts",
+    "line": 36,
+    "text": "//   -addext \"subjectAltName=DNS:localhost,DNS:foo.localhost,DNS:*.vite.localhost\" \\"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/packages/vite/src/node/__tests__/utils.spec.ts",
+    "line": 37,
+    "text": "//   -keyout /tmp/test.key -out /tmp/test.crt"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/packages/vite/src/node/__tests__/utils.spec.ts",
+    "line": 888,
+    "text": "// https://evanw.github.io/source-map-visualization/#MzQALyogY29tbWVudCAqLwpjb25zb2xlLmxvZygiZm9vIik7CjE1NgB7InZlcnNpb24iOjMsInNvdXJjZXMiOlsiL3NyYy9mb28uanMiXSwic291cmNlc0NvbnRlbnQiOlsiY29uc29sZS5sb2coXCJmb29cIik7XG4iXSwibmFtZXMiOltdLCJtYXBwaW5ncyI6IjtBQUFBLE9BQU8sQ0FBQyxHQUFHLENBQUMsQ0FBQyxHQUFHLENBQUMsQ0FBQzsifQo="
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/packages/vite/src/node/__tests__/utils.spec.ts",
+    "line": 896,
+    "text": "// https://evanw.github.io/source-map-visualization/#MjAAY29uc29sZS5sb2coImZvbyIpOwoxNDgAewogICJ2ZXJzaW9uIjogMywKICAic291cmNlcyI6IFsiL3NyYy9mb28uanMiXSwKICAic291cmNlc0NvbnRlbnQiOiBbImNvbnNvbGUubG9nKFwiZm9vXCIpIl0sCiAgIm1hcHBpbmdzIjogIkFBQUEsUUFBUSxJQUFJLEtBQUs7IiwKICAibmFtZXMiOiBbXQp9Cg=="
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/packages/vite/src/node/__tests__/utils.spec.ts",
+    "line": 919,
+    "text": "// https://evanw.github.io/source-map-visualization/#NzcALyogY29tbWVudCAqLwovLyBiLmpzCmNvbnNvbGUubG9nKCIuL2IuanMiKTsKCi8vIGEuanMKY29uc29sZS5sb2coIi4vYS5qcyIpOwozMzkAeyJ2ZXJzaW9uIjozLCJzb3VyY2VzIjpbIi9hLmpzIl0sInNvdXJjZXNDb250ZW50IjpbIi8vIGIuanNcbmNvbnNvbGUubG9nKFwiLi9iLmpzXCIpO1xuXG4vLyBhLmpzXG5jb25zb2xlLmxvZyhcIi4vYS5qc1wiKTtcblxuIl0sIm5hbWVzIjpbXSwibWFwcGluZ3MiOiI7QUFBQSxDQUFDLENBQUMsQ0FBQyxDQUFDLENBQUM7T0FDRSxDQUFDLEdBQUcsQ0FBQyxDQUFDLENBQUMsQ0FBQyxDQUFDLENBQUMsRUFBRSxDQUFDLENBQUM7O0FBRXJCLENBQUMsQ0FBQyxDQUFDLENBQUMsQ0FBQztPQUNFLENBQUMsR0FBRyxDQUFDLENBQUMsQ0FBQyxDQUFDLENBQUMsQ0FBQyxFQUFFLENBQUMsQ0FBQzs7In0K"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/packages/vite/src/node/__tests__/utils.spec.ts",
+    "line": 928,
+    "text": "// https://evanw.github.io/source-map-visualization/#NjMALy8gYi5qcwpjb25zb2xlLmxvZygiLi9iLmpzIik7CgovLyBhLmpzCmNvbnNvbGUubG9nKCIuL2EuanMiKTsKMjIwAHsKICAidmVyc2lvbiI6IDMsCiAgInNvdXJjZXMiOiBbImIuanMiLCAiYS5qcyJdLAogICJzb3VyY2VzQ29udGVudCI6IFsiY29uc29sZS5sb2coJy4vYi5qcycpXG4iLCAiaW1wb3J0ICcuL2IuanMnXG5jb25zb2xlLmxvZygnLi9hLmpzJylcbiJdLAogICJtYXBwaW5ncyI6ICI7QUFBQSxRQUFRLElBQUksUUFBUTs7O0FDQ3BCLFFBQVEsSUFBSSxRQUFROyIsCiAgIm5hbWVzIjogW10KfQo="
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/packages/vite/src/node/__tests__/utils.spec.ts",
+    "line": 951,
+    "text": "// https://evanw.github.io/source-map-visualization/#NTYALmltcG9ydGVkMiB7CiAgY29sb3I6IHJlZAp9CgouaW1wb3J0ZWQgewogIGNvbG9yOiByZWQKfQoyNzAAewogICJ2ZXJzaW9uIjogMywKICAic291cmNlcyI6IFsKICAgICIvaW1wb3J0ZWQyLnNhc3MiLAogICAgIi9Gb28udnVlIgogIF0sCiAgIm5hbWVzIjogW10sCiAgIm1hcHBpbmdzIjogIkFBQUE7RUFDRTs7O0FDRUY7RUFDRSIsCiAgImZpbGUiOiAiL0Zvby52dWUiLAogICJzb3VyY2VzQ29udGVudCI6IFsKICAgICIuaW1wb3J0ZWQyXG4gIGNvbG9yOiByZWRcbiIsCiAgICAiXG5AdXNlICcuL2ltcG9ydGVkMidcblxuLmltcG9ydGVkXG4gIGNvbG9yOiByZWRcbiIKICBdCn0K"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/packages/vite/src/node/__tests__/utils.spec.ts",
+    "line": 963,
+    "text": "// https://evanw.github.io/source-map-visualization/#NDQACkB1c2UgJy4vaW1wb3J0ZWQyJwoKLmltcG9ydGVkCiAgY29sb3I6IHJlZAo0OTQAewogICJ2ZXJzaW9uIjogMywKICAic291cmNlcyI6IFsKICAgICIvRm9vLnZ1ZSIKICBdLAogICJuYW1lcyI6IFtdLAogICJtYXBwaW5ncyI6ICI7QUFNQSxDQUFDLENBQUMsQ0FBQyxFQUFFLENBQUMsQ0FBQyxDQUFDLENBQUMsQ0FBQyxDQUFDLENBQUMsQ0FBQyxDQUFDLENBQUMsQ0FBQyxDQUFDOztBQUVqQixDQUFDLENBQUMsQ0FBQyxDQUFDLENBQUMsQ0FBQyxDQUFDLENBQUM7RUFDTixDQUFDLENBQUMsQ0FBQyxDQUFDLENBQUMsRUFBRSxDQUFDLENBQUMiLAogICJmaWxlIjogIi9Gb28udnVlIiwKICAic291cmNlc0NvbnRlbnQiOiBbCiAgICAiPHRlbXBsYXRlPlxuICA8cCBjbGFzcz1cImltcG9ydGVkXCI+Zm9vPC9wPlxuICA8cCBjbGFzcz1cImltcG9ydGVkMlwiPmJhcjwvcD5cbjwvdGVtcGxhdGU+XG5cbjxzdHlsZSBsYW5nPVwic2Fzc1wiPlxuQHVzZSAnLi9pbXBvcnRlZDInXG5cbi5pbXBvcnRlZFxuICBjb2xvcjogcmVkXG48L3N0eWxlPlxuIgogIF0KfQo="
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/packages/vite/src/node/__tests__/utils.spec.ts",
+    "line": 991,
+    "text": "// https://evanw.github.io/source-map-visualization/#NjYALmZvbyB7CiAgb3ZlcmZsb3c6IHNjcm9sbDsKICAtd2Via2l0LW92ZXJmbG93LXNjcm9sbGluZzogdG91Y2g7Cn0KMjU1AHsKICAiZmlsZSI6ICIvc3JjL3Nhc3Mvc3R5bGUuc2FzcyIsCiAgIm1hcHBpbmdzIjogIkFBQUE7RUFDRSxnQkFBZ0I7RUNEbEIsa0NBQUE7QURFQSIsCiAgIm5hbWVzIjogW10sCiAgInNvdXJjZXMiOiBbCiAgICAiL3NyYy9zYXNzL3N0eWxlLnNhc3MiLAogICAgIlx1MDAwMDxubyBzb3VyY2U+IgogIF0sCiAgInNvdXJjZXNDb250ZW50IjogWyAiLmZvbyB7XG4gIG92ZXJmbG93OiBzY3JvbGw7XG59IiwgbnVsbCBdLAogICJ2ZXJzaW9uIjogMwp9Cg=="
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/packages/vite/src/node/__tests__/utils.spec.ts",
+    "line": 1003,
+    "text": "// https://evanw.github.io/source-map-visualization/#MjkALmZvbyB7CiAgb3ZlcmZsb3c6IHNjcm9sbDsKfQoyMDcAewogICJmaWxlIjogIi9zcmMvc2Fzcy9zdHlsZS5zYXNzIiwKICAibWFwcGluZ3MiOiAiQUFBQTtFQUNFIiwKICAibmFtZXMiOiBbXSwKICAic291cmNlcyI6IFsKICAgICIvc3JjL3Nhc3MvdmVuZG9yL2luZGV4LnNjc3MiCiAgXSwKICAic291cmNlc0NvbnRlbnQiOiBbIi5mb28ge1xuICBvdmVyZmxvdzogc2Nyb2xsO1xufVxuIl0sCiAgInZlcnNpb24iOiAzCn0K"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/assetSource.ts",
+    "line": 35,
+    "text": "// https://developer.mozilla.org/en-US/docs/Web/HTML/Element/meta/name"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/assetSource.ts",
+    "line": 36,
+    "text": "// https://wiki.whatwg.org/wiki/MetaExtensions"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/assetSource.ts",
+    "line": 48,
+    "text": "// https://ogp.me"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/build.ts",
+    "line": 319,
+    "text": "// | 'system'"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/build.ts",
+    "line": 373,
+    "text": "/** @deprecated */"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/build.ts",
+    "line": 379,
+    "text": "// cssCodeSplit"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/build.ts",
+    "line": 380,
+    "text": "// cssTarget"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/build.ts",
+    "line": 381,
+    "text": "// cssMinify"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/build.ts",
+    "line": 383,
+    "text": "// minify"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/build.ts",
+    "line": 400,
+    "text": "// ssr"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/build.ts",
+    "line": 403,
+    "text": "// emitAssets"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/build.ts",
+    "line": 407,
+    "text": "// createEnvironment"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/build.ts",
+    "line": 664,
+    "text": "// cache: options.watch ? undefined : false,"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/build.ts",
+    "line": 753,
+    "text": "// hoistTransitiveImports: libOptions ? false : undefined,"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/build.ts",
+    "line": 755,
+    "text": "// `Symbol.toStringTag`（#764、#1048）。"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/build.ts",
+    "line": 1564,
+    "text": "// https://github.com/rolldown/rolldown/blob/f4c5ff27799f2b0152c689c398e61bc7d30429ff/packages/rolldown/src/utils/transform-to-rollup-output.ts#L87"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/build.ts",
+    "line": 1681,
+    "text": "// amd: (relativePath) => {"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/build.ts",
+    "line": 1682,
+    "text": "//   if (relativePath[0] !== '.') relativePath = './' + relativePath"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/build.ts",
+    "line": 1683,
+    "text": "//   return getResolveUrl("
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/build.ts",
+    "line": 1684,
+    "text": "//     `require.toUrl('${escapeId(relativePath)}'), document.baseURI`,"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/build.ts",
+    "line": 1700,
+    "text": "// system: (relativePath) =>"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/build.ts",
+    "line": 1701,
+    "text": "//   getResolveUrl("
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/build.ts",
+    "line": 1702,
+    "text": "//     `'${escapeId(partialEncodeURIPath(relativePath))}', module.meta.url`,"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/build.ts",
+    "line": 1947,
+    "text": "// buildApp"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/config.ts",
+    "line": 978,
+    "text": "/** @experimental */"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/config.ts",
+    "line": 992,
+    "text": "/** @experimental */"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/config.ts",
+    "line": 1016,
+    "text": "/** @experimental */"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/config.ts",
+    "line": 1023,
+    "text": "/** @experimental */"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/config.ts",
+    "line": 1059,
+    "text": "/** @experimental */"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/config.ts",
+    "line": 1061,
+    "text": "/** @deprecated @experimental */"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/config.ts",
+    "line": 1064,
+    "text": "/** @experimental */"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/config.ts",
+    "line": 1067,
+    "text": "/** @experimental */"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/config.ts",
+    "line": 1069,
+    "text": "/** @experimental */"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/config.ts",
+    "line": 1600,
+    "text": "// - legalComments"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/config.ts",
+    "line": 1602,
+    "text": "// - ignoreAnnotations"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/config.ts",
+    "line": 1603,
+    "text": "// - jsx、jsxFactory、jsxFragment、jsxImportSource、jsxDev、jsxSideEffects"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/config.ts",
+    "line": 1604,
+    "text": "// - tsconfigRaw、tsconfig"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/config.ts",
+    "line": 1607,
+    "text": "// - sourceRoot"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/config.ts",
+    "line": 1609,
+    "text": "// - drop"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/config.ts",
+    "line": 1610,
+    "text": "// - dropLabels"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/config.ts",
+    "line": 1611,
+    "text": "// - mangleProps、reserveProps、mangleQuoted、mangleCache"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/config.ts",
+    "line": 1612,
+    "text": "// - minifyWhitespace、minifyIdentifiers、minifySyntax"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/config.ts",
+    "line": 1613,
+    "text": "// - lineLimit"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/config.ts",
+    "line": 1614,
+    "text": "// - charset"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/config.ts",
+    "line": 1617,
+    "text": "// - inject"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/config.ts",
+    "line": 1618,
+    "text": "// - banner、footer"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/config.ts",
+    "line": 1619,
+    "text": "// - nodePaths"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/config.ts",
+    "line": 1623,
+    "text": "// - color"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/config.ts",
+    "line": 1624,
+    "text": "// - logLimit"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/config.ts",
+    "line": 1625,
+    "text": "// - logOverride"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/config.ts",
+    "line": 1626,
+    "text": "// - splitting"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/config.ts",
+    "line": 1627,
+    "text": "// - outbase"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/config.ts",
+    "line": 1629,
+    "text": "// - allowOverwrite"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/config.ts",
+    "line": 1632,
+    "text": "// - stdin"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/config.ts",
+    "line": 1633,
+    "text": "// - absWorkingDir"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/config.ts",
+    "line": 1736,
+    "text": "/** @internal */"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/config.ts",
+    "line": 1738,
+    "text": "/** @internal */"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/config.ts",
+    "line": 2416,
+    "text": "// https://github.com/micromatch/picomatch/issues/89"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/config.ts",
+    "line": 3049,
+    "text": "/** #__KEEP__ */"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/config.ts",
+    "line": 3110,
+    "text": "// https://github.com/vitejs/vite/issues/12923"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/constants.ts",
+    "line": 30,
+    "text": "// 'renderDynamicImport',"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/constants.ts",
+    "line": 31,
+    "text": "// 'resolveFileUrl',"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/constants.ts",
+    "line": 32,
+    "text": "// 'resolveImportMeta',"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/constants.ts",
+    "line": 42,
+    "text": "// 'shouldTransformCachedModule',"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/environment.ts",
+    "line": 11,
+    "text": "/** @internal */"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/http.ts",
+    "line": 343,
+    "text": "// https://github.com/nodejs/node/blob/v26.2.0/lib/_http_server.js#L992"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/logger.ts",
+    "line": 1,
+    "text": "/* eslint no-console: 0 */"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/optimizer/index.ts",
+    "line": 1268,
+    "text": "// Yarn v3+ PnP。"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/optimizer/index.ts",
+    "line": 1274,
+    "text": "// Yarn v2 PnP。"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/optimizer/index.ts",
+    "line": 1280,
+    "text": "// Yarn 1。"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/optimizer/index.ts",
+    "line": 1477,
+    "text": "// https://github.com/isaacs/node-graceful-fs/blob/main/LICENSE"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/optimizer/resolve.ts",
+    "line": 125,
+    "text": "// https://nodejs.org/api/packages.html#subpath-patterns"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/optimizer/rolldownDepPlugin.ts",
+    "line": 49,
+    "text": "// WASM。"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/optimizer/rolldownDepPlugin.ts",
+    "line": 204,
+    "text": "// https://github.com/sapphi-red-repros/rolldown-esbuild-path-normalization"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/optimizer/rolldownDepPlugin.ts",
+    "line": 365,
+    "text": "// https://github.com/rolldown/rolldown/issues/2745"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/optimizer/scan.ts",
+    "line": 575,
+    "text": "// Svelte 5 `<script module>`。"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/packages.ts",
+    "line": 18,
+    "text": "/** #__KEEP__ */"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/asset.ts",
+    "line": 77,
+    "text": "// https://github.com/lukeed/mrmime/issues/3"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/asset.ts",
+    "line": 79,
+    "text": "// https://github.com/h5bp/html5-boilerplate/issues/219"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/asset.ts",
+    "line": 81,
+    "text": "// https://mimesniff.spec.whatwg.org/#matching-an-image-type-pattern"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/asset.ts",
+    "line": 83,
+    "text": "// https://developer.mozilla.org/en-US/docs/Web/Media/Formats/Containers#flac"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/asset.ts",
+    "line": 85,
+    "text": "// https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/MIME_types/Common_types"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/asset.ts",
+    "line": 623,
+    "text": "// https://github.com/iconify/iconify/blob/main/packages/utils/src/svg/url.ts"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/assetImportMetaUrl.ts",
+    "line": 176,
+    "text": "// https://github.com/rolldown/rolldown/issues/2745"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/css.ts",
+    "line": 228,
+    "text": "/** @experimental */"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/css.ts",
+    "line": 233,
+    "text": "/** @experimental */"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/css.ts",
+    "line": 1015,
+    "text": "// https://github.com/vitejs/vite/issues/2062#issuecomment-782388010"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/css.ts",
+    "line": 1912,
+    "text": "// https://github.com/postcss/postcss/blob/main/docs/guidelines/plugin.md#3-dependencies"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/css.ts",
+    "line": 2127,
+    "text": "// Chromium issue：https://issues.chromium.org/issues/40381978"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/css.ts",
+    "line": 2442,
+    "text": "// https://github.com/vitejs/vite/pull/13893#issuecomment-1678628198"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/css.ts",
+    "line": 2750,
+    "text": "// https://github.com/sass/dart-sass/issues/710"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/css.ts",
+    "line": 2986,
+    "text": "// #endregion Sass"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/css.ts",
+    "line": 3277,
+    "text": "// #endregion Less"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/css.ts",
+    "line": 3416,
+    "text": "// #endregion Stylus"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/css.ts",
+    "line": 3736,
+    "text": "// https://github.com/parcel-bundler/lightningcss/issues/291"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/css.ts",
+    "line": 3742,
+    "text": "// https://lightningcss.dev/css-modules.html#class-composition"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/css.ts",
+    "line": 3757,
+    "text": "// https://github.com/parcel-bundler/lightningcss/issues/39"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/css.ts",
+    "line": 3767,
+    "text": "// https://stackoverflow.com/a/1667560"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/css.ts",
+    "line": 3774,
+    "text": "// https://stackoverflow.com/a/14585820"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/css.ts",
+    "line": 3784,
+    "text": "// https://esbuild.github.io/api/#target"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/css.ts",
+    "line": 3785,
+    "text": "// https://github.com/parcel-bundler/lightningcss/blob/master/node/targets.d.ts"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/css.ts",
+    "line": 3806,
+    "text": "// https://caniuse.com/?search=es2015"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/css.ts",
+    "line": 3808,
+    "text": "// https://caniuse.com/?search=es2016"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/css.ts",
+    "line": 3810,
+    "text": "// https://caniuse.com/?search=es2017"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/css.ts",
+    "line": 3812,
+    "text": "// https://caniuse.com/?search=es2018"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/css.ts",
+    "line": 3814,
+    "text": "// https://caniuse.com/?search=es2019"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/css.ts",
+    "line": 3816,
+    "text": "// https://caniuse.com/?search=es2020"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/css.ts",
+    "line": 3818,
+    "text": "// https://caniuse.com/?search=es2021"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/css.ts",
+    "line": 3820,
+    "text": "// https://caniuse.com/?search=es2022"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/css.ts",
+    "line": 3822,
+    "text": "// https://caniuse.com/?search=es2023"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/css.ts",
+    "line": 3831,
+    "text": "// https://caniuse.com/sr-es15"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/css.ts",
+    "line": 3840,
+    "text": "// https://caniuse.com/?feats=mdn-javascript_builtins_set_union%2Cmdn-javascript_builtins_iterator_toarray%2Cmdn-javascript_statements_import_import_attributes_type_json%2Cmdn-javascript_regular_expressions_named_capturing_group_duplicate_named_capturing_groups%2Cmdn-javascript_regular_expressions_modifier%2Cmdn-javascript_builtins_promise_try%2Cmdn-javascript_builtins_float16array%2Cmdn-javascript_builtins_regexp_escape"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/esbuild.ts",
+    "line": 136,
+    "text": "/** @internal */"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/esbuild.ts",
+    "line": 161,
+    "text": "// https://esbuild.github.io/content-types/#tsconfig-json"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/esbuild.ts",
+    "line": 471,
+    "text": "// https://github.com/vuejs/core/issues/2860#issuecomment-926882793"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/forwardConsole.ts",
+    "line": 129,
+    "text": "// https://github.com/vitest-dev/vitest/blob/4783137cd8d766cf998bdf2d638890eaa51e08d9/packages/utils/src/source-map.ts#L17"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/html.ts",
+    "line": 128,
+    "text": "// https://github.com/vitejs/vite/issues/6372"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/html.ts",
+    "line": 391,
+    "text": "// https://github.com/lit/lit/issues/2470"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/html.ts",
+    "line": 526,
+    "text": "// <previous-line-node></previous-line-node>"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/html.ts",
+    "line": 527,
+    "text": "// <target-node></target-node>"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/html.ts",
+    "line": 531,
+    "text": "// <previous-node></previous-node>"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/html.ts",
+    "line": 532,
+    "text": "// <doubled-up-node></doubled-up-node><target-node></target-node>"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/html.ts",
+    "line": 912,
+    "text": "// https://developer.chrome.com/blog/modulepreload/#ok-so-why-doesnt-link-relpreload-work-for-modules:~:text=For%20%3Cscript%3E,of%20other%20modules."
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/html.ts",
+    "line": 1327,
+    "text": "// https://caniuse.com/mdn-html_elements_script_type_importmap_multiple_import_maps"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/html.ts",
+    "line": 1376,
+    "text": "// https://developer.mozilla.org/en-US/docs/Web/HTML/Global_attributes/nonce#accessing_nonces_and_nonce_hiding"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/importAnalysisBuild.ts",
+    "line": 142,
+    "text": "// https://developer.mozilla.org/en-US/docs/Web/HTML/Global_attributes/nonce#accessing_nonces_and_nonce_hiding"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/importAnalysisBuild.ts",
+    "line": 166,
+    "text": "/** #__KEEP__ */"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/importAnalysisBuild.ts",
+    "line": 182,
+    "text": "// https://html.spec.whatwg.org/multipage/common-dom-interfaces.html#reflecting-content-attributes-in-idl-attributes:idl-domstring-5"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/importAnalysisBuild.ts",
+    "line": 247,
+    "text": "// __vitePreload(() => import(asyncChunk), [ ...deps... ])"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/importAnalysisBuild.ts",
+    "line": 258,
+    "text": "// https://stackblitz.com/edit/node-vqfvv8dy?file=index.js"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/importMetaGlob.ts",
+    "line": 784,
+    "text": "// https://vite.dev/guide/api-plugin.html#virtual-modules-convention"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/license.ts",
+    "line": 36,
+    "text": "// https://github.com/npm/npm-packlist/blob/53b2a4f42b7fef0f63e8f26a3ea4692e23a58fed/lib/index.js#L284-L286"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/oxc.ts",
+    "line": 278,
+    "text": "// https://github.com/vitejs/vite-plugin-react/blob/c8ecad052001b6fc42e508f18433e6b305bca641/packages/plugin-react/src/index.ts#L261-L269"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/resolve.ts",
+    "line": 396,
+    "text": "// PartialEnvironment logger（#22509）。"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/resolve.ts",
+    "line": 984,
+    "text": "// https://github.com/lukeed/resolve.exports"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/resolve.ts",
+    "line": 1013,
+    "text": "// https://nodejs.org/api/modules.html#all-together"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/wasm.ts",
+    "line": 103,
+    "text": "/** #__KEEP__ */"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/worker.ts",
+    "line": 70,
+    "text": "/* inputId */"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/worker.ts",
+    "line": 75,
+    "text": "/* hash */"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/worker.ts",
+    "line": 76,
+    "text": "/* entryFilename */"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/worker.ts",
+    "line": 79,
+    "text": "/* inputId */"
+  },
+  {
+    "owner": "assets_build",
+    "file": "vite/packages/vite/src/node/plugins/workerImportMetaUrl.ts",
+    "line": 303,
+    "text": "// https://github.com/rolldown/rolldown/issues/2745"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/server/bundledDev.ts",
+    "line": 489,
+    "text": "// https://github.com/vitejs/vite/issues/21843"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/server/bundledDev.ts",
+    "line": 549,
+    "text": "// https://github.com/webpack/webpack-dev-server/security/advisories/GHSA-4v9v-hfq4-rm2v"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/server/bundledDev.ts",
+    "line": 550,
+    "text": "// https://green.sapphi.red/blog/local-server-security-best-practices#_2-using-xssi-and-modifying-the-prototype"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/server/bundledDev.ts",
+    "line": 551,
+    "text": "// https://green.sapphi.red/blog/local-server-security-best-practices#properly-check-the-request-origin"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/server/hmr.ts",
+    "line": 997,
+    "text": "// A -> B -> C -> ACCEPTED -> D -> E -> NODE"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/server/hmr.ts",
+    "line": 1004,
+    "text": "// `node`         : ACCEPTED"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/server/hmr.ts",
+    "line": 1005,
+    "text": "// `nodeChain`    : [NODE, E, D, ACCEPTED]"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/server/hmr.ts",
+    "line": 1006,
+    "text": "// `currentChain` : [ACCEPTED, C, B]"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/server/hmr.ts",
+    "line": 1025,
+    "text": "// `importer`                    : E"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/server/middlewares/indexHtml.ts",
+    "line": 317,
+    "text": "/* useSrcSetReplacer */"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/server/middlewares/indexHtml.ts",
+    "line": 597,
+    "text": "/* html */"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/server/middlewares/proxy.ts",
+    "line": 50,
+    "text": "// target origin（#16558）。"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/server/middlewares/rejectInvalidRequest.ts",
+    "line": 12,
+    "text": "// (HTTP 1.1: https://datatracker.ietf.org/doc/html/rfc9112#section-3.2)"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/server/middlewares/rejectInvalidRequest.ts",
+    "line": 13,
+    "text": "// (HTTP 2: https://datatracker.ietf.org/doc/html/rfc9113#section-8.3.1-2.4.1)"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/server/middlewares/rejectInvalidRequest.ts",
+    "line": 17,
+    "text": "// (https://datatracker.ietf.org/doc/html/rfc9112#section-3.2-4)"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/server/mixedModuleGraph.ts",
+    "line": 462,
+    "text": "/** @internal */"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/server/moduleGraph.ts",
+    "line": 203,
+    "text": "/** @internal */"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/server/moduleGraph.ts",
+    "line": 285,
+    "text": "/** @internal */"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/server/openBrowser.ts",
+    "line": 121,
+    "text": "// https://github.com/react/create-react-app/pull/1690#issuecomment-283518768"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/server/searchRoot.ts",
+    "line": 7,
+    "text": "// https://github.com/vitejs/vite/issues/2820#issuecomment-812495079"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/server/searchRoot.ts",
+    "line": 9,
+    "text": "// '.git',"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/server/searchRoot.ts",
+    "line": 11,
+    "text": "// https://pnpm.io/workspaces/"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/server/searchRoot.ts",
+    "line": 14,
+    "text": "// https://rushjs.io/pages/advanced/config_files/"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/server/searchRoot.ts",
+    "line": 15,
+    "text": "// 'rush.json',"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/server/searchRoot.ts",
+    "line": 17,
+    "text": "// https://nx.dev/latest/react/getting-started/nx-setup"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/server/searchRoot.ts",
+    "line": 18,
+    "text": "// 'workspace.json',"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/server/searchRoot.ts",
+    "line": 19,
+    "text": "// 'nx.json',"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/server/searchRoot.ts",
+    "line": 21,
+    "text": "// https://github.com/lerna/lerna#lernajson"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/server/send.ts",
+    "line": 92,
+    "text": "// https://github.com/vitejs/vite/pull/13514#issuecomment-1592431496"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/server/ws.ts",
+    "line": 239,
+    "text": "// https://github.com/websockets/ws/blob/45e17acea791d865df6b255a55182e9c42e5877a/lib/websocket-server.js#L88-L96"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/packages/vite/src/node/ssr/__tests__/ssrLoadModule.spec.ts",
+    "line": 227,
+    "text": "// https://github.com/oxc-project/oxc/issues/7261"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/packages/vite/src/node/ssr/__tests__/ssrLoadModule.spec.ts",
+    "line": 374,
+    "text": "//   $ node -e 'import(\"./packages/vite/src/node/ssr/__tests__/fixtures/named-overwrite-all/main.js\").then(console.log)'"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/packages/vite/src/node/ssr/__tests__/ssrLoadModule.spec.ts",
+    "line": 375,
+    "text": "//   [Module: null prototype] { a: 'main-a', b: 'dep1-b', c: 'main-c' }"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/packages/vite/src/node/ssr/__tests__/ssrLoadModule.spec.ts",
+    "line": 377,
+    "text": "//   Conflicting namespaces: \"main.js\" re-exports \"d\" from one of the modules \"dep1.js\" and \"dep2.js\" (will be ignored)."
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/packages/vite/src/node/ssr/__tests__/ssrTransform.spec.ts",
+    "line": 1333,
+    "text": "// https://github.com/vitest-dev/vitest/issues/1141"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/packages/vite/src/node/ssr/__tests__/ssrTransform.spec.ts",
+    "line": 1340,
+    "text": "// export default <MyFn> function getRandom() {"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/packages/vite/src/node/ssr/__tests__/ssrTransform.spec.ts",
+    "line": 1341,
+    "text": "//   return Math.random()"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/packages/vite/src/node/ssr/__tests__/ssrTransform.spec.ts",
+    "line": 1657,
+    "text": "// \"mod a\", \"mod foo\", \"mod b\", \"bar1\", \"bar2\""
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/packages/vite/src/node/ssr/__tests__/ssrTransform.spec.ts",
+    "line": 1954,
+    "text": "// https://unpkg.com/@headlessui/vue@1.7.23/dist/components/transitions/transition.js"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/ssr/index.ts",
+    "line": 73,
+    "text": "// noExternal"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/ssr/index.ts",
+    "line": 74,
+    "text": "// external"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/ssr/index.ts",
+    "line": 77,
+    "text": "// resolve"
+  },
+  {
+    "owner": "root_fixtures",
+    "file": "vite/packages/vite/src/node/ssr/runtime/__tests__/fixtures/has-error-first-comment.ts",
+    "line": 1,
+    "text": "// comment"
+  },
+  {
+    "owner": "root_fixtures",
+    "file": "vite/packages/vite/src/node/ssr/runtime/__tests__/fixtures/has-error.js",
+    "line": 1,
+    "text": "// comment"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/packages/vite/src/node/ssr/runtime/__tests__/server-runtime.spec.ts",
+    "line": 338,
+    "text": "// action.js"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/packages/vite/src/node/ssr/runtime/__tests__/server-runtime.spec.ts",
+    "line": 384,
+    "text": "//   $ node packages/vite/src/node/ssr/runtime/__tests__/fixtures/cyclic2/test5/index.js"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/packages/vite/src/node/ssr/runtime/__tests__/server-runtime.spec.ts",
+    "line": 385,
+    "text": "//   ReferenceError: Cannot access 'dep1' before initialization"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/packages/vite/src/node/ssr/runtime/__tests__/server-runtime.spec.ts",
+    "line": 672,
+    "text": "// file:///C:/"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/packages/vite/src/node/ssr/runtime/__tests__/server-runtime.spec.ts",
+    "line": 676,
+    "text": "// file:///"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/ssr/ssrTransform.ts",
+    "line": 110,
+    "text": "// https://github.com/rollup/rollup/blob/42e587e0e37bc0661aa39fe7ad6f1d7fd33f825c/src/utils/bufferToAst.ts#L17-L22"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/ssr/ssrTransform.ts",
+    "line": 337,
+    "text": "// default export。"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/ssr/ssrTransform.ts",
+    "line": 347,
+    "text": "/* 'export default '.length */"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/ssr/ssrTransform.ts",
+    "line": 354,
+    "text": "/* 'export default'.length */"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/ssr/ssrTransform.ts",
+    "line": 417,
+    "text": "// https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Property_accessors#method_binding"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/utils.ts",
+    "line": 193,
+    "text": "/** #__KEEP__ */"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/utils.ts",
+    "line": 196,
+    "text": "// https://github.com/rolldown/rolldown/blob/62fba31428af244f871f0e119ed43936ee5d01fd/packages/rolldown/src/log/logger.ts#L64"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/utils.ts",
+    "line": 398,
+    "text": "/* hash only */"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/utils.ts",
+    "line": 816,
+    "text": "// https://github.com/nodejs/node/issues/37737"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/utils.ts",
+    "line": 824,
+    "text": "// https://github.com/larrybahr/windows-network-drive"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/utils.ts",
+    "line": 867,
+    "text": "// OK  Y:  \\\\NETWORKA\\Foo  Microsoft Windows Network"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/utils.ts",
+    "line": 868,
+    "text": "// OK  Z:  \\\\NETWORKA\\Bar  Microsoft Windows Network"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/utils.ts",
+    "line": 1001,
+    "text": "// https://github.com/sveltejs/svelte/blob/abf11bb02b2afbd3e4cac509a0f70e318c306364/src/compiler/utils/mapped_code.ts#L221"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/utils.ts",
+    "line": 1039,
+    "text": "//: SourceMap"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/node/utils.ts",
+    "line": 1287,
+    "text": "/* for , */"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/shared/forwardConsole.ts",
+    "line": 120,
+    "text": "// https://developer.mozilla.org/en-US/docs/Web/API/ErrorEvent/error"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/shared/forwardConsole.ts",
+    "line": 121,
+    "text": "// https://developer.mozilla.org/en-US/docs/Web/API/ResizeObserver#observation_errors"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/shared/forwardConsole.ts",
+    "line": 146,
+    "text": "// https://github.com/vitest-dev/vitest/blob/a2d650e00dbd8220397c5c25aef05c850100e446/packages/utils/src/display.ts#L129"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/shared/hmr.ts",
+    "line": 344,
+    "text": "// https://github.com/vitejs/vite/issues/721"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/shared/utils.ts",
+    "line": 69,
+    "text": "// https://github.com/nodejs/node/issues/43047#issuecomment-1564068099"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/types/chokidar.d.ts",
+    "line": 5,
+    "text": "// https://github.com/paulmillr/chokidar/blob/3.6.0/types/index.d.ts"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/types/connect.d.ts",
+    "line": 5,
+    "text": "// Type definitions for connect v3.4.0"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/types/connect.d.ts",
+    "line": 6,
+    "text": "// Project: https://github.com/senchalabs/connect"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/types/connect.d.ts",
+    "line": 7,
+    "text": "// Definitions by: Maxime LUCE <https://github.com/SomaticIT>"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/types/connect.d.ts",
+    "line": 8,
+    "text": "//                 Evan Hahn <https://github.com/EvanHahn>"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/types/connect.d.ts",
+    "line": 9,
+    "text": "// Definitions: https://github.com/DefinitelyTyped/DefinitelyTyped"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/types/ws.d.ts",
+    "line": 3,
+    "text": "// Source: https://github.com/DefinitelyTyped/DefinitelyTyped/blob/master/types/ws/index.d.ts"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/types/ws.d.ts",
+    "line": 5,
+    "text": "// Type definitions for ws 8.5"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/types/ws.d.ts",
+    "line": 6,
+    "text": "// Project: https://github.com/websockets/ws"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/types/ws.d.ts",
+    "line": 7,
+    "text": "// Definitions by: Paul Loyd <https://github.com/loyd>"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/types/ws.d.ts",
+    "line": 8,
+    "text": "//                 Margus Lamp <https://github.com/mlamp>"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/types/ws.d.ts",
+    "line": 9,
+    "text": "//                 Philippe D'Alva <https://github.com/TitaneBoy>"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/types/ws.d.ts",
+    "line": 10,
+    "text": "//                 reduckted <https://github.com/reduckted>"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/types/ws.d.ts",
+    "line": 11,
+    "text": "//                 teidesu <https://github.com/teidesu>"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/types/ws.d.ts",
+    "line": 12,
+    "text": "//                 Bartosz Wojtkowiak <https://github.com/wojtkowiak>"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/types/ws.d.ts",
+    "line": 13,
+    "text": "//                 Kyle Hensel <https://github.com/k-yle>"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/types/ws.d.ts",
+    "line": 14,
+    "text": "//                 Samuel Skeen <https://github.com/cwadrupldijjit>"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/types/ws.d.ts",
+    "line": 15,
+    "text": "// Definitions: https://github.com/DefinitelyTyped/DefinitelyTyped"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/src/types/ws.d.ts",
+    "line": 756,
+    "text": "// export = WebSocket"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/types/importMeta.d.ts",
+    "line": 3,
+    "text": "// <https://www.typescriptlang.org/docs/handbook/declaration-merging.html#module-augmentation>"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/types/importMeta.d.ts",
+    "line": 10,
+    "text": "// strictImportMetaEnv: unknown"
+  },
+  {
+    "owner": "root",
+    "file": "vite/packages/vite/types/internal/cssPreprocessorOptions.d.ts",
+    "line": 16,
+    "text": "// https://github.com/type-challenges/type-challenges/issues/29285"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/assets-sanitize/__tests__/assets-sanitize.spec.ts",
+    "line": 26,
+    "text": "// 2 svg, 1 index.js"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/assets/__tests__/assets.spec.ts",
+    "line": 717,
+    "text": "// expect reload"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/assets/__tests__/assets.spec.ts",
+    "line": 724,
+    "text": "// expect reload"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/assets/vite.config-relative-base.js",
+    "line": 18,
+    "text": "// manualChunks(id) {"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/assets/vite.config-relative-base.js",
+    "line": 19,
+    "text": "//   if (id.includes('css/manual-chunks.css')) {"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/assets/vite.config-relative-base.js",
+    "line": 20,
+    "text": "//     return 'css/manual-chunks'"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/backend-integration/__tests__/backend-integration.spec.ts",
+    "line": 28,
+    "text": "// assert valid image src https://github.com/microsoft/playwright/issues/6046#issuecomment-1799585719"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/backend-integration/__tests__/backend-integration.spec.ts",
+    "line": 41,
+    "text": "// asset url is prefixed with server.origin"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/backend-integration/__tests__/backend-integration.spec.ts",
+    "line": 79,
+    "text": "// '\\\\' should not be used even on windows"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/backend-integration/__tests__/backend-integration.spec.ts",
+    "line": 80,
+    "text": "// use the entry name"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/backend-integration/__tests__/backend-integration.spec.ts",
+    "line": 120,
+    "text": "// sanity check"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/backend-integration/__tests__/backend-integration.spec.ts",
+    "line": 124,
+    "text": "// successful HMR"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/backend-integration/__tests__/backend-integration.spec.ts",
+    "line": 126,
+    "text": "// Verify that the base (/dev/) was added during the css-update"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/chunk-importmap/shared-dep.js",
+    "line": 3,
+    "text": "// https://github.com/vitejs/vite/issues/22740"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/css-codesplit-cjs/vite.config.js",
+    "line": 16,
+    "text": "// freeze: false,"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/css-codesplit/vite.config.js",
+    "line": 19,
+    "text": "// manualChunks(id) {"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/css-codesplit/vite.config.js",
+    "line": 21,
+    "text": "//   if (id.includes('chunk.css')) {"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/css-codesplit/vite.config.js",
+    "line": 22,
+    "text": "//     return 'chunk'"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/css-sourcemap/__tests__/css-sourcemap.spec.ts",
+    "line": 39,
+    "text": "// has a sourcemap, unlike unbundled dev below"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/css-sourcemap/__tests__/css-sourcemap.spec.ts",
+    "line": 63,
+    "text": "// drops transform result when the transformed result is the same as the source file."
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/css-sourcemap/__tests__/css-sourcemap.spec.ts",
+    "line": 70,
+    "text": "// not served at its own URL, so check the style tag the bundle added"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/css-sourcemap/__tests__/css-sourcemap.spec.ts",
+    "line": 145,
+    "text": "// The response is the JS module that wraps the CSS. The JS itself must"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/css-sourcemap/__tests__/css-sourcemap.spec.ts",
+    "line": 148,
+    "text": "// one is fine."
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/css-sourcemap/__tests__/css-sourcemap.spec.ts",
+    "line": 158,
+    "text": "// the empty map with no sources is a known gap (vitejs/vite#23028);"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/css-sourcemap/__tests__/css-sourcemap.spec.ts",
+    "line": 159,
+    "text": "// once fixed, this should match the lightningcss twin"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/css-sourcemap/__tests__/lightningcss/lightningcss.spec.ts",
+    "line": 39,
+    "text": "// has a sourcemap, unlike unbundled dev below"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/css-sourcemap/__tests__/lightningcss/lightningcss.spec.ts",
+    "line": 71,
+    "text": "// drops transform result when the transformed result is the same as the source file."
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/css-sourcemap/__tests__/lightningcss/lightningcss.spec.ts",
+    "line": 79,
+    "text": "// not served at its own URL, so check the style tag the bundle added"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/css-sourcemap/__tests__/lightningcss/lightningcss.spec.ts",
+    "line": 128,
+    "text": "// The response is the JS module that wraps the CSS. The JS itself must"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/css-sourcemap/__tests__/lightningcss/lightningcss.spec.ts",
+    "line": 131,
+    "text": "// one is fine."
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/css/__tests__/postcss-plugins-different-dir/css-postcss-plugins-different-dir.spec.ts",
+    "line": 6,
+    "text": "// Regression test for https://github.com/vitejs/vite/issues/4000"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/css/__tests__/sass-tests.ts",
+    "line": 108,
+    "text": "// editFile('composed.module.scss', (code) =>"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/css/__tests__/sass-tests.ts",
+    "line": 109,
+    "text": "//   code.replace('color: orangered', 'color: red')"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/css/__tests__/sass-tests.ts",
+    "line": 111,
+    "text": "// await expect.poll(() => getColor(imported)).toMatch('red')"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/css/__tests__/tests.ts",
+    "line": 221,
+    "text": "// editFile('composed.module.css', (code) =>"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/css/__tests__/tests.ts",
+    "line": 222,
+    "text": "//   code.replace('color: turquoise', 'color: red')"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/css/__tests__/tests.ts",
+    "line": 224,
+    "text": "// await expect.poll(() => getColor(imported)).toBe('red')"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/css/__tests__/tests.ts",
+    "line": 244,
+    "text": "// editFile('composed.module.scss', (code) =>"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/css/__tests__/tests.ts",
+    "line": 245,
+    "text": "//   code.replace('color: orangered', 'color: red')"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/css/__tests__/tests.ts",
+    "line": 247,
+    "text": "// await expect.poll(() => getColor(imported)).toBe('red')"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/css/__tests__/tests.ts",
+    "line": 492,
+    "text": "// expect(await page.textContent('.aliased-content')).toMatch('.aliased')"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/css/lightningcss-plugins.js",
+    "line": 86,
+    "text": "// .source-input::before"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/css/lightningcss-plugins.js",
+    "line": 93,
+    "text": "// content: ${JSON.stringify(from)};"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/css/vite.config.js",
+    "line": 7,
+    "text": "// https://github.com/sass/dart-sass/issues/710"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/css/vite.config.js",
+    "line": 89,
+    "text": "// getJSON(cssFileName, json, _outputFileName) {"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/css/vite.config.js",
+    "line": 90,
+    "text": "//   let typings = 'declare const classNames: {\\n'"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/css/vite.config.js",
+    "line": 91,
+    "text": "//   for (let className in json) {"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/css/vite.config.js",
+    "line": 92,
+    "text": "//     typings += `    \"${className}\": string;\\n`"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/css/vite.config.js",
+    "line": 94,
+    "text": "//   typings += '};\\n'"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/css/vite.config.js",
+    "line": 95,
+    "text": "//   typings += 'export default classNames;\\n'"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/css/vite.config.js",
+    "line": 96,
+    "text": "//   const { join, dirname, basename } = require('path')"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/css/vite.config.js",
+    "line": 97,
+    "text": "//   const typingsFile = join("
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/css/vite.config.js",
+    "line": 98,
+    "text": "//     dirname(cssFileName),"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/css/vite.config.js",
+    "line": 99,
+    "text": "//     basename(cssFileName) + '.d.ts'"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/css/vite.config.js",
+    "line": 101,
+    "text": "//   require('fs').writeFileSync(typingsFile, typings)"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/dynamic-import/nested/deps.js",
+    "line": 1,
+    "text": "/* don't include dynamic import inside this file */"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/dynamic-import/nested/index.js",
+    "line": 16,
+    "text": "// literal dynamic"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/dynamic-import/nested/index.js",
+    "line": 22,
+    "text": "// full dynamic"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/dynamic-import/nested/index.js",
+    "line": 32,
+    "text": "// mixed static and dynamic"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/dynamic-import/nested/index.js",
+    "line": 53,
+    "text": "// data URLs (`blob:`)"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/dynamic-import/nested/index.js",
+    "line": 65,
+    "text": "// data URLs (`data:`)"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/dynamic-import/nested/index.js",
+    "line": 112,
+    "text": "/* this messes with */"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/dynamic-import/nested/index.js",
+    "line": 114,
+    "text": "/* es-module-lexer */"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/dynamic-import/nested/index.js",
+    "line": 179,
+    "text": "// Test syntax parsing only"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/dynamic-import/nested/index.js",
+    "line": 192,
+    "text": "// to disallow minifier to constant fold"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/dynamic-import/nested/index.js",
+    "line": 220,
+    "text": "// #22700: in a nested `import().then(() => import())`, the outer import's CSS"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/dynamic-import/nested/index.js",
+    "line": 221,
+    "text": "// dep used to be dropped to `void 0` in the build output, orphaning the CSS."
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/environment-react-ssr/vite.config.ts",
+    "line": 46,
+    "text": "// manual test for https://github.com/vitejs/rolldown-vite/issues/416"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/environment-react-ssr/vite.config.ts",
+    "line": 76,
+    "text": "// vavite-style ssr middleware plugin"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/fs-serve/root/src/code.js",
+    "line": 1,
+    "text": "// code.js"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/glob-import/__tests__/glob-import.spec.ts",
+    "line": 310,
+    "text": "// https://github.com/vitejs/vite/issues/22170"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/glob-import/__tests__/glob-import.spec.ts",
+    "line": 364,
+    "text": "// https://github.com/vitejs/vite/issues/22166"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/glob-import/root/vite.config.ts",
+    "line": 37,
+    "text": "// https://github.com/nodejs/node/issues/62653"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/glob-import/root/vite.config.ts",
+    "line": 62,
+    "text": "// manualChunks(id) {"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/glob-import/root/vite.config.ts",
+    "line": 63,
+    "text": "//   if (id.includes('foo.css')) {"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/glob-import/root/vite.config.ts",
+    "line": 64,
+    "text": "//     return 'foo_css'"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/hmr-full-bundle-mode/__tests__/hmr-full-bundle-mode.spec.ts",
+    "line": 36,
+    "text": "// page shown after reload"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/hmr-full-bundle-mode/data.js",
+    "line": 1,
+    "text": "// verifies `import.meta.hot.data` persists across HMR updates (#23001)"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/hmr-full-bundle-mode/data.js",
+    "line": 5,
+    "text": "// direct mutation: must survive each update, so `count` keeps climbing"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/hmr-full-bundle-mode/data.js",
+    "line": 9,
+    "text": "// written by the dispose callback below: proves the disposer is handed the"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/hmr-full-bundle-mode/data.js",
+    "line": 10,
+    "text": "// *existing* data object rather than a freshly allocated one"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/hmr-full-bundle-mode/dead-accept.js",
+    "line": 5,
+    "text": "// visible to static analysis so the server ships a patch instead of"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/hmr-full-bundle-mode/dead-accept.js",
+    "line": 6,
+    "text": "// broadcasting a full reload itself, but never executed at runtime"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/hmr-full-bundle-mode/hmr-asset.js",
+    "line": 1,
+    "text": "// self-accepting module with no asset import; the spec adds one via an HMR edit"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/hmr-full-bundle-mode/hmr-asset.js",
+    "line": 9,
+    "text": "/* @asset-src */"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/hmr-full-bundle-mode/vite.config.ts",
+    "line": 8,
+    "text": "// emit assets as files instead of inlining, for the new-asset HMR test"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/hmr-ssr/__tests__/hmr-ssr.spec.ts",
+    "line": 640,
+    "text": "// so it's in the module graph"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/hmr-ssr/__tests__/hmr-ssr.spec.ts",
+    "line": 653,
+    "text": "// for 2 seconds check that there is no log about the file being reloaded"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/hmr-ssr/__tests__/hmr-ssr.spec.ts",
+    "line": 672,
+    "text": "// for 2 seconds check that there is no log about the file being reloaded"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/hmr-ssr/__tests__/hmr-ssr.spec.ts",
+    "line": 888,
+    "text": "// delete the file"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/hmr-ssr/__tests__/hmr-ssr.spec.ts",
+    "line": 901,
+    "text": "// restore the file"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/hmr-ssr/__tests__/hmr-ssr.spec.ts",
+    "line": 924,
+    "text": "// add state"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/hmr-ssr/__tests__/hmr-ssr.spec.ts",
+    "line": 930,
+    "text": "// update import, hmr works"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/hmr-ssr/__tests__/hmr-ssr.spec.ts",
+    "line": 941,
+    "text": "// remove unused file"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/hmr-ssr/__tests__/hmr-ssr.spec.ts",
+    "line": 943,
+    "text": "// reset state"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/hmr-ssr/__tests__/hmr-ssr.spec.ts",
+    "line": 948,
+    "text": "// re-add state"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/hmr-ssr/__tests__/hmr-ssr.spec.ts",
+    "line": 954,
+    "text": "// hmr works after file deletion"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/hmr-ssr/__tests__/hmr-ssr.spec.ts",
+    "line": 973,
+    "text": "// delete the file"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/hmr-ssr/__tests__/hmr-ssr.spec.ts",
+    "line": 993,
+    "text": "// restore the file"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/hmr-ssr/__tests__/hmr-ssr.spec.ts",
+    "line": 1027,
+    "text": "// it throws a same error as browser case,"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/hmr-ssr/__tests__/hmr-ssr.spec.ts",
+    "line": 1028,
+    "text": "// but it doesn't auto reload and it calls `hot.accept(nextExports)` with `nextExports = undefined`"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/hmr-ssr/__tests__/hmr-ssr.spec.ts",
+    "line": 1030,
+    "text": "// test reloading manually for now"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/hmr-ssr/__tests__/hmr-ssr.spec.ts",
+    "line": 1031,
+    "text": "// TODO: why is `runner.clearCache()` not enough?"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/hmr-ssr/__tests__/hmr-ssr.spec.ts",
+    "line": 1043,
+    "text": "// tests in the browser check that there is an error, but vite runtime just returns undefined in those cases"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/hmr-ssr/__tests__/hmr-ssr.spec.ts",
+    "line": 1085,
+    "text": "// Should be updated with new data url"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/hmr-ssr/__tests__/hmr-ssr.spec.ts",
+    "line": 1300,
+    "text": "// During tests we edit the files too fast and sometimes chokidar"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/hmr-ssr/__tests__/hmr-ssr.spec.ts",
+    "line": 1301,
+    "text": "// misses change events, so enforce polling for consistency"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/hmr-ssr/accept-exports/reexports.bak/accept-named.ts",
+    "line": 4,
+    "text": "// import.meta.hot.accept('./source', (m) => {"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/hmr-ssr/accept-exports/reexports.bak/accept-named.ts",
+    "line": 5,
+    "text": "//   log(`accept-named reexport:${m.a},${m.b}`)"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/hmr-ssr/counter/dep.ts",
+    "line": 1,
+    "text": "// This file is never loaded"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/hmr-ssr/hmr.ts",
+    "line": 105,
+    "text": "// send custom event to server to calculate 1 + 2"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/hmr-ssr/invalidation/child.js",
+    "line": 2,
+    "text": "// Need to accept, to register a callback for HMR"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/hmr-ssr/invalidation/child.js",
+    "line": 4,
+    "text": "// Trigger HMR in importers"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/hmr/accept-exports/reexports.bak/accept-named.ts",
+    "line": 4,
+    "text": "// import.meta.hot.accept('./source', (m) => {"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/hmr/accept-exports/reexports.bak/accept-named.ts",
+    "line": 5,
+    "text": "//   console.log(`accept-named reexport:${m.a},${m.b}`)"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/hmr/counter/dep.ts",
+    "line": 1,
+    "text": "// This file is never loaded"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/hmr/css-deps/dep.js",
+    "line": 1,
+    "text": "// This file is depended by main.css via this.addWatchFile"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/hmr/css-deps/dep.js",
+    "line": 5,
+    "text": "// Self-accept so that updating this file would not trigger a page reload."
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/hmr/css-deps/dep.js",
+    "line": 6,
+    "text": "// We only want to observe main.css updating itself."
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/hmr/css-link/plugin.ts",
+    "line": 4,
+    "text": "// use plugin to simulate server rendered css link"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/hmr/hmr.ts",
+    "line": 112,
+    "text": "// Wait until the tag has been swapped out, which includes the time taken"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/hmr/hmr.ts",
+    "line": 113,
+    "text": "// to download and parse the new stylesheet. Assert the swapped link."
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/hmr/hmr.ts",
+    "line": 159,
+    "text": "// send custom event to server to calculate 1 + 2"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/hmr/invalidation/child.js",
+    "line": 2,
+    "text": "// Need to accept, to register a callback for HMR"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/hmr/invalidation/child.js",
+    "line": 4,
+    "text": "// Trigger HMR in importers"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/hmr/invalidation/root.js",
+    "line": 4,
+    "text": "// Need to accept, to register a callback for HMR"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/hmr/invalidation/root.js",
+    "line": 6,
+    "text": "// Triggers full page reload because no importers"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/hmr/invalidation/root.js",
+    "line": 14,
+    "text": "// Non HMR-able behaviour"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/hmr/vite.config.ts",
+    "line": 136,
+    "text": "// replace the `replaced` identifier in the CSS file with the adjacent"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/hmr/vite.config.ts",
+    "line": 137,
+    "text": "// `dep.js` file's `color` variable."
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/html/__tests__/html.spec.ts",
+    "line": 526,
+    "text": "// → serve/file.html"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/html/__tests__/html.spec.ts",
+    "line": 528,
+    "text": "// → serve/file.html"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/html/__tests__/html.spec.ts",
+    "line": 531,
+    "text": "// → serve/folder/index.html"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/html/__tests__/html.spec.ts",
+    "line": 532,
+    "text": "// → serve/folder/index.html"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/html/__tests__/html.spec.ts",
+    "line": 534,
+    "text": "// → serve/both.html"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/html/__tests__/html.spec.ts",
+    "line": 535,
+    "text": "// → serve/both/index.html"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/html/__tests__/html.spec.ts",
+    "line": 536,
+    "text": "// → serve/both.html"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/html/__tests__/html.spec.ts",
+    "line": 537,
+    "text": "// → serve/both/index.html"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/html/test.js",
+    "line": 1,
+    "text": "// https://github.com/vitejs/vite/issues/20705"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/js-sourcemap/__tests__/js-sourcemap.spec.ts",
+    "line": 90,
+    "text": "// the server also injects its client runtime as a script tag (vitejs/vite#23161)"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/js-sourcemap/__tests__/js-sourcemap.spec.ts",
+    "line": 97,
+    "text": "// every bundled-dev check reads the map of this one chunk. Fail here and now"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/js-sourcemap/__tests__/js-sourcemap.spec.ts",
+    "line": 98,
+    "text": "// if the dev bundle ever starts splitting the entry into more chunks."
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/js-sourcemap/__tests__/js-sourcemap.spec.ts",
+    "line": 124,
+    "text": "// check the mapping of a variable"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/js-sourcemap/__tests__/js-sourcemap.spec.ts",
+    "line": 181,
+    "text": "// bundled dev does not inject fallback sourcemap, so this test is irrelevant"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/js-sourcemap/__tests__/js-sourcemap.spec.ts",
+    "line": 240,
+    "text": "// This test is for the import-analysis plugin (#14232), which does not run"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/js-sourcemap/__tests__/js-sourcemap.spec.ts",
+    "line": 241,
+    "text": "// in bundled dev."
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/js-sourcemap/__tests__/js-sourcemap.spec.ts",
+    "line": 282,
+    "text": "// bundled-dev does not parse input sourcemaps,"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/js-sourcemap/__tests__/js-sourcemap.spec.ts",
+    "line": 283,
+    "text": "// it copies them as the input source as a whole into `sourcesContent`,"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/js-sourcemap/__tests__/js-sourcemap.spec.ts",
+    "line": 284,
+    "text": "// whereas unbundled-dev extracts the input sourcemaps"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/js-sourcemap/__tests__/js-sourcemap.spec.ts",
+    "line": 302,
+    "text": "// Find the rewritten import URL for the malicious dep"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/js-sourcemap/__tests__/js-sourcemap.spec.ts",
+    "line": 315,
+    "text": "// bundled dev has no dep optimizer by design, so `/node_modules/.vite/deps/`"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/js-sourcemap/__tests__/js-sourcemap.spec.ts",
+    "line": 316,
+    "text": "// does not exist. The dep is still bundled, and the test above scans the"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/js-sourcemap/__tests__/js-sourcemap.spec.ts",
+    "line": 317,
+    "text": "// whole map, so the no-leak check still covers it."
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/js-sourcemap/__tests__/js-sourcemap.spec.ts",
+    "line": 326,
+    "text": "// Find the rewritten import URL for the optimized malicious dep"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/js-sourcemap/__tests__/js-sourcemap.spec.ts",
+    "line": 330,
+    "text": "// Ensure the dep was actually optimized (served from .vite/deps)"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/js-sourcemap/__tests__/js-sourcemap.spec.ts",
+    "line": 345,
+    "text": "// bundled dev: these cases only apply with the dep optimizer. The test"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/js-sourcemap/__tests__/js-sourcemap.spec.ts",
+    "line": 346,
+    "text": "// plugins act on `/deps/` URLs, which do not exist under bundled dev."
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/js-sourcemap/__tests__/js-sourcemap.spec.ts",
+    "line": 412,
+    "text": "// verify sourcemap comment is preserved at the last line"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/js-sourcemap/vite.config.js",
+    "line": 94,
+    "text": "// manualChunks(name) {"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/js-sourcemap/vite.config.js",
+    "line": 95,
+    "text": "//   if (name.endsWith('after-preload-dynamic.js')) {"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/js-sourcemap/vite.config.js",
+    "line": 96,
+    "text": "//     return 'after-preload-dynamic'"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/js-sourcemap/vite.config.js",
+    "line": 98,
+    "text": "//   if (name.endsWith('after-preload-dynamic-hashbang.js')) {"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/js-sourcemap/vite.config.js",
+    "line": 99,
+    "text": "//     return 'after-preload-dynamic-hashbang'"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/js-sourcemap/vite.config.js",
+    "line": 101,
+    "text": "//   if (name.endsWith('after-preload-dynamic-no-dep.js')) {"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/js-sourcemap/vite.config.js",
+    "line": 102,
+    "text": "//     return 'after-preload-dynamic-no-dep'"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/js-sourcemap/vite.config.js",
+    "line": 104,
+    "text": "//   if (name.includes('with-define-object')) {"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/js-sourcemap/vite.config.js",
+    "line": 105,
+    "text": "//     return 'with-define-object'"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/legacy/__tests__/legacy.spec.ts",
+    "line": 24,
+    "text": "// bundled dev: import.meta.env.LEGACY is not replaced — needs a fix in vite's"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/legacy/__tests__/legacy.spec.ts",
+    "line": 25,
+    "text": "// legacy-env define handling (vitejs/vite#23028)"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/legacy/__tests__/legacy.spec.ts",
+    "line": 34,
+    "text": "// https://github.com/vitejs/vite/issues/3400"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/legacy/__tests__/legacy.spec.ts",
+    "line": 71,
+    "text": "// bundled dev serves the entry at /assets/index.js. That name"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/legacy/__tests__/legacy.spec.ts",
+    "line": 72,
+    "text": "// has no hash, so the request finds it and gets JavaScript."
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/legacy/__tests__/legacy.spec.ts",
+    "line": 73,
+    "text": "// Legacy chunks do not exist at all, because the legacy plugin"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/legacy/__tests__/legacy.spec.ts",
+    "line": 74,
+    "text": "// only runs on build."
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/legacy/__tests__/legacy.spec.ts",
+    "line": 75,
+    "text": "// Every other chunk name has a hash. A request for the plain"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/legacy/__tests__/legacy.spec.ts",
+    "line": 76,
+    "text": "// name finds nothing and falls back to index.html."
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/legacy/__tests__/legacy.spec.ts",
+    "line": 77,
+    "text": "// `immutable-chunk` gets a hash here too, because the dev bundle"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/legacy/__tests__/legacy.spec.ts",
+    "line": 78,
+    "text": "// ignores `build.rolldownOptions.output` naming. Whether it"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/legacy/__tests__/legacy.spec.ts",
+    "line": 79,
+    "text": "// should ignore it is still undecided (vitejs/vite#23028)."
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/legacy/__tests__/legacy.spec.ts",
+    "line": 105,
+    "text": "// dynamic import css"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/legacy/__tests__/legacy.spec.ts",
+    "line": 123,
+    "text": "// legacy polyfill"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/legacy/__tests__/legacy.spec.ts",
+    "line": 137,
+    "text": "// modern polyfill"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/legacy/__tests__/legacy.spec.ts",
+    "line": 162,
+    "text": "// The playground targets IE 11, so babel lowers the legacy chunks to ES5."
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/legacy/__tests__/legacy.spec.ts",
+    "line": 163,
+    "text": "// The minifier must not reintroduce syntax newer than its `es2015` compress"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/legacy/__tests__/legacy.spec.ts",
+    "line": 164,
+    "text": "// target: `try {} catch (e) {}` must not be collapsed to `try {} catch {}`"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/legacy/__tests__/legacy.spec.ts",
+    "line": 165,
+    "text": "// (ES2019) and optional chaining (ES2020) must not appear."
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/legacy/__tests__/legacy.spec.ts",
+    "line": 197,
+    "text": "// also for modern polyfills"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/legacy/__tests__/modern-target/legacy-modern-target.spec.ts",
+    "line": 15,
+    "text": "// `modernTargets` includes Chrome 64, which does not support optional catch binding."
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/legacy/__tests__/modern-target/legacy-modern-target.spec.ts",
+    "line": 16,
+    "text": "// `try {} catch (e) {}` must not be collapsed to `try {} catch {}`."
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/legacy/entry-server-sequential.js",
+    "line": 3,
+    "text": "/* html */"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/legacy/entry-server.js",
+    "line": 3,
+    "text": "/* html */"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/lib/__tests__/lib.spec.ts",
+    "line": 60,
+    "text": "// Test that library chunks are hashed"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/lib/__tests__/lib.spec.ts",
+    "line": 68,
+    "text": "// Does not import pure CSS chunks and replaced by `Promise.resolve({})` instead"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/lib/__tests__/lib.spec.ts",
+    "line": 90,
+    "text": "// no warning from esbuild css minifier"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/lib/__tests__/serve.ts",
+    "line": 55,
+    "text": "// use resolved port/base from server"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/lib/__tests__/serve.ts",
+    "line": 71,
+    "text": "// output esbuild warns"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/lib/__tests__/serve.ts",
+    "line": 77,
+    "text": "// output esbuild warns"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/lib/__tests__/serve.ts",
+    "line": 83,
+    "text": "// output esbuild warns"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/lib/__tests__/serve.ts",
+    "line": 89,
+    "text": "// output esbuild warns"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/lib/__tests__/serve.ts",
+    "line": 95,
+    "text": "// output esbuild warns"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/lib/__tests__/serve.ts",
+    "line": 101,
+    "text": "// output esbuild warns"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/lib/__tests__/serve.ts",
+    "line": 107,
+    "text": "// output esbuild warns"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/lib/__tests__/serve.ts",
+    "line": 113,
+    "text": "// output esbuild warns"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/lib/__tests__/serve.ts",
+    "line": 119,
+    "text": "// output esbuild warns"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/lib/__tests__/serve.ts",
+    "line": 123,
+    "text": "// start static file server"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/minify/dir/module/index.js",
+    "line": 1,
+    "text": "/*! explicit comment */"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/optimize-deps/__tests__/optimize-deps.spec.ts",
+    "line": 276,
+    "text": "// Regression test for #8428: flattenId must encode '/' and '.' differently"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/optimize-deps/__tests__/optimize-deps.spec.ts",
+    "line": 277,
+    "text": "// to avoid collisions between 'lodash/cloneDeep' and 'lodash.clonedeep'"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/optimize-deps/__tests__/optimize-deps.spec.ts",
+    "line": 302,
+    "text": "// from dep-with-builtin-module-esm"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/optimize-deps/__tests__/optimize-deps.spec.ts",
+    "line": 304,
+    "text": "// dep-with-builtin-module-esm warnings"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/optimize-deps/__tests__/optimize-deps.spec.ts",
+    "line": 311,
+    "text": "// from dep-with-builtin-module-cjs"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/optimize-deps/__tests__/optimize-deps.spec.ts",
+    "line": 313,
+    "text": "// dep-with-builtin-module-cjs warnings"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/optimize-deps/__tests__/optimize-deps.spec.ts",
+    "line": 325,
+    "text": "// from user source code"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/optimize-deps/__tests__/optimize-deps.spec.ts",
+    "line": 458,
+    "text": "// Check that there are no errors related to virtual modules during dep scan"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/preload/vite.config-preload-disabled.js",
+    "line": 17,
+    "text": "// manualChunks(id) {"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/preload/vite.config-preload-disabled.js",
+    "line": 18,
+    "text": "//   if (id.includes('chunk.js')) {"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/preload/vite.config-preload-disabled.js",
+    "line": 19,
+    "text": "//     return 'chunk'"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/preload/vite.config-resolve-deps.js",
+    "line": 17,
+    "text": "// manualChunks(id) {"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/preload/vite.config-resolve-deps.js",
+    "line": 18,
+    "text": "//   if (id.includes('chunk.js')) {"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/preload/vite.config-resolve-deps.js",
+    "line": 19,
+    "text": "//     return 'chunk'"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/preload/vite.config.ts",
+    "line": 17,
+    "text": "// manualChunks(id) {"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/preload/vite.config.ts",
+    "line": 18,
+    "text": "//   if (id.includes('chunk.js')) {"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/preload/vite.config.ts",
+    "line": 19,
+    "text": "//     return 'chunk'"
+  },
+  {
+    "owner": "root_fixtures",
+    "file": "vite/playground/ssr-html/src/network-imports.js",
+    "line": 5,
+    "text": "// import slash from 'https://esm.sh/slash@3.0.0'"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/ssr-resolve/__tests__/ssr-resolve.spec.ts",
+    "line": 28,
+    "text": "// expect(contents).toMatch("
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/ssr-resolve/__tests__/ssr-resolve.spec.ts",
+    "line": 29,
+    "text": "//   new RegExp(`from ${_}@vitejs/test-deep-import/utils/bar.js${_}`),"
+  },
+  {
+    "owner": "root_fixtures",
+    "file": "vite/playground/ssr-resolve/main.js",
+    "line": 8,
+    "text": "// import deepBar from '@vitejs/test-deep-import/bar'"
+  },
+  {
+    "owner": "root_fixtures",
+    "file": "vite/playground/ssr-resolve/main.js",
+    "line": 17,
+    "text": "/* `deep-import/bar: ${deepBar}` */"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/tailwind-v3/postcss.config.js",
+    "line": 1,
+    "text": "// postcss.config.ts"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/tailwind-v3/src/components/component1.js",
+    "line": 2,
+    "text": "/* html */"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/tailwind-v3/src/main.js",
+    "line": 4,
+    "text": "/* html */"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/tailwind-v3/src/views/view1.js",
+    "line": 4,
+    "text": "/* html */"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/tailwind-v3/tailwind.config.ts",
+    "line": 8,
+    "text": "// https://github.com/vitejs/vite/pull/6959"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/tailwind/src/components/component1.js",
+    "line": 2,
+    "text": "/* html */"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/tailwind/src/main.js",
+    "line": 4,
+    "text": "/* html */"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/tailwind/src/views/view1.js",
+    "line": 4,
+    "text": "/* html */"
+  },
+  {
+    "owner": "assets_fixtures",
+    "file": "vite/playground/tailwind/tailwind.config.ts",
+    "line": 6,
+    "text": "// https://github.com/vitejs/vite/pull/6959"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/tsconfig-json-load-error/__tests__/tsconfig-json-load-error.spec.ts",
+    "line": 22,
+    "text": "// got expected error, null it here so testsuite does not fail from rethrow in afterAll"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/tsconfig-json-load-error/__tests__/tsconfig-json-load-error.spec.ts",
+    "line": 43,
+    "text": "// don't test for actual complete message as this might be locale dependent. chrome does log 500 consistently though"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/tsconfig-json-load-error/__tests__/tsconfig-json-load-error.spec.ts",
+    "line": 53,
+    "text": "// bundled dev does not request modules one by one, so nothing can"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/tsconfig-json-load-error/__tests__/tsconfig-json-load-error.spec.ts",
+    "line": 54,
+    "text": "// answer with 500. The first build failed, so the server keeps serving"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/tsconfig-json-load-error/__tests__/tsconfig-json-load-error.spec.ts",
+    "line": 55,
+    "text": "// the fallback page with status 200. The error shows up in the overlay"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/tsconfig-json-load-error/__tests__/tsconfig-json-load-error.spec.ts",
+    "line": 56,
+    "text": "// instead, which the next test checks."
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/tsconfig-json-load-error/__tests__/tsconfig-json-load-error.spec.ts",
+    "line": 73,
+    "text": "// use regex with variable filename and position values because they are different on win"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/tsconfig-json-load-error/__tests__/tsconfig-json-load-error.spec.ts",
+    "line": 77,
+    "text": "// bundled dev: no rebuild after initial-build failure yet (vitejs/vite#23028, rolldown#9598)"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/tsconfig-json/__tests__/tsconfig-json.spec.ts",
+    "line": 11,
+    "text": "// main side effect should be called (because of `\"verbatimModuleSyntax\": true`)"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/tsconfig-json/__tests__/tsconfig-json.spec.ts",
+    "line": 13,
+    "text": "// main base setter should not be called (because of `\"useDefineForClassFields\": true\"`)"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/tsconfig-json/__tests__/tsconfig-json.spec.ts",
+    "line": 16,
+    "text": "// nested side effect should not be called (because \"verbatimModuleSyntax\" is not set, defaults to false)"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/tsconfig-json/__tests__/tsconfig-json.spec.ts",
+    "line": 18,
+    "text": "// nested base setter should be called (because of `\"useDefineForClassFields\": false\"`)"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/tsconfig-json/__tests__/tsconfig-json.spec.ts",
+    "line": 21,
+    "text": "// nested-with-extends side effect should be called (because \"verbatimModuleSyntax\" is extended from the main tsconfig.json, which is true)"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/tsconfig-json/__tests__/tsconfig-json.spec.ts",
+    "line": 23,
+    "text": "// nested-with-extends base setter should be called (because of `\"useDefineForClassFields\": false\"`)"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/tsconfig-json/__tests__/tsconfig-json.spec.ts",
+    "line": 51,
+    "text": "// \"verbatimModuleSyntax\": true from tsconfig.json should still work"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/tsconfig-json/__tests__/tsconfig-json.spec.ts",
+    "line": 66,
+    "text": "// \"verbatimModuleSyntax\": true from tsconfig.json should not be read"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/tsconfig-json/__tests__/tsconfig-json.spec.ts",
+    "line": 67,
+    "text": "// and defaults to false"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/tsconfig-json/__tests__/tsconfig-json.spec.ts",
+    "line": 91,
+    "text": "// Should not error when transpiling decorators as nearest tsconfig.json"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/tsconfig-json/__tests__/tsconfig-json.spec.ts",
+    "line": 92,
+    "text": "// has \"experimentalDecorators\": true"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/vitestSetup.ts",
+    "line": 30,
+    "text": "// #region serializer"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/vitestSetup.ts",
+    "line": 65,
+    "text": "// #endregion"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/vitestSetup.ts",
+    "line": 67,
+    "text": "// #region env"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/vitestSetup.ts",
+    "line": 91,
+    "text": "// #endregion"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/vitestSetup.ts",
+    "line": 93,
+    "text": "// #region context"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/vitestSetup.ts",
+    "line": 156,
+    "text": "// #endregion"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/worker/__tests__/relative-base/worker-relative-base.spec.ts",
+    "line": 32,
+    "text": "// TODO: inline worker should inline assets"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/worker/__tests__/relative-base/worker-relative-base.spec.ts",
+    "line": 69,
+    "text": "// assert correct files"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/worker/__tests__/relative-base/worker-relative-base.spec.ts",
+    "line": 87,
+    "text": "// worker should have all imports resolved and no exports"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/worker/__tests__/relative-base/worker-relative-base.spec.ts",
+    "line": 90,
+    "text": "// chunk"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/worker/__tests__/relative-base/worker-relative-base.spec.ts",
+    "line": 93,
+    "text": "// inlined"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/worker/__tests__/sourcemap-hidden/worker-sourcemap-hidden.spec.ts",
+    "line": 7,
+    "text": "// assert correct files"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/worker/__tests__/sourcemap-hidden/worker-sourcemap-hidden.spec.ts",
+    "line": 13,
+    "text": "// every .js file should have a corresponding .js.map"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/worker/__tests__/sourcemap-hidden/worker-sourcemap-hidden.spec.ts",
+    "line": 91,
+    "text": "// worker should have all imports resolved and no exports"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/worker/__tests__/sourcemap-hidden/worker-sourcemap-hidden.spec.ts",
+    "line": 95,
+    "text": "// shared worker should have all imports resolved and no exports"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/worker/__tests__/sourcemap-hidden/worker-sourcemap-hidden.spec.ts",
+    "line": 99,
+    "text": "// chunk"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/worker/__tests__/sourcemap-hidden/worker-sourcemap-hidden.spec.ts",
+    "line": 114,
+    "text": "// inlined"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/worker/__tests__/sourcemap-inline/worker-sourcemap-inline.spec.ts",
+    "line": 7,
+    "text": "// assert correct files"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/worker/__tests__/sourcemap-inline/worker-sourcemap-inline.spec.ts",
+    "line": 12,
+    "text": "// inline sourcemaps should not produce .map files"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/worker/__tests__/sourcemap-inline/worker-sourcemap-inline.spec.ts",
+    "line": 66,
+    "text": "// worker should have all imports resolved and no exports"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/worker/__tests__/sourcemap-inline/worker-sourcemap-inline.spec.ts",
+    "line": 70,
+    "text": "// shared worker should have all imports resolved and no exports"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/worker/__tests__/sourcemap-inline/worker-sourcemap-inline.spec.ts",
+    "line": 74,
+    "text": "// chunk"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/worker/__tests__/sourcemap-inline/worker-sourcemap-inline.spec.ts",
+    "line": 89,
+    "text": "// inlined"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/worker/__tests__/sourcemap/worker-sourcemap.spec.ts",
+    "line": 7,
+    "text": "// assert correct files"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/worker/__tests__/sourcemap/worker-sourcemap.spec.ts",
+    "line": 13,
+    "text": "// every .js file should have a corresponding .js.map"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/worker/__tests__/sourcemap/worker-sourcemap.spec.ts",
+    "line": 95,
+    "text": "// worker should have all imports resolved and no exports"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/worker/__tests__/sourcemap/worker-sourcemap.spec.ts",
+    "line": 99,
+    "text": "// shared worker should have all imports resolved and no exports"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/worker/__tests__/sourcemap/worker-sourcemap.spec.ts",
+    "line": 103,
+    "text": "// chunk"
+  },
+  {
+    "owner": "resolution_html_import",
+    "file": "vite/playground/worker/__tests__/sourcemap/worker-sourcemap.spec.ts",
+    "line": 116,
+    "text": "// inlined"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/worker/classic-shared-worker.js",
+    "line": 2,
+    "text": "// for dev"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/worker/classic-shared-worker.js",
+    "line": 13,
+    "text": "// for sourcemap"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/worker/classic-worker.js",
+    "line": 1,
+    "text": "// this is to test `importScripts` injection doesn't break the code"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/worker/classic-worker.js",
+    "line": 4,
+    "text": "// for dev"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/worker/classic-worker.js",
+    "line": 18,
+    "text": "// Vite may inject imports to handle this dynamic import, make sure"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/worker/classic-worker.js",
+    "line": 19,
+    "text": "// it still works in classic workers."
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/worker/classic-worker.js",
+    "line": 20,
+    "text": "// NOTE: this test only works in dev."
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/worker/classic-worker.js",
+    "line": 32,
+    "text": "// for sourcemap"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/worker/emit-chunk-dynamic-import-worker.js",
+    "line": 9,
+    "text": "// for sourcemap"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/worker/emit-chunk-nested-worker.js",
+    "line": 36,
+    "text": "// for sourcemap"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/worker/emit-chunk-sub-worker.js",
+    "line": 10,
+    "text": "// for sourcemap"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/worker/importMetaGlob.worker.js",
+    "line": 10,
+    "text": "// for sourcemap"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/worker/importMetaGlobEager.worker.js",
+    "line": 10,
+    "text": "// for sourcemap"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/worker/module-and-worker.js",
+    "line": 8,
+    "text": "// for sourcemap"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/worker/my-inline-shared-worker.ts",
+    "line": 14,
+    "text": "// for sourcemap"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/worker/my-shared-worker.ts",
+    "line": 14,
+    "text": "// for sourcemap"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/worker/possible-ts-output-worker.mjs",
+    "line": 11,
+    "text": "// for sourcemap"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/worker/sub-worker.js",
+    "line": 9,
+    "text": "// for sourcemap"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/worker/url-shared-worker.js",
+    "line": 10,
+    "text": "// for sourcemap"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/worker/url-worker.js",
+    "line": 11,
+    "text": "// for sourcemap"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/worker/vite.config-iife.js",
+    "line": 20,
+    "text": "// should be overwritten to worker_entry-[name] by the config-test plugin"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/worker/worker-nested-worker.js",
+    "line": 49,
+    "text": "// for sourcemap"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/worker/worker-plugin-test-plugin.js",
+    "line": 10,
+    "text": "// keep length for sourcemap"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/worker/worker/main-classic.js",
+    "line": 11,
+    "text": "// test comment"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/worker/worker/main-classic.js",
+    "line": 14,
+    "text": "// just test for case: ') ... ,' mean no worker options params"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/worker/worker/main-classic.js",
+    "line": 34,
+    "text": "// test trailing comma"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/worker/worker/main-classic.js",
+    "line": 39,
+    "text": "// test comment"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/worker/worker/main-format-es.js",
+    "line": 1,
+    "text": "// run when format es"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/worker/worker/main-module.js",
+    "line": 127,
+    "text": "// url import worker"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/worker/worker/main-module.js",
+    "line": 137,
+    "text": "// url import worker with alias path"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/worker/worker/main-module.js",
+    "line": 147,
+    "text": "// url import worker without extension"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/worker/worker/main-module.js",
+    "line": 207,
+    "text": "// only run on build"
+  },
+  {
+    "owner": "test_fixtures",
+    "file": "vite/playground/worker/worker/main.js",
+    "line": 1,
+    "text": "/* flag: will replace in vite config import(\"./format-es.js\") */"
+  }
+]

@@ -33,17 +33,10 @@ describe('SyntheticWheelEvent', () => {
     container = null;
   });
 
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「should normalize properties from the MouseEvent interface」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：事件断言连接 DOMPluginEventSystem 的委托、合成与传播路径。
-   */
+  /** 把带 button=1 的 MouseEvent("wheel") 派发到有 onWheel 的节点；应收到一个合成事件且 button 保留为 1，验证 WheelEvent 继承的 MouseEvent 字段复制。 */
   it('should normalize properties from the MouseEvent interface', async () => {
     const events = [];
-    /** `onWheel`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 收集含 button 的 wheel 合成事件；persist 为兼容空方法，保存对象不依赖事件池。 */
     const onWheel = event => {
       event.persist();
       events.push(event);
@@ -63,10 +56,10 @@ describe('SyntheticWheelEvent', () => {
     expect(events[0].button).toBe(1);
   });
 
-  /** 测试场景：验证「should normalize properties from the WheelEvent interface」描述的渲染、交互或错误处理结果。 */
+  /** 依次派发标准 deltaX=10/deltaY=-50 的 WheelEvent 与手工补 wheelDeltaX=-10/wheelDeltaY=50 的旧式 MouseEvent；两次合成 delta 都应为 10/-50，验证 WebKit 回退取反后方向一致。 */
   it('should normalize properties from the WheelEvent interface', async () => {
     const events = [];
-    /** `onWheel`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 保存两种原生 wheel 形状对应的合成事件，以逐项比较标准 delta 和旧 WebKit 回退值。 */
     const onWheel = event => {
       event.persist();
       events.push(event);
@@ -100,10 +93,10 @@ describe('SyntheticWheelEvent', () => {
     expect(events[1].deltaY).toBe(-50);
   });
 
-  /** 测试场景：验证「should be able to `preventDefault` and `stopPropagation`」描述的渲染、交互或错误处理结果。 */
+  /** 向同一节点连续派发两次 wheel，handler 每次检查默认状态由 false 经 preventDefault 变为 true；事件数组应有两个对象且完成五次断言，验证合成默认标志可更新。本 case 未实际调用 stopPropagation，标题中的该部分没有独立断言。 */
   it('should be able to `preventDefault` and `stopPropagation`', async () => {
     const events = [];
-    /** `onWheel`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 逐事件核对默认状态更新并保留事件引用，计数和 assertions 数量共同检查两个派发都执行。 */
     const onWheel = event => {
       expect(event.isDefaultPrevented()).toBe(false);
       event.preventDefault();

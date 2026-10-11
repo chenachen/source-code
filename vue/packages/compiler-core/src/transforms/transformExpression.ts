@@ -118,6 +118,8 @@ interface PrefixMeta {
  * @param asParams 把源码放在函数参数位置解析（v-slot / v-for aliases）
  * @param asRawStatements 按可含分号的语句列表解析（v-on 内联多语句）
  * @param localVars 额外局部标识符计数表
+ * @returns 原简单节点或按标识符位置拆出的复合节点；会改写 content/Babel Identifier 并登记 ref helpers。
+ * node.ast 的 false 表示 parser 已报错，直接返回以避免重复诊断；无前缀或空文本也保持原节点。
  */
 export function processExpression(
   node: SimpleExpressionNode,

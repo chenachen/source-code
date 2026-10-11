@@ -35,9 +35,9 @@ const pendingSetRefMap = new WeakMap<VNodeNormalizedRef, SchedulerJob>()
 /**
  * 根据 VNode 的挂载/更新/卸载结果维护模板 ref。
  *
- * 支持字符串 ref、`Ref` 对象、函数 ref、`v-for` 数组 ref 和兼容层生成的 ref key。
- * 非空赋值延迟到渲染提交后，确保组件公开实例和 DOM 已完整挂载；清空则同步执行，
- * 防止同名新 ref 先赋值后又被旧节点的延迟卸载覆盖。
+ * 支持字符串 ref、`Ref` 对象、函数 ref、`v-for` 数组 ref 和编译器保留的 ref_key。
+ * 字符串 ref 和 Ref 对象的非空赋值排入 post-render 阶段；Suspense 未解决时先由边界
+ * 保存任务。清空同步执行，避免同名新 ref 赋值后又被旧 ref 清空；函数 ref 在这里同步调用。
  */
 export function setRef(
   rawRef: VNodeNormalizedRef,
@@ -118,6 +118,7 @@ export function setRef(
           return hasOwn(rawSetupState, key)
         }
 
+  /** 开发态跳过 knownTemplateRefs 中的只读包装；携带 key 时检查对应 $refs 访问器，避免重复写入 useTemplateRef 的引用。 */
   const canSetRef = (ref: VNodeRef, key?: string) => {
     if (__DEV__ && knownTemplateRefs.has(ref as any)) {
       return false
@@ -153,6 +154,7 @@ export function setRef(
     const _isRef = isRef(ref)
 
     if (_isString || _isRef) {
+      /** 写回 refs/setupState/Ref；ref_for 维护去重数组，卸载只删本次节点而非清空全部引用。 */
       const doSet = () => {
         if (rawRef.f) {
           // `ref_for`（通常来自 v-for）维护值数组：挂载去重追加，卸载只删除当前节点。
@@ -201,6 +203,7 @@ export function setRef(
         // #1789：非空 ref 在 render 完成后赋值，确保拿到最终 DOM/组件实例，并排在普通
         // post 钩子前（job.id = -1）。清空必须同步：若新旧节点共用 ref key，延迟清空
         // 可能在新节点已赋值后把它错误覆盖成 null。
+        /** 执行有效的非空 post 赋值后撤销 pending 登记，供动态切换/卸载取消陈旧任务。 */
         const job: SchedulerJob = () => {
           doSet()
           pendingSetRefMap.delete(rawRef)

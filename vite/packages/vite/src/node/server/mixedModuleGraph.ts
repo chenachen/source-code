@@ -19,7 +19,7 @@ const EMPTY_OBJECT = Object.freeze({})
 
 /**
  * 把同一 ID 的 client/ssr EnvironmentModuleNode 合成旧 ModuleNode 视图。
- * client 专属字段优先；集合/对象按旧混合图语义合并；写入会同步到当前存在的两个底层节点。
+ * client 专属字段优先；集合/对象按旧混合图语义合并；标量 `_set` 写入同步两端，转换缓存的 setter 则只更新所属一端。
  */
 export class ModuleNode {
   /** 创建本代理的兼容 ModuleGraph。 */
@@ -68,7 +68,7 @@ export class ModuleNode {
     }
     return createBackwardCompatibleModuleSet(this._moduleGraph, prop, module)
   }
-  /** 合并 client/ssr 的 import 集合；相同 resolved ID 只保留一项。 */
+  /** 先收集 client，再并入带 ID 的 SSR 节点；相同 resolved ID 只保留一项。 */
   _getModuleSetUnion(prop: 'importedModules' | 'importers'): Set<ModuleNode> {
     const importedModules = new Set<ModuleNode>()
     const ids = new Set<string>()
@@ -99,6 +99,7 @@ export class ModuleNode {
     if (_clientValue == null && _ssrValue == null) return undefined
 
     return new Proxy({} as any, {
+      /** meta 走对象合并；其他字段按键是否存在选择 client 或 SSR，保留 undefined 遮蔽。 */
       get: (_, key: string) => {
         // ModuleInfo.meta 必须走 this.meta 的对象合并，而不是直接选择单一 Environment。
         if (key === 'meta') {
@@ -233,7 +234,7 @@ export class ModuleNode {
   get ssrError(): Error | null {
     return this._ssrModule?.ssrError ?? null
   }
-  /** 返回两端最近 HMR 时间戳的较大值，保持旧混合图的单调视图。 */
+  /** 返回当前两端 HMR 时间戳的较大值。 */
   get lastHMRTimestamp(): number {
     return Math.max(
       this._clientModule?.lastHMRTimestamp ?? 0,
@@ -294,7 +295,7 @@ function mapIterator<T, K = T>(
  * 该层只兼容两种历史 Environment，自定义 Environment 不会出现在此视图。
  */
 export class ModuleGraph {
-  /** @internal */
+  /** 获取两端当前图的函数集合，使兼容视图可在服务端重启后跟随新实例。 @internal */
   _moduleGraphs: {
     /** 惰性取得当前 client 图，允许 Server 原地重启后切换实例。 */
     client: () => EnvironmentModuleGraph
@@ -486,7 +487,7 @@ export class ModuleGraph {
     }
   }
 
-  /** 清空两张底层图的全部转换缓存与失效状态。 */
+  /** 对两张底层图执行全量硬失效：清转换缓存，并留下 HARD_INVALIDATED 标记。 */
   invalidateAll(): void {
     this._client.invalidateAll()
     this._ssr.invalidateAll()
@@ -595,11 +596,12 @@ export class ModuleGraph {
 }
 
 /**
- * 以两个可选弱引用 key 的组合缓存值；共享占位对象表示 undefined。
+ * 以两个可选对象 key 的组合缓存值；外层 WeakMap 按第一个 key 索引，实际内层为 Map。
+ * 共享占位对象表示 undefined，因此同一节点对可稳定复用包装对象。
  * 用于 client-only、ssr-only 和双节点三种 ModuleNode 代理身份。
  */
 class DualWeakMap<K1 extends WeakKey, K2 extends WeakKey, V> {
-  /** 第一层 key 到第二层弱引用表；undefined 由共享占位对象表示。 */
+  /** 第一层弱 key 到第二层表；set() 实际创建 Map，第二个 key 在第一层存活期间为强引用。 */
   private map = new WeakMap<K1 | object, WeakMap<K2 | object, V>>()
   /** 代替 undefined 进入 WeakMap 的稳定对象身份。 */
   private undefinedKey = {}
@@ -686,7 +688,7 @@ function createBackwardCompatibleModuleMap(
   getModuleMap: () => Map<string, EnvironmentModuleNode>,
 ): Map<string, ModuleNode> {
   return {
-    /** Map 默认遍历 entries，避免预先复制双图内容。 */
+    /** Map 默认通过 entries 遍历；双图并集由 getModuleMap 按需生成。 */
     [Symbol.iterator]() {
       return this.entries()
     },
@@ -751,7 +753,8 @@ function createBackwardCompatibleFileToModulesMap(
 ): Map<string, Set<ModuleNode>> {
   /** 生成 client 优先、按模块 ID 去重的 fileToModules 并集。 */
   const getFileToModulesMap = (): Map<string, Set<EnvironmentModuleNode>> => {
-    // client key 优先；SSR 同文件节点按 ID 去重后补入。SSR 为空时直接暴露 client Map。
+    // client key 优先；这里只浅拷贝 Map，同文件的 Set 仍是 client 原集合，补入 SSR 节点会
+    // 修改该共享集合。SSR 为空时直接返回 client Map。
     if (!moduleGraph._ssr.fileToModulesMap.size) {
       return moduleGraph._client.fileToModulesMap
     }
@@ -792,7 +795,7 @@ function createBackwardCompatibleFileToModulesMap(
     [Symbol.iterator]() {
       return this.entries()
     },
-    /** 合并指定文件在 client/SSR 图中的节点并转换为兼容集合。 */
+    /** 合并指定文件的两端节点，再转成兼容集合；存在 client Set 时会直接向其中补入 SSR 节点。 */
     get(key) {
       const clientModules = moduleGraph._client.fileToModulesMap.get(key)
       const ssrModules = moduleGraph._ssr.fileToModulesMap.get(key)

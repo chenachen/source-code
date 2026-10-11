@@ -51,11 +51,11 @@ export type SharedStateServer = {
   /** 当前 renderer 注入的组件栈读取器（旧名 ReactDebugCurrentFrame）。 */
   getCurrentStack: null | (() => string),
 
-  /** 最近创建 owner 栈的重置代数，供开发态去重/失效。 */
+  /** 当前采样窗口的元素创建计数；超过 ownerStackLimit 后复用未知栈，重置器周期归零。 */
   recentlyCreatedOwnerStacks: 0,
 };
 
-/** renderer 队列任务：返回后续任务可形成链，为 `null` 时链结束。 */
+/** renderer 队列任务接受 didTimeout 布尔值；返回下一段任务或以 null 结束链，不返回渲染节点。 */
 export type RendererTask = boolean => RendererTask | null;
 
 /** 服务端单例共享状态；由公共 React API 与 renderer 共同读写。 */

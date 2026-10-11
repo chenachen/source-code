@@ -20,9 +20,9 @@ import { isWindows } from '../../shared/utils'
 
 describe('mergeConfig', () => {
   /**
-   * 场景：低优先级配置使用 Alias 数组，高优先级配置使用对象简写。
+   * 低优先级配置使用 Alias 数组，高优先级配置使用对象简写。
    *
-   * 验证目标：两种 schema 都会规范化为数组；高优先级 alias 排在前面，因为 resolver
+   * 两种 schema 都会规范化为数组；高优先级 alias 排在前面，因为 resolver
    * 自上而下首次命中即停止。
    */
   test('handles configs with different alias schemas', () => {
@@ -69,8 +69,8 @@ describe('mergeConfig', () => {
   })
 
   /**
-   * 场景：两侧 alias 都使用对象简写，并包含同名 `bar`。
-   * 验证目标：保持对象 schema；新配置覆盖同名键，其他键取并集。
+   * 两侧 alias 都使用对象简写，并包含同名 `bar`。
+   * 保持对象 schema；新配置覆盖同名键，其他键取并集。
    */
   test('keep object alias schema', () => {
     const baseConfig = {
@@ -105,8 +105,8 @@ describe('mergeConfig', () => {
   })
 
   /**
-   * 场景：普通配置字段一侧为标量、一侧为数组。
-   * 验证目标：普通数组采用追加语义，标量先数组化并保持低→高优先级顺序。
+   * 普通配置字段一侧为标量、一侧为数组。
+   * 普通数组采用追加语义，标量先数组化并保持低→高优先级顺序。
    */
   test('handles arrays', () => {
     const baseConfig: UserConfigExport = {
@@ -125,8 +125,8 @@ describe('mergeConfig', () => {
   })
 
   /**
-   * 场景：`assetsInclude` 同时包含字符串、数组和 RegExp。
-   * 验证目标：该顶层字段专门按列表追加，不能让新数组整体覆盖旧匹配规则。
+   * `assetsInclude` 同时包含字符串、数组和 RegExp。
+   * 该顶层字段专门按列表追加，不能让新数组整体覆盖旧匹配规则。
    */
   test('handles assetsInclude', () => {
     const baseConfig: UserConfigExport = {
@@ -145,9 +145,9 @@ describe('mergeConfig', () => {
   })
 
   /**
-   * 场景：顶层 input 以字符串、数组、命名对象的全部组合出现。
+   * 顶层 input 以字符串、数组、命名对象的全部组合出现。
    *
-   * 验证目标：字符串/数组追加；遇到命名对象时全部转成对象；高优先级对象覆盖同名
+   * 字符串/数组追加；遇到命名对象时全部转成对象；高优先级对象覆盖同名
    * entry；任一侧缺省时保留另一侧。覆盖 #22642 引入的入口合并规则。
    */
   test('handles input', () => {
@@ -231,8 +231,8 @@ describe('mergeConfig', () => {
   })
 
   /**
-   * 场景：名为 input 的字段位于 `build` 内，而不是 Vite 顶层入口。
-   * 验证目标：专属 mergeInput 只在根路径生效；普通嵌套标量仍由高优先级值覆盖。
+   * 名为 input 的字段位于 `build` 内，而不是 Vite 顶层入口。
+   * 专属 mergeInput 只在根路径生效；普通嵌套标量仍由高优先级值覆盖。
    */
   test('not handles input not at top level', () => {
     const baseConfig = {
@@ -258,8 +258,8 @@ describe('mergeConfig', () => {
   })
 
   /**
-   * 场景：业务自定义对象中也存在名为 alias 的字段。
-   * 验证目标：Vite alias 特殊顺序只应用于顶层/resolve.alias；其他 alias 按普通对象
+   * 业务自定义对象中也存在名为 alias 的字段。
+   * Vite alias 特殊顺序只应用于顶层/resolve.alias；其他 alias 按普通对象
    * 递归合并，避免配置工具错误解释用户数据。
    */
   test('not handles alias not under `resolve`', () => {
@@ -295,8 +295,8 @@ describe('mergeConfig', () => {
   })
 
   /**
-   * 场景：低优先级字段为 null，高优先级字段为数组。
-   * 验证目标：null 视为没有可合并的旧值，直接采用新数组，不生成 `[null, ...]`。
+   * 低优先级字段为 null，高优先级字段为数组。
+   * null 视为没有可合并的旧值，直接采用新数组，不生成 `[null, ...]`。
    */
   test('merge array correctly', () => {
     const baseConfig = {
@@ -315,8 +315,8 @@ describe('mergeConfig', () => {
   })
 
   /**
-   * 场景：SSR external/noExternal 一侧为 `true`，另一侧为包名数组。
-   * 验证目标：`true` 表示全量规则，语义强于有限数组；无论合并方向都必须保留 true。
+   * SSR external/noExternal 一侧为 `true`，另一侧为包名数组。
+   * `true` 表示全量规则，语义强于有限数组；无论合并方向都必须保留 true。
    */
   test('handles ssr.noExternal', () => {
     const baseConfig: UserConfig = {
@@ -346,8 +346,8 @@ describe('mergeConfig', () => {
   })
 
   /**
-   * 场景：同样的 noExternal 规则位于 `environments.ssr.resolve`。
-   * 验证目标：递归进入 `environments.<name>` 后要重置路径语义，使 resolve 专属 true
+   * 同样的 noExternal 规则位于 `environments.ssr.resolve`。
+   * 递归进入 `environments.<name>` 后要重置路径语义，使 resolve 专属 true
    * 规则仍然生效；这是 #20077 修复的核心场景。
    */
   test('handles environments.*.resolve.noExternal', () => {
@@ -387,10 +387,10 @@ describe('mergeConfig', () => {
   })
 
   /**
-   * 场景：旧顶层 `ssr.noExternal` 与新 Environment API
+   * 旧顶层 `ssr.noExternal` 与新 Environment API
    * `environments.ssr.resolve.noExternal` 同时配置。
    *
-   * 验证目标：兼容迁移合并后 true 仍强于数组，不因新旧配置入口方向不同而改变。
+   * 兼容迁移合并后 true 仍强于数组，不因新旧配置入口方向不同而改变。
    */
   test('merge ssr.noExternal and environments.ssr.resolve.noExternal', async () => {
     const oldTrue = await resolveConfig(
@@ -429,8 +429,8 @@ describe('mergeConfig', () => {
   })
 
   /**
-   * 场景：`server.ws.server` 保存真实 Node HTTP Server 实例，两侧引用同一对象。
-   * 验证目标：非纯对象不能被递归克隆或展开，合并结果必须保持实例引用。
+   * `server.ws.server` 保存真实 Node HTTP Server 实例，两侧引用同一对象。
+   * 非纯对象不能被递归克隆或展开，合并结果必须保持实例引用。
    */
   test('handles server.ws.server', () => {
     const httpServer = http.createServer()
@@ -445,8 +445,8 @@ describe('mergeConfig', () => {
   })
 
   /**
-   * 场景：allowedHosts 一侧为有限域名数组，另一侧为允许全部的 true。
-   * 验证目标：true 语义更强，不能被数组追加规则转换成混合数组。
+   * allowedHosts 一侧为有限域名数组，另一侧为允许全部的 true。
+   * true 语义更强，不能被数组追加规则转换成混合数组。
    */
   test('handles server.allowedHosts', () => {
     const baseConfig = {
@@ -469,8 +469,8 @@ describe('mergeConfig', () => {
   })
 
   /**
-   * 场景：调用方试图直接合并两个函数式配置。
-   * 验证目标：类型层和运行时都拒绝；函数必须先用 ConfigEnv 执行，否则没有确定对象可
+   * 调用方试图直接合并两个函数式配置。
+   * 类型层和运行时都拒绝；函数必须先用 ConfigEnv 执行，否则没有确定对象可
    * 合并。两个断言分别覆盖低优先级和高优先级函数。
    */
   test('throws error with functions', () => {
@@ -496,10 +496,10 @@ describe('mergeConfig', () => {
   })
 
   /**
-   * 场景：build、worker、optimizeDeps、ssr.optimizeDeps 两侧都使用新
+   * build、worker、optimizeDeps、ssr.optimizeDeps 两侧都使用新
    * `rolldownOptions`。
    *
-   * 验证目标：四个配置根递归合并；兼容 `rollupOptions` getter 与新字段读取到同一最终
+   * 四个配置根递归合并；兼容 `rollupOptions` getter 与新字段读取到同一最终
    * 对象。
    */
   test('handles `rolldownOptions`', () => {
@@ -582,8 +582,8 @@ describe('mergeConfig', () => {
   })
 
   /**
-   * 场景：再次覆盖四个根路径中的嵌套 Rolldown output 字段。
-   * 验证目标：treeshake 与 output 递归合并，并确保 build/worker/依赖优化路径采用一致
+   * 再次覆盖四个根路径中的嵌套 Rolldown output 字段。
+   * treeshake 与 output 递归合并，并确保 build/worker/依赖优化路径采用一致
    * 规则，防止只修复顶层 build。
    */
   test('handles `build.rolldownOptions`', () => {
@@ -666,9 +666,9 @@ describe('mergeConfig', () => {
   })
 
   /**
-   * 场景：低优先级仍使用旧 `rollupOptions`，高优先级混用新旧字段。
+   * 低优先级仍使用旧 `rollupOptions`，高优先级混用新旧字段。
    *
-   * 验证目标：迁移时新字段优先，四个根路径都建立双向实时代理；修改旧字段返回对象
+   * 迁移时新字段优先，四个根路径都建立双向实时代理；修改旧字段返回对象
    * 后，新字段立即看到同一变化，而不是只在首次解析时复制。
    */
   test('syncs `build.rollupOptions` and `build.rolldownOptions`', () => {
@@ -761,9 +761,9 @@ describe('mergeConfig', () => {
   })
 
   /**
-   * 场景：用户只提供旧 rollupOptions，mergeConfig 自动创建新字段代理。
+   * 用户只提供旧 rollupOptions，mergeConfig 自动创建新字段代理。
    *
-   * 验证目标：两个属性指向同一对象时不应误报“同时显式配置两套选项”；覆盖 #22043。
+   * 两个属性指向同一对象时不应误报“同时显式配置两套选项”；覆盖 #22043。
    */
   test('hasBothRollupOptionsAndRolldownOptions returns false when only rollupOptions is set', () => {
     // 低优先级必须已有 build 对象，递归合并才会进入 build 根并安装兼容代理。
@@ -789,8 +789,8 @@ describe('mergeConfig', () => {
   })
 
   /**
-   * 场景：用户确实同时提供内容不同的 rollupOptions 和 rolldownOptions。
-   * 验证目标：两者不是兼容代理同一对象时返回 true，供配置校验输出迁移告警。
+   * 用户确实同时提供内容不同的 rollupOptions 和 rolldownOptions。
+   * 两者不是兼容代理同一对象时返回 true，供配置校验输出迁移告警。
    */
   test('hasBothRollupOptionsAndRolldownOptions returns true when both are explicitly set to different values', () => {
     const config = defineConfig({
@@ -807,8 +807,8 @@ describe('mergeConfig', () => {
   })
 
   /**
-   * 场景：插件通过 `configEnvironment` 分别使用旧、新字段设置 SSR platform。
-   * 验证目标：两种写法都落到 `rolldownOptions.platform`；只影响 SSR，client 继续保持
+   * 插件通过 `configEnvironment` 分别使用旧、新字段设置 SSR platform。
+   * 两种写法都落到 `rolldownOptions.platform`；只影响 SSR，client 继续保持
    * browser 默认值。
    */
   test('rollupOptions/rolldownOptions.platform', async () => {
@@ -872,8 +872,8 @@ describe('mergeConfig', () => {
   })
 
   /**
-   * 场景：配置已经 resolve 后，插件重新赋值 rollupOptions 或 rolldownOptions。
-   * 验证目标：顶层、client、ssr 三份 build 配置都保留 getter/setter 实时代理，而不是
+   * 配置已经 resolve 后，插件重新赋值 rollupOptions 或 rolldownOptions。
+   * 顶层、client、ssr 三份 build 配置都保留 getter/setter 实时代理，而不是
    * 在解析完成后退化成两个独立快照。
    */
   test('resolved build options keep rollupOptions as a live proxy of rolldownOptions', async () => {
@@ -897,8 +897,8 @@ describe('mergeConfig', () => {
   })
 
   /**
-   * 场景：用户只配置旧 `server.hmr` 下的 WebSocket 连接字段。
-   * 验证目标：#21357 迁移层把 protocol/host/port/clientPort/path/timeout 同步到新
+   * 用户只配置旧 `server.hmr` 下的 WebSocket 连接字段。
+   * #21357 迁移层把 protocol/host/port/clientPort/path/timeout 同步到新
    * `server.ws`，旧对象继续通过代理可读。
    */
   test('syncs `server.hmr.*` to `server.ws.*`', () => {
@@ -942,8 +942,8 @@ describe('mergeConfig', () => {
   })
 
   /**
-   * 场景：低优先级使用新 server.ws，高优先级插件仍写旧 server.hmr。
-   * 验证目标：旧字段按配置优先级覆盖新字段，并让两个入口最终保持一致。
+   * 低优先级使用新 server.ws，高优先级插件仍写旧 server.hmr。
+   * 旧字段按配置优先级覆盖新字段，并让两个入口最终保持一致。
    */
   test('mergeConfig works with `server.ws` and `server.hmr`', () => {
     const baseConfig = defineConfig({
@@ -973,8 +973,8 @@ describe('mergeConfig', () => {
   })
 
   /**
-   * 场景：`overlay` 仍是 HMR UI 行为，不是 WebSocket 连接参数。
-   * 验证目标：只迁移 wsOptionKeys；overlay 留在 server.hmr，不能污染 server.ws。
+   * `overlay` 仍是 HMR UI 行为，不是 WebSocket 连接参数。
+   * 只迁移 wsOptionKeys；overlay 留在 server.hmr，不能污染 server.ws。
    */
   test('`server.hmr.overlay` is not mapped to `server.ws.overlay`', () => {
     const config = mergeConfig(
@@ -994,8 +994,8 @@ describe('mergeConfig', () => {
   })
 
   /**
-   * 场景：完整 resolveConfig 处理旧 HMR 配置后，插件在 resolved 阶段继续修改旧字段。
-   * 验证目标：初始迁移和后续实时代理都有效，修改 hmr.host 会同步更新 ws.host。
+   * 完整 resolveConfig 处理旧 HMR 配置后，插件在 resolved 阶段继续修改旧字段。
+   * 初始迁移和后续实时代理都有效，修改 hmr.host 会同步更新 ws.host。
    */
   test('resolveConfig properly syncs hmr and ws', async () => {
     const config = await resolveConfig(
@@ -1022,15 +1022,15 @@ describe('mergeConfig', () => {
   })
 
   /**
-   * 场景：较早执行的插件返回新版 `rolldownOptions`，较晚插件仍从兼容字段
+   * 较早执行的插件返回新版 `rolldownOptions`，较晚插件仍从兼容字段
    * `rollupOptions` 读取配置。
-   * 验证目标：兼容代理必须在每次插件配置合并后立即建立，而不是等所有插件结束后
+   * 兼容代理必须在每次插件配置合并后立即建立，而不是等所有插件结束后
    * 才统一转换；否则后续插件会读不到前一个插件的配置（#21612）。
    */
   describe('later plugin can read `rollupOptions` set via `rolldownOptions` in earlier plugin', () => {
     /**
-     * 场景：插件 A 在顶层 build/worker 中写入 rolldownOptions。
-     * 验证目标：紧随其后的插件 B 可从两个旧 rollupOptions 入口读到相同值。
+     * 插件 A 在顶层 build/worker 中写入 rolldownOptions。
+     * 紧随其后的插件 B 可从两个旧 rollupOptions 入口读到相同值。
      */
     test('top-level config', async () => {
       expect.assertions(2)
@@ -1070,8 +1070,8 @@ describe('mergeConfig', () => {
     })
 
     /**
-     * 场景：初始配置没有 environments，插件 A 首次创建 ssr 环境并写入 rolldownOptions。
-     * 验证目标：新建环境同样立即获得兼容代理，插件 B 可通过 rollupOptions 读取。
+     * 初始配置没有 environments，插件 A 首次创建 ssr 环境并写入 rolldownOptions。
+     * 新建环境同样立即获得兼容代理，插件 B 可通过 rollupOptions 读取。
      */
     test('new `environments` object', async () => {
       expect.assertions(1)
@@ -1111,8 +1111,8 @@ describe('mergeConfig', () => {
     })
 
     /**
-     * 场景：初始配置已有 client 环境，插件 A 再追加此前不存在的 ssr 环境。
-     * 验证目标：兼容处理必须遍历合并后的环境集合，不能只处理初始环境。
+     * 初始配置已有 client 环境，插件 A 再追加此前不存在的 ssr 环境。
+     * 兼容处理必须遍历合并后的环境集合，不能只处理初始环境。
      */
     test('new environment on existing `environments` object', async () => {
       expect.assertions(1)
@@ -1159,8 +1159,8 @@ describe('mergeConfig', () => {
 
 describe('resolveEnvPrefix', () => {
   /**
-   * 场景：用户未配置 `envPrefix`。
-   * 验证目标：默认只公开以 `VITE_` 开头的环境变量，并统一返回数组形式。
+   * 用户未配置 `envPrefix`。
+   * 默认只公开以 `VITE_` 开头的环境变量，并统一返回数组形式。
    */
   test(`use 'VITE_' as default value`, () => {
     const config: UserConfig = {}
@@ -1168,8 +1168,8 @@ describe('resolveEnvPrefix', () => {
   })
 
   /**
-   * 场景：用户把单个前缀或前缀数组中的某项设为空字符串。
-   * 验证目标：空字符串会匹配所有 `process.env` 键，存在把密钥打入客户端的风险，
+   * 用户把单个前缀或前缀数组中的某项设为空字符串。
+   * 空字符串会匹配所有 `process.env` 键，存在把密钥打入客户端的风险，
    * 因此必须抛错，而不是把它当成“禁用前缀过滤”。
    */
   test(`throw error if envPrefix contains ''`, () => {
@@ -1180,8 +1180,8 @@ describe('resolveEnvPrefix', () => {
   })
 
   /**
-   * 场景：前缀包含空格。
-   * 验证目标：这类前缀在合法 shell/`.env` 变量名中无法实际匹配，Vite 应逐次告警，
+   * 前缀包含空格。
+   * 这类前缀不符合通常的 shell/`.env` 变量命名方式，Vite 应逐次告警，
    * 帮助用户发现无效配置（#21292）。
    */
   test(`show a warning message if envPrefix contains a whitespace`, () => {
@@ -1198,8 +1198,8 @@ describe('resolveEnvPrefix', () => {
   })
 
   /**
-   * 场景：用户提供合法的自定义前缀数组。
-   * 验证目标：保持用户前缀，不再额外加入默认 `VITE_`。
+   * 用户提供合法的自定义前缀数组。
+   * 保持用户前缀，不再额外加入默认 `VITE_`。
    */
   test('should work correctly for valid envPrefix value', () => {
     const config: UserConfig = { envPrefix: ['CUSTOM_'] }
@@ -1222,7 +1222,7 @@ describe('preview config', () => {
     cors: true,
   })
 
-  /** 场景：只配置 server。验证目标：通用字段继承，但 preview 端口使用独立默认值 4173。 */
+  /** 只配置 server。通用字段继承，但 preview 端口使用独立默认值 4173。 */
   test('preview inherits server config with default port', async () => {
     const config: InlineConfig = {
       server: serverConfig(),
@@ -1235,7 +1235,7 @@ describe('preview config', () => {
     })
   })
 
-  /** 场景：preview 只覆盖端口。验证目标：其余字段仍逐项继承 server 配置。 */
+  /** preview 只覆盖端口。其余字段仍逐项继承 server 配置。 */
   test('preview inherits server config with port override', async () => {
     const config: InlineConfig = {
       server: serverConfig(),
@@ -1261,7 +1261,7 @@ describe('preview config', () => {
     cors: false,
   })
 
-  /** 场景：preview 提供完整冲突值。验证目标：所有显式 preview 值都优先于 server。 */
+  /** preview 提供完整冲突值。所有显式 preview 值都优先于 server。 */
   test('preview overrides server config', async () => {
     const config: InlineConfig = {
       server: serverConfig(),
@@ -1297,8 +1297,8 @@ describe('resolveConfig', () => {
   }
 
   /**
-   * 场景：插件通过 config 钩子返回 `{ clearScreen: false }`。
-   * 验证目标：插件返回值会合入当前配置，且能够覆盖用户内联的 true。
+   * 插件通过 config 钩子返回 `{ clearScreen: false }`。
+   * 插件返回值会合入当前配置，且能够覆盖用户内联的 true。
    */
   test('plugin merges `clearScreen` option', async () => {
     const config1: InlineConfig = { plugins: [keepScreenMergePlugin()] }
@@ -1315,8 +1315,8 @@ describe('resolveConfig', () => {
   })
 
   /**
-   * 场景：插件直接原地修改传入的 config，并不返回新对象。
-   * 验证目标：resolveConfig 保留原地修改，不要求插件必须返回配置。
+   * 插件直接原地修改传入的 config，并不返回新对象。
+   * resolveConfig 保留原地修改，不要求插件必须返回配置。
    */
   test('plugin overrides `clearScreen` option', async () => {
     const config1: InlineConfig = { plugins: [keepScreenOverridePlugin()] }
@@ -1333,13 +1333,14 @@ describe('resolveConfig', () => {
   })
 
   /**
-   * 场景：项目 root 含 `?`、`#`、`*`，会与 URL query/hash 或 glob 语义冲突。
-   * 验证目标：不阻断跨平台合法路径，但必须给出重命名告警（#15761、#19683）。
+   * 项目 root 含 `?`、`#`、`*`，会与 URL query/hash 或 glob 语义冲突。
+   * 不阻断跨平台合法路径，但必须给出重命名告警（#15761、#19683）。
    */
   test('resolveConfig with root path including "#" and "?" and "*" should warn ', async () => {
     expect.assertions(1)
 
     const logger = createLogger('info')
+    /** 直接断言本次配置解析给出的特殊目录字符警告，expect.assertions 限定实际调用。 */
     logger.warn = (str) => {
       expect(str).to.include(
         'Consider renaming the directory without the characters',
@@ -1350,8 +1351,8 @@ describe('resolveConfig', () => {
   })
 
   /**
-   * 场景：用户完全不配置新旧打包器字段。
-   * 验证目标：build、worker、optimizeDeps 的旧 rollupOptions 都是新
+   * 用户完全不配置新旧打包器字段。
+   * build、worker、optimizeDeps 的旧 rollupOptions 都是新
    * rolldownOptions 的兼容视图，而不是彼此脱节的默认对象。
    */
   test('syncs `build.rollupOptions` and `build.rolldownOptions`', async () => {
@@ -1368,8 +1369,8 @@ describe('resolveConfig', () => {
   })
 
   /**
-   * 场景：只使用顶层 input。
-   * 验证目标：它作为旧入口只传给 client Environment，且保持环境入口身份，不能误塞进
+   * 只使用顶层 input。
+   * 它作为旧入口只传给 client Environment，且保持环境入口身份，不能误塞进
    * build.rolldownOptions.input；SSR 也不能继承浏览器入口（#22642）。
    */
   test('top-level input applies to the client environment only (non-inherit)', async () => {
@@ -1385,8 +1386,8 @@ describe('resolveConfig', () => {
   })
 
   /**
-   * 场景：顶层声明 client 入口，ssr Environment 声明自己的入口。
-   * 验证目标：环境级 input 优先，两个环境各自保留正确入口。
+   * 顶层声明 client 入口，ssr Environment 声明自己的入口。
+   * 环境级 input 优先，两个环境各自保留正确入口。
    */
   test('per-environment input overrides the top-level value', async () => {
     const config = await resolveConfig(
@@ -1404,8 +1405,8 @@ describe('resolveConfig', () => {
   })
 
   /**
-   * 场景：input 是相对路径数组。
-   * 验证目标：解析配置阶段只校验/反转义，不提前转成绝对路径或改变数组形状。
+   * input 是相对路径数组。
+   * 解析配置阶段只校验/反转义，不提前转成绝对路径或改变数组形状。
    */
   test('keeps array input relative to the root', async () => {
     const config = await resolveConfig(
@@ -1417,8 +1418,8 @@ describe('resolveConfig', () => {
   })
 
   /**
-   * 场景：input 是命名入口对象。
-   * 验证目标：键名和相对路径值均原样保留，供后续 Environment/构建阶段解释。
+   * input 是命名入口对象。
+   * 键名和相对路径值均原样保留，供后续 Environment/构建阶段解释。
    */
   test('keeps record input relative to the root', async () => {
     const config = await resolveConfig(
@@ -1433,8 +1434,8 @@ describe('resolveConfig', () => {
   })
 
   /**
-   * 场景：字符串、数组元素或对象值含 tinyglobby 支持的动态模式字符。
-   * 验证目标：当前版本明确拒绝 glob，避免未来真正支持 glob 时改变既有路径语义
+   * 字符串、数组元素或对象值含 tinyglobby 支持的动态模式字符。
+   * 当前版本明确拒绝 glob，避免未来真正支持 glob 时改变既有路径语义
    * （#22642）。
    */
   test('reserves glob characters in input', async () => {
@@ -1464,8 +1465,8 @@ describe('resolveConfig', () => {
   })
 
   /**
-   * 场景：真实文件名本身含 `*` 等字符，用户用反斜杠显式转义。
-   * 验证目标：转义形式通过校验，并在最终 input 中还原成真实文件名。
+   * 真实文件名本身含 `*` 等字符，用户用反斜杠显式转义。
+   * 转义形式通过校验，并在最终 input 中还原成真实文件名。
    */
   test('support escaped input', async () => {
     const cases: {
@@ -1504,8 +1505,8 @@ describe('resolveConfig', () => {
   })
 
   /**
-   * 场景：input 含 `$`、连字符、下划线或 Windows 反斜杠等非 glob 特殊字符。
-   * 验证目标：不能把普通合法路径误判成 glob，也不能擅自标准化用户入口字符串。
+   * input 含 `$`、连字符、下划线或 Windows 反斜杠等非 glob 特殊字符。
+   * 不能把普通合法路径误判成 glob，也不能擅自标准化用户入口字符串。
    */
   test('allows non-glob special characters in input', async () => {
     const cases: {
@@ -1543,8 +1544,8 @@ describe('resolveConfig', () => {
   })
 
   /**
-   * 场景：库模式只配置名称，没有单独声明 lib.entry。
-   * 验证目标：顶层 input 作为库入口回退值，避免用户重复声明同一路径。
+   * 库模式只配置名称，没有单独声明 lib.entry。
+   * 顶层 input 作为库入口回退值，避免用户重复声明同一路径。
    */
   test('is used as the default for build.lib.entry when entry is omitted', async () => {
     const config = await resolveConfig(
@@ -1559,8 +1560,8 @@ describe('resolveConfig', () => {
   })
 
   /**
-   * 场景：顶层 input 与 build.lib.entry 同时存在。
-   * 验证目标：更具体的库入口优先，顶层兼容入口不能覆盖它。
+   * 顶层 input 与 build.lib.entry 同时存在。
+   * 更具体的库入口优先，顶层兼容入口不能覆盖它。
    */
   test('explicit build.lib.entry overrides the top-level input', async () => {
     const config = await resolveConfig(
@@ -1576,8 +1577,8 @@ describe('resolveConfig', () => {
 })
 
 /**
- * 场景：用户从旧顶层 client/ssr resolve 配置起步，插件返回新 environments 配置。
- * 验证目标：两套入口按“旧配置为默认、新环境配置追加”的顺序合并，并同步回兼容字段。
+ * 用户从旧顶层 client/ssr resolve 配置起步，插件返回新 environments 配置。
+ * 两套入口按“旧配置为默认、新环境配置追加”的顺序合并，并同步回兼容字段。
  */
 test('config compat 1', async () => {
   const config = await resolveConfig(
@@ -1593,7 +1594,7 @@ test('config compat 1', async () => {
       plugins: [
         {
           name: 'test',
-          /** 用新 Environment 配置覆盖旧顶层 client/ssr 条件。 */
+          /** 用新 Environment 配置追加旧顶层 client/ssr 条件。 */
           config() {
             return {
               environments: {
@@ -1642,8 +1643,9 @@ test('config compat 1', async () => {
 })
 
 /**
- * 场景：用户从新 environments 配置起步，插件仍返回旧顶层 client/ssr 字段。
- * 验证目标：插件返回值继续拥有较高优先级，同时最终新旧入口保持一致。
+ * 用户从新 environments 配置起步，插件仍返回旧顶层 client/ssr 字段。
+ * 插件返回的旧字段先成为环境默认输入，再追加原有环境数组；结果顺序为
+ * client2→client1、ssr2→ssr1，最终新旧入口保持一致。
  */
 test('config compat 2', async () => {
   const config = await resolveConfig(
@@ -1663,7 +1665,7 @@ test('config compat 2', async () => {
       plugins: [
         {
           name: 'test',
-          /** 用旧顶层字段覆盖初始 Environment 条件，验证反向兼容合并。 */
+          /** 用旧顶层字段补入环境默认条件，验证与既有环境数组的合并顺序。 */
           config() {
             return {
               resolve: {
@@ -1708,8 +1710,8 @@ test('config compat 2', async () => {
 })
 
 /**
- * 场景：用户没有声明任何 resolve conditions。
- * 验证目标：client 采用 browser 条件、ssr 采用 node 条件，且每组默认值同步到旧入口。
+ * 用户没有声明任何 resolve conditions。
+ * client 采用 browser 条件、ssr 采用 node 条件，且每组默认值同步到旧入口。
  */
 test('config compat 3', async () => {
   const config = await resolveConfig({}, 'serve')
@@ -1744,8 +1746,8 @@ test('config compat 3', async () => {
 })
 
 /**
- * 场景：configEnvironment 钩子只原地修改 custom1 的 noExternal。
- * 验证目标：各 Environment 在继承默认配置时拥有独立对象，修改不能泄漏到 custom2。
+ * configEnvironment 钩子只原地修改 custom1 的 noExternal。
+ * 各 Environment 在继承默认配置时拥有独立对象，修改不能泄漏到 custom2。
  */
 test('configEnvironment mutation does not leak between environments', async () => {
   const resolved = await resolveConfig(
@@ -1775,8 +1777,8 @@ test('configEnvironment mutation does not leak between environments', async () =
 })
 
 /**
- * 场景：顶层 build 内含需按引用保留的 terser nameCache。
- * 验证目标：旧顶层 build 与 client Environment build 共享相同深层引用，兼容
+ * 顶层 build 内含需按引用保留的 terser nameCache。
+ * 旧顶层 build 与 client Environment build 共享相同深层引用，兼容
  * configResolved 阶段的生态插件原地修改。
  */
 test('build and environments.client.build has the same reference', async () => {
@@ -1799,8 +1801,8 @@ test('build and environments.client.build has the same reference', async () => {
 })
 
 /**
- * 场景：未配置、旧顶层 server.preTransformRequests，以及环境级显式 true/false 组合。
- * 验证目标：client 默认 true、其他环境默认 false；旧顶层值作为环境默认值，但不能覆盖
+ * 未配置、旧顶层 server.preTransformRequests，以及环境级显式 true/false 组合。
+ * client 默认 true、其他环境默认 false；旧顶层值作为环境默认值，但不能覆盖
  * 环境自身显式选择。
  */
 test('preTransformRequests', async () => {
@@ -1937,8 +1939,8 @@ describe('loadConfigFromFile', () => {
     }
 
     /**
-     * 场景：ESM 配置直接使用 CJS 的 __dirname/__filename。
-     * 验证目标：bundle 仍可注入兼容值，但提示改用 Node ESM 的 import.meta 对应属性。
+     * ESM 配置直接使用 CJS 的 __dirname/__filename。
+     * bundle 仍可注入兼容值，但提示改用 Node ESM 的 import.meta 对应属性。
      */
     test('warns on __dirname / __filename', async () => {
       const messages = await loadWithWarnings('dirname')
@@ -1953,8 +1955,8 @@ describe('loadConfigFromFile', () => {
     })
 
     /**
-     * 场景：含 TypeScript 专属语法的配置也使用 __dirname。
-     * 验证目标：当当前 Node 能原生剥离类型时，兼容扫描仍能定位 TS 源码行列；不支持该
+     * 含 TypeScript 专属语法的配置也使用 __dirname。
+     * 当当前 Node 能原生剥离类型时，兼容扫描仍能定位 TS 源码行列；不支持该
      * 能力的 Node 跳过用例，而不是把运行时限制误判成扫描失败。
      */
     test.skipIf(!supportsTypeStripping)(
@@ -1972,8 +1974,8 @@ describe('loadConfigFromFile', () => {
     )
 
     /**
-     * 场景：ESM 配置省略相对导入扩展名。
-     * 验证目标：bundle 可以解析，但告知 native Node ESM 必须写完整文件名。
+     * ESM 配置省略相对导入扩展名。
+     * bundle 可以解析，但告知 native Node ESM 必须写完整文件名。
      */
     test('warns on extension-less import', async () => {
       const messages = await loadWithWarnings('extensionless')
@@ -1987,8 +1989,8 @@ describe('loadConfigFromFile', () => {
     })
 
     /**
-     * 场景：ESM 相对导入依赖目录 index 自动解析。
-     * 验证目标：提示显式导入 index 文件，因为 native Node ESM 不做目录入口补全。
+     * ESM 相对导入依赖目录 index 自动解析。
+     * 提示显式导入 index 文件，因为 native Node ESM 不做目录入口补全。
      */
     test('warns on directory-index import', async () => {
       const messages = await loadWithWarnings('directory-index')
@@ -2002,8 +2004,8 @@ describe('loadConfigFromFile', () => {
     })
 
     /**
-     * 场景：ESM 配置导入 JSON，但没有 import attributes。
-     * 验证目标：精确提示补充 `with { type: 'json' }`，避免切到 native 后加载失败。
+     * ESM 配置导入 JSON，但没有 import attributes。
+     * 精确提示补充 `with { type: 'json' }`，避免切到 native 后加载失败。
      */
     test('warns on JSON import without attributes', async () => {
       const messages = await loadWithWarnings('json')
@@ -2017,16 +2019,16 @@ describe('loadConfigFromFile', () => {
     })
 
     /**
-     * 场景：JSON import 已声明正确 attributes。
-     * 验证目标：原生兼容写法不能产生误报警告。
+     * JSON import 已声明正确 attributes。
+     * 原生兼容写法不能产生误报警告。
      */
     test('does not warn on JSON import with attributes', async () => {
       expect(await loadWithWarnings('json-ok')).toHaveLength(0)
     })
 
     /**
-     * 场景：无扩展名导入最终解析到 JSON。
-     * 验证目标：一次告警同时给出 `.json` 扩展名和 import attributes 两项修复要求。
+     * 无扩展名导入最终解析到 JSON。
+     * 一次告警同时给出 `.json` 扩展名和 import attributes 两项修复要求。
      */
     test('warns on an extension-less import that resolves to JSON', async () => {
       const messages = await loadWithWarnings('json-extensionless')
@@ -2040,24 +2042,24 @@ describe('loadConfigFromFile', () => {
     })
 
     /**
-     * 场景：配置只使用 native Node ESM 支持的语法。
-     * 验证目标：兼容扫描应保持安静，避免无行动价值的迁移噪声。
+     * 配置只使用 native Node ESM 支持的语法。
+     * 兼容扫描应保持安静，避免无行动价值的迁移噪声。
      */
     test('does not warn on a native-compatible config', async () => {
       expect(await loadWithWarnings('clean')).toHaveLength(0)
     })
 
     /**
-     * 场景：真正的 `.cjs` 配置使用 __dirname。
-     * 验证目标：该变量在原生 CommonJS 中合法，不能套用 ESM 告警规则。
+     * 真正的 `.cjs` 配置使用 __dirname。
+     * 该变量在原生 CommonJS 中合法，不能套用 ESM 告警规则。
      */
     test('does not warn for a CJS config using __dirname', async () => {
       expect(await loadWithWarnings('cjs', 'vite.config.cjs')).toHaveLength(0)
     })
 
     /**
-     * 场景：CJS 主配置导入 ESM 辅助文件，辅助文件内部使用 __dirname。
-     * 验证目标：兼容性按每个模块的真实格式判断，而不是只看入口 `.cjs`。
+     * CJS 主配置导入 ESM 辅助文件，辅助文件内部使用 __dirname。
+     * 兼容性按每个模块的真实格式判断，而不是只看入口 `.cjs`。
      */
     test('warns for an ESM file imported by a CJS config', async () => {
       const messages = await loadWithWarnings(
@@ -2074,8 +2076,8 @@ describe('loadConfigFromFile', () => {
     })
 
     /**
-     * 场景：最近 package.json 声明 `type: commonjs`，但 `.js` 配置使用 ESM 语法。
-     * 验证目标：提示改扩展名或 package type；bundle 能转译不代表 native Node 能加载。
+     * 最近 package.json 声明 `type: commonjs`，但 `.js` 配置使用 ESM 语法。
+     * 提示改扩展名或 package type；bundle 能转译不代表 native Node 能加载。
      */
     test('warns on ESM syntax in a config under a `type: commonjs` package', async () => {
       const messages = await loadWithWarnings('esm-in-commonjs-pkg')
@@ -2189,8 +2191,8 @@ describe('loadConfigFromFile', () => {
     for (const { fileName, content } of cases) {
       for (const typeField of [undefined, 'module']) {
         /**
-         * 场景：当前扩展名与最近 package type 的组合。
-         * 验证目标：默认发现、模块格式判断、TS 转换和返回路径全部一致。
+         * 循环按 js/cjs/mjs 的 JS 源码与 ts/mts/cts 的类型断言源码，分别搭配缺省/module package type；
+         * 写入配置后默认发现应返回同一路径和 define.foo=1，afterEach 删除当前文件及 package.json。
          */
         test(`load ${fileName}${typeField ? ' with package#type module' : ''}`, async () => {
           writePackageJson(typeField)
@@ -2202,8 +2204,8 @@ describe('loadConfigFromFile', () => {
   })
 
   /**
-   * 场景：TS 配置跨多个本地模块导入数组、package imports 映射和条件导出。
-   * 验证目标：bundle loader 遵循 Node/Vite 解析语义，并执行完整依赖图而非只转入口。
+   * TS 配置跨多个本地模块导入数组、package imports 映射和条件导出。
+   * bundle loader 遵循 Node/Vite 解析语义，并执行完整依赖图而非只转入口。
    */
   test('can import values', async () => {
     const { config } = (await loadConfigFromFile(
@@ -2230,8 +2232,8 @@ describe('loadConfigFromFile', () => {
   })
 
   /**
-   * 场景：配置通过 import attributes 导入 JSON。
-   * 验证目标：bundle loader 能消费 attributes 并把 JSON 值交给配置。
+   * 配置通过 import attributes 导入 JSON。
+   * bundle loader 能消费 attributes 并把 JSON 值交给配置。
    */
   test('loadConfigFromFile with import attributes', async () => {
     const { config } = (await loadConfigFromFile(
@@ -2247,8 +2249,8 @@ describe('loadConfigFromFile', () => {
   })
 
   /**
-   * 场景：ESM/TS 配置使用 __dirname 和 __filename。
-   * 验证目标：默认 bundle loader 注入每个源文件自己的原始路径，而不是打包临时文件路径
+   * ESM/TS 配置使用 __dirname 和 __filename。
+   * 默认 bundle loader 注入每个源文件自己的原始路径，而不是打包临时文件路径
    * （#2728、#8442）。
    */
   test('cjs module vars are supported in esm', async () => {
@@ -2264,8 +2266,8 @@ describe('loadConfigFromFile', () => {
   })
 
   /**
-   * 场景：配置读取 import.meta.main/url/dirname/filename/resolve，包括跨行 resolve 语法。
-   * 验证目标：打包时的 define 与自定义 resolve hook 保留原生文件作用域语义
+   * 配置读取 import.meta.main/url/dirname/filename/resolve，包括跨行 resolve 语法。
+   * 打包时的 define 与自定义 resolve hook 保留原生文件作用域语义
    * （#20516、#20962）。
    */
   test('import.meta properties are supported', async () => {
@@ -2285,8 +2287,8 @@ describe('loadConfigFromFile', () => {
   })
 
   /**
-   * 场景：配置首行带 Unix shebang，随后还需注入文件作用域变量。
-   * 验证目标：shebang 保持输出第一行，注入代码插在其后，避免 Node 语法错误（#21158）。
+   * 配置首行带 Unix shebang，随后还需注入文件作用域变量。
+   * shebang 保持输出第一行，注入代码插在其后，避免 Node 语法错误（#21158）。
    */
   test('shebang is preserved at the top of the file', async () => {
     const { config } = (await loadConfigFromFile(
@@ -2300,8 +2302,8 @@ describe('loadConfigFromFile', () => {
   })
 
   /**
-   * 场景：hashbang 以 Windows CRLF 结束。
-   * 验证目标：行终止符识别正确，注入变量不会挤进 hashbang 行（#23038）。
+   * hashbang 以 Windows CRLF 结束。
+   * 行终止符识别正确，注入变量不会挤进 hashbang 行（#23038）。
    */
   test('injected variables follow a hashbang ending in CRLF', async () => {
     const { config, path: configPath } = (await loadConfigFromFile(
@@ -2322,8 +2324,8 @@ describe('loadConfigFromFile', () => {
     const fixtureRoot = path.resolve(fixtures, './native-import')
 
     /**
-     * 场景：原生兼容的基础 ESM JavaScript 配置。
-     * 验证目标：native loader 直接取得默认导出；普通测试运行时无 freshImport，依赖列表
+     * 原生兼容的基础 ESM JavaScript 配置。
+     * native loader 直接取得默认导出；普通测试运行时无 freshImport，依赖列表
      * 因而为空（#19178、#22602）。
      */
     test('imports a basic js config', async () => {
@@ -2356,8 +2358,8 @@ describe('loadConfigFromFile', () => {
     })
 
     /**
-     * 场景：root 没有 package.json，但已有 node_modules（常见于使用 npm 包的 Deno 项目）。
-     * 验证目标：缓存仍放入 node_modules/.vite，不在 root 额外创建裸 `.vite`。
+     * root 没有 package.json，但已有 node_modules（常见于使用 npm 包的 Deno 项目）。
+     * 缓存仍放入 node_modules/.vite，不在 root 额外创建裸 `.vite`。
      */
     test('uses node_modules/.vite when node_modules exists without package.json', async () => {
       const tempDir = path.join(tmpBase, 'with-node-modules')
@@ -2374,8 +2376,8 @@ describe('loadConfigFromFile', () => {
     })
 
     /**
-     * 场景：root 既无 package.json 也无 node_modules。
-     * 验证目标：最后才回退到 root/.vite。
+     * root 既无 package.json 也无 node_modules。
+     * 最后才回退到 root/.vite。
      */
     test('uses .vite when neither package.json nor node_modules exist', async () => {
       const tempDir = path.join(tmpBase, 'empty')
@@ -2398,7 +2400,7 @@ describe('resolveServerOptions', () => {
     delete process.env.__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS
   })
 
-  /** 场景：环境变量只含一个主机。验证目标：该主机被追加到空 allowedHosts。 */
+  /** 环境变量只含一个主机。该主机被追加到空 allowedHosts。 */
   test('adds single host from __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS', async () => {
     process.env.__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS = 'example.com'
     const resolved = await resolveServerOptions(
@@ -2409,7 +2411,7 @@ describe('resolveServerOptions', () => {
     expect(resolved.allowedHosts).toEqual(['example.com'])
   })
 
-  /** 场景：环境变量用逗号声明多个主机。验证目标：保持声明顺序解析为三个独立条目。 */
+  /** 环境变量用逗号声明多个主机。保持声明顺序解析为三个独立条目。 */
   test('adds multiple hosts from __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS', async () => {
     process.env.__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS =
       'example.com,test.com,dev.example.org'
@@ -2425,7 +2427,7 @@ describe('resolveServerOptions', () => {
     ])
   })
 
-  /** 场景：各主机两侧含空白。验证目标：规范化结果只保留主机文本。 */
+  /** 各主机两侧含空白。规范化结果只保留主机文本。 */
   test('trims whitespace from hosts in __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS', async () => {
     process.env.__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS =
       ' example.com , test.com , dev.example.org '
@@ -2441,7 +2443,7 @@ describe('resolveServerOptions', () => {
     ])
   })
 
-  /** 场景：逗号列表含连续和尾随空项。验证目标：空项被丢弃且有效主机全部保留。 */
+  /** 逗号列表含连续和尾随空项。空项被丢弃且有效主机全部保留。 */
   test('filters empty hosts from __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS', async () => {
     process.env.__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS =
       'example.com,,test.com,,'
@@ -2453,7 +2455,7 @@ describe('resolveServerOptions', () => {
     expect(resolved.allowedHosts).toEqual(['example.com', 'test.com'])
   })
 
-  /** 场景：配置已有允许主机且环境变量再提供两个。验证目标：原配置优先保留并在末尾追加新项。 */
+  /** 配置已有允许主机且环境变量再提供两个。原配置优先保留并在末尾追加新项。 */
   test('appends to existing allowedHosts', async () => {
     process.env.__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS = 'new.com,another.com'
     const resolved = await resolveServerOptions(
@@ -2468,7 +2470,7 @@ describe('resolveServerOptions', () => {
     ])
   })
 
-  /** 场景：allowedHosts 已设为允许全部。验证目标：环境变量不能把布尔语义降级成数组。 */
+  /** allowedHosts 已设为允许全部。环境变量不能把布尔语义降级成数组。 */
   test('does not modify allowedHosts when set to true', async () => {
     process.env.__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS = 'example.com'
     const resolved = await resolveServerOptions(
@@ -2479,7 +2481,7 @@ describe('resolveServerOptions', () => {
     expect(resolved.allowedHosts).toBe(true)
   })
 
-  /** 场景：环境变量包含引号或反斜杠保留字符。验证目标：拒绝全部条目并为每种输入输出警告。 */
+  /** 环境变量包含引号或反斜杠保留字符。拒绝全部条目并为每种输入输出警告。 */
   test('throw an error if it contains `"` or `\'` or `\\`', async () => {
     const envs = ['"example.com"', "'example.com'", '\\example.com']
     for (const env of envs) {

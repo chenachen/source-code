@@ -11,7 +11,7 @@ async function createWorkerImportMetaUrlPluginTransform() {
   const environment = new PartialEnvironment('client', config)
 
   return async (code: string) => {
-  // @ts-expect-error transform.handler should exist
+    // @ts-expect-error transform.handler should exist
     const result = await instance.transform.handler.call(
       { environment, parse: parseAst },
       code,
@@ -156,7 +156,7 @@ worker.addEventListener('message', (ev) => text('.simple-worker-url', JSON.strin
 
   /**
    * 场景：options 与 Worker 调用存在尾逗号、注释、换行和内部括号。
-   * 机制：通过 AST 范围配合括号扫描定位参数边界，而不是用脆弱的正则截断。
+   * 机制：先屏蔽注释/字面量，再扫描括号定位参数边界；需要时用 AST 提取 options.type。
    * 验证目标：只替换 URL 参数，不吞掉调用后的代码或改变原有 options。
    */
   test('trailing comma', async () => {
@@ -184,7 +184,7 @@ new Worker(
   /**
    * 场景：type 无法静态确定，或对象展开可能在已解析 type 后覆盖它。
    * 验证目标：拒绝产生编译类型与浏览器运行类型不一致的 worker；用户可用
-   * `@vite-ignore` 明确选择跳过自动处理。
+   * `@vite-ignore` 跳过静态 type 推断，URL 仍会被转换。
    */
   test('throws an error when non-static worker options are provided', async () => {
     await expect(
@@ -216,7 +216,7 @@ new Worker(
     )
   })
 
-  /** 场景：options 只有对象展开且没有静态 type；验证目标：转换要求展开之前存在可证明的 type。 */
+  /** 场景：options 只有对象展开且没有静态 type；验证目标：转换要求最后一次展开之后存在可证明的 type。 */
   test('throws an error when spread operator used without the type field', async () => {
     await expect(
       transform(

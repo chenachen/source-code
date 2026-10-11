@@ -15,7 +15,7 @@ let act;
 
 /** 验证显式 StrictMode 下函数 Effect 与类生命周期的开发态双调用语义。 */
 describe('StrictEffectsMode', () => {
-  /** 每个用例重置模块，并重新绑定 React、Noop 渲染器、调度日志与 `act`。 */
+  /** 每个用例重置模块，并重新绑定 React、Noop 渲染器与 `act`。 */
   beforeEach(() => {
     jest.resetModules();
     act = require('internal-test-utils').act;
@@ -25,17 +25,14 @@ describe('StrictEffectsMode', () => {
   });
 
   /**
-   * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-   * When：完成挂载以及用例指定的后续渲染或提交步骤。
-   * Then：在 legacy 根中完成挂载与更新，确认 StrictMode 不额外双调用 Effect 或类生命周期。
-   *
-   * 验证机制：显式断言联合检查状态、输出和副作用。
-   * 对应源码：`commitDoubleInvokeEffectsInDEV()` 的 legacy 根跳过分支。
+   * 在 legacy 根的 StrictMode 中首次挂载同时注册 layout/passive effect 的 App。
+   * 日志只有两类 create 各一次，没有开发态模拟 cleanup/create；该用例只执行首次挂载。
+   * 对应源码：LegacyRoot 不给这棵树启用 StrictEffectsMode，因而没有 MountLayoutDev/MountPassiveDev 重放工作。
    */
   // @gate !disableLegacyMode
   it('should not double invoke effects in legacy mode', async () => {
     const log = [];
-    /** 组织当前用例的根组件、更新入口与受测 Hook；服务于“在 legacy 根中完成挂载与更新，确认 StrictMode 不额外双调用 Effect 或类生命周期”场景。 */
+    /** 注册未传依赖数组的 layout/passive effect，返回 text 供 legacy 根挂载。 */
     function App({text}) {
       React.useEffect(() => {
         log.push('useEffect mount');
@@ -63,16 +60,13 @@ describe('StrictEffectsMode', () => {
   });
 
   /**
-   * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-   * When：完成挂载以及用例指定的后续渲染或提交步骤。
-   * Then：挂载 StrictMode 组件并检查开发态 Effect 的挂载、模拟卸载与重挂载序列。
-   *
-   * 验证机制：显式断言联合检查状态、输出和副作用。
-   * 对应源码：`commitDoubleInvokeEffectsInDEV()`、`recursivelyTraverseAndDoubleInvokeEffectsInDEV()` 与 `doubleInvokeEffectsOnFiber()`。
+   * 在现代根的 StrictMode 中挂载、改变 text、再卸载同时注册两类 effect 的 App。
+   * 初挂在 DEV 额外 cleanup/create 一轮；后续更新因未传依赖数组正常 cleanup/create，真实卸载仅 cleanup。
+   * 对应源码：commitDoubleInvokeEffectsInDEV 的初挂重放，以及普通 mutation/layout/passive 更新和删除路径。
    */
   it('double invoking for effects works properly', async () => {
     const log = [];
-    /** 组织当前用例的根组件、更新入口与受测 Hook；服务于“挂载 StrictMode 组件并检查开发态 Effect 的挂载、模拟卸载与重挂载序列”场景。 */
+    /** 注册未传依赖数组的两类 effect，使 text 更新也触发正常拆装。 */
     function App({text}) {
       React.useEffect(() => {
         log.push('useEffect mount');
@@ -135,16 +129,13 @@ describe('StrictEffectsMode', () => {
   });
 
   /**
-   * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-   * When：删除目标子树并冲刷对应提交阶段。
-   * Then：注册多个 Passive Effect，确认开发态按全挂载、全卸载、全重挂载分阶段执行。
-   *
-   * 验证机制：显式断言联合检查状态、输出和副作用。
-   * 对应源码：`commitDoubleInvokeEffectsInDEV()`、`recursivelyTraverseAndDoubleInvokeEffectsInDEV()` 与 `doubleInvokeEffectsOnFiber()`。
+   * 同一组件按 One、Two 顺序注册两个 passive effect，并在 StrictMode 中挂载、更新、卸载。
+   * 初挂 DEV 日志为 One/Two create、One/Two cleanup、One/Two create；更新先清两项再建两项，删除只清两项。
+   * 对应源码：commitHookEffectListMount/Unmount 的环形链顺序与 doubleInvokeEffectsOnFiber 的分阶段重放。
    */
   it('multiple effects are double invoked in the right order (all mounted, all unmounted, all remounted)', async () => {
     const log = [];
-    /** 组织当前用例的根组件、更新入口与受测 Hook；服务于“注册多个 Passive Effect，确认开发态按全挂载、全卸载、全重挂载分阶段执行”场景。 */
+    /** 按 One、Two 顺序注册两个 passive effect，各自记录 create 与 cleanup。 */
     function App({text}) {
       React.useEffect(() => {
         log.push('useEffect One mount');
@@ -207,16 +198,13 @@ describe('StrictEffectsMode', () => {
   });
 
   /**
-   * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-   * When：删除目标子树并冲刷对应提交阶段。
-   * Then：注册多个 Layout Effect，确认先全部挂载、再全部清理、最后按原序重挂载。
-   *
-   * 验证机制：显式断言联合检查状态、输出和副作用。
-   * 对应源码：`commitDoubleInvokeEffectsInDEV()`、`recursivelyTraverseAndDoubleInvokeEffectsInDEV()` 与 `doubleInvokeEffectsOnFiber()`。
+   * 同一组件按 One、Two 顺序注册两个 layout effect，并在 StrictMode 中挂载、更新、卸载。
+   * 初挂 DEV 日志为两项 create、两项 cleanup、两项 create；更新的 cleanup 位于 mutation，create 位于 layout。
+   * 对应源码：commitHookLayoutUnmountEffects、commitHookLayoutEffects 与 doubleInvokeEffectsOnFiber。
    */
   it('multiple layout effects are double invoked in the right order (all mounted, all unmounted, all remounted)', async () => {
     const log = [];
-    /** 组织当前用例的根组件、更新入口与受测 Hook；服务于“注册多个 Layout Effect，确认先全部挂载、再全部清理、最后按原序重挂载”场景。 */
+    /** 按 One、Two 顺序注册两个 layout effect，各自记录 create 与 cleanup。 */
     function App({text}) {
       React.useLayoutEffect(() => {
         log.push('useLayoutEffect One mount');
@@ -285,16 +273,13 @@ describe('StrictEffectsMode', () => {
   });
 
   /**
-   * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-   * When：删除目标子树并冲刷对应提交阶段。
-   * Then：同时注册布局与被动 Effect，确认无真实卸载时两类 Effect 都执行两次。
-   *
-   * 验证机制：显式断言联合检查状态、输出和副作用。
-   * 对应源码：`commitDoubleInvokeEffectsInDEV()`、`recursivelyTraverseAndDoubleInvokeEffectsInDEV()` 与 `doubleInvokeEffectsOnFiber()`。
+   * App 的 layout/passive create 都不返回 cleanup；在 StrictMode 中挂载、更新、卸载。
+   * 初挂 DEV 仍有两轮 create；更新只有一轮 create，真实卸载无日志。标题中的 no unmount 指未返回清理函数。
+   * 对应源码：effect.inst.destroy 为 undefined 时跳过 cleanup，开发态 reconnect 仍重新执行 create。
    */
   it('useEffect and useLayoutEffect is called twice when there is no unmount', async () => {
     const log = [];
-    /** 组织当前用例的根组件、更新入口与受测 Hook；服务于“同时注册布局与被动 Effect，确认无真实卸载时两类 Effect 都执行两次”场景。 */
+    /** 注册不返回 cleanup 的 layout/passive effect，单独观察 create 次数。 */
     function App({text}) {
       React.useEffect(() => {
         log.push('useEffect mount');
@@ -346,27 +331,24 @@ describe('StrictEffectsMode', () => {
   });
 
   /**
-   * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-   * When：完成挂载以及用例指定的后续渲染或提交步骤。
-   * Then：重放类生命周期时检查实例、参数和 state，确认回调上下文保持正确。
-   *
-   * 验证机制：显式断言联合检查状态、输出和副作用。
-   * 对应源码：`commitDoubleInvokeEffectsInDEV()`、`recursivelyTraverseAndDoubleInvokeEffectsInDEV()` 与 `doubleInvokeEffectsOnFiber()`。
+   * 类的生命周期都通过 this.test() 访问实例方法；在 StrictMode 中首次挂载该类。
+   * DEV 的 didMount → willUnmount → didMount 均成功调用实例方法。test 是空方法，不返回实例或状态。
+   * 对应源码：commitClassDidMount 与 safelyCallComponentWillUnmount 以 instance 作为生命周期接收者。
    */
   it('passes the right context to class component lifecycles', async () => {
     const log = [];
-    /** 定义 App 类 fixture，在“重放类生命周期时检查实例、参数和 state，确认回调上下文保持正确”场景中暴露类生命周期、实例 ref 或错误边界。 */
+    /** 用 this.test() 检查重放生命周期的实例接收者，并记录调用顺序。 */
     class App extends React.PureComponent {
-      /** App.test 返回当前实例标识，供生命周期回调核对 `this` 上下文。 */
+      /** 生命周期调用的空实例方法；this 绑定丢失时访问 this.test() 会抛错。 */
       test() {}
 
-      /** App.componentDidMount 在挂载提交后记录日志或实例状态，用于识别首次调用与开发态重放。 */
+      /** 记录 didMount 调用，供初挂与开发态重放顺序断言使用。 */
       componentDidMount() {
         this.test();
         log.push('componentDidMount');
       }
 
-      /** App.componentDidUpdate 记录更新提交及前后状态，区分更新生命周期与挂载重放。 */
+      /** 记录更新生命周期调用，区分普通更新与初挂重放。 */
       componentDidUpdate() {
         this.test();
         log.push('componentDidUpdate');
@@ -378,7 +360,7 @@ describe('StrictEffectsMode', () => {
         log.push('componentWillUnmount');
       }
 
-      /** 渲染 App.render 对应的类 fixture，并把本轮状态或子树交给宿主输出断言。 */
+      /** 返回本例的宿主输出；生命周期日志由对应方法记录。 */
       render() {
         return null;
       }
@@ -404,23 +386,20 @@ describe('StrictEffectsMode', () => {
   });
 
   /**
-   * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-   * When：完成挂载以及用例指定的后续渲染或提交步骤。
-   * Then：挂载、更新并卸载类组件，确认开发态生命周期重放及真实卸载边界。
-   *
-   * 验证机制：显式断言联合检查状态、输出和副作用。
-   * 对应源码：`commitDoubleInvokeEffectsInDEV()`、`recursivelyTraverseAndDoubleInvokeEffectsInDEV()` 与 `doubleInvokeEffectsOnFiber()`。
+   * 在 StrictMode 中挂载、修改 text、再卸载类组件，分别记录三种生命周期。
+   * 初挂 DEV 为 didMount → willUnmount → didMount；真正更新只 didUpdate，真正删除只 willUnmount。
+   * 对应源码：Strict Effects 的 disappear/reappear，以及 commitClassLayoutLifecycles 和删除提交。
    */
   it('double invoking works for class components', async () => {
     const log = [];
-    /** 定义 App 类 fixture，在“挂载、更新并卸载类组件，确认开发态生命周期重放及真实卸载边界”场景中暴露类生命周期、实例 ref 或错误边界。 */
+    /** 记录类的挂载、更新与卸载，返回 props.text 使更新产生可观察输出。 */
     class App extends React.PureComponent {
-      /** App.componentDidMount 在挂载提交后记录日志或实例状态，用于识别首次调用与开发态重放。 */
+      /** 记录 didMount 调用，供初挂与开发态重放顺序断言使用。 */
       componentDidMount() {
         log.push('componentDidMount');
       }
 
-      /** App.componentDidUpdate 记录更新提交及前后状态，区分更新生命周期与挂载重放。 */
+      /** 记录更新生命周期调用，区分普通更新与初挂重放。 */
       componentDidUpdate() {
         log.push('componentDidUpdate');
       }
@@ -430,7 +409,7 @@ describe('StrictEffectsMode', () => {
         log.push('componentWillUnmount');
       }
 
-      /** 渲染 App.render 对应的类 fixture，并把本轮状态或子树交给宿主输出断言。 */
+      /** 返回本例的宿主输出；生命周期日志由对应方法记录。 */
       render() {
         return this.props.text;
       }
@@ -476,18 +455,15 @@ describe('StrictEffectsMode', () => {
   });
 
   /**
-   * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-   * When：删除目标子树并冲刷对应提交阶段。
-   * Then：让缺少 componentDidMount 的类参与重放，确认非对称生命周期仍会正确清理。
-   *
-   * 验证机制：显式断言联合检查状态、输出和副作用。
-   * 对应源码：`commitDoubleInvokeEffectsInDEV()`、`recursivelyTraverseAndDoubleInvokeEffectsInDEV()` 与 `doubleInvokeEffectsOnFiber()`。
+   * 类只实现 didUpdate/willUnmount；在 StrictMode 中挂载、修改 text、再卸载。
+   * DEV 初挂仍模拟一次 willUnmount；更新只 didUpdate，真实删除再调用 willUnmount。
+   * 对应源码：disappearLayoutEffects 独立检查 componentWillUnmount，不要求存在 componentDidMount。
    */
   it('invokes componentWillUnmount for class components without componentDidMount', async () => {
     const log = [];
-    /** 定义 App 类 fixture，在“让缺少 componentDidMount 的类参与重放，确认非对称生命周期仍会正确清理”场景中暴露类生命周期、实例 ref 或错误边界。 */
+    /** 只实现更新与卸载生命周期，检查初挂模拟清理是否独立于 didMount。 */
     class App extends React.PureComponent {
-      /** App.componentDidUpdate 记录更新提交及前后状态，区分更新生命周期与挂载重放。 */
+      /** 记录更新生命周期调用，区分普通更新与初挂重放。 */
       componentDidUpdate() {
         log.push('componentDidUpdate');
       }
@@ -497,7 +473,7 @@ describe('StrictEffectsMode', () => {
         log.push('componentWillUnmount');
       }
 
-      /** 渲染 App.render 对应的类 fixture，并把本轮状态或子树交给宿主输出断言。 */
+      /** 返回本例的宿主输出；生命周期日志由对应方法记录。 */
       render() {
         return this.props.text;
       }
@@ -539,24 +515,21 @@ describe('StrictEffectsMode', () => {
   });
 
   /**
-   * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-   * When：完成挂载以及用例指定的后续渲染或提交步骤。
-   * Then：在 legacy 根中完成挂载与更新，确认 StrictMode 不额外双调用 Effect 或类生命周期。
-   *
-   * 验证机制：显式断言联合检查状态、输出和副作用。
-   * 对应源码：`commitDoubleInvokeEffectsInDEV()` 的 legacy 根跳过分支。
+   * 在 legacy 根的 StrictMode 中首次挂载带 didMount/didUpdate/willUnmount 的类组件。
+   * 只记录 componentDidMount；未触发更新或卸载，也没有开发态生命周期重放。
+   * 对应源码：LegacyRoot 的 StrictMode 不启用 StrictEffectsMode。
    */
   // @gate !disableLegacyMode
   it('should not double invoke class lifecycles in legacy mode', async () => {
     const log = [];
-    /** 定义 App 类 fixture，在“在 legacy 根中完成挂载与更新，确认 StrictMode 不额外双调用 Effect 或类生命周期”场景中暴露类生命周期、实例 ref 或错误边界。 */
+    /** 记录三类生命周期，检查 legacy 根首次挂载是否追加模拟卸载。 */
     class App extends React.PureComponent {
-      /** App.componentDidMount 在挂载提交后记录日志或实例状态，用于识别首次调用与开发态重放。 */
+      /** 记录 didMount 调用，供初挂与开发态重放顺序断言使用。 */
       componentDidMount() {
         log.push('componentDidMount');
       }
 
-      /** App.componentDidUpdate 记录更新提交及前后状态，区分更新生命周期与挂载重放。 */
+      /** 记录更新生命周期调用，区分普通更新与初挂重放。 */
       componentDidUpdate() {
         log.push('componentDidUpdate');
       }
@@ -566,7 +539,7 @@ describe('StrictEffectsMode', () => {
         log.push('componentWillUnmount');
       }
 
-      /** 渲染 App.render 对应的类 fixture，并把本轮状态或子树交给宿主输出断言。 */
+      /** 返回本例的宿主输出；生命周期日志由对应方法记录。 */
       render() {
         return this.props.text;
       }
@@ -585,16 +558,13 @@ describe('StrictEffectsMode', () => {
   });
 
   /**
-   * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-   * When：完成挂载以及用例指定的后续渲染或提交步骤。
-   * Then：同一提交多次请求冲刷 Passive Effect，确认双调用流程只发生一轮。
-   *
-   * 验证机制：显式断言联合检查状态、输出和副作用。
-   * 对应源码：`commitDoubleInvokeEffectsInDEV()`、`recursivelyTraverseAndDoubleInvokeEffectsInDEV()` 与 `doubleInvokeEffectsOnFiber()`。
+   * 首次 passive create 把 state 从 0 改为 1，使 act 继续处理派生更新和新一轮 passive 工作。
+   * 初挂 DEV 重放一次；派生更新按普通更新拆装，没有再次追加 Strict Effects 重放。
+   * 对应源码：doubleInvokeEffectsInDEVIfNecessary 按新挂载标记选择重放，flushPassiveEffectsImpl 冲刷派生同步工作。
    */
   it('double flushing passive effects only results in one double invoke', async () => {
     const log = [];
-    /** 组织当前用例的根组件、更新入口与受测 Hook；服务于“同一提交多次请求冲刷 Passive Effect，确认双调用流程只发生一轮”场景。 */
+    /** 在 passive create 中把 state 改为 1，触发一轮派生更新，并记录 render 与 effect 日志。 */
     function App({text}) {
       const [state, setState] = React.useState(0);
       React.useEffect(() => {
@@ -654,17 +624,14 @@ describe('StrictEffectsMode', () => {
   });
 
   /**
-   * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-   * When：完成挂载以及用例指定的后续渲染或提交步骤。
-   * Then：初始提交后插入新子树，确认只有新挂载组件进入 Strict Effects 双调用。
-   *
-   * 验证机制：显式断言联合检查状态、输出和副作用。
-   * 对应源码：`commitDoubleInvokeEffectsInDEV()`、`recursivelyTraverseAndDoubleInvokeEffectsInDEV()` 与 `doubleInvokeEffectsOnFiber()`。
+   * 先仅挂载 App，再用 setShowChild(true) 插入 Child；App/Child 均未传 effect 依赖数组。
+   * App 正常更新拆装一次；新 Child 在 DEV create 后额外 cleanup/create。日志区分普通更新与初挂重放。
+   * 对应源码：doubleInvokeEffectsInDEVIfNecessary 的 PlacementDEV 分支。
    */
   it('newly mounted components after initial mount get double invoked', async () => {
     const log = [];
     let _setShowChild;
-    /** 作为子级函数组件暴露 Hook 状态和提交日志；服务于“初始提交后插入新子树，确认只有新挂载组件进入 Strict Effects 双调用”场景。 */
+    /** 注册未传依赖数组的两类 effect，区分首次创建、DEV 重放与普通更新。 */
     function Child() {
       React.useEffect(() => {
         log.push('Child useEffect mount');
@@ -678,7 +645,7 @@ describe('StrictEffectsMode', () => {
       return null;
     }
 
-    /** 组织当前用例的根组件、更新入口与受测 Hook；服务于“初始提交后插入新子树，确认只有新挂载组件进入 Strict Effects 双调用”场景。 */
+    /** 暴露 showChild 的 setter，在既有 App 下插入新的 Child。 */
     function App() {
       const [showChild, setShowChild] = React.useState(false);
       _setShowChild = setShowChild;
@@ -747,16 +714,13 @@ describe('StrictEffectsMode', () => {
   });
 
   /**
-   * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-   * When：完成挂载以及用例指定的后续渲染或提交步骤。
-   * Then：只重排稳定 key 的既有子节点，确认未卸载且依赖未变的 Effect 不会重跑。
-   *
-   * 验证机制：显式断言联合检查状态、输出和副作用。
-   * 对应源码：`commitDoubleInvokeEffectsInDEV()`、`recursivelyTraverseAndDoubleInvokeEffectsInDEV()` 与 `doubleInvokeEffectsOnFiber()`。
+   * Child 的两类 effect 依赖均为空数组；初挂后把稳定 key 顺序从 a,b 改成 b,a。
+   * 重排没有任何 effect 日志：Placement 移动保留组件身份，也未给 effect 写 HookHasEffect。
+   * 对应源码：协调的 key/type 复用、Hook 依赖比较与 PlacementDEV 初挂重放判定。
    */
   it('reordering keyed children does not re-run effects', async () => {
     const log = [];
-    /** 作为子级函数组件暴露 Hook 状态和提交日志；服务于“只重排稳定 key 的既有子节点，确认未卸载且依赖未变的 Effect 不会重跑”场景。 */
+    /** 两类 effect 均使用空依赖数组，按 label 记录创建与清理。 */
     function Child({label}) {
       React.useEffect(() => {
         log.push(`${label} useEffect mount`);
@@ -770,7 +734,7 @@ describe('StrictEffectsMode', () => {
       return null;
     }
 
-    /** 组织当前用例的根组件、更新入口与受测 Hook；服务于“只重排稳定 key 的既有子节点，确认未卸载且依赖未变的 Effect 不会重跑”场景。 */
+    /** 按 keys 数组生成稳定 key 的 Child，以切换兄弟顺序。 */
     function App({keys}) {
       return keys.map(key => <Child key={key} label={key} />);
     }
@@ -821,18 +785,15 @@ describe('StrictEffectsMode', () => {
   });
 
   /**
-   * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-   * When：完成挂载以及用例指定的后续渲染或提交步骤。
-   * Then：混合挂载类与函数组件，确认两套生命周期的双调用顺序正确交错。
-   *
-   * 验证机制：显式断言联合检查状态、输出和副作用。
-   * 对应源码：`commitDoubleInvokeEffectsInDEV()`、`recursivelyTraverseAndDoubleInvokeEffectsInDEV()` 与 `doubleInvokeEffectsOnFiber()`。
+   * ClassChild 与 FunctionChild 同处 StrictMode；随后用同一 text 重渲染，再卸载。
+   * DEV 初挂先完成类/layout/passive create，再统一拆装；PureComponent 更新 bailout，函数无依赖数组的 effect 仍更新。
+   * 对应源码：disappearLayoutEffects/reappearLayoutEffects 与 disconnectPassiveEffect/reconnectPassiveEffects 的阶段顺序。
    */
   it('classes and functions are double invoked together correctly', async () => {
     const log = [];
-    /** 定义 ClassChild 类 fixture，在“混合挂载类与函数组件，确认两套生命周期的双调用顺序正确交错”场景中暴露类生命周期、实例 ref 或错误边界。 */
+    /** 以 PureComponent 的 props 比较跳过相同 text 更新，记录类挂载/卸载。 */
     class ClassChild extends React.PureComponent {
-      /** ClassChild.componentDidMount 在挂载提交后记录日志或实例状态，用于识别首次调用与开发态重放。 */
+      /** 记录 didMount 调用，供初挂与开发态重放顺序断言使用。 */
       componentDidMount() {
         log.push('componentDidMount');
       }
@@ -842,13 +803,13 @@ describe('StrictEffectsMode', () => {
         log.push('componentWillUnmount');
       }
 
-      /** 渲染 ClassChild.render 对应的类 fixture，并把本轮状态或子树交给宿主输出断言。 */
+      /** 返回本例的宿主输出；生命周期日志由对应方法记录。 */
       render() {
         return this.props.text;
       }
     }
 
-    /** 作为子级函数组件暴露 Hook 状态和提交日志；服务于“混合挂载类与函数组件，确认两套生命周期的双调用顺序正确交错”场景。 */
+    /** 记录函数组件的 layout/passive 创建与清理。 */
     function FunctionChild({text}) {
       React.useEffect(() => {
         log.push('useEffect mount');
@@ -861,7 +822,7 @@ describe('StrictEffectsMode', () => {
       return text;
     }
 
-    /** 组织当前用例的根组件、更新入口与受测 Hook；服务于“混合挂载类与函数组件，确认两套生命周期的双调用顺序正确交错”场景。 */
+    /** 并列返回 ClassChild 与 FunctionChild，比较两种组件的提交和重放顺序。 */
     function App({text}) {
       return (
         <>
@@ -930,29 +891,26 @@ describe('StrictEffectsMode', () => {
   });
 
   /**
-   * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-   * When：完成挂载以及用例指定的后续渲染或提交步骤。
-   * Then：让缺少 componentDidMount 的类参与重放，确认非对称生命周期仍会正确清理。
-   *
-   * 验证机制：显式断言联合检查状态、输出和副作用。
-   * 对应源码：`commitDoubleInvokeEffectsInDEV()`、`recursivelyTraverseAndDoubleInvokeEffectsInDEV()` 与 `doubleInvokeEffectsOnFiber()`。
+   * ClassChild 只有 willUnmount，旁边 FunctionChild 注册两类 effect；挂载、同 props 重渲染、再删除。
+   * DEV 重放照样调用类 willUnmount，并拆装函数 effect；普通更新只有函数 effect，真实删除两者均清理。
+   * 对应源码：disappearLayoutEffects 的类清理不依赖 didMount，PureComponent bailout 与函数 effect 更新分开处理。
    */
   it('classes without componentDidMount and functions are double invoked together correctly', async () => {
     const log = [];
-    /** 定义 ClassChild 类 fixture，在“让缺少 componentDidMount 的类参与重放，确认非对称生命周期仍会正确清理”场景中暴露类生命周期、实例 ref 或错误边界。 */
+    /** 只记录 willUnmount，以 PureComponent 跳过相同 text 更新。 */
     class ClassChild extends React.PureComponent {
       /** ClassChild.componentWillUnmount 在真实卸载或模拟卸载时记录清理顺序。 */
       componentWillUnmount() {
         log.push('componentWillUnmount');
       }
 
-      /** 渲染 ClassChild.render 对应的类 fixture，并把本轮状态或子树交给宿主输出断言。 */
+      /** 返回本例的宿主输出；生命周期日志由对应方法记录。 */
       render() {
         return this.props.text;
       }
     }
 
-    /** 作为子级函数组件暴露 Hook 状态和提交日志；服务于“让缺少 componentDidMount 的类参与重放，确认非对称生命周期仍会正确清理”场景。 */
+    /** 记录函数组件的 layout/passive 创建与清理。 */
     function FunctionChild({text}) {
       React.useEffect(() => {
         log.push('useEffect mount');
@@ -965,7 +923,7 @@ describe('StrictEffectsMode', () => {
       return text;
     }
 
-    /** 组织当前用例的根组件、更新入口与受测 Hook；服务于“让缺少 componentDidMount 的类参与重放，确认非对称生命周期仍会正确清理”场景。 */
+    /** 并列返回缺少 didMount 的类与带两类 effect 的函数组件。 */
     function App({text}) {
       return (
         <>
@@ -1028,12 +986,9 @@ describe('StrictEffectsMode', () => {
   });
 
   /**
-   * Given：并发根已挂载，低优先级工作、thenable 与日志检查点均已准备。
-   * When：启动并发渲染，再制造挂起或高优先级中断并恢复。
-   * Then：已提交 Suspense 子树再次挂起并恢复，确认恢复提交后的 Effect 会被双调用。
-   *
-   * 验证机制：显式断言联合检查状态、输出和副作用。
-   * 对应源码：`commitDoubleInvokeEffectsInDEV()`、`recursivelyTraverseAndDoubleInvokeEffectsInDEV()` 与 `doubleInvokeEffectsOnFiber()`。
+   * 已挂载的 Child 再次挂起；显示 fallback 期间 Parent 的 prop 改为 bar，随后解决 thenable。
+   * 恢复先更新 Child 变化的依赖 effect，再 DEV 重放两项 effect；cleanup 写 ref 后，重连 create 触发一次派生 state 更新。
+   * 对应源码：可见 Offscreen 的 Visibility 重放分支；Suspense 隐藏时保留 passive 连接，恢复后的开发态重放再断连/重连。
    */
   // @gate __DEV__
   it('should double invoke effects after a re-suspend', async () => {
@@ -1044,13 +999,13 @@ describe('StrictEffectsMode', () => {
     const suspensePromise = new Promise(_resolve => {
       resolve = _resolve;
     });
-    /** 在 Suspense 挂起期间输出可识别回退内容；服务于“已提交 Suspense 子树再次挂起并恢复，确认恢复提交后的 Effect 会被双调用”场景。 */
+    /** 输出 Loading 并记录 fallback 渲染。 */
     function Fallback() {
       log.push('Fallback');
       return 'Loading';
     }
 
-    /** 作为父级 fixture 持有状态、Context 或子树边界；服务于“已提交 Suspense 子树再次挂起并恢复，确认恢复提交后的 Effect 会被双调用”场景。 */
+    /** 在 Suspense 外记录固定与 prop 依赖的 passive effect，供隐藏子树日志对照。 */
     function Parent({prop}) {
       log.push('Parent rendered');
 
@@ -1075,7 +1030,7 @@ describe('StrictEffectsMode', () => {
       );
     }
 
-    /** 作为子级函数组件暴露 Hook 状态和提交日志；服务于“已提交 Suspense 子树再次挂起并恢复，确认恢复提交后的 Effect 会被双调用”场景。 */
+    /** 可抛 thenable 挂起；固定依赖 cleanup 写 ref，变化依赖 create 据此再调度 state 更新。 */
     function Child({prop}) {
       const [count, forceUpdate] = React.useState(0);
       const ref = React.useRef(null);
@@ -1137,7 +1092,7 @@ describe('StrictEffectsMode', () => {
       'Child suspended',
       'Fallback',
       'Fallback',
-    // 预热渲染。
+      // 预热渲染。
       'Child rendered',
       'Child suspended',
     ]);
@@ -1161,7 +1116,7 @@ describe('StrictEffectsMode', () => {
       'Fallback',
       'Parent dep destroy',
       'Parent dep create',
-    // 预热渲染。
+      // 预热渲染。
       'Child rendered',
       'Child suspended',
     ]);
@@ -1176,16 +1131,16 @@ describe('StrictEffectsMode', () => {
     expect(log).toEqual([
       'Child rendered',
       'Child rendered',
-    // 已提交：销毁并重新创建依赖变化的 Effect；另一 Effect 的依赖未变，因此不执行清理和创建。
+      // 已提交：销毁并重新创建依赖变化的 Effect；另一 Effect 的依赖未变，因此不执行清理和创建。
       'Child dep destroy',
       'Child dep create',
 
-    // 对两个 Effect 执行开发态双调用。
+      // 对两个 Effect 执行开发态双调用。
       'Child destroy',
       'Child dep destroy',
       'Child create',
       'Child dep create',
-    // 触发 setState。
+      // 触发 setState。
       '-----------------------after setState',
       'Child rendered',
       'Child rendered',

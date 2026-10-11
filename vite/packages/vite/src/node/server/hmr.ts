@@ -218,13 +218,13 @@ export interface NormalizedHotChannel<Api = any> {
     ) => void,
   ): void
   /**
+   * 监听旧 connection 事件，并由实现映射到 transport 连接生命周期。
    * @deprecated 请改监听 `vite:client:connect` 事件。
    */
-  /** 监听旧 connection 事件，并由实现映射到 transport 连接生命周期。 */
   on(event: 'connection', listener: () => void): void
   /** 注销事件监听器。 */
   off(event: string, listener: Function): void
-  /** @internal */
+  /** 安装或卸载 transport 的 RPC 方法分派器。 @internal */
   setInvokeHandler(invokeHandlers: InvokeMethods | undefined): void
   /** 执行 RPC payload，并把成功值或可序列化错误封装为互斥响应。 */
   handleInvoke(payload: HotPayload): Promise<
@@ -303,6 +303,7 @@ export const normalizeHotChannel = (
 
   return {
     ...channel,
+    /** 直接转发兼容事件；普通事件先包装来源 client，并按原回调保存注销用的包装函数。 */
     on: (
       event: string,
       fn: (data: any, client: NormalizedHotChannelClient) => void,
@@ -319,6 +320,7 @@ export const normalizeHotChannel = (
       ) => {
         if (!normalizedClients.has(client)) {
           normalizedClients.set(client, {
+            /** 将自定义事件重载包装成 payload，再发送给该来源连接。 */
             send: (...args) => {
               let payload: HotPayload
               if (typeof args[0] === 'string') {
@@ -340,6 +342,7 @@ export const normalizeHotChannel = (
 
       channel.on?.(event, listenerWithNormalizedClient)
     },
+    /** 用原回调查找其包装函数后注销；不存在包装记录时不向 transport 发起注销。 */
     off: (event: string, fn: () => void) => {
       if (event === 'connection' || !normalizeClient) {
         channel.off?.(event, fn as () => void)
@@ -351,7 +354,7 @@ export const normalizeHotChannel = (
         channel.off?.(event, normalizedListener)
       }
     },
-    /** 安装或卸载 vite:invoke 的 RPC 分派器。 */
+    /** 安装 vite:invoke 分派器；传 undefined 注销最近的监听器，重复安装不会先移除旧监听器。 */
     setInvokeHandler(_invokeHandlers) {
       invokeHandlers = _invokeHandlers
       if (!_invokeHandlers) {
@@ -361,6 +364,7 @@ export const normalizeHotChannel = (
         return
       }
 
+      /** 保留方法名和请求 ID，等待 RPC 执行后把成功值或诊断错误发回来源连接。 */
       listenerForInvokeHandler = async (payload, client) => {
         const responseInvoke = payload.id.replace('send', 'response') as
           | 'response'
@@ -382,6 +386,7 @@ export const normalizeHotChannel = (
       channel.on?.('vite:invoke', listenerForInvokeHandler)
     },
     handleInvoke,
+    /** 包装自定义事件重载；禁用 HMR 时仅放行连接、ping、自定义事件和错误 payload。 */
     send: (...args: any[]) => {
       let payload: HotPayload
       if (typeof args[0] === 'string') {
@@ -420,7 +425,7 @@ export const normalizeHotChannel = (
  *
  * @param plugins - 当前配置已启用的插件，原始顺序作为同组插件的稳定次序。
  * @returns 仅包含 `hotUpdate` 或旧 `handleHotUpdate` hook 的插件，按 pre、normal、post 排列。
- * @remarks 新 hook 的 `order` 优先；只有插件未提供新 hook 时才读取兼容 hook 的 `enforce`。
+ * @remarks 优先选 hotUpdate，否则选 handleHotUpdate；两者均读取 hook 对象的 order，不重新读取插件 enforce。
  */
 export function getSortedPluginsByHotUpdateHook(
   plugins: readonly Plugin[],
@@ -531,6 +536,7 @@ export async function handleHMRUpdate(
     type,
     file,
     timestamp,
+    /** hook 按需调用时读取文件，首次为空则等待编辑器写入稳定后重读。 */
     read: () => readModifiedFile(file),
     server,
   }
@@ -726,6 +732,7 @@ export async function handleHMRUpdate(
 
   if (isStale()) return
 
+  /** 使用用户调度函数；缺省并行等待当前服务器的所有 Environment 更新任务。 */
   const hotUpdateEnvironments =
     server.config.server.hotUpdateEnvironments ??
     ((server, hmr) => {
@@ -873,8 +880,9 @@ function areAllImportsAccepted(
 }
 
 /**
- * 深度优先沿 importer 反向传播。找到接受边界就停止该分支；到达无 importer、HTML、未接受动态边或不安全
- * 循环则返回死端原因。共享 traversedModules 防止图遍历重复，但 currentChain 保留当前路径供循环判断。
+ * 深度优先沿 importer 反向传播：self/dependency accept 停止分支，acceptExports 按 binding 子集筛选
+ * importer；未接受节点无 importer 时返回死端。路径环只停止递归，HTML 和 invalidate 回环另由
+ * updateModules 判定。共享 traversedModules 去重，currentChain 保留当前路径供循环判断。
  */
 function propagateUpdate(
   node: EnvironmentModuleNode,
@@ -887,8 +895,8 @@ function propagateUpdate(
   }
   traversedModules.add(node)
 
-  // #7561：imports 尚未分析表示该节点未被浏览器真正加载，停止传播即可，不能把“没有 accept 信息”
-  // 误判成死端并 reload。
+  // #7561：imports 尚未分析，节点还没有可用的 accept 信息，先停止传播。
+  // 此处以图节点的分析状态判断，预转换也能先于浏览器加载建立该状态。
   if (node.id && node.isSelfAccepting === undefined) {
     debugHmr?.(
       `[propagate update] stop propagation because not analyzed: ${colors.dim(
@@ -970,7 +978,7 @@ function propagateUpdate(
 }
 
 /**
- * 从接受边界继续递归 importer，检查它是否处在回到原变更节点的 import 环中。循环内重新导入无法恢复
+ * 从接受边界继续递归 importer，检查是否回到原传播链中的任一节点。循环内重新导入无法恢复
  * 首次执行顺序，因此客户端即使能调用 accept，也要准备在 import 失败时整页 reload。
  *
  * @param node 接受 HMR 的传播边界。
@@ -1085,6 +1093,7 @@ const enum LexerState {
  * 数组，无需为了这一小段语法对整个源文件运行重型 AST parser。
  *
  * @returns 没有显式依赖参数时返回 true，表示模块自接受。
+ * @remarks 字符串按原字符累积，不解析转义序列；模板遇到插值即报错。这不是完整的 JavaScript 字符串解析器。
  */
 export function lexAcceptedHmrDeps(
   code: string,
@@ -1290,6 +1299,7 @@ export function createServerHotChannel(): ServerHotChannel {
     off(event, listener: () => void) {
       innerEmitter.off(event, listener)
     },
+    /** 在运行端到服务端的 innerEmitter 上登记监听器。 */
     on: ((event: string, listener: () => unknown) => {
       innerEmitter.on(event, listener)
     }) as ServerHotChannel['on'],

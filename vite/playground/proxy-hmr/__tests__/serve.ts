@@ -1,10 +1,13 @@
-// this is automatically detected by playground/vitestSetup.ts and will replace
-// the default e2e test serve behavior
+// harness选用此custom serve，同时启动主应用与子应用服务器。
 
 import path from 'node:path'
 import { rootDir, setViteUrl } from '~utils'
 
-export async function serve(): Promise<{ close(): Promise<void> }> {
+/** 启动root与other-app两Vite服务器，设置主应用测试URL，返回并行关闭两实例的清理对象。 */
+export async function serve(): Promise<{
+  /** 供 harness teardown 调用，Promise 在主应用与代理目标的两台 Vite 服务器均关闭后完成。 */
+  close(): Promise<void>
+}> {
   const vite = await import('vite')
   const rootServer = await vite.createServer({
     root: rootDir,
@@ -20,6 +23,7 @@ export async function serve(): Promise<{ close(): Promise<void> }> {
   setViteUrl(viteUrl)
 
   return {
+    /** 等待两个HTTP/HMR服务器关闭，供harness teardown使用。 */
     async close() {
       await Promise.all([rootServer.close(), otherServer.close()])
     },

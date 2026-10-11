@@ -26,7 +26,7 @@ describe('ReactDOMOption', () => {
       require('internal-test-utils').assertConsoleErrorDev;
   });
 
-  /** `renderIntoDocument`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 每次新建容器和根，在act中渲染children后返回容器；用于独立验证option输入，不在此工具内卸载。 */
   async function renderIntoDocument(children) {
     const container = document.createElement('div');
     const root = ReactDOMClient.createRoot(container);
@@ -34,14 +34,7 @@ describe('ReactDOMOption', () => {
     return container;
   }
 
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「should flatten children to a string」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言连接 ReactDOM 公开入口、ReactDOMRoot 根生命周期及 DOM 提交结果。
-   */
+  /** option子级含数字1、空白及foo；innerHTML应1 foo，验证普通文本/数字组合扁平化。 */
   it('should flatten children to a string', async () => {
     const stub = (
       <option>
@@ -53,7 +46,7 @@ describe('ReactDOMOption', () => {
     expect(container.firstChild.innerHTML).toBe('1 foo');
   });
 
-  /** 测试场景：验证「should warn for invalid child tags」描述的渲染、交互或错误处理结果。 */
+  /** option显式value=12且子级含div；DEV应提示HTML嵌套导致hydration错误，客户端仍有1 <div></div> 2；第二次渲染不重复警告，验证诊断不阻止客户端构建。 */
   it('should warn for invalid child tags', async () => {
     const el = (
       <option value="12">
@@ -75,9 +68,9 @@ describe('ReactDOMOption', () => {
     await renderIntoDocument(el);
   });
 
-  /** 测试场景：验证「should warn for component child if no value prop is provided」描述的渲染、交互或错误处理结果。 */
+  /** option未显式value且子级含返回2的Foo组件；DEV不能推断复杂children值诊断、DOM为1 2 3，再次不重复，验证复杂树需要显式值。 */
   it('should warn for component child if no value prop is provided', async () => {
-    /** `Foo`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 返回文本2，作为option复杂组件child，区分最终DOM文字与renderer可直接推断的原始child。 */
     function Foo() {
       return '2';
     }
@@ -96,9 +89,9 @@ describe('ReactDOMOption', () => {
     await renderIntoDocument(el);
   });
 
-  /** 测试场景：验证「should not warn for component child if value prop is provided」描述的渲染、交互或错误处理结果。 */
+  /** 相同Foo子级但option显式value=123；DOM仍1 2 3且无警告，验证显式值避开复杂children推断。 */
   it('should not warn for component child if value prop is provided', async () => {
-    /** `Foo`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 返回文本2，作为option复杂组件child，区分最终DOM文字与renderer可直接推断的原始child。 */
     function Foo() {
       return '2';
     }
@@ -112,7 +105,7 @@ describe('ReactDOMOption', () => {
     await renderIntoDocument(el);
   });
 
-  /** 测试场景：验证「should ignore null/undefined/false children without warning」描述的渲染、交互或错误处理结果。 */
+  /** option子级混数字、布尔、null/undefined与JSX空白；输出1  2，验证空子值不产生文本但相邻空白保留。 */
   it('should ignore null/undefined/false children without warning', async () => {
     const stub = (
       <option>
@@ -127,7 +120,7 @@ describe('ReactDOMOption', () => {
     expect(container.firstChild.innerHTML).toBe('1  2');
   });
 
-  /** 测试场景：验证「should throw on object children」描述的渲染、交互或错误处理结果。 */
+  /** 分别将普通对象直接、数组内、与元素/文本混合放入option；每次异步渲染均应拒绝对象不是合法child，验证option不绕过通用child校验。 */
   it('should throw on object children', async () => {
     await expect(async () =>
       renderIntoDocument(<option>{{}}</option>),
@@ -154,19 +147,19 @@ describe('ReactDOMOption', () => {
     }).rejects.toThrow('Objects are not valid as a React child');
   });
 
-  /** 测试场景：验证「should support element-ish child」描述的渲染、交互或错误处理结果。 */
+  /** 手工React元素形状对象既可渲染hello又有toString=hello；作为直接/数组child时输出hello，作为option.value时value=hello，混合文本仍1hello2，验证元素渲染与值序列化走不同协议。 */
   it('should support element-ish child', async () => {
     // 这类似于 <fbt>。 我们不将其转换为字符串，因为您必须提供一个值属性。
     const obj = {
       $$typeof: Symbol.for('react.transitional.element'),
-      /** `type`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 手工元素对象的函数类型，从props.content返回hello，走正常React元素渲染而非对象toString。 */
       type: props => props.content,
       ref: null,
       key: null,
       props: {
         content: 'hello',
       },
-      /** `toString`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 返回this.props.content，供同一对象作为option.value时进行属性字符串化。 */
       toString() {
         return this.props.content;
       },
@@ -193,14 +186,14 @@ describe('ReactDOMOption', () => {
     expect(container.firstChild.value).toBe('hello');
   });
 
-  /** 测试场景：验证「should support bigint values」描述的渲染、交互或错误处理结果。 */
+  /** option仅含5n；HTML与DOM value均5，验证bigint文本并作为隐式option值。 */
   it('should support bigint values', async () => {
     const container = await renderIntoDocument(<option>{5n}</option>);
     expect(container.firstChild.innerHTML).toBe('5');
     expect(container.firstChild.value).toBe('5');
   });
 
-  /** 测试场景：验证「should be able to use dangerouslySetInnerHTML on option」描述的渲染、交互或错误处理结果。 */
+  /** option只有innerHTML=foobar无value；DOM文本foobar且DEV建议显式value，验证rawHTML内容不能供renderer推断选择值。 */
   it('should be able to use dangerouslySetInnerHTML on option', async () => {
     const stub = <option dangerouslySetInnerHTML={{__html: 'foobar'}} />;
     const container = await renderIntoDocument(stub);
@@ -212,7 +205,7 @@ describe('ReactDOMOption', () => {
     expect(container.firstChild.innerHTML).toBe('foobar');
   });
 
-  /** 测试场景：验证「should set attribute for empty value」描述的渲染、交互或错误处理结果。 */
+  /** option初值value为空字符串再更新lava；两轮value attribute均存在且分别空/lava，验证空值与缺值不同。 */
   it('should set attribute for empty value', async () => {
     const container = document.createElement('div');
     const root = ReactDOMClient.createRoot(container);
@@ -232,7 +225,7 @@ describe('ReactDOMOption', () => {
     expect(option.getAttribute('value')).toBe('lava');
   });
 
-  /** 测试场景：验证「should allow ignoring `value` on option」描述的渲染、交互或错误处理结果。 */
+  /** 受控select.value=giraffe，options无显式值且部分文本分段；首轮selectedIndex=1，改gorilla为2，验证option隐式值从最终文字取得。 */
   it('should allow ignoring `value` on option', async () => {
     const a = 'a';
     let node;
@@ -260,7 +253,7 @@ describe('ReactDOMOption', () => {
     expect(node.selectedIndex).toEqual(2);
   });
 
-  /** 测试场景：验证「generates a hydration error when an invalid nested tag is used as a child」描述的渲染、交互或错误处理结果。 */
+  /** SSR受控select的option内含非法div；解析后option文字BarFooBaz且选中，hydrate应给嵌套诊断并客户端恢复出真实div/ref在option下，文字与选中状态保持，验证解析树变化触发恢复。 */
   it('generates a hydration error when an invalid nested tag is used as a child', async () => {
     const ref = React.createRef();
     const children = (
@@ -286,7 +279,7 @@ describe('ReactDOMOption', () => {
 
     await act(async () => {
       ReactDOMClient.hydrateRoot(container, children, {
-        /** `onRecoverableError`：封装当前用例复用的操作、回调或断言步骤。 */
+        /** 忽略本例预期hydration恢复错误的回调，嵌套诊断仍由console断言检查；不改变恢复子树。 */
         onRecoverableError: () => {},
       });
     });

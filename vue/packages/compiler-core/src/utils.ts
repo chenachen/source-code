@@ -68,7 +68,7 @@ export function isCoreComponent(tag: string): symbol | void {
 
 /** 匹配空串、数字开头或包含 JS 标识符非法字符的名称。 */
 const nonIdentifierRE = /^$|^\d|[^\$\w\xA0-\uFFFF]/
-/** 是否可直接作为 JS 标识符使用；支持 ASCII 之外的 Unicode 字符。 */
+/** 编译器的标识符快速近似判断，接受广泛非 ASCII 字符；完整 JS 合法性仍由表达式解析确认。 */
 export const isSimpleIdentifier = (name: string): boolean =>
   !nonIdentifierRE.test(name)
 
@@ -98,8 +98,9 @@ const getExpSource = (exp: ExpressionNode): string =>
 /**
  * 浏览器构建使用的轻量成员表达式检查器。
  *
- * 只严格校验根路径，不验证方括号内部 JS 语法；这里仅需判断 `v-model` 左值形态，
- * 方括号内部即使误判为合法，也会在模板表达式整体校验时因非法 JS 报错。
+ * 这里只识别成员路径形态，不验证方括号内部 JS 语法。浏览器开发构建另做表达式校验；
+ * 生产构建可能返回含非法表达式的代码，在创建 render 函数时才抛 SyntaxError。
+ * 括号深度与字符串状态只做轻量扫描，不是完整 JS lexer；返回 true 也不保证可选链可被赋值。
  */
 export const isMemberExpressionBrowser = (exp: ExpressionNode): boolean => {
   // 先去掉 `foo . bar` / `foo [x]` 访问符周围空白，简化状态机。
@@ -172,7 +173,10 @@ export const isMemberExpressionBrowser = (exp: ExpressionNode): boolean => {
   return !currentOpenBracketCount && !currentOpenParensCount
 }
 
-/** Node 构建使用 Babel AST 精确判断成员表达式/可选成员表达式/可赋值标识符。 */
+/**
+ * Node 构建按 Babel AST 识别成员访问、可选成员访问和非 undefined 的简单标识符。
+ * 其中可选成员访问是可读取路径，但不能直接用作赋值目标。
+ */
 export const isMemberExpressionNode: (
   exp: ExpressionNode,
   context: TransformContext,
@@ -271,6 +275,7 @@ export function advancePositionWithClone(
 
 /**
  * 原地推进源码位置。parser/codegen 热路径频繁调用，避免 clone 分配。
+ * 按 UTF-16 代码单元累计 offset/column，只有 LF 增加 line；numberOfCharacters 指定本次消费的前缀长度。
  */
 export function advancePositionWithMutation(
   pos: Position,
@@ -280,7 +285,7 @@ export function advancePositionWithMutation(
   let linesCount = 0
   let lastNewLinePos = -1
   for (let i = 0; i < numberOfCharacters; i++) {
-    if (source.charCodeAt(i) === 10 /* newline char code */) {
+    if (source.charCodeAt(i) === 10 /* LF 换行代码 */) {
       linesCount++
       lastNewLinePos = i
     }
@@ -304,7 +309,7 @@ export function assert(condition: boolean, msg?: string): void {
   }
 }
 
-/** 在元素 props 中查找指定名称/正则匹配的指令。 */
+/** 查找首个匹配指令；默认要求 exp 节点存在，allowEmpty 允许裸指令，但不检查表达式文本是否为空白。 */
 export function findDir(
   node: ElementNode,
   name: string | RegExp,
@@ -324,6 +329,7 @@ export function findDir(
 
 /**
  * 查找静态属性或等价的静态参数 `v-bind`；`dynamicOnly` 为 true 时只接受 v-bind。
+ * 默认要求 value/exp 节点存在，allowEmpty 接受无值项；动态参数不可能在编译期确认等于 name。
  */
 export function findProp(
   node: ElementNode,
@@ -387,7 +393,7 @@ export function isVSlot(p: ElementNode['props'][0]): p is DirectiveNode {
   return p.type === NodeTypes.DIRECTIVE && p.name === 'slot'
 }
 
-/** 节点是否为会在转换阶段消除的 `<template>` 容器。 */
+/** 节点是否为承载结构指令或插槽语义的 `<template>` 容器。 */
 export function isTemplateNode(
   node: RootNode | TemplateChildNode,
 ): node is TemplateNode {
@@ -595,6 +601,8 @@ export function toValidAssetId(
 /**
  * 递归检查节点是否引用当前 `v-for` / `v-slot` 局部标识符。
  * 结果用于判断插槽、处理器、静态节点能否安全提升或缓存；捕获局部变量就必须留在作用域内。
+ * 依赖 processExpression 已把复合 JS 拆成标识符片段；它不会重新解析未拆分的任意表达式文本。
+ * identifiers 的零计数保留在表中，但不构成活动引用；已经生成的缓存表达式不再向内检查。
  */
 export function hasScopeRef(
   node:

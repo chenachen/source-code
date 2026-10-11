@@ -35,7 +35,7 @@ describe('ReactStartTransitionMultipleRenderers', () => {
     textCache = new Map();
   });
 
-  /** `resolveText`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 创建已完成缓存记录，或把 pending 记录改为 resolved 并通知全部等待者；控制同一 async action 两个独立等待点。 */
   function resolveText(text) {
     const record = textCache.get(text);
     if (record === undefined) {
@@ -52,13 +52,13 @@ describe('ReactStartTransitionMultipleRenderers', () => {
     }
   }
 
-  /** `getText`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 按文本键返回稳定 pending thenable；完成记录改返回已完成 Promise，拒绝记录改返回 rejected Promise。缓存用于手工控制 Transition 的开始与结束。 */
   function getText(text) {
     const record = textCache.get(text);
     if (record === undefined) {
       const thenable = {
         pings: [],
-        /** `getText.then`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** pending 时保存 resolve 回调；已完成时借 Promise 微任务通知，模拟异步等待可在首次订阅前或后完成。 */
         then(resolve) {
           if (newRecord.status === 'pending') {
             thenable.pings.push(resolve);
@@ -85,7 +85,7 @@ describe('ReactStartTransitionMultipleRenderers', () => {
     }
   }
 
-  /** `Text`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 记录每个 renderer 的当前乐观状态并原样输出，以同时比较调度日志和两个根结果。 */
   function Text({text}) {
     Scheduler.log(text);
     return text;
@@ -98,20 +98,13 @@ describe('ReactStartTransitionMultipleRenderers', () => {
   // 该测试导入多个 reconciler。受 renderer 构建方式影响，它只能针对实际构建产物运行，不能直接针对
   // 源文件运行。
   // @gate !source
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「React.startTransition works across multiple renderers」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言连接 ReactDOM 公开入口、ReactDOMRoot 根生命周期及 DOM 提交结果。
-   */
+  /** 在实际构建产物中同时建立 DOM 与 Noop 根，各自挂载 useOptimistic 状态；同一个 async startTransition 在第一等待点后设置两个根为 Pending，第二等待点结束后二者恢复 Not pending，验证共享 React Transition 上下文跨 renderer 延续且乐观状态维持至整个 action 完成。 */
   it('React.startTransition works across multiple renderers', async () => {
     const ReactNoop = require('react-noop-renderer');
 
     const setIsPendings = new Set();
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 各 renderer 独立建立 useOptimistic(false)，把更新器收进 Set；同一 action 可遍历更新所有根，完成后自动回退。 */
     function App() {
       const [isPending, setIsPending] = useOptimistic(false);
       setIsPendings.add(setIsPending);

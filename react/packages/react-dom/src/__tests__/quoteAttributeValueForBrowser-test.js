@@ -19,53 +19,47 @@ describe('quoteAttributeValueForBrowser', () => {
     ReactDOMServer = require('react-dom/server');
   });
 
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「ampersand is escaped inside attributes」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言连接 ReactDOM 公开入口、ReactDOMRoot 根生命周期及 DOM 提交结果。
-   */
+  /** img 的 data-attr 输入 &，同步 SSR 应输出双引号包裹的 &amp;，验证属性值实体起始符转义。 */
   it('ampersand is escaped inside attributes', () => {
     const response = ReactDOMServer.renderToString(<img data-attr="&" />);
     expect(response).toMatch('<img data-attr="&amp;"/>');
   });
 
-  /** 测试场景：验证「double quote is escaped inside attributes」描述的渲染、交互或错误处理结果。 */
+  /** img 的 data-attr 输入双引号，同步 SSR 应输出 &quot;，验证用户值不能闭合属性边界。 */
   it('double quote is escaped inside attributes', () => {
     const response = ReactDOMServer.renderToString(<img data-attr={'"'} />);
     expect(response).toMatch('<img data-attr="&quot;"/>');
   });
 
-  /** 测试场景：验证「single quote is escaped inside attributes」描述的渲染、交互或错误处理结果。 */
+  /** img 的 data-attr 输入单引号，同步 SSR 应输出 &#x27;，验证属性序列化的统一引号转义规则。 */
   it('single quote is escaped inside attributes', () => {
     const response = ReactDOMServer.renderToString(<img data-attr="'" />);
     expect(response).toMatch('<img data-attr="&#x27;"/>');
   });
 
-  /** 测试场景：验证「greater than entity is escaped inside attributes」描述的渲染、交互或错误处理结果。 */
+  /** img 的 data-attr 输入 >，同步 SSR 应输出 &gt;，验证属性值中的尖括号编码。 */
   it('greater than entity is escaped inside attributes', () => {
     const response = ReactDOMServer.renderToString(<img data-attr=">" />);
     expect(response).toMatch('<img data-attr="&gt;"/>');
   });
 
-  /** 测试场景：验证「lower than entity is escaped inside attributes」描述的渲染、交互或错误处理结果。 */
+  /** img 的 data-attr 输入 <，同步 SSR 应输出 &lt;，验证属性内容不能被解释为新标签。 */
   it('lower than entity is escaped inside attributes', () => {
     const response = ReactDOMServer.renderToString(<img data-attr="<" />);
     expect(response).toMatch('<img data-attr="&lt;"/>');
   });
 
-  /** 测试场景：验证「number is escaped to string inside attributes」描述的渲染、交互或错误处理结果。 */
+  /** img 的 data-attr 输入数字 42，同步 SSR 应输出字符串属性值 "42"，验证数值属性转换。 */
   it('number is escaped to string inside attributes', () => {
     const response = ReactDOMServer.renderToString(<img data-attr={42} />);
     expect(response).toMatch('<img data-attr="42"/>');
   });
 
-  /** 测试场景：验证「object is passed to a string inside attributes」描述的渲染、交互或错误处理结果。 */
+  /** img 的 data-attr 输入自定义 toString 返回 ponys 的对象；同步 SSR 应写 ponys，验证属性值先执行字符串转换再编码。 */
   it('object is passed to a string inside attributes', () => {
     const sampleObject = {
-      /** `toString`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /** 为非字符串属性值提供固定转换结果 ponys，检查 SSR 是否调用对象转换并输出该文本。 */
       toString: function () {
         return 'ponys';
       },
@@ -77,7 +71,7 @@ describe('quoteAttributeValueForBrowser', () => {
     expect(response).toMatch('<img data-attr="ponys"/>');
   });
 
-  /** 测试场景：验证「script tag is escaped inside attributes」描述的渲染、交互或错误处理结果。 */
+  /** img 的 data-attr 输入含单双引号的完整 script 字符串；输出中所有引号与尖括号必须编码，验证该字符串留在单一属性值内。 */
   it('script tag is escaped inside attributes', () => {
     const response = ReactDOMServer.renderToString(
       <img data-attr={'<script type=\'\' src=""></script>'} />,

@@ -30,23 +30,23 @@ import {
 } from 'shared/ReactFeatureFlags';
 import typeof {SyntheticEvent} from '../events/SyntheticEvent';
 
-/** `EventHandleOptions` 定义在受控 EventTarget 上创建和管理事件句柄监听器的数据契约；字段共同约束所有权、生命周期与跨模块传递边界。 */
+/** event handle 的固定阶段选项。 */
 type EventHandleOptions = {
-  /** `EventHandleOptions.capture` 表示所属契约跨调用链传递的受限状态；只在所属契约生命周期内有效。 */
+  /** 为 true 时在 capture 阶段调用；默认 false。 */
   capture?: boolean,
 };
 
-/** `isValidEventTarget` 判断适用条件并返回只读结果；用于在受控 EventTarget 上创建和管理事件句柄监听器。 */
+/** 检查目标是否暴露 addEventListener，供非 React EventTarget 注册。 */
 function isValidEventTarget(target: EventTarget | ReactScopeInstance): boolean {
   return typeof (target as Object).addEventListener === 'function';
 }
 
-/** `isReactScope` 判断适用条件并返回只读结果；用于在受控 EventTarget 上创建和管理事件句柄监听器。 */
+/** 按 getChildContextValues 能力识别 React Scope 实例。 */
 function isReactScope(target: EventTarget | ReactScopeInstance): boolean {
   return typeof (target as Object).getChildContextValues === 'function';
 }
 
-/** `createEventHandleListener` 创建调用方所需对象，不转移无关状态所有权；用于在受控 EventTarget 上创建和管理事件句柄监听器。 */
+/** 保存回调、原生事件名和 capture 选项，供派发时筛选。 */
 function createEventHandleListener(
   type: DOMEventName,
   isCapturePhaseListener: boolean,
@@ -59,7 +59,7 @@ function createEventHandleListener(
   };
 }
 
-/** `registerReactDOMEvent` 完成该模块的宿主边界操作；用于在受控 EventTarget 上创建和管理事件句柄监听器。 */
+/** Element/Scope 复用根 listener；其他有效 EventTarget 安装 non-managed listener，非法目标抛错。 */
 function registerReactDOMEvent(
   target: EventTarget | ReactScopeInstance,
   domEventName: DOMEventName,
@@ -86,7 +86,7 @@ function registerReactDOMEvent(
   }
 }
 
-/** `createEventHandle` 创建调用方所需对象，不转移无关状态所有权；用于在受控 EventTarget 上创建和管理事件句柄监听器。 */
+/** 特性开启时校验事件必须已被 React 注册，返回固定事件名/阶段的订阅函数；关闭时返回 null。 */
 export function createEventHandle(
   type: string,
   options?: EventHandleOptions,
@@ -117,7 +117,7 @@ export function createEventHandle(
       }
     }
 
-    /** `createEventHandle.eventHandle` 完成该模块的宿主边界操作；用于在受控 EventTarget 上创建和管理事件句柄监听器。 */
+    /** 为目标登记回调并返回取消函数；取消只移除回调记录，原生 listener 与句柄去重记录保留。 */
     const eventHandle: ReactDOMEventHandle = (
       target: EventTarget | ReactScopeInstance,
       callback: SyntheticEvent => void,

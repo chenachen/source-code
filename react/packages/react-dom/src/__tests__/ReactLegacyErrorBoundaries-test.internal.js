@@ -48,290 +48,494 @@ describe('ReactLegacyErrorBoundaries', () => {
 
     log = [];
 
+    /**
+     * 构造器抛 Hello 的故障组件；其他生命周期日志用于确认失败后哪些阶段不会发生。
+     */
     BrokenConstructor = class extends React.Component {
-      /** `constructor`：初始化测试夹具实例及其状态。 */
+
+      /**
+       * 调用 super(props) 后记录构造日志；立即抛 Hello，实例不会完成构造或提交。 参数 props 交由 React.Component 保存。
+       */
       constructor(props) {
         super(props);
         log.push('BrokenConstructor constructor [!]');
         throw new Error('Hello');
       }
-      /** `render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 记录 BrokenConstructor 的 render，并返回包住 props.children 的 div；不在此处抛错，测试由指定生命周期制造故障。
+       */
       render() {
         log.push('BrokenConstructor render');
         return <div>{this.props.children}</div>;
       }
-      /** `UNSAFE_componentWillMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 BrokenConstructor 在首次 render 前的旧式挂载阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       UNSAFE_componentWillMount() {
         log.push('BrokenConstructor componentWillMount');
       }
-      /** `componentDidMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 BrokenConstructor 在layout 提交中的挂载阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       componentDidMount() {
         log.push('BrokenConstructor componentDidMount');
       }
-      /** `UNSAFE_componentWillReceiveProps`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 BrokenConstructor 在接收新 props 的更新 render 阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       UNSAFE_componentWillReceiveProps() {
         log.push('BrokenConstructor componentWillReceiveProps');
       }
-      /** `UNSAFE_componentWillUpdate`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 BrokenConstructor 在更新 render 前的旧式阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       UNSAFE_componentWillUpdate() {
         log.push('BrokenConstructor componentWillUpdate');
       }
-      /** `componentDidUpdate`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 BrokenConstructor 在layout 提交中的更新阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       componentDidUpdate() {
         log.push('BrokenConstructor componentDidUpdate');
       }
-      /** `componentWillUnmount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 BrokenConstructor 在删除已提交实例的清理阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       componentWillUnmount() {
         log.push('BrokenConstructor componentWillUnmount');
       }
     };
 
+    /**
+     * willMount 抛 Hello 的挂载故障组件；对照正常生命周期日志区分 render 中止与提交。
+     */
     BrokenComponentWillMount = class extends React.Component {
-      /** `constructor`：初始化测试夹具实例及其状态。 */
+
+      /**
+       * 调用 super(props) 后记录构造日志；供断言区别新建实例与仅更新已有实例。 参数 props 交由 React.Component 保存。
+       */
       constructor(props) {
         super(props);
         log.push('BrokenComponentWillMount constructor');
       }
-      /** `render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 记录 BrokenComponentWillMount 的 render，并返回包住 props.children 的 div；不在此处抛错，测试由指定生命周期制造故障。
+       */
       render() {
         log.push('BrokenComponentWillMount render');
         return <div>{this.props.children}</div>;
       }
-      /** `UNSAFE_componentWillMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 记录 BrokenComponentWillMount 在首次 render 前的旧式挂载阶段的故障，再抛 Hello；由父边界或根处理，不能依赖后续本实例代码继续执行。
+       */
       UNSAFE_componentWillMount() {
         log.push('BrokenComponentWillMount componentWillMount [!]');
         throw new Error('Hello');
       }
-      /** `componentDidMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 BrokenComponentWillMount 在layout 提交中的挂载阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       componentDidMount() {
         log.push('BrokenComponentWillMount componentDidMount');
       }
-      /** `UNSAFE_componentWillReceiveProps`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 BrokenComponentWillMount 在接收新 props 的更新 render 阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       UNSAFE_componentWillReceiveProps() {
         log.push('BrokenComponentWillMount componentWillReceiveProps');
       }
-      /** `UNSAFE_componentWillUpdate`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 BrokenComponentWillMount 在更新 render 前的旧式阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       UNSAFE_componentWillUpdate() {
         log.push('BrokenComponentWillMount componentWillUpdate');
       }
-      /** `componentDidUpdate`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 BrokenComponentWillMount 在layout 提交中的更新阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       componentDidUpdate() {
         log.push('BrokenComponentWillMount componentDidUpdate');
       }
-      /** `componentWillUnmount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 BrokenComponentWillMount 在删除已提交实例的清理阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       componentWillUnmount() {
         log.push('BrokenComponentWillMount componentWillUnmount');
       }
     };
 
+    /**
+     * didMount 抛 Hello 的提交故障组件；其 render 正常，使测试能够验证提交遍历继续及随后恢复。
+     */
     BrokenComponentDidMount = class extends React.Component {
-      /** `constructor`：初始化测试夹具实例及其状态。 */
+
+      /**
+       * 调用 super(props) 后记录构造日志；供断言区别新建实例与仅更新已有实例。 参数 props 交由 React.Component 保存。
+       */
       constructor(props) {
         super(props);
         log.push('BrokenComponentDidMount constructor');
       }
-      /** `render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 记录 BrokenComponentDidMount 的 render，并返回包住 props.children 的 div；不在此处抛错，测试由指定生命周期制造故障。
+       */
       render() {
         log.push('BrokenComponentDidMount render');
         return <div>{this.props.children}</div>;
       }
-      /** `UNSAFE_componentWillMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 BrokenComponentDidMount 在首次 render 前的旧式挂载阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       UNSAFE_componentWillMount() {
         log.push('BrokenComponentDidMount componentWillMount');
       }
-      /** `componentDidMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 记录 BrokenComponentDidMount 在layout 提交中的挂载阶段的故障，再抛 Hello；由父边界或根处理，不能依赖后续本实例代码继续执行。
+       */
       componentDidMount() {
         log.push('BrokenComponentDidMount componentDidMount [!]');
         throw new Error('Hello');
       }
-      /** `UNSAFE_componentWillReceiveProps`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 BrokenComponentDidMount 在接收新 props 的更新 render 阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       UNSAFE_componentWillReceiveProps() {
         log.push('BrokenComponentDidMount componentWillReceiveProps');
       }
-      /** `UNSAFE_componentWillUpdate`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 BrokenComponentDidMount 在更新 render 前的旧式阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       UNSAFE_componentWillUpdate() {
         log.push('BrokenComponentDidMount componentWillUpdate');
       }
-      /** `componentDidUpdate`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 BrokenComponentDidMount 在layout 提交中的更新阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       componentDidUpdate() {
         log.push('BrokenComponentDidMount componentDidUpdate');
       }
-      /** `componentWillUnmount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 BrokenComponentDidMount 在删除已提交实例的清理阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       componentWillUnmount() {
         log.push('BrokenComponentDidMount componentWillUnmount');
       }
     };
 
+    /**
+     * 首次挂载正常、接收更新 props 时抛 Hello 的组件，用来定位更新 render 阶段的捕获。
+     */
     BrokenComponentWillReceiveProps = class extends React.Component {
-      /** `constructor`：初始化测试夹具实例及其状态。 */
+
+      /**
+       * 调用 super(props) 后记录构造日志；供断言区别新建实例与仅更新已有实例。 参数 props 交由 React.Component 保存。
+       */
       constructor(props) {
         super(props);
         log.push('BrokenComponentWillReceiveProps constructor');
       }
-      /** `render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 记录 BrokenComponentWillReceiveProps 的 render，并返回包住 props.children 的 div；不在此处抛错，测试由指定生命周期制造故障。
+       */
       render() {
         log.push('BrokenComponentWillReceiveProps render');
         return <div>{this.props.children}</div>;
       }
-      /** `UNSAFE_componentWillMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 BrokenComponentWillReceiveProps 在首次 render 前的旧式挂载阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       UNSAFE_componentWillMount() {
         log.push('BrokenComponentWillReceiveProps componentWillMount');
       }
-      /** `componentDidMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 BrokenComponentWillReceiveProps 在layout 提交中的挂载阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       componentDidMount() {
         log.push('BrokenComponentWillReceiveProps componentDidMount');
       }
-      /** `UNSAFE_componentWillReceiveProps`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 记录 BrokenComponentWillReceiveProps 在接收新 props 的更新 render 阶段的故障，再抛 Hello；由父边界或根处理，不能依赖后续本实例代码继续执行。
+       */
       UNSAFE_componentWillReceiveProps() {
         log.push(
           'BrokenComponentWillReceiveProps componentWillReceiveProps [!]',
         );
         throw new Error('Hello');
       }
-      /** `UNSAFE_componentWillUpdate`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 BrokenComponentWillReceiveProps 在更新 render 前的旧式阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       UNSAFE_componentWillUpdate() {
         log.push('BrokenComponentWillReceiveProps componentWillUpdate');
       }
-      /** `componentDidUpdate`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 BrokenComponentWillReceiveProps 在layout 提交中的更新阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       componentDidUpdate() {
         log.push('BrokenComponentWillReceiveProps componentDidUpdate');
       }
-      /** `componentWillUnmount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 BrokenComponentWillReceiveProps 在删除已提交实例的清理阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       componentWillUnmount() {
         log.push('BrokenComponentWillReceiveProps componentWillUnmount');
       }
     };
 
+    /**
+     * 初挂正常、willUpdate 抛 Hello 的组件，覆盖更新 render 开始后的错误恢复。
+     */
     BrokenComponentWillUpdate = class extends React.Component {
-      /** `constructor`：初始化测试夹具实例及其状态。 */
+
+      /**
+       * 调用 super(props) 后记录构造日志；供断言区别新建实例与仅更新已有实例。 参数 props 交由 React.Component 保存。
+       */
       constructor(props) {
         super(props);
         log.push('BrokenComponentWillUpdate constructor');
       }
-      /** `render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 记录 BrokenComponentWillUpdate 的 render，并返回包住 props.children 的 div；不在此处抛错，测试由指定生命周期制造故障。
+       */
       render() {
         log.push('BrokenComponentWillUpdate render');
         return <div>{this.props.children}</div>;
       }
-      /** `UNSAFE_componentWillMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 BrokenComponentWillUpdate 在首次 render 前的旧式挂载阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       UNSAFE_componentWillMount() {
         log.push('BrokenComponentWillUpdate componentWillMount');
       }
-      /** `componentDidMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 BrokenComponentWillUpdate 在layout 提交中的挂载阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       componentDidMount() {
         log.push('BrokenComponentWillUpdate componentDidMount');
       }
-      /** `UNSAFE_componentWillReceiveProps`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 BrokenComponentWillUpdate 在接收新 props 的更新 render 阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       UNSAFE_componentWillReceiveProps() {
         log.push('BrokenComponentWillUpdate componentWillReceiveProps');
       }
-      /** `UNSAFE_componentWillUpdate`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 记录 BrokenComponentWillUpdate 在更新 render 前的旧式阶段的故障，再抛 Hello；由父边界或根处理，不能依赖后续本实例代码继续执行。
+       */
       UNSAFE_componentWillUpdate() {
         log.push('BrokenComponentWillUpdate componentWillUpdate [!]');
         throw new Error('Hello');
       }
-      /** `componentDidUpdate`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 BrokenComponentWillUpdate 在layout 提交中的更新阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       componentDidUpdate() {
         log.push('BrokenComponentWillUpdate componentDidUpdate');
       }
-      /** `componentWillUnmount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 BrokenComponentWillUpdate 在删除已提交实例的清理阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       componentWillUnmount() {
         log.push('BrokenComponentWillUpdate componentWillUnmount');
       }
     };
 
+    /**
+     * 初挂正常、didUpdate 抛 errorText 的组件，用来验证 layout 提交错误延后恢复。
+     */
     BrokenComponentDidUpdate = class extends React.Component {
-      /** `defaultProps`：记录测试夹具在当前场景中的状态。 */
+
+      /**
+       * 默认 errorText=Hello；调用者可改成 E1/E2/E3/E4，以区分同一批提交中多个独立错误。
+       */
       static defaultProps = {
         errorText: 'Hello',
       };
-      /** `constructor`：初始化测试夹具实例及其状态。 */
+
+      /**
+       * 调用 super(props) 后记录构造日志；供断言区别新建实例与仅更新已有实例。 参数 props 交由 React.Component 保存。
+       */
       constructor(props) {
         super(props);
         log.push('BrokenComponentDidUpdate constructor');
       }
-      /** `render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 记录 BrokenComponentDidUpdate 的 render，并返回包住 props.children 的 div；不在此处抛错，测试由指定生命周期制造故障。
+       */
       render() {
         log.push('BrokenComponentDidUpdate render');
         return <div>{this.props.children}</div>;
       }
-      /** `UNSAFE_componentWillMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 BrokenComponentDidUpdate 在首次 render 前的旧式挂载阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       UNSAFE_componentWillMount() {
         log.push('BrokenComponentDidUpdate componentWillMount');
       }
-      /** `componentDidMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 BrokenComponentDidUpdate 在layout 提交中的挂载阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       componentDidMount() {
         log.push('BrokenComponentDidUpdate componentDidMount');
       }
-      /** `UNSAFE_componentWillReceiveProps`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 BrokenComponentDidUpdate 在接收新 props 的更新 render 阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       UNSAFE_componentWillReceiveProps() {
         log.push('BrokenComponentDidUpdate componentWillReceiveProps');
       }
-      /** `UNSAFE_componentWillUpdate`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 BrokenComponentDidUpdate 在更新 render 前的旧式阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       UNSAFE_componentWillUpdate() {
         log.push('BrokenComponentDidUpdate componentWillUpdate');
       }
-      /** `componentDidUpdate`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 记录 BrokenComponentDidUpdate 在layout 提交中的更新阶段的故障，再抛 props.errorText；由父边界或根处理，不能依赖后续本实例代码继续执行。
+       */
       componentDidUpdate() {
         log.push('BrokenComponentDidUpdate componentDidUpdate [!]');
         throw new Error(this.props.errorText);
       }
-      /** `componentWillUnmount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 BrokenComponentDidUpdate 在删除已提交实例的清理阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       componentWillUnmount() {
         log.push('BrokenComponentDidUpdate componentWillUnmount');
       }
     };
 
+    /**
+     * 卸载时抛 errorText 的组件；既可作为原错误源，也可在回退清理中产生第二条错误。
+     */
     BrokenComponentWillUnmount = class extends React.Component {
-      /** `defaultProps`：记录测试夹具在当前场景中的状态。 */
+
+      /**
+       * 默认 errorText=Hello；调用者可改成 E1/E2/E3/E4，以区分同一批提交中多个独立错误。
+       */
       static defaultProps = {
         errorText: 'Hello',
       };
-      /** `constructor`：初始化测试夹具实例及其状态。 */
+
+      /**
+       * 调用 super(props) 后记录构造日志；供断言区别新建实例与仅更新已有实例。 参数 props 交由 React.Component 保存。
+       */
       constructor(props) {
         super(props);
         log.push('BrokenComponentWillUnmount constructor');
       }
-      /** `render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 记录 BrokenComponentWillUnmount 的 render，并返回包住 props.children 的 div；不在此处抛错，测试由指定生命周期制造故障。
+       */
       render() {
         log.push('BrokenComponentWillUnmount render');
         return <div>{this.props.children}</div>;
       }
-      /** `UNSAFE_componentWillMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 BrokenComponentWillUnmount 在首次 render 前的旧式挂载阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       UNSAFE_componentWillMount() {
         log.push('BrokenComponentWillUnmount componentWillMount');
       }
-      /** `componentDidMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 BrokenComponentWillUnmount 在layout 提交中的挂载阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       componentDidMount() {
         log.push('BrokenComponentWillUnmount componentDidMount');
       }
-      /** `UNSAFE_componentWillReceiveProps`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 BrokenComponentWillUnmount 在接收新 props 的更新 render 阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       UNSAFE_componentWillReceiveProps() {
         log.push('BrokenComponentWillUnmount componentWillReceiveProps');
       }
-      /** `UNSAFE_componentWillUpdate`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 BrokenComponentWillUnmount 在更新 render 前的旧式阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       UNSAFE_componentWillUpdate() {
         log.push('BrokenComponentWillUnmount componentWillUpdate');
       }
-      /** `componentDidUpdate`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 BrokenComponentWillUnmount 在layout 提交中的更新阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       componentDidUpdate() {
         log.push('BrokenComponentWillUnmount componentDidUpdate');
       }
-      /** `componentWillUnmount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 记录 BrokenComponentWillUnmount 在删除已提交实例的清理阶段的故障，再抛 props.errorText；由父边界或根处理，不能依赖后续本实例代码继续执行。
+       */
       componentWillUnmount() {
         log.push('BrokenComponentWillUnmount componentWillUnmount [!]');
         throw new Error(this.props.errorText);
       }
     };
 
+    /**
+     * 虽提供componentDidCatch 恢复状态却在自身 willMount 抛错的边界；证明边界不能捕获自己的初始化错误。
+     */
     BrokenComponentWillMountErrorBoundary = class extends React.Component {
-      /** `constructor`：初始化测试夹具实例及其状态。 */
+
+      /**
+       * 初始化 error=null 的成功状态，再记录构造日志；供断言区别新建实例与仅更新已有实例。 参数 props 交由 React.Component 保存。
+       */
       constructor(props) {
         super(props);
         this.state = {error: null};
         log.push('BrokenComponentWillMountErrorBoundary constructor');
       }
-      /** `render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * error 存在时返回错误消息 div，否则包住 children；自身生命周期抛错不能由自己的componentDidCatch 捕获。
+       */
       render() {
         if (this.state.error) {
           log.push('BrokenComponentWillMountErrorBoundary render error');
@@ -340,36 +544,57 @@ describe('ReactLegacyErrorBoundaries', () => {
         log.push('BrokenComponentWillMountErrorBoundary render success');
         return <div>{this.props.children}</div>;
       }
-      /** `UNSAFE_componentWillMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 记录 BrokenComponentWillMountErrorBoundary 在首次 render 前的旧式挂载阶段的故障，再抛 Hello；由父边界或根处理，不能依赖后续本实例代码继续执行。
+       */
       UNSAFE_componentWillMount() {
         log.push(
           'BrokenComponentWillMountErrorBoundary componentWillMount [!]',
         );
         throw new Error('Hello');
       }
-      /** `componentDidMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 BrokenComponentWillMountErrorBoundary 在layout 提交中的挂载阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       componentDidMount() {
         log.push('BrokenComponentWillMountErrorBoundary componentDidMount');
       }
-      /** `componentWillUnmount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 BrokenComponentWillMountErrorBoundary 在删除已提交实例的清理阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       componentWillUnmount() {
         log.push('BrokenComponentWillMountErrorBoundary componentWillUnmount');
       }
-      /** `componentDidCatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 提交捕获回调接收 error，记录并 setState({error})；下一次更新由 render 返回回退，不能捕获自身生命周期或回退 render 的错误。
+       */
       componentDidCatch(error) {
         log.push('BrokenComponentWillMountErrorBoundary componentDidCatch');
         this.setState({error});
       }
     };
 
+    /**
+     * 自身 didMount 抛错的边界；外层边界必须接手并清理已提交的内层实例。
+     */
     BrokenComponentDidMountErrorBoundary = class extends React.Component {
-      /** `constructor`：初始化测试夹具实例及其状态。 */
+
+      /**
+       * 初始化 error=null 的成功状态，再记录构造日志；供断言区别新建实例与仅更新已有实例。 参数 props 交由 React.Component 保存。
+       */
       constructor(props) {
         super(props);
         this.state = {error: null};
         log.push('BrokenComponentDidMountErrorBoundary constructor');
       }
-      /** `render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * error 存在时返回错误消息 div，否则包住 children；自身生命周期抛错不能由自己的componentDidCatch 捕获。
+       */
       render() {
         if (this.state.error) {
           log.push('BrokenComponentDidMountErrorBoundary render error');
@@ -378,34 +603,55 @@ describe('ReactLegacyErrorBoundaries', () => {
         log.push('BrokenComponentDidMountErrorBoundary render success');
         return <div>{this.props.children}</div>;
       }
-      /** `UNSAFE_componentWillMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 BrokenComponentDidMountErrorBoundary 在首次 render 前的旧式挂载阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       UNSAFE_componentWillMount() {
         log.push('BrokenComponentDidMountErrorBoundary componentWillMount');
       }
-      /** `componentDidMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 记录 BrokenComponentDidMountErrorBoundary 在layout 提交中的挂载阶段的故障，再抛 Hello；由父边界或根处理，不能依赖后续本实例代码继续执行。
+       */
       componentDidMount() {
         log.push('BrokenComponentDidMountErrorBoundary componentDidMount [!]');
         throw new Error('Hello');
       }
-      /** `componentWillUnmount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 BrokenComponentDidMountErrorBoundary 在删除已提交实例的清理阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       componentWillUnmount() {
         log.push('BrokenComponentDidMountErrorBoundary componentWillUnmount');
       }
-      /** `componentDidCatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 提交捕获回调接收 error，记录并 setState({error})；下一次更新由 render 返回回退，不能捕获自身生命周期或回退 render 的错误。
+       */
       componentDidCatch(error) {
         log.push('BrokenComponentDidMountErrorBoundary componentDidCatch');
         this.setState({error});
       }
     };
 
+    /**
+     * 成功分支显示 children，捕获子错误后自身回退 render 再抛 Hello 的边界，用来测试向外层传播。
+     */
     BrokenRenderErrorBoundary = class extends React.Component {
-      /** `constructor`：初始化测试夹具实例及其状态。 */
+
+      /**
+       * 初始化 error=null 的成功状态，再记录构造日志；供断言区别新建实例与仅更新已有实例。 参数 props 交由 React.Component 保存。
+       */
       constructor(props) {
         super(props);
         this.state = {error: null};
         log.push('BrokenRenderErrorBoundary constructor');
       }
-      /** `render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * error 存在时记录回退 render 并再次抛 Hello，否则返回 children 的 div；自身回退错误必须交给外层边界。
+       */
       render() {
         if (this.state.error) {
           log.push('BrokenRenderErrorBoundary render error [!]');
@@ -414,140 +660,239 @@ describe('ReactLegacyErrorBoundaries', () => {
         log.push('BrokenRenderErrorBoundary render success');
         return <div>{this.props.children}</div>;
       }
-      /** `UNSAFE_componentWillMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 BrokenRenderErrorBoundary 在首次 render 前的旧式挂载阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       UNSAFE_componentWillMount() {
         log.push('BrokenRenderErrorBoundary componentWillMount');
       }
-      /** `componentDidMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 BrokenRenderErrorBoundary 在layout 提交中的挂载阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       componentDidMount() {
         log.push('BrokenRenderErrorBoundary componentDidMount');
       }
-      /** `componentWillUnmount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 BrokenRenderErrorBoundary 在删除已提交实例的清理阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       componentWillUnmount() {
         log.push('BrokenRenderErrorBoundary componentWillUnmount');
       }
-      /** `componentDidCatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 提交捕获回调接收 error，记录并 setState({error})；下一次更新由 render 返回回退，不能捕获自身生命周期或回退 render 的错误。
+       */
       componentDidCatch(error) {
         log.push('BrokenRenderErrorBoundary componentDidCatch');
         this.setState({error});
       }
     };
 
+    /**
+     * render 直接抛 Hello 的组件；正常构造和生命周期日志用于区分错误重试与真正提交。
+     */
     BrokenRender = class extends React.Component {
-      /** `constructor`：初始化测试夹具实例及其状态。 */
+
+      /**
+       * 调用 super(props) 后记录构造日志；供断言区别新建实例与仅更新已有实例。 参数 props 交由 React.Component 保存。
+       */
       constructor(props) {
         super(props);
         log.push('BrokenRender constructor');
       }
-      /** `render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 记录 render 故障并抛 Hello；不返回 UI，父边界或 HostRoot 必须恢复。
+       */
       render() {
         log.push('BrokenRender render [!]');
         throw new Error('Hello');
       }
-      /** `UNSAFE_componentWillMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 BrokenRender 在首次 render 前的旧式挂载阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       UNSAFE_componentWillMount() {
         log.push('BrokenRender componentWillMount');
       }
-      /** `componentDidMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 BrokenRender 在layout 提交中的挂载阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       componentDidMount() {
         log.push('BrokenRender componentDidMount');
       }
-      /** `UNSAFE_componentWillReceiveProps`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 BrokenRender 在接收新 props 的更新 render 阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       UNSAFE_componentWillReceiveProps() {
         log.push('BrokenRender componentWillReceiveProps');
       }
-      /** `UNSAFE_componentWillUpdate`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 BrokenRender 在更新 render 前的旧式阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       UNSAFE_componentWillUpdate() {
         log.push('BrokenRender componentWillUpdate');
       }
-      /** `componentDidUpdate`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 BrokenRender 在layout 提交中的更新阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       componentDidUpdate() {
         log.push('BrokenRender componentDidUpdate');
       }
-      /** `componentWillUnmount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 BrokenRender 在删除已提交实例的清理阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       componentWillUnmount() {
         log.push('BrokenRender componentWillUnmount');
       }
     };
 
+    /**
+     * 仅记录 didCatch、不更新状态的无效恢复边界；失败 children 被置空，但边界外 sibling 保留，用来观察警告与实际输出。
+     */
     NoopErrorBoundary = class extends React.Component {
-      /** `constructor`：初始化测试夹具实例及其状态。 */
+
+      /**
+       * 调用 super(props) 后记录构造日志；供断言区别新建实例与仅更新已有实例。 参数 props 交由 React.Component 保存。
+       */
       constructor(props) {
         super(props);
         log.push('NoopErrorBoundary constructor');
       }
-      /** `render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 始终返回 BrokenRender；本 fixture 的 didCatch 没有建立有效回退，具体捕获结果由用例断言区分。
+       */
       render() {
         log.push('NoopErrorBoundary render');
         return <BrokenRender />;
       }
-      /** `UNSAFE_componentWillMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 NoopErrorBoundary 在首次 render 前的旧式挂载阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       UNSAFE_componentWillMount() {
         log.push('NoopErrorBoundary componentWillMount');
       }
-      /** `componentDidMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 NoopErrorBoundary 在layout 提交中的挂载阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       componentDidMount() {
         log.push('NoopErrorBoundary componentDidMount');
       }
-      /** `componentWillUnmount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 NoopErrorBoundary 在删除已提交实例的清理阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       componentWillUnmount() {
         log.push('NoopErrorBoundary componentWillUnmount');
       }
-      /** `componentDidCatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 只记录捕获，不设置状态也不返回回退；因此失败 children 被置空并触发缺少恢复状态的 DEV 警告。
+       */
       componentDidCatch() {
         log.push('NoopErrorBoundary componentDidCatch');
       }
     };
 
+    /**
+     * 成功路径日志对照组件；logName 区分多个实例，children 用来组成异常恢复前的已提交子树。
+     */
     Normal = class extends React.Component {
-      /** `defaultProps`：记录测试夹具在当前场景中的状态。 */
+
+      /**
+       * 默认 logName=Normal；多个成功 fixture 可覆盖日志标签，避免混淆实例的挂载、更新与清理顺序。
+       */
       static defaultProps = {
         logName: 'Normal',
       };
-      /** `constructor`：初始化测试夹具实例及其状态。 */
+
+      /**
+       * 调用 super(props) 后记录构造日志；供断言区别新建实例与仅更新已有实例。 参数 props 交由 React.Component 保存。
+       */
       constructor(props) {
         super(props);
         log.push(`${this.props.logName} constructor`);
       }
-      /** `render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 记录 Normal 的 render，并返回包住 props.children 的 div；不在此处抛错，测试由指定生命周期制造故障。
+       */
       render() {
         log.push(`${this.props.logName} render`);
         return <div>{this.props.children}</div>;
       }
-      /** `UNSAFE_componentWillMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 Normal 在首次 render 前的旧式挂载阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       UNSAFE_componentWillMount() {
         log.push(`${this.props.logName} componentWillMount`);
       }
-      /** `componentDidMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 Normal 在layout 提交中的挂载阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       componentDidMount() {
         log.push(`${this.props.logName} componentDidMount`);
       }
-      /** `UNSAFE_componentWillReceiveProps`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 Normal 在接收新 props 的更新 render 阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       UNSAFE_componentWillReceiveProps() {
         log.push(`${this.props.logName} componentWillReceiveProps`);
       }
-      /** `UNSAFE_componentWillUpdate`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 Normal 在更新 render 前的旧式阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       UNSAFE_componentWillUpdate() {
         log.push(`${this.props.logName} componentWillUpdate`);
       }
-      /** `componentDidUpdate`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 Normal 在layout 提交中的更新阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       componentDidUpdate() {
         log.push(`${this.props.logName} componentDidUpdate`);
       }
-      /** `componentWillUnmount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 Normal 在删除已提交实例的清理阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       componentWillUnmount() {
         log.push(`${this.props.logName} componentWillUnmount`);
       }
     };
 
+    /**
+     * 旧式错误边界；componentDidCatch 在提交后 setState({error})，renderError 显示回退，forceRetry 显式绕过错误态，日志核对两次提交及清理。
+     */
     ErrorBoundary = class extends React.Component {
-      /** `constructor`：初始化测试夹具实例及其状态。 */
+
+      /**
+       * 初始化 error=null 的成功状态，再记录构造日志；供断言区别新建实例与仅更新已有实例。 参数 props 交由 React.Component 保存。
+       */
       constructor(props) {
         super(props);
         this.state = {error: null};
         log.push(`${this.props.logName} constructor`);
       }
-      /** `render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * error 存在且未 forceRetry 时把 error/props 传给 renderError 返回回退；否则返回包含 children 的 div。状态保留到测试显式重试，不会仅因 children 改变自动清除。
+       */
       render() {
         if (this.state.error && !this.props.forceRetry) {
           log.push(`${this.props.logName} render error`);
@@ -556,39 +901,63 @@ describe('ReactLegacyErrorBoundaries', () => {
         log.push(`${this.props.logName} render success`);
         return <div>{this.props.children}</div>;
       }
-      /** `componentDidCatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 提交捕获回调接收 error，记录并 setState({error})；下一次更新由 render 返回回退，不能捕获自身生命周期或回退 render 的错误。
+       */
       componentDidCatch(error) {
         log.push(`${this.props.logName} componentDidCatch`);
         this.setState({error});
       }
-      /** `UNSAFE_componentWillMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 ErrorBoundary 在首次 render 前的旧式挂载阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       UNSAFE_componentWillMount() {
         log.push(`${this.props.logName} componentWillMount`);
       }
-      /** `componentDidMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 ErrorBoundary 在layout 提交中的挂载阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       componentDidMount() {
         log.push(`${this.props.logName} componentDidMount`);
       }
-      /** `UNSAFE_componentWillReceiveProps`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 ErrorBoundary 在接收新 props 的更新 render 阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       UNSAFE_componentWillReceiveProps() {
         log.push(`${this.props.logName} componentWillReceiveProps`);
       }
-      /** `UNSAFE_componentWillUpdate`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 ErrorBoundary 在更新 render 前的旧式阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       UNSAFE_componentWillUpdate() {
         log.push(`${this.props.logName} componentWillUpdate`);
       }
-      /** `componentDidUpdate`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 ErrorBoundary 在layout 提交中的更新阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       componentDidUpdate() {
         log.push(`${this.props.logName} componentDidUpdate`);
       }
-      /** `componentWillUnmount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 ErrorBoundary 在删除已提交实例的清理阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       componentWillUnmount() {
         log.push(`${this.props.logName} componentWillUnmount`);
       }
     };
     ErrorBoundary.defaultProps = {
       logName: 'ErrorBoundary',
-      /** `renderError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 默认回退渲染器：把 Error.message 放入 div，并挂接 props.errorMessageRef；该 ref 只属于成功提交的回退，卸载时清空。
+       */
       renderError(error, props) {
         return (
           <div ref={props.errorMessageRef}>
@@ -598,21 +967,31 @@ describe('ReactLegacyErrorBoundaries', () => {
       },
     };
 
+    /**
+     * 同时提供派生状态恢复和提交后 didCatch 的测试边界；两者都保存 error，日志用来核对首个回退与后续捕获更新。
+     */
     BothErrorBoundaries = class extends React.Component {
-      /** `constructor`：初始化测试夹具实例及其状态。 */
+
+      /**
+       * 初始化 error=null 的成功状态，再记录构造日志；供断言区别新建实例与仅更新已有实例。 参数 props 交由 React.Component 保存。
+       */
       constructor(props) {
         super(props);
         this.state = {error: null};
         log.push('BothErrorBoundaries constructor');
       }
 
-      /** `getDerivedStateFromError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 记录捕获并返回 {error} 状态补丁；React 在恢复 render 前合并，使 render 能选择回退；error 为当前捕获对象。
+       */
       static getDerivedStateFromError(error) {
         log.push('BothErrorBoundaries static getDerivedStateFromError');
         return {error};
       }
 
-      /** `render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * error 存在时返回 Hello 等错误消息 div，否则承载 children；派生方法可在首个恢复 render 生效，didCatch 又追加同一错误状态。
+       */
       render() {
         if (this.state.error) {
           log.push('BothErrorBoundaries render error');
@@ -622,93 +1001,146 @@ describe('ReactLegacyErrorBoundaries', () => {
         return <div>{this.props.children}</div>;
       }
 
-      /** `componentDidCatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 提交捕获回调接收 error，记录并 setState({error})；下一次更新由 render 返回回退，不能捕获自身生命周期或回退 render 的错误。
+       */
       componentDidCatch(error) {
         log.push('BothErrorBoundaries componentDidCatch');
         this.setState({error});
       }
 
-      /** `UNSAFE_componentWillMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 把 BothErrorBoundaries 在首次 render 前的旧式挂载阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       UNSAFE_componentWillMount() {
         log.push('BothErrorBoundaries componentWillMount');
       }
 
-      /** `componentDidMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 把 BothErrorBoundaries 在layout 提交中的挂载阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       componentDidMount() {
         log.push('BothErrorBoundaries componentDidMount');
       }
 
-      /** `UNSAFE_componentWillReceiveProps`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 把 BothErrorBoundaries 在接收新 props 的更新 render 阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       UNSAFE_componentWillReceiveProps() {
         log.push('BothErrorBoundaries componentWillReceiveProps');
       }
 
-      /** `UNSAFE_componentWillUpdate`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 把 BothErrorBoundaries 在更新 render 前的旧式阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       UNSAFE_componentWillUpdate() {
         log.push('BothErrorBoundaries componentWillUpdate');
       }
 
-      /** `componentDidUpdate`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 把 BothErrorBoundaries 在layout 提交中的更新阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       componentDidUpdate() {
         log.push('BothErrorBoundaries componentDidUpdate');
       }
 
-      /** `componentWillUnmount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 把 BothErrorBoundaries 在删除已提交实例的清理阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       componentWillUnmount() {
         log.push('BothErrorBoundaries componentWillUnmount');
       }
     };
 
+    /**
+     * didCatch 仅 setState({}) 的旧式重试边界；仍返回 BrokenRender，恢复再次失败并向外层传播。
+     */
     RetryErrorBoundary = class extends React.Component {
-      /** `constructor`：初始化测试夹具实例及其状态。 */
+
+      /**
+       * 调用 super(props) 后记录构造日志；供断言区别新建实例与仅更新已有实例。 参数 props 交由 React.Component 保存。
+       */
       constructor(props) {
         super(props);
         log.push('RetryErrorBoundary constructor');
       }
-      /** `render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 始终返回 BrokenRender；本 fixture 的 didCatch 没有建立有效回退，具体捕获结果由用例断言区分。
+       */
       render() {
         log.push('RetryErrorBoundary render');
         return <BrokenRender />;
       }
-      /** `UNSAFE_componentWillMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 RetryErrorBoundary 在首次 render 前的旧式挂载阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       UNSAFE_componentWillMount() {
         log.push('RetryErrorBoundary componentWillMount');
       }
-      /** `componentDidMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 RetryErrorBoundary 在layout 提交中的挂载阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       componentDidMount() {
         log.push('RetryErrorBoundary componentDidMount');
       }
-      /** `componentWillUnmount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 RetryErrorBoundary 在删除已提交实例的清理阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       componentWillUnmount() {
         log.push('RetryErrorBoundary componentWillUnmount');
       }
-      /** `componentDidCatch`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 接收捕获 error，记录后 setState({})；空补丁不更换 BrokenRender，下一轮失败必须交给外层边界。
+       */
       componentDidCatch(error) {
         log.push('RetryErrorBoundary componentDidCatch [!]');
-        // 在 Fiber 中，调用 setState()（并失败）被视为重新抛出。
+        // 空状态补丁不更换失败输出，下一轮仍抛错，随后由外层边界接手。
         this.setState({});
       }
     };
 
+    /**
+     * 具有完整挂载/卸载日志的回退组件；message 来自捕获错误，用来证明回退组件真正提交及随后清理。
+     */
     ErrorMessage = class extends React.Component {
-      /** `constructor`：初始化测试夹具实例及其状态。 */
+
+      /**
+       * 调用 super(props) 后记录构造日志；供断言区别新建实例与仅更新已有实例。 参数 props 交由 React.Component 保存。
+       */
       constructor(props) {
         super(props);
         log.push('ErrorMessage constructor');
       }
-      /** `UNSAFE_componentWillMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 ErrorMessage 在首次 render 前的旧式挂载阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       UNSAFE_componentWillMount() {
         log.push('ErrorMessage componentWillMount');
       }
-      /** `componentDidMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 ErrorMessage 在layout 提交中的挂载阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       componentDidMount() {
         log.push('ErrorMessage componentDidMount');
       }
-      /** `componentWillUnmount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把 ErrorMessage 在删除已提交实例的清理阶段的访问记入 log 数组；无状态更新或返回值，让测试根据日志确认实际执行阶段及错误后是否继续遍历。
+       */
       componentWillUnmount() {
         log.push('ErrorMessage componentWillUnmount');
       }
-      /** `render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 记录回退 render 并返回 props.message 的错误文本 div；didMount 日志另外证明这份候选输出真正提交。
+       */
       render() {
         log.push('ErrorMessage render');
         return <div>Caught an error: {this.props.message}.</div>;
@@ -719,16 +1151,12 @@ describe('ReactLegacyErrorBoundaries', () => {
   afterEach(() => {
     jest.restoreAllMocks();
   });
+  /**
+   * 在 legacy gate 启用时，分别以 ReactDOM.render 初挂 render/willMount/didMount 抛错组件；await act 全部拒绝 Hello，覆盖无边界 render 与提交异常。
+   */
 
   // @gate !disableLegacyMode
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「does not swallow exceptions on mounting without boundaries」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言连接 ReactDOM 公开入口、ReactDOMRoot 根生命周期及 DOM 提交结果。
-   */
+
   it('does not swallow exceptions on mounting without boundaries', async () => {
     let container = document.createElement('div');
     await expect(async () => {
@@ -751,9 +1179,12 @@ describe('ReactLegacyErrorBoundaries', () => {
       });
     }).rejects.toThrow('Hello');
   });
+  /**
+   * 先通过 ReactDOM.render 成功挂载，再分别更新触发 willUpdate/willReceiveProps/didUpdate 错误；await act 均拒绝 Hello，证明旧入口也报告更新错误。
+   */
 
   // @gate !disableLegacyMode
-  /** 测试场景：验证「does not swallow exceptions on updating without boundaries」描述的渲染、交互或错误处理结果。 */
+
   it('does not swallow exceptions on updating without boundaries', async () => {
     let container = document.createElement('div');
     ReactDOM.render(<BrokenComponentWillUpdate />, container);
@@ -779,9 +1210,12 @@ describe('ReactLegacyErrorBoundaries', () => {
       });
     }).rejects.toThrow('Hello');
   });
+  /**
+   * 先提交卸载抛错节点，再 unmountComponentAtNode；await act 拒绝 Hello，覆盖旧根删除阶段的异常出口。
+   */
 
   // @gate !disableLegacyMode
-  /** 测试场景：验证「does not swallow exceptions on unmounting without boundaries」描述的渲染、交互或错误处理结果。 */
+
   it('does not swallow exceptions on unmounting without boundaries', async () => {
     const container = document.createElement('div');
     ReactDOM.render(<BrokenComponentWillUnmount />, container);
@@ -791,9 +1225,12 @@ describe('ReactLegacyErrorBoundaries', () => {
       });
     }).rejects.toThrow('Hello');
   });
+  /**
+   * 三个独立根分别正常、无边界失败、有边界失败；失败后前根保持 Before 1、第二根为空、第三根为回退；再分别更新到 After 1/2/3 并卸载，证明根之间错误状态隔离且各自可继续使用。
+   */
 
   // @gate !disableLegacyMode
-  /** 测试场景：验证「prevents errors from leaking into other roots」描述的渲染、交互或错误处理结果。 */
+
   it('prevents errors from leaking into other roots', async () => {
     const container1 = document.createElement('div');
     const container2 = document.createElement('div');
@@ -832,9 +1269,12 @@ describe('ReactLegacyErrorBoundaries', () => {
     expect(container2.firstChild).toBe(null);
     expect(container3.firstChild).toBe(null);
   });
+  /**
+   * BothErrorBoundaries 同时使用派生方法与 didCatch；子 render 抛错后 DOM 为 Hello，两方法均记录；DEV console.error 两次分别是 legacy render 弃用提示和一条捕获错误报告。
+   */
 
   // @gate !disableLegacyMode
-  /** 测试场景：验证「logs a single error using both error boundaries」描述的渲染、交互或错误处理结果。 */
+
   it('logs a single error using both error boundaries', () => {
     const container = document.createElement('div');
     spyOnDev(console, 'error');
@@ -862,11 +1302,11 @@ describe('ReactLegacyErrorBoundaries', () => {
       'BrokenRender constructor',
       'BrokenRender componentWillMount',
       'BrokenRender render [!]',
-      // getDerivedStateFromError 和 componentDidCatch 应该被调用。
+      // 派生方法先生成回退状态；didCatch 稍后在提交中接收同一错误。
       'BothErrorBoundaries static getDerivedStateFromError',
       'BothErrorBoundaries componentWillMount',
       'BothErrorBoundaries render error',
-      // Fiber 在捕获错误前先以 null 子节点完成挂载。
+      // 派生状态产生的回退已提交；随后 didCatch 再安排一次状态更新。
       'BothErrorBoundaries componentDidMount',
       // 捕获并渲染错误消息
       'BothErrorBoundaries componentDidCatch',
@@ -879,9 +1319,12 @@ describe('ReactLegacyErrorBoundaries', () => {
     ReactDOM.unmountComponentAtNode(container);
     expect(log).toEqual(['BothErrorBoundaries componentWillUnmount']);
   });
+  /**
+   * 边界内 BrokenRender 首挂抛 Hello；旧式 didCatch 边界先提交空 children，再在 didCatch 设置状态，更新提交 Hello 回退；最后仅边界卸载。
+   */
 
   // @gate !disableLegacyMode
-  /** 测试场景：验证「renders an error state if child throws in render」描述的渲染、交互或错误处理结果。 */
+
   it('renders an error state if child throws in render', () => {
     const container = document.createElement('div');
     ReactDOM.render(
@@ -911,9 +1354,12 @@ describe('ReactLegacyErrorBoundaries', () => {
     ReactDOM.unmountComponentAtNode(container);
     expect(log).toEqual(['ErrorBoundary componentWillUnmount']);
   });
+  /**
+   * 边界内构造器抛 Hello；子实例未完成初始化，边界先提交空 children 再由 didCatch 设置 error，DOM 为 Hello，日志不含失败子实例的卸载。
+   */
 
   // @gate !disableLegacyMode
-  /** 测试场景：验证「renders an error state if child throws in constructor」描述的渲染、交互或错误处理结果。 */
+
   it('renders an error state if child throws in constructor', () => {
     const container = document.createElement('div');
     ReactDOM.render(
@@ -941,9 +1387,12 @@ describe('ReactLegacyErrorBoundaries', () => {
     ReactDOM.unmountComponentAtNode(container);
     expect(log).toEqual(['ErrorBoundary componentWillUnmount']);
   });
+  /**
+   * 边界内 willMount 抛 Hello；先以空 children 完成边界挂载，再 didCatch 安排回退更新，最终 Hello；未提交子实例不执行卸载。
+   */
 
   // @gate !disableLegacyMode
-  /** 测试场景：验证「renders an error state if child throws in componentWillMount」描述的渲染、交互或错误处理结果。 */
+
   it('renders an error state if child throws in componentWillMount', () => {
     const container = document.createElement('div');
     ReactDOM.render(
@@ -970,24 +1419,42 @@ describe('ReactLegacyErrorBoundaries', () => {
     ReactDOM.unmountComponentAtNode(container);
     expect(log).toEqual(['ErrorBoundary componentWillUnmount']);
   });
+  /**
+   * legacy Context provider 在 willMount 抛 Hello；受 gate 控制的配置下断言 legacy API 警告和边界错误文本，证明 provider 初始化错误也向父边界传播。
+   */
 
   // @gate !disableLegacyContext || !__DEV__
   // @gate !disableLegacyMode
-  /** 测试场景：验证「renders an error state if context provider throws in componentWillMount」描述的渲染、交互或错误处理结果。 */
+
   it('renders an error state if context provider throws in componentWillMount', () => {
-    /** `BrokenComponentWillMountWithContext`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+
+    /**
+     * legacy Context provider 故障夹具；getChildContext 提供 foo=42，但 willMount 立即抛错，用来检查初始化失败能否由父边界恢复。
+     */
     class BrokenComponentWillMountWithContext extends React.Component {
-      /** `BrokenComponentWillMountWithContext.childContextTypes`：记录测试夹具在当前场景中的状态。 */
+
+      /**
+       * 声明旧 Context 的 foo 数值通道，配合 getChildContext 的 42；用例受 legacy Context gate 控制。
+       */
       static childContextTypes = {foo: PropTypes.number};
-      /** `BrokenComponentWillMountWithContext.getChildContext`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 返回 foo=42 的旧 Context 值；其存在让 willMount 错误发生在 provider 初始化路径。
+       */
       getChildContext() {
         return {foo: 42};
       }
-      /** `BrokenComponentWillMountWithContext.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 正常路径以 div 承载 children；本用例 willMount 先抛错，故不会提交这份输出。
+       */
       render() {
         return <div>{this.props.children}</div>;
       }
-      /** `BrokenComponentWillMountWithContext.UNSAFE_componentWillMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 在 provider 初次 render 前抛 Hello，验证自身尚未提交时由外层边界捕获。
+       */
       UNSAFE_componentWillMount() {
         throw new Error('Hello');
       }
@@ -1007,11 +1474,17 @@ describe('ReactLegacyErrorBoundaries', () => {
     ]);
     expect(container.firstChild.textContent).toBe('Caught an error: Hello.');
   });
+  /**
+   * 自定义 renderError 返回有生命周期日志的 ErrorMessage；子 render 失败后，边界先 didMount/didCatch，再回退组件首次挂载；根清理依次卸载边界与回退。
+   */
 
   // @gate !disableLegacyMode
-  /** 测试场景：验证「mounts the error message if mounting fails」描述的渲染、交互或错误处理结果。 */
+
   it('mounts the error message if mounting fails', () => {
-    /** `renderError`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /**
+     * 把捕获 Error.message 传给 ErrorMessage，返回有完整挂载/卸载日志的回退组件；借此区别回退 render 尝试与真正提交。
+     */
     function renderError(error) {
       return <ErrorMessage message={error.message} />;
     }
@@ -1048,9 +1521,12 @@ describe('ReactLegacyErrorBoundaries', () => {
       'ErrorMessage componentWillUnmount',
     ]);
   });
+  /**
+   * RetryErrorBoundary 的 didCatch 仅 setState({})，恢复仍返回 BrokenRender；再次失败后内边界被卸载，外层 didCatch 提交 Hello，日志证明该无效重试不会吞掉错误。
+   */
 
   // @gate !disableLegacyMode
-  /** 测试场景：验证「propagates errors on retry on mounting」描述的渲染、交互或错误处理结果。 */
+
   it('propagates errors on retry on mounting', () => {
     const container = document.createElement('div');
     ReactDOM.render(
@@ -1094,9 +1570,12 @@ describe('ReactLegacyErrorBoundaries', () => {
     ReactDOM.unmountComponentAtNode(container);
     expect(log).toEqual(['ErrorBoundary componentWillUnmount']);
   });
+  /**
+   * 内层边界自身 willMount 抛 Hello；外层先以空 children 挂载，再 didCatch 设置 error 并提交回退，内层自己的捕获方法不会接住自身初始化故障。
+   */
 
   // @gate !disableLegacyMode
-  /** 测试场景：验证「propagates errors inside boundary during componentWillMount」描述的渲染、交互或错误处理结果。 */
+
   it('propagates errors inside boundary during componentWillMount', () => {
     const container = document.createElement('div');
     ReactDOM.render(
@@ -1124,9 +1603,12 @@ describe('ReactLegacyErrorBoundaries', () => {
     ReactDOM.unmountComponentAtNode(container);
     expect(log).toEqual(['ErrorBoundary componentWillUnmount']);
   });
+  /**
+   * 内层 didCatch 保存 error，但下一轮回退 render 又抛 Hello；已挂载内层被卸载，外层 didCatch 更新为 Hello，日志核对逐层传播与清理。
+   */
 
   // @gate !disableLegacyMode
-  /** 测试场景：验证「propagates errors inside boundary while rendering error state」描述的渲染、交互或错误处理结果。 */
+
   it('propagates errors inside boundary while rendering error state', () => {
     const container = document.createElement('div');
     ReactDOM.render(
@@ -1167,9 +1649,12 @@ describe('ReactLegacyErrorBoundaries', () => {
     ReactDOM.unmountComponentAtNode(container);
     expect(log).toEqual(['ErrorBoundary componentWillUnmount']);
   });
+  /**
+   * 正常 sibling 后跟 BrokenRender 和另一个正常 sibling；初挂 render 被中止后只提交边界回退，日志没有任何未提交子组件的 didMount 或 willUnmount。
+   */
 
   // @gate !disableLegacyMode
-  /** 测试场景：验证「does not call componentWillUnmount when aborting initial mount」描述的渲染、交互或错误处理结果。 */
+
   it('does not call componentWillUnmount when aborting initial mount', () => {
     const container = document.createElement('div');
     ReactDOM.render(
@@ -1207,15 +1692,24 @@ describe('ReactLegacyErrorBoundaries', () => {
     ReactDOM.unmountComponentAtNode(container);
     expect(log).toEqual(['ErrorBoundary componentWillUnmount']);
   });
+  /**
+   * 初挂包含 callback ref 节点及 BrokenRender；失败子树的 ref 从未挂接，只有错误回退 ref 获得 DOM；卸载时回退 ref 收到 null，避免把中止 render 误当成已提交挂载。
+   */
 
   // @gate !disableLegacyMode
-  /** 测试场景：验证「resets callback refs if mounting aborts」描述的渲染、交互或错误处理结果。 */
+
   it('resets callback refs if mounting aborts', () => {
-    /** `childRef`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /**
+     * 记录失败子树 ref 的 DOM/null 参数；初挂中止时应完全没有这条日志，因为 ref 只在提交时挂接。
+     */
     function childRef(x) {
       log.push('Child ref is set to ' + x);
     }
-    /** `errorMessageRef`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /**
+     * 记录回退 ref 收到的 DOM 或卸载 null；日志用于证明成功提交的回退拥有独立 ref 生命周期。
+     */
     function errorMessageRef(x) {
       log.push('Error message ref is set to ' + x);
     }
@@ -1254,9 +1748,12 @@ describe('ReactLegacyErrorBoundaries', () => {
       'Error message ref is set to null',
     ]);
   });
+  /**
+   * 初挂包含对象 ref 和 BrokenRender；断言回退 ref 指向 HTMLDivElement、根卸载后变 null；日志只提交边界，不把未提交子树当成需卸载的实例。
+   */
 
   // @gate !disableLegacyMode
-  /** 测试场景：验证「resets object refs if mounting aborts」描述的渲染、交互或错误处理结果。 */
+
   it('resets object refs if mounting aborts', () => {
     const childRef = React.createRef();
     const errorMessageRef = React.createRef();
@@ -1295,9 +1792,12 @@ describe('ReactLegacyErrorBoundaries', () => {
     expect(log).toEqual(['ErrorBoundary componentWillUnmount']);
     expect(errorMessageRef.current).toEqual(null);
   });
+  /**
+   * 边界内只放正常文本；首挂直接提交 Mounted successfully，日志无捕获分支，卸载正常清理边界，作为异常路径的成功对照。
+   */
 
   // @gate !disableLegacyMode
-  /** 测试场景：验证「successfully mounts if no error occurs」描述的渲染、交互或错误处理结果。 */
+
   it('successfully mounts if no error occurs', () => {
     const container = document.createElement('div');
     ReactDOM.render(
@@ -1318,9 +1818,12 @@ describe('ReactLegacyErrorBoundaries', () => {
     ReactDOM.unmountComponentAtNode(container);
     expect(log).toEqual(['ErrorBoundary componentWillUnmount']);
   });
+  /**
+   * 先提交 Normal，再添加 Normal2 与构造器抛错节点；旧 Normal 在空 children 恢复提交时卸载，随后 didCatch 提交回退；新 Normal2 未提交，不能执行卸载。
+   */
 
   // @gate !disableLegacyMode
-  /** 测试场景：验证「catches if child throws in constructor during update」描述的渲染、交互或错误处理结果。 */
+
   it('catches if child throws in constructor during update', () => {
     const container = document.createElement('div');
     ReactDOM.render(
@@ -1368,9 +1871,12 @@ describe('ReactLegacyErrorBoundaries', () => {
     ReactDOM.unmountComponentAtNode(container);
     expect(log).toEqual(['ErrorBoundary componentWillUnmount']);
   });
+  /**
+   * 先提交 Normal，再添加 Normal2 与 willMount 抛错节点；错误恢复先清理旧 Normal，再由 didCatch 设置错误回退，新建候选节点不会被误当成已提交实例清理。
+   */
 
   // @gate !disableLegacyMode
-  /** 测试场景：验证「catches if child throws in componentWillMount during update」描述的渲染、交互或错误处理结果。 */
+
   it('catches if child throws in componentWillMount during update', () => {
     const container = document.createElement('div');
     ReactDOM.render(
@@ -1419,9 +1925,12 @@ describe('ReactLegacyErrorBoundaries', () => {
     ReactDOM.unmountComponentAtNode(container);
     expect(log).toEqual(['ErrorBoundary componentWillUnmount']);
   });
+  /**
+   * 已有 Normal 与 willReceiveProps 抛错节点，再次渲染同结构；旧子实例均被删除，边界先 didUpdate 后 didCatch，再提交 Hello，覆盖更新 render 错误的提交后恢复。
+   */
 
   // @gate !disableLegacyMode
-  /** 测试场景：验证「catches if child throws in componentWillReceiveProps during update」描述的渲染、交互或错误处理结果。 */
+
   it('catches if child throws in componentWillReceiveProps during update', () => {
     const container = document.createElement('div');
     ReactDOM.render(
@@ -1465,9 +1974,12 @@ describe('ReactLegacyErrorBoundaries', () => {
     ReactDOM.unmountComponentAtNode(container);
     expect(log).toEqual(['ErrorBoundary componentWillUnmount']);
   });
+  /**
+   * 已挂载 Normal 与 willUpdate 抛错节点，更新触发错误；断言 Hello，日志证明先清理旧子树、完成原边界 didUpdate，再 didCatch 安排回退。
+   */
 
   // @gate !disableLegacyMode
-  /** 测试场景：验证「catches if child throws in componentWillUpdate during update」描述的渲染、交互或错误处理结果。 */
+
   it('catches if child throws in componentWillUpdate during update', () => {
     const container = document.createElement('div');
     ReactDOM.render(
@@ -1512,9 +2024,12 @@ describe('ReactLegacyErrorBoundaries', () => {
     ReactDOM.unmountComponentAtNode(container);
     expect(log).toEqual(['ErrorBoundary componentWillUnmount']);
   });
+  /**
+   * 先提交 Normal，再添加 Normal2 与 BrokenRender；失败候选中止，已提交 Normal 被删除，didCatch 随后提交 Hello；未提交的新增实例没有卸载日志。
+   */
 
   // @gate !disableLegacyMode
-  /** 测试场景：验证「catches if child throws in render during update」描述的渲染、交互或错误处理结果。 */
+
   it('catches if child throws in render during update', () => {
     const container = document.createElement('div');
     ReactDOM.render(
@@ -1563,19 +2078,31 @@ describe('ReactLegacyErrorBoundaries', () => {
     ReactDOM.unmountComponentAtNode(container);
     expect(log).toEqual(['ErrorBoundary componentWillUnmount']);
   });
+  /**
+   * 先挂接 Child1 callback ref，再新增 Child2 与抛错节点；原 Child1 ref 先收到 null，didCatch 恢复后回退 ref 得到 DOM，Child2 从未挂接；卸载回退 ref 再收到 null。
+   */
 
   // @gate !disableLegacyMode
-  /** 测试场景：验证「keeps refs up-to-date during updates」描述的渲染、交互或错误处理结果。 */
+
   it('keeps refs up-to-date during updates', () => {
-    /** `child1Ref`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /**
+     * 记录已提交 Child1 ref 的 DOM/null；更新失败删除旧节点时必须收到 null。
+     */
     function child1Ref(x) {
       log.push('Child1 ref is set to ' + x);
     }
-    /** `child2Ref`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /**
+     * 记录本轮新 Child2 ref 的 DOM/null；失败 render 未提交时不应调用该回调。
+     */
     function child2Ref(x) {
       log.push('Child2 ref is set to ' + x);
     }
-    /** `errorMessageRef`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /**
+     * 记录错误回退 ref 挂接与卸载清空，和 Child1 的清理日志共同验证提交顺序。
+     */
     function errorMessageRef(x) {
       log.push('Error message ref is set to ' + x);
     }
@@ -1632,9 +2159,12 @@ describe('ReactLegacyErrorBoundaries', () => {
       'Error message ref is set to null',
     ]);
   });
+  /**
+   * 已提交两个卸载抛错节点和 Normal，更新删去后两项；提交遍历继续完成其余生命周期，随后边界恢复再删除剩余抛错节点并再次捕获，最终 DOM 为 Hello。
+   */
 
   // @gate !disableLegacyMode
-  /** 测试场景：验证「recovers from componentWillUnmount errors on update」描述的渲染、交互或错误处理结果。 */
+
   it('recovers from componentWillUnmount errors on update', () => {
     const container = document.createElement('div');
     ReactDOM.render(
@@ -1672,13 +2202,13 @@ describe('ReactLegacyErrorBoundaries', () => {
       // 提交阶段结束后，Fiber 会卸载该边界的子节点。
       'BrokenComponentWillUnmount componentWillUnmount [!]',
       'ErrorBoundary componentDidCatch',
-      // 初始渲染被中止了，因此 Fiber 从根节点重新尝试。
+      // 捕获回调安排边界恢复更新；本轮子树清理又产生错误，下一次捕获仍需继续处理。
       'ErrorBoundary componentWillUpdate',
       'ErrorBoundary componentDidUpdate',
       // 第二个 componentWillUnmount 错误也应被捕获并记录。
       'ErrorBoundary componentDidCatch',
       'ErrorBoundary componentWillUpdate',
-      // 现在渲染错误（Stack 实现稍后才会这样做）。
+      // 两次提交错误均已交给 didCatch；现在把其状态更新提交为错误回退。
       'ErrorBoundary render error',
       // 尝试卸载上一个子组件：成功卸载。
       'ErrorBoundary componentDidUpdate',
@@ -1688,9 +2218,12 @@ describe('ReactLegacyErrorBoundaries', () => {
     ReactDOM.unmountComponentAtNode(container);
     expect(log).toEqual(['ErrorBoundary componentWillUnmount']);
   });
+  /**
+   * 嵌套 Normal 内含卸载抛错节点，旁边还有同类节点；删除旁节点触发恢复，再清理嵌套旧子树产生第二次错误；日志证明清理继续、每次错误均被处理。
+   */
 
   // @gate !disableLegacyMode
-  /** 测试场景：验证「recovers from nested componentWillUnmount errors on update」描述的渲染、交互或错误处理结果。 */
+
   it('recovers from nested componentWillUnmount errors on update', () => {
     const container = document.createElement('div');
     ReactDOM.render(
@@ -1734,13 +2267,13 @@ describe('ReactLegacyErrorBoundaries', () => {
       'BrokenComponentWillUnmount componentWillUnmount [!]',
       // 提交阶段完成后，Fiber 开始处理错误。
       'ErrorBoundary componentDidCatch',
-      // 初始渲染被中止了，因此 Fiber 从根节点重新尝试。
+      // 捕获回调安排边界恢复更新；本轮子树清理又产生错误，下一次捕获仍需继续处理。
       'ErrorBoundary componentWillUpdate',
       'ErrorBoundary componentDidUpdate',
       // 第二个 componentWillUnmount 错误也应被捕获并记录。
       'ErrorBoundary componentDidCatch',
       'ErrorBoundary componentWillUpdate',
-      // 现在渲染错误（Stack 实现稍后才会这样做）。
+      // 两次提交错误均已交给 didCatch；现在把其状态更新提交为错误回退。
       'ErrorBoundary render error',
       // 完成
       'ErrorBoundary componentDidUpdate',
@@ -1750,15 +2283,24 @@ describe('ReactLegacyErrorBoundaries', () => {
     ReactDOM.unmountComponentAtNode(container);
     expect(log).toEqual(['ErrorBoundary componentWillUnmount']);
   });
+  /**
+   * 外层与内层边界包裹卸载抛错节点，更新仅移除该节点；最近仍保留的内层边界提交 inner 回退，外层只参与原更新，不再为错误恢复重渲染。
+   */
 
   // @gate !disableLegacyMode
-  /** 测试场景：验证「picks the right boundary when handling unmounting errors」描述的渲染、交互或错误处理结果。 */
+
   it('picks the right boundary when handling unmounting errors', () => {
-    /** `renderInnerError`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /**
+     * 返回带 inner 标记的错误文本，让 DOM 直接区分是否由最近仍挂载的内边界捕获。
+     */
     function renderInnerError(error) {
       return <div>Caught an inner error: {error.message}.</div>;
     }
-    /** `renderOuterError`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /**
+     * 返回带 outer 标记的错误文本，用于发现卸载错误是否误越过仍可恢复的内边界。
+     */
     function renderOuterError(error) {
       return <div>Caught an outer error: {error.message}.</div>;
     }
@@ -1820,9 +2362,12 @@ describe('ReactLegacyErrorBoundaries', () => {
       'InnerErrorBoundary componentWillUnmount',
     ]);
   });
+  /**
+   * 先进入错误态，直接换成 Normal 仍保留 Hello；设置 forceRetry 才走成功分支并挂载 Normal；证明是否重试由本 fixture 的状态/prop 协议控制，最后正常清理。
+   */
 
   // @gate !disableLegacyMode
-  /** 测试场景：验证「can recover from error state」描述的渲染、交互或错误处理结果。 */
+
   it('can recover from error state', () => {
     const container = document.createElement('div');
     ReactDOM.render(
@@ -1870,9 +2415,12 @@ describe('ReactLegacyErrorBoundaries', () => {
       'Normal componentWillUnmount',
     ]);
   });
+  /**
+   * 进入错误态后重复提交相同失败 children 仍保持回退，再替换整个边界为 Other screen；断言两次错误文本与最终普通输出，验证错误态可以继续更新和被移除。
+   */
 
   // @gate !disableLegacyMode
-  /** 测试场景：验证「can update multiple times in error state」描述的渲染、交互或错误处理结果。 */
+
   it('can update multiple times in error state', () => {
     const container = document.createElement('div');
     ReactDOM.render(
@@ -1896,9 +2444,12 @@ describe('ReactLegacyErrorBoundaries', () => {
 
     ReactDOM.unmountComponentAtNode(container);
   });
+  /**
+   * 已提交 Normal、卸载抛错节点、Normal 后删去全部 children；边界恢复为 Hello，最后卸载只清理边界，验证删除中异常不残留失效子树。
+   */
 
   // @gate !disableLegacyMode
-  /** 测试场景：验证「doesn't get into inconsistent state during removals」描述的渲染、交互或错误处理结果。 */
+
   it("doesn't get into inconsistent state during removals", () => {
     const container = document.createElement('div');
     ReactDOM.render(
@@ -1917,9 +2468,12 @@ describe('ReactLegacyErrorBoundaries', () => {
     ReactDOM.unmountComponentAtNode(container);
     expect(log).toEqual(['ErrorBoundary componentWillUnmount']);
   });
+  /**
+   * 先提交空边界，再添加正常/抛错/正常节点；失败后 DOM 为 Hello，最后只卸载边界，验证新增 render 中止不会留下需清理的子实例。
+   */
 
   // @gate !disableLegacyMode
-  /** 测试场景：验证「doesn't get into inconsistent state during additions」描述的渲染、交互或错误处理结果。 */
+
   it("doesn't get into inconsistent state during additions", () => {
     const container = document.createElement('div');
     ReactDOM.render(<ErrorBoundary />, container);
@@ -1937,11 +2491,17 @@ describe('ReactLegacyErrorBoundaries', () => {
     ReactDOM.unmountComponentAtNode(container);
     expect(log).toEqual(['ErrorBoundary componentWillUnmount']);
   });
+  /**
+   * 随机重排 100 个 keyed Normal 与一个可抛错节点；先成功挂载，再开启 fail 重排；最终提交 Hello 且卸载只剩边界，验证错误恢复不依赖 sibling 的原排列。
+   */
 
   // @gate !disableLegacyMode
-  /** 测试场景：验证「doesn't get into inconsistent state during reorders」描述的渲染、交互或错误处理结果。 */
+
   it("doesn't get into inconsistent state during reorders", () => {
-    /** `getAMixOfNormalAndBrokenRenderElements`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /**
+     * 创建 100 个稳定 key 的 Normal 与一个 MaybeBrokenRender，再原地随机置换并返回数组；两轮顺序不同但 identity 仍可按 key 关联，错误恢复不能依赖位置。
+     */
     function getAMixOfNormalAndBrokenRenderElements() {
       const elements = [];
       for (let i = 0; i < 100; i++) {
@@ -1960,9 +2520,14 @@ describe('ReactLegacyErrorBoundaries', () => {
       return elements;
     }
 
-    /** `MaybeBrokenRender`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /**
+     * 受闭包 fail 开关控制的 keyed 故障节点；供随机重排用例在第二轮才触发 render 错误。
+     */
     class MaybeBrokenRender extends React.Component {
-      /** `MaybeBrokenRender.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * fail 开启时抛 Hello，否则返回包住 children 的 div；使第一次提交可建立旧 sibling 树。
+       */
       render() {
         if (fail) {
           throw new Error('Hello');
@@ -1990,17 +2555,28 @@ describe('ReactLegacyErrorBoundaries', () => {
     ReactDOM.unmountComponentAtNode(container);
     expect(log).toEqual(['ErrorBoundary componentWillUnmount']);
   });
+  /**
+   * 先挂载 Stateful 并取得实例，设置闭包 fail 后 forceUpdate；调用不抛，日志确实包含子 render 故障、父 didCatch 和回退更新，证明实例发起的下游更新也走祖先边界。
+   */
 
   // @gate !disableLegacyMode
-  /** 测试场景：验证「catches errors originating downstream」描述的渲染、交互或错误处理结果。 */
+
   it('catches errors originating downstream', () => {
     let fail = false;
-    /** `Stateful`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+
+    /**
+     * 供实例 forceUpdate 入口测试的组件；是否抛错读取闭包 fail，而非下面的 shouldThrow 字段。
+     */
     class Stateful extends React.Component {
-      /** `Stateful.state`：记录测试夹具在当前场景中的状态。 */
+
+      /**
+       * 初始化未被 render 读取的 shouldThrow=false；本用例真正故障开关是外层 fail。
+       */
       state = {shouldThrow: false};
 
-      /** `Stateful.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 读取闭包 fail，开启时记录 render 故障并抛 Hello，否则返回 div；旧根 forceUpdate 同步恢复后，日志验证父 didCatch 与回退更新。
+       */
       render() {
         if (fail) {
           log.push('Stateful render [!]');
@@ -2037,9 +2613,12 @@ describe('ReactLegacyErrorBoundaries', () => {
     ReactDOM.unmountComponentAtNode(container);
     expect(log).toEqual(['ErrorBoundary componentWillUnmount']);
   });
+  /**
+   * 首挂中 didMount 抛错且另一个子组件卸载也抛错；日志显示其余 didMount 继续，随后恢复删除所有 children，再捕获卸载错误，最终边界可正常卸载。
+   */
 
   // @gate !disableLegacyMode
-  /** 测试场景：验证「catches errors in componentDidMount」描述的渲染、交互或错误处理结果。 */
+
   it('catches errors in componentDidMount', () => {
     const container = document.createElement('div');
     ReactDOM.render(
@@ -2097,9 +2676,12 @@ describe('ReactLegacyErrorBoundaries', () => {
     ReactDOM.unmountComponentAtNode(container);
     expect(log).toEqual(['ErrorBoundary componentWillUnmount']);
   });
+  /**
+   * 先提交 didUpdate 抛错组件，再更新；子 didUpdate 失败后父 didUpdate 仍执行，随后边界恢复并卸载失败子组件，日志证明提交错误延后处理。
+   */
 
   // @gate !disableLegacyMode
-  /** 测试场景：验证「catches errors in componentDidUpdate」描述的渲染、交互或错误处理结果。 */
+
   it('catches errors in componentDidUpdate', () => {
     const container = document.createElement('div');
     ReactDOM.render(
@@ -2138,9 +2720,12 @@ describe('ReactLegacyErrorBoundaries', () => {
     ReactDOM.unmountComponentAtNode(container);
     expect(log).toEqual(['ErrorBoundary componentWillUnmount']);
   });
+  /**
+   * 内层边界在 didMount 抛错，即使有 renderError prop 也不能捕获自身错误；外层提交 Hello，内层已提交实例被卸载，日志区分原 layout 与恢复更新。
+   */
 
   // @gate !disableLegacyMode
-  /** 测试场景：验证「propagates errors inside boundary during componentDidMount」描述的渲染、交互或错误处理结果。 */
+
   it('propagates errors inside boundary during componentDidMount', () => {
     const container = document.createElement('div');
     ReactDOM.render(
@@ -2167,7 +2752,7 @@ describe('ReactLegacyErrorBoundaries', () => {
       'BrokenComponentDidMountErrorBoundary componentWillUnmount',
       // 错误会传播到更高层边界。
       'ErrorBoundary componentDidCatch',
-      // Fiber 从 root 重新尝试。
+      // 外层边界的捕获状态更新重新渲染该边界。
       'ErrorBoundary componentWillUpdate',
       'ErrorBoundary render error',
       'ErrorBoundary componentDidUpdate',
@@ -2177,15 +2762,24 @@ describe('ReactLegacyErrorBoundaries', () => {
     ReactDOM.unmountComponentAtNode(container);
     expect(log).toEqual(['ErrorBoundary componentWillUnmount']);
   });
+  /**
+   * 两个内边界分别收到 E1/E2 删除错误和 E3/E4 更新错误；日志四次 didCatch，最终分别显示 E2/E4，证明提交捕获的每条错误都会交给对应边界且状态按队列顺序合并。
+   */
 
   // @gate !disableLegacyMode
-  /** 测试场景：验证「calls componentDidCatch for each error that is captured」描述的渲染、交互或错误处理结果。 */
+
   it('calls componentDidCatch for each error that is captured', () => {
-    /** `renderUnmountError`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /**
+     * 返回带 unmounting 标记的错误文本；同一边界多次派生更新最终以最后一条错误消息呈现。
+     */
     function renderUnmountError(error) {
       return <div>Caught an unmounting error: {error.message}.</div>;
     }
-    /** `renderUpdateError`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /**
+     * 返回带 updating 标记的错误文本，与另一边界的卸载错误分开验证各自捕获队列。
+     */
     function renderUpdateError(error) {
       return <div>Caught an updating error: {error.message}.</div>;
     }
@@ -2281,9 +2875,12 @@ describe('ReactLegacyErrorBoundaries', () => {
       'InnerUpdateBoundary componentWillUnmount',
     ]);
   });
+  /**
+   * null 与 undefined 分别作为组件类型送入 ReactDOM.render；await act 拒绝 got: null/undefined，覆盖旧根入口无有效组件类型时的错误出口。
+   */
 
   // @gate !disableLegacyMode
-  /** 测试场景：验证「discards a bad root if the root component fails」描述的渲染、交互或错误处理结果。 */
+
   it('discards a bad root if the root component fails', async () => {
     const X = null;
     const Y = undefined;
@@ -2302,9 +2899,12 @@ describe('ReactLegacyErrorBoundaries', () => {
       });
     }).rejects.toThrow('got: undefined');
   });
+  /**
+   * 标题写 empty output，实际 NoopErrorBoundary 的空 didCatch 只移除失败子树；断言外部 Sibling 保留和 DEV 恢复方法警告，日志没有回退更新，不能把此例讲成整个根被清空。
+   */
 
   // @gate !disableLegacyMode
-  /** 测试场景：验证「renders empty output if error boundary does not handle the error」描述的渲染、交互或错误处理结果。 */
+
   it('renders empty output if error boundary does not handle the error', async () => {
     const container = document.createElement('div');
     ReactDOM.render(
@@ -2339,30 +2939,51 @@ describe('ReactLegacyErrorBoundaries', () => {
     ReactDOM.unmountComponentAtNode(container);
     expect(log).toEqual(['NoopErrorBoundary componentWillUnmount']);
   });
+  /**
+   * 标题写 first error，实际 Parent/Child didMount 均抛错且 act 拒绝对象的 errors 包含 child sad、parent sad；errors 记录同序，证明提交继续并聚合两个异常。
+   */
 
   // @gate !disableLegacyMode
-  /** 测试场景：验证「passes first error when two errors happen in commit」描述的渲染、交互或错误处理结果。 */
+
   it('passes first error when two errors happen in commit', async () => {
     const errors = [];
-    /** `Parent`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+
+    /**
+     * 无边界的父提交故障夹具；其 Child 先 didMount，再由父 didMount 抛错，用于验证聚合顺序。
+     */
     class Parent extends React.Component {
-      /** `Parent.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 返回 Child，使 layout 提交按子先父后访问两个故障点。
+       */
       render() {
         return <Child />;
       }
-      /** `Parent.componentDidMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 先向 errors 追加 parent sad 再抛同消息错误；无返回值，act 应在 child 错误后继续收集此错误。
+       */
       componentDidMount() {
         errors.push('parent sad');
         throw new Error('parent sad');
       }
     }
-    /** `Child`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+
+    /**
+     * 父提交故障夹具的子节点；以自己的 didMount 错误建立聚合列表的首项。
+     */
     class Child extends React.Component {
-      /** `Child.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 返回可挂载的 div，确保错误发生在 layout didMount 而非 render。
+       */
       render() {
         return <div />;
       }
-      /** `Child.componentDidMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 先记录 child sad 再抛同消息错误；后续父 didMount 仍应执行并加入聚合结果。
+       */
       componentDidMount() {
         errors.push('child sad');
         throw new Error('child sad');
@@ -2386,11 +3007,17 @@ describe('ReactLegacyErrorBoundaries', () => {
 
     expect(errors).toEqual(['child sad', 'parent sad']);
   });
+  /**
+   * 标题写 unbatched，正文是 act 内 unstable_batchedUpdates 调用 ReactDOM.render(Foo)；await act 拒绝 foo error，验证实际批处理路径仍报告未捕获错误。
+   */
 
   // @gate !disableLegacyMode
-  /** 测试场景：验证「propagates uncaught error inside unbatched initial mount」描述的渲染、交互或错误处理结果。 */
+
   it('propagates uncaught error inside unbatched initial mount', async () => {
-    /** `Foo`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /**
+     * render 立即抛 foo error；供实际 batchedUpdates/act 入口验证无边界异步拒绝。
+     */
     function Foo() {
       throw new Error('foo error');
     }
@@ -2403,35 +3030,62 @@ describe('ReactLegacyErrorBoundaries', () => {
       });
     }).rejects.toThrow('foo error');
   });
+  /**
+   * Parent/Child 首挂成功，value 更新触发两个 snapshot 抛错；act 拒绝对象的 errors 按 child、parent 包含两条消息，独立 errors 日志同序，覆盖 before-mutation 的错误聚合。
+   */
 
   // @gate !disableLegacyMode
-  /** 测试场景：验证「handles errors that occur in before-mutation commit hook」描述的渲染、交互或错误处理结果。 */
+
   it('handles errors that occur in before-mutation commit hook', async () => {
     const errors = [];
-    /** `Parent`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+
+    /**
+     * 更新时 snapshot 抛错的父 fixture；初挂不走 snapshot，用 value 变化触发子先父后的 before-mutation 访问。
+     */
     class Parent extends React.Component {
-      /** `Parent.getSnapshotBeforeUpdate`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 记录 parent sad 后抛同消息错误；before-mutation 遍历仍须收集已先发生的子 snapshot 错误。
+       */
       getSnapshotBeforeUpdate() {
         errors.push('parent sad');
         throw new Error('parent sad');
       }
-      /** `Parent.componentDidUpdate`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 保留空的更新提交钩子，与 snapshot 成对声明，避免缺失 componentDidUpdate 警告干扰异常聚合。
+       */
       componentDidUpdate() {}
-      /** `Parent.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把收到的 props 传给 Child，令 value 更新同时覆盖父子 snapshot 阶段。
+       */
       render() {
         return <Child {...this.props} />;
       }
     }
-    /** `Child`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+
+    /**
+     * snapshot 故障子 fixture；在父节点之前接受 before-mutation 遍历。
+     */
     class Child extends React.Component {
-      /** `Child.getSnapshotBeforeUpdate`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 记录 child sad 后抛同消息错误；父 snapshot 随后仍应执行。
+       */
       getSnapshotBeforeUpdate() {
         errors.push('child sad');
         throw new Error('child sad');
       }
-      /** `Child.componentDidUpdate`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 提供与 snapshot 配套的空更新钩子，不加入新的日志或错误。
+       */
       componentDidUpdate() {}
-      /** `Child.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 返回 div，首挂正常提交，后续错误仅由 snapshot 触发。
+       */
       render() {
         return <div />;
       }
@@ -2456,6 +3110,6 @@ describe('ReactLegacyErrorBoundaries', () => {
     );
 
     expect(errors).toEqual(['child sad', 'parent sad']);
-    // 该错误应最先被抛出。
+    // errors 数组同时保留 child 和 parent 的 snapshot 错误，顺序与遍历日志一致。
   });
 });

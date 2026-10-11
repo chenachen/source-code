@@ -1,0 +1,119 @@
+/* Runtime 教程的工程图：SVG 保持可读字号，窄屏仅在图内滚动。 */
+.eng-diagram {
+  min-width: 0;
+  margin: 1.6rem 0;
+}
+
+.eng-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  overscroll-behavior-inline: contain;
+}
+
+.eng-scroll:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 3px;
+}
+
+.eng-svg {
+  display: block;
+  width: 100%;
+  min-width: var(--diagram-width, 800px);
+  height: auto;
+  font-family: var(--sans);
+}
+
+.eng-svg text {
+  fill: var(--text);
+  stroke: none;
+}
+
+.eng-label {
+  font-size: 16px;
+}
+
+.eng-small {
+  font-size: 14px;
+}
+
+.eng-heading {
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.eng-node,
+.eng-state {
+  fill: var(--brand-soft);
+  stroke: var(--brand);
+  stroke-width: 1.5;
+}
+
+.eng-decision {
+  fill: var(--warm-soft);
+  stroke: var(--warm);
+  stroke-width: 1.5;
+}
+
+.eng-note {
+  fill: var(--surface-muted);
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.eng-lane {
+  fill: var(--surface-muted);
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.eng-arrow,
+.eng-async {
+  fill: none;
+  stroke: var(--brand);
+  stroke-width: 1.8;
+}
+
+.eng-async {
+  stroke-dasharray: 6 4;
+}
+
+.eng-divider {
+  stroke: var(--border);
+  stroke-width: 1.2;
+  stroke-dasharray: 5 5;
+}
+
+.eng-diagram figcaption {
+  margin-top: 0.65rem;
+  color: var(--text-soft);
+  font-size: 0.85rem;
+  line-height: 1.7;
+}
+
+.eng-diagram figcaption code {
+  font-size: 0.95em;
+}
+
+@media (max-width: 680px) {
+  .eng-diagram::before {
+    display: block;
+    margin-bottom: 0.5rem;
+    color: var(--brand-strong);
+    font-size: 0.78rem;
+    content: '图内可左右滑动，按原字号阅读节点与连线。';
+  }
+}
+
+@media print {
+  .eng-scroll {
+    overflow: visible;
+    break-inside: avoid;
+  }
+
+  .eng-svg {
+    min-width: 0;
+  }
+}

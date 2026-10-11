@@ -74,7 +74,7 @@ describe('ReactFiberRefs', () => {
   /**
    * Given div 已绑定 ref1；When 用相同 props/children 重新创建元素但改为 ref2；
    * Then 宿主输出不变，ref1 被清空且 ref2 指向实例。
-   * 验证机制：Noop 输出与 ref.current；对应 ReactFiberCompleteWork 的 Ref 标记及 commit detach/attach 顺序。
+   * 验证机制：Noop 输出与 ref.current；对应 ReactFiberBeginWork 的 markRef 及 commit detach/attach 顺序。
    */
   it('ref is attached even if there are no other updates (host component)', async () => {
     // 宿主组件收到新元素时不会像类组件一样 bailout，且更新 ref 时也会产生新 props；

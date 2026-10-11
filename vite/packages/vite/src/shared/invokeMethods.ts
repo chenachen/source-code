@@ -1,6 +1,6 @@
 /** Runner 请求服务端模块时携带的缓存与求值器位置信息。 */
 export interface FetchFunctionOptions {
-  /** Runner 是否已缓存该 URL；服务端可据此只返回 cache 确认。 */
+  /** Runner 节点是否已有该模块的元信息；只有服务端变换缓存也存在时才返回 cache 确认。 */
   cached?: boolean
   /** 求值器在代码前插入的行数，用于给 sourcemap mappings 增加偏移。 */
   startOffset?: number
@@ -114,9 +114,9 @@ export type InvokeMethods = {
       | {
           /** 正则规则判别项。 */
           type: 'RegExp'
-          /** RegExp source。 */
+          /** 正则主体字符串；客户端用它与 flags 重建 RegExp，而非传递不可序列化的正则实例。 */
           source: string
-          /** RegExp flags。 */
+          /** 重建正则时使用的标志，保留配置的匹配语义。 */
           flags: string
         }
     >

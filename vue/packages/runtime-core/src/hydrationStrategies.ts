@@ -12,9 +12,9 @@ const cancelIdleCallback: Window['cancelIdleCallback'] =
 /**
  * 异步组件的延迟水合策略。
  *
- * @param hydrate 条件满足后调用，执行真正的组件加载/水合
+ * @param hydrate 条件满足后调用，认领内部组件的 SSR DOM 并建立客户端运行关系
  * @param forEachElement 遍历尚未水合的组件根元素，并正确跨越 Fragment 注释边界
- * @returns 可选清理函数；组件在水合前卸载时用于移除监听器、observer 或空闲任务
+ * @returns 可选清理函数；创建了监听器、observer 或空闲任务时，用它在 beforeUnmount 清理
  */
 export type HydrationStrategy = (
   hydrate: () => void,
@@ -110,6 +110,7 @@ export const hydrateOnInteraction: HydrationStrategyFactory<
   (hydrate, forEach) => {
     if (isString(interactions)) interactions = [interactions]
     let hasHydrated = false
+    /** 首次事件先撤监听再同步水合并重放；置位在水合前，防止重入再次激活。 */
     const doHydrate = (e: Event) => {
       if (!hasHydrated) {
         hasHydrated = true
@@ -119,6 +120,7 @@ export const hydrateOnInteraction: HydrationStrategyFactory<
         e.target!.dispatchEvent(new (e.constructor as any)(e.type, e))
       }
     }
+    /** 移除所有根元素上登记的激活监听，供成功激活和组件提前卸载共用。 */
     const teardown = () => {
       forEach(el => {
         for (const i of interactions) {

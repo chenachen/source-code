@@ -25,7 +25,7 @@ import {
   enableScrollEndPolyfill,
 } from 'shared/ReactFeatureFlags';
 
-/** topLevelEventsToReactNames 保存把简单事件、React 名称与调度优先级注册进事件表所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** 原生事件名到 React on* 名称的映射；SimpleEventPlugin 用它选择 handler。 */
 export const topLevelEventsToReactNames: Map<DOMEventName, string | null> =
   new Map();
 
@@ -38,7 +38,7 @@ export const topLevelEventsToReactNames: Map<DOMEventName, string | null> =
 // 不符合该约定的例外会在后文单独注册。
 //
 // prettier-ignore
-/** simpleEventPluginEvents 保存把简单事件、React 名称与调度优先级注册进事件表所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** 用于派生小写 DOM 名与 onXxx React 名的基础事件列表。 */
 const simpleEventPluginEvents = [
   'abort',
   'auxClick',
@@ -124,13 +124,13 @@ if (enableCreateEventHandleAPI) {
   topLevelEventsToReactNames.set('afterblur', null);
 }
 
-/** registerSimpleEvent 管理把简单事件、React 名称与调度优先级注册进事件表的注册/监听边界；避免同一容器重复安装或遗漏 capture 配置。 */
+/** 登记原生名与 React 名的对应关系，并注册 capture/bubble 共用的原生依赖。 */
 function registerSimpleEvent(domEventName: DOMEventName, reactName: string) {
   topLevelEventsToReactNames.set(domEventName, reactName);
   registerTwoPhaseEvent(reactName, [domEventName]);
 }
 
-/** registerSimpleEvents 管理把简单事件、React 名称与调度优先级注册进事件表的注册/监听边界；避免同一容器重复安装或遗漏 capture 配置。 */
+/** 注册基础事件及 focus、动画和过渡等特殊名称映射；此处只填注册表，不安装 DOM listener。 */
 export function registerSimpleEvents() {
   for (let i = 0; i < simpleEventPluginEvents.length; i++) {
     const eventName = simpleEventPluginEvents[i] as any as string;

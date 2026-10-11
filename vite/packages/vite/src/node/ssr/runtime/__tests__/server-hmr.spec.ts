@@ -61,6 +61,7 @@ describe(
       const testGlobal = globalThis as any
 
       testGlobal.__vite_ssr_hmr_reexport_race__ = {
+        /** 首次求值立即放行，先建立两条入口及共享依赖的已求值图。 */
         wait: () => Promise.resolve(),
       }
       onTestFinished(() => {
@@ -97,6 +98,7 @@ describe(
       })
 
       testGlobal.__vite_ssr_hmr_reexport_race__ = {
+        /** 标记重求值已进入 core，再停在可由本例显式解除的 Promise 上。 */
         wait: () => {
           waitStarted()
           return waitPromise

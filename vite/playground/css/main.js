@@ -63,10 +63,12 @@ document
   .querySelector('.css-js-dep-module')
   .classList.add(barModuleClasses.cssJsDepModule)
 
+/** 把 CSS 原文、模块映射或转换标记写入指定 DOM 节点，供浏览器测试读取。 */
 function text(el, text) {
   document.querySelector(el).textContent = text
 }
 
+/** 将 ?url 导出的 CSS URL 挂载成 stylesheet link，验证 URL 模式可以手工加载样式。 */
 function appendLinkStylesheet(href) {
   const link = document.createElement('link')
   link.rel = 'stylesheet'
@@ -90,18 +92,19 @@ if (import.meta.hot) {
   })
 }
 
-// async
+// 动态样式入口。
 import('./async')
 
 if (import.meta.env.DEV) {
   import('./async-treeshaken')
 }
 
-// inlined
+// inline 模式返回 CSS 文本。
 import inlined from './inlined.css?inline'
 text('.inlined-code', inlined)
 
-// glob
+// 懒加载 inline CSS 模块。
+/** 懒加载 CSS ?inline 模块表；Promise.all 读取每项 default 后展示原文数组。 */
 const glob = import.meta.glob('./glob-import/*.css', { query: '?inline' })
 Promise.all(
   Object.keys(glob).map((key) => glob[key]().then((i) => i.default)),
@@ -109,7 +112,8 @@ Promise.all(
   text('.imported-css-glob', JSON.stringify(res, null, 2))
 })
 
-// globEager
+// 立即加载 inline CSS 模块。
+/** 立即导入 CSS ?inline 的模块表，页面直接展示每个模块的默认导出文本。 */
 const globEager = import.meta.glob('./glob-import/*.css', {
   eager: true,
   query: '?inline',
@@ -119,7 +123,7 @@ text('.imported-css-globEager', JSON.stringify(globEager, null, 2))
 import postcssSourceInput from './postcss-source-input.css?inline&query=foo'
 text('.postcss-source-input', postcssSourceInput)
 
-// The file is jsfile.css.js, and we should be able to import it without extension
+// 真实文件为 jsfile.css.js；省略 .js 仍应按 JS 模块解析。
 import jsFileMessage from './jsfile.css'
 text('.jsfile-css-js', jsFileMessage)
 

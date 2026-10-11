@@ -11,7 +11,7 @@ export interface CustomEventMap {
   'vite:beforeUpdate': UpdatePayload
   /** 客户端完成一批模块更新后触发。 */
   'vite:afterUpdate': UpdatePayload
-  /** 客户端执行被移出模块图的清理回调前触发。 */
+  /** 客户端执行本批 prune 清理前触发。 */
   'vite:beforePrune': PrunePayload
   /** 客户端执行整页重载前触发。 */
   'vite:beforeFullReload': FullReloadPayload
@@ -45,9 +45,9 @@ export interface CustomEventMap {
     reason: string
   }
 
-  /** 客户端连接建立后上报给服务端的生命周期事件。 */
+  /** 服务端通道在客户端建连时派发给插件监听器的本地生命周期事件。 */
   'vite:client:connect': undefined
-  /** 客户端连接关闭后上报给服务端的生命周期事件。 */
+  /** 服务端通道在客户端关闭连接时派发给插件监听器的本地生命周期事件。 */
   'vite:client:disconnect': undefined
 }
 
@@ -55,8 +55,7 @@ export interface CustomEventMap {
 export interface WebSocketConnectionPayload {
   /**
    * @experimental
-   * 实验性暴露底层 WebSocket 实例，以收集真实使用场景；若没有合理用途可能移除。
-   * 若插件依赖此字段，应反馈具体场景以推动稳定 API 设计。
+   * 实验性暴露底层 WebSocket 实例。
    */
   // eslint-disable-next-line n/no-unsupported-features/node-builtins
   webSocket: WebSocket

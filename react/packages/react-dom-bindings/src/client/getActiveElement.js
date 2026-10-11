@@ -7,7 +7,7 @@
  * @flow
  */
 
-/** `getActiveElement` 查询并返回所需值；缺失或不适用时走显式回退；用于在浏览器异常边界内安全读取活动元素。 */
+/** 读取给定 document 的 activeElement；缺失或异常时回退 body。 */
 export default function getActiveElement(doc: ?Document): ?Element {
   doc = doc || (typeof document !== 'undefined' ? document : undefined);
   if (typeof doc === 'undefined') {

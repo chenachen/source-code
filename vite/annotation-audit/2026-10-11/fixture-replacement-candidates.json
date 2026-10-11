@@ -1,0 +1,13 @@
+{
+  "literalOrRegexReplaceDefinitions": 193,
+  "filePatternPairs": 2182,
+  "preservedOriginalMarkers": [
+    {
+      "file": "vite/playground/hmr-full-bundle-mode/hmr-asset.js",
+      "test": "vite/playground/hmr-full-bundle-mode/__tests__/hmr-full-bundle-mode.spec.ts",
+      "pattern": "'/* @asset-src */'",
+      "reason": "原来就是测试主动替换的注释标记，当前整条标记与阶段快照相同。"
+    }
+  ],
+  "candidates": []
+}

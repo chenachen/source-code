@@ -70,7 +70,7 @@ export interface CreteBaseRouter {
  * 管理微应用首次挂载默认页面的 API 契约。
  */
 export interface CreateDefaultPage {
-  /** 登记默认页并返回移除本条登记的幂等回调。 */
+  /** 登记默认页并返回按应用名删除当前记录的回调。 */
   setDefaultPage(options: SetDefaultPageOptions): () => boolean
   /** 按应用名删除默认页登记。 */
   removeDefaultPage(appName: string): boolean
@@ -127,11 +127,11 @@ function createRouterApi (): RouterApi {
    *
    * @remarks
    * 目标只采用 pathname/search/hash，即使输入包含不同 origin 也不会跨域切换微应用。重复路径仅在浏览器
-   * 已同步同一路径时拦截；`pure` 模式跳过宿主 History，仅更新内部 location。`search` 模式通过宿主
-   * 模拟事件回流更新子应用，其他模式直接派发子应用事件。
+   * 已同步同一路径时拦截；pure 模式跳过宿主 History，仅更新内部 location。search 模式只有在宿主
+   * URL 确实改变时才通过模拟事件回流更新子应用，其他模式直接派发子应用事件。
    *
    * @param appName - 目标微应用名称。
-   * @param app - 已活动且沙箱就绪的应用实例。
+   * @param app - 调用公共 API 时通过活动性筛选、此时沙箱已就绪的应用实例。
    * @param to - 目标路径、state 与可选 replace 覆盖项。
    * @param replace - 当前方法是否为 `router.replace`。
    */
@@ -163,9 +163,12 @@ function createRouterApi (): RouterApi {
    * 创建公共 `router.push` 或 `router.replace` 方法。
    *
    * @remarks
-   * 应用名与字符串路径为必填；只允许控制已渲染、非隐藏、非预渲染应用。方法等待 `sandboxReady` 后才
-   * 导航，避免代理 location/history 尚未建立。相同完整路径由执行层拦截；path 可带域名但域名会被忽略。
-   * 失败通过返回 Promise 拒绝，调用方可统一处理未活动应用与参数错误。
+   * 应用名与字符串路径为必填；getActiveApps 排除已卸载、隐藏、预加载及预渲染应用，没有另行检查
+   * MOUNTED 状态。方法等待 sandboxReady 后提交导航；search 模式的子应用事件还要等待宏任务，返回
+   * Promise 不表示事件已送达。只有内部路径与浏览器记录都相同时才跳过写入；path 中的域名会被忽略。
+   * 参数或活动性校验失败时记录错误并拒绝 Promise。
+   * 活动性只在排入 ready.then 前判断；等待期间若卸载或隐藏，本回调不重新执行这组筛选。
+   * ready 拒绝或实际导航抛错会使返回 Promise 拒绝，已经完成的 History/location 写入不回滚。
    *
    * @param replace - 是否以 replace 作为该方法的默认写入策略；`to.replace` 可显式覆盖。
    * @returns 异步导航方法。
@@ -176,14 +179,7 @@ function createRouterApi (): RouterApi {
       return new Promise((resolve, reject) => {
         const appName = formatAppName(to.name)
         if (appName && isString(to.path)) {
-          // 公共 API 只控制当前活动应用；预渲染或隐藏 keep-alive 应用自行记录/清理历史事件，外部强制
-          // 导航会破坏其恢复顺序。
-          /**
-           * TODO：
-           *  1、子应用开始渲染但是还没渲染完成，调用跳转改如何处理
-           *  2、iframe的沙箱还没初始化时执行跳转报错，如何处理。。。
-           *  3、hidden app、预渲染 app 是否支持跳转 --- 支持（这里还涉及子应用内部跳转的支持）
-           */
+          // 公共 API 先按当前活动性过滤，再等待沙箱就绪；内部 location 导航使用的是另一组有效性条件。
           if (getActiveApps({ excludeHiddenApp: true, excludePreRender: true }).includes(appName)) {
             const app = appInstanceMap.get(appName)!
             resolve(app.sandBox.sandboxReady.then(() => handleNavigate(appName, app, to, replace)))
@@ -191,17 +187,6 @@ function createRouterApi (): RouterApi {
             reject(logError('导航失败，请确保子应用渲染后再调用此方法'))
           }
 
-          // const rawLocation = globalEnv.rawWindow.location
-          // const targetLocation = createURL(to.path, rawLocation.origin)
-          // const targetFullPath = targetLocation.pathname + targetLocation.search + targetLocation.hash
-          // if (getMicroPathFromURL(appName) !== targetFullPath) {
-          //   navigateWithRawHistory(
-          //     appName,
-          //     to.replace === false ? 'pushState' : 'replaceState',
-          //     targetLocation,
-          //     to.state,
-          //   )
-          // }
         } else {
           reject(logError(`navigation failed, name & path are required when use router.${replace ? 'replace' : 'push'}`))
         }
@@ -260,9 +245,10 @@ function createRouterApi (): RouterApi {
    * 提交一次导航的 current 快照，并按“前置同步、后置空闲”的顺序执行全局守卫。
    *
    * @remarks
-   * 浏览器 URL 与 microLocation 已由调用方先更新，顺序与浏览器前进/后退一致，因此守卫是提交后的
-   * 通知钩子，不具备取消或回滚协议。`beforeEach` 在当前调用栈执行；`afterEach` 通过 idle callback
-   * 延后，避免阻塞路由主链。后置回调读取本次捕获的 `to/from`，即使期间再次导航也不会改写参数。
+   * 调用方完成本次 location 更新后才执行守卫，因此它们是通知钩子，不具备取消或回滚协议；pure
+   * 模式可只改内部 location。beforeEach 在当前调用栈执行，afterEach 延到 idle callback，并在执行
+   * 时读取当时的守卫集合。后置回调使用本次捕获的 to/from，即使期间再次导航也不随 location 改变。
+   * 卸载只删除 current，不取消已经排入的 idle 回调；同步前置守卫抛错时 current 已更新，后置任务尚未排入。
    *
    * @param appName - 当前发生导航的微应用名称。
    * @param to - 已提交的新路由快照。
@@ -339,15 +325,15 @@ function createRouterApi (): RouterApi {
    * 创建默认页登记、移除与查询 API，共享一个应用名到路径的映射。
    */
   function createDefaultPageApi (): CreateDefaultPage {
-    /** 仅保存首次挂载候选页；浏览器已有应用路径时其优先级更高。 */
+    /** 保存路由初始化候选页；浏览器已有应用路径时其优先级更高。 */
     const defaultPageRecord = useMapRecord<string>()
 
     /**
-     * 登记应用首次挂载的默认页面，并返回删除该登记的函数。
+     * 登记应用初始化候选页，并返回按应用名删除当前记录的函数。
      *
      * @remarks
-     * 默认页只在挂载初始化且浏览器没有该应用路径时生效。应用名或 path 无效时不写记录，开发环境
-     * 给出警告，并返回始终失败的清理函数。
+     * 默认页在路由初始化且浏览器没有该应用路径时生效。注销函数按键删除，若同名默认页后来被覆盖，
+     * 旧注销函数也会删除新值。应用名或 path 为空时不写记录，开发环境警告并返回始终失败的清理函数。
      *
      * @param options - 包含应用名称与默认完整路径的配置。
      */

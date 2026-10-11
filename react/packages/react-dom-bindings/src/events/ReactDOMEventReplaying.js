@@ -60,26 +60,26 @@ import {enableHydrationChangeEvent} from 'shared/ReactFeatureFlags';
 
 // TODO：升级 Flow 后改用
 // 其内建的该类型定义。
-/** PointerEventType 定义 Flow 数据形状，用于按离散/连续类别排队被 hydration 阻塞的事件，并在边界解除后克隆重放；类型边界阻止插件、原生事件与 Fiber 状态混用。 */
+/** 重放需要的 PointerEvent 扩展字段。 */
 type PointerEventType = Event & {
-  /** PointerEventType.pointerId 描述按离散/连续类别排队被 hydration 阻塞的事件，并在边界解除后克隆重放的数据字段；该字段限定跨插件、队列或原生事件传递的状态边界。 */
+  /** 指针身份，用于按指针分别保存 over/capture 重放槽。 */
   pointerId: number,
-  /** PointerEventType.relatedTarget 描述按离散/连续类别排队被 hydration 阻塞的事件，并在边界解除后克隆重放的数据字段；该字段限定跨插件、队列或原生事件传递的状态边界。 */
+  /** 原生指针进入/离开时关联的目标。 */
   relatedTarget: EventTarget | null,
   ...
 };
 
-/** QueuedReplayableEvent 定义 Flow 数据形状，用于按离散/连续类别排队被 hydration 阻塞的事件，并在边界解除后克隆重放；类型边界阻止插件、原生事件与 Fiber 状态混用。 */
+/** 一条可合并的连续事件记录；保留原事件、阻塞对象和剩余容器。 */
 type QueuedReplayableEvent = {
-  /** QueuedReplayableEvent.blockedOn 描述按离散/连续类别排队被 hydration 阻塞的事件，并在边界解除后克隆重放的数据字段；该字段限定跨插件、队列或原生事件传递的状态边界。 */
+  /** 当前阻塞的根容器或边界注释；null 表示可重新查询并尝试重放。 */
   blockedOn: null | Container | ActivityInstance | SuspenseInstance,
-  /** QueuedReplayableEvent.domEventName 描述按离散/连续类别排队被 hydration 阻塞的事件，并在边界解除后克隆重放的数据字段；该字段限定跨插件、队列或原生事件传递的状态边界。 */
+  /** 原生事件名，用于类别判断与清槽。 */
   domEventName: DOMEventName,
-  /** QueuedReplayableEvent.eventSystemFlags 描述按离散/连续类别排队被 hydration 阻塞的事件，并在边界解除后克隆重放的数据字段；该字段限定跨插件、队列或原生事件传递的状态边界。 */
+  /** 同一原事件在多个 listener 上观察到的 flags 的按位合并。 */
   eventSystemFlags: EventSystemFlags,
-  /** QueuedReplayableEvent.nativeEvent 描述按离散/连续类别排队被 hydration 阻塞的事件，并在边界解除后克隆重放的数据字段；该字段限定跨插件、队列或原生事件传递的状态边界。 */
+  /** 被阻塞的原生事件对象；重放时用其 constructor 和字段创建克隆。 */
   nativeEvent: AnyNativeEvent,
-  /** QueuedReplayableEvent.targetContainers 描述按离散/连续类别排队被 hydration 阻塞的事件，并在边界解除后克隆重放的数据字段；该字段限定跨插件、队列或原生事件传递的状态边界。 */
+  /** 观察到此原事件、尚未消费的容器；每轮成功重放后移除首项。 */
   targetContainers: Array<EventTarget>,
 };
 
@@ -91,28 +91,28 @@ let queuedFocus: null | QueuedReplayableEvent = null;
 let queuedDrag: null | QueuedReplayableEvent = null;
 let queuedMouse: null | QueuedReplayableEvent = null;
 // pointer 事件按 pointerId 各保留一个最新事件。
-/** queuedPointers 保存按离散/连续类别排队被 hydration 阻塞的事件，并在边界解除后克隆重放所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** 每个 pointerId 最近一次被阻塞的 pointerover。 */
 const queuedPointers: Map<number, QueuedReplayableEvent> = new Map();
-/** queuedPointerCaptures 保存按离散/连续类别排队被 hydration 阻塞的事件，并在边界解除后克隆重放所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** 每个 pointerId 最近一次被阻塞的 gotpointercapture。 */
 const queuedPointerCaptures: Map<number, QueuedReplayableEvent> = new Map();
 // 未来也可考虑重放 selectionchange 与 touchmove。
 
-/** queuedChangeEventTargets 保存按离散/连续类别排队被 hydration 阻塞的事件，并在边界解除后克隆重放所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** 启用 hydration change 特性时，在 hydration 中发现值变动的控件。 */
 const queuedChangeEventTargets: Array<EventTarget> = [];
 
-/** QueuedHydrationTarget 定义 Flow 数据形状，用于按离散/连续类别排队被 hydration 阻塞的事件，并在边界解除后克隆重放；类型边界阻止插件、原生事件与 Fiber 状态混用。 */
+/** 用户显式要求优先 hydration 的 DOM 目标记录。 */
 type QueuedHydrationTarget = {
-  /** QueuedHydrationTarget.blockedOn 描述按离散/连续类别排队被 hydration 阻塞的事件，并在边界解除后克隆重放的数据字段；该字段限定跨插件、队列或原生事件传递的状态边界。 */
+  /** 该显式目标当前等待的脱水根或边界。 */
   blockedOn: null | Container | ActivityInstance | SuspenseInstance,
-  /** QueuedHydrationTarget.target 描述按离散/连续类别排队被 hydration 阻塞的事件，并在边界解除后克隆重放的数据字段；该字段限定跨插件、队列或原生事件传递的状态边界。 */
+  /** unstable_scheduleHydration 指定的 DOM 目标。 */
   target: Node,
-  /** QueuedHydrationTarget.priority 描述按离散/连续类别排队被 hydration 阻塞的事件，并在边界解除后克隆重放的数据字段；该字段限定跨插件、队列或原生事件传递的状态边界。 */
+  /** 入队时捕获的更新优先级，用于安排边界 hydration。 */
   priority: EventPriority,
 };
-/** queuedExplicitHydrationTargets 保存按离散/连续类别排队被 hydration 阻塞的事件，并在边界解除后克隆重放所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** 显式目标的优先级队列；只尝试队首，解除 blocker 后继续消费。 */
 const queuedExplicitHydrationTargets: Array<QueuedHydrationTarget> = [];
 
-/** discreteReplayableEvents 保存按离散/连续类别排队被 hydration 阻塞的事件，并在边界解除后克隆重放所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** capture 阶段允许同步尝试 hydration 的离散事件名；此列表不代表通用 FIFO 重放队列。 */
 const discreteReplayableEvents: Array<DOMEventName> = [
   'mousedown',
   'mouseup',
@@ -141,17 +141,17 @@ const discreteReplayableEvents: Array<DOMEventName> = [
   'change',
   'contextmenu',
   'reset',
-  // 'submit', // stopPropagation blocks the replay mechanism
+  // 'submit', // 停止传播会阻止 Fizz 表单提交的独立重放机制。
 ];
 
-/** isDiscreteEventThatRequiresHydration 判断按离散/连续类别排队被 hydration 阻塞的事件，并在边界解除后克隆重放的前置条件；返回值用于在热路径提前跳过不适用分支。 */
+/** 检查原生事件是否属于捕获阶段需要同步尝试 hydration 的离散类别。 */
 export function isDiscreteEventThatRequiresHydration(
   eventType: DOMEventName,
 ): boolean {
   return discreteReplayableEvents.indexOf(eventType) > -1;
 }
 
-/** createQueuedReplayableEvent 为按离散/连续类别排队被 hydration 阻塞的事件，并在边界解除后克隆重放创建封装对象；生成值保留原生事件身份并携带必要调度上下文。 */
+/** 保存原事件、blocker、flags 和首个目标容器，供后续合并与重放。 */
 function createQueuedReplayableEvent(
   blockedOn: null | Container | ActivityInstance | SuspenseInstance,
   domEventName: DOMEventName,
@@ -169,7 +169,7 @@ function createQueuedReplayableEvent(
 }
 
 // 把该连续事件类型的 replay 状态重置为空。
-/** clearIfContinuousEvent 更新按离散/连续类别排队被 hydration 阻塞的事件，并在边界解除后克隆重放的模块状态或 DOM 状态；重复调用需保持队列顺序与恢复幂等性。 */
+/** 进入/退出事件使对应连续重放槽失效；pointer 槽按 pointerId 清除。 */
 export function clearIfContinuousEvent(
   domEventName: DOMEventName,
   nativeEvent: AnyNativeEvent,
@@ -202,7 +202,7 @@ export function clearIfContinuousEvent(
   }
 }
 
-/** accumulateOrCreateContinuousQueuedReplayableEvent 从原生事件和 Fiber 路径收集按离散/连续类别排队被 hydration 阻塞的事件，并在边界解除后克隆重放所需数据；只生成满足插件条件的 listener/event。 */
+/** 新原事件替换同类旧槽并提高 blocker 的 hydration 优先级；同一原事件则合并 flags 和容器。 */
 function accumulateOrCreateContinuousQueuedReplayableEvent(
   existingQueuedEvent: null | QueuedReplayableEvent,
   blockedOn: null | Container | ActivityInstance | SuspenseInstance,
@@ -247,7 +247,7 @@ function accumulateOrCreateContinuousQueuedReplayableEvent(
   return existingQueuedEvent;
 }
 
-/** queueIfContinuousEvent 更新按离散/连续类别排队被 hydration 阻塞的事件，并在边界解除后克隆重放的模块状态或 DOM 状态；重复调用需保持队列顺序与恢复幂等性。 */
+/** 仅将 focusin、dragenter、mouseover、pointerover、gotpointercapture 放入可合并重放槽；其他类型返回 false。 */
 export function queueIfContinuousEvent(
   blockedOn: null | Container | ActivityInstance | SuspenseInstance,
   domEventName: DOMEventName,
@@ -255,9 +255,8 @@ export function queueIfContinuousEvent(
   targetContainer: EventTarget,
   nativeEvent: AnyNativeEvent,
 ): boolean {
-  // 这些事件会把 relatedTarget 设为 null，使重放行为等同于
-  // hydration 完成后从窗口外（无 target）移入目标。
-  // 未来可考虑克隆事件，避免直接修改。
+  // 保存原生事件，不修改 relatedTarget。EnterLeaveEventPlugin 对 replay 的 over
+  // 从窗口外开始计算进入路径，补发 hydration 前被阻塞的 enter。
   switch (domEventName) {
     case 'focusin': {
       const focusEvent = nativeEvent as any as FocusEvent;
@@ -331,8 +330,8 @@ export function queueIfContinuousEvent(
   return false;
 }
 
-// 检查 target 是否解除阻塞；解除时返回 true。
-/** attemptExplicitHydrationTarget 推进按离散/连续类别排队被 hydration 阻塞的事件，并在边界解除后克隆重放的分发或重放状态机；阻塞时保留事件，解除后按原优先级继续。 */
+// 通过 queuedTarget.blockedOn 写回阻塞结果；此函数不返回布尔值。
+/** 把显式目标的 blocker 写回记录；Suspense/Activity 在记录的优先级下尝试 hydration，脱水根只记录等待。 */
 function attemptExplicitHydrationTarget(
   queuedTarget: QueuedHydrationTarget,
 ): void {
@@ -372,8 +371,7 @@ function attemptExplicitHydrationTarget(
         const root: FiberRoot = nearestMounted.stateNode;
         if (isRootDehydrated(root)) {
           queuedTarget.blockedOn = getContainerFromFiber(nearestMounted);
-          // 当前无法提高
-          // root 的优先级，只能同步 hydration。
+          // 该路径不主动提升 HostRoot；记录容器，等待根提交后 retry。
           return;
         }
       }
@@ -382,7 +380,12 @@ function attemptExplicitHydrationTarget(
   queuedTarget.blockedOn = null;
 }
 
-/** queueExplicitHydrationTarget 更新按离散/连续类别排队被 hydration 阻塞的事件，并在边界解除后克隆重放的模块状态或 DOM 状态；重复调用需保持队列顺序与恢复幂等性。 */
+/**
+ * 捕获当前更新优先级，为 unstable_scheduleHydration 保存目标；仅新记录成为队首时
+ * 立即尝试 hydration。插入循环在“新优先级不高于当前项”时停止，因此当前实现会
+ * 把较低或相等优先级插在该项之前；不要把这里解释为高优先级总在队首的排序。
+ * 已受阻的旧记录保留，后续 retryIfBlockedOn 解开 blocker 后逐个重查队首。
+ */
 export function queueExplicitHydrationTarget(target: Node): void {
   const updatePriority = resolveUpdatePriority();
   const queuedTarget: QueuedHydrationTarget = {
@@ -392,7 +395,7 @@ export function queueExplicitHydrationTarget(target: Node): void {
   };
   let i = 0;
   for (; i < queuedExplicitHydrationTargets.length; i++) {
-    // 遇到第一个优先级低于
+    // 按 isHigherEventPriority 比较结果确定插入位置。
     if (
       !isHigherEventPriority(
         updatePriority,
@@ -408,7 +411,7 @@ export function queueExplicitHydrationTarget(target: Node): void {
   }
 }
 
-/** attemptReplayContinuousQueuedEvent 推进按离散/连续类别排队被 hydration 阻塞的事件，并在边界解除后克隆重放的分发或重放状态机；阻塞时保留事件，解除后按原优先级继续。 */
+/** 重新检查 blocker；可交互时克隆原事件经 DOM.dispatchEvent 派发，再消费容器；新 blocker 则保存并提高 hydration 优先级。 */
 function attemptReplayContinuousQueuedEvent(
   queuedEvent: QueuedReplayableEvent,
 ): boolean {
@@ -442,7 +445,7 @@ function attemptReplayContinuousQueuedEvent(
   return true;
 }
 
-/** attemptReplayContinuousQueuedEventInMap 推进按离散/连续类别排队被 hydration 阻塞的事件，并在边界解除后克隆重放的分发或重放状态机；阻塞时保留事件，解除后按原优先级继续。 */
+/** 尝试重放某个 pointer 槽；全部容器消费成功后才从 Map 删除。 */
 function attemptReplayContinuousQueuedEventInMap(
   queuedEvent: QueuedReplayableEvent,
   key: number,
@@ -453,7 +456,7 @@ function attemptReplayContinuousQueuedEventInMap(
   }
 }
 
-/** replayChangeEvent 推进按离散/连续类别排队被 hydration 阻塞的事件，并在边界解除后克隆重放的分发或重放状态机；阻塞时保留事件，解除后按原优先级继续。 */
+/** 按控件类型派发模拟 click/input/change，使 hydration 前的用户改动进入正常 ChangeEventPlugin 路径。 */
 function replayChangeEvent(target: EventTarget): void {
   // 为 input 分发一个模拟“change”事件。
   const element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement =
@@ -479,7 +482,7 @@ function replayChangeEvent(target: EventTarget): void {
   target.dispatchEvent(new Event('change', {bubbles: true}));
 }
 
-/** replayUnblockedEvents 推进按离散/连续类别排队被 hydration 阻塞的事件，并在边界解除后克隆重放的分发或重放状态机；阻塞时保留事件，解除后按原优先级继续。 */
+/** 清除 replay 调度标记，尝试各连续槽；成功清槽，并处理 hydration change 目标。 */
 function replayUnblockedEvents() {
   hasScheduledReplayAttempt = false;
   // 重放所有已解除阻塞的连续事件。
@@ -502,7 +505,7 @@ function replayUnblockedEvents() {
   }
 }
 
-/** flushEventReplaying 执行按离散/连续类别排队被 hydration 阻塞的事件，并在边界解除后克隆重放的核心步骤；输入来自原生事件/Fiber，输出保持插件分发与调度边界。 */
+/** 有待重放标记时同步消费可用的连续槽和 change 目标；特性开关控制调用时机而非本函数入口。 */
 export function flushEventReplaying(): void {
   // 同步冲刷事件重放，确保它在
   // 任何新更新应用之前可被观察。
@@ -511,7 +514,7 @@ export function flushEventReplaying(): void {
   }
 }
 
-/** queueChangeEvent 更新按离散/连续类别排队被 hydration 阻塞的事件，并在边界解除后克隆重放的模块状态或 DOM 状态；重复调用需保持队列顺序与恢复幂等性。 */
+/** 特性开启时登记 hydration 中变化的控件并置待冲刷标记；此函数不调度 callback，由提交路径同步冲刷。 */
 export function queueChangeEvent(target: EventTarget): void {
   if (enableHydrationChangeEvent) {
     queuedChangeEventTargets.push(target);
@@ -521,7 +524,7 @@ export function queueChangeEvent(target: EventTarget): void {
   }
 }
 
-/** scheduleCallbackIfUnblocked 执行按离散/连续类别排队被 hydration 阻塞的事件，并在边界解除后克隆重放的核心步骤；输入来自原生事件/Fiber，输出保持插件分发与调度边界。 */
+/** 匹配 unblocked 时清除该事件的 blocker；默认模式下至多安排一个 NormalPriority replay callback。 */
 function scheduleCallbackIfUnblocked(
   queuedEvent: QueuedReplayableEvent,
   unblocked: Container | SuspenseInstance | ActivityInstance,
@@ -531,24 +534,22 @@ function scheduleCallbackIfUnblocked(
     if (!hasScheduledReplayAttempt) {
       hasScheduledReplayAttempt = true;
       if (!enableHydrationChangeEvent) {
-        // 调度 callback，尝试重放尽可能多的
-        // 已解除阻塞事件；传入的首个目标此刻可能仍未解除。
-        // 可以提前检查，避免调度无用 callback。
+        // 安排一次 callback 扫描全部连续槽；尚未解除阻塞的槽继续保留。
         scheduleCallback(NormalPriority, replayUnblockedEvents);
       }
     }
   }
 }
 
-/** FormAction 定义 Flow 数据形状，用于按离散/连续类别排队被 hydration 阻塞的事件，并在边界解除后克隆重放；类型边界阻止插件、原生事件与 Fiber 状态混用。 */
+/** 接收本次 FormData 的表单 action 函数。 */
 type FormAction = FormData => void | Promise<void>;
 
-/** FormReplayingQueue 定义 Flow 数据形状，用于按离散/连续类别排队被 hydration 阻塞的事件，并在边界解除后克隆重放；类型边界阻止插件、原生事件与 Fiber 状态混用。 */
+/** document 上共享的扁平三元组队列：[form, submitter/action, formData]。 */
 type FormReplayingQueue = Array<any>; // 队列布局：[form、submitter 或 action、formData……]
 
 let lastScheduledReplayQueue: null | FormReplayingQueue = null;
 
-/** replayUnblockedFormActions 推进按离散/连续类别排队被 hydration 阻塞的事件，并在边界解除后克隆重放的分发或重放状态机；阻塞时保留事件，解除后按原优先级继续。 */
+/** 按顺序等待 form/action 可用；当前 React 实例拥有且已解锁的提交先出队，再启动宿主 transition。 */
 function replayUnblockedFormActions(formReplayingQueue: FormReplayingQueue) {
   if (lastScheduledReplayQueue === formReplayingQueue) {
     lastScheduledReplayQueue = null;
@@ -591,7 +592,7 @@ function replayUnblockedFormActions(formReplayingQueue: FormReplayingQueue) {
   }
 }
 
-/** scheduleReplayQueueIfNeeded 执行按离散/连续类别排队被 hydration 阻塞的事件，并在边界解除后克隆重放的核心步骤；输入来自原生事件/Fiber，输出保持插件分发与调度边界。 */
+/** 为尚未调度的 form replay 队列安排一次 NormalPriority callback。 */
 function scheduleReplayQueueIfNeeded(formReplayingQueue: FormReplayingQueue) {
   // 调度 callback 执行队列中已解除阻塞的 form actions。
   // 这里只跟踪最后一个队列；若多个 React 实例交替
@@ -605,7 +606,7 @@ function scheduleReplayQueueIfNeeded(formReplayingQueue: FormReplayingQueue) {
   }
 }
 
-/** retryIfBlockedOn 推进按离散/连续类别排队被 hydration 阻塞的事件，并在边界解除后克隆重放的分发或重放状态机；阻塞时保留事件，解除后按原优先级继续。 */
+/** 解锁匹配边界的连续槽与显式目标，并解析 document 中等待 hydration 的 form action。 */
 export function retryIfBlockedOn(
   unblocked: Container | SuspenseInstance | ActivityInstance,
 ): void {
@@ -618,7 +619,7 @@ export function retryIfBlockedOn(
   if (queuedMouse !== null) {
     scheduleCallbackIfUnblocked(queuedMouse, unblocked);
   }
-  /** unblock 以闭包保存按离散/连续类别排队被 hydration 阻塞的事件，并在边界解除后克隆重放的可替换实现，调用方只依赖稳定函数边界。 */
+  /** 将当前 unblocked 通知应用到 pointer Map 的单个槽。 */
   const unblock = (queuedEvent: QueuedReplayableEvent) =>
     scheduleCallbackIfUnblocked(queuedEvent, unblocked);
   queuedPointers.forEach(unblock);

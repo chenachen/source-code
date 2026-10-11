@@ -34,7 +34,11 @@ import { transformFor } from '../../src/transforms/vFor'
 import { transformIf } from '../../src/transforms/vIf'
 import { transformText } from '../../src/transforms/transformText'
 
-/** 运行组件 slot 转换并返回首组件的 slots 表达式与根 AST。 */
+/**
+ * 按基础顺序运行结构、可选作用域/表达式、出口、元素、插槽跟踪和可选文本转换。
+ * parser 这里只接收 whitespace；其余 options 传给 transform。逆序退出先撤销本层 slot 计数再构造 slots。
+ * 返回根与首 child 的 codegen children；结构根返回 null，普通元素根的 children 也可能是模板数组。
+ */
 function parseWithSlots(
   template: string,
   options: CompilerOptions & {
@@ -73,7 +77,10 @@ function parseWithSlots(
   }
 }
 
-/** 构造只比较插槽名称、参数和 children 的 SlotsObjectProperty matcher。 */
+/**
+ * 把键名映射到调用方给定的函数 matcher，再追加 STABLE/DYNAMIC 的 `_` 属性。
+ * 方括号键表示动态名称并去除括号；这里只组装 partial matcher，不执行插槽函数。
+ */
 function createSlotMatcher(obj: Record<string, any>, isDynamic = false) {
   return {
     type: NodeTypes.JS_OBJECT_EXPRESSION,
@@ -100,6 +107,9 @@ function createSlotMatcher(obj: Record<string, any>, isDynamic = false) {
 }
 
 describe('compiler: transform component slots', () => {
+  /**
+   * Comp 只含 div 且开启前缀；检查隐式 default 无参函数返回 div，slots 标记 STABLE，并比对 _withCtx 生成快照。
+   */
   test('implicit default slot', () => {
     const { root, slots } = parseWithSlots(`<Comp><div/></Comp>`, {
       prefixIdentifiers: true,
@@ -121,6 +131,9 @@ describe('compiler: transform component slots', () => {
     expect(generate(root, { prefixIdentifiers: true }).code).toMatchSnapshot()
   })
 
+  /**
+   * 组件自身 v-slot 解构 foo，子树插值 foo/bar；检查 default 参数模式和局部 foo 保留，bar 加前缀，自己的 slot 参数不使插槽捕获外层。
+   */
   test('on-component default slot', () => {
     const { root, slots } = parseWithSlots(
       `<Comp v-slot="{ foo }">{{ foo }}{{ bar }}</Comp>`,
@@ -154,6 +167,9 @@ describe('compiler: transform component slots', () => {
     expect(generate(root, { prefixIdentifiers: true }).code).toMatchSnapshot()
   })
 
+  /**
+   * 组件自身 v-slot:named 解构 foo；检查生成 named 函数，参数/局部与自由变量的前缀规则同默认插槽。
+   */
   test('on component named slot', () => {
     const { root, slots } = parseWithSlots(
       `<Comp v-slot:named="{ foo }">{{ foo }}{{ bar }}</Comp>`,
@@ -187,6 +203,9 @@ describe('compiler: transform component slots', () => {
     expect(generate(root, { prefixIdentifiers: true }).code).toMatchSnapshot()
   })
 
+  /**
+   * 两个 template 分别声明 one 的 foo 与 two 的 bar；检查两作用域相互独立，各自参数保持局部，另一名字作为自由量加前缀。
+   */
   test('template named slots', () => {
     const { root, slots } = parseWithSlots(
       `<Comp>
@@ -248,6 +267,9 @@ describe('compiler: transform component slots', () => {
     expect(generate(root, { prefixIdentifiers: true }).code).toMatchSnapshot()
   })
 
+  /**
+   * 组件自身的插槽名为 [named]；检查计算 key 为 _ctx.named，作用域参数 foo 局部，slots 标记 DYNAMIC。
+   */
   test('on component dynamically named slot', () => {
     const { root, slots } = parseWithSlots(
       `<Comp v-slot:[named]="{ foo }">{{ foo }}{{ bar }}</Comp>`,
@@ -284,6 +306,9 @@ describe('compiler: transform component slots', () => {
     expect(generate(root, { prefixIdentifiers: true }).code).toMatchSnapshot()
   })
 
+  /**
+   * 具名 one 之外有 bar 文本和 span；检查创建隐式 default 包住这两项，同时保留 one 的 foo 文本函数。
+   */
   test('named slots w/ implicit default slot', () => {
     const { root, slots } = parseWithSlots(
       `<Comp>
@@ -321,6 +346,9 @@ describe('compiler: transform component slots', () => {
     expect(generate(root).code).toMatchSnapshot()
   })
 
+  /**
+   * 具名 one 之外只有 NBSP 与换行；检查 NBSP 不是 HTML 可忽略空白，生成含规范化空白与 NBSP 的 default。
+   */
   test('named slots w/ implicit default slot containing non-breaking space', () => {
     const { root, slots } = parseWithSlots(
       `<Comp>
@@ -355,6 +383,9 @@ describe('compiler: transform component slots', () => {
     expect(generate(root).code).toMatchSnapshot()
   })
 
+  /**
+   * 两个 template 的名称分别为 [one]/[two]，参数为 foo/bar；检查名称自由变量加前缀、参数作用域隔离，整组 slots 标记 DYNAMIC。
+   */
   test('dynamically named slots', () => {
     const { root, slots } = parseWithSlots(
       `<Comp>
@@ -419,6 +450,9 @@ describe('compiler: transform component slots', () => {
     expect(generate(root, { prefixIdentifiers: true }).code).toMatchSnapshot()
   })
 
+  /**
+   * 外层 default 声明 foo，Inner 插槽声明 bar；检查内部 foo/bar 局部、baz 加前缀，内层捕获 foo 所以 DYNAMIC_SLOTS；退出 Inner 后 bar 又变为 _ctx.bar。
+   */
   test('nested slots scoping', () => {
     const { root, slots } = parseWithSlots(
       `<Comp>
@@ -478,7 +512,7 @@ describe('compiler: transform component slots', () => {
                   },
                   true,
                 ),
-                // 嵌套插槽强制动态：其捕获的外层作用域变量不会进入普通插槽依赖追踪。
+                // 此处内层插槽确实捕获外层 foo；即使开启精确前缀分析，也须标记 DYNAMIC_SLOTS。
                 patchFlag: PatchFlags.DYNAMIC_SLOTS,
               },
             },
@@ -512,6 +546,9 @@ describe('compiler: transform component slots', () => {
     expect(generate(root, { prefixIdentifiers: true }).code).toMatchSnapshot()
   })
 
+  /**
+   * 不开启前缀，将只含静态 foo 的组件插槽放进 for；检查仍保守标记 DYNAMIC_SLOTS，缺少精确引用分析时按外层循环深度处理。
+   */
   test('should force dynamic when inside v-for', () => {
     const { root } = parseWithSlots(
       `<div v-for="i in list">
@@ -524,6 +561,9 @@ describe('compiler: transform component slots', () => {
     expect(comp.codegenNode.patchFlag).toBe(PatchFlags.DYNAMIC_SLOTS)
   })
 
+  /**
+   * 开启前缀逐个比较九种场景：for 中静态内容、内层自身 bar、无参 fn() 均无动态槽标记；捕获 i、外层 foo、事件 fn(i)、默认值 i、动态名 [i] 均为 DYNAMIC_SLOTS；普通组件 prop :i 仅为 PROPS。只有插槽捕获才升级插槽动态性。
+   */
   test('should only force dynamic slots when actually using scope vars w/ prefixIdentifiers: true', () => {
     /** 编译插槽并断言最终组件 patchFlag，区分捕获作用域与普通动态 prop。 */
     function assertDynamicSlots(
@@ -613,6 +653,9 @@ describe('compiler: transform component slots', () => {
     )
   })
 
+  /**
+   * 具名 one 的 template 带 if ok；检查 CREATE_SLOTS 合并条件描述 {name,fn,key:0}，不命中为 undefined，组件增加 DYNAMIC_SLOTS。
+   */
   test('named slot with v-if', () => {
     const { root, slots } = parseWithSlots(
       `<Comp>
@@ -655,6 +698,9 @@ describe('compiler: transform component slots', () => {
     expect(generate(root).code).toMatchSnapshot()
   })
 
+  /**
+   * 条件插槽开启前缀且参数 props；检查条件 _ctx.ok、函数参数/内容 props 保持局部，描述仍带 key 0。
+   */
   test('named slot with v-if + prefixIdentifiers: true', () => {
     const { root, slots } = parseWithSlots(
       `<Comp>
@@ -704,6 +750,9 @@ describe('compiler: transform component slots', () => {
     expect(generate(root, { prefixIdentifiers: true }).code).toMatchSnapshot()
   })
 
+  /**
+   * one if、two else-if、one else 三条件插槽；检查三元链的名称与函数分别保留，分支 key 为 0/1/2，模板 children 仍有三项供插槽收集。
+   */
   test('named slot with v-if + v-else-if + v-else', () => {
     const { root, slots } = parseWithSlots(
       `<Comp>
@@ -768,6 +817,9 @@ describe('compiler: transform component slots', () => {
     expect(generate(root).code).toMatchSnapshot()
   })
 
+  /**
+   * 循环 template 用 #[name]，内容插值 name；检查来源 _ctx.list、循环参数/name key/内容均局部，由 RENDER_LIST 返回描述并交 CREATE_SLOTS 合并。
+   */
   test('named slot with v-for w/ prefixIdentifiers: true', () => {
     const { root, slots } = parseWithSlots(
       `<Comp>
@@ -820,6 +872,7 @@ describe('compiler: transform component slots', () => {
 
   // 转发插槽：检测插槽函数内容中的 `<slot>`，为运行时设置 FORWARDED 稳定性标志。
   describe('forwarded slots', () => {
+    /** 共同 fixture 仅匹配默认插槽函数与 FORWARDED 标记，不断言出口内部每个参数。 */
     const toMatch = {
       type: NodeTypes.JS_OBJECT_EXPRESSION,
       properties: [
@@ -833,21 +886,33 @@ describe('compiler: transform component slots', () => {
         },
       ],
     }
+    /**
+     * Comp 直接转发 slot outlet；检查 default 插槽函数与 FORWARDED 标记，稳定性由接收方结合父级 slots 决定。
+     */
     test('<slot> tag only', () => {
       const { slots } = parseWithSlots(`<Comp><slot/></Comp>`)
       expect(slots).toMatchObject(toMatch)
     })
 
+    /**
+     * 转发出口带 if；检查递归进入条件分支仍发现出口，slots 保持 FORWARDED。
+     */
     test('<slot> tag w/ v-if', () => {
       const { slots } = parseWithSlots(`<Comp><slot v-if="ok"/></Comp>`)
       expect(slots).toMatchObject(toMatch)
     })
 
+    /**
+     * 转发出口带 for；检查递归进入循环 children 仍发现出口，slots 保持 FORWARDED。
+     */
     test('<slot> tag w/ v-for', () => {
       const { slots } = parseWithSlots(`<Comp><slot v-for="a in b"/></Comp>`)
       expect(slots).toMatchObject(toMatch)
     })
 
+    /**
+     * 转发出口放在显式 default template；检查穿过透明模板 children 检测到出口，slots 标记 FORWARDED。
+     */
     test('<slot> tag w/ template', () => {
       const { slots } = parseWithSlots(
         `<Comp><template #default><slot/></template></Comp>`,
@@ -855,12 +920,18 @@ describe('compiler: transform component slots', () => {
       expect(slots).toMatchObject(toMatch)
     })
 
+    /**
+     * 出口位于嵌套 Comp 内；检查递归穿过组件子树检测转发，外层 default 仍标记 FORWARDED。
+     */
     test('<slot w/ nested component>', () => {
       const { slots } = parseWithSlots(`<Comp><Comp><slot/></Comp></Comp>`)
       expect(slots).toMatchObject(toMatch)
     })
 
     // #6900：事件名参数的 camelCase 与 kebab-case 写法应生成一致的 handler key。
+    /**
+     * 分别给出口监听 foo:modelValue 与 foo:model-Value；检查传给插槽的事件 props 都规范化为 onFoo:modelValue，处理器 handler 保持成员值。
+     */
     test('consistent behavior of @xxx:modelValue and @xxx:model-value', () => {
       const { root: rootUpper } = parseWithSlots(
         `<div><slot @foo:modelValue="handler" /></div>`,
@@ -913,6 +984,9 @@ describe('compiler: transform component slots', () => {
 
   // 错误分组：混合语法、重名、错位指令及显式默认插槽外的多余 children。
   describe('errors', () => {
+    /**
+     * 组件已显式声明 default，后面又有 bar 文本；检查额外默认内容错误精确定位 bar，返回式处理器忽略该额外内容。
+     */
     test('error on extraneous children w/ named default slot', () => {
       const onError = vi.fn()
       const source = `<Comp><template #default>foo</template>bar</Comp>`
@@ -935,6 +1009,9 @@ describe('compiler: transform component slots', () => {
       })
     })
 
+    /**
+     * 组件内两个 template 都声明 foo；检查重复名称错误定位第二个 #foo，编译期静态名称可判重并跳过后项。
+     */
     test('error on duplicated slot names', () => {
       const onError = vi.fn()
       const source = `<Comp><template #foo></template><template #foo></template></Comp>`
@@ -957,6 +1034,9 @@ describe('compiler: transform component slots', () => {
       })
     })
 
+    /**
+     * 组件自身 v-slot 与内层 #foo 同时存在；检查混用错误定位内层指令，作用域不明确时停止继续收集内层插槽。
+     */
     test('error on invalid mixed slot usage', () => {
       const onError = vi.fn()
       const source = `<Comp v-slot="foo"><template #foo></template></Comp>`
@@ -979,6 +1059,9 @@ describe('compiler: transform component slots', () => {
       })
     })
 
+    /**
+     * 普通 div 使用 v-slot；检查错误定位完整指令，只有组件或 template 才具有插槽定义语义。
+     */
     test('error on v-slot usage on plain elements', () => {
       const onError = vi.fn()
       const source = `<div v-slot/>`
@@ -1004,6 +1087,9 @@ describe('compiler: transform component slots', () => {
 
   // preserve 空白模式：插槽边界空白不能被误认为额外默认内容或打断条件插槽邻接。
   describe(`with whitespace: 'preserve'`, () => {
+    /**
+     * preserve 模式下 header/default template 之间保留空白；检查不警告额外 default 内容并比对快照，纯空白不会与显式 default 冲突。
+     */
     test('named default slot + implicit whitespace content', () => {
       const source = `
       <Comp>
@@ -1021,6 +1107,9 @@ describe('compiler: transform component slots', () => {
       expect(generate(root, { prefixIdentifiers: true }).code).toMatchSnapshot()
     })
 
+    /**
+     * preserve 模式下 header 外另有 p；检查不发默认槽冲突警告，快照确认 p 与周围空白进入隐式 default。
+     */
     test('implicit default slot', () => {
       const source = `
       <Comp>
@@ -1038,6 +1127,9 @@ describe('compiler: transform component slots', () => {
       expect(generate(root, { prefixIdentifiers: true }).code).toMatchSnapshot()
     })
 
+    /**
+     * preserve 模式只有 header/footer 及间隔空白；检查 slots 仅三属性（含 `_`），没有 default，忽略全空白的隐式内容。
+     */
     test('should not generate whitespace only default slot', () => {
       const source = `
       <Comp>
@@ -1062,6 +1154,9 @@ describe('compiler: transform component slots', () => {
       expect(generate(root, { prefixIdentifiers: true }).code).toMatchSnapshot()
     })
 
+    /**
+     * preserve 模式具名 header 外放 &nbsp;；检查存在 default，实体解码后的 NBSP 仍是有意义内容。
+     */
     test('implicit default slot with non-breaking space', () => {
       const source = `
       <Comp>
@@ -1083,6 +1178,9 @@ describe('compiler: transform component slots', () => {
       expect(generate(root, { prefixIdentifiers: true }).code).toMatchSnapshot()
     })
 
+    /**
+     * preserve 模式具名 one if 与 two else 之间有空白；快照检查仍生成同一条件插槽链，邻接搜索跳过 HTML 空白。
+     */
     test('named slot with v-if + v-else', () => {
       const source = `
         <Comp>
@@ -1097,6 +1195,9 @@ describe('compiler: transform component slots', () => {
       expect(generate(root, { prefixIdentifiers: true }).code).toMatchSnapshot()
     })
 
+    /**
+     * preserve 模式条件插槽间还夹两注释，启用文本转换；快照检查注释/空白不打断 if/else 收集，TEXT_CALL 空白识别与插槽邻接配合。
+     */
     test('named slot with v-if + v-else and comments', () => {
       const source = `
         <Comp>

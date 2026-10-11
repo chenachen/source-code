@@ -245,7 +245,7 @@ function rewriteSelector(
           n.nodes[0],
           selectorRoot,
           deep,
-          true /* slotted */,
+          true /* 插槽模式 */,
         )
         let last: selectorParser.Selector['nodes'][0] = n
         n.nodes[0].each(ss => {
@@ -398,8 +398,8 @@ function canSplitDeepContainerPseudo(node: selectorParser.Pseudo): boolean {
 }
 
 /**
- * 将含 deep 与普通混合分支的 `:is/:where/:has` 克隆拆分，再逐支计算 scope 边界。
- * 若不拆分，一个分支设置的 deep 状态会让其他分支漏加或错加 `[data-v-id]`。
+ * 当前不在 deep 上下文、伪类前无 scope 锚点且后有尾随节点时，将含 deep/普通混合分支
+ * 的 `:is/:where/:has` 克隆拆分，逐支计算 scope 边界，使尾随节点只在普通分支加 scope。
  */
 function splitSelectorForNestedDeep(
   id: string,

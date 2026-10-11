@@ -28,14 +28,7 @@ describe('SyntheticFocusEvent', () => {
     container = null;
   });
 
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「onFocus events have the focus type」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：事件断言连接 DOMPluginEventSystem 的委托、合成与传播路径。
-   */
+  /** 按钮同时注册 onFocusCapture/onFocus；向它派发冒泡的原生 focusin 后，日志应按 capture→bubble 顺序且两个 event.type 都为 focus，验证插件类型映射与传播顺序。 */
   it('onFocus events have the focus type', async () => {
     const log = [];
     const root = ReactDOMClient.createRoot(container);
@@ -62,7 +55,7 @@ describe('SyntheticFocusEvent', () => {
     expect(log).toEqual(['onFocusCapture: focus', 'onFocus: focus']);
   });
 
-  /** 测试场景：验证「onBlur events have the blur type」描述的渲染、交互或错误处理结果。 */
+  /** 按钮同时注册 onBlurCapture/onBlur；向它派发冒泡的原生 focusout 后，日志应按 capture→bubble 顺序且两个 event.type 都为 blur，验证原生退出焦点被归一化为 React blur。 */
   it('onBlur events have the blur type', async () => {
     const log = [];
     const root = ReactDOMClient.createRoot(container);

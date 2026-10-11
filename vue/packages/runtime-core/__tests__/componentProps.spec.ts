@@ -1,6 +1,5 @@
 /**
- * 测试阅读说明：本文件验证 `runtime-core/componentProps` 的运行时行为。
- * “测试组”概括共享前置条件，“测试场景”说明当前输入、边界或历史回归目标；具体预期以断言为准。
+ * 通过连续 render、模板更新和开发期警告，验证 props/attrs 分流、类型转换、默认值与声明合并。
  */
 /**
  * @vitest-environment jsdom
@@ -26,9 +25,9 @@ import {
 } from '@vue/runtime-test'
 import { render as domRender } from 'vue'
 
-// 测试组：组件 props。
+// 有状态与函数式组件的 props/attrs 分流，以及 prop 声明的转换和校验。
 describe('component props', () => {
-  // 测试场景：有状态。
+  // 通过公共实例读取声明的 props；连续 render 检查连字符键归一化、更新与移除，未声明输入进入 attrs。
   test('stateful', () => {
     let props: any
     let attrs: any
@@ -36,6 +35,9 @@ describe('component props', () => {
 
     const Comp = defineComponent({
       props: ['fooBar', 'barBaz'],
+      /**
+       * 同时记录 `props`、`attrs`、`proxy` 供 render 后的断言检查。
+       */
       render() {
         props = this.$props
         attrs = this.$attrs
@@ -49,13 +51,13 @@ describe('component props', () => {
     expect(props).toEqual({ fooBar: 1 })
     expect(attrs).toEqual({ bar: 2 })
 
-    // test passing kebab-case and resolving to camelCase
+    // 父输入连字符键匹配 camelCase 声明。
     render(h(Comp, { 'foo-bar': 2, bar: 3, baz: 4 }), root)
     expect(proxy.fooBar).toBe(2)
     expect(props).toEqual({ fooBar: 2 })
     expect(attrs).toEqual({ bar: 3, baz: 4 })
 
-    // test updating kebab-case should not delete it (#955)
+    // #955：更新连字符输入时，不应误把 camelCase 内部 prop 当作已移除。
     render(h(Comp, { 'foo-bar': 3, bar: 3, baz: 4, barBaz: 5 }), root)
     expect(proxy.fooBar).toBe(3)
     expect(proxy.barBaz).toBe(5)
@@ -64,19 +66,22 @@ describe('component props', () => {
 
     render(h(Comp, { qux: 5 }), root)
     expect(proxy.fooBar).toBeUndefined()
-    // remove the props with camelCase key (#1412)
+    // #1412：旧 camelCase 输入移除后，公共实例值恢复为 undefined。
     expect(proxy.barBaz).toBeUndefined()
     expect(props).toEqual({})
     expect(attrs).toEqual({ qux: 5 })
   })
 
-  // 测试场景：setup 有状态。
+  // setup 捕获的 props 与 attrs 随连续 render 更新，已移除的输入也被清理。
   test('stateful with setup', () => {
     let props: any
     let attrs: any
 
     const Comp = defineComponent({
       props: ['foo'],
+      /**
+       * 返回空渲染闭包，不创建宿主内容。
+       */
       setup(_props, { attrs: _attrs }) {
         return () => {
           props = _props
@@ -99,11 +104,14 @@ describe('component props', () => {
     expect(attrs).toEqual({ qux: 5 })
   })
 
-  // 测试场景：函数式声明。
+  // 函数式组件声明 Comp.props 后，只接收声明的 foo，其他输入进入 attrs。
   test('functional with declaration', () => {
     let props: any
     let attrs: any
 
+    /**
+     * 修改或记录 `props`、`attrs`。
+     */
     const Comp: FunctionalComponent = (_props, { attrs: _attrs }) => {
       props = _props
       attrs = _attrs
@@ -124,10 +132,13 @@ describe('component props', () => {
     expect(attrs).toEqual({ qux: 5 })
   })
 
-  // 测试场景：未声明 props 的函数式组件直接接收 attrs。
+  // 未声明 props 的函数式组件接收全部 attrs；两次 render 都验证 props 与 attrs 是同一对象。
   test('functional without declaration', () => {
     let props: any
     let attrs: any
+    /**
+     * 修改或记录 `props`、`attrs`。
+     */
     const Comp: FunctionalComponent = (_props, { attrs: _attrs }) => {
       props = _props
       attrs = _attrs
@@ -145,7 +156,7 @@ describe('component props', () => {
     expect(props).toBe(attrs)
   })
 
-  // 测试场景：布尔转换。
+  // Boolean prop 缺失时为 false，空字符串和同名字符串为 true；其他字符串保留原值并触发类型警告。
   test('boolean casting', () => {
     let proxy: any
     const Comp = {
@@ -155,15 +166,18 @@ describe('component props', () => {
         baz: Boolean,
         qux: Boolean,
       },
+      /**
+       * 同时记录 `proxy` 供 render 后的断言检查。
+       */
       render() {
         proxy = this
       },
     }
     render(
       h(Comp, {
-        // absent should cast to false
-        bar: '', // empty string should cast to true
-        baz: 'baz', // same string should cast to true
+        // 未传 foo，应解析为 false。
+        bar: '', // 空字符串按 Boolean attribute 解析为 true。
+        baz: 'baz', // 与 prop 名相同的字符串解析为 true。
         qux: 'ok', // other values should be left in-tact (but raise warning)
       }),
       nodeOps.createElement('div'),
@@ -176,7 +190,7 @@ describe('component props', () => {
     expect('type check failed for prop "qux"').toHaveBeenWarned()
   })
 
-  // 测试场景：默认值。
+  // 传值覆盖默认值；对象默认工厂只调用一次并复用结果，Function 类型的默认函数直接作为值保留。
   test('default value', () => {
     let proxy: any
     const defaultFn = vi.fn(() => ({ a: 1 }))
@@ -195,6 +209,9 @@ describe('component props', () => {
           default: defaultBaz,
         },
       },
+      /**
+       * 同时记录 `proxy` 供 render 后的断言检查。
+       */
       render() {
         proxy = this
       },
@@ -209,8 +226,8 @@ describe('component props', () => {
     expect(defaultFn).toHaveBeenCalledTimes(1)
     expect(defaultBaz).toHaveBeenCalledTimes(0)
 
-    // #999: updates should not cause default factory of unchanged prop to be
-    // called again
+    // #999：只更新 foo，不应再次执行未改变的 bar 默认值工厂。
+    // 缓存的 bar 默认对象应保持同一引用。
     render(h(Comp, { foo: 3 }), root)
     expect(proxy.foo).toBe(3)
     expect(proxy.bar).toEqual({ a: 1 })
@@ -233,14 +250,20 @@ describe('component props', () => {
     expect(defaultFn).toHaveBeenCalledTimes(1)
   })
 
-  // 测试场景：在默认值工厂中使用注入。
+  // 默认值工厂调用 inject，读取父组件 provide 的 test 并渲染 injected。
   test('using inject in default value factory', () => {
     const Child = defineComponent({
       props: {
         test: {
+          /**
+           * prop 默认值工厂 返回 `inject('test', 'default')`。
+           */
           default: () => inject('test', 'default'),
         },
       },
+      /**
+       * 返回渲染闭包，执行时产出 `h('div', props.test)`。
+       */
       setup(props) {
         return () => {
           return h('div', props.test)
@@ -249,6 +272,9 @@ describe('component props', () => {
     })
 
     const Comp = {
+      /**
+       * 调用 `provide('test', 'injected')` 完成本例的初始化登记或读取；返回渲染闭包，执行时产出 `h(Child)`。
+       */
       setup() {
         provide('test', 'injected')
         return () => h(Child)
@@ -260,7 +286,7 @@ describe('component props', () => {
     expect(serializeInner(root)).toBe(`<div>injected</div>`)
   })
 
-  // 测试场景：优化props更新。
+  // 用主 Vue 入口编译模板，分别更新声明的 foo 和未声明的 id，检查文本与根元素属性。
   test('optimized props updates', async () => {
     const Child = defineComponent({
       props: ['foo'],
@@ -271,6 +297,9 @@ describe('component props', () => {
     const id = ref('a')
 
     const Comp = defineComponent({
+      /**
+       * 返回 `foo`、`id` 作为后续渲染可读的绑定。
+       */
       setup() {
         return {
           foo,
@@ -281,8 +310,8 @@ describe('component props', () => {
       template: `<Child :foo="foo" :id="id"/>`,
     })
 
-    // Note this one is using the main Vue render so it can compile template
-    // on the fly
+    // 使用主 Vue 入口 domRender，让模板经过运行时编译。
+    // 编译产物提供 patchFlag/dynamicProps，覆盖优化更新分支。
     const root = document.createElement('div')
     domRender(h(Comp), root)
     expect(root.innerHTML).toBe('<div id="a">1</div>')
@@ -296,15 +325,18 @@ describe('component props', () => {
     expect(root.innerHTML).toBe('<div id="b">2</div>')
   })
 
-  // 测试组：验证者。
+  // 自定义 validator 的参数与只读约束。
   describe('validator', () => {
-    // 测试场景：验证器应该用两个参数调用。
+    // validator 接收当前 prop 值，以及包含 foo、bar 的完整 props 对象。
     test('validator should be called with two arguments', async () => {
       const mockFn = vi.fn((...args: any[]) => true)
       const Comp = defineComponent({
         props: {
           foo: {
             type: Number,
+            /**
+             * prop/事件校验器 返回 `mockFn(value, props)`。
+             */
             validator: (value, props) => mockFn(value, props),
           },
           bar: {
@@ -314,32 +346,38 @@ describe('component props', () => {
         template: `<div />`,
       })
 
-      // Note this one is using the main Vue render so it can compile template
-      // on the fly
+      // 使用主 Vue 入口 domRender，让模板经过运行时编译。
+      // 编译产物提供 patchFlag/dynamicProps，覆盖优化更新分支。
       const root = document.createElement('div')
       domRender(h(Comp, { foo: 1, bar: 2 }), root)
       expect(mockFn).toHaveBeenCalledWith(1, { foo: 1, bar: 2 })
     })
 
-    // 测试场景：验证者不应该能够改变其他props。
+    // foo 的 validator 尝试改写 bar 时发出只读警告，bar 的 validator 仍收到原值 2。
     test('validator should not be able to mutate other props', async () => {
       const mockFn = vi.fn((...args: any[]) => true)
       const Comp = defineComponent({
         props: {
           foo: {
             type: Number,
+            /**
+             * 修改或记录 `props.bar`；prop/事件校验器 返回 `!!(props.bar = 1)`。
+             */
             validator: (value, props) => !!(props.bar = 1),
           },
           bar: {
             type: Number,
+            /**
+             * prop/事件校验器 返回 `mockFn(value)`。
+             */
             validator: value => mockFn(value),
           },
         },
         template: `<div />`,
       })
 
-      // Note this one is using the main Vue render so it can compile template
-      // on the fly
+      // 使用主 Vue 入口 domRender，让模板经过运行时编译。
+      // 编译产物提供 patchFlag/dynamicProps，覆盖优化更新分支。
       const root = document.createElement('div')
       domRender(h(Comp, { foo: 1, bar: 2 }), root)
       expect(
@@ -350,12 +388,15 @@ describe('component props', () => {
   })
 
   //#12011
-  // 测试场景：连字符 prop key 经 camelize 后仍能被正确更新和删除。
+  // 初次挂载分别传入两种含数字的连字符键，均不触发 hasB4BProp 的必填缺失警告。
   test('replace camelize with hyphenate to handle props key', () => {
     const Comp = {
       props: {
         hasB4BProp: { type: Boolean, required: true },
       },
+      /**
+       * 返回渲染闭包，执行时产出 `null`。
+       */
       setup() {
         return () => null
       },
@@ -374,12 +415,15 @@ describe('component props', () => {
     expect(`Missing required prop: "hasB4BProp"`).not.toHaveBeenWarned()
   })
 
-  // 测试场景：组件尝试修改只读 props 时发出开发期警告。
+  // 修改 setup 的 props 发出只读警告；通过公共实例改写 prop 则警告并抛出 TypeError。
   test('warn props mutation', () => {
     let instance: ComponentInternalInstance
     let setupProps: any
     const Comp = {
       props: ['foo'],
+      /**
+       * 调用 `getCurrentInstance()` 完成本例的初始化登记或读取；把 `instance`、`setupProps` 写入本例的状态或观察变量；返回渲染闭包，执行时产出 `null`。
+       */
       setup(props: any) {
         instance = getCurrentInstance()!
         setupProps = props
@@ -395,13 +439,14 @@ describe('component props', () => {
       ;(instance!.proxy as any).foo = 2
     }).toThrow(TypeError)
     expect(`Attempting to mutate prop "foo"`).toHaveBeenWarned()
-    // should not throw when overriding properties other than props
+    // 新增非 prop 的同名 Object 原型方法不应被当成只读 prop。
     expect(() => {
+      /** 空自定义方法赋值探针，验证非 prop 键可写入公共实例，不触发只读 prop 的 TypeError。 */
       ;(instance!.proxy as any).hasOwnProperty = () => {}
     }).not.toThrow(TypeError)
   })
 
-  // 测试场景：警告缺席，需要props。
+  // 未传入 required 的 Boolean、String、Number props 时，分别发出必填缺失警告。
   test('warn absent required props', () => {
     const Comp = {
       props: {
@@ -409,6 +454,9 @@ describe('component props', () => {
         str: { type: String, required: true },
         num: { type: Number, required: true },
       },
+      /**
+       * 返回渲染闭包，执行时产出 `null`。
+       */
       setup() {
         return () => null
       },
@@ -419,8 +467,11 @@ describe('component props', () => {
     expect(`Missing required prop: "num"`).toHaveBeenWarned()
   })
 
-  // 测试场景：prop 的运行时值与声明类型不匹配时发出开发期警告。
+  // 逐项检查运行时值与声明类型不匹配的警告，并覆盖 skipCheck 和空类型数组。
   test('warn on type mismatch', () => {
+    /**
+     * 自定义 prop 构造器夹具；传入普通对象以检查 instanceof 类型不匹配的警告。
+     */
     class MyClass {}
     const Comp = {
       props: {
@@ -436,6 +487,9 @@ describe('component props', () => {
         skipCheck: { type: [Boolean, Function], skipCheck: true },
         empty: { type: [] },
       },
+      /**
+       * 返回渲染闭包，执行时产出 `null`。
+       */
       setup() {
         return () => null
       },
@@ -492,12 +546,15 @@ describe('component props', () => {
   })
 
   // #3495
-  // 测试场景：不应使用 kebab-case 警告所需的 props。
+  // 声明 required 的 fooBar，传入 foo-bar 后不应再报必填缺失。
   test('should not warn required props using kebab-case', async () => {
     const Comp = {
       props: {
         fooBar: { type: String, required: true },
       },
+      /**
+       * 返回渲染闭包，执行时产出 `null`。
+       */
       setup() {
         return () => null
       },
@@ -511,7 +568,7 @@ describe('component props', () => {
     expect(`Missing required prop: "fooBar"`).not.toHaveBeenWarned()
   })
 
-  // 测试场景：从mixins和extends中合并props。
+  // 组件、两个局部 mixin 和 extends 的 prop 声明共同进入 setup props 与公共实例 $props。
   test('merging props from mixins and extends', () => {
     let setupProps: any
     let renderProxy: any
@@ -529,9 +586,15 @@ describe('component props', () => {
       props: ['self'],
       mixins: [M1, M2],
       extends: E,
+      /**
+       * 把 `setupProps` 写入本例的状态或观察变量。
+       */
       setup(props: any) {
         setupProps = props
       },
+      /**
+       * 渲染结果为 `h('div', [this.self, this.base, this.m1, this.m2])`；同时记录 `renderProxy` 供 render 后的断言检查。
+       */
       render(this: any) {
         renderProxy = this
         return h('div', [this.self, this.base, this.m1, this.m2])
@@ -554,7 +617,7 @@ describe('component props', () => {
     expect(renderProxy.$props).toMatchObject(props)
   })
 
-  // 测试场景：全局 mixin 声明的 props 能与组件自身和 extends 的声明合并。
+  // 两个全局 mixin 的 prop 声明与组件自身声明合并，并在 setup 和公共实例中可读。
   test('merging props from global mixins', () => {
     let setupProps: any
     let renderProxy: any
@@ -567,9 +630,15 @@ describe('component props', () => {
     }
     const Comp = {
       props: ['self'],
+      /**
+       * 把 `setupProps` 写入本例的状态或观察变量。
+       */
       setup(props: any) {
         setupProps = props
       },
+      /**
+       * 渲染结果为 `h('div', [this.self, this.m1, this.m2])`；同时记录 `renderProxy` 供 render 后的断言检查。
+       */
       render(this: any) {
         renderProxy = this
         return h('div', [this.self, this.m1, this.m2])
@@ -595,7 +664,7 @@ describe('component props', () => {
     expect(renderProxy.$props).toMatchObject(props)
   })
 
-  // 测试场景：从全局 mixin 中合并 props 并扩展。
+  // 同一全局 mixin 的 prop 默认值分别应用到基础组件和通过 extends 继承它的组件。
   test('merging props from global mixins and extends', () => {
     let renderProxy: any
     let extendedRenderProxy: any
@@ -611,6 +680,9 @@ describe('component props', () => {
       props,
     }
     const Comp = {
+      /**
+       * 渲染结果为 `h('div', ['Comp', this.globalProp])`；同时记录 `renderProxy` 供 render 后的断言检查。
+       */
       render(this: any) {
         renderProxy = this
         return h('div', ['Comp', this.globalProp])
@@ -618,6 +690,9 @@ describe('component props', () => {
     }
     const ExtendedComp = {
       extends: Comp,
+      /**
+       * 渲染结果为 `h('div', ['ExtendedComp', this.globalProp])`；同时记录 `extendedRenderProxy` 供 render 后的断言检查。
+       */
       render(this: any) {
         extendedRenderProxy = this
         return h('div', ['ExtendedComp', this.globalProp])
@@ -626,6 +701,9 @@ describe('component props', () => {
 
     const app = createApp(
       {
+        /**
+         * 渲染结果为 `[h(ExtendedComp), h(Comp)]`。
+         */
         render: () => [h(ExtendedComp), h(Comp)],
       },
       {},
@@ -644,9 +722,12 @@ describe('component props', () => {
     })
   })
 
-  // 测试场景：合并 props 也用作 mixin 的组件。
+  // CompA 同时作为组件和 mixin 使用；独立渲染采用全局默认值，CompB 中局部 mixin 的默认值胜出。
   test('merging props for a component that is also used as a mixin', () => {
     const CompA = {
+      /**
+       * 渲染结果为 `this.foo`。
+       */
       render(this: any) {
         return this.foo
       },
@@ -662,12 +743,18 @@ describe('component props', () => {
 
     const CompB = {
       mixins: [mixin, CompA],
+      /**
+       * 渲染结果为 `this.foo`。
+       */
       render(this: any) {
         return this.foo
       },
     }
 
     const app = createApp({
+      /**
+       * 渲染结果为 `[h(CompA), ', ', h(CompB)]`。
+       */
       render() {
         return [h(CompA), ', ', h(CompB)]
       },
@@ -687,12 +774,15 @@ describe('component props', () => {
     expect(serializeInner(root)).toMatch(`from global mixin, from mixin`)
   })
 
-  // 测试场景：运行时 prop 类型校验支持 BigInt。
+  // 声明 BigInt 类型的 prop，传入计算所得 BigInt 并检查渲染出的精确数字字符串。
   test('props type support BigInt', () => {
     const Comp = {
       props: {
         foo: BigInt,
       },
+      /**
+       * 渲染结果为 `h('div', [this.foo])`。
+       */
       render(this: any) {
         return h('div', [this.foo])
       },
@@ -710,17 +800,23 @@ describe('component props', () => {
   })
 
   // #3474
-  // 测试场景：应该缓存从默认工厂返回的值以避免不必要的watcher触发。
+  // foo 始终传入 undefined，只更新 bar；watch(props.foo) 不触发，说明默认工厂结果保持同一引用。
   test('should cache the value returned from the default factory to avoid unnecessary watcher trigger', async () => {
     let count = 0
     const Comp = {
       props: {
         foo: {
           type: Object,
+          /**
+           * prop 默认值工厂 返回 `({ val: 1 })`。
+           */
           default: () => ({ val: 1 }),
         },
         bar: Number,
       },
+      /**
+       * 调用 `watch(() => props.foo, () => { count++; })` 完成本例的初始化登记或读取；返回渲染闭包，执行时产出 `h('h1', [props.foo.val, props.bar])`。
+       */
       setup(props: any) {
         watch(
           () => props.foo,
@@ -735,6 +831,9 @@ describe('component props', () => {
     const foo = ref()
     const bar = ref(0)
     const app = createApp({
+      /**
+       * 渲染结果为 `h(Comp, { foo: foo.value, bar: bar.value })`。
+       */
       render: () => h(Comp, { foo: foo.value, bar: bar.value }),
     })
 
@@ -750,17 +849,23 @@ describe('component props', () => {
   })
 
   // #3288
-  // 测试场景：声明的 prop key 即使没有通过也应该存在。
+  // foo 未传入时仍存在于 Object.keys(props)，toRefs 为它创建的 ref 能监听后续传值。
   test('declared prop key should be present even if not passed', async () => {
     let initialKeys: string[] = []
     const changeSpy = vi.fn()
     const passFoo = ref(false)
 
     const Comp = {
+      /**
+       * 空渲染占位，让组件完成本例所需的初始化，断言读取状态或诊断结果。
+       */
       render() {},
       props: {
         foo: String,
       },
+      /**
+       * 调用 `watch(foo, changeSpy)` 完成本例的初始化登记或读取；把 `initialKeys` 写入本例的状态或观察变量。
+       */
       setup(props: any) {
         initialKeys = Object.keys(props)
         const { foo } = toRefs(props)
@@ -768,6 +873,9 @@ describe('component props', () => {
       },
     }
 
+    /**
+     * 返回 `(passFoo.value ? h(Comp, { foo: 'ok' }) : h(Comp))`。
+     */
     const Parent = () => (passFoo.value ? h(Comp, { foo: 'ok' }) : h(Comp))
     const root = nodeOps.createElement('div')
     createApp(Parent).mount(root)
@@ -779,18 +887,24 @@ describe('component props', () => {
   })
 
   // #3371
-  // 测试场景：Boolean/String 类型转换阶段避免对同一 prop 重复赋值。
+  // 父组件渲染时读取子组件的 Boolean prop；传入空字符串的子组件完成挂载与更新队列后仍输出 foo。
   test(`avoid double-setting props when casting`, async () => {
     const Parent = {
+      /**
+       * 调用 `provide('register', registerChildProps)` 完成本例的初始化登记或读取；返回渲染闭包，执行时产出 `slots.default!()`。
+       */
       setup(props: any, { slots }: SetupContext) {
         const childProps = ref()
+        /**
+         * 把子组件 props 对象写入父级 childProps ref，让父 render 随后主动读取 Boolean prop，复现重复赋值可能产生的更新循环。
+         */
         const registerChildProps = (props: any) => {
           childProps.value = props
         }
         provide('register', registerChildProps)
 
         return () => {
-          // access the child component's props
+          // 父 render 主动读取子 props，建立可能被重复赋值触发的依赖。
           childProps.value && childProps.value.foo
           return slots.default!()
         }
@@ -804,10 +918,13 @@ describe('component props', () => {
           required: false,
         },
       },
+      /**
+       * 调用 `inject('register')` 完成本例的初始化登记或读取；返回渲染闭包，执行时产出 `'foo'`。
+       */
       setup(props: { foo: boolean }) {
         const register = inject('register') as any
-        // 1. change the reactivity data of the parent component
-        // 2. register its own props to the parent component
+        // register 将子 props 写入父级 childProps ref。
+        // 父 render 随后读取这个对象，最终输出必须仍能稳定刷新。
         register(props)
 
         return () => 'foo'
@@ -815,6 +932,9 @@ describe('component props', () => {
     }
 
     const App = {
+      /**
+       * 返回渲染闭包，执行时产出 `h(Parent, () => h(Child as any, { foo: '' }, () => null))`。
+       */
       setup() {
         return () => h(Parent, () => h(Child as any, { foo: '' }, () => null))
       },
@@ -826,17 +946,25 @@ describe('component props', () => {
     expect(serializeInner(root)).toBe(`foo`)
   })
 
-  // 测试场景：在必需+多类型声明中支持 null。
+  // required prop 的类型数组包含 Function 与 null，分别传入函数和 null 均不抛错。
   test('support null in required + multiple-type declarations', () => {
     const Comp = {
       props: {
         foo: { type: [Function, null], required: true },
       },
+      /**
+       * 空渲染占位，让组件完成本例所需的初始化，断言读取状态或诊断结果。
+       */
       render() {},
     }
     const root = nodeOps.createElement('div')
     expect(() => {
-      render(h(Comp, { foo: () => {} }), root)
+      render(
+        h(Comp, {
+          /** 空 foo 夹具，保留本例的选项/回调形状；函数自身不产生副作用。 */ foo: () => {}
+        }),
+        root
+      )
     }).not.toThrow()
 
     expect(() => {
@@ -845,9 +973,12 @@ describe('component props', () => {
   })
 
   // #5016
-  // 测试场景：处理具有未定义值的 attr。
+  // 值为 undefined 的 foo 仍保留在 attrs 的键集合中，后续更新为字符串也能正确渲染。
   test('handling attr with undefined value', () => {
     const Comp = {
+      /**
+       * 渲染结果为 `JSON.stringify(this.$attrs) + Object.keys(this.$attrs)`。
+       */
       render(this: any) {
         return JSON.stringify(this.$attrs) + Object.keys(this.$attrs)
       },
@@ -868,7 +999,7 @@ describe('component props', () => {
   })
 
   // #691ef
-  // 测试场景：不应改变原始 props 长格式定义对象。
+  // 挂载后原始 props.msg 仍只有 type 一个键，归一化过程没有往声明对象写入内部字段。
   test('should not mutate original props long-form definition object', () => {
     const props = {
       msg: {
@@ -877,6 +1008,9 @@ describe('component props', () => {
     }
     const Comp = defineComponent({
       props,
+      /**
+       * 空渲染占位，让组件完成本例所需的初始化，断言读取状态或诊断结果。
+       */
       render() {},
     })
 
@@ -887,7 +1021,7 @@ describe('component props', () => {
     expect(Object.keys(props.msg).length).toBe(1)
   })
 
-  // 测试场景：应该警告保留的props名称。
+  // 将 key、ref 和 $foo 声明为 prop，分别检查保留名称警告。
   test('should warn against reserved prop names', () => {
     const Comp = defineComponent({
       props: {
@@ -895,6 +1029,9 @@ describe('component props', () => {
         ref: String,
         $foo: String,
       },
+      /**
+       * 空渲染占位，让组件完成本例所需的初始化，断言读取状态或诊断结果。
+       */
       render() {},
     })
 
@@ -908,13 +1045,19 @@ describe('component props', () => {
   })
 
   // #5517
-  // 测试场景：组件更新时事件不应该是props。
+  // Child 声明 event 后，模板的 onEvent 监听器在初次挂载与 foo 更新后都不进入 setup props。
   test('events should not be props when component updating', async () => {
     let props: any
+    /**
+     * 编译模板的事件处理器占位，Child 声明 event 后该监听器应由 emits 消费；本用例不实际发送事件。
+     */
     function eventHandler() {}
     const foo = ref(1)
 
     const Child = defineComponent({
+      /**
+       * 把 `props` 写入本例的状态或观察变量。
+       */
       setup(_props) {
         props = _props
       },
@@ -924,6 +1067,9 @@ describe('component props', () => {
     })
 
     const Comp = defineComponent({
+      /**
+       * 返回 `foo`、`eventHandler` 作为后续渲染可读的绑定。
+       */
       setup() {
         return {
           foo,

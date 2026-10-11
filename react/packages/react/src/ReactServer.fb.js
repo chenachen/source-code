@@ -42,6 +42,7 @@ const Children = {
   only,
 };
 
+/** FB 服务端 DEV 才安装的 owner 栈读取函数；生产保持 undefined，避免公开可调用诊断入口。 */
 let captureOwnerStack: ?() => null | string;
 if (__DEV__) {
   captureOwnerStack = captureOwnerStackImpl;

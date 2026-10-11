@@ -6,7 +6,7 @@ export const TELEPORT: unique symbol = Symbol(__DEV__ ? `Teleport` : ``)
 export const SUSPENSE: unique symbol = Symbol(__DEV__ ? `Suspense` : ``)
 /** KeepAlive 内置组件标识。 */
 export const KEEP_ALIVE: unique symbol = Symbol(__DEV__ ? `KeepAlive` : ``)
-/** 平台无关的过渡组件标识，DOM 编译器会把 `<transition>` 映射到它。 */
+/** BaseTransition/base-transition 的 helper 标识；DOM 的 Transition 使用平台 TRANSITION。 */
 export const BASE_TRANSITION: unique symbol = Symbol(
   __DEV__ ? `BaseTransition` : ``,
 )
@@ -32,7 +32,7 @@ export const CREATE_COMMENT: unique symbol = Symbol(
 export const CREATE_TEXT: unique symbol = Symbol(
   __DEV__ ? `createTextVNode` : ``,
 )
-/** 创建由静态提升生成的静态 VNode 的运行时 helper 标识。 */
+/** 创建由静态 HTML 字符串化生成的静态 VNode 的运行时 helper 标识。 */
 export const CREATE_STATIC: unique symbol = Symbol(
   __DEV__ ? `createStaticVNode` : ``,
 )
@@ -170,6 +170,7 @@ export const helperNameMap: Record<symbol, string> = {
 /**
  * 注册平台编译器自有的运行时 helper。
  * compiler-dom / compiler-ssr 借此把各自 Symbol 合并到统一名字表中。
+ * 原地更新模块级 helperNameMap，只遍历 Symbol 自有键；同一 Symbol 的再次注册会覆盖原导出名。
  */
 export function registerRuntimeHelpers(helpers: Record<symbol, string>): void {
   Object.getOwnPropertySymbols(helpers).forEach(s => {

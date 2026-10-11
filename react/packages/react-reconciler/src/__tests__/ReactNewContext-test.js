@@ -108,7 +108,7 @@ describe('ReactNewContext', () => {
     Context =>
       /** Consumer 通过 renderer dispatcher 的 readContext 在 class render 中登记依赖。 */
       class Consumer extends React.Component {
-        /** Consumer.render 渲染当前 props/state/Context 并暴露可观察输出，用于“Context 读取与传播基础设施”。 */
+        /** 在类组件 render 中用 dispatcher 读取 Context，并把值交给 children 函数，参与共享传播矩阵。 */
         render() {
           const contextValue = readContext(Context);
           const render = this.props.children;
@@ -121,7 +121,7 @@ describe('ReactNewContext', () => {
     Context =>
       /** Consumer 组合 PureComponent bailout 与 dispatcher readContext，验证 Context 可单独唤醒 class。 */
       class Consumer extends React.PureComponent {
-        /** Consumer.render 渲染当前 props/state/Context 并暴露可观察输出，用于“Context 读取与传播基础设施”。 */
+        /** 在 PureComponent render 中读取 Context；props 浅比较可 bailout，Context 依赖仍需独立唤醒。 */
         render() {
           const contextValue = readContext(Context);
           const render = this.props.children;
@@ -148,7 +148,7 @@ describe('ReactNewContext', () => {
 
         const Indirection = React.Fragment;
 
-        /** App 组织 Provider、Consumer 与 bailout 层级，并暴露场景更新入口，用于“多种 Context 读取入口的挂载与更新语义一致”。 */
+        /** App 组织 Provider、Consumer 与 bailout 层级，并暴露场景更新入口。 */
         function App(props) {
           return (
             <Context.Provider value={props.value}>
@@ -185,7 +185,7 @@ describe('ReactNewContext', () => {
         const Context = React.createContext(1);
         const ContextConsumer = getConsumer(Context);
 
-        /** Provider 把受控 props 写入 Context，并保持 children 结构以隔离传播行为，用于“Context 穿过 shouldComponentUpdate=false 边界”。 */
+        /** Provider 把受控 props 写入 Context，并保持 children 结构以隔离传播行为。 */
         function Provider(props) {
           Scheduler.log('Provider');
           return (
@@ -208,20 +208,20 @@ describe('ReactNewContext', () => {
           );
         }
 
-        /** 定义 Indirection 类 fixture，制造 class/PureComponent/legacy 边界，用于“Context 穿过 shouldComponentUpdate=false 边界”。 */
+        /** 以 sCU=false 隔开 Provider 与消费者，验证依赖传播越过普通 props bailout。 */
         class Indirection extends React.Component {
           /** sharedContextTests.Indirection.shouldComponentUpdate 固定返回 false，制造 props bailout 以验证 Context 的独立调度能力。 */
           shouldComponentUpdate() {
             return false;
           }
-          /** sharedContextTests.Indirection.render 渲染当前 props/state/Context 并暴露可观察输出，用于“Context 穿过 shouldComponentUpdate=false 边界”。 */
+          /** 记录 Indirection 渲染并原样返回 children；sCU=false 后的缺失日志用于验证传播越过此层。 */
           render() {
             Scheduler.log('Indirection');
             return this.props.children;
           }
         }
 
-        /** App 组织 Provider、Consumer 与 bailout 层级，并暴露场景更新入口，用于“Context 穿过 shouldComponentUpdate=false 边界”。 */
+        /** App 组织 Provider、Consumer 与 bailout 层级，并暴露场景更新入口。 */
         function App(props) {
           Scheduler.log('App');
           return (
@@ -264,7 +264,7 @@ describe('ReactNewContext', () => {
         const Context = React.createContext(1);
         const ContextConsumer = getConsumer(Context);
 
-        /** Provider 把受控 props 写入 Context，并保持 children 结构以隔离传播行为，用于“相同 Context value 触发消费者 bailout”。 */
+        /** Provider 把受控 props 写入 Context，并保持 children 结构以隔离传播行为。 */
         function Provider(props) {
           Scheduler.log('Provider');
           return (
@@ -287,20 +287,20 @@ describe('ReactNewContext', () => {
           );
         }
 
-        /** 定义 Indirection 类 fixture，制造 class/PureComponent/legacy 边界，用于“相同 Context value 触发消费者 bailout”。 */
+        /** 记录并拒绝 Indirection 的后续 props 更新，为相同 Context 值的消费 bailout 提供对照。 */
         class Indirection extends React.Component {
           /** sharedContextTests.Indirection.shouldComponentUpdate 固定返回 false，制造 props bailout 以验证 Context 的独立调度能力。 */
           shouldComponentUpdate() {
             return false;
           }
-          /** sharedContextTests.Indirection.render 渲染当前 props/state/Context 并暴露可观察输出，用于“相同 Context value 触发消费者 bailout”。 */
+          /** 记录透传层渲染；同值更新应绕过此方法及 Consumer，只执行 App/Provider。 */
           render() {
             Scheduler.log('Indirection');
             return this.props.children;
           }
         }
 
-        /** App 组织 Provider、Consumer 与 bailout 层级，并暴露场景更新入口，用于“相同 Context value 触发消费者 bailout”。 */
+        /** App 组织 Provider、Consumer 与 bailout 层级，并暴露场景更新入口。 */
         function App(props) {
           Scheduler.log('App');
           return (
@@ -347,7 +347,7 @@ describe('ReactNewContext', () => {
         const Context = React.createContext(1);
         const Consumer = getConsumer(Context);
 
-        /** Provider 把受控 props 写入 Context，并保持 children 结构以隔离传播行为，用于“嵌套 Provider 的遮蔽、派生与栈恢复”。 */
+        /** Provider 把受控 props 写入 Context，并保持 children 结构以隔离传播行为。 */
         function Provider(props) {
           return (
             <Consumer>
@@ -361,19 +361,19 @@ describe('ReactNewContext', () => {
           );
         }
 
-        /** 定义 Indirection 类 fixture，制造 class/PureComponent/legacy 边界，用于“嵌套 Provider 的遮蔽、派生与栈恢复”。 */
+        /** 拒绝 props 更新的透传层，分隔三个逐层乘二的同 Context Provider。 */
         class Indirection extends React.Component {
           /** sharedContextTests.Indirection.shouldComponentUpdate 固定返回 false，制造 props bailout 以验证 Context 的独立调度能力。 */
           shouldComponentUpdate() {
             return false;
           }
-          /** sharedContextTests.Indirection.render 渲染当前 props/state/Context 并暴露可观察输出，用于“嵌套 Provider 的遮蔽、派生与栈恢复”。 */
+          /** 透传嵌套 Provider 子树，让 sCU=false 层隔开各层 Context 值的乘二计算。 */
           render() {
             return this.props.children;
           }
         }
 
-        /** App 组织 Provider、Consumer 与 bailout 层级，并暴露场景更新入口，用于“嵌套 Provider 的遮蔽、派生与栈恢复”。 */
+        /** App 组织 Provider、Consumer 与 bailout 层级，并暴露场景更新入口。 */
         function App(props) {
           return (
             <Provider value={props.value}>
@@ -463,7 +463,7 @@ describe('ReactNewContext', () => {
         const Context = React.createContext(1);
         const Consumer = getConsumer(Context);
 
-        /** Provider 把受控 props 写入 Context，并保持 children 结构以隔离传播行为，用于“Context 更新覆盖不同兄弟分支”。 */
+        /** Provider 把受控 props 写入 Context，并保持 children 结构以隔离传播行为。 */
         function Provider(props) {
           return (
             <Context.Consumer>
@@ -477,19 +477,19 @@ describe('ReactNewContext', () => {
           );
         }
 
-        /** 定义 Indirection 类 fixture，制造 class/PureComponent/legacy 边界，用于“Context 更新覆盖不同兄弟分支”。 */
+        /** 隔开直接消费者与派生 Provider 分支，验证传播能遍历多个 siblings。 */
         class Indirection extends React.Component {
           /** sharedContextTests.Indirection.shouldComponentUpdate 固定返回 false，制造 props bailout 以验证 Context 的独立调度能力。 */
           shouldComponentUpdate() {
             return false;
           }
-          /** sharedContextTests.Indirection.render 渲染当前 props/state/Context 并暴露可观察输出，用于“Context 更新覆盖不同兄弟分支”。 */
+          /** 透传当前分支，拒绝后续 props 更新以隔离嵌套/直接 Consumer 的传播路径。 */
           render() {
             return this.props.children;
           }
         }
 
-        /** App 组织 Provider、Consumer 与 bailout 层级，并暴露场景更新入口，用于“Context 更新覆盖不同兄弟分支”。 */
+        /** App 组织 Provider、Consumer 与 bailout 层级，并暴露场景更新入口。 */
         function App(props) {
           return (
             <Provider value={props.value}>
@@ -553,7 +553,7 @@ describe('ReactNewContext', () => {
         const Context = React.createContext(1);
         const ContextConsumer = getConsumer(Context);
 
-        /** Provider 把受控 props 写入 Context，并保持 children 结构以隔离传播行为，用于“Context value 按 Object.is 而非 === 比较”。 */
+        /** Provider 把受控 props 写入 Context，并保持 children 结构以隔离传播行为。 */
         function Provider(props) {
           Scheduler.log('Provider');
           return (
@@ -576,20 +576,20 @@ describe('ReactNewContext', () => {
           );
         }
 
-        /** 定义 Indirection 类 fixture，制造 class/PureComponent/legacy 边界，用于“Context value 按 Object.is 而非 === 比较”。 */
+        /** 拒绝 props 更新并记录挂载，验证 NaN 的 Object.is 相等阻止二次传播。 */
         class Indirection extends React.Component {
           /** sharedContextTests.Indirection.shouldComponentUpdate 固定返回 false，制造 props bailout 以验证 Context 的独立调度能力。 */
           shouldComponentUpdate() {
             return false;
           }
-          /** sharedContextTests.Indirection.render 渲染当前 props/state/Context 并暴露可观察输出，用于“Context value 按 Object.is 而非 === 比较”。 */
+          /** 记录初次 Indirection 渲染；第二次 NaN 更新时此层与消费回调都应 bailout。 */
           render() {
             Scheduler.log('Indirection');
             return this.props.children;
           }
         }
 
-        /** App 组织 Provider、Consumer 与 bailout 层级，并暴露场景更新入口，用于“Context value 按 Object.is 而非 === 比较”。 */
+        /** App 组织 Provider、Consumer 与 bailout 层级，并暴露场景更新入口。 */
         function App(props) {
           Scheduler.log('App');
           return (
@@ -651,7 +651,7 @@ describe('ReactNewContext', () => {
           throw new Error('Bad render');
         }
 
-        /** 定义 ErrorBoundary 类 fixture，制造 class/PureComponent/legacy 边界，用于“渲染中断后正确 unwind Context 栈”。 */
+        /** 用 componentDidCatch 的本地 error state 删除故障 Provider 子树，留下外层兄弟消费者校验栈恢复。 */
         class ErrorBoundary extends React.Component {
           /** sharedContextTests.ErrorBoundary.state 保存驱动本场景的实例 state，区分组件更新与 Context 传播来源。 */
           state = {error: null};
@@ -659,7 +659,7 @@ describe('ReactNewContext', () => {
           componentDidCatch(error) {
             this.setState({error});
           }
-          /** sharedContextTests.ErrorBoundary.render 渲染当前 props/state/Context 并暴露可观察输出，用于“渲染中断后正确 unwind Context 栈”。 */
+          /** 错误 state 非空时删除故障子树，否则返回内层 Provider；兄弟 Consumer 验证 Context 已 unwind。 */
           render() {
             if (this.state.error) {
               return null;
@@ -668,7 +668,7 @@ describe('ReactNewContext', () => {
           }
         }
 
-        /** App 组织 Provider、Consumer 与 bailout 层级，并暴露场景更新入口，用于“渲染中断后正确 unwind Context 栈”。 */
+        /** App 组织 Provider、Consumer 与 bailout 层级，并暴露场景更新入口。 */
         function App(props) {
           return (
             <>
@@ -705,11 +705,11 @@ describe('ReactNewContext', () => {
         const Consumer = getConsumer(Context);
 
         let child;
-        /** 定义 Child 类 fixture，制造 class/PureComponent/legacy 边界，用于“子组件更新不反向重渲染 Context Consumer”。 */
+        /** 保存 step=0 的本地状态；Context 值经 prop 输入，子 setState 不应重跑父消费函数。 */
         class Child extends React.Component {
           /** sharedContextTests.Child.state 保存驱动本场景的实例 state，区分组件更新与 Context 传播来源。 */
           state = {step: 0};
-          /** sharedContextTests.Child.render 渲染当前 props/state/Context 并暴露可观察输出，用于“子组件更新不反向重渲染 Context Consumer”。 */
+          /** 把 Context prop 与本地 step 一并编码进 span，并记录 Child 重渲染；只更新 step 不应重跑父消费回调。 */
           render() {
             Scheduler.log('Child');
             return (
@@ -720,7 +720,7 @@ describe('ReactNewContext', () => {
           }
         }
 
-        /** App 组织 Provider、Consumer 与 bailout 层级，并暴露场景更新入口，用于“子组件更新不反向重渲染 Context Consumer”。 */
+        /** App 组织 Provider、Consumer 与 bailout 层级，并暴露场景更新入口。 */
         function App(props) {
           return (
             <Context.Provider value={props.value}>
@@ -779,9 +779,9 @@ describe('ReactNewContext', () => {
           return <Consumer>{renderChildValue}</Consumer>;
         }
 
-        /** 定义 PureIndirection 类 fixture，制造 class/PureComponent/legacy 边界，用于“Context 相同值 bailout 不依赖 render callback 引用”。 */
+        /** 无变化 props 的纯组件，包含 inline/cached 两种消费回调，用于检验 Context 唤醒不依赖函数引用。 */
         class PureIndirection extends React.PureComponent {
-          /** sharedContextTests.PureIndirection.render 渲染当前 props/state/Context 并暴露可观察输出，用于“Context 相同值 bailout 不依赖 render callback 引用”。 */
+          /** 创建 inline 与缓存 callback 两个消费者；纯组件 props 不变时自身 bailout，由 Context 变化唤醒内部依赖。 */
           render() {
             Scheduler.log('PureIndirection');
             return (
@@ -793,9 +793,9 @@ describe('ReactNewContext', () => {
           }
         }
 
-        /** 定义 App 类 fixture，制造 class/PureComponent/legacy 边界，用于“Context 相同值 bailout 不依赖 render callback 引用”。 */
+        /** 从受控 value 发布 Context，日志区分父重渲染与纯组件内部定向传播。 */
         class App extends React.Component {
-          /** sharedContextTests.App.render 渲染当前 props/state/Context 并暴露可观察输出，用于“Context 相同值 bailout 不依赖 render callback 引用”。 */
+          /** 记录 App 并发布受控 value；相同值只执行 App，新值更新需越过 PureIndirection。 */
           render() {
             Scheduler.log('App');
             return (
@@ -857,7 +857,7 @@ describe('ReactNewContext', () => {
         const Context = React.createContext('dark');
         const Consumer = getConsumer(Context);
 
-        /** App 组织 Provider、Consumer 与 bailout 层级，并暴露场景更新入口，用于“hidden Offscreen 子树中的 Context Consumer 不错误 bailout”。 */
+        /** App 组织 Provider、Consumer 与 bailout 层级，并暴露场景更新入口。 */
         function App({theme}) {
           return (
             <Context.Provider value={theme}>
@@ -898,7 +898,7 @@ describe('ReactNewContext', () => {
         const Context = React.createContext(null);
         const Consumer = getConsumer(Context);
 
-        /** 定义 App 类 fixture，制造 class/PureComponent/legacy 边界，用于“Context 消费者参与列表重排时 work loop 收敛”。 */
+        /** 构造包含 Consumer 与普通 sibling 的 keyed 列表，切换 reverse 复现旧遍历无限循环。 */
         class App extends React.Component {
           /** sharedContextTests.App.renderItem 构造含 Consumer 与普通 sibling 的 keyed 列表项。 */
           renderItem(id) {
@@ -917,7 +917,7 @@ describe('ReactNewContext', () => {
             }
             return list;
           }
-          /** sharedContextTests.App.render 渲染当前 props/state/Context 并暴露可观察输出，用于“Context 消费者参与列表重排时 work loop 收敛”。 */
+          /** 用新 value 对象包裹可反转 keyed 列表，复现 Context walker 与 sibling 重排交错。 */
           render() {
             return (
               <Context.Provider value={{}}>
@@ -948,14 +948,14 @@ describe('ReactNewContext', () => {
         const Context = React.createContext(0);
         const ContextConsumer = getConsumer(Context);
 
-        /** 定义 App 类 fixture，制造 class/PureComponent/legacy 边界，用于“Context 更新不跳过静态与动态兄弟 Fiber”。 */
+        /** step 状态控制 Provider 值和条件插入消费者，验证传播不漏过稳定 Fragment 兄弟。 */
         class App extends React.Component {
           /** sharedContextTests.App.state 保存驱动本场景的实例 state，区分组件更新与 Context 传播来源。 */
           state = {
             step: 0,
           };
 
-          /** sharedContextTests.App.render 渲染当前 props/state/Context 并暴露可观察输出，用于“Context 更新不跳过静态与动态兄弟 Fiber”。 */
+          /** 发布 state.step 并在 step>0 时插入消费分支；静态 Fragment siblings 必须保留。 */
           render() {
             Scheduler.log('App');
             return (
@@ -967,9 +967,9 @@ describe('ReactNewContext', () => {
           }
         }
 
-        /** 定义 StaticContent 类 fixture，制造 class/PureComponent/legacy 边界，用于“Context 更新不跳过静态与动态兄弟 Fiber”。 */
+        /** PureComponent 固定渲染两项静态内容，作为动态消费分支插入/更新的保留对照。 */
         class StaticContent extends React.PureComponent {
-          /** sharedContextTests.StaticContent.render 渲染当前 props/state/Context 并暴露可观察输出，用于“Context 更新不跳过静态与动态兄弟 Fiber”。 */
+          /** 返回两层无 key Fragment 的固定 static 1/2，作为 Context sibling 遍历的稳定对照。 */
           render() {
             return (
               <>
@@ -982,9 +982,9 @@ describe('ReactNewContext', () => {
           }
         }
 
-        /** 定义 Indirection 类 fixture，制造 class/PureComponent/legacy 边界，用于“Context 更新不跳过静态与动态兄弟 Fiber”。 */
+        /** 纯组件包装 Context Consumer，验证 state.step 变化能更新新增消费者。 */
         class Indirection extends React.PureComponent {
-          /** sharedContextTests.Indirection.render 渲染当前 props/state/Context 并暴露可观察输出，用于“Context 更新不跳过静态与动态兄弟 Fiber”。 */
+          /** 通过 Consumer 输出当前 step 并记录消费回调；自身为 PureComponent，Context 变化仍应更新后代。 */
           render() {
             return (
               <ContextConsumer>
@@ -1066,13 +1066,13 @@ describe('ReactNewContext', () => {
       spyOnDev(console, 'error').mockImplementation(() => {});
       const Context = React.createContext(0);
 
-      /** Foo 构造目标非法或告警调用位置，用于“同一 Context 被多个 renderer 并发渲染时告警”。 */
+      /** Foo 构造目标非法或告警调用位置。 */
       function Foo(props) {
         Scheduler.log('Foo');
         return null;
       }
 
-      /** App 组织 Provider、Consumer 与 bailout 层级，并暴露场景更新入口，用于“同一 Context 被多个 renderer 并发渲染时告警”。 */
+      /** App 组织 Provider、Consumer 与 bailout 层级，并暴露场景更新入口。 */
       function App(props) {
         return (
           <Context.Provider value={props.value}>
@@ -1121,13 +1121,13 @@ describe('ReactNewContext', () => {
       spyOnDev(console, 'error');
       const Context = React.createContext(0);
 
-      /** Foo 构造目标非法或告警调用位置，用于“多个 renderer 顺序使用同一 Context 不误告警”。 */
+      /** Foo 构造目标非法或告警调用位置。 */
       function Foo(props) {
         Scheduler.log('Foo');
         return null;
       }
 
-      /** App 组织 Provider、Consumer 与 bailout 层级，并暴露场景更新入口，用于“多个 renderer 顺序使用同一 Context 不误告警”。 */
+      /** App 组织 Provider、Consumer 与 bailout 层级，并暴露场景更新入口。 */
       function App(props) {
         return (
           <Context.Provider value={props.value}>
@@ -1171,7 +1171,7 @@ describe('ReactNewContext', () => {
     it('provider bails out if children and value are unchanged (like sCU)', async () => {
       const Context = React.createContext(0);
 
-      /** Child 提供可观察叶子/静态 sibling，用于“Provider 在 value 与 children 同时不变时 bailout”。 */
+      /** Child 提供可观察叶子/静态 sibling。 */
       function Child() {
         Scheduler.log('Child');
         return <span prop="Child" />;
@@ -1179,7 +1179,7 @@ describe('ReactNewContext', () => {
 
       const children = <Child />;
 
-      /** App 组织 Provider、Consumer 与 bailout 层级，并暴露场景更新入口，用于“Provider 在 value 与 children 同时不变时 bailout”。 */
+      /** App 组织 Provider、Consumer 与 bailout 层级，并暴露场景更新入口。 */
       function App(props) {
         Scheduler.log('App');
         return (
@@ -1202,9 +1202,10 @@ describe('ReactNewContext', () => {
     });
 
     /**
-     * Given：新 Context Provider 的 value/children 不变，但祖先 LegacyProvider 产生 legacy context 更新。
-     * When：分别更新 App 相同 state、LegacyProvider，再更新 App。
-     * Then：普通相同值更新可 bailout；legacy context 变化会阻止 Provider bailout 并重访 Child。
+     * Given：新 Context Provider 的 value/children 不变，旧 LegacyProvider 发布 legacyValue=1。
+     * When：App 以相同 value 更新；再向 LegacyProvider 写入额外 state.value=1；最后再次更新 App。
+     * Then：LegacyProvider 的重渲染重新发布旧 Context 作用域，legacyValue 数字仍为 1，但这条
+     * 遗留传播路径仍重访 App/Child；两次 App-only 同值更新则 bailout。
      *
      * 验证机制：分段日志区分 App-only 与 LegacyProvider/App/Child 路径。
      * 对应源码：`ReactFiberBeginWork.js` 的 `hasLegacyContextChanged()` 与 Context Provider bailout。
@@ -1213,7 +1214,7 @@ describe('ReactNewContext', () => {
     it('provider does not bail out if legacy context changed above', async () => {
       const Context = React.createContext(0);
 
-      /** Child 提供可观察叶子/静态 sibling，用于“祖先 legacy context 变化使新 Provider 放弃 bailout”。 */
+      /** Child 提供可观察叶子/静态 sibling。 */
       function Child() {
         Scheduler.log('Child');
         return <span prop="Child" />;
@@ -1221,7 +1222,7 @@ describe('ReactNewContext', () => {
 
       const children = <Child />;
 
-      /** 定义 LegacyProvider 类 fixture，制造 class/PureComponent/legacy 边界，用于“祖先 legacy context 变化使新 Provider 放弃 bailout”。 */
+      /** 声明旧 childContextTypes 并发布 legacyValue，验证遗留 Context 作用域更新阻止新 Provider bailout。 */
       class LegacyProvider extends React.Component {
         /** LegacyProvider.childContextTypes 声明 legacy context schema，用于触发祖先 legacy context 变化。 */
         static childContextTypes = {
@@ -1234,18 +1235,18 @@ describe('ReactNewContext', () => {
         getChildContext() {
           return {legacyValue: this.state.legacyValue};
         }
-        /** LegacyProvider.render 渲染当前 props/state/Context 并暴露可观察输出，用于“祖先 legacy context 变化使新 Provider 放弃 bailout”。 */
+        /** 记录旧 Provider 并透传 children；每次自身更新重建遗留 Context 作用域，即使 legacyValue 数字不变。 */
         render() {
           Scheduler.log('LegacyProvider');
           return this.props.children;
         }
       }
 
-      /** 定义 App 类 fixture，制造 class/PureComponent/legacy 边界，用于“祖先 legacy context 变化使新 Provider 放弃 bailout”。 */
+      /** state.value 控制新 Context Provider，children 保持同一元素引用以隔离旧 Context 影响。 */
       class App extends React.Component {
         /** App.state 保存驱动本场景的实例 state，区分组件更新与 Context 传播来源。 */
         state = {value: 1};
-        /** App.render 渲染当前 props/state/Context 并暴露可观察输出，用于“祖先 legacy context 变化使新 Provider 放弃 bailout”。 */
+        /** 记录 App 并发布 state.value，同时保留稳定 children 引用，区分相同值 bailout 与遗留 Context 更新。 */
         render() {
           Scheduler.log('App');
           return (
@@ -1339,19 +1340,19 @@ describe('ReactNewContext', () => {
         );
       }
 
-      /** 定义 Indirection 类 fixture，制造 class/PureComponent/legacy 边界，用于“Consumer render prop 内登记其他 Context 依赖”。 */
+      /** 拒绝 props 更新的透传层，让 Foo/Bar 两条 Context 依赖独立唤醒同一消费者。 */
       class Indirection extends React.Component {
         /** Indirection.shouldComponentUpdate 固定返回 false，制造 props bailout 以验证 Context 的独立调度能力。 */
         shouldComponentUpdate() {
           return false;
         }
-        /** Indirection.render 渲染当前 props/state/Context 并暴露可观察输出，用于“Consumer render prop 内登记其他 Context 依赖”。 */
+        /** 透传 FooAndBar，并以 sCU=false 阻止普通父更新；两个 Context 的依赖传播仍需到达同一消费回调。 */
         render() {
           return this.props.children;
         }
       }
 
-      /** App 组织 Provider、Consumer 与 bailout 层级，并暴露场景更新入口，用于“Consumer render prop 内登记其他 Context 依赖”。 */
+      /** App 组织 Provider、Consumer 与 bailout 层级，并暴露场景更新入口。 */
       function App(props) {
         return (
           <FooContext.Provider value={props.foo}>
@@ -1396,7 +1397,7 @@ describe('ReactNewContext', () => {
       const Context = React.createContext(0);
       const Consumer = Context.Consumer;
 
-      /** 定义 App 类 fixture，制造 class/PureComponent/legacy 边界，用于“Context.Consumer 在祖先未 bailout 时不按引用相等跳过自身更新”。 */
+      /** 文本 state 与稳定 Consumer render prop 组合，验证正常父更新不能仅因 Context 值未变而跳过。 */
       class App extends React.Component {
         /** App.state 保存驱动本场景的实例 state，区分组件更新与 Context 传播来源。 */
         state = {
@@ -1409,7 +1410,7 @@ describe('ReactNewContext', () => {
           return <span prop={this.state.text} />;
         };
 
-        /** App.render 渲染当前 props/state/Context 并暴露可观察输出，用于“Context.Consumer 在祖先未 bailout 时不按引用相等跳过自身更新”。 */
+        /** 发布固定 Context value，并传入实例上的稳定 renderConsumer 函数；文本 state 更新仍需重新调用该函数。 */
         render() {
           Scheduler.log('App');
           return (
@@ -1438,12 +1439,12 @@ describe('ReactNewContext', () => {
     // Unstable changedBits API 已移除；Context selectors
     // 可用后应把此测试迁移过去。
     /**
-     * Given：同一函数以不同 observed bits 读取 foo/bar，兄弟 Baz 读取另一 bit；旧 changedBits API 由 gate 保留。
+     * Given：同一函数以不同 observed bits 读取 foo/bar，兄弟 Baz 读取另一 bit；这是被 FIXME gate 停用的 changedBits 历史用例。
      * When：依次只更新 foo、bar、baz。
      * Then：每轮只调度订阅对应 bit 的消费者，未匹配分支保持输出。
      *
      * 验证机制：Scheduler 与两段宿主数组逐轮验证选择性重渲染。
-     * 对应源码：`ReactFiberNewContext.js` 的 Context dependency 链与 changed-bits 兼容路径。
+     * 当前 createContext/readContext 已不使用 changedBits 参数；这里保留的是旧选择性订阅期望。
      */
     // @gate FIXME
     it('can read the same context multiple times in the same function', async () => {
@@ -1461,7 +1462,7 @@ describe('ReactNewContext', () => {
         return result;
       });
 
-      /** Provider 把受控 props 写入 Context，并保持 children 结构以隔离传播行为，用于“同一函数多次读取同一 Context 的依赖合并”。 */
+      /** Provider 把受控 props 写入 Context，并保持 children 结构以隔离传播行为。 */
       function Provider(props) {
         return (
           <Context.Provider
@@ -1484,19 +1485,19 @@ describe('ReactNewContext', () => {
         return <Text text={'Baz: ' + baz} />;
       }
 
-      /** 定义 Indirection 类 fixture，制造 class/PureComponent/legacy 边界，用于“同一函数多次读取同一 Context 的依赖合并”。 */
+      /** 被 FIXME gate 停用的 changedBits 历史用例透传层；sCU=false 隔离选择性订阅的旧期望。 */
       class Indirection extends React.Component {
         /** Indirection.shouldComponentUpdate 固定返回 false，制造 props bailout 以验证 Context 的独立调度能力。 */
         shouldComponentUpdate() {
           return false;
         }
-        /** Indirection.render 渲染当前 props/state/Context 并暴露可观察输出，用于“同一函数多次读取同一 Context 的依赖合并”。 */
+        /** 透传 FooAndBar/Baz，并阻止 props 更新；此 fixture 仅属于被 FIXME gate 停用的 changedBits 历史用例。 */
         render() {
           return this.props.children;
         }
       }
 
-      /** App 组织 Provider、Consumer 与 bailout 层级，并暴露场景更新入口，用于“同一函数多次读取同一 Context 的依赖合并”。 */
+      /** App 组织 Provider、Consumer 与 bailout 层级，并暴露场景更新入口。 */
       function App(props) {
         return (
           <Provider foo={props.foo} bar={props.bar} baz={props.baz}>
@@ -1560,16 +1561,16 @@ describe('ReactNewContext', () => {
     it('does not bail out if there were no bailouts above it', async () => {
       const Context = React.createContext(0);
 
-      /** 定义 Consumer 类 fixture，制造 class/PureComponent/legacy 边界，用于“readContext 在祖先未 bailout 时不按引用相等跳过自身更新”。 */
+      /** 通过 dispatcher 的 readContext 实现类消费者，用稳定 children 函数输出父 state。 */
       class Consumer extends React.Component {
-        /** Consumer.render 渲染当前 props/state/Context 并暴露可观察输出，用于“readContext 在祖先未 bailout 时不按引用相等跳过自身更新”。 */
+        /** 直接登记 Context 依赖再调用 children，使父 App 文本更新覆盖消费值相同的情形。 */
         render() {
           const contextValue = readContext(Context);
           return this.props.children(contextValue);
         }
       }
 
-      /** 定义 App 类 fixture，制造 class/PureComponent/legacy 边界，用于“readContext 在祖先未 bailout 时不按引用相等跳过自身更新”。 */
+      /** 驱动 hello→goodbye 文本更新，class Consumer 即使 Context 值相同也必须执行回调。 */
       class App extends React.Component {
         /** App.state 保存驱动本场景的实例 state，区分组件更新与 Context 传播来源。 */
         state = {
@@ -1582,7 +1583,7 @@ describe('ReactNewContext', () => {
           return <span prop={this.state.text} />;
         };
 
-        /** App.render 渲染当前 props/state/Context 并暴露可观察输出，用于“readContext 在祖先未 bailout 时不按引用相等跳过自身更新”。 */
+        /** 发布固定 value 并传入稳定 class Consumer 回调；hello→goodbye 必须由父 state 更新正常推进。 */
         render() {
           Scheduler.log('App');
           return (
@@ -1616,11 +1617,11 @@ describe('ReactNewContext', () => {
     it('warns when reading context inside render phase class setState updater', async () => {
       const ThemeContext = React.createContext('light');
 
-      /** 定义 Cls 类 fixture，制造 class/PureComponent/legacy 边界，用于“class setState updater 中非法读取 Context 的诊断”。 */
+      /** 在 render 内 setState 并在 updater 中读 Context 的非法调用 fixture，state 初值为空对象。 */
       class Cls extends React.Component {
         /** Cls.state 保存驱动本场景的实例 state，区分组件更新与 Context 传播来源。 */
         state = {};
-        /** Cls.render 渲染当前 props/state/Context 并暴露可观察输出，用于“class setState updater 中非法读取 Context 的诊断”。 */
+        /** 在 render 内提交 updater 并让 updater 读取 Context，刻意同时触发 render-phase 更新和非法读取诊断。 */
         render() {
           this.setState(() => {
             readContext(ThemeContext);
@@ -1656,9 +1657,9 @@ describe('ReactNewContext', () => {
      */
     it('throws when used in a class component', async () => {
       const Context = React.createContext(0);
-      /** 定义 Foo 类 fixture，制造 class/PureComponent/legacy 边界，用于“class 组件调用 useContext 时抛错”。 */
+      /** 刻意在类组件 render 中调用 useContext 的非法 Hook fixture。 */
       class Foo extends React.Component {
-        /** Foo.render 渲染当前 props/state/Context 并暴露可观察输出，用于“class 组件调用 useContext 时抛错”。 */
+        /** 刻意在类 render 调用 useContext，验证 class 使用的 dispatcher 抛 Invalid hook call。 */
         render() {
           return useContext(Context);
         }
@@ -1680,11 +1681,11 @@ describe('ReactNewContext', () => {
      * Then：读取路径发出不支持 Consumer 包装对象的开发态告警。
      *
      * 验证机制：assertConsoleErrorDev 匹配建议改用 useContext(Context) 的诊断。
-     * 对应源码：`ReactFiberNewContext.js` 的 `readContextForConsumer()` 开发态类型检查。
+     * 对应源码：`ReactHooks.js` 的 useContext() 参数检查；随后由 renderer 读取 Context。
      */
     it('warns when passed a consumer', async () => {
       const Context = React.createContext(0);
-      /** Foo 构造目标非法或告警调用位置，用于“useContext 接收 Context.Consumer 时告警”。 */
+      /** Foo 构造目标非法或告警调用位置。 */
       function Foo() {
         return useContext(Context.Consumer);
       }
@@ -1719,7 +1720,7 @@ describe('ReactNewContext', () => {
         return children(contextValue);
       }
 
-      /** 定义 App 类 fixture，制造 class/PureComponent/legacy 边界，用于“useContext 在祖先未 bailout 时不按引用相等跳过自身更新”。 */
+      /** 驱动 hello→goodbye 的父类组件，函数消费者在固定 Context 值下仍须处理正常父更新。 */
       class App extends React.Component {
         /** App.state 保存驱动本场景的实例 state，区分组件更新与 Context 传播来源。 */
         state = {
@@ -1732,7 +1733,7 @@ describe('ReactNewContext', () => {
           return <span prop={this.state.text} />;
         };
 
-        /** App.render 渲染当前 props/state/Context 并暴露可观察输出，用于“useContext 在祖先未 bailout 时不按引用相等跳过自身更新”。 */
+        /** 发布不变 value 并把稳定 renderConsumer 传给函数 Consumer；父文本 state 变化仍须重跑输出。 */
         render() {
           Scheduler.log('App');
           return (

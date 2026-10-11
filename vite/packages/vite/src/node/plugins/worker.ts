@@ -27,7 +27,7 @@ import { cleanUrl } from '../../shared/utils'
 import type { Logger } from '../logger'
 import { fileToUrl, toOutputFilePathInJSForBundledDev } from './asset'
 
-/** 描述一个 worker 入口产物及其关联资源和内容哈希。 */
+/** 描述一个 worker 入口产物、关联资源与监听文件。 */
 type WorkerBundle = {
   /** worker 入口在子构建中的输出文件名。 */
   entryFilename: string
@@ -45,7 +45,10 @@ type WorkerBundle = {
 type WorkerBundleAsset = {
   /** 产物中的最终文件名。 */
   fileName: string
-  /** @deprecated */
+  /**
+   * 子构建输出兼容保留的单个原始文件名；JS chunk/map 转为资产时设为 null，主构建按已确定的 fileName 发射。
+   * @deprecated 使用 originalFileNames 表示全部原始来源。
+   */
   originalFileName: string | null
   /** 该产物关联的全部原始源文件名。 */
   originalFileNames: string[]
@@ -62,12 +65,12 @@ type WorkerBundleAsset = {
  */
 class WorkerOutputCache {
   /**
-   * 按输入 id 保存 worker bundle，使同一个 worker 文件只打包一次。
+   * 按输入 id 缓存已完成的 worker bundle，后续访问可直接复用。
    */
   private bundles = new Map</* inputId */ string, WorkerBundle>()
   /** 所有 worker bundle 产生、等待主构建发射的资源。 */
   private assets = new Map<string, WorkerBundleAsset>()
-  /** 从 worker 入口文件名映射到占位哈希。 */
+  /** 从占位哈希反查 worker 入口文件名。 */
   private fileNameHash = new Map<
     /* hash */ string,
     /* entryFilename */ string
@@ -99,7 +102,7 @@ class WorkerOutputCache {
     return bundle
   }
 
-  /** 按文件名保存 worker 资源；内容冲突时保留先到值并报告警告。 */
+  /** 按文件名保存 worker 资源；内容冲突时警告，并用后到资源覆盖缓存。 */
   saveAsset(asset: WorkerBundleAsset, logger: Logger) {
     const duplicateAsset = this.assets.get(asset.fileName)
     if (duplicateAsset) {
@@ -132,7 +135,7 @@ class WorkerOutputCache {
     }
   }
 
-  /** 删除一个 worker bundle 及其派生索引，并清理不再被引用的资源。 */
+  /** 删除 bundle 的入口及哈希索引，再按剩余 bundle 的引用清理其关联资源。 */
   private removeBundle(file: string) {
     const bundle = this.bundles.get(file)
     if (!bundle) return
@@ -151,7 +154,7 @@ class WorkerOutputCache {
     }
   }
 
-  /** 取得仍有效的 worker bundle；若已失效则先完成清理。 */
+  /** 直接读取 worker bundle；调用方须先调用 removeBundleIfInvalidated 清理失效项。 */
   getWorkerBundle(file: string) {
     return this.bundles.get(file)
   }
@@ -179,12 +182,12 @@ class WorkerOutputCache {
 /** 区分 classic、module 与显式忽略转换的 Worker 类型。 */
 export type WorkerType = 'classic' | 'module' | 'ignore'
 
-/** 识别源码中的 Worker 与 SharedWorker 构造器。 */
+/** 识别导入 ID 中的 worker/sharedworker 查询参数。 */
 export const workerOrSharedWorkerRE: RegExp =
   /(?:\?|&)(worker|sharedworker)(?:&|$)/
 /** 从内部 worker 文件请求中提取 worker 类型。 */
 const workerFileRE = /(?:\?|&)worker_file&type=(\w+)(?:&|$)/
-/** 识别要求把 worker bundle 内联为 data URL 的查询参数。 */
+/** 识别内联 worker 请求；Worker 使用 blob/data URL，SharedWorker 使用 data URL。 */
 const inlineRE = /[?&]inline\b/
 
 /** 标记内部 worker 文件请求的稳定查询参数。 */
@@ -196,7 +199,7 @@ const workerOutputCaches = new WeakMap<ResolvedConfig, WorkerOutputCache>()
  * 把 worker 入口作为独立的客户端子构建打包，并缓存其入口与关联资源。
  *
  * `bundleChain` 记录嵌套 worker 的入口链，从而在递归构建前报告循环引用；
- * 子构建自己的插件、target、格式和 sourcemap 均来自 `config.worker`。
+ * 插件与格式来自 `config.worker`；target、压缩和 sourcemap 读取解析后的 worker Environment build 配置。
  */
 async function bundleWorkerEntry(
   config: ResolvedConfig,
@@ -403,7 +406,7 @@ export function emitWorkerAssetsForBundledDev(
 export function webWorkerPostPlugin(_config: ResolvedConfig): Plugin {
   return {
     name: 'vite:worker-post',
-    /** worker 后处理仅进入 bundled 环境，以便改写子构建产物占位符。 */
+    /** bundled IIFE 使用原生 import.meta 改写插件；其他 bundled 格式跳过，非 bundled 使用下方 transform。 */
     applyToEnvironment(environment) {
       if (environment.config.isBundled) {
         if (environment.config.worker.format === 'iife') {
@@ -418,7 +421,7 @@ export function webWorkerPostPlugin(_config: ResolvedConfig): Plugin {
         code: 'import.meta',
       },
       order: 'post',
-      /** 替换 worker chunk 中的资源 URL，并按输出格式补入运行时环境垫片。 */
+      /** 把 IIFE worker 的 import.meta.url 换成 self.location.href，其他 import.meta 访问改用兼容对象。 */
       async handler(code, id) {
         // IIFE worker 中没有 `import.meta`，必须在输出前改写。
         if (this.environment.config.worker.format === 'iife') {
@@ -469,9 +472,9 @@ export function webWorkerPostPlugin(_config: ResolvedConfig): Plugin {
 /**
  * 把 `?worker` / `?sharedworker` 导入转换成构造器包装模块，并管理 worker 子构建。
  *
- * 开发模式只生成带 `worker_file&type=...` 的 URL，由 transform 阶段注入运行时；
- * 构建模式则独立打包 worker，用占位符跨越主构建，最后在 `renderChunk` 中按
- * 当前输出格式换成最终公共路径或相对路径。
+ * 非 bundled 环境生成带 `worker_file&type=...` 的 URL，由 transform 阶段注入环境代码；
+ * bundled 环境（含 bundled dev）独立打包 worker。正式构建用占位符跨越主构建并在
+ * renderChunk 计算最终 URL，bundled dev 在 load 中补发资源并直接取得输出地址。
  */
 export function webWorkerPlugin(config: ResolvedConfig): Plugin {
   const isBuild = config.command === 'build'
@@ -483,7 +486,7 @@ export function webWorkerPlugin(config: ResolvedConfig): Plugin {
   return {
     name: 'vite:worker',
 
-    /** 为当前构建创建新的 worker 输出缓存，隔离监听模式的前后两轮产物。 */
+    /** 主构建每轮清空已发射文件标记；worker bundle 缓存继续复用，由 watchChange 按依赖失效。 */
     buildStart() {
       if (isWorker) return
       emittedAssets.clear()
@@ -611,11 +614,11 @@ export function webWorkerPlugin(config: ResolvedConfig): Plugin {
 
     transform: {
       filter: { id: workerFileRE },
-      /** 识别 worker 请求并生成包装模块，开发态直接返回服务 URL。 */
+      /** 为 worker_file 入口前置环境代码；按 type 选择 importScripts、ESM import 或已转换的 env 内容。 */
       handler(raw, id) {
         const workerFileMatch = workerFileRE.exec(id)
         if (workerFileMatch) {
-          // 构造器导入会携带具体 `query.type`；其他形式按 ESM worker 处理。
+          // worker_file query 携带入口加载类型，决定环境代码使用的语法。
           const workerType = workerFileMatch[1] as WorkerType
           let injectEnv = ''
 
@@ -655,10 +658,10 @@ export function webWorkerPlugin(config: ResolvedConfig): Plugin {
 
     ...(isBuild
       ? {
-          /** 把 worker 资源占位符改写为最终 URL 或 data URL，并生成必要映射。 */
+          /** 把外置 worker 入口占位符改写为公开 URL 或相对当前 chunk 的运行时表达式。 */
           renderChunk(code, chunk, outputOptions) {
             let s: MagicString
-            /** 惰性创建 worker chunk 的 MagicString 结果，避免无替换时分配映射。 */
+            /** 已创建 MagicString 时返回代码及可选映射；没有匹配占位符时返回 undefined。 */
             const result = () => {
               return (
                 s && {

@@ -1,68 +1,65 @@
-/**
- * 测试阅读说明：本文件验证 `runtime-core/h` 的运行时行为。
- * “测试组”概括共享前置条件，“测试场景”说明当前输入、边界或历史回归目标；具体预期以断言为准。
- */
 import { h } from '../src/h'
 import { createVNode } from '../src/vnode'
 import type { RawSlots } from '../src/componentSlots'
 
-// Since h is a thin layer on top of createVNode, we are only testing its
-// own logic here. Details of vnode creation is tested in vnode.spec.ts.
-// 测试组：h 函数各重载对 type、props、children 和 slot 参数的消歧。
+// h 的参数消歧：区分 props、普通 children、单个 VNode 和 slots。
 describe('renderer: h', () => {
-  // 测试场景：仅输入。
+  /** 只传 div 类型并与 createVNode 的默认结果比较，验证 h 省略参数时不增加 props 或 children。 */
   test('type only', () => {
     expect(h('div')).toMatchObject(createVNode('div'))
   })
 
-  // 测试场景：类型+props。
+  /** 向 h 传入 div 与 id:foo 普通对象，对比 createVNode 的 props，验证二参对象被识别为属性。 */
   test('type + props', () => {
     expect(h('div', { id: 'foo' })).toMatchObject(
       createVNode('div', { id: 'foo' }),
     )
   })
 
-  // 测试场景：类型 + 省略 props。
+  /** 分别把数组、默认插槽函数、单个 VNode 和文本放在第二参数，与 createVNode 对照；单个 VNode 应包装成数组，其余按 children 传递。 */
   test('type + omit props', () => {
-    // array
+    // 数组 children
     expect(h('div', ['foo'])).toMatchObject(createVNode('div', null, ['foo']))
-    // default slot
+    // 默认插槽。
     const Component = { template: '<br />' }
+    /** 不输出内容的插槽夹具，仅用函数身份检验 h 对插槽参数的识别。 */
     const slot = () => {}
     expect(h(Component, slot)).toMatchObject(createVNode(Component, null, slot))
-    // single vnode
+    // 单个 VNode。
     const vnode = h('div')
     expect(h('div', vnode)).toMatchObject(createVNode('div', null, [vnode]))
-    // text
+    // 文本 children
     expect(h('div', 'foo')).toMatchObject(createVNode('div', null, 'foo'))
   })
 
-  // 测试场景：h(type, props, children) 三参数重载。
+  /** 显式传入 props，再分别传数组、插槽对象/函数、单个 VNode 和文本；逐项对比 createVNode，验证三参调用的 children 处理。 */
   test('type + props + children', () => {
-    // array
+    // 数组 children
     expect(h('div', {}, ['foo'])).toMatchObject(createVNode('div', {}, ['foo']))
-    // slots
+    // 插槽对象
     const slots = {} as RawSlots
     expect(h('div', {}, slots)).toMatchObject(createVNode('div', {}, slots))
     const Component = { template: '<br />' }
     expect(h(Component, {}, slots)).toMatchObject(
       createVNode(Component, {}, slots),
     )
-    // default slot
+    // 默认插槽。
+    /** 不输出内容的插槽夹具，仅用函数身份检验 h 对插槽参数的识别。 */
     const slot = () => {}
     expect(h(Component, {}, slot)).toMatchObject(
       createVNode(Component, {}, slot),
     )
-    // single vnode
+    // 单个 VNode。
     const vnode = h('div')
     expect(h('div', {}, vnode)).toMatchObject(createVNode('div', {}, [vnode]))
-    // text
+    // 文本 children
     expect(h('div', {}, 'foo')).toMatchObject(createVNode('div', {}, 'foo'))
   })
 
-  // 测试场景：命名为 slots，props 为空。
+  /** 组件使用 null 占据 props 参数，把 foo 插槽放到第三参数；对比 createVNode 的插槽记录，验证具名插槽的调用位置。 */
   test('named slots with null props', () => {
     const Component = { template: '<br />' }
+    /** 不输出内容的插槽夹具，仅用函数身份检验 h 对插槽参数的识别。 */
     const slot = () => {}
     expect(
       h(Component, null, {
@@ -75,10 +72,7 @@ describe('renderer: h', () => {
     )
   })
 
-  // for simple JSX compat
-  // note this signature is not supported in types; it's purely for usage with
-  // compiled code.
-  // 测试场景：支持可变子项。
+  /** 运行时向 h 连续传两个 span VNode，检查 children 按顺序包含二者，验证编译 JSX 所需的可变参数收集；该签名由类型错误标记说明。 */
   test('support variadic children', () => {
     // @ts-expect-error
     const vnode = h('div', null, h('span'), h('span'))

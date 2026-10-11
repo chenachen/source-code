@@ -24,7 +24,7 @@ export type Node = React$Node;
 export type Context<T> = React.Context<T>;
 /** 把子树渲染到另一个宿主容器的 Portal 记录。 */
 export type Portal = React$Portal;
-/** 接收宿主实例或 `null` 的回调 ref。 */
+/** 接收实例、命令式句柄或 `null` 的回调 ref；可返回解绑时调用的清理函数。 */
 // eslint-disable-next-line no-undef
 export type RefSetter<-I> = React.RefSetter<I>;
 /** 组件 `C` 经 JSX 属性规则归一化后的可传入属性。 */

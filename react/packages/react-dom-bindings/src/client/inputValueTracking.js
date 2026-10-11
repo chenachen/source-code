@@ -9,22 +9,22 @@
 
 import {checkFormFieldValueStringCoercion} from 'shared/CheckStringCoercion';
 
-/** `ValueTracker` 定义跟踪表单控件值并识别用户态变化使用的数据契约；字段共同限定所有权、生命周期与跨模块传递边界。 */
+/** 记录 input 的 value 或 checked 的已观察字符串，并提供解除属性拦截能力。 */
 type ValueTracker = {
-  /** `ValueTracker.getValue` 约定跟踪表单控件值并识别用户态变化的可调用能力；实现必须保持参数所有权与宿主副作用边界。 */
+  /** 读取已观察值，不重新读 DOM。 */
   getValue(): string,
-  /** `ValueTracker.setValue` 约定跟踪表单控件值并识别用户态变化的可调用能力；实现必须保持参数所有权与宿主副作用边界。 */
+  /** 更新已观察值基线。 */
   setValue(value: string): void,
-  /** `ValueTracker.stopTracking` 约定跟踪表单控件值并识别用户态变化的可调用能力；实现必须保持参数所有权与宿主副作用边界。 */
+  /** 解除节点与 tracker 关联，并移除节点自有的属性拦截。 */
   stopTracking(): void,
 };
-/** `ElementWithValueTracker` 定义跟踪表单控件值并识别用户态变化使用的数据契约；字段共同限定所有权、生命周期与跨模块传递边界。 */
+/** 附有 React 值跟踪器的 input/textarea DOM 节点。 */
 interface ElementWithValueTracker extends HTMLInputElement {
-  /** `ElementWithValueTracker._valueTracker` 表示受控表单值及其默认值边界；仅用于跟踪表单控件值并识别用户态变化。 */
+  /** 节点当前的值跟踪器；停止跟踪后置 null。 */
   _valueTracker?: ?ValueTracker;
 }
 
-/** `isCheckable` 判断适用条件并返回布尔结果，不写入宿主状态；用于跟踪表单控件值并识别用户态变化。 */
+/** checkbox/radio 跟踪 checked，其他控件跟踪 value。 */
 function isCheckable(elem: HTMLInputElement) {
   const type = elem.type;
   const nodeName = elem.nodeName;
@@ -35,17 +35,17 @@ function isCheckable(elem: HTMLInputElement) {
   );
 }
 
-/** `getTracker` 查询并返回所需值；缺失或不适用时走显式回退；用于跟踪表单控件值并识别用户态变化。 */
+/** 读取节点已经安装的值跟踪器。 */
 function getTracker(node: ElementWithValueTracker) {
   return node._valueTracker;
 }
 
-/** `detachTracker` 更新对应关联或宿主状态，并保持后续读取看到一致快照；用于跟踪表单控件值并识别用户态变化。 */
+/** 清空节点的 tracker 引用。 */
 function detachTracker(node: ElementWithValueTracker) {
   node._valueTracker = null;
 }
 
-/** `getValueFromNode` 查询并返回所需值；缺失或不适用时走显式回退；用于跟踪表单控件值并识别用户态变化。 */
+/** checkbox/radio 返回 checked 的 true/false 字符串；其他节点返回 value。 */
 function getValueFromNode(node: HTMLInputElement): string {
   let value = '';
   if (!node) {
@@ -61,7 +61,13 @@ function getValueFromNode(node: HTMLInputElement): string {
   return value;
 }
 
-/** `trackValueOnNode` 更新对应关联或宿主状态，并保持后续读取看到一致快照；用于跟踪表单控件值并识别用户态变化。 */
+/**
+ * 包装节点原型的 value/checked getter 和 setter，使脚本赋值更新已观察基线，浏览器用户编辑留待事件检测。
+ * 已有同名自有属性或缺少原型访问器时不安装，避免覆盖外部拦截；调用者仍可比较 DOM，但 change 可能多报。
+ * tracker 持有闭包字符串，stopTracking 删除自有属性恢复原型访问器；不改原型本身。
+ *
+ * @param currentValue - 普通挂载取当前 DOM 值，hydration 取初始 props 期望值。
+ */
 function trackValueOnNode(
   node: any,
   valueField: 'checked' | 'value',
@@ -88,13 +94,13 @@ function trackValueOnNode(
   Object.defineProperty(node, valueField, {
     configurable: true,
     // $FlowFixMe[missing-this-annot]
-    /** `trackValueOnNode.get` 查询并返回所需值；缺失或不适用时走显式回退；用于跟踪表单控件值并识别用户态变化。 */
+    /** 透传原生 property getter。 */
     get: function () {
       return get.call(this);
     },
     // $FlowFixMe[missing-local-annot]
     // $FlowFixMe[missing-this-annot]
-    /** `trackValueOnNode.set` 更新对应关联或宿主状态，并保持后续读取看到一致快照；用于跟踪表单控件值并识别用户态变化。 */
+    /** 先记录脚本赋值的字符串基线，再调用原生 setter。 */
     set: function (value) {
       if (__DEV__) {
         checkFormFieldValueStringCoercion(value);
@@ -112,18 +118,18 @@ function trackValueOnNode(
   });
 
   const tracker = {
-    /** `trackValueOnNode.getValue` 查询并返回所需值；缺失或不适用时走显式回退；用于跟踪表单控件值并识别用户态变化。 */
+    /** 读取闭包保存的已观察字符串。 */
     getValue() {
       return currentValue;
     },
-    /** `trackValueOnNode.setValue` 更新对应关联或宿主状态，并保持后续读取看到一致快照；用于跟踪表单控件值并识别用户态变化。 */
+    /** 仅更新 tracker 基线，不写 DOM property。 */
     setValue(value: string) {
       if (__DEV__) {
         checkFormFieldValueStringCoercion(value);
       }
       currentValue = '' + value;
     },
-    /** `trackValueOnNode.stopTracking` 清理对应状态或关联，重复清理保持安全；用于跟踪表单控件值并识别用户态变化。 */
+    /** 清空 tracker 引用并删除自有 property，让节点恢复原型 getter/setter。 */
     stopTracking() {
       detachTracker(node);
       delete node[valueField];
@@ -132,7 +138,7 @@ function trackValueOnNode(
   return tracker;
 }
 
-/** `track` 更新对应关联或宿主状态，并保持后续读取看到一致快照；用于跟踪表单控件值并识别用户态变化。 */
+/** 尚无 tracker 时，以当前 DOM value/checked 作为基线安装属性拦截。 */
 export function track(node: ElementWithValueTracker) {
   if (getTracker(node)) {
     return;
@@ -146,7 +152,10 @@ export function track(node: ElementWithValueTracker) {
   node._valueTracker = trackValueOnNode(node, valueField, initialValue);
 }
 
-/** `trackHydrated` 更新对应关联或宿主状态，并保持后续读取看到一致快照；用于跟踪表单控件值并识别用户态变化。 */
+/**
+ * 以初始 props 值安装 tracker，并比较已保留的 DOM 值，供 hydration-change 路径识别 hydration 前的编辑。
+ * 已有 tracker 时不重复安装并返回 false；返回的差异比较不依赖拦截是否成功安装。
+ */
 export function trackHydrated(
   node: ElementWithValueTracker,
   initialValue: string,
@@ -176,7 +185,7 @@ export function trackHydrated(
   return currentValue !== expectedValue;
 }
 
-/** `updateValueIfChanged` 更新对应关联或宿主状态，并保持后续读取看到一致快照；用于跟踪表单控件值并识别用户态变化。 */
+/** 比较 DOM 与 tracker 基线，变化时更新基线并返回 true；无 tracker 时保守返回 true。 */
 export function updateValueIfChanged(node: ElementWithValueTracker): boolean {
   if (!node) {
     return false;
@@ -198,7 +207,7 @@ export function updateValueIfChanged(node: ElementWithValueTracker): boolean {
   return false;
 }
 
-/** `stopTracking` 清理对应状态或关联，重复清理保持安全；用于跟踪表单控件值并识别用户态变化。 */
+/** 有 tracker 时解除节点的属性拦截和 tracker 引用。 */
 export function stopTracking(node: ElementWithValueTracker) {
   const tracker = getTracker(node);
   if (tracker) {

@@ -177,7 +177,7 @@ const tokenizer = new Tokenizer(stack, {
     }
   },
 
-  /** 普通 `>` 结束时完成元素分类并把非 void 标签压栈。 */
+  /** 普通 `>` 结束时把元素追加到父节点，并把非 void 标签压入开放栈。 */
   onopentagend(end) {
     endOpenTag(end)
   },
@@ -539,7 +539,10 @@ const stripParensRE = /^\(|\)$/g
 
 /**
  * 把 `v-for="(value, key, index) in source"` 拆成数据源和别名表达式。
- * 每个子表达式保留相对原模板的精确 loc，后续表达式转换报错能指向具体别名。
+ * 先以 in/of 正则拆左右两侧，再从左侧尾部提取至多 key/index；缺少可匹配的分隔符
+ * 返回 undefined，空别名保持 undefined，source 仍可为空，错误诊断由转换阶段继续判断。
+ * 子表达式按源码中的匹配偏移建立 loc；value/key/index 按参数模式解析，source 按表达式
+ * 模式解析。finalized 初始 false，processFor 才做前缀和作用域处理，避免重复完成。
  */
 function parseForExpression(
   input: SimpleExpressionNode,
@@ -669,7 +672,11 @@ function onText(content: string, start: number, end: number) {
 
 /**
  * 完成元素节点：确定源码范围、元素语义类型、空白规则和兼容模式行为。
- * `isImplied` 表示因祖先闭合而被隐式关闭，例如 `<div><span></div>` 中的 span。
+ * end 是 tokenizer 报告的终止字符偏移；通过 lookAhead 找到最终 >。isImplied 表示因
+ * 祖先闭合而被隐式关闭，例如 `<div><span></div>` 中的 span，范围止于祖先闭标签前。
+ * 先定范围和元素类型、再在 pre/v-pre 状态尚生效时整理 children，最后恢复边界状态；
+ * RAWTEXT/RCDATA 关闭回调执行期间 inRCDATA 仍为 true，因此跳过空白压缩。异常抛出
+ * 不经过 finally，关闭前的错误可能留下模块级 pre/v-pre 状态。
  */
 function onCloseTag(el: ElementNode, end: number, isImplied = false) {
   // 隐式闭合不能把祖先结束标签算进当前元素范围，需要回退到 `<`。
@@ -680,7 +687,7 @@ function onCloseTag(el: ElementNode, end: number, isImplied = false) {
   }
 
   if (tokenizer.inSFCRoot) {
-    // 根块 innerLoc 只覆盖第一个到最后一个 child；空块则保持零长度范围。
+    // 根块 innerLoc 从开标签 > 后起，到最后一个 child 的源码终点；空块保持零长度范围。
     if (el.children.length) {
       el.innerLoc!.end = extend({}, el.children[el.children.length - 1].loc.end)
     } else {
@@ -902,9 +909,10 @@ const windowsNewlineRE = /\r\n/g
 /**
  * 按 `whitespace` 选项整理同一父节点下的文本空白。
  *
- * 只删除不会影响浏览器行内布局的边界/节点间空白；可能分隔两段行内内容的空白保留为
- * 单个空格。`<pre>` 不压缩内容，但仍把 CRLF 统一为 LF，保证 SSR 服务端字符串与浏览器
- * 解析后的 DOM 文本一致。
+ * 在元素闭合时整理其完整 children；扫描结束后再整理根 children。首尾纯空白删除；
+ * condense 模式还删除元素间含换行的纯空白，其余纯空白合并成一个空格。规则基于
+ * AST 邻接关系，不分析 CSS 行内布局；`<pre>` 保留内容并把 CRLF 统一为 LF，
+ * 使 SSR 字符串中的换行与浏览器解析后的 DOM 文本一致。
  */
 function condenseWhitespace(nodes: TemplateChildNode[]): TemplateChildNode[] {
   const shouldCondense = currentOptions.whitespace !== 'preserve'
@@ -916,7 +924,7 @@ function condenseWhitespace(nodes: TemplateChildNode[]): TemplateChildNode[] {
         if (isAllWhitespace(node.content)) {
           const prev = nodes[i - 1] && nodes[i - 1].type
           const next = nodes[i + 1] && nodes[i + 1].type
-          // 以下空白可安全删除：首尾空白；压缩模式下两个注释之间、注释与元素之间，
+          // 按空白策略删除：首尾空白；压缩模式下两个注释之间、注释与元素之间，
           // 或两个元素之间且源码含换行的纯空白。
           if (
             !prev ||
@@ -994,7 +1002,10 @@ function getLoc(start: number, end?: number): SourceLocation {
   }
 }
 
-/** 用当前输入重新构造 location，避免调用方共享并误改原位置对象。 */
+/**
+ * 按原 loc 偏移在当前 parser 输入和换行表中重新创建位置对象，避免共享 start/end。
+ * 依赖最近一轮 baseParse 的输入；不能拿另一轮模板的 loc 在这里独立克隆。
+ */
 export function cloneLoc(loc: SourceLocation): SourceLocation {
   return getLoc(loc.start.offset, loc.end.offset)
 }
@@ -1051,7 +1062,10 @@ enum ExpParseMode {
 
 /**
  * 创建简单表达式，并在 Node 前缀模式下用 Babel 预解析语法树。
- * AST 缓存在节点上供 transformExpression 复用；简单标识符走快速路径，以 `null` 标记。
+ * AST 缓存在节点上供 transformExpression 复用；简单标识符走快速路径，以 null 标记。
+ * 非浏览器、prefixIdentifiers、非静态、非 Skip 且非空内容才预解析，并始终追加
+ * typescript Babel 插件。失败缓存 false 再调用 onError；若回调返回，保留表达式节点
+ * 供后续转换恢复，若回调抛出则中断本轮解析。
  */
 function createExp(
   content: SimpleExpressionNode['content'],
@@ -1101,7 +1115,11 @@ function emitError(code: ErrorCodes, index: number, message?: string) {
   )
 }
 
-/** 清空上一次解析的 tokenizer 与节点组装状态。 */
+/**
+ * 重置 tokenizer、开放栈和属性组装缓冲。pre/v-pre 状态由元素关闭时恢复。
+ * 默认 onError 若在边界元素关闭前抛出，这些状态会残留：例如解析
+ * `<div v-pre><span>` 抛错后再次解析 `{{ msg }}`，插值会被当作 Text。
+ */
 function reset() {
   tokenizer.reset()
   currentOpenTag = null
@@ -1117,6 +1135,10 @@ function reset() {
  *
  * 此阶段只完成词法结构、元素/指令归一化、表达式预解析和空白整理，不生成 VNode 调用。
  * 平台编译器通过 ParserOptions 提供 namespace、void 标签、自定义元素等规则。
+ * 只覆盖非 null/undefined 选项；每轮重置定界符和 tokenizer，再由关闭回调逐元素整理
+ * 空白，扫描结束另整理根。onError 默认抛出；返回型回调允许恢复 AST，但不能在回调
+ * 内重入本函数，因为 currentInput/currentRoot/stack 是共享状态。reset 不清 pre/v-pre
+ * 状态，异常退出后再次调用的具体残留见 reset 注释。
  *
  * @param input 完整模板源码
  * @param options 平台解析规则与错误处理选项

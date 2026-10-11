@@ -1,3 +1,4 @@
+/** 根路径列出四个 Wasm 示例；其他已知路径动态导入对应 render，分别覆盖初始化器轻/重资源与直接 Wasm 导入，未知路径返回 undefined。 */
 export async function render(url) {
   switch (url) {
     case '/':

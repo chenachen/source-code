@@ -8,7 +8,7 @@ import { ssrTransform } from '../ssrTransform'
 import { createServer } from '../..'
 
 /**
- * 阅读目标：把这些用例当作 `ssrTransform` 输出协议的可执行规格。
+ * 执行无上游 Source Map 的 SSR 转换，并把同一 code 同时作为转换输入与 originalCode。
  *
  * 输入覆盖 import/export 改写、词法作用域、循环依赖所需的提升与 live binding、
  * `import.meta`/动态导入，以及 sourcemap。快照中的 `__vite_ssr_*__` 名称分别对应
@@ -443,6 +443,7 @@ test('dynamic import', async () => {
   expect(result?.dynamicDeps).toEqual(['./foo'])
 })
 
+// #2221：方法定义键与导入同名时不能替换；否则 `namespace.fn() {}` 不是合法方法语法。
 /**
  * 场景：类方法名与具名导入 fn 相同，方法体又调用该导入。
  * 验证目标：方法定义键保持 `fn`，只有方法体中的值引用被改写。
@@ -531,7 +532,7 @@ test('rewrite variable in string interpolation in function nested arguments', as
   expect(result?.deps).toEqual(['vue'])
 })
 
-// #6520：解构形参的默认值位于新绑定生效前，需要改写其中的 import 引用。
+// #6520：解构形参默认值里的 fn 仍指向外层 import，不能把它登记成新参数绑定。
 /**
  * 场景：解构形参属性默认值直接引用外层导入 fn。
  * 验证目标：默认值求值位置使用依赖成员，函数体的形参作用域边界保持正确。
@@ -666,7 +667,7 @@ test('do not rewrite catch clause', async () => {
   expect(result?.deps).toEqual(['./dependency'])
 })
 
-// #2221：`extends` 求值时需要稳定标识符，不能直接使用一般表达式式改写。
+// 类声明继承导入值时插入本地别名；类表达式的 extends 则可直接改写为属性读取。
 /**
  * 场景：普通类和导出类都继承具名导入的父类 Foo。
  * 验证目标：转换器在首次 extends 前建立稳定本地别名，两种类均通过该别名继承。
@@ -702,7 +703,7 @@ test('should declare variable for imported super class', async () => {
 // #4049：默认导出的匿名/具名函数与类需要分别保持名称、提升和自引用语义。
 /**
  * 场景：默认导出分别使用匿名函数、匿名类、具名函数与具名类。
- * 验证目标：匿名值使用内部绑定；具名声明保留名称、提升及后续本地引用。
+ * 验证目标：匿名值使用内部绑定；具名声明保留名称和后续本地引用，函数仍可提升、类仍有 TDZ。
  */
 test('should handle default export variants', async () => {
   // 默认匿名函数：创建内部临时绑定。
@@ -1680,7 +1681,7 @@ console.log(foo + 2)
 
 /**
  * 场景：默认导出立即调用具名导入，随后 namespace re-export 并读取导出名。
- * 验证目标：依赖协议在首次 getter/调用前完成登记，default 与 namespace 导出顺序稳定。
+ * 验证目标：getter 注册被提前；依赖导入先于 default 的 foo() 调用，namespace 导出指向其协议结果。
  */
 test('identity function is declared before used', async () => {
   expect(

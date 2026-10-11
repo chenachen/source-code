@@ -17,24 +17,21 @@ import {
 
 import ReactDOMSharedInternals from 'shared/ReactDOMSharedInternals';
 
-/** `setCurrentUpdatePriority` 更新对应关联或宿主状态，并保持后续读取看到一致快照；用于桥接 DOM 事件优先级与 reconciler 更新优先级。 */
+/** 写入 DOM shared internals 的当前更新优先级，供 reconciler 请求 lane。 */
 export function setCurrentUpdatePriority(
   newPriority: EventPriority,
-  //当函数的参数个数为 1 时，Closure 将始终不会将其内联
-  //然而，当它的元数为2时，即使第二个参数在每次调用时被省略
-  //调用点似乎会内联它，即使函数的内部长度
-  //要长得多。我希望这在各个版本中足够一致，可以依赖。
+  // 保留未使用的第二参数，意在让 Closure 按二参数函数进行内联优化。
   IntentionallyUnusedArgument?: empty,
 ): void {
   ReactDOMSharedInternals.p /*当前更新优先级*/ = newPriority;
 }
 
-/** `getCurrentUpdatePriority` 查询并返回所需值；缺失或不适用时走显式回退；用于桥接 DOM 事件优先级与 reconciler 更新优先级。 */
+/** 读取当前显式更新优先级；NoEventPriority 表示尚未设置。 */
 export function getCurrentUpdatePriority(): EventPriority {
   return ReactDOMSharedInternals.p; /*当前更新优先级*/
 }
 
-/** `resolveUpdatePriority` 查询并返回所需值；缺失或不适用时走显式回退；用于桥接 DOM 事件优先级与 reconciler 更新优先级。 */
+/** 优先取显式更新优先级，否则按 window.event 映射；无原生事件则取 DefaultEventPriority。 */
 export function resolveUpdatePriority(): EventPriority {
   const updatePriority = ReactDOMSharedInternals.p; /*当前更新优先级*/
   if (updatePriority !== NoEventPriority) {
@@ -47,7 +44,7 @@ export function resolveUpdatePriority(): EventPriority {
   return getEventPriority(currentEvent.type);
 }
 
-/** `runWithPriority` 执行该模块的单一职责，并把副作用限制在当前 DOM/Fiber 边界；用于桥接 DOM 事件优先级与 reconciler 更新优先级。 */
+/** 在指定更新优先级下执行回调，finally 还原原优先级。 */
 export function runWithPriority<T>(priority: EventPriority, fn: () => T): T {
   const previousPriority = getCurrentUpdatePriority();
   try {

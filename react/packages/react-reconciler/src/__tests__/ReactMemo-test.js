@@ -161,22 +161,9 @@ describe('memo', () => {
 
       /** Given–When–Then：Given SimpleMemo、forwardRef Memo 与带 Indirection Memo 接收相同 prop；When依次改变 prop、相同 prop bailout、再与本地 state 同批更新；Then三种 Fiber 布局对 props 对象复用行为一致。通过 useRef 身份日志验证 MemoComponent/SimpleMemoComponent 等价。 */
       it('consistent behavior for reusing props object across different function component types', async () => {
-        // 此用例涉及实现细节：当无法 bailout 时，
-        // React 并不强保证更新期间 props
-        // 对象引用保持相等，例如浅相等 props
-        // 与本地 state/context 更新
-        // 同批发生的情况。
-        //
-        // 但不同 memo 包装形式应保持行为一致。
-        // 普通函数会形成 SimpleMemoComponent，
-        // forwardRef 等类型会形成 MemoComponent；
-        // 这是内部 Fiber 布局差异，
-        // 不应影响 props 对象在 bailout
-        // 与重基线中的复用。
-        //
-        // 因而本测试不规定唯一的 props 身份策略，
-        // 只要求各种 memo 形态
-        // 保持一致。
+        // SimpleMemoComponent 自身持有 Hooks；另外两种形态由 MemoComponent
+        // 包裹内层组件。本例比较三种布局在相同操作下的 props 引用复用，
+        // 并通过 effect 中的身份日志检查差异。
 
         const {useEffect, useState} = React;
 
@@ -237,7 +224,7 @@ describe('memo', () => {
           return <Text text={`MemoWithIndirection [${props.prop}${step}]`} />;
         }
 
-        /** 同步推进三种 memo 形态的本地 state，制造父 props bailout 与 child lane 并存。 */
+        /** 更新三种形态的本地 state：SimpleMemo 更新自身 lanes，另外两种 Memo wrapper 的工作位于内层 Fiber。 */
         function setLocalUpdateOnChildren(step) {
           setSimpleMemoStep(step);
           setMemoWithIndirectionStep(step);
@@ -286,9 +273,8 @@ describe('memo', () => {
         // 没有组件重新渲染。
         assertLog([]);
 
-        // 再让父级 props 仍浅相等，同时同批加入
-        // 本地 state 更新；memo 本身 bailout，
-        // 但有 child lane 的组件仍需渲染。
+        // 父 props 浅相等，同时加入本地 state 更新。SimpleMemo 自身仍需求值；
+        // 另外两种 Memo wrapper 可 bailout，再沿 childLanes 进入内层组件。
         await act(() => {
           root.render(<App prop="B" />);
           setLocalUpdateOnChildren(1);
@@ -417,7 +403,7 @@ describe('memo', () => {
         ]);
       });
 
-      /** Given–When–Then：Given memo Hook state 安排普通更新 1，同时高优先级 root render 的 props 相等而 bailout；When同一 act 冲刷；Then低优先级 state 仍提交为 1。通过输出验证 bailout 不会丢弃 child lanes。 */
+      /** Given–When–Then：Given memo Hook state 安排普通更新 1，随后 discreteUpdates 内以相同 props 重渲染根；When同一 act 冲刷；Then最终输出从 0 变 1，待处理 state 更新未丢失。SimpleMemo 的 Hooks 位于自身 Fiber，提前 bailout 时需保留自身 lanes；本例未记录中间 render 顺序。 */
       it('does not drop lower priority state updates when bailing out at higher pri (simple)', async () => {
         const {useState} = React;
 
@@ -452,7 +438,7 @@ describe('memo', () => {
         expect(root).toMatchRenderedOutput('1');
       });
 
-      /** Given–When–Then：Given带自定义 compare 的复杂 memo 安排低优先级 state，同时高优先级父 render compare 为相等；When重基线；Then state 更新仍保留并输出 1。通过复杂 MemoComponent 路径验证 child lanes。 */
+      /** Given–When–Then：Given带自定义 compare 的 memo 安排普通 state 更新，随后 discreteUpdates 内重渲染父级且 complexProp.val 仍为 1；When act 冲刷；Then最终 state 为 1。复杂 MemoComponent 将 Hooks 放在内层 Fiber，wrapper bailout 仍须保留子树工作；本例未断言比较与重渲染的中间顺序。 */
       it('does not drop lower priority state updates when bailing out at higher pri (complex)', async () => {
         const {useState} = React;
 
@@ -512,7 +498,9 @@ describe('memo', () => {
       /** Given–When–Then：Given memo 包装具名 Inner 函数；When触发 key 警告；Then消息和栈均使用 Inner。通过控制台文本验证内层函数名传播。 */
     it('should use the inner function name for the stack', async () => {
       /** 构造会触发 key 警告的 memo wrapper，用其 name/displayName 检查组件栈格式。 */
-      const MemoComponent = React.memo(function Inner(props, ref) {
+      const MemoComponent = React.memo(
+        /** 返回缺 key 的 span 数组，以有名内层函数 Inner 验证警告 component stack 的名称选择；props/ref 未消费。 */
+        function Inner(props, ref) {
         return [<span />];
       });
       ReactNoop.render(

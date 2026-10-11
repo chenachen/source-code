@@ -35,6 +35,7 @@ describe('ReactSuspense', () => {
     let completed = false;
     let resolve;
     const promise = new Promise(res => {
+      /** 先把组件读取的完成标记设为 true，再解决 Promise 并触发 Suspense 重试。 */
       resolve = () => {
         completed = true;
         res();
@@ -120,7 +121,7 @@ describe('ReactSuspense', () => {
     expect(ops).toEqual([]);
   });
 
-  /** Given–When–Then：Given同一边界含两个 thenable，依次解决 promise1/promise2；When每次重新渲染；Then callback 集合从 2 个缩为 1 个，最终清空。通过预热阶段 Set 和 Waiting/DoneDone 输出验证集合更新。 */
+  /** Given–When–Then：Given 同一边界含 promise1/promise2；When 首次挂起后依次解决两者并重渲染；Then 首轮至少报告 promise1，解决后两次报告只剩 promise2 的 Set，全部完成则不再调用 callback，输出 Waiting Tier 1→DoneDone。额外首轮期望受 alwaysThrottleRetries 控制，不把所有配置概括为固定 2→1 次数。 */
   // @gate enableSuspenseCallback
   it('2 then 1 then 0 suspense callback', async () => {
     const {
@@ -154,6 +155,7 @@ describe('ReactSuspense', () => {
     expect(ReactNoop).toMatchRenderedOutput('Waiting Tier 1');
     expect(ops).toEqual([
       new Set([promise1]),
+      // 此历史断言在关闭节流时直接展开 Set 为 promise 项；它不是另一个 Set 回调的期望。
       ...(gate('alwaysThrottleRetries') ? [] : new Set([promise1, promise2])),
     ]);
     ops = [];

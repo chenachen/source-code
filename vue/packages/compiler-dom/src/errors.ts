@@ -39,11 +39,11 @@ export enum DOMErrorCodes {
   X_V_MODEL_ARG_ON_ELEMENT,
   /** 文件输入框只读，不能通过 `v-model` 回写文件路径。 */
   X_V_MODEL_ON_FILE_INPUT_ELEMENT,
-  /** `v-model` 与显式 `value` 绑定冲突。 */
+  /** 文本类 `v-model` 检查发现首个带表达式的 v-bind 是 `:value`。 */
   X_V_MODEL_UNNECESSARY_VALUE,
   /** `v-show` 缺少控制可见性的表达式。 */
   X_V_SHOW_NO_EXPRESSION,
-  /** `<Transition>` 包含多个可渲染子节点。 */
+  /** `<Transition>` 不满足单个有效过渡目标，如多根、v-for 或空条件分支。 */
   X_TRANSITION_INVALID_CHILDREN,
   /** 客户端组件模板中的 `<script>` / `<style>` 因副作用而被忽略。 */
   X_IGNORED_SIDE_EFFECT_TAG,

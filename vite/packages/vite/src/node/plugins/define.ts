@@ -65,7 +65,7 @@ export function definePlugin(config: ResolvedConfig): Plugin {
     for (const key in environment.config.define) {
       userDefine[key] = handleDefineValue(environment.config.define[key])
 
-      // 用户定义的 import.meta.env.X 也必须出现在裸 import.meta.env 对象中。
+      // build 时把用户 import.meta.env.X 同时写入裸 env 对象；bundled-dev 不进入此收集分支。
       if (isBuild && key.startsWith('import.meta.env.')) {
         userDefineEnv[key.slice(16)] = environment.config.define[key]
       }
@@ -111,7 +111,7 @@ export function definePlugin(config: ResolvedConfig): Plugin {
     return [define, pattern, importMetaEnvVal] as const
   }
 
-  // Environment 为 WeakMap 键，环境关闭后缓存可回收，也不会把不同 define 配置串在一起。
+  // Environment 为 WeakMap 键；环境不再被持有时缓存可回收，不同环境也不会共享 define 产物。
   const patternsCache = new WeakMap<
     Environment,
     readonly [Record<string, string>, RegExp | null, string]
@@ -129,13 +129,13 @@ export function definePlugin(config: ResolvedConfig): Plugin {
   return {
     name: 'vite:define',
 
-    /** bundled 环境始终启用 define；开发态只在存在用户 define 时运行替换。 */
+    /** bundled 环境改用 options 注入；unbundled 环境保留 JS transform，由命中正则决定是否转换。 */
     applyToEnvironment(environment) {
       if (environment.config.isBundled) {
         // bundled 模式把定义并入 Rolldown options；未知静态 import.meta.env.* 统一为 undefined。
         return {
           name: 'vite:define',
-          /** 声明 define transform 串行执行，保护插件内部替换缓存。 */
+          /** 把环境级 define 合入 Rolldown 转换配置，并补裸 env 与未知静态属性规则。 */
           options(option) {
             const [define, _pattern, importMetaEnvVal] = getPattern(
               this.environment,
@@ -151,7 +151,7 @@ export function definePlugin(config: ResolvedConfig): Plugin {
     },
 
     transform: {
-      /** 跳过 HTML、CSS 和静态资源后，用 esbuild 替换 define 并清理无效 sourcemap。 */
+      /** server unbundled 模块命中 define 后，用 Oxc 执行替换并生成 sourcemap。 */
       handler(code, id) {
         if (this.environment.config.consumer === 'client') {
           // client dev 的全局 define 和 import.meta.env 已由 clientInjection/importAnalysis 注入。
@@ -171,7 +171,7 @@ export function definePlugin(config: ResolvedConfig): Plugin {
         const [define, pattern] = getPattern(this.environment)
         if (!pattern) return
 
-        // 只有快速正则命中才启动 Oxc，且每次重置全局正则状态。
+        // 只有快速正则命中才启动 Oxc；重置 lastIndex，使检测从源码开头开始。
         pattern.lastIndex = 0
         if (!pattern.test(code)) return
 

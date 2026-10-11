@@ -1,7 +1,3 @@
-/**
- * 测试阅读说明：本文件验证 `runtime-dom/patchProps` 的运行时行为。
- * “测试组”概括共享前置条件，“测试场景”说明当前输入、边界或历史回归目标；具体预期以断言为准。
- */
 import { patchProp } from '../src/patchProp'
 import {
   h,
@@ -12,20 +8,20 @@ import {
   withDirectives,
 } from '../src'
 
-// 测试组：runtime-dom 的 DOM properties 修补规则。
+// 测试组：对input/textarea/select及自定义元素直接补property，读取宿主值、原值缓存与setter计数；错误输入用警告或不抛异常断言观察。
 describe('runtime-dom: props patching', () => {
-  // 测试场景：设置、更新和移除普通 DOM property。
+  /** 测试场景：div.id 写 foo 后清 null；property 为空串且 attribute 不存在，核对字符串 property 清理。 */
   test('basic', () => {
     const el = document.createElement('div')
     patchProp(el, 'id', null, 'foo')
     expect(el.id).toBe('foo')
-    // prop with string value should be set to empty string on null values
+    // 原始 property 为字符串时，null 更新复位为空串。
     patchProp(el, 'id', null, null)
     expect(el.id).toBe('')
     expect(el.getAttribute('id')).toBe(null)
   })
 
-  // 测试场景：表单元素 value 使用专门路径同步 property，并保留原始绑定值。
+  /** 测试场景：input.value 依次写字符串、null、对象，DOM value 字符串化而 _value 保留原对象；option 未声明 value 时回退文本，显式设置后同步 attribute。 */
   test('value', () => {
     const el = document.createElement('input')
     patchProp(el, 'value', null, 'foo')
@@ -47,24 +43,30 @@ describe('runtime-dom: props patching', () => {
     expect(option.getAttribute('value')).toBe('foo')
   })
 
-  // 测试场景：自定义元素的值。
+  /** 测试场景：自定义元素 value setter 使用自己的 _value；写字符串、null、对象分别仅调用一次，最终对象保持身份，避免原生表单路径二次覆写。 */
   test('value for custom elements', () => {
+    /** value带可观察setter的自定义元素fixture；内部_value保存原始输入、setterCalled计写入次数，验证patchDOMProp不按普通input等值跳过。 */
     class TestElement extends HTMLElement {
+      /** 调用HTMLElement原生构造器，value存储与计数由字段初始值建立。 */
       constructor() {
         super()
       }
 
-      // intentionally uses _value because this is used in "normal" HTMLElement for storing the object of the set property value
+      // 故意使用普通元素保存原始 value 的同名 _value，验证自定义 setter 不被该缓存误短路。
+      /** value accessor保存的原始输入；故意同普通元素内部_value同名，以检验自定义元素分支不被该缓存误短路。 */
       private _value: any
+      /** 返回fixture内部_value，保留对象或原始输入类型。 */
       get value() {
         return this._value
       }
 
+      /** 把val保存到_value并累加setterCalled，供补丁断言观察setter是否每次执行。 */
       set value(val) {
         this._value = val
         this.setterCalled++
       }
 
+      /** value setter被调用的累计次数，断言相同值也会再次经过自定义setter。 */
       public setterCalled: number = 0
     }
     window.customElements.define('patch-props-test-element', TestElement)
@@ -82,9 +84,9 @@ describe('runtime-dom: props patching', () => {
     expect(el.setterCalled).toBe(3)
   })
 
-  // For <input type="text">, setting el.value won't create a `value` attribute
-  // so we need to add tests for other elements
-  // 测试场景：非文本输入值。
+  // 文本 input 的 value property 写入不创建 value attribute；
+  // 因此同时检查其他原生元素的 attribute 移除。
+  /** 测试场景：option 文本为 foo 时显式写同值仍建立 value attribute；再设 null并清文本，value 为空且 attribute 移除，核对 option 的比较依据。 */
   test('value for non-text input', () => {
     const el = document.createElement('option')
     el.textContent = 'foo' // #4956
@@ -98,7 +100,7 @@ describe('runtime-dom: props patching', () => {
     expect(el.getAttribute('value')).toBe(null)
   })
 
-  // 测试场景：布尔属性。
+  /** 测试场景：select.multiple 依次接受空串、null、true、0、字符串0、false、1、undefined；核对空串为存在、假值为关闭的布尔 property 转换。 */
   test('boolean prop', () => {
     const el = document.createElement('select')
     patchProp(el, 'multiple', null, '')
@@ -119,10 +121,11 @@ describe('runtime-dom: props patching', () => {
     expect(el.multiple).toBe(false)
   })
 
-  // 测试场景：innerHTML 卸载上一个子项。
+  /** 测试场景：div 先挂子组件，随后改 innerHTML=bar；内容替换且原组件 unmounted 调用，核对 renderer 在 HTML 覆盖前执行子树卸载。 */
   test('innerHTML unmount prev children', () => {
     const fn = vi.fn()
     const comp = {
+      /** 渲染'foo'。 */
       render: () => 'foo',
       unmounted: fn,
     }
@@ -136,10 +139,11 @@ describe('runtime-dom: props patching', () => {
   })
 
   // #954
-  // 测试场景：(svg) innerHTML 卸载上一个子项。
+  /** 测试场景：原 div 子组件替换为含 g 的 SVG innerHTML，旧组件仍执行 unmounted；断言 namespace 内容和卸载均完成。 */
   test('(svg) innerHTML unmount prev children', () => {
     const fn = vi.fn()
     const comp = {
+      /** 渲染'foo'。 */
       render: () => 'foo',
       unmounted: fn,
     }
@@ -152,11 +156,12 @@ describe('runtime-dom: props patching', () => {
     expect(fn).toHaveBeenCalled()
   })
 
-  // 测试场景：正确修补 innerHTML property。
+  /** 测试场景：响应式 div 由 innerHTML=baz 改为 del VNode children；旧 HTML 清理后显示 del，核对从 HTML sink 回到普通 children 的 patch。 */
   test('patch innerHTML porp', async () => {
     const root = document.createElement('div')
     const state = ref(false)
     const Comp = {
+      /** 提供空根组件，不返回VNode。 */
       render: () => {
         if (state.value) {
           return h('div', [h('del', null, 'baz')])
@@ -172,17 +177,18 @@ describe('runtime-dom: props patching', () => {
     expect(root.innerHTML).toBe(`<div><del>baz</del></div>`)
   })
 
-  // 测试场景：innerHTML 更新为 undefined 时清空旧内容。
+  /** 测试场景：首次 div innerHTML=undefined，元素为空；核对 nullish sink 不执行赋值。 */
   test('patch innerHTML porp w/ undefined value', async () => {
     const root = document.createElement('div')
     render(h('div', { innerHTML: undefined }), root)
     expect(root.innerHTML).toBe(`<div></div>`)
   })
 
-  // 测试场景：textContent 卸载上一个子项。
+  /** 测试场景：div 子组件改 textContent=bar，内容替换且 unmounted 被调用；核对 renderer 清旧树而不只覆盖 DOM。 */
   test('textContent unmount prev children', () => {
     const fn = vi.fn()
     const comp = {
+      /** 渲染'foo'。 */
       render: () => 'foo',
       unmounted: fn,
     }
@@ -196,14 +202,14 @@ describe('runtime-dom: props patching', () => {
   })
 
   // #1049
-  // 测试场景：按原样设置非字符串值 props 的值。
+  /** 测试场景：video.srcObject 写原对象后保持身份，再清 null 恢复初始值；核对非字符串 DOM property 不提前字符串化。 */
   test('set value as-is for non string-value props', () => {
     const el = document.createElement('video')
-    // jsdom doesn't really support video playback. srcObject in a real browser
-    // should default to `null`, but in jsdom it's `undefined`.
-    // anyway, here we just want to make sure Vue doesn't set non-string props
-    // to an empty string on nullish values - it should reset to its default
-    // value.
+    // 此 jsdom 环境中 video.srcObject 默认 undefined，
+    // 与浏览器默认 null 的情况不同。
+    // 此例验证非字符串 property 遇到 nullish 值时按原类型复位，
+    // 不会一律写为空字符串；
+    // 断言当前环境可观察的复位值。
     el.srcObject = null
     const initialValue = el.srcObject
     const fakeObject = {}
@@ -213,10 +219,11 @@ describe('runtime-dom: props patching', () => {
     expect(el.srcObject).toBe(initialValue)
   })
 
-  // 测试场景：设置 DOM property 抛出 TypeError 时捕获异常并给出开发期警告。
+  /** 测试场景：人为设置抛 TypeError 的 DOM property，patchProp 捕获并给出开发告警；错误不逃逸到整个 patch。 */
   test('catch and warn prop set TypeError', () => {
     const el = document.createElement('div')
     Object.defineProperty(el, 'someProp', {
+      /** fixture的set主动抛出new TypeError('Invalid type')，验证补丁捕获诊断；无正常返回值。 */
       set() {
         throw new TypeError('Invalid type')
       },
@@ -227,7 +234,7 @@ describe('runtime-dom: props patching', () => {
   })
 
   // #1576
-  // 测试场景：当值为假时删除属性。
+  /** 测试场景：div.id 空串仍保留 attribute，null/undefined 移除；img.width 空串/0 与 nullish 的存在性分别断言，避免把所有假值统称为移除。 */
   test('remove attribute when value is falsy', () => {
     const el = document.createElement('div')
     patchProp(el, 'id', null, '')
@@ -261,34 +268,34 @@ describe('runtime-dom: props patching', () => {
     expect(img.hasAttribute('width')).toBe(true)
   })
 
-  // 测试场景：表单属性。
+  /** 测试场景：input.form 通过 attribute 写 foo，property 仍 null；更新 null 删除关联标记，核对只读 form property 例外。 */
   test('form attribute', () => {
     const el = document.createElement('input')
     patchProp(el, 'form', null, 'foo')
-    // non existent element
+    // 未注册的自定义标签也走原生属性存在性判断。
     expect(el.form).toBe(null)
     expect(el.getAttribute('form')).toBe('foo')
-    // remove attribute
+    // null 更新删除 attribute。
     patchProp(el, 'form', 'foo', null)
     expect(el.getAttribute('form')).toBe(null)
   })
 
-  // 测试场景：readonly 文本区域上的类型属性。
+  /** 测试场景：textarea 的只读 type 清为 null，调用结束无异常；本例没有显式状态断言，只检查不会因赋 property 中断。 */
   test('readonly type prop on textarea', () => {
     const el = document.createElement('textarea')
-    // just to verify that it doesn't throw when i.e. switching a dynamic :is from an 'input' to a 'textarea'
-    // see https://github.com/vuejs/core/issues/2766
+    // 仅验证动态 input→textarea 时修补 type 不抛异常。
+    // 参见 https://github.com/vuejs/core/issues/2766
     patchProp(el, 'type', 'text', null)
   })
 
-  // 测试场景：显式 `.` 前缀强制按 DOM property 修补。
+  /** 测试场景：未知 .x 显式前缀强制 property，写 1 后 el.x=1；核对前缀路由。 */
   test('force patch as prop', () => {
     const el = document.createElement('div') as any
     patchProp(el, '.x', null, 1)
     expect(el.x).toBe(1)
   })
 
-  // 测试场景：显式 `^` 前缀强制按 DOM attribute 修补。
+  /** 测试场景：已有 el.x=1，^x 写 2 只产生字符串 attribute，property 仍1；核对强制 attribute。 */
   test('force patch as attribute', () => {
     const el = document.createElement('div') as any
     el.x = 1
@@ -297,7 +304,7 @@ describe('runtime-dom: props patching', () => {
     expect(el.getAttribute('x')).toBe('2')
   })
 
-  // 测试场景：输入大小（数字属性）。
+  /** 测试场景：input.size 写100后清null，attribute移除且不告警；写非法foobar才告警，核对数字清理与异常诊断区别。 */
   test('input with size (number property)', () => {
     const el = document.createElement('input')
     patchProp(el, 'size', null, 100)
@@ -309,7 +316,7 @@ describe('runtime-dom: props patching', () => {
     expect('Failed setting prop "size" on <input>').toHaveBeenWarnedLast()
   })
 
-  // 测试场景：选择类型（字符串属性）。
+  /** 测试场景：只读 select.type 写 test 后仍 select-one 并告警；核对赋值失败捕获。 */
   test('select with type (string property)', () => {
     const el = document.createElement('select')
     patchProp(el, 'type', null, 'test')
@@ -317,7 +324,7 @@ describe('runtime-dom: props patching', () => {
     expect('Failed setting prop "type" on <select>').toHaveBeenWarnedLast()
   })
 
-  // 测试场景：用 willValidate 选择（布尔属性）。
+  /** 测试场景：只读 select.willValidate 清null后仍true并告警；核对布尔只读 property 的异常分支。 */
   test('select with willValidate (boolean property)', () => {
     const el = document.createElement('select')
     patchProp(el, 'willValidate', true, null)
@@ -327,7 +334,7 @@ describe('runtime-dom: props patching', () => {
     ).toHaveBeenWarnedLast()
   })
 
-  // 测试场景：select 的 value 修补后同步正确的选中项。
+  /** 测试场景：select 初始 options 包含 foo/bar，再更新为 foo/baz 且 value=baz；断言选中值随最终 options 更新。 */
   test('patch value for select', () => {
     const root = document.createElement('div')
     render(
@@ -350,7 +357,7 @@ describe('runtime-dom: props patching', () => {
     expect(el.value).toBe('baz')
   })
 
-  // 测试场景：初始化选项的空值。
+  /** 测试场景：option 明确 value=空串而文本foo，select和option value均空串；显式空value不能回退文本。 */
   test('init empty value for option', () => {
     const root = document.createElement('div')
     render(
@@ -364,24 +371,24 @@ describe('runtime-dom: props patching', () => {
   })
 
   // #8780
-  // 测试场景：带有宽度和高度的嵌入标签。
+  /** 测试场景：img.width 接收24px，attribute保留该字符串；核对嵌入元素尺寸使用 attribute。 */
   test('embedded tag with width and height', () => {
-    // Width and height of some embedded element such as img、video、source、canvas
-    // must be set as attribute
+    // img/video/source/canvas 的 width/height 等嵌入元素尺寸
+    // 按 attribute 设置，以接受CSS尺寸字符串。
     const el = document.createElement('img')
     patchProp(el, 'width', null, '24px')
     expect(el.getAttribute('width')).toBe('24px')
   })
 
-  // # 9762 should fallthrough to `key in el` logic for non embedded tags
-  // 测试场景：自定义元素的宽度和高度。
+  // #9762：非嵌入标签回到 key in el 的 property 存在性判断。
+  /** 测试场景：非嵌入标签 foobar.width 接收24px，attribute为24px；核对宽高特判后回到 key in el 的默认选择。 */
   test('width and height on custom elements', () => {
     const el = document.createElement('foobar')
     patchProp(el, 'width', null, '24px')
     expect(el.getAttribute('width')).toBe('24px')
   })
 
-  // 测试场景：翻译属性。
+  /** 测试场景：div.translate 写no，attribute为no且property为假；枚举字符串不能被直接写成布尔true。 */
   test('translate attribute', () => {
     const el = document.createElement('div')
     patchProp(el, 'translate', null, 'no')
@@ -390,10 +397,11 @@ describe('runtime-dom: props patching', () => {
   })
 
   // #11647
-  // 测试场景：当 `value` 为 `undefined` 时不应触发输入突变。
+  /** 测试场景：checkbox 的 value=undefined 挂载后观察 attribute mutations，再经过 nextTick；零次回调证明没有额外 value 变异，不扩大为全部表单事件保证。 */
   test('should not trigger input mutation when `value` is `undefined`', async () => {
     const fn = vi.fn()
     const comp = {
+      /** 建立checked=ref()。setup返回渲染函数：withDirectives( h('input', { type: 'checkbox', value: undefined, 'onUpdate:modelValue': (value: any) => { checked.value = value }, }), [[vModelCheckbox, checked.value]], )。 */
       setup() {
         const checked = ref()
         return () =>
@@ -401,6 +409,7 @@ describe('runtime-dom: props patching', () => {
             h('input', {
               type: 'checkbox',
               value: undefined,
+              /** 执行checked.value=value。无返回值。 */
               'onUpdate:modelValue': (value: any) => {
                 checked.value = value
               },

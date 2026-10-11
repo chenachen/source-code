@@ -9,27 +9,18 @@
 
 'use strict';
 
-/** 同步子进程入口，用于在隔离环境中比较不同构建模式。 */
+/** 同步启动独立 Jest 进程，隔离三种语言的 class 测试及其模块状态。 */
 const spawnSync = require('child_process').spawnSync;
 
 describe('ReactClassEquivalence', () => {
-  /**
-   * Given：已建立该文件所需的 renderer、容器与测试夹具。
-   * When：执行“tests the same thing for es6 classes and CoffeeScript”场景的唯一关键操作。
-   * Then：断言 class 组件在开发与生产构建间的行为等价性 的可观察结果。
-   *
-   * 验证机制：同时观察返回值、渲染输出或诊断信息，证明结果来自目标分支。
-   */
+  /** 分别运行 CoffeeScript 与 ES6 class 套件，比较排序后的 EQUIVALENCE 用例标识；检查两套夹具覆盖相同场景，而非只比较进程是否成功。 */
   it('tests the same thing for es6 classes and CoffeeScript', () => {
     const result1 = runJest('ReactCoffeeScriptClass-test.coffee');
     const result2 = runJest('ReactES6Class-test.js');
     compareResults(result1, result2);
   });
 
-  /**
-   * 场景：“tests the same thing for es6 classes and TypeScript”。
-   * 机制：验证class 组件在开发与生产构建间的行为等价性，锁定可观察结果与失败边界。
-   */
+  /** 分别运行 TypeScript 与 ES6 class 套件，比较 EQUIVALENCE 用例标识集合；若任何子套件失败或未产出标识，不能将其误判为语言行为等价。 */
   it('tests the same thing for es6 classes and TypeScript', () => {
     const result1 = runJest('ReactTypeScriptClass-test.ts');
     const result2 = runJest('ReactES6Class-test.js');
@@ -37,7 +28,13 @@ describe('ReactClassEquivalence', () => {
   });
 });
 
-/** 在指定环境变量下启动子 Jest 进程并返回可比较结果。 */
+/**
+ * 用当前 npm test 命令在独立进程运行指定语言的 class 套件，并启用等价场景 reporter。
+ * REACT_CLASS_EQUIVALENCE_TEST 让子进程选择对应等价测试路径；拼接 stdout/stderr 后交给 compareResults 提取标识。
+ * 非 test 命令、启动错误和非零退出码均抛错，避免把缺失或失败的子套件当成可比较结果。
+ * @param testFile - 要交给 Jest 选择的语言测试文件名。
+ * @returns 子进程的标准输出和错误输出文本。
+ */
 function runJest(testFile) {
   const cwd = process.cwd();
   const extension = process.platform === 'win32' ? '.cmd' : '';
@@ -80,7 +77,11 @@ function runJest(testFile) {
   return result.stdout.toString() + result.stderr.toString();
 }
 
-/** 比较开发与生产构建的测试结果，验证 class 行为等价。 */
+/**
+ * 从两个语言套件的输出中提取、排序并比较 EQUIVALENCE 场景标识。
+ * 排序消除 reporter 输出顺序差异；两个输出都无标识时显式失败，防止空集合相等掩盖没有运行场景。
+ * 此处比较测试场景清单，具体行为仍由各子套件自己的断言验证。
+ */
 function compareResults(a, b) {
   const regexp = /EQUIVALENCE.*$/gm;
   const aSpecs = (a.match(regexp) || []).sort().join('\n');

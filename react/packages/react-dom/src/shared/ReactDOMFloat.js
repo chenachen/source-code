@@ -23,7 +23,8 @@ import {
 
 /**
  * 请求当前 DOM dispatcher 为主机名发出 DNS 预取提示。
- * 无效输入仅在开发态诊断；生产态乐观跳过，因为资源提示属于可选性能优化。
+ * DEV检查非空href及多余第二参数，实际派发只检查href为字符串，因此空字符串仍交dispatcher。
+ * 本层不做资源去重或DOM写入；默认/客户端/Fizz/Flight dispatcher各自解释D槽。
  */
 export function prefetchDNS(href: string) {
   if (__DEV__) {
@@ -54,12 +55,13 @@ export function prefetchDNS(href: string) {
     ReactDOMSharedInternals.d /* ReactDOMCurrentDispatcher */
       .D(/* prefetchDNS */ href);
   }
-  // 资源提示可能从多种作用域调用，运行时也可能无法响应；它不影响正确性，故无效时静默退出。
+  // 非字符串href不派发；空字符串仍由dispatcher决定是否处理。
 }
 
 /**
  * 请求当前 DOM dispatcher 提前建立到资源源站的连接，并归一化 CORS 选项。
- * 调用只提供优化提示，不保证底层宿主一定执行。
+ * 运行时只要求href为字符串，options有值时取crossOrigin并归一化，无值时传null；
+ * DEV对options类型的诊断不会自行终止后续派发，宿主负责提示去重与输出。
  */
 export function preconnect(href: string, options?: ?PreconnectOptions) {
   if (__DEV__) {
@@ -87,11 +89,13 @@ export function preconnect(href: string, options?: ?PreconnectOptions) {
     ReactDOMSharedInternals.d /* ReactDOMCurrentDispatcher */
       .C(/* preconnect */ href, crossOrigin);
   }
-  // 资源提示不影响渲染正确性；宿主不支持或输入无效时静默跳过。
+  // C槽接收归一化跨域值；是否创建连接提示由当前dispatcher实现决定。
 }
 
 /**
- * 校验并归一化 `<link rel="preload">` 选项，再交给当前 dispatcher 去重和写入宿主提示。
+ * href须为字符串、options须是非null对象且as须为字符串才进入L槽；DEV非空诊断
+ * 与此运行时类型门分开，空href/as仍会派发。font跨域由getCrossOriginStringAs强制归一化，
+ * 其它可选字段只保留字符串；本层不缓存身份，也不等待下载完成。
  */
 export function preload(href: string, options: PreloadOptions) {
   if (__DEV__) {
@@ -153,10 +157,10 @@ export function preload(href: string, options: PreloadOptions) {
         media: typeof options.media === 'string' ? options.media : undefined,
       });
   }
-  // preload 是可选性能提示；宿主不支持或输入无效时静默跳过，不破坏应用正确性。
+  // 不满足上述类型门就不派发；通过后资源的创建/请求与去重归当前renderer。
 }
 
-/** 校验模块预加载选项，并请求 dispatcher 发出 `modulepreload` 提示。 */
+/** href为字符串就进入m槽；options有值时按字段类型投影，as=script省略以采用默认值，其它字符串as保留，无options时传短参数形状。DEV诊断不替代运行期派发门，空href也会转交。 */
 export function preloadModule(href: string, options?: ?PreloadModuleOptions) {
   if (__DEV__) {
     let encountered = '';
@@ -209,11 +213,13 @@ export function preloadModule(href: string, options?: ?PreloadModuleOptions) {
         .m(/* preloadModule */ href);
     }
   }
-  // 模块预加载只优化时序；宿主不支持或输入无效时静默跳过。
+  // 模块资源身份与重复提示处理由m槽实现维护。
 }
 
 /**
- * 根据 `as` 把资源预初始化请求路由到样式或脚本 dispatcher 槽，并过滤无效属性类型。
+ * href为字符串、options有值且as为字符串时继续，只把as=style/script路由到S/X槽。
+ * style把precedence单独传递，script另保留nonce；其它字符串选项按类型过滤。
+ * 这是加载并应用资源的preinit协议，实际宿主效果由当前dispatcher执行，本层没有等待/回调。
  */
 export function preinit(href: string, options: PreinitOptions) {
   if (__DEV__) {
@@ -267,10 +273,10 @@ export function preinit(href: string, options: PreinitOptions) {
         });
     }
   }
-  // preinit 不影响正确性；调用环境无法处理时静默跳过。
+  // as既不是style也不是script时，即使其为字符串也没有匹配派发分支。
 }
 
-/** 校验模块预初始化请求；当前只支持 script，并转发到模块脚本 dispatcher 槽。 */
+/** href为字符串且options为非null对象时只接受as缺省/null/script，再把归一化选项交M槽；options缺失/null走无选项形状，其它类型不派发。模块脚本创建与去重由renderer处理，DEV非空诊断本身不取消调用。 */
 export function preinitModule(href: string, options?: ?PreinitModuleOptions) {
   if (__DEV__) {
     let encountered = '';
@@ -343,7 +349,7 @@ export function preinitModule(href: string, options?: ?PreinitModuleOptions) {
         .M(/* preinitModuleScript */ href);
     }
   }
-  // 模块预初始化是可选优化；运行时无法处理时静默退出。
+  // M槽只承接这里筛选出的模块脚本请求，不处理其它模块as类型。
 }
 
 /** 为“期望对象/非空字符串”的开发态诊断生成稳定值描述，避免直接强制转换用户对象。 */

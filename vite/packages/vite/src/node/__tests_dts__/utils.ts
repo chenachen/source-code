@@ -2,8 +2,7 @@
 import type { Equal, ExpectTrue } from '@type-challenges/utils'
 import { mergeWithDefaults } from '../utils'
 
-// 场景矩阵：验证 mergeWithDefaults 的类型结果与运行时“undefined 回退、普通对象
-// 深合并、数组等非普通对象整体替换”语义一致。
+/** defaults 带 foo:number 而 value 缺少该键；合并类型应保留默认 foo，供 cases1 的编译期断言验证。 */
 const useDefaultTypeForUndefined1 = mergeWithDefaults(
   {
     foo: 1,

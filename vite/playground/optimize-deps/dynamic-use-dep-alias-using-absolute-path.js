@@ -1,6 +1,2 @@
-// This is used to setup a test scenario, where dep scanner
-// could not determine all of the used dependencies on first
-// pass, e.g., a dependency that is aliased using an absolute
-// path, in which case it used to trigger unnecessary "full
-// reloads" invalidating all modules in a module graph.
+// 动态加载绝对 alias 的入口，构造首轮扫描未发现依赖的回归场景，观察额外整页刷新是否出现。
 export { default } from '@vitejs/test-dep-alias-using-absolute-path'

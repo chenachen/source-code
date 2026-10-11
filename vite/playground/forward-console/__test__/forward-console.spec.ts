@@ -18,11 +18,7 @@ function normalizeLogs(logs: string[]) {
   )
 }
 
-/** window error 应转发为 Unhandled error，并用 sourcemap 指回 TS 源码及最近 code frame。 */
-/**
- * 场景：在当前 playground 中，点击 “page.click('#test-error')”。
- * 验证目标：“normalizeLogs(serverLogs)” 应包含 “'\ [Unhandled error] Error: this is test error > testError src/main.ts:30:8 28 | 29 | function testError…”，从而确认浏览器 console/未处理异常被序列化到 server logger 且堆栈指向原源。
- */
+/** window error 转发为 Unhandled error；栈位置映射回 TS 源码，并为符合模块图/文件条件的首帧展示 code frame。 */
 test.runIf(isServe)('unhandled error', async () => {
   await page.click('#test-error')
   await expect.poll(() => normalizeLogs(serverLogs)).toContain(`\
@@ -39,10 +35,6 @@ test.runIf(isServe)('unhandled error', async () => {
 })
 
 /** Promise rejection 使用独立标题，同时保留发起函数和事件 callback 调用链。 */
-/**
- * 场景：在当前 playground 中，点击 “page.click('#test-unhandledrejection')”。
- * 验证目标：“normalizeLogs(serverLogs.slice(logIndex))” 应包含 “'\ [Unhandled rejection] Error: this is test unhandledrejection > testUnhandledRejection src/main.ts:34:…”，从而确认浏览器 console/未处理异常被序列化到 server logger 且堆栈指向原源。
- */
 test.runIf(isServe)('unhandled rejection', async () => {
   const logIndex = serverLogs.length
   await page.click('#test-unhandledrejection')
@@ -60,11 +52,7 @@ test.runIf(isServe)('unhandled rejection', async () => {
 `)
 })
 
-/** console.error 的占位符/对象格式应与本地 console 接近，并带 level 前缀进入 server logger。 */
-/**
- * 场景：在当前 playground 中，点击 “page.click('#test-console-error')”。
- * 验证目标：“normalizeLogs(serverLogs.slice(logIndex))” 应包含 “'[console.error] format: string=hello number=12.9 int=42 float=3.5 json={"id":1} object={"enabled":true}…”，从而确认浏览器 console/未处理异常被序列化到 server logger 且堆栈指向原源。
- */
+/** console.error 的占位符和对象转换为预期文本，并带 [console.error] 前缀进入 server logger。 */
 test.runIf(isServe)('console.error', async () => {
   const logIndex = serverLogs.length
   await page.click('#test-console-error')
@@ -75,11 +63,7 @@ test.runIf(isServe)('console.error', async () => {
     )
 })
 
-/** 依赖外置 sourcemap 也要被提取；code frame 选择最近项目源码帧，不展开依赖文件。 */
-/**
- * 场景：在当前 playground 中，点击 “page.click('#test-dep-error')”。
- * 验证目标：“normalizeLogs(serverLogs.slice(logIndex))” 应包含 “'\ [Unhandled error] Error: this is test dependency error > throwDepError ../../node_modules/.pnpm/<norm…”，从而确认浏览器 console/未处理异常被序列化到 server logger 且堆栈指向原源。
- */
+/** 依赖外置 sourcemap 还原依赖路径；本例第一个符合模块图/文件条件的帧是项目调用点，code frame 展示在那里。 */
 test.runIf(isServe)('dependency stack uses source map path', async () => {
   const logIndex = serverLogs.length
   await page.click('#test-dep-error')

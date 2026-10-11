@@ -4,7 +4,8 @@ import type { ImportGlobFunction } from '#types/importGlob'
 
 /**
  * 类型用例桩：组合 eager/lazy、已知/未知 query 与旧版 as 选项，验证返回值
- * 是立即模块值还是 Promise 工厂，并验证 raw/url/worker 能收窄为具体资源类型。
+ * 是立即值还是 Promise 工厂，并验证发布声明对 raw/url/worker 的类型映射。
+ * 这里不执行 glob 转换，不能证明 query 自动选 default 或 worker 自动创建实例。
  */
 const importGlobFunction: ImportGlobFunction = () => ({})
 
@@ -54,13 +55,13 @@ const importGlobNonEagerReturnWithKnownAs = importGlobFunction('', {
   as: 'url',
 })
 
-/** 旧版 eager `as: 'worker'` 应直接返回 Worker 实例映射。 */
+/** 旧版 eager `as: 'worker'` 的兼容声明推导为 Worker 值映射。 */
 const importGlobEagerReturnWithWorkerAs = importGlobFunction('', {
   eager: true,
   as: 'worker',
 })
 
-/** 旧版 lazy `as: 'worker'` 应返回 Worker Promise 工厂映射。 */
+/** 旧版 lazy `as: 'worker'` 的兼容声明推导为 Worker Promise 工厂映射。 */
 const importGlobNonEagerReturnWithWorkerAs = importGlobFunction('', {
   eager: false,
   as: 'worker',

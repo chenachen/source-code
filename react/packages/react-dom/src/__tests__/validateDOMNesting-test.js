@@ -9,17 +9,20 @@
 
 'use strict';
 
-/** `React`：保存当前测试场景复用的夹具、状态或回调。 */
+/** 构造动态 Tag 嵌套树，将输入标签序列转为对应 React 元素层级。 */
 const React = require('react');
-/** `ReactDOM`：保存当前测试场景复用的夹具、状态或回调。 */
+
+/** 提供 flushSync，使每次嵌套树检查在断言前完成提交。 */
 const ReactDOM = require('react-dom');
-/** `ReactDOMClient`：保存当前测试场景复用的夹具、状态或回调。 */
+
+/** 为不同类型宿主容器创建并发根，覆盖普通标签、SVG 与文档单例。 */
 const ReactDOMClient = require('react-dom/client');
-/** `assertConsoleErrorDev`：保存当前测试场景复用的夹具、状态或回调。 */
+
+/** 匹配预期 HTML 嵌套诊断；无预期时由测试环境的未消费日志检查确保保持安静。 */
 const assertConsoleErrorDev =
   require('internal-test-utils').assertConsoleErrorDev;
 
-/** `expectWarnings`：封装当前用例复用的操作、回调或断言步骤。 */
+/** 复制标签/消息数组，重建空 HTML 文档后从外到内选容器、从内到外构造子树；flushSync 提交、匹配 DEV 诊断并卸载，避免前一树干扰后续嵌套作用域。 */
 function expectWarnings(tags, warnings = []) {
   tags = [...tags];
   warnings = [...warnings];
@@ -72,14 +75,8 @@ function expectWarnings(tags, warnings = []) {
 }
 
 describe('validateDOMNesting', () => {
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「allows valid nestings」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言连接 ReactDOM 公开入口、ReactDOMRoot 根生命周期及 DOM 提交结果。
-   */
+
+  /** 依次挂载 table/tbody/tr、datalist/option、object 与 button 作用域、SVG foreignObject 等组合，并含标准无效但解析树不变的结构；全部无警告，验证检查范围限于会改变浏览器解析树的 HTML 嵌套。 */
   it('allows valid nestings', () => {
     expectWarnings(['table', 'tbody', 'tr', 'td', 'b']);
     expectWarnings(['body', 'datalist', 'option']);
@@ -95,7 +92,7 @@ describe('validateDOMNesting', () => {
     expectWarnings(['div', 'ul', 'li', 'dd', 'li']);
   });
 
-  /** 测试场景：验证「prevents problematic nestings」描述的渲染、交互或错误处理结果。 */
+  /** 依次构造嵌套 a/form/p/li、table 直含 tr 与错误 html/head/body 位置；DEV 应给定子级或祖先诊断，li 冲突另给祖先栈，验证解析隐式闭合/插入与文档单例位置会提示 hydration 风险。 */
   it('prevents problematic nestings', () => {
     expectWarnings(
       ['a', 'a'],
@@ -218,7 +215,7 @@ describe('validateDOMNesting', () => {
     );
   });
 
-  /** 测试场景：验证「relaxes the nesting rules at the root when the container is a singleton」描述的渲染、交互或错误处理结果。 */
+  /** 根容器分别为 document/html/body，再直接渲染 html/head/body、普通 div/meta 或文本；这些根层次都应无警告，验证单例容器允许 renderer 接管文档内容时放宽最外层规则。 */
   it('relaxes the nesting rules at the root when the container is a singleton', () => {
     expectWarnings(['#document', 'html']);
     expectWarnings(['#document', 'body']);

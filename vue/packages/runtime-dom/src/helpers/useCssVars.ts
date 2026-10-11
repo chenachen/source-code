@@ -38,6 +38,9 @@ export function useCssVars(
   }
   /* v8 ignore stop */
 
+  /**
+   * 按组件 uid 查询 data-v-owner 标记的远端元素并写 CSS 变量；默认参数重新调用 getter，也可复用本轮 vars。
+   */
   const updateTeleports = (instance.ut = (vars = getter(instance.proxy)) => {
     // SSR/渲染器给传送内容标记 data-v-owner，通过 uid 找到不在组件 DOM 子树下的节点。
     Array.from(
@@ -46,9 +49,11 @@ export function useCssVars(
   })
 
   if (__DEV__) {
+    /** 开发水合诊断读取当前 getter 结果，不直接写 DOM。 */
     instance.getCssVars = () => getter(instance.proxy)
   }
 
+  /** 重新求值 getter，向当前组件/自定义元素根及 Teleport 所有者节点写 CSS 变量；由 watcher、更新钩子和 MutationObserver 触发。 */
   const setVars = () => {
     const vars = getter(instance.proxy)
     if (instance.ce) {

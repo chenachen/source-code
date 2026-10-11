@@ -19,12 +19,9 @@ import {
 /**
  * CSS 端到端矩阵：同一组 fixture 同时验证开发注入/HMR 与构建抽取/tree-shaking，覆盖 PostCSS、三类
  * 预处理器、CSS Modules、URL、异步 chunk 和输出顺序。用例应在编辑前取得元素并复用，借此确认 CSS
- * HMR 没有偷偷整页 reload。
+ * HMR 复用原页面元素。
  */
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “page.textContent('.imported-css-glob')”。
- * 验证目标：“page.textContent('.imported-css-glob')” 应包含 “'.dir-import'”；“page.textContent('.imported-css-globEager')” 应包含 “'.dir-import'”，从而确认CSS @import/url() 依赖经解析、base 重写后仍可访问。
- */
+/** lazy/eager glob 导入的 CSS 文本都包含 .dir-import 规则。 */
 test('imported css', async () => {
   await expect
     .poll(() => page.textContent('.imported-css-glob'))
@@ -34,10 +31,7 @@ test('imported css', async () => {
     .toContain('.dir-import')
 })
 
-/**
- * 场景：在当前 playground 中，修改 “editFile('linked.css', (code) => code.replace('color: blue', 'color: red'))”，然后修改 “editFile('linked-at-import.css', (code) => code.replace('color: red', 'color: blue'), )”。
- * 验证目标：“await getColor(linked)” 应等于 “'blue'”；“await getColor(atImport)” 应等于 “'red'”，从而确认开发态样式注入与构建态 CSS 抽取产生同等视觉结果。
- */
+/** link 样式及其 @import 先呈现 blue/red；unbundled dev 编辑后在原元素上观察 red/blue。 */
 test('linked css', async () => {
   const linked = await page.$('.linked')
   const atImport = await page.$('.linked-at-import')
@@ -58,10 +52,7 @@ test('linked css', async () => {
   await expect.poll(() => getColor(atImport)).toBe('blue')
 })
 
-/**
- * 场景：在当前 playground 中，修改 “editFile('imported.css', (code) => code.replace('color: green', 'color: red'))”，然后修改 “editFile('imported-at-import.css', (code) => code.replace('color: purple', 'color: blue'), )”。
- * 验证目标：“await getColor(imported)” 应等于 “'green'”；“await getColor(atImport)” 应等于 “'purple'”，从而确认CSS @import/url() 依赖经解析、base 重写后仍可访问。
- */
+/** JS 导入的 CSS 与其 @import 先呈现 green/purple；unbundled dev 再检查原元素上的更新。 */
 test('css import from js', async () => {
   const imported = await page.$('.imported')
   const atImport = await page.$('.imported-at-import')
@@ -81,20 +72,14 @@ test('css import from js', async () => {
   await expect.poll(() => getColor(atImport)).toBe('blue')
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “await getBg(importedWithSpace)”。
- * 验证目标：“await getBg(importedWithSpace)” 应匹配 “/.*\/ok.*\.png/”，从而确认CSS @import/url() 依赖经解析、base 重写后仍可访问。
- */
+/** 带空格的 CSS 资源路径经处理后仍指向 ok PNG。 */
 test('css import asset with space', async () => {
   const importedWithSpace = await page.$('.import-with-space')
 
   expect(await getBg(importedWithSpace)).toMatch(/.*\/ok.*\.png/)
 })
 
-/**
- * 场景：在当前 playground 中，修改 “editFile('imported.css', (code) => code.replace('color: pink', 'color: red'))”。
- * 验证目标：“await getColor(imported)” 应等于 “'pink'”；“getColor(imported)” 应等于 “'red'”，从而确认预处理器/PostCSS 配置、依赖和 Source 路径被正确传递。
- */
+/** PostCSS 嵌套规则生效；unbundled dev 编辑后检查颜色更新。 */
 test('postcss config', async () => {
   const imported = await page.$('.postcss .nesting')
   expect(await getColor(imported)).toBe('pink')
@@ -106,10 +91,7 @@ test('postcss config', async () => {
   await expect.poll(() => getColor(imported)).toBe('red')
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “await getBg(imported)”。
- * 验证目标：“await getBg(imported)” 应匹配 “/localhost(?::\d+)?\/(?:assets\/)?ok.*\.png/”，从而确认预处理器/PostCSS 配置、依赖和 Source 路径被正确传递。
- */
+/** 用户 PostCSS 插件注入的 URL 也经过资源解析，URL 指向 ok PNG。 */
 test('postcss plugin that injects url()', async () => {
   const imported = await page.$('.inject-url')
   // PostCSS 插件后注入的 url() 也必须经过 alias 解析。
@@ -120,10 +102,7 @@ test('postcss plugin that injects url()', async () => {
 
 sassTest()
 
-/**
- * 场景：在当前 playground 中，修改 “editFile('less.less', (code) => code.replace('@color: blue', '@color: red'))”，然后修改 “editFile('nested/nested.less', (code) => code.replace('color: darkslateblue', 'color: blue'), )”。
- * 验证目标：“await getColor(imported)” 应等于 “'blue'”；“await getColor(atImport)” 应等于 “'darkslateblue'”，从而确认预处理器/PostCSS 配置、依赖和 Source 路径被正确传递。
- */
+/** 覆盖 Less 变量、导入、别名及变量/插值 URL；dev 编辑入口和依赖后更新原元素。 */
 test('less', async () => {
   const imported = await page.$('.less')
   const atImport = await page.$('.less-at-import')
@@ -162,10 +141,7 @@ test('less', async () => {
   await expect.poll(() => getColor(atImport)).toBe('blue')
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “await getBg(body)”。
- * 验证目标：“await getBg(body)” 应等于 “'url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAAXNSR0IArs4c6QAAAA1JREFUGFdj…”，从而确认预处理器/PostCSS 配置、依赖和 Source 路径被正确传递。
- */
+/** Less 自定义插件生成预期的 PNG data URI 背景。 */
 test('less-plugin', async () => {
   const body = await page.$('.less-js-plugin')
   expect(await getBg(body)).toBe(
@@ -173,10 +149,7 @@ test('less-plugin', async () => {
   )
 })
 
-/**
- * 场景：在当前 playground 中，修改 “editFile('stylus.styl', (code) => code.replace('$color ?= blue', '$color ?= red'), )”，然后修改 “editFile('nested/nested.styl', (code) => code.replace('color darkslateblue', 'color blue'), )”。
- * 验证目标：“await getColor(imported)” 应等于 “'blue'”；“await getColor(additionalData)” 应等于 “'orange'”，从而确认预处理器/PostCSS 配置、依赖和 Source 路径被正确传递。
- */
+/** 覆盖 Stylus additionalData、导入、define 变量/函数和 URL；dev 再检查入口与依赖更新。 */
 test('stylus', async () => {
   const imported = await page.$('.stylus')
   const additionalData = await page.$('.stylus-additional-data')
@@ -212,10 +185,7 @@ test('stylus', async () => {
   await expect.poll(() => getColor(relativeImport)).toBe('blue')
 })
 
-/**
- * 场景：在当前 playground 中，修改 “editFile('mod.module.css', (code) => code.replace('color: turquoise', 'color: red'), )”。
- * 验证目标：“await getColor(imported)” 应等于 “'turquoise'”；“await imported.getAttribute('class')” 应匹配 “/.mod-module__apply-color___[\w-]{5}/”，从而确认CSS Modules 映射、composes 解析和 tree-shaking 边界正确。
- */
+/** CSS Modules 类名遵循 scoped name 配置；dev 编辑样式后更新原元素颜色。 */
 test('css modules', async () => {
   const imported = await page.$('.modules')
   expect(await getColor(imported)).toBe('turquoise')
@@ -233,10 +203,7 @@ test('css modules', async () => {
   await expect.poll(() => getColor(imported)).toBe('red')
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “await getColor(imported)”。
- * 验证目标：“await getColor(imported)” 应等于 “'turquoise'”；“await imported.getAttribute('class')” 应匹配 “/.composed-module__apply-color___[\w-]{5}/”，从而确认CSS Modules 映射、composes 解析和 tree-shaking 边界正确。
- */
+/** composes 解析到正确文件，元素同时含来源类名与当前模块类名；HMR 部分仍被注释。 */
 test('css modules composes/from path resolving', async () => {
   const imported = await page.$('.path-resolved-modules-css')
   expect(await getColor(imported)).toBe('turquoise')
@@ -259,10 +226,7 @@ test('css modules composes/from path resolving', async () => {
 
 sassModuleTests()
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “await getColor(imported)”。
- * 验证目标：“await getColor(imported)” 应等于 “'blue'”；“await imported.getAttribute('class')” 应匹配 “/.composed-module__apply-color___[\w-]{5}/”，从而确认CSS Modules 映射、composes 解析和 tree-shaking 边界正确。
- */
+/** Less Modules 的 composes 保留来源和当前类名，并呈现 blue；此用例没有执行 HMR 步骤。 */
 test('less modules composes/from path resolving', async () => {
   const imported = await page.$('.path-resolved-modules-less')
   expect(await getColor(imported)).toBe('blue')
@@ -283,39 +247,27 @@ test('less modules composes/from path resolving', async () => {
   // await expect.poll(() => getColor(imported)).toBe('red')
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “css”。
- * 验证目标：“css” 应匹配 “/\.inline-module__apply-color-inline___[\w-]{5}/”，从而确认CSS Modules 映射、composes 解析和 tree-shaking 边界正确。
- */
+/** `?inline` 导出的 CSS 文本包含配置生成的模块类名。 */
 test('inline css modules', async () => {
   const css = await page.textContent('.modules-inline')
   expect(css).toMatch(/\.inline-module__apply-color-inline___[\w-]{5}/)
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “log”。
- * 验证目标：“log” 不应匹配 “'"@charset" must be the first rule in the file'”，从而确认开发态样式注入与构建态 CSS 抽取产生同等视觉结果。
- */
+/** build 日志不含 @charset 位置警告。 */
 test.runIf(isBuild)('@charset hoist', async () => {
   serverLogs.forEach((log) => {
-    // finalizeCss 已提升 @charset，esbuild CSS minifier 不应再警告位置非法。
+    // hoistAtRules 提升 @charset 后，CSS 压缩器不再报告位置非法。
     expect(log).not.toMatch('"@charset" must be the first rule in the file')
   })
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “await getColor('.layers-blue')”。
- * 验证目标：“await getColor('.layers-blue')” 应匹配 “'blue'”；“await getColor('.layers-green')” 应匹配 “'green'”，从而确认开发态样式注入与构建态 CSS 抽取产生同等视觉结果。
- */
+/** 层叠规则分别得到 blue/green 的最终颜色。 */
 test('layers', async () => {
   expect(await getColor('.layers-blue')).toMatch('blue')
   expect(await getColor('.layers-green')).toMatch('green')
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “await icon.evaluate((span) => getComputedStyle(span).maskImage)”。
- * 验证目标：“await icon.evaluate((span) => getComputedStyle(span).maskImage)” 应包含 “'data:image/svg+xml,'”，从而确认CSS @import/url() 依赖经解析、base 重写后仍可访问。
- */
+/** 外部 CSS 的图标规则生效，maskImage 保留 SVG data URI。 */
 test('@import external css', async () => {
   const icon = page.locator('.icon--mdi-light--help-circle')
   expect(
@@ -323,44 +275,29 @@ test('@import external css', async () => {
   ).toContain('data:image/svg+xml,')
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “await getColor('.css-dep')”。
- * 验证目标：“await getColor('.css-dep')” 应等于 “'purple'”，从而确认CSS @import/url() 依赖经解析、base 重写后仍可访问。
- */
+/** CSS 包的 style 入口被 @import 解析，规则呈现 purple。 */
 test('@import dependency w/ style entry', async () => {
   expect(await getColor('.css-dep')).toBe('purple')
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “await getColor('.css-dep-exports')”。
- * 验证目标：“await getColor('.css-dep-exports')” 应等于 “'purple'”，从而确认CSS @import/url() 依赖经解析、base 重写后仍可访问。
- */
+/** CSS 包的 style exports 映射被解析，规则呈现 purple。 */
 test('@import dependency w/ style export mapping', async () => {
   expect(await getColor('.css-dep-exports')).toBe('purple')
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “await getColor('.css-proxy-dep')”。
- * 验证目标：“await getColor('.css-proxy-dep')” 应等于 “'purple'”，从而确认CSS @import/url() 依赖经解析、base 重写后仍可访问。
- */
+/** 依赖中的二次 @import 继续解析到目标样式。 */
 test('@import dependency that @import another dependency', async () => {
   expect(await getColor('.css-proxy-dep')).toBe('purple')
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “await getColor('.scss-proxy-dep')”。
- * 验证目标：“await getColor('.scss-proxy-dep')” 应等于 “'purple'”，从而确认预处理器/PostCSS 配置、依赖和 Source 路径被正确传递。
- */
+/** SCSS 依赖中带 .css 后缀的 @import 继续解析另一包的样式。 */
 test('@import scss dependency that has @import with a css extension pointing to another dependency', async () => {
   expect(await getColor('.scss-proxy-dep')).toBe('purple')
 })
 
 sassOtherTests()
 
-/**
- * 场景：在当前 playground 中，修改 “editFile('async.css', (code) => code.replace('color: teal', 'color: blue '))”。
- * 验证目标：“await getColor(el)” 应等于 “'teal'”；“findAssetFile(/index-[-\w]{8}\.css$/)” 不应匹配 “'teal'”，从而确认异步 chunk 的 CSS 抽取、去重与执行顺序稳定。
- */
+/** build 将异步样式单独输出，入口 CSS 不含 teal；dev 在原元素上检查 teal 到 blue 的更新。 */
 test('async chunk', async () => {
   const el = await page.$('.async')
   expect(await getColor(el)).toBe('teal')
@@ -376,10 +313,7 @@ test('async chunk', async () => {
   }
 })
 
-/**
- * 场景：在当前 playground 中，修改 “editFile('async-treeshaken.css', (code) => code.replace('color: plum', 'color: blue '), )”。
- * 验证目标：“await page.evaluate(() => { return document.querySelector('.async-treeshaken') })” 应为 null；“findAssetFile(/\.css$/)” 不应匹配 “'plum'”，从而确认异步 chunk 的 CSS 抽取、去重与执行顺序稳定。
- */
+/** build 删除未使用异步模块及其样式/占位文件；dev 保留该模块并检查 CSS 更新。 */
 test('treeshaken async chunk', async () => {
   if (isBuild) {
     // 生产 tree-shaking 后异步模块 DOM/代码均不存在。
@@ -404,10 +338,7 @@ test('treeshaken async chunk', async () => {
   }
 })
 
-/**
- * 场景：在当前 playground 中，修改 “editFile('glob-dep/foo.css', (code) => code.replace('color: grey', 'color: blue '), )”，然后修改 “editFile('glob-dep/bar.css', (code) => code.replace('color: grey', 'color: red'), )”。
- * 验证目标：“await getColor(el1)” 应等于 “'grey'”；“await getColor(el2)” 应等于 “'grey'”，从而确认预处理器/PostCSS 配置、依赖和 Source 路径被正确传递。
- */
+/** 场景：插件登记的 glob 目录依赖含普通与括号目录文件；初始三元素为灰，非构建时逐个编辑蓝/红/绿并删除 bar，核对对应元素更新且其他元素保持原值。 */
 test('PostCSS dir-dependency', async () => {
   const el1 = await page.$('.dir-dep')
   const el2 = await page.$('.dir-dep-2')
@@ -417,7 +348,7 @@ test('PostCSS dir-dependency', async () => {
   expect(await getColor(el2)).toBe('grey')
   expect(await getColor(el3)).toBe('grey')
 
-  // 注意：Lightning CSS 不支持插件登记 dir-dependency；此 HMR 部分只验证 PostCSS 模式。
+  // 仅非构建分支编辑源文件并等待目录依赖触发样式更新。
   if (!isBuild) {
     editFile('glob-dep/foo.css', (code) =>
       code.replace('color: grey', 'color: blue '),
@@ -444,19 +375,13 @@ test('PostCSS dir-dependency', async () => {
   }
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “await getColor('.css-js-dep')”。
- * 验证目标：“await getColor('.css-js-dep')” 应等于 “'green'”；“await getColor('.css-js-dep-module')” 应等于 “'green'”，从而确认CSS @import/url() 依赖经解析、base 重写后仍可访问。
- */
+/** 依赖 JS 所导入的普通 CSS 与 CSS Modules 都影响页面颜色。 */
 test('import dependency includes css import', async () => {
   expect(await getColor('.css-js-dep')).toBe('green')
   expect(await getColor('.css-js-dep-module')).toBe('green')
 })
 
-/**
- * 场景：在当前 playground 中，修改 “editFile('imported.css', (code) => code.replace(cases[i - 1], c) + '\n')”。
- * 验证目标：“getBg(urlSeparated)” 应匹配 “/^url\(.+\)(?:\s*,\s*url\(.+\))*$/”，从而确认CSS @import/url() 依赖经解析、base 重写后仍可访问。
- */
+/** 场景：背景列表先含猫/狗两个 URL，再循环 1..5 个相同 URL × 四种逗号空白；逐轮编辑 CSS 后核对计算背景仍为合法 URL 列表。构建模式只检查已加载输出的列表格式，不断言源编辑被重构建。 */
 test('URL separation', async () => {
   const urlSeparated = await page.$('.url-separated')
   const baseUrl = 'url(images/dog.webp)'
@@ -483,19 +408,13 @@ test('URL separation', async () => {
   }
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “await getColor('.inlined')”。
- * 验证目标：“await getColor('.inlined')” 应等于 “'black'”，从而确认开发态样式注入与构建态 CSS 抽取产生同等视觉结果。
- */
+/** `?inline` 只导出字符串，因此对应规则不注入页面，元素保持默认 black。 */
 test('inlined', async () => {
   // ?inline 只导出字符串，不应把样式插入页面。
   expect(await getColor('.inlined')).toBe('black')
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “code”。
- * 验证目标：“code” 应包含 “'background:'”；“code” 不应包含 “'__VITE_ASSET__'”，从而确认开发态样式注入与构建态 CSS 抽取产生同等视觉结果。
- */
+/** inline CSS 文本含背景规则且无资产占位符；build 分支还检查文本已压缩。 */
 test('inlined-code', async () => {
   const code = await page.textContent('.inlined-code')
   // inline 字符串中的资源仍应解析，不能残留内部占位符。
@@ -507,10 +426,7 @@ test('inlined-code', async () => {
   }
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “cssFile”。
- * 验证目标：“cssFile” 应匹配 “'rgba('”；“cssFile” 不应匹配 “'#ffff00b3'”，从而确认开发态样式注入与构建态 CSS 抽取产生同等视觉结果。
- */
+/** build.cssTarget 限制下保留兼容的 rgba()，不压成八位 hex 颜色。 */
 test('minify css', async () => {
   if (!isBuild) {
     return
@@ -524,18 +440,12 @@ test('minify css', async () => {
 
 // bundled dev 当前把 css?url 直接变成源文件 data URI，没有先运行 PostCSS，因此目标规则根本不会生成。
 // 这是 #22863 的真实缺陷；修复后无需修改用例即可重新通过。
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “await getColor('.url-imported-css')”。
- * 验证目标：“await getColor('.url-imported-css')” 应等于 “'yellow'”，从而确认CSS @import/url() 依赖经解析、base 重写后仍可访问。
- */
+/** 将 CSS URL 用作样式链接后规则生效；bundled dev 因 #22863 跳过。 */
 test.skipIf(isBundledDev)('?url', async () => {
   expect(await getColor('.url-imported-css')).toBe('yellow')
 })
 
-/**
- * 场景：在当前 playground 中，修改 “editFile('raw-imported.css', (code) => code.replace('color: yellow', 'color: blue'), )”。
- * 验证目标：“await rawImportCss.textContent()” 应等于 “readFileSync(require.resolve('../raw-imported.css'), 'utf-8')”；“page.textContent('.raw-imported-css')” 应匹配 “'color: blue'”，从而确认开发态样式注入与构建态 CSS 抽取产生同等视觉结果。
- */
+/** 导出的 CSS 文本等于源文件；unbundled dev 编辑后页面文本更新。 */
 test('?raw', async () => {
   const rawImportCss = await page.$('.raw-imported-css')
 
@@ -554,19 +464,13 @@ test('?raw', async () => {
   }
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “await getColor('.css-in-less')”。
- * 验证目标：“await getColor('.css-in-less')” 应等于 “'yellow'”；“await getColor('.css-in-less-2')” 应等于 “'blue'”，从而确认预处理器/PostCSS 配置、依赖和 Source 路径被正确传递。
- */
+/** Less 导入的两份 CSS 分别呈现 yellow/blue。 */
 test('import css in less', async () => {
   expect(await getColor('.css-in-less')).toBe('yellow')
   expect(await getColor('.css-in-less-2')).toBe('blue')
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “await getBg('.form-box-data-uri')”。
- * 验证目标：“await getBg('.form-box-data-uri')” 应匹配 “/^url\("data:image\/svg\+xml,%3Csvg/”，从而确认预处理器/PostCSS 配置、依赖和 Source 路径被正确传递。
- */
+/** Less data-uri() 的相对 SVG 路径能读取并内联为 data URI。 */
 test("relative path rewritten in Less's data-uri", async () => {
   // 传给 Less data-uri 的相对路径先改写为绝对路径，随后由 Less 内联。
   expect(await getBg('.form-box-data-uri')).toMatch(
@@ -574,20 +478,14 @@ test("relative path rewritten in Less's data-uri", async () => {
   )
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “code”。
- * 验证目标：“code” 应包含 “'/postcss-source-input.css?inline&query=foo'”，从而确认预处理器/PostCSS 配置、依赖和 Source 路径被正确传递。
- */
+/** PostCSS 插件输出的 source.input.from 保留 inline 与自定义 query。 */
 test('PostCSS source.input.from includes query', async () => {
   const code = await page.textContent('.postcss-source-input')
-  // 带 query 的 PostCSS source.input.from 仍能作为资源解析 importer。
+  // 对照插件输出的 source.input.from，检查完整 query 未被剥离。
   expect(code).toContain('/postcss-source-input.css?inline&query=foo')
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “await getColor('.aliased')”。
- * 验证目标：“await getColor('.aliased')” 应等于 “'blue'”；“await getColor('.aliased-module')” 应等于 “'blue'”，从而确认开发态样式注入与构建态 CSS 抽取产生同等视觉结果。
- */
+/** 别名解析的普通 CSS 与 CSS Modules 都产生 blue 样式。 */
 test('aliased css has content', async () => {
   expect(await getColor('.aliased')).toBe('blue')
   // 暂不支持 alias CSS 作为文本内容返回，见 #8936。
@@ -595,18 +493,12 @@ test('aliased css has content', async () => {
   expect(await getColor('.aliased-module')).toBe('blue')
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “await getColor('.imports-field')”。
- * 验证目标：“await getColor('.imports-field')” 应等于 “'red'”，从而确认CSS @import/url() 依赖经解析、base 重写后仍可访问。
- */
+/** CSS 中的包 imports 映射解析到规则并呈现 red。 */
 test('resolve imports field in CSS', async () => {
   expect(await getColor('.imports-field')).toBe('red')
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “log”。
- * 验证目标：“log” 不应匹配 “'unsupported-css-property'”，从而确认开发态样式注入与构建态 CSS 抽取产生同等视觉结果。
- */
+/** build 日志中不出现被 esbuild.logOverride 抑制的 CSS 属性警告。 */
 test.runIf(isBuild)('warning can be suppressed by esbuild.logOverride', () => {
   serverLogs.forEach((log) => {
     // 用户 logOverride 应能抑制 esbuild CSS minifier 警告。
@@ -614,10 +506,7 @@ test.runIf(isBuild)('warning can be suppressed by esbuild.logOverride', () => {
   })
 })
 
-/**
- * 场景：在当前 playground 中，修改 “editFile('sugarss.sss', (code) => code.replace('color: blue', 'color: coral'))”，然后修改 “editFile('nested/nested.sss', (code) => code.replace('color: darkslateblue', 'color: blue'), )”。
- * 验证目标：“await getColor(imported)” 应等于 “'blue'”；“await getColor(atImport)” 应等于 “'darkslateblue'”，从而确认预处理器/PostCSS 配置、依赖和 Source 路径被正确传递。
- */
+/** SugarSS 入口、导入和别名样式生效；dev 编辑入口与依赖后更新颜色。 */
 test('sugarss', async () => {
   const imported = await page.$('.sugarss')
   const atImport = await page.$('.sugarss-at-import')
@@ -644,36 +533,24 @@ test('sugarss', async () => {
   await expect.poll(() => getColor(atImport)).toBe('blue')
 })
 
-// 注意：异步 CSS 顺序的 snapshot/预期应以构建态输出顺序为准。
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “getColor('.async-green')”。
- * 验证目标：“getColor('.async-green')” 应等于 “'green'”；“getColor('.async-blue')” 应等于 “'blue'”，从而确认异步 chunk 的 CSS 抽取、去重与执行顺序稳定。
- */
+// 从浏览器最终颜色观察异步 CSS 层叠顺序。
+/** 异步样式加载后检查最终 green/blue，验证层叠顺序。 */
 test('async css order', async () => {
   await expect.poll(() => getColor('.async-green')).toBe('green')
   await expect.poll(() => getColor('.async-blue')).toBe('blue')
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “getColor('.modules-pink')”。
- * 验证目标：“getColor('.modules-pink')” 应等于 “'pink'”，从而确认CSS Modules 映射、composes 解析和 tree-shaking 边界正确。
- */
+/** 异步 CSS Modules 加载后的最终颜色为 pink。 */
 test('async css order with css modules', async () => {
   await expect.poll(() => getColor('.modules-pink')).toBe('pink')
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “await getColor('.at-import-scss')”。
- * 验证目标：“await getColor('.at-import-scss')” 应等于 “'red'”，从而确认预处理器/PostCSS 配置、依赖和 Source 路径被正确传递。
- */
+/** CSS @import 的 SCSS 文件经过预处理，规则呈现 red。 */
 test('@import scss', async () => {
   expect(await getColor('.at-import-scss')).toBe('red')
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “findAssetFile(/manual-chunk-[-\w]{8}\.css$/, undefined, 'assets/dir/dir2')”。
- * 验证目标：“findAssetFile(/manual-chunk-[-\w]{8}\.css$/, undefined, 'assets/dir/dir2')” 应不为 undefined，从而确认异步 chunk 的 CSS 抽取、去重与执行顺序稳定。
- */
+/** build 的 manual chunk CSS 跟随配置的命名模板，输出到嵌套目录。 */
 test.runIf(isBuild)('manual chunk path', async () => {
   // manual chunk CSS 应输出到 manualChunk 指定的嵌套目录（#12072）。
   expect(
@@ -681,39 +558,27 @@ test.runIf(isBuild)('manual chunk path', async () => {
   ).not.toBeUndefined()
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “css”。
- * 验证目标：“css” 不应包含 “'treeshake-module-b'”，从而确认CSS Modules 映射、composes 解析和 tree-shaking 边界正确。
- */
+/** 全部输出 CSS 中不含未使用模块的 treeshake-module-b 规则。 */
 test.runIf(isBuild)('CSS modules should be treeshaken if not used', () => {
   const css = findAssetFile(/\.css$/, undefined, undefined, true)
   expect(css).not.toContain('treeshake-module-b')
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “css”。
- * 验证目标：“css” 不应匹配 “/\btreeshake-scoped-b\b/”；“css” 不应匹配 “/\btreeshake-scoped-c\b/”，从而确认开发态样式注入与构建态 CSS 抽取产生同等视觉结果。
- */
+/** 全部输出 CSS 中不含绑定到未渲染 importer/export 的 scoped 规则。 */
 test.runIf(isBuild)('Scoped CSS via cssScopeTo should be treeshaken', () => {
   const css = findAssetFile(/\.css$/, undefined, undefined, true)
   expect(css).not.toMatch(/\btreeshake-scoped-b\b/)
   expect(css).not.toMatch(/\btreeshake-scoped-c\b/)
 })
 
-/**
- * 场景：在当前 playground 中，导航到 “page.goto(viteTestUrl + '/treeshake-scoped/')”。
- * 验证目标：“getColor('.treeshake-scoped-order')” 应等于 “'red'”；“getBgColor('.treeshake-scoped-order')” 应等于 “'blue'”，从而确认异步 chunk 的 CSS 抽取、去重与执行顺序稳定。
- */
+/** 导航到 scoped fixture，检查最终前景 red、背景 blue。 */
 test('Scoped CSS should have a correct order', async () => {
   await page.goto(viteTestUrl + '/treeshake-scoped/')
   await expect.poll(() => getColor('.treeshake-scoped-order')).toBe('red')
   await expect.poll(() => getBgColor('.treeshake-scoped-order')).toBe('blue')
 })
 
-/**
- * 场景：在当前 playground 中，加载用例 fixture 并观察 “findAssetFile(/empty-[-\w]{8}\.css$/)”。
- * 验证目标：“findAssetFile(/empty-[-\w]{8}\.css$/)” 应不为 undefined；“findAssetFile(/empty-[-\w]{8}\.js$/)” 应为 undefined，从而确认CSS @import/url() 依赖经解析、base 重写后仍可访问。
- */
+/** 空 CSS 入口仍发射 CSS 文件，纯 CSS 的空 JS 占位 chunk 被删除。 */
 test.runIf(isBuild)(
   'empty CSS files should generate .css assets, not .js assets',
   () => {

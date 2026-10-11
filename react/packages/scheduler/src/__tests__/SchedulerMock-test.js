@@ -29,6 +29,7 @@ let waitForPaint;
 
 // Mock Scheduler 让测试按 yield 边界推进工作，而不是依赖真实 host event；因此可直接证明队列不变量。
 describe('Scheduler', () => {
+  // 清空队列/时钟的模块状态后把 scheduler 映射到 unstable_mock，helper 只按显式 flush 推进。
   beforeEach(() => {
     jest.resetModules();
     jest.mock('scheduler', () => require('scheduler/unstable_mock'));
@@ -124,8 +125,8 @@ describe('Scheduler', () => {
    * When：依次推进到 250ms 和 5000ms 过期阈值，并分别 flush。
    * Then：过期任务收到 `didTimeout: true` 且突破时间片连续执行，未过期任务仍可正常 yield。
    *
-   * 验证机制：每阶段同时断言执行顺序和 `didTimeout` 参数，覆盖 timer/ready queue 的时间迁移。
-   * 对应源码：`advanceTimers()`、priority timeout 常量与 `workLoop()` 的 `expirationTime <= currentTime` 分支。
+   * 验证机制：每阶段同时断言执行顺序和 `didTimeout` 参数，核对绝对过期时间及 callback 内的时间推进。
+   * 对应源码：priority timeout 常量与 `workLoop()` 的 `expirationTime <= currentTime` 分支；此用例未设置 delay。
    */
   it('expires work', async () => {
     scheduleCallback(NormalPriority, didTimeout => {
@@ -167,7 +168,7 @@ describe('Scheduler', () => {
     await waitForAll(['D (did timeout: false)', 'E (did timeout: true)']);
   });
 
-  /** 场景：Normal callback 的默认 timeout 为 5000ms；4999ms 不执行，恰到阈值后可被 `flushExpired()` 取出。 */
+  /** Normal callback 的默认过期时间为 5000ms；推进时钟不会自动执行它，到阈值后 `flushExpired()` 会取出它。 */
   it('has a default expiration of ~5 seconds', () => {
     scheduleCallback(NormalPriority, () => Scheduler.log('A'));
 
@@ -288,7 +289,7 @@ describe('Scheduler', () => {
       ['C', 100],
       ['D', 100],
     ];
-    /** 在 host 要求 yield 时保存剩余分段为 continuation。 */
+    /** 在当前测试 flush 要求 yield 时保存剩余分段为 continuation。 */
     const work = () => {
       while (tasks.length > 0) {
         const [label, ms] = tasks.shift();
@@ -378,7 +379,7 @@ describe('Scheduler', () => {
   });
 
   /**
-   * 场景：顶层 Immediate callback 只在后续 flush task 中执行，但到期队列一旦开始排空会连续完成全部四个。
+   * 顶层 Immediate callback 入队时不执行；测试随后显式调用 `flushExpired()`，连续完成全部四个。
    * 对应源码：Immediate timeout 为 -1，入队不等于同步调用；`flushExpired()` 才驱动 work loop。
    */
   it('top-level immediate callbacks fire in a subsequent task', () => {
@@ -408,7 +409,7 @@ describe('Scheduler', () => {
     assertLog(['A', 'B', 'D', 'C']);
   });
 
-  /** 场景：`wrapCallback()` 必须原样转发可变参数和返回值，不能只保存 priority 而改变函数签名。 */
+  /** 包装返回 {args} 的函数后传入 'a'/'b'，断言返回两项参数数组，验证 wrapCallback 原样转发可变参数和返回值。 */
   it('wrapped callbacks have same signature as original callback', () => {
     const wrappedCallback = wrapCallback((...args) => ({args}));
     expect(wrappedCallback('a', 'b')).toEqual({args: ['a', 'b']});
@@ -468,10 +469,10 @@ describe('Scheduler', () => {
   /**
    * Given：三个 Immediate callback 中首个和末个抛错。
    * When：分两次调用 `flushExpired()`。
-   * Then：首错误中止当前 host 事件；B、C 在后续事件继续，C 的错误仍向外传播。
+   * Then：首错误中止当前 mock flush；第二次 flush 执行 B、C，C 的错误仍向外传播。
    *
    * 验证机制：两次独立 `toThrow` 与阶段日志证明异常既不会吞掉队列，也不会吞掉后续错误。
-   * 对应源码：Scheduler work loop 的异常退出、host callback 重调度及状态 `finally` 清理。
+   * 对应源码：mock work loop 异常退出，`scheduledCallback` 保留，以及 flushWork/helper 的 `finally` 清理。
    */
   it("immediate callbacks fire even if there's an error", () => {
     scheduleCallback(ImmediatePriority, () => {
@@ -489,7 +490,7 @@ describe('Scheduler', () => {
     expect(() => Scheduler.unstable_flushExpired()).toThrow('Oops A');
     assertLog(['A']);
 
-    // B、C 在后续 host 事件继续排空，使第二个错误拥有独立传播机会。
+    // 第二次显式 mock flush 继续执行 B、C，并传播第二个错误。
     expect(() => Scheduler.unstable_flushExpired()).toThrow('Oops C');
     assertLog(['B', 'C']);
   });
@@ -538,8 +539,8 @@ describe('Scheduler', () => {
     // TODO：调查某个压缩器缺陷期间暂时禁用该能力测试。
     // eslint-disable-next-line jest/no-disabled-tests
     /**
-     * 场景：DEV 调度帧函数名应编码当前 priority，便于从错误调用栈诊断任务级别。
-     * 状态：该测试因压缩器问题暂时 skip；注释不把未执行断言当作当前保证。
+     * 五种优先级各安排一个 callback，内部解析 Error 栈并 flush 全部；旧断言期望五条日志从 `scheduler_flushTaskAtPriority_*` 栈帧取出对应 priority，验证诊断包装。
+     * 当前 mock 的 workLoop 直接调用 callback，未提供该命名包装；it.skip 保留旧期望，当前不执行这些断言。
      */
     it.skip('adds extra function to the JS stack whose name includes the priority level', async () => {
       /**
@@ -770,7 +771,7 @@ describe('Scheduler', () => {
       await waitForAll([]);
       cancelCallback(taskB);
 
-      // 推进越过 startTime 后取消 C；此时它可能已迁入 ready queue。
+      // advanceTime 同步触发最早 timeout 并迁移到期 timer；C 此时已在 ready queue。
       Scheduler.unstable_advanceTime(500);
       cancelCallback(taskC);
 
@@ -813,7 +814,7 @@ describe('Scheduler', () => {
 
       await waitForPaint([
         'Original Task',
-        // 返回 continuation 前仍有时间片余额。
+        // mock 尚未命中日志数量或 paint 停止条件。
         'shouldYield: false',
         'Return a continuation',
 
@@ -828,7 +829,7 @@ describe('Scheduler', () => {
     });
 
     /**
-     * Given：与上一用例相同的主动 continuation。
+     * Given：Normal callback 在 shouldYield 为 false 时记录原任务并主动返回续函数。
      * When：改用 `waitForAll()` 排空全部工作。
      * Then：helper 忽略 paint 观察边界，在同次测试操作中继续执行 continuation。
      * 对应源码：Mock flush 模式对 `yieldedValues` 与 continuation 的不同停止条件。
@@ -845,7 +846,7 @@ describe('Scheduler', () => {
 
       await waitForAll([
         'Original Task',
-        // 返回 continuation 前仍有时间片余额。
+        // 普通全量 flush 未设置日志数量或 paint 停止条件。
         'shouldYield: false',
         'Return a continuation',
 

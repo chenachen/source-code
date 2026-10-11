@@ -1,6 +1,6 @@
 /**
- * compiler-ssr 测试辅助：统一执行 SSR 编译、解析生成代码中的 `_push` 片段并规范化 helper
- * 名称，使测试既能比较完整代码，也能聚焦最终 HTML 字符串表达式。
+ * compiler-ssr 测试辅助：执行 SSR 编译，并从生成代码中抽取父 div 内部的 `_push` 模板字面量，
+ * 便于测试聚焦字符串表达式。
  */
 import { compile } from '../src'
 

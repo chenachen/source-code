@@ -25,7 +25,14 @@ let startTransition;
 let caches;
 let seededCache;
 
-/** ReactInteractionTracing 套件串联具名转换、Suspense 阻塞集合与 TracingMarker 的开始、进度、完成及不完整回调。 */
+/**
+ * 具名 transition 的追踪：root 聚合其 Suspense 阻塞集合，Marker 记录局部集合。
+ * processTransitionCallbacks 按 start、Marker progress/complete/incomplete、
+ * transition progress/complete 的类别顺序分发；某类没有待处理记录时便跳过。
+ * progress 中的 pending 是此轮回调读取的边界记录数组，endTime 是本轮处理时间，
+ * 并不表示转换已经结束。删除相关边界会使追踪记录 incomplete，其他分支仍可更新。
+ * 下面把回调参数转换成日志，与各阶段的资源解析和渲染日志一起断言。
+ */
 describe('ReactInteractionTracing', () => {
   /** stringifyDeletions 对每条删除记录的键排序后串联，确保 Marker 不完整事件的对象日志稳定可断言。 */
   function stringifyDeletions(deletions) {
@@ -39,7 +46,7 @@ describe('ReactInteractionTracing', () => {
       )
       .join(', ');
   }
-  /** beforeEach 重建 React/Noop/Scheduler 模块和断言工具，并清空资源缓存，使虚拟时间、根 callback 与 thenable 状态不跨场景泄漏。 */
+  /** 重置模块，重新加载 React、Noop、Scheduler 及断言工具，并清空本套件的资源缓存。 */
   beforeEach(() => {
     jest.resetModules();
 
@@ -64,7 +71,7 @@ describe('ReactInteractionTracing', () => {
     seededCache = null;
   });
 
-  /** createTextCache 创建按文本索引的资源状态机；seededCache 仅消费一次，随后缓存进入 pending、resolved 或 rejected 终态。 */
+  /** 创建按文本索引的资源缓存；seededCache 仅消费一次。记录从 pending 转为 resolved 或 rejected 后不再被 resolve/reject 覆盖。 */
   function createTextCache() {
     if (seededCache !== null) {
       const cache = seededCache;
@@ -133,7 +140,7 @@ describe('ReactInteractionTracing', () => {
 
       const thenable = {
         pings: [],
-        /** readText.then 在记录仍 pending 时聚合重试订阅；若已结算则用微任务回放结果，避免同步回调改变渲染时序。 */
+        /** pending 时收集重试订阅；结算后订阅则用微任务通知。这里只实现 ping 所需的 then(resolve)，拒绝状态由下一次 readText 抛出错误。 */
         then(resolve) {
           if (newRecord.status === 'pending') {
             thenable.pings.push(resolve);
@@ -166,7 +173,7 @@ describe('ReactInteractionTracing', () => {
     return text;
   }
 
-  /** resolveMostRecentTextCache 只解析最近创建的根缓存；无缓存时显式失败，旧根需由测试按索引解析。 */
+  /** 解析最近由 createTextCache 创建并登记的资源缓存；无缓存时抛错，较早缓存可按 caches 索引解析。 */
   function resolveMostRecentTextCache(text) {
     if (caches.length === 0) {
       throw Error('Cache does not exist');
@@ -179,7 +186,7 @@ describe('ReactInteractionTracing', () => {
 
   const resolveText = resolveMostRecentTextCache;
 
-  /** advanceTimers 仅推进 Jest 虚拟时钟并等待当前微任务尾部；React 过期时间仍由 ReactNoop.expire 单独推进。 */
+  /** 推进 Jest 虚拟时钟，再经 Promise 微任务让出一次；Scheduler 的模拟时间由 ReactNoop.expire 单独推进。 */
   function advanceTimers(ms) {
     // 注意：这里只推进 Jest 的虚拟时间，不推进 React 的时间；
     // React 的过期时间需使用 ReactNoop.expire 推进。
@@ -187,7 +194,7 @@ describe('ReactInteractionTracing', () => {
       throw new Error('Must specify ms');
     }
     jest.advanceTimersByTime(ms);
-    // 等待当前微任务队列结束。
+    // 经 Promise 微任务让出一次，让此前排入的微任务获得执行机会。
     // 这里使用了伪计时器，因此不能再靠 timer 等待。
     return Promise.resolve().then(() => {});
   }
@@ -203,24 +210,40 @@ describe('ReactInteractionTracing', () => {
   // @gate enableTransitionTracing
   it('should not call callbacks when transition is not defined', async () => {
     const transitionCallbacks = {
-      /** onTransitionStart 在“未命名转换隔离”场景接收 name 与 startTime，记录转换进入追踪集合的开放事件；它不携带 pending 或结束时间，区别于进度和完成回调。 */
+
+      /**
+       * 区分无名称更新与 name transition 的回调归属。
+       * 记录具名转换的名称与起始 Scheduler 毫秒时间；此回调只写日志，不触发页面更新。
+       */
       onTransitionStart: (name, startTime) => {
         Scheduler.log(`onTransitionStart(${name}, ${startTime})`);
       },
-      /** onTransitionProgress 在“未命名转换隔离”场景接收 name、startTime、endTime 与 pending，快照当前阻塞 Suspense；它可重复触发，区别于一次性的开始和完成回调。 */
+
+      /**
+       * 区分无名称更新与 name transition 的回调归属。
+       * 把 pending 边界名称按传入顺序写入日志，无名称时显示 <null>。startTime 是转换起点，名为 endTime 的实参此时是进度快照时间，并非转换已经完成。
+       */
       onTransitionProgress: (name, startTime, endTime, pending) => {
         const suspenseNames = pending.map(p => p.name || '<null>').join(', ');
         Scheduler.log(
           `onTransitionProgress(${name}, ${startTime}, ${endTime}, [${suspenseNames}])`,
         );
       },
-      /** onTransitionComplete 在“未命名转换隔离”场景接收 name、startTime 与 endTime，只在有效转换的阻塞集合清空后记录终态；它不再携带 pending。 */
+
+      /**
+       * 区分无名称更新与 name transition 的回调归属。
+       * 记录该转换等待集合清空后的名称、起始时间和完成快照时间（Scheduler 毫秒）；供断言区分各转换的终态。
+       */
       onTransitionComplete: (name, startTime, endTime) => {
         Scheduler.log(
           `onTransitionComplete(${name}, ${startTime}, ${endTime})`,
         );
       },
-      /** onMarkerProgress 在“未命名转换隔离”场景接收转换名、Marker 名、起始/当前时间及 pending，记录 Marker 局部阻塞集合，区别于根转换的聚合进度。 */
+
+      /**
+       * 区分无名称更新与 name transition 的回调归属。
+       * 记录转换与 Marker 的名称、起始时间和本次进度时间（Scheduler 毫秒），并序列化该 Marker 仍等待的边界；不自行增删 pending。
+       */
       onMarkerProgress: (
         transitioName,
         markerName,
@@ -233,7 +256,11 @@ describe('ReactInteractionTracing', () => {
           `onMarkerProgress(${transitioName}, ${markerName}, ${startTime}, ${currentTime}, [${suspenseNames}])`,
         );
       },
-      /** onMarkerComplete 在“未命名转换隔离”场景接收转换名、Marker 名及起止时间，只结算该 Marker 的正常终态，区别于整个转换完成。 */
+
+      /**
+       * 区分无名称更新与 name transition 的回调归属。
+       * 记录转换名称、Marker 名称及起止 Scheduler 毫秒时间；这只证明该 Marker 的完成事件，根转换是否完成由另一个回调验证。
+       */
       onMarkerComplete: (transitioName, markerName, startTime, endTime) => {
         Scheduler.log(
           `onMarkerComplete(${transitioName}, ${markerName}, ${startTime}, ${endTime})`,
@@ -298,18 +325,30 @@ describe('ReactInteractionTracing', () => {
   // @gate enableTransitionTracing
   it('should correctly trace basic interaction', async () => {
     const transitionCallbacks = {
-      /** onTransitionStart 在“同步基础转换”场景接收 name 与 startTime，记录转换进入追踪集合的开放事件；它不携带 pending 或结束时间，区别于进度和完成回调。 */
+
+      /**
+       * 核对同步页面切换只产生一次起止事件。
+       * 记录具名转换的名称与起始 Scheduler 毫秒时间；此回调只写日志，不触发页面更新。
+       */
       onTransitionStart: (name, startTime) => {
         Scheduler.log(`onTransitionStart(${name}, ${startTime})`);
       },
-      /** onTransitionProgress 在“同步基础转换”场景接收 name、startTime、endTime 与 pending，快照当前阻塞 Suspense；它可重复触发，区别于一次性的开始和完成回调。 */
+
+      /**
+       * 核对同步页面切换只产生一次起止事件。
+       * 把 pending 边界名称按传入顺序写入日志，无名称时显示 <null>。startTime 是转换起点，名为 endTime 的实参此时是进度快照时间，并非转换已经完成。
+       */
       onTransitionProgress: (name, startTime, endTime, pending) => {
         const suspenseNames = pending.map(p => p.name || '<null>').join(', ');
         Scheduler.log(
           `onTransitionProgress(${name}, ${startTime}, ${endTime}, [${suspenseNames}])`,
         );
       },
-      /** onTransitionComplete 在“同步基础转换”场景接收 name、startTime 与 endTime，只在有效转换的阻塞集合清空后记录终态；它不再携带 pending。 */
+
+      /**
+       * 核对同步页面切换只产生一次起止事件。
+       * 记录该转换等待集合清空后的名称、起始时间和完成快照时间（Scheduler 毫秒）；供断言区分各转换的终态。
+       */
       onTransitionComplete: (name, startTime, endTime) => {
         Scheduler.log(
           `onTransitionComplete(${name}, ${startTime}, ${endTime})`,
@@ -321,6 +360,9 @@ describe('ReactInteractionTracing', () => {
     /** App 持有 navigate 状态并暴露更新入口，以一次同步页面切换形成最小具名转换生命周期。 */
     function App() {
       const [navigate, setNavigate] = useState(false);
+      /**
+       * 将 App 的 navigate 从 false 设为 true，供 basic interaction 的转换作用域调入；不在此处直接 render root。
+       */
       navigateToPageTwo = () => {
         setNavigate(true);
       };
@@ -368,11 +410,19 @@ describe('ReactInteractionTracing', () => {
   // @gate enableTransitionTracing
   it('multiple updates in transition callback should only result in one transitionStart/transitionComplete call', async () => {
     const transitionCallbacks = {
-      /** onTransitionStart 在“同一转换批量更新去重”场景接收 name 与 startTime，记录转换进入追踪集合的开放事件；它不携带 pending 或结束时间，区别于进度和完成回调。 */
+
+      /**
+       * 核对同一转换中的两个 setter 共用一组起止事件。
+       * 记录具名转换的名称与起始 Scheduler 毫秒时间；此回调只写日志，不触发页面更新。
+       */
       onTransitionStart: (name, startTime) => {
         Scheduler.log(`onTransitionStart(${name}, ${startTime})`);
       },
-      /** onTransitionComplete 在“同一转换批量更新去重”场景接收 name、startTime 与 endTime，只在有效转换的阻塞集合清空后记录终态；它不再携带 pending。 */
+
+      /**
+       * 核对同一转换中的两个 setter 共用一组起止事件。
+       * 记录该转换等待集合清空后的名称、起始时间和完成快照时间（Scheduler 毫秒）；供断言区分各转换的终态。
+       */
       onTransitionComplete: (name, startTime, endTime) => {
         Scheduler.log(
           `onTransitionComplete(${name}, ${startTime}, ${endTime})`,
@@ -386,7 +436,13 @@ describe('ReactInteractionTracing', () => {
     function App() {
       const [navigate, setNavigate] = useState(false);
       const [text, _setText] = useState('hide');
+      /**
+       * 把 navigate 置为 true，和下方文本 setter 在同一转换中入队，验证一条转换覆盖两个状态更新。
+       */
       navigateToPageTwo = () => setNavigate(true);
+      /**
+       * 把文本状态改为 show，和页面导航共用同一转换；组件渲染时才产生新的日志。
+       */
       setText = () => _setText('show');
 
       return (
@@ -442,18 +498,30 @@ describe('ReactInteractionTracing', () => {
   // @gate enableTransitionTracing
   it('should correctly trace interactions for async roots', async () => {
     const transitionCallbacks = {
-      /** onTransitionStart 在“异步根挂起追踪”场景接收 name 与 startTime，记录转换进入追踪集合的开放事件；它不携带 pending 或结束时间，区别于进度和完成回调。 */
+
+      /**
+       * 跟踪 Page Two 挂起到解除挂起的 pending 集合。
+       * 记录具名转换的名称与起始 Scheduler 毫秒时间；此回调只写日志，不触发页面更新。
+       */
       onTransitionStart: (name, startTime) => {
         Scheduler.log(`onTransitionStart(${name}, ${startTime})`);
       },
-      /** onTransitionProgress 在“异步根挂起追踪”场景接收 name、startTime、endTime 与 pending，快照当前阻塞 Suspense；它可重复触发，区别于一次性的开始和完成回调。 */
+
+      /**
+       * 跟踪 Page Two 挂起到解除挂起的 pending 集合。
+       * 把 pending 边界名称按传入顺序写入日志，无名称时显示 <null>。startTime 是转换起点，名为 endTime 的实参此时是进度快照时间，并非转换已经完成。
+       */
       onTransitionProgress: (name, startTime, endTime, pending) => {
         const suspenseNames = pending.map(p => p.name || '<null>').join(', ');
         Scheduler.log(
           `onTransitionProgress(${name}, ${startTime}, ${endTime}, [${suspenseNames}])`,
         );
       },
-      /** onTransitionComplete 在“异步根挂起追踪”场景接收 name、startTime 与 endTime，只在有效转换的阻塞集合清空后记录终态；它不再携带 pending。 */
+
+      /**
+       * 跟踪 Page Two 挂起到解除挂起的 pending 集合。
+       * 记录该转换等待集合清空后的名称、起始时间和完成快照时间（Scheduler 毫秒）；供断言区分各转换的终态。
+       */
       onTransitionComplete: (name, startTime, endTime) => {
         Scheduler.log(
           `onTransitionComplete(${name}, ${startTime}, ${endTime})`,
@@ -464,6 +532,9 @@ describe('ReactInteractionTracing', () => {
     /** App 将导航后的异步文本包进具名 Suspense，使挂起集合从非空推进到清空。 */
     function App() {
       const [navigate, setNavigate] = useState(false);
+      /**
+       * 将页面切换到会读取未解析 Page Two 的分支，使该转换产生 Suspense 进度事件。
+       */
       navigateToPageTwo = () => {
         setNavigate(true);
       };
@@ -533,18 +604,30 @@ describe('ReactInteractionTracing', () => {
   // @gate enableTransitionTracing
   it('should correctly trace multiple separate root interactions', async () => {
     const transitionCallbacks = {
-      /** onTransitionStart 在“顺序独立转换”场景接收 name 与 startTime，记录转换进入追踪集合的开放事件；它不携带 pending 或结束时间，区别于进度和完成回调。 */
+
+      /**
+       * 区分先后独立的页面转换与文本转换。
+       * 记录具名转换的名称与起始 Scheduler 毫秒时间；此回调只写日志，不触发页面更新。
+       */
       onTransitionStart: (name, startTime) => {
         Scheduler.log(`onTransitionStart(${name}, ${startTime})`);
       },
-      /** onTransitionProgress 在“顺序独立转换”场景接收 name、startTime、endTime 与 pending，快照当前阻塞 Suspense；它可重复触发，区别于一次性的开始和完成回调。 */
+
+      /**
+       * 区分先后独立的页面转换与文本转换。
+       * 把 pending 边界名称按传入顺序写入日志，无名称时显示 <null>。startTime 是转换起点，名为 endTime 的实参此时是进度快照时间，并非转换已经完成。
+       */
       onTransitionProgress: (name, startTime, endTime, pending) => {
         const suspenseNames = pending.map(p => p.name || '<null>').join(', ');
         Scheduler.log(
           `onTransitionProgress(${name}, ${startTime}, ${endTime}, [${suspenseNames}])`,
         );
       },
-      /** onTransitionComplete 在“顺序独立转换”场景接收 name、startTime 与 endTime，只在有效转换的阻塞集合清空后记录终态；它不再携带 pending。 */
+
+      /**
+       * 区分先后独立的页面转换与文本转换。
+       * 记录该转换等待集合清空后的名称、起始时间和完成快照时间（Scheduler 毫秒）；供断言区分各转换的终态。
+       */
       onTransitionComplete: (name, startTime, endTime) => {
         Scheduler.log(
           `onTransitionComplete(${name}, ${startTime}, ${endTime})`,
@@ -559,10 +642,16 @@ describe('ReactInteractionTracing', () => {
       const [navigate, setNavigate] = useState(false);
       const [showText, setShowText] = useState(false);
 
+      /**
+       * 触发页面导航，供先发生的 page transition 与后发生的独立文本转换对比。
+       */
       navigateToPageTwo = () => {
         setNavigate(true);
       };
 
+      /**
+       * 显示异步 Text，作为另一条 text transition 的独立更新入口。
+       */
       showTextFn = () => {
         setShowText(true);
       };
@@ -658,18 +747,30 @@ describe('ReactInteractionTracing', () => {
   // @gate enableTransitionTracing
   it('should correctly trace multiple intertwined root interactions', async () => {
     const transitionCallbacks = {
-      /** onTransitionStart 在“交错并发转换”场景接收 name 与 startTime，记录转换进入追踪集合的开放事件；它不携带 pending 或结束时间，区别于进度和完成回调。 */
+
+      /**
+       * 区分页面先完成、文本后完成的交错转换。
+       * 记录具名转换的名称与起始 Scheduler 毫秒时间；此回调只写日志，不触发页面更新。
+       */
       onTransitionStart: (name, startTime) => {
         Scheduler.log(`onTransitionStart(${name}, ${startTime})`);
       },
-      /** onTransitionProgress 在“交错并发转换”场景接收 name、startTime、endTime 与 pending，快照当前阻塞 Suspense；它可重复触发，区别于一次性的开始和完成回调。 */
+
+      /**
+       * 区分页面先完成、文本后完成的交错转换。
+       * 把 pending 边界名称按传入顺序写入日志，无名称时显示 <null>。startTime 是转换起点，名为 endTime 的实参此时是进度快照时间，并非转换已经完成。
+       */
       onTransitionProgress: (name, startTime, endTime, pending) => {
         const suspenseNames = pending.map(p => p.name || '<null>').join(', ');
         Scheduler.log(
           `onTransitionProgress(${name}, ${startTime}, ${endTime}, [${suspenseNames}])`,
         );
       },
-      /** onTransitionComplete 在“交错并发转换”场景接收 name、startTime 与 endTime，只在有效转换的阻塞集合清空后记录终态；它不再携带 pending。 */
+
+      /**
+       * 区分页面先完成、文本后完成的交错转换。
+       * 记录该转换等待集合清空后的名称、起始时间和完成快照时间（Scheduler 毫秒）；供断言区分各转换的终态。
+       */
       onTransitionComplete: (name, startTime, endTime) => {
         Scheduler.log(
           `onTransitionComplete(${name}, ${startTime}, ${endTime})`,
@@ -682,10 +783,16 @@ describe('ReactInteractionTracing', () => {
     function App() {
       const [navigate, setNavigate] = useState(false);
       const [showText, setShowText] = useState(false);
+      /**
+       * 将页面切入 Page Two 的挂起分支，保留其转换以便和稍后的文本转换交错解析。
+       */
       navigateToPageTwo = () => {
         setNavigate(true);
       };
 
+      /**
+       * 显示 Text 的挂起分支，验证页面完成后此转换仍等待自己的资源。
+       */
       showTextFn = () => {
         setShowText(true);
       };
@@ -792,18 +899,30 @@ describe('ReactInteractionTracing', () => {
   // @gate enableTransitionTracing
   it('trace interaction with nested and sibling suspense boundaries', async () => {
     const transitionCallbacks = {
-      /** onTransitionStart 在“嵌套与同级 Suspense”场景接收 name 与 startTime，记录转换进入追踪集合的开放事件；它不携带 pending 或结束时间，区别于进度和完成回调。 */
+
+      /**
+       * 跟踪父 Suspense 解除后才成为可见待完成项的两个子边界。
+       * 记录具名转换的名称与起始 Scheduler 毫秒时间；此回调只写日志，不触发页面更新。
+       */
       onTransitionStart: (name, startTime) => {
         Scheduler.log(`onTransitionStart(${name}, ${startTime})`);
       },
-      /** onTransitionProgress 在“嵌套与同级 Suspense”场景接收 name、startTime、endTime 与 pending，快照当前阻塞 Suspense；它可重复触发，区别于一次性的开始和完成回调。 */
+
+      /**
+       * 跟踪父 Suspense 解除后才成为可见待完成项的两个子边界。
+       * 把 pending 边界名称按传入顺序写入日志，无名称时显示 <null>。startTime 是转换起点，名为 endTime 的实参此时是进度快照时间，并非转换已经完成。
+       */
       onTransitionProgress: (name, startTime, endTime, pending) => {
         const suspenseNames = pending.map(p => p.name || '<null>').join(', ');
         Scheduler.log(
           `onTransitionProgress(${name}, ${startTime}, ${endTime}, [${suspenseNames}])`,
         );
       },
-      /** onTransitionComplete 在“嵌套与同级 Suspense”场景接收 name、startTime 与 endTime，只在有效转换的阻塞集合清空后记录终态；它不再携带 pending。 */
+
+      /**
+       * 跟踪父 Suspense 解除后才成为可见待完成项的两个子边界。
+       * 记录该转换等待集合清空后的名称、起始时间和完成快照时间（Scheduler 毫秒）；供断言区分各转换的终态。
+       */
       onTransitionComplete: (name, startTime, endTime) => {
         Scheduler.log(
           `onTransitionComplete(${name}, ${startTime}, ${endTime})`,
@@ -815,6 +934,9 @@ describe('ReactInteractionTracing', () => {
     /** App 构造嵌套及同级 Suspense，验证父边界解除后 pending 集合转移到更深子边界。 */
     function App() {
       const [navigate, setNavigate] = useState(false);
+      /**
+       * 切入含外层和嵌套两个子 Suspense 的页面，资源按父边界再子边界顺序解析。
+       */
       navigateToPageTwo = () => {
         setNavigate(true);
       };
@@ -927,18 +1049,30 @@ describe('ReactInteractionTracing', () => {
   // @gate enableTransitionTracing
   it('trace interactions with the same child suspense boundaries', async () => {
     const transitionCallbacks = {
-      /** onTransitionStart 在“共享子 Suspense 的转换纠缠”场景接收 name 与 startTime，记录转换进入追踪集合的开放事件；它不携带 pending 或结束时间，区别于进度和完成回调。 */
+
+      /**
+       * 区分共用挂起子树的两条转换与后来独立的 Text Two 转换。
+       * 记录具名转换的名称与起始 Scheduler 毫秒时间；此回调只写日志，不触发页面更新。
+       */
       onTransitionStart: (name, startTime) => {
         Scheduler.log(`onTransitionStart(${name}, ${startTime})`);
       },
-      /** onTransitionProgress 在“共享子 Suspense 的转换纠缠”场景接收 name、startTime、endTime 与 pending，快照当前阻塞 Suspense；它可重复触发，区别于一次性的开始和完成回调。 */
+
+      /**
+       * 区分共用挂起子树的两条转换与后来独立的 Text Two 转换。
+       * 把 pending 边界名称按传入顺序写入日志，无名称时显示 <null>。startTime 是转换起点，名为 endTime 的实参此时是进度快照时间，并非转换已经完成。
+       */
       onTransitionProgress: (name, startTime, endTime, pending) => {
         const suspenseNames = pending.map(p => p.name || '<null>').join(', ');
         Scheduler.log(
           `onTransitionProgress(${name}, ${startTime}, ${endTime}, [${suspenseNames}])`,
         );
       },
-      /** onTransitionComplete 在“共享子 Suspense 的转换纠缠”场景接收 name、startTime 与 endTime，只在有效转换的阻塞集合清空后记录终态；它不再携带 pending。 */
+
+      /**
+       * 区分共用挂起子树的两条转换与后来独立的 Text Two 转换。
+       * 记录该转换等待集合清空后的名称、起始时间和完成快照时间（Scheduler 毫秒）；供断言区分各转换的终态。
+       */
       onTransitionComplete: (name, startTime, endTime) => {
         Scheduler.log(
           `onTransitionComplete(${name}, ${startTime}, ${endTime})`,
@@ -955,8 +1089,17 @@ describe('ReactInteractionTracing', () => {
       const [showTextOne, _setShowTextOne] = useState(false);
       const [showTextTwo, _setShowTextTwo] = useState(false);
 
+      /**
+       * 把导航状态置真，使转换进入多个共享挂起子树的页面。
+       */
       setNavigate = () => _setNavigate(true);
+      /**
+       * 显示 Text One，让 text one transition 与 page transition 共同等待该子树。
+       */
       setShowTextOne = () => _setShowTextOne(true);
+      /**
+       * 显示 Text Two，创建后来可独立于前两条转换完成的子边界。
+       */
       setShowTextTwo = () => _setShowTextTwo(true);
 
       return (
@@ -1115,24 +1258,40 @@ describe('ReactInteractionTracing', () => {
   // @gate enableTransitionTracing
   it('should correctly trace basic interaction with tracing markers', async () => {
     const transitionCallbacks = {
-      /** onTransitionStart 在“同步 TracingMarker”场景接收 name 与 startTime，记录转换进入追踪集合的开放事件；它不携带 pending 或结束时间，区别于进度和完成回调。 */
+
+      /**
+       * 区分换 key 后新 Marker 的完成与根转换的完成。
+       * 记录具名转换的名称与起始 Scheduler 毫秒时间；此回调只写日志，不触发页面更新。
+       */
       onTransitionStart: (name, startTime) => {
         Scheduler.log(`onTransitionStart(${name}, ${startTime})`);
       },
-      /** onTransitionProgress 在“同步 TracingMarker”场景接收 name、startTime、endTime 与 pending，快照当前阻塞 Suspense；它可重复触发，区别于一次性的开始和完成回调。 */
+
+      /**
+       * 区分换 key 后新 Marker 的完成与根转换的完成。
+       * 把 pending 边界名称按传入顺序写入日志，无名称时显示 <null>。startTime 是转换起点，名为 endTime 的实参此时是进度快照时间，并非转换已经完成。
+       */
       onTransitionProgress: (name, startTime, endTime, pending) => {
         const suspenseNames = pending.map(p => p.name || '<null>').join(', ');
         Scheduler.log(
           `onTransitionProgress(${name}, ${startTime}, ${endTime}, [${suspenseNames}])`,
         );
       },
-      /** onTransitionComplete 在“同步 TracingMarker”场景接收 name、startTime 与 endTime，只在有效转换的阻塞集合清空后记录终态；它不再携带 pending。 */
+
+      /**
+       * 区分换 key 后新 Marker 的完成与根转换的完成。
+       * 记录该转换等待集合清空后的名称、起始时间和完成快照时间（Scheduler 毫秒）；供断言区分各转换的终态。
+       */
       onTransitionComplete: (name, startTime, endTime) => {
         Scheduler.log(
           `onTransitionComplete(${name}, ${startTime}, ${endTime})`,
         );
       },
-      /** onMarkerProgress 在“同步 TracingMarker”场景接收转换名、Marker 名、起始/当前时间及 pending，记录 Marker 局部阻塞集合，区别于根转换的聚合进度。 */
+
+      /**
+       * 区分换 key 后新 Marker 的完成与根转换的完成。
+       * 记录转换与 Marker 的名称、起始时间和本次进度时间（Scheduler 毫秒），并序列化该 Marker 仍等待的边界；不自行增删 pending。
+       */
       onMarkerProgress: (
         transitioName,
         markerName,
@@ -1145,7 +1304,11 @@ describe('ReactInteractionTracing', () => {
           `onMarkerProgress(${transitioName}, ${markerName}, ${startTime}, ${currentTime}, [${suspenseNames}])`,
         );
       },
-      /** onMarkerComplete 在“同步 TracingMarker”场景接收转换名、Marker 名及起止时间，只结算该 Marker 的正常终态，区别于整个转换完成。 */
+
+      /**
+       * 区分换 key 后新 Marker 的完成与根转换的完成。
+       * 记录转换名称、Marker 名称及起止 Scheduler 毫秒时间；这只证明该 Marker 的完成事件，根转换是否完成由另一个回调验证。
+       */
       onMarkerComplete: (transitioName, markerName, startTime, endTime) => {
         Scheduler.log(
           `onMarkerComplete(${transitioName}, ${markerName}, ${startTime}, ${endTime})`,
@@ -1154,9 +1317,12 @@ describe('ReactInteractionTracing', () => {
     };
 
     let navigateToPageTwo;
-    /** App 在两个 keyed TracingMarker 页面间切换，验证同步 Marker 与转换在同次提交完成。 */
+    /** 切换页面时为第二个 Marker 指定新 key，使其重新挂载；同步子树可与转换一起完成。 */
     function App() {
       const [navigate, setNavigate] = useState(false);
+      /**
+       * 将 key 从 markerOne 切为 markerTwo 并显示 Page Two；转换因此关联重新挂载的 Marker。
+       */
       navigateToPageTwo = () => {
         setNavigate(true);
       };
@@ -1206,24 +1372,36 @@ describe('ReactInteractionTracing', () => {
    * 场景：同步与异步 Marker 使用不同终态路径。
    * Given：同一转换树含空的同步 Marker 和内部仍挂起的异步 Marker。
    * When：先解析外层 Page Two，再解析 Marker Text。
-   * Then：同步 Marker 立即 complete；异步 Marker 先 progress，待自身 pending 清空后 complete，随后转换完成。
+   * Then：外层 Page Two 解析并提交后，同步 Marker complete；异步 Marker 先 progress，待自身 pending 清空后 complete，随后转换完成。
    * 验证机制：分两次 waitForAll 校验 Marker 级 pending、完成顺序和 transition 终态。
    * 对应源码：packages/react-reconciler/src/ReactFiberTracingMarkerComponent.js 的 markerProgress/markerComplete 分发。
    */
   // @gate enableTransitionTracing
   it('should correctly trace interactions for tracing markers', async () => {
     const transitionCallbacks = {
-      /** onTransitionStart 在“异步 TracingMarker”场景接收 name 与 startTime，记录转换进入追踪集合的开放事件；它不携带 pending 或结束时间，区别于进度和完成回调。 */
+
+      /**
+       * 核对同步 Marker 先完成而异步 Marker 继续等待资源。
+       * 记录具名转换的名称与起始 Scheduler 毫秒时间；此回调只写日志，不触发页面更新。
+       */
       onTransitionStart: (name, startTime) => {
         Scheduler.log(`onTransitionStart(${name}, ${startTime})`);
       },
-      /** onTransitionComplete 在“异步 TracingMarker”场景接收 name、startTime 与 endTime，只在有效转换的阻塞集合清空后记录终态；它不再携带 pending。 */
+
+      /**
+       * 核对同步 Marker 先完成而异步 Marker 继续等待资源。
+       * 记录该转换等待集合清空后的名称、起始时间和完成快照时间（Scheduler 毫秒）；供断言区分各转换的终态。
+       */
       onTransitionComplete: (name, startTime, endTime) => {
         Scheduler.log(
           `onTransitionComplete(${name}, ${startTime}, ${endTime})`,
         );
       },
-      /** onMarkerProgress 在“异步 TracingMarker”场景接收转换名、Marker 名、起始/当前时间及 pending，记录 Marker 局部阻塞集合，区别于根转换的聚合进度。 */
+
+      /**
+       * 核对同步 Marker 先完成而异步 Marker 继续等待资源。
+       * 记录转换与 Marker 的名称、起始时间和本次进度时间（Scheduler 毫秒），并序列化该 Marker 仍等待的边界；不自行增删 pending。
+       */
       onMarkerProgress: (
         transitioName,
         markerName,
@@ -1236,7 +1414,11 @@ describe('ReactInteractionTracing', () => {
           `onMarkerProgress(${transitioName}, ${markerName}, ${startTime}, ${currentTime}, [${suspenseNames}])`,
         );
       },
-      /** onMarkerComplete 在“异步 TracingMarker”场景接收转换名、Marker 名及起止时间，只结算该 Marker 的正常终态，区别于整个转换完成。 */
+
+      /**
+       * 核对同步 Marker 先完成而异步 Marker 继续等待资源。
+       * 记录转换名称、Marker 名称及起止 Scheduler 毫秒时间；这只证明该 Marker 的完成事件，根转换是否完成由另一个回调验证。
+       */
       onMarkerComplete: (transitioName, markerName, startTime, endTime) => {
         Scheduler.log(
           `onMarkerComplete(${transitioName}, ${markerName}, ${startTime}, ${endTime})`,
@@ -1244,9 +1426,12 @@ describe('ReactInteractionTracing', () => {
       },
     };
     let navigateToPageTwo;
-    /** App 同时构造同步与异步 Marker，区分立即完成和受内部 Suspense 阻塞的 Marker。 */
+    /** 外层 Suspense 中并置同步与异步 Marker：前者等待外层揭示，后者还要等待内部资源。 */
     function App() {
       const [navigate, setNavigate] = useState(false);
+      /**
+       * 显示同时含同步与异步 Marker 的 Page Two，验证各 Marker 的完成时点不同。
+       */
       navigateToPageTwo = () => {
         setNavigate(true);
       };
@@ -1341,17 +1526,29 @@ describe('ReactInteractionTracing', () => {
   // @gate enableTransitionTracing
   it('trace interaction with multiple tracing markers', async () => {
     const transitionCallbacks = {
-      /** onTransitionStart 在“多层 TracingMarker”场景接收 name 与 startTime，记录转换进入追踪集合的开放事件；它不携带 pending 或结束时间，区别于进度和完成回调。 */
+
+      /**
+       * 核对外层 Marker 等待两个内层 Marker 的资源归属。
+       * 记录具名转换的名称与起始 Scheduler 毫秒时间；此回调只写日志，不触发页面更新。
+       */
       onTransitionStart: (name, startTime) => {
         Scheduler.log(`onTransitionStart(${name}, ${startTime})`);
       },
-      /** onTransitionComplete 在“多层 TracingMarker”场景接收 name、startTime 与 endTime，只在有效转换的阻塞集合清空后记录终态；它不再携带 pending。 */
+
+      /**
+       * 核对外层 Marker 等待两个内层 Marker 的资源归属。
+       * 记录该转换等待集合清空后的名称、起始时间和完成快照时间（Scheduler 毫秒）；供断言区分各转换的终态。
+       */
       onTransitionComplete: (name, startTime, endTime) => {
         Scheduler.log(
           `onTransitionComplete(${name}, ${startTime}, ${endTime})`,
         );
       },
-      /** onMarkerProgress 在“多层 TracingMarker”场景接收转换名、Marker 名、起始/当前时间及 pending，记录 Marker 局部阻塞集合，区别于根转换的聚合进度。 */
+
+      /**
+       * 核对外层 Marker 等待两个内层 Marker 的资源归属。
+       * 记录转换与 Marker 的名称、起始时间和本次进度时间（Scheduler 毫秒），并序列化该 Marker 仍等待的边界；不自行增删 pending。
+       */
       onMarkerProgress: (
         transitioName,
         markerName,
@@ -1364,7 +1561,11 @@ describe('ReactInteractionTracing', () => {
           `onMarkerProgress(${transitioName}, ${markerName}, ${startTime}, ${currentTime}, [${suspenseNames}])`,
         );
       },
-      /** onMarkerComplete 在“多层 TracingMarker”场景接收转换名、Marker 名及起止时间，只结算该 Marker 的正常终态，区别于整个转换完成。 */
+
+      /**
+       * 核对外层 Marker 等待两个内层 Marker 的资源归属。
+       * 记录转换名称、Marker 名称及起止 Scheduler 毫秒时间；这只证明该 Marker 的完成事件，根转换是否完成由另一个回调验证。
+       */
       onMarkerComplete: (transitioName, markerName, startTime, endTime) => {
         Scheduler.log(
           `onMarkerComplete(${transitioName}, ${markerName}, ${startTime}, ${endTime})`,
@@ -1376,6 +1577,9 @@ describe('ReactInteractionTracing', () => {
     /** App 构造外层 Marker、两个内层 Marker 与三层 Suspense，验证进度沿 Marker 祖先链聚合。 */
     function App() {
       const [navigate, setNavigate] = useState(false);
+      /**
+       * 进入含两个内层 Marker 的 Page Two，外层 Marker 保持等待内层未解析资源。
+       */
       navigateToPageTwo = () => {
         setNavigate(true);
       };
@@ -1474,35 +1678,51 @@ describe('ReactInteractionTracing', () => {
   });
 
   /**
-   * 场景：转换完成前修改 Marker 名称会标记不完整。
+   * 场景：保留但跳过的 Marker 改名历史期望。
    * Given：被跳过的回归场景中，具名 Marker 仍有 Suspense 挂起。
    * When：复用同一 Marker 实例但把 name 从 marker one 改为 marker two。
-   * Then：旧 Marker 产生含 newName 的 incomplete 删除记录，而转换在资源解析后仍可结算。
-   * 验证机制：预期日志对 deletions 的 type、name、newName、endTime 做稳定排序断言。
+   * Then：此历史断言期望旧 Marker 的 incomplete 记录包含 newName，并期望资源解析后转换完成。
+   * 验证状态：it.skip 不执行此回归；当前 processTransitionCallbacks 只转换 type、name、endTime，且更新同一 Marker 的 name 会警告，不支持此处的 newName 期望。
    * 对应源码：packages/react-reconciler/src/ReactFiberCommitWork.js 的 abortTracingMarkerTransitions()；ReactFiberTracingMarkerComponent.js。
    */
   // @gate enableTransitionTracing
   // eslint-disable-next-line jest/no-disabled-tests
   it.skip('warn and calls marker incomplete if name changes before transition completes', async () => {
     const transitionCallbacks = {
-      /** onTransitionStart 在“转换中 Marker 改名”场景接收 name 与 startTime，记录转换进入追踪集合的开放事件；它不携带 pending 或结束时间，区别于进度和完成回调。 */
+
+      /**
+       * 保留已跳过的历史改名场景的事件观测口，不作为本版已验证行为。
+       * 记录具名转换的名称与起始 Scheduler 毫秒时间；此回调只写日志，不触发页面更新。
+       */
       onTransitionStart: (name, startTime) => {
         Scheduler.log(`onTransitionStart(${name}, ${startTime})`);
       },
-      /** onTransitionProgress 在“转换中 Marker 改名”场景接收 name、startTime、endTime 与 pending，快照当前阻塞 Suspense；它可重复触发，区别于一次性的开始和完成回调。 */
+
+      /**
+       * 保留已跳过的历史改名场景的事件观测口，不作为本版已验证行为。
+       * 把 pending 边界名称按传入顺序写入日志，无名称时显示 <null>。startTime 是转换起点，名为 endTime 的实参此时是进度快照时间，并非转换已经完成。
+       */
       onTransitionProgress: (name, startTime, endTime, pending) => {
         const suspenseNames = pending.map(p => p.name || '<null>').join(', ');
         Scheduler.log(
           `onTransitionProgress(${name}, ${startTime}, ${endTime}, [${suspenseNames}])`,
         );
       },
-      /** onTransitionComplete 在“转换中 Marker 改名”场景接收 name、startTime 与 endTime，只在有效转换的阻塞集合清空后记录终态；它不再携带 pending。 */
+
+      /**
+       * 保留已跳过的历史改名场景的事件观测口，不作为本版已验证行为。
+       * 记录该转换等待集合清空后的名称、起始时间和完成快照时间（Scheduler 毫秒）；供断言区分各转换的终态。
+       */
       onTransitionComplete: (name, startTime, endTime) => {
         Scheduler.log(
           `onTransitionComplete(${name}, ${startTime}, ${endTime})`,
         );
       },
-      /** onMarkerProgress 在“转换中 Marker 改名”场景接收转换名、Marker 名、起始/当前时间及 pending，记录 Marker 局部阻塞集合，区别于根转换的聚合进度。 */
+
+      /**
+       * 保留已跳过的历史改名场景的事件观测口，不作为本版已验证行为。
+       * 记录转换与 Marker 的名称、起始时间和本次进度时间（Scheduler 毫秒），并序列化该 Marker 仍等待的边界；不自行增删 pending。
+       */
       onMarkerProgress: (
         transitioName,
         markerName,
@@ -1515,7 +1735,11 @@ describe('ReactInteractionTracing', () => {
           `onMarkerProgress(${transitioName}, ${markerName}, ${startTime}, ${currentTime}, [${suspenseNames}])`,
         );
       },
-      /** onMarkerIncomplete 在“转换中 Marker 改名”场景接收转换名、Marker 名、startTime 与 deletions，记录删除或改名破坏的追踪链；它表示异常终止而非正常完成。 */
+
+      /**
+       * 保留已跳过的历史改名场景的事件观测口，不作为本版已验证行为。
+       * 用 stringifyDeletions 排序序列化终止记录的键，保留 type/name/endTime；该日志区分删除导致的不完整与正常完成。
+       */
       onMarkerIncomplete: (
         transitionName,
         markerName,
@@ -1528,7 +1752,11 @@ describe('ReactInteractionTracing', () => {
           )}])`,
         );
       },
-      /** onMarkerComplete 在“转换中 Marker 改名”场景接收转换名、Marker 名及起止时间，只结算该 Marker 的正常终态，区别于整个转换完成。 */
+
+      /**
+       * 保留已跳过的历史改名场景的事件观测口，不作为本版已验证行为。
+       * 记录转换名称、Marker 名称及起止 Scheduler 毫秒时间；这只证明该 Marker 的完成事件，根转换是否完成由另一个回调验证。
+       */
       onMarkerComplete: (transitioName, markerName, startTime, endTime) => {
         Scheduler.log(
           `onMarkerComplete(${transitioName}, ${markerName}, ${startTime}, ${endTime})`,
@@ -1536,7 +1764,7 @@ describe('ReactInteractionTracing', () => {
       },
     };
 
-    /** App 通过 navigate 与 markerName 改写仍在追踪中的 Marker，触发名称变化的不完整路径。 */
+    /** 历史夹具复用同一 Marker 并修改 name；该用例被跳过，下面的 incomplete 预期不代表当前实现保证。 */
     function App({navigate, markerName}) {
       return (
         <div>
@@ -1606,30 +1834,46 @@ describe('ReactInteractionTracing', () => {
    * Given：父 Marker 内含可删除子 Marker和持续存在的同级 Marker，两者均挂起。
    * When：转换进行中移除子 Marker，随后重新渲染并分别解析资源。
    * Then：子 Marker 与父 Marker收到 incomplete；同级 Marker 继续 progress/complete，不应被误删。
-   * 验证机制：waitForAll 核对删除记录、剩余 pending 集合，并验证无错误的全树完成回调。
+   * 验证机制：waitForAll 核对删除记录、剩余 pending 集合，并验证不完整祖先与转换不产生 complete，幸存兄弟仍可完成。
    * 对应源码：packages/react-reconciler/src/ReactFiberCommitWork.js 的 abortTracingMarkerTransitions()；ReactFiberTracingMarkerComponent.js。
    */
   // @gate enableTransitionTracing
   it('marker incomplete for tree with parent and sibling tracing markers', async () => {
     const transitionCallbacks = {
-      /** onTransitionStart 在“父子同级 Marker 删除”场景接收 name 与 startTime，记录转换进入追踪集合的开放事件；它不携带 pending 或结束时间，区别于进度和完成回调。 */
+
+      /**
+       * 跟踪删除 Marker 子树后祖先不完整、兄弟仍可完成的分支。
+       * 记录具名转换的名称与起始 Scheduler 毫秒时间；此回调只写日志，不触发页面更新。
+       */
       onTransitionStart: (name, startTime) => {
         Scheduler.log(`onTransitionStart(${name}, ${startTime})`);
       },
-      /** onTransitionProgress 在“父子同级 Marker 删除”场景接收 name、startTime、endTime 与 pending，快照当前阻塞 Suspense；它可重复触发，区别于一次性的开始和完成回调。 */
+
+      /**
+       * 跟踪删除 Marker 子树后祖先不完整、兄弟仍可完成的分支。
+       * 把 pending 边界名称按传入顺序写入日志，无名称时显示 <null>。startTime 是转换起点，名为 endTime 的实参此时是进度快照时间，并非转换已经完成。
+       */
       onTransitionProgress: (name, startTime, endTime, pending) => {
         const suspenseNames = pending.map(p => p.name || '<null>').join(', ');
         Scheduler.log(
           `onTransitionProgress(${name}, ${startTime}, ${endTime}, [${suspenseNames}])`,
         );
       },
-      /** onTransitionComplete 在“父子同级 Marker 删除”场景接收 name、startTime 与 endTime，只在有效转换的阻塞集合清空后记录终态；它不再携带 pending。 */
+
+      /**
+       * 跟踪删除 Marker 子树后祖先不完整、兄弟仍可完成的分支。
+       * 记录该转换等待集合清空后的名称、起始时间和完成快照时间（Scheduler 毫秒）；供断言区分各转换的终态。
+       */
       onTransitionComplete: (name, startTime, endTime) => {
         Scheduler.log(
           `onTransitionComplete(${name}, ${startTime}, ${endTime})`,
         );
       },
-      /** onMarkerProgress 在“父子同级 Marker 删除”场景接收转换名、Marker 名、起始/当前时间及 pending，记录 Marker 局部阻塞集合，区别于根转换的聚合进度。 */
+
+      /**
+       * 跟踪删除 Marker 子树后祖先不完整、兄弟仍可完成的分支。
+       * 记录转换与 Marker 的名称、起始时间和本次进度时间（Scheduler 毫秒），并序列化该 Marker 仍等待的边界；不自行增删 pending。
+       */
       onMarkerProgress: (
         transitioName,
         markerName,
@@ -1642,7 +1886,11 @@ describe('ReactInteractionTracing', () => {
           `onMarkerProgress(${transitioName}, ${markerName}, ${startTime}, ${currentTime}, [${suspenseNames}])`,
         );
       },
-      /** onMarkerIncomplete 在“父子同级 Marker 删除”场景接收转换名、Marker 名、startTime 与 deletions，记录删除或改名破坏的追踪链；它表示异常终止而非正常完成。 */
+
+      /**
+       * 跟踪删除 Marker 子树后祖先不完整、兄弟仍可完成的分支。
+       * 用 stringifyDeletions 排序序列化终止记录的键，保留 type/name/endTime；该日志区分删除导致的不完整与正常完成。
+       */
       onMarkerIncomplete: (
         transitionName,
         markerName,
@@ -1655,7 +1903,11 @@ describe('ReactInteractionTracing', () => {
           )}])`,
         );
       },
-      /** onMarkerComplete 在“父子同级 Marker 删除”场景接收转换名、Marker 名及起止时间，只结算该 Marker 的正常终态，区别于整个转换完成。 */
+
+      /**
+       * 跟踪删除 Marker 子树后祖先不完整、兄弟仍可完成的分支。
+       * 记录转换名称、Marker 名称及起止 Scheduler 毫秒时间；这只证明该 Marker 的完成事件，根转换是否完成由另一个回调验证。
+       */
       onMarkerComplete: (transitioName, markerName, startTime, endTime) => {
         Scheduler.log(
           `onMarkerComplete(${transitioName}, ${markerName}, ${startTime}, ${endTime})`,
@@ -1792,24 +2044,40 @@ describe('ReactInteractionTracing', () => {
   // @gate enableTransitionTracing
   it('marker gets deleted', async () => {
     const transitionCallbacks = {
-      /** onTransitionStart 在“Marker 子树删除”场景接收 name 与 startTime，记录转换进入追踪集合的开放事件；它不携带 pending 或结束时间，区别于进度和完成回调。 */
+
+      /**
+       * 区分被删除 Marker 的终止记录与幸存兄弟的完成记录。
+       * 记录具名转换的名称与起始 Scheduler 毫秒时间；此回调只写日志，不触发页面更新。
+       */
       onTransitionStart: (name, startTime) => {
         Scheduler.log(`onTransitionStart(${name}, ${startTime})`);
       },
-      /** onTransitionProgress 在“Marker 子树删除”场景接收 name、startTime、endTime 与 pending，快照当前阻塞 Suspense；它可重复触发，区别于一次性的开始和完成回调。 */
+
+      /**
+       * 区分被删除 Marker 的终止记录与幸存兄弟的完成记录。
+       * 把 pending 边界名称按传入顺序写入日志，无名称时显示 <null>。startTime 是转换起点，名为 endTime 的实参此时是进度快照时间，并非转换已经完成。
+       */
       onTransitionProgress: (name, startTime, endTime, pending) => {
         const suspenseNames = pending.map(p => p.name || '<null>').join(', ');
         Scheduler.log(
           `onTransitionProgress(${name}, ${startTime}, ${endTime}, [${suspenseNames}])`,
         );
       },
-      /** onTransitionComplete 在“Marker 子树删除”场景接收 name、startTime 与 endTime，只在有效转换的阻塞集合清空后记录终态；它不再携带 pending。 */
+
+      /**
+       * 区分被删除 Marker 的终止记录与幸存兄弟的完成记录。
+       * 记录该转换等待集合清空后的名称、起始时间和完成快照时间（Scheduler 毫秒）；供断言区分各转换的终态。
+       */
       onTransitionComplete: (name, startTime, endTime) => {
         Scheduler.log(
           `onTransitionComplete(${name}, ${startTime}, ${endTime})`,
         );
       },
-      /** onMarkerProgress 在“Marker 子树删除”场景接收转换名、Marker 名、起始/当前时间及 pending，记录 Marker 局部阻塞集合，区别于根转换的聚合进度。 */
+
+      /**
+       * 区分被删除 Marker 的终止记录与幸存兄弟的完成记录。
+       * 记录转换与 Marker 的名称、起始时间和本次进度时间（Scheduler 毫秒），并序列化该 Marker 仍等待的边界；不自行增删 pending。
+       */
       onMarkerProgress: (
         transitioName,
         markerName,
@@ -1822,7 +2090,11 @@ describe('ReactInteractionTracing', () => {
           `onMarkerProgress(${transitioName}, ${markerName}, ${startTime}, ${currentTime}, [${suspenseNames}])`,
         );
       },
-      /** onMarkerIncomplete 在“Marker 子树删除”场景接收转换名、Marker 名、startTime 与 deletions，记录删除或改名破坏的追踪链；它表示异常终止而非正常完成。 */
+
+      /**
+       * 区分被删除 Marker 的终止记录与幸存兄弟的完成记录。
+       * 用 stringifyDeletions 排序序列化终止记录的键，保留 type/name/endTime；该日志区分删除导致的不完整与正常完成。
+       */
       onMarkerIncomplete: (
         transitionName,
         markerName,
@@ -1835,7 +2107,11 @@ describe('ReactInteractionTracing', () => {
           )}])`,
         );
       },
-      /** onMarkerComplete 在“Marker 子树删除”场景接收转换名、Marker 名及起止时间，只结算该 Marker 的正常终态，区别于整个转换完成。 */
+
+      /**
+       * 区分被删除 Marker 的终止记录与幸存兄弟的完成记录。
+       * 记录转换名称、Marker 名称及起止 Scheduler 毫秒时间；这只证明该 Marker 的完成事件，根转换是否完成由另一个回调验证。
+       */
       onMarkerComplete: (transitioName, markerName, startTime, endTime) => {
         Scheduler.log(
           `onMarkerComplete(${transitioName}, ${markerName}, ${startTime}, ${endTime})`,
@@ -1947,24 +2223,40 @@ describe('ReactInteractionTracing', () => {
   // @gate enableTransitionTracing
   it('Suspense boundary added by the transition is deleted', async () => {
     const transitionCallbacks = {
-      /** onTransitionStart 在“转换新增 Suspense 被删除”场景接收 name 与 startTime，记录转换进入追踪集合的开放事件；它不携带 pending 或结束时间，区别于进度和完成回调。 */
+
+      /**
+       * 只记录删除时仍挂起的 child，排除已完成和未提交的后代。
+       * 记录具名转换的名称与起始 Scheduler 毫秒时间；此回调只写日志，不触发页面更新。
+       */
       onTransitionStart: (name, startTime) => {
         Scheduler.log(`onTransitionStart(${name}, ${startTime})`);
       },
-      /** onTransitionProgress 在“转换新增 Suspense 被删除”场景接收 name、startTime、endTime 与 pending，快照当前阻塞 Suspense；它可重复触发，区别于一次性的开始和完成回调。 */
+
+      /**
+       * 只记录删除时仍挂起的 child，排除已完成和未提交的后代。
+       * 把 pending 边界名称按传入顺序写入日志，无名称时显示 <null>。startTime 是转换起点，名为 endTime 的实参此时是进度快照时间，并非转换已经完成。
+       */
       onTransitionProgress: (name, startTime, endTime, pending) => {
         const suspenseNames = pending.map(p => p.name || '<null>').join(', ');
         Scheduler.log(
           `onTransitionProgress(${name}, ${startTime}, ${endTime}, [${suspenseNames}])`,
         );
       },
-      /** onTransitionComplete 在“转换新增 Suspense 被删除”场景接收 name、startTime 与 endTime，只在有效转换的阻塞集合清空后记录终态；它不再携带 pending。 */
+
+      /**
+       * 只记录删除时仍挂起的 child，排除已完成和未提交的后代。
+       * 记录该转换等待集合清空后的名称、起始时间和完成快照时间（Scheduler 毫秒）；供断言区分各转换的终态。
+       */
       onTransitionComplete: (name, startTime, endTime) => {
         Scheduler.log(
           `onTransitionComplete(${name}, ${startTime}, ${endTime})`,
         );
       },
-      /** onMarkerProgress 在“转换新增 Suspense 被删除”场景接收转换名、Marker 名、起始/当前时间及 pending，记录 Marker 局部阻塞集合，区别于根转换的聚合进度。 */
+
+      /**
+       * 只记录删除时仍挂起的 child，排除已完成和未提交的后代。
+       * 记录转换与 Marker 的名称、起始时间和本次进度时间（Scheduler 毫秒），并序列化该 Marker 仍等待的边界；不自行增删 pending。
+       */
       onMarkerProgress: (
         transitioName,
         markerName,
@@ -1977,7 +2269,11 @@ describe('ReactInteractionTracing', () => {
           `onMarkerProgress(${transitioName}, ${markerName}, ${startTime}, ${currentTime}, [${suspenseNames}])`,
         );
       },
-      /** onMarkerIncomplete 在“转换新增 Suspense 被删除”场景接收转换名、Marker 名、startTime 与 deletions，记录删除或改名破坏的追踪链；它表示异常终止而非正常完成。 */
+
+      /**
+       * 只记录删除时仍挂起的 child，排除已完成和未提交的后代。
+       * 用 stringifyDeletions 排序序列化终止记录的键，保留 type/name/endTime；该日志区分删除导致的不完整与正常完成。
+       */
       onMarkerIncomplete: (
         transitionName,
         markerName,
@@ -1990,7 +2286,11 @@ describe('ReactInteractionTracing', () => {
           )}])`,
         );
       },
-      /** onMarkerComplete 在“转换新增 Suspense 被删除”场景接收转换名、Marker 名及起止时间，只结算该 Marker 的正常终态，区别于整个转换完成。 */
+
+      /**
+       * 只记录删除时仍挂起的 child，排除已完成和未提交的后代。
+       * 记录转换名称、Marker 名称及起止 Scheduler 毫秒时间；这只证明该 Marker 的完成事件，根转换是否完成由另一个回调验证。
+       */
       onMarkerComplete: (transitioName, markerName, startTime, endTime) => {
         Scheduler.log(
           `onMarkerComplete(${transitioName}, ${markerName}, ${startTime}, ${endTime})`,
@@ -2129,24 +2429,40 @@ describe('ReactInteractionTracing', () => {
   // @gate enableTransitionTracing
   it('Suspense boundary not added by the transition is deleted', async () => {
     const transitionCallbacks = {
-      /** onTransitionStart 在“非转换新增 Suspense 删除”场景接收 name 与 startTime，记录转换进入追踪集合的开放事件；它不携带 pending 或结束时间，区别于进度和完成回调。 */
+
+      /**
+       * 验证普通更新新增的 Suspense 不加入原转换。
+       * 记录具名转换的名称与起始 Scheduler 毫秒时间；此回调只写日志，不触发页面更新。
+       */
       onTransitionStart: (name, startTime) => {
         Scheduler.log(`onTransitionStart(${name}, ${startTime})`);
       },
-      /** onTransitionProgress 在“非转换新增 Suspense 删除”场景接收 name、startTime、endTime 与 pending，快照当前阻塞 Suspense；它可重复触发，区别于一次性的开始和完成回调。 */
+
+      /**
+       * 验证普通更新新增的 Suspense 不加入原转换。
+       * 把 pending 边界名称按传入顺序写入日志，无名称时显示 <null>。startTime 是转换起点，名为 endTime 的实参此时是进度快照时间，并非转换已经完成。
+       */
       onTransitionProgress: (name, startTime, endTime, pending) => {
         const suspenseNames = pending.map(p => p.name || '<null>').join(', ');
         Scheduler.log(
           `onTransitionProgress(${name}, ${startTime}, ${endTime}, [${suspenseNames}])`,
         );
       },
-      /** onTransitionComplete 在“非转换新增 Suspense 删除”场景接收 name、startTime 与 endTime，只在有效转换的阻塞集合清空后记录终态；它不再携带 pending。 */
+
+      /**
+       * 验证普通更新新增的 Suspense 不加入原转换。
+       * 记录该转换等待集合清空后的名称、起始时间和完成快照时间（Scheduler 毫秒）；供断言区分各转换的终态。
+       */
       onTransitionComplete: (name, startTime, endTime) => {
         Scheduler.log(
           `onTransitionComplete(${name}, ${startTime}, ${endTime})`,
         );
       },
-      /** onMarkerProgress 在“非转换新增 Suspense 删除”场景接收转换名、Marker 名、起始/当前时间及 pending，记录 Marker 局部阻塞集合，区别于根转换的聚合进度。 */
+
+      /**
+       * 验证普通更新新增的 Suspense 不加入原转换。
+       * 记录转换与 Marker 的名称、起始时间和本次进度时间（Scheduler 毫秒），并序列化该 Marker 仍等待的边界；不自行增删 pending。
+       */
       onMarkerProgress: (
         transitioName,
         markerName,
@@ -2159,7 +2475,11 @@ describe('ReactInteractionTracing', () => {
           `onMarkerProgress(${transitioName}, ${markerName}, ${startTime}, ${currentTime}, [${suspenseNames}])`,
         );
       },
-      /** onMarkerIncomplete 在“非转换新增 Suspense 删除”场景接收转换名、Marker 名、startTime 与 deletions，记录删除或改名破坏的追踪链；它表示异常终止而非正常完成。 */
+
+      /**
+       * 验证普通更新新增的 Suspense 不加入原转换。
+       * 用 stringifyDeletions 排序序列化终止记录的键，保留 type/name/endTime；该日志区分删除导致的不完整与正常完成。
+       */
       onMarkerIncomplete: (
         transitionName,
         markerName,
@@ -2172,7 +2492,11 @@ describe('ReactInteractionTracing', () => {
           )}])`,
         );
       },
-      /** onMarkerComplete 在“非转换新增 Suspense 删除”场景接收转换名、Marker 名及起止时间，只结算该 Marker 的正常终态，区别于整个转换完成。 */
+
+      /**
+       * 验证普通更新新增的 Suspense 不加入原转换。
+       * 记录转换名称、Marker 名称及起止 Scheduler 毫秒时间；这只证明该 Marker 的完成事件，根转换是否完成由另一个回调验证。
+       */
       onMarkerComplete: (transitioName, markerName, startTime, endTime) => {
         Scheduler.log(
           `onMarkerComplete(${transitioName}, ${markerName}, ${startTime}, ${endTime})`,
@@ -2265,24 +2589,40 @@ describe('ReactInteractionTracing', () => {
   // @gate enableTransitionTracing
   it('marker incomplete gets called properly if child suspense marker is not part of it', async () => {
     const transitionCallbacks = {
-      /** onTransitionStart 在“非归属子 Suspense 的不完整事件”场景接收 name 与 startTime，记录转换进入追踪集合的开放事件；它不携带 pending 或结束时间，区别于进度和完成回调。 */
+
+      /**
+       * 区分 transition two 的删除记录与 transition one 的独立完成。
+       * 记录具名转换的名称与起始 Scheduler 毫秒时间；此回调只写日志，不触发页面更新。
+       */
       onTransitionStart: (name, startTime) => {
         Scheduler.log(`onTransitionStart(${name}, ${startTime})`);
       },
-      /** onTransitionProgress 在“非归属子 Suspense 的不完整事件”场景接收 name、startTime、endTime 与 pending，快照当前阻塞 Suspense；它可重复触发，区别于一次性的开始和完成回调。 */
+
+      /**
+       * 区分 transition two 的删除记录与 transition one 的独立完成。
+       * 把 pending 边界名称按传入顺序写入日志，无名称时显示 <null>。startTime 是转换起点，名为 endTime 的实参此时是进度快照时间，并非转换已经完成。
+       */
       onTransitionProgress: (name, startTime, endTime, pending) => {
         const suspenseNames = pending.map(p => p.name || '<null>').join(', ');
         Scheduler.log(
           `onTransitionProgress(${name}, ${startTime}, ${endTime}, [${suspenseNames}])`,
         );
       },
-      /** onTransitionComplete 在“非归属子 Suspense 的不完整事件”场景接收 name、startTime 与 endTime，只在有效转换的阻塞集合清空后记录终态；它不再携带 pending。 */
+
+      /**
+       * 区分 transition two 的删除记录与 transition one 的独立完成。
+       * 记录该转换等待集合清空后的名称、起始时间和完成快照时间（Scheduler 毫秒）；供断言区分各转换的终态。
+       */
       onTransitionComplete: (name, startTime, endTime) => {
         Scheduler.log(
           `onTransitionComplete(${name}, ${startTime}, ${endTime})`,
         );
       },
-      /** onMarkerProgress 在“非归属子 Suspense 的不完整事件”场景接收转换名、Marker 名、起始/当前时间及 pending，记录 Marker 局部阻塞集合，区别于根转换的聚合进度。 */
+
+      /**
+       * 区分 transition two 的删除记录与 transition one 的独立完成。
+       * 记录转换与 Marker 的名称、起始时间和本次进度时间（Scheduler 毫秒），并序列化该 Marker 仍等待的边界；不自行增删 pending。
+       */
       onMarkerProgress: (
         transitioName,
         markerName,
@@ -2295,7 +2635,11 @@ describe('ReactInteractionTracing', () => {
           `onMarkerProgress(${transitioName}, ${markerName}, ${startTime}, ${currentTime}, [${suspenseNames}])`,
         );
       },
-      /** onMarkerIncomplete 在“非归属子 Suspense 的不完整事件”场景接收转换名、Marker 名、startTime 与 deletions，记录删除或改名破坏的追踪链；它表示异常终止而非正常完成。 */
+
+      /**
+       * 区分 transition two 的删除记录与 transition one 的独立完成。
+       * 用 stringifyDeletions 排序序列化终止记录的键，保留 type/name/endTime；该日志区分删除导致的不完整与正常完成。
+       */
       onMarkerIncomplete: (
         transitionName,
         markerName,
@@ -2308,7 +2652,11 @@ describe('ReactInteractionTracing', () => {
           )}])`,
         );
       },
-      /** onMarkerComplete 在“非归属子 Suspense 的不完整事件”场景接收转换名、Marker 名及起止时间，只结算该 Marker 的正常终态，区别于整个转换完成。 */
+
+      /**
+       * 区分 transition two 的删除记录与 transition one 的独立完成。
+       * 记录转换名称、Marker 名称及起止 Scheduler 毫秒时间；这只证明该 Marker 的完成事件，根转换是否完成由另一个回调验证。
+       */
       onMarkerComplete: (transitioName, markerName, startTime, endTime) => {
         Scheduler.log(
           `onMarkerComplete(${transitioName}, ${markerName}, ${startTime}, ${endTime})`,
@@ -2427,17 +2775,29 @@ describe('ReactInteractionTracing', () => {
   // @gate enableTransitionTracing
   it('warns when marker name changes', async () => {
     const transitionCallbacks = {
-      /** onTransitionStart 在“Marker 名称与 key”场景接收 name 与 startTime，记录转换进入追踪集合的开放事件；它不携带 pending 或结束时间，区别于进度和完成回调。 */
+
+      /**
+       * 区分同 key 改名警告与新 key 重挂载后的 Marker 完成。
+       * 记录具名转换的名称与起始 Scheduler 毫秒时间；此回调只写日志，不触发页面更新。
+       */
       onTransitionStart: (name, startTime) => {
         Scheduler.log(`onTransitionStart(${name}, ${startTime})`);
       },
-      /** onTransitionComplete 在“Marker 名称与 key”场景接收 name、startTime 与 endTime，只在有效转换的阻塞集合清空后记录终态；它不再携带 pending。 */
+
+      /**
+       * 区分同 key 改名警告与新 key 重挂载后的 Marker 完成。
+       * 记录该转换等待集合清空后的名称、起始时间和完成快照时间（Scheduler 毫秒）；供断言区分各转换的终态。
+       */
       onTransitionComplete: (name, startTime, endTime) => {
         Scheduler.log(
           `onTransitionComplete(${name}, ${startTime}, ${endTime})`,
         );
       },
-      /** onMarkerIncomplete 在“Marker 名称与 key”场景接收转换名、Marker 名、startTime 与 deletions，记录删除或改名破坏的追踪链；它表示异常终止而非正常完成。 */
+
+      /**
+       * 区分同 key 改名警告与新 key 重挂载后的 Marker 完成。
+       * 用 stringifyDeletions 排序序列化终止记录的键，保留 type/name/endTime；该日志区分删除导致的不完整与正常完成。
+       */
       onMarkerIncomplete: (
         transitionName,
         markerName,
@@ -2450,7 +2810,11 @@ describe('ReactInteractionTracing', () => {
           )}])`,
         );
       },
-      /** onMarkerComplete 在“Marker 名称与 key”场景接收转换名、Marker 名及起止时间，只结算该 Marker 的正常终态，区别于整个转换完成。 */
+
+      /**
+       * 区分同 key 改名警告与新 key 重挂载后的 Marker 完成。
+       * 记录转换名称、Marker 名称及起止 Scheduler 毫秒时间；这只证明该 Marker 的完成事件，根转换是否完成由另一个回调验证。
+       */
       onMarkerComplete: (transitioName, markerName, startTime, endTime) => {
         Scheduler.log(
           `onMarkerComplete(${transitioName}, ${markerName}, ${startTime}, ${endTime})`,
@@ -2533,17 +2897,29 @@ describe('ReactInteractionTracing', () => {
   // @gate enableTransitionTracing
   it('offscreen trees should not stop transition from completing', async () => {
     const transitionCallbacks = {
-      /** onTransitionStart 在“隐藏 Activity 不阻塞”场景接收 name 与 startTime，记录转换进入追踪集合的开放事件；它不携带 pending 或结束时间，区别于进度和完成回调。 */
+
+      /**
+       * 验证隐藏 Activity 的挂起不会延迟可见转换完成。
+       * 记录具名转换的名称与起始 Scheduler 毫秒时间；此回调只写日志，不触发页面更新。
+       */
       onTransitionStart: (name, startTime) => {
         Scheduler.log(`onTransitionStart(${name}, ${startTime})`);
       },
-      /** onTransitionComplete 在“隐藏 Activity 不阻塞”场景接收 name、startTime 与 endTime，只在有效转换的阻塞集合清空后记录终态；它不再携带 pending。 */
+
+      /**
+       * 验证隐藏 Activity 的挂起不会延迟可见转换完成。
+       * 记录该转换等待集合清空后的名称、起始时间和完成快照时间（Scheduler 毫秒）；供断言区分各转换的终态。
+       */
       onTransitionComplete: (name, startTime, endTime) => {
         Scheduler.log(
           `onTransitionComplete(${name}, ${startTime}, ${endTime})`,
         );
       },
-      /** onMarkerComplete 在“隐藏 Activity 不阻塞”场景接收转换名、Marker 名及起止时间，只结算该 Marker 的正常终态，区别于整个转换完成。 */
+
+      /**
+       * 验证隐藏 Activity 的挂起不会延迟可见转换完成。
+       * 记录转换名称、Marker 名称及起止 Scheduler 毫秒时间；这只证明该 Marker 的完成事件，根转换是否完成由另一个回调验证。
+       */
       onMarkerComplete: (transitioName, markerName, startTime, endTime) => {
         Scheduler.log(
           `onMarkerComplete(${transitioName}, ${markerName}, ${startTime}, ${endTime})`,
@@ -2615,18 +2991,30 @@ describe('ReactInteractionTracing', () => {
   // @gate enableTransitionTracing
   it('discrete events', async () => {
     const transitionCallbacks = {
-      /** onTransitionStart 在“离散事件转换”场景接收 name 与 startTime，记录转换进入追踪集合的开放事件；它不携带 pending 或结束时间，区别于进度和完成回调。 */
+
+      /**
+       * 核对离散事件入口下转换仍按挂起集合结算。
+       * 记录具名转换的名称与起始 Scheduler 毫秒时间；此回调只写日志，不触发页面更新。
+       */
       onTransitionStart: (name, startTime) => {
         Scheduler.log(`onTransitionStart(${name}, ${startTime})`);
       },
-      /** onTransitionProgress 在“离散事件转换”场景接收 name、startTime、endTime 与 pending，快照当前阻塞 Suspense；它可重复触发，区别于一次性的开始和完成回调。 */
+
+      /**
+       * 核对离散事件入口下转换仍按挂起集合结算。
+       * 把 pending 边界名称按传入顺序写入日志，无名称时显示 <null>。startTime 是转换起点，名为 endTime 的实参此时是进度快照时间，并非转换已经完成。
+       */
       onTransitionProgress: (name, startTime, endTime, pending) => {
         const suspenseNames = pending.map(p => p.name || '<null>').join(', ');
         Scheduler.log(
           `onTransitionProgress(${name}, ${startTime}, ${endTime}, [${suspenseNames}])`,
         );
       },
-      /** onTransitionComplete 在“离散事件转换”场景接收 name、startTime 与 endTime，只在有效转换的阻塞集合清空后记录终态；它不再携带 pending。 */
+
+      /**
+       * 核对离散事件入口下转换仍按挂起集合结算。
+       * 记录该转换等待集合清空后的名称、起始时间和完成快照时间（Scheduler 毫秒）；供断言区分各转换的终态。
+       */
       onTransitionComplete: (name, startTime, endTime) => {
         Scheduler.log(
           `onTransitionComplete(${name}, ${startTime}, ${endTime})`,
@@ -2688,18 +3076,30 @@ describe('ReactInteractionTracing', () => {
   // @gate enableTransitionTracing
   it('multiple commits happen before a paint', async () => {
     const transitionCallbacks = {
-      /** onTransitionStart 在“绘制前多次提交”场景接收 name 与 startTime，记录转换进入追踪集合的开放事件；它不携带 pending 或结束时间，区别于进度和完成回调。 */
+
+      /**
+       * 核对绘制前连续提交合并后的最终 pending 快照。
+       * 记录具名转换的名称与起始 Scheduler 毫秒时间；此回调只写日志，不触发页面更新。
+       */
       onTransitionStart: (name, startTime) => {
         Scheduler.log(`onTransitionStart(${name}, ${startTime})`);
       },
-      /** onTransitionProgress 在“绘制前多次提交”场景接收 name、startTime、endTime 与 pending，快照当前阻塞 Suspense；它可重复触发，区别于一次性的开始和完成回调。 */
+
+      /**
+       * 核对绘制前连续提交合并后的最终 pending 快照。
+       * 把 pending 边界名称按传入顺序写入日志，无名称时显示 <null>。startTime 是转换起点，名为 endTime 的实参此时是进度快照时间，并非转换已经完成。
+       */
       onTransitionProgress: (name, startTime, endTime, pending) => {
         const suspenseNames = pending.map(p => p.name || '<null>').join(', ');
         Scheduler.log(
           `onTransitionProgress(${name}, ${startTime}, ${endTime}, [${suspenseNames}])`,
         );
       },
-      /** onTransitionComplete 在“绘制前多次提交”场景接收 name、startTime 与 endTime，只在有效转换的阻塞集合清空后记录终态；它不再携带 pending。 */
+
+      /**
+       * 核对绘制前连续提交合并后的最终 pending 快照。
+       * 记录该转换等待集合清空后的名称、起始时间和完成快照时间（Scheduler 毫秒）；供断言区分各转换的终态。
+       */
       onTransitionComplete: (name, startTime, endTime) => {
         Scheduler.log(
           `onTransitionComplete(${name}, ${startTime}, ${endTime})`,
@@ -2769,7 +3169,7 @@ describe('ReactInteractionTracing', () => {
    * 场景：多个根的转换回调与缓存状态互相隔离。
    * Given：两个 ReactNoop 根拥有带 root 标签的独立 callback 对象及各自缓存。
    * When：同一 act 中分别启动 transition one/two，再按根缓存顺序解析。
-   * Then：每个根只记录自己的 transition、pending 与 complete，时间推进互不窜写。
+   * Then：两个根共享 Scheduler 模拟时钟，各自只报告所属 transition 和 pending；按缓存解析顺序分别在 2000、3000 完成。
    * 验证机制：日志中的 /root one/ 与 /root two/ 标签及分根解析顺序共同验证归属。
    * 对应源码：packages/react-reconciler/src/ReactFiberRoot.js 的 transitionCallbacks；ReactFiberTracingMarkerComponent.js。
    */
@@ -2778,20 +3178,32 @@ describe('ReactInteractionTracing', () => {
     /** getTransitionCallbacks 捕获根标签并生成一组根专属 transition callbacks，使相同转换事件可按 root 归属独立断言。 */
     const getTransitionCallbacks = transitionName => {
       return {
-        /** onTransitionStart 在“多根回调隔离”场景接收 name 与 startTime，记录转换进入追踪集合的开放事件；它不携带 pending 或结束时间，区别于进度和完成回调。 回调还闭包记录 transitionName 根标签，用于检测跨根串线。 */
+
+        /**
+         * 把闭包捕获的根标签附在事件后，核对两个根的缓存与回调归属。
+         * 记录具名转换的名称与起始 Scheduler 毫秒时间；此回调只写日志，不触发页面更新。
+         */
         onTransitionStart: (name, startTime) => {
           Scheduler.log(
             `onTransitionStart(${name}, ${startTime}) /${transitionName}/`,
           );
         },
-        /** onTransitionProgress 在“多根回调隔离”场景接收 name、startTime、endTime 与 pending，快照当前阻塞 Suspense；它可重复触发，区别于一次性的开始和完成回调。 回调还闭包记录 transitionName 根标签，用于检测跨根串线。 */
+
+        /**
+         * 把闭包捕获的根标签附在事件后，核对两个根的缓存与回调归属。
+         * 把 pending 边界名称按传入顺序写入日志，无名称时显示 <null>。startTime 是转换起点，名为 endTime 的实参此时是进度快照时间，并非转换已经完成。
+         */
         onTransitionProgress: (name, startTime, endTime, pending) => {
           const suspenseNames = pending.map(p => p.name || '<null>').join(', ');
           Scheduler.log(
             `onTransitionProgress(${name}, ${startTime}, ${endTime}, [${suspenseNames}]) /${transitionName}/`,
           );
         },
-        /** onTransitionComplete 在“多根回调隔离”场景接收 name、startTime 与 endTime，只在有效转换的阻塞集合清空后记录终态；它不再携带 pending。 回调还闭包记录 transitionName 根标签，用于检测跨根串线。 */
+
+        /**
+         * 把闭包捕获的根标签附在事件后，核对两个根的缓存与回调归属。
+         * 记录该转换等待集合清空后的名称、起始时间和完成快照时间（Scheduler 毫秒）；供断言区分各转换的终态。
+         */
         onTransitionComplete: (name, startTime, endTime) => {
           Scheduler.log(
             `onTransitionComplete(${name}, ${startTime}, ${endTime}) /${transitionName}/`,

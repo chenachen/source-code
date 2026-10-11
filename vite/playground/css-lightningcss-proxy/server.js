@@ -3,8 +3,10 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import express from 'express'
 
+/** 由 Vitest 环境标识决定日志级别及是否自动启动独立 Express HTTP 服务。 */
 const isTest = process.env.VITEST
 
+/** 服务端插入 HTML 占位处的内联样式，用于验证 Lightning CSS 的 HTML style 代理转换。 */
 const DYNAMIC_STYLES = `
   <style>
   .ssr-proxy {
@@ -13,7 +15,10 @@ const DYNAMIC_STYLES = `
   </style>
 `
 
+/** 创建 Express 与 Lightning CSS Vite middleware 服务；读取请求 HTML、插入服务端样式，再故意以 / 调用 HTML 转换。
+ * 测试接管返回的 app/vite 并负责关闭；独立运行由文件末尾监听 5173。异常修正 SSR 堆栈后返回 500。 */
 export async function createServer(root = process.cwd(), hmrPort) {
+  /** 以夹具目录定位请求对应的 HTML 文件，独立于 Vite 配置 root。 */
   const resolve = (p) => path.resolve(import.meta.dirname, p)
 
   const app = express()
@@ -32,8 +37,7 @@ export async function createServer(root = process.cwd(), hmrPort) {
     server: {
       middlewareMode: true,
       watch: {
-        // During tests we edit the files too fast and sometimes chokidar
-        // misses change events, so enforce polling for consistency
+        // 测试连续快速编辑文件，以轮询避免原生监听漏掉变化事件。
         usePolling: true,
         interval: 100,
       },
@@ -43,7 +47,7 @@ export async function createServer(root = process.cwd(), hmrPort) {
     },
     appType: 'custom',
   })
-  // use vite's connect instance as middleware
+  // 先挂载 Vite 的 Connect middleware，再处理夹具 HTML 响应。
   app.use(vite.middlewares)
 
   app.use('*all', async (req, res, next) => {
@@ -60,9 +64,7 @@ export async function createServer(root = process.cwd(), hmrPort) {
 
       template = template.replace('<!--[inline-css]-->', DYNAMIC_STYLES)
 
-      // Force calling transformIndexHtml with url === '/', to simulate
-      // usage by ecosystem that was recommended in the SSR documentation
-      // as `const url = req.originalUrl`
+      // 故意以 / 转换实际读取的 HTML，覆盖 HTML 代理 ID 与请求路径不一致的集成场景。
       const html = await vite.transformIndexHtml('/', template)
 
       res.status(200).set({ 'Content-Type': 'text/html' }).end(html)

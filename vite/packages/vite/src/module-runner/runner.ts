@@ -66,7 +66,10 @@ export class ModuleRunner {
   /** close 后阻止继续访问 transport。 */
   private closed = false
 
-  /** 初始化模块图、传输层、可选 HMR 和 sourcemap 支持。 */
+  /**
+   * 初始化模块图、传输层、可选 HMR 和 sourcemap 支持。
+   * connect 在构造时启动，但构造器不等待它；后续 invoke 会等待规范化传输层的连接。
+   */
   constructor(
     public options: ModuleRunnerOptions,
     public evaluator: ModuleEvaluator = new ESModulesEvaluator(),
@@ -119,6 +122,7 @@ export class ModuleRunner {
 
   /**
    * 清空缓存/listeners、恢复 sourcemap 全局钩子并断开 transport。
+   * closed 在等待断开前置位；此方法不取消已进入求值器的用户代码。
    */
   public async close(): Promise<void> {
     this.resetSourceMapSupport?.()
@@ -183,6 +187,7 @@ export class ModuleRunner {
   /**
    * 复用模块执行 Promise，并在循环依赖时提前返回已创建的 exports namespace，
    * 避免互相 await 死锁；已完成模块则直接等待缓存 Promise。
+   * finally 在成功和失败时都置 evaluated=true，promise 保留结果或同一个拒绝直到失效。
    */
   private async cachedRequest(
     url: string,
@@ -239,7 +244,10 @@ export class ModuleRunner {
     }
   }
 
-  /** 对同一原始 URL 的并发 fetch 合并为一个 Promise，并更新模块元信息缓存。 */
+  /**
+   * 对同一原始 URL 的并发 fetch 合并为一个 Promise；键不包含 importer，首个请求提供它。
+   * 完成或失败后移除此临时 Promise，持久元信息和求值结果另存于 evaluatedModules。
+   */
   private async cachedModule(
     url: string,
     importer?: string,
@@ -260,7 +268,7 @@ export class ModuleRunner {
     return cached
   }
 
-  /** 首次请求前从 server 获取 builtins 规则，并合并所有并发初始化。 */
+  /** 首次请求前从 server 获取 builtins 规则；成功保留判定器，失败清除 Promise 以便重试。 */
   private ensureBuiltins(): Promise<void> | undefined {
     if (this.isBuiltin) return
 
@@ -291,7 +299,8 @@ export class ModuleRunner {
 
   /**
    * 向 transport 请求 external/cache/code 元信息，并把 server id/url 规范化到
-   * evaluated graph；server 指示 invalidate 时清除旧执行状态。
+   * evaluated graph。cache 响应复用旧节点；invalidate 响应先清执行状态，再写本次元信息。
+   * 后一种响应已经携带新代码，不需要为失效再发一次 fetchModule。
    */
   private async getModuleInformation(
     url: string,
@@ -308,7 +317,7 @@ export class ModuleRunner {
 
     const isCached = !!(typeof cachedModule === 'object' && cachedModule.meta)
 
-    const fetchedModule = // data/builtin 是已知 external，走快速路径，不发 RPC。
+    const fetchedModule = // data/builtin 是已知 external，跳过 fetchModule RPC。
       (
         url.startsWith('data:') || this.isBuiltin?.(url)
           ? { externalize: url, type: 'builtin' }
@@ -421,6 +430,7 @@ export class ModuleRunner {
     if (this.hmrClient) {
       Object.defineProperty(meta, 'hot', {
         enumerable: true,
+        /** 首次读取时创建上下文并复用；Runner 关闭后再读会报错。 */
         get: () => {
           if (!this.hmrClient) {
             throw new Error(`[module runner] HMR client was closed.`)
@@ -429,6 +439,7 @@ export class ModuleRunner {
           hotContext ||= new HMRContext(this.hmrClient, mod.url)
           return hotContext
         },
+        /** 允许宿主替换缓存的热上下文；下一次读取直接返回该值。 */
         set: (value) => {
           hotContext = value
         },
@@ -439,7 +450,9 @@ export class ModuleRunner {
       [ssrImportKey]: request,
       [ssrDynamicImportKey]: dynamicRequest,
       [ssrModuleExportsKey]: exports,
+      /** 把依赖 namespace 的具名导出转成当前 namespace 上的 live getter。 */
       [ssrExportAllKey]: (obj: any) => exportAll(exports, obj),
+      /** 为单个导出安装可枚举、可重定义的 getter，读取时获得最新绑定值。 */
       [ssrExportNameKey]: (name, getter) =>
         Object.defineProperty(exports, name, {
           enumerable: true,
@@ -478,6 +491,7 @@ function exportAll(exports: any, sourceModule: any) {
         Object.defineProperty(exports, key, {
           enumerable: true,
           configurable: true,
+          /** 在消费者读取当前导出时，转发依赖 namespace 中同名成员的最新值。 */
           get: () => sourceModule[key],
         })
       } catch {}

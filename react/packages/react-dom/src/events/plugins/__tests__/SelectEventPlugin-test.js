@@ -30,17 +30,12 @@ describe('SelectEventPlugin', () => {
   });
 
   // 见 https://github.com/facebook/react/pull/3639 详情。
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「does not get confused when dependent events are registered independently」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：事件断言连接 DOMPluginEventSystem 的委托、合成与传播路径。
-   */
+
+  /** 先只给 input 注册 onMouseDown，并在 onSelect 尚未存在时派发 mousedown/mouseup；更新加入 onSelect、focus 后派发 keydown，应合成一次 select，验证依赖事件始终更新插件鼠标状态而不受 prop 注册时机干扰。 */
   it('does not get confused when dependent events are registered independently', async () => {
     const select = jest.fn();
-    /** `onSelect`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 核对 select 对象/type/target 并记录 currentTarget 调用，检查晚注册监听仍能正确提取。 */
     const onSelect = event => {
       expect(typeof event).toBe('object');
       expect(event.type).toBe('select');
@@ -51,13 +46,13 @@ describe('SelectEventPlugin', () => {
     const root = ReactDOMClient.createRoot(container);
     const node = await (async function () {
       await act(() => {
-        // 将 `onMouseDown` 传递给 React，以便 React 注册一个顶级监听器。
+        // 首次 render 仅提供 onMouseDown；createRoot 已注册包含 mouseup 在内的原生监听器。
         root.render(<input type="text" onMouseDown={function () {}} />);
       });
       return container.firstChild;
     })();
 
-    // 触发 `mousedown` 与 `mouseup`。注意，React 当前并未监听 `mouseup`。
+    // 在尚无 onSelect prop 时派发 mousedown/mouseup，检查插件的 mouseDown 状态能正确复位。
     node.dispatchEvent(
       new MouseEvent('mousedown', {
         bubbles: true,
@@ -82,14 +77,15 @@ describe('SelectEventPlugin', () => {
       new KeyboardEvent('keydown', {bubbles: true, cancelable: true}),
     );
 
-    // 验证它不会卡住并一直等待此前因尚无顶层监听器而错过的 `mouseup` 事件。
+    // 后加入 onSelect 后，keydown 应能合成 select，不应被先前鼠标按下状态阻塞。
     expect(select).toHaveBeenCalledTimes(1);
   });
 
-  /** 测试场景：验证「should fire `onSelect` when a listener is present」描述的渲染、交互或错误处理结果。 */
+  /** 已聚焦 input 注册 onSelect，先派发 focus 与 mousedown 均不应触发，mouseup 应一次触发且 target 是 input，验证拖选期间抑制而释放时比较选择快照。 */
   it('should fire `onSelect` when a listener is present', async () => {
     const select = jest.fn();
-    /** `onSelect`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 校验 bubble select 的事件形状与活动 input 身份，并累计鼠标释放后的调用。 */
     const onSelect = event => {
       expect(typeof event).toBe('object');
       expect(event.type).toBe('select');
@@ -126,10 +122,11 @@ describe('SelectEventPlugin', () => {
     expect(select).toHaveBeenCalledTimes(1);
   });
 
-  /** 测试场景：验证「should fire `onSelectCapture` when a listener is present」描述的渲染、交互或错误处理结果。 */
+  /** 已聚焦 input 仅注册 onSelectCapture，focus/mousedown 后仍无调用，mouseup 后一次调用且 target 正确，验证 bubble 运行的 Select 插件能收集两阶段 capture listener。 */
   it('should fire `onSelectCapture` when a listener is present', async () => {
     const select = jest.fn();
-    /** `onSelectCapture`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 校验仅 capture prop 收到的 select 仍以活动 input 为 target，证明插件自身累积了两阶段。 */
     const onSelectCapture = event => {
       expect(typeof event).toBe('object');
       expect(event.type).toBe('select');
@@ -167,10 +164,12 @@ describe('SelectEventPlugin', () => {
   });
 
   // 针对 https://github.com/facebook/react/issues/11379 的回归测试。
-  /** 测试场景：验证「should not wait for `mouseup` after receiving `dragend`」描述的渲染、交互或错误处理结果。 */
+
+  /** 已聚焦 input 在 mousedown 后收到 dragend 而非 mouseup；select 应立即一次触发，验证拖动结束同样清空 mouseDown，不把后续选择检测永久压住。 */
   it('should not wait for `mouseup` after receiving `dragend`', async () => {
     const select = jest.fn();
-    /** `onSelect`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 记录 dragend 之后的 select，并验证目标不是 dragend 的其它路径节点。 */
     const onSelect = event => {
       expect(typeof event).toBe('object');
       expect(event.type).toBe('select');
@@ -207,7 +206,7 @@ describe('SelectEventPlugin', () => {
     expect(select).toHaveBeenCalledTimes(1);
   });
 
-  /** 测试场景：验证「should handle selectionchange events」描述的渲染、交互或错误处理结果。 */
+  /** 聚焦 input 后对 document 派发 bubbles=false 的 selectionchange；此前回调 0、之后 1，验证 document 直接监听及活动控件跟踪能定位并生成 select。 */
   it('should handle selectionchange events', async function () {
     const onSelect = jest.fn();
 

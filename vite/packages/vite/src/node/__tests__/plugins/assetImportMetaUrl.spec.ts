@@ -11,7 +11,7 @@ async function createAssetImportMetaurlPluginTransform() {
   const environment = new PartialEnvironment('client', config)
 
   return async (code: string) => {
-  // @ts-expect-error transform.handler should exist
+    // @ts-expect-error transform.handler should exist
     const result = await instance.transform.handler.call(
       { environment, parse: parseAst },
       code,
@@ -46,7 +46,7 @@ describe('assetImportMetaUrlPlugin', async () => {
     )
   })
 
-  /** 场景：同一 URL 模板包含两个变量段；验证目标：两个动态段分别展开为 glob 通配符。 */
+  /** 模板中两个相邻变量折叠为同一个 glob 通配符，运行时查表键仍保留原模板。 */
   test('two variables', async () => {
     expect(
       await transform('new URL(`./foo/${dir}${file}.js`, import.meta.url)'),
@@ -55,7 +55,7 @@ describe('assetImportMetaUrlPlugin', async () => {
     )
   })
 
-  /** 场景：两个变量位于不同斜杠分段之间；验证目标：glob 保持目录边界并覆盖两个动态段。 */
+  /** 同一目录段中的两个相邻变量共用一个 `*`，两侧斜杠与 index.js 后缀保持。 */
   test('two variables between /', async () => {
     expect(
       await transform(

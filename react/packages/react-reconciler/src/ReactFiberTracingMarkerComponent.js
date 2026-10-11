@@ -95,7 +95,9 @@ export type PendingBoundaries = Map<OffscreenInstance, SuspenseInfo>;
 
 /**
  * 按开始、Marker 进度/完成/中止、Transition 进度/完成的顺序冲刷 tracing callback 批次。
- * 只向用户暴露命名 Transition，并在统一 endTime 下把内部 Map 转成不可依赖身份的数组。
+ * 只向用户暴露命名 Transition；endTime 是本批次共享的结束时间。
+ * 进度通知新建数组容器，但其中的 SuspenseInfo 仍引用内部对象；这里没有逐回调的
+ * 异常隔离，某个用户回调抛错会中断本次后续通知。
  */
 export function processTransitionCallbacks(
   pendingTransitions: PendingTransitionCallbacks,
@@ -235,8 +237,10 @@ export function processTransitionCallbacks(
   }
 }
 
-// 保存当前祖先链的所有 Marker 指针，完成阶段据此查询仍需解除挂起的边界。该栈与
-// ReactFiberTransition 分离，因为压栈/弹栈边界是 TracingMarker，而非 Suspense。
+/**
+ * 保存当前祖先链的 Marker 指针，完成阶段据此登记仍在挂起的边界。
+ * 压栈/弹栈边界是 TracingMarker，因此独立于按 Suspense 等边界维护的 Transition 栈。
+ */
 const markerInstanceStack: StackCursor<Array<TracingMarkerInstance> | null> =
   createCursor(null);
 

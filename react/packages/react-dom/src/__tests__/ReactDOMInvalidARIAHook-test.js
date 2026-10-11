@@ -24,6 +24,7 @@ describe('ReactDOMInvalidARIAHook', () => {
     assertConsoleErrorDev =
       require('internal-test-utils').assertConsoleErrorDev;
 
+    /** 为一组 ARIA props 创建独立并发根并等待 div 提交；beforeEach 重置模块清空警告去重缓存，让每个诊断 case 可独立观察。 */
     mountComponent = async function (props) {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -34,21 +35,14 @@ describe('ReactDOMInvalidARIAHook', () => {
   });
 
   describe('aria-* props', () => {
-    /**
-     * 代表场景（Given–When–Then）：
-     * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-     * When 执行「should allow valid aria-* props」描述的渲染或交互；
-     * Then 通过本用例的 DOM、日志或调度断言确认行为。
-     *
-     * 验证机制：断言连接 ReactDOM 公开入口、ReactDOMRoot 根生命周期及 DOM 提交结果。
-     */
+    /** 给 div 传标准 aria-label 文本后提交；应无 DEV 警告，验证合法 aria-* 名称被标准表接受。 */
     it('should allow valid aria-* props', async () => {
       await mountComponent({'aria-label': 'Bumble bees'});
     });
 
-    /** 测试场景：验证「should allow new ARIA 1.3 attributes」描述的渲染、交互或错误处理结果。 */
+    /** 分别及组合传 aria-braillelabel、aria-brailleroledescription、aria-colindextext、aria-rowindextext；各次提交应无警告，验证当前标准表包含这些 ARIA 1.3 扩展键。 */
     it('should allow new ARIA 1.3 attributes', async () => {
-      // 测试 aaria-braillelabel
+      // 测试 aria-braillelabel
       await mountComponent({'aria-braillelabel': 'Braille label text'});
 
       // 测试 aria-brailleroledescription 属性
@@ -57,17 +51,17 @@ describe('ReactDOMInvalidARIAHook', () => {
       // 测试 aria-colindextext
       await mountComponent({'aria-colindextext': 'Column A'});
 
-      // 测试 aria-rowindex 属性
+      // 测试 aria-rowindextext 属性
       await mountComponent({'aria-rowindextext': 'Row 1'});
 
-      // 测试多个 ARIA 1.3 属性一起使用
+      // 测试本版本 validAriaProperties 表中的多个扩展属性一起使用
       await mountComponent({
         'aria-braillelabel': 'Braille text',
         'aria-colindextext': 'First column',
         'aria-rowindextext': 'First row',
       });
     });
-    /** 测试场景：验证「should warn for one invalid aria-* prop」描述的渲染、交互或错误处理结果。 */
+    /** 仅传 aria-badprop；DEV 应生成单数 Invalid aria prop 汇总消息，验证未知标准形状属性归入批量诊断。 */
     it('should warn for one invalid aria-* prop', async () => {
       await mountComponent({'aria-badprop': 'maybe'});
       assertConsoleErrorDev([
@@ -76,7 +70,7 @@ describe('ReactDOMInvalidARIAHook', () => {
           '    in div (at **)',
       ]);
     });
-    /** 测试场景：验证「should warn for many invalid aria-* props」描述的渲染、交互或错误处理结果。 */
+    /** 同时传 aria-badprop 与 aria-malprop；DEV 应以一次复数消息列出两个键，验证多个未知 ARIA 名的汇总顺序。 */
     it('should warn for many invalid aria-* props', async () => {
       await mountComponent({
         'aria-badprop': 'Very tall trees',
@@ -88,7 +82,7 @@ describe('ReactDOMInvalidARIAHook', () => {
           '    in div (at **)',
       ]);
     });
-    /** 测试场景：验证「should warn for an improperly cased aria-* prop」描述的渲染、交互或错误处理结果。 */
+    /** 传带连字符但混合大小写的 aria-hasPopup；DEV 应建议 aria-haspopup，验证名称归一化后能在标准表找到正确键。 */
     it('should warn for an improperly cased aria-* prop', async () => {
       // 有效属性名称是 aria-haspopup.
       await mountComponent({'aria-hasPopup': 'true'});
@@ -99,7 +93,7 @@ describe('ReactDOMInvalidARIAHook', () => {
       ]);
     });
 
-    /** 测试场景：验证「should warn for use of recognized camel case aria attributes」描述的渲染、交互或错误处理结果。 */
+    /** 传 camelCase 的 ariaHasPopup；DEV 应建议 aria-haspopup，验证 ariaXxx 形状转换到已知规范名称。 */
     it('should warn for use of recognized camel case aria attributes', async () => {
       // 有效属性名称是 aria-haspopup.
       await mountComponent({ariaHasPopup: 'true'});
@@ -110,9 +104,9 @@ describe('ReactDOMInvalidARIAHook', () => {
       ]);
     });
 
-    /** 测试场景：验证「should warn for use of unrecognized camel case aria attributes」描述的渲染、交互或错误处理结果。 */
+    /** 传 camelCase 的 ariaSomethingInvalid；DEV 仅提示 aria-* 与小写规则而不虚构替代名称，验证无法在标准表识别的拼写分支。 */
     it('should warn for use of unrecognized camel case aria attributes', async () => {
-      // 有效属性名称是 aria-haspopup.
+      // 未知的驼峰 ARIA 属性没有可建议的名称，警告只提示 aria-* 与小写命名规则。
       await mountComponent({ariaSomethingInvalid: 'true'});
       assertConsoleErrorDev([
         'Invalid ARIA attribute `ariaSomethingInvalid`. ARIA ' +

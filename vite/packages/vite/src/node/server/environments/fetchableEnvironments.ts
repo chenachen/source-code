@@ -43,7 +43,7 @@ export function isFetchableDevEnvironment(
 }
 
 /**
- * 用 Request/Response 序列化边界封装目标运行时的 DevEnvironment。
+ * 以 Request/Response 为应用请求接口的 DevEnvironment；实际运行时转发由 handleRequest 实现。
  * 它适合 Cloudflare Workers 一类不能与 Vite Server 同进程共享任意 JavaScript 值的运行时。
  */
 class FetchableDevEnvironment extends DevEnvironment {

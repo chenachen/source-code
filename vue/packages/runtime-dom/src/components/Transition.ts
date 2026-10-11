@@ -27,16 +27,34 @@ export interface TransitionProps extends BaseTransitionProps<Element> {
   /** 是否启用 CSS class/结束事件管理；false 表示纯 JS 钩子。 */
   css?: boolean
   /** 显式毫秒时长，可分别指定 enter/leave。 */
-  duration?: number | { enter: number; leave: number }
+  duration?:
+     number
+    | {
+        /** 入场显式时长，单位毫秒。 */
+        enter: number;
+        /**
+         * 离场显式时长，单位毫秒。
+         */
+        leave: number
+      }
   // 自定义各阶段 class；未提供时由 name 生成。
+  /** 入场起态类，双 RAF 后移除；默认由 name 生成。 */
   enterFromClass?: string
+  /** 入场整个过程持有的类，完成或取消时移除。 */
   enterActiveClass?: string
+  /** 双 RAF 后的入场目标态类，完成或取消时移除。 */
   enterToClass?: string
+  /** 首次 appear 的起态类，未设置回退 enterFromClass。 */
   appearFromClass?: string
+  /** 首次 appear 的活动类，未设置回退 enterActiveClass。 */
   appearActiveClass?: string
+  /** 首次 appear 的目标态类，未设置回退 enterToClass。 */
   appearToClass?: string
+  /** 离场起态类，先强制布局固化再切换目标态。 */
   leaveFromClass?: string
+  /** 离场期间持有的类，与 enter 取消状态共同决定 reflow 顺序。 */
   leaveActiveClass?: string
+  /** 双 RAF 后的离场目标态类，完成/取消时清理。 */
   leaveToClass?: string
 }
 
@@ -47,6 +65,7 @@ export const vtcKey: unique symbol = Symbol('_vtc')
 export interface ElementWithTransition extends HTMLElement {
   // `_vtc` = Vue Transition Classes。patchClass 会合并这组临时类，避免响应式 class
   // 更新在过渡中途把 enter/leave class 覆盖掉。
+  /** 该元素当前过渡class的Set；patchClass合并这些class以避免普通class更新覆盖动画状态，removeTransitionClass同步移除记录。 */
   [vtcKey]?: Set<string>
 }
 
@@ -112,7 +131,7 @@ const callHook = (
 }
 
 /**
- * 钩子是否声明第二个 done 参数。存在时表示用户显式控制结束，Vue 不再自动等 CSS。
+ * 钩子是否声明第二个 done 参数。存在时由用户调用 done 结束，Vue 不再自动等 CSS 或 duration。
  * 数组中任一钩子需要 done，整组都按显式控制处理，避免自动结束抢先清 class。
  */
 const hasExplicitCallback = (
@@ -128,8 +147,9 @@ const hasExplicitCallback = (
 /**
  * 把 DOM Transition props 转为 BaseTransition 钩子。
  *
- * enter/appear：首帧写 from+active，双 RAF 后切 to，再按显式 duration 或计算样式结束；
- * leave 流程类似但先强制 reflow 固化起态。用户 JS 钩子与 CSS 状态机在同一 done 汇合。
+ * enter/appear：首帧写 from+active，双 RAF 后切 to；未声明 done 的 hook 才自动结束。
+ * 自动路径中，显式 duration 直接计时，否则检测 CSS 结束事件并用计算时长兜底。
+ * leave 流程类似但先强制 reflow 固化起态；声明 done 时由用户调用它结束。
  */
 export function resolveTransitionProps(
   rawProps: TransitionProps,
@@ -168,6 +188,7 @@ export function resolveTransitionProps(
   let legacyAppearFromClass: string
   let legacyLeaveFromClass: string
   if (__COMPAT__ && legacyClassEnabled) {
+    /** compat 模式去掉 -from 后缀，得到 Vue 2 起态类名。 */
     const toLegacyClass = (cls: string) => cls.replace(/-from$/, '')
     if (!rawProps.enterFromClass) {
       legacyEnterFromClass = toLegacyClass(enterFromClass)
@@ -194,8 +215,12 @@ export function resolveTransitionProps(
     onAppearCancelled = onEnterCancelled,
   } = baseProps
 
+  /** 记录是否取消入场，清理 appear/enter 的 to 与 active 类，再调用 core done 结算钩子。 */
   const finishEnter = (
-    el: Element & { _enterCancelled?: boolean },
+    el: Element & {
+      /** 上次入场是否被取消；leave 据此决定 active 类与 reflow 的先后。 */
+      _enterCancelled?: boolean
+    },
     isAppear: boolean,
     done?: () => void,
     isCancelled?: boolean,
@@ -206,8 +231,12 @@ export function resolveTransitionProps(
     done && done()
   }
 
+  /** 清除离场运行标记与 from/to/active 类，再调用 done，让 core 执行移除/完成钩子。 */
   const finishLeave = (
-    el: Element & { _isLeaving?: boolean },
+    el: Element & {
+      /** 当前离场是否仍有效；双 RAF 恢复时读取，取消后不继续写 leave-to。 */
+      _isLeaving?: boolean
+    },
     done?: () => void,
   ) => {
     el._isLeaving = false
@@ -217,9 +246,11 @@ export function resolveTransitionProps(
     done && done()
   }
 
+  /** 生成 enter/appear 桥接器；先调用用户钩子，双 RAF 切目标类；用户未声明 done 才自动等待 CSS/显式时长。 */
   const makeEnterHook = (isAppear: boolean) => {
     return (el: Element, done: () => void) => {
       const hook = isAppear ? onAppear : onEnter
+      /** 把本次 enter/appear 自动结束转交 finishEnter，再完成 core 回调。 */
       const resolve = () => finishEnter(el, isAppear, done)
       callHook(hook, [el, resolve])
       nextFrame(() => {
@@ -241,6 +272,7 @@ export function resolveTransitionProps(
   }
 
   return extend(baseProps, {
+    /** 调用用户 beforeEnter，写入 enter-from 与 active 起态类。 */
     onBeforeEnter(el) {
       callHook(onBeforeEnter, [el])
       addTransitionClass(el, enterFromClass)
@@ -249,6 +281,7 @@ export function resolveTransitionProps(
       }
       addTransitionClass(el, enterActiveClass)
     },
+    /** 调用用户 beforeAppear，写入 appear 起态类及兼容旧类。 */
     onBeforeAppear(el) {
       callHook(onBeforeAppear, [el])
       addTransitionClass(el, appearFromClass)
@@ -259,11 +292,20 @@ export function resolveTransitionProps(
     },
     onEnter: makeEnterHook(false),
     onAppear: makeEnterHook(true),
+    /** 标记离场，按入场是否取消安排 reflow 与 active 类；双 RAF 切 leave-to，显式 done 与 CSS 自动完成二选一。 */
     onLeave(
-      el: Element & { _isLeaving?: boolean; _enterCancelled?: boolean },
+      el: Element & {
+        /** 离场双 RAF 是否仍可推进的元素状态。 */
+        _isLeaving?: boolean;
+        /**
+         * 入场取消结果，决定本次离场 reflow 顺序。
+         */
+        _enterCancelled?: boolean
+      },
       done,
     ) {
       el._isLeaving = true
+      /** 将本次用户 done 或 CSS 自动完成转交 finishLeave。 */
       const resolve = () => finishLeave(el, done)
       addTransitionClass(el, leaveFromClass)
       if (__COMPAT__ && legacyClassEnabled && legacyLeaveFromClass) {
@@ -295,14 +337,17 @@ export function resolveTransitionProps(
       })
       callHook(onLeave, [el, resolve])
     },
+    /** 清理入场样式并保留取消标记，然后通知用户取消钩子。 */
     onEnterCancelled(el) {
       finishEnter(el, false, undefined, true)
       callHook(onEnterCancelled, [el])
     },
+    /** 清理首次 appear 样式并标记取消，然后通知用户钩子。 */
     onAppearCancelled(el) {
       finishEnter(el, true, undefined, true)
       callHook(onAppearCancelled, [el])
     },
+    /** 立即清理离场样式/标记，再调用用户取消钩子。 */
     onLeaveCancelled(el) {
       finishLeave(el)
       callHook(onLeaveCancelled, [el])
@@ -369,12 +414,16 @@ let endId = 0
  * 额外 timeout+1 兜底浏览器不触发 end 事件、属性数量统计差异及节点提前隐藏。
  */
 function whenTransitionEnds(
-  el: Element & { _endId?: number },
+  el: Element & {
+    /** 元素当前结束监听代次；过期 timeout/event 不得完成更新后的过渡。 */
+    _endId?: number
+  },
   expectedType: TransitionProps['type'] | undefined,
   explicitTimeout: number | null,
   resolve: () => void,
 ) {
   const id = (el._endId = ++endId)
+  /** 仅在元素 _endId 仍等于捕获代次时调用 resolve，拒绝旧过渡完成。 */
   const resolveIfNotStale = () => {
     if (id === el._endId) {
       resolve()
@@ -392,10 +441,12 @@ function whenTransitionEnds(
 
   const endEvent = type + 'end'
   let ended = 0
+  /** 移除 CSS end 监听器后按版本结算；兜底 timeout 与有效 end 事件共用。 */
   const end = () => {
     el.removeEventListener(endEvent, onEnd)
     resolveIfNotStale()
   }
+  /** 只统计目标为本元素的 CSS end 事件；达到计算属性数后移除监听并结束。 */
   const onEnd = (e: Event) => {
     if (e.target === el && ++ended >= propCount) {
       end()
@@ -411,9 +462,13 @@ function whenTransitionEnds(
 
 /** 从计算样式提取的有效过渡类型、属性数、总超时和 transform 能力。 */
 interface CSSTransitionInfo {
+  /** 实际需等待的 CSS 类型；无正时长时为 null。 */
   type: AnimationTypes | null
+  /** 所选类型的 duration 列表长度，用于统计 end 事件数。 */
   propCount: number
+  /** 所选类型最长 delay+duration，单位毫秒。 */
   timeout: number
+  /** 有效类型为 transition 且 property 包含 transform/all；供 TransitionGroup 探测 move。 */
   hasTransform: boolean
 }
 
@@ -436,6 +491,7 @@ export function getTransitionInfo(
     StylePropertiesKey
   >
   // JSDOM 可能给 transition 属性返回 undefined，统一成空串数组。
+  /** 读取指定计算样式时间/属性列表，空值归为空字符串列表，兼容 JSDOM。 */
   const getStyleProperties = (key: StylePropertiesKey) =>
     (styles[key] || '').split(', ')
   const transitionDelays = getStyleProperties(`${TRANSITION}Delay`)

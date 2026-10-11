@@ -21,14 +21,7 @@ describe('ReactDOMSVG', () => {
     act = require('internal-test-utils').act;
   });
 
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「creates initial namespaced markup」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言连接 DOM host 属性写入与提交路径。
-   */
+  /** 字符串 SSR 输出 svg/image 的 xlinkHref URL；markup应含 xlink:href，验证React prop名称映射为带XML前缀的属性。 */
   it('creates initial namespaced markup', () => {
     const markup = ReactDOMServer.renderToString(
       <svg>
@@ -38,7 +31,7 @@ describe('ReactDOMSVG', () => {
     expect(markup).toContain('xlink:href="http://i.imgur.com/w7GCRPb.png"');
   });
 
-  /** 测试场景：验证「creates elements with SVG namespace inside SVG tag during mount」描述的渲染、交互或错误处理结果。 */
+  /** 首次创建多层 svg/g/image/foreignObject，foreignObject 内同时嵌套 svg与HTML div，外部另有HTML p/div；断言各节点 namespaceURI、大小写tagName、stroke-width及 xlink命名空间值，验证命名空间沿上下文进入SVG并在foreignObject子级退出。 */
   it('creates elements with SVG namespace inside SVG tag during mount', async () => {
     const node = document.createElement('div');
     let div,
@@ -122,7 +115,7 @@ describe('ReactDOMSVG', () => {
     });
   });
 
-  /** 测试场景：验证「creates elements with SVG namespace inside SVG tag during update」描述的渲染、交互或错误处理结果。 */
+  /** svg 内 App初始返回null，再setState(step=1)插入SVG/foreignObject与HTML混合子树；与首次挂载相同命名空间/属性断言应成立，验证更新新增节点仍继承现有宿主上下文。 */
   it('creates elements with SVG namespace inside SVG tag during update', async () => {
     let inst,
       div,
@@ -137,12 +130,12 @@ describe('ReactDOMSVG', () => {
       svg3,
       svg4;
 
-    /** `App`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 在既有svg父级下分两轮输出：step=0为空，step=1创建混合命名空间子树，供更新创建路径测量。 */
     class App extends React.Component {
-      /** `App.state`：记录测试夹具在当前场景中的状态。 */
+      /** step初始为0，让根先提交空子树，再经setState插入SVG内容。 */
       state = {step: 0};
 
-      /** `App.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 暴露当前实例给外部setState；step=0返回null，其后返回含foreignObject与HTMLdiv的g，以检测跨命名空间新增节点。 */
       render() {
         inst = this;
         const {step} = this.state;
@@ -214,7 +207,7 @@ describe('ReactDOMSVG', () => {
     });
   });
 
-  /** 测试场景：验证「can render SVG into a non-React SVG tree」描述的渲染、交互或错误处理结果。 */
+  /** 手工创建SVG命名空间的svg/g作为根容器，再createRoot渲染image；新image仍为SVG且tagName小写，验证根上下文来自容器而非React祖先。 */
   it('can render SVG into a non-React SVG tree', async () => {
     const outerSVGRoot = document.createElementNS(
       'http://www.w3.org/2000/svg',
@@ -234,7 +227,7 @@ describe('ReactDOMSVG', () => {
     expect(image.tagName).toBe('image');
   });
 
-  /** 测试场景：验证「can render HTML into a foreignObject in non-React SVG tree」描述的渲染、交互或错误处理结果。 */
+  /** 手工创建SVG foreignObject容器，再渲染div；新div应为HTML命名空间且tagName大写，验证foreignObject根容器对子级切换到HTML。 */
   it('can render HTML into a foreignObject in non-React SVG tree', async () => {
     const outerSVGRoot = document.createElementNS(
       'http://www.w3.org/2000/svg',

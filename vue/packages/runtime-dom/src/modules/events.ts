@@ -11,7 +11,9 @@ import {
  * value 可热替换而无需 remove/add；attached 用于过滤早于监听器注册的冒泡事件。
  */
 interface Invoker extends EventListener {
+  /** 当前单处理器或数组；patchEvent 更新此值以复用已注册 DOM listener。 */
   value: EventValue
+  /** 注册批次的 Date.now 毫秒时间戳；过滤本次冒泡开始后才新增的监听器。 */
   attached: number
 }
 
@@ -47,7 +49,10 @@ const veiKey: unique symbol = Symbol('_vei')
  * 当前 listener 身份稳定。rawName 同时编码 Once/Passive/Capture options。
  */
 export function patchEvent(
-  el: Element & { [veiKey]?: Record<string, Invoker | undefined> },
+  el: Element & {
+    /** 元素上的事件代理表，以含 Once/Passive/Capture 的原始 prop 名为键。 */
+    [veiKey]?: Record<string, Invoker | undefined>
+  },
   rawName: string,
   prevValue: EventValue | null,
   nextValue: EventValue | unknown,
@@ -118,10 +123,17 @@ function createInvoker(
   initialValue: EventValue,
   instance: ComponentInternalInstance | null,
 ) {
-  const invoker: Invoker = (e: Event & { _vts?: number }) => {
+  /** 实际 DOM listener：给首次 Vue 事件写 _vts，拒绝不晚于 attached 的后续冒泡；数组快照与 _stopped 控制当前分发，错误交给组件上下文。 */
+  const invoker: Invoker = (
+    e: Event & {
+      /** Vue 首次处理该事件时写的墙钟时间，供后续 invoker 与 attached 比较。 */
+      _vts?: number
+    }
+  ) => {
     // vue#6566：内层 click 可在冒泡途中触发 patch，并给外层新增 handler；某些浏览器会在
     // 冒泡阶段间刷新微任务，导致这个“事件发生后才注册”的外层 handler 仍收到同一事件。
-    // 保存注册时间，并给首次经 Vue 处理的事件附 `_vts`，仅执行事件发生后已存在的 handler。
+    // 首次进入 Vue invoker 时写入 `_vts` 并执行；同一事件随后进入其他 invoker 时，
+    // 若 `_vts <= attached` 就跳过，防止本次冒泡中新增的父监听器收到同一次事件。
     // 不直接信任 event.timeStamp：不同浏览器基准不一致，iframe 事件也会跨时间原点（#2513）。
     if (!e._vts) {
       e._vts = Date.now()
@@ -131,6 +143,7 @@ function createInvoker(
     const value = invoker.value
     if (isArray(value)) {
       const originalStop = e.stopImmediatePropagation
+      /** 先调用浏览器原方法，再标记 _stopped；本 invoker 的数组分发循环读取标记并停止后续函数。 */
       e.stopImmediatePropagation = () => {
         originalStop.call(e)
         ;(e as any)._stopped = true

@@ -57,7 +57,7 @@ URL query 是 Vite 插件间协议，不是任意 cache 参数：
 | `?html-proxy&inline-css` | 缓存 HTML style/style attribute 编译结果，稍后回填 HTML |
 | `?transform-only`        | `?url` 构建内部身份，不混入普通 CSS chunk               |
 
-`?direct` 仍经过预处理和 URL 重写，只是 css-post 不把它包装成 JS。`?inline` 与普通 CSS Modules 的导出
+开发态 `?direct` 仍经过预处理和 URL 重写，只是 css-post 不把它包装成 JS。`?inline` 与普通 CSS Modules 的导出
 语义也不同：前者导出 CSS 文本，后者导出 class 映射。
 
 ## 为什么有三个 CSS 插件
@@ -122,8 +122,8 @@ URL query 是 Vite 插件间协议，不是任意 cache 参数：
 需要处理时插件顺序概念上是：
 
 ```text
-postcss-import（若有 @import）
 postcss-modules（若是 module）
+postcss-import（若有 @import）
 用户 PostCSS plugins
 vite-url-rewrite（OnceExit）
 ```
@@ -136,8 +136,8 @@ postcss-import 的 source 可能为空：这表示 @import 是其他插件生成
 项目 root。Vite 移除了 postcss-import 原本的 `resolve` 依赖以缩小自身 bundle，所以解析失败时要在
 这里主动给出错误，而不是让第三方 fallback 静默缺失。
 
-PostCSS messages 中的 dir-dependency 会按 glob 枚举当前文件，同时把目录模式交给 watcher 语义；文件
-新增/删除也应触发更新，而不只是已有文件内容变化。
+PostCSS messages 中的 `dir-dependency` 会按 glob 枚举当前已存在文件，再把这些文件加入 deps。
+本段不向 watcher 登记 glob 或目录，所以新增匹配文件是否触发更新，取决于插件另行建立的监听。
 
 ## Lightning CSS 分支
 
@@ -156,7 +156,8 @@ Lightning CSS 同时承担 bundle、CSS Modules、URL dependency 分析与可选
 避免把编译阶段转换再跑一次；近期修复见
 [PR #23147](https://github.com/vitejs/vite/pull/23147)。
 
-CSS Modules exports 先按 key 排序，再拼 composes class，保证输出对象和 hash 不受底层遍历顺序影响。
+Lightning CSS 的 Modules exports 先按 key 排序，再拼 composes class，使后续 JS 导出的属性顺序稳定；
+这一步不改变 Lightning CSS 已生成的 scoped class 名。
 
 ## CSS URL 重写
 
@@ -173,7 +174,7 @@ CSS Modules exports 先按 key 排序，再拼 composes class，保证输出对�
 http(s)/protocol-relative
 data:
 #fragment
-变量/函数调用
+函数调用（如 var(...)）
 已经是 __VITE_ASSET__/__VITE_PUBLIC_ASSET__ 占位符
 ```
 
@@ -185,7 +186,7 @@ data:
 [PR #20581](https://github.com/vitejs/vite/pull/20581)。
 
 构建态 `fileToUrl()` 先产生 reference placeholder，renderChunk 知道 CSS asset 的最终目录后，才用
-`toOutputFilePathInCss()` 决定绝对 base、相对 base 或运行时 URL。过早在 transform 阶段算相对路径会
+`toOutputFilePathInCss()` 决定公开 base 或相对 CSS 输出目录的字符串 URL。CSS 无法嵌入 JS 运行时表达式。过早在 transform 阶段算相对路径会
 不知道最终 chunk 名与 assetFileNames。
 
 ## Sass/Less/Stylus 与 URL rebase
@@ -220,19 +221,20 @@ Less 只向 FileManager 暴露 importer 目录，无法给 Vite真实 importer �
 
 ## 预处理器 worker 生命周期
 
-`preprocessorMaxWorkers`：
+用户未配置 `preprocessorMaxWorkers` 时，CSS 配置归一化会补成 `true`。内部 helper 的转换规则是：
 
 ```text
-undefined → 0，主线程 fake worker
-true      → 让 worker helper 选择 CPU - 1
-number    → 指定上限
+undefined → 0，Less/Stylus 主线程 fake worker
+true      → undefined，由 worker helper 自动选择上限（CPU - 1）
+number    → 指定 Less/Stylus 上限
 ```
 
-以下值无法结构化克隆，会回退主线程：
+Less/Stylus 的以下选项使任务回退主线程：
 
 - Less plugins（函数）；
 - Stylus define 中函数或 Evaluator；
-- additionalData 函数已在主线程执行，传给 worker 的副本固定 undefined。
+
+`additionalData` 函数先在主线程执行，传给 worker 的选项副本固定为 undefined；它本身不会迫使编译任务回退。
 
 Sass 使用自身 AsyncCompiler 长期实例，不另建通用 pool；优先 sass-embedded，若平台二进制加载失败则
 回退 sass，见 [PR #21002](https://github.com/vitejs/vite/pull/21002)。
@@ -241,8 +243,9 @@ Sass 使用自身 AsyncCompiler 长期实例，不另建通用 pool；优先 sas
 进程中残留 sass-embedded 子进程；修复见
 [PR #22275](https://github.com/vitejs/vite/pull/22275)。
 
-插件生命周期外的 `preprocessCSS()` 不拥有可关闭时机，因此复用 max=0 的 fake controller，避免创建
-调用方无法释放的真实 worker。
+插件生命周期外的 `preprocessCSS()` 若找不到配置对应的 controller，会复用一个 max=0 的全局 controller。
+这让 Less/Stylus 使用主线程执行，避免创建 worker pool。Sass 不读取 maxWorkers，仍复用 AsyncCompiler；
+该全局 fallback 没有公开关闭入口，不能把它理解为所有预处理器都不持有长期资源。
 
 ## 开发态：CSS 变成 JS
 
@@ -301,8 +304,8 @@ chunk modules CSS
 → chunk.viteMetadata.importedCss.add(file)
 ```
 
-CSS 发射使用串行 Promise queue。Rolldown 的并行 renderChunk 完成顺序不稳定；若直接 emit，CSS asset
-顺序/命名与最终 cascade 可能漂移。即使当前 chunk 没有 `?url` 任务，也必须穿过同一队列，才能让后续
+CSS 的异步 finalize 使用串行 Promise queue，使 renderChunk 进入队列的顺序与资源发射顺序一致，
+避免压缩耗时不同导致产物生成顺序漂移。即使当前 chunk 没有 `?url` 任务，也必须穿过同一队列，才能让后续
 阶段的相对顺序一致。
 
 JS entry 间接导入 CSS 时，CSS sidecar 名按 JS chunk basename；CSS 自身作为 entry 时保留 CSS 路径。
@@ -327,8 +330,8 @@ legacy IIFE/UMD 不能使用普通 ESM CSS sidecar 加载协议，样式以内�
 ```
 
 `collected` 防止共享 chunk 重复；dynamicImports 用 Set 保留首次出现的确定顺序。结果只 finalize/emit
-一次，originalFileName 使用 style.css 作为 manifest key。多 output/modern-legacy 不重复发射，并遵守
-`emitAssets`；相关修复见 [PR #20883](https://github.com/vitejs/vite/pull/20883)。
+一次，originalFileName 使用 style.css 作为 manifest key。下一次 output 的 renderStart 会重置发射状态；
+plugin-legacy 标记的 legacy output 在 generateBundle 跳过，避免重复 CSS，并遵守 `emitAssets`；相关修复见 [PR #20883](https://github.com/vitejs/vite/pull/20883)。
 
 ## 纯 CSS chunk 清理
 
@@ -364,7 +367,7 @@ legacy IIFE/UMD 不能使用普通 ESM CSS sidecar 加载协议，样式以内�
 换行；这个细节会影响 HTML 内联和内容 hash。
 
 `viteHashUpdateMarker` 是只参与 hash 的临时字符串。Vite 5.4.3 改变 CSS link 的 crossorigin 请求属性
-后，Chromium 可能复用旧内容 hash 缓存并阻止加载；marker 强制生成新 hash，发射最终 CSS 前再删除。
+后，Chromium 可能复用旧内容 hash 缓存并阻止加载；marker 先进入 emitFile 的 source，强制生成新 hash；文件名确定后，generateBundle 再从最终 asset source 删除它。
 背景见 [Issue #18038](https://github.com/vitejs/vite/issues/18038)。
 
 ## Sourcemap
@@ -473,8 +476,8 @@ buildStart() {
 6. cssCodeSplit=false 为什么动态 chunk 样式最后追加？
 7. 删除纯 CSS JS chunk 时若不转移 metadata，HTML/manifest 会漏掉什么？
 8. CJS 逗号链中直接删除 require 文本会产生哪些语法错误？
-9. preprocessCSS 为什么只能安全复用 fake worker controller？
+9. preprocessCSS 的 max=0 fallback 怎样约束 Less/Stylus，Sass 为什么仍使用 AsyncCompiler？
 10. CSS hash marker 为何要参与 hash，却不能留在最终 asset？
 
-能把一个 `.scss?inline`、一个普通 `.module.css` 和一个动态 import 的纯 CSS entry 分别推演到最终结果，
-才算掌握 CSS 管线，而不只是知道 Vite支持 PostCSS。
+可用 `.scss?inline`、普通 `.module.css` 与动态导入的纯 CSS 入口对照这三条分支，分别追踪导出值、
+样式加载和最终资源文件。

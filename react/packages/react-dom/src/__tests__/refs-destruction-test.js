@@ -26,23 +26,24 @@ describe('refs-destruction', () => {
     ReactDOMClient = require('react-dom/client');
     act = require('internal-test-utils').act;
 
-    /** `ClassComponent`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 无 DOM 输出的类实例 fixture，验证类组件 ref 清理与宿主元素 ref 使用相同删除时机。 */
     class ClassComponent extends React.Component {
-      /** `ClassComponent.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 返回 null 保留类实例但不增加 DOM 子节点，避免把 ref 目标误认为宿主节点。 */
       render() {
         return null;
       }
     }
 
+    /** 以 destroy/removeRef 两个输入分别删除 children 或仅解除绑定，同时保存宿主与类组件 ref 对象。 */
     TestComponent = class extends React.Component {
-      /** `constructor`：初始化测试夹具实例及其状态。 */
+      /** 初始化父类并创建两个独立对象 ref；这些对象供更新和卸载前后检查 current。 */
       constructor(props) {
         super(props);
         theInnerDivRef = React.createRef();
         theInnerClassComponentRef = React.createRef();
       }
 
-      /** `render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 默认绑定两个 ref，destroy 时删除两类 children，removeRef 时保持 child 类型而去掉 ref，以区分删除与解绑。 */
       render() {
         if (this.props.destroy) {
           return <div />;
@@ -70,14 +71,7 @@ describe('refs-destruction', () => {
     theInnerDivRef = null;
   });
 
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「should remove refs when destroying the parent」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言连接 ReactDOM 公开入口、ReactDOMRoot 根生命周期及 DOM 提交结果。
-   */
+  /** 先挂载同时持有宿主 ref 与类实例 ref 的父 fixture，再 unmount 根；两个 ref 先非空、卸载后均为 null，验证整棵父树删除会清除不同实例类型的 ref。 */
   it('should remove refs when destroying the parent', async () => {
     const container = document.createElement('div');
     const root = ReactDOMClient.createRoot(container);
@@ -94,7 +88,7 @@ describe('refs-destruction', () => {
     expect(theInnerClassComponentRef.current).toBe(null);
   });
 
-  /** 测试场景：验证「should remove refs when destroying the child」描述的渲染、交互或错误处理结果。 */
+  /** 先挂载两个带 ref 的 children，再更新父 destroy=true 只留下空 div；两个 ref 均应置 null，验证子树删除的 ref detach。 */
   it('should remove refs when destroying the child', async () => {
     const container = document.createElement('div');
     const root = ReactDOMClient.createRoot(container);
@@ -113,7 +107,7 @@ describe('refs-destruction', () => {
     expect(theInnerClassComponentRef.current).toBe(null);
   });
 
-  /** 测试场景：验证「should remove refs when removing the child ref attribute」描述的渲染、交互或错误处理结果。 */
+  /** 保留两种 child 类型但更新 removeRef=true 去掉 ref prop；两个旧 ref 应置 null，验证仅解除 ref 绑定也会清理旧对象。 */
   it('should remove refs when removing the child ref attribute', async () => {
     const container = document.createElement('div');
     const root = ReactDOMClient.createRoot(container);
@@ -132,12 +126,12 @@ describe('refs-destruction', () => {
     expect(theInnerClassComponentRef.current).toBe(null);
   });
 
-  /** 测试场景：验证「should not error when destroying child with ref asynchronously」描述的渲染、交互或错误处理结果。 */
+  /** Modal 在独立 DOM 根异步渲染带 ref 的子树，父 App 随后隐藏 Modal 并延迟卸载其根；act 应完成，定时器里的 unmount 不应抛错，验证外层删除与独立根延后 ref 清理可以配合。 */
   it('should not error when destroying child with ref asynchronously', async () => {
     let nestedRoot;
-    /** `Modal`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 使用独立并发根承载 children，渲染与卸载均通过定时器延后，制造外层父树先销毁的时序。 */
     class Modal extends React.Component {
-      /** `Modal.componentDidMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 创建并挂接独立容器和根，再复用更新方法安排异步子树渲染。 */
       componentDidMount() {
         this.div = document.createElement('div');
         nestedRoot = ReactDOMClient.createRoot(this.div);
@@ -145,7 +139,7 @@ describe('refs-destruction', () => {
         this.componentDidUpdate();
       }
 
-      /** `Modal.componentDidUpdate`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 在下一定时器中用 flushSync 提交当前 children；内根调度独立于 Modal 外层树。 */
       componentDidUpdate() {
         setTimeout(() => {
           ReactDOM.flushSync(() => {
@@ -154,7 +148,7 @@ describe('refs-destruction', () => {
         }, 0);
       }
 
-      /** `Modal.componentWillUnmount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 保存容器引用，在后续定时器断言内根 unmount 不抛错，再从 document 移除容器。 */
       componentWillUnmount() {
         const self = this;
         // 一些异步动画
@@ -166,15 +160,15 @@ describe('refs-destruction', () => {
         }, 0);
       }
 
-      /** `Modal.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 不在外层根输出宿主内容，实际子树位于 componentDidMount 创建的独立容器。 */
       render() {
         return null;
       }
     }
 
-    /** `AppModal`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 向 Modal 提供带对象 ref 的 a 元素，让延后删除路径确实需要执行 ref detach。 */
     class AppModal extends React.Component {
-      /** `AppModal.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 组合 Modal 与带 ref 的宿主叶节点，作为独立根异步清理的输入。 */
       render() {
         return (
           <Modal>
@@ -184,9 +178,9 @@ describe('refs-destruction', () => {
       }
     }
 
-    /** `App`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 用 hidden 控制 Modal 的外层生命周期，触发父先销毁、内根后卸载的时序。 */
     class App extends React.Component {
-      /** `App.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** hidden 时返回 null 删除 Modal，否则渲染 AppModal；该分支仅控制外树，不直接操作内根。 */
       render() {
         return this.props.hidden ? null : <AppModal onClose={this.close} />;
       }

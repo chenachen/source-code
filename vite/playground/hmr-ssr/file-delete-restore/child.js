@@ -1,5 +1,6 @@
 import { rerender } from './runtime'
 
+/** 子模块初始导出；自身接受回调更新渲染，dispose/prune 日志与持久数据用来观察删除与恢复。 */
 export const value = 'child'
 
 if (import.meta.hot) {

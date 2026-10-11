@@ -25,8 +25,9 @@ module.exports = function (JSDOM) {
   /**
    * 在全新 JSDOM realm 中加载浏览器构建，并依次执行环境注入、加载前检查和最终断言。
    *
-   * WHY：Trusted Types policy 名称在同一 realm 中必须唯一；复用 window 会让“首次创建 policy”
-   * 场景相互污染。异步完成信号由本函数统一持有，避免测试在 script 执行前结束。
+   * 新 window 让每个用例从独立的 DOMPurify 实例及默认 policy 缓存开始。
+   * 在此 JSDOM 配置中，appendChild 会同步执行内联 script；之后依次运行两个断言回调，
+   * 最后调用 QUnit 的完成信号。没有等待 script load 事件。
    *
    * @param assert - 当前 QUnit 断言上下文。
    * @param addScriptAttribute - 是否在加载脚本上设置 policy 名称后缀。
@@ -129,9 +130,9 @@ module.exports = function (JSDOM) {
   /**
    * Given：window 提供记录 policy 名称并包装 `createHTML` 结果的 Trusted Types stub。
    * When：加载 DOMPurify，并以 `RETURN_TRUSTED_TYPE` 清洗 `<img>`。
-   * Then：内部 policy 名为 `dompurify`，输出内容安全且保持包装对象身份。
+   * Then：内部 policy 名为 `dompurify`，输出字符串内容为 `<img>`，并属于 StringWrapper。
    *
-   * 验证机制：名称、字符串值、对象类型三项联合断言，避免只证明回调被调用。
+   * 验证机制：名称、字符串值与 stub 包装类型三项断言；StringWrapper 模拟对象返回值。
    * 对应源码：`_getDefaultTrustedTypesPolicy()`、`_createTrustedHTML()` 与 `sanitize()` TrustedHTML 返回分支。
    */
   QUnit.test(
@@ -157,7 +158,7 @@ module.exports = function (JSDOM) {
             },
           };
         },
-        /** 验证内部 policy 命名、清洗结果与 Trusted Type 身份。 */
+        /** 验证内部 policy 命名、清洗结果与 stub 包装身份。 */
         function onload(window) {
           assert.equal(policyCreated, 'dompurify');
           const output = window.DOMPurify.sanitize('<img>', {
@@ -200,10 +201,11 @@ module.exports = function (JSDOM) {
   /**
    * Given：分别提供缺失必需回调和实现完整的调用方 policy。
    * When：通过单次 `sanitize()` 配置安装 policy。
-   * Then：缺失 `createHTML`/`createScriptURL` 时给出精确错误；完整 policy 被用于空值和输入两次签名。
+   * Then：缺失 `createHTML`/`createScriptURL` 时给出精确错误；完整 policy 被用于空值和解析输入两次签名。
    *
    * 验证机制：错误消息覆盖配置校验分支，调用计数覆盖 policy 实际接管清洗路径。
-   * 对应源码：`_parseConfig()` 的 `TRUSTED_TYPES_POLICY` 校验与 `sanitize()` 最终签名分支。
+   * 对应源码：`_parseConfig()` 校验接口并包装空值，`_initDocument()` 包装解析输入。
+   * 本次未开启 RETURN_TRUSTED_TYPE，净化后输出直接返回字符串。
    */
   QUnit.test('supports TRUSTED_TYPES_POLICY via sanitize()', function (assert) {
     /** `onload` 回调逐项验证调用方 policy 的接口校验和实际 HTML 签名次数。 */
@@ -251,7 +253,7 @@ module.exports = function (JSDOM) {
             suppliedPolicyCallCount += 1;
             return new StringWrapper(s);
           },
-          /** 为 policy 补齐 DOMPurify 要求的 ScriptURL 签名能力。 */
+            /** 补齐必需的 ScriptURL 接口；本输入不会调用它。 */
           createScriptURL(s) {
             return new StringWrapper(s);
           },
@@ -270,7 +272,7 @@ module.exports = function (JSDOM) {
         false,
         undefined,
         undefined,
-        /** 创建隔离 DOMPurify 实例，并验证持久 policy 的调用次数。 */
+        /** 创建独立实例；setConfig 包装空值，后续 sanitize 包装解析输入，共调用两次 createHTML。 */
         function onload(window) {
           let purify = window.DOMPurify();
           assert.notEqual(purify, window.DOMPurify);
@@ -302,7 +304,7 @@ module.exports = function (JSDOM) {
    * When：把该 policy 传给 `sanitize()`，随后再做一次无配置清洗。
    * Then：DOMPurify 不创建内部 `dompurify` policy，且后续调用沿用已配置 policy。
    *
-   * 验证机制：精确记录所有 `createPolicy` 名称，排除“内部 policy 创建后未被使用”的竞争解释。
+   * 验证机制：连续检查 createPolicy 记录只有 test，没有 dompurify 创建记录。
    * 对应源码：`_parseConfig()` 选择调用方 policy 的分支。
    */
   QUnit.test(
@@ -364,7 +366,7 @@ module.exports = function (JSDOM) {
    * When：连续清洗含 `onerror` 的输入和普通 `<img>`。
    * Then：事件处理器仍被移除，且整个过程不创建任何 policy。
    *
-   * 验证机制：同时断言安全输出与 policy 创建计数，覆盖严格 CSP 下的显式退出语义。
+   * 验证机制：检查安全输出与 policy 创建计数；这里的 stub 不模拟真实 CSP 的 sink 拒绝。
    * 对应源码：`_parseConfig()` 的 null policy 分支。
    */
   QUnit.test(
@@ -396,9 +398,9 @@ module.exports = function (JSDOM) {
         undefined,
         /** 验证 null policy 不创建内部 policy，同时保留普通清洗能力。 */
         function onload(window) {
-          // 显式 null policy 不得创建内部 `dompurify` 回退 policy，也不得抛错（见 #1422）。
-          // 因而严格 `trusted-types` CSP 未允许 `dompurify` 名称时，页面仍可从自己的
-          // policy `createHTML` 中调用 `sanitize()`。
+          // 显式 null 使活动策略变为 undefined，且本次配置不请求内部 dompurify policy。
+          // 它可用于外层 policy 的 createHTML 回调中调用 sanitize，避免再创建内部策略（#1422）；
+          // 本例检查创建记录与字符串内容。
           const out = window.DOMPurify.sanitize(
             '<img src=x onerror=alert(1)>',
             { TRUSTED_TYPES_POLICY: null }
@@ -417,9 +419,10 @@ module.exports = function (JSDOM) {
   /**
    * Given：调用方 policy 的 `createHTML` 回调重新进入同一 DOMPurify 实例。
    * When：通过 `setConfig()` 安装该自引用 policy。
-   * Then：立即抛出可操作错误，且失败不会污染下一次默认清洗。
+   * Then：安装时包装空值触发重入错误；随后默认清洗仍能删除 onerror。
    *
-   * 验证机制：先匹配明确错误，再用正常 XSS 清洗证明实例状态已恢复。
+   * 验证机制：先匹配错误，再检查下一次清洗输出；源码在策略初始化失败时恢复旧活动策略，
+   * `_createTrustedHTML()` 的 finally 还会恢复共享重入计数器。
    * 对应源码：`_assertNotInTrustedTypesPolicy()` 及 `_parseConfig()` 的失败回滚分支。
    */
   QUnit.test(
@@ -482,8 +485,8 @@ module.exports = function (JSDOM) {
   );
 
   // GHSA-vxr8-fq34-vvx9 回归测试放在 bootstrap（jsdom）套件，而非 test-suite.js。
-  // 原因：每个用例都需要全新 realm；Trusted Types policy 名称在 realm 内唯一，共享浏览器
-  // 页面无法为新实例再次创建内部 `dompurify` policy。
+  // 每个用例使用新 window，独立观察默认策略创建、调用方策略清理与创建次数。
+  // stub 只记录 createPolicy，不执行真实浏览器的同名策略或 CSP 校验。
   /**
    * 构造记录 policy 名称的 Trusted Types 环境，并返回供 `loadDOMPurify()` 使用的 setup。
    *
@@ -550,7 +553,7 @@ module.exports = function (JSDOM) {
         function onload(window) {
           const DOMPurify = window.DOMPurify;
 
-          // 调用方仅为当前调用显式启用不安全 policy。
+          // 首次调用显式启用不安全 policy；它会暂留在实例上，clearConfig 才解除。
           const during = String(
             DOMPurify.sanitize('<img src=x onerror=alert(1)>', {
               TRUSTED_TYPES_POLICY: unsafeCallerPolicy(),
@@ -634,7 +637,7 @@ module.exports = function (JSDOM) {
   /**
    * Given：仅存在可计数的 Trusted Types API，没有调用方 policy。
    * When：请求 Trusted Type 输出，执行 `clearConfig()` 后再次请求。
-   * Then：输出为包装后的安全 `<b>ok</b>`，内部 `dompurify` policy 总共只创建一次。
+   * Then：首个输出为 StringWrapper 包装的安全 `<b>ok</b>`，内部 dompurify policy 总共创建一次。
    *
    * 验证机制：对象身份、清洗内容和跨清理创建计数共同覆盖缓存不变量。
    * 对应源码：`_getDefaultTrustedTypesPolicy()` 的单次解析缓存及 `clearConfig()` 恢复逻辑。
@@ -648,7 +651,7 @@ module.exports = function (JSDOM) {
         false,
         withCountingTrustedTypes(created),
         undefined,
-        /** 验证默认 policy 的签名内容与 realm 内单次创建不变量。 */
+        /** 验证默认 policy 的包装内容与该实例跨 clearConfig 的缓存。 */
         function onload(window) {
           const DOMPurify = window.DOMPurify;
 
@@ -665,8 +668,7 @@ module.exports = function (JSDOM) {
             'wraps the sanitized result; script removed'
           );
 
-          // 默认路径跨越 clearConfig() 再次执行时，不得重建内部 policy；
-          // Trusted Types 会拒绝同名 policy 的重复创建。
+          // clearConfig 保留该实例缓存的默认 policy；第二次清洗复用它，创建计数保持为一。
           DOMPurify.clearConfig();
           DOMPurify.sanitize('<b>again</b>', { RETURN_TRUSTED_TYPE: true });
           assert.equal(
@@ -682,12 +684,13 @@ module.exports = function (JSDOM) {
   );
 
   /**
-   * Given：Trusted Types 把 `<script src>` 识别为 TrustedScriptURL，且调用方
+   * Given：Trusted Types stub 把 `<script src>` 识别为 TrustedScriptURL，且调用方
    * `createScriptURL` 会重新进入 DOMPurify。
    * When：允许 script/src 后清洗该元素。
    * Then：重入快速抛出明确错误，失败后默认清洗仍可用。
    *
-   * 验证机制：精确错误模式加恢复后输出，覆盖 ScriptURL 路径的重入保护与状态回滚。
+   * 验证机制：匹配重入错误，再检查默认清洗输出。这里的 createHTML 是恒等回调，
+   * 后续结果确认共享计数器在失败后复位；本例没有断言调用方 policy 被卸载。
    * 对应源码：`_applyTrustedTypesToAttribute()`、`_createTrustedScriptURL()` 和共享重入计数器。
    */
   QUnit.test(
@@ -754,7 +757,7 @@ module.exports = function (JSDOM) {
             'circular createScriptURL throws a descriptive TypeError'
           );
 
-          // 失败调用不得污染实例状态。
+          // createScriptURL 失败后，共享重入计数器必须复位，后续普通清洗仍可执行。
           assert.equal(
             DOMPurify.sanitize('<img src=x onerror=alert(1)>'),
             '<img src="x">'

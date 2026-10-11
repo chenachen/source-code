@@ -47,7 +47,10 @@ import { updateHOCHostEl } from './componentRenderUtils'
 /** 把客户端 VNode 树绑定到容器现有 SSR DOM 的根水合函数。 */
 export type RootHydrateFunction = (
   vnode: VNode<Node, Element>,
-  container: (Element | ShadowRoot) & { _vnode?: VNode },
+  container: (Element | ShadowRoot) & {
+    /** 根水合完成后保存提交的 VNode，后续 render 以其为旧树执行 patch。 */
+    _vnode?: VNode
+  },
 ) => void
 
 /** 水合分派只关心的 DOM nodeType 子集。 */
@@ -167,6 +170,7 @@ export function createHydrationFunctions(
   ): Node | null => {
     optimized = optimized || !!vnode.dynamicChildren
     const isFragmentStart = isComment(node) && node.data === '['
+    /** 按当前 SSR 游标修复结构差异，保留组件/Suspense 上下文及是否要删除整个范围。 */
     const onMismatch = () =>
       handleMismatch(
         node,
@@ -205,6 +209,8 @@ export function createHydrationFunctions(
           }
         } else {
           if ((node as Text).data !== vnode.children) {
+            // 独立 Text VNode 的检查直接警告，不读取 data-allow-mismatch；元素
+            // TEXT_CHILDREN 的允许失配判断位于 hydrateElement，两条路径不同。
             ;(__DEV__ || __FEATURE_PROD_HYDRATION_MISMATCH_DETAILS__) &&
               warn(
                 `Hydration text mismatch in`,
@@ -435,7 +441,10 @@ export function createHydrationFunctions(
           parentComponent.vnode.props.appear
 
         const content = (el as HTMLTemplateElement).content
-          .firstChild as Element & { $cls?: string }
+          .firstChild as Element & {
+          /** 保存 beforeEnter 添加过渡类之前的 SSR class，供属性不匹配诊断。 */
+          $cls?: string
+        }
 
         if (needCallTransitionHooks) {
           const cls = content.getAttribute('class')
@@ -862,7 +871,10 @@ function isUnchangedResourceProp(
  * 不主动校正普通 attribute，以免为所有静态属性支付写 DOM 成本。
  */
 function propHasMismatch(
-  el: Element & { $cls?: string },
+  el: Element & {
+    /** appear 水合时暂存的原始 SSR class，避免把过渡类误判为不匹配。 */
+    $cls?: string
+  },
   key: string,
   clientValue: any,
   vnode: VNode,
@@ -945,6 +957,7 @@ function propHasMismatch(
   }
 
   if (mismatchType != null && !isMismatchAllowed(el, mismatchType)) {
+    /** 把未渲染属性与实际字符串区分显示，只服务诊断消息，不修改元素。 */
     const format = (v: any) =>
       v === false ? `(not rendered)` : `${mismatchKey}="${v}"`
     const preSegment = `Hydration ${MismatchTypeString[mismatchType]} mismatch on`
@@ -1057,7 +1070,7 @@ const allowMismatchAttr = 'data-allow-mismatch'
 
 /** 可按 `data-allow-mismatch` 分别抑制的差异类别。 */
 enum MismatchTypes {
-  /** 单个文本节点的内容不一致。 */
+  /** 元素 TEXT_CHILDREN 的文本内容不一致；独立 Text VNode 不经过该允许失配检查。 */
   TEXT = 0,
   /** 元素的子节点数量或结构不一致。 */
   CHILDREN = 1,
@@ -1080,7 +1093,8 @@ const MismatchTypeString: Record<MismatchTypes, string> = {
 
 /**
  * 判断元素或祖先是否允许某类差异。
- * text/children 属于子树结构差异，可由任一祖先声明；class/style/attribute 只看本元素。
+ * text/children 从本元素向上寻找最近一处声明；更近的声明会遮住外层声明，不合并配置。
+ * class/style/attribute 只读取本元素上的声明。
  */
 function isMismatchAllowed(
   el: Element | null,

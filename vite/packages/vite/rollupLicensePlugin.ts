@@ -4,6 +4,10 @@ import type { Dependency } from 'rollup-plugin-license'
 import colors from 'picocolors'
 import type { Plugin, PluginContext } from 'rollup'
 
+/**
+ * 为 Vite 自身发布包生成依赖许可证文档，并仅在文本变化时写入目标文件。
+ * 复用 rollup-plugin-license 的依赖收集；附加段用于 create-vite 模板许可证，watch 模式跳过两个生成 hook。
+ */
 export default function licensePlugin(
   licenseFilePath: string,
   licenseTitle: string,
@@ -11,6 +15,7 @@ export default function licensePlugin(
   additionalSection?: string,
 ): Plugin {
   const originalPlugin = license({
+    /** 将收集到的依赖按名称与许可证文本归组，连同项目 MIT 文本生成发布许可证。 */
     thirdParty(dependencies) {
       // https://github.com/rollup/rollup/blob/master/build-plugins/generate-license-file.js
       // MIT Licensed https://github.com/rollup/rollup/blob/master/LICENSE-CORE.md
@@ -28,7 +33,7 @@ export default function licensePlugin(
 
       let dependencyLicenseTexts = ''
       for (let i = 0; i < deps.length; i++) {
-        // Find dependencies with the same license text so it can be shared
+        // 完全相同的许可证文本合并展示，splice 后回退索引避免漏掉相邻依赖。
         const licenseText = deps[i].licenseText
         const sameDeps = [deps[i]]
         if (licenseText) {
@@ -43,7 +48,7 @@ export default function licensePlugin(
         let text = `## ${sameDeps.map((d) => d.name).join(', ')}\n`
         const depInfos = sameDeps.map((d) => getDependencyInformation(d))
 
-        // If all same dependencies have the same license and contributor names, show them only once
+        // 同组许可证标识和贡献者列表也相同时只展示一次，仓库地址仍逐包合并。
         if (
           depInfos.length > 1 &&
           depInfos.every(
@@ -62,7 +67,7 @@ export default function licensePlugin(
           if (names) text += `By: ${names}\n`
           if (repositoryText) text += `Repositories: ${repositoryText}\n`
         }
-        // Else show each dependency separately
+        // 其余情况逐包展示元信息，正文仍共享。
         else {
           for (let j = 0; j < depInfos.length; j++) {
             const { license, names, repository } = depInfos[j]
@@ -116,9 +121,10 @@ export default function licensePlugin(
       }
     },
   })
-  // skip for watch mode
+  // watch 输出跳过许可证收集/生成，普通输出保持原插件上下文与参数。
   for (const hook of ['renderChunk', 'generateBundle'] as const) {
     const originalHook = originalPlugin[hook]!
+    /** watch 模式直接退出；普通构建以原 PluginContext 转发到被包装的 hook。 */
     originalPlugin[hook] = function (this: PluginContext, ...args: unknown[]) {
       if (this.meta.watchMode) return
       return (originalHook as Function).apply(this, args)
@@ -127,12 +133,14 @@ export default function licensePlugin(
   return originalPlugin
 }
 
+/** 原地按包名排序依赖数组，稳定许可证文档的包展示顺序。 */
 function sortDependencies(dependencies: Dependency[]) {
   return dependencies.sort(({ name: nameA }, { name: nameB }) => {
     return nameA! > nameB! ? 1 : nameB! > nameA! ? -1 : 0
   })
 }
 
+/** 将已去重的许可证标识分为普通项和括号表达式，各自排序后把括号表达式放在末尾。 */
 function sortLicenses(licenses: Set<string>) {
   let withParenthesis: string[] = []
   let noParenthesis: string[] = []
@@ -148,12 +156,17 @@ function sortLicenses(licenses: Set<string>) {
   return [...noParenthesis, ...withParenthesis]
 }
 
+/** 用于许可证文档分组比较和展示的包元信息。 */
 interface DependencyInfo {
+  /** package.json 提供的许可证标识或表达式。 */
   license?: string
+  /** author、maintainers 和 contributors 的姓名去重后连接结果。 */
   names?: string
+  /** 规范化为网页 URL 的仓库地址。 */
   repository?: string
 }
 
+/** 提取许可证、去重贡献者姓名和仓库地址；未提供的元信息不写入结果。 */
 function getDependencyInformation(dep: Dependency): DependencyInfo {
   const info: DependencyInfo = {}
   const { license, author, maintainers, contributors, repository } = dep
@@ -182,12 +195,13 @@ function getDependencyInformation(dep: Dependency): DependencyInfo {
   return info
 }
 
+/** 将 Git/SSH 和 GitHub 等简写地址转换为文档链接，去掉 git+、.git 与 SSH 用户名前缀。 */
 function normalizeGitUrl(url: string): string {
   url = url
     .replace(/^git\+/, '')
     .replace(/\.git$/, '')
-    .replace(/(^|\/)[^/]+?@/, '$1') // remove "user@" from "ssh://user@host.com:..."
-    .replace(/(\.[^.]+?):/, '$1/') // change ".com:" to ".com/" from "ssh://user@host.com:..."
+    .replace(/(^|\/)[^/]+?@/, '$1') // 删除 SSH 地址的 user@。
+    .replace(/(\.[^.]+?):/, '$1/') // 把 .com: 路径分隔形式转换为 .com/。
     .replace(/^git:\/\//, 'https://')
     .replace(/^ssh:\/\//, 'https://')
   if (url.startsWith('github:')) {

@@ -5,9 +5,13 @@ import type { ComponentInternalInstance } from './component'
 
 /** Devtools 为每个 Vue App 保存的基础记录。 */
 interface AppRecord {
+  /** Devtools 分配的应用标识，不等于 runtime-core 的组件 uid。 */
   id: number
+  /** 对应的应用实例，供事件归属与卸载清理。 */
   app: App
+  /** 该应用使用的 Vue 构建版本。 */
   version: string
+  /** 供 Devtools 识别 Fragment/Text/Comment/Static 的内置类型标记表。 */
   types: Record<string, string | Symbol>
 }
 
@@ -33,11 +37,17 @@ enum DevtoolsHooks {
 
 /** 浏览器扩展或独立 Devtools 注入的全局事件总线协议。 */
 export interface DevtoolsHook {
+  /** hook 安装后置 true，使扩展启用 Vue 事件接收。 */
   enabled?: boolean
+  /** 向扩展发送事件名与对应载荷。 */
   emit: (event: string, ...payload: any[]) => void
+  /** 登记持续监听的扩展事件处理器。 */
   on: (event: string, handler: Function) => void
+  /** 登记只接收一次事件的扩展处理器。 */
   once: (event: string, handler: Function) => void
+  /** 移除指定扩展事件处理器。 */
   off: (event: string, handler: Function) => void
+  /** 扩展当前追踪的应用记录，生命周期由 Devtools 管理。 */
   appRecords: AppRecord[]
   /**
    * 较新 Devtools 提供的缓冲清理能力；返回参数是否仍处于 Devtools 自身缓冲区。
@@ -50,7 +60,12 @@ export interface DevtoolsHook {
 export let devtools: DevtoolsHook
 
 /** Devtools 延迟注入前暂存的运行时事件。 */
-let buffer: { event: string; args: any[] }[] = []
+let buffer: {
+  /** 原始 hook 事件名，安装扩展后按缓存顺序重放。 */
+  event: string;
+  /** 对应事件的实参数组；清空 buffer 后不再由运行时保留实例引用。 */
+  args: any[]
+}[] = []
 
 /** 已确认当前环境没有 Devtools 后停止继续缓冲，防止长期内存增长。 */
 let devtoolsNotInstalled = false
@@ -134,7 +149,8 @@ const _devtoolsComponentRemoved = /*@__PURE__*/ createDevtoolsComponentHook(
 
 /**
  * 上报组件卸载。若 Devtools 仍缓冲该组件的 added 事件，cleanupBuffer 会直接消去
- * 成对事件；只有未被缓冲时才发送 removed。
+ * 成对事件；只有 hook 提供 cleanupBuffer 且未匹配缓冲时才发送 removed。
+ * 没有 hook 或缺少该能力时本入口直接返回，不额外加入 runtime 的 buffer。
  */
 export const devtoolsComponentRemoved = (
   component: ComponentInternalInstance,

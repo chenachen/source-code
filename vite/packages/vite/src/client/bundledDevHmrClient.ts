@@ -12,7 +12,7 @@ export interface RolldownRuntimeLike {
   getImporters(id: string): string[]
   /** 模块是否已在当前页面执行；未执行模块无需参与更新冒泡。 */
   isExecuted(id: string): boolean
-  /** HMR patch 是否提供了该模块的新 factory。 */
+  /** runtime 当前是否已有该模块的 factory；不判断它是否来自本次 patch。 */
   hasFactory(id: string): boolean
   /** 删除旧 namespace/执行缓存，但保留新 patch 注册的 factory。 */
   removeModuleCache(id: string): void
@@ -37,7 +37,7 @@ type HmrUpdate =
       reason: string
     }
   | {
-      /** 表示已找到可原子应用的 HMR 接受边界。 */
+      /** 表示已找到可按序应用的 HMR 接受边界。 */
       type: 'boundaries'
       /** `[接受边界, 被该边界接受的依赖]` 对。 */
       boundaries: [string, string][]
@@ -62,7 +62,7 @@ export interface BundledDevHMRClientOptions {
 export class BundledDevHMRClient extends HMRClient {
   /** 所有 push/invalidate 串行执行，防止两个 patch 交叉清理同一模块缓存。 */
   private applyQueue = Promise.resolve()
-  /** 最后应用的服务端 patch 序号；缺号意味着客户端状态不再可信。 */
+  /** 最后消费的服务端 patch 序号；noop 也消费，序号不连续时请求 reload。 */
   private lastSeq = 0
   /** 一旦请求 full reload，忽略后续 patch，等待服务端完成重建后导航。 */
   private reloadPending = false
@@ -100,7 +100,8 @@ export class BundledDevHMRClient extends HMRClient {
 
   /**
    * 从已执行的 changedIds 向 importer 冒泡，收集 HMR boundary 与需失效的模块。
-   * 任一路径回到 invalidate 发起者、到达无 importer 根或形成 import 环时都退回整页重载。
+   * 沿未被 accept 边界截断的路径传播；回到本轮 invalidate 来源、到达无已执行 importer 根
+   * 或形成路径环时退回整页重载。
    */
   computeHmrUpdate(
     changedIds: string[],
@@ -242,7 +243,7 @@ export class BundledDevHMRClient extends HMRClient {
     if (this.options.beforeApply() === 'reload') return
 
     try {
-      // patch 必须作为 ESM 导入：既执行 factory 注册，也阻止跨源 script 读取响应内容。
+      // patch 作为 ESM 导入以注册 factory；export 语法使它无法作为 classic script 执行。
       await import(/* @vite-ignore */ this.options.base + url)
     } catch {
       this.requestFullReload(`failed to import hmr patch ${url}`)
@@ -255,10 +256,11 @@ export class BundledDevHMRClient extends HMRClient {
 
   /**
    * 从 invalidate 模块的已执行 importers 开始重新计算边界。
-   * 没有 rebuild，因此没有 patch 可下载，只能使用 runtime 中已有的新 factory。
+   * 没有 rebuild，因此没有 patch 可下载，只能使用 runtime 中已有的 factory。
    */
   private async applyInvalidate(id: string): Promise<void> {
     if (this.reloadPending) return
+    // 在队列实际执行时取来源；invalidateLocally 没保存前轮 callback 期间的来源。
     const firstInvalidatedBy = this.currentFirstInvalidatedBy ?? id
     const importers = this.runtime
       .getImporters(id)
@@ -289,8 +291,9 @@ export class BundledDevHMRClient extends HMRClient {
   }
 
   /**
-   * 原子应用一组 boundary：先确认 factory 齐全并捕获旧 callback，再统一清缓存，
-   * 最后按 boundary 重建 acceptedVia、读取新 exports 并调用 callback。
+   * 按序应用一组 boundary：先确认 factory 齐全并捕获旧 callback，再统一清缓存，
+   * 最后按 boundary 重建 acceptedVia、读取新 exports 并同步调用 callback；不等待 dispose/callback
+   * 返回的 Promise，同步异常也不会回滚已经移除的缓存。
    */
   private async applyUpdate(
     update: Extract<
@@ -302,7 +305,7 @@ export class BundledDevHMRClient extends HMRClient {
     >,
     firstInvalidatedBy?: string,
   ): Promise<void> {
-    // 若更新集任一模块没有随 bundle/patch 提供 factory，局部重建会执行到旧代码。
+    // 删除缓存前确认更新集都有可初始化的 factory；此检查只验证存在性。
     for (const id of update.updateSet) {
       if (!this.runtime.hasFactory(id)) {
         this.requestFullReload(`no factory for module \`${id}\``)
@@ -329,7 +332,8 @@ export class BundledDevHMRClient extends HMRClient {
       this.runtime.initModule(acceptedVia)
       const fresh = this.runtime.loadExports(acceptedVia)
       try {
-        // callback 内再次 invalidate 时沿用最初发起者，检测传播是否绕回起点。
+        // 同步 callback 发出的 listener payload 可读到本轮来源；本地 invalidate 只排队 id，
+        // 等下轮 applyInvalidate 执行时此字段已由 finally 清空。
         this.currentFirstInvalidatedBy = firstInvalidatedBy
         for (const { deps, fn } of callbacks) {
           fn(

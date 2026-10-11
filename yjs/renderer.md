@@ -3,9 +3,9 @@
 
 The Attribution feature extends Yjs types to provide rich metadata about content
 changes, including information about who created, deleted, or formatted content.
-This enables powerful collaborative editing features such as authorship tracking
-and change visualization. The information about who performed which changes can
-be handled by a separate CRDT (which is part of the renderer).
+Applications associate structure IDs with author or time metadata in `IdMap`s.
+The renderer combines those mappings with the document's insertion and deletion
+state; Yjs does not assign authors automatically.
 
 ## Core Concepts
 
@@ -16,12 +16,21 @@ central component for the attribution feature: pass it to methods like
 `toDelta()` / `getDelta()` to render content together with attribution metadata.
 
 Different implementations of Renderer are available for different use cases:
+- `AttributionsRenderer`: Adds metadata to selected ID ranges, optionally using
+  an explicit set of normally visible content
 - `DiffRenderer`: Highlights the differences between two Yjs documents
 - `SnapshotRenderer`: Highlights the differences between two snapshots
 
+`AttributionsRenderer` and `SnapshotRenderer` need the deleted content to remain
+in the document, so set `gc: false` before deleting it. `DiffRenderer` can recover
+deleted content from its baseline document. Empty attribution arrays still mark
+a change: `{ delete: [] }` means a deletion with no author names supplied.
+
 ### Attributed Content
 
-Attributed content includes standard Yjs operations enhanced with attribution metadata:
+Attributed content includes standard Yjs operations enhanced with attribution metadata.
+The arrays below abbreviate the `children` field of `Delta.toJSON()`; actual JSON
+also includes operation `type` fields.
 
 ```javascript
 // Standard content
@@ -53,13 +62,14 @@ Deleted content is represented in attributed results to maintain authorship info
 In Yjs v14 all shared types (text, array, map, xml) are instances of the unified
 `Y.Type`.
 
-#### `toDelta([{ renderer }])`
+#### `toDelta({ renderer, deep } = {})`
 
 Returns the delta representation (lib0/delta) of the type's content, optionally
 with attribution information.
 
 **Parameters:**
 - `renderer` (optional): The renderer instance
+- `deep` (optional): Render nested shared types as deltas
 
 **Returns:**
 - A `Delta` describing the content, with attribution metadata if `renderer` is provided
@@ -69,7 +79,7 @@ with attribution information.
 ```javascript
 const ytext = ydoc.get()
 // Content is inserted during collaborative editing
-// Attribution is handled automatically by the server
+// The application supplies the renderer's attribution mappings
 
 // Without attribution
 const d = ytext.toDelta()
@@ -83,7 +93,7 @@ const attributedDelta = ytext.toDelta({ renderer })
 // ]
 ```
 
-#### `applyDelta(delta, [origin], [{ renderer }])`
+#### `applyDelta(delta, origin = null, { renderer } = {})`
 
 Applies a delta (lib0/delta) on the shared type. The optional `origin` is stored
 on the transaction (`transaction.origin`) and forwarded verbatim on the emitted
@@ -96,12 +106,19 @@ are interpreted relative to the attributed (rendered) content.
 - `origin` (optional): Origin of the transaction that applies this delta; defaults to `null`
 - `renderer` (optional): The renderer instance
 
+**Returns:**
+- `null` when no correction is needed, or a Delta that corrects operations
+  rejected by the document. For example, modifying a deleted node that the
+  renderer still displays returns an inverse for that nested modification.
+  The consumer applies this correction to its own proposed state.
+
 ### YEvent
 
-#### `getDelta([{ renderer, deep }])`
+#### `getDelta({ renderer, deep } = {})`
 
 Returns the changes of an event as a delta, optionally rendered with attribution
-information.
+information. It describes the change from the consumer's previous rendered
+state, so unchanged content is retained rather than inserted again.
 
 **Parameters:**
 - `renderer` (optional): The renderer instance
@@ -113,6 +130,11 @@ information.
 ## Position Adjustments
 
 When working with attributed content, position calculations must account for deleted content that appears in the attributed representation but not in the standard representation.
+
+The examples below use `DiffRenderer`. In this release, `SnapshotRenderer` hides
+content newer than its snapshot when rendering, but `contentLength()` counts a
+currently live Item in full. Index helpers can therefore count hidden future
+content when using a snapshot renderer.
 
 ### Example: Position Adjustment
 
@@ -132,9 +154,10 @@ ytext.toDelta({ renderer })
 // - Attributed position: 11 (after "world" accounting for deleted "hello ")
 ```
 
-## Use Cases
+## Event Deltas
 
-Events in Yjs are enhanced to work with attributed content, automatically adjusting positions when attribution is considered.
+Events use the selected renderer's coordinate space, including deleted content
+that the renderer continues to display.
 
 ### Event Position Adjustment
 
@@ -142,27 +165,36 @@ When a `renderer` is used, event positions are automatically adjusted to account
 
 **Example:**
 
+Run this example in Node.js 22 or later from this package's directory.
+
 ```javascript
-// Initial content: "hello world"
-// User deletes "hello " (positions 0-6)
-// Current visible content: "world"
+import assert from 'node:assert/strict'
+import * as Y from '@y/y'
+import * as delta from 'lib0/delta'
+
+const ydoc = new Y.Doc()
+const ytext = ydoc.get()
+ytext.insert(0, 'hello world')
+const baseline = Y.cloneDoc(ydoc)
+ytext.delete(0, 6)
+const renderer = Y.createDiffRenderer(baseline, ydoc)
+// Ordinary content: "world"; renderer view: "hello world", with a deleted prefix
 
 ytext.observe((event, transaction) => {
-  // User wants to insert "!" after "world"
-  
   // Standard event (without attribution)
-  const standardDelta = event.getDelta()
-  // Shows insertion at position 5 (after "world" in visible content)
+  const standardDelta = event.getDelta({ renderer: null })
+  // Equivalent to delta.create().retain(5).insert('!')
   
   // Attributed event (with renderer)
   const attributedDelta = event.getDelta({ renderer })
-  // Shows insertion at position 11 (accounting for deleted "hello ")
-  // [
-  //   { insert: 'hello ', attribution: { delete: ['kevin'] } },
-  //   { insert: 'world' },
-  //   { insert: '!' }  // inserted at attributed position 11
-  // ]
+  // Equivalent to delta.create().retain(11).insert('!', null, { insert: [] })
+  assert.ok(standardDelta.equals(delta.create().retain(5).insert('!')))
+  assert.ok(attributedDelta.equals(delta.create().retain(11).insert('!', null, { insert: [] })))
 })
+ytext.applyDelta(delta.create().retain(11).insert('!').done(), null, { renderer })
+renderer.destroy()
+baseline.destroy()
+ydoc.destroy()
 ```
 
 ## Use Cases
@@ -211,9 +243,13 @@ function trackChanges(ytext, renderer) {
 
 ### Renderer Lifecycle
 
-- Create one renderer per document or collaboration session
-- Ensure the renderer is consistently used across all operations
-- Pass the same renderer instance to all methods that need attribution
+- A `DiffRenderer` belongs to a baseline/working-document pair and installs
+  listeners on both documents. Call `destroy()` when that pair is no longer used.
+- An `AttributionsRenderer` captures the supplied mappings at construction;
+  create a new renderer after changing those mappings.
+- Use the same renderer when reading a view, applying changes in its coordinates,
+  and interpreting events. `type.useRenderer(renderer)` makes it the default for
+  that type's APIs and maintained `delta` cache; child types have their own defaults.
 
 ## Migration Guide
 
@@ -226,9 +262,8 @@ To add attribution support to existing Yjs applications:
 3. **Handle attributed content**: Update code to handle the new attribution metadata format
 4. **Adjust position calculations**: Update position calculations to account for deleted content
 
-### Backward Compatibility
+### Using APIs without attribution
 
-The Attribution feature is fully backward compatible:
-- All existing methods work without the renderer parameter
-- Existing code continues to work unchanged
-- Attribution is opt-in and doesn't affect performance when not used
+With no renderer installed, the v14 APIs render live content and omit deleted
+content. Passing `{ renderer: null }` explicitly selects this view even when
+`useRenderer()` has installed a default renderer.

@@ -23,13 +23,13 @@ type EnvironmentPluginHooksContextMatched = {
 
 /** 收集未获得 Vite 上下文扩展的钩子键；正确结果必须是 never。 */
 type HooksMissingExtension = NonNeverKeys<EnvironmentPluginHooksContextMatched>
-/** 收集类型层存在但运行时 ROLLUP_HOOKS 清单遗漏的钩子。 */
+/** 比较钩子名联合与数组元素类型；显式数组注解使它不能检查实际元素是否完整。 */
 type HooksMissingInConstants = Exclude<
   RollupPluginHooks,
   (typeof ROLLUP_HOOKS)[number]
 >
 
-/** 验证上下文扩展、运行时钩子清单和三类插件兼容关系的类型断言组。 */
+/** 验证上下文扩展、钩子名类型和三类插件兼容关系的类型断言组。 */
 export type cases = [
   // Vite 环境插件必须是 Rolldown 插件的超集。
   ExpectTrue<ExpectExtends<RolldownPlugin, Plugin>>,
@@ -37,7 +37,7 @@ export type cases = [
   // 每个底层钩子的 this 都必须带 Vite PluginContextExtension。
   ExpectTrue<Equal<HooksMissingExtension, never>>,
 
-  // 运行时 ROLLUP_HOOKS 清单必须覆盖全部可调度钩子。
+  // 元素类型覆盖钩子名联合；ROLLUP_HOOKS: RollupPluginHooks[] 已将字面量拓宽。
   ExpectTrue<Equal<HooksMissingInConstants, never>>,
 
   // plugins 配置同时接纳 Vite、Rolldown 与兼容 Rollup 插件。

@@ -56,7 +56,7 @@ export function convertLegacyRenderFn(
   }
 
   if (render.length >= 2) {
-    // Vue 3 预编译 render 会接收多个 helper 参数；Vue 2 普通 render 不会，旧函数组件
+    // Vue 3 预编译 render 至少接收渲染上下文与缓存；Vue 2 普通 render 只接收 h，旧函数组件
     // 也已先转换为 Vue 3 FunctionalComponent，因此可安全标为已检查。
     render._compatChecked = true
     return
@@ -64,6 +64,7 @@ export function convertLegacyRenderFn(
 
   // 剩余单参数/零参数函数按 Vue 2 render 尝试兼容。
   if (checkCompatEnabled(DeprecationTypes.RENDER_FUNCTION, instance)) {
+    /** 以原 this 和 compatH 调用旧 render；包装只改变调用协议，函数结果直接返回。 */
     const wrapped = (Component.render = function compatRender() {
       // @ts-expect-error
       return render.call(this, compatH)
@@ -75,36 +76,58 @@ export function convertLegacyRenderFn(
 
 /** Vue 2 `h(type, data, children)` 中 data 对象的完整历史结构。 */
 interface LegacyVNodeProps {
+  /** 旧 VNode 身份键，转换后保留为 Vue 3 key。 */
   key?: string | number
+  /** 旧模板引用名，转换后交给 VNode ref 归一化。 */
   ref?: string
+  /** 旧循环 ref 标记；该 data 字段被保留，不能把它等同于 Vue 3 的 ref_for 转换。 */
   refInFor?: boolean
 
+  /** 与动态 class 合并的静态类名。 */
   staticClass?: string
+  /** 动态类输入，转换时与 staticClass 一并规范化。 */
   class?: unknown
+  /** 与动态 style 合并的静态样式对象。 */
   staticStyle?: Record<string, unknown>
+  /** 动态样式输入，转为 Vue 3 扁平 style prop。 */
   style?: Record<string, unknown>
+  /** 元素 attribute 分区，合并到 Vue 3 顶层 props。 */
   attrs?: Record<string, unknown>
+  /** DOM property 分区，与 attrs 同级合入新 props。 */
   domProps?: Record<string, unknown>
+  /** 旧事件名到处理器，选项前缀会改为 Vue 3 事件后缀。 */
   on?: Record<string, Function | Function[]>
+  /** 旧组件原生监听分区，转换后的处理器 key 追加 Native。 */
   nativeOn?: Record<string, Function | Function[]>
+  /** 按旧名称/值/参数/修饰符描述的指令，转换为 withDirectives 元组。 */
   directives?: LegacyVNodeDirective[]
 
   // 以下字段仅用于组件 VNode。
   props?: Record<string, unknown>
+  /** 该子 VNode 所属的具名插槽，聚合 children 时读取，缺省为 default。 */
   slot?: string
+  /** 可接收插槽 props 的函数表，覆盖同名普通 children 插槽。 */
   scopedSlots?: Record<string, Function>
+  /** 旧组件 v-model 协议输入；转换时结合组件 model.prop/event 生成 prop 和兼容事件。 */
   model?: {
+    /** 本轮 v-model 的父模型输入。 */
     value: any
+    /** 子组件更新模型时调用的父级写回函数。 */
     callback: (v: any) => void
+    /** Vue 2 编译器保存的源表达式文本；当前转换逻辑不使用它。 */
     expression: string
   }
 }
 
 /** Vue 2 render 编译结果中的指令描述。 */
 interface LegacyVNodeDirective {
+  /** 待按当前实例注册表解析的指令名。 */
   name: string
+  /** 本次绑定值，作为指令元组的第二项。 */
   value: unknown
+  /** 旧指令参数，原样传给 Vue 3 指令绑定。 */
   arg?: string
+  /** 已使用的修饰符布尔表，原样转交。 */
   modifiers?: Record<string, boolean>
 }
 
@@ -112,10 +135,12 @@ interface LegacyVNodeDirective {
 type LegacyVNodeChildren =
   string | number | boolean | VNode | VNodeArrayChildren
 
+/** 省略旧 data 参数的重载；第二参数作为 children，经组件名解析和插槽转换返回 VNode。 */
 export function compatH(
   type: string | Component,
   children?: LegacyVNodeChildren,
 ): VNode
+/** 显式提供 Vue 2 分区 data 的重载，类型层约束后由同一实现转换 props、事件、指令和插槽。 */
 export function compatH(
   type: string | Component,
   props?: Data & LegacyVNodeProps,
@@ -306,6 +331,7 @@ function convertLegacySlots(vnode: VNode): VNode {
     if (slots) {
       for (const key in slots) {
         const slotChildren = slots[key]
+        /** 把该名称聚合的固定 children 作为 Vue 3 插槽函数返回，后续 _ns 标记其为旧普通插槽。 */
         slots[key] = () => slotChildren
         // 标记这是 Vue 2 普通插槽，而非接收 props 的 scoped slot。
         slots[key]._ns = true
@@ -331,9 +357,9 @@ function convertLegacySlots(vnode: VNode): VNode {
 }
 
 /**
- * 在 VNode 上惰性安装 Vue 2 私有字段别名（tag/data/elm/componentInstance 等）。
- * 只有 RENDER_FUNCTION 与 PRIVATE_APIS 都开启才安装，避免主路径承担 defineProperty
- * 成本；字段通过 getter 始终映射到 Vue 3 VNode 的最新状态。
+ * 创建或克隆 VNode 时，按 RENDER_FUNCTION 与 PRIVATE_APIS 开关安装旧字段 getter。
+ * tag/data/elm 等读取当前 VNode；context 保存安装时的渲染实例。componentOptions
+ * 首次读取时缓存对象，整体替换 props 或 children 后不会重新生成该对象。
  */
 export function defineLegacyVNodeProperties(vnode: VNode): void {
   /* v8 ignore start */
@@ -350,17 +376,36 @@ export function defineLegacyVNodeProperties(vnode: VNode): void {
     )
   ) {
     const context = currentRenderingInstance
+    /** 读取 VNode 当前组件的公共 proxy；未挂载或非组件节点返回空值，不创建实例。 */
     const getInstance = () => vnode.component && vnode.component.proxy
     let componentOptions: any
     Object.defineProperties(vnode, {
-      tag: { get: () => vnode.type },
-      data: { get: () => vnode.props || {}, set: p => (vnode.props = p) },
-      elm: { get: () => vnode.el },
+      tag: {
+        /** 旧 tag 访问器读取当前 VNode.type，不另外解析组件名。 */
+        get: () => vnode.type
+      },
+      data: {
+        /** 旧 data 访问器读取当前 props；props 为空时返回新空对象。 */
+        get: () => vnode.props || {},
+        /** 整体替换旧 data 时直接写 VNode.props，不重新执行 props 标准化。 */
+        set: p => (vnode.props = p)
+      },
+      elm: {
+        /** 旧 elm 访问器读取当前 VNode.el，跟随实际挂载/更新引用。 */
+        get: () => vnode.el
+      },
       componentInstance: { get: getInstance },
       child: { get: getInstance },
-      text: { get: () => (isString(vnode.children) ? vnode.children : null) },
-      context: { get: () => context && context.proxy },
+      text: {
+        /** 只有字符串 children 才作为旧 text 返回，数组/插槽返回 null。 */
+        get: () => (isString(vnode.children) ? vnode.children : null)
+      },
+      context: {
+        /** 返回安装访问器时保存的渲染组件公开实例，不随后续 currentRenderingInstance 改变。 */
+        get: () => context && context.proxy
+      },
       componentOptions: {
+        /** 只为状态组件生成并缓存旧 componentOptions；props/children 整体替换后不刷新该快照。 */
         get: () => {
           if (vnode.shapeFlag & ShapeFlags.STATEFUL_COMPONENT) {
             if (componentOptions) {

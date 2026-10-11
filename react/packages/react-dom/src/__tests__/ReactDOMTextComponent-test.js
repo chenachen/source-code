@@ -22,14 +22,7 @@ describe('ReactDOMTextComponent', () => {
     act = require('internal-test-utils').act;
   });
 
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「updates a mounted text component in place」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言连接 ReactDOM 公开入口、ReactDOMRoot 根生命周期及 DOM 提交结果。
-   */
+  /** div内span之后有foo/bar两个独立文本子级，更新为baz/qux；两个Text对象身份不变且data分别改变，验证HostText原位nodeValue更新。 */
   it('updates a mounted text component in place', async () => {
     const container = document.createElement('div');
     const root = ReactDOMClient.createRoot(container);
@@ -68,7 +61,7 @@ describe('ReactDOMTextComponent', () => {
     expect(bar.data).toBe('qux');
   });
 
-  /** 测试场景：验证「can be toggled in and out of the markup」描述的渲染、交互或错误处理结果。 */
+  /** div中foo/中间div/bar更新为null/div/null再恢复文本；中间DIV身份始终保留，节点数按3→1→3，验证空值切换移除/新建文本而保留元素。 */
   it('can be toggled in and out of the markup', async () => {
     const container = document.createElement('div');
     const root = ReactDOMClient.createRoot(container);
@@ -118,11 +111,12 @@ describe('ReactDOMTextComponent', () => {
   });
 
   /**
-   * 下列Node.normalize()测试故意失败. 查看https://github.com/facebook/react/issues/9836 追踪我们
-   * 是否需要修复这个或如果它是不必要的.
+   * Node.normalize() 会合并或删除 React 跟踪的文本节点。下列用例以 TODO gate 记录
+   * 尚未支持的外部 DOM 改动场景：https://github.com/facebook/react/issues/9836。
    */
   // @gate TODO
-  /** 测试场景：验证「can reconcile text merged by Node.normalize() alongside other elements」描述的渲染、交互或错误处理结果。 */
+
+  /** 此定义受 TODO gate 控制，当前未作为已支持行为执行；先挂载三段文本、span及尾文本，外部normalize合并后更新字符串；预期barbazquxfoo，记录外部合并与元素混排的待支持恢复路径。 */
   it('can reconcile text merged by Node.normalize() alongside other elements', async () => {
     const container = document.createElement('div');
     const root = ReactDOMClient.createRoot(container);
@@ -158,7 +152,8 @@ describe('ReactDOMTextComponent', () => {
   });
 
   // @gate TODO
-  /** 测试场景：验证「can reconcile text merged by Node.normalize()」描述的渲染、交互或错误处理结果。 */
+
+  /** 此定义受 TODO gate 控制，当前未执行；三段Text外部normalize后改为bar/baz/qux，预期barbazqux，记录Fiber跟踪节点被浏览器合并后的待支持更新。 */
   it('can reconcile text merged by Node.normalize()', async () => {
     const container = document.createElement('div');
     const root = ReactDOMClient.createRoot(container);
@@ -189,7 +184,7 @@ describe('ReactDOMTextComponent', () => {
     expect(inst.textContent).toBe('barbazqux');
   });
 
-  /** 测试场景：验证「can reconcile text from pre-rendered markup」描述的渲染、交互或错误处理结果。 */
+  /** 先SSR三段foo/bar/baz并hydrate，文本应foobarbaz；卸载后SSR三段空字符串再hydrate，文本空，验证服务器文本分隔与空文本认领。 */
   it('can reconcile text from pre-rendered markup', async () => {
     const container = document.createElement('div');
     let children = (
@@ -226,7 +221,8 @@ describe('ReactDOMTextComponent', () => {
   });
 
   // @gate TODO
-  /** 测试场景：验证「can reconcile text arbitrarily split into multiple nodes」描述的渲染、交互或错误处理结果。 */
+
+  /** 此定义受 TODO gate 控制，当前未执行；把span后的单Text外部改为foo并插入bar/baz节点，再更新为barbazqux；预期无外部残留文本，记录任意拆分的待支持修复。 */
   it('can reconcile text arbitrarily split into multiple nodes', async () => {
     const container = document.createElement('div');
     const root = ReactDOMClient.createRoot(container);
@@ -267,7 +263,8 @@ describe('ReactDOMTextComponent', () => {
   });
 
   // @gate TODO
-  /** 测试场景：验证「can reconcile text arbitrarily split into multiple nodes on some substitutions only」描述的渲染、交互或错误处理结果。 */
+
+  /** 此定义受 TODO gate 控制，当前未执行；元素间多个Text里只拆分部分节点，再更新各文本；预期bazbarbazquxbarbazbar，记录部分外部拆分与其它正常节点并存的待支持恢复。 */
   it('can reconcile text arbitrarily split into multiple nodes on some substitutions only', async () => {
     const container = document.createElement('div');
     const root = ReactDOMClient.createRoot(container);
@@ -324,7 +321,8 @@ describe('ReactDOMTextComponent', () => {
   });
 
   // @gate TODO
-  /** 测试场景：验证「can unmount normalized text nodes」描述的渲染、交互或错误处理结果。 */
+
+  /** 此定义受 TODO gate 控制，当前未执行；相邻foo/bar经normalize后渲染空div；预期仅<div></div>，记录已合并Text卸载的待支持清理。 */
   it('can unmount normalized text nodes', async () => {
     const container = document.createElement('div');
     const root = ReactDOMClient.createRoot(container);
@@ -346,18 +344,21 @@ describe('ReactDOMTextComponent', () => {
     expect(container.innerHTML).toBe('<div></div>');
   });
 
-  /** 测试场景：验证「throws for Temporal-like text nodes」描述的渲染、交互或错误处理结果。 */
+  /** TemporalLike提供抛错valueOf及成功toString，直接作为React child；act应拒绝对象不是合法child的Error，验证它先被child类型校验拒绝，本例不是属性转换TypeError路径。 */
   it('throws for Temporal-like text nodes', async () => {
     const container = document.createElement('div');
-    /** `TemporalLike`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+
+    /** 模拟有Temporal转换方法的普通对象；作为child应被对象类型检查拒绝，不进入文本转换。 */
     class TemporalLike {
-      /** `TemporalLike.valueOf`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 若发生默认原始值转换则抛prod message；本场景期望在转换前拒绝对象child。 */
       valueOf() {
         // 此处抛错符合 ECMAScript “Temporal” 日期/时间 API 的行为。
         // 参见 https://tc39.es/proposal-temporal/docs/plaindate.html#valueOf
         throw new TypeError('prod message');
       }
-      /** `TemporalLike.toString`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 显式文本转换可返回日期，说明并非所有toString对象都可成为合法React child。 */
       toString() {
         return '2020-01-01';
       }

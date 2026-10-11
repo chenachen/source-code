@@ -37,7 +37,7 @@ export interface ImportGlobOptions<
    */
   exhaustive?: boolean
   /**
-   * 解析相对匹配路径时使用的基准目录。
+   * 匹配文件时使用的基准目录，也使导入表键相对此目录生成。
    */
   base?: string
   /**
@@ -73,13 +73,13 @@ declare global {
   interface Worker {}
 }
 
-/** Vite 已知资源模式到同步/异步导入值类型的映射。 */
+/** 已发布重载的资源模式映射；运行时导出选择仍由 import 选项决定。 */
 export interface KnownAsTypeMap {
   /** `?raw` 查询返回模块文件的原始文本。 */
   raw: string
   /** `?url` 查询返回已解析的资源 URL。 */
   url: string
-  /** `?worker` 查询返回 Worker 构造结果。 */
+  /** 兼容重载声明为 Worker；运行时 worker 模块的默认导出实际是构造包装器。 */
   worker: Worker
 }
 

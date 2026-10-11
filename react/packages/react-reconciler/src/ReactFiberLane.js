@@ -65,7 +65,7 @@ export const DefaultHydrationLane: Lane = /*            */ 0b0000000000000000000
 /** 普通非 transition 更新。 */
 export const DefaultLane: Lane = /*                     */ 0b0000000000000000000000000100000;
 
-/** flushSync 需一起纳入的同步、连续与默认更新集合。 */
+/** 最高优先级选择与 flushSync 共用的同步、连续、默认合批集合。 */
 export const SyncUpdateLanes: Lane =
   SyncLane | InputContinuousLane | DefaultLane;
 
@@ -450,14 +450,15 @@ export function checkIfRootIsPrerendering(
 }
 
 /**
- * 把与 renderLanes 有直接或传递纠缠关系的 Lanes 加入同一批。
- * 纠缠通常表达“同一来源只展示最新一致状态”；它在保留已有部分 render 进度之后应用，属于 best effort。
+ * 读取 renderLanes 在 root.entanglements 中已登记的关联，并加入同一批。
+ * 仅扫描输入集合中已标为 entangled 的位，不递归重扫刚加入的位；登记阶段负责传播已有关系。
+ * 纠缠通常表达“同一来源只展示最新一致状态”；根选择先判断是否保留已有 render，再应用这里的关联。
  */
 export function getEntangledLanes(root: FiberRoot, renderLanes: Lanes): Lanes {
   let entangledLanes = renderLanes;
 
   if ((entangledLanes & InputContinuousLane) !== NoLanes) {
-    // 默认同步更新模式下，连续与 Default 需同批；分成两 Lane 只为连续输入可打断 transition，Default 不可。
+    // 当前表达式只保留集合内已有的 DefaultLane，不会加入尚未选中的 Default；后续纠缠扩展由 root.entanglements 决定。
     entangledLanes |= entangledLanes & DefaultLane;
   }
 
@@ -696,7 +697,7 @@ export function includesBlockingLane(lanes: Lanes): boolean {
   return (lanes & SyncDefaultLanes) !== NoLanes;
 }
 
-/** 判断本次 render 集合中是否有 Lane 在开始后进入 root.expiredLanes。 */
+/** 判断本次 render 集合是否与 root.expiredLanes 相交；包含开始前或 render 期间过期的 Lane。 */
 export function includesExpiredLane(root: FiberRoot, lanes: Lanes): boolean {
   // 必须与 includesBlockingLane 分开：Lane 可能在 render 开始后才过期。
   return (lanes & root.expiredLanes) !== NoLanes;
@@ -818,7 +819,7 @@ export function laneToLanes(lane: Lane): Lanes {
   return lane;
 }
 
-/** 返回两者中数值更小的有效 Lane；NoLane 不会压过真实工作。 */
+/** a 非零且数值小于 b 时返回 a，否则返回 b；调用方应提供有效的 b，b 为 NoLane 时仍返回零。 */
 export function higherPriorityLane(a: Lane, b: Lane): Lane {
   // 位越向左数值越大、优先级越低。
   return a !== NoLane && a < b ? a : b;
@@ -951,7 +952,7 @@ export function markRootFinished(
     const hiddenUpdatesForLane = hiddenUpdates[index];
     if (hiddenUpdatesForLane !== null) {
       hiddenUpdates[index] = null;
-      // hidden 更新可能与树外更新纠缠；外层树一旦提交，就清掉 Offscreen 标记并恢复普通 update 语义。
+      // 该原始 Lane 已从 pending 移除；清掉其 hidden update 的 Offscreen 标记，后续重放按普通 update 判断资格。
       for (let i = 0; i < hiddenUpdatesForLane.length; i++) {
         const update = hiddenUpdatesForLane[i];
         // $FlowFixMe[invalid-compare]
@@ -1014,8 +1015,9 @@ function markSpawnedDeferredLane(
 }
 
 /**
- * 把给定 Lanes 建成同一传递闭包的纠缠组。
- * 若 C 已与 A 纠缠，再纠缠 A/B 会使 C 也与 B 纠缠；否则可能提交不一致的中间组合。
+ * 把给定 Lanes 写入根的纠缠登记，并更新所有已与新组相交的 Lane 表项。
+ * 若 C 的表项已包含 A，再登记 A/B 时会把 A/B 加入 C 的表项，防止从 C 开始渲染时漏掉 B。
+ * 本次扫描传播的是传入的新组，没有反复求完整图闭包；getEntangledLanes 直接读取这些登记结果。
  */
 export function markRootEntangled(root: FiberRoot, entangledLanes: Lanes) {
   // ReactTransition-test.js 中的传递纠缠用例保护下面两个条件，任一缺失都会泄漏中间态。
@@ -1162,7 +1164,10 @@ export function addFiberToLanesMap(
   }
 }
 
-/** 把已提交 Lanes 的 pending updater Fibers 移入 memoized 集合，并按 alternate 去重。 */
+/**
+ * 在新的 render 尝试开始前，把目标 Lanes 的 pending updater Fibers 移入 memoized 集合，并按 alternate 去重。
+ * 先消费 pending 槽可区分本轮与之后同 Lane 的更新归因；尝试重启时 WorkLoop 可把归因恢复到 pending。
+ */
 export function movePendingFibersToMemoized(root: FiberRoot, lanes: Lanes) {
   if (!enableUpdaterTracking) {
     return;

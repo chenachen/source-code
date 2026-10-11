@@ -9,6 +9,7 @@
     />
     <title>调度系统 · Vue Runtime 内核解剖</title>
     <link rel="stylesheet" href="assets/styles.css" />
+    <link rel="stylesheet" href="assets/engineering-diagrams.css" />
   </head>
   <body data-current="scheduler.html">
     <header data-site-header></header>
@@ -20,19 +21,20 @@
           <h1>为什么数据变了，页面却不是立刻变</h1>
           <p class="article-lead">
             Vue
-            会把同一瞬间发生的许多状态修改合并成一轮页面更新，并安排父组件、子组件和回调的正确顺序。Scheduler
-            就是这位时间管理员。
+            会把同一同步调用栈中的多次状态修改合并成一轮页面更新，并安排父组件、子组件和回调的执行顺序。
+            Scheduler 负责收集这些任务，在微任务中刷新。
           </p>
           <div class="hero-meta">
-            <span>建议阅读 30 分钟</span><span>353 行核心源码</span
+            <span>建议阅读 30 分钟</span><span>355 行核心源码</span
             ><span>关键结构：SchedulerJob</span>
           </div>
         </div>
 
         <section class="article-section prose" id="scheduler-counter-case">
-          <h2>完整用例先行：两次点击，为什么只刷新一个组件 job</h2>
+          <h2>完整用例先行：同步触发两次 click，为什么只刷新一个组件 job</h2>
           <p>
-            仍是同一个 Counter。第一次 click 把 count 写成 1 并将组件 job
+            仍是同一个 Counter。测试在同一同步栈中连续调用两次
+            <code>triggerEvent</code>。第一次 click 把 count 写成 1 并将组件 job
             入队；第二次 click 写成 2，但 job 已有
             <code>QUEUED</code> 位，不重复加入。同步断言仍看到 button
             0；微任务里的 <code>flushJobs</code> 执行
@@ -113,12 +115,12 @@ describe('runtime course: Counter', () =&gt; {
             </div>
           </details>
           <p class="reader-check">
-            <strong>测试能证明什么：</strong>教程测试直接证明“await 前宿主仍是
-            0、await 后是最终值 2、卸载后为空”。它没有统计 component render
-            次数；“queue 中只有一个 component job”必须由下面的
-            <code>queueJob</code> 源码、QUEUED 状态推演与仓库
-            <code>should dedupe queued jobs</code> 测试联合证明，不能只凭最终
-            DOM 倒推。
+            教程测试检查 await 前的 0、await 后的 2 和卸载后的空容器。
+            在这两次同步赋值期间，第一次 <code>queueJob</code> 设置
+            QUEUED，第二次调用 因该位已存在而直接返回，因此 queue 只保留一个组件
+            job。下面的源码与仓库
+            <code>should dedupe queued jobs</code>
+            用例分别展开并验证这条去重规则。
           </p>
           <h3>这个用例要验证什么</h3>
           <div class="table-wrap">
@@ -169,129 +171,442 @@ describe('runtime course: Counter', () =&gt; {
 
         <section class="article-section prose" id="scheduler-counter-flow">
           <h2>同一用例执行图：同步 batch 与微任务 queue 不要混在一起</h2>
-          <div
-            class="flow"
-            role="img"
-            aria-label="Counter 两次点击进入组件调度队列并在微任务刷新及 nextTick 恢复的完整流程"
-          >
-            <div class="flow-step">
-              <span class="flow-index">01</span
-              ><span class="flow-copy"
-                ><strong>click #1：count 0→1</strong
-                ><small
-                  >reactivity 的同步 batch 结束后调用 effect.trigger；effect 有
-                  scheduler，所以直接 scheduler()。</small
-                ></span
-              ><span class="flow-file">Ref/Dep/ReactiveEffect</span>
+          <figure class="eng-diagram" id="scheduler-counter-sequence">
+            <div
+              class="eng-scroll"
+              tabindex="0"
+              aria-label="工程图，可横向滚动"
+            >
+              <svg
+                class="eng-svg"
+                viewBox="0 0 1320 1210"
+                style="--diagram-width: 1320px"
+                role="img"
+                aria-labelledby="scheduler-counter-sequence-title scheduler-counter-sequence-desc"
+              >
+                <title id="scheduler-counter-sequence-title">
+                  Counter：两次同步 click 与一次微任务更新
+                </title>
+                <desc id="scheduler-counter-sequence-desc">
+                  五条泳道区分测试调用栈、响应式通知、Scheduler、Renderer 和
+                  post 回调。第一次 click 入队并设置 QUEUED，第二次 click
+                  只改状态；微任务执行同一个组件 job，提交 button 2，再排空
+                  post，最后恢复 nextTick。Counter 没有注册
+                  updated，图中该路径标为可选。
+                </desc>
+                <defs>
+                  <marker
+                    id="scheduler-counter-sequence-arrow"
+                    viewBox="0 0 10 10"
+                    refX="9"
+                    refY="5"
+                    markerWidth="7"
+                    markerHeight="7"
+                    orient="auto-start-reverse"
+                  >
+                    <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--brand)" />
+                  </marker>
+                </defs>
+                <text class="eng-heading" x="35" y="28" text-anchor="start">
+                  <tspan x="35" dy="0">
+                    同一同步调用栈：状态已变化，组件 job 仍在等待
+                  </tspan>
+                </text>
+                <rect
+                  class="eng-lane"
+                  x="35"
+                  y="45"
+                  width="230"
+                  height="65"
+                  rx="10"
+                />
+                <text
+                  class="eng-heading"
+                  x="150.0"
+                  y="71.0"
+                  text-anchor="middle"
+                >
+                  <tspan x="150.0" dy="0">测试调用栈</tspan>
+                  <tspan x="150.0" dy="23">runtime-test</tspan>
+                </text>
+                <line
+                  class="eng-divider"
+                  x1="150"
+                  y1="120"
+                  x2="150"
+                  y2="1185"
+                />
+                <rect
+                  class="eng-lane"
+                  x="290"
+                  y="45"
+                  width="230"
+                  height="65"
+                  rx="10"
+                />
+                <text
+                  class="eng-heading"
+                  x="405.0"
+                  y="71.0"
+                  text-anchor="middle"
+                >
+                  <tspan x="405.0" dy="0">响应式通知</tspan>
+                  <tspan x="405.0" dy="23">Ref → Dep → Effect</tspan>
+                </text>
+                <line
+                  class="eng-divider"
+                  x1="405"
+                  y1="120"
+                  x2="405"
+                  y2="1185"
+                />
+                <rect
+                  class="eng-lane"
+                  x="545"
+                  y="45"
+                  width="230"
+                  height="65"
+                  rx="10"
+                />
+                <text
+                  class="eng-heading"
+                  x="660.0"
+                  y="71.0"
+                  text-anchor="middle"
+                >
+                  <tspan x="660.0" dy="0">Scheduler</tspan>
+                  <tspan x="660.0" dy="23">queue / flush Promise</tspan>
+                </text>
+                <line
+                  class="eng-divider"
+                  x1="660"
+                  y1="120"
+                  x2="660"
+                  y2="1185"
+                />
+                <rect
+                  class="eng-lane"
+                  x="800"
+                  y="45"
+                  width="230"
+                  height="65"
+                  rx="10"
+                />
+                <text
+                  class="eng-heading"
+                  x="915.0"
+                  y="71.0"
+                  text-anchor="middle"
+                >
+                  <tspan x="915.0" dy="0">Renderer</tspan>
+                  <tspan x="915.0" dy="23">组件 render effect</tspan>
+                </text>
+                <line
+                  class="eng-divider"
+                  x1="915"
+                  y1="120"
+                  x2="915"
+                  y2="1185"
+                />
+                <rect
+                  class="eng-lane"
+                  x="1055"
+                  y="45"
+                  width="230"
+                  height="65"
+                  rx="10"
+                />
+                <text
+                  class="eng-heading"
+                  x="1170.0"
+                  y="71.0"
+                  text-anchor="middle"
+                >
+                  <tspan x="1170.0" dy="0">Post callbacks</tspan>
+                  <tspan x="1170.0" dy="23">updated（可选）</tspan>
+                </text>
+                <line
+                  class="eng-divider"
+                  x1="1170"
+                  y1="120"
+                  x2="1170"
+                  y2="1185"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 150 155 H 405"
+                  marker-end="url(#scheduler-counter-sequence-arrow)"
+                />
+                <text class="eng-small" x="277" y="143" text-anchor="middle">
+                  <tspan x="277" dy="0">click #1：count 0 → 1</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 405 195 H 660"
+                  marker-end="url(#scheduler-counter-sequence-arrow)"
+                />
+                <text class="eng-small" x="532" y="183" text-anchor="middle">
+                  <tspan x="532" dy="0">effect.scheduler()</tspan>
+                </text>
+                <rect
+                  class="eng-state"
+                  x="550"
+                  y="215"
+                  width="220"
+                  height="85"
+                  rx="10"
+                />
+                <text
+                  class="eng-label"
+                  x="660.0"
+                  y="239.5"
+                  text-anchor="middle"
+                >
+                  <tspan x="660.0" dy="0">queue = [job]</tspan>
+                  <tspan x="660.0" dy="23">QUEUED = 1</tspan>
+                  <tspan x="660.0" dy="23">预约一个 flush 微任务</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 150 340 H 405"
+                  marker-end="url(#scheduler-counter-sequence-arrow)"
+                />
+                <text class="eng-small" x="277" y="328" text-anchor="middle">
+                  <tspan x="277" dy="0">click #2：count 1 → 2</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 405 380 H 660"
+                  marker-end="url(#scheduler-counter-sequence-arrow)"
+                />
+                <text class="eng-small" x="532" y="368" text-anchor="middle">
+                  <tspan x="532" dy="0">再次 queueJob(job)</tspan>
+                </text>
+                <rect
+                  class="eng-state"
+                  x="550"
+                  y="400"
+                  width="220"
+                  height="60"
+                  rx="10"
+                />
+                <text
+                  class="eng-label"
+                  x="660.0"
+                  y="423.5"
+                  text-anchor="middle"
+                >
+                  <tspan x="660.0" dy="0">QUEUED 已有：直接返回</tspan>
+                  <tspan x="660.0" dy="23">queue 仍是 [job]</tspan>
+                </text>
+                <rect
+                  class="eng-note"
+                  x="35"
+                  y="400"
+                  width="230"
+                  height="85"
+                  rx="10"
+                />
+                <text
+                  class="eng-label"
+                  x="150.0"
+                  y="424.5"
+                  text-anchor="middle"
+                >
+                  <tspan x="150.0" dy="0">同步断言：button 0</tspan>
+                  <tspan x="150.0" dy="23">await nextTick()</tspan>
+                  <tspan x="150.0" dy="23">等待当前 flush Promise</tspan>
+                </text>
+                <line class="eng-divider" x1="35" y1="525" x2="1285" y2="525" />
+                <text class="eng-heading" x="35" y="514" text-anchor="start">
+                  <tspan x="35" dy="0">
+                    同步栈结束 · 以下执行 flush 微任务
+                  </tspan>
+                </text>
+                <path
+                  class="eng-async"
+                  d="M 660 460 V 560"
+                  marker-end="url(#scheduler-counter-sequence-arrow)"
+                />
+                <text class="eng-small" x="680" y="549" text-anchor="start">
+                  <tspan x="680" dy="0">微任务启动</tspan>
+                </text>
+                <rect
+                  class="eng-node"
+                  x="550"
+                  y="565"
+                  width="220"
+                  height="60"
+                  rx="10"
+                />
+                <text
+                  class="eng-label"
+                  x="660.0"
+                  y="588.5"
+                  text-anchor="middle"
+                >
+                  <tspan x="660.0" dy="0">flushJobs()</tspan>
+                  <tspan x="660.0" dy="23">主队列取出同一个 job</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 660 665 H 915"
+                  marker-end="url(#scheduler-counter-sequence-arrow)"
+                />
+                <text class="eng-small" x="787" y="653" text-anchor="middle">
+                  <tspan x="787" dy="0">job → runIfDirty()</tspan>
+                </text>
+                <rect
+                  class="eng-state"
+                  x="805"
+                  y="685"
+                  width="220"
+                  height="80"
+                  rx="10"
+                />
+                <text
+                  class="eng-label"
+                  x="915.0"
+                  y="707.0"
+                  text-anchor="middle"
+                >
+                  <tspan x="915.0" dy="0">读取最终 count = 2</tspan>
+                  <tspan x="915.0" dy="23">render → patch</tspan>
+                  <tspan x="915.0" dy="23">button 文本 0 → 2</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 915 805 H 1170"
+                  marker-end="url(#scheduler-counter-sequence-arrow)"
+                />
+                <text class="eng-small" x="1042" y="793" text-anchor="middle">
+                  <tspan x="1042" dy="0">若注册 updated：入 post</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 915 840 H 660"
+                  marker-end="url(#scheduler-counter-sequence-arrow)"
+                />
+                <text class="eng-small" x="787" y="828" text-anchor="middle">
+                  <tspan x="787" dy="0">组件 job 返回</tspan>
+                </text>
+                <rect
+                  class="eng-node"
+                  x="550"
+                  y="860"
+                  width="220"
+                  height="90"
+                  rx="10"
+                />
+                <text
+                  class="eng-label"
+                  x="660.0"
+                  y="887.0"
+                  text-anchor="middle"
+                >
+                  <tspan x="660.0" dy="0">finally：清主队列</tspan>
+                  <tspan x="660.0" dy="23">flushPostFlushCbs()</tspan>
+                  <tspan x="660.0" dy="23">本例 post 为空</tspan>
+                </text>
+                <rect
+                  class="eng-note"
+                  x="1060"
+                  y="850"
+                  width="220"
+                  height="70"
+                  rx="10"
+                />
+                <text
+                  class="eng-label"
+                  x="1170.0"
+                  y="878.5"
+                  text-anchor="middle"
+                >
+                  <tspan x="1170.0" dy="0">pending：updated</tspan>
+                  <tspan x="1170.0" dy="23">若注册，就等待 post 执行</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 660 980 H 1170"
+                  marker-end="url(#scheduler-counter-sequence-arrow)"
+                />
+                <text class="eng-small" x="915" y="968" text-anchor="middle">
+                  <tspan x="915" dy="0">flushPostFlushCbs：取出回调执行</tspan>
+                </text>
+                <rect
+                  class="eng-note"
+                  x="1060"
+                  y="1000"
+                  width="220"
+                  height="70"
+                  rx="10"
+                />
+                <text
+                  class="eng-label"
+                  x="1170"
+                  y="1028.5"
+                  text-anchor="middle"
+                >
+                  <tspan x="1170" dy="0">updated（若注册）</tspan>
+                  <tspan x="1170" dy="23">此时宿主文本已经是 2</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 1170 1090 H 660"
+                  marker-end="url(#scheduler-counter-sequence-arrow)"
+                />
+                <text class="eng-small" x="915" y="1078" text-anchor="middle">
+                  <tspan x="915" dy="0">
+                    post 正常返回；清 Promise；新任务同步 flush
+                  </tspan>
+                </text>
+                <path
+                  class="eng-async"
+                  d="M 660 1110 H 150"
+                  marker-end="url(#scheduler-counter-sequence-arrow)"
+                />
+                <text class="eng-small" x="405" y="1098" text-anchor="middle">
+                  <tspan x="405" dy="0">
+                    整次 flush 返回 → Promise 兑现 → await 继续
+                  </tspan>
+                </text>
+                <rect
+                  class="eng-state"
+                  x="35"
+                  y="1130"
+                  width="230"
+                  height="55"
+                  rx="10"
+                />
+                <text
+                  class="eng-label"
+                  x="150.0"
+                  y="1162.5"
+                  text-anchor="middle"
+                >
+                  <tspan x="150.0" dy="0">异步断言：button 2</tspan>
+                </text>
+              </svg>
             </div>
-            <div class="flow-join"></div>
-            <div class="flow-step">
-              <span class="flow-index">02</span
-              ><span class="flow-copy"
-                ><strong>queueJob(instance.job)</strong
-                ><small
-                  >按 uid 插入 queue，设置 QUEUED；queueFlush 创建
-                  resolvedPromise.then(flushJobs)。</small
-                ></span
-              ><span class="flow-file">scheduler.ts</span>
-            </div>
-            <div class="flow-join"></div>
-            <div class="flow-step">
-              <span class="flow-index">03</span
-              ><span class="flow-copy"
-                ><strong>click #2：count 1→2</strong
-                ><small
-                  >再次触发同一 scheduler；QUEUED 已存在，queueJob
-                  整体跳过，queue 仍为 [job]。</small
-                ></span
-              ><span class="flow-file">dedupe</span>
-            </div>
-            <div class="flow-join"></div>
-            <div class="flow-step">
-              <span class="flow-index">04</span
-              ><span class="flow-copy"
-                ><strong>同步栈结束</strong
-                ><small
-                  >render job 尚未运行；这就是测试在 await 前仍断言 button 0
-                  的原因。</small
-                ></span
-              ><span class="flow-file">host tree unchanged</span>
-            </div>
-            <div class="flow-join"></div>
-            <div class="flow-step">
-              <span class="flow-index">05</span
-              ><span class="flow-copy"
-                ><strong>微任务：flushJobs</strong
-                ><small
-                  >按 queue 顺序取 job；DISPOSED/递归检查后
-                  callWithErrorHandling(job)。job 才在此处 runIfDirty。</small
-                ></span
-              ><span class="flow-file">scheduler.ts · flushJobs</span>
-            </div>
-            <div class="flow-join"></div>
-            <div class="flow-step">
-              <span class="flow-index">06</span
-              ><span class="flow-copy"
-                ><strong>component job → render/patch</strong
-                ><small
-                  >本例组件 job 带 ALLOW_RECURSE，执行前先清
-                  QUEUED，以允许合法重入；dirty 检查通过后读取最终 count=2
-                  并提交 button 2。普通非递归 job 则在执行后清位。</small
-                ></span
-              ><span class="flow-file">renderer.ts</span>
-            </div>
-            <div class="flow-join"></div>
-            <div class="flow-step">
-              <span class="flow-index">07</span
-              ><span class="flow-copy"
-                ><strong>finally → flushPostFlushCbs</strong
-                ><small
-                  >无论主 job 是否报错，都清剩余
-                  QUEUED、queue、flushIndex；随后执行 updated 等 post
-                  回调。</small
-                ></span
-              ><span class="flow-file">scheduler.ts</span>
-            </div>
-            <div class="flow-join"></div>
-            <div class="flow-step">
-              <span class="flow-index">08</span
-              ><span class="flow-copy"
-                ><strong>currentFlushPromise=null → nextTick 恢复</strong
-                ><small
-                  >若 post 又入队则递归清空；整个 flush Promise resolve
-                  后，测试的 await 才继续。</small
-                ></span
-              ><span class="flow-file">stable boundary</span>
-            </div>
-          </div>
-          <h3>按时间顺序再走一遍</h3>
-          <ol>
-            <li>
-              reactivity 的
-              <code>batch/endBatch</code> 是同步依赖通知收口；scheduler 的
-              queue/flush 是另一个微任务批次。
-            </li>
-            <li>
-              组件 effect 的 scheduler 只做
-              <code>queueJob(job)</code>；第一次设置 QUEUED 并预约微任务。
-            </li>
-            <li>
-              第二次写状态仍完成到 count=2，但同一个 job 因 QUEUED
-              位提前退出，所以不会重复渲染。
-            </li>
-            <li>
-              <code>isDirty</code> 不在 click 时检查；job 是
-              <code>runIfDirty</code>，直到 flushJobs 调它才检查。
-            </li>
-            <li>
-              flushJobs 执行组件更新，随后 finally 清主队列并刷新 post
-              callbacks。
-            </li>
-            <li>
-              post callback 如果又产生任务会继续清空；currentFlushPromise 对应的
-              nextTick 最后才恢复。
-            </li>
-          </ol>
+            <figcaption>
+              实线表示同步调用或数据提交；虚线表示微任务 / Promise
+              的延后执行。两次 click 是测试的两次同步
+              <code>triggerEvent</code> 调用。<code>updated</code>
+              只在注册时入队，本例没有该钩子；它所在的位置用于说明“patch
+              后、nextTick 前”的时序。<code>currentFlushPromise = null</code>
+              发生在 post 正常返回后；已经拿到的 Promise 要等后续同步递归 flush
+              全部返回才兑现。
+            </figcaption>
+          </figure>
+          <p>
+            两个收口发生在不同时间：<code>batch/endBatch</code>
+            在每次同步响应式通知中调用 effect 的 scheduler；<code
+              >queueJob</code
+            >
+            把多次通知合为一个等待执行的组件 job。
+            <code>runIfDirty</code> 直到微任务取出 job 时才检查脏状态，render
+            也在此时读取最终值。
+          </p>
         </section>
 
         <section class="article-section prose" id="scheduler-source-proof">
@@ -432,7 +747,7 @@ describe('runtime course: Counter', () =&gt; {
       expect(calls).toEqual(['job1', 'job2'])
     })</code></pre>
           <p class="test-proof">
-              <strong>运行结果：</strong>Node 24.5.0 定向执行
+            <strong>运行结果：</strong>Node 24.5.0 定向执行
             <code>should dedupe queued jobs</code>，1 passed / 38 skipped。
           </p>
           <div class="branch-grid">
@@ -455,7 +770,7 @@ describe('runtime course: Counter', () =&gt; {
               ><span
                 >主队列 job 经 callWithErrorHandling
                 进入错误管线；若错误继续抛出，flushJobs 的 finally
-                清剩余主任务标志与主队列，并调用 post flush。这里不把“post callback 自己继续抛错”扩大成同一保证。</span
+                清剩余主任务标志与主队列，并调用 post flush。</span
               >
             </div>
             <div class="branch">
@@ -468,9 +783,13 @@ describe('runtime course: Counter', () =&gt; {
             </div>
           </div>
           <details class="source-layer">
-            <summary>scheduler.spec.ts · nextTick 接住主队列 flush 错误</summary>
+            <summary>
+              scheduler.spec.ts · nextTick 接住主队列 flush 错误
+            </summary>
             <div>
-              <pre data-source-file="vue/packages/runtime-core/__tests__/scheduler.spec.ts"><code>  test('nextTick should capture scheduler flush errors', async () =&gt; {
+              <pre
+                data-source-file="vue/packages/runtime-core/__tests__/scheduler.spec.ts"
+              ><code>  test('nextTick should capture scheduler flush errors', async () =&gt; {
     const err = new Error('test')
     queueJob(() =&gt; {
       throw err
@@ -492,7 +811,9 @@ describe('runtime course: Counter', () =&gt; {
           <details class="source-layer">
             <summary>scheduler.spec.ts · 主队列报错后任务可再次入队</summary>
             <div>
-              <pre data-source-file="vue/packages/runtime-core/__tests__/scheduler.spec.ts"><code>  test('jobs can be re-queued after an error', async () =&gt; {
+              <pre
+                data-source-file="vue/packages/runtime-core/__tests__/scheduler.spec.ts"
+              ><code>  test('jobs can be re-queued after an error', async () =&gt; {
     const err = new Error('test')
     let shouldThrow = true
 
@@ -617,8 +938,9 @@ count.value++</code></pre>
               末尾若队列不空，继续刷新而不是丢到未知时机。
             </div>
             <div class="sequence-item">
-              <strong>异常不能污染下一轮</strong><br />finally 清除队列与 QUEUED
-              位，错误后 nextTick 和后续更新仍可运行。
+              <strong>主队列异常后可重新入队</strong><br />finally
+              清除剩余主任务的 QUEUED 位与主队列；post flush 正常返回后重置刷新
+              Promise，后续更新仍可运行。
             </div>
           </div>
           <div class="source-links">
@@ -694,25 +1016,369 @@ count.value++</code></pre>
             Boolean，一方面减少对象字段，另一方面让热路径能在一个整数上判断和清理状态。未初始化
             flags 在位运算中会被视为 0。
           </p>
-          <div
-            class="diagram"
-            role="img"
-            aria-label="SchedulerJob 从空闲、排队、执行、重新排队到失效的 flags 状态图"
-          >
-            <div class="diagram-title">SCHEDULER JOB FLAGS</div>
-            <div class="layer-flow">
-              <div class="layer-node"><strong>idle</strong><small>QUEUED=0，可入队</small></div>
-              <div class="diagram-arrow">queueJob</div>
-              <div class="layer-node"><strong>queued</strong><small>QUEUED=1，重复 queue 提前返回</small></div>
-              <div class="diagram-arrow">flush</div>
-              <div class="layer-node emphasis"><strong>executing</strong><small>ALLOW_RECURSE：执行前清 QUEUED；普通 job：执行后清</small></div>
-              <div class="diagram-arrow">完成 / finally</div>
-              <div class="layer-node"><strong>idle again</strong><small>可进入下一轮；错误后的剩余主任务也被清标志</small></div>
+          <figure class="eng-diagram" id="scheduler-job-flags-flow">
+            <div
+              class="eng-scroll"
+              tabindex="0"
+              aria-label="工程图，可横向滚动"
+            >
+              <svg
+                class="eng-svg"
+                viewBox="0 0 1180 950"
+                style="--diagram-width: 1180px"
+                role="img"
+                aria-labelledby="scheduler-job-flags-flow-title scheduler-job-flags-flow-desc"
+              >
+                <title id="scheduler-job-flags-flow-title">
+                  主队列 job：DISPOSED 与 ALLOW_RECURSE 的执行分支
+                </title>
+                <desc id="scheduler-job-flags-flow-desc">
+                  flushJobs 先跳过已作废任务，再做开发递归检查。允许递归的 job
+                  在执行前清 QUEUED，普通 job 在执行后清
+                  QUEUED；前者可在执行中再次入队，后者被去重。未处理的主任务错误转入
+                  finally。
+                </desc>
+                <defs>
+                  <marker
+                    id="scheduler-job-flags-flow-arrow"
+                    viewBox="0 0 10 10"
+                    refX="9"
+                    refY="5"
+                    markerWidth="7"
+                    markerHeight="7"
+                    orient="auto-start-reverse"
+                  >
+                    <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--brand)" />
+                  </marker>
+                </defs>
+                <text class="eng-heading" x="35" y="30" text-anchor="start">
+                  <tspan x="35" dy="0">
+                    主队列每次取一个 job：状态位决定是否执行、何时可以再次入队
+                  </tspan>
+                </text>
+                <rect
+                  class="eng-node"
+                  x="440"
+                  y="55"
+                  width="300"
+                  height="55"
+                  rx="10"
+                />
+                <text class="eng-label" x="590.0" y="87.5" text-anchor="middle">
+                  <tspan x="590.0" dy="0">queue[flushIndex]</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 590 110 V 140"
+                  marker-end="url(#scheduler-job-flags-flow-arrow)"
+                />
+                <polygon
+                  class="eng-decision"
+                  points="590,140.0 710.0,190 590,240.0 470.0,190"
+                />
+                <text class="eng-label" x="590" y="195.0" text-anchor="middle">
+                  <tspan x="590" dy="0">DISPOSED？</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 710 190 H 900"
+                  marker-end="url(#scheduler-job-flags-flow-arrow)"
+                />
+                <text class="eng-small" x="795" y="178" text-anchor="middle">
+                  <tspan x="795" dy="0">是</tspan>
+                </text>
+                <rect
+                  class="eng-note"
+                  x="900"
+                  y="162"
+                  width="230"
+                  height="56"
+                  rx="10"
+                />
+                <text
+                  class="eng-label"
+                  x="1015.0"
+                  y="195.0"
+                  text-anchor="middle"
+                >
+                  <tspan x="1015.0" dy="0">跳过作废任务</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 590 240 V 270"
+                  marker-end="url(#scheduler-job-flags-flow-arrow)"
+                />
+                <text class="eng-small" x="610" y="258" text-anchor="start">
+                  <tspan x="610" dy="0">否</tspan>
+                </text>
+                <polygon
+                  class="eng-decision"
+                  points="590,270.0 740.0,320 590,370.0 440.0,320"
+                />
+                <text class="eng-label" x="590" y="314.5" text-anchor="middle">
+                  <tspan x="590" dy="0">开发递归检查</tspan>
+                  <tspan x="590" dy="21">要求跳过？</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 740 320 H 900"
+                  marker-end="url(#scheduler-job-flags-flow-arrow)"
+                />
+                <text class="eng-small" x="815" y="308" text-anchor="middle">
+                  <tspan x="815" dy="0">是</tspan>
+                </text>
+                <rect
+                  class="eng-note"
+                  x="900"
+                  y="292"
+                  width="230"
+                  height="56"
+                  rx="10"
+                />
+                <text
+                  class="eng-label"
+                  x="1015.0"
+                  y="325.0"
+                  text-anchor="middle"
+                >
+                  <tspan x="1015.0" dy="0">跳过本次执行</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 590 370 V 400"
+                  marker-end="url(#scheduler-job-flags-flow-arrow)"
+                />
+                <text class="eng-small" x="610" y="389" text-anchor="start">
+                  <tspan x="610" dy="0">否 / 生产模式</tspan>
+                </text>
+                <polygon
+                  class="eng-decision"
+                  points="590,400.0 725.0,450 590,500.0 455.0,450"
+                />
+                <text class="eng-label" x="590" y="455.0" text-anchor="middle">
+                  <tspan x="590" dy="0">ALLOW_RECURSE？</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 455 450 H 280 V 525"
+                  marker-end="url(#scheduler-job-flags-flow-arrow)"
+                />
+                <text class="eng-small" x="358" y="438" text-anchor="middle">
+                  <tspan x="358" dy="0">是：允许重新入队</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 725 450 H 860 V 525"
+                  marker-end="url(#scheduler-job-flags-flow-arrow)"
+                />
+                <text class="eng-small" x="817" y="438" text-anchor="middle">
+                  <tspan x="817" dy="0">否：普通任务</tspan>
+                </text>
+                <rect
+                  class="eng-state"
+                  x="145"
+                  y="525"
+                  width="270"
+                  height="65"
+                  rx="10"
+                />
+                <text
+                  class="eng-label"
+                  x="280.0"
+                  y="551.0"
+                  text-anchor="middle"
+                >
+                  <tspan x="280.0" dy="0">执行前清 QUEUED</tspan>
+                  <tspan x="280.0" dy="23">允许本次执行中再次入队</tspan>
+                </text>
+                <rect
+                  class="eng-state"
+                  x="725"
+                  y="525"
+                  width="270"
+                  height="65"
+                  rx="10"
+                />
+                <text
+                  class="eng-label"
+                  x="860.0"
+                  y="551.0"
+                  text-anchor="middle"
+                >
+                  <tspan x="860.0" dy="0">执行前保留 QUEUED</tspan>
+                  <tspan x="860.0" dy="23">同一个 job 再入队会被去重</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 280 590 V 630"
+                  marker-end="url(#scheduler-job-flags-flow-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 860 590 V 630"
+                  marker-end="url(#scheduler-job-flags-flow-arrow)"
+                />
+                <rect
+                  class="eng-node"
+                  x="145"
+                  y="630"
+                  width="270"
+                  height="65"
+                  rx="10"
+                />
+                <text
+                  class="eng-label"
+                  x="280.0"
+                  y="656.0"
+                  text-anchor="middle"
+                >
+                  <tspan x="280.0" dy="0">callWithErrorHandling(job)</tspan>
+                  <tspan x="280.0" dy="23">组件 job 调用 runIfDirty()</tspan>
+                </text>
+                <rect
+                  class="eng-node"
+                  x="725"
+                  y="630"
+                  width="270"
+                  height="65"
+                  rx="10"
+                />
+                <text
+                  class="eng-label"
+                  x="860.0"
+                  y="656.0"
+                  text-anchor="middle"
+                >
+                  <tspan x="860.0" dy="0">callWithErrorHandling(job)</tspan>
+                  <tspan x="860.0" dy="23">同步执行这个任务</tspan>
+                </text>
+                <rect
+                  class="eng-note"
+                  x="465"
+                  y="635"
+                  width="220"
+                  height="55"
+                  rx="10"
+                />
+                <text
+                  class="eng-small"
+                  x="575.0"
+                  y="657.5"
+                  text-anchor="middle"
+                >
+                  <tspan x="575.0" dy="0">未处理错误抛出</tspan>
+                  <tspan x="575.0" dy="20">转入 finally</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 415 662 H 465"
+                  marker-end="url(#scheduler-job-flags-flow-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 725 662 H 685"
+                  marker-end="url(#scheduler-job-flags-flow-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 280 695 V 745"
+                  marker-end="url(#scheduler-job-flags-flow-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 860 695 V 745"
+                  marker-end="url(#scheduler-job-flags-flow-arrow)"
+                />
+                <text class="eng-small" x="300" y="724" text-anchor="start">
+                  <tspan x="300" dy="0">正常返回</tspan>
+                </text>
+                <text class="eng-small" x="880" y="724" text-anchor="start">
+                  <tspan x="880" dy="0">正常返回</tspan>
+                </text>
+                <rect
+                  class="eng-state"
+                  x="145"
+                  y="745"
+                  width="270"
+                  height="65"
+                  rx="10"
+                />
+                <text
+                  class="eng-label"
+                  x="280.0"
+                  y="771.0"
+                  text-anchor="middle"
+                >
+                  <tspan x="280.0" dy="0">执行后不再清 QUEUED</tspan>
+                  <tspan x="280.0" dy="23">保留执行中重新入队的标记</tspan>
+                </text>
+                <rect
+                  class="eng-state"
+                  x="725"
+                  y="745"
+                  width="270"
+                  height="65"
+                  rx="10"
+                />
+                <text
+                  class="eng-label"
+                  x="860.0"
+                  y="771.0"
+                  text-anchor="middle"
+                >
+                  <tspan x="860.0" dy="0">执行后清 QUEUED</tspan>
+                  <tspan x="860.0" dy="23">后续才可再次入队</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 280 810 V 850 H 590 V 875"
+                  marker-end="url(#scheduler-job-flags-flow-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 860 810 V 850 H 590"
+                  marker-end="url(#scheduler-job-flags-flow-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 1130 190 H 1155 V 900 H 740"
+                  marker-end="url(#scheduler-job-flags-flow-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 1130 320 H 1155"
+                  marker-end="url(#scheduler-job-flags-flow-arrow)"
+                />
+                <rect
+                  class="eng-node"
+                  x="440"
+                  y="875"
+                  width="300"
+                  height="55"
+                  rx="10"
+                />
+                <text
+                  class="eng-label"
+                  x="590.0"
+                  y="907.5"
+                  text-anchor="middle"
+                >
+                  <tspan x="590.0" dy="0">flushIndex++，继续主循环</tspan>
+                </text>
+              </svg>
             </div>
-            <p class="concept-sentence">
-              任意时点若置 <code>DISPOSED</code>，flush 会跳过任务；这不是暂停状态，也不会自动恢复。
-            </p>
-          </div>
+            <figcaption>
+              这张图对应 <code>flushJobs</code> 的主队列循环。<code
+                >ALLOW_RECURSE</code
+              >
+              只开放重新入队，开发模式仍检查递归次数。<code>DISPOSED</code>
+              表示显式作废，不等同于所有已经停止的 effect；<code
+                >flushPreFlushCbs</code
+              >
+              的独立扫描路径见下一图。主任务抛错后的剩余 QUEUED 清理由 finally
+              完成。
+            </figcaption>
+          </figure>
         </section>
 
         <section class="article-section prose" id="queue">
@@ -722,18 +1388,361 @@ count.value++</code></pre>
             push；否则通过二分查找插入位置。这样队列大部分时间保持有序，避免每轮
             flush 前完整 sort。
           </p>
-          <pre><code>// 机制流程图，不是 Vue 源码
-queueJob(job)
-  if job.flags & QUEUED:
-    return
-
-  if 可以追加到队尾:
-    queue.push(job)
-  else:
-    queue.splice(findInsertionIndex(jobId), 0, job)
-
-  job.flags |= QUEUED
-  queueFlush() // 只创建一个微任务</code></pre>
+          <figure class="eng-diagram" id="scheduler-pre-dispatch">
+            <div
+              class="eng-scroll"
+              tabindex="0"
+              aria-label="工程图，可横向滚动"
+            >
+              <svg
+                class="eng-svg"
+                viewBox="0 0 1370 920"
+                style="--diagram-width: 1370px"
+                role="img"
+                aria-labelledby="scheduler-pre-dispatch-title scheduler-pre-dispatch-desc"
+              >
+                <title id="scheduler-pre-dispatch-title">
+                  PRE：主队列插入与 render 前同步刷新
+                </title>
+                <desc id="scheduler-pre-dispatch-desc">
+                  左侧 queueJob 先按 QUEUED 去重，普通递增 id
+                  可追加，非空队列中的 PRE
+                  或乱序任务二分插入尚未执行区间。右侧渲染器更新子 props
+                  后，flushPreFlushCbs 扫描队列，仅移除并执行 PRE 且 id 匹配实例
+                  uid 的任务，扫描完才执行子 render。
+                </desc>
+                <defs>
+                  <marker
+                    id="scheduler-pre-dispatch-arrow"
+                    viewBox="0 0 10 10"
+                    refX="9"
+                    refY="5"
+                    markerWidth="7"
+                    markerHeight="7"
+                    orient="auto-start-reverse"
+                  >
+                    <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--brand)" />
+                  </marker>
+                </defs>
+                <text class="eng-heading" x="35" y="30" text-anchor="start">
+                  <tspan x="35" dy="0">
+                    PRE 的两个入口：排在同 uid 的 render job 前；新 props
+                    到达后立即刷新
+                  </tspan>
+                </text>
+                <rect
+                  class="eng-node"
+                  x="145"
+                  y="55"
+                  width="310"
+                  height="60"
+                  rx="10"
+                />
+                <text class="eng-label" x="300.0" y="90.0" text-anchor="middle">
+                  <tspan x="300.0" dy="0">queueJob(job)</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 300 115 V 145"
+                  marker-end="url(#scheduler-pre-dispatch-arrow)"
+                />
+                <polygon
+                  class="eng-decision"
+                  points="300,145.0 425.0,195 300,245.0 175.0,195"
+                />
+                <text class="eng-label" x="300" y="200.0" text-anchor="middle">
+                  <tspan x="300" dy="0">已有 QUEUED？</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 425 195 H 530"
+                  marker-end="url(#scheduler-pre-dispatch-arrow)"
+                />
+                <text class="eng-small" x="475" y="183" text-anchor="middle">
+                  <tspan x="475" dy="0">是</tspan>
+                </text>
+                <rect
+                  class="eng-note"
+                  x="530"
+                  y="166"
+                  width="205"
+                  height="58"
+                  rx="10"
+                />
+                <text
+                  class="eng-label"
+                  x="632.5"
+                  y="200.0"
+                  text-anchor="middle"
+                >
+                  <tspan x="632.5" dy="0">直接返回</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 300 245 V 285"
+                  marker-end="url(#scheduler-pre-dispatch-arrow)"
+                />
+                <text class="eng-small" x="320" y="269" text-anchor="start">
+                  <tspan x="320" dy="0">否</tspan>
+                </text>
+                <polygon
+                  class="eng-decision"
+                  points="300,285.0 480.0,355 300,425.0 120.0,355"
+                />
+                <text class="eng-label" x="300" y="339.0" text-anchor="middle">
+                  <tspan x="300" dy="0">可以追加到队尾？</tspan>
+                  <tspan x="300" dy="21">队列为空，或</tspan>
+                  <tspan x="300" dy="21">非 PRE 且 id ≥ 队尾 id</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 120 355 H 90 V 465"
+                  marker-end="url(#scheduler-pre-dispatch-arrow)"
+                />
+                <text class="eng-small" x="80" y="420" text-anchor="middle">
+                  <tspan x="80" dy="0">是</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 480 355 H 570 V 465"
+                  marker-end="url(#scheduler-pre-dispatch-arrow)"
+                />
+                <text class="eng-small" x="590" y="420" text-anchor="start">
+                  <tspan x="590" dy="0">否</tspan>
+                </text>
+                <rect
+                  class="eng-node"
+                  x="35"
+                  y="465"
+                  width="230"
+                  height="60"
+                  rx="10"
+                />
+                <text
+                  class="eng-label"
+                  x="150.0"
+                  y="500.0"
+                  text-anchor="middle"
+                >
+                  <tspan x="150.0" dy="0">queue.push(job)</tspan>
+                </text>
+                <rect
+                  class="eng-node"
+                  x="385"
+                  y="465"
+                  width="350"
+                  height="85"
+                  rx="10"
+                />
+                <text
+                  class="eng-label"
+                  x="560.0"
+                  y="489.5"
+                  text-anchor="middle"
+                >
+                  <tspan x="560.0" dy="0">二分插入未执行区间</tspan>
+                  <tspan x="560.0" dy="23">起点 = flushIndex + 1</tspan>
+                  <tspan x="560.0" dy="23">同 id：PRE 在普通 job 之前</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 150 525 V 605 H 300 V 635"
+                  marker-end="url(#scheduler-pre-dispatch-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 560 550 V 605 H 300"
+                  marker-end="url(#scheduler-pre-dispatch-arrow)"
+                />
+                <rect
+                  class="eng-state"
+                  x="120"
+                  y="635"
+                  width="360"
+                  height="85"
+                  rx="10"
+                />
+                <text
+                  class="eng-label"
+                  x="300.0"
+                  y="659.5"
+                  text-anchor="middle"
+                >
+                  <tspan x="300.0" dy="0">设置 QUEUED</tspan>
+                  <tspan x="300.0" dy="23">queueFlush()</tspan>
+                  <tspan x="300.0" dy="23">预约 / 复用当前 flush Promise</tspan>
+                </text>
+                <rect
+                  class="eng-note"
+                  x="35"
+                  y="770"
+                  width="700"
+                  height="85"
+                  rx="10"
+                />
+                <text
+                  class="eng-small"
+                  x="385.0"
+                  y="794.5"
+                  text-anchor="middle"
+                >
+                  <tspan x="385.0" dy="0">
+                    Counter 没有 watcher：只走普通组件 job 的左侧路径
+                  </tspan>
+                  <tspan x="385.0" dy="23">
+                    父子组件示例：parent pre → parent render → child pre → child
+                    render
+                  </tspan>
+                  <tspan x="385.0" dy="23">
+                    同 uid 的顺序由二分规则保证，不需要每次全量 sort
+                  </tspan>
+                </text>
+                <line class="eng-divider" x1="765" y1="55" x2="765" y2="875" />
+                <rect
+                  class="eng-node"
+                  x="820"
+                  y="55"
+                  width="340"
+                  height="60"
+                  rx="10"
+                />
+                <text class="eng-label" x="990.0" y="90.0" text-anchor="middle">
+                  <tspan x="990.0" dy="0">父 patch：更新子 props / slots</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 990 115 V 150"
+                  marker-end="url(#scheduler-pre-dispatch-arrow)"
+                />
+                <rect
+                  class="eng-node"
+                  x="820"
+                  y="150"
+                  width="340"
+                  height="60"
+                  rx="10"
+                />
+                <text
+                  class="eng-label"
+                  x="990.0"
+                  y="185.0"
+                  text-anchor="middle"
+                >
+                  <tspan x="990.0" dy="0">flushPreFlushCbs(instance)</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 990 210 V 255"
+                  marker-end="url(#scheduler-pre-dispatch-arrow)"
+                />
+                <polygon
+                  class="eng-decision"
+                  points="990,255.0 1125.0,305 990,355.0 855.0,305"
+                />
+                <text class="eng-label" x="990" y="310.0" text-anchor="middle">
+                  <tspan x="990" dy="0">还有未扫描的项？</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 855 305 H 790 V 825 H 820"
+                  marker-end="url(#scheduler-pre-dispatch-arrow)"
+                />
+                <text class="eng-small" x="818" y="293" text-anchor="middle">
+                  <tspan x="818" dy="0">否</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 990 355 V 410"
+                  marker-end="url(#scheduler-pre-dispatch-arrow)"
+                />
+                <text class="eng-small" x="1010" y="384" text-anchor="start">
+                  <tspan x="1010" dy="0">是</tspan>
+                </text>
+                <polygon
+                  class="eng-decision"
+                  points="990,410.0 1155.0,465 990,520.0 825.0,465"
+                />
+                <text class="eng-label" x="990" y="459.5" text-anchor="middle">
+                  <tspan x="990" dy="0">带 PRE，且</tspan>
+                  <tspan x="990" dy="21">id = instance.uid？</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 1155 465 H 1220 V 240 H 990 V 255"
+                  marker-end="url(#scheduler-pre-dispatch-arrow)"
+                />
+                <text class="eng-small" x="1198" y="453" text-anchor="middle">
+                  <tspan x="1198" dy="0">否</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 990 520 V 585"
+                  marker-end="url(#scheduler-pre-dispatch-arrow)"
+                />
+                <text class="eng-small" x="1010" y="555" text-anchor="start">
+                  <tspan x="1010" dy="0">是</tspan>
+                </text>
+                <rect
+                  class="eng-node"
+                  x="820"
+                  y="585"
+                  width="340"
+                  height="100"
+                  rx="10"
+                />
+                <text
+                  class="eng-small"
+                  x="990.0"
+                  y="608.5"
+                  text-anchor="middle"
+                >
+                  <tspan x="990.0" dy="0">
+                    从 queue splice 移除，避免主循环重跑
+                  </tspan>
+                  <tspan x="990.0" dy="21">
+                    ALLOW_RECURSE：调用前清 QUEUED
+                  </tspan>
+                  <tspan x="990.0" dy="21">同步 cb()</tspan>
+                  <tspan x="990.0" dy="21">普通 cb：调用后清 QUEUED</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 990 685 V 735 H 1220 V 465"
+                  marker-end="url(#scheduler-pre-dispatch-arrow)"
+                />
+                <text class="eng-small" x="1060" y="723" text-anchor="start">
+                  <tspan x="1060" dy="0">继续扫描</tspan>
+                </text>
+                <rect
+                  class="eng-state"
+                  x="820"
+                  y="795"
+                  width="340"
+                  height="60"
+                  rx="10"
+                />
+                <text
+                  class="eng-label"
+                  x="990.0"
+                  y="830.0"
+                  text-anchor="middle"
+                >
+                  <tspan x="990.0" dy="0">
+                    扫描结束：子 render 读取派生后的状态
+                  </tspan>
+                </text>
+              </svg>
+            </div>
+            <figcaption>
+              左侧对应 <code>queueJob</code> /
+              <code>findInsertionIndex</code>；PRE watcher 与组件更新共享
+              uid。右侧对应 <code>renderer.updateComponentPreRender</code>：新
+              props 可能把 pre watcher 加入 queue，渲染器在 render
+              前同步取走它们。此扫描直接调用 <code>cb()</code>，并不经过主循环的
+              DISPOSED 分支；watcher 自身还会检查 effect 是否
+              ACTIVE。开发模式的递归检查可跳过本次 cb，图中省略该共用检查。
+            </figcaption>
+          </figure>
           <h3>相同 id 下 PRE 为什么排前面</h3>
           <p>
             pre watcher 与所属组件 job 共用 uid。二分插入时，遇到相同 id 的 PRE
@@ -744,68 +1753,360 @@ queueJob(job)
 
         <section class="article-section prose" id="flush">
           <h2>一次 flush 的完整时间线</h2>
-          <div class="diagram">
-            <div class="diagram-title">MICROTASK FLUSH</div>
-            <div class="flow">
-              <div class="flow-step">
-                <span class="flow-index">01</span>
-                <div class="flow-copy">
-                  <strong>currentFlushPromise 建立</strong
-                  ><small
-                    >Promise.resolve().then(flushJobs)，同一轮只创建一次。</small
+          <figure class="eng-diagram" id="scheduler-flush-drain-flow">
+            <div
+              class="eng-scroll"
+              tabindex="0"
+              aria-label="工程图，可横向滚动"
+            >
+              <svg
+                class="eng-svg"
+                viewBox="0 0 1260 1220"
+                style="--diagram-width: 1260px"
+                role="img"
+                aria-labelledby="scheduler-flush-drain-flow-title scheduler-flush-drain-flow-desc"
+              >
+                <title id="scheduler-flush-drain-flow-title">
+                  flushJobs：主队列、post 队列与新任务回路
+                </title>
+                <desc id="scheduler-flush-drain-flow-desc">
+                  主队列循环运行到末尾或因未处理错误退出，都会进入 finally
+                  清剩余 QUEUED 与主队列。post
+                  回调去重排序后执行，正常返回后才清 currentFlushPromise；新主或
+                  post 任务同步递归处理。post 直接抛错会中断其活动队列与 Promise
+                  复位。
+                </desc>
+                <defs>
+                  <marker
+                    id="scheduler-flush-drain-flow-arrow"
+                    viewBox="0 0 10 10"
+                    refX="9"
+                    refY="5"
+                    markerWidth="7"
+                    markerHeight="7"
+                    orient="auto-start-reverse"
                   >
-                </div>
-                <span class="flow-file">queueFlush</span>
-              </div>
-              <div class="flow-join"></div>
-              <div class="flow-step">
-                <span class="flow-index">02</span>
-                <div class="flow-copy">
-                  <strong>顺序遍历主队列</strong
-                  ><small
-                    >跳过
-                    DISPOSED；开发模式检查递归次数；按错误码调用任务。</small
-                  >
-                </div>
-                <span class="flow-file">flushJobs</span>
-              </div>
-              <div class="flow-join"></div>
-              <div class="flow-step">
-                <span class="flow-index">03</span>
-                <div class="flow-copy">
-                  <strong>清理剩余 QUEUED 标志</strong
-                  ><small
-                    >即使某个 job 抛错，finally
-                    也恢复所有未执行任务状态。</small
-                  >
-                </div>
-                <span class="flow-file">finally</span>
-              </div>
-              <div class="flow-join"></div>
-              <div class="flow-step">
-                <span class="flow-index">04</span>
-                <div class="flow-copy">
-                  <strong>flushPostFlushCbs</strong
-                  ><small
-                    >去重并按 id 排序，处理 mounted/updated/ref/post
-                    watcher。</small
-                  >
-                </div>
-                <span class="flow-file">post queue</span>
-              </div>
-              <div class="flow-join"></div>
-              <div class="flow-step">
-                <span class="flow-index">05</span>
-                <div class="flow-copy">
-                  <strong>检查是否产生新任务</strong
-                  ><small
-                    >若主队列或 post 队列仍有内容，继续 flush 直到稳定。</small
-                  >
-                </div>
-                <span class="flow-file">recursive settle</span>
-              </div>
+                    <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--brand)" />
+                  </marker>
+                </defs>
+                <text class="eng-heading" x="35" y="30" text-anchor="start">
+                  <tspan x="35" dy="0">
+                    一个 flush Promise 中的排空回路：主队列 → post → 新任务检查
+                  </tspan>
+                </text>
+                <rect
+                  class="eng-node"
+                  x="435"
+                  y="55"
+                  width="350"
+                  height="65"
+                  rx="10"
+                />
+                <text class="eng-label" x="610.0" y="81.0" text-anchor="middle">
+                  <tspan x="610.0" dy="0">queueFlush：只预约一次</tspan>
+                  <tspan x="610.0" dy="23">
+                    resolvedPromise.then(flushJobs)
+                  </tspan>
+                </text>
+                <path
+                  class="eng-async"
+                  d="M 610 120 V 165"
+                  marker-end="url(#scheduler-flush-drain-flow-arrow)"
+                />
+                <rect
+                  class="eng-node"
+                  x="435"
+                  y="165"
+                  width="350"
+                  height="75"
+                  rx="10"
+                />
+                <text
+                  class="eng-label"
+                  x="610.0"
+                  y="184.5"
+                  text-anchor="middle"
+                >
+                  <tspan x="610.0" dy="0">flushJobs(seen)</tspan>
+                  <tspan x="610.0" dy="23">主队列按 flushIndex 遍历</tspan>
+                  <tspan x="610.0" dy="23">任务分支见上方 flags 图</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 610 240 V 305"
+                  marker-end="url(#scheduler-flush-drain-flow-arrow)"
+                />
+                <text class="eng-small" x="630" y="274" text-anchor="start">
+                  <tspan x="630" dy="0">循环结束</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 435 220 H 160 V 337 H 435"
+                  marker-end="url(#scheduler-flush-drain-flow-arrow)"
+                />
+                <text class="eng-small" x="165" y="255" text-anchor="start">
+                  <tspan x="165" dy="0">主任务未处理错误抛出</tspan>
+                  <tspan x="165" dy="23">也进入 finally</tspan>
+                </text>
+                <rect
+                  class="eng-state"
+                  x="435"
+                  y="305"
+                  width="350"
+                  height="90"
+                  rx="10"
+                />
+                <text
+                  class="eng-label"
+                  x="610.0"
+                  y="332.0"
+                  text-anchor="middle"
+                >
+                  <tspan x="610.0" dy="0">finally：清剩余主任务 QUEUED</tspan>
+                  <tspan x="610.0" dy="23">flushIndex = -1</tspan>
+                  <tspan x="610.0" dy="23">queue.length = 0</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 610 395 V 445"
+                  marker-end="url(#scheduler-flush-drain-flow-arrow)"
+                />
+                <polygon
+                  class="eng-decision"
+                  points="610,445.0 760.0,500 610,555.0 460.0,500"
+                />
+                <text class="eng-label" x="610" y="505.0" text-anchor="middle">
+                  <tspan x="610" dy="0">pending post 有任务？</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 460 500 H 390 V 1002 H 435"
+                  marker-end="url(#scheduler-flush-drain-flow-arrow)"
+                />
+                <text class="eng-small" x="350" y="488" text-anchor="middle">
+                  <tspan x="350" dy="0">否：直接返回</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 610 555 V 600"
+                  marker-end="url(#scheduler-flush-drain-flow-arrow)"
+                />
+                <text class="eng-small" x="630" y="581" text-anchor="start">
+                  <tspan x="630" dy="0">是</tspan>
+                </text>
+                <rect
+                  class="eng-node"
+                  x="435"
+                  y="600"
+                  width="350"
+                  height="90"
+                  rx="10"
+                />
+                <text
+                  class="eng-label"
+                  x="610.0"
+                  y="627.0"
+                  text-anchor="middle"
+                >
+                  <tspan x="610.0" dy="0">Set 去重 → 按 getId 稳定排序</tspan>
+                  <tspan x="610.0" dy="23">pending.length = 0</tspan>
+                  <tspan x="610.0" dy="23">建立 active post 队列</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 610 690 V 740"
+                  marker-end="url(#scheduler-flush-drain-flow-arrow)"
+                />
+                <rect
+                  class="eng-node"
+                  x="435"
+                  y="740"
+                  width="350"
+                  height="110"
+                  rx="10"
+                />
+                <text
+                  class="eng-small"
+                  x="610.0"
+                  y="765.5"
+                  text-anchor="middle"
+                >
+                  <tspan x="610.0" dy="0">逐项运行 post callback</tspan>
+                  <tspan x="610.0" dy="23">
+                    ALLOW_RECURSE：调用前清 QUEUED
+                  </tspan>
+                  <tspan x="610.0" dy="23">DISPOSED：跳过 cb()</tspan>
+                  <tspan x="610.0" dy="23">直接 cb()；返回后清 QUEUED</tspan>
+                </text>
+                <rect
+                  class="eng-note"
+                  x="35"
+                  y="725"
+                  width="320"
+                  height="125"
+                  rx="10"
+                />
+                <text
+                  class="eng-small"
+                  x="195.0"
+                  y="758.0"
+                  text-anchor="middle"
+                >
+                  <tspan x="195.0" dy="0">刷新期间入队的回调</tspan>
+                  <tspan x="195.0" dy="23">通常先进入 pending post</tspan>
+                  <tspan x="195.0" dy="23">活动期单个 id = -1 的回调</tspan>
+                  <tspan x="195.0" dy="23">插到当前 post 下标之后</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 355 785 H 435"
+                  marker-end="url(#scheduler-flush-drain-flow-arrow)"
+                />
+                <text class="eng-small" x="390" y="773" text-anchor="middle">
+                  <tspan x="390" dy="0">追加</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 785 795 H 1060"
+                  marker-end="url(#scheduler-flush-drain-flow-arrow)"
+                />
+                <text class="eng-small" x="915" y="783" text-anchor="middle">
+                  <tspan x="915" dy="0">cb 直接抛错</tspan>
+                </text>
+                <rect
+                  class="eng-note"
+                  x="1060"
+                  y="720"
+                  width="175"
+                  height="150"
+                  rx="10"
+                />
+                <text
+                  class="eng-small"
+                  x="1147.5"
+                  y="754.0"
+                  text-anchor="middle"
+                >
+                  <tspan x="1147.5" dy="0">中断后续复位</tspan>
+                  <tspan x="1147.5" dy="23">active post 保留</tspan>
+                  <tspan x="1147.5" dy="23">当前 flush Promise</tspan>
+                  <tspan x="1147.5" dy="23">不会被设为 null</tspan>
+                  <tspan x="1147.5" dy="23">该 Promise 拒绝</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 610 850 V 890"
+                  marker-end="url(#scheduler-flush-drain-flow-arrow)"
+                />
+                <text class="eng-small" x="630" y="876" text-anchor="start">
+                  <tspan x="630" dy="0">正常返回</tspan>
+                </text>
+                <rect
+                  class="eng-state"
+                  x="435"
+                  y="890"
+                  width="350"
+                  height="65"
+                  rx="10"
+                />
+                <text
+                  class="eng-label"
+                  x="610.0"
+                  y="916.0"
+                  text-anchor="middle"
+                >
+                  <tspan x="610.0" dy="0">activePostFlushCbs = null</tspan>
+                  <tspan x="610.0" dy="23">postFlushIndex = 0</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 610 955 V 975"
+                  marker-end="url(#scheduler-flush-drain-flow-arrow)"
+                />
+                <rect
+                  class="eng-state"
+                  x="435"
+                  y="975"
+                  width="350"
+                  height="55"
+                  rx="10"
+                />
+                <text
+                  class="eng-label"
+                  x="610.0"
+                  y="1007.5"
+                  text-anchor="middle"
+                >
+                  <tspan x="610.0" dy="0">currentFlushPromise = null</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 610 1030 V 1060"
+                  marker-end="url(#scheduler-flush-drain-flow-arrow)"
+                />
+                <polygon
+                  class="eng-decision"
+                  points="610,1060.0 780.0,1110 610,1160.0 440.0,1110"
+                />
+                <text class="eng-label" x="610" y="1104.5" text-anchor="middle">
+                  <tspan x="610" dy="0">queue 或 pending post</tspan>
+                  <tspan x="610" dy="21">又有新任务？</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 440 1110 H 15 V 185 H 435"
+                  marker-end="url(#scheduler-flush-drain-flow-arrow)"
+                />
+                <text class="eng-small" x="195" y="1097" text-anchor="middle">
+                  <tspan x="195" dy="0">
+                    是：同一调用内递归 flushJobs(seen)
+                  </tspan>
+                  <tspan x="195" dy="23">
+                    共享递归计数；原 Promise 仍在等待
+                  </tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 780 1110 H 1000"
+                  marker-end="url(#scheduler-flush-drain-flow-arrow)"
+                />
+                <text class="eng-small" x="895" y="1098" text-anchor="middle">
+                  <tspan x="895" dy="0">否</tspan>
+                </text>
+                <rect
+                  class="eng-state"
+                  x="1000"
+                  y="1080"
+                  width="235"
+                  height="95"
+                  rx="10"
+                />
+                <text
+                  class="eng-small"
+                  x="1117.5"
+                  y="1109.5"
+                  text-anchor="middle"
+                >
+                  <tspan x="1117.5" dy="0">本轮 flush 结束</tspan>
+                  <tspan x="1117.5" dy="23">正常返回：Promise 兑现</tspan>
+                  <tspan x="1117.5" dy="23">向外抛错：Promise 拒绝</tspan>
+                </text>
+              </svg>
             </div>
-          </div>
+            <figcaption>
+              新任务检查发生在 post 正常返回且
+              <code>currentFlushPromise</code> 清空之后；递归
+              <code>flushJobs(seen)</code> 仍属于原 Promise
+              正在执行的调用。图中右下出口表示正常完成：若主任务错误仍向外传播，finally
+              虽运行，Promise 仍会拒绝。post
+              的直接抛错出口则更早中断复位。图示顶层 post 刷新；嵌套调用
+              <code>flushPostFlushCbs</code> 若已有 active
+              队列，只把去重结果追加到它并返回，由外层循环接着执行。普通
+              mounted/updated 与 post watcher 通常无
+              id，稳定排序保留入队顺序；模板 ref 赋值任务的 id = −1
+              排在它们前面。
+            </figcaption>
+          </figure>
           <div class="callout">
             这里的“递归继续 flush”是队列层面的收敛，不等于允许单个 job
             无限触发自己。后者由 ALLOW_RECURSE 与递归次数上限单独控制。
@@ -890,8 +2191,8 @@ await nextTick()
             在一轮中的递归次数，并报告具体组件名。
           </p>
           <div class="callout warm">
-            2026 年的 #15143 修复了超大 post callback
-            数组导致的栈溢出。它说明调度器的成熟度不仅体现在顺序正确，也体现在任务规模增大时调用栈仍保持有界。
+            #15143 把超大 post callback 数组的展开传参改成逐项追加。
+            普通入队和嵌套合并的百万回调用例都覆盖了这条路径，避免因函数参数过多产生栈溢出。
           </div>
         </section>
 
@@ -899,10 +2200,18 @@ await nextTick()
           <h2>错误恢复为何是调度器的一等逻辑</h2>
           <p>
             job 通过 callWithErrorHandling 执行，但 flushJobs 自身仍使用
-            try/finally。原因是错误处理器可能选择继续抛出；即使如此，队列也必须重置长度、清
-            QUEUED，并进入 post flush。仓库测试直接证明的是<strong>主队列 job
-            抛错</strong>后，下一次 nextTick 不再沿用该错误，相关 job 也可重新入队；
-            它没有证明任意 post callback 再次抛出时仍能完成所有剩余 post 回调。
+            try/finally。主队列 job 的错误若经错误管道继续抛出，finally
+            仍会清除剩余主任务的 QUEUED 位、清空主队列并调用 post flush。 post
+            flush 正常返回后先把
+            <code>currentFlushPromise</code> 置空，再同步递归处理新任务；
+            先前取得的 nextTick 仍要等整次 flushJobs 返回才兑现。
+          </p>
+          <p>
+            若 post 回调继续向外抛错，<code>flushPostFlushCbs</code> 中没有
+            finally 兜底，活动 post 队列与
+            <code>currentFlushPromise</code> 的复位会被中断。 此时刷新 Promise
+            拒绝并被保留，后续 queueFlush 无法预约新刷新。
+            因此上面的错误恢复用例覆盖主队列抛错且 post flush 能正常返回的路径。
           </p>
           <details>
             <summary>为什么不能在 catch 中简单 queue.length = 0？</summary>
@@ -914,8 +2223,11 @@ await nextTick()
           <details>
             <summary>为什么 post 回调也要按 id 排序？</summary>
             <p>
-              组件生命周期与 ref 需要父子可预测顺序；嵌套 post callback
-              还可能在刷新期间加入新回调，因此必须统一去重和排序。
+              非空模板 ref 的赋值任务使用 <code>id=-1</code>，排在普通 post
+              回调前， 因此 mounted 和 post watcher 可以读取已赋值的模板引用。
+              mounted、updated 与普通 post watcher 通常没有 id，排序值为
+              Infinity， 相同值保持入队顺序。父子生命周期的子先父后来自 patch
+              的递归入队顺序， 并不是用组件 uid 排出来的。
             </p>
           </details>
           <div class="callout">
@@ -951,25 +2263,23 @@ await nextTick()
                     <code>should dedupe queued jobs</code> 测试体
                   </td>
                   <td>
-                    <a href="#scheduler-counter-flow"
-                      >8 步 click→flush→post→nextTick 图</a
+                    <a href="#scheduler-counter-flow">Counter 跨角色时序图</a
                     >，图后逐步复述
                   </td>
                 </tr>
                 <tr>
                   <td>主队列 job 抛错后重新入队；nextTick 捕获 flush 错误</td>
                   <td><code>scheduler.ts · flushJobs try/finally</code></td>
-                  <td><code>jobs can be re-queued after an error</code>；<code>nextTick should capture scheduler flush errors</code></td>
+                  <td>
+                    <code>jobs can be re-queued after an error</code>；<code
+                      >nextTick should capture scheduler flush errors</code
+                    >
+                  </td>
                   <td><a href="#job">SchedulerJob flags 状态图</a></td>
                 </tr>
               </tbody>
             </table>
           </div>
-          <p class="reader-check">
-            <strong>结论：</strong>同步 batch 与微任务
-            queue、去重提前退出、DISPOSED、递归上限、错误 finally
-            和主队列错误清理均有源码、状态与真实测试落点；post callback 自身继续抛错不在本页恢复保证内。
-          </p>
         </section>
 
         <nav class="page-nav" aria-label="章节翻页">
@@ -987,7 +2297,7 @@ await nextTick()
         ><a href="#queue">queueJob</a><a href="#flush">flush 时间线</a
         ><a href="#watchers">Watcher 阶段</a><a href="#next-tick">nextTick</a
         ><a href="#recursion">递归更新</a><a href="#errors">错误恢复</a
-              ><a href="#scheduler-evidence">源码与测试</a>
+        ><a href="#scheduler-evidence">源码与测试</a>
       </aside>
     </div>
     <footer data-site-footer></footer>

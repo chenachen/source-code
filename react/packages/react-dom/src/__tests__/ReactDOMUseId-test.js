@@ -68,7 +68,7 @@ describe('useId', () => {
     });
   });
 
-  /** `serverAct`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 执行服务器操作并等一个 setImmediate；检查 PassThrough 错误，再将当前 buffer 当完整 HTML 片段插入容器。重新创建顶层 script 只复制 textContent 以执行内联指令，不模拟逐字节 HTML parser。 */
   async function serverAct(callback) {
     await callback();
     // 等待一次事件循环的轮询。 这假设我们已经将所有东西都冲刷了。
@@ -97,7 +97,7 @@ describe('useId', () => {
     }
   }
 
-  /** `normalizeTreeIdForTesting`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 提取测试已知 ID 的 R/r 前缀、base32 树路径与 H 后缀；服务端路径转二进制，客户端去掉不稳定计数。正则失败实际返回 null，现有 undefined 检查不覆盖它，因此调用者必须传入合法 ID。 */
   function normalizeTreeIdForTesting(id) {
     const result = id.match(/_(R|r)_([a-z0-9]*)(H([0-9]*))?_/);
     if (result === undefined) {
@@ -118,22 +118,16 @@ describe('useId', () => {
     );
   }
 
-  /** `DivWithId`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 调用 useId 并规范化为可读路径，写入 div.id；除 children 外的 label 等参数不会输出。 */
   function DivWithId({children}) {
     const id = normalizeTreeIdForTesting(useId());
     return <div id={id}>{children}</div>;
   }
 
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「basic example」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言连接 ReactDOM 公开入口、ReactDOMRoot 根生命周期及 DOM 提交结果。
-   */
+  /** 服务端渲染两层兄弟 DivWithId 后 hydrateRoot 同树；规范化快照为 101/1001/10，验证两端使用相同树分叉路径。 */
   it('basic example', async () => {
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 构造两层兄弟槽位，比较分叉位置的 ID 路径。 */
     function App() {
       return (
         <div>
@@ -174,9 +168,10 @@ describe('useId', () => {
     `);
   });
 
-  /** 测试场景：验证「indirections」描述的渲染、交互或错误处理结果。 */
+  /** 外层带 ID 的节点经多层无 ID div 到内部带 ID 节点；水合后 ID 为 0/1，验证消费 useId 的父子即使无兄弟分支也不同。 */
   it('indirections', async () => {
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 在有 ID 的父子之间加无 ID 主机层，验证消费 useId 的层级仍推进路径。 */
     function App() {
       // 没有分支。 但是父组件和子组件应该有不同的 id。
       return (
@@ -220,11 +215,11 @@ describe('useId', () => {
     `);
   });
 
-  /** 测试场景：验证「StrictMode double rendering」描述的渲染、交互或错误处理结果。 */
+  /** 服务端 StrictMode 包住一个 DivWithId，再客户端水合；ID 仍为 0，验证开发重复执行不改变水合身份。 */
   it('StrictMode double rendering', async () => {
     const {StrictMode} = React;
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 把 ID 子置于 StrictMode，覆盖开发重复执行。 */
     function App() {
       return (
         <StrictMode>
@@ -251,12 +246,12 @@ describe('useId', () => {
     `);
   });
 
-  /** 测试场景：验证「empty (null) children」描述的渲染、交互或错误处理结果。 */
+  /** Fragment 中 null 与带 ID 节点交替；服务端和客户端快照为 10/100，验证空数组槽仍参与路径编码而不创建 DOM。 */
   it('empty (null) children', async () => {
-    // 空子节点与非空子节点采用相同规则，因此生成 id 时也会占用一个槽位。
-    // 这不是语义上的必需，只是 Fiber 会为列表中的 null 子节点分配 Fiber，性能上并不理想；
-    // 对 id 生成而言，关键是 Fizz 与 Fiber 保持一致。
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    // null 不创建 Fiber，但数组遍历仍保留其索引，并把总槽位数用于 hydration 的 tree fork。
+    // 因此空槽会影响后续 useId 的路径编码；Fizz 与客户端必须使用同一规则。
+
+    /** 在两 ID 子前各保留一个 null 槽，检验槽索引编码。 */
     function App() {
       return (
         <>
@@ -289,20 +284,20 @@ describe('useId', () => {
     `);
   });
 
-  /** 测试场景：验证「large ids」描述的渲染、交互或错误处理结果。 */
+  /** 嵌套 50 层二叉 Fragment 并逐层输出 useId；水合后所有原始 ID 匹配交替 a/l 的 base32 模式，验证超出 32 位的路径溢出编码。 */
   it('large ids', async () => {
     // 该组件会输出一棵带 id 的递归节点树；这些 id 的底层二进制位按 1、0 交替排列，形如 101010101。
-    // 因为使用 base-32 编码，结果除 `R:` 前缀和其后的首字符外，应交替出现 `a`（01010）与
-    // `l`（10101），例如 `_Rclalalalalalalala...`；首字符可能不足完整的 5 位。
-    // 这个规律可用于验证超过 32 位位运算安全范围的大 id；算法理论上应支持任意长度的 id。
+    // 因为使用 base-32 编码，结果除 `_R_` 前缀和其后的首字符外，应交替出现 `a`（01010）与
+    // `l`（10101），例如 `_R_clalalalalalalala..._`；首字符可能不足完整的 5 位。
+    // 本例 50 层树用这个规律检验超过 32 位位运算范围的编码，不枚举任意深度。
 
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 用原始 useId 写 div.id，保留超长 base32 路径供正则检验。 */
     function Child({children}) {
       const id = useId();
       return <div id={id}>{children}</div>;
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 循环 50 次构造递归 Fragment，每层旧树处于第二槽，制造超 32 位路径。 */
     function App() {
       let tree = <Child />;
       for (let i = 0; i < 50; i++) {
@@ -327,14 +322,15 @@ describe('useId', () => {
 
     // 确认每个ID符合预期模式
     for (let i = 0; i < divs.length; i++) {
-      // 示例：_Rclalalalalalalala...:
+      // 示例：_R_clalalalalalalala..._
       expect(divs[i].id).toMatch(/^_R_.(((al)*a?)((la)*l?))*_$/);
     }
   });
 
-  /** 测试场景：验证「multiple ids in a single component」描述的渲染、交互或错误处理结果。 */
+  /** 一个组件顺序调用 useId 三次；服务端与水合输出 R_0、R_0H1、R_0H2，验证同组件内按 Hook 索引区分。 */
   it('multiple ids in a single component', async () => {
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 顺序获取三个 ID 并直接拼字符串，观察本组件 Hook 索引后缀。 */
     function App() {
       const id1 = useId();
       const id2 = useId();
@@ -359,9 +355,10 @@ describe('useId', () => {
     `);
   });
 
-  /** 测试场景：验证「local render phase updates」描述的渲染、交互或错误处理结果。 */
+  /** App 在 render 将 count 从 0 连续更新到 3，再返回 useId；SSR 与水合仍为 R_0，验证 render 阶段重跑不额外分配 ID。 */
   it('local render phase updates', async () => {
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 在 render 重跑三次后返回 useId，避免把本地更新次数当新的 ID 槽。 */
     function App({swap}) {
       const [count, setCount] = useState(0);
       if (count < 3) {
@@ -387,20 +384,22 @@ describe('useId', () => {
   });
 
   // @gate enableSuspenseList
-  /** 测试场景：验证「Supports SuspenseList (reveal order independent)」描述的渲染、交互或错误处理结果。 */
+
+  /** SuspenseList independent 中两 Bar 调用 useId；SSR 与水合均为 R_1/R_2，验证独立揭示模式保留兄弟 ID 路径。 */
   it('Supports SuspenseList (reveal order independent)', async () => {
-    /** `Baz`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 将 Bar 的 ID 与 children 放到 span，保持两端主机输出一致。 */
     function Baz({id, children}) {
       return <span id={id}>{children}</span>;
     }
 
-    /** `Bar`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 调用 useId，再通过 Baz 传到 span，验证组件间透传不重新分配 ID。 */
     function Bar({children}) {
       const id = useId();
       return <Baz id={id}>{children}</Baz>;
     }
 
-    /** `Foo`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 构造 independent SuspenseList，观察该模式下兄弟槽位与 ID。 */
     function Foo() {
       return (
         <SuspenseList revealOrder="independent">
@@ -454,20 +453,22 @@ describe('useId', () => {
   });
 
   // @gate enableSuspenseList
-  /** 测试场景：验证「Supports SuspenseList (reveal order "together")」描述的渲染、交互或错误处理结果。 */
+
+  /** SuspenseList together 中两 Bar 调用 useId；两端快照均为 R_1/R_2，覆盖一起揭示的树 ID 编码。 */
   it('Supports SuspenseList (reveal order "together")', async () => {
-    /** `Baz`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 将 Bar 的 ID 与 children 放到 span，保持两端主机输出一致。 */
     function Baz({id, children}) {
       return <span id={id}>{children}</span>;
     }
 
-    /** `Bar`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 调用 useId，再通过 Baz 传到 span，验证组件间透传不重新分配 ID。 */
     function Bar({children}) {
       const id = useId();
       return <Baz id={id}>{children}</Baz>;
     }
 
-    /** `Foo`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 构造 together SuspenseList，观察该模式下兄弟槽位与 ID。 */
     function Foo() {
       return (
         <SuspenseList revealOrder="together">
@@ -521,20 +522,22 @@ describe('useId', () => {
   });
 
   // @gate enableSuspenseList
-  /** 测试场景：验证「Supports SuspenseList (reveal order "forwards")」描述的渲染、交互或错误处理结果。 */
+
+  /** SuspenseList forwards/visible 中两 Bar 调用 useId；SSR 与水合 ID 保持 R_1/R_2，覆盖正向揭示模式。 */
   it('Supports SuspenseList (reveal order "forwards")', async () => {
-    /** `Baz`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 将 Bar 的 ID 与 children 放到 span，保持两端主机输出一致。 */
     function Baz({id, children}) {
       return <span id={id}>{children}</span>;
     }
 
-    /** `Bar`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 调用 useId，再通过 Baz 传到 span，验证组件间透传不重新分配 ID。 */
     function Bar({children}) {
       const id = useId();
       return <Baz id={id}>{children}</Baz>;
     }
 
-    /** `Foo`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 构造 forwards SuspenseList，观察该模式下兄弟槽位与 ID。 */
     function Foo() {
       return (
         <SuspenseList revealOrder="forwards" tail="visible">
@@ -588,20 +591,22 @@ describe('useId', () => {
   });
 
   // @gate enableSuspenseList
-  /** 测试场景：验证「Supports SuspenseList (reveal order "backwards") with a single child in a list of many」描述的渲染、交互或错误处理结果。 */
+
+  /** legacy-backwards 列表的三槽中仅中间 Bar 非 null；SSR 与水合均为 R_2 并保留尾部注释，验证单项时的空槽路径。 */
   it('Supports SuspenseList (reveal order "backwards") with a single child in a list of many', async () => {
-    /** `Baz`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 将 Bar 的 ID 与 children 放到 span，保持两端主机输出一致。 */
     function Baz({id, children}) {
       return <span id={id}>{children}</span>;
     }
 
-    /** `Bar`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 调用 useId，再通过 Baz 传到 span，验证组件间透传不重新分配 ID。 */
     function Bar({children}) {
       const id = useId();
       return <Baz id={id}>{children}</Baz>;
     }
 
-    /** `Foo`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 构造 legacy-backwards 单非空槽 SuspenseList，观察该模式下兄弟槽位与 ID。 */
     function Foo() {
       return (
         <SuspenseList revealOrder="unstable_legacy-backwards" tail="visible">
@@ -648,20 +653,22 @@ describe('useId', () => {
   });
 
   // @gate enableSuspenseList
-  /** 测试场景：验证「Supports SuspenseList (reveal order "backwards")」描述的渲染、交互或错误处理结果。 */
+
+  /** legacy-backwards 列表有两个 Bar，SSR 为 R_1/R_2；当前逆向水合会抛 mismatch 并客户端重建为 r_1/r_0，记录已知缺陷而非成功水合。 */
   it('Supports SuspenseList (reveal order "backwards")', async () => {
-    /** `Baz`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 将 Bar 的 ID 与 children 放到 span，保持两端主机输出一致。 */
     function Baz({id, children}) {
       return <span id={id}>{children}</span>;
     }
 
-    /** `Bar`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 调用 useId，再通过 Baz 传到 span，验证组件间透传不重新分配 ID。 */
     function Bar({children}) {
       const id = useId();
       return <Baz id={id}>{children}</Baz>;
     }
 
-    /** `Foo`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 构造 legacy-backwards 两项 SuspenseList，观察该模式下兄弟槽位与 ID。 */
     function Foo() {
       return (
         <SuspenseList revealOrder="unstable_legacy-backwards" tail="visible">
@@ -719,9 +726,10 @@ describe('useId', () => {
     `);
   });
 
-  /** 测试场景：验证「basic incremental hydration」描述的渲染、交互或错误处理结果。 */
+  /** Suspense 内两个 ID 节点、外部一个节点，先 SSR 再水合；快照同时保持边界注释和 101/1001/10 路径，覆盖边界内外 ID。 */
   it('basic incremental hydration', async () => {
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 同时放置 Suspense 内两个与外部一个 ID 子，比较水合路径。 */
     function App() {
       return (
         <div>
@@ -762,13 +770,14 @@ describe('useId', () => {
     `);
   });
 
-  /** 测试场景：验证「inserting/deleting siblings outside a dehydrated Suspense boundary」描述的渲染、交互或错误处理结果。 */
+  /** 先只水合 shell，使边界 span ref 仍为空，再在边界外数组将 key B 换成 C；新项用客户端 ID，边界 ID 不变且 span 复用原 DOM，验证更新不破坏待水合路径。 */
   it('inserting/deleting siblings outside a dehydrated Suspense boundary', async () => {
     const span = React.createRef(null);
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 在边界外有 key 的数组切换 B/C；数组占外层单个槽，边界位置保持稳定。 */
     function App({swap}) {
-      // 注意：使用动态数组，因此它们被视为插入和删除而不是更新。 因为 Fiber 目前为任何子节点分配了一
-      // 个节点，即使子节点为空。
+      // 动态数组占一个 Fragment 槽位。swap 时 key B 改为 C，故该行删除并插入；
+      // 外层 Suspense 仍处于同一槽位，其 hydration ID 路径不应受数组内部替换影响。
       const children = [
         <DivWithId key="A" />,
         swap ? <DivWithId key="C" /> : <DivWithId key="B" />,
@@ -818,7 +827,7 @@ describe('useId', () => {
       // 内层边界尚未完成水合。
       expect(span.current).toBe(null);
 
-      // 换B换C
+      // 将 key B 替换为 key C，要求新实例使用客户端 ID。
       root.render(<App swap={true} />);
     });
     // 元素交换不应导致 hydration mismatch。
@@ -843,17 +852,18 @@ describe('useId', () => {
         <!--/$-->
       </div>
     `);
-    // 应该成功hydration
+    // span ref 指向原服务端节点，证明该边界成功水合。
     expect(span.current).toBe(dehydratedSpan);
   });
 
-  /** 测试场景：验证「inserting/deleting siblings inside a dehydrated Suspense boundary」描述的渲染、交互或错误处理结果。 */
+  /** 边界内部数组先输出 A/B/D，shell 水合暂停时将 B 替换为 C；其余 ID 保持、C 用客户端 ID且 span 身份复用，验证先恢复边界再处理内部替换。 */
   it('inserting/deleting siblings inside a dehydrated Suspense boundary', async () => {
     const span = React.createRef(null);
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 在边界内部有 key 的数组切换 B/C，并保留后续 span ref；用主机身份检验边界恢复。 */
     function App({swap}) {
-      // 注意：使用动态数组，因此它们被视为插入和删除而不是更新。 因为 Fiber 目前为任何子节点分配了一
-      // 个节点，即使子节点为空。
+      // 动态数组占一个 Fragment 槽位。swap 时 key B 改为 C，故该行删除并插入；
+      // 外层 Suspense 仍处于同一槽位，其 hydration ID 路径不应受数组内部替换影响。
       const children = [
         <DivWithId key="A" />,
         swap ? <DivWithId key="C" /> : <DivWithId key="B" />,
@@ -897,7 +907,7 @@ describe('useId', () => {
       // 内层边界尚未完成水合。
       expect(span.current).toBe(null);
 
-      // 换B换C
+      // 将 key B 替换为 key C，要求新实例使用客户端 ID。
       root.render(<App swap={true} />);
     });
     // 元素交换不应导致 hydration mismatch。
@@ -919,19 +929,20 @@ describe('useId', () => {
         <!--/$-->
       </div>
     `);
-    // 应该成功hydration
+    // span ref 指向原服务端节点，证明该边界成功水合。
     expect(span.current).toBe(dehydratedSpan);
   });
 
-  /** 测试场景：验证「identifierPrefix option」描述的渲染、交互或错误处理结果。 */
+  /** SSR 与 hydrateRoot 同设 custom-prefix-，两初始子保留 R_1/R_2；客户端再增一子为 r_0，验证前缀跨服务端与客户端分配均生效。 */
   it('identifierPrefix option', async () => {
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 把原始 ID 输出为文本，观察自定义 prefix 及 R/r 区别。 */
     function Child() {
       const id = useId();
       return <div>{id}</div>;
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 先渲染两个 Child，showMore 时增加只在客户端挂载的第三项。 */
     function App({showMore}) {
       return (
         <>
@@ -990,9 +1001,11 @@ describe('useId', () => {
 
   // https://github.com/vercel/next.js/issues/43033：Strict Mode 重渲染曾重置 localIdCounter，
   // 但 rerender Hook 不会再次递增它；问题只会影响后续 useId 的子级与 sibling 计数器，而非首个 ID。
-  /** 测试场景：验证「does not forget it mounted an id when re-rendering in dev」描述的渲染、交互或错误处理结果。 */
+
+  /** StrictMode 下 Parent 与 Child 各调用 useId；水合前后快照均为 R_0/R_7，回归检查开发 rerender 仍记住父已消费 ID，避免子路径计数重置。 */
   it('does not forget it mounted an id when re-rendering in dev', async () => {
-    /** `Parent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 自身消费 useId 后再输出 Child，让开发重复渲染必须保留父 ID 消费计数。 */
     function Parent() {
       const id = useId();
       return (
@@ -1001,13 +1014,14 @@ describe('useId', () => {
         </div>
       );
     }
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 输出子 useId 文本，回归检查父 rerender 后的派生路径。 */
     function Child() {
       const id = useId();
       return <div>{id}</div>;
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 以 StrictMode 包住 Parent，制造开发重复执行条件。 */
     function App({showMore}) {
       return (
         <React.StrictMode>

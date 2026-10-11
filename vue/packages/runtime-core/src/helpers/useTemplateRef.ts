@@ -6,8 +6,8 @@ import { EMPTY_OBJ } from '@vue/shared'
 /**
  * 开发环境中由 `useTemplateRef()` 创建的 ref 集合。
  *
- * 使用 WeakSet 不阻止 ref 被回收；渲染器可据此识别只读模板 ref，并在用户同时用旧式
- * `ref()` 接收同名模板引用时给出更准确的诊断。
+ * 使用 WeakSet 不阻止 ref 被回收。渲染器据此跳过对 setupState 中该 ref 或直接 ref
+ * 值的赋值；模板引用通过 `$refs` 访问器写入内部 shallowRef，避免重复写 readonly 包装。
  */
 export const knownTemplateRefs: WeakSet<ShallowRef> = new WeakSet()
 
@@ -33,7 +33,9 @@ export function useTemplateRef<T = unknown, Keys extends string = string>(
     } else {
       Object.defineProperty(refs, key, {
         enumerable: true,
+        /** 从 $refs[key] 读取内部 shallowRef.value，使公开模板引用与组合式返回值一致。 */
         get: () => r.value,
+        /** 渲染器写入 $refs[key] 时同步内部 shallowRef，不替换用户取得的只读引用对象。 */
         set: val => (r.value = val),
       })
     }

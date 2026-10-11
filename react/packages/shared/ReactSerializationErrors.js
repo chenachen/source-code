@@ -29,7 +29,7 @@ export const jsxPropsParents: WeakMap<any, any> = new WeakMap();
 /** 开发期记录 children 数组由哪个 JSX type 创建。 */
 export const jsxChildrenParents: WeakMap<any, any> = new WeakMap();
 
-/** 判断候选值是否是当前 realm 或另一 realm 的纯 Object prototype。 */
+/** 识别当前 Object.prototype，或按空原型链与属性名判断另一 realm 的候选原型。 */
 function isObjectPrototype(object: any): boolean {
   if (!object) {
     return false;
@@ -51,7 +51,12 @@ function isObjectPrototype(object: any): boolean {
   return true;
 }
 
-/** 沿原型链判断某个属性最终是否由 getter 提供，且不触发该 getter。 */
+/**
+ * 沿原型链查找属性描述符，判断实际命中的属性是否由 getter 提供。
+ * @param object - 起始对象；查到 null 或当前 realm 的 Object.prototype 即停止。
+ * @param name - 待检查字段名；最近的数据属性会遮住祖先 getter。
+ * @returns 命中的描述符有 get 函数时为 true；不调用该 getter，但代理描述符操作仍可抛错。
+ */
 export function isGetter(object: any, name: string): boolean {
   const ObjectPrototype = Object.prototype;
   if (object === ObjectPrototype || object === null) {
@@ -64,7 +69,13 @@ export function isGetter(object: any, name: string): boolean {
   return typeof descriptor.get === 'function';
 }
 
-/** 判断对象能否只靠可枚举数据属性安全地跨序列化边界传输。 */
+/**
+ * 检查 Flight 普通对象候选的原型和字符串自有字段可枚举性。
+ * @param object - 待检查对象；其原型须被 isObjectPrototype 识别，null 原型对象在此不通过。
+ * @returns 是否符合形状约束；非枚举 key/ref getter 是 React props 的兼容特例。
+ * @remarks 不读取字段值，不拒绝 enumerable getter，也不枚举 Symbol 键；此结果不等于
+ * 整个对象已可序列化，字段值和其他限制由 Flight 后续路径检查。
+ */
 export function isSimpleObject(object: any): boolean {
   if (!isObjectPrototype(getPrototypeOf(object))) {
     return false;
@@ -138,7 +149,13 @@ export function describeValueForErrorMessage(value: mixed): string {
   }
 }
 
-/** 递归解开 memo/forwardRef/lazy，生成 JSX 预览使用的元素类型名。 */
+/**
+ * 为序列化错误中的 JSX 外形递归解开 memo、forwardRef 和 lazy 类型。
+ * @param type - 有效 JSX type 或包装描述对象；宿主标签直接返回原字符串。
+ * @returns 已识别特殊边界或宿主标签名称；其他组件类型和无法解析的 lazy 返回空串。
+ * @remarks lazy._init 可能首次启动加载、改变 payload，或抛出 thenable/错误；此分支
+ * 吞掉该异常以继续生成诊断。其他属性读取没有统一 catch，也没有循环包装检测。
+ */
 function describeElementType(type: any): string {
   if (typeof type === 'string') {
     return type;
@@ -184,8 +201,14 @@ function describeClientReference(ref: any) {
 /**
  * 把对象、数组或 JSX props/children 压缩成错误消息预览，并可用 `^` 标出指定字段。
  *
- * @remarks 预览严格限制单项与总长度，递归对象只在必要处展开；开发期 parent WeakMap
- * 允许恢复 JSX 外形，但任何运行时字符串都只用于诊断，不参与序列化结果。
+ * @remarks 普通子值达到长度阈值后改用省略号，expandedName 指定的字段完整展示；仍会
+ * 遍历全部字段，因此不是固定长度预览。开发期 parent WeakMap 用于恢复 JSX 外形。
+ * @param objectOrArray - 正在报错的值或 props/children 容器；非 Object/Array 仅返回类型名。
+ * @param expandedName - 需要定位的直接字段名或十进制索引字符串；匹配时记录文本区间。
+ * @returns 默认返回单行预览；指定字段后返回带缩进的文本，匹配到非空区间才加 ^ 标记。
+ * @remarks 递归生成子摘要发生在长度检查之前，长度阈值不能限制递归成本；没有 visited
+ * 集合，循环对象不会被自动折叠。getter、类型探测及普通递归异常向调用方传播。
+ * parent WeakMap 仅恢复开发期 JSX 上下文，不拥有或延长 props/children 生命周期。
  */
 export function describeObjectForErrorMessage(
   objectOrArray:

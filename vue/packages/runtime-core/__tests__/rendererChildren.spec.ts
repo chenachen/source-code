@@ -1,7 +1,3 @@
-/**
- * 测试阅读说明：本文件验证 `runtime-core/rendererChildren` 的运行时行为。
- * “测试组”概括共享前置条件，“测试场景”说明当前输入、边界或历史回归目标；具体预期以断言为准。
- */
 // reference: https://github.com/vuejs/vue/blob/dev/test/unit/modules/vdom/patch/children.spec.js
 import {
   type TestElement,
@@ -30,12 +26,12 @@ function shuffle(array: Array<any>) {
   let temporaryValue
   let randomIndex
 
-  // while there remain elements to shuffle...
+  // 逐步缩小尚未洗牌的前缀。
   while (currentIndex !== 0) {
-    // pick a remaining element...
+    // 从剩余前缀中随机选一项。
     randomIndex = Math.floor(Math.random() * currentIndex)
     currentIndex -= 1
-    // and swap it with the current element.
+    // 与当前前缀末项交换。
     temporaryValue = array[currentIndex]
     array[currentIndex] = array[randomIndex]
     array[randomIndex] = temporaryValue
@@ -43,7 +39,7 @@ function shuffle(array: Array<any>) {
   return array
 }
 
-// 测试场景：应该修补以前空的子项。
+/** 先渲染 div 的空数组，再更新为 hello 文本数组；检查两次输出，验证空数组到非空数组的挂载。 */
 test('should patch previously empty children', () => {
   const root = nodeOps.createElement('div')
 
@@ -54,7 +50,7 @@ test('should patch previously empty children', () => {
   expect(inner(root)).toBe('<div>hello</div>')
 })
 
-// 测试场景：应该修补之前为空的子项。
+/** 先渲染没有 children 的 div，再传 hello 数组；检查文本出现，验证空 children 到数组的转换。 */
 test('should patch previously null children', () => {
   const root = nodeOps.createElement('div')
 
@@ -65,7 +61,7 @@ test('should patch previously null children', () => {
   expect(inner(root)).toBe('<div>hello</div>')
 })
 
-// 测试场景：数组子项 -> 文本子项。
+/** 先挂载 div 子元素数组，再改为 hello 文本；检查旧子元素消失且文本写入，验证数组到文本的转换。 */
 test('array children -> text children', () => {
   const root = nodeOps.createElement('div')
   render(h('div', [h('div')]), root)
@@ -75,7 +71,7 @@ test('array children -> text children', () => {
   expect(inner(root)).toBe('<div>hello</div>')
 })
 
-// 测试场景：普通对象作为 children 时执行必要规范化。
+/** 将普通 foo 对象放入 children 数组，检查无无效 VNode 警告且输出[object Object]，验证原始对象的文本归一化。 */
 test('plain object child', () => {
   const root = nodeOps.createElement('div')
   const foo = { foo: '1' }
@@ -85,10 +81,11 @@ test('plain object child', () => {
   expect(inner(root)).toBe('<div>[object Object]</div>')
 })
 
-// 测试组：renderer 的 keyed children diff、移动与复用。
+// renderer 的 keyed children diff、移动与复用。
 describe('renderer: keyed children', () => {
   let root: TestElement
   let elm: TestElement
+  /** 把数字列表转为同 key 的 span 并渲染到本例 root，返回 div 宿主方便检查 children。 */
   const renderChildren = (arr: number[]) => {
     render(h('div', arr.map(toSpan)), root)
     return root.children[0] as TestElement
@@ -99,7 +96,7 @@ describe('renderer: keyed children', () => {
     render(h('div', { id: 1 }, 'hello'), root)
   })
 
-  // 测试场景：追加。
+  /** key列表[1]更新为[1,2,3]，检查长度与新增2/3文本，验证尾部追加。 */
   test('append', () => {
     elm = renderChildren([1])
     expect(elm.children.length).toBe(1)
@@ -110,7 +107,7 @@ describe('renderer: keyed children', () => {
     expect(serialize(elm.children[2])).toBe('<span>3</span>')
   })
 
-  // 测试场景：前置。
+  /** key列表[4,5]更新为[1,2,3,4,5]，检查全部文本顺序，验证头部新增。 */
   test('prepend', () => {
     elm = renderChildren([4, 5])
     expect(elm.children.length).toBe(2)
@@ -126,7 +123,7 @@ describe('renderer: keyed children', () => {
     ])
   })
 
-  // 测试场景：插入中间。
+  /** key列表[1,2,4,5]更新为[1,2,3,4,5]，检查长度与顺序，验证中间插入。 */
   test('insert in middle', () => {
     elm = renderChildren([1, 2, 4, 5])
     expect(elm.children.length).toBe(4)
@@ -142,7 +139,7 @@ describe('renderer: keyed children', () => {
     ])
   })
 
-  // 测试场景：在开头和结尾插入。
+  /** key列表[2,3,4]更新为[1,2,3,4,5]，检查顺序，验证同时在首尾新增。 */
   test('insert at beginning and end', () => {
     elm = renderChildren([2, 3, 4])
     expect(elm.children.length).toBe(3)
@@ -158,7 +155,7 @@ describe('renderer: keyed children', () => {
     ])
   })
 
-  // 测试场景：插入到空父级。
+  /** 空 key 列表更新为[1,2,3,4,5]，检查全部子项，验证空父容器挂载。 */
   test('insert to empty parent', () => {
     elm = renderChildren([])
     expect(elm.children.length).toBe(0)
@@ -174,7 +171,7 @@ describe('renderer: keyed children', () => {
     ])
   })
 
-  // 测试场景：从父级中删除所有子级。
+  /** key列表[1,2,3,4,5]改为无 children 的 div，检查原宿主元素没有子节点，验证清空整个数组。 */
   test('remove all children from parent', () => {
     elm = renderChildren([1, 2, 3, 4, 5])
     expect(elm.children.length).toBe(5)
@@ -190,7 +187,7 @@ describe('renderer: keyed children', () => {
     expect(elm.children.length).toBe(0)
   })
 
-  // 测试场景：从头开始删除。
+  /** key列表[1,2,3,4,5]更新为[3,4,5]，检查长度和顺序，验证删除头部。 */
   test('remove from beginning', () => {
     elm = renderChildren([1, 2, 3, 4, 5])
     expect(elm.children.length).toBe(5)
@@ -200,7 +197,7 @@ describe('renderer: keyed children', () => {
     expect((elm.children as TestElement[]).map(inner)).toEqual(['3', '4', '5'])
   })
 
-  // 测试场景：从末尾删除。
+  /** key列表[1,2,3,4,5]更新为[1,2,3]，检查长度和顺序，验证删除尾部。 */
   test('remove from end', () => {
     elm = renderChildren([1, 2, 3, 4, 5])
     expect(elm.children.length).toBe(5)
@@ -210,7 +207,7 @@ describe('renderer: keyed children', () => {
     expect((elm.children as TestElement[]).map(inner)).toEqual(['1', '2', '3'])
   })
 
-  // 测试场景：从中间删除。
+  /** key列表[1,2,3,4,5]更新为[1,2,4,5]，检查长度和顺序，验证中间删除。 */
   test('remove from middle', () => {
     elm = renderChildren([1, 2, 3, 4, 5])
     expect(elm.children.length).toBe(5)
@@ -225,7 +222,7 @@ describe('renderer: keyed children', () => {
     ])
   })
 
-  // 测试场景：推动独生子女前进。
+  /** key列表[1,2,3,4]更新为[2,3,1,4]，检查顺序，验证前部节点向后移动。 */
   test('moving single child forward', () => {
     elm = renderChildren([1, 2, 3, 4])
     expect(elm.children.length).toBe(4)
@@ -240,7 +237,7 @@ describe('renderer: keyed children', () => {
     ])
   })
 
-  // 测试场景：让独生子女倒退。
+  /** key列表[1,2,3,4]更新为[1,4,2,3]，检查顺序，验证尾部节点向前移动。 */
   test('moving single child backwards', () => {
     elm = renderChildren([1, 2, 3, 4])
     expect(elm.children.length).toBe(4)
@@ -255,7 +252,7 @@ describe('renderer: keyed children', () => {
     ])
   })
 
-  // 测试场景：终结独生子女。
+  /** key列表[1,2,3]更新为[2,3,1]，检查顺序，验证首节点移到末尾。 */
   test('moving single child to end', () => {
     elm = renderChildren([1, 2, 3])
     expect(elm.children.length).toBe(3)
@@ -265,7 +262,7 @@ describe('renderer: keyed children', () => {
     expect((elm.children as TestElement[]).map(inner)).toEqual(['2', '3', '1'])
   })
 
-  // 测试场景：交换第一个和最后一个。
+  /** key列表[1,2,3,4]更新为[4,2,3,1]，检查顺序，验证首尾交换。 */
   test('swap first and last', () => {
     elm = renderChildren([1, 2, 3, 4])
     expect(elm.children.length).toBe(4)
@@ -280,7 +277,7 @@ describe('renderer: keyed children', () => {
     ])
   })
 
-  // 测试场景：向左移动并替换。
+  /** key列表[1,2,3,4,5]更新为[4,1,2,3,6]，检查顺序，验证节点移动与删除/新增同时发生。 */
   test('move to left & replace', () => {
     elm = renderChildren([1, 2, 3, 4, 5])
     expect(elm.children.length).toBe(5)
@@ -296,7 +293,7 @@ describe('renderer: keyed children', () => {
     ])
   })
 
-  // 测试场景：向左移动并离开按住。
+  /** key列表[1,4,5]更新为[4,6]，检查输出4/6，验证保留中间节点并删除两侧、新增尾项。 */
   test('move to left and leaves hold', () => {
     elm = renderChildren([1, 4, 5])
     expect(elm.children.length).toBe(3)
@@ -305,7 +302,7 @@ describe('renderer: keyed children', () => {
     expect((elm.children as TestElement[]).map(inner)).toEqual(['4', '6'])
   })
 
-  // 测试场景：移动并设置为以末尾结尾的未定义元素。
+  /** key列表[2,4,5]更新为[4,5,3]，检查顺序，验证删除头项同时新增尾项。 */
   test('moved and set to undefined element ending at the end', () => {
     elm = renderChildren([2, 4, 5])
     expect(elm.children.length).toBe(3)
@@ -315,7 +312,7 @@ describe('renderer: keyed children', () => {
     expect((elm.children as TestElement[]).map(inner)).toEqual(['4', '5', '3'])
   })
 
-  // 测试场景：反转元素。
+  /** key列表1至8整体反转，检查全部逆序文本，验证多节点重排。 */
   test('reverse element', () => {
     elm = renderChildren([1, 2, 3, 4, 5, 6, 7, 8])
     expect(elm.children.length).toBe(8)
@@ -333,7 +330,7 @@ describe('renderer: keyed children', () => {
     ])
   })
 
-  // 测试场景：随机打乱 keyed children，多轮验证节点移动、插入和删除结果。
+  /** key列表[0,1,2,3,4,5]更新为[4,3,2,1,5,0]，检查复杂新顺序，验证非单向重排。 */
   test('something', () => {
     elm = renderChildren([0, 1, 2, 3, 4, 5])
     expect(elm.children.length).toBe(6)
@@ -349,13 +346,14 @@ describe('renderer: keyed children', () => {
     ])
   })
 
-  // 测试场景：随机洗牌。
+  /** 对14个 key 做5轮随机洗牌，同时按新位置设置 opacity；逐项检查文本与样式，验证重排和 props 更新同时正确。 */
   test('random shuffle', () => {
     const elms = 14
     const samples = 5
     const arr = [...Array(elms).keys()]
     const opacities: string[] = []
 
+    /** 以 n 为 key/文本并写入指定 opacity，供随机重排同时更新样式。 */
     function spanNumWithOpacity(n: number, o: string) {
       return h('span', { key: n, style: { opacity: o } }, n.toString())
     }
@@ -401,7 +399,7 @@ describe('renderer: keyed children', () => {
     }
   })
 
-  // 测试场景：具有相同key但具有不同标签的子级。
+  /** 四个 div 的 key1至4反转，其中 key2/3 改为 span；检查新标签与文本顺序，验证同 key 不同类型仍替换节点。 */
   test('children with the same key but with different tag', () => {
     render(
       h('div', [
@@ -449,7 +447,7 @@ describe('renderer: keyed children', () => {
     ])
   })
 
-  // 测试场景：具有相同标签、相同key的子级，但一个有数据，一个没有数据。
+  /** 同位置 div 从 class:hi/one 改为无 class/four，检查 class:null 与新文本，验证旧 prop 删除；两次节点均没有显式 key。 */
   test('children with the same tag, same key, but one with data and one without data', () => {
     render(h('div', [h('div', { class: 'hi' }, 'one')]), root)
     elm = root.children[0] as TestElement
@@ -463,15 +461,15 @@ describe('renderer: keyed children', () => {
     elm = root.children[0] as TestElement
     expect(elm.children[0] as TestElement).toMatchObject({
       props: {
-        // in the DOM renderer this will be ''
-        // but the test renderer simply sets whatever value it receives.
+        // DOM 宿主清除 class 时最终显示为空字符串。
+        // 测试宿主保存收到的 null，不额外模拟 DOM 的字符串转换。
         class: null,
       },
     })
     expect(serialize(elm.children[0])).toBe(`<div>four</div>`)
   })
 
-  // 测试场景：应该警告重复的键。
+  /** key列表[1,2,3,4,5]改为含两个6的数组，检查 Duplicate keys 警告，验证未知序列的重复键诊断。 */
   test('should warn with duplicate keys', () => {
     renderChildren([1, 2, 3, 4, 5])
     renderChildren([1, 6, 6, 3, 5])
@@ -479,10 +477,11 @@ describe('renderer: keyed children', () => {
   })
 })
 
-// 测试组：renderer 的 unkeyed children 按位置更新行为。
+// 手写数组中无 key 或混合 key 节点的更新与复用。
 describe('renderer: unkeyed children', () => {
   let root: TestElement
   let elm: TestElement
+  /** 数字项带 key、字符串项不带 key，将混合列表渲染到 root 后返回 div 宿主。 */
   const renderChildren = (arr: Array<number | string>) => {
     render(h('div', arr.map(toSpan)), root)
     return root.children[0] as TestElement
@@ -493,7 +492,7 @@ describe('renderer: unkeyed children', () => {
     render(h('div', { id: 1 }, 'hello'), root)
   })
 
-  // 测试场景：在非键控节点中移动尺寸增大的键。
+  /** 混合列表[1,a,b,c]改为[d,a,b,c,1,e]，检查长度与新文本顺序，验证有/无 key 混排增大。 */
   test('move a key in non-keyed nodes with a size up', () => {
     elm = renderChildren([1, 'a', 'b', 'c'])
     expect(elm.children.length).toBe(4)
@@ -516,7 +515,7 @@ describe('renderer: unkeyed children', () => {
     ])
   })
 
-  // 测试场景：附加元素并更新没有键的子元素。
+  /** 无 key 文本列表[hello]更新为[hello,world]，检查文本顺序，验证尾部扩展。 */
   test('append elements with updating children without keys', () => {
     elm = renderChildren(['hello'])
     expect((elm.children as TestElement[]).map(inner)).toEqual(['hello'])
@@ -528,7 +527,7 @@ describe('renderer: unkeyed children', () => {
     ])
   })
 
-  // 测试场景：未移动的文本节点，更新没有键的子节点。
+  /** 相同 text 与 span/hello 子树连续渲染两次，检查首文本仍为 text，验证无 key 文本更新。 */
   test('unmoved text nodes with updating children without keys', () => {
     render(h('div', ['text', h('span', ['hello'])]), root)
 
@@ -547,7 +546,7 @@ describe('renderer: unkeyed children', () => {
     })
   })
 
-  // 测试场景：更改文本子项并更新子项而无需键。
+  /** 首文本 text 改为 text2，后面的 span/hello 不变；检查首节点文本，验证文本内容更新。 */
   test('changing text children with updating children without keys', () => {
     render(h('div', ['text', h('span', ['hello'])]), root)
 
@@ -566,7 +565,7 @@ describe('renderer: unkeyed children', () => {
     })
   })
 
-  // 测试场景：在元素前面添加更新没有键的子元素。
+  /** 无 key 的 span/world 前新增 span/hello，检查两个文本顺序，验证同类型位置更新与尾部挂载。 */
   test('prepend element with updating children without keys', () => {
     render(h('div', [h('span', ['world'])]), root)
     elm = root.children[0] as TestElement
@@ -579,7 +578,7 @@ describe('renderer: unkeyed children', () => {
     ])
   })
 
-  // 测试场景：在不同标签类型的元素前面加上更新没有键的子元素。
+  /** span/world 前新增 div/hello，检查标签 div/span 与文本顺序，验证不同类型的无 key 更新。 */
   test('prepend element of different tag type with updating children without keys', () => {
     render(h('div', [h('span', ['world'])]), root)
     elm = root.children[0] as TestElement
@@ -596,7 +595,7 @@ describe('renderer: unkeyed children', () => {
     ])
   })
 
-  // 测试场景：删除元素并更新没有键的子元素。
+  /** 三个无 key span/one,two,three 改为 one,three 两项，检查文本序列，验证位置更新及尾部删除。 */
   test('remove elements with updating children without keys', () => {
     render(
       h('div', [h('span', ['one']), h('span', ['two']), h('span', ['three'])]),
@@ -614,7 +613,7 @@ describe('renderer: unkeyed children', () => {
     expect((elm.children as TestElement[]).map(inner)).toEqual(['one', 'three'])
   })
 
-  // 测试场景：删除单个文本节点并更新没有键的子节点。
+  /** div 的单文本数组 one 改为无 children，检查为空，验证文本节点删除。 */
   test('remove a single text node with updating children without keys', () => {
     render(h('div', ['one']), root)
     elm = root.children[0] as TestElement
@@ -624,7 +623,7 @@ describe('renderer: unkeyed children', () => {
     expect(serializeInner(elm)).toBe('')
   })
 
-  // 测试场景：更新子节点时删除单个文本节点。
+  /** 单文本 one 更新为 div/two 与 span/three，检查两项文本，验证文本到元素数组转换。 */
   test('remove a single text node when children are updated', () => {
     render(h('div', ['one']), root)
     elm = root.children[0] as TestElement
@@ -635,7 +634,7 @@ describe('renderer: unkeyed children', () => {
     expect((elm.children as TestElement[]).map(inner)).toEqual(['two', 'three'])
   })
 
-  // 测试场景：删除其他元素中的文本节点。
+  /** 混合文本 one 与 span/two 更新为一个 div/three，检查唯一子节点及序列化输出，验证混合 children 清理。 */
   test('remove a text node among other elements', () => {
     render(h('div', ['one', h('span', ['two'])]), root)
     elm = root.children[0] as TestElement
@@ -650,7 +649,7 @@ describe('renderer: unkeyed children', () => {
     expect(serialize(elm.children[0])).toBe('<div>three</div>')
   })
 
-  // 测试场景：重新排序元素。
+  /** 无 key 的 span/one、div/two、b/three 反转，检查文本顺序，验证不同标签序列重排。 */
   test('reorder elements', () => {
     render(
       h('div', [h('span', ['one']), h('div', ['two']), h('b', ['three'])]),
@@ -676,7 +675,7 @@ describe('renderer: unkeyed children', () => {
   })
 
   // #6502
-  // 测试场景：头部和尾部均发生变化时不应取消选择。
+  /** 首尾 null 更新为 p，中间 div 类型不变；比较中间宿主身份，验证首尾变化不会阻止中间复用。 */
   test('should not de-opt when both head and tail change', () => {
     render(h('div', [null, h('div'), null]), root)
     elm = root.children[0] as TestElement

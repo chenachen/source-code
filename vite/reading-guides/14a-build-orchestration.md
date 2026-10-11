@@ -15,6 +15,7 @@ build(inlineConfig)
 → rolldown() / watch()
 → generate 或 write 每个 output
 → 回填 viteMetadata
+→ 一次性构建关闭 bundle；watch 返回长期 watcher
 ```
 
 本章不展开 HTML/CSS/asset 插件内部算法，它们分别见 09、13A、13B。动态 import preload、
@@ -81,14 +82,14 @@ Environment API 引入 Builder 的演进见
 
 ### 与环境相关的默认值
 
-| 配置          | client               | server / SSR   | bundled-dev    |
-| ------------- | -------------------- | -------------- | -------------- |
-| platform      | browser              | node           | 按 consumer    |
-| minify        | oxc                  | false          | false          |
-| emitAssets    | true                 | false          | 按 consumer    |
-| cssCodeSplit  | 非 lib 时 true       | 非 lib 时 true | 非 lib 时 true |
-| cssMinify     | 跟随 build.minify    | lightningcss   | 跟随规则       |
-| modulePreload | `{ polyfill: true }` | 配置仍归一化   | 配置仍归一化   |
+| 配置          | client                                      | server / SSR   | bundled-dev    |
+| ------------- | ------------------------------------------- | -------------- | -------------- |
+| platform      | browser                                     | node           | 按 consumer    |
+| minify        | oxc                                         | false          | false          |
+| emitAssets    | true                                        | false          | 按 consumer    |
+| cssCodeSplit  | 非 lib 时 true                              | 非 lib 时 true | 非 lib 时 true |
+| cssMinify     | `!!build.minify`（true 使用 Lightning CSS） | lightningcss   | 默认 false     |
+| modulePreload | `{ polyfill: true }`                        | 配置仍归一化   | 配置仍归一化   |
 
 SSR target=webworker 是例外：platform 使用 browser；若 external 中残留 CJS require，再追加
 `esmExternalRequirePlugin()`，因为 worker 运行时没有 Node `createRequire`。对应修复见
@@ -153,15 +154,15 @@ build.ssr 字符串入口
 
 边界校验：
 
-- SSR 入口不能是 HTML；服务端需要明确模块入口；
+- 当前 SSR HTML 校验只检查字符串 input 是否以 `.html` 结尾；数组和对象 input 不经过这条检查；
 - `cssCodeSplit=false` 时不能把 CSS 本身列为 input；单 CSS bundle 需要由 JS/HTML 图聚合；
 - lib 已启用却仍无 entry 时立即报错。
 
 ## Rolldown 输入配置
 
-Vite 主要覆写：
+Vite 为 Rolldown 补默认值，并设置构建协议：
 
-- `preserveEntrySignatures`：SSR=`allow-extension`，lib=`strict`，应用=false；
+- `preserveEntrySignatures` 默认：SSR=`allow-extension`，lib=`strict`，应用=false；用户 rolldownOptions 可覆盖；
 - plugins：全部经 Environment wrapper；
 - onLog：进入 Vite 日志适配；
 - transform.target：build target；
@@ -328,7 +329,7 @@ watch 模式每轮第一次 renderChunk 重置该 chunk metadata，防止旧 CSS
 决定“首次”的不是进入过 `renderStart`，而是已经执行过一次写盘准备。源码中的 `rendered` 只在
 `write=true` 时登记 Environment：
 
-来源：`packages/vite/src/node/build.ts`，`prepareOutDirPlugin()`。
+来源：`packages/vite/src/node/plugins/prepareOutDir.ts`，`prepareOutDirPlugin()`。
 
 ```ts
 renderStart: {
@@ -431,16 +432,16 @@ export const lazy = true
 
 仓库测试使用两个命名 Environment：client 开启 `chunkImportMap`，SSR 关闭；二者复用插件实例，
 但构建配置必须隔离。为了观察交付阶段，可在同一模块图上再开启 `manifest`、`write` 与 output 数组。
-后者是基于公开配置协议的讲解扩展，不冒充仓库测试已执行的场景。
+下方 output 循环与目录准备源码说明这些选项如何改变交付阶段。
 
 ### 所有权地图
 
-| 对象/状态 | 创建者 | 持有者 | 生命周期 | 不应误解为 |
-| --- | --- | --- | --- | --- |
-| 顶层 `ResolvedConfig` | 首次 `resolveConfigToBuild()` | `ViteBuilder.config` | Builder 生命周期 | 每个 Environment 的最终 build 配置 |
-| 环境 `ResolvedConfig` | 默认逐环境重新解析；可共享 | `BuildEnvironment` | Environment 生命周期 | 必然与顶层对象同一引用 |
-| 原插件实例 | 每次配置解析；共享策略可替换 | 环境配置的 plugin 列表 | 配置生命周期 | 直接交给 Rolldown 的对象 |
-| hook wrapper | `resolveRolldownOptions()` | 本次 `RolldownOptions.plugins` | 单次 build 调用 | 新的业务插件实例 |
+| 对象/状态             | 创建者                        | 持有者                         | 生命周期             | 不应误解为                         |
+| --------------------- | ----------------------------- | ------------------------------ | -------------------- | ---------------------------------- |
+| 顶层 `ResolvedConfig` | 首次 `resolveConfigToBuild()` | `ViteBuilder.config`           | Builder 生命周期     | 每个 Environment 的最终 build 配置 |
+| 环境 `ResolvedConfig` | 默认逐环境重新解析；可共享    | `BuildEnvironment`             | Environment 生命周期 | 必然与顶层对象同一引用             |
+| 原插件实例            | 每次配置解析；共享策略可替换  | 环境配置的 plugin 列表         | 配置生命周期         | 直接交给 Rolldown 的对象           |
+| hook wrapper          | `resolveRolldownOptions()`    | 本次 `RolldownOptions.plugins` | 单次 build 调用      | 新的业务插件实例                   |
 
 `sharedPlugins: true` 共享的是原插件实例，不是 wrapper；插件若闭包捕获首次 config，wrapper 也无法修复。
 
@@ -581,18 +582,18 @@ output”的事务回滚。调用方应把失败理解为“构建资源已释�
 
 ## 编排状态表：同一案例从配置到释放
 
-| 时点 | 触发动作 | 关键状态变化 | 可见副作用 | 失败/退出语义 |
-| --- | --- | --- | --- | --- |
-| S0 配置 | `createBuilder(inlineConfig)` | 顶层 config、共享策略确定 | config hooks 可产生日志 | 解析失败时 Builder 不返回 |
-| S1 环境 | 重解析并 `setupEnvironment()` | 插件独立或共享；登记环境，`isBuilt=false` | 无产物 | 初始化失败的环境不登记 |
-| S2 翻译 | `resolveRolldownOptions()` | 新 metadata map、wrappers、outputs | 无产物 | input/output 校验失败时尚无 bundle |
-| S3 建图 | `rolldown(options)` | 创建一个 `RolldownBuild` | build hooks 执行 | 若已创建 bundle，错误路径最终关闭 |
-| S4 输出 | 逐 output generate/write | metadata 跨 hook 同步 | 内存结果或部分磁盘文件 | 后序失败不回滚前序磁盘输出 |
-| S5 释放 | `finally bundle.close()` | 一次性 bundle 先关闭 | 无新增产物 | close 失败会使本次构建拒绝 |
-| S6 返回 | 回到 `builder.build()` | 此时才置 `isBuilt=true` | 返回 output；watch 返回 watcher | 失败或 close 失败均不置位 |
+| 时点    | 触发动作                      | 关键状态变化                              | 可见副作用                                 | 失败/退出语义                      |
+| ------- | ----------------------------- | ----------------------------------------- | ------------------------------------------ | ---------------------------------- |
+| S0 配置 | `createBuilder(inlineConfig)` | 顶层 config、共享策略确定                 | config hooks 可产生日志                    | 解析失败时 Builder 不返回          |
+| S1 环境 | 重解析并 `setupEnvironment()` | 插件独立或共享；登记环境，`isBuilt=false` | 无产物                                     | 初始化失败的环境不登记             |
+| S2 翻译 | `resolveRolldownOptions()`    | 新 metadata map、wrappers、outputs        | 无产物                                     | input/output 校验失败时尚无 bundle |
+| S3 建图 | `rolldown(options)`           | 创建一个 `RolldownBuild`                  | build hooks 执行                           | 若已创建 bundle，错误路径最终关闭  |
+| S4 输出 | 逐 output generate/write      | metadata 跨 hook 同步                     | 内存结果或部分磁盘文件                     | 后序失败不回滚前序磁盘输出         |
+| S5 释放 | `finally bundle.close()`      | 一次性 bundle 先关闭                      | 无新增产物                                 | close 失败会使本次构建拒绝         |
+| S6 返回 | 回到 `builder.build()`        | 返回成功时置 `isBuilt=true`               | 返回 output；watch 创建 watcher 后即可返回 | 本次拒绝不置位，也不清除已有 true  |
 
-其中 S6 的 chunk/CSS/asset/preload/manifest 状态变化由 14B 展开。这个边界很重要：14A 证明**何时**各 hook
-得到正确 Environment 和 metadata，14B 证明这些 hook **写了什么**。
+`isBuilt` 记录 Builder 的 build 调用是否曾返回成功；watch 模式不等待首轮输出，之后的 watch 错误也不会
+清除它。chunk/CSS/asset/preload/manifest 的生成发生在输出阶段，由 14B 展开。
 
 ```mermaid
 flowchart TD
@@ -601,31 +602,31 @@ flowchart TD
   C --> D["setupEnvironment 并登记 isBuilt=false"]
   D --> E["buildApp → builder.build(environment)"]
   E --> F["resolveRolldownOptions：绑定 Environment wrapper"]
-  F --> G["rolldown：创建单个 RolldownBuild"]
-  G --> H{"watch?"}
-  H -- "是" --> I["返回 watcher；调用方负责关闭"]
-  H -- "否" --> J["按顺序 generate / write 每个 output"]
+  F --> H{"watch?"}
+  H -- "是" --> I["watch(options)：返回 watcher 并置 isBuilt=true"]
+  H -- "否" --> G["rolldown：创建单个 RolldownBuild"]
+  G --> J["按顺序 generate / write 每个 output"]
   J --> K["统一回填 ChunkMetadataMap"]
   J -- "任一 output 失败" --> L["停止后序 output；不回滚已写文件"]
   K --> M["finally bundle.close"]
   L --> M
   M --> N{"close 与构建均成功?"}
   N -- "是" --> O["返回结果；builder 再置 isBuilt=true"]
-  N -- "否" --> P["拒绝；isBuilt 保持 false"]
+  N -- "否" --> P["拒绝；保留调用前的 isBuilt"]
 ```
 
 图中 client/SSR 是下方共享插件测试的两个真实 Environment；多 output 与失败分支由源码锁定，测试未直接
-触发。一次性构建的资源提交点不是写完某个 output，而是 `bundle.close()` 成功后调用方取得结果。
+触发。一次性构建先执行 finally 中的 `bundle.close()`，随后调用方才取得返回结果；close 负责释放资源。
 
 ## 源码—测试证据
 
-| 机制 | 决定性源码 | 代表测试 | 证据边界 |
-| --- | --- | --- | --- |
-| Environment 所有权 | `createBuilder()` | 14B 完整 chunkImportMap 测试 | 动态证明共享插件下 client/SSR 配置隔离 |
-| hook wrapper / metadata | `resolveRolldownOptions()`、`wrapEnvironmentHook()` | 同上、CSS hash 回归 | 源码证明注入顺序；测试证明 CSS specifier 最终进入 client 产物 |
-| output 与关闭 | `buildEnvironment()` | `write:false` 构建测试 | 测试只覆盖 generate 成功；失败停止与 finally close 来自源码 |
-| 输出目录 | `prepareOutDirPlugin()` | write=false 后再 write=true 复制 publicDir | 动态证明首轮内存构建不消费后续写盘准备 |
-| 格式与入口 | `resolveBuildOutputs()`、input 解析 | lib formats、虚拟/顶层 input 测试 | 覆盖约束与优先级，不证明磁盘事务回滚 |
+| 机制                    | 决定性源码                                          | 代表测试                                   | 证据边界                                                      |
+| ----------------------- | --------------------------------------------------- | ------------------------------------------ | ------------------------------------------------------------- |
+| Environment 所有权      | `createBuilder()`                                   | 14B 完整 chunkImportMap 测试               | 动态证明共享插件下 client/SSR 配置隔离                        |
+| hook wrapper / metadata | `resolveRolldownOptions()`、`wrapEnvironmentHook()` | 同上、CSS hash 回归                        | 源码证明注入顺序；测试证明 CSS specifier 最终进入 client 产物 |
+| output 与关闭           | `buildEnvironment()`                                | `write:false` 构建测试                     | 测试只覆盖 generate 成功；失败停止与 finally close 来自源码   |
+| 输出目录                | `prepareOutDirPlugin()`                             | write=false 后再 write=true 复制 publicDir | 动态证明首轮内存构建不消费后续写盘准备                        |
+| 格式与入口              | `resolveBuildOutputs()`、input 解析                 | lib formats、虚拟/顶层 input 测试          | 校验格式约束与入口优先级                                      |
 
 ## 建议断点
 

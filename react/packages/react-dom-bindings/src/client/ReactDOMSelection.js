@@ -9,8 +9,9 @@ import getNodeForCharacterOffset from './getNodeForCharacterOffset';
 import {TEXT_NODE} from './HTMLNodeType';
 
 /**
- * @param {DOMElement} outerNode 选择区所属的外层 DOM 节点。
- * @return {?object} 以字符偏移表示的起止位置；无选择区时为 null。
+ * 从元素所属 window 读取 Selection，并把 anchor/focus 转为该元素内的文本偏移。
+ * 无 range、端点不可访问或端点不在元素内时返回 null，供提交前选区快照决定是否恢复。
+ * start/end 保留 anchor/focus 的方向，因此后向选区可出现 start 大于 end。
  */
 export function getOffsets(outerNode) {
   const {ownerDocument} = outerNode;
@@ -49,12 +50,9 @@ export function getOffsets(outerNode) {
 }
 
 /**
- * 返回 {start, end}，其中 `start` 是 (anchorNode, anchorOffset) 在 `outerNode` 的 textContent 中的字符/代码点索引，
- * 并且 `end` 是 (focusNode, focusOffset) 的索引。
- *
- * 如果传入无效输入则返回 null，但我们可能应该直接崩溃。
- *
- * 仅导出用于测试。
+ * 把 anchor/focus 的 DOM 位置换成 outerNode.textContent 中的 UTF-16 偏移。
+ * 文本节点偏移按 nodeValue.length 计数，元素节点偏移按其前面的子节点文本长度累计。
+ * 任一端点不在 outerNode 内时返回 null；此入口也导出供测试。
  */
 export function getModernOffsetsFromPoints(
   outerNode,
@@ -126,8 +124,7 @@ export function getModernOffsetsFromPoints(
   }
 
   if (start === -1 || end === -1) {
-    //这永远不应该发生。（如果锚点/焦点节点没有……就会发生）
-    //实际上在传入的节点内部。)
+    // anchor 或 focus 不在 outerNode 内，无法转换为该容器的偏移。
     return null;
   }
 
@@ -138,12 +135,9 @@ export function getModernOffsetsFromPoints(
 }
 
 /**
- * 在现代非 IE 浏览器中，我们可以支持前向和后向选区。
- *
- * 注意：IE10 及以上版本支持 Selection 对象，但它不支持 `extend` 方法，这意味着即使在现代 IE 中，也无法以编程方式创建后向选区。因此，对于所有 IE 版本，我们使用旧的 IE API 来创建选区。
- *
- * @param {DOMElement|DOMTextNode} node
- * @param {object} offsets
+ * 按 UTF-16 文本偏移创建 Selection。支持 extend 时保留前向/后向方向；
+ * 缺少 extend 时把后向起止交换，用普通 Range 表示相同选中范围。
+ * 上限裁到当前 textContent 长度；找不到对应 Text 节点则不改选区，已有同一选区也不重复写入。
  */
 export function setOffsets(node, offsets) {
   const doc = node.ownerDocument || document;

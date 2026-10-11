@@ -38,34 +38,37 @@ describe('ReactDOMServerHydration', () => {
     assertConsoleWarnDev = InternalTestUtils.assertConsoleWarnDev;
   });
 
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「should have the correct mounting behavior」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言对应 ReactDOMRoot.hydrateRoot 的容器认领与事件重放路径。
-   */
+  /** Given：记录mountCount与click数的类；When：首次创建根、更新name、卸载重建、匹配SSR hydration，再以name=y制造文本不匹配；Then：mountCount依次1/2/3/4，更新不重挂；匹配标记保持原HTML且事件可点击，不匹配有非空新HTML且事件仍可点击。目的：更新复用实例、hydration建立客户端生命周期与事件，恢复后也可交互；finally只移除容器。 */
   it('should have the correct mounting behavior', async () => {
     let mountCount = 0;
     let numClicks = 0;
 
-    /** `TestComponent`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 记录真实客户端mount及点击的类fixture；SSR只产生文字，不执行componentDidMount。 */
     class TestComponent extends React.Component {
-      /** `TestComponent.spanRef`：记录测试夹具在当前场景中的状态。 */
+
+      /** 实例持有的宿主span引用，用于hydration提交后直接click；由ref协议在挂载/卸载时写入/清空。 */
       spanRef = React.createRef();
 
-      /** `TestComponent.componentDidMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 每次真正客户端挂载把mountCount加1，更新复用实例时不调用。
+       * @returns 无返回值。
+       */
       componentDidMount() {
         mountCount++;
       }
 
-      /** `TestComponent.click`：封装当前用例复用的操作、回调或断言步骤。 */
+      /**
+       * 记录span原生click经过React onClick后的调用次数。
+       * @returns 无返回值。
+       */
       click = () => {
         numClicks++;
       };
 
-      /** `TestComponent.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 按props.name输出两段文本，并把spanRef及click处理器传给宿主。
+       * @returns Name前缀的span。
+       */
       render() {
         return (
           <span ref={this.spanRef} onClick={this.click}>
@@ -85,14 +88,14 @@ describe('ReactDOMServerHydration', () => {
 
       let lastMarkup = element.innerHTML;
 
-      // 测试更新路径。 标记不应改变。 但是，一些生命周期方法需要再次运行。
+      // 更新 name 改变文本，但复用实例，不再次调用 componentDidMount。
       await act(() => {
         root.render(<TestComponent name="x" />);
       });
       expect(mountCount).toEqual(1);
 
-      // 卸载并重新挂载。 我们应获取另一个挂载事件，并且应该得到不同的标记。 由于 ID 是唯一的，每次都
-      // 会。
+      // 卸载后创建新 root，componentDidMount 再运行一次。与上次记录的初始 HTML 相比，
+      // 这里包含 name="x" 对应的文本，因此标记不同；fixture 没有生成 ID。
       root.unmount();
       expect(element.innerHTML).toEqual('');
       root = ReactDOMClient.createRoot(element);
@@ -146,7 +149,12 @@ describe('ReactDOMServerHydration', () => {
             }}
           />,
           {
-            /** `onRecoverableError`：封装当前用例复用的操作、回调或断言步骤。 */
+
+            /**
+             * 忽略本例name不匹配的预期可恢复错误；主断言检查新HTML、mount次数与可点击性，不收集错误数组。
+             * @param error - hydration恢复报告的Error。
+             * @returns undefined。
+             */
             onRecoverableError: error => {},
           },
         );
@@ -167,7 +175,8 @@ describe('ReactDOMServerHydration', () => {
 
   // 我们有一个客户端的自动聚焦 polyfill。 但我们故意不希望在hydrate时调用focus()，因为这可能会在
   // JS加载之前影响现有的聚焦。
-  /** 测试场景：验证「should emit autofocus on the server but not focus() when hydrating」描述的渲染、交互或错误处理结果。 */
+
+  /** Given：SSR input autoFocus=true且其focus替换成mock；When：hydrate后再root.render同配置；Then：autofocus属性为真，focus两次均未调用。目的：hydration不打断JS加载前已有焦点，普通更新也不重复聚焦。 */
   it('should emit autofocus on the server but not focus() when hydrating', async () => {
     const element = document.createElement('div');
     element.innerHTML = ReactDOMServer.renderToString(
@@ -189,7 +198,7 @@ describe('ReactDOMServerHydration', () => {
     expect(element.firstChild.focus).not.toHaveBeenCalled();
   });
 
-  /** 测试场景：验证「should not focus on either server or client with autofocus={false}」描述的渲染、交互或错误处理结果。 */
+  /** Given：SSR input autoFocus=false且focus为mock；When：hydrate再更新；Then：autofocus为假、focus始终不调用。目的：禁用autoFocus不会触发客户端焦点副作用。 */
   it('should not focus on either server or client with autofocus={false}', async () => {
     const element = document.createElement('div');
     element.innerHTML = ReactDOMServer.renderToString(
@@ -211,7 +220,8 @@ describe('ReactDOMServerHydration', () => {
   });
 
   // 针对 https://github.com/facebook/react/issues/11726 的回归测试。
-  /** 测试场景：验证「should not focus on either server or client with autofocus={false} even if there is a markup mismatch」描述的渲染、交互或错误处理结果。 */
+
+  /** Given：SSR button文本server、autoFocus=false，旧focus和客户端onFocus各为mock；When：hydrate文本client并消费预期恢复错误；Then：两mock均未调用。目的：文本恢复不绕过autoFocus=false；不是DOM复用或错误数量断言。 */
   it('should not focus on either server or client with autofocus={false} even if there is a markup mismatch', async () => {
     const element = document.createElement('div');
     element.innerHTML = ReactDOMServer.renderToString(
@@ -229,7 +239,11 @@ describe('ReactDOMServerHydration', () => {
           client
         </button>,
         {
-          /** 消费本用例预期的可恢复 hydration 错误。 */
+          /**
+           * 消费autoFocus=false文本不匹配场景的恢复报告，避免预期错误污染控制台；本例只比较两种focus回调是否调用。
+           * @param error - 预期hydration恢复错误。
+           * @returns undefined。
+           */
           onRecoverableError: error => {}
         },
       );
@@ -239,7 +253,7 @@ describe('ReactDOMServerHydration', () => {
     expect(onFocusAfterHydration).not.toHaveBeenCalled();
   });
 
-  /** 测试场景：验证「should warn when the style property differs」描述的渲染、交互或错误处理结果。 */
+  /** Given：SSR style为none/black/10px，初始color断言black；When：hydrate时color改white；Then：消费属性差异警告，diff列出black→white及CSS名称差异。目的：核对诊断文本；没有额外断言hydration后的style值。 */
   it('should warn when the style property differs', async () => {
     const element = document.createElement('div');
     element.innerHTML = ReactDOMServer.renderToString(
@@ -281,7 +295,7 @@ describe('ReactDOMServerHydration', () => {
     ]);
   });
 
-  /** 测试场景：验证「should not warn when the style property differs on whitespace or order in IE」描述的渲染、交互或错误处理结果。 */
+  /** Given：documentMode=11并重装模块，手写style与客户端等价但顺序/空白不同；When：hydrate；Then：完成且不登记预期style警告，finally删除documentMode。目的：IE样式规范化分支避免格式误报。 */
   it('should not warn when the style property differs on whitespace or order in IE', async () => {
     document.documentMode = 11;
     jest.resetModules();
@@ -308,7 +322,7 @@ describe('ReactDOMServerHydration', () => {
     }
   });
 
-  /** 测试场景：验证「should warn when the style property differs on whitespace in non-IE browsers」描述的渲染、交互或错误处理结果。 */
+  /** Given：非IE的手写style含多余空白，客户端对象值相同；When：hydrate；Then：消费属性差异警告并核对style diff。目的：字符串样式格式差异在非IE分支被报告。 */
   it('should warn when the style property differs on whitespace in non-IE browsers', async () => {
     const element = document.createElement('div');
 
@@ -350,7 +364,7 @@ describe('ReactDOMServerHydration', () => {
     ]);
   });
 
-  /** 测试场景：验证「should throw rendering portals on the server」描述的渲染、交互或错误处理结果。 */
+  /** Given：DOM portal的目标为独立div；When：把portal嵌入服务器树并renderToString；Then：抛服务器不支持Portal、应条件地只在客户端渲染的错误。目的：禁止把外部DOM挂载点当SSR child。 */
   it('should throw rendering portals on the server', () => {
     const div = document.createElement('div');
     expect(() => {
@@ -363,15 +377,24 @@ describe('ReactDOMServerHydration', () => {
     );
   });
 
-  /** 测试场景：验证「should be able to render and hydrate Mode components」描述的渲染、交互或错误处理结果。 */
+  /** Given：StrictMode包裹含旧componentWillMount的类，返回Hi；When：字符串SSR后hydrate；Then：两端都显示Hi，分别消费服务器与Strict客户端的生命周期重命名警告。目的：Mode不改变输出，但两端诊断适用说明不同。 */
   it('should be able to render and hydrate Mode components', async () => {
-    /** `ComponentWithWarning`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+
+    /** 保留旧componentWillMount名称以触发SSR与StrictMode客户端各自诊断的类fixture。 */
     class ComponentWithWarning extends React.Component {
-      /** `ComponentWithWarning.componentWillMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 空旧生命周期方法；仅其定义就使相关阶段输出迁移警告。
+       * @returns 无返回值。
+       */
       componentWillMount() {
         // 预期的警告
       }
-      /** `ComponentWithWarning.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 保持Mode两端稳定的输出。
+       * @returns Hi字符串。
+       */
       render() {
         return 'Hi';
       }
@@ -414,10 +437,14 @@ describe('ReactDOMServerHydration', () => {
     expect(element.textContent).toBe('Hi');
   });
 
-  /** 测试场景：验证「replays effects when hydrating a StrictMode subtree」描述的渲染、交互或错误处理结果。 */
+  /** Given：StrictMode内Child分别注册layout/passive mount及cleanup日志；When：SSR后hydrate；Then：DEV日志为两mount、两cleanup、再两mount；production只有两mount。目的：hydration提交后的DEV effect重放顺序，SSR阶段不执行这些create。 */
   it('replays effects when hydrating a StrictMode subtree', async () => {
     const log = [];
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /**
+     * 注册layout/passive create和各自cleanup，记录hydration后StrictMode重放顺序。
+     * @returns Hello span。
+     */
     function Child() {
       React.useLayoutEffect(() => {
         log.push('layout mount');
@@ -430,7 +457,10 @@ describe('ReactDOMServerHydration', () => {
       return <span>Hello</span>;
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * 用div包住effect Child，作为StrictMode子树入口。
+     * @returns 含Child的div。
+     */
     function App() {
       return (
         <div>
@@ -467,12 +497,19 @@ describe('ReactDOMServerHydration', () => {
     }
   });
 
-  /** 测试场景：验证「should be able to render and hydrate forwardRef components」描述的渲染、交互或错误处理结果。 */
+  /** Given：forwardRef组件接label=Hi及空createRef；When：SSR后hydrate；Then：两端文字Hi，SSR ref.current=null，客户端绑定到DIV。目的：服务器不挂载宿主ref，hydration commit会转发并安装引用。 */
   it('should be able to render and hydrate forwardRef components', async () => {
-    /** `FunctionComponent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /**
+     * 把外部转发引用安装到DIV而不把ref作为普通字符串属性。
+     * @param label - 展示文本Hi。
+     * @param forwardedRef - WrappedFunctionComponent传入的createRef。
+     * @returns 带引用与label的div。
+     */
     const FunctionComponent = ({label, forwardedRef}) => (
       <div ref={forwardedRef}>{label}</div>
     );
+    /** forwardRef把外部ref作为第二参数接收，再以forwardedRef传给宿主fixture；返回FunctionComponent元素。 */
     const WrappedFunctionComponent = React.forwardRef((props, ref) => (
       <FunctionComponent {...props} forwardedRef={ref} />
     ));
@@ -492,7 +529,7 @@ describe('ReactDOMServerHydration', () => {
     expect(ref.current.tagName).toBe('DIV');
   });
 
-  /** 测试场景：验证「should be able to render and hydrate Profiler components」描述的渲染、交互或错误处理结果。 */
+  /** Given：Profiler id=profiler，onRender为mock且children是Hi div；When：SSR后hydrate；Then：SSR未调用；DEV客户端恰一次参数id=profiler/phase=mount，production零次，文本Hi。目的：Profiler回调属于客户端提交且受构建条件限制。 */
   it('should be able to render and hydrate Profiler components', async () => {
     const callback = jest.fn();
     const markup = (
@@ -521,10 +558,16 @@ describe('ReactDOMServerHydration', () => {
   });
 
   // 针对 https://github.com/facebook/react/issues/11423 的回归测试。
-  /** 测试场景：验证「should ignore noscript content on the client and not warn about mismatches」描述的渲染、交互或错误处理结果。 */
+
+  /** Given：noscript内TestComponent渲染时调用mock；When：SSR后hydrate同树；Then：调用次数仍为1，textContent始终是原始div标记字串。目的：启用脚本的客户端忽略noscript children，不重新执行内部组件。 */
   it('should ignore noscript content on the client and not warn about mismatches', async () => {
     const callback = jest.fn();
-    /** `TestComponent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /**
+     * 在render时调用onRender，用计数区分SSR运行与客户端noscript忽略。
+     * @param onRender - 用例的jest.fn计数器。
+     * @returns 启用JavaScript说明div。
+     */
     const TestComponent = ({onRender}) => {
       onRender();
       return <div>Enable JavaScript to run this app.</div>;
@@ -551,33 +594,51 @@ describe('ReactDOMServerHydration', () => {
     );
   });
 
-  /** 测试场景：验证「should be able to use lazy components after hydrating」描述的渲染、交互或错误处理结果。 */
+  /** Given：HelloWorld初始isClient=false，lazy Promise由resolveLazy手动兑现；When：SSR、hydrate后的componentDidMount置true、再act兑现；Then：文本Hello空格→Hello loading→Hello world。目的：首次认领后普通更新可挂起并恢复lazy组件。 */
   it('should be able to use lazy components after hydrating', async () => {
     let resolveLazy;
     const Lazy = React.lazy(
       () =>
         new Promise(resolve => {
+          /**
+           * 手动兑现lazy加载器创建的Promise，交付默认World；由act调用以冲刷边界恢复。
+           * @returns 无返回值，resolve使Promise进入兑现状态。
+           */
           resolveLazy = () => {
             resolve({
-              /** `default`：封装当前用例复用的操作、回调或断言步骤。 */
-              default: function World() {
+
+              /**
+               * lazy模块的默认组件函数属性。
+               * @returns world文本。
+               */
+              default: /** World是lazy Promise兑现后的默认组件；不接参数，返回world文本。 */ function World() {
                 return 'world';
               },
             });
           };
         }),
     );
-    /** `HelloWorld`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+
+    /** 初始只SSR Hello空格；客户端mount后打开含lazy的Suspense分支。 */
     class HelloWorld extends React.Component {
-      /** `HelloWorld.state`：记录测试夹具在当前场景中的状态。 */
+
+      /** isClient初始false保证SSR不启动lazy加载；mount改true后走普通客户端挂起更新。 */
       state = {isClient: false};
-      /** `HelloWorld.componentDidMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把isClient置true，引起已hydrate根上的客户端更新。
+       * @returns 无返回值。
+       */
       componentDidMount() {
         this.setState({
           isClient: true,
         });
       }
-      /** `HelloWorld.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 按isClient是否开启lazy决定只输出Hello还是附加Suspense。
+       * @returns Hello与可选lazy边界的div。
+       */
       render() {
         return (
           <div>
@@ -606,7 +667,7 @@ describe('ReactDOMServerHydration', () => {
     expect(element.textContent).toBe('Hello world');
   });
 
-  /** 测试场景：验证「does not re-enter hydration after committing the first one」描述的渲染、交互或错误处理结果。 */
+  /** Given：匹配的SSR空div已hydrate提交；When：root.render(null)后再次render div；Then：三个act完成且没有预期hydration警告，未显式断言节点身份。目的：初次提交后更新不重新进入hydration。 */
   it('does not re-enter hydration after committing the first one', async () => {
     const finalHTML = ReactDOMServer.renderToString(<div />);
     const container = document.createElement('div');
@@ -620,7 +681,8 @@ describe('ReactDOMServerHydration', () => {
   });
 
   // 针对 https://github.com/facebook/react/issues/17170 的回归测试。
-  /** 测试场景：验证「should not warn if dangerouslySetInnerHtml=undefined」描述的渲染、交互或错误处理结果。 */
+
+  /** Given：dangerouslySetInnerHTML=undefined并有p(Hello, World!) children；When：静态SSR后hydrate同输入；Then：innerHTML严格等于初始markup。目的：undefined等同未提供HTML注入，合法children仍可认领。 */
   it('should not warn if dangerouslySetInnerHtml=undefined', async () => {
     const domElement = document.createElement('div');
     const reactElement = (
@@ -638,7 +700,7 @@ describe('ReactDOMServerHydration', () => {
     expect(domElement.innerHTML).toEqual(markup);
   });
 
-  /** 测试场景：验证「should warn if innerHTML mismatches with dangerouslySetInnerHTML=undefined and children on the client」描述的渲染、交互或错误处理结果。 */
+  /** Given：服务器以HTML注入生成p(server)，客户端注入undefined并显式p(client)；When：hydrate并消费恢复错误；Then：innerHTML不同于SSR。目的：真正children不匹配会恢复，undefined不抑制恢复；不按标题声称额外检查了console警告。 */
   it('should warn if innerHTML mismatches with dangerouslySetInnerHTML=undefined and children on the client', async () => {
     const domElement = document.createElement('div');
     const markup = ReactDOMServer.renderToStaticMarkup(
@@ -653,7 +715,11 @@ describe('ReactDOMServerHydration', () => {
           <p>client</p>
         </div>,
         {
-          /** 消费本用例预期的可恢复 hydration 错误。 */
+          /**
+           * 消费HTML注入改为显式children导致的预期hydration错误；不改变恢复算法也不收集错误数量。
+           * @param error - 预期的可恢复Error。
+           * @returns undefined。
+           */
           onRecoverableError: error => {}
         },
       );
@@ -662,7 +728,7 @@ describe('ReactDOMServerHydration', () => {
     expect(domElement.innerHTML).not.toEqual(markup);
   });
 
-  /** 测试场景：验证「should warn if innerHTML mismatches with dangerouslySetInnerHTML=undefined on the client」描述的渲染、交互或错误处理结果。 */
+  /** Given：服务器以HTML注入生成p(server)，客户端HTML注入undefined且无children；When：hydrate并消费恢复错误；Then：innerHTML不同于SSR。目的：服务器多出的HTML需要客户端恢复，未断言具体错误列表。 */
   it('should warn if innerHTML mismatches with dangerouslySetInnerHTML=undefined on the client', async () => {
     const domElement = document.createElement('div');
     const markup = ReactDOMServer.renderToStaticMarkup(
@@ -675,7 +741,11 @@ describe('ReactDOMServerHydration', () => {
         domElement,
         <div dangerouslySetInnerHTML={undefined} />,
         {
-          /** 消费本用例预期的可恢复 hydration 错误。 */
+          /**
+           * 消费服务器注入HTML但客户端无children时的预期恢复错误。
+           * @param error - hydration恢复报告。
+           * @returns undefined。
+           */
           onRecoverableError: error => {}
         },
       );
@@ -684,7 +754,7 @@ describe('ReactDOMServerHydration', () => {
     expect(domElement.innerHTML).not.toEqual(markup);
   });
 
-  /** 测试场景：验证「should warn when hydrating read-only properties」描述的渲染、交互或错误处理结果。 */
+  /** Given：逐个为自定义元素传offsetParent/offsetTop/offsetLeft/offsetWidth/offsetHeight/isContentEditable/outerText/outerHTML=hello；When：各自SSR后hydrate；Then：每个都消费对应只读属性赋值no-op警告。目的：只读宿主property检查覆盖8个真实输入。 */
   it('should warn when hydrating read-only properties', async () => {
     const readOnlyProperties = [
       'offsetParent',
@@ -713,7 +783,7 @@ describe('ReactDOMServerHydration', () => {
     }
   });
 
-  /** 测试场景：验证「should not re-assign properties on hydration」描述的渲染、交互或错误处理结果。 */
+  /** Given：SSR自定义元素str=string、obj为对象，之后安装保存到_str/_obj的setter/getter；When：hydrate同props；Then：str属性仍string、obj属性缺失，两个property都undefined。目的：hydration不重新给自定义属性赋值，SSR非序列化对象也不被补写。 */
   it('should not re-assign properties on hydration', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -728,21 +798,39 @@ describe('ReactDOMServerHydration', () => {
 
     // 安装设置以激活 `in` 检查
     Object.defineProperty(customElement, 'str', {
-      /** `set`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /**
+       * 自定义元素str属性存在性探测fixture的setter；若hydration赋值会在_str留下证据。
+       * @param x - 被赋给str的值。
+       * @returns 无返回值。
+       */
       set: function (x) {
         this._str = x;
       },
-      /** `get`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /**
+       * 读取_str以检测setter是否曾被调用。
+       * @returns 尚未赋值时为undefined。
+       */
       get: function () {
         return this._str;
       },
     });
     Object.defineProperty(customElement, 'obj', {
-      /** `set`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /**
+       * 对象property的setter，记录实际赋值到_obj；用于证明SSR省略对象后hydration也不补赋。
+       * @param x - 传给obj的对象值。
+       * @returns 无返回值。
+       */
       set: function (x) {
         this._obj = x;
       },
-      /** `get`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /**
+       * 读取_obj以判断对象property赋值是否发生。
+       * @returns 本例未赋值时为undefined。
+       */
       get: function () {
         return this._obj;
       },
@@ -758,15 +846,23 @@ describe('ReactDOMServerHydration', () => {
     expect(customElement.obj).toBe(undefined);
   });
 
-  /** 测试场景：验证「refers users to apis that support Suspense when something suspends」描述的渲染、交互或错误处理结果。 */
+  /** Given：Node字符串SSR中的Suspender抛永不兑现Promise，客户端App改为resolved；When：hydrate并waitForAll，收集onRecoverableError.message；Then：恰1错误，DEV要求切换客户端并建议renderToPipeableStream，production为通用未完成边界消息。目的：同步Node API不等待Suspense；未额外断言最终DOM。 */
   it('refers users to apis that support Suspense when something suspends', async () => {
     const theInfinitePromise = new Promise(() => {});
-    /** `InfiniteSuspend`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /**
+     * 抛永不兑现Promise，使同步Node SSR无法完成当前Suspense边界。
+     * @returns 不返回。
+     */
     function InfiniteSuspend() {
       throw theInfinitePromise;
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * 服务器使用挂起组件，客户端切为已解析文字，触发服务器未完成边界的恢复报告。
+     * @param isClient - false为SSR挂起；true为客户端resolved文本。
+     * @returns 含fallback边界的div。
+     */
     function App({isClient}) {
       return (
         <div>
@@ -783,7 +879,13 @@ describe('ReactDOMServerHydration', () => {
 
     const errors = [];
     ReactDOMClient.hydrateRoot(container, <App isClient={true} />, {
-      /** `onRecoverableError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 把Node恢复错误的message追加errors，供数量与平台建议消息断言。
+       * @param error - 恢复Error。
+       * @param errorInfo - 本例未读取的额外诊断信息。
+       * @returns 无返回值。
+       */
       onRecoverableError(error, errorInfo) {
         errors.push(error.message);
       },
@@ -808,15 +910,23 @@ describe('ReactDOMServerHydration', () => {
     }
   });
 
-  /** 测试场景：验证「refers users to apis that support Suspense when something suspends (browser)」描述的渲染、交互或错误处理结果。 */
+  /** Given：browser字符串SSR的同样永挂起边界，客户端输入resolved；When：hydrate并收集恢复错误后waitForAll；Then：恰1错误，DEV建议renderToReadableStream，production同通用未完成消息。目的：浏览器服务器入口给出匹配平台的异步API建议。 */
   it('refers users to apis that support Suspense when something suspends (browser)', async () => {
     const theInfinitePromise = new Promise(() => {});
-    /** `InfiniteSuspend`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /**
+     * 抛同一个永不兑现Promise，使browser同步SSR留下未完成边界。
+     * @returns 不返回。
+     */
     function InfiniteSuspend() {
       throw theInfinitePromise;
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * 用isClient区分browser SSR挂起输入与客户端resolved输入。
+     * @param isClient - false服务器、true客户端。
+     * @returns div中的Suspense边界。
+     */
     function App({isClient}) {
       return (
         <div>
@@ -833,7 +943,13 @@ describe('ReactDOMServerHydration', () => {
 
     const errors = [];
     ReactDOMClient.hydrateRoot(container, <App isClient={true} />, {
-      /** `onRecoverableError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /**
+       * 收集browser恢复错误的message，不吞掉断言要检查的内容。
+       * @param error - 服务器未完成边界对应的恢复Error。
+       * @param errorInfo - 本例未使用。
+       * @returns 无返回值。
+       */
       onRecoverableError(error, errorInfo) {
         errors.push(error.message);
       },
@@ -858,7 +974,7 @@ describe('ReactDOMServerHydration', () => {
     }
   });
 
-  /** 测试场景：验证「allows rendering extra hidden inputs in a form」描述的渲染、交互或错误处理结果。 */
+  /** Given：form中在a/b/c前后穿插额外hidden inputs；When：hydrate只声明a hidden、b submit及c button；Then：form ref与原form同一节点，a/b/c的name和value各为a/A、b/B、c/C。目的：跳过多余hidden输入仍认领原form，不整根重建。 */
   it('allows rendering extra hidden inputs in a form', async () => {
     const element = document.createElement('div');
     element.innerHTML =
@@ -895,7 +1011,7 @@ describe('ReactDOMServerHydration', () => {
     expect(c.current.value).toBe('C');
   });
 
-  /** 测试场景：验证「allows rendering extra hidden inputs immediately before a text instance」描述的渲染、交互或错误处理结果。 */
+  /** Given：原button内hidden input后紧跟Click与分隔注释及me；When：hydrate只声明Click/me文本并绑定ref；Then：ref.current与原button严格同一节点。目的：文本认领前可跳过额外hidden输入。 */
   it('allows rendering extra hidden inputs immediately before a text instance', async () => {
     const element = document.createElement('div');
     element.innerHTML =

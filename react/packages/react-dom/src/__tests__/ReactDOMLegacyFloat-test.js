@@ -22,14 +22,8 @@ describe('ReactDOMFloat', () => {
   });
 
   // 修复 #27177
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「does not hoist above the <html> tag」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言直接覆盖 ReactDOMFloat 的资源提示分派、校验与静默降级。
-   */
+
+  /** 同步 SSR 输出包含 head/script/meta/title 的完整 html；结果中 charset 与 title 可在 head 内调整顺序，但全部资源仍位于 html/head 之内，验证 legacy 字符串输出不会把提升资源放到 html 外。 */
   it('does not hoist above the <html> tag', async () => {
     const result = ReactDOMFizzServer.renderToString(
       <html>

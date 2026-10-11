@@ -8,6 +8,7 @@ import mri from 'mri'
 import * as prompts from '@clack/prompts'
 import { determineAgent } from '@vercel/detect-agent'
 
+/** 从颜色 Proxy 取得本 CLI 使用的终端样式函数，供菜单与帮助输出共用。 */
 const {
   blue,
   blueBright,
@@ -22,20 +23,29 @@ const {
   yellow,
 } = createColors()
 
+/** 按 mri 解析目录与模板/覆盖/立即运行/交互/linter 开关；未提供布尔开关保留 undefined，供 init 选择默认值。 */
 const argv = mri<{
+  /** 模板名称，对应内置目录或 FRAMEWORKS 的外部创建命令。 */
   template?: string
+  /** 打印帮助并退出初始化流程。 */
   help?: boolean
+  /** 非空目录直接清理开关；未启用时由交互选择或非交互取消。 */
   overwrite?: boolean
+  /** 是否在生成后安装依赖并启动 dev；undefined 时交互询问，非交互默认关闭。 */
   immediate?: boolean
+  /** 显式覆盖是否交互；未提供时使用 stdin.isTTY。 */
   interactive?: boolean
+  /** 仅 React 模板可用，选择 ESLint 替换默认 Oxlint。 */
   eslint?: boolean
 }>(process.argv.slice(2), {
   boolean: ['help', 'overwrite', 'immediate', 'interactive', 'eslint'],
   alias: { h: 'help', t: 'template', i: 'immediate' },
   string: ['template'],
 })
+/** CLI 启动时的工作目录，供目标 root 与完成提示的相对路径计算。 */
 const cwd = process.cwd()
 
+/** CLI 帮助原文，模板列表使用终端颜色函数生成；只有 --help 路径输出。 */
 // prettier-ignore
 const helpMessage = `\
 Usage: create-vite [OPTION]... [DIRECTORY]
@@ -62,21 +72,34 @@ ${red       ('svelte-ts           svelte'        )}
 ${blue      ('solid-ts            solid'         )}
 ${blueBright('qwik-ts             qwik'          )}`
 
+/** 终端样式包装函数，输入原文并返回格式化字符串。 */
 type ColorFunc = (str: string) => string
+/** 框架选择项及其可生成或委托的模板变体。 */
 type Framework = {
+  /** 框架内部选择值。 */
   name: string
+  /** 交互菜单显示名称。 */
   display: string
+  /** 菜单显示名称使用的颜色函数。 */
   color: ColorFunc
+  /** 该框架下可选择的模板变体。 */
   variants: FrameworkVariant[]
 }
+/** 模板变体；有 customCommand 时委托外部脚手架，否则复制本包 template-name 目录。 */
 type FrameworkVariant = {
+  /** 命令行 template 值与内部选择值。 */
   name: string
+  /** 变体菜单标签。 */
   display: string
+  /** 额外显示在菜单标签中的项目网址。 */
   link?: `https://${string}`
+  /** 菜单标签的终端颜色函数。 */
   color: ColorFunc
+  /** 以 npm 语法记录的外部创建命令；执行前适配包管理器并按独立参数替换 TARGET_DIR。 */
   customCommand?: string
 }
 
+/** 交互框架/变体目录，兼含内置模板和外部脚手架命令。 */
 const FRAMEWORKS: Framework[] = [
   {
     name: 'vanilla',
@@ -386,18 +409,22 @@ const FRAMEWORKS: Framework[] = [
   },
 ]
 
+/** 框架目录展平后的合法 template 名称，供命令行参数校验使用。 */
 const TEMPLATES = FRAMEWORKS.map((f) => f.variants.map((v) => v.name)).reduce(
   (a, b) => a.concat(b),
   [],
 )
 
+/** 复制模板时需要恢复点号前缀的文件名映射。 */
 const renameFiles: Record<string, string | undefined> = {
   _gitignore: '.gitignore',
   '_oxlintrc.json': '.oxlintrc.json',
 }
 
+/** 未给目录时交互默认值或非交互目标目录。 */
 const defaultTargetDir = 'vite-project'
 
+/** 同步执行命令；非零正退出码原样退出，spawn 错误打印后退出 1，调用者提供 cwd/stdio。 */
 function run([command, ...args]: string[], options?: SpawnOptions) {
   const { status, error } = spawn.sync(command, args, options)
   if (status != null && status > 0) {
@@ -411,6 +438,7 @@ function run([command, ...args]: string[], options?: SpawnOptions) {
   }
 }
 
+/** 在目标目录执行包管理器安装命令；CLI 测试环境仅打印跳过提示。 */
 function install(root: string, agent: string) {
   if (process.env._VITE_TEST_CLI) {
     prompts.log.step(
@@ -425,6 +453,7 @@ function install(root: string, agent: string) {
   })
 }
 
+/** 在目标目录运行 dev 脚本；CLI 测试环境不启动长驻服务器。 */
 function start(root: string, agent: string) {
   if (process.env._VITE_TEST_CLI) {
     prompts.log.step('Starting dev server... (skipped in test)')
@@ -437,6 +466,10 @@ function start(root: string, agent: string) {
   })
 }
 
+/**
+ * 完成 CLI 初始化：帮助/交互选择、非空目录处理、包名与模板选择、外部委托或复制内置模板，再可选安装启动。
+ * 非交互缺省 vanilla-ts 且不立即运行；非空目标未启用 overwrite 时取消。所有交互取消立即返回，外部命令分支退出进程且不进入内置模板目录创建。
+ */
 async function init() {
   const argTargetDir = argv._[0]
     ? formatTargetDir(String(argv._[0]))
@@ -455,7 +488,7 @@ async function init() {
 
   const interactive = argInteractive ?? process.stdin.isTTY
 
-  // Detect AI agent environment for better agent experience (AX)
+  // 代理环境中仍启用交互时，提示一次性非交互命令。
   const { isAgent } = await determineAgent()
   if (isAgent && interactive) {
     console.log(
@@ -464,9 +497,10 @@ async function init() {
   }
 
   const pkgInfo = pkgFromUserAgent(process.env.npm_config_user_agent)
+  /** 统一输出交互或目录处理取消提示。 */
   const cancel = () => prompts.cancel('Operation cancelled')
 
-  // 1. Get project name and target dir
+  // 1. 确定项目名与目标目录。
   let targetDir = argTargetDir
   if (!targetDir) {
     if (interactive) {
@@ -474,6 +508,7 @@ async function init() {
         message: 'Project name:',
         defaultValue: defaultTargetDir,
         placeholder: defaultTargetDir,
+        /** 项目目录提示的校验器；空值可采用默认值，非空输入经路径清理后必须仍有字符。 */
         validate: (value) => {
           return !value || formatTargetDir(value).length > 0
             ? undefined
@@ -487,7 +522,7 @@ async function init() {
     }
   }
 
-  // 2. Handle directory if exist and not empty
+  // 2. 目标存在且非空时，处理覆盖、忽略或取消。
   if (fs.existsSync(targetDir) && !isEmpty(targetDir)) {
     let overwrite: 'yes' | 'no' | 'ignore' | undefined = argOverwrite
       ? 'yes'
@@ -532,7 +567,7 @@ async function init() {
     }
   }
 
-  // 3. Get package name
+  // 3. 从目标目录生成并校验包名。
   let packageName = path.basename(path.resolve(targetDir))
   if (!isValidPackageName(packageName)) {
     if (interactive) {
@@ -540,6 +575,7 @@ async function init() {
         message: 'Package name:',
         defaultValue: toValidPackageName(packageName),
         placeholder: toValidPackageName(packageName),
+        /** 仅对非空包名校验 npm 名称正则，失败返回交互错误提示。 */
         validate(dir) {
           if (dir && !isValidPackageName(dir)) {
             return 'Invalid package.json name'
@@ -553,7 +589,7 @@ async function init() {
     }
   }
 
-  // 4. Choose a framework and variant
+  // 4. 选择框架与模板变体。
   let template = argTemplate
   let hasInvalidArgTemplate = false
   if (argTemplate && !TEMPLATES.includes(argTemplate)) {
@@ -603,7 +639,7 @@ async function init() {
   const pkgManager = pkgInfo ? pkgInfo.name : 'npm'
 
   const root = path.join(cwd, targetDir)
-  // determine template
+  // React Compiler 变体复用普通 React 模板，复制后另做配置。
   let isReactCompiler = false
   if (template.includes('react-compiler')) {
     isReactCompiler = true
@@ -617,7 +653,7 @@ async function init() {
     const fullCustomCommand = getFullCustomCommand(customCommand, pkgInfo)
 
     const [command, ...args] = fullCustomCommand.split(' ')
-    // we replace TARGET_DIR here because targetDir may include a space
+    // 先拆命令，再按独立参数替换目标目录，保留目录中的空格。
     const replacedArgs = args.map((arg) =>
       arg.replace('TARGET_DIR', () => targetDir),
     )
@@ -627,7 +663,7 @@ async function init() {
     process.exit(status ?? 0)
   }
 
-  // 5. Ask whether to use ESLint instead of Oxlint (React templates only)
+  // 5. 仅 React 模板可选择用 ESLint 替换 Oxlint。
   const isReactTemplate = template === 'react' || template === 'react-ts'
   let eslint = argEslint
   if (!isReactTemplate && eslint) {
@@ -652,7 +688,7 @@ async function init() {
     }
   }
 
-  // 6. Ask about immediate install and package manager
+  // 6. 确定是否生成后立即安装并启动。
   let immediate = argImmediate
   if (immediate === undefined) {
     if (interactive) {
@@ -666,7 +702,7 @@ async function init() {
     }
   }
 
-  // Only create directory for built-in templates, not for customCommand
+  // 外部脚手架分支已退出；这里只为内置模板创建目录。
   fs.mkdirSync(root, { recursive: true })
   prompts.log.step(`Scaffolding project in ${root}...`)
 
@@ -676,6 +712,7 @@ async function init() {
     `template-${template}`,
   )
 
+  /** 按 renameFiles 映射写入目标；非空 content 原样写入，index.html 另替换 title，其余路径复制模板文件或目录。 */
   const write = (file: string, content?: string) => {
     const targetPath = path.join(root, renameFiles[file] ?? file)
     if (content) {
@@ -732,6 +769,7 @@ async function init() {
   }
 }
 
+/** 清理目录首尾空白、文件名禁用字符与尾部斜杠；保留中间路径层级供目标 root 使用。 */
 function formatTargetDir(targetDir: string) {
   return targetDir
     .trim()
@@ -739,6 +777,7 @@ function formatTargetDir(targetDir: string) {
     .replace(/\/+$/g, '')
 }
 
+/** stat 来源后分派递归目录复制或文件复制；文件系统错误直接传播。 */
 function copy(src: string, dest: string) {
   const stat = fs.statSync(src)
   if (stat.isDirectory()) {
@@ -748,12 +787,14 @@ function copy(src: string, dest: string) {
   }
 }
 
+/** 按当前允许的 npm 名称正则校验普通或 scoped 名称，供交互提示和默认包名选择。 */
 function isValidPackageName(projectName: string) {
   return /^(?:@[a-z\d\-*~][a-z\d\-*._~]*\/)?[a-z\d\-~][a-z\d\-._~]*$/.test(
     projectName,
   )
 }
 
+/** 将目录名转换为默认包名：小写、空白转连字符，清理开头点/下划线及其他不允许字符。 */
 function toValidPackageName(projectName: string) {
   return projectName
     .trim()
@@ -763,6 +804,7 @@ function toValidPackageName(projectName: string) {
     .replace(/[^a-z\d\-~]+/g, '-')
 }
 
+/** 递归创建目标目录并复制全部来源条目，复用 copy 对文件/目录的分派。 */
 function copyDir(srcDir: string, destDir: string) {
   fs.mkdirSync(destDir, { recursive: true })
   for (const file of fs.readdirSync(srcDir)) {
@@ -772,11 +814,13 @@ function copyDir(srcDir: string, destDir: string) {
   }
 }
 
+/** 目标无条目或仅有 .git 时视作可直接生成，不触发非空目录询问。 */
 function isEmpty(path: string) {
   const files = fs.readdirSync(path)
   return files.length === 0 || (files.length === 1 && files[0] === '.git')
 }
 
+/** 目标存在时递归删除除 .git 外的条目，保留仓库元数据。 */
 function emptyDir(dir: string) {
   if (!fs.existsSync(dir)) {
     return
@@ -789,11 +833,15 @@ function emptyDir(dir: string) {
   }
 }
 
+/** 从 npm_config_user_agent 首段提取的包管理器名称与版本，不做额外格式校验。 */
 interface PkgInfo {
+  /** 首个 user-agent 段的斜杠前名称，供命令映射使用。 */
   name: string
+  /** 首个 user-agent 段的斜杠后版本，供 Yarn 1.x 特殊分支使用。 */
   version: string
 }
 
+/** 读取 user-agent 首段的 name/version；未提供时返回 undefined，使调用者回退 npm。 */
 function pkgFromUserAgent(userAgent: string | undefined): PkgInfo | undefined {
   if (!userAgent) return undefined
   const pkgSpec = userAgent.split(' ')[0]
@@ -804,6 +852,7 @@ function pkgFromUserAgent(userAgent: string | undefined): PkgInfo | undefined {
   }
 }
 
+/** 在已生成 React 模板中加入 Babel/React Compiler 依赖，改写 Vite 插件列表并更新 README 对应段；TS 模板另加 Babel 类型包。 */
 function setupReactCompiler(root: string, isTs: boolean) {
   // renovate: datasource=npm depName=@rolldown/plugin-babel
   const babelPluginVersion = '0.2.3'
@@ -854,6 +903,7 @@ import babel from '@rolldown/plugin-babel'`,
   )
 }
 
+/** 把已生成 React 模板的 Oxlint 配置和依赖换成 ESLint，写对应 JS/TS flat config、更新 lint 脚本与 README；保留生成文本原文。 */
 function setupEslint(root: string, isTs: boolean) {
   // renovate: datasource=npm depName=@eslint/js
   const eslintJsVersion = '10.0.1'
@@ -1027,6 +1077,7 @@ If you are developing a production application, we recommend using TypeScript wi
   })
 }
 
+/** 定位 React Compiler 标题和下一个二级标题，只替换中间正文；结构不匹配时告警并保留内容。 */
 function updateReactCompilerReadme(root: string, newBody: string) {
   editFile(path.resolve(root, `README.md`), (content) => {
     const h2Start = content.indexOf('## React Compiler')
@@ -1043,11 +1094,13 @@ function updateReactCompilerReadme(root: string, newBody: string) {
   })
 }
 
+/** 同步读取 UTF-8 文件，将 callback 返回的完整文本写回同一路径；回调和文件错误直接传播。 */
 function editFile(file: string, callback: (content: string) => string) {
   const content = fs.readFileSync(file, 'utf-8')
   fs.writeFileSync(file, callback(content), 'utf-8')
 }
 
+/** 把保存的 npm create/exec 命令适配为当前包管理器；Yarn 1 去掉 @latest，bun/deno/pnpm 使用对应创建或执行入口。 */
 function getFullCustomCommand(customCommand: string, pkgInfo?: PkgInfo) {
   const pkgManager = pkgInfo ? pkgInfo.name : 'npm'
   const isYarn1 = pkgManager === 'yarn' && pkgInfo?.version.startsWith('1.')
@@ -1055,30 +1108,29 @@ function getFullCustomCommand(customCommand: string, pkgInfo?: PkgInfo) {
   return (
     customCommand
       .replace(/^npm create (?:-- )?/, () => {
-        // `bun create` uses its own set of templates,
-        // the closest alternative is using `bun x` directly on the package
+        // bun create 使用自己的模板规则，改用 bun x 执行创建包。
         if (pkgManager === 'bun') {
           return 'bun x create-'
         }
-        // Deno uses `run -A npm:create-` instead of `create` or `init` to also provide needed perms
+        // Deno 用 run -A npm:create- 执行创建包并提供所需权限。
         if (pkgManager === 'deno') {
           return 'deno run -A npm:create-'
         }
-        // pnpm doesn't support the -- syntax
+        // pnpm 分支不保留 npm 的 -- 分隔形式。
         if (pkgManager === 'pnpm') {
           return 'pnpm create '
         }
-        // For other package managers, preserve the original format
+        // 其余包管理器保留原 create 命令格式。
         return customCommand.startsWith('npm create -- ')
           ? `${pkgManager} create -- `
           : `${pkgManager} create `
       })
-      // Only Yarn 1.x doesn't support `@version` in the `create` command
+      // Yarn 1.x 的 create 命令不接受 @version，此分支去掉 @latest。
       .replace('@latest', () => (isYarn1 ? '' : '@latest'))
       .replace(/^npm exec (?:-- )?/, () => {
-        // Prefer `pnpm dlx`, `yarn dlx`, or `bun x`
+        // 按包管理器映射临时执行命令。
         if (pkgManager === 'pnpm') {
-          // pnpm doesn't support the -- syntax
+          // pnpm 分支不保留 npm 的 -- 分隔形式。
           return 'pnpm dlx '
         }
         if (pkgManager === 'yarn' && !isYarn1) {
@@ -1090,8 +1142,7 @@ function getFullCustomCommand(customCommand: string, pkgInfo?: PkgInfo) {
         if (pkgManager === 'deno') {
           return 'deno run -A npm:'
         }
-        // Use `npm exec` in all other cases,
-        // including Yarn 1.x and other custom npm clients.
+        // Yarn 1.x 与其他自定义客户端仍使用原 npm exec 格式。
         return customCommand.startsWith('npm exec -- ')
           ? 'npm exec -- '
           : 'npm exec '
@@ -1099,6 +1150,7 @@ function getFullCustomCommand(customCommand: string, pkgInfo?: PkgInfo) {
   )
 }
 
+/** 给变体显示名着色，存在网址时附加下划线链接。 */
 function getLabel(variant: FrameworkVariant) {
   const labelText = variant.display || variant.name
   let label = variant.color(labelText)
@@ -1109,6 +1161,7 @@ function getLabel(variant: FrameworkVariant) {
   return label
 }
 
+/** 生成安装命令参数；Yarn 使用裸命令，其他包管理器追加 install。 */
 function getInstallCommand(agent: string) {
   if (agent === 'yarn') {
     return [agent]
@@ -1116,6 +1169,7 @@ function getInstallCommand(agent: string) {
   return [agent, 'install']
 }
 
+/** 按包管理器生成脚本命令；Yarn/pnpm/bun 直接脚本名，Deno task，其余 run。 */
 function getRunCommand(agent: string, script: string) {
   switch (agent) {
     case 'yarn':
@@ -1129,10 +1183,13 @@ function getRunCommand(agent: string, script: string) {
   }
 }
 
+/** util.styleText 接受的单个终端样式名称，排除样式数组形式。 */
 type ColorName = Exclude<Parameters<typeof util.styleText>[0], any[]>
 
+/** 通过 Proxy 按属性名惰性提供 util.styleText 包装函数，不预建全部颜色函数。 */
 function createColors() {
   return new Proxy({} as Record<ColorName, ColorFunc>, {
+    /** 把请求的样式属性转换为终端格式化函数，实际样式应用发生在返回函数调用时。 */
     get(_, prop: ColorName) {
       // eslint-disable-next-line n/no-unsupported-features/node-builtins -- our supported nodejs range supports `styleText` but in experimental state, which is fine
       return (str: string) => util.styleText(prop, str)

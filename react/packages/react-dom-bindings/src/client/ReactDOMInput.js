@@ -27,18 +27,12 @@ let didWarnValueDefaultValue = false;
 let didWarnCheckedDefaultChecked = false;
 
 /**
- * 实现一个 <input> 主机组件，该组件允许设置这些可选属性： `checked`、`value`、`defaultChecked` 和 `defaultValue`。
- *
- * 如果未提供 (或为 null/undefined) `checked` 或 `value`，影响选中状态或值的用户操作将触发元素的更新。
- *
- * 如果提供了它们（且不是 null/undefined），则渲染的元素将不会触发对元素的更新。相反，必须更改属性才能更新渲染的元素。
- *
- * 渲染的元素将初始化为未选中（或 `defaultChecked`）且值为空（或 `defaultValue`）。
- *
- * 参见 http://www.w3.org/TR/2012/WD-html5-20121025/the-input-element.html
+ * input 的 value/checked 非 null 时由 React props 控制。浏览器仍先响应用户输入，
+ * ChangeEventPlugin 在事件批次结束后按最终 props 恢复；handler 要保留输入，须提交新的值。
+ * 未提供受控值时，用户编辑保留在 DOM，defaultValue/defaultChecked 只定义默认状态。
  */
 
-/** `validateInputProps` 校验输入并仅在开发期报告不变量；用于初始化并同步 input 的受控值、选中态和默认值。 */
+/** 开发期警告同时提供 value/defaultValue 或 checked/defaultChecked 的受控约定冲突。 */
 export function validateInputProps(element: Element, props: Object) {
   if (__DEV__) {
     //通常我们检查 undefined 和 null 的方式相同，但会明确指定两者
@@ -81,7 +75,13 @@ export function validateInputProps(element: Element, props: Object) {
   }
 }
 
-/** `updateInput` 更新关联或宿主状态，使后续读取看到一致快照；用于初始化并同步 input 的受控值、选中态和默认值。 */
+/**
+ * 由属性提交或受控状态恢复调用，把 input 的当前值与默认值同步到下一份 props。
+ * 暂时清 name 断开 radio 组，先更新 type/value/defaultValue/checked，再恢复 name，避免更新中途改变同组选择。
+ * number 值使用数值相等比较保留 "0.0" 等用户拼写；value/defaultValue 到 attribute 的同步受特性开关控制。
+ *
+ * @param lastDefaultValue - 前次 defaultValue，用于识别默认值已删除并移除 value attribute。
+ */
 export function updateInput(
   element: Element,
   value: ?string,
@@ -216,7 +216,11 @@ export function updateInput(
   }
 }
 
-/** `initInput` 完成该模块的宿主边界操作；用于初始化并同步 input 的受控值、选中态和默认值。 */
+/**
+ * 初始化 input 的当前值、默认值和跟踪器；value/checked 优先于对应 default props。
+ * hydration 且 hydration-change 特性关闭时保留用户当前 value/checked，仍设置默认状态。
+ * name 最后设置，避免 defaultChecked 的浏览器兼容写入影响已有 radio 组；submit/reset 未给 value 时保留浏览器按钮文本。
+ */
 export function initInput(
   element: Element,
   value: ?string,
@@ -277,8 +281,7 @@ export function initInput(
           }
         }
       } else {
-        //在同步 value 属性时，value 属性应使用
-        //wrapperState._initialValue 属性。这使用了：
+        // value property 使用上面计算的 initialValue：
         //
         //1. 当存在时的 value React 属性
         //2. 当存在时的 defaultValue React 属性
@@ -358,7 +361,7 @@ export function initInput(
   track(element as any);
 }
 
-/** `hydrateInput` 完成该模块的宿主边界操作；用于初始化并同步 input 的受控值、选中态和默认值。 */
+/** hydration change 特性路径保留当前用户值，以 props 建立 tracker 基线，差异时排队模拟变更事件。 */
 export function hydrateInput(
   element: Element,
   value: ?string,
@@ -395,7 +398,7 @@ export function hydrateInput(
   }
 }
 
-/** `restoreControlledInputState` 完成该模块的宿主边界操作；用于初始化并同步 input 的受控值、选中态和默认值。 */
+/** 按最新 props 恢复 input；同名同 form 的 radio 一并恢复，再刷新全组 tracker。 */
 export function restoreControlledInputState(element: Element, props: Object) {
   const rootNode: HTMLInputElement = element as any;
   updateInput(
@@ -448,9 +451,7 @@ export function restoreControlledInputState(element: Element, props: Object) {
         );
       }
 
-      //如果这是一个受控的单选按钮组，强制输入该
-      //之前已检查过的更新将导致它被重新检查
-      //视情况而定。
+      // 点击当前 radio 会取消其他 radio；按各自 props 恢复此前应选中的组成员。
       updateInput(
         otherNode,
         otherProps.value,
@@ -475,7 +476,7 @@ export function restoreControlledInputState(element: Element, props: Object) {
   }
 }
 
-/** `setDefaultValue` 更新关联或宿主状态，使后续读取看到一致快照；用于初始化并同步 input 的受控值、选中态和默认值。 */
+/** 仅在默认文本不同的时候写 input.defaultValue；number 的当前拼写由 updateInput 选好后传入。 */
 function setDefaultValue(node: HTMLInputElement, value: ToStringValue) {
   if (node.defaultValue !== toString(value)) {
     node.defaultValue = toString(value);

@@ -79,7 +79,8 @@ export function ssrProcessSuspense(
     const slot = wipSlots[i]
     slot.fn.body = processChildrenAsStatement(slot, context)
   }
-  // helper 接收 push 与 slots，按服务端 Suspense 策略选择实际输出分支。
+  // helper 只执行 default，没有 default 时输出空注释；fallback 虽已编译，但不在服务端执行。
+  // default 中的异步组件结果进入 SSR buffer，由最终展开阶段等待。
   context.pushStatement(
     createCallExpression(context.helper(SSR_RENDER_SUSPENSE), [
       `_push`,

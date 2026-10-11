@@ -32,7 +32,9 @@ import { extend } from '@vue/shared'
 
 /** 元素布局视口坐标；FLIP 只需要 top/left。 */
 interface Position {
+  /** 视口中的上边坐标，供新旧布局差值计算。 */
   top: number
+  /** 视口中的左边坐标，供新旧布局差值计算。 */
   left: number
 }
 
@@ -42,12 +44,14 @@ const positionMap = new WeakMap<VNode, Position>()
 const newPositionMap = new WeakMap<VNode, Position>()
 /** 元素上当前 move transition 结束回调的私有键。 */
 const moveCbKey = Symbol('_moveCb')
-/** BaseTransition 元素上可能存在的 enter 回调键，用于开始 move 前取消。 */
+/** 本模块独立的入场回调键，与 BaseTransition 保存 enter 回调的 Symbol 不同。 */
 const enterCbKey = Symbol('_enterCb')
 
 /** TransitionGroup 不支持 mode，但增加可选包裹 tag 和 moveClass。 */
 export type TransitionGroupProps = Omit<TransitionProps, 'mode'> & {
+  /** 列表外壳标签；未设置时使用 Fragment，compat 可回退 span。 */
   tag?: string
+  /** 移动阶段的 CSS 类；默认由 name 生成，用其 transform transition 决定是否执行 FLIP。 */
   moveClass?: string
 }
 
@@ -75,6 +79,7 @@ const TransitionGroupImpl: ComponentOptions = /*@__PURE__*/ decorate({
     moveClass: String,
   }),
 
+  /** 建立跨 render 的 keyed children 与布局缓存，render 记录旧位置，onUpdated 分批读取新布局、写逆向 translate 并登记 move 结束清理。 */
   setup(props: TransitionGroupProps, { slots }: SetupContext) {
     const instance = getCurrentInstance()!
     const state = useTransitionState()
@@ -113,6 +118,9 @@ const TransitionGroupImpl: ComponentOptions = /*@__PURE__*/ decorate({
         const style = el.style
         addTransitionClass(el, moveClass)
         style.transform = style.webkitTransform = style.transitionDuration = ''
+        /**
+         * move 结束监听：只处理本元素 transform 结束，或无参数的主动清理；解绑 listener、清私有回调并移除 moveClass。
+         */
         const cb = ((el as any)[moveCbKey] = (e: TransitionEvent) => {
           if (e && e.target !== el) {
             return
@@ -190,12 +198,14 @@ const TransitionGroupImpl: ComponentOptions = /*@__PURE__*/ decorate({
 
 /** 公开 TransitionGroup 虚拟构造器类型。 */
 export const TransitionGroup = TransitionGroupImpl as unknown as {
+  /** 供 h/TSX 推导 props 的虚拟构造签名；运行时仍是组件对象。 */
   new (): {
+    /** TransitionGroup 对外 props 类型，排除单根 mode。 */
     $props: TransitionGroupProps
   }
 }
 
-/** 开始新 move 前结束旧 move/enter，避免多个 transform 状态叠加。 */
+/** 开始新 move 前结束本模块保存的旧 move；下方 enter 键不与 BaseTransition 共享，读不到 core 的入场回调。 */
 function callPendingCbs(c: VNode) {
   const el = c.el as any
   if (el[moveCbKey]) {

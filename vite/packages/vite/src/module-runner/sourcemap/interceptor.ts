@@ -30,7 +30,7 @@ export interface InterceptorOptions {
   retrieveSourceMap?: RetrieveSourceMapHandler
 }
 
-// 拦截器修改的是进程级 Error.prepareStackTrace，因此缓存与 handler 也由所有 Runner 共享。
+/** 全部 Runner 共享的外部 map 正/负缓存；内存模块图的 map 每次查询仍优先于它。 */
 const sourceMapCache: Record<string, CachedMapEntry> = {}
 /** 已读取文件或 sourcesContent 的进程级文本缓存。 */
 const fileContentsCache: Record<string, string> = {}
@@ -62,11 +62,12 @@ const retrieveSourceMapFromHandlers = createExecHandlers(
   retrieveSourceMapHandlers,
 )
 
+/** 标记本模块是否已接管 Error.prepareStackTrace，供首次安装和最后注销时切换。 */
 let overridden = false
-/** 安装拦截器前宿主提供的堆栈格式化器。 */
+/** 本模块初始化时捕获的宿主堆栈格式化器，最后注销时恢复该值。 */
 const originalPrepare = Error.prepareStackTrace
 
-/** 注销一个 Runner；最后一个 Runner 离开时恢复宿主原来的堆栈格式化器。 */
+/** 按模块图和 handler 实例注销；模块图 Set 为空时恢复初始化时捕获的格式化器。 */
 function resetInterceptor(runner: ModuleRunner, options: InterceptorOptions) {
   evaluatedModulesCache.delete(runner.evaluatedModules)
   if (options.retrieveFile) retrieveFileHandlers.delete(options.retrieveFile)
@@ -80,7 +81,8 @@ function resetInterceptor(runner: ModuleRunner, options: InterceptorOptions) {
 
 /**
  * 将 Runner 及其外部读取器加入全局堆栈拦截器，并返回对应的注销函数。
- * 多个 Runner 复用同一个 `Error.prepareStackTrace`，避免后注册者覆盖前者。
+ * 多个 Runner 复用同一个 `Error.prepareStackTrace`；注册表按模块图/handler 身份去重，
+ * 不记录引用次数，共享同一对象的集成需要协调注销时机。
  */
 export function interceptStackTrace(
   runner: ModuleRunner,
@@ -162,14 +164,18 @@ function retrieveFile(path: string): string | null | undefined | false {
   return null
 }
 
-/** 从源码末尾有效的 `sourceMappingURL` 注释中提取 map 地址。 */
+/**
+ * 搜索源码中最后一个符合正则的行式 sourceMappingURL，并返回其地址。
+ * 正则也匹配块式标记，但地址只由行式分支捕获；最后命中块式标记时返回 undefined。
+ */
 function retrieveSourceMapURL(source: string) {
   // 先读取生成代码，再搜索其中声明的 map 地址。
   const fileData = retrieveFile(source)
   if (!fileData) return null
   const re =
     /\/\/[@#]\s*sourceMappingURL=([^\s'"]+)\s*$|\/\*[@#]\s*sourceMappingURL=[^\s*'"]+\s*\*\/\s*$/gm
-  // 搜索到最后一个 sourceMappingURL，避免误取源码字符串或旧注释中的同名片段。
+  // 使用最后一个匹配：Vite 最终 map 通常位于文件末尾，可覆盖此前字符串或旧 map 标记。
+  // 此处只按正则搜索，不会解析 JavaScript 来识别字符串字面量。
   let lastMatch, match
 
   while ((match = re.exec(fileData))) lastMatch = match
@@ -412,6 +418,7 @@ function wrapCallSite(frame: CallSite, state: State) {
     state.curPosition = position
     frame = cloneCallSite(frame)
     const originalFunctionName = frame.getFunctionName
+    /** 优先采用相邻映射段记录的名称，并隐藏 Vite 求值包装器产生的 eval 名称。 */
     frame.getFunctionName = function () {
       const name = (() => {
         if (state.nextPosition == null) return originalFunctionName()
@@ -420,15 +427,19 @@ function wrapCallSite(frame: CallSite, state: State) {
       })()
       return name === 'eval' && '_vite' in position ? null : name
     }
+    /** 将生成文件名替换为 map 中恢复的源文件名。 */
     frame.getFileName = function () {
       return position.source ?? null
     }
+    /** 返回原始源码的一基行号，保持 V8 CallSite 的行号约定。 */
     frame.getLineNumber = function () {
       return position.line
     }
+    /** 把 sourcemap 的零基列转换回 V8 CallSite 的一基列。 */
     frame.getColumnNumber = function () {
       return position.column + 1
     }
+    /** 让堆栈展示地址与映射后的源文件名一致。 */
     frame.getScriptNameOrSourceURL = function () {
       return position.source!
     }
@@ -440,6 +451,7 @@ function wrapCallSite(frame: CallSite, state: State) {
   if (origin) {
     origin = mapEvalOrigin(origin)
     frame = cloneCallSite(frame)
+    /** 返回递归改写后的 eval 来源，无法保留来源时遵循 CallSite 的 undefined 约定。 */
     frame.getEvalOrigin = function () {
       return origin || undefined
     }

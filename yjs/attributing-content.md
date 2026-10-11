@@ -19,20 +19,27 @@ When we click on a version in Google Docs, we might get annotated changes like
 this:
 
 ```
-# E.g. If Bob appends "world" to the previous version "hello "
-[{ insert: 'hello' }, { insert: 'world', color: 'blue', creator: 'Bob', when: 'yesterday' }]
-# E.g. If Bob deletes "world" from the previous version "hello world"
-[{ insert: 'hello' }, { insert: 'world', backgroundColor: 'red', creator: 'Bob', when: 'yesterday' }]
+# If Bob appends "world" to the previous version "hello "
+[{ insert: 'hello ' }, { insert: 'world', attribution: { insert: ['Bob'] } }]
+# If Bob deletes "world" from the previous version "hello world"
+[{ insert: 'hello ' }, { insert: 'world', attribution: { delete: ['Bob'] } }]
 ```
 
 In Yjs, we can now "attribute" changes with additional information. When we
-render content using methods like `toString()` or `toDelta()`, Yjs will render
-the unattributed content as-is, but it will render the attributed content with
-the additional information. As all changes in Yjs are identifyable by Ids, we
+render content using `toDelta({ renderer })`, Yjs will render
+the unattributed live content as-is and attach metadata to attributed content,
+including preserved deletions. `toString()` returns ordinary live text and does
+not accept a renderer. As all changes in Yjs are identifiable by IDs, we
 can use `IdMap`s to map changes to "attributions". For example, we could
 attribute deletions and insertions of a change and render them:
 
+Run this example in Node.js 22 or later from this package's directory.
+
 ```js
+import assert from 'node:assert/strict'
+import * as Y from '@y/y'
+import * as delta from 'lib0/delta'
+
 // We create some initial content "Hello World!". Then we create another
 // document that will have a bunch of changes (make "Hell" italic, replace "World"
 // with "attributions").
@@ -51,14 +58,15 @@ const deleteSetDiff = Y.diffIdSet(deleteSet, Y.createDeleteSetFromStructStore(yd
 // assign attributes to the diff
 const attributedInsertions = Y.createIdMapFromIdSet(insertionSetDiff, [Y.createContentAttribute('insert', 'Bob')])
 const attributedDeletions = Y.createIdMapFromIdSet(deleteSetDiff, [Y.createContentAttribute('delete', 'Bob')])
-// now we can define a renderer that maps these changes to output. One of the
-// implementations is the TwosetRenderer
-const renderer = new Y.TwosetRenderer(attributedInsertions, attributedDeletions)
+// Both mappings form one ContentMap. Empty ranges remain ordinary live content;
+// attributed deleted ranges are also displayed, using the content preserved by gc:false.
+const attributions = Y.createContentMap(attributedInsertions, attributedDeletions)
+const renderer = Y.createAttributionsRenderer(attributions)
 // we render the attributed content with the renderer
 const attributedContent = ytext.toDelta({ renderer })
 console.log(JSON.stringify(attributedContent.toJSON(), null, 2))
 const expectedContent = delta.create().insert('Hell', { italic: true }, { format: { italic: ['Bob'] } }).insert('o ').insert('World', {}, { delete: ['Bob'] }).insert('attributions', {}, { insert: ['Bob'] }).insert('!')
-t.assert(attributedContent.equals(expectedContent))
+assert.ok(attributedContent.equals(expectedContent))
 
 // this is how the output would look like
 const output = {
@@ -106,25 +114,30 @@ const output = {
     }
   ]
 }
+assert.deepEqual(attributedContent.toJSON(), output)
+renderer.destroy()
+ydoc.destroy()
+ydocVersion0.destroy()
 ```
 
 We get a similar output to Google Docs: Insertions, Deletions, and changes to
 formatting (attributes) are clearly associated to users. It will be the job of
 the editor to render those changes with background-color etc..
 
-Of course, we could associated changes also to multiple users like this:
+Deletion metadata can name multiple users:
 
 ```js
-const attributedDeletions = Y.createIdMapFromIdSet(deleteSetDiff, [Y.createContentAttribute('insert', 'Bob'), Y.createContentAttribute('insert', 'OpenAI o3')])
+const multiAuthorDeletions = Y.createIdMapFromIdSet(deleteSetDiff, [Y.createContentAttribute('delete', 'Bob'), Y.createContentAttribute('delete', 'OpenAI o3')])
 ```
 
-You could use the same output to calculate a real diff as well (consisting of
-deletions and insertions only, without Attributions). 
+The attributed output is a display state: deleted text still appears as an
+`insert` with delete metadata. To calculate ordinary insert/delete operations,
+compare the two documents' unrendered deltas with `delta.diff(previous, next)`.
 
 `AbstractRenderer` is the abstract base class for renderers, which map
 attributions onto content. It is possible to highlight arbitrary content with
 this approach.
 
-The attribution data is encoded very efficiently. The ids are encoded using
-run-length encoding and the Attributes are de-duplicated and only encoded once.
-The above example encodes in 27 bytes.
+`Y.encodeContentMap(attributions)` serializes both mappings. Each map stores
+contiguous ID ranges and writes each shared attribute definition once, then uses
+references to it. The byte length depends on the client IDs, ranges, and attribute values.

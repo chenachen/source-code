@@ -66,8 +66,11 @@ import { isInternalObject } from './internalObject'
  * 虚拟类型断言同时让 `h(Fragment)` 在类型层表现为可构造组件。
  */
 export const Fragment = Symbol.for('v-fgt') as any as {
+  /** 仅供类型推导识别 Fragment；运行时值仍是 Symbol，而非构造器对象。 */
   __isFragment: true
+  /** 为 h/JSX 提供组件形态的 props 推导，不表示运行时可 new Fragment。 */
   new (): {
+    /** Fragment 接受 key/ref 与 VNode 阶段钩子等保留 props。 */
     $props: VNodeProps
   }
 }
@@ -110,7 +113,7 @@ export type VNodeNormalizedRefAtom = {
   i: ComponentInternalInstance
   /** 用户提供的实际 ref。 */
   r: VNodeRef
-  /** setup state 中对应的键，供编译后的 `ref="name"` 同步同名 ref。 */
+  /** 直接传入 Ref 时保留的字符串名，供渲染器把结果同步到 owner.refs[k]。 */
   k?: string
   /** 是否来自 `v-for`；为真时目标值维护为数组。 */
   f?: boolean
@@ -140,15 +143,20 @@ export type VNodeProps = {
   ref?: VNodeRef
   /** 编译器标记 ref 位于 `v-for`，目标应为数组。 */
   ref_for?: boolean
-  /** 编译器提供的 setup state 同名键。 */
+  /** setup 内联模式保留的 ref 字符串名，供直接 Ref 同步 `$refs`。 */
   ref_key?: string
 
-  // VNode 钩子直接跟随该节点，而组件生命周期跟随组件实例。
+  /** 首次挂载时同步通知；普通元素在插入前执行，水合元素已在 DOM。组件节点跟随其首次子树挂载。 */
   onVnodeBeforeMount?: VNodeMountHook | VNodeMountHook[]
+  /** 节点挂载后进入 post-render；未决 Suspense 中等分支提交后再执行。 */
   onVnodeMounted?: VNodeMountHook | VNodeMountHook[]
+  /** 更新前同步取得新旧 VNode，宿主节点尚未应用本轮变化。 */
   onVnodeBeforeUpdate?: VNodeUpdateHook | VNodeUpdateHook[]
+  /** 更新提交后在 post-render 中取得新旧 VNode。 */
   onVnodeUpdated?: VNodeUpdateHook | VNodeUpdateHook[]
+  /** 逻辑卸载前同步通知，不等同于宿主节点已被移除。 */
   onVnodeBeforeUnmount?: VNodeMountHook | VNodeMountHook[]
+  /** 逻辑卸载后的 post-render 通知；异步 leave 的物理删除可晚于此钩子。 */
   onVnodeUnmounted?: VNodeMountHook | VNodeMountHook[]
 }
 
@@ -224,7 +232,7 @@ export interface VNode<
   targetStart: HostNode | null
   /** Teleport 在目标容器内的结束锚点。 */
   targetAnchor: HostNode | null
-  /** 字符串化 Static VNode 包含的宿主节点数，移动/水合时用于确定范围。 @internal */
+  /** Static 内容的顶层宿主节点数，水合时用于认领节点并确定结束位置。 @internal */
   staticCount: number
 
   // Suspense 分支与边界状态。
@@ -243,7 +251,12 @@ export interface VNode<
   /** `PROPS` patchFlag 下需要逐项比较的动态 prop 名。 @internal */
   dynamicProps: string[] | null
   /** block tree 收集到的动态后代；`hasOnce` 表示含 v-once，卸载不能走纯快路径。 @internal */
-  dynamicChildren: (VNode[] & { hasOnce?: boolean }) | null
+  dynamicChildren:
+     (VNode[] & {
+        /** v-once 中可能隐藏未收集的组件；为真时卸载必须遍历完整 children。 */
+        hasOnce?: boolean
+      })
+    | null
 
   /** 仅应用根 VNode 设置，向下建立 app 配置、组件和指令注册表。 */
   appContext: AppContext | null
@@ -359,7 +372,7 @@ export function createElementBlock(
       patchFlag,
       dynamicProps,
       shapeFlag,
-      true /* isBlock */,
+      true /* 作为 block 根 */,
     ),
   )
 }
@@ -383,7 +396,7 @@ export function createBlock(
       children,
       patchFlag,
       dynamicProps,
-      true /* isBlock: prevent a block from tracking itself */,
+      true /* block 不收集自身。 */,
     ),
   )
 }
@@ -608,7 +621,7 @@ function _createVNode(
   if (isVNode(type)) {
     // `<component :is="vnode"/>` 会把现有 VNode 当 type 传入。VNode 不能被两个渲染位置
     // 共享挂载状态，因此先 clone；#2078 要求额外 ref 与原 ref 合并，而非覆盖。
-    const cloned = cloneVNode(type, props, true /* mergeRef: true */)
+    const cloned = cloneVNode(type, props, true /* 合并 ref。 */)
     if (children) {
       normalizeChildren(cloned, children)
     }
@@ -642,7 +655,8 @@ function _createVNode(
       props.class = normalizeClass(klass)
     }
     if (isObject(style)) {
-      // normalizeStyle 可能写入对象；代理 style 先克隆以免污染用户响应式源。
+      // 代理 style 先复制成本轮快照，保留旧 VNode 的样式键和值供下一轮比较、删除。
+      // normalizeStyle 对普通对象直接返回，对数组另建合并对象。
       if (isProxy(style) && !isArray(style)) {
         style = extend({}, style)
       }
@@ -744,7 +758,7 @@ export function cloneVNode<T, U>(
     // patchFlag 只描述 children diff 策略，额外 props 不应破坏其快路径标志。
     patchFlag:
       extraProps && vnode.type !== Fragment
-        ? patchFlag === PatchFlags.CACHED // hoisted node
+        ? patchFlag === PatchFlags.CACHED // 提升节点。
           ? PatchFlags.FULL_PROPS
           : patchFlag | PatchFlags.FULL_PROPS
         : patchFlag,
@@ -808,7 +822,7 @@ export function createStaticVNode(
   content: string,
   numberOfNodes: number,
 ): VNode {
-  // 一个静态 HTML 字符串可生成多个兄弟节点；水合、移动和删除都要靠数量定位范围。
+  // 一段静态 HTML 可生成多个兄弟节点；水合按数量建立首尾引用，移动和删除使用 el/anchor。
   const vnode = createVNode(Static, null, content)
   vnode.staticCount = numberOfNodes
   return vnode
@@ -924,7 +938,8 @@ export function normalizeChildren(vnode: VNode, children: unknown): void {
 /**
  * 合并多组 VNode props，使用适合渲染语义的特殊规则。
  *
- * class/style 做标准化合并；事件处理器合并为去重数组以全部执行；其他键后值覆盖前值。
+ * class/style 做标准化合并；事件处理器保留已有值并追加新处理器。相同输入引用，或已有
+ * 数组已包含的单个函数会被跳过；两个处理器数组之间不逐项去重。其他键后值覆盖前值。
  * model update listener 即使值为 undefined 也不能被保留，否则会让组件误判存在 v-model。
  */
 export function mergeProps(...args: (Data & VNodeProps)[]): Data {

@@ -10,8 +10,8 @@ export type NonNeverKeys<T> = {
 }[keyof T]
 
 /**
- * 将插件的对象式钩子映射为其 handler 的 `this` 上下文；不是对象钩子、没有
- * handler 或上下文不兼容 Rolldown 最小插件上下文的键均收窄为 `never`。
+ * 提取函数式钩子或对象式 handler 的 `this` 上下文。ObjectHook 同时包含这两种形态；
+ * 无可调用签名或上下文不兼容 Rolldown 最小插件上下文的键收窄为 `never`。
  */
 export type GetHookContextMap<Plugin> = {
   [K in keyof Plugin]-?: Plugin[K] extends ObjectHook<infer T, unknown>

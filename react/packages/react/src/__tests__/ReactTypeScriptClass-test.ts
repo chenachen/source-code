@@ -18,7 +18,7 @@ import PropTypes = require('prop-types');
 import ReactFeatureFlags = require('shared/ReactFeatureFlags');
 import TestUtils = require('internal-test-utils');
 
-// 每个用例前从测试工具重新绑定开发态控制台断言。
+// 断言助手在模块加载时从测试工具绑定；beforeEach 不重新绑定这些常量。
 /** 校验开发态 `console.error` 输出的测试助手。 */
 const assertConsoleErrorDev = TestUtils.assertConsoleErrorDev;
 /** 校验开发态 `console.warn` 输出的测试助手。 */
@@ -60,7 +60,7 @@ function test(element, expectedTag, expectedClassName) {
   expect(container.firstChild.className).toBe(expectedClassName);
 }
 
-// 类必须声明在顶层作用域，因此下方测试所需类集中预先声明，不能直接内联到用例。
+// 共享类 fixture 集中在顶层，保留历史测试组织；下方也有内联类，顶层不是当前语法要求。
 // TODO：可改用模块隔离，让类名能够重复，并把声明与对应测试放在一起。
 
 /** 验证缺少 `render` 的类仍保留构造器名，以便错误消息指出真实组件。 */
@@ -385,7 +385,7 @@ class ProvideContext extends React.Component {
   }
 }
 
-/** 使用字符串 ref 的旧版引用兼容组件。 */
+/** 保留旧字符串 ref 写法的夹具声明；当前测试未挂载它，不能据此推断字符串 ref 仍受支持。 */
 class ClassicRefs extends React.Component {
   /** 创建带字符串 ref 的 `Inner`。 */
   render() {
@@ -396,6 +396,7 @@ class ClassicRefs extends React.Component {
 // 以下开始定义实际测试用例；上方顶层类由这些用例复用。
 
 describe('ReactTypeScriptClass', function () {
+  // 每例创建新 root/container 并清空叶子事件/名称探针；顶层 fixture 类型共享，计数与旧方法探针由对应用例另重置。
   beforeEach(function () {
     container = document.createElement('div');
     root = ReactDOMClient.createRoot(container);
@@ -403,6 +404,7 @@ describe('ReactTypeScriptClass', function () {
     renderedName = null;
   });
 
+  /** 顶层 TypeScript 类名 Empty 编译后读取 name 仍为 Empty，验证构造器名称可供 React 诊断使用。 */
   it('preserves the name of the class for use in error messages', function () {
     // Given：顶层声明了名为 Empty 的类组件。
     // When：直接读取 TypeScript 编译后保留的构造器名称。
@@ -410,6 +412,7 @@ describe('ReactTypeScriptClass', function () {
     expect(Empty.name).toBe('Empty');
   });
 
+  /** 实际挂载无 render 的 Empty，捕获并阻止 window error 默认报告；断言两条缺 render 诊断且 caughtErrors.length=1，finally 移除监听器，验证错误报告次数。内联 Foo 没有被挂载。 */
   it('throws if no render function is defined', function () {
     /** 给错误事件路径提供另一个无 render 的类名样本。 */
     class Foo extends React.Component {}
@@ -437,11 +440,13 @@ describe('ReactTypeScriptClass', function () {
     expect(caughtErrors.length).toBe(1);
   });
 
+  /** 无 state 的 Foo 把 bar prop 传给叶子，先 foo 再 bar 同步渲染；宿主 className 随 props 改变，验证同类实例更新。 */
   it('renders a simple stateless component with prop', function () {
     test(React.createElement(SimpleStateless, {bar: 'foo'}), 'DIV', 'foo');
     test(React.createElement(SimpleStateless, {bar: 'bar'}), 'DIV', 'bar');
   });
 
+  /** InitialState 通过类字段初始化器从 this.props.initialValue 建 state.bar，初挂 foo 输出 SPAN/foo，验证编译后字段初始化能读取基类 props。 */
   it('renders based on state using initial values in this.props', function () {
     test(
       React.createElement(InitialState, {initialValue: 'foo'}),
@@ -450,6 +455,7 @@ describe('ReactTypeScriptClass', function () {
     );
   });
 
+  /** 构造器从参数 initialValue 建 state，ref 调 changeState 后同步提交；DIV/foo 变 SPAN/bar，再同类重渲染仍保留 bar，验证状态更新与宿主替换。 */
   it('renders based on state using props in the constructor', function () {
     const ref = React.createRef();
     test(
@@ -461,6 +467,7 @@ describe('ReactTypeScriptClass', function () {
     test(React.createElement(StateBasedOnProps), 'SPAN', 'bar');
   });
 
+  /** 初始 state.foo=null，静态派生方法返回 foo prop 与 bar 常量；初挂得到 DIV/foo bar，验证派生补丁在首次 render 前合并。 */
   it('sets initial state with value returned by static getDerivedStateFromProps', function () {
     /** 验证派生状态在首次渲染前合并 props 与固定字段。 */
     class Foo extends React.Component {
@@ -469,7 +476,7 @@ describe('ReactTypeScriptClass', function () {
         foo: null,
         bar: null,
       };
-      /** 从新属性与旧状态派生首次状态补丁。 */
+      /** 按 nextProps.foo 和固定 bar 返回首次状态补丁；prevState 未使用。 */
       static getDerivedStateFromProps(nextProps, prevState) {
         return {
           foo: nextProps.foo,
@@ -486,6 +493,7 @@ describe('ReactTypeScriptClass', function () {
     test(React.createElement(Foo, {foo: 'foo'}), 'DIV', 'foo bar');
   });
 
+  /** 把 getDerivedStateFromProps 定为实例方法并挂载；诊断要求静态方法且将其忽略，验证错误 API 形状识别。 */
   it('warns if getDerivedStateFromProps is not static', function () {
     /** 故意把派生状态 API 定义为实例方法。 */
     class Foo extends React.Component {
@@ -508,6 +516,7 @@ describe('ReactTypeScriptClass', function () {
     ]);
   });
 
+  /** 把 getDerivedStateFromError 定为实例方法并挂载；诊断要求静态方法且将其忽略，验证错误派生 API 形状识别。 */
   it('warns if getDerivedStateFromError is not static', function () {
     /** 故意把派生错误状态 API 定义为实例方法。 */
     class Foo extends React.Component {
@@ -530,6 +539,7 @@ describe('ReactTypeScriptClass', function () {
     ]);
   });
 
+  /** 把 getSnapshotBeforeUpdate 挂在构造器而非实例，初挂后要求被忽略并建议实例方法；验证快照 API 静态声明诊断。 */
   it('warns if getSnapshotBeforeUpdate is static', function () {
     /** 故意把更新快照 API 定义为静态方法。 */
     class Foo extends React.Component {
@@ -550,6 +560,7 @@ describe('ReactTypeScriptClass', function () {
     ]);
   });
 
+  /** 未初始化 state 却声明静态派生状态，挂载后要求初始化形状诊断；验证派生参数形状提醒，不把可继续渲染误说成拒绝挂载。 */
   it('warns if state not initialized before static getDerivedStateFromProps', function () {
     /** 缺少初始 state 却声明派生状态钩子的错误形状。 */
     class Foo extends React.Component {
@@ -579,6 +590,7 @@ describe('ReactTypeScriptClass', function () {
     ]);
   });
 
+  /** 初始 state={foo:foo,bar:bar}，派生方法仅返回 not-foo；输出 not-foo bar，验证补丁覆盖 foo 而保留 bar。 */
   it('updates initial state with values returned by static getDerivedStateFromProps', function () {
     /** 验证派生状态可读取并覆盖初始状态，同时保留未返回字段。 */
     class Foo extends React.Component {
@@ -587,7 +599,7 @@ describe('ReactTypeScriptClass', function () {
         foo: 'foo',
         bar: 'bar',
       };
-      /** 根据旧 `foo` 生成新值，省略 `bar` 以验证合并语义。 */
+      /** 按 prevState.foo 返回 not-foo，省略 bar 以验证浅合并；nextProps 未使用。 */
       static getDerivedStateFromProps(nextProps, prevState) {
         return {
           foo: `not-${prevState.foo}`,
@@ -603,6 +615,7 @@ describe('ReactTypeScriptClass', function () {
     test(React.createElement(Foo), 'DIV', 'not-foo bar');
   });
 
+  /** 初始 value=initial，update=false 的派生方法返回 null，再改 update=true 返回 updated；两次宿主 className 分别对应旧/新值，验证 null 保持与补丁更新。 */
   it('renders updated state with values returned by static getDerivedStateFromProps', function () {
     /** 验证更新时派生状态可按 props 条件返回补丁或 null。 */
     class Foo extends React.Component {
@@ -610,7 +623,7 @@ describe('ReactTypeScriptClass', function () {
       state = {
         value: 'initial',
       };
-      /** `update` 为真时返回补丁，否则明确保持现状。 */
+      /** nextProps.update 为真返回 value=updated 补丁，否则 null 保持原 state；prevState 未使用。 */
       static getDerivedStateFromProps(nextProps, prevState) {
         if (nextProps.update) {
           return {
@@ -629,6 +642,7 @@ describe('ReactTypeScriptClass', function () {
   });
 
   if (!ReactFeatureFlags.disableLegacyContext) {
+    /** 仅旧版 Context 开启时定义：ProvideChildContextTypes 提供 span/foo，StateBasedOnContext 在类字段初始化器读取 this.context 建 state；输出 SPAN/foo并断言双方迁移诊断，实际不是本体显式 constructor 读取。 */
     it('renders based on context in the constructor', function () {
       test(React.createElement(ProvideChildContextTypes), 'SPAN', 'foo');
       assertConsoleErrorDev([
@@ -642,12 +656,14 @@ describe('ReactTypeScriptClass', function () {
     });
   }
 
+  /** 初始 bar=foo，UNSAFE_componentWillMount 调 setState(bar)；同步初挂输出 SPAN/bar 且 renderCount=1，验证挂载前状态合入首次 render。 */
   it('renders only once when setting state in componentWillMount', function () {
     renderCount = 0;
     test(React.createElement(RenderOnce, {initialValue: 'foo'}), 'SPAN', 'bar');
     expect(renderCount).toBe(1);
   });
 
+  /** 三个顶层类分别以数组、字符串、数字作 state，依次同 root 渲染为 SPAN并各断言对应类型名的对象/null诊断，验证非法初始状态提醒。 */
   it('should warn with non-object in the initial state property', function () {
     test(React.createElement(ArrayState), 'SPAN', '');
     assertConsoleErrorDev([
@@ -666,10 +682,12 @@ describe('ReactTypeScriptClass', function () {
     ]);
   });
 
+  /** 显式 state=null 的类初挂渲染 SPAN/空类名；验证 null 是允许的空状态，区别于非法原始值或数组。 */
   it('should render with null in the initial state property', function () {
     test(React.createElement(NullState), 'SPAN', '');
   });
 
+  /** BoundEventHandler 用箭头函数字段绑定 this，初挂 foo 后裸调用叶子监听器并 flushSync；renderedName 变 bar，验证 TS 字段绑定的实例 setState。 */
   it('setState through an event handler', function () {
     test(
       React.createElement(BoundEventHandler, {initialValue: 'foo'}),
@@ -680,6 +698,7 @@ describe('ReactTypeScriptClass', function () {
     expect(renderedName).toBe('bar');
   });
 
+  /** UnboundEventHandler 把原型 handleClick 原样传给 Inner，初挂 foo 后裸调用要求抛错，验证 React 不自动绑定类原型方法。 */
   it('should not implicitly bind event handlers', function () {
     test(
       React.createElement(UnboundEventHandler, {initialValue: 'foo'}),
@@ -689,6 +708,7 @@ describe('ReactTypeScriptClass', function () {
     expect(attachedListener).toThrow();
   });
 
+  /** ForceUpdateWithNoState 不用 state，保存 mutativeValue；render 显式 bind 的监听器改为 bar并forceUpdate，同步提交后renderedName=bar，验证可变字段重读。 */
   it('renders using forceUpdate even when there is no state', function () {
     test(
       React.createElement(ForceUpdateWithNoState, {initialValue: 'foo'}),
@@ -699,6 +719,7 @@ describe('ReactTypeScriptClass', function () {
     expect(renderedName).toBe('bar');
   });
 
+  /** NormalLifeCycles 初挂 foo、更新 bar、卸载，三段分别清空 lifeCycles；比较旧式钩子顺序以及新 props/空 state 和 didUpdate 旧 props，验证 TS 类生命周期合同。root.unmount 的多余 container 实参不参与卸载选择。 */
   it('will call all the normal life cycle methods', function () {
     lifeCycles = [];
     test(React.createElement(NormalLifeCycles, {value: 'foo'}), 'SPAN', 'foo');
@@ -724,6 +745,7 @@ describe('ReactTypeScriptClass', function () {
   });
 
   if (!ReactFeatureFlags.disableLegacyContext) {
+    /** 仅旧版 Context 开启时定义此例：类声明旧 getInitialState/getDefaultProps 和实例 contextTypes/contextType；挂载告警且两旧方法探针仍 false，验证只诊断、不调用。 */
     it(
       'warns when classic properties are defined on the instance, ' +
         'but does not invoke them.',
@@ -753,6 +775,7 @@ describe('ReactTypeScriptClass', function () {
     );
   }
 
+  /** 内联 Example 已有 state={} 且定义旧 getInitialState，挂载 SPAN/foo 无预期诊断；未记录该方法调用次数，验证显式 state 的迁移提醒边界。 */
   it(
     'does not warn about getInitialState() on class components ' +
       'if state is also defined.',
@@ -775,6 +798,7 @@ describe('ReactTypeScriptClass', function () {
     },
   );
 
+  /** 类错拼 componentShouldUpdate，挂载输出 SPAN/foo 并要求 shouldComponentUpdate 建议；验证名称诊断。 */
   it('should warn when misspelling shouldComponentUpdate', function () {
     test(React.createElement(MisspelledComponent1), 'SPAN', 'foo');
     assertConsoleErrorDev([
@@ -785,6 +809,7 @@ describe('ReactTypeScriptClass', function () {
     ]);
   });
 
+  /** 类错拼 componentWillRecieveProps，挂载输出 SPAN/foo 并要求正确 Receive 名称；验证旧生命周期拼写诊断。 */
   it('should warn when misspelling componentWillReceiveProps', function () {
     test(React.createElement(MisspelledComponent2), 'SPAN', 'foo');
     assertConsoleErrorDev([
@@ -794,6 +819,7 @@ describe('ReactTypeScriptClass', function () {
     ]);
   });
 
+  /** 类错拼 UNSAFE_componentWillRecieveProps，挂载输出 SPAN/foo 并要求正确 Receive 名称；验证 UNSAFE 变体拼写诊断。 */
   it('should warn when misspelling UNSAFE_componentWillReceiveProps', function () {
     test(React.createElement(MisspelledComponent3), 'SPAN', 'foo');
     assertConsoleErrorDev([
@@ -803,6 +829,7 @@ describe('ReactTypeScriptClass', function () {
     ]);
   });
 
+  /** 先用 ref 取得语言类实例，再调用 replaceState 与 isMounted；各要求抛错并给弃用告警，验证普通类上的旧 API 访问边界。 */
   it('should throw AND warn when trying to access classic APIs', function () {
     const ref = React.createRef();
     test(React.createElement(Inner, {name: 'foo', ref: ref}), 'DIV', 'foo');
@@ -820,6 +847,7 @@ describe('ReactTypeScriptClass', function () {
   });
 
   if (!ReactFeatureFlags.disableLegacyContext) {
+    /** 仅旧版 Context 开启时定义此例：Foo 的 getChildContext 返回 bar-through-context，Bar 读取 this.context.bar；输出 DIV/该值并要求双方迁移诊断，验证旧上下文传播。 */
     it('supports this.context passed via getChildContext', () => {
       test(React.createElement(ProvideContext), 'DIV', 'bar-through-context');
       assertConsoleErrorDev([

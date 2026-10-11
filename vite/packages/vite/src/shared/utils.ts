@@ -5,8 +5,8 @@ export const isWindows: boolean =
   typeof process !== 'undefined' && process.platform === 'win32'
 
 /**
- * 给浏览器不能直接表达的 resolved id 添加 `/@id/`，并转义 null byte。
- * importAnalysis 用它把内部/虚拟模块 id 安全放进 import URL。
+ * 给 resolved id 添加 `/@id/`，并替换第一个 null byte；已有前缀时原样返回。
+ * importAnalysis 用它编码标准的内部/虚拟模块 id。
  */
 export function wrapId(id: string): string {
   return id.startsWith(VALID_ID_PREFIX)
@@ -15,7 +15,7 @@ export function wrapId(id: string): string {
 }
 
 /**
- * 撤销 {@link wrapId} 添加的 `/@id/` 与 null byte 转义，再交回插件管线。
+ * 有 `/@id/` 前缀时去掉它并替换第一个 null-byte 占位符；其他 id 原样返回。
  */
 export function unwrapId(id: string): string {
   return id.startsWith(VALID_ID_PREFIX)
@@ -70,7 +70,7 @@ export const AsyncFunction = async function () {}.constructor as typeof Function
 let asyncFunctionDeclarationPaddingLineCount: number | undefined
 
 /**
- * 运行时探测 AsyncFunction 构造器在函数体前增加的行数，供旧 SSR 堆栈修正扣除。
+ * 运行时探测 AsyncFunction 构造器在函数体前增加的行数，供执行器堆栈修正扣除。
  * 结果按进程缓存，因为同一 realm 的构造器格式不会变化。
  */
 export function getAsyncFunctionDeclarationPaddingLineCount(): number {

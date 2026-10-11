@@ -9,24 +9,19 @@
 
 'use strict';
 
-/** `React`：保存当前测试场景复用的夹具、状态或回调。 */
+/** 构造 dangerouslySetInnerHTML 测试使用的 JSX 元素。 */
 const React = require('react');
-/** `ReactDOMClient`：保存当前测试场景复用的夹具、状态或回调。 */
+
+/** 提供空容器并发根，用其提交结果检查原生 innerHTML。 */
 const ReactDOMClient = require('react-dom/client');
 
-/** `act`：保存当前测试场景复用的夹具、状态或回调。 */
+/** 等待根渲染与提交完成后再读取 DOM，避免把尚未提交误判为属性未写入。 */
 const act = require('internal-test-utils').act;
 
 describe('dangerouslySetInnerHTML', () => {
   describe('when the node has innerHTML property', () => {
-    /**
-     * 代表场景（Given–When–Then）：
-     * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-     * When 执行「sets innerHTML on it」描述的渲染或交互；
-     * Then 通过本用例的 DOM、日志或调度断言确认行为。
-     *
-     * 验证机制：断言连接 DOM host 属性写入与提交路径。
-     */
+
+    /** 创建空并发根并把 __html 设为 <h1>Hello</h1>；act 提交后首个 div 的 innerHTML 必须等于原字符串，验证该 prop 写入原生 HTML 而非转成文本子节点。 */
     it('sets innerHTML on it', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);

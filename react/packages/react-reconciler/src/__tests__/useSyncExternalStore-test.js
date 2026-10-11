@@ -259,7 +259,7 @@ describe('useSyncExternalStore', () => {
   /**
    * Given：组件同时订阅 store，并在快照变化时于渲染阶段把相同值同步进本地 state。
    * When：store 从 initial 改为 changed，再改回 initial。
-   * Then：两次变化都各自产生正确输出，旧快照不会因渲染阶段更新而污染缓存。
+   * Then：Text 日志依次出现 initial、changed、initial，证明旧快照不会阻止回切值重新渲染；本例没有宿主输出断言。
    *
    * 验证机制：每次 `set` 后只检查唯一快照日志，回切初值专门证明 next value 已更新。
    * 对应源码：`updateSyncExternalStore()` 更新 Hook 快照，渲染阶段 state 重试由 `renderWithHooksAgain()` 处理。
@@ -391,7 +391,7 @@ describe('useSyncExternalStore', () => {
    * Then：订阅者在重新订阅时补查错过的突变，并提交 revision:2。
    *
    * 验证机制：同时断言渲染日志、最终宿主输出及订阅者数量的 `1 → 0 → 1` 转移。
-   * 对应源码：`updateStoreInstance()` 在订阅 Effect 中调用 `checkIfSnapshotChanged()` 补偿提交窗口内的突变。
+   * 对应源码：重连的被动 Effect 执行 updateStoreInstance()，用 checkIfSnapshotChanged() 补查布局阶段的突变。
    */
   it('detects store mutations from a layout effect while an Activity subtree is being revealed', async () => {
     const store = createExternalStore('revision:1');
@@ -495,8 +495,8 @@ describe('useSyncExternalStore', () => {
       expect(root).toMatchRenderedOutput('a:initial');
       expect(store.getSubscriberCount()).toBe(1);
 
-      // 在 store 不变时用不同 props 重渲染一次订阅者；其 Effect 列表随后只含订阅 Effect，
-      // 不含交错突变检查。
+      // 在 store 不变时用不同 props 重渲染一次订阅者；本轮不标记交错突变检查需要普通更新时执行；
+      // 该检查的 Effect 节点仍留在列表中，Activity 重连时必须重新执行。
       await act(() => {
         root.render(<App mode="visible" label="b" />);
       });

@@ -38,7 +38,7 @@ export interface CustomPluginOptionsVite {
   lang?: string
 }
 
-// 通过模块增强把 Vite 元数据挂到 Rolldown 产物与插件自定义选项上。
+/** 通过模块增强把 Vite 元数据挂到 Rolldown 产物与插件自定义选项上。 */
 declare module 'rolldown' {
   /** Vite 对 Rolldown 输出资源增加的依赖元数据。 */
   export interface OutputAsset {

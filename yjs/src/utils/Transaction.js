@@ -57,12 +57,12 @@ export class Transaction {
     this.deleteSet = createIdSet()
     /** 格式清理额外删除的结构 ID 区间；始终是 `deleteSet` 的子集。 */
     this.cleanUps = createIdSet()
-    /** 本事务插入的结构 ID 区间。 */
+    /** 本事务插入的结构 ID 区间；同事务内又被删除的 ID 仍保留，需结合 deleteSet 判断最终可见性。 */
     this.insertSet = createIdSet()
-    /** 事务开始前的惰性 state vector 缓存。
+    /** 已废弃 `beforeState` 兼容字段的惰性缓存，时钟按本事务插入范围回退。
      * @type {Map<Number,Number>?} */
     this._beforeState = null
-    /** 事务完成后的惰性 state vector 缓存；完成前读取非法。
+    /** 已废弃 `afterState` 的惰性缓存，按本事务插入范围末端覆盖；仅在 cleanup 已标记 _done 后允许读取。
      * @type {Map<Number,Number>?} */
     this._afterState = null
     /** 直接修改的已存在类型及其属性键；序列内容变化用 `null`，本事务新插入的类型不单独发事件。
@@ -80,7 +80,7 @@ export class Transaction {
     /** 生命周期监听器之间共享的事务级元数据。
      * @type {Map<any,any>} */
     this.meta = new Map()
-    /** 变更是否源于本地，而非解码远端 update。
+    /** 创建事务时的本地标记；远端 readUpdateV2 可把复用事务也置为 false，因而一笔混合事务不能按此值拆出各操作来源。
      * @type {boolean} */
     this.local = local
     /** 本事务新集成的子文档。
@@ -95,13 +95,15 @@ export class Transaction {
     /** 是否需要在 observer 调用后另开事务清理冗余格式项。
      * @type {boolean} */
     this._needFormattingCleanup = false
+    /** cleanup 入口置为 true，表示写回调已结束；此时 observer、GC、update 及后续事务仍未全部完成。 */
     this._done = false
   }
 
   /**
-   * 惰性重建事务开始前的 state vector。
+   * 惰性生成已废弃的 `beforeState` 兼容映射。
    *
-   * 当前 store 已含本事务插入项，因此必须把每个插入区间的 client clock 回退到首项起点。
+   * 以当前 store 的 state vector 为基底，把本事务有插入的客户端回退到首个插入区间起点。
+   * 它不记录真实起始快照：空文档接收 [5, 7) 的稀疏结构时，该字段为 5，而真实起始时钟为 0。
    *
    * @deprecated
    * @type {Map<Number,Number>}
@@ -118,9 +120,12 @@ export class Transaction {
   }
 
   /**
-   * 在事务标记完成后惰性重建结束 state vector。
+   * 在事务标记完成后惰性生成已废弃的 `afterState` 兼容映射。
    *
-   * 当前 store 可能已继续变化，因此本事务写入 client 的 clock 取其最后插入区间末端；完成前读取会抛错。
+   * 以当前 store 的 state vector 为基底，把本事务有插入的客户端覆盖为最后插入区间末端。
+   * 这个端点可越过 Skip：接收 [5, 7) 后该字段为 7，若 [0, 5) 仍缺失，文档连续前缀仍为 0。
+   * 写回调内读取会由 error.unexpectedCase() 自身抛错。_done 在 cleanup 入口置位，不表示整批清理完成。
+   * getter 第一次计算后保存缓存，返回内部 Map；此兼容水位不能替代现代 insertSet 或文档连续 state vector。
    *
    * @deprecated
    * @type {Map<Number,Number>}
@@ -178,7 +183,9 @@ export const cleanupYTextFormatting = type => {
 /**
  * 按队列顺序完成事务：通知 observer、清理结构、编码 update、处理子文档，再继续 observer 新建的后续事务。
  *
- * WHY：observer 可修改同一文档并可抛错。队列加 `try/finally` 同时保证不递归调用、每个事务必做结构清理，且其他 observer 仍有机会执行。
+ * observer 中的新事务只追加到队列，不立即嵌套清理；当前事务清理完成后，再递归处理下一项。
+ * `callAll` 在 observer 抛错后继续尝试剩余回调，随后进入 finally 尝试结构清理与 update 编码。
+ * finally 内的 GC/生命周期监听器若抛错，后面的 update、子文档或队列处理也可能被中断。
  *
  * @param {Array<Transaction>} transactionCleanups - 最外层事务及 observer 中追加的事务队列。
  * @param {number} i - 当前清理位置。
@@ -236,7 +243,7 @@ const cleanupTransactions = (transactionCleanups, i) => {
         cleanupYTextAfterTransaction(transaction)
       }
     } finally {
-      // observer 全部尝试后才把删除项替换为 ItemDeleted/GC；此前 observer 仍可读取事务前后结构。
+      // observer 阶段结束后才回收删除项的载荷；普通 Item 保留元数据并改用 ContentDeleted，已回收父项内的子结构可转为 GC。
       if (doc.gc) {
         tryGcDeleteSet(transaction, ds, doc.gcFilter)
       }
@@ -301,6 +308,7 @@ const cleanupTransactions = (transactionCleanups, i) => {
       }
 
       if (transactionCleanups.length <= i + 1) {
+        // 用新数组替换 Doc 字段；事件参数仍持有旧数组，供监听者查看这一批已清理的事务。
         doc._transactionCleanups = []
         doc.emit('afterAllTransactions', [doc, transactionCleanups])
       } else {
@@ -313,7 +321,7 @@ const cleanupTransactions = (transactionCleanups, i) => {
 /**
  * observer 调用后，按本事务插入/删除范围选择局部或全量格式清理。
  *
- * WHY：格式项插入或删除会改变后续位置的格式上下文，必须全量重算对应类型；仅删除普通内容时可从局部间隙反向去重。清理另开事务，使新增删除可正常进入 observer/update 流程。
+ * 格式项插入或删除会改变后续位置的格式上下文，需要全量重算对应类型；仅删除普通内容时可从局部间隙反向去重。清理另开事务，使新增删除正常进入 observer/update 流程。
  *
  * @param {Transaction} transaction
  */
@@ -354,14 +362,15 @@ export const cleanupYTextAfterTransaction = transaction => {
 }
 
 /**
- * 实现 `Doc.transact()` 的嵌套事务边界，并保证异常路径也会完成最外层 cleanup。
+ * 实现 `Doc.transact()` 的嵌套事务边界；回调抛错时仍进入最外层 cleanup。
  *
- * 首次调用创建事务和 cleanup 队列项；嵌套调用直接把同一事务传给回调。只有创建者清空 `_transaction` 并启动队列，因此 observer 中产生的事务按序处理而不会递归。
+ * 首次调用创建事务和 cleanup 队列项；嵌套调用直接把同一事务传给回调。创建者清空 `_transaction`；仅队首事务启动 cleanup。observer 中的新事务追加到队尾，待当前事务清理完后继续处理。
+ * 嵌套调用提供的 origin/local 不替换已有事务字段；回调返回值同步透传。事务只分批通知，没有写入回滚。
  *
  * @template T
  * @param {Doc} doc - 目标文档。
  * @param {function(Transaction):T} f - 在事务中执行的回调。
- * @param {any} [origin=true] - 发起方标识。
+ * @param {any} [origin=null] - 发起方标识。
  * @param {boolean} [local=true] - 是否为本地变更。
  * @return {T} 回调返回值。
  *
@@ -390,7 +399,7 @@ export const transact = (doc, f, origin = null, local = true) => {
       const finishCleanup = doc._transaction === transactionCleanups[0]
       doc._transaction = null
       if (finishCleanup) {
-        // 最外层事务结束后才处理 observer。observer 可追加事务或抛错；cleanup 队列配合 finally 保证逐个执行且不形成递归栈。
+        // 最外层回调结束后开始通知 observer；其中的新事务只入队，当前 cleanup 完成后再递归处理下一项。
         cleanupTransactions(transactionCleanups, 0)
       }
     }

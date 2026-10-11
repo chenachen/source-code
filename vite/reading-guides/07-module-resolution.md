@@ -10,7 +10,7 @@ transform 留到第 08 章。
 
 读完应能回答：
 
-1. 为什么 alias 与 resolve 是两个插件，但顺序上必须相邻？
+1. 为什么 alias 先于通用 resolve，用户 pre 插件又能在两者之间接管解析？
 2. 文件路径解析为什么要保留 query/hash，且对 node_modules 中的 `#` 特判？
 3. `exports`、`imports`、mainFields、main、browser 和 index 的优先级是什么？
 4. conditions、externalConditions、import/require 怎样共同选择 package export？
@@ -36,6 +36,8 @@ transform 留到第 08 章。
 ```text
 preAlias（优化依赖存在时避免过早展开 alias）
 → @rollup/plugin-alias
+→ 用户 enforce: 'pre' 插件（可在这里解析 alias 替换结果）
+→ modulepreload polyfill 插件（按配置启用）
 → optimizerResolvePlugin（可选开发快路径）
 → Rolldown viteResolvePlugin
    ├─ builtin
@@ -54,8 +56,9 @@ Vite 8 把主解析器交给 Rolldown 的原生 `viteResolvePlugin`，但 Vite �
 package 数据、依赖优化器、日志和结果收尾。阅读时不要把 `plugins/resolve.ts` 误认为从头手写了
 所有 resolveId；它既是适配器，也保留一套供特殊场景直接调用的文件/包算法。
 
-alias 先把用户 specifier 映射成目标 specifier，resolve 再判断目标是文件、包或 external。alias
-也可以按 Environment 不同；因此不能在全局配置阶段一次性把所有 import 字符串展开。
+alias 先把用户 specifier 映射成目标 specifier，再通过插件容器继续解析目标。用户 pre 插件可以
+在通用 resolver 之前接管虚拟模块或自定义路径；未接管的目标才交给原生 resolver。alias 与
+resolve 因而有先后关系，但无需相邻。Environment 的 alias 配置可以不同，解析使用当前环境的配置。
 
 ## 按 Environment 创建原生 resolver
 
@@ -203,8 +206,9 @@ dedupe 从 root 解析，避免 monorepo/嵌套依赖给 React 等状态型库�
 }
 ```
 
-Vite 返回 `__vite-optional-peer-dep:<id>:<parent>` 虚拟 ID。应用未走到该可选功能时可以正常运行；
-真正执行 import 时再给出准确错误（[PR #20029](https://github.com/vitejs/vite/pull/20029)）。
+Vite 返回 `__vite-optional-peer-dep:<id>:<parent>` 虚拟 ID，使解析阶段可以继续；加载这个占位模块时
+再报告缺失依赖。未调用的动态 import 可以保持未加载，静态 import 则会随导入方执行。这种延迟
+取决于实际加载路径（[PR #20029](https://github.com/vitejs/vite/pull/20029)）。
 `nodeResolveWithVite()` 用于纯 Node 路径解析，不需要这个运行时协议，因此显式关闭特判。
 
 ## package 入口优先级
@@ -220,11 +224,14 @@ package.json exports['.']（最高）
 → Node 默认 index.js / index.json / index.node
 ```
 
-若 mainFields 包含 browser 且 browser 是对象，选定相对入口还会再次经过 browser map。Sass
-把 mainFields 第一项设为 sass 时，不允许错误回退到普通 JS script。
+这份 TypeScript 实现中，`exports` 无法解析会抛入口错误，不会改查 mainFields。只有 exports
+解析没有返回入口时才继续字段回退。若 mainFields 包含 browser 且 browser 是对象，选定相对入口
+还会再次经过 browser map；这里只采用字符串映射，`false` 被 `mapped || entry` 留作原入口，deep
+import 的 `false` 才返回 browser external。Sass resolver 把 mainFields 第一项设为 sass 时，
+不把不匹配样式扩展名的普通 JS 入口作为结果，而是继续查找目录中的样式入口。
 
-入口字段存在却无法落到文件时抛 `ERR_RESOLVE_PACKAGE_ENTRY_FAIL`。目录解析把这个特定错误
-视为“package entry 探测失败”，还能尝试目录 index；其他异常不能吞掉。
+入口字段存在却无法落到文件时抛 `ERR_RESOLVE_PACKAGE_ENTRY_FAIL`。目录解析把这个错误和 `ENOENT`
+视为入口探测失败，还能尝试目录 index；其他异常继续上抛。
 
 ### deep import
 
@@ -249,7 +256,7 @@ importer 的 specifier；若 `path.relative()` 给出普通单词开头，还要
 
 ```text
 配置 conditions
-→ development|production 占位符按 mode 展开
+→ development|production 占位符按 isProduction 展开
 → 追加 import 或 require
 ```
 
@@ -265,7 +272,7 @@ PackageCache 的入口键必须包含：
 - deep import key。
 
 否则先发生的解析会污染后续条件。`resolve.spec.ts` 先后交换 Runner import 与
-pluginContainer.resolveId，仍分别得到 default/module，正是对
+pluginContainer.resolveId，仍分别得到 default/module，验证两条解析路径没有相互污染。这对应
 [PR #18302](https://github.com/vitejs/vite/pull/18302) 与
 [PR #18332](https://github.com/vitejs/vite/pull/18332) 的顺序无关验证。
 
@@ -317,24 +324,28 @@ node_modules 数量大且通常由包管理器维护，不逐包 watch。
 
 外部化意味着构建产物/Module Runner 保留运行时 import，而不是让 Vite load/transform 它。
 
-`createIsConfiguredAsExternal()` 的优先级：
+供 server 加载路径使用的 TypeScript 判定器 `createIsConfiguredAsExternal()` 按以下顺序返回；主
+插件的原生 resolver 则直接接收 external/noExternal 配置，不调用这份判定器：
 
 ```text
-1. external 精确 deep import
-2. external 顶层包名
-3. noExternal: boolean
-4. noExternal filter
-5. external:true 或默认可外部化
+1. external 数组精确命中原始 id → 直接 true
+2. external 数组命中顶层包名 → 解析并检查，允许链接包
+3. noExternal: true → false；内部接受的 noExternal: false → true
+4. noExternal filter 命中包名 → false
+5. 其余 → 解析并检查；external:true 允许链接包
 ```
 
-但最终还要满足：
+步骤 2、5 以及无法提取包名的路径会调用 `isExternalizable()`，要求：
 
 - 必须是裸包，不能是相对/绝对/虚拟 ID；
 - Node 解析成功；
 - 文件无扩展名或为 `.js/.mjs/.cjs`；
 - workspace/link 包只有显式 external 才外部化，`external:true` 算显式全量；
-- builtin 直接 external；
 - CSS/JSON 等需要 Vite 插件处理，不能保留原生 import。
+
+精确 external 命中和布尔 noExternal 分支直接返回，不执行上述文件检查。例如显式列出
+`external:['pkg/theme.css']` 会得到 true；把它写成 `external:['pkg']` 则仍检查实际文件类型。
+外围 `createIsExternal()` 先排除相对/绝对路径，再直接接受环境 builtin，最后调用配置判定器。
 
 build 判断嵌套依赖时故意不传 importer：若一个包只从嵌套 node_modules 可解析，从输出 bundle
 所在 root 不可解析，外部化只会把问题推到运行时。
@@ -384,9 +395,10 @@ Environment 走新模型（[PR #17972](https://github.com/vitejs/vite/pull/17972
 
 ### `nodeResolveWithVite()`
 
-它固定 Node 生产语义：node/module-sync conditions、Node-like builtins、无 browser/mainFields
-偏好、无 optimizer、无 optional peer 协议、无 package cache。用途是“给定 id，返回 Node 可直接
-执行的文件路径”，不是完整 Vite 请求 resolver。
+它给 `tryNodeResolve()` 固定生产语义：node 条件、运行时支持时追加 module-sync、无
+browser/mainFields 偏好、无 optimizer、无 optional peer 协议、无 package cache。它用于获得包
+入口文件路径，不处理完整 Vite URL 管线；builtin 不对应磁盘包入口，通常返回 undefined。输出
+扩展名仍可能按 Vite 扩展名表回退到 TS，调用方需要决定后续如何加载该文件。
 
 ## 关键源码证据
 
@@ -394,8 +406,7 @@ Environment 走新模型（[PR #17972](https://github.com/vitejs/vite/pull/17972
 
 ```ts
 const deepMatch = deepImportRE.exec(id)
-// package name doesn't include postfixes
-// trim them to support importing package with queries (e.g. `import css from 'normalize.css?inline'`)
+// 包名不含 query/hash；清理后支持 `normalize.css?inline` 一类裸包资源导入。
 const pkgId = deepMatch ? deepMatch[1] || deepMatch[2] : cleanUrl(id)
 
 let basedir: string
@@ -404,7 +415,7 @@ if (dedupe.includes(pkgId)) {
 } else if (
   importer &&
   path.isAbsolute(importer) &&
-  // css processing appends `*` for importer
+  // CSS 处理会给 importer 追加 `*` 标记；其余绝对 importer 必须真实存在才作为 basedir。
   (importer.endsWith('*') || fs.existsSync(cleanUrl(importer)))
 ) {
   basedir = path.dirname(importer)
@@ -434,5 +445,5 @@ if (dedupe.includes(pkgId)) {
 3. exports 存在时，deep import 为什么不能回退目录 index？
 4. conditions 与 externalConditions 若共用同一个包入口缓存，会出现什么顺序依赖？
 5. workspace 链接包为什么默认不 external？
-6. external:true 为什么仍不能把 CSS 文件交给 Node 原生 import？
+6. 精确 external、包名 external 和 external:true 对 CSS 子路径的检查有何不同？
 7. optimizer 产物未落盘时，resolver 如何仍给浏览器稳定 ID？

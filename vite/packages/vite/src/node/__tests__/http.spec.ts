@@ -8,7 +8,7 @@ import type { InlineConfig, ViteDevServer } from '..'
 /** 测试专用高位端口起点，降低与系统服务冲突概率。 */
 const BASE_PORT = 15181
 
-// 禁用自动发现，避免 listen 扫描 __tests__ 下全部 HTML 夹具。
+/** 禁用依赖自动发现和显式预打包，使端口探测不触发 __tests__ HTML 扫描。 */
 const optimizeDeps: InlineConfig['optimizeDeps'] = {
   noDiscovery: true,
   include: [],
@@ -165,14 +165,14 @@ describe('port detection', () => {
 
     /**
      * 场景：IPv6 wildcard `::` 占用端口。
-     * 验证目标：支持 IPv6 的系统回退下一端口；系统关闭 IPv6 时跳过平台不适用场景。
+     * 验证目标：绑定成功时回退下一端口；若创建 `::` 占位服务器失败，则调用 ctx.skip() 跳过本例。
      */
     test('detects port conflict when server listens on :: (IPv6)', async (ctx) => {
       let blockingServer
       try {
         blockingServer = await createSimpleServer(BASE_PORT, '::')
       } catch {
-        // 当前系统没有 IPv6，不属于端口算法失败。
+        // 创建 `::` 占位服务器失败即跳过；此处没有进一步区分绑定失败原因。
         ctx.skip()
         return
       }
@@ -236,6 +236,7 @@ describe('port detection', () => {
     using _ = vi.spyOn(net, 'createServer').mockImplementation(() => {
       const server = originalCreateServer()
       const originalListen = server.listen.bind(server)
+      /** 用 EACCES 模拟 wildcard 探测失败，其他 host 仍委托原 listen，以区分权限错误与端口占用。 */
       // @ts-expect-error this is the overload used internally
       server.listen = (
         port: number,
@@ -305,11 +306,17 @@ describe('port detection', () => {
       root: import.meta.dirname,
       optimizeDeps,
       customLogger: {
+        /** 忽略启动信息，使本例只收集 wildcard 端口探测警告。 */
         info: () => {},
+        /** 保存警告消息，供监听完成或失败后核对 wildcard 提示。 */
         warn: (msg) => warnMessages.push(msg),
+        /** 本例不收集去重警告，只检查普通 warn 通道。 */
         warnOnce: () => {},
+        /** 屏蔽端口监听失败日志，失败本身由 listen 的异常分支判定。 */
         error: () => {},
+        /** 保持测试输出不受 logger 清屏请求影响。 */
         clearScreen: () => {},
+        /** 返回未记录错误，满足仅收集 warn 的测试 logger 契约。 */
         hasErrorLogged: () => false,
         hasWarned: false,
       },

@@ -225,7 +225,7 @@ export interface ResolvedServerOptions extends Omit<
 /** 开发服务器直接读取磁盘文件时的安全边界。 */
 export interface FileSystemServeOptions {
   /**
-   * 严格拒绝访问 allow 外路径；false 关闭限制告警。
+   * 严格拒绝访问 allow 外路径；false 关闭本层文件访问限制。
    *
    * @default true
    */
@@ -406,7 +406,7 @@ export interface ViteDevServer {
 
 /** Server 监听后解析出的本地与局域网 URL。 */
 export interface ResolvedServerUrls {
-  /** loopback/localhost URL。 */
+  /** 回环地址及 localhost 的本地访问 URL。 */
   local: string[]
   /** 可从局域网接口访问的 URL。 */
   network: string[]
@@ -433,13 +433,13 @@ export function createServer(
  * 注册 watcher/SIGTERM → 排列中间件 → 建立一次性初始化门闩。previous* 字段把旧
  * Environment、快捷键和并发重启状态传给新实例，使重启能够迁移资源而不替换用户引用。
  *
- * @param options.listen - 是否按普通独立 Server 初始化 Environment listen 生命周期；
- * middleware mode 或重启构造会使用不同值。
+ * @param options.listen - middleware mode 初始化时是否同时启动 Environment listen；公开创建为
+ * true，重启构造为 false。普通模式在底层 HTTP listen 前始终启动 Environment。
  */
 export async function _createServer(
   inlineConfig: ResolvedConfig | InlineConfig | undefined = {},
   options: {
-    /** 是否按独立服务器流程启动 Environment 的 listen 生命周期。 */
+    /** middleware mode 初始化时是否立即启动 Environment listen；重启构造为 false。 */
     listen: boolean
     /** 重启前的 Environment，用于迁移可复用状态。 */
     previousEnvironments?: Record<string, DevEnvironment>
@@ -554,7 +554,9 @@ export async function _createServer(
   // 为旧 server.moduleGraph/pluginContainer API 建立 client+ssr 兼容门面。
 
   let moduleGraph = new ModuleGraph({
+    /** 读取当前 client 环境的模块图，供兼容图惰性访问。 */
     client: () => environments.client.moduleGraph,
+    /** 读取当前 ssr 环境的模块图，供兼容图惰性访问。 */
     ssr: () => environments.ssr.moduleGraph,
   })
   let pluginContainer = createPluginContainer(environments)
@@ -565,7 +567,7 @@ export async function _createServer(
 
   // close Promise 作为幂等门闩，确保资源清理只启动一次（#19204）。
   let closeServerPromise: Promise<void> | undefined
-  /** 并行关闭互不依赖的资源；allSettled 防止单项失败跳过其他清理。 */
+  /** 发起各资源关闭，等待已发起的异步任务 settle；单项 Promise 拒绝不会跳过最终字段复位。 */
   const closeServer = async () => {
     if (!middlewareMode) {
       teardownSIGTERMListener(closeServerAndExit)
@@ -737,8 +739,8 @@ export async function _createServer(
             ? new URL(options.open, url).href
             : url
 
-        // 打开浏览器前已知道入口 URL；并行发起 HTML 请求，可让静态 import 爬取提前约
-        // 500ms。只有 preTransformRequests 启用时该预取才有收益。
+        // 打开浏览器前已知道入口 URL；并行发起 HTML 请求，可让静态 import 爬取先行。
+        // 只有 preTransformRequests 启用时才发起这次预取。
         if (server.config.server.preTransformRequests) {
           setTimeout(() => {
             const getMethod = path.startsWith('https:') ? httpsGet : httpGet
@@ -796,7 +798,7 @@ export async function _createServer(
     bindCLIShortcuts(options) {
       bindCLIShortcuts(server, options)
     },
-    /** 串行执行原位重启，并合并并发调用的强制优化请求。 */
+    /** 串行执行原位重启；并发调用共享首次调用的任务和 forceOptimize 值。 */
     async restart(forceOptimize?: boolean) {
       // 并发重启共享 Promise，防止多个新 Server 争抢端口（#21636、#21810）。
       if (!server._restartPromise) {
@@ -826,9 +828,11 @@ export async function _createServer(
 
   // 代理始终反射当前闭包 server，使 configureServer 钩子的对象在重启后也保持一致。
   const reflexServer = new Proxy(server, {
+    /** 每次读取都转到闭包内当前 server，重启后继续看到新实现。 */
     get: (_, property: keyof ViteDevServer) => {
       return server[property]
     },
+    /** 将 configureServer 的属性写入转发到当前 server。 */
     set: (_, property: keyof ViteDevServer, value: never) => {
       server[property] = value
       return true
@@ -890,7 +894,7 @@ export async function _createServer(
       }
     }
     if (isUnlink) {
-      // 删除文件时清理每个 Environment 的模块图索引。
+      // 删除文件时断开节点作为 importer 的反向边；节点及 URL/ID/file 索引仍保留。
       for (const environment of Object.values(server.environments)) {
         environment.moduleGraph.onFileDelete(file)
       }
@@ -952,7 +956,7 @@ export async function _createServer(
 
   // Host 校验防止 DNS rebinding 攻击。
   const { allowedHosts } = serverConfig
-  // HTTPS 证书已绑定可信主机，不受同类 DNS rebinding 攻击，无需重复校验。
+  // HTTPS 连接还要通过 TLS 证书验证，此处按 HTTPS 配置跳过 Host 校验。
   if (allowedHosts !== true && !serverConfig.https) {
     middlewares.use(hostValidationMiddleware(allowedHosts, false))
   }
@@ -991,13 +995,16 @@ export async function _createServer(
   middlewares.use('/__open-in-editor', launchEditorMiddleware())
 
   // HMR ping；保留命名函数，`DEBUG=connect:dispatcher` 会显示该名称。
-  middlewares.use(function viteHMRPingMiddleware(req, res, next) {
-    if (req.headers.accept === 'text/x-vite-ping') {
-      res.writeHead(204).end()
-    } else {
-      next()
+  middlewares.use(
+    /** 特定 Accept 的 HTTP 可达性探测返回 204，其他请求继续后续中间件。 */
+    function viteHMRPingMiddleware(req, res, next) {
+      if (req.headers.accept === 'text/x-vite-ping') {
+        res.writeHead(204).end()
+      } else {
+        next()
+      }
     }
-  })
+  )
 
   // public 文件必须位于 transform 前，确保原样提供且不进入插件转换。
   if (publicDir) {
@@ -1047,15 +1054,15 @@ export async function _createServer(
   // 一次，其他调用等待同一任务。
   let initingServer: Promise<void> | undefined
   let serverInited = false
-  /** 只执行一次插件 buildStart 与 Environment listen 初始化。 */
+  /** 普通开发模式只启动一次 client buildStart；按监听阶段启动各 Environment。 */
   const initServer = async (onListen: boolean) => {
     if (serverInited) return
     if (initingServer) return initingServer
 
     initingServer = (async function () {
       if (!config.experimental.bundledDev) {
-        // 兼容旧行为：初始化时只启动 client buildStart；其他 Environment 在首次 transform
-        // 时惰性启动。
+        // 兼容旧行为：初始化时只启动 client buildStart；其他 Environment 在首次 resolveId
+        // 时惰性启动，直接 load/transform 不会触发该启动分支。
         await environments.client.pluginContainer.buildStart()
       }
 
@@ -1075,6 +1082,7 @@ export async function _createServer(
   if (!middlewareMode && httpServer) {
     // 包装原生 listen，在端口真正暴露前完成插件/Environment 初始化。
     const listen = httpServer.listen.bind(httpServer)
+    /** 等待一次性初始化后调用原 listen；初始化失败向 HTTP server 发出 error，保留失败门闩。 */
     httpServer.listen = (async (port: number, ...args: any[]) => {
       try {
         await initServer(true)
@@ -1172,7 +1180,7 @@ function resolvedAllowDir(root: string, dir: string): string {
   return normalizePath(path.resolve(root, dir))
 }
 
-/** 可静态确定的 ServerOptions 默认值；allow/origin 等派生字段稍后解析。 */
+/** 可静态确定的 ServerOptions 默认值；fs.allow、sourcemapIgnoreList 等字段稍后解析。 */
 const _serverConfigDefaults = Object.freeze({
   port: DEFAULT_DEV_PORT,
   strictPort: false,
@@ -1202,7 +1210,7 @@ const _serverConfigDefaults = Object.freeze({
       '**/.git/**',
     ],
   },
-  // origin 缺省由真实监听地址推导。
+  // origin 保持用户提供的值；缺省为 undefined，资源 URL 可直接使用 base。
   preTransformRequests: true,
   // sourcemapIgnoreList 缺省使用 isInNodeModules。
   perEnvironmentStartEndDuringDev: false,
@@ -1247,6 +1255,7 @@ export async function resolveServerOptions(
       // 仅在用户没有显式 allow 时搜索 workspace root。
       allow: raw?.fs?.allow ?? [workspaceRoot],
     },
+    /** false 转为空判定函数；其余情况保留已合并的用户函数或默认 isInNodeModules。 */
     sourcemapIgnoreList:
       _server.sourcemapIgnoreList === false
         ? () => false
@@ -1278,10 +1287,9 @@ export async function resolveServerOptions(
     }
   }
 
-  // pnpm Global Virtual Store 可能把包文件放在 workspace 外。安装时必写的
-  // node_modules/.modules.yaml 能稳定给出位置，不依赖 node/npx/pnpm run 启动方式，也无需
-  // 子进程或 user-agent 猜测。monorepo 中该文件位于 workspace root，而非嵌套 package
-  // root（#22757、#22825）。
+  // pnpm Global Virtual Store 可能把包文件放在 workspace 外，从 workspace 根的
+  // node_modules/.modules.yaml 尝试读取 virtualStoreDir（#22757、#22825）。
+  // 此实现使用 JSON.parse，只有内容同时是合法 JSON 才会命中；普通 YAML 内容会进入 catch。
   const pnpmModulesYaml = path.join(
     workspaceRoot,
     'node_modules',
@@ -1304,7 +1312,7 @@ export async function resolveServerOptions(
       }
     }
   } catch {
-    // 文件不存在/不可读说明并非可识别 pnpm 项目，静默跳过额外目录。
+    // 文件不存在、不可读或无法按 JSON 解析时，静默跳过额外目录。
   }
 
   allowDirs = allowDirs.map((i) => resolvedAllowDir(root, i))

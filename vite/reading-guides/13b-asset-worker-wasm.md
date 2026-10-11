@@ -60,19 +60,22 @@ CSS 中的 URL 怎样进入 asset 流水线见 13A；第 14 章会从完整 buil
 ```mermaid
 flowchart TD
   A["JS / CSS / HTML 中的资源引用"] --> B["fileToUrl"]
-  B --> C{"serve 还是 bundled"}
-  C -->|serve| D["fileToDevUrl：base、/@fs/、public"]
-  C -->|bundled| E["fileToBuiltUrl：inline 或 emitFile"]
-  E --> F["__VITE_ASSET__ / __VITE_PUBLIC_ASSET__"]
+  B --> C{"unbundled dev?"}
+  C -->|是| D["fileToDevUrl：base、/@fs/、public、SSR file URL"]
+  C -->|否| E["fileToBuiltUrl：inline 或 emitFile"]
+  E -->|外置资产| F["asset/public 占位符；SSR Wasm 改为 __VITE_WASM_INIT__"]
+  E -->|内联| R["data URL"]
   F --> G["renderChunk：最终文件名与公开路径"]
 
   H["new Worker(new URL(...)) / ?worker"] --> I["识别入口与 worker type"]
-  I --> J["bundleWorkerEntry：独立子构建"]
-  J --> K["__VITE_WORKER_ASSET__"]
+  I --> W{"bundled?"}
+  W -->|否| V["开发 worker_file URL"]
+  W -->|是| J["bundleWorkerEntry：独立子构建"]
+  J --> K["worker URL 占位符 / bundled-dev 产物 URL / inline 包装器"]
   K --> G
 
   L[".wasm?init / 直接 .wasm"] --> M["wasm helper + ESM glue"]
-  M --> E
+  M --> B
 ```
 
 主线只有一个原则：transform 阶段通常不知道最终输出文件名，所以先建立资源引用关系并写占位符；
@@ -102,8 +105,8 @@ query 是插件之间的身份协议。`cleanUrl()` 只用于文件系统解析�
 ?inline
 → 读取文件并转 data URL
 
-构建时会 inline 的 SVG
-→ 开发态也 inline，避免两边编码/引号语义漂移
+SVG 且 shouldInline 的非构建专属规则允许内联
+→ 开发态也生成 data URL
 
 public 内文件
 → 保留根绝对 URL
@@ -127,8 +130,8 @@ asset 对应的 ModuleNode 已失效时，开发 URL 会附带 HMR timestamp。�
 
 ## 构建态：内联、emit 与占位符
 
-`fileToBuiltUrl()` 先检查 config 级缓存。同一文件被 JS、CSS、HTML 多次引用时，应该得到同一引用协议，
-不必重复读取、hash 或 emit。
+`fileToBuiltUrl()` 先处理 public 请求，再查当前 Environment 的 assetCache。相同完整 ID（包括 query/postfix）
+被 JS、CSS、HTML 多次引用时复用已生成 URL；不同环境和不同 query 不共用这条缓存。
 
 ### 内联优先级
 
@@ -137,16 +140,19 @@ asset 对应的 ModuleNode 已失效时，开发 URL 会附带 HMR timestamp。�
 ```text
 ?no-inline                         → false
 ?inline                            → true
-没有 build plugin context         → false
-用户 assetsInlineLimit 回调有结果 → 使用回调
-入口资源                           → false
-lib 构建                           → true
-Git LFS pointer                    → false
+有 build context 且 lib 构建       → true
+有 build context 且入口资源        → false
+forceInline 已指定                 → 使用该值
+HTML 文件                          → false
 SVG 带 #fragment                   → false
-否则 size < assetsInlineLimit      → true
+assetsInlineLimit 回调有结果        → 使用回调
+否则 size < limit 且非 LFS pointer  → true
 ```
 
-Git LFS 未拉取时磁盘内容只是 pointer 文本。若按小文件内联，页面得到的不是资源而是 LFS 元数据；跳过逻辑
+没有 build plugin context 时只跳过 lib/entry 判断，仍会执行其余规则，所以开发态 SVG 也能按阈值内联。
+显式 query、lib 与用户回调都先于最后的 LFS 检查；lib 内联 LFS pointer 时会给出警告。
+
+Git LFS 未拉取时磁盘内容只是 pointer 文本。默认大小分支不内联它，否则页面得到的会是 LFS 元数据；跳过逻辑
 来自 [PR #9795](https://github.com/vitejs/vite/pull/9795)。
 
 SVG 带 fragment 往往引用内部 symbol。将它转成 data URL 会改变复用与 fragment 行为，因此保持外置。
@@ -191,7 +197,9 @@ new URL('./img.png', import.meta.url)
 ```
 
 插件以 importer 目录解析文件，支持相对路径、alias/package 解析、public 根路径与无扩展文件，然后调用
-`fileToUrl()`。文件存在时登记 watcher；不存在时保留原表达式，给出一次警告，让浏览器运行时自行解析。
+`fileToUrl()`。普通本地文件存在时登记 watcher；取得 URL 失败时警告一次，保留原 URL 值供运行时解析。
+最终表达式仍会规范为 `new URL(url, '' + import.meta.url)`。非 bundled 开发态的 fileToDevUrl 通常只映射路径，
+不读取普通资源文件，因此缺失文件可能直到浏览器请求时才返回 404。
 只观察真实文件避免把目录或尚不存在路径交给 watcher，修复见
 [PR #20507](https://github.com/vitejs/vite/pull/20507)。
 
@@ -235,11 +243,13 @@ const worker = new WorkerCtor()
 new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' })
 ```
 
-前者由 `webWorkerPlugin.load()` 生成包装模块；后者先由 `workerImportMetaUrlPlugin` 识别构造器和入口 URL。
+前者由 `webWorkerPlugin.load()` 生成包装模块，开发态固定使用 module；后者先由
+`workerImportMetaUrlPlugin` 识别构造器和入口 URL，保留用户 options，并默认按 classic 判断入口类型。
 两者在 bundled 模式最终都进入 `bundleWorkerEntry()`，所以 worker plugins、target、format、资源发射和缓存
 行为一致。
 
-`?sharedworker` 只改变构造器；`?inline` 选择内联包装；`?url` 只导出 worker URL，不生成构造函数。
+`?sharedworker` 选择 SharedWorker 构造器；bundled 模式的 `?inline` 选择内联包装，非 bundled 开发态仍使用服务 URL。
+`?url` 选择外置 worker URL 导出。若同时带 `?inline`，bundled 分支先返回内联构造器，所以该组合导出的是构造器。
 
 ## Worker options 为什么只关心 type
 
@@ -253,7 +263,7 @@ new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' })
 3. 失败时解析 AST，只提取 ObjectExpression 的 `type`；
 4. 无 type 且无 spread，安全回退 classic；
 5. spread 位于 type 之后时拒绝，因为它可能覆盖已读到的 type；
-6. `@vite-ignore` 返回 `ignore`，让用户承担动态装载方式。
+6. options 中的 `@vite-ignore` 返回 `ignore`，跳过静态 type 求值；入口 URL 仍照常转换。
 
 动态 name 支持见 [PR #19010](https://github.com/vitejs/vite/pull/19010)，字符串插值修复见
 [PR #19476](https://github.com/vitejs/vite/pull/19476)，type 检测边界见
@@ -263,12 +273,12 @@ new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' })
 [PR #20644](https://github.com/vitejs/vite/pull/20644) 阅读。
 
 普通 asset 动态模板可以枚举候选 URL；worker 入口却必须静态，因为每个候选都意味着一次独立构建、运行时
-type 和嵌套 bundle chain。当前实现直接拒绝动态 worker 模板，避免生成不完整的子构建集合。
+type 和嵌套 bundle chain。当前实现直接拒绝带 `${}` 的 worker 模板；即使 options 有 `@vite-ignore`，这项 URL 校验仍先执行。
 
 ## Worker 独立子构建
 
 worker 不是把源码复制成文件。它可以 import npm 依赖、CSS、资产、动态 chunk，甚至创建下一层 worker，
-因此 `bundleWorkerEntry()` 创建新的 `BuildEnvironment`，用 `config.worker.plugins()` 和
+因此 `bundleWorkerEntry()` 创建新的 `BuildEnvironment`（内部名仍为 client），用 `config.worker.plugins()` 和
 `worker.rolldownOptions` 执行完整 Rolldown 构建。
 
 关键配置继承/覆盖：
@@ -278,7 +288,7 @@ worker 不是把源码复制成文件。它可以 import npm 依赖、CSS、资�
 - define 仍由 Vite define 插件处理，并转发给子构建，修复见
   [PR #22408](https://github.com/vitejs/vite/pull/22408)；
 - format 来自 `worker.format`；错误消息也把 Rolldown 的 `output.format` 改写成用户认识的配置名；
-- entry/chunk/asset 文件都写入 `build.assetsDir`；
+- entry/chunk/asset 默认命名放在 `build.assetsDir`，用户 worker output 命名选项可覆盖；
 - sourcemap 作为关联 worker asset 交给主构建发射。
 
 `bundleChain` 保存当前嵌套 worker 入口链。若下一入口已经在链中，报告带完整 import chain 的循环；合法的
@@ -297,7 +307,7 @@ fileNameHash: placeholder hash → entry filename
 invalidatedBundles: 等待惰性删除的 worker input
 ```
 
-同一 worker 被多个入口引用时只构建一次。watchChange 不清空全部缓存，只扫描 `watchedFiles` 标记受影响
+已完成的同一 worker bundle 被多个入口引用时复用缓存；缓存不保存构建中的 Promise。watchChange 不清空全部缓存，只扫描 `watchedFiles` 标记受影响
 bundle；该入口下次被请求时才删除旧 bundle，并只回收不再被其他 bundle 引用的 assets。按影响范围重建
 来自 [PR #20559](https://github.com/vitejs/vite/pull/20559)。
 
@@ -405,7 +415,7 @@ JS String builtins 等保留模块由 WebAssembly 引擎提供，不能生成普
 
 ## Wasm Global 的两层胶水
 
-Wasm-to-Wasm 导入 Global 时需要 `WebAssembly.Global` 对象本身，因为它表示可变的活单元格；JS 使用者
+Wasm-to-Wasm 导入 Global 时需要 `WebAssembly.Global` 对象本身，以共享同一个可变或不可变 Global；JS 使用者
 通常期望拿到 `.value`。同一导出无法同时满足两种形态，所以包含 Global 导出的 Wasm 拆成：
 
 ```text
@@ -416,17 +426,18 @@ foo.wasm?vite-wasm-instance
 
 foo.wasm
 → export * from instance 层
-→ Global 用 .value 覆盖成普通 JS 值
+→ 非 default Global 用初始化时读取的 .value 覆盖
 → 供应用代码导入
 ```
 
-`export *` 不包含 default，所以 default 需要显式重导出。v128 Global 没有可读 JS 值，读取会抛错；
+外层只在初始化时读取一次 `.value`，并不订阅可变 Global 的后续变化；Wasm-to-Wasm 则继续共享底层 Global 对象。
+`export *` 不包含 default，所以 default 显式重导出，且即便 default 是 Global 也不解包。v128 Global 没有可读 JS 值，读取会抛错；
 wrapper 捕获后令其保持 undefined。两层设计、Global 解包与 string builtins 用例扩充见
 [PR #22674](https://github.com/vitejs/vite/pull/22674)。
 
 ## SSR Wasm 占位符
 
-普通 asset 占位符面向浏览器公开 URL；SSR `?init` 需要的是相对 server chunk 的文件 URL。因此 load 阶段
+普通 asset 占位符面向浏览器公开 URL；SSR 的 `?init` 与直接导入都需要相对 server chunk 的文件 URL。因此 load 阶段
 把 `__VITE_ASSET__` 标记改为 `__VITE_WASM_INIT__`，`renderChunk` 再：
 
 1. 由 referenceId 取得 Wasm 输出文件名；
@@ -434,7 +445,7 @@ wrapper 捕获后令其保持 undefined。两层设计、Global 解包与 string
 3. 生成相对当前 server chunk 的运行时表达式；
 4. 交给 `new URL(..., import.meta.url)` 在 Node 中定位文件。
 
-使用全局正则 `.test()` 前必须重置 `lastIndex`。否则连续 Wasm 资产中第二个可能随机漏掉替换并在运行时报
+使用全局正则 `.test()` 前必须重置 `lastIndex`。否则连续 Wasm 资产中第二个可能因旧游标起点漏掉替换并在运行时报
 ENOENT；修复与最小回归用例见
 [PR #21780](https://github.com/vitejs/vite/pull/21780)。
 
@@ -532,7 +543,7 @@ Worker 与 Wasm 最终复用的正是这条“请求身份”和“文件身份�
 
 1. 为什么 public 资产需要自己的 hash 占位符，不能统一用 `emitFile()`？
 2. 为什么 SVG 在开发态也要复用构建的 inline 判断？
-3. `new URL()` 的文件不存在时，为何保留表达式比直接构建报错更合理？
+3. `new URL()` 无法取得资源 URL 时怎样保留运行时解析，开发态缺失文件为何可能直到请求才报错？
 4. 为什么动态 asset 模板可以 glob，而动态 worker 模板直接报错？
 5. Worker options 中 name 可动态，type 却必须静态，根本原因是什么？
 6. worker 子构建的 assets 为什么由主构建统一发射？

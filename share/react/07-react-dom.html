@@ -1,6 +1,6 @@
 <!doctype html><html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="description" content="packages/react-dom 19.3.0 源码指南：createRoot、hydrateRoot、portal、flushSync、表单 API 和多环境服务端入口。" />
-<title>07 · react-dom：公开宿主入口</title><link rel="stylesheet" href="assets/guide.css?v=1" /></head><body>
+<title>07 · react-dom：公开宿主入口</title><link rel="stylesheet" href="assets/guide.css?v=1" /><link rel="stylesheet" href="assets/engineering-diagrams.css?v=1" /></head><body>
 <header class="topbar"><div class="topbar-inner"><a class="brand" href="index.html">React 六包源码指南</a><nav class="pager" aria-label="页面导航">
 <a href="index.html">地图</a><a href="01-shared.html">shared</a><a href="02-scheduler.html">scheduler</a><a href="03-react.html">react</a>
 <a href="04-reconciler-render.html">render</a><a href="05-reconciler-commit.html">commit</a><a href="06-dom-bindings.html">bindings</a>
@@ -16,7 +16,7 @@
 <tr><td>react-dom/server</td><td>browser/node/edge/bun 条件文件</td><td>renderToReadableStream / PipeableStream、resume</td><td>react-server Fizz + bindings server config</td></tr>
 <tr><td>react-dom/static</td><td>static browser/node/edge 条件文件</td><td>prerender、resumeAndPrerender</td><td>react-server prerender + I/O adapter</td></tr>
 <tr><td>react-dom/test-utils</td><td><a href="../../react/packages/react-dom/src/test-utils/ReactTestUtils.js">ReactTestUtils.js</a></td><td>兼容 act 出口与弃用诊断</td><td>测试环境</td></tr>
-</tbody></table></div><p>根目录与 npm 下许多文件只负责条件路由或发布格式；它们仍是公开契约的一部分，不能因“代码短”就跳过注释。</p></section>
+</tbody></table></div><p>根目录与 npm 下的文件按条件选择开发/生产构建及 Node、Web Streams 等环境实现。</p></section>
 
 <section id="create-root"><h2>createRoot：创建 FiberRoot，但不渲染首棵树</h2><ol class="state-list">
 <li><strong>校验。</strong>只接受 Element、Document、DocumentFragment，以及特性开关允许时的注释容器。</li>
@@ -30,8 +30,8 @@ markContainerAsRoot(root.current, container);
 listenToAllSupportedEvents(rootContainerElement);
 <span class="kw">return new</span> ReactDOMRoot(root);</pre></figure></section>
 
-<section id="render"><h2>root.render 与 unmount 都只是 Root Update</h2><p><code>root.render(children)</code> 检查句柄未释放后调用 <code>updateContainer</code>。
-<code>root.unmount()</code> 则先把句柄置 null，提交 element=null 的 SyncLane 更新，flush 同步工作，再移除 container 的 root 标记。</p>
+<section id="render"><h2>root.render 排队更新，unmount 同步清理根</h2><p><code>root.render(children)</code> 检查句柄未释放后调用 <code>updateContainer</code>。
+<code>root.unmount()</code> 则先把句柄置 null，提交 element=null 的 SyncLane 更新，flush 同步工作，再移除 container 的 root 标记。若在 render/commit 内调用，当前工作结束前无法完成同步卸载，DEV 会报告这次重入。</p>
 <div class="callout"><p><strong>为什么 unmount 先清句柄：</strong>提交删除会运行用户 cleanup/lifecycle；其中若重入调用同一 root，必须立刻看到“已释放”，
 不能把正在销毁的根重新投入使用。</p></div></section>
 
@@ -39,7 +39,7 @@ listenToAllSupportedEvents(rootContainerElement);
 初始 hydration Lane 在建根时已经入队。它还可接收 server formState、hydration callbacks，并暴露 <code>unstable_scheduleHydration</code> 提高指定目标的恢复优先级。</p>
 <div class="table-wrap"><table><thead><tr><th></th><th>createRoot</th><th>hydrateRoot</th></tr></thead><tbody>
 <tr><td>初始 DOM</td><td>由第一次 render 创建/替换受管内容</td><td>尝试认领现有 server DOM</td></tr><tr><td>初始 children</td><td>稍后传给 root.render</td><td>建根参数，立即安排 hydration</td></tr>
-<tr><td>事件</td><td>根监听后正常派发</td><td>根监听后可能被 hydration blocker 排队</td></tr><tr><td>失败</td><td>普通 render 错误恢复</td><td>边界不匹配可切 client render，并报告 recoverable error</td></tr>
+<tr><td>事件</td><td>根监听后正常派发</td><td>根监听后可能同步尝试 hydration；指定连续事件可排队重放</td></tr><tr><td>失败</td><td>普通 render 错误恢复</td><td>边界不匹配可切 client render，并报告 recoverable error</td></tr>
 </tbody></table></div></section>
 
 <section id="portal"><h2>Portal：改变宿主父级，不改变 React 父级</h2><p><code>createPortal(children, container, key)</code> 校验目标后创建带 <code>REACT_PORTAL_TYPE</code> 的 portal 记录。
@@ -48,31 +48,38 @@ reconciler 生成 HostPortal Fiber，commit 时把宿主 descendants 插入目�
 
 <section id="flush"><h2>flushSync：临时建立离散优先级边界</h2><p><code>flushSync(fn)</code> 保存 transition 与当前 update priority，把 priority 设为 DiscreteEventPriority，执行回调，最后恢复上下文并 flush sync work。
 若在 render/commit 生命周期内部调用，不能安全地同步重入，DEV 会警告。</p>
-<div class="callout warn"><p><strong>它不是“让所有异步变同步”：</strong>flushSync 只确保边界内及为满足一致性而连带的同步工作在返回前提交；
-Suspense、数据 promise、passive effect 与其他根可能带来额外 flush 或 fallback。</p></div></section>
+<div class="callout warn"><p><strong>同步冲刷的范围：</strong>在 render/commit 外调用时，它冲刷回调产生的同步工作，也可能连带冲刷其他根的同步工作和 Effects。
+遇到尚未就绪的 Suspense 数据，提交的可能是 fallback；Promise 本身仍需等到结算。</p></div></section>
 
-<section id="forms"><h2>form/resource API：公开 facade，实际 DOM 行为在 bindings</h2><div class="grid">
+<section id="forms"><h2>form/resource API：公开 facade，表单与资源行为由 bindings 执行</h2><div class="grid">
 <article class="card"><span class="number">FORM</span><h3>useFormStatus / useFormState / requestFormReset</h3><p>公开函数经 dispatcher 或 DOM internals 进入 action 状态与表单 reset；submit 提取、FormData、受控恢复由 event/client bindings 执行。</p></article>
 <article class="card"><span class="number">RESOURCE</span><h3>preconnect / prefetchDNS / preload / preinit</h3><p>公开 API 校验参数后调用当前 DOM dispatcher；服务端收集资源，客户端创建/复用 resource 节点，避免 React 包依赖浏览器。</p></article></div></section>
 
-<section id="server"><h2>服务端入口：环境适配器围住范围外 Fizz</h2><div class="chain" aria-label="ReactDOM 服务端边界">
+<section id="server"><h2>服务端入口：把 Fizz 请求接到各环境的流</h2><div class="chain" aria-label="ReactDOM 服务端边界">
 <div class="node">公开 server API<small>Node / Web / Edge / Bun</small></div><span class="arrow">→</span><div class="node">ReactDOM adapter<small>options + destination</small></div>
 <span class="arrow">→</span><div class="node">react-server Fizz<small>request / task（范围外）</small></div><span class="arrow">→</span><div class="node">bindings config<small>HTML / instruction</small></div>
 <span class="arrow">→</span><div class="node">stream destination<small>backpressure / abort</small></div></div>
 <p>Node 的 <code>renderToPipeableStream</code> 创建 request 后启动工作；<code>pipe</code> 只允许绑定一次 Writable，drain 恢复流动，error/提前 close 中止 request。
 Browser/Edge 用 ReadableStream controller；Bun 有独立 destination 适配。static 入口返回 prelude 与 postponed state，resume 路径重新构造 request。</p>
-<figure class="source"><figcaption><span>删节源码 · ReactDOMFizzServerNode.js · PipeableStream 所有权</span><a href="../../react/packages/react-dom/src/server/ReactDOMFizzServerNode.js">打开文件</a></figcaption><pre><span class="kw">const</span> request = createRequestImpl(children, options);
+<figure class="engineering-diagram" data-diagram="dom-node-stream-lifecycle" style="--diagram-min-width:820px"><div class="diagram-scroll"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 770" width="820" height="770" role="img" aria-labelledby="dom-node-stream-lifecycle-title dom-node-stream-lifecycle-desc"><title id="dom-node-stream-lifecycle-title">Node PipeableStream 的绑定、背压和中止</title><desc id="dom-node-stream-lifecycle-desc">首次 pipe 绑定唯一 Writable 并开始流动。write 返回 false 时暂停写出并清空 request.destination，drain 回调恢复相同 Writable。全部输出写完且无剩余任务时 end。显式 abort 中止待完成工作且可能输出客户端接管指令；destination error 或提前 close 先 stopFlowing 再 abort。</desc><defs><marker id="dom-node-stream-lifecycle-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#507476" /></marker></defs><text x="20" y="27" class="d-muted" text-anchor="start"><tspan x="20" dy="0">实线：调用 / 写出；虚线：destination 事件回调</tspan></text><rect x="280" y="55" width="260" height="100" rx="12" class="d-state" /><text x="410.0" y="99.0" class="d-label" text-anchor="middle"><tspan x="410.0" dy="0">createRequest + startWork</tspan><tspan x="410.0" dy="24">尚未绑定 Writable</tspan></text><path d="M 410 155 V 193" class="d-edge" marker-end="url(#dom-node-stream-lifecycle-arrow)" /><text x="426" y="181" class="d-muted" text-anchor="start"><tspan x="426" dy="0">pipe(destination)</tspan></text><rect x="280" y="193" width="260" height="104" rx="12" class="d-condition" /><text x="410.0" y="239.0" class="d-label" text-anchor="middle"><tspan x="410.0" dy="0">hasStartedFlowing？</tspan><tspan x="410.0" dy="24">本对象已调用过 pipe 吗</tspan></text><path d="M 280 245 H 240" class="d-edge" marker-end="url(#dom-node-stream-lifecycle-arrow)" /><text x="258" y="230" class="d-muted" text-anchor="middle"><tspan x="258" dy="0">是</tspan></text><rect x="20" y="205" width="220" height="80" rx="12" class="d-node" /><text x="130.0" y="239.0" class="d-label" text-anchor="middle"><tspan x="130.0" dy="0">抛错</tspan><tspan x="130.0" dy="24">不允许再次绑定</tspan></text><path d="M 410 297 V 347" class="d-edge" marker-end="url(#dom-node-stream-lifecycle-arrow)" /><text x="426" y="329" class="d-muted" text-anchor="start"><tspan x="426" dy="0">否：置 true</tspan></text><rect x="280" y="347" width="260" height="120" rx="12" class="d-state" /><text x="410.0" y="389.0" class="d-label" text-anchor="middle"><tspan x="410.0" dy="0">流动中</tspan><tspan x="410.0" dy="24">request.destination = Writable</tspan><tspan x="410.0" dy="24">写出已完成的队列</tspan></text><path d="M 540 383 H 585" class="d-edge" marker-end="url(#dom-node-stream-lifecycle-arrow)" /><text x="700" y="313" class="d-muted" text-anchor="middle"><tspan x="700" dy="0">write 返回 false</tspan><tspan x="700" dy="24">背压</tspan></text><rect x="585" y="347" width="215" height="120" rx="12" class="d-state" /><text x="692.5" y="389.0" class="d-label" text-anchor="middle"><tspan x="692.5" dy="0">暂停写出</tspan><tspan x="692.5" dy="24">request.destination=null</tspan><tspan x="692.5" dy="24">保留未写出的队列</tspan></text><path d="M 585 435 H 540" class="d-edge d-async" marker-end="url(#dom-node-stream-lifecycle-arrow)" /><text x="670" y="500" class="d-muted" text-anchor="middle"><tspan x="670" dy="0">drain → startFlowing</tspan></text><path d="M 410 467 V 627" class="d-edge" marker-end="url(#dom-node-stream-lifecycle-arrow)" /><text x="395" y="550" class="d-muted" text-anchor="end"><tspan x="395" dy="0">输出队列写完</tspan><tspan x="395" dy="24">且无剩余渲染任务</tspan></text><rect x="280" y="627" width="260" height="112" rx="12" class="d-state" /><text x="410.0" y="677.0" class="d-label" text-anchor="middle"><tspan x="410.0" dy="0">正常完成</tspan><tspan x="410.0" dy="24">end(destination)</tspan></text><path d="M 280 410 H 130 V 612" class="d-edge" marker-end="url(#dom-node-stream-lifecycle-arrow)" /><text x="130" y="530" class="d-muted" text-anchor="middle"><tspan x="130" dy="0">显式 abort(reason)</tspan><tspan x="130" dy="24">中止仍未完成的工作</tspan></text><rect x="20" y="612" width="220" height="127" rx="12" class="d-condition" /><text x="130.0" y="657.5" class="d-label" text-anchor="middle"><tspan x="130.0" dy="0">request.aborted = true</tspan><tspan x="130.0" dy="24">可能继续写出</tspan><tspan x="130.0" dy="24">客户端接管指令</tspan></text><path d="M 510 467 V 595 H 690 V 612" class="d-edge d-async" marker-end="url(#dom-node-stream-lifecycle-arrow)" /><path d="M 790 467 V 595 H 690 V 612" class="d-edge d-async" marker-end="url(#dom-node-stream-lifecycle-arrow)" /><text x="699" y="551" class="d-muted" text-anchor="middle"><tspan x="699" dy="0">error / 提前 close</tspan><tspan x="699" dy="24">事件回调</tspan></text><rect x="585" y="612" width="215" height="127" rx="12" class="d-condition" /><text x="692.5" y="657.5" class="d-label" text-anchor="middle"><tspan x="692.5" dy="0">stopFlowing</tspan><tspan x="692.5" dy="24">然后 abort(request)</tspan><tspan x="692.5" dy="24">停止此 destination 写出</tspan></text></svg></div><figcaption><strong>背压与 abort 是不同状态变化。</strong>drain 恢复原 Writable，暂停不会重置 hasStartedFlowing，因此也不能再次 pipe。显式 abort 中止尚未完成的任务，若仍有 destination，Fizz 可写客户端接管指令；error/提前 close 回调则先停止流动。onAllReady 表示渲染工作完成，流的正常终点还取决于输出队列写完。</figcaption></figure>
+<figure class="source"><figcaption><span>教程伪代码（不可执行） · ReactDOMFizzServerNode.js · PipeableStream 只能绑定一次</span><a href="../../react/packages/react-dom/src/server/ReactDOMFizzServerNode.js">打开文件</a></figcaption><pre><span class="kw">const</span> request = createRequestImpl(children, options);
+<span class="kw">let</span> hasStartedFlowing = <span class="kw">false</span>;
 startWork(request);
 <span class="kw">return</span> {
   pipe(destination) {
+    <span class="kw">if</span> (hasStartedFlowing) <span class="kw">throw new</span> Error(<span class="str">'React currently only supports piping to one writable stream.'</span>);
+    hasStartedFlowing = <span class="kw">true</span>;
+    prepareForStartFlowingIfBeforeAllReady(request);
     startFlowing(request, destination);
     destination.on(<span class="str">'drain'</span>, createDrainHandler(destination, request));
-    destination.on(<span class="str">'error'</span>, createCancelHandler(request, <span class="str">'destination errored'</span>));
+    destination.on(<span class="str">'error'</span>, createCancelHandler(request, <span class="str">'The destination stream errored while writing data.'</span>));
+    destination.on(<span class="str">'close'</span>, createCancelHandler(request, <span class="str">'The destination stream closed early.'</span>));
+    <span class="kw">return</span> destination;
   },
   abort(reason) { abort(request, reason); },
 };</pre></figure></section>
 
-<section id="legacy"><h2>Legacy 与现代入口并存，但语义不要混写</h2><p><code>render/hydrate/unmountComponentAtNode/findDOMNode</code> 等 legacy API 由特性开关和构建 fork 管理。
+<section id="legacy"><h2>Legacy 与现代入口并存，但语义不要混写</h2><p>现代公开入口不再导出 <code>render/hydrate/unmountComponentAtNode/findDOMNode</code>。仓库中的 legacy 兼容路径位于 FB 构建等 fork，另受 <code>disableLegacyMode</code> 管理。
 现代 client root 使用 ConcurrentRoot 与显式 root 句柄；legacy root 保留同步批处理、callback 和容器复用兼容。阅读测试时要先确认入口与 feature flags，
 否则会把 legacy 时序误套给 createRoot。</p></section>
 
@@ -82,11 +89,11 @@ startWork(request);
 <tr><td>hydration</td><td><a href="../../react/packages/react-dom/src/__tests__/ReactDOMServerPartialHydration-test.internal.js">ReactDOMServerPartialHydration-test.internal.js</a></td><td>阻塞、重放、恢复与 mismatch</td></tr>
 <tr><td>Fizz Node</td><td><a href="../../react/packages/react-dom/src/__tests__/ReactDOMFizzServer-test.js">ReactDOMFizzServer-test.js</a></td><td>stream、Suspense、abort、错误</td></tr>
 <tr><td>资源 Float</td><td><a href="../../react/packages/react-dom/src/__tests__/ReactDOMFloat-test.js">ReactDOMFloat-test.js</a></td><td>preload/preinit、去重与顺序</td></tr>
-</tbody></table></div><p>150 个 tests/fixtures 文件中识别的 2,581 个测试场景均有中文邻近说明；每个文件至少一个代表场景补了 Given–When–Then 与对应源码入口。</p></section>
+</tbody></table></div><p>这些测试分别验证根句柄、事件传播、hydration、流输出与资源行为；阅读时把用例的入口、特性开关和断言与对应源码分支一起核对。</p></section>
 
 <section id="deep"><h2>继续深挖：公开入口怎样走完整源码链</h2><div class="grid">
 <article class="card"><span class="number">REAL COUNTER</span><h3><a href="16-end-to-end-source.html">16 · 真实源码主线</a></h3><p>仓库测试贯穿 createRoot、root.render、click、setState、render、commit、DOM、passive effect 与 unmount。</p></article>
-<article class="card"><span class="number">BLOCKED CLICK</span><h3><a href="15-events-hydration.html">15 · 事件与 hydration</a></h3><p>hydrateRoot 的 initial children 与根 listener 如何让被阻塞事件保持优先级和因果顺序。</p></article>
+<article class="card"><span class="number">BLOCKED CLICK</span><h3><a href="15-events-hydration.html">15 · 事件与 hydration</a></h3><p>hydrateRoot 的 initial children 与根 listener 怎样触发选择性 hydration，并合并重放指定连续事件。</p></article>
 </div></section>
 
 <section id="questions"><h2>检查理解</h2><ul class="qa"><li>createRoot 为什么不把初始 children 作为参数，而 hydrateRoot 必须带？</li>

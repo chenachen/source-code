@@ -40,8 +40,7 @@ const buildProject = ({ format = 'es' as ModuleFormat } = {}) =>
   }) as Promise<RolldownOutput>
 
 /**
- * 场景：浏览器 ES 输出需要加载 modulepreload polyfill，CJS 输出必须通过
- * `isModernFlag=false` 被 tree-shaking 删除。
+ * 只导入 polyfill 的入口按 ES/CJS 分别构建；比较快照，检查格式相关的 polyfill 保留与删除。
  */
 describe('load', () => {
   /** 场景：ES 输出入口只导入 modulepreload polyfill；验证目标：保留其副作用模块，快照包含 polyfill 内容。 */
@@ -51,7 +50,7 @@ describe('load', () => {
     expect(output[0].code).toMatchSnapshot()
   })
 
-  /** 场景：CJS 输出入口导入 modulepreload polyfill；验证目标：现代浏览器标志为 false，空副作用模块被 tree-shake。 */
+  /** CJS 入口仅导入 polyfill；快照检查产物不含浏览器 polyfill 代码。 */
   it("doesn't load modulepreload polyfill when format is cjs", async ({
     expect,
   }) => {

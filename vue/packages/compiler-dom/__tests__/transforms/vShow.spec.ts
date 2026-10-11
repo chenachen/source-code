@@ -26,12 +26,18 @@ function transformWithShow(template: string, options: CompilerOptions = {}) {
 }
 
 describe('compiler: v-show transform', () => {
+  /**
+   * 场景：div 用 v-show=a，转换后匹配 render 快照，验证表达式与 vShow 运行时指令参数被保留。
+   */
   test('simple expression', () => {
     const ast = transformWithShow(`<div v-show="a"/>`)
 
     expect(generate(ast).code).toMatchSnapshot()
   })
 
+  /**
+   * 场景：div 的 v-show 没有表达式，收集型 onError 继续转换，断言恰一次 NO_EXPRESSION 诊断，验证错误回调的次数与错误码。
+   */
   test('should raise error if has no expression', () => {
     const onError = vi.fn()
     transformWithShow(`<div v-show/>`, { onError })

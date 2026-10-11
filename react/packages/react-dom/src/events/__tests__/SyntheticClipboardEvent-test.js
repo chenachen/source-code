@@ -34,14 +34,8 @@ describe('SyntheticClipboardEvent', () => {
   describe('ClipboardEvent interface', () => {
     describe('clipboardData', () => {
       describe('when event has clipboardData', () => {
-        /**
-         * 代表场景（Given–When–Then）：
-         * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-         * When 执行「returns event's clipboardData」描述的渲染或交互；
-         * Then 通过本用例的 DOM、日志或调度断言确认行为。
-         *
-         * 验证机制：事件断言连接 DOMPluginEventSystem 的委托、合成与传播路径。
-         */
+
+        /** 为 copy/cut/paste 注册同一 handler，向三个原生 Event 手工附加同一个 clipboardData 对象；三个合成回调都应保持该对象身份，计数为 3，验证剪贴板字段复制不克隆数据。 */
         it("returns event's clipboardData", async () => {
           let expectedCount = 0;
 
@@ -53,7 +47,8 @@ describe('SyntheticClipboardEvent', () => {
             items: null,
             types: null,
           };
-          /** `eventHandler`：封装当前用例复用的操作、回调或断言步骤。 */
+
+          /** 核对每个合成剪贴板事件的 clipboardData 与 fixture 对象同一，并累计 copy/cut/paste 三次调用。 */
           const eventHandler = event => {
             expect(event.clipboardData).toBe(clipboardData);
             expectedCount++;
@@ -99,11 +94,12 @@ describe('SyntheticClipboardEvent', () => {
   });
 
   describe('EventInterface', () => {
-    /** 测试场景：验证「is able to `preventDefault` and `stopPropagation`」描述的渲染、交互或错误处理结果。 */
+
+    /** 对 copy/cut/paste 各派发一次可取消冒泡事件；每次 handler 检查默认与传播查询分别从 false 变为 true，计数为 3，验证剪贴板事件复用基础 SyntheticEvent 状态方法。 */
     it('is able to `preventDefault` and `stopPropagation`', async () => {
       let expectedCount = 0;
 
-      /** `eventHandler`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 核对剪贴板合成事件取消默认和停止传播后的查询值，再累计三种事件的执行次数。 */
       const eventHandler = event => {
         expect(event.isDefaultPrevented()).toBe(false);
         event.preventDefault();

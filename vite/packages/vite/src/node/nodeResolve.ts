@@ -14,8 +14,9 @@ export interface NodeResolveWithViteOptions {
 /**
  * 用 Vite 算法按 Node.js 运行时语义解析 id。
  *
- * 该便捷入口固定为生产构建、Node builtin、无 browser/mainFields 偏好，并关闭依赖优化、可选
- * peer 特判和 package cache，供 Vite 自身或外部消费者获得可直接执行的文件路径。
+ * 该便捷入口固定生产条件、无 browser/mainFields 偏好，并关闭依赖优化、可选 peer 特判和
+ * package cache。只返回包入口路径；builtin 通常无包入口而返回 undefined，TS 扩展名回退
+ * 仍遵循 Vite 规则，后续加载由调用方决定。
  */
 export function nodeResolveWithVite(
   id: string,
@@ -40,7 +41,7 @@ export function nodeResolveWithVite(
     extensions: DEFAULT_EXTENSIONS,
     preserveSymlinks: false,
     tsconfigPaths: false,
-    // 当前调用者没有重复解析收益，主动关闭 package cache，避免额外生命周期状态。
+    // 该入口不持有跨调用 package cache；每次解析读取当时的 package.json。
     packageCache: undefined,
     isRequire: options.isRequire,
     builtins: nodeLikeBuiltins,

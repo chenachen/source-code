@@ -11,6 +11,8 @@ export const silentConsole: HMRLogger = {
 
 /** Module Runner 默认 HMRLogger，为宿主控制台添加统一 `[vite]` 前缀。 */
 export const hmrLogger: HMRLogger = {
+  /** 把调试参数原样交给宿主 console.log，并在首项添加 Vite 前缀。 */
   debug: (...msg) => console.log('[vite]', ...msg),
+  /** 用同一 console.log 通道输出 HMR 错误；不抛出错误或改变更新流程。 */
   error: (error) => console.log('[vite]', error),
 }

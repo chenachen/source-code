@@ -20,6 +20,8 @@ import {
 /**
  * 第一遍为 `<slot>` 构造 ssrRenderSlot 调用的固定参数。
  * fallback 函数要等第二遍才能生成；使用 scoped `:slotted()` 时还会传入 `scopeId-s`。
+ * 第四参数暂为 null，第七参数预留 slot scopeId；Transition 内层 helper 即便没有
+ * scopeId 也要填 null 再追加 true，避免禁用 Fragment 的参数错位。
  */
 export const ssrTransformSlotOutlet: NodeTransform = (node, context) => {
   if (isSlotOutlet(node)) {

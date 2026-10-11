@@ -2,13 +2,9 @@ import * as Y from '../src/index.js'
 import * as t from 'lib0/testing'
 
 /**
- * 验证包含 15,000 个子类型的事务在 `afterTransaction` 中读取 JSON 时不会递归溢出。
- *
- * Given：单一事务批量插入大量节点，observer 在 cleanup 阶段读文档。
- * When：最外层事务结束并触发 `afterTransaction`。
- * Then：读取完成且 cleanup 不形成嵌套递归。
- *
- * 验证机制：该调用直接覆盖 `transact → cleanupTransactions → afterTransaction` 大批量路径。
+ * 测试场景：空根类型，并注册仅处理 origin=test 的 afterTransaction 监听器。
+ * 触发操作：一个事务插入 15,000 个同级 a 子类型，完成后监听器读取整棵 JSON。
+ * 预期结果：调用完成且不抛异常；没有显式断言，覆盖宽列表的序列化，不是 15,000 层嵌套。
  *
  * @param {t.TestCase} _tc
  */
@@ -28,7 +24,9 @@ export const testAfterTransactionRecursion = _tc => {
 }
 
 /**
- * 验证根类型可按 share 键、嵌套类型可按承载 Item ID 在同步副本中定位。
+ * 测试场景：文档根类型带一个 ytext 嵌套属性类型，完整 update 已同步到另一文档。
+ * 触发操作：根类型按 share 键查找，嵌套类型按承载 Item 的 client/clock 查找对应 ContentType。
+ * 预期结果：两次查找均非 null；用例没有比较对象身份或内部内容。
  *
  * @param {t.TestCase} _tc
  */
@@ -74,11 +72,9 @@ export const testFindTypeInOtherDoc = _tc => {
 }
 
 /**
- * 验证文档收到同 clientID 的远端结构时会更换自身 clientID，避免后续本地 clock 冲突。
- *
- * Given：两个文档被强制设置相同 clientID。
- * When：第二个文档应用第一个文档的 update。
- * Then：cleanup 检测远端 insertSet 命中自身 clientID，并生成新 ID。
+ * 测试场景：两个空文档的 clientID 都强制为 0。
+ * 触发操作：第一份在根 a 插入 [1,2]，第二份应用它的完整 update。
+ * 预期结果：应用前 clientID 相同，清理后第二份 clientID 与第一份不同。
  *
  * @param {t.TestCase} _tc
  */
@@ -94,7 +90,9 @@ export const testClientIdDuplicateChange = _tc => {
 }
 
 /**
- * 验证空字符串根键与无参 `get()` 指向同一根类型，并能跨 update 保持一致。
+ * 测试场景：第一份文档在空字符串根键写 h，再由无参 get() 写 i。
+ * 触发操作：把完整 update 应用到第二份文档，分别以无参和空字符串 get 读取。
+ * 预期结果：两种读取均为 hi；断言检查内容，没有直接比较类型实例身份。
  *
  * @param {t.TestCase} _tc
  */
@@ -109,7 +107,9 @@ export const testGetTypeEmptyId = _tc => {
 }
 
 /**
- * 验证 `Doc.toJSON()` 只序列化已定义根类型，并递归包含嵌套属性类型。
+ * 测试场景：空文档先序列化为 {}。
+ * 触发操作：在 array 根放入元素 test1，并创建带 k1 和嵌套 k2/m2k1 的 map 根。
+ * 预期结果：精确比较包含两个根、children 与递归 attrs 的 JSON。
  *
  * @param {t.TestCase} _tc
  */
@@ -141,13 +141,9 @@ export const testToJSON = _tc => {
 }
 
 /**
- * 验证子文档 added/loaded/removed 生命周期、同 guid 去重查询及远端同步后的显式加载。
- *
- * Given：父文档包含多个子文档，其中两个共享 guid。
- * When：依次集成、重复 load、destroy、远端 applyUpdate 与删除属性。
- * Then：每次 `subdocs` 事件集合只反映本事务状态，`getSubdocGuids()` 按 guid 去重。
- *
- * 验证机制：同时断言事件三集合与文档维护集合，覆盖事务 cleanup 的子文档分支。
+ * 测试场景：父文档管理属性中的子文档，并记录 added/removed/loaded 三集合。
+ * 触发操作：依次插入、重复 load、destroy 替换、加载新壳，再加入同 guid=a 的第二实例和 guid=c；完整同步后显式加载与删除其中一个 a。
+ * 预期结果：重复 load 不发事件；destroy 同时移除旧实例并加入未加载新壳；远端初次加入三个实例但不加载，guid 查询去重，删除一个 a 后另一个 a 仍存在。
  *
  * @param {t.TestCase} _tc
  */
@@ -216,7 +212,9 @@ export const testSubdoc = _tc => {
 }
 
 /**
- * 验证非 autoLoad 子文档在销毁替换、显式加载和远端集成时的 shouldLoad/事件边界。
+ * 测试场景：父文档的序列插入默认 autoLoad=false 子文档。
+ * 触发操作：销毁并加载替换壳，然后同步到远端，再显式加载远端实例。
+ * 预期结果：本地初次插入 added+loaded；替换壳进入 added、不进入 loaded（本例未断言 removed）；显式 load 不再 added 而进入 loaded；远端初次 shouldLoad=false 且未 loaded，显式 load 后才为 true 并登记 loaded。
  *
  * @param {t.TestCase} _tc
  */
@@ -265,7 +263,9 @@ export const testSubdocLoadEdgeCases = _tc => {
 }
 
 /**
- * 验证 autoLoad 子文档在本地集成和远端同步后都会自动登记 loaded。
+ * 测试场景：父文档序列插入 autoLoad=true 子文档。
+ * 触发操作：销毁并显式加载替换壳，再同步到第二份文档。
+ * 预期结果：本地替换壳仍需 load；远端集成同时 added+loaded。最后 shouldLoad/autoLoad 断言读的是原 subdoc1，远端自动加载由事件集合验证。
  *
  * @param {t.TestCase} _tc
  */
@@ -309,7 +309,9 @@ export const testSubdocLoadEdgeCasesAutoload = _tc => {
 }
 
 /**
- * 验证 UndoManager 能撤销并重做承载子文档的 Item，恢复序列长度。
+ * 测试场景：空序列已安装 UndoManager。
+ * 触发操作：插入一个 Doc，依次 undo 和 redo。
+ * 预期结果：最终序列长度为 1；未断言撤销中间长度、恢复实例身份或子文档内部内容。
  *
  * @param {t.TestCase} _tc
  */
@@ -326,7 +328,9 @@ export const testSubdocsUndo = _tc => {
 }
 
 /**
- * 验证 `load` 事件同步更新 `isLoaded` 并兑现一次性的 `whenLoaded`。
+ * 测试场景：新 Doc 的 isLoaded=false，并注册 load 监听器。
+ * 触发操作：手动 emit(load)，等待 whenLoaded。
+ * 预期结果：监听器已触发且 isLoaded=true；没有连接实际 provider。
  *
  * @param {t.TestCase} _tc
  */
@@ -344,13 +348,9 @@ export const testLoadDocsEvent = async _tc => {
 }
 
 /**
- * 验证成功 sync 会补发首次 load 并兑现 Promise，断线只重建 `whenSynced` 而不重置 loaded。
- *
- * Given：新文档尚未 load/sync。
- * When：先发 `sync(true)`，再发 `sync(false)`。
- * Then：首次同步同时置 loaded/synced；断线保留 loaded、清除 synced，并替换等待下一周期的 Promise。
- *
- * 验证机制：事件计数、布尔状态与 Promise 身份共同证明状态迁移。
+ * 测试场景：新 Doc 的 loaded/synced 均为 false，并监听首次 load/sync。
+ * 触发操作：手动 emit sync(true) 并等待两个 Promise，然后监听后续事件并 emit sync(false)。
+ * 预期结果：首次同步补发 load；断线仅置 synced=false、替换 whenSynced，loaded 保持 true 且不再发 load；未执行再次同步。
  *
  * @param {t.TestCase} _tc
  */

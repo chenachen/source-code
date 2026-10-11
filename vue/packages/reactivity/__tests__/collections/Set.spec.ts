@@ -8,6 +8,9 @@ import {
 } from '../../src'
 
 describe('reactivity/collections', () => {
+  /**
+   * 创建集合代理，再将原实例指定方法覆盖为 spy，返回代理与计数器，供检查单次底层转发调用。
+   */
   function coverCollectionFn(collection: Set<any>, fnName: string) {
     const spy = vi.fn()
     let proxy = reactive(collection)
@@ -16,7 +19,10 @@ describe('reactivity/collections', () => {
   }
 
   describe('Set', () => {
-    // 场景：代理 Set 实例；验证响应式代理仍通过 Set 的 instanceof 检查。
+    /**
+     * 把空 Set 转为 reactive，再检查原实例和代理的 instanceof 及响应式标记。
+     * 代理仍是 Set 实例且具有响应式标记，验证集合代理保留原型继承关系。
+     */
     it('instanceof', () => {
       const original = new Set()
       const observed = reactive(original)
@@ -25,7 +31,10 @@ describe('reactivity/collections', () => {
       expect(observed).toBeInstanceOf(Set)
     })
 
-    // 场景：effect 查询 Set 成员后 add/delete；验证成员变化触发更新。
+    /**
+     * effect 查询空 reactive Set 的字符串成员，再 add/delete 同一成员。
+     * 记录 false→true→false，验证成员 ADD/DELETE 通知相应的 HAS 依赖。
+     */
     it('should observe mutations', () => {
       let dummy
       const set = reactive(new Set())
@@ -38,7 +47,10 @@ describe('reactivity/collections', () => {
       expect(dummy).toBe(false)
     })
 
-    // 场景：使用响应式对象作为 Set 成员；验证 proxy/raw 身份指向同一逻辑成员。
+    /**
+     * effect 用 reactive 对象代理查询空 reactive Set，再 add/delete 同一代理。
+     * 记录 false→true→false，验证普通深层代理成员的身份兼容；本例不验证已预存双身份的合并。
+     */
     it('should observe mutations with observed value', () => {
       let dummy
       const value = reactive({})
@@ -52,7 +64,10 @@ describe('reactivity/collections', () => {
       expect(dummy).toBe(false)
     })
 
-    // 场景：effect 使用 for...of 遍历 Set；验证成员增删触发重新遍历。
+    /**
+     * effect 默认迭代数值 reactive Set 并求和，依次加入 2/1、删除 2、clear。
+     * 记录 0→3→1→0，验证 Set 默认迭代的结构依赖。
+     */
     it('should observe for of iteration', () => {
       let dummy
       const set = reactive(new Set() as Set<number>)
@@ -73,7 +88,10 @@ describe('reactivity/collections', () => {
       expect(dummy).toBe(0)
     })
 
-    // 场景：effect 通过 Set.forEach 遍历；验证 add/delete/clear 更新遍历结果。
+    /**
+     * effect 用 forEach 累计 reactive Set 数值，依次 add 2/1、delete 2、clear。
+     * 记录 0→3→1→0，验证 forEach 订阅成员迭代变化。
+     */
     it('should observe forEach iteration', () => {
       let dummy: any
       const set = reactive(new Set())
@@ -92,7 +110,10 @@ describe('reactivity/collections', () => {
       expect(dummy).toBe(0)
     })
 
-    // 场景：effect 迭代 Set.values；验证集合结构变化触发值序列更新。
+    /**
+     * effect 用 values 累计 reactive Set 数值，依次 add 2/1、delete 2、clear。
+     * 记录 0→3→1→0，验证 values 迭代响应有效成员变更。
+     */
     it('should observe values iteration', () => {
       let dummy
       const set = reactive(new Set() as Set<number>)
@@ -113,7 +134,10 @@ describe('reactivity/collections', () => {
       expect(dummy).toBe(0)
     })
 
-    // 场景：effect 迭代 Set.keys；验证 Set 的 keys 与 values 采用相同成员依赖。
+    /**
+     * effect 用 keys 累计 reactive Set 数值，依次 add 2/1、delete 2、clear。
+     * 记录 0→3→1→0，验证 Set.keys 产出成员并使用 ITERATE_KEY，不采用 Map 的独立键依赖。
+     */
     it('should observe keys iteration', () => {
       let dummy
       const set = reactive(new Set() as Set<number>)
@@ -134,7 +158,10 @@ describe('reactivity/collections', () => {
       expect(dummy).toBe(0)
     })
 
-    // 场景：effect 迭代 Set.entries；验证 `[value, value]` 结果随成员变化更新。
+    /**
+     * effect 用 entries 累计每对的第二项，依次 add 2/1、delete 2、clear。
+     * 记录 0→3→1→0，验证 Set 成对成员迭代的结构依赖；本例不直接比较同对两项身份。
+     */
     it('should observe entries iteration', () => {
       let dummy
       const set = reactive(new Set<number>())
@@ -156,7 +183,10 @@ describe('reactivity/collections', () => {
       expect(dummy).toBe(0)
     })
 
-    // 场景：effect 依赖 Set 内容后调用 clear；验证全部成员和遍历依赖触发。
+    /**
+     * effect 用 has 查询 reactive Set 的 key，先 add 再 clear 非空集合。
+     * 记录 false→true→false，验证 CLEAR 会通知该成员已建立的 Dep。
+     */
     it('should be triggered by clearing', () => {
       let dummy
       const set = reactive(new Set())
@@ -169,7 +199,10 @@ describe('reactivity/collections', () => {
       expect(dummy).toBe(false)
     })
 
-    // 场景：修改 Set 实例的普通自定义属性；验证集合插桩不追踪额外属性。
+    /**
+     * effect 读取 reactive Set 上不存在的 customProp，再向该普通属性赋字符串。
+     * 记录仍 undefined，验证集合 handler 不追踪额外对象属性；本例不检查直接读回值。
+     */
     it('should not observe custom property mutations', () => {
       let dummy
       const set: any = reactive(new Set())
@@ -180,7 +213,10 @@ describe('reactivity/collections', () => {
       expect(dummy).toBe(undefined)
     })
 
-    // 场景：effect 读取 Set.size 后增删成员；验证大小变化触发更新。
+    /**
+     * effect 读取空 reactive Set 的 size，加入两个不同成员、删除一个、clear。
+     * 记录 0→2→1→0，验证 size 订阅的迭代依赖随结构变化更新。
+     */
     it('should observe size mutations', () => {
       let dummy
       const set = reactive(new Set())
@@ -196,7 +232,10 @@ describe('reactivity/collections', () => {
       expect(dummy).toBe(0)
     })
 
-    // 场景：重复 add、删除不存在成员或清空空 Set；验证无实际变化时不触发。
+    /**
+     * spy effect 查询空 Set 的 value，随后 add、重复 add、delete、重复 delete、clear 空集合。
+     * 仅有效新增和删除增加次数，总计 3，验证重复成员和无成员变动不发通知。
+     */
     it('should not observe non value changing mutations', () => {
       let dummy
       const set = reactive(new Set())
@@ -222,7 +261,10 @@ describe('reactivity/collections', () => {
       expect(setSpy).toHaveBeenCalledTimes(3)
     })
 
-    // 场景：直接读取原始 Set；验证绕过代理的操作不建立响应式依赖。
+    /**
+     * effect 绕过代理，经 toRaw(set).has 查询成员，再通过代理 add。
+     * 记录保持 false，验证 raw has 不建立依赖。
+     */
     it('should not observe raw data', () => {
       let dummy
       const set = reactive(new Set())
@@ -233,7 +275,10 @@ describe('reactivity/collections', () => {
       expect(dummy).toBe(false)
     })
 
-    // 场景：在 effect 中迭代原始 Set；验证 raw 迭代不被代理依赖系统追踪。
+    /**
+     * effect 分别经 raw 的 entries、keys、values、forEach 和默认迭代累计数值，再经代理 add/delete。
+     * 记录一直为 0，验证这些原生 raw 迭代入口都不接入代理依赖系统。
+     */
     it('should not observe raw iterations', () => {
       let dummy = 0
       const set = reactive(new Set<number>())
@@ -264,7 +309,10 @@ describe('reactivity/collections', () => {
       expect(dummy).toBe(0)
     })
 
-    // 场景：effect 订阅代理后直接修改原始 Set；验证 raw 写入不会触发代理订阅。
+    /**
+     * effect 已通过代理 has 订阅，随后经 raw add/delete/clear；中途把记录手动设为 true。
+     * 原始写入不改变记录，验证 bypass 代理的操作不发送通知，手动赋值用于辨别后续是否重跑。
+     */
     it('should not be triggered by raw mutations', () => {
       let dummy
       const set = reactive(new Set())
@@ -280,7 +328,10 @@ describe('reactivity/collections', () => {
       expect(dummy).toBe(true)
     })
 
-    // 场景：effect 直接读取原始 Set.size；验证不会订阅大小依赖。
+    /**
+     * effect 直接读取 toRaw(set).size，再通过代理 add 成员。
+     * 记录保持 0，验证原始 size getter 不建立依赖。
+     */
     it('should not observe raw size mutations', () => {
       let dummy
       const set = reactive(new Set())
@@ -291,7 +342,10 @@ describe('reactivity/collections', () => {
       expect(dummy).toBe(0)
     })
 
-    // 场景：代理 size 已被观察但从 raw Set 改变大小；验证绕过代理不主动触发。
+    /**
+     * effect 读取代理 Set.size，再通过 toRaw(set).add 增加成员。
+     * 记录保持 0，验证即便存在订阅者，raw 写入也不进入触发路径。
+     */
     it('should not be triggered by raw size mutations', () => {
       let dummy
       const set = reactive(new Set())
@@ -302,7 +356,10 @@ describe('reactivity/collections', () => {
       expect(dummy).toBe(0)
     })
 
-    // 场景：Set 使用对象成员并以 raw/proxy 形态查询；验证对象身份兼容。
+    /**
+     * spy effect 用某个普通对象查询空 Set，先加入另一个对象，再加入查询对象。
+     * 无关对象新增不重跑，匹配对象使 false→true 且次数 1→2，验证对象成员依赖按身份精确定位。
+     */
     it('should support objects as key', () => {
       let dummy
       const key = {}
@@ -322,7 +379,10 @@ describe('reactivity/collections', () => {
       expect(setSpy).toHaveBeenCalledTimes(2)
     })
 
-    // 场景：向深响应式 Set 添加代理对象；验证原 Set 不被代理身份污染。
+    /**
+     * 向深 reactive Set 添加一个普通 reactive 对象代理，再分别从代理和原 Set has 查询。
+     * 代理命中，原 Set 不含该代理引用，验证此类成员写入不把代理身份保存到 raw 容器。
+     */
     it('should not pollute original Set with Proxies', () => {
       const set = new Set()
       const observed = reactive(set)
@@ -332,7 +392,10 @@ describe('reactivity/collections', () => {
       expect(set.has(value)).toBe(false)
     })
 
-    // 场景：forEach 回调读取 Set 成员嵌套字段；验证成员以响应式代理传入。
+    /**
+     * effect 用 forEach 读取 reactive Set 中 { foo: 1 } 的字段，再经 forEach 递增 foo。
+     * 成员具响应式标记，记录 1→2，验证回调值包装及其字段读取依赖。
+     */
     it('should observe nested values in iterations (forEach)', () => {
       const set = reactive(new Set([{ foo: 1 }]))
       let dummy: any
@@ -350,7 +413,10 @@ describe('reactivity/collections', () => {
       expect(dummy).toBe(2)
     })
 
-    // 场景：values 迭代成员并读取嵌套字段；验证深层变化触发 effect。
+    /**
+     * effect 用 values 读取 reactive Set 中对象的 foo，再经 forEach 递增 foo。
+     * 产出值具响应式标记，记录 1→2，验证 values 的深层包装与字段追踪。
+     */
     it('should observe nested values in iterations (values)', () => {
       const set = reactive(new Set([{ foo: 1 }]))
       let dummy: any
@@ -368,7 +434,10 @@ describe('reactivity/collections', () => {
       expect(dummy).toBe(2)
     })
 
-    // 场景：entries 迭代成员对并读取嵌套字段；验证两个位置都正确包装。
+    /**
+     * effect 用 entries 检查对象成员对的两项代理标记并累加第二项 foo，再修改成员 foo。
+     * 两项均响应式且记录 1→2，验证 Set 成对产出的包装和实际字段依赖。
+     */
     it('should observe nested values in iterations (entries)', () => {
       const set = reactive(new Set([{ foo: 1 }]))
       let dummy: any
@@ -387,7 +456,10 @@ describe('reactivity/collections', () => {
       expect(dummy).toBe(2)
     })
 
-    // 场景：for...of 读取 Set 成员嵌套字段；验证深层修改更新遍历 effect。
+    /**
+     * effect 默认迭代 reactive Set 中对象并累加 foo，再经 forEach 递增字段。
+     * 产出值响应式且记录 1→2，验证默认迭代的深层成员包装。
+     */
     it('should observe nested values in iterations (for...of)', () => {
       const set = reactive(new Set([{ foo: 1 }]))
       let dummy: any
@@ -405,7 +477,10 @@ describe('reactivity/collections', () => {
       expect(dummy).toBe(2)
     })
 
-    // 场景：原始 Set 已保存响应式对象成员；验证代理 Set 仍能正确查询。
+    /**
+     * 原始 Set 已保存 reactive 对象成员，创建代理后用同一代理 has/delete。
+     * has 初始为 true、delete 返回 true、删除后 has false，验证已存在的传入成员身份优先命中。
+     */
     it('should work with reactive entries in raw set', () => {
       const raw = new Set()
       const entry = reactive({})
@@ -418,7 +493,10 @@ describe('reactivity/collections', () => {
       expect(set.has(entry)).toBe(false)
     })
 
-    // 场景：原始 Set 保存 proxy 成员后经代理删除；验证依赖正确触发。
+    /**
+     * 原始 Set 预存 reactive 对象成员，effect 用代理 has 查询，再经代理 delete。
+     * 记录 true→false，验证删除已有 proxy 成员通知对应 HAS 读取。
+     */
     it('should track deletion of reactive entries in raw set', () => {
       const raw = new Set()
       const entry = reactive({})
@@ -435,7 +513,10 @@ describe('reactivity/collections', () => {
       expect(dummy).toBe(false)
     })
 
-    // 场景：Set 已含 raw 对象后尝试添加其只读代理；验证不会产生重复成员。
+    /**
+     * 深 reactive Set 已含 raw 对象，再查询并 add 其 readonly 代理。
+     * size 保持 1，raw 容器仅含 raw、不含只读代理，验证添加前也检查该输入的 toRaw 身份。
+     */
     it('should not add readonly versions of existing raw values', () => {
       const rawValue = {}
       const wrappedValue = readonly(rawValue)
@@ -450,7 +531,10 @@ describe('reactivity/collections', () => {
       expect(toRaw(set).has(wrappedValue)).toBe(false)
     })
 
-    // 场景：浅响应式 Set 已含 raw 对象后添加其代理；验证身份检查避免重复。
+    /**
+     * 浅 reactive Set 已含 raw 对象，再查询并 add 其 reactive 代理。
+     * size 保持 1，raw 容器没有新增 proxy，验证浅集合也检查输入及其 raw 已有成员。
+     */
     it('should not add proxy versions of existing raw values to shallow sets', () => {
       const rawValue = {}
       const wrappedValue = reactive(rawValue)
@@ -465,7 +549,10 @@ describe('reactivity/collections', () => {
       expect(toRaw(set).has(wrappedValue)).toBe(false)
     })
 
-    // 场景：Set 同时含同一对象的 raw/proxy 版本；验证开发模式发出身份冲突警告。
+    /**
+     * 原始 Set 同时预存同一对象的 raw/proxy 两项，创建代理后 delete proxy 项。
+     * 开发警告提示双身份共存，验证冲突检测；本例不要求预存成员自动合并。
+     */
     it('should warn when set contains both raw and reactive versions of the same object', () => {
       const raw = new Set()
       const rawKey = {}
@@ -479,7 +566,10 @@ describe('reactivity/collections', () => {
       ).toHaveBeenWarned()
     })
 
-    // 场景：调用响应式 Set.forEach 并传 thisArg；验证回调 this 与第三参数符合原生约定。
+    /**
+     * reactive Set 仅含字符串成员，forEach 传入 thisArg 并使用普通函数回调。
+     * 回调执行一次，this 等于传入对象、value 正确、第三参数等于集合代理，验证集合回调协议。
+     */
     it('thisArg', () => {
       const raw = new Set(['value'])
       const proxy = reactive(raw)
@@ -494,35 +584,50 @@ describe('reactivity/collections', () => {
       expect(count).toBe(1)
     })
 
-    // 场景：非代理成员参与 Set.has；验证一次变化只触发一次相关依赖。
+    /**
+     * 夹具将空 Set 的 has 覆盖为 spy，代理调用 has('foo')。
+     * 底层 has 只调用一次，验证普通参数无需 raw 查询重试，计数对象为方法而非 effect。
+     */
     it('should trigger Set.has only once for non-reactive keys', () => {
       const [proxy, spy] = coverCollectionFn(new Set(), 'has')
       proxy.has('foo')
       expect(spy).toBeCalledTimes(1)
     })
 
-    // 场景：添加非代理成员；验证 raw/proxy 兼容检查不会造成重复触发。
+    /**
+     * 夹具将空 Set 的 add 覆盖为 spy，代理调用 add('foo')。
+     * 底层 add 只调用一次，验证插桩只转发一次实际成员写入。
+     */
     it('should trigger Set.add only once for non-reactive keys', () => {
       const [proxy, spy] = coverCollectionFn(new Set(), 'add')
       proxy.add('foo')
       expect(spy).toBeCalledTimes(1)
     })
 
-    // 场景：删除非代理成员；验证订阅者仅收到一次通知。
+    /**
+     * 夹具将空 Set 的 delete 覆盖为 spy，代理删除不存在的 'foo'。
+     * 底层 delete 只调用一次，验证未命中成员仍只执行一次删除调用。
+     */
     it('should trigger Set.delete only once for non-reactive keys', () => {
       const [proxy, spy] = coverCollectionFn(new Set(), 'delete')
       proxy.delete('foo')
       expect(spy).toBeCalledTimes(1)
     })
 
-    // 场景：清空只含非代理成员的 Set；验证同一 effect 在批处理中仅执行一次。
+    /**
+     * 夹具将空 Set 的 clear 覆盖为 spy，再经代理 clear。
+     * 底层 clear 只调用一次，验证方法转发次数，不测通知或批处理次数。
+     */
     it('should trigger Set.clear only once for non-reactive keys', () => {
       const [proxy, spy] = coverCollectionFn(new Set(), 'clear')
       proxy.clear()
       expect(spy).toBeCalledTimes(1)
     })
 
-    // 场景：调用响应式 Set.add；验证链式返回值是响应式代理。
+    /**
+     * 空 reactive Set 执行 add('a') 并保存返回值。
+     * 返回值等于集合代理本身，验证链式调用沿用代理 receiver。
+     */
     it('should return proxy from Set.add call', () => {
       const set = reactive(new Set())
       const result = set.add('a')

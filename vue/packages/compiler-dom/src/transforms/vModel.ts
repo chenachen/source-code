@@ -23,6 +23,9 @@ import {
  * 组件只需要 `modelValue` / `onUpdate:modelValue`；原生 input、textarea、select 则需根据
  * 标签和 type 选择文本、单选、复选、选择框或动态分派 helper，并校验 file input 等
  * 浏览器限制。
+ * 成功的原生分支只登记 needRuntime，值由 withDirectives 的绑定参数传递；统一删除
+ * modelValue prop，保留写回监听器。file/非法元素在 onError 仅收集时仍走这项过滤，
+ * 但不会登记运行时 helper；默认抛错则在诊断处中止，不会返回有效 render 结果。
  */
 export const transformModel: DirectiveTransform = (dir, node, context) => {
   const baseResult = baseTransform(dir, node, context)
@@ -40,7 +43,10 @@ export const transformModel: DirectiveTransform = (dir, node, context) => {
     )
   }
 
-  /** 检查会与 v-model 争夺 value 的显式 `:value`，避免两套写入互相覆盖。 */
+  /**
+   * DEV 文本控件分支检查首个带表达式的 v-bind，仅当其静态参数是 value 时报告冲突。
+   * findDir 不会继续查找后面的绑定，因此 `:id` 排在 `:value` 前面时不会命中。
+   */
   function checkDuplicatedValue() {
     const value = findDir(node, 'bind')
     if (value && isStaticArgOf(value.arg, 'value')) {
@@ -65,6 +71,8 @@ export const transformModel: DirectiveTransform = (dir, node, context) => {
     let isInvalidType = false
     if (tag === 'input' || isCustomElement) {
       const type = findProp(node, `type`)
+      // 显式 type 优先于对象/动态键绑定；即便 type 没有 value，存在该属性也不会再
+      // 检查后面的动态绑定。默认 helper 已是文本型，需与下方“未找到 type”区分。
       if (type) {
         if (type.type === NodeTypes.DIRECTIVE) {
           // `:type="foo"` 运行时才能决定应采用文本、单选还是复选逻辑。
@@ -93,7 +101,8 @@ export const transformModel: DirectiveTransform = (dir, node, context) => {
           }
         }
       } else if (hasDynamicKeyVBind(node)) {
-        // `v-bind:[key]` / `v-bind="obj"` 可能在运行时提供 type，必须动态分派。
+        // 没有找到显式 type 时，`v-bind:[key]` / `v-bind="obj"` 可能提供 type，改用动态分派。
+        // 若已命中上面的静态 type 分支，则不会因这些动态绑定重新选择 helper。
         directiveToUse = V_MODEL_DYNAMIC
       } else {
         // 没有 type 的 input 默认是文本输入框。

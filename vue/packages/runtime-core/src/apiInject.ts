@@ -62,16 +62,25 @@ export function provide<T, K = InjectionKey<T> | string | number>(
  * 代理作为 `this`，以兼容 Options API 的使用方式。
  */
 export function inject<T>(key: InjectionKey<T> | string): T | undefined
+/**
+ * 缺失键使用传入默认值的重载；treatDefaultAsFactory 为 false 时，函数默认值也作为普通值返回。
+ */
 export function inject<T>(
   key: InjectionKey<T> | string,
   defaultValue: T,
   treatDefaultAsFactory?: false,
 ): T
+/**
+ * 缺失键时把函数默认值作为工厂调用的重载；返回类型为 T，有组件实例时以其公开代理为 this，应用外层 runWithContext 中则没有组件 this。
+ */
 export function inject<T>(
   key: InjectionKey<T> | string,
   defaultValue: T | (() => T),
   treatDefaultAsFactory: true,
 ): T
+/**
+ * 依次选择活动 App、父组件或根/自定义元素 appContext 的 provides；in 查询允许沿原型链继承。只有调用实参确实包含默认值时才回退，包括显式 undefined；无上下文时开发环境警告并返回 undefined。
+ */
 export function inject(
   key: InjectionKey<any> | string,
   defaultValue?: unknown,
@@ -85,7 +94,7 @@ export function inject(
   // 通过 `app.provide()` 注册的应用级依赖。
   if (instance || currentApp) {
     // #2400：根组件没有父实例；为支持插件通过 `app.provide()` 注入，需回退到
-    // `appContext.provides`。
+
     // #11488：嵌套调用 `createApp()` 时，优先读取 `runWithContext()` 设置的当前应用，
     // 否则可能误取外层组件所属应用的依赖。
     // #13212：自定义元素的 appContext 已继承父元素的 provides，必须从该上下文取值；

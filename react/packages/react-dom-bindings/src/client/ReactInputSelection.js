@@ -10,12 +10,12 @@ import getActiveElement from './getActiveElement';
 import {getOffsets, setOffsets} from './ReactDOMSelection';
 import {ELEMENT_NODE, TEXT_NODE} from './HTMLNodeType';
 
-/** `isTextNode` 判断适用条件并返回布尔结果，不写入宿主状态；用于提交前后捕获并恢复焦点与文本选择区。 */
+/** 按 nodeType 判断节点是否为 Text。 */
 function isTextNode(node) {
   return node && node.nodeType === TEXT_NODE;
 }
 
-/** `containsNode` 执行该模块的单一职责，并把副作用限制在当前 DOM/Fiber 边界；用于提交前后捕获并恢复焦点与文本选择区。 */
+/** 判断外节点是否包含内节点，兼容 Text 无 contains 的情况。 */
 function containsNode(outerNode, innerNode) {
   if (!outerNode || !innerNode) {
     return false;
@@ -34,7 +34,7 @@ function containsNode(outerNode, innerNode) {
   }
 }
 
-/** `isInDocument` 判断适用条件并返回布尔结果，不写入宿主状态；用于提交前后捕获并恢复焦点与文本选择区。 */
+/** 检查节点是否仍属于 ownerDocument.documentElement。 */
 function isInDocument(node) {
   return (
     node &&
@@ -43,16 +43,11 @@ function isInDocument(node) {
   );
 }
 
-/** `isSameOriginFrame` 判断适用条件并返回布尔结果，不写入宿主状态；用于提交前后捕获并恢复焦点与文本选择区。 */
+/** 通过读取 frame 的 location.href 判断能否继续访问同源 iframe；跨源异常返回 false。 */
 function isSameOriginFrame(iframe) {
   try {
-    //访问 HTMLIframeElement 的 contentDocument 可能会导致浏览器
-    //抛出，例如，如果它具有跨源 src 属性。
-    //当访问导致“已阻止来自某个来源的框架”时，Safari 会在控制台显示错误。例如：
-    //iframe.contentDocument.defaultView;
-    //一种安全的方式是访问其中一个跨域属性：Window 或 Location
-    //这可能会导致“SecurityError”DOM 异常，并且它兼容 Safari。
-    //https://html.spec.whatwg.org/multipage/browsers.html#integration-with-idl
+    // Safari 可能在读取跨源 contentDocument 时向控制台报错。
+    // 这里读取 contentWindow.location.href，让跨源访问以可捕获的 SecurityError 失败。
 
     return typeof iframe.contentWindow.location.href === 'string';
   } catch (err) {
@@ -60,7 +55,7 @@ function isSameOriginFrame(iframe) {
   }
 }
 
-/** `getActiveElementDeep` 查询并返回所需值；缺失或不适用时走显式回退；用于提交前后捕获并恢复焦点与文本选择区。 */
+/** 从容器所属 window（缺失时用全局 window）开始，逐层进入可访问的同源 iframe。 */
 function getActiveElementDeep(containerInfo) {
   let win =
     containerInfo != null &&
@@ -81,11 +76,11 @@ function getActiveElementDeep(containerInfo) {
 }
 
 /**
- * @ReactInputSelection：React 输入选择模块。基于 Selection.js，但经过修改以适用于 React，并修复了一些错误（不假设按钮允许范围选择）。React 的输入选择模块。
+ * 提交前保存焦点与选区，提交后在原元素仍位于文档内时恢复；聚焦造成的祖先滚动一并还原。
  */
 
 /**
- * @hasSelectionCapabilities：我们从 https://html.spec.whatwg.org/#do-not-apply, 获取支持选择的元素类型，查看 `selectionStart` 和 `selectionEnd` 行。
+ * 识别支持 selectionStart/selectionEnd 的 input 类型、textarea 与 contentEditable=true。
  */
 export function hasSelectionCapabilities(elem) {
   const nodeName = elem && elem.nodeName && elem.nodeName.toLowerCase();
@@ -102,7 +97,7 @@ export function hasSelectionCapabilities(elem) {
   );
 }
 
-/** `getSelectionInformation` 查询并返回所需值；缺失或不适用时走显式回退；用于提交前后捕获并恢复焦点与文本选择区。 */
+/** 保存当前聚焦元素，以及支持选区时的 selectionStart/end 或文本偏移。 */
 export function getSelectionInformation(containerInfo) {
   const focusedElem = getActiveElementDeep(containerInfo);
   return {
@@ -114,7 +109,7 @@ export function getSelectionInformation(containerInfo) {
 }
 
 /**
- * @restoreSelection：如果任何选区信息可能丢失，请恢复它。当执行可能移除 DOM 节点并再放回去的操作时，这非常有用，因为这些操作会导致焦点丢失。
+ * 焦点已改变且原节点仍在文档中时，恢复其选区与焦点，并还原聚焦前记录的祖先滚动位置。
  */
 export function restoreSelection(priorSelectionInformation, containerInfo) {
   const curFocusedElem = getActiveElementDeep(containerInfo);
@@ -154,9 +149,7 @@ export function restoreSelection(priorSelectionInformation, containerInfo) {
 }
 
 /**
- * @getSelection: 获取聚焦的 textarea、输入框或 contentEditable 节点的选区范围。
- * -@input: 查找此输入框的选区范围
- * -@return {start: selectionStart, end: selectionEnd}
+ * 读取 input/textarea 的 selectionStart/end，其他可编辑节点使用 DOM Selection 文本偏移；无选区时回退 0。
  */
 export function getSelection(input) {
   let selection;
@@ -168,7 +161,7 @@ export function getSelection(input) {
       end: input.selectionEnd,
     };
   } else {
-    //可编辑内容或旧版 IE 文本区域。
+    // contentEditable 等不提供 selectionStart 的节点使用 DOM Selection。
     selection = getOffsets(input);
   }
 
@@ -176,9 +169,7 @@ export function getSelection(input) {
 }
 
 /**
- * @setSelection：设置文本区域或输入框的选区范围并聚焦输入框。
- * -@input     设置此输入框或文本区域的选区范围
- * -@offsets   与 get* 返回的对象形式相同的对象
+ * 写入 input 的 selectionStart/end，或调用 setOffsets 设置 DOM Selection；聚焦由 restoreSelection 单独完成。
  */
 export function setSelection(input, offsets) {
   const start = offsets.start;

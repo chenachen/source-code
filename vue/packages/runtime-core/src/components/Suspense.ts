@@ -39,9 +39,9 @@ import { NULL_DYNAMIC_COMPONENT } from '../helpers/resolveAssets'
 
 /** `<Suspense>` 的事件、超时与嵌套边界配置。 */
 export interface SuspenseProps {
-  /** 当前 pending 分支全部异步依赖完成、正式显示时触发。 */
+  /** 边界结算 pending 分支并切换逻辑活动分支后触发；out-in 时 DOM 仍需等待旧分支离场。 */
   onResolve?: () => void
-  /** 更新产生新的异步 pending 分支时触发。 */
+  /** 首次挂载发现异步依赖，或更新替换默认分支根节点时触发；后者也可能同步 resolve。 */
   onPending?: () => void
   /** fallback 即将显示时触发。 */
   onFallback?: () => void
@@ -83,6 +83,7 @@ export const SuspenseImpl = {
   // renderer 通过标记发现 Suspense，再把底层能力传给 process。若 renderer 直接
   // import Suspense，未使用该功能的应用也无法将实现 tree-shake 掉。
   __isSuspense: true,
+  /** renderer 的 Suspense 分派入口；首次 mount 收集默认分支依赖，更新复用 boundary。父边界仍 pending 且本边界未处 fallback 时只迁移引用，交由父树处理以免重复 patch。 */
   process(
     n1: VNode | null,
     n2: VNode,
@@ -143,11 +144,17 @@ export const SuspenseImpl = {
 export const Suspense = (__FEATURE_SUSPENSE__
   ? SuspenseImpl
   : null) as unknown as {
+  /** 供 renderer 按类型分派的内置字面量标记。 */
   __isSuspense: true
+  /** h/TSX 使用的虚拟构造协议，运行时对象由 renderer 特殊处理。 */
   new (): {
+    /** VNode 属性与 Suspense 事件/超时/嵌套捕获参数的交集。 */
     $props: VNodeProps & SuspenseProps
+    /** 默认内容和 fallback 的单根插槽协议。 */
     $slots: {
+      /** 返回默认内容节点列表，规范化后形成 ssContent。 */
       default(): VNode[]
+      /** 返回等待期间备用内容，规范化后形成 ssFallback。 */
       fallback(): VNode[]
     }
   }
@@ -436,52 +443,63 @@ function patchSuspense(
 /**
  * 一个 Suspense 实例的完整运行时状态与操作协议。
  *
- * `activeBranch` 是用户当前看到的分支；`pendingBranch` 在 hiddenContainer 中准备；
- * `deps` 是尚未完成的 async setup 数；`effects` 缓冲 mounted/updated 等提交后副作用。
+ * `activeBranch` 是边界当前采用的逻辑活动分支；out-in 等待期间，其 DOM 可能尚未搬入
+ * 真实容器。`pendingBranch` 通常在 hiddenContainer 准备，水合时则认领已可见的 SSR DOM。
+ * `deps` 计入 async setup 与向本 pending 边界登记的 suspensible 子边界；
+ * `effects` 缓冲 mounted/updated 等提交后副作用。
  */
 export interface SuspenseBoundary {
   /** 当前 Suspense 外壳 VNode。 */
   vnode: VNode<RendererNode, RendererElement, SuspenseProps>
   /** 嵌套的父边界。 */
   parent: SuspenseBoundary | null
+  /** 边界所属组件上下文，传给分支 patch/unmount 与 HOC 根引用更新。 */
   parentComponent: ComponentInternalInstance | null
+  /** 创建分支宿主节点时沿用的 HTML/SVG/MathML 命名空间。 */
   namespace: ElementNamespace
   /** 活动分支所在的真实容器。 */
   container: RendererElement
   /** pending 分支的离屏容器。 */
   hiddenContainer: RendererElement
-  /** 当前显示的 content 或 fallback。 */
+  /** 逻辑活动的 content 或 fallback；out-in 等待期间不保证其 DOM 已进入真实容器。 */
   activeBranch: VNode | null
   /** fallback 是否因 out-in 过渡而正在等待旧分支离场。 */
   isFallbackMountPending: boolean
   /** 正在准备的默认内容分支。 */
   pendingBranch: VNode | null
-  /** 当前 pending 分支未完成的异步 setup 数量。 */
+  /** 当前 pending 周期尚未结算的依赖数，包括 async setup 和登记的 suspensible 子边界。 */
   deps: number
   /** 当前 pending 周期版本号。 */
   pendingId: number
   /** 更新分支等待多久后显示 fallback；-1 表示不自动显示。 */
   timeout: number
+  /** 逻辑上处于/进入 fallback；out-in 等待时 fallback DOM 可能尚未挂载，resolve 会清除此标记。 */
   isInFallback: boolean
+  /** pending 默认分支正在认领可见 SSR DOM；resolve 在此模式仅结算，不移动/卸载已有内容。 */
   isHydrating: boolean
+  /** 边界已销毁，晚到的 async setup 完成回调必须退出。 */
   isUnmounted: boolean
   /** pending 期间暂缓的提交后副作用。 */
   effects: Function[]
-  /** 完成 pending 分支并切换为 active。 */
+  /** 结算 pending 默认内容；第一参数在实现中名为 resume，表示复用已在真实容器的分支，sync 表示不要立即递归 resolve 父依赖。 */
   resolve(force?: boolean, sync?: boolean): void
-  /** 将备用分支切换为 active。 */
+  /** 仍有 pending 时启动 fallback 切换；out-in 先等旧分支离场，逻辑标记先于实际挂载。 */
   fallback(fallbackVNode: VNode): void
+  /** 移动逻辑活动分支并更新真实目标容器；后台 pending 内容留在其准备位置。 */
   move(
     container: RendererElement,
     anchor: RendererNode | null,
     type: MoveType,
   ): void
+  /** 取得活动分支范围后的宿主节点，供父渲染器选择插入锚点。 */
   next(): RendererNode | null
+  /** 登记 async setup；仅登记时 pending 才增加 deps，完成后检查实例/边界/版本，恢复渲染并在最后依赖结束时 resolve。 */
   registerDep(
     instance: ComponentInternalInstance,
     setupRenderEffect: SetupRenderEffectFn,
     optimized: boolean,
   ): void
+  /** 销毁活动与 pending 分支，先标记 isUnmounted 令异步完成回调失效；doRemove 控制宿主删除。 */
   unmount(parentSuspense: SuspenseBoundary | null, doRemove?: boolean): void
 }
 
@@ -600,6 +618,7 @@ function createSuspenseBoundary(
           pendingBranch!.transition.mode === 'out-in'
         let hasUpdatedAnchor = false
         if (delayEnter) {
+          /** out-in 延迟提交：仅捕获 pendingId 仍有效时移动新默认树并排队该轮 effects；随后清旧 fallback 的 el 引用。 */
           activeBranch!.transition!.afterLeave = () => {
             if (pendingId === suspense.pendingId) {
               move(
@@ -682,7 +701,7 @@ function createSuspenseBoundary(
         }
       }
 
-      // 状态和父依赖均结算后再通知用户 resolve。
+      // 状态和父依赖均结算后通知用户 resolve；out-in 的实际 move 仍由 afterLeave 执行。
       triggerEvent(vnode, 'onResolve')
     },
 
@@ -703,6 +722,7 @@ function createSuspenseBoundary(
       triggerEvent(vnode, 'onFallback')
 
       const anchor = next(activeBranch!)
+      /** 旧分支离场后的备用树挂载器；先清等待标记，若默认内容已经 resolve 则取消，仍处 fallback 才 patch 并更新 activeBranch。 */
       const mountFallback = () => {
         suspense.isFallbackMountPending = false
         if (!suspense.isInFallback) {
@@ -850,8 +870,9 @@ function createSuspenseBoundary(
 
 /**
  * 水合服务端输出的 Suspense 内容。
- * 客户端无法从普通 DOM 确认服务端最终输出的是 content 还是 fallback，因此先按
- * content 建立边界并尝试水合；若客户端仍发现异步依赖，边界继续保持 pending。
+ * 服务器渲染器输出默认内容分支，并等待其中异步组件；失败走错误处理，不自动输出
+ * Suspense fallback。客户端以 ssContent 建立 pending 分支并水合现有 DOM，异步依赖
+ * 未结束时保持 isHydrating/pending，完成后只结算分支状态，不再搬移已显示的 SSR 节点。
  */
 function hydrateSuspense(
   node: Node,
@@ -883,11 +904,11 @@ function hydrateSuspense(
     slotScopeIds,
     optimized,
     rendererInternals,
-    true /* hydrating */,
+    true /* 水合中 */,
   ))
-  // SSR 可能成功输出已解析 content，也可能失败/超时后输出 fallback；客户端从当前
-  // DOM 无法可靠区分。Vue先假设是 content 并水合，但必须提前创建 boundary，才能
-  // 让过程中遇到的 async setup 正确 registerDep。
+  // 先创建 boundary，再以默认内容作为 pendingBranch 认领 SSR DOM，过程中遇到的
+  // async setup 才能 registerDep。此时 activeBranch 尚为空；deps 清零后的 resolve
+  // 将 pendingBranch 记为 activeBranch，水合路径跳过普通的卸载/移动操作。
   const result = hydrateNode(
     node,
     (suspense.pendingBranch = vnode.ssContent!),

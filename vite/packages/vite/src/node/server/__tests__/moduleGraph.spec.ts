@@ -59,7 +59,9 @@ describe('moduleGraph', () => {
         id: url,
       }))
       const moduleGraph = new ModuleGraph({
+        /** 为兼容图返回 client 环境图，测试始终共享同一实例。 */
         client: () => clientModuleGraph,
+        /** 为兼容图返回 SSR 环境图，以配对同 ID 的节点。 */
         ssr: () => ssrModuleGraph,
       })
 

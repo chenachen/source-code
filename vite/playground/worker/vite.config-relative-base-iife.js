@@ -10,6 +10,8 @@ export default defineConfig(({ isPreview }) => ({
   },
   worker: {
     format: 'iife',
+    /** 每次worker子构建新建测试插件实例，避免父构建/并发worker共享插件状态。
+     * @returns 独立worker插件数组。 */
     plugins: () => [workerPluginTestPlugin()],
     rolldownOptions: {
       output: {
@@ -21,6 +23,9 @@ export default defineConfig(({ isPreview }) => ({
   },
   build: {
     outDir: 'dist/relative-base-iife',
+    /** SVG返回false以强制发射资产，其他类型返回undefined沿用默认大小规则。
+     * @param filePath 资产路径。
+     * @returns SVG禁止内联，其他类型无覆盖值。 */
     assetsInlineLimit: (filePath) =>
       filePath.endsWith('.svg') ? false : undefined,
     rolldownOptions: {

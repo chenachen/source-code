@@ -16,9 +16,9 @@ import { getEscapedCssVarName } from '@vue/shared'
 export const CSS_VARS_HELPER = `useCssVars`
 
 /**
- * 把 style 中收集的表达式生成 `{ "--name": (value) }` 对象源码。
- * SSR 键额外带 `:` 前缀，ssrRenderStyle 据此把组件实例上的同名变量重置为 initial，
- * 避免嵌套的同组件实例意外继承外层实例值。
+ * 生成 CSS 绑定值对象的源码。客户端键不带 `--`，由 useCssVars 写入 style 时补上；
+ * SSR 键为 `:--名称`，ssrRenderStyle 删除 `:` 并规范值：null/undefined 输出 initial，
+ * 避免该实例继续继承外层值；正常字符串和数值保留。
  */
 export function genCssVarsFromList(
   vars: string[],
@@ -100,6 +100,8 @@ enum LexerState {
 /**
  * 从 `v-bind(` 后开始扫描与其匹配的右括号。
  * 支持嵌套调用和单双引号；源码不完整时返回 null，让上层保留原 CSS。
+ * 这里仅寻找 CSS v-bind 的括号边界，不校验 JS 表达式；不处理反引号或字符串转义，
+ * 引号结束仅按相同字符判断。start 是左括号后的原文索引，返回匹配右括号的位置。
  */
 function lexBinding(content: string, start: number): number | null {
   let state: LexerState = LexerState.inParens
@@ -184,6 +186,9 @@ cssVarsPlugin.postcss = true
 /**
  * 生成 script setup 内调用 `useCssVars(_ctx => vars)` 的代码。
  * 表达式复用 compiler-core 的 identifier 重写，使 setup binding/ref 的访问语义与模板一致。
+ * 创建 inline=true 的表达式上下文：已知 ref 写 .value、可能 ref 用 unref、prop 用 __props。
+ * 普通 script 的 __isScriptSetup=false 会丢弃绑定元信息，让所有公开值经 _ctx 读取。
+ * 本函数只生成调用源码，不直接注入 import；compileScript/普通 script 包装负责提供 helper。
  */
 export function genCssVarsCode(
   vars: string[],

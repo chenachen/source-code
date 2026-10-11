@@ -72,7 +72,7 @@ export function expandGlobIds(id: string, config: ResolvedConfig): string[] {
     for (const key in exports) {
       if (key[0] === '.') {
         if (key.includes('*')) {
-          // 条件 exports 理论上可映射不同文件集；为避免复制完整条件 resolver，这里取首个字符串并
+          // 条件 exports 可映射不同文件集；这里沿首个条件分支取目标，不遍历后续分支，并
           // 假设各条件共享相同 wildcard 集合。
           const exportsValue = getFirstExportStringValue(exports[key])
           if (!exportsValue) continue
@@ -147,7 +147,7 @@ export function expandGlobIds(id: string, config: ResolvedConfig): string[] {
   }
 }
 
-/** 深度优先取得 exports 条件树中的首个字符串目标，用于推导 glob 子路径模式。 */
+/** 沿 exports 对象的首个 key 递归、数组直接取首项，用于推导 glob；首分支无结果时不再搜索其他条件。 */
 function getFirstExportStringValue(
   obj: string | string[] | Record<string, any>,
 ): string | undefined {

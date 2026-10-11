@@ -16,7 +16,7 @@ let container;
 let yields;
 let prevActGlobal;
 
-/** `clearLog`：封装当前用例复用的操作、回调或断言步骤。 */
+/** 返回本轮 effect 日志，并换成新数组供后续调用记录。 */
 function clearLog() {
   try {
     return yields;
@@ -44,16 +44,10 @@ afterEach(() => {
 });
 
 // @gate __DEV__
-/**
- * 代表场景（Given–When–Then）：
- * Given 当前文件已建立所需 DOM、React 根与测试夹具；
- * When 执行「can use act to flush effects」描述的渲染或交互；
- * Then 通过本用例的 DOM、日志或调度断言确认行为。
- *
- * 验证机制：断言覆盖 ReactTestUtils.act 到 React.act 的兼容转发与调度冲刷。
- */
+/** 使用真实 Scheduler 挂载组件；await act 后，effect 写入的 100 已可观察。 */
+/** 使用真实 Scheduler 与 DEV act 环境，首次提交仅含 effect 的 App；await act 后日志应是 [100]，验证 act 自身会冲刷被动 effect。 */
 test('can use act to flush effects', async () => {
-  /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 挂载时在被动 effect 写入 100，返回 null 隔离 DOM 更新对 act 冲刷效果的影响。 */
   function App() {
     React.useEffect(() => {
       yields.push(100);
@@ -70,9 +64,10 @@ test('can use act to flush effects', async () => {
 });
 
 // @gate __DEV__
-/** 测试场景：验证「flushes effects on every call」描述的渲染、交互或错误处理结果。 */
+/** 同一 act 中的三个函数式更新依次得到 3；后续两个独立 act 分别让 effect 观察 4、5。 */
+/** 计数按钮首次 effect 记录 0；一个 act 连点三次只产生最终 3 的 effect，后两个独立 act 分别记录 4 和 5，最终按钮为 5，验证每轮 act 批次都提交并冲刷对应 effect。 */
 test('flushes effects on every call', async () => {
-  /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 用计数按钮安排函数式增量，并在每次提交的 effect 记录最终计数，区分单次批处理和多轮 act。 */
   function App() {
     const [ctr, setCtr] = React.useState(0);
     React.useEffect(() => {
@@ -93,7 +88,7 @@ test('flushes effects on every call', async () => {
   expect(clearLog()).toEqual([0]);
 
   const button = container.querySelector('#button');
-  /** `click`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 在同一 button 上派发冒泡 click，由根事件监听器调用当前 onClick。 */
   function click() {
     button.dispatchEvent(new MouseEvent('click', {bubbles: true}));
   }
@@ -113,9 +108,10 @@ test('flushes effects on every call', async () => {
 });
 
 // @gate __DEV__
-/** 测试场景：验证「should keep flushing effects until they're done」描述的渲染、交互或错误处理结果。 */
+/** effect 在 ctr 小于 5 时继续更新；await act 冲刷级联提交，最终 DOM 为 5。 */
+/** 组件初始计数 0，effect 在计数小于 5 时继续安排函数式更新；一个 await act 后 DOM 应为 5，验证 act 持续消费由 effect 新增的提交工作。 */
 test("should keep flushing effects until they're done", async () => {
-  /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** effect 在计数不足 5 时继续更新，构造需要 act 持续冲刷的级联提交。 */
   function App() {
     const [ctr, setCtr] = React.useState(0);
     React.useEffect(() => {
@@ -135,9 +131,10 @@ test("should keep flushing effects until they're done", async () => {
 });
 
 // @gate __DEV__
-/** 测试场景：验证「should flush effects only on exiting the outermost act」描述的渲染、交互或错误处理结果。 */
+/** 内层 act 返回时尚未运行 effect；最外层 act 退出后日志才出现 0。 */
+/** 在外层 async act 内再 await 内层 act 挂载组件；内层返回时 effect 日志仍空，最外层退出后才记录 0，验证嵌套 act 的冲刷归属外层作用域。 */
 test('should flush effects only on exiting the outermost act', async () => {
-  /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** effect 仅记录 0，以日志是否出现区分内层 act 返回和最外层作用域退出。 */
   function App() {
     React.useEffect(() => {
       yields.push(0);
@@ -158,13 +155,14 @@ test('should flush effects only on exiting the outermost act', async () => {
 });
 
 // @gate __DEV__
-/** 测试场景：验证「can handle cascading promises」描述的渲染、交互或错误处理结果。 */
+/** effect 通过微任务与嵌套 act 推进 state；依赖 Math.min(state, 4) 在 state=5 时保持 4，停止继续触发。 */
+/** effect 每轮安排等待一个微任务的 ticker，ticker 用嵌套 act 增加状态；依赖 Math.min(state,4) 让 state=5 停止新增 effect，日志应为 0..4 且 DOM 5，验证级联 Promise 工作被外层 act 完整等待。 */
 test('can handle cascading promises', async () => {
   // 此组件触发一个 effect；effect 等待一个 tick 后设置 state，并重复 5 次。
-  /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** effect 记录当前状态并启动 ticker，依赖被 Math.min 截断后停止新增工作，使 Promise 级联有限结束。 */
   function App() {
     const [state, setState] = React.useState(0);
-    /** `App.ticker`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 等一个微任务后，在嵌套 act 中推进 state，使外层 act 能等待这轮提交。 */
     async function ticker() {
       await null;
       await act(() => {

@@ -19,9 +19,11 @@ const createWorkerTransport = (worker: Worker): HotChannel => {
   }
 
   return {
+    /** 从服务端向 worker 发送完整 HotPayload。 */
     send: (data) => worker.postMessage(data),
+    /** 将 custom 或 disconnect 监听转换为 worker message/exit 监听，并保留反向移除映射。 */
     on: (event: string, handler: HotChannelListener) => {
-      // client is already connected
+      // worker 已在创建环境前发出就绪信号，不再合成 connect 事件。
       if (event === 'vite:client:connect') return
       if (event === 'vite:client:disconnect') {
         /** worker 退出时合成 HotChannel 的 client disconnect 事件。 */
@@ -42,6 +44,7 @@ const createWorkerTransport = (worker: Worker): HotChannel => {
       handlerToWorkerListener.set(handler, listener)
       worker.on('message', listener)
     },
+    /** 用原 handler 找回对应 worker listener，移除 message/exit 订阅并删除映射。 */
     off: (event, handler: HotChannelListener) => {
       if (event === 'vite:client:connect') return
       if (event === 'vite:client:disconnect') {
@@ -92,6 +95,7 @@ describe('running module runner inside a worker', () => {
       environments: {
         worker: {
           dev: {
+            /** 构造接入 worker 消息通道的 DevEnvironment，供 worker ModuleRunner 拉取模块。 */
             createEnvironment: (name, config) => {
               return new DevEnvironment(name, config, {
                 hot: false,
@@ -107,6 +111,7 @@ describe('running module runner inside a worker', () => {
     })
     const channel = new BroadcastChannel('vite-worker')
     return new Promise<void>((resolve, reject) => {
+      /** 在主线程核对 worker 导出结果，并兑现或拒绝本例等待。 */
       channel.onmessage = (event) => {
         try {
           expect(event.data).toEqual({
@@ -151,6 +156,7 @@ describe('running module runner inside a worker', () => {
       environments: {
         worker: {
           dev: {
+            /** 构造接入 worker 消息通道的 DevEnvironment，供 worker ModuleRunner 拉取模块。 */
             createEnvironment: (name, config) => {
               return new DevEnvironment(name, config, {
                 hot: false,

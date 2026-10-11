@@ -91,6 +91,8 @@ export const transformIf: NodeTransform = createStructuralDirectiveTransform(
  *
  * `v-if` 创建根节点；`v-else-if` 与 `v-else` 向前寻找相邻 IfNode 并追加分支。
  * 客户端和 SSR 共用分支归并逻辑，实际代码生成通过 `processCodegen` 定制。
+ * 缺失条件经返回式 onError 恢复成 true。无法找到相邻 IfNode 时保留原元素供后续转换；
+ * 若在最终 else 后继续追加分支，返回式处理器报告后仍会追加这个不可达分支。
  */
 export function processIf(
   node: ElementNode,
@@ -149,7 +151,7 @@ export function processIf(
       }
 
       if (sibling && sibling.type === NodeTypes.IF) {
-        // 已出现无条件 v-else 后不能再追加 else-if/else；后面的分支永远不可达。
+        // 无条件 v-else 后的分支不可达，先报告相邻分支错误；默认处理器抛出，返回式处理器继续归并。
         if (
           (dir.name === 'else-if' || dir.name === 'else') &&
           sibling.branches[sibling.branches.length - 1].condition === undefined
@@ -300,7 +302,7 @@ function createChildrenCodegenNode(
         undefined,
         true,
         false,
-        false /* isComponent */,
+        false /* 非组件 */,
         branch.loc,
       )
     }

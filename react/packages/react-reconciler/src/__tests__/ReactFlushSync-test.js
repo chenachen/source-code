@@ -83,9 +83,9 @@ describe('ReactFlushSync', () => {
         : children;
   }
 
-  /** Given–When–Then：Given transition 提交后，useEffect 同时安排普通 state 与 flushSync 的 syncState；When 按 paint 边界推进并在 effect 内触发 flushSync 警告；Then同步更新优先提交，普通更新留到后续轮次。通过日志、警告和可见 DOM 验证 effect 中 flushSync 的优先级与调用限制。 */
+  /** Given–When–Then：Given transition 挂载后的 useEffect 安排普通 state 与 flushSync 的 syncState；When 推进两次 mock paint；Then日志从 0,0 直接到 1,1，effect 内的 flushSync 报生命周期警告。随后空 flushSync 不产生新日志，最终 DOM 为 1,1；这里没有观察到两次独立提交。 */
   it('changes priority of updates in useEffect', async () => {
-    /** 在 effect 中交错普通更新与 flushSync 更新，制造两个不同 lane 的提交批次。 */
+    /** 在 effect 中安排 DefaultLane 与 SyncLane 更新；当前 SyncUpdateLanes 会将它们纳入同批 render。 */
     function App() {
       const [syncState, setSyncState] = useState(0);
       const [state, setState] = useState(0);
@@ -107,11 +107,10 @@ describe('ReactFlushSync', () => {
       // 在被动 effect 触发前的 paint 边界暂停。
       await waitForPaint(['0, 0']);
 
-      // 被动 effect 同时安排同步更新和普通更新；
-      // 两者应分属两个批次，先提交同步更新。
+      // 两个 setter 的 lane 不同，但此轮日志直接为 1,1。
       await waitForPaint(['1, 1']);
 
-      // 剩余普通更新不是同步工作，空 flushSync 不会冲刷它。
+      // 两个状态已更新为 1；空 flushSync 没有额外渲染日志。
       ReactDOM.flushSync();
       assertLog([]);
       assertConsoleErrorDev([
@@ -195,10 +194,10 @@ describe('ReactFlushSync', () => {
     });
   });
 
-  /** Given–When–Then：Given legacy render 位于 flushSync；When同步宿主 Child 已提交；Then被动 Effect 仍延后到 paint 后。通过分段日志验证 legacy 模式的特殊 effect 时序。 */
+  /** Given–When–Then：Given legacy render 位于 flushSync；When flushSync 返回；Then Child 已提交而 Effect 尚未执行，act 结束后才记录 Effect。两段日志验证 legacy 根在此次同步提交后延后处理被动 effect。 */
   // @gate !disableLegacyMode
   it('does not flush passive effects synchronously after render in legacy mode', async () => {
-    /** 在 legacy 根注册一次 Effect，用日志区分宿主提交与 paint 后被动阶段。 */
+    /** 在 legacy 根注册 Effect，比较 flushSync 返回时与 act 结束后的日志。 */
     function App() {
       useEffect(() => {
         Scheduler.log('Effect');
@@ -218,7 +217,7 @@ describe('ReactFlushSync', () => {
       ]);
       expect(getVisibleChildren(container)).toEqual('Child');
     });
-    // Effect 在 paint 后冲刷。
+    // act 后续冲刷了 Effect；此用例未设置 paint 检查点。
     assertLog(['Effect']);
   });
 
@@ -259,9 +258,9 @@ describe('ReactFlushSync', () => {
     assertLog(['Effect: 2']);
   });
 
-  /** Given–When–Then：Given App 由普通并发更新挂载；When 推进到首次 paint；Then Child 已提交但 Effect 尚未运行，随后 act 才冲刷它。通过 paint 前后日志验证非同步来源的 effect 不被 flushSync 语义提前。 */
+  /** Given–When–Then：Given concurrent root 的普通 root.render 挂载 App；When 到达首次 mock paint 检查点；Then Child 已提交而 Effect 尚未运行，act 后续才记录 Effect。这里验证当前提交未立即冲刷被动 effect；DefaultLane 的 render 本身仍可走同步工作循环。 */
   it("does not flush passive effects synchronously when they aren't the result of a sync render", async () => {
-    /** 普通并发挂载产生 Effect，作为非同步来源的被动队列样本。 */
+    /** 普通 root.render 产生 Effect，用于比较提交检查点与 act 结束后的日志。 */
     function App() {
       useEffect(() => {
         Scheduler.log('Effect');
@@ -275,12 +274,11 @@ describe('ReactFlushSync', () => {
       root.render(<App />);
       await waitForPaint([
         'Child',
-        // 此被动 effect 并非由同步更新产生，
-        // 因而不能在 paint 前冲刷。
+        // 当前提交未立即执行 Effect，mock paint 检查点仅记录 Child。
       ]);
       expect(getVisibleChildren(container)).toEqual('Child');
     });
-    // Effect 在 paint 后冲刷。
+    // 本例在 mock paint 检查点之后由 act 的后续冲刷记录 Effect。
     assertLog(['Effect']);
   });
 
@@ -310,7 +308,7 @@ describe('ReactFlushSync', () => {
     assertLog(['Effect']);
   });
 
-  /** Given–When–Then：Given 三个根进入同一 flushSync，其中前两根抛错、第三根更新为 aww；When 同步队列冲刷；Then第三根仍完成、错误根卸载，并聚合抛出两个原始错误。通过三根 DOM 与 AggregateError 顺序验证同步工作队列的异常隔离。 */
+  /** Given–When–Then：Given 三个根进入同一 flushSync，其中前两根抛错、第三根更新为 aww；When 内部 act 执行并收集根错误；Then第三根仍完成、错误根卸载，act 将两个原始错误按顺序组成 AggregateError。三根 DOM 验证同步工作会继续处理其它根，errors 数组验证测试 act 的错误聚合边界。 */
   it('completely exhausts synchronous work queue even if something throws', async () => {
     /** 无条件抛出传入错误，用于在多个同步根中制造可辨认的失败。 */
     function Throws({error}) {
@@ -357,7 +355,7 @@ describe('ReactFlushSync', () => {
     expect(getVisibleChildren(container2)).toEqual(undefined);
     expect(getVisibleChildren(container3)).toEqual('aww');
 
-    // 多个同步错误按发生顺序封装进 AggregateError。
+    // 内部 act 收集的多个根错误按发生顺序封装进 AggregateError。
     expect(error).toBeInstanceOf(AggregateError);
     expect(error.errors.length).toBe(2);
     expect(error.errors[0]).toBe(aahh);

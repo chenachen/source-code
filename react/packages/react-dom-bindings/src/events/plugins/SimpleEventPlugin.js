@@ -54,7 +54,7 @@ import getEventCharCode from '../getEventCharCode';
 
 import {enableCreateEventHandleAPI} from 'shared/ReactFeatureFlags';
 
-/** extractEvents 从原生事件和 Fiber 路径收集将大多数原生事件按类型映射为对应 SyntheticEvent 并进入两阶段分发所需数据；只生成满足插件条件的 listener/event。 */
+/** 按事件名选择合成事件 constructor，过滤无效 keypress/右键 click；按当前原生阶段累积，scroll/scrollend bubble 只取 target。 */
 function extractEvents(
   dispatchQueue: DispatchQueue,
   domEventName: DOMEventName,
@@ -201,16 +201,10 @@ function extractEvents(
       dispatchQueue.push({event, listeners});
     }
   } else {
-    // 部分事件在浏览器中不冒泡。
-    // React 过去始终让它们冒泡，可能产生意外行为。
-    // 这里尝试贴近浏览器语义，让 React 也不再对它们
-    // 执行冒泡；先从 onScroll 开始，再逐步扩展。
+    // scroll/scrollend 的 bubble 只累积目标回调；capture 仍沿 Fiber 路径收集。
     const accumulateTargetOnly =
       !inCapturePhase &&
-      // TODO：理想情况下应把
-      // DOMPluginEventSystem.nonDelegatedEvents 中的全部事件加入此处，
-      // 之后即可移除该特殊列表。
-      // 这是破坏性变更，可推迟到 React 18。
+      // scroll 与 scrollend 的 bubble 只收集目标节点；capture 仍遍历祖先。
       (domEventName === 'scroll' || domEventName === 'scrollend');
 
     const listeners = accumulateSinglePhaseListeners(

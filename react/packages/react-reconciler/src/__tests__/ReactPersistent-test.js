@@ -44,7 +44,7 @@ describe('ReactPersistent', () => {
     ReactNoopPersistent.render(element);
   }
 
-  /** 构造预期 div 宿主快照，并把字符串规范化为不可见文本记录。 */
+  /** 构造预期 div 宿主快照，并把字符串规范化为 hidden=false 的可见文本记录。 */
   function div(...children) {
     children = children.map(c =>
       typeof c === 'string' ? {text: c, hidden: false} : c,

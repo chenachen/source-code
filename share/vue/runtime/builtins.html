@@ -9,6 +9,7 @@
     />
     <title>内置组件协议 · Vue Runtime 内核解剖</title>
     <link rel="stylesheet" href="assets/styles.css" />
+    <link rel="stylesheet" href="assets/engineering-diagrams.css" />
   </head>
   <body data-current="builtins.html">
     <header data-site-header></header>
@@ -152,7 +153,9 @@
                 <tr>
                   <td><strong>Transition</strong></td>
                   <td>insert/remove 立即完成</td>
-                  <td>VNode transition hooks；TransitionGroup 另有 FLIP 流程</td>
+                  <td>
+                    VNode transition hooks；TransitionGroup 另有 FLIP 流程
+                  </td>
                   <td>enter/leave callbacks、leavingVNodes</td>
                 </tr>
               </tbody>
@@ -249,9 +252,14 @@ if (vnodeShouldKeepAlive) return keepAliveContext.deactivate(vnode)
           </div>
           <p>
             这张图描述<strong>首次挂载后的完整区间</strong>。但当
-            <code>to</code> 从 A 改成 B 时，当前实现不会把这三个远端节点当作不可分割的一段：
-            <code>targetAnchor</code> 与 children 会去 B，<code>targetStart</code>
-            留在 A。卸载时再按 VNode 保存的两个引用分别清理，因此两个目标都不能只靠“删除当前 target 的整段内容”处理。
+            <code>to</code> 从 A 改成 B
+            时，当前实现不会把这三个远端节点当作不可分割的一段：
+            <code>targetAnchor</code> 与 children 会去 B，<code
+              >targetStart</code
+            >
+            留在 A。本例目标切换传入空插入锚点，先追加 targetAnchor，再追加
+            children， 所以 B 中的顺序是 targetAnchor、children。卸载时按 VNode
+            保存的两个锚点引用分别清理。
           </p>
           <h3>首次挂载</h3>
           <div class="sequence">
@@ -306,6 +314,8 @@ if (vnodeShouldKeepAlive) return keepAliveContext.deactivate(vnode)
             <code>activeBranch</code>。新内容先挂到离屏
             hiddenContainer：如果同步完成就一次性显示；若发现异步 setup
             依赖，则继续展示旧分支或 fallback，等依赖数归零再 resolve。
+            <code>deps</code> 也包含向当前 pending 边界登记的 suspensible
+            子边界， 因而不是所有 async setup 的简单总数。
           </p>
           <div class="sequence">
             <div class="sequence-item">
@@ -369,17 +379,320 @@ if (vnodeShouldKeepAlive) return keepAliveContext.deactivate(vnode)
                   <td><strong>已 resolve</strong></td>
                   <td>新 content</td>
                   <td>null</td>
-                  <td>内容原子切换</td>
+                  <td>普通情况显示新内容；out-in 时仍等待旧分支离场</td>
                 </tr>
               </tbody>
             </table>
           </div>
+          <p>
+            <code>activeBranch</code>
+            表示边界当前采用的逻辑分支，不总等于此刻可见的 DOM。 out-in
+            模式下，resolve 先切换分支状态并触发 onResolve，内容实际移入容器和
+            effects 执行仍要等旧分支 afterLeave。onPending
+            既会在首次挂载发现异步依赖时触发，
+            也会在更新替换默认分支根节点时触发；后一种情况即使同步
+            resolve，也已经通知 pending。
+          </p>
+          <figure
+            class="eng-diagram"
+            id="eng-suspense-state-commit"
+            style="--diagram-width: 1320px"
+          >
+            <div
+              class="eng-scroll"
+              tabindex="0"
+              aria-label="工程图，可横向滚动"
+            >
+              <svg
+                class="eng-svg"
+                viewBox="0 0 1320 916"
+                role="img"
+                aria-labelledby="eng-suspense-state-commit-title eng-suspense-state-commit-desc"
+              >
+                <title id="eng-suspense-state-commit-title">
+                  Suspense pending 周期与 out-in 提交分支
+                </title>
+                <desc id="eng-suspense-state-commit-desc">
+                  上半图显示准备、等待、resolve 与根替换开启新
+                  pendingId。下半图区分普通立即移动和 out-in 先结算后等待
+                  afterLeave 移动，说明 onResolve、DOM可见与 effects
+                  执行的不同时间。
+                </desc>
+                <defs>
+                  <marker
+                    id="eng-suspense-state-commit-arrow"
+                    viewBox="0 0 10 8"
+                    refX="9"
+                    refY="4"
+                    markerWidth="10"
+                    markerHeight="8"
+                    orient="auto-start-reverse"
+                  >
+                    <path d="M 0 0 L 10 4 L 0 8 Z" fill="var(--brand)" />
+                  </marker>
+                </defs>
+                <text class="eng-heading" x="34" y="30" text-anchor="start">
+                  客户端 pending 周期：同一轮依赖完成，才能结算对应默认分支
+                </text>
+                <g>
+                  <rect
+                    class="eng-state"
+                    x="34"
+                    y="90"
+                    width="372"
+                    height="142"
+                    rx="10"
+                  />
+                  <text class="eng-heading" x="52" y="118" text-anchor="start">
+                    准备分支 N
+                  </text>
+                  <text class="eng-small" x="52" y="144" text-anchor="start">
+                    pendingBranch = content N
+                  </text>
+                  <text class="eng-small" x="52" y="166" text-anchor="start">
+                    pendingId = N；deps 在 patch 中收集
+                  </text>
+                  <text class="eng-small" x="52" y="188" text-anchor="start">
+                    DOM 先挂在 hiddenContainer
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-state"
+                    x="480"
+                    y="90"
+                    width="374"
+                    height="142"
+                    rx="10"
+                  />
+                  <text class="eng-heading" x="498" y="118" text-anchor="start">
+                    等待：deps &gt; 0
+                  </text>
+                  <text class="eng-small" x="498" y="144" text-anchor="start">
+                    pendingBranch 仍是 content N
+                  </text>
+                  <text class="eng-small" x="498" y="166" text-anchor="start">
+                    首次 active = fallback；更新可保留旧 active
+                  </text>
+                  <text class="eng-small" x="498" y="188" text-anchor="start">
+                    timeout 只决定更新期间何时进入 fallback
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-state"
+                    x="956"
+                    y="90"
+                    width="330"
+                    height="142"
+                    rx="10"
+                  />
+                  <text class="eng-heading" x="974" y="118" text-anchor="start">
+                    resolve 结算分支
+                  </text>
+                  <text class="eng-small" x="974" y="144" text-anchor="start">
+                    activeBranch = content N
+                  </text>
+                  <text class="eng-small" x="974" y="166" text-anchor="start">
+                    pendingBranch = null
+                  </text>
+                  <text class="eng-small" x="974" y="188" text-anchor="start">
+                    逻辑结算不总等于 DOM 已进入页面
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M 406 154 H 478"
+                  marker-end="url(#eng-suspense-state-commit-arrow)"
+                />
+                <text class="eng-small" x="443" y="133" text-anchor="middle">
+                  deps &gt; 0
+                </text>
+                <path
+                  class="eng-arrow eng-async"
+                  d="M 854 154 H 954"
+                  marker-end="url(#eng-suspense-state-commit-arrow)"
+                />
+                <text class="eng-small" x="904" y="130" text-anchor="middle">
+                  本轮 deps = 0
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 220 90 V 55 H 1120 V 88"
+                  marker-end="url(#eng-suspense-state-commit-arrow)"
+                />
+                <text class="eng-small" x="674" y="48" text-anchor="middle">
+                  没有异步依赖：同步 resolve
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 1120 232 V 274 H 220 V 234"
+                  marker-end="url(#eng-suspense-state-commit-arrow)"
+                />
+                <text class="eng-small" x="670" y="263" text-anchor="middle">
+                  更新替换根类型/key：新 pendingId，再准备下一默认分支
+                </text>
+                <g>
+                  <rect
+                    class="eng-note"
+                    x="34"
+                    y="300"
+                    width="1252"
+                    height="78"
+                    rx="10"
+                  />
+                  <text class="eng-heading" x="52" y="328" text-anchor="start">
+                    版本检查决定谁有资格继续渲染
+                  </text>
+                  <text class="eng-small" x="52" y="354" text-anchor="start">
+                    registerDep 完成回调先检查实例/边界未卸载且 pendingId
+                    匹配；旧 Promise 返回即退出，不执行 setupRenderEffect 或
+                    deps--。
+                  </text>
+                </g>
+                <line class="eng-divider" x1="34" y1="410" x2="1286" y2="410" />
+                <text class="eng-heading" x="34" y="440" text-anchor="start">
+                  resolve 的 DOM 与 effects 分支（非水合、非 resume；无 pending
+                  祖先）
+                </text>
+                <g>
+                  <polygon
+                    class="eng-decision"
+                    points="660,472.0 795.0,528 660,584.0 525.0,528"
+                  />
+                  <text class="eng-label" x="660" y="523" text-anchor="middle">
+                    旧 active 存在，且
+                  </text>
+                  <text class="eng-label" x="660" y="543" text-anchor="middle">
+                    新分支 mode = out-in？
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M 525 528 H 262 V 618"
+                  marker-end="url(#eng-suspense-state-commit-arrow)"
+                />
+                <text class="eng-label" x="383" y="514" text-anchor="middle">
+                  否
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 795 528 H 1050 V 618"
+                  marker-end="url(#eng-suspense-state-commit-arrow)"
+                />
+                <text class="eng-label" x="916" y="514" text-anchor="middle">
+                  是
+                </text>
+                <g>
+                  <rect
+                    class="eng-state"
+                    x="34"
+                    y="620"
+                    width="460"
+                    height="151"
+                    rx="10"
+                  />
+                  <text class="eng-heading" x="52" y="648" text-anchor="start">
+                    普通提交
+                  </text>
+                  <text class="eng-small" x="52" y="674" text-anchor="start">
+                    卸载旧 active，立即 move 新内容
+                  </text>
+                  <text class="eng-small" x="52" y="696" text-anchor="start">
+                    结算 active/pending 状态
+                  </text>
+                  <text class="eng-small" x="52" y="718" text-anchor="start">
+                    queuePostFlushCb(effects)，触发 onResolve
+                  </text>
+                  <text class="eng-small" x="52" y="740" text-anchor="start">
+                    DOM 此时已进入真实容器
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-state"
+                    x="816"
+                    y="620"
+                    width="470"
+                    height="151"
+                    rx="10"
+                  />
+                  <text class="eng-heading" x="834" y="648" text-anchor="start">
+                    out-in：先结算，等待物理进入
+                  </text>
+                  <text class="eng-small" x="834" y="674" text-anchor="start">
+                    把 move 与 effects 释放挂到旧分支 afterLeave
+                  </text>
+                  <text class="eng-small" x="834" y="696" text-anchor="start">
+                    开始旧分支离场，结算 active/pending 状态
+                  </text>
+                  <text class="eng-small" x="834" y="718" text-anchor="start">
+                    onResolve 已触发，但新内容仍在隐藏容器
+                  </text>
+                  <text class="eng-small" x="834" y="740" text-anchor="start">
+                    afterLeave 再检查捕获的 pendingId
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow eng-async"
+                  d="M 1050 771 V 805"
+                  marker-end="url(#eng-suspense-state-commit-arrow)"
+                />
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="816"
+                    y="807"
+                    width="470"
+                    height="87"
+                    rx="10"
+                  />
+                  <text class="eng-heading" x="834" y="835" text-anchor="start">
+                    afterLeave：版本仍匹配
+                  </text>
+                  <text class="eng-small" x="834" y="861" text-anchor="start">
+                    move 新内容；queuePostFlushCb(effects)
+                  </text>
+                  <text class="eng-small" x="834" y="883" text-anchor="start">
+                    版本已过期则跳过这次延迟提交
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-note"
+                    x="34"
+                    y="807"
+                    width="710"
+                    height="87"
+                    rx="10"
+                  />
+                  <text class="eng-heading" x="52" y="835" text-anchor="start">
+                    嵌套边界的 effects 归属
+                  </text>
+                  <text class="eng-small" x="52" y="861" text-anchor="start">
+                    最近祖先仍 pending 时，effects 先并入祖先缓冲；
+                  </text>
+                  <text class="eng-small" x="52" y="883" text-anchor="start">
+                    这里的普通 post 排队时机以没有 pending 祖先为前提。
+                  </text>
+                </g>
+              </svg>
+            </div>
+            <figcaption>
+              <code>deps</code> 包含 async setup 和登记的 suspensible
+              子边界。根未换时普通 patch 不会自动开启新 pending 周期；pending
+              根被替换时也会换版本、清旧 deps/effects。下半图对应
+              <code>createSuspenseBoundary.resolve</code>：out-in 的延迟 move
+              用捕获的 pendingId 拒绝过期提交。
+            </figcaption>
+          </figure>
           <h3>effects 为什么要延后</h3>
           <p>
             pendingBranch 虽已在 hiddenContainer mount，但还不可见。如果此时运行
-            mounted、指令或 ref，用户代码会误以为节点已提交到页面。Suspense
-            暂存这些 post-render effects，在 resolve 后交回正常调度队列；嵌套
-            Suspense 还要向未完成的祖先边界继续汇入。
+            mounted、指令的 mounted 或非空字符串/Ref
+            对象赋值，用户代码会误以为节点已提交到页面。Suspense 暂存这些
+            post-render effects，在 resolve 后交回正常调度队列；嵌套 Suspense
+            还要向未完成的祖先边界继续汇入。
           </p>
         </section>
 
@@ -492,9 +805,11 @@ if (vnodeShouldKeepAlive) return keepAliveContext.deactivate(vnode)
             leave，避免重复节点与错误动画。
           </p>
           <div class="callout">
-            普通 keyed diff 的 <code>MoveType.REORDER</code> 只是把已有宿主节点插到新位置，renderer
+            普通 keyed diff 的
+            <code>MoveType.REORDER</code> 只是把已有宿主节点插到新位置，renderer
             不会把这次重排当成一次 leave + enter。列表移动动画由 runtime-dom 的
-            <code>TransitionGroup</code> 在更新前后测量位置并单独执行 FLIP，不能与 BaseTransition 的节点移除协议混成一条 hook 链。
+            <code>TransitionGroup</code> 在更新前后测量位置并单独执行
+            FLIP，不能与 BaseTransition 的节点移除协议混成一条 hook 链。
           </div>
           <h3>out-in 与 in-out</h3>
           <ul>
@@ -571,10 +886,10 @@ if (vnodeShouldKeepAlive) return keepAliveContext.deactivate(vnode)
         <section class="article-section prose" id="protocol-proof">
           <h2>四个协议逐个验明：测试、源码与同场景流程</h2>
           <p>
-            总览只能说明四者会相遇，不能证明任何一个协议。下面每节都固定一个真实仓库用例，
-            紧接完整源码和该用例自己的执行图。Suspense 小节还完整给出
-            imports、 shared
-            setup、动作、断言与清理，是本页可直接定位运行的完整仓库测试上下文。
+            下面用四个仓库测试分别说明目标迁移、异步提交、状态缓存和 appear
+            完成时机， 每个用例都配合对应源码与执行图。随后用 Suspense 内的
+            Teleport 场景说明 两套协议如何共同决定挂载时机。Suspense 小节的
+            imports 和共享 helper 也供这个组合用例使用。
           </p>
 
           <h3 id="teleport-proof">A. Teleport：目标从 A 改为 B</h3>
@@ -673,7 +988,9 @@ if (vnodeShouldKeepAlive) return keepAliveContext.deactivate(vnode)
   { o: { insert }, m: move }: RendererInternals,
   moveType: TeleportMoveTypes = TeleportMoveTypes.REORDER,
 ): void {
-  // 目标变化先把结束锚点插入新容器，children 随后都移动到它之前。
+  // 目标变化先插入 targetAnchor，再用同一个 parentAnchor 移动 children。
+  // process 的 TARGET_CHANGE 路径传入 null，二者依次追加，所以新目标内是
+  // targetAnchor、children；targetStart 仍留在旧目标，不构成新的完整包围区间。
   if (moveType === TeleportMoveTypes.TARGET_CHANGE) {
     insert(vnode.targetAnchor!, container, parentAnchor)
   }
@@ -704,30 +1021,357 @@ if (vnodeShouldKeepAlive) return keepAliveContext.deactivate(vnode)
     insert(anchor!, container, parentAnchor)
   }
 }</code></pre>
-          <div
-            class="diagram"
-            role="img"
-            aria-label="Teleport 从 target A 移到 target B 前后，targetStart 留在 A，children 和 targetAnchor 去 B"
+          <figure
+            class="eng-diagram"
+            id="eng-teleport-target-snapshot"
+            style="--diagram-width: 1320px"
           >
-            <div class="diagram-title">TELEPORT · TARGET CHANGE</div>
-            <div class="branch-grid">
-              <div class="layer-node">
-                <strong>更新前 · target A</strong
-                ><small>targetStart(A) · children · targetAnchor</small>
-              </div>
-              <div class="layer-node">
-                <strong>更新前 · target B</strong><small>空</small>
-              </div>
-              <div class="layer-node">
-                <strong>更新后 · target A</strong
-                ><small>targetStart(A) 留下；空文本锚点不会出现在 serializeInner 中</small>
-              </div>
-              <div class="layer-node emphasis">
-                <strong>更新后 · target B</strong
-                ><small>children · targetAnchor；主树 start/end 始终不动</small>
-              </div>
+            <div
+              class="eng-scroll"
+              tabindex="0"
+              aria-label="工程图，可横向滚动"
+            >
+              <svg
+                class="eng-svg"
+                viewBox="0 0 1320 590"
+                role="img"
+                aria-labelledby="eng-teleport-target-snapshot-title eng-teleport-target-snapshot-desc"
+              >
+                <title id="eng-teleport-target-snapshot-title">
+                  Teleport 目标变化前后的逻辑关系与宿主对象快照
+                </title>
+                <desc id="eng-teleport-target-snapshot-desc">
+                  目标由 A 变为 B，VNode children 关系与 Child 的组件 parent
+                  不变，Teleport 不创建组件实例。主容器 start/end 不变；S 留在
+                  A，B 中依次追加 E 与 C。
+                </desc>
+                <defs>
+                  <marker
+                    id="eng-teleport-target-snapshot-arrow"
+                    viewBox="0 0 10 8"
+                    refX="9"
+                    refY="4"
+                    markerWidth="10"
+                    markerHeight="8"
+                    orient="auto-start-reverse"
+                  >
+                    <path d="M 0 0 L 10 4 L 0 8 Z" fill="var(--brand)" />
+                  </marker>
+                </defs>
+                <text class="eng-heading" x="34" y="30" text-anchor="start">
+                  VNode children 关系：宿主位置改变，组件 parent 不变
+                </text>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="34"
+                    y="50"
+                    width="220"
+                    height="75"
+                    rx="10"
+                  />
+                  <text class="eng-heading" x="52" y="78" text-anchor="start">
+                    父级元素 VNode
+                  </text>
+                  <text class="eng-small" x="52" y="104" text-anchor="start">
+                    由 Parent 组件渲染
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="410"
+                    y="50"
+                    width="390"
+                    height="75"
+                    rx="10"
+                  />
+                  <text class="eng-heading" x="428" y="78" text-anchor="start">
+                    Teleport VNode
+                  </text>
+                  <text class="eng-small" x="428" y="104" text-anchor="start">
+                    el/anchor：主树；S/E：远端
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="988"
+                    y="50"
+                    width="298"
+                    height="75"
+                    rx="10"
+                  />
+                  <text class="eng-heading" x="1006" y="78" text-anchor="start">
+                    Child VNode → 宿主节点 C
+                  </text>
+                  <text class="eng-small" x="1006" y="104" text-anchor="start">
+                    宿主 DOM 与已有组件实例不重建
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M 254 88 H 408"
+                  marker-end="url(#eng-teleport-target-snapshot-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 800 88 H 986"
+                  marker-end="url(#eng-teleport-target-snapshot-arrow)"
+                />
+                <text class="eng-small" x="330" y="76" text-anchor="middle">
+                  children
+                </text>
+                <text class="eng-small" x="892" y="76" text-anchor="middle">
+                  children
+                </text>
+                <text class="eng-small" x="34" y="145" text-anchor="start">
+                  组件 parent 链：Child.component.parent = Parent；Teleport
+                  不创建组件实例。
+                </text>
+                <g>
+                  <rect
+                    class="eng-lane"
+                    x="34"
+                    y="155"
+                    width="610"
+                    height="314"
+                    rx="10"
+                  />
+                  <text class="eng-heading" x="52" y="183" text-anchor="start">
+                    更新前：to = A，target = A
+                  </text>
+                  <text class="eng-small" x="52" y="209" text-anchor="start">
+                    保存的引用：targetStart = S，targetAnchor = E
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-lane"
+                    x="678"
+                    y="155"
+                    width="610"
+                    height="314"
+                    rx="10"
+                  />
+                  <text class="eng-heading" x="696" y="183" text-anchor="start">
+                    更新后：to = B，target = B
+                  </text>
+                  <text class="eng-small" x="696" y="209" text-anchor="start">
+                    引用仍是 S/E；只更改 target 与物理位置
+                  </text>
+                </g>
+                <text class="eng-small" x="54" y="245" text-anchor="start">
+                  主容器
+                </text>
+                <g>
+                  <rect
+                    class="eng-state"
+                    x="162"
+                    y="218"
+                    width="170"
+                    height="61"
+                    rx="10"
+                  />
+                  <text class="eng-heading" x="180" y="246" text-anchor="start">
+                    start
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-state"
+                    x="360"
+                    y="218"
+                    width="170"
+                    height="61"
+                    rx="10"
+                  />
+                  <text class="eng-heading" x="378" y="246" text-anchor="start">
+                    end
+                  </text>
+                </g>
+                <text class="eng-small" x="54" y="330" text-anchor="start">
+                  目标 A
+                </text>
+                <text class="eng-small" x="54" y="416" text-anchor="start">
+                  目标 B
+                </text>
+                <text class="eng-small" x="698" y="245" text-anchor="start">
+                  主容器
+                </text>
+                <g>
+                  <rect
+                    class="eng-state"
+                    x="806"
+                    y="218"
+                    width="170"
+                    height="61"
+                    rx="10"
+                  />
+                  <text class="eng-heading" x="824" y="246" text-anchor="start">
+                    start
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-state"
+                    x="1004"
+                    y="218"
+                    width="170"
+                    height="61"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-heading"
+                    x="1022"
+                    y="246"
+                    text-anchor="start"
+                  >
+                    end
+                  </text>
+                </g>
+                <text class="eng-small" x="698" y="330" text-anchor="start">
+                  目标 A
+                </text>
+                <text class="eng-small" x="698" y="416" text-anchor="start">
+                  目标 B
+                </text>
+                <g>
+                  <rect
+                    class="eng-state"
+                    x="162"
+                    y="300"
+                    width="145"
+                    height="62"
+                    rx="10"
+                  />
+                  <text class="eng-heading" x="180" y="328" text-anchor="start">
+                    S
+                  </text>
+                  <text class="eng-small" x="180" y="352" text-anchor="start">
+                    targetStart
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-state"
+                    x="328"
+                    y="300"
+                    width="145"
+                    height="62"
+                    rx="10"
+                  />
+                  <text class="eng-heading" x="346" y="328" text-anchor="start">
+                    C
+                  </text>
+                  <text class="eng-small" x="346" y="352" text-anchor="start">
+                    children
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-state"
+                    x="494"
+                    y="300"
+                    width="145"
+                    height="62"
+                    rx="10"
+                  />
+                  <text class="eng-heading" x="512" y="328" text-anchor="start">
+                    E
+                  </text>
+                  <text class="eng-small" x="512" y="352" text-anchor="start">
+                    targetAnchor
+                  </text>
+                </g>
+                <text class="eng-label" x="164" y="417" text-anchor="start">
+                  空
+                </text>
+                <g>
+                  <rect
+                    class="eng-state"
+                    x="806"
+                    y="300"
+                    width="145"
+                    height="62"
+                    rx="10"
+                  />
+                  <text class="eng-heading" x="824" y="328" text-anchor="start">
+                    S
+                  </text>
+                  <text class="eng-small" x="824" y="352" text-anchor="start">
+                    targetStart
+                  </text>
+                </g>
+                <text class="eng-small" x="976" y="334" text-anchor="start">
+                  S 留在 A
+                </text>
+                <g>
+                  <rect
+                    class="eng-state"
+                    x="806"
+                    y="386"
+                    width="170"
+                    height="62"
+                    rx="10"
+                  />
+                  <text class="eng-heading" x="824" y="414" text-anchor="start">
+                    E
+                  </text>
+                  <text class="eng-small" x="824" y="438" text-anchor="start">
+                    targetAnchor
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-state"
+                    x="1005"
+                    y="386"
+                    width="170"
+                    height="62"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-heading"
+                    x="1023"
+                    y="414"
+                    text-anchor="start"
+                  >
+                    C
+                  </text>
+                  <text class="eng-small" x="1023" y="438" text-anchor="start">
+                    children
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-note"
+                    x="34"
+                    y="490"
+                    width="1254"
+                    height="78"
+                    rx="10"
+                  />
+                  <text class="eng-heading" x="52" y="518" text-anchor="start">
+                    TARGET_CHANGE 的两个连续宿主操作
+                  </text>
+                  <text class="eng-small" x="52" y="544" text-anchor="start">
+                    insert(E, B, null) 先追加 E；随后 move(C, B, null) 追加
+                    C。主树 start/end 不动，卸载时按 S/E 的引用分别移除。
+                  </text>
+                </g>
+              </svg>
             </div>
-          </div>
+            <figcaption>
+              Vue 3.5.41 的
+              <code>process → TARGET_CHANGE → moveTeleport</code> 路径传入
+              <code>parentAnchor = null</code>，所以新目标内是 E、C。<code
+                >should update target</code
+              >
+              测试中的空文本锚点不会显示在序列化字符串中；对象顺序依据实际
+              insert/move 调用。
+            </figcaption>
+          </figure>
           <div class="test-proof">
             <p>
               <strong>Given：</strong>A/B
@@ -737,10 +1381,9 @@ if (vnodeShouldKeepAlive) return keepAliveContext.deactivate(vnode)
             </p>
             <p>
               <strong>Mechanism：</strong>update 比较新旧
-              <code>to</code>，解析新目标并用
-              <code>TARGET_CHANGE</code> 移动 <code>targetAnchor</code> 和 children；
-              <code>targetStart</code> 保留在旧目标；<strong
-                >Source：</strong
+              <code>to</code>，解析新目标并用 <code>TARGET_CHANGE</code> 移动
+              <code>targetAnchor</code> 和 children；
+              <code>targetStart</code> 保留在旧目标；<strong>Source：</strong
               ><code>Teleport.ts · moveTeleport</code> 连续段。
             </p>
           </div>
@@ -748,7 +1391,8 @@ if (vnodeShouldKeepAlive) return keepAliveContext.deactivate(vnode)
             <strong>失效/清理：</strong>新 target
             无效时开发态警告且不搬移；卸载会取消 pending defer
             job、分别移除可能位于不同容器的 <code>targetStart</code> 与
-            <code>targetAnchor</code>，并 unmount 远端 children，避免旧目标残留锚点。
+            <code>targetAnchor</code>，并 unmount 远端
+            children，避免旧目标残留锚点。
           </div>
 
           <h3 id="suspense-proof">
@@ -1101,32 +1745,207 @@ describe('KeepAlive', () =&gt; {
 
       current = vnode
       return isSuspense(rawVNode.type) ? rawVNode : vnode</code></pre>
-          <div
-            class="diagram"
-            role="img"
-            aria-label="KeepAlive one two one 状态恢复的局部流程"
+          <figure
+            class="eng-diagram"
+            id="eng-keepalive-lifecycle-eviction"
+            style="--diagram-width: 1320px"
           >
-            <div class="diagram-title">KEEPALIVE · CACHE IDENTITY</div>
-            <div class="layer-flow">
-              <div class="layer-node">
-                <strong>Given</strong><small>one.msg 改为 changed</small>
-              </div>
-              <div class="diagram-arrow">→ 切 two</div>
-              <div class="layer-node">
-                <strong>Deactivate</strong
-                ><small>one 实例/DOM 移入 storage；cache 保留</small>
-              </div>
-              <div class="diagram-arrow">→ 切 one</div>
-              <div class="layer-node emphasis">
-                <strong>Cache hit</strong
-                ><small>复用 component/el；标记 KEPT_ALIVE</small>
-              </div>
-              <div class="diagram-arrow">→</div>
-              <div class="layer-node">
-                <strong>Then</strong><small>重新显示 changed，不是 one</small>
-              </div>
+            <div
+              class="eng-scroll"
+              tabindex="0"
+              aria-label="工程图，可横向滚动"
+            >
+              <svg
+                class="eng-svg"
+                viewBox="0 0 1320 684"
+                role="img"
+                aria-labelledby="eng-keepalive-lifecycle-eviction-title eng-keepalive-lifecycle-eviction-desc"
+              >
+                <title id="eng-keepalive-lifecycle-eviction-title">
+                  KeepAlive 活动、停用与缓存淘汰分支
+                </title>
+                <desc id="eng-keepalive-lifecycle-eviction-desc">
+                  同一组件实例在真实容器与 storageContainer
+                  之间移动。缓存淘汰检查是否为
+                  current：活动项只清保活标记，非活动项直接普通卸载。
+                </desc>
+                <defs>
+                  <marker
+                    id="eng-keepalive-lifecycle-eviction-arrow"
+                    viewBox="0 0 10 8"
+                    refX="9"
+                    refY="4"
+                    markerWidth="10"
+                    markerHeight="8"
+                    orient="auto-start-reverse"
+                  >
+                    <path d="M 0 0 L 10 4 L 0 8 Z" fill="var(--brand)" />
+                  </marker>
+                </defs>
+                <text class="eng-heading" x="34" y="30" text-anchor="start">
+                  KeepAlive 的同一实例：停用可恢复，淘汰才走普通卸载
+                </text>
+                <g>
+                  <rect
+                    class="eng-state"
+                    x="34"
+                    y="70"
+                    width="450"
+                    height="152"
+                    rx="10"
+                  />
+                  <text class="eng-heading" x="52" y="98" text-anchor="start">
+                    活动实例 A
+                  </text>
+                  <text class="eng-small" x="52" y="124" text-anchor="start">
+                    真实容器持有 DOM D；component = C
+                  </text>
+                  <text class="eng-small" x="52" y="146" text-anchor="start">
+                    cache[key A] 保留已挂载 VNode
+                  </text>
+                  <text class="eng-small" x="52" y="168" text-anchor="start">
+                    isDeactivated = false
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-state"
+                    x="826"
+                    y="70"
+                    width="460"
+                    height="152"
+                    rx="10"
+                  />
+                  <text class="eng-heading" x="844" y="98" text-anchor="start">
+                    停用实例 A
+                  </text>
+                  <text class="eng-small" x="844" y="124" text-anchor="start">
+                    storageContainer 持有同一 DOM D
+                  </text>
+                  <text class="eng-small" x="844" y="146" text-anchor="start">
+                    component C 与 cache[key A] 均保留
+                  </text>
+                  <text class="eng-small" x="844" y="168" text-anchor="start">
+                    post：先调用 deactivated，再置标记为 true
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M 484 138 H 824"
+                  marker-end="url(#eng-keepalive-lifecycle-eviction-arrow)"
+                />
+                <text class="eng-small" x="654" y="109" text-anchor="middle">
+                  切走 → deactivate → move(LEAVE)
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 1056 222 V 280 H 260 V 224"
+                  marker-end="url(#eng-keepalive-lifecycle-eviction-arrow)"
+                />
+                <text class="eng-small" x="659" y="264" text-anchor="middle">
+                  命中 cache → move(ENTER) → patch 最新 props/slots → post：标记
+                  false，再 activated
+                </text>
+                <text class="eng-label" x="660" y="328" text-anchor="middle">
+                  缓存淘汰入口：max 超限 / include、exclude 清理
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 660 340 V 370"
+                  marker-end="url(#eng-keepalive-lifecycle-eviction-arrow)"
+                />
+                <g>
+                  <polygon
+                    class="eng-decision"
+                    points="660,370.0 790.0,430 660,490.0 530.0,430"
+                  />
+                  <text class="eng-label" x="660" y="425" text-anchor="middle">
+                    待淘汰项仍是
+                  </text>
+                  <text class="eng-label" x="660" y="445" text-anchor="middle">
+                    current 活动分支？
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M 530 430 H 260 V 518"
+                  marker-end="url(#eng-keepalive-lifecycle-eviction-arrow)"
+                />
+                <text class="eng-label" x="390" y="414" text-anchor="middle">
+                  是
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 790 430 H 1056 V 518"
+                  marker-end="url(#eng-keepalive-lifecycle-eviction-arrow)"
+                />
+                <text class="eng-label" x="915" y="414" text-anchor="middle">
+                  否
+                </text>
+                <g>
+                  <rect
+                    class="eng-state"
+                    x="34"
+                    y="520"
+                    width="450"
+                    height="135"
+                    rx="10"
+                  />
+                  <text class="eng-heading" x="52" y="548" text-anchor="start">
+                    取消保活，当前 DOM 暂时保留
+                  </text>
+                  <text class="eng-small" x="52" y="574" text-anchor="start">
+                    清 COMPONENT_SHOULD_KEEP_ALIVE / KEPT_ALIVE
+                  </text>
+                  <text class="eng-small" x="52" y="596" text-anchor="start">
+                    从 cache、keys 删除该项
+                  </text>
+                  <text class="eng-small" x="52" y="618" text-anchor="start">
+                    下一次离开或父级卸载时进入普通 unmount
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-state"
+                    x="826"
+                    y="520"
+                    width="460"
+                    height="135"
+                    rx="10"
+                  />
+                  <text class="eng-heading" x="844" y="548" text-anchor="start">
+                    真正 unmount
+                  </text>
+                  <text class="eng-small" x="844" y="574" text-anchor="start">
+                    resetShapeFlag 后调用 renderer._unmount
+                  </text>
+                  <text class="eng-small" x="844" y="596" text-anchor="start">
+                    停止组件作用域，销毁实例并移除宿主节点
+                  </text>
+                  <text class="eng-small" x="844" y="618" text-anchor="start">
+                    执行正常的卸载生命周期
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow eng-async"
+                  d="M 484 587 H 824"
+                  marker-end="url(#eng-keepalive-lifecycle-eviction-arrow)"
+                />
+                <text class="eng-small" x="655" y="575" text-anchor="middle">
+                  以后离开 / 父级卸载
+                </text>
+              </svg>
             </div>
-          </div>
+            <figcaption>
+              图以无 Transition 的普通有状态子组件为例，post 表示 post-render
+              队列。<code>activate/deactivate</code> 的标记与钩子顺序来自 setup
+              中的实现；<code>pruneCacheEntry</code>
+              区分活动项和后台项。停用保留响应式
+              effect，只有普通卸载会停止组件作用域。KeepAlive
+              自身卸载时，后台缓存逐个
+              unmount，当前子树清除保活标记后随父级正常卸载。
+            </figcaption>
+          </figure>
           <div class="test-proof">
             <p>
               <strong>Given：</strong>one 实例状态改为
@@ -1336,62 +2155,356 @@ function mockProps(
             undefined。
           </div>
 
-          <h3 id="combined-proof">E. 组合场景：先列风险，不虚构一条通用时序</h3>
+          <h3 id="combined-proof">
+            E. Suspense + Teleport：远端内容也要等默认分支提交
+          </h3>
           <p>
-            当前页面只有 Teleport、Suspense、KeepAlive、BaseTransition
-            的四个独立测试，<strong>没有一个同时嵌套四者的回归测试</strong>。因此这一节只列组合时必须核对的状态，不再给出“先 fallback、再 deactivate、再 leave、最后 commit”之类确定顺序。嵌套顺序、Transition mode、Suspense timeout
-            任一变化，都可能改变实际回调先后。
+            这次把 Teleport 放在 Suspense 默认插槽的 div 中，与一个 async setup
+            组件并列； fallback 是独立的等待界面。Teleport 没有设置
+            defer，但首次 render 后 target 仍为空。这是 Suspense
+            等待协议对远端内容的约束：如果目标 children 立即挂载，
+            主页面还在显示 fallback，弹窗或其他远端内容就会提前出现。
           </p>
-          <div
-            class="diagram"
-            role="img"
-            aria-label="Teleport Suspense KeepAlive Transition 组合场景的四类独立风险与共同 renderer 边界"
+          <p>
+            mountSuspense 先把默认分支挂到 hiddenContainer，async setup 使 deps
+            增加。 Teleport 随后创建主树 start/end 锚点，发现
+            parentSuspense.pendingBranch 非空， 便调用
+            queuePendingMount。这个任务通过 queuePostRenderEffect 进入边界
+            effects， 此时既不解析 target，也不挂载远端 children。
+          </p>
+          <p class="source-note">
+            下列两段分别是 Teleport.ts
+            中的连续原文：第一段是首次挂载的排队条件，
+            第二段是任务注册与执行；它们位于同一文件的不同位置。
+          </p>
+          <pre
+            data-source-file="vue/packages/runtime-core/src/components/Teleport.ts"
+          ><code>      if (
+        isTeleportDeferred(n2.props) ||
+        (__FEATURE_SUSPENSE__ &amp;&amp; parentSuspense &amp;&amp; parentSuspense.pendingBranch)
+      ) {
+        queuePendingMount(n2)
+        return
+      }</code></pre>
+          <pre
+            data-source-file="vue/packages/runtime-core/src/components/Teleport.ts"
+          ><code>    const queuePendingMount = (vnode: TeleportVNode) =&gt; {
+      const mountJob: SchedulerJob = () =&gt; {
+        if (pendingMounts.get(vnode) !== mountJob) return
+        pendingMounts.delete(vnode)
+        if (isTeleportDisabled(vnode.props)) {
+          // Suspense resolve 期间可能已把整条分支移动到另一容器，闭包捕获的 container
+          // 会过期；从当前占位节点反查父容器，才能把 disabled children 放到正确位置。
+          const mountContainer = parentNode(vnode.el!) || container
+          mount(vnode, mountContainer, vnode.anchor!)
+          updateCssVars(vnode, true)
+        }
+        mountToTarget(vnode)
+      }
+      pendingMounts.set(vnode, mountJob)
+      queuePostRenderEffect(mountJob, parentSuspense)
+    }</code></pre>
+          <p>
+            最后一个依赖完成后，registerDep 减少 deps 并调用
+            resolve。这里没有过渡， resolve 先移除 fallback，把默认分支从
+            hiddenContainer 移到真实容器， 再以 queuePostFlushCb(effects)
+            释放挂载任务。任务检查 WeakMap 中的身份仍匹配后， 删除 pendingMounts
+            记录并执行 mountToTarget，远端 children 才真正出现在 target 中。
+            如果上层还有 pending Suspense，effects
+            会先交给最近的等待祖先，继续推迟到外层提交。
+          </p>
+          <figure
+            class="eng-diagram"
+            id="eng-suspense-teleport-sequence"
+            style="--diagram-width: 1320px"
           >
-            <div class="diagram-title">COMPOSED CASE · RISK MAP, NOT A TIMELINE</div>
-            <div class="branch-grid">
-              <div class="layer-node">
-                <strong>Teleport</strong
-                ><small>主树锚点、旧/新 target、children 当前物理容器</small>
-              </div>
-              <div class="layer-node">
-                <strong>Suspense</strong
-                ><small>active/pending branch、deps、pendingId、hiddenContainer</small>
-              </div>
-              <div class="layer-node">
-                <strong>KeepAlive</strong
-                ><small>cache key、active/deactivated、storageContainer、最终 prune</small>
-              </div>
-              <div class="layer-node emphasis">
-                <strong>Transition</strong
-                ><small>enter/leave callback、mode、取消与真正 remove 时点</small>
-              </div>
+            <div
+              class="eng-scroll"
+              tabindex="0"
+              aria-label="工程图，可横向滚动"
+            >
+              <svg
+                class="eng-svg"
+                viewBox="0 0 1320 705"
+                role="img"
+                aria-labelledby="eng-suspense-teleport-sequence-title eng-suspense-teleport-sequence-desc"
+              >
+                <title id="eng-suspense-teleport-sequence-title">
+                  pending Suspense 内 Teleport 的跨角色挂载时序
+                </title>
+                <desc id="eng-suspense-teleport-sequence-desc">
+                  Renderer 先挂载默认分支并登记 async setup，Teleport
+                  的挂载任务缓冲在边界 effects。Promise 完成后 resolve
+                  先移入默认内容，再释放 post 任务，任务执行才挂载 target
+                  children。
+                </desc>
+                <defs>
+                  <marker
+                    id="eng-suspense-teleport-sequence-arrow"
+                    viewBox="0 0 10 8"
+                    refX="9"
+                    refY="4"
+                    markerWidth="10"
+                    markerHeight="8"
+                    orient="auto-start-reverse"
+                  >
+                    <path d="M 0 0 L 10 4 L 0 8 Z" fill="var(--brand)" />
+                  </marker>
+                </defs>
+                <text class="eng-heading" x="34" y="30" text-anchor="start">
+                  同一用例中的调用者、异步完成、边界缓冲与 post 执行
+                </text>
+                <g>
+                  <rect
+                    class="eng-lane"
+                    x="42"
+                    y="55"
+                    width="285"
+                    height="58"
+                    rx="10"
+                  />
+                  <text class="eng-heading" x="60" y="83" text-anchor="start">
+                    Renderer / Suspense
+                  </text>
+                </g>
+                <line class="eng-divider" x1="184" y1="113" x2="184" y2="669" />
+                <g>
+                  <rect
+                    class="eng-lane"
+                    x="367"
+                    y="55"
+                    width="235"
+                    height="58"
+                    rx="10"
+                  />
+                  <text class="eng-heading" x="385" y="83" text-anchor="start">
+                    Async setup 组件
+                  </text>
+                </g>
+                <line class="eng-divider" x1="484" y1="113" x2="484" y2="669" />
+                <g>
+                  <rect
+                    class="eng-lane"
+                    x="657"
+                    y="55"
+                    width="235"
+                    height="58"
+                    rx="10"
+                  />
+                  <text class="eng-heading" x="675" y="83" text-anchor="start">
+                    Teleport
+                  </text>
+                </g>
+                <line class="eng-divider" x1="774" y1="113" x2="774" y2="669" />
+                <g>
+                  <rect
+                    class="eng-lane"
+                    x="947"
+                    y="55"
+                    width="325"
+                    height="58"
+                    rx="10"
+                  />
+                  <text class="eng-heading" x="965" y="83" text-anchor="start">
+                    Scheduler / post 队列
+                  </text>
+                </g>
+                <line
+                  class="eng-divider"
+                  x1="1110"
+                  y1="113"
+                  x2="1110"
+                  y2="669"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 184 146 H 482"
+                  marker-end="url(#eng-suspense-teleport-sequence-arrow)"
+                />
+                <text class="eng-small" x="333" y="135" text-anchor="middle">
+                  patch 默认分支到 hiddenContainer
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 484 193 H 186"
+                  marker-end="url(#eng-suspense-teleport-sequence-arrow)"
+                />
+                <text class="eng-small" x="333" y="179" text-anchor="middle">
+                  setup 返回 Promise；registerDep → deps++
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 184 240 H 772"
+                  marker-end="url(#eng-suspense-teleport-sequence-arrow)"
+                />
+                <text class="eng-small" x="480" y="228" text-anchor="middle">
+                  process：主树锚点已创建，parentSuspense.pendingBranch 非空
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 774 287 H 186"
+                  marker-end="url(#eng-suspense-teleport-sequence-arrow)"
+                />
+                <text class="eng-small" x="480" y="275" text-anchor="middle">
+                  queuePendingMount → queuePostRenderEffect(job, boundary)
+                </text>
+                <g>
+                  <rect
+                    class="eng-note"
+                    x="42"
+                    y="315"
+                    width="285"
+                    height="90"
+                    rx="10"
+                  />
+                  <text class="eng-heading" x="60" y="343" text-anchor="start">
+                    等待时的边界
+                  </text>
+                  <text class="eng-small" x="60" y="369" text-anchor="start">
+                    effects = [mountJob]
+                  </text>
+                  <text class="eng-small" x="60" y="391" text-anchor="start">
+                    主容器仍是 fallback
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-note"
+                    x="947"
+                    y="315"
+                    width="325"
+                    height="90"
+                    rx="10"
+                  />
+                  <text class="eng-heading" x="965" y="343" text-anchor="start">
+                    等待时的目标
+                  </text>
+                  <text class="eng-small" x="965" y="369" text-anchor="start">
+                    target 为空
+                  </text>
+                  <text class="eng-small" x="965" y="391" text-anchor="start">
+                    job 尚未交给全局 post 队列
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow eng-async"
+                  d="M 484 431 H 186"
+                  marker-end="url(#eng-suspense-teleport-sequence-arrow)"
+                />
+                <text class="eng-small" x="332" y="410" text-anchor="middle">
+                  Promise 完成 → setupRenderEffect → --deps = 0
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 184 479 H 1108"
+                  marker-end="url(#eng-suspense-teleport-sequence-arrow)"
+                />
+                <text class="eng-small" x="646" y="464" text-anchor="middle">
+                  resolve：先 move 默认分支入真实容器，再
+                  queuePostFlushCb(effects)
+                </text>
+                <path
+                  class="eng-arrow eng-async"
+                  d="M 1110 527 H 776"
+                  marker-end="url(#eng-suspense-teleport-sequence-arrow)"
+                />
+                <text class="eng-small" x="943" y="512" text-anchor="middle">
+                  post flush：执行 mountJob
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 774 575 H 186"
+                  marker-end="url(#eng-suspense-teleport-sequence-arrow)"
+                />
+                <text class="eng-small" x="480" y="560" text-anchor="middle">
+                  mountToTarget → Renderer 宿主操作：向 target 插入锚点和
+                  children
+                </text>
+                <g>
+                  <rect
+                    class="eng-note"
+                    x="42"
+                    y="613"
+                    width="1230"
+                    height="65"
+                    rx="10"
+                  />
+                  <text class="eng-heading" x="60" y="641" text-anchor="start">
+                    测试断言的两个观察点
+                  </text>
+                  <text class="eng-small" x="60" y="667" text-anchor="start">
+                    首次 render：fallback 可见、target 为空；await
+                    Promise.all(deps) 与 nextTick 后：默认内容和远端 children
+                    均已显示。
+                  </text>
+                </g>
+              </svg>
             </div>
-            <p class="concept-sentence">
-              四者只在 renderer internals、VNode 状态、container/anchor 与 post effects
-              上相遇；上面四格没有执行先后含义。
-            </p>
-          </div>
-          <div class="branch-grid">
-            <div class="branch">
-              <strong>先画容器</strong
-              ><span>逻辑父树、Teleport target、Suspense hiddenContainer、KeepAlive storageContainer 当前分别是谁？</span>
-            </div>
-            <div class="branch">
-              <strong>再标身份</strong
-              ><span>当前 active VNode、pendingId、cache key 与 transition key 是否仍属于这次导航？</span>
-            </div>
-            <div class="branch">
-              <strong>最后标时机</strong
-              ><span>节点是在 move、deactivate、延迟 leave，还是最终 unmount？post effects 挂在哪个边界？</span>
-            </div>
-            <div class="branch">
-              <strong>验证清理</strong
-              ><span>过期 async 分支、transition callback、缓存实例、远端 children 与两套 target anchors 是否全部有退出路径？</span>
-            </div>
-          </div>
+            <figcaption>
+              实线是当前调用中的动作，虚线是 Promise 或 post 队列恢复执行。对应
+              <code>should mount after suspense is resolved</code>；本例没有
+              Transition，也没有 pending
+              祖先。等待期间更新会替换旧任务，卸载会删除 pendingMounts
+              记录并标记 DISPOSED，故过期任务不会在 resolve 后补挂载。
+            </figcaption>
+          </figure>
+          <p class="source-note">
+            以下是 Suspense.spec.ts 的完整连续测试体，复用
+            <a href="#suspense-proof"
+              >B 节的 imports、deps 与 defineAsyncComponent helper</a
+            >。 两组断言分别对应“fallback 可见但 target
+            为空”和“主内容、远端内容均已提交”。
+          </p>
+          <pre
+            data-source-file="vue/packages/runtime-core/__tests__/components/Suspense.spec.ts"
+          ><code>  test(&#x27;should mount after suspense is resolved&#x27;, async () =&gt; {
+    const target = nodeOps.createElement(&#x27;div&#x27;)
+
+    const Async = defineAsyncComponent({
+      render() {
+        return h(&#x27;div&#x27;, &#x27;async&#x27;)
+      },
+    })
+
+    const Comp = {
+      setup() {
+        return () =&gt;
+          h(Suspense, null, {
+            default: h(&#x27;div&#x27;, null, [
+              h(Async),
+              h(Teleport, { to: target }, h(&#x27;div&#x27;, &#x27;teleported&#x27;)),
+            ]),
+            fallback: h(&#x27;div&#x27;, &#x27;fallback&#x27;),
+          })
+      },
+    }
+
+    const root = nodeOps.createElement(&#x27;div&#x27;)
+    render(h(Comp), root)
+    expect(serializeInner(root)).toBe(`&lt;div&gt;fallback&lt;/div&gt;`)
+    expect(serializeInner(target)).toBe(``)
+
+    await Promise.all(deps)
+    await nextTick()
+    expect(serializeInner(root)).toBe(
+      `&lt;div&gt;&lt;div&gt;async&lt;/div&gt;&lt;!--teleport start--&gt;&lt;!--teleport end--&gt;&lt;/div&gt;`,
+    )
+    expect(serializeInner(target)).toBe(`&lt;div&gt;teleported&lt;/div&gt;`)
+  })</code></pre>
+          <p>
+            pending 期间更新 Teleport，process 会处置旧 VNode
+            的挂载任务，并为最新 VNode 重新排队；卸载则删除 WeakMap
+            记录、标记任务 DISPOSED，且不卸载尚未挂载的 children。 同文件的
+            should patch teleport before suspense is resolved 与 should not
+            mount discarded teleport after suspense is resolved
+            用例分别覆盖这两条退出路径。 因而等待期间的旧 props、children
+            或已移除分支都不会在 resolve 后重新出现。
+          </p>
           <div class="callout warm">
-            <strong>证据边界：</strong>上面是根据四套独立协议整理的审查清单，不是已验证行为。
-            要写某一种嵌套的精确事件顺序，必须先补同一棵 VNode 树、同一组操作与清理断言的组合测试。
+            本例默认分支没有 Transition，所以内容先移入主容器，再释放 Teleport
+            任务。 out-in 会把实际 move 和 effects 释放推迟到旧分支
+            afterLeave；KeepAlive 还会加入 storageContainer
+            的停用与激活过程，事件顺序需按这些具体分支说明。
           </div>
         </section>
 
@@ -1483,12 +2596,9 @@ function mockProps(
         <section class="article-section prose" id="evidence-matrix">
           <h2>四个协议分别去哪里核对</h2>
           <p class="source-note">
-            固定版本实跑（Node v24.5.0）：<code>Teleport.spec.ts</code> 56、<code
-              >Suspense.spec.ts</code
-            >
-            58、<code>KeepAlive.spec.ts</code> 32、<code
-              >BaseTransition.spec.ts</code
-            >
+            固定版本实跑（Node v24.5.0）：<code>Teleport.spec.ts</code>
+            56、<code>Suspense.spec.ts</code> 58、<code>KeepAlive.spec.ts</code>
+            32、<code>BaseTransition.spec.ts</code>
             39 tests passed。
           </p>
           <div class="table-wrap">

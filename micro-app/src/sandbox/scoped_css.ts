@@ -40,8 +40,8 @@ function parseError (msg: string, linkPath?: string): void {
  * 以游标切片方式解析并重写子应用 CSS。
  *
  * 解析器参考 reworkcss/css，识别普通样式规则、`@` 规则与注释三类结构；作用域处理只改写选择器
- * 与相对 `url()`，并通过内联控制注释临时关闭改写。每个匹配器都必须消费 `cssText` 的前缀并把
- * 等价片段追加到 `result`，这是递归解析能够终止且不丢字符的核心不变量。
+ * 与相对 `url()`，并通过内联控制注释临时关闭改写。匹配成功后从 `cssText` 前缀消费文本，把
+ * 原片段或改写后的片段追加到 `result`；规则循环每轮必须前移游标，才能继续处理剩余文本。
  *
  * @see https://github.com/reworkcss/css
  */
@@ -50,17 +50,17 @@ class CSSParser {
   private cssText = ''
   /** 注入普通选择器前的子应用根前缀，例如 `micro-app[name=xxx]`。 */
   private prefix = ''
-  /** 补全相对资源地址时使用的基础 URL。 */
+  /** URL 补全的当前基址；起初为应用入口，遇到需处理的外链非根路径 URL 后持续改为 CSS 文件目录。 */
   private baseURI = ''
   /** 外链样式地址；内联样式为空，并用于错误定位及相对路径基准。 */
   private linkPath = ''
   /** 按原顺序累计的解析结果。 */
   private result = ''
-  /** 是否因 `scopecss-disable` 控制注释而全局暂停选择器与 URL 改写。 */
+  /** disable 指令是否生效；配合空列表时全局禁用，非空列表时只豁免精确命中的选择器。 */
   private scopecssDisable = false
-  /** 全局暂停期间仍需精准关闭作用域改写的选择器白名单。 */
+  /** `scopecss-disable` 后的精确选择器列表；非空时只跳过这些选择器，URL 仍会补全。 */
   private scopecssDisableSelectors: Array<string> = []
-  /** 是否仅对控制注释后的下一条规则关闭作用域改写。 */
+  /** 跳过下一条普通规则的选择器，或声明内紧接注释的下一段 URL 改写；消费后复位。 */
   private scopecssDisableNextLine = false
   /** 来自 `microApp.options.optionCss`、需要参与特殊隔离判断的选择器选项。 */
   private optionCssSelectors: Array<string> = []
@@ -150,7 +150,8 @@ class CSSParser {
    * 读取并格式化当前规则的选择器列表。
    *
    * 属性选择器中的逗号会先被占位，防止列表分割误切；随后逐个选择器判断控制注释、根选择器和
-   * `body` 映射，再决定是否添加子应用前缀。
+   * `body` 映射，再决定是否添加子应用前缀。禁用列表用 trim 后的整段字符串执行 includes，
+   * 因而 `div` 不会同时豁免 `div .child`；body 正则也可命中 `.x body` 中的 body。
    *
    * @param skip 是否只消费选择器而暂不把原文本写入结果。
    * @returns 格式化后的选择器文本；无法匹配时为 `false`。
@@ -160,9 +161,9 @@ class CSSParser {
     if (!m) return false
 
     /**
-     * 选择器改写必须保留函数伪类内部的逗号，只分割顶层选择器列表。例如 `:is(...)`、`:has(...)`、
-     * `:where(...)` 与 `:not(...)` 的参数不能被拆开；普通 `.a, .b` 则应分别加前缀。
-     * `body :not(...)` 还需把 body 映射成 `micro-app-body`，而不是简单追加根前缀。
+     * 先用占位值保护属性选择器内的逗号，再按逗号分段、恢复属性值并逐段添加前缀。
+     * 当前正则不识别函数伪类括号：`:is(.a, .b)` 也会被拆开，第二段再次加前缀，因而会改变
+     * 多参数伪类的含义。`body :not(.a)` 没有参数逗号，仍可进入 body 改写分支。
      */
     const attributeValues: {[key: string]: any} = {}
     const matchRes = m[0].replace(/\[([^\]=]+)(?:=([^\]]+))?\]/g, (match, p1, p2, offset) => {
@@ -180,13 +181,14 @@ class CSSParser {
         return match
       })
 
-      // isolation-root 用于隔离主、子应用的 :root；开启后只把 html 视为不可加前缀的根选择器。
+      // isolation-root 将 :root 移出免前缀列表；输出是“应用前缀 :root”，不会把 :root 替换为应用根。
       const isIsolationRoot = this.optionCssSelectors.some(includeSelector => {
         if (includeSelector === 'isolation-root') return true
         return false
       })
       const rootSelectorREG = isIsolationRoot ? /(^|\s+)(html)(?=[\s>~[.#:]+|$)/ : /(^|\s+)(html|:root)(?=[\s>~[.#:]+|$)/ // 未开启隔离时 html 与 :root 都保持全局根语义。
 
+      // 根选择器检测先于 body 改写，所以 `html body` 整段保留；普通 `body .x` 才映射到应用 body。
       if (selector && !(
         this.scopecssDisableNextLine ||
         (
@@ -227,7 +229,10 @@ class CSSParser {
   /**
    * 消费声明块内容、嵌套花括号和其中的注释，同时补全相对 `url()`。
    *
-   * data/blob/锚点及绝对 URL 必须原样保留；外链 CSS 中的相对 URL 以该 CSS 文件目录为基准。
+   * data/blob、以 #/%23 开头的锚点及 http(s)、file、协议相对 URL 原样保留，匹配区分大小写。
+   * 外链中非空且不以 / 开头的 URL 会把 baseURI 改为 CSS 文件目录，后续规则也沿用这个值；
+   * 因此根路径 URL 采用“当前基址”的 origin，可能已由应用 origin 切换为 CSS 所在 origin。
+   * 嵌套规则在这里作为声明文本消费，只保证花括号层次与文本保留，不逐层给嵌套选择器加前缀。
    * `nesting` 只允许内部右花括号被消费，最外层右花括号留给调用者校验。
    *
    * @param nesting 当前声明内部的附加花括号深度。
@@ -245,7 +250,7 @@ class CSSParser {
             return all
           }
 
-          // `./a/b.png`、`../a/b.png` 与 `a/b.png` 都应相对外链 CSS 文件目录解析。
+          // 这是解析器字段的持久赋值，不是单个 URL 的局部基址；后续 /a.png 也采用 CSS origin。
           if (/^((\.\.?\/)|[^/])/.test($1) && this.linkPath) {
             this.baseURI = getLinkFileDir(this.linkPath)
           }
@@ -409,7 +414,7 @@ class CSSParser {
   }
 
   /**
-   * 匹配 `@layer` 的语句形式或包含子规则的块形式。
+   * 匹配命名 `@layer` 的语句形式或包含子规则的块形式；匿名 `@layer {}` 不符合此头部正则。
    *
    * @returns 完整消费 layer 规则时为 `true`，否则为空/`false`。
    * @see https://developer.mozilla.org/en-US/docs/Web/CSS/@layer
@@ -447,9 +452,9 @@ class CSSParser {
   private hostRule = this.createMatcherForRuleWithChildRule(/^@host\s*/, '@host')
   // `:global` 属于 CSS Modules 语法；启用时应先转为普通选择器。
   // private globalRule = this.createMatcherForRuleWithChildRule(/^:global([^{]*)/, ':global')
-  /** 匹配以分号结束、没有块体的 `@import`。 */
+  /** 原样消费以分号结束的 `@import`；不补全其 URL，也不加载或隔离被导入的 CSS。 */
   private importRule = this.createMatcherForNoneBraceAtRule('import')
-  /** 匹配多数浏览器已移除但仍可能出现在样式文本中的 `@charset`。 */
+  /** 原样消费以分号结束的 `@charset` 编码声明。 */
   private charsetRule = this.createMatcherForNoneBraceAtRule('charset')
   /** 匹配以分号结束、没有块体的 `@namespace`。 */
   private namespaceRule = this.createMatcherForNoneBraceAtRule('namespace')
@@ -525,11 +530,14 @@ class CSSParser {
   /**
    * 消费一个 CSS 块注释、原样记录，并更新 scoped CSS 控制状态。
    *
+   * 任意注释都会先清除 next-line，包括普通说明注释；带列表的 disable 累加选择器，
+   * 裸 disable 只设置开关而不清空旧列表，只有 enable 同时清开关与列表。
+   *
    * @returns 成功消费时为 `true`，当前位置不是注释时为 `false`，未闭合时为空并上报错误。
    */
   private matchComment (): boolean | void {
     if (this.cssText.charAt(0) !== '/' || this.cssText.charAt(1) !== '*') return false
-    // 新控制注释开始前复位上一条“一次性禁用”，由当前注释内容重新决定状态。
+    // 普通注释也会复位上一条“一次性禁用”，再由当前注释内容决定是否重新打开。
     this.scopecssDisableNextLine = false
 
     let i = 2
@@ -625,7 +633,7 @@ class CSSParser {
   /**
    * 仅在仍有未消费文本时抛出解析错误。
    *
-   * 输入恰好结束时不报错，可让调用者把“可选规则未匹配”与“残余文本导致结构损坏”区分开。
+   * 输入恰好结束时不报错；例如 `div {` 在缺少右花括号时已耗尽文本，也会沿此分支返回而不抛出。
    *
    * @param msg 错误原因。
    * @param linkPath 可选外链样式地址。
@@ -640,8 +648,10 @@ class CSSParser {
 /**
  * 对一个 style 元素执行一次 scoped CSS 改写，并在失败时恢复解析器状态。
  *
- * `__MICRO_APP_HAS_SCOPED__` 是幂等标记，避免 MutationObserver 或重复挂载反复添加前缀；单例解析器
- * 在成功与异常路径都必须 reset，否则残余游标和控制注释状态会污染下一份样式。
+ * `__MICRO_APP_HAS_SCOPED__` 在解析前置为 true，阻止重复添加前缀。失败只记录错误、保留原 CSS，
+ * 标记仍为 true。已有文本路径的 observer 观察到无前缀的新文本时会清标记并重试；空 style
+ * 路径的 observer 在调用前已断开，不持续重试。单例解析器在成功与异常路径都 reset，避免
+ * 残余游标和控制注释状态影响下一份样式。
  *
  * @param styleElement 待改写的样式元素。
  * @param appName 子应用名称，用于错误日志。

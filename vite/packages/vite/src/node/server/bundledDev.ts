@@ -141,7 +141,7 @@ export class BundledDev {
     return this._devEngine
   }
 
-  /** 已生成但尚未由 HTTP 响应确认交付的 HMR/懒构建 payload 文件名。 */
+  /** 已生成但尚未在 HTTP finish 后登记发送完成的 HMR/懒构建 payload 文件名。 */
   private pendingPayloadFilenames = new Set<string>()
 
   /** 内存表除客户端 runtime 外是否已经包含真正的应用构建输出。 */
@@ -220,6 +220,7 @@ export class BundledDev {
     )
 
     this._devEngine = await dev(rolldownOptions, outputOptions, {
+      /** 按 clientId 分派增量结果；错误广播给已登记客户端，等待刷新集合在成功更新后重新生成输出。 */
       onHmrUpdates: (result) => {
         if (result instanceof Error) {
           this.environment.logger.error(
@@ -257,6 +258,7 @@ export class BundledDev {
           this.ensureOutputAndFlushReloadNeeded()
         }
       },
+      /** 保存构建错误或最新内存输出；仅成功输出允许兑现待发送的全局/指定客户端刷新。 */
       onOutput: (result) => {
         if (result instanceof Error) {
           this.environment.logger.error(
@@ -286,6 +288,7 @@ export class BundledDev {
           this.debouncedReloadNeededFlush()
         }
       },
+      /** 将增量新增资源合并进内存文件表，保留未变化文件。 */
       onAdditionalAssets: (result) => {
         this.storeOutputFiles(result.output)
       },
@@ -324,7 +327,7 @@ export class BundledDev {
    * 等待首轮构建真正产生应用输出或进入错误状态。
    *
    * ensureCurrentBuildFinish 可能完成一次没有可服务输出的阶段，因此循环检查 bundle
-   * state；每轮短暂让出事件循环，并在所有 await 边界后检查 close，避免关闭后继续工作。
+   * state；入口、ensureCurrentBuildFinish 与重试等待后检查 close，外层发送前再检查 _closed。
    */
   private async waitForInitialBuildFinish(): Promise<void> {
     if (this._closed) return
@@ -397,7 +400,7 @@ export class BundledDev {
     | {
         /** Rolldown 为该客户端生成的惰性入口代码。 */
         code: string
-        /** 内存中间件用于交付并确认 payload 的唯一文件名。 */
+        /** lazy 中间件 finish 回调用于登记交付的唯一文件名。 */
         filename: string
       }
     | undefined
@@ -416,8 +419,8 @@ export class BundledDev {
   /**
    * serving 中间件在 payload 响应完成后调用。
    *
-   * 只有确认送达的 payload 才能写入服务端按客户端维护的 ship map；后续 chunk
-   * 只有在携带模块的先前 payload 确实送达后，才可安全省略该模块。
+   * HTTP finish 后通知 DevEngine 登记 payload 发送完成，推进其按客户端维护的 ship map；
+   * finish 表示内容交给操作系统发送，并非浏览器的接收或执行确认。
    *
    * 注意：payload 文件名在所有客户端之间全局唯一。
    */
@@ -427,7 +430,7 @@ export class BundledDev {
     }
   }
 
-  /** 停止 engine、清空内存产物，并重置可再次 listen 的首轮构建状态。 */
+  /** 标记关闭、清空内存产物，engine 关闭成功后复位首轮标记；不取消本类的 debounce timer。 */
   async close(): Promise<void> {
     this._closed = true
     this.memoryFiles.clear()
@@ -463,7 +466,7 @@ export class BundledDev {
   /**
    * 从普通 build 配置派生 full bundle dev engine 所需的可预测输出设置。
    *
-   * 开启 lazy devMode、跳过公共 runtime 注入，并固定文件命名、关闭压缩、开启
+   * 默认启用 lazy devMode、跳过公共 runtime 注入，并固定文件命名、关闭压缩、开启
    * sourcemap，使客户端能稳定按 URL 请求增量 payload。
    */
   private async getRolldownOptions() {

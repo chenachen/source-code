@@ -16,11 +16,11 @@ export let passiveBrowserEventsSupported: boolean = false;
 if (canUseDOM) {
   try {
     const options: {
-      /** passive 描述探测浏览器是否读取事件监听选项，从而安全启用 passive listener的数据字段；该字段限定跨插件、队列或原生事件传递的状态边界。 */
+      /** 用 getter 探测 addEventListener 是否读取 passive 选项。 */
       passive?: void,
     } = {};
     Object.defineProperty(options, 'passive', {
-      /** get 是探测浏览器是否读取事件监听选项，从而安全启用 passive listener的可调用属性；它在读取或归一化该字段时保持宿主事件语义。 */
+      /** 浏览器读取 passive 选项时把 passiveBrowserEventsSupported 置 true。 */
       get: function () {
         passiveBrowserEventsSupported = true;
       },

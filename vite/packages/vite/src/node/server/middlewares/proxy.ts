@@ -17,7 +17,8 @@ export interface ProxyOptions extends httpProxy.ServerOptions {
   configure?: (proxy: httpProxy.ProxyServer, options: ProxyOptions) => void
   /**
    * webpack-dev-server 风格的路由旁路函数。
-   * 返回 string：改写 URL 后交给 Vite；false：直接 404；空值：继续代理。
+   * HTTP 返回 string 时改写 URL 后交给 Vite；WS 返回 string 时只改 URL 并结束本 listener。
+   * false 返回 404；其他非字符串结果继续代理。
    */
   bypass?: (
     req: http.IncomingMessage,
@@ -72,7 +73,7 @@ const rewriteOriginHeader = (
 
 /**
  * 创建同时处理普通 HTTP 和 `upgrade` WebSocket 的代理层。
- * 路由 key 以 `^` 开头时按正则匹配，否则按 URL 前缀匹配；首个命中项拥有请求。
+ * 路由 key 以 `^` 开头时按正则匹配，否则按 URL 前缀匹配；HTTP 首个命中项拥有请求；WS 还要求该规则启用 ws 或使用 ws/wss target。
  */
 export function proxyMiddleware(
   httpServer: HttpServer | null,
@@ -138,7 +139,7 @@ export function proxyMiddleware(
       })
     })
 
-    // http-proxy 会修改传入选项；保存浅拷贝，保证 bypass/rewrite 看到稳定的用户配置。
+    // http-proxy 会修改选项对象；保存当前顶层选项的浅拷贝，供 bypass/rewrite 路径使用。
     proxies[context] = [proxy, { ...opts }]
   })
 
@@ -158,8 +159,8 @@ export function proxyMiddleware(
               try {
                 const bypassResult = await opts.bypass(req, undefined, opts)
                 if (typeof bypassResult === 'string') {
-                  // WS 没有后续 Connect 管线；字符串只改写 URL，并停止本代理处理，让其他
-                  // upgrade listener 有机会接管。
+                  // WS 没有后续 Connect 管线；字符串只改写 URL，并停止本代理 listener。
+                  // 其他 upgrade listener 独立执行，不由这里的 return 顺序转交。
                   debug?.(`bypass: ${req.url} -> ${bypassResult}`)
                   req.url = bypassResult
                   return
@@ -195,7 +196,7 @@ export function proxyMiddleware(
     })
   }
 
-  // 保留命名函数；`DEBUG=connect:dispatcher` 会把名称显示在调度日志中。
+  /** 使用首条命中规则处理HTTP请求；bypass可结束/改写/报错，正常路径重写后交给代理。 */
   return async function viteProxyMiddleware(req, res, next) {
     const url = req.url!
     for (const context in proxies) {
@@ -239,7 +240,7 @@ export function proxyMiddleware(
   }
 }
 
-/** `^` 开头的 context 作为正则，其余按字面 URL 前缀匹配。 */
+/** 先尝试以^开头规则的正则匹配；未命中时仍允许context的字面URL前缀匹配。 */
 function doesProxyContextMatchUrl(context: string, url: string): boolean {
   return (
     (context[0] === '^' && new RegExp(context).test(url)) ||

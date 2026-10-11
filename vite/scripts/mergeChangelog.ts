@@ -1,23 +1,14 @@
 /**
- * Merges prerelease (alpha/beta/rc) changelog entries into a single stable
- * release section within a package's CHANGELOG.md.
- *
- * Usage:
- *   pnpm merge-changelog <package> <version>
- *
- * Example:
- *   pnpm merge-changelog vite 8.0.0
- *
- * This will find the `## [8.0.0]` header in packages/vite/CHANGELOG.md,
- * collect all entries from its prerelease versions (e.g. 8.0.0-beta.1,
- * 8.0.0-rc.0), deduplicate and reorder them by category, append a
- * "Beta Changelogs" section with links to each prerelease's tagged
- * changelog, and write the merged result back to the file.
+ * 将指定正式版本及其随后 alpha/beta/rc 段落按分类合并写回 CHANGELOG.md。
+ * 正文重复行保留；另附各预发布 tag 的 changelog 链接，更新与上一正式版本的 compare 链接。
+ * 运行：pnpm merge-changelog <package> <version>，例如 pnpm merge-changelog vite 8.0.0。
  */
 import { readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
+/** 命令行指定的 packages 子目录名，决定 changelog 路径和非 Vite 包的标签前缀。 */
 const pkg = process.argv[2]
+/** 要合并其 alpha/beta/rc 段落的正式版本号。 */
 const version = process.argv[3]
 
 if (!pkg || !version) {
@@ -25,6 +16,7 @@ if (!pkg || !version) {
   process.exit(1)
 }
 
+/** 合并输出的固定分类顺序；输入出现其他 ### 分类时明确失败。 */
 const CATEGORY_ORDER = [
   '### ⚠ BREAKING CHANGES',
   '### Features',
@@ -36,12 +28,15 @@ const CATEGORY_ORDER = [
   '### Tests',
 ]
 
+/** 转义版本字符串中的正则元字符，使 release header 匹配使用字面量版本。 */
 function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
+/** 识别正式或 small 包装的二级版本标题，用于重置分类和确定合并边界。 */
 const versionHeaderRe = /^## (?:<small>)?\[/
 
+/** 查找目标正式版本标题；不存在时打印错误并以状态 1 退出。 */
 function findReleaseHeaderIndex(lines: string[], version: string): number {
   const re = new RegExp(`^## (?:<small>)?\\[${escapeRegex(version)}\\]`)
   const idx = lines.findIndex((l) => re.test(l))
@@ -52,6 +47,7 @@ function findReleaseHeaderIndex(lines: string[], version: string): number {
   return idx
 }
 
+/** 从正式标题向后扫描，跨过该版本的 alpha/beta/rc 数字序号标题，遇到其他版本标题结束。 */
 function findEndBoundary(
   lines: string[],
   startIdx: number,
@@ -68,6 +64,7 @@ function findEndBoundary(
   return lines.length
 }
 
+/** 按 ### 分类收集非空正文行，遇到版本标题重置当前分类；同名分类合并行，保留重复内容。 */
 function parseCategories(releaseLines: string[]): Map<string, string[]> {
   const categories = new Map<string, string[]>()
   let currentCategory: string | null = null
@@ -94,6 +91,7 @@ function parseCategories(releaseLines: string[]): Map<string, string[]> {
   return categories
 }
 
+/** 从边界向后取首个不含 alpha/beta/rc 的版本标题；没有匹配时返回空字符串。 */
 function findPreviousStableVersion(lines: string[], startIdx: number): string {
   for (let i = startIdx; i < lines.length; i++) {
     const match = lines[i].match(/^## (?:<small>)?\[([^\]]+)\]/)
@@ -107,6 +105,7 @@ function findPreviousStableVersion(lines: string[], startIdx: number): string {
   return ''
 }
 
+/** 有上一正式版本时替换标题 compare 链接，按 vite 或其他包生成标签前缀；否则保留标题。 */
 function updateHeaderCompareLink(
   headerLine: string,
   prevStable: string,
@@ -121,6 +120,7 @@ function updateHeaderCompareLink(
   )
 }
 
+/** 从合并范围提取带 compare URL 的预发布标题和可选日期，生成指向对应 tag changelog 的链接。 */
 function collectPrereleaseHeaders(
   releaseLines: string[],
   pkg: string,
@@ -149,6 +149,7 @@ function collectPrereleaseHeaders(
   return lines
 }
 
+/** 按固定分类顺序输出合并正文，附加预发布链接；未知分类抛错，不对正文行去重。 */
 function buildOutputLines(
   headerLine: string,
   categories: Map<string, string[]>,
@@ -180,29 +181,41 @@ function buildOutputLines(
   return outputLines
 }
 
+/** 目标包 CHANGELOG.md 的绝对路径，以本脚本目录定位。 */
 const filePath = path.resolve(
   // eslint-disable-next-line n/no-unsupported-features/node-builtins
   import.meta.dirname,
   `../packages/${pkg}/CHANGELOG.md`,
 )
+/** 读取的完整 changelog 原文，用于保留合并范围外的内容。 */
 const content = await readFile(filePath, 'utf-8')
+/** 按换行拆分的 changelog，标题定位和分类收集共用同一数组。 */
 const lines = content.split('\n')
 
+/** 目标正式版本标题在原始行数组中的索引。 */
 const releaseHeaderIdx = findReleaseHeaderIndex(lines, version)
+/** 合并范围的排他结束索引，指向下一非目标预发布版本标题。 */
 const endIdx = findEndBoundary(lines, releaseHeaderIdx, version)
+/** 目标正式版本及随后同版本预发布的完整行区间。 */
 const releaseLines = lines.slice(releaseHeaderIdx, endIdx)
 
+/** 合并范围内按三级分类归组的非空正文行，重复行保留。 */
 const categories = parseCategories(releaseLines)
+/** 合并范围中预发布版本的标题与 tagged changelog 链接。 */
 const prereleaseLines = collectPrereleaseHeaders(releaseLines, pkg)
+/** 合并区间之后首个正式版本号，供 compare 起点使用。 */
 const prevStable = findPreviousStableVersion(lines, endIdx)
+/** 已按前一正式版本更新 compare 链接的目标标题。 */
 const headerLine = updateHeaderCompareLink(
   releaseLines[0],
   prevStable,
   pkg,
   version,
 )
+/** 按固定分类顺序重建的正式版本段及 Beta Changelogs 链接段。 */
 const outputLines = buildOutputLines(headerLine, categories, prereleaseLines)
 
+/** 原文前缀、重建段与原文后缀连接后的最终 changelog；下方写回同一文件。 */
 const result = [
   ...lines.slice(0, releaseHeaderIdx),
   ...outputLines,

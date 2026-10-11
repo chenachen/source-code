@@ -11,15 +11,15 @@
 export type PriorityLevel = 0 | 1 | 2 | 3 | 4 | 5;
 
 // TODO: 是否改用 Symbol，避免把内部编码误当作可计算数值？
-// 尚未进入任何优先级上下文时使用的哨兵值，不会作为可调度任务的有效优先级。
+/** 尚未进入任何优先级上下文时使用的哨兵值，不会作为可调度任务的有效优先级。 */
 export const NoPriority = 0;
-// 必须尽快执行的工作；超时时间为负，因此一进入 ready queue 就视为过期。
+/** 必须尽快执行的工作；超时时间为负，因此一进入 ready queue 就视为过期。 */
 export const ImmediatePriority = 1;
-// 对用户输入有直接反馈的工作，默认允许等待约 250 毫秒。
+/** 对用户输入有直接反馈的工作，默认允许等待约 250 毫秒。 */
 export const UserBlockingPriority = 2;
-// 普通更新与后台渲染的默认优先级，默认超时约 5 秒。
+/** 普通更新与后台渲染的默认优先级，默认超时约 5 秒。 */
 export const NormalPriority = 3;
-// 可延后的非紧急工作，默认超时约 10 秒。
+/** 可延后的非紧急工作，默认超时约 10 秒。 */
 export const LowPriority = 4;
-// 仅在空闲机会执行的工作，使用可表示的最长超时。
+/** 过期预算为 1073741823 毫秒；通常排在其他 ready 任务之后，有时间预算就可执行，不依赖浏览器 idle 回调。 */
 export const IdlePriority = 5;

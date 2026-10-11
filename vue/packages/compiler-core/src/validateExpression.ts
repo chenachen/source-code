@@ -2,8 +2,8 @@ import type { SimpleExpressionNode } from './ast'
 import type { TransformContext } from './transform'
 import { ErrorCodes, createCompilerError } from './errors'
 
-// 模板表达式中不能直接出现的语句级关键字。`typeof`、`instanceof`、`in`
-// 属于合法表达式运算符，因此有意不在名单中。
+// JS 引擎已判定语法错误后，用这些关键字补充属性名相关诊断。
+// 正则不决定表达式是否合法；new、delete、void 等仍可出现在合法表达式中。
 const prohibitedKeywordRE = new RegExp(
   '\\b' +
     (

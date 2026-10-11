@@ -120,7 +120,8 @@ export function isExplicitImportRequired(url: string): boolean {
 }
 
 /**
- * 把插件 resolve ID 转成浏览器可请求 URL：root 内缩成根绝对路径，root 外/优化依赖使用 `/@fs/`，
+ * 把插件 resolve ID 转成浏览器可请求 URL：先把 root 内结果缩成根绝对路径，其余优化依赖或
+ * root 外真实文件使用 `/@fs/`，
  * 虚拟或非 URL specifier 使用 `/@id/` 包装。
  */
 function normalizeResolvedIdToUrl(
@@ -159,8 +160,8 @@ function normalizeResolvedIdToUrl(
 }
 
 /**
- * 为 experimental.hmrPartialAccept 提取每个依赖实际使用的 export 名。namespace、动态 import 与
- * import.meta 视为 `*`，因为任意 export 变化都可能影响调用方。
+ * 为 experimental.hmrPartialAccept 提取每个依赖实际使用的 export 名。namespace 与动态 import
+ * 视为 `*`；函数也可处理 meta 记录，但当前调用链在 meta 专用分支已返回，不为它建立依赖边。
  */
 function extractImportedBindings(
   id: string,
@@ -229,7 +230,7 @@ export function importAnalysisPlugin(config: ResolvedConfig): Plugin {
 
   let _env: string | undefined
   let _ssrEnv: string | undefined
-  /** 惰性生成 client/SSR 两份 import.meta.env 赋值，只让 SSR 布尔值不同。 */
+  /** 基于全局 config.env/define 缓存两份 env 赋值，按 consumer 替换默认 SSR 布尔值。 */
   function getEnv(ssr: boolean) {
     if (!_ssrEnv || !_env) {
       const importMetaEnvKeys: Record<string, any> = {}
@@ -337,7 +338,7 @@ export function importAnalysisPlugin(config: ResolvedConfig): Plugin {
 
       /**
        * 解析单个 specifier，确保依赖节点入图，附加 HMR 时间戳，并返回“浏览器 URL、规范 ID”。
-       * forceSkipImportAnalysis 用于插件 addWatchFile 产生的边，避免把非源码依赖再次当 ESM 分析。
+       * forceSkipImportAnalysis 标记插件 addWatchFile 产生的图边，在入图时直接确定节点的分析跳过状态。
        */
       const normalizeUrl = async (
         url: string,
@@ -453,7 +454,7 @@ export function importAnalysisPlugin(config: ResolvedConfig): Plugin {
       let _isNodeModeResult = config.legacy?.inconsistentCjsInterop
         ? false
         : undefined
-      /** 惰性判断当前解析结果是否采用 Node 外部化模式，并缓存本模块结论。 */
+      /** 按 importer 的 ESM 格式判断静态 CJS interop 是否使用 Node mode，缓存本模块结论。 */
       const isNodeMode = () => {
         _isNodeModeResult ??= isFilePathESM(importer, config.packageCache)
         return _isNodeModeResult
@@ -462,7 +463,7 @@ export function importAnalysisPlugin(config: ResolvedConfig): Plugin {
         ?.inconsistentCjsInterop
         ? false
         : undefined
-      /** 判断动态导入是否必须保留 Node 运行时语义，避免浏览器 URL 改写。 */
+      /** 按 importer 是否显式声明模块格式选择动态 CJS interop mode，不改变 URL 解析流程。 */
       const isNodeModeForDynamicImport = () => {
         _isNodeModeForDynamicImportResult ??= isFilePathFormatExplicit(
           importer,
@@ -620,8 +621,7 @@ export function importAnalysisPlugin(config: ResolvedConfig): Plugin {
                 )
 
                 if (needsInterop === undefined) {
-                  // 依赖内部非入口动态 import 没有优化元数据是正常的，也不需互操作；动态入口若
-                  // 声称需要优化却缺元数据才是内部错误。
+                  // 找不到入口信息时不做互操作；若现有 depInfo 标记为动态入口却无法判定，则记录内部诊断。
                   if (depInfo?.isDynamicEntry) {
                     config.logger.error(
                       colors.red(
@@ -898,7 +898,7 @@ export function createParseErrorInfo(
   source: string,
 ): {
   /** 针对文件类型与缺失插件生成的用户诊断。 */
-  message: string;
+  message: string
   /** 二进制疑似内容为 false，避免在错误中输出乱码代码框。 */
   showCodeFrame: boolean
 } {
@@ -1020,7 +1020,7 @@ function getLineBreaks(str: string) {
 /** 描述 CommonJS 互操作转换中的导入名与本地绑定名。 */
 type ImportNameSpecifier = {
   /** 从 CommonJS 包装对象读取的导出名称。 */
-  importedName: string;
+  importedName: string
   /** 改写后的 ESM 模块中创建的本地绑定名。 */
   localName: string
 }
@@ -1041,10 +1041,10 @@ export function transformCjsImport(
   isNodeMode: boolean,
   config: ResolvedConfig,
 ):
-  {
+  | {
       /** 替换原 import/export 声明的互操作导入代码。 */
-      importLine: string;
-      /** 需要提升到模块顶部、再在原位置引用的赋值代码。 */
+      importLine: string
+      /** 提升到模块顶部的本地绑定赋值与重导出代码；原位置仅保留 import 声明。 */
       hoistedAssignments?: string
     }
   | undefined {

@@ -30,13 +30,13 @@ import { lifeCycles } from './constants'
 import { router } from './sandbox/router'
 
 /**
- * 返回当前仍参与运行的子应用名称。
+ * 返回主状态尚未进入 `UNMOUNT` 且满足筛选条件的应用名。
  *
- * 预加载但未预渲染的实例不算活跃；预渲染实例和隐藏的 keep-alive 实例是否计入，
- * 分别由两个过滤选项控制。
+ * 普通加载中的实例也会计入。纯预取实例默认排除，三级预取因 `isPrerender` 为真
+ * 默认计入，即使资源还未就绪；隐藏的 keep-alive 实例默认计入。
  *
  * @param excludeHiddenApp - 是否排除已隐藏的 keep-alive 应用，默认不排除。
- * @param excludePreRender - 是否排除仍处于预渲染阶段的应用，默认不排除。
+ * @param excludePreRender - 是否排除仍由预取流程持有的三级预取实例，默认不排除。
  * @returns 满足活跃条件的规范化应用名。
  */
 export function getActiveApps ({
@@ -69,22 +69,26 @@ export function getAllApps (): string[] {
   return Array.from(appInstanceMap.keys())
 }
 
-/** 命令式卸载的策略；未显式开启的清理动作默认保留实例及其可复用状态。 */
+/** 命令式卸载策略；显示实例还会读取宿主元素与全局配置中的卸载选项。 */
 type unmountAppOptions = {
   /** 是否彻底销毁实例和已缓存的内联脚本。 */
   destroy?: boolean
-  /** 是否把已隐藏的 keep-alive 实例继续卸载到普通未挂载状态。 */
+  /** 是否把隐藏实例继续卸载；显示实例有 keep-alive 属性时临时移除该属性，让断开走普通卸载。 */
   clearAliveState?: boolean
-  /** 是否同时清除基座与子应用的数据中心数据。 */
+  /** 运行实例实际卸载时，是否同时清除基座与子应用的数据中心数据。 */
   clearData?: boolean
 }
 
 /**
- * 按应用名卸载、隐藏或销毁实例，并在对应生命周期事件完成后结算结果。
+ * 按应用名卸载、隐藏或销毁实例，并在直接处理或对应生命周期事件到达时结算结果。
  *
  * 已卸载/纯预加载实例可同步处理；隐藏实例按策略决定是否继续卸载；正在显示的
  * 实例则通过移除自定义元素触发 `disconnectedCallback`，因此 Promise 必须等待
- * `unmount` 或 `afterhidden` 生命周期事件。
+ * `unmount` 或 `afterhidden` 生命周期事件。仅已卸载或纯预取且非预渲染的实例
+ * 会直接返回，`clearData` 不在这个分支单独执行。
+ * 显示实例先安装成对事件监听，再临时改宿主属性并移除元素，让元素回调沿统一卸载路径取配置。
+ * 销毁恢复两种拼写的旧属性；clearAliveState 恢复旧 keep-alive；clear-data 只有原值是字符串
+ * 才回写，原本缺省时临时加上的 true 仍会保留。收到事件即 resolve，并非所有同步清理已经结束。
  *
  * @param appName - 待处理的应用名，内部会先规范化。
  * @param options - 销毁、清除 keep-alive 状态和数据的策略。
@@ -126,14 +130,14 @@ export function unmountApp (appName: string, options?: unmountAppOptions): Promi
         }
       } else {
         const container = getRootContainer(app.container!)
-        /** 普通卸载完成时移除成对监听器，保证 Promise 只结算一次。 */
+        /** 收到 unmount 时移除成对监听器并结算；容器清空随后由实例继续执行。 */
         const unmountHandler = () => {
           container.removeEventListener(lifeCycles.UNMOUNT, unmountHandler)
           container.removeEventListener(lifeCycles.AFTERHIDDEN, afterhiddenHandler)
           resolve(true)
         }
 
-        /** keep-alive 隐藏完成时移除成对监听器，保证 Promise 只结算一次。 */
+        /** 收到 afterhidden 时移除成对监听器并结算；DOM 转存与副作用释放仍在同一调用栈后部。 */
         const afterhiddenHandler = () => {
           container.removeEventListener(lifeCycles.UNMOUNT, unmountHandler)
           container.removeEventListener(lifeCycles.AFTERHIDDEN, afterhiddenHandler)
@@ -189,9 +193,12 @@ export function unmountApp (appName: string, options?: unmountAppOptions): Promi
 }
 
 /**
- * 按注册顺序串行卸载全部应用。
+ * 对调用时已注册的应用名按顺序串行执行 `unmountApp`。
  *
- * 串行链避免多个自定义元素同时拆除时交叠全局沙箱与 DOM 作用域清理。
+ * 前一个卸载 Promise 结算后才处理下一应用，最后返回最后一次调用的结果；空表返回 `true`。
+ * 名称数组是调用时的快照，过程中新增的应用不纳入本批次；前项拒绝会中断后项，未在此吞错。
+ * @param options - 同一卸载策略依次传给快照中的每个应用。
+ * @returns 最后一项的布尔结果；不是所有结果的逻辑与，也不汇总失败名单。
  */
 export function unmountAllApps (options?: unmountAppOptions): Promise<boolean> {
   return Array.from(appInstanceMap.keys()).reduce((pre, next) => pre.then(() => unmountApp(next, options)), Promise.resolve(true))
@@ -199,6 +206,8 @@ export function unmountAllApps (options?: unmountAppOptions): Promise<boolean> {
 
 /**
  * 通过已渲染应用的宿主元素执行卸载后重挂载，并恢复重载前的数据。
+ * 先取基座向子应用通道的数据，再置 isReloading 避免中间卸载清空；只有重载成功回调才
+ * 重发数据、取消标志并结算。元素 reload 缺少完成事件或内部 Promise 拒绝时，本层没有失败收尾。
  *
  * @param appName - 目标应用名。
  * @param destroy - 重载前是否以彻底销毁模式卸载。
@@ -255,10 +264,13 @@ interface RenderAppOptions extends MicroAppConfig {
 /**
  * 创建并插入 `<micro-app>` 元素，以命令式方式渲染子应用。
  *
- * Promise 以 `mounted`/`error` 事件为唯一结算边界，并在结算前成对移除监听器。
+ * 创建元素后，Promise 在 `mounted`/`error` 事件到达时结算并移除临时监听器。
+ * 非法 options 或容器只记录错误并提前退出 executor，Promise 保持 pending。
+ * data 交给元素 setAttribute 的对象分支，生命周期/数据回调直接注册，其余配置写为属性。
+ * 函数在 append 前装好 mounted/error 监听；用户的配置监听先于这些临时监听注册。
  *
  * @param options - 应用、容器、数据和生命周期配置。
- * @returns 挂载成功时为 `true`，资源或渲染阶段报错时为 `false`。
+ * @returns 收到 `mounted` 时为 `true`，收到 `error` 生命周期时为 `false`。
  */
 export function renderApp (options: RenderAppOptions): Promise<boolean> {
   return new Promise((resolve) => {
@@ -320,9 +332,9 @@ export function renderApp (options: RenderAppOptions): Promise<boolean> {
 export class MicroApp extends EventCenterForBaseApp implements MicroAppBaseType {
   /** 注册到 `customElements` 的标签名，可在首次启动时覆盖。 */
   tagName = 'micro-app'
-  /** 标记全局环境是否已初始化，阻止同一门面重复启动。 */
+  /** 首次通过浏览器能力检查后立即置真；后续启动被拒绝，即使首次配置校验失败。 */
   hasInit = false
-  /** 保存经过兼容字段归一化的全局默认配置。 */
+  /** 保存调用方传入的配置对象引用，并在该对象上归一化兼容字段。 */
   options: OptionsType = {}
   /** 暴露基座侧路由控制 API。 */
   router: Router = router
@@ -342,9 +354,10 @@ export class MicroApp extends EventCenterForBaseApp implements MicroAppBaseType 
   renderApp = renderApp
 
   /**
-   * 一次性初始化浏览器全局代理、处理全局配置并注册微应用自定义元素。
+   * 捕获原生全局环境、处理全局配置并注册微应用自定义元素。
    *
    * 非浏览器环境、重复调用、非法标签名或已被外部注册的同名元素都会提前返回。
+   * `hasInit` 在标签校验前置真，非法标签或同名注册使首次启动提前退出后也无法再重试。
    * 全局资源和应用预加载只负责排队，不阻塞元素注册。
    *
    * @param options - 全局默认配置、插件、预加载和自定义标签名。
@@ -408,7 +421,7 @@ export class MicroApp extends EventCenterForBaseApp implements MicroAppBaseType 
   }
 }
 
-/** 默认导出的单例；确保数据中心、路由和一次性启动状态在基座内共享。 */
+  /** 当前模块默认单例；数据中心、路由和一次性启动状态在该模块副本内共享，嵌套的另一 bundle 可有自己的单例。 */
 const microApp = new MicroApp()
 
 export default microApp

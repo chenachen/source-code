@@ -15,7 +15,7 @@ const resolvedModulePreloadPolyfillId = '\0' + modulePreloadPolyfillId + '.js'
 export function modulePreloadPolyfillPlugin(): Plugin {
   return {
     name: 'vite:modulepreload-polyfill',
-    /** 仅在客户端构建且启用 polyfill 时注入 modulepreload 兼容代码。 */
+    /** bundled 模式按 consumer 配置原生 polyfill 插件；非 bundled 模式使用空虚拟模块。 */
     applyToEnvironment(environment) {
       if (environment.config.isBundled) {
         return nativeModulePreloadPolyfillPlugin({
@@ -26,14 +26,14 @@ export function modulePreloadPolyfillPlugin(): Plugin {
     },
     resolveId: {
       filter: { id: exactRegex(modulePreloadPolyfillId) },
-      /** 返回 modulepreload 垫片的运行时代码。 */
+      /** 把公共 polyfill ID 解析为内部 null-byte 虚拟 ID。 */
       handler(_id) {
         return resolvedModulePreloadPolyfillId
       },
     },
     load: {
       filter: { id: exactRegex(resolvedModulePreloadPolyfillId) },
-      /** 在客户端入口前导入垫片虚拟模块，确保应用代码执行前完成安装。 */
+      /** 非 bundled 模式加载空模块；开发模块图不需要产物级 modulepreload 垫片。 */
       handler(_id) {
         // dev 不需要构建产物级的 modulepreload 兼容逻辑。
         return ''

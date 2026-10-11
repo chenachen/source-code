@@ -1,6 +1,6 @@
 /**
- * compiler-core 工具场景：验证源码位置推进、可赋值成员表达式判断和 Babel 标识符引用分析；
- * 边界用例覆盖 Unicode、可选链、嵌套解构、TypeScript 节点及无效左值。
+ * compiler-core 工具场景：验证源码位置推进、成员路径识别、资源名编码和函数参数引用分析；
+ * 路径包含可选链、嵌套计算属性、TypeScript 包装及非法表达式。
  */
 import { babelParse, walkIdentifiers } from '@vue/compiler-sfc'
 import {
@@ -23,6 +23,9 @@ function p(line: number, column: number, offset: number): Position {
 
 // 位置推进：覆盖单行、多换行与非零起点，确认 clone 不修改调用方位置对象。
 describe('advancePositionWithClone', () => {
+  /**
+   * 从 Position(1,1,0) 消费 foo 换行 bar 的前两个代码单元；检查新位置仍在首行，column/offset 各增加 2。
+   */
   test('same line', () => {
     const pos = p(1, 1, 0)
     const newPos = advancePositionWithClone(pos, 'foo\nbar', 2)
@@ -32,6 +35,9 @@ describe('advancePositionWithClone', () => {
     expect(newPos.offset).toBe(2)
   })
 
+  /**
+   * 同一起点消费四个代码单元，包含 LF；检查位置到第二行首列，offset 为 4。换行后的列按最后一个 LF 重新计算。
+   */
   test('same line', () => {
     const pos = p(1, 1, 0)
     const newPos = advancePositionWithClone(pos, 'foo\nbar', 4)
@@ -41,6 +47,9 @@ describe('advancePositionWithClone', () => {
     expect(newPos.offset).toBe(4)
   })
 
+  /**
+   * 消费含两个 LF 的十个代码单元；检查位置到第三行第三列，offset 为 10，覆盖多换行的列重置。
+   */
   test('multiple lines', () => {
     const pos = p(1, 1, 0)
     const newPos = advancePositionWithClone(pos, 'foo\nbar\nbaz', 10)
@@ -51,9 +60,9 @@ describe('advancePositionWithClone', () => {
   })
 })
 
-// 成员表达式：比较浏览器轻量词法器和 Babel 路径对合法 v-model 左值的判断。
+// 成员表达式：比较浏览器词法器和 Babel 实现的路径识别结果，包括可选成员访问。
 describe('isMemberExpression', () => {
-  /** 对浏览器轻量实现和 Node Babel 实现复用同一组合法/非法左值断言。 */
+  /** 复用路径识别断言；接受可选成员访问不等于证明该路径可直接作为赋值左侧。 */
   function commonAssertions(raw: (exp: ExpressionNode) => boolean) {
     /** 把字符串包装成 AST 表达式后调用当前被测实现。 */
     const fn = (str: string) => raw(createSimpleExpression(str))
@@ -91,6 +100,9 @@ describe('isMemberExpression', () => {
     expect(fn(`state['text'] = $event`)).toBe(false)
   }
 
+  /**
+   * 浏览器成员扫描复用全部合法/非法路径断言，并额外拒绝 123[a]；嵌套计算属性、字符串与换行允许，调用结束和不平衡括号拒绝。该扫描仅近似识别路径。
+   */
   test('browser', () => {
     commonAssertions(isMemberExpressionBrowser)
     expect(isMemberExpressionBrowser(createSimpleExpression('123[a]'))).toBe(
@@ -98,6 +110,9 @@ describe('isMemberExpression', () => {
     )
   })
 
+  /**
+   * Node 成员识别复用路径断言，再检查 TS as 包装、计算键及字面量边界；Babel 允许 123[a] 成员访问，但拒绝调用结果、二元式、空字符串、undefined/null。
+   */
   test('node', () => {
     const ctx = { expressionPlugins: ['typescript'] } as any as TransformContext
     /** 使用带 TypeScript 表达式插件的 Node 实现检查源码。 */
@@ -121,6 +136,9 @@ describe('isMemberExpression', () => {
   })
 })
 
+/**
+ * 将 component/directive/filter 名编码为局部变量；检查短横线改下划线、中文字符改 UTF-16 十进制代码，同时保留资源类型前缀。
+ */
 test('toValidAssetId', () => {
   expect(toValidAssetId('foo', 'component')).toBe('_component_foo')
   expect(toValidAssetId('p', 'directive')).toBe('_directive_p')
@@ -133,6 +151,9 @@ test('toValidAssetId', () => {
 
 // 引用分析：区分读取、声明、属性 key、标签、解构目标及 TypeScript 类型位置。
 describe('isReferencedIdentifier', () => {
+  /**
+   * 解析解构参数箭头函数并用 walkIdentifiers 检查 title；四次断言都视其为参数声明而非读取引用，isReferencedIdentifier 与 walker 的标志应一致。
+   */
   test('identifiers in function parameters should not be inferred as references', () => {
     expect.assertions(4)
     const ast = babelParse(`(({ title }) => [])`)

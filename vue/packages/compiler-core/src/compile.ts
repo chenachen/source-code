@@ -83,10 +83,12 @@ export function getBaseTransformPreset(
  *
  * 这里命名为 `baseCompile`，是为了让 `@vue/compiler-dom` 等上层编译器可以把
  * 自己加入平台选项后的入口命名为 `compile`，同时继续原样导出 compiler-core API。
- * 若传入的已经是 `RootNode`，会跳过解析阶段，供 SFC 编译器复用已经缓存的模板 AST。
+ * 若传入的已经是 `RootNode`，会跳过解析阶段；调用方须保证它适合本轮选项且尚未转换。
+ * 本函数不克隆输入树，transform 会原地改写结构与 codegenNode，不能把返回的转换树当作新解析树复用。
  *
  * 浏览器版编译器使用 `with` 作用域，不能启用模块模式、标识符前缀等依赖构建时分析的能力；
  * 这些组合会在这里尽早报错，避免生成运行时无法执行的代码。
+ * 默认 onError 会抛出并中断管线；自定义处理器返回时仍会继续执行后续转换和代码生成。
  *
  * @param source 模板源码，或已经解析好的根 AST
  * @param options 贯穿解析、转换和代码生成阶段的编译选项
@@ -128,6 +130,8 @@ export function baseCompile(
     getBaseTransformPreset(prefixIdentifiers)
 
   if (!__BROWSER__ && options.isTS) {
+    // 为调用方的表达式插件配置补充 TS 语法。该赋值会更新传入的 options，
+    // 不应把它理解为仅作用于此函数内部的临时选项。
     const { expressionPlugins } = options
     if (!expressionPlugins || !expressionPlugins.includes('typescript')) {
       options.expressionPlugins = [...(expressionPlugins || []), 'typescript']

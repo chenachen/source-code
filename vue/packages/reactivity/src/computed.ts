@@ -20,6 +20,7 @@ declare const WritableComputedRefSymbol: unique symbol
 
 /** 只读与可写计算属性共享的内部类型。 */
 interface BaseComputedRef<T, S = T> extends Ref<T, S> {
+  /** 只在类型层面区分 computed 与普通 Ref，不对应运行时属性。 */
   [ComputedRefSymbol]: true
   /**
    * @deprecated 计算属性已不再通过 `ReactiveEffect` 实现；仅为兼容读取
@@ -30,11 +31,13 @@ interface BaseComputedRef<T, S = T> extends Ref<T, S> {
 
 /** 只读计算属性；只能读取派生后的 `value`。 */
 export interface ComputedRef<T = any> extends BaseComputedRef<T> {
+  /** 读取缓存并按需刷新派生值；类型层面禁止赋值，运行时由 value getter 实现。 */
   readonly value: T
 }
 
 /** 可写计算属性；读取走 getter，赋值走 setter。 */
 export interface WritableComputedRef<T, S = T> extends BaseComputedRef<T, S> {
+  /** 区分可写 computed 的类型品牌；与 getter/setter 的读写类型一起参与推导。 */
   [WritableComputedRefSymbol]: true
 }
 
@@ -45,7 +48,9 @@ export type ComputedSetter<T> = (newValue: T) => void
 
 /** 创建可写计算属性时传入的 getter/setter 配置。 */
 export interface WritableComputedOptions<T, S = T> {
+  /** 计算读取值；refreshComputed 传入上次缓存，返回值按 Object.is 语义决定是否发布。 */
   get: ComputedGetter<T>
+  /** 接收 value 赋值；由使用者修改上游状态，Vue 不直接替换 computed 缓存。 */
   set: ComputedSetter<S>
 }
 
@@ -54,7 +59,10 @@ export interface WritableComputedOptions<T, S = T> {
  *
  * - 外部 effect 读取 `value` 时，订阅当前实例的 `dep`；
  * - getter 执行时，本实例又作为订阅者收集 getter 读取到的其他依赖；
- * - 上游依赖变化只先标脏并加入批处理，真正读取时才重新计算。
+ * - 上游变化先标脏并入批；读取 value 或下游 isDirty 检查时才按需刷新。
+ *
+ * 无活动下游时保留依赖 Link/版本，退出上游通知链；首次出现追踪中的消费者时，
+ * Dep.addSub 再恢复上游订阅。computed 不作为 ReactiveEffect 登记到作用域。
  *
  * @private 供 Vue 核心通过 `@vue/reactivity` 使用，但不会从主 `vue` 包导出。
  */
@@ -93,6 +101,8 @@ export class ComputedRefImpl<T = any> implements Subscriber {
   _warnRecursive?: boolean
 
   /**
+   * 保存 getter/setter 并确定只读身份；构造阶段不执行 getter，也不收集上游依赖。
+   *
    * @param fn 计算 getter，重新求值时会收到上一次结果。
    * @param setter 可写计算属性的 setter；缺省表示只读。
    * @param isSSR 是否运行于服务端渲染环境。
@@ -130,10 +140,11 @@ export class ComputedRefImpl<T = any> implements Subscriber {
   }
 
   /**
-   * 读取计算结果并收集依赖。
+   * 读取计算结果并让当前活动订阅者（effect 或外层 computed）订阅自身 Dep。
    *
    * 先让当前外部 effect 订阅 `dep`，再按需刷新 getter。刷新后同步 `Link` 版本，
-   * 避免外部 effect 随后把本次已确认的新值误判为过期。
+   * 避免外层订阅者随后把本次已确认的新值误判为过期。刷新抛错时不执行版本同步或
+   * 返回缓存，异常直接传播；非追踪上下文仍可求值，只是不创建消费者 Link。
    */
   get value(): T {
     const link = __DEV__
@@ -165,7 +176,8 @@ export class ComputedRefImpl<T = any> implements Subscriber {
  * 创建带缓存的计算属性。
  *
  * 传入 getter 时返回只读计算属性；传入 `{ get, set }` 时返回可写计算属性。
- * getter 不会在创建时执行，而是在首次读取或上游变化后的下一次读取时执行。
+ * getter 不会在创建时执行。首次读取必要求值；有下游订阅时，上游写入也可能在
+ * 同步 runIfDirty 检查中刷新 getter。缓存命中与否由版本检查决定，不等于每次通知重算。
  *
  * @example
  * ```js
@@ -200,11 +212,13 @@ export function computed<T>(
   getter: ComputedGetter<T>,
   debugOptions?: DebuggerOptions,
 ): ComputedRef<T>
+/** 可写重载：读取值与 setter 输入可使用不同类型，赋值操作交给 options.set。 */
 export function computed<T, S = T>(
   options: WritableComputedOptions<T, S>,
   debugOptions?: DebuggerOptions,
 ): WritableComputedRef<T, S>
 /*@__NO_SIDE_EFFECTS__*/
+/** 归一化只读 getter／可写配置，创建尚未求值的实例；调试钩子仅在开发且非 SSR 时安装。 */
 export function computed<T>(
   getterOrOptions: ComputedGetter<T> | WritableComputedOptions<T>,
   debugOptions?: DebuggerOptions,

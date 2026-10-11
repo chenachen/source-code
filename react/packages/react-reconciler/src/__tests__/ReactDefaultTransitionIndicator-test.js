@@ -78,14 +78,14 @@ describe('ReactDefaultTransitionIndicator', () => {
     expect(root).toMatchRenderedOutput('Hello');
   });
 
-  /** Given–When–Then：Given已有 Hi，随后同步 state 写入 Loading 并在 transition 中清空 state、等待 B；When B 解决；Then应用自有同步 loading UI 抑制默认 indicator。通过全程无 start/stop 与宿主输出验证 sync mutation 启发式。 */
+  /** Given–When–Then：Given已有 Hi，随后普通 state 更新写入 Loading 并在 transition 中清空 state、等待 B；When B 解决；Then应用先提交的 loading UI 抑制默认 indicator。通过全程无 start/stop 与宿主输出验证 sync mutation 启发式。 */
   // @gate enableDefaultTransitionIndicator
   it('does not trigger the default indicator if there is a sync mutation', async () => {
     const promiseA = Promise.resolve('Hi');
     let resolveB;
     const promiseB = new Promise(r => (resolveB = r));
     let update;
-    /** 持有同步 state 并组合 promise children，允许在挂起期间显示显式 Loading 文本。 */
+    /** 持有普通 state 并组合 promise children，允许在挂起期间显示显式 Loading 文本。 */
     function App({children}) {
       const [state, setState] = useState('');
       update = setState;
@@ -387,12 +387,12 @@ describe('ReactDefaultTransitionIndicator', () => {
     expect(root).toMatchRenderedOutput('Hi');
   });
 
-  /** Given–When–Then：Given同步 state 先切到 Loading，isomorphic action 完成后再恢复 Hi；When promise pending；Then应用已有 loading mutation，默认 indicator 不触发。通过 Loading/Hi 输出与空日志验证。 */
+  /** Given–When–Then：Given普通 state 更新先切到 Loading，isomorphic action 完成后再恢复 Hi；When promise pending；Then应用已有 loading mutation，默认 indicator 不触发。通过 Loading/Hi 输出与空日志验证。 */
   it('does not triggers isomorphic async action default indicator if there is a loading state', async () => {
     let resolve;
     const promise = new Promise(r => (resolve = r));
     let update;
-    /** 持有显式 Loading/Hi 状态，action pending 前先同步切换 UI。 */
+    /** 持有显式 Loading/Hi 状态，action pending 前先安排普通更新切换 UI。 */
     function App() {
       const [state, setState] = useState(false);
       update = setState;

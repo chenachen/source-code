@@ -39,7 +39,7 @@ describe('ReactLazyContextPropagation', () => {
     seededCache = null;
   });
 
-  /** createTextCache 创建请求级文本 cache；记录只从 pending 单向进入 resolved/rejected，完成时逐一触发 ping。 */
+  /** createTextCache 为当前 React Cache 提供文本资源表；记录只从 pending 单向进入 resolved/rejected，完成时逐一触发 ping。 */
   function createTextCache() {
     if (seededCache !== null) {
       // 在 cache 尚未创建前预置下一份 cache；预置值只供首次请求消费。
@@ -173,8 +173,8 @@ describe('ReactLazyContextPropagation', () => {
   //   if (caches.length === 0) {
   //     throw Error('Cache does not exist.');
   //   } else {
-  //     // Resolve the most recently created cache. An older cache can by
-  //     // resolved with `caches[index].reject(text, error)`.
+  //     // 拒绝最近一次新建的缓存；较早的缓存可通过下一行所示调用拒绝。
+  //     // 调用 `caches[index].reject(text, error)`。
   //     caches[caches.length - 1].reject(text, error);
   //   }
   // }
@@ -196,7 +196,7 @@ describe('ReactLazyContextPropagation', () => {
       const Context = React.createContext(0);
 
       let setValue;
-      /** App 持有 Provider 更新入口并组织 bailout、Suspense 或 Offscreen 层级，用于“useMemo 固定元素且无中间 Fiber 下 Context 变化阻止消费者错误 bailout”。 */
+      /** 持有 Provider 的 value setter，并用 useMemo 保持 Consumer 元素与 props 的身份。 */
       function App() {
         const [value, _setValue] = useState(0);
         setValue = _setValue;
@@ -210,7 +210,7 @@ describe('ReactLazyContextPropagation', () => {
         return <Context.Provider value={value}>{consumer}</Context.Provider>;
       }
 
-      /** Consumer 登记 Context 依赖并把读取值交给日志或宿主输出，用于“useMemo 固定元素且无中间 Fiber 下 Context 变化阻止消费者错误 bailout”。 */
+      /** Consumer 登记 Context 依赖并把读取值交给日志或宿主输出。 */
       function Consumer() {
         const value = useContext(Context);
         // 即使 Consumer 已 memoize，Context 变化仍应让它重新渲染
@@ -219,7 +219,7 @@ describe('ReactLazyContextPropagation', () => {
         return <DeepChild value={value} />;
       }
 
-      /** DeepChild 是传播末端消费者；其日志和输出验证“useMemo 固定元素且无中间 Fiber 下 Context 变化阻止消费者错误 bailout”。 */
+      /** DeepChild 接收 Consumer 传下来的 value prop，并输出最新 Context 值。 */
       function DeepChild({value}) {
         return <Text text={value} />;
       }
@@ -252,7 +252,7 @@ describe('ReactLazyContextPropagation', () => {
     const Context = React.createContext(0);
 
     let setValue;
-    /** App 持有 Provider 更新入口并组织 bailout、Suspense 或 Offscreen 层级，用于“React.memo HOC 下 Context 变化阻止消费者错误 bailout”。 */
+    /** 持有 Provider value setter，直接渲染 React.memo Consumer 以隔离 props 与 Context 更新。 */
     function App() {
       const [value, _setValue] = useState(0);
       setValue = _setValue;
@@ -304,7 +304,7 @@ describe('ReactLazyContextPropagation', () => {
     const Context = React.createContext(0);
 
     let setValue;
-    /** App 持有 Provider 更新入口并组织 bailout、Suspense 或 Offscreen 层级，用于“PureComponent 下 Context 变化阻止消费者错误 bailout”。 */
+    /** 持有 Provider value setter，渲染通过 contextType 订阅的 PureComponent。 */
     function App() {
       const [value, _setValue] = useState(0);
       setValue = _setValue;
@@ -315,11 +315,11 @@ describe('ReactLazyContextPropagation', () => {
       );
     }
 
-    /** 定义 Consumer 类 fixture，制造 class bailout 或实例边界，用于“PureComponent 下 Context 变化阻止消费者错误 bailout”。 */
+    /** 定义 Consumer 类 fixture，制造 class bailout 或实例边界。 */
     class Consumer extends React.PureComponent {
       /** Consumer.contextType 绑定目标 Context，使 PureComponent 登记 Context 依赖。 */
       static contextType = Context;
-      /** Consumer.render 渲染当前 Context/实例状态并暴露可观察输出，用于“PureComponent 下 Context 变化阻止消费者错误 bailout”。 */
+      /** Consumer.render 渲染当前 Context/实例状态并暴露可观察输出。 */
       render() {
         // 即使 Consumer 已 memoize，Context 变化仍应让它重新渲染
         // DeepChild；否则 DeepChild
@@ -359,7 +359,7 @@ describe('ReactLazyContextPropagation', () => {
 
     const Context = React.createContext(0);
 
-    /** App 持有 Provider 更新入口并组织 bailout、Suspense 或 Offscreen 层级，用于“Context 不变时 lazy bailout 复用深层子树”。 */
+    /** 固定 Provider value=0；局部 state 更新入口在 Consumer 内，用于区分 eager 与 render 后 bailout。 */
     function App() {
       return (
         <Context.Provider value={0}>
@@ -405,7 +405,7 @@ describe('ReactLazyContextPropagation', () => {
 
   /**
    * Given：并发 Root 中 Provider 从 A 变为 B，Async 在访问后代前挂起。
-   * When：同步更新提交 fallback，再解决资源触发 Suspense retry。
+   * When：普通 state 更新挂起并提交 fallback，再解决资源触发 Suspense retry。
    * Then：重试携带最新 Context，首遍未访问的 DeepChild 仍读取 B。
    *
    * 验证机制：挂起、fallback、恢复日志与最终 `BB` 输出划分两遍渲染。
@@ -418,7 +418,7 @@ describe('ReactLazyContextPropagation', () => {
     const Context = React.createContext('A');
 
     let setContext;
-    /** App 持有 Provider 更新入口并组织 bailout、Suspense 或 Offscreen 层级，用于“并发模式下 Context 跨 Suspense retry 不丢失”。 */
+    /** 持有 A/B Context 更新入口，在边界内放可挂起 Async、边界外放可见 Text 对照。 */
     function App() {
       const [value, setValue] = useState('A');
       setContext = setValue;
@@ -432,7 +432,7 @@ describe('ReactLazyContextPropagation', () => {
       );
     }
 
-    /** Async 在访问后代前读取可挂起资源，制造 render 中断与 retry，用于“并发模式下 Context 跨 Suspense retry 不丢失”。 */
+    /** Async 在访问后代前读取可挂起资源，制造 render 中断与 retry。 */
     function Async() {
       const value = useContext(Context);
       readText(value);
@@ -463,7 +463,7 @@ describe('ReactLazyContextPropagation', () => {
 
     await act(() => {
       // 故意不使用 startTransition，确保这是 refresh 时
-      // 也立即显示 fallback 的同步更新。
+      // 也立即显示 fallback 的普通紧急更新；并发根下未显式使用 flushSync。
       setContext('B');
     });
     assertLog([
@@ -484,7 +484,7 @@ describe('ReactLazyContextPropagation', () => {
 
   /**
    * Given：两个 Provider 同时从 A 变为 B，Async 在访问 memo 后代前因 B 资源未就绪而挂起。
-   * When：同步更新显示 fallback，随后解决 B thenable 触发 retry。
+   * When：普通 state 更新显示 fallback，随后解决 B thenable 触发 retry。
    * Then：重试恢复两条 Context 依赖，两个深层消费者都读取 B。
    *
    * 验证机制：Suspend/预热/恢复日志与最终 `BBB` 输出验证两条依赖均未丢失。
@@ -499,7 +499,7 @@ describe('ReactLazyContextPropagation', () => {
     const Context2 = React.createContext('A');
 
     let setContext;
-    /** App 持有 Provider 更新入口并组织 bailout、Suspense 或 Offscreen 层级，用于“多 Context 依赖跨挂起 retry 完整传播”。 */
+    /** 以同一 state 同时更新 Context1/2，边界内两个 memo 分支读取各自 Context，外部 Text 作对照。 */
     function App() {
       const [value, setValue] = useState('A');
       setContext = setValue;
@@ -515,7 +515,7 @@ describe('ReactLazyContextPropagation', () => {
       );
     }
 
-    /** Async 在访问后代前读取可挂起资源，制造 render 中断与 retry，用于“多 Context 依赖跨挂起 retry 完整传播”。 */
+    /** Async 在访问后代前读取可挂起资源，制造 render 中断与 retry。 */
     function Async() {
       const value = useContext(Context1);
       readText(value);
@@ -563,7 +563,7 @@ describe('ReactLazyContextPropagation', () => {
 
     await act(() => {
       // 故意不使用 startTransition，确保这是 refresh 时
-      // 也立即显示 fallback 的同步更新。
+      // 也立即显示 fallback 的普通紧急更新；并发根下未显式使用 flushSync。
       setContext('B');
     });
     assertLog([
@@ -584,7 +584,7 @@ describe('ReactLazyContextPropagation', () => {
 
   /**
    * Given：LegacyRoot 中 Provider 从 A 变为 B，Async 在访问后代前挂起。
-   * When：同步更新提交 fallback，再解决资源触发 Suspense retry。
+   * When：普通 state 更新挂起并提交 fallback，再解决资源触发 Suspense retry。
    * Then：重试携带最新 Context，首遍未访问的 DeepChild 仍读取 B。
    *
    * 验证机制：挂起、fallback、恢复日志与最终 `BB` 输出划分两遍渲染。
@@ -597,7 +597,7 @@ describe('ReactLazyContextPropagation', () => {
     const Context = React.createContext('A');
 
     let setContext;
-    /** App 持有 Provider 更新入口并组织 bailout、Suspense 或 Offscreen 层级，用于“legacy 模式下 Context 跨 Suspense retry 不丢失”。 */
+    /** 在 legacy 根中持有 Context 更新入口，比较边界内 retry 消费者与外部 Text。 */
     function App() {
       const [value, setValue] = useState('A');
       setContext = setValue;
@@ -611,7 +611,7 @@ describe('ReactLazyContextPropagation', () => {
       );
     }
 
-    /** Async 在访问后代前读取可挂起资源，制造 render 中断与 retry，用于“legacy 模式下 Context 跨 Suspense retry 不丢失”。 */
+    /** Async 在访问后代前读取可挂起资源，制造 render 中断与 retry。 */
     function Async() {
       const value = useContext(Context);
       readText(value);
@@ -642,7 +642,7 @@ describe('ReactLazyContextPropagation', () => {
 
     await act(() => {
       // 故意不使用 startTransition，确保这是 refresh 时
-      // 也立即显示 fallback 的同步更新。
+      // 也立即显示 fallback 的普通紧急更新；并发根下未显式使用 flushSync。
       setContext('B');
     });
     assertLog(['Suspend! [B]', 'Loading...', 'B']);
@@ -672,7 +672,7 @@ describe('ReactLazyContextPropagation', () => {
     const Context = React.createContext('A');
 
     let setContext;
-    /** App 持有 Provider 更新入口并组织 bailout、Suspense 或 Offscreen 层级，用于“Context 依赖穿过 hidden Offscreen 树”。 */
+    /** 更新 Context 并同时渲染 hidden LegacyHidden 与可见 Text，检查延迟隐藏工作与可见工作一致。 */
     function App() {
       const [value, setValue] = useState('A');
       setContext = setValue;
@@ -731,7 +731,7 @@ describe('ReactLazyContextPropagation', () => {
     const Context2 = React.createContext('A');
 
     let setContext;
-    /** App 持有 Provider 更新入口并组织 bailout、Suspense 或 Offscreen 层级，用于“多个 Context 穿过 hidden Offscreen 子树”。 */
+    /** 以同一 state 更新两个 Context，隐藏树中放两个 memo 消费者、树外放 Text。 */
     function App() {
       const [value, setValue] = useState('A');
       setContext = setValue;
@@ -802,7 +802,7 @@ describe('ReactLazyContextPropagation', () => {
     const Context = React.createContext('A');
 
     let setContext;
-    /** App 持有 Provider 更新入口并组织 bailout、Suspense 或 Offscreen 层级，用于“SuspenseList 专用 early bailout 不截断 Context”。 */
+    /** 更新 Provider，并用 useMemo 保持含两个 Child 的 SuspenseList 元素稳定。 */
     function App() {
       const [value, setValue] = useState('A');
       setContext = setValue;
@@ -847,13 +847,13 @@ describe('ReactLazyContextPropagation', () => {
    * 对应源码：`ReactFiberNewContext.js` 的 `propagateContextChanges()`、`checkIfContextChanged()` 与 `ReactFiberBeginWork.js` 的 bailout 路径。
    */
   it('nested bailouts', async () => {
-    // lazy Context 传播命中首个
-    // 匹配后会停止；若子树内再次 bailout，必须恢复传播扫描。
+    // lazy Context 传播命中消费者后跳过其后代，仍继续扫描兄弟；
+    // 消费者子树再次 bailout 时，要继续向深层传播。
 
     const Context = React.createContext('A');
 
     let setContext;
-    /** App 持有 Provider 更新入口并组织 bailout、Suspense 或 Offscreen 层级，用于“lazy Context 传播在嵌套 bailout 处恢复扫描”。 */
+    /** 更新 Provider，令 ChildIndirection 与 DeepChildIndirection 两层 memo bailout 检验 lazy 传播。 */
     function App() {
       const [value, setValue] = useState('A');
       setContext = setValue;
@@ -907,7 +907,7 @@ describe('ReactLazyContextPropagation', () => {
 
   /**
    * Given：并发 Root 中 Provider 从 A 变为 B，Async 在访问后代前挂起。
-   * When：同步更新提交 fallback，再解决资源触发 Suspense retry。
+   * When：普通 state 更新挂起并提交 fallback，再解决资源触发 Suspense retry。
    * Then：重试携带最新 Context，首遍未访问的 DeepChild 仍读取 B。
    *
    * 验证机制：挂起、fallback、恢复日志与最终 `BB` 输出划分两遍渲染。
@@ -915,13 +915,13 @@ describe('ReactLazyContextPropagation', () => {
    */
   // @gate enableLegacyCache
   it('nested bailouts across retries', async () => {
-    // lazy Context 传播命中首个
-    // 匹配后会停止；若子树内再次 bailout，必须恢复传播扫描。
+    // lazy Context 传播命中消费者后跳过其后代，仍继续扫描兄弟；
+    // 消费者子树再次 bailout 时，要继续向深层传播。
 
     const Context = React.createContext('A');
 
     let setContext;
-    /** App 持有 Provider 更新入口并组织 bailout、Suspense 或 Offscreen 层级，用于“并发模式下 Context 跨 Suspense retry 不丢失”。 */
+    /** 更新 Context 与传给 Async 的 value；Async 先读资源再访问两个深层消费者。 */
     function App() {
       const [value, setValue] = useState('A');
       setContext = setValue;
@@ -934,7 +934,7 @@ describe('ReactLazyContextPropagation', () => {
       );
     }
 
-    /** Async 在访问后代前读取可挂起资源，制造 render 中断与 retry，用于“并发模式下 Context 跨 Suspense retry 不丢失”。 */
+    /** Async 在访问后代前读取可挂起资源，制造 render 中断与 retry。 */
     function Async({value}) {
       // 该节点挂起后，当前 render 无法访问其 children，
       // 因此必须以可跨 retry 保留的方式传播
@@ -993,24 +993,22 @@ describe('ReactLazyContextPropagation', () => {
   });
 
   /**
-   * Given：Provider 同时包含 hidden LegacyHidden 消费者和可见兄弟，中间 memo 层可 bailout。
-   * When：Provider value 从 A 更新为 B。
-   * Then：传播器进入隐藏树并唤醒 DeepChild，隐藏与可见分支都读取 B。
-   *
-   * 验证机制：两个 B 日志与 `BB` 输出证明可见性不影响依赖传播。
-   * 对应源码：`ReactFiberNewContext.js` 的 `propagateContextChanges()` 与 `ReactFiberBeginWork.js` 的 `updateOffscreenComponent()`。
+   * Given：hidden LegacyHidden 内，Child 直接读取 Context，DeepChild 经过 memo 间接层读取同一 Context。
+   * When：Provider 从 A 更新为 B，传播先命中浅层消费者，再经深层 bailout 继续传播。
+   * Then：两个 B 日志及 BB 输出证明两层隐藏消费者都更新；本例没有树外可见兄弟。
+   * 对应源码：propagateContextChanges 与 updateOffscreenComponent 的隐藏工作路径。
    */
   // @gate enableLegacyCache && enableLegacyHidden
   it('nested bailouts through offscreen trees', async () => {
-    // lazy Context 传播命中首个
-    // 匹配后会停止；若子树内再次 bailout，必须恢复传播扫描。
+    // lazy Context 传播命中消费者后跳过其后代，仍继续扫描兄弟；
+    // 消费者子树再次 bailout 时，要继续向深层传播。
 
     const LegacyHidden = React.unstable_LegacyHidden;
 
     const Context = React.createContext('A');
 
     let setContext;
-    /** App 持有 Provider 更新入口并组织 bailout、Suspense 或 Offscreen 层级，用于“Context 依赖穿过 hidden Offscreen 树”。 */
+    /** 更新 Provider，将浅层和深层消费者都放在 LegacyHidden 内；本例没有树外可见对照。 */
     function App() {
       const [value, setValue] = useState('A');
       setContext = setValue;
@@ -1074,7 +1072,7 @@ describe('ReactLazyContextPropagation', () => {
     const Context = React.createContext('A');
 
     let setContext;
-    /** App 持有 Provider 更新入口并组织 bailout、Suspense 或 Offscreen 层级，用于“Context 扫描覆盖多个兄弟分支”。 */
+    /** 更新 Provider，在 Blah 下放两个 memo Indirection 兄弟，检查匹配后仍继续 sibling 扫描。 */
     function App() {
       const [value, setValue] = useState('A');
       setContext = setValue;
@@ -1144,15 +1142,15 @@ describe('ReactLazyContextPropagation', () => {
     // 曾触发该缺陷的 lazy Context 传播路径。
     const Context = React.createContext(null);
     const neverResolvingPromise = new Promise(() => {});
-    const resolvedThenable = {status: 'fulfilled', value: 'Result', /** then 按 thenable 协议登记 ping；pending 时入队，终态时用微任务回放，覆盖订阅/完成竞态。 */ then() {}};
+    const resolvedThenable = {status: 'fulfilled', value: 'Result', /** 已标记 fulfilled，use 可直接读取 value；then 为空实现。 */ then() {}};
 
-    /** Consumer 登记 Context 依赖并把读取值交给日志或宿主输出，用于“首次挂起丢弃消费者后由 Context 变化触发 retry”。 */
+    /** Consumer 登记 Context 依赖并把读取值交给日志或宿主输出。 */
     function Consumer() {
       return <Text text={use(use(Context))} />;
     }
 
     let setPromise;
-    /** Provider 写入受控 Context，并保持 children 结构以隔离真正的传播行为，用于“首次挂起丢弃消费者后由 Context 变化触发 retry”。 */
+    /** Provider 写入受控 Context，并保持 children 结构以隔离真正的传播行为。 */
     function Provider({children}) {
       const [promise, _setPromise] = useState(neverResolvingPromise);
       setPromise = _setPromise;
@@ -1194,21 +1192,21 @@ describe('ReactLazyContextPropagation', () => {
     // `propagateParentContextChanges` 路径。
     const Context = React.createContext(null);
     const neverResolvingPromise = new Promise(() => {});
-    const resolvedThenable = {status: 'fulfilled', value: 'Result', /** then 按 thenable 协议登记 ping；pending 时入队，终态时用微任务回放，覆盖订阅/完成竞态。 */ then() {}};
+    const resolvedThenable = {status: 'fulfilled', value: 'Result', /** 已标记 fulfilled，use 可直接读取 value；then 为空实现。 */ then() {}};
 
-    /** Consumer 登记 Context 依赖并把读取值交给日志或宿主输出，用于“嵌套路径在首次挂起丢弃消费者后仍重试 Suspense”。 */
+    /** Consumer 登记 Context 依赖并把读取值交给日志或宿主输出。 */
     function Consumer() {
       return <Text text={use(use(Context))} />;
     }
 
-    /** Indirection 保持 children 身份，区分父级重渲染与 Context walker 的定向调度，用于“嵌套路径在首次挂起丢弃消费者后仍重试 Suspense”。 */
+    /** Indirection 保持 children 身份，区分父级重渲染与 Context walker 的定向调度。 */
     function Indirection({children}) {
       Scheduler.log('Indirection');
       return children;
     }
 
     let setPromise;
-    /** Provider 写入受控 Context，并保持 children 结构以隔离真正的传播行为，用于“嵌套路径在首次挂起丢弃消费者后仍重试 Suspense”。 */
+    /** Provider 写入受控 Context，并保持 children 结构以隔离真正的传播行为。 */
     function Provider({children}) {
       const [promise, _setPromise] = useState(neverResolvingPromise);
       setPromise = _setPromise;
@@ -1258,7 +1256,7 @@ describe('ReactLazyContextPropagation', () => {
     const Context = React.createContext('A');
 
     let setContext;
-    /** App 持有 Provider 更新入口并组织 bailout、Suspense 或 Offscreen 层级，用于“memo 边界后的 Suspense fallback 接收最新 Context”。 */
+    /** 更新 Provider，使稳定 MemoizedWrapper 的 fallback 消费者与树外 Text 都读取新值。 */
     function App() {
       const [value, _setValue] = useState('A');
       setContext = _setValue;
@@ -1271,7 +1269,7 @@ describe('ReactLazyContextPropagation', () => {
     }
 
     /** MemoizedWrapper 固定 Suspense 与 fallback element 引用，使 Context 更新必须直接命中已提交 fallback 树。 */
-    const MemoizedWrapper = React.memo(function MemoizedWrapper() {
+    const MemoizedWrapper = React.memo(/** 构造固定 primary/fallback 元素，props 不变时 wrapper 不重渲染，Context 仍须命中 fallback Consumer。 */ function MemoizedWrapper() {
       return (
         <Suspense fallback={<FallbackConsumer />}>
           <AsyncChild />
@@ -1279,13 +1277,13 @@ describe('ReactLazyContextPropagation', () => {
       );
     });
 
-    /** FallbackConsumer 登记 Context 依赖并把读取值交给日志或宿主输出，用于“memo 边界后的 Suspense fallback 接收最新 Context”。 */
+    /** FallbackConsumer 登记 Context 依赖并把读取值交给日志或宿主输出。 */
     function FallbackConsumer() {
       const value = useContext(Context);
       return <Text text={'Fallback: ' + value} />;
     }
 
-    /** AsyncChild 在访问后代前读取可挂起资源，制造 render 中断与 retry，用于“memo 边界后的 Suspense fallback 接收最新 Context”。 */
+    /** AsyncChild 在访问后代前读取可挂起资源，制造 render 中断与 retry。 */
     function AsyncChild() {
       readText('async');
       return <Text text="Content" />;

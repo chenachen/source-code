@@ -40,7 +40,8 @@ export function shouldExternalize(
 
 /**
  * 把 `resolve.external`、`resolve.noExternal` 与真实 Node 解析结果合成为 external 判定器。
- * 只有裸包 import 可外部化；链接包默认参与 Vite 转换，除非用户显式 external。
+ * 默认路径只接受可解析的裸包 JS；链接包需显式 external。精确 external 与布尔 noExternal
+ * 分支直接返回，不经过默认路径的解析/文件类型检查。
  */
 export function createIsConfiguredAsExternal(
   environment: PartialEnvironment,
@@ -102,7 +103,7 @@ export function createIsConfiguredAsExternal(
   // 优先级：精确 id external → 包名 external → noExternal 布尔/过滤器 → 默认可外部化判断。
   return (id: string, importer?: string) => {
     if (
-      // external 可精确指定包的单个 deep import。
+      // 精确命中原始 id 直接外部化，不再检查是否存在、是否链接包或是否 JS 文件。
       external !== true &&
       external.includes(id)
     ) {

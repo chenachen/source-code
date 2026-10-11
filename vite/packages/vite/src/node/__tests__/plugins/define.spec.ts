@@ -23,7 +23,7 @@ async function createDefinePluginTransform(
 
   return async (code: string) => {
     if (isSsrDev) {
-        // @ts-expect-error transform.handler should exist
+      // @ts-expect-error transform.handler should exist
       const result = await instance.transform.handler.call(
         { environment },
         code,
@@ -67,11 +67,11 @@ async function createDefinePluginTransform(
 }
 
 describe('definePlugin (SSR dev)', () => {
-  /** 固定 JavaScript 文件名创建 define 转换器，供各 define 矩阵复用。 */
+  /** 固定 SSR dev 路径创建 define 转换器，供各 define 矩阵复用；内部使用 foo.ts 模拟 importer。 */
   const createJsDefinePluginTransform = (define: Record<string, any> = {}) =>
     createDefinePluginTransform(define, true)
 
-  /** 场景：自定义标识符分别紧邻分号或与分号有空格；验证目标：两种写法都按语法节点替换，而非依赖文本拼接。 */
+  /** 自定义标识符分别紧邻分号或与分号有空格；两种写法都按语法节点替换，而非依赖文本拼接。 */
   test('replaces custom define', async () => {
     const transform = await createJsDefinePluginTransform({
       __APP_VERSION__: JSON.stringify('1.0'),
@@ -84,7 +84,7 @@ describe('definePlugin (SSR dev)', () => {
     )
   })
 
-  /** 场景：源码不含任何 define 快速匹配模式；验证目标：transform 返回 undefined，保留源码并跳过 Oxc 开销。 */
+  /** 源码不含任何 define 快速匹配模式；transform 返回 undefined，保留源码并跳过 Oxc 开销。 */
   test('should not replace if not defined', async () => {
     const transform = await createJsDefinePluginTransform({
       __APP_VERSION__: JSON.stringify('1.0'),
@@ -95,7 +95,7 @@ describe('definePlugin (SSR dev)', () => {
     ).toBe(undefined)
   })
 
-  /** 场景：define 值是非 JSON 源码表达式且源码还含未知 env；验证目标：只替换显式配置项，未知 env 留给开发运行时。 */
+  /** define 值是非 JSON 源码表达式且源码还含未知 env；只替换显式配置项，未知 env 留给开发运行时。 */
   test('replace import.meta.env when it is a invalid json', async () => {
     const transform = await createJsDefinePluginTransform({
       'import.meta.env.LEGACY': '__VITE_IS_LEGACY__',
@@ -114,7 +114,7 @@ describe('definePlugin (SSR dev)', () => {
 })
 
 describe('native definePlugin', () => {
-  /** 场景：bundled 路径配置相同的自定义 define；验证目标：该表达式合并进 Rolldown transform options 并出现在产物。 */
+  /** bundled 路径配置相同的自定义 define；该表达式合并进 Rolldown transform options 并出现在产物。 */
   test('replaces custom define', async () => {
     const transform = await createDefinePluginTransform({
       __APP_VERSION__: JSON.stringify('1.0'),
@@ -127,7 +127,7 @@ describe('native definePlugin', () => {
     )
   })
 
-  /** 场景：源码引用未配置的普通表达式；验证目标：define 插件不替换它，只允许 bundler 做正常输出改写。 */
+  /** 源码引用未配置的普通表达式；define 插件不替换它，只允许 bundler 做正常输出改写。 */
   test('should not replace if not defined', async () => {
     const transform = await createDefinePluginTransform({
       __APP_VERSION__: JSON.stringify('1.0'),
@@ -140,7 +140,7 @@ describe('native definePlugin', () => {
     ).toBe('const version = import.meta.SOMETHING;\nexport { version };\n')
   })
 
-  /** 场景：在 client Environment 转换内建 SSR 标志；验证目标：import.meta.env.SSR 被固定替换为 false。 */
+  /** 在 client Environment 转换内建 SSR 标志；import.meta.env.SSR 被固定替换为 false。 */
   test('replaces import.meta.env.SSR with false', async () => {
     const transform = await createDefinePluginTransform()
     expect(await transform('export const isSSR = import.meta.env.SSR;')).toBe(
@@ -148,7 +148,7 @@ describe('native definePlugin', () => {
     )
   })
 
-  /** 场景：用户 define 显式覆盖 import.meta.hot；验证目标：define 插件保留用户值，不执行默认 HMR 特殊处理。 */
+  /** 用户 define 显式覆盖 import.meta.hot；define 插件保留用户值，不执行默认 HMR 特殊处理。 */
   test('preserve import.meta.hot with override', async () => {
     // build 默认移除 import.meta.hot，使死代码可 tree-shake。
     const transform = await createDefinePluginTransform()
@@ -164,7 +164,7 @@ describe('native definePlugin', () => {
     )
   })
 
-  /** 场景：生产构建访问未声明的静态 import.meta.env 点属性；验证目标：该访问被替换为 undefined。 */
+  /** 生产构建访问未声明的静态 import.meta.env 点属性；该访问被替换为 undefined。 */
   test('replace import.meta.env.UNKNOWN with undefined', async () => {
     const transform = await createDefinePluginTransform()
     expect(await transform('export const foo = import.meta.env.UNKNOWN;')).toBe(
@@ -172,7 +172,7 @@ describe('native definePlugin', () => {
     )
   })
 
-  /** 场景：import.meta.env 使用计算属性访问；验证目标：不套用静态点属性通配替换，保留给运行时处理。 */
+  /** import.meta.env 使用计算属性访问；不套用静态点属性通配替换，保留给运行时处理。 */
   test('leave import.meta.env["UNKNOWN"] to runtime', async () => {
     const transform = await createDefinePluginTransform()
     expect(
@@ -180,7 +180,7 @@ describe('native definePlugin', () => {
     ).toMatch(/const foo = .*\["UNKNOWN"\];\nexport \{ foo \};\n/s)
   })
 
-  /** 场景：用户用同值 define 显式声明某个静态 env 访问；验证目标：该访问按用户配置保留。 */
+  /** 用户用同值 define 显式声明某个静态 env 访问；该访问按用户配置保留。 */
   test('preserve import.meta.env.UNKNOWN with override', async () => {
     const transform = await createDefinePluginTransform({
       'import.meta.env.UNKNOWN': 'import.meta.env.UNKNOWN',
@@ -190,7 +190,7 @@ describe('native definePlugin', () => {
     )
   })
 
-  /** 场景：用户 define 值是非 JSON 源码表达式且还访问未知静态 env；验证目标：用户值原样嵌入，未知访问由通配规则消去。 */
+  /** 用户 define 值是非 JSON 源码表达式且还访问未知静态 env；用户值原样嵌入，未知访问由通配规则消去。 */
   test('replace import.meta.env when it is a invalid json', async () => {
     const transform = await createDefinePluginTransform({
       'import.meta.env.LEGACY': '__VITE_IS_LEGACY__',
@@ -205,7 +205,7 @@ describe('native definePlugin', () => {
     )
   })
 
-  /** 场景：源码直接读取裸 import.meta.env；验证目标：替换为汇总内建 env 与用户 env define 的稳定对象。 */
+  /** 源码直接导出裸 import.meta.env；转换后应得到可赋给 env 的表达式，本例正则只检查赋值/导出形态，不逐键核对 env 对象。 */
   test('replace bare import.meta.env', async () => {
     const transform = await createDefinePluginTransform()
     expect(await transform('export const env = import.meta.env;')).toMatch(

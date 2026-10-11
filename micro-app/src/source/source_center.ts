@@ -29,7 +29,7 @@ export interface SourceCenter<L = LinkSourceInfo, S = ScriptSourceInfo> {
     hasInfo (address: SourceAddress): boolean,
     /** 删除指定脚本地址及所有应用空间数据。 */
     deleteInfo (address: SourceAddress): boolean,
-    /** 从给定应用资源集合中删除静态内联脚本，保留可跨应用复用的远程脚本。 */
+    /** 按给定集合删除全局缓存中的静态内联脚本；不修改集合本身，远程资源及 appSpace 继续保留。 */
     deleteInlineInfo (addressList: Set<SourceAddress>): void,
   }
 }
@@ -40,11 +40,13 @@ export type LinkListType = Map<SourceAddress, LinkSourceInfo>
 export type ScriptListType = Map<SourceAddress, ScriptSourceInfo>
 
 /**
- * 创建进程级 link/script 资源中心。
+ * 创建当前框架模块共享的 link/script 资源中心。
  *
- * 远程资源按完整地址全局共享，因此带不同查询参数的地址会形成不同缓存项；原始代码只需
- * 抓取一次，而插件、CSS 前缀、沙箱类型等应用相关结果继续隔离在 `appSpace`。静态内联
+ * 远程资源按完整地址全局共享，因此带不同查询参数的地址会形成不同缓存项。非空原始代码
+ * 命中后可跳过下载，插件、CSS 前缀、沙箱类型等应用相关结果继续保存在
+ * `appSpace`。这里不保存进行中的请求，代码尚未写入时的并发调用仍会各自下载。静态内联
  * 脚本使用随机 nonce 登记，应用彻底销毁时单独清除。
+ * 嵌套应用另行加载框架 bundle 时可拥有独立模块副本，这里的 Map 不跨副本汇合。
  */
 function createSourceCenter (): SourceCenter {
   // 两个 Map 被返回的处理器闭包持有，生命周期与默认导出的资源中心单例一致。
@@ -77,7 +79,7 @@ function createSourceCenter (): SourceCenter {
     link: createSourceHandler<LinkSourceInfo, LinkListType>(linkList),
     script: {
       ...createSourceHandler<ScriptSourceInfo, ScriptListType>(scriptList),
-      /** 清除应用集合中的内联 nonce；远程地址继续留在全局缓存供其他应用复用。 */
+      /** 根据应用集合清除全局内联 nonce，不从该 Set 删除键；远程地址及各 appSpace 继续留存。 */
       deleteInlineInfo (addressList: Set<SourceAddress>): void {
         addressList.forEach((address) => {
           if (isInlineScript(address)) {

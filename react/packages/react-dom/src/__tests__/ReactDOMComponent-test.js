@@ -21,6 +21,7 @@ describe('ReactDOMComponent', () => {
   let Scheduler;
   let assertConsoleErrorDev;
 
+  /** 各例重置模块并重载React/DOM/Scheduler及内部act，使用同一轮实例；套件外层FeatureFlags引用仍用于事件顺序条件。 */
   beforeEach(() => {
     jest.resetModules();
     React = require('react');
@@ -34,19 +35,13 @@ describe('ReactDOMComponent', () => {
     assertLog = require('internal-test-utils').assertLog;
   });
 
+  /** 恢复jest/spy改写的方法；事件顺序例的document监听不由restoreAllMocks移除，其finally仅移容器。 */
   afterEach(() => {
     jest.restoreAllMocks();
   });
 
   describe('updateDOM', () => {
-    /**
-     * 代表场景（Given–When–Then）：
-     * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-     * When 执行「should handle className」描述的渲染或交互；
-     * Then 通过本用例的 DOM、日志或调度断言确认行为。
-     *
-     * 验证机制：断言连接 ReactDOM 公开入口、ReactDOMRoot 根生命周期及 DOM 提交结果。
-     */
+    /** div从无class更新foo→bar→null，DOM className最终空串，验证别名属性的增加、替换与删除。 */
     it('should handle className', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -68,7 +63,7 @@ describe('ReactDOMComponent', () => {
       expect(container.firstChild.className).toEqual('');
     });
 
-    /** 测试场景：验证「should gracefully handle various style value types」描述的渲染、交互或错误处理结果。 */
+    /** 空style更新display/left字符串、top数字2、fontFamily字符串，top成为2px；再用空串/null/布尔清除各项，验证样式值转换与重置。 */
     it('should gracefully handle various style value types', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -103,36 +98,36 @@ describe('ReactDOMComponent', () => {
       expect(stubStyle.fontFamily).toEqual('');
     });
 
-    /** 测试场景：验证「should not update styles when mutating a proxy style object」描述的渲染、交互或错误处理结果。 */
+    /** 同一style代理对象以getter读取可变store，DEV冻结也仍能改store；三次复用对象后DOM仍none/Arial/1.2，去掉style才清空，验证差分依据对象身份而不重读同对象变更。 */
     it('should not update styles when mutating a proxy style object', async () => {
       const styleStore = {
         display: 'none',
         fontFamily: 'Arial',
         lineHeight: 1.2,
       };
-    // 使用代理样式对象，以便即使它在 DEV 中被冻结，仍可修改。
+      // 使用代理样式外壳，即使DEV冻结外壳，setter仍可修改底层styleStore。
       const styles = {
-        /** `display`：保存当前测试场景复用的夹具、状态或回调。 */
+        /** 读取代理store的display，允许同一冻结style外壳暴露后来值；React复用该外壳时仍不应重写DOM。 */
         get display() {
           return styleStore.display;
         },
-        /** `display`：保存当前测试场景复用的夹具、状态或回调。 */
+        /** 只更新display底层store，不新增或修改style外壳字段，绕过DEV冻结以测试引用不变的差分。 */
         set display(v) {
           styleStore.display = v;
         },
-        /** `fontFamily`：保存当前测试场景复用的夹具、状态或回调。 */
+        /** 读取store当前fontFamily，供同引用style输入测试。 */
         get fontFamily() {
           return styleStore.fontFamily;
         },
-        /** `fontFamily`：保存当前测试场景复用的夹具、状态或回调。 */
+        /** 改fontFamily底层值而保持styles对象身份，DOM应仍保留原Arial。 */
         set fontFamily(v) {
           styleStore.fontFamily = v;
         },
-        /** `lineHeight`：保存当前测试场景复用的夹具、状态或回调。 */
+        /** 读取store中的无单位lineHeight，初次DOM应得到1.2。 */
         get lineHeight() {
           return styleStore.lineHeight;
         },
-        /** `lineHeight`：保存当前测试场景复用的夹具、状态或回调。 */
+        /** 只把store lineHeight改0.5；复用styles对象时不应把它写到DOM。 */
         set lineHeight(v) {
           styleStore.lineHeight = v;
         },
@@ -182,16 +177,16 @@ describe('ReactDOMComponent', () => {
       expect(stubStyle.lineHeight).toBe('');
     });
 
-    /** 测试场景：验证「should throw when mutating style objects」描述的渲染、交互或错误处理结果。 */
+    /** App用state引用普通style对象挂载，DEV再给style新增position应抛错；验证样式对象冻结，仅开发分支有变更断言。 */
     it('should throw when mutating style objects', async () => {
       const style = {border: '1px solid black'};
 
-      /** `App`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+      /** state持有原style引用的类fixture，供开发冻结后外部修改测试。 */
       class App extends React.Component {
-        /** `App.state`：记录测试夹具在当前场景中的状态。 */
+        /** 保存同一个style对象，不拷贝，以便外部新增键命中React冻结的实际输入。 */
         state = {style: style};
 
-        /** `App.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 把state.style传主机div，触发样式初始化及DEV冻结。 */
         render() {
           return <div style={this.state.style}>asd</div>;
         }
@@ -208,7 +203,7 @@ describe('ReactDOMComponent', () => {
       }
     });
 
-    /** 测试场景：验证「should warn for unknown prop」描述的渲染、交互或错误处理结果。 */
+    /** 普通div的未知foo值为函数，开发警告要求字符串/数字；本例验证无效值诊断，不是拒绝所有未知属性名。 */
     it('should warn for unknown prop', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -223,7 +218,7 @@ describe('ReactDOMComponent', () => {
       ]);
     });
 
-    /** 测试场景：验证「should group multiple unknown prop warnings together」描述的渲染、交互或错误处理结果。 */
+    /** div同时带函数foo/baz，只输出一条合并的Invalid values诊断，验证同元素多个无效值集中报告。 */
     it('should group multiple unknown prop warnings together', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -238,7 +233,7 @@ describe('ReactDOMComponent', () => {
       ]);
     });
 
-    /** 测试场景：验证「should warn for onDblClick prop」描述的渲染、交互或错误处理结果。 */
+    /** div使用错误事件名onDblClick，开发建议onDoubleClick，验证已知事件别名拼写诊断。 */
     it('should warn for onDblClick prop', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -251,7 +246,7 @@ describe('ReactDOMComponent', () => {
       ]);
     });
 
-    /** 测试场景：验证「should warn for unknown string event handlers」描述的渲染、交互或错误处理结果。 */
+    /** 依次挂未知onUnknown/onunknown/on-unknown字符串，三种都警告且无DOM attribute/property，验证未知on前缀不会作为可执行字符串落DOM。 */
     it('should warn for unknown string event handlers', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -285,7 +280,7 @@ describe('ReactDOMComponent', () => {
       expect(container.firstChild['on-unknown']).toBe(undefined);
     });
 
-    /** 测试场景：验证「should warn for unknown function event handlers」描述的渲染、交互或错误处理结果。 */
+    /** 同三种未知on拼写的值改为函数，仍警告且无attribute/property，验证函数值不能绕过未知事件过滤。 */
     it('should warn for unknown function event handlers', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -318,7 +313,7 @@ describe('ReactDOMComponent', () => {
       expect(container.firstChild['on-unknown']).toBe(undefined);
     });
 
-    /** 测试场景：验证「should warn for badly cased React attributes」描述的渲染、交互或错误处理结果。 */
+    /** 大写CHILDREN传字符串5，开发建议children但仍作为普通attribute读取到5，验证保留名大小写警告不等于删除该原始属性。 */
     it('should warn for badly cased React attributes', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -332,11 +327,11 @@ describe('ReactDOMComponent', () => {
       expect(container.firstChild.getAttribute('CHILDREN')).toBe('5');
     });
 
-    /** 测试场景：验证「should not warn for "0" as a unitless style value」描述的渲染、交互或错误处理结果。 */
+    /** 类fixture返回margin字符串0，act成功且无警告；验证CSS零值允许不带单位，无显式DOM数值断言。 */
     it('should not warn for "0" as a unitless style value', async () => {
-      /** `Component`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+      /** 返回零值margin的类fixture，检查样式校验不误报合法字符串0。 */
       class Component extends React.Component {
-        /** `Component.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 输出margin字符串0而非数字，覆盖已有CSS单位规则的零值特例。 */
         render() {
           return <div style={{margin: '0'}} />;
         }
@@ -349,7 +344,7 @@ describe('ReactDOMComponent', () => {
       });
     });
 
-    /** 测试场景：验证「should warn nicely about NaN in style」描述的渲染、交互或错误处理结果。 */
+    /** span fontSize为NaN，首次开发诊断明确属性名，再复用style对象渲染不再报；验证非法样式值诊断与缓存去重。 */
     it('should warn nicely about NaN in style', async () => {
       const style = {fontSize: NaN};
       const div = document.createElement('div');
@@ -366,17 +361,17 @@ describe('ReactDOMComponent', () => {
       });
     });
 
-    /** 测试场景：验证「throws with Temporal-like objects as style values」描述的渲染、交互或错误处理结果。 */
+    /** fontSize对象的valueOf抛TypeError而toString返回日期，act最终拒绝同错误、开发报告两次unsupported type；验证样式会做字符串前的类型强制转换。 */
     it('throws with Temporal-like objects as style values', async () => {
-      /** `TemporalLike`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+      /** 模拟Temporal对象：字符串表示可用但数值默认转换抛错，暴露样式值的隐式转换路径。 */
       class TemporalLike {
-        /** `TemporalLike.valueOf`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** valueOf总抛prod message TypeError，保证错误来自默认类型转换而非日期toString。 */
         valueOf() {
         // 此处抛错符合 ECMAScript “Temporal” 日期/时间 API 的行为。
         // 参见 https://tc39.es/proposal-temporal/docs/plaindate.html#valueOf
           throw new TypeError('prod message');
         }
-        /** `TemporalLike.toString`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 提供日期字符串表示；此方法可用不代表样式赋值绕过valueOf。 */
         toString() {
           return '2020-01-01';
         }
@@ -398,7 +393,7 @@ describe('ReactDOMComponent', () => {
       ]);
     });
 
-    /** 测试场景：验证「should update styles if initially null」描述的渲染、交互或错误处理结果。 */
+    /** style最初null，再变display block对象，保存的CSSStyleDeclaration变block，验证从无样式到对象的初始化。 */
     it('should update styles if initially null', async () => {
       let styles = null;
       const container = document.createElement('div');
@@ -417,7 +412,7 @@ describe('ReactDOMComponent', () => {
       expect(stubStyle.display).toEqual('block');
     });
 
-    /** 测试场景：验证「should update styles if updated to null multiple times」描述的渲染、交互或错误处理结果。 */
+    /** style按null→block→null→同block对象→null反复更新，display逐次block/空串，验证删除后再添加不会被旧引用差分遗漏。 */
     it('should update styles if updated to null multiple times', async () => {
       let styles = null;
       const container = document.createElement('div');
@@ -450,7 +445,7 @@ describe('ReactDOMComponent', () => {
       expect(stubStyle.display).toEqual('');
     });
 
-    /** 测试场景：验证「should allow named slot projection on both web components and regular DOM elements」描述的渲染、交互或错误处理结果。 */
+    /** 自定义父内同时有自定义child slot first与button slot second，两个light DOM节点属性分别保存，验证普通元素和Web Component都允许slot。 */
     it('should allow named slot projection on both web components and regular DOM elements', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -470,7 +465,7 @@ describe('ReactDOMComponent', () => {
       expect(lightDOM[1].getAttribute('slot')).toBe('second');
     });
 
-    /** 测试场景：验证「should skip reserved props on web components」描述的渲染、交互或错误处理结果。 */
+    /** 自定义元素children及两个suppress开关初始true再false，三者始终不成为attribute，验证保留props在初始化/更新中均过滤。 */
     it('should skip reserved props on web components', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -510,7 +505,7 @@ describe('ReactDOMComponent', () => {
       ).toBe(false);
     });
 
-    /** 测试场景：验证「should skip dangerouslySetInnerHTML on web components」描述的渲染、交互或错误处理结果。 */
+    /** 自定义元素危险HTML hi→bye，两次均不生成dangerouslySetInnerHTML attribute；本例只检查保留名过滤，未断言innerHTML文本。 */
     it('should skip dangerouslySetInnerHTML on web components', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -530,7 +525,7 @@ describe('ReactDOMComponent', () => {
       );
     });
 
-    /** 测试场景：验证「should render null and undefined as empty but print other falsy values」描述的渲染、交互或错误处理结果。 */
+    /** 危险HTML内容依次文本、0、false、空串、null、undefined，textContent分别文本/0/false/空，验证nullish清空而其它假值仍写字符串。 */
     it('should render null and undefined as empty but print other falsy values', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -566,7 +561,7 @@ describe('ReactDOMComponent', () => {
       expect(container.textContent).toEqual('');
     });
 
-    /** 测试场景：验证「should remove attributes」描述的渲染、交互或错误处理结果。 */
+    /** img初始height17，再删该prop，hasAttribute由true变false，验证旧属性从DOM移除。 */
     it('should remove attributes', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -581,7 +576,7 @@ describe('ReactDOMComponent', () => {
       expect(container.firstChild.hasAttribute('height')).toBe(false);
     });
 
-    /** 测试场景：验证「should remove properties」描述的渲染、交互或错误处理结果。 */
+    /** div className monkey更新为空props，DOM className空串，验证别名class属性清除。 */
     it('should remove properties', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -596,7 +591,7 @@ describe('ReactDOMComponent', () => {
       expect(container.firstChild.className).toEqual('');
     });
 
-    /** 测试场景：验证「should not set null/undefined attributes」描述的渲染、交互或错误处理结果。 */
+    /** img src/data-foo的null/undefined交换、去掉、再加，始终没有两attribute，验证nullish值在增加/更新/删除各路径均不写。 */
     it('should not set null/undefined attributes', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -633,7 +628,7 @@ describe('ReactDOMComponent', () => {
       expect(node.hasAttribute('data-foo')).toBe(false);
     });
 
-    /** 测试场景：验证「should not add an empty src attribute」描述的渲染、交互或错误处理结果。 */
+    /** img src空串警告且不生成attribute，改abc存在，再空串警告并删除，验证URL空串在初始化与更新中都过滤。 */
     it('should not add an empty src attribute', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -668,7 +663,7 @@ describe('ReactDOMComponent', () => {
       expect(node.hasAttribute('src')).toBe(false);
     });
 
-    /** 测试场景：验证「should not add an empty href attribute」描述的渲染、交互或错误处理结果。 */
+    /** link href空串警告且不存在，改abc再空串又删除并警告，验证非anchor的空href过滤。 */
     it('should not add an empty href attribute', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -701,7 +696,7 @@ describe('ReactDOMComponent', () => {
       expect(node.hasAttribute('href')).toBe(false);
     });
 
-    /** 测试场景：验证「should allow an empty href attribute on anchors」描述的渲染、交互或错误处理结果。 */
+    /** a href空串保留为空attribute，验证anchor允许当前页链接这一标签例外。 */
     it('should allow an empty href attribute on anchors', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -712,7 +707,7 @@ describe('ReactDOMComponent', () => {
       expect(node.getAttribute('href')).toBe('');
     });
 
-    /** 测试场景：验证「should allow an empty action attribute」描述的渲染、交互或错误处理结果。 */
+    /** form action空串→abc→空串，action始终可用且最终为空，验证表单action允许空URL。 */
     it('should allow an empty action attribute', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -733,7 +728,7 @@ describe('ReactDOMComponent', () => {
       expect(node.getAttribute('action')).toBe('');
     });
 
-    /** 测试场景：验证「allows empty string of a formAction to override the default of a parent」描述的渲染、交互或错误处理结果。 */
+    /** 父form action hello而button formAction空串，按钮formaction存在且为空，验证显式空覆盖父默认值。 */
     it('allows empty string of a formAction to override the default of a parent', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -749,7 +744,7 @@ describe('ReactDOMComponent', () => {
       expect(node.getAttribute('formaction')).toBe('');
     });
 
-    /** 测试场景：验证「should not filter attributes for custom elements」描述的渲染、交互或错误处理结果。 */
+    /** 自定义元素action/formAction/href/src均空串，四attribute都保留，验证普通URL字段过滤不套用自定义标签。 */
     it('should not filter attributes for custom elements', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -765,7 +760,7 @@ describe('ReactDOMComponent', () => {
       expect(node.hasAttribute('src')).toBe(true);
     });
 
-    /** 测试场景：验证「should apply React-specific aliases to HTML elements」描述的渲染、交互或错误处理结果。 */
+    /** HTML form acceptCharset foo→boo→null→恢复→undefined→恢复→移除，始终用accept-charset而无acceptCharset，验证HTML别名与删除各分支。 */
     it('should apply React-specific aliases to HTML elements', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -814,7 +809,7 @@ describe('ReactDOMComponent', () => {
       expect(node.hasAttribute('acceptCharset')).toBe(false);
     });
 
-    /** 测试场景：验证「should apply React-specific aliases to SVG elements」描述的渲染、交互或错误处理结果。 */
+    /** SVG arabicForm同样经历字符串、null、undefined与缺省，使用arabic-form且不留原名，验证SVG别名的初始化/更新/删除。 */
     it('should apply React-specific aliases to SVG elements', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -863,7 +858,7 @@ describe('ReactDOMComponent', () => {
       expect(node.hasAttribute('arabicForm')).toBe(false);
     });
 
-    /** 测试场景：验证「should properly update custom attributes on custom elements」描述的渲染、交互或错误处理结果。 */
+    /** 自定义标签foo bar更新为仅bar buzz，旧foo删除、新bar保存buzz，验证任意自定义attribute的双向差分。 */
     it('should properly update custom attributes on custom elements', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -881,7 +876,7 @@ describe('ReactDOMComponent', () => {
       expect(node.getAttribute('bar')).toBe('buzz');
     });
 
-    /** 测试场景：验证「should not apply React-specific aliases to custom elements」描述的渲染、交互或错误处理结果。 */
+    /** 自定义标签arabicForm foo→boo后改acceptCharset buzz，保留原名、删除旧名且不生成SVG/HTML连字符别名，验证自定义路径名称规则。 */
     it('should not apply React-specific aliases to custom elements', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -908,7 +903,7 @@ describe('ReactDOMComponent', () => {
       expect(node.hasAttribute('accept-charset')).toBe(false);
     });
 
-    /** 测试场景：验证「should clear a single style prop when changing `style`」描述的渲染、交互或错误处理结果。 */
+    /** style从display none/color red改为仅color green，display清空而color变green，验证删除单个样式键与修改保留键。 */
     it('should clear a single style prop when changing `style`', async () => {
       let styles = {display: 'none', color: 'red'};
       const container = document.createElement('div');
@@ -927,7 +922,7 @@ describe('ReactDOMComponent', () => {
       expect(stubStyle.color).toEqual('green');
     });
 
-    /** 测试场景：验证「should reject attribute key injection attack on markup for regular DOM (SSR)」描述的渲染、交互或错误处理结果。 */
+    /** SSR普通div循环三遍传含引号onclick与闭标签script的两种非法键，结果不含onclick/script且仅首次诊断每种键，验证键过滤及警告缓存。 */
     it('should reject attribute key injection attack on markup for regular DOM (SSR)', () => {
       for (let i = 0; i < 3; i++) {
         const element1 = React.createElement(
@@ -953,7 +948,7 @@ describe('ReactDOMComponent', () => {
       ]);
     });
 
-    /** 测试场景：验证「should reject attribute key injection attack on markup for custom elements (SSR)」描述的渲染、交互或错误处理结果。 */
+    /** SSR自定义x-foo-component重复相同两类非法键，结果不含注入onclick/script且每种只警告一次，验证自定义标签仍检查属性名。 */
     it('should reject attribute key injection attack on markup for custom elements (SSR)', () => {
       for (let i = 0; i < 3; i++) {
         const element1 = React.createElement(
@@ -979,7 +974,7 @@ describe('ReactDOMComponent', () => {
       ]);
     });
 
-    /** 测试场景：验证「should reject attribute key injection attack on mount for regular DOM」描述的渲染、交互或错误处理结果。 */
+    /** 客户端普通div三轮挂载两种非法键，中间unmount并建新root；每次零attribute、仅首轮各报非法名，验证挂载过滤与跨root警告缓存。 */
     it('should reject attribute key injection attack on mount for regular DOM', async () => {
       for (let i = 0; i < 3; i++) {
         const container = document.createElement('div');
@@ -1025,7 +1020,7 @@ describe('ReactDOMComponent', () => {
       }
     });
 
-    /** 测试场景：验证「should reject attribute key injection attack on mount for custom elements」描述的渲染、交互或错误处理结果。 */
+    /** 同攻击键挂到自定义x-foo-component，三轮重建root仍无attribute、只首轮警告，验证自定义挂载不会绕过键校验。 */
     it('should reject attribute key injection attack on mount for custom elements', async () => {
       for (let i = 0; i < 3; i++) {
         const container = document.createElement('div');
@@ -1073,7 +1068,7 @@ describe('ReactDOMComponent', () => {
       }
     });
 
-    /** 测试场景：验证「should reject attribute key injection attack on update for regular DOM」描述的渲染、交互或错误处理结果。 */
+    /** 普通空div后依次更新两类注入键，循环三轮始终零attribute且仅首轮警告，验证更新阶段也校验键而非只初始化。 */
     it('should reject attribute key injection attack on update for regular DOM', async () => {
       for (let i = 0; i < 3; i++) {
         const container = document.createElement('div');
@@ -1119,7 +1114,7 @@ describe('ReactDOMComponent', () => {
       }
     });
 
-    /** 测试场景：验证「should reject attribute key injection attack on update for custom elements」描述的渲染、交互或错误处理结果。 */
+    /** 自定义空元素后更新两类注入键，三轮零attribute与警告去重，验证custom更新路径的非法名过滤。 */
     it('should reject attribute key injection attack on update for custom elements', async () => {
       for (let i = 0; i < 3; i++) {
         const container = document.createElement('div');
@@ -1165,7 +1160,7 @@ describe('ReactDOMComponent', () => {
       }
     });
 
-    /** 测试场景：验证「should update arbitrary attributes for tags containing dashes」描述的渲染、交互或错误处理结果。 */
+    /** 带连字符x-foo-component初始空props，更新myattr myval可从DOM读取，验证自定义任意字符串attribute可新增。 */
     it('should update arbitrary attributes for tags containing dashes', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -1183,7 +1178,7 @@ describe('ReactDOMComponent', () => {
       expect(container.childNodes[0].getAttribute('myattr')).toBe('myval');
     });
 
-    /** 测试场景：验证「should clear all the styles when removing `style`」描述的渲染、交互或错误处理结果。 */
+    /** display none/color red后完全去掉style，两CSS字段都清空，验证整体样式删除。 */
     it('should clear all the styles when removing `style`', async () => {
       const styles = {display: 'none', color: 'red'};
       const container = document.createElement('div');
@@ -1201,7 +1196,7 @@ describe('ReactDOMComponent', () => {
       expect(stubStyle.color).toEqual('');
     });
 
-    /** 测试场景：验证「should update styles when `style` changes from null to object」描述的渲染、交互或错误处理结果。 */
+    /** color red对象→缺省style→同对象，DOM依次red/空/red，验证删除后再次使用旧对象仍写入；输入实际缺省而非显式null。 */
     it('should update styles when `style` changes from null to object', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -1222,7 +1217,7 @@ describe('ReactDOMComponent', () => {
       expect(stubStyle.color).toBe('red');
     });
 
-    /** 测试场景：验证「should not reset innerHTML for when children is null」描述的渲染、交互或错误处理结果。 */
+    /** React初始和后续都渲染空div，中间外部改innerHTML bonjour，再render仍保留，验证没有旧React文本/HTML内容时不主动清理外部变更。 */
     it('should not reset innerHTML for when children is null', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -1238,7 +1233,7 @@ describe('ReactDOMComponent', () => {
       expect(container.firstChild.innerHTML).toEqual('bonjour');
     });
 
-    /** 测试场景：验证「should reset innerHTML when switching from a direct text child to an empty child」描述的渲染、交互或错误处理结果。 */
+    /** 直接文本bonjour分别切到null/undefined/false三个空child，各新root innerHTML都清空，验证原直接文本转空需要ContentReset。 */
     it('should reset innerHTML when switching from a direct text child to an empty child', async () => {
       const transitionToValues = [null, undefined, false];
       // eslint-disable-next-line no-for-of-loops/no-for-of-loops
@@ -1257,7 +1252,7 @@ describe('ReactDOMComponent', () => {
       }
     });
 
-    /** 测试场景：验证「should empty element when removing innerHTML」描述的渲染、交互或错误处理结果。 */
+    /** dangerous HTML :)切为无children普通div，innerHTML变空，验证删除旧HTML内容。 */
     it('should empty element when removing innerHTML', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -1272,7 +1267,7 @@ describe('ReactDOMComponent', () => {
       expect(container.firstChild.innerHTML).toEqual('');
     });
 
-    /** 测试场景：验证「should transition from string content to innerHTML」描述的渲染、交互或错误处理结果。 */
+    /** 直接文本hello切dangerous HTML goodbye，innerHTML替换为goodbye，验证文本到HTML的主机更新。 */
     it('should transition from string content to innerHTML', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -1287,7 +1282,7 @@ describe('ReactDOMComponent', () => {
       expect(container.firstChild.innerHTML).toEqual('goodbye');
     });
 
-    /** 测试场景：验证「should transition from innerHTML to string content」描述的渲染、交互或错误处理结果。 */
+    /** dangerous HTML bonjour切直接文本adieu，innerHTML变adieu，验证HTML到直接文本转换。 */
     it('should transition from innerHTML to string content', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -1302,7 +1297,7 @@ describe('ReactDOMComponent', () => {
       expect(container.firstChild.innerHTML).toEqual('adieu');
     });
 
-    /** 测试场景：验证「should transition from innerHTML to children in nested el」描述的渲染、交互或错误处理结果。 */
+    /** 嵌套div从HTML bonjour切span child adieu，最终textContent adieu，验证先清旧内容再插入React子节点。 */
     it('should transition from innerHTML to children in nested el', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -1327,7 +1322,7 @@ describe('ReactDOMComponent', () => {
       expect(container.textContent).toEqual('adieu');
     });
 
-    /** 测试场景：验证「should transition from children to innerHTML in nested el」描述的渲染、交互或错误处理结果。 */
+    /** 嵌套div从span adieu切HTML bonjour，最终textContent bonjour，验证删除React子树再接管HTML。 */
     it('should transition from children to innerHTML in nested el', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -1352,7 +1347,7 @@ describe('ReactDOMComponent', () => {
       expect(container.textContent).toEqual('bonjour');
     });
 
-    /** 测试场景：验证「should not incur unnecessary DOM mutations for equal innerHTML」描述的渲染、交互或错误处理结果。 */
+    /** 用两个新__html对象传相同span hi字符串，子节点身份保持；改span bye后身份变且HTML更新，验证相同内容避免重设innerHTML。 */
     it('should not incur unnecessary DOM mutations for equal innerHTML', async () => {
       // https://github.com/facebook/react/issues/30994 的回归测试：重新赋予相同 innerHTML 会销毁并
       // 重建子节点，从而打断进行中的手势（例如 focus 与 click 之间重渲染会吞掉尚未完成的 click），
@@ -1386,7 +1381,7 @@ describe('ReactDOMComponent', () => {
       expect(node.innerHTML).toEqual('<span>bye</span>');
     });
 
-    /** 测试场景：验证「should not incur unnecessary DOM mutations for attributes」描述的渲染、交互或错误处理结果。 */
+    /** 代理记录setAttribute/removeAttribute，id空串不变0次、变foo仅1次、再相同不写、缺省删、空串再加再删，验证属性差分只产生必要DOM调用。 */
     it('should not incur unnecessary DOM mutations for attributes', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -1440,7 +1435,7 @@ describe('ReactDOMComponent', () => {
       expect(node.removeAttribute).toHaveBeenCalledTimes(2);
     });
 
-    /** 测试场景：验证「should not incur unnecessary DOM mutations for string properties」描述的渲染、交互或错误处理结果。 */
+    /** 普通div value空串更新foo，两次相同只调用setAttribute一次；缺省/null删除不经过代理计数，再空串才增至2，验证字符串attribute差分，非input.value setter。 */
     it('should not incur unnecessary DOM mutations for string properties', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -1453,6 +1448,7 @@ describe('ReactDOMComponent', () => {
       const nodeValueSetter = jest.fn();
 
       const oldSetAttribute = node.setAttribute.bind(node);
+      /** 委托原绑定setAttribute后记录(key,value)，统计div value更新调用；removeAttribute不经过此计数。 */
       node.setAttribute = function (key, value) {
         oldSetAttribute(key, value);
         nodeValueSetter(key, value);
@@ -1489,9 +1485,9 @@ describe('ReactDOMComponent', () => {
       expect(nodeValueSetter).toHaveBeenCalledTimes(2);
     });
 
-    /** 测试场景：验证「should not incur unnecessary DOM mutations for controlled string properties」描述的渲染、交互或错误处理结果。 */
+    /** 受控input的value getter/setter被代理，foo只写1次，改无关data属性不写；缺省/null不写并开发警告受控切换/null，空串再写1次，验证表单值避免重复赋值与模式诊断。 */
     it('should not incur unnecessary DOM mutations for controlled string properties', async () => {
-      /** `onChange`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 受控input的空onChange，满足只读值校验而不触发业务更新；用例只统计value写入。 */
       function onChange() {}
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -1504,10 +1500,11 @@ describe('ReactDOMComponent', () => {
       let nodeValue = '';
       const nodeValueSetter = jest.fn();
       Object.defineProperty(node, 'value', {
-        /** `get`：封装当前用例复用的操作、回调或断言步骤。 */
+        /** 返回代理保存的当前input.value，配合记录setter判断React是否真的需要再次赋值。 */
         get: function () {
           return nodeValue;
         },
+        /** 记录实际value写入并更新getter返回的保存值，使相同受控value可避免再次赋值。 */
         set: nodeValueSetter.mockImplementation(function (newValue) {
           nodeValue = newValue;
         }),
@@ -1565,7 +1562,7 @@ describe('ReactDOMComponent', () => {
       expect(nodeValueSetter).toHaveBeenCalledTimes(2);
     });
 
-    /** 测试场景：验证「should not incur unnecessary DOM mutations for boolean properties」描述的渲染、交互或错误处理结果。 */
+    /** audio muted初始true后代理getter/setter，仅改无关data不写、muted false才写1次，验证布尔property差分。 */
     it('should not incur unnecessary DOM mutations for boolean properties', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -1577,10 +1574,11 @@ describe('ReactDOMComponent', () => {
       let nodeValue = true;
       const nodeValueSetter = jest.fn();
       Object.defineProperty(node, 'muted', {
-        /** `get`：封装当前用例复用的操作、回调或断言步骤。 */
+        /** 返回已保存的audio.muted布尔值，代理setter仅统计true→false的必要写入。 */
         get: function () {
           return nodeValue;
         },
+        /** 记录实际muted写入并更新保存的布尔值，区分仅更新无关props与真正切换播放静音状态。 */
         set: nodeValueSetter.mockImplementation(function (newValue) {
           nodeValue = newValue;
         }),
@@ -1597,14 +1595,7 @@ describe('ReactDOMComponent', () => {
       expect(nodeValueSetter).toHaveBeenCalledTimes(1);
     });
 
-    /**
-     * 代表场景（Given–When–Then）：
-     * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-     * When 执行「should ignore attribute list for elements with the "is" attribute」描述的渲染或交互；
-     * Then 通过本用例的 DOM、日志或调度断言确认行为。
-     *
-     * 验证机制：断言连接 ReactDOM 公开入口、ReactDOMRoot 根生命周期及 DOM 提交结果。
-     */
+    /** button is=test且有未知cowabunga，DOM保留cowabunga，验证扩展原生自定义元素可接收普通自定义attribute。 */
     it('should ignore attribute list for elements with the "is" attribute', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -1614,7 +1605,7 @@ describe('ReactDOMComponent', () => {
       expect(container.firstChild.hasAttribute('cowabunga')).toBe(true);
     });
 
-    /** 测试场景：验证「should warn about non-string "is" attribute」描述的渲染、交互或错误处理结果。 */
+    /** button is值为函数，开发要求字符串属性先显式转换，验证自定义扩展名称的类型校验。 */
     it('should warn about non-string "is" attribute', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -1628,7 +1619,7 @@ describe('ReactDOMComponent', () => {
       ]);
     });
 
-    /** 测试场景：验证「should not update when switching between null/undefined」描述的渲染、交互或错误处理结果。 */
+    /** div dir按缺省/null/undefined/缺省更新，代理setAttribute始终0次，改ltr才1次，验证无属性的nullish切换不产生DOM写。 */
     it('should not update when switching between null/undefined', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -1655,10 +1646,9 @@ describe('ReactDOMComponent', () => {
       expect(setter).toHaveBeenCalledTimes(1);
     });
 
-    /** 测试场景：验证「handles multiple child updates without interference」描述的渲染、交互或错误处理结果。 */
+    /** 两组分别AB/CD的key子节点同时交换为BA/DC，最终文本BADC，验证两组提交操作不干扰；本例未逐个验证DOM身份。 */
     it('handles multiple child updates without interference', async () => {
-      // 此测试看似只覆盖 ReactMultiChild，但最近一次相关缺陷实际位于 DOMChildrenOperations，
-      // 因此必须保留在 DOM 专用测试文件中。
+      // 同时重排两组子节点，验证一组的 DOM 插入与删除不会破坏另一组；这是宿主提交路径的回归场景。
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
 
@@ -1698,12 +1688,12 @@ describe('ReactDOMComponent', () => {
   });
 
   describe('createOpenTagMarkup', () => {
-    /** `quoteRegexp`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 转义字符串中的正则元字符，避免class/style输出值改变后续attribute匹配模式。 */
     function quoteRegexp(str) {
       return String(str).replace(/([.?*+\^$\[\]\\(){}|-])/g, '\\$1');
     }
 
-    /** `expectToHaveAttribute`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** expected为[attr,value]，在字符串actual中查带引号attribute；value缺省只检查名字及开引号，提供value时转义它，本helper不是DOM解析器。 */
     function expectToHaveAttribute(actual, expected) {
       const [attr, value] = expected;
       let re = '(?:^|\\s)' + attr + '=[\\\'"]';
@@ -1713,19 +1703,19 @@ describe('ReactDOMComponent', () => {
       expect(actual).toMatch(new RegExp(re));
     }
 
-    /** `genMarkup`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 把props展开到div并SSR，供HTML开标签属性的转义和别名检查。 */
     function genMarkup(props) {
       return ReactDOMServer.renderToString(<div {...props} />);
     }
 
-    /** 测试场景：验证「should generate the correct markup with className」描述的渲染、交互或错误处理结果。 */
+    /** SSR className依次a、a b、空串，helper匹配class attribute各值，验证服务器别名和空串序列化。 */
     it('should generate the correct markup with className', () => {
       expectToHaveAttribute(genMarkup({className: 'a'}), ['class', 'a']);
       expectToHaveAttribute(genMarkup({className: 'a b'}), ['class', 'a b']);
       expectToHaveAttribute(genMarkup({className: ''}), ['class', '']);
     });
 
-    /** 测试场景：验证「should escape style names and values」描述的渲染、交互或错误处理结果。 */
+    /** SSR style键b&ckground、值<3，输出style中分别转义&与<，验证样式名和值进入HTML attribute的转义。 */
     it('should escape style names and values', () => {
       expectToHaveAttribute(
         genMarkup({
@@ -1737,23 +1727,23 @@ describe('ReactDOMComponent', () => {
   });
 
   describe('createContentMarkup', () => {
-    /** `quoteRegexp`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 转义内容字符串的正则元字符，使子串测试按字面文本匹配。 */
     function quoteRegexp(str) {
       return String(str).replace(/([.?*+\^$\[\]\\(){}|-])/g, '\\$1');
     }
 
-    /** `genMarkup`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 服务器渲染带props的div，供危险HTML内容输出检查。 */
     function genMarkup(props) {
       return ReactDOMServer.renderToString(<div {...props} />);
     }
 
-    /** `toHaveInnerhtml`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 对actual做未锚定字面子串正则测试，返回是否包含expected；名称虽称innerHTML，实际不解析或精确比较内容区间。 */
     function toHaveInnerhtml(actual, expected) {
       const re = quoteRegexp(expected);
       return new RegExp(re).test(actual);
     }
 
-    /** 测试场景：验证「should handle dangerouslySetInnerHTML」描述的渲染、交互或错误处理结果。 */
+    /** SSR div危险HTML testContent，未锚定正则查到该文本即true，验证内容写入；helper并非完整innerHTML等价比较。 */
     it('should handle dangerouslySetInnerHTML', () => {
       const innerHTML = {__html: 'testContent'};
       expect(
@@ -1769,6 +1759,7 @@ describe('ReactDOMComponent', () => {
     let mountComponent;
 
     beforeEach(() => {
+      /** 新容器/root中用act挂div props并等待完成；不返回DOM也不卸载，调用者主要检查挂载错误和开发诊断。 */
       mountComponent = async props => {
         const container = document.createElement('div');
         const root = ReactDOMClient.createRoot(container);
@@ -1778,7 +1769,7 @@ describe('ReactDOMComponent', () => {
       };
     });
 
-    /** 测试场景：验证「should work error event on <source> element」描述的渲染、交互或错误处理结果。 */
+    /** video/source派发不冒泡error，开发日志有onError一次，验证source需目标监听；生产分支本例未断言日志。 */
     it('should work error event on <source> element', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -1803,11 +1794,11 @@ describe('ReactDOMComponent', () => {
       }
     });
 
-    /** 测试场景：验证「should warn for uppercased selfclosing tags」描述的渲染、交互或错误处理结果。 */
+    /** 类Container服务端返回字符串标签BR，开发告大小写错误且结果仍含闭标签/BR，验证大写名不走小写br的void输出分支。 */
     it('should warn for uppercased selfclosing tags', () => {
-      /** `Container`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+      /** 服务端输出字符串BR标签的类fixture，观察错误大小写与非void闭标签。 */
       class Container extends React.Component {
-        /** `Container.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 用createElement的字符串BR创建主机元素，不是引用名为BR的React组件。 */
         render() {
           return React.createElement('BR', null);
         }
@@ -1825,7 +1816,7 @@ describe('ReactDOMComponent', () => {
       expect(returnedValue).toContain('</BR>');
     });
 
-    /** 测试场景：验证「should warn on upper case HTML tags, not SVG nor custom tags」描述的渲染、交互或错误处理结果。 */
+    /** 先渲染SVG下PATH与CUSTOM-TAG都无HTML大小写警告，再渲染IMG只有该警告，验证命名空间与自定义标签豁免。 */
     it('should warn on upper case HTML tags, not SVG nor custom tags', async () => {
       let container = document.createElement('div');
       let root = ReactDOMClient.createRoot(container);
@@ -1855,7 +1846,7 @@ describe('ReactDOMComponent', () => {
       ]);
     });
 
-    /** 测试场景：验证「should warn on props reserved for future use」描述的渲染、交互或错误处理结果。 */
+    /** div aria=hello，开发提示aria保留并使用具体aria-*，验证属性名诊断。 */
     it('should warn on props reserved for future use', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -1870,12 +1861,12 @@ describe('ReactDOMComponent', () => {
       ]);
     });
 
-    /** 测试场景：验证「should warn if the tag is unrecognized」描述的渲染、交互或错误处理结果。 */
+    /** 临时包装Object.prototype.toString模拟HTMLUnknownElement，bar/foo首次警告、再foo去重、time无警告、hasOwnProperty仍正常双诊断；finally恢复原方法，验证诊断缓存键及清理。 */
     it('should warn if the tag is unrecognized', async () => {
       let realToString;
       try {
         realToString = Object.prototype.toString;
-        /** `wrappedToString`：封装当前用例复用的操作、回调或断言步骤。 */
+        /** 对HTMLUnknownElement模拟真实浏览器toString，其它receiver委托原方法/参数；所在try/finally负责恢复全局prototype。 */
         const wrappedToString = function () {
     // 模拟 jsdom 缺失的浏览器行为。
           if (this instanceof window.HTMLUnknownElement) {
@@ -1928,7 +1919,7 @@ describe('ReactDOMComponent', () => {
       }
     });
 
-    /** 测试场景：验证「should throw on children for void elements」描述的渲染、交互或错误处理结果。 */
+    /** 首次挂input带children，act拒绝void元素错误，验证初始化禁止子内容，输入不是可恢复开发警告。 */
     it('should throw on children for void elements', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -1942,7 +1933,7 @@ describe('ReactDOMComponent', () => {
       );
     });
 
-    /** 测试场景：验证「should throw on dangerouslySetInnerHTML for void elements」描述的渲染、交互或错误处理结果。 */
+    /** 首次input带合法__html对象仍拒绝void元素错误，验证危险HTML也不能绕过void限制。 */
     it('should throw on dangerouslySetInnerHTML for void elements', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -1956,7 +1947,7 @@ describe('ReactDOMComponent', () => {
       );
     });
 
-    /** 测试场景：验证「should treat menuitem as a void element but still create the closing tag」描述的渲染、交互或错误处理结果。 */
+    /** SSR menuitem结果保留闭标签，客户端menuitem带children又拒绝void错误，并开发未知元素警告，验证该历史标签的输出/子内容规则不同。 */
     it('should treat menuitem as a void element but still create the closing tag', async () => {
       // jsdom 尚未实现 menuitem，因此会触发“未知元素”警告。
       const container = document.createElement('div');
@@ -1989,7 +1980,7 @@ describe('ReactDOMComponent', () => {
       ]);
     });
 
-    /** 测试场景：验证「should validate against multiple children props」描述的渲染、交互或错误处理结果。 */
+    /** mount helper同时children空串与dangerous HTML空串，实际拒绝__html对象格式错误，验证优先到达的结构校验，不把标题当成有效HTML与children冲突断言。 */
     it('should validate against multiple children props', async () => {
       await expect(async () => {
         await mountComponent({children: '', dangerouslySetInnerHTML: ''});
@@ -1999,7 +1990,7 @@ describe('ReactDOMComponent', () => {
       );
     });
 
-    /** 测试场景：验证「should validate against use of innerHTML」描述的渲染、交互或错误处理结果。 */
+    /** 通过普通innerHTML prop传span，开发禁止直接设置并指向危险HTML API，验证初始化保留名诊断。 */
     it('should validate against use of innerHTML', async () => {
       await mountComponent({innerHTML: '<span>Hi Jim!</span>'});
       assertConsoleErrorDev([
@@ -2009,7 +2000,7 @@ describe('ReactDOMComponent', () => {
       ]);
     });
 
-    /** 测试场景：验证「should validate against use of innerHTML without case sensitivity」描述的渲染、交互或错误处理结果。 */
+    /** 同输入改小写innerhtml，仍报同禁止直接设置诊断，验证属性名检查不区分这两种大小写。 */
     it('should validate against use of innerHTML without case sensitivity', async () => {
       await mountComponent({innerhtml: '<span>Hi Jim!</span>'});
       assertConsoleErrorDev([
@@ -2019,7 +2010,7 @@ describe('ReactDOMComponent', () => {
       ]);
     });
 
-    /** 测试场景：验证「should validate use of dangerouslySetInnerHTM with JSX」描述的渲染、交互或错误处理结果。 */
+    /** 危险HTML prop直接是HTML字符串，act拒绝必须{__html:...}，验证不是合法包装对象。 */
     it('should validate use of dangerouslySetInnerHTM with JSX', async () => {
       await expect(async () => {
         await mountComponent({dangerouslySetInnerHTML: '<span>Hi Jim!</span>'});
@@ -2029,7 +2020,7 @@ describe('ReactDOMComponent', () => {
       );
     });
 
-    /** 测试场景：验证「should validate use of dangerouslySetInnerHTML with object」描述的渲染、交互或错误处理结果。 */
+    /** 危险HTML对象只有foo键而无__html，拒绝相同格式错误，验证对象本身还不足以通过结构校验。 */
     it('should validate use of dangerouslySetInnerHTML with object', async () => {
       await expect(async () => {
         await mountComponent({dangerouslySetInnerHTML: {foo: 'bar'}});
@@ -2039,14 +2030,14 @@ describe('ReactDOMComponent', () => {
       );
     });
 
-    /** 测试场景：验证「should allow {__html: null}」描述的渲染、交互或错误处理结果。 */
+    /** 危险HTML包装__html:null，使用not.toThrow检查async封装无同步抛错；未显式等待该封装Promise，说明空值输入而不扩大为异步拒绝覆盖。 */
     it('should allow {__html: null}', async () => {
       await expect(async () => {
         await mountComponent({dangerouslySetInnerHTML: {__html: null}});
       }).not.toThrow();
     });
 
-    /** 测试场景：验证「should warn about contentEditable and children」描述的渲染、交互或错误处理结果。 */
+    /** contentEditable true且children空串，开发警告React管理子节点可能被外部编辑，验证即使空串仍有children prop冲突。 */
     it('should warn about contentEditable and children', async () => {
       await mountComponent({contentEditable: true, children: ''});
       assertConsoleErrorDev([
@@ -2058,7 +2049,7 @@ describe('ReactDOMComponent', () => {
       ]);
     });
 
-    /** 测试场景：验证「should respect suppressContentEditableWarning」描述的渲染、交互或错误处理结果。 */
+    /** 同contentEditable/children加suppressContentEditableWarning true，挂载无警告，验证显式抑制该开发诊断。 */
     it('should respect suppressContentEditableWarning', async () => {
       await mountComponent({
         contentEditable: true,
@@ -2067,7 +2058,7 @@ describe('ReactDOMComponent', () => {
       });
     });
 
-    /** 测试场景：验证「should validate against invalid styles」描述的渲染、交互或错误处理结果。 */
+    /** style传字符串display none，mount helper拒绝mapping要求，验证样式输入类型约束。 */
     it('should validate against invalid styles', async () => {
       await expect(async () => {
         await mountComponent({style: 'display: none'});
@@ -2078,11 +2069,11 @@ describe('ReactDOMComponent', () => {
       );
     });
 
-    /** 测试场景：验证「should throw for children on void elements」描述的渲染、交互或错误处理结果。 */
+    /** 类X返回input子文本moo，act拒绝void错误，验证组件包装不会绕过主机子内容校验。 */
     it('should throw for children on void elements', async () => {
-      /** `X`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+      /** 类包装不合法input children，确认主机校验通过组件调用链仍生效。 */
       class X extends React.Component {
-        /** `X.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 返回input文本moo，触发void子内容错误。 */
         render() {
           return <input>moo</input>;
         }
@@ -2100,7 +2091,7 @@ describe('ReactDOMComponent', () => {
       );
     });
 
-    /** 测试场景：验证「should support custom elements which extend native elements」描述的渲染、交互或错误处理结果。 */
+    /** 监视document.createElement，挂div is custom-div应调用createElement(div,{is:custom-div})，验证扩展原生元素选项在创建时传给浏览器。 */
     it('should support custom elements which extend native elements', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -2113,7 +2104,7 @@ describe('ReactDOMComponent', () => {
       });
     });
 
-    /** 测试场景：验证「should work load and error events on <image> element in SVG」描述的渲染、交互或错误处理结果。 */
+    /** SVG image先派不冒泡error再load，开发日志按error/load各一次，验证SVG媒体目标监听；生产分支未断言日志。 */
     it('should work load and error events on <image> element in SVG', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -2143,7 +2134,7 @@ describe('ReactDOMComponent', () => {
       }
     });
 
-    /** 测试场景：验证「should receive a load event on <link> elements」描述的渲染、交互或错误处理结果。 */
+    /** link目标派发不冒泡load，onLoad mock1次，验证link资源事件可在目标节点接收。 */
     it('should receive a load event on <link> elements', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -2162,7 +2153,7 @@ describe('ReactDOMComponent', () => {
       expect(onLoad).toHaveBeenCalledTimes(1);
     });
 
-    /** 测试场景：验证「should receive an error event on <link> elements」描述的渲染、交互或错误处理结果。 */
+    /** link目标派发不冒泡error，onError mock1次，验证资源失败目标监听。 */
     it('should receive an error event on <link> elements', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -2186,12 +2177,13 @@ describe('ReactDOMComponent', () => {
     let container;
     let root;
 
+    /** 更新组每例建立空容器和root，各场景自行决定是否先挂有效输入再更新非法props。 */
     beforeEach(() => {
       container = document.createElement('div');
       root = ReactDOMClient.createRoot(container);
     });
 
-    /** 测试场景：验证「should warn against children for void elements」描述的渲染、交互或错误处理结果。 */
+    /** 先挂空input再更新children，act拒绝void错误，验证更新阶段同样禁止子内容，不仅首次创建。 */
     it('should warn against children for void elements', async () => {
       await act(() => {
         root.render(<input />);
@@ -2207,7 +2199,7 @@ describe('ReactDOMComponent', () => {
       );
     });
 
-    /** 测试场景：验证「should warn against dangerouslySetInnerHTML for void elements」描述的渲染、交互或错误处理结果。 */
+    /** 先空input再更新dangerous HTML对象，act拒绝void错误，验证更新危险HTML仍受void校验。 */
     it('should warn against dangerouslySetInnerHTML for void elements', async () => {
       await act(() => {
         root.render(<input />);
@@ -2223,7 +2215,7 @@ describe('ReactDOMComponent', () => {
       );
     });
 
-    /** 测试场景：验证「should validate against multiple children props」描述的渲染、交互或错误处理结果。 */
+    /** 普通div更新时同时children空串和合法__html空串对象，拒绝只能设置一个的错误，区别初始化用例中的包装格式失败。 */
     it('should validate against multiple children props', async () => {
       await act(() => {
         root.render(<div />);
@@ -2240,7 +2232,7 @@ describe('ReactDOMComponent', () => {
       );
     });
 
-    /** 测试场景：验证「should warn about contentEditable and children」描述的渲染、交互或错误处理结果。 */
+    /** 更新区域首次挂contentEditable div含React div child，开发警告可编辑DOM和React子树冲突；本例没有先挂空div再切换的步骤。 */
     it('should warn about contentEditable and children', async () => {
       await act(() => {
         root.render(
@@ -2257,7 +2249,7 @@ describe('ReactDOMComponent', () => {
       ]);
     });
 
-    /** 测试场景：验证「should validate against invalid styles」描述的渲染、交互或错误处理结果。 */
+    /** 已挂空div更新style数字1，act拒绝mapping错误，验证非字符串但非对象的样式输入同样非法。 */
     it('should validate against invalid styles', async () => {
       await act(() => {
         root.render(<div />);
@@ -2274,11 +2266,11 @@ describe('ReactDOMComponent', () => {
       );
     });
 
-    /** 测试场景：验证「should report component containing invalid styles」描述的渲染、交互或错误处理结果。 */
+    /** Animal类返回div style1，act拒绝样式mapping错误，验证组件包装的无效style仍向调用者抛出；未额外断言组件栈字符串。 */
     it('should report component containing invalid styles', async () => {
-      /** `Animal`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+      /** 无效style来自类render的fixture，用于检查主机输入错误经过组件调用链仍拒绝。 */
       class Animal extends React.Component {
-        /** `Animal.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 返回style数字1的div，触发样式mapping类型错误。 */
         render() {
           return <div style={1} />;
         }
@@ -2295,7 +2287,7 @@ describe('ReactDOMComponent', () => {
       );
     });
 
-    /** 测试场景：验证「should properly escape text content and attributes values」描述的渲染、交互或错误处理结果。 */
+    /** SSR static同时给title、textAlign样式值、文本传单/双引号及<>&，精确比较各HTML实体，验证开标签/样式/文本三个输出位置的转义。 */
     it('should properly escape text content and attributes values', () => {
       expect(
         ReactDOMServer.renderToStaticMarkup(
@@ -2319,16 +2311,16 @@ describe('ReactDOMComponent', () => {
   });
 
   describe('unmountComponent', () => {
-    /** 测试场景：验证「unmounts children before unsetting DOM node info」描述的渲染、交互或错误处理结果。 */
+    /** Inner返回span，root.unmount期间componentWillUnmount通过findDOMNode仍找到SPAN，验证卸载生命周期先于组件DOM关联清理。 */
     it('unmounts children before unsetting DOM node info', async () => {
-      /** `Inner`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+      /** 返回span并在卸载生命周期查自身DOM，检查关联清理的先后顺序。 */
       class Inner extends React.Component {
-        /** `Inner.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 提供唯一span主机节点，让findDOMNode在卸载时有明确目标。 */
         render() {
           return <span />;
         }
 
-        /** `Inner.componentWillUnmount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 在关联尚未清除时findDOMNode(this)必须返回SPAN；该断言约束生命周期与DOM缓存清理顺序。 */
         componentWillUnmount() {
           // 不应抛错。
           expect(
@@ -2354,7 +2346,7 @@ describe('ReactDOMComponent', () => {
   });
 
   describe('tag sanitization', () => {
-    /** 测试场景：验证「should throw when an invalid tag name is used server-side」描述的渲染、交互或错误处理结果。 */
+    /** SSR字符串标签script tag含空格，renderToString抛明确Invalid tag，验证服务端标签名校验。 */
     it('should throw when an invalid tag name is used server-side', () => {
       const hackzor = React.createElement('script tag');
       expect(() => ReactDOMServer.renderToString(hackzor)).toThrowError(
@@ -2362,7 +2354,7 @@ describe('ReactDOMComponent', () => {
       );
     });
 
-    /** 测试场景：验证「should throw when an attack vector is used server-side」描述的渲染、交互或错误处理结果。 */
+    /** SSR标签含div闭开标签及img注入，renderToString抛原恶意标签的Invalid tag错误，验证标签名不能突破输出边界。 */
     it('should throw when an attack vector is used server-side', () => {
       const hackzor = React.createElement('div><img /><div');
       expect(() => ReactDOMServer.renderToString(hackzor)).toThrowError(
@@ -2370,7 +2362,7 @@ describe('ReactDOMComponent', () => {
       );
     });
 
-    /** 测试场景：验证「should throw when an invalid tag name is used」描述的渲染、交互或错误处理结果。 */
+    /** 客户端字符串标签script tag含空格，act拒绝抛错但未限定错误文本，验证浏览器创建失败可传播。 */
     it('should throw when an invalid tag name is used', async () => {
       const hackzor = React.createElement('script tag');
       const container = document.createElement('div');
@@ -2382,7 +2374,7 @@ describe('ReactDOMComponent', () => {
       ).rejects.toThrow();
     });
 
-    /** 测试场景：验证「should throw when an attack vector is used」描述的渲染、交互或错误处理结果。 */
+    /** 客户端标签含div/img注入片段，act拒绝抛错且无指定错误消息，验证非法名字不会成功挂载。 */
     it('should throw when an attack vector is used', async () => {
       const hackzor = React.createElement('div><img /><div');
       const container = document.createElement('div');
@@ -2396,7 +2388,7 @@ describe('ReactDOMComponent', () => {
   });
 
   describe('nesting validation', () => {
-    /** 测试场景：验证「warns on invalid nesting」描述的渲染、交互或错误处理结果。 */
+    /** 普通div下有两个tr，开发仅一组child-nesting诊断并提示水合错误，验证同标签嵌套错误缓存去重与祖先上下文。 */
     it('warns on invalid nesting', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -2419,7 +2411,7 @@ describe('ReactDOMComponent', () => {
       ]);
     });
 
-    /** 测试场景：验证「warns on invalid nesting at root」描述的渲染、交互或错误处理结果。 */
+    /** 实际root容器为p，内部span再含p，开发诊断p不可嵌套p而栈没有容器外p，验证HostContext纳入容器但组件栈边界不同。 */
     it('warns on invalid nesting at root', async () => {
       const p = document.createElement('p');
       const root = ReactDOMClient.createRoot(p);
@@ -2439,19 +2431,19 @@ describe('ReactDOMComponent', () => {
       ]);
     });
 
-    /** 测试场景：验证「warns nicely for table rows」描述的渲染、交互或错误处理结果。 */
+    /** Foo/table下直接Row/tr x并有空白兄弟，开发分别报告缺tbody、祖先table栈、tr文本x和table空白，验证元素与两种文本嵌套诊断均带具体上下文。 */
     it('warns nicely for table rows', async () => {
-      /** `Row`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+      /** Row类直接产生非法tr文本x，供嵌套诊断的child组件栈。 */
       class Row extends React.Component {
-        /** `Row.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 输出tr内裸文本x，触发文本不能直接放tr的校验。 */
         render() {
           return <tr>x</tr>;
         }
       }
 
-      /** `Foo`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+      /** Foo类在table直接放Row及空白，同时产生缺tbody和空白文本两种警告。 */
       class Foo extends React.Component {
-        /** `Foo.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 不插tbody地透传Row，并追加空白，确保诊断能显示table/Row/tr层级。 */
         render() {
           return (
             <table>
@@ -2511,16 +2503,16 @@ describe('ReactDOMComponent', () => {
       ]);
     });
 
-    /** 测试场景：验证「warns nicely for updating table rows to use text」描述的渲染、交互或错误处理结果。 */
+    /** 先空Foo/table无警告，再更新为空白有table文本警告；再合法tbody/空Row，最后Row加text有tr文本警告，验证更新直接文本时也做嵌套检查。 */
     it('warns nicely for updating table rows to use text', async () => {
       const root = ReactDOMClient.createRoot(document.createElement('div'));
 
-      /** `Row`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 把children直接放tr，更新可从空行变成非法裸文本。 */
       function Row({children}) {
         return <tr>{children}</tr>;
       }
 
-      /** `Foo`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 把children直接放table，更新可分别成为空白或合法tbody。 */
       function Foo({children}) {
         return <table>{children}</table>;
       }
@@ -2581,18 +2573,18 @@ describe('ReactDOMComponent', () => {
       ]);
     });
 
-    /** 测试场景：验证「gives useful context in warnings」描述的渲染、交互或错误处理结果。 */
+    /** App1→Viz1→table→FancyRow→Row→tr，开发差异树标出非法table/tr并给Row owner链及另条table祖先链，验证跨函数包装的诊断定位。 */
     it('gives useful context in warnings', async () => {
-      /** `Row`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 输出空tr，错误仅来自它在table下的父子关系。 */
       function Row() {
         return <tr />;
       }
-      /** `FancyRow`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 返回Row增加函数owner层，用于非法table/tr警告的组件上下文。 */
       function FancyRow() {
         return <Row />;
       }
 
-      /** `Viz1`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** table直接包含FancyRow而无tbody，制造主机嵌套错误并保留Viz调用链。 */
       function Viz1() {
         return (
           <table>
@@ -2600,7 +2592,7 @@ describe('ReactDOMComponent', () => {
           </table>
         );
       }
-      /** `App1`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 最外函数包装Viz1，使诊断显示完整App/Viz/FancyRow/Row链。 */
       function App1() {
         return <Viz1 />;
       }
@@ -2633,34 +2625,34 @@ describe('ReactDOMComponent', () => {
       ]);
     });
 
-    /** 测试场景：验证「gives useful context in warnings 2」描述的渲染、交互或错误处理结果。 */
+    /** App2/Viz2经FancyTable/Table透传children到table，再FancyRow/Row/tr；两条警告分别展示子创建者链与Table祖先链，验证owner与实际主机祖先上下文。 */
     it('gives useful context in warnings 2', async () => {
-      /** `Row`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 返回空tr作为非法table直接child。 */
       function Row() {
         return <tr />;
       }
-      /** `FancyRow`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 函数包装Row，让子创建者栈包含FancyRow。 */
       function FancyRow() {
         return <Row />;
       }
 
-      /** `Table`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+      /** Table类把children透传到主机table，不补tbody，提供真实祖先组件栈。 */
       class Table extends React.Component {
-        /** `Table.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 返回table和原children，保持非法tr父子关系。 */
         render() {
           return <table>{this.props.children}</table>;
         }
       }
 
-      /** `FancyTable`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+      /** FancyTable类透传children到Table，增加实际祖先包装层。 */
       class FancyTable extends React.Component {
-        /** `FancyTable.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 保持相同child元素转交Table，区别child owner与祖先组件链。 */
         render() {
           return <Table>{this.props.children}</Table>;
         }
       }
 
-      /** `Viz2`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 通过FancyTable承载FancyRow，同时构成Row owner与Table祖先两条上下文。 */
       function Viz2() {
         return (
           <FancyTable>
@@ -2668,7 +2660,7 @@ describe('ReactDOMComponent', () => {
           </FancyTable>
         );
       }
-      /** `App2`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 外层返回Viz2，扩大两条警告共同的顶部上下文。 */
       function App2() {
         return <Viz2 />;
       }
@@ -2706,28 +2698,28 @@ describe('ReactDOMComponent', () => {
       ]);
     });
 
-    /** 测试场景：验证「gives useful context in warnings 3」描述的渲染、交互或错误处理结果。 */
+    /** root直接FancyTable/Table包含FancyRow/Row/tr，无App/Viz包装；两条警告仍展示主机table/tr及各自组件栈，验证短调用链上下文。 */
     it('gives useful context in warnings 3', async () => {
-      /** `Row`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 返回空tr，供无App/Viz的简化诊断链。 */
       function Row() {
         return <tr />;
       }
-      /** `FancyRow`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 包装Row并返回，保持子创建者上下文。 */
       function FancyRow() {
         return <Row />;
       }
 
-      /** `Table`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+      /** 类Table透传children到主机table，不修补tbody，以观察简化祖先栈。 */
       class Table extends React.Component {
-        /** `Table.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** table直接接收this.props.children，保留非法tr关系。 */
         render() {
           return <table>{this.props.children}</table>;
         }
       }
 
-      /** `FancyTable`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+      /** 类FancyTable继续透传相同children，让祖先链比子owner链多两层包装。 */
       class FancyTable extends React.Component {
-        /** `FancyTable.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 返回Table原children，供独立祖先栈诊断。 */
         render() {
           return <Table>{this.props.children}</Table>;
         }
@@ -2764,13 +2756,13 @@ describe('ReactDOMComponent', () => {
       ]);
     });
 
-    /** 测试场景：验证「gives useful context in warnings 4」描述的渲染、交互或错误处理结果。 */
+    /** root直接table含FancyRow/Row/tr，两条警告只给真实子owner链与table祖先栈，验证无Table组件包装时诊断裁剪。 */
     it('gives useful context in warnings 4', async () => {
-      /** `Row`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 返回空tr，根table用例只增加函数Row这一owner。 */
       function Row() {
         return <tr />;
       }
-      /** `FancyRow`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 包Row，让根table诊断包含FancyRow/Row而无Table组件。 */
       function FancyRow() {
         return <Row />;
       }
@@ -2803,19 +2795,19 @@ describe('ReactDOMComponent', () => {
       ]);
     });
 
-    /** 测试场景：验证「gives useful context in warnings 5」描述的渲染、交互或错误处理结果。 */
+    /** FancyTable/Table直接含tr先报告table/tr，再Link/a经div嵌另Link/a报告非法a后代及祖先链，验证不同嵌套类型共享诊断格式而保持各自上下文。 */
     it('gives useful context in warnings 5', async () => {
-      /** `Table`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+      /** 类Table透传直接tr child，提供祖先链但没有Row组件owner。 */
       class Table extends React.Component {
-        /** `Table.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 返回table原children，故不合法父子关系保持。 */
         render() {
           return <table>{this.props.children}</table>;
         }
       }
 
-      /** `FancyTable`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+      /** 类FancyTable包装Table，测试tr诊断与table祖先诊断不同栈。 */
       class FancyTable extends React.Component {
-        /** `FancyTable.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 继续原样传children，保留根传入的tr元素身份。 */
         render() {
           return <Table>{this.props.children}</Table>;
         }
@@ -2847,9 +2839,9 @@ describe('ReactDOMComponent', () => {
           '\n    in FancyTable (at **)',
       ]);
 
-      /** `Link`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+      /** Link类把children放a，多层实例经div构成非法a后代关系。 */
       class Link extends React.Component {
-        /** `Link.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 返回主机a和原children，不阻止后代另一a，供跨主机层级的祖先诊断。 */
         render() {
           return <a>{this.props.children}</a>;
         }
@@ -2882,7 +2874,7 @@ describe('ReactDOMComponent', () => {
       ]);
     });
 
-    /** 测试场景：验证「should warn about incorrect casing on properties (ssr)」描述的渲染、交互或错误处理结果。 */
+    /** SSR input tabindex字符串1，开发建议tabIndex，验证服务端已知DOM属性大小写映射。 */
     it('should warn about incorrect casing on properties (ssr)', () => {
       ReactDOMServer.renderToString(
         React.createElement('input', {type: 'text', tabindex: '1'}),
@@ -2893,7 +2885,7 @@ describe('ReactDOMComponent', () => {
       ]);
     });
 
-    /** 测试场景：验证「should warn about incorrect casing on the credentialless property (ssr)」描述的渲染、交互或错误处理结果。 */
+    /** SSR iframe Credentialless布尔true，开发建议credentialless，验证新布尔属性的大小写校验。 */
     it('should warn about incorrect casing on the credentialless property (ssr)', () => {
       ReactDOMServer.renderToString(
         React.createElement('iframe', {Credentialless: true}),
@@ -2904,7 +2896,7 @@ describe('ReactDOMComponent', () => {
       ]);
     });
 
-    /** 测试场景：验证「should warn about incorrect casing on event handlers (ssr)」描述的渲染、交互或错误处理结果。 */
+    /** SSR input oninput字符串先告事件用camelCase并给通用onClick示例，再onKeydown无警告；服务器不打包注册表，验证不能照客户端精确识别所有错误事件名。 */
     it('should warn about incorrect casing on event handlers (ssr)', () => {
       ReactDOMServer.renderToString(
         React.createElement('input', {type: 'text', oninput: '1'}),
@@ -2924,7 +2916,7 @@ describe('ReactDOMComponent', () => {
         // 无法判断它是否为有效事件。
     });
 
-    /** 测试场景：验证「should warn about incorrect casing on properties」描述的渲染、交互或错误处理结果。 */
+    /** 客户端input tabindex字符串1，开发建议tabIndex，验证客户端已知属性大小写诊断。 */
     it('should warn about incorrect casing on properties', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -2939,7 +2931,7 @@ describe('ReactDOMComponent', () => {
       ]);
     });
 
-    /** 测试场景：验证「should warn about incorrect casing on event handlers」描述的渲染、交互或错误处理结果。 */
+    /** 客户端先oninput再onKeydown，分别精确建议onInput/onKeyDown，验证事件注册表支持具体纠错而不同于SSR通用示例。 */
     it('should warn about incorrect casing on event handlers', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -2963,7 +2955,7 @@ describe('ReactDOMComponent', () => {
       ]);
     });
 
-    /** 测试场景：验证「should warn about class」描述的渲染、交互或错误处理结果。 */
+    /** 客户端div class muffins，开发建议className，验证HTML属性名与React prop名的别名诊断。 */
     it('should warn about class', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -2976,7 +2968,7 @@ describe('ReactDOMComponent', () => {
       ]);
     });
 
-    /** 测试场景：验证「should warn about class (ssr)」描述的渲染、交互或错误处理结果。 */
+    /** SSR div class muffins报相同className建议，验证服务器也执行保留别名名称校验。 */
     it('should warn about class (ssr)', () => {
       ReactDOMServer.renderToString(
         React.createElement('div', {class: 'muffins'}),
@@ -2987,7 +2979,7 @@ describe('ReactDOMComponent', () => {
       ]);
     });
 
-    /** 测试场景：验证「should warn about props that are no longer supported」描述的渲染、交互或错误处理结果。 */
+    /** 客户端新root分别onFocusIn/onFocusOut函数，开发建议onFocus/onBlur，验证两个历史事件名的专门诊断。 */
     it('should warn about props that are no longer supported', async () => {
       let container = document.createElement('div');
       let root = ReactDOMClient.createRoot(container);
@@ -3018,7 +3010,7 @@ describe('ReactDOMComponent', () => {
       ]);
     });
 
-    /** 测试场景：验证「should warn about props that are no longer supported without case sensitivity」描述的渲染、交互或错误处理结果。 */
+    /** 客户端小写onfocusin/onfocusout仍各报相同Focus/Blur诊断，验证历史事件名检查忽略大小写。 */
     it('should warn about props that are no longer supported without case sensitivity', async () => {
       let container = document.createElement('div');
       let root = ReactDOMClient.createRoot(container);
@@ -3048,7 +3040,7 @@ describe('ReactDOMComponent', () => {
       ]);
     });
 
-    /** 测试场景：验证「should warn about props that are no longer supported (ssr)」描述的渲染、交互或错误处理结果。 */
+    /** SSR分别onFocusIn/onFocusOut函数，仍有专门Focus/Blur诊断，验证此检查无需完整客户端事件注册表。 */
     it('should warn about props that are no longer supported (ssr)', () => {
       ReactDOMServer.renderToString(<div />);
       ReactDOMServer.renderToString(<div onFocusIn={() => {}} />);
@@ -3065,7 +3057,7 @@ describe('ReactDOMComponent', () => {
       ]);
     });
 
-    /** 测试场景：验证「should warn about props that are no longer supported without case sensitivity (ssr)」描述的渲染、交互或错误处理结果。 */
+    /** SSR小写onfocusin/onfocusout仍各报专门诊断，验证服务器的大小写归一化分支。 */
     it('should warn about props that are no longer supported without case sensitivity (ssr)', () => {
       ReactDOMServer.renderToString(<div />);
       ReactDOMServer.renderToString(<div onfocusin={() => {}} />);
@@ -3082,7 +3074,7 @@ describe('ReactDOMComponent', () => {
       ]);
     });
 
-    /** 测试场景：验证「gives source code refs for unknown prop warning」描述的渲染、交互或错误处理结果。 */
+    /** 客户端先div class错误再新root input onclick错误，诊断分别含div/input来源行，验证错误定位到实际主机元素。 */
     it('gives source code refs for unknown prop warning', async () => {
       let container = document.createElement('div');
       let root = ReactDOMClient.createRoot(container);
@@ -3105,7 +3097,7 @@ describe('ReactDOMComponent', () => {
       ]);
     });
 
-    /** 测试场景：验证「gives source code refs for unknown prop warning (ssr)」描述的渲染、交互或错误处理结果。 */
+    /** SSR先class再oninput，分别显示div/input栈且事件只给通用onClick示例，验证服务器来源定位与有限事件建议。 */
     it('gives source code refs for unknown prop warning (ssr)', () => {
       ReactDOMServer.renderToString(<div class="paladin" />);
       assertConsoleErrorDev([
@@ -3122,7 +3114,7 @@ describe('ReactDOMComponent', () => {
       ]);
     });
 
-    /** 测试场景：验证「gives source code refs for unknown prop warning for update render」描述的渲染、交互或错误处理结果。 */
+    /** 先正确className，随后另建容器/root挂错误class，警告仍有div来源；实际不是复用同root更新，验证新错误元素定位。 */
     it('gives source code refs for unknown prop warning for update render', async () => {
       let container = document.createElement('div');
       let root = ReactDOMClient.createRoot(container);
@@ -3141,7 +3133,7 @@ describe('ReactDOMComponent', () => {
       ]);
     });
 
-    /** 测试场景：验证「gives source code refs for unknown prop warning for exact elements」描述的渲染、交互或错误处理结果。 */
+    /** 同父树中span class、strong onclick错误而其它div正确，仅两条诊断定位span/strong，验证不会把兄弟或父主机归为来源。 */
     it('gives source code refs for unknown prop warning for exact elements', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -3164,7 +3156,7 @@ describe('ReactDOMComponent', () => {
       ]);
     });
 
-    /** 测试场景：验证「gives source code refs for unknown prop warning for exact elements (ssr)」描述的渲染、交互或错误处理结果。 */
+    /** SSR同样的span class/strong onclick错误，仅两条定位且onclick用通用camelCase示例，验证服务器精确主机来源。 */
     it('gives source code refs for unknown prop warning for exact elements (ssr)', () => {
       ReactDOMServer.renderToString(
         <div className="foo1">
@@ -3184,11 +3176,11 @@ describe('ReactDOMComponent', () => {
       ]);
     });
 
-    /** 测试场景：验证「gives source code refs for unknown prop warning for exact elements in composition」描述的渲染、交互或错误处理结果。 */
+    /** Parent含四类Child，仅Child1/span class与Child3/strong onclick错误；诊断分别给对应Child/Parent链，验证组件组合不混淆不同子创建者。 */
     it('gives source code refs for unknown prop warning for exact elements in composition', async () => {
-      /** `Parent`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+      /** 组合四个类Child，只有两个主机prop非法，观察不同错误各自的创建者栈。 */
       class Parent extends React.Component {
-        /** `Parent.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 按Child1/2/3/4顺序返回，合法兄弟不得出现在其它错误来源中。 */
         render() {
           return (
             <div>
@@ -3201,33 +3193,33 @@ describe('ReactDOMComponent', () => {
         }
       }
 
-      /** `Child1`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+      /** 返回带错误class的span，提供Child1/Parent来源链。 */
       class Child1 extends React.Component {
-        /** `Child1.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** span使用class而非className，触发只属于此子组件的诊断。 */
         render() {
           return <span class="paladin">Child1</span>;
         }
       }
 
-      /** `Child2`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+      /** 返回合法div Child2，作为不应产生警告的兄弟。 */
       class Child2 extends React.Component {
-        /** `Child2.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 仅输出普通div文本，无非法属性。 */
         render() {
           return <div>Child2</div>;
         }
       }
 
-      /** `Child3`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+      /** 返回错误onclick的strong，提供独立Child3/Parent来源链。 */
       class Child3 extends React.Component {
-        /** `Child3.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 用小写onclick字符串制造事件名纠错诊断。 */
         render() {
           return <strong onclick="1">Child3</strong>;
         }
       }
 
-      /** `Child4`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+      /** 合法Child4提供另一个不应被误标来源的兄弟。 */
       class Child4 extends React.Component {
-        /** `Child4.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 返回无非法prop的div文本，保持组合树上下文。 */
         render() {
           return <div>Child4</div>;
         }
@@ -3250,20 +3242,13 @@ describe('ReactDOMComponent', () => {
       ]);
     });
 
-    /**
-     * 代表场景（Given–When–Then）：
-     * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-     * When 执行「gives source code refs for unknown prop warning for exact elements in composition (ssr)」描述的渲染或交互；
-     * Then 通过本用例的 DOM、日志或调度断言确认行为。
-     *
-     * 验证机制：断言连接 ReactDOM 公开入口、ReactDOMRoot 根生命周期及 DOM 提交结果。
-     */
+    /** SSR相同四Child组合，只有Child1/Child3各带Parent来源链，事件为服务器通用建议，验证服务器组合栈。 */
     it('gives source code refs for unknown prop warning for exact elements in composition (ssr)', () => {
       const container = document.createElement('div');
 
-      /** `Parent`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+      /** 服务端组合四Child，只让Child1/Child3生成不同prop诊断。 */
       class Parent extends React.Component {
-        /** `Parent.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 按固定顺序返回四个类子组件，比较SSR各自创建者栈。 */
         render() {
           return (
             <div>
@@ -3276,33 +3261,33 @@ describe('ReactDOMComponent', () => {
         }
       }
 
-      /** `Child1`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+      /** SSR子fixture在span用class，提供Child1来源。 */
       class Child1 extends React.Component {
-        /** `Child1.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 返回错误class的span，验证服务端别名诊断。 */
         render() {
           return <span class="paladin">Child1</span>;
         }
       }
 
-      /** `Child2`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+      /** SSR合法Child2，保证不会混进其它child的错误栈。 */
       class Child2 extends React.Component {
-        /** `Child2.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 返回普通div Child2文本，无诊断输入。 */
         render() {
           return <div>Child2</div>;
         }
       }
 
-      /** `Child3`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+      /** SSR子fixture在strong用onclick，提供Child3事件来源。 */
       class Child3 extends React.Component {
-        /** `Child3.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 返回小写onclick字符串的strong，服务器给通用事件命名示例。 */
         render() {
           return <strong onclick="1">Child3</strong>;
         }
       }
 
-      /** `Child4`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+      /** SSR合法Child4，作为错误来源定位的对照兄弟。 */
       class Child4 extends React.Component {
-        /** `Child4.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 返回普通div Child4文本，不触发prop诊断。 */
         render() {
           return <div>Child4</div>;
         }
@@ -3322,7 +3307,7 @@ describe('ReactDOMComponent', () => {
       ]);
     });
 
-    /** 测试场景：验证「should suggest property name if available」描述的渲染、交互或错误处理结果。 */
+    /** 客户端label for与input autofocus分别告htmlFor/autoFocus，验证已知属性别名和大小写候选建议。 */
     it('should suggest property name if available', async () => {
       let container = document.createElement('div');
       let root = ReactDOMClient.createRoot(container);
@@ -3346,7 +3331,7 @@ describe('ReactDOMComponent', () => {
       ]);
     });
 
-    /** 测试场景：验证「should suggest property name if available (ssr)」描述的渲染、交互或错误处理结果。 */
+    /** SSR label for与input autofocus也分别建议htmlFor/autoFocus，验证服务器属性名称纠错表。 */
     it('should suggest property name if available (ssr)', () => {
       ReactDOMServer.renderToString(
         React.createElement('label', {for: 'test'}),
@@ -3366,7 +3351,7 @@ describe('ReactDOMComponent', () => {
   });
 
   describe('whitespace', () => {
-    /** 测试场景：验证「renders innerHTML and preserves whitespace」描述的渲染、交互或错误处理结果。 */
+    /** 危险HTML含首尾换行/tab和span内空白，挂载后innerHTML精确等于输入，验证不裁剪HTML空白。 */
     it('renders innerHTML and preserves whitespace', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -3380,7 +3365,7 @@ describe('ReactDOMComponent', () => {
       expect(container.firstChild.innerHTML).toBe(html);
     });
 
-    /** 测试场景：验证「render and then updates innerHTML and preserves whitespace」描述的渲染、交互或错误处理结果。 */
+    /** 危险HTML从带空白span改为带空白div，innerHTML精确等于第二字符串，验证更新同样保留全部空白。 */
     it('render and then updates innerHTML and preserves whitespace', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -3401,7 +3386,7 @@ describe('ReactDOMComponent', () => {
   });
 
   describe('Attributes with aliases', function () {
-    /** 测试场景：验证「sets aliased attributes on HTML attributes」描述的渲染、交互或错误处理结果。 */
+    /** 普通HTML div传class并以ref读节点，开发建议className而实际className仍test，验证诊断不阻止浏览器识别原attribute。 */
     it('sets aliased attributes on HTML attributes', async function () {
       let el;
       const container = document.createElement('div');
@@ -3418,7 +3403,7 @@ describe('ReactDOMComponent', () => {
       expect(el.className).toBe('test');
     });
 
-    /** 测试场景：验证「sets incorrectly cased aliased attributes on HTML attributes with a warning」描述的渲染、交互或错误处理结果。 */
+    /** HTML div传混合大小写cLASS，开发建议className且DOM className test，验证浏览器HTML属性大小写归一化。 */
     it('sets incorrectly cased aliased attributes on HTML attributes with a warning', async function () {
       let el;
       const container = document.createElement('div');
@@ -3435,7 +3420,7 @@ describe('ReactDOMComponent', () => {
       expect(el.className).toBe('test');
     });
 
-    /** 测试场景：验证「sets aliased attributes on SVG elements with a warning」描述的渲染、交互或错误处理结果。 */
+    /** SVG text用arabic-form原DOM名，开发建议React arabicForm但DOM仍有arabic-form，验证SVG别名诊断与实际写入分离。 */
     it('sets aliased attributes on SVG elements with a warning', async function () {
       let el;
       const container = document.createElement('div');
@@ -3457,7 +3442,7 @@ describe('ReactDOMComponent', () => {
       expect(text.hasAttribute('arabic-form')).toBe(true);
     });
 
-    /** 测试场景：验证「sets aliased attributes on custom elements」描述的渲染、交互或错误处理结果。 */
+    /** 扩展原生div is custom-element使用class，无警告且class test，验证自定义扩展允许原始attribute名。 */
     it('sets aliased attributes on custom elements', async function () {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -3469,7 +3454,7 @@ describe('ReactDOMComponent', () => {
       expect(el.getAttribute('class')).toBe('test');
     });
 
-    /** 测试场景：验证「aliased attributes on custom elements with bad casing」描述的渲染、交互或错误处理结果。 */
+    /** 扩展原生div is custom-element传claSS，DOM class test且无该别名警告，验证此路径放行名称后仍由HTML DOM归一化。 */
     it('aliased attributes on custom elements with bad casing', async function () {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -3483,7 +3468,7 @@ describe('ReactDOMComponent', () => {
       expect(el.getAttribute('class')).toBe('test');
     });
 
-    /** 测试场景：验证「updates aliased attributes on custom elements」描述的渲染、交互或错误处理结果。 */
+    /** 扩展原生div class foo→bar，最终attribute class bar，验证自定义扩展属性更新。 */
     it('updates aliased attributes on custom elements', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -3499,7 +3484,7 @@ describe('ReactDOMComponent', () => {
   });
 
   describe('Custom attributes', function () {
-    /** 测试场景：验证「allows assignment of custom attributes with string values」描述的渲染、交互或错误处理结果。 */
+    /** 普通div未知whatever字符串30可作为attribute读取，验证未知小写名允许字符串值。 */
     it('allows assignment of custom attributes with string values', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -3513,7 +3498,7 @@ describe('ReactDOMComponent', () => {
       expect(el.getAttribute('whatever')).toBe('30');
     });
 
-    /** 测试场景：验证「removes custom attributes」描述的渲染、交互或错误处理结果。 */
+    /** whatever字符串30改null，attribute消失，验证自定义attribute删除。 */
     it('removes custom attributes', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -3530,7 +3515,7 @@ describe('ReactDOMComponent', () => {
       expect(container.firstChild.hasAttribute('whatever')).toBe(false);
     });
 
-    /** 测试场景：验证「does not assign a boolean custom attributes as a string」描述的渲染、交互或错误处理结果。 */
+    /** 普通div未知whatever布尔true，开发非布尔属性警告且attribute不存在，验证不是一律把布尔变字符串。 */
     it('does not assign a boolean custom attributes as a string', async function () {
       let el;
       const container = document.createElement('div');
@@ -3549,7 +3534,7 @@ describe('ReactDOMComponent', () => {
       expect(el.hasAttribute('whatever')).toBe(false);
     });
 
-    /** 测试场景：验证「does not assign an implicit boolean custom attributes」描述的渲染、交互或错误处理结果。 */
+    /** 相同whatever省略值的JSX隐式true，仍警告且无attribute，验证语法简写不改变未知非布尔过滤。 */
     it('does not assign an implicit boolean custom attributes', async function () {
       let el;
       const container = document.createElement('div');
@@ -3571,7 +3556,7 @@ describe('ReactDOMComponent', () => {
       expect(el.hasAttribute('whatever')).toBe(false);
     });
 
-    /** 测试场景：验证「assigns a numeric custom attributes as a string」描述的渲染、交互或错误处理结果。 */
+    /** 未知whatever数字3，DOM attribute字符串3，验证数值序列化。 */
     it('assigns a numeric custom attributes as a string', async function () {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -3585,7 +3570,7 @@ describe('ReactDOMComponent', () => {
       expect(el.getAttribute('whatever')).toBe('3');
     });
 
-    /** 测试场景：验证「will not assign a function custom attributes」描述的渲染、交互或错误处理结果。 */
+    /** 未知whatever函数，开发无效值诊断且无attribute，验证函数不能序列化成自定义属性。 */
     it('will not assign a function custom attributes', async function () {
       let el;
       const container = document.createElement('div');
@@ -3606,7 +3591,7 @@ describe('ReactDOMComponent', () => {
       expect(el.hasAttribute('whatever')).toBe(false);
     });
 
-    /** 测试场景：验证「will assign an object custom attributes」描述的渲染、交互或错误处理结果。 */
+    /** 未知whatever普通对象，DOM值为[object Object]，验证对象走字符串转换而非被函数/布尔规则拒绝。 */
     it('will assign an object custom attributes', async function () {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -3619,23 +3604,23 @@ describe('ReactDOMComponent', () => {
       expect(el.getAttribute('whatever')).toBe('[object Object]');
     });
 
-    /** 测试场景：验证「allows Temporal-like objects as HTML (they are not coerced to strings first)」描述的渲染、交互或错误处理结果。 */
+    /** 危险HTML原值为TemporalLike，valueOf抛错但DOM string hint调用toString得日期，innerHTML成功；验证此路径把对象交DOM而不先用默认hint拼字符串。 */
     it('allows Temporal-like objects as HTML (they are not coerced to strings first)', async () => {
-      /** `TemporalLike`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+      /** 危险HTML对象fixture拥有可用日期toString而valueOf抛错，区分DOM字符串提示与默认数值转换。 */
       class TemporalLike {
-        /** `TemporalLike.valueOf`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 默认hint若调用valueOf即抛TypeError；成功HTML测试证明此转换没有被调用。 */
         valueOf() {
         // 此处抛错符合 ECMAScript “Temporal” 日期/时间 API 的行为。
         // 参见 https://tc39.es/proposal-temporal/docs/plaindate.html#valueOf
           throw new TypeError('prod message');
         }
-        /** `TemporalLike.toString`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** DOM innerHTML按string hint调用此方法，返回可插入的日期文本。 */
         toString() {
           return '2020-01-01';
         }
       }
 
-      // `dangerouslySetInnerHTML` 的值不会被强制转为字符串，因此即使传入类 Temporal 对象也不会抛错。
+      // React 将 __html 原值交给 innerHTML setter；DOM 按字符串提示调用 toString，绕开会抛错的 valueOf。
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
       await act(() => {
@@ -3646,7 +3631,7 @@ describe('ReactDOMComponent', () => {
       expect(container.firstChild.innerHTML).toEqual('2020-01-01');
     });
 
-    /** 测试场景：验证「allows cased data attributes」描述的渲染、交互或错误处理结果。 */
+    /** data-fooBar字符串true，开发建议小写data-foobar而DOM可按小写读到true，验证属性名警告与HTML大小写归一化。 */
     it('allows cased data attributes', async () => {
       let el;
       const container = document.createElement('div');
@@ -3666,7 +3651,7 @@ describe('ReactDOMComponent', () => {
       expect(el.getAttribute('data-foobar')).toBe('true');
     });
 
-    /** 测试场景：验证「allows cased custom attributes」描述的渲染、交互或错误处理结果。 */
+    /** 普通div fooBar字符串true，开发建议foobar但DOM小写读取true，验证未知混合大小写名诊断而不丢合法字符串值。 */
     it('allows cased custom attributes', async () => {
       let el;
       const container = document.createElement('div');
@@ -3686,7 +3671,7 @@ describe('ReactDOMComponent', () => {
       expect(el.getAttribute('foobar')).toBe('true');
     });
 
-    /** 测试场景：验证「warns on NaN attributes」描述的渲染、交互或错误处理结果。 */
+    /** whatever值NaN，开发告非法数值但DOM仍保存NaN字符串，验证数值警告不等于attribute过滤。 */
     it('warns on NaN attributes', async () => {
       let el;
       const container = document.createElement('div');
@@ -3704,7 +3689,7 @@ describe('ReactDOMComponent', () => {
       expect(el.getAttribute('whatever')).toBe('NaN');
     });
 
-    /** 测试场景：验证「removes a property when it becomes invalid」描述的渲染、交互或错误处理结果。 */
+    /** whatever从数字0变函数，开发无效值警告且旧attribute被删除，验证原先合法属性更新成非法值的清理。 */
     it('removes a property when it becomes invalid', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -3724,7 +3709,7 @@ describe('ReactDOMComponent', () => {
       expect(el.hasAttribute('whatever')).toBe(false);
     });
 
-    /** 测试场景：验证「warns on bad casing of known HTML attributes」描述的渲染、交互或错误处理结果。 */
+    /** 已知HTML属性SiZe混合大小写，开发建议size而DOM size仍30，验证已知名称归一化与纠错。 */
     it('warns on bad casing of known HTML attributes', async function () {
       let el;
       const container = document.createElement('div');
@@ -3743,7 +3728,7 @@ describe('ReactDOMComponent', () => {
   });
 
   describe('Object stringification', function () {
-    /** 测试场景：验证「allows objects on known properties」描述的渲染、交互或错误处理结果。 */
+    /** acceptCharset值普通对象，DOM accept-charset为[object Object]，验证已知别名属性也允许对象字符串转换。 */
     it('allows objects on known properties', async function () {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -3756,10 +3741,10 @@ describe('ReactDOMComponent', () => {
       expect(el.getAttribute('accept-charset')).toBe('[object Object]');
     });
 
-    /** 测试场景：验证「should pass objects as attributes if they define toString」描述的渲染、交互或错误处理结果。 */
+    /** 自定义toString对象返回hello，先img src property解析为localhost/hello，再SVG arabic-form及普通unknown为hello，验证URL/已知SVG/未知attribute三条转换路径。 */
     it('should pass objects as attributes if they define toString', async () => {
       const obj = {
-        /** `toString`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 返回hello供属性字符串化；同对象用于img URL、SVG别名与普通未知attribute，浏览器再对src做绝对URL解析。 */
         toString() {
           return 'hello';
         },
@@ -3783,7 +3768,7 @@ describe('ReactDOMComponent', () => {
       expect(container.firstChild.getAttribute('unknown')).toBe('hello');
     });
 
-    /** 测试场景：验证「passes objects on known SVG attributes if they do not define toString」描述的渲染、交互或错误处理结果。 */
+    /** SVG arabicForm普通对象无自定义toString，arabic-form值[object Object]，验证继承默认字符串转换。 */
     it('passes objects on known SVG attributes if they do not define toString', async () => {
       const obj = {};
       const container = document.createElement('div');
@@ -3797,7 +3782,7 @@ describe('ReactDOMComponent', () => {
       );
     });
 
-    /** 测试场景：验证「passes objects on custom attributes if they do not define toString」描述的渲染、交互或错误处理结果。 */
+    /** 普通div unknown普通对象，attribute值[object Object]，验证未知属性同样使用默认字符串表示。 */
     it('passes objects on custom attributes if they do not define toString', async () => {
       const obj = {};
       const container = document.createElement('div');
@@ -3811,7 +3796,7 @@ describe('ReactDOMComponent', () => {
       );
     });
 
-    /** 测试场景：验证「allows objects that inherit a custom toString method」描述的渲染、交互或错误处理结果。 */
+    /** Object.create从父对象继承toString hello.jpg，img src解析为localhost/hello.jpg，验证转换方法无需是对象自身字段。 */
     it('allows objects that inherit a custom toString method', async function () {
       const parent = {
         /** 让继承该对象的属性值稳定转换为图片 URL。 */
@@ -3830,7 +3815,7 @@ describe('ReactDOMComponent', () => {
       expect(el.src).toBe('http://localhost/hello.jpg');
     });
 
-    /** 测试场景：验证「assigns ajaxify (an important internal FB attribute)」描述的渲染、交互或错误处理结果。 */
+    /** ajaxify值对象toString返回ajaxy，DOM未知attribute保存ajaxy，验证内部历史属性仍走普通对象字符串转换。 */
     it('assigns ajaxify (an important internal FB attribute)', async function () {
       const options = {
         /** 模拟 FB 内部属性值的自定义字符串转换。 */
@@ -3850,7 +3835,7 @@ describe('ReactDOMComponent', () => {
   });
 
   describe('String boolean attributes', function () {
-    /** 测试场景：验证「does not assign string boolean attributes for custom attributes」描述的渲染、交互或错误处理结果。 */
+    /** 普通div whatever true，开发告非布尔属性且不写attribute，验证可字符串化的特定属性白名单不扩大到所有未知属性。 */
     it('does not assign string boolean attributes for custom attributes', async function () {
       let el;
       const container = document.createElement('div');
@@ -3869,7 +3854,7 @@ describe('ReactDOMComponent', () => {
       expect(el.hasAttribute('whatever')).toBe(false);
     });
 
-    /** 测试场景：验证「stringifies the boolean true for allowed attributes」描述的渲染、交互或错误处理结果。 */
+    /** spellCheck true允许并写字符串true，验证枚举式布尔属性与存在式布尔属性区别。 */
     it('stringifies the boolean true for allowed attributes', async function () {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -3883,7 +3868,7 @@ describe('ReactDOMComponent', () => {
       expect(el.getAttribute('spellCheck')).toBe('true');
     });
 
-    /** 测试场景：验证「stringifies the boolean false for allowed attributes」描述的渲染、交互或错误处理结果。 */
+    /** spellCheck false仍写字符串false而非删除，验证该字段的false有实际枚举语义。 */
     it('stringifies the boolean false for allowed attributes', async function () {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -3897,7 +3882,7 @@ describe('ReactDOMComponent', () => {
       expect(el.getAttribute('spellCheck')).toBe('false');
     });
 
-    /** 测试场景：验证「stringifies implicit booleans for allowed attributes」描述的渲染、交互或错误处理结果。 */
+    /** JSX隐式spellCheck true，DOM仍字符串true，验证简写进入同一枚举序列化路径。 */
     it('stringifies implicit booleans for allowed attributes', async function () {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -3914,7 +3899,7 @@ describe('ReactDOMComponent', () => {
   });
 
   describe('Boolean attributes', function () {
-    /** 测试场景：验证「warns on the ambiguous string value "false"」描述的渲染、交互或错误处理结果。 */
+    /** hidden传字符串false，开发警告浏览器视为真，DOM仍空值hidden attribute，验证存在式布尔字段不解析文本false。 */
     it('warns on the ambiguous string value "false"', async function () {
       let el;
       const container = document.createElement('div');
@@ -3933,7 +3918,7 @@ describe('ReactDOMComponent', () => {
       expect(el.getAttribute('hidden')).toBe('');
     });
 
-    /** 测试场景：验证「warns on the potentially-ambiguous string value "true"」描述的渲染、交互或错误处理结果。 */
+    /** hidden传字符串true，开发提示字符串false风险，DOM同样空值hidden，验证字符串truthiness与布尔建议。 */
     it('warns on the potentially-ambiguous string value "true"', async function () {
       let el;
       const container = document.createElement('div');
@@ -3954,7 +3939,7 @@ describe('ReactDOMComponent', () => {
   });
 
   describe('Hyphenated SVG elements', function () {
-    /** 测试场景：验证「the font-face element is not a custom element」描述的渲染、交互或错误处理结果。 */
+    /** SVG font-face虽带连字符仍非Web Component，x-height false先提示xHeight别名且无attribute，验证保留SVG标签不走自定义布尔路径。 */
     it('the font-face element is not a custom element', async function () {
       let el;
       const container = document.createElement('div');
@@ -3977,7 +3962,7 @@ describe('ReactDOMComponent', () => {
       );
     });
 
-    /** 测试场景：验证「the font-face element does not allow unknown boolean values」描述的渲染、交互或错误处理结果。 */
+    /** SVG font-face whatever false，开发非布尔值诊断且无attribute，验证连字符SVG特殊标签仍过滤未知布尔。 */
     it('the font-face element does not allow unknown boolean values', async function () {
       let el;
       const container = document.createElement('div');
@@ -4005,9 +3990,9 @@ describe('ReactDOMComponent', () => {
     });
   });
 
-  // 这些测试主要验证现有行为。这些行为未必始终合理，但我们不能在次版本中更改它们。
+  // 自定义元素通过专用属性提交路径处理布尔值、名称大小写和事件监听；下面覆盖这些差异。
   describe('Custom elements', () => {
-    /** 测试场景：验证「does not strip unknown boolean attributes」描述的渲染、交互或错误处理结果。 */
+    /** 真正自定义some-custom-element foo true→false→缺省→true，attribute先空串后删除再存在，验证自定义布尔presence规则。 */
     it('does not strip unknown boolean attributes', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -4030,7 +4015,7 @@ describe('ReactDOMComponent', () => {
       expect(node.hasAttribute('foo')).toBe(true);
     });
 
-    /** 测试场景：验证「does not strip the on* attributes」描述的渲染、交互或错误处理结果。 */
+    /** 自定义标签onx字符串bar→buzz→缺省→bar，attribute保留/更新/删除/恢复，验证自定义字符串on*没有套普通HTML未知事件过滤。 */
     it('does not strip the on* attributes', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -4054,15 +4039,15 @@ describe('ReactDOMComponent', () => {
     });
   });
 
-  /** 测试场景：验证「receives events in specific order」描述的渲染、交互或错误处理结果。 */
+  /** 两个嵌套React root加document原生捕获/冒泡监听后点击inner，标准顺序document捕获→outer捕获→inner捕获→inner冒泡→outer冒泡→document冒泡；Legacy FB改为document冒泡早于React冒泡，验证委托时序。finally只移容器未注销document监听。 */
   it('receives events in specific order', async () => {
     const eventOrder = [];
-    /** `track`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 为tag创建无参数事件记录闭包，调用时向eventOrder追加该tag；返回函数可同时用于React与document原生监听。 */
     const track = tag => () => eventOrder.push(tag);
     const outerRef = React.createRef();
     const innerRef = React.createRef();
 
-    /** `OuterReactApp`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 已提交外root的div同时带capture/bubble记录和DOM ref，后续成为独立innerRoot容器。 */
     function OuterReactApp() {
       return (
         <div
@@ -4073,7 +4058,7 @@ describe('ReactDOMComponent', () => {
       );
     }
 
-    /** `InnerReactApp`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 独立内root的div同时带capture/bubble记录和ref，click从此节点穿过两个root及document。 */
     function InnerReactApp() {
       return (
         <div
@@ -4128,13 +4113,13 @@ describe('ReactDOMComponent', () => {
   });
 
   describe('iOS Tap Highlight', () => {
-    /** 测试场景：验证「adds onclick handler to elements with onClick prop」描述的渲染、交互或错误处理结果。 */
+    /** 现代root主机div有onClick，ref.current.onclick类型function，验证iOS点击冒泡兼容的本地空handler安装；不直接测试真实iOS手势。 */
     it('adds onclick handler to elements with onClick prop', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
 
       const elementRef = React.createRef();
-      /** `Component`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 输出带onClick和ref的div，检查主机节点本地onclick兼容handler是否安装。 */
       function Component() {
         return <div ref={elementRef} onClick={() => {}} />;
       }
@@ -4145,13 +4130,13 @@ describe('ReactDOMComponent', () => {
       expect(typeof elementRef.current.onclick).toBe('function');
     });
 
-    /** 测试场景：验证「adds onclick handler to a portal root」描述的渲染、交互或错误处理结果。 */
+    /** 现代root通过portal返回onClick div，portal容器onclick类型function，验证点击兼容空handler同时安装到portal挂载容器。 */
     it('adds onclick handler to a portal root', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
       const portalContainer = document.createElement('div');
 
-      /** `Component`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 向独立portalContainer返回onClick div，测试portal容器自己的onclick补丁。 */
       function Component() {
         return ReactDOM.createPortal(
           <div onClick={() => {}} />,
@@ -4165,12 +4150,12 @@ describe('ReactDOMComponent', () => {
       expect(typeof portalContainer.onclick).toBe('function');
     });
 
+    /** 仅legacy模式启用定义用ReactDOM.render挂onClick div，外root容器onclick不是function，验证旧入口容器无需同样补丁；断言目标为容器而非子div。 */
     // @gate !disableLegacyMode
-    /** 测试场景：验证「does not add onclick handler to the React root in legacy mode」描述的渲染、交互或错误处理结果。 */
     it('does not add onclick handler to the React root in legacy mode', () => {
       const container = document.createElement('div');
 
-      /** `Component`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 用legacy入口输出onClick div，测试外root容器保持无onclick补丁，不把子节点行为混入断言。 */
       function Component() {
         return <div onClick={() => {}} />;
       }

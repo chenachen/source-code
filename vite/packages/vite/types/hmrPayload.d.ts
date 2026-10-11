@@ -70,11 +70,11 @@ export interface Update {
    * @internal
    */
   firstInvalidatedBy?: string
-  /** @internal */
+  /** 可携带的失效模块列表；本版本 Vite 源码未填充或读取该字段。 @internal */
   invalidates?: string[]
 }
 
-/** 通知客户端清理已从模块图移除的模块。 */
+/** 通知客户端清理不再被当前导入关系引用的模块；服务端图节点可以保留。 */
 export interface PrunePayload {
   /** 模块清理消息的判别字段。 */
   type: 'prune'

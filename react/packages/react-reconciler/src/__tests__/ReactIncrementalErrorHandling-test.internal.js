@@ -41,6 +41,7 @@ describe('ReactIncrementalErrorHandling', () => {
     waitForThrow = InternalTestUtils.waitForThrow;
   });
 
+  /** 恢复每例安装的 console 等 jest spy；模块重置由下一例 beforeEach 执行。 */
   afterEach(() => {
     jest.restoreAllMocks();
   });
@@ -69,18 +70,18 @@ describe('ReactIncrementalErrorHandling', () => {
     );
   }
 
-  /** Given 已挂载错误边界、失败节点与正常 sibling；When 执行“recovers from errors asynchronously”定义的抛错、重试或恢复；Then 边界状态、fallback 和错误身份符合预期。验证机制：渲染树、日志及 console；对应 ReactFiberThrow、ReactFiberUnwindWork、ReactFiberWorkLoop。 */
+  /** 场景：初始空根在 transition 中挂载静态派生错误边界、三层 Indirection 与故障 child；逐 yield 看到首遍 fallback 仍未提交，随后一次 flushNextYield 重跑全根并提交 oops!。日志与中间 null 验证异步尝试之后的同步错误恢复。 */
   it('recovers from errors asynchronously', async () => {
-    /** “recovers from errors asynchronously”中的错误边界：保存捕获状态并在 children 与 fallback 间切换，隔离本例失败范围。 */
+    /** 静态派生状态错误边界：并发首遍与同步恢复都能直接生成 ErrorMessage，观察两遍恢复尚未提交时的日志。 */
     class ErrorBoundary extends React.Component {
-      /** ErrorBoundary.state：保存本例已捕获错误或更新阶段；初始值代表正常渲染，变化后驱动恢复分支。 */
+      /** 已捕获的原始错误；null 时尝试子树，非 null 时显示其 message。 */
       state = {error: null};
       /** ErrorBoundary.getDerivedStateFromError：把 render 错误折叠为恢复 state，使下一分支渲染 fallback。 */
       static getDerivedStateFromError(error) {
         Scheduler.log('getDerivedStateFromError');
         return {error};
       }
-      /** ErrorBoundary.render：依据错误 state 选择原 children 或 fallback，形成“recovers from errors asynchronously”的恢复输出。 */
+      /** 记录 try/catch 分支，恢复分支改为 ErrorMessage，供逐 yield 检查是否仅 render 或已提交。 */
       render() {
         if (this.state.error) {
           Scheduler.log('ErrorBoundary (catch)');
@@ -91,13 +92,13 @@ describe('ReactIncrementalErrorHandling', () => {
       }
     }
 
-    /** 把捕获错误渲染为可断言文本，并记录恢复提交发生的时点。 */
+    /** 记录 fallback 的 render 日志，并返回可断言的错误文本。 */
     function ErrorMessage({error}) {
       Scheduler.log('ErrorMessage');
       return <span prop={`Caught an error: ${error.message}`} />;
     }
 
-    /** Indirection 中间层：增加一层 Fiber/Context 转发，验证错误栈与 unwind 不跳过祖先。 */
+    /** Indirection 记录经过中间组件的 render 日志，并透传 children。 */
     function Indirection({children}) {
       Scheduler.log('Indirection');
       return children || null;
@@ -176,18 +177,18 @@ describe('ReactIncrementalErrorHandling', () => {
     );
   });
 
-  /** Given 已挂载错误边界、失败节点与正常 sibling；When 执行“recovers from errors asynchronously (legacy, no getDerivedStateFromError)”定义的抛错、重试或恢复；Then 边界状态、fallback 和错误身份符合预期。验证机制：渲染树、日志及 console；对应 ReactFiberThrow、ReactFiberUnwindWork、ReactFiberWorkLoop。 */
+  /** 场景：初始空根在 transition 中挂载只定义 cDC 的边界和故障 child；让出后完成根并同步重试，提交才执行 cDC 并 setState；最终显示 oops!。区别旧式提交通知恢复与静态派生恢复。 */
   it('recovers from errors asynchronously (legacy, no getDerivedStateFromError)', async () => {
-    /** “recovers from errors asynchronously (legacy, no getDerivedStateFromError)”中的错误边界：保存捕获状态并在 children 与 fallback 间切换，隔离本例失败范围。 */
+    /** 仅 componentDidCatch 的旧式边界：首遍先丢弃故障子树，提交回调再 setState 显示错误，区别于 render 阶段派生状态。 */
     class ErrorBoundary extends React.Component {
-      /** ErrorBoundary.state：保存本例已捕获错误或更新阶段；初始值代表正常渲染，变化后驱动恢复分支。 */
+      /** 提交回调写入的捕获值，初始 null 保留正常 children。 */
       state = {error: null};
-      /** ErrorBoundary.componentDidCatch：记录捕获信息并安排恢复，验证边界 commit 阶段错误处理。 */
+      /** ErrorBoundary.componentDidCatch：在 componentDidCatch 中将捕获值写入 state，排入恢复更新。 */
       componentDidCatch(error) {
         Scheduler.log('componentDidCatch');
         this.setState({error});
       }
-      /** ErrorBoundary.render：依据错误 state 选择原 children 或 fallback，形成“recovers from errors asynchronously (legacy, no getDerivedStateFromError)”的恢复输出。 */
+      /** 按提交恢复 state 选择 children 或 ErrorMessage，并记录分支用于辨认额外恢复 render。 */
       render() {
         if (this.state.error) {
           Scheduler.log('ErrorBoundary (catch)');
@@ -198,13 +199,13 @@ describe('ReactIncrementalErrorHandling', () => {
       }
     }
 
-    /** 把捕获错误渲染为可断言文本，并记录恢复提交发生的时点。 */
+    /** 记录 fallback 的 render 日志，并返回可断言的错误文本。 */
     function ErrorMessage({error}) {
       Scheduler.log('ErrorMessage');
       return <span prop={`Caught an error: ${error.message}`} />;
     }
 
-    /** Indirection 中间层：增加一层 Fiber/Context 转发，验证错误栈与 unwind 不跳过祖先。 */
+    /** Indirection 记录经过中间组件的 render 日志，并透传 children。 */
     function Indirection({children}) {
       Scheduler.log('Indirection');
       return children || null;
@@ -270,9 +271,9 @@ describe('ReactIncrementalErrorHandling', () => {
     );
   });
 
-  /** Given 已初始化本组错误处理夹具；When 执行“retries at a lower priority if there's additional pending work”的 render/update 序列；Then 成功与失败子树按预期提交或回滚。验证机制：Noop 输出、Scheduler 与错误断言；对应 ReactFiberThrow 和 ReactFiberWorkLoop。 */
+  /** 场景：先让 isBroken=true 的 transition 抛 Oops!，再入队另一 transition 的正常 Root 输入；只冲刷一个 mock yield 即同步恢复为 Everything is fine。两个 commit 日志是两项 Root Update 的回调，不能据此断言两次宿主提交；另检查可恢复并发错误诊断。 */
   it("retries at a lower priority if there's additional pending work", async () => {
-    /** App 组合夹具：为“retries at a lower priority if there's additional pending work”装配边界、失败节点与 siblings，控制更新拓扑。 */
+    /** 根据 isBroken 抛 Oops! 或输出固定成功 span，后入队的正常 Root 更新可在同步恢复中取代失败输入。 */
     function App(props) {
       if (props.isBroken) {
         Scheduler.log('error');
@@ -282,7 +283,7 @@ describe('ReactIncrementalErrorHandling', () => {
       return <span prop="Everything is fine." />;
     }
 
-    /** Profiler onCommit 回调：记录本次提交，用于确认失败或恢复 render 是否真正进入 commit。 */
+    /** Root Update 的提交通知：每项被处理的 Root 更新都各自调用 callback；两条 commit 日志不等于两次独立宿主提交。 */
     function onCommit() {
       Scheduler.log('commit');
     }
@@ -297,12 +298,12 @@ describe('ReactIncrementalErrorHandling', () => {
       ReactNoop.render(<App isBroken={false} />, onCommit);
     });
 
-    // React 会把全部 pending 更新合并到一个同步 batch
-    // 中恢复；本次能够成功。
+    // 同步恢复合并当前可重试的 pending lanes（排除 OffscreenLane）；
+    // 新更新移除抛错节点，因此本次能够成功。
     //
     // 这里只要求 Scheduler render 一个 work unit；错误恢复 render
     // 是同步的，因此一个 unit 足以
-    // 完成全部剩余工作。
+    // 完成本次同步恢复中可重试的工作。
     Scheduler.unstable_flushNumberOfYields(1);
     assertLog([
       'success',
@@ -319,10 +320,10 @@ describe('ReactIncrementalErrorHandling', () => {
     );
   });
 
-  /** Given 失败节点位于 hidden/Offscreen 结构；When 执行“does not include offscreen work when retrying after an error”的更新序列；Then 错误传播与可见树提交互不污染。验证机制：Noop 输出、日志与错误断言；对应 ReactFiberOffscreenComponent、ReactFiberThrow。 */
+  /** 场景：开启 LegacyHidden 时，失败 transition 后追加正常输入，正常树带隐藏子内容；同步恢复先显示文本与空隐藏 div，随后后台工作补入 Offscreen content。两次宿主快照验证恢复 lanes 排除 OffscreenLane。 */
   // @gate enableLegacyHidden
   it('does not include offscreen work when retrying after an error', async () => {
-    /** App 组合夹具：为“does not include offscreen work when retrying after an error”装配边界、失败节点与 siblings，控制更新拓扑。 */
+    /** 故障输入抛 Oops!，正常输入含隐藏 LegacyHiddenDiv；观察可见恢复先提交、Offscreen 内容随后填充。 */
     function App(props) {
       if (props.isBroken) {
         Scheduler.log('error');
@@ -339,7 +340,7 @@ describe('ReactIncrementalErrorHandling', () => {
       );
     }
 
-    /** Profiler onCommit 回调：记录本次提交，用于确认失败或恢复 render 是否真正进入 commit。 */
+    /** Root Update 的提交通知：即使恢复合并两项输入，两项 callback 仍可在同一次提交逐一运行。 */
     function onCommit() {
       Scheduler.log('commit');
     }
@@ -356,12 +357,12 @@ describe('ReactIncrementalErrorHandling', () => {
       ReactNoop.render(<App isBroken={false} />, onCommit);
     });
 
-    // React 会把全部 pending 更新合并到一个同步 batch
-    // 中恢复；本次能够成功。
+    // 同步恢复合并当前可重试的 pending lanes（排除 OffscreenLane）；
+    // 新更新移除抛错节点，因此本次能够成功。
     //
     // 这里只要求 Scheduler render 一个 work unit；错误恢复 render
     // 是同步的，因此一个 unit 足以
-    // 完成全部剩余工作。
+    // 完成本次同步恢复中可重试的工作。
     Scheduler.unstable_flushNumberOfYields(1);
     assertLog([
       'success',
@@ -393,7 +394,7 @@ describe('ReactIncrementalErrorHandling', () => {
     );
   });
 
-  /** Given 已挂载错误边界、失败节点与正常 sibling；When 执行“retries one more time before handling error”定义的抛错、重试或恢复；Then 边界状态、fallback 和错误身份符合预期。验证机制：渲染树、日志及 console；对应 ReactFiberThrow、ReactFiberUnwindWork、ReactFiberWorkLoop。 */
+  /** 场景：transition 的 Parent 首个 child 抛 oops，后面另有正常 Sibling；首遍让出后只冲刷一个 yield，即从 Parent 同步再尝试并清空根。日志无 Sibling，验证根错误处理前有一次整根重试。 */
   it('retries one more time before handling error', async () => {
     /** “retries one more time before handling error”中的失败函数夹具 BadRender：在 render 时抛出固定错误，触发目标恢复分支。 */
     function BadRender({unused}) {
@@ -407,7 +408,7 @@ describe('ReactIncrementalErrorHandling', () => {
       return <span prop="Sibling" />;
     }
 
-    /** Parent 组合夹具：为“retries one more time before handling error”装配边界、失败节点与 siblings，控制更新拓扑。 */
+    /** 记录 Parent 后依次返回失败 child 与成功 sibling；子树失败时后一个 sibling 的日志没有出现。 */
     function Parent({unused}) {
       Scheduler.log('Parent');
       return (
@@ -433,7 +434,7 @@ describe('ReactIncrementalErrorHandling', () => {
     expect(ReactNoop).toMatchRenderedOutput(null);
   });
 
-  /** Given 已挂载错误边界、失败节点与正常 sibling；When 执行“retries one more time if an error occurs during a render that expires midway through the tree”定义的抛错、重试或恢复；Then 边界状态、fallback 和错误身份符合预期。验证机制：渲染树、日志及 console；对应 ReactFiberThrow、ReactFiberUnwindWork、ReactFiberWorkLoop。 */
+  /** 场景：transition 已渲染 A/B 后将 mock 时钟推进 10000ms 并冲刷过期工作；先续到 Oops，再从 A/B/Oops 重试，C/D 未运行且根为空。验证中途过期不会抹掉已完成进度，但错误恢复仍重开根。 */
   it('retries one more time if an error occurs during a render that expires midway through the tree', async () => {
     /** “retries one more time if an error occurs during a render that expires midway through the tree”中的失败函数夹具 Oops：在 render 时抛出固定错误，触发目标恢复分支。 */
     function Oops({unused}) {
@@ -447,7 +448,7 @@ describe('ReactIncrementalErrorHandling', () => {
       return text;
     }
 
-    /** App 组合夹具：为“retries one more time if an error occurs during a render that expires midway through the tree”装配边界、失败节点与 siblings，控制更新拓扑。 */
+    /** 把 Oops 放在 A/B 与 C/D 之间，令模拟时钟在前两项后过期，检查错误同步恢复从根重跑。 */
     function App({unused}) {
       return (
         <>
@@ -487,32 +488,32 @@ describe('ReactIncrementalErrorHandling', () => {
     expect(ReactNoop).toMatchRenderedOutput(null);
   });
 
-  /** Given 已挂载错误边界、失败节点与正常 sibling；When 执行“calls componentDidCatch multiple times for multiple errors”定义的抛错、重试或恢复；Then 边界状态、fallback 和错误身份符合预期。验证机制：渲染树、日志及 console；对应 ReactFiberThrow、ReactFiberUnwindWork、ReactFiberWorkLoop。 */
+  /** 场景：一个旧式边界内挂三个只在 didMount 抛错的 BadMount；冲刷后按 id=1/2/3 分别调用 cDC，三个函数 updater 累计到错误计数 3。验证提交错误不会按边界去重丢失独立通知。 */
   it('calls componentDidCatch multiple times for multiple errors', async () => {
     let id = 0;
     /** “calls componentDidCatch multiple times for multiple errors”中的失败类夹具 BadMount：在指定生命周期制造错误，定位 commit/unwind 边界。 */
     class BadMount extends React.Component {
-      /** BadMount.componentDidMount：记录或制造 mount commit 行为，定位“calls componentDidCatch multiple times for multiple errors”的提交错误边界。 */
+      /** 每次挂载抛带递增 id 的 Error，三个实例提供可区分的三项提交错误。 */
       componentDidMount() {
         throw new Error(`Error ${++id}`);
       }
-      /** BadMount.render：在受控条件下制造 render 错误，驱动当前错误恢复路径。 */
+      /** 只记录 BadMount 并返回 null；错误发生在 componentDidMount，不是 render。 */
       render() {
         Scheduler.log('BadMount');
         return null;
       }
     }
 
-    /** “calls componentDidCatch multiple times for multiple errors”中的错误边界：保存捕获状态并在 children 与 fallback 间切换，隔离本例失败范围。 */
+    /** 统计多个挂载错误的旧式边界，componentDidCatch 每次都入队一次函数 state 增量，最终显示计数 3。 */
     class ErrorBoundary extends React.Component {
-      /** ErrorBoundary.state：保存本例已捕获错误或更新阶段；初始值代表正常渲染，变化后驱动恢复分支。 */
+      /** 捕获错误次数从 0 开始；函数 updater 保证三项累加不互相覆盖。 */
       state = {errorCount: 0};
-      /** ErrorBoundary.componentDidCatch：记录捕获信息并安排恢复，验证边界 commit 阶段错误处理。 */
+      /** ErrorBoundary.componentDidCatch：在 componentDidCatch 中将捕获值写入 state，排入恢复更新。 */
       componentDidCatch(error) {
         Scheduler.log(`componentDidCatch: ${error.message}`);
         this.setState(state => ({errorCount: state.errorCount + 1}));
       }
-      /** ErrorBoundary.render：依据错误 state 选择原 children 或 fallback，形成“calls componentDidCatch multiple times for multiple errors”的恢复输出。 */
+      /** 计数为零时透传三个 BadMount，捕获后输出错误总数且移除故障 children。 */
       render() {
         if (this.state.errorCount > 0) {
           return <span prop={`Number of errors: ${this.state.errorCount}`} />;
@@ -544,17 +545,17 @@ describe('ReactIncrementalErrorHandling', () => {
     );
   });
 
-  /** Given 已挂载含可观察生命周期/ref 的树；When 执行“catches render error in a boundary during full deferred mounting”规定的提交失败或删除；Then 其余 commit 工作、清理顺序与错误路由保持正确。验证机制：Scheduler/console/树断言；对应 ReactFiberCommitEffects、ReactFiberWorkLoop 与 ReactFiberErrorLogger。 */
+  /** 场景：普通 Root render 从空根挂载旧式边界与抛 Hello 的子函数；耗尽调度后显示 Caught an error: Hello.。验证完整挂载失败可经 cDC 的 state 更新恢复。 */
   it('catches render error in a boundary during full deferred mounting', async () => {
-    /** “catches render error in a boundary during full deferred mounting”中的错误边界：保存捕获状态并在 children 与 fallback 间切换，隔离本例失败范围。 */
+    /** 普通 Root render 的旧式边界，cDC 保存 Hello 后显示带句点的恢复文本。 */
     class ErrorBoundary extends React.Component {
-      /** ErrorBoundary.state：保存本例已捕获错误或更新阶段；初始值代表正常渲染，变化后驱动恢复分支。 */
+      /** 初始未捕获，cDC 写入 Error 后切换 fallback。 */
       state = {error: null};
-      /** ErrorBoundary.componentDidCatch：记录捕获信息并安排恢复，验证边界 commit 阶段错误处理。 */
+      /** ErrorBoundary.componentDidCatch：在 componentDidCatch 中将捕获值写入 state，排入恢复更新。 */
       componentDidCatch(error) {
         this.setState({error});
       }
-      /** ErrorBoundary.render：依据错误 state 选择原 children 或 fallback，形成“catches render error in a boundary during full deferred mounting”的恢复输出。 */
+      /** 正常透传 children，恢复时从原始 error.message 生成 span，不保留故障子树。 */
       render() {
         if (this.state.error) {
           return (
@@ -581,18 +582,18 @@ describe('ReactIncrementalErrorHandling', () => {
     );
   });
 
-  /** Given 已挂载含可观察生命周期/ref 的树；When 执行“catches render error in a boundary during partial deferred mounting”规定的提交失败或删除；Then 其余 commit 工作、清理顺序与错误路由保持正确。验证机制：Scheduler/console/树断言；对应 ReactFiberCommitEffects、ReactFiberWorkLoop 与 ReactFiberErrorLogger。 */
+  /** 场景：transition 先只推进旧式边界的正常 render，此时输出仍 null；继续工作后 child 抛 Hello，同步重试再失败，cDC 后切 fallback。日志与快照验证部分挂载没有提前提交未完成 children。 */
   it('catches render error in a boundary during partial deferred mounting', async () => {
-    /** “catches render error in a boundary during partial deferred mounting”中的错误边界：保存捕获状态并在 children 与 fallback 间切换，隔离本例失败范围。 */
+    /** transition 部分挂载的旧式边界，用分支/cDC 日志定位首次让出、同步重试和提交恢复。 */
     class ErrorBoundary extends React.Component {
-      /** ErrorBoundary.state：保存本例已捕获错误或更新阶段；初始值代表正常渲染，变化后驱动恢复分支。 */
+      /** null 是正常尝试状态；捕获 Hello 后用于 fallback 文本。 */
       state = {error: null};
-      /** ErrorBoundary.componentDidCatch：记录捕获信息并安排恢复，验证边界 commit 阶段错误处理。 */
+      /** ErrorBoundary.componentDidCatch：在 componentDidCatch 中将捕获值写入 state，排入恢复更新。 */
       componentDidCatch(error) {
         Scheduler.log('ErrorBoundary componentDidCatch');
         this.setState({error});
       }
-      /** ErrorBoundary.render：依据错误 state 选择原 children 或 fallback，形成“catches render error in a boundary during partial deferred mounting”的恢复输出。 */
+      /** 记录正常与错误分支，正常时还可能让出而没有宿主输出，错误分支生成恢复 span。 */
       render() {
         if (this.state.error) {
           Scheduler.log('ErrorBoundary render error');
@@ -637,18 +638,18 @@ describe('ReactIncrementalErrorHandling', () => {
     );
   });
 
-  /** Given 已挂载含可观察生命周期/ref 的树；When 执行“catches render error in a boundary during synchronous mounting”规定的提交失败或删除；Then 其余 commit 工作、清理顺序与错误路由保持正确。验证机制：Scheduler/console/树断言；对应 ReactFiberCommitEffects、ReactFiberWorkLoop 与 ReactFiberErrorLogger。 */
+  /** 场景：flushSync 从空根挂载旧式边界与抛 Hello 的 child；日志包含两次失败尝试、一次 cDC 和 fallback render，返回后错误文本已可见。验证同步范围耗尽 cDC 安排的恢复更新。 */
   it('catches render error in a boundary during synchronous mounting', () => {
-    /** “catches render error in a boundary during synchronous mounting”中的错误边界：保存捕获状态并在 children 与 fallback 间切换，隔离本例失败范围。 */
+    /** flushSync 挂载的旧式边界，观察失败重试之后 cDC 的恢复 state 更新仍被同步耗尽。 */
     class ErrorBoundary extends React.Component {
-      /** ErrorBoundary.state：保存本例已捕获错误或更新阶段；初始值代表正常渲染，变化后驱动恢复分支。 */
+      /** 捕获 Hello 后替换原 children，首次为 null。 */
       state = {error: null};
-      /** ErrorBoundary.componentDidCatch：记录捕获信息并安排恢复，验证边界 commit 阶段错误处理。 */
+      /** ErrorBoundary.componentDidCatch：在 componentDidCatch 中将捕获值写入 state，排入恢复更新。 */
       componentDidCatch(error) {
         Scheduler.log('ErrorBoundary componentDidCatch');
         this.setState({error});
       }
-      /** ErrorBoundary.render：依据错误 state 选择原 children 或 fallback，形成“catches render error in a boundary during synchronous mounting”的恢复输出。 */
+      /** 记录 try/fallback，输出错误文本用于 flushSync 返回后的最终宿主断言。 */
       render() {
         if (this.state.error) {
           Scheduler.log('ErrorBoundary render error');
@@ -692,18 +693,18 @@ describe('ReactIncrementalErrorHandling', () => {
     );
   });
 
-  /** Given 已挂载含可观察生命周期/ref 的树；When 执行“catches render error in a boundary during batched mounting”规定的提交失败或删除；Then 其余 commit 工作、清理顺序与错误路由保持正确。验证机制：Scheduler/console/树断言；对应 ReactFiberCommitEffects、ReactFiberWorkLoop 与 ReactFiberErrorLogger。 */
+  /** 场景：同一 flushSync 先入队 Before the storm.、再入队同一边界的失败 child；日志只见最后输入的失败尝试与恢复，最终 Hello fallback。验证同批 Root 输入替换不要求逐项宿主提交。 */
   it('catches render error in a boundary during batched mounting', () => {
-    /** “catches render error in a boundary during batched mounting”中的错误边界：保存捕获状态并在 children 与 fallback 间切换，隔离本例失败范围。 */
+    /** 同一 flushSync 里连续两个 Root element 输入的旧式边界；最后输入含故障 child，前一文本不会单独提交。 */
     class ErrorBoundary extends React.Component {
-      /** ErrorBoundary.state：保存本例已捕获错误或更新阶段；初始值代表正常渲染，变化后驱动恢复分支。 */
+      /** 旧式提交通知保存的故障值，驱动恢复分支。 */
       state = {error: null};
-      /** ErrorBoundary.componentDidCatch：记录捕获信息并安排恢复，验证边界 commit 阶段错误处理。 */
+      /** ErrorBoundary.componentDidCatch：在 componentDidCatch 中将捕获值写入 state，排入恢复更新。 */
       componentDidCatch(error) {
         Scheduler.log('ErrorBoundary componentDidCatch');
         this.setState({error});
       }
-      /** ErrorBoundary.render：依据错误 state 选择原 children 或 fallback，形成“catches render error in a boundary during batched mounting”的恢复输出。 */
+      /** 记录当前尝试分支；捕获后生成 Hello fallback，正常时透传本轮 Root 提供的 children。 */
       render() {
         if (this.state.error) {
           Scheduler.log('ErrorBoundary render error');
@@ -748,16 +749,16 @@ describe('ReactIncrementalErrorHandling', () => {
     );
   });
 
-  /** Given 已挂载含可观察生命周期/ref 的树；When 执行“propagates an error from a noop error boundary during full deferred mounting”规定的提交失败或删除；Then 其余 commit 工作、清理顺序与错误路由保持正确。验证机制：Scheduler/console/树断言；对应 ReactFiberCommitEffects、ReactFiberWorkLoop 与 ReactFiberErrorLogger。 */
+  /** 场景：普通 Root 挂载 cDC 会重抛原错误的边界与 BrokenRender；waitForThrow 收到 Hello，日志含两次失败 render 与一次 cDC，宿主树为空。验证边界提交通知自身的错误继续到根。 */
   it('propagates an error from a noop error boundary during full deferred mounting', async () => {
     /** “propagates an error from a noop error boundary during full deferred mounting”中的重抛错误边界：捕获后再次抛出，验证更外层恢复与错误保真。 */
     class RethrowErrorBoundary extends React.Component {
-      /** RethrowErrorBoundary.componentDidCatch：记录捕获信息并安排恢复，验证边界 commit 阶段错误处理。 */
+      /** RethrowErrorBoundary.componentDidCatch 记录日志后重抛原错误，让错误继续向外传播。 */
       componentDidCatch(error) {
         Scheduler.log('RethrowErrorBoundary componentDidCatch');
         throw error;
       }
-      /** RethrowErrorBoundary.render：依据错误 state 选择原 children 或 fallback，形成“propagates an error from a noop error boundary during full deferred mounting”的恢复输出。 */
+      /** 记录重抛边界的正常尝试并透传 children；自身无恢复 state，cDC 重抛后根被清空。 */
       render() {
         Scheduler.log('RethrowErrorBoundary render');
         return this.props.children;
@@ -791,16 +792,16 @@ describe('ReactIncrementalErrorHandling', () => {
     expect(ReactNoop.getChildrenAsJSX()).toEqual(null);
   });
 
-  /** Given 已挂载含可观察生命周期/ref 的树；When 执行“propagates an error from a noop error boundary during partial deferred mounting”规定的提交失败或删除；Then 其余 commit 工作、清理顺序与错误路由保持正确。验证机制：Scheduler/console/树断言；对应 ReactFiberCommitEffects、ReactFiberWorkLoop 与 ReactFiberErrorLogger。 */
+  /** 场景：transition 先停在重抛边界 render，后继续到故障 child；waitForThrow 收到 Hello，后续日志含同步重试与 cDC，最终根为空。验证部分挂载的重抛边界不会保留失败树。 */
   it('propagates an error from a noop error boundary during partial deferred mounting', async () => {
     /** “propagates an error from a noop error boundary during partial deferred mounting”中的重抛错误边界：捕获后再次抛出，验证更外层恢复与错误保真。 */
     class RethrowErrorBoundary extends React.Component {
-      /** RethrowErrorBoundary.componentDidCatch：记录捕获信息并安排恢复，验证边界 commit 阶段错误处理。 */
+      /** RethrowErrorBoundary.componentDidCatch 记录日志后重抛原错误，让错误继续向外传播。 */
       componentDidCatch(error) {
         Scheduler.log('RethrowErrorBoundary componentDidCatch');
         throw error;
       }
-      /** RethrowErrorBoundary.render：依据错误 state 选择原 children 或 fallback，形成“propagates an error from a noop error boundary during partial deferred mounting”的恢复输出。 */
+      /** 记录 transition 让出前的边界尝试并透传故障 child，供后续同步恢复日志比较。 */
       render() {
         Scheduler.log('RethrowErrorBoundary render');
         return this.props.children;
@@ -837,16 +838,16 @@ describe('ReactIncrementalErrorHandling', () => {
     expect(ReactNoop).toMatchRenderedOutput(null);
   });
 
-  /** Given 已挂载含可观察生命周期/ref 的树；When 执行“propagates an error from a noop error boundary during synchronous mounting”规定的提交失败或删除；Then 其余 commit 工作、清理顺序与错误路由保持正确。验证机制：Scheduler/console/树断言；对应 ReactFiberCommitEffects、ReactFiberWorkLoop 与 ReactFiberErrorLogger。 */
+  /** 场景：flushSync 挂载重抛 cDC 的边界与 Hello child；日志检查两次失败尝试和一次重抛回调，最终根为空。本例没有 toThrow 断言，验证目标是同步清空及回调顺序。 */
   it('propagates an error from a noop error boundary during synchronous mounting', () => {
     /** “propagates an error from a noop error boundary during synchronous mounting”中的重抛错误边界：捕获后再次抛出，验证更外层恢复与错误保真。 */
     class RethrowErrorBoundary extends React.Component {
-      /** RethrowErrorBoundary.componentDidCatch：记录捕获信息并安排恢复，验证边界 commit 阶段错误处理。 */
+      /** RethrowErrorBoundary.componentDidCatch 记录日志后重抛原错误，让错误继续向外传播。 */
       componentDidCatch(error) {
         Scheduler.log('RethrowErrorBoundary componentDidCatch');
         throw error;
       }
-      /** RethrowErrorBoundary.render：依据错误 state 选择原 children 或 fallback，形成“propagates an error from a noop error boundary during synchronous mounting”的恢复输出。 */
+      /** 记录同步挂载的边界尝试；同一故障 child 在恢复重试中再次运行。 */
       render() {
         Scheduler.log('RethrowErrorBoundary render');
         return this.props.children;
@@ -881,16 +882,16 @@ describe('ReactIncrementalErrorHandling', () => {
     expect(ReactNoop).toMatchRenderedOutput(null);
   });
 
-  /** Given 已挂载含可观察生命周期/ref 的树；When 执行“propagates an error from a noop error boundary during batched mounting”规定的提交失败或删除；Then 其余 commit 工作、清理顺序与错误路由保持正确。验证机制：Scheduler/console/树断言；对应 ReactFiberCommitEffects、ReactFiberWorkLoop 与 ReactFiberErrorLogger。 */
+  /** 场景：同一 flushSync 先排正常文本，再排重抛边界中的 Hello child；日志只见失败树两次尝试及 cDC，根为空。验证同批替换后错误提交通知的处理，不单独断言调用栈抛错。 */
   it('propagates an error from a noop error boundary during batched mounting', () => {
     /** “propagates an error from a noop error boundary during batched mounting”中的重抛错误边界：捕获后再次抛出，验证更外层恢复与错误保真。 */
     class RethrowErrorBoundary extends React.Component {
-      /** RethrowErrorBoundary.componentDidCatch：记录捕获信息并安排恢复，验证边界 commit 阶段错误处理。 */
+      /** RethrowErrorBoundary.componentDidCatch 记录日志后重抛原错误，让错误继续向外传播。 */
       componentDidCatch(error) {
         Scheduler.log('RethrowErrorBoundary componentDidCatch');
         throw error;
       }
-      /** RethrowErrorBoundary.render：依据错误 state 选择原 children 或 fallback，形成“propagates an error from a noop error boundary during batched mounting”的恢复输出。 */
+      /** 透传同批最后 Root 输入并记录边界 render，区分前一正常文本是否曾单独渲染。 */
       render() {
         Scheduler.log('RethrowErrorBoundary render');
         return this.props.children;
@@ -928,7 +929,7 @@ describe('ReactIncrementalErrorHandling', () => {
     expect(ReactNoop).toMatchRenderedOutput(null);
   });
 
-  /** Given 已挂载错误边界、失败节点与正常 sibling；When 执行“applies batched updates regardless despite errors in scheduling”定义的抛错、重试或恢复；Then 边界状态、fallback 和错误身份符合预期。验证机制：渲染树、日志及 console；对应 ReactFiberThrow、ReactFiberUnwindWork、ReactFiberWorkLoop。 */
+  /** 场景：先排 a:1，在 batchedUpdates 排 a:2/a:3 后由调用者直接抛 Hello；外层 toThrow 检查原错误，后续调度仍提交 a:3。验证调度范围异常不撤销已入队 Root 更新。 */
   it('applies batched updates regardless despite errors in scheduling', async () => {
     ReactNoop.render(<span prop="a:1" />);
     expect(() => {
@@ -942,7 +943,7 @@ describe('ReactIncrementalErrorHandling', () => {
     expect(ReactNoop).toMatchRenderedOutput(<span prop="a:3" />);
   });
 
-  /** Given 已挂载错误边界、失败节点与正常 sibling；When 执行“applies nested batched updates despite errors in scheduling”定义的抛错、重试或恢复；Then 边界状态、fallback 和错误身份符合预期。验证机制：渲染树、日志及 console；对应 ReactFiberThrow、ReactFiberUnwindWork、ReactFiberWorkLoop。 */
+  /** 场景：外层批次排 a:2/a:3，内层再排 a:4/a:5 后抛 Hello；异常穿过两层范围，随后最终为 a:5。验证嵌套执行上下文恢复且入队更新保留。 */
   it('applies nested batched updates despite errors in scheduling', async () => {
     ReactNoop.render(<span prop="a:1" />);
     expect(() => {
@@ -961,7 +962,7 @@ describe('ReactIncrementalErrorHandling', () => {
   });
 
   // TODO：这是否属于破坏性变更？
-  /** Given 失败节点位于 hidden/Offscreen 结构；When 执行“defers additional sync work to a separate event after an error”的更新序列；Then 错误传播与可见树提交互不污染。验证机制：Noop 输出、日志与错误断言；对应 ReactFiberOffscreenComponent、ReactFiberThrow。 */
+  /** 场景：flushSync 中嵌 batchedUpdates，入队 a:2/a:3 后直接抛 Hello；断言错误继续外抛，后续耗尽工作显示 a:3。此例没有同步返回后的中间宿主检查，不能单独证明标题所称“另一个事件”。 */
   it('defers additional sync work to a separate event after an error', async () => {
     ReactNoop.render(<span prop="a:1" />);
     expect(() => {
@@ -977,7 +978,7 @@ describe('ReactIncrementalErrorHandling', () => {
     expect(ReactNoop).toMatchRenderedOutput(<span prop="a:3" />);
   });
 
-  /** Given 已挂载含可观察生命周期/ref 的树；When 执行“can schedule updates after uncaught error in render on mount”规定的提交失败或删除；Then 其余 commit 工作、清理顺序与错误路由保持正确。验证机制：Scheduler/console/树断言；对应 ReactFiberCommitEffects、ReactFiberWorkLoop 与 ReactFiberErrorLogger。 */
+  /** 场景：初始根挂载 BrokenRender 连续两次抛 Hello 后由 waitForThrow 接收；随后替换 Foo 并看到日志。验证根初次失败后仍能接受后续正常更新。 */
   it('can schedule updates after uncaught error in render on mount', async () => {
     /** “can schedule updates after uncaught error in render on mount”中的失败函数夹具 BrokenRender：在 render 时抛出固定错误，触发目标恢复分支。 */
     function BrokenRender({unused}) {
@@ -985,7 +986,7 @@ describe('ReactIncrementalErrorHandling', () => {
       throw new Error('Hello');
     }
 
-    /** Foo 组合夹具：为“can schedule updates after uncaught error in render on mount”装配边界、失败节点与 siblings，控制更新拓扑。 */
+    /** 故障根清空后记录 Foo 并返回 null，验证同一 renderer 还能接受新的正常更新。 */
     function Foo({unused}) {
       Scheduler.log('Foo');
       return null;
@@ -1003,7 +1004,7 @@ describe('ReactIncrementalErrorHandling', () => {
     await waitForAll(['Foo']);
   });
 
-  /** Given 已挂载错误边界、失败节点与正常 sibling；When 执行“can schedule updates after uncaught error in render on update”定义的抛错、重试或恢复；Then 边界状态、fallback 和错误身份符合预期。验证机制：渲染树、日志及 console；对应 ReactFiberThrow、ReactFiberUnwindWork、ReactFiberWorkLoop。 */
+  /** 场景：先让 BrokenRender 正常挂载，再用 shouldThrow=true 更新触发两次 Hello 尝试；waitForThrow 后替换 Foo 成功。验证已有根的 render 失败不会永久阻断调度。 */
   it('can schedule updates after uncaught error in render on update', async () => {
     /** “can schedule updates after uncaught error in render on update”中的失败函数夹具 BrokenRender：在 render 时抛出固定错误，触发目标恢复分支。 */
     function BrokenRender({shouldThrow}) {
@@ -1014,7 +1015,7 @@ describe('ReactIncrementalErrorHandling', () => {
       return null;
     }
 
-    /** Foo 组合夹具：为“can schedule updates after uncaught error in render on update”装配边界、失败节点与 siblings，控制更新拓扑。 */
+    /** 记录恢复后的正常替换组件，证明更新期根错误没有永久阻止后续调度。 */
     function Foo({unused}) {
       Scheduler.log('Foo');
       return null;
@@ -1036,11 +1037,11 @@ describe('ReactIncrementalErrorHandling', () => {
     await waitForAll(['Foo']);
   });
 
-  /** Given 已挂载含可观察生命周期/ref 的树；When 执行“can schedule updates after uncaught error during unmounting”规定的提交失败或删除；Then 其余 commit 工作、清理顺序与错误路由保持正确。验证机制：Scheduler/console/树断言；对应 ReactFiberCommitEffects、ReactFiberWorkLoop 与 ReactFiberErrorLogger。 */
+  /** 场景：先挂载卸载回调会抛 Hello 的类，替换 div 触发删除错误；waitForThrow 后再 render Foo 并看到日志。验证删除阶段未捕获错误后 renderer 仍可复用。 */
   it('can schedule updates after uncaught error during unmounting', async () => {
     /** “can schedule updates after uncaught error during unmounting”中的失败类夹具 BrokenComponentWillUnmount：在指定生命周期制造错误，定位 commit/unwind 边界。 */
     class BrokenComponentWillUnmount extends React.Component {
-      /** BrokenComponentWillUnmount.render：在受控条件下制造 render 错误，驱动当前错误恢复路径。 */
+      /** 挂载普通 div，卸载生命周期才抛错，隔离删除阶段错误来源。 */
       render() {
         return <div />;
       }
@@ -1050,7 +1051,7 @@ describe('ReactIncrementalErrorHandling', () => {
       }
     }
 
-    /** Foo 组合夹具：为“can schedule updates after uncaught error during unmounting”装配边界、失败节点与 siblings，控制更新拓扑。 */
+    /** 卸载抛错后再次渲染的正常探针，仅记录 Foo，无自身宿主输出。 */
     function Foo() {
       Scheduler.log('Foo');
       return null;
@@ -1066,27 +1067,27 @@ describe('ReactIncrementalErrorHandling', () => {
     await waitForAll(['Foo']);
   });
 
-  /** Given 已挂载含可观察生命周期/ref 的树；When 执行“should not attempt to recover an unmounting error boundary”规定的提交失败或删除；Then 其余 commit 工作、清理顺序与错误路由保持正确。验证机制：Scheduler/console/树断言；对应 ReactFiberCommitEffects、ReactFiberWorkLoop 与 ReactFiberErrorLogger。 */
+  /** 场景：Parent 包含也将卸载的 Boundary 和 ThrowsOnUnmount；render(null) 时日志为父卸载、故障子卸载，waitForThrow 收到 unmount error，没有 cDC 捕获日志。验证删除中的边界不是存活恢复目标。 */
   it('should not attempt to recover an unmounting error boundary', async () => {
-    /** “should not attempt to recover an unmounting error boundary”中的父级类夹具：承载失败子树并暴露父生命周期或状态恢复顺序。 */
+    /** 整个 Parent 子树将被删除，包含也在删除的 Boundary；卸载日志用于确认其错误不会由被删边界接住。 */
     class Parent extends React.Component {
       /** Parent.componentWillUnmount：记录父子删除顺序，并确认错误 unwind 不重复或遗漏清理。 */
       componentWillUnmount() {
         Scheduler.log('Parent componentWillUnmount');
       }
-      /** Parent.render：输出可观察测试树，并把本例状态映射为确定的 reconciliation 输入。 */
+      /** 固定返回 Boundary，建立根到待删除错误边界的祖先关系。 */
       render() {
         return <Boundary />;
       }
     }
 
-    /** “should not attempt to recover an unmounting error boundary”中的错误边界：保存捕获状态并在 children 与 fallback 间切换，隔离本例失败范围。 */
+    /** 只记录 cDC 的边界，随 Parent 一起删除；应被捕获搜索排除，不能在删除树里恢复。 */
     class Boundary extends React.Component {
-      /** Boundary.componentDidCatch：记录捕获信息并安排恢复，验证边界 commit 阶段错误处理。 */
+      /** 只记录捕获日志；本例检查删除中的 Boundary 是否会被错误选作恢复目标。 */
       componentDidCatch(e) {
         Scheduler.log(`Caught error: ${e.message}`);
       }
-      /** Boundary.render：依据错误 state 选择原 children 或 fallback，形成“should not attempt to recover an unmounting error boundary”的恢复输出。 */
+      /** 返回会在卸载时抛错的后代，自身没有 fallback 状态。 */
       render() {
         return <ThrowsOnUnmount />;
       }
@@ -1099,7 +1100,7 @@ describe('ReactIncrementalErrorHandling', () => {
         Scheduler.log('ThrowsOnUnmount componentWillUnmount');
         throw new Error('unmount error');
       }
-      /** ThrowsOnUnmount.render：输出可观察测试树，并把本例状态映射为确定的 reconciliation 输入。 */
+      /** 渲染 null，不在 render 抛错；唯一故障点是其卸载回调。 */
       render() {
         return null;
       }
@@ -1120,39 +1121,39 @@ describe('ReactIncrementalErrorHandling', () => {
     ReactNoop.render(<Parent />);
   });
 
-  /** Given 已挂载含可观察生命周期/ref 的树；When 执行“can unmount an error boundary before it is handled”规定的提交失败或删除；Then 其余 commit 工作、清理顺序与错误路由保持正确。验证机制：Scheduler/console/树断言；对应 ReactFiberCommitEffects、ReactFiberWorkLoop 与 ReactFiberErrorLogger。 */
+  /** 场景：Parent.step=0 挂载空 cDC 边界和 Child；再次同步 render 触发 Child.didUpdate，先把 Parent.step 设 1、再抛 update error；冲刷结束未抛到测试。本例没有输出断言，回归目标是边界先被父更新移除时能完成处理。 */
   it('can unmount an error boundary before it is handled', async () => {
     let parent;
 
-    /** “can unmount an error boundary before it is handled”中的父级类夹具：承载失败子树并暴露父生命周期或状态恢复顺序。 */
+    /** 保存 parent 实例的控制层，step=1 时移除 Boundary，使已入队的边界错误恢复失去目标。 */
     class Parent extends React.Component {
-      /** Parent.state：保存本例已捕获错误或更新阶段；初始值代表正常渲染，变化后驱动恢复分支。 */
+      /** 0 保留 Boundary，Child 更新回调切到 1 后删除它。 */
       state = {step: 0};
-      /** Parent.render：输出可观察测试树，并把本例状态映射为确定的 reconciliation 输入。 */
+      /** 暴露 this 给 Child 的提交回调，按 step 决定是否还保留错误边界。 */
       render() {
         parent = this;
         return this.state.step === 0 ? <Boundary /> : null;
       }
     }
 
-    /** “can unmount an error boundary before it is handled”中的错误边界：保存捕获状态并在 children 与 fallback 间切换，隔离本例失败范围。 */
+    /** 空 cDC 使它成为可捕获边界；同次提交由 Child 先安排父更新将它删除，不生成 fallback。 */
     class Boundary extends React.Component {
-      /** Boundary.componentDidCatch：记录捕获信息并安排恢复，验证边界 commit 阶段错误处理。 */
+      /** 空捕获回调使 Boundary 成为错误边界；Child 的提交更新会先将它从树中移除。 */
       componentDidCatch() {}
-      /** Boundary.render：依据错误 state 选择原 children 或 fallback，形成“can unmount an error boundary before it is handled”的恢复输出。 */
+      /** 固定返回 Child，建立被移除边界与更新期错误源的关系。 */
       render() {
         return <Child />;
       }
     }
 
-    /** “can unmount an error boundary before it is handled”中的子级类夹具：记录 update/commit 生命周期，暴露错误恢复对实例的影响。 */
+    /** 更新提交探针：先要求 Parent 移除边界，再抛 update error，检验捕获更新与父删除交错。 */
     class Child extends React.Component {
-      /** Child.componentDidUpdate：观察恢复更新后的实例状态与 callback 顺序。 */
+      /** 先入队 parent.step=1，再抛出固定错误；顺序是该回归场景的关键，挂载时不会执行。 */
       componentDidUpdate() {
         parent.setState({step: 1});
         throw new Error('update error');
       }
-      /** Child.render：输出可观察测试树，并把本例状态映射为确定的 reconciliation 输入。 */
+      /** 渲染 null，故障与父更新只发生在 didUpdate。 */
       render() {
         return null;
       }
@@ -1166,17 +1167,17 @@ describe('ReactIncrementalErrorHandling', () => {
     });
   });
 
-  /** Given 已挂载错误边界、失败节点与正常 sibling；When 执行“continues work on other roots despite caught errors”定义的抛错、重试或恢复；Then 边界状态、fallback 和错误身份符合预期。验证机制：渲染树、日志及 console；对应 ReactFiberThrow、ReactFiberUnwindWork、ReactFiberWorkLoop。 */
+  /** 场景：根 a 挂边界与 Hello child，独立根 b 挂 b:1；耗尽后 a 显示恢复文本，b 仍提交 b:1。验证一个根捕获错误不取消其它根工作。 */
   it('continues work on other roots despite caught errors', async () => {
-    /** “continues work on other roots despite caught errors”中的错误边界：保存捕获状态并在 children 与 fallback 间切换，隔离本例失败范围。 */
+    /** 根 a 的旧式恢复边界，捕获 Hello 后显示 fallback，与独立根 b 的正常提交并列检查。 */
     class ErrorBoundary extends React.Component {
-      /** ErrorBoundary.state：保存本例已捕获错误或更新阶段；初始值代表正常渲染，变化后驱动恢复分支。 */
+      /** a 根捕获值，初始 null，恢复后移除失败 child。 */
       state = {error: null};
-      /** ErrorBoundary.componentDidCatch：记录捕获信息并安排恢复，验证边界 commit 阶段错误处理。 */
+      /** ErrorBoundary.componentDidCatch：在 componentDidCatch 中将捕获值写入 state，排入恢复更新。 */
       componentDidCatch(error) {
         this.setState({error});
       }
-      /** ErrorBoundary.render：依据错误 state 选择原 children 或 fallback，形成“continues work on other roots despite caught errors”的恢复输出。 */
+      /** 正常透传 a 的 child，捕获后显示带句点的 Hello 文本，不依赖 b 的 state。 */
       render() {
         if (this.state.error) {
           return (
@@ -1207,7 +1208,7 @@ describe('ReactIncrementalErrorHandling', () => {
     expect(ReactNoop.getChildrenAsJSX('b')).toEqual(<span prop="b:1" />);
   });
 
-  /** Given 已挂载错误边界、失败节点与正常 sibling；When 执行“continues work on other roots despite uncaught errors”定义的抛错、重试或恢复；Then 边界状态、fallback 和错误身份符合预期。验证机制：渲染树、日志及 console；对应 ReactFiberThrow、ReactFiberUnwindWork、ReactFiberWorkLoop。 */
+  /** 场景：依次在 a/b/e 等根制造未捕获 label 错误，交错给其它根入队正常 span；每次 waitForThrow 后失败根为 null，其它根保留/推进相应版本，最后逐根卸载皆为空。验证多根队列在反复根故障之后仍可继续调度与清理。 */
   it('continues work on other roots despite uncaught errors', async () => {
     /** “continues work on other roots despite uncaught errors”中的失败函数夹具 BrokenRender：在 render 时抛出固定错误，触发目标恢复分支。 */
     function BrokenRender(props) {
@@ -1294,7 +1295,7 @@ describe('ReactIncrementalErrorHandling', () => {
   // 及其他能力充分覆盖；
   // 各能力仍需独立测试自己的栈行为。因此本例虽然
   // 表面通用，实际只针对 legacy context。
-  /** Given 已建立 legacy Context Provider/consumer 与错误边界；When 执行“unwinds the context stack correctly on error”中的失败和恢复；Then Context 栈正确 unwind，后续 render 不读取污染值。验证机制：输出及错误断言；对应 ReactFiberContext、ReactFiberUnwindWork。 */
+  /** 场景：启用 legacy Context 时，外层 a 中的边界含 b/c/d/e 嵌套 Provider 和 BadRender，旁边有 Connector；捕获后移除 BadRender，Connector 输出只能为 a，而不是 abcde。验证 unwind 恢复 Provider 栈，并核对弃用诊断。 */
   // @gate !disableLegacyContext && !disableLegacyContextForFunctionComponents
   it('unwinds the context stack correctly on error', async () => {
     /** “unwinds the context stack correctly on error”中的旧 Context Provider：建立 legacy context 栈，验证错误 unwind 后栈恢复。 */
@@ -1303,19 +1304,19 @@ describe('ReactIncrementalErrorHandling', () => {
       static childContextTypes = {message: PropTypes.string};
       /** Provider.contextTypes：声明 Provider 自身消费的旧 Context，验证嵌套上下文恢复。 */
       static contextTypes = {message: PropTypes.string};
-      /** Provider.getChildContext：返回稳定旧 Context 值，用于检查失败 render 后上下文栈是否复位。 */
+      /** Provider.getChildContext 将父级 message 与本层 props.message 拼接，便于从完整路径检查 context 栈恢复。 */
       getChildContext() {
         return {
           message: (this.context.message || '') + this.props.message,
         };
       }
-      /** Provider.render：输出可观察测试树，并把本例状态映射为确定的 reconciliation 输入。 */
+      /** 透传 children，在 Fiber legacy Provider 栈中增加一层，而不新增宿主节点。 */
       render() {
         return this.props.children;
       }
     }
 
-    /** Connector 中间层：增加一层 Fiber/Context 转发，验证错误栈与 unwind 不跳过祖先。 */
+    /** Connector 将接收到的 legacy context.message 写入宿主 prop，作为栈恢复的断言值。 */
     function Connector(props, context) {
       return <span prop={context.message} />;
     }
@@ -1329,15 +1330,15 @@ describe('ReactIncrementalErrorHandling', () => {
       throw new Error('render error');
     }
 
-    /** “unwinds the context stack correctly on error”中的错误边界：保存捕获状态并在 children 与 fallback 间切换，隔离本例失败范围。 */
+    /** 在 legacy a 下建立 b/c/d/e 链，捕获后移除最深 BadRender；旁边 Connector 必须只读外层 a。 */
     class Boundary extends React.Component {
-      /** Boundary.state：保存本例已捕获错误或更新阶段；初始值代表正常渲染，变化后驱动恢复分支。 */
+      /** 捕获值仅用于阻止最深 BadRender 再次挂载，Provider 嵌套结构保留。 */
       state = {error: null};
-      /** Boundary.componentDidCatch：记录捕获信息并安排恢复，验证边界 commit 阶段错误处理。 */
+      /** Boundary.componentDidCatch：在 componentDidCatch 中将捕获值写入 state，排入恢复更新。 */
       componentDidCatch(error) {
         this.setState({error});
       }
-      /** Boundary.render：依据错误 state 选择原 children 或 fallback，形成“unwinds the context stack correctly on error”的恢复输出。 */
+      /** 构造 b/c/d/e Provider 路径，仅正常分支包含 BadRender，便于检查错误 unwind 是否泄漏深层 Context。 */
       render() {
         return (
           <Provider message="b">
@@ -1377,17 +1378,17 @@ describe('ReactIncrementalErrorHandling', () => {
     expect(ReactNoop).toMatchRenderedOutput(<span prop="a" />);
   });
 
-  /** Given 已挂载含可观察生命周期/ref 的树；When 执行“catches reconciler errors in a boundary during mounting”规定的提交失败或删除；Then 其余 commit 工作、清理顺序与错误路由保持正确。验证机制：Scheduler/console/树断言；对应 ReactFiberCommitEffects、ReactFiberWorkLoop 与 ReactFiberErrorLogger。 */
+  /** 场景：边界子函数返回 undefined 的 InvalidType，错误由协调器生成；普通挂载完成恢复后 span 为完整 invalid-type 消息，DEV 还含 BrokenRender 提示。验证内部 JSX 类型错误也可被用户边界捕获。 */
   it('catches reconciler errors in a boundary during mounting', async () => {
-    /** “catches reconciler errors in a boundary during mounting”中的错误边界：保存捕获状态并在 children 与 fallback 间切换，隔离本例失败范围。 */
+    /** 捕获无效 element type 所触发的 reconciler 错误，旧式 cDC 保存该内部 Error 用于宿主断言。 */
     class ErrorBoundary extends React.Component {
-      /** ErrorBoundary.state：保存本例已捕获错误或更新阶段；初始值代表正常渲染，变化后驱动恢复分支。 */
+      /** 初始正常，捕获后保存完整 invalid-type Error。 */
       state = {error: null};
-      /** ErrorBoundary.componentDidCatch：记录捕获信息并安排恢复，验证边界 commit 阶段错误处理。 */
+      /** ErrorBoundary.componentDidCatch：在 componentDidCatch 中将捕获值写入 state，排入恢复更新。 */
       componentDidCatch(error) {
         this.setState({error});
       }
-      /** ErrorBoundary.render：依据错误 state 选择原 children 或 fallback，形成“catches reconciler errors in a boundary during mounting”的恢复输出。 */
+      /** 从 error.message 显示 reconciler 生成的诊断，未捕获时透传 BrokenRender。 */
       render() {
         if (this.state.error) {
           return <span prop={this.state.error.message} />;
@@ -1396,7 +1397,7 @@ describe('ReactIncrementalErrorHandling', () => {
       }
     }
     const InvalidType = undefined;
-    /** “catches reconciler errors in a boundary during mounting”中的失败函数夹具 BrokenRender：在 render 时抛出固定错误，触发目标恢复分支。 */
+    /** 返回 type=undefined 的元素；组件函数不自己抛错，child 协调生成标准 invalid-type Error。 */
     function BrokenRender(props) {
       return <InvalidType />;
     }
@@ -1423,17 +1424,17 @@ describe('ReactIncrementalErrorHandling', () => {
     );
   });
 
-  /** Given 已挂载错误边界、失败节点与正常 sibling；When 执行“catches reconciler errors in a boundary during update”定义的抛错、重试或恢复；Then 边界状态、fallback 和错误身份符合预期。验证机制：渲染树、日志及 console；对应 ReactFiberThrow、ReactFiberUnwindWork、ReactFiberWorkLoop。 */
+  /** 场景：先以 fail=false 挂载正常 span，再让同一 child 返回 undefined type；边界恢复后输出完整 invalid-type 消息及 DEV 附加说明。验证更新协调异常沿已挂载边界捕获。 */
   it('catches reconciler errors in a boundary during update', async () => {
-    /** “catches reconciler errors in a boundary during update”中的错误边界：保存捕获状态并在 children 与 fallback 间切换，隔离本例失败范围。 */
+    /** 先正常挂载、后 fail=true 返回无效 type 的错误边界，验证内部协调错误也走已有边界恢复。 */
     class ErrorBoundary extends React.Component {
-      /** ErrorBoundary.state：保存本例已捕获错误或更新阶段；初始值代表正常渲染，变化后驱动恢复分支。 */
+      /** 更新期捕获的内部 Error，null 表示未失败。 */
       state = {error: null};
-      /** ErrorBoundary.componentDidCatch：记录捕获信息并安排恢复，验证边界 commit 阶段错误处理。 */
+      /** ErrorBoundary.componentDidCatch：在 componentDidCatch 中将捕获值写入 state，排入恢复更新。 */
       componentDidCatch(error) {
         this.setState({error});
       }
-      /** ErrorBoundary.render：依据错误 state 选择原 children 或 fallback，形成“catches reconciler errors in a boundary during update”的恢复输出。 */
+      /** 正常显示 child，失败后用内部 Error 的完整消息替换输出，包含 DEV 附加信息。 */
       render() {
         if (this.state.error) {
           return <span prop={this.state.error.message} />;
@@ -1443,7 +1444,7 @@ describe('ReactIncrementalErrorHandling', () => {
     }
 
     const InvalidType = undefined;
-    /** “catches reconciler errors in a boundary during update”中的失败函数夹具 BrokenRender：在 render 时抛出固定错误，触发目标恢复分支。 */
+    /** fail=false 返回合法 span；fail=true 返回 undefined type，由 child 协调触发内部错误。 */
     function BrokenRender(props) {
       return props.fail ? <InvalidType /> : <span />;
     }
@@ -1477,7 +1478,7 @@ describe('ReactIncrementalErrorHandling', () => {
     );
   });
 
-  /** Given 已挂载错误边界、失败节点与正常 sibling；When 执行“recovers from uncaught reconciler errors”定义的抛错、重试或恢复；Then 边界状态、fallback 和错误身份符合预期。验证机制：渲染树、日志及 console；对应 ReactFiberThrow、ReactFiberUnwindWork、ReactFiberWorkLoop。 */
+  /** 场景：空根直接 render undefined type，无用户边界；waitForThrow 检查标准消息，随后 render hi span 能成功提交。验证根内部协调错误后的复用。 */
   it('recovers from uncaught reconciler errors', async () => {
     const InvalidType = undefined;
     ReactNoop.render(<InvalidType />);
@@ -1496,19 +1497,19 @@ describe('ReactIncrementalErrorHandling', () => {
     expect(ReactNoop).toMatchRenderedOutput(<span prop="hi" />);
   });
 
-  /** Given 已挂载含可观察生命周期/ref 的树；When 执行“unmounts components with uncaught errors”规定的提交失败或删除；Then 其余 commit 工作、清理顺序与错误路由保持正确。验证机制：Scheduler/console/树断言；对应 ReactFiberCommitEffects、ReactFiberWorkLoop 与 ReactFiberErrorLogger。 */
+  /** 场景：两层 Parent 包含正常 BrokenRenderAndUnmount，保存实例后在 act/flushSync 切 fail=true；最深 render 抛 Hello.，两个父卸载各抛清理错误，子卸载仍记录且根为空。internal act 收集三项错误并按顺序提供 errors 数组，验证删除清理继续与错误保留。 */
   it('unmounts components with uncaught errors', async () => {
     let inst;
 
     /** “unmounts components with uncaught errors”中的失败类夹具 BrokenRenderAndUnmount：在指定生命周期制造错误，定位 commit/unwind 边界。 */
     class BrokenRenderAndUnmount extends React.Component {
-      /** BrokenRenderAndUnmount.state：保存本例已捕获错误或更新阶段；初始值代表正常渲染，变化后驱动恢复分支。 */
+      /** fail=false 成功挂载，外部保留实例后同步切 true 触发 render 错误。 */
       state = {fail: false};
-      /** BrokenRenderAndUnmount.componentWillUnmount：在删除阶段故意抛错，验证其余卸载工作和外层边界仍能继续。 */
+      /** 只记录最深组件卸载，不抛错；前面两层 Parent 的清理错误不应阻止此日志。 */
       componentWillUnmount() {
         Scheduler.log('BrokenRenderAndUnmount componentWillUnmount');
       }
-      /** BrokenRenderAndUnmount.render：在受控条件下制造 render 错误，驱动当前错误恢复路径。 */
+      /** 暴露实例并在 fail=true 抛 Hello.；其卸载方法只记录清理，不额外抛错。 */
       render() {
         inst = this;
         if (this.state.fail) {
@@ -1518,14 +1519,14 @@ describe('ReactIncrementalErrorHandling', () => {
       }
     }
 
-    /** “unmounts components with uncaught errors”中的父级类夹具：承载失败子树并暴露父生命周期或状态恢复顺序。 */
+    /** 两层同类父节点均在卸载时抛固定错误，验证父清理失败仍会继续遍历后代。 */
     class Parent extends React.Component {
       /** Parent.componentWillUnmount：记录父子删除顺序，并确认错误 unwind 不重复或遗漏清理。 */
       componentWillUnmount() {
         Scheduler.log('Parent componentWillUnmount [!]');
         throw new Error('One does not simply unmount me.');
       }
-      /** Parent.render：输出可观察测试树，并把本例状态映射为确定的 reconciliation 输入。 */
+      /** 只透传 children，两个卸载错误与最深 render 错误分别定位。 */
       render() {
         return this.props.children;
       }
@@ -1560,7 +1561,7 @@ describe('ReactIncrementalErrorHandling', () => {
     ]);
     expect(ReactNoop).toMatchRenderedOutput(null);
 
-    // React 将两个错误合并为单个 AggregateError。
+    // internal act 聚合三项错误：原 render 错误及两个 Parent 的卸载错误。
     const errors = aggregateError.errors;
     expect(errors.length).toBe(3);
     expect(errors[0].message).toBe('Hello.');
@@ -1568,7 +1569,7 @@ describe('ReactIncrementalErrorHandling', () => {
     expect(errors[2].message).toBe('One does not simply unmount me.');
   });
 
-  /** Given 已挂载含可观察生命周期/ref 的树；When 执行“does not interrupt unmounting if detaching a ref throws”规定的提交失败或删除；Then 其余 commit 工作、清理顺序与错误路由保持正确。验证机制：Scheduler/console/树断言；对应 ReactFiberCommitEffects、ReactFiberWorkLoop 与 ReactFiberErrorLogger。 */
+  /** 场景：已挂载 Bar 的 callback ref 在 detach 时抛 Detach error；更新 Foo.hide=true 后仍记录 Bar unmount，根最终为空。验证 ref 断开失败不截断该类的卸载清理。 */
   it('does not interrupt unmounting if detaching a ref throws', async () => {
     /** “does not interrupt unmounting if detaching a ref throws”中的类夹具 Bar：用可观察生命周期限定当前错误恢复边界。 */
     class Bar extends React.Component {
@@ -1576,7 +1577,7 @@ describe('ReactIncrementalErrorHandling', () => {
       componentWillUnmount() {
         Scheduler.log('Bar unmount');
       }
-      /** Bar.render：输出可观察测试树，并把本例状态映射为确定的 reconciliation 输入。 */
+      /** 返回 Bar span；callback ref 的 attach/detach 与卸载日志可对照宿主存在性。 */
       render() {
         return <span prop="Bar" />;
       }
@@ -1591,7 +1592,7 @@ describe('ReactIncrementalErrorHandling', () => {
       Scheduler.log('barRef attach');
     }
 
-    /** Foo 组合夹具：为“does not interrupt unmounting if detaching a ref throws”装配边界、失败节点与 siblings，控制更新拓扑。 */
+    /** hide=false 保留带 callback ref 的 Bar，hide=true 删除它，触发 ref detach 错误而非 render 错误。 */
     function Foo(props) {
       return <div>{props.hide ? null : <Bar ref={barRef} />}</div>;
     }
@@ -1616,13 +1617,13 @@ describe('ReactIncrementalErrorHandling', () => {
     expect(ReactNoop).toMatchRenderedOutput(null);
   });
 
-  /** Given 已挂载错误边界、失败节点与正常 sibling；When 执行“handles error thrown by host config while working on failed root”定义的抛错、重试或恢复；Then 边界状态、fallback 和错误身份符合预期。验证机制：渲染树、日志及 console；对应 ReactFiberThrow、ReactFiberUnwindWork、ReactFiberWorkLoop。 */
+  /** 场景：空根 render 特殊 errorInBeginPhase 宿主类型；waitForThrow 接收到 Error in host config.，验证宿主 begin 错误能结束失败根的处理。 */
   it('handles error thrown by host config while working on failed root', async () => {
     ReactNoop.render(<errorInBeginPhase />);
     await waitForThrow('Error in host config.');
   });
 
-  /** Given 已挂载错误边界、失败节点与正常 sibling；When 执行“handles error thrown by top-level callback”定义的抛错、重试或恢复；Then 边界状态、fallback 和错误身份符合预期。验证机制：渲染树、日志及 console；对应 ReactFiberThrow、ReactFiberUnwindWork、ReactFiberWorkLoop。 */
+  /** 场景：正常 div 的 Root Update 提交 callback 直接抛 Error!；waitForThrow 收到同一消息，验证根提交回调错误进入统一提交错误路径。 */
   it('handles error thrown by top-level callback', async () => {
     ReactNoop.render(<div />, () => {
       throw new Error('Error!');
@@ -1630,22 +1631,22 @@ describe('ReactIncrementalErrorHandling', () => {
     await waitForThrow('Error!');
   });
 
-  /** Given 已挂载错误边界、失败节点与正常 sibling；When 执行“error boundaries capture non-errors”定义的抛错、重试或恢复；Then 边界状态、fallback 和错误身份符合预期。验证机制：渲染树、日志及 console；对应 ReactFiberThrow、ReactFiberUnwindWork、ReactFiberWorkLoop。 */
+  /** 场景：用普通对象 notAnError 作抛出值，经旧式边界 cDC 保存；fallback 使用 nonStandardMessage 为 oops，console.error 只调用一次且相应参数仍是原对象。验证任意抛出值身份与开发栈附加。 */
   it('error boundaries capture non-errors', async () => {
     spyOnProd(console, 'error').mockImplementation(() => {});
     spyOnDev(console, 'error').mockImplementation(() => {});
 
-    /** “error boundaries capture non-errors”中的错误边界：保存捕获状态并在 children 与 fallback 间切换，隔离本例失败范围。 */
+    /** 捕获普通对象的旧式边界，使用 nonStandardMessage 展示并保留原始抛出值身份供日志检查。 */
     class ErrorBoundary extends React.Component {
-      /** ErrorBoundary.state：保存本例已捕获错误或更新阶段；初始值代表正常渲染，变化后驱动恢复分支。 */
+      /** null 为正常分支，捕获的对象并非 Error 实例。 */
       state = {error: null};
-      /** ErrorBoundary.componentDidCatch：记录捕获信息并安排恢复，验证边界 commit 阶段错误处理。 */
+      /** ErrorBoundary.componentDidCatch：在 componentDidCatch 中将捕获值写入 state，排入恢复更新。 */
       componentDidCatch(error) {
-        // 不应调用。
+        // 普通对象也按原始值传给 cDC，随后以其 nonStandardMessage 恢复。
         Scheduler.log('componentDidCatch');
         this.setState({error});
       }
-      /** ErrorBoundary.render：依据错误 state 选择原 children 或 fallback，形成“error boundaries capture non-errors”的恢复输出。 */
+      /** 按任意捕获值的 nonStandardMessage 显示 fallback，不要求 Error.message。 */
       render() {
         if (this.state.error) {
           Scheduler.log('ErrorBoundary (catch)');
@@ -1660,14 +1661,14 @@ describe('ReactIncrementalErrorHandling', () => {
       }
     }
 
-    /** Indirection 中间层：增加一层 Fiber/Context 转发，验证错误栈与 unwind 不跳过祖先。 */
+    /** Indirection 记录经过中间组件的 render 日志，并透传 children。 */
     function Indirection({children}) {
       Scheduler.log('Indirection');
       return children;
     }
 
     const notAnError = {nonStandardMessage: 'oops'};
-    /** “error boundaries capture non-errors”中的失败函数夹具 BadRender：在 render 时抛出固定错误，触发目标恢复分支。 */
+    /** BadRender 抛出普通对象 notAnError，验证边界可捕获任意抛出值。 */
     function BadRender({unused}) {
       Scheduler.log('BadRender');
       throw notAnError;
@@ -1713,18 +1714,18 @@ describe('ReactIncrementalErrorHandling', () => {
 
   // TODO：错误边界不会捕获 Promise。
 
-  /** Given 已初始化本组错误处理夹具；When 执行“continues working on siblings of a component that throws”的 render/update 序列；Then 成功与失败子树按预期提交或回滚。验证机制：Noop 输出、Scheduler 与错误断言；对应 ReactFiberThrow 和 ReactFiberWorkLoop。 */
+  /** 场景：旧式边界内先放抛 oops! 的 BadRender，再放两个只记录日志的正常 sibling；两次失败尝试后 cDC 驱动 ErrorMessage，最终 fallback 可见。日志没有两个 sibling 的记录，实际验证错误后放弃边界子树，标题所称继续 sibling 没有由本例证明。 */
   it('continues working on siblings of a component that throws', async () => {
-    /** “continues working on siblings of a component that throws”中的错误边界：保存捕获状态并在 children 与 fallback 间切换，隔离本例失败范围。 */
+    /** 故障子树旁带两个成功 sibling 的旧式边界；日志检查当前实现实际放弃整个边界子树并进入 fallback。 */
     class ErrorBoundary extends React.Component {
-      /** ErrorBoundary.state：保存本例已捕获错误或更新阶段；初始值代表正常渲染，变化后驱动恢复分支。 */
+      /** 保存 oops! 后只渲染 ErrorMessage，不再访问原 sibling。 */
       state = {error: null};
-      /** ErrorBoundary.componentDidCatch：记录捕获信息并安排恢复，验证边界 commit 阶段错误处理。 */
+      /** ErrorBoundary.componentDidCatch：在 componentDidCatch 中将捕获值写入 state，排入恢复更新。 */
       componentDidCatch(error) {
         Scheduler.log('componentDidCatch');
         this.setState({error});
       }
-      /** ErrorBoundary.render：依据错误 state 选择原 children 或 fallback，形成“continues working on siblings of a component that throws”的恢复输出。 */
+      /** 记录 try/catch 并切换整棵 children；错误日志中没有 BadRenderSibling，因此不证明继续渲染这两个 sibling。 */
       render() {
         if (this.state.error) {
           Scheduler.log('ErrorBoundary (catch)');
@@ -1735,13 +1736,13 @@ describe('ReactIncrementalErrorHandling', () => {
       }
     }
 
-    /** 把捕获错误渲染为可断言文本，并记录恢复提交发生的时点。 */
+    /** 记录 fallback 的 render 日志，并返回可断言的错误文本。 */
     function ErrorMessage({error}) {
       Scheduler.log('ErrorMessage');
       return <span prop={`Caught an error: ${error.message}`} />;
     }
 
-    /** “continues working on siblings of a component that throws”中的失败函数夹具 BadRenderSibling：在 render 时抛出固定错误，触发目标恢复分支。 */
+    /** 不抛错的 sibling，只记日志并返回 null；本例实际没有访问到它，不能按名称视为失败夹具。 */
     function BadRenderSibling({unused}) {
       Scheduler.log('BadRenderSibling');
       return null;
@@ -1764,7 +1765,7 @@ describe('ReactIncrementalErrorHandling', () => {
     await waitForAll([
       'ErrorBoundary (try)',
       'throw',
-      // BadRender 抛错后继续 render siblings。
+      // 此处没有 BadRenderSibling 日志：本次失败跳过边界剩余 children。
 
       // React 再重试一次。
       'ErrorBoundary (try)',
@@ -1780,7 +1781,7 @@ describe('ReactIncrementalErrorHandling', () => {
     );
   });
 
-  /** Given 已挂载含可观察生命周期/ref 的树；When 执行“calls the correct lifecycles on the error boundary after catching an error (mixed)”规定的提交失败或删除；Then 其余 commit 工作、清理顺序与错误路由保持正确。验证机制：Scheduler/console/树断言；对应 ReactFiberCommitEffects、ReactFiberWorkLoop 与 ReactFiberErrorLogger。 */
+  /** 场景：Parent 只有 didUpdate 与 cDC，没有 didMount；初次挂载 BadRender 两次失败后捕获并更新 fallback，日志末尾为 did update。验证恢复更新选正确生命周期，不按 didUpdate 存在误调用 didMount。 */
   it('calls the correct lifecycles on the error boundary after catching an error (mixed)', async () => {
     // 此例看似刻意，但来自真实回归：
     // 实现错误检查 didUpdate 是否存在，而非 didMount；
@@ -1791,20 +1792,20 @@ describe('ReactIncrementalErrorHandling', () => {
       throw new Error('oops!');
     }
 
-    /** “calls the correct lifecycles on the error boundary after catching an error (mixed)”中的父级类夹具：承载失败子树并暴露父生命周期或状态恢复顺序。 */
+    /** 只定义 didUpdate、不定义 didMount 的旧式边界，检查挂载故障恢复不会误调用不存在的挂载回调。 */
     class Parent extends React.Component {
-      /** Parent.state：保存本例已捕获错误或更新阶段；初始值代表正常渲染，变化后驱动恢复分支。 */
+      /** error 控制 fallback，other=false 是本例不变的附加 state 字段。 */
       state = {error: null, other: false};
-      /** Parent.componentDidCatch：记录捕获信息并安排恢复，验证边界 commit 阶段错误处理。 */
+      /** Parent.componentDidCatch：在 componentDidCatch 中将捕获值写入 state，排入恢复更新。 */
       componentDidCatch(error) {
         Scheduler.log('did catch');
         this.setState({error});
       }
-      /** Parent.componentDidUpdate：观察恢复更新后的实例状态与 callback 顺序。 */
+      /** 记录 did update，捕获提交后 setState 产生的恢复更新应执行它。 */
       componentDidUpdate() {
         Scheduler.log('did update');
       }
-      /** Parent.render：输出可观察测试树，并把本例状态映射为确定的 reconciliation 输入。 */
+      /** 记录普通与错误文本分支，初次子树故障两次尝试后由 cDC 驱动 fallback 更新。 */
       render() {
         if (this.state.error) {
           Scheduler.log('render error message');
@@ -1830,17 +1831,17 @@ describe('ReactIncrementalErrorHandling', () => {
     );
   });
 
-  /** Given 已挂载错误边界、失败节点与正常 sibling；When 执行“provides component stack to the error boundary with componentDidCatch”定义的抛错、重试或恢复；Then 边界状态、fallback 和错误身份符合预期。验证机制：渲染树、日志及 console；对应 ReactFiberThrow、ReactFiberUnwindWork、ReactFiberWorkLoop。 */
+  /** 场景：旧式边界 cDC 接收 errorInfo 并存入 state；Hello child 失败后，宿主输出规范化的 BrokenRender→ErrorBoundary componentStack。验证栈是 cDC 第二实参而非 Error.message。 */
   it('provides component stack to the error boundary with componentDidCatch', async () => {
-    /** “provides component stack to the error boundary with componentDidCatch”中的错误边界：保存捕获状态并在 children 与 fallback 间切换，隔离本例失败范围。 */
+    /** 同时保存 error 与 errorInfo 的旧式边界，以输出验证 cDC 收到故障组件到边界的 componentStack。 */
     class ErrorBoundary extends React.Component {
-      /** ErrorBoundary.state：保存本例已捕获错误或更新阶段；初始值代表正常渲染，变化后驱动恢复分支。 */
+      /** 原始 Error 与提交通知提供的 errorInfo 分开保存，后者用于格式化栈。 */
       state = {error: null, errorInfo: null};
-      /** ErrorBoundary.componentDidCatch：记录捕获信息并安排恢复，验证边界 commit 阶段错误处理。 */
+      /** ErrorBoundary.componentDidCatch：在 componentDidCatch 中将捕获值写入 state，排入恢复更新。 */
       componentDidCatch(error, errorInfo) {
         this.setState({error, errorInfo});
       }
-      /** ErrorBoundary.render：依据错误 state 选择原 children 或 fallback，形成“provides component stack to the error boundary with componentDidCatch”的恢复输出。 */
+      /** errorInfo 存在时格式化 componentStack，并把源码位置规范化为 **，否则透传 children。 */
       render() {
         if (this.state.errorInfo) {
           Scheduler.log('render error message');
@@ -1878,18 +1879,18 @@ describe('ReactIncrementalErrorHandling', () => {
     );
   });
 
-  /** Given 已挂载错误边界、失败节点与正常 sibling；When 执行“does not provide component stack to the error boundary with getDerivedStateFromError”定义的抛错、重试或恢复；Then 边界状态、fallback 和错误身份符合预期。验证机制：渲染树、日志及 console；对应 ReactFiberThrow、ReactFiberUnwindWork、ReactFiberWorkLoop。 */
+  /** 场景：静态 getDerivedStateFromError 的第二形参名为 errorInfo；Hello child 失败时方法断言该参数 undefined，仍返回 Error 并显示 fallback。验证静态错误 API 仅接收原始抛出值。 */
   it('does not provide component stack to the error boundary with getDerivedStateFromError', async () => {
-    /** “does not provide component stack to the error boundary with getDerivedStateFromError”中的错误边界：保存捕获状态并在 children 与 fallback 间切换，隔离本例失败范围。 */
+    /** 静态派生错误边界，方法内部断言第二实参未提供；与有 errorInfo 的 cDC 区分。 */
     class ErrorBoundary extends React.Component {
-      /** ErrorBoundary.state：保存本例已捕获错误或更新阶段；初始值代表正常渲染，变化后驱动恢复分支。 */
+      /** 静态错误 API 返回的恢复值，驱动无 componentStack 的 fallback。 */
       state = {error: null};
       /** ErrorBoundary.getDerivedStateFromError：把 render 错误折叠为恢复 state，使下一分支渲染 fallback。 */
       static getDerivedStateFromError(error, errorInfo) {
         expect(errorInfo).toBeUndefined();
         return {error};
       }
-      /** ErrorBoundary.render：依据错误 state 选择原 children 或 fallback，形成“does not provide component stack to the error boundary with getDerivedStateFromError”的恢复输出。 */
+      /** 按 Error.message 显示 Hello，不要求第二 errorInfo 参数。 */
       render() {
         if (this.state.error) {
           return <span prop={`Caught an error: ${this.state.error.message}`} />;
@@ -1914,8 +1915,9 @@ describe('ReactIncrementalErrorHandling', () => {
     );
   });
 
-  /** Given 已初始化本组错误处理夹具；When 执行“provides component stack even if overriding prepareStackTrace”的 render/update 序列；Then 成功与失败子树按预期提交或回滚。验证机制：Noop 输出、Scheduler 与错误断言；对应 ReactFiberThrow 和 ReactFiberWorkLoop。 */
+  /** 场景：先覆盖全局 Error.prepareStackTrace 为自定义格式，再挂 cDC 边界与 Hello child；冲刷后还原该钩子，输出仍是规范化 BrokenRender→ErrorBoundary 栈。验证 React 组件栈不依赖用户 Error.stack 格式。 */
   it('provides component stack even if overriding prepareStackTrace', async () => {
+    /** 覆盖 V8 的 Error.stack 格式化钩子，按 callsite 输出自定义字段；测试 React 独立 componentStack 仍能保留组件名。冲刷后手动清除此全局钩子。 */
     Error.prepareStackTrace = function (error, callsites) {
       const stack = ['An error occurred:', error.message];
       for (let i = 0; i < callsites.length; i++) {
@@ -1930,15 +1932,15 @@ describe('ReactIncrementalErrorHandling', () => {
       return stack.join('\n');
     };
 
-    /** “provides component stack even if overriding prepareStackTrace”中的错误边界：保存捕获状态并在 children 与 fallback 间切换，隔离本例失败范围。 */
+    /** 全局 prepareStackTrace 被改写时仍保存 cDC 的独立 componentStack，用稳定组件名校验诊断不受用户格式化影响。 */
     class ErrorBoundary extends React.Component {
-      /** ErrorBoundary.state：保存本例已捕获错误或更新阶段；初始值代表正常渲染，变化后驱动恢复分支。 */
+      /** 原始故障与单独的 componentStack 信息；初始均未设置。 */
       state = {error: null, errorInfo: null};
-      /** ErrorBoundary.componentDidCatch：记录捕获信息并安排恢复，验证边界 commit 阶段错误处理。 */
+      /** ErrorBoundary.componentDidCatch：在 componentDidCatch 中将捕获值写入 state，排入恢复更新。 */
       componentDidCatch(error, errorInfo) {
         this.setState({error, errorInfo});
       }
-      /** ErrorBoundary.render：依据错误 state 选择原 children 或 fallback，形成“provides component stack even if overriding prepareStackTrace”的恢复输出。 */
+      /** 输出规范化的 componentStack，允许底层 Error.stack 使用自定义格式。 */
       render() {
         if (this.state.errorInfo) {
           Scheduler.log('render error message');
@@ -1978,7 +1980,7 @@ describe('ReactIncrementalErrorHandling', () => {
     );
   });
 
-  /** Given 已挂载错误边界、失败节点与正常 sibling；When 执行“uncaught errors should be discarded if the render is aborted”定义的抛错、重试或恢复；Then 边界状态、fallback 和错误身份符合预期。验证机制：渲染树、日志及 console；对应 ReactFiberThrow、ReactFiberUnwindWork、ReactFiberWorkLoop。 */
+  /** 场景：transition 的 Oops 已抛错并让出，输出仍为空；另一 transition 用正常文本替换根输入；act 最终成功显示文本，同时报告一次已恢复并发错误。验证被后续输入替代的故障不再作为未捕获错误终止根。 */
   it('uncaught errors should be discarded if the render is aborted', async () => {
     const root = ReactNoop.createRoot();
 
@@ -2012,7 +2014,7 @@ describe('ReactIncrementalErrorHandling', () => {
     expect(root).toMatchRenderedOutput('Everything is fine.');
   });
 
-  /** Given 已挂载错误边界、失败节点与正常 sibling；When 执行“uncaught errors are discarded if the render is aborted, case 2”定义的抛错、重试或恢复；Then 边界状态、fallback 和错误身份符合预期。验证机制：渲染树、日志及 console；对应 ReactFiberThrow、ReactFiberUnwindWork、ReactFiberWorkLoop。 */
+  /** 场景：先挂载 Oops 保存 setter，随后普通 Root 输入仍为 Oops、transition 输入换 AllGood；等 AllGood render 日志出现但尚未提交，再对当前 Oops 入队离散抛错更新。最终同步恢复采用待处理 Root 替换，显示 Everything is fine 并仅报告可恢复错误。 */
   it('uncaught errors are discarded if the render is aborted, case 2', async () => {
     const {useState} = React;
     const root = ReactNoop.createRoot();
@@ -2028,7 +2030,7 @@ describe('ReactIncrementalErrorHandling', () => {
       return null;
     }
 
-    /** 始终成功的对照组件：证明错误恢复后正常 sibling 仍可完成提交。 */
+    /** 替换整个 Root 输入的正常组件，记录并输出 Everything is fine；它不是 Oops 的 sibling。 */
     function AllGood() {
       Scheduler.log('Everything is fine.');
       return 'Everything is fine.';
@@ -2045,8 +2047,8 @@ describe('ReactIncrementalErrorHandling', () => {
         root.render(<AllGood />);
       });
 
-      // 只完成 default priority 更新；low priority 更新仍留在
-      // 队列中。
+      // default 输入已处理；transition 的 AllGood 已开始 render，并在提交前让出，
+      // 因而当前已提交树仍包含可接收下面 setter 更新的 Oops。
       await waitFor(['Everything is fine.']);
 
       // 在 child 上安排会触发错误的 discrete 更新。
@@ -2065,16 +2067,11 @@ describe('ReactIncrementalErrorHandling', () => {
     expect(root).toMatchRenderedOutput('Everything is fine.');
   });
 
-  /** Given 已挂载错误边界、失败节点与正常 sibling；When 执行“does not infinite loop if there's a render phase update in the same render as an error”定义的抛错、重试或恢复；Then 边界状态、fallback 和错误身份符合预期。验证机制：渲染树、日志及 console；对应 ReactFiberThrow、ReactFiberUnwindWork、ReactFiberWorkLoop。 */
+  /** 场景：先正常挂载 App/Child 并保存 Child setter；App.shouldThrow=true 的 render 先跨组件更新、后计数并抛 Oops!；act 捕获 Oops! 且次数小于 100，DEV 检查一次跨组件更新错误和一次未捕获错误警告。验证恢复能终止，不要求固定重试次数。 */
   it("does not infinite loop if there's a render phase update in the same render as an error", async () => {
-    // 某些 React 能力会把 render phase 更新作为
-    // 实现细节。错误若伴随 render phase
-    // 更新，React 会假定其来自内部；因为用户态触发
-    // render phase 更新不被允许，并会记录
-    // 警告。因此 React 会持续恢复，直到 opaque
-    // identifier 全部升级；但必须在若干次后
-    // 放弃，以防意外存在用户态 render phase
-    // 更新时形成无限循环。
+    // App 在 render 中调用先前保存的 Child setter，随后自身抛出 Oops。
+    // 这个组合会触发 render 阶段跨组件更新警告和错误恢复；
+    // 断言最终抛出 Oops 且抛错次数小于 100，验证恢复能终止。
 
     spyOnDev(console, 'error').mockImplementation(() => {});
     spyOnDev(console, 'warn').mockImplementation(() => {});
@@ -2082,14 +2079,14 @@ describe('ReactIncrementalErrorHandling', () => {
     let numberOfThrows = 0;
 
     let setStateInRenderPhase;
-    /** “does not infinite loop if there's a render phase update in the same render as an error”中的 Child 夹具：暴露局部更新或生命周期，验证错误恢复对后代的影响。 */
+    /** 初始挂载保存 Child setter；App 后续在自身 render 中调用它，制造跨组件 render 更新但不由 Child 抛错。 */
     function Child() {
       const [, setState] = React.useState(0);
       setStateInRenderPhase = setState;
       return 'All good';
     }
 
-    /** App 组合夹具：为“does not infinite loop if there's a render phase update in the same render as an error”装配边界、失败节点与 siblings，控制更新拓扑。 */
+    /** 正常返回 Child；shouldThrow=true 时先跨组件更新、累计次数，再抛 Oops!，用次数上限检查错误恢复能终止。 */
     function App({shouldThrow}) {
       if (shouldThrow) {
         setStateInRenderPhase();
@@ -2130,7 +2127,7 @@ describe('ReactIncrementalErrorHandling', () => {
   });
 
   if (global.__PERSISTENT__) {
-    /** Given 已挂载错误边界、失败节点与正常 sibling；When 执行“regression test: should fatal if error is thrown at the root”定义的抛错、重试或恢复；Then 边界状态、fallback 和错误身份符合预期。验证机制：渲染树、日志及 console；对应 ReactFiberThrow、ReactFiberUnwindWork、ReactFiberWorkLoop。 */
+    /** 场景：仅 persistent renderer 分支定义：空根 render 特殊文本 Error when completing root，使根完成阶段直接失败；waitForThrow 接收消息。其它构建不定义本例，验证根自身错误能触发致命结束而不寻找自身边界。 */
     it('regression test: should fatal if error is thrown at the root', async () => {
       const root = ReactNoop.createRoot();
       root.render('Error when completing root');

@@ -61,7 +61,7 @@ function prefetchDNS(href: string) {
   }
 }
 
-/** 按 crossOrigin 与 href 为当前请求发出并去重 preconnect 提示。 */
+/** 只要求href为字符串（此层允许空字符串），按crossOrigin/href去重当前请求preconnect；null/undefined跨域统一键，字符串跨域值编码tuple，无请求委托旧dispatcher。 */
 function preconnect(href: string, crossOrigin?: ?CrossOriginEnum) {
   if (typeof href === 'string') {
     const request = resolveRequest();
@@ -86,7 +86,9 @@ function preconnect(href: string, crossOrigin?: ?CrossOriginEnum) {
 }
 
 /**
- * 发出资源 preload 提示；图片使用 srcSet/sizes 构造与浏览器选择逻辑一致的去重键。
+ * 发出当前请求preload提示；href必须是字符串。图片srcSet/sizes优先于href作为身份，
+ * 其它资源按as/href构造键；先入hints再发出，后续相同键的其它options不替换首个提示。
+ * 无活动请求时委托旧dispatcher，当前模块不创建DOM元素或等待资源加载。
  */
 export function preload(
   href: string,
@@ -243,7 +245,9 @@ function preinitModuleScript(
 
 /**
  * 移除提示选项中的 null/undefined 字段，避免 Flight 用特殊字符编码无效键而膨胀负载。
- * 类型安全前提：这些选项字段全为可选，null/undefined 与属性缺失具有相同语义。
+ * 用for-in复制所有非空字段（含可枚举继承字段），保留false/0/空字符串，不修改输入；
+ * options缺失或没有保留字段时返回null，使调用者选更短的wire tuple。
+ * 类型安全前提：这些选项字段全为可选，null/undefined与缺失在提示协议中具有相同语义。
  */
 function trimOptions<
   T:
@@ -267,7 +271,8 @@ function trimOptions<
 }
 
 /**
- * 构造图片 preload 的去重键；有 srcSet 时它优先于 href，并把 sizes 纳入身份。
+ * 构造图片preload键；imageSrcSet为非空字符串时忽略href，sizes为字符串则追加对应段；
+ * 其它情况使用空占位段加href。分隔符保持图片键与其它as键区分，不解析srcSet候选。
  */
 function getImagePreloadKey(
   href: string,

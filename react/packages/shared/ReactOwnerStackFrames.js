@@ -12,8 +12,12 @@ import DefaultPrepareStackTrace from 'shared/DefaultPrepareStackTrace';
 /**
  * 从捕获的 Error 栈中裁出 JSX 创建点到 React bottom sentinel 之间的用户 owner 栈。
  *
- * @remarks 临时安装构建选择的 `prepareStackTrace`，读取后立即恢复；找不到用户空间
- * 边界时返回空串，避免把内部 frame 暴露为误导性 owner stack。
+ * @param error - JSX 创建时捕获、带有 React 栈边界标记的 Error。
+ * @returns 去掉捕获辅助帧和 bottom sentinel 后的用户帧文本；无边界则为空串。
+ * @remarks 某些引擎在首次读取 stack 时才格式化，因此读取前临时安装构建选择的
+ * `prepareStackTrace`。正常读取后恢复原值；这里没有 try/finally，若 stack getter
+ * 抛错则异常继续传播，且恢复语句不会执行。调用方负责诊断路径的异常处理。
+ * 已经格式化过的 stack 不一定再采用新 formatter；此函数仍按 sentinel 文本裁切。
  */
 export function formatOwnerStack(error: Error): string {
   const prevPrepareStackTrace = Error.prepareStackTrace;

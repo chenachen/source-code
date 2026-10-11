@@ -20,10 +20,11 @@ export default defineConfig({
     cssCodeSplit: false,
     manifest: true,
     sourcemap: true,
-    assetsInlineLimit: 100, // keep SVG as assets URL
-    emptyOutDir: false, // the dist directory is shared with other configs
+    assetsInlineLimit: 100, // 小内联阈值使 SVG 保持外部资产 URL。
+    emptyOutDir: false, // 多个配置共享 dist，保留其他配置产物。
     rolldownOptions: {
       output: {
+        /** immutable chunk 保持无 hash 文件名；custom0/1/2 分别用点、横线或无分隔符连接 hash，测试 legacy 后缀插入位置。 */
         chunkFileNames(chunkInfo) {
           if (chunkInfo.name === 'immutable-chunk') {
             return `assets/${chunkInfo.name}.js`
@@ -38,8 +39,8 @@ export default defineConfig({
     },
   },
 
-  // for tests, remove `<script type="module">` tags and remove `nomodule`
-  // attrs so that we run the legacy bundle instead.
+  // 构建后由测试 harness 调用，强制当前浏览器执行 legacy 分支。
+  /** 构建后删掉现代 script 并移除 nomodule 限制，让当前浏览器实际执行 legacy 输出进行断言。 */
   __test__() {
     const indexPath = path.resolve(import.meta.dirname, './dist/index.html')
     let index = fs.readFileSync(indexPath, 'utf-8')

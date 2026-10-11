@@ -9,6 +9,7 @@
     />
     <title>组件模型 · Vue Runtime 内核解剖</title>
     <link rel="stylesheet" href="assets/styles.css" />
+    <link rel="stylesheet" href="assets/engineering-diagrams.css" />
   </head>
   <body data-current="component.html">
     <header data-site-header></header>
@@ -29,9 +30,9 @@
         </div>
 
         <section class="article-section prose" id="component-counter-case">
-          <h2>完整用例先行：这一页只追 Counter 组件实例</h2>
+          <h2>完整用例先行：Counter 的组件生命线</h2>
           <p>
-            架构页已经证明 core 与宿主如何接线。本页不换例子：Counter 的
+            继续沿用架构页中连接 core 与宿主的 Counter：它的
             <code>setup()</code> 创建 <code>ref(0)</code> 并返回渲染函数；首次
             mount 后点击两次，微任务刷新把 <code>instance.subTree</code> 从
             button 0 更新为 button 2；最后卸载组件。
@@ -157,132 +158,338 @@ describe('runtime course: Counter', () =&gt; {
 
         <section class="article-section prose" id="component-counter-flow">
           <h2>同一用例执行图：组件从出生到更新再到销毁</h2>
-          <div
-            class="flow"
-            role="img"
-            aria-label="Counter 组件实例创建、首次渲染、点击更新和卸载的完整流程"
+          <p>
+            图中 I 是 Counter 内部实例，E 是 render effect，J 是组件 job；T0/T2
+            是两次 render 产生的 button VNode，B 是被复用的宿主
+            button。实线表示当前调用中的执行，虚线表示微任务边界。
+          </p>
+          <figure
+            class="eng-diagram"
+            id="component-counter-sequence"
+            style="--diagram-width: 1100px"
           >
-            <div class="flow-step">
-              <span class="flow-index">01</span
-              ><span class="flow-copy"
-                ><strong>patch(null, h(Counter))</strong
-                ><small
-                  >shapeFlag 命中 COMPONENT；旧 VNode 为 null，所以进入
-                  mount。</small
-                ></span
-              ><span class="flow-file">renderer.ts · patch</span>
+            <div
+              class="eng-scroll"
+              tabindex="0"
+              aria-label="工程图，可横向滚动"
+            >
+              <svg
+                class="eng-svg"
+                id="component-counter-sequence-svg"
+                viewBox="0 0 1100 960"
+                role="img"
+                aria-labelledby="component-sequence-title component-sequence-desc"
+              >
+                <title id="component-sequence-title">
+                  Counter 挂载、两次点击和卸载的跨角色时序
+                </title>
+                <desc id="component-sequence-desc">
+                  测试操作、实例与 render
+                  effect、scheduler、宿主树四条生命线。首次挂载同步调用
+                  effect.run；两次点击只排入同一个 job，微任务中 runIfDirty
+                  后复用宿主 button 更新文本。根 render 卸载在返回前刷新 post
+                  回调。
+                </desc>
+                <defs>
+                  <marker
+                    id="component-sequence-arrow"
+                    viewBox="0 0 10 10"
+                    refX="9"
+                    refY="5"
+                    markerWidth="7"
+                    markerHeight="7"
+                    orient="auto-start-reverse"
+                  >
+                    <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--brand)" />
+                  </marker>
+                </defs>
+                <g>
+                  <rect
+                    class="eng-lane"
+                    x="25"
+                    y="20"
+                    width="230"
+                    height="65"
+                    rx="12"
+                  />
+                  <rect
+                    class="eng-lane"
+                    x="295"
+                    y="20"
+                    width="230"
+                    height="65"
+                    rx="12"
+                  />
+                  <rect
+                    class="eng-lane"
+                    x="555"
+                    y="20"
+                    width="230"
+                    height="65"
+                    rx="12"
+                  />
+                  <rect
+                    class="eng-lane"
+                    x="825"
+                    y="20"
+                    width="250"
+                    height="65"
+                    rx="12"
+                  />
+                </g>
+                <text class="eng-heading" x="140" y="48" text-anchor="middle">
+                  测试 / 用户操作
+                </text>
+                <text class="eng-small" x="140" y="70" text-anchor="middle">
+                  render、count、nextTick
+                </text>
+                <text class="eng-heading" x="410" y="48" text-anchor="middle">
+                  Renderer / 实例 I
+                </text>
+                <text class="eng-small" x="410" y="70" text-anchor="middle">
+                  setup → E 执行 render / patch
+                </text>
+                <text class="eng-heading" x="670" y="48" text-anchor="middle">
+                  scheduler
+                </text>
+                <text class="eng-small" x="670" y="70" text-anchor="middle">
+                  主队列 J / post 回调
+                </text>
+                <text class="eng-heading" x="950" y="48" text-anchor="middle">
+                  宿主树
+                </text>
+                <text class="eng-small" x="950" y="70" text-anchor="middle">
+                  root 内的同一个 button B
+                </text>
+                <path
+                  class="eng-divider"
+                  d="M140 95 V935 M410 95 V935 M670 95 V935 M950 95 V935"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M140 135 H410"
+                  marker-end="url(#component-sequence-arrow)"
+                />
+                <text class="eng-label" x="275" y="119" text-anchor="middle">
+                  render(h(Counter), root)
+                </text>
+                <text class="eng-small" x="420" y="171">
+                  创建 I、setup，建立 E / J
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M410 205 H950"
+                  marker-end="url(#component-sequence-arrow)"
+                />
+                <text class="eng-label" x="680" y="190" text-anchor="middle">
+                  直接 E.run() → 首次 render → patch(null, T0)
+                </text>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="305"
+                    y="228"
+                    width="210"
+                    height="66"
+                    rx="10"
+                  />
+                  <text class="eng-label" x="410" y="254" text-anchor="middle">
+                    I.subTree = T0
+                  </text>
+                  <text class="eng-small" x="410" y="279" text-anchor="middle">
+                    I.isMounted = true
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="840"
+                    y="228"
+                    width="220"
+                    height="66"
+                    rx="10"
+                  />
+                  <text class="eng-label" x="950" y="254" text-anchor="middle">
+                    T0.el = B
+                  </text>
+                  <text class="eng-small" x="950" y="279" text-anchor="middle">
+                    B 的文本为 0
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M410 319 H140"
+                  marker-end="url(#component-sequence-arrow)"
+                />
+                <text class="eng-small" x="275" y="311" text-anchor="middle">
+                  根 render 刷 post 后返回
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M140 360 H410"
+                  marker-end="url(#component-sequence-arrow)"
+                />
+                <text class="eng-label" x="275" y="345" text-anchor="middle">
+                  两次 click：count 0 → 2
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M410 395 H670"
+                  marker-end="url(#component-sequence-arrow)"
+                />
+                <text class="eng-label" x="540" y="380" text-anchor="middle">
+                  依赖触发 → queueJob(J)
+                </text>
+                <g>
+                  <rect
+                    class="eng-note"
+                    x="25"
+                    y="420"
+                    width="230"
+                    height="82"
+                    rx="10"
+                  />
+                  <text class="eng-label" x="140" y="448" text-anchor="middle">
+                    count 已是 2
+                  </text>
+                  <text class="eng-small" x="140" y="473" text-anchor="middle">
+                    T0 / B 文本仍为 0
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="565"
+                    y="420"
+                    width="210"
+                    height="82"
+                    rx="10"
+                  />
+                  <text class="eng-label" x="670" y="448" text-anchor="middle">
+                    queue 中只有一个 J
+                  </text>
+                  <text class="eng-small" x="670" y="473" text-anchor="middle">
+                    J.flags 含 QUEUED
+                  </text>
+                </g>
+                <path class="eng-divider" d="M25 529 H1075" />
+                <text class="eng-heading" x="30" y="553">
+                  进入已预约的刷新微任务
+                </text>
+                <path
+                  class="eng-arrow eng-async"
+                  d="M670 590 H410"
+                  marker-end="url(#component-sequence-arrow)"
+                />
+                <text class="eng-label" x="540" y="576" text-anchor="middle">
+                  flushJobs：J() → E.runIfDirty()
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M410 638 H950"
+                  marker-end="url(#component-sequence-arrow)"
+                />
+                <text class="eng-label" x="680" y="623" text-anchor="middle">
+                  render T2；先写 I.subTree，再 patch(T0, T2)
+                </text>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="305"
+                    y="660"
+                    width="210"
+                    height="66"
+                    rx="10"
+                  />
+                  <text class="eng-label" x="410" y="686" text-anchor="middle">
+                    I.subTree = T2
+                  </text>
+                  <text class="eng-small" x="410" y="711" text-anchor="middle">
+                    I、E、J 都复用
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="840"
+                    y="660"
+                    width="220"
+                    height="66"
+                    rx="10"
+                  />
+                  <text class="eng-label" x="950" y="686" text-anchor="middle">
+                    T2.el = B
+                  </text>
+                  <text class="eng-small" x="950" y="711" text-anchor="middle">
+                    同一 B 的文本改为 2
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow eng-async"
+                  d="M670 760 H140"
+                  marker-end="url(#component-sequence-arrow)"
+                />
+                <text class="eng-label" x="405" y="746" text-anchor="middle">
+                  主队列与 post 完成 → 此前 await nextTick() 继续
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M140 805 H410"
+                  marker-end="url(#component-sequence-arrow)"
+                />
+                <text class="eng-label" x="275" y="790" text-anchor="middle">
+                  afterEach：render(null, root)
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M410 849 H950"
+                  marker-end="url(#component-sequence-arrow)"
+                />
+                <text class="eng-label" x="680" y="835" text-anchor="middle">
+                  scope.stop → J 标 DISPOSED → 卸载 T2 / 移除 B
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M410 886 H670"
+                  marker-end="url(#component-sequence-arrow)"
+                />
+                <text class="eng-small" x="540" y="875" text-anchor="middle">
+                  排入卸载 post 回调
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M670 932 H140"
+                  marker-end="url(#component-sequence-arrow)"
+                />
+                <text class="eng-label" x="405" y="919" text-anchor="middle">
+                  本次 render 返回前刷 post：I.isUnmounted = true，root 为空
+                </text>
+              </svg>
             </div>
-            <div class="flow-join"></div>
-            <div class="flow-step">
-              <span class="flow-index">02</span
-              ><span class="flow-copy"
-                ><strong>processComponent → mountComponent</strong
-                ><small
-                  >创建 ComponentInternalInstance，并把它同时写到
-                  initialVNode.component。</small
-                ></span
-              ><span class="flow-file">renderer.ts</span>
-            </div>
-            <div class="flow-join"></div>
-            <div class="flow-step">
-              <span class="flow-index">03</span
-              ><span class="flow-copy"
-                ><strong>setupComponent(instance)</strong
-                ><small
-                  >先 initProps/initSlots，再调用 setup；count 被返回的
-                  render/handler 闭包捕获，setupState 仍为空。</small
-                ></span
-              ><span class="flow-file">component.ts</span>
-            </div>
-            <div class="flow-join"></div>
-            <div class="flow-step">
-              <span class="flow-index">04</span
-              ><span class="flow-copy"
-                ><strong>setupRenderEffect</strong
-                ><small
-                  >创建
-                  ReactiveEffect；update=run，job=runIfDirty，scheduler=queueJob。结尾直接调用
-                  update()。</small
-                ></span
-              ><span class="flow-file">renderer.ts</span>
-            </div>
-            <div class="flow-join"></div>
-            <div class="flow-step">
-              <span class="flow-index">05</span
-              ><span class="flow-copy"
-                ><strong>首次 componentUpdateFn</strong
-                ><small
-                  >renderComponentRoot 得到 button 0，patch(null, subTree)
-                  挂载，再把 initialVNode.el 指向 subTree.el。</small
-                ></span
-              ><span class="flow-file">isMounted=false 分支</span>
-            </div>
-            <div class="flow-join"></div>
-            <div class="flow-step">
-              <span class="flow-index">06</span
-              ><span class="flow-copy"
-                ><strong>两次 click → 一个 component job</strong
-                ><small
-                  >ref 通知 effect；scheduler 去重排入 job。此时
-                  instance.subTree 与宿主文本仍为 0。</small
-                ></span
-              ><span class="flow-file">reactivity + scheduler</span>
-            </div>
-            <div class="flow-join"></div>
-            <div class="flow-step">
-              <span class="flow-index">07</span
-              ><span class="flow-copy"
-                ><strong>runIfDirty → componentUpdateFn</strong
-                ><small
-                  >renderComponentRoot 得到 button 2；prevTree 保存旧
-                  subTree，instance.subTree 先换成 nextTree，再 patch。</small
-                ></span
-              ><span class="flow-file">isMounted=true 分支</span>
-            </div>
-            <div class="flow-join"></div>
-            <div class="flow-step">
-              <span class="flow-index">08</span
-              ><span class="flow-copy"
-                ><strong>unmountComponent</strong
-                ><small
-                  >scope.stop，待执行 job 标 DISPOSED，递归卸载
-                  subTree，unmounted 钩子进入 post 队列。</small
-                ></span
-              ><span class="flow-file">renderer.ts</span>
-            </div>
-          </div>
-          <h3>按执行顺序再走一遍</h3>
-          <ol>
-            <li>
-              组件 VNode 只是一份输入；mountComponent 才创建长期存活的
-              instance。
-            </li>
-            <li>
-              setupComponent 先准备 props/slots，再执行
-              setup；本例返回函数，所以函数成为
-              <code>instance.render</code>，count 只存在于闭包。
-            </li>
-            <li>
-              setupRenderEffect 一次性把 render effect、同步 update、调度 job 与
-              instance.uid 绑在实例上。
-            </li>
-            <li>
-              首次 mount 为了立即建立依赖和 DOM，直接
-              <code>update()</code>，不经过 queueJob。
-            </li>
-            <li>
-              点击属于组件自身状态更新：ref 触发 scheduler；flush 时 runIfDirty
-              确认 dirty 后才重跑 render。
-            </li>
-            <li>
-              更新分支保存 prevTree、计算 nextTree、更新 instance.subTree，再交
-              renderer 做增量提交。
-            </li>
-            <li>
-              卸载先停 effect scope，并把已排队 job 标为
-              DISPOSED，防止“死组件”稍后重新渲染。
-            </li>
-          </ol>
+            <figcaption>
+              同一 Counter 的首次挂载走同步
+              <code>update()</code>，自身状态变化才把 J 排进微任务。<code
+                >post</code
+              >
+              是提交后的回调阶段：直接调用根
+              <code>render()</code> 时，它在返回前刷新；点击后的刷新则在
+              <code>flushJobs</code> 尾部执行。依据：<code
+                >renderer.ts · setupRenderEffect / render</code
+              >、<code>scheduler.ts · queueJob / flushJobs</code>。
+            </figcaption>
+          </figure>
+          <p>
+            <code>setup</code> 返回的 render 与事件处理器都捕获 count；本例的
+            <code>setupState</code> 仍为空。首次同步 render
+            建立依赖与子树，两次点击先改变 ref， 队列刷新再把最终值 2
+            提交给宿主树。
+          </p>
+          <p>
+            根卸载先停止 scope，再让 J 失效并移除子树。清理回调属于 post
+            阶段，但本例的
+            <code>render(null, root)</code> 在退出前已经执行该阶段；afterEach
+            的空 root 断言因此同步成立。
+          </p>
         </section>
 
         <section class="article-section prose" id="component-source-proof">
@@ -394,6 +601,379 @@ describe('runtime course: Counter', () =&gt; {
     }
 
     update()</code></pre>
+          <h3>同一实例里的对象引用，与两次 render 的快照</h3>
+          <figure
+            class="eng-diagram"
+            id="component-object-snapshots"
+            style="--diagram-width: 1100px"
+          >
+            <div
+              class="eng-scroll"
+              tabindex="0"
+              aria-label="工程图，可横向滚动"
+            >
+              <svg
+                class="eng-svg"
+                id="component-object-snapshots-svg"
+                viewBox="0 0 1100 790"
+                role="img"
+                aria-labelledby="component-objects-title component-objects-desc"
+              >
+                <title id="component-objects-title">
+                  Counter 的 VNode、内部实例、effect、job 与宿主节点引用
+                </title>
+                <desc id="component-objects-desc">
+                  组件 VNode C 与实例 I 互相引用，I 持有 effect E 与 job J，J
+                  回指 I。下方对比两次点击后刷新前和 nextTick 后：I.subTree 从
+                  T0 变成 T2，组件 VNode、实例、effect、job 和宿主 button B
+                  均保持同一对象。
+                </desc>
+                <defs>
+                  <marker
+                    id="component-objects-arrow"
+                    viewBox="0 0 10 10"
+                    refX="9"
+                    refY="5"
+                    markerWidth="7"
+                    markerHeight="7"
+                    orient="auto-start-reverse"
+                  >
+                    <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--brand)" />
+                  </marker>
+                </defs>
+                <text class="eng-heading" x="35" y="37">
+                  挂载后保留的引用与调用绑定
+                </text>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="35"
+                    y="70"
+                    width="245"
+                    height="130"
+                    rx="12"
+                  />
+                  <text class="eng-heading" x="55" y="100">组件 VNode C</text>
+                  <text class="eng-label" x="55" y="128">type = Counter</text>
+                  <text class="eng-label" x="55" y="153">component = I</text>
+                  <text class="eng-label" x="55" y="178">el = B</text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="355"
+                    y="70"
+                    width="325"
+                    height="180"
+                    rx="12"
+                  />
+                  <text class="eng-heading" x="375" y="100">内部实例 I</text>
+                  <text class="eng-label" x="375" y="128">
+                    vnode = C；effect = E
+                  </text>
+                  <text class="eng-label" x="375" y="153">job = J</text>
+                  <text class="eng-small" x="375" y="179">
+                    update = E.run.bind(E)
+                  </text>
+                  <text class="eng-small" x="375" y="203">
+                    render 的闭包捕获 count
+                  </text>
+                  <text class="eng-small" x="375" y="227">
+                    subTree = 当前 render 的结果
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="800"
+                    y="70"
+                    width="260"
+                    height="115"
+                    rx="12"
+                  />
+                  <text class="eng-heading" x="820" y="100">
+                    ReactiveEffect E
+                  </text>
+                  <text class="eng-small" x="820" y="129">
+                    fn = componentUpdateFn
+                  </text>
+                  <text class="eng-small" x="820" y="157">
+                    scheduler：queueJob(J)
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="800"
+                    y="255"
+                    width="260"
+                    height="100"
+                    rx="12"
+                  />
+                  <text class="eng-heading" x="820" y="285">调度函数 J</text>
+                  <text class="eng-small" x="820" y="312">
+                    E.runIfDirty.bind(E)
+                  </text>
+                  <text class="eng-small" x="820" y="335">
+                    J.i = I；J.id = I.uid
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M280 128 H355"
+                  marker-end="url(#component-objects-arrow)"
+                />
+                <text class="eng-small" x="316" y="117" text-anchor="middle">
+                  .component
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M355 176 H280"
+                  marker-end="url(#component-objects-arrow)"
+                />
+                <text class="eng-small" x="316" y="194" text-anchor="middle">
+                  .vnode
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M680 128 H800"
+                  marker-end="url(#component-objects-arrow)"
+                />
+                <text class="eng-small" x="740" y="117" text-anchor="middle">
+                  effect
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M680 203 H740 V287 H800"
+                  marker-end="url(#component-objects-arrow)"
+                />
+                <text class="eng-small" x="715" y="192" text-anchor="middle">
+                  job
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M930 185 V255"
+                  marker-end="url(#component-objects-arrow)"
+                />
+                <text class="eng-small" x="947" y="225">排入 J</text>
+                <path
+                  class="eng-arrow"
+                  d="M800 337 H770 V378 H520 V250"
+                  marker-end="url(#component-objects-arrow)"
+                />
+                <text class="eng-small" x="650" y="369" text-anchor="middle">
+                  J.i 回指 I
+                </text>
+                <g>
+                  <rect
+                    class="eng-note"
+                    x="35"
+                    y="270"
+                    width="440"
+                    height="95"
+                    rx="12"
+                  />
+                  <text class="eng-label" x="55" y="300">
+                    首次挂载：直接调用 update()
+                  </text>
+                  <text class="eng-label" x="55" y="325">
+                    自身状态更新：排入 J，运行前检查 dirty
+                  </text>
+                  <text class="eng-small" x="55" y="349">
+                    E 在 I.scope 中创建，scope.stop() 会停止 E
+                  </text>
+                </g>
+                <path class="eng-divider" d="M35 405 H1065" />
+                <g>
+                  <rect
+                    class="eng-lane"
+                    x="35"
+                    y="423"
+                    width="500"
+                    height="325"
+                    rx="12"
+                  />
+                  <rect
+                    class="eng-lane"
+                    x="565"
+                    y="423"
+                    width="500"
+                    height="325"
+                    rx="12"
+                  />
+                </g>
+                <text class="eng-heading" x="55" y="453">
+                  两次 click 后，flush 前：count = 2
+                </text>
+                <text class="eng-heading" x="585" y="453">
+                  await nextTick 后：count 仍为 2
+                </text>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="60"
+                    y="480"
+                    width="160"
+                    height="95"
+                    rx="10"
+                  />
+                  <text class="eng-heading" x="80" y="508">同一实例 I</text>
+                  <text class="eng-small" x="80" y="535">subTree = T0</text>
+                  <text class="eng-small" x="80" y="557">next = null</text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="290"
+                    y="480"
+                    width="220"
+                    height="95"
+                    rx="10"
+                  />
+                  <text class="eng-heading" x="310" y="508">
+                    旧 button VNode T0
+                  </text>
+                  <text class="eng-small" x="310" y="535">children = '0'</text>
+                  <text class="eng-small" x="310" y="557">el = B</text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="60"
+                    y="617"
+                    width="160"
+                    height="95"
+                    rx="10"
+                  />
+                  <text class="eng-heading" x="80" y="645">同一 VNode C</text>
+                  <text class="eng-small" x="80" y="672">component = I</text>
+                  <text class="eng-small" x="80" y="694">el = B</text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="290"
+                    y="617"
+                    width="220"
+                    height="95"
+                    rx="10"
+                  />
+                  <text class="eng-heading" x="310" y="645">宿主 button B</text>
+                  <text class="eng-label" x="310" y="676">文本为 0</text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M220 527 H290"
+                  marker-end="url(#component-objects-arrow)"
+                />
+                <text class="eng-small" x="255" y="512" text-anchor="middle">
+                  subTree
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M400 575 V617"
+                  marker-end="url(#component-objects-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M220 665 H290"
+                  marker-end="url(#component-objects-arrow)"
+                />
+                <text class="eng-small" x="255" y="650" text-anchor="middle">
+                  C.el
+                </text>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="590"
+                    y="480"
+                    width="160"
+                    height="95"
+                    rx="10"
+                  />
+                  <text class="eng-heading" x="610" y="508">同一实例 I</text>
+                  <text class="eng-small" x="610" y="535">subTree = T2</text>
+                  <text class="eng-small" x="610" y="557">next = null</text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="820"
+                    y="480"
+                    width="220"
+                    height="95"
+                    rx="10"
+                  />
+                  <text class="eng-heading" x="840" y="508">
+                    新 button VNode T2
+                  </text>
+                  <text class="eng-small" x="840" y="535">children = '2'</text>
+                  <text class="eng-small" x="840" y="557">el = B</text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="590"
+                    y="617"
+                    width="160"
+                    height="95"
+                    rx="10"
+                  />
+                  <text class="eng-heading" x="610" y="645">同一 VNode C</text>
+                  <text class="eng-small" x="610" y="672">component = I</text>
+                  <text class="eng-small" x="610" y="694">el = B</text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="820"
+                    y="617"
+                    width="220"
+                    height="95"
+                    rx="10"
+                  />
+                  <text class="eng-heading" x="840" y="645">同一个宿主 B</text>
+                  <text class="eng-label" x="840" y="676">文本改为 2</text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M750 527 H820"
+                  marker-end="url(#component-objects-arrow)"
+                />
+                <text class="eng-small" x="785" y="512" text-anchor="middle">
+                  subTree
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M930 575 V617"
+                  marker-end="url(#component-objects-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M750 665 H820"
+                  marker-end="url(#component-objects-arrow)"
+                />
+                <text class="eng-small" x="785" y="650" text-anchor="middle">
+                  C.el
+                </text>
+                <text class="eng-small" x="550" y="776" text-anchor="middle">
+                  两张快照中 C / I / E / J / B 均是同一对象；T0 与 T2 是不同的
+                  VNode。
+                </text>
+              </svg>
+            </div>
+            <figcaption>
+              <code>I.subTree</code> 在 patch 前从 T0 改为 T2；patch 复用 button
+              B，并让 <code>T2.el</code> 指向 B。自身更新没有父传的新
+              VNode，所以 <code>I.next=null</code>，组件 VNode C 也复用，<code
+                >C.el</code
+              >
+              仍指向同一 B。依据：<code
+                >renderer.ts · setupRenderEffect / componentUpdateFn /
+                patchElement</code
+              >。
+            </figcaption>
+          </figure>
           <div class="branch-grid">
             <div class="branch">
               <strong>正常路径</strong
@@ -428,22 +1008,274 @@ describe('runtime course: Counter', () =&gt; {
           </div>
 
           <h3>卸载不是一句 scope.stop：它有明确的同步与 post 阶段</h3>
-          <div
-            class="sequence"
-            role="img"
-            aria-label="组件实例从创建、setup、挂载、更新到卸载完成的状态图"
+          <figure
+            class="eng-diagram"
+            id="component-lifecycle-states"
+            style="--diagram-width: 1100px"
           >
-            <div class="sequence-item"><strong>created</strong><br /><code>subTree=null</code>，props/slots 尚待 setup。</div>
-            <div class="sequence-item"><strong>setup pending / ready</strong><br />同步结果直接继续；async setup 等 Suspense，期间可能提前卸载。</div>
-            <div class="sequence-item"><strong>mounted</strong><br /><code>isMounted=true</code>，effect/job/subTree 可用于更新。</div>
-            <div class="sequence-item"><strong>updating</strong><br /><code>next</code> 暂存父输入；job 可去重、重排或被标记失效。</div>
-            <div class="sequence-item"><strong>unmounting</strong><br />beforeUnmount → scope.stop → job DISPOSED → unmount(subTree)。</div>
-            <div class="sequence-item"><strong>unmounted</strong><br />post 队列执行 unmounted，并把 <code>isUnmounted=true</code>。</div>
-          </div>
+            <div
+              class="eng-scroll"
+              tabindex="0"
+              aria-label="工程图，可横向滚动"
+            >
+              <svg
+                class="eng-svg"
+                id="component-lifecycle-states-svg"
+                viewBox="0 0 1100 680"
+                role="img"
+                aria-labelledby="component-lifecycle-title component-lifecycle-desc"
+              >
+                <title id="component-lifecycle-title">
+                  Counter 同步挂载、待刷新、卸载与 post 完成的状态迁移
+                </title>
+                <desc id="component-lifecycle-desc">
+                  实例创建后同步挂载。依赖变更进入待刷新状态，job
+                  更新后回到已挂载。已挂载或待刷新实例都可同步卸载，先停止 scope
+                  和处置 job，再卸载子树；post 执行卸载钩子并把 isUnmounted 设为
+                  true。isMounted 不会因卸载而重置。
+                </desc>
+                <defs>
+                  <marker
+                    id="component-lifecycle-arrow"
+                    viewBox="0 0 10 10"
+                    refX="9"
+                    refY="5"
+                    markerWidth="7"
+                    markerHeight="7"
+                    orient="auto-start-reverse"
+                  >
+                    <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--brand)" />
+                  </marker>
+                </defs>
+                <text class="eng-heading" x="35" y="35">
+                  Counter 的实例 I：循环更新，分阶段结束
+                </text>
+                <g>
+                  <rect
+                    class="eng-state"
+                    x="35"
+                    y="60"
+                    width="265"
+                    height="140"
+                    rx="16"
+                  />
+                  <text class="eng-heading" x="55" y="93">实例已创建</text>
+                  <text class="eng-label" x="55" y="122">
+                    isMounted = false
+                  </text>
+                  <text class="eng-label" x="55" y="147">subTree = null</text>
+                  <text class="eng-small" x="55" y="174">
+                    scope 已建立；E / J 尚待创建
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-state"
+                    x="395"
+                    y="60"
+                    width="280"
+                    height="140"
+                    rx="16"
+                  />
+                  <text class="eng-heading" x="415" y="93">
+                    已挂载 / 可更新
+                  </text>
+                  <text class="eng-label" x="415" y="122">
+                    isMounted = true
+                  </text>
+                  <text class="eng-label" x="415" y="147">
+                    subTree = 当前 T
+                  </text>
+                  <text class="eng-small" x="415" y="174">
+                    E、J 与宿主 B 可用于后续更新
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-note"
+                    x="35"
+                    y="240"
+                    width="265"
+                    height="178"
+                    rx="12"
+                  />
+                  <text class="eng-heading" x="55" y="272">同步挂载中完成</text>
+                  <text class="eng-small" x="55" y="300">
+                    initProps / slots → setup
+                  </text>
+                  <text class="eng-small" x="55" y="326">
+                    建立 E / J，直接 update()
+                  </text>
+                  <text class="eng-small" x="55" y="352">
+                    render → patch → vnode.el
+                  </text>
+                  <text class="eng-small" x="55" y="378">
+                    mounted 钩子排入 post（若有）
+                  </text>
+                  <text class="eng-small" x="55" y="404">
+                    设置 isMounted = true
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M300 125 H395"
+                  marker-end="url(#component-lifecycle-arrow)"
+                />
+                <text class="eng-small" x="347" y="112" text-anchor="middle">
+                  同步挂载
+                </text>
+                <g>
+                  <rect
+                    class="eng-state"
+                    x="395"
+                    y="330"
+                    width="280"
+                    height="120"
+                    rx="16"
+                  />
+                  <text class="eng-heading" x="415" y="361">待刷新</text>
+                  <text class="eng-label" x="415" y="389">
+                    J 已入队 / E 已失效
+                  </text>
+                  <text class="eng-small" x="415" y="416">
+                    ref 已变；子树 / B 尚未 patch
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M445 200 V330"
+                  marker-end="url(#component-lifecycle-arrow)"
+                />
+                <text class="eng-small" x="462" y="255">ref 改变</text>
+                <text class="eng-small" x="462" y="278">queueJob(J)</text>
+                <path
+                  class="eng-arrow eng-async"
+                  d="M640 330 V200"
+                  marker-end="url(#component-lifecycle-arrow)"
+                />
+                <text class="eng-small" x="665" y="255">flushJobs → J()</text>
+                <text class="eng-small" x="665" y="278">dirty 时更新</text>
+                <g>
+                  <rect
+                    class="eng-state"
+                    x="800"
+                    y="115"
+                    width="270"
+                    height="220"
+                    rx="16"
+                  />
+                  <text class="eng-heading" x="820" y="147">同步卸载中</text>
+                  <text class="eng-small" x="820" y="176">
+                    beforeUnmount（若有）
+                  </text>
+                  <text class="eng-label" x="820" y="204">
+                    scope.active = false
+                  </text>
+                  <text class="eng-label" x="820" y="231">
+                    J.flags 含 DISPOSED
+                  </text>
+                  <text class="eng-small" x="820" y="256">
+                    卸载 T，根 render 移除宿主 B
+                  </text>
+                  <text class="eng-small" x="820" y="282">
+                    isMounted 仍为 true
+                  </text>
+                  <text class="eng-label" x="820" y="308">
+                    isUnmounted 仍为 false
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M675 120 H740 V190 H800"
+                  marker-end="url(#component-lifecycle-arrow)"
+                />
+                <text class="eng-small" x="741" y="106" text-anchor="middle">
+                  render(null)
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M675 390 H755 V300 H800"
+                  marker-end="url(#component-lifecycle-arrow)"
+                />
+                <text class="eng-small" x="717" y="414" text-anchor="middle">
+                  刷新前卸载
+                </text>
+                <g>
+                  <rect
+                    class="eng-state"
+                    x="800"
+                    y="485"
+                    width="270"
+                    height="135"
+                    rx="16"
+                  />
+                  <text class="eng-heading" x="820" y="517">
+                    post 完成 / 已卸载
+                  </text>
+                  <text class="eng-small" x="820" y="545">
+                    执行 unmounted（若有）
+                  </text>
+                  <text class="eng-label" x="820" y="573">
+                    isUnmounted = true
+                  </text>
+                  <text class="eng-small" x="820" y="598">
+                    scope 已停止，J 仍为 DISPOSED
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M935 335 V485"
+                  marker-end="url(#component-lifecycle-arrow)"
+                />
+                <text class="eng-heading" x="953" y="393">post 阶段</text>
+                <text class="eng-small" x="953" y="417">
+                  根 render 退出前刷新
+                </text>
+                <g>
+                  <rect
+                    class="eng-note"
+                    x="35"
+                    y="495"
+                    width="640"
+                    height="125"
+                    rx="12"
+                  />
+                  <text class="eng-heading" x="55" y="527">
+                    阻止后续更新的两个机制
+                  </text>
+                  <text class="eng-label" x="55" y="556">
+                    scope.stop() 停止 E 与组件 scope 中的其他 effect
+                  </text>
+                  <text class="eng-label" x="55" y="585">
+                    队列中的 J 即使还在，scheduler 也会因 DISPOSED 跳过它
+                  </text>
+                  <text class="eng-small" x="55" y="608">
+                    同步清理先发生；isUnmounted 的赋值位于 post 回调中
+                  </text>
+                </g>
+                <text class="eng-small" x="35" y="655">
+                  状态名概括执行阶段；源码用字段与标记判断，并没有这一套阶段枚举。
+                </text>
+              </svg>
+            </div>
+            <figcaption>
+              状态更新不会创建新实例，只让同一个 I
+              在“已挂载”和“待刷新”之间循环。卸载同步停止 scope、标记
+              J、移除子树；<code>isUnmounted</code> 在 post 回调中才置
+              true，<code>isMounted</code>
+              不会重置。图中刷新前卸载是源码支持的另一分支；上方 Counter 测试在
+              nextTick 后卸载。依据：<code
+                >renderer.ts · unmountComponent / render</code
+              >
+              与 <code>scheduler.ts · flushJobs</code>。
+            </figcaption>
+          </figure>
           <details class="source-layer">
             <summary>renderer.ts · unmountComponent（连续源码）</summary>
             <div>
-              <pre data-source-file="vue/packages/runtime-core/src/renderer.ts"><code>  const unmountComponent = (
+              <pre
+                data-source-file="vue/packages/runtime-core/src/renderer.ts"
+              ><code>  const unmountComponent = (
     instance: ComponentInternalInstance,
     parentSuspense: SuspenseBoundary | null,
     doRemove?: boolean,
@@ -497,9 +1329,13 @@ describe('runtime course: Counter', () =&gt; {
             </div>
           </details>
           <details class="source-layer">
-            <summary>apiLifecycle.spec.ts · onUnmounted 在子树移除后执行</summary>
+            <summary>
+              apiLifecycle.spec.ts · onUnmounted 在子树移除后执行
+            </summary>
             <div>
-              <pre data-source-file="vue/packages/runtime-core/__tests__/apiLifecycle.spec.ts"><code>  // 测试场景：onUnmounted 在组件子树与副作用完成清理后调用。
+              <pre
+                data-source-file="vue/packages/runtime-core/__tests__/apiLifecycle.spec.ts"
+              ><code>  // onUnmounted 执行时，子组件节点已移除并替换为父级空分支。
   it('onUnmounted', async () =&gt; {
     const toggle = ref(true)
     const root = nodeOps.createElement('div')
@@ -673,9 +1509,8 @@ describe('runtime course: Counter', () =&gt; {
             </table>
           </div>
           <div class="callout">
-            实例字段很多，是因为它要避免通过全局表查找状态。绝大多数热路径都能从当前
-            instance
-            直接拿到下一步数据，这是一种以对象体积换运行时局部性的选择。
+            Renderer、scheduler、props/slots 与生命周期处理共享同一个内部实例。
+            各阶段把输入、渲染结果、任务与清理状态保存在对应字段中，下一阶段据此继续执行。
           </div>
           <div class="source-links">
             <a
@@ -703,8 +1538,8 @@ describe('runtime course: Counter', () =&gt; {
               等上下文。
             </li>
             <li>
-              创建 propsOptions、emitsOptions、accessCache、ctx
-              等空状态，并准备公共实例代理 target。
+              规范化 propsOptions 与 emitsOptions，并创建公共代理的 ctx target。
+              accessCache 此时为 null，要到 setupStatefulComponent 才创建。
             </li>
             <li>
               把 emit 绑定到实例，但暂不初始化 props、slots，也不执行 setup。
@@ -715,55 +1550,16 @@ describe('runtime course: Counter', () =&gt; {
             需要先拿到一个可引用实例，Suspense、HMR、Devtools
             和错误处理才能在后续用户代码执行时拥有明确归属。
           </p>
-          <div class="diagram">
-            <div class="diagram-title">INSTANCE BOOTSTRAP</div>
-            <div class="flow">
-              <div class="flow-step">
-                <span class="flow-index">01</span>
-                <div class="flow-copy">
-                  <strong>mountComponent</strong
-                  ><small>为组件 VNode 创建内部实例。</small>
-                </div>
-                <span class="flow-file">renderer.ts</span>
-              </div>
-              <div class="flow-join"></div>
-              <div class="flow-step">
-                <span class="flow-index">02</span>
-                <div class="flow-copy">
-                  <strong>createComponentInstance</strong
-                  ><small
-                    >建立父子、应用、effect scope、缓存与生命周期槽位。</small
-                  >
-                </div>
-                <span class="flow-file">component.ts</span>
-              </div>
-              <div class="flow-join"></div>
-              <div class="flow-step">
-                <span class="flow-index">03</span>
-                <div class="flow-copy">
-                  <strong>setupComponent</strong
-                  ><small>初始化 props/slots，区分状态组件与函数组件。</small>
-                </div>
-                <span class="flow-file">component.ts</span>
-              </div>
-              <div class="flow-join"></div>
-              <div class="flow-step">
-                <span class="flow-index">04</span>
-                <div class="flow-copy">
-                  <strong>setupRenderEffect</strong
-                  ><small
-                    >Renderer 创建 effect 和 job，首次执行组件更新函数。</small
-                  >
-                </div>
-                <span class="flow-file">renderer.ts</span>
-              </div>
-            </div>
-          </div>
+          <p>
+            完成挂载后的
+            <a href="#component-object-snapshots">对象引用与更新快照</a>
+            展示实例如何继续持有 effect、job 和当前子树。
+          </p>
         </section>
 
         <section class="article-section prose" id="setup">
           <h2>setupComponent：把 VNode 输入转换为可执行组件</h2>
-          <p>初始化顺序不是偶然：</p>
+          <p>有状态组件按以下顺序完成初始化：</p>
           <div class="sequence">
             <div class="sequence-item">
               <strong>initProps</strong><br />先把 rawProps 拆成已声明 props 与
@@ -774,8 +1570,14 @@ describe('runtime course: Counter', () =&gt; {
               flag 规范化 children，使 setup 能读取 slots。
             </div>
             <div class="sequence-item">
-              <strong>setupStatefulComponent</strong><br />创建公共 Proxy，设置
-              currentInstance，暂停依赖追踪后调用用户 setup。
+              <strong>setupStatefulComponent</strong><br />创建访问缓存与公共
+              Proxy； 暂停追踪，设置 currentInstance 和活动 scope，再调用用户
+              setup。
+            </div>
+            <div class="sequence-item">
+              <strong>恢复 setup 调用上下文</strong><br />用户 setup
+              同步调用返回后， 立即恢复 tracking、currentInstance 和
+              scope，再分派返回值；Promise 也先退出此窗口。
             </div>
             <div class="sequence-item">
               <strong>handleSetupResult</strong><br />函数结果成为
@@ -783,11 +1585,8 @@ describe('runtime course: Counter', () =&gt; {
             </div>
             <div class="sequence-item">
               <strong>finishComponentSetup</strong><br />若仍无 render，使用组件
-              render 或运行时编译 template；随后应用 Options API。
-            </div>
-            <div class="sequence-item">
-              <strong>恢复上下文</strong><br />重置 currentInstance、tracking 与
-              scope，确保错误或异步路径不泄漏到兄弟组件。
+              render 或运行时编译 template；应用 Options API
+              时另开实例与暂停追踪的窗口， 并用 finally 恢复该窗口。
             </div>
           </div>
 
@@ -806,10 +1605,13 @@ describe('runtime course: Counter', () =&gt; {
             Suspense 时开发环境会提示，因为组件无法同步完成首次 render。
           </p>
           <div class="callout warm">
-            async setup 最难的不是等待
-            Promise，而是等待期间组件可能被卸载、分支可能切换、HMR 可能
-            reload。resolve 时必须核对实例和 Suspense 的
-            pendingId，避免把过期结果提交到新分支。
+            resolve 回调先检查
+            <code>instance.isUnmounted</code
+            >、<code>suspense.isUnmounted</code>， 以及
+            <code>suspense.pendingId !== instance.suspenseId</code
+            >；任一命中就返回。 通过后才标记 asyncResolved、处理 setup
+            结果并建立 render effect，最后清除占位； 注册时参与 pending
+            计数的依赖全部完成后，边界再 resolve。
           </div>
         </section>
 
@@ -829,9 +1631,9 @@ describe('runtime course: Counter', () =&gt; {
               <span class="card-label">SLOTS</span>
               <h3>函数决定执行上下文</h3>
               <p>
-                slot 是延迟执行的 render 函数。withCtx
-                恢复父组件渲染上下文，并控制 block
-                tracking，避免动态节点被错误收集到调用方。
+                slot 是延迟执行的 render 函数。withCtx 恢复声明方的资源解析与
+                scopeId 上下文，并控制 block
+                tracking；响应式依赖仍由调用插槽时的活动 effect 收集。
               </p>
             </article>
           </div>
@@ -842,13 +1644,243 @@ describe('runtime course: Counter', () =&gt; {
             必须同时判断 props 变化和 slot 稳定性：稳定编译 slot
             通常不要求子组件因父更新重渲染；手写或动态 slot 则需要保守更新。
           </p>
-          <div class="callout">
-            <strong>这里收窄到可验证的行为：</strong><code>componentProps.spec.ts · component props</code>
-            覆盖声明 props 的新增、更新与删除；<code>componentSlots.spec.ts · initSlots: instance.slots should be set correctly</code>
-            覆盖 slots 写入实例；<code>components/Suspense.spec.ts</code> 的
-            <code>async component should receive updated props/slots when resolved</code>
-            覆盖 async setup 等待期间父输入更新。更细的 Boolean/default 转换与 slot flag 快路径应回到对应文件和测试逐项核对，本页不把它们都算作 Counter 已证明的结论。
+          <h3 id="component-props-casting">
+            default 与 Boolean：先补默认值，再做布尔转换
+          </h3>
+          <p>
+            <code>normalizePropsOptions</code> 预先把需要 default 或 Boolean
+            转换的键放进 <code>needCastKeys</code>。<code>setFullProps</code>
+            先写普通 props，再逐个调用
+            <code>resolvePropValue</code
+            >，所以默认值工厂收到的是当前正在初始化的 props 对象。
+          </p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>输入与声明</th>
+                  <th>解析结果</th>
+                  <th>决定分支</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>值为 undefined，声明了 default</td>
+                  <td>使用默认值；显式 null 保留</td>
+                  <td>先判断 hasDefault 与 value === undefined</td>
+                </tr>
+                <tr>
+                  <td>default 为函数，type 不是 Function 且未设 skipFactory</td>
+                  <td>
+                    调用工厂并按实例、prop 缓存；以后再次需要默认值时复用结果
+                  </td>
+                  <td>
+                    propsDefaults[key]；执行时设置 currentInstance，支持 inject
+                  </td>
+                </tr>
+                <tr>
+                  <td>type 为 Function，default 为函数</td>
+                  <td>函数本身成为默认值</td>
+                  <td>跳过工厂调用</td>
+                </tr>
+                <tr>
+                  <td>Boolean prop 缺失，且未声明 default</td>
+                  <td>false</td>
+                  <td>isAbsent &amp;&amp; !hasDefault</td>
+                </tr>
+                <tr>
+                  <td>Boolean prop 的值为空串或连字符形式的同名字符串</td>
+                  <td>
+                    单独声明 Boolean 或 Boolean 先于 String 时转为
+                    true；[String, Boolean] 保留字符串
+                  </td>
+                  <td>normalizePropsOptions 按类型顺序设置 shouldCastTrue</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
+          <p>
+            <strong>源码摘录：</strong
+            ><code>componentProps.ts · resolvePropValue</code>，Vue 3.5.41
+            连续函数原文。
+          </p>
+          <pre
+            data-source-file="vue/packages/runtime-core/src/componentProps.ts"
+          ><code>function resolvePropValue(
+  options: NormalizedProps,
+  props: Data,
+  key: string,
+  value: unknown,
+  instance: ComponentInternalInstance,
+  isAbsent: boolean,
+) {
+  const opt = options[key]
+  if (opt != null) {
+    const hasDefault = hasOwn(opt, 'default')
+    // 只有值为 undefined 时应用 default；显式 null 会保留。
+    if (hasDefault &amp;&amp; value === undefined) {
+      const defaultValue = opt.default
+      if (
+        opt.type !== Function &amp;&amp;
+        !opt.skipFactory &amp;&amp;
+        isFunction(defaultValue)
+      ) {
+        const { propsDefaults } = instance
+        if (key in propsDefaults) {
+          value = propsDefaults[key]
+        } else {
+          const reset = setCurrentInstance(instance)
+          value = propsDefaults[key] = defaultValue.call(
+            __COMPAT__ &amp;&amp;
+              isCompatEnabled(DeprecationTypes.PROPS_DEFAULT_THIS, instance)
+              ? createPropsDefaultThis(instance, props, key)
+              : null,
+            props,
+          )
+          reset()
+        }
+      } else {
+        value = defaultValue
+      }
+      // #9006：自定义元素的默认 prop 也需反射进 VueElement 内部状态，否则元素属性未传
+      // 值时组件与宿主 `_props` 会不一致。
+      if (instance.ce) {
+        instance.ce._setProp(key, value)
+      }
+    }
+    // Boolean 缺失且无 default → false；空串或同名 attribute → true（除非 String 优先）。
+    if (opt[BooleanFlags.shouldCast]) {
+      if (isAbsent &amp;&amp; !hasDefault) {
+        value = false
+      } else if (
+        opt[BooleanFlags.shouldCastTrue] &amp;&amp;
+        (value === '' || value === hyphenate(key))
+      ) {
+        value = true
+      }
+    }
+  }
+  return value
+}</code></pre>
+          <p>
+            <code>componentProps.spec.ts · boolean casting</code>
+            断言缺失、空串、同名字符串与其他字符串的结果；
+            <code>default value</code> 断言 Function
+            类型保留默认函数，以及父更新后默认对象引用和工厂调用次数不变。
+            默认对象缓存的 watcher 用例还断言：只更新 bar 时，监听 foo
+            的回调次数仍为零。
+          </p>
+          <h3 id="component-slot-fast-path">
+            slot 快路径：稳定性标记约束更新方式
+          </h3>
+          <p>
+            编译 slots 对象的 <code>_</code> 是
+            <code>SlotFlags</code>；插槽函数的 <code>_c</code> 是另一种标记，供
+            renderSlot 等调用方控制 block tracking。
+            <code>STABLE</code> 表示插槽能在执行时收集自身依赖，并不保证父
+            render 每次产生相同函数引用。
+          </p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>updateSlots 输入</th>
+                  <th>映射更新</th>
+                  <th>旧键清理</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>optimized 且编译标记为 STABLE</td>
+                  <td>跳过复制</td>
+                  <td>跳过</td>
+                </tr>
+                <tr>
+                  <td>动态编译 slots，或未优化的稳定编译 slots</td>
+                  <td>直接复制已标准化函数</td>
+                  <td>删除新输入中已不存在的 slot</td>
+                </tr>
+                <tr>
+                  <td>手写 slots，没有编译标记</td>
+                  <td>规范化值和函数，绑定声明方渲染上下文</td>
+                  <td>$stable 为真时跳过，否则删除消失的键</td>
+                </tr>
+                <tr>
+                  <td>开发环境父模板 HMR</td>
+                  <td>强制复制，并触发读取 $slots 的依赖</td>
+                  <td>继续检查</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            <strong>源码摘录：</strong
+            ><code>componentSlots.ts · updateSlots</code>，Vue 3.5.41
+            连续函数原文。
+          </p>
+          <pre
+            data-source-file="vue/packages/runtime-core/src/componentSlots.ts"
+          ><code>export const updateSlots = (
+  instance: ComponentInternalInstance,
+  children: VNodeNormalizedChildren,
+  optimized: boolean,
+): void =&gt; {
+  const { vnode, slots } = instance
+  let needDeletionCheck = true
+  let deletionComparisonTarget = EMPTY_OBJ
+  if (vnode.shapeFlag &amp; ShapeFlags.SLOTS_CHILDREN) {
+    const type = (children as RawSlots)._
+    if (type) {
+      // 编译 slots 携带稳定性标志。
+      if (__DEV__ &amp;&amp; isHmrUpdating) {
+        // 父模板 HMR 后内容/函数可能改变，强制复制并通知读取 `$slots` 的依赖。
+        assignSlots(slots, children as Slots, optimized)
+        trigger(instance, TriggerOpTypes.SET, '$slots')
+      } else if (optimized &amp;&amp; type === SlotFlags.STABLE) {
+        // 稳定编译 slots 能在执行时收集自身依赖；优化更新跳过映射复制和删除检查。
+        // STABLE 不保证父组件每次 render 生成的 slot 函数引用相同。
+        needDeletionCheck = false
+      } else {
+        // 动态编译 slots 或未启用优化的稳定 slots：复制映射，函数无需再次标准化。
+        assignSlots(slots, children as Slots, optimized)
+      }
+    } else {
+      needDeletionCheck = !(children as RawSlots).$stable
+      normalizeObjectSlots(children as RawSlots, slots, instance)
+    }
+    deletionComparisonTarget = children as RawSlots
+  } else if (children) {
+    // 直接值 children 作为 default slot，删除比较目标只含 default。
+    normalizeVNodeSlots(instance, children)
+    deletionComparisonTarget = { default: 1 }
+  }
+
+  // 动态键集合可能缩小，清除旧函数避免 `$slots.foo` 残留。
+  if (needDeletionCheck) {
+    for (const key in slots) {
+      if (!isInternalKey(key) &amp;&amp; deletionComparisonTarget[key] == null) {
+        delete slots[key]
+      }
+    }
+  }
+}</code></pre>
+          <p>
+            <code>componentSlots.spec.ts</code> 的编译动态 slot 用例把
+            <code>one</code> 切成 <code>two</code>，断言旧键删除、新键写入；两个
+            <code>$stable</code> 用例断言 props
+            不变时的子组件渲染次数不同，props 改变时两者仍更新。
+            <code
+              >components/Suspense.spec.ts · async component should receive
+              updated props/slots when resolved</code
+            >
+            断言异步 setup 完成后使用父级等待期间更新的输入。
+          </p>
+          <p>
+            props 值比较会跳过已声明事件监听器的函数变化；完整比较仍先检查原始
+            props 键数， 所以新增或删除监听器可能触发子组件更新。手写 slots 的
+            <code>$stable</code> 是调用方的稳定性提示，
+            不是编译器推导；错误地声明为真会跳过必要的更新或旧键清理。
+          </p>
           <div class="source-links">
             <a
               class="source-link"
@@ -905,9 +1937,12 @@ describe('runtime course: Counter', () =&gt; {
             </div>
           </div>
           <p>
-            Options 初始化期间会暂时关闭缓存，因为
-            inject、methods、data、computed 正在依次写入 ctx。若过早把一个 key
-            缓存为 OTHER，后面新增的同名字段将永远无法被找到。
+            inject、methods、data 初始化期间暂时禁止把未命中的 key 缓存为
+            OTHER，避免 data() 中提前访问尚未建立的 data
+            字段后跳过后续查找；已找到来源的 key 仍可缓存。 data
+            初始化完成就恢复 OTHER 缓存，然后才创建 computed。computed 位于
+            ctx； 即使 key 已缓存为 OTHER，getter 仍继续检查 ctx 和
+            globalProperties。
           </p>
         </section>
 
@@ -1020,8 +2055,8 @@ update()</code></pre>
               <tbody>
                 <tr>
                   <td><strong>beforeMount</strong></td>
-                  <td>首次 subTree patch 前</td>
-                  <td>宿主节点尚未插入，可观察挂载前状态</td>
+                  <td>首次 render 前，setup 与 Options API 已完成</td>
+                  <td>尚未创建、插入宿主子树，可观察初始化后的组件状态</td>
                 </tr>
                 <tr>
                   <td><strong>mounted</strong></td>
@@ -1052,8 +2087,8 @@ update()</code></pre>
             </table>
           </div>
           <div class="callout">
-            组件章节的最终产物不是 DOM，而是一个可被 scheduler 反复触发的 render
-            effect。下一章从 effect 产生的 VNode 出发，进入 renderer
+            组件实例持有可被 scheduler 反复触发的 render effect，以及它生成的
+            subTree。 下一章从 effect 产生的 VNode 出发，进入 renderer
             的增量提交算法。
           </div>
         </section>
@@ -1087,23 +2122,48 @@ update()</code></pre>
                     清理
                   </td>
                   <td>
-                    <a href="#component-counter-flow">8 步组件生命线</a>，图后 7
-                    步复述
+                    <a href="#component-counter-sequence">Counter 跨角色时序</a
+                    >与同步、微任务、post 边界解释
                   </td>
                 </tr>
                 <tr>
                   <td>组件卸载与生命周期时点</td>
                   <td><code>renderer.ts · unmountComponent</code> 连续原文</td>
                   <td><code>apiLifecycle.spec.ts · onUnmounted</code></td>
-                  <td><a href="#component-source-proof">实例六状态图</a></td>
+                  <td>
+                    <a href="#component-lifecycle-states">生命周期状态图</a>
+                  </td>
+                </tr>
+                <tr>
+                  <td>props 默认值、工厂缓存与 Boolean 转换</td>
+                  <td>
+                    <code>componentProps.ts · resolvePropValue</code>
+                    连续原文；类型顺序见 normalizePropsOptions
+                  </td>
+                  <td>
+                    <code
+                      >componentProps.spec.ts · boolean casting / default
+                      value</code
+                    >
+                  </td>
+                  <td><a href="#component-props-casting">转换规则表</a></td>
+                </tr>
+                <tr>
+                  <td>稳定、动态与手写 slots 更新</td>
+                  <td><code>componentSlots.ts · updateSlots</code> 连续原文</td>
+                  <td>
+                    <code>componentSlots.spec.ts</code> 的动态键切换与 $stable
+                    用例
+                  </td>
+                  <td><a href="#component-slot-fast-path">快路径表</a></td>
                 </tr>
               </tbody>
             </table>
           </div>
           <p class="reader-check">
-            <strong>结论：</strong>首次 update、状态自更新 job、subTree
-            前后状态、shouldUpdate 提前退出与卸载清理已有直接证据；props/slots/async
-            的细分规则由相邻测试定位，不把 Counter 的最终 DOM 断言扩大成全覆盖。
+            Counter 用例贯穿实例创建、首次 render、状态触发 job、subTree
+            更新与卸载； props 默认值、Boolean 转换和 slots
+            更新规则分别由上文的源码与对应测试说明。
           </p>
         </section>
 
@@ -1123,7 +2183,7 @@ update()</code></pre>
         ><a href="#public-instance">公共 Proxy</a
         ><a href="#render-effect">Render Effect</a
         ><a href="#lifecycle">生命周期</a
-              ><a href="#component-evidence">源码与测试</a>
+        ><a href="#component-evidence">源码与测试</a>
       </aside>
     </div>
     <footer data-site-footer></footer>

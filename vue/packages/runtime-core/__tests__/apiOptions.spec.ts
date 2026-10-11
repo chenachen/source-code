@@ -1,6 +1,5 @@
 /**
- * 测试阅读说明：本文件验证 `runtime-core/apiOptions` 的运行时行为。
- * “测试组”概括共享前置条件，“测试场景”说明当前输入、边界或历史回归目标；具体预期以断言为准。
+ * 挂载 Options API 组件，验证状态更新、watch 回调、依赖注入、生命周期顺序和选项合并结果。
  */
 /**
  * @vitest-environment jsdom
@@ -22,20 +21,29 @@ import {
 } from '@vue/runtime-test'
 import { render as domRender } from 'vue'
 
-// 测试组：api：选项。
+// Options API 的初始化、更新与选项合并。
 describe('api: options', () => {
-  // 测试场景：数据。
+  // data 返回的 foo 通过 this 参与渲染，点击递增后从 1 更新为 2。
   test('data', async () => {
     const Comp = defineComponent({
+      /**
+       * 建立每实例初始 data：`{ foo: 1, }`。
+       */
       data() {
         return {
           foo: 1,
         }
       },
+      /**
+       * 渲染结果为 `h('div', { onClick: () => { this.foo++; }, }, this.foo)`。
+       */
       render() {
         return h(
           'div',
           {
+            /**
+             * 修改或记录 `this.foo`。
+             */
             onClick: () => {
               this.foo++
             },
@@ -53,24 +61,39 @@ describe('api: options', () => {
     expect(serializeInner(root)).toBe(`<div>2</div>`)
   })
 
-  // 测试场景：Options API computed 按需求值、缓存，并通过 this 访问组件状态。
+  // 普通 computed getter 通过 this 读取 foo，箭头 getter 通过 vm 读取 bar；点击改变 foo 后渲染结果由 5 变为 7。
   test('computed', async () => {
     const Comp = defineComponent({
+      /**
+       * 建立每实例初始 data：`{ foo: 1, }`。
+       */
       data() {
         return {
           foo: 1,
         }
       },
       computed: {
+        /**
+         * 返回 `this.foo + 1`。
+         */
         bar(): number {
           return this.foo + 1
         },
+        /**
+         * 返回 `vm.bar + 1`。
+         */
         baz: (vm: any): number => vm.bar + 1,
       },
+      /**
+       * 渲染结果为 `h('div', { onClick: () => { this.foo++; }, }, this.bar + this.baz)`。
+       */
       render() {
         return h(
           'div',
           {
+            /**
+             * 修改或记录 `this.foo`。
+             */
             onClick: () => {
               this.foo++
             },
@@ -88,24 +111,36 @@ describe('api: options', () => {
     expect(serializeInner(root)).toBe(`<div>7</div>`)
   })
 
-  // 测试场景：方法。
+  // methods 作为事件回调仍绑定组件 this；data 中重新绑定 incBy 的参数后，两次事件分别递增 1 和 2。
   test('methods', async () => {
     const Comp = defineComponent({
+      /**
+       * 建立每实例初始 data：`{ foo: 1, }`；并记录 `this.incBy` 供外层检查。
+       */
       data() {
-        // #3300 method on ctx should be overwritable
+        // #3300：data 初始化期间可重新赋值 ctx 中已绑定的方法。
         this.incBy = this.incBy.bind(this, 2)
         return {
           foo: 1,
         }
       },
       methods: {
+        /**
+         * 作为 click 回调递增 this.foo，脱离直接方法调用时仍应绑定组件公共 this。
+         */
         inc() {
           this.foo++
         },
+        /**
+         * 把 this.foo 增加 n；data 中预绑定 n=2 后，foo 事件即使不传参数仍应增加 2。
+         */
         incBy(n = 0) {
           this.foo += n
         },
       },
+      /**
+       * 渲染结果为 `h('div', { onClick: this.inc, onFoo: this.incBy, }, this.foo)`。
+       */
       render() {
         return h(
           'div',
@@ -130,18 +165,27 @@ describe('api: options', () => {
     expect(serializeInner(root)).toBe(`<div>4</div>`)
   })
 
-  // 测试场景：组件自身 methods 与 globalProperties 同名时，应优先解析组件方法。
+  // 组件 methods.foo 与 globalProperties.foo 同名时，渲染调用组件方法并得到 foo。
   test("component's own methods have higher priority than global properties", async () => {
     const app = createApp({
       methods: {
+        /**
+         * 返回 `'foo'`。
+         */
         foo() {
           return 'foo'
         },
       },
+      /**
+       * 渲染结果为 `this.foo()`。
+       */
       render() {
         return this.foo()
       },
     })
+    /**
+     * 提供返回 bar 的全局同名函数，与组件 methods.foo 返回 foo 竞争；渲染结果用来判断查找优先级。
+     */
     app.config.globalProperties.foo = () => 'bar'
 
     const root = nodeOps.createElement('div')
@@ -149,8 +193,11 @@ describe('api: options', () => {
     expect(serializeInner(root)).toBe(`foo`)
   })
 
-  // 测试场景：Options API watch 解析字符串、函数和对象写法并按配置触发。
+  // watch 覆盖方法名、函数、handler 对象、deep 与点路径；逐次改值检查新旧值和回调 this。
   test('watch', async () => {
+    /**
+     * 返回实际回调 this，供 spy.mock.results 检查 watcher 是否绑定组件公共实例。
+     */
     function returnThis(this: any) {
       return this
     }
@@ -162,6 +209,9 @@ describe('api: options', () => {
 
     let ctx: any
     const Comp = {
+      /**
+       * 建立每实例初始 data：`{ foo: 1, bar: 2, baz: { qux: 3, }, qux: 4, dot: { path: 5, }, }`。
+       */
       data() {
         return {
           foo: 1,
@@ -176,9 +226,9 @@ describe('api: options', () => {
         }
       },
       watch: {
-        // string method name
+        // 处理器使用 methods 中的方法名。
         foo: 'onFooChange',
-        // direct function
+        // 直接使用函数作为处理器。
         bar: spyB,
         baz: {
           handler: spyC,
@@ -193,6 +243,9 @@ describe('api: options', () => {
         onFooChange: spyA,
         onQuxChange: spyD,
       },
+      /**
+       * 同时记录 `ctx` 供 render 后的断言检查。
+       */
       render() {
         ctx = this
       },
@@ -200,6 +253,9 @@ describe('api: options', () => {
     const root = nodeOps.createElement('div')
     render(h(Comp), root)
 
+    /**
+     * 检查指定次 spy 回调的前两个参数内容和返回的 this；callIndex 选择记录，args 只比较新旧值，不约束 cleanup 参数。
+     */
     function assertCall(spy: Mock, callIndex: number, args: any[]) {
       expect(spy.mock.calls[callIndex].slice(0, 2)).toMatchObject(args)
       expect(spy.mock.results[callIndex].value).toBe(ctx)
@@ -218,7 +274,7 @@ describe('api: options', () => {
     ctx.baz.qux++
     await nextTick()
     expect(spyC).toHaveBeenCalledTimes(1)
-    // new and old objects have same identity
+    // 深度修改未替换源对象，新旧参数都表示当前同一对象内容；此断言比较内容。
     assertCall(spyC, 0, [{ qux: 4 }, { qux: 4 }])
 
     ctx.qux++
@@ -232,8 +288,11 @@ describe('api: options', () => {
     assertCall(spyE, 0, [6, 5])
   })
 
-  // 测试场景：watch数组。
+  // watch 的处理器数组支持方法名、函数与 deep 对象写法，逐次改值检查回调参数和 this。
   test('watch array', async () => {
+    /**
+     * 数组形式 watch 的回调探针，返回调用时 this，检查处理器展开后仍绑定同一组件。
+     */
     function returnThis(this: any) {
       return this
     }
@@ -243,6 +302,9 @@ describe('api: options', () => {
 
     let ctx: any
     const Comp = {
+      /**
+       * 建立每实例初始 data：`{ foo: 1, bar: 2, baz: { qux: 3, }, }`。
+       */
       data() {
         return {
           foo: 1,
@@ -253,9 +315,9 @@ describe('api: options', () => {
         }
       },
       watch: {
-        // string method name
+        // 处理器使用 methods 中的方法名。
         foo: ['onFooChange'],
-        // direct function
+        // 直接使用函数作为处理器。
         bar: [spyB],
         baz: [
           {
@@ -267,6 +329,9 @@ describe('api: options', () => {
       methods: {
         onFooChange: spyA,
       },
+      /**
+       * 同时记录 `ctx` 供 render 后的断言检查。
+       */
       render() {
         ctx = this
       },
@@ -274,6 +339,9 @@ describe('api: options', () => {
     const root = nodeOps.createElement('div')
     render(h(Comp), root)
 
+    /**
+     * 为数组 watch 处理器检查新旧值与回调 this；读取 mock 指定次调用和返回记录，不额外触发 watcher。
+     */
     function assertCall(spy: Mock, callIndex: number, args: any[]) {
       expect(spy.mock.calls[callIndex].slice(0, 2)).toMatchObject(args)
       expect(spy.mock.results[callIndex].value).toBe(ctx)
@@ -292,14 +360,17 @@ describe('api: options', () => {
     ctx.baz.qux++
     await nextTick()
     expect(spyC).toHaveBeenCalledTimes(1)
-    // new and old objects have same identity
+    // 深度修改未替换源对象，新旧参数都表示当前同一对象内容；此断言比较内容。
     assertCall(spyC, 0, [{ qux: 4 }, { qux: 4 }])
   })
 
   // #3966
-  // 测试场景：watch 从 mixin 合并。
+  // 两个 mixin 与组件共同监听 obj；改值后，三个处理器都把各自字段更新为 bar。
   test('watch merging from mixins', async () => {
     const mixinA = {
+      /**
+       * 建立每实例初始 data：`{ fromMixinA: '', }`。
+       */
       data() {
         return {
           fromMixinA: '',
@@ -307,6 +378,9 @@ describe('api: options', () => {
       },
       watch: {
         obj: {
+          /**
+           * 修改或记录 `this.fromMixinA`。
+           */
           handler(this: any, to: any) {
             this.fromMixinA = to
           },
@@ -315,6 +389,9 @@ describe('api: options', () => {
     }
 
     const mixinB = {
+      /**
+       * 建立每实例初始 data：`{ fromMixinB: '', }`。
+       */
       data() {
         return {
           fromMixinB: '',
@@ -324,6 +401,9 @@ describe('api: options', () => {
         obj: 'setMixinB',
       },
       methods: {
+        /**
+         * 修改或记录 `this.fromMixinB`。
+         */
         setMixinB(this: any, to: any) {
           this.fromMixinB = to
         },
@@ -332,17 +412,29 @@ describe('api: options', () => {
 
     let vm: any
     const Comp = {
+      /**
+       * 空渲染占位，让组件完成本例所需的初始化，断言读取状态或诊断结果。
+       */
       render() {},
       mixins: [mixinA, mixinB],
+      /**
+       * 建立每实例初始 data：`({ obj: 'foo', fromComp: '', })`。
+       */
       data: () => ({
         obj: 'foo',
         fromComp: '',
       }),
       watch: {
+        /**
+         * 修改或记录 `this.fromComp`。
+         */
         obj(this: any, to: any) {
           this.fromComp = to
         },
       },
+      /**
+       * 在 mounted 阶段写入 `vm` 供后续观察或触发更新。
+       */
       mounted() {
         vm = this
       },
@@ -358,21 +450,30 @@ describe('api: options', () => {
     expect(vm.fromMixinB).toBe('bar')
   })
 
-  // 测试场景：提供/注入。
+  // provide 提供字符串和 Symbol 键；inject 覆盖数组、别名、from 及普通值或工厂默认值。
   test('provide/inject', () => {
     const symbolKey = Symbol()
     const Root = defineComponent({
+      /**
+       * 建立每实例初始 data：`{ a: 1, }`。
+       */
       data() {
         return {
           a: 1,
         }
       },
+      /**
+       * 返回 `a`、`[symbolKey]` 作为此组件的祖先提供值，让后代 inject 读取。
+       */
       provide() {
         return {
           a: this.a,
           [symbolKey]: 2,
         }
       },
+      /**
+       * 渲染结果为 `[ h(ChildA), h(ChildB), h(ChildC), h(ChildD), h(ChildE), h(ChildF), h(ChildG), h(ChildH), h(ChildI), h(ChildJ), ]`。
+       */
       render() {
         return [
           h(ChildA),
@@ -389,9 +490,15 @@ describe('api: options', () => {
       },
     })
 
+    /**
+     * 按给定 inject 声明创建消费组件，render 读取 injectedKey；让数组、别名、默认值与 Symbol 来源共用同一输出探针。
+     */
     const defineChild = (injectOptions: any, injectedKey = 'b') =>
       ({
         inject: injectOptions,
+        /**
+         * 渲染结果为 `this[injectedKey]`。
+         */
         render() {
           return this[injectedKey]
         },
@@ -407,6 +514,9 @@ describe('api: options', () => {
     const ChildD = defineChild(
       {
         a: {
+          /**
+           * prop 默认值工厂 返回 `0`。
+           */
           default: () => 0,
         },
       },
@@ -421,6 +531,9 @@ describe('api: options', () => {
     const ChildF = defineChild({
       b: {
         from: 'c',
+        /**
+         * prop 默认值工厂 返回 `3`。
+         */
         default: () => 3,
       },
     })
@@ -431,6 +544,9 @@ describe('api: options', () => {
     })
     const ChildH = defineChild({
       b: {
+        /**
+         * prop 默认值工厂 返回 `5`。
+         */
         default: () => 5,
       },
     })
@@ -445,21 +561,30 @@ describe('api: options', () => {
     expect(renderToString(h(Root))).toBe(`1111234522`)
   })
 
-  // 测试场景：提供/注入refs。
+  // 通过 provide/inject 传递 ref 和 computed，子组件 this 自动解包，源 ref 改变后渲染从 1 更新为 3。
   test('provide/inject refs', async () => {
     const n = ref(0)
     const np = computed(() => n.value + 1)
     const Parent = defineComponent({
+      /**
+       * 返回 `n`、`np` 作为此组件的祖先提供值，让后代 inject 读取。
+       */
       provide() {
         return {
           n,
           np,
         }
       },
+      /**
+       * 渲染结果为 `h(Child)`。
+       */
       render: () => h(Child),
     })
     const Child = defineComponent({
       inject: ['n', 'np'],
+      /**
+       * 渲染结果为 `this.n + this.np`。
+       */
       render(this: any) {
         return this.n + this.np
       },
@@ -474,14 +599,20 @@ describe('api: options', () => {
     expect(serializeInner(root)).toBe(`3`)
   })
 
-  // 测试场景：在扩展中提供数据访问。
+  // extends 中的 provide 通过 this 读取合并后的 data，子组件 inject 得到值 1。
   test('provide accessing data in extends', () => {
     const Base = defineComponent({
+      /**
+       * 建立每实例初始 data：`{ a: 1, }`。
+       */
       data() {
         return {
           a: 1,
         }
       },
+      /**
+       * 返回 `a` 作为此组件的祖先提供值，让后代 inject 读取。
+       */
       provide() {
         return {
           a: this.a,
@@ -491,6 +622,9 @@ describe('api: options', () => {
 
     const Child = {
       inject: ['a'],
+      /**
+       * 渲染结果为 `(this as any).a`。
+       */
       render() {
         return (this as any).a
       },
@@ -498,6 +632,9 @@ describe('api: options', () => {
 
     const Root = defineComponent({
       extends: Base,
+      /**
+       * 渲染结果为 `h(Child)`。
+       */
       render() {
         return h(Child)
       },
@@ -505,103 +642,184 @@ describe('api: options', () => {
     expect(renderToString(h(Root))).toBe(`1`)
   })
 
-  // 测试场景：生命周期。
+  // 以 root、mid、child 三层组件记录挂载、更新与卸载钩子，逐阶段断言父子调用顺序。
   test('lifecycle', async () => {
     const count = ref(0)
     const root = nodeOps.createElement('div')
     const calls: string[] = []
 
     const Root = {
+      /**
+       * 在 beforeCreate 阶段执行 `calls.push('root beforeCreate')`。
+       */
       beforeCreate() {
         calls.push('root beforeCreate')
       },
+      /**
+       * 在 created 阶段执行 `calls.push('root created')`。
+       */
       created() {
         calls.push('root created')
       },
+      /**
+       * 在 beforeMount 阶段执行 `calls.push('root onBeforeMount')`。
+       */
       beforeMount() {
         calls.push('root onBeforeMount')
       },
+      /**
+       * 在 mounted 阶段执行 `calls.push('root onMounted')`。
+       */
       mounted() {
         calls.push('root onMounted')
       },
+      /**
+       * 在 beforeUpdate 阶段执行 `calls.push('root onBeforeUpdate')`。
+       */
       beforeUpdate() {
         calls.push('root onBeforeUpdate')
       },
+      /**
+       * 在 updated 阶段执行 `calls.push('root onUpdated')`。
+       */
       updated() {
         calls.push('root onUpdated')
       },
+      /**
+       * 在 beforeUnmount 阶段执行 `calls.push('root onBeforeUnmount')`。
+       */
       beforeUnmount() {
         calls.push('root onBeforeUnmount')
       },
+      /**
+       * 在 unmounted 阶段执行 `calls.push('root onUnmounted')`。
+       */
       unmounted() {
         calls.push('root onUnmounted')
       },
+      /**
+       * 渲染结果为 `h(Mid, { count: count.value })`。
+       */
       render() {
         return h(Mid, { count: count.value })
       },
     }
 
     const Mid = {
+      /**
+       * 在 beforeCreate 阶段执行 `calls.push('mid beforeCreate')`。
+       */
       beforeCreate() {
         calls.push('mid beforeCreate')
       },
+      /**
+       * 在 created 阶段执行 `calls.push('mid created')`。
+       */
       created() {
         calls.push('mid created')
       },
+      /**
+       * 在 beforeMount 阶段执行 `calls.push('mid onBeforeMount')`。
+       */
       beforeMount() {
         calls.push('mid onBeforeMount')
       },
+      /**
+       * 在 mounted 阶段执行 `calls.push('mid onMounted')`。
+       */
       mounted() {
         calls.push('mid onMounted')
       },
+      /**
+       * 在 beforeUpdate 阶段执行 `calls.push('mid onBeforeUpdate')`。
+       */
       beforeUpdate() {
         calls.push('mid onBeforeUpdate')
       },
+      /**
+       * 在 updated 阶段执行 `calls.push('mid onUpdated')`。
+       */
       updated() {
         calls.push('mid onUpdated')
       },
+      /**
+       * 在 beforeUnmount 阶段执行 `calls.push('mid onBeforeUnmount')`。
+       */
       beforeUnmount() {
         calls.push('mid onBeforeUnmount')
       },
+      /**
+       * 在 unmounted 阶段执行 `calls.push('mid onUnmounted')`。
+       */
       unmounted() {
         calls.push('mid onUnmounted')
       },
+      /**
+       * 渲染结果为 `h(Child, { count: this.$props.count })`。
+       */
       render(this: any) {
         return h(Child, { count: this.$props.count })
       },
     }
 
     const Child = {
+      /**
+       * 在 beforeCreate 阶段执行 `calls.push('child beforeCreate')`。
+       */
       beforeCreate() {
         calls.push('child beforeCreate')
       },
+      /**
+       * 在 created 阶段执行 `calls.push('child created')`。
+       */
       created() {
         calls.push('child created')
       },
+      /**
+       * 在 beforeMount 阶段执行 `calls.push('child onBeforeMount')`。
+       */
       beforeMount() {
         calls.push('child onBeforeMount')
       },
+      /**
+       * 在 mounted 阶段执行 `calls.push('child onMounted')`。
+       */
       mounted() {
         calls.push('child onMounted')
       },
+      /**
+       * 在 beforeUpdate 阶段执行 `calls.push('child onBeforeUpdate')`。
+       */
       beforeUpdate() {
         calls.push('child onBeforeUpdate')
       },
+      /**
+       * 在 updated 阶段执行 `calls.push('child onUpdated')`。
+       */
       updated() {
         calls.push('child onUpdated')
       },
+      /**
+       * 在 beforeUnmount 阶段执行 `calls.push('child onBeforeUnmount')`。
+       */
       beforeUnmount() {
         calls.push('child onBeforeUnmount')
       },
+      /**
+       * 在 unmounted 阶段执行 `calls.push('child onUnmounted')`。
+       */
       unmounted() {
         calls.push('child onUnmounted')
       },
+      /**
+       * 渲染结果为 `h('div', this.$props.count)`。
+       */
       render(this: any) {
         return h('div', this.$props.count)
       },
     }
 
-    // mount
+    // 首次挂载，核对记录的调用顺序。
     render(h(Root), root)
     expect(calls).toEqual([
       'root beforeCreate',
@@ -620,7 +838,7 @@ describe('api: options', () => {
 
     calls.length = 0
 
-    // update
+    // 修改渲染依赖并等待一次刷新，核对更新顺序。
     count.value++
     await nextTick()
     expect(calls).toEqual([
@@ -634,7 +852,7 @@ describe('api: options', () => {
 
     calls.length = 0
 
-    // unmount
+    // 卸载根树，核对卸载钩子顺序。
     render(null, root)
     expect(calls).toEqual([
       'root onBeforeUnmount',
@@ -646,21 +864,30 @@ describe('api: options', () => {
     ])
   })
 
-  // 测试场景：混入。
+  // 多个 mixin 合并 data 与 props，组件自身的 c 覆盖同名字段；created、mounted 按 mixin 列表再到组件执行。
   test('mixins', () => {
     const calls: string[] = []
     const mixinA = defineComponent({
+      /**
+       * 建立每实例初始 data：`{ a: 1, }`。
+       */
       data() {
         return {
           a: 1,
         }
       },
+      /**
+       * 在 created 阶段执行 `calls.push('mixinA created')`、`expect(this.a).toBe(1)`、`expect(this.a)`。
+       */
       created(this: any) {
         calls.push('mixinA created')
         expect(this.a).toBe(1)
         expect(this.b).toBe(2)
         expect(this.c).toBe(4)
       },
+      /**
+       * 在 mounted 阶段执行 `calls.push('mixinA mounted')`。
+       */
       mounted() {
         calls.push('mixinA mounted')
       },
@@ -671,11 +898,17 @@ describe('api: options', () => {
           type: String,
         },
       },
+      /**
+       * 建立每实例初始 data：`{ b: 2, }`。
+       */
       data() {
         return {
           b: 2,
         }
       },
+      /**
+       * 在 created 阶段执行 `calls.push('mixinB created')`、`expect(this.a).toBe(1)`、`expect(this.a)`。
+       */
       created(this: any) {
         calls.push('mixinB created')
         expect(this.a).toBe(1)
@@ -684,23 +917,35 @@ describe('api: options', () => {
         expect(this.c).toBe(4)
         expect(this.cP1).toBeUndefined()
       },
+      /**
+       * 在 mounted 阶段执行 `calls.push('mixinB mounted')`。
+       */
       mounted() {
         calls.push('mixinB mounted')
       },
     })
     const mixinC = defineComponent({
       props: ['cP1', 'cP2'],
+      /**
+       * 建立每实例初始 data：`{ c: 3, }`。
+       */
       data() {
         return {
           c: 3,
         }
       },
+      /**
+       * 在 created 阶段执行 `calls.push('mixinC created')`、`expect(this.c).toBe(4)`、`expect(this.c)`。
+       */
       created() {
         calls.push('mixinC created')
-        // component data() should overwrite mixin field with same key
+        // 组件 data 的同名 c 覆盖 mixin 的 c。
         expect(this.c).toBe(4)
         expect(this.cP1).toBeUndefined()
       },
+      /**
+       * 在 mounted 阶段执行 `calls.push('mixinC mounted')`。
+       */
       mounted() {
         calls.push('mixinC mounted')
       },
@@ -710,12 +955,18 @@ describe('api: options', () => {
         aaa: String,
       },
       mixins: [mixinA, mixinB, mixinC],
+      /**
+       * 建立每实例初始 data：`{ c: 4, z: 4, }`。
+       */
       data() {
         return {
           c: 4,
           z: 4,
         }
       },
+      /**
+       * 在 created 阶段执行 `calls.push('comp created')`、`expect(this.a).toBe(1)`、`expect(this.a)`。
+       */
       created() {
         calls.push('comp created')
         expect(this.a).toBe(1)
@@ -725,9 +976,15 @@ describe('api: options', () => {
         expect(this.cP2).toBeUndefined()
         expect(this.z).toBe(4)
       },
+      /**
+       * 在 mounted 阶段执行 `calls.push('comp mounted')`。
+       */
       mounted() {
         calls.push('comp mounted')
       },
+      /**
+       * 渲染结果为 `` `${this.a}${this.b}${this.c}` ``。
+       */
       render() {
         return `${this.a}${this.b}${this.c}`
       },
@@ -745,11 +1002,14 @@ describe('api: options', () => {
     ])
   })
 
-  // 测试场景：从 mixin 渲染。
+  // 组件未定义 render，采用 mixin 的 render 并输出 from mixin。
   test('render from mixin', () => {
     const Comp = {
       mixins: [
         {
+          /**
+           * 渲染结果为 `'from mixin'`。
+           */
           render: () => 'from mixin',
         },
       ],
@@ -757,13 +1017,19 @@ describe('api: options', () => {
     expect(renderToString(h(Comp))).toBe('from mixin')
   })
 
-  // 测试场景：extends 内存在多层 mixin 时，选项能够按继承链完整合并。
+  // 组件 extends 的对象包含 mixin；beforeCreate 与 created 都按 mixin、extends 对象、组件的顺序执行。
   test('chained mixins in extends', () => {
     const calls: string[] = []
     const mixinA = {
+      /**
+       * 在 beforeCreate 阶段执行 `calls.push('mixinA beforeCreate')`。
+       */
       beforeCreate() {
         calls.push('mixinA beforeCreate')
       },
+      /**
+       * 在 created 阶段执行 `calls.push('mixinA created')`。
+       */
       created() {
         calls.push('mixinA created')
       },
@@ -771,9 +1037,15 @@ describe('api: options', () => {
 
     const extendA = {
       mixins: [mixinA],
+      /**
+       * 在 beforeCreate 阶段执行 `calls.push('extendA beforeCreate')`。
+       */
       beforeCreate() {
         calls.push('extendA beforeCreate')
       },
+      /**
+       * 在 created 阶段执行 `calls.push('extendA created')`。
+       */
       created() {
         calls.push('extendA created')
       },
@@ -781,10 +1053,19 @@ describe('api: options', () => {
 
     const Comp = {
       extends: extendA,
+      /**
+       * 渲染结果为 `'123'`。
+       */
       render: () => '123',
+      /**
+       * 在 beforeCreate 阶段执行 `calls.push('self beforeCreate')`。
+       */
       beforeCreate() {
         calls.push('self beforeCreate')
       },
+      /**
+       * 在 created 阶段执行 `calls.push('self created')`。
+       */
       created() {
         calls.push('self created')
       },
@@ -801,29 +1082,44 @@ describe('api: options', () => {
     ])
   })
 
-  // 测试场景：不太可能使用 mixin。
+  // 连续调用 defineComponent，并把两个结果放入外层 mixins；仅保留该选项的类型/调用写法，没有挂载或运行时 matcher，不据此判断实际合并结果。
   test('unlikely mixin usage', () => {
     const MixinA = {
+      /**
+       * 空 data 工厂占位；该选项形状用于本例的类型/混入写法。
+       */
       data() {},
     }
     const MixinB = {
+      /**
+       * 空 data 工厂占位；该选项形状用于本例的类型/混入写法。
+       */
       data() {},
     }
     defineComponent({
-      // since the user will want to type the mixins themselves.
+      // 先给每个 mixin 做 defineComponent 类型推导，再作为外层 mixins 输入。
       mixins: [defineComponent(MixinA), defineComponent(MixinB)],
+      /**
+       * 空 data 工厂占位；该选项形状用于本例的类型/混入写法。
+       */
       data() {},
     })
   })
 
-  // 测试场景：mixin 中的链式扩展。
+  // mixin 自身带 extends；beforeCreate 与 created 都先执行其基类，再执行 mixin 和组件。
   test('chained extends in mixins', () => {
     const calls: string[] = []
 
     const extendA = {
+      /**
+       * 在 beforeCreate 阶段执行 `calls.push('extendA beforeCreate')`。
+       */
       beforeCreate() {
         calls.push('extendA beforeCreate')
       },
+      /**
+       * 在 created 阶段执行 `calls.push('extendA created')`。
+       */
       created() {
         calls.push('extendA created')
       },
@@ -831,9 +1127,15 @@ describe('api: options', () => {
 
     const mixinA = {
       extends: extendA,
+      /**
+       * 在 beforeCreate 阶段执行 `calls.push('mixinA beforeCreate')`。
+       */
       beforeCreate() {
         calls.push('mixinA beforeCreate')
       },
+      /**
+       * 在 created 阶段执行 `calls.push('mixinA created')`。
+       */
       created() {
         calls.push('mixinA created')
       },
@@ -841,10 +1143,19 @@ describe('api: options', () => {
 
     const Comp = {
       mixins: [mixinA],
+      /**
+       * 渲染结果为 `'123'`。
+       */
       render: () => '123',
+      /**
+       * 在 beforeCreate 阶段执行 `calls.push('self beforeCreate')`。
+       */
       beforeCreate() {
         calls.push('self beforeCreate')
       },
+      /**
+       * 在 created 阶段执行 `calls.push('self created')`。
+       */
       created() {
         calls.push('self created')
       },
@@ -861,10 +1172,13 @@ describe('api: options', () => {
     ])
   })
 
-  // 测试场景：延伸。
+  // 组件继承 Base 的 data，自己的 b 覆盖基类值；mounted 先执行 Base，再执行组件。
   test('extends', () => {
     const calls: string[] = []
     const Base = defineComponent({
+      /**
+       * 建立每实例初始 data：`{ a: 1, b: 1, }`。
+       */
       data() {
         return {
           a: 1,
@@ -872,8 +1186,14 @@ describe('api: options', () => {
         }
       },
       methods: {
+        /**
+         * 基类的空方法占位，用于 extends 选项形状；本用例不调用此方法。
+         */
         sayA() {},
       },
+      /**
+       * 在 mounted 阶段执行 `expect(this.a).toBe(1)`、`expect(this.a)`、`expect(this.b).toBe(2)`。
+       */
       mounted(this: any) {
         expect(this.a).toBe(1)
         expect(this.b).toBe(2)
@@ -882,14 +1202,23 @@ describe('api: options', () => {
     })
     const Comp = defineComponent({
       extends: Base,
+      /**
+       * 建立每实例初始 data：`{ b: 2, }`。
+       */
       data() {
         return {
           b: 2,
         }
       },
+      /**
+       * 在 mounted 阶段执行 `calls.push('comp')`。
+       */
       mounted() {
         calls.push('comp')
       },
+      /**
+       * 渲染结果为 `` `${this.a}${this.b}` ``。
+       */
       render() {
         return `${this.a}${this.b}`
       },
@@ -899,10 +1228,13 @@ describe('api: options', () => {
     expect(calls).toEqual(['base', 'comp'])
   })
 
-  // 测试场景：用 mixin 扩展。
+  // extends、mixin 与组件的 data 合并，mixin 的 x 覆盖基类值；mounted 按 base、mixin、comp 顺序执行。
   test('extends with mixins', () => {
     const calls: string[] = []
     const Base = defineComponent({
+      /**
+       * 建立每实例初始 data：`{ a: 1, x: 'base', }`。
+       */
       data() {
         return {
           a: 1,
@@ -910,8 +1242,14 @@ describe('api: options', () => {
         }
       },
       methods: {
+        /**
+         * extends 与 mixin 夹具中的基类方法占位；本用例的断言观察数据覆盖和 mounted 顺序。
+         */
         sayA() {},
       },
+      /**
+       * 在 mounted 阶段执行 `expect(this.a).toBe(1)`、`expect(this.a)`、`expect(this.b).toBeTruthy()`。
+       */
       mounted(this: any) {
         expect(this.a).toBe(1)
         expect(this.b).toBeTruthy()
@@ -920,12 +1258,18 @@ describe('api: options', () => {
       },
     })
     const Mixin = defineComponent({
+      /**
+       * 建立每实例初始 data：`{ b: true, x: 'mixin', }`。
+       */
       data() {
         return {
           b: true,
           x: 'mixin',
         }
       },
+      /**
+       * 在 mounted 阶段执行 `expect(this.a).toBe(1)`、`expect(this.a)`、`expect(this.b).toBeTruthy()`。
+       */
       mounted(this: any) {
         expect(this.a).toBe(1)
         expect(this.b).toBeTruthy()
@@ -936,14 +1280,23 @@ describe('api: options', () => {
     const Comp = defineComponent({
       extends: Base,
       mixins: [Mixin],
+      /**
+       * 建立每实例初始 data：`{ c: 2, }`。
+       */
       data() {
         return {
           c: 2,
         }
       },
+      /**
+       * 在 mounted 阶段执行 `calls.push('comp')`。
+       */
       mounted() {
         calls.push('comp')
       },
+      /**
+       * 渲染结果为 `` `${this.a}${this.b}${this.c}${this.x}` ``。
+       */
       render() {
         return `${this.a}${this.b}${this.c}${this.x}`
       },
@@ -953,40 +1306,64 @@ describe('api: options', () => {
     expect(calls).toEqual(['base', 'mixin', 'comp'])
   })
 
-  // 测试场景：extends 与 mixins 中的 beforeCreate/created 钩子按正确顺序执行。
+  // extends 链先于 mixins 链合并；分别记录 beforeCreate 与 created，确认每组都按 A、B、C、D、组件执行。
   test('beforeCreate/created in extends and mixins', () => {
     const calls: string[] = []
     const BaseA = {
+      /**
+       * 在 beforeCreate 阶段执行 `calls.push('beforeCreateA')`。
+       */
       beforeCreate() {
         calls.push('beforeCreateA')
       },
+      /**
+       * 在 created 阶段执行 `calls.push('createdA')`。
+       */
       created() {
         calls.push('createdA')
       },
     }
     const BaseB = {
       extends: BaseA,
+      /**
+       * 在 beforeCreate 阶段执行 `calls.push('beforeCreateB')`。
+       */
       beforeCreate() {
         calls.push('beforeCreateB')
       },
+      /**
+       * 在 created 阶段执行 `calls.push('createdB')`。
+       */
       created() {
         calls.push('createdB')
       },
     }
 
     const MixinA = {
+      /**
+       * 在 beforeCreate 阶段执行 `calls.push('beforeCreateC')`。
+       */
       beforeCreate() {
         calls.push('beforeCreateC')
       },
+      /**
+       * 在 created 阶段执行 `calls.push('createdC')`。
+       */
       created() {
         calls.push('createdC')
       },
     }
     const MixinB = {
       mixins: [MixinA],
+      /**
+       * 在 beforeCreate 阶段执行 `calls.push('beforeCreateD')`。
+       */
       beforeCreate() {
         calls.push('beforeCreateD')
       },
+      /**
+       * 在 created 阶段执行 `calls.push('createdD')`。
+       */
       created() {
         calls.push('createdD')
       },
@@ -995,12 +1372,21 @@ describe('api: options', () => {
     const Comp = {
       extends: BaseB,
       mixins: [MixinB],
+      /**
+       * 在 beforeCreate 阶段执行 `calls.push('selfBeforeCreate')`。
+       */
       beforeCreate() {
         calls.push('selfBeforeCreate')
       },
+      /**
+       * 在 created 阶段执行 `calls.push('selfCreated')`。
+       */
       created() {
         calls.push('selfCreated')
       },
+      /**
+       * 空渲染占位，让组件完成本例所需的初始化，断言读取状态或诊断结果。
+       */
       render() {},
     }
 
@@ -1019,7 +1405,7 @@ describe('api: options', () => {
     ])
   })
 
-  // 测试场景：展平合并选项。
+  // 嵌套 mixins 与 extends 的自定义选项被合并到当前 $options，渲染可读出两个 base 值。
   test('flatten merged options', async () => {
     const MixinBase = {
       msg1: 'base',
@@ -1036,6 +1422,9 @@ describe('api: options', () => {
     const Comp = defineComponent({
       extends: defineComponent(Extends),
       mixins: [defineComponent(Mixin)],
+      /**
+       * 渲染结果为 `` `${this.$options.msg1},${this.$options.msg2}` ``。
+       */
       render() {
         return `${this.$options.msg1},${this.$options.msg2}`
       },
@@ -1044,7 +1433,7 @@ describe('api: options', () => {
     expect(renderToString(h(Comp))).toBe('base,base')
   })
 
-  // 测试场景：扩展模板。
+  // 组件没有自己的模板，继承 extends.template，经主 Vue 入口编译后渲染 Foo。
   test('extends template', () => {
     const Comp = {
       extends: {
@@ -1057,7 +1446,7 @@ describe('api: options', () => {
     expect(root.innerHTML).toBe(`<h1>Foo</h1>`)
   })
 
-  // 测试场景：组件中定义的选项具有更高的优先级。
+  // 组件自身 msg1、msg2 覆盖 mixin 和 extends 的同名自定义选项，$options 读取结果均为 local。
   test('options defined in component have higher priority', async () => {
     const Mixin = {
       msg1: 'base',
@@ -1070,6 +1459,9 @@ describe('api: options', () => {
       msg2: 'local',
       extends: defineComponent(Extends),
       mixins: [defineComponent(Mixin)],
+      /**
+       * 渲染结果为 `` `${this.$options.msg1},${this.$options.msg2}` ``。
+       */
       render() {
         return `${this.$options.msg1},${this.$options.msg2}`
       },
@@ -1078,29 +1470,44 @@ describe('api: options', () => {
     expect(renderToString(h(Comp))).toBe('local,local')
   })
 
-  // 测试场景：从选项访问setup()状态。
+  // Options API 通过 this 读取 setup 的 count ref；递增后 computed 重算，data 初始化的 plusOne 保留原值。
   test('accessing setup() state from options', async () => {
     const Comp = defineComponent({
+      /**
+       * 返回 `count` 作为后续渲染可读的绑定。
+       */
       setup() {
         return {
           count: ref(0),
         }
       },
+      /**
+       * 建立每实例初始 data：`{ plusOne: (this as any).count + 1, }`。
+       */
       data() {
         return {
           plusOne: (this as any).count + 1,
         }
       },
       computed: {
+        /**
+         * 返回 `this.count + 2`。
+         */
         plusTwo(): number {
           return this.count + 2
         },
       },
       methods: {
+        /**
+         * 递增 setup 返回并自动解包到 this 的 count，让渲染和 computed 更新，data 初始快照保持原值。
+         */
         inc() {
           this.count++
         },
       },
+      /**
+       * 渲染结果为 `` h('div', { onClick: this.inc, }, `${this.count},${this.plusOne},${this.plusTwo}`) ``。
+       */
       render() {
         return h(
           'div',
@@ -1121,9 +1528,12 @@ describe('api: options', () => {
   })
 
   // #1016
-  // 测试场景：watcher 初始化应该在 mixin 中推迟。
+  // mixin2 的 watch 监听后续 mixin3 声明的数据；数据初始化完成后注册监听，改值时获得正确的新旧值。
   test('watcher initialization should be deferred in mixins', async () => {
     const mixin1 = {
+      /**
+       * 建立每实例初始 data：`{ mixin1Data: 'mixin1', }`。
+       */
       data() {
         return {
           mixin1Data: 'mixin1',
@@ -1140,6 +1550,9 @@ describe('api: options', () => {
     }
 
     const mixin3 = {
+      /**
+       * 建立每实例初始 data：`{ mixin3Data: 'mixin3', }`。
+       */
       data() {
         return {
           mixin3Data: 'mixin3',
@@ -1151,7 +1564,13 @@ describe('api: options', () => {
     let vm: any
     const Comp = {
       mixins: [mixin1, mixin2, mixin3],
+      /**
+       * 空渲染占位，让组件完成本例所需的初始化，断言读取状态或诊断结果。
+       */
       render() {},
+      /**
+       * 在 created 阶段写入 `vm` 供后续观察或触发更新。
+       */
       created() {
         vm = this
       },
@@ -1160,24 +1579,30 @@ describe('api: options', () => {
     const root = nodeOps.createElement('div')
     render(h(Comp), root)
 
-    // should have no warnings
+    // 修改来自后续 mixin 的字段，检查 watcher 已读取到正确初始值。
     vm.mixin3Data = 'hello'
     await nextTick()
     expect(watchSpy.mock.calls[0].slice(0, 2)).toEqual(['hello', 'mixin3'])
   })
 
-  // 测试场景：来自最近祖先的注射。
+  // inject 采用最近提供同名键的祖先值，分别覆盖根级、直接 provide 和 mixin provide。
   test('injection from closest ancestor', () => {
     const Root = defineComponent({
       provide: {
         a: 'root',
       },
+      /**
+       * 渲染结果为 `[h(Mid), ' ', h(MidWithProvide), ' ', h(MidWithMixinProvide)]`。
+       */
       render() {
         return [h(Mid), ' ', h(MidWithProvide), ' ', h(MidWithMixinProvide)]
       },
     })
 
     const Mid = {
+      /**
+       * 渲染结果为 `h(Child)`。
+       */
       render() {
         return h(Child)
       },
@@ -1187,6 +1612,9 @@ describe('api: options', () => {
       provide: {
         a: 'midWithProvide',
       },
+      /**
+       * 渲染结果为 `h(Child)`。
+       */
       render() {
         return h(Child)
       },
@@ -1200,6 +1628,9 @@ describe('api: options', () => {
 
     const MidWithMixinProvide = {
       mixins: [mixin],
+      /**
+       * 渲染结果为 `h(Child)`。
+       */
       render() {
         return h(Child)
       },
@@ -1207,6 +1638,9 @@ describe('api: options', () => {
 
     const Child = {
       inject: ['a'],
+      /**
+       * 渲染结果为 `this.a`。
+       */
       render() {
         return this.a
       },
@@ -1217,23 +1651,32 @@ describe('api: options', () => {
     )
   })
 
-  // 测试组：选项合并策略。
+  // $options 暴露合并后的选项形态。
   describe('options merge strategies', () => {
-    // 测试场景：这个.$options.数据。
+    // $options.data 是合并函数；调用后保留 mixin 的 bar，组件 foo 覆盖同名值，并加入 baz。
     test('this.$options.data', () => {
       const mixin = {
+        /**
+         * 建立每实例初始 data：`{ foo: 1, bar: 2 }`。
+         */
         data() {
           return { foo: 1, bar: 2 }
         },
       }
       createApp({
         mixins: [mixin],
+        /**
+         * 建立每实例初始 data：`{ foo: 3, baz: 4, }`。
+         */
         data() {
           return {
             foo: 3,
             baz: 4,
           }
         },
+        /**
+         * 在 created 阶段执行 `expect(this.$options.data).toBeInstanceOf(Function)`、`expect(this.$options.data)`、`expect(this.$options.data()).toEqual({ foo: 3, bar: 2, baz: 4, })`。
+         */
         created() {
           expect(this.$options.data).toBeInstanceOf(Function)
           expect(this.$options.data()).toEqual({
@@ -1242,11 +1685,14 @@ describe('api: options', () => {
             baz: 4,
           })
         },
+        /**
+         * 渲染结果为 `null`。
+         */
         render: () => null,
       }).mount(nodeOps.createElement('div'))
     })
 
-    // 测试场景：这个.$options.注入。
+    // $options.inject 将数组声明归一化并与对象声明合并，实例字段按 from 映射读取 app.provide 的值。
     test('this.$options.inject', () => {
       const mixin = {
         inject: ['a'],
@@ -1254,6 +1700,9 @@ describe('api: options', () => {
       const app = createApp({
         mixins: [mixin],
         inject: { b: 'b', c: { from: 'd' } },
+        /**
+         * 在 created 阶段执行 `expect(this.$options.inject.a).toEqual('a')`、`expect(this.$options.inject.a)`、`expect(this.$options.inject.b).toEqual('b')`。
+         */
         created() {
           expect(this.$options.inject.a).toEqual('a')
           expect(this.$options.inject.b).toEqual('b')
@@ -1262,6 +1711,9 @@ describe('api: options', () => {
           expect(this.b).toBe(2)
           expect(this.c).toBe(3)
         },
+        /**
+         * 渲染结果为 `null`。
+         */
         render: () => null,
       })
 
@@ -1271,7 +1723,7 @@ describe('api: options', () => {
       app.mount(nodeOps.createElement('div'))
     })
 
-    // 测试场景：这个.$options.提供。
+    // $options.provide 是合并函数；调用后同时返回 mixin 的 a 和组件的 b。
     test('this.$options.provide', () => {
       const mixin = {
         provide: {
@@ -1280,31 +1732,61 @@ describe('api: options', () => {
       }
       createApp({
         mixins: [mixin],
+        /**
+         * 返回 `b` 作为此组件的祖先提供值，让后代 inject 读取。
+         */
         provide() {
           return {
             b: 2,
           }
         },
+        /**
+         * 在 created 阶段执行 `expect(this.$options.provide).toBeInstanceOf(Function)`、`expect(this.$options.provide)`、`expect(this.$options.provide()).toEqual({ a: 1, b: 2 })`。
+         */
         created() {
           expect(this.$options.provide).toBeInstanceOf(Function)
           expect(this.$options.provide()).toEqual({ a: 1, b: 2 })
         },
+        /**
+         * 渲染结果为 `null`。
+         */
         render: () => null,
       }).mount(nodeOps.createElement('div'))
     })
 
-    // 测试场景：this.$options[生命周期名称]。
+    // mixin 与组件的同名生命周期选项合并为数组，mounted、beforeUnmount、unmounted 各包含两个函数。
     test('this.$options[lifecycle-name]', () => {
       const mixin = {
+        /**
+         * 在 mounted 阶段保留生命周期占位。
+         */
         mounted() {},
+        /**
+         * 在 beforeUnmount 阶段保留生命周期占位。
+         */
         beforeUnmount() {},
+        /**
+         * 在 unmounted 阶段保留生命周期占位。
+         */
         unmounted() {},
       }
       createApp({
         mixins: [mixin],
+        /**
+         * 在 mounted 阶段保留生命周期占位。
+         */
         mounted() {},
+        /**
+         * 在 beforeUnmount 阶段保留生命周期占位。
+         */
         beforeUnmount() {},
+        /**
+         * 在 unmounted 阶段保留生命周期占位。
+         */
         unmounted() {},
+        /**
+         * 在 created 阶段执行 `expect(this.$options.mounted).toBeInstanceOf(Array)`、`expect(this.$options.mounted)`、`expect(this.$options.mounted.length).toBe(2)`。
+         */
         created() {
           expect(this.$options.mounted).toBeInstanceOf(Array)
           expect(this.$options.mounted.length).toBe(2)
@@ -1313,11 +1795,14 @@ describe('api: options', () => {
           expect(this.$options.unmounted).toBeInstanceOf(Array)
           expect(this.$options.unmounted.length).toBe(2)
         },
+        /**
+         * 渲染结果为 `null`。
+         */
         render: () => null,
       }).mount(nodeOps.createElement('div'))
     })
 
-    // 测试场景：this.$options[资产名称]。
+    // components 与 directives 的注册表合并，$options 保留 mixin 和组件各自的注册键。
     test('this.$options[asset-name]', () => {
       const mixin = {
         components: {
@@ -1335,74 +1820,116 @@ describe('api: options', () => {
         directives: {
           d2: {},
         },
+        /**
+         * 在 created 阶段执行 `expect('a' in this.$options.components).toBe(true)`、`expect('a' in this.$options.components)`、`expect('b' in this.$options.components).toBe(true)`。
+         */
         created() {
           expect('a' in this.$options.components).toBe(true)
           expect('b' in this.$options.components).toBe(true)
           expect('d1' in this.$options.directives).toBe(true)
           expect('d2' in this.$options.directives).toBe(true)
         },
+        /**
+         * 渲染结果为 `null`。
+         */
         render: () => null,
       }).mount(nodeOps.createElement('div'))
     })
 
-    // 测试场景：这个.$options.方法。
+    // $options.methods 保留 mixin 的 fn1 与组件的 fn2，二者仍为函数。
     test('this.$options.methods', () => {
       const mixin = {
         methods: {
+          /**
+           * 空 fn1 夹具，保留本例的选项/回调形状；函数自身不产生副作用。
+           */
           fn1() {},
         },
       }
       createApp({
         mixins: [mixin],
         methods: {
+          /**
+           * 空 fn2 夹具，保留本例的选项/回调形状；函数自身不产生副作用。
+           */
           fn2() {},
         },
+        /**
+         * 在 created 阶段执行 `expect(this.$options.methods.fn1).toBeInstanceOf(Function)`、`expect(this.$options.methods.fn1)`、`expect(this.$options.methods.fn2).toBeInstanceOf(Function)`。
+         */
         created() {
           expect(this.$options.methods.fn1).toBeInstanceOf(Function)
           expect(this.$options.methods.fn2).toBeInstanceOf(Function)
         },
+        /**
+         * 渲染结果为 `null`。
+         */
         render: () => null,
       }).mount(nodeOps.createElement('div'))
     })
 
-    // 测试场景：这个.$options.computed。
+    // $options.computed 保留 mixin 的 c1 与组件的 c2 getter，二者仍为函数。
     test('this.$options.computed', () => {
       const mixin = {
         computed: {
+          /**
+           * 空 c1 夹具，保留本例的选项/回调形状；函数自身不产生副作用。
+           */
           c1() {},
         },
       }
       createApp({
         mixins: [mixin],
         computed: {
+          /**
+           * 空 c2 夹具，保留本例的选项/回调形状；函数自身不产生副作用。
+           */
           c2() {},
         },
+        /**
+         * 在 created 阶段执行 `expect(this.$options.computed.c1).toBeInstanceOf(Function)`、`expect(this.$options.computed.c1)`、`expect(this.$options.computed.c2).toBeInstanceOf(Function)`。
+         */
         created() {
           expect(this.$options.computed.c1).toBeInstanceOf(Function)
           expect(this.$options.computed.c2).toBeInstanceOf(Function)
         },
+        /**
+         * 渲染结果为 `null`。
+         */
         render: () => null,
       }).mount(nodeOps.createElement('div'))
     })
 
     // #2791
-    // 测试场景：修改beforeCreate钩子中的$options。
+    // mixin 的 beforeCreate 向 $options.computed 添加 getter，随后初始化生效并响应 count 更新。
     test('modify $options in the beforeCreate hook', async () => {
       const count = ref(0)
       const mixin = {
+        /**
+         * 建立每实例初始 data：`{ foo: 1 }`。
+         */
         data() {
           return { foo: 1 }
         },
+        /**
+         * 在 beforeCreate 阶段写入 `this.$options.computed`、`this.$options.computed.value` 供后续观察或触发更新。
+         */
         beforeCreate(this: any) {
           if (!this.$options.computed) {
             this.$options.computed = {}
           }
+          /**
+           * beforeCreate 临时添加的 computed getter，读取 count.value；验证选项解构/初始化发生在该钩子之后。
+           */
           this.$options.computed.value = () => count.value
         },
       }
       const root = nodeOps.createElement('div')
       createApp({
         mixins: [mixin],
+        /**
+         * 渲染结果为 `this.value`。
+         */
         render(this: any) {
           return this.value
         },
@@ -1416,9 +1943,9 @@ describe('api: options', () => {
     })
   })
 
-  // 测试组：Options API 配置不合法或存在歧义时的开发期警告。
+  // 非法选项与重复属性声明的开发期警告。
   describe('warnings', () => {
-    // 测试场景：Expected 作为 watch 处理程序的函数。
+    // watch 用方法名指定不存在的处理器，普通写法与 handler 对象写法都发出警告。
     test('Expected a function as watch handler', () => {
       const Comp = {
         watch: {
@@ -1427,6 +1954,9 @@ describe('api: options', () => {
             handler: 'notExistingMethod2',
           },
         },
+        /**
+         * 空渲染占位，让组件完成本例所需的初始化，断言读取状态或诊断结果。
+         */
         render() {},
       }
 
@@ -1441,10 +1971,13 @@ describe('api: options', () => {
       ).toHaveBeenWarned()
     })
 
-    // 测试场景：watch 选项值不合法时给出开发期警告，而不是静默失败。
+    // watch.foo 传入布尔值 true，挂载时发出非法 watch 选项警告。
     test('Invalid watch option', () => {
       const Comp = {
         watch: { foo: true },
+        /**
+         * 空渲染占位，让组件完成本例所需的初始化，断言读取状态或诊断结果。
+         */
         render() {},
       }
 
@@ -1455,14 +1988,20 @@ describe('api: options', () => {
       expect('Invalid watch option: "foo"').toHaveBeenWarned()
     })
 
-    // 测试场景：computed 有 setter 无 getter。
+    // computed.foo 只有 setter，挂载时发出缺少 getter 的警告。
     test('computed with setter and no getter', () => {
       const Comp = {
         computed: {
           foo: {
+            /**
+             * 空 set 夹具，保留本例的选项/回调形状；函数自身不产生副作用。
+             */
             set() {},
           },
         },
+        /**
+         * 空渲染占位，让组件完成本例所需的初始化，断言读取状态或诊断结果。
+         */
         render() {},
       }
 
@@ -1471,18 +2010,27 @@ describe('api: options', () => {
       expect('Computed property "foo" has no getter.').toHaveBeenWarned()
     })
 
-    // 测试场景：分配给computed，没有setter。
+    // 向只有 getter 的 computed.foo 赋值，发出计算属性只读警告。
     test('assigning to computed with no setter', () => {
       let instance: any
       const Comp = {
         computed: {
           foo: {
+            /**
+             * 空 get 夹具，保留本例的选项/回调形状；函数自身不产生副作用。
+             */
             get() {},
           },
         },
+        /**
+         * 在 mounted 阶段写入 `instance` 供后续观察或触发更新。
+         */
         mounted() {
           instance = this
         },
+        /**
+         * 空渲染占位，让组件完成本例所需的初始化，断言读取状态或诊断结果。
+         */
         render() {},
       }
 
@@ -1494,19 +2042,28 @@ describe('api: options', () => {
       ).toHaveBeenWarned()
     })
 
-    // 测试场景：注入属性已在 props 中声明。
+    // inject 与 props 同时声明 a，挂载时发出重复属性警告。
     test('inject property is already declared in props', () => {
       const Comp = {
+        /**
+         * 建立每实例初始 data：`{ a: 1, }`。
+         */
         data() {
           return {
             a: 1,
           }
         },
+        /**
+         * 返回 `a` 作为此组件的祖先提供值，让后代 inject 读取。
+         */
         provide() {
           return {
             a: this.a,
           }
         },
+        /**
+         * 渲染结果为 `[h(ChildA)]`。
+         */
         render() {
           return [h(ChildA)]
         },
@@ -1514,6 +2071,9 @@ describe('api: options', () => {
       const ChildA = {
         props: { a: Number },
         inject: ['a'],
+        /**
+         * 渲染结果为 `this.a`。
+         */
         render() {
           return this.a
         },
@@ -1526,12 +2086,15 @@ describe('api: options', () => {
       ).toHaveBeenWarned()
     })
 
-    // 测试场景：methods 属性不是函数。
+    // methods.foo 被配置为数字，挂载时发出方法类型不是函数的警告。
     test('methods property is not a function', () => {
       const Comp = {
         methods: {
           foo: 1,
         },
+        /**
+         * 空渲染占位，让组件完成本例所需的初始化，断言读取状态或诊断结果。
+         */
         render() {},
       }
 
@@ -1543,15 +2106,21 @@ describe('api: options', () => {
       ).toHaveBeenWarned()
     })
 
-    // 测试场景：methods 属性已在 props 中声明。
+    // methods 与 props 同时声明 foo，挂载时发出重复属性警告。
     test('methods property is already declared in props', () => {
       const Comp = {
         props: {
           foo: Number,
         },
         methods: {
+          /**
+           * 空 foo 夹具，保留本例的选项/回调形状；函数自身不产生副作用。
+           */
           foo() {},
         },
+        /**
+         * 空渲染占位，让组件完成本例所需的初始化，断言读取状态或诊断结果。
+         */
         render() {},
       }
 
@@ -1562,28 +2131,43 @@ describe('api: options', () => {
       ).toHaveBeenWarned()
     })
 
-    // 测试场景：methods 属性已在注入中声明。
+    // methods 与 inject 同时声明 a，挂载时发出重复属性警告。
     test('methods property is already declared in inject', () => {
       const Comp = {
+        /**
+         * 建立每实例初始 data：`{ a: 1, }`。
+         */
         data() {
           return {
             a: 1,
           }
         },
+        /**
+         * 返回 `a` 作为此组件的祖先提供值，让后代 inject 读取。
+         */
         provide() {
           return {
             a: this.a,
           }
         },
+        /**
+         * 渲染结果为 `[h(ChildA)]`。
+         */
         render() {
           return [h(ChildA)]
         },
       } as any
       const ChildA = {
         methods: {
+          /**
+           * 返回 `null`。
+           */
           a: () => null,
         },
         inject: ['a'],
+        /**
+         * 渲染结果为 `this.a`。
+         */
         render() {
           return this.a
         },
@@ -1596,13 +2180,19 @@ describe('api: options', () => {
       ).toHaveBeenWarned()
     })
 
-    // 测试场景：data 返回值与 props 存在同名属性时发出冲突警告。
+    // data 返回值与 props 存在同名 foo，挂载时发出重复属性警告。
     test('data property is already declared in props', () => {
       const Comp = {
         props: { foo: Number },
+        /**
+         * 建立每实例初始 data：`({ foo: 1, })`。
+         */
         data: () => ({
           foo: 1,
         }),
+        /**
+         * 空渲染占位，让组件完成本例所需的初始化，断言读取状态或诊断结果。
+         */
         render() {},
       }
 
@@ -1613,30 +2203,45 @@ describe('api: options', () => {
       ).toHaveBeenWarned()
     })
 
-    // 测试场景：data 返回值与 inject 存在同名属性时发出冲突警告。
+    // data 返回值与 inject 存在同名 a，挂载时发出重复属性警告。
     test('data property is already declared in inject', () => {
       const Comp = {
+        /**
+         * 建立每实例初始 data：`{ a: 1, }`。
+         */
         data() {
           return {
             a: 1,
           }
         },
+        /**
+         * 返回 `a` 作为此组件的祖先提供值，让后代 inject 读取。
+         */
         provide() {
           return {
             a: this.a,
           }
         },
+        /**
+         * 渲染结果为 `[h(ChildA)]`。
+         */
         render() {
           return [h(ChildA)]
         },
       } as any
       const ChildA = {
+        /**
+         * 建立每实例初始 data：`{ a: 1, }`。
+         */
         data() {
           return {
             a: 1,
           }
         },
         inject: ['a'],
+        /**
+         * 渲染结果为 `this.a`。
+         */
         render() {
           return this.a
         },
@@ -1649,15 +2254,24 @@ describe('api: options', () => {
       ).toHaveBeenWarned()
     })
 
-    // 测试场景：data 返回值与 methods 存在同名属性时发出冲突警告。
+    // data 返回值与 methods 存在同名 foo，挂载时发出重复属性警告。
     test('data property is already declared in methods', () => {
       const Comp = {
+        /**
+         * 建立每实例初始 data：`({ foo: 1, })`。
+         */
         data: () => ({
           foo: 1,
         }),
         methods: {
+          /**
+           * 空 foo 夹具，保留本例的选项/回调形状；函数自身不产生副作用。
+           */
           foo() {},
         },
+        /**
+         * 空渲染占位，让组件完成本例所需的初始化，断言读取状态或诊断结果。
+         */
         render() {},
       }
 
@@ -1668,13 +2282,19 @@ describe('api: options', () => {
       ).toHaveBeenWarned()
     })
 
-    // 测试场景：computed 属性已在 props 中声明。
+    // computed 与 props 同时声明 foo，挂载时发出重复属性警告。
     test('computed property is already declared in props', () => {
       const Comp = {
         props: { foo: Number },
         computed: {
+          /**
+           * 空 foo 夹具，保留本例的选项/回调形状；函数自身不产生副作用。
+           */
           foo() {},
         },
+        /**
+         * 空渲染占位，让组件完成本例所需的初始化，断言读取状态或诊断结果。
+         */
         render() {},
       }
 
@@ -1685,19 +2305,28 @@ describe('api: options', () => {
       ).toHaveBeenWarned()
     })
 
-    // 测试场景：computed 属性已在注入中声明。
+    // computed 与 inject 同时声明 a，挂载时发出重复属性警告。
     test('computed property is already declared in inject', () => {
       const Comp = {
+        /**
+         * 建立每实例初始 data：`{ a: 1, }`。
+         */
         data() {
           return {
             a: 1,
           }
         },
+        /**
+         * 返回 `a` 作为此组件的祖先提供值，让后代 inject 读取。
+         */
         provide() {
           return {
             a: this.a,
           }
         },
+        /**
+         * 渲染结果为 `[h(ChildA)]`。
+         */
         render() {
           return [h(ChildA)]
         },
@@ -1705,11 +2334,20 @@ describe('api: options', () => {
       const ChildA = {
         computed: {
           a: {
+            /**
+             * 空 get 夹具，保留本例的选项/回调形状；函数自身不产生副作用。
+             */
             get() {},
+            /**
+             * 空 set 夹具，保留本例的选项/回调形状；函数自身不产生副作用。
+             */
             set() {},
           },
         },
         inject: ['a'],
+        /**
+         * 渲染结果为 `this.a`。
+         */
         render() {
           return this.a
         },
@@ -1722,15 +2360,24 @@ describe('api: options', () => {
       ).toHaveBeenWarned()
     })
 
-    // 测试场景：computed 属性已在方法中声明。
+    // computed 与 methods 同时声明 foo，挂载时发出重复属性警告。
     test('computed property is already declared in methods', () => {
       const Comp = {
         computed: {
+          /**
+           * 空 foo 夹具，保留本例的选项/回调形状；函数自身不产生副作用。
+           */
           foo() {},
         },
         methods: {
+          /**
+           * 空 foo 夹具，保留本例的选项/回调形状；函数自身不产生副作用。
+           */
           foo() {},
         },
+        /**
+         * 空渲染占位，让组件完成本例所需的初始化，断言读取状态或诊断结果。
+         */
         render() {},
       }
 
@@ -1741,15 +2388,24 @@ describe('api: options', () => {
       ).toHaveBeenWarned()
     })
 
-    // 测试场景：computed 属性已在数据中声明。
+    // computed 与 data 同时声明 foo，挂载时发出重复属性警告。
     test('computed property is already declared in data', () => {
       const Comp = {
+        /**
+         * 建立每实例初始 data：`({ foo: 1, })`。
+         */
         data: () => ({
           foo: 1,
         }),
         computed: {
+          /**
+           * 空 foo 夹具，保留本例的选项/回调形状；函数自身不产生副作用。
+           */
           foo() {},
         },
+        /**
+         * 空渲染占位，让组件完成本例所需的初始化，断言读取状态或诊断结果。
+         */
         render() {},
       }
 

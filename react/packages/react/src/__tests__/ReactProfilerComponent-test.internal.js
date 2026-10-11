@@ -16,7 +16,7 @@ let act;
 let container;
 let assertConsoleErrorDev;
 
-/** 按当前特性开关重新加载 React、测试 renderer 与调度器，隔离模块状态。 */
+/** 在 require React/DOM renderer 前写入三个 profiling flags（timer、commit hooks、nested phase）；默认全开，不自行 resetModules，由用例 setup 隔离加载缓存。 */
 function loadModules({
   enableProfilerTimer = true,
   enableProfilerCommitHooks = true,
@@ -39,6 +39,7 @@ function loadModules({
 describe('Profiler', () => {
   beforeEach(() => {
     container = document.createElement('div');
+  // 每例创建空容器；内层循环另重置模块并在 require renderer 前切换 timer，隔离两组 profiling 配置。
   });
 
   describe('works in profiling and non-profiling bundles', () => {
@@ -52,15 +53,9 @@ describe('Profiler', () => {
           loadModules({enableProfilerTimer});
         });
 
-      // 生产构建同样会抛错，但此用例只验证 DEV 的诊断信息。
+        // 只有 DEV 且 profiler timer 开启时检查缺少 id 的诊断；此用例没有期待抛错。
         if (__DEV__ && enableProfilerTimer) {
-          /**
-           * Given：已建立该文件所需的 renderer、容器与测试夹具。
-           * When：执行“should warn if required params are missing”场景的唯一关键操作。
-           * Then：断言 Profiler 组件的公开校验与嵌套行为 的可观察结果。
-           *
-           * 验证机制：同时观察返回值、渲染输出或诊断信息，证明结果来自目标分支。
-           */
+          /** 外层循环在 timer 开/关两配置加载模块，但本例只在 DEV 且 timer 开时定义；挂空 Profiler 且无 id，要求 id 必须字符串的诊断，验证配置门控下的参数提醒。 */
           it('should warn if required params are missing', async () => {
             const root = ReactDOMClient.createRoot(container);
             await act(() => {
@@ -72,19 +67,16 @@ describe('Profiler', () => {
           });
         }
 
-        /**
-         * 场景：“should support an empty Profiler (with no children)”。
-         * 机制：验证Profiler 组件的公开校验与嵌套行为，锁定可观察结果与失败边界。
-         */
+        /** 在 timer=true/false 两配置各挂空 Profiler，再包在 div 中更新；两次比较容器快照，验证 Profiler 透明结构及无 children 边界，没有计时参数断言。 */
         it('should support an empty Profiler (with no children)', async () => {
           const root = ReactDOMClient.createRoot(container);
-    // 作为根节点挂载时，Profiler 仍必须正常报告提交。
+          // 空 Profiler 不生成宿主节点；快照检查容器为空。
           await act(() => {
             root.render(<React.Profiler id="label" onRender={jest.fn()} />);
           });
           expect(container.innerHTML).toMatchSnapshot();
 
-    // 作为非根后代挂载时，Profiler 使用相同的测量契约。
+          // 放入 div 后，快照应只包含外层 div；这里没有断言 onRender 的计时参数。
           await act(() => {
             root.render(
               <div>
@@ -95,12 +87,9 @@ describe('Profiler', () => {
           expect(container.innerHTML).toMatchSnapshot();
         });
 
-        /**
-         * 场景：“should render children”。
-         * 机制：验证Profiler 组件的公开校验与嵌套行为，锁定可观察结果与失败边界。
-         */
+        /** 在 timer=true/false 两配置各挂外部 span 与 Profiler 内 span/函数文本，比较 DOM 快照，验证启停计时不改变宿主 children 结构。 */
         it('should render children', async () => {
-          /** 作为“should render children”场景的函数夹具，返回待协调内容或触发目标行为。 */
+          /** 返回 label span 的函数叶，供 timer 开/关配置下宿主结构快照。 */
           const FunctionComponent = ({label}) => <span>{label}</span>;
           const root = ReactDOMClient.createRoot(container);
           await act(() => {
@@ -117,16 +106,13 @@ describe('Profiler', () => {
           expect(container.innerHTML).toMatchSnapshot();
         });
 
-        /**
-         * 场景：“should support nested Profilers”。
-         * 机制：验证Profiler 组件的公开校验与嵌套行为，锁定可观察结果与失败边界。
-         */
+        /** 在 timer=true/false 两配置各挂外层函数和内层 class/span 的嵌套 Profiler，比较 DOM 快照，验证多层透明结构而非回调耗时。 */
         it('should support nested Profilers', async () => {
-          /** 作为“should support nested Profilers”场景的函数夹具，返回待协调内容或触发目标行为。 */
+          /** 返回 label div 的函数叶，供嵌套 Profiler 的外层结构快照。 */
           const FunctionComponent = ({label}) => <div>{label}</div>;
-          /** 作为“should support nested Profilers”场景的组件夹具，隔离待验证的 React 行为。 */
+          /** 嵌套 Profiler 的 class 叶，将 label 输出成 span，与外层函数叶对照。 */
           class ClassComponent extends React.Component {
-            /** 渲染“should support nested Profilers”场景所需的元素树，使断言能够观察协调与提交结果。 */
+            /** 返回 props.label 的 span，供内层 Profiler children 快照。 */
             render() {
               return <span>{this.props.label}</span>;
             }

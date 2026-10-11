@@ -22,6 +22,7 @@ export default defineConfig({
       },
     },
     modulePreload: {
+      /** hello 分包的预加载列表额外追加 public preloaded.js，其余分包保持传入依赖列表。 */
       resolveDependencies(filename, deps, { hostId, hostType }) {
         if (filename.includes('hello')) {
           return [...deps, 'preloaded.js']
@@ -31,6 +32,7 @@ export default defineConfig({
     },
   },
   experimental: {
+    /** 对额外 public 预加载文件生成根路径运行时字符串表达式，其余引用要求相对 URL。 */
     renderBuiltUrl(filename, { hostId, hostType }) {
       if (filename.includes('preloaded')) {
         return { runtime: `""+${JSON.stringify('/' + filename)}` }

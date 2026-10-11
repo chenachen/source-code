@@ -24,6 +24,7 @@ export default defineConfig(() => ({
   ],
 }))
 
+/** create-vite 模板与生成文件的 CC0 正文，追加到 licensePlugin 输出；法律原文保持原样。 */
 const cc0LicenseText = `
 CC0 1.0 Universal
 

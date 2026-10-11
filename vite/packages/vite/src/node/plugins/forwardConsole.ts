@@ -10,7 +10,8 @@ import { generateCodeFrame } from '../utils'
 
 /**
  * 接收浏览器/Runner 转发的 console 与未处理错误，并写入对应 Environment 的终端 logger。
- * 错误会利用模块图 sourcemap 还原位置并展示离项目最近的 code frame；普通日志保持原 level。
+ * 错误利用模块图 sourcemap 还原位置，为首个已有转换结果且磁盘文件存在的帧展示 code frame；
+ * error/warn 日志走对应 logger，其余级别带原 level 前缀走 info。
  */
 export function forwardConsolePlugin(pluginOpts: {
   /** 需要监听 forward-console custom event 的 Environment 名称。 */
@@ -22,7 +23,7 @@ export function forwardConsolePlugin(pluginOpts: {
   return {
     name: 'vite:forward-console',
     apply: 'serve',
-    /** 接入开发服务器生命周期，为浏览器控制台转发注册运行时状态或事件转发。 */
+    /** 为选定 Environment 注册 vite:forward-console 监听器并写入各自的 logger。 */
     configureServer(server) {
       for (const name of pluginOpts.environments) {
         // 每个 Environment 使用自己的模块图、root 与 logger，不能统一映射后广播。
@@ -61,7 +62,7 @@ export function forwardConsolePlugin(pluginOpts: {
 
 /**
  * 把浏览器 ErrorPayload 的 stack 映射回项目源码，并生成终端友好的错误标题、帧列表与
- * 单个最近 code frame。依赖堆栈仍完整保留，但不会为每帧都输出大段源码。
+ * 首个符合模块图/文件条件的 code frame。依赖堆栈仍完整保留，只展开选中的一帧源码。
  */
 function formatError(
   payload: Extract<

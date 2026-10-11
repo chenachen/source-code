@@ -33,7 +33,7 @@ export function describeBuiltInComponentFrame(name: string): string {
           : // JSC/Spidermonkey
             x.stack.indexOf('@') > -1
             ? '@unknown:0:0'
-            : // Other
+            : // 其他引擎
               '';
     }
   }
@@ -64,6 +64,7 @@ export function describeDebugInfoFrame(
 let reentry = false;
 let componentFrameCache;
 if (__DEV__) {
+  // 以组件函数为键缓存采样结果；WeakMap 不阻止函数回收，旧环境的 Map 回退则会保留这些开发诊断引用。
   const PossiblyWeakMap = typeof WeakMap === 'function' ? WeakMap : Map;
   componentFrameCache = new PossiblyWeakMap<Function, string>();
 }
@@ -74,7 +75,11 @@ if (__DEV__) {
  * @remarks
  * 先在受控函数中抛出并捕获 control error，再调用组件得到 sample error，最后比较两条
  * stack，找出只存在于 sample 的组件 frame。重放期间会清空 dispatcher、屏蔽 console
- * 并替换 `Error.prepareStackTrace`，所有全局状态都在 `finally` 恢复。
+ * 并替换 `Error.prepareStackTrace`，进入取样 try 后的退出路径都经 `finally` 恢复。
+ * 初始化 dispatcher/console 的 patch 在该 try 之前；初始化本身若抛错，不属于下方 finally 的保护范围。
+ * DEV 缓存按组件函数存 frame，命中时不会再次执行组件；无法取样时缓存按名称合成的回退行。
+ * @param construct - class 路径需通过构造调用制造 sample 栈；函数路径直接调用 fn，刻意不给真实 props/Hook dispatcher。
+ * @returns 代表目标组件的单行原生或合成 frame；重入和无可用名称时可以为空串。
  */
 export function describeNativeComponentFrame(
   fn: Function,

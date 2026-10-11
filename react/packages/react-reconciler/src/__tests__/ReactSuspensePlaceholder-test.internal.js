@@ -217,7 +217,7 @@ describe('ReactSuspensePlaceholder', () => {
 
   /**
    * 场景（Given–When–Then）：给定主树直接由文本节点 A/B/C 构成；当 B2 更新挂起并超时；
-   * 那么回退替换文本占位，资源完成后恢复为 AB2C。对应机制：文本节点的隐藏与重新附着。
+   * 那么回退替换文本占位，资源完成后恢复为 AB2C。对应机制：文本节点隐藏与恢复内容，宿主节点不因隐藏而重新挂载。
    */
   it('times out text nodes', async () => {
     /** 生成左右稳定文本夹住一个异步中间文本的边界。 */
@@ -526,7 +526,7 @@ describe('ReactSuspensePlaceholder', () => {
 
       /**
        * 场景（Given–When–Then）：给定并发根已显示 5ms 文本，更新后主边界与兄弟边界都挂起；
-       * 当 fallback 超时、再次更新并同时完成两个资源；那么回退计时排除未提交工作，最终
+       * 当 fallback 超时、再次更新并同时完成两个资源；那么回退 actualDuration 包含已尝试的3ms主树工作，最终
        * actualDuration 为 9ms。验证机制：阶段日志、回调次数和 feature gate 下的 base 值。
        */
       it('properly accounts for base durations when a suspended times out in a concurrent tree', async () => {
@@ -611,8 +611,8 @@ describe('ReactSuspensePlaceholder', () => {
           </>,
         );
 
-        // TODO：这里只为推进到下一个 JND 时间桶；原因是 AsyncText 与 React 内部 Suspense
-        // 共用计时器队列，后续应让测试辅助资源脱离该计时器。
+        // 推进 Scheduler mock 时间200ms，再处理本次挂起与重试；本版 work loop 使用 fallback retry 节流，
+        // 没有旧 JND 分桶函数。资源完成由独立 Jest timer 推进，二者在后续阶段分别控制。
         Scheduler.unstable_advanceTime(200);
 
         await waitForAll([

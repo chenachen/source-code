@@ -152,7 +152,8 @@ enum NewlineType {
 
 /**
  * 代码生成期间的输出缓冲和位置状态。
- * `push` 是唯一写入入口，负责同步 code、行列、source map；各 gen* 函数只拼语法结构。
+ * `push` 是唯一写入入口；code 总会追加，行列/offset 仅在非浏览器且启用 source map 时累计。
+ * 各 gen* 函数只拼语法结构，不在未启用映射时额外扫描字符串来维护位置。
  */
 export interface CodegenContext extends Omit<
   Required<CodegenOptions>,
@@ -229,7 +230,7 @@ function createCodegenContext(
     helper(key) {
       return `_${helperNameMap[key]}`
     },
-    /** 追加生成代码，并同步位置与可选 source map 映射。 */
+    /** 追加生成代码；仅启用 map 时计算位置和起止映射，newlineIndex 是该路径的换行提示。 */
     push(code, newlineIndex = NewlineType.None, node) {
       context.code += code
       if (!__BROWSER__ && context.map) {
@@ -343,6 +344,8 @@ function createCodegenContext(
  * 根据 mode 生成 ESM 模块或供 `new Function` 执行的函数工厂；随后依次输出 helper 序言、
  * 资源解析、临时变量和根 codegenNode。setup 内联模式把 import/提升声明分离到 preamble，
  * 让调用方把箭头渲染函数嵌回 setup 作用域。
+ * ast.helpers 与各 codegenNode 须由转换器预先补齐；打印器不会重新扫描调用来收集 helper。
+ * 返回原 AST 引用。inline 模式的 preamble 使用独立缓冲，其映射不拼入主体 map。
  */
 export function generate(
   ast: RootNode,
@@ -496,8 +499,8 @@ function genFunctionPreamble(ast: RootNode, context: CodegenContext) {
     } else {
       // 先把全局 Vue 保存为保留局部名，避免模板属性 `Vue` 遮蔽它。
       push(`const _Vue = ${VueBinding}\n`, NewlineType.End)
-      // 提升常量位于 render/with 外，无法看到 with 内 helper；因此仅把提升表达式实际用到的
-      // VNode helper 再解构到顶层。
+      // 提升常量位于 render/with 外，无法看到 with 内 helper；在存在 hoists 时，将固定
+      // VNode helper 列表与整棵 ast.helpers 取交集再解构到顶层，并未扫描每个 hoist 的实际调用。
       if (ast.hoists.length) {
         const staticHelpers = [
           CREATE_VNODE,
@@ -530,6 +533,7 @@ function genFunctionPreamble(ast: RootNode, context: CodegenContext) {
 
 /**
  * 生成 module 模式序言：ESM 导入 runtime helper、自定义 import、提升常量和 export 关键字。
+ * inline 时不输出 export；genScopeId 保留在签名中，当前不再为提升元素生成旧 scopeId 包装。
  */
 function genModulePreamble(
   ast: RootNode,
@@ -664,7 +668,7 @@ function genImports(importsOptions: ImportItem[], context: CodegenContext) {
   })
 }
 
-/** 判断节点打印结果是否足够短，供数组/对象格式化选择单行布局。 */
+/** 按节点种类判断是否可紧凑打印的文本类，不计算实际字符串长度。 */
 function isText(n: string | CodegenNode) {
   return (
     isString(n) ||
@@ -675,7 +679,10 @@ function isText(n: string | CodegenNode) {
   )
 }
 
-/** 把节点列表打印成 JS 数组；复杂或超过三个元素时自动多行缩进。 */
+/**
+ * 把节点列表打印成 JS 数组；超过三项必定多行，非浏览器或开发构建还会按复杂节点换行。
+ * 浏览器生产构建省去复杂度分支，三项以内只采用紧凑外层布局。
+ */
 function genNodeListAsArray(
   nodes: (string | CodegenNode | TemplateChildNode[])[],
   context: CodegenContext,
@@ -922,7 +929,7 @@ function genVNodeCall(node: VNodeCall, context: CodegenContext) {
   if (patchFlag) {
     if (__DEV__) {
       if (patchFlag < 0) {
-        // 负数是互斥的特殊标记，如 HOISTED / BAIL。
+        // 负数是互斥的特殊标记，如 CACHED / BAIL。
         patchFlagString = patchFlag + ` /* ${PatchFlagNames[patchFlag]} */`
       } else {
         // 正数可组合，逐位收集命中的标记名。
@@ -968,6 +975,7 @@ function genVNodeCall(node: VNodeCall, context: CodegenContext) {
 
 /**
  * 去掉调用参数尾部的空值，并把中间空槽补成 `null`，保持运行时参数位置。
+ * 调用方传的是已准备好的代码片段/节点；尾部用 nullish 判断裁剪，中间按 truthy 判断补位。
  */
 function genNullableArgs(args: any[]): CallExpression['arguments'] {
   let i = args.length
@@ -1028,6 +1036,7 @@ function genArrayExpression(node: ArrayExpression, context: CodegenContext) {
 
 /**
  * 打印箭头函数；插槽函数额外包裹 `withCtx`，确保异步/子组件调用时恢复声明方渲染上下文。
+ * returns 与 body 由转换器择一提供，二者同时存在时优先打印 returns；newline 控制显式 return 与换行块。
  */
 function genFunctionExpression(
   node: FunctionExpression,
@@ -1108,13 +1117,14 @@ function genConditionalExpression(
   if (!isNested) {
     context.indentLevel--
   }
-  needNewline && deindent(true /* without newline */)
+  needNewline && deindent(true /* 不再换行 */)
 }
 
 /**
  * 打印 `_cache[index]` 缓存表达式。
- * 缓存 VNode/v-once 时会暂停 block tracking，防止首次创建的动态子节点被外层 block 重复收集；
- * 写入 `cacheIndex` 供 HMR/运行时失效逻辑定位缓存槽，然后恢复追踪。
+ * needPauseTracking 为 true 时暂停 block tracking，赋值结果写入 cacheIndex 后恢复并返回缓存；
+ * inVOnce 只控制暂停 helper 的第二个参数，不能把它与 needPauseTracking 混为同一开关。
+ * needArraySpread 会在每次求值外层浅拷贝缓存数组，保留 VNode 复用并避免共享可被归一化改写的数组容器。
  */
 function genCacheExpression(node: CacheExpression, context: CodegenContext) {
   const { push, helper, indent, deindent, newline } = context

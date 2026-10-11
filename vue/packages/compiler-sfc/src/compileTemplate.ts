@@ -49,7 +49,7 @@ export interface SFCTemplateCompileResults {
   tips: string[]
   /** 预处理与模板编译诊断。 */
   errors: (string | CompilerError)[]
-  /** 生成代码到原 SFC template block 的 source map。 */
+  /** 代码到编译输入的映射；复用完整 SFC AST 或合并 inMap 时可直接指向整个 .vue。 */
   map?: RawSourceMap
 }
 
@@ -131,7 +131,9 @@ function preprocess(
 
 /**
  * 编译 SFC 的 template block，并可先执行 `lang` 对应预处理器。
- * 预处理器缺失或执行失败会返回空 render 与结构化错误，而不是令整个构建进程直接崩溃。
+ * 预处理器缺失返回空 render、tip 和字符串错误。可用预处理器分支把预处理与后续编译
+ * 都包在 try 中，异常返回空 render 与 errors；无预处理时 compiler 自行 throw 会传播。
+ * 浏览器缺加载函数、或自定义加载函数自己 throw，都发生在该 try 之外。
  */
 export function compileTemplate(
   options: SFCTemplateCompileOptions,
@@ -189,7 +191,11 @@ export function compileTemplate(
   }
 }
 
-/** 选择 DOM/SSR 编译器、安装资产转换并合并 source map 的模板编译主流程。 */
+/**
+ * 选择 DOM/SSR 或自定义 compiler，安装资源 transforms，再编译并收口映射与诊断。
+ * 用户 compilerOptions 可覆盖前置默认项；nodeTransforms 始终是资源转换在前、用户转换
+ * 追加在后，filename/hmr/onError/onWarn 则在展开选项后由 SFC 层最终设置。
+ */
 function doCompileTemplate({
   filename,
   id,
@@ -269,7 +275,8 @@ function doCompileTemplate({
   })
 
   // inMap 是 parse.ts 生成的 block→SFC 简单映射。直接编译 block 字符串时，再把模板
-  // 编译器的 code→block 映射与它合并，并将错误位置平移回完整 `.vue` 文件。
+  // 编译器的 code→block 映射与它合并。错误的 line/offset 按模板字符串在 SFC 中的位置
+  // 平移；column 保留 block 坐标，内容与 <template> 同行时不会补回标签占用的列。
   if (inMap && !inAST) {
     if (map) {
       map = mapLines(inMap, map)
@@ -296,6 +303,9 @@ function doCompileTemplate({
 
 /**
  * 合并 `生成代码 → template block` 与 `template block → 完整 SFC` 两层 source map。
+ * 以新 map 的 original 坐标查询旧 map：只采用旧 map 的行与来源，列仍取新 map 的原始列。
+ * 因而这是保持现有列语义的行映射合并，不会把旧 map 中的缩进列偏移再次施加到结果。
+ * 无 original 或旧 map 查不到 source 的合成段跳过；来源文本、file/root 沿用旧 map。
  */
 function mapLines(oldMap: RawSourceMap, newMap: RawSourceMap): RawSourceMap {
   if (!oldMap) return newMap
@@ -349,7 +359,7 @@ function mapLines(oldMap: RawSourceMap, newMap: RawSourceMap): RawSourceMap {
   return generator.toJSON()
 }
 
-/** 将基于 template block 的错误位置平移到完整 SFC 源码坐标。 */
+/** 按模板字符串在完整 SFC 中的位置补回错误的 line/offset；不调整 column。 */
 function patchErrors(
   errors: CompilerError[],
   source: string,

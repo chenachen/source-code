@@ -31,7 +31,10 @@ export { onActivated, onDeactivated } from './components/KeepAlive'
  */
 export function injectHook(
   type: LifecycleHooks,
-  hook: Function & { __weh?: Function },
+  hook: Function & {
+    /** 用户 hook 上缓存的生命周期包装函数，使再次登记时复用同一包装身份。 */
+    __weh?: Function
+  },
   target: ComponentInternalInstance | null = currentInstance,
   prepend: boolean = false,
 ): Function | undefined {
@@ -39,6 +42,7 @@ export function injectHook(
     const hooks = target[type] || (target[type] = [])
     // 缓存包装器，确保同一用户回调多次进入调度队列时仍可按函数引用去重。
     // `__weh` 是 “with error handling” 的缩写。
+    /** 缓存生命周期错误包装器：暂停响应式追踪，临时激活 target 的实例/scope，再通过同步/异步错误管道调用 hook；正常返回时恢复上下文和追踪状态。 */
     const wrappedHook =
       hook.__weh ||
       (hook.__weh = (...args: unknown[]) => {
@@ -99,7 +103,7 @@ type CreateHook<T = any> = (
   target?: ComponentInternalInstance | null,
 ) => void
 
-/** 注册组件挂载前钩子。此时已完成首次渲染，但宿主节点尚未插入容器。 */
+/** 注册首次渲染前执行的挂载钩子；初始化已完成，尚未执行 render 或创建宿主子树。 */
 export const onBeforeMount: CreateHook = createHook(LifecycleHooks.BEFORE_MOUNT)
 /** 注册组件挂载完成钩子。宿主节点已插入，模板引用也已赋值。 */
 export const onMounted: CreateHook = createHook(LifecycleHooks.MOUNTED)

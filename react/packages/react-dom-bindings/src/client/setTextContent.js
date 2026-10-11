@@ -10,11 +10,8 @@
 import {TEXT_NODE} from './HTMLNodeType';
 
 /**
- * 设置节点的 textContent 属性。对于文本更新，直接设置文本节点的 `nodeValue` 比使用 `.textContent` 更快，因为后者会移除现有节点并创建一个新节点。
- *
- * @param {DOMElement} node
- * @param {string} text
- * @internal
+ * 更新元素的直接文本内容；非空文本且仅有一个 Text 子节点时复用该节点，保留其 DOM 身份。
+ * 空文本或多个子节点走 textContent，由浏览器清空或替换整组子节点。
  */
 function setTextContent(node: Element, text: string): void {
   if (text) {

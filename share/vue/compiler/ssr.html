@@ -9,6 +9,7 @@
     />
     <title>compiler-ssr 详解 · Vue Compiler 指南</title>
     <link rel="stylesheet" href="assets/styles.css" />
+    <link rel="stylesheet" href="assets/diagrams.css" />
   </head>
   <body>
     <a class="skip-link" href="#content">跳到正文</a>
@@ -121,8 +122,12 @@
                 </tr>
                 <tr>
                   <td>scopeId</td>
-                  <td>function mode 下置空</td>
-                  <td>scopeId 注入依赖 module 产物与上层协作。</td>
+                  <td>显式指定 mode: 'function' 时置空</td>
+                  <td>
+                    清空条件检查传入的 mode；省略 mode
+                    不触发清空，不能仅凭最终产物是 function 形式判断 scopeId
+                    已被移除。
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -227,7 +232,9 @@
             props 构造、表达式前缀和作用域追踪可以共享；VNode patch 优化、DOM
             事件和客户端 block tree 不能照搬。
           </div>
-          <a class="source-link" href="../../../vue/packages/compiler-ssr/src/index.ts"
+          <a
+            class="source-link"
+            href="../../../vue/packages/compiler-ssr/src/index.ts"
             >packages/compiler-ssr/src/index.ts</a
           >
         </section>
@@ -458,8 +465,10 @@ _push(&#96;&lt;div class="box"&gt;hello &#36;{
             <article class="code-note">
               <h3>第一个字符串片段才创建 _push</h3>
               <p>
-                空分支或只含组件调用的子树不会生成空模板字面量。延迟创建让 body
-                中每个 _push 都有真实内容。
+                普通空分支无需建立字符串缓冲；只含组件调用的子树使用独立
+                <code>_push(_ssrRenderComponent(...))</code>。#5352 的 slot
+                根路径会刻意推入空字符串，供运行时判定插槽内容，HTML
+                本身不增加节点。
               </p>
             </article>
             <article class="code-note">
@@ -473,9 +482,12 @@ _push(&#96;&lt;div class="box"&gt;hello &#36;{
             <article class="code-note">
               <h3>控制流不能嵌入字符串</h3>
               <p>
-                IfStatement、ssrRenderComponent 等是独立 JS 语句。pushStatement
-                清空 currentString，下一个文本片段会开启新
-                _push，保证语句顺序与模板顺序一致。
+                IfStatement 直接追加控制流；组件则追加独立的
+                <code>_push(_ssrRenderComponent(...))</code>。ssrRenderComponent
+                返回子组件的 SSRBuffer，异步组件还可能返回
+                Promise，不能将结果放入字符串插值。_push
+                保留子缓冲和输出顺序，最终展开阶段再得到 HTML。pushStatement
+                清空 currentString，下一个字符串片段重新建立 _push。
               </p>
             </article>
             <article class="code-note">
@@ -492,6 +504,235 @@ _push(&#96;&lt;div class="box"&gt;hello &#36;{
             追加字符串或表达式；<code>pushStatement()</code> 在写控制流前先结算
             buffer。各 transform 因而不必自行处理字符串拼接边界。
           </p>
+          <figure class="engineering-diagram" id="ssr-buffer-flow">
+            <div
+              class="engineering-scroll"
+              tabindex="0"
+              aria-label="编译期字符串缓冲与运行时同步异步 buffer 展开图，可横向滚动"
+            >
+              <svg
+                viewBox="0 0 960 880"
+                role="img"
+                aria-labelledby="ssr-buffer-title ssr-buffer-desc"
+              >
+                <title id="ssr-buffer-title">
+                  字符串程序如何保留子组件 buffer 并按顺序展开
+                </title>
+                <desc id="ssr-buffer-desc">
+                  编译期 currentString 将字符串与插值合成 push
+                  调用，运行时各组件另有 SSRBuffer。父组件先后 push 前段、子组件
+                  buffer 或 Promise、后段。push 将异步标记传播到父 buffer。没有
+                  hasAsync 时递归同步展开；有 hasAsync 时逐项等待 Promise
+                  并在原位置继续，最终得到按原顺序合成的 HTML。
+                </desc>
+                <defs>
+                  <marker
+                    id="ssr-buffer-arrow"
+                    viewBox="0 0 10 10"
+                    refX="9"
+                    refY="5"
+                    markerWidth="7"
+                    markerHeight="7"
+                    orient="auto-start-reverse"
+                  >
+                    <path d="M 0 0 L 10 5 L 0 10 z" />
+                  </marker>
+                </defs>
+                <text class="eng-stage" x="30" y="33">
+                  编译期：currentString 是 JS AST，不是运行时 SSRBuffer
+                </text>
+                <g class="eng-edge" marker-end="url(#ssr-buffer-arrow)">
+                  <path d="M 310 106 H 355" />
+                  <path d="M 615 106 H 660" />
+                  <path d="M 795 144 V 198 H 170 V 215" />
+                  <path d="M 305 267 H 340" />
+                  <path d="M 620 267 H 655" />
+                  <path d="M 170 319 V 352 H 480 V 376" />
+                  <path d="M 480 319 V 376" />
+                  <path d="M 793 319 V 352 H 480" />
+                  <path d="M 480 482 V 508" />
+                  <path d="M 370 553 H 232 V 643" />
+                  <path d="M 590 553 H 727 V 643" />
+                  <path d="M 232 751 V 823 H 310" />
+                  <path d="M 727 751 V 823 H 650" />
+                </g>
+                <rect
+                  class="eng-node"
+                  x="30"
+                  y="68"
+                  width="280"
+                  height="76"
+                  rx="9"
+                />
+                <text class="eng-label" x="47" y="96">
+                  标签、静态文本、动态插值
+                </text>
+                <text class="eng-code" x="47" y="126">
+                  pushStringPart(part)
+                </text>
+                <rect
+                  class="eng-node primary"
+                  x="355"
+                  y="68"
+                  width="260"
+                  height="76"
+                  rx="9"
+                />
+                <text class="eng-label" x="372" y="96">
+                  合成 TemplateLiteral
+                </text>
+                <text class="eng-small" x="372" y="126">
+                  pushStatement 会结束当前缓冲
+                </text>
+                <rect
+                  class="eng-node blue"
+                  x="660"
+                  y="68"
+                  width="270"
+                  height="76"
+                  rx="9"
+                />
+                <text class="eng-label" x="677" y="96">
+                  generate 打印调用代码
+                </text>
+                <text class="eng-code" x="677" y="126">
+                  _push(`HTML + 插值`)
+                </text>
+                <text class="eng-stage" x="30" y="183">
+                  运行时：以父元素包住一个组件为例，三个调用先后执行
+                </text>
+                <rect
+                  class="eng-node"
+                  x="30"
+                  y="215"
+                  width="275"
+                  height="104"
+                  rx="9"
+                />
+                <text class="eng-label" x="47" y="242">父组件：前段</text>
+                <text class="eng-code" x="47" y="276">
+                  _push("&lt;div&gt;")
+                </text>
+                <rect
+                  class="eng-node violet"
+                  x="340"
+                  y="215"
+                  width="280"
+                  height="104"
+                  rx="9"
+                />
+                <text class="eng-code" x="356" y="242">
+                  ssrRenderComponent(Child)
+                </text>
+                <text class="eng-code" x="356" y="271">
+                  SSRBuffer | Promise&lt;SSRBuffer&gt;
+                </text>
+                <text class="eng-small" x="356" y="299">
+                  直接 _push 结果，此处不 await
+                </text>
+                <rect
+                  class="eng-node"
+                  x="655"
+                  y="215"
+                  width="275"
+                  height="104"
+                  rx="9"
+                />
+                <text class="eng-label" x="672" y="242">父组件：后段</text>
+                <text class="eng-code" x="672" y="276">
+                  _push("&lt;/div&gt;")
+                </text>
+                <text class="eng-small" x="510" y="345">
+                  createBuffer().push 按调用顺序存项
+                </text>
+                <rect
+                  class="eng-node primary"
+                  x="95"
+                  y="376"
+                  width="770"
+                  height="106"
+                  rx="9"
+                />
+                <text class="eng-label" x="115" y="402">
+                  父组件的 SSRBuffer
+                </text>
+                <text class="eng-code" x="115" y="433">
+                  ["&lt;div&gt;", childBuffer 或 Promise, "&lt;/div&gt;"]
+                </text>
+                <text class="eng-small" x="115" y="464">
+                  相邻字符串可合并；push(Promise) 或 push(hasAsync 子 buffer)
+                  会设置 hasAsync=true
+                </text>
+                <polygon
+                  class="eng-decision"
+                  points="480,508 590,553 480,598 370,553"
+                />
+                <text class="eng-label" x="480" y="558" text-anchor="middle">
+                  buffer.hasAsync？
+                </text>
+                <text class="eng-small" x="75" y="578">否：同步路径</text>
+                <text class="eng-small" x="688" y="578">是：按项处理</text>
+                <rect
+                  class="eng-node blue"
+                  x="35"
+                  y="643"
+                  width="395"
+                  height="108"
+                  rx="9"
+                />
+                <text class="eng-label" x="55" y="671">unrollBufferSync</text>
+                <text class="eng-small" x="55" y="704">
+                  字符串直接拼接，子 buffer 递归展开
+                </text>
+                <text class="eng-small" x="55" y="731">
+                  返回合成的 HTML 字符串
+                </text>
+                <rect
+                  class="eng-node amber"
+                  x="530"
+                  y="643"
+                  width="395"
+                  height="108"
+                  rx="9"
+                />
+                <text class="eng-label" x="550" y="671">
+                  nestedUnrollBuffer
+                </text>
+                <text class="eng-small" x="550" y="699">
+                  字符串拼接，子 buffer 递归
+                </text>
+                <text class="eng-code" x="550" y="723">
+                  Promise 解析结果写回 buffer[i]
+                </text>
+                <text class="eng-small" x="550" y="742">
+                  从原位置继续，不按完成先后重排后项
+                </text>
+                <rect
+                  class="eng-node primary"
+                  x="310"
+                  y="790"
+                  width="340"
+                  height="66"
+                  rx="9"
+                />
+                <text class="eng-code" x="328" y="816">
+                  renderToString await unrollBuffer
+                </text>
+                <text class="eng-label" x="328" y="843">
+                  返回按原顺序合成的 HTML
+                </text>
+              </svg>
+            </div>
+            <figcaption>
+              <strong>两种 buffer 生命周期不同。</strong>currentString
+              仅在编译时组织 <code>_push</code> 语句；运行时的 SSRBuffer
+              保存字符串、子 buffer 和 Promise。子组件结果先保留在父 buffer
+              的原位置，后续父字符串可继续入队；同步路径直接展开，异步路径等待该项后从原位置继续。图对应
+              <code>createBuffer</code>、<code>ssrRenderComponent</code> 与
+              <code>renderToString/unrollBuffer</code
+              >，不把组件结果插进模板字符串。
+            </figcaption>
+          </figure>
         </section>
 
         <section id="elements">
@@ -647,8 +888,10 @@ export const ssrTransformElement: NodeTransform = (node, context) =&gt; {
               <h3>Boolean 属性不能输出 false</h3>
               <p>
                 <code>disabled="false"</code> 在 HTML 中仍表示 disabled
-                存在。因此它们使用
-                ssrIncludeBooleanAttr：值为真时输出空格加属性名，值为假时什么都不输出。
+                存在。因此它们使用 ssrIncludeBooleanAttr：值为 truthy 或空字符串
+                <code>''</code>
+                时输出空格加属性名，其余值不输出。空字符串用于表达
+                <code>&lt;input disabled&gt;</code> 这类只声明属性存在的写法。
               </p>
             </article>
           </div>
@@ -702,20 +945,29 @@ export const ssrTransformElement: NodeTransform = (node, context) =&gt; {
           </div>
           <div class="grid-3">
             <article class="card">
-              <h3>v-html / innerHTML</h3>
+              <h3>v-html</h3>
               <p>
-                内容被视为已准备的 HTML并覆盖 children；调用者承担内容可信责任。
+                表达式被视为已准备的 HTML 并覆盖
+                children；调用者承担内容可信责任。
               </p>
             </article>
             <article class="card">
-              <h3>v-text / textContent</h3>
-              <p>动态文本必须 HTML 转义，避免字符被解释成标签。</p>
+              <h3>v-text</h3>
+              <p>用 ssrInterpolate 输出转义文本，避免字符被解释成标签。</p>
             </article>
             <article class="card">
               <h3>textarea / pre</h3>
               <p>初始换行与文本解析特殊，输出必须匹配 hydration 后的 DOM。</p>
             </article>
           </div>
+          <p class="prose">
+            对 input/textarea 之外的原生元素，若运行时自定义指令的 getSSRProps
+            返回 textContent/innerHTML，编译器仅在元素没有模板 children 且未声明
+            v-text/v-html 时采用它们；textContent 优先并经过转义，否则输出
+            innerHTML。元素已有模板 children 时仍输出这些 children。普通
+            <code>:innerHTML</code>/<code>:textContent</code> 绑定不会在这条 SSR
+            模板编译路径中自动变成内容覆盖，应使用 v-html/v-text 表达该意图。
+          </p>
           <a
             class="source-link"
             href="../../../vue/packages/compiler-ssr/src/transforms/ssrTransformElement.ts"
@@ -734,22 +986,290 @@ export const ssrTransformElement: NodeTransform = (node, context) =&gt; {
               _push，需要回退为普通 VNode slot。
             </p>
           </div>
-          <div class="branch">
-            <div class="flow-node primary">
-              <strong>组件 children</strong><small>同一份模板 slot 语义</small>
+          <figure class="engineering-diagram" id="ssr-slot-flow">
+            <div
+              class="engineering-scroll"
+              tabindex="0"
+              aria-label="slot 双分支与作用域传递图，可横向滚动"
+            >
+              <svg
+                viewBox="0 0 960 980"
+                role="img"
+                aria-labelledby="ssr-slot-title ssr-slot-desc"
+              >
+                <title id="ssr-slot-title">
+                  同一个 slot 的两遍编译与两种调用协议
+                </title>
+                <desc id="ssr-slot-desc">
+                  第一遍克隆 slot 子树生成 VNode 分支，并保存 SSR 函数壳、原
+                  children 和 VNode 分支；第二遍补上 if push 的函数体。B 的 SSR
+                  slot 出口传入 bufferedPush 和 B-s，A 的函数输出同时带 A
+                  scopeId 和传入 scopeId 的 HTML；普通 render 函数不传
+                  push，取得 VNode 数组。
+                </desc>
+                <defs>
+                  <marker
+                    id="ssr-slot-arrow"
+                    viewBox="0 0 10 10"
+                    refX="9"
+                    refY="5"
+                    markerWidth="7"
+                    markerHeight="7"
+                    orient="auto-start-reverse"
+                  >
+                    <path d="M 0 0 L 10 5 L 0 10 z" />
+                  </marker>
+                </defs>
+                <text class="eng-stage" x="20" y="35">
+                  编译期：提供方 A 的 slot 被编成一个双分支函数
+                </text>
+                <rect
+                  class="eng-lane"
+                  x="20"
+                  y="70"
+                  width="455"
+                  height="270"
+                  rx="12"
+                />
+                <rect
+                  class="eng-lane"
+                  x="505"
+                  y="70"
+                  width="435"
+                  height="270"
+                  rx="12"
+                />
+                <text class="eng-lane-title" x="40" y="98">
+                  第一遍：沿用 core 的 slot 作用域
+                </text>
+                <text class="eng-lane-title" x="525" y="98">
+                  第二遍：补齐函数体，再交给 generate
+                </text>
+                <g class="eng-edge" marker-end="url(#ssr-slot-arrow)">
+                  <path d="M 215 163 H 250" />
+                  <path d="M 353 200 V 245" />
+                  <path d="M 128 200 V 282 H 250" />
+                  <path d="M 455 282 H 490 V 184 H 530" />
+                  <path d="M 723 240 V 270" />
+                </g>
+                <rect
+                  class="eng-node"
+                  x="40"
+                  y="125"
+                  width="175"
+                  height="75"
+                  rx="9"
+                />
+                <text class="eng-label" x="55" y="150">A 的 slot children</text>
+                <text class="eng-code" x="55" y="179">
+                  &lt;span&gt;Hello&lt;/span&gt;
+                </text>
+                <rect
+                  class="eng-node blue"
+                  x="250"
+                  y="125"
+                  width="205"
+                  height="75"
+                  rx="9"
+                />
+                <text class="eng-label" x="265" y="150">clone + core/DOM</text>
+                <text class="eng-small" x="265" y="179">
+                  生成 return VNode 分支
+                </text>
+                <text class="eng-small" x="366" y="226">vnodeBranch</text>
+                <text class="eng-small" x="145" y="254">
+                  原 AST：buildSlots
+                </text>
+                <rect
+                  class="eng-node amber"
+                  x="250"
+                  y="245"
+                  width="205"
+                  height="75"
+                  rx="9"
+                />
+                <text class="eng-label" x="265" y="270">wipMap 暂存半成品</text>
+                <text class="eng-code" x="265" y="299">
+                  fn + children + 分支
+                </text>
+                <rect
+                  class="eng-node primary"
+                  x="530"
+                  y="125"
+                  width="385"
+                  height="115"
+                  rx="9"
+                />
+                <text class="eng-label" x="550" y="151">
+                  ssrProcessComponent
+                </text>
+                <text class="eng-code" x="550" y="185">
+                  if (_push) → SSR children 语句
+                </text>
+                <text class="eng-code" x="550" y="215">
+                  else → return vnodeBranch
+                </text>
+                <rect
+                  class="eng-node violet"
+                  x="540"
+                  y="270"
+                  width="365"
+                  height="55"
+                  rx="9"
+                />
+                <text class="eng-code" x="558" y="302">
+                  slot(_, _push, _parent, _scopeId)
+                </text>
+                <text class="eng-stage" x="20" y="380">
+                  运行时：消费方决定是否传入 _push
+                </text>
+                <rect
+                  class="eng-lane"
+                  x="20"
+                  y="405"
+                  width="435"
+                  height="140"
+                  rx="12"
+                />
+                <rect
+                  class="eng-lane"
+                  x="505"
+                  y="405"
+                  width="435"
+                  height="140"
+                  rx="12"
+                />
+                <text class="eng-lane-title" x="40" y="432">
+                  B 的 SSR &lt;slot&gt; 出口
+                </text>
+                <text class="eng-lane-title" x="525" y="432">
+                  普通 render function 消费 slot
+                </text>
+                <g class="eng-edge" marker-end="url(#ssr-slot-arrow)">
+                  <path d="M 230 487 H 250" />
+                  <path d="M 343 524 V 632 H 360" />
+                  <path d="M 715 524 V 632 H 600" />
+                  <path d="M 425 660 V 709 H 240 V 742" />
+                  <path d="M 535 660 V 709 H 725 V 742" />
+                  <path d="M 240 853 V 889" />
+                </g>
+                <path
+                  class="eng-edge eng-dashed"
+                  d="M 905 298 H 930 V 553 H 480 V 578"
+                  marker-end="url(#ssr-slot-arrow)"
+                />
+                <rect
+                  class="eng-node"
+                  x="45"
+                  y="450"
+                  width="185"
+                  height="74"
+                  rx="9"
+                />
+                <text class="eng-label" x="59" y="476">scopeId=data-v-b</text>
+                <text class="eng-small" x="59" y="504">
+                  本例 slotted ≠ false
+                </text>
+                <rect
+                  class="eng-node blue"
+                  x="250"
+                  y="450"
+                  width="185"
+                  height="74"
+                  rx="9"
+                />
+                <text class="eng-label" x="263" y="476">ssrRenderSlot</text>
+                <text class="eng-small" x="263" y="504">取出 A 的 slotFn</text>
+                <rect
+                  class="eng-node violet"
+                  x="550"
+                  y="450"
+                  width="330"
+                  height="74"
+                  rx="9"
+                />
+                <text class="eng-code" x="570" y="478">slotFn(props)</text>
+                <text class="eng-small" x="570" y="505">
+                  没有第二参数 _push
+                </text>
+                <text class="eng-code" x="70" y="572">
+                  bufferedPush + " data-v-b-s"
+                </text>
+                <text class="eng-small" x="650" y="572">只传 props</text>
+                <polygon
+                  class="eng-decision"
+                  points="480,578 600,632 480,686 360,632"
+                />
+                <text class="eng-label" x="480" y="637" text-anchor="middle">
+                  _push 存在？
+                </text>
+                <text class="eng-small" x="145" y="701">
+                  是：直接写入 slotBuffer
+                </text>
+                <text class="eng-small" x="636" y="701">
+                  否：返回普通 VNode
+                </text>
+                <rect
+                  class="eng-node primary"
+                  x="45"
+                  y="742"
+                  width="390"
+                  height="111"
+                  rx="9"
+                />
+                <text class="eng-label" x="65" y="769">
+                  SSR body：A 的属性 + B 传入的属性
+                </text>
+                <text class="eng-code" x="65" y="803">data-v-a + _scopeId</text>
+                <text class="eng-code" x="65" y="830">
+                  &lt;span data-v-a data-v-b-s&gt;Hello&lt;/span&gt;
+                </text>
+                <rect
+                  class="eng-node violet"
+                  x="530"
+                  y="742"
+                  width="390"
+                  height="111"
+                  rx="9"
+                />
+                <text class="eng-label" x="550" y="769">VNode fallback</text>
+                <text class="eng-code" x="550" y="803">
+                  return [createVNode("span", ...)]
+                </text>
+                <text class="eng-small" x="550" y="830">
+                  交回调用它的普通 render 函数
+                </text>
+                <rect
+                  class="eng-node blue"
+                  x="45"
+                  y="889"
+                  width="390"
+                  height="65"
+                  rx="9"
+                />
+                <text class="eng-label" x="65" y="915">
+                  helper 写回外层 _push
+                </text>
+                <text class="eng-code" x="65" y="940">
+                  &lt;!--[--&gt; + slot 内容 + &lt;!--]--&gt;
+                </text>
+                <text class="eng-note" x="550" y="919">
+                  虚线：编译好的函数在运行时被调用。
+                </text>
+                <text class="eng-note" x="550" y="943">
+                  无 _push 不等于只在浏览器执行。
+                </text>
+              </svg>
             </div>
-            <div class="branch-lines">↗<br />↘</div>
-            <div class="branch-targets">
-              <div class="branch-target">
-                <strong>SSR slot</strong>
-                <p>函数接收 _push、_parent、scopeId，直接输出字符串。</p>
-              </div>
-              <div class="branch-target">
-                <strong>VNode fallback</strong>
-                <p>复用 core + DOM transforms 生成普通 slot VNode。</p>
-              </div>
-            </div>
-          </div>
+            <figcaption>
+              <strong>slot 的双分支不是两份独立模板。</strong>左上克隆子树保留
+              VNode 分支，SSR 原树继续保存待完成
+              children；第二遍将两者装入同一个函数。图中沿用下文 A/B 的 scope
+              示例，B 的普通 SSR 出口消费非空 span。普通 render
+              函数也可能在服务端执行，判别条件始终是调用时有没有 _push；转发
+              scope 和 Transition 出口的特殊边界见下文。
+            </figcaption>
+          </figure>
           <figure class="source-block">
             <figcaption class="source-caption">
               <span
@@ -836,12 +1356,59 @@ for (let i = 0; i &lt; wipEntries.length; i++) {
               </p>
             </article>
           </div>
+          <div class="code-walkthrough">
+            <article class="code-note">
+              <h3>&lt;slot&gt; 出口调用提供方的函数</h3>
+              <p>
+                ssrTransformSlotOutlet 第一遍准备
+                slots、名称、props、fallback、_push 和 _parent 参数。fallback
+                先放 null，第二遍有 children 时再填入独立的 SSR 函数。运行时
+                ssrRenderSlot 在外围输出 Fragment 锚点，内部按名称取出 slot
+                函数并传入 _push；这里的 fallback
+                是出口自身的默认内容，与提供方函数中无 _push 时返回 VNode
+                的分支不同。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>_scopeId 从消费方传回提供方</h3>
+              <p>
+                假设父组件 A 提供
+                <code>&lt;span&gt;Hello&lt;/span&gt;</code> 给子组件 B，A 的普通
+                scopeId 是 data-v-a，最终元素输出会带上这个属性。B 的
+                &lt;slot&gt; 若启用 slotted 样式，还会向 helper 传入
+                data-v-b-s。helper 调用 A 的 slot 函数时给它补前导空格，作为
+                _scopeId 参数；A 的元素输出再追加这项属性，最终 span 同时带
+                data-v-a 和 data-v-b-s。前者匹配 A 的 scoped 样式，后者匹配 B 的
+                :slotted() 样式。
+              </p>
+              <p>
+                转发 &lt;slot&gt; 时，出口把当前 scopeId-s 与外层 _scopeId
+                合并传下去；slot 内的组件则把 _scopeId 传给组件 helper，由
+                server-renderer 合入其根 attrs。指定 slotted: false
+                时，出口不生成自身的 scopeId-s。
+              </p>
+            </article>
+            <article class="code-note">
+              <h3>Transition 中的出口省去外围 Fragment</h3>
+              <p>
+                Transition/TransitionGroup 只含一个元素类型的 slot
+                子节点时，编译器改用 ssrRenderSlotInner，并传入 transition:
+                true。slot 带 v-if 时还会检查 IfBranch 的祖父组件。Inner
+                自身不添加普通出口的外围 Fragment；运行时还会去除 slot
+                内容已有的一对最外层 Fragment
+                锚点，空内容保留一个空注释，以匹配客户端展平后的节点。
+              </p>
+            </article>
+          </div>
           <div class="callout warn">
             <strong>#5352 的具体场景：</strong>当 slot 根是透明
             Transition，且内部 v-if 当前为 false 时，slot 的有效输出可能只剩
             hydration 注释。<code>ssrRenderSlot</code> 曾将这判为“空 slot”而误走
-            fallback。当前实现会先 <code>_push(``)</code>：不改变
-            HTML，但明确标记 SSR 分支已执行，保留正确的 slot/Fragment 边界。
+            fallback。当前实现先 <code>_push(``)</code>，helper 的 bufferedPush
+            将每次调用原样收进 slotBuffer，因此内容成为
+            <code>['', '&lt;!----&gt;']</code>。isComment('') 返回 false，整份
+            slot 就不会被判为全注释而改走 fallback。空字符串不产生 DOM；外围
+            Fragment 锚点仍由 ssrRenderSlot 输出。
           </div>
           <div class="grid-3" style="margin-top: 1.3rem">
             <article class="card">
@@ -898,7 +1465,10 @@ _ssrRenderList(_ctx.items, (item, key, index) =&gt; {
   _push(&#96;&lt;li&gt;...&lt;/li&gt;&#96;)
 })
 _push(&#96;&lt;!--]--&gt;&#96;)</code></pre>
-              <p>多节点循环需要 Fragment 边界，帮助客户端对齐列表范围。</p>
+              <p>
+                整个列表默认都有 Fragment
+                边界，即使每项只有一个元素；单项含多个节点或唯一节点不是元素时，单项自身也有边界。
+              </p>
             </article>
           </div>
           <figure class="source-block">
@@ -1006,9 +1576,12 @@ export function ssrProcessFor(
             <article class="code-note">
               <h3>嵌套边界可被关闭</h3>
               <p>
-                若父结构已经为该子树提供 fragment 范围，disableNestedFragments
-                可阻止里面重复输出一层 comments。这是减少 HTML
-                噪声，但前提是不破坏节点归属。
+                Transition/TransitionGroup 的客户端运行时会展平直接 children
+                中的 Fragment，SSR 因而在对应输出路径传入
+                disableNestedFragments，抑制这些列表或分支的额外边界。普通嵌套列表仍各自保留
+                Fragment，不能只因祖先已有边界就关闭。另外，v-if 分支唯一 child
+                为 ForNode 时，processIfBranch 直接复用 v-for
+                的边界，不再额外包一层。
               </p>
             </article>
           </div>
@@ -1043,14 +1616,21 @@ export function ssrProcessFor(
               <tbody>
                 <tr>
                   <td>_attrs</td>
-                  <td>单根原生元素或组件；结构分支中的等价根</td>
-                  <td>多根、文本根、无可透传根。</td>
+                  <td>
+                    单根原生元素或组件；模板有效根为一条 v-if
+                    链时，分别注入其中的单根分支
+                  </td>
+                  <td>
+                    条件链之外另有有效根、当前分支多根、文本根、无可透传根；根
+                    v-for 也不注入。
+                  </td>
                 </tr>
                 <tr>
                   <td>_cssVars</td>
                   <td>每个合格根元素/组件；多根与各个 v-if 分支也会分别注入</td>
                   <td>
-                    文本/注释；v-for 载体本身；Suspense 改为注入 slot children。
+                    文本/注释与根 v-for；循环单项不会补注入。Suspense 改为注入
+                    slot children。
                   </td>
                 </tr>
                 <tr>
@@ -1062,8 +1642,14 @@ export function ssrProcessFor(
                 </tr>
                 <tr>
                   <td>slotted scopeId</td>
-                  <td>父组件提供的 slot 内容</td>
-                  <td>传播方向与普通 scopeId 不同。</td>
+                  <td>
+                    消费组件的 scopeId-s，通过 _scopeId 写入父组件提供的 slot
+                    元素
+                  </td>
+                  <td>
+                    slotted: false 时不生成自身的 scopeId-s；转发出口仍传递外层
+                    _scopeId。
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -1128,22 +1714,28 @@ if (context.scopeId) {
             <article class="card">
               <h3>Suspense</h3>
               <p>
-                default/fallback slots 各自编译为函数，不能落入父级当前字符串
-                buffer。
+                default/fallback slots 各自编译为函数；当前 ssrRenderSuspense
+                只调用 default，没有 default 时输出空注释，不执行
+                fallback。default 中异步组件的结果进入 SSR
+                buffer，由最终展开阶段等待。
               </p>
             </article>
             <article class="card">
               <h3>Transition</h3>
               <p>
-                服务端不输出外壳，只透明输出唯一有效 child；DOM
-                转换负责开发期校验。
+                通常直接输出过滤注释后的 children。声明 appear 或 :appear
+                时额外输出 template 包装；客户端取出其内容，根据运行时 appear
+                值执行相应过渡，再替换外层
+                template。编译器只检查属性是否存在，:appear="false"
+                也会生成包装。
               </p>
             </article>
             <article class="card">
               <h3>TransitionGroup</h3>
               <p>
-                无 tag 时展平 children；运行时还会过滤注释，SSR
-                必须同步禁用对应嵌套边界。
+                无 tag 时以自身的一对 Fragment 锚点包围展平的 children，有 tag
+                时输出外层元素。运行时会过滤注释，SSR
+                同步禁用对应子列表/分支的边界、普通注释和缺省 v-if 空注释。
               </p>
             </article>
           </div>
@@ -1178,9 +1770,17 @@ if (!node.ssrCodegenNode) {
           </figure>
           <p class="source-context">
             “专用”不代表四者都调用同一种 helper：Teleport/Suspense
-            形成专用调用，Transition 透明处理有效 child，TransitionGroup 根据
-            tag 选择元素或 Fragment 拓扑。共同点是都不能落入普通
+            形成专用调用，Transition 根据 appear 属性决定直接输出或 template
+            包装， TransitionGroup 根据 tag 选择元素或 Fragment
+            拓扑。共同点是都不能落入普通
             <code>ssrRenderComponent</code> 路径。
+          </p>
+          <p class="prose">
+            Transition 的单 child 和 HTML 嵌套校验由客户端 compiler-dom
+            的开发期转换执行。compiler-ssr
+            默认管线没有安装这两项校验；只有普通组件 slot 的 VNode fallback
+            子转换会复用 DOMNodeTransforms。单独完成 SSR
+            编译，不能据此认为这些结构已经通过 DOM 校验。
           </p>
         </section>
 
@@ -1199,8 +1799,10 @@ if (!node.ssrCodegenNode) {
             <li>
               <b>1</b>
               <div>
-                <strong>DOM 树形一致。</strong>非法 nesting 会被浏览器重排，因此
-                DOM 开发校验也是 SSR 安全网。
+                <strong>DOM 树形一致。</strong>非法 nesting
+                会被浏览器重排，造成与客户端 VNode 树不同的结构。客户端
+                compiler-dom 的开发期校验可提示这类问题，SSR
+                默认编译管线不执行该校验。
               </div>
             </li>
             <li>
@@ -1305,11 +1907,17 @@ if (!currentIf.alternate &amp;&amp; !disableComment) {
                 </tr>
                 <tr>
                   <td>FallthroughAttrs / InjectCssVars</td>
-                  <td>穿过结构根寻找单根并保持 merge 顺序。</td>
+                  <td>
+                    attrs 只注入模板的合格单根；CSS vars 可注入多个合格根、根
+                    v-if 分支与 Suspense 内容，保持 props 合并顺序。
+                  </td>
                 </tr>
                 <tr>
                   <td>ScopeId / SlotOutlet</td>
-                  <td>普通/slotted scope、slot 参数、fallback 与分支 key。</td>
+                  <td>
+                    普通/slotted scope、slot 参数、fallback、scope 转发与
+                    Transition 中的出口。
+                  </td>
                 </tr>
                 <tr>
                   <td>Portal / Suspense / TransitionGroup</td>
@@ -1357,7 +1965,8 @@ if (!currentIf.alternate &amp;&amp; !disableComment) {
             <article class="code-note">
               <h3>输入同时命中三个边界</h3>
               <p>
-                foo 提供 slot，Transition 在 SSR 中透明，v-if=false
+                父模板向 foo 提供 slot，这个未声明 appear 的 Transition 直接输出
+                children，v-if=false
                 只输出占位注释。单独测任何一个功能都不会复现
                 bug，回归用例必须保留这个组合。
               </p>

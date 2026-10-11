@@ -59,8 +59,10 @@ export type TreeContext = {
   overflow: string,
 };
 
-// TODO: 改用统一 Fiber 栈模块。当前 push/pop 模式较特殊，为降低初始实现风险先使用
-// 本地栈；即使出错，也宁可 ID 不正确而不是让整个 reconciler 崩溃。
+/**
+ * 按对保存父级 treeForkCount 与 treeForkProvider，popTreeContext 据此恢复 useId 的树分叉上下文。
+ * 使用独立本地栈承载此 push/pop 协议；TODO：以后改用统一 Fiber 栈模块。
+ */
 const forkStack: Array<any> = [];
 let forkStackIndex: number = 0;
 let treeForkProvider: Fiber | null = null;

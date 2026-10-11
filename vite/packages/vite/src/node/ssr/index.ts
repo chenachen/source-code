@@ -28,11 +28,8 @@ export interface SSROptions {
   target?: SSRTarget
 
   /**
-   * 控制 SSR 中哪些依赖进入预构建，以及对应的 esbuild 选项。
-   *
-   * 构建阶段默认不优化被标记为 noExternal 的 CJS 依赖；开发阶段则默认优化
-   * 用户显式列入 noExternal 的 CJS 依赖。二者区分是为了平衡构建确定性与开发
-   * 启动/互操作性能。
+   * 配置 SSR 开发态依赖预构建，沿用通用 optimizeDeps 的 include/exclude 与 Rolldown 选项。
+   * `noExternal` 决定是否经过 Vite 转换；是否预构建还由依赖优化配置决定。
    *
    * @experimental
    */
@@ -84,7 +81,8 @@ export const ssrConfigDefaults: Readonly<Partial<SSROptions>> =
   _ssrConfigDefaults
 
 /**
- * 合并 SSR 默认项，并把根解析选项中的 preserveSymlinks 传给 esbuild。
+ * 合并 SSR 默认项，并在兼容字段 esbuildOptions 中保留 preserveSymlinks。
+ * 本版优化器使用 Rolldown，实际符号链接策略来自 Environment 的 resolve.preserveSymlinks。
  *
  * 先构造含嵌套默认值的对象、再合并用户配置，可避免用户只设置一个
  * `optimizeDeps` 子项时丢掉符号链接语义。

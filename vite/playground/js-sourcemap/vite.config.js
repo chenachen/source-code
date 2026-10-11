@@ -10,6 +10,7 @@ export default defineConfig({
     transformFooWithInlineSourceMap(),
     {
       name: 'test-babel-transformed-optimized-dep',
+      /** 只对优化目录中的 Babel class-field 依赖再次转换，返回 Babel map，验证与依赖优化 map 串联。 */
       async transform(code, id) {
         if (
           !id.includes('/deps/') ||
@@ -24,12 +25,18 @@ export default defineConfig({
           babelrc: false,
           ast: false,
           sourceMaps: true,
-          plugins: [() => ({ visitor: { Program() {} } })],
+          plugins: [() => ({
+            visitor: {
+              /** 空 Program visitor 使 Babel 插件参与转换而不改 AST，隔离多阶段 map 串联本身。 */
+              Program() {}
+            }
+          })],
         })
       },
     },
     {
       name: 'test-oxc-transformed-optimized-dep',
+      /** 只改写优化目录中的 Oxc class-field 依赖；MagicString 记录符号原名并返回高精度 map，验证优化后的变量回映。 */
       transform(code, id) {
         if (
           !id.includes('/deps/') ||
@@ -41,6 +48,7 @@ export default defineConfig({
         const parsed = parseSync(id, code, { range: true })
         const s = new MagicString(code)
         const visitor = new Visitor({
+          /** 给所有 Identifier 追加 $$$，以 storeName 保留原名供 source map 的 names 查询。 */
           Identifier(node) {
             s.overwrite(node.start, node.end, `${node.name}$$$`, {
               storeName: true,
@@ -76,8 +84,8 @@ export default defineConfig({
       '@vitejs/test-dep-class-field-sourcemap-babel',
       '@vitejs/test-dep-class-field-sourcemap-oxc',
     ],
-    // Force class fields to be downleveled so the optimized deps get the
-    // constructor parameter rename shape some of these sourcemap tests assert on.
+    // 强制降低 class fields 语法，使优化依赖构造器出现测试检查的参数重命名，
+    // 再验证后续 Babel/Oxc 变换能回映到原参数。
     rolldownOptions: {
       transform: {
         target: 'es2015',
@@ -116,6 +124,7 @@ export default defineConfig({
             { name: 'with-define-object', test: 'with-define-object' },
           ],
         },
+        /** 仅给 hashbang 分包添加首行解释器指令，验证 preload mapDeps 注入位于 banner 之后。 */
         banner(chunk) {
           if (chunk.name.endsWith('after-preload-dynamic-hashbang')) {
             return '#!/usr/bin/env node'

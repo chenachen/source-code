@@ -5,6 +5,9 @@
 import { compile } from '../src'
 
 describe('ssr: components', () => {
+  /**
+   * 场景：foo 根组件有静态 id 与动态 prop=b，快照断言 resolveComponent、显式 props 与 _attrs 合并后交 ssrRenderComponent，再单独 _push 子结果，验证组件输出不塞进字符串插值。
+   */
   test('basic', () => {
     expect(compile(`<foo id="a" :prop="b" />`).code).toMatchInlineSnapshot(`
       "const { resolveComponent: _resolveComponent, mergeProps: _mergeProps } = require("vue")
@@ -22,6 +25,9 @@ describe('ssr: components', () => {
   })
 
   // 组件事件监听仍属于组件 props，SSR 不能像原生元素事件一样删除。
+  /**
+   * 场景：foo 组件监听 click=bar，快照仍有 onClick:_ctx.bar 并合并 _attrs，验证 SSR 保留组件事件 props，区别于原生元素监听器省略。
+   */
   test('event listeners', () => {
     expect(compile(`<foo @click="bar" />`).code).toMatchInlineSnapshot(`
       "const { resolveComponent: _resolveComponent, mergeProps: _mergeProps } = require("vue")
@@ -35,6 +41,9 @@ describe('ssr: components', () => {
     `)
   })
 
+  /**
+   * 场景：component 分别用静态 is=foo 与动态 :is=foo，快照均先 resolveDynamicComponent/createVNode 再 ssrRenderVNode，验证动态解析结果可能是标签或组件，需要统一分派。
+   */
   test('dynamic component', () => {
     expect(compile(`<component is="foo" prop="b" />`).code)
       .toMatchInlineSnapshot(`
@@ -59,6 +68,9 @@ describe('ssr: components', () => {
 
   // 插槽分组：每个 slot 同时包含 SSR `_push` 分支与普通 VNode fallback 分支。
   describe('slots', () => {
+    /**
+     * 场景：foo 的直接文本和 div 形成隐式 default，快照断言 _push 分支输出字符串、无 _push 分支返回两个 VNode，验证同一 slot 的双调用协议。
+     */
     test('implicit default slot', () => {
       expect(compile(`<foo>hello<div/></foo>`).code).toMatchInlineSnapshot(`
         "const { resolveComponent: _resolveComponent, withCtx: _withCtx, createVNode: _createVNode, createTextVNode: _createTextVNode } = require("vue")
@@ -84,6 +96,9 @@ describe('ssr: components', () => {
       `)
     })
 
+    /**
+     * 场景：foo 的 v-slot 解构 msg，内容引用 msg+outer，快照两分支都仅给 outer 加 _ctx 前缀，验证 slot 参数作用域在 SSR 和克隆 VNode 子转换中一致。
+     */
     test('explicit default slot', () => {
       expect(compile(`<foo v-slot="{ msg }">{{ msg + outer }}</foo>`).code)
         .toMatchInlineSnapshot(`
@@ -109,11 +124,17 @@ describe('ssr: components', () => {
         `)
     })
 
+    /**
+     * 场景：foo 使用空 v-slot 属性，断言生成代码不出现 (,，验证缺省首参数以占位符补齐。
+     */
     test('empty attribute should not produce syntax error', () => {
       // 修复前会生成 `default: _withCtx((, _push, ...)`，缺少首参数导致语法错误。
       expect(compile(`<foo v-slot="">foo</foo>`).code).not.toMatch(`(,`)
     })
 
+    /**
+     * 场景：foo 同时声明 template 默认槽与 named 槽，快照两个槽各有对应文本的 SSR/VNode 函数，验证两次 buildSlots 遍历按同一顺序配对。
+     */
     test('named slots', () => {
       expect(
         compile(`<foo>
@@ -152,6 +173,9 @@ describe('ssr: components', () => {
       `)
     })
 
+    /**
+     * 场景：named template 槽带 v-if=ok，快照使用 createSlots/DYNAMIC 和条件 slot 描述，验证槽的存在性与其函数体分开生成。
+     */
     test('v-if slot', () => {
       expect(
         compile(`<foo>
@@ -185,6 +209,9 @@ describe('ssr: components', () => {
       `)
     })
 
+    /**
+     * 场景：循环 names 得 key/index 并以 key 作动态槽名、解构 msg，断言 msg/key/index 保持局部、bar 前缀化，快照验证 renderList 生成 slot 描述及两种函数体。
+     */
     test('v-for slot', () => {
       const { code } = compile(`<foo>
       <template v-for="(key, index) in names" v-slot:[key]="{ msg }">{{ msg + key + index + bar }}</template>
@@ -220,6 +247,9 @@ describe('ssr: components', () => {
       `)
     })
 
+    /**
+     * 场景：foo 与 bar 两个具名槽分别把 list 或 ok 定义为局部参数，并各含 if/for，快照核对两分支的不同前缀，验证独立子转换不泄漏兄弟槽作用域。
+     */
     test('nested transform scoping in vnode branch', () => {
       expect(
         compile(`<foo>
@@ -295,6 +325,9 @@ describe('ssr: components', () => {
     })
 
     // #7644：插槽中的 v-once 缓存是客户端概念，SSR slot 双分支生成不能出现无效缓存引用。
+    /**
+     * 场景：foo 槽内容 bar 带 v-once，断言代码无 _cache 并核对 SSR/VNode 双分支，验证 SSR slots 不生成需要 render cache 参数的客户端缓存协议。
+     */
     test('slot content with v-once', () => {
       const { code } = compile(`<foo><bar v-once /></foo>`)
       expect(code).not.toMatch(`_cache`)
@@ -323,6 +356,9 @@ describe('ssr: components', () => {
     })
 
     // #13724：插槽中的 v-memo 同样要在 SSR 字符串分支中安全降级，不能泄漏 withMemo 协议。
+    /**
+     * 场景：foo 槽内容 bar 带 v-memo=[]，断言代码无 _cache 并核对双分支快照，验证 SSR 编译的 memo 指令安全降级。
+     */
     test('slot content with v-memo', () => {
       const { code } = compile(`<foo><bar v-memo="[]" /></foo>`)
       expect(code).not.toMatch(`_cache`)
@@ -353,6 +389,9 @@ describe('ssr: components', () => {
 
     // 内置组件分派：Transition/KeepAlive 等需要透明或专用处理，而非普通组件 helper。
     describe('built-in fallthroughs', () => {
+      /**
+       * 场景：唯一 Transition 根包 div，快照只输出带 _attrs 的 div，验证透明内置组件不会走普通组件 helper。
+       */
       test('transition', () => {
         expect(compile(`<transition><div/></transition>`).code)
           .toMatchInlineSnapshot(`
@@ -364,6 +403,9 @@ describe('ssr: components', () => {
           `)
       })
 
+      /**
+       * 场景：唯一 KeepAlive 根包 foo，快照直接渲染 foo 并透传 _attrs，验证 SSR 不生成客户端 KeepAlive 缓存包装。
+       */
       test('keep-alive', () => {
         expect(compile(`<keep-alive><foo/></keep-alive>`).code)
           .toMatchInlineSnapshot(`
@@ -378,7 +420,11 @@ describe('ssr: components', () => {
           `)
       })
 
-      // #5352：插槽本身作为根输出时要推送 hydration marker，客户端才能认领 Fragment 边界。
+      // #5352：slot 根包含透明内置组件时，先向 slotBuffer 推入空字符串。
+      // isComment('') 为 false，后续只有空注释也不会误走 slot fallback；空字符串不生成 DOM。
+      /**
+       * 场景：foo 槽根是 Transition，内部 div 的条件为 false，快照断言先独立 _push 空字符串再输出条件占位，验证为 slot 空内容识别预留标记。
+       */
       test('should push marker string if is slot root', () => {
         expect(
           compile(`<foo><transition><div v-if="false"/></transition></foo>`)
@@ -422,6 +468,9 @@ describe('ssr: components', () => {
 
   // 自定义指令：通过 ssrGetDirectiveProps 取得服务端 props，并与普通 props 合并。
   describe('custom directive', () => {
+    /**
+     * 场景：foo 组件使用 v-xxx:x.y=z，快照断言 resolveDirective、值/参数/修饰符传入 ssrGetDirectiveProps 后合并 _attrs，验证自定义指令 props 参与组件调用。
+     */
     test('basic', () => {
       expect(compile(`<foo v-xxx:x.y="z" />`).code).toMatchInlineSnapshot(`
         "const { resolveComponent: _resolveComponent, resolveDirective: _resolveDirective, mergeProps: _mergeProps } = require("vue")

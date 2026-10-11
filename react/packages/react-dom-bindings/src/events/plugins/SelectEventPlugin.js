@@ -26,11 +26,11 @@ import {hasSelectionCapabilities} from '../../client/ReactInputSelection';
 import {DOCUMENT_NODE} from '../../client/HTMLNodeType';
 import {accumulateTwoPhaseListeners} from '../DOMPluginEventSystem';
 
-/** skipSelectionChangeEvent 保存跟踪焦点、鼠标状态与选择快照，仅在 selection 真正变化时合成 onSelect所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** IE 文档模式 11 及以下忽略 selectionchange，改为按键/鼠标时轮询。 */
 const skipSelectionChangeEvent =
   canUseDOM && 'documentMode' in document && document.documentMode <= 11;
 
-/** registerEvents 管理跟踪焦点、鼠标状态与选择快照，仅在 selection 真正变化时合成 onSelect的注册/监听边界；避免同一容器重复安装或遗漏 capture 配置。 */
+/** 登记 onSelect 的焦点、鼠标、键盘和 selectionchange 原生依赖。 */
 function registerEvents() {
   registerTwoPhaseEvent('onSelect', [
     'focusout',
@@ -53,9 +53,9 @@ let mouseDown = false;
 /**
  * 返回可唯一表示当前选择区的对象。
  * 
- * 不同节点或浏览器的返回形状不保证一致，但同一节点上的相同选择区会产生相同对象。
+ * 不同节点或浏览器的返回形状不保证一致，但同一节点上的相同选择区产生字段值相同的快照，随后用 shallowEqual 比较。
  */
-/** getSelection 查询并返回跟踪焦点、鼠标状态与选择快照，仅在 selection 真正变化时合成 onSelect所需状态；无匹配时使用 null/默认值而不修改事件队列。 */
+/** 生成节点当前选择区的值快照，供 shallowEqual 比较。 */
 function getSelection(node: any) {
   if ('selectionStart' in node && hasSelectionCapabilities(node)) {
     return {
@@ -78,7 +78,7 @@ function getSelection(node: any) {
 /**
  * 取得事件目标所属的 document。
  */
-/** getEventTargetDocument 查询并返回跟踪焦点、鼠标状态与选择快照，仅在 selection 真正变化时合成 onSelect所需状态；无匹配时使用 null/默认值而不修改事件队列。 */
+/** 从 Window、Document 或普通节点确定所属 document。 */
 function getEventTargetDocument(eventTarget: any) {
   return eventTarget.window === eventTarget
     ? eventTarget.document
@@ -92,9 +92,9 @@ function getEventTargetDocument(eventTarget: any) {
  * 
  * @param {object} nativeEvent 触发轮询的原生事件。
  * @param {object} nativeEventTarget 原生事件目标。
- * @return {?SyntheticEvent} 选择区变化时生成的合成事件，否则为 null。
+ * 选择区变化时把事件写入 dispatchQueue，不通过返回值交付事件。
  */
-/** constructSelectEvent 为跟踪焦点、鼠标状态与选择快照，仅在 selection 真正变化时合成 onSelect创建封装对象；生成值保留原生事件身份并携带必要调度上下文。 */
+/** 活动节点仍聚焦且鼠标未拖拽时比较选择快照；变化后记录新快照，创建 select 并把两阶段 listeners 入队。 */
 function constructSelectEvent(
   dispatchQueue: DispatchQueue,
   nativeEvent: AnyNativeEvent,
@@ -150,7 +150,7 @@ function constructSelectEvent(
  * - 折叠选择区也会触发；
  * - 在用户输入之后触发。
  */
-/** extractEvents 从原生事件和 Fiber 路径收集跟踪焦点、鼠标状态与选择快照，仅在 selection 真正变化时合成 onSelect所需数据；只生成满足插件条件的 listener/event。 */
+/** 跟踪可选择节点的 focus 与鼠标按下状态，并在适当原生事件中轮询选择变化。 */
 function extractEvents(
   dispatchQueue: DispatchQueue,
   domEventName: DOMEventName,
@@ -194,7 +194,7 @@ function extractEvents(
     // 有时未变化也会触发。IE 的事件相对
     // 删除时的 key/input 事件顺序异常，因此丢弃。
     //
-    // Firefox 不支持 selectionchange，因此在
+    // 兼容不提供可靠 selectionchange 的浏览器，在
     // 每次按键后检查选择区。选择区在 keydown 后、
     // keyup 前变化；为处理长按按键产生多个 keydown
     // 但只有一个 keyup 的情况，也在 keydown 时检查。

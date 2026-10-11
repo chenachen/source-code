@@ -7,7 +7,7 @@
  * @flow
  */
 
-// 在为组件栈无副作用地重放 render 函数时临时屏蔽 console。当前只惰性替换 console
+// 在为组件栈重放 render 函数时临时屏蔽 console，避免诊断重放产生重复日志。当前只惰性替换 console
 // 对象上的方法；若用户早已提取方法引用则无法屏蔽，未来也可考虑提前 patch。
 
 let disabledDepth = 0;
@@ -24,7 +24,7 @@ function disabledLog() {}
 disabledLog.__reactDisabledLog = true;
 
 /**
- * 屏蔽会干扰无副作用重放的 console 方法。
+ * 屏蔽组件栈诊断重放期间的 console 方法。
  *
  * @remarks `disabledDepth` 允许嵌套调用；只有从 0 变为 1 时保存并替换原方法。
  */
@@ -39,7 +39,8 @@ export function disableLogs(): void {
       prevGroup = console.group;
       prevGroupCollapsed = console.groupCollapsed;
       prevGroupEnd = console.groupEnd;
-      // 使用可写 descriptor 兼容 issue 19099 中被冻结/特殊定义的 console 方法。
+      // 用 defineProperties 替换仍可配置但不可直接赋值的方法，兼容 issue 19099；
+      // 真正被冻结、不可配置的属性仍不能被重新定义。
       // https://github.com/facebook/react/issues/19099
       const props = {
         configurable: true,

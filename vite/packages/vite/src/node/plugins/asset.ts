@@ -58,21 +58,21 @@ export const inlineRE: RegExp = /[?&]inline\b/
 /** 按环境缓存资源文件到最终 URL 的映射，防止不同环境共享构建状态。 */
 const assetCache = new WeakMap<Environment, Map<string, string>>()
 
-/** 每个 Environment 的 CSS standalone entry referenceId 与逻辑名称映射。 */
+/** 每个 Environment 的 CSS entry JS chunk 名 → CSS referenceId/逻辑名称映射。 */
 export const cssEntriesMap: WeakMap<
   Environment,
   Map<
     string,
     {
       /** Rollup 为 CSS 入口资源分配的引用 ID。 */
-      referenceId: string;
+      referenceId: string
       /** CSS 入口用于生成产物名的逻辑名称。 */
       name: string
     }
   >
 > = new WeakMap()
 
-/** 给 mrmime 补 Vite 需要的兼容 MIME 映射；在 asset 插件初始化时调用一次。 */
+/** 给 mrmime 补 Vite 需要的兼容 MIME 映射；每次创建 asset 插件时调用。 */
 export function registerCustomMime(): void {
   // https://github.com/lukeed/mrmime/issues/3
   // IANA 登记 ico 为 image/vnd.microsoft.icon，但 image/x-icon 的浏览器兼容性更好：
@@ -87,7 +87,7 @@ export function registerCustomMime(): void {
 }
 
 /**
- * renderChunk 阶段把 JS/CSS 字符串中的 asset/public 占位符替换为最终 URL，并登记 importedAssets。
+ * renderChunk 阶段把 JS 及其内联 CSS 字符串中的 asset/public 占位符替换为最终 URL；asset 引用同时登记 importedAssets。
  * 此时已知 chunk 文件名，才能正确计算 relative base 或 renderBuiltUrl runtime 表达式。
  */
 export function renderAssetUrlInJS(
@@ -312,7 +312,7 @@ export function assetPlugin(config: ResolvedConfig): Plugin {
         }
       }
 
-      // SSR/关闭 emitAssets 的 Environment 只保留 JS、map、SSR manifest 与可选 chunk import map。
+      // 关闭 emitAssets 时剔除资产；保留 JS map、名字以 ssr-manifest.json 结尾的文件及启用的 chunk import map。
       if (
         config.command === 'build' &&
         !this.environment.config.build.emitAssets
@@ -335,14 +335,14 @@ export function assetPlugin(config: ResolvedConfig): Plugin {
       }
     },
 
-    /** 文件变化时删除当前环境对应的资源 URL 缓存项。 */
+    /** 文件变化时删除当前环境中以规范化 id 为键的资源 URL 缓存项。 */
     watchChange(id) {
       assetCache.get(this.environment)?.delete(normalizePath(id))
     },
   }
 }
 
-/** 按 Environment 模式选择开发公开 URL 或构建 emit/inline 占位符。 */
+/** 按 Environment 的 isBundled 选择开发 URL 或 inline/emit 路径；bundled dev 也使用后者。 */
 export async function fileToUrl(
   pluginContext: PluginContext,
   id: string,
@@ -372,7 +372,7 @@ export async function fileToDevUrl(
     return assetToDataURL(environment, file, content)
   }
 
-  // SVG 若构建判断会 inline，开发态也 inline；否则两边引号/编码差异会造成行为漂移。
+  // SVG 在开发态也应用 shouldInline 的通用规则；这里不传构建 context，因此不执行 lib/entry 判断。
   const cleanedId = cleanUrl(id)
   if (cleanedId.endsWith('.svg')) {
     const file = publicFile || cleanedId
@@ -415,7 +415,7 @@ export const publicAssetUrlCache: WeakMap<
   Map<string, string>
 > = new WeakMap()
 
-/** 匹配构建期写入的公共资源占位符，并捕获其内容哈希。 */
+/** 匹配构建期写入的公共资源占位符，并捕获原 URL 的哈希。 */
 export const publicAssetUrlRE: RegExp = /__VITE_PUBLIC_ASSET__([a-z\d]{8})__/g
 
 /** 开发态拼 base；构建态把 public URL 编码成不经 emitFile 的稳定 hash 占位符。 */
@@ -439,12 +439,12 @@ export function publicFileToBuiltUrl(
   return `__VITE_PUBLIC_ASSET__${hash}__`
 }
 
-/** Git LFS 指针文件的固定头部，用于阻止把未拉取的指针内容内联。 */
+/** Git LFS 指针文件的固定头部，默认大小策略用它排除未拉取的指针内容。 */
 const GIT_LFS_PREFIX = Buffer.from('version https://git-lfs.github.com')
 /** 判断缓冲区是否仍是 Git LFS 指针，避免生成无效的 data URL。 */
 function isGitLfsPlaceholder(content: Buffer): boolean {
   if (content.length < GIT_LFS_PREFIX.length) return false
-  // Git LFS 未拉取对象以固定前缀开头，不能把 pointer 文本误当真实资源 inline。
+  // Git LFS 未拉取对象以固定前缀开头；显式内联/库模式可绕过默认排除。
   return GIT_LFS_PREFIX.compare(content, 0, GIT_LFS_PREFIX.length) === 0
 }
 
@@ -562,7 +562,7 @@ export async function urlToBuiltUrl(
   )
 }
 
-/** 综合查询参数、构建模式、文件大小与 Git LFS 状态决定资源是否内联。 */
+/** 依次检查 query、构建 lib/entry、forceInline、文件类型、回调及默认大小/LFS 规则。 */
 function shouldInline(
   environment: Environment,
   file: string,
@@ -581,7 +581,7 @@ function shouldInline(
   }
   if (forceInline !== undefined) return forceInline
   if (file.endsWith('.html')) return false
-  // 带 fragment 的 SVG 通常引用内部 symbol，需保留独立文件供多处复用，不能 data URL inline。
+  // 未被前面的显式 query/lib/forceInline 决定时，带 fragment 的 SVG 保持外置文件。
   if (file.endsWith('.svg') && id.includes('#')) return false
   let limit: number
   const { assetsInlineLimit } = environment.config.build

@@ -50,7 +50,9 @@ if (typeof DevRuntime !== 'undefined') {
 
   const bundledDevHmrClient = new BundledDevHMRClient(
     {
+      /** 在浏览器错误通道中显示 bundled-dev 更新失败。 */
       error: (err) => console.error('[vite]', err),
+      /** 在浏览器调试通道中显示 patch 应用和本地失效过程。 */
       debug: (...msg) => console.debug('[vite]', ...msg),
     },
     transport,
@@ -64,7 +66,9 @@ if (typeof DevRuntime !== 'undefined') {
 
   // Runtime 删除模块缓存时先让 Vite 执行 dispose，创建 hot context 则回到同一 HMR client。
   runtime.hooks = {
+    /** 将 Rolldown 模块 ID 接到 Vite 的 bundled-dev 热上下文。 */
     createModuleHotContext: (id: string) => runtime.createModuleHotContext(id),
+    /** 缓存删除时同步执行该模块的 dispose；不等待其返回的 Promise。 */
     onModuleCacheRemoval: (id: string) =>
       bundledDevHmrClient.handleModuleCacheRemoval(id),
   }

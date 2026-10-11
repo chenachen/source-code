@@ -36,19 +36,13 @@ describe('ReactDOMHooks', () => {
   });
 
   // @gate !disableLegacyMode
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「can ReactDOM.render() from useEffect」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言连接 ReactDOM 公开入口、ReactDOMRoot 根生命周期及 DOM 提交结果。
-   */
+
+  /** legacy 根的 Example1 effect 渲染第二根，其 effect 再渲染第三根；初次同步 DOM 仅第一根为 1，冲刷后为 1/2/3。n=2 更新时后两根仍旧值，冲刷后为 2/4/6，验证跨根 effect 链在被动阶段继续调度。 */
   it('can ReactDOM.render() from useEffect', async () => {
     const container2 = document.createElement('div');
     const container3 = document.createElement('div');
 
-    /** `Example1`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** legacy 第一根组件输出 n，并在 effect 用 ReactDOM.render 推进第二根。 */
     function Example1({n}) {
       React.useEffect(() => {
         ReactDOM.render(<Example2 n={n} />, container2);
@@ -56,7 +50,7 @@ describe('ReactDOMHooks', () => {
       return 1 * n;
     }
 
-    /** `Example2`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** legacy 第二根输出 2*n，并在其 effect 推进第三根，形成连续被动调度链。 */
     function Example2({n}) {
       React.useEffect(() => {
         ReactDOM.render(<Example3 n={n} />, container3);
@@ -64,7 +58,7 @@ describe('ReactDOMHooks', () => {
       return 2 * n;
     }
 
-    /** `Example3`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** legacy 第三根只输出 3*n，作为跨根 effect 链的末端。 */
     function Example3({n}) {
       return 3 * n;
     }
@@ -88,7 +82,7 @@ describe('ReactDOMHooks', () => {
     expect(container3.textContent).toBe('6');
   });
 
-  /** 测试场景：验证「can render() from useEffect」描述的渲染、交互或错误处理结果。 */
+  /** 三个并发根串联 effect 渲染，先传 n=1 再传 n=2；act/调度冲刷后对应 DOM 为 1/2/3 与 2/4/6，验证 effect 内 root.render 能连续推进其它根。 */
   it('can render() from useEffect', async () => {
     const container2 = document.createElement('div');
     const container3 = document.createElement('div');
@@ -97,7 +91,7 @@ describe('ReactDOMHooks', () => {
     const root2 = ReactDOMClient.createRoot(container2);
     const root3 = ReactDOMClient.createRoot(container3);
 
-    /** `Example1`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 并发第一根输出 n，effect 在独立 root2 提交 Example2。 */
     function Example1({n}) {
       React.useEffect(() => {
         root2.render(<Example2 n={n} />);
@@ -105,7 +99,7 @@ describe('ReactDOMHooks', () => {
       return 1 * n;
     }
 
-    /** `Example2`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 并发第二根输出 2*n，effect 在独立 root3 提交 Example3。 */
     function Example2({n}) {
       React.useEffect(() => {
         root3.render(<Example3 n={n} />);
@@ -113,7 +107,7 @@ describe('ReactDOMHooks', () => {
       return 2 * n;
     }
 
-    /** `Example3`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 并发第三根输出 3*n，供最终三个容器的比例值比较。 */
     function Example3({n}) {
       return 3 * n;
     }
@@ -136,13 +130,15 @@ describe('ReactDOMHooks', () => {
   });
 
   // @gate !disableLegacyMode
-  /** 测试场景：验证「should not bail out when an update is scheduled from within an event handler」描述的渲染、交互或错误处理结果。 */
+
+  /** legacy 挂载 input 与 state 驱动 label，程序写 input.value=abc 再派发 input；label 应同步变 abc，验证 useCallback handler 安排的 Hook 更新不会因错误 bailout 丢失。 */
   it('should not bail out when an update is scheduled from within an event handler', () => {
     const {createRef, useCallback, useState} = React;
 
-    /** `Example`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** legacy 输入 fixture 用 Hook state 驱动 label；input 回调从原生 target 取值安排更新。 */
     const Example = ({inputRef, labelRef}) => {
       const [text, setText] = useState('');
+      /** 从当前 input 事件读值并安排 Hook 更新，检查 legacy 事件批次能提交新 label。 */
       const handleInput = useCallback(event => {
         setText(event.target.value);
       });
@@ -171,13 +167,14 @@ describe('ReactDOMHooks', () => {
     expect(labelRef.current.innerHTML).toBe('abc');
   });
 
-  /** 测试场景：验证「should not bail out when an update is scheduled from within an event handler in Concurrent Mode」描述的渲染、交互或错误处理结果。 */
+  /** 并发根挂载同样输入 fixture，等待初次提交后写 value=abc 并在 act 中派发 input；label 最终应为 abc，验证并发事件更新也能越过 bailout 并提交。 */
   it('should not bail out when an update is scheduled from within an event handler in Concurrent Mode', async () => {
     const {createRef, useCallback, useState} = React;
 
-    /** `Example`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 并发输入 fixture 用 Hook state 驱动 label，外部对象 ref 提供程序赋值与结果读取节点。 */
     const Example = ({inputRef, labelRef}) => {
       const [text, setText] = useState('');
+      /** 并发根的 input handler 保存原生 target.value，后续 act 检查 Hook 更新未被 bailout 丢弃。 */
       const handleInput = useCallback(event => {
         setText(event.target.value);
       });

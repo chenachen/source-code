@@ -19,6 +19,8 @@ import { getConstantType } from './cacheStatic'
  * 例如 `<div>abc {{ d }} {{ e }}</div>` 合成一个复合表达式，避免运行时创建三段文本节点。
  * 单个原生元素文本 child 保持原样，让 renderer 走直接设置 `textContent` 的最快路径；
  * 多 child 或组件 child 则显式转成文本 VNode，省去运行时 normalizeChildren。
+ * 根节点只有一段文本时也保留原节点，根 codegen 再决定包装；带未知指令的元素排除快速路径。
+ * 本转换原地合并 children 数组并替换文本节点，动态 TEXT 标记仅用于客户端生成。
  */
 export const transformText: NodeTransform = (node, context) => {
   if (

@@ -142,7 +142,7 @@ describe('ReactBlockingMode', () => {
     );
   });
 
-  /** Given–When–Then：Given 两个兄弟分别积压于 batchedUpdates，第二个更新嵌在 flushSync；When 同步范围结束；Then flushSync 不越界冲刷第一条批处理，但最终批次按 A1/B1 提交。通过统一日志验证同步边界与已有批处理队列的关系。 */
+  /** Given–When–Then：Given 两个兄弟分别积压于 batchedUpdates，第二个更新嵌在 flushSync；When 同步范围结束；Then 退出这些嵌套调用后日志为 A1/B1，最终输出 A1B1。断言固定这一组合调用的结果，未在 flushSync 回调内部检查第一条更新。 */
   it('flushSync does not flush batched work', async () => {
     const {useState, forwardRef, useImperativeHandle} = React;
     const root = ReactNoop.createRoot();

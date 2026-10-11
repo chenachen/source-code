@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite'
 import baseConfig from './vite.config.js'
 
-/** see `ports` variable in test-utils.ts */
+/** 完整 URL base 变体的独占端口；dev 与 preview 固定使用同一端口。 */
 const port = 9525
 
 export default defineConfig({

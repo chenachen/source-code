@@ -414,6 +414,9 @@ function recursivelyInsertNew(
 /**
  * 按 Fiber tag 处理全新节点：临时挂载 insertion effect、插入宿主实例，并在边界末尾
  * 应用 exit/share gesture 名称。
+ * finishedWork 没有 alternate，宿主 stateNode 直接用于目标 snapshot，不再 clone。
+ * hostParentClone 是视觉目标容器；parentViewTransition 只收集该边界第一层宿主实例，
+ * 进入宿主节点后传 null，嵌套边界重新接管。visitPhase 区分建立 exit 状态与仅找 share 配对。
  */
 function recursivelyInsertNewFiber(
   finishedWork: Fiber,
@@ -584,6 +587,8 @@ function recursivelyInsertNewFiber(
 /**
  * 在无 reconciliation mutation 的既有子树中构造 clone：需要继续找边界时浅克隆，否则
  * 深克隆并提前退出；同时收集边界宿主实例。
+ * 当前函数访问的 child 可直接来自 current 树；为了后续布局测量，会清理其 ViewTransition
+ * Update 标志并重建临时 clones。深 clone 省去逐 Fiber 遍历，但当前仍未迁移滚动位置。
  */
 function recursivelyInsertClonesFromExistingTree(
   parentFiber: Fiber,
@@ -783,6 +788,9 @@ function recursivelyInsertClones(
 /**
  * 将单个 finished Fiber 的目标视觉状态写入 clone：应用属性/文本 delta、可见性变化，
  * 并在 ViewTransition 边界收集 clone 与选择 exit/share/update。
+ * current 是 alternate，但 gesture 的视觉 old 是目标 finished clone、视觉 new 是仍挂载
+ * 的 current；因此下方 enter/exit 配对和普通提交方向相反。该遍不提交类生命周期/layout effect，
+ * 新组件只临时运行 insertion effect，snapshot 捕获后再撤销。
  */
 function insertDestinationClonesOfFiber(
   finishedWork: Fiber,
@@ -923,6 +931,9 @@ function insertDestinationClonesOfFiber(
       if (flags & Update) {
         const newText: string = finishedWork.memoizedProps;
         const oldText: string = current.memoizedProps;
+        // 此调用实际按 finishedText、currentText 传入；普通提交接口按 oldText、newText 使用。
+        // DOM HostConfig 只把第三实参 currentText 写入 nodeValue。若下方进入 CLONE_EXIT/
+        // CLONE_UNHIDE，unhideTextInstance 会再写 finishedText；其它 phase 没有这次覆盖。
         commitTextUpdate(clone, newText, oldText);
         trackHostMutation();
       }
@@ -1017,6 +1028,8 @@ function insertDestinationClonesOfFiber(
 /**
  * 克隆发生 mutation 或可能受子级插入影响布局的 ViewTransition 边界，并挂到 root，供
  * gesture snapshot/反向动画使用。
+ * detectMutationOrInsertClones 当前恒为 true，因此每次都创建根 clone 并保存 gestureClone，
+ * 没有稳定树不克隆的实际快路径。此遍同步修改 snapshot 宿主树，等待/动画生命周期由 WorkLoop 管理。
  */
 export function insertDestinationClones(
   root: FiberRoot,
@@ -1066,7 +1079,8 @@ function recursivelyRestoreNew(
   finishedWork: Fiber,
   nearestMountedAncestor: Fiber,
 ): void {
-  // 只有下方同时涉及 Placement 与 Update，此遍才可能有意义：这里仅处理新组件的
+  // 下方只要涉及 Placement 或 Update 就进入遍历；真正卸载仅针对无 alternate 且有 Update
+  // 的函数组件。这里仅处理新组件的
   // insertion effect。
   if (((Placement | Update) & finishedWork.subtreeFlags) !== NoFlags) {
     let child = finishedWork.child;
@@ -1221,6 +1235,8 @@ function applyViewTransitionsOnFiber(finishedWork: Fiber, current: Fiber) {
 /**
  * 撤销 snapshot 插入状态并向视觉“new”（current）应用 transition 名称；随后移除根 clone，
  * 若布局影响未泄漏到根则取消可省略的 child/root transition。
+ * 先测量再移除 clone，防止目标视觉状态消失后测量失真；取消集合以实例/名称/props 三槽
+ * 一组保存。gestureClone 在宿主移除前置 null，此函数没有局部回滚或 finally 清理。
  */
 export function applyDepartureTransitions(
   root: FiberRoot,
@@ -1332,6 +1348,8 @@ function restoreViewTransitionsOnFiber(finishedWork: Fiber) {
 
 /**
  * 在宿主 ViewTransition 已启动后恢复真实树与根容器名称，从而启动或校准 gesture 动画。
+ * 此入口只恢复用于捕获 snapshot 的名称，不调用用户 gesture 回调或返回其 cleanup；
+ * 事件队列在 WorkLoop 的后续 gesture 动画阶段执行。
  */
 export function startGestureAnimations(
   root: FiberRoot,

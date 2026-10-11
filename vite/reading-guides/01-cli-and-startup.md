@@ -9,8 +9,8 @@
 
 读完应能区分两个层次：
 
-- `bin/vite.js` 是前置引导层：必须在加载其他 Vite 模块前设置调试环境、启动 CPU
-  Profiler、记录启动时间并启用 Node.js 编译缓存。
+- `bin/vite.js` 是前置引导层：在加载 CLI 主模块前记录启动时间，按参数设置调试环境、
+  启动 CPU Profiler，并尝试启用 Node.js 编译缓存。
 - `src/node/cli.ts` 是命令分发层：注册参数，把 CLI 值整理成 `InlineConfig`，然后调用
   `createServer()`、`createBuilder()`、`optimizeDeps()` 或 `preview()`。
 
@@ -36,19 +36,22 @@ package.json#bin
 ```
 
 开发源码位于 `src/node/cli.ts`，发布前会被打包成 `dist/node/cli.js`。bin 入口导入后者，
-因此不能把源码路径和运行时产物路径误认为两套 CLI。
+它们是同一 CLI 在开发与发布时的文件形式。
 
 ## 关键对象
 
 ### `global.__vite_start_time`
 
-入口执行第一时间记录。Dev Server 成功监听后，`cli.ts` 用它计算包含模块加载、配置解析
+引导入口记录启动时间。Dev Server 成功监听后，`cli.ts` 用它计算包含 CLI 模块加载、配置解析
 和服务器创建在内的总启动耗时。若只在 `createServer()` 内开始计时，会漏掉 CLI 前置成本。
 
 ### `global.__vite_profile_session`
 
 `--profile` 模式必须先启动 V8 Inspector，再加载 CLI 主模块，否则采样会漏掉模块求值和
 配置加载。会话通过全局变量跨越 bin 与打包后的 CLI chunk。
+
+开发服务器随后提供 `p` 快捷键：停止时写出 `.cpuprofile` 并清空当前会话引用，再次开始时
+创建新会话。build 和 preview 在正常完成后停止入口采样；optimize action 没有对应的结束调用。
 
 ### `GlobalCLIOptions`
 
@@ -65,6 +68,9 @@ cac 返回的参数既含全局字段，也含命令专属字段。`cleanGlobalC
 又可能覆盖 Node API 需要的结构化配置。
 
 ## 容易忽略的场景
+
+CLI 启动时会检查 Node 版本；不满足 `20.19+`、`22.12+` 或更高主版本时打印警告，然后继续
+解析命令。后续能否完成取决于运行时是否提供实际调用的 API。
 
 ### 调试参数必须提前处理
 
@@ -100,6 +106,9 @@ cac 会推断纯数字参数类型：`--host 0` 得到 number，但服务器需�
 CLI 的 `--watch` 是 boolean，构建 API 的 `watch` 是对象。显式传入时应转换成 `{}`；
 未传入时应保持 `undefined`，让配置文件中的 `build.watch` 正常参与后续合并。相关修复：
 [PR #18390](https://github.com/vitejs/vite/pull/18390)。
+
+转换成 `{}` 后，`mergeConfig()` 会继续保留文件中 watch 对象的具体字段。CLI 不直接覆盖
+整份监听配置。`--app` 则放到顶层 `builder: {}`，不能混进 `build` 子对象。
 
 ## 测试怎样证明链路
 
@@ -149,10 +158,23 @@ try {
       bundledDev: options.experimentalBundle,
     },
   })
+  // 后续 HTTP 检查、监听和日志处理省略。
+} catch (e) {
+  const logger = createLogger(options.logLevel)
+  logger.error(colors.red(`error when starting dev server:\n${inspect(e)}`), {
+    error: e,
+  })
+  await stopProfiler(logger.info)
+  process.exit(1)
+}
 ```
 
-这段代码确认两件事：server 实现到 action 才动态导入；CLI 参数先清除全局选项，再作为
-`InlineConfig` 进入 `createServer()`。因此启动语义的分界点不是参数解析，而是这次异步调用。
+dev action 在选中开发命令后取得 `createServer()`，再把整理好的 `InlineConfig` 交给它。
+服务器对象创建后还要 `await server.listen()`，HTTP 监听成功后才打印 ready 横幅、URL 和快捷键。
+创建或监听失败时，catch 输出错误、停止活动采样，然后以退出码 1 结束进程。
+
+这里的动态 import 是命令分发写法。CLI 还静态导入了 `createBuilder()`，它经 `build.ts`、
+`config.ts` 依赖服务器模块；模块加载成本应按整个依赖图理解。
 
 ## 推荐断点
 

@@ -8,7 +8,7 @@ import { withTrailingSlash } from '../shared/utils'
 import { arraify, normalizePath } from './utils'
 import type { Logger } from './logger'
 
-/** 收集默认 outDir 与每个 Rolldown output.dir 的绝对路径并去重。 */
+/** 收集各 Rolldown output.dir 的绝对路径并去重；未配置 output 或单项未提供 dir 时使用 outDir。 */
 export function getResolvedOutDirs(
   root: string,
   outDir: string,
@@ -26,8 +26,8 @@ export function getResolvedOutDirs(
 
 /**
  * 决定构建前是否清空输出目录。
- * 用户显式值优先；缺省时只自动清理 root 内目录，root 外目录告警并保留，避免误删用户
- * 其他项目文件。
+ * 用户显式值优先；缺省时所有 outDir 都必须是 root 的子目录。任一输出目录等于 root
+ * 或位于 root 外时，告警并返回 false，使整个输出集合都不自动清空。
  */
 export function resolveEmptyOutDir(
   emptyOutDir: boolean | null,

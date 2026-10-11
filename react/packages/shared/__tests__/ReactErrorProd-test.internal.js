@@ -11,6 +11,7 @@
 let formatProdErrorMessage;
 
 describe('ReactErrorProd', () => {
+  // 每例重新加载纯 formatter，避免模块缓存把不同构建配置混进同一测试状态。
   beforeEach(() => {
     jest.resetModules();
     formatProdErrorMessage = require('shared/formatProdErrorMessage').default;
@@ -21,7 +22,7 @@ describe('ReactErrorProd', () => {
    * When：调用 `formatProdErrorMessage`。
    * Then：URL 的 `args[]` 数量、顺序与 percent-encoding 精确对应输入。
    *
-   * 验证机制：同时覆盖无 query 与特殊字符，证明不是简单字符串拼接的偶然结果。
+   * 验证机制：逐项比较完整返回字符串，核对无 query、多参数及保留字符的编码。
    */
   it('should throw with the correct number of `%s`s in the URL', () => {
     expect(formatProdErrorMessage(124, 'foo', 'bar')).toEqual(

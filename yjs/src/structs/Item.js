@@ -25,9 +25,9 @@ const isDevMode = env.getVariable('node_env') === 'development'
  *
  * @todo 当前接口只返回最终一个 Item；一段内容跨越多个重做 Item 时应扩展返回值。
  *
- * @param {StructStore} store
- * @param {ID} id
- * @return {{item:Item, diff:number}}
+ * @param {StructStore} store 必须已掌握查询 ID 及沿途重做 ID 的存储，不代查 pending 更新。
+ * @param {ID} id 原操作内任意一个 clock；可落在合并后的 Item 中间。
+ * @return {{item:Item, diff:number}} 最后到达的结构及其内部 clock 偏移；遇非 Item 时终止，类型标注不做运行时校验。
  */
 export const followRedone = (store, id) => {
   /**
@@ -52,9 +52,9 @@ export const followRedone = (store, id) => {
 /**
  * 表示可集成进共享类型的 CRDT 内容结构。
  *
- * Item 同时保存不可变的原始锚点（`origin`/`rightOrigin`）与集成后的双向链接
- * （`left`/`right`）。并发插入只依据锚点和 ID 排序，因此所有副本能收敛；删除
- * 仅设置墓碑并保留因果地址，GC 后才丢弃载荷。
+ * Item 同时保存排序锚点（`origin`/`rightOrigin`）与集成后的双向链接（`left`/`right`）。
+ * 并发插入会改变当前邻居，但保留锚点表达的创建时位置；切分或裁剪后缀时，右段
+ * 的 origin 派生为左段末 ID。删除保留 Item 的因果地址，载荷通常等到 GC 才丢弃。
  */
 export class Item extends AbstractStruct {
   /**
@@ -63,14 +63,14 @@ export class Item extends AbstractStruct {
    * 解码阶段 `parent` 可为顶层键或父 Item ID；依赖解析完成后会替换为 `YType`。
    * `parentSub === null` 表示序列内容，否则表示映射/属性键下的版本链。
    *
-   * @param {ID} id
-   * @param {Item | null} left
-   * @param {ID | null} origin
-   * @param {Item | null} right
-   * @param {ID | null} rightOrigin
-   * @param {YType|ID|string|null} parent Is a type if integrated, is null if it is possible to copy parent from left or right, is ID before integration to search for it, is string if child of top-level-parent
-   * @param {string | null} parentSub
-   * @param {AbstractContent} content
+   * @param {ID} id 此 Item 的首个逻辑 clock；length 从内容策略读取，格式项和单值类型也占 clock。
+   * @param {Item | null} left 本地已知左邻；解码时为空，依赖解析和冲突仲裁后才确定当前邻居。
+   * @param {ID | null} origin 创建时左锚点，通常指向原左邻最后一个 clock；并发排序不随当前邻居变化。
+   * @param {Item | null} right 本地已知右邻，解码时为空。
+   * @param {ID | null} rightOrigin 创建时右锚点，通常指向原右邻首个 clock。
+   * @param {YType|ID|string|null} parent 集成后为 YType；解码态可为父 Item ID、顶层键，或 null（从邻居恢复）。
+   * @param {string | null} parentSub 属性版本链的键；null 表示父类型的序列，不是名为空字符串的属性。
+   * @param {AbstractContent} content 内容策略对象，构造器保留其身份；集成、切分和 GC 可修改或替换它。
    */
   constructor (id, left, origin, right, rightOrigin, parent, parentSub, content) {
     super(id, content.getLength())
@@ -104,7 +104,8 @@ export class Item extends AbstractStruct {
      * 父类型通过键引用当前 Item 时保存该键（例如 YMap）。
      *
      * `null` 表示插入 `parent._start` 序列；非空表示进入 `parent._map` 对应键的
-     * 版本链，最右侧未删除 Item 是当前可见值。
+     * 版本链。`_map` 指向链中最右 Item；该项未删除时才有可见值，删除后不会
+     * 回退到较早版本。
      * @type {String | null}
      */
     this.parentSub = parentSub
@@ -158,7 +159,7 @@ export class Item extends AbstractStruct {
     }
   }
 
-  /** 返回内容是否计入父序列的可见长度。 */
+  /** 返回构造时内容是否可计数；只有同时未删除且属于序列时才计入父 `_length`，GC 换内容不重算此位。 */
   get countable () {
     return (this.info & binary.BIT2) > 0
   }
@@ -186,16 +187,22 @@ export class Item extends AbstractStruct {
   /**
    * 解析位置并把 Item 集成进父类型、结构存储与事务索引。
    *
-   * 若只接收结构后缀，先按 `offset` 切掉已知前缀。并发冲突处理中，算法从候选
-   * 左邻开始扫描：同 `origin` 的并发项按 client ID 决定顺序；来源链嵌套时保留
-   * 因果先后。确定位置后一次性修复双向链接、父映射、可见长度、插入集和内容
-   * 副作用。
+   * 调用前已由依赖解析把父类型和锚点 ID 解析成对象。若只接收结构后缀，先按
+   * `offset` 切掉已知前缀，并把其最后一个 ID 作为新的 origin。
+   *
+   * 已解析的左右邻仍相邻时直接插入；中间已有并发项时，从候选左邻之后扫描到
+   * right 之前。同 origin 的项以 client ID 升序仲裁；来源嵌套在已扫描项内时，
+   * 还要判断它跟随的是已确定左侧的项，还是尚未决定顺序的冲突项。确定位置后
+   * 修复双向链、父入口和可见长度，登记插入集，再执行内容特有的集成副作用。
    *
    * 边界：父依赖已 GC 或无法解析时，调用链会把 `parent` 置空，本方法转而集成
    * 等长 GC，避免悬空内容进入共享类型。
    *
-   * @param {Transaction} transaction
-   * @param {number} offset
+   * 属性 Item 若最终不是版本链最右项，会立即删除；父类型已经删除时，新后代也立即删除。
+   * 因而 insertSet 可与 deleteSet 重叠，集成成功不等于普通视图可见。
+   *
+   * @param {Transaction} transaction 接收存储、插入集、父类型变化以及内容生命周期副作用的当前事务。
+   * @param {number} offset 已掌握前缀的 clock 数，裁剪会原地修改 ID、content 与 length；当前读取入口预先排除已知范围后传 0。
    */
   integrate (transaction, offset) {
     if (offset > 0) {
@@ -237,8 +244,8 @@ export class Item extends AbstractStruct {
          * @type {Set<Item>}
          */
         const itemsBeforeOrigin = new Set()
-        // c∈conflictingItems，b∈itemsBeforeOrigin：***{origin}bbbb{this}{c,b}{c,b}{o}***。
-        // 不变量：conflictingItems 始终是 itemsBeforeOrigin 的子集。
+        // itemsBeforeOrigin 保存全部已扫描项；conflictingItems 保存最近一次推进 left
+        // 之后仍待仲裁的项。推进 left 时只清空后者，才能区分已确定左侧与冲突来源。
         while (o !== null && o !== this.right) {
           itemsBeforeOrigin.add(o)
           conflictingItems.add(o)
@@ -248,11 +255,12 @@ export class Item extends AbstractStruct {
               left = o
               conflictingItems.clear()
             } else if (compareIDs(this.rightOrigin, o.rightOrigin)) {
-              // 两项锚点完全相同；ID 是全局一致的最终仲裁。当前项应在 o 左侧，可停止扫描。
+              // 同一对锚点且 o 的 client 更大：this 排在 o 左侧，不必继续越过它。
               break
             } // 否则 o 可能先于另一个真正冲突项；继续扫描才能确定位置。
           } else if (o.origin !== null && itemsBeforeOrigin.has(transaction.doc.store.getItem(o.origin))) { // 此处只判断来源关系，无需为精确末端切分 Item。
-            // 情形 2：候选 origin 已位于当前扫描前缀。
+            // 情形 2：o 跟随已扫描项。若来源已确定在 this 左侧，o 也应留在左侧；
+            // 来源仍处于冲突集合时先不推进 left，避免把整个并发分支提前移到左侧。
             if (!conflictingItems.has(transaction.doc.store.getItem(o.origin))) {
               left = o
               conflictingItems.clear()
@@ -264,7 +272,7 @@ export class Item extends AbstractStruct {
         }
         this.left = left
       }
-      // 原子修复左右链，并按需更新父类型入口或键的当前值。
+      // 按刚确定的位置修复左右链，并更新父类型入口或键的当前值。
       if (this.left !== null) {
         const right = this.left.right
         this.right = right
@@ -348,8 +356,8 @@ export class Item extends AbstractStruct {
    * 接受合并。成功后迁移搜索标记和 keep 位、修复右链；调用方仍负责从存储数组
    * 移除被吞并项。
    *
-   * @param {Item} right
-   * @return {boolean}
+   * @param {Item} right 当前链中的直接右邻；右段 origin 须指向本段末 ID，两段 rightOrigin 相等。
+   * @return {boolean} 是否合并；成功时左段内容/长度已扩大，右对象仍需由调用方从 store 数组移除。
    */
   mergeWith (right) {
     if (
@@ -394,10 +402,10 @@ export class Item extends AbstractStruct {
   /**
    * 把 Item 转为墓碑并记录事务可见副作用。
    *
-   * 删除幂等；首次删除会扣减父序列长度、加入删除集、标记父类型变更，并委托
-   * 内容对象释放其子资源。
+   * 删除幂等；首次删除会扣减父序列长度、加入删除集、标记父类型变更。内容对象
+   * 再处理嵌套内容删除或子文档移除等副作用；普通值载荷此时仍保留，直到 GC。
    *
-   * @param {Transaction} transaction
+   * @param {Transaction} transaction 首次删除登记 ID 范围与父变化的事务；重复删除不再修改长度或再次执行内容 delete。
    */
   delete (transaction) {
     if (!this.deleted) {
@@ -416,11 +424,14 @@ export class Item extends AbstractStruct {
   /**
    * 回收已删除 Item 的内容载荷。
    *
-   * 父结构也已 GC 时，用 GC 完全替换 Item；否则保留 Item 元数据并把内容压缩为
-   * `ContentDeleted`，使尚需解析其锚点的更新仍可工作。
+   * 回收嵌套类型的全部内容时，`parentGCd=true` 使 Item 被等长 GC 替换；其父类型
+   * 入口随后清空。单独回收墓碑时保留 Item 的定位元数据，只把内容改为
+   * `ContentDeleted`，供之后到达的更新继续解析锚点。
    *
-   * @param {Transaction} tr
-   * @param {boolean} parentGCd
+   * 调用者须先删除 Item；活项直接抛出内部错误。此方法不检查 keep/gcFilter，它们由上游回收范围筛选。
+   *
+   * @param {Transaction} tr 记录结构替换和后续合并的事务。
+   * @param {boolean} parentGCd 是否正在释放整个父类型；true 丢弃当前定位元数据，false 保留锚点墓碑。
    */
   gc (tr, parentGCd) {
     if (!this.deleted) {
@@ -439,9 +450,9 @@ export class Item extends AbstractStruct {
    *
    * 删除、keep 与 redone 状态按对应时钟偏移传播。事务内切分还会修复双向链、
    * 键当前值与待合并队列；无事务切分用于惰性编码，返回段不挂接文档链。
-   * @param {Transaction?} transaction
-   * @param {number} diff
-   * @return {Item}
+   * @param {Transaction?} transaction 非空时更新文档链及合并队列；null 用于可消费的临时解码结构，不挂接返回段。
+   * @param {number} diff 相对起始 ID 的内部 clock 边界，要求 0 < diff < length；字符串按 UTF-16 单元计。
+   * @return {Item} 新建右段，左对象的内容与 length 已截短；两段总 clock 长度不变。
    */
   split (transaction, diff) {
     // 右段继承稳定锚点和父上下文，origin 指向左段最后一个时钟。
@@ -494,8 +505,8 @@ export class Item extends AbstractStruct {
    * 上下文，从而缩短更新。
    *
    * @param {UpdateEncoderV1 | UpdateEncoderV2} encoder 目标更新编码器。
-   * @param {number} offset
-   * @param {number} offsetEnd
+   * @param {number} offset 左端不发送的 clock 数；非零时 origin 改编码为被裁前缀最后一个 ID，不修改原 Item。
+   * @param {number} offsetEnd 右端不发送的 clock 数；内容策略据此裁剪，保留原 rightOrigin。
    */
   write (encoder, offset, offsetEnd) {
     const origin = offset > 0 ? createID(this.id.client, this.id.clock + offset - 1) : this.origin
@@ -591,7 +602,7 @@ export class AbstractContent {
   }
 
   /**
-   * 创建未集成的浅副本。
+   * 创建用于重新集成的副本；普通数组值复用载荷引用，嵌套类型复制类型实例。
    *
    * @return {AbstractContent}
    */
@@ -602,7 +613,7 @@ export class AbstractContent {
   /**
    * 在内容偏移处分裂，并返回右半段。
    *
-   * @param {number} _offset
+   * @param {number} _offset 相对内容起点的内部 clock 边界；具体内容原地保留左段，返回右段。
    * @return {AbstractContent}
    */
   splice (_offset) {
@@ -651,8 +662,8 @@ export class AbstractContent {
    * 编码指定首尾裁剪后的内容切片。
    *
    * @param {UpdateEncoderV1 | UpdateEncoderV2} _encoder
-   * @param {number} _offset
-   * @param {number} _offsetEnd
+   * @param {number} _offset 从内容左端排除的 clock 数，不是字节数。
+   * @param {number} _offsetEnd 从内容右端排除的 clock 数；单 clock 的不可分内容要求两者为 0。
    */
   write (_encoder, _offset, _offsetEnd) {
     throw error.methodUnimplemented()
@@ -673,7 +684,7 @@ export class ContentAny {
   /**
    * 创建任意值数组内容；开发模式下冻结输入以暴露外部突变。
    *
-   * @param {Array<any>} arr
+   * @param {Array<any>} arr 原数组按引用保存，元素不深拷贝；开发模式 deepFreeze 也会冻结嵌套对象。
    */
   constructor (arr) {
     /**
@@ -794,9 +805,10 @@ export class ContentBinary {
   /**
    * 创建单值二进制内容。
    *
-   * @param {Uint8Array} content
+   * @param {Uint8Array} content 原字节数组按引用保存；字节数量不改变此内容仅占一个 clock 的约定。
    */
   constructor (content) {
+    /** 完整二进制单值；copy 复用该缓冲区，读出值后修改字节会修改同一载荷。 */
     this.content = content
   }
 
@@ -901,9 +913,10 @@ export class ContentDeleted {
   /**
    * 创建指定时钟长度的删除占位内容。
    *
-   * @param {number} len
+   * @param {number} len 被删除内容仍占据的 clock 数；不对应可见长度。
    */
   constructor (len) {
+    /** 墓碑保留的 ID 区间长度；切分和合并同步调整该值。 */
     this.len = len
   }
 
@@ -1021,8 +1034,8 @@ export class ContentDoc {
   /**
    * 创建尚未挂接宿主 Item 的子文档描述。
    *
-   * @param {string} guid
-   * @param {Object<string,any>} opts
+   * @param {string} guid 子文档的同步身份，远端按该 GUID 建立独立 Doc。
+   * @param {Object<string,any>} opts 随更新发送的构造选项，保留对象身份；shouldLoad/autoLoad 决定首次实例化后的加载请求。
    */
   constructor (guid, opts) {
     /**
@@ -1031,7 +1044,9 @@ export class ContentDoc {
      * @type {Doc?}
      */
     this.doc = null
+    /** 更新携带的子文档 GUID；不随宿主 Item 的 clock 改变。 */
     this.guid = guid
+    /** 远端实例化选项；copy 复用它，但重新创建子文档实例。 */
     this.opts = opts
   }
 
@@ -1045,7 +1060,7 @@ export class ContentDoc {
   }
 
   /**
-   * 返回当前子文档实例。
+   * 以单元素数组返回子文档实例；集成前该元素为 null，不会在 getter 内创建 Doc。
    *
    * @return {Array<any>}
    */
@@ -1094,8 +1109,9 @@ export class ContentDoc {
   /**
    * 创建或复用子文档，并把它挂到宿主 Item 与事务事件集合。
    *
-   * WHY：通过 `transaction.doc.constructor` 构造可保留宿主的 Doc 子类，又避免
-   * 模块循环依赖。`shouldLoad` 同时兼容显式、自动加载选项。
+   * 通过 `transaction.doc.constructor` 构造可保留宿主的 Doc 子类，又避免模块循环
+   * 依赖。新建实例的 `shouldLoad` 由显式加载或自动加载选项决定；复用已有 Doc 时
+   * 使用该实例当前的加载状态。
    *
    * @param {Transaction} transaction
    * @param {Item} item
@@ -1115,6 +1131,9 @@ export class ContentDoc {
 
   /**
    * 从事务新增集合撤回子文档，或登记为已移除。
+   *
+   * 同事务新增后删除只撤销 added；已存在子文档进入 removed，销毁由事务收尾统一执行。
+   * 本方法不清除 loaded，也不直接 destroy，事件集合因此各自表达这一批发生的动作。
    *
    * @param {Transaction} transaction
    */
@@ -1163,7 +1182,8 @@ export class ContentDoc {
  * 只传播会改变远端子文档语义的 `gc`、`autoLoad` 与 `meta`；返回对象复用传入
  * Doc，等待宿主 Item 集成完成反向链接。
  *
- * @param {Doc} ydoc
+ * @param {Doc} ydoc 待嵌入的现有 Doc；其实例直接复用，meta 对象也不复制。
+ * @return {ContentDoc} 尚未挂到父 Item 的描述；集成时才登记 added/loaded。
  */
 export const createContentDocFromDoc = ydoc => {
   /**
@@ -1193,9 +1213,10 @@ export class ContentEmbed {
   /**
    * 创建嵌入内容。
    *
-   * @param {Object} embed
+   * @param {Object} embed 不可切分的嵌入载荷，copy 复用同一对象，编码器决定 JSON/any 线格式。
    */
   constructor (embed) {
+    /** 单值嵌入对象，作为一个 clock；不深拷贝，也不在 delete 时清空。 */
     this.embed = embed
   }
 
@@ -1307,11 +1328,13 @@ export class ContentFormat {
   /**
    * 创建格式键及其起止值；`null` 通常表示结束该格式范围。
    *
-   * @param {string} key
-   * @param {Object} value
+   * @param {string} key 被修改的格式属性名，同键后续标记覆盖当前值。
+   * @param {Object} value 格式值；运行时也可为原始值或 null，null 表示从有效格式映射移除此键。
    */
   constructor (key, value) {
+    /** 后续文本的格式属性键，编码使用 writeKey 的兼容通道。 */
     this.key = key
+    /** 格式值或结束标记 null；copy 保留对象值身份，清理按严格相等比较。 */
     this.value = value
   }
 
@@ -1397,7 +1420,8 @@ export class ContentFormat {
    */
   gc (_tr) {}
   /**
-   * 写入格式键和值；V2 可分别压缩重复键和任意值。
+   * 写入格式键和值；V1 把值写成 JSON 字符串，V2 使用 any 编码。
+   * V2 格式键保留编号通道，但当前编码器仍逐次写键字符串，没有启用键复用。
    *
    * @param {UpdateEncoderV1 | UpdateEncoderV2} encoder
    * @param {number} _offset
@@ -1555,7 +1579,7 @@ export class ContentString {
   /**
    * 创建字符串内容。
    *
-   * @param {string} str
+   * @param {string} str 原字符串；CRDT clock 与 API 偏移均按 UTF-16 单元计，不按 Unicode 码点计。
    */
   constructor (str) {
     /**
@@ -1576,7 +1600,7 @@ export class ContentString {
   }
 
   /**
-   * 把字符串拆成共享类型 API 使用的字符数组。
+   * 按 UTF-16 代码单元拆成数组；代理对会占两个元素。
    *
    * @return {Array<any>}
    */
@@ -1605,11 +1629,12 @@ export class ContentString {
   /**
    * 按 UTF-16 偏移切分字符串，并修复被切开的代理对。
    *
-   * WHY：孤立高/低代理会生成不可编码文档；若边界落在代理对中间，两侧都改为
-   * U+FFFD，使长度不变且更新保持有效。对应历史场景：yjs/yjs#248。
+   * UTF-8 编解码会替换孤立代理，导致本地字符串与远端不同。若左段末代码单元是
+   * 高代理，这里把它及右段首代码单元替换为 U+FFFD，使两段长度不变、同步后的
+   * 内容一致。有效代理对被从中切开时正好进入该分支。对应历史场景：yjs/yjs#248。
    *
-   * @param {number} offset
-   * @return {ContentString}
+   * @param {number} offset 内部 UTF-16 代码单元边界；0 < offset < str.length，不检查右段首单元是否为低代理。
+   * @return {ContentString} 右段；原字符串变成左段，切开高代理时双方都改为替换字符。
    */
   splice (offset) {
     const right = new ContentString(this.str.slice(offset))
@@ -1677,26 +1702,26 @@ export class ContentString {
   }
 }
 
-/** `YArray` 嵌套类型的稳定线格式引用号。 */
+/** 更新协议保留的旧式 `YArray` 类型引用号。 */
 export const YArrayRefID = 0
-/** `YMap` 嵌套类型的稳定线格式引用号。 */
+/** 更新协议保留的旧式 `YMap` 类型引用号。 */
 export const YMapRefID = 1
-/** `YText` 嵌套类型的稳定线格式引用号。 */
+/** 更新协议保留的旧式 `YText` 类型引用号。 */
 export const YTextRefID = 2
-/** `YXmlElement` 嵌套类型的稳定线格式引用号。 */
+/** 更新协议保留的旧式 `YXmlElement` 类型引用号。 */
 export const YXmlElementRefID = 3
-/** `YXmlFragment` 嵌套类型的稳定线格式引用号。 */
+/** 更新协议保留的旧式 `YXmlFragment` 类型引用号。 */
 export const YXmlFragmentRefID = 4
-/** `YXmlHook` 嵌套类型的稳定线格式引用号。 */
+/** 更新协议保留的旧式 `YXmlHook` 类型引用号。 */
 export const YXmlHookRefID = 5
-/** `YXmlText` 嵌套类型的稳定线格式引用号。 */
+/** 更新协议保留的旧式 `YXmlText` 类型引用号。 */
 export const YXmlTextRefID = 6
 
 /**
- * 承载嵌套共享类型及其整个子树。
+ * 在一个 Item 中承载嵌套共享类型的引用。
  *
- * 集成时把类型绑定到宿主文档和 Item；删除/GC 必须递归处理子结构，保证父项
- * 生命周期覆盖所有后代。
+ * 子内容仍由独立 Item 存储与同步；集成时把类型绑定到宿主文档和 Item，删除/GC
+ * 再递归处理其序列和映射子结构。
  *
  * @private
  */
@@ -1704,7 +1729,7 @@ export class ContentType {
   /**
    * 创建嵌套共享类型内容。
    *
-   * @param {import('../ytype.js').YType} type
+   * @param {import('../ytype.js').YType} type 尚未挂接宿主 Item 的共享类型实例；集成后其 _item/doc 指向父结构和文档。
    */
   constructor (type) {
     /**
@@ -1784,8 +1809,8 @@ export class ContentType {
   /**
    * 递归删除嵌套类型的序列与映射内容。
    *
-   * 已删除且非本事务新插入的后代仍加入 `_mergeStructs`；WHY：它们不会再次进入
-   * 删除集，若不显式登记，事务收尾就不知道需要尝试合并这些墓碑。
+   * 已删除且非本事务新插入的后代仍加入 `_mergeStructs`：它们不会再次进入删除集，
+   * 显式登记后，事务收尾才会尝试把这些旧墓碑与相邻结构合并。
    *
    * @param {Transaction} transaction
    */
@@ -1813,7 +1838,10 @@ export class ContentType {
   /**
    * 递归 GC 嵌套类型全部后代并清空类型入口。
    *
-   * @param {Transaction} tr
+   * 序列沿 right、属性版本链沿 left 回收，不能只处理属性当前值，否则旧墓碑仍占据载荷。
+   * 调用前后代须已删除；若某个 Item 的 gc 抛错，已完成的替换不会回滚，入口清空也可能尚未执行。
+   *
+   * @param {Transaction} tr 承接每次 GC 替换的合并记录；不创建独立事务。
    */
   gc (tr) {
     let item = this.type._start
@@ -1832,7 +1860,7 @@ export class ContentType {
   }
 
   /**
-   * 委托嵌套类型写出其稳定类型引用和类型元数据。
+   * 委托嵌套类型写出旧式类型引用及可选节点名，不在此递归编码子内容。
    *
    * @param {UpdateEncoderV1 | UpdateEncoderV2} encoder
    * @param {number} _offset

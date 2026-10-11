@@ -92,7 +92,7 @@ import type { Environment } from './environment'
 /** 单个构建 Environment 的输出、转换、资源与监听行为配置。 */
 export interface BuildEnvironmentOptions {
   /**
-   * 兼容性转换目标。转换由 esbuild 执行，最低支持 es2015；这里只转换语法，
+   * 兼容性转换目标。默认由 Rolldown/Oxc 执行，最低支持 es2015；这里只转换语法，
    * 不注入 polyfill。
    *
    * 默认 `'baseline-widely-available'`：面向 2026-01-01 已进入 Baseline
@@ -149,8 +149,8 @@ export interface BuildEnvironmentOptions {
    */
   cssTarget?: EsbuildTarget | false
   /**
-   * 单独覆盖 CSS 压缩器，不再跟随 `build.minify`，以便分别配置 JS/CSS。
-   * @default 客户端为 'lightningcss'；build.minify 关闭时为 false
+   * 单独覆盖 CSS 压缩器；true 使用 Lightning CSS，false 关闭压缩。
+   * @default 客户端跟随 build.minify 是否启用；服务端为 'lightningcss'
    */
   cssMinify?: boolean | 'lightningcss' | 'esbuild'
   /**
@@ -203,7 +203,7 @@ export interface BuildEnvironmentOptions {
   write?: boolean
   /**
    * 写入前是否清空 outDir。
-   * @default outDir 位于项目 root 内时为 true
+   * @default 所有输出目录均为 root 的严格子目录时为 true
    */
   emptyOutDir?: boolean | null
   /**
@@ -226,7 +226,7 @@ export interface BuildEnvironmentOptions {
    * {
    *   "main.js": {
    *     "file": "main.68fe3fad.js",
-   *     "css": "main.e6b63442.css",
+   *     "css": ["main.e6b63442.css"],
    *     "imports": [...],
    *     "dynamicImports": [...]
    *   }
@@ -339,7 +339,7 @@ export interface ResolvedModulePreloadOptions {
   resolveDependencies?: ResolveModulePreloadDependenciesFn
 }
 
-/** 按宿主 chunk/HTML 上下文重写单个动态导入的预加载依赖。 */
+/** 按宿主 chunk/HTML 上下文重写 modulepreload 依赖列表；调用方另外保留需要实际装载的 CSS。 */
 export type ResolveModulePreloadDependenciesFn = (
   filename: string,
   deps: string[],
@@ -449,6 +449,7 @@ export function resolveBuildEnvironmentOptions(
       rolldownOptions: undefined,
       ssr: consumer === 'server',
       emitAssets: consumer === 'client',
+      /** 默认构建环境工厂，使用当前解析后的配置创建命名 BuildEnvironment。 */
       createEnvironment: (name, config) => new BuildEnvironment(name, config),
     } satisfies BuildEnvironmentOptions,
     raw,
@@ -709,7 +710,7 @@ export function resolveRolldownOptions(
     plugins.push(esmExternalRequirePlugin())
   }
 
-  /** 合并单个输出的 Vite 默认值，并拒绝与顶层构建配置冲突的字段。 */
+  /** 合并单个输出的默认值，拒绝 output.file，并警告顶层专用的 sourcemap 配置。 */
   const buildOutputOptions = (output: OutputOptions = {}): OutputOptions => {
     // @ts-expect-error -- 兼容旧版嵌套 output.output；Rolldown 类型不再声明该字段。见 https://github.com/vitejs/vite/issues/5812#issuecomment-984345618
     if (output.output) {
@@ -755,6 +756,7 @@ export function resolveRolldownOptions(
       generatedCode: {
         preset: 'es2015',
       },
+      /** 库输出按格式与入口名调用 resolveLibFilename；SSR 和应用输出分别采用固定默认模式。 */
       entryFileNames: ssr
         ? `[name].${jsExt}`
         : libOptions
@@ -1001,7 +1003,7 @@ function normalizeCodeFrame(frame: string) {
 /** Node 模块身份安全的 JavaScript 输出扩展名。 */
 type JsExt = 'js' | 'cjs' | 'mjs'
 
-/** 根据 package type 与输出 format 选择不会被 Node 误判模块系统的扩展名。 */
+/** 按 package type 及 es/cjs/umd 分支选择输出扩展名；其他 format 使用对应分支的默认 js。 */
 function resolveOutputJsExtension(
   format: ModuleFormat,
   type: string = 'commonjs',
@@ -1048,8 +1050,8 @@ export function resolveLibFilename(
 }
 
 /**
- * 将库 formats 展开为 Rolldown outputs，并校验 UMD/IIFE 的单入口与全局 name 约束。
- * 用户显式提供 output 数组时，以该数组为准并忽略 `lib.formats`。
+ * 将库 formats 展开为 outputs；此路径校验 UMD/IIFE 的单入口与 lib.name。
+ * 显式 output 数组以用户数组为准、忽略 lib.formats，并逐项校验 UMD/IIFE 的 output.name。
  */
 export function resolveBuildOutputs(
   outputs: OutputOptions | OutputOptions[] | undefined,
@@ -1189,7 +1191,7 @@ export function onRollupLog(
         return
       default:
         logLeveling satisfies never
-        // 防御未知日志级别，至少以 info 展示而不是静默丢失。
+        // 运行时传入类型范围之外的级别时，落到 info 分支。
         environment.logger.info(message)
         return
     }
@@ -1322,7 +1324,7 @@ export class ChunkMetadataMap {
 }
 
 /**
- * 克隆插件并包装所有构建钩子，把 Environment、旧 ssr 参数和 viteMetadata
+ * 克隆插件并包装其自身可枚举的构建钩子，把 Environment、旧 ssr 参数和 viteMetadata
  * 注入 Rolldown context/参数；保留 class 原型与对象式 hook 的 filter/order。
  */
 export function injectEnvironmentToHooks(
@@ -1639,6 +1641,7 @@ function injectSsrFlag<T extends Record<string, any>>(
   The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
+/** 快速检测单引号路径字面量是否包含需转义的字符，未命中时免做两次 replace。 */
 const needsEscapeRegEx = /[\n\r'\\\u2028\u2029]/
 /** 在 JavaScript 单引号字面量中需要反斜杠转义的换行或引号字符。 */
 const quoteNewlineRegEx = /([\n\r'\u2028\u2029])/g
@@ -1681,20 +1684,24 @@ const relativeUrlMechanisms: Record<
   //     `require.toUrl('${escapeId(relativePath)}'), document.baseURI`,
   //   )
   // },
+  /** CJS 在无 document 时使用 Node file URL，否则按当前脚本或文档基准解析。 */
   cjs: (relativePath) =>
     `(typeof document === 'undefined' ? ${getFileUrlFromRelativePath(
       relativePath,
     )} : ${getRelativeUrlFromDocument(relativePath)})`,
+  /** ES 输出以当前 chunk 的 import.meta.url 为相对资源基准。 */
   es: (relativePath) =>
     getResolveUrl(
       `'${escapeId(partialEncodeURIPath(relativePath))}', import.meta.url`,
     ),
+  /** 普通 IIFE 以当前 script.src 或 document.baseURI 为资源基准。 */
   iife: (relativePath) => getRelativeUrlFromDocument(relativePath),
   // SystemJS 分支要求 Rollup 生成 `module` 参数。
   // system: (relativePath) =>
   //   getResolveUrl(
   //     `'${escapeId(partialEncodeURIPath(relativePath))}', module.meta.url`,
   //   ),
+  /** UMD 无 document/location 时用 Node file URL；浏览器或 worker 则选文档/位置基准。 */
   umd: (relativePath) =>
     `(typeof document === 'undefined' && typeof location === 'undefined' ? ${getFileUrlFromRelativePath(
       relativePath,
@@ -1705,6 +1712,7 @@ const relativeUrlMechanisms: Record<
 /** 在 Rollup 格式机制之外补 worker-IIFE 的 self.location 基准。 */
 const customRelativeUrlMechanisms = {
   ...relativeUrlMechanisms,
+  /** Worker IIFE 以 self.location.href 为资源基准，避免依赖 document。 */
   'worker-iife': (relativePath) =>
     getResolveUrl(
       `'${escapeId(partialEncodeURIPath(relativePath))}', self.location.href`,
@@ -1761,7 +1769,7 @@ export function toOutputFilePathInJS(
       runtime: string
     } {
   const { experimental, base, decodedBase } = environment.config
-  const ssr = environment.config.consumer === 'server' // was !!environment.config.build.ssr
+  const ssr = environment.config.consumer === 'server' // 按当前 Environment 的消费方判断。
   const { renderBuiltUrl } = experimental
   let relative = base === '' || base === './'
   if (renderBuiltUrl) {
@@ -1794,7 +1802,10 @@ export function toOutputFilePathInJS(
 export function createToImportMetaURLBasedRelativeRuntime(
   format: InternalModuleFormat,
   isWorker: boolean,
-): (filename: string, importer: string) => {
+): (
+  filename: string,
+  importer: string,
+) => {
   /** 针对目标输出格式生成的运行时 URL 表达式。 */
   runtime: string
 } {
@@ -1860,7 +1871,7 @@ export class BuildEnvironment extends BaseEnvironment {
   /** 固定为 build，供调用方正向收窄 Environment 能力。 */
   mode = 'build' as const
 
-  /** Builder 成功执行该 Environment 后置为 true。 */
+  /** builder.build 返回 output 或 watcher 后置为 true；后续失败不会重置已有标记。 */
   isBuilt = false
   /** 合并可选环境覆盖后初始化构建 Environment。 */
   constructor(
@@ -1945,7 +1956,11 @@ export function resolveBuilderOptions(
 ): ResolvedBuilderOptions | undefined {
   if (!options) return
   return mergeWithDefaults(
-    { ..._builderOptionsDefaults, buildApp: async () => {} },
+    {
+      ..._builderOptionsDefaults,
+      /** 默认不自行构建，由 builder.buildApp 的未构建环境回退路径接管。 */
+      buildApp: async () => {}
+    },
     options,
   )
 }
@@ -1984,7 +1999,7 @@ export async function createBuilder(
   const builder: ViteBuilder = {
     environments,
     config,
-    /** 按插件 order 与用户 buildApp 回调编排应用构建，并保证至少构建一次。 */
+    /** 按插件 order 与用户回调编排；全部环境仍未标记 isBuilt 时按序调用默认构建。 */
     async buildApp() {
       const pluginContext = new BasicMinimalPluginContext(
         { ...basePluginContextMeta, watchMode: false },
@@ -2009,7 +2024,7 @@ export async function createBuilder(
       if (!configBuilderBuildAppCalled) {
         await configBuilder.buildApp(builder)
       }
-      // 自定义编排若未构建任何环境，回退为依次构建全部环境，保证默认调用有产物。
+      // 没有任何环境被 build 成功返回标记时，回退为依次构建；watch 返回时首轮产物可尚未完成。
       if (
         Object.values(builder.environments).every(
           (environment) => !environment.isBuilt,
@@ -2020,7 +2035,7 @@ export async function createBuilder(
         }
       }
     },
-    /** 构建指定 Environment，并在成功后记录 isBuilt。 */
+    /** 返回 output 或已创建的 watcher 后记录 isBuilt；watch 首轮输出此时可能尚未完成。 */
     async build(
       environment: BuildEnvironment,
     ): Promise<RolldownOutput | RolldownOutput[] | RolldownWatcher> {

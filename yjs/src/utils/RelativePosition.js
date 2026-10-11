@@ -7,27 +7,36 @@ import { writeID, readID, compareIDs, findRootTypeKey, createID } from './ID.js'
 import { rendererContentLength } from './renderer-helpers.js'
 
 /**
- * 用稳定结构 ID 或类型端点表示不随并发编辑漂移的 Yjs 位置。
+ * 用稳定结构 ID 或类型端点表示随编辑重新解析的 Yjs 位置。
  *
  * 数值索引无法表达插入发生后光标应黏附哪一侧；相对位置把锚点关联到指定字符，或关联到类型开头/末尾。例如 `Insert(0, 'x')('a|bc') = 'xa|bc'` 中 `|` 仍指向原字符边界。
  *
- * 不变量：`item`、`tname`、`type` 至少一个非空。`item` 定位内容；无 item 时，`tname` 标识根类型，`type` 标识嵌套类型。
+ * 有效位置的 `item`、`tname`、`type` 至少一个不为 null；空字符串也是合法根键。`item` 定位内容；无 item 时，`tname` 标识根类型，`type` 标识嵌套类型。
  *
  * @example
- *   // 当前光标位于索引 10。
- *   const relativePosition = createRelativePositionFromIndex(yText, 10)
+ *   import * as Y from '@y/y'
+ *   import assert from 'node:assert/strict'
+ *   const ydoc = new Y.Doc()
+ *   const yText = ydoc.get('text')
+ *   yText.insert(0, '0123456789!')
+ *   // 当前光标位于索引 10，即 ! 之前。
+ *   const relativePosition = Y.createRelativePositionFromTypeIndex(yText, 10)
  *   // 修改 yText。
  *   yText.insert(0, 'abc')
  *   yText.delete(3, 10)
  *   // 在新文档状态上重新解析光标。
- *   const absolutePosition = createAbsolutePositionFromRelativePosition(y, relativePosition)
- *   absolutePosition.type === yText // => true
+ *   const absolutePosition = Y.createAbsolutePositionFromRelativePosition(relativePosition, ydoc)
+ *   assert.equal(absolutePosition.type, yText)
+ *   assert.equal(absolutePosition.index, 3)
  *   console.log('cursor location is ' + absolutePosition.index) // => cursor location is 3
+ *   ydoc.destroy()
  *
  */
 export class RelativePosition {
   /**
    * 创建稳定锚点；调用方必须提供 item，或提供根/嵌套类型标识作为端点锚点。
+   *
+   * 这里只保存字段，不检查锚点是否已同步；相同值可在不同 Doc 上解析，结构可用性在解析时判定。
    *
    * @param {ID|null} type - 承载嵌套类型的 Item ID。
    * @param {string|null} tname - 根类型键。
@@ -56,8 +65,12 @@ export class RelativePosition {
 /**
  * 把相对位置转换为可 JSON 序列化的稀疏对象。
  *
+ * 当前实现按 truthy 判断锚点字段：空字符串根键不会写入。因此无名根类型的端点位置应使用二进制编解码往返。
+ * ID 字段仍引用原 ID 对象；此函数构造外层对象，不给它们分配新的结构地址。
+ *
  * @param {RelativePosition} rpos - 待序列化位置。
- * @return {any} 仅包含非空锚点字段与 assoc 的对象。
+ *
+ * @return {any} 包含 truthy 锚点字段及非 null assoc 的对象。
  */
 export const relativePositionToJSON = rpos => {
   const json = {}
@@ -87,7 +100,7 @@ export const relativePositionToJSON = rpos => {
 export const createRelativePositionFromJSON = json => new RelativePosition(json.type == null ? null : createID(json.type.client, json.type.clock), json.tname ?? null, json.item == null ? null : createID(json.item.client, json.item.clock), json.assoc == null ? 0 : json.assoc)
 
 /**
- * 相对位置在某份具体文档状态与 renderer 视图中的解析结果。
+ * 相对位置在某份具体文档状态中的解析结果。
  *
  * `index` 只在对应 `type` 内有效；`assoc` 保留原锚点黏附方向，供后续选择逻辑使用。
  */
@@ -96,22 +109,25 @@ export class AbsolutePosition {
    * 创建绝对位置值对象。
    *
    * @param {YType<any>} type - 位置所属类型。
-   * @param {number} index - 当前可见视图中的数值索引。
+   * @param {number} index - 当前类型中的数值索引。
    * @param {number} [assoc] - 原相对位置的关联方向。
    */
   constructor (type, index, assoc = 0) {
     /** 位置所属共享类型。
      * @type {YType<any>} */
     this.type = type
-    /** 按指定 renderer 计算的当前可见索引。
+    /** 内容锚点按 renderer 计算的当前索引；类型末尾端点取 type._length。
      * @type {number} */
     this.index = index
+    /** 原相对锚点的黏附方向；负值向左关联，零或正值向右关联，不参与 index 校验。 */
     this.assoc = assoc
   }
 }
 
 /**
  * 创建绝对位置值对象的便捷函数。
+ *
+ * 不查询 store，也不校验 index；需要从稳定 ID 重新定位时应调用 `createAbsolutePositionFromRelativePosition()`。
  *
  * @param {YType<any>} type - 位置所属类型。
  * @param {number} index - 当前索引。
@@ -125,6 +141,7 @@ export const createAbsolutePosition = (type, index, assoc = 0) => new AbsolutePo
  * 根据类型身份和可选内容 ID 创建相对位置。
  *
  * 根类型用 share 键标识，嵌套类型用其承载 Item ID 标识；两种形式可跨文档副本解析到同一逻辑类型。
+ * 类型必须已集成：独立 YType 没有可编码的根键或宿主 ID。内容锚点存在时，二进制编码优先写 item ID，解析由其 parent 找回类型。
  *
  * @param {YType<any>} type - 锚点所属类型。
  * @param {ID|null} item - 内容锚点；`null` 表示由 assoc 决定类型开头或末尾。
@@ -146,13 +163,15 @@ export const createRelativePosition = (type, item, assoc) => {
 /**
  * 把类型中的绝对索引转换为 renderer 感知的稳定相对位置。
  *
- * 负 assoc 锚定左字符：索引 0 使用类型起点端点，其余索引先左移一位；非负 assoc 锚定右字符。扫描长度来自 renderer，确保建议删除等可见内容与 UI 索引一致。
+ * 负 assoc 锚定左字符：索引 0 使用类型起点端点，其余索引先左移一位；非负 assoc 锚定右字符。扫描长度来自 renderer，可把它展示的删除内容也纳入索引。
+ * 左关联扫描越过末尾且链非空时使用最后一个 Item 的 lastId；否则返回类型端点。
+ * 位置扫描与之后解析需使用相同 Renderer 计长规则；普通视图跳过不计长的格式/删除项，ID clock 偏移仍按原结构单位计算。
  *
  * @param {YType} type - 基础类型，如文本或数组。
  * @param {number} index - renderer 视图中的绝对位置。
  * @param {number} [assoc] - 黏附方向。
  * @param {import('../utils/Renderer.js').AbstractRenderer?} renderer - 决定每项可见长度的 renderer。
- * @return {RelativePosition} 内容锚点；越过末尾时退化为类型端点。
+ * @return {RelativePosition} 内容锚点或类型端点；左关联且链非空时，越过末尾会锚定链尾 ID。
  *
  * @function
  */
@@ -173,7 +192,7 @@ export const createRelativePositionFromTypeIndex = (type, index, assoc = 0, rend
     }
     index -= len
     if (t.right === null && assoc < 0) {
-      // 左关联的末尾位置应锚定最后一个可用 ID，而非“类型末尾”右关联端点。
+      // 左关联越过末尾时直接取链尾 lastId；此处不再检查链尾的 renderer 可见长度。
       return createRelativePosition(type, t.lastId, assoc)
     }
     t = t.right
@@ -183,6 +202,8 @@ export const createRelativePositionFromTypeIndex = (type, index, assoc = 0, rend
 
 /**
  * 按判别标签写入相对位置：0=内容 ID，1=根类型名，2=嵌套类型 ID，末尾追加 assoc。
+ *
+ * item ID 优先于两种类型身份；字段全部为空会抛 unexpectedCase。assoc 使用带符号整数，所以左关联的负值能往返。
  *
  * @param {encoding.Encoder} encoder - 目标编码器。
  * @param {RelativePosition} rpos - 满足至少一个锚点字段非空的不变量位置。
@@ -262,6 +283,8 @@ export const decodeRelativePosition = uint8Array => readRelativePosition(decodin
 /**
  * 取得覆盖 ID clock 的结构及结构内偏移，但不追随 undo 产生的 redone 链。
  *
+ * store 的查找可能返回 Skip/GC；本函数只返回原结构与偏移，是否能作为内容锚点由上游 instanceof Item 判断。
+ *
  * @param {StructStore} store - 目标文档 store。
  * @param {ID} id - 可位于结构内部的 ID。
  */
@@ -278,13 +301,14 @@ const getItemWithOffset = (store, id) => {
  *
  * 默认追随 undo 创建的 `redone` 链，让执行撤销的本地用户看到锚点恢复到重建内容；该映射不会随 update 持久化，跨用户共享位置时应传 `false`，否则客户端可能解析出不同索引。参见 https://github.com/yjs/yjs/issues/638 。
  *
- * 内容 ID 尚未同步、已 GC、或嵌套类型承载项不可解析时返回 `null`。解析索引只累计 renderer 可见长度。
+ * 内容 ID 尚未同步或已被替换为 GC 时返回 null；只把载荷回收为 ContentDeleted 的 Item 仍可作为折叠锚点。嵌套类型端点须保留 ContentType，否则也返回 null。
+ * 内容锚点累计左侧 Item 的 renderer 可见长度；其父类型已删除但 Item 仍可解析时返回该类型的索引 0。类型端点则按 assoc 返回 0 或 type._length，末尾值不经过 renderer。
  *
  * @param {RelativePosition} rpos - 待解析锚点。
  * @param {Doc} doc - 目标文档副本。
  * @param {boolean} followUndoneDeletions - 是否追随本地 undo 的 redone 链。
  * @param {import('../utils/Renderer.js').AbstractRenderer?} renderer - 决定可见长度的 renderer。
- * @return {AbsolutePosition|null} 当前绝对位置；依赖尚未存在或已 GC 时为 `null`。
+ * @return {AbsolutePosition|null} 当前绝对位置；锚点结构或类型身份不可解析时为 null。
  *
  * @function
  */

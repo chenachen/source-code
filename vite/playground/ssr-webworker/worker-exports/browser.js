@@ -1,2 +1,2 @@
-// conditions are set to worker, and worker is higher up in the exports object in package.json, so should be preferred
+// 启用 worker 条件，且 exports 对象中 worker 排在 browser 之前；SSR 应优先选择 worker 出口。
 export default '[fail] should not load me'

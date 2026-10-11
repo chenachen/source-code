@@ -74,7 +74,7 @@ export type RenderState = {
     fontPreloads: string,
     /** 已编码的高优先级图片 preload Link 头。 */
     highImagePreloads: string,
-    /** 当前响应头容量预算。 */
+    /** 当前Link响应头UTF-16码元预算。 */
     remainingCapacity: number,
   },
   /** 需要在阶段边界复位的资源状态集合。 */
@@ -85,11 +85,11 @@ export type RenderState = {
   viewportChunks: Array<Chunk | PrecomputedChunk>,
   /** 可提升到文档前部的通用块。 */
   hoistableChunks: Array<Chunk | PrecomputedChunk>,
-  /** 已发出的 preconnect 资源。 */
+  /** 当前等待输出的preconnect资源集合，是否已flush由资源状态另行跟踪。 */
   preconnects: Set<Resource>,
-  /** 已发出的字体 preload 资源。 */
+  /** 等待写出的字体preload资源集合。 */
   fontPreloads: Set<Resource>,
-  /** 已发出的高优先级图片 preload 资源。 */
+  /** 等待写出的高优先级图片preload资源集合。 */
   highImagePreloads: Set<Resource>,
   // usedImagePreloads: Set<Resource>,
   /** 按 precedence 分组的样式队列。 */
@@ -113,9 +113,9 @@ export type RenderState = {
   },
   /** 两类内联内容使用的 CSP nonce。 */
   nonce: {
-    /** script nonce。 */
+    /** 写入脚本标签的CSP nonce。 */
     script: string | void,
-    /** style nonce。 */
+    /** 写入样式标签的CSP nonce。 */
     style: string | void,
   },
   /** 当前是否存在需要提升的样式。 */
@@ -124,7 +124,7 @@ export type RenderState = {
   generateStaticMarkup: boolean,
 };
 
-/** 从现代实现创建基础状态，再投影出 Legacy 所需字段与静态标记开关。 */
+/** 以nonce/runtime/importMap/header均缺省调用现代createRenderState，再共享其数组/Set/Map字段并追加generateStaticMarkup；这是浅投影，不克隆资源记录。static开关让下方覆盖器省略hydration标记，其余宿主标签/资源编码沿用现代实现。 */
 export function createRenderState(
   resumableState: ResumableState,
   generateStaticMarkup: boolean,
@@ -248,7 +248,7 @@ export function canHavePreamble(formatContext: FormatContext): boolean {
   return false;
 }
 
-/** 静态标记模式直接转义文本；可水合模式委托现代 Fizz 文本编码。 */
+/** 静态模式直接将转义文本加入target并返回false，不添加相邻文本分隔；可水合模式把textEmbedded交给现代编码器并保留其尾文本状态返回值，供后续segment结尾处理。 */
 export function pushTextInstance(
   target: Array<Chunk | PrecomputedChunk>,
   text: string,
@@ -317,12 +317,12 @@ export function writeStartCompletedSuspenseBoundary(
   return writeStartCompletedSuspenseBoundaryImpl(destination, renderState);
 }
 /**
- * 静态标记无法客户端恢复，直接把 client-rendered 边界视为完成；流式模式委托现代编码。
+ * 静态标记无法客户端恢复，直接把 client-rendered 边界视为完成；可水合标记模式委托现代编码。
  */
 export function writeStartClientRenderedSuspenseBoundary(
   destination: Destination,
   renderState: RenderState,
-  // Legacy 流格式当前不支持输出这些错误参数。
+  // 静态标记模式忽略错误元数据；可水合模式向现代编码器完整转交。
   errorDigest: ?string,
   errorMessage: ?string,
   errorStack: ?string,
@@ -362,7 +362,7 @@ export function writeEndClientRenderedSuspenseBoundary(
   return writeEndClientRenderedSuspenseBoundaryImpl(destination, renderState);
 }
 
-/** 写出 Legacy preamble，并强制跳过阻塞 shell 的阶段。 */
+/** 委托现代preamble写出但固定skipBlockingShell=true，忽略调用方传入值；legacy同步字符串不能等待异步shell前导依赖。canHavePreamble=false另控制遍历时不收集完整文档preamble。 */
 export function writePreambleStart(
   destination: Destination,
   resumableState: ResumableState,
@@ -377,12 +377,12 @@ export function writePreambleStart(
   );
 }
 
-/** Legacy 永不把 suspensey 资源抽离为延迟轮廓。 */
+/** Legacy 不因 stylesheet/图片等待要求把边界单独输出。 */
 export function hasSuspenseyContent(
   hoistableState: HoistableState,
   flushingInShell: boolean,
 ): boolean {
-  // 永不抽离。
+  // 不因 suspensey 资源要求 outline；大小等其他条件仍由 Fizz 判断。
   return false;
 }
 

@@ -7,11 +7,11 @@
  * @flow
  */
 
-/** AnyNativeEvent 定义 Flow 数据形状，用于描述事件插件 extractEvents 的 Flow 调用契约；类型边界阻止插件、原生事件与 Fiber 状态混用。 */
+/** 插件接受的浏览器 Event 类型。 */
 export type AnyNativeEvent = Event | KeyboardEvent | MouseEvent | TouchEvent;
 
-/** PluginName 定义 Flow 数据形状，用于描述事件插件 extractEvents 的 Flow 调用契约；类型边界阻止插件、原生事件与 Fiber 状态混用。 */
+/** 插件注册名称。 */
 export type PluginName = string;
 
-/** EventSystemFlags 定义 Flow 数据形状，用于描述事件插件 extractEvents 的 Flow 调用契约；类型边界阻止插件、原生事件与 Fiber 状态混用。 */
+/** 插件调用中携带的来源/阶段位标志。 */
 export type EventSystemFlags = number;

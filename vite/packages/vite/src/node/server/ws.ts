@@ -94,7 +94,7 @@ function noop() {
 
 /**
  * 用恒定时间比较请求 token 与当前进程 token，拒绝跨站 WebSocket 劫持。
- * 校验必须早于 `handleUpgrade`，否则恶意连接会先进入客户端集合。
+ * 由 ws.handleUpgrade 内的 shouldHandle 调用，在完成握手和登记客户端前拒绝无效 token。
  */
 function hasValidToken(config: ResolvedConfig, url: URL) {
   const token = url.searchParams.get('token')
@@ -133,6 +133,7 @@ export function createWebSocketServer(
       on: noop as any as WebSocketServer['on'],
       off: noop as any as WebSocketServer['off'],
       setInvokeHandler: noop,
+      /** 禁用网络通道时返回未实现的 RPC 诊断，不执行任何方法。 */
       handleInvoke: async () => ({
         error: {
           name: 'TransportError',
@@ -167,7 +168,7 @@ export function createWebSocketServer(
       ? config.server.allowedHosts
       : Object.freeze([...config.server.allowedHosts]) // 冻结数组，允许 host 校验层安全缓存。
 
-  /** 在握手升级前校验协议、Host 与浏览器 token。 */
+  /** ws.handleUpgrade 完成握手前调用：ping 放行，其余请求校验 Host 和浏览器 token。 */
   const shouldHandle = (req: IncomingMessage) => {
     const protocol = req.headers['sec-websocket-protocol']!
     // vite-ping 必须在客户端重新获取 `/@vite/client` 前探测 server，因此允许任意来源；它不收发业务
@@ -203,7 +204,8 @@ export function createWebSocketServer(
     isPing: boolean,
   ) => {
     wss.handleUpgrade(req, socket as Socket, head, (ws) => {
-      // vite-ping 只验证握手可达性：直接正常关闭，不发 connection 事件，也不进入 wss.clients。
+      // vite-ping 握手后直接正常关闭，不发 Vite connection 事件、不装业务监听器；ws 的 clients
+      // 集合已在 upgrade 内登记它，close 后会删除。
       if (isPing) {
         ws.close(/* 正常关闭 */ 1000)
         return
@@ -220,6 +222,7 @@ export function createWebSocketServer(
     if (wsPath) {
       hmrBase = path.posix.join(hmrBase, wsPath)
     }
+    /** 复用 HTTP server 时，仅处理协议及 pathname 都匹配 Vite endpoint 的升级请求。 */
     hmrServerWsListener = (req, socket, head) => {
       const protocol = req.headers['sec-websocket-protocol']!
       const parsedUrl = new URL(`http://example.com${req.url!}`)
@@ -234,6 +237,7 @@ export function createWebSocketServer(
   } else {
     // 独立 server 的普通 HTTP 请求行为与 ws 自带 server 保持一致：
     // https://github.com/websockets/ws/blob/45e17acea791d865df6b255a55182e9c42e5877a/lib/websocket-server.js#L88-L96
+    /** 独立 WS server 的普通 HTTP 请求统一返回 426 Upgrade Required 文本响应。 */
     const route = ((_, res) => {
       const statusCode = 426
       const body = STATUS_CODES[statusCode]
@@ -362,6 +366,7 @@ export function createWebSocketServer(
   function getSocketClient(socket: WebSocketRaw) {
     if (!clientsMap.has(socket)) {
       clientsMap.set(socket, {
+        /** 将协议或自定义事件 payload 序列化为 JSON 后发送到此 socket。 */
         send: (...args: any[]) => {
           let payload: HotPayload
           if (typeof args[0] === 'string') {
@@ -457,6 +462,7 @@ export function createWebSocketServer(
   return {
     ...normalizedHotChannel,
 
+    /** 底层 ws 事件直接登记；其余事件登记到 Vite 自定义事件表。 */
     on: ((event: string, fn: any) => {
       if (wsServerEvents.includes(event)) {
         wss.on(event, fn)
@@ -464,6 +470,7 @@ export function createWebSocketServer(
       }
       normalizedHotChannel.on(event, fn)
     }) as WebSocketServer['on'],
+    /** 按相同事件分类从底层 ws 或 Vite 自定义事件表移除回调。 */
     off: ((event: string, fn: any) => {
       if (wsServerEvents.includes(event)) {
         wss.off(event, fn)

@@ -7,29 +7,25 @@
  * @flow
  */
 
-/** EventSystemFlags 定义 Flow 数据形状，用于定义事件分发上下文的位标志并组合 capture、non-managed 与 replay 路径；类型边界阻止插件、原生事件与 Fiber 状态混用。 */
+/** 原生 listener 的来源、阶段及兼容路径位标志。 */
 export type EventSystemFlags = number;
 
-/** IS_EVENT_HANDLE_NON_MANAGED_NODE 保存定义事件分发上下文的位标志并组合 capture、non-managed 与 replay 路径所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** listener 安装在非 React 管理的 EventTarget 上，跳过 Fiber 根匹配和兼容插件。 */
 export const IS_EVENT_HANDLE_NON_MANAGED_NODE = 1;
-/** IS_NON_DELEGATED 是定义事件分发上下文的位标志并组合 capture、non-managed 与 replay 路径使用的稳定常量，避免在热路径重复分配或推导。 */
+/** listener 直接安装在目标节点上；跳过根边界匹配和兼容插件。 */
 export const IS_NON_DELEGATED = 1 << 1;
-/** IS_CAPTURE_PHASE 保存定义事件分发上下文的位标志并组合 capture、non-managed 与 replay 路径所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** 当前原生 listener 处于 capture 阶段。 */
 export const IS_CAPTURE_PHASE = 1 << 2;
-/** IS_PASSIVE 是定义事件分发上下文的位标志并组合 capture、non-managed 与 replay 路径使用的稳定常量，避免在热路径重复分配或推导。 */
+/** 保留的 passive 路径标志；实际安装选项由 addTrappedEventListener 决定。 */
 export const IS_PASSIVE = 1 << 3;
-/** IS_LEGACY_FB_SUPPORT_MODE 是定义事件分发上下文的位标志并组合 capture、non-managed 与 replay 路径使用的稳定常量，避免在热路径重复分配或推导。 */
+/** 本轮已使用 legacy FB 延迟 listener，不再把 click 延迟一次。 */
 export const IS_LEGACY_FB_SUPPORT_MODE = 1 << 4;
 
-/** SHOULD_NOT_DEFER_CLICK_FOR_FB_SUPPORT_MODE 是定义事件分发上下文的位标志并组合 capture、non-managed 与 replay 路径使用的稳定常量，避免在热路径重复分配或推导。 */
+/** capture 或已延迟的 legacy listener 禁止再次向 document 延迟 click。 */
 export const SHOULD_NOT_DEFER_CLICK_FOR_FB_SUPPORT_MODE =
   IS_LEGACY_FB_SUPPORT_MODE | IS_CAPTURE_PHASE;
 
-// 若事件系统已经设置
-// LEGACY_FB_SUPPORT，则不能再次延迟。该标志只会在
-// willDeferLaterForLegacyFBSupport 调用时设置；若此处不提前退出，
-// 会形成类似无限循环的反复延迟。
-// 事件重放期间同样不能延迟。
-/** SHOULD_NOT_PROCESS_POLYFILL_EVENT_PLUGINS 保存定义事件分发上下文的位标志并组合 capture、non-managed 与 replay 路径所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+// 非受管目标、目标本地监听和原生 capture 路径跳过依赖共享状态的兼容插件。
+/** 非 React 目标、non-delegated 或原生 capture 路径只运行基础插件，避免重复改变兼容插件状态。 */
 export const SHOULD_NOT_PROCESS_POLYFILL_EVENT_PLUGINS =
   IS_EVENT_HANDLE_NON_MANAGED_NODE | IS_NON_DELEGATED | IS_CAPTURE_PHASE;

@@ -9,7 +9,7 @@ import { resolveObjectKey } from './utils'
 
 /**
  * 从普通 `<script>` 的 Options API 默认导出中提取模板可见绑定。
- * script setup 已在主编译流程中精确分析声明，此函数只用于单普通 script 的保守推导。
+ * 既用于普通 script 单入口，也用于与 script setup 合并时补充 Options API bindings。
  */
 export function analyzeScriptBindings(ast: Statement[]): BindingMetadata {
   for (const node of ast) {

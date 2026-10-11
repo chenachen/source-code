@@ -15,6 +15,7 @@ let act;
 describe('ReactError', () => {
   let globalErrorMock;
 
+  // 生产分支暂存 Error mock 并恢复原构造器，确保后续断言观察构建输出的原始错误文本。
   beforeEach(() => {
     if (!__DEV__) {
       // 生产 Jest 环境会覆盖全局 Error 以自动解码消息；本组测试必须观察原始压缩错误，
@@ -29,6 +30,7 @@ describe('ReactError', () => {
     act = require('internal-test-utils').act;
   });
 
+  // 无论测试断言是否成功都归还全局 Error，避免本文件影响其他错误测试。
   afterEach(() => {
     if (!__DEV__) {
       global.Error = globalErrorMock;
@@ -58,14 +60,14 @@ describe('ReactError', () => {
   // @gate build === "production"
   // @gate !source
   /**
-   * Given：组件显示名包含 URL 需编码的 `#`。
-   * When：生产 render 因组件返回普通对象而失败。
-   * Then：错误码 URL 把插值参数编码为 `%23wtf`。
-   *
-   * 验证机制：等待 act rejection，并断言错误码、参数和帮助文本形成闭环。
+   * 历史参数编码用例：组件显示名含 `#`，旧预期使用错误码 152 和 reactjs.org URL。
+   * 初始创建有效 DOM root；act 中渲染返回普通对象的 Oops，断言 Promise 拒绝文本携带
+   * %23wtf 编码参数。目的是覆盖压缩错误参数编码，实际预期仍保留下面的历史字符串。
+   * 当前对象 child 路径对应错误码 31，formatProdErrorMessage 使用 react.dev URL，
+   * 因此下面的旧断言不能作为当前编码行为的证据；现行编码由 ReactErrorProd 测试覆盖。
    */
   it('should serialize arguments', async () => {
-    /** 返回无效 React child，触发生产错误码 152。 */
+    /** 返回普通对象，触发当前 reconciler 的无效 child 错误路径。 */
     function Oops() {
       return {};
     }

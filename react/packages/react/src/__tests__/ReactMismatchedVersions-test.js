@@ -20,6 +20,8 @@ describe('ReactMismatchedVersions-test', () => {
   let React;
   let actualReactVersion;
 
+// 每例重置模块、修补 MessageChannel，并用真实 React 的其余导出加不匹配 version，保留 __actualVersion 供 renderer 版本错误断言。
+
   beforeEach(() => {
     jest.resetModules();
 
@@ -37,13 +39,7 @@ describe('ReactMismatchedVersions-test', () => {
     actualReactVersion = React.__actualVersion;
   });
 
-  /**
-   * Given：已建立该文件所需的 renderer、容器与测试夹具。
-   * When：执行“当前测试”场景的唯一关键操作。
-   * Then：断言 React 与 ReactDOM 版本一致性门禁 的可观察结果。
-   *
-   * 验证机制：同时观察返回值、渲染输出或诊断信息，证明结果来自目标分支。
-   */
+  /** 将 React.version mock 为 18.0.0-whoa-this-aint-the-right-react、保留原真实版本，再 require client；同步导入必须抛出两包要求完全相同版本及各版本值，验证客户端入口门禁。 */
   it('importing "react-dom/client" throws if version does not match React version', async () => {
     expect(() => require('react-dom/client')).toThrow(
       'Incompatible React versions: The "react" and "react-dom" packages ' +
@@ -56,10 +52,7 @@ describe('ReactMismatchedVersions-test', () => {
       // 源码模式通过惰性 require 模拟构建期静态配置注入，只有调用 API 触发加载时才会报错；
       // 因此构建产物模式已足以验证导入时版本门禁。
   // @gate !source
-  /**
-   * 场景：“当前测试”。
-   * 机制：验证React 与 ReactDOM 版本一致性门禁，锁定可观察结果与失败边界。
-   */
+  /** 仅构建产物模式定义此路径：React.version mock 为故意不匹配值后 require 默认 server；导入抛出包含 React 与真实 ReactDOM 版本的错误，验证默认服务端门禁。源码惰性配置注入不在此入口断言范围。 */
   it('importing "react-dom/server" throws if version does not match React version', async () => {
     expect(() => require('react-dom/server')).toThrow(
       'Incompatible React versions: The "react" and "react-dom" packages ' +
@@ -70,10 +63,7 @@ describe('ReactMismatchedVersions-test', () => {
   });
 
   // @gate !source
-  /**
-   * 场景：“当前测试”。
-   * 机制：验证React 与 ReactDOM 版本一致性门禁，锁定可观察结果与失败边界。
-   */
+  /** 仅构建模式以故意不匹配 React.version 导入 server.node，要求精确版本错误包含 mock 与真实值，验证 Node 服务端入口门禁。 */
   it('importing "react-dom/server.node" throws if version does not match React version', async () => {
     expect(() => require('react-dom/server.node')).toThrow(
       'Incompatible React versions: The "react" and "react-dom" packages ' +
@@ -84,10 +74,7 @@ describe('ReactMismatchedVersions-test', () => {
   });
 
   // @gate !source
-  /**
-   * 场景：“当前测试”。
-   * 机制：验证React 与 ReactDOM 版本一致性门禁，锁定可观察结果与失败边界。
-   */
+  /** 仅构建模式以故意不匹配 React.version 导入 server.browser，要求精确版本错误包含 mock 与真实值，验证浏览器流服务端入口门禁。 */
   it('importing "react-dom/server.browser" throws if version does not match React version', async () => {
     expect(() => require('react-dom/server.browser')).toThrow(
       'Incompatible React versions: The "react" and "react-dom" packages ' +
@@ -98,10 +85,7 @@ describe('ReactMismatchedVersions-test', () => {
   });
 
   // @gate !source
-  /**
-   * 场景：“当前测试”。
-   * 机制：验证React 与 ReactDOM 版本一致性门禁，锁定可观察结果与失败边界。
-   */
+  /** 仅构建模式以故意不匹配 React.version 导入 server.bun，要求精确版本错误包含 mock 与真实值，验证 Bun 服务端入口门禁。 */
   it('importing "react-dom/server.bun" throws if version does not match React version', async () => {
     expect(() => require('react-dom/server.bun')).toThrow(
       'Incompatible React versions: The "react" and "react-dom" packages ' +
@@ -112,10 +96,7 @@ describe('ReactMismatchedVersions-test', () => {
   });
 
   // @gate !source
-  /**
-   * 场景：“当前测试”。
-   * 机制：验证React 与 ReactDOM 版本一致性门禁，锁定可观察结果与失败边界。
-   */
+  /** 仅构建模式以故意不匹配 React.version 导入 server.edge，要求精确版本错误包含 mock 与真实值，验证 Edge 服务端入口门禁。 */
   it('importing "react-dom/server.edge" throws if version does not match React version', async () => {
     expect(() => require('react-dom/server.edge')).toThrow(
       'Incompatible React versions: The "react" and "react-dom" packages ' +
@@ -125,10 +106,7 @@ describe('ReactMismatchedVersions-test', () => {
     );
   });
 
-  /**
-   * 场景：“当前测试”。
-   * 机制：验证React 与 ReactDOM 版本一致性门禁，锁定可观察结果与失败边界。
-   */
+  /** React.version 为故意不匹配 mock 后 require 默认 static，要求错误列出 mock 与真实 ReactDOM 版本，验证默认预渲染入口门禁。 */
   it('importing "react-dom/static" throws if version does not match React version', async () => {
     expect(() => require('react-dom/static')).toThrow(
       'Incompatible React versions: The "react" and "react-dom" packages ' +
@@ -139,10 +117,7 @@ describe('ReactMismatchedVersions-test', () => {
   });
 
   // @gate !source
-  /**
-   * 场景：“当前测试”。
-   * 机制：验证React 与 ReactDOM 版本一致性门禁，锁定可观察结果与失败边界。
-   */
+  /** 仅构建模式以故意不匹配 React.version 导入 static.node，要求精确版本错误包含 mock 与真实值，验证 Node 预渲染入口门禁。 */
   it('importing "react-dom/static.node" throws if version does not match React version', async () => {
     expect(() => require('react-dom/static.node')).toThrow(
       'Incompatible React versions: The "react" and "react-dom" packages ' +
@@ -152,10 +127,7 @@ describe('ReactMismatchedVersions-test', () => {
     );
   });
 
-  /**
-   * 场景：“当前测试”。
-   * 机制：验证React 与 ReactDOM 版本一致性门禁，锁定可观察结果与失败边界。
-   */
+  /** React.version 为故意不匹配 mock 后 require static.browser，要求错误列出 mock 与真实 ReactDOM 版本，验证浏览器预渲染入口门禁。 */
   it('importing "react-dom/static.browser" throws if version does not match React version', async () => {
     expect(() => require('react-dom/static.browser')).toThrow(
       'Incompatible React versions: The "react" and "react-dom" packages ' +
@@ -165,10 +137,7 @@ describe('ReactMismatchedVersions-test', () => {
     );
   });
 
-  /**
-   * 场景：“当前测试”。
-   * 机制：验证React 与 ReactDOM 版本一致性门禁，锁定可观察结果与失败边界。
-   */
+  /** React.version 为故意不匹配 mock 后 require static.edge，要求错误列出 mock 与真实 ReactDOM 版本，验证 Edge 预渲染入口门禁。 */
   it('importing "react-dom/static.edge" throws if version does not match React version', async () => {
     expect(() => require('react-dom/static.edge')).toThrow(
       'Incompatible React versions: The "react" and "react-dom" packages ' +

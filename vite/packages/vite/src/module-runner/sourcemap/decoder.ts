@@ -16,7 +16,7 @@ interface SourceMapLike {
   sourcesContent?: string[]
 }
 
-/** trace-mapping 查询使用的零基列、一本基行生成位置。 */
+/** trace-mapping 查询使用的零基列、一基行生成位置。 */
 type Needle = {
   /** 生成代码行号。 */
   line: number
@@ -84,7 +84,7 @@ function memoizedState(): Stats {
   }
 }
 
-/** 查询生成位置对应的原始位置；无法精确到列时视为没有可用映射。 */
+/** 查询生成位置对应的原始位置；返回值缺少列号时视为没有可用映射。 */
 export function getOriginalPosition(
   map: DecodedMap,
   needle: Needle,

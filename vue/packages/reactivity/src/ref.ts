@@ -54,6 +54,7 @@ export interface Ref<T = any, S = T> {
  */
 export function isRef<T>(r: Ref<T> | unknown): r is Ref<T>
 /*@__NO_SIDE_EFFECTS__*/
+/** 读取运行时 IS_REF 且严格比较 true；无值直接判 false，不创建代理或 Dep。 */
 export function isRef(r: any): r is Ref {
   return r ? r[ReactiveFlags.IS_REF] === true : false
 }
@@ -69,8 +70,10 @@ export function isRef(r: any): r is Ref {
 export function ref<T>(
   value: T,
 ): [T] extends [Ref] ? IfAny<T, Ref<T>, T> : Ref<UnwrapRef<T>, UnwrapRef<T> | T>
+/** 无参重载：创建初值 undefined 的 Ref，读取／写入类型均保留 undefined。 */
 export function ref<T = any>(): Ref<T | undefined>
 /*@__NO_SIDE_EFFECTS__*/
+/** 转发到深层 createRef；已有 Ref 原样返回，对象初值由 RefImpl 转成可变代理。 */
 export function ref(value?: unknown) {
   return createRef(value, false)
 }
@@ -80,6 +83,7 @@ declare const ShallowRefMarker: unique symbol
 
 /** 浅层 Ref：只追踪 `.value` 本身的替换，不转换或追踪内部对象。 */
 export type ShallowRef<T = any, S = T> = Ref<T, S> & {
+  /** 浅层类型品牌：UnwrapRef 只解开 Ref 外壳，不递归改写内部对象。 */
   [ShallowRefMarker]?: true
 }
 
@@ -110,8 +114,10 @@ export function shallowRef<T>(
     ? IfAny<T, ShallowRef<T>, T>
     : ShallowRef<T>
   : ShallowRef<T>
+/** 无参浅层重载：内部值初始 undefined，后续值保持调用者提供的身份。 */
 export function shallowRef<T = any>(): ShallowRef<T | undefined>
 /*@__NO_SIDE_EFFECTS__*/
+/** 转发到浅层 createRef；已有 Ref 不重建，普通值按原样存储。 */
 export function shallowRef(value?: unknown) {
   return createRef(value, true)
 }
@@ -130,7 +136,9 @@ function createRef(rawValue: unknown, shallow: boolean) {
  * 普通 Ref 实现，同时保存“用于比较的原始值”和“暴露给用户的响应式值”。
  *
  * 深层 Ref 写入代理对象时先还原为 raw 再比较，避免同一原始对象的不同代理造成假变化；
- * 读取值则保存转换后的响应式代理。浅层/只读值需要保持原身份，不能强制还原再代理。
+ * 构造深层 Ref 时，比较值取 toRaw、公开值取 toReactive；后者遇到只读代理仍保留它。
+ * 浅层 Ref 整体原样存储。后续赋值遇到浅层／只读新值时，两种存储都保留该新值身份，
+ * 不强制还原再代理。普通深层对象的新旧比较则使用 raw 身份。
  *
  * @internal
  */
@@ -148,7 +156,10 @@ class RefImpl<T = any> {
   /** 当前 Ref 是否只追踪根值替换。 */
   public readonly [ReactiveFlags.IS_SHALLOW]: boolean = false
 
-  /** @param value 初始值。 @param isShallow 是否按原样保存内部值。 */
+  /** 建立独立 Dep，并按深浅规则分别保存比较值与公开值；构造时不登记订阅者。
+   * @param value 初始业务值。
+   * @param isShallow true 时保留原身份；false 时比较 raw、公开 reactive 值。
+   */
   constructor(value: T, isShallow: boolean) {
     this._rawValue = isShallow ? value : toRaw(value)
     this._value = isShallow ? value : toReactive(value)
@@ -203,7 +214,8 @@ class RefImpl<T = any> {
 /**
  * 强制触发依赖某个浅层 Ref 的 effect，通常用于直接修改其内部对象之后。
  *
- * 此函数不会改变 `.value`，只是递增 Ref 的 Dep 版本并发出 SET 通知。
+ * 此函数不会改变 value，已有 Dep 时递增版本并发出 SET 通知；它不局限于浅层 Ref。
+ * 属性 Ref 只转发已存在的属性 Dep，从未被追踪时没有 Dep，此函数不新建订阅关系。
  *
  * @example
  * ```js
@@ -295,10 +307,12 @@ export function toValue<T>(source: MaybeRefOrGetter<T>): T {
  * 对象槽位继续保存原 Ref。写入另一个 Ref 时才真正替换属性。
  */
 const shallowUnwrapHandlers: ProxyHandler<any> = {
+  /** 返回 RAW 时直取 target，普通属性先保留 receiver getter 语义，再浅层 unref。 */
   get: (target, key, receiver) =>
     key === ReactiveFlags.RAW
       ? target
       : unref(Reflect.get(target, key, receiver)),
+  /** 普通值写入原 Ref.value；新值也是 Ref 时才替换槽位，其他情况交给 Reflect.set。 */
   set: (target, key, value, receiver) => {
     const oldValue = target[key]
     if (isRef(oldValue) && !isRef(value)) {
@@ -313,8 +327,9 @@ const shallowUnwrapHandlers: ProxyHandler<any> = {
 /**
  * 返回一个会浅层解包 Ref 属性的代理。
  *
- * 已有响应式对象的 `get/set` 陷阱本就具备相同解包语义，直接返回可避免重复代理；普通
- * 对象才套用 `shallowUnwrapHandlers`。常用于把 `setup()` 返回对象暴露给模板。
+ * `isReactive()` 为 true 时直接返回输入，沿用该代理原有的读写规则：浅层代理不解包
+ * Ref，响应式数组整数索引也保留 Ref。其他对象才套用 `shallowUnwrapHandlers`，提供
+ * 顶层解包与赋值转发。常用于把 `setup()` 返回对象暴露给模板。
  *
  * @param objectWithRefs 已有响应式对象，或包含 Ref 属性的普通对象。
  */
@@ -334,7 +349,9 @@ export type CustomRefFactory<T, S = T> = (
   track: () => void,
   trigger: () => void,
 ) => {
+  /** 读取工厂保存的业务值；需要依赖收集时由此函数显式调用传入的 track。 */
   get: () => T
+  /** 接收赋值并决定存储／通知时机；Vue 不替工厂做相等比较，也不自动 trigger。 */
   set: (value: S) => void
 }
 
@@ -354,7 +371,10 @@ class CustomRefImpl<T, S = T> {
   /** 最近一次 getter 返回值，供开发调试事件和内部观察使用。 */
   public _value: T = undefined!
 
-  /** @param factory 接收依赖收集/触发函数并返回自定义 get/set 的工厂。 */
+  /** 创建 Dep，并把绑定到它的 track/trigger 交给工厂，缓存工厂返回的 get/set。
+   * 工厂在构造中立即执行；若抛错直接传播，不返回半成品 Ref。
+   * @param factory 接收依赖收集／触发函数并返回自定义 get/set 的工厂。
+   */
   constructor(factory: CustomRefFactory<T, S>) {
     const dep = (this.dep = new Dep())
     const { get, set } = factory(dep.track.bind(dep), dep.trigger.bind(dep))
@@ -416,6 +436,7 @@ type ToRefValue<T extends object, K extends ToRefKey<T>> = K extends keyof T
       : never
     : never
 
+/*@__NO_SIDE_EFFECTS__*/
 /**
  * 把响应式对象转换成普通对象，其中每个可枚举属性都是指向原属性的 Ref。
  *
@@ -426,13 +447,12 @@ type ToRefValue<T extends object, K extends ToRefKey<T>> = K extends keyof T
  * @param object 要转换为属性 Ref 集合的响应式对象。
  * @see {@link https://vuejs.org/api/reactivity-utilities.html#torefs}
  */
-/*@__NO_SIDE_EFFECTS__*/
 export function toRefs<T extends object>(object: T): ToRefs<T> {
   if (__DEV__ && !isProxy(object)) {
     warn(`toRefs() expects a reactive object but received a plain one.`)
   }
   const ret: any = isArray(object) ? new Array(object.length) : {}
-  // propertyToRef 会复用属性本身已有的 Ref，否则创建双向转发的 ObjectRefImpl。
+  // 每个属性都创建 ObjectRefImpl；槽位已有 Ref 时转发其 value，槽位替换后跟随新值。
   for (const key in object) {
     ret[key] = propertyToRef(object, key)
   }
@@ -459,6 +479,9 @@ class ObjectRefImpl<T extends object, K extends keyof T> {
   private readonly _shallow: boolean
 
   /**
+   * 保存源对象与归一化 key，并判断整条代理链是否已经自动解包 Ref。
+   * ObjectRef 不另建 Dep，默认值也不预先写入源属性；后续槽位替换仍由访问时读取。
+   *
    * @param _object 源对象，通常是响应式代理。
    * @param key 要转发的属性键。
    * @param _defaultValue 属性值为 `undefined` 时使用的默认值。
@@ -526,7 +549,7 @@ class GetterRefImpl<T> {
   /** 最近一次 getter 返回值。 */
   public _value: T = undefined!
 
-  /** @param _getter 每次读取 `.value` 时执行的 getter。 */
+  /** 保存读取函数而不执行，不建立独立 Dep；每次 value 访问都重新调用 _getter。 */
   constructor(private readonly _getter: () => T) {}
   /** 直接执行 getter；其内部响应式读取会由当前外部 effect 自然收集。 */
   get value() {
@@ -585,16 +608,19 @@ export function toRef<T>(
   : T extends Ref
     ? T
     : Ref<UnwrapRef<T>>
+/** 属性重载：返回与 object[key] 联动的 Ref，包含数组字符串索引的值类型推导。 */
 export function toRef<T extends object, K extends ToRefKey<T>>(
   object: T,
   key: K,
 ): ToRef<ToRefValue<T, K>>
+/** 默认值重载：仅源属性读为 undefined 时返回 defaultValue，不将默认值写回对象。 */
 export function toRef<T extends object, K extends ToRefKey<T>>(
   object: T,
   key: K,
   defaultValue: ToRefValue<T, K>,
 ): ToRef<Exclude<ToRefValue<T, K>, undefined>>
 /*@__NO_SIDE_EFFECTS__*/
+/** 先保留已有 Ref，再识别 getter／显式属性参数；其他输入包装为普通深层 Ref。 */
 export function toRef(
   source: Record<PropertyKey, any> | MaybeRef,
   key?: string | number | symbol,
@@ -676,7 +702,10 @@ export type UnwrapRefSimple<T> = T extends
   | Builtin
   | Ref
   | RefUnwrapBailTypes[keyof RefUnwrapBailTypes]
-  | { [RawSymbol]?: true }
+  | {
+      /** markRaw 的类型品牌，匹配后停止整个对象的递归解包。 */
+      [RawSymbol]?: true
+    }
   ? T
   : T extends ShallowReactiveBrand
     ? T

@@ -24,7 +24,7 @@ let waitForThrow;
 
 /** 验证 Hooks 开发态诊断、提前退出、渲染阶段更新、调用顺序与错误恢复的内部不变量。 */
 describe('ReactHooks', () => {
-  /** 每个用例重置模块与警告状态，并重新绑定 React、Noop 渲染器、调度日志及内部断言工具。 */
+  /** 每个用例重置模块与警告状态，并重新绑定 React、Test Renderer、调度日志及内部断言工具。 */
   beforeEach(() => {
     jest.resetModules();
     React = require('react');
@@ -42,18 +42,11 @@ describe('ReactHooks', () => {
 
   if (__DEV__) {
     // `useDebugValue` 仅在开发态生效。
-    /**
-     * Given：目标组件已进入可触发开发态保护的最小运行环境。
-     * When：执行用例中的非法 Hook、参数或阶段调用。
-     * Then：在类组件中调用仅函数组件可用的 Hook，确认无 dispatcher 时立即抛错。
-     *
-     * 验证机制：异常断言保留原始错误与阶段边界。
-     * 对应源码：`renderWithHooks()`、`warnOnHookMismatchInDev()` 与开发态 dispatcher。
-     */
+    /** DEV 中类 render 调用 useDebugValue(abc)；act 拒绝并包含 Invalid hook call，验证 ContextOnlyDispatcher 不能用于类 Hook 调用。 */
     it('useDebugValue throws when used in a class component', async () => {
-      /** 定义 Example 类 fixture，在“在类组件中调用仅函数组件可用的 Hook，确认无 dispatcher 时立即抛错”场景中暴露类生命周期、实例 ref 或错误边界。 */
+      /** 类render非法useDebugValue，供函数Hook调用边界测试。 */
       class Example extends React.Component {
-        /** 渲染 Example.render 对应的类 fixture，并把本轮状态或子树交给宿主输出断言。 */
+        /** 调用useDebugValue后原本返回null；非法Hook调用先抛错。 */
         render() {
           React.useDebugValue('abc');
           return null;
@@ -76,18 +69,11 @@ describe('ReactHooks', () => {
     });
   }
 
-  /**
-   * Given：安排相同值与差异值更新，确认状态队列只在满足不变量时提前退出渲染所需的初始状态、更新入口与观测日志均已建立。
-   * When：安排用例指定的状态、属性、Context 或依赖更新。
-   * Then：安排相同值与差异值更新，确认状态队列只在满足不变量时提前退出渲染。
-   *
-   * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果。
-   * 对应源码：`updateReducerImpl()`、`dispatchSetStateInternal()` 与 `bailoutHooks()`。
-   */
+  /** 两个 state 从0/0到1/1；相同状态或多次往返最终不变时只记录 Parent，不重渲染 Child/不运行 layout。再以 NaN与负零验证 Object.is：负零→正零仍更新。 */
   it('bails out in the render phase if all of the state is the same', async () => {
     const {useState, useLayoutEffect} = React;
 
-    /** 作为子级函数组件暴露 Hook 状态和提交日志；服务于“安排相同值与差异值更新，确认状态队列只在满足不变量时提前退出渲染”场景。 */
+    /** 仅在render记录Child:text并返回文本；不注册effect，缺少Child日志可观察父render后bailout。 */
     function Child({text}) {
       Scheduler.log('Child: ' + text);
       return text;
@@ -95,7 +81,7 @@ describe('ReactHooks', () => {
 
     let setCounter1;
     let setCounter2;
-    /** 作为父级 fixture 持有状态、Context 或子树边界；服务于“安排相同值与差异值更新，确认状态队列只在满足不变量时提前退出渲染”场景。 */
+    /** 暴露两份计数setter，render记录组合值，layout记录真正提交，Child日志区分render后bailout。 */
     function Parent() {
       const [counter1, _setCounter1] = useState(0);
       setCounter1 = _setCounter1;
@@ -173,18 +159,11 @@ describe('ReactHooks', () => {
     assertLog(['Parent: 0, NaN', 'Child: 0, NaN', 'Effect: 0, NaN']);
   });
 
-  /**
-   * Given：安排相同值与差异值更新，确认状态队列只在满足不变量时提前退出渲染所需的初始状态、更新入口与观测日志均已建立。
-   * When：安排用例指定的状态、属性、Context 或依赖更新。
-   * Then：安排相同值与差异值更新，确认状态队列只在满足不变量时提前退出渲染。
-   *
-   * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果。
-   * 对应源码：`updateReducerImpl()`、`dispatchSetStateInternal()` 与 `bailoutHooks()`。
-   */
+  /** memo Parent 有两份 state 与 theme；相同state时跳过 Child，但 light→dark 的 props 变化仍渲染 Child；state/props都同值时仅Parent日志。 */
   it('bails out in render phase if all the state is the same and props bail out with memo', async () => {
     const {useState, memo} = React;
 
-    /** 作为子级函数组件暴露 Hook 状态和提交日志；服务于“安排相同值与差异值更新，确认状态队列只在满足不变量时提前退出渲染”场景。 */
+    /** 仅在render记录Child:text并返回文本；不注册effect，缺少Child日志可观察父render后bailout。 */
     function Child({text}) {
       Scheduler.log('Child: ' + text);
       return text;
@@ -192,7 +171,7 @@ describe('ReactHooks', () => {
 
     let setCounter1;
     let setCounter2;
-    /** 作为父级 fixture 持有状态、Context 或子树边界；服务于“安排相同值与差异值更新，确认状态队列只在满足不变量时提前退出渲染”场景。 */
+    /** 暴露两份计数并消费theme prop，作为memo组件区分state不变与props变化。 */
     function Parent({theme}) {
       const [counter1, _setCounter1] = useState(0);
       setCounter1 = _setCounter1;
@@ -250,19 +229,12 @@ describe('ReactHooks', () => {
     assertLog(['Parent: 1, 2 (dark)']);
   });
 
-  /**
-   * Given：目标组件已进入可触发开发态保护的最小运行环境。
-   * When：执行用例中的非法 Hook、参数或阶段调用。
-   * Then：向 Hook 更新函数传入不受支持的第二参数，确认开发态给出迁移指引。
-   *
-   * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果，开发态控制台断言限定诊断内容与去重。
-   * 对应源码：`updateReducerImpl()`、`dispatchSetStateInternal()` 与 `bailoutHooks()`。
-   */
+  /** useState计数0→1，第二参数回调若执行会抛错；日志/输出均为1，DEV警告不支持回调，证明回调被忽略。 */
   it('warns about setState second argument', async () => {
     const {useState} = React;
 
     let setCounter;
-    /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“向 Hook 更新函数传入不受支持的第二参数，确认开发态给出迁移指引”场景。 */
+    /** 暴露useState计数setter，记录counter并返回值，第二参数非法回调不应执行。 */
     function Counter() {
       const [counter, _setCounter] = useState(0);
       setCounter = _setCounter;
@@ -291,19 +263,12 @@ describe('ReactHooks', () => {
     expect(root).toMatchRenderedOutput('1');
   });
 
-  /**
-   * Given：目标组件已进入可触发开发态保护的最小运行环境。
-   * When：执行用例中的非法 Hook、参数或阶段调用。
-   * Then：向 Hook 更新函数传入不受支持的第二参数，确认开发态给出迁移指引。
-   *
-   * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果，开发态控制台断言限定诊断内容与去重。
-   * 对应源码：`renderWithHooks()` 与对应 Hook dispatcher 分支。
-   */
+  /** useReducer用 action 直接替换计数0→1，dispatch第二参数回调若执行会抛错；警告与输出1验证其被忽略。 */
   it('warns about dispatch second argument', async () => {
     const {useReducer} = React;
 
     let dispatch;
-    /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“向 Hook 更新函数传入不受支持的第二参数，确认开发态给出迁移指引”场景。 */
+    /** 暴露把action直接作为新计数的reducer dispatch，记录并输出counter。 */
     function Counter() {
       const [counter, _dispatch] = useReducer((s, a) => a, 0);
       dispatch = _dispatch;
@@ -332,21 +297,14 @@ describe('ReactHooks', () => {
     expect(root).toMatchRenderedOutput('1');
   });
 
-  /**
-   * Given：安排相同值与差异值更新，确认状态队列只在满足不变量时提前退出渲染所需的初始状态、更新入口与观测日志均已建立。
-   * When：完成挂载以及用例指定的后续渲染或提交步骤。
-   * Then：安排相同值与差异值更新，确认状态队列只在满足不变量时提前退出渲染。
-   *
-   * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果。
-   * 对应源码：`updateReducerImpl()`、`dispatchSetStateInternal()` 与 `bailoutHooks()`。
-   */
+  /** Provider初值light、counter更新到1；同counter再设1仅Parent日志，同时theme变dark则Child/layout仍执行，验证Context变化阻止render后bailout。 */
   it('never bails out if context has changed', async () => {
     const {useState, useLayoutEffect, useContext} = React;
 
     const ThemeContext = React.createContext('light');
 
     let setTheme;
-    /** 作为 ThemeProvider fixture 承载当前测试职责；服务于“安排相同值与差异值更新，确认状态队列只在满足不变量时提前退出渲染”场景。 */
+    /** 用 state 驱动 ThemeContext，并暴露 theme 更新器，区分状态 bailout 与 Context 传播。 */
     function ThemeProvider({children}) {
       const [theme, _setTheme] = useState('light');
       Scheduler.log('Theme: ' + theme);
@@ -356,14 +314,14 @@ describe('ReactHooks', () => {
       );
     }
 
-    /** 作为子级函数组件暴露 Hook 状态和提交日志；服务于“安排相同值与差异值更新，确认状态队列只在满足不变量时提前退出渲染”场景。 */
+    /** 仅在render记录Child:text并返回文本；不注册effect，缺少Child日志可观察父render后bailout。 */
     function Child({text}) {
       Scheduler.log('Child: ' + text);
       return text;
     }
 
     let setCounter;
-    /** 作为父级 fixture 持有状态、Context 或子树边界；服务于“安排相同值与差异值更新，确认状态队列只在满足不变量时提前退出渲染”场景。 */
+    /** 暴露counter并读取ThemeContext，两者共同生成Text与layout日志。 */
     function Parent() {
       const [counter, _setCounter] = useState(0);
       setCounter = _setCounter;
@@ -424,25 +382,18 @@ describe('ReactHooks', () => {
     expect(root).toMatchRenderedOutput('1 (dark)');
   });
 
-  /**
-   * Given：安排相同值与差异值更新，确认状态队列只在满足不变量时提前退出渲染所需的初始状态、更新入口与观测日志均已建立。
-   * When：完成挂载以及用例指定的后续渲染或提交步骤。
-   * Then：安排相同值与差异值更新，确认状态队列只在满足不变量时提前退出渲染。
-   *
-   * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果。
-   * 对应源码：`updateReducerImpl()`、`dispatchSetStateInternal()` 与 `bailoutHooks()`。
-   */
+  /** 计数0→1后首个同值更新仍进入Parent，下一次同值无render日志；再重复0与正零→负零，验证两侧Fiber lanes清空后的eager bailout及Object.is。 */
   it('can bail out without calling render phase (as an optimization) if queue is known to be empty', async () => {
     const {useState, useLayoutEffect} = React;
 
-    /** 作为子级函数组件暴露 Hook 状态和提交日志；服务于“安排相同值与差异值更新，确认状态队列只在满足不变量时提前退出渲染”场景。 */
+    /** 仅在render记录Child:text并返回文本；不注册effect，缺少Child日志可观察父render后bailout。 */
     function Child({text}) {
       Scheduler.log('Child: ' + text);
       return text;
     }
 
     let setCounter;
-    /** 作为父级 fixture 持有状态、Context 或子树边界；服务于“安排相同值与差异值更新，确认状态队列只在满足不变量时提前退出渲染”场景。 */
+    /** 暴露counter并记录Parent/layout，区分一次render后bailout与后续eager bailout。 */
     function Parent() {
       const [counter, _setCounter] = useState(0);
       setCounter = _setCounter;
@@ -508,25 +459,18 @@ describe('ReactHooks', () => {
     expect(root).toMatchRenderedOutput('0');
   });
 
-  /**
-   * Given：安排相同值与差异值更新，确认状态队列只在满足不变量时提前退出渲染所需的初始状态、更新入口与观测日志均已建立。
-   * When：完成挂载以及用例指定的后续渲染或提交步骤。
-   * Then：安排相同值与差异值更新，确认状态队列只在满足不变量时提前退出渲染。
-   *
-   * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果。
-   * 对应源码：`updateReducerImpl()`、`dispatchSetStateInternal()` 与 `bailoutHooks()`。
-   */
+  /** 计数0连续派发0/0/0/1/2/3；前四项同步计算，1使Fiber标记工作后2/3留待render，最终3。日志区分eager结果复用与后续计算。 */
   it('bails out multiple times in a row without entering render phase', async () => {
     const {useState} = React;
 
-    /** 作为子级函数组件暴露 Hook 状态和提交日志；服务于“安排相同值与差异值更新，确认状态队列只在满足不变量时提前退出渲染”场景。 */
+    /** 仅在render记录Child:text并返回文本；不注册effect，缺少Child日志可观察父render后bailout。 */
     function Child({text}) {
       Scheduler.log('Child: ' + text);
       return text;
     }
 
     let setCounter;
-    /** 作为父级 fixture 持有状态、Context 或子树边界；服务于“安排相同值与差异值更新，确认状态队列只在满足不变量时提前退出渲染”场景。 */
+    /** 暴露counter，仅记录Parent/Child render，函数updater日志用于检测eager计算。 */
     function Parent() {
       const [counter, _setCounter] = useState(0);
       setCounter = _setCounter;
@@ -576,25 +520,18 @@ describe('ReactHooks', () => {
     expect(root).toMatchRenderedOutput('3');
   });
 
-  /**
-   * Given：让低优先级更新被高优先级更新打断，确认跳过更新随后按队列顺序 rebase所需的初始状态、更新入口与观测日志均已建立。
-   * When：安排用例指定的状态、属性、Context 或依赖更新。
-   * Then：让低优先级更新被高优先级更新打断，确认跳过更新随后按队列顺序 rebase。
-   *
-   * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果。
-   * 对应源码：`updateReducerImpl()`、`dispatchSetStateInternal()` 与 `bailoutHooks()`。
-   */
+  /** 初值1，transition ×100先eager计算100；flushSync +5跳过transition提交6，后台复用100并重放+5得到105，验证首次跳过后的baseQueue顺序。 */
   it('can rebase on top of a previously skipped update', async () => {
     const {useState} = React;
 
-    /** 作为子级函数组件暴露 Hook 状态和提交日志；服务于“让低优先级更新被高优先级更新打断，确认跳过更新随后按队列顺序 rebase”场景。 */
+    /** 仅在render记录Child:text并返回文本；不注册effect，缺少Child日志可观察父render后bailout。 */
     function Child({text}) {
       Scheduler.log('Child: ' + text);
       return text;
     }
 
     let setCounter;
-    /** 作为父级 fixture 持有状态、Context 或子树边界；服务于“让低优先级更新被高优先级更新打断，确认跳过更新随后按队列顺序 rebase”场景。 */
+    /** 初值1的计数队列，函数更新交错乘100与加5，记录Parent/Child观察baseQueue重放。 */
     function Parent() {
       const [counter, _setCounter] = useState(1);
       setCounter = _setCounter;
@@ -642,17 +579,10 @@ describe('ReactHooks', () => {
     expect(root).toMatchRenderedOutput('105');
   });
 
-  /**
-   * Given：目标组件已进入可触发开发态保护的最小运行环境。
-   * When：执行用例中的非法 Hook、参数或阶段调用。
-   * Then：改变依赖数组形状或类型，确认 Hook 输入一致性校验产生对应诊断。
-   *
-   * 验证机制：调度日志精确约束执行次数与先后顺序，开发态控制台断言限定诊断内容与去重。
-   * 对应源码：`areHookInputsEqual()` 的开发态输入校验。
-   */
+  /** layout依赖从[A]改为[A,B]，初挂记录Did commit A，更新DEV警告依赖长度变化；本例未用新effect日志证明更新create。 */
   it('warns about variable number of dependencies', async () => {
     const {useLayoutEffect} = React;
-    /** 组织当前用例的根组件、更新入口与受测 Hook；服务于“改变依赖数组形状或类型，确认 Hook 输入一致性校验产生对应诊断”场景。 */
+    /** 把props.dependencies直接传给layout effect，记录effect版本并返回同一数组内容。 */
     function App(props) {
       useLayoutEffect(() => {
         Scheduler.log('Did commit: ' + props.dependencies.join(', '));
@@ -680,17 +610,10 @@ describe('ReactHooks', () => {
     ]);
   });
 
-  /**
-   * Given：目标组件已进入可触发开发态保护的最小运行环境。
-   * When：执行用例中的非法 Hook、参数或阶段调用。
-   * Then：改变依赖数组形状或类型，确认 Hook 输入一致性校验产生对应诊断。
-   *
-   * 验证机制：调度日志精确约束执行次数与先后顺序，宿主输出断言确认实际提交结果，开发态控制台断言限定诊断内容与去重。
-   * 对应源码：`areHookInputsEqual()` 的开发态输入校验。
-   */
+  /** hasDeps=true实际传null，false实际传[text]；相同Hello更新从无依赖改为数组，DEV警告新增最终参数。测试标题方向与实际表达式不同，按本体说明。 */
   it('warns if switching from dependencies to no dependencies', async () => {
     const {useMemo} = React;
-    /** 组织当前用例的根组件、更新入口与受测 Hook；服务于“改变依赖数组形状或类型，确认 Hook 输入一致性校验产生对应诊断”场景。 */
+    /** 按hasDeps传null或[text]给useMemo，计算大写文本；变量名不代表实际依赖存在与否。 */
     function App({text, hasDeps}) {
       const resolvedText = useMemo(
         () => {
@@ -723,18 +646,11 @@ describe('ReactHooks', () => {
     ]);
   });
 
-  /**
-   * Given：目标组件已进入可触发开发态保护的最小运行环境。
-   * When：执行用例中的非法 Hook、参数或阶段调用。
-   * Then：改变依赖数组形状或类型，确认 Hook 输入一致性校验产生对应诊断。
-   *
-   * 验证机制：开发态控制台断言限定诊断内容与去重。
-   * 对应源码：`areHookInputsEqual()` 的开发态输入校验。
-   */
+  /** 四类Hook分别接收string/number/object依赖，逐类逐类型DEV警告；空数组/null/undefined为无警告对照。非数组检测来自DEV dispatcher，不是仅areHookInputsEqual。 */
   it('warns if deps is not an array', async () => {
     const {useEffect, useLayoutEffect, useMemo, useCallback} = React;
 
-    /** 组织当前用例的根组件、更新入口与受测 Hook；服务于“改变依赖数组形状或类型，确认 Hook 输入一致性校验产生对应诊断”场景。 */
+    /** 把props.deps同时传给四类Hook，以逐Hook非数组诊断与合法空值作对照。 */
     function App(props) {
       useEffect(() => {}, props.deps);
       useLayoutEffect(() => {}, props.deps);
@@ -814,17 +730,11 @@ describe('ReactHooks', () => {
     });
   });
 
-  /**
-   * Given：目标组件已进入可触发开发态保护的最小运行环境。
-   * When：执行用例中的非法 Hook、参数或阶段调用。
-   * Then：改变依赖数组形状或类型，确认 Hook 输入一致性校验产生对应诊断。
-   *
-   * 验证机制：开发态控制台断言限定诊断内容与去重。
-   * 对应源码：`areHookInputsEqual()` 的开发态输入校验。
-   */
+  /** forwardRef内useImperativeHandle deps=hello触发非数组警告；null/[]/undefined对照不警告，未传ref且create不会执行。 */
   it('warns if deps is not an array for useImperativeHandle', async () => {
     const {useImperativeHandle} = React;
 
+    /** 把本例 deps/create 参数交给 useImperativeHandle；没有 ref 时仅DEV参数检查，handle effect 不调用create。 */
     const App = React.forwardRef((props, ref) => {
       useImperativeHandle(ref, () => {}, props.deps);
       return null;
@@ -858,18 +768,11 @@ describe('ReactHooks', () => {
     });
   });
 
-  /**
-   * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-   * When：安排用例指定的状态、属性、Context 或依赖更新。
-   * Then：Effect 中触发包含渲染阶段 useState 更新的组件，确认更新不会在提交后丢失。
-   *
-   * 验证机制：宿主输出断言确认实际提交结果。
-   * 对应源码：`updateReducerImpl()`、`dispatchSetStateInternal()` 与 `bailoutHooks()`。
-   */
+  /** count0时render阶段加一两次，首次passive再加一两次；act后输出4，验证render阶段队列不会被effect更新覆盖。 */
   it('does not forget render phase useState updates inside an effect', async () => {
     const {useState, useEffect} = React;
 
-    /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“Effect 中触发包含渲染阶段 useState 更新的组件，确认更新不会在提交后丢失”场景。 */
+    /** 初值0在render中加一两次，空依赖passive再加一两次，最终输出4。 */
     function Counter() {
       const [counter, setCounter] = useState(0);
       if (counter === 0) {
@@ -890,20 +793,13 @@ describe('ReactHooks', () => {
     expect(root).toMatchRenderedOutput('4');
   });
 
-  /**
-   * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-   * When：安排用例指定的状态、属性、Context 或依赖更新。
-   * Then：Effect 中触发包含渲染阶段 reducer 更新的组件，确认内联或提升 reducer 都不会丢更新。
-   *
-   * 验证机制：宿主输出断言确认实际提交结果。
-   * 对应源码：`updateReducerImpl()`、`dispatchSetStateInternal()` 与 `bailoutHooks()`。
-   */
+  /** 提升到组件外的reducer固定+1，render阶段dispatch两次，passive再两次；输出4，验证重放与外部reducer队列。 */
   it('does not forget render phase useReducer updates inside an effect with hoisted reducer', async () => {
     const {useReducer, useEffect} = React;
 
     /** reducer 根据 action 与闭包参数计算下一状态，用于检验 reducer 队列的选择和 rebase。 */
     const reducer = x => x + 1;
-    /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“Effect 中触发包含渲染阶段 reducer 更新的组件，确认内联或提升 reducer 都不会丢更新”场景。 */
+    /** 使用提升reducer固定加一，render阶段两次加一后passive再次两次加一。 */
     function Counter() {
       const [counter, increment] = useReducer(reducer, 0);
       if (counter === 0) {
@@ -924,18 +820,11 @@ describe('ReactHooks', () => {
     expect(root).toMatchRenderedOutput('4');
   });
 
-  /**
-   * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-   * When：安排用例指定的状态、属性、Context 或依赖更新。
-   * Then：Effect 中触发包含渲染阶段 reducer 更新的组件，确认内联或提升 reducer 都不会丢更新。
-   *
-   * 验证机制：宿主输出断言确认实际提交结果。
-   * 对应源码：`updateReducerImpl()`、`dispatchSetStateInternal()` 与 `bailoutHooks()`。
-   */
+  /** 每轮内联reducer固定+1，render阶段dispatch两次，passive再两次；输出4，验证reducer身份变化不丢render阶段更新。 */
   it('does not forget render phase useReducer updates inside an effect with inline reducer', async () => {
     const {useReducer, useEffect} = React;
 
-    /** 作为计数 fixture 驱动状态队列并输出每次渲染或 Effect；服务于“Effect 中触发包含渲染阶段 reducer 更新的组件，确认内联或提升 reducer 都不会丢更新”场景。 */
+    /** 使用每轮内联reducer固定加一，render阶段与首次passive分别派发两次。 */
     function Counter() {
       const [counter, increment] = useReducer(x => x + 1, 0);
       if (counter === 0) {
@@ -956,20 +845,13 @@ describe('ReactHooks', () => {
     expect(root).toMatchRenderedOutput('4');
   });
 
-  /**
-   * Given：目标组件已进入可触发开发态保护的最小运行环境。
-   * When：执行用例中的非法 Hook、参数或阶段调用。
-   * Then：向 useImperativeHandle 传入非法 ref 或 create 参数，确认开发态边界诊断。
-   *
-   * 验证机制：开发态控制台断言限定诊断内容与去重，异常断言保留原始错误与阶段边界。
-   * 对应源码：`renderWithHooks()` 与对应 Hook dispatcher 分支。
-   */
+  /** useImperativeHandle只传含focus的对象，create缺失；DEV分别警告两实参，layout调用create时报create is not a function。空focus方法未调用。 */
   it('warns for bad useImperativeHandle first arg', async () => {
     const {useImperativeHandle} = React;
-    /** 组织当前用例的根组件、更新入口与受测 Hook；服务于“向 useImperativeHandle 传入非法 ref 或 create 参数，确认开发态边界诊断”场景。 */
+    /** 只给useImperativeHandle传含空focus对象，刻意同时缺少create并使用非法ref对象。 */
     function App() {
       useImperativeHandle({
-        /** App.focus 暴露 imperative handle 的聚焦行为，供 ref 参数校验场景调用。 */
+        /** 空focus方法只构成非法ref对象的key，不会调用。 */
         focus() {},
       });
       return null;
@@ -991,19 +873,13 @@ describe('ReactHooks', () => {
     ]);
   });
 
-  /**
-   * Given：目标组件已进入可触发开发态保护的最小运行环境。
-   * When：执行用例中的非法 Hook、参数或阶段调用。
-   * Then：向 useImperativeHandle 传入非法 ref 或 create 参数，确认开发态边界诊断。
-   *
-   * 验证机制：开发态控制台断言限定诊断内容与去重。
-   * 对应源码：`renderWithHooks()` 与对应 Hook dispatcher 分支。
-   */
+  /** forwardRef内把含focus对象传为create，ref未提供；DEV警告第二参数object，无ref所以本例没有调用create或异常断言。 */
   it('warns for bad useImperativeHandle second arg', async () => {
     const {useImperativeHandle} = React;
+    /** 把本例 deps/create 参数交给 useImperativeHandle；没有 ref 时仅DEV参数检查，handle effect 不调用create。 */
     const App = React.forwardRef((props, ref) => {
       useImperativeHandle(ref, {
-        /** focus 暴露 imperative handle 的聚焦行为，供 ref 参数校验场景调用。 */
+        /** 空focus方法只构成非法create对象的key，不会调用。 */
         focus() {},
       });
       return null;
@@ -1021,17 +897,10 @@ describe('ReactHooks', () => {
   });
 
   // 相关问题：https://github.com/facebook/react/issues/14022
-  /**
-   * Given：组件渲染中嵌套服务端渲染调用，确认 Hooks dispatcher 能正确恢复所需的初始状态、更新入口与观测日志均已建立。
-   * When：完成挂载以及用例指定的后续渲染或提交步骤。
-   * Then：组件渲染中嵌套服务端渲染调用，确认 Hooks dispatcher 能正确恢复。
-   *
-   * 验证机制：显式断言联合检查状态、输出和副作用。
-   * 对应源码：`renderWithHooks()`、`warnOnHookMismatchInDev()` 与开发态 dispatcher。
-   */
+  /** 函数render先renderToString hello、renderToStaticMarkup bye，再useState(0)；JSON快照验证嵌套服务端renderer恢复外层Hook dispatcher。 */
   it('works with ReactDOMServer calls inside a component', async () => {
     const {useState} = React;
-    /** 组织当前用例的根组件、更新入口与受测 Hook；服务于“组件渲染中嵌套服务端渲染调用，确认 Hooks dispatcher 能正确恢复”场景。 */
+    /** 先嵌套两种服务端render，再读取state=0并拼接标记，检查外层dispatcher恢复。 */
     function App(props) {
       const markup1 = ReactDOMServer.renderToString(<p>hello</p>);
       const markup2 = ReactDOMServer.renderToStaticMarkup(<p>bye</p>);
@@ -1045,17 +914,10 @@ describe('ReactHooks', () => {
     expect(root.toJSON()).toMatchSnapshot();
   });
 
-  /**
-   * Given：目标组件已进入可触发开发态保护的最小运行环境。
-   * When：执行用例中的非法 Hook、参数或阶段调用。
-   * Then：在禁止嵌套 Hook 的回调中调用 Hook，确认非法 dispatcher 记录诊断。
-   *
-   * 验证机制：异常断言保留原始错误与阶段边界。
-   * 对应源码：`renderWithHooks()`、`warnOnHookMismatchInDev()` 与开发态 dispatcher。
-   */
+  /** memo比较器非法useState；首次挂载不调用compare，第一次update抛Invalid hook call；错误后重新挂载成功，再update又失败，验证compare没有函数组件dispatcher。 */
   it("throws when calling hooks inside .memo's compare function", async () => {
     const {useState} = React;
-    /** 组织当前用例的根组件、更新入口与受测 Hook；服务于“在禁止嵌套 Hook 的回调中调用 Hook，确认非法 dispatcher 记录诊断”场景。 */
+    /** 合法顶层useState作为memo被包组件；compare中的非法Hook与此合法调用分开。 */
     function App() {
       useState(0);
       return null;
@@ -1112,17 +974,10 @@ describe('ReactHooks', () => {
     );
   });
 
-  /**
-   * Given：目标组件已进入可触发开发态保护的最小运行环境。
-   * When：执行用例中的非法 Hook、参数或阶段调用。
-   * Then：在禁止嵌套 Hook 的回调中调用 Hook，确认非法 dispatcher 记录诊断。
-   *
-   * 验证机制：开发态控制台断言限定诊断内容与去重。
-   * 对应源码：`renderWithHooks()`、`warnOnHookMismatchInDev()` 与开发态 dispatcher。
-   */
+  /** useMemo计算中非法useState(0)；初挂DEV记录嵌套Hook警告，未断言抛错。 */
   it('warns when calling hooks inside useMemo', async () => {
     const {useMemo, useState} = React;
-    /** 组织当前用例的根组件、更新入口与受测 Hook；服务于“在禁止嵌套 Hook 的回调中调用 Hook，确认非法 dispatcher 记录诊断”场景。 */
+    /** 在memo计算里调用state Hook，制造DEV InvalidNestedHooksDispatcher诊断。 */
     function App() {
       useMemo(() => {
         useState(0);
@@ -1140,21 +995,14 @@ describe('ReactHooks', () => {
     ]);
   });
 
-  /**
-   * Given：目标组件已进入可触发开发态保护的最小运行环境。
-   * When：执行用例中的非法 Hook、参数或阶段调用。
-   * Then：在禁止嵌套 Hook 的回调中调用 Hook，确认非法 dispatcher 记录诊断。
-   *
-   * 验证机制：开发态控制台断言限定诊断内容与去重。
-   * 对应源码：`readContext()` 与非法嵌套 Hooks dispatcher。
-   */
+  /** useMemo计算中通过shared dispatcher readContext(light)；DEV记录不允许在Hook回调读取Context的警告。 */
   it('warns when reading context inside useMemo', async () => {
     const {useMemo, createContext} = React;
     const ReactSharedInternals =
       React.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
 
     const ThemeContext = createContext('light');
-    /** 组织当前用例的根组件、更新入口与受测 Hook；服务于“在禁止嵌套 Hook 的回调中调用 Hook，确认非法 dispatcher 记录诊断”场景。 */
+    /** 在memo计算里从shared dispatcher读ThemeContext，覆盖非法Context读取。 */
     function App() {
       return useMemo(() => {
         return ReactSharedInternals.H.readContext(ThemeContext);
@@ -1173,14 +1021,7 @@ describe('ReactHooks', () => {
     ]);
   });
 
-  /**
-   * Given：目标组件已进入可触发开发态保护的最小运行环境。
-   * When：执行用例中的非法 Hook、参数或阶段调用。
-   * Then：在禁止嵌套 Hook 的回调中调用 Hook，确认非法 dispatcher 记录诊断。
-   *
-   * 验证机制：开发态控制台断言限定诊断内容与去重。
-   * 对应源码：`readContext()` 与非法嵌套 Hooks dispatcher。
-   */
+  /** 在useMemo外读取Context两次，中间插入合法useMemo；最后在另一个memo计算内读Context触发警告，外部firstRead/secondRead均为light。 */
   it('warns when reading context inside useMemo after reading outside it', async () => {
     const {useMemo, createContext} = React;
     const ReactSharedInternals =
@@ -1188,7 +1029,7 @@ describe('ReactHooks', () => {
 
     const ThemeContext = createContext('light');
     let firstRead, secondRead;
-    /** 组织当前用例的根组件、更新入口与受测 Hook；服务于“在禁止嵌套 Hook 的回调中调用 Hook，确认非法 dispatcher 记录诊断”场景。 */
+    /** 在memo外记录两次Context读取值，再在memo内违规读取，检查dispatcher复位与警告。 */
     function App() {
       firstRead = ReactSharedInternals.H.readContext(ThemeContext);
       useMemo(() => {});
@@ -1213,21 +1054,14 @@ describe('ReactHooks', () => {
   });
 
   // 此处严格限制没有额外运行时成本，因此直接抛错。
-  /**
-   * Given：目标组件已进入可触发开发态保护的最小运行环境。
-   * When：执行用例中的非法 Hook、参数或阶段调用。
-   * Then：在受限 Hook 回调或 Effect 创建函数中读取 Context，确认嵌套读取边界被诊断。
-   *
-   * 验证机制：显式断言联合检查状态、输出和副作用。
-   * 对应源码：`readContext()` 与非法嵌套 Hooks dispatcher。
-   */
+  /** passive create通过shared dispatcher读取Context；waitForThrow验证提交后的读取不在render作用域而抛错。 */
   it('throws when reading context inside useEffect', async () => {
     const {useEffect, createContext} = React;
     const ReactSharedInternals =
       React.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
 
     const ThemeContext = createContext('light');
-    /** 组织当前用例的根组件、更新入口与受测 Hook；服务于“在受限 Hook 回调或 Effect 创建函数中读取 Context，确认嵌套读取边界被诊断”场景。 */
+    /** 注册在passive create里读取Context的effect，render自身不读Context。 */
     function App() {
       useEffect(() => {
         ReactSharedInternals.H.readContext(ThemeContext);
@@ -1243,21 +1077,14 @@ describe('ReactHooks', () => {
   });
 
   // 此处严格限制没有额外运行时成本，因此直接抛错。
-  /**
-   * Given：目标组件已进入可触发开发态保护的最小运行环境。
-   * When：执行用例中的非法 Hook、参数或阶段调用。
-   * Then：在受限 Hook 回调或 Effect 创建函数中读取 Context，确认嵌套读取边界被诊断。
-   *
-   * 验证机制：异常断言保留原始错误与阶段边界。
-   * 对应源码：`readContext()` 与非法嵌套 Hooks dispatcher。
-   */
+  /** layout create读取Context；act拒绝并包含只能render中读取的错误，验证布局提交不能沿用render上下文。 */
   it('throws when reading context inside useLayoutEffect', async () => {
     const {useLayoutEffect, createContext} = React;
     const ReactSharedInternals =
       React.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
 
     const ThemeContext = createContext('light');
-    /** 组织当前用例的根组件、更新入口与受测 Hook；服务于“在受限 Hook 回调或 Effect 创建函数中读取 Context，确认嵌套读取边界被诊断”场景。 */
+    /** 注册在layout create里读取Context的effect，提交阶段触发读取错误。 */
     function App() {
       useLayoutEffect(() => {
         ReactSharedInternals.H.readContext(ThemeContext);
@@ -1275,21 +1102,14 @@ describe('ReactHooks', () => {
     );
   });
 
-  /**
-   * Given：目标组件已进入可触发开发态保护的最小运行环境。
-   * When：执行用例中的非法 Hook、参数或阶段调用。
-   * Then：在禁止嵌套 Hook 的回调中调用 Hook，确认非法 dispatcher 记录诊断。
-   *
-   * 验证机制：开发态控制台断言限定诊断内容与去重。
-   * 对应源码：`updateReducerImpl()`、`dispatchSetStateInternal()` 与 `bailoutHooks()`。
-   */
+  /** reducer回调内部readContext，初值0在render中dispatch(1)触发该回调；DEV警告非法Context读取，不是effect阶段调用。 */
   it('warns when reading context inside useReducer', async () => {
     const {useReducer, createContext} = React;
     const ReactSharedInternals =
       React.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
 
     const ThemeContext = createContext('light');
-    /** 组织当前用例的根组件、更新入口与受测 Hook；服务于“在禁止嵌套 Hook 的回调中调用 Hook，确认非法 dispatcher 记录诊断”场景。 */
+    /** render初值0时dispatch1，reducer内非法读取Context并返回action。 */
     function App() {
       const [state, dispatch] = useReducer((s, action) => {
         ReactSharedInternals.H.readContext(ThemeContext);
@@ -1314,14 +1134,7 @@ describe('ReactHooks', () => {
   });
 
   // 覆盖边界场景。
-  /**
-   * Given：目标组件已进入可触发开发态保护的最小运行环境。
-   * When：执行用例中的非法 Hook、参数或阶段调用。
-   * Then：在受限 Hook 回调或 Effect 创建函数中读取 Context，确认嵌套读取边界被诊断。
-   *
-   * 验证机制：开发态控制台断言限定诊断内容与去重。
-   * 对应源码：`updateReducerImpl()`、`dispatchSetStateInternal()` 与 `bailoutHooks()`。
-   */
+  /** Fn暴露useState setter，Cls render调用函数updater在eager计算中readContext；DEV既警告非法读取，也警告Cls渲染时更新Fn。没有调用useReducer。 */
   it('warns when reading context inside eager useReducer', async () => {
     const {useState, createContext} = React;
     const ThemeContext = createContext('light');
@@ -1330,16 +1143,16 @@ describe('ReactHooks', () => {
       React.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
 
     let _setState;
-    /** 作为 Fn fixture 承载当前测试职责；服务于“在受限 Hook 回调或 Effect 创建函数中读取 Context，确认嵌套读取边界被诊断”场景。 */
+    /** 暴露 Fn 的 setState，供另一个组件在 updater 中违规读取 Context。 */
     function Fn() {
       const [, setState] = useState(0);
       _setState = setState;
       return null;
     }
 
-    /** 定义 Cls 类 fixture，在“在受限 Hook 回调或 Effect 创建函数中读取 Context，确认嵌套读取边界被诊断”场景中暴露类生命周期、实例 ref 或错误边界。 */
+    /** render调用Fn的函数updater，制造eager Context违规读取与跨组件更新。 */
     class Cls extends React.Component {
-      /** 渲染 Cls.render 对应的类 fixture，并把本轮状态或子树交给宿主输出断言。 */
+      /** 调用Fn setter，让函数updater读取Context，随后返回null。 */
       render() {
         _setState(() => ReactSharedInternals.H.readContext(ThemeContext));
 
@@ -1369,18 +1182,11 @@ describe('ReactHooks', () => {
     ]);
   });
 
-  /**
-   * Given：目标组件已进入可触发开发态保护的最小运行环境。
-   * When：执行用例中的非法 Hook、参数或阶段调用。
-   * Then：在禁止嵌套 Hook 的回调中调用 Hook，确认非法 dispatcher 记录诊断。
-   *
-   * 验证机制：开发态控制台断言限定诊断内容与去重，异常断言保留原始错误与阶段边界。
-   * 对应源码：`updateReducerImpl()`、`dispatchSetStateInternal()` 与 `bailoutHooks()`。
-   */
+  /** reducer在render阶段dispatch后非法useRef，外层仍调用useState；DEV记录嵌套与useState→useRef顺序错配，最终抛initial render的update Hook错误。 */
   it('warns when calling hooks inside useReducer', async () => {
     const {useReducer, useState, useRef} = React;
 
-    /** 组织当前用例的根组件、更新入口与受测 Hook；服务于“在禁止嵌套 Hook 的回调中调用 Hook，确认非法 dispatcher 记录诊断”场景。 */
+    /** render初值0时dispatch，reducer非法调用ref；外层随后state造成Hook类型错配。 */
     function App() {
       const [value, dispatch] = useReducer((state, action) => {
         useRef(0);
@@ -1423,17 +1229,10 @@ describe('ReactHooks', () => {
     ]);
   });
 
-  /**
-   * Given：目标组件已进入可触发开发态保护的最小运行环境。
-   * When：执行用例中的非法 Hook、参数或阶段调用。
-   * Then：在禁止嵌套 Hook 的回调中调用 Hook，确认非法 dispatcher 记录诊断。
-   *
-   * 验证机制：开发态控制台断言限定诊断内容与去重。
-   * 对应源码：`updateReducerImpl()`、`dispatchSetStateInternal()` 与 `bailoutHooks()`。
-   */
+  /** useState惰性initializer中非法useRef(0)；DEV警告嵌套Hook，未断言抛错。 */
   it("warns when calling hooks inside useState's initialize function", async () => {
     const {useState, useRef} = React;
-    /** 组织当前用例的根组件、更新入口与受测 Hook；服务于“在禁止嵌套 Hook 的回调中调用 Hook，确认非法 dispatcher 记录诊断”场景。 */
+    /** 在state initializer中调用ref并返回0，制造非法嵌套Hook调用。 */
     function App() {
       useState(() => {
         useRef(0);
@@ -1452,20 +1251,13 @@ describe('ReactHooks', () => {
     ]);
   });
 
-  /**
-   * Given：目标组件已进入可触发开发态保护的最小运行环境。
-   * When：执行用例中的非法 Hook、参数或阶段调用。
-   * Then：以错误中断 Hook 后再次渲染，确认开发态警告状态被复位而非泄漏。
-   *
-   * 验证机制：开发态控制台断言限定诊断内容与去重。
-   * 对应源码：`updateReducerImpl()`、`dispatchSetStateInternal()` 与 `bailoutHooks()`。
-   */
+  /** memo计算先非法Context/useRef再抛No，Boundary恢复Oops；合法Valid随后无警告，再挂载错误App仍出现两类警告，验证异常后DEV dispatcher状态恢复。 */
   it('resets warning internal state when interrupted by an error', async () => {
     const ReactSharedInternals =
       React.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE;
 
     const ThemeContext = React.createContext('light');
-    /** 组织当前用例的根组件、更新入口与受测 Hook；服务于“以错误中断 Hook 后再次渲染，确认开发态警告状态被复位而非泄漏”场景。 */
+    /** memo计算内违规读Context和ref后抛No；Boundary负责恢复，后续Valid检查警告状态。 */
     function App() {
       React.useMemo(() => {
         // 触发开发态告警。
@@ -1476,7 +1268,7 @@ describe('ReactHooks', () => {
       }, []);
     }
 
-    /** 定义 Boundary 类 fixture，在“以错误中断 Hook 后再次渲染，确认开发态警告状态被复位而非泄漏”场景中暴露类生命周期、实例 ref 或错误边界。 */
+    /** 以err state切换Oops与children，隔离memo计算的异常后继续测试dispatcher。 */
     class Boundary extends React.Component {
       /** 保存 Boundary.state 的实例状态，作为错误恢复或生命周期断言的跨提交标记。 */
       state = {};
@@ -1484,7 +1276,7 @@ describe('ReactHooks', () => {
       static getDerivedStateFromError(error) {
         return {err: true};
       }
-      /** 渲染 Boundary.render 对应的类 fixture，并把本轮状态或子树交给宿主输出断言。 */
+      /** err为真返回Oops，否则渲染children。 */
       render() {
         if (this.state.err) {
           return 'Oops';
@@ -1522,7 +1314,7 @@ describe('ReactHooks', () => {
         '    in App (at **)',
     ]);
 
-    /** 作为 Valid fixture 承载当前测试职责；服务于“以错误中断 Hook 后再次渲染，确认开发态警告状态被复位而非泄漏”场景。 */
+    /** 按合法位置调用各类 Hook，确认前一次抛错后 dispatcher 与警告状态已恢复。 */
     function Valid() {
       React.useState();
       React.useMemo(() => {});
@@ -1576,47 +1368,44 @@ describe('ReactHooks', () => {
     ]);
   });
 
-  /**
-   * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-   * When：完成挂载以及用例指定的后续渲染或提交步骤。
-   * Then：在 StrictMode 开发态挂载 Hook 组件，确认组件与 memo 计算按规则双调用。
-   *
-   * 验证机制：显式断言联合检查状态、输出和副作用。
-   * 对应源码：`renderWithHooks()` 与对应 Hook dispatcher 分支。
-   */
+  /** 普通函数/forwardRef/memo各有无state两组，普通模式render一次；StrictMode下DEV初挂和更新两次、生产一次，memo更新通过arg变化触发。 */
   it('double-invokes components with Hooks in Strict Mode', async () => {
     const {useState, StrictMode} = React;
     let renderCount = 0;
 
-    /** 作为 NoHooks fixture 承载当前测试职责；服务于“在 StrictMode 开发态挂载 Hook 组件，确认组件与 memo 计算按规则双调用”场景。 */
+    /** 不调用 Hook，只累计组件执行次数，与含 Hook 的 StrictMode 用例对照。 */
     function NoHooks() {
       renderCount++;
       return <div />;
     }
 
-    /** 作为 HasHooks fixture 承载当前测试职责；服务于“在 StrictMode 开发态挂载 Hook 组件，确认组件与 memo 计算按规则双调用”场景。 */
+    /** 调用一个 useState 并累计执行次数，核对 StrictMode 的额外组件求值。 */
     function HasHooks() {
       useState(0);
       renderCount++;
       return <div />;
     }
 
+    /** 不使用Hook的forwardRef渲染函数，计数与含Hook版本作StrictMode对照；props/ref不参与。 */
     const FwdRef = React.forwardRef((props, ref) => {
       renderCount++;
       return <div />;
     });
 
+    /** 建立state Hook并计数forwardRef执行，核对StrictMode求值次数。 */
     const FwdRefHasHooks = React.forwardRef((props, ref) => {
       useState(0);
       renderCount++;
       return <div />;
     });
 
+    /** 不含Hook的memo函数，arg变化保证更新进入render；计数StrictMode求值次数。 */
     const Memo = React.memo(props => {
       renderCount++;
       return <div />;
     });
 
+    /** 含state Hook的memo函数，arg变化驱动更新并累计执行次数。 */
     const MemoHasHooks = React.memo(props => {
       useState(0);
       renderCount++;
@@ -1803,19 +1592,12 @@ describe('ReactHooks', () => {
     expect(renderCount).toBe(__DEV__ ? 2 : 1); // 该组件包含 Hook。
   });
 
-  /**
-   * Given：带目标 Effect 或生命周期的组件树已完成必要的首次挂载。
-   * When：完成挂载以及用例指定的后续渲染或提交步骤。
-   * Then：在 StrictMode 开发态挂载 Hook 组件，确认组件与 memo 计算按规则双调用。
-   *
-   * 验证机制：显式断言联合检查状态、输出和副作用。
-   * 对应源码：`renderWithHooks()` 与对应 Hook dispatcher 分支。
-   */
+  /** StrictMode首挂空依赖useMemo累计计算；DEV为2、生产为1，验证首遍用户计算额外调用而第二次组件求值复用memo结果。 */
   it('double-invokes useMemo in DEV StrictMode despite []', async () => {
     const {useMemo, StrictMode} = React;
 
     let useMemoCount = 0;
-    /** 作为 BadUseMemo fixture 承载当前测试职责；服务于“在 StrictMode 开发态挂载 Hook 组件，确认组件与 memo 计算按规则双调用”场景。 */
+    /** 以空依赖 useMemo 累计计算次数，核对 DEV StrictMode 首遍的用户函数双调用。 */
     function BadUseMemo() {
       useMemo(() => {
         useMemoCount++;
@@ -1839,9 +1621,9 @@ describe('ReactHooks', () => {
   describe('hook ordering', () => {
     /** useCallbackHelper 封装对应 Hook 调用，供参数化顺序错配测试组合使用。 */
     const useCallbackHelper = () => React.useCallback(() => {}, []);
-    /** useContextHelper 封装对应 Hook 调用，供参数化顺序错配测试组合使用。 */
+    /** 创建默认值undefined的Context并读取；DEV记录Hook名称，但不占用memoizedState Hook链槽位。 */
     const useContextHelper = () => React.useContext(React.createContext());
-    /** useDebugValueHelper 封装对应 Hook 调用，供参数化顺序错配测试组合使用。 */
+    /** 调用useDebugValue(abc)；DEV记录Hook名称，不占用Hook链槽位。 */
     const useDebugValueHelper = () => React.useDebugValue('abc');
     /** useEffectHelper 封装对应 Hook 调用，供参数化顺序错配测试组合使用。 */
     const useEffectHelper = () => React.useEffect(() => () => {}, []);
@@ -1854,7 +1636,7 @@ describe('ReactHooks', () => {
       React.useLayoutEffect(() => () => {}, []);
     /** useMemoHelper 封装对应 Hook 调用，供参数化顺序错配测试组合使用。 */
     const useMemoHelper = () => React.useMemo(() => 123, []);
-    /** useReducerHelper 根据 action 与闭包参数计算下一状态，用于检验 reducer 队列的选择和 rebase。 */
+    /** useReducerHelper 调用 useReducer，供参数化 Hook 顺序错配测试使用。 */
     const useReducerHelper = () => React.useReducer((s, a) => a, 0);
     /** useRefHelper 封装对应 Hook 调用，供参数化顺序错配测试组合使用。 */
     const useRefHelper = () => React.useRef(null);
@@ -1888,7 +1670,7 @@ describe('ReactHooks', () => {
 
     /** useTransitionHelper 封装对应 Hook 调用，供参数化顺序错配测试组合使用。 */
     const useTransitionHelper = () => React.useTransition();
-    /** useDeferredValueHelper 封装对应 Hook 调用，供参数化顺序错配测试组合使用。 */
+    /** 调用useDeferredValue(0,对象初始值)，供顺序错配测试；第二参数是initialValue，不是timeout配置。 */
     const useDeferredValueHelper = () =>
       React.useDeferredValue(0, {timeoutMs: 1000});
 
@@ -1918,16 +1700,9 @@ describe('ReactHooks', () => {
         .replace('use', '')
         .replace('Helper', '');
 
-      /**
-       * Given：改变相邻渲染的 Hook 调用顺序，确认首个不匹配位置稳定产生诊断所需的初始状态、更新入口与观测日志均已建立。
-       * When：完成挂载以及用例指定的后续渲染或提交步骤。
-       * Then：改变相邻渲染的 Hook 调用顺序，确认首个不匹配位置稳定产生诊断。
-       *
-       * 验证机制：开发态控制台断言限定诊断内容与去重。
-       * 对应源码：`renderWithHooks()`、`warnOnHookMismatchInDev()` 与开发态 dispatcher。
-       */
+      /** orderedHooks循环取当前helper与前一个（首项环绕末项），mount A/B、update B/A，再调用ref；DEV只报告首个位置错配，重复组件警告去重，允许类型交换引起的运行时错误。 */
       it(`warns on using differently ordered hooks (${hookNameA}, ${hookNameB}) on subsequent renders`, async () => {
-        /** 组织当前用例的根组件、更新入口与受测 Hook；服务于“改变相邻渲染的 Hook 调用顺序，确认首个不匹配位置稳定产生诊断”场景。 */
+        /** 按props.update把参数化A/B顺序交换，末尾ref使告警仅定位首个错配。 */
         function App(props) {
           if (props.update) {
             secondHelper();
@@ -1976,16 +1751,9 @@ describe('ReactHooks', () => {
         }
       });
 
-      /**
-       * Given：改变相邻渲染的 Hook 调用顺序，确认首个不匹配位置稳定产生诊断所需的初始状态、更新入口与观测日志均已建立。
-       * When：完成挂载以及用例指定的后续渲染或提交步骤。
-       * Then：改变相邻渲染的 Hook 调用顺序，确认首个不匹配位置稳定产生诊断。
-       *
-       * 验证机制：开发态控制台断言限定诊断内容与去重。
-       * 对应源码：`renderWithHooks()`、`warnOnHookMismatchInDev()` 与开发态 dispatcher。
-       */
+      /** orderedHooks同一helper对，mount仅A、update A/B；DEV在第二位置报告undefined→B，允许不同Hook内部结构引起异常。 */
       it(`warns when more hooks (${hookNameA}, ${hookNameB}) are used during update than mount`, async () => {
-        /** 组织当前用例的根组件、更新入口与受测 Hook；服务于“改变相邻渲染的 Hook 调用顺序，确认首个不匹配位置稳定产生诊断”场景。 */
+        /** 按props.update从只A增加为A/B，制造第二Hook位置未定义的DEV诊断。 */
         function App(props) {
           if (props.update) {
             firstHelper();
@@ -2038,16 +1806,9 @@ describe('ReactHooks', () => {
         .replace('use', '')
         .replace('Helper', '');
 
-      /**
-       * Given：改变相邻渲染的 Hook 调用顺序，确认首个不匹配位置稳定产生诊断所需的初始状态、更新入口与观测日志均已建立。
-       * When：完成挂载以及用例指定的后续渲染或提交步骤。
-       * Then：改变相邻渲染的 Hook 调用顺序，确认首个不匹配位置稳定产生诊断。
-       *
-       * 验证机制：异常断言保留原始错误与阶段边界。
-       * 对应源码：`renderWithHooks()`、`warnOnHookMismatchInDev()` 与开发态 dispatcher。
-       */
+      /** hooksInList循环取helper对，mount A/B、update仅A；act必须抛Rendered fewer hooks。Context/DebugValue不建Hook链故排除，未以控制台顺序警告作为断言。 */
       it(`warns when fewer hooks (${hookNameA}, ${hookNameB}) are used during update than mount`, async () => {
-        /** 组织当前用例的根组件、更新入口与受测 Hook；服务于“改变相邻渲染的 Hook 调用顺序，确认首个不匹配位置稳定产生诊断”场景。 */
+        /** 按props.update从A/B减少为A，触发Hook链未完全消费错误。 */
         function App(props) {
           if (props.update) {
             firstHelper();
@@ -2072,19 +1833,12 @@ describe('ReactHooks', () => {
       });
     });
 
-    /**
-     * Given：目标组件已进入可触发开发态保护的最小运行环境。
-     * When：执行用例中的非法 Hook、参数或阶段调用。
-     * Then：向 useImperativeHandle 传入非法 ref 或 create 参数，确认开发态边界诊断。
-     *
-     * 验证机制：开发态控制台断言限定诊断内容与去重。
-     * 对应源码：`renderWithHooks()`、`warnOnHookMismatchInDev()` 与开发态 dispatcher。
-     */
+    /** 单独交换ImperativeHandle/Memo顺序，末尾ref保持；DEV报告第一处错配，忽略交换导致的错误，再改回不重复警告。此例不是非法ref/create参数测试。 */
     it(
       'warns on using differently ordered hooks ' +
         '(useImperativeHandleHelper, useMemoHelper) on subsequent renders',
       async () => {
-        /** 组织当前用例的根组件、更新入口与受测 Hook；服务于“向 useImperativeHandle 传入非法 ref 或 create 参数，确认开发态边界诊断”场景。 */
+        /** 交换ImperativeHandle与Memo，两者后追加ref；忽略类型交换运行时错误仅检查首个错配。 */
         function App(props) {
           if (props.update) {
             useMemoHelper();
@@ -2130,21 +1884,14 @@ describe('ReactHooks', () => {
       },
     );
 
-    /**
-     * Given：目标组件已进入可触发开发态保护的最小运行环境。
-     * When：执行用例中的非法 Hook、参数或阶段调用。
-     * Then：改变相邻渲染的 Hook 调用顺序，确认首个不匹配位置稳定产生诊断。
-     *
-     * 验证机制：开发态控制台断言限定诊断内容与去重，异常断言保留原始错误与阶段边界。
-     * 对应源码：`renderWithHooks()`、`warnOnHookMismatchInDev()` 与开发态 dispatcher。
-     */
+    /** mount reducer→customState，update customState→reducer并主动抛custom error；既保留原始异常，又记录首位置reducer→state错配。 */
     it('detects a bad hook order even if the component throws', async () => {
       const {useState, useReducer} = React;
-      /** 作为自定义 Hook 封装当前机制并向调用组件返回稳定入口；服务于“改变相邻渲染的 Hook 调用顺序，确认首个不匹配位置稳定产生诊断”场景。 */
+      /** 通过自定义 Hook 增加一个 useState 槽位，检测交换 Hook 调用顺序时的诊断。 */
       function useCustomHook() {
         useState(0);
       }
-      /** 组织当前用例的根组件、更新入口与受测 Hook；服务于“改变相邻渲染的 Hook 调用顺序，确认首个不匹配位置稳定产生诊断”场景。 */
+      /** 更新时先customState再reducer并抛custom error；初挂顺序相反。 */
       function App(props) {
         if (props.update) {
           useCustomHook();
@@ -2183,26 +1930,19 @@ describe('ReactHooks', () => {
   });
 
   // 回归场景：#14674。
-  /**
-   * Given：渲染阶段跨组件更新后抛出原始错误，确认诊断不会吞掉业务异常所需的初始状态、更新入口与观测日志均已建立。
-   * When：完成挂载以及用例指定的后续渲染或提交步骤。
-   * Then：渲染阶段跨组件更新后抛出原始错误，确认诊断不会吞掉业务异常。
-   *
-   * 验证机制：开发态控制台断言限定诊断内容与去重，异常断言保留原始错误与阶段边界。
-   * 对应源码：`resetHooksOnUnwind()` 与渲染错误恢复。
-   */
+  /** A暴露setter，B render调用updater抛Hello；act拒绝保留Hello，同时DEV警告跨组件render更新，验证规则诊断不吞业务错误。 */
   it('does not swallow original error when updating another component in render phase', async () => {
     const {useState} = React;
 
     let _setState;
-    /** 作为 A fixture 承载当前测试职责；服务于“渲染阶段跨组件更新后抛出原始错误，确认诊断不会吞掉业务异常”场景。 */
+    /** 暴露 A 的 setState，作为跨组件 render 更新的目标。 */
     function A() {
       const [, setState] = useState(0);
       _setState = setState;
       return null;
     }
 
-    /** 作为 B fixture 承载当前测试职责；服务于“渲染阶段跨组件更新后抛出原始错误，确认诊断不会吞掉业务异常”场景。 */
+    /** 在 B 渲染中更新 A，updater 抛出 Hello；检验规则诊断不会吞掉原错误。 */
     function B() {
       _setState(() => {
         throw new Error('Hello');
@@ -2230,40 +1970,34 @@ describe('ReactHooks', () => {
   });
 
   // 回归场景：https://github.com/facebook/react/issues/15057
-  /**
-   * Given：目标组件已进入可触发开发态保护的最小运行环境。
-   * When：执行用例中的非法 Hook、参数或阶段调用。
-   * Then：组合卸载、挂起或 memo 边界，确认 Hook 顺序检测不会误报。
-   *
-   * 验证机制：异常断言保留原始错误与阶段边界。
-   * 对应源码：`renderWithHooks()` 与对应 Hook dispatcher 分支。
-   */
+  /** C effect保存listener，更新时cleanup先标记stale再调用父hideMe删除B/C；连续两次listener调用的act不抛错，覆盖旧effect清理触发删除后的更新边界。 */
   it('does not fire a false positive warning when previous effect unmounts the component', async () => {
     const {useState, useEffect} = React;
     let globalListener;
 
-    /** 作为 A fixture 承载当前测试职责；服务于“组合卸载、挂起或 memo 边界，确认 Hook 顺序检测不会误报”场景。 */
+    /** 用 show 控制 B/C 存活，向后代传入触发删除的 hideMe。 */
     function A() {
       const [show, setShow] = useState(true);
-      /** 作为 hideMe fixture 承载当前测试职责；服务于“组合卸载、挂起或 memo 边界，确认 Hook 顺序检测不会误报”场景。 */
+      /** 将 show 设为 false，删除 B/C 子树。 */
       function hideMe() {
         setShow(false);
       }
       return show ? <B hideMe={hideMe} /> : null;
     }
 
-    /** 作为 B fixture 承载当前测试职责；服务于“组合卸载、挂起或 memo 边界，确认 Hook 顺序检测不会误报”场景。 */
+    /** 透传 hideMe 到 C，增加一层 Fiber 返回路径。 */
     function B(props) {
       return <C {...props} />;
     }
 
-    /** 作为 C fixture 承载当前测试职责；服务于“组合卸载、挂起或 memo 边界，确认 Hook 顺序检测不会误报”场景。 */
+    /** 安装外部 listener；cleanup 先标记 listener 过期，再调用 hideMe 删除祖先子树。 */
     function C({hideMe}) {
       const [, setState] = useState();
 
       useEffect(() => {
         let isStale = false;
 
+        /** 外部listener只在本轮effect未标stale时更新C；cleanup删除树后旧listener不再派发。 */
         globalListener = () => {
           if (!isStale) {
             setState('hello');
@@ -2292,23 +2026,17 @@ describe('ReactHooks', () => {
   });
 
   // 回归场景：https://github.com/facebook/react/issues/14790
-  /**
-   * Given：目标组件已进入可触发开发态保护的最小运行环境。
-   * When：执行用例中的非法 Hook、参数或阶段调用。
-   * Then：组合卸载、挂起或 memo 边界，确认 Hook 顺序检测不会误报。
-   *
-   * 验证机制：宿主输出断言确认实际提交结果。
-   * 对应源码：`renderWithHooks()` 与对应 Hook dispatcher 分支。
-   */
+  /** memo Child先useState再挂起，显示loading；resolve先清挂起标志再resolve Promise，输出hello，验证恢复不误报Hook顺序。 */
   it('does not fire a false positive warning when suspending memo', async () => {
     const {Suspense, useState} = React;
 
     let isSuspended = true;
     let resolve;
-    /** 按测试信号抛出 thenable，制造可恢复的 Suspense 挂起；服务于“组合卸载、挂起或 memo 边界，确认 Hook 顺序检测不会误报”场景。 */
+    /** 按测试信号抛出 thenable，制造可恢复的 Suspense 挂起。 */
     function trySuspend() {
       if (isSuspended) {
         throw new Promise(res => {
+          /** 先关闭isSuspended再resolve原生Promise，恢复render时输出hello。 */
           resolve = () => {
             isSuspended = false;
             res();
@@ -2317,7 +2045,7 @@ describe('ReactHooks', () => {
       }
     }
 
-    /** 作为子级函数组件暴露 Hook 状态和提交日志；服务于“组合卸载、挂起或 memo 边界，确认 Hook 顺序检测不会误报”场景。 */
+    /** 建立state Hook后尝试挂起，恢复时返回hello；不注册effect。 */
     function Child() {
       useState();
       trySuspend();
@@ -2340,23 +2068,17 @@ describe('ReactHooks', () => {
   });
 
   // 回归场景：https://github.com/facebook/react/issues/14790
-  /**
-   * Given：目标组件已进入可触发开发态保护的最小运行环境。
-   * When：执行用例中的非法 Hook、参数或阶段调用。
-   * Then：组合卸载、挂起或 memo 边界，确认 Hook 顺序检测不会误报。
-   *
-   * 验证机制：宿主输出断言确认实际提交结果。
-   * 对应源码：`renderWithHooks()` 与对应 Hook dispatcher 分支。
-   */
+  /** forwardRef render先useState再挂起，loading→resolve→hello；ref未使用，恢复不得误报Hook顺序。 */
   it('does not fire a false positive warning when suspending forwardRef', async () => {
     const {Suspense, useState} = React;
 
     let isSuspended = true;
     let resolve;
-    /** 按测试信号抛出 thenable，制造可恢复的 Suspense 挂起；服务于“组合卸载、挂起或 memo 边界，确认 Hook 顺序检测不会误报”场景。 */
+    /** 按测试信号抛出 thenable，制造可恢复的 Suspense 挂起。 */
     function trySuspend() {
       if (isSuspended) {
         throw new Promise(res => {
+          /** 先关闭isSuspended再resolve原生Promise，恢复render时输出hello。 */
           resolve = () => {
             isSuspended = false;
             res();
@@ -2365,7 +2087,7 @@ describe('ReactHooks', () => {
       }
     }
 
-    /** 作为 render fixture 承载当前测试职责；服务于“组合卸载、挂起或 memo 边界，确认 Hook 顺序检测不会误报”场景。 */
+    /** forwardRef 的渲染函数：建立 state Hook 后尝试挂起，恢复时输出 hello。 */
     function render(props, ref) {
       useState();
       trySuspend();
@@ -2388,23 +2110,17 @@ describe('ReactHooks', () => {
   });
 
   // 回归场景：https://github.com/facebook/react/issues/14790
-  /**
-   * Given：目标组件已进入可触发开发态保护的最小运行环境。
-   * When：执行用例中的非法 Hook、参数或阶段调用。
-   * Then：组合卸载、挂起或 memo 边界，确认 Hook 顺序检测不会误报。
-   *
-   * 验证机制：宿主输出断言确认实际提交结果。
-   * 对应源码：`renderWithHooks()` 与对应 Hook dispatcher 分支。
-   */
+  /** memo包forwardRef的render先useState再挂起，loading→resolve→hello；双包装恢复不得误报Hook顺序。 */
   it('does not fire a false positive warning when suspending memo(forwardRef)', async () => {
     const {Suspense, useState} = React;
 
     let isSuspended = true;
     let resolve;
-    /** 按测试信号抛出 thenable，制造可恢复的 Suspense 挂起；服务于“组合卸载、挂起或 memo 边界，确认 Hook 顺序检测不会误报”场景。 */
+    /** 按测试信号抛出 thenable，制造可恢复的 Suspense 挂起。 */
     function trySuspend() {
       if (isSuspended) {
         throw new Promise(res => {
+          /** 先关闭isSuspended再resolve原生Promise，恢复render时输出hello。 */
           resolve = () => {
             isSuspended = false;
             res();
@@ -2413,7 +2129,7 @@ describe('ReactHooks', () => {
       }
     }
 
-    /** 作为 render fixture 承载当前测试职责；服务于“组合卸载、挂起或 memo 边界，确认 Hook 顺序检测不会误报”场景。 */
+    /** memo/forwardRef 的渲染函数：建立 state Hook 后挂起，检验包装层恢复时不误报 Hook 顺序。 */
     function render(props, ref) {
       useState();
       trySuspend();
@@ -2436,18 +2152,11 @@ describe('ReactHooks', () => {
   });
 
   // 回归场景：https://github.com/facebook/react/issues/15732
-  /**
-   * Given：在 Hook 列表中途抛错后重试，确认 Hook 游标与队列状态完全复位所需的初始状态、更新入口与观测日志均已建立。
-   * When：完成挂载以及用例指定的后续渲染或提交步骤。
-   * Then：在 Hook 列表中途抛错后重试，确认 Hook 游标与队列状态完全复位。
-   *
-   * 验证机制：宿主输出断言确认实际提交结果。
-   * 对应源码：`resetHooksOnUnwind()` 与渲染错误恢复。
-   */
+  /** Thrower初挂state后effect输出Throw；setShouldThrow(true)在state与effect间抛错，ErrorBoundary输出Error，经Wrapper透传，验证异常中途Hook游标清理。 */
   it('resets hooks when an error is thrown in the middle of a list of hooks', async () => {
     const {useEffect, useState} = React;
 
-    /** 定义 ErrorBoundary 类 fixture，在“在 Hook 列表中途抛错后重试，确认 Hook 游标与队列状态完全复位”场景中暴露类生命周期、实例 ref 或错误边界。 */
+    /** 捕获Thrower错误并经Wrapper输出Error，使Hook链中途抛错后的恢复可见。 */
     class ErrorBoundary extends React.Component {
       /** 保存 ErrorBoundary.state 的实例状态，作为错误恢复或生命周期断言的跨提交标记。 */
       state = {hasError: false};
@@ -2457,7 +2166,7 @@ describe('ReactHooks', () => {
         return {hasError: true};
       }
 
-      /** 渲染 ErrorBoundary.render 对应的类 fixture，并把本轮状态或子树交给宿主输出断言。 */
+      /** 经Wrapper透传Error或正常children，观察错误恢复不会沿用中断的Hook游标。 */
       render() {
         return (
           <Wrapper>
@@ -2467,13 +2176,13 @@ describe('ReactHooks', () => {
       }
     }
 
-    /** 包裹受测子树并控制错误、Suspense 或 memo 边界；服务于“在 Hook 列表中途抛错后重试，确认 Hook 游标与队列状态完全复位”场景。 */
+    /** 原样返回children，错误恢复时由上游边界把Error文本透传；本函数没有边界或Hook。 */
     function Wrapper({children}) {
       return children;
     }
 
     let setShouldThrow;
-    /** 作为 Thrower fixture 承载当前测试职责；服务于“在 Hook 列表中途抛错后重试，确认 Hook 游标与队列状态完全复位”场景。 */
+    /** 暴露 shouldThrow 更新器，在 state Hook 与 Effect Hook 之间抛错，检查下一次尝试的 Hook 游标。 */
     function Thrower() {
       const [shouldThrow, _setShouldThrow] = useState(false);
       setShouldThrow = _setShouldThrow;

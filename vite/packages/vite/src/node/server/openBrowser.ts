@@ -105,7 +105,7 @@ async function startBrowserProcess(
           ? preferredOSXBrowser
           : supportedChromiumBrowsers.find((b) => ps.includes(b))
       if (openedBrowser) {
-        // openChrome.js 负责按“同 URL、空白页、新标签”顺序选择目标。
+        // openChrome.js 负责按“URL 包含目标地址、空白页、新标签”顺序选择目标。
         await execAsync(`osascript openChrome.js "${url}" "${openedBrowser}"`, {
           cwd: join(VITE_PACKAGE_DIR, 'bin'),
         })
@@ -123,7 +123,7 @@ async function startBrowserProcess(
     browser = undefined
   }
 
-  // 通用回退会新开标签页。这里不 await 子进程结束，避免自动打开浏览器阻塞启动。
+  // 通用回退把 URL 交给浏览器应用；不等待子进程结束，避免自动打开浏览器阻塞启动。
   try {
     const options: Options = browser
       ? { app: { name: browser, arguments: browserArgs } }

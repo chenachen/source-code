@@ -18,6 +18,7 @@ let document;
 let Fragment;
 
 describe('FragmentRefs', () => {
+  /** 每例创建独立JSDOM文档并同步window/document/navigator/Event全局，保证Document根的节点与事件来自同一浏览器环境。 */
   beforeEach(() => {
     jest.resetModules();
     JSDOM = require('jsdom');
@@ -37,14 +38,7 @@ describe('FragmentRefs', () => {
   describe('focus methods', () => {
     describe('blur()', () => {
       // @gate enableFragmentRefs
-      /**
-       * 代表场景（Given–When–Then）：
-       * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-       * When 执行「throws when the nearest host parent is a Document container」描述的渲染或交互；
-       * Then 通过本用例的 DOM、日志或调度断言确认行为。
-       *
-       * 验证机制：断言连接 reconciler Fragment ref 与 DOM 宿主实例查询路径。
-       */
+      /** enableFragmentRefs开启，以Document根渲染Fragment包html/body/a，先focus a再fragment.blur；activeElement回到body，验证单例遍历能释放片段内焦点；本例标题称throws但实际断言正常blur结果。 */
       it('throws when the nearest host parent is a Document container', async () => {
         const fragmentRef = React.createRef();
         const root = ReactDOMClient.createRoot(document);
@@ -64,7 +58,7 @@ describe('FragmentRefs', () => {
         });
 
         await act(() => {
-          // 会停止在 <body> 处。 这通常是一个片段的子元素，并且通常是 activeElement。
+          // 先让片段内链接获得焦点，blur后应回到文档默认的body活动元素。
           document.getElementById('child-a').focus();
         });
         expect(document.activeElement.id).toEqual('child-a');
@@ -80,7 +74,7 @@ describe('FragmentRefs', () => {
   describe('events', () => {
     describe('dispatchEvent()', () => {
       // @gate enableFragmentRefs
-      /** 测试场景：验证「fires events when the fragment is a child of a HostSingleton in a document root」描述的渲染、交互或错误处理结果。 */
+      /** Document根的body含空Fragment，给Fragment/body各加custom listener后dispatchEvent(bubbles=true)；两者各调用一次，验证无宿主子级时临时目标附到最近body父级并冒泡。 */
       it('fires events when the fragment is a child of a HostSingleton in a document root', async () => {
         const fragmentRef = React.createRef();
         const bodyRef = React.createRef();
@@ -111,7 +105,7 @@ describe('FragmentRefs', () => {
 
     describe('addEventListener()', () => {
       // @gate enableFragmentRefs
-      /** 测试场景：验证「attaches listeners to the host children inside singletons」描述的渲染、交互或错误处理结果。 */
+      /** Fragment在html单例上方并包body/div，添加click listener再由div冒泡；currentTarget只为documentElement，验证监听挂到片段直接宿主单例而不铺到内部所有节点。 */
       it('attaches listeners to the host children inside singletons', async () => {
         const fragmentRef = React.createRef();
         const childRef = React.createRef();
@@ -141,13 +135,13 @@ describe('FragmentRefs', () => {
       });
 
       // @gate enableFragmentRefs
-      /** 测试场景：验证「attaches listeners to a singleton mounted into the fragment, but not to its content」描述的渲染、交互或错误处理结果。 */
+      /** Fragment初始无html，先加listener再showShell=true插入单例子树；div click的currentTarget仍只html一次，验证后插入直接单例接收既有监听且内容不重复附加。 */
       it('attaches listeners to a singleton mounted into the fragment, but not to its content', async () => {
         const fragmentRef = React.createRef();
         const childRef = React.createRef();
         const root = ReactDOMClient.createRoot(document);
 
-        /** `Test`：封装当前用例复用的操作、回调或断言步骤。 */
+        /** showShell=false时仅有空Fragment，true时插入html/body/div单例子树，验证注册监听后新增单例的归属。 */
         function Test({showShell}) {
           return (
             <Fragment ref={fragmentRef}>
@@ -183,14 +177,14 @@ describe('FragmentRefs', () => {
       });
 
       // @gate enableFragmentRefs
-      /** 测试场景：验证「attributes new children inside a singleton to fragments below it, not above it」描述的渲染、交互或错误处理结果。 */
+      /** 外Fragment位于html上方、内Fragment位于body下，先注册两者listener再插入span；span click使内currentTarget为span、外为html各一次，验证新增节点归最近单例下方Fragment且祖先靠冒泡接收。 */
       it('attributes new children inside a singleton to fragments below it, not above it', async () => {
         const outerFragmentRef = React.createRef();
         const innerFragmentRef = React.createRef();
         const lateChildRef = React.createRef();
         const root = ReactDOMClient.createRoot(document);
 
-        /** `Test`：封装当前用例复用的操作、回调或断言步骤。 */
+        /** 保持外Fragment/html/body/内Fragment结构，仅showLateChild控制span插入，让监听归属可在单例边界两侧比较。 */
         function Test({showLateChild}) {
           return (
             <Fragment ref={outerFragmentRef}>
@@ -226,7 +220,7 @@ describe('FragmentRefs', () => {
         lateChildRef.current.dispatchEvent(new Event('click', {bubbles: true}));
 
         // 内层片段直接拥有新子节点，并在插入时附加其监听器。 外层片段的子元素是 <html> 单例。 因此，新
-        // 子组件不会被 <body> 绑定，其监听器只会通过冒泡机制触发一次。
+        // 子节点不会另挂外层监听器；外层在html上仅通过冒泡接收一次。
         expect(innerCurrentTargets).toEqual([lateChildRef.current]);
         expect(outerCurrentTargets).toEqual([document.documentElement]);
       });
@@ -235,7 +229,7 @@ describe('FragmentRefs', () => {
 
   describe('getClientRects()', () => {
     // @gate enableFragmentRefs
-    /** 测试场景：验证「measures the host children inside singletons」描述的渲染、交互或错误处理结果。 */
+    /** Fragment包html/body/div，为div和html的getClientRects设不同桩值；片段只返回html-rect，验证测量其直接宿主单例而不深入其内容。 */
     it('measures the host children inside singletons', async () => {
       const fragmentRef = React.createRef();
       const childRef = React.createRef();

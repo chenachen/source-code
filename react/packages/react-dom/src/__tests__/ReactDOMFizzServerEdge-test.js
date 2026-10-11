@@ -30,7 +30,7 @@ describe('ReactDOMFizzServerEdge', () => {
     ReactDOMFizzServer = require('react-dom/server.edge');
   });
 
-  /** `readResult`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 以 reader.read 消费 Uint8Array 并按 UTF8 合并，到 done 返回全部输出；显式消费让流关闭时机可观察。 */
   async function readResult(stream) {
     const reader = stream.getReader();
     let result = '';
@@ -44,16 +44,9 @@ describe('ReactDOMFizzServerEdge', () => {
   }
 
   // https://github.com/facebook/react/issues/27540
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「does not try to write to the stream after it has been closed」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言覆盖 react-dom 的服务端流适配层；完整 Fizz 状态机位于 react-server。
-   */
+  /** Edge SSR 中启动等待两个微任务的 preconnect，而主树没有悬挂；读完已关闭的流后再等宏任务，不应追加 foo 提示或发生关闭后写入，快照只包含正常文档及特性开启时的阻塞标记，回归晚到资源提示。 */
   it('does not try to write to the stream after it has been closed', async () => {
-    /** `preloadLate`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 跨两个微任务后发 preconnect，刻意把资源提示推到主文档已完成输出之后。 */
     async function preloadLate() {
       await 1;
       await 1;
@@ -61,13 +54,13 @@ describe('ReactDOMFizzServerEdge', () => {
       ReactDOM.preconnect('foo');
     }
 
-    /** `Preload`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 在渲染期间启动晚到提示但不返回或抛该 Promise，因此不会阻止 shell 完成。 */
     function Preload() {
       preloadLate();
       return null;
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 输出完整 html/body 文档并启动无阻塞 Preload，重现已关闭流后资源提示请求。 */
     function App() {
       return (
         <html>
@@ -96,9 +89,9 @@ describe('ReactDOMFizzServerEdge', () => {
     }
   });
 
-  /** 测试场景：验证「recoverably errors and does not add rel="expect" for large shells」描述的渲染、交互或错误处理结果。 */
+  /** 用 600 个段落构成超过默认容量的完整 shell；无边界时不输出 rel=expect，阻塞渲染开启则报告一次可恢复大型文档错误。包入 Suspense 或调大 progressiveChunkSize 后都无错误，expect 仅随特性开启出现，验证大 shell 的可恢复降级与两条可正常阻塞的输入。 */
   it('recoverably errors and does not add rel="expect" for large shells', async () => {
-    /** `Paragraph`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 固定的大段文本叶节点；重复 600 次使无 Suspense shell 超出默认阻塞渲染容量。 */
     function Paragraph() {
       return (
         <p>
@@ -119,7 +112,7 @@ describe('ReactDOMFizzServerEdge', () => {
       );
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 按 suspense 输入把同样 600 段内容直接放入 shell 或置于独立边界，隔离容量与边界分块因素。 */
     function App({suspense}) {
       const paragraphs = [];
       for (let i = 0; i < 600; i++) {
@@ -129,10 +122,10 @@ describe('ReactDOMFizzServerEdge', () => {
         <html>
           <body>
             {suspense ? (
-              // 这没问题。
+              // Suspense 边界允许大型内容拆成后续片段，shell 不必一次输出全部段落。
               <Suspense fallback="Loading">{paragraphs}</Suspense>
             ) : (
-              // 这不是。
+              // 没有边界时全部段落属于 shell；启用阻塞渲染后，超过容量会报告大型文档错误。
               paragraphs
             )}
           </body>
@@ -143,7 +136,7 @@ describe('ReactDOMFizzServerEdge', () => {
     const stream = await ReactDOMFizzServer.renderToReadableStream(
       <App suspense={false} />,
       {
-        /** `onError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 收集无边界大 shell 的可恢复错误；特性开启应恰好一次，关闭应没有。 */
         onError(error) {
           errors.push(error);
         },
@@ -165,7 +158,7 @@ describe('ReactDOMFizzServerEdge', () => {
     const stream2 = await ReactDOMFizzServer.renderToReadableStream(
       <App suspense={true} />,
       {
-        /** `onError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 收集加 Suspense 边界后的错误，验证同样内容经边界拆分不会触发大 shell 降级。 */
         onError(error) {
           errors2.push(error);
         },
@@ -179,13 +172,13 @@ describe('ReactDOMFizzServerEdge', () => {
     }
     expect(errors2.length).toBe(0);
 
-    // 或是我们增加进步的尺度.
+    // 也可增大 progressiveChunkSize，使同一份 shell 不再超过本次测试的容量限制。
     const errors3 = [];
     const stream3 = await ReactDOMFizzServer.renderToReadableStream(
       <App suspense={false} />,
       {
         progressiveChunkSize: 100000,
-        /** `onError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 收集提高 progressiveChunkSize 后的错误，验证其容量阈值允许同样无边界内容正常阻塞。 */
         onError(error) {
           errors3.push(error);
         },

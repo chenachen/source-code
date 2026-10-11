@@ -1,7 +1,7 @@
 /// <reference types="../global.d.ts" />
 /** eslint-env browser */
 
-// 导出顺序必须与内部依赖方向一致，避免模块初始化阶段触发循环依赖。
+// 统一导出文档、共享类型、同步与历史工具；各模块通过相对路径引用自己的依赖。
 
 export { IdSet, equalIdSets, createDeleteSetFromStructStore, createInsertSetFromStructStore, diffIdSet, createIdSet, mergeIdSets, insertIntoIdSet, iterateStructsByIdSet, gcIdSet, readIdSet, writeIdSet, encodeIdSet, decodeIdSet, IdMap, createIdMap, createContentAttribute, ContentAttribute, diffIdMap, encodeIdMap, createIdMapFromIdSet, createIdSetFromIdMap, insertIntoIdMap, mergeIdMaps, readIdMap, writeIdMap, decodeIdMap, filterIdMap, intersectSets, intersectMaps } from './utils/ids.js'
 export { Doc } from './utils/Doc.js'
@@ -48,13 +48,13 @@ const importIdentifier = '__ $YJS14$ __'
 
 if (glo[importIdentifier] === true) {
   /**
-   * 同一 JavaScript 运行时只能加载一份 Yjs 14 实例。
+   * 同一 JavaScript 运行时再次加载 Yjs 14 模块副本时报告重复导入。
    *
    * 包管理器可能为不同依赖安装多份 Yjs，也可能让 CommonJS 与 ESM 构建同时进入应用。
    * 这些副本拥有不同的构造器身份。
    *
    * 内部会执行 `struct instanceof GC` 一类构造器检查；跨副本对象无法通过检查，进而可能
-   * 破坏 CRDT 集成分派。此处只报告错误并写入哨兵，不中止模块初始化。
+   * 破坏 CRDT 集成分派。此处报告错误；随后仍会写入哨兵并完成模块初始化。
    *
    * https://github.com/yjs/yjs/issues/438
    */

@@ -33,14 +33,7 @@ describe('InvalidEventListeners', () => {
     container = null;
   });
 
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「should prevent non-function listeners, at dispatch」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：事件断言连接 DOMPluginEventSystem 的委托、合成与传播路径。
-   */
+  /** 先把 onClick 设为字符串并核对 DEV 渲染警告，再派发冒泡 click，同时捕获 window.error；应有一次未捕获错误与一次 JSDOM 控制台报告，验证真值非函数 handler 在派发阶段仍被拒绝并进入全局错误报告。 */
   it('should prevent non-function listeners, at dispatch', async () => {
     const root = ReactDOMClient.createRoot(container);
     await act(() => {
@@ -55,7 +48,7 @@ describe('InvalidEventListeners', () => {
     console.error = jest.fn();
 
     const uncaughtErrors = [];
-    /** `handleWindowError`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 保存浏览器 error 事件的原始 Error 对象，供派发后的数量与类型消息断言；try/finally 移除监听避免污染其它 case。 */
     function handleWindowError(e) {
       uncaughtErrors.push(e.error);
     }
@@ -90,7 +83,7 @@ describe('InvalidEventListeners', () => {
     );
   });
 
-  /** 测试场景：验证「should not prevent null listeners, at dispatch」描述的渲染、交互或错误处理结果。 */
+  /** 把 onClick 设为 null，提交后派发冒泡 click；act 应正常完成，验证空 listener 被当作未注册而不触发函数类型异常。 */
   it('should not prevent null listeners, at dispatch', async () => {
     const root = ReactDOMClient.createRoot(container);
     await act(() => {

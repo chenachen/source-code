@@ -117,12 +117,13 @@ export interface PreviewServer {
    */
   bindCLIShortcuts(options?: BindCLIShortcutsOptions<PreviewServer>): void
   /**
+   * bindCLIShortcuts 保存的 readline/快捷键状态；重复绑定时复用，HTTP Server 关闭时由快捷键清理逻辑解除输入监听。
    * @internal
    */
   _shortcutsState?: ShortcutsState<PreviewServer>
 }
 
-/** configurePreviewServer 钩子，可返回在内部中间件之后执行的安装/清理回调。 */
+/** configurePreviewServer 钩子，可返回在内部核心中间件之后执行的安装回调。 */
 export type PreviewServerHook = (
   this: MinimalPluginContextWithoutEnvironment,
   server: PreviewServer,
@@ -131,7 +132,7 @@ export type PreviewServerHook = (
 /**
  * 启动 Vite 预览服务器，用本地静态服务近似验证生产构建产物。
  *
- * 它不会运行开发期模块转换，而是解析 production 配置、挂载插件预览钩子、代理、
+ * 它以 command: 'serve'、默认 mode: 'production' 解析预览配置，挂载插件预览钩子、代理、
  * 压缩、base、静态产物与 HTML fallback。预览只能验证构建结果和服务行为，不能
  * 等价替代真实生产基础设施。
  */
@@ -209,7 +210,7 @@ export async function preview(
     },
   }
 
-  /** 响应进程信号：等待服务器关闭后设置退出码并结束进程。 */
+  /** 响应进程信号：尝试等待服务器关闭，finally 设置退出码并结束进程。 */
   const closeServerAndExit = async (_: unknown, exitCode?: number) => {
     try {
       await server.close()
@@ -221,13 +222,13 @@ export async function preview(
 
   setupSIGTERMListener(closeServerAndExit)
 
-  // CORS 位于代理和静态内容之前，确保所有正常响应采用一致策略。
+  // CORS 位于插件预览钩子、代理和静态内容之前，按 preview.cors 处理请求。
   const { cors } = config.preview
   if (cors !== false) {
     app.use(corsMiddleware(typeof cors === 'boolean' ? {} : cors))
   }
 
-  // Host 校验防御 DNS rebinding；HTTPS 已由证书绑定主机身份，不需此层重复校验。
+  // HTTP 下安装 Host 校验以限制 DNS rebinding；HTTPS 分支跳过这层中间件。
   const { allowedHosts } = config.preview
   if (allowedHosts !== true && !config.preview.https) {
     app.use(hostValidationMiddleware(allowedHosts, true))
@@ -257,9 +258,9 @@ export async function preview(
   }
 
   // sirv 以 dev 模式启用 ETag，但禁用扩展名猜测与默认 ignores；shouldServeFile
-  // 额外保证最终路径仍位于 distDir，避免符号链接或路径穿越越界。
+  // 在大小写不敏感文件系统上进一步核对候选路径的实际大小写。
   const headers = config.preview.headers
-  /** 为每个请求创建受 distDir 边界和自定义响应头约束的 sirv 处理器。 */
+  /** 为请求创建以 distDir 为服务根、附带自定义响应头的 sirv 处理器。 */
   const viteAssetMiddleware = (...args: readonly [any, any?, any?]) =>
     sirv(distDir, {
       etag: true,
@@ -274,7 +275,7 @@ export async function preview(
           }
         }
       },
-      /** 拒绝解析后逃逸 distDir 的文件路径。 */
+      /** 核对 sirv 候选路径的大小写；这里不解析符号链接的真实目标。 */
       shouldServe(filePath) {
         return shouldServeFile(filePath, distDir)
       },
@@ -291,7 +292,7 @@ export async function preview(
   postHooks.forEach((fn) => fn && fn())
 
   if (config.appType === 'spa' || config.appType === 'mpa') {
-    // 即使是已构建 HTML，仍通过预览钩子处理，允许 configurePreviewServer 定制。
+    // 直接读取 fallback 对应的构建 HTML 并发送；预览不运行 dev HTML 转换。
     const normalizedDistDir = normalizePath(distDir)
     app.use(indexHtmlMiddleware(normalizedDistDir, server))
 

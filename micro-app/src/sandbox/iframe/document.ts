@@ -39,7 +39,7 @@ import microApp from '../../micro_app'
  * 修补 iframe 子应用的 `Document` 原型、宿主属性与事件副作用，并返回可做快照的清理钩子。
  *
  * 这里同时承担两层桥接：DOM 查询/创建需要在子应用容器与主文档间选择正确目标，事件监听则需要
- * 在 iframe realm 的 `document` 外观下登记到实际生效的宿主文档。后续仍需完善 Shadow DOM 支持并梳理结构。
+ * 在 iframe 文档与主文档间选择真实目标。结构属性和全局文档方法目前统一桥接主文档，未按 ShadowRoot 分流。
  *
  * @param appName 子应用名称，用于查找容器并标记新建节点的归属。
  * @param microAppWindow iframe realm 中的子应用窗口。
@@ -200,7 +200,8 @@ function patchDocumentPrototype (appName: string, microAppWindow: microAppWindow
   }
 
   /**
-   * 优先在子应用容器中查询元素，必要时回退到 iframe 文档。
+   * 普通选择器先查子应用容器，无结果时回退 iframe 文档；文档唯一结构元素查询主文档。
+   * 精确的 `body` 选择器在未继承基座 body 时读取 this.body；独立解析文档仍查询自身。
    *
    * @param selectors CSS 选择器。
    * @returns 首个匹配元素；无结果时为 `null`。
@@ -219,7 +220,7 @@ function patchDocumentPrototype (appName: string, microAppWindow: microAppWindow
     }
 
     /**
-     * 子应用不能查询 iframe 模板中的 `base`，`querySelectorAll` 同样遵守该约束。
+     * 精确的 `base` 选择器不回退到 iframe 模板，`querySelectorAll` 同样处理。
      *
      * 典型场景是 vue-router 4 的 `createWebHistory` 会读取 `document.querySelector('base')`；若把
      * 沙箱内部的 base 暴露出去，路由基址会被错误覆盖，因此 base 查无结果时也不能回退。
@@ -231,7 +232,8 @@ function patchDocumentPrototype (appName: string, microAppWindow: microAppWindow
   }
 
   /**
-   * 查询子应用容器内的全部匹配元素，并维持 `base` 不可见的不变量。
+   * 普通选择器先查子应用容器，无结果才回退 iframe；精确的 `base` 选择器不回退。
+   * 唯一结构元素仍查询主文档，独立解析文档查询自身。
    *
    * @param selectors CSS 选择器。
    * @returns 匹配元素集合。
@@ -289,7 +291,7 @@ function patchDocumentPrototype (appName: string, microAppWindow: microAppWindow
       isInvalidQuerySelectorKey(key)
     ) {
       return rawMicroGetElementsByTagName.call(_this, key)
-    // iframe 模板只允许脚本查询回退，不能把内部 base 暴露给子应用路由。
+    // script 直接查询 iframe 模板；普通标签仍走容器优先路径，精确的 base 不回退模板。
     } else if (/^script$/i.test(key)) {
       return rawMicroGetElementsByTagName.call(microDocument, key)
     }
@@ -404,11 +406,13 @@ function patchDocumentProperty (
 
   rawDefineProperties(microRootDocument.prototype, createDescriptors())
 
-  // 唯一结构元素必须映射到宿主 DOM；body 可按配置改为子应用的 micro-app-body 容器。
+  // body 未继承基座时从创建沙箱时的 options.container 查找 micro-app-body，找不到则返回宿主 body。
+  // 其他结构属性直接读取宿主；这里没有把 options.container 更新为应用后续切换的新容器。
   uniqueDocumentElement.forEach((tagName: string) => {
     rawDefineProperty(microDocument, tagName, {
       enumerable: true,
       configurable: true,
+      /** 读取结构属性时标记当前应用；body 优先使用创建时容器，其他结构属性读取宿主文档。 */
       get: () => {
         throttleDeferForIframeAppName(appName)
         if (tagName === 'body' && microApp?.options?.inheritBaseBody !== true) {
@@ -416,6 +420,7 @@ function patchDocumentProperty (
         }
         return rawDocument[tagName]
       },
+      /** 结构属性赋值直接转发宿主，不替换 iframe 内部原生 head/body 引用。 */
       set: (value: unknown) => { rawDocument[tagName] = value },
     })
   })
@@ -424,8 +429,11 @@ function patchDocumentProperty (
 /**
  * 接管 iframe 文档事件，并提供可记录、重建和释放的副作用快照。
  *
- * 需要文档作用域的事件绑定到 iframe 文档，其余事件绑定到主文档；监听器仍以 iframe 文档为
- * `this`，从而同时维持事件传播位置和子应用 realm 语义。释放阶段会逐项解除真实绑定，避免卸载泄漏。
+ * DOMContentLoaded/readystatechange 使用调用方法的文档，其余事件绑定到主文档。
+ * 函数监听器首次登记时缓存绑定调用文档的函数；handleEvent 对象保持原引用。
+ * 释放通过缓存函数定位真实绑定，不处理未纳入快照的其他 on* 属性。
+ * 登记表只按事件名/回调保存，不保存调用文档；独立文档的 scope 事件释放、重建仍使用主 microDocument，
+ * 因而不保证从原独立文档移除，也不会重建到原文档。缓存函数的 this 仍是第一次登记时的调用文档。
  *
  * @param appName 子应用名称，用于输出属性修补失败告警。
  * @param microAppWindow iframe realm 的窗口对象。
@@ -444,14 +452,14 @@ function patchDocumentEffect (appName: string, microAppWindow: microAppWindowTyp
    * 根据事件类型选择实际绑定文档。
    *
    * @param type 事件类型。
-   * @param bindTarget 当前 iframe 文档。
+   * @param bindTarget 调用事件方法的文档；释放阶段使用沙箱的 microDocument。
    * @returns 事件应绑定的真实目标。
    */
   function getEventTarget (type: string, bindTarget: Document): Document {
     return SCOPE_DOCUMENT_EVENT.includes(type) ? bindTarget : rawDocument
   }
 
-  /** 登记 iframe 文档监听器，并缓存绑定当前文档的稳定函数。 */
+  /** 按事件名登记回调引用；函数首次绑定调用文档后缓存在回调对象上，options 也保存在该对象上。 */
   microRootDocument.prototype.addEventListener = function (
     type: string,
     listener: MicroEventListener,
@@ -468,7 +476,10 @@ function patchDocumentEffect (appName: string, microAppWindow: microAppWindowTyp
     rawAddEventListener.call(getEventTarget(type, this), type, handler, options)
   }
 
-  /** 从快照登记表与真实目标上同步移除 iframe 文档监听器。 */
+  /**
+   * 从活动登记表删除回调，并用缓存函数、调用文档和传入 options 尝试解除真实绑定。
+   * 登记不区分 capture 或调用文档；移除条件不匹配时记录会先消失，原目标的绑定仍可保留。
+   */
   microRootDocument.prototype.removeEventListener = function (
     type: string,
     listener: MicroEventListener,
@@ -516,7 +527,7 @@ function patchDocumentEffect (appName: string, microAppWindow: microAppWindowTyp
   /**
    * 将非文档作用域的 `on*` 属性代理到主文档。
    *
-   * TODO：继续验证直接代理原生 document 的兼容性，并在 Shadow DOM 模式下选择正确事件目标。
+   * 除 onclick 由快照钩子管理外，这些赋值直接改写主文档属性；release 不恢复它们的旧值。
    */
   Object.getOwnPropertyNames(microRootDocument.prototype)
     .filter((key: string) => /^on/.test(key) && !SCOPE_DOCUMENT_ON_EVENT.includes(key))
@@ -530,6 +541,7 @@ function patchDocumentEffect (appName: string, microAppWindow: microAppWindowTyp
         rawDefineProperty(microRootDocument.prototype, eventName, {
           enumerable,
           configurable: true,
+          /** onclick 返回可快照的独立槽位；其他 on 属性反映宿主当前处理器。 */
           get: () => {
             if (eventName === 'onclick') return onClickHandler
             return rawDocument[eventName]
@@ -550,8 +562,8 @@ function patchDocumentEffect (appName: string, microAppWindow: microAppWindowTyp
   /**
    * 合并记录当前 document 事件副作用，供预渲染或 keep-alive 恢复时重建。
    *
-   * UMD 挂载、keep-alive 隐藏和预渲染完成都可能触发记录，同一次生命周期甚至会调用两次；
-   * 因此这里使用集合合并并保留旧 `onclick`，而不是覆盖快照。
+   * UMD 软卸载、keep-alive 隐藏和预渲染完成都可能触发记录，同一次生命周期甚至会调用两次；
+   * 因此监听器集合取并集；onclick 采用当前非假值，否则保留旧快照。
    */
   const record = (): void => {
     // onclick 在预渲染或 keep-alive 隐藏后可能再次赋值，空值不能覆盖已有快照。
@@ -568,7 +580,7 @@ function patchDocumentEffect (appName: string, microAppWindow: microAppWindowTyp
 
   /** 在重新挂载前恢复已记录的文档事件，并在成功登记后清空快照。 */
   const rebuild = (): void => {
-    // 只在当前 onclick 尚未重新赋值时恢复，避免覆盖应用的新状态。
+    // 当前槽位是假值时恢复旧 onclick；已设置的新函数优先，null 等假值也满足恢复条件。
     if (sstOnClickHandler && !onClickHandler) microDocument.onclick = sstOnClickHandler
 
     sstEventListenerMap.forEach((listenerList, type) => {
@@ -581,10 +593,10 @@ function patchDocumentEffect (appName: string, microAppWindow: microAppWindowTyp
   }
 
   /**
-   * 解除当前子应用登记的全部文档事件。
+   * 移除 onclick 绑定并清空当前子应用的文档监听器登记。
    *
    * 清理必须使用缓存的绑定函数和对应的真实目标，否则 `removeEventListener` 无法命中，子应用卸载后
-   * 仍会收到主文档事件。
+   * 仍会收到主文档事件。这里未传 options，只匹配 capture=false；capture=true 需应用自行以相同选项解除。
    */
   const release = (): void => {
     // 清理由子应用通过 document.onclick 绑定的函数。
@@ -593,7 +605,7 @@ function patchDocumentEffect (appName: string, microAppWindow: microAppWindowTyp
     }
     onClickHandler = null
 
-    // 清理通过 document.addEventListener 登记的全部真实绑定。
+    // 按主 microDocument/宿主文档尝试解除登记项；这里不保存独立文档或 capture=true 的原绑定元组。
     if (eventListenerMap.size) {
       eventListenerMap.forEach((listenerList, type) => {
         for (const listener of listenerList) {

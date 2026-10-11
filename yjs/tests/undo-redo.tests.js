@@ -3,7 +3,12 @@ import { init } from './testHelper.js' // eslint-disable-line
 import * as t from 'lib0/testing'
 import * as delta from 'lib0/delta'
 
-/** 验证本地构建与 update 重建文档在跨分段清除/设置格式后得到相同规范 Delta。 */
+/**
+ * 测试场景：gc=false 文档拼成带 bold/type/italic 的 Merge Test After；另一路从完整 update 重建同样初态。
+ * 触发操作：两路径均移除前六字符 bold，再把索引 6 起的四字符 Test 的 type 设为 text。
+ * 预期结果：都得到 Merge Test 的 type=text 分段和 After 的 type=text/italic=true 分段；本例没有调用 undo。
+ *
+ */
 export const testInconsistentFormat = () => {
   /**
    * 对目标文档执行跨格式边界变更，并断言合并后的格式结果。
@@ -38,7 +43,9 @@ export const testInconsistentFormat = () => {
 }
 
 /**
- * 验证即使 captureTimeout 极大，`stopCapturing()` 仍强制下一次编辑建立独立栈项。
+ * 测试场景：三副本夹具的 array0 安装 captureTimeout=Number.MAX_VALUE 的管理器。
+ * 触发操作：写 [1,2,3]，stopCapturing 后再写 [4,5,6]，执行一次 undo。
+ * 预期结果：仅撤销第二批，剩 [1,2,3]；本例未进行副本同步比较。
  *
  * @param {t.TestCase} tc
  */
@@ -53,13 +60,9 @@ export const testInfiniteCaptureTimeout = tc => {
 }
 
 /**
- * 覆盖文本插入/删除/格式、redone 链及并发远端变更下的 undo/redo 语义。
- *
- * Given：本地与远端交错编辑同一文本，部分本地结构随后被远端删除。
- * When：多次撤销、重做并同步。
- * Then：只反转本地作用域内仍可应用的结构，远端内容保留，格式可往返。
- *
- * 验证机制：字符串与 Delta 断言同时覆盖 `popStackItem()` 的 delete、redo 与冲突跳过分支。
+ * 测试场景：三副本文本夹具，text0 安装默认 UndoManager。
+ * 触发操作：先测同段插入又删除及 redone 链，再与 text1 并发写 abc/xyz，远端删除 a，最后格式化并 undo/redo。
+ * 预期结果：同段增删撤销为空；远端 xyz 保留，远端已删 a 不恢复，最后 bold 区间 cxy 随格式步骤正确往返。
  *
  * @param {t.TestCase} tc
  */
@@ -107,7 +110,9 @@ export const testUndoText = tc => {
 }
 
 /**
- * 回归验证 #241：可先用显式 doc 创建空 scope UndoManager，再动态加入类型并撤销。
+ * 测试场景：用显式 doc 创建空 scope 管理器。
+ * 触发操作：动态 addToScope 根类型，插入 [1] 后 undo。
+ * 预期结果：根长度回到 0；覆盖 issue #241 的延迟设置作用域。
  *
  * @param {t.TestCase} _tc
  */
@@ -122,7 +127,9 @@ export const testEmptyTypeScope = _tc => {
 }
 
 /**
- * 验证用临时 UndoManager 拒绝 update 中受限类型，同时保留公开类型和既有 pending update 状态。
+ * 测试场景：两份 update 分别带 restricted/public 新增与另一 public 新增；目标已有 restricted 根。
+ * 触发操作：临时管理器跟踪 remote change，在应用后撤销受限步骤、销毁管理器并恢复原 pending 状态。
+ * 预期结果：restricted 长度 0、public 长度 2；初态没有构造真实 pending 缺口，因此 pending 恢复分支是示例代码，未由断言独立覆盖。
  *
  * @param {t.TestCase} _tc
  */
@@ -139,14 +146,14 @@ export const testRejectUpdateExample = _tc => {
   const restrictedType = ydoc.get('restricted')
 
   /**
-   * 模拟 WebSocket 等通道的入站 update 处理器，拒绝 `restricted` 类型及后代变化。
+   * 模拟入站 update 处理器，以 restricted 类型为 scope 捕获指定远端 origin。
    *
-   * 顺序不变量：先缓存 pending 状态并创建只跟踪远端 origin 的 UndoManager；再应用 update；finally 中撤销所有受限变化、销毁管理器、恢复并重放原 pending update。这样异常也不能绕过回滚。
+   * 先缓存 pending 状态，再应用 update；finally 尝试撤销受限步骤、销毁管理器、恢复 pendingDs 并重放原 pendingStructs。这里的撤销会生成新的 CRDT 操作，不能从 store 中抹去已接收的历史。
    *
    * @param {Uint8Array} update - 待审查入站 update。
    */
   const updateHandler = (update) => {
-    // 只跟踪 `remote change`，回滚事务以 UndoManager 自身为 origin，不会再次入栈。
+    // 捕获 remote change；管理器自身也自动进入 trackedOrigins，因此 undo 的逆操作会写入 redo 栈。
     const um = new Y.UndoManager(restrictedType, { trackedOrigins: new Set(['remote change']) })
     const beforePendingDs = ydoc.store.pendingDs
     const beforePendingStructs = ydoc.store.pendingStructs?.update
@@ -171,7 +178,9 @@ export const testRejectUpdateExample = _tc => {
 }
 
 /**
- * 回归验证 #241：以 Doc 为全局 scope 时可撤销其任意根类型变更。
+ * 测试场景：空 Doc 作为 UndoManager scope。
+ * 触发操作：在根类型插入 [1] 后 undo。
+ * 预期结果：根长度为 0，Doc scope 可捕获该根变化。
  *
  * @param {t.TestCase} _tc
  */
@@ -185,7 +194,9 @@ export const testGlobalScope = _tc => {
 }
 
 /**
- * 回归验证 #241：连续调用 undo 不会把两个栈项合并或破坏后续插入位置。
+ * 测试场景：文本先有 1221，再安装管理器。
+ * 触发操作：连续插入两个 3，undo 两次，再在索引 2 插入 3。
+ * 预期结果：最终 12321；首轮两插入合并为一步，第二次空栈 undo 不影响后续定位。
  *
  * @param {t.TestCase} _tc
  */
@@ -208,7 +219,9 @@ export const testDoubleUndo = _tc => {
 }
 
 /**
- * 验证 Map 属性值、嵌套类型、连续赋值与远端覆盖下的撤销/重做。
+ * 测试场景：两副本 map0 属性 a=0，随后安装管理器。
+ * 触发操作：修改标量并 undo/redo，再替换为含 x=42 的子类型；远端覆盖 a=44 后尝试 undo/redo，最后连续写 b 两次并 undo。
+ * 预期结果：子类型与内属性整体恢复，远端 44 不被默认策略覆盖，合并写 b 恢复 initial。
  *
  * @param {t.TestCase} tc
  */
@@ -250,9 +263,9 @@ export const testUndoMap = tc => {
 }
 
 /**
- * 回归验证：同一步撤销嵌套类型删除及其属性变化时，恢复属性必须在远端同步后仍一致。
- *
- * 历史缺陷中，重做属性 Item 沿用了已删除父项的 origin，导致本地值正确但同步后丢失。
+ * 测试场景：两副本文本包含 button 子类型，带 type=button/test=true 和 Click me 内容，已同步。
+ * 触发操作：同一捕获步骤把 type 改为 paragraph 并删除父嵌入项，再 undo 并同步。
+ * 预期结果：本地与远端恢复节点属性均为 type=button/test=true；断言未比较 Click me 内容。
  *
  * @param {t.TestCase} tc
  */
@@ -281,7 +294,9 @@ export const testUndoEmbeddedTypeAttribute = tc => {
 }
 
 /**
- * 验证数组并发插入、远端删除、嵌套属性与多步 undo/redo 只反转本地作用域内容。
+ * 测试场景：三副本夹具，array0 管理器与 array1 交错编辑。
+ * 触发操作：并发插入两批数字、远端删除首个本地数字，再分步插入子类型及本地属性 a，远端添加 b，反复 undo/redo。
+ * 预期结果：远端数字和 b 保留；本地已被远端删除的 1 不恢复；嵌入项、a 属性分别往返，最终含 a=1/b=2。
  *
  * @param {t.TestCase} tc
  */
@@ -334,7 +349,9 @@ export const testUndoArray = tc => {
 }
 
 /**
- * 验证嵌套 XML/文本格式、节点删除均能通过深层 Delta 完整撤销与重做。
+ * 测试场景：XML 根插入 p 子类型，内部文本为 content。
+ * 触发操作：独立步骤给 tent 加 bold 并 undo/redo，再删除 p 并 undo。
+ * 预期结果：每个格式阶段精确比较深层 Delta；删除变空，再恢复带 bold 的整棵子树。
  *
  * @param {t.TestCase} tc
  */
@@ -362,7 +379,9 @@ export const testUndoXml = tc => {
 }
 
 /**
- * 验证 stack-item-added/popped 事件携带类型、changedParentTypes，并通过 meta 往返用户数据。
+ * 测试场景：text0 管理器监听 added/popped，added 逐项写入递增 meta。
+ * 触发操作：插入 abc，undo，再 redo。
+ * 预期结果：事件 type 非空且 changedParentTypes 含 text0；popped 恢复的 meta 依次为 0、1。
  *
  * @param {t.TestCase} tc
  */
@@ -389,7 +408,9 @@ export const testUndoEvents = tc => {
 }
 
 /**
- * 验证 trackedOrigins 可登记构造器，并匹配 Number 实例 origin。
+ * 测试场景：普通编辑捕获规则配置为 Number 构造器；管理器自身也自动加入 trackedOrigins。
+ * 触发操作：以数值 origin=42 的事务写 abc，再 undo。
+ * 预期结果：先为 abc 后为空，origin.constructor 可命中 Number 规则。
  *
  * @param {t.TestCase} tc
  */
@@ -406,7 +427,9 @@ export const testTrackClass = tc => {
 }
 
 /**
- * 验证单类型与多类型 scope 只捕获各自类型及后代变更。
+ * 测试场景：数组包含两个 sibling 文本；分别安装只覆盖 text0 和覆盖两者的管理器。
+ * 触发操作：仅给 text1 写 abc，先调用单类型管理器 undo，再调用双类型管理器 undo。
+ * 预期结果：单类型栈为空且 text1 保留 abc；双类型有一项并能把 text1 撤销为空。
  *
  * @param {t.TestCase} tc
  */
@@ -429,7 +452,9 @@ export const testTypeScope = tc => {
 }
 
 /**
- * 验证嵌套文本内部编辑与承载嵌套类型的插入可按两个栈项依次撤销。
+ * 测试场景：根文本管理器与未集成的 initial text 子类型。
+ * 触发操作：独立插入带 bold 的子类型，再独立把其文本替换为 other text，undo 两次。
+ * 预期结果：第一次恢复内部 initial text；第二次删除承载子类型，根长度 0。
  *
  * @param {t.TestCase} tc
  */
@@ -451,13 +476,23 @@ export const testUndoInEmbed = tc => {
 }
 
 /**
- * 验证 deleteFilter 可阻止删除带属性的嵌套 Item，同时允许删除空嵌套项。
+ * 测试场景：数组同时插入带 hi 属性的子类型与空子类型，管理器仅允许删除空 ContentType 项。
+ * 触发操作：执行 undo。
+ * 预期结果：保留一项且该项有一个属性键；过滤器阻止撤销删除带属性的嵌入项。
  *
  * @param {t.TestCase} tc
  */
 export const testUndoDeleteFilter = tc => {
   const array0 = init(tc, { users: 3 }).array0
-  const undoManager = new Y.UndoManager(array0, { deleteFilter: item => !(item instanceof Y.Item) || (item.content instanceof Y.ContentType && item.content.type._map.size === 0) })
+  const undoManager = new Y.UndoManager(array0, {
+    /**
+     * 撤销删除前按 Item 载荷筛选；带属性的嵌入类型必须保留，空类型允许删除。
+     *
+     * @param {Y.Item} item - popStackItem 准备删除的作用域内 Item。
+     * @return {boolean} 非 Item 或属性表为空的 ContentType 为 true；其他载荷为 false。
+     */
+    deleteFilter: item => !(item instanceof Y.Item) || (item.content instanceof Y.ContentType && item.content.type._map.size === 0)
+  })
   const map0 = new Y.Type()
   map0.setAttr('hi', 1)
   const map1 = new Y.Type()
@@ -469,9 +504,10 @@ export const testUndoDeleteFilter = tc => {
 }
 
 /**
- * 回归验证外部更新场景：顶端栈项因远端覆盖成为 no-op 时，undo 会继续弹栈直到实际产生变化。
+ * 测试场景：两文档即时双向同步，数组含两个属性子类型，两管理器对普通编辑仅跟踪各自 clientID origin，另自动跟踪自身。
+ * 触发操作：本地依次改两个子类型属性，远端删除第一个后再 undo，随后本地 undo。
+ * 预期结果：第二个子类型 key 回到 value，证明失效栈项可继续弹出直到出现实际变化。
  *
- * 来源：https://discuss.yjs.dev/t/undomanager-with-external-updates/454/6
  * @param {t.TestCase} _tc
  */
 export const testUndoUntilChangePerformed = _tc => {
@@ -502,7 +538,9 @@ export const testUndoUntilChangePerformed = _tc => {
 }
 
 /**
- * 回归验证 issue #317：多层 Map-like 嵌套属性替换可逐级 undo/redo，且每一步恢复正确历史子树。
+ * 测试场景：gc=false 根管理器 captureTimeout=0。
+ * 触发操作：三事务创建并连续替换 text.blocks 引用，三次 undo 后三次 redo。
+ * 预期结果：每步深层 Delta 从 Something Else 回退至 Something、Type Something、空，再按原顺序恢复（issue #317）。
  *
  * @param {t.TestCase} _tc
  */
@@ -554,7 +592,9 @@ export const testUndoNestedUndoIssue = _tc => {
 }
 
 /**
- * 回归验证 issue #355：连续重做嵌套点对象的多轮属性修改，最后一步不得把对象变成空值。
+ * 测试场景：根属性 a 为坐标子类型，x/y=0，按 stopCapturing 切分步骤。
+ * 触发操作：依次改为 100、200、300，四次 undo，再四次 redo；首次 redo 后从根重新取得新子类型实例。
+ * 预期结果：逐步恢复坐标与空值，最后为 300/300，没有丢失属性（issue #355）。
  *
  * @param {t.TestCase} _tc
  */
@@ -605,7 +645,9 @@ export const testConsecutiveRedoBug = _tc => {
 }
 
 /**
- * 回归验证 issue #304：XML 节点多轮属性修改在三次 undo/redo 后恢复最终两个属性值。
+ * 测试场景：XML 根管理器 captureTimeout=0，普通编辑仅跟踪 origin；管理器自身另自动加入。
+ * 触发操作：三事务依次创建 a=100/b=0 节点、改 a=200、改 a=180/b=50，再三次 undo/redo。
+ * 预期结果：最终序列化为 <test-node a="180" b="50" />；未逐步断言中间状态（issue #304）。
  *
  * @param {t.TestCase} _tc
  */
@@ -650,7 +692,9 @@ export const testUndoXmlBug = _tc => {
 }
 
 /**
- * 回归验证 issue #343：连续替换深层 block 引用后，四次 redo 必须恢复最后 block 内容。
+ * 测试场景：gc=false 文档根管理器 captureTimeout=0。
+ * 触发操作：四事务连续替换嵌套 block text 为 1、2、3、4，四次 undo 后四次 redo。
+ * 预期结果：最终嵌套 JSON 恢复 text=4；中间状态只写在注释中，没有各步断言（issue #343）。
  *
  * @param {t.TestCase} _tc
  */
@@ -697,21 +741,22 @@ export const testUndoBlockBug = _tc => {
   })
 
   // {"text":{"blocks":{"text":"4"}}}
-  undoManager.undo() // {"text":{"blocks":{"3"}}}
+  undoManager.undo() // 恢复 blocks.text=3。
   undoManager.undo() // {"text":{"blocks":{"text":"2"}}}
   undoManager.undo() // {"text":{"blocks":{"text":"1"}}}
   undoManager.undo() // {}
   undoManager.redo() // {"text":{"blocks":{"text":"1"}}}
   undoManager.redo() // {"text":{"blocks":{"text":"2"}}}
   undoManager.redo() // {"text":{"blocks":{"text":"3"}}}
-  undoManager.redo() // {"text":{}}
+  undoManager.redo() // 恢复 blocks.text=4。
   t.compare(design.toJSON().attrs, { text: { attrs: { blocks: { attrs: { text: '4' } } } } })
 }
 
 /**
- * 回归验证 issue #392：撤销文本格式删除后，本地与同步 peer 的 Delta 必须一致且格式区间正确。
+ * 测试场景：两文档共享 Attack ships… 文本，本地安装管理器。
+ * 触发操作：给 on fire 加 bold 并同步；移除其中 fire 的 bold 并同步，再 undo 并同步。
+ * 预期结果：本地与远端 Delta 都完整恢复 on fire 的 bold 区间（issue #392）。
  *
- * @see https://github.com/yjs/yjs/issues/392
  * @param {t.TestCase} _tc
  */
 export const testUndoDeleteTextFormat = _tc => {
@@ -743,9 +788,10 @@ export const testUndoDeleteTextFormat = _tc => {
 }
 
 /**
- * 验证 `ignoreRemoteAttributeChanges=true` 允许本地 undo 越过较新的远端属性值，恢复本地捕获前值并同步收敛。
+ * 测试场景：两文档即时双向同步，本地管理器 ignoreRemoteAttributeChanges=true。
+ * 触发操作：交错写 x=本地1、远端2、本地3、远端4，再 undo 合并的本地步骤。
+ * 预期结果：两份文档均为 2；捕获删除集保留被本地 3 替换的远端 2，并允许越过最新远端 4。
  *
- * @see https://github.com/yjs/yjs/issues/392
  * @param {t.TestCase} _tc
  */
 export const testBehaviorOfIgnoreRemoteAttributeChangesProperty = _tc => {
@@ -766,9 +812,10 @@ export const testBehaviorOfIgnoreRemoteAttributeChangesProperty = _tc => {
 }
 
 /**
- * 回归验证 issue #447：同一事务修改节点属性后删除节点，undo 应恢复删除前而非中间属性值。
+ * 测试场景：普通编辑仅跟踪 undoable origin，管理器自身另自动加入；初始 test 节点 a=1/b=2 由未跟踪事务创建。
+ * 触发操作：一个受跟踪事务把 b 改 3 后删掉节点，再 undo。
+ * 预期结果：先为空，撤销后恢复 a=1/b=2，跳过同一步骤的中间 b=3（issue #447）。
  *
- * @see https://github.com/yjs/yjs/issues/447
  * @param {t.TestCase} _tc
  */
 export const testSpecialDeletionCase = _tc => {
@@ -795,9 +842,10 @@ export const testSpecialDeletionCase = _tc => {
 }
 
 /**
- * 回归验证 issue #500：Map 键交替 set/delete 后逐步 undo，应在空值与每个历史值之间正确切换。
+ * 测试场景：map0 管理器 captureTimeout=0，每次属性写删独立捕获。
+ * 触发操作：a 键交替写 a/b/c/d 与删除，再逐步 undo 六次。
+ * 预期结果：值按空、c、空、b、空、a 回退，正确重做每次属性删除（issue #500）。
  *
- * @see https://github.com/yjs/yjs/issues/500
  * @param {t.TestCase} tc
  */
 export const testUndoDeleteInMap = (tc) => {
@@ -826,11 +874,9 @@ export const testUndoDeleteInMap = (tc) => {
 }
 
 /**
- * 验证 `currStackItem` 只在 undo/redo 事务及 observer 期间暴露当前 meta，事务结束后恢复为 null。
- *
- * Given：栈项 added 事件写入 meta。
- * When：observer 在 undoing/redoing 标志下读取 `currStackItem`。
- * Then：两次均读到同一元数据，操作结束后字段清空。
+ * 测试场景：管理器 added 事件在栈项 meta 写字符串 42，文本 observer 分别记录 undoing/redoing 的 currStackItem。
+ * 触发操作：插入 abc，undo，再 redo。
+ * 预期结果：两个 observer 都读到 42，事务返回后 currStackItem=null；函数声明 async，但主体没有 await。
  *
  * @param {t.TestCase} _tc
  */

@@ -9,6 +9,7 @@
     />
     <title>compiler-dom 详解 · Vue Compiler 指南</title>
     <link rel="stylesheet" href="assets/styles.css" />
+    <link rel="stylesheet" href="assets/diagrams.css" />
   </head>
   <body>
     <a class="skip-link" href="#content">跳到正文</a>
@@ -70,7 +71,7 @@
         <div class="reading-contract">
           <strong>证据基线与阅读边界</strong>
           <p>
-            本页逐项核对 commit
+            本文对应 commit
             <code>11cd09cf54a878ec70d3dcca14520b4c4ec267b9</code> 中
             <code>packages/compiler-dom/src</code> 与对应
             <code>__tests__</code>。本文覆盖客户端模板的
@@ -431,7 +432,8 @@ return generate(ast, resolvedOptions)</code></pre>
             </p>
             <div class="branch">
               <div class="flow-node primary">
-                <strong>父节点 namespace</strong><small>HTML / SVG / MathML</small>
+                <strong>父节点 namespace</strong
+                ><small>HTML / SVG / MathML</small>
               </div>
               <div class="branch-lines">↗<br />→<br />↘</div>
               <div class="branch-targets">
@@ -441,11 +443,16 @@ return generate(ast, resolvedOptions)</code></pre>
                 </div>
                 <div class="branch-target">
                   <strong>SVG</strong>
-                  <p>通常继承 SVG；foreignObject、desc、title 的后代回到 HTML。</p>
+                  <p>
+                    通常继承 SVG；foreignObject、desc、title 的后代回到 HTML。
+                  </p>
                 </div>
                 <div class="branch-target">
                   <strong>MathML</strong>
-                  <p>annotation-xml 和文本集成点按 encoding、子标签决定 HTML/SVG。</p>
+                  <p>
+                    annotation-xml 和文本集成点按 encoding、子标签决定
+                    HTML/SVG。
+                  </p>
                 </div>
               </div>
             </div>
@@ -513,7 +520,9 @@ return generate(ast, resolvedOptions)</code></pre>
                 ><strong>平台判断在 core 中怎样被消费</strong
                 ><code>packages/compiler-core/src/parser.ts</code></span
               >
-              <span class="source-version">onopentagname · endOpenTag · onCloseTag</span>
+              <span class="source-version"
+                >onopentagname · endOpenTag · onCloseTag</span
+              >
             </figcaption>
             <pre><code>// 创建元素时，平台函数决定并写入当前节点的 namespace。
 ns: currentOptions.getNamespace(name, stack[0], currentOptions.ns)
@@ -537,8 +546,8 @@ if (tokenizer.inXML &amp;&amp;
 }</code></pre>
           </figure>
           <div class="callout">
-            <strong>职责要分清：</strong>RCDATA/RAWTEXT 的状态机在
-            compiler-core tokenizer 中；<code>parseMode: 'html'</code> 和
+            <strong>职责要分清：</strong>RCDATA/RAWTEXT 的状态机在 compiler-core
+            tokenizer 中；<code>parseMode: 'html'</code> 和
             <code>inXML</code> 决定是否启用它。compiler-dom 没有重写 tokenizer，
             它提供的是让同一状态机按浏览器规则运行所需的平台上下文。
           </div>
@@ -877,9 +886,12 @@ if (child in knownInvalidParents &amp;&amp;
 return true</code></pre>
           </figure>
           <p class="prose">
-            这是“严格白名单优先、已知黑名单兜底”的规则判断，不是完整 HTML
-            parser。对应测试分别覆盖 <code>p &gt; div</code>、表格层级、同类标签嵌套，
-            以及 SVG <code>foreignObject</code> 中重新进入 HTML 的组合。
+            规则先判断严格白名单，再检查已知黑名单；它只接收直接父子
+            tag，不扫描任意祖先，也不按 namespace 排除 SVG。对应测试分别断言
+            <code>p &gt; div</code>、表格层级、同类标签，以及 SVG 和
+            <code>foreignObject</code> 相关标签对的结果。普通
+            <code>&lt;template&gt;</code> 保持原生元素路径，但内容存放在
+            DocumentFragment，因此规则对 template 父标签直接放行。
           </p>
           <div class="callout warn">
             <strong>删节点后的控制流：</strong
@@ -971,8 +983,8 @@ return true</code></pre>
                 <div class="branch-target">
                   <strong>needRuntime</strong>
                   <p>
-                    登记 helper symbol，codegen 生成 withDirectives。它可与 props
-                    同时存在；v-show 只有该字段，v-model 两者都有。
+                    登记 helper symbol，codegen 生成 withDirectives。它可与
+                    props 同时存在；v-show 只有该字段，v-model 两者都有。
                   </p>
                 </div>
               </div>
@@ -980,7 +992,8 @@ return true</code></pre>
           </div>
           <p class="prose">
             <code>v-cloak</code> 是第三种实际结果：noop transform 返回空
-            <code>props</code>，也不提供 <code>needRuntime</code>，因此只在编译期被消费。
+            <code>props</code>，也不提供
+            <code>needRuntime</code>，因此只在编译期被消费。
           </p>
           <figure class="source-block">
             <figcaption class="source-caption">
@@ -1037,9 +1050,15 @@ exp
               <h3>v-text 为何多一层 toDisplayString</h3>
               <p>
                 <code>textContent</code>
-                接收展示文本。不能证明为编译期常量的表达式要经
-                <code>toDisplayString</code> 统一处理
-                null、对象等值；常量表达式则直接保留。
+                接收展示文本。<code>getConstantType</code> 返回
+                <code>NOT_CONSTANT</code> 时，表达式经
+                <code>toDisplayString</code> 处理
+                null、对象等展示语义；其他等级直接保留表达式。后者也包括运行时稳定的
+                setup const，并不都能在编译期求值。例如绑定元数据把
+                <code>obj</code> 标为 <code>SETUP_CONST</code> 时，<code
+                  >v-text="obj"</code
+                >
+                可直接生成 <code>textContent: $setup.obj</code>。
                 <code>v-html</code> 刻意不转义，内容可信性由调用方负责。
               </p>
             </article>
@@ -1082,8 +1101,9 @@ registerRuntimeHelpers({
           <p class="prose">
             transform 返回的是 helper <em>symbol</em>，不是字符串
             import。注册表把 symbol 映射成公开运行时名字；transform context
-            把用到的 symbol 记进 <code>RootNode.helpers</code>，generate 再按实际使用量生成
-            import 或浏览器版解构。没被选中的 helper 不出现在产物中。
+            把用到的 symbol 记进 <code>RootNode.helpers</code>，generate
+            再按实际使用量生成 import 或浏览器版解构。没被选中的 helper
+            不出现在产物中。
           </p>
         </section>
 
@@ -1203,30 +1223,566 @@ registerRuntimeHelpers({
   return baseResult
 }</code></pre>
           </figure>
-          <div class="diagram" aria-label="v-model 编译期数据变化">
-            <p class="diagram-title">baseTransform 返回值怎样被 DOM 层改写</p>
-            <div class="flow">
-              <div class="flow-node blue">
-                <strong>core baseTransform</strong
-                ><small>modelValue + onUpdate:modelValue</small>
-              </div>
-              <div class="arrow">→</div>
-              <div class="flow-node primary">
-                <strong>DOM 分派</strong
-                ><small>tag / type / dynamic v-bind</small>
-              </div>
-              <div class="arrow">→</div>
-              <div class="flow-node">
-                <strong>过滤 modelValue</strong
-                ><small>原生元素不重复设值</small>
-              </div>
-              <div class="arrow">→</div>
-              <div class="flow-node">
-                <strong>needRuntime</strong
-                ><small>helper + value + modifiers</small>
-              </div>
+          <figure class="engineering-diagram" id="dom-model-dispatch">
+            <div
+              class="engineering-scroll"
+              tabindex="0"
+              aria-label="可横向滚动的v-model 的编译期 helper 分派"
+            >
+              <svg
+                role="img"
+                aria-labelledby="dom-model-dispatch-title dom-model-dispatch-desc"
+                viewBox="0 0 1000 1340"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <title id="dom-model-dispatch-title">
+                  v-model 的编译期 helper 分派
+                </title>
+                <desc id="dom-model-dispatch-desc">
+                  先执行 core 转换；无 props 或组件直接返回。原生合法控件进入
+                  helper 分派，input 和自定义元素先检查显式 type，只有没有 type
+                  才检查动态 v-bind。file 和非法元素报错，不登记
+                  helper。其他分支登记 helper 后删除 modelValue，保留写回事件。
+                </desc>
+                <defs>
+                  <marker
+                    id="dom-model-dispatch-arrow"
+                    viewBox="0 0 10 10"
+                    refX="9"
+                    refY="5"
+                    markerWidth="7"
+                    markerHeight="7"
+                    orient="auto-start-reverse"
+                  >
+                    <path d="M 0 0 L 10 5 L 0 10 z" />
+                  </marker>
+                </defs>
+                <rect
+                  class="eng-node blue"
+                  x="250"
+                  y="25"
+                  width="430"
+                  height="62"
+                  rx="12"
+                />
+                <text class="eng-label" x="465.0" y="50" text-anchor="middle">
+                  baseTransform(dir, node, context)
+                </text>
+                <text class="eng-small" x="465.0" y="72" text-anchor="middle">
+                  先生成 modelValue 与 onUpdate:modelValue
+                </text>
+                <polygon
+                  class="eng-decision"
+                  points="465,95 655,145 465,195 275,145"
+                />
+                <text class="eng-label" x="465" y="140" text-anchor="middle">
+                  无 props，或是组件？
+                </text>
+                <text class="eng-code" x="465" y="162" text-anchor="middle">
+                  !props.length || COMPONENT
+                </text>
+                <rect
+                  class="eng-node violet"
+                  x="710"
+                  y="112"
+                  width="235"
+                  height="66"
+                  rx="12"
+                />
+                <text class="eng-label" x="827.5" y="138" text-anchor="middle">
+                  直接返回 baseResult
+                </text>
+                <text class="eng-small" x="827.5" y="160" text-anchor="middle">
+                  组件不进入原生 helper 分派
+                </text>
+                <polygon
+                  class="eng-decision"
+                  points="465,220 655,270 465,320 275,270"
+                />
+                <text class="eng-label" x="465" y="265" text-anchor="middle">
+                  是允许使用 v-model 的 DOM？
+                </text>
+                <text class="eng-code" x="465" y="287" text-anchor="middle">
+                  input / textarea / select / custom
+                </text>
+                <rect
+                  class="eng-node amber"
+                  x="710"
+                  y="231"
+                  width="235"
+                  height="86"
+                  rx="12"
+                />
+                <text class="eng-label" x="827.5" y="256" text-anchor="middle">
+                  非法元素：onError
+                </text>
+                <text class="eng-small" x="827.5" y="279" text-anchor="middle">
+                  默认 throw：转换终止
+                </text>
+                <text class="eng-small" x="827.5" y="300" text-anchor="middle">
+                  收集错误：转入下方后处理
+                </text>
+                <polygon
+                  class="eng-decision"
+                  points="465,335 655,385 465,435 275,385"
+                />
+                <text class="eng-label" x="465" y="380" text-anchor="middle">
+                  input 或自定义元素？
+                </text>
+                <text class="eng-code" x="465" y="402" text-anchor="middle">
+                  isCustomElement(tag)
+                </text>
+                <polygon
+                  class="eng-decision"
+                  points="815,338 935,385 815,432 695,385"
+                />
+                <text class="eng-label" x="815" y="381" text-anchor="middle">
+                  tag === select？
+                </text>
+                <text class="eng-small" x="815" y="402" text-anchor="middle">
+                  否则为 textarea
+                </text>
+                <rect
+                  class="eng-node primary"
+                  x="710"
+                  y="466"
+                  width="220"
+                  height="64"
+                  rx="12"
+                />
+                <text class="eng-label" x="820.0" y="493" text-anchor="middle">
+                  V_MODEL_SELECT
+                </text>
+                <text class="eng-small" x="820.0" y="514" text-anchor="middle">
+                  登记 needRuntime
+                </text>
+                <rect
+                  class="eng-node primary"
+                  x="710"
+                  y="546"
+                  width="220"
+                  height="64"
+                  rx="12"
+                />
+                <text class="eng-label" x="820.0" y="573" text-anchor="middle">
+                  V_MODEL_TEXT
+                </text>
+                <text class="eng-small" x="820.0" y="594" text-anchor="middle">
+                  textarea：登记 needRuntime
+                </text>
+                <polygon
+                  class="eng-decision"
+                  points="315,455 475,505 315,555 155,505"
+                />
+                <text class="eng-label" x="315" y="500" text-anchor="middle">
+                  找到显式 type？
+                </text>
+                <text class="eng-code" x="315" y="522" text-anchor="middle">
+                  findProp(node, &#x27;type&#x27;)
+                </text>
+                <polygon
+                  class="eng-decision"
+                  points="800,631 920,681 800,731 680,681"
+                />
+                <text class="eng-label" x="800" y="676" text-anchor="middle">
+                  动态 v-bind？
+                </text>
+                <text class="eng-code" x="800" y="698" text-anchor="middle">
+                  hasDynamicKeyVBind
+                </text>
+                <polygon
+                  class="eng-decision"
+                  points="315,576 475,626 315,676 155,626"
+                />
+                <text class="eng-label" x="315" y="621" text-anchor="middle">
+                  type 是指令节点？
+                </text>
+                <text class="eng-small" x="315" y="643" text-anchor="middle">
+                  :type（含同名简写）
+                </text>
+                <rect
+                  class="eng-node primary"
+                  x="30"
+                  y="684"
+                  width="195"
+                  height="64"
+                  rx="12"
+                />
+                <text class="eng-label" x="127.5" y="711" text-anchor="middle">
+                  V_MODEL_DYNAMIC
+                </text>
+                <text class="eng-small" x="127.5" y="732" text-anchor="middle">
+                  显式 :type：登记 needRuntime
+                </text>
+                <polygon
+                  class="eng-decision"
+                  points="315,709 475,759 315,809 155,759"
+                />
+                <text class="eng-label" x="315" y="754" text-anchor="middle">
+                  静态 type 的值
+                </text>
+                <text class="eng-code" x="315" y="776" text-anchor="middle">
+                  radio / checkbox / file / 其他
+                </text>
+                <rect
+                  class="eng-node amber"
+                  x="490"
+                  y="733"
+                  width="190"
+                  height="86"
+                  rx="12"
+                />
+                <text class="eng-label" x="585.0" y="758" text-anchor="middle">
+                  file：onError
+                </text>
+                <text class="eng-small" x="585.0" y="781" text-anchor="middle">
+                  默认 throw：转换终止
+                </text>
+                <text class="eng-small" x="585.0" y="802" text-anchor="middle">
+                  收集错误：转入下方后处理
+                </text>
+                <rect
+                  class="eng-node primary"
+                  x="30"
+                  y="867"
+                  width="185"
+                  height="64"
+                  rx="12"
+                />
+                <text class="eng-label" x="122.5" y="894" text-anchor="middle">
+                  V_MODEL_RADIO
+                </text>
+                <text class="eng-small" x="122.5" y="915" text-anchor="middle">
+                  登记 needRuntime
+                </text>
+                <rect
+                  class="eng-node primary"
+                  x="245"
+                  y="867"
+                  width="195"
+                  height="64"
+                  rx="12"
+                />
+                <text class="eng-label" x="342.5" y="894" text-anchor="middle">
+                  V_MODEL_CHECKBOX
+                </text>
+                <text class="eng-small" x="342.5" y="915" text-anchor="middle">
+                  登记 needRuntime
+                </text>
+                <rect
+                  class="eng-node primary"
+                  x="470"
+                  y="867"
+                  width="195"
+                  height="64"
+                  rx="12"
+                />
+                <text class="eng-label" x="567.5" y="894" text-anchor="middle">
+                  V_MODEL_TEXT
+                </text>
+                <text class="eng-small" x="567.5" y="915" text-anchor="middle">
+                  其他静态值 / type 无值
+                </text>
+                <rect
+                  class="eng-node primary"
+                  x="710"
+                  y="849"
+                  width="235"
+                  height="64"
+                  rx="12"
+                />
+                <text class="eng-label" x="827.5" y="876" text-anchor="middle">
+                  V_MODEL_DYNAMIC
+                </text>
+                <text class="eng-small" x="827.5" y="897" text-anchor="middle">
+                  无 type + 动态绑定
+                </text>
+                <rect
+                  class="eng-node primary"
+                  x="710"
+                  y="950"
+                  width="235"
+                  height="64"
+                  rx="12"
+                />
+                <text class="eng-label" x="827.5" y="977" text-anchor="middle">
+                  V_MODEL_TEXT
+                </text>
+                <text class="eng-small" x="827.5" y="998" text-anchor="middle">
+                  无 type + 无动态绑定
+                </text>
+                <rect
+                  class="eng-node blue"
+                  x="250"
+                  y="1130"
+                  width="430"
+                  height="78"
+                  rx="12"
+                />
+                <text class="eng-label" x="465" y="1156" text-anchor="middle">
+                  原生分支统一后置处理
+                </text>
+                <text class="eng-small" x="465" y="1181" text-anchor="middle">
+                  删除 modelValue，保留 onUpdate:modelValue
+                </text>
+                <text class="eng-small" x="465" y="1200" text-anchor="middle">
+                  onError 只收集错误时也执行这里
+                </text>
+                <rect
+                  class="eng-node violet"
+                  x="250"
+                  y="1250"
+                  width="430"
+                  height="60"
+                  rx="12"
+                />
+                <text class="eng-label" x="465" y="1285" text-anchor="middle">
+                  return baseResult
+                </text>
+
+                <path
+                  class="eng-edge"
+                  d="M465 87 V95"
+                  marker-end="url(#dom-model-dispatch-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M655 145 H710"
+                  marker-end="url(#dom-model-dispatch-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M465 195 V220"
+                  marker-end="url(#dom-model-dispatch-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M655 270 H710"
+                  marker-end="url(#dom-model-dispatch-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M465 320 V335"
+                  marker-end="url(#dom-model-dispatch-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M655 385 H695"
+                  marker-end="url(#dom-model-dispatch-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M815 432 V466"
+                  marker-end="url(#dom-model-dispatch-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M755 408 H675 V578 H710"
+                  marker-end="url(#dom-model-dispatch-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M465 435 V450 H315 V455"
+                  marker-end="url(#dom-model-dispatch-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M475 505 H650 V681 H680"
+                  marker-end="url(#dom-model-dispatch-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M315 555 V576"
+                  marker-end="url(#dom-model-dispatch-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M155 626 H127 V684"
+                  marker-end="url(#dom-model-dispatch-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M315 676 V709"
+                  marker-end="url(#dom-model-dispatch-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M155 759 H122 V867"
+                  marker-end="url(#dom-model-dispatch-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M315 809 V837 H342 V867"
+                  marker-end="url(#dom-model-dispatch-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M405 781 H445 V840 H567 V867"
+                  marker-end="url(#dom-model-dispatch-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M475 759 H490"
+                  marker-end="url(#dom-model-dispatch-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M800 731 V849"
+                  marker-end="url(#dom-model-dispatch-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M920 681 H950 V982 H945"
+                  marker-end="url(#dom-model-dispatch-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M930 498 H980 V1080"
+                  marker-end="url(#dom-model-dispatch-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M930 578 H965 V1080"
+                  marker-end="url(#dom-model-dispatch-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M30 716 H15 V1080"
+                  marker-end="url(#dom-model-dispatch-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M122.5 931 V1080"
+                  marker-end="url(#dom-model-dispatch-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M342.5 931 V1080"
+                  marker-end="url(#dom-model-dispatch-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M567.5 931 V1080"
+                  marker-end="url(#dom-model-dispatch-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M710 881 H700 V1080"
+                  marker-end="url(#dom-model-dispatch-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M710 982 H700"
+                  marker-end="url(#dom-model-dispatch-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M465 1080 V1130"
+                  marker-end="url(#dom-model-dispatch-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M465 1208 V1250"
+                  marker-end="url(#dom-model-dispatch-arrow)"
+                />
+                <path class="eng-edge" d="M15 1080 H997" />
+                <path
+                  class="eng-edge eng-dashed"
+                  d="M945 274 H997 V1080 H980"
+                  marker-end="url(#dom-model-dispatch-arrow)"
+                />
+                <path
+                  class="eng-edge eng-dashed"
+                  d="M680 776 H690 V1080"
+                  marker-end="url(#dom-model-dispatch-arrow)"
+                />
+                <circle class="eng-node primary" cx="15" cy="1080" r="3.5" />
+                <circle class="eng-node primary" cx="122.5" cy="1080" r="3.5" />
+                <circle class="eng-node primary" cx="342.5" cy="1080" r="3.5" />
+                <circle class="eng-node primary" cx="465" cy="1080" r="3.5" />
+                <circle class="eng-node primary" cx="567.5" cy="1080" r="3.5" />
+                <circle class="eng-node primary" cx="690" cy="1080" r="3.5" />
+                <circle class="eng-node primary" cx="700" cy="1080" r="3.5" />
+                <circle class="eng-node primary" cx="965" cy="1080" r="3.5" />
+                <circle class="eng-node primary" cx="980" cy="1080" r="3.5" />
+                <circle class="eng-node primary" cx="700" cy="982" r="3.5" />
+                <text class="eng-small" x="974" y="261" text-anchor="middle">
+                  收集
+                </text>
+                <text class="eng-small" x="465" y="1051" text-anchor="middle">
+                  成功 helper 分支在此汇合
+                </text>
+                <text class="eng-small" x="680" y="133" text-anchor="middle">
+                  是
+                </text>
+                <text class="eng-small" x="487" y="209" text-anchor="middle">
+                  否
+                </text>
+                <text class="eng-small" x="680" y="258" text-anchor="middle">
+                  否
+                </text>
+                <text class="eng-small" x="487" y="329" text-anchor="middle">
+                  是
+                </text>
+                <text class="eng-small" x="675" y="372" text-anchor="middle">
+                  否
+                </text>
+                <text class="eng-small" x="487" y="448" text-anchor="middle">
+                  是
+                </text>
+                <text class="eng-small" x="837" y="451" text-anchor="middle">
+                  是
+                </text>
+                <text class="eng-small" x="693" y="530" text-anchor="middle">
+                  否
+                </text>
+                <text class="eng-small" x="553" y="493" text-anchor="middle">
+                  否：才检查动态绑定
+                </text>
+                <text class="eng-small" x="337" y="568" text-anchor="middle">
+                  是
+                </text>
+                <text class="eng-small" x="105" y="650" text-anchor="middle">
+                  是
+                </text>
+                <text class="eng-small" x="337" y="691" text-anchor="middle">
+                  否
+                </text>
+                <text class="eng-code" x="166" y="816" text-anchor="middle">
+                  radio
+                </text>
+                <text class="eng-code" x="384" y="850" text-anchor="middle">
+                  checkbox
+                </text>
+                <text class="eng-small" x="610" y="843" text-anchor="middle">
+                  其他 / 无值
+                </text>
+
+                <text class="eng-small" x="822" y="781" text-anchor="middle">
+                  是
+                </text>
+                <text class="eng-small" x="930" y="830" text-anchor="middle">
+                  否
+                </text>
+              </svg>
             </div>
-          </div>
+            <figcaption>
+              <strong>先看显式 type，再看动态绑定。</strong>图中的 custom 指
+              <code>isCustomElement</code> 命中的 DOM 元素。<code
+                >&lt;input type="text" v-bind="obj" v-model="x"&gt;</code
+              >
+              沿静态 type 分支选择 <code>V_MODEL_TEXT</code>；<code
+                >&lt;input :type="kind" v-model="x"&gt;</code
+              >
+              选择 <code>V_MODEL_DYNAMIC</code>。所有成功的原生分支都登记
+              <code>needRuntime</code
+              >，沿实线汇入后置过滤，再返回；组件提前返回。虚线表示
+              <code>onError</code> 只收集错误后继续执行，默认
+              <code>throw</code> 在诊断节点终止。原生参数和 DEV 的
+              <code>:value</code> 检查在默认
+              <code>onError</code> 抛出时也会中断转换。
+            </figcaption>
+          </figure>
           <div class="code-walkthrough">
             <article class="code-note">
               <h3>先让 core 生成写回函数</h3>
@@ -1251,16 +1807,20 @@ registerRuntimeHelpers({
               <p>
                 <code>&lt;input :type="kind" v-model="x"&gt;</code> 可在
                 text/checkbox/radio 之间变化，编译期只能选
-                V_MODEL_DYNAMIC，让运行时根据真实 type 分派。无参数
-                <code>v-bind="obj"</code> 和动态参数 <code>v-bind:[key]</code>
-                也可能带来 type，同样走动态 helper。
+                V_MODEL_DYNAMIC，让运行时根据真实 type 分派。若没有找到显式
+                <code>type</code>，无参数 <code>v-bind="obj"</code> 和动态参数
+                <code>v-bind:[key]</code> 也会选择动态 helper。若已找到静态
+                <code>type="text"</code>，当前转换先采用文本分支，不再因动态
+                v-bind 改选 helper；例如
+                <code>&lt;input type="text" v-bind="obj" v-model="x"&gt;</code>
+                仍生成 <code>V_MODEL_TEXT</code>。
               </p>
             </article>
             <article class="code-note">
               <h3>file input 不是“尚未支持”</h3>
               <p>
-                浏览器禁止程序为 file input
-                写入文件路径，所以它无法实现 v-model 的双向绑定。编译器直接报错，
+                浏览器禁止程序为 file input 写入文件路径，所以它无法实现 v-model
+                的双向绑定。编译器直接报错，
                 避免用户得到一个看似有效却永远无法回填的模板。
               </p>
             </article>
@@ -1278,9 +1838,11 @@ assigner，监听真实 DOM 事件后调用它，最终执行“$event → 表�
             <article class="card">
               <h3>编译期可确定</h3>
               <p>
-                静态 type、元素 tag、动态键是否存在，以及动态
-                <code>:value</code> 是否会与模型争夺写入；最后一项只在 DEV
-                构建执行检查。
+                元素 tag、显式 type 以及动态键是否存在决定 helper 分派。DEV
+                的文本控件分支还会检查首个带表达式的
+                <code>v-bind</code>：只有它的静态参数是
+                <code>value</code> 才报告冲突。<code>:id</code> 排在
+                <code>:value</code> 前面时，当前检查不会继续查找后面的绑定。
               </p>
             </article>
             <article class="card">
@@ -1294,9 +1856,10 @@ assigner，监听真实 DOM 事件后调用它，最终执行“$event → 表�
               <h3>错误回调后的边界</h3>
               <p>
                 file input、非法元素、原生元素参数与 core 的不可写表达式会诊断；
-                DEV 构建还会检查动态 value 冲突。若 onError
-                只收集不抛出，转换仍可能返回降级产物；不能把“有
-                code”误当成模板有效。
+                DEV 文本控件分支命中上述首个
+                <code>:value</code> 绑定时也会诊断。
+                <code>onError</code>
+                若只收集不抛出，转换可能返回降级产物，供编辑器检查错误位置；报错模板的语义仍可能无效。
               </p>
             </article>
           </div>
@@ -1492,7 +2055,13 @@ const transformClick = (key: ExpressionNode, event: string) =&gt; {
               <p>
                 keyup.right 表示 ArrowRight，click.right
                 表示鼠标右键。resolveModifiers
-                必须先看事件类型；动态事件名无法提前确定，会保守地同时留下两类守卫。
+                必须先看事件类型。动态事件名下，left/right
+                同时进入两组，最终生成外层
+                <code>withKeys</code>、内层
+                <code>withModifiers</code>。外层要求事件带
+                <code>key</code>，没有 key
+                的普通鼠标事件会直接返回，不会退回鼠标按键判断；例如
+                <code>@[e].left</code> 在 e 为 click 时不会调用 handler。
               </p>
             </article>
             <article class="code-note">
@@ -1517,7 +2086,8 @@ handler → _withKeys(
           <div class="callout warn">
             <strong>click.right / click.middle：</strong>这类修饰符不仅过滤
             handler，还可能把事件名改为 contextmenu /
-            mouseup。动态事件名无法静态确定时，需要生成条件表达式安全重写。
+            mouseup。动态事件名下，条件表达式只在规范化后的 key 严格等于
+            <code>onClick</code> 时改写事件名。
           </div>
           <p class="prose">
             compiler-dom 的 v-on 转换本身没有新增 DOMErrorCodes。空表达式、非法
@@ -1544,31 +2114,455 @@ handler → _withKeys(
               createStaticVNode(html, count)。
             </p>
           </div>
-          <div class="diagram" aria-label="静态字符串化流程">
-            <p class="diagram-title">
-              stringifyStatic(children, context, parent)
-            </p>
-            <div class="flow">
-              <div class="flow-node">
-                <strong>扫描连续缓存节点</strong
-                ><small>统计节点与属性收益</small>
-              </div>
-              <div class="arrow">→</div>
-              <div class="flow-node">
-                <strong>安全性检查</strong
-                ><small>namespace / attrs / interpolation</small>
-              </div>
-              <div class="arrow">→</div>
-              <div class="flow-node primary">
-                <strong>serialize</strong><small>HTML 转义与属性格式</small>
-              </div>
-              <div class="arrow">→</div>
-              <div class="flow-node">
-                <strong>StaticVNode</strong
-                ><small>html + top-level count</small>
-              </div>
+          <figure class="engineering-diagram" id="dom-static-loop">
+            <div
+              class="engineering-scroll"
+              tabindex="0"
+              aria-label="可横向滚动的stringifyStatic 的候选扫描与结算回路"
+            >
+              <svg
+                role="img"
+                aria-labelledby="dom-static-loop-title dom-static-loop-desc"
+                viewBox="0 0 1000 1120"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <title id="dom-static-loop-title">
+                  stringifyStatic 的候选扫描与结算回路
+                </title>
+                <desc id="dom-static-loop-desc">
+                  插槽作用域直接退出。逐项扫描 children，缓存候选通过
+                  analyzeNode 后累计 chunk
+                  和两项计数；遇到分隔节点或列表结束时调用同一个结算函数。达到
+                  20 个节点或 5 个带属性元素才生成
+                  staticCall，再按父级整体缓存或独立缓存替换。分隔处按删除量调整下标，清空
+                  chunk 后继续扫描；末尾结算完成则退出。
+                </desc>
+                <defs>
+                  <marker
+                    id="dom-static-loop-arrow"
+                    viewBox="0 0 10 10"
+                    refX="9"
+                    refY="5"
+                    markerWidth="7"
+                    markerHeight="7"
+                    orient="auto-start-reverse"
+                  >
+                    <path d="M 0 0 L 10 5 L 0 10 z" />
+                  </marker>
+                </defs>
+                <rect
+                  class="eng-lane"
+                  x="40"
+                  y="20"
+                  width="405"
+                  height="1040"
+                  rx="12"
+                />
+                <rect
+                  class="eng-lane"
+                  x="530"
+                  y="20"
+                  width="430"
+                  height="1080"
+                  rx="12"
+                />
+                <text class="eng-lane-title" x="60" y="48" text-anchor="start">
+                  逐项扫描 children
+                </text>
+                <text class="eng-lane-title" x="550" y="48" text-anchor="start">
+                  stringifyCurrentChunk(i)
+                </text>
+                <rect
+                  class="eng-node blue"
+                  x="60"
+                  y="73"
+                  width="350"
+                  height="53"
+                  rx="12"
+                />
+                <text class="eng-code" x="235.0" y="104" text-anchor="middle">
+                  stringifyStatic(children, context, parent)
+                </text>
+                <polygon
+                  class="eng-decision"
+                  points="235,138 410,181 235,224 60,181"
+                />
+                <text class="eng-label" x="235" y="186" text-anchor="middle">
+                  context.scopes.vSlot &gt; 0？
+                </text>
+                <rect
+                  class="eng-node violet"
+                  x="448"
+                  y="151"
+                  width="105"
+                  height="60"
+                  rx="12"
+                />
+                <text class="eng-label" x="500.5" y="186" text-anchor="middle">
+                  直接返回
+                </text>
+                <rect
+                  class="eng-node blue"
+                  x="60"
+                  y="251"
+                  width="350"
+                  height="70"
+                  rx="12"
+                />
+                <text class="eng-label" x="235.0" y="276" text-anchor="middle">
+                  判定 isParentCached；i = 0
+                </text>
+                <text class="eng-code" x="235.0" y="299" text-anchor="middle">
+                  nc = ec = 0；currentChunk = []
+                </text>
+                <polygon
+                  class="eng-decision"
+                  points="235,343 410,390 235,437 60,390"
+                />
+                <text class="eng-label" x="235" y="395" text-anchor="middle">
+                  i &lt; children.length？
+                </text>
+                <polygon
+                  class="eng-decision"
+                  points="235,468 410,519 235,570 60,519"
+                />
+                <text class="eng-label" x="235" y="514" text-anchor="middle">
+                  已缓存且能字符串化？
+                </text>
+                <text class="eng-small" x="235" y="536" text-anchor="middle">
+                  analyzeNode 返回 [nc, ec]
+                </text>
+                <rect
+                  class="eng-node primary"
+                  x="60"
+                  y="615"
+                  width="350"
+                  height="73"
+                  rx="12"
+                />
+                <text class="eng-label" x="235.0" y="641" text-anchor="middle">
+                  累计 nc、ec；加入 currentChunk
+                </text>
+                <text class="eng-code" x="235.0" y="666" text-anchor="middle">
+                  父级整体缓存 / getCachedNode(child)
+                </text>
+                <rect
+                  class="eng-node blue"
+                  x="60"
+                  y="738"
+                  width="350"
+                  height="53"
+                  rx="12"
+                />
+                <text class="eng-label" x="235.0" y="770" text-anchor="middle">
+                  i++，继续扩展当前 chunk
+                </text>
+                <rect
+                  class="eng-node violet"
+                  x="60"
+                  y="854"
+                  width="350"
+                  height="64"
+                  rx="12"
+                />
+                <text class="eng-label" x="235.0" y="880" text-anchor="middle">
+                  分隔节点：调用结算函数
+                </text>
+                <text class="eng-code" x="235.0" y="903" text-anchor="middle">
+                  stringifyCurrentChunk(i)
+                </text>
+                <rect
+                  class="eng-node blue"
+                  x="60"
+                  y="961"
+                  width="350"
+                  height="79"
+                  rx="12"
+                />
+                <text class="eng-label" x="235.0" y="986" text-anchor="middle">
+                  i -= 返回的 deleteCount
+                </text>
+                <text class="eng-small" x="235.0" y="1009" text-anchor="middle">
+                  清空 nc、ec、currentChunk
+                </text>
+                <text class="eng-small" x="235.0" y="1029" text-anchor="middle">
+                  循环 i++，跳过保留的分隔节点
+                </text>
+                <rect
+                  class="eng-node violet"
+                  x="570"
+                  y="151"
+                  width="350"
+                  height="60"
+                  rx="12"
+                />
+                <text class="eng-label" x="745.0" y="176" text-anchor="middle">
+                  列表结束：调用结算函数
+                </text>
+                <text class="eng-small" x="745.0" y="198" text-anchor="middle">
+                  最后一个 chunk 也要结算
+                </text>
+                <polygon
+                  class="eng-decision"
+                  points="735,269 905,316 735,363 565,316"
+                />
+                <text class="eng-label" x="735" y="321" text-anchor="middle">
+                  nc &gt;= 20 或 ec &gt;= 5？
+                </text>
+                <rect
+                  class="eng-node primary"
+                  x="570"
+                  y="415"
+                  width="350"
+                  height="84"
+                  rx="12"
+                />
+                <text class="eng-label" x="745.0" y="440" text-anchor="middle">
+                  生成 createStaticVNode(html, count)
+                </text>
+                <text class="eng-small" x="745.0" y="464" text-anchor="middle">
+                  html = 当前 chunk 的序列化结果串接
+                </text>
+                <text class="eng-code" x="745.0" y="486" text-anchor="middle">
+                  count = currentChunk.length
+                </text>
+                <polygon
+                  class="eng-decision"
+                  points="735,551 905,601 735,651 565,601"
+                />
+                <text class="eng-label" x="735" y="606" text-anchor="middle">
+                  isParentCached？
+                </text>
+                <rect
+                  class="eng-node blue"
+                  x="550"
+                  y="722"
+                  width="190"
+                  height="110"
+                  rx="12"
+                />
+                <text class="eng-label" x="645.0" y="747" text-anchor="middle">
+                  父级整体缓存
+                </text>
+                <text class="eng-code" x="645.0" y="771" text-anchor="middle">
+                  children.splice
+                </text>
+                <text class="eng-small" x="645.0" y="793" text-anchor="middle">
+                  chunk 整段 → staticCall
+                </text>
+                <text class="eng-small" x="645.0" y="816" text-anchor="middle">
+                  不调整各子节点缓存槽
+                </text>
+                <rect
+                  class="eng-node blue"
+                  x="760"
+                  y="722"
+                  width="200"
+                  height="130"
+                  rx="12"
+                />
+                <text class="eng-label" x="860.0" y="747" text-anchor="middle">
+                  各节点独立缓存
+                </text>
+                <text class="eng-small" x="860.0" y="771" text-anchor="middle">
+                  首缓存 value = staticCall
+                </text>
+                <text class="eng-small" x="860.0" y="792" text-anchor="middle">
+                  删除其余 children
+                </text>
+                <text class="eng-small" x="860.0" y="813" text-anchor="middle">
+                  缓存表命中时：
+                </text>
+                <text class="eng-small" x="860.0" y="834" text-anchor="middle">
+                  删项、后续 index 左移
+                </text>
+                <rect
+                  class="eng-node violet"
+                  x="570"
+                  y="922"
+                  width="350"
+                  height="77"
+                  rx="12"
+                />
+                <text class="eng-label" x="745.0" y="947" text-anchor="middle">
+                  返回 deleteCount
+                </text>
+                <text class="eng-small" x="745.0" y="970" text-anchor="middle">
+                  未达阈值：0
+                </text>
+                <text class="eng-code" x="745.0" y="991" text-anchor="middle">
+                  已合并：currentChunk.length - 1
+                </text>
+                <rect
+                  class="eng-node violet"
+                  x="570"
+                  y="1040"
+                  width="350"
+                  height="53"
+                  rx="12"
+                />
+                <text class="eng-label" x="745.0" y="1072" text-anchor="middle">
+                  末尾结算完成，结束
+                </text>
+                <path
+                  class="eng-edge"
+                  d="M235 126 V138"
+                  marker-end="url(#dom-static-loop-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M410 181 H448"
+                  marker-end="url(#dom-static-loop-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M235 224 V251"
+                  marker-end="url(#dom-static-loop-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M235 321 V343"
+                  marker-end="url(#dom-static-loop-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M235 437 V468"
+                  marker-end="url(#dom-static-loop-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M235 570 V615"
+                  marker-end="url(#dom-static-loop-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M235 688 V738"
+                  marker-end="url(#dom-static-loop-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M235 791 V817 H20 V390 H60"
+                  marker-end="url(#dom-static-loop-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M410 519 H462 V886 H410"
+                  marker-end="url(#dom-static-loop-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M410 886 H498 V316 H565"
+                  marker-end="url(#dom-static-loop-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M410 390 H460 V242 H560 V181 H570"
+                  marker-end="url(#dom-static-loop-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M735 211 V269"
+                  marker-end="url(#dom-static-loop-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M735 363 V415"
+                  marker-end="url(#dom-static-loop-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M905 316 H980 V960 H920"
+                  marker-end="url(#dom-static-loop-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M735 499 V551"
+                  marker-end="url(#dom-static-loop-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M646 625 V685 H645 V722"
+                  marker-end="url(#dom-static-loop-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M824 625 V685 H860 V722"
+                  marker-end="url(#dom-static-loop-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M645 832 V895 H680 V922"
+                  marker-end="url(#dom-static-loop-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M860 852 V895 H790 V922"
+                  marker-end="url(#dom-static-loop-arrow)"
+                />
+                <path
+                  class="eng-edge eng-dashed"
+                  d="M570 960 H510 V1000 H410"
+                  marker-end="url(#dom-static-loop-arrow)"
+                />
+                <path
+                  class="eng-edge eng-dashed"
+                  d="M735 999 V1040"
+                  marker-end="url(#dom-static-loop-arrow)"
+                />
+                <path
+                  class="eng-edge"
+                  d="M235 1040 V1075 H20 V817"
+                  marker-end="url(#dom-static-loop-arrow)"
+                />
+                <text class="eng-small" x="425" y="168" text-anchor="middle">
+                  是
+                </text>
+                <text class="eng-small" x="256" y="243" text-anchor="middle">
+                  否
+                </text>
+                <text class="eng-small" x="256" y="454" text-anchor="middle">
+                  是
+                </text>
+                <text class="eng-small" x="484" y="230" text-anchor="middle">
+                  否
+                </text>
+                <text class="eng-small" x="256" y="598" text-anchor="middle">
+                  是
+                </text>
+                <text class="eng-small" x="434" y="667" text-anchor="middle">
+                  否
+                </text>
+                <text class="eng-small" x="933" y="300" text-anchor="middle">
+                  否
+                </text>
+                <text class="eng-small" x="756" y="400" text-anchor="middle">
+                  是
+                </text>
+                <text class="eng-small" x="627" y="677" text-anchor="middle">
+                  是
+                </text>
+                <text class="eng-small" x="881" y="677" text-anchor="middle">
+                  否
+                </text>
+                <text class="eng-small" x="459" y="980" text-anchor="middle">
+                  分隔处返回
+                </text>
+                <text class="eng-small" x="790" y="1025" text-anchor="middle">
+                  末尾调用返回
+                </text>
+              </svg>
             </div>
-          </div>
+            <figcaption>
+              <strong
+                >达到阈值也先继续收集，遇到分隔节点或列表结束才结算。</strong
+              ><code>nc</code> 统计 chunk 内全部节点，<code>ec</code>
+              统计带属性或绑定的元素，<code>count</code>
+              则是合并项的顶层数量。下方“五个带 class 的
+              span”沿候选成功分支累计至 <code>ec = 5</code>，在末尾生成
+              <code>createStaticVNode(html, 5)</code>；它的父级 children
+              整体缓存，因此走左侧替换分支。虚线表示结算函数返回到对应调用处；分隔节点保留，删除量修正保证下一次扫描仍从它后面开始。
+            </figcaption>
+          </figure>
           <figure class="source-block">
             <figcaption class="source-caption">
               <span
@@ -1709,7 +2703,9 @@ if (p.type === NodeTypes.DIRECTIVE &amp;&amp; p.name === 'bind') {
                 ><strong>候选节点怎样变成 HTML</strong
                 ><code>stringifyStatic.ts · stringifyElement</code></span
               >
-              <span class="source-version">源码删节；布尔属性与导入变量分支另述</span>
+              <span class="source-version"
+                >源码删节；布尔属性与导入变量分支另述</span
+              >
             </figcaption>
             <pre><code>function stringifyElement(node: ElementNode, context: TransformContext): string {
   let res = `&lt;${node.tag}`
@@ -1746,10 +2742,12 @@ if (p.type === NodeTypes.DIRECTIVE &amp;&amp; p.name === 'bind') {
           </figure>
           <div class="callout">
             <strong>这里省略了两类已单独测试的保护分支：</strong>布尔属性为
-            <code>false</code> 时不输出；<code>&lt;option :value="1"&gt;</code>
-            因 number property 与字符串 attribute 语义不同而在
-            <code>analyzeNode()</code> 阶段退出。测试还分别断言 v-html 保留原始
-            HTML、v-text 转义、以及 SVG/MathML 属性序列化。
+            <code>false</code> 时不输出；HTML option 的绑定 value
+            可能需要保留原始类型，当前对非静态 value 表达式统一退出，包含
+            <code>&lt;option :value="1"&gt;</code> 和
+            <code>&lt;option :value="'one'"&gt;</code>。普通
+            <code>value="1"</code> 属性可以字符串化。测试还分别断言 v-html
+            保留原始 HTML、v-text 转义、以及 SVG/MathML 属性序列化。
           </div>
           <div class="code-walkthrough">
             <article class="code-note">
@@ -1772,8 +2770,10 @@ if (p.type === NodeTypes.DIRECTIVE &amp;&amp; p.name === 'bind') {
               <h3>第二个参数是顶层节点数</h3>
               <p>
                 <code>createStaticVNode(html, count)</code>
-                可表示多个兄弟节点。runtime 在插入、移动或 hydration 时需要
-                count，才知道这一个 VNode 覆盖真实 DOM 中的哪段范围。
+                可表示多个兄弟节点。count 写入 <code>VNode.staticCount</code>，
+                水合时按这个数量认领已有的顶层 DOM 并确定末尾
+                anchor。首次插入由宿主函数返回实际
+                <code>el/anchor</code>；后续移动和删除沿这两个端点执行。
               </p>
             </article>
             <article class="code-note">
@@ -1804,22 +2804,37 @@ _createStaticVNode(
 后续 CacheExpression.index。</code></pre>
           </div>
           <div class="callout warn">
-            <strong>源码自己留下了未完项：</strong><code>analyzeNode()</code> 的
-            TODO 明确写着还要继续覆盖“innerHTML
-            与逐节点创建结果不同”的结构，例子就是 <code>&lt;p&gt;</code> 内放非
-            phrasing content。<code>stringifyStatic()</code>
-            真正会检查的是已知表格标签黑名单、属性与常量类型、
+            <strong>浏览器树修正规则尚未覆盖：</strong
+            ><code>&lt;p&gt;</code> 内放非 phrasing content 时，innerHTML
+            解析可能自动闭合 p，得到与逐节点创建不同的树。
+            <code>analyzeNode()</code> 的 TODO 记录了这个缺口。当前
+            <code>stringifyStatic()</code>
+            检查的是已知表格标签黑名单、属性与常量类型、
             <code>v-once</code>、<code>slot</code> 等退出条件。
             <code>validateHtmlNesting</code> 只是独立的开发期警告：它只调用
-            <code>onWarn()</code>，不会阻止节点被字符串化，生产构建也不会注册这项
-            transform。因此，这个 TODO 仍是当前实现没有完全覆盖的边界。
+            <code>onWarn()</code
+            >，不会阻止节点被字符串化，生产构建也不会注册这项 transform。例如
+            main 下的 p 含五个带 class 的 div 时，DEV
+            会逐个报告嵌套警告，但这个静态候选仍会生成
+            <code>createStaticVNode</code>。
           </div>
+          <p class="prose">
+            常量表达式由 <code>evaluateConstant()</code> 用
+            <code>new Function</code> 在编译期执行。候选由 core 的
+            <code>constType</code> 与
+            <code>analyzeNode()</code>
+            筛选；这些规则没有统一排除函数调用。比如五个连续的
+            <code
+              >&lt;span class="x"&gt;{{ (() =&gt; 'x')() }}&lt;/span&gt;</code
+            >
+            会把这个调用的结果 x 写入静态 HTML。
+          </p>
           <p class="prose">
             父级未整体缓存时，合并项中只有第一个 CacheExpression 的 value
             被替换为 <code>createStaticVNode</code>；其余位置从 children 与
             <code>context.cached</code> 中移除。父级 children
-            已整体缓存时，则直接在该缓存数组内替换连续区间。topLevelCount 告诉
-            runtime 这段 HTML 会创建多少个顶层节点，以便正确插入和移动。
+            已整体缓存时，则直接在该缓存数组内替换连续区间。两条路径都以合并项的数量作为顶层节点数，供水合认领已有
+            DOM。
           </p>
           <a
             class="source-link"
@@ -1934,7 +2949,7 @@ _createStaticVNode(
                 ><strong>固定版本生成结果</strong
                 ><code>compile(mainlineTemplate, options).code</code></span
               >
-              <span class="source-version">由 11cd09cf 源码生成；不是测试快照</span>
+              <span class="source-version">由 11cd09cf 源码编译生成</span>
             </figcaption>
             <pre><code>import {
   vModelDynamic as _vModelDynamic,
@@ -1961,19 +2976,20 @@ export function render(_ctx, _cache) {
   ])
 }</code></pre>
           </figure>
-          <div class="callout warn">
-            <strong>证据边界：</strong>仓库没有一条测试使用上面完全相同的 input。
+          <div class="callout">
+            <strong>对应测试：</strong>
             <code>transformStyle.spec.ts</code>、<code>vModel.spec.ts</code> 与
-            <code>vOn.spec.ts</code> 分别证明三个转换分支；这里的完整 code 是固定版本
-            编译结果，不能据此宣称“同一 Demo 已有集成回归测试”。
+            <code>vOn.spec.ts</code> 分别覆盖 style、model、on 的转换分支。
           </div>
           <div class="code-walkthrough">
             <article class="code-note">
               <h3>40 不是魔法数字</h3>
               <p>
                 动态 type/onUpdate/onKeyup 需要
-                <code>PROPS</code>（8）；原生事件在挂载和 hydration
-                阶段要处理，另带 <code>NEED_HYDRATION</code>（32）。按位或得到
+                <code>PROPS</code
+                >（8）；原生事件还需在水合时恢复监听器，因此另带
+                <code>NEED_HYDRATION</code>（32）。首次挂载本来就会遍历 props
+                注册监听器；这个标志主要避免水合优化跳过必须恢复的属性。按位或得到
                 40。
               </p>
             </article>
@@ -2030,7 +3046,9 @@ export function render(_ctx, _cache) {
                   </td>
                 </tr>
                 <tr>
-                  <td>v-model 与动态 <code>:value</code> 冲突</td>
+                  <td>
+                    文本类 v-model 的首个表达式 v-bind 为 <code>:value</code>
+                  </td>
                   <td>仅 <code>__DEV__</code></td>
                   <td>仍选择对应 v-model helper</td>
                 </tr>
@@ -2057,8 +3075,8 @@ export function render(_ctx, _cache) {
 
           <p class="prose">
             本 Demo 的 <code>PROPS</code> 让 renderer 只检查列出的三个动态键，
-            <code>NEED_HYDRATION</code> 则确保原生事件在挂载或 hydration 时处理。
-            具体 DOM 写入属于 runtime-dom 的 <code>patchProp.ts</code>，不在本页展开。
+            <code>NEED_HYDRATION</code> 则让水合路径恢复原生事件监听器。具体 DOM
+            写入属于 runtime-dom 的 <code>patchProp.ts</code>，不在本页展开。
           </p>
         </section>
 
@@ -2069,8 +3087,8 @@ export function render(_ctx, _cache) {
               <h2>测试到底证明了什么</h2>
             </div>
             <p>
-              每条证据都写清 Given / When / Then /
-              Mechanism。快照只证明这份固定输入的产物形状，不把未断言分支扩大成全局保证。
+              下面按输入、执行入口和断言结果对应到具体机制。AST
+              断言呈现中间状态，快照保存固定输入生成的代码形状。
             </p>
           </div>
           <div class="table-wrap">
@@ -2168,7 +3186,7 @@ export function render(_ctx, _cache) {
                     运行 DOM transformModel。<br /><strong>Then</strong> helpers
                     分别命中
                     TEXT/RADIO/CHECKBOX/SELECT/DYNAMIC；file、非法元素报错，DEV
-                    下动态 value 冲突也报错。
+                    下首个动态绑定是 value 的用例也报冲突。
                   </td>
                   <td>
                     core 生成写回函数，DOM 再选择控件 helper。<br /><code
@@ -2232,10 +3250,11 @@ export function render(_ctx, _cache) {
                     span；另测小树、table、slot、
                     v-once、未知属性、SVG/MathML。<br /><strong>When</strong>
                     compileWithStringify。<br /><strong>Then</strong> 达阈值变
-                    StaticVNode；不安全或不划算的候选保持 cache array。
+                    StaticVNode；未通过候选检查或未达阈值的节点保持 cache
+                    array。
                   </td>
                   <td>
-                    收益阈值与安全条件缺一不可。<br /><code
+                    候选检查与收益阈值共同决定是否字符串化。<br /><code
                       >stringifyStatic.spec.ts</code
                     >
                   </td>
@@ -2282,8 +3301,9 @@ test('should NOT error on static value binding alongside v-model', () =&gt; {
             <article class="code-note">
               <h3>#3596 测的是动态写入冲突</h3>
               <p>
-                <code>:value="test"</code> 每次 render 都可覆盖 v-model 管理的
-                DOM value，所以应警告；普通
+                <code>:value="test"</code> 会作为动态 prop 参与更新，可能与
+                v-model 管理的 DOM value 争夺写入。这个用例中它是首个带表达式的
+                v-bind，DEV 检查因此报告编译错误；普通
                 <code>value="test"</code>
                 只是初始默认值，不会在后续更新中争夺写入权。
               </p>
@@ -2305,16 +3325,16 @@ test('should NOT error on static value binding alongside v-model', () =&gt; {
           <div class="section-head">
             <div>
               <span class="section-no">10 / Boundaries</span>
-              <h2>已覆盖与未覆盖</h2>
+              <h2>适用范围</h2>
             </div>
             <p>
-              本页覆盖 compiler-dom 的客户端主路径和主要分支；同一 input Demo
-              尚无单条集成测试，相邻包和未测试组合也不算已证明。
+              本页解释 compiler-dom
+              的客户端主路径、平台分支，以及编译产物与运行时的消费接口。
             </p>
           </div>
           <div class="grid-2">
             <article class="card green">
-              <h3>源码与测试能直接支持</h3>
+              <h3>客户端主路径</h3>
               <ul>
                 <li>DOM 入口如何分两层合并 core、平台与用户转换。</li>
                 <li>
@@ -2327,17 +3347,11 @@ test('should NOT error on static value binding alongside v-model', () =&gt; {
                   v-model/v-on 的分派、helper
                   生成结果、主要错误路径与静态字符串化条件。
                 </li>
-                <li>固定输入由目标版本生成的 render code；它不是测试快照。</li>
               </ul>
             </article>
             <article class="card red">
-              <h3>不要从本页外推</h3>
+              <h3>实现限制与相邻层</h3>
               <ul>
-                <li>
-                  用户覆盖 directive transform、追加 node transform
-                  的任意组合没有专门的 compiler-dom 回归矩阵；合并顺序来自入口与
-                  core 源码。
-                </li>
                 <li>
                   DEV/生产差异来自条件编译分支；现有单测主要在 DEV
                   语义下断言诊断。
@@ -2359,8 +3373,8 @@ test('should NOT error on static value binding alongside v-model', () =&gt; {
           </div>
           <div class="callout">
             <strong>两层职责：</strong>compiler-core 决定“怎样把模板编成 VNode
-            程序”，compiler-dom
-            决定“浏览器平台里这段模板是什么、应生成哪些 helper 与 props”；两者通过
+            程序”，compiler-dom 决定“浏览器平台里这段模板是什么、应生成哪些
+            helper 与 props”；两者通过
             ParserOptions、NodeTransform、DirectiveTransform 和 helper symbol
             接起来。
           </div>

@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1160 1260" role="img" aria-labelledby="title desc">
+<title id="title">请求失效时 pending 槽位与模块缓存的竞争</title>
+<desc id="desc">同 URL 的请求 P1 正在运行时，非 HMR 失效更新节点 lastInvalidationTimestamp 并清缓存，但不删除 pending 槽位。请求 2 比较 P1 的旧时间戳后调用 abort，仅删除槽位并设置 P1 的 cleared 标志，再递归建立 P2。P1 继续完成，其结果不写缓存；旧 finally 因 cleared 为 true 不再删除 P2。P2 开始时间仍新于最近失效时间，才写新缓存并在自己的 finally 中删除槽位。</desc>
+<defs>
+<marker id="blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563eb"/></marker>
+<marker id="purple" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#7c3aed"/></marker>
+<marker id="red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#a8333e"/></marker>
+<marker id="green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#247449"/></marker>
+<marker id="gray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#526377"/></marker>
+</defs>
+<style>.race-text{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Noto Sans CJK SC",sans-serif;font-size:18px;fill:#14263c}.race-code{font-family:ui-monospace,"SFMono-Regular",Consolas,"PingFang SC",monospace;font-size:16px}.race-muted{fill:#526377}.race-small{font-size:16px}.race-heading{font-size:22px;font-weight:650}.race-title{font-size:30px;font-weight:700}.race-label{font-size:17px}.race-blue{fill:#1d4ed8}.race-purple{fill:#6d28d9}.race-red{fill:#a8333e}.race-green{fill:#247449}</style>
+<rect width="1160" height="1260" fill="#f7f9fc"/>
+<text x="36" y="46" class="race-text race-title" text-anchor="start">一次性清理守住 pending，时间戳守住模块缓存</text>
+<text x="36" y="80" class="race-text race-muted" text-anchor="start">client 节点 A 已存在，期间未再次失效；时间值仅为示意，cleared1/2 是各请求的闭包变量。</text>
+<rect x="28" y="105" width="1104" height="1124" rx="12" fill="#fff" stroke="#cbd5e1" stroke-width="1.6"/>
+<rect x="20" y="130" width="200" height="72" rx="12" fill="#edf4ff" stroke="#b4c9ef" stroke-width="1.6"/>
+<text x="120" y="160" class="race-text race-heading" text-anchor="middle">请求 1</text>
+<text x="120" y="186" class="race-text race-small race-muted" text-anchor="middle">P1 的转换与 finally</text>
+<path d="M120 205 V1154" fill="none" stroke="#526377" stroke-width="1.3" stroke-dasharray="4 7"/>
+<rect x="300" y="130" width="200" height="72" rx="12" fill="#edf4ff" stroke="#b4c9ef" stroke-width="1.6"/>
+<text x="400" y="160" class="race-text race-heading" text-anchor="middle">pending[url]</text>
+<text x="400" y="186" class="race-text race-small race-muted" text-anchor="middle">Environment 的 Map</text>
+<path d="M400 205 V1154" fill="none" stroke="#526377" stroke-width="1.3" stroke-dasharray="4 7"/>
+<rect x="590" y="130" width="200" height="72" rx="12" fill="#edf4ff" stroke="#b4c9ef" stroke-width="1.6"/>
+<text x="690" y="160" class="race-text race-heading" text-anchor="middle">模块图 / 节点 A</text>
+<text x="690" y="186" class="race-text race-small race-muted" text-anchor="middle">结果与失效时间</text>
+<path d="M690 205 V1154" fill="none" stroke="#526377" stroke-width="1.3" stroke-dasharray="4 7"/>
+<rect x="930" y="130" width="200" height="72" rx="12" fill="#edf4ff" stroke="#b4c9ef" stroke-width="1.6"/>
+<text x="1030" y="160" class="race-text race-heading" text-anchor="middle">请求 2</text>
+<text x="1030" y="186" class="race-text race-small race-muted" text-anchor="middle">检查 P1，再创建 P2</text>
+<path d="M1030 205 V1154" fill="none" stroke="#526377" stroke-width="1.3" stroke-dasharray="4 7"/>
+<path d="M47 220 V1154" fill="none" stroke="#526377" stroke-width="1.6" marker-end="url(#gray)"/>
+<text x="40" y="1188" class="race-text race-small race-muted" text-anchor="start">时间向下</text>
+<path d="M120 242 H400" fill="none" stroke="#2563eb" stroke-width="2.6" marker-end="url(#blue)"/>
+<text x="142" y="226" class="race-text race-label race-blue" text-anchor="start">t1 = 100，保存 P1</text>
+<rect x="288" y="261" width="225" height="75" rx="12" fill="#edf4ff" stroke="#b4c9ef" stroke-width="1.6"/>
+<text x="302" y="288" class="race-text race-label" text-anchor="start">槽位 = P1</text>
+<text x="302" y="310" class="race-text race-code" text-anchor="start">timestamp = 100</text>
+<text x="302" y="331" class="race-text race-code" text-anchor="start">abort = clearCache1</text>
+<rect x="57" y="268" width="186" height="86" rx="12" fill="#fff" stroke="#d5dce6" stroke-width="1.6"/>
+<text x="71" y="293" class="race-text race-small" text-anchor="start">load / transform 等待中</text>
+<text x="71" y="316" class="race-text race-small race-muted" text-anchor="start">插件 Promise 继续运行</text>
+<text x="71" y="341" class="race-text race-code" text-anchor="start">cleared1 = false</text>
+<path d="M690 359 H881 V384 H690" fill="none" stroke="#a8333e" stroke-width="2.6" marker-end="url(#red)"/>
+<text x="714" y="348" class="race-text race-label race-red" text-anchor="start">非 HMR invalidate，I = 150</text>
+<rect x="554" y="405" width="390" height="90" rx="12" fill="#fff3f2" stroke="#e5bfc1" stroke-width="1.6"/>
+<text x="572" y="432" class="race-text race-code" text-anchor="start">lastInvalidationTimestamp = 150</text>
+<text x="572" y="458" class="race-text race-code" text-anchor="start">transformResult = null</text>
+<text x="572" y="483" class="race-text race-small race-red" text-anchor="start">P1 仍在 pending；失效本身不 abort</text>
+<path d="M1030 527 H400" fill="none" stroke="#2563eb" stroke-width="2.6" marker-end="url(#blue)"/>
+<text x="650" y="513" class="race-text race-label race-blue" text-anchor="start">请求 2：t2 = 200，读取 P1</text>
+<path d="M1030 575 H690" fill="none" stroke="#2563eb" stroke-width="2.6" marker-end="url(#blue)"/>
+<text x="719" y="560" class="race-text race-label race-blue" text-anchor="start">查 A：100 ≤ 150，不能复用 P1</text>
+<path d="M1030 621 H400" fill="none" stroke="#a8333e" stroke-width="2.6" marker-end="url(#red)"/>
+<text x="610" y="607" class="race-text race-label race-red" text-anchor="start">调用 P1.abort()，仅清槽位</text>
+<rect x="288" y="642" width="225" height="86" rx="12" fill="#fff3f2" stroke="#e5bfc1" stroke-width="1.6"/>
+<text x="302" y="665" class="race-text race-label" text-anchor="start">clearCache1 操作</text>
+<text x="302" y="690" class="race-text race-code" text-anchor="start">delete(url)</text>
+<text x="302" y="716" class="race-text race-code" text-anchor="start">cleared1 = true</text>
+<text x="561" y="678" class="race-text race-label race-red" text-anchor="start">P1 的插件没有被取消。</text>
+<path d="M1030 750 H400" fill="none" stroke="#2563eb" stroke-width="2.6" marker-end="url(#blue)"/>
+<text x="629" y="735" class="race-text race-label race-blue" text-anchor="start">递归调用，t2′ = 201，保存 P2</text>
+<rect x="288" y="769" width="225" height="71" rx="12" fill="#edf4ff" stroke="#b4c9ef" stroke-width="1.6"/>
+<text x="302" y="795" class="race-text race-label" text-anchor="start">槽位 = P2</text>
+<text x="302" y="819" class="race-text race-code" text-anchor="start">timestamp = 201</text>
+<text x="884" y="819" class="race-text race-code" text-anchor="start">cleared2 = false</text>
+<path d="M120 876 H690" fill="none" stroke="#a8333e" stroke-width="2.6" marker-end="url(#red)"/>
+<text x="151" y="860" class="race-text race-label race-red" text-anchor="start">P1 完成：100 &gt; 150 为 false，不写缓存</text>
+<text x="137" y="902" class="race-text race-small race-muted" text-anchor="start">结果仍返回给请求 1 的原调用者。</text>
+<path d="M120 944 H400" fill="none" stroke="#a8333e" stroke-width="2.6" stroke-dasharray="5 6" marker-end="url(#red)"/>
+<text x="147" y="928" class="race-text race-label race-red" text-anchor="start">旧 finally：cleared1 已为 true</text>
+<text x="259" y="951" class="race-text race-heading race-red" text-anchor="start">×</text>
+<text x="450" y="949" class="race-text race-label race-red" text-anchor="start">跳过 delete(url)，槽位仍是 P2</text>
+<path d="M1030 1013 H690" fill="none" stroke="#247449" stroke-width="2.6" marker-end="url(#green)"/>
+<text x="709" y="995" class="race-text race-label race-green" text-anchor="start">P2 完成：201 &gt; 150，写新结果</text>
+<text x="709" y="1040" class="race-text race-small race-green" text-anchor="start">更新 A.transformResult 与 client ETag</text>
+<path d="M1030 1099 H400" fill="none" stroke="#247449" stroke-width="2.6" marker-end="url(#green)"/>
+<text x="641" y="1083" class="race-text race-label race-green" text-anchor="start">P2 自己的 finally：delete(url)</text>
+<rect x="288" y="1120" width="225" height="94" rx="12" fill="#eef8f0" stroke="#b4d2be" stroke-width="1.6"/>
+<text x="302" y="1144" class="race-text race-label" text-anchor="start">clearCache2 操作</text>
+<text x="302" y="1168" class="race-text race-code" text-anchor="start">cleared2 = true</text>
+<text x="302" y="1194" class="race-text race-label race-green" text-anchor="start">pending[url] 已空</text>
+<text x="559" y="1143" class="race-text race-small race-muted" text-anchor="start">写缓存还会检查当时最新的失效时间。</text>
+<text x="559" y="1174" class="race-text race-small race-muted" text-anchor="start">清理条件是闭包 cleared，不是槽位身份比较。</text>
+<text x="36" y="1244" class="race-text race-small race-muted" text-anchor="start">依据：transformRequest() / loadAndTransform() / invalidateModule()；abort 不取消 hooks，等号也算过期。</text>
+</svg>

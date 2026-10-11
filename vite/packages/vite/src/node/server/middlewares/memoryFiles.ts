@@ -6,9 +6,9 @@ import type { ViteDevServer } from '..'
 /**
  * 在 full bundle 开发模式下，从内存构建结果响应非 HTML 静态请求。
  *
- * HTML 继续交给 HTML 中间件注入开发客户端。其余请求先安全解码，再按无前导
+ * HTML 继续交给 indexHtml 中间件处理内存输出与 fallback。其余请求先安全解码，再按无前导
  * `/` 的构建文件名查询 memoryFiles；命中时处理 ETag、MIME、自定义响应头，
- * 并在响应完成后通知 bundledDev 此 payload 已真正送达客户端。
+ * 并在 finish 后登记发送完成；此事件表示交给操作系统，不是浏览器接收/执行确认。
  */
 export function memoryFilesMiddleware(
   server: ViteDevServer,
@@ -20,6 +20,7 @@ export function memoryFilesMiddleware(
   }
   const headers = server.config.server.headers
 
+  /** 查无前导斜杠的内存文件；HTML和未命中请求交给next，命中时发送内容或304。 */
   return function viteMemoryFilesMiddleware(req, res, next) {
     const cleanedUrl = cleanUrl(req.url!)
     if (cleanedUrl.endsWith('.html')) {
@@ -56,7 +57,7 @@ export function memoryFilesMiddleware(
         res.setHeader(name, headers[name]!)
       }
 
-      // 只在响应真正结束后标记，避免连接中断时提前推进懒构建状态。
+      // finish 表示响应已交底层发送；提前中断且没有 finish 时不登记 payload 交付。
       res.on('finish', () => bundledDev.markPayloadDelivered(filePath))
       return res.end(file.source)
     }

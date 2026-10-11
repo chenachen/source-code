@@ -41,7 +41,7 @@ describe('ReactDOMNativeEventHeuristic-test', () => {
     document.body.removeChild(container);
   });
 
-  /** `dispatchAndSetCurrentEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 在派发前把event赋给window.event，finally清为undefined，让更新优先级可模拟浏览器当前原生事件；不恢复先前event值。 */
   function dispatchAndSetCurrentEvent(el, event) {
     try {
       window.event = event;
@@ -51,19 +51,12 @@ describe('ReactDOMNativeEventHeuristic-test', () => {
     }
   }
 
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「ignores discrete events on a pending removed element」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：事件断言连接 DOMPluginEventSystem 的委托、合成与传播路径。
-   */
+  /** 布局effect安装原生Disable onclick，Form初active=true；派click并等act微任务后Submit ref为null，验证从window.event识别离散原生事件并及时提交移除；本例未向已移除按钮再派事件。 */
   it('ignores discrete events on a pending removed element', async () => {
     const disableButtonRef = React.createRef();
     const submitButtonRef = React.createRef();
 
-    /** `Form`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 初active=true，布局effect安装原生Disable onclick；关闭状态时Submit元素从树删除。 */
     function Form() {
       const [active, setActive] = React.useState(true);
 
@@ -71,7 +64,7 @@ describe('ReactDOMNativeEventHeuristic-test', () => {
         disableButtonRef.current.onclick = disableForm;
       });
 
-      /** `Form.disableForm`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 设active=false，触发离散点击产生的节点移除。 */
       function disableForm() {
         setActive(false);
       }
@@ -103,14 +96,14 @@ describe('ReactDOMNativeEventHeuristic-test', () => {
     // 我们假设浏览器不会允许用户点击它。
   });
 
-  /** 测试场景：验证「ignores discrete events on a pending removed event listener」描述的渲染、交互或错误处理结果。 */
+  /** 两按钮始终存在，Disable原生onclick使active=false；同act内显式flushSync后再点Submit，formSubmitted=false，验证提交布局effect已替换原生处理器为禁用实现。 */
   it('ignores discrete events on a pending removed event listener', async () => {
     const disableButtonRef = React.createRef();
     const submitButtonRef = React.createRef();
 
     let formSubmitted = false;
 
-    /** `Form`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 两按钮保持存在，布局effect按active替换Submit.onclick，测试显式flush后的原生监听更新。 */
     function Form() {
       const [active, setActive] = React.useState(true);
 
@@ -121,17 +114,17 @@ describe('ReactDOMNativeEventHeuristic-test', () => {
           : disabledSubmitForm;
       });
 
-      /** `Form.disableForm`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 设active=false，等待flushSync提交后禁用原生Submit处理器。 */
       function disableForm() {
         setActive(false);
       }
 
-      /** `Form.submitForm`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 置formSubmitted=true，禁用之后不应再执行旧提交函数。 */
       function submitForm() {
         formSubmitted = true; // 这不应该被调用
       }
 
-      /** `Form.disabledSubmitForm`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 禁用态原生onclick空操作，代替旧submit函数。 */
       function disabledSubmitForm() {
         // 表单已禁用。
       }
@@ -174,14 +167,14 @@ describe('ReactDOMNativeEventHeuristic-test', () => {
     expect(formSubmitted).toBe(false);
   });
 
-  /** 测试场景：验证「uses the newest discrete events on a pending changed event listener」描述的渲染、交互或错误处理结果。 */
+  /** 初active=false且Submit.onclick=null；Enable click后flushSync再Submit click，formSubmitted=true，验证离散更新提交安装最新原生处理器。 */
   it('uses the newest discrete events on a pending changed event listener', async () => {
     const enableButtonRef = React.createRef();
     const submitButtonRef = React.createRef();
 
     let formSubmitted = false;
 
-    /** `Form`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 初active=false，Enable原生click开启并在layout安装Submit handler。 */
     function Form() {
       const [active, setActive] = React.useState(false);
 
@@ -190,14 +183,14 @@ describe('ReactDOMNativeEventHeuristic-test', () => {
         submitButtonRef.current.onclick = active ? submitForm : null;
       });
 
-      /** `Form.enableForm`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 设active=true，让flushSync之后安装有效提交函数。 */
       function enableForm() {
         setActive(true);
       }
 
-      /** `Form.submitForm`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 置formSubmitted=true，本用例开启后应被调用。 */
       function submitForm() {
-        formSubmitted = true; // 这不应该被调用
+        formSubmitted = true; // 启用后应调用最新安装的提交处理器。
       }
 
       return (
@@ -237,15 +230,16 @@ describe('ReactDOMNativeEventHeuristic-test', () => {
     expect(formSubmitted).toBe(true);
   });
 
-  /** 测试场景：验证「mouse over should be user-blocking but not discrete」描述的渲染、交互或错误处理结果。 */
+  /** 布局effect安装原生mouseover更新isHover；事件后flushSync仍not hovered，act结束hovered，验证连续优先级不是离散同步更新。 */
   it('mouse over should be user-blocking but not discrete', async () => {
     const root = ReactDOMClient.createRoot(container);
 
     const target = React.createRef(null);
-    /** `Foo`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 原生mouseover更新isHover，以DOM文字检查连续调度时序。 */
     function Foo() {
       const [isHover, setHover] = React.useState(false);
       React.useLayoutEffect(() => {
+        /** 设hover=true，事件优先级从window.event而非React合成handler包装获得。 */
         target.current.onmouseover = () => setHover(true);
       });
       return <div ref={target}>{isHover ? 'hovered' : 'not hovered'}</div>;
@@ -269,15 +263,16 @@ describe('ReactDOMNativeEventHeuristic-test', () => {
     expect(container.textContent).toEqual('hovered');
   });
 
-  /** 测试场景：验证「mouse enter should be user-blocking but not discrete」描述的渲染、交互或错误处理结果。 */
+  /** 布局effect安装原生mouseenter更新isHover；flushSync时文字未变，act结束hovered，验证即使React插件不监听原生mouseenter也可从window.event判连续优先级。 */
   it('mouse enter should be user-blocking but not discrete', async () => {
     const root = ReactDOMClient.createRoot(container);
 
     const target = React.createRef(null);
-    /** `Foo`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 原生mouseenter更新isHover，测试未用于React插件注册的原生名称也有优先级映射。 */
     function Foo() {
       const [isHover, setHover] = React.useState(false);
       React.useLayoutEffect(() => {
+        /** 设hover=true，flushSync时尚不能把连续更新当离散提交。 */
         target.current.onmouseenter = () => setHover(true);
       });
       return <div ref={target}>{isHover ? 'hovered' : 'not hovered'}</div>;
@@ -296,18 +291,18 @@ describe('ReactDOMNativeEventHeuristic-test', () => {
 
       // 冲刷离散更新。
       ReactDOM.flushSync();
-      // 由于 mouse end 不是离散事件，此时尚不应完成更新。
+      // mouseenter/mouseover 使用连续事件优先级，flushSync 不会冲刷这项连续更新。
       expect(container.textContent).toEqual('not hovered');
     });
     expect(container.textContent).toEqual('hovered');
   });
 
-  /** 测试场景：验证「continuous native events flush as expected」描述的渲染、交互或错误处理结果。 */
+  /** 原生addEventListener mouseover内root.render(hovered=true)；立即无Scheduler日志/文字未变，waitFor后hovered，验证连续更新在后续调度提交；本例没有调用flushSync。 */
   it('continuous native events flush as expected', async () => {
     const root = ReactDOMClient.createRoot(container);
 
     const target = React.createRef(null);
-    /** `Foo`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 按hovered props记录Scheduler并输出文字，供原生监听内root.render后的调度断言。 */
     function Foo({hovered}) {
       const hoverString = hovered ? 'hovered' : 'not hovered';
       Scheduler.log(hoverString);
@@ -329,7 +324,7 @@ describe('ReactDOMNativeEventHeuristic-test', () => {
       });
       dispatchAndSetCurrentEvent(target.current, mouseEnterEvent);
 
-      // 由于 mouse end 不是离散事件，此时尚不应完成更新。
+      // 此处仅检查派发后的即时状态，尚未等待连续更新调度；本例没有调用flushSync。
       assertLog([]);
       expect(container.textContent).toEqual('not hovered');
 
@@ -339,18 +334,19 @@ describe('ReactDOMNativeEventHeuristic-test', () => {
     expect(container.textContent).toEqual('hovered');
   });
 
-  /** 测试场景：验证「should batch inside native events」描述的渲染、交互或错误处理结果。 */
+  /** 原生onclick连续两次setCount(countRef.current+1)，ref仅layout更新；act结束Count:1而非2，验证事件内两次读取同已提交值并批处理。 */
   it('should batch inside native events', async () => {
     const root = ReactDOMClient.createRoot(container);
 
     const target = React.createRef(null);
-    /** `Foo`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 布局同步countRef后安装onclick，两次setState读相同已提交ref，验证批处理。 */
     function Foo() {
       const [count, setCount] = React.useState(0);
       const countRef = React.useRef(-1);
 
       React.useLayoutEffect(() => {
         countRef.current = count;
+        /** 连续两次设置countRef.current+1；两次之间无提交则相同值，最终只增加一次。 */
         target.current.onclick = () => {
           setCount(countRef.current + 1);
           // 再次更新。若这些更新被批处理，由于尚未重新渲染且 `countRef` 未变化，这一步应为空操作。
@@ -374,12 +370,12 @@ describe('ReactDOMNativeEventHeuristic-test', () => {
     expect(container.textContent).toEqual('Count: 1');
   });
 
-  /** 测试场景：验证「should not flush discrete events at the end of outermost batchedUpdates」描述的渲染、交互或错误处理结果。 */
+  /** 原生onclick中unstable_batchedUpdates设count+1后立即记DOM；退出该包装仍Count:0，act微任务后Count:1，验证外层batch返回不是离散提交边界。 */
   it('should not flush discrete events at the end of outermost batchedUpdates', async () => {
     const root = ReactDOMClient.createRoot(container);
 
     let target;
-    /** `Foo`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 把count闭包捕获在原生onclick，记录unstable_batchedUpdates返回后仍旧DOM。 */
     function Foo() {
       const [count, setCount] = React.useState(0);
       return (
@@ -387,6 +383,7 @@ describe('ReactDOMNativeEventHeuristic-test', () => {
           ref={el => {
             target = el;
             if (target !== null) {
+              /** 在batch中更新count，再立即读取旧DOM日志，验证batch退出不会在该点同步提交。 */
               el.onclick = () => {
                 ReactDOM.unstable_batchedUpdates(() => {
                   setCount(count + 1);

@@ -4,7 +4,7 @@ import { ObservableV2 } from 'lib0/observable'
 
 import { createIdSet } from './ids.js'
 
-/** attribution JSON 的结构校验器；分别允许插入、删除、格式来源数组及对应数值位置。 */
+/** attribution JSON 的结构校验器；插入、删除、格式来源为字符串数组，`*At` 是单位由应用约定的数值元数据。 */
 export const attributionJsonSchema = s.$object({
   insert: s.$array(s.$string).optional,
   insertAt: s.$number.optional,
@@ -16,8 +16,10 @@ export const attributionJsonSchema = s.$object({
 
 /**
  * renderer 可附着到内容片段上的 attribution JSON 形状。
+ * insert/delete 是作者或来源标签数组；format 按格式键保存同类数组。对应的 *At 数值由应用解释，
+ * 不参与 Item clock 或可见长度计算；所有字段都可省略，空数组仍表示存在该类归因。
  *
- * @todo 字段可进一步改名为 `insertBy`、`insertAt` 等，以区分来源与位置。
+ * @todo 来源字段可改名为 `insertBy`、`deleteBy`，与 `*At` 数值元数据区分。
  *
  * @typedef {s.Unwrap<typeof attributionJsonSchema>} Attribution
  */
@@ -58,7 +60,7 @@ export class AttributedContent {
 /**
  * 把 Content 与 attribution 转为 Delta 的 renderer 抽象基类。
  *
- * 只有 `hasItem()` 声明接管的 Item 才进入 renderer；其余走通用快路径：存活内容原样输出、无 attribution、删除内容不可见。attribution 在原始变化之后改变时，实现应发出 `change`，让现有内容刷新归因。
+ * 只有 `hasItem()` 声明接管的 Item 才进入 renderer；其余走通用快路径。完整状态渲染时，存活内容无归因地输出，删除内容隐藏；事件渲染时，未接管的本次删除仍需生成 DeleteOp。attribution 在原始变化之后改变时，实现应发出 `change`，让现有内容刷新归因。
  *
  * @extends {ObservableV2<{change:(idset:IdSet,origin:any,local:boolean)=>void}>}
  */
@@ -87,14 +89,14 @@ export class AbstractRenderer extends ObservableV2 {
   /**
    * 把一个结构内容按 renderer 边界切片并追加到结果；子类必须实现。
    *
-   * mode 0 生成 retain；mode 1 只输出存活或有归因片段；mode 2 生成 insert，且无归因删除可生成 delete；mode 3 表示同事务新增后删除，有归因处必须 insert、无归因处不输出。
+   * mode 0 用于未变化片段，countable 可见内容生成 retain；mode 1 用于完整状态，只输出存活或有归因片段；mode 2 用于变化片段，存活/有归因内容可生成 insert，无归因删除生成 delete；mode 3 用于同事务新增后删除，有归因处必须 insert、无归因处不输出。格式标记不占可见长度，由 `toDelta` 的格式状态机解释。
    *
    * @param {Array<AttributedContent<any>>} _contents - 结果数组。
    * @param {number} _client - 内容 client。
-   * @param {number} _clock - 起始 clock。
+   * @param {number} _clock - 传入 Content 切片的起始 clock，不一定等于原 Item 起点。
    * @param {boolean} _deleted - 文档删除状态。
    * @param {AbstractContent} _content - 待切分内容。
-   * @param {0|1|2|3} _shouldRender - 内部输出模式。
+   * @param {0|1|2|3} _shouldRender - 内部输出模式；输出片段的 clock 应对应原内容位置，切片不得修改文档原 Content。
    */
   readContent (_contents, _client, _clock, _deleted, _content, _shouldRender) {
     error.methodUnimplemented()
@@ -103,7 +105,7 @@ export class AbstractRenderer extends ObservableV2 {
   /**
    * 计算 Item 在该 renderer 视图中的可见长度，供索引迭代器使用；非 countable 内容必须返回零。
    *
-   * @param {Item} _item - 待计算 Item。
+   * @param {Item} _item - 待计算 Item；结果应与 readContent 的可见片段长度一致，才能按同一坐标编辑。
    * @return {number} renderer 可见长度。
    */
   contentLength (_item) {
@@ -119,7 +121,7 @@ export const $renderer = AbstractRenderer.prototype.$type = s.$type('y:r', Abstr
  *
  * renderer 接管时委托 `contentLength()`；否则使用通用规则：存活且 countable 的内容取完整长度，其余为零。
  *
- * @param {AbstractRenderer?} renderer - 可选 renderer。
+ * @param {AbstractRenderer?} renderer - renderer；传 `null` 使用普通文档视图。
  * @param {Item} item - 待计算 Item。
  * @return {number} 当前视图可见长度。
  */

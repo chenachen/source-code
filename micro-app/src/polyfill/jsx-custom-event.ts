@@ -21,7 +21,16 @@ const eventLifeCycles = [
  * 包装 `React.createElement`，为 micro-app 元素桥接 `data` 属性和生命周期事件 props。
  *
  * @remarks
- * 普通元素直接透传。micro-app 元素使用包装后的 ref：先维护调用方原始 ref，再在真实元素存在时同步对象数据，并替换发生变化的生命周期监听器。
+ * 名称不匹配 micro-app 前缀的元素直接透传。匹配元素使用包装后的 ref：先转发调用方 ref，
+ * 再同步对象数据；本轮仍传入的函数型生命周期 props 发生变化时，移除旧监听并绑定新函数。
+ * 已省略或变成非函数的 prop 不进入替换分支，旧监听仍留在元素上。
+ * 生命周期事件名按 prop 小写归一化，但缓存字段仍使用原 prop 键；ref 反复调用时
+ * 依靠函数引用避免重复绑定。此工厂不负责卸载清理或 React 合成事件调度。
+ *
+ * @param type - React 元素类型；字符串匹配 micro-app 前缀时才进行自定义元素桥接。
+ * @param props - 保留原对象，浅复制后只替换 ref；data 由元素属性 setter 进入数据中心。
+ * @param children - 原样交给 React.createElement 的子节点。
+ * @returns 实际返回 React.createElement 的结果；这里的 void 声明未表达 React 返回类型。
  */
 function jsxCustomEvent (
   type: string | CallableFunction,
@@ -34,7 +43,11 @@ function jsxCustomEvent (
 
   const newProps = Object.assign({}, props)
 
-  // React 在创建、更新和卸载时调用 ref；元素为 null 时只需把状态转发给原始 ref。
+  /**
+   * React 每次回调 ref 时先转发原 ref，再同步真实元素的 data 与事件函数引用。
+   * @param element - 创建/更新时的宿主元素，卸载时为 null；null 元素不解除旧 DOM 监听。
+   * @remarks 对象 ref 直接写 current，未单独排除 props.ref 为 null 的情况。
+   */
   newProps.ref = (element: MicroElementType | null) => {
     if (typeof props.ref === 'function') {
       props.ref(element)
@@ -44,7 +57,7 @@ function jsxCustomEvent (
 
     // 只有拿到真实元素时才能同步自定义属性和 DOM 监听器。
     if (element) {
-      // `data` 只接受普通对象；引用未变化时避免触发自定义元素的重复数据更新。
+      // `data` 接受 [object Object] 标签的值；引用未变化时避免触发元素的重复数据更新。
       if (toString.call(props.data) === '[object Object]' && element.data !== props.data) {
         element.data = props.data
       }

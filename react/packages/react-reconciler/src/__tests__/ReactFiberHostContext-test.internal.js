@@ -17,7 +17,7 @@ let ConcurrentRoot;
 let DefaultEventPriority;
 let NoEventPriority;
 
-/** 验证根 HostContext 在 render 到 commit 的栈传递，尤其 prepareForCommit/resetAfterCommit 接收同一根上下文。 */
+/** 验证 prepareForCommit/resetAfterCommit 接收根容器 containerInfo；夹具让根容器与根 HostContext 引用相同。 */
 describe('ReactFiberHostContext', () => {
   /** 每例重载 reconciler 工厂、根标签和事件优先级常量，避免自定义 HostConfig 状态复用。 */
   beforeEach(() => {
@@ -36,9 +36,9 @@ describe('ReactFiberHostContext', () => {
   global.IS_REACT_ACT_ENVIRONMENT = true;
 
   /**
-   * Given 自定义 renderer 返回唯一 rootContext 与不同 childContext；When 创建 ConcurrentRoot 并提交嵌套宿主树；
-   * Then commit 前后钩子都收到 rootContext，而非当前子节点上下文。
-   * 验证机制：HostConfig 参数断言；对应 ReactFiberHostContext 的 push/pop 栈与 ReactFiberWorkLoop commit 包装。
+   * Given 根容器和根 HostContext 共用 rootContext，子 HostContext 为另一对象；When 提交嵌套宿主树；
+   * Then commit 前后钩子都收到创建容器时传入的 rootContext。
+   * 验证机制：HostConfig 参数断言；对应 commitBeforeMutationEffects 和 commitRoot 中的根容器参数传递。
    */
   // @gate __DEV__
   it('should send the context to prepareForCommit and resetAfterCommit', () => {
@@ -47,12 +47,12 @@ describe('ReactFiberHostContext', () => {
     let updatePriority: typeof DefaultEventPriority = NoEventPriority;
     // 构造最小 mutation renderer；无关宿主能力使用稳定空实现，突出 HostContext 传递。
     const Renderer = ReactFiberReconciler({
-      /** commit 开始前核对 reconciler 恢复到根 HostContext。 */
+      /** 核对提交前钩子的参数是根容器 containerInfo。 */
       prepareForCommit: function (hostContext) {
         expect(hostContext).toBe(rootContext);
         return null;
       },
-      /** commit 结束后再次核对根 HostContext，防止子上下文残留在栈顶。 */
+       /** 核对 mutation 完成后的宿主重置钩子收到相同根容器；此时 layout 尚未执行。 */
       resetAfterCommit: function (hostContext) {
         expect(hostContext).toBe(rootContext);
       },
@@ -60,7 +60,7 @@ describe('ReactFiberHostContext', () => {
       getRootHostContext: function () {
         return rootContext;
       },
-      /** 为嵌套宿主节点返回不同 childContext，证明 commit 钩子不会误取它。 */
+      /** 为嵌套宿主节点返回另一 HostContext，区分渲染上下文与提交钩子的容器参数。 */
       getChildHostContext: function () {
         return childContext;
       },
@@ -80,7 +80,7 @@ describe('ReactFiberHostContext', () => {
       appendInitialChild: function () {
         return null;
       },
-      /** 返回稳定时间戳，排除时间推进对调度的影响。 */
+       /** 旧 HostConfig now 字段的占位实现；本版 reconciler 实际从 Scheduler 读取时间。 */
       now: function () {
         return 0;
       },

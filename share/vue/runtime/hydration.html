@@ -9,6 +9,7 @@
     />
     <title>SSR 水合 · Vue Runtime 内核解剖</title>
     <link rel="stylesheet" href="assets/styles.css" />
+    <link rel="stylesheet" href="assets/engineering-diagrams.css" />
   </head>
   <body data-current="hydration.html">
     <header data-site-header></header>
@@ -90,11 +91,11 @@
                   <td>本地时间、条件分支数量</td>
                 </tr>
                 <tr>
-                  <td><strong>class / style / 普通 attribute 不同</strong></td>
+                  <td><strong>class / style / 已知 attribute 不同</strong></td>
                   <td>
                     失配检查负责诊断，不因检查本身自动校正；应修复服务端与客户端输入
                   </td>
-                  <td>主题 class、静态 aria-*、内联样式</td>
+                  <td>主题 class、静态 title、内联样式</td>
                 </tr>
                 <tr>
                   <td><strong>身份不同</strong></td>
@@ -194,13 +195,258 @@
             </div>
             <div class="sequence-item">
               <strong>子树各自推进游标</strong><br />Element children、Fragment
-              等分支会接住 <code>hydrateNode</code> 返回的下一个兄弟并处理各自范围内的多余节点；根入口本身不做通用尾节点扫描。
+              等分支会接住
+              <code>hydrateNode</code>
+              返回的下一个兄弟并处理各自范围内的多余节点；根入口本身不做通用尾节点扫描。
             </div>
             <div class="sequence-item">
               <strong>提交水合副作用</strong><br />执行 post-flush 生命周期与
               ref，容器记录 <code>_vnode</code>，以后进入普通更新流程。
             </div>
           </div>
+          <figure
+            class="eng-diagram"
+            id="eng-hydration-cursor-branches"
+            style="--diagram-width: 1320px"
+          >
+            <div
+              class="eng-scroll"
+              tabindex="0"
+              aria-label="工程图，可横向滚动"
+            >
+              <svg
+                class="eng-svg"
+                viewBox="0 0 1320 701"
+                role="img"
+                aria-labelledby="eng-hydration-cursor-branches-title eng-hydration-cursor-branches-desc"
+              >
+                <title id="eng-hydration-cursor-branches-title">
+                  水合游标的空文本、认领与结构失配分支
+                </title>
+                <desc id="eng-hydration-cursor-branches-desc">
+                  先判断缺失空 Text 的特殊情况，其余按分支判断 DOM
+                  是否可认领。空 Text 返回原
+                  node；匹配范围返回范围后节点；结构失配删除旧范围并以 next 为
+                  anchor 重挂，然后返回 next。
+                </desc>
+                <defs>
+                  <marker
+                    id="eng-hydration-cursor-branches-arrow"
+                    viewBox="0 0 10 8"
+                    refX="9"
+                    refY="4"
+                    markerWidth="10"
+                    markerHeight="8"
+                    orient="auto-start-reverse"
+                  >
+                    <path d="M 0 0 L 10 4 L 0 8 Z" fill="var(--brand)" />
+                  </marker>
+                </defs>
+                <text class="eng-heading" x="34" y="30" text-anchor="start">
+                  hydrateNode 如何消费 DOM：返回值决定父层下一次从哪里继续
+                </text>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="34"
+                    y="58"
+                    width="380"
+                    height="88"
+                    rx="10"
+                  />
+                  <text class="eng-heading" x="52" y="86" text-anchor="start">
+                    输入：当前 node 与客户端 vnode
+                  </text>
+                  <text class="eng-small" x="52" y="112" text-anchor="start">
+                    先写 vnode.el = node
+                  </text>
+                  <text class="eng-small" x="52" y="134" text-anchor="start">
+                    再按 VNode 类型分派
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M 264 146 V 177"
+                  marker-end="url(#eng-hydration-cursor-branches-arrow)"
+                />
+                <g>
+                  <polygon
+                    class="eng-decision"
+                    points="264,177.0 390.0,234 264,291.0 138.0,234"
+                  />
+                  <text class="eng-label" x="264" y="229" text-anchor="middle">
+                    期望空 Text，
+                  </text>
+                  <text class="eng-label" x="264" y="249" text-anchor="middle">
+                    当前 DOM 不是 Text？
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M 264 291 V 385"
+                  marker-end="url(#eng-hydration-cursor-branches-arrow)"
+                />
+                <text class="eng-label" x="289" y="334" text-anchor="start">
+                  是
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 390 234 H 911"
+                  marker-end="url(#eng-hydration-cursor-branches-arrow)"
+                />
+                <text class="eng-small" x="650" y="220" text-anchor="middle">
+                  否：按 Text / Element / Fragment 的匹配规则继续
+                </text>
+                <g>
+                  <polygon
+                    class="eng-decision"
+                    points="1038,177.0 1164.0,234 1038,291.0 912.0,234"
+                  />
+                  <text class="eng-label" x="1038" y="229" text-anchor="middle">
+                    当前分支能认领
+                  </text>
+                  <text class="eng-label" x="1038" y="249" text-anchor="middle">
+                    这个 DOM 范围？
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M 1038 291 V 331 H 668 V 385"
+                  marker-end="url(#eng-hydration-cursor-branches-arrow)"
+                />
+                <text class="eng-label" x="813" y="316" text-anchor="middle">
+                  是
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 1164 234 H 1286 V 359 H 1080 V 385"
+                  marker-end="url(#eng-hydration-cursor-branches-arrow)"
+                />
+                <text class="eng-label" x="1261" y="319" text-anchor="middle">
+                  否
+                </text>
+                <g>
+                  <rect
+                    class="eng-state"
+                    x="34"
+                    y="388"
+                    width="390"
+                    height="162"
+                    rx="10"
+                  />
+                  <text class="eng-heading" x="52" y="416" text-anchor="start">
+                    补空 Text，但不消费当前 node
+                  </text>
+                  <text class="eng-small" x="52" y="442" text-anchor="start">
+                    在 node 前插入一个空 Text
+                  </text>
+                  <text class="eng-small" x="52" y="464" text-anchor="start">
+                    vnode.el 指向新 Text
+                  </text>
+                  <text class="eng-small" x="52" y="486" text-anchor="start">
+                    返回原 node；下一个 VNode 仍可认领它
+                  </text>
+                  <text class="eng-small" x="52" y="508" text-anchor="start">
+                    没有把空 Text 当成 SSR Comment
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-state"
+                    x="475"
+                    y="388"
+                    width="375"
+                    height="162"
+                    rx="10"
+                  />
+                  <text class="eng-heading" x="493" y="416" text-anchor="start">
+                    复用匹配的 DOM 范围
+                  </text>
+                  <text class="eng-small" x="493" y="442" text-anchor="start">
+                    必要时修正文本、递归水合 children
+                  </text>
+                  <text class="eng-small" x="493" y="464" text-anchor="start">
+                    Fragment 还要认领/补建结束 anchor
+                  </text>
+                  <text class="eng-small" x="493" y="486" text-anchor="start">
+                    vnode.el 保留认领关系
+                  </text>
+                  <text class="eng-small" x="493" y="508" text-anchor="start">
+                    返回该范围后的下一个 DOM 节点
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-state"
+                    x="902"
+                    y="388"
+                    width="384"
+                    height="162"
+                    rx="10"
+                  />
+                  <text class="eng-heading" x="920" y="416" text-anchor="start">
+                    结构失配：handleMismatch
+                  </text>
+                  <text class="eng-small" x="920" y="442" text-anchor="start">
+                    先定位错误范围后的 next
+                  </text>
+                  <text class="eng-small" x="920" y="464" text-anchor="start">
+                    删除旧范围，再 patch(null, vnode, ..., next)
+                  </text>
+                  <text class="eng-small" x="920" y="486" text-anchor="start">
+                    Fragment 要越过完整配对范围
+                  </text>
+                  <text class="eng-small" x="920" y="508" text-anchor="start">
+                    返回 next；新节点不是下一轮输入
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M 229 550 V 621 H 473"
+                  marker-end="url(#eng-hydration-cursor-branches-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 668 550 V 587"
+                  marker-end="url(#eng-hydration-cursor-branches-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 1094 550 V 621 H 851"
+                  marker-end="url(#eng-hydration-cursor-branches-arrow)"
+                />
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="475"
+                    y="589"
+                    width="375"
+                    height="82"
+                    rx="10"
+                  />
+                  <text class="eng-heading" x="493" y="617" text-anchor="start">
+                    hydrateChildren 接住返回值
+                  </text>
+                  <text class="eng-small" x="493" y="643" text-anchor="start">
+                    把返回值作为下一个 VNode 的 node
+                  </text>
+                  <text class="eng-small" x="493" y="665" text-anchor="start">
+                    消费位置由子树范围决定，next 可为 null
+                  </text>
+                </g>
+              </svg>
+            </div>
+            <figcaption>
+              图选择 Text、Element、Fragment
+              的关键分支；其他类型的消费规则见下方矩阵。依据
+              <code>hydrateNode</code>、<code>hydrateChildren</code> 与
+              <code>handleMismatch</code>，对应 empty text node in
+              slot、complete mismatch 等用例。父层还有 VNode 但 next 为 null
+              时，按普通挂载补缺失项；VNode 已遍历完便返回 next。Element
+              调用者会清理多余 children；根
+              <code>hydrate()</code> 不接返回游标，也不统一扫描根尾部兄弟。
+            </figcaption>
+          </figure>
           <pre><code>// 不是源码逐字复制，而是水合游标的概念骨架
 function hydrateNode(node, vnode): Node | null {
   vnode.el = node
@@ -221,10 +467,15 @@ function hydrateNode(node, vnode): Node | null {
           </p>
           <div class="callout warm">
             <strong>根入口的边界：</strong><code>hydrate()</code> 调用
-            <code>hydrateNode(container.firstChild, vnode)</code> 后没有接住返回值，因此不能据此推出“根 VNode 后的额外 sibling 会被统一删除”。
-            多余节点清理是 <code>hydrateElement</code>、Fragment 等具体范围的职责；根容器额外兄弟是另一条边界，不能套用 element children 的保证。
+            <code>hydrateNode(container.firstChild, vnode)</code>
+            后没有接住返回值，因此不能据此推出“根 VNode 后的额外 sibling
+            会被统一删除”。 多余节点清理是 <code>hydrateElement</code>、Fragment
+            等具体范围的职责；根容器额外兄弟是另一条边界，不能套用 element
+            children 的保证。
           </div>
-          <pre data-source-file="vue/packages/runtime-core/src/hydration.ts"><code>  const hydrate: RootHydrateFunction = (vnode, container) =&gt; {
+          <pre
+            data-source-file="vue/packages/runtime-core/src/hydration.ts"
+          ><code>  const hydrate: RootHydrateFunction = (vnode, container) =&gt; {
     if (!container.hasChildNodes()) {
       ;(__DEV__ || __FEATURE_PROD_HYDRATION_MISMATCH_DETAILS__) &amp;&amp;
         warn(
@@ -260,7 +511,9 @@ function hydrateNode(node, vnode): Node | null {
                   <td><strong>Text</strong></td>
                   <td>DOM nodeType === TEXT</td>
                   <td>写回 el；文本不同则修正 node.data</td>
-                  <td>空文本在 SSR 中由注释占位</td>
+                  <td>
+                    空 Text 通常没有 SSR 节点，客户端补建；空条件分支是 Comment
+                  </td>
                 </tr>
                 <tr>
                   <td><strong>Comment</strong></td>
@@ -285,7 +538,9 @@ function hydrateNode(node, vnode): Node | null {
                 <tr>
                   <td><strong>Element</strong></td>
                   <td>DOM nodeType 与 tagName</td>
-                  <td>推导 namespace 上下文，补事件/动态属性；递归水合 children</td>
+                  <td>
+                    推导 namespace 上下文，补事件/动态属性；递归水合 children
+                  </td>
                   <td>tag、文本、class/style/attr 不同</td>
                 </tr>
                 <tr>
@@ -303,12 +558,24 @@ function hydrateNode(node, vnode): Node | null {
                 <tr>
                   <td><strong>Suspense</strong></td>
                   <td>当前已解析分支的 DOM</td>
-                  <td>创建边界，水合 activeBranch，继续跟踪异步依赖</td>
+                  <td>
+                    以 pendingBranch = ssContent 水合；依赖清零后转为
+                    activeBranch
+                  </td>
                   <td>客户端依赖状态与服务端不同</td>
                 </tr>
               </tbody>
             </table>
           </div>
+          <p>
+            Suspense
+            的服务器渲染器输出默认内容分支并等待其中异步组件，失败交给错误处理，
+            不按 timeout 自动输出 fallback。客户端水合时先创建 isHydrating
+            边界， 将 ssContent 记为 pendingBranch 并认领已显示的 SSR DOM；此时
+            activeBranch 仍为空。 依赖清零后 resolve
+            跳过普通卸载和移动，只把该分支记为 activeBranch、清空
+            pendingBranch， 再释放已缓冲的提交后副作用。
+          </p>
         </section>
 
         <section class="article-section prose" id="element-component">
@@ -337,8 +604,9 @@ function hydrateNode(node, vnode): Node | null {
               排入 post-render 队列。
             </li>
             <li>
-              <strong>ref：</strong>等提交完成再设置，避免用户在 ref
-              回调中看到半水合树。
+              <strong>ref：</strong>非空字符串 ref 和 Ref 对象赋值排入
+              post-render； 函数 ref
+              在当前节点水合后同步调用，此时其他兄弟或异步子树可能仍未完成。
             </li>
           </ul>
           <h3>组件水合仍会创建完整实例</h3>
@@ -372,10 +640,12 @@ function hydrateNode(node, vnode): Node | null {
             </article>
             <article class="card">
               <span class="card-label">CHECK-ONLY PROPS</span>
-              <h3>class / style / attribute：报告来源问题</h3>
+              <h3>class / style / 已知 attribute：报告来源问题</h3>
               <p>
                 <code>propHasMismatch</code>
-                比较归一化结果并发出警告，但检查本身不校正 DOM。只有事件、动态
+                比较 class、style 以及已知 HTML/SVG 属性的归一化结果并发出警告，
+                但检查本身不校正 DOM；此处不会逐一诊断 aria-*、data-*
+                等任意属性。只有事件、动态
                 prop、表单值等原本就必须水合的字段，才会因各自规则另走
                 <code>patchProp</code>。
               </p>
@@ -450,9 +720,19 @@ patch(null, vnode, container, next, ...)</code></pre>
           <p>
             某些页面故意让服务端与客户端不同，例如用户时区格式、本地化相对时间、浏览器扩展注入
             class。Vue 允许在元素上按类型抑制
-            mismatch：text、children、class、style、attribute。它主要抑制对应类型的
-            mismatch 警告，不会跳过认领流程；文本仍会改成客户端值，多余 children
-            仍会被清理。它也不是修复不确定性的手段。
+            mismatch：text、children、class、style、attribute。允许失配会抑制读取该声明的
+            检查路径中的警告，不会跳过认领流程；元素文本仍会改成客户端值，多余
+            children 仍会被清理。
+          </p>
+          <p>
+            元素文本内容和 children 结构差异从本元素向上查找最近一处
+            <code>data-allow-mismatch</code>，不合并多个祖先的配置。例如外层允许
+            children、内层只允许 class，内层文本差异不会继承外层的允许规则。
+            class、style 和 attribute 只读本元素上的声明。独立 Text VNode
+            的检查则直接警告： <code>h('div', 'bar')</code> 的元素文本路径会读取
+            text 声明，
+            <code>h('div', null, [createTextVNode('bar')])</code> 的独立 Text
+            路径不会读取它。
           </p>
           <div class="callout">
             调试失配时先找第一个警告，而不是最后一个。父层结构错位会让游标偏移，随后产生一串看似无关的子节点警告。
@@ -487,7 +767,10 @@ patch(null, vnode, container, next, ...)</code></pre>
                 <tr>
                   <td><strong>SVG/MathML</strong></td>
                   <td>只按 HTML tagName 判断</td>
-                  <td>tagName 负责当前 Element 的匹配；namespace 继续约束属性与 children 的宿主语义</td>
+                  <td>
+                    tagName 负责当前 Element 的匹配；namespace 继续约束属性与
+                    children 的宿主语义
+                  </td>
                   <td>节点被错误替换，属性语义失真</td>
                 </tr>
                 <tr>
@@ -511,7 +794,10 @@ patch(null, vnode, container, next, ...)</code></pre>
           <h2>懒水合：推迟的是组件认领，不是服务端可见内容</h2>
           <p>
             Vue 3.5 的异步组件可配置 hydration strategy。HTML
-            仍由服务端输出，页面也能展示。客户端会先创建异步 wrapper；若组件尚未解析，还会先执行 loader。loader resolve 后才注册 hydration strategy，条件触发时再认领内部组件的 SSR DOM。它推迟的是内部组件水合，不是 wrapper 创建，也不是异步模块下载。
+            仍由服务端输出，页面也能展示。客户端会先创建异步
+            wrapper；若组件尚未解析，还会先执行 loader。loader resolve 后才注册
+            hydration strategy，条件触发时再认领内部组件的 SSR
+            DOM。它推迟的是内部组件水合，不是 wrapper 创建，也不是异步模块下载。
           </p>
           <div class="table-wrap">
             <table>
@@ -552,7 +838,10 @@ patch(null, vnode, container, next, ...)</code></pre>
                   <td><strong>自定义策略</strong></td>
                   <td>用户定义调度器</td>
                   <td>业务优先级、实验性加载策略</td>
-                  <td>必须返回清理函数并处理组件已卸载</td>
+                  <td>
+                    创建监听器、observer 或定时任务时返回清理函数；Vue 在
+                    beforeUnmount 调用它
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -564,48 +853,82 @@ patch(null, vnode, container, next, ...)</code></pre>
           >
             <div class="flow-step">
               <span class="flow-index">01</span
-              ><span class="flow-copy"><strong>AsyncComponentWrapper 已创建</strong
-                ><small>组件实例和外层 render effect 已存在，SSR DOM 仍未由内部组件认领。</small></span
-              ><span class="flow-file">__asyncHydrate(el, instance, hydrate)</span>
+              ><span class="flow-copy"
+                ><strong>AsyncComponentWrapper 已创建</strong
+                ><small
+                  >组件实例和外层 render effect 已存在，SSR DOM
+                  仍未由内部组件认领。</small
+                ></span
+              ><span class="flow-file"
+                >__asyncHydrate(el, instance, hydrate)</span
+              >
             </div>
             <div class="flow-join"></div>
             <div class="flow-step">
               <span class="flow-index">02</span
-              ><span class="flow-copy"><strong>resolvedComp ? 直接继续 : load()</strong
-                ><small>未解析时先启动 loader；resolve 后还要检查 instance 未卸载。</small></span
+              ><span class="flow-copy"
+                ><strong>resolvedComp ? 直接继续 : load()</strong
+                ><small
+                  >未解析时先启动 loader；resolve 后还要检查 instance
+                  未卸载。</small
+                ></span
               ><span class="flow-file">load().then(...doHydrate)</span>
             </div>
             <div class="flow-join"></div>
             <div class="flow-step">
               <span class="flow-index">03</span
-              ><span class="flow-copy"><strong>注册 hydration strategy</strong
-                ><small>策略拿到 performHydrate 和 DOM 范围遍历器；teardown 挂到 beforeUnmount。</small></span
-              ><span class="flow-file">idle / visible / media / interaction</span>
+              ><span class="flow-copy"
+                ><strong>注册 hydration strategy</strong
+                ><small
+                  >策略拿到 performHydrate 和 DOM 范围遍历器；teardown 挂到
+                  beforeUnmount。</small
+                ></span
+              ><span class="flow-file"
+                >idle / visible / media / interaction</span
+              >
             </div>
             <div class="flow-join"></div>
             <div class="flow-step">
               <span class="flow-index">04</span
-              ><span class="flow-copy"><strong>条件触发 → performHydrate</strong
-                ><small>仍连在 DOM、且等待期间没有被父更新接管，才执行 hydrate。</small></span
+              ><span class="flow-copy"
+                ><strong>条件触发 → performHydrate</strong
+                ><small
+                  >仍连在 DOM、且等待期间没有被父更新接管，才执行
+                  hydrate。</small
+                ></span
               ><span class="flow-file">hydrate()</span>
             </div>
           </div>
           <div class="branch-grid">
             <div class="branch">
               <strong>父树先更新</strong
-              ><span><code>beforeUpdate</code> 把 <code>patched</code> 置 true；后续策略触发只警告并跳过过期水合，客户端 patch 已接管。</span>
+              ><span
+                ><code>beforeUpdate</code> 把 <code>patched</code> 置
+                true；后续策略触发只警告并跳过过期水合，客户端 patch
+                已接管。</span
+              >
             </div>
             <div class="branch">
               <strong>loader 期间卸载</strong
-              ><span><code>instance.isUnmounted</code> 阻止策略注册；若策略已经注册，<code>beforeUnmount</code> 执行 teardown。</span>
+              ><span
+                ><code>instance.isUnmounted</code>
+                阻止策略注册；若策略已经注册，<code>beforeUnmount</code> 执行
+                teardown。</span
+              >
             </div>
             <div class="branch">
               <strong>节点已断开</strong
-              ><span>起点原本连接但触发时不再 <code>isConnected</code>，或已无 parentNode，直接退出。</span>
+              ><span
+                >起点原本连接但触发时不再 <code>isConnected</code>，或已无
+                parentNode，直接退出。</span
+              >
             </div>
             <div class="branch">
               <strong>正常触发</strong
-              ><span>认领服务端节点；interaction 策略还会重放最初事件，避免用户第一次点击被吞掉。</span>
+              ><span
+                >认领服务端节点；interaction
+                策略还会重放最初事件，避免用户第一次点击被吞掉。</span
+              >
             </div>
           </div>
           <div class="callout warm">
@@ -615,9 +938,14 @@ patch(null, vnode, container, next, ...)</code></pre>
           </div>
 
           <details class="source-layer">
-            <summary>连续源码：loader → strategy → trigger，以及 patched/unmounted/disconnected 旁路</summary>
+            <summary>
+              连续源码：loader → strategy → trigger，以及
+              patched/unmounted/disconnected 旁路
+            </summary>
             <div>
-              <pre data-source-file="vue/packages/runtime-core/src/apiAsyncComponent.ts"><code>    __asyncHydrate(el, instance, hydrate) {
+              <pre
+                data-source-file="vue/packages/runtime-core/src/apiAsyncComponent.ts"
+              ><code>    __asyncHydrate(el, instance, hydrate) {
       // 延迟水合等待期间组件可能已被父级 patch 或节点已被移除。两种情况下都不能再
       // 用旧 SSR DOM 执行 hydrate，否则会覆盖新状态或操作脱离文档的节点。
       const wasConnected = el.isConnected
@@ -659,13 +987,16 @@ patch(null, vnode, container, next, ...)</code></pre>
 
           <h3>浏览器测试把三条时序分别锁住</h3>
           <p>
-            idle case 明确先手动 resolve loader，再等待 idle hydration；media case
-            证明触发前发生 patch 时会跳过旧水合；custom teardown 则证明未触发便卸载时会释放策略资源。
+            idle case 明确先手动 resolve loader，再等待 idle hydration；media
+            case 证明触发前发生 patch 时会跳过旧水合；custom teardown
+            则证明未触发便卸载时会释放策略资源。
           </p>
           <details class="source-layer">
             <summary>e2e · loader 顺序、patched 旁路与 teardown</summary>
             <div>
-              <pre data-source-file="vue/packages/vue/__tests__/e2e/hydrationStrategies.spec.ts"><code>  test('idle', async () =&gt; {
+              <pre
+                data-source-file="vue/packages/vue/__tests__/e2e/hydrationStrategies.spec.ts"
+              ><code>  test('idle', async () =&gt; {
     const messages: string[] = []
     page().on('console', e =&gt; messages.push(e.text()))
 
@@ -680,7 +1011,9 @@ patch(null, vnode, container, next, ...)</code></pre>
     expect(messages.slice(1)).toMatchObject(['resolve', 'busy', 'hydrated'])
     await assertHydrationSuccess()
   })</code></pre>
-              <pre data-source-file="vue/packages/vue/__tests__/e2e/hydrationStrategies.spec.ts"><code>  test('media query (patched before hydration)', async () =&gt; {
+              <pre
+                data-source-file="vue/packages/vue/__tests__/e2e/hydrationStrategies.spec.ts"
+              ><code>  test('media query (patched before hydration)', async () =&gt; {
     const spy = vi.fn()
     const currentPage = page()
     currentPage.on('pageerror', spy)
@@ -708,7 +1041,9 @@ patch(null, vnode, container, next, ...)</code></pre>
       warn.some(w =&gt; w.includes('Skipping lazy hydration for component')),
     ).toBe(true)
   })</code></pre>
-              <pre data-source-file="vue/packages/vue/__tests__/e2e/hydrationStrategies.spec.ts"><code>  test('custom teardown', async () =&gt; {
+              <pre
+                data-source-file="vue/packages/vue/__tests__/e2e/hydrationStrategies.spec.ts"
+              ><code>  test('custom teardown', async () =&gt; {
     await goToCase('custom')
     await page().waitForFunction(() =&gt; window.isRootMounted)
     expect(await page().evaluate(() =&gt; window.isHydrated)).toBe(false)
@@ -1003,8 +1338,8 @@ pnpm vitest packages/vue/__tests__/e2e/hydrationStrategies.spec.ts</code></pre>
         <section class="article-section prose" id="evidence-matrix">
           <h2>每种水合情况去哪里核对</h2>
           <p class="source-note">
-            固定版本实跑：Node v24.5.0，<code>hydration.spec.ts</code> 整文件 122
-            tests passed。
+            固定版本实跑：Node v24.5.0，<code>hydration.spec.ts</code> 整文件
+            122 tests passed。
           </p>
           <div class="table-wrap">
             <table>
@@ -1042,12 +1377,16 @@ pnpm vitest packages/vue/__tests__/e2e/hydrationStrategies.spec.ts</code></pre>
                 <tr>
                   <td>结构失配 / element 多余 children / 懒水合竞态</td>
                   <td>
-                    <code>handleMismatch</code>、<code>remove(cur)</code>、<code>__asyncHydrate</code>
+                    <code>handleMismatch</code>、<code>remove(cur)</code>、<code
+                      >__asyncHydrate</code
+                    >
                   </td>
                   <td>
                     同文件 <code>complete mismatch</code>、<code
                       >too many children</code
-                    >；<code>vue/__tests__/e2e/hydrationStrategies.spec.ts</code>
+                    >；<code
+                      >vue/__tests__/e2e/hydrationStrategies.spec.ts</code
+                    >
                     的 idle、patched-before-hydration、custom teardown
                   </td>
                   <td>

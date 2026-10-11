@@ -84,7 +84,7 @@ export function isFunction(target: unknown): target is Function {
   return typeof target === 'function'
 }
 
-/** 通过跨 realm 类型标签判断普通对象。 */
+/** 通过 [object Object] 标签识别对象；不检查原型，因此也接受带此标签的类实例。 */
 export function isPlainObject<T = Record<PropertyKey, unknown>>(target: unknown): target is T {
   return toTypeString(target) === '[object Object]'
 }
@@ -226,7 +226,7 @@ export function isMicroAppHead(target: unknown): target is HTMLElement {
 }
 
 /**
- * 识别普通自定义 Web Component 元素，并排除框架自身 `MICRO-APP*` 标签。
+ * 识别标签为 [object HTMLElement] 且名称不以 MICRO-APP 开头的元素，用于 iframe 自定义元素处理。
  */
 export function isWebComponentElement(target: unknown): boolean {
   let result = toTypeString(target) === '[object HTMLElement]'
@@ -252,9 +252,9 @@ export function isTargetExtension(path: string, suffix: string): boolean {
 }
 
 /**
- * ES2016 `Array.prototype.includes` 兼容实现，支持负索引及 SameValueZero 的 `NaN` 语义。
+ * 数组 includes 的兼容实现，按 parseInt 归一化长度与起始索引，支持负索引及 NaN 匹配。
  *
- * @throws 当目标为 null/undefined 时抛出 TypeError，与原生行为一致。
+ * @throws 当目标为 null/undefined 时抛出 TypeError。
  */
 export function includes(target: unknown[], searchElement: unknown, fromIndex?: number): boolean {
   if (target == null) {
@@ -319,6 +319,8 @@ export function logWarn(
 
 /**
  * 在 Promise 微任务中调用函数，使当前同步生命周期先完成。
+ *
+ * 不返回生成的 Promise；回调抛错成为该链的拒绝，调用方无法通过本函数返回值等待或捕获它。
  *
  * @param fn - 待执行回调。
  * @param args - 预绑定的位置参数。
@@ -390,7 +392,8 @@ export function formatAppURL(url: string | null, appName: string | null = null):
 /**
  * 删除应用名开头数字及非字母、数字、下划线、连字符字符，生成统一隔离键。
  *
- * 元素、通信、预取、插件和路由 API 都必须使用同一规范化规则；非法或空输入返回空字符串。
+ * 元素、通信、预取、插件和路由 API 共用该规则；非字符串或删除字符后为空的输入返回空字符串。
+ * 数字前缀判断以原输入开头为准：例如 @1a 先删除 @ 后得到 1a，不会重新执行开头数字过滤。
  */
 export function formatAppName(name: string | null): string {
   if (!isString(name) || !name) return ''
@@ -400,7 +403,8 @@ export function formatAppName(name: string | null): string {
 /**
  * 计算应用入口所属目录，用作相对资源的公共基址。
  *
- * 例如 `https://domain/xx/xx.html` 与 `https://domain/xx` 都得到对应目录并以 `/` 结尾。
+ * 路径末尾匹配 `.\w+` 时按文件处理并去掉最后一段，其他路径按目录处理并补尾 `/`；例如
+ * `https://domain/xx/xx.html` 得到 `https://domain/xx/`，`https://domain/xx` 也得到该目录。
  *
  * @param url - 已验证的应用入口 URL。
  */
@@ -421,12 +425,14 @@ export function getEffectivePath(url: string): string {
 }
 
 /**
- * 将相对资源路径补全为基于应用目录的绝对地址。
+ * 将相对资源路径补全为基于调用方给定目录的绝对地址。
  *
- * 空地址、已有网络/file 协议以及 data/blob 地址原样返回。
+ * 空地址、已有 http(s)/ftp(s)/file 协议、协议相对地址及 data/blob 地址原样返回。
+ * 常见调用方传应用入口；CSS 解析器也会传外链目录。根路径沿用基址 origin，普通相对路径
+ * 先经 getEffectivePath 去掉文件部分、query 和 hash，再交给原生 URL 解析。
  *
  * @param path - 资源地址。
- * @param baseURI - 应用入口 URL。
+ * @param baseURI - 应用入口或 CSS 文件目录等解析基址。
  */
 export function CompletionPath(path: string, baseURI: string): string {
   if (
@@ -452,7 +458,10 @@ export function getLinkFileDir(linkPath: string): string {
 /**
  * 流式消费一组 Promise/普通值，每项完成后立即携带原索引回调。
  *
- * 单项失败不会终止其余任务；全部项目处理完后才调用 `finallyCb`。
+ * 普通值同步回调，Promise 按结算顺序回调；各项成功或错误回调完成后计数，最后一项触发 finallyCb。
+ * 空列表不会触发 finallyCb。Promise 项的成功回调或汇总回调抛错会进入同链错误回调；
+ * 错误回调抛错则无法继续计数。普通值的回调直接在当前栈执行，抛错会中断遍历。
+ * 因此它是回调式结算器，不能把“所有回调都抛错”也视为必定完成的 allSettled。
  *
  * @param promiseList - 保留原始顺序的任务或值列表。
  * @param successCb - 单项成功回调，接收 `{ data, index }`。
@@ -513,7 +522,8 @@ export function unique(array: any[]): any[] {
 /**
  * 原生 `requestIdleCallback` 或定时器降级实现。
  *
- * 降级版本在约 1ms 后执行，并用 50ms 预算近似 `timeRemaining()`。
+ * 模块初始化时选择原生实现或回退，此后修改全局 requestIdleCallback 不会重新选择。回退安排 1ms
+ * 定时器，并从登记时刻起用 50ms 预算近似 timeRemaining，不表示浏览器真的进入空闲。
  */
 export const requestIdleCallback = globalObj.requestIdleCallback ||
   function (fn: CallableFunction) {
@@ -533,6 +543,8 @@ export const requestIdleCallback = globalObj.requestIdleCallback ||
  * 把空闲回调包装为 Promise，并把 resolve 控制权交给任务本身。
  *
  * 回调必须显式调用收到的 resolve；适合在空闲阶段完成异步编排后再结算。
+ * 空闲回调在 Promise executor 结束后才运行，内部同步抛错不会自动 reject 此 Promise；
+ * 若异常发生在 resolve 前，外层会保持 pending，后续串行任务也无法启动。
  */
 export function promiseRequestIdle(callback: CallableFunction): Promise<void> {
   return new Promise((resolve) => {
@@ -560,7 +572,7 @@ export function getCurrentAppName(): string | null {
 /**
  * 设置当前 DOM 作用域，并在下一微任务自动清空。
  *
- * `preventSetState` 开启时跳过，供强制返回基座作用域的代码块使用。
+ * 只有应用名变化且 preventSetState 未开启时才设置并安排清空；同名重复调用不追加微任务。
  */
 export function throttleDeferForSetAppName(appName: string): void {
   if (currentAppName !== appName && !getPreventSetState()) {
@@ -584,7 +596,7 @@ export function getIframeCurrentAppName(): string | null {
   return iframeCurrentAppName
 }
 
-/** 设置 iframe 查询作用域，并在下一微任务自动清空。 */
+/** 应用名变化且未被 preventSetState 抑制时，设置 iframe 查询作用域并安排下一微任务清空。 */
 export function throttleDeferForIframeAppName(appName: string): void {
   if (iframeCurrentAppName !== appName && !getPreventSetState()) {
     setIframeCurrentAppName(appName)
@@ -594,7 +606,7 @@ export function throttleDeferForIframeAppName(appName: string): void {
   }
 }
 
-/** 是否暂时禁止任何代码重新写入 DOM 作用域。 */
+/** 是否抑制两个 throttleDefer 入口重设作用域；直接 setter 不受该标记限制。 */
 let preventSetState = false
 
 /** 返回 DOM 作用域写入抑制状态。 */
@@ -605,8 +617,8 @@ export function getPreventSetState(): boolean {
 /**
  * 清除 DOM/iframe 作用域，并可在一轮微任务内强制保持基座作用域。
  *
- * `removeDomScope(true)` 到 `removeDomScope(false)` 之间，元素操作明确归属基座；若未手动
- * 关闭，强制标记也会在下一微任务自动释放，避免长期污染。
+ * true 先清空两种作用域，并临时阻止两个 throttleDefer 入口重设；直接 setter 仍可写入。false 只
+ * 解除抑制，不再清空作用域。抑制还会在首次开启时安排的下一微任务中释放，连续 true 不延长该窗口。
  *
  * @param force - `false` 仅解除抑制；`true` 清空并临时抑制重设；缺省只清空。
  */
@@ -645,14 +657,14 @@ export function pureCreateElement<K extends keyof MicroAppElementTagNameMap>(tag
 /**
  * 判断字符串能否直接作为简单 querySelector 键。
  *
- * 测试环境使用更窄字符集保持断言稳定；生产环境额外允许中文字符。
+ * __TEST__ 分支允许 $ 而不允许中文；生产分支允许中文而不允许 $，两者都会拒绝数字开头。
  */
 export function isInvalidQuerySelectorKey(key: string): boolean {
   if (__TEST__) return !key || /(^\d)|([^\w\d-_$])/gi.test(key)
   return !key || /(^\d)|([^\w\d-_\u4e00-\u9fa5])/gi.test(key)
 }
 
-/** 判断选择器是否指向文档级唯一元素，CSS 作用域改写会对它们特殊处理。 */
+/** 判断查询是否指向 body/head/html/title/:root，供 DOM 查询补丁保留文档级元素语义。 */
 export function isUniqueElement(key: string): boolean {
   return (
     /^body$/i.test(key) ||
@@ -751,7 +763,7 @@ export function stringifyQuery(queryObject: LocationQueryObject): string {
 /**
  * 创建基于 Set 的处理器注册表。
  *
- * `add()` 返回幂等注销函数，`list()` 暴露当前集合供同步迭代。
+ * add 返回按处理器引用删除的函数，list 暴露当前集合供同步迭代。
  */
 export function useSetRecord<T>() {
   const handlers: Set<T> = new Set()
@@ -767,6 +779,7 @@ export function useSetRecord<T>() {
 
   return {
     add,
+    /** 返回当前处理器集合本身，后续登记和删除会反映到该引用。 */
     list: () => handlers,
   }
 }
@@ -774,7 +787,7 @@ export function useSetRecord<T>() {
 /**
  * 创建基于 Map 的键值注册表。
  *
- * 每次 `add()` 覆盖同键值并返回幂等删除函数，供路由默认页等配置保存所有权。
+ * 每次 add 覆盖同键值并返回按键删除的函数；旧函数也能删除该键后来登记的新值。
  */
 export function useMapRecord<T>() {
   const data: Map<PropertyKey, T> = new Map()
@@ -790,7 +803,9 @@ export function useMapRecord<T>() {
 
   return {
     add,
+    /** 读取该键当前保存的值，不存在时返回 undefined。 */
     get: (key: PropertyKey) => data.get(key),
+    /** 删除该键当前记录，并返回是否实际删除。 */
     delete: (key: PropertyKey): boolean => {
       if (data.has(key)) return data.delete(key)
       return false
@@ -811,7 +826,10 @@ export function getAttributes(element: Element): AttrsType {
 /**
  * 有 fiber 队列时把动作包装为空闲 Promise 入队，否则立即执行。
  *
- * @param fiberTasks - fiber 任务列表；为空表示同步模式。
+ * 只等待 callback 的同步调用结束，不采用其返回 Promise；同步模式的异常直接交给调用方，
+ * 空闲模式的同步异常则发生在稍后的原生回调中，可能使任务 Promise 一直 pending。
+ *
+ * @param fiberTasks - fiber 任务数组；空数组也会入队，只有 null/undefined 表示同步模式。
  * @param callback - 待执行动作。
  */
 export function injectFiberTask(fiberTasks: fiberTasks, callback: CallableFunction): void {
@@ -828,8 +846,10 @@ export function injectFiberTask(fiberTasks: fiberTasks, callback: CallableFuncti
 /**
  * 串行执行 link、style、script 阶段积累的 fiber 任务。
  *
+ * 每个 next 等待前一项兑现；拒绝会跳过剩余项，pending 则会卡住整个后续链，本函数不补偿重试。
+ *
  * @param tasks - 空闲任务数组或空值。
- * @returns 任务链 Promise；没有任务时为 `null`。
+ * @returns 任务链 Promise，空数组得到已完成 Promise；null/undefined 得到 null。
  */
 export function serialExecFiberTasks(tasks: fiberTasks): Promise<void> | null {
   return tasks?.reduce((pre, next) => pre.then(next), Promise.resolve()) || null
@@ -866,7 +886,7 @@ export function execMicroAppGlobalHook(
 }
 
 /**
- * 逐个移除目标的全部子节点，确保原生移除钩子按节点触发。
+ * 逐个调用目标的 removeChild 清空子节点，节点移除仍会经过已安装的 DOM 补丁。
  *
  * @param $dom - 待清空的元素、ShadowRoot 或 Document。
  */
@@ -877,9 +897,10 @@ export function clearDOM($dom: HTMLElement | ShadowRoot | Document): void {
 }
 
 /**
- * 沿显式原型链执行跨 realm 友好的 `instanceof` 判断。
+ * 沿显式原型链查找指定构造器的 prototype，用于 iframe 代理逐一尝试基座与子应用构造器。
  *
- * 原始值直接返回 false；构造器不可调用时与原生 `instanceof` 一样抛出 TypeError。
+ * null/undefined 与数字、字符串、布尔原始值返回 false；不处理 Symbol.hasInstance 或 bind 转发规则。
+ * 构造器不是函数时抛出 TypeError；跨 realm 匹配仍需传入目标原型链中的构造器。
  */
 export function instanceOf<T extends new (...args: unknown[]) => unknown>(
   instance: unknown,
@@ -903,19 +924,15 @@ export function instanceOf<T extends new (...args: unknown[]) => unknown>(
   return false
 }
 
-/**
- * 为会与基座生命周期重名的子应用事件追加应用名。
- *
- * with 沙箱把子应用事件和基座生命周期都绑定到 microAppElement，`mounted`/`unmount`
- * 若不改名会互相触发（上游 issue #1161）。
- *
- * @param type - 原事件名。
- * @param appName - 用于隔离的应用名。
- */
 /** 需要按应用名隔离的冲突事件集合。 */
 const formatEventList = ['mounted', 'unmount']
 
-/** 返回必要时追加应用名后的事件类型。 */
+/**
+ * 为 mounted/unmount 追加应用名，其他事件保留原名。
+ *
+ * with 沙箱把子应用事件和基座生命周期都绑定到 microAppElement，若不改名会互相触发
+ *（上游 issue #1161）；该函数同时用于子应用状态派发和 with 沙箱的监听器名称归一化。
+ */
 export function formatEventType(type: string, appName: string): string {
   return formatEventList.includes(type) ? `${type}-${appName}` : type
 }

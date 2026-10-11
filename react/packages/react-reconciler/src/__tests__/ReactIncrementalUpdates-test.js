@@ -46,14 +46,14 @@ describe('ReactIncrementalUpdates', () => {
     return text;
   }
 
-  /** Given–When–Then：Given componentDidMount 同时安排 transition 的 b/c 与 Task 优先级的 a；When 先暂停在 commit 日志再耗尽工作；Then state 先只有 a，重基线后成为 a/b/c。通过中间与最终 state 验证类更新队列按 lane 跳过并重放。 */
+  /** Given–When–Then：Given componentDidMount 同时安排 transition 的 b/c 与 SyncLane 的 a；When 先暂停在 commit 日志再耗尽工作；Then state 先只有 a，重基线后成为 a/b/c。通过中间与最终 state 验证类更新队列按 lane 跳过并重放。 */
   it('applies updates in order of priority', async () => {
     let state;
-    /** 当前场景的类更新队列载体；通过 state、生命周期或实例句柄暴露队列处理结果。 */
+    /** 空 state 的类队列探针；挂载时把 Transition b/c 与 Sync a 交错，观察两轮累积。 */
     class Foo extends React.Component {
-      /** 类更新队列的基础状态；各用例向其合并或替换字段。 */
+      /** 初始空对象，让每条合并更新对应新增的 a/b/c 字段。 */
       state = {};
-      /** 同时安排 transition b/c 与 Task a，形成可观察的优先级跳过。 */
+      /** 同时安排 transition b/c 与同步 a 更新，形成可观察的优先级跳过。 */
       componentDidMount() {
         Scheduler.log('commit');
         React.startTransition(() => {
@@ -61,12 +61,11 @@ describe('ReactIncrementalUpdates', () => {
           this.setState({b: 'b'});
           this.setState({c: 'c'});
         });
-        // 提交生命周期中的 a 使用 Task 优先级。
+        // 提交生命周期中的 a 使用 SyncLane。
         this.setState({a: 'a'});
       }
-      /** 暴露实例或记录 render，并把当前 state 编码到宿主输出供断言。 */
+      /** 保存本轮候选 state 给测试；中间同步结果只有 a，恢复后包含 a/b/c。 */
       render() {
-        /** 类更新队列的基础状态；各用例向其合并或替换字段。 */
         state = this.state;
         return <div />;
       }
@@ -80,23 +79,22 @@ describe('ReactIncrementalUpdates', () => {
     expect(state).toEqual({a: 'a', b: 'b', c: 'c'});
   });
 
-  /** Given–When–Then：Given同一生命周期按 a/b/c 顺序安排三个 Task 更新；When 一次耗尽队列；Then对象合并结果保持插入顺序。通过最终 state 验证等 lane 的 FIFO 处理。 */
+  /** Given–When–Then：Given 初始空 state；When 挂载生命周期按 a/b/c 顺序安排三个同步对象更新并耗尽工作；Then 最终 state 保留 a/b/c 三个字段。该断言检查合并结果，三条更新字段不同，因此没有直接区分 FIFO 与其他处理次序。 */
   it('applies updates with equal priority in insertion order', async () => {
     let state;
-    /** 当前场景的类更新队列载体；通过 state、生命周期或实例句柄暴露队列处理结果。 */
+    /** 挂载生命周期连续安排 a/b/c 的同优先级合并更新，最终检查三个字段均保留。 */
     class Foo extends React.Component {
-      /** 类更新队列的基础状态；各用例向其合并或替换字段。 */
+      /** 初始空对象作为三条对象更新的累积起点。 */
       state = {};
       /** 按 a/b/c 插入三个等优先级更新，验证 FIFO 合并。 */
       componentDidMount() {
-        // 三个更新都继承提交阶段的 Task 优先级。
+        // 三个更新都继承提交阶段的 SyncLane。
         this.setState({a: 'a'});
         this.setState({b: 'b'});
         this.setState({c: 'c'});
       }
-      /** 暴露实例或记录 render，并把当前 state 编码到宿主输出供断言。 */
+      /** 把处理后的 state 交给断言，不产生字段相关宿主内容。 */
       render() {
-        /** 类更新队列的基础状态；各用例向其合并或替换字段。 */
         state = this.state;
         return <div />;
       }
@@ -107,12 +105,12 @@ describe('ReactIncrementalUpdates', () => {
     expect(state).toEqual({a: 'a', b: 'b', c: 'c'});
   });
 
-  /** Given–When–Then：Given sync 的 a/b 与 transition 的 x/y、replace c、d 交错；When先完成 sync 提交再冲刷 transition；Then中间 state 为 a/b，replaceState 生效后只保留 c/d。通过两次生命周期日志与 state 验证 ReplaceState 只截断其后同/低优先级累积。 */
+  /** Given–When–Then：Given 队列按 transition x/y、sync a/b、transition replace c/d 入队；When 先完成 sync 提交再冲刷 transition；Then 中间 state 为 a/b，后续重放到 replace c 时整体替换此前累积，最终只保留 c/d。通过两轮提交日志与 state 验证跳过的 ReplaceState 在自己的处理轮中生效。 */
   it('only drops updates with equal or lesser priority when replaceState is called', async () => {
     let instance;
-    /** 当前场景的类更新队列载体；通过 state、生命周期或实例句柄暴露队列处理结果。 */
+    /** 保存实例与空初始 state，记录提交轮次以区分 Sync 与 Transition replaceState 的处理。 */
     class Foo extends React.Component {
-      /** 类更新队列的基础状态；各用例向其合并或替换字段。 */
+      /** 空初始 state，便于辨认同步 a/b 与稍后替换后的 c/d。 */
       state = {};
       /** 记录初次提交，建立 replaceState 场景的生命周期边界。 */
       componentDidMount() {
@@ -122,7 +120,7 @@ describe('ReactIncrementalUpdates', () => {
       componentDidUpdate() {
         Scheduler.log('componentDidUpdate');
       }
-      /** 暴露实例或记录 render，并把当前 state 编码到宿主输出供断言。 */
+      /** 记录每次 render 并暴露实例，所有字段结果由 instance.state 断言。 */
       render() {
         Scheduler.log('render');
         instance = this;
@@ -159,11 +157,11 @@ describe('ReactIncrementalUpdates', () => {
   /** Given–When–Then：Given transition a/b/c 已计算但未提交；When插入默认 d、同步 e/f 与 transition g 后恢复；Then同步轮先提交 def，最终重放 a..g 得到 abcdefg。通过 updater 日志和宿主 prop 验证中断后的 base queue 克隆与确定性重基线。 */
   it('can abort an update, schedule additional updates, and resume', async () => {
     let instance;
-    /** 当前场景的类更新队列载体；通过 state、生命周期或实例句柄暴露队列处理结果。 */
+    /** 候选状态的字段名编码成文本，验证挂起 Transition 与新 Sync 更新的中断/重基线。 */
     class Foo extends React.Component {
-      /** 类更新队列的基础状态；各用例向其合并或替换字段。 */
+      /** 从空对象积累 a..g 字段，各函数 updater 的日志追踪重放次序。 */
       state = {};
-      /** 暴露实例或记录 render，并把当前 state 编码到宿主输出供断言。 */
+      /** 保存实例，并将候选字段排序后编码进 span，断言只读取已提交宿主输出。 */
       render() {
         instance = this;
         return <span prop={Object.keys(this.state).sort().join('')} />;
@@ -227,11 +225,11 @@ describe('ReactIncrementalUpdates', () => {
   /** Given–When–Then：Given transition a/b/c 被中断；When插入 d/e、同步 replace f 与 transition g；Then同步轮只剩 f，最终重放得到 fg。通过日志和宿主 prop 验证 ReplaceState 在重基线中的截断语义。 */
   it('can abort an update, schedule a replaceState, and resume', async () => {
     let instance;
-    /** 当前场景的类更新队列载体；通过 state、生命周期或实例句柄暴露队列处理结果。 */
+    /** 在中断队列恢复时加入同步 replace f，检查其对重放累积状态的整体替换。 */
     class Foo extends React.Component {
-      /** 类更新队列的基础状态；各用例向其合并或替换字段。 */
+      /** 初始空对象；replaceState 的 f 返回值会成为新的整个 state。 */
       state = {};
-      /** 暴露实例或记录 render，并把当前 state 编码到宿主输出供断言。 */
+      /** 保存实例并输出排序字段名，区别中间 f 与最终 fg 提交。 */
       render() {
         instance = this;
         return <span prop={Object.keys(this.state).sort().join('')} />;
@@ -298,11 +296,11 @@ describe('ReactIncrementalUpdates', () => {
   /** Given–When–Then：Given a/b setState 排在函数式 replaceState 前；When耗尽同一更新队列；Then replace updater 的 previousState 同时含 a/b，并以其返回值完全替换。通过实例 state 验证 updater 入参是此前累积结果。 */
   it('passes accumulation of previous updates to replaceState updater function', async () => {
     let instance;
-    /** 当前场景的类更新队列载体；通过 state、生命周期或实例句柄暴露队列处理结果。 */
+    /** 保存类实例，验证函数式 ReplaceState 接收到 a/b 的此前累积 state。 */
     class Foo extends React.Component {
-      /** 类更新队列的基础状态；各用例向其合并或替换字段。 */
+      /** 空初始 state，用 a/b 两次合并构造 replace updater 的输入。 */
       state = {};
-      /** 暴露实例或记录 render，并把当前 state 编码到宿主输出供断言。 */
+      /** 暴露实例并返回固定 span；本用例以 instance.state 检查 replace 函数参数。 */
       render() {
         instance = this;
         return <span />;
@@ -324,9 +322,9 @@ describe('ReactIncrementalUpdates', () => {
 
   /** Given–When–Then：Given挂载后更新 a 的完成回调再安排更新 b 与回调；When耗尽所有工作；Then callback a、callback b 各自位于对应后续提交之后。通过 render/commit/callback 日志验证提交开始后新增回调不会并入当前 callback 列表。 */
   it('does not call callbacks that are scheduled by another callback until a later commit', async () => {
-    /** 当前场景的类更新队列载体；通过 state、生命周期或实例句柄暴露队列处理结果。 */
+    /** 在 a 的完成回调中安排 b 与新回调，验证 callback 批次不会并入当前提交。 */
     class Foo extends React.Component {
-      /** 类更新队列的基础状态；各用例向其合并或替换字段。 */
+      /** 初始空对象，分别以 a/b 字段驱动后续两个提交。 */
       state = {};
       /** 挂载后安排 a，并在其提交回调中再安排 b，制造跨提交 callback 链。 */
       componentDidMount() {
@@ -338,7 +336,7 @@ describe('ReactIncrementalUpdates', () => {
           });
         });
       }
-      /** 暴露实例或记录 render，并把当前 state 编码到宿主输出供断言。 */
+      /** 记录 render 次数，与 did mount/callback a/callback b 对齐提交顺序。 */
       render() {
         Scheduler.log('render');
         return <div />;
@@ -360,16 +358,16 @@ describe('ReactIncrementalUpdates', () => {
   it('gives setState during reconciliation the same priority as whatever level is currently reconciling', async () => {
     let instance;
 
-    /** 当前场景的类更新队列载体；通过 state、生命周期或实例句柄暴露队列处理结果。 */
+    /** 新 props 触发旧 receiveProps 生命周期，在协调期间追加 b，与外部同步 a 同轮合并。 */
     class Foo extends React.Component {
-      /** 类更新队列的基础状态；各用例向其合并或替换字段。 */
+      /** 初始空对象，使 a/b 两条更新结果可直接检查。 */
       state = {};
       /** 协调新 props 时安排 b，验证生命周期更新继承当前 sync lane。 */
       UNSAFE_componentWillReceiveProps() {
         Scheduler.log('componentWillReceiveProps');
         this.setState({b: 'b'});
       }
-      /** 暴露实例或记录 render，并把当前 state 编码到宿主输出供断言。 */
+      /** 记录 render 并保存实例，测试以 state 检查 receiveProps 内追加的 b。 */
       render() {
         Scheduler.log('render');
         instance = this;
@@ -393,11 +391,11 @@ describe('ReactIncrementalUpdates', () => {
   /** Given–When–Then：Given函数式 updater a 内部再次 setState b；When执行更新并重复一次；Then嵌套更新继承当前 render lane、同轮提交，且纯函数警告只报告一次。通过 state、渲染日志和控制台去重断言验证。 */
   it('updates triggered from inside a class setState updater', async () => {
     let instance;
-    /** 当前场景的类更新队列载体；通过 state、生命周期或实例句柄暴露队列处理结果。 */
+    /** 类 updater 内再次 setState 的违规 fixture，验证队列仍处理更新且 DEV 警告去重。 */
     class Foo extends React.Component {
-      /** 类更新队列的基础状态；各用例向其合并或替换字段。 */
+      /** 空初始 state，让外层 updater a 与内层 b 的合并结果可见。 */
       state = {};
-      /** 暴露实例或记录 render，并把当前 state 编码到宿主输出供断言。 */
+      /** 记录 render 并保存实例，状态变化由实例断言，宿主输出固定。 */
       render() {
         Scheduler.log('render');
         instance = this;
@@ -411,7 +409,7 @@ describe('ReactIncrementalUpdates', () => {
       'render',
     ]);
 
-    instance.setState(function a() {
+    instance.setState(/** 记录外层 updater，嵌套提交 b 后返回 a 字段，刻意违反 updater 纯函数约束。 */ function a() {
       Scheduler.log('setState updater');
       this.setState({b: 'b'});
       return {a: 'a'};
@@ -435,7 +433,7 @@ describe('ReactIncrementalUpdates', () => {
     expect(instance.state).toEqual({a: 'a', b: 'b'});
 
     // 再触发同类违规以验证警告去重，不应新增控制台输出。
-    instance.setState(function a() {
+    instance.setState(/** 再次在 updater 内提交 a 并返回 b，验证同类纯函数警告已被去重。 */ function a() {
       this.setState({a: 'a'});
       return {b: 'b'};
     });
@@ -453,9 +451,9 @@ describe('ReactIncrementalUpdates', () => {
     // 源自真实产品缺陷的回归场景。
 
     let foo;
-    /** 当前场景的类更新队列载体；通过 state、生命周期或实例句柄暴露队列处理结果。 */
+    /** 固定派生 value 的父类组件；Bar 的独立更新用来检查 updateQueue.baseState 保留派生结果。 */
     class Foo extends React.Component {
-      /** 类更新队列的基础状态；各用例向其合并或替换字段。 */
+      /** 首次 value 为 initial state；getDerivedStateFromProps 每轮替换为 derived state。 */
       state = {value: 'initial state'};
       /** 固定返回 derived state，并要求该结果同步成为 updateQueue 的新 baseState。 */
       static getDerivedStateFromProps() {
@@ -494,7 +492,7 @@ describe('ReactIncrementalUpdates', () => {
       // noop callback 用于进入曾触发缺陷的特定内部路径；
       // 删除它会让用例“偶然”通过。
       // noop 仅用于让完成回调列表非空，从而覆盖历史缺陷的内部分支。
-      foo.setState({value: 'update state'}, function noop() {});
+      foo.setState({value: 'update state'}, /** 空完成回调使 callback 列表非空，进入派生 baseState 的历史回归路径。 */ function noop() {});
     });
     expect(ReactNoop).toMatchRenderedOutput(<span prop="derived state" />);
 
@@ -671,7 +669,7 @@ describe('ReactIncrementalUpdates', () => {
       pushToLog = msg => {
         this.setState(prevState => ({log: prevState.log + msg}));
       };
-      /** 记录每次已提交 log；在 B 状态下插入连续事件 C 与默认 D。 */
+      /** 记录每次已提交 log；在 B 状态下插入连续事件 C 与继承提交优先级的同步 D。 */
       componentDidUpdate() {
         Scheduler.log('Committed: ' + this.state.log);
         if (this.state.log === 'B') {
@@ -684,7 +682,6 @@ describe('ReactIncrementalUpdates', () => {
       }
       /** 暴露 pushToLog 或返回当前 log，使外部能安排 A/B 并观察最终字符串。 */
       render() {
-      /** 以函数式 setState 追加字符，保证重放顺序直接反映在最终 log。 */
         pushToLog = this.pushToLog;
         return this.state.log;
       }

@@ -5,10 +5,25 @@ import { isVNode } from '../vnode'
 
 /** Vue 2 高级异步组件工厂返回的选项对象。 */
 interface LegacyAsyncOptions {
+  /**
+   * 旧工厂返回的组件 Promise，转换为 Vue 3 loader 的结果。
+   */
   component: Promise<Component>
+  /**
+   * 加载等待期间展示的组件。
+   */
   loading?: Component
+  /**
+   * 加载失败或超时后展示的组件。
+   */
   error?: Component
+  /**
+   * 展示 loading 前的等待毫秒数，透传给 defineAsyncComponent。
+   */
   delay?: number
+  /**
+   * 判定超时的毫秒数，透传给 defineAsyncComponent。
+   */
   timeout?: number
 }
 
@@ -54,6 +69,9 @@ export function convertLegacyAsyncComponent(
     converted = defineAsyncComponent(() => res)
   } else if (isObject(res) && !isVNode(res) && !isArray(res)) {
     converted = defineAsyncComponent({
+      /**
+       * 把旧高级异步选项中的 component Promise 交给 Vue 3 异步组件 loader；旧工厂已在外层执行，此闭包不再次调用工厂。
+       */
       loader: () => res.component,
       loadingComponent: res.loading,
       errorComponent: res.error,

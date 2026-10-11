@@ -41,16 +41,27 @@ const modifierGuards: Record<
   | ((e: Event) => void | boolean)
   | ((e: Event, modifiers: string[]) => void | boolean)
 > = {
+  /** 先停止冒泡；返回 void，不阻止同处理器后续修饰符和用户函数。 */
   stop: (e: Event) => e.stopPropagation(),
+  /** 先阻止默认行为；返回 void，不阻止后续处理器执行。 */
   prevent: (e: Event) => e.preventDefault(),
+  /** target 不等于 currentTarget 时拒绝调用用户处理器。 */
   self: (e: Event) => e.target !== e.currentTarget,
+  /** 未按 Ctrl 时返回 true，终止包装处理器。 */
   ctrl: (e: Event) => !(e as KeyedEvent).ctrlKey,
+  /** 未按 Shift 时拒绝用户处理器。 */
   shift: (e: Event) => !(e as KeyedEvent).shiftKey,
+  /** 未按 Alt 时拒绝用户处理器。 */
   alt: (e: Event) => !(e as KeyedEvent).altKey,
+  /** 未按 Meta 时拒绝用户处理器。 */
   meta: (e: Event) => !(e as KeyedEvent).metaKey,
+  /** 事件有 button 且不是左键时拒绝；无 button 的事件不据此过滤。 */
   left: (e: Event) => 'button' in e && (e as MouseEvent).button !== 0,
+  /** 事件有 button 且不是中键时拒绝。 */
   middle: (e: Event) => 'button' in e && (e as MouseEvent).button !== 1,
+  /** 事件有 button 且不是右键时拒绝。 */
   right: (e: Event) => 'button' in e && (e as MouseEvent).button !== 2,
+  /** 任何正在按下但未在修饰符中声明的系统键都会拒绝，允许所列键组合。 */
   exact: (e, modifiers) =>
     systemModifiers.some(m => (e as any)[`${m}Key`] && !modifiers.includes(m)),
 }
@@ -63,7 +74,10 @@ const modifierGuards: Record<
 export const withModifiers = <
   T extends (event: Event, ...args: unknown[]) => any,
 >(
-  fn: T & { _withMods?: { [key: string]: T } },
+  fn: T & {
+    /** 原处理器持有的修饰符包装缓存，以修饰符顺序拼接为键；保持跨 render 的函数身份。 */
+    _withMods?: { [key: string]: T }
+  },
   modifiers: VOnModifiers[],
 ): T => {
   if (!fn) return fn
@@ -71,7 +85,12 @@ export const withModifiers = <
   const cacheKey = modifiers.join('.')
   return (
     cache[cacheKey] ||
-    (cache[cacheKey] = ((event, ...args) => {
+
+    (
+    /**
+     * 按声明顺序执行动作/条件 guard，首个返回真者终止；全部通过后将原事件和其余参数传给 fn。
+     */
+    cache[cacheKey] = ((event, ...args) => {
       for (let i = 0; i < modifiers.length; i++) {
         const guard = modifierGuards[modifiers[i] as ModifierGuards]
         if (guard && guard(event, modifiers)) return
@@ -103,7 +122,10 @@ const keyNames: Record<
  * @private 编译器辅助函数。
  */
 export const withKeys = <T extends (event: KeyboardEvent) => any>(
-  fn: T & { _withKeys?: { [k: string]: T } },
+  fn: T & {
+    /** 原处理器持有的按键过滤包装缓存；同一按键序列复用同一函数。 */
+    _withKeys?: { [k: string]: T }
+  },
   modifiers: string[],
 ): T => {
   let globalKeyCodes: LegacyConfig['keyCodes']
@@ -130,7 +152,12 @@ export const withKeys = <T extends (event: KeyboardEvent) => any>(
 
   return (
     cache[cacheKey] ||
-    (cache[cacheKey] = (event => {
+
+    (
+    /**
+     * 只处理带 key 的事件，按 hyphenate 后键名/旧别名匹配；compat 再检查数字 keyCode 和 app.keyCodes。
+     */
+    cache[cacheKey] = (event => {
       if (!('key' in event)) {
         return
       }

@@ -16,15 +16,12 @@ import {
   flushSyncWork,
 } from 'react-reconciler/src/ReactFiberReconciler';
 
-// 当调用方没有 renderer 引用时，通过这里调用 batchedUpdates，
-// 例如事件分发或第三方
-// 库需要批量更新的场景。所有更新默认批处理后，该 API 将被移除，
-// 届时会提供相反的 API，用于退出默认调度
-// 并强制同步执行。
+// 事件分发通过这个适配层进入 reconciler 的批处理，并在最外调用退出时恢复受控 DOM。
+// 除更新调度上下文外，这里还管理嵌套事件的恢复时机，不能只理解为批处理 API 的别名。
 
 let isInsideEventHandler = false;
 
-/** finishEventHandler 建立把事件回调包进 reconciler batching/discrete 更新，并在批次末恢复受控状态的批次边界，并在退出时完成受控状态恢复或队列清理。 */
+/** 存在受控恢复目标时先 flushSyncWork，再按最终已提交 props 恢复 DOM。 */
 function finishEventHandler() {
   // 这里必须等待全部更新传播完成，这对
   // 跨层级使用受控组件尤其重要：
@@ -37,14 +34,13 @@ function finishEventHandler() {
     // bailout 且没有触碰 DOM 时尤其必要。
     // TODO：改为在离散更新冲刷后的微任务中恢复状态，
     // 而不是在这里提前冲刷。
-    // @TODO 移除 legacy mode 后应迁移到 flushSyncWork；但由于这次 flushSync
-    // 由于当前冲刷还会触发 passive effects，暂时无法这样做。
+    // 当前路径调用 flushSyncWork；恢复读取冲刷后节点上的 props 缓存。
     flushSyncWork();
     restoreStateIfNeeded();
   }
 }
 
-/** batchedUpdates 建立把事件回调包进 reconciler batching/discrete 更新，并在批次末恢复受控状态的批次边界，并在退出时完成受控状态恢复或队列清理。 */
+/** 最外事件调用建立批次；嵌套调用直接执行，只有最外 finally 执行受控恢复。 */
 export function batchedUpdates(fn, a, b) {
   if (isInsideEventHandler) {
     // 若当前仍位于另一批次内部，必须等它
@@ -61,7 +57,7 @@ export function batchedUpdates(fn, a, b) {
 }
 
 // TODO：替换为 flushSync。
-/** discreteUpdates 建立把事件回调包进 reconciler batching/discrete 更新，并在批次末恢复受控状态的批次边界，并在退出时完成受控状态恢复或队列清理。 */
+/** 转发到 reconciler 的离散更新上下文；此入口自身不管理受控恢复队列。 */
 export function discreteUpdates(fn, a, b, c, d) {
   return discreteUpdatesImpl(fn, a, b, c, d);
 }

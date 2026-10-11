@@ -20,14 +20,7 @@ describe('root level refs with legacy APIs', () => {
   });
 
   // @gate !disableLegacyMode
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「attaches and detaches root refs」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言连接 ReactDOM 公开入口、ReactDOMRoot 根生命周期及 DOM 提交结果。
-   */
+  /** 依次 legacy 渲染宿主 div、带方法的类组件、混合数组、null 和数字，再逐树卸载；ref 挂载收到对应实例、卸载收到 null，render 返回首个可公开实例且数字返回 Text，验证根返回值与 ref 身份及清理语义。 */
   it('attaches and detaches root refs', () => {
     let inst = null;
 
@@ -43,13 +36,13 @@ describe('root level refs with legacy APIs', () => {
     expect(ref.mock.calls[1][0]).toBe(null);
 
     // composite 组件
-    /** `Comp`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 可公开类实例 fixture；method 用于证明 legacy render 与 ref 返回的是可调用的同一实例。 */
     class Comp extends React.Component {
-      /** `Comp.method`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 返回 true 作为实例身份探针，排除 legacy render 返回宿主 div 的可能。 */
       method() {
         return true;
       }
-      /** `Comp.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 输出固定 div 文本，为类实例提供真实宿主子节点而不改变公开 ref 目标。 */
       render() {
         return <div>Comp</div>;
       }

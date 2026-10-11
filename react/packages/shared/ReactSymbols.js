@@ -11,7 +11,7 @@
 // `react-devtools-shared/src/backend/ReactSymbols` 是否需要同步，
 // 否则 DevTools 可能无法识别新的 React 类型。
 
-/** 标记旧版 ReactElement 形状，只用于识别兼容输入。 */
+/** 标记旧版 ReactElement 形状；reconciler 识别后报告版本不兼容错误。 */
 export const REACT_LEGACY_ELEMENT_TYPE: symbol = Symbol.for('react.element');
 /** 标记当前过渡期 ReactElement；renderer 依靠它区分普通对象。 */
 export const REACT_ELEMENT_TYPE: symbol = Symbol.for(
@@ -76,6 +76,10 @@ const FAUX_ITERATOR_SYMBOL = '@@iterator';
  * 从候选对象读取同步 iterator 工厂。
  *
  * @returns 标准或兼容 iterator 方法；非对象或不可迭代值返回 `null`。
+ * @param maybeIterable - children 等路径的候选值；函数对象即使带 iterator 也不在此接受。
+ * @remarks 只取方法，不创建 iterator 或绑定 this，调用方应以原对象作为接收者。
+ * 标准键值为假时才尝试 @@iterator；标准键为真但不是函数时直接返回 null。
+ * 读取 accessor 的异常继续传播，异步 iterator 由 ASYNC_ITERATOR 的消费方另行处理。
  */
 export function getIteratorFn(maybeIterable: ?any): ?() => ?Iterator<any> {
   if (maybeIterable === null || typeof maybeIterable !== 'object') {

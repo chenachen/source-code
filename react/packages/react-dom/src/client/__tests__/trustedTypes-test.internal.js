@@ -23,29 +23,34 @@ describe('when Trusted Types are available in global object', () => {
     container = document.createElement('div');
     const fakeTTObjects = new Set();
     window.trustedTypes = {
-      /** `isHTML`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /** 检查this必须为window.trustedTypes，再以Set身份判断两个假TrustedHTML对象；模拟原生brand检测而不是按toString值判断。 */
       isHTML: function (value) {
         if (this !== window.trustedTypes) {
           throw new Error(this);
         }
         return fakeTTObjects.has(value);
       },
-      /** `isScript`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /** 始终否认脚本brand，本文件只模拟TrustedHTML。 */
       isScript: () => false,
-      /** `isScriptURL`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /** 始终否认脚本URL brand，避免HTML对象被视为TrustedScriptURL。 */
       isScriptURL: () => false,
     };
     React = require('react');
     ReactDOMClient = require('react-dom/client');
     ({act, assertConsoleErrorDev} = require('internal-test-utils'));
     ttObject1 = {
-      /** `toString`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 第一个假TrustedHTML的原生sink转换结果为<b>Hi</b>。 */
       toString() {
         return '<b>Hi</b>';
       },
     };
     ttObject2 = {
-      /** `toString`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 第二个假TrustedHTML转换为<b>Bye</b>，更新用于核对对象身份换新。 */
       toString() {
         return '<b>Bye</b>';
       },
@@ -58,14 +63,7 @@ describe('when Trusted Types are available in global object', () => {
     delete window.trustedTypes;
   });
 
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「should not stringify trusted values for dangerouslySetInnerHTML」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言连接 ReactDOM 公开入口、ReactDOMRoot 根生命周期及 DOM 提交结果。
-   */
+  /** 假TrustedHTML对象先Hi后Bye，拦截innerHTML原生setter；DOM相应更新且每轮只一次setter、收到原对象身份，验证dangerouslySetInnerHTML在DOM sink前不字符串化，finally恢复descriptor。 */
   it('should not stringify trusted values for dangerouslySetInnerHTML', async () => {
     const innerHTMLDescriptor = Object.getOwnPropertyDescriptor(
       Element.prototype,
@@ -74,11 +72,13 @@ describe('when Trusted Types are available in global object', () => {
     try {
       const innerHTMLCalls = [];
       Object.defineProperty(Element.prototype, 'innerHTML', {
-        /** `get`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 透传原innerHTML getter的this/arguments，让测试读取DOM不会被拦截器改变。 */
         get() {
           return innerHTMLDescriptor.get.apply(this, arguments);
         },
-        /** `set`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 先记录原value对象，再以原this调用原setter，核对React交给DOM sink前是否字符串化。 */
         set(value) {
           innerHTMLCalls.push(value);
           return innerHTMLDescriptor.set.apply(this, arguments);
@@ -112,11 +112,12 @@ describe('when Trusted Types are available in global object', () => {
     }
   });
 
-  /** 测试场景：验证「should not stringify trusted values for setAttribute (unknown attribute)」描述的渲染、交互或错误处理结果。 */
+  /** data-foo由假TrustedHTML Hi改Bye，拦截setAttribute；DOM字符串正确且目标/名称正确，启用集成时sink收到原对象，关闭时收到字符串，验证未知属性的feature分支与更新。 */
   it('should not stringify trusted values for setAttribute (unknown attribute)', async () => {
     const setAttribute = Element.prototype.setAttribute;
     try {
       const setAttributeCalls = [];
+      /** 拦截未知data-foo的setAttribute，记录目标/小写名称/原值后转交原方法；finally恢复，比较feature开关下的对象身份。 */
       Element.prototype.setAttribute = function (name, value) {
         setAttributeCalls.push([this, name.toLowerCase(), value]);
         return setAttribute.apply(this, arguments);
@@ -156,11 +157,12 @@ describe('when Trusted Types are available in global object', () => {
     }
   });
 
-  /** 测试场景：验证「should not stringify trusted values for setAttribute (known attribute)」描述的渲染、交互或错误处理结果。 */
+  /** className由假TrustedHTML Hi改Bye；setAttribute调用名称class、目标正确，集成开关决定原对象或字符串，验证已知别名属性的TrustedTypes分支。 */
   it('should not stringify trusted values for setAttribute (known attribute)', async () => {
     const setAttribute = Element.prototype.setAttribute;
     try {
       const setAttributeCalls = [];
+      /** 拦截className别名对应setAttribute，记录真实DOM调用后透传，验证已知属性和开关行为。 */
       Element.prototype.setAttribute = function (name, value) {
         setAttributeCalls.push([this, name.toLowerCase(), value]);
         return setAttribute.apply(this, arguments);
@@ -200,11 +202,12 @@ describe('when Trusted Types are available in global object', () => {
     }
   });
 
-  /** 测试场景：验证「should not stringify trusted values for setAttributeNS」描述的渲染、交互或错误处理结果。 */
+  /** SVG xlinkHref由Hi改Bye；拦截setAttributeNS，命名空间与xlink:href正确，集成开关决定原对象或字符串，验证命名空间sink；finally恢复方法。 */
   it('should not stringify trusted values for setAttributeNS', async () => {
     const setAttributeNS = Element.prototype.setAttributeNS;
     try {
       const setAttributeNSCalls = [];
+      /** 拦截setAttributeNS记录命名空间、名称、原值和this后透传；finally恢复，验证xlink属性的对象身份。 */
       Element.prototype.setAttributeNS = function (ns, name, value) {
         setAttributeNSCalls.push([this, ns, name, value]);
         return setAttributeNS.apply(this, arguments);
@@ -246,7 +249,7 @@ describe('when Trusted Types are available in global object', () => {
     }
   });
 
-  /** 测试场景：验证「should warn once when rendering script tag in jsx on client」描述的渲染、交互或错误处理结果。 */
+  /** 客户端连续渲染普通script文字；集成开启时首次DEV出现脚本不执行诊断，第二次不再诊断，验证普通script告警去重；本例不直接执行/计数脚本。 */
   it('should warn once when rendering script tag in jsx on client', async () => {
     const root = ReactDOMClient.createRoot(container);
     await act(() => {
@@ -268,7 +271,7 @@ describe('when Trusted Types are available in global object', () => {
     });
   });
 
-  /** 测试场景：验证「should not warn when rendering a data block script tag」描述的渲染、交互或错误处理结果。 */
+  /** 客户端script.type=application/json且JSON文本；act完成无未消费诊断，验证数据块不触发普通可执行script告警。 */
   it('should not warn when rendering a data block script tag', async () => {
     const root = ReactDOMClient.createRoot(container);
     await act(() => {
@@ -278,7 +281,7 @@ describe('when Trusted Types are available in global object', () => {
     });
   });
 
-  /** 测试场景：验证「should not warn when rendering a ld+json script tag」描述的渲染、交互或错误处理结果。 */
+  /** 客户端script.type=application/ld+json且schema JSON文本；act完成无未消费诊断，验证结构化数据脚本免普通script告警。 */
   it('should not warn when rendering a ld+json script tag', async () => {
     const root = ReactDOMClient.createRoot(container);
     await act(() => {

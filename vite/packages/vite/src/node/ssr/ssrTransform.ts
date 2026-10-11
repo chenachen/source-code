@@ -177,7 +177,10 @@ async function ssrTransformScript(
     return importId
   }
 
-  /** 通过 getter 定义 export live binding，并兼容声明初始化前读取为 undefined。 */
+  /**
+   * 通过 getter 定义 export live binding；读取时的异常被生成的 catch 吞掉并返回 undefined。
+   * 这包括本地声明尚在 TDZ 的情况，也包括被转发属性的 getter 自身抛错。
+   */
   function defineExport(name: string, local = name) {
     // try/catch 保持旧行为：TDZ 或尚未初始化的声明暂时导出 undefined。
     s.appendLeft(
@@ -339,7 +342,7 @@ async function ssrTransformScript(
         node.declaration.id &&
         !expressionTypes.includes(node.declaration.type)
       ) {
-        // 有名函数/类保持可提升声明，仅移除 `export default` 前缀。
+        // 有名函数/类保留原声明及绑定；函数可提升，类仍遵守初始化前的 TDZ。
         const { name } = node.declaration.id
         s.remove(node.start, node.start + 15 /* 'export default '.length */)
         defineExport('default', name)
@@ -369,7 +372,7 @@ async function ssrTransformScript(
 
   // 阶段 3：按作用域把 import 绑定引用、import.meta 与动态 import 改成 runner 协议。
   walk(ast, {
-    /** 修复变换后相邻顶层语句的自动分号插入边界。 */
+    /** 修复 Program、块、静态块和 switch 分支中相邻语句的自动分号插入边界。 */
     onStatements(statements) {
       // MagicString 移动/替换后保证相邻语句间有分号，避免 ASI 改变语义。
       for (let i = 0; i < statements.length - 1; i++) {
@@ -405,7 +408,7 @@ async function ssrTransformScript(
       ) {
         if (!declaredConst.has(id.name)) {
           declaredConst.add(id.name)
-          // extends 需要稳定本地绑定；在包含 class 的顶层语句前声明一次 const。
+          // 类声明的 superclass 使用本地别名；在包含 class 的顶层语句前声明一次 const。
           const topNode = parentStack[parentStack.length - 2]
           s.prependRight(topNode.start, `const ${id.name} = ${binding};\n`)
         }
@@ -516,7 +519,8 @@ const isNodeInPattern = (node: ESTree.Node): node is ESTreeProperty =>
 
 /**
  * 作用域遍历算法源自 `@vue/compiler-core` / `@vue/compiler-sfc`，这里适配 ESTree。
- * 它以 DFS 建作用域与父栈，再以 BFS 发出 identifier，保证提升声明先于引用判断。
+ * 它以 DFS 建作用域与父栈并收集候选引用，遍历结束后按收集顺序检查引用。
+ * 后方声明此时也已入 scopeMap，避免把受局部绑定遮蔽的引用误当成 import。
  */
 function walk(
   root: ESTree.Node,

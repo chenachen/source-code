@@ -145,6 +145,11 @@ entry → parent → changed
 
 传播从 `changed` 沿 `importers` 反向走向 `parent`、`entry`，直到找到接受边界或死端。
 
+下图先给一个多 importer 的具体图：P 接受 changed，Q 却到达未接受的图根，因此整轮仍需刷新。
+下半部分再展开真实 DFS 的停止与递归条件；普通路径环只跳过该递归，死端和外层刷新条件才决定最终结果。
+
+![普通 HMR 的反向传播分支与整轮 reload 判定](diagrams/12-hmr-propagation.svg)
+
 ### 1. self accept
 
 ```text
@@ -272,8 +277,10 @@ HMRContext 向本地事件监听器和服务端都发送 `vite:invalidate`，pay
 - `message`：诊断原因；
 - `firstInvalidatedBy`：整条 invalidate 链的最初模块。
 
-服务端重新以该模块为起点调用 `updateModules()`，从 importer 继续寻找更高边界。firstInvalidatedBy 在
-回调执行期间由 HMRClient 暂存，后续 invalidate 才能继承同一根；事务结束后必须清空。
+服务端只接收已 self-accept、已有 HMR timestamp 且本轮尚未上报的模块，再把它的 importers 作为
+`updateModules()` 起点。这样跳过刚刚拒绝接管更新的模块，寻找更高边界。没有 importer 时刷新页面；
+同轮多标签上报由 `lastHMRInvalidationReceived` 去重。firstInvalidatedBy 在同步 accept callback
+调用期间由 HMRClient 暂存，后续 invalidate 才能继承同一根；callback 返回后由 `finally` 清空。
 
 多标签页会同时对同一个更新发送 invalidate，服务端按同一轮身份去重，否则 parent 会更新两次。
 
@@ -331,15 +338,16 @@ payload 处理过程中触发下一轮更新。这个竞态修复见
 - data 在普通更新中保留，在 prune 后必须删除；否则未来重新导入会继承已结束生命周期的状态。修复见
   [PR #23002](https://github.com/vitejs/vite/pull/23002)。
 
-prune callbacks 需要全部 await 完成，下一轮 HMR 才可开始，否则旧副作用清理会与新模块执行交错；见
+正常 prune 会先等待本批所有 dispose，再等待所有 prune，最后删除 data；若 dispose 拒绝，后续 prune
+不会执行，但 `finally` 仍删除 data。回调成功时下一条 payload 要等清理完成才开始；见
 [PR #20698](https://github.com/vitejs/vite/pull/20698)。即使模块本身不是 self-accepting，删除其 import
 边也要触发 prune；相关修复见 [PR #20768](https://github.com/vitejs/vite/pull/20768) 和
 [PR #21093](https://github.com/vitejs/vite/pull/21093)。
 
 ## 深挖：一次 `invalidate` 怎样跨两轮 HMR 完成事务
 
-前文已经分别解释图算法、payload 与运行时。这里不再重述所有分支，只追踪官方 playground 中的一条
-`child self-accept → child 主动 invalidate → parent self-accept` 链，并用真实测试约束结论边界。
+下面以官方 playground 的 `child self-accept → child 主动 invalidate → parent self-accept` 为例，
+把服务端边界与浏览器 callback 的两轮协作连起来。
 
 ### Demo：服务端图与浏览器 callback 表通过 URL 对齐
 
@@ -381,7 +389,7 @@ document.querySelector('.invalidation-parent').innerHTML = value
 
 watcher 收到本次 change 后，`server/index.ts::onFileChange()` 的当前实现顺序是：等待所有 Environment
 的 `pluginContainer.watchChange`，调用各自 `moduleGraph.onFileChange(file)` 清旧转换结果，再进入
-`onHMRUpdate`。这说明本版本实际采用的顺序，不单独证明任何其他排列必然错误。图失效清
+`onHMRUpdate`。图失效清
 transform/ETag/SSR 结果，但保留 ModuleNode、importer 边和最近一次成功分析留下的 accept 状态。
 
 `server/hmr.ts::propagateUpdate()` 首先命中 child 的 self-accept 分支：
@@ -468,66 +476,27 @@ fixture 的实际结果。
 
 ## 同一 Demo 的端到端执行图
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant E as "编辑器"
-    participant W as "chokidar watcher"
-    participant G as "EnvironmentModuleGraph"
-    participant S as "HMR server"
-    participant T as "HotChannel / WebSocket"
-    participant C as "client serial handler"
-    participant H as "HMRClient / HMRContext"
-    participant B as "浏览器 ESM"
+图中把 watcher 的缓存失效、服务端静态边界、WebSocket 消息和浏览器求值放在独立角色上。
+watcher 先清转换结果再计算边界；传播之后的 HMR 失效才写入本轮 timestamp。`dispose` 是框架的可选
+等待点，本 fixture 的 child/parent 未登记 disposer。
 
-    E->>W: child.js: child → child updated
-    W->>G: onFileChange 清转换结果，保留节点与边
-    W->>S: onHMRUpdate(update, child.file)
-    S->>S: plugin hooks → propagateUpdate(child)
-    S->>G: invalidateModule(child, timestamp, isHmr=true)
-    S->>T: HotPayload #1：update(child → child)
-    T->>C: payload #1 进入串行 handler
-    C->>H: beforeUpdate → queueUpdate
-    H->>H: 冻结旧 callback；dispose(data)
-    H->>B: import child.js?t=timestamp
-    Note over H,B: import 失败时记录 warnFailedUpdate；本测试未触发
-    B-->>H: 新 namespace；新 context/callback 已登记
-    H->>H: 执行旧 child callback
-    H->>T: vite:invalidate(child, firstInvalidatedBy=child)
-
-    par 服务端可在 #1 客户端收尾期间处理 invalidate
-        T->>S: 收到自定义 invalidate
-        S->>S: 去重；从 child.importers={parent} 传播
-        S->>G: invalidateModule(parent, same timestamp, isHmr=true)
-        S->>T: HotPayload #2：update(parent → parent)
-        T-->>C: payload #2 到达并排队
-    and 客户端完成 payload #1
-        H-->>C: child callback 返回
-        C->>C: afterUpdate #1
-    end
-
-    Note over C,H: #2 要等 #1 handler 结束才开始执行
-    C->>H: 开始 #2：beforeUpdate → queueUpdate
-    H->>B: import parent.js?t=timestamp
-    B->>B: 读取新 child namespace；写入 DOM
-    H->>H: 执行 parent accept callback
-    H-->>C: afterUpdate #2
-    Note over E,B: 测试 finally 关闭第二页；fixture 由全局 teardown 回收
-```
+![child invalidate 的两轮跨角色时序与客户端排队](diagrams/12-hmr-roundtrip.svg)
 
 `vite:invalidate` 的网络接收与 `afterUpdate #1` 没有固定先后；服务端可能已生成甚至发回 #2。可依赖的
 保证是 `client.ts` 用 `createHMRHandler(handleMessage)` 包装 transport handler：即使 #2 已到达，也要
-等 #1 的 dispose/import/callback/afterUpdate 全部结束后才开始处理。
+等 #1 的 dispose、import、同步 callback 调用及 afterUpdate listener 等待结束后才开始处理。
+accept callback 返回的 Promise 不会被 `fetchUpdate()` 等待；异步 callback 后续工作不在这条串行
+保证内，`currentFirstInvalidatedBy` 也仅覆盖同步调用。
 
 ## 关键状态变化
 
-| 状态/所有者 | 初次执行后 | child 文件变化 | payload #1 | invalidate 回到服务端 | payload #2 后 |
-| --- | --- | --- | --- | --- | --- |
-| `lastHMRTimestamp` / server | `0` | 写入本轮 timestamp | 保持 | 第二轮复用 | 等待下次变化 |
-| `lastHMRInvalidationReceived` / server | `false` | 重置 `false` | `false` | 首个上报置 `true`，其他标签忽略 | 下次真实失效再重置 |
-| child callbacks / browser | 旧一代 | 仍是旧一代 | 先冻结；新 import 登记下一代 | 旧 callback 已提交 | 新一代等待下次更新 |
-| `currentFirstInvalidatedBy` / browser | `undefined` | `undefined` | 首轮无根值，invalidate 回退到 child URL | #1 的 `finally` 已清空；根来源随 #2 返回 | parent callback 期间为 child URL，`finally` 后清空 |
-| DOM `.invalidation-parent` | `child` | `child` | `child` | 等待 parent 执行 | `child updated` |
+| 状态/所有者                            | 初次执行后  | child 文件变化     | payload #1                              | invalidate 回到服务端                    | payload #2 后                                      |
+| -------------------------------------- | ----------- | ------------------ | --------------------------------------- | ---------------------------------------- | -------------------------------------------------- |
+| `lastHMRTimestamp` / server            | `0`         | 写入本轮 timestamp | 保持                                    | 第二轮复用                               | 等待下次变化                                       |
+| `lastHMRInvalidationReceived` / server | `false`     | 重置 `false`       | `false`                                 | 首个上报置 `true`，其他标签忽略          | 下次真实失效再重置                                 |
+| child callbacks / browser              | 旧一代      | 仍是旧一代         | 先冻结；新 import 登记下一代            | 旧 callback 已提交                       | 新一代等待下次更新                                 |
+| `currentFirstInvalidatedBy` / browser  | `undefined` | `undefined`        | 首轮无根值，invalidate 回退到 child URL | #1 的 `finally` 已清空；根来源随 #2 返回 | parent callback 期间为 child URL，`finally` 后清空 |
+| DOM `.invalidation-parent`             | `child`     | `child`            | `child`                                 | 等待 parent 执行                         | `child updated`                                    |
 
 ## 真实完整测试：多标签 invalidate 只产生一轮上游更新
 
@@ -578,35 +547,26 @@ test('invalidate works with multiple tabs', async () => {
 })
 ```
 
-### GWTMS 与证据边界
+<span id="gwtms-与证据边界"></span>
 
-- **Given**：主页面已加载 fixture；测试再创建第二页面并导航到同一 URL，构造多标签场景。body 没有单独
-  断言第二页 WebSocket 已握手，因此不能只凭 `goto()` 把“两个 HMR client 均已连接”写成直接测试事实。
-- **When**：唯一外部触发是把 `invalidation/child.js` 中首个 `child` 改为 `child updated`。
-- **Then**：`untilBrowserLogAfter(..., true)` 在主页面要求列出的日志严格按序出现；额外的第二次 parent
-  `beforeUpdate` 会使匹配失败。DOM 最终为 `child updated`。测试没有记录 dispose 或 dynamic import，不能
-  把它们列为日志断言。
-- **Mechanism / Source**：fixture 与日志证明 child 更新后触发 invalidate、parent 重执行并产生可见结果；
-  `HMRContext.invalidate` 与 `DevEnvironment.invalidateModule` 源码解释回传、从 importers 继续和
-  `lastHMRInvalidationReceived` 去重。跨 payload 串行由 `createHMRHandler()` 源码保证，不由这组日志单独
-  推导。
-- **Cleanup**：若第二页创建成功，`finally` 会关闭它；测试对 `playground-temp` 隔离副本的文件修改由全局
-  teardown 回收。test body 不直接证明 server teardown。
+### 一次文件修改为何产生两轮更新
 
-这组组合证据不直接断言 watcher 回调次数、WS JSON、全部 `dataMap` 内容或第二页握手时刻。本文的“完整链”
-限定为 watcher 已收到事件后的普通 JS self-accept → invalidate → parent self-accept → DOM；不覆盖 CSS
-`<link>`、acceptExports、HTML 定向 reload、循环 import、插件改写模块集合或 Module Runner。磁盘 write
-到 chokidar 事件仍可能合并；这里描述的是单个已收到 change 事件在当前实现中的处理。
+主页面已加载 fixture，第二页面也导航到同一 URL。测试只修改一次 `invalidation/child.js`，
+把首个 `child` 替换成 `child updated`。后续两轮更新由 child 的接受回调与 invalidate 接续触发：
 
-## 本链源码—测试证据
+<span id="本链源码-测试证据"></span>
 
-| 阶段 | 决定性源码 | 测试观察 | 证据边界 |
-| --- | --- | --- | --- |
-| 第一轮边界 | `server/hmr.ts::propagateUpdate()` | child 的 before/invalidate/hot-updated 日志 | 源码证明 self-accept 映射；日志不展示 ModuleNode |
-| 浏览器提交 | `shared/hmr.ts::fetchUpdate()` | child 日志先于 parent 日志 | callback 冻结、dispose/import 来自源码，不是日志断言 |
-| 第二轮传播 | `HMRContext.invalidate()`、`DevEnvironment.invalidateModule()` | parent 重执行且 DOM 更新 | 证明结果；跨 payload 串行另由 `createHMRHandler()` 锁定 |
-| 多标签去重 | `lastHMRInvalidationReceived` 分支 | parent 的第二个 beforeUpdate 不得重复 | 测试构造第二页，但不单独断言其 WS 握手时刻 |
-| 清理 | test `finally`、全局 playground teardown | 第二页在创建成功后关闭 | fixture/server 全局清理不由本 test body 单独证明 |
+| 阶段 | 发生的动作与结果 | 对应源码 |
+| --- | --- | --- |
+| 第一轮：更新 child | child 自接受形成边界；浏览器取新模块并调用已保存的旧 accept callback | `server/hmr.ts::propagateUpdate()`、`shared/hmr.ts::fetchUpdate()` |
+| 回传 invalidate | child callback 调用 invalidate，服务端从 child 的 importers 继续寻找边界 | `HMRContext.invalidate()`、`DevEnvironment.invalidateModule()` |
+| 第二轮：更新 parent | parent 重新执行并更新 DOM；客户端消息处理队列让这条 payload 等第一条处理结束 | `createHMRHandler()`、fixture 中的 parent 模块 |
+| 多标签去重 | 同一轮的重复 invalidate 由服务端节点的 `lastHMRInvalidationReceived` 合并 | `DevEnvironment.invalidateModule()` 的去重分支 |
+
+测试精确比较主页面的日志顺序：先出现 child 的更新和 invalidate，再出现 parent 的执行日志，
+DOM 最终显示 `child updated`。若 parent 那轮的 `beforeUpdate` 重复出现，日志匹配就会失败。
+去重字段属于服务端节点，两个标签页因而共用同一轮上游传播。第二页面在 `finally` 关闭，
+测试用的隔离目录与 server 由全局 teardown 回收。
 
 ## accept 参数为什么用轻量 lexer
 
@@ -670,10 +630,12 @@ HTTP(S) server。
 
 浏览器连接需依次满足：
 
-1. protocol/path 是 `vite-hmr` 对应地址；
-2. Host 通过 `server.allowedHosts`；
-3. 带 Origin 的浏览器请求提供本进程生成的 token；
-4. token 用 `timingSafeEqual` 比较，并且必须在 `handleUpgrade()` 前校验。
+1. 复用 HTTP server 时，upgrade listener 只接管 `vite-hmr`/`vite-ping` 且路径匹配的请求；
+2. 非 ping 请求的 Host 通过 `server.allowedHosts`；
+3. 带 Origin 的请求提供本进程生成的 token；`legacy.skipWebSocketTokenCheck` 可跳过这一项；
+4. `ws.handleUpgrade()` 内部先调用 Vite 覆写的 `shouldHandle()` 完成检查，再完成握手、登记连接。
+
+独立 WS server 的 upgrade listener 接管其端口上的请求，不使用上述路径筛选。
 
 这防止恶意网页连接本机开发服务器实施 Cross-site WebSocket hijacking。token 校验相关安全修复可从
 提交 [`029dcd6d7`](https://github.com/vitejs/vite/commit/029dcd6d7) 追溯。
@@ -681,10 +643,10 @@ HTTP(S) server。
 无 Origin 的 CLI/本地工具为兼容可无 token 连接；它们不受浏览器同源策略限制，本来就能发普通 HTTP
 请求。
 
-`vite-ping` 是特殊探测协议：允许任意来源，握手后立即正常关闭，不进入 clients，也不收发有意义
-payload。客户端断线后先用 ping 确认 server 已重新可用，再 reload 获取新 `@vite/client`。这个策略
-避免盲目 HTTP 轮询，见 [PR #17891](https://github.com/vitejs/vite/pull/17891)。SharedWorker 会合并同源
-多窗口的探测，并在页面全部隐藏时暂停轮询；见
+`vite-ping` 是特殊探测协议：允许任意来源，握手后立即正常关闭，不触发 Vite 的 connection 事件，
+因而不安装消息监听器或发送业务 payload。底层 `ws` 会短暂把它加入 `wss.clients`，关闭时删除。客户端断线后先用 ping 确认 server 已重新可用，再 reload 获取新 `@vite/client`。这个策略
+避免盲目 HTTP 轮询，见 [PR #17891](https://github.com/vitejs/vite/pull/17891)。可用 SharedWorker 时，Vite 把探测移入 worker；每个连接端口各自运行轮询，用该窗口的可见性暂停
+重试。首个 ping 总会尝试一次，后续才按 visibility 决定等待或重试；见
 [PR #19057](https://github.com/vitejs/vite/pull/19057)。
 
 重启时若旧 WS upgrade listener 不从用户 server 移除，它会继续吞掉新连接。close 因而不仅 terminate
@@ -777,12 +739,12 @@ transformResult 没有内联 map 时，再从预构建依赖产物末尾读取�
 又不会被每一帧的源码淹没。
 
 `playground/forward-console` 验证普通 error、Promise rejection、console 格式符与依赖外置 map。依赖报错
-应保留 node_modules 帧，但 code frame 选择最近的项目源码调用点。
+在该 fixture 中保留 node_modules 帧，并为第一个符合条件的项目调用点展示 code frame。
 
 ## Bundled-dev：边界算法移到浏览器
 
 本节只建立普通 HMR 与 bundled-dev 的对照坐标。Rolldown 后台整包、首屏 fallback、内存文件、lazy
-payload 交付确认、浏览器执行图、单次 reload 门闩与关闭链，见独立章节
+payload 响应发送完成登记、浏览器执行图、单次 reload 门闩与关闭链，见独立章节
 [12B：Bundled Dev](./12b-bundled-dev.md)。
 
 普通 HMR 的服务端 ModuleGraph 知道每个 URL 的 importer 和 accept；bundled-dev 真正执行的是 Rolldown
@@ -796,16 +758,16 @@ changedIds + patch URL + 单调 seq
 
 ```text
 未执行模块       → noop
+回到本轮 invalidate 来源 → full reload
 self accept       → [id, id] boundary
 parent accept dep → [parent, id] boundary
 无 importer 根    → full reload
 无边界 import 环  → full reload
-回到 invalidate 发起者 → full reload
 ```
 
 每轮同时收集 `updateSet`：从 changed module 到 boundary 之间的全部模块都要清缓存。应用顺序不能交换：
 
-1. 确认 updateSet 的新 factory 全部存在；
+1. 确认 updateSet 的 factory 全部存在；
 2. 在删缓存前冻结 accept callbacks；
 3. 清除 updateSet 缓存，runtime hook 同步执行 dispose；
 4. 初始化 acceptedVia 并读取新 exports；
@@ -816,7 +778,7 @@ push 与模块主动 `hot.invalidate()` 共用 `applyQueue` 串行执行。push 
 重新计算边界。
 
 客户端决定需要 full reload 时不直接调用 `location.reload()`，只发
-`vite:bundled-dev:reload-needed`。服务端等新完整 bundle 可服务后再发 full-reload，页面因此不会先加载
+`vite:bundled-dev:reload-needed`。服务端等最新完整 bundle 可服务后再发 full-reload，页面因此不会先加载
 fallback 再二次导航；见 [PR #23106](https://github.com/vitejs/vite/pull/23106)。浏览器侧 HMR 主体由
 [PR #22961](https://github.com/vitejs/vite/pull/22961) 引入。
 
@@ -825,25 +787,27 @@ fallback 再二次导航；见 [PR #23106](https://github.com/vitejs/vite/pull/2
 | 状态                      | 用途                                                |
 | ------------------------- | --------------------------------------------------- |
 | `memoryFiles`             | 当前完整输出、HMR patch、sourcemap 与客户端 runtime |
-| `pendingPayloadFilenames` | 已生成但 HTTP 响应尚未确认送达的 payload            |
+| `pendingPayloadFilenames` | 已生成但 HTTP 响应尚未完成发送的 payload            |
 | `fullReloadPending`       | 所有客户端等待最新完整输出后 reload                 |
 | `reloadNeededClientIds`   | 只有计算出死端的特定客户端等待 reload               |
 
 Rolldown 回调的时序是关键：`onHmrUpdates` 决定 patch 或刷新意图，`onOutput` 才表示新完整 bundle 已经写入
-内存。刷新必须后置到 `onOutput`；若 HMR 生成阶段失败，下一次页面访问会强制 full build，提供自愈通道。
-新连接客户端会立即收到缓存的最后一次构建错误，否则它可能只看到空白页面。
+内存。等待全局重建的刷新在成功 `onOutput` 时发出；定向客户端刷新也可在 `ensureLatestBuildOutput()`
+确认最新输出已经可用时发出。若 HMR 生成阶段失败，下一次页面访问会强制 full build。
+新连接客户端会收到最近一次完整输出构建错误；HMR 生成错误只广播给当时已登记的客户端。
 
 `MemoryFiles` 支持惰性值：构建回调先保存读取函数，浏览器首次请求时才提取 code/source 并计算 ETag。
 增量构建不能清空整个 Map，因为未变化文件会被 Rolldown 复用。内存文件中间件处理 304、MIME 与自定义
-header；响应 `finish` 后才调用 `markPayloadDelivered()`，服务端只有确认 payload 送达，才允许后续 chunk
-依据 per-client ship map 省略其中模块。
+header；响应 `finish` 后调用 `markPayloadDelivered()`，表示该响应已交给操作系统发送，再登记 Rolldown
+的 per-client ship map，让后续 chunk 可以省略其中模块。这不是浏览器接收或执行确认，见
+[Node.js finish 事件](https://nodejs.org/api/http.html#event-finish_2)。
 
-HMR patch 末尾强制追加 `export {}`，让响应只能作为 ESM 执行，不能被恶意跨源页面当 classic script
-读取。这是 full-bundle 本地服务器安全边界的一部分，不是无意义的空导出。
+HMR patch 末尾追加 `export {}`：模块没有其他 export 时也保留 ESM 语法，作为 classic script 执行会报
+语法错误，避免跨源页面按普通 script 执行 patch。
 
 `playground/hmr-full-bundle-mode` 用页面全局标记区分“patch 原地更新”和“整页刷新”，并覆盖新增 asset、
 `?worker`、`new URL` worker、nested worker、hot.data 与 invalidate。patch 必须包含 ESM 语法，避免被
-跨源页面当普通 script 标签读取响应内容。
+跨源页面当普通 script 执行。
 
 ## 测试怎样映射源码机制
 
@@ -899,7 +863,7 @@ vite:afterUpdate
    [PR #20698](https://github.com/vitejs/vite/pull/20698)、
    [PR #20768](https://github.com/vitejs/vite/pull/20768)、
    [PR #21093](https://github.com/vitejs/vite/pull/21093)。
-7. 断线后用 WS ping + SharedWorker 合并多窗口重连：
+7. 断线后用 WS ping + SharedWorker 中的窗口可见性控制：
    [PR #17891](https://github.com/vitejs/vite/pull/17891)、
    [PR #19057](https://github.com/vitejs/vite/pull/19057)。
 8. Environment API 让传播与 transport 不再绑定浏览器 WebSocket。

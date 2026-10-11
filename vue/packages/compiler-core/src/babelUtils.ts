@@ -20,6 +20,8 @@ import { walk } from 'estree-walker'
  *
  * 默认只回调真正引用且不属于局部声明的标识符，供模板表达式添加 `_ctx.`；
  * `includeAll` 用于需要同时观察声明位置的分析。`knownIds` 使用计数支持嵌套同名遮蔽。
+ * scopeIds 缓存在 Babel 节点上，复用 AST 时重新累计这些名字；离开嵌套作用域后成组撤销。
+ * 最外层表达式的声明保留在 knownIds 中，供 processExpression 提取参数模式引入的名字。
  */
 export function walkIdentifiers(
   root: Node,
@@ -229,7 +231,8 @@ export function walkFunctionParams(
 }
 
 /**
- * 收集一个块/Program/SwitchCase 直接作用域中的变量、函数、类及 var 提升声明。
+ * 扫描块/Program/SwitchCase 的直接变量、函数和类声明，跳过仅用于类型的 declare。
+ * 对直接出现的 for/switch 另外收集其声明；这不是递归扫描任意嵌套控制流的完整 JS 提升分析。
  */
 export function walkBlockDeclarations(
   block: BlockStatement | SwitchCase | Program,
@@ -292,7 +295,10 @@ function walkForStatement(
   }
 }
 
-/** 收集 switch 各 case 中的 var 或块级声明。 */
+/**
+ * 遍历全部 case：先按 isVar 选择变量种类，再用块声明扫描补充直接声明与嵌套 for/switch。
+ * 调用方的 scopeIds 集合消除重复名字；共享一个 switch 作用域，避免把其他 case 的局部量当成自由引用。
+ */
 function walkSwitchStatement(
   stmt: SwitchStatement,
   isVar: boolean,
@@ -317,6 +323,8 @@ function walkSwitchStatement(
 
 /**
  * 从 Identifier 或对象/数组/剩余/默认值解构模式中递归提取被绑定的名字。
+ * MemberExpression 取最内层 object；默认值只处理左侧，数组空洞跳过。
+ * nodes 为可选累积数组，结果追加到原数组并返回，不解析源码字符串或创建 Identifier 副本。
  */
 export function extractIdentifiers(
   param: Node,
@@ -557,11 +565,11 @@ function isReferenced(node: Node, parent: Node, grandparent?: Node): boolean {
  * 前缀化和函数/成员判断时可连续剥离这些外壳。
  */
 export const TS_NODE_TYPES: string[] = [
-  'TSAsExpression', // foo as number
-  'TSTypeAssertion', // (<number>foo)
-  'TSNonNullExpression', // foo!
-  'TSInstantiationExpression', // foo<string>
-  'TSSatisfiesExpression', // foo satisfies T
+  'TSAsExpression', // as 类型断言：foo as number。
+  'TSTypeAssertion', // 尖括号类型断言：(<number>foo)。
+  'TSNonNullExpression', // 非空断言：foo!。
+  'TSInstantiationExpression', // 泛型实例化：foo<string>。
+  'TSSatisfiesExpression', // 类型约束校验：foo satisfies T。
 ]
 
 /** 递归剥离 `as`、非空断言、泛型实例化、satisfies 等 TS 表达式包装。 */

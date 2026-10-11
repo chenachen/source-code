@@ -19,6 +19,7 @@ export function buildReporterPlugin(config: ResolvedConfig): Plugin {
       isLib: !!env.config.build.lib,
       assetsDir,
       chunkLimit: env.config.build.chunkSizeWarningLimit,
+      /** 允许 info 级别输出时，将原生报告器的消息转发到当前 Environment logger。 */
       logInfo: shouldLogInfo ? (msg) => env.logger.info(msg) : undefined,
       reportCompressedSize: env.config.build.reportCompressedSize,
       warnLargeChunks:

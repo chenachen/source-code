@@ -32,22 +32,16 @@ describe('SyntheticMouseEvent', () => {
     container = null;
   });
 
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「should only use values from movementX/Y when event type is mousemove」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：事件断言连接 DOMPluginEventSystem 的委托、合成与传播路径。
-   */
+  /** 连续派发 screen 坐标 2/2、8/8 的两次 mousemove，再派发 25/65 的 mousedown；movementX 应为 0、6、0，验证缺少原生 movement 字段时仅移动事件计算差值，按下事件重置为 0。 */
   it('should only use values from movementX/Y when event type is mousemove', async () => {
     const events = [];
-    /** `onMouseMove`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 保存每次移动事件的水平差值，检查相邻移动坐标的 fallback 运算。 */
     const onMouseMove = event => {
       events.push(event.movementX);
     };
 
-    /** `onMouseDown`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 保存按下事件的水平差值，验证非 mousemove 会把回退值清零。 */
     const onMouseDown = event => {
       events.push(event.movementX);
     };
@@ -98,22 +92,26 @@ describe('SyntheticMouseEvent', () => {
     expect(events[2]).toBe(0); // `mousedown` 事件应该有 `movementX` 属性为 0。
   });
 
-  /** 测试场景：验证「should correctly calculate movementX/Y for capture phase」描述的渲染、交互或错误处理结果。 */
+  /** 同时注册鼠标移动/按下的 capture 与 bubble，再派发两个不同坐标的 mousemove 和一个 mousedown；两阶段分别得到相同的 0/0、6/7、0/0，验证同一原生事件仅更新一次位移缓存且 capture 先执行。 */
   it('should correctly calculate movementX/Y for capture phase', async () => {
     const events = [];
-    /** `onMouseMove`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 记录移动 bubble 的两个坐标差值及阶段标识，和本次 capture 对照。 */
     const onMouseMove = event => {
       events.push(['move', false, event.movementX, event.movementY]);
     };
-    /** `onMouseMoveCapture`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 记录移动 capture 的坐标差，验证它首次归一化后 bubble 不会重新计算为零。 */
     const onMouseMoveCapture = event => {
       events.push(['move', true, event.movementX, event.movementY]);
     };
-    /** `onMouseDown`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 记录按下 bubble 的差值，验证结束移动序列后仍为零。 */
     const onMouseDown = event => {
       events.push(['down', false, event.movementX, event.movementY]);
     };
-    /** `onMouseDownCapture`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 记录按下 capture 的差值及阶段顺序，检查两阶段非移动归一化一致。 */
     const onMouseDownCapture = event => {
       events.push(['down', true, event.movementX, event.movementY]);
     };

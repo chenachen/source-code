@@ -49,8 +49,11 @@ const initialValueKey: unique symbol = Symbol('_initialValue')
 /** 带 v-model 内部状态的指令类型。 */
 type ModelDirective<T, Modifiers extends string = string> = ObjectDirective<
   T & {
+    /** 当前 VNode 的 model 回写处理器；每次更新替换它，让稳定事件监听器读取最新闭包。 */
     [assignKey]: AssignerFn
+    /** 水合 created 保存的规范化 defaultValue；mounted 用它判断用户是否提前输入，随后删除。 */
     [initialValueKey]?: string
+    /** select change 回写到 nextTick 之间为 true，阻止同轮 updated 用旧 model 覆盖选中状态。 */
     _assigning?: boolean
   },
   any,
@@ -74,6 +77,7 @@ export const vModelText: ModelDirective<
   HTMLInputElement | HTMLTextAreaElement,
   'trim' | 'number' | 'lazy'
 > = {
+  /** 初始化文本输入监听与水合初值；lazy 监听 change，其余监听 input/组合输入；事件读取元素上最新 assigner。 */
   created(el, { modifiers: { lazy, trim, number } }, vnode) {
     // 水合 created 面对已在 DOM 的元素。保存 SSR/defaultValue 规范化结果，mounted 时可
     // 判断用户是否在 JS 加载前已经输入；若已输入，应写回 model 而非覆盖用户内容。
@@ -107,6 +111,7 @@ export const vModelText: ModelDirective<
     }
   },
   // mounted 才设 value，保证 range 的 min/max 等 props 已先写入。
+  /** 待 type/min/max 等 props 已写入后设置 value。水合前用户已编辑文本时，把现值按修饰符回写 model 并删除初值缓存，避免覆盖输入。 */
   mounted(el, { value, modifiers: { trim, number } }) {
     const newValue = value == null ? '' : value
     const initialValue = el[initialValueKey]
@@ -121,6 +126,7 @@ export const vModelText: ModelDirective<
       el.value = newValue
     }
   },
+  /** 更新 assigner，组合输入中直接返回；等价值或焦点下 lazy/trim 的等价变化不重写 value，减少光标跳动。 */
   beforeUpdate(
     el,
     { value, oldValue, modifiers: { lazy, trim, number } },
@@ -165,6 +171,7 @@ export const vModelText: ModelDirective<
 export const vModelCheckbox: ModelDirective<HTMLInputElement> = {
   // #4096：数组内部增删也应影响每个 checkbox checked，指令绑定需深度追踪。
   deep: true,
+  /** 登记 checkbox change 监听；Array 按宽松索引增删，Set 克隆后按原值增删，标量使用 true/false-value；读取最新 _modelValue。 */
   created(el, _, vnode) {
     el[assignKey] = getModelAssigner(vnode)
     addEventListener(el, 'change', () => {
@@ -197,6 +204,7 @@ export const vModelCheckbox: ModelDirective<HTMLInputElement> = {
   },
   // 挂载后再算初始 checked，等待 true-value/false-value props 已写入元素私有字段。
   mounted: setChecked,
+  /** 替换 checkbox assigner 后计算 checked；保持监听器身份不变。 */
   beforeUpdate(el, binding, vnode) {
     el[assignKey] = getModelAssigner(vnode)
     setChecked(el, binding, vnode)
@@ -230,6 +238,7 @@ function setChecked(
 
 /** radio v-model：当前 model 与 radio 原始 value 宽松相等时选中。 */
 export const vModelRadio: ModelDirective<HTMLInputElement> = {
+  /** 按宽松比较设置 radio 初始 checked，登记 change 时回写原始 _value 的监听器。 */
   created(el, { value }, vnode) {
     el.checked = looseEqual(value, vnode.props!.value)
     el[assignKey] = getModelAssigner(vnode)
@@ -237,6 +246,7 @@ export const vModelRadio: ModelDirective<HTMLInputElement> = {
       el[assignKey](getValue(el))
     })
   },
+  /** 刷新 radio assigner；model 新旧值不同时再更新 checked。 */
   beforeUpdate(el, { value, oldValue }, vnode) {
     el[assignKey] = getModelAssigner(vnode)
     if (value !== oldValue) {
@@ -252,6 +262,7 @@ export const vModelRadio: ModelDirective<HTMLInputElement> = {
 export const vModelSelect: ModelDirective<HTMLSelectElement, 'number'> = {
   // multiple 的 Array/Set 内部变化会改变 option.selected，需要深度追踪。
   deep: true,
+  /** 登记 select change 监听，按 number 修饰符读取选中 options，并依最新 model 类型返回 Array/Set；_assigning 保护同轮回写到 nextTick 结束。 */
   created(el, { value, modifiers: { number } }, vnode) {
     ;(el as any)._modelValue = value
     addEventListener(el, 'change', () => {
@@ -275,13 +286,16 @@ export const vModelSelect: ModelDirective<HTMLSelectElement, 'number'> = {
     el[assignKey] = getModelAssigner(vnode)
   },
   // select 状态依赖 option children，mounted/updated 后它们才是本轮最终集合。
+  /** 等所有 option 挂载后，以 model 初始化 selected/selectedIndex。 */
   mounted(el, { value }) {
     setSelected(el, value)
   },
+  /** option patch 前更新 _modelValue 与 assigner；选择状态留给 updated。 */
   beforeUpdate(el, { value }, vnode) {
     ;(el as any)._modelValue = value
     el[assignKey] = getModelAssigner(vnode)
   },
+  /** option patch 后重算选择；change 刚回写产生的同轮 updated 用 _assigning 跳过，避免读回旧值。 */
   updated(el, { value }) {
     if (!el._assigning) {
       setSelected(el, value)
@@ -334,7 +348,14 @@ function getValue(el: HTMLOptionElement | HTMLInputElement) {
 
 /** 读取 checkbox 非字符串 true-value/false-value；未设置时回退原生布尔值。 */
 function getCheckboxValue(
-  el: HTMLInputElement & { _trueValue?: any; _falseValue?: any },
+  el: HTMLInputElement & {
+    /** patchProp 保存的未字符串化 true-value，勾选时用于标量 model。 */
+    _trueValue?: any;
+    /**
+     * patchProp 保存的未字符串化 false-value，取消勾选时用于标量 model。
+     */
+    _falseValue?: any
+  },
   checked: boolean,
 ) {
   const key = checked ? '_trueValue' : '_falseValue'
@@ -348,15 +369,19 @@ function getCheckboxValue(
 export const vModelDynamic: ObjectDirective<
   HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
 > = {
+  /** created 时按真实 tag/type 转交专用 v-model 的创建钩子。 */
   created(el, binding, vnode) {
     callModelHook(el, binding, vnode, null, 'created')
   },
+  /** mounted 时重新解析控件类型，转交初始化 DOM 状态的钩子。 */
   mounted(el, binding, vnode) {
     callModelHook(el, binding, vnode, null, 'mounted')
   },
+  /** beforeUpdate 时按本轮 VNode type 转交更新钩子，带上 prevVNode 供专用实现使用。 */
   beforeUpdate(el, binding, vnode, prevVNode) {
     callModelHook(el, binding, vnode, prevVNode, 'beforeUpdate')
   },
+  /** updated 时重新选择控件实现，在 option 等 children 更新后同步 DOM。 */
   updated(el, binding, vnode, prevVNode) {
     callModelHook(el, binding, vnode, prevVNode, 'updated')
   },
@@ -402,14 +427,17 @@ function callModelHook(
  * 仅用户在 SSR 中复用客户端 render 函数时使用；SSR 模板编译器有专门转换。
  */
 export function initVModelForSSR(): void {
+  /** 为客户端 render 的 SSR 复用输出绑定 value；不安装浏览器输入监听。 */
   vModelText.getSSRProps = ({ value }) => ({ value })
 
+  /** SSR 中绑定 model 与 radio value 宽松相等时输出 checked:true，否则不添加。 */
   vModelRadio.getSSRProps = ({ value }, vnode) => {
     if (vnode.props && looseEqual(vnode.props.value, value)) {
       return { checked: true }
     }
   }
 
+  /** SSR Array 用宽松索引、Set 用原值 has 判定 checked；标量真值输出 checked:true。 */
   vModelCheckbox.getSSRProps = ({ value }, vnode) => {
     if (isArray(value)) {
       if (vnode.props && looseIndexOf(value, vnode.props.value) > -1) {
@@ -424,6 +452,7 @@ export function initVModelForSSR(): void {
     }
   }
 
+  /** SSR 原生 VNode 根据大写标签和 type 分派专用指令的 getSSRProps；非字符串组件 VNode 直接返回。 */
   vModelDynamic.getSSRProps = (binding, vnode) => {
     if (typeof vnode.type !== 'string') {
       return

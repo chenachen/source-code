@@ -38,17 +38,10 @@ describe('ReactDOM HostSingleton', () => {
     waitForAll = InternalTestUtils.waitForAll;
   });
 
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「errors when a hoistable component becomes a Resource」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言连接 DOM host 属性写入与提交路径。
-   */
+  /** 同一 link 槽先渲染 preload，再改为带 precedence 的 stylesheet；根 onUncaughtError 应收到不允许普通 hoistable 转资源的诊断，DEV 另带前后 props 差异，验证资源身份不能跨更新改变。 */
   it('errors when a hoistable component becomes a Resource', async () => {
     const errors = [];
-    /** `onError`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 收集普通 link 转 stylesheet 时根报告的未捕获错误消息，区分 DEV 差异输出与生产诊断。 */
     function onError(e) {
       errors.push(e.message);
     }
@@ -83,10 +76,10 @@ describe('ReactDOM HostSingleton', () => {
     }
   });
 
-  /** 测试场景：验证「errors when a hoistable Resource becomes an instance」描述的渲染、交互或错误处理结果。 */
+  /** 同一 link 槽先渲染 precedence stylesheet，向查到的 preload 节点派发 load 后改为 rel=foo；根应报告资源不能变普通 link，验证资源记录与实例类别保持不变量。两轮加载查询实际都选择 preload。 */
   it('errors when a hoistable Resource becomes an instance', async () => {
     const errors = [];
-    /** `onError`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 收集 stylesheet 转普通 link 时根报告的错误消息，验证资源类别不能在同一 Fiber 槽更新改变。 */
     function onError(e) {
       errors.push(e.message);
     }

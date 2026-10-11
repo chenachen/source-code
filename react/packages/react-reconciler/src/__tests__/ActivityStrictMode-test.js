@@ -203,7 +203,7 @@ describe('Activity StrictMode', () => {
       );
     }
 
-    /** resolve 前抛可控 Promise，resolve 后记录首次提交及严格 effect 重放。 */
+    /** resolve 前抛可控 Promise，resolve 后记录 render；首次提交及严格重放由 effect 的 mount/cleanup 日志区分。 */
     function Child() {
       log.push('Child rendered');
       React.useEffect(() => {
@@ -259,7 +259,7 @@ describe('Activity StrictMode', () => {
 
   /**
    * Given hidden Activity 先预渲染无子节点 Parent；When 揭示时插入 Child one，随后普通更新并再插入 Child two；
-   * Then 仅每个“首次提交”的新 Child 执行 StrictMode 双 effect，既有组件更新只执行单轮 effect。
+   * Then 首次揭示时 Parent 与新 Child one 都重放 effects；后续普通更新为单轮，另插入的 Child two 独立重放。
    * 验证机制：分阶段生命周期日志；对应 Activity visibility effects 与 commitDoubleInvokeEffectsInDEV。
    */
   // @gate __DEV__

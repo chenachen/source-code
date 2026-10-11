@@ -59,6 +59,7 @@ export function once(
   event: string,
   fn: Function,
 ): ComponentPublicInstance | null {
+  /** 先注销该 once 包装器，再以组件公共实例为 this 调用原监听器，重入 emit 不会再次命中。 */
   const wrapped = (...args: any[]) => {
     off(instance, event, wrapped)
     fn.apply(instance.proxy, args)

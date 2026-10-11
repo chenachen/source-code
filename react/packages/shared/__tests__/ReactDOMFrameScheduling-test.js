@@ -10,6 +10,7 @@
 'use strict';
 
 describe('ReactDOMFrameScheduling', () => {
+  // 重置模块并启用真实 Scheduler，让入口的环境探测发生在本次 require 而非 mock 中。
   beforeEach(() => {
     jest.resetModules();
 

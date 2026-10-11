@@ -3,12 +3,14 @@
  */
 
 /**
- * 浏览器实体解码场景：在真实 DOM 元素中验证文本/属性上下文的 HTML 实体差异，并回归
- * script/style/title 等特殊标签内容不能因复用 textarea 解码器而被错误解释。
+ * 在 jsdom 中验证常见字符实体，以及属性模式中的标签文本与引号。
  */
 import { decodeHtmlBrowser } from '../src/decodeHtmlBrowser'
 
 describe('decodeHtmlBrowser', () => {
+  /**
+   * 场景：在 jsdom 中对文本实体、十进制/十六进制字符码与嵌套转义各解码一次，断言空白及单层结果；属性模式另输入标签与引号，确认保留标签文本而不当作真实元素。
+   */
   it('should decode HTML correctly', () => {
     expect(decodeHtmlBrowser(' abc  123 ')).toBe(' abc  123 ')
 

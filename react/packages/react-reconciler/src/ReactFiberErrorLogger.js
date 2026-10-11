@@ -63,7 +63,7 @@ export function defaultOnUncaughtError(
         // 组件栈由 console.error 包装层追加到末尾。
       );
     } finally {
-      // 默认报告失败也不能改变 reconciler 的控制流。
+      // 此空 finally 不吞掉报告异常；外层 logUncaughtError 会捕获并在定时任务中重抛。
     }
   }
 }
@@ -130,7 +130,7 @@ export function defaultOnCaughtError(
         );
       }
     } finally {
-      // 默认报告失败也不能改变 reconciler 的控制流。
+      // 报告异常仍向外传播；logCaughtError 负责把它转移到当前提交栈之外。
     }
   } else {
     // 生产环境直接传递 Error 对象，让浏览器原生显示消息、JS 栈和宿主附加信息。

@@ -42,9 +42,9 @@ export function ssrTransformTransitionGroup(
         node,
         context,
         otherProps,
-        true /* isComponent */,
-        false /* isDynamicComponent */,
-        true /* ssr (skip event listeners) */,
+        true /* 按组件处理 props */,
+        false /* 不按动态组件处理 */,
+        true /* SSR 模式跳过事件监听器 */,
       )
       let propsExp = null
       if (props || directives.length) {

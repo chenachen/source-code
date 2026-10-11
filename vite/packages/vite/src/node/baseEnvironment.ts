@@ -14,7 +14,7 @@ const environmentColors = [
 /**
  * 只依赖已解析配置的最小 Environment 视图。
  *
- * 它把顶层 `ResolvedConfig` 与当前 Environment 的覆盖项合成一个只读代理，并为日志附加
+ * 它把顶层 `ResolvedConfig` 与当前 Environment 的覆盖项合成一个读取代理，并为日志附加
  * Environment 标签。配置解析期间插件尚不一定拥有完整运行时，因此 `applyToEnvironment`
  * 等早期 API 也可以只依赖此基类。
  */
@@ -59,6 +59,7 @@ export class PartialEnvironment {
     this.config = new Proxy(
       options as ResolvedConfig & ResolvedEnvironmentOptions,
       {
+        /** 对存在于环境选项的键直接读覆盖值（包括 undefined），其余键才回退顶层。 */
         get: (target, prop: keyof ResolvedConfig) => {
           if (prop === 'logger') {
             return this.logger
@@ -129,7 +130,7 @@ export class BaseEnvironment extends PartialEnvironment {
     return this.config.plugins
   }
 
-  /** 是否已经完成该具体 Environment 的一次性初始化。 @internal */
+  /** 是否已进入该具体 Environment 的初始化；DevEnvironment 在异步创建容器前置位。 @internal */
   _initiated: boolean = false
 
   /** 用顶层配置中同名 Environment 选项创建实例。 */

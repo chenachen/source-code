@@ -9,6 +9,7 @@
     />
     <title>Renderer 与 Patch · Vue Runtime 内核解剖</title>
     <link rel="stylesheet" href="assets/styles.css" />
+    <link rel="stylesheet" href="assets/engineering-diagrams.css" />
   </head>
   <body data-current="renderer.html">
     <header data-site-header></header>
@@ -237,7 +238,8 @@ describe('runtime course: Counter', () =&gt; {
               ><span class="flow-copy"
                 ><strong>nextTree.el 已是原 TestElement</strong
                 ><small
-                  >serializeInner(root) 得到 button 2；创建次数没有增加。</small
+                  >serializeInner(root) 得到 button 2；button
+                  元素未重建，只替换其文本 children。</small
                 ></span
               ><span class="flow-file">commit result</span>
             </div>
@@ -481,10 +483,10 @@ describe('runtime course: Counter', () =&gt; {
             <div class="branch">
               <strong>替换/错误路径</strong
               ><span
-                >type/key 不同先算 next host anchor、卸载旧树再
-            mount；经 Vue 包装的用户 hook 进入应用错误处理流程，未被包装的 host
-            operation 抛错则交给 renderer 调用方，自定义元素的
-                endPatch 由 finally 保证。</span
+                >type/key 不同先算 next host anchor、卸载旧树再 mount；经 Vue
+                包装的用户 hook 进入应用错误处理流程，未被包装的 host operation
+                抛错则交给 renderer 调用方，自定义元素的 endPatch 由 finally
+                保证。</span
               >
             </div>
             <div class="branch">
@@ -594,41 +596,572 @@ describe('runtime course: Counter', () =&gt; {
         <section class="article-section prose" id="patch-dispatch">
           <h2>patch：先判断身份，再讨论差异</h2>
           <p>
-            patch 的第一步是 <code>isSameVNodeType(n1, n2)</code>。type 或 key
-            不同，旧节点无法原位更新：先找到旧树之后的 anchor，卸载 n1，再把 n2
-            当首次挂载。类型相同才进入分派。
+            patch 先检查 <code>n1 === n2</code>，同一对象直接返回。否则核对
+            <code>type / key</code>：身份不同，先找到旧树之后的 anchor，卸载
+            n1，再把 n2 当首次挂载。随后独立检查 BAIL，再进入类型分派。
           </p>
-          <div class="diagram">
-            <div class="diagram-title">PATCH DISPATCH</div>
-            <div class="branch-grid">
-              <div class="branch">
-                <strong>Text / Comment</strong
-                ><span>更新 nodeValue，或创建/复用注释节点。</span>
-              </div>
-              <div class="branch">
-                <strong>Static</strong
-                ><span>挂载编译器提升的连续静态节点；更新通常复用。</span>
-              </div>
-              <div class="branch">
-                <strong>Fragment</strong
-                ><span>维护开始和结束锚点，更新锚点之间的 children。</span>
-              </div>
-              <div class="branch">
-                <strong>Element</strong
-                ><span>processElement → mountElement / patchElement。</span>
-              </div>
-              <div class="branch">
-                <strong>Component</strong
-                ><span
-                  >processComponent → mountComponent / updateComponent。</span
-                >
-              </div>
-              <div class="branch">
-                <strong>Teleport / Suspense</strong
-                ><span>调用类型对象的 process，并传入 RendererInternals。</span>
-              </div>
+          <figure class="eng-diagram" id="renderer-patch-router">
+            <div
+              class="eng-scroll"
+              tabindex="0"
+              aria-label="工程图，可横向滚动"
+            >
+              <svg
+                class="eng-svg"
+                id="renderer-patch-router-svg"
+                viewBox="0 0 1140 1210"
+                style="--diagram-width: 1140px"
+                role="img"
+                aria-labelledby="renderer-patch-router-title renderer-patch-router-desc"
+              >
+                <title id="renderer-patch-router-title">
+                  patch 身份、BAIL 与类型分派
+                </title>
+                <desc id="renderer-patch-router-desc">
+                  先以对象身份提前退出；type或key改变时记录锚点并卸载。BAIL关闭优化后，按特殊type和shapeFlag分派，最后维护模板ref。
+                </desc>
+                <defs>
+                  <marker
+                    id="renderer-patch-router-arrow"
+                    viewBox="0 0 10 10"
+                    refX="9"
+                    refY="5"
+                    markerWidth="7"
+                    markerHeight="7"
+                    orient="auto"
+                  >
+                    <path d="M 0 0 L 10 5 L 0 10 Z" fill="var(--brand)" />
+                  </marker>
+                </defs>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="410"
+                    y="20"
+                    width="320"
+                    height="65"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="570.0"
+                    y="46.0"
+                    text-anchor="middle"
+                  >
+                    <tspan x="570.0" dy="0">patch(n1, n2, …)</tspan>
+                    <tspan x="570.0" dy="23">
+                      新旧 VNode + container / anchor
+                    </tspan>
+                  </text>
+                </g>
+                <g>
+                  <polygon
+                    class="eng-decision"
+                    points="570,105 710,155 570,205 430,155"
+                  />
+                  <text class="eng-label" x="570" y="160" text-anchor="middle">
+                    <tspan x="570" dy="0">n1 === n2 ?</tspan>
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-note"
+                    x="850"
+                    y="120"
+                    width="230"
+                    height="70"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="965.0"
+                    y="148.5"
+                    text-anchor="middle"
+                  >
+                    <tspan x="965.0" dy="0">return</tspan>
+                    <tspan x="965.0" dy="23">不进入分派，也不更新 ref</tspan>
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M 570 85 V 105"
+                  marker-end="url(#renderer-patch-router-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 710 155 H 850"
+                  marker-end="url(#renderer-patch-router-arrow)"
+                />
+                <text class="eng-small" x="780" y="143" text-anchor="middle">
+                  <tspan x="780" dy="0">是</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 570 205 V 235"
+                  marker-end="url(#renderer-patch-router-arrow)"
+                />
+                <text class="eng-small" x="590" y="226" text-anchor="middle">
+                  <tspan x="590" dy="0">否</tspan>
+                </text>
+                <g>
+                  <polygon
+                    class="eng-decision"
+                    points="570,235 755,290 570,345 385,290"
+                  />
+                  <text class="eng-label" x="570" y="284" text-anchor="middle">
+                    <tspan x="570" dy="0">n1 存在且</tspan>
+                    <tspan x="570" dy="23">type / key 不同？</tspan>
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-state"
+                    x="35"
+                    y="248"
+                    width="300"
+                    height="90"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="185.0"
+                    y="275.0"
+                    text-anchor="middle"
+                  >
+                    <tspan x="185.0" dy="0">anchor = getNextHostNode(n1)</tspan>
+                    <tspan x="185.0" dy="23">unmount(n1, …, true)</tspan>
+                    <tspan x="185.0" dy="23">n1 = null → 后面按挂载处理</tspan>
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M 385 290 H 335"
+                  marker-end="url(#renderer-patch-router-arrow)"
+                />
+                <text class="eng-small" x="360" y="278" text-anchor="middle">
+                  <tspan x="360" dy="0">是</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 185 338 V 368 H 570 V 395"
+                  marker-end="url(#renderer-patch-router-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 570 345 V 395"
+                  marker-end="url(#renderer-patch-router-arrow)"
+                />
+                <text class="eng-small" x="594" y="368" text-anchor="middle">
+                  <tspan x="594" dy="0">否 / 首次挂载</tspan>
+                </text>
+                <g>
+                  <polygon
+                    class="eng-decision"
+                    points="570,395 710,445 570,495 430,445"
+                  />
+                  <text class="eng-label" x="570" y="450" text-anchor="middle">
+                    <tspan x="570" dy="0">n2.patchFlag === BAIL ?</tspan>
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-state"
+                    x="850"
+                    y="409"
+                    width="230"
+                    height="76"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="965.0"
+                    y="440.5"
+                    text-anchor="middle"
+                  >
+                    <tspan x="965.0" dy="0">optimized = false</tspan>
+                    <tspan x="965.0" dy="23">dynamicChildren = null</tspan>
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M 710 445 H 850"
+                  marker-end="url(#renderer-patch-router-arrow)"
+                />
+                <text class="eng-small" x="780" y="433" text-anchor="middle">
+                  <tspan x="780" dy="0">是</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 965 485 V 516 H 570 V 540"
+                  marker-end="url(#renderer-patch-router-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 570 495 V 540"
+                  marker-end="url(#renderer-patch-router-arrow)"
+                />
+                <text class="eng-small" x="592" y="520" text-anchor="middle">
+                  <tspan x="592" dy="0">否</tspan>
+                </text>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="370"
+                    y="540"
+                    width="400"
+                    height="60"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="570.0"
+                    y="575.0"
+                    text-anchor="middle"
+                  >
+                    <tspan x="570.0" dy="0">先按 type 分派特殊节点</tspan>
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M 570 600 V 632 H 137 V 668"
+                  marker-end="url(#renderer-patch-router-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 570 632 H 402 V 668"
+                  marker-end="url(#renderer-patch-router-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 570 632 H 667 V 668"
+                  marker-end="url(#renderer-patch-router-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 570 632 H 932 V 668"
+                  marker-end="url(#renderer-patch-router-arrow)"
+                />
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="20"
+                    y="668"
+                    width="235"
+                    height="92"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="137.5"
+                    y="696.0"
+                    text-anchor="middle"
+                  >
+                    <tspan x="137.5" dy="0">Text</tspan>
+                    <tspan x="137.5" dy="23">processText</tspan>
+                    <tspan x="137.5" dy="23">挂载 / 复用节点并改文本</tspan>
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="285"
+                    y="668"
+                    width="235"
+                    height="92"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="402.5"
+                    y="696.0"
+                    text-anchor="middle"
+                  >
+                    <tspan x="402.5" dy="0">Comment</tspan>
+                    <tspan x="402.5" dy="23">processCommentNode</tspan>
+                    <tspan x="402.5" dy="23">挂载 / 仅复用旧 el</tspan>
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="550"
+                    y="668"
+                    width="235"
+                    height="92"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="667.5"
+                    y="696.0"
+                    text-anchor="middle"
+                  >
+                    <tspan x="667.5" dy="0">Static</tspan>
+                    <tspan x="667.5" dy="23">mountStaticNode</tspan>
+                    <tspan x="667.5" dy="23">开发更新：patchStaticNode</tspan>
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="815"
+                    y="668"
+                    width="235"
+                    height="92"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="932.5"
+                    y="696.0"
+                    text-anchor="middle"
+                  >
+                    <tspan x="932.5" dy="0">Fragment</tspan>
+                    <tspan x="932.5" dy="23">processFragment</tspan>
+                    <tspan x="932.5" dy="23">挂载 / 更新锚点间 children</tspan>
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M 770 568 H 1120 V 810 H 570 V 820"
+                  marker-end="url(#renderer-patch-router-arrow)"
+                />
+                <text class="eng-small" x="950" y="553" text-anchor="middle">
+                  <tspan x="950" dy="0">default：不属于四种特殊 type</tspan>
+                </text>
+                <text class="eng-small" x="1076" y="796" text-anchor="middle">
+                  <tspan x="1076" dy="0">default</tspan>
+                </text>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="390"
+                    y="820"
+                    width="360"
+                    height="60"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="570.0"
+                    y="855.0"
+                    text-anchor="middle"
+                  >
+                    <tspan x="570.0" dy="0">
+                      其余 type：依次检查 shapeFlag
+                    </tspan>
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M 570 880 V 917 H 137 V 950"
+                  marker-end="url(#renderer-patch-router-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 570 917 H 402 V 950"
+                  marker-end="url(#renderer-patch-router-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 570 917 H 667 V 950"
+                  marker-end="url(#renderer-patch-router-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 570 917 H 932 V 950"
+                  marker-end="url(#renderer-patch-router-arrow)"
+                />
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="20"
+                    y="950"
+                    width="235"
+                    height="92"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="137.5"
+                    y="978.0"
+                    text-anchor="middle"
+                  >
+                    <tspan x="137.5" dy="0">ELEMENT</tspan>
+                    <tspan x="137.5" dy="23">processElement</tspan>
+                    <tspan x="137.5" dy="23">mountElement / patchElement</tspan>
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="285"
+                    y="950"
+                    width="235"
+                    height="92"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="402.5"
+                    y="978.0"
+                    text-anchor="middle"
+                  >
+                    <tspan x="402.5" dy="0">COMPONENT</tspan>
+                    <tspan x="402.5" dy="23">processComponent</tspan>
+                    <tspan x="402.5" dy="23">
+                      挂载 / 更新 / KeepAlive 激活
+                    </tspan>
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="550"
+                    y="950"
+                    width="235"
+                    height="92"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="667.5"
+                    y="978.0"
+                    text-anchor="middle"
+                  >
+                    <tspan x="667.5" dy="0">TELEPORT</tspan>
+                    <tspan x="667.5" dy="23">type.process(…, internals)</tspan>
+                    <tspan x="667.5" dy="23">由 Teleport 处理多容器</tspan>
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="815"
+                    y="950"
+                    width="235"
+                    height="92"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="932.5"
+                    y="978.0"
+                    text-anchor="middle"
+                  >
+                    <tspan x="932.5" dy="0">SUSPENSE（特性开启时）</tspan>
+                    <tspan x="932.5" dy="23">type.process(…, internals)</tspan>
+                    <tspan x="932.5" dy="23">由 Suspense 处理分支</tspan>
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-note"
+                    x="850"
+                    y="820"
+                    width="230"
+                    height="60"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="965.0"
+                    y="855.0"
+                    text-anchor="middle"
+                  >
+                    <tspan x="965.0" dy="0">都未匹配：开发环境 warn</tspan>
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M 750 849 H 850"
+                  marker-end="url(#renderer-patch-router-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 1080 849 H 1120 V 1144 H 805"
+                  marker-end="url(#renderer-patch-router-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 137 760 V 785 H 10 V 1144 H 350"
+                  marker-end="url(#renderer-patch-router-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 137 1042 V 1075 H 570 V 1106"
+                  marker-end="url(#renderer-patch-router-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 402 760 V 785 H 10 V 1144 H 350"
+                  marker-end="url(#renderer-patch-router-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 402 1042 V 1075 H 570 V 1106"
+                  marker-end="url(#renderer-patch-router-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 667 760 V 785 H 10 V 1144 H 350"
+                  marker-end="url(#renderer-patch-router-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 667 1042 V 1075 H 570 V 1106"
+                  marker-end="url(#renderer-patch-router-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 932 760 V 785 H 10 V 1144 H 350"
+                  marker-end="url(#renderer-patch-router-arrow)"
+                />
+                <text class="eng-small" x="192" y="804" text-anchor="middle">
+                  <tspan x="192" dy="0">
+                    特殊 type 处理完成后，直接维护 ref
+                  </tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 932 1042 V 1075 H 570 V 1106"
+                  marker-end="url(#renderer-patch-router-arrow)"
+                />
+                <g>
+                  <rect
+                    class="eng-state"
+                    x="350"
+                    y="1106"
+                    width="455"
+                    height="80"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="577.5"
+                    y="1128.0"
+                    text-anchor="middle"
+                  >
+                    <tspan x="577.5" dy="0">
+                      处理结果已写入 n2.el / component
+                    </tspan>
+                    <tspan x="577.5" dy="23">
+                      新 ref + owner：setRef；仅旧 ref：清空
+                    </tspan>
+                    <tspan x="577.5" dy="23">return</tspan>
+                  </text>
+                </g>
+              </svg>
             </div>
-          </div>
+            <figcaption>
+              <code>patch</code> 中只有
+              <code>n1 === n2</code> 提前返回。身份替换和 BAIL
+              是两个独立判断：替换决定是否重挂，BAIL
+              决定后续能否使用编译优化。Text/Comment/Static/Fragment 优先按 type
+              分派，其他节点再检查 shapeFlag；专用处理完成后维护 ref。对应
+              <code>renderer.ts · patch</code>。
+            </figcaption>
+          </figure>
           <p>
             patch 参数看似很多，是因为递归调用不能依赖隐式全局状态：container
             决定物理宿主，anchor 决定插入位置，parentComponent
@@ -710,9 +1243,10 @@ describe('runtime course: Counter', () =&gt; {
                   children 被残留内容覆盖。
                 </div>
                 <div class="sequence-item">
-                  <strong>先修补 children</strong><br />有 dynamicChildren 走
-                  block 快路径，否则先执行 patchChildren；这一步发生在普通 props
-                  diff 之前。
+                  <strong>先修补 children</strong><br />有 dynamicChildren
+                  时更新动态子节点； 没有 dynamicChildren 且 optimized 为 false
+                  时，才执行通用 patchChildren。 优化模式中的动态文本由后面的
+                  TEXT 分支直接更新。
                 </div>
                 <div class="sequence-item">
                   <strong>再修补 props / 文本</strong><br />按 patchFlag 处理
@@ -847,7 +1381,466 @@ queuePostRenderEffect(updatedHooks, parentSuspense)</code></pre>
         </section>
 
         <section class="article-section prose" id="children">
-          <h2>patchChildren：先判断 children 形态</h2>
+          <h2>patchChildren：先读编译标记，再分 children 形态</h2>
+          <figure class="eng-diagram" id="renderer-children-router">
+            <div
+              class="eng-scroll"
+              tabindex="0"
+              aria-label="工程图，可横向滚动"
+            >
+              <svg
+                class="eng-svg"
+                id="renderer-children-router-svg"
+                viewBox="0 0 1220 1190"
+                style="--diagram-width: 1220px"
+                role="img"
+                aria-labelledby="renderer-children-router-title renderer-children-router-desc"
+              >
+                <title id="renderer-children-router-title">
+                  patchChildren 的编译标记与三种 children 形态
+                </title>
+                <desc id="renderer-children-router-desc">
+                  先检查KEYED和UNKEYED编译标记。通用路径按新文本、数组、空分三列，再按旧children是否数组决定逻辑清理、列表更新、文本清空或挂载。
+                </desc>
+                <defs>
+                  <marker
+                    id="renderer-children-router-arrow"
+                    viewBox="0 0 10 10"
+                    refX="9"
+                    refY="5"
+                    markerWidth="7"
+                    markerHeight="7"
+                    orient="auto"
+                  >
+                    <path d="M 0 0 L 10 5 L 0 10 Z" fill="var(--brand)" />
+                  </marker>
+                </defs>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="455"
+                    y="20"
+                    width="310"
+                    height="60"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="610.0"
+                    y="55.0"
+                    text-anchor="middle"
+                  >
+                    <tspan x="610.0" dy="0">patchChildren(n1, n2, …)</tspan>
+                  </text>
+                </g>
+                <g>
+                  <polygon
+                    class="eng-decision"
+                    points="610,100 790,155 610,210 430,155"
+                  />
+                  <text class="eng-label" x="610" y="149" text-anchor="middle">
+                    <tspan x="610" dy="0">patchFlag &gt; 0 且</tspan>
+                    <tspan x="610" dy="23">KEYED_FRAGMENT ?</tspan>
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="35"
+                    y="117"
+                    width="300"
+                    height="76"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="185.0"
+                    y="148.5"
+                    text-anchor="middle"
+                  >
+                    <tspan x="185.0" dy="0">patchKeyedChildren(…)</tspan>
+                    <tspan x="185.0" dy="23">完成后 return</tspan>
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M 610 80 V 100"
+                  marker-end="url(#renderer-children-router-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 430 155 H 335"
+                  marker-end="url(#renderer-children-router-arrow)"
+                />
+                <text class="eng-small" x="380" y="143" text-anchor="middle">
+                  <tspan x="380" dy="0">是</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 610 210 V 240"
+                  marker-end="url(#renderer-children-router-arrow)"
+                />
+                <text class="eng-small" x="632" y="230" text-anchor="middle">
+                  <tspan x="632" dy="0">否</tspan>
+                </text>
+                <g>
+                  <polygon
+                    class="eng-decision"
+                    points="610,240 790,295 610,350 430,295"
+                  />
+                  <text class="eng-label" x="610" y="289" text-anchor="middle">
+                    <tspan x="610" dy="0">patchFlag &gt; 0 且</tspan>
+                    <tspan x="610" dy="23">UNKEYED_FRAGMENT ?</tspan>
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="885"
+                    y="257"
+                    width="300"
+                    height="76"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="1035.0"
+                    y="288.5"
+                    text-anchor="middle"
+                  >
+                    <tspan x="1035.0" dy="0">patchUnkeyedChildren(…)</tspan>
+                    <tspan x="1035.0" dy="23">完成后 return</tspan>
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M 790 295 H 885"
+                  marker-end="url(#renderer-children-router-arrow)"
+                />
+                <text class="eng-small" x="835" y="283" text-anchor="middle">
+                  <tspan x="835" dy="0">是</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 610 350 V 390"
+                  marker-end="url(#renderer-children-router-arrow)"
+                />
+                <text class="eng-small" x="632" y="378" text-anchor="middle">
+                  <tspan x="632" dy="0">否</tspan>
+                </text>
+                <g>
+                  <polygon
+                    class="eng-decision"
+                    points="610,390 790,445 610,500 430,445"
+                  />
+                  <text class="eng-label" x="610" y="450" text-anchor="middle">
+                    <tspan x="610" dy="0">新 children 的形态</tspan>
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M 430 445 H 180 V 535"
+                  marker-end="url(#renderer-children-router-arrow)"
+                />
+                <text class="eng-small" x="304" y="433" text-anchor="middle">
+                  <tspan x="304" dy="0">文本</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 610 500 V 535"
+                  marker-end="url(#renderer-children-router-arrow)"
+                />
+                <text class="eng-small" x="634" y="523" text-anchor="middle">
+                  <tspan x="634" dy="0">数组</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 790 445 H 1030 V 535"
+                  marker-end="url(#renderer-children-router-arrow)"
+                />
+                <text class="eng-small" x="902" y="433" text-anchor="middle">
+                  <tspan x="902" dy="0">空</tspan>
+                </text>
+                <g>
+                  <polygon
+                    class="eng-decision"
+                    points="180,535 310,585 180,635 50,585"
+                  />
+                  <text class="eng-label" x="180" y="590" text-anchor="middle">
+                    <tspan x="180" dy="0">旧 children 是数组？</tspan>
+                  </text>
+                </g>
+                <g>
+                  <polygon
+                    class="eng-decision"
+                    points="610,535 740,585 610,635 480,585"
+                  />
+                  <text class="eng-label" x="610" y="590" text-anchor="middle">
+                    <tspan x="610" dy="0">旧 children 是数组？</tspan>
+                  </text>
+                </g>
+                <g>
+                  <polygon
+                    class="eng-decision"
+                    points="1030,535 1160,585 1030,635 900,585"
+                  />
+                  <text class="eng-label" x="1030" y="590" text-anchor="middle">
+                    <tspan x="1030" dy="0">旧 children 是数组？</tspan>
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-state"
+                    x="35"
+                    y="685"
+                    width="290"
+                    height="80"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="180.0"
+                    y="707.0"
+                    text-anchor="middle"
+                  >
+                    <tspan x="180.0" dy="0">unmountChildren(旧数组)</tspan>
+                    <tspan x="180.0" dy="23">先清组件 / 指令等逻辑资源</tspan>
+                    <tspan x="180.0" dy="23">宿主内容留给文本替换</tspan>
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M 180 635 V 685"
+                  marker-end="url(#renderer-children-router-arrow)"
+                />
+                <text class="eng-small" x="200" y="660" text-anchor="middle">
+                  <tspan x="200" dy="0">是</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 310 585 H 355 V 815 H 180 V 855"
+                  marker-end="url(#renderer-children-router-arrow)"
+                />
+                <text class="eng-small" x="340" y="606" text-anchor="middle">
+                  <tspan x="340" dy="0">否</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 180 765 V 855"
+                  marker-end="url(#renderer-children-router-arrow)"
+                />
+                <g>
+                  <polygon
+                    class="eng-decision"
+                    points="180,855 310,905 180,955 50,905"
+                  />
+                  <text class="eng-label" x="180" y="910" text-anchor="middle">
+                    <tspan x="180" dy="0">c2 !== c1 ?</tspan>
+                  </text>
+                </g>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="35"
+                    y="1000"
+                    width="290"
+                    height="65"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="180.0"
+                    y="1037.5"
+                    text-anchor="middle"
+                  >
+                    <tspan x="180.0" dy="0">hostSetElementText(c2)</tspan>
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M 180 955 V 1000"
+                  marker-end="url(#renderer-children-router-arrow)"
+                />
+                <text class="eng-small" x="199" y="982" text-anchor="middle">
+                  <tspan x="199" dy="0">是</tspan>
+                </text>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="455"
+                    y="685"
+                    width="310"
+                    height="80"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="610.0"
+                    y="707.0"
+                    text-anchor="middle"
+                  >
+                    <tspan x="610.0" dy="0">patchKeyedChildren(旧, 新)</tspan>
+                    <tspan x="610.0" dy="23">
+                      无 fragment flag 的通用数组路径
+                    </tspan>
+                    <tspan x="610.0" dy="23">兼容有 key / 无 key 节点</tspan>
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M 610 635 V 685"
+                  marker-end="url(#renderer-children-router-arrow)"
+                />
+                <text class="eng-small" x="630" y="660" text-anchor="middle">
+                  <tspan x="630" dy="0">是</tspan>
+                </text>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="455"
+                    y="875"
+                    width="310"
+                    height="80"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="610.0"
+                    y="908.5"
+                    text-anchor="middle"
+                  >
+                    <tspan x="610.0" dy="0">
+                      旧文本先 setElementText(空串)
+                    </tspan>
+                    <tspan x="610.0" dy="23">再 mountChildren(新数组)</tspan>
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M 740 585 H 800 V 835 H 610 V 875"
+                  marker-end="url(#renderer-children-router-arrow)"
+                />
+                <text class="eng-small" x="775" y="609" text-anchor="middle">
+                  <tspan x="775" dy="0">否：旧文本 / 空</tspan>
+                </text>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="875"
+                    y="685"
+                    width="310"
+                    height="80"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="1030.0"
+                    y="718.5"
+                    text-anchor="middle"
+                  >
+                    <tspan x="1030.0" dy="0">
+                      unmountChildren(旧数组, …, true)
+                    </tspan>
+                    <tspan x="1030.0" dy="23">清逻辑资源并移除宿主节点</tspan>
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M 1030 635 V 685"
+                  marker-end="url(#renderer-children-router-arrow)"
+                />
+                <text class="eng-small" x="1050" y="660" text-anchor="middle">
+                  <tspan x="1050" dy="0">是</tspan>
+                </text>
+                <g>
+                  <rect
+                    class="eng-node"
+                    x="875"
+                    y="875"
+                    width="310"
+                    height="80"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="1030.0"
+                    y="908.5"
+                    text-anchor="middle"
+                  >
+                    <tspan x="1030.0" dy="0">
+                      旧文本：setElementText(空串)
+                    </tspan>
+                    <tspan x="1030.0" dy="23">旧空：无操作</tspan>
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M 1160 585 H 1202 V 835 H 1030 V 875"
+                  marker-end="url(#renderer-children-router-arrow)"
+                />
+                <text class="eng-small" x="1144" y="610" text-anchor="middle">
+                  <tspan x="1144" dy="0">否</tspan>
+                </text>
+                <g>
+                  <rect
+                    class="eng-note"
+                    x="455"
+                    y="1110"
+                    width="310"
+                    height="50"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-label"
+                    x="610.0"
+                    y="1140.0"
+                    text-anchor="middle"
+                  >
+                    <tspan x="610.0" dy="0">children 更新完成</tspan>
+                  </text>
+                </g>
+                <path
+                  class="eng-arrow"
+                  d="M 180 1065 V 1088 H 610 V 1110"
+                  marker-end="url(#renderer-children-router-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 50 905 H 15 V 1088 H 610 V 1110"
+                  marker-end="url(#renderer-children-router-arrow)"
+                />
+                <text class="eng-small" x="35" y="883" text-anchor="middle">
+                  <tspan x="35" dy="0">否</tspan>
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M 610 765 V 795 H 820 V 1088 H 610 V 1110"
+                  marker-end="url(#renderer-children-router-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 610 955 V 1110"
+                  marker-end="url(#renderer-children-router-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 1030 765 V 810 H 855 V 1088 H 610 V 1110"
+                  marker-end="url(#renderer-children-router-arrow)"
+                />
+                <path
+                  class="eng-arrow"
+                  d="M 1030 955 V 1088 H 610 V 1110"
+                  marker-end="url(#renderer-children-router-arrow)"
+                />
+              </svg>
+            </div>
+            <figcaption>
+              上方两个 fragment
+              标记命中后直接返回；三种形态分支只属于未命中标记的通用路径。数组转文本的卸载不单独移除宿主节点，随后的
+              setElementText 一次替换容器内容；数组转空则显式传
+              doRemove=true。对应 <code>renderer.ts · patchChildren</code>。
+            </figcaption>
+          </figure>
           <div class="table-wrap">
             <table>
               <thead>
@@ -947,7 +1940,7 @@ queuePostRenderEffect(updatedHooks, parentSuspense)</code></pre>
 新：a c b e d
 
 同步头部后未知区间：
-旧索引序列映射到新位置 ≈ [c→2, b→1, e→4, d→3]
+按新顺序保存旧下标 + 1：[c→3, b→2, e→5, d→4]
 
 Renderer 已知道最终顺序；LIS 只用于决定哪些节点可以不 move。</code></pre>
         </section>
@@ -982,8 +1975,8 @@ Renderer 已知道最终顺序；LIS 只用于决定哪些节点可以不 move�
               <span class="card-label">BAIL</span>
               <h3>优化提示不可信时回退</h3>
               <p>
-                复用已有 VNode、非稳定 slot、多 keyed Fragment 展平等情况使 block
-                元数据不再可信时，清空 dynamicChildren 并完整 Diff。
+                复用已有 VNode、非稳定 slot、多 keyed Fragment 展平等情况使
+                block 元数据不再可信时，清空 dynamicChildren 并完整 Diff。
               </p>
             </article>
           </div>
@@ -1009,20 +2002,48 @@ Renderer 已知道最终顺序；LIS 只用于决定哪些节点可以不 move�
           <div
             class="diagram"
             role="img"
-            aria-label="VNode move 与 unmount 在组件、Fragment、Teleport、宿主容器和锚点之间的递归与反向清理关系"
+            aria-label="VNode move 与 unmount 在组件、Fragment、Teleport、宿主容器和锚点之间的范围移动与递归清理关系"
           >
-            <div class="diagram-title">VNODE RANGE → CONTAINER / ANCHOR → REVERSE CLEANUP</div>
+            <div class="diagram-title">
+              VNODE RANGE → CONTAINER / ANCHOR → RECURSIVE CLEANUP
+            </div>
             <div class="branch-grid">
-              <div class="layer-node"><strong>Component</strong><small>move/unmount 递归到 instance.subTree；组件 VNode 自身没有另一份 DOM。</small></div>
-              <div class="layer-node"><strong>Fragment</strong><small>el(start) → children → anchor(end) 作为完整范围移动；删除时反向清掉整段。</small></div>
-              <div class="layer-node"><strong>Teleport / Suspense</strong><small>委托协议自身处理多容器或 activeBranch，普通 renderer 不猜目标。</small></div>
-              <div class="layer-node emphasis"><strong>Element / Static</strong><small>REORDER 用 hostInsert 复用节点；unmount 完成逻辑清理后才由 remove 处理宿主范围。</small></div>
+              <div class="layer-node">
+                <strong>Component</strong
+                ><small
+                  >move/unmount 递归到 instance.subTree；组件 VNode
+                  自身没有另一份 DOM。</small
+                >
+              </div>
+              <div class="layer-node">
+                <strong>Fragment</strong
+                ><small
+                  >移动起点、各 child 与终点；卸载时先递归清理逻辑资源，再沿
+                  nextSibling 删除宿主范围。</small
+                >
+              </div>
+              <div class="layer-node">
+                <strong>Teleport / Suspense</strong
+                ><small
+                  >委托协议自身处理多容器或 activeBranch，普通 renderer
+                  不猜目标。</small
+                >
+              </div>
+              <div class="layer-node emphasis">
+                <strong>Element / Static</strong
+                ><small
+                  >REORDER 用 hostInsert 复用节点；unmount 完成逻辑清理后才由
+                  remove 处理宿主范围。</small
+                >
+              </div>
             </div>
           </div>
           <details class="source-layer">
             <summary>renderer.ts · move 按 VNode 范围分派（连续源码）</summary>
             <div>
-              <pre data-source-file="vue/packages/runtime-core/src/renderer.ts"><code>  const move: MoveFn = (
+              <pre
+                data-source-file="vue/packages/runtime-core/src/renderer.ts"
+              ><code>  const move: MoveFn = (
     vnode,
     container,
     anchor,
@@ -1060,9 +2081,13 @@ Renderer 已知道最终顺序；LIS 只用于决定哪些节点可以不 move�
             </div>
           </details>
           <details class="source-layer">
-            <summary>renderer.ts · unmount 先分流协议与逻辑资源，再决定是否 remove</summary>
+            <summary>
+              renderer.ts · unmount 先分流协议与逻辑资源，再决定是否 remove
+            </summary>
             <div>
-              <pre data-source-file="vue/packages/runtime-core/src/renderer.ts"><code>    if (shapeFlag &amp; ShapeFlags.COMPONENT_SHOULD_KEEP_ALIVE) {
+              <pre
+                data-source-file="vue/packages/runtime-core/src/renderer.ts"
+              ><code>    if (shapeFlag &amp; ShapeFlags.COMPONENT_SHOULD_KEEP_ALIVE) {
       ;(parentComponent!.ctx as KeepAliveContext).deactivate(vnode)
       return
     }
@@ -1131,9 +2156,13 @@ Renderer 已知道最终顺序；LIS 只用于决定哪些节点可以不 move�
             </div>
           </details>
           <details class="source-layer">
-            <summary>renderer.ts · remove 处理 Fragment/Static/Transition 的物理删除</summary>
+            <summary>
+              renderer.ts · remove 处理 Fragment/Static/Transition 的物理删除
+            </summary>
             <div>
-              <pre data-source-file="vue/packages/runtime-core/src/renderer.ts"><code>  const remove: RemoveFn = vnode =&gt; {
+              <pre
+                data-source-file="vue/packages/runtime-core/src/renderer.ts"
+              ><code>  const remove: RemoveFn = vnode =&gt; {
     const { type, el, anchor, transition } = vnode
     if (type === Fragment) {
       if (
@@ -1187,9 +2216,13 @@ Renderer 已知道最终顺序；LIS 只用于决定哪些节点可以不 move�
             </div>
           </details>
           <details class="source-layer">
-            <summary>rendererChildren.spec.ts · 删除父节点的全部 children</summary>
+            <summary>
+              rendererChildren.spec.ts · 删除父节点的全部 children
+            </summary>
             <div>
-              <pre data-source-file="vue/packages/runtime-core/__tests__/rendererChildren.spec.ts"><code>  test('remove all children from parent', () =&gt; {
+              <pre
+                data-source-file="vue/packages/runtime-core/__tests__/rendererChildren.spec.ts"
+              ><code>  test('remove all children from parent', () =&gt; {
     elm = renderChildren([1, 2, 3, 4, 5])
     expect(elm.children.length).toBe(5)
     expect((elm.children as TestElement[]).map(inner)).toEqual([
@@ -1206,8 +2239,7 @@ Renderer 已知道最终顺序；LIS 只用于决定哪些节点可以不 move�
             </div>
           </details>
           <div class="callout">
-            Renderer 的完整语义已经建立。下一章把最重要也最容易被一句“用了
-            LIS”带过的列表 Diff 单独拆开：从 key
+            下一章继续拆开列表 Diff：从 key
             身份、区间收缩、中段映射一直推演到倒序提交。
           </div>
         </section>
@@ -1244,10 +2276,19 @@ Renderer 已知道最终顺序；LIS 只用于决定哪些节点可以不 move�
                   </td>
                 </tr>
                 <tr>
-                  <td>VNode range 移动与反向卸载</td>
-                  <td><code>renderer.ts · move/unmount/remove</code> 连续原文</td>
-                  <td><code>rendererChildren.spec.ts · moving single child forward / remove all children from parent</code></td>
-                  <td><a href="#move-unmount">VNode/container/anchor 反向图</a></td>
+                  <td>VNode range 移动与递归清理</td>
+                  <td>
+                    <code>renderer.ts · move/unmount/remove</code> 连续原文
+                  </td>
+                  <td>
+                    <code
+                      >rendererChildren.spec.ts · moving single child forward /
+                      remove all children from parent</code
+                    >
+                  </td>
+                  <td>
+                    <a href="#move-unmount">VNode 范围移动与递归清理图</a>
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -1276,7 +2317,7 @@ Renderer 已知道最终顺序；LIS 只用于决定哪些节点可以不 move�
         ><a href="#children">children 形态</a
         ><a href="#keyed-diff">keyed diff</a><a href="#optimized">优化模式</a
         ><a href="#move-unmount">move / unmount</a
-              ><a href="#renderer-evidence">源码与测试</a>
+        ><a href="#renderer-evidence">源码与测试</a>
       </aside>
     </div>
     <footer data-site-footer></footer>

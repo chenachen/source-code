@@ -5,17 +5,23 @@ import { commonStartEffect, releaseAllEffect, ports, setAppName } from '../commo
 import { defer } from '../../libs/utils'
 import microApp from '../..'
 
-/** 获取样式 fixture 原文，供转换结果与预生成 scoped 文件比较。 */
+/**
+ * 获取样式 fixture 的完整原文，供转换结果与预生成 scoped 文件逐字比较。
+ *
+ * resolve 采用 res.text() 的 Promise；未设置 catch/reject，抓取失败时外层可能一直待定。
+ * large/nesting 输入与预期均保留原字节，场景说明写在测试头而不插入 CSS 改变摘要。
+ */
 const fetchText = (url: string) => new Promise((resolve) => {
   fetch(url).then((res: Response) => resolve(res.text()))
 }) as Promise<string>
 
-/** 对样式文本计算稳定摘要，避免在断言中嵌入大段 CSS。 */
+/** 对完整样式文本计算 md5，压缩失败日志；没有空白归一化，任一输出字节变化都会参与比较。 */
 const md5 = (content: string) => {
   return createHash('md5').update(content).digest('hex')
 }
 
 
+/** 当前默认 Jest testMatch 纳入本文件。 */
 describe('source scoped_css', () => {
   let appCon: Element
   beforeAll(() => {
@@ -28,7 +34,11 @@ describe('source scoped_css', () => {
     return releaseAllEffect()
   })
 
-  // 动态插入style标签，先插入后赋值
+  /**
+   * 在 dynamic 应用中先插入空 style，再写入通配选择器与包含 html 的列表，
+   * 等待 defer 后读 textContent。MutationObserver 应处理首次文本，
+   * 给 * 与 .test 加应用前缀，而 html > .abc 保留原段；验证空节点延迟隔离。
+   */
   test('set textContent after style element append to html', async () => {
     const microAppElement1 = document.createElement('micro-app')
     microAppElement1.setAttribute('name', 'test-app1')
@@ -52,9 +62,11 @@ describe('source scoped_css', () => {
     })
   })
 
-  // safari浏览器补全丢失的引号
-  // 2022-1-7补充：已废弃
-  // TODO：确认该兼容场景稳定后是否可删除。
+  /**
+   * 当前 test.skip 跳过：切换 Safari UA 并插入含 content 值及绝对 URL 的 style，
+   * 旧预期逐字检查 content 保留与前缀。当前解析器直接处理文本，选择器到左花括号间空白会被消费，
+   * 旧 CSSOM 引号兼容预期不能当作当前覆盖。
+   */
   test.skip('complete quotation marks in safari', async () => {
     const rawUserAgent = navigator.userAgent
     Object.defineProperty(navigator, 'userAgent', {
@@ -91,7 +103,11 @@ describe('source scoped_css', () => {
     })
   })
 
-  // 一些cssRules需要特殊处理
+  /**
+   * 在 dynamic 应用插入同时含 font-face、media、supports 和未知 at-rule 的 style，
+   * 等待 defer 后逐字核对输出。font-face 声明保留，容器规则递归改写 body/div，
+   * 未知 @unknown 被普通规则路径加前缀；验证 at-rule 分流。
+   */
   test('some CSSRuleType should special handling', async () => {
     const microAppElement3 = document.createElement('micro-app')
     microAppElement3.setAttribute('name', 'test-app3')
@@ -115,11 +131,15 @@ describe('source scoped_css', () => {
     })
   })
 
-  // 补全静态资源地址
-  // TODO：修复 Safari 协议相对 URL 的兼容模拟后重新启用。
+  /**
+   * 当前 test.skip 跳过：改写 indexOf 并给 style 设置旧 __MICRO_APP_LINK_PATH__ 属
+   * 性，输入绝对、data 和两种相对 URL，旧断言期待按该属性补址。当前解析器不读取此属性，
+   * linkPath 由 scopedCSS 第三参传入，故这些旧 URL 预期不代表现实现。
+   */
   test.skip('complete static resource address', async () => {
     const rewIndexOf = String.prototype.indexOf
     const safariPolyfill = `//127.0.0.1:${ports.scoped_css}/safari-polyfill.png`
+    /** 只令特定协议相对地址的 indexOf 表现为未命中，保留旧 Safari 兼容路径的模拟输入。 */
     String.prototype.indexOf = function (searchString: string): number {
       if (searchString === safariPolyfill) {
         return -1
@@ -150,7 +170,10 @@ describe('source scoped_css', () => {
     String.prototype.indexOf = rewIndexOf
   })
 
-  // 分支覆盖
+  /**
+   * 开始加载 common 后立即移除带 destroy 的宿主，让后续样式处理与销毁状态交错。目标是执行加载期间卸载路径；
+   * 本例既无等待资源结算也无 expect，不能直接证明解析器、observer 或资源全部清理。
+   */
   test('covering special branches', async () => {
     // 执行样式隔离时app已经被卸载
     const microAppElement5 = document.createElement('micro-app')
@@ -162,7 +185,11 @@ describe('source scoped_css', () => {
     appCon.removeChild(microAppElement5)
   })
 
-  // styled-component降级处理
+  /**
+   * 分别构造 CSSOM insertRule 的空文本 style、data-styled=active 的空 style 和已移除
+   * 的空 style，再写规则/文本并安排 10ms 断言。应避免改写 styled-components 管理的规则，
+   * 普通空节点也不因空文本产生前缀；定时断言不属于已 resolve 的 mounted Promise。
+   */
   test('temporary handle for styled component', async () => {
     const microAppElement7 = document.createElement('micro-app')
     microAppElement7.setAttribute('name', 'test-app7')
@@ -207,7 +234,10 @@ describe('source scoped_css', () => {
     })
   })
 
-  // 分支覆盖 -- 同一个style元素被执行了两次 -- styleElement.__MICRO_APP_HAS_SCOPED__
+  /**
+   * 把同一个空 style 插入、移除，写入 div 文本后再次插入。二次插入应同步完成一次前缀改写，
+   * textContent 不出现重复前缀；验证节点复用时 scoped 标记与空节点等待路径的协作。
+   */
   test('coverage: styleElement.__MICRO_APP_HAS_SCOPED__', async () => {
     const microAppElement8 = document.createElement('micro-app')
     microAppElement8.setAttribute('name', 'test-app8')
@@ -230,7 +260,11 @@ describe('source scoped_css', () => {
     })
   })
 
-  // 使用large.css提升覆盖率
+  /**
+   * 从服务读取 large.css 原始输入，放入动态 style，再读取 large.scoped.css 比较完整文本 md5。
+   * 输入/预期包含完整 Semantic UI 规则和 at-rule，摘要覆盖选择器、声明、注释、空白与 URL 的全部输出字节，
+   * 不是只检查几个样例规则。
+   */
   test('coverage: use large.css improves coverage', async () => {
     const microAppElement9 = document.createElement('micro-app')
     microAppElement9.setAttribute('name', 'test-app9')
@@ -258,8 +292,10 @@ describe('source scoped_css', () => {
     })
   })
 
-  // 处理所有错误情况
-  // TODO：补齐错误分支的稳定断言后重新启用。
+  /**
+   * 当前 test.skip 跳过：依次输入未闭合注释、缺选择器/花括号、缺关键帧名以及缺冒号声明，旧断言期待多种解析错误。
+   * 当前 printError 仅在有剩余输入时抛错，div { 等耗尽输入不报错，声明冒号也不校验；仍分别保留每段旧输入以记录边界。
+   */
   test.skip('coverage of all failures', async () => {
     const microAppElement10 = document.createElement('micro-app')
     microAppElement10.setAttribute('name', 'test-app10')
@@ -271,7 +307,7 @@ describe('source scoped_css', () => {
       microAppElement10.addEventListener('mounted', () => {
         setAppName('test-app10')
         const dynamicStyle1 = document.createElement('style')
-        // 非法选择器。
+        // 输入在左花括号后结束；当前 printError 因 cssText 已空而不抛缺少右花括号错误。
         dynamicStyle1.setAttribute('__MICRO_APP_LINK_PATH__', 'http://micro-app-test.com/unimportant.css')
         dynamicStyle1.textContent = 'div {'
         document.head.appendChild(dynamicStyle1)
@@ -295,7 +331,7 @@ describe('source scoped_css', () => {
         document.head.appendChild(dynamicStyle4)
         expect(console.error).toBeCalledWith(expect.any(String), expect.any(Error))
 
-        // 属性声明缺少 `:`。
+        // 旧断言期待缺少冒号报错；当前 matchAllDeclarations 原样消费 color，不执行属性语法校验。
         const dynamicStyle5 = document.createElement('style')
         dynamicStyle5.textContent = 'div {color}'
         document.head.appendChild(dynamicStyle5)
@@ -354,7 +390,11 @@ describe('source scoped_css', () => {
     })
   })
 
-  // 通过注释实现的内置的控制规则
+  /**
+   * 依次插入 next-line、带选择器列表的 disable、全局 disable/enable、声明内 next-line、普通
+   * 斜杠与逗号空白输入，逐字检查七段输出。规则前 next-line 只免选择器，声明内指令可免下一段 URL；
+   * 带列表时 URL 继续补全，enable 清列表，验证控制状态与游标消费。
+   */
   test('Using configuration comments', async () => {
     const microAppElement11 = document.createElement('micro-app')
     microAppElement11.setAttribute('name', 'test-app11')
@@ -412,7 +452,11 @@ describe('source scoped_css', () => {
     })
   })
 
-  // 火狐浏览器中编码result
+  /**
+   * 切换 Firefox UA，插入 #root 普通规则，等待 defer 后核对最终可读 CSS，再恢复 UA。
+   * 应输出应用前缀并保留声明，验证 encode/decode 路径能返回普通文本；
+   * 该 ASCII 输入不验证长 Unicode 字符串的性能改善。
+   */
   test('encode result in firefox', async () => {
     const rawUserAgent = navigator.userAgent
     Object.defineProperty(navigator, 'userAgent', {
@@ -449,7 +493,11 @@ describe('source scoped_css', () => {
     })
   })
 
-  // 支持原生 CSS 嵌套（Nesting CSS）
+  /**
+   * 读取 nesting-css 输入动态插入 style，再比较 nesting-css.scoped 预期的完整 md5。
+   * 预期仅给最外层 .ui.comments 加前缀，内部选择器、注释、字符串花括号和 keyframes 保留，
+   * 验证声明扫描的嵌套深度而非逐层选择器隔离。
+   */
   test('coverage: nesting-css support', async () => {
     const microAppElement13 = document.createElement('micro-app')
     microAppElement13.setAttribute('name', 'test-app13')

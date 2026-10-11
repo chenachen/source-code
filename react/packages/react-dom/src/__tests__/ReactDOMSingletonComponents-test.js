@@ -25,7 +25,11 @@ let fatalError = undefined;
 let waitForAll;
 let assertConsoleErrorDev;
 
-/** `normalizeError`：封装当前用例复用的操作、回调或断言步骤。 */
+/**
+ * 截取错误消息的首句（含第一个句点）；没有句点时原样返回，屏蔽恢复错误后面的建议段落以稳定具体首句断言。
+ * @param msg - 待规范化的错误 message。
+ * @returns 首句或原字符串。
+ */
 function normalizeError(msg) {
   // 将第一个句子作为基础，以便更容易地进行断言。
   const idx = msg.indexOf('.');
@@ -73,7 +77,11 @@ describe('ReactDOM HostSingleton', () => {
     });
   });
 
-  /** `actIntoEmptyDocument`：封装当前用例复用的操作、回调或断言步骤。 */
+  /**
+   * 执行提供的服务端动作并等待一次 setImmediate，使本测试预期已完成的流数据进入 buffer；流错误由 hasErrored/fatalError 转为拒绝。取走并清空 buffer，再以允许脚本执行的新 JSDOM 重建局部 document/container，不负责等待无限挂起的流。
+   * @param callback - 启动服务端渲染并 pipe 到 writable 的动作，可返回 Promise。
+   * @returns 文档替换完成的 Promise，无结果值；callback 或流失败时拒绝。
+   */
   async function actIntoEmptyDocument(callback) {
     await callback();
     // 等待一次事件循环的轮询。 这假设我们已经将所有东西都冲刷了。
@@ -94,7 +102,11 @@ describe('ReactDOM HostSingleton', () => {
     container = document;
   }
 
-  /** `getVisibleChildren`：封装当前用例复用的操作、回调或断言步骤。 */
+  /**
+   * 递归把 DOM 转为可见 React 元素/文本，保留属性字符串；过滤脚本、模板、hidden/aria-hidden 与 rel=expect 且 blocking=render 的提示，data-meaningful 可越过过滤。含冒号的 id 作为生成标识省略；这份结构比较不代替另行进行的节点引用断言。
+   * @param element - 要遍历子节点的 DOM 节点。
+   * @returns 无子节点为 undefined，一个为单值，多个为数组。
+   */
   function getVisibleChildren(element) {
     const children = [];
     let node = element.firstChild;
@@ -107,7 +119,7 @@ describe('ReactDOM HostSingleton', () => {
             el.tagName !== 'template' &&
             !el.hasAttribute('hidden') &&
             !el.hasAttribute('aria-hidden') &&
-            // 忽略渲染阻塞，期望
+            // 过滤 rel=expect 且 blocking=render 的渲染完成提示。
             (node.getAttribute('rel') !== 'expect' ||
               node.getAttribute('blocking') !== 'render')) ||
           el.hasAttribute('data-meaningful')
@@ -139,14 +151,7 @@ describe('ReactDOM HostSingleton', () => {
         : children;
   }
 
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「warns if you render the same singleton twice at the same time」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言连接 ReactDOM 公开入口、ReactDOMRoot 根生命周期及 DOM 提交结果。
-   */
+  /** Given：document 已渲染一个 en head；When：同时渲染 en/es 两个 head，再改成单独 fr 和 en head；Then：DEV 报重复挂载；共用 head 的 lang/data-foo 来自 es，含 Hola/Hello；回到单实例后分别只剩 Bonjour 或 Hello。目的：显示同一文档 singleton 被两个组件争用的结果与告警。 */
   it('warns if you render the same singleton twice at the same time', async () => {
     const root = ReactDOMClient.createRoot(document);
     root.render(
@@ -235,7 +240,7 @@ describe('ReactDOM HostSingleton', () => {
     );
   });
 
-  /** 测试场景：验证「resets property-backed state when a singleton is released」描述的渲染、交互或错误处理结果。 */
+  /** Given：body 有 React 属性、红色 style、受管 HTML 与点击属性；第三方另加属性、蓝色背景和 onclick；When：root 改渲染为仅 html；Then：head/body 引用保留；React onclick、属性、红色 style 与 HTML 清掉，第三方 onclick/data-external/蓝背景保留。目的：验证释放 singleton 只移除 React 管理的状态。 */
   it('resets property-backed state when a singleton is released', async () => {
     const root = ReactDOMClient.createRoot(document);
     const head = document.head;
@@ -280,9 +285,10 @@ describe('ReactDOM HostSingleton', () => {
     expect(body.style.color).toBe('');
     expect(body.style.backgroundColor).toBe('blue');
   });
+  /** Given：TODO 门控当前为 false；定义中 body 已有受管 HTML；When：把整个 dangerouslySetInnerHTML prop 改为 undefined；Then：定义的预期为 body.textContent 变空；当前门控不执行该用例。目的：记录待实现的 HTML prop 清理行为。 */
 
   // @gate TODO
-  /** 测试场景：验证「clears dangerouslySetInnerHTML when it becomes undefined」描述的渲染、交互或错误处理结果。 */
+
   it('clears dangerouslySetInnerHTML when it becomes undefined', async () => {
     const root = ReactDOMClient.createRoot(document);
     const body = document.body;
@@ -309,9 +315,10 @@ describe('ReactDOM HostSingleton', () => {
 
     expect(body.textContent).toBe('');
   });
+  /** Given：TODO 门控当前为 false；body 已有受管 HTML；When：保留 dangerouslySetInnerHTML 对象但把 __html 改为 undefined；Then：定义的预期为正文清空；当前门控不执行。目的：记录待实现的内部 HTML 值清理行为。 */
 
   // @gate TODO
-  /** 测试场景：验证「clears dangerouslySetInnerHTML when __html becomes undefined」描述的渲染、交互或错误处理结果。 */
+
   it('clears dangerouslySetInnerHTML when __html becomes undefined', async () => {
     const root = ReactDOMClient.createRoot(document);
     const body = document.body;
@@ -338,7 +345,7 @@ describe('ReactDOM HostSingleton', () => {
     expect(body.textContent).toBe('');
   });
 
-  /** 测试场景：验证「updates dangerouslySetInnerHTML on a singleton」描述的渲染、交互或错误处理结果。 */
+  /** Given：body 已渲染 <div>first</div>；When：把 HTML prop 改为 <span>second</span>；Then：body.innerHTML 精确替换为第二段 HTML。目的：验证 singleton 的受管 HTML 可更新。 */
   it('updates dangerouslySetInnerHTML on a singleton', async () => {
     const root = ReactDOMClient.createRoot(document);
     const body = document.body;
@@ -363,7 +370,7 @@ describe('ReactDOM HostSingleton', () => {
     expect(body.innerHTML).toBe('<span>second</span>');
   });
 
-  /** 测试场景：验证「replaces singleton children with dangerouslySetInnerHTML」描述的渲染、交互或错误处理结果。 */
+  /** Given：body 先渲染普通 div 子节点；When：改用 dangerouslySetInnerHTML 的 span managed HTML；Then：innerHTML 从 div managed child 变为 span managed HTML。目的：验证普通子节点可以切换为受管 HTML。 */
   it('replaces singleton children with dangerouslySetInnerHTML', async () => {
     const root = ReactDOMClient.createRoot(document);
     const body = document.body;
@@ -389,9 +396,10 @@ describe('ReactDOM HostSingleton', () => {
 
     expect(body.innerHTML).toBe('<span>managed HTML</span>');
   });
+  /** Given：TODO 门控当前为 false；body 先有受管 div HTML；When：改为普通 span 子节点；Then：定义预期为仅 <span>managed child</span>；当前门控不执行。目的：记录从受管 HTML 切换回普通子节点的目标。 */
 
   // @gate TODO
-  /** 测试场景：验证「replaces dangerouslySetInnerHTML with singleton children」描述的渲染、交互或错误处理结果。 */
+
   it('replaces dangerouslySetInnerHTML with singleton children', async () => {
     const root = ReactDOMClient.createRoot(document);
     const body = document.body;
@@ -419,9 +427,10 @@ describe('ReactDOM HostSingleton', () => {
 
     expect(body.innerHTML).toBe('<span>managed child</span>');
   });
+  /** Given：TODO 门控当前为 false；第三方已在 body 设置 data-external；When：createRoot(document) 获取并渲染空 body；Then：定义预期为 body 引用和外部属性保留；当前门控不执行。目的：记录获取 singleton 时保留第三方属性的目标。 */
 
   // @gate TODO
-  /** 测试场景：验证「preserves imperative attributes when acquiring a singleton」描述的渲染、交互或错误处理结果。 */
+
   it('preserves imperative attributes when acquiring a singleton', async () => {
     const body = document.body;
     body.setAttribute('data-external', 'true');
@@ -438,9 +447,10 @@ describe('ReactDOM HostSingleton', () => {
     expect(document.body).toBe(body);
     expect(body.getAttribute('data-external')).toBe('true');
   });
+  /** Given：TODO 门控当前为 false；body 已有外部属性和已完成边界的 body contribution 标记；When：hydrateRoot 用 span client 替换边界内 server div，并忽略恢复错误；Then：定义预期为正文 client 且 data-external 保留；当前门控不执行。目的：记录清除 preamble contribution 时保留外部属性的目标。 */
 
   // @gate TODO
-  /** 测试场景：验证「preserves imperative attributes when clearing a preamble contribution」描述的渲染、交互或错误处理结果。 */
+
   it('preserves imperative attributes when clearing a preamble contribution', async () => {
     const body = document.body;
     body.setAttribute('data-react-owned', 'true');
@@ -459,7 +469,11 @@ describe('ReactDOM HostSingleton', () => {
         </body>
       </html>,
       {
-        /** `onRecoverableError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /**
+         * 忽略 preamble contribution 不匹配时的预期恢复错误；该 TODO 门控用例只定义正文和外部属性断言，未记录错误数组。
+         * @returns undefined。
+         */
         onRecoverableError() {},
       },
     );
@@ -469,7 +483,7 @@ describe('ReactDOM HostSingleton', () => {
     expect(body.getAttribute('data-external')).toBe('true');
   });
 
-  /** 测试场景：验证「does not duplicate native listeners when a singleton is reacquired」描述的渲染、交互或错误处理结果。 */
+  /** Given：同一个 body 的 onScroll mock 已挂载；When：依次派发 scroll、移除 body 组件再派发、重新获取 body 再派发；Then：累计调用次数为 1、1、2，重新获取后 document.body 仍为原 body。目的：验证释放与重新获取不会复制原生监听器。 */
   it('does not duplicate native listeners when a singleton is reacquired', async () => {
     const root = ReactDOMClient.createRoot(document);
     const body = document.body;
@@ -508,14 +522,18 @@ describe('ReactDOM HostSingleton', () => {
     body.dispatchEvent(new document.defaultView.Event('scroll'));
     expect(onScroll).toHaveBeenCalledTimes(2);
   });
+  /** Given：DEV 门控，Fizz 输出匹配 head meta 和 body 的受管 managed 元素；When：StrictMode hydrateRoot 挂载带 layout effect 的 Effect；Then：effectLog 为 mount/unmount/mount，managed 元素与服务端节点为同一对象。目的：验证 effect 重放执行时不会释放 singleton 导致受管节点丢失。 */
 
   // @gate __DEV__
-  /** 测试场景：验证「does not release or reacquire singletons when double invoking effects during hydration」描述的渲染、交互或错误处理结果。 */
+
   it('does not release or reacquire singletons when double invoking effects during hydration', async () => {
     const effectLog = [];
     const html = '<span id="managed">managed content</span>';
 
-    /** `Effect`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * 注册 layout effect，把挂载和清理写入 effectLog，并返回与服务端匹配的 meta；StrictMode 用其 mount/unmount/mount 日志确认 effect 重放确实发生。
+     * @returns strict-effect meta 元素；effect 返回记录 unmount 的清理函数。
+     */
     function Effect() {
       React.useLayoutEffect(() => {
         effectLog.push('mount');
@@ -559,7 +577,7 @@ describe('ReactDOM HostSingleton', () => {
     expect(document.getElementById('managed')).toBe(managedElement);
   });
 
-  /** 测试场景：验证「renders into html, head, and body persistently so the node identities never change and extraneous styles are retained」描述的渲染、交互或错误处理结果。 */
+  /** Given：Fizz 文档含三个样式表、内嵌 style 与正文，保存 html/head/body 引用；When：客户端替换、增删子节点、移除 body、卸载，再分别对不匹配和内容匹配的树 hydration；Then：每阶段三节点数组保持相等；外部样式留存；不匹配 hydrationErrors 精确含一个首句及 at div；后轮属性差异发 DEV 告警、link/style 引用保留，最终卸载已匹配样式内容后 head/body 为空。目的：区分持久节点身份、非受管资源保留与已被 hydration 接管资源的清理；后轮空错误数组检查发生在 flush 前。 */
   it('renders into html, head, and body persistently so the node identities never change and extraneous styles are retained', async () => {
     // 服务器渲染一些 HTML，这些 HTML 将被客户端渲染替换。
     await actIntoEmptyDocument(() => {
@@ -800,7 +818,13 @@ describe('ReactDOM HostSingleton', () => {
         </body>
       </html>,
       {
-        /** `onRecoverableError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /**
+         * 收集不匹配 hydration 的规范化首句与组件栈第一行，用例 flush 后精确断言一项 at div 错误。
+         * @param error - hydration 恢复 Error。
+         * @param errorInfo - 含 componentStack 的错误信息。
+         * @returns undefined。
+         */
         onRecoverableError(error, errorInfo) {
           hydrationErrors.push([
             normalizeError(error.message),
@@ -868,7 +892,13 @@ describe('ReactDOM HostSingleton', () => {
         </body>
       </html>,
       {
-        /** `onRecoverableError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /**
+         * 收集第二轮 hydration 的完整 message 与组件栈第一行；空数组检查紧接 hydrateRoot、在 waitForAll 前，后续属性差异由 console 告警断言检查。
+         * @param error - 恢复 Error。
+         * @param errorInfo - 含 componentStack 的错误信息。
+         * @returns undefined。
+         */
         onRecoverableError(error, errorInfo) {
           hydrationErrors.push([
             error.message,
@@ -948,8 +978,9 @@ describe('ReactDOM HostSingleton', () => {
   });
 
   // 当前实现不支持该测试；若重新引入 insertion edge，应再复核此场景。
+  /** 此定义为 skip/todo，不会执行；Given：已 hydration 的文档中，第三方在受管 title/div 前后插入 a–h 样式表；When：定义中依次移除 head、增 body 子节点，再挂新 head 且移除 body；Then：定义期望保留外部样式与相对插入位置；此 skip 用例不执行，不能作为当前插入边界支持证据。目的：保留尚未支持的 tree-adjacent 插入位置回归场景。 */
   // eslint-disable-next-line jest/no-disabled-tests
-  /** 测试场景：验证「is able to maintain insertions in head and body between tree-adjacent Nodes」描述的渲染、交互或错误处理结果。 */
+
   it.skip('is able to maintain insertions in head and body between tree-adjacent Nodes', async () => {
     // 在服务器端渲染一些 HTML，再在客户端进行 hydration。
     await actIntoEmptyDocument(() => {
@@ -1079,7 +1110,7 @@ describe('ReactDOM HostSingleton', () => {
     );
   });
 
-  /** 测试场景：验证「clears persistent head and body when html is the container」描述的渲染、交互或错误处理结果。 */
+  /** Given：html 作为容器，其 head/body 各含前后样式表、旧内容与 data-meaningful script；When：createRoot(html) 渲染新的 head/body 内容；Then：旧 title/div 删除，样式表和有意义 script 保留，新内容追加于其后。目的：验证根清理穿过持久 head/body 但保留资源脚本。 */
   it('clears persistent head and body when html is the container', async () => {
     await actIntoEmptyDocument(() => {
       const {pipe} = ReactDOMFizzServer.renderToPipeableStream(
@@ -1132,7 +1163,7 @@ describe('ReactDOM HostSingleton', () => {
     );
   });
 
-  /** 测试场景：验证「clears persistent head when it is the container」描述的渲染、交互或错误处理结果。 */
+  /** Given：head 作为容器，旧 title 位于两个样式表之间；When：createRoot(head) 渲染新 title；Then：两个 link 保留，旧 title 删除，新 title 位于 link 后。目的：验证 head 容器清理保留样式表。 */
   it('clears persistent head when it is the container', async () => {
     await actIntoEmptyDocument(() => {
       const {pipe} = ReactDOMFizzServer.renderToPipeableStream(
@@ -1164,7 +1195,7 @@ describe('ReactDOM HostSingleton', () => {
     );
   });
 
-  /** 测试场景：验证「clears persistent body when it is the container」描述的渲染、交互或错误处理结果。 */
+  /** Given：body 作为容器，旧 div 位于两个样式表之间；When：createRoot(body) 渲染新 div；Then：两个 link 保留，旧 div 删除，新 div 位于 link 后。目的：验证 body 容器清理保留样式表。 */
   it('clears persistent body when it is the container', async () => {
     await actIntoEmptyDocument(() => {
       const {pipe} = ReactDOMFizzServer.renderToPipeableStream(
@@ -1196,7 +1227,7 @@ describe('ReactDOM HostSingleton', () => {
     );
   });
 
-  /** 测试场景：验证「renders single Text children into HostSingletons correctly」描述的渲染、交互或错误处理结果。 */
+  /** Given：Fizz body 只有文本 foo；When：匹配 hydration 后更新为 bar，再卸载并 createRoot 渲染 baz；Then：各阶段可见 body 文本为 foo、bar、baz。目的：验证 singleton 的单一文本路径覆盖 hydration、更新与新根。 */
   it('renders single Text children into HostSingletons correctly', async () => {
     await actIntoEmptyDocument(() => {
       const {pipe} = ReactDOMFizzServer.renderToPipeableStream(
@@ -1255,7 +1286,7 @@ describe('ReactDOM HostSingleton', () => {
     );
   });
 
-  /** 测试场景：验证「supports going from single text child to many children back to single text child in body」描述的渲染、交互或错误处理结果。 */
+  /** Given：新根 body 的唯一子节点为文本 foo；When：依次改为 div foo、文本 foo、div foo；Then：每轮可见结构分别匹配文本或 div，旧内容没有残留。目的：验证直接文本和元素子节点之间的往返切换。 */
   it('supports going from single text child to many children back to single text child in body', async () => {
     const root = ReactDOMClient.createRoot(document);
     root.render(
@@ -1323,7 +1354,7 @@ describe('ReactDOM HostSingleton', () => {
     );
   });
 
-  /** 测试场景：验证「allows for hydrating without a head」描述的渲染、交互或错误处理结果。 */
+  /** Given：服务端 JSX 省略 head，但 HTML 解析补出空 head；When：以同样省略 head 的 JSX hydration；Then：服务端与 hydration 后可见结构均为 html/空 head/body foo。目的：验证隐式文档 head 不要求对应客户端组件。 */
   it('allows for hydrating without a head', async () => {
     await actIntoEmptyDocument(() => {
       const {pipe} = ReactDOMFizzServer.renderToPipeableStream(
@@ -1357,22 +1388,25 @@ describe('ReactDOM HostSingleton', () => {
   });
 
   // https://github.com/facebook/react/issues/26128
+  /** Given：legacy mode 未禁用的门控环境；When：ReactDOM.render(<div />) 到 document.body；Then：调用完成且没有抛出；没有额外 DOM 断言。目的：回归 #26128 的 body 容器路径。 */
   // @gate !disableLegacyMode
-  /** 测试场景：验证「(#26128) does not throw when rendering at body in legacy mode」描述的渲染、交互或错误处理结果。 */
+
   it('(#26128) does not throw when rendering at body in legacy mode', async () => {
     ReactDOM.render(<div />, document.body);
   });
 
   // https://github.com/facebook/react/issues/26128
+  /** Given：legacy mode 未禁用的门控环境；When：ReactDOM.render(<body />) 到 document.documentElement；Then：调用完成且没有抛出；没有额外 DOM 断言。目的：回归 #26128 的 html 容器路径。 */
   // @gate !disableLegacyMode
-  /** 测试场景：验证「(#26128) does not throw when rendering at <html> in legacy mode」描述的渲染、交互或错误处理结果。 */
+
   it('(#26128) does not throw when rendering at <html> in legacy mode', async () => {
     ReactDOM.render(<body />, document.documentElement);
   });
 
   // https://github.com/facebook/react/issues/26128
+  /** Given：legacy mode 未禁用的门控环境；When：ReactDOM.render(<html />) 到 document；Then：调用完成且没有抛出；没有额外 DOM 断言。目的：回归 #26128 的 document 容器路径。 */
   // @gate !disableLegacyMode
-  /** 测试场景：验证「(#26128) does not throw when rendering at document in legacy mode」描述的渲染、交互或错误处理结果。 */
+
   it('(#26128) does not throw when rendering at document in legacy mode', async () => {
     ReactDOM.render(<html />, document);
   });

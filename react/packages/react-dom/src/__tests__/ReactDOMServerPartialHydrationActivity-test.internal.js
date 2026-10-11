@@ -26,7 +26,7 @@ let waitFor;
 let assertLog;
 let assertConsoleErrorDev;
 
-/** `normalizeError`：封装当前用例复用的操作、回调或断言步骤。 */
+/** 截取错误message首句供稳定日志比较；无句点时保留完整msg，不处理cause，后者由调用处另记。 */
 function normalizeError(msg) {
   // 将第一个句子作为基础，以便更容易地进行断言。
   const idx = msg.indexOf('.');
@@ -36,7 +36,7 @@ function normalizeError(msg) {
   return msg;
 }
 
-/** `dispatchMouseEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+/** 模拟指针从from移到to：先在from派发mouseout，再在to派发mouseover，relatedTarget互指；任一空端点代表进入或离开文档，用于连续事件覆盖与重放。 */
 function dispatchMouseEvent(to, from) {
   if (!to) {
     to = null;
@@ -89,6 +89,7 @@ function dispatchMouseEvent(to, from) {
 }
 
 describe('ReactDOMServerPartialHydrationActivity', () => {
+  /** 每例重置模块并在导入DOM入口前开启水合回调与event-handle开关；使用同一Scheduler/act实例，避免跨例缓存和事件实现串扰。 */
   beforeEach(() => {
     jest.resetModules();
 
@@ -115,21 +116,14 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     IdleEventPriority = require('react-reconciler/constants').IdleEventPriority;
   });
 
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「hydrates a parent even if a child Activity boundary is blocked」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言对应 ReactDOMRoot.hydrateRoot 的容器认领与事件重放路径。
-   */
+  /** SSR完整Hello Activity后客户端Child挂起，span ref为空；解除promise后ref复用原span，验证Activity子树的阻塞不迫使外层根替换DOM。 */
   it('hydrates a parent even if a child Activity boundary is blocked', async () => {
     let suspend = false;
     let resolve;
     const promise = new Promise(resolvePromise => (resolve = resolvePromise));
     const ref = React.createRef();
 
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 共享suspend为true时抛同promise，完成时返回Hello；用于保留完整SSR而延后客户端span的ref提交。 */
     function Child() {
       if (suspend) {
         throw promise;
@@ -138,7 +132,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
       }
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 外div内Activity包住ref span/Child，隔开已水合根与受阻子树。 */
     function App() {
       return (
         <div>
@@ -177,12 +171,12 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     expect(ref.current).toBe(span);
   });
 
-  /** 测试场景：验证「can hydrate siblings of a suspended component without errors」描述的渲染、交互或错误处理结果。 */
+  /** 外Activity的Child先pending，后面另有已完成Activity Hello；服务端HelloHello保持，解除后同文本且无错误日志，覆盖挂起兄弟与边界游标恢复。 */
   it('can hydrate siblings of a suspended component without errors', async () => {
     let suspend = false;
     let resolve;
     const promise = new Promise(resolvePromise => (resolve = resolvePromise));
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 挂起时阻塞外Activity，完成输出Hello；其后的独立内Activity仍有完整服务端内容。 */
     function Child() {
       if (suspend) {
         throw promise;
@@ -191,7 +185,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
       }
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** Activity内先异步Child再内Activity/div Hello，制造暂停点后的边界兄弟。 */
     function App() {
       return (
         <Activity>
@@ -214,7 +208,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     // 客户端尚未取得全部数据，但仍要开始水合。
     suspend = true;
     ReactDOMClient.hydrateRoot(container, <App />, {
-      /** `onRecoverableError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 记录恢复错误message首句并另记原cause首句；日志区分尚在暂停的尝试与已提交的客户端接管。 */
       onRecoverableError(error) {
         Scheduler.log('onRecoverableError: ' + normalizeError(error.message));
         if (error.cause) {
@@ -236,18 +230,19 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     expect(container.textContent).toBe('HelloHello');
   });
 
-  /** 测试场景：验证「falls back to client rendering boundary on mismatch」描述的渲染、交互或错误处理结果。 */
+  /** Activity内Child先挂起，末尾第四Component仅客户端div改article；pending时保留原marker/DOM，解除后遍历差异、局部客户端重建并报告recoverable，移除Activity marker。 */
   it('falls back to client rendering boundary on mismatch', async () => {
     let client = false;
     let suspend = false;
     let resolve;
     const promise = new Promise(resolvePromise => {
+      /** 先清suspend再兑现共享promise，保证重试不会继续抛已兑现的暂停任务；后续日志分辨恢复水合与客户端重建。 */
       resolve = () => {
         suspend = false;
         resolvePromise();
       };
     });
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 记录Suspend并抛promise，否则记录/返回Hello；恢复日志分辨水合尝试与客户端重建。 */
     function Child() {
       if (suspend) {
         Scheduler.log('Suspend');
@@ -257,7 +252,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
         return 'Hello';
       }
     }
-    /** `Component`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 仅shouldMismatch且client时div改article Mismatch，其它三个实例始终div Component。 */
     function Component({shouldMismatch}) {
       Scheduler.log('Component');
       if (shouldMismatch && client) {
@@ -265,7 +260,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
       }
       return <div>Component</div>;
     }
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** Activity先Child后四个Component，把唯一差异放到末尾且晚于暂停点。 */
     function App() {
       return (
         <Activity>
@@ -290,7 +285,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     client = true;
 
     ReactDOMClient.hydrateRoot(container, <App />, {
-      /** `onRecoverableError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 记录恢复错误message首句并另记原cause首句；日志区分尚在暂停的尝试与已提交的客户端接管。 */
       onRecoverableError(error) {
         Scheduler.log('onRecoverableError: ' + normalizeError(error.message));
         if (error.cause) {
@@ -327,24 +322,25 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
       "onRecoverableError: Hydration failed because the server rendered HTML didn't match the client.",
     ]);
 
-    // 客户端完成渲染，Suspense 注释节点已移除。
+    // 客户端完成渲染，Activity 注释节点已移除。
     expect(container.innerHTML).toBe(
       'Hello<div>Component</div><div>Component</div><div>Component</div><article>Mismatch</article>',
     );
   });
 
-  /** 测试场景：验证「handles if mismatch is after suspending」描述的渲染、交互或错误处理结果。 */
+  /** 差异Component紧随挂起Child，暂停期间仍保持服务端Hello/div；解除后先检测差异再客户端重建为Hello/article，验证未遍历的差异不会提前触发恢复。 */
   it('handles if mismatch is after suspending', async () => {
     let client = false;
     let suspend = false;
     let resolve;
     const promise = new Promise(resolvePromise => {
+      /** 先清suspend再兑现共享promise，保证重试不会继续抛已兑现的暂停任务；后续日志分辨恢复水合与客户端重建。 */
       resolve = () => {
         suspend = false;
         resolvePromise();
       };
     });
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 暂停时记录并抛promise，解阻后记录/返回Hello，控制是否能遍历紧随的差异。 */
     function Child() {
       if (suspend) {
         Scheduler.log('Suspend');
@@ -354,7 +350,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
         return 'Hello';
       }
     }
-    /** `Component`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 客户端的shouldMismatch实例把div改article，服务端保持div。 */
     function Component({shouldMismatch}) {
       Scheduler.log('Component');
       if (shouldMismatch && client) {
@@ -362,7 +358,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
       }
       return <div>Component</div>;
     }
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 同Activity里先Child再差异Component，无独立父Suspense fallback。 */
     function App() {
       return (
         <Activity>
@@ -384,7 +380,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     client = true;
 
     ReactDOMClient.hydrateRoot(container, <App />, {
-      /** `onRecoverableError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 记录恢复错误message首句并另记原cause首句；日志区分尚在暂停的尝试与已提交的客户端接管。 */
       onRecoverableError(error) {
         Scheduler.log('onRecoverableError: ' + normalizeError(error.message));
         if (error.cause) {
@@ -413,22 +409,23 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     ]);
     jest.runAllTimers();
 
-    // 客户端完成渲染，Suspense 注释节点已移除。
+    // 客户端完成渲染，Activity 注释节点已移除。
     expect(container.innerHTML).toBe('Hello<article>Mismatch</article>');
   });
 
-  /** 测试场景：验证「handles if mismatch is child of suspended component」描述的渲染、交互或错误处理结果。 */
+  /** 差异嵌在挂起Child返回的div内；暂停时保留服务端嵌套DOM，解除后重建为div/article并报告差异，覆盖子树恢复后的游标。 */
   it('handles if mismatch is child of suspended component', async () => {
     let client = false;
     let suspend = false;
     let resolve;
     const promise = new Promise(resolvePromise => {
+      /** 先清suspend再兑现共享promise，保证重试不会继续抛已兑现的暂停任务；后续日志分辨恢复水合与客户端重建。 */
       resolve = () => {
         suspend = false;
         resolvePromise();
       };
     });
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 暂停时不返回子树；完成后返回包children的div，差异位于恢复后才能进入的内部。 */
     function Child({children}) {
       if (suspend) {
         Scheduler.log('Suspend');
@@ -438,7 +435,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
         return <div>{children}</div>;
       }
     }
-    /** `Component`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 把受控差异的div Component改为article Mismatch，位于Child返回的div内。 */
     function Component({shouldMismatch}) {
       Scheduler.log('Component');
       if (shouldMismatch && client) {
@@ -446,7 +443,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
       }
       return <div>Component</div>;
     }
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** Activity的Child包住差异Component，检验恢复后深层主机游标。 */
     function App() {
       return (
         <Activity>
@@ -469,7 +466,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     client = true;
 
     ReactDOMClient.hydrateRoot(container, <App />, {
-      /** `onRecoverableError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 记录恢复错误message首句并另记原cause首句；日志区分尚在暂停的尝试与已提交的客户端接管。 */
       onRecoverableError(error) {
         Scheduler.log('onRecoverableError: ' + normalizeError(error.message));
         if (error.cause) {
@@ -498,22 +495,23 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     ]);
     jest.runAllTimers();
 
-    // 客户端完成渲染，Suspense 注释节点已移除。
+    // 客户端完成渲染，Activity 注释节点已移除。
     expect(container.innerHTML).toBe('<div><article>Mismatch</article></div>');
   });
 
-  /** 测试场景：验证「handles if mismatch is parent and first child suspends」描述的渲染、交互或错误处理结果。 */
+  /** 父Component在Child之后放差异节点，第一child挂起使差异尚未被遍历；Component/Suspend日志后保留原DOM，解除后局部重建，区别父函数执行与主机节点差异。 */
   it('handles if mismatch is parent and first child suspends', async () => {
     let client = false;
     let suspend = false;
     let resolve;
     const promise = new Promise(resolvePromise => {
+      /** 先清suspend再兑现共享promise，保证重试不会继续抛已兑现的暂停任务；后续日志分辨恢复水合与客户端重建。 */
       resolve = () => {
         suspend = false;
         resolvePromise();
       };
     });
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 暂停时抛共享promise，否则返回div children；作为父Component的第一child。 */
     function Child({children}) {
       if (suspend) {
         Scheduler.log('Suspend');
@@ -523,7 +521,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
         return <div>{children}</div>;
       }
     }
-    /** `Component`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 父div保持相同，先children再服务端div或客户端article；差异节点晚于第一child暂停点。 */
     function Component({shouldMismatch, children}) {
       Scheduler.log('Component');
       if (shouldMismatch && client) {
@@ -541,7 +539,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
         </div>
       );
     }
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** Activity内差异父Component包暂停Child，父函数已执行但后置差异尚未遍历。 */
     function App() {
       return (
         <Activity>
@@ -564,7 +562,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     client = true;
 
     ReactDOMClient.hydrateRoot(container, <App />, {
-      /** `onRecoverableError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 记录恢复错误message首句并另记原cause首句；日志区分尚在暂停的尝试与已提交的客户端接管。 */
       onRecoverableError(error) {
         Scheduler.log('onRecoverableError: ' + normalizeError(error.message));
         if (error.cause) {
@@ -593,24 +591,25 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     ]);
     jest.runAllTimers();
 
-    // 客户端完成渲染，Suspense 注释节点已移除。
+    // 客户端完成渲染，Activity 注释节点已移除。
     expect(container.innerHTML).toBe(
       '<div><div></div><article>Mismatch</article></div>',
     );
   });
 
-  /** 测试场景：验证「does show a parent fallback if mismatch is parent and second child suspends」描述的渲染、交互或错误处理结果。 */
+  /** Component先产生article差异再到挂起的第二child，外层有Suspense；立即隐藏原div、保留marker并加Loading，解除后重建移除Activity marker；节流开关决定recoverable在timer前或后记录。 */
   it('does show a parent fallback if mismatch is parent and second child suspends', async () => {
     let client = false;
     let suspend = false;
     let resolve;
     const promise = new Promise(resolvePromise => {
+      /** 先清suspend再兑现共享promise，保证重试不会继续抛已兑现的暂停任务；后续日志分辨恢复水合与客户端重建。 */
       resolve = () => {
         suspend = false;
         resolvePromise();
       };
     });
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 异步div children位于Component的第二child，前面的差异已触发客户端重建。 */
     function Child({children}) {
       if (suspend) {
         Scheduler.log('Suspend');
@@ -620,7 +619,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
         return <div>{children}</div>;
       }
     }
-    /** `Component`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 先客户端article/服务端div差异，再children，确保差异先于第二child暂停。 */
     function Component({shouldMismatch, children}) {
       Scheduler.log('Component');
       if (shouldMismatch && client) {
@@ -638,12 +637,12 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
         </div>
       );
     }
-    /** `Fallback`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 记录Fallback并返回Loading，用日志证明暂停传播到父Suspense。 */
     function Fallback() {
       Scheduler.log('Fallback');
       return 'Loading...';
     }
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** Suspense包Activity/Component/Child，让Activity重建期间的暂停由父fallback接住。 */
     function App() {
       return (
         <Suspense fallback={<Fallback />}>
@@ -670,7 +669,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     client = true;
 
     ReactDOMClient.hydrateRoot(container, <App />, {
-      /** `onRecoverableError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 记录恢复错误message首句并另记原cause首句；日志区分尚在暂停的尝试与已提交的客户端接管。 */
       onRecoverableError(error) {
         Scheduler.log('onRecoverableError: ' + normalizeError(error.message));
         if (error.cause) {
@@ -681,7 +680,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     await waitForAll(['Component', 'Component', 'Suspend', 'Fallback']);
     jest.runAllTimers();
 
-    // !! 客户端切换到 Suspense 后备内容。由于客户端渲染从未提交，未水合内容仍保持隐藏。
+    // 父Suspense已提交Loading并隐藏服务端主机内容；Activity的客户端重建尚未提交，原marker仍保留。
     expect(container.innerHTML).toBe(
       '<!--$--><!--&--><div style="display: none;"><div>Component</div><div></div></div><!--/&--><!--/$-->' +
         'Loading...',
@@ -702,7 +701,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     }
     jest.runAllTimers();
 
-    // 达到节流超时后，即可提交失败的水合。
+    // alwaysThrottleRetries开启时恢复提交被节流，runAllTimers后才报告差异；关闭时前面的waitForAll已包含该回调。
     if (gate(flags => flags.alwaysThrottleRetries)) {
       assertLog([
         "onRecoverableError: Hydration failed because the server rendered HTML didn't match the client.",
@@ -715,18 +714,19 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     );
   });
 
-  /** 测试场景：验证「does show a parent fallback if mismatch is in parent element only」描述的渲染、交互或错误处理结果。 */
+  /** 父主机div仅客户端改article，内部Child仍pending且有外Suspense；先遇父标签差异，转客户端后挂起，保留隐藏原div并显示Loading；解除后article提交，覆盖父fallback与错误节流。 */
   it('does show a parent fallback if mismatch is in parent element only', async () => {
     let client = false;
     let suspend = false;
     let resolve;
     const promise = new Promise(resolvePromise => {
+      /** 先清suspend再兑现共享promise，保证重试不会继续抛已兑现的暂停任务；后续日志分辨恢复水合与客户端重建。 */
       resolve = () => {
         suspend = false;
         resolvePromise();
       };
     });
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 内部Child受同promise控制，完成返回div children，父标签已先被客户端改变。 */
     function Child({children}) {
       if (suspend) {
         Scheduler.log('Suspend');
@@ -736,7 +736,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
         return <div>{children}</div>;
       }
     }
-    /** `Component`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 仅改父标签div→article并原样放children，隔离父主机本身的水合差异。 */
     function Component({shouldMismatch, children}) {
       Scheduler.log('Component');
       if (shouldMismatch && client) {
@@ -744,12 +744,12 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
       }
       return <div>{children}</div>;
     }
-    /** `Fallback`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 记录Fallback并输出Loading，证明父标签差异后的暂停显示外层fallback。 */
     function Fallback() {
       Scheduler.log('Fallback');
       return 'Loading...';
     }
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 外Suspense接住Activity内父标签重建的异步Child，旧主机内容先隐藏。 */
     function App() {
       return (
         <Suspense fallback={<Fallback />}>
@@ -774,7 +774,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     client = true;
 
     ReactDOMClient.hydrateRoot(container, <App />, {
-      /** `onRecoverableError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 记录恢复错误message首句并另记原cause首句；日志区分尚在暂停的尝试与已提交的客户端接管。 */
       onRecoverableError(error) {
         Scheduler.log('onRecoverableError: ' + normalizeError(error.message));
         if (error.cause) {
@@ -785,7 +785,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     await waitForAll(['Component', 'Component', 'Suspend', 'Fallback']);
     jest.runAllTimers();
 
-    // !! 客户端切换到 Suspense 后备内容。由于客户端渲染从未提交，未水合内容仍保持隐藏。
+    // 父Suspense已提交Loading并隐藏服务端主机内容；Activity的客户端重建尚未提交，原marker仍保留。
     expect(container.innerHTML).toBe(
       '<!--$--><!--&--><div style="display: none;"><div></div></div><!--/&--><!--/$-->' +
         'Loading...',
@@ -806,7 +806,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     }
     jest.runAllTimers();
 
-    // 达到节流超时后，即可提交失败的水合。
+    // alwaysThrottleRetries开启时恢复提交被节流，runAllTimers后才报告差异；关闭时前面的waitForAll已包含该回调。
     if (gate(flags => flags.alwaysThrottleRetries)) {
       assertLog([
         "onRecoverableError: Hydration failed because the server rendered HTML didn't match the client.",
@@ -819,18 +819,19 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     );
   });
 
-  /** 测试场景：验证「does show a parent fallback if mismatch is before suspending」描述的渲染、交互或错误处理结果。 */
+  /** 同Activity内差异Component先于挂起Child，外Suspense接住客户端重建的暂停；旧div隐藏、原Hello文本从textContent中清空，Loading可见，解除后article/Hello并报告恢复。 */
   it('does show a parent fallback if mismatch is before suspending', async () => {
     let client = false;
     let suspend = false;
     let resolve;
     const promise = new Promise(resolvePromise => {
+      /** 先清suspend再兑现共享promise，保证重试不会继续抛已兑现的暂停任务；后续日志分辨恢复水合与客户端重建。 */
       resolve = () => {
         suspend = false;
         resolvePromise();
       };
     });
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** pending抛promise，完成返回Hello；前面的Component差异已放弃局部水合。 */
     function Child() {
       if (suspend) {
         Scheduler.log('Suspend');
@@ -840,7 +841,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
         return 'Hello';
       }
     }
-    /** `Component`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 首个主机child客户端div→article，确保水合差异先于随后Child暂停。 */
     function Component({shouldMismatch}) {
       Scheduler.log('Component');
       if (shouldMismatch && client) {
@@ -848,12 +849,12 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
       }
       return <div>Component</div>;
     }
-    /** `Fallback`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 记录并显示Loading，观察先差异后暂停的父Suspense提交。 */
     function Fallback() {
       Scheduler.log('Fallback');
       return 'Loading...';
     }
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** Suspense内Activity先差异Component再Child，比较主机文本清空与父fallback。 */
     function App() {
       return (
         <Suspense fallback={<Fallback />}>
@@ -877,7 +878,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     client = true;
 
     ReactDOMClient.hydrateRoot(container, <App />, {
-      /** `onRecoverableError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 记录恢复错误message首句并另记原cause首句；日志区分尚在暂停的尝试与已提交的客户端接管。 */
       onRecoverableError(error) {
         Scheduler.log('onRecoverableError: ' + normalizeError(error.message));
         if (error.cause) {
@@ -888,7 +889,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     await waitForAll(['Component', 'Component', 'Suspend', 'Fallback']);
     jest.runAllTimers();
 
-    // !! 客户端切换到 Suspense 后备内容。由于客户端渲染从未提交，未水合内容仍保持隐藏。
+    // 父Suspense已提交Loading并隐藏服务端主机内容；Activity的客户端重建尚未提交，原marker仍保留。
     expect(container.innerHTML).toBe(
       '<!--$--><!--&--><div style="display: none;">Component</div><!--/&--><!--/$-->' +
         'Loading...',
@@ -909,7 +910,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     }
     jest.runAllTimers();
 
-    // 达到节流超时后，即可提交失败的水合。
+    // alwaysThrottleRetries开启时恢复提交被节流，runAllTimers后才报告差异；关闭时前面的waitForAll已包含该回调。
     if (gate(flags => flags.alwaysThrottleRetries)) {
       assertLog([
         "onRecoverableError: Hydration failed because the server rendered HTML didn't match the client.",
@@ -922,18 +923,19 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     );
   });
 
-  /** 测试场景：验证「does show a parent fallback if mismatch is before suspending in a child」描述的渲染、交互或错误处理结果。 */
+  /** 差异Component在前、挂起Child嵌在后一个div；旧两个div隐藏而Loading可见，解除后article/div Hello，验证父Suspense隐藏区间包含深层暂停的旧DOM。 */
   it('does show a parent fallback if mismatch is before suspending in a child', async () => {
     let client = false;
     let suspend = false;
     let resolve;
     const promise = new Promise(resolvePromise => {
+      /** 先清suspend再兑现共享promise，保证重试不会继续抛已兑现的暂停任务；后续日志分辨恢复水合与客户端重建。 */
       resolve = () => {
         suspend = false;
         resolvePromise();
       };
     });
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 暂停时抛promise，完成返回Hello；嵌在后一个div以测试多层暂停。 */
     function Child() {
       if (suspend) {
         Scheduler.log('Suspend');
@@ -943,7 +945,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
         return 'Hello';
       }
     }
-    /** `Component`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 前置Component客户端改article，触发Activity局部接管。 */
     function Component({shouldMismatch}) {
       Scheduler.log('Component');
       if (shouldMismatch && client) {
@@ -951,12 +953,12 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
       }
       return <div>Component</div>;
     }
-    /** `Fallback`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 记录并返回Loading，判断深层暂停是否传播到父边界。 */
     function Fallback() {
       Scheduler.log('Fallback');
       return 'Loading...';
     }
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 父Suspense包Activity，前差异Component、后div/Child，使整个原内容区间隐藏。 */
     function App() {
       return (
         <Suspense fallback={<Fallback />}>
@@ -982,7 +984,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     client = true;
 
     ReactDOMClient.hydrateRoot(container, <App />, {
-      /** `onRecoverableError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 记录恢复错误message首句并另记原cause首句；日志区分尚在暂停的尝试与已提交的客户端接管。 */
       onRecoverableError(error) {
         Scheduler.log('onRecoverableError: ' + normalizeError(error.message));
         if (error.cause) {
@@ -993,7 +995,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     await waitForAll(['Component', 'Component', 'Suspend', 'Fallback']);
     jest.runAllTimers();
 
-    // !! 客户端切换到 Suspense 后备内容。由于客户端渲染从未提交，未水合内容仍保持隐藏。
+    // 父Suspense已提交Loading并隐藏服务端主机内容；Activity的客户端重建尚未提交，原marker仍保留。
     expect(container.innerHTML).toBe(
       '<!--$--><!--&--><div style="display: none;">Component</div><div style="display: none;">Hello</div><!--/&--><!--/$-->' +
         'Loading...',
@@ -1014,7 +1016,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     }
     jest.runAllTimers();
 
-    // 达到节流超时后，即可提交失败的水合。
+    // alwaysThrottleRetries开启时恢复提交被节流，runAllTimers后才报告差异；关闭时前面的waitForAll已包含该回调。
     if (gate(flags => flags.alwaysThrottleRetries)) {
       assertLog([
         "onRecoverableError: Hydration failed because the server rendered HTML didn't match the client.",
@@ -1027,12 +1029,12 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     );
   });
 
-  /** 测试场景：验证「calls the hydration callbacks after hydration or deletion」描述的渲染、交互或错误处理结果。 */
+  /** 两个Activity完整SSR后客户端都pending；先解决第一使onHydrated一次，再value=true让第二的新输入可完成、旧边界被接管，onDeleted一次，验证水合与删除回调的不同提交。 */
   it('calls the hydration callbacks after hydration or deletion', async () => {
     let suspend = false;
     let resolve;
     const promise = new Promise(resolvePromise => (resolve = resolvePromise));
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 第一Activity可由resolve解阻，完成Hello，对应成功水合回调。 */
     function Child() {
       if (suspend) {
         throw promise;
@@ -1043,7 +1045,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
 
     let suspend2 = false;
     const promise2 = new Promise(() => {});
-    /** `Child2`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 第二Activity仅在suspend2且value为假时永pending，value=true的新输入返回World并接管旧边界。 */
     function Child2({value}) {
       if (suspend2 && !value) {
         throw promise2;
@@ -1052,7 +1054,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
       }
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 两个兄弟Activity分别挂第一Child和带value的Child2，区分水合与删除回调计数。 */
     function App({value}) {
       return (
         <div>
@@ -1081,15 +1083,15 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     suspend = true;
     suspend2 = true;
     const root = ReactDOMClient.hydrateRoot(container, <App />, {
-      /** `onHydrated`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 保存成功水合边界node，最终只应记录第一Activity的成功提交。 */
       onHydrated(node) {
         hydrated.push(node);
       },
-      /** `onDeleted`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 保存接管时删除的边界node，最终记录第二Activity，和成功水合回调分开计数。 */
       onDeleted(node) {
         deleted.push(node);
       },
-      /** `onRecoverableError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 记录恢复错误message首句并另记原cause首句；日志区分尚在暂停的尝试与已提交的客户端接管。 */
       onRecoverableError(error) {
         Scheduler.log('onRecoverableError: ' + normalizeError(error.message));
         if (error.cause) {
@@ -1121,9 +1123,9 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     expect(deleted.length).toBe(1);
   });
 
-  /** 测试场景：验证「hydrates an empty activity boundary」描述的渲染、交互或错误处理结果。 */
+  /** SSR空Activity后跟Sibling，水合同树后仍含Sibling；验证空边界后的主机游标能继续匹配，本例没有直接断言空marker身份。 */
   it('hydrates an empty activity boundary', async () => {
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 空Activity后放Sibling div，检验游标跳过空边界协议后仍能匹配兄弟。 */
     function App() {
       return (
         <div>
@@ -1144,9 +1146,9 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     expect(container.innerHTML).toContain('<div>Sibling</div>');
   });
 
-  /** 测试场景：验证「recovers with client render when server rendered additional nodes at suspense root」描述的渲染、交互或错误处理结果。 */
+  /** Activity的SSR含A/B而客户端仅A，store snapshot日志区分水合与客户端；报告差异、B消失且A ref不再指原span，验证边界尾部额外节点导致局部重建。 */
   it('recovers with client render when server rendered additional nodes at suspense root', async () => {
-    /** `CheckIfHydrating`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 用store的server/client snapshot回调修改局部标签并返回null，日志显示当前水合或客户端路径；children未使用，订阅函数无外部store监听。 */
     function CheckIfHydrating({children}) {
       // 这里借助 useSyncExternalStore 判断当前是否正在水合，因为 React 目前没有公开其他方式获取该状态。
       let serverOrClient = '(unknown)';
@@ -1166,7 +1168,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     }
 
     const ref = React.createRef();
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** Activity内A ref后按hasB放B，再snapshot探针；外Sibling用于限制重建范围。 */
     function App({hasB}) {
       return (
         <div>
@@ -1194,7 +1196,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
 
     await act(() => {
       ReactDOMClient.hydrateRoot(container, <App hasB={false} />, {
-        /** `onRecoverableError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 记录恢复错误message首句并另记原cause首句；日志区分尚在暂停的尝试与已提交的客户端接管。 */
         onRecoverableError(error) {
           Scheduler.log('onRecoverableError: ' + normalizeError(error.message));
           if (error.cause) {
@@ -1215,25 +1217,26 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     expect(ref.current).not.toBe(span);
   });
 
-  /** 测试场景：验证「recovers with client render when server rendered additional nodes at suspense root after unsuspending」描述的渲染、交互或错误处理结果。 */
+  /** 相同额外B，但前面的Suspender先阻塞；解除后发现多余节点、报告差异并新建A span，覆盖暂停恢复后的Activity尾部检查。 */
   it('recovers with client render when server rendered additional nodes at suspense root after unsuspending', async () => {
     const ref = React.createRef();
     let shouldSuspend = false;
     let resolve;
     const promise = new Promise(res => {
+      /** 先清shouldSuspend再兑现promise，允许暂停恢复后继续检查额外B节点。 */
       resolve = () => {
         shouldSuspend = false;
         res();
       };
     });
-    /** `Suspender`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** shouldSuspend时抛promise，否则空Fragment；在A/B之前阻止尾部多余节点检测。 */
     function Suspender() {
       if (shouldSuspend) {
         throw promise;
       }
       return <></>;
     }
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** Activity先Suspender再A及可选B，制造暂停恢复后才暴露的尾部差异。 */
     function App({hasB}) {
       return (
         <div>
@@ -1260,7 +1263,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     shouldSuspend = true;
     await act(() => {
       ReactDOMClient.hydrateRoot(container, <App hasB={false} />, {
-        /** `onRecoverableError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 记录恢复错误message首句并另记原cause首句；日志区分尚在暂停的尝试与已提交的客户端接管。 */
         onRecoverableError(error) {
           Scheduler.log('onRecoverableError: ' + normalizeError(error.message));
           if (error.cause) {
@@ -1283,10 +1286,10 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     expect(ref.current).not.toBe(span);
   });
 
-  /** 测试场景：验证「recovers with client render when server rendered additional nodes deep inside suspense root」描述的渲染、交互或错误处理结果。 */
+  /** A/B嵌在Activity内额外div，客户端去掉B；差异回调、B删除且A ref指新节点，覆盖深层多余节点的重建边界。 */
   it('recovers with client render when server rendered additional nodes deep inside suspense root', async () => {
     const ref = React.createRef();
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 额外div中放A和可选B，差异位于Activity内部深层；外Sibling独立。 */
     function App({hasB}) {
       return (
         <div>
@@ -1314,7 +1317,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
 
     await act(() => {
       ReactDOMClient.hydrateRoot(container, <App hasB={false} />, {
-        /** `onRecoverableError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 记录恢复错误message首句并另记原cause首句；日志区分尚在暂停的尝试与已提交的客户端接管。 */
         onRecoverableError(error) {
           Scheduler.log('onRecoverableError: ' + normalizeError(error.message));
           if (error.cause) {
@@ -1332,11 +1335,11 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     expect(ref.current).not.toBe(span);
   });
 
-  /** 测试场景：验证「calls the onDeleted hydration callback if the parent gets deleted」描述的渲染、交互或错误处理结果。 */
+  /** Activity Child永久pending时父App更新deleted=true返回null；onDeleted由0变1，验证祖先删除能清理并通知尚未水合的Activity。 */
   it('calls the onDeleted hydration callback if the parent gets deleted', async () => {
     let suspend = false;
     const promise = new Promise(() => {});
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 客户端suspend时抛永不兑现的promise，否则Hello，保证删除发生在未水合状态。 */
     function Child() {
       if (suspend) {
         throw promise;
@@ -1345,7 +1348,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
       }
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** deleted时返回null删除整个祖先div，否则保留Activity/Child，触发边界onDeleted。 */
     function App({deleted}) {
       if (deleted) {
         return null;
@@ -1371,7 +1374,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     suspend = true;
     const root = await act(() => {
       return ReactDOMClient.hydrateRoot(container, <App />, {
-        /** `onDeleted`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 收集祖先删除通知的未水合边界node，数组长度应仅增一次。 */
         onDeleted(node) {
           deleted.push(node);
         },
@@ -1388,13 +1391,13 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     expect(deleted.length).toBe(1);
   });
 
-  /** 测试场景：验证「can insert siblings before the dehydrated boundary」描述的渲染、交互或错误处理结果。 */
+  /** Second Activity客户端永久pending，前面的Sibling最初null；独立state更新把First div插在未水合marker前，验证已水合兄弟可更新而无需解阻子边界。 */
   it('can insert siblings before the dehydrated boundary', async () => {
     let suspend = false;
     const promise = new Promise(() => {});
     let showSibling;
 
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 完整SSR输出Second，客户端抛永久pending promise，使后方边界始终未水合。 */
     function Child() {
       if (suspend) {
         throw promise;
@@ -1403,9 +1406,10 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
       }
     }
 
-    /** `Sibling`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 初始null，暴露showSibling把visible设true后输出First div；已水合兄弟状态可独立提交。 */
     function Sibling() {
       const [visible, setVisibilty] = React.useState(false);
+      /** 把Sibling自身visible置true，供测试在未水合Activity前插入First。 */
       showSibling = () => setVisibilty(true);
       if (visible) {
         return <div>First</div>;
@@ -1413,7 +1417,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
       return null;
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 同div里先Sibling再Activity/Second，观察在未水合起始marker前插入主机节点。 */
     function App() {
       return (
         <div>
@@ -1448,13 +1452,13 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     expect(container.firstChild.firstChild.textContent).toBe('First');
   });
 
-  /** 测试场景：验证「can delete the dehydrated boundary before it is hydrated」描述的渲染、交互或错误处理结果。 */
+  /** Before/After间Activity含Middle div与文本，客户端pending时hideMiddle删除整边界；第二个主机child由Middle变After，验证无需水合即可移除边界区间。 */
   it('can delete the dehydrated boundary before it is hydrated', async () => {
     let suspend = false;
     const promise = new Promise(() => {});
     let hideMiddle;
 
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 完整SSR返回Middle div与文本，客户端pending让整Activity可在未水合时被删除。 */
     function Child() {
       if (suspend) {
         throw promise;
@@ -1468,9 +1472,10 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
       }
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** Before/After间按visible放Activity；hideMiddle删除包括marker、div和文本的整个区间。 */
     function App() {
       const [visible, setVisibilty] = React.useState(true);
+      /** 把visible置false，删除Middle Activity而无需解阻其中Child。 */
       hideMiddle = () => setVisibilty(false);
 
       return (
@@ -1505,14 +1510,14 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     expect(container.firstChild.children[1].textContent).toBe('After');
   });
 
-  /** 测试场景：验证「blocks updates to hydrate the content first if props have changed」描述的渲染、交互或错误处理结果。 */
+  /** Hello/hello Activity pending，root先排Hi/hi props更新并同时解除promise；原span/ref复用且文本、class都改Hi/hi，验证旧输入水合先于后续props提交。 */
   it('blocks updates to hydrate the content first if props have changed', async () => {
     let suspend = false;
     let resolve;
     const promise = new Promise(resolvePromise => (resolve = resolvePromise));
     const ref = React.createRef();
 
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 旧输入pending抛promise，解阻返回text，分别观察旧Hello水合与新Hi更新。 */
     function Child({text}) {
       if (suspend) {
         throw promise;
@@ -1521,7 +1526,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
       }
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** Activity内span同时接收text/className和ref，节点身份与属性更新共同验证先水合再更新。 */
     function App({text, className}) {
       return (
         <div>
@@ -1575,15 +1580,15 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     expect(span.className).toBe('hi');
   });
 
+  /** 同样的Hi/hi更新在www环境以IdleEventPriority排队，同时解除promise；原span仍复用并完成ref/文本/class更新，覆盖低优先级变更与水合ping的顺序。 */
   // @gate www
-  /** 测试场景：验证「blocks updates to hydrate the content first if props changed at idle priority」描述的渲染、交互或错误处理结果。 */
   it('blocks updates to hydrate the content first if props changed at idle priority', async () => {
     let suspend = false;
     let resolve;
     const promise = new Promise(resolvePromise => (resolve = resolvePromise));
     const ref = React.createRef();
 
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 共享promise控制Hello/Hi的完成时机，供Idle props更新与ping交叠。 */
     function Child({text}) {
       if (suspend) {
         throw promise;
@@ -1592,7 +1597,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
       }
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** Activity包带class/ref的span，验证低优先级更新不会导致不必要重建。 */
     function App({text, className}) {
       return (
         <div>
@@ -1649,7 +1654,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     expect(span.className).toBe('hi');
   });
 
-  /** 测试场景：验证「shows the fallback of the parent if props have changed before hydration completes and is still suspended」描述的渲染、交互或错误处理结果。 */
+  /** 已水合外div内的Activity仍pending，普通props更新Hi/hi；父Suspense隐藏原div、outerRef脱离而原span仍在，textContent含HelloLoading；解除后新内容Hi/hi提交，验证隐藏保留而非立即删除。 */
   it('shows the fallback of the parent if props have changed before hydration completes and is still suspended', async () => {
     let suspend = false;
     let resolve;
@@ -1657,7 +1662,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     const outerRef = React.createRef();
     const ref = React.createRef();
 
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** suspend期间旧、新text均抛同promise，确保Hi更新只能先显示父fallback。 */
     function Child({text}) {
       if (suspend) {
         throw promise;
@@ -1666,7 +1671,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
       }
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 外Suspense内div有outerRef，Activity内span另有ref；区分已提交祖先隐藏时脱ref与子树尚未提交。 */
     function App({text, className}) {
       return (
         <Suspense fallback="Loading...">
@@ -1694,7 +1699,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
       container,
       <App text="Hello" className="hello" />,
       {
-        /** `onRecoverableError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 记录恢复错误message首句并另记原cause首句；日志区分尚在暂停的尝试与已提交的客户端接管。 */
         onRecoverableError(error) {
           Scheduler.log('onRecoverableError: ' + normalizeError(error.message));
           if (error.cause) {
@@ -1705,7 +1710,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     );
     await waitForAll([]);
 
-    expect(container.getElementsByTagName('div').length).toBe(1); // 隐藏
+    expect(container.getElementsByTagName('div').length).toBe(1); // 此时外div已水合且尚未隐藏。
     const div = container.getElementsByTagName('div')[0];
 
     expect(outerRef.current).toBe(div);
@@ -1738,13 +1743,13 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     expect(container.textContent).toBe('Hi');
   });
 
-  /** 测试场景：验证「clears nested activity boundaries if they did not hydrate yet」描述的渲染、交互或错误处理结果。 */
+  /** 外Activity嵌内Activity，两处旧Hello永pending但新Hi不挂起；普通props更新直接提交Hi Hi/ref/class，验证接管父边界时清理未水合内边界且不需等待旧promise。 */
   it('clears nested activity boundaries if they did not hydrate yet', async () => {
     let suspend = false;
     const promise = new Promise(() => {});
     const ref = React.createRef();
 
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 旧Hello挂起但text为Hi直接完成，提供无需解决旧promise的新输入接管路径。 */
     function Child({text}) {
       if (suspend && text !== 'Hi') {
         throw promise;
@@ -1753,7 +1758,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
       }
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 外Activity内放嵌套Activity/text及带ref span/text，父接管须清理内层未水合协议。 */
     function App({text, className}) {
       return (
         <div>
@@ -1782,7 +1787,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
       container,
       <App text="Hello" className="hello" />,
       {
-        /** `onRecoverableError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 记录恢复错误message首句并另记原cause首句；日志区分尚在暂停的尝试与已提交的客户端接管。 */
         onRecoverableError(error) {
           Scheduler.log('onRecoverableError: ' + normalizeError(error.message));
           if (error.cause) {
@@ -1807,14 +1812,14 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     expect(container.textContent).toBe('Hi Hi');
   });
 
-  /** 测试场景：验证「hydrates first if props changed but we are able to resolve within a timeout」描述的渲染、交互或错误处理结果。 */
+  /** transition排Hi/hi而旧Child仍pending，先保持Hello/ref空；随后解除promise并复用原span更新，覆盖可等待过渡；本例未测量具体timeout阈值。 */
   it('hydrates first if props changed but we are able to resolve within a timeout', async () => {
     let suspend = false;
     let resolve;
     const promise = new Promise(resolvePromise => (resolve = resolvePromise));
     const ref = React.createRef();
 
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** suspend控制promise，供transition保留旧内容直到旧输入可水合。 */
     function Child({text}) {
       if (suspend) {
         throw promise;
@@ -1823,7 +1828,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
       }
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** Activity内ref/class span承载text，原节点身份判断过渡是否先复用再更新。 */
     function App({text, className}) {
       return (
         <div>
@@ -1856,7 +1861,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     expect(ref.current).toBe(null);
     expect(container.textContent).toBe('Hello');
 
-    // 渲染一个带有长超时的更新。
+    // 在 transition 中更新；原始内容仍挂起时，React 会保留已显示的服务端内容。
     React.startTransition(() => root.render(<App text="Hi" className="hi" />));
     // 此时还不应强制显示后备内容。
     await waitForAll([]);
@@ -1879,7 +1884,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     expect(span.className).toBe('hi');
   });
 
-  /** 测试场景：验证「warns but works if setState is called before commit in a dehydrated component」描述的渲染、交互或错误处理结果。 */
+  /** Child水合render暴露setter但仍未提交，在暂停中setState Hi；开发警告未挂载，解除后最终仍Hello，验证该更新没有成为已提交状态，不按标题推断Hi已应用。 */
   it('warns but works if setState is called before commit in a dehydrated component', async () => {
     let suspend = false;
     let resolve;
@@ -1887,7 +1892,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
 
     let updateText;
 
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** render暴露尚未提交的state setter并记录Child；pending时抛promise，完成输出本轮初始Hello。 */
     function Child() {
       const [state, setState] = React.useState('Hello');
       updateText = setState;
@@ -1899,13 +1904,13 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
       }
     }
 
-    /** `Sibling`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 记录Sibling后返回null，日志证明解阻后完整渲染才经过后续兄弟。 */
     function Sibling() {
       Scheduler.log('Sibling');
       return null;
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** Activity包Child/Sibling，使中途暴露的setter属于未挂载子组件。 */
     function App() {
       return (
         <div>
@@ -1942,7 +1947,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
           '    in App (at **)',
       ]);
 
-      // 这会丢弃现有内容并重新渲染。
+      // 再次尝试仍读初始Hello；该未挂载setter更新不进入最终已提交状态。
       await waitForAll(['Child']);
 
       expect(container.textContent).toBe('Hello');
@@ -1956,7 +1961,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     expect(container.textContent).toBe('Hello');
   });
 
-  /** 测试场景：验证「blocks the update to hydrate first if context has changed」描述的渲染、交互或错误处理结果。 */
+  /** memo App内Child读Context Hello/hello且pending，Provider先排Hi/hi并同时解阻；原span/ref复用并改文本/class，验证context变更先水合旧树再提交新输入。 */
   it('blocks the update to hydrate first if context has changed', async () => {
     let suspend = false;
     let resolve;
@@ -1964,7 +1969,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     const ref = React.createRef();
     const Context = React.createContext(null);
 
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 从Context读取text/className，pending抛promise，完成返回带ref的span，观察context传播与水合顺序。 */
     function Child() {
       const {text, className} = React.useContext(Context);
       if (suspend) {
@@ -1978,7 +1983,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
       }
     }
 
-    const App = React.memo(function App() {
+    const App = React.memo(/** memo化Activity外壳，Context消费者仍可因Provider传播更新而进入旧输入水合/新输入提交。 */ function App() {
       return (
         <div>
           <Activity>
@@ -2037,7 +2042,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     expect(span.className).toBe('hi');
   });
 
-  /** 测试场景：验证「shows the parent fallback if context has changed before hydration completes and is still suspended」描述的渲染、交互或错误处理结果。 */
+  /** 同Context变更但promise仍pending，外Suspense显示Loading并保留隐藏原span、ref空、textContent为HelloLoading；解除后Hi/hi提交，验证父fallback隐藏旧Activity内容而非删除。 */
   it('shows the parent fallback if context has changed before hydration completes and is still suspended', async () => {
     let suspend = false;
     let resolve;
@@ -2045,7 +2050,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     const ref = React.createRef();
     const Context = React.createContext(null);
 
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** Context消费者受共享promise阻塞，解阻输出带ref/class的span，旧树需要父Suspense隐藏保留。 */
     function Child() {
       const {text, className} = React.useContext(Context);
       if (suspend) {
@@ -2059,7 +2064,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
       }
     }
 
-    const App = React.memo(function App() {
+    const App = React.memo(/** memo化含父Suspense的Activity外壳，Context变化继续挂起时由外边界隐藏旧内容。 */ function App() {
       return (
         <Suspense fallback="Loading...">
           <div>
@@ -2088,7 +2093,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
         <App />
       </Context.Provider>,
       {
-        /** `onRecoverableError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 记录恢复错误message首句并另记原cause首句；日志区分尚在暂停的尝试与已提交的客户端接管。 */
         onRecoverableError(error) {
           Scheduler.log('onRecoverableError: ' + normalizeError(error.message));
           if (error.cause) {
@@ -2101,7 +2106,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
 
     expect(ref.current).toBe(null);
 
-    // 渲染一次仍会保持挂起的更新；立即冲刷应删除现有内容并显示后备内容。
+    // 新Context仍挂起，父Suspense隐藏原span并显示Loading；旧span保留，textContent仍含Hello。
     await act(() => {
       root.render(
         <Context.Provider value={{text: 'Hi', className: 'hi'}}>
@@ -2128,12 +2133,12 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     expect(container.textContent).toBe('Hi');
   });
 
-  /** 测试场景：验证「can hydrate TWO activity boundaries」描述的渲染、交互或错误处理结果。 */
+  /** 两个已完成兄弟Activity直接水合，两个ref分别指原span1/span2；验证独立Activity起止marker的游标匹配和节点复用。 */
   it('can hydrate TWO activity boundaries', async () => {
     const ref1 = React.createRef();
     const ref2 = React.createRef();
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 两个兄弟Activity各含不同ref span，检验&起止marker与主机节点身份逐一对应。 */
     function App() {
       return (
         <div>
@@ -2164,14 +2169,14 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     expect(ref2.current).toBe(span2);
   });
 
-  /** 测试场景：验证「regenerates if it cannot hydrate before changes to props/context expire」描述的渲染、交互或错误处理结果。 */
+  /** 旧Context hello/文本Hello永pending，而新hi/Hi可完成；普通更新直接重建span/ref并改class，不复用旧span，验证新输入接管，本例没有推进过期计时器。 */
   it('regenerates if it cannot hydrate before changes to props/context expire', async () => {
     let suspend = false;
     const promise = new Promise(resolvePromise => {});
     const ref = React.createRef();
     const ClassName = React.createContext(null);
 
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 仅旧className和旧text同时出现才pending；hi或Hi可完成，普通更新能接管旧边界。 */
     function Child({text}) {
       const className = React.useContext(ClassName);
       if (suspend && className !== 'hi' && text !== 'Hi') {
@@ -2186,7 +2191,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
       }
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** Activity中将text传Child，className实际由外Context提供，保持两种更新来源分离。 */
     function App({text, className}) {
       return (
         <div>
@@ -2216,7 +2221,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
         <App text="Hello" />
       </ClassName.Provider>,
       {
-        /** `onRecoverableError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 记录恢复错误message首句并另记原cause首句；日志区分尚在暂停的尝试与已提交的客户端接管。 */
         onRecoverableError(error) {
           Scheduler.log('onRecoverableError: ' + normalizeError(error.message));
           if (error.cause) {
@@ -2230,7 +2235,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     expect(ref.current).toBe(null);
     expect(span.textContent).toBe('Hello');
 
-    // 渲染一次更新，其优先级高于或等于水合 ping。新更新不会挂起；由于原始数据仍挂起，当前无法水合。这会强制冲刷所有过期时间。
+    // 原始数据仍挂起，无法完成水合；普通更新的新数据已经可用，因此 React 放弃复用旧边界并提交客户端内容。
     await act(() => {
       root.render(
         <ClassName.Provider value={'hi'}>
@@ -2250,13 +2255,13 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     expect(newSpan.className).toBe('hi');
   });
 
-  /** 测试场景：验证「does not invoke an event on a hydrated node until it commits」描述的渲染、交互或错误处理结果。 */
+  /** Activity的按钮Fiber已开始水合但Sibling仍pending，click不能调用handler；解除提交后clicks仍0且内容未变，验证未提交节点阻塞离散事件且不重放该click。 */
   it('does not invoke an event on a hydrated node until it commits', async () => {
     let suspend = false;
     let resolve;
     const promise = new Promise(resolvePromise => (resolve = resolvePromise));
 
-    /** `Sibling`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 同Activity中在按钮后挂起，阻止已遍历按钮Fiber完成提交；完成输出Hello。 */
     function Sibling({text}) {
       if (suspend) {
         throw promise;
@@ -2267,7 +2272,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
 
     let clicks = 0;
 
-    /** `Button`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** click设clicked并计数，已提交后应使a消失；本例阻塞click始终无调用所以a保持。 */
     function Button() {
       const [clicked, setClicked] = React.useState(false);
       if (clicked) {
@@ -2284,7 +2289,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
       );
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** Activity先按钮后异步Sibling，构造主机节点已匹配但边界未提交的状态。 */
     function App() {
       return (
         <div>
@@ -2332,8 +2337,8 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     document.body.removeChild(container);
   });
 
+  /** www event handle在客户端layout注册，Sibling阻塞整个Activity提交；水合前和部分水合时点击均0，解除后仍0，验证注册时序及离散click未重放；layout返回的注销函数随effect清理。 */
   // @gate www
-  /** 测试场景：验证「does not invoke an event on a hydrated event handle until it commits」描述的渲染、交互或错误处理结果。 */
   it('does not invoke an event on a hydrated event handle until it commits', async () => {
     const setClick = ReactDOM.unstable_createEventHandle('click');
     let suspend = false;
@@ -2341,7 +2346,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     let resolve;
     const promise = new Promise(resolvePromise => (resolve = resolvePromise));
 
-    /** `Sibling`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 在event-handle按钮后挂起，推迟整个Activity的layout注册。 */
     function Sibling({text}) {
       if (suspend) {
         throw promise;
@@ -2352,7 +2357,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
 
     const onEvent = jest.fn();
 
-    /** `Button`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** ref绑定a，客户端layout注册click并返回注销函数；SSR不调用layout hook，未提交时onEvent尚不可执行。 */
     function Button() {
       const ref = React.useRef(null);
       if (!isServerRendering) {
@@ -2363,7 +2368,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
       return <a ref={ref}>Click me</a>;
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** Activity内先event-handle按钮再Sibling，检验注册依赖边界提交。 */
     function App() {
       return (
         <div>
@@ -2392,7 +2397,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
 
     // 水合前先点击一次。
     a.click();
-    // 这应该延迟.
+    // 当前click因边界未提交被阻塞；解阻后断言仍为0，不会重放该离散click。
     expect(onEvent).toHaveBeenCalledTimes(0);
 
     await waitForAll([]);
@@ -2416,7 +2421,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     document.body.removeChild(container);
   });
 
-  /** 测试场景：验证「invokes discrete events on nested activity boundaries in a root (legacy system)」描述的渲染、交互或错误处理结果。 */
+  /** 外Activity的Child pending且内嵌Activity/按钮，水合前和部分水合时点击都0；解除后仍0，验证嵌套未提交边界阻塞离散click，标题invokes不代表本例有成功调用。 */
   it('invokes discrete events on nested activity boundaries in a root (legacy system)', async () => {
     let suspend = false;
     let resolve;
@@ -2424,7 +2429,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
 
     let clicks = 0;
 
-    /** `Button`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 输出带click计数的a，本例边界阻塞使次数一直0。 */
     function Button() {
       return (
         <a
@@ -2436,7 +2441,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
       );
     }
 
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 外Child pending则抛promise，完成才返回内Activity/Button，形成嵌套阻塞边界。 */
     function Child() {
       if (suspend) {
         throw promise;
@@ -2449,7 +2454,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
       }
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 根只返回外Activity/Child，比较嵌套边界上的离散click。 */
     function App() {
       return (
         <Activity>
@@ -2476,7 +2481,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     await act(() => {
       a.click();
     });
-    // 这应该延迟.
+    // 当前click因边界未提交被阻塞；解阻后断言仍为0，不会重放该离散click。
     expect(clicks).toBe(0);
 
     await waitForAll([]);
@@ -2499,8 +2504,8 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     document.body.removeChild(container);
   });
 
+  /** www createEventHandle版本嵌套Activity，客户端layout尚未提交注册；两次click均无调用，解除后仍0，覆盖嵌套边界的event-handle阻塞与不重放。 */
   // @gate www
-  /** 测试场景：验证「invokes discrete events on nested activity boundaries in a root (createEventHandle)」描述的渲染、交互或错误处理结果。 */
   it('invokes discrete events on nested activity boundaries in a root (createEventHandle)', async () => {
     let suspend = false;
     let isServerRendering = true;
@@ -2510,7 +2515,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     const onEvent = jest.fn();
     const setClick = ReactDOM.unstable_createEventHandle('click');
 
-    /** `Button`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 客户端layout为ref a安装event handle并返回注销函数；SSR无注册，内Activity须先提交。 */
     function Button() {
       const ref = React.useRef(null);
 
@@ -2523,7 +2528,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
       return <a ref={ref}>Click me</a>;
     }
 
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 外Child解阻后返回内Activity/Button，外边界pending使内部handle注册也延后。 */
     function Child() {
       if (suspend) {
         throw promise;
@@ -2536,7 +2541,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
       }
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 外Activity包异步Child，检验嵌套createEventHandle的离散事件阻塞。 */
     function App() {
       return (
         <Activity>
@@ -2562,7 +2567,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
 
     // 水合前先点击一次。
     a.click();
-    // 这应该延迟.
+    // 当前click因边界未提交被阻塞；解阻后断言仍为0，不会重放该离散click。
     expect(onEvent).toHaveBeenCalledTimes(0);
 
     await waitForAll([]);
@@ -2586,7 +2591,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     document.body.removeChild(container);
   });
 
-  /** 测试场景：验证「does not invoke the parent of dehydrated boundary event」描述的渲染、交互或错误处理结果。 */
+  /** 已水合父div有click，Activity内Child的handler本应stopPropagation；pending时点击child不调用父子，解除后仍都0，验证不能越过未水合目标直接派发父监听器。 */
   it('does not invoke the parent of dehydrated boundary event', async () => {
     let suspend = false;
     let resolve;
@@ -2595,7 +2600,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     let clicksOnParent = 0;
     let clicksOnChild = 0;
 
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** pending时抛promise，完成返回会stopPropagation并累加子次数的span；阻塞期间连父监听也不可先派发。 */
     function Child({text}) {
       if (suspend) {
         throw promise;
@@ -2613,7 +2618,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
       }
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 已水合父div有click计数，未水合Activity内Child的传播规则尚未就绪。 */
     function App() {
       return (
         <div onClick={() => clicksOnParent++}>
@@ -2659,7 +2664,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     document.body.removeChild(container);
   });
 
-  /** 测试场景：验证「does not invoke an event on a parent tree when a subtree is dehydrated」描述的渲染、交互或错误处理结果。 */
+  /** 先完成父React root，再把pending Activity的独立hydrate root嵌到父DOM槽；点击子a不调用已水合父root，解除后仍0，验证阻塞事件不能跨根错误冒泡。 */
   it('does not invoke an event on a parent tree when a subtree is dehydrated', async () => {
     let suspend = false;
     let resolve;
@@ -2668,12 +2673,12 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     let clicks = 0;
     const childSlotRef = React.createRef();
 
-    /** `Parent`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 在独立已提交root输出click div并暴露DOM槽，容纳另一个hydrate root。 */
     function Parent() {
       return <div onClick={() => clicks++} ref={childSlotRef} />;
     }
 
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** pending时抛promise否则a，事件目标属于嵌入父root的未水合子root。 */
     function Child({text}) {
       if (suspend) {
         throw promise;
@@ -2682,9 +2687,9 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
       }
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 子root只输出Activity/Child，和父root保持独立Fiber入口以检测跨根误派发。 */
     function App() {
-      // 根节点是 Suspense 边界。
+      // 根组件返回一个尚待水合的 Activity 边界。
       return (
         <Activity>
           <Child />
@@ -2716,7 +2721,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     // 异步水合。
     await act(() => ReactDOMClient.hydrateRoot(childContainer, <App />));
 
-    // Suspense 边界尚未水合。
+    // Activity 边界尚未水合。
     await act(() => {
       a.click();
     });
@@ -2734,7 +2739,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     document.body.removeChild(parentContainer);
   });
 
-  /** 测试场景：验证「blocks only on the last continuous event (legacy system)」描述的渲染、交互或错误处理结果。 */
+  /** 两个Activity都pending，鼠标从app→First→Second；初始无事件，先解决Second只重放Mouse Enter Second，再解决First无额外事件，验证连续事件只保留最后悬停目标。 */
   it('blocks only on the last continuous event (legacy system)', async () => {
     let suspend1 = false;
     let resolve1;
@@ -2743,7 +2748,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     let resolve2;
     const promise2 = new Promise(resolvePromise => (resolve2 = resolvePromise));
 
-    /** `First`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 独立promise1控制First边界，完成Hello；位于空span后让其监听器虽已遍历却未提交。 */
     function First({text}) {
       if (suspend1) {
         throw promise1;
@@ -2752,7 +2757,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
       }
     }
 
-    /** `Second`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 独立promise2控制Second边界并返回World，最后悬停目标先解阻触发唯一重放。 */
     function Second({text}) {
       if (suspend2) {
         throw promise2;
@@ -2763,7 +2768,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
 
     const ops = [];
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 两个Activity各带enter/leave日志，First空span之后再异步子、Second span内部异步子，覆盖监听器提前遍历。 */
     function App() {
       return (
         <div>
@@ -2835,14 +2840,14 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     document.body.removeChild(container);
   });
 
-  /** 测试场景：验证「finishes normal pri work before continuing to hydrate a retry」描述的渲染、交互或错误处理结果。 */
+  /** 稳定Activity元素保存Hello待水合，promise已ping但未重试时root更新加入Sibling；先render/commit Sibling使HelloWorld且ref仍空，再Child水合，验证普通更新先于较低优先级重试。 */
   it('finishes normal pri work before continuing to hydrate a retry', async () => {
     let suspend = false;
     let resolve;
     const promise = new Promise(resolvePromise => (resolve = resolvePromise));
     const ref = React.createRef();
 
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 解阻后记录Child并返回Hello，日志与ref用于判断水合重试是否晚于普通兄弟提交。 */
     function Child() {
       if (suspend) {
         throw promise;
@@ -2852,7 +2857,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
       }
     }
 
-    /** `Sibling`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** render记录Sibling，layout记录Commit Sibling并返回World，提供普通更新提交证据。 */
     function Sibling() {
       Scheduler.log('Sibling');
       React.useLayoutEffect(() => {
@@ -2870,7 +2875,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
       </Activity>
     );
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 复用同一个Activity元素tree避免props导致接管，showSibling仅在旁加入Sibling。 */
     function App({showSibling}) {
       return (
         <div>
@@ -2921,13 +2926,13 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     expect(ref.current).not.toBe(null);
   });
 
-  /** 测试场景：验证「regression test: does not overfire non-bubbling browser events」描述的渲染、交互或错误处理结果。 */
+  /** Form已匹配但同Activity Sibling未提交，派发实际bubbles=true的submit；提交前后submits均0且表单还在，验证离散submit阻塞后不重放，标题non-bubbling不描述本输入。 */
   it('regression test: does not overfire non-bubbling browser events', async () => {
     let suspend = false;
     let resolve;
     const promise = new Promise(resolvePromise => (resolve = resolvePromise));
 
-    /** `Sibling`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 表单后共享promise挂起，阻止Form部分水合后的提交。 */
     function Sibling({text}) {
       if (suspend) {
         throw promise;
@@ -2938,7 +2943,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
 
     let submits = 0;
 
-    /** `Form`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** submit会设submitted并计数、随后删form；本例阻塞事件不执行，所以DOM仍有Click me。 */
     function Form() {
       const [submitted, setSubmitted] = React.useState(false);
       if (submitted) {
@@ -2955,7 +2960,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
       );
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** Activity先Form后异步Sibling，使用bubbles=true的submit检验未提交目标的离散事件。 */
     function App() {
       return (
         <div>
@@ -3008,17 +3013,18 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     document.body.removeChild(container);
   });
 
-  /** 测试场景：验证「fallback to client render on hydration mismatch at root」描述的渲染、交互或错误处理结果。 */
+  /** 两个Activity间根div server仅客户端改span client，且两个Child客户端pending；根恢复也会挂起而保留完整旧HTML，解除后整根重建1/client/2并报告差异，区别有父fallback的局部恢复。 */
   it('fallback to client render on hydration mismatch at root', async () => {
     let suspend = true;
     let resolve;
     const promise = new Promise((res, rej) => {
+      /** 先清suspend再兑现共享promise，允许两个客户端Child完成根级恢复。 */
       resolve = () => {
         suspend = false;
         res();
       };
     });
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 两个Activity之间服务端div server改客户端span client，制造边界外根级差异且无父fallback。 */
     function App({isClient}) {
       return (
         <>
@@ -3032,7 +3038,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
         </>
       );
     }
-    /** `ChildThatSuspends`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 只在客户端并且suspend时抛promise，服务端完整输出id div；根重建需等两个子都解阻。 */
     function ChildThatSuspends({id, isClient}) {
       if (isClient && suspend) {
         throw promise;
@@ -3048,7 +3054,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
 
     await act(() => {
       ReactDOMClient.hydrateRoot(container, <App isClient={true} />, {
-        /** `onRecoverableError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** 记录恢复错误message首句并另记原cause首句；日志区分尚在暂停的尝试与已提交的客户端接管。 */
         onRecoverableError(error) {
           Scheduler.log('onRecoverableError: ' + normalizeError(error.message));
           if (error.cause) {
@@ -3077,13 +3083,13 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     );
   });
 
-  /** 测试场景：验证「commits new suspending content next to a dehydrated Activity that hides」描述的渲染、交互或错误处理结果。 */
+  /** 挂载effect普通更新同时增加pending Second并将待水合Activity First切hidden；解阻后Second存在且可见、First不存在或display none，验证新内容提交可配合旧树隐藏，不直接断言中间UI。 */
   it('commits new suspending content next to a dehydrated Activity that hides', async () => {
     let suspend = false;
     let resolve;
     const promise = new Promise(resolvePromise => (resolve = resolvePromise));
 
-    /** `Second`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 新增Second pending抛promise，完成输出id second span，最终验证可见性。 */
     function Second() {
       if (suspend) {
         throw promise;
@@ -3091,7 +3097,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
       return <span id="second">Second</span>;
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** effect普通setActive切到second，同步增加新异步Sibling并把旧First Activity从visible改hidden，父Suspense fallback为null。 */
     function App({showSecondOnMount}) {
       const [active, setActive] = React.useState('first');
       React.useEffect(() => {
@@ -3142,14 +3148,14 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
     expect(first === null || first.style.display === 'none').toBe(true);
   });
 
-  /** 测试场景：验证「commits new suspending content next to a dehydrated Activity that hides (transition)」描述的渲染、交互或错误处理结果。 */
+  /** 同样First→Second切换在挂载effect中用startTransition；解除后Second可见、First删除或隐藏，覆盖过渡交叠与Activity模式变化，断言不要求两路径有相同中间提交。 */
   it('commits new suspending content next to a dehydrated Activity that hides (transition)', async () => {
     // 同上测试。 除了更新被包裹在 startTransition 中。
     let suspend = false;
     let resolve;
     const promise = new Promise(resolvePromise => (resolve = resolvePromise));
 
-    /** `Second`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** transition路径的新Second受promise阻塞，完成输出可见span供最终断言。 */
     function Second() {
       if (suspend) {
         throw promise;
@@ -3157,7 +3163,7 @@ describe('ReactDOMServerPartialHydrationActivity', () => {
       return <span id="second">Second</span>;
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** effect中startTransition切active，增Second并隐藏待水合First Activity，观察两树交叠后最终提交。 */
     function App({showSecondOnMount}) {
       const [active, setActive] = React.useState('first');
       React.useEffect(() => {

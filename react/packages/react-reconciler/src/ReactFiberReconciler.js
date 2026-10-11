@@ -248,6 +248,9 @@ function findHostInstanceWithWarning(
 /**
  * 创建非 hydration FiberRoot，安装错误/Transition callbacks 与默认 indicator。
  * 初始 child 为 null；实际 element 由随后 updateContainer 作为 Root Update 入队。
+ * containerInfo 是 HostConfig 管理的目标容器；tag 决定 legacy/concurrent 根模式。
+ * identifierPrefix 用于 useId，错误回调保存到根并在对应错误路径调用；这里只注册
+ * onDefaultTransitionIndicator，不立即启动指示器。被忽略的兼容参数不改变更新优先级。
  */
 export function createContainer(
   containerInfo: Container,
@@ -308,6 +311,9 @@ export function createContainer(
  * 创建以服务端 child/formState 为初值的 hydration FiberRoot，并调度首轮 hydration。
  * 初始 Update 仅携带 legacy callback，不含 element payload；车道提升为 hydration 专用优先级，
  * 使首轮必须与既有宿主结构匹配，而非按普通 Root 更新处理。
+ * initialChildren 直接写入根初始 state，formState 留给服务端 Action/form 标记认领；
+ * callback 是根更新的提交通知。enqueueUpdate 建立队列，scheduleInitialHydrationOnRoot
+ * 登记根 pending lanes 并安排调度，这个入口本身不同步认领宿主节点。
  */
 export function createHydrationContainer(
   initialChildren: ReactNodeList,
@@ -387,6 +393,7 @@ export function createHydrationContainer(
 /**
  * 为 Root element 请求当前优先级 Lane，构造 Root Update 并返回该 Lane。
  * parentComponent 仅用于继承 legacy Context。
+ * 返回 lane 表示已选更新优先级，不表示该更新已经提交；callback 在更新提交后调用。
  */
 export function updateContainer(
   element: ReactNodeList,
@@ -408,7 +415,8 @@ export function updateContainer(
 }
 
 /**
- * 以 SyncLane 更新 Root；LegacyRoot 先冲刷 pending effects，保持旧版同步时序。
+ * 以 SyncLane 入队并调度 Root；这个函数本身不调用 flushSyncWork。
+ * LegacyRoot 先冲刷 pending effects；renderer 通常在返回后另行冲刷同步工作。
  */
 export function updateContainerSync(
   element: ReactNodeList,
@@ -434,6 +442,9 @@ export function updateContainerSync(
 /**
  * Root render 的公共实现：登记 DevTools/Profiler 调度、更新 legacy Context，构造 `{element}`
  * Update 并入队，随后调度 FiberRoot 与纠缠 Transition。render 中嵌套调用在 DEV 警告。
+ * rootFiber 是目标根的当前 Fiber；lane 由入口已选定，不在这里重新推断优先级。
+ * container.context 首次写入，之后存到 pendingContext 由 HostRoot completeWork 接管；只有 enqueueUpdate
+ * 找到仍连接的根时才启动计时、调度并纠缠。非法 callback 仅 DEV 警告，仍保存到更新。
  */
 function updateContainerImpl(
   rootFiber: Fiber,
@@ -775,7 +786,11 @@ if (__DEV__) {
     return currentHook;
   };
 
-  // 支持 DevTools 编辑 useState/useReducer 值。
+  /**
+   * DEV 编辑指定 Hook 的嵌套 state：id 是 memoizedState 链下标，path 是属性/数组下标路径，
+   * 空 path 直接替换整个 state。同步改写 memoizedState/baseState，浅克隆 props 绕过 bailout，
+   * 再安排 SyncLane render；不生成 reducer action，也不清空现有 baseQueue。
+   */
   overrideHookState = (
     fiber: Fiber,
     id: number,
@@ -798,6 +813,7 @@ if (__DEV__) {
       }
     }
   };
+  /** 删除指定 Hook state 的非空路径，沿访问链克隆容器；更新 memoizedState/baseState 后以 SyncLane 调度，旧更新队列仍保留。数组末端键按 splice 删除并移动后续下标。 */
   overrideHookStateDeletePath = (
     fiber: Fiber,
     id: number,
@@ -819,6 +835,7 @@ if (__DEV__) {
       }
     }
   };
+  /** 编辑 Hook state 的最深键；old/new 路径必须等长且共享父路径，否则辅助函数警告并返回 undefined。本入口仍保存该返回值，不另做失败回滚；成功后的旧 baseQueue 也不会被清空。 */
   overrideHookStateRenamePath = (
     fiber: Fiber,
     id: number,
@@ -842,7 +859,7 @@ if (__DEV__) {
     }
   };
 
-  // 支持 DevTools 编辑函数组件、forwardRef、memo、宿主组件等 props。
+  /** DEV 编辑完整 memoizedProps 的指定路径，将结果同步写入两面的 pendingProps；不改已提交 memoizedProps，随后以 SyncLane 调度展示编辑结果。空路径可整体替换 props。 */
   overrideProps = (fiber: Fiber, path: Array<string | number>, value: any) => {
     fiber.pendingProps = copyWithSet(fiber.memoizedProps, path, value);
     if (fiber.alternate) {
@@ -853,6 +870,7 @@ if (__DEV__) {
       scheduleUpdateOnFiber(root, fiber, SyncLane);
     }
   };
+  /** 从已提交 props 克隆并删除非空路径，给 current/alternate 设置同一 pendingProps，再安排同步 render；数组叶子用 splice 删除，兄弟属性仍结构共享。 */
   overridePropsDeletePath = (fiber: Fiber, path: Array<string | number>) => {
     fiber.pendingProps = copyWithDelete(fiber.memoizedProps, path);
     if (fiber.alternate) {
@@ -863,6 +881,7 @@ if (__DEV__) {
       scheduleUpdateOnFiber(root, fiber, SyncLane);
     }
   };
+  /** 在 props 的相同父路径下改最深键，将辅助函数结果写到两面 pendingProps 并同步调度。路径校验失败时结果为 undefined，本入口不会取消后续调度。 */
   overridePropsRenamePath = (
     fiber: Fiber,
     oldPath: Array<string | number>,
@@ -878,6 +897,7 @@ if (__DEV__) {
     }
   };
 
+  /** DEV 请求 Fiber 重新 render，不修改 props/state 或入队用户 Update；并发暂存仅标 lane，找到根后以 SyncLane 安排工作。 */
   scheduleUpdate = (fiber: Fiber) => {
     const root = enqueueConcurrentRenderForLane(fiber, SyncLane);
     if (root !== null) {
@@ -885,6 +905,7 @@ if (__DEV__) {
     }
   };
 
+  /** DEV 请求一次边界重试，从循环分配器取 RetryLane 后标记 Fiber/祖先并调度根；不直接解决资源，也不在此冲刷工作。 */
   scheduleRetry = (fiber: Fiber) => {
     const lane = claimNextRetryLane();
     const root = enqueueConcurrentRenderForLane(fiber, lane);
@@ -893,10 +914,12 @@ if (__DEV__) {
     }
   };
 
+  /** 替换后续 render 使用的 DEV 错误判定器；按 Fiber 返回 true/false/null 的语义由 beginWork 消费，本函数不触发更新或包装用户异常。 */
   setErrorHandler = (newShouldErrorImpl: Fiber => ?boolean) => {
     shouldErrorImpl = newShouldErrorImpl;
   };
 
+  /** 替换 DEV 挂起判定器供后续 Suspense render 查询；设置操作不触发 retry，判定器抛错也不在这里捕获。 */
   setSuspenseHandler = (newShouldSuspendImpl: Fiber => boolean) => {
     shouldSuspendImpl = newShouldSuspendImpl;
   };

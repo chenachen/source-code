@@ -18,6 +18,12 @@ import {getNextSiblingInstanceOrTextInstanceFiber} from 'react-reconciler/src/Re
  *
  * @remarks 空 Fragment 没有可直接比较的节点，只能先比较 parent，再借下一个宿主 sibling
  * 判断前后；结果始终附加 `IMPLEMENTATION_SPECIFIC`，明确它是推导位置。
+ * otherNode 就是宿主父节点时使用 CONTAINS；同父范围内若没有后续宿主 sibling，Fragment
+ * 处于父范围末尾。跨父或断开文档的情况沿用父节点比较结果，而不凭 Fiber 顺序制造 DOM 关系。
+ * @param fragmentFiber - 要定位的空 Fragment，供树反射查找其后续宿主 sibling。
+ * @param parentHostInstance - 实际宿主父实例，不是任意 return Fiber 的 stateNode。
+ * @param getPublicInstance - 把宿主 Fiber 转为当前 renderer 可比较的公开实例，兼容 DOM 与 Fabric。
+ * @returns document-position 位集；IMPLEMENTATION_SPECIFIC 标记该结果为虚拟位置推导。
  */
 export function compareDocumentPositionForEmptyFragment<TPublicInstance>(
   fragmentFiber: Fiber,

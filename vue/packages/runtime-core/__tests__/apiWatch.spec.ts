@@ -1,6 +1,6 @@
 /**
- * 测试阅读说明：本文件验证 `runtime-core/apiWatch` 的运行时行为。
- * “测试组”概括共享前置条件，“测试场景”说明当前输入、边界或历史回归目标；具体预期以断言为准。
+ * 先用 ref、reactive 与独立 watcher 检查取值、遍历、清理和停止行为。
+ * 组件调度用例读取 runtime-test 宿主树；SSR 停止用例通过 renderToString 核对服务端输出。
  */
 import {
   type ComponentInternalInstance,
@@ -43,9 +43,9 @@ import {
 } from '@vue/reactivity'
 import { renderToString } from '@vue/server-renderer'
 
-// 测试组：watch/watchEffect 的依赖追踪、调度时机、清理和深度监听行为。
+// watch/watchEffect 的依赖追踪、调度时机、清理和深度监听行为。
 describe('api: watch', () => {
-  // 测试场景：watchEffect 立即执行并在读取的响应式依赖变化后重新执行。
+  // watchEffect 首次立即执行，依赖修改后在下一次刷新重新取值。
   it('effect', async () => {
     const state = reactive({ count: 0 })
     let dummy
@@ -59,7 +59,7 @@ describe('api: watch', () => {
     expect(dummy).toBe(1)
   })
 
-  // 测试场景：观看单一来源：getter。
+  // 监听 getter 返回值，回调收到变化后的值与上次值。
   it('watching single source: getter', async () => {
     const state = reactive({ count: 0 })
     let dummy
@@ -67,7 +67,7 @@ describe('api: watch', () => {
       () => state.count,
       (count, prevCount) => {
         dummy = [count, prevCount]
-        // assert types
+        // 保留静态类型使用表达式；运行时结论由下方 matcher 断言给出。
         count + 1
         if (prevCount) {
           prevCount + 1
@@ -79,13 +79,13 @@ describe('api: watch', () => {
     expect(dummy).toMatchObject([1, 0])
   })
 
-  // 测试场景：正在观看单一来源：ref。
+  // 监听单个 ref，修改 value 后回调收到新旧值。
   it('watching single source: ref', async () => {
     const count = ref(0)
     let dummy
     watch(count, (count, prevCount) => {
       dummy = [count, prevCount]
-      // assert types
+      // 保留静态类型使用表达式；运行时结论由下方 matcher 断言给出。
       count + 1
       if (prevCount) {
         prevCount + 1
@@ -96,7 +96,7 @@ describe('api: watch', () => {
     expect(dummy).toMatchObject([1, 0])
   })
 
-  // 测试场景：观看单一来源：数组。
+  // reactive 数组作为一个数据源监听；push 后回调中的新旧值都指向该数组。
   it('watching single source: array', async () => {
     const array = reactive([] as number[])
     const spy = vi.fn()
@@ -107,7 +107,7 @@ describe('api: watch', () => {
     expect(spy).toBeCalledWith([1], [1], expect.anything())
   })
 
-  // 测试场景：不应调用 reactive 源数组内的函数。
+  // reactive 数组是被监听的值，数组内的函数不会被当作 getter 执行。
   it('should not call functions inside a reactive source array', () => {
     const spy1 = vi.fn()
     const array = reactive([spy1])
@@ -117,7 +117,7 @@ describe('api: watch', () => {
     expect(spy2).toBeCalledWith([spy1], undefined, expect.anything())
   })
 
-  // 测试场景：不应在 reactive 源数组中解包 refs。
+  // 直接监听 reactive 数组会深度访问其中 ref，但回调保留 ref 元素，不解包数组。
   it('should not unwrap refs in a reactive source array', async () => {
     const val = ref({ foo: 1 })
     const array = reactive([val])
@@ -126,14 +126,14 @@ describe('api: watch', () => {
     expect(spy).toBeCalledTimes(1)
     expect(spy).toBeCalledWith([val], undefined, expect.anything())
 
-    // deep by default
+    // 直接监听 reactive 数组会遍历 ref 元素的内部值。
     val.value.foo++
     await nextTick()
     expect(spy).toBeCalledTimes(2)
     expect(spy).toBeCalledWith([val], [val], expect.anything())
   })
 
-  // 测试场景：如果观察 getter 结果没有改变，则不应触发。
+  // getter 的依赖变化但返回值未变时，不再次调用 watch 回调。
   it('should not fire if watched getter result did not change', async () => {
     const spy = vi.fn()
     const n = ref(0)
@@ -145,18 +145,18 @@ describe('api: watch', () => {
 
     n.value += 2
     await nextTick()
-    // should not be called again because getter result did not change
+    // 依赖已变但取模结果不变，回调次数保持 1。
     expect(spy).toBeCalledTimes(1)
   })
 
-  // 测试场景：观看单一来源：computed ref。
+  // 监听 computed ref，回调接收计算结果的新旧值。
   it('watching single source: computed ref', async () => {
     const count = ref(0)
     const plus = computed(() => count.value + 1)
     let dummy
     watch(plus, (count, prevCount) => {
       dummy = [count, prevCount]
-      // assert types
+      // 保留静态类型使用表达式；运行时结论由下方 matcher 断言给出。
       count + 1
       if (prevCount) {
         prevCount + 1
@@ -167,7 +167,7 @@ describe('api: watch', () => {
     expect(dummy).toMatchObject([2, 1])
   })
 
-  // 测试场景：用深度观看原始：true。
+  // 监听基本类型 ref 时，deep: true 不影响新旧值回调。
   it('watching primitive with deep: true', async () => {
     const count = ref(0)
     let dummy
@@ -185,7 +185,7 @@ describe('api: watch', () => {
     expect(dummy).toMatchObject([1, 0])
   })
 
-  // 测试场景：直接观看reactive对象（自动深度：true）。
+  // 直接 watch reactive({ count: 0 })，递增根属性 count 并刷新后，回调观察值为 1；确认对象 source 可监听根属性，此例没有嵌套输入。
   it('directly watching reactive object (with automatic deep: true)', async () => {
     const src = reactive({
       count: 0,
@@ -199,7 +199,7 @@ describe('api: watch', () => {
     expect(dummy).toBe(1)
   })
 
-  // 测试场景：直接观察 reactive 对象，具有显式深度： false。
+  // deep: false 只响应根层属性替换，不响应对象内部的嵌套修改。
   it('directly watching reactive object with explicit deep: false', async () => {
     const src = reactive({
       state: {
@@ -217,18 +217,18 @@ describe('api: watch', () => {
       },
     )
 
-    // nested should not trigger
+    // deep:false 不追踪 state 内部的 count 修改。
     src.state.count++
     await nextTick()
     expect(dummy).toBe(undefined)
 
-    // root level should trigger
+    // 替换根层 state 属性应触发回调。
     src.state = { count: 1 }
     await nextTick()
     expect(dummy).toBe(1)
   })
 
-  // 测试场景：直接监听 reactive 数组并显式设置 deep: false 时，只追踪浅层变化。
+  // 直接监听 reactive 数组并设置 deep: false，响应数组项替换而不响应其中 ref 的修改。
   it('directly watching reactive array with explicit deep: false', async () => {
     const val = ref(1)
     const array: any[] = reactive([val])
@@ -248,10 +248,19 @@ describe('api: watch', () => {
   })
 
   // #9916
-  // 测试场景：用 deep: false 观看浅层 reactive 数组。
+  // shallowReactive 数组配合 deep: false，忽略元素内部 ref 的修改并响应数组 push。
   it('watching shallow reactive array with deep: false', async () => {
+    /**
+     * 浅数组监听夹具，包含 shallowRef 字段和普通字符串字段；内部 ref 变化与集合 push 分别测试 deep:false 的遍历边界。
+     */
     class foo {
+      /**
+       * 浅监听夹具内部的 shallowRef 字段；修改 value 后应不触发 deep:false 的数组监听。
+       */
       prop1: ShallowRef<string> = shallowRef('')
+      /**
+       * 夹具的普通字符串字段；数组 push 添加新实例时用它检查集合层变化。
+       */
       prop2: string = ''
     }
 
@@ -264,16 +273,16 @@ describe('api: watch', () => {
 
     collection[0].prop1.value = 'foo'
     await nextTick()
-    // should not trigger
+    // 当前修改不在已追踪范围内，回调计数保持原值。
     expect(cb).toBeCalledTimes(0)
 
     collection.push(new foo())
     await nextTick()
-    // should trigger on array self mutation
+    // 数组 push 改变集合本身，应触发一次回调。
     expect(cb).toBeCalledTimes(1)
   })
 
-  // 测试场景：仍应尊重 shallowReactive 源上的 deep: true。
+  // 显式 deep: true 会继续遍历 shallowReactive 数组中的 reactive 元素。
   it('should still respect deep: true on shallowReactive source', async () => {
     const obj = reactive({ a: 1 })
     const arr = shallowReactive([obj])
@@ -292,7 +301,7 @@ describe('api: watch', () => {
     expect(dummy).toBe(2)
   })
 
-  // 测试场景：观看多个来源。
+  // 混合 getter、ref 和 computed 的多个数据源，合并同步修改并返回新旧值元组。
   it('watching multiple sources', async () => {
     const state = reactive({ count: 1 })
     const count = ref(1)
@@ -301,7 +310,7 @@ describe('api: watch', () => {
     let dummy
     watch([() => state.count, count, plus], (vals, oldVals) => {
       dummy = [vals, oldVals]
-      // assert types
+      // 保留静态类型使用表达式；运行时结论由下方 matcher 断言给出。
       vals.concat(1)
       oldVals.concat(1)
     })
@@ -315,7 +324,7 @@ describe('api: watch', () => {
     ])
   })
 
-  // 测试场景：观看多个来源：未定义的初始值和即时值：true。
+  // 多个初始值均为 undefined 的 ref 仍会立即回调，新旧值都可按数组解构。
   it('watching multiple sources: undefined initial values and immediate: true', async () => {
     const a = ref()
     const b = ref()
@@ -333,7 +342,7 @@ describe('api: watch', () => {
     expect(called).toBe(true)
   })
 
-  // 测试场景：用立即观看空多个源：true。
+  // 空数据源数组配合 immediate: true，也立即调用一次回调并传入两个空数组。
   it('watching empty multiple sources with immediate: true', () => {
     const spy = vi.fn()
     watch([], spy, { immediate: true })
@@ -341,7 +350,7 @@ describe('api: watch', () => {
     expect(spy).toHaveBeenCalledWith([], [], expect.any(Function))
   })
 
-  // 测试场景：观看多个源：readonly 数组。
+  // 只读数据源元组保留每项类型，并在各项变化后返回对应的新旧值。
   it('watching multiple sources: readonly array', async () => {
     const state = reactive({ count: 1 })
     const status = ref(false)
@@ -351,7 +360,7 @@ describe('api: watch', () => {
       dummy = [vals, oldVals]
       const [count] = vals
       const [, oldStatus] = oldVals
-      // assert types
+      // 保留静态类型使用表达式；运行时结论由下方 matcher 断言给出。
       count + 1
       oldStatus === true
     })
@@ -365,13 +374,13 @@ describe('api: watch', () => {
     ])
   })
 
-  // 测试场景：观看多个源：reactive 对象（自动深度：true）。
+  // 把 reactive({ count: 0 }) 放入多 source 数组，递增根属性 count 并刷新后，回调接收包含 count: 1 的对象；此例没有嵌套输入。
   it('watching multiple sources: reactive object (with automatic deep: true)', async () => {
     const src = reactive({ count: 0 })
     let dummy
     watch([src], ([state]) => {
       dummy = state
-      // assert types
+      // 保留静态类型使用表达式；运行时结论由下方 matcher 断言给出。
       state.count === 1
     })
     src.count++
@@ -379,20 +388,20 @@ describe('api: watch', () => {
     expect(dummy).toMatchObject({ count: 1 })
   })
 
-  // 测试场景：警告无效的 watch 源。
+  // 单个无效数据源触发 Invalid watch source 警告。
   it('warn invalid watch source', () => {
     // @ts-expect-error
     watch(1, () => {})
     expect(`Invalid watch source`).toHaveBeenWarned()
   })
 
-  // 测试场景：警告无效 watch 源：多个源。
+  // 多数据源数组中的无效项触发 Invalid watch source 警告。
   it('warn invalid watch source: multiple sources', () => {
     watch([1], () => {})
     expect(`Invalid watch source`).toHaveBeenWarned()
   })
 
-  // 测试场景：停止watcher (effect)。
+  // 停止 watchEffect 后，依赖修改不再更新副作用结果。
   it('stopping the watcher (effect)', async () => {
     const state = reactive({ count: 0 })
     let dummy
@@ -404,14 +413,17 @@ describe('api: watch', () => {
     stop()
     state.count++
     await nextTick()
-    // should not update
+    // 停止句柄已执行，后续修改不再改变已记录结果。
     expect(dummy).toBe(0)
   })
 
-  // 测试场景：停止watcher (SSR)。
+  // SSR created 取得非立即 watcher 的停止句柄并调用它，渲染期间及渲染后的修改都不调用回调；此分支本就不创建 effect，不能据此证明停止了活跃 SSR watcher。
   it('stopping the watcher (SSR)', async () => {
     let dummy = 0
     const count = ref<number>(1)
+    /**
+     * 把传入的 getter 值写入 dummy，区分主动读取与 watcher 回调产生的副作用。
+     */
     const captureValue = (value: number) => {
       dummy = value
     }
@@ -419,34 +431,46 @@ describe('api: watch', () => {
       captureValue(newValue)
     })
     const Comp = defineComponent({
+      /**
+       * 在 created 阶段执行 `captureValue(getter())`、`getter()`、`this.$watch(getter, watchCallback)`；写入 `this.count` 供后续观察或触发更新。
+       */
       created() {
+        /**
+         * 通过 Options 公共 this 读取 count；停止前手动调用记录初始值，再作为 this.$watch 数据源。
+         */
         const getter = () => this.count
-        captureValue(getter()) // sets dummy to 1
+        captureValue(getter()) // 停止前主动读取 getter，将 dummy 记为 1。
         const stop = this.$watch(getter, watchCallback)
         stop()
-        this.count = 2 // shouldn't trigger side effect
+        this.count = 2 // 已停止的 watcher 不应产生新副作用。
       },
+      /**
+       * 渲染结果为 `h('div', this.count)`。
+       */
       render() {
         return h('div', this.count)
       },
+      /**
+       * 返回 `count` 作为后续渲染可读的绑定。
+       */
       setup() {
         return { count }
       },
     })
     let html
     html = await renderToString(h(Comp))
-    // should not throw here
+    // 服务端渲染输出包含修改后的 count=2。
     expect(html).toBe(`<div>2</div>`)
     expect(watchCallback).not.toHaveBeenCalled()
     expect(dummy).toBe(1)
     await nextTick()
-    count.value = 3 // shouldn't trigger side effect
+    count.value = 3 // 已停止的 watcher 不应产生新副作用。
     await nextTick()
     expect(watchCallback).not.toHaveBeenCalled()
     expect(dummy).toBe(1)
   })
 
-  // 测试场景：停止watcher（带源）。
+  // 停止带数据源的 watch 后，后续数据变化不再调用回调。
   it('stopping the watcher (with source)', async () => {
     const state = reactive({ count: 0 })
     let dummy
@@ -464,11 +488,11 @@ describe('api: watch', () => {
     stop()
     state.count++
     await nextTick()
-    // should not update
+    // 停止句柄已执行，后续修改不再改变已记录结果。
     expect(dummy).toBe(1)
   })
 
-  // 测试场景：清理登记(effect)。
+  // watchEffect 重跑前调用已登记清理函数，停止时再次清理。
   it('cleanup registration (effect)', async () => {
     const state = reactive({ count: 0 })
     const cleanup = vi.fn()
@@ -488,7 +512,7 @@ describe('api: watch', () => {
     expect(cleanup).toHaveBeenCalledTimes(2)
   })
 
-  // 测试场景：清理注册（带源码）。
+  // watch 回调登记的清理函数，在下一次回调之前和停止时执行。
   it('cleanup registration (with source)', async () => {
     const count = ref(0)
     const cleanup = vi.fn()
@@ -512,7 +536,7 @@ describe('api: watch', () => {
     expect(cleanup).toHaveBeenCalledTimes(2)
   })
 
-  // 测试场景：onWatcherCleanup 在 watcher 失效或停止前执行已登记清理函数。
+  // onWatcherCleanup 为 watchEffect 和 watch 登记清理，重跑或停止时分别执行。
   it('onWatcherCleanup', async () => {
     const count = ref(0)
     const cleanupEffect = vi.fn()
@@ -542,7 +566,7 @@ describe('api: watch', () => {
     expect(cleanupWatch).toHaveBeenCalledTimes(2)
   })
 
-  // 测试场景：冲洗时间：预（默认）。
+  // 默认 pre watchEffect 在所属组件 DOM 更新前执行，并合并同一同步栈内的两次修改。
   it('flush timing: pre (default)', async () => {
     const count = ref(0)
     const count2 = ref(0)
@@ -552,17 +576,20 @@ describe('api: watch', () => {
     let result2
     const assertion = vi.fn((count, count2Value) => {
       callCount++
-      // on mount, the watcher callback should be called before DOM render
-      // on update, should be called before the count is updated
+      // 首次执行发生在宿主渲染前，容器为空。
+      // 再次执行发生在宿主文本提交前，仍看到上一轮内容。
       const expectedDOM = callCount === 1 ? `` : `${count - 1}`
       result1 = serializeInner(root) === expectedDOM
 
-      // in a pre-flush callback, all state should have been updated
+      // pre 回调虽早于宿主 patch，同步栈内两个状态赋值已全部完成。
       const expectedState = callCount - 1
       result2 = count === expectedState && count2Value === expectedState
     })
 
     const Comp = {
+      /**
+       * 调用 `watchEffect(() => { assertion(count.value, count2.value); })` 完成本例的初始化登记或读取；返回渲染闭包，执行时产出 `count.value`。
+       */
       setup() {
         watchEffect(() => {
           assertion(count.value, count2.value)
@@ -579,13 +606,13 @@ describe('api: watch', () => {
     count.value++
     count2.value++
     await nextTick()
-    // two mutations should result in 1 callback execution
+    // 同一同步栈内两次修改被合并为一次后续执行。
     expect(assertion).toHaveBeenCalledTimes(2)
     expect(result1).toBe(true)
     expect(result2).toBe(true)
   })
 
-  // 测试场景：刷新时间：发布。
+  // post watchEffect 在组件 DOM 提交后执行，首次执行也能读到已挂载的输出。
   it('flush timing: post', async () => {
     const count = ref(0)
     let result
@@ -594,6 +621,9 @@ describe('api: watch', () => {
     })
 
     const Comp = {
+      /**
+       * 调用 `watchEffect(() => { assertion(count.value); }, { flush: 'post' })` 完成本例的初始化登记或读取；返回渲染闭包，执行时产出 `count.value`。
+       */
       setup() {
         watchEffect(
           () => {
@@ -615,7 +645,7 @@ describe('api: watch', () => {
     expect(result).toBe(true)
   })
 
-  // 测试场景：watchPostEffect 延迟到组件 DOM 提交后的 post-flush 阶段执行。
+  // watchPostEffect 在首次挂载及后续更新的 DOM 提交后读取新文本。
   it('watchPostEffect', async () => {
     const count = ref(0)
     let result
@@ -624,6 +654,9 @@ describe('api: watch', () => {
     })
 
     const Comp = {
+      /**
+       * 调用 `watchPostEffect(() => { assertion(count.value); })` 完成本例的初始化登记或读取；返回渲染闭包，执行时产出 `count.value`。
+       */
       setup() {
         watchPostEffect(() => {
           assertion(count.value)
@@ -642,7 +675,7 @@ describe('api: watch', () => {
     expect(result).toBe(true)
   })
 
-  // 测试场景：冲洗时间：同步。
+  // sync watchEffect 在每次依赖修改时立即执行，能读到下一条语句执行前的状态。
   it('flush timing: sync', async () => {
     const count = ref(0)
     const count2 = ref(0)
@@ -652,18 +685,21 @@ describe('api: watch', () => {
     let result2
     const assertion = vi.fn(count => {
       callCount++
-      // on mount, the watcher callback should be called before DOM render
-      // on update, should be called before the count is updated
+      // 首次执行发生在宿主渲染前，容器为空。
+      // 再次执行发生在宿主文本提交前，仍看到上一轮内容。
       const expectedDOM = callCount === 1 ? `` : `${count - 1}`
       result1 = serializeInner(root) === expectedDOM
 
-      // in a sync callback, state mutation on the next line should not have
-      // executed yet on the 2nd call, but will be on the 3rd call.
+      // 第二次 sync 回调发生在 count 改值时，下一条 count2 赋值尚未执行。
+      // count2 赋值再触发第三次回调，此时可以读到它的新值。
       const expectedState = callCount < 3 ? 0 : 1
       result2 = count2.value === expectedState
     })
 
     const Comp = {
+      /**
+       * 调用 `watchEffect(() => { assertion(count.value); }, { flush: 'sync', })` 完成本例的初始化登记或读取；返回渲染闭包，执行时产出 `count.value`。
+       */
       setup() {
         watchEffect(
           () => {
@@ -690,7 +726,7 @@ describe('api: watch', () => {
     expect(result2).toBe(true)
   })
 
-  // 测试场景：watchSyncEffect 在依赖变化时同步执行，不进入批处理队列。
+  // watchSyncEffect 对连续两次依赖修改逐次执行，不进入组件批处理队列。
   it('watchSyncEffect', async () => {
     const count = ref(0)
     const count2 = ref(0)
@@ -700,18 +736,21 @@ describe('api: watch', () => {
     let result2
     const assertion = vi.fn(count => {
       callCount++
-      // on mount, the watcher callback should be called before DOM render
-      // on update, should be called before the count is updated
+      // 首次执行发生在宿主渲染前，容器为空。
+      // 再次执行发生在宿主文本提交前，仍看到上一轮内容。
       const expectedDOM = callCount === 1 ? `` : `${count - 1}`
       result1 = serializeInner(root) === expectedDOM
 
-      // in a sync callback, state mutation on the next line should not have
-      // executed yet on the 2nd call, but will be on the 3rd call.
+      // 第二次 sync 回调发生在 count 改值时，下一条 count2 赋值尚未执行。
+      // count2 赋值再触发第三次回调，此时可以读到它的新值。
       const expectedState = callCount < 3 ? 0 : 1
       result2 = count2.value === expectedState
     })
 
     const Comp = {
+      /**
+       * 调用 `watchSyncEffect(() => { assertion(count.value); })` 完成本例的初始化登记或读取；返回渲染闭包，执行时产出 `count.value`。
+       */
       setup() {
         watchSyncEffect(() => {
           assertion(count.value)
@@ -733,17 +772,26 @@ describe('api: watch', () => {
     expect(result2).toBe(true)
   })
 
-  // 测试场景：不应该在组件卸载时触发/刷新：post。
+  // 同一次状态修改使组件卸载时，所属 post watcher 不再执行。
   it('should not fire on component unmount w/ flush: post', async () => {
     const toggle = ref(true)
     const cb = vi.fn()
     const Comp = {
+      /**
+       * 调用 `watch(toggle, cb, { flush: 'post' })` 完成本例的初始化登记或读取。
+       */
       setup() {
         watch(toggle, cb, { flush: 'post' })
       },
+      /**
+       * 空渲染占位，让组件完成本例所需的初始化，断言读取状态或诊断结果。
+       */
       render() {},
     }
     const App = {
+      /**
+       * 渲染结果为 `toggle.value ? h(Comp) : null`。
+       */
       render() {
         return toggle.value ? h(Comp) : null
       },
@@ -756,17 +804,26 @@ describe('api: watch', () => {
   })
 
   // #2291
-  // 测试场景：不应该在组件卸载时触发/刷新：pre。
+  // 父组件先卸载子组件，已入队的子组件 pre watcher 不再执行。
   it('should not fire on component unmount w/ flush: pre', async () => {
     const toggle = ref(true)
     const cb = vi.fn()
     const Comp = {
+      /**
+       * 调用 `watch(toggle, cb, { flush: 'pre' })` 完成本例的初始化登记或读取。
+       */
       setup() {
         watch(toggle, cb, { flush: 'pre' })
       },
+      /**
+       * 空渲染占位，让组件完成本例所需的初始化，断言读取状态或诊断结果。
+       */
       render() {},
     }
     const App = {
+      /**
+       * 渲染结果为 `toggle.value ? h(Comp) : null`。
+       */
       render() {
         return toggle.value ? h(Comp) : null
       },
@@ -779,23 +836,35 @@ describe('api: watch', () => {
   })
 
   // #7030
-  // 测试场景：不应该触发子组件卸载w/flush: pre。
+  // 经中间父组件传递状态并卸载孙组件时，孙组件 pre watcher 不再执行。
   it('should not fire on child component unmount w/ flush: pre', async () => {
     const visible = ref(true)
     const cb = vi.fn()
     const Parent = defineComponent({
       props: ['visible'],
+      /**
+       * 渲染结果为 `visible.value ? h(Comp) : null`。
+       */
       render() {
         return visible.value ? h(Comp) : null
       },
     })
     const Comp = {
+      /**
+       * 调用 `watch(visible, cb, { flush: 'pre' })` 完成本例的初始化登记或读取。
+       */
       setup() {
         watch(visible, cb, { flush: 'pre' })
       },
+      /**
+       * 空渲染占位，让组件完成本例所需的初始化，断言读取状态或诊断结果。
+       */
       render() {},
     }
     const App = {
+      /**
+       * 渲染结果为 `h(Parent, { visible: visible.value, })`。
+       */
       render() {
         return h(Parent, {
           visible: visible.value,
@@ -810,12 +879,15 @@ describe('api: watch', () => {
   })
 
   // #7030
-  // 测试场景：刷新：子组件中的 pre watcher 不应在父组件更新之前触发。
+  // 父子组件同时监听同一状态时，父 pre watcher 和父 render 先于子的对应任务。
   it('flush: pre watcher in child component should not fire before parent update', async () => {
     const b = ref(0)
     const calls: string[] = []
 
     const Comp = {
+      /**
+       * 调用 `watch(() => b.value, val => { calls.push('watcher child'); }, { flush: 'pre' })` 完成本例的初始化登记或读取；返回渲染闭包，执行时执行 `calls.push('render child')`。
+       */
       setup() {
         watch(
           () => b.value,
@@ -833,6 +905,9 @@ describe('api: watch', () => {
 
     const Parent = {
       props: ['a'],
+      /**
+       * 调用 `watch(() => b.value, val => { calls.push('watcher parent'); }, { flush: 'pre' })` 完成本例的初始化登记或读取；返回渲染闭包，执行时产出 `h(Comp)`。
+       */
       setup() {
         watch(
           () => b.value,
@@ -850,6 +925,9 @@ describe('api: watch', () => {
     }
 
     const App = {
+      /**
+       * 渲染结果为 `h(Parent, { a: b.value, })`。
+       */
       render() {
         return h(Parent, {
           a: b.value,
@@ -873,7 +951,7 @@ describe('api: watch', () => {
   })
 
   // #1763
-  // 测试场景：刷新：预 watcher 观看 props 应该在子更新之前触发。
+  // 父级同步更新多个 props 后，子的 pre watcher 及其触发的 watcher 先于子 render 执行。
   it('flush: pre watcher watching props should fire before child update', async () => {
     const a = ref(0)
     const b = ref(0)
@@ -882,6 +960,9 @@ describe('api: watch', () => {
 
     const Comp = {
       props: ['a', 'b'],
+      /**
+       * 调用 `watch(() => props.a + props.b, () => { calls.push('watcher 1'); c.value++; }, { flush: 'pre' })`、`watch(c, () => { calls.push('watcher 2'); }, { flush: 'pre' })` 完成本例的初始化登记或读取；返回渲染闭包，执行时执行 `calls.push('render')`。
+       */
       setup(props: any) {
         watch(
           () => props.a + props.b,
@@ -892,7 +973,7 @@ describe('api: watch', () => {
           { flush: 'pre' },
         )
 
-        // #1777 chained pre-watcher
+        // #1777：第一个 pre watcher 改写 c，再触发第二个 pre watcher。
         watch(
           c,
           () => {
@@ -908,6 +989,9 @@ describe('api: watch', () => {
     }
 
     const App = {
+      /**
+       * 渲染结果为 `h(Comp, { a: a.value, b: b.value })`。
+       */
       render() {
         return h(Comp, { a: a.value, b: b.value })
       },
@@ -916,9 +1000,9 @@ describe('api: watch', () => {
     render(h(App), nodeOps.createElement('div'))
     expect(calls).toEqual(['render'])
 
-    // both props are updated
-    // should trigger pre-flush watcher first and only once
-    // then trigger child render
+    // 同一同步栈修改两个父级 prop 来源。
+    // 子 props watcher 只执行一次，随后执行它触发的 c watcher。
+    // 两个 pre 回调都完成后，才重新执行子 render。
     a.value++
     b.value++
     await nextTick()
@@ -926,12 +1010,18 @@ describe('api: watch', () => {
   })
 
   // #5721
-  // 测试场景：flush：在组件setup中预触发应该在挂载之前进行缓冲和调用。
+  // setup 中连续修改数据，pre watcher 合并取最终值并先于 mounted 执行。
   it('flush: pre triggered in component setup should be buffered and called before mounted', () => {
     const count = ref(0)
     const calls: string[] = []
     const App = {
+      /**
+       * 空渲染占位，让组件完成本例所需的初始化，断言读取状态或诊断结果。
+       */
       render() {},
+      /**
+       * 调用 `watch(count, () => { calls.push('watch ' + count.value); }, { flush: 'pre' })`、`onMounted(() => { calls.push('mounted'); })` 完成本例的初始化登记或读取；把 `count.value` 写入本例的状态或观察变量。
+       */
       setup() {
         watch(
           count,
@@ -943,7 +1033,7 @@ describe('api: watch', () => {
         onMounted(() => {
           calls.push('mounted')
         })
-        // mutate multiple times
+        // setup 同步连改三次，pre watcher 合并读取最终 count=3。
         count.value++
         count.value++
         count.value++
@@ -954,12 +1044,15 @@ describe('api: watch', () => {
   })
 
   // #1852
-  // 测试场景：刷新：模板 refs 更新后应该触发帖子 watcher。
+  // post watcher 在模板 ref 赋值后执行，能读到新挂载的节点。
   it('flush: post watcher should fire after template refs updated', async () => {
     const toggle = ref(false)
     let dom: TestElement | null = null
 
     const App = {
+      /**
+       * 调用 `watch(toggle, () => { dom = domRef.value; }, { flush: 'post' })` 完成本例的初始化登记或读取；返回渲染闭包，执行时产出 `toggle.value ? h('p', { ref: domRef }) : null`。
+       */
       setup() {
         const domRef = ref<TestElement | null>(null)
 
@@ -985,7 +1078,7 @@ describe('api: watch', () => {
     expect(dom!.tag).toBe('p')
   })
 
-  // 测试场景：深。
+  // deep watcher 遍历嵌套对象、数组、Map 和 Set，响应各类内部修改。
   it('deep', async () => {
     const state = reactive({
       nested: {
@@ -1017,23 +1110,23 @@ describe('api: watch', () => {
     await nextTick()
     expect(dummy).toEqual([1, 1, 1, true])
 
-    // nested array mutation
+    // 修改嵌套数组元素。
     state.array[0] = 2
     await nextTick()
     expect(dummy).toEqual([1, 2, 1, true])
 
-    // nested map mutation
+    // 修改嵌套 Map 中 a 的值。
     state.map.set('a', 2)
     await nextTick()
     expect(dummy).toEqual([1, 2, 2, true])
 
-    // nested set mutation
+    // 删除嵌套 Set 中的元素 1。
     state.set.delete(1)
     await nextTick()
     expect(dummy).toEqual([1, 2, 2, false])
   })
 
-  // 测试场景：看深ref。
+  // 深度遍历包含 ref 与 computed 的 reactive 数组，响应 ref 引发的计算结果变化。
   it('watching deep ref', async () => {
     const count = ref(0)
     const double = computed(() => count.value * 2)
@@ -1053,7 +1146,7 @@ describe('api: watch', () => {
     expect(dummy).toEqual([1, 2])
   })
 
-  // 测试场景：深奥的符号。
+  // 深度监听可枚举 Symbol 属性的修改、添加和删除，忽略不可枚举属性。
   it('deep with symbols', async () => {
     const symbol1 = Symbol()
     const symbol2 = Symbol()
@@ -1084,23 +1177,23 @@ describe('api: watch', () => {
     await nextTick()
     expect(spy).toHaveBeenCalledTimes(1)
 
-    // Non-enumerable properties don't trigger deep watchers
+    // 不可枚举 Symbol 字段未被 traverse 读取，修改它不触发回调。
     state[symbol3] = 3
     await nextTick()
     expect(spy).toHaveBeenCalledTimes(1)
 
-    // Adding a new symbol property
+    // 添加可枚举 Symbol 字段，触发已收集的枚举依赖。
     state[symbol4] = 1
     await nextTick()
     expect(spy).toHaveBeenCalledTimes(2)
 
-    // Removing a symbol property
+    // 删除该 Symbol 字段，再次触发枚举依赖。
     delete state[symbol4]
     await nextTick()
     expect(spy).toHaveBeenCalledTimes(3)
   })
 
-  // 测试场景：立即。
+  // immediate watcher 创建时执行一次，后续依赖变化再执行。
   it('immediate', async () => {
     const count = ref(0)
     const cb = vi.fn()
@@ -1111,7 +1204,7 @@ describe('api: watch', () => {
     expect(cb).toHaveBeenCalledTimes(2)
   })
 
-  // 测试场景：立即：初始值为空时触发。
+  // 初始值为 null 的数据源也会触发 immediate 回调。
   it('immediate: triggers when initial value is null', async () => {
     const state = ref(null)
     const spy = vi.fn()
@@ -1119,7 +1212,7 @@ describe('api: watch', () => {
     expect(spy).toHaveBeenCalled()
   })
 
-  // 测试场景：立即：初始值未定义时触发。
+  // 初始值为 undefined 仍立即回调；再次写入相同 undefined 不重复调用。
   it('immediate: triggers when initial value is undefined', async () => {
     const state = ref()
     const spy = vi.fn()
@@ -1128,17 +1221,17 @@ describe('api: watch', () => {
     state.value = 3
     await nextTick()
     expect(spy).toHaveBeenCalledTimes(2)
-    // testing if undefined can trigger the watcher
+    // 从 3 改回 undefined，应视为一次值变化。
     state.value = undefined
     await nextTick()
     expect(spy).toHaveBeenCalledTimes(3)
-    // it shouldn't trigger if the same value is set
+    // 连续赋同一 undefined 不应再次回调。
     state.value = undefined
     await nextTick()
     expect(spy).toHaveBeenCalledTimes(3)
   })
 
-  // 测试场景：使用 effect 时立即警告选项。
+  // watchEffect 传入 immediate 会警告，该选项不改变其首次立即执行。
   it('warn immediate option when using effect', async () => {
     const count = ref(0)
     let dummy
@@ -1157,7 +1250,7 @@ describe('api: watch', () => {
     expect(dummy).toBe(1)
   })
 
-  // 测试场景：使用 effect 时发出警告且不尊重深度选项。
+  // watchEffect 传入 deep 会警告，也不会替回调自动遍历返回的 ref。
   it('warn and not respect deep option when using effect', async () => {
     const arr = ref([1, [2]])
     const spy = vi.fn()
@@ -1176,7 +1269,7 @@ describe('api: watch', () => {
     expect(`"deep" option is only respected`).toHaveBeenWarned()
   })
 
-  // 测试场景：onTrack 接收 watcher 读取响应式依赖时的调试事件。
+  // onTrack 接收 watchEffect 读取属性、检查键和枚举对象时的调试事件。
   it('onTrack', async () => {
     const events: DebuggerEvent[] = []
     let dummy
@@ -1212,7 +1305,7 @@ describe('api: watch', () => {
     ])
   })
 
-  // 测试场景：onTrigger 接收响应式写操作触发 watcher 时的调试事件。
+  // onTrigger 接收属性设置与删除引发的 watchEffect 调试事件。
   it('onTrigger', async () => {
     const events: DebuggerEvent[] = []
     let dummy
@@ -1251,7 +1344,7 @@ describe('api: watch', () => {
     })
   })
 
-  // 测试场景：应该同步工作。
+  // sync watch 在 ref 修改的同步调用栈内执行回调。
   it('should work sync', () => {
     const v = ref(1)
     let calls = 0
@@ -1271,7 +1364,7 @@ describe('api: watch', () => {
     expect(calls).toBe(1)
   })
 
-  // 测试场景：观看浅 ref 时应强制触发 triggerRef。
+  // shallowRef 内部修改不自动触发 watch，显式 triggerRef 后才读取新内部值。
   test('should force trigger on triggerRef when watching a shallow ref', async () => {
     const v = shallowRef({ a: 1 })
     let sideEffect = 0
@@ -1281,21 +1374,21 @@ describe('api: watch', () => {
 
     v.value = v.value
     await nextTick()
-    // should not trigger
+    // 当前修改不在已追踪范围内，回调计数保持原值。
     expect(sideEffect).toBe(0)
 
     v.value.a++
     await nextTick()
-    // should not trigger
+    // 当前修改不在已追踪范围内，回调计数保持原值。
     expect(sideEffect).toBe(0)
 
     triggerRef(v)
     await nextTick()
-    // should trigger now
+    // 显式通知已追踪依赖后，应重新执行对应 watcher。
     expect(sideEffect).toBe(2)
   })
 
-  // 测试场景：观看多个源时应强制触发 triggerRef：浅 ref 数组。
+  // 多数据源中的 shallowRef 经 triggerRef 通知后，即使数组引用未变也会回调。
   test('should force trigger on triggerRef when watching multiple sources: shallow ref array', async () => {
     const v = shallowRef([] as any)
     const spy = vi.fn()
@@ -1307,11 +1400,11 @@ describe('api: watch', () => {
     triggerRef(v)
 
     await nextTick()
-    // should trigger now
+    // 显式通知已追踪依赖后，应重新执行对应 watcher。
     expect(spy).toHaveBeenCalledTimes(1)
   })
 
-  // 测试场景：应该从 reactive 强制触发 triggerRef 和 toRef。
+  // 对 reactive 属性的 toRef 调用 triggerRef，也能重新执行读取该 ref 的 watchEffect。
   test('should force trigger on triggerRef with toRef from reactive', async () => {
     const foo = reactive({ bar: 1 })
     const bar = toRef(foo, 'bar')
@@ -1327,12 +1420,12 @@ describe('api: watch', () => {
     triggerRef(bar)
 
     await nextTick()
-    // should trigger now
+    // 显式通知已追踪依赖后，应重新执行对应 watcher。
     expect(spy).toHaveBeenCalledTimes(2)
   })
 
   // #2125
-  // 测试场景：watchEffect 不应递归触发自身。
+  // watchEffect 向自己读取的数组 push，不递归执行自身。
   test('watchEffect should not recursively trigger itself', async () => {
     const spy = vi.fn()
     const price = ref(10)
@@ -1346,7 +1439,7 @@ describe('api: watch', () => {
   })
 
   // #2231
-  // 测试场景：computed 如果值没有变化，refs 不应触发 watch。
+  // computed 的依赖变化但计算结果未变时，不再次调用 watch 回调。
   test('computed refs should not trigger watch if value has no change', async () => {
     const spy = vi.fn()
     const source = ref(0)
@@ -1360,36 +1453,57 @@ describe('api: watch', () => {
   })
 
   // https://github.com/vuejs/core/issues/2381
-  // 测试场景：$watch 应始终使用其自己的实例注册其效果。
+  // 在父组件 mounted 中调用子实例 $watch，watcher 仍属于子实例并随子卸载停止。
   test('$watch should always register its effects with its own instance', async () => {
     let instance: ComponentInternalInstance | null
     let _show: Ref<boolean>
 
     const Child = defineComponent({
+      /**
+       * 渲染结果为 `h('div')`。
+       */
       render: () => h('div'),
+      /**
+       * 在 mounted 阶段执行 `getCurrentInstance()`；写入 `instance` 供后续观察或触发更新。
+       */
       mounted() {
         instance = getCurrentInstance()
       },
+      /**
+       * 在 unmounted 阶段保留生命周期占位。
+       */
       unmounted() {},
     })
 
     const Comp = defineComponent({
+      /**
+       * 把 `_show` 写入本例的状态或观察变量；返回 `comp`、`show` 作为后续渲染可读的绑定。
+       */
       setup() {
         const comp = ref<ComponentPublicInstance | undefined>()
         const show = ref(true)
         _show = show
         return { comp, show }
       },
+      /**
+       * 渲染结果为 `this.show ? h(Child, { ref: vm => void (this.comp = vm as ComponentPublicInstance), }) : null`。
+       */
       render() {
         return this.show
           ? h(Child, {
+              /**
+               * 修改或记录 `this.comp`；返回 `void (this.comp = vm as ComponentPublicInstance)`。
+               */
               ref: vm => void (this.comp = vm as ComponentPublicInstance),
             })
           : null
       },
+      /**
+       * 在 mounted 阶段执行 `this.comp!.$watch(() => this.show, () => void 0)`。
+       */
       mounted() {
-        // this call runs while Comp is currentInstance, but
-        // the effect for this `$watch` should nonetheless be registered with Child
+        // 调用点位于父 Comp 的 mounted，而 $watch 接收者是 Child 的公开实例。
+        // instanceWatch 必须将新 watcher 的 scope 切到 Child。
         this.comp!.$watch(
           () => this.show,
           () => void 0,
@@ -1401,7 +1515,7 @@ describe('api: watch', () => {
 
     expect(instance!).toBeDefined()
     expect(instance!.scope.effects).toBeInstanceOf(Array)
-    // includes the component's own render effect AND the watcher effect
+    // 子 scope 同时包含自身 render effect 和经 $watch 注册的 watcher effect。
     expect(instance!.scope.effects.length).toBe(2)
 
     _show!.value = false
@@ -1412,13 +1526,19 @@ describe('api: watch', () => {
     expect(instance!.scope.effects.length).toBe(0)
   })
 
-  // 测试场景：this.$watch 的函数 source 应以组件公共代理作为 this 和首个参数。
+  // created 中把函数 source 传给 this.$watch，挂载后确认公共实例已记录；参数成员检查只有 expect(...) 而没有 matcher，本例没有有效断言 source 收到该实例参数。
   test('this.$watch should pass `this.proxy` to watch source as the first argument ', () => {
     let instance: any
     const source = vi.fn()
 
     const Comp = defineComponent({
+      /**
+       * 空渲染占位，让组件完成本例所需的初始化，断言读取状态或诊断结果。
+       */
       render() {},
+      /**
+       * 在 created 阶段执行 `this.$watch(source, function () { })`；写入 `instance` 供后续观察或触发更新。
+       */
       created(this: any) {
         instance = this
         this.$watch(source, function () {})
@@ -1432,12 +1552,18 @@ describe('api: watch', () => {
     expect(source.mock.calls.some(args => args.includes(instance)))
   })
 
-  // 测试场景：不应将 `this.proxy` 泄漏到 setup()。
+  // setup 中调用普通 watch 时，不给函数数据源传入 this.proxy 参数。
   test('should not leak `this.proxy` to setup()', () => {
     const source = vi.fn()
 
     const Comp = defineComponent({
+      /**
+       * 空渲染占位，让组件完成本例所需的初始化，断言读取状态或诊断结果。
+       */
       render() {},
+      /**
+       * 调用 `watch(source, () => { })` 完成本例的初始化登记或读取。
+       */
       setup() {
         watch(source, () => {})
       },
@@ -1445,12 +1571,12 @@ describe('api: watch', () => {
 
     const root = nodeOps.createElement('div')
     createApp(Comp).mount(root)
-    // should not have any arguments
+    // 普通 watch 的 source 调用不传入实例参数，参数列表为空。
     expect(source.mock.calls[0]).toMatchObject([])
   })
 
   // #2728
-  // 测试场景：pre watcher 回调不应跟踪依赖关系。
+  // pre watcher 回调读取的其他 ref 不成为子组件的渲染依赖。
   test('pre watcher callbacks should not track dependencies', async () => {
     const a = ref(0)
     const b = ref(0)
@@ -1460,16 +1586,25 @@ describe('api: watch', () => {
       props: ['a'],
       updated,
       watch: {
+        /**
+         * Options pre watcher 的回调只读取 b.value，不返回派生数据；修改 b 后 Child.updated 次数检查该读取没有污染渲染依赖。
+         */
         a() {
           b.value
         },
       },
+      /**
+       * 渲染结果为 `h('div', this.a)`。
+       */
       render() {
         return h('div', this.a)
       },
     })
 
     const Parent = defineComponent({
+      /**
+       * 渲染结果为 `h(Child, { a: a.value })`。
+       */
       render() {
         return h(Child, { a: a.value })
       },
@@ -1484,15 +1619,21 @@ describe('api: watch', () => {
 
     b.value++
     await nextTick()
-    // should not track b as dependency of Child
+    // watch 回调读取 b 不应让它成为 Child render 的依赖。
     expect(updated).toHaveBeenCalledTimes(1)
   })
 
-  // 测试场景：观察键路径。
+  // Options watch 与 this.$watch 都能通过 a.b 路径响应嵌套属性变化。
   test('watching keypath', async () => {
     const spy = vi.fn()
     const Comp = defineComponent({
+      /**
+       * 空渲染占位，让组件完成本例所需的初始化，断言读取状态或诊断结果。
+       */
       render() {},
+      /**
+       * 建立每实例初始 data：`{ a: { b: 1, }, }`。
+       */
       data() {
         return {
           a: {
@@ -1503,9 +1644,15 @@ describe('api: watch', () => {
       watch: {
         'a.b': spy,
       },
+      /**
+       * 在 created 阶段执行 `this.$watch('a.b', spy)`。
+       */
       created(this: any) {
         this.$watch('a.b', spy)
       },
+      /**
+       * 在 mounted 阶段写入 `this.a.b` 供后续观察或触发更新。
+       */
       mounted(this: any) {
         this.a.b++
       },
@@ -1518,7 +1665,7 @@ describe('api: watch', () => {
     expect(spy).toHaveBeenCalledTimes(2)
   })
 
-  // 测试场景：观看来源：ref<any[]>。
+  // ref 中的数组被替换成新引用时，watch 调用一次回调。
   it('watching sources: ref<any[]>', async () => {
     const foo = ref([1])
     const spy = vi.fn()
@@ -1530,7 +1677,7 @@ describe('api: watch', () => {
     expect(spy).toBeCalledTimes(1)
   })
 
-  // 测试场景：观看多个来源：computed。
+  // 多数据源中的 computed 结果未变时，不触发回调。
   it('watching multiple sources: computed', async () => {
     let count = 0
     const value = ref('1')
@@ -1545,10 +1692,13 @@ describe('api: watch', () => {
   })
 
   // #4158
-  // 测试场景：watch 如果在分离范围内创建，则不应在所有者组件中注册。
+  // detached effectScope 内创建的 watch 不登记到当前组件的 scope.effects。
   test('watch should not register in owner component if created inside detached scope', () => {
     let instance: ComponentInternalInstance
     const Comp = {
+      /**
+       * 调用 `getCurrentInstance()` 完成本例的初始化登记或读取；把 `instance` 写入本例的状态或观察变量；返回渲染闭包，执行时产出 `''`。
+       */
       setup() {
         instance = getCurrentInstance()!
         effectScope(true).run(() => {
@@ -1562,17 +1712,20 @@ describe('api: watch', () => {
     }
     const root = nodeOps.createElement('div')
     createApp(Comp).mount(root)
-    // should not record watcher in detached scope and only the instance's
-    // own update effect
+    // watcher 留在独立 detached scope，不登记到组件 scope。
+    // 组件 scope 中只有自身 render effect。
     expect(instance!.scope.effects.length).toBe(1)
   })
 
-  // 测试场景：watchEffect 如果在独立作用域中创建，则应继续运行。
+  // detached effectScope 中的 watchEffect 和 watch 在组件卸载后仍可响应修改。
   test('watchEffect should keep running if created in a detached scope', async () => {
     const trigger = ref(0)
     let countWE = 0
     let countW = 0
     const Comp = {
+      /**
+       * 返回渲染闭包，执行时产出 `''`。
+       */
       setup() {
         effectScope(true).run(() => {
           watchEffect(() => {
@@ -1586,19 +1739,19 @@ describe('api: watch', () => {
     }
     const root = nodeOps.createElement('div')
     render(h(Comp), root)
-    // only watchEffect as ran so far
+    // 初始 watchEffect 已执行；watch 未使用 immediate，尚未执行回调。
     expect(countWE).toBe(1)
     expect(countW).toBe(0)
     trigger.value++
     await nextTick()
-    // both watchers run while component is mounted
+    // 组件尚挂载时，修改 trigger 会使两类 watcher 都执行。
     expect(countWE).toBe(2)
     expect(countW).toBe(1)
-    render(null, root) // unmount
+    render(null, root) // 卸载当前组件。
     await nextTick()
     trigger.value++
     await nextTick()
-    // both watchers run again event though component has been unmounted
+    // 组件卸载不停止 detached scope，修改 trigger 后两类 watcher 仍运行。
     expect(countWE).toBe(3)
     expect(countW).toBe(2)
   })
@@ -1622,7 +1775,7 @@ describe('api: watch', () => {
       name: 'only trigger once watch with immediate',
     },
   ] as const
-  // 测试场景：this.$watch 能监听组件公共实例上的 `$name` 属性路径。
+  // 对初始 count=0 分别使用默认、deep、sync、pre 与 immediate 五组 once 配置；两次递增并刷新后回调始终一次，immediate 在创建时已消耗唯一调用。
   test.each(options)('$name', async option => {
     const count = ref(0)
     const cb = vi.fn()
@@ -1643,7 +1796,7 @@ describe('api: watch', () => {
   })
 
   // #5151
-  // 测试场景：OnCleanup也需要清理，。
+  // 回调不再登记新清理时，旧清理仍在下一次回调前执行且不会反复执行。
   test('OnCleanup also needs to be cleaned，', async () => {
     const spy1 = vi.fn()
     const spy2 = vi.fn()
@@ -1655,7 +1808,7 @@ describe('api: watch', () => {
       }
       spy1()
       onCleanup(() => {
-        // OnCleanup also needs to be cleaned
+        // 执行旧 cleanup 后移除登记，后续回调未再注册就不应重复清理。
         spy2()
       })
     })
@@ -1673,12 +1826,12 @@ describe('api: watch', () => {
 
     num.value++
     await nextTick()
-    // would not be called when value>1
+    // value>1 的回调提前返回，旧 cleanup 已清掉，两个 spy 次数都保持不变。
     expect(spy1).toHaveBeenCalledTimes(1)
     expect(spy2).toHaveBeenCalledTimes(1)
   })
 
-  // 测试场景：观看reactive深度。
+  // reactive 对象的 deep: 2 响应第二层替换，不响应更深层替换。
   it('watching reactive depth', async () => {
     const state = reactive({
       a: {
@@ -1711,7 +1864,7 @@ describe('api: watch', () => {
     expect(cb).toHaveBeenCalledTimes(2)
   })
 
-  // 测试场景：观看ref深度。
+  // 对象 ref 的 deep: 1 响应根对象的属性替换，不响应下一层内部修改。
   it('watching ref depth', async () => {
     const state = ref({
       a: {
@@ -1732,7 +1885,7 @@ describe('api: watch', () => {
     expect(cb).toHaveBeenCalledTimes(1)
   })
 
-  // 测试场景：观察数组深度。
+  // 数组 ref 的 deep: 2 响应数组增删及元素属性替换，忽略更深层属性修改。
   it('watching array depth', async () => {
     const arr = ref([
       {
@@ -1770,7 +1923,7 @@ describe('api: watch', () => {
     expect(cb).toHaveBeenCalledTimes(4)
   })
 
-  // 测试场景：以不同 deep 深度同时监听同一响应式对象。
+  // 同一对象可经不同数组路径到达；各 watcher 按自己的最大遍历深度响应修改。
   test('watching the same object at different depths', async () => {
     const arr1: any[] = reactive([[[{ foo: {} }]]])
     const arr2 = arr1[0]
@@ -1822,7 +1975,7 @@ describe('api: watch', () => {
     expect(cb4).toHaveBeenCalledTimes(4)
   })
 
-  // 测试场景：暂停/恢复。
+  // pause 期间不回调；resume 后合并未处理的修改，并保留暂停前的旧值。
   test('pause / resume', async () => {
     const count = ref(0)
     const cb = vi.fn()
@@ -1862,7 +2015,7 @@ describe('api: watch', () => {
     expect(cb).toHaveBeenLastCalledWith(5, 4, expect.any(Function))
   })
 
-  // 测试场景：监听 shallowReactive 时只响应根层属性替换，不深追踪嵌套值。
+  // 直接监听 shallowReactive 对象，只响应根层修改，不追踪其中 ref 或普通对象的内部变化。
   it('shallowReactive', async () => {
     const state = shallowReactive({
       msg: ref('hello'),
@@ -1894,7 +2047,7 @@ describe('api: watch', () => {
     await nextTick()
     expect(spy).toHaveBeenCalledTimes(2)
   })
-  // 测试场景：用深度观看reactive：假。
+  // reactive 对象显式 deep: false，只响应根层属性修改。
   it('watching reactive with deep: false', async () => {
     const state = reactive({
       foo: {
@@ -1916,13 +2069,16 @@ describe('api: watch', () => {
     expect(spy).toHaveBeenCalledTimes(1)
   })
 
-  // 测试场景：effect 应在范围停止后从其效果中删除。
+  // 停止 watcher 后从所属 scope.effects 移除；immediate + once 执行后也不留下 effect。
   test("effect should be removed from scope's effects after it is stopped", () => {
     const num = ref(0)
     let unwatch: () => void
 
     let instance: ComponentInternalInstance
     const Comp = {
+      /**
+       * 调用 `getCurrentInstance()`、`watch(num, () => { console.log(num.value); })` 完成本例的初始化登记或读取；把 `instance`、`unwatch` 写入本例的状态或观察变量；返回渲染闭包，执行时产出 `null`。
+       */
       setup() {
         instance = getCurrentInstance()!
         unwatch = watch(num, () => {
@@ -1953,8 +2109,8 @@ describe('api: watch', () => {
     expect(scope.effects.length).toBe(0)
   })
 
-  // simplified case of VueUse syncRef
-  // 测试场景：flush: 'sync' 的 watcher 应立即逐次执行，不能被调度器批处理。
+  // 模拟同步双向引用流程：内层 sync 回调必须看到外层临时标志。
+  // 两个 sync watcher 同步串联时，内层回调在外层临时标记复位之前执行。
   test('sync watcher should not be batched', () => {
     const a = ref(0)
     const b = ref(0)
@@ -1982,7 +2138,7 @@ describe('api: watch', () => {
     expect(b.value).toBe(2)
   })
 
-  // 测试场景：watchEffect 不应在未更改的 computed 依赖项上触发。
+  // watchEffect 依赖的 computed 结果未变时，不重新执行副作用。
   test('watchEffect should not fire on computed deps that did not change', async () => {
     const a = ref(0)
     const c = computed(() => a.value % 2)
@@ -1997,7 +2153,7 @@ describe('api: watch', () => {
     expect(spy).toHaveBeenCalledTimes(1)
   })
 
-  // 测试场景：循环引用。
+  // 深度遍历遇到循环引用会停止重复访问，仍能监听循环对象的属性修改。
   test('circular reference', async () => {
     const obj = { a: 1 }
     // @ts-expect-error
@@ -2014,7 +2170,7 @@ describe('api: watch', () => {
     expect(foo.value.a).toBe(2)
   })
 
-  // 测试场景：watch effect 范围内的即时错误应被 onErrorCaptured 捕获。
+  // setup 中 detached scope 内的 immediate watch 和普通 watchEffect 抛错，都由父组件捕获。
   test('watch immediate error in effect scope should be caught by onErrorCaptured', async () => {
     const warn = vi.spyOn(console, 'warn')
     warn.mockImplementation(() => {})
@@ -2023,6 +2179,9 @@ describe('api: watch', () => {
 
     const errors = ref<string[]>([])
     const Comp = {
+      /**
+       * 调用 `watchEffect(() => { throw new Error(ERROR_OUT_SCOPE); })` 完成本例的初始化登记或读取；返回渲染闭包，执行时产出 `''`。
+       */
       setup() {
         const trigger = ref(0)
 
@@ -2048,6 +2207,9 @@ describe('api: watch', () => {
     render(
       h(
         {
+          /**
+           * 调用 `onErrorCaptured(e => { errors.value.push(e.message); return false; })` 完成本例的初始化登记或读取；返回渲染闭包，执行时产出 `h('div', slots.default && slots.default())`。
+           */
           setup(_, { slots }) {
             onErrorCaptured(e => {
               errors.value.push(e.message)
@@ -2063,7 +2225,7 @@ describe('api: watch', () => {
       root,
     )
     await nextTick()
-    // only watchEffect as ran so far
+    // immediate watch 与 watchEffect 的错误依次进入父级捕获钩子。
     expect(errors.value).toHaveLength(2)
     expect(errors.value[0]).toBe(ERROR_IN_SCOPE)
     expect(errors.value[1]).toBe(ERROR_OUT_SCOPE)
@@ -2071,7 +2233,7 @@ describe('api: watch', () => {
     warn.mockRestore()
   })
 
-  // 测试场景：应该正确执行。
+  // 监听同一个 ref 的两个 sync watcher，按登记顺序在修改时执行。
   test('should be executed correctly', () => {
     const v = ref(1)
     let foo = ''
@@ -2101,7 +2263,7 @@ describe('api: watch', () => {
   })
 
   // 12045
-  // 测试场景：同步 watcher 不应在 watchers 之前中断。
+  // sync watcher 修改第二个 ref，不会丢失已订阅第一个 ref 的 pre watcher 通知。
   test('sync watcher should not break pre watchers', async () => {
     const count1 = ref(0)
     const count2 = ref(0)
@@ -2128,13 +2290,19 @@ describe('api: watch', () => {
   })
 
   // #12631
-  // 测试场景：这个.$watch 带 onScopeDispose。
+  // created 中调用 this.$watch 后登记 onScopeDispose；挂载结束时清理回调尚未执行。
   test('this.$watch w/ onScopeDispose', () => {
     const onCleanup = vi.fn()
     const toggle = ref(true)
 
     const Comp = defineComponent({
+      /**
+       * 空渲染占位，让组件完成本例所需的初始化，断言读取状态或诊断结果。
+       */
       render() {},
+      /**
+       * 在 created 阶段执行 `this.$watch(() => 1, function () { })`、`onScopeDispose(onCleanup)`。
+       */
       created(this: any) {
         this.$watch(
           () => 1,
@@ -2145,6 +2313,9 @@ describe('api: watch', () => {
     })
 
     const App = defineComponent({
+      /**
+       * 渲染结果为 `toggle.value ? h(Comp) : null`。
+       */
       render() {
         return toggle.value ? h(Comp) : null
       },

@@ -12,7 +12,8 @@
 // 与 Fiber 相同，队列成对存在：current 表示屏幕可见状态；work-in-progress 可在提交前异步
 // 修改和处理，形成双缓冲。若 WIP 渲染被丢弃，下一次会从 current 克隆新队列。
 //
-// 两个队列共享持久化单链表。新更新追加到两边的末尾；各队列各自指向首个未处理更新。
+// 两个队列共享持久化单链表。常规新更新先暂存并接入 shared.pending 环，转入 base list 时
+// 追加到两边的末尾；各队列各自指向首个仍需重放的更新。
 // WIP 始终处理得不比 current 少，current 指针只在提交、WIP 成为 current 时推进：
 //
 //   current 指针： A - B - C - D - E - F
@@ -36,7 +37,7 @@
 //   优先级 2 次轮：base='A'（B2 被跳过时尚未含 C1），执行 [B2, C1, D2]，结果 'ABCD'
 //
 // 按插入顺序执行，并在前项被跳过时 rebase 后续高优先级更新，使最终结果不受调度顺序
-// 影响；系统资源只会改变中间状态，不改变最终状态。
+// 影响。对于纯 updater 和相同输入，系统资源只会改变中间状态，不改变最终状态。
 
 import type {Fiber, FiberRoot} from './ReactInternalTypes';
 import type {Lanes, Lane} from './ReactFiberLane';
@@ -141,6 +142,7 @@ export let resetCurrentlyProcessingQueue: () => void;
 if (__DEV__) {
   didWarnUpdateInsideUpdate = false;
   currentlyProcessingQueue = null;
+  /** render 异常退出时解除 DEV 正在处理的 shared queue，避免下一次更新被误判为 updater 内更新。 */
   resetCurrentlyProcessingQueue = () => {
     currentlyProcessingQueue = null;
   };
@@ -201,7 +203,7 @@ export function createUpdate(lane: Lane): Update<mixed> {
 
 /**
  * 把类更新加入队列并返回需调度的 Root。
- * render-phase legacy 更新直接写入 pending 环形链以便本轮立即处理；常规路径委托并发
+ * render 上下文中的 class 更新直接写入 pending 环形链以便本轮立即处理（也包括并发根）；常规路径委托并发
  * 队列。已卸载 Fiber 返回 null，DEV 会警告 updater 函数内部再次更新的副作用。
  */
 export function enqueueUpdate<State>(
@@ -467,6 +469,9 @@ export function suspendIfUpdateReadFromEntangledAsyncAction() {
  * 先把 shared.pending 环形链拆开并同时追加到 current/WIP；优先级不足的首项定义新
  * baseState，之后所有更新都 clone 以支持确定性 rebase。已执行 callback 留到 commit，
  * 隐藏更新另打 Visibility；纠缠 async action 则记录供后续挂起。
+ * props/instance 提供 updater 的参数与 this。带 Offscreen 标记的更新按根 renderLanes 判断资格，
+ * 避免进入隐藏子树时补入的 baseLanes 提前执行隐藏期新更新；已执行重放副本用 NoLane 并清 callback。
+ * updater 抛错会中断本次处理，由 work loop 的异常路径恢复；本函数不自行回滚队列或隔离各 updater。
  */
 export function processUpdateQueue<State>(
   workInProgress: Fiber,
@@ -683,7 +688,7 @@ export function checkHasForceUpdateAfterProcessing(): boolean {
 
 /**
  * Offscreen 隐藏组件完成更新时，把本次 callbacks 转存到 shared.hiddenCallbacks，延迟到
- * 组件重新可见后再调用。
+ * 组件重新可见后再调用。本函数只合并共享列表，不清空本视图 callbacks；后续队列克隆会重置该视图。
  */
 export function deferHiddenCallbacks<State>(
   updateQueue: UpdateQueue<State>,

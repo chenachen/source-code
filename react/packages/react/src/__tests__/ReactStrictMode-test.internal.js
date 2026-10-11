@@ -14,6 +14,7 @@ describe('ReactStrictMode', () => {
   let ReactDOMClient;
   let act;
 
+  // 每例重置模块；levels 内另清空 log，以日志比较严格检查发生范围和阶段。
   beforeEach(() => {
     jest.resetModules();
     React = require('react');
@@ -29,7 +30,7 @@ describe('ReactStrictMode', () => {
       log = [];
     });
 
-    /** 作为“levels”场景的函数夹具，返回待协调内容或触发目标行为。 */
+    /** 记录 label 的 render、layout/passive setup 和返回的 cleanup；不输出宿主节点，供严格模式日志顺序。 */
     function Component({label}) {
       React.useEffect(() => {
         log.push(`${label}: useEffect mount`);
@@ -46,13 +47,7 @@ describe('ReactStrictMode', () => {
       return null;
     }
 
-    /**
-     * Given：已建立该文件所需的 renderer、容器与测试夹具。
-     * When：执行“should default to not strict”场景的唯一关键操作。
-     * Then：断言 StrictMode 的内部重复执行与 Effect 重放契约 的可观察结果。
-     *
-     * 验证机制：同时观察返回值、渲染输出或诊断信息，证明结果来自目标分支。
-     */
+    /** 普通 createRoot 直接挂 A，没有 StrictMode；日志为一次 render、layout setup、passive setup，验证默认根不启用严格重放。 */
     it('should default to not strict', async () => {
       await act(() => {
         const container = document.createElement('div');
@@ -68,10 +63,7 @@ describe('ReactStrictMode', () => {
     });
 
     if (__DEV__) {
-      /**
-       * 场景：“should support enabling strict mode via createRoot option”。
-       * 机制：验证StrictMode 的内部重复执行与 Effect 重放契约，锁定可观察结果与失败边界。
-       */
+      /** 仅 DEV 定义本例：createRoot({unstable_strictMode:true}) 挂 A，日志双 render、首次两 effect setup、两 cleanup、再两 setup，验证根选项启用严格检查。 */
       it('should support enabling strict mode via createRoot option', async () => {
         await act(() => {
           const container = document.createElement('div');
@@ -93,10 +85,7 @@ describe('ReactStrictMode', () => {
         ]);
       });
 
-      /**
-       * 场景：“should include legacy + strict effects mode”。
-       * 机制：验证StrictMode 的内部重复执行与 Effect 重放契约，锁定可观察结果与失败边界。
-       */
+      /** 仅 DEV 定义本例：普通根的直接 StrictMode 包 A，日志双 render及 layout/passive setup→cleanup→setup，验证显式顶层边界。 */
       it('should include legacy + strict effects mode', async () => {
         await act(() => {
           const container = document.createElement('div');
@@ -120,10 +109,7 @@ describe('ReactStrictMode', () => {
         ]);
       });
 
-      /**
-       * 场景：“should allow level to be increased with nesting”。
-       * 机制：验证StrictMode 的内部重复执行与 Effect 重放契约，锁定可观察结果与失败边界。
-       */
+      /** 仅 DEV 定义本例：根 Fragment 并列普通 A 与 StrictMode 下 B；A 单 render/effect，B 双 render且 effect 重放，验证严格级别局限于该后代。 */
       it('should allow level to be increased with nesting', async () => {
         await act(() => {
           const container = document.createElement('div');
@@ -154,12 +140,9 @@ describe('ReactStrictMode', () => {
         ]);
       });
 
-      /**
-       * 场景：“should support nested strict mode on initial mount”。
-       * 机制：验证StrictMode 的内部重复执行与 Effect 重放契约，锁定可观察结果与失败边界。
-       */
+      /** 仅 DEV 定义本例：Wrapper 下并列 A 与嵌套 StrictMode B；B 双 render但两 effect 只 setup 一次，A 也一次，验证此结构的初挂 effect 重放边界；被注释的 cleanup/setup 行未参与期望。 */
       it('should support nested strict mode on initial mount', async () => {
-        /** 作为“should support nested strict mode on initial mount”场景的函数夹具，返回待协调内容或触发目标行为。 */
+        /** 直接返回 children，给 StrictMode 添加普通函数祖先以检查嵌套初挂行为。 */
         function Wrapper({children}) {
           return children;
         }
@@ -185,7 +168,7 @@ describe('ReactStrictMode', () => {
           'B: useLayoutEffect mount',
           'A: useEffect mount',
           'B: useEffect mount',
-      // TODO：以下 Effect 卸载与重新挂载顺序当前尚未实现，暂不纳入期望数组。
+          // 本例的 StrictMode 嵌在 Wrapper 下：B 的 render 双调用，但初次 effect 只记录一次 setup。
           // 'B: useLayoutEffect unmount',
           // 'B: useEffect unmount',
           // 'B: useLayoutEffect mount',

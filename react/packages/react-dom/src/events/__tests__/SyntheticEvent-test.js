@@ -32,18 +32,11 @@ describe('SyntheticEvent', () => {
     container = null;
   });
 
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「should be able to `preventDefault`」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：事件断言连接 DOMPluginEventSystem 的委托、合成与传播路径。
-   */
+  /** 给 div 注册点击 handler 并派发可取消 click；handler 内取消默认前查询为 false，取消后查询与 defaultPrevented 字段都为 true，最终仅调用一次，验证合成默认状态同步。 */
   it('should be able to `preventDefault`', async () => {
     let expectedCount = 0;
 
-    /** `eventHandler`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 核对点击的默认状态从未阻止到已阻止，并累计一次 handler 执行。 */
     const eventHandler = syntheticEvent => {
       expect(syntheticEvent.isDefaultPrevented()).toBe(false);
       syntheticEvent.preventDefault();
@@ -65,11 +58,11 @@ describe('SyntheticEvent', () => {
     expect(expectedCount).toBe(1);
   });
 
-  /** 测试场景：验证「should be prevented if nativeEvent is prevented」描述的渲染、交互或错误处理结果。 */
+  /** 分别派发已 preventDefault 的现代 click 和 defaultPrevented getter 返回 undefined、returnValue=false 的 IE8 形状 click；两次合成查询都应直接为 true，验证构造器读取原生默认状态及旧字段回退。 */
   it('should be prevented if nativeEvent is prevented', async () => {
     let expectedCount = 0;
 
-    /** `eventHandler`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 只检查构造时已阻止默认的状态，用同一 handler 覆盖现代字段与 IE8 returnValue 回退。 */
     const eventHandler = syntheticEvent => {
       expect(syntheticEvent.isDefaultPrevented()).toBe(true);
 
@@ -91,11 +84,11 @@ describe('SyntheticEvent', () => {
     event.initEvent('click', true, true);
     // 模拟 IE8
     Object.defineProperty(event, 'defaultPrevented', {
-      /** `get`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 返回 undefined 模拟旧浏览器缺少 defaultPrevented 值，迫使构造器读取 returnValue。 */
       get() {},
     });
     Object.defineProperty(event, 'returnValue', {
-      /** `get`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 固定返回 false 模拟 IE8 取消默认的原生 returnValue 标记。 */
       get() {
         return false;
       },
@@ -105,11 +98,11 @@ describe('SyntheticEvent', () => {
     expect(expectedCount).toBe(2);
   });
 
-  /** 测试场景：验证「should be able to `stopPropagation`」描述的渲染、交互或错误处理结果。 */
+  /** 派发冒泡 click，handler 内检查传播查询从 false 经 stopPropagation 变为 true，累计一次调用；验证该方法更新合成传播标志，本 case 通过状态查询而非祖先 handler 次数断言。 */
   it('should be able to `stopPropagation`', async () => {
     let expectedCount = 0;
 
-    /** `eventHandler`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 调用 stopPropagation 前后查询合成状态，累计执行次数确保点击提取成功。 */
     const eventHandler = syntheticEvent => {
       expect(syntheticEvent.isPropagationStopped()).toBe(false);
       syntheticEvent.stopPropagation();

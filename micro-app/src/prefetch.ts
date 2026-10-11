@@ -39,7 +39,7 @@ import {
 } from './sandbox/router'
 
 /**
- * 在浏览器空闲后串行预取子应用资源。
+ * 在浏览器空闲后按数组顺序启动子应用预取。
  *
  * 调用形态：
  * `preFetch([
@@ -96,7 +96,12 @@ export default function preFetch (apps: prefetchParamList, delay?: number): void
   // window.addEventListener('load', handleOnLoad)
 }
 
-/** 解析惰性配置，并用 Promise 链保证各应用按数组顺序进入空闲预取。 */
+/**
+ * 解析惰性配置，再把数组项串成 Promise 链；前一项首次 onLoad/onLoadError 后才排下一项空闲任务。
+ * 惰性函数在定时器任务内调用，其同步异常不会在这里转成拒绝处理；非数组静默忽略。
+ * reduce 的最终 Promise 没有向上返回，因此调用者拿不到批次等待或失败句柄。
+ * @param apps - 预取列表或返回列表的函数，调用结果只接受数组。
+ */
 function preFetchInSerial (apps: prefetchParamList): void {
   isFunction(apps) && (apps = apps())
 
@@ -108,9 +113,14 @@ function preFetchInSerial (apps: prefetchParamList): void {
 /**
  * 在一个空闲任务中校验并创建单个预取实例。
  *
- * 同名实例已注册、配置非法或浏览器离线时直接完成；成功创建后把实例加载回调
- * 包装成 Promise 结算点，使串行调度等待 HTML 与静态资源完成。三级预取还会把
- * 路由和请求补丁配置交给预渲染挂载流程。
+ * 同名实例已注册、配置非法或浏览器离线时直接完成。成功创建后，任一资源分支首次
+ * 调用 onLoad，或 HTML 加载触发 onLoadError，就结算当前调度 Promise；另一资源分支
+ * 和三级预渲染可能仍在进行，因此多个实例的后续工作可以交叠。三级预取还会把
+ * 路由和请求补丁配置交给挂载流程。
+   * 本方法原地规范化 options.name/url，并继承全局默认值；已存在的同名实例无需 URL 相同
+   * 就跳过。包装回调在实例创建后安装，先 resolve 调度 Promise，再保留 this 调用原回调。
+   * @param options - 单应用预取配置；非法项、离线或重复名均不创建实例。
+   * @returns 首次资源信号到达或校验跳过时结算；不代表完整资源准备或预渲染完成。
  */
 function preFetchAction (options: prefetchParam): Promise<void> {
   return promiseRequestIdle((resolve: PromiseConstructor['resolve']) => {
@@ -131,15 +141,12 @@ function preFetchAction (options: prefetchParam): Promise<void> {
 
         const oldOnload = app.onLoad
         const oldOnLoadError = app.onLoadError
+        /** 为三级预渲染补挂载配置，先放行下一项调度，再交回原 onLoad 的两路计数。 */
         app.onLoad = (onLoadParam: OnLoadParam): void => {
           if (app.isPrerender) {
             assign(onLoadParam, {
               defaultPage: options['default-page'],
-              /**
-               * TODO: 预渲染支持disable-memory-router，默认渲染首页即可，文档中也要保留
-               * 问题：
-               *  1、如何确保子应用进行跳转时不影响到浏览器地址？？pure？？
-               */
+              // 此入口只解析 router-mode，没有把旧 disable-memory-router 参数交给兼容层。
               routerMode: initRouterMode(options['router-mode']),
               baseroute: options.baseroute,
               disablePatchRequest: options['disable-patch-request'],
@@ -149,6 +156,7 @@ function preFetchAction (options: prefetchParam): Promise<void> {
           oldOnload.call(app, onLoadParam)
         }
 
+        /** HTML 失败也先放行串行调度，再用原实例方法记录失败与派发错误；不取消另一资源链。 */
         app.onLoadError = (...rests): void => {
           resolve()
           oldOnLoadError.call(app, ...rests)
@@ -183,6 +191,7 @@ export function getGlobalAssets (assets: globalAssetsType): void {
  *
  * `promiseStream` 允许先完成的请求先入缓存；二次 `hasInfo` 检查避免并发期间被其他
  * 应用填充后重复覆盖。当前仅整个批次位于空闲回调，尚未为每个文件单独调度空闲任务。
+   * 过滤阶段尚未写入占位条目，所以同批重复 URL 仍可发出重复请求；入缓存时才再次去重。
  *
  * @param resources - 资源地址列表；缺省时不执行任何动作。
  * @param suffix - 用于过滤扩展名并选择缓存结构的 `js` 或 `css`。

@@ -23,6 +23,7 @@ import a22 from './a22'
 import a23 from './a23'
 import a24 from './a24'
 
+/** 调用更高编号 a1 至 a24 的默认函数并相加，制造 24 条静态依赖。 */
 export function other() {
   return (
     a1() +
@@ -52,6 +53,7 @@ export function other() {
   )
 }
 
+/** a0 的公开默认函数返回固定 123；其入口签名被严格保留，另由 a1 的 that 动态导入此入口。 */
 export default function () {
   return 123
 }

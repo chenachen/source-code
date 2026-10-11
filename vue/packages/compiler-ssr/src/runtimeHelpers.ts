@@ -8,7 +8,7 @@ export const SSR_RENDER_VNODE: unique symbol = Symbol(`ssrRenderVNode`)
 export const SSR_RENDER_COMPONENT: unique symbol = Symbol(`ssrRenderComponent`)
 /** 渲染普通 SSR 插槽及 fallback。 */
 export const SSR_RENDER_SLOT: unique symbol = Symbol(`ssrRenderSlot`)
-/** 已取得插槽函数时渲染内部插槽内容。 */
+/** 渲染指定名称的插槽内容，不添加普通 slot 的外围 Fragment；用于 Transition/TransitionGroup。 */
 export const SSR_RENDER_SLOT_INNER: unique symbol = Symbol(`ssrRenderSlotInner`)
 /** 将 class 数组/对象规范化并转义为属性值。 */
 export const SSR_RENDER_CLASS: unique symbol = Symbol(`ssrRenderClass`)
@@ -35,13 +35,13 @@ export const SSR_LOOSE_CONTAIN: unique symbol = Symbol(`ssrLooseContain`)
 export const SSR_RENDER_DYNAMIC_MODEL: unique symbol = Symbol(
   `ssrRenderDynamicModel`,
 )
-/** 组件/动态 input v-model 需要的附加 props。 */
+/** 根据 input 最终 type 与模型值生成需要合并的 value/checked props。 */
 export const SSR_GET_DYNAMIC_MODEL_PROPS: unique symbol = Symbol(
   `ssrGetDynamicModelProps`,
 )
 /** 收集 Teleport 内容到目标缓冲区并输出锚点。 */
 export const SSR_RENDER_TELEPORT: unique symbol = Symbol(`ssrRenderTeleport`)
-/** 渲染 Suspense 默认/fallback 插槽。 */
+/** 调用 Suspense default 插槽；没有 default 时输出空注释，不执行 fallback。 */
 export const SSR_RENDER_SUSPENSE: unique symbol = Symbol(`ssrRenderSuspense`)
 /** 取得自定义指令的 getSSRProps 返回值。 */
 export const SSR_GET_DIRECTIVE_PROPS: unique symbol =

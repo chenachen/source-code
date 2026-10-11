@@ -12,9 +12,9 @@
  *
  * @see http://www.whatwg.org/specs/web-apps/current-work/multipage/the-input-element.html#input-type-attr-summary
  */
-/** supportedInputTypes 保存判断元素是否具备可编辑文本选择语义所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。；key 描述判断元素是否具备可编辑文本选择语义的数据字段；该字段限定跨插件、队列或原生事件传递的状态边界。 */
+/** ChangeEventPlugin 支持的 input type 集合。 */
 const supportedInputTypes: {
-  /** key 是 Flow 索引签名的键名，仅描述任意宿主属性，不会在运行时生成字段。 */
+  /** input.type 到可使用输入值 change 检测的标记；名单外类型返回 undefined。 */
   [key: string]: true | void, ...} = {
   color: true,
   date: true,
@@ -33,7 +33,7 @@ const supportedInputTypes: {
   week: true,
 };
 
-/** isTextInputElement 判断判断元素是否具备可编辑文本选择语义的前置条件；返回值用于在热路径提前跳过不适用分支。 */
+/** 判断节点是否为受支持的 input 类型或 textarea。 */
 function isTextInputElement(elem: ?HTMLElement): boolean {
   const nodeName = elem && elem.nodeName && elem.nodeName.toLowerCase();
 

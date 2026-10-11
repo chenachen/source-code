@@ -20,8 +20,8 @@ import {trackHostMutation} from 'react-reconciler/src/ReactFiberMutationTracking
 /**
  * 创建与服务端渲染生成的 `style` attribute 等价的字符串。
  *
- * WHY：此路径会绕过警告和安全检查，因此结果只能用于开发期 SSR
- * 一致性比较，禁止作为可写入 DOM 的已验证样式值。
+ * 仅在开发期返回结果，供 hydration 比较 SSR style；不调用 warnValidStyle，
+ * 但需要拼接字符串的分支仍做字符串转换检查。这里不执行任何 DOM 写入。
  */
 export function createDangerousStringForStyles(styles) {
   if (__DEV__) {
@@ -65,7 +65,7 @@ export function createDangerousStringForStyles(styles) {
   }
 }
 
-/** `setValueForStyle` 更新对应关联或宿主状态，并保持后续读取看到一致快照；用于把 React style 对象序列化并同步到 DOMStyleDeclaration。 */
+/** 写入或清除单项样式；自定义属性用 setProperty，普通非零数值按 unitless 表决定是否补 px。 */
 function setValueForStyle(style, styleName, value) {
   const isCustomProperty = styleName.indexOf('--') === 0;
   if (__DEV__) {
@@ -103,10 +103,11 @@ function setValueForStyle(style, styleName, value) {
 }
 
 /**
- * 把一组样式同步到节点；值为 `''` 时移除对应样式属性。
+ * 按前后 style 对象同步元素样式：先清除已移除的键，再写入值变化的键。
+ * 更新路径记录宿主变更，初次设置直接写入；开发期冻结下一份对象并检查简写冲突。
  *
- * @param {DOMElement} node
- * @param {object} styles
+ * @param styles - 下一份 React style 对象；null 表示没有样式。
+ * @param prevStyles - 上次提交的对象，用于清除缺失的键；调用者应以新对象表示变化。
  */
 export function setValueForStyles(node, styles, prevStyles) {
   if (styles != null && typeof styles !== 'object') {
@@ -165,7 +166,7 @@ export function setValueForStyles(node, styles, prevStyles) {
   }
 }
 
-/** `isValueEmpty` 判断适用条件并返回布尔结果，不写入宿主状态；用于把 React style 对象序列化并同步到 DOMStyleDeclaration。 */
+/** null、boolean 和空字符串表示应清除该样式。 */
 function isValueEmpty(value) {
   return value == null || typeof value === 'boolean' || value === '';
 }

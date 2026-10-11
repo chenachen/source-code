@@ -55,9 +55,8 @@ describe('ReactFragment', () => {
       throw new Error('uh oh');
     };
 
-    /** 捕获错误、记录边界收到的 component stack，并在恢复 render 中移除失败子树。 */
     // eslint-disable-next-line no-shadow
-    CatchingBoundary = class CatchingBoundary extends React.Component {
+    /** 捕获错误、记录边界收到的 component stack，并在恢复 render 中移除失败子树。 */ CatchingBoundary = class CatchingBoundary extends React.Component {
       /** 初始化未出错状态；不使用外部状态，确保每例边界独立。 */
       constructor() {
         super();
@@ -106,7 +105,7 @@ describe('ReactFragment', () => {
 
   /**
    * Given 内层边界在 getDerivedStateFromError 中重抛，外层边界最终捕获；When 叶组件失败；
-   * Then component stack 保留完整祖先链，owner stack 仍保留创建 Foo/Bar 的所有者。
+   * Then component stack 保留完整祖先链，owner stack 依次记录创建失败叶节点的 Bar、创建 Bar 的 Foo。
    * 验证机制：边界与 root 两路栈数组；对应 ReactFiberThrow、ReactFiberComponentStack 与 ReactOwnerStack。
    */
   it('retains component and owner stacks when rethrowing an error', async () => {

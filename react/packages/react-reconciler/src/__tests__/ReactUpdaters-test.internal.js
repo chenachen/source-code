@@ -110,7 +110,7 @@ describe('updaters', () => {
 
     /** 仅委托 Child 的顶层组件；没有自身更新，因此 scheduler 应保持 HostRoot。 */
     const Parent = () => <Child />;
-    /** 无输出叶节点，使类 setState 的唯一 updater 保持 SchedulingComponent。 */
+    /** 无输出叶节点；更新来源由当前场景的根 render 或类 setState 决定。 */
     const Child = () => null;
     const root = ReactDOMClient.createRoot(document.createElement('div'));
 
@@ -142,12 +142,14 @@ describe('updaters', () => {
     /** 持有独立 Hook state 并暴露 scheduleForA；更新应归属自身函数 Fiber。 */
     const SchedulingComponentA = () => {
       const [count, setCount] = React.useState(0);
+      /** 给组件 A 的 count 函数式加一，验证当前提交 memoizedUpdaters 归属 A Fiber。 */
       scheduleForA = () => setCount(prevCount => prevCount + 1);
       return <Child count={count} />;
     };
     /** 持有独立 Hook state 并暴露 scheduleForB；作为 A 的对照 updater。 */
     const SchedulingComponentB = () => {
       const [count, setCount] = React.useState(0);
+      /** 给组件 B 的独立 count 加一，与上一轮 A 更新对照 DevTools 来源。 */
       scheduleForB = () => setCount(prevCount => prevCount + 1);
       return <Child count={count} />;
     };
@@ -193,7 +195,7 @@ describe('updaters', () => {
         return <Child />;
       }
     }
-    /** 无输出叶节点，使类 setState 的唯一 updater 保持 SchedulingComponent。 */
+    /** 无输出叶节点；更新来源由当前场景的根 render 或类 setState 决定。 */
     const Child = () => null;
     let instance;
     const root = ReactDOMClient.createRoot(document.createElement('div'));
@@ -219,7 +221,9 @@ describe('updaters', () => {
     /** 持有 cascade 模式并暴露 active/passive 触发器，父更新后驱动 Child effect。 */
     const SchedulingComponent = () => {
       const [cascade, setCascade] = React.useState(null);
+      /** 把父 cascade 模式改 active，使子 layout effect 在父提交后入队自身 count 更新。 */
       triggerActiveCascade = () => setCascade('active');
+      /** 把父 cascade 模式改 passive，使子被动 effect 发起另一轮 count 更新。 */
       triggerPassiveCascade = () => setCascade('passive');
       return <CascadingChild cascade={cascade} />;
     };
@@ -299,6 +303,7 @@ describe('updaters', () => {
     const fakeCacheRead = () => {
       if (data === null) {
         promise = new Promise(resolve => {
+          /** 先写夹具 data 再 resolve 当前 Promise，使下次读取返回数据，并触发继承 Suspender 来源的重试。 */
           resolver = resolvedData => {
             data = resolvedData;
             resolve(resolvedData);
@@ -361,6 +366,7 @@ describe('updaters', () => {
     /** 根据 shouldError 在正常 Yield 与 BrokenRender 间切换，由 ErrorBoundary 捕获。 */
     const Parent = () => {
       const [shouldError, setShouldError] = React.useState(false);
+      /** 把 Parent 的 shouldError 置真，切到 BrokenRender，作为错误恢复两次提交中的首个 updater。 */
       triggerError = () => setShouldError(true);
       return shouldError ? (
         <ErrorBoundary>
@@ -431,6 +437,7 @@ describe('updaters', () => {
     /** 暴露同步 Hook setter并记录 count，作为抢占 transition 的高优先级来源。 */
     const SyncPriorityUpdater = () => {
       const [count, setCount] = React.useState(0);
+      /** 函数式增加同步探针 count；调用者 ReactDOM.flushSync 提供同步优先级，此函数本身不设置 lane。 */
       triggerSyncPriorityUpdate = () => setCount(prevCount => prevCount + 1);
       Scheduler.log(`SyncPriorityUpdater ${count}`);
       return <Yield value={`HighPriority ${count}`} />;
@@ -438,6 +445,7 @@ describe('updaters', () => {
     /** 将 Hook setter 包入 startTransition，制造可被打断的低优先级来源。 */
     const LowPriorityUpdater = () => {
       const [count, setCount] = React.useState(0);
+      /** 在 startTransition 中函数式增加低优先级探针 count，可被同步分支打断并在恢复时累计。 */
       triggerLowPriorityUpdate = () => {
         React.startTransition(() => {
           setCount(prevCount => prevCount + 1);

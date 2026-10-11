@@ -294,8 +294,7 @@ cli
       options: ServerOptions & ExperimentalDevOptions & GlobalCLIOptions,
     ) => {
       filterDuplicateOptions(options)
-      // 延迟加载服务器实现，避免 `vite build`、`vite preview` 启动时解析整套 Dev
-      // Server 代码。Vite 的打包产物保留该相对模块关系，因此动态导入仍可定位。
+      // 选中开发命令后取得 createServer；共享依赖仍可能由顶层 createBuilder 导入链提前加载。
       const { createServer } = await import('./server')
       try {
         // CLI 只做参数到 InlineConfig 的映射。配置加载、插件解析、HTTP Server
@@ -358,7 +357,7 @@ cli
           customShortcuts.push({
             key: 'p',
             description: 'start/stop the profiler',
-            /** 在同一 inspector session 上切换 CPU profile 的开始与落盘。 */
+            /** 停止并写出当前采样；再次开始时创建新的 inspector session。 */
             async action(server) {
               if (profileSession) {
                 await stopProfiler(server.config.logger.info)

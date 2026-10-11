@@ -70,9 +70,15 @@ export const NoTransition = null;
 //     });
 //   }
 //
-// 当前只组合每个 startTransition 末尾执行的逻辑，因为栈上 isTransition=true 由另一
-// 个共享内部字段维护。长期应删除该共享字段，改由各 reconciler 独立跟踪。
+/** 保存安装本 renderer 完成通知前的共享 startTransition 回调；新的 S 处理完当前 Transition 后继续调用它，以组合多个 renderer 的完成逻辑。 */
 const prevOnStartTransitionFinish = ReactSharedInternals.S;
+/**
+ * 将同构 startTransition 的完成通知接到 reconciler：记录开始时间，并把返回的
+ * thenable 加入共享异步 Action 范围。同步返回值不进入该范围。
+ * 当前 Transition 的视图类型传给已调度根；最后接续之前 renderer 注册的通知。
+ * @param transition 刚结束同步作用域的 Transition，其 types 会参与视图过渡类型合并。
+ * @param returnValue scope 的返回值；只有对象 thenable 会延长 Action 的待完成时间。
+ */
 ReactSharedInternals.S = function onStartTransitionFinishForReconciler(
   transition: Transition,
   returnValue: mixed,
@@ -132,7 +138,7 @@ function chainGestureCancellation(
   scheduledGesture: ScheduledGesture,
   prevCancel: null | (() => void),
 ): () => void {
-  return function cancelGesture(): void {
+  return /** 释放当前根对手势的调度引用，再接续此前 renderer 的取消链；异常向调用者传播。 */ function cancelGesture(): void {
     // $FlowFixMe[invalid-compare]
     if (scheduledGesture !== null) {
       cancelScheduledGesture(root, scheduledGesture);
@@ -145,6 +151,13 @@ function chainGestureCancellation(
 
 if (enableGestureTransition) {
   const prevOnStartGestureTransitionFinish = ReactSharedInternals.G;
+  /**
+   * 把同构手势作用域提交给每个已调度根，并组合跨 renderer 的取消函数。
+   * @param transition 本次作用域的 Transition；types 决定相应视图过渡的类型集合。
+   * @param provider renderer 用于订阅进度、创建手势动画的时间线提供者。
+   * @param options 手势起点与方向范围等配置，由宿主手势调度解释。
+   * @returns 释放各根手势引用的取消链；没有任何 renderer 参与时返回空操作。
+   */
   ReactSharedInternals.G = function onStartGestureTransitionFinishForReconciler(
     transition: Transition,
     provider: GestureProvider,
@@ -177,7 +190,7 @@ if (enableGestureTransition) {
     if (cancel !== null) {
       return cancel;
     }
-    return function cancelGesture(): void {
+    return /** 没有 renderer 安排手势工作时，提供可直接调用的空取消函数。 */ function cancelGesture(): void {
       // 本 renderer 没有手势工作，但其他 renderer 可能已经安排。
     };
   };
@@ -188,11 +201,13 @@ export function requestCurrentTransition(): Transition | null {
   return ReactSharedInternals.T;
 }
 
-// 重试 Suspense/Offscreen 边界时，把上次渲染使用的 Cache 放在此栈上恢复。
+/** 恢复 Suspense/Offscreen 边界曾保留的 Cache 池；子树重试优先复用该池，出栈后恢复外层池。 */
 const resumedCache: StackCursor<Cache | null> = createCursor(null);
 
-// render/同步 commit 阶段不实际消费 Transition，因此采用延迟合并：先保存未经处理
-// 的数组，不在每次组合时比较和去重，直到 passive 阶段再统一过滤。
+/**
+ * 保存 render 中关联当前子树的 Transition 数组，并在边界 push/pop 时恢复外层数组。
+ * 合并时允许重复项，实际完成/进度通知由 passive 阶段处理，避免每次压栈都去重。
+ */
 const transitionStack: StackCursor<Array<Transition> | null> =
   createCursor(null);
 

@@ -35,9 +35,9 @@ import globalEnv from '../libs/global_env'
 import { GLOBAL_CACHED_KEY } from '../constants'
 import sourceCenter from './source_center'
 
-/** 脚本执行进度回调；两个计数由异步模块加载流程在同一函数对象上维护。 */
+/** 脚本执行进度回调；原生 module 数量与延迟批次失败数附在同一函数对象上。 */
 export type moduleCallBack = Func & {
-  /** 尚未完成 load 通知的 module 脚本数量。 */
+  /** 尚未结算的原生 module 数量；外链等 load，内联由微任务结算。 */
   moduleCount?: number,
   /** defer/async 资源批次中抓取失败的脚本数量。 */
   errorCount?: number
@@ -75,8 +75,8 @@ function isInlineMode (app: AppInterface, scriptInfo: ScriptSourceInfo): boolean
 /**
  * 返回 Function 构造和调用应绑定的有效 window。
  *
- * iframe 重建前后的 window 身份不同，由旧 iframe `Function` 构造出的函数不能跨实例复用；
- * 当前实现以调用时的 sandbox window 为准。
+ * iframe 应用使用当前 iframe window，其他模式使用宿主原始 window。这里决定新函数的
+ * 构造器和执行时的 `this`；从其他应用借用的缓存函数仍属于它创建时的 realm。
  */
 function getEffectWindow (app: AppInterface): microAppWindowType {
   return app.iframe ? app.sandBox.microAppWindow : globalEnv.rawWindow
@@ -89,13 +89,13 @@ function code2Function (app: AppInterface, code: string): Function {
 }
 
 /**
- * 在同一脚本地址的其他应用空间中查找可安全复用的已编译函数。
+ * 在同一脚本地址的其他应用空间中查找代码相同的已编译函数。
  *
- * 当前实现只以 `parsedCode` 完全相同作为复用条件，并排除当前应用空间。已知边界：它不比较
- * iframe window 身份；iframe 重建后，由旧 window 的 Function 构造器创建的结果可能不可
- * 复用，这也是 `getEffectWindow()` 附近保留的待优化点。
+ * 当前实现只比较 `parsedCode` 并排除当前应用空间，不单独检查函数所属 realm。正常
+ * CreateApp 的 iframe 模式强制 inline，不进入此 Function 缓存路径；可达的复用场景主要是
+ * with 沙箱或关闭沙箱的非 inline 脚本，它们都使用宿主 Function 构造器。
  *
- * @param app - 当前应用，用于排除自身空间并确定有效执行环境。
+ * @param app - 当前应用，用于排除自身空间。
  * @param scriptInfo - 当前脚本地址的全局及应用级缓存。
  * @param currentCode - 当前应用已经完成插件和沙箱包装的代码。
  * @returns 匹配的编译函数；不存在时返回 `undefined`。
@@ -165,8 +165,9 @@ function getSandboxType (app: AppInterface, scriptInfo: ScriptSourceInfo): 'with
 /**
  * 提取一个脚本元素，并按执行策略登记资源或返回动态执行信息。
  *
- * exclude/不受支持的 module 分支用注释占位；ignore 和非脚本 MIME 保留原生节点；远程脚本
- * 按完整地址全局缓存，静态内联脚本以唯一 nonce 缓存。静态提取只登记资源，真正执行发生
+ * exclude/不受支持的 module 分支用注释占位；ignore 和非脚本 MIME 保留节点、跳过执行管线；远程脚本
+ * 按完整地址全局缓存，静态内联脚本以唯一 nonce 缓存。DOMParser 生成的 ignore 脚本仍是
+ * 惰性节点，不由框架执行。静态提取只登记资源，真正执行发生
  * 在挂载阶段；动态提取把地址和资源信息交给 DOM 补丁立即调度。
  *
  * @param script - 待提取的原始脚本元素。
@@ -393,8 +394,8 @@ export function fetchScriptsFromHtml (
 /**
  * 记录脚本抓取结果，并在二级预加载中提前完成作用域绑定与可选编译。
  *
- * 预解析缓存按应用空间保存；内联执行和原生 module 不编译为 Function。编译失败只记录，
- * 挂载时仍可沿正常执行路径重试或暴露错误，不让预加载本身失败。
+ * 预解析缓存按应用空间保存；inline 模式不编译为 Function。Function 构造失败只记录，
+ * 挂载时再尝试构造；插件转换与作用域绑定位于该 try 之外，由调用链处理其异常。
  *
  * @param address - 脚本地址或内联 nonce。
  * @param scriptInfo - 接收原始代码及应用级解析缓存的资源信息。
@@ -407,7 +408,7 @@ export function fetchScriptSuccess (
   code: string,
   app: AppInterface,
 ): void {
-  // 每次成功抓取都以最新响应刷新共享原始代码。
+  // 下载结果和缓存命中都经此入口，统一写入共享原始代码。
   scriptInfo.code = code
 
   /**
@@ -439,12 +440,19 @@ export function fetchScriptSuccess (
 /**
  * 在挂载生命周期中按脚本调度属性执行应用脚本。
  *
- * 同步脚本按资源集合顺序立即或经 fiber 串行执行；defer/async 脚本先并行补齐代码，待整批
- * 结算后仍按登记顺序入队。`initHook` 同时承担普通完成计数和 module load 计数，最终布尔值
- * 表示非 module 流程已完成，或 module 全部因抓取失败而无需等待 load。
+ * 同步脚本按资源集合顺序立即或经 fiber 串行执行；defer/async 共用延迟批次，先并行补齐代码，
+ * 待整批结算后按登记顺序执行，而不是浏览器 async 的下载即执行。原生外链 module 只设置
+ * src，由浏览器加载与求值，计数在 load 后递减；内联 module 用微任务近似结算。
+ * 每个普通脚本后调用 `initHook(false)`，批次末尾无原生 module 或失败数等于整批长度时传 true。
+ * 下载失败项的 code 初值仍为字符串 `''`，会进入空代码执行分支；原生 module 的 error 没有
+ * 配对计数处理，失败时不能让剩余 moduleCount 归零。
+ * 扫描 Set 时遇到缺代码的 defer/async 就立即开请求，仍继续处理后面的同步脚本；fiber 只把
+ * 执行动作入队，有延迟批次时连前面已入队的同步脚本也要等整批下载结算后才启动。
+ * 没有延迟批次且未开启 fiber 时，最终 initHook(true) 在当前调用栈完成；全是缓存字符串的
+ * 延迟批次也会经 promiseStream 的普通值分支同步结算，而非固定另起微任务。
  *
  * @param app - 当前挂载应用。
- * @param initHook - `CreateApp` 用于识别 UMD hooks 与脚本完成状态的回调。
+ * @param initHook - `CreateApp` 用于在非 UMD 模式收到 true 时完成挂载的回调。
  */
 export function execScripts (
   app: AppInterface,
@@ -504,7 +512,7 @@ export function execScripts (
       })
 
       /**
-       * fiber 通过 `requestIdleCallback` 包装任务。必须等待整批脚本加载完再串行入队，才能
+       * fiber 通过 `requestIdleCallback` 包装任务。同步项已入队，整批结算后才追加延迟项并启动，才能
        * 保持静态脚本顺序。已知边界：脚本执行中创建动态脚本时，后续静态脚本仍等待下一次
        * 空闲回调，动态脚本可能先执行；把动态脚本也放进空闲回调不能建立同一队列顺序。
        */
@@ -535,8 +543,9 @@ export function execScripts (
  * 在当前应用沙箱中执行单个脚本，并维护应用级包装与函数缓存。
  *
  * 执行前切换活跃代理 window；沙箱类别变化会使旧 `parsedCode/parsedFunction` 失效。inline
- * 模式交给真实 script 元素，其他模式调用缓存 Function。异常默认向上抛出；仅当
- * `excludeRunScriptFilter` 对该错误返回 `true` 时抑制。
+ * 模式配置真实 script 元素，随后由插入 DOM 触发浏览器执行；其他模式调用缓存 Function。
+ * 本函数内捕获的同步异常默认重新抛出，仅当 `excludeRunScriptFilter` 返回 `true` 时抑制；
+ * 真实 script 由浏览器报告的求值错误不属于这段 try 的同步异常。
  *
  * @param address - 脚本地址或内联 nonce，用于插件、sourceURL 与缓存定位。
  * @param app - 当前执行应用。
@@ -565,10 +574,7 @@ export function runScript (
       appSpaceData.parsedFunction = null
     }
 
-    /**
-     * TODO：优化逻辑。
-     * 是否是内联模式应该由外部传入，这样自外而内更加统一，逻辑更加清晰
-     */
+    // inline 模式写入真实元素；Function 模式直接求值。
     if (isInlineMode(app, scriptInfo)) {
       const scriptElement = replaceElement || pureCreateElement('script')
       runCode2InlineScript(
@@ -580,12 +586,7 @@ export function runScript (
         callback,
       )
 
-      /**
-       * TODO：优化逻辑。
-       * replaceElement不存在说明是初始化执行，需要主动插入script
-       * 但这里的逻辑不清晰，应该明确声明是什么环境下才需要主动插入，而不是用replaceElement间接判断
-       * replaceElement还有可能是注释类型(一定是在后台执行)，这里的判断都是间接判断，不够直观
-       */
+      // 静态执行没有替代元素，由此处插入；动态路径把返回节点交给 DOM 补丁负责插入。
       if (!replaceElement) {
         // TEST IGNORE
         const parent = app.iframe ? app.sandBox?.microBody : app.querySelector('micro-app-body')
@@ -596,7 +597,7 @@ export function runScript (
     }
   } catch (e) {
     console.warn(`[micro-app from ${replaceElement ? 'runDynamicScript' : 'runScript'}] app ${app.name}: `, e, address)
-    // with 沙箱默认把执行错误抛给基座；过滤器可按地址和错误显式选择忽略。
+    // 此 try 中捕获的同步错误默认重新抛出；过滤器可按地址和错误显式选择忽略。
     const error = e as Error
     let throwError = true
     if (typeof microApp?.options?.excludeRunScriptFilter === 'function') {
@@ -612,8 +613,10 @@ export function runScript (
  * 调度运行期创建的远程脚本，并返回应插入 DOM 的替代节点。
  *
  * inline/module 场景返回真实 script，Function 场景返回注释。执行前尽量把原元素暴露为
- * `document.currentScript`；普通脚本执行后人工发送 load，module 脚本等待浏览器 onload。
- * 缓存未命中时先抓取，失败则记录并向原元素发送 error。
+ * `document.currentScript`；普通脚本执行后人工发送 load，原生外链 module 等待浏览器 onload。
+ * 非空缓存命中或原生 module 在微任务中调度，普通远程脚本未命中时先抓取。未命中分支的
+ * Promise catch 同时接收下载和同步执行异常，向原元素发送 error；缓存命中的 defer 分支
+ * 没有对应 catch。原生外链 module 的通知只绑定 load，浏览器 error 不在此转发。
  *
  * @param address - 已补全的远程脚本地址。
  * @param app - 当前应用实例。
@@ -663,9 +666,10 @@ export function runDynamicRemoteScript (
 }
 
 /**
- * 立即执行运行期创建的内联脚本，并返回真实 script 或注释占位。
+ * 处理运行期创建的内联脚本，并返回真实 script 或注释占位。
  *
- * 动态内联脚本不进入资源中心，每次插入都会重新绑定当前沙箱并执行。
+ * 动态内联脚本不进入资源中心，每次调用重新绑定当前沙箱。Function 模式在此同步执行，
+ * inline 模式先配置真实 script，随后由调用方插入 DOM 触发浏览器执行。
  *
  * @param address - 本次动态内联脚本的唯一 nonce。
  * @param app - 当前应用实例。
@@ -723,8 +727,8 @@ function runCode2InlineScript (
         callback(callback.moduleCount === 0)
       }
       /**
-       * 远程 module 只有插入 document/iframe 后才触发 onload。内联 module 没有可直接观察的
-       * 完成时机，当前用微任务近似结算；这不等价于浏览器模块求值完成，是调用方需接受的边界。
+       * 远程 module 插入 document/iframe 后由浏览器触发 onload；这里未绑定 onerror，失败时
+       * 不会递减 moduleCount。内联 module 直接在微任务中结算，可能早于模块实际求值完成。
        */
       if (isInlineScript(address)) {
         defer(onloadHandler)
@@ -751,8 +755,11 @@ function runParsedFunction (app: AppInterface, scriptInfo: ScriptSourceInfo) {
 /**
  * 依次应用资源插件，并按当前沙箱实现把代码绑定到子应用全局作用域。
  *
- * with 沙箱把代码放进代理 window 的 with 作用域；iframe 沙箱显式注入 window/self/global/
- * location。远程脚本追加 sourceURL 便于调试，内联 nonce 不作为真实 URL 输出。
+ * with 沙箱的 with 目标是 `proxyWindow.__MICRO_APP_WINDOW__` 指向的独立 microAppWindow，
+ * 并非 Proxy 本身。GLOBAL_CACHED_KEY 在该作用域中取值后传给内层函数作为参数；其他裸标识符
+ * 再沿 with 目标和外层作用域查找。iframe 沙箱显式注入 window/self/global/location。
+ * 启用作用域包装时，远程脚本追加 sourceURL 便于调试，内联 nonce 不作为真实 URL 输出；
+ * 原生 module 与关闭沙箱的代码只经过插件，不添加这段包装或 sourceURL。
  *
  * @param address - 供插件识别及生成 sourceURL 的资源地址。
  * @param app - 决定插件模块与沙箱类型的应用。

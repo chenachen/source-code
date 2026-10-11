@@ -35,7 +35,9 @@ import globalEnv from '../../libs/global_env'
  * @remarks
  * 沙箱启动时注册、停止时由返回函数释放。隐藏、预渲染应用以及标记为 `onlyForBrowser` 的事件不会
  * 下发。转发使用容器配置的宏任务延迟，让可能异步卸载/切页的基座先响应浏览器导航，避免子应用过早
- * 修改地址或进入已不属于它的页面。
+ * 修改地址或进入已不属于它的页面。此延迟只提供时间窗口，不等待基座异步导航完成；过滤条件在
+ * 收到事件时检查，定时器执行时再读取当前宿主 URL，而不是保存本次事件对应的路径；返回的清理
+ * 函数只移除监听器，不取消已登记的定时器。
  *
  * @param appName - 订阅宿主历史事件的微应用名称。
  * @returns 移除本次宿主事件监听器的清理函数。
@@ -57,11 +59,12 @@ export function addHistoryListener (appName: string): CallableFunction {
       /**
        * 基座处理返回/前进时可能先懒加载页面，而 Vue 2、React 等子应用通常同步响应 popstate。这里用
        * `router-event-delay` 把子应用响应移到宏任务，给基座完成切页或卸载的窗口。该边界覆盖浏览器
-       * 前进/后退、location 属性赋值、链接导航、History API 等最终产生的宿主历史事件。
+       * 前进/后退，以及 micro-app 为部分 location/History 写入合成的 popstate。原生 pushState/
+       * replaceState 本身不产生 popstate。
        *
        * 自定义原生模式还要求当前 history 无 state，或 state 中存在本应用快照才下发，避免把纯基座
        * 页面事件误送给子应用。React 16 hash 模式可能长期保持空 state，因此空值仍允许通过；同页多个
-       * 原生子应用共享路径的歧义由模式本身的限制承担。
+       * 原生子应用共享路径时，仍可能各自用不同快照恢复同一宿主地址。
        */
       if (
         !isRouterModeCustom(appName) ||
@@ -86,12 +89,14 @@ export function addHistoryListener (appName: string): CallableFunction {
 }
 
 /**
- * 用宿主导航结果更新微应用 location，并依次派发格式化的 popstate 与可选 hashchange。
+ * 用宿主导航结果更新微应用 location，并依次派发标准 popstate 与可选 hashchange。
  *
  * @remarks
  * 先保存旧 href，再更新 location，因此 hashchange 能获得正确的新旧 URL。popstate 始终先派发；仅当
  * hash 实际变化时再派发 hashchange。处理完一个应用后清除 DOM 作用域，避免下一个应用事件沿用前一
  * 个应用的节点查询上下文。空目标路径不改 location，但仍通知子应用读取当前 state。
+ * 本函数仅检查实例仍有 sandBox，不复查 active/隐藏状态；已排宏任务可能在 stop 后进入这里。
+ * location 更新或手调 onpopstate/onhashchange 抛错会打断剩余步骤，末尾作用域清理没有 finally 保证。
  *
  * @param appName - 接收导航的微应用名称。
  * @param targetFullPath - 从宿主路由恢复的目标完整路径；为空时仅派发状态事件。
@@ -141,18 +146,8 @@ export function dispatchPopStateEventToMicroApp (
   proxyWindow: WindowProxy,
   microAppWindow: microAppWindowType,
 ): void {
-  /**
-   * TODO：补充 Angular 14 按 `e.type` 判断事件类型的回归测试。事件名必须保持标准 `popstate`；若改为
-   * `popstate-${appName}`，Angular 路由会忽略它。曾考虑通过下列方式重写 type：
-   * Object.defineProperty(newPopStateEvent, 'type', {
-   *    value: 'popstate',
-   *    writable: true,
-   *    configurable: true,
-   *    enumerable: true,
-   * })
-   */
-  // 事件仅携带当前应用的业务 state，避免把宿主与其他应用的路由元信息暴露给子应用。
-  // TODO：继续核验原生模式下路由 API 未建立应用条目时的 state 回退语义。
+  // 保留标准 popstate 名称，应用隔离由派发目标承担。state 只读应用条目；缺少条目时为 null，
+  // 原生模式也不会退回基座业务 state。
   const newPopStateEvent = new PopStateEvent(
     'popstate',
     { state: getMicroState(appName) }
@@ -229,7 +224,7 @@ function dispatchNativeHashChangeEvent (oldHref: string): void {
  *
  * @remarks
  * 派发前清除 DOM 作用域，保证基座事件处理器访问真实文档。应用不存在或仍处于预加载阶段时不产生
- * 全局副作用；`oldHref` 仅在 hash 确实变化时传入。
+ * 全局副作用。是否追加 hashchange 由调用方传入 oldHref 决定，此函数不重新比较 hash。
  *
  * @param appName - 发起导航的微应用名称，用于有效性校验。
  * @param onlyForBrowser - 是否让 popstate 仅供基座消费。

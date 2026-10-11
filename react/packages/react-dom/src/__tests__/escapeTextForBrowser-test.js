@@ -19,56 +19,49 @@ describe('escapeTextForBrowser', () => {
     ReactDOMServer = require('react-dom/server');
   });
 
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「ampersand is escaped when passed as text content」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言连接 ReactDOM 公开入口、ReactDOMRoot 根生命周期及 DOM 提交结果。
-   */
+  /** 把单个 & 作为 span 文本执行同步 SSR；输出必须含 &amp;，验证实体起始符不能以原样文本进入 HTML。 */
   it('ampersand is escaped when passed as text content', () => {
     const response = ReactDOMServer.renderToString(<span>{'&'}</span>);
     expect(response).toMatch('<span>&amp;</span>');
   });
 
-  /** 测试场景：验证「double quote is escaped when passed as text content」描述的渲染、交互或错误处理结果。 */
+  /** 把双引号作为 span 文本执行同步 SSR；输出必须含 &quot;，验证文本编码统一转义引号。 */
   it('double quote is escaped when passed as text content', () => {
     const response = ReactDOMServer.renderToString(<span>{'"'}</span>);
     expect(response).toMatch('<span>&quot;</span>');
   });
 
-  /** 测试场景：验证「single quote is escaped when passed as text content」描述的渲染、交互或错误处理结果。 */
+  /** 把单引号作为 span 文本执行同步 SSR；输出必须含 &#x27;，验证引号字符被编码而不改变其文本含义。 */
   it('single quote is escaped when passed as text content', () => {
     const response = ReactDOMServer.renderToString(<span>{"'"}</span>);
     expect(response).toMatch('<span>&#x27;</span>');
   });
 
-  /** 测试场景：验证「greater than entity is escaped when passed as text content」描述的渲染、交互或错误处理结果。 */
+  /** 把 > 作为 span 文本执行同步 SSR；输出必须含 &gt;，验证闭合尖括号走 HTML 文本转义。 */
   it('greater than entity is escaped when passed as text content', () => {
     const response = ReactDOMServer.renderToString(<span>{'>'}</span>);
     expect(response).toMatch('<span>&gt;</span>');
   });
 
-  /** 测试场景：验证「lower than entity is escaped when passed as text content」描述的渲染、交互或错误处理结果。 */
+  /** 把 < 作为 span 文本执行同步 SSR；输出必须含 &lt;，验证文本不能开启新的 HTML 标签。 */
   it('lower than entity is escaped when passed as text content', () => {
     const response = ReactDOMServer.renderToString(<span>{'<'}</span>);
     expect(response).toMatch('<span>&lt;</span>');
   });
 
-  /** 测试场景：验证「number is correctly passed as text content」描述的渲染、交互或错误处理结果。 */
+  /** 把数字 42 作为 span children 执行同步 SSR；输出文本应是 42，验证数值 children 的字符串化结果。 */
   it('number is correctly passed as text content', () => {
     const response = ReactDOMServer.renderToString(<span>{42}</span>);
     expect(response).toMatch('<span>42</span>');
   });
 
-  /** 测试场景：验证「number is escaped to string when passed as text content」描述的渲染、交互或错误处理结果。 */
+  /** 把数字 42 作为 img 的 data-attr 执行同步 SSR；结果应是带双引号的属性值 42，验证数字属性序列化。 */
   it('number is escaped to string when passed as text content', () => {
     const response = ReactDOMServer.renderToString(<img data-attr={42} />);
     expect(response).toMatch('<img data-attr="42"/>');
   });
 
-  /** 测试场景：验证「escape text content representing a script tag」描述的渲染、交互或错误处理结果。 */
+  /** 把完整 script 标签字符串作为 span children 执行同步 SSR；尖括号及单双引号均应编码为实体，验证危险形状仍作为文本而非可执行标签输出。 */
   it('escape text content representing a script tag', () => {
     const response = ReactDOMServer.renderToString(
       <span>{'<script type=\'\' src=""></script>'}</span>,

@@ -36,14 +36,16 @@ import {
 
 import {enableScrollEndPolyfill} from 'shared/ReactFeatureFlags';
 
-/** isScrollEndEventSupported 保存在缺少原生 scrollend 时用 debounce timer 合成结束事件并管理目标状态所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** 特性开启且 DOM 探测支持原生 scrollend 时为 true。 */
 const isScrollEndEventSupported =
   enableScrollEndPolyfill && canUseDOM && isEventSupported('scrollend');
 
+/** 模块级按下状态跨目标共享；任一活动触摸会让结束计时器继续等待 touchend/cancel。 */
 let isTouchStarted = false;
+/** 鼠标按住时即便短暂停止位移，也不把当前滚动视作结束。 */
 let isMouseDown = false;
 
-/** registerEvents 管理在缺少原生 scrollend 时用 debounce timer 合成结束事件并管理目标状态的注册/监听边界；避免同一容器重复安装或遗漏 capture 配置。 */
+/** 登记 onScrollEnd 及滚动、触摸、鼠标按下/抬起的检测依赖。 */
 function registerEvents() {
   registerTwoPhaseEvent('onScrollEnd', [
     'scroll',
@@ -56,7 +58,7 @@ function registerEvents() {
   ]);
 }
 
-/** manualDispatchScrollEndEvent 执行在缺少原生 scrollend 时用 debounce timer 合成结束事件并管理目标状态的核心步骤；输入来自原生事件/Fiber，输出保持插件分发与调度边界。 */
+/** 计时器结束后创建 scrollend 合成事件，在 batch 中执行两阶段列表；此回退路径包含祖先 bubble。 */
 function manualDispatchScrollEndEvent(
   inst: Fiber,
   nativeEvent: AnyNativeEvent,
@@ -77,12 +79,12 @@ function manualDispatchScrollEndEvent(
   batchedUpdates(runEventInBatch, dispatchQueue);
 }
 
-/** runEventInBatch 执行在缺少原生 scrollend 时用 debounce timer 合成结束事件并管理目标状态的核心步骤；输入来自原生事件/Fiber，输出保持插件分发与调度边界。 */
+/** 执行 polyfill 累积的 scrollend 队列。 */
 function runEventInBatch(dispatchQueue: DispatchQueue) {
   processDispatchQueue(dispatchQueue, 0);
 }
 
-/** fireScrollEnd 执行在缺少原生 scrollend 时用 debounce timer 合成结束事件并管理目标状态的核心步骤；输入来自原生事件/Fiber，输出保持插件分发与调度边界。 */
+/** 清空目标计时器记录；仍在鼠标/触摸按下期间则重新计时，否则派发 scrollend。 */
 function fireScrollEnd(
   targetInst: Fiber,
   nativeEvent: AnyNativeEvent,
@@ -101,10 +103,10 @@ function fireScrollEnd(
 // 滚动减速后，新 scroll 事件的频率可能很低。
 // 该超时时间足以覆盖低频阶段，同时又不会
 // 让 scrollend 触发得过晚。
-/** DEBOUNCE_TIMEOUT 是在缺少原生 scrollend 时用 debounce timer 合成结束事件并管理目标状态使用的稳定常量，避免在热路径重复分配或推导。 */
+/** 最近 scroll 后等待 200 毫秒再判定结束；按住鼠标或触摸时重复等待。 */
 const DEBOUNCE_TIMEOUT = 200;
 
-/** debounceScrollEnd 执行在缺少原生 scrollend 时用 debounce timer 合成结束事件并管理目标状态的核心步骤；输入来自原生事件/Fiber，输出保持插件分发与调度边界。 */
+/** 取消目标旧计时器；有 target Fiber 时保存新的 200 毫秒结束检测。 */
 function debounceScrollEnd(
   targetInst: null | Fiber,
   nativeEvent: AnyNativeEvent,
@@ -126,7 +128,12 @@ function debounceScrollEnd(
 /**
  * 原生 scrollend 不可用时，该插件创建 `onScrollEnd` polyfill。
  */
-/** extractEvents 从原生事件和 Fiber 路径收集在缺少原生 scrollend 时用 debounce timer 合成结束事件并管理目标状态所需数据；只生成满足插件条件的 listener/event。 */
+/**
+ * 特性开启后，原生支持缺失时仅在 capture 更新按下状态并按目标重置 200ms 计时器。
+ * 收到 scrollend 时取消尚存的回退计时器；探测不支持且已经没有计时器则忽略，避免
+ * 回退先触发后再次派发。此原生事件路径收集整个 capture 祖先链，但 bubble 仅取
+ * target；计时器的 manualDispatchScrollEndEvent 使用另一条两阶段祖先传播路径。
+ */
 function extractEvents(
   dispatchQueue: DispatchQueue,
   domEventName: DOMEventName,
@@ -191,7 +198,7 @@ function extractEvents(
     }
   }
 
-  // React 中 onScrollEnd 不冒泡。
+  // 原生 scrollend 的 React bubble 路径只处理 target；计时器回退在另一个入口收集两阶段。
   const accumulateTargetOnly = !inCapturePhase;
 
   const listeners = accumulateSinglePhaseListeners(

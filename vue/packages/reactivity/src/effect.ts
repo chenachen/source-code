@@ -10,6 +10,7 @@ export type EffectScheduler = (...args: any[]) => any
 
 /** 开发模式调试事件：订阅者信息与本次收集/触发操作的详情。 */
 export type DebuggerEvent = {
+  /** 收到收集／通知事件的订阅者，可能是普通 effect 或 computed。 */
   effect: Subscriber
 } & DebuggerEventExtraInfo
 
@@ -23,9 +24,9 @@ export type DebuggerEventExtraInfo = {
   key: any
   /** 写操作后的值。 */
   newValue?: any
-  /** 写操作前的值。 */
+  /** 写操作前的值；本版集合 clear 事件在此字段携带清空前快照。 */
   oldValue?: any
-  /** `Map.clear()` / `Set.clear()` 前的集合快照，仅开发模式提供。 */
+  /** 清空前集合快照的可选字段；本版 Map/Set.clear() 将快照传给 oldValue，未填充此字段。 */
   oldTarget?: Map<any, any> | Set<any>
 }
 
@@ -41,7 +42,7 @@ export interface DebuggerOptions {
 export interface ReactiveEffectOptions extends DebuggerOptions {
   /** 依赖变化时替代默认立即重跑逻辑。 */
   scheduler?: EffectScheduler
-  /** 是否允许 effect 在自身仍运行时再次被通知。 */
+  /** 保留的配置字段；本版 effect() 仅拷贝此属性，不将它映射到 ALLOW_RECURSE 状态位。 */
   allowRecurse?: boolean
   /** effect 首次停止时调用。 */
   onStop?: () => void
@@ -49,7 +50,7 @@ export interface ReactiveEffectOptions extends DebuggerOptions {
 
 /** `effect()` 的可调用返回值；附带底层实例，便于停止或高级调度。 */
 export interface ReactiveEffectRunner<T = any> {
-  /** 手动执行原始函数并重新收集依赖。 */
+  /** 手动执行原始函数；effect 仍活动时为它重新收集依赖。 */
   (): T
   /** 当前 runner 绑定的底层副作用实例。 */
   effect: ReactiveEffect
@@ -83,15 +84,15 @@ export enum EffectFlags {
   ALLOW_RECURSE = 1 << 5,
   /** 暂停实际调度；期间收到的通知记录到恢复队列。 */
   PAUSED = 1 << 6,
-  /** 计算属性至少成功求值过一次。 */
+  /** 计算属性至少成功发布过一次结果。 */
   EVALUATED = 1 << 7,
 }
 
 /**
  * 订阅一组 `Dep` 的统一协议，由 `ReactiveEffect` 和 `ComputedRefImpl` 实现。
  *
- * 每个订阅关系由 `Link` 表示；同一批 Link 沿 `nextDep/prevDep` 组成当前订阅者的
- * 依赖链，同时沿 `nextSub/prevSub` 加入各个 Dep 的订阅链。
+ * 每个订阅关系由 `Link` 表示；Link 沿 `nextDep/prevDep` 组成订阅者的依赖链。
+ * 订阅者开启 TRACKING 时，还沿 `nextSub/prevSub` 加入各个 Dep 的通知链。
  */
 export interface Subscriber extends DebuggerOptions {
   /** 当前订阅者依赖双向链表的头节点。 @internal */
@@ -206,15 +207,19 @@ export class ReactiveEffect<T = any>
   /**
    * 执行用户函数并重新收集本轮真实依赖。
    *
-   * 已停止 effect 的 runner 仍可像普通函数一样手动执行，但不会收集依赖。活动 effect
-   * 先执行上轮清理、标记旧依赖，再设置全局收集上下文。所有全局状态均在 `finally`
-   * 恢复，保证用户函数抛错不会破坏后续依赖收集。
+   * 已停止 effect 的 runner 仍可手动执行，但不会重新激活自身或恢复自己的订阅。
+   * 若它在另一活动 effect 内执行，读取仍会收集到外层 effect。活动 effect 先执行
+   * 上轮清理、标记旧依赖，再设置全局收集上下文；用户函数退出时在 finally 中恢复，
+   * 保证 try 内用户函数抛错后仍恢复依赖上下文。cleanupEffect 位于 try 之前；
+   * 清理抛错时不会进入本次用户函数，也不会执行下方 finally 清 RUNNING。
+   *
+   * @returns 用户函数本次返回值；Promise 不被等待，await 之后不延续此依赖上下文。
    */
   run(): T {
     // TODO：评估 cleanupEffect 与依赖准备阶段是否还能进一步合并。
 
     if (!(this.flags & EffectFlags.ACTIVE)) {
-      // effect 已停止或在清理阶段被停止：只执行函数，不再建立响应式订阅。
+      // 已停止 effect 直接执行原函数，不切换 activeSub；存在外层收集上下文时读取归入外层。
       return this.fn()
     }
 
@@ -243,8 +248,10 @@ export class ReactiveEffect<T = any>
   }
 
   /**
-   * 永久停止自动响应：从全部 Dep 订阅链移除，执行清理与 `onStop`，并保持幂等。
-   * 停止后的 runner 仍可手动调用，但执行时不再收集依赖。
+   * 停止自动响应：先移除全部 Dep 订阅，再执行清理与 onStop，最后清 ACTIVE。
+   * 正常完成后再次停止无效果；清理／onStop 若抛错会直接传播，后续步骤不执行。
+   * 停止后的 runner 仍可手动调用，不恢复自身订阅；在另一活动 effect 内调用时，
+   * 函数中的读取仍会被外层 effect 收集。
    */
   stop(): void {
     if (this.flags & EffectFlags.ACTIVE) {
@@ -314,7 +321,8 @@ let batchedComputed: Subscriber | undefined
  * 把订阅者加入当前批处理队列，并用 `NOTIFIED` 标记去重。
  *
  * 队列复用订阅者自身的 `next` 字段，避免每次触发分配额外数组或任务对象。计算属性与
- * 普通 effect 分开：计算属性只需标脏，普通 effect 才在批结束时执行。
+ * 普通 effect 分开：computed 队列只清 NOTIFIED；普通 effect 在批结束时调用 trigger，
+ * 有 scheduler 时只交出调度控制权，不能据出队就判断用户函数已经重跑。
  */
 export function batch(sub: Subscriber, isComputed = false): void {
   sub.flags |= EffectFlags.NOTIFIED
@@ -341,7 +349,8 @@ export function startBatch(): void {
  *
  * 先清空计算属性的入队标记，再执行普通 effect；执行期间新产生的 effect 会形成新一段
  * 链表，由外层 `while` 继续冲刷。某个 effect 抛错不会阻止其余 effect 执行，最终抛出
- * 捕获到的第一个错误。
+ * 捕获到的第一个真值错误。当前实现用 if (!error) 保存、if (error) 抛出；
+ * 抛出的 0、false、undefined 等假值不会作为最终错误保留。此函数同步冲刷，不建立微任务。
  *
  * @internal
  */
@@ -436,8 +445,10 @@ function cleanupDeps(sub: Subscriber) {
 /**
  * 比较订阅者记录的 Link 版本与每个 Dep 当前版本，判断是否需要重新运行。
  *
- * 依赖若来自计算属性，先刷新该计算属性：其上游可能触发过但计算结果仍相等，此时
- * dep.version 不变，下游 effect 可以跳过。最后保留 `_dirty` 兼容通道供旧生态使用。
+ * 按读取顺序逐条比较：版本已不等时立即返回 true，不先刷新 computed。版本相等且
+ * 依赖来自 computed 时才刷新后再比较：上游可能触发过而派生值仍相等，此时下游可跳过。
+ * 本函数不把正在比较的 Link 同步为新版本；同步由实际读取的 Dep.track/value getter 完成。
+ * 全部依赖相等后再检查 `_dirty` 兼容通道；嵌套刷新抛错会直接传播。
  */
 function isDirty(sub: Subscriber): boolean {
   for (let link = sub.deps; link; link = link.nextDep) {
@@ -461,7 +472,12 @@ function isDirty(sub: Subscriber): boolean {
  * 按需刷新计算属性的缓存。
  *
  * 快速路径从便宜到昂贵依次为：仍在追踪且未标脏、全局版本没有任何变化、逐依赖版本
- * 检查后确认结果不可能变化；只有这些判断都失败才真正执行 getter。
+ * 检查后确认当前依赖版本仍匹配；只有这些判断都失败才真正执行 getter。
+ *
+ * 上游通知只设置 DIRTY，不先发布结果版本；此处 getter 结果变化或首次发布才递增
+ * computed.dep.version，让下游区分“可能变化”和“结果已变”。第三条快路之前已保存
+ * globalVersion、清 DIRTY；isDirty 中嵌套刷新若抛错，本层尚未进入 try/finally。
+ * SSR 跳过逐依赖／无依赖快路，但仍保留全局版本快路；try 中异常递增版本而不回滚缓存。
  *
  * @returns 当前实现只返回 `undefined`；调用方通过计算属性 `dep.version` 判断值是否变化。
  * @internal
@@ -475,17 +491,17 @@ export function refreshComputed(computed: ComputedRefImpl): undefined {
   }
   computed.flags &= ~EffectFlags.DIRTY
 
-  // 全局版本快速路径：上次刷新后整个响应式系统都没有触发过变化，无需扫描依赖链。
+  // 全局触发版本未变时复用缓存，无需扫描依赖链；它不等于整个系统没有发生过赋值。
   if (computed.globalVersion === globalVersion) {
     return
   }
   computed.globalVersion = globalVersion
 
-  // SSR 没有渲染 effect，computed 通常没有下游订阅者，也就不会维持可供 isDirty()
-  // 使用的完整依赖订阅状态；因此 SSR 主要依赖上面的 globalVersion 缓存，否则重算。
+  // SSR 求值仍收集并保留依赖 Link，但 !computed.isSSR 会跳过下面的依赖版本快路径。
+  // 全局版本相同仍复用缓存；全局版本变化后，即使自身依赖版本没变，也会重新求值。
   // issue #12337 场景：`computed(() => constant)` 不读取任何响应式数据。它求值一次后
-  // 即使别处响应式状态让 globalVersion 增长，结果也不可能变化；无 deps 时直接复用，
-  // 避免每次全局任意更新都重新执行这个常量 getter。
+  // 非 SSR 下，已发布结果、无 deps 且未设置兼容 _dirty 的 computed 会直接复用缓存，
+  // 不因别处触发使 globalVersion 增长而再次执行 getter。
   if (
     !computed.isSSR &&
     computed.flags & EffectFlags.EVALUATED &&
@@ -512,7 +528,8 @@ export function refreshComputed(computed: ComputedRefImpl): undefined {
       dep.version++
     }
   } catch (err) {
-    // getter 抛错也递增版本；下次读取必须重试，不能把失败当作有效缓存。
+    // getter 抛错时递增版本并继续抛出，保留现有 _value；不会回退 globalVersion 或补设 DIRTY。
+    // 后续读取仍由前面的快速路径判断是否重算，不能据此保证立即重试。
     dep.version++
     throw err
   } finally {
@@ -564,7 +581,7 @@ function removeSub(link: Link, soft = false) {
   if (!soft && !--dep.sc && dep.map) {
     // issue #11979：targetMap 的外层 WeakMap 不会阻止 target 回收，但只要 target 本身
     // 长期存活，其 KeyToDepMap 就会一直保留所有曾被短暂追踪的属性。动态 key、大表格
-    // 或虚拟列表会让 Map 持续增长。属性 Dep 已无订阅者时立即按 key 删除，释放内存。
+    // 或虚拟列表会让 Map 持续增长。非软移除使 sc 降为 0 时按 key 删除该 Dep。
     dep.map.delete(dep.key)
   }
 }
@@ -590,7 +607,7 @@ function removeDep(link: Link) {
  * 依赖图中。后续依赖变化默认同步运行，也可通过 `scheduler` 自定义调度。
  *
  * @param fn 需要自动追踪响应式读取的函数。
- * @param options 调度器、停止钩子、递归与开发调试配置。
+ * @param options 调度器、停止钩子与开发调试配置。
  * @returns 绑定底层 `ReactiveEffect` 的可调用 runner。
  */
 export function effect<T = any>(

@@ -13,7 +13,7 @@ import {TEXT_NODE} from '../client/HTMLNodeType';
  * @param {object} nativeEvent 原生浏览器事件。
  * @return {DOMEventTarget} 目标节点。
  */
-/** getEventTarget 查询并返回归一化原生事件 target，处理 SVG use 与文本节点目标所需状态；无匹配时使用 null/默认值而不修改事件队列。 */
+/** 取得原生 target，兼容 srcElement、SVG use，并把文本节点目标归一化到父节点。 */
 function getEventTarget(nativeEvent) {
   // IE9 回退使用 nativeEvent.srcElement。
   // 参考：https://github.com/facebook/react/issues/12506

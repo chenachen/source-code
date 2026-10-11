@@ -55,7 +55,7 @@ export function getValueForAttribute(
   }
 }
 
-/** `getValueForAttributeOnCustomComponent` 查询所需宿主值；无匹配时走显式回退；用于安全读取、写入和移除 DOM 属性及自定义组件属性。 */
+/** 开发期比较自定义元素的服务端 attribute；缺失时按自定义元素的值类型规则还原期望值。 */
 export function getValueForAttributeOnCustomComponent(
   node: Element,
   name: string,
@@ -102,7 +102,7 @@ export function getValueForAttributeOnCustomComponent(
   }
 }
 
-/** `setValueForAttribute` 更新关联或宿主状态，使后续读取看到一致快照；用于安全读取、写入和移除 DOM 属性及自定义组件属性。 */
+/** 校验属性名并写入普通 attribute；null、函数和 symbol 删除，boolean 仅对 data-/aria- 保留。 */
 export function setValueForAttribute(
   node: Element,
   name: string,
@@ -139,7 +139,7 @@ export function setValueForAttribute(
   }
 }
 
-/** `setValueForKnownAttribute` 更新关联或宿主状态，使后续读取看到一致快照；用于安全读取、写入和移除 DOM 属性及自定义组件属性。 */
+/** 写入已知 attribute；null、undefined、函数、symbol 和 boolean 均删除。 */
 export function setValueForKnownAttribute(
   node: Element,
   name: string,
@@ -167,7 +167,7 @@ export function setValueForKnownAttribute(
   );
 }
 
-/** `setValueForNamespacedAttribute` 更新关联或宿主状态，使后续读取看到一致快照；用于安全读取、写入和移除 DOM 属性及自定义组件属性。 */
+/** 对指定命名空间写 attribute；不可序列化值与 boolean 删除。 */
 export function setValueForNamespacedAttribute(
   node: Element,
   namespace: string,
@@ -197,7 +197,7 @@ export function setValueForNamespacedAttribute(
   );
 }
 
-/** `setValueForPropertyOnCustomComponent` 更新关联或宿主状态，使后续读取看到一致快照；用于安全读取、写入和移除 DOM 属性及自定义组件属性。 */
+/** 自定义元素 on* 函数直接安装原生 listener 并移除旧回调；其他值优先写存在的 property，再回退 attribute。 */
 export function setValueForPropertyOnCustomComponent(
   node: Element,
   name: string,

@@ -1,15 +1,19 @@
 import { defineConfig } from 'vite'
 
 /**
- * Plugin to test that env imports with query parameters work correctly (#20997)
+ * 创建 env 查询参数夹具插件；dev 导入 /@vite/env?foo，build 使用空 data JS，覆盖 #20997。
+ *
+ * 验证带查询参数的 env 导入仍能处理（#20997）。
  */
 function testEnvQueryParamsPlugin() {
   let isBuild = true
   return {
     name: 'test-env-query-params',
+    /** 记录最终 command，让后续 HTML 代理 JS 的占位符选择开发 env URL 或构建 data URI。 */
     configResolved(config) {
       isBuild = config.command === 'build'
     },
+    /** 只替换 index.html 代理代码中的占位符；保留字符串引号以形成可执行 import 地址。 */
     transform(code, id) {
       if (
         id.includes('index.html') &&

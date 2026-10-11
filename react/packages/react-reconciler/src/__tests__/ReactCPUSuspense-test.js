@@ -266,7 +266,7 @@ describe('ReactSuspenseWithNoopRenderer', () => {
     );
   });
 
-  /** Given–When–Then：Given外层与内层两个 defer Suspense 嵌套；When初次挂载耗尽工作；Then A、Loading B、B、Loading C、C 按层级分别提交。通过日志顺序验证每层 CPU 边界独立分段。 */
+  /** Given 外层与内层两个 defer Suspense 嵌套；When 初次挂载耗尽工作；Then 渲染日志依次为 A、Loading B、B、Loading C、C，最终宿主树为 A/B/C。两层 fallback 与内容的日志顺序验证 CPU 子树逐层延后；本例没有逐次宿主快照或提交次数断言。 */
   // @gate enableCPUSuspense
   it('nested CPU-bound trees', async () => {
     /** 嵌套两层 defer 边界和 A/B/C 标记，暴露逐层提交顺序。 */

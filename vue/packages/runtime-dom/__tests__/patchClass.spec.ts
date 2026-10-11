@@ -1,7 +1,3 @@
-/**
- * 测试阅读说明：本文件验证 `runtime-dom/patchClass` 的运行时行为。
- * “测试组”概括共享前置条件，“测试场景”说明当前输入、边界或历史回归目标；具体预期以断言为准。
- */
 import { patchProp } from '../src/patchProp'
 import {
   type ElementWithTransition,
@@ -9,9 +5,9 @@ import {
 } from '../src/components/Transition'
 import { svgNS } from '../src/nodeOps'
 
-// 测试组：runtime-dom 对 HTML、SVG 元素的 class 修补规则。
+// 测试组：对HTML/SVG元素写class，并给vtcKey对应的Set记录动画类；比较实际class字符串及移除结果。
 describe('runtime-dom: class patching', () => {
-  // 测试场景：基础知识。
+  /** 测试场景：空 div 写 class=foo 后 className 为 foo，更新 null 清空；核对 HTML className 路径。 */
   test('basics', () => {
     const el = document.createElement('div')
     patchProp(el, 'class', null, 'foo')
@@ -20,7 +16,7 @@ describe('runtime-dom: class patching', () => {
     expect(el.className).toBe('')
   })
 
-  // 测试场景：更新用户 class 时保留 Transition 临时附加的过渡 class。
+  /** 测试场景：元素的vtcKey对应Set保存 bar/baz，用户 class 写 foo 或 null 时仍保留临时类；清掉集合后只剩用户 foo，核对过渡类合并。 */
   test('transition class', () => {
     const el = document.createElement('div') as ElementWithTransition
     el[vtcKey] = new Set(['bar', 'baz'])
@@ -33,7 +29,7 @@ describe('runtime-dom: class patching', () => {
     expect(el.className).toBe('foo')
   })
 
-  // 测试场景：SVG 元素通过 attribute 正确设置和移除 class。
+  /** 测试场景：SVG 元素写 class=foo，通过 getAttribute 读取 foo；核对 SVG 使用 attribute 的分支。 */
   test('svg', () => {
     const el = document.createElementNS(svgNS, 'svg')
     patchProp(el, 'class', null, 'foo', 'svg')

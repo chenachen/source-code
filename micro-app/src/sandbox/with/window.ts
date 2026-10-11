@@ -70,7 +70,9 @@ function patchWindowProperty (
       rawDefineProperty(microAppWindow, eventName, {
         enumerable,
         configurable: true,
+        /** 读取宿主实时 on 处理器；普通事件属性在 with 窗口上不另建隔离槽位。 */
         get: () => rawWindow[eventName],
+        /** 宿主描述符允许写入时才桥接赋值；release 不恢复这些宿主 on 属性的旧值。 */
         set: writable ?? !!set
           ? (value) => { rawWindow[eventName] = value }
           : undefined,
@@ -82,7 +84,10 @@ function patchWindowProperty (
  * 创建以 `microAppWindow` 为隔离存储、以原生 window 为回退来源的 Proxy。
  *
  * @remarks
- * 读操作优先隔离目标并绑定原生函数；写操作默认留在隔离目标，插件声明的逃逸键才镜像到宿主。注入键和逃逸键都被记录，供默认模式卸载时精确清理。
+ * 读取优先使用隔离目标，回退到宿主的方法才绑定宿主 this。普通赋值留在目标；location 写到宿主，
+ * 插件逃逸键和宿主尚不存在的静态逃逸键可镜像到宿主。运行期登记的键供默认卸载或销毁时清理。
+ * 此 Proxy 没有以 sandbox.active 限制 get/set；停止后仍持有代理的代码仍能赋值，active 只约束生命周期。
+ * 描述符来源 Map 随此 Proxy 存活，defineProperty 的目的地取决于先前查询，不经过普通赋值登记。
  */
 function createProxyWindow (
   appName: string,
@@ -99,6 +104,10 @@ function createProxyWindow (
   })
 
   const proxyWindow = new Proxy(microAppWindow, {
+    /**
+     * 读取前设置应用 DOM 作用域；自有键、框架保留前缀及作用域键从隔离目标读取。
+     * 其余键回退宿主，并为宿主函数缓存绑定接收者；RAW_GLOBAL_TARGET 读取会先退出 DOM 作用域。
+     */
     get: (target: microAppWindowType, key: PropertyKey): unknown => {
       throttleDeferForSetAppName(appName)
       // 子应用读取 Worker 时始终返回可登记并清理实例的代理构造器。
@@ -116,6 +125,10 @@ function createProxyWindow (
 
       return bindFunctionToRawTarget(Reflect.get(rawWindow, key), rawWindow)
     },
+    /**
+     * 按键领域写入宿主或隔离目标，登记新增隔离键与新逃逸键，供普通卸载清理。
+     * 宿主已有属性被复制时继承其可写边界；scopeProperties 优先于逃逸配置，active 不参与赋值门禁。
+     */
     set: (target: microAppWindowType, key: PropertyKey, value: unknown): boolean => {
       if (includes(sandbox.rawWindowScopeKeyList, key)) {
         Reflect.set(rawWindow, key, value)
@@ -161,6 +174,7 @@ function createProxyWindow (
 
       return true
     },
+    /** 作用域键在未注入时屏蔽宿主存在性，其余键合并目标与宿主的 in 判断。 */
     has: (target: microAppWindowType, key: PropertyKey): boolean => {
       /**
        * Vue 等作用域键在未注入时需同时满足 `window.Vue === undefined` 与 `'Vue' in window === false`。
@@ -175,7 +189,7 @@ function createProxyWindow (
       }
       return Reflect.has(target, key) || Reflect.has(rawWindow, key)
     },
-    // `Object.getOwnPropertyDescriptor(window, key)`：记录描述符来自隔离目标还是宿主。
+    /** 查询自有描述符并记住来源；宿主不可配置描述符作为可配置副本返回，满足当前代理目标约束。 */
     getOwnPropertyDescriptor: (target: microAppWindowType, key: PropertyKey): PropertyDescriptor|undefined => {
       if (rawHasOwnProperty.call(target, key)) {
         descriptorTargetMap.set(key, 'target')
@@ -193,7 +207,7 @@ function createProxyWindow (
 
       return undefined
     },
-    // `Object.defineProperty` 紧随描述符查询时写回同一底层对象，维持反射语义。
+    /** 曾查询到宿主描述符的键写回宿主，其他键定义到目标；此路径不经过 set 的注入/逃逸登记。 */
     defineProperty: (target: microAppWindowType, key: PropertyKey, value: PropertyDescriptor): boolean => {
       const from = descriptorTargetMap.get(key)
       if (from === 'rawWindow') {
@@ -201,10 +215,11 @@ function createProxyWindow (
       }
       return Reflect.defineProperty(target, key, value)
     },
-    // 枚举结果合并宿主与隔离目标并去重。
+    /** 合并宿主和隔离目标的自有键并去重，使枚举能看到两侧成员。 */
     ownKeys: (target: microAppWindowType): Array<string | symbol> => {
       return unique(Reflect.ownKeys(rawWindow).concat(Reflect.ownKeys(target)))
     },
+    /** 删除隔离自有键及对应宿主新逃逸值；目标上不存在的键不会删除宿主同名成员。 */
     deleteProperty: (target: microAppWindowType, key: PropertyKey): boolean => {
       if (rawHasOwnProperty.call(target, key)) {
         sandbox.injectedKeys.has(key) && sandbox.injectedKeys.delete(key)
@@ -222,7 +237,9 @@ function createProxyWindow (
  * 改写 window 事件和定时器 API，并提供跨卸载阶段的副作用快照。
  *
  * @remarks
- * 特殊生命周期/路由事件绑定到应用根元素，其余事件和全部定时器使用宿主 window。监听器始终登记；默认卸载清事件和定时器，UMD、预渲染与 keep-alive 则记录事件并保留仍运行的定时器。
+ * 作用域事件有容器时绑定到应用根元素，其余事件和全部定时器使用宿主 window。
+ * 监听器按事件名与回调引用登记；options 写在回调对象上，恢复时读取该值。默认卸载清理定时器，
+ * UMD、预渲染与 keep-alive 保留仍运行的定时器，快照只恢复事件。
  */
 function patchWindowEffect (microAppWindow: microAppWindowType, appName: string): CommonEffectHook {
   const eventListenerMap = new Map<string, Set<MicroEventListener>>()
@@ -245,6 +262,7 @@ function patchWindowEffect (microAppWindow: microAppWindowType, appName: string)
    *
    * @remarks
    * 早期使用独立 EventTarget，但无法兼容 iOS 14 及更早版本，现以 micro-app 根元素承载子应用专属事件。
+   * 目标每次从当前 container 计算，不保存在监听器登记表中；容器迁移后的 remove/release 不一定命中旧目标。
    */
   function getEventTarget (type: string): EventTarget {
     if (SCOPE_WINDOW_EVENT_OF_WITH.includes(type) && appInstanceMap.get(appName)?.container) {
@@ -254,12 +272,9 @@ function patchWindowEffect (microAppWindow: microAppWindowType, appName: string)
   }
 
   /**
-   * 监听器允许为 null，例如 passive 特性探测。
-   * TODO：继续验证 listener 是否应绑定 microAppWindow；当前函数回调中的 this 指向真实事件目标。
-   * 对 `window.addEventListener.call(非 window, ...)` 这类显式借用调用，还需定义非 proxyWindow/
-   * microAppWindow 接收者的兼容语义。
+   * 登记监听器及 options，并绑定到按事件类型选择的真实目标；null 监听器用于 passive 特性探测。
+   * 函数监听器不改绑 this，仍由真实事件目标调用；显式 call 借用此方法也不改变所选目标。
    */
-  /** 登记监听器及原始 options，并绑定到按事件类型选择的真实目标。 */
   microAppWindow.addEventListener = function (
     type: string,
     listener: MicroEventListener,
@@ -276,7 +291,7 @@ function patchWindowEffect (microAppWindow: microAppWindowType, appName: string)
     rawAddEventListener.call(getEventTarget(type), type, listener, options)
   }
 
-  /** 从登记表与真实目标同步移除监听器。 */
+  /** 删除登记并按传入 options 尝试移除真实绑定；登记不区分 capture，选项不匹配时原绑定可能仍在。 */
   microAppWindow.removeEventListener = function (
     type: string,
     listener: MicroEventListener,
@@ -295,7 +310,7 @@ function patchWindowEffect (microAppWindow: microAppWindowType, appName: string)
     return rawDispatchEvent.call(getEventTarget(event?.type), event)
   }
 
-  /** 使用宿主定时器创建 interval，并保存重建/清理所需参数。 */
+  /** 使用宿主定时器创建 interval，并登记 id 供默认卸载或销毁时清理。 */
   microAppWindow.setInterval = function (
     handler: TimerHandler,
     timeout?: number,
@@ -312,7 +327,7 @@ function patchWindowEffect (microAppWindow: microAppWindowType, appName: string)
     timeout?: number,
     ...args: any[]
   ): number {
-    /** 函数型 timeout 执行时先清除登记，避免已完成任务仍被快照持有。 */
+    /** 函数型 timeout 执行时先清除活动登记；字符串 handler 直接交给浏览器，不经过此回调。 */
     const setTimeoutHander = function(...args: any[]) {
       timeoutIdMap.delete(timeoutId)
       typeof handler === 'function' && handler(...args)
@@ -344,7 +359,7 @@ function patchWindowEffect (microAppWindow: microAppWindowType, appName: string)
    * 合并记录当前窗口监听器，供 UMD、预渲染或 keep-alive 恢复。
    *
    * @remarks
-   * 记录可能发生多次，因此与旧快照取并集；定时器在这些模式下不会释放，无需重建。普通默认模式不记录，直接清理事件与定时器。
+   * 记录可能发生多次，因此与旧快照取并集；定时器在这些模式下不会释放，无需重建。默认模式 stop 选择 reset 分支，随后清理事件与定时器。
    */
   const record = (): void => {
     // 合并而非覆盖，防止预渲染卸载与手动 keep-alive 连续记录时丢失监听器。
@@ -356,9 +371,9 @@ function patchWindowEffect (microAppWindow: microAppWindowType, appName: string)
     })
   }
 
-  /** 重挂载前按原 options 重新绑定窗口事件，并消费快照。 */
+  /** 重挂载前按回调对象保存的 options 重新绑定窗口事件，并消费快照。 */
   const rebuild = (): void => {
-    // 通过代理 API 重建，确保登记表与真实绑定同步恢复。
+    // 通过代理 API 登记到当前所选目标，不记住上次的容器；重建成功后再消费快照。
     sstEventListenerMap.forEach((listenerList, type) => {
       for (const listener of listenerList) {
         microAppWindow.addEventListener(type, listener, listener?.__MICRO_APP_MARK_OPTIONS__)
@@ -368,9 +383,13 @@ function patchWindowEffect (microAppWindow: microAppWindowType, appName: string)
     reset()
   }
 
-  /** 释放全部窗口事件，并按模式决定是否同时终止定时器。 */
+  /**
+   * 清空窗口监听器登记，并按模式决定是否终止定时器。
+   * 移除监听器未传 options，只匹配 capture=false 的绑定；capture=true 需应用自行以相同选项解除。
+   * scope 事件还依赖当前 container 与登记时目标一致；keep-alive 已换到临时 div 时只能尝试解除新目标。
+   */
   const release = (clearTimer: boolean): void => {
-    // 从每种事件实际绑定的目标移除监听器。
+    // 按当前容器重新选择目标尝试移除；登记表没有保存旧绑定的目标/capture 元组。
     if (eventListenerMap.size) {
       eventListenerMap.forEach((listenerList, type) => {
         for (const listener of listenerList) {

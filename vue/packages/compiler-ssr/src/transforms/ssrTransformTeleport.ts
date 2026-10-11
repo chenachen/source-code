@@ -16,8 +16,10 @@ import { SSR_RENDER_TELEPORT } from '../runtimeHelpers'
 
 /**
  * 第二遍把 Teleport 生成 `ssrRenderTeleport(push, content, target, disabled, parent)`。
- * 服务端将内容写入目标专用缓冲区；原位置由 helper 输出 hydration 锚点。缺少有效 to 时
- * 无法确定缓冲区，直接报告 SSR 编译错误。
+ * disabled 为 false 时，内容写入目标专用缓冲；为 true 时写入当前位置，目标只保留锚点。
+ * 原位置由 helper 输出 hydration 锚点。缺少 to 属性或目标表达式时报告 SSR 编译错误。
+ * 即使 onError 只收集，缺少 target 仍立即返回、不生成 Teleport 调用。contentRenderFn
+ * 接收自己的 _push，运行时据 disabled 选择父 buffer 或目标 buffer；编译器不操作目标 DOM。
  */
 export function ssrProcessTeleport(
   node: ComponentNode,
@@ -48,7 +50,7 @@ export function ssrProcessTeleport(
     return
   }
 
-  const disabledProp = findProp(node, 'disabled', false, true /* allow empty */)
+  const disabledProp = findProp(node, 'disabled', false, true /* 允许空值 */)
   const disabled = disabledProp
     ? disabledProp.type === NodeTypes.ATTRIBUTE
       ? `true`

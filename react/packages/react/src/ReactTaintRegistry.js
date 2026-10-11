@@ -14,7 +14,7 @@ export interface Reference {}
 export type TaintEntry = {
   /** 泄漏该值时应报告的诊断消息。 */
   message: string,
-  /** 全局缓存和在途请求仍可能持有该值的引用数。 */
+  /** 尚未清理的生命周期注册次数，加上在途请求为该值保留的计数。 */
   count: number,
 };
 
@@ -31,8 +31,8 @@ export const TaintRegistryByteLengths: Set<number> = new Set();
 /**
  * 单个请求结束时需要释放的原始污染值列表。
  *
- * 值从全局缓存移除后，新请求无法再取得它，但既有请求仍可能持有引用；只有这些队列全部
- * 清理完毕，注册表计数才能归零并删除污染记录。
+ * 生命周期对象被回收时，ReactTaint.cleanup 把值复制到所有在途请求的队列并增加计数。
+ * 请求结束逐项减少计数；只要注册生命周期或在途请求仍有计数，污染记录就继续保留。
  */
 export type RequestCleanupQueue = Array<string | bigint>;
 /** 所有在途请求的清理队列，用于跨请求正确维护污染值引用计数。 */

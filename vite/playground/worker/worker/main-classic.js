@@ -1,3 +1,6 @@
+/** 按选择器展示classic普通/共享worker消息。
+ * @param el 输出节点。
+ * @param text 结果文本。 */
 // prettier-ignore
 function text(el, text) {
   document.querySelector(el).textContent = text
@@ -5,10 +8,10 @@ function text(el, text) {
 
 let classicWorker = new Worker(
   new URL('../classic-worker.js', import.meta.url) /* , */,
-  // test comment
+  // 参数间保留注释，检验 Worker 构造器的解析。
 )
 
-// just test for case: ') ... ,' mean no worker options params
+// 检验右括号后续逗号不会被误认为 Worker 的第二个选项参数。
 classicWorker = new Worker(new URL('../classic-worker.js', import.meta.url))
 
 classicWorker.addEventListener('message', ({ data }) => {
@@ -26,13 +29,14 @@ classicWorker.addEventListener('message', ({ data }) => {
 classicWorker.postMessage('ping')
 classicWorker.postMessage('test-import')
 
+/** 显式classic选项创建的SharedWorker；保留尾逗号和评论语法，端口start后接收importScripts全局常量。 */
 // prettier-ignore
-// test trailing comma
+// 检验第二个参数后的尾逗号。
 const classicSharedWorker = new SharedWorker(
   new URL('../classic-shared-worker.js', import.meta.url),
   {
     type: 'classic'
-  }, // test comment
+  }, // 参数间保留注释，检验 Worker 构造器的解析。
 )
 classicSharedWorker.port.addEventListener('message', (ev) => {
   text('.classic-shared-worker', JSON.stringify(ev.data))

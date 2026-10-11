@@ -15,14 +15,7 @@ describe('ReactDOMInReactServer', () => {
     jest.mock('react', () => require('react/react.react-server'));
   });
 
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「can require react-dom」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言覆盖 react-dom 的服务端流适配层；完整 Fizz 状态机位于 react-server。
-   */
+  /** 把 react 模块替换为 react-server 入口后依次加载 react 与 react-dom；两个 require 都应完成而不抛错，验证 RSC 环境下 DOM 包初始化不会依赖客户端专用 React 导出。 */
   it('can require react-dom', () => {
     // 在 RSC 中，这将被别名化。
     require('react');

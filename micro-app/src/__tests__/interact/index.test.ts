@@ -16,12 +16,14 @@ import {
 } from '../../libs/utils'
 import CreateApp, { appInstanceMap } from '../../create_app'
 
+/** 当前默认 Jest testMatch 纳入本文件。 */
 describe('data center', () => {
   const app1EventHandler = jest.fn()
   const app2EventHandler = jest.fn()
   beforeAll(() => {
     rewriteConsole()
     microApp.start()
+    // app1 使用 ShadowRoot，datachange 应派发到其 host；app2 使用普通元素，直接作为事件目标。
     const con1 = document.createElement('micro-app')
     con1.attachShadow({ mode: 'open' })
     con1.addEventListener('datachange', app1EventHandler, false)
@@ -50,7 +52,7 @@ describe('data center', () => {
     releaseConsole()
   })
 
-  /** 等待 EventCenter 当前微任务批次完成，供断言读取合并后的数据。 */
+  /** 排入 defer 微任务，等待此前已排的通知批次，供断言读取合并值；不保证回调重入的下一批也结束。 */
   const nextFrame = async () => await new Promise((resolve) => {
     defer(() => {
       resolve(true)
@@ -60,19 +62,19 @@ describe('data center', () => {
   const microApp1 = new EventCenterForMicroApp('test-app1')
   const microApp2 = new EventCenterForMicroApp('test-app2')
 
-  // umd app 分支代码覆盖
+  /**
+   * 在任何监听器登记前，对 microApp1 记录数据中心快照；应建立可容纳空通道的快照，不发生通知。此处没有 expect，
+   * 验证目标仅是空通道记录路径可调用。
+   */
   test('coverage branch of pure umd app', () => {
     recordDataCenterSnapshot(microApp1)
   })
 
   /**
-   * Given：`test-app2` 已向基座提交上行数据，基座随后排入下行与全局数据更新。
-   * When：在待提交批次结算前绑定普通/自动监听器，再连续派发等值、非法及后续数据并逐项解绑。
-   * Then：基座自动监听器可回放已提交快照；批次前绑定的监听器接收待提交数据，解绑只停止回调而不删除缓存。
-   *
-   * 验证机制：每次 `dispatch` 后等待微任务，联合断言回调次数、参数、`datachange` 事件和查询结果，
-   * 区分已提交快照、待提交批次、浅比较去重与监听器清理。
-   * 对应源码：`EventCenter.on()`/`dispatch()`/`off()` 及基座、子应用两层数据中心适配 API。
+   * 先让 app2 上行数据完成提交，再在下行与全局数据批次尚未提交时注册监听器，逐轮派发、查询、解绑。
+   * 等待 nextFrame 后核对回放、同栈合并、datachange、数据方向及按应用清理；解绑保留缓存数据。
+   * 名称带 AutoTrigger 的子应用监听器未传 true，只接收普通批次；移除 app1Cb 后的同值派发未等待，
+   * app1CbOther 断言匹配先前记录。
    */
   test('main process of data center', async () => {
     // 基座监听子应用app1的数据
@@ -106,7 +108,7 @@ describe('data center', () => {
     const globalData3 = { info: 'global data3' }
     const globalData4 = { info: 'global data4' }
 
-    // dispatch是异步执行的，所以等待下一帧后执行后续操作
+    // 等待数据通知微任务；nextFrame 不涉及动画帧或浏览器绘制。
     microApp2.dispatch(dataFromApp2Case1)
     await nextFrame()
 
@@ -130,10 +132,10 @@ describe('data center', () => {
     microApp2.addGlobalDataListener(app2GlobalCb)
     microApp2.addGlobalDataListener(app2GlobalCbAutoTrigger)
 
-    // 等待自动触发
+    // 子应用侧两个名称含 AutoTrigger 的监听器没有传 true，它们接收的是已排队批次的普通通知。
     await nextFrame()
 
-    // 自动触发
+    // 基座 cbForApp2AutoTrigger 回放已完成的上行数据；普通监听器不回放。
     expect(cbForApp2).not.toBeCalled()
     expect(cbForApp2AutoTrigger).toBeCalledWith(dataFromApp2Case1)
     expect(app2EventHandler).toBeCalled()
@@ -156,8 +158,7 @@ describe('data center', () => {
     expect(JSON.stringify(baseApp.getData('test-app1'))).toBe('{}')
     expect(baseApp.getData('test-app1', true)).toStrictEqual(dataToApp1Case1)
 
-    // app2向基座发送数据
-    // 相同数据，或非对象数据不会触发回调
+    // app1 连续两次同步发送同值数据合并为一条通知；非法数据只记录错误。
     microApp1.dispatch(dataFromApp1)
     microApp1.dispatch(dataFromApp1)
     microApp1.dispatch('11' as any)
@@ -204,7 +205,7 @@ describe('data center', () => {
     expect(app2EventHandler).toBeCalled()
 
     app1Cb.mockClear()
-    // app1卸载单个监听
+    // 先移除 app1Cb，再排入同值更新；尚未等待批次，app1CbOther 的断言匹配先前通知记录。
     microApp1.removeDataListener(app1Cb)
     baseApp.setData('test-app1', dataToApp1Case2)
     expect(app1Cb).not.toBeCalled()
@@ -259,7 +260,10 @@ describe('data center', () => {
     expect(app2GlobalCb).toBeCalledWith(globalData3)
   })
 
-  // 一些异常情况
+  /**
+   * 已有两应用与监听器时，依次查询不存在通道、传非法应用名/回调，再清空 app2 容器和删除实例。同步错误应记录到 console，
+   * 已等待的无容器派发不产生 datachange；末次删除实例后的派发未等待，目标是触达保护分支。
+   */
   test('unusual circumstance', async () => {
     // 不存在的数据
     baseApp.removeDataListener('not-exit', () => {})
@@ -288,7 +292,10 @@ describe('data center', () => {
     microApp2.dispatch({ info: '应用被卸载后发送数据' })
   })
 
-  // umd app 数据绑定函数快照代码分支覆盖
+  /**
+   * 在前面通信流程留下的通道上记录并恢复 microApp1 的监听器快照，再为全新 app3 记录空快照。操作应容忍不同通道状态；
+   * 没有对恢复回调次数或快照内容的断言，不能据此证明完整 UMD 恢复。
+   */
   test('coverage of umd app', () => {
     recordDataCenterSnapshot(microApp1)
     rebuildDataCenterSnapshot(microApp1)
@@ -296,7 +303,11 @@ describe('data center', () => {
     recordDataCenterSnapshot(microApp3)
   })
 
-  // 测试带有特殊符号的 appName
+  /**
+   * 分别使用含特殊符号的名称和清洗后为空的名称创建通信实例，再由基座向非法名称发数据。
+   * 应把 special-name_$#1 规范化为 special-name_1，并对两个空名称路径记录错误，
+   * 验证构造与基座入口共用的名称格式化。
+   */
   test('test special appName', () => {
     // 初始化子应用数据对象 - 带有特殊符号，被格式化的appName
     const specialNameApp1 = new EventCenterForMicroApp('special-name_$#1')

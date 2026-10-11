@@ -18,6 +18,8 @@ import microApp, {
 import { appInstanceMap } from '../create_app'
 import { getCurrentAppName, defer } from '../libs/utils'
 
+/** 集成场景共用单例、注册表及 fixture 服务；以下用例按前序留下的实例和数据继续操作，Jest clearMocks 仅重置每例的 mock 调用记录。 */
+
 describe('main process', () => {
   // 根容器
   let appCon: Element
@@ -66,7 +68,7 @@ describe('main process', () => {
           test1: [{
             scopeProperties: ['3', '4'],
             escapeProperties: ['c', 'd'],
-            /** 原样返回 test1 脚本，用于覆盖按规范化应用名选择插件。 */
+            /** 为模块名 test1 提供恒等脚本转换；下面运行的名称是 test-app*，没有断言此插件实际被选中。 */
             loader (code, _url) {
               // console.log('test1插件', _url)
               return code
@@ -75,7 +77,7 @@ describe('main process', () => {
           test2: [{
             scopeProperties: ['5', '6'],
             escapeProperties: ['e', 'f'],
-            /** 原样返回 test2 脚本，用于证明不同应用使用独立插件配置。 */
+            /** 为模块名 test2 提供另一组配置和恒等转换；该配置项没有对应的直接用例断言。 */
             loader (code, _url) {
               // console.log('test2插件', _url)
               return code
@@ -83,6 +85,7 @@ describe('main process', () => {
           }]
         }
       },
+      /** 空闲调度时才返回预取列表：一个关闭隔离的有效入口，以及空 URL 会被跳过的配置。 */
       preFetchApps: function () {
         return [
           {
@@ -116,13 +119,9 @@ describe('main process', () => {
   })
 
   /**
-   * Given：`test-app1` 尚未注册，且没有对应的预取实例。
-   * When：把元素插入基座容器，等待 mounted，再从容器移除并等待 unmount。
-   * Then：应用只在 mounted 到 unmount 之间出现在 `getActiveApps()`。
-   *
-   * 验证机制：同时观察真实 DOM 生命周期事件和公开活跃查询，证明状态写入先于事件派发。
-   * 对应源码：`MicroAppElement.connectedCallback()`、`CreateApp.actionsAfterMounted()`、
-   * `CreateApp.actionsAfterUnmounted()`。
+   * 场景：此前未注册 test-app1，以 common HTML 和 inline 脚本模式创建宿主并等待 mounted。
+   * 随后移除同一元素，等待 unmount；分别断言 mounted 回调中的活跃表包含它、unmount 回调中已排除它。
+   * 验证状态查询随挂载/卸载变化；getActiveApps 在 LOADING 时也可计入，本例没有断言“仅 mounted 期间活跃”。
    */
   test('main process of micro-app', async () => {
     const microAppElement1 = document.createElement('micro-app')
@@ -154,11 +153,9 @@ describe('main process', () => {
   })
 
   /**
-   * 应用名：test-app2
-   * 预加载: false
-   * 执行前: appInstanceMap => [
-   *  {name: 'test-app1'},
-   * ]
+   * 场景：前例已 removeDomScope，先断言当前 DOM 归属名为空，再用 iframe 模式挂载 ssr-render 应用。
+   * mounted 到达时检查 getAllApps 至少有一个条目，保留宿主到套件清理。
+   * 验证 iframe 路径能完成该挂载并留下注册实例；本例未断言整个后续期间始终 active。
    */
   test('app that stay active all the time', async () => {
     expect(getCurrentAppName()).toBeNull()
@@ -178,12 +175,9 @@ describe('main process', () => {
   })
 
   /**
-   * 应用名：test-app3
-   * 预加载: true
-   * 执行前: appInstanceMap => [
-   *  {name: 'test-app1'},
-   *  {name: 'test-app2'},
-   * ]
+   * 场景：未命名元素先缓存两次对象 data，再给 name/url、inline 和 destroy 属性并挂载。
+   * 首次 mounted 后延时把 name/url 一起改为已卸载 test-app1 的新入口，第二次 mounted 断言 Map 大小为 2；移除后在微任务中断言大小为 1。
+   * 验证未命名数据读取、属性合并切换及 destroy 后注册数量；数量依赖前例遗留实例。setAttribute 的第三个回调参数当前不被接收，其中断言不会执行。
    */
   test('render an unstable app with special attribute', async () => {
     const microAppElement3 = document.createElement('micro-app') as any
@@ -236,11 +230,9 @@ describe('main process', () => {
   })
 
   /**
-   * 应用名：test-app4
-   * 预加载: false
-   * 执行前: appInstanceMap => [
-   *  {name: 'test-app2'},
-   * ]
+   * 场景：给新宿主配置无法获取的 HTML 入口，先装 error 监听再插入 DOM。
+   * 等待 error 后核对带应用名、规范化入口和 Error 对象的完整 console.error 参数。
+   * 验证 HTMLLoader 请求链失败转到 onLoadError 的日志和宿主事件；本例不检查 loadSourceLevel 或最终实例状态。
    */
   test('failed to fetch html', async () => {
     const microAppElement4 = document.createElement('micro-app')
@@ -257,20 +249,15 @@ describe('main process', () => {
   })
 
   /**
-   * 应用名：test-app6
-   * 预加载: false
-   * 执行前: appInstanceMap => [
-   *  {name: 'test-app2'},
-   * ]
-   *
-   * 渲染umd应用，卸载时记录快照、重新渲染时恢复快照
+   * 场景：umd1 脚本在沙箱内写成对 window.mount/unmount，并安装 window/document 监听。
+   * 第一次 mounted 时派发两种事件、检查对应警告再移除；重新插入并等第二次 mounted，再派发并检查同样日志。
+   * 观察 UMD 重挂载后的事件回调；两阶段没有清空 mock 或比较次数，所以断言只证明日志曾出现，不单独证明每个监听已释放再恢复。
    */
   test('mount and remount umd app ', async () => {
     const microAppElement6 = document.createElement('micro-app')
     microAppElement6.setAttribute('name', 'test-app6')
     microAppElement6.setAttribute('url', `http://127.0.0.1:${ports.main}/umd1`)
 
-    // TODO: 如果在卸载的钩子中立即渲染会出错，需要设置延迟才能解决，需要再验证一下
     // microAppElement6.addEventListener('unmount', function () {
     //   setTimeout(() => {
     //     appCon.appendChild(microAppElement6)
@@ -278,7 +265,7 @@ describe('main process', () => {
     // })
 
     await new Promise((resolve) => {
-      /** 首次挂载后验证 UMD 副作用，再卸载以准备快照恢复断言。 */
+      /** 首次 mounted 时派发 window/document 事件，再移除元素并准备第二次挂载。 */
       function firstMountHandler () {
         window.dispatchEvent(new CustomEvent('umd-window-event'))
         expect(jestConsoleWarn).toHaveBeenCalledWith('umd-window-event is triggered')
@@ -307,14 +294,9 @@ describe('main process', () => {
   })
 
   /**
-   * 应用名：test-app7
-   * 预加载: false
-   * 执行前: appInstanceMap => [
-   *  {name: 'test-app2'},
-   *  {name: 'test-app6'},
-   * ]
-   *
-   * 关闭沙箱后，micro-app只渲染umd app，快照功能失效
+   * 场景：同一 umd1 fixture 禁用沙箱，两次插入元素并分别等待普通模式 mounted。
+   * 两次都派发 umd-window-event，检查相应警告；第一次随后移除，第二次保留到清理。
+   * 无沙箱不识别 UMD setter、不建立 effect 快照，脚本按普通路径重执行；共用 mock 的“曾调用”断言不验证第二次新增次数。
    */
   test('render umd app with disableSandbox', async () => {
     const microAppElement7 = document.createElement('micro-app')
@@ -323,7 +305,7 @@ describe('main process', () => {
     microAppElement7.setAttribute('disableSandbox', 'true')
 
     await new Promise((resolve) => {
-      /** 首次无沙箱挂载后验证 UMD 事件，再卸载以覆盖重新执行路径。 */
+      /** 首次无沙箱 mounted 时派发事件，再移除元素并安排重挂载。 */
       function firstMountHandler () {
         window.dispatchEvent(new CustomEvent('umd-window-event'))
         expect(jestConsoleWarn).toHaveBeenCalledWith('umd-window-event is triggered')
@@ -348,7 +330,8 @@ describe('main process', () => {
   })
 
   /**
-   * 卸载所有应用
+    * 已停用的历史场景：清空宿主容器触发所有显示元素断开，再检查注册表大小。
+    * 以下 test 整体被注释，未注册为 Jest 用例；固定数量依赖当时的预取和 UMD 保留规则，不计入当前可注册用例清单。
    * 卸载前：appInstanceMap => [
    *  {name: 'test-app2'},
    *  {name: 'test-app6'},

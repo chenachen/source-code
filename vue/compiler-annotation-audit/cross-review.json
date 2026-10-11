@@ -1,0 +1,303 @@
+{
+  "generatedAt": "2026-10-11T04:04:42.667Z",
+  "scope": "compiler-core 六文件注释只读交叉复核",
+  "readOnly": true,
+  "sourceEditsByThisAgent": 0,
+  "method": "逐文件完整读取当前注释和实现，对照特定调用者与测试；Babel AST 提取实际注释扫描英文。未运行框架测试。主编辑修正后再次读取对应段落。",
+  "reviewedFiles": [
+    {
+      "file": "/Users/chenpengxiang/Desktop/source-code-analysis/vue/packages/compiler-core/src/codegen.ts",
+      "reviewed": true,
+      "completeRead": true,
+      "lines": 1237,
+      "commentCount": 125,
+      "sha256": "0823811cf35ee9837dfdac6302d1388ebdb01ee5ef0f9587fce1cf60ba8477a2",
+      "mechanismReview": "完整核对参数/换行提示/source map、module/function/inline/SSR 序言及节点打印；needPauseTracking 决定暂停、cacheIndex、恢复与返回，inVOnce 只决定暂停 helper 的第二参；needArraySpread 外层浅拷贝。",
+      "englishExemptions": [
+        {
+          "line": 816,
+          "reason": "覆盖率工具 magic 指令"
+        },
+        {
+          "line": 827,
+          "reason": "覆盖率工具 magic 指令"
+        }
+      ]
+    },
+    {
+      "file": "/Users/chenpengxiang/Desktop/source-code-analysis/vue/packages/compiler-core/src/tokenizer.ts",
+      "reviewed": true,
+      "completeRead": true,
+      "lines": 1404,
+      "commentCount": 221,
+      "sha256": "9fc5cef0da1884b8c810b7d2923876e40f8ba4bada40bba014a04705892ab306",
+      "mechanismReview": "完整核对有限状态机、Text/RCDATA/RAWTEXT/SFC 选路、同字符重消费、实体 baseState/index 恢复、快速跳转 LF 记录、cleanup→finish→trailing→onend 顺序及 EOF 状态。",
+      "englishExemptions": [
+        {
+          "line": 1,
+          "reason": "必须保留许可证"
+        },
+        {
+          "line": 329,
+          "reason": "匹配序列的代码示意，不是英文讲解"
+        },
+        {
+          "line": 332,
+          "reason": "匹配序列的代码示意，不是英文讲解"
+        },
+        {
+          "line": 333,
+          "reason": "匹配序列的代码示意，不是英文讲解"
+        },
+        {
+          "line": 334,
+          "reason": "匹配序列的代码示意，不是英文讲解"
+        },
+        {
+          "line": 337,
+          "reason": "匹配序列的代码示意，不是英文讲解"
+        }
+      ]
+    },
+    {
+      "file": "/Users/chenpengxiang/Desktop/source-code-analysis/vue/packages/compiler-core/src/transform.ts",
+      "reviewed": true,
+      "completeRead": true,
+      "lines": 603,
+      "commentCount": 92,
+      "sha256": "b85333b84dbcc7767ea2af6bc378db174ffb8ce2a950e5983ed60d635d439829",
+      "mechanismReview": "完整核对 helper 引用计数、replace/remove 游标、identifier 嵌套计数、hoist/cache 槽、静态优化与根生成顺序、退出回调数组逆序。删除/抛错不执行已收集退出函数，退出不是 finally。",
+      "englishExemptions": [
+        {
+          "line": 285,
+          "reason": "覆盖率工具 magic 指令"
+        },
+        {
+          "line": 294,
+          "reason": "覆盖率工具 magic 指令"
+        },
+        {
+          "line": 299,
+          "reason": "覆盖率工具 magic 指令"
+        },
+        {
+          "line": 309,
+          "reason": "覆盖率工具 magic 指令"
+        }
+      ]
+    },
+    {
+      "file": "/Users/chenpengxiang/Desktop/source-code-analysis/vue/packages/compiler-core/src/transforms/cacheStatic.ts",
+      "reviewed": true,
+      "completeRead": true,
+      "lines": 485,
+      "commentCount": 29,
+      "sha256": "6a0d0ab78d7fbccb7536b4890d08a9d9f9a58c464f785030a29641733d301d30",
+      "mechanismReview": "完整核对单根/结构单子节点保护、CAN_CACHE/CAN_SKIP_PATCH 分支、VNode/text 的 CACHED=-1 与独立 props/dynamicProps 提升、数组统一展开、WeakMap、SVG/foreignObject/math block 降级及 transformHoist 时机。",
+      "englishExemptions": []
+    },
+    {
+      "file": "/Users/chenpengxiang/Desktop/source-code-analysis/vue/packages/compiler-core/src/transforms/vFor.ts",
+      "reviewed": true,
+      "completeRead": true,
+      "lines": 436,
+      "commentCount": 38,
+      "sha256": "21a62d97aa5ee5f4561d55859d0bab7d3fd1023613ffbc0b521cf60fc2c74088",
+      "mechanismReview": "完整核对表达式非法时不替换、别名登记/撤销、source 静态级别与列表 Fragment、单项 block/helper 改写、slot 第六参 key、memo el/key/deps 判定、缓存占槽与参数补位。正常退出先撤销循环 scope，再执行平台 codegen。",
+      "englishExemptions": []
+    },
+    {
+      "file": "/Users/chenpengxiang/Desktop/source-code-analysis/vue/packages/compiler-core/src/transforms/vSlot.ts",
+      "reviewed": true,
+      "completeRead": true,
+      "lines": 444,
+      "commentCount": 35,
+      "sha256": "6e216305b895864774610343a6e1c7776eebcc89750ba5732e59131a98c6798e",
+      "mechanismReview": "完整核对有 exp 的 v-slot 标识符与深度、template v-for 仅登记 identifiers、buildSlots 中作用域捕获/SSR 差异、条件链/循环/重名/默认内容诊断、SlotFlags 和转发检测；基础预设使同节点 slot scope 在 buildSlots 前撤销。",
+      "englishExemptions": []
+    }
+  ],
+  "findings": [
+    {
+      "id": "CCR-001",
+      "category": "机制准确性",
+      "original": "提升常量位于 render/with 外，无法看到 with 内 helper；因此仅把提升表达式实际用到的\nVNode helper 再解构到顶层。",
+      "problem": "staticHelpers 只与整棵 ast.helpers 相交，不扫描 hoists 内的实际 helper 用法；“仅把提升表达式实际用到”把保守名单描述成精确收集。",
+      "current": {
+        "file": "/Users/chenpengxiang/Desktop/source-code-analysis/vue/packages/compiler-core/src/codegen.ts",
+        "line": 502,
+        "source": "      // 提升常量位于 render/with 外，无法看到 with 内 helper；在存在 hoists 时，将固定\n      // VNode helper 列表与整棵 ast.helpers 取交集再解构到顶层，并未扫描每个 hoist 的实际调用。"
+      },
+      "evidence": [
+        {
+          "file": "/Users/chenpengxiang/Desktop/source-code-analysis/vue/packages/compiler-core/src/codegen.ts",
+          "line": 370,
+          "source": "  const helpers = Array.from(ast.helpers)"
+        },
+        {
+          "file": "/Users/chenpengxiang/Desktop/source-code-analysis/vue/packages/compiler-core/src/codegen.ts",
+          "line": 504,
+          "source": "      if (ast.hoists.length) {\n        const staticHelpers = [\n          CREATE_VNODE,\n          CREATE_ELEMENT_VNODE,\n          CREATE_COMMENT,\n          CREATE_TEXT,\n          CREATE_STATIC,\n        ]\n          .filter(helper => helpers.includes(helper))\n          .map(aliasHelper)\n          .join(', ')\n        push(`const { ${staticHelpers} } = _Vue\\n`, NewlineType.End)\n      }\n    }"
+        }
+      ],
+      "status": "已由主编辑修复并复核",
+      "fixedBy": "core_transform"
+    },
+    {
+      "id": "CCR-002",
+      "category": "机制准确性",
+      "original": "走到这里的 block 通常是 svg/foreignObject/math。完全静态且无自定义指令时没有动态后代，\n可降级为普通 VNode，并同步撤销/登记 helper，减少 openBlock 开销。\n自定义指令可能在运行时产生更新，必须保留 block。",
+      "problem": "实际分支发现任意 NodeTypes.DIRECTIVE 即返回 NOT_CONSTANT，包括静态 v-bind；仅排除自定义指令的说明不足以支持降级条件。",
+      "current": {
+        "file": "/Users/chenpengxiang/Desktop/source-code-analysis/vue/packages/compiler-core/src/transforms/cacheStatic.ts",
+        "line": 341,
+        "source": "        // 走到这里的 block 通常是 svg/foreignObject/math。完全静态且没有任何指令时没有动态后代，\n        // 可降级为普通 VNode，并同步撤销/登记 helper，减少 openBlock 开销。\n        if (codegenNode.isBlock) {\n          // 此分支保守排除所有 DIRECTIVE；包括 v-bind，并不限于自定义指令。\n          for (let i = 0; i < node.props.length; i++) {"
+      },
+      "evidence": [
+        {
+          "file": "/Users/chenpengxiang/Desktop/source-code-analysis/vue/packages/compiler-core/src/transforms/cacheStatic.ts",
+          "line": 344,
+          "source": "          // 此分支保守排除所有 DIRECTIVE；包括 v-bind，并不限于自定义指令。\n          for (let i = 0; i < node.props.length; i++) {\n            const p = node.props[i]\n            if (p.type === NodeTypes.DIRECTIVE) {\n              constantCache.set(node, ConstantTypes.NOT_CONSTANT)\n              return ConstantTypes.NOT_CONSTANT\n            }\n          }\n\n          context.removeHelper(OPEN_BLOCK)"
+        }
+      ],
+      "status": "已由主编辑修复并复核",
+      "fixedBy": "core_transform"
+    },
+    {
+      "id": "CCR-003",
+      "category": "机制准确性",
+      "original": "源为编译期常量时，列表长度和顺序稳定；否则根据是否提供 key 选择 keyed/unkeyed\ndiff。这一标记属于“整个列表 Fragment”，并不取代单项 VNode 自身的 patchFlag。",
+      "problem": "稳定列表的实际谓词是 SIMPLE_EXPRESSION 且 constType > NOT_CONSTANT。该范围含 SETUP_CONST 被标成的 CAN_SKIP_PATCH，不能全部等同于编译期已知列表长度/顺序。",
+      "current": {
+        "file": "/Users/chenpengxiang/Desktop/source-code-analysis/vue/packages/compiler-core/src/transforms/vFor.ts",
+        "line": 131,
+        "source": "      // 源的 constType > NOT_CONSTANT 时采用 STABLE_FRAGMENT，包括 CAN_SKIP_PATCH 的\n      // setup 常量绑定；否则根据是否提供 key 选择 keyed/unkeyed\n      // diff。这一标记属于“整个列表 Fragment”，并不取代单项 VNode 自身的 patchFlag。"
+      },
+      "evidence": [
+        {
+          "file": "/Users/chenpengxiang/Desktop/source-code-analysis/vue/packages/compiler-core/src/transforms/vFor.ts",
+          "line": 108,
+          "source": "      const isStableFragment =\n        forNode.source.type === NodeTypes.SIMPLE_EXPRESSION &&\n        forNode.source.constType > ConstantTypes.NOT_CONSTANT\n      const fragmentFlag = isStableFragment\n        ? PatchFlags.STABLE_FRAGMENT\n        : keyProp\n          ? PatchFlags.KEYED_FRAGMENT\n          : PatchFlags.UNKEYED_FRAGMENT\n\n      forNode.codegenNode = createVNodeCall("
+        },
+        {
+          "file": "/Users/chenpengxiang/Desktop/source-code-analysis/vue/packages/compiler-core/src/transforms/transformExpression.ts",
+          "line": 261,
+          "source": "      if (isConst(bindingMetadata[rawExp])) {\n        node.constType = ConstantTypes.CAN_SKIP_PATCH\n      }\n      node.content = rewriteIdentifier(rawExp)"
+        },
+        {
+          "file": "/Users/chenpengxiang/Desktop/source-code-analysis/vue/packages/compiler-core/src/transforms/transformExpression.ts",
+          "line": 416,
+          "source": "function isConst(type: unknown) {\n  return (\n    type === BindingTypes.SETUP_CONST || type === BindingTypes.LITERAL_CONST\n  )\n}"
+        }
+      ],
+      "status": "已由主编辑修复并复核",
+      "fixedBy": "core_transform"
+    },
+    {
+      "id": "CCR-004",
+      "category": "机制准确性",
+      "original": "调用只会查询已经扫描过的位置，故换行表必然完整。短模板从尾部线性查找更快；\n超过 100 个换行后改用二分，避免大文件位置计算退化为 O(n²)。",
+      "problem": "parser.onCloseTag 会先 lookAhead 到尚未扫描的 > 并查询结束位置；未来部分的 LF 尚未登记，不能保证所查位置的换行表完整。",
+      "current": {
+        "file": "/Users/chenpengxiang/Desktop/source-code-analysis/vue/packages/compiler-core/src/tokenizer.ts",
+        "line": 417,
+        "source": "   * 依据已扫描的 LF 表计算行列，UTF-16 偏移为 0 起点，行列为 1 起点；查询换行符\n   * 本身仍属于上一行。parser 多数查询已扫描片段，但 lookAhead 也可能查询尚未扫描\n   * 的闭标签末尾，因此未来片段中的换行还未计入。短换行表从尾部线性查找；\n   * 超过 100 个换行后改用二分，避免大文件位置计算退化为 O(n²)。"
+      },
+      "evidence": [
+        {
+          "file": "/Users/chenpengxiang/Desktop/source-code-analysis/vue/packages/compiler-core/src/parser.ts",
+          "line": 686,
+          "source": "    setLocEnd(el.loc, lookAhead(end, CharCodes.Gt) + 1)"
+        },
+        {
+          "file": "/Users/chenpengxiang/Desktop/source-code-analysis/vue/packages/compiler-core/src/parser.ts",
+          "line": 820,
+          "source": "function lookAhead(index: number, c: number) {\n  let i = index\n  while (currentInput.charCodeAt(i) !== c && i < currentInput.length - 1) i++\n  return i\n}"
+        },
+        {
+          "file": "/Users/chenpengxiang/Desktop/source-code-analysis/vue/packages/compiler-core/src/tokenizer.ts",
+          "line": 1152,
+          "source": "      if (c === CharCodes.NewLine && this.state !== State.InEntity) {\n        this.newlines.push(this.index)\n      }"
+        }
+      ],
+      "status": "已由主编辑修复并复核",
+      "fixedBy": "core_transform"
+    },
+    {
+      "id": "CCR-005",
+      "category": "机制准确性",
+      "original": "性能关键路径只比较字符码；位置对象、AST 节点和字符串切片均由 parser 按事件创建。",
+      "problem": "AST 由 parser 构造，但 tokenizer.getPos 本身创建 Position，stateInSFCRootTagName 本身 slice 标签名，emitCodePoint 生成解码字符；“均由 parser”超出实现支持。",
+      "current": {
+        "file": "/Users/chenpengxiang/Desktop/source-code-analysis/vue/packages/compiler-core/src/tokenizer.ts",
+        "line": 344,
+        "source": " * 热路径主要比较字符码；AST 由 parser 按事件组装，位置与切片在取 loc、识别 SFC\n * 根标签或发送实体等边界计算。sectionStart 指向尚未回调的源码起点，index 指向当前\n * UTF-16 字符；状态切换若已消费定界符须同步调整片段起点，实体回调还会快进 index。"
+      },
+      "evidence": [
+        {
+          "file": "/Users/chenpengxiang/Desktop/source-code-analysis/vue/packages/compiler-core/src/tokenizer.ts",
+          "line": 422,
+          "source": "  public getPos(index: number): Position {"
+        },
+        {
+          "file": "/Users/chenpengxiang/Desktop/source-code-analysis/vue/packages/compiler-core/src/tokenizer.ts",
+          "line": 742,
+          "source": "      const tag = this.buffer.slice(this.sectionStart, this.index)\n      if (tag !== 'template') {\n        this.enterRCDATA(toCharCodes(`</` + tag), 0)\n      }"
+        },
+        {
+          "file": "/Users/chenpengxiang/Desktop/source-code-analysis/vue/packages/compiler-core/src/tokenizer.ts",
+          "line": 1375,
+          "source": "  private emitCodePoint(cp: number, consumed: number): void {\n    if (!__BROWSER__) {\n      if (this.baseState !== State.Text && this.baseState !== State.InRCDATA) {\n        if (this.sectionStart < this.entityStart) {\n          this.cbs.onattribdata(this.sectionStart, this.entityStart)\n        }\n        this.sectionStart = this.entityStart + consumed\n        this.index = this.sectionStart - 1\n\n        this.cbs.onattribentity(\n          fromCodePoint(cp),\n          this.entityStart,\n          this.sectionStart,\n        )\n      } else {\n        if (this.sectionStart < this.entityStart) {\n          this.cbs.ontext(this.sectionStart, this.entityStart)\n        }"
+        }
+      ],
+      "status": "已由主编辑修复并复核",
+      "fixedBy": "core_transform"
+    },
+    {
+      "id": "CCR-006",
+      "category": "普通英文残留",
+      "original": "Skip over the `</`",
+      "problem": "这是解释片段起点移动的普通英文注释，可在不改变扫描逻辑的情况下译写。",
+      "current": {
+        "file": "/Users/chenpengxiang/Desktop/source-code-analysis/vue/packages/compiler-core/src/tokenizer.ts",
+        "line": 580,
+        "source": "        this.sectionStart = endOfText + 2 // 跳过闭标签前缀 </。"
+      },
+      "evidence": [
+        {
+          "file": "/Users/chenpengxiang/Desktop/source-code-analysis/vue/packages/compiler-core/src/tokenizer.ts",
+          "line": 580,
+          "source": "        this.sectionStart = endOfText + 2 // 跳过闭标签前缀 </。\n        this.stateInClosingTagName(c)\n        this.inRCDATA = false\n        return\n      }"
+        }
+      ],
+      "status": "已由主编辑修复并复核",
+      "fixedBy": "core_transform"
+    }
+  ],
+  "summary": {
+    "filesReviewed": 6,
+    "commentsReviewed": 540,
+    "mechanismIssuesFound": 5,
+    "ordinaryEnglishIssuesFound": 1,
+    "resolved": 6,
+    "remaining": 0
+  },
+  "focusChecks": [
+    {
+      "topic": "CACHED 与静态提升",
+      "conclusion": "CACHED 是缓存 VNode/text 的负特殊 patchFlag；props/dynamicProps 的 context.hoist 是另一路径，当前说明一致。"
+    },
+    {
+      "topic": "needPauseTracking 与 inVOnce",
+      "conclusion": "当前说明区分两个开关，与 codegen、createCacheExpression 和 runtime setBlockTracking 一致；codegen.spec 第三参 true 用例覆盖暂停分支。"
+    },
+    {
+      "topic": "反序退出与词法 scope 撤销",
+      "conclusion": "traverseNode 反序调用 exits；processFor 清 scope 后执行平台退出；基础预设 transformElement→trackSlotScopes 导致 slot scope 先清、buildSlots 后执行；删除与异常不会 finally 清理。"
+    }
+  ],
+  "protectedGeneratedString": {
+    "file": "/Users/chenpengxiang/Desktop/source-code-analysis/vue/packages/compiler-core/src/codegen.ts",
+    "note": "生成代码中的 Binding optimization for webpack code-split 是受本轮禁止改字符串约束的模板字面量内容，未计普通 TS 注释缺口。"
+  }
+}

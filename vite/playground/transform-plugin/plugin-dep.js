@@ -1,1 +1,1 @@
-// Empty file for detecting changes in tests
+// 不被 import 的监听依赖；测试追加空格触发入口重新 transform。

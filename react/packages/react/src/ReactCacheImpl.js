@@ -52,7 +52,10 @@ type ErroredCacheNode<T> = {
   p: null | Map<string | number | null | void | symbol | boolean, CacheNode<T>>,
 };
 
-/** 缓存 trie 节点的状态联合；状态只能从未完成进入一个终态。 */
+/**
+ * 缓存 trie 节点的状态联合；普通非重入调用从未完成写入成功或异常终态。
+ * 同步计算期间仍保持 0，没有独立 computing 标记；同参数重入可能再次计算并覆盖结果。
+ */
 type CacheNode<T> =
   | TerminatedCacheNode<T>
   | UnterminatedCacheNode<T>
@@ -74,16 +77,25 @@ function createCacheNode<T>(): CacheNode<T> {
 }
 
 /**
- * 在当前异步 dispatcher 的请求级缓存域中，按函数与完整参数序列记忆结果。
+ * 在当前异步 dispatcher 提供的缓存域中，按原函数与完整参数序列记忆结果。
  *
  * @remarks 参数序列形成 trie：对象/函数进入 WeakMap，原始值进入 Map。叶节点会缓存
- * 首次返回值或首次异常；若当前没有 dispatcher，则直接调用原函数而不跨请求共享数据。
+ * 返回值或同步抛出的异常；返回 Promise 时缓存的是 Promise 本身，不等待它落定。
+ * 缓存域的寿命由 renderer 决定：Server Components 按请求隔离，客户端实现可绑定缓存边界。
+ * 无 dispatcher 时直接执行原函数。多个包装器包装同一个 `fn` 时，共用该域内的参数 trie。
+ * @param fn - 结果要在 renderer 缓存域内复用的原函数；函数引用本身也是根层弱键。
+ * @returns 新包装函数，转发原参数序列但以 null 调用 fn，不继承调用点 this。
+ * @remarks 参数数量也是路径的一部分，零参数与一个 undefined 不同；原始键采用 Map
+ * 的 SameValueZero，NaN 可命中自身，+0/-0 合并；对象键只按引用命中，不做内容比较。
+ * 原始值分支与结果强引用直到缓存域释放；WeakMap 只保证对象键本身不被该键表保活。
+ * try/catch 仅覆盖 fn 的实际调用；dispatcher/参数 trie 操作失败不成为该叶的缓存异常。
+ * 尚未结束的同步计算没有去重锁，同参数重入会再调用 fn；正常结束才写入终态。
  */
 export function cache<A: Iterable<mixed>, T>(fn: (...A) => T): (...A) => T {
   return function () {
     const dispatcher = ReactSharedInternals.A;
     if (!dispatcher) {
-      // 无 dispatcher 表示当前不处于可安全隔离的缓存域，因此直接计算。
+      // 当前没有 renderer 提供缓存域，不建立全局缓存，直接计算。
       // $FlowFixMe[incompatible-type]: We don't want to use rest arguments since we transpile the code.
       return fn.apply(null, arguments);
     }
@@ -118,7 +130,7 @@ export function cache<A: Iterable<mixed>, T>(fn: (...A) => T): (...A) => T {
           cacheNode = objectNode;
         }
       } else {
-        // 原始值无法作为 WeakMap 键，进入普通 Map。
+        // 本实现把其余参数放入 Map，按 Map 的键比较规则复用参数路径。
         let primitiveCache = cacheNode.p;
         if (primitiveCache === null) {
           cacheNode.p = primitiveCache = new Map();
@@ -158,8 +170,9 @@ export function cache<A: Iterable<mixed>, T>(fn: (...A) => T): (...A) => T {
 /**
  * 返回当前缓存域的生命周期信号；无 dispatcher 时返回 `null`。
  *
- * @remarks 这与无 dispatcher 时 `cache` 允许调用但不缓存的语义保持一致：该作用域既
- * 不是永不结束的缓存，也不是已经结束的缓存，因此不能伪造 AbortSignal。
+ * @remarks dispatcher 负责提供与缓存域同寿命的 AbortSignal；公共包装器不创建自己的信号。
+ * @returns 当前域的 AbortSignal 或 null；取消表示该 renderer 缓存域结束，不代表任意
+ * 返回 Promise 的成功/失败。dispatcher.cacheSignal 的异常直接传播。
  */
 export function cacheSignal(): null | AbortSignal {
   const dispatcher = ReactSharedInternals.A;

@@ -15,22 +15,27 @@ import {REACT_CONTEXT_TYPE} from 'shared/ReactSymbols';
 import {pushProvider, popProvider} from './ReactFiberNewContext';
 import * as Scheduler from 'scheduler';
 
-// 在没有 AbortController 的环境（例如测试）使用只实现所需能力的轻量 shim。
+/** 优先使用环境的 AbortController；缺失时以轻量 shim 为 Cache 提供 signal、abort 及监听通知。 */
 const AbortControllerLocal: typeof AbortController =
   typeof AbortController !== 'undefined'
     ? AbortController
-    : // $FlowFixMe[incompatible-type]
+    : /**
+       * 在无原生 AbortController 的 renderer 环境创建最小取消通知对象。
+       * 仅记录本模块资源所需的监听器；不实现事件类型筛选、移除监听器或原生 AbortSignal 全部语义。
+       */
+      // $FlowFixMe[incompatible-type]
       // $FlowFixMe[missing-this-annot]
       function AbortControllerShim() {
         const listeners = [];
         const signal = (this.signal = {
           aborted: false as boolean,
-          /** 登记 abort 时需要逐一调用的监听器。 */
+          /** 将监听器追加到本控制器列表；type 参数只为兼容调用形状，不参与筛选。 */
           addEventListener: (type, listener) => {
             listeners.push(listener);
           },
         });
 
+        /** 标记 signal 已取消并同步通知全部监听器；没有逐项异常隔离，重复调用也会再次通知。 */
         this.abort = () => {
           signal.aborted = true;
           listeners.forEach(listener => listener());
@@ -63,7 +68,7 @@ export type SpawnedCachePool = {
   +pool: Cache,
 };
 
-// 刻意不使用命名 import；否则 Rollup 会为 CommonJS 互操作生成动态分派。
+/** 从 Scheduler 命名空间提取缓存清理所用的调度函数与 NormalPriority，避免 Rollup 为命名 import 的 CommonJS 互操作生成动态分派。 */
 const {
   unstable_scheduleCallback: scheduleCallback,
   unstable_NormalPriority: NormalPriority,
@@ -117,7 +122,8 @@ export function retainCache(cache: Cache) {
  * 释放一个 Cache 引用；计数归零时以普通优先级异步 abort。
  *
  * 延迟 abort 可避免提交阶段同步执行任意资源清理逻辑，也给同一轮所有权转移留下
- * 时间；开发环境会报告重复释放导致的负引用计数。
+ * 时间；开发环境会报告重复释放导致的负引用计数。已安排的回调不再复查 refCount，
+ * 因此重新 retain 不会撤销这次 abort；已经释放的 Cache 不应再次成为资源所有者。
  */
 export function releaseCache(cache: Cache) {
   cache.refCount--;

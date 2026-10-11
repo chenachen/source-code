@@ -5,7 +5,7 @@ import { type ServerOptions, createServer } from '../index'
 
 /**
  * 场景：hotUpdate hook 在等待期间重启 server，旧 Environment 与模块图随即失效。
- * 机制：handleHMRUpdate 保存 environments 快照，每次 await 后用引用变化检测陈旧事务。
+ * 机制：handleHMRUpdate 保存 environments 快照，在 hook 完成、异常处理与后续调度时检测引用变化。
  * 目标：hook 的后续异常不发送 error/update，也不把旧 hmr 回调交给新的 Environment。
  */
 async function testRestartDuringHotUpdate(serverOptions: ServerOptions = {}) {

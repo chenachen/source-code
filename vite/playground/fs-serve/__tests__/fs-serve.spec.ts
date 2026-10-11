@@ -5,7 +5,11 @@ import { isServe, isWindows, viteTestUrl } from '~utils'
 import './commonTests'
 
 describe.runIf(isServe)('invalid request', () => {
-  /** 绕过 fetch/URL 规范化，直接向 TCP socket 写入指定 request-target。 */
+  /** 绕过 fetch/URL 客户端的路径规范化，经 encodeURI 编码后直接写 TCP 请求行，收集完整 HTTP 响应。
+   * @param baseUrl 测试服务的主机与端口。
+   * @param requestTarget 待检查的原始路径结构。
+   * @returns TCP 正常结束后的响应文本；连接错误时拒绝。
+   */
   const sendRawRequest = async (baseUrl: string, requestTarget: string) => {
     return new Promise<string>((resolve, reject) => {
       const parsedUrl = new URL(baseUrl)
@@ -122,10 +126,7 @@ describe.runIf(isServe)('invalid request', () => {
     },
   ]
   for (const { name, target, status, content } of testCases) {
-    /**
-     * 场景：在 “'invalid request'” 中，加载用例 fixture 并观察 “response”。
-     * 验证目标：“response” 应包含 “status”；“response” 应包含 “content”，从而确认静态文件响应的状态、内容、header 与 SPA fallback 符合配置。
-     */
+    /** 仅 dev 按十一行发送 target：安全 root/@fs 返回 200，含 # 返回 400，点段/根外 HTML/正斜杠 map 穿越返回 403；反斜杠行按 Windows 判为 403，其他平台按各行返回 404 或 no-cache 的 200。 */
     test(name, async () => {
       const response = await sendRawRequest(viteTestUrl, target)
       expect(response).toContain(status)

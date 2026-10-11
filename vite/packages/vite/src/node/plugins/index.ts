@@ -79,7 +79,7 @@ export async function resolvePlugins(
         entries: config.resolve.alias,
         customResolver: viteAliasCustomResolver,
       }),
-      /** 仅让依赖元数据插件进入启用依赖优化器的环境。 */
+      /** bundled 环境可用原生 alias；有用户 customResolver 时保留 JS 插件。 */
       applyToEnvironment(environment) {
         // 打包环境且不存在用户 customResolver 时，换成 Rolldown 原生 alias 插件；
         // 自定义 resolver 仍需保留 @rollup/plugin-alias 的完整行为。
@@ -132,7 +132,7 @@ export async function resolvePlugins(
     config.oxc !== false
       ? ({
           ...oxcRuntimePlugin(),
-          /** 仅让依赖发现插件进入启用扫描且可优化依赖的环境。 */
+          /** 仅在非打包环境补充 Oxc helper 的模块解析。 */
           applyToEnvironment(environment) {
             return !environment.config.isBundled
           },
@@ -190,7 +190,8 @@ async function loadDevToolsIntegrationPlugin(
 
 /**
  * 为固定插件列表创建按 hook 查询和 handler 查询工具。
- * 每个 hook 第一次查询时排序并缓存；插件列表在 configResolved 前已固定，因此缓存安全。
+ * 每个 hook 第一次查询时排序并缓存；后续同名查询直接复用结果，不重新观察插件列表或
+ * hook.order 的变化。Environment 会对 configResolved 后派生的插件列表另建查询工具。
  */
 export function createPluginHookUtils(
   plugins: readonly Plugin[],
@@ -328,7 +329,7 @@ export function getCachedFilterForPlugin<
 /** 仅从对象形式 ObjectHook 提取可选 filter；普通函数 hook 没有声明式过滤器。 */
 function extractFilter<T extends Function, F>(
   hook:
-    ObjectHook<
+    | ObjectHook<
         T,
         {
           /** 对象式钩子声明、可提前筛掉无关模块的过滤条件。 */

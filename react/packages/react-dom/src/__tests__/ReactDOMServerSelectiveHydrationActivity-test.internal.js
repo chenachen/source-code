@@ -27,7 +27,9 @@ let waitForPaint;
 let IdleEventPriority;
 let ContinuousEventPriority;
 
-/** `dispatchMouseHoverEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+/**
+ * 模拟从 from 到 to 的鼠标跨节点移动：先向 from 派发 mouseout（relatedTarget=to），再向 to 派发 mouseover（relatedTarget=from）；空端点代表窗口外。无返回值，供连续事件捕获/重放测试控制目标路径。
+ */
 function dispatchMouseHoverEvent(to, from) {
   if (!to) {
     to = null;
@@ -79,7 +81,9 @@ function dispatchMouseHoverEvent(to, from) {
   }
 }
 
-/** `dispatchClickEvent`：封装当前用例复用的操作、回调或断言步骤。 */
+/**
+ * 向 target 派发可冒泡、可取消的 click，返回 dispatchEvent 的布尔值；false 表示水合后 handler 已 preventDefault，true 并不代表 handler 已执行。
+ */
 function dispatchClickEvent(target) {
   const mouseOutEvent = document.createEvent('MouseEvents');
   mouseOutEvent.initMouseEvent(
@@ -102,8 +106,10 @@ function dispatchClickEvent(target) {
   return target.dispatchEvent(mouseOutEvent);
 }
 
-// TODO：当前没有 React DOM API 可选择使用 Idle 优先级更新，也没有映射到 Idle 优先级的原生 DOM 事件，因此这里只能临时规避；需要类似 ReactDOM.unstable_IdleUpdates 的 API。
-/** `TODO_scheduleIdleDOMSchedulerTask`：封装当前用例复用的操作、回调或断言步骤。 */
+// 通过内部 unstable_runWithPriority 指定 Idle 优先级，并将 window.event 临时改成 message，避免测试运行器遗留的原生事件覆盖优先级。
+/**
+ * 在 IdleEventPriority 下调用 fn，临时 window.event=message 避免继承外部原生事件优先级；finally 恢复旧事件，即使 fn 抛错也不泄漏全局环境；不转发 fn 返回值。
+ */
 function TODO_scheduleIdleDOMSchedulerTask(fn) {
   ReactDOM.unstable_runWithPriority(IdleEventPriority, () => {
     const prevEvent = window.event;
@@ -116,7 +122,9 @@ function TODO_scheduleIdleDOMSchedulerTask(fn) {
   });
 }
 
-/** `TODO_scheduleContinuousSchedulerTask`：封装当前用例复用的操作、回调或断言步骤。 */
+/**
+ * 在 ContinuousEventPriority 下执行 fn，临时设置 message 事件以隔离优先级推断；finally 恢复 window.event，callback 异常继续传播，不转发返回值。
+ */
 function TODO_scheduleContinuousSchedulerTask(fn) {
   ReactDOM.unstable_runWithPriority(ContinuousEventPriority, () => {
     const prevEvent = window.event;
@@ -155,15 +163,12 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
   });
 
   /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「hydrates the target boundary synchronously during a click」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言对应 ReactDOMRoot.hydrateRoot 的容器认领与事件重放路径。
+   * SSR 已输出 A/B，hydrateRoot 尚未执行客户端 render；点击 B 同步水合 App/B 并调用 preventDefault，dispatchEvent 返回 false；随后才水合 A，证明离散事件先恢复目标路径。
    */
   it('hydrates the target boundary synchronously during a click', async () => {
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * text 标识 server span 与 render 日志；成功时返回带 click handler 的 span，handler 接收事件后 preventDefault 并记 Clicked，使 dispatchEvent 返回值与日志可验证目标是否已水合。
+     */
     function Child({text}) {
       Scheduler.log(text);
       return (
@@ -177,7 +182,9 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
       );
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * 记录 App 并返回独立 A/B 边界；固定 server 顺序让点击 B 的 App/B/A 日志证明目标边界优先且 A 不必同步完成。
+     */
     function App() {
       Scheduler.log('App');
       return (
@@ -209,7 +216,7 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
     // 目前没有任何内容完成水合。
     assertLog([]);
 
-    // 这应同步水合根 App 和第二个 Suspense 边界。
+    // 这应同步水合根 App 和第二个 Activity 边界。
     const result = dispatchClickEvent(span);
 
     // 由于调用了 preventDefault，事件应已被取消。
@@ -224,13 +231,17 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
     document.body.removeChild(container);
   });
 
-  /** 测试场景：验证「hydrates at higher pri if sync did not work first time」描述的渲染、交互或错误处理结果。 */
+  /**
+   * SSR 有 A/B/C/D，客户端 A/D 被同一 Promise 阻塞；点击 D 未取消事件，先水合 B/C；解除 Promise 后日志 D→A，没有 Clicked D，证明提高 retry 优先级不会把阻塞 click 存成重放事件。
+   */
   it('hydrates at higher pri if sync did not work first time', async () => {
     let suspend = false;
     let resolve;
     const promise = new Promise(resolvePromise => (resolve = resolvePromise));
 
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * text 标识 server span 与 render 日志；A/D 在 suspend 开关开启时抛共享 Promise；成功时返回带 click handler 的 span，handler 接收事件后 preventDefault 并记 Clicked，使 dispatchEvent 返回值与日志可验证目标是否已水合。
+     */
     function Child({text}) {
       if ((text === 'A' || text === 'D') && suspend) {
         throw promise;
@@ -247,7 +258,9 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
       );
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * 记录 App 并返回四个独立 Activity，children 按 A/B/C/D 固定排列；客户端 A/D 可挂起，因此日志能区分事件目标优先与原 sibling 顺序。
+     */
     function App() {
       Scheduler.log('App');
       return (
@@ -311,13 +324,17 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
     document.body.removeChild(container);
   });
 
-  /** 测试场景：验证「hydrates at higher pri for secondary discrete events」描述的渲染、交互或错误处理结果。 */
+  /**
+   * 客户端 A/D 阻塞，依次点击 A/C/D；C 当场水合并执行 Clicked C，解除数据后 A→D→B；日志证明多个离散目标提升重试优先级而未点击 B 最后执行。
+   */
   it('hydrates at higher pri for secondary discrete events', async () => {
     let suspend = false;
     let resolve;
     const promise = new Promise(resolvePromise => (resolve = resolvePromise));
 
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * text 标识 server span 与 render 日志；A/D 在 suspend 开关开启时抛共享 Promise；成功时返回带 click handler 的 span，handler 接收事件后 preventDefault 并记 Clicked，使 dispatchEvent 返回值与日志可验证目标是否已水合。
+     */
     function Child({text}) {
       if ((text === 'A' || text === 'D') && suspend) {
         throw promise;
@@ -334,7 +351,9 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
       );
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * 记录 App 并返回四个独立 Activity，children 按 A/B/C/D 固定排列；客户端 A/D 可挂起，因此日志能区分事件目标优先与原 sibling 顺序。
+     */
     function App() {
       Scheduler.log('App');
       return (
@@ -399,14 +418,18 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
 
     document.body.removeChild(container);
   });
+  /**
+   * www gate 下用 createEventHandle 在 layout 注册 click；SSR A/B 后点击 B，日志 App/B/Clicked B，随后 A；目标水合提交时即可安装监听并处理当前事件，effect 返回解除订阅函数。
+   */
 
   // @gate www
-  /** 测试场景：验证「hydrates the target boundary synchronously during a click (createEventHandle)」描述的渲染、交互或错误处理结果。 */
   it('hydrates the target boundary synchronously during a click (createEventHandle)', async () => {
     const setClick = ReactDOM.unstable_createEventHandle('click');
     let isServerRendering = true;
 
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * 返回带 ref 的 text span，仅客户端通过 layout effect 对 DOM 注册 setClick，返回解除监听函数作为清理；render 日志与 Clicked 日志区分认领和当前离散事件执行。
+     */
     function Child({text}) {
       const ref = React.useRef(null);
       Scheduler.log(text);
@@ -421,7 +444,9 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
       return <span ref={ref}>{text}</span>;
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * 记录 App 并返回独立 A/B 边界；固定 server 顺序让点击 B 的 App/B/A 日志证明目标边界优先且 A 不必同步完成。
+     */
     function App() {
       Scheduler.log('App');
       return (
@@ -457,7 +482,7 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
 
     const target = createEventTarget(span);
 
-    // 这应同步水合根 App 和第二个 Suspense 边界。
+    // 这应同步水合根 App 和第二个 Activity 边界。
     target.virtualclick();
 
     // 我们渲染了 App、B，然后没有渲染 A，就触发了事件。
@@ -468,9 +493,11 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
 
     document.body.removeChild(container);
   });
+  /**
+   * createEventHandle 版本 A/D 阻塞时点击 D；先 App/B/C，解除 Promise 后 D→A 且无 Clicked D；验证失败同步水合只提升 retry 优先级，不重放离散事件。
+   */
 
   // @gate www
-  /** 测试场景：验证「hydrates at higher pri if sync did not work first time (createEventHandle)」描述的渲染、交互或错误处理结果。 */
   it('hydrates at higher pri if sync did not work first time (createEventHandle)', async () => {
     let suspend = false;
     let isServerRendering = true;
@@ -478,7 +505,9 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
     const promise = new Promise(resolvePromise => (resolve = resolvePromise));
     const setClick = ReactDOM.unstable_createEventHandle('click');
 
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * 返回带 ref 的 text span，A/D 在 suspend 时抛共享 Promise；仅客户端通过 layout effect 对 DOM 注册 setClick，返回解除监听函数作为清理；render 日志与 Clicked 日志区分认领和当前离散事件执行。
+     */
     function Child({text}) {
       const ref = React.useRef(null);
       if ((text === 'A' || text === 'D') && suspend) {
@@ -497,7 +526,9 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
       return <span ref={ref}>{text}</span>;
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * 记录 App 并返回四个独立 Activity，children 按 A/B/C/D 固定排列；客户端 A/D 可挂起，因此日志能区分事件目标优先与原 sibling 顺序。
+     */
     function App() {
       Scheduler.log('App');
       return (
@@ -546,7 +577,7 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
     });
     assertLog(['App', 'B', 'C']);
 
-    // 点击后应优先处理 D 和 Click，之后才渲染 A 和 C。
+    // D 已被点击提高优先级；解除挂起后先水合 D，再完成 A；阻塞期间的 click 不会重播。
     await act(async () => {
       suspend = false;
       resolve();
@@ -558,9 +589,11 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
 
     document.body.removeChild(container);
   });
+  /**
+   * createEventHandle 版本依次点击阻塞 A、可水合 C、阻塞 D；先 App/C/Clicked C，解除后 A/D/B；目标优先级同样不受监听注册方式改变。
+   */
 
   // @gate www
-  /** 测试场景：验证「hydrates at higher pri for secondary discrete events (createEventHandle)」描述的渲染、交互或错误处理结果。 */
   it('hydrates at higher pri for secondary discrete events (createEventHandle)', async () => {
     const setClick = ReactDOM.unstable_createEventHandle('click');
     let suspend = false;
@@ -568,7 +601,9 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
     let resolve;
     const promise = new Promise(resolvePromise => (resolve = resolvePromise));
 
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * 返回带 ref 的 text span，A/D 在 suspend 时抛共享 Promise；仅客户端通过 layout effect 对 DOM 注册 setClick，返回解除监听函数作为清理；render 日志与 Clicked 日志区分认领和当前离散事件执行。
+     */
     function Child({text}) {
       const ref = React.useRef(null);
       if ((text === 'A' || text === 'D') && suspend) {
@@ -586,7 +621,9 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
       return <span ref={ref}>{text}</span>;
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * 记录 App 并返回四个独立 Activity，children 按 A/B/C/D 固定排列；客户端 A/D 可挂起，因此日志能区分事件目标优先与原 sibling 顺序。
+     */
     function App() {
       Scheduler.log('App');
       return (
@@ -653,12 +690,16 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
     document.body.removeChild(container);
   });
 
-  /** 测试场景：验证「hydrates the hovered targets as higher priority for continuous events」描述的渲染、交互或错误处理结果。 */
+  /**
+   * SSR 四边界，客户端 A/D 阻塞；hover/click D 后依次 hover B/C，解除后 D/B/C/Hover C/A；只重放最后 hover 的进入事件，阻塞 click 不重放，当前日志也保留此前提升的 B 工作。
+   */
   it('hydrates the hovered targets as higher priority for continuous events', async () => {
     let suspend = false;
     let resolve;
     const promise = new Promise(resolvePromise => (resolve = resolvePromise));
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * text 标识 A/B/C/D；A/D 在客户端开关开启时抛共享 Promise，否则返回 span；click 和 mouseEnter 均取消默认行为并记日志，以区别同步 click 处理与最后 hover 的重放。
+     */
     function Child({text}) {
       if ((text === 'A' || text === 'D') && suspend) {
         throw promise;
@@ -679,7 +720,9 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
       );
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * 记录 App 并返回四个独立 Activity，children 按 A/B/C/D 固定排列；客户端 A/D 可挂起，因此日志能区分事件目标优先与原 sibling 顺序。
+     */
     function App() {
       Scheduler.log('App');
       return (
@@ -746,13 +789,17 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
     document.body.removeChild(container);
   });
 
-  /** 测试场景：验证「replays capture phase for continuous events and respects stopPropagation」描述的渲染、交互或错误处理结果。 */
+  /**
+   * 在嵌套 DOM 注册 capture、bubble、enter/out，客户端 A/D 阻塞；hover/click D 后移至 B/C，解除后只重放父/C mouseover capture；C stopPropagation 阻止更深 capture 和 bubble，再次移入也断言 B out capture 阻止 enter。
+   */
   it('replays capture phase for continuous events and respects stopPropagation', async () => {
     let suspend = false;
     let resolve;
     const promise = new Promise(resolvePromise => (resolve = resolvePromise));
 
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * 按 text 返回带嵌套 div 的 span，A/D 可抛共享 Promise；over/out capture 会 stopPropagation，其余监听只记日志与 preventDefault，用来验证重放 capture 路径及深层传播被阻断。
+     */
     function Child({text}) {
       if ((text === 'A' || text === 'D') && suspend) {
         throw promise;
@@ -802,7 +849,9 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
       );
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * 记录 App 并返回四个独立 Activity，children 按 A/B/C/D 固定排列；客户端 A/D 可挂起，因此日志能区分事件目标优先与原 sibling 顺序。 父 capture handler 另记事件路径，配合 Child 的 stopPropagation 断言。
+     */
     function App() {
       Scheduler.log('App');
       return (
@@ -891,18 +940,25 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
     document.body.removeChild(container);
   });
 
-  /** 测试场景：验证「replays event with null target when tree is dismounted」描述的渲染、交互或错误处理结果。 */
+  /**
+   * 将待重放 mouseover 的 Child 先水合，再在重放前把其 DOM 移到另一原生容器；最终只记 container2 mouse over，不调用旧 React handler，证明克隆事件沿当前 DOM 路径分发。
+   */
   it('replays event with null target when tree is dismounted', async () => {
     let suspend = false;
     let resolve;
     const promise = new Promise(resolvePromise => {
+      /**
+       * 先清除 Child 挂起开关再 resolve Promise，供移动 DOM 前等待 Child 水合；不直接派发已保存的 mouseover。
+       */
       resolve = () => {
         suspend = false;
         resolvePromise();
       };
     });
 
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * suspend 时抛 Promise，否则记 Child 并返回带 mouseover 日志的 div；用原 React handler 与新容器原生 handler 区分重放最终传播路径。
+     */
     function Child() {
       if (suspend) {
         throw promise;
@@ -918,7 +974,9 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
       );
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * 用默认可见 Activity 包 Child，返回可独立脱水/认领的 server/client 同构树；DOM 移动由外部测试控制，没有 Suspense fallback。
+     */
     function App() {
       return (
         <Activity>
@@ -966,13 +1024,17 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
     document.body.removeChild(container);
   });
 
-  /** 测试场景：验证「hydrates the last target path first for continuous events」描述的渲染、交互或错误处理结果。 */
+  /**
+   * SSR A/B/C/D，B 还嵌套在 C 同一外边界内；客户端 A/D 阻塞，依次 hover B/C 后解除；实际日志 App/C/Hover C/A/B/D，没有点击 D，验证连续事件保留最后目标路径而非 FIFO 重放全部 hover。
+   */
   it('hydrates the last target path first for continuous events', async () => {
     let suspend = false;
     let resolve;
     const promise = new Promise(resolvePromise => (resolve = resolvePromise));
 
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * text 标识 span，A/D 可挂起，mouseEnter 取消默认行为并记录 Hover；B/C 位于不同深度，用日志观察最后连续目标路径的认领。
+     */
     function Child({text}) {
       if ((text === 'A' || text === 'D') && suspend) {
         throw promise;
@@ -989,7 +1051,9 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
       );
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * 返回 A、嵌套 B 与同层 C、D 三组边界结构；B 有额外内 Activity，让 hover B→C 可以比较新旧目标路径的深度。
+     */
     function App() {
       Scheduler.log('App');
       return (
@@ -1028,7 +1092,7 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
 
     suspend = true;
 
-    // A 和 D 会挂起。我们将点击 D；解除挂起后，D 应获得更高优先级。
+    // A 和 D 会挂起；后续只 hover B/C，验证最后连续目标路径先水合。
     ReactDOMClient.hydrateRoot(container, <App />);
 
     // 目前没有任何内容完成水合。
@@ -1044,21 +1108,27 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
       await promise;
     });
 
-    // 因为点击了 D，应先水合 D。接着水合当前悬停目标 C。之后先水合 A 还是 B 并不重要；当前实现先水合 B，因为此前曾悬停其上且从未降低其优先级。
+    // 本用例没有 click；先 hover B 再 hover C，保存的连续事件指向最后目标 C。日志先 C/Hover C，再完成 A、B、D。
     assertLog(['App', 'C', 'Hover C', 'A', 'B', 'D']);
 
     document.body.removeChild(container);
   });
 
-  /** 测试场景：验证「hydrates the last explicitly hydrated target at higher priority」描述的渲染、交互或错误处理结果。 */
+  /**
+   * SSR 三边界 A/B/C，hydrateRoot 后先显式请求 B 再 C；日志 App/C/B/A，证明此例同优先级显式目标的新请求排在旧请求前面。
+   */
   it('hydrates the last explicitly hydrated target at higher priority', async () => {
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * 记录 text 并返回无监听 span；仅作为显式 scheduleHydration 目标，避免事件副作用混入目标优先级断言。
+     */
     function Child({text}) {
       Scheduler.log(text);
       return <span>{text}</span>;
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * 返回各自独立边界的 A/B/C，初始 server 顺序固定，使后续 C/B/A 日志能反映显式目标队列的调度顺序。
+     */
     function App() {
       Scheduler.log('App');
       return (
@@ -1095,18 +1165,25 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
     root.unstable_scheduleHydration(spanB);
     root.unstable_scheduleHydration(spanC);
 
-    // 应优先水合 C，因为最后添加的目标优先级最高，其次是倒数第二个。
+    // 此处请求处于同一事件优先级；相同优先级的新目标插入队首，所以先 C、再 B，最后普通后台目标 A。
     await waitForAll(['App', 'C', 'B', 'A']);
   });
+  /**
+   * www gate 下先水合 shell，Idle 更新 A→AA 启动时打断；hover A/B 后点击 C，先水合 C/c，再完成 A/a、B/b，最后提交 AA/aa；原 spanA identity 保留，证明在更新前认领 server DOM 而非替换。
+   */
 
   // @gate www
-  /** 测试场景：验证「hydrates before an update even if hydration moves away from it」描述的渲染、交互或错误处理结果。 */
   it('hydrates before an update even if hydration moves away from it', async () => {
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * 记录 text 并返回 span，大小写 children 组成同一边界；外层 Idle 更新和事件水合都调用它，日志用来区分旧 A/a 认领与新 AA/aa 更新。
+     */
     function Child({text}) {
       Scheduler.log(text);
       return <span>{text}</span>;
     }
+    /**
+     * memo 包装的边界 fixture；text 不变时可复用外部元素，边界内返回大小写两枚 Child，供验证 hydration 必须在后续 prop 更新之前完成。
+     */
     const ChildWithBoundary = React.memo(function ({text}) {
       return (
         <Activity>
@@ -1116,7 +1193,9 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
       );
     });
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * a 驱动首个 memo 边界，其余 B/C props 固定；effect 记录 Commit，返回三组 children，帮助区分 shell 提交、选择性认领与最终 Idle 更新提交。
+     */
     function App({a}) {
       Scheduler.log('App');
       React.useEffect(() => {
@@ -1201,10 +1280,14 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
     document.body.removeChild(container);
   });
 
-  /** 测试场景：验证「fires capture event handlers and native events if content is hydratable during discrete event」描述的渲染、交互或错误处理结果。 */
+  /**
+   * SSR A/B，Child layout 在 DOM.onclick 注册原生处理器；点击 B 同步认领并提交监听，日志依次 App/B、React capture、native、React bubble，再水合 A，验证本次事件可继续走完整原生传播。
+   */
   it('fires capture event handlers and native events if content is hydratable during discrete event', async () => {
     spyOnDev(console, 'error');
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * 返回 span 并同时声明 React capture/bubble；layout effect 按 text 给 ref.current.onclick 安装原生日志，null ref 时跳过；无显式清理，DOM 随本例容器移除而离开文档。
+     */
     function Child({text}) {
       Scheduler.log(text);
       const ref = React.useRef();
@@ -1212,6 +1295,9 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
         if (!ref.current) {
           return;
         }
+        /**
+         * 原生 onclick 记录 Native Click 和闭包 text；由 Child layout 提交安装，插在 React capture 与 bubble 的实际 DOM 事件传播之间。
+         */
         ref.current.onclick = () => {
           Scheduler.log('Native Click ' + text);
         };
@@ -1230,7 +1316,9 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
       );
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * 返回独立 A/B Activity，App 日志标记根 shell 认领；点击 B 时 A 可以继续保持未水合。
+     */
     function App() {
       Scheduler.log('App');
       return (
@@ -1262,7 +1350,7 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
     // 目前没有任何内容完成水合。
     assertLog([]);
 
-    // 这应同步水合根 App 和第二个 Suspense 边界。
+    // 这应同步水合根 App 和第二个 Activity 边界。
     dispatchClickEvent(span);
 
     // 我们渲染了 App、B，然后没有渲染 A，就触发了事件。
@@ -1274,13 +1362,17 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
     document.body.removeChild(container);
   });
 
-  /** 测试场景：验证「does not propagate discrete event if it cannot be synchronously hydrated」描述的渲染、交互或错误处理结果。 */
+  /**
+   * 客户端 Child 永久挂起，父同时有原生/React click，子有 capture stopPropagation；连续点击两次只水合 App，父子 flags 均 false，证明无法同步水合时 React 截断离散事件传播。
+   */
   it('does not propagate discrete event if it cannot be synchronously hydrated', async () => {
     let triggeredParent = false;
     let triggeredChild = false;
     let suspend = false;
     const promise = new Promise(() => {});
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * 客户端 suspend 时抛永久未决 Promise，否则返回 Click me span；capture handler 停止传播并置 triggeredChild，断言未水合时这个 handler 根本不执行。
+     */
     function Child() {
       if (suspend) {
         throw promise;
@@ -1296,9 +1388,13 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
         </span>
       );
     }
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * 返回具有同一原生 onclick 与 React onClick 的父 div；Child 包在 Activity 内，父 flag 用来发现阻塞子目标的 click 是否漏到祖先。
+     */
     function App() {
-      /** `App.onClick`：封装当前用例复用的操作、回调或断言步骤。 */
+      /**
+       * 把 triggeredParent 设为 true；同时供原生与 React 冒泡注册使用，任一路径误传播都能被测试发现。
+       */
       const onClick = () => {
         triggeredParent = true;
       };
@@ -1340,14 +1436,20 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
     expect(triggeredChild).toBe(false);
   });
 
-  /** 测试场景：验证「can force hydration in response to sync update」描述的渲染、交互或错误处理结果。 */
+  /**
+   * 只提交 SSR A 的 shell，再 flushSync root.render(B)；日志 App B/Child A/App B/Child B，spanRef 与初始 server span 相同，证明同步更新先认领旧 A 再更新 B。
+   */
   it('can force hydration in response to sync update', async () => {
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * 记录 Child text 并返回带 callback ref 的 span；提交时 ref 写 spanRef，让测试比较 server 节点 identity，日志区分旧 A 认领与新 B 更新。
+     */
     function Child({text}) {
       Scheduler.log(`Child ${text}`);
       return <span ref={ref => (spanRef = ref)}>{text}</span>;
     }
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * 把 text 传入 Activity 中的 Child 并记录 App text；返回稳定 div/边界结构，使 shell 先认领后外部更新可触发子边界先 hydration 再变更文本。
+     */
     function App({text}) {
       Scheduler.log(`App ${text}`);
       return (
@@ -1377,16 +1479,22 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
     assertLog(['App B', 'Child A', 'App B', 'Child B']);
     expect(initialSpan).toBe(spanRef);
   });
+  /**
+   * www gate 下 shell 已认领、子边界未完成；连续事件优先级更新 A→B，日志先 Child A 后 Child B，server span identity 保留，证明该优先级也先完成 hydration 再处理更新。
+   */
 
   // @gate www
-  /** 测试场景：验证「can force hydration in response to continuous update」描述的渲染、交互或错误处理结果。 */
   it('can force hydration in response to continuous update', async () => {
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * 记录 Child text 并返回带 callback ref 的 span；提交时 ref 写 spanRef，让测试比较 server 节点 identity，日志区分旧 A 认领与新 B 更新。
+     */
     function Child({text}) {
       Scheduler.log(`Child ${text}`);
       return <span ref={ref => (spanRef = ref)}>{text}</span>;
     }
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * 把 text 传入 Activity 中的 Child 并记录 App text；返回稳定 div/边界结构，使 shell 先认领后外部更新可触发子边界先 hydration 再变更文本。
+     */
     function App({text}) {
       Scheduler.log(`App ${text}`);
       return (
@@ -1418,14 +1526,20 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
     expect(initialSpan).toBe(spanRef);
   });
 
-  /** 测试场景：验证「can force hydration in response to default update」描述的渲染、交互或错误处理结果。 */
+  /**
+   * shell 已认领、子边界未完成，普通 root.render A→B；日志先认领 Child A 再提交 Child B，原 span 与 ref 相同，验证默认更新不直接替换尚未水合的 server 节点。
+   */
   it('can force hydration in response to default update', async () => {
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * 记录 Child text 并返回带 callback ref 的 span；提交时 ref 写 spanRef，让测试比较 server 节点 identity，日志区分旧 A 认领与新 B 更新。
+     */
     function Child({text}) {
       Scheduler.log(`Child ${text}`);
       return <span ref={ref => (spanRef = ref)}>{text}</span>;
     }
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * 把 text 传入 Activity 中的 Child 并记录 App text；返回稳定 div/边界结构，使 shell 先认领后外部更新可触发子边界先 hydration 再变更文本。
+     */
     function App({text}) {
       Scheduler.log(`App ${text}`);
       return (
@@ -1452,24 +1566,33 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
     assertLog(['App B', 'Child A', 'App B', 'Child B']);
     expect(initialSpan).toBe(spanRef);
   });
+  /**
+   * Provider 仅包待水合 Child，兄弟 reader 应读 DefaultContext；Idle A→AA 途中 click A 插入选择性水合，最终 reader 仍 DefaultContext，证明中断时 provider 栈正确 unwind，不向 sibling 泄漏 SiblingContext。
+   */
 
   // @gate www
-  /** 测试场景：验证「regression test: can unwind context on selective hydration interruption」描述的渲染、交互或错误处理结果。 */
   it('regression test: can unwind context on selective hydration interruption', async () => {
     const Context = React.createContext('DefaultContext');
 
-    /** `ContextReader`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * 读取 Context 并记其实际值，返回 null；位于 Provider sibling 而非内部，应始终读 DefaultContext，props 参数未参与读取。
+     */
     function ContextReader(props) {
       const value = React.useContext(Context);
       Scheduler.log(value);
       return null;
     }
 
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * 记录 text 并返回 span，使中断前 A 认领与更新后 AA 输出在日志中可区分。
+     */
     function Child({text}) {
       Scheduler.log(text);
       return <span>{text}</span>;
     }
+    /**
+     * memo/Activity 包装 Child，返回可单独选择性水合的边界；与 Provider sibling reader 共同检验中断后的 Context 栈恢复。
+     */
     const ChildWithBoundary = React.memo(function ({text}) {
       return (
         <Activity>
@@ -1478,7 +1601,9 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
       );
     });
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * 返回只包住 Child 边界的 SiblingContext Provider 和其外 sibling reader；a 控制 Child 更新，effect 记 Commit，reader 的 DefaultContext 是 unwind 的可观察证据。
+     */
     function App({a}) {
       Scheduler.log('App');
       React.useEffect(() => {
@@ -1516,22 +1641,31 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
     });
   });
 
-  /** 测试场景：验证「regression test: can unwind context on selective hydration interruption for sync updates」描述的渲染、交互或错误处理结果。 */
+  /**
+   * 相同 Provider/sibling reader 结构，shell 后 flushSync A→AA；日志 App/A/App/AA/DefaultContext/Commit，验证同步水合重启也正确恢复 Context 栈。
+   */
   it('regression test: can unwind context on selective hydration interruption for sync updates', async () => {
     const Context = React.createContext('DefaultContext');
 
-    /** `ContextReader`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * 在 Provider 外读 Context 并记值，返回 null；同步水合重启后也必须得到 DefaultContext，props 未使用。
+     */
     function ContextReader(props) {
       const value = React.useContext(Context);
       Scheduler.log(value);
       return null;
     }
 
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * 记录 text 并返回 span，供同步更新先认领 A 再提交 AA 的顺序断言。
+     */
     function Child({text}) {
       Scheduler.log(text);
       return <span>{text}</span>;
     }
+    /**
+     * memo/Activity 包装 Child，为同步更新构造仍脱水的独立边界；返回树中不读取 Context，本例关注祖先 Provider 栈恢复。
+     */
     const ChildWithBoundary = React.memo(function ({text}) {
       return (
         <Activity>
@@ -1540,7 +1674,9 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
       );
     });
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * 返回 SiblingContext Provider 内的 Child 边界和 Provider 外 reader；effect 记录 Commit，a 更新触发认领重启，不能把 provider 值泄漏给 sibling。
+     */
     function App({a}) {
       Scheduler.log('App');
       React.useEffect(() => {
@@ -1571,11 +1707,15 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
     });
   });
 
-  /** 测试场景：验证「regression: selective hydration does not contribute to "maximum update limit" count」描述的渲染、交互或错误处理结果。 */
+  /**
+   * 100 个独立边界共用 insideRef，先仅水合 shell：outsideRef 非空、insideRef 为空；一次 flushSync setState(true) 触发子边界水合，最终 insideRef 非空且 act 完成，证明水合重试不应被累计为无限更新循环。
+   */
   it('regression: selective hydration does not contribute to "maximum update limit" count', async () => {
     const outsideRef = React.createRef(null);
     const insideRef = React.createRef(null);
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * 返回一个含 insideRef div 的独立 Activity；isMounted prop 未读取，但父更新把新 props 送到100个边界，迫使未水合 children 进入认领路径。
+     */
     function Child() {
       return (
         <Activity>
@@ -1585,7 +1725,9 @@ describe('ReactDOMServerSelectiveHydrationActivity', () => {
     }
 
     let setIsMounted = false;
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * useState(false) 的 setter 暴露为 setIsMounted，生成100个 keyed Child 并给 shell 挂 outsideRef；两类 ref 区分 shell 先提交与所有子边界后续认领，返回 div 子树。
+     */
     function App() {
       const [isMounted, setState] = React.useState(false);
       setIsMounted = setState;

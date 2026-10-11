@@ -133,7 +133,7 @@ describe('ReactUse', () => {
   // `use`，因此额外实现成本目前并不划算。
   // @gate TODO
   /**
-   * 场景：微任务在挂起栈展开前 ping 当前 fiber。
+   * 场景：微任务在挂起栈展开前 ping 当前 fiber（@gate TODO 保留的未启用期望）。
    * Given 异步组件抛出会在微任务中兑现的 Promise；When transition 首次渲染；
    * Then React 直接重试而不构造 fallback。验证机制：调度日志无 Loading 且根输出为 Async；
    * 对应源码：`ReactFiberThenable` 的 ping 与 work loop 挂起重试路径。
@@ -218,7 +218,7 @@ describe('ReactUse', () => {
    * 场景：用户代码错误地抛出已标记 fulfilled 的 thenable。
    * Given thenable 已完成却被组件反复抛出；When React 尝试渲染 Suspense 树；
    * Then React 停在 fallback 而非无限同步重试。验证机制：循环哨兵未触发且只观察预热重试；
-   * 对应源码：`trackUsedThenable` 对已完成却被抛出的 thenable 的防循环分支。
+   * 对应源码：work loop 对用户直接 throw thenable 的展开路径；这与 use 解包 fulfilled 值的路径不同。
    */
   it('does not infinite loop if already fulfilled thenable is thrown', async () => {
     // 已兑现 Promise 正常不应再被抛出；继续重试没有意义并可能形成死循环。
@@ -267,7 +267,7 @@ describe('ReactUse', () => {
 
   /**
    * 场景：组件顺序读取三个已兑现 Promise。
-   * Given 三个稳定 Promise；When transition 调用 `use` 解包；Then 拼接值 ABC 一次提交。
+   * Given 三个稳定 Promise；When transition 调用 `use` 解包；Then 输出拼接值 ABC。
    * 验证机制：日志和根输出一致；对应源码：`use` dispatcher 与 thenable 状态跟踪。
    */
   it('basic use(promise)', async () => {
@@ -720,7 +720,7 @@ describe('ReactUse', () => {
   // @gate enableSuspendingDuringWorkLoop
   /**
    * 场景：已有内容的边界在 transition 中读取完全未缓存请求。
-   * Given 当前 UI 为 empty；When transition 切换到 Async 并分两轮解析同名请求；Then 旧 UI 保留直至重试完成。
+   * Given 当前 UI 为 empty；When transition 切换到 Async 并解析当前同名请求批次；Then 旧 UI 保留直至重试完成。
    * 验证机制：请求日志、未缓存告警及最终 Async；对应源码：work-loop 挂起延迟与 transition 重试。
    */
   it('during a transition, can unwrap async operations even if nothing is cached', async () => {
@@ -904,9 +904,9 @@ describe('ReactUse', () => {
 
   // @gate enableSuspendingDuringWorkLoop
   /**
-   * 场景：组件因 `use` 挂起后，当前 Hook dispatcher 必须清空。
+   * 场景：组件因 `use` 挂起后，dispatcher 必须退出组件的 Hook 调用上下文。
    * Given transition 停在永不兑现请求；When 组件外直接调用 useState；Then 抛出 Invalid hook call。
-   * 验证机制：异常文本断言；对应源码：renderWithHooks 挂起退出时的 dispatcher 恢复。
+   * 验证机制：异常文本断言；对应源码：renderWithHooks 挂起退出时切到 ContextOnlyDispatcher 的恢复路径。
    */
   it('while suspended, hooks cannot be called (i.e. current dispatcher is unset correctly)', async () => {
     /** 读取永不兑现请求，使 work loop 停留在挂起状态。 */
@@ -1625,7 +1625,7 @@ describe('ReactUse', () => {
 
   /**
    * 场景：顶层 async 组件返回的 Promise 在协调前透明解包。
-   * Given返回元素身份随 text 更新；When A 更新为 B；Then Child 复用而不是按 Promise 重挂载。
+   * Given返回元素身份随 text 更新；When A 更新为 B；Then解包后的 Child 收到新 text，并重新执行依赖 text 的 effect。
    * 验证机制：效果日志和根输出；对应源码：async child 解包后继续 reconcileChildFibers。
    */
   it('async children are transparently unwrapped before being reconciled (top level)', async () => {
@@ -1663,7 +1663,7 @@ describe('ReactUse', () => {
     ]);
     expect(root).toMatchRenderedOutput('A');
 
-    // 更新 Child 属性；它应沿用现有 fiber 而不是重新挂载。
+    // 更新 Child 的 text；下方 Mount: B 是依赖变化导致的 effect 执行日志。
     await act(() => {
       startTransition(() => {
         root.render(<App text="B" />);
@@ -2129,8 +2129,8 @@ describe('ReactUse', () => {
 
   /**
    * 场景：Suspense 边界外的 async Client Component 在微任务内完成。
-   * Given async 函数立即返回 Promise；When根直接渲染且错误边界捕获；Then转换为描述性客户端异步组件错误。
-   * 验证机制：告警、错误日志与最终边界文本；对应源码：无 Suspense 的 thenable 异常升级及错误边界恢复。
+   * Given async 函数立即返回 Promise；When根直接渲染且错误边界捕获；Then反复 shell 挂起超过计数阈值，抛出描述性客户端异步组件错误。
+   * 验证机制：告警、错误日志与最终边界文本；对应源码：trackUsedThenable 检查 shellSuspendCounter，随后走错误边界恢复。
    */
   it('an async component outside of a Suspense boundary crashes with an error (resolves in microtask)', async () => {
     /** 捕获无边界异步组件升级的错误，并显示其消息。 */
@@ -2193,8 +2193,8 @@ describe('ReactUse', () => {
 
   /**
    * 场景：Suspense 边界外的 async Client Component 跨宏任务完成。
-   * Given组件显式等待微任务工具；When错误边界渲染它；Then仍升级为相同描述性错误而非永久挂起。
-   * 验证机制：告警、重复错误日志和最终文本；对应源码：挂起跨任务后的无边界错误恢复。
+   * Given组件显式等待微任务工具；When错误边界渲染它；Then重复 shell 挂起同样超过计数阈值，并由错误边界显示描述性错误。
+   * 验证机制：告警、重复错误日志和最终文本；对应源码：trackUsedThenable 的 shellSuspendCounter 检查与错误边界恢复。
    */
   it('an async component outside of a Suspense boundary crashes with an error (resolves in macrotask)', async () => {
     /** 捕获跨任务异步组件产生的升级错误。 */
@@ -2337,7 +2337,7 @@ describe('ReactUse', () => {
   // @gate enableAsyncIterableChildren
   /**
    * 场景：异步生成器组件分批 yield 文本节点。
-   * Given Hi 与 World 请求按序待决且缓存；When逐个解析；Then生成器流最终协调为 Hi World。
+   * Given Hi 与 World 请求按序待决且缓存；When逐个解析；Then请求按顺序启动，最终协调为 Hi World；这里只断言最终结果。
    * 验证机制：请求/输出日志、告警和根结果；对应源码：AsyncIterable child 消费与增量协调。
    */
   it('async generator component', async () => {
@@ -2393,7 +2393,7 @@ describe('ReactUse', () => {
   // @gate enableAsyncIterableChildren
   /**
    * 场景：普通元素的 children 是自定义 async iterable。
-   * Given迭代器按序等待并 yield Hi/空格/World；When两次解析模拟请求；Then div 内增量结果为 Hi World。
+   * Given迭代器按序等待并 yield Hi/空格/World；When两次解析模拟请求；Then请求依次启动，最终 div 内容为 Hi World。
    * 验证机制：请求日志、未缓存警告和 JSX 输出；对应源码：`Symbol.asyncIterator` child 消费路径。
    */
   it('async iterable children', async () => {
@@ -2466,6 +2466,7 @@ describe('ReactUse', () => {
         const value = use(promise);
 
         const [isPending, startLocalTransition] = useTransition();
+        /** 在本地 transition 中换成 Updated 请求，观察 use 重放后的 pending 复位。 */
         update = () => {
           startLocalTransition(() => {
             root.render(<App promise={getAsyncText('Updated')} />);
@@ -2510,6 +2511,7 @@ describe('ReactUse', () => {
         const value = use(promise);
 
         const [isPending, startLocalTransition] = useTransition();
+        /** 在本地 transition 中换成 Updated 请求，观察 use 重放后的 pending 复位。 */
         update = () => {
           startLocalTransition(() => {
             root.render(<App promise={getAsyncText('Updated')} />);

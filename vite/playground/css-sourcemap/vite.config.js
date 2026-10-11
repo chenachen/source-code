@@ -14,6 +14,7 @@ export default defineConfig({
         additionalData: '@color: red;',
       },
       styl: {
+        /** 替换 Stylus 颜色标记并返回对应 MagicString map，供 CSS sourcemap 测试验证预处理输入映射链。 */
         additionalData: (content, filename) => {
           const ms = new MagicString(content, { filename })
 
@@ -39,6 +40,7 @@ export default defineConfig({
   plugins: [
     {
       name: 'virtual-html',
+      /** 为 /virtual.html 提供含内联 style 的虚拟 HTML，先走 transformIndexHtml 再响应，覆盖 CSS 代理 map。 */
       configureServer(server) {
         server.middlewares.use(async (req, res, next) => {
           if (req.url === '/virtual.html') {

@@ -39,6 +39,7 @@ let streamingContainer;
 let assertConsoleErrorDev;
 
 describe('ReactDOMFloat', () => {
+  // 每例重置模块并创建可执行脚本的JSDOM文档，matchMedia仅匹配空串/all；初始化文本记录与按节点去重的loadCache，并把PassThrough数据累入buffer。资源load/error由辅助函数人工派发。
   beforeEach(() => {
     jest.resetModules();
     JSDOM = require('jsdom').JSDOM;
@@ -65,7 +66,11 @@ describe('ReactDOMFloat', () => {
     global.addEventListener = global.window.addEventListener;
     global.MutationObserver = global.window.MutationObserver;
     // Fizz runtime 假定 requestAnimationFrame 存在，因此这里需要提供 polyfill。
-    global.requestAnimationFrame = global.window.requestAnimationFrame = cb =>
+    global.requestAnimationFrame =
+      /** 为Fizz runtime补requestAnimationFrame，以setTimeout(cb)异步调用，不提供浏览器帧时间或真实vsync；返回timer handle。
+       * @param cb 下一帧通知函数，此polyfill不传时间戳。
+       * @returns setTimeout定时器句柄。 */
+      global.window.requestAnimationFrame = cb =>
       setTimeout(cb);
     container = document.getElementById('container');
 
@@ -111,7 +116,10 @@ describe('ReactDOMFloat', () => {
   const bodyStartMatch = /<body(?:>| .*?>)/;
   const headStartMatch = /<head(?:>| .*?>)/;
 
-  /** `act`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 执行server侧callback并等待一次setImmediate，再消费PassThrough缓冲：首段可替换document内容，后段按head/body/container插入且执行内嵌脚本，最后跑定时器使节流揭示完成。这是JSDOM整片段模拟，不是浏览器增量HTML解析。
+   * @param callback 本次渲染、解锁文本或派load/error的同步/异步操作。
+   * @returns 插入与脚本处理完成的Promise；空缓冲只跑定时器。
+   * @throws callback/脚本错误、stream fatalError或非法首段html格式；错误不自动恢复已写DOM。 */
   async function act(callback) {
     await callback();
     // 等待一次事件循环的轮询。 这假设我们已经将所有东西都冲刷了。
@@ -185,7 +193,7 @@ describe('ReactDOMFloat', () => {
         }
 
         if (bodyMatch) {
-          // 我们解析了一个主体标签。 我们需要复制头部属性，并将未来的内容插入到 <body> 中。
+          // 解析到 body 标签后复制 body 属性，并把后续流式内容插入 document.body。
           streamingContainer = document.body;
           const tempBodyNode = tempDom.window.document.body;
           for (let i = 0; i < tempBodyNode.attributes.length; i++) {
@@ -238,7 +246,9 @@ describe('ReactDOMFloat', () => {
     jest.runAllTimers();
   }
 
-  /** `getMeaningfulChildren`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 递归把DOM投影为可比较的React元素/文本，忽略实现脚本、template、hidden/aria-hidden节点与render-blocking expect标记；data-meaningful覆盖过滤，async外部脚本可保留，含冒号id被省略。只比较此投影，不证明节点身份或网络加载。
+   * @param element 从其firstChild遍历的DOM容器。
+   * @returns 无可见子项为undefined，一个项直接返回，多个项返回数组。 */
   function getMeaningfulChildren(element) {
     const children = [];
     let node = element.firstChild;
@@ -289,13 +299,16 @@ describe('ReactDOMFloat', () => {
         : children;
   }
 
-  /** `BlockedOn`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 先读value对应文本记录，pending时抛thenable使当前Suspense挂起，resolved后透传children。
+   * @param props value为缓存键，children为解锁后的资源/内容。
+   * @returns children；挂起或拒绝时不返回。 */
   function BlockedOn({value, children}) {
     readText(value);
     return children;
   }
 
-  /** `resolveText`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 缺记录时创建resolved记录；pending时先改状态和值，再同步调用全部ping，已resolved/rejected记录不修改。ping数组不清空，但重复resolve不再次通知。
+   * @param text 缓存键及最终字符串值。 */
   function resolveText(text) {
     const record = textCache.get(text);
     if (record === undefined) {
@@ -312,7 +325,9 @@ describe('ReactDOMFloat', () => {
     }
   }
 
-  /** `readText`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 读textCache的resolved值，pending/rejected抛记录值；首次未命中构造可订阅thenable存为pending后抛出，供BlockedOn/AsyncText控制Fizz边界。
+   * @param text 字符串缓存键。
+   * @returns resolved文本；未就绪时抛thenable，rejected时抛原因。 */
   function readText(text) {
     const record = textCache.get(text);
     if (record !== undefined) {
@@ -327,7 +342,9 @@ describe('ReactDOMFloat', () => {
     } else {
       const thenable = {
         pings: [],
-        /** `readText.then`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** pending时把resolve加入ping列表，状态已改变时以Promise微任务调用resolve(newRecord.value)；仅实现单一成功订阅，不接受拒绝回调或返回链式promise。
+         * @param resolve Fizz重试用通知函数。 */
         then(resolve) {
           if (newRecord.status === 'pending') {
             thenable.pings.push(resolve);
@@ -347,12 +364,17 @@ describe('ReactDOMFloat', () => {
     }
   }
 
-  /** `AsyncText`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 返回文本缓存值，pending则沿readText抛thenable，由最近Suspense显示fallback。
+   * @param props text为记录键和成功值。
+   * @returns resolved文本。 */
   function AsyncText({text}) {
     return readText(text);
   }
 
-  /** `renderToPipeableStream`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 将本例options与按特性开关建立的renderOptions经mergeOptions合并后转发Fizz Node流入口；测试调用方负责pipe到writable。
+   * @param jsx 待流式输出的React树。
+   * @param options 本例额外服务端选项，可能为空。
+   * @returns Fizz返回的pipe/abort流控制对象。 */
   function renderToPipeableStream(jsx, options) {
     // 合并选项与 renderOptions。 可能包含特定于 featureFlag 的行为。
     return ReactDOMFizzServer.renderToPipeableStream(
@@ -361,7 +383,8 @@ describe('ReactDOMFloat', () => {
     );
   }
 
-  /** `loadPreloads`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 为document中尚未通知的preload节点派load并记href日志，按可选hrefs筛选；不触发真实网络请求。
+   * @param hrefs 可选href数组；缺省选择所有preload。 */
   function loadPreloads(hrefs) {
     const event = new window.Event('load');
     const nodes = document.querySelectorAll('link[rel="preload"]');
@@ -370,7 +393,8 @@ describe('ReactDOMFloat', () => {
     );
   }
 
-  /** `errorPreloads`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 为document中未通知的preload节点派error并记日志；与成功路径共享按节点记录的loadCache。
+   * @param hrefs 可选href筛选列表。 */
   function errorPreloads(hrefs) {
     const event = new window.Event('error');
     const nodes = document.querySelectorAll('link[rel="preload"]');
@@ -379,12 +403,15 @@ describe('ReactDOMFloat', () => {
     );
   }
 
-  /** `loadStylesheets`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 把document作为资源查找根转交loadStylesheetsFrom，模拟全页样式加载。
+   * @param hrefs 可选stylesheet href筛选列表。 */
   function loadStylesheets(hrefs) {
     loadStylesheetsFrom(document, hrefs);
   }
 
-  /** `loadStylesheetsFrom`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 在指定Document或shadowRoot内查找stylesheet，给未通知节点派load并记录日志，支持验证shadow资源归属。
+   * @param root 支持querySelectorAll的样式查找根。
+   * @param hrefs 可选href筛选列表。 */
   function loadStylesheetsFrom(root, hrefs) {
     const event = new window.Event('load');
     const nodes = root.querySelectorAll('link[rel="stylesheet"]');
@@ -393,7 +420,8 @@ describe('ReactDOMFloat', () => {
     });
   }
 
-  /** `errorStylesheets`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 在document内为未通知的stylesheet派error并记录日志，让样式依赖失败路径可控。
+   * @param hrefs 可选href筛选列表。 */
   function errorStylesheets(hrefs) {
     const event = new window.Event('error');
     const nodes = document.querySelectorAll('link[rel="stylesheet"]');
@@ -402,7 +430,11 @@ describe('ReactDOMFloat', () => {
     });
   }
 
-  /** `resolveLoadables`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 按href筛选nodes，跳过loadCache中已处理的节点；先记录节点，再调用onLoad日志钩子并派event。去重键是DOM节点而非URL，同节点不再通知，替换节点可重新通知。
+   * @param hrefs 可选href列表，缺省全部；空数组不处理任何节点。
+   * @param nodes 本次querySelectorAll得到的节点集合。
+   * @param event 循环复用的load或error事件。
+   * @param onLoad 派事件前调用的href观察函数；抛错会中止循环且当前节点已入缓存。 */
   function resolveLoadables(hrefs, nodes, event, onLoad) {
     const hrefSet = hrefs ? new Set(hrefs) : null;
     for (let i = 0; i < nodes.length; i++) {
@@ -419,14 +451,7 @@ describe('ReactDOMFloat', () => {
     }
   }
 
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「can render resources before singletons」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言直接覆盖 ReactDOMFloat 的资源提示分派、校验与静默降级。
-   */
+  /** 以document为根，title先于html/head/body出现；等待提交后title仍归入head，body保持hello world，验证资源可先于singleton创建。 */
   it('can render resources before singletons', async () => {
     const root = ReactDOMClient.createRoot(document);
     root.render(
@@ -458,7 +483,7 @@ describe('ReactDOMFloat', () => {
     );
   });
 
-  /** 测试场景：验证「can hydrate non Resources in head when Resources are also inserted there」描述的渲染、交互或错误处理结果。 */
+  /** Fizz先输出含meta、带onLoad的普通link、title、noscript、base与async脚本的head；再用相同树hydrate，前后有意义DOM完全相同，普通节点与提升资源可并存。 */
   it('can hydrate non Resources in head when Resources are also inserted there', async () => {
     await act(() => {
       const {pipe} = renderToPipeableStream(
@@ -524,7 +549,7 @@ describe('ReactDOMFloat', () => {
     );
   });
 
-  /** 测试场景：验证「warns if you render resource-like elements above <head> or <body>」描述的渲染、交互或错误处理结果。 */
+  /** 依次把noscript、template、无资源键style、无precedence样式link、同步script及带事件的link/script放在head/body外；断言各类定位和嵌套警告，trusted-types开关只增加脚本执行提示。 */
   it('warns if you render resource-like elements above <head> or <body>', async () => {
     const root = ReactDOMClient.createRoot(document);
 
@@ -661,7 +686,7 @@ describe('ReactDOMFloat', () => {
     return;
   });
 
-  /** 测试场景：验证「can acquire a resource after releasing it in the same commit」描述的渲染、交互或错误处理结果。 */
+  /** 先挂载async src=foo资源，再同提交删除原引用并在第二槽位重新引用foo、增加data-new；head仍只有原脚本且无新增属性，验证资源复用而非重建。 */
   it('can acquire a resource after releasing it in the same commit', async () => {
     const root = ReactDOMClient.createRoot(container);
     root.render(
@@ -701,7 +726,7 @@ describe('ReactDOMFloat', () => {
     );
   });
 
-  /** 测试场景：验证「emits an implicit <head> element to hold resources when none is rendered but an <html> is rendered」描述的渲染、交互或错误处理结果。 */
+  /** Fizz树有html/body而无head，title和async脚本在html外；采集两段原始流，第一段补head并按开关加入外部runtime/阻塞标记，第二段关闭body/html。 */
   it('emits an implicit <head> element to hold resources when none is rendered but an <html> is rendered', async () => {
     const chunks = [];
 
@@ -738,10 +763,12 @@ describe('ReactDOMFloat', () => {
     ]);
   });
 
-  /** 测试场景：验证「dedupes if the external runtime is explicitly loaded using preinit」描述的渲染、交互或错误处理结果。 */
+  /** App在render中preinit与externalRuntimeSrc相同的脚本，子Suspense仍pending；输出文档只含一个对应async脚本，验证显式预初始化与Fizz runtime去重。 */
   it('dedupes if the external runtime is explicitly loaded using preinit', async () => {
     const unstable_externalRuntimeSrc = 'src-of-external-runtime';
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** render时preinit指定的外部Fizz runtime脚本，再返回等待Hello文本的Suspense，给显式脚本与runtime自动插入的去重提供同URL输入。
+     * @returns div与pending边界。 */
     function App() {
       ReactDOM.preinit(unstable_externalRuntimeSrc, {as: 'script'});
       return (
@@ -775,7 +802,7 @@ describe('ReactDOMFloat', () => {
     ).toEqual(['<script src="src-of-external-runtime" async=""></script>']);
   });
 
-  /** 测试场景：验证「can send style insertion implementation independent of boundary commpletion instruction implementation」描述的渲染、交互或错误处理结果。 */
+  /** 两个文本边界分别等待foo/bar，只有bar依赖样式；先解foo可直接显示，解bar后插入stylesheet与preload但仍保留bar fallback，验证晚到样式插入与无样式边界完成可独立执行。 */
   it('can send style insertion implementation independent of boundary commpletion instruction implementation', async () => {
     await act(() => {
       renderToPipeableStream(
@@ -834,7 +861,7 @@ describe('ReactDOMFloat', () => {
     );
   });
 
-  /** 测试场景：验证「can avoid inserting a late stylesheet if it already rendered on the client」描述的渲染、交互或错误处理结果。 */
+  /** 服务端foo/bar边界都pending，hydrate时客户端在边界外先引用foo样式；先解bar并模拟两样式load后显示bar，再解foo时不再发新load，head只有各一份资源，晚到服务端复用客户端样式。 */
   it('can avoid inserting a late stylesheet if it already rendered on the client', async () => {
     await act(() => {
       renderToPipeableStream(
@@ -945,7 +972,7 @@ describe('ReactDOMFloat', () => {
     );
   });
 
-  /** 测试场景：验证「can hoist <link rel="stylesheet" .../> and <style /> tags together, respecting order of discovery」描述的渲染、交互或错误处理结果。 */
+  /** shell先发现one到four组link/style，随后依次解三个含重复资源的边界，再hydrate加入one到eight的新项并派load；核对每组内部发现顺序、组首次顺序、重复项去重及晚到preload位置。 */
   it('can hoist <link rel="stylesheet" .../> and <style /> tags together, respecting order of discovery', async () => {
     const css = `
 body {
@@ -1254,9 +1281,11 @@ body {
     );
   });
 
-  /** 测试场景：验证「client renders a boundary if a style Resource dependency fails to load」描述的渲染、交互或错误处理结果。 */
+  /** 晚到边界插入foo/bar样式后仍显示loading，模拟bar error使边界注释变$!并带CSS failed to load digest；hydrate后load foo，改由客户端显示Hello并收集可恢复错误消息及digest。 */
   it('client renders a boundary if a style Resource dependency fails to load', async () => {
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 文档内一个Suspense先等待unblock，再依赖foo/bar两份样式与Hello；服务端和hydrate复用同树以观察CSS失败转客户端恢复。
+     * @returns 完整html/head/body树。 */
     function App() {
       return (
         <html>
@@ -1330,7 +1359,10 @@ body {
 
     const errors = [];
     ReactDOMClient.hydrateRoot(document, <App />, {
-      /** `onRecoverableError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 记录hydrate恢复错误的message和digest，供CSS failed to load两项断言；errInfo参数未读取。
+       * @param err React恢复路径提供的错误对象。
+       * @param errInfo 错误上下文，本夹具忽略。 */
       onRecoverableError(err, errInfo) {
         errors.push(err.message);
         errors.push(err.digest);
@@ -1361,7 +1393,7 @@ body {
     ]);
   });
 
-  /** 测试场景：验证「treats stylesheet links with a precedence as a resource」描述的渲染、交互或错误处理结果。 */
+  /** 服务端body内带precedence的foo样式被提升到head；hydrate树省略该link仍保留已输出的样式，body Hello不变，验证资源独立于普通子节点生命周期。 */
   it('treats stylesheet links with a precedence as a resource', async () => {
     await act(() => {
       const {pipe} = renderToPipeableStream(
@@ -1402,10 +1434,13 @@ body {
     );
   });
 
-  /** 测试场景：验证「inserts text separators following text when followed by an element that is converted to a resource and thus removed from the html inline」描述的渲染、交互或错误处理结果。 */
+  /** 三个组件各返回已解锁文本和被提升的样式link；服务端head有三个资源，body投影仍为foo、bar、baz三个文本项，避免移走link后相邻文本合并。 */
   it('inserts text separators following text when followed by an element that is converted to a resource and thus removed from the html inline', async () => {
         // 将多个此类节点作为兄弟节点渲染时，值有时会合并成一段无分隔符的文本，因为 link 会作为资源被省略。
-    /** `AsyncTextWithResource`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 先读text，成功后返回文本与紧邻的stylesheet资源；link被提升后文本仍需保留节点分隔。
+     * @param props text缓存键，href资源URL，precedence为资源分组。
+     * @returns 文本/link Fragment；pending时抛thenable。 */
     function AsyncTextWithResource({text, href, precedence}) {
       const value = readText(text);
       return (
@@ -1449,9 +1484,11 @@ body {
     );
   });
 
-  /** 测试场景：验证「hoists late stylesheets the correct precedence」描述的渲染、交互或错误处理结果。 */
+  /** 先建立one与preset组，晚到bar/default、baz/two、qux/one分批解锁；foo/bar及baz/qux各load前对应fallback保留，load后逐边界显示，最终第三重复边界直接复用资源且head按one/preset/default/two排序。 */
   it('hoists late stylesheets the correct precedence', async () => {
-    /** `PresetPrecedence`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 在render中preinit preset样式并先建立preset分组；无显式return，测试只观察资源副作用。
+     * @returns undefined，不产生UI。 */
     function PresetPrecedence() {
       ReactDOM.preinit('preset', {as: 'style', precedence: 'preset'});
     }
@@ -1735,7 +1772,7 @@ body {
     );
   });
 
-  /** 测试场景：验证「normalizes stylesheet resource precedence for all boundaries inlined as part of the shell flush」描述的渲染、交互或错误处理结果。 */
+  /** 外/中/内与另一兄弟边界都同步完成并随shell内联，资源发现顺序交错；最终按one到four各收集1/2/3/4资源，新的five组最后，body同步显示全部内容，验证shell统一precedence排序。 */
   it('normalizes stylesheet resource precedence for all boundaries inlined as part of the shell flush', async () => {
     await act(() => {
       const {pipe} = renderToPipeableStream(
@@ -1819,7 +1856,7 @@ body {
     );
   });
 
-  /** 测试场景：验证「stylesheet resources are inserted according to precedence order on the client」描述的渲染、交互或错误处理结果。 */
+  /** 先SSR并hydrate foo/one与bar/two，再客户端更新Goodbye并加baz/one；派preload和stylesheet load后head顺序foo、baz、bar，旧资源保留，新资源插入既有precedence组末尾。 */
   it('stylesheet resources are inserted according to precedence order on the client', async () => {
     await act(() => {
       const {pipe} = renderToPipeableStream(
@@ -1910,24 +1947,33 @@ body {
     );
   });
 
-  /** 测试场景：验证「inserts preloads in render phase eagerly」描述的渲染、交互或错误处理结果。 */
+  /** 客户端边界内先发现foo样式，再由Throw抛Uh oh；错误边界提交错误文本，head仍有foo preload但没有stylesheet，证明render发现的预加载不依赖原子树成功提交。 */
   it('inserts preloads in render phase eagerly', async () => {
-    /** `Throw`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 在样式preload已于render登记后抛Uh oh，迫使原树未提交就切换错误回退。
+     * @throws Uh oh错误，不返回UI。 */
     function Throw() {
       throw new Error('Uh oh!');
     }
-    /** `ErrorBoundary`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+
+    /** 将Throw错误派生为hasError/error，回退直接显示message，观察废弃render留下的preload。 */
     class ErrorBoundary extends React.Component {
-      /** `ErrorBoundary.state`：记录测试夹具在当前场景中的状态。 */
+
+      /** hasError=false/error=null初值透传children，派生错误后切换消息回退。 */
       state = {hasError: false, error: null};
-      /** `ErrorBoundary.getDerivedStateFromError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 返回hasError与捕获error补丁，不自行发起网络或资源处理。
+       * @param error 后代render的Uh oh异常。
+       * @returns 回退状态补丁。 */
       static getDerivedStateFromError(error) {
         return {
           hasError: true,
           error,
         };
       }
-      /** `ErrorBoundary.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 无错误时透传children，有错时返回error.message作为唯一可见回退。
+       * @returns 原子树或错误文本。 */
       render() {
         if (this.state.hasError) {
           return this.state.error.message;
@@ -1957,7 +2003,7 @@ body {
     );
   });
 
-  /** 测试场景：验证「will include child boundary stylesheet resources in the boundary reveal instruction」描述的渲染、交互或错误处理结果。 */
+  /** foo包含bar包含baz三个等待文本的边界，先解bar/baz仍无输出；再解foo后插入三份样式和preload但保留外层fallback，三样式load后才一次显示整棵内容，依赖汇总到外层揭示。 */
   it('will include child boundary stylesheet resources in the boundary reveal instruction', async () => {
     await act(() => {
       const {pipe} = renderToPipeableStream(
@@ -2076,7 +2122,7 @@ body {
     );
   });
 
-  /** 测试场景：验证「will hoist resources of child boundaries emitted as part of a partial boundary to the parent boundary」描述的渲染、交互或错误处理结果。 */
+  /** 外边界同时等foo与qux，foo内部bar/baz先完成；解foo只输出已完成segment的三份preload，head仍空，解qux才插四份stylesheet，全部load后外层揭示，验证partial flush把子依赖交父边界。 */
   it('will hoist resources of child boundaries emitted as part of a partial boundary to the parent boundary', async () => {
     await act(() => {
       const {pipe} = renderToPipeableStream(
@@ -2237,9 +2283,11 @@ body {
     );
   });
 
-  /** 测试场景：验证「encodes attributes consistently whether resources are flushed in shell or in late boundaries」描述的渲染、交互或错误处理结果。 */
+  /** shell的foo和晚到bar样式携带同组连接属性、带引号data值、未知属性及函数/符号非法值；两阶段DOM投影均保留合法值并过滤非法值，DEV记录未知/非法prop警告，晚到preload只带可用的连接属性。 */
   it('encodes attributes consistently whether resources are flushed in shell or in late boundaries', async () => {
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 同时构建shell foo与待unblock的bar样式，使用同一批合法/非法属性输入比较两种输出时机的编码和过滤。
+     * @returns html文档与pending边界。 */
     function App() {
       return (
         <html>
@@ -2247,11 +2295,11 @@ body {
           <body>
             <div>
               <link
-                // 该 preload 是显式的，因此可以携带大量可能的属性进行冲刷。
-                // 它还会被复制成一个在 shell 之后冲刷的 style。
+                // 这里显式渲染的是stylesheet资源，可携带合法DOM属性；对应自动preload仅保留预加载适用属性。
+                // foo在shell输出，bar随晚到边界输出；两者都是stylesheet link。
                 rel="stylesheet"
                 href="foo"
-                // precedence 不是 preload 的特殊属性，因此会原样冲刷。
+                // 资源precedence转为data-precedence，用于后续分组插入顺序。
                 precedence="default"
                 // 一些标准的链接属性
                 crossOrigin="anonymous"
@@ -2270,8 +2318,8 @@ body {
               <Suspense fallback={'loading...'}>
                 <BlockedOn value="unblock">
                   <link
-                    // 该 preload 是显式的，因此可以携带大量可能的属性进行冲刷。
-                    // 它还会被复制成一个在 shell 之后冲刷的 style。
+                    // 这里显式渲染的是stylesheet资源，可携带合法DOM属性；对应自动preload仅保留预加载适用属性。
+                    // foo在shell输出，bar随晚到边界输出；两者都是stylesheet link。
                     rel="stylesheet"
                     href="bar"
                     // 这个 opt-in 属性使它被当作资源处理。
@@ -2385,7 +2433,7 @@ body {
     );
   });
 
-  /** 测试场景：验证「boundary stylesheet resource dependencies hoist to a parent boundary when flushed inline」描述的渲染、交互或错误处理结果。 */
+  /** 嵌套A/AA/AAA/AAAA先解unblock、AA、AAAA而A/AAA仍pending，仅输出四份preload；解A并load先显示A/AA和AAA fallback，解AAA后加入AAA/AAAA样式并load显示全部，内联子边界依赖归父揭示。 */
   it('boundary stylesheet resource dependencies hoist to a parent boundary when flushed inline', async () => {
     await act(() => {
       const {pipe} = renderToPipeableStream(
@@ -2508,9 +2556,11 @@ body {
     );
   });
 
-  /** 测试场景：验证「always enforces crossOrigin "anonymous" for font preloads」描述的渲染、交互或错误处理结果。 */
+  /** render中以缺省、foo、use-credentials、anonymous四种crossOrigin预加载字体；四link最终crossorigin都为空匿名值，foo另保留woff2 type，字体预加载强制匿名模式。 */
   it('always enforces crossOrigin "anonymous" for font preloads', async () => {
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 在render中声明四种font预加载crossOrigin输入并返回空文档；最终输出用于核对字体统一匿名模式。
+     * @returns html/head/body。 */
     function App() {
       ReactDOM.preload('foo', {as: 'font', type: 'font/woff2'});
       ReactDOM.preload('bar', {as: 'font', crossOrigin: 'foo'});
@@ -2546,9 +2596,11 @@ body {
     );
   });
 
-  /** 测试场景：验证「does not hoist anything with an itemprop prop」描述的渲染、交互或错误处理结果。 */
+  /** 同一文档head与body深层都放带itemProp的meta/link/title/style/async脚本；SSR和hydrate后节点均留在原微数据位置、样式仍用precedence原属性，验证itemProp阻止资源化与提升。 */
   it('does not hoist anything with an itemprop prop', async () => {
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 在head和body微数据域内各返回六类带itemProp元素，防止按普通hoistable/resource处理，并供SSR与hydrate比较。
+     * @returns 带itemScope的文档。 */
     function App() {
       return (
         <html>
@@ -2675,7 +2727,7 @@ body {
     );
   });
 
-  /** 测试场景：验证「warns if you render <meta> tag with itemProp outside <body> or <head>」描述的渲染、交互或错误处理结果。 */
+  /** document根把itemProp=foo的meta直接置于html下；等待后DEV同时断言不能提升微数据元素的定位警告与非法HTML嵌套警告。 */
   it('warns if you render <meta> tag with itemProp outside <body> or <head>', async () => {
     const root = ReactDOMClient.createRoot(document);
     root.render(
@@ -2701,7 +2753,7 @@ body {
     ]);
   });
 
-  /** 测试场景：验证「warns if you render a <title> tag with itemProp outside <body> or <head>」描述的渲染、交互或错误处理结果。 */
+  /** document根把带itemProp的title直接置于html下；DEV断言微数据定位和title不能作为html直接子项两条警告，未断言资源提升成功。 */
   it('warns if you render a <title> tag with itemProp outside <body> or <head>', async () => {
     const root = ReactDOMClient.createRoot(document);
     root.render(
@@ -2727,7 +2779,7 @@ body {
     ]);
   });
 
-  /** 测试场景：验证「warns if you render a <style> tag with itemProp outside <body> or <head>」描述的渲染、交互或错误处理结果。 */
+  /** document根把带itemProp的style直接置于html下；DEV断言微数据定位与非法嵌套两条警告，提示保持其itemScope语义位置。 */
   it('warns if you render a <style> tag with itemProp outside <body> or <head>', async () => {
     const root = ReactDOMClient.createRoot(document);
     root.render(
@@ -2753,7 +2805,7 @@ body {
     ]);
   });
 
-  /** 测试场景：验证「warns if you render a <link> tag with itemProp outside <body> or <head>」描述的渲染、交互或错误处理结果。 */
+  /** document根把带itemProp的link直接置于html下；DEV断言微数据定位与link/html嵌套警告，itemProp不可走普通hoistable路径。 */
   it('warns if you render a <link> tag with itemProp outside <body> or <head>', async () => {
     const root = ReactDOMClient.createRoot(document);
     root.render(
@@ -2779,7 +2831,7 @@ body {
     ]);
   });
 
-  /** 测试场景：验证「warns if you render a <script> tag with itemProp outside <body> or <head>」描述的渲染、交互或错误处理结果。 */
+  /** document根把带itemProp的script置于html下；DEV断言微数据定位、非法嵌套及trusted-types开启时的客户端script提示，测试只检查诊断。 */
   it('warns if you render a <script> tag with itemProp outside <body> or <head>', async () => {
     const root = ReactDOMClient.createRoot(document);
     root.render(
@@ -2813,11 +2865,13 @@ body {
     ]);
   });
 
-  /** 测试场景：验证「can hydrate resources and components in the head and body even if a browser or 3rd party script injects extra html nodes」描述的渲染、交互或错误处理结果。 */
+  /** SSR混合资源、普通host、itemProp、noscript后，在head/body多处注入style/div/async脚本；同树hydrate保持注入节点与资源，unmount后仅移除React管理的普通树，资源和跳过的第三方节点仍在。 */
   it('can hydrate resources and components in the head and body even if a browser or 3rd party script injects extra html nodes', async () => {
     // 这是一个 hydration 压力测试：在 <head> 和 <body> 已被第三方脚本或扩展修改的环境中，对
     // hoistable 元素、hoistable 资源与 host component 的复杂组合进行 hydration。
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 混合html外资源、head普通host、body微数据节点与深层div；相同树用于SSR/hydrate/unmount的第三方注入压力场景。
+     * @returns 含文档singleton及外部hoistable的Fragment。 */
     function App() {
       return (
         <>
@@ -2837,7 +2891,7 @@ body {
               <link rel="foo" href="foo" onLoad={() => {}} />
             </head>
             <body>
-              {/* 组件因为它有项目Prop */}
+              {/* 带itemProp的普通宿主节点，保持微数据位置 */}
               <meta name="foo" content="foo" itemProp="a prop" />
               {/* 常规可提升的 */}
               <meta name="foo" content="foo" />
@@ -2846,7 +2900,7 @@ body {
               <div itemScope={true}>
                 <div>
                   <div>deep hello</div>
-                  {/* 组件因为它有项目Prop */}
+                  {/* 带itemProp的普通宿主节点，保持微数据位置 */}
                   <meta name="foo" content="foo" itemProp="a prop" />
                 </div>
               </div>
@@ -2864,7 +2918,7 @@ body {
     expect(getMeaningfulChildren(document)).toEqual(
       <html itemscope="">
         <head>
-          {/* Hoisted 资源和元素 */}
+          {/* 提升的资源和元素 */}
           <link rel="stylesheet" href="stylesheet" data-precedence="default" />
           <script async="" src="rendered" />
           <link rel="foo" href="foo" />
@@ -2915,8 +2969,7 @@ body {
     document.body.prepend(injectedScript.cloneNode(true));
     document.body.appendChild(injectedScript.cloneNode(true));
 
-    // 我们对相同的 App 进行了 hydration，并确认输出与原生一致，除了因为我们在不使用 load handlers
-    // 的 SSR 中没有插入异步脚本。 所有额外的注入节点已预设。
+    // 同一App hydrate后React结构保持，rendered与async rendered脚本仍在，第三方注入节点也保留。
     const root = ReactDOMClient.hydrateRoot(document, <App />);
     await waitForAll([]);
     expect(getMeaningfulChildren(document)).toEqual(
@@ -2986,7 +3039,7 @@ body {
     );
   });
 
-  /** 测试场景：验证「does not preload nomodule scripts」描述的渲染、交互或错误处理结果。 */
+  /** SSR同步与async两份noModule脚本，分别保留body与提升到head；DOM投影只有这两份script而无preload，验证noModule不生成脚本预加载。 */
   it('does not preload nomodule scripts', async () => {
     await act(() => {
       renderToPipeableStream(
@@ -3010,7 +3063,7 @@ body {
     );
   });
 
-  /** 测试场景：验证「can delay commit until css resources load」描述的渲染、交互或错误处理结果。 */
+  /** transition首次添加foo stylesheet与hello，render后只有preload且容器空；preload load后插入stylesheet仍不提交，stylesheet load后hello立即出现，区分两种加载完成。 */
   it('can delay commit until css resources load', async () => {
     const root = ReactDOMClient.createRoot(container);
     expect(getMeaningfulChildren(container)).toBe(undefined);
@@ -3050,7 +3103,8 @@ body {
   });
 
   // https://github.com/facebook/react/issues/27585
-  /** 测试场景：验证「does not reinsert already inserted stylesheets during a delayed commit」描述的渲染、交互或错误处理结果。 */
+
+  /** SSR first/second样式，再客户端添加third并完成load；随后transition再引用一次first，head仍按first/second/third且各一份，不把已插入资源移动到组末。 */
   it('does not reinsert already inserted stylesheets during a delayed commit', async () => {
     await act(() => {
       renderToPipeableStream(
@@ -3121,7 +3175,7 @@ body {
       );
     });
     await waitForAll([]);
-    // 在 https://github.com/facebook/react/issues/27585 中，顺序更新为第二。 第三， 第一行
+    // 旧回归曾把first重插到second/third之后；此处断言first/second/third原顺序不变。
     expect(getMeaningfulChildren(document)).toEqual(
       <html>
         <head>
@@ -3137,8 +3191,9 @@ body {
     );
   });
 
+  /** it.skip未执行：原设计transition等foo/bar样式，foo preload成功、bar preload失败后插入两样式，最终bar error/foo load允许hello提交；保留TODO所述失败崩溃状态，不把这些期望写成已验证行为。 */
   // eslint-disable-next-line jest/no-disabled-tests
-  /** 测试场景：验证「can delay commit until css resources error」描述的渲染、交互或错误处理结果。 */
+
   it.skip('can delay commit until css resources error', async () => {
     // TODO：此测试会失败并导致 Jest 崩溃；恢复执行前需先查明原因。
     const root = ReactDOMClient.createRoot(container);
@@ -3187,7 +3242,7 @@ body {
     ]);
   });
 
-  /** 测试场景：验证「assumes stylesheets that load in the shell loaded already」描述的渲染、交互或错误处理结果。 */
+  /** SSR shell已有foo样式，hydrate及后续hello2更新无需人工load即可提交；再加新bar时hello3等待preload和stylesheet两阶段load，foo无需重新加载。 */
   it('assumes stylesheets that load in the shell loaded already', async () => {
     await act(() => {
       renderToPipeableStream(
@@ -3291,9 +3346,12 @@ body {
     );
   });
 
-  /** 测试场景：验证「can interrupt a suspended commit with a new update」描述的渲染、交互或错误处理结果。 */
+  /** foo transition只输出preload且提交挂起，普通根更新改用bar并完成其load后显示hello2；稍后foo preload load不改变UI，再transition重引foo可直接显示hello3，旧preload成功状态可复用。 */
   it('can interrupt a suspended commit with a new update', async () => {
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 将children放进html/body包装，根更新依次替换foo/bar资源及文本，用于中断悬置commit。
+     * @param props children为本轮文本与样式资源。
+     * @returns 完整文档。 */
     function App({children}) {
       return (
         <html>
@@ -3409,9 +3467,12 @@ body {
     );
   });
 
-  /** 测试场景：验证「will put a Suspense boundary into fallback if it contains a stylesheet not loaded during a sync update」描述的渲染、交互或错误处理结果。 */
+  /** 空文档后同步在Suspense加入foo样式，load后显示hello；再同步加bar时旧内容隐藏、fallback出现，bar load后恢复旧div。中间fallback/preload检查仅在alwaysThrottleRetries gate成立时执行。 */
   it('will put a Suspense boundary into fallback if it contains a stylesheet not loaded during a sync update', async () => {
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 提供稳定html/body结构，children内的Suspense同步引入样式并在未加载时回退。
+     * @param props children为本轮边界。
+     * @returns 完整文档。 */
     function App({children}) {
       return (
         <html>
@@ -3539,7 +3600,7 @@ body {
     );
   });
 
-  /** 测试场景：验证「will assume stylesheets already in the document have loaded if it cannot confirm it is not yet loaded」描述的渲染、交互或错误处理结果。 */
+  /** SSR head中手动写带data-precedence的foo样式但未派load，客户端另一个root在Suspense内引用同URL资源；直接显示hello world且无preload，已有无pending证据的样式被视为已加载。 */
   it('will assume stylesheets already in the document have loaded if it cannot confirm it is not yet loaded', async () => {
     await act(() => {
       renderToPipeableStream(
@@ -3580,10 +3641,12 @@ body {
     );
   });
 
-  /** 测试场景：验证「will assume wait for loading stylesheets to load before continuing」描述的渲染、交互或错误处理结果。 */
+  /** 晚到SSR边界已插foo stylesheet但未load，另一hydrate组件从服务端null改为客户端hello client且引用同资源；load前两部分都不更新，load后记录局部hydration mismatch并重建，最终同时显示服务端hello world与客户端内容。 */
   it('will assume wait for loading stylesheets to load before continuing', async () => {
     let ssr = true;
-    /** `Component`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 依据闭包ssr标志，SSR时返回null，客户端改为foo资源及hello client；刻意制造局部hydrate差异并复用正在加载的晚到样式。
+     * @returns null或资源/文本Fragment。 */
     function Component() {
       if (ssr) {
         return null;
@@ -3726,7 +3789,7 @@ body {
     );
   });
 
-  /** 测试场景：验证「does not suspend a transition on a stylesheet whose preload has already loaded」描述的渲染、交互或错误处理结果。 */
+  /** 初始body为initial，显式preload route.css并先派load；transition再引用该stylesheet可直接提交next，不必等待stylesheet load，之后load不重复插资源。 */
   it('does not suspend a transition on a stylesheet whose preload has already loaded', async () => {
     const root = ReactDOMClient.createRoot(document);
     root.render(
@@ -3776,7 +3839,7 @@ body {
     expect(getMeaningfulChildren(document.body)).toEqual('next');
   });
 
-  /** 测试场景：验证「suspends a transition on a stylesheet whose preload has not loaded yet」描述的渲染、交互或错误处理结果。 */
+  /** 先显式preload但尚未load，transition引用route.css后仍显示initial；preload load只插stylesheet，stylesheet load后才显示next，与预加载已经完成路径形成对照。 */
   it('suspends a transition on a stylesheet whose preload has not loaded yet', async () => {
     const root = ReactDOMClient.createRoot(document);
     root.render(
@@ -3832,7 +3895,7 @@ body {
     expect(getMeaningfulChildren(document.body)).toEqual('next');
   });
 
-  /** 测试场景：验证「can suspend commits on more than one root for the same resource at the same time」描述的渲染、交互或错误处理结果。 */
+  /** 两个独立root都transition等待公共foo与各自one/two；仅load foo/two让第二root先显示two，第一root仍空；再load one第一root显示one，公共资源一份且两提交依赖独立解锁。 */
   it('can suspend commits on more than one root for the same resource at the same time', async () => {
     document.body.innerHTML = '';
     const container1 = document.createElement('div');
@@ -3941,9 +4004,12 @@ body {
     );
   });
 
-  /** 测试场景：验证「stylesheets block render, with a really long timeout」描述的渲染、交互或错误处理结果。 */
+  /** foo样式transition仅留下preload，假定时器推进50秒仍显示空body，再推进10秒超时插stylesheet并显示hello；随后迟到load不改DOM，验证60秒兜底提交而非真实网络耗时。 */
   it('stylesheets block render, with a really long timeout', async () => {
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 透传children到html/body，给60秒样式等待上限提供稳定文档包装。
+     * @param props children为待提交文本与stylesheet。
+     * @returns html文档。 */
     function App({children}) {
       return (
         <html>
@@ -4010,9 +4076,12 @@ body {
     );
   });
 
-  /** 测试场景：验证「can interrupt a suspended commit with a new transition」描述的渲染、交互或错误处理结果。 */
+  /** 初始(empty)，transition A等待样式，再transition B取代；两个preload都留在head，统一派load仅B插stylesheet并提交B，废弃A不恢复UI。 */
   it('can interrupt a suspended commit with a new transition', async () => {
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 透传children到html/body，先挂载empty再分别transition到A/B，隔离两个互相替代的悬置提交。
+     * @param props children为各轮资源与文本。
+     * @returns html文档。 */
     function App({children}) {
       return (
         <html>
@@ -4083,17 +4152,24 @@ body {
     );
   });
 
-  /** 测试场景：验证「loading a stylesheet as part of an error boundary UI, during initial render」描述的渲染、交互或错误处理结果。 */
+  /** SSR Throws的Oops被Suspense转为Loading且onError记日志；hydrate中class边界改用含A stylesheet的错误回退，先仅preload并保留Loading，clientAct派样式load后显示Oops和一份A资源。 */
   it('loading a stylesheet as part of an error boundary UI, during initial render', async () => {
-    /** `ErrorBoundary`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+
+    /** 客户端捕获Oops后渲染A样式资源与error.message，观察错误回退自身也需等CSS；SSR错误由外部Fizz/Suspense处理。 */
     class ErrorBoundary extends React.Component {
-      /** `ErrorBoundary.state`：记录测试夹具在当前场景中的状态。 */
+
+      /** error初值null透传正常children，派生错误后选择样式化错误回退。 */
       state = {error: null};
-      /** `ErrorBoundary.getDerivedStateFromError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 将后代错误转换为error状态补丁。
+       * @param error Throws抛出的Oops异常。
+       * @returns error字段。 */
       static getDerivedStateFromError(error) {
         return {error};
       }
-      /** `ErrorBoundary.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 正常时返回children，错误时返回A资源与message；未执行实际网络请求。
+       * @returns 正常子树或含资源的错误Fragment。 */
       render() {
         const error = this.state.error;
         if (error !== null) {
@@ -4108,12 +4184,14 @@ body {
       }
     }
 
-    /** `Throws`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 无条件抛Oops，服务端Suspense与客户端class边界分别接手。
+     * @throws Oops异常。 */
     function Throws() {
       throw new Error('Oops!');
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 文档body内class边界包住Suspense/Throws；同一组件树用于SSR fallback与hydrate错误屏幕。
+     * @returns html/head自动补建的文档树。 */
     function App() {
       return (
         <html>
@@ -4131,7 +4209,9 @@ body {
     // 初始服务器渲染。由于某处抛错，会显示 Suspense fallback。
     await act(() => {
       renderToPipeableStream(<App />, {
-        /** `onError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+        /** 记录Fizz捕获的服务端错误message，不返回digest或修改错误边界状态。
+         * @param x Fizz的Oops错误。 */
         onError(x) {
           Scheduler.log('Caught server error: ' + x.message);
         },
@@ -4150,7 +4230,7 @@ body {
     ReactDOMClient.hydrateRoot(document, <App />);
     await waitForAll([]);
 
-    // 预加载样式表。 但我们还没有执行错误屏幕.
+    // preload 已插入；错误屏幕已完成 render，但尚未提交到 DOM。
     expect(getMeaningfulChildren(document)).toEqual(
       <html>
         <head>
@@ -4173,9 +4253,11 @@ body {
     );
   });
 
-  /** 测试场景：验证「will not flush a preload for a new rendered Stylesheet Resource if one was already flushed」描述的渲染、交互或错误处理结果。 */
+  /** Component先显式preload foo，边界等待blocked再渲染同URL样式；解文本并load样式后head只有一份原preload和一份stylesheet，body显示hello，不补第二preload。 */
   it('will not flush a preload for a new rendered Stylesheet Resource if one was already flushed', async () => {
-    /** `Component`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 先显式preload foo，返回等待blocked后渲染同URLstylesheet的边界，用于避免晚到资源重复生成preload。
+     * @returns div与等待边界。 */
     function Component() {
       ReactDOM.preload('foo', {as: 'style'});
       return (
@@ -4227,9 +4309,11 @@ body {
     );
   });
 
-  /** 测试场景：验证「will not flush a preload for a new preinitialized Stylesheet Resource if one was already flushed」描述的渲染、交互或错误处理结果。 */
+  /** shell先由Component显式preload foo，解blocked后Preinit调用同URL style preinit；本例DOM期望仍仅一份preload而body已显示hello，核对重复预加载输出，未断言第二个stylesheet节点。 */
   it('will not flush a preload for a new preinitialized Stylesheet Resource if one was already flushed', async () => {
-    /** `Component`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 先显式preload foo，返回等待blocked后执行Preinit的边界，对比预加载与晚到预初始化的去重。
+     * @returns div/边界树。 */
     function Component() {
       ReactDOM.preload('foo', {as: 'style'});
       return (
@@ -4244,7 +4328,8 @@ body {
       );
     }
 
-    /** `Preinit`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 在解除文本等待后的render里preinit foo style，无UI输出；断言只观察后续流中的资源提示。
+     * @returns undefined。 */
     function Preinit() {
       ReactDOM.preinit('foo', {as: 'style'});
     }
@@ -4283,7 +4368,7 @@ body {
     );
   });
 
-  /** 测试场景：验证「will not insert a preload if the underlying resource already exists in the Document」描述的渲染、交互或错误处理结果。 */
+  /** SSR已有foo stylesheet、bar async脚本、baz font preload，客户端ClientApp分别preload同URL；提交后head三节点不增加，容器显示foo，底层资源存在时复用。 */
   it('will not insert a preload if the underlying resource already exists in the Document', async () => {
     await act(() => {
       renderToPipeableStream(
@@ -4315,7 +4400,8 @@ body {
 
     container = document.getElementById('container');
 
-    /** `ClientApp`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 对SSR已存在的style/script/font各发同URL preload，再返回foo文本，观察客户端是否多插link。
+     * @returns foo。 */
     function ClientApp() {
       ReactDOM.preload('foo', {as: 'style'});
       ReactDOM.preload('bar', {as: 'script'});
@@ -4340,9 +4426,12 @@ body {
     );
   });
 
-  /** 测试场景：验证「uses imageSrcSet and imageSizes when keying image preloads」描述的渲染、交互或错误处理结果。 */
+  /** SSR重复调用image preload，分别按href、srcSet、srcSet+sizes去重，只有sizes时仍按href；非image忽略图像参数。hydrate保持四条，客户端isClient轮再加三种client键，核对完整输出集合。 */
   it('uses imageSrcSet and imageSizes when keying image preloads', async () => {
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 提交多组重复预加载输入，image按srcSet/sizes组合而无srcSet时按href；isClient轮再追加client组，非image参数作忽略对照。
+     * @param props isClient为true时追加客户端URL组。
+     * @returns hello文档。 */
     function App({isClient}) {
       // 将根据 href 属性在没有 imageSrcSet 属性时进行操作。
       ReactDOM.preload('foo', {as: 'image'});
@@ -4482,9 +4571,12 @@ body {
     );
   });
 
-  /** 测试场景：验证「should handle referrerPolicy on image preload」描述的渲染、交互或错误处理结果。 */
+  /** SSR与客户端新预加载都使用srcSet/sizes及no-referrer；hydrate复用server项，后续isClient更新仅追加client项，两个link均保留referrerpolicy。 */
   it('should handle referrerPolicy on image preload', async () => {
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 预加载server响应式图片且设置no-referrer；isClient真时再声明对应client项。
+     * @param props isClient控制是否新增client资源。
+     * @returns hello文档。 */
     function App({isClient}) {
       ReactDOM.preload('/server', {
         as: 'image',
@@ -4569,9 +4661,11 @@ body {
     );
   });
 
-  /** 测试场景：验证「can emit preloads for non-lazy images that are rendered」描述的渲染、交互或错误处理结果。 */
+  /** 显式预加载script/a/b，同时渲染普通、lazy及不同srcSet/sizes图像；普通a/c/d自动预加载并排前，lazy b2不生成，显式b仍保留，比较图片发现与调用API的顺序。 */
   it('can emit preloads for non-lazy images that are rendered', async () => {
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 显式声明script/a/b预加载并返回含普通、lazy、srcSet/sizes变化的img，用于检查自动提示去重与排序。
+     * @returns 图片文档。 */
     function App() {
       ReactDOM.preload('script', {as: 'script'});
       ReactDOM.preload('a', {as: 'image'});
@@ -4627,9 +4721,11 @@ body {
     );
   });
 
-  /** 测试场景：验证「Does not preload lazy images」描述的渲染、交互或错误处理结果。 */
+  /** 标题称lazy，但实际两个img都用fetchPriority=low，没有loading=lazy；仅显式preload的a出现在head，b无自动preload，验证低优先级抑制自动图片提示。 */
   it('Does not preload lazy images', async () => {
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 显式preload a并渲染两张fetchPriority=low图片；本夹具没有lazy loading属性，b用于观察低优先级自动提示抑制。
+     * @returns 两张low图片的文档。 */
     function App() {
       ReactDOM.preload('a', {as: 'image'});
       return (
@@ -4658,9 +4754,11 @@ body {
     );
   });
 
-  /** 测试场景：验证「preloads up to 10 suspensey images as high priority when fetchPriority is not specified」描述的渲染、交互或错误处理结果。 */
+  /** 先显式预加载1/9/10为high，再发现普通、auto、high、low图片；前三项加七个自动项占默认高序队列，显式high的12仍排前，11与auto/low提示排后，低优先级5low不自动预加载。 */
   it('preloads up to 10 suspensey images as high priority when fetchPriority is not specified', async () => {
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 预置三条high与auto/low图片提示，再返回普通/auto/high/low图像，比较默认十项高序预算与显式high超出预算的排序。
+     * @returns 图片集合文档。 */
     function App() {
       ReactDOM.preload('1', {as: 'image', fetchPriority: 'high'});
       ReactDOM.preload('auto', {as: 'image'});
@@ -4732,9 +4830,11 @@ body {
     );
   });
 
-  /** 测试场景：验证「can promote images to high priority when at least one instance specifies a high fetchPriority」描述的渲染、交互或错误处理结果。 */
+  /** 先preload a/b，再渲染12张普通图与a的low/普通/high重复实例；前十普通图在前，a被至少一处high提升到stylesheet之前且link保留首份无fetchpriority属性，b/11/12排后，验证队列提升与资源去重。 */
   it('can promote images to high priority when at least one instance specifies a high fetchPriority', async () => {
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 先声明a/b普通图片提示，再返回十二张普通图片和a的多种priority实例及样式，观察十项预算后的同资源队列提升。
+     * @returns 图片与资源文档。 */
     function App() {
       // 若 a 最终位于比 b 更高优先级的队列中，它会先被冲刷。
       ReactDOM.preload('a', {as: 'image'});
@@ -4816,9 +4916,11 @@ body {
     );
   });
 
-  /** 测试场景：验证「preloads from rendered images properly use srcSet and sizes」描述的渲染、交互或错误处理结果。 */
+  /** 显式preload ss1及ss2/s2，再渲染四张srcSet/sizes图片；head输出四个响应式键且不带href，前两项与API调用去重，后两项由img自动发现。 */
   it('preloads from rendered images properly use srcSet and sizes', async () => {
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 显式声明ss1、ss2/s2图像提示，再渲染相同两项与ss3、ss4/s4新项，检查srcSet/sizes键和去重。
+     * @returns 四图文档。 */
     function App() {
       ReactDOM.preload('1', {as: 'image', imageSrcSet: 'ss1'});
       ReactDOM.preload('2', {
@@ -4859,9 +4961,11 @@ body {
     );
   });
 
-  /** 测试场景：验证「should not preload images that have a data URIs for src or srcSet」描述的渲染、交互或错误处理结果。 */
+  /** 四张img分别在src或srcSet使用data:前缀，包含src=data但srcSet普通和src普通但srcSet=data的对照；head保持空，原img属性保留，data输入不生成自动预加载。 */
   it('should not preload images that have a data URIs for src or srcSet', async () => {
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 返回四种src/srcSet含data前缀的组合，让自动图片预加载跳过这些内联输入。
+     * @returns 图片文档。 */
     function App() {
       return (
         <html>
@@ -4892,7 +4996,8 @@ body {
   });
 
   // https://github.com/vercel/next.js/discussions/54799
-  /** 测试场景：验证「omits preloads when an <img> is inside a <picture>」描述的渲染、交互或错误处理结果。 */
+
+  /** 两个picture分别含普通img与webp source+jpg fallback；SSR保留picture/source结构且head无preload，避免以img fallback替代picture候选选择。 */
   it('omits preloads when an <img> is inside a <picture>', async () => {
     await act(() => {
       renderToPipeableStream(
@@ -4927,9 +5032,12 @@ body {
   });
 
   // 修复：https://github.com/facebook/react/issues/27910
-  /** 测试场景：验证「omits preloads for images inside noscript tags」描述的渲染、交互或错误处理结果。 */
+
+  /** 普通foo图片旁边的noscript内有bar图片；head仅foo preload，noscript内容作为转义文本保留，没有bar提示，验证noscript上下文抑制资源发现。 */
   it('omits preloads for images inside noscript tags', async () => {
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 返回普通foo与noscript内bar图片，以普通自动提示对照被抑制的noscript上下文。
+     * @returns 文档。 */
     function App() {
       return (
         <html>
@@ -4960,9 +5068,12 @@ body {
     );
   });
 
-  /** 测试场景：验证「should handle media on image preload」描述的渲染、交互或错误处理结果。 */
+  /** SSR/server与后续client响应式preload分别带print和screen媒体条件；hydrate复用server项，isClient轮追加client项，两条link保持各自media，未模拟图片媒体实际下载。 */
   it('should handle media on image preload', async () => {
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 声明server响应式图片与print媒体条件，isClient轮再声明client与screen条件。
+     * @param props isClient控制是否追加client预加载。
+     * @returns hello文档。 */
     function App({isClient}) {
       ReactDOM.preload('/server', {
         as: 'image',
@@ -5047,10 +5158,12 @@ body {
     );
   });
 
-  /** 测试场景：验证「should warn if you preload a stylesheet and then render a style tag with the same href」描述的渲染、交互或错误处理结果。 */
+  /** 先preload foo为外链style，随后同href渲染内联style；DEV报同键预加载/内联冲突，head仍含内联style与原preload，body hello保留，测试诊断与实际输出共存。 */
   it('should warn if you preload a stylesheet and then render a style tag with the same href', async () => {
     const style = 'body { color: red; }';
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 先把foo作为外链style预加载，再同键返回内联CSS，制造DEV资源形式冲突。
+     * @returns hello与内联style文档。 */
     function App() {
       ReactDOM.preload('foo', {as: 'style'});
       return (
@@ -5088,9 +5201,11 @@ body {
     );
   });
 
-  /** 测试场景：验证「should preload only once even if you discover a stylesheet, script, or moduleScript late」描述的渲染、交互或错误处理结果。 */
+  /** 覆盖shell/late/later发现时机与preload/preinit/渲染的style、script、module三类组合；逐阶段核对旧资源不补重复preload、晚到style按组进入head而script流入body，派样式load后hydrate补缺失的两个preinit样式并显示Late/Later。 */
   it('should preload only once even if you discover a stylesheet, script, or moduleScript late', async () => {
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 构造shell内preinit/preload/直接资源的交叉组合，并返回等待late/later的两个边界；URL前后缀表示首次提示与实际资源发现的时机。
+     * @returns shell资源与两pending边界的文档。 */
     function App() {
       // 我们首先初始化一些资源。
       ReactDOM.preinit('shell preinit/shell', {as: 'style'});
@@ -5158,7 +5273,8 @@ body {
       );
     }
 
-    /** `Late`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** late文本解锁后为later资源发预加载，为已在shell出现的资源重复提示，再preinit shell/late组并直接渲染对应资源。
+     * @returns Late文本与style/普通脚本/module脚本Fragment。 */
     function Late() {
       ReactDOM.preload('late/later preinit', {as: 'style'});
       ReactDOM.preload('late/later preinit', {as: 'script'});
@@ -5194,7 +5310,8 @@ body {
       );
     }
 
-    /** `Later`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 最后一个文本解锁后preinit late/later组并直接渲染同阶段资源，对比已发preload是否重复。
+     * @returns Later文本与三类资源Fragment。 */
     function Later() {
       // 后期 preinit 不会真正冲刷，因此 DOM 中不会出现该 stylesheet，但应能看到该资源的 preload。
       ReactDOM.preinit('late/later preinit', {as: 'style'});
@@ -5547,9 +5664,11 @@ body {
     );
   });
 
-  /** 测试场景：验证「does not flush hoistables for fallbacks」描述的渲染、交互或错误处理结果。 */
+  /** 三个边界的fallback含meta/title/link及内层已完成边界；首两primary随shell显示时head仅primary1/2，第三fallback的可提升项不输出，解second后primary3替换fallback且晚到meta留body，断言fallback hoistables被忽略。 */
   it('does not flush hoistables for fallbacks', async () => {
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 并列三个primary/fallback组合，fallback内放不同hoistable与已完成嵌套边界，测试只提升primary发现的资源。
+     * @returns html文档。 */
     function App() {
       return (
         <html>
@@ -5645,9 +5764,11 @@ body {
     );
   });
 
-  /** 测试场景：验证「avoids flushing hoistables from completed boundaries nested inside fallbacks」描述的渲染、交互或错误处理结果。 */
+  /** 外层primary等待release，而fallback内Suspense已完成并含nested primary meta；输出fallback div但不输出其meta，head却保留外层已发现的primary1 meta，解release后body换primary1，区分fallback与primary资源归属。 */
   it('avoids flushing hoistables from completed boundaries nested inside fallbacks', async () => {
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 外边界primary等待release，fallback内边界立即完成；两路径meta不同，观察已完成fallback也不会冲刷可提升元素。
+     * @returns 嵌套边界文档。 */
     function App() {
       return (
         <html>
@@ -5713,14 +5834,15 @@ body {
     );
   });
 
-  /** 测试场景：验证「should never flush hoistables before the preamble」描述的渲染、交互或错误处理结果。 */
+  /** App先preinit foo脚本再use未解promise，使整个文档preamble未就绪；首轮JSDOM原container完全保持，解promise后才整文档替换并输出foo脚本，资源不能先于文档前导冲刷。 */
   it('should never flush hoistables before the preamble', async () => {
     let resolve;
     const promise = new Promise(res => {
       resolve = res;
     });
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** render先preinit foo脚本，再use尚未完成的promise，阻住html前导；promise解锁后返回hello文档。
+     * @returns html文档；等待阶段由use挂起。 */
     function App() {
       ReactDOM.preinit('foo', {as: 'script'});
       React.use(promise);
@@ -5761,9 +5883,13 @@ body {
   });
 
   describe('ReactDOM.prefetchDNS(href)', () => {
-    /** 测试场景：验证「creates a dns-prefetch resource when called」描述的渲染、交互或错误处理结果。 */
+
+    /** App重复prefetchDNS同URL并传空options/crossOrigin错误第二参数；SSR与hydrate各仅一条foo且DEV报两种参数警告，客户端换bar只追加一条bar，DNS提示按href去重。 */
     it('creates a dns-prefetch resource when called', async () => {
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /** 重复prefetchDNS url并故意传两个当前禁用的options输入，跨SSR/hydrate/URL更新观察去重和诊断。
+       * @param props url为DNS提示href。
+       * @returns hello world文档。 */
       function App({url}) {
         ReactDOM.prefetchDNS(url);
         ReactDOM.prefetchDNS(url);
@@ -5859,14 +5985,19 @@ body {
     });
   });
 
-  /** 测试场景：验证「does not wait for stylesheets of completed fallbacks」描述的渲染、交互或错误处理结果。 */
+  /** 外边界等待两个锁，内fallback分别含completed inner与in fallback inner样式，前者由Unblock在render解锁primary；外层完成并load后head只插仍可见fallback样式，已完成fallback的资源不成为揭示依赖。 */
   it('does not wait for stylesheets of completed fallbacks', async () => {
-    /** `Unblock`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** render中直接resolveText(value)让内层primary完成，避免已显示后又被替换的fallback资源阻塞外层。
+     * @param props value为待解锁缓存键。
+     * @returns null。 */
     function Unblock({value}) {
       resolveText(value);
       return null;
     }
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 外边界等两个文本锁，内层分别有已完成与仍可见fallback的style，区分哪些资源随最终揭示需要安装。
+     * @returns 嵌套Suspense文档。 */
     function App() {
       return (
         <html>
@@ -5976,8 +6107,9 @@ body {
     );
   });
 
+  /** enableSuspenseList下forwards/visible列表先由外层bar锁阻塞；解foo后CSS已插但未load，解bar/baz仍各行fallback，foo样式load后foo/bar/baz一起显示，后行受首行CSS揭示顺序约束。 */
   // @gate enableSuspenseList
-  /** 测试场景：验证「delays "forwards" SuspenseList rows until the css of previous rows have completed」描述的渲染、交互或错误处理结果。 */
+
   it('delays "forwards" SuspenseList rows until the css of previous rows have completed', async () => {
     await act(() => {
       renderToPipeableStream(
@@ -6011,7 +6143,7 @@ body {
       </html>,
     );
 
-    // 解除 CSS 加载阻塞
+    // 解锁foo文本，让CSS资源被发现；此时尚未派stylesheet load。
     await act(() => {
       resolveText('foo');
     });
@@ -6087,8 +6219,9 @@ body {
     );
   });
 
+  /** enableSuspenseList下together列表第一行等foo文本与样式，第二行bar已完成；解foo只插CSS与preload而两行仍fallback，样式load后共同显示foo/bar。 */
   // @gate enableSuspenseList
-  /** 测试场景：验证「delays "together" SuspenseList rows until the css of previous rows have completed」描述的渲染、交互或错误处理结果。 */
+
   it('delays "together" SuspenseList rows until the css of previous rows have completed', async () => {
     await act(() => {
       renderToPipeableStream(
@@ -6154,9 +6287,13 @@ body {
   });
 
   describe('ReactDOM.preconnect(href, { crossOrigin })', () => {
-    /** 测试场景：验证「creates a preconnect resource when called」描述的渲染、交互或错误处理结果。 */
+
+    /** 同URL重复preconnect，分别不带crossOrigin、匿名和use-credentials，布尔true引DEV警告；SSR/hydrate只有三种模式各一条，换bar又加三条，连接提示按URL和模式区分。 */
     it('creates a preconnect resource when called', async () => {
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /** 重复preconnect url并给出无模式/布尔/匿名/凭证输入，用于比较模式键、非法类型警告与新URL追加。
+       * @param props url为连接提示目标。
+       * @returns hello world文档。 */
       function App({url}) {
         ReactDOM.preconnect(url);
         ReactDOM.preconnect(url);
@@ -6236,9 +6373,12 @@ body {
   });
 
   describe('ReactDOM.preload(href, { as: ... })', () => {
-    /** 测试场景：验证「creates a preload resource when called」描述的渲染、交互或错误处理结果。 */
+
+    /** SSR render先preload foo style，blocked解锁后子组件发bar script提示进入body；hydrate中render/insertion/layout/passive分别再提示foo/bar/font/baz/qux，foo/bar去重且新增字体匿名，比较各阶段都可发提示。 */
     it('creates a preload resource when called', async () => {
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /** 在shell render中发foo style preload，并等待blocked后让子组件发晚到script提示。
+       * @returns 文档与等待边界。 */
       function App() {
         ReactDOM.preload('foo', {as: 'style'});
         return (
@@ -6253,7 +6393,9 @@ body {
           </html>
         );
       }
-      /** `Component`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /** 解锁后render发bar script preload并返回hello div，晚到提示随body流输出。
+       * @returns hello div。 */
       function Component() {
         ReactDOM.preload('bar', {as: 'script'});
         return <div>hello</div>;
@@ -6287,7 +6429,8 @@ body {
         </html>,
       );
 
-      /** `ClientApp`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** render提示foo与font，insertion/layout/passive分别提示bar/baz/qux；hydrate相同hello树并观察旧提示复用和新项插入。
+       * @returns 文档树。 */
       function ClientApp() {
         ReactDOM.preload('foo', {as: 'style'});
         ReactDOM.preload('font', {as: 'font', type: 'font/woff2'});
@@ -6328,9 +6471,11 @@ body {
       );
     });
 
-    /** 测试场景：验证「can seed connection props for stylesheet and script resources」描述的渲染、交互或错误处理结果。 */
+    /** SSR先preload foo style带credentials/integrity/low，再render同URL stylesheet但未给连接属性；最终stylesheet继承credentials和integrity、不带fetchpriority且无独立preload。本例未构造script资源，标题范围较广。 */
     it('can seed connection props for stylesheet and script resources', async () => {
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /** 先给foo style预加载设置连接属性，再直接渲染缺省连接属性的foo stylesheet，观察资源吸收preload的CORS/integrity。
+       * @returns hello与stylesheet文档。 */
       function App() {
         ReactDOM.preload('foo', {
           as: 'style',
@@ -6371,9 +6516,11 @@ body {
       );
     });
 
-    /** 测试场景：验证「warns if you do not pass in a valid href argument or options argument」描述的渲染、交互或错误处理结果。 */
+    /** App依次preload缺参、空href、null options、缺as与字符串as=foo；DEV断言前四种错误，非空as字符串foo未在此期望额外警告，核对当前参数校验边界。 */
     it('warns if you do not pass in a valid href argument or options argument', async () => {
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /** 构造四种缺失/类型错误preload参数及非空as字符串foo；测试诊断当前公开参数校验。
+       * @returns foo div。 */
       function App() {
         ReactDOM.preload();
         ReactDOM.preload('');
@@ -6408,9 +6555,12 @@ body {
       ]);
     });
 
-    /** 测试场景：验证「supports fetchPriority」描述的渲染、交互或错误处理结果。 */
+    /** SSR组件提示high script、low style、auto style三URL，再hydrate以client后缀新增三项；head六link各保留fetchpriority对应值，验证属性输出而非真实网络优先调度。 */
     it('supports fetchPriority', async () => {
-      /** `Component`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /** 按isServer选server/client URL，声明high script与low/auto style预加载，比较两端属性。
+       * @param props isServer为SSR后缀选择标志。
+       * @returns hello文本。 */
       function Component({isServer}) {
         ReactDOM.preload(isServer ? 'highserver' : 'highclient', {
           as: 'script',
@@ -6517,9 +6667,12 @@ body {
       );
     });
 
-    /** 测试场景：验证「supports nonce」描述的渲染、交互或错误处理结果。 */
+    /** 片段SSR预加载server脚本nonce=abc，link随流进入container；hydrate新client URL则在head追加nonce相同提示，旧body提示仍保留。 */
     it('supports nonce', async () => {
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /** 给脚本preload加nonce=abc，URL随props改变，让片段SSR与hydrate提示位置及nonce都可观察。
+       * @param props url为server/client资源键。
+       * @returns hello文本。 */
       function App({url}) {
         ReactDOM.preload(url, {as: 'script', nonce: 'abc'});
         return 'hello';
@@ -6560,9 +6713,13 @@ body {
   });
 
   describe('ReactDOM.preloadModule(href, options)', () => {
-    /** 测试场景：验证「preloads scripts as modules」描述的渲染、交互或错误处理结果。 */
+
+    /** preloadModule覆盖默认script、显式script、CORS、integrity与serviceworker；SSR五项在container中，hydrate不同browser前缀在head再加五项，script默认省略as而非script保留as。 */
     it('preloads scripts as modules', async () => {
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /** 按ssr选URL前缀，声明默认/显式script与CORS/integrity/serviceworker的模块预加载输入。
+       * @param props ssr控制前缀，不切换API实现本身。
+       * @returns hello div。 */
       function App({ssr}) {
         const prefix = ssr ? 'ssr ' : 'browser ';
         ReactDOM.preloadModule(prefix + 'plain');
@@ -6649,9 +6806,12 @@ body {
       );
     });
 
-    /** 测试场景：验证「supports fetchPriority」描述的渲染、交互或错误处理结果。 */
+    /** 模块预加载high/low/auto三项在SSR使用server后缀，hydrate使用client后缀；六modulepreload均保留各fetchpriority，已有server项仍在。 */
     it('supports fetchPriority', async () => {
-      /** `Component`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /** 按isServer选URL后缀，对模块提示分别给high/low/auto优先属性。
+       * @param props isServer控制server/client键。
+       * @returns hello。 */
       function Component({isServer}) {
         const suffix = isServer ? 'server' : 'client';
         ReactDOM.preloadModule('high' + suffix, {
@@ -6712,9 +6872,11 @@ body {
       );
     });
 
-    /** 测试场景：验证「preloads multiple non-script modules with the same as type」描述的渲染、交互或错误处理结果。 */
+    /** SSR对两个不同serviceworker URL使用同as；两份modulepreload均输出且保留serviceworker属性，去重不只按as类型。 */
     it('preloads multiple non-script modules with the same as type', async () => {
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /** 声明两个serviceworker不同URL的modulepreload，检查相同as不会错误合并资源。
+       * @returns hello div。 */
       function App() {
         ReactDOM.preloadModule('serviceworker one', {as: 'serviceworker'});
         ReactDOM.preloadModule('serviceworker two', {as: 'serviceworker'});
@@ -6742,9 +6904,12 @@ body {
       );
     });
 
-    /** 测试场景：验证「supports nonce」描述的渲染、交互或错误处理结果。 */
+    /** SSR preloadModule ssr module携nonce=abc进入片段container；hydrate browser module在head生成新提示，nonce继续保留。 */
     it('supports nonce', async () => {
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /** 按ssr选前缀，给modulepreload写nonce=abc，跨SSR/hydrate观察独立URL资源。
+       * @param props ssr控制URL前缀。
+       * @returns hello div。 */
       function App({ssr}) {
         const prefix = ssr ? 'ssr ' : 'browser ';
         ReactDOM.preloadModule(prefix + 'module', {nonce: 'abc'});
@@ -6767,9 +6932,11 @@ body {
       );
     });
 
-    /** 测试场景：验证「warns if you provide invalid arguments」描述的渲染、交互或错误处理结果。 */
+    /** 模块预加载缺href、函数href、空href及布尔options/as分别产生五条DEV警告；有效href的1/2即使options或as错误仍输出默认modulepreload，客户端createRoot再跑也产生同类诊断。 */
     it('warns if you provide invalid arguments', async () => {
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /** 提供三种无效href及布尔options/as；有效URL1/2仍可落到默认模块提示，测试警告与输出不是同一拒绝条件。
+       * @returns hello div。 */
       function App() {
         ReactDOM.preloadModule();
         ReactDOM.preloadModule(() => {});
@@ -6842,9 +7009,12 @@ body {
   });
 
   describe('ReactDOM.preinit(href, { as: ... })', () => {
-    /** 测试场景：验证「creates a stylesheet resource when ReactDOM.preinit(..., {as: "style" }) is called」描述的渲染、交互或错误处理结果。 */
+
+    /** shell preinit foo style立即输出stylesheet，bar锁后才调用的preinit只发body preload而不阻塞hello；hydrate中重新preinit bar在head补stylesheet，核对服务端晚提示与客户端实际初始化的不同。 */
     it('creates a stylesheet resource when ReactDOM.preinit(..., {as: "style" }) is called', async () => {
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /** shell中preinit foo stylesheet，body边界等bar后再执行另一style preinit，比较先后输出能力。
+       * @returns 带等待边界的文档。 */
       function App() {
         ReactDOM.preinit('foo', {as: 'style'});
         return (
@@ -6860,7 +7030,8 @@ body {
         );
       }
 
-      /** `Component`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 解bar文本后在server render调用bar style preinit，返回hello；晚preinit不把当前边界声明为CSS依赖。
+       * @returns hello div。 */
       function Component() {
         ReactDOM.preinit('bar', {as: 'style'});
         return <div>hello</div>;
@@ -6898,7 +7069,8 @@ body {
         </html>,
       );
 
-      /** `ClientApp`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** hydrate render重新preinit bar style，让服务端仅发preload的资源在客户端补成stylesheet。
+       * @returns 已完成hello文档。 */
       function ClientApp() {
         ReactDOM.preinit('bar', {as: 'style'});
         return (
@@ -6928,9 +7100,11 @@ body {
       );
     });
 
-    /** 测试场景：验证「creates a stylesheet resource in the ownerDocument when ReactDOM.preinit(..., {as: "style" }) is called outside of render on the client」描述的渲染、交互或错误处理结果。 */
+    /** 客户端App首次passive effect调用foo style preinit；等待effect后head有default stylesheet，body foo保留，API可在render外以ownerDocument插资源。 */
     it('creates a stylesheet resource in the ownerDocument when ReactDOM.preinit(..., {as: "style" }) is called outside of render on the client', async () => {
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /** 首次passive effect中preinit foo style，验证客户端render外入口仍选ownerDocument。
+       * @returns body为foo的文档。 */
       function App() {
         React.useEffect(() => {
           ReactDOM.preinit('foo', {as: 'style'});
@@ -6955,17 +7129,21 @@ body {
       );
     });
 
-    /** 测试场景：验证「creates a stylesheet resource in the ownerDocument when ReactDOM.preinit(..., {as: "style" }) is called in shadowRoot」描述的渲染、交互或错误处理结果。 */
+    /** 主文档App passive preinit foo，shadow portal内组件render preinit bar；head顺序bar、foo，shadow仅有div shadow而无样式，验证此API使用ownerDocument而非当前shadow资源根。 */
     it('creates a stylesheet resource in the ownerDocument when ReactDOM.preinit(..., {as: "style" }) is called in shadowRoot', async () => {
       // 这里是在验证既有行为，但也说明不宜在 shadowRoot 内调用 preinit；我们断言的正是实际应用中应
       // 避免的行为。
       const shadow = document.body.attachShadow({mode: 'open'});
-      /** `ShadowComponent`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /** portal render内preinit bar style；资源进入ownerDocument.head，未进入shadowRoot。
+       * @returns null。 */
       function ShadowComponent() {
         ReactDOM.preinit('bar', {as: 'style'});
         return null;
       }
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /** passive preinit foo，并portal ShadowComponent到shadow，比较两调用位置的资源归属。
+       * @returns 主文档foo与shadow portal。 */
       function App() {
         React.useEffect(() => {
           ReactDOM.preinit('foo', {as: 'style'});
@@ -7001,9 +7179,11 @@ body {
       expect(getMeaningfulChildren(shadow)).toEqual(<div>shadow</div>);
     });
 
-    /** 测试场景：验证「creates a script resource when ReactDOM.preinit(..., {as: "script" }) is called」描述的渲染、交互或错误处理结果。 */
+    /** shell preinit foo script进入head，解bar锁后late preinit bar script随流进入body；hydrate再次preinit bar不重复插脚本，普通hello树正确保留。 */
     it('creates a script resource when ReactDOM.preinit(..., {as: "script" }) is called', async () => {
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /** shell preinit foo script，等待bar文本后让子组件preinit晚到bar script。
+       * @returns pending边界文档。 */
       function App() {
         ReactDOM.preinit('foo', {as: 'script'});
         return (
@@ -7019,7 +7199,8 @@ body {
         );
       }
 
-      /** `Component`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** bar解锁后preinit bar script并返回hello；脚本随晚到流进入body。
+       * @returns hello div。 */
       function Component() {
         ReactDOM.preinit('bar', {as: 'script'});
         return <div>hello</div>;
@@ -7053,7 +7234,8 @@ body {
         </html>,
       );
 
-      /** `ClientApp`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** hydrate时再preinit bar script，验证与body已有同URL资源复用。
+       * @returns hello文档。 */
       function ClientApp() {
         ReactDOM.preinit('bar', {as: 'script'});
         return (
@@ -7082,9 +7264,11 @@ body {
       );
     });
 
-    /** 测试场景：验证「creates a script resource when ReactDOM.preinit(..., {as: "script" }) is called outside of render on the client」描述的渲染、交互或错误处理结果。 */
+    /** 客户端App passive effect里preinit foo script；等待后head有async foo，body foo未变，render外也可初始化脚本。 */
     it('creates a script resource when ReactDOM.preinit(..., {as: "script" }) is called outside of render on the client', async () => {
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /** passive effect中preinit foo script，测试客户端render外资源登记。
+       * @returns foo文档。 */
       function App() {
         React.useEffect(() => {
           ReactDOM.preinit('foo', {as: 'script'});
@@ -7109,9 +7293,11 @@ body {
       );
     });
 
-    /** 测试场景：验证「warns if you do not pass in a valid href argument or options argument」描述的渲染、交互或错误处理结果。 */
+    /** style/script preinit的缺href、空href、null options、缺as和as=foo依次产生五条DEV错误；合法as限定style/script，比普通preload的非空字符串校验更窄。 */
     it('warns if you do not pass in a valid href argument or options argument', async () => {
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /** 以缺失或非法href/options/as构造五种preinit诊断输入，as=foo不属于style/script支持域。
+       * @returns foo div。 */
       function App() {
         ReactDOM.preinit();
         ReactDOM.preinit('');
@@ -7145,9 +7331,12 @@ body {
       ]);
     });
 
-    /** 测试场景：验证「accepts a `nonce` option for `as: "script"`」描述的渲染、交互或错误处理结果。 */
+    /** SSR preinit foo script自身nonce=R4nD0m且render options同nonce；hydrate新bar资源同nonce，head两script各保留nonce，验证资源选项传递。 */
     it('accepts a `nonce` option for `as: "script"`', async () => {
-      /** `Component`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /** 按src preinit脚本并显式设置资源nonce，SSR与hydrate分别发现不同URL。
+       * @param props src为脚本URL。
+       * @returns hello。 */
       function Component({src}) {
         ReactDOM.preinit(src, {as: 'script', nonce: 'R4nD0m'});
         return 'hello';
@@ -7197,9 +7386,12 @@ body {
       );
     });
 
-    /** 测试场景：验证「accepts an `integrity` option for `as: "script"`」描述的渲染、交互或错误处理结果。 */
+    /** SSR preinit foo script integrity=foo hash，再hydrate新bar/bar hash；head保留两async脚本各自integrity，render options nonce没有自动写入这些用户资源。 */
     it('accepts an `integrity` option for `as: "script"`', async () => {
-      /** `Component`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /** 按src/hash preinit script，给每个资源单独写integrity，不继承render options nonce。
+       * @param props src为URL，hash为对应integrity字符串。
+       * @returns hello。 */
       function Component({src, hash}) {
         ReactDOM.preinit(src, {as: 'script', integrity: hash});
         return 'hello';
@@ -7249,9 +7441,12 @@ body {
       );
     });
 
-    /** 测试场景：验证「accepts an `integrity` option for `as: "style"`」描述的渲染、交互或错误处理结果。 */
+    /** SSR preinit foo style integrity=foo hash，再hydrate bar/bar hash；head两default stylesheet各保留integrity，本例render options nonce未出现在样式link。 */
     it('accepts an `integrity` option for `as: "style"`', async () => {
-      /** `Component`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /** 按src/hash preinit style，检查同组样式link的integrity跨SSR/hydrate输出。
+       * @param props src为样式URL，hash为对应integrity字符串。
+       * @returns hello。 */
       function Component({src, hash}) {
         ReactDOM.preinit(src, {as: 'style', integrity: hash});
         return 'hello';
@@ -7314,9 +7509,12 @@ body {
       );
     });
 
-    /** 测试场景：验证「supports fetchPriority」描述的渲染、交互或错误处理结果。 */
+    /** preinit high script与low/auto style，SSR/server三项及hydrate/client三项均保留fetchpriority；style按default组排在script前，比较属性而非浏览器下载顺序。 */
     it('supports fetchPriority', async () => {
-      /** `Component`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /** 按isServer选URL后缀，preinit high脚本与low/auto样式，将优先属性传到实际资源而非仅提示。
+       * @param props isServer决定资源URL。
+       * @returns hello。 */
       function Component({isServer}) {
         ReactDOM.preinit(isServer ? 'highserver' : 'highclient', {
           as: 'script',
@@ -7409,9 +7607,13 @@ body {
   });
 
   describe('ReactDOM.preinitModule(href, options)', () => {
-    /** 测试场景：验证「creates a script module resources」描述的渲染、交互或错误处理结果。 */
+
+    /** 模块preinit覆盖默认/显式script、CORS、integrity与非法style；SSR只输出四async module脚本，非法项警告且不输出，hydrate新browser键在head加四项并重复对应DEV诊断。 */
     it('creates a script module resources', async () => {
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /** 按ssr选前缀，preinitModule默认/显式script、CORS、integrity并以style作非法as输入，比较SSR与hydrate实际脚本输出。
+       * @param props ssr只控制URL前缀。
+       * @returns hello div。 */
       function App({ssr}) {
         const prefix = ssr ? 'ssr ' : 'browser ';
         ReactDOM.preinitModule(prefix + 'plain');
@@ -7501,9 +7703,12 @@ body {
       );
     });
 
-    /** 测试场景：验证「supports fetchPriority」描述的渲染、交互或错误处理结果。 */
+    /** preinitModule high/low/auto分别使用server与client URL；SSR三脚本与hydrate三新脚本均为async module并保留fetchpriority，验证实际资源属性传递。 */
     it('supports fetchPriority', async () => {
-      /** `Component`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /** 按isServer选后缀，初始化high/low/auto三个模块脚本。
+       * @param props isServer决定server/client资源键。
+       * @returns hello。 */
       function Component({isServer}) {
         const suffix = isServer ? 'server' : 'client';
         ReactDOM.preinitModule('high' + suffix, {
@@ -7609,9 +7814,11 @@ body {
       );
     });
 
-    /** 测试场景：验证「warns if you provide invalid arguments」描述的渲染、交互或错误处理结果。 */
+    /** preinitModule缺href、函数、空串、布尔options、布尔as产生五条DEV警告且不生成脚本；客户端createRoot再执行同输入也报五类，区别于preloadModule对有效href的默认提示输出。 */
     it('warns if you provide invalid arguments', async () => {
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /** 构造五种无效模块初始化参数，检查DEV诊断且不输出对应script。
+       * @returns hello div。 */
       function App() {
         ReactDOM.preinitModule();
         ReactDOM.preinitModule(() => {});
@@ -7682,7 +7889,8 @@ body {
   });
 
   describe('Stylesheet Resources', () => {
-    /** 测试场景：验证「treats link rel stylesheet elements as a stylesheet resource when it includes a precedence when server rendering」描述的渲染、交互或错误处理结果。 */
+
+    /** SSR body内aresource stylesheet带precedence=foo，输出提升到head并转data-precedence，body只保留hello world div。 */
     it('treats link rel stylesheet elements as a stylesheet resource when it includes a precedence when server rendering', async () => {
       await act(() => {
         const {pipe} = renderToPipeableStream(
@@ -7709,7 +7917,7 @@ body {
       );
     });
 
-    /** 测试场景：验证「treats link rel stylesheet elements as a stylesheet resource when it includes a precedence when client rendering」描述的渲染、交互或错误处理结果。 */
+    /** 客户端同样从body声明aresource/foo资源，等待并模拟preload和stylesheet load；最后head只有stylesheet、body为hello world，验证客户端资源分类与提升。 */
     it('treats link rel stylesheet elements as a stylesheet resource when it includes a precedence when client rendering', async () => {
       const root = ReactDOMClient.createRoot(document);
       root.render(
@@ -7743,7 +7951,7 @@ body {
       );
     });
 
-    /** 测试场景：验证「treats link rel stylesheet elements as a stylesheet resource when it includes a precedence when hydrating」描述的渲染、交互或错误处理结果。 */
+    /** SSR已提升aresource/foo，再hydrate相同树；head一份资源、body hello world保持，资源不会按body普通link参与重复节点匹配。 */
     it('treats link rel stylesheet elements as a stylesheet resource when it includes a precedence when hydrating', async () => {
       await act(() => {
         const {pipe} = renderToPipeableStream(
@@ -7781,7 +7989,7 @@ body {
       );
     });
 
-    /** 测试场景：验证「hoists stylesheet resources to the correct precedence」描述的渲染、交互或错误处理结果。 */
+    /** SSR发现foo1/default1/foo2后head按foo组再default组；hydrate新bar1、foo3、default2并load，既有组尾加入各新项，bar新组最后，旧资源仍保留。 */
     it('hoists stylesheet resources to the correct precedence', async () => {
       await act(() => {
         const {pipe} = renderToPipeableStream(
@@ -7859,7 +8067,7 @@ body {
       );
     });
 
-    /** 测试场景：验证「retains styles even after the last referring Resource unmounts」描述的渲染、交互或错误处理结果。 */
+    /** 客户端挂载并load foo样式后，根更新删除最后一个link引用；head仍保留foo资源，body hello world不变，当前释放引用不回收资源节点。 */
     it('retains styles even after the last referring Resource unmounts', async () => {
       // 在未来实现某种垃圾回收机制前，本测试始终成立。
       const root = ReactDOMClient.createRoot(document);
@@ -7897,7 +8105,7 @@ body {
       );
     });
 
-    /** 测试场景：验证「retains styles even when a new html, head, and/body mount」描述的渲染、交互或错误处理结果。 */
+    /** SSR foo/bar样式和server文本，hydrate以client文本及qux/foo造成重建并load；最终foo/bar旧样式仍保留，qux在新组追加，body换client；仅收集恢复错误，未断言其条数。 */
     it('retains styles even when a new html, head, and/body mount', async () => {
       await act(() => {
         const {pipe} = renderToPipeableStream(
@@ -7923,7 +8131,9 @@ body {
           <body>client</body>
         </html>,
         {
-          /** `onRecoverableError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+          /** 只把hydration恢复错误message放入errors数组；此用例后面没有对数组作断言。
+           * @param error 恢复路径提供的错误对象。 */
           onRecoverableError(error) {
             errors.push(error.message);
           },
@@ -7953,7 +8163,7 @@ body {
       );
     });
 
-    /** 测试场景：验证「retains styles in head through head remounts」描述的渲染、交互或错误处理结果。 */
+    /** 客户端head key从1变2，资源从foo/bar改foo/baz；加载后旧bar仍在，新baz及其preload追加，核对head remount保留资源且这次仍保留晚插preload。 */
     it('retains styles in head through head remounts', async () => {
       const root = ReactDOMClient.createRoot(document);
       root.render(
@@ -8006,8 +8216,7 @@ body {
       });
       await assertLog(['load preload: baz', 'load stylesheet: baz']);
 
-      // 我们不在头部看到预加载是因为它们在渲染时同步插入，然后当新的单例挂载时会重置其内容。 仅保留
-      // 样式
+      // head重挂保留foo/bar资源，插入baz；下面断言仍有新baz的preload。
       expect(getMeaningfulChildren(document)).toEqual(
         <html>
           <head>
@@ -8021,7 +8230,7 @@ body {
       );
     });
 
-    /** 测试场景：验证「can support styles inside portals to a shadowRoot」描述的渲染、交互或错误处理结果。 */
+    /** 主root与shadow portal各引用同foo但不同precedence/额外属性；document与shadow各有独立stylesheet，人工分别派load，shadow资源保留自身属性，作用域间不合并同URL样式。 */
     it('can support styles inside portals to a shadowRoot', async () => {
       const shadow = document.body.attachShadow({mode: 'open'});
       const root = ReactDOMClient.createRoot(container);
@@ -8076,7 +8285,7 @@ body {
       ]);
     });
 
-    /** 测试场景：验证「can support styles inside portals to an element in shadowRoots」描述的渲染、交互或错误处理结果。 */
+    /** 多个portal目标位于同shadowRoot的不同元素，同时主文档也引用foo；shadow内按one/two/three组统一去重排序foo/baz/bar/qux，主head仅自身foo样式及共享预加载提示，内部目标不各建资源库。 */
     it('can support styles inside portals to an element in shadowRoots', async () => {
       const template = document.createElement('template');
       template.innerHTML =
@@ -8164,9 +8373,11 @@ body {
       ]);
     });
 
-    /** 测试场景：验证「escapes hrefs when selecting matching elements in the document when rendering Resources」描述的渲染、交互或错误处理结果。 */
+    /** SSR含换行preload与反斜杠样式，再客户端渲染含引号/选择器片段的不同href；load日志和DOM表明原资源复用而特殊href新增独立项，查询转义不误命中旧style。 */
     it('escapes hrefs when selecting matching elements in the document when rendering Resources', async () => {
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /** SSR声明普通与换行style预加载、普通与反斜杠样式，并留客户端容器，作为特殊选择器键复用对照。
+       * @returns 文档。 */
       function App() {
         ReactDOM.preload('preload', {as: 'style'});
         ReactDOM.preload('with\nnewline', {as: 'style'});
@@ -8189,7 +8400,8 @@ body {
       container = document.getElementById('container');
       const root = ReactDOMClient.createRoot(container);
 
-      /** `ClientApp`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 重复提示已存在URL，并返回含引号选择器片段的新样式与原反斜杠样式，验证特殊href不误匹配普通style。
+       * @returns foo div与两样式。 */
       function ClientApp() {
         ReactDOM.preload('preload', {as: 'style'});
         ReactDOM.preload('with\nnewline', {as: 'style'});
@@ -8246,7 +8458,7 @@ body {
       );
     });
 
-    /** 测试场景：验证「escapes hrefs when selecting matching elements in the document when using preload and preinit」描述的渲染、交互或错误处理结果。 */
+    /** SSR先放普通preload/style、反斜杠及换行URL，客户端API再提示含引号选择器片段的URL并preinit同反斜杠项；最终特殊URL各独立、已存在项去重，验证API匹配选择器转义。 */
     it('escapes hrefs when selecting matching elements in the document when using preload and preinit', async () => {
       await act(() => {
         const {pipe} = renderToPipeableStream(
@@ -8264,7 +8476,8 @@ body {
         pipe(writable);
       });
 
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 客户端通过preload/preinit提示含选择器片段、反斜杠和换行URL，比较转义查询与已存在节点去重。
+       * @returns foo div。 */
       function App() {
         ReactDOM.preload('preload"][rel="preload', {as: 'style'});
         ReactDOM.preinit('style"][rel="stylesheet', {
@@ -8310,7 +8523,7 @@ body {
       );
     });
 
-    /** 测试场景：验证「does not create stylesheet resources when inside an <svg> context」描述的渲染、交互或错误处理结果。 */
+    /** SSR与客户端都在SVG path和foreignObject分别放foo/bar样式；SVG命名空间foo留原位，foreignObject恢复HTML上下文后bar被提升到head，不能把整个svg后代都视作禁用资源。 */
     it('does not create stylesheet resources when inside an <svg> context', async () => {
       await act(() => {
         const {pipe} = renderToPipeableStream(
@@ -8371,7 +8584,7 @@ body {
       );
     });
 
-    /** 测试场景：验证「does not create stylesheet resources when inside a <noscript> context」描述的渲染、交互或错误处理结果。 */
+    /** SSR noscript中的样式link作为转义文本保留且head空；客户端重渲染noscript为空不创建子link或资源，验证两端不同noscript处理都不提升样式。 */
     it('does not create stylesheet resources when inside a <noscript> context', async () => {
       await act(() => {
         const {pipe} = renderToPipeableStream(
@@ -8413,7 +8626,7 @@ body {
       );
     });
 
-    /** 测试场景：验证「warns if you provide a `precedence` prop with other props that invalidate the creation of a stylesheet resource」描述的渲染、交互或错误处理结果。 */
+    /** SSR依次用缺/空href、load/error监听及disabled=false使precedence样式不具备资源资格，断言对应七条DEV警告；hydrate带双监听普通link再报冲突，disabled是否为false仍以属性存在为条件。 */
     it('warns if you provide a `precedence` prop with other props that invalidate the creation of a stylesheet resource', async () => {
       await act(() => {
         renderToPipeableStream(
@@ -8523,7 +8736,7 @@ body {
       ]);
     });
 
-    /** 测试场景：验证「will not block displaying a Suspense boundary on a stylesheet with media that does not match」描述的渲染、交互或错误处理结果。 */
+    /** 两个pending边界同时依赖print与all样式，matchMedia夹具仅all匹配；解文本后都保持loading，只派all stylesheet load即可同时显示foo/bar，print未load不阻塞揭示。 */
     it('will not block displaying a Suspense boundary on a stylesheet with media that does not match', async () => {
       await act(() => {
         renderToPipeableStream(
@@ -8640,7 +8853,8 @@ body {
   });
 
   describe('Style Resource', () => {
-    /** 测试场景：验证「treats <style href="..." precedence="..."> elements as a style resource when server rendering」描述的渲染、交互或错误处理结果。 */
+
+    /** SSR body内style带href=foo/precedence=foo及CSS；输出head style改为data-href/data-precedence，body为空，验证内联资源提升。 */
     it('treats <style href="..." precedence="..."> elements as a style resource when server rendering', async () => {
       const css = `
 body {
@@ -8670,7 +8884,7 @@ body {
       );
     });
 
-    /** 测试场景：验证「can insert style resources as part of a boundary reveal」描述的渲染、交互或错误处理结果。 */
+    /** pending文本边界解锁时直接插红色foo内联style并显示loaded，无外链load等待；hydrate复用foo，再根更新添加绿色baz/foo与蓝色bar/bar，head按组排列foo、baz、bar。 */
     it('can insert style resources as part of a boundary reveal', async () => {
       const cssRed = `
 body {
@@ -8786,7 +9000,7 @@ background-color: green;
       );
     });
 
-    /** 测试场景：验证「can emit styles early when a partial boundary flushes」描述的渲染、交互或错误处理结果。 */
+    /** 边界先等first再等second，解first仅早冲刷foo style到body并加media=not all；解second后foo/bar移入head并去临时media，body显示两div，区分资源早发与边界揭示。 */
     it('can emit styles early when a partial boundary flushes', async () => {
       const css = 'body { background-color: red; }';
       await act(() => {
@@ -8856,7 +9070,7 @@ background-color: green;
       );
     });
 
-    /** 测试场景：验证「can hoist styles flushed early even when no other style dependencies are flushed on completion」描述的渲染、交互或错误处理结果。 */
+    /** first解锁后唯一foo内联style以media=not all发到body，second解锁不发现任何新style；仍将已早发foo提升到head并显示两个div，完成指令不能依赖本轮新CSS存在。 */
     it('can hoist styles flushed early even when no other style dependencies are flushed on completion', async () => {
       await act(() => {
         renderToPipeableStream(
@@ -8921,7 +9135,7 @@ background-color: green;
       );
     });
 
-    /** 测试场景：验证「can emit multiple style rules into a single style tag for a given precedence」描述的渲染、交互或错误处理结果。 */
+    /** shell与两个晚阶段各发现default/foo多条内联规则，SSR按阶段与组分别合并CSS及空格分隔data-href；hydrate复用旧合并组并给新16/17各插独立style，客户端不重新合并规则。 */
     it('can emit multiple style rules into a single style tag for a given precedence', async () => {
       await act(() => {
         renderToPipeableStream(
@@ -9099,7 +9313,7 @@ background-color: green;
       );
     });
 
-    /** 测试场景：验证「warns if you render a <style> with an href with a space on the server」描述的渲染、交互或错误处理结果。 */
+    /** SSR style资源href含空格foo bar；DEV断言空间会破坏客户端data-href键匹配的警告，未执行后续hydrate失败验证。 */
     it('warns if you render a <style> with an href with a space on the server', async () => {
       await act(() => {
         renderToPipeableStream(
@@ -9121,7 +9335,7 @@ background-color: green;
       ]);
     });
 
-    /** 测试场景：验证「can emit styles with nonce」描述的渲染、交互或错误处理结果。 */
+    /** 两个文本锁控制内联样式晚发，render options显式nonce.style且各style也带nonce；first阶段合并foo/bar以临时media发body，second阶段提升head并追加baz，两阶段所有输出style保留R4nD0m。 */
     it('can emit styles with nonce', async () => {
       const nonce = 'R4nD0m';
       const fooCss = '.foo { color: hotpink; }';
@@ -9204,7 +9418,8 @@ background-color: green;
   });
 
   describe('Script Resources', () => {
-    /** 测试场景：验证「treats async scripts without onLoad or onError as Resources」描述的渲染、交互或错误处理结果。 */
+
+    /** SSR/hydrate四种脚本：无监听async foo提升head，带onLoad async bar、普通baz、defer qux保留body；unmount后只留foo资源，普通宿主脚本被移除，资源与host生命周期不同。 */
     it('treats async scripts without onLoad or onError as Resources', async () => {
       await act(() => {
         const {pipe} = renderToPipeableStream(
@@ -9221,9 +9436,8 @@ background-color: green;
         );
         pipe(writable);
       });
-      // 普通 async script 会转换为资源，并作为 shell 的一部分发出。带 onLoad 的 async script 会在
-      // shell 中 preload，等待 hydration 时加入；特殊之处在于它既不是 HostHoistable，也永远不会
-      // hydrate。普通 script 则是常规 HTML，应通过 HostComponent 完成 hydration。
+      // 无 onLoad/onError 的 async script 作为资源提升到 head。带 onLoad 的 bar 留在 body，
+      // 与普通 script 一样走 HostComponent hydration；它不会被转为共享资源。
       expect(getMeaningfulChildren(document)).toEqual(
         <html>
           <head>
@@ -9252,7 +9466,7 @@ background-color: green;
         </html>,
       );
       await waitForAll([]);
-      // 带 onLoad 的 async script 会插入正确位置，且不会导致 hydration 失败。
+      // hydration 后 bar 仍位于 body，其位置与服务端输出一致。
       expect(getMeaningfulChildren(document)).toEqual(
         <html>
           <head>
@@ -9280,7 +9494,7 @@ background-color: green;
       );
     });
 
-    /** 测试场景：验证「does not create script resources when inside an <svg> context」描述的渲染、交互或错误处理结果。 */
+    /** SSR与客户端在SVG path内foo及foreignObject内bar声明async脚本；foo留SVG原位，bar恢复HTML上下文被提升head，SVG限制不扩展到foreignObject中的HTML子树。 */
     it('does not create script resources when inside an <svg> context', async () => {
       await act(() => {
         const {pipe} = renderToPipeableStream(
@@ -9341,7 +9555,7 @@ background-color: green;
       );
     });
 
-    /** 测试场景：验证「does not create script resources when inside a <noscript> context」描述的渲染、交互或错误处理结果。 */
+    /** SSR noscript内async脚本仅为转义文本且head空；客户端noscript不创建子脚本，验证两端不会从该上下文生成共享脚本资源。 */
     it('does not create script resources when inside a <noscript> context', async () => {
       await act(() => {
         const {pipe} = renderToPipeableStream(
@@ -9385,7 +9599,8 @@ background-color: green;
   });
 
   describe('Hoistables', () => {
-    /** 测试场景：验证「can hoist meta tags on the server and hydrate them on the client」描述的渲染、交互或错误处理结果。 */
+
+    /** SSR body meta提升head，hydrate相同name/data/content不增节点；根更新删meta后head为空，普通可提升meta随引用卸载而删除。 */
     it('can hoist meta tags on the server and hydrate them on the client', async () => {
       await act(() => {
         const {pipe} = renderToPipeableStream(
@@ -9439,7 +9654,7 @@ background-color: green;
       );
     });
 
-    /** 测试场景：验证「can hoist meta tags on the client」描述的渲染、交互或错误处理结果。 */
+    /** 客户端container内div声明meta，head收到完整meta而div为空；更新为无meta div后head投影undefined，验证客户端提升与移除。 */
     it('can hoist meta tags on the client', async () => {
       const root = ReactDOMClient.createRoot(container);
       await act(() => {
@@ -9461,7 +9676,7 @@ background-color: green;
       expect(getMeaningfulChildren(document.head)).toEqual(undefined);
     });
 
-    /** 测试场景：验证「can hoist link (non-stylesheet) tags on the server and hydrate them on the client」描述的渲染、交互或错误处理结果。 */
+    /** SSR body的非stylesheet rel=foo link提升head，hydrate保留原属性，根更新删除引用后head清空，区别于长留的CSS资源。 */
     it('can hoist link (non-stylesheet) tags on the server and hydrate them on the client', async () => {
       await act(() => {
         const {pipe} = renderToPipeableStream(
@@ -9515,7 +9730,7 @@ background-color: green;
       );
     });
 
-    /** 测试场景：验证「can hoist link (non-stylesheet) tags on the client」描述的渲染、交互或错误处理结果。 */
+    /** 客户端div内普通rel=foo link提升head并保留data/href，div空；删除引用后head为空，提升不改变普通节点卸载语义。 */
     it('can hoist link (non-stylesheet) tags on the client', async () => {
       const root = ReactDOMClient.createRoot(container);
       await act(() => {
@@ -9537,7 +9752,7 @@ background-color: green;
       expect(getMeaningfulChildren(document.head)).toEqual(undefined);
     });
 
-    /** 测试场景：验证「can hoist title tags on the server and hydrate them on the client」描述的渲染、交互或错误处理结果。 */
+    /** SSR body title提升head且保留文本/data，hydrate复用；根更新去title后head清空，验证title提升/匹配/卸载。 */
     it('can hoist title tags on the server and hydrate them on the client', async () => {
       await act(() => {
         const {pipe} = renderToPipeableStream(
@@ -9591,7 +9806,7 @@ background-color: green;
       );
     });
 
-    /** 测试场景：验证「can hoist title tags on the client」描述的渲染、交互或错误处理结果。 */
+    /** 客户端div内title提升head而container div空；更新为无title div后head投影undefined，普通title引用移除时清理。 */
     it('can hoist title tags on the client', async () => {
       const root = ReactDOMClient.createRoot(container);
       await act(() => {
@@ -9613,7 +9828,7 @@ background-color: green;
       expect(getMeaningfulChildren(document.head)).toEqual(undefined);
     });
 
-    /** 测试场景：验证「prioritizes ordering for certain hoistables over others when rendering on the server」描述的渲染、交互或错误处理结果。 */
+    /** SSR body声明混合普通link/meta/title与显式preload/preconnect/DNS提示，最后才声明viewport/charset；head排序charset先、viewport次，其余按本例发现顺序，显式提示不自动按API资源队列重排。 */
     it('prioritizes ordering for certain hoistables over others when rendering on the server', async () => {
       await act(() => {
         const {pipe} = renderToPipeableStream(
@@ -9653,7 +9868,7 @@ background-color: green;
       );
     });
 
-    /** 测试场景：验证「supports rendering hoistables outside of <html> scope」描述的渲染、交互或错误处理结果。 */
+    /** meta before/after分别位于html元素前后；SSR与hydrate均移入head且顺序保留，根更新两处改null后head清空，支持文档singleton外声明普通hoistable。 */
     it('supports rendering hoistables outside of <html> scope', async () => {
       await act(() => {
         const {pipe} = renderToPipeableStream(
@@ -9717,9 +9932,11 @@ background-color: green;
       );
     });
 
-    /** 测试场景：验证「can hydrate hoistable tags inside late suspense boundaries」描述的渲染、交互或错误处理结果。 */
+    /** 同href/content而rel/name不同的link/meta分shell和release后两阶段发现；hydrate期间插入第三方同href/content节点，解release后保留第三方并正确管理晚到元素，unmount只移React节点，第三方留body。 */
     it('can hydrate hoistable tags inside late suspense boundaries', async () => {
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /** 用相同href/content但不同rel/name区分多组普通hoistable，部分待release后发现；跨SSR/hydrate/unmount观察晚到匹配及第三方同类节点保留。
+       * @returns 含shell/late两批hoistable的文档。 */
       function App() {
         return (
           <html>
@@ -9833,7 +10050,7 @@ background-color: green;
       );
     });
 
-    /** 测试场景：验证「does not hoist inside an <svg> context」描述的渲染、交互或错误处理结果。 */
+    /** SSR SVG与path里title/meta/link都不提升，foreignObject中同类元素恢复HTML上下文而在head出现；本例只断言head这三项，未直接比较SVG原位节点。 */
     it('does not hoist inside an <svg> context', async () => {
       await act(() => {
         const {pipe} = renderToPipeableStream(
@@ -9867,7 +10084,7 @@ background-color: green;
       ]);
     });
 
-    /** 测试场景：验证「does not hoist inside noscript context」描述的渲染、交互或错误处理结果。 */
+    /** body普通title/link/meta旁有noscript内同类元素；SSR head只含普通三项，noscript内容不贡献hoistable，本例未测试客户端noscript。 */
     it('does not hoist inside noscript context', async () => {
       await act(() => {
         const {pipe} = renderToPipeableStream(
@@ -9894,7 +10111,7 @@ background-color: green;
       ]);
     });
 
-    /** 测试场景：验证「can render a title before a singleton even if that singleton clears its contents」描述的渲染、交互或错误处理结果。 */
+    /** SSR title先于html/head singleton，body server文本；hydrate保持同title但改client造成恢复，最终head仍有foo title、body client；errors仅收集未断言内容。 */
     it('can render a title before a singleton even if that singleton clears its contents', async () => {
       await act(() => {
         const {pipe} = renderToPipeableStream(
@@ -9924,7 +10141,9 @@ background-color: green;
           </html>
         </>,
         {
-          /** `onRecoverableError`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+          /** 收集文本不匹配导致的hydrate恢复错误message；此用例最终只检查title与body，不断言errors数组。
+           * @param err 恢复路径错误。 */
           onRecoverableError(err) {
             errors.push(err.message);
           },
@@ -9944,7 +10163,7 @@ background-color: green;
       );
     });
 
-    /** 测试场景：验证「can update title tags」描述的渲染、交互或错误处理结果。 */
+    /** 客户端在container根先渲染title文本和data-foo，再更新两者；head输出从a title/foo改another title/bar，验证已提升title属性及文本可更新。 */
     it('can update title tags', async () => {
       const root = ReactDOMClient.createRoot(container);
       await act(() => {
@@ -9966,7 +10185,7 @@ background-color: green;
     });
   });
 
-  /** 测试场景：验证「does not outline a boundary with suspensey CSS when flushing the shell」描述的渲染、交互或错误处理结果。 */
+  /** shell同步完成的中层边界含CSS资源而最内文本pending；原始流不含Middle Fallback，DOM显示Inner Fallback，解content后直接显示Async Content，无需人工CSS load，验证shell CSS不额外outline中层。 */
   it('does not outline a boundary with suspensey CSS when flushing the shell', async () => {
     // 冲刷 shell 时，带 precedence 的 stylesheet 会在 <head> 中发出，本就会阻塞绘制，因此无需把
     // boundary 设为 outlined——那只会无谓显示更高层 fallback。应改为内联 boundary，以显示最内层
@@ -10019,7 +10238,7 @@ background-color: green;
     );
   });
 
-  /** 测试场景：验证「outlines a boundary with suspensey CSS when flushing a streamed completion」描述的渲染、交互或错误处理结果。 */
+  /** 根先等shell，解锁后晚到中层CSS边界被outline，原始流含Middle Fallback；CSS load后改Inner Fallback，再解content显示Async Content，区分晚到资源依赖与内层文本依赖。 */
   it('outlines a boundary with suspensey CSS when flushing a streamed completion', async () => {
     // boundary 通过流完成（而非作为 shell 的一部分）时，suspensey CSS 应使其变为 outlined。这样父级
     // 内容可先显示，CSS 则另行加载。
@@ -10117,8 +10336,9 @@ background-color: green;
     );
   });
 
+  /** enableViewTransition下shell中边界同时有CSS与图片；只检查原始流包含Image Fallback，验证图片令边界仍outline。此例没有派图片load、检查最终揭示或动画执行。 */
   // @gate enableViewTransition
-  /** 测试场景：验证「still outlines a boundary with a suspensey image inside a ViewTransition when flushing the shell」描述的渲染、交互或错误处理结果。 */
+
   it('still outlines a boundary with a suspensey image inside a ViewTransition when flushing the shell', async () => {
     // stylesheet 本就会从 <head> 阻塞绘制；与之不同，ViewTransition 内的图片会变为 outlined，以便
     // 以动画显示，即使在 shell 冲刷期间也是如此。

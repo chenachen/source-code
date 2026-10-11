@@ -12,7 +12,7 @@ import {
 describe('formatConsoleArgs', () => {
   /**
    * 场景：格式串混用全部受支持占位符、缺失参数、额外参数、literal `%` 与 Symbol 数字转换。
-   * 验证目标：`formatConsoleArgs` 按 Node console 语义消费参数，并生成稳定单行快照。
+   * 验证目标：`formatConsoleArgs` 按支持的占位符规则消费参数，并用快照检查文本；这是一套轻量格式化规则。
    */
   test('formats placeholders', () => {
     expect(
@@ -94,9 +94,12 @@ describe('setupForwardConsoleHandler', () => {
     send: (...args: any[]) => Promise<void>,
   ): NormalizedModuleRunnerTransport {
     return {
+      /** 立即完成连接，测试发送失败时无需真实通信端点。 */
       connect: () => Promise.resolve(),
+      /** 立即完成断开，满足 transport 生命周期接口。 */
       disconnect: () => Promise.resolve(),
       send,
+      /** 返回空调用结果，使替身只暴露本例注入的 send 失败行为。 */
       invoke: () => Promise.resolve({ result: undefined } as any),
     }
   }
@@ -128,8 +131,8 @@ describe('setupForwardConsoleHandler', () => {
   })
 
   /**
-   * 场景：日志 transport.send 以普通 Error 拒绝，而非连接前专用错误。
-   * 验证目标：handler 调用原始 console.error 并保留失败说明与 Error，不能静默吞掉诊断（#22450）。
+   * 日志发送与随后报告发送错误的 send 都以普通 Error 拒绝；第二次失败回落到原始 console.error，
+   * 保留失败说明和 Error（#22450）。
    */
   test('log errors from transport.send', async () => {
     const transport = createMockTransport(() =>

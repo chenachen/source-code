@@ -10,18 +10,19 @@
 'use strict';
 
 // TODO：是否可以仅使用公共 API 表达这个测试？
+/** 直接导入DOM selection内部文本偏移遍历器，返回指定字符所属Text节点及局部offset；本组覆盖多层DOM/空节点而不是通过公共selection事件间接触发。 */
 const getNodeForCharacterOffset =
   require('react-dom-bindings/src/client/getNodeForCharacterOffset').default;
 
 // 从 HTML 字符串创建节点
-/** `createNode`：封装当前用例复用的操作、回调或断言步骤。 */
+/** 在独立 HTMLDocument 中解析传入 markup 并返回包裹 div，保留多层与空节点的真实 DOM 文本结构。 */
 function createNode(html) {
   const node = (getTestDocument() || document).createElement('div');
   node.innerHTML = html;
   return node;
 }
 
-/** `getTestDocument`：封装当前用例复用的操作、回调或断言步骤。 */
+/** 新建并写入可选 HTML 文档，缺省补最小 charset/title；隔离 fixture 的节点所有者文档。 */
 function getTestDocument(markup) {
   const doc = document.implementation.createHTMLDocument('');
   doc.open();
@@ -34,21 +35,14 @@ function getTestDocument(markup) {
 }
 
 // 检查 getNodeForCharacterOffset返回值与预期结果匹配.
-/** `expectNodeOffset`：封装当前用例复用的操作、回调或断言步骤。 */
+/** 同时核对定位到的 Text 内容和该节点内偏移，避免只比较全局文字而漏掉跨节点定位错误。 */
 function expectNodeOffset(result, textContent, nodeOffset) {
   expect(result.node.textContent).toBe(textContent);
   expect(result.offset).toBe(nodeOffset);
 }
 
 describe('getNodeForCharacterOffset', () => {
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「should handle siblings」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言连接 ReactDOM 公开入口、ReactDOMRoot 根生命周期及 DOM 提交结果。
-   */
+  /** 从三个兄弟 i 的串联文本 123456789 查全局偏移 0 和 4；应分别定位第一文本节点的 0 与第二节点的 1，验证跨兄弟累计字符数。 */
   it('should handle siblings', () => {
     const node = createNode('<i>123</i><i>456</i><i>789</i>');
 
@@ -56,7 +50,7 @@ describe('getNodeForCharacterOffset', () => {
     expectNodeOffset(getNodeForCharacterOffset(node, 4), '456', 1);
   });
 
-  /** 测试场景：验证「should handle trailing chars」描述的渲染、交互或错误处理结果。 */
+  /** 同一兄弟树查偏移 3 和末尾 9；应取前一节点末尾 3 而非下一节点开头，验证相等边界归属于当前 Text 的尾端。 */
   it('should handle trailing chars', () => {
     const node = createNode('<i>123</i><i>456</i><i>789</i>');
 
@@ -64,7 +58,7 @@ describe('getNodeForCharacterOffset', () => {
     expectNodeOffset(getNodeForCharacterOffset(node, 9), '789', 3);
   });
 
-  /** 测试场景：验证「should handle trees」描述的渲染、交互或错误处理结果。 */
+  /** 构造带空 i 的多层文本树，查偏移 3/5/10；前两项应定位文本 3 的尾端和 45 的尾端，超出总长应 undefined，验证深度优先文本遍历跳过空元素。 */
   it('should handle trees', () => {
     const node = createNode(
       '<i>' +
@@ -87,7 +81,7 @@ describe('getNodeForCharacterOffset', () => {
     expect(getNodeForCharacterOffset(node, 10)).toBeUndefined();
   });
 
-  /** 测试场景：验证「should handle non-existent offset」描述的渲染、交互或错误处理结果。 */
+  /** 单一文本 123 查 -1 和 4；两项都应 undefined，验证负值与超过末尾的偏移不制造节点结果。 */
   it('should handle non-existent offset', () => {
     const node = createNode('<i>123</i>');
 

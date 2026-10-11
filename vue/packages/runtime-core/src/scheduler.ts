@@ -20,7 +20,7 @@ export enum SchedulerJobFlags {
    *   状态归一化，是否最终稳定应由用户负责。
    */
   ALLOW_RECURSE = 1 << 2,
-  /** 任务所属 effect/组件已停止；仍在队列中也必须跳过。 */
+  /** 任务已显式作废；flushJobs 与 post-flush 循环即使取到它也会跳过。 */
   DISPOSED = 1 << 3,
 }
 
@@ -76,10 +76,12 @@ type CountMap = Map<SchedulerJob, number>
  * 当前同步栈之后执行。它只保证等待“当前批次”，不是浏览器绘制完成信号。
  */
 export function nextTick(): Promise<void>
+/** 在当前刷新 Promise 后调用 fn，保留显式 this 绑定，并把 fn 返回值/拒绝传给调用方。 */
 export function nextTick<T, R>(
   this: T,
   fn: (this: T) => R | Promise<R>,
 ): Promise<R>
+/** 选择当前批次或已决 Promise；回调的同步抛错会成为返回 Promise 的拒绝。 */
 export function nextTick<T, R>(
   this: T,
   fn?: (this: T) => R | Promise<R>,
@@ -259,7 +261,8 @@ export function flushPostFlushCbs(seen?: CountMap): void {
 
 /**
  * 取得排序 ID：无 ID 的 pre 任务排最前，普通无 ID 任务排最后。
- * 组件相关任务总有 uid，因此这个回退主要服务内部独立回调。
+ * 组件 render job 和所属 pre watcher 使用 uid；mounted/updated 钩子与普通 post watcher
+ * 通常没有 ID，使用 Infinity 后由稳定排序保留其入队顺序。
  */
 const getId = (job: SchedulerJob): number =>
   job.id == null ? (job.flags! & SchedulerJobFlags.PRE ? -1 : Infinity) : job.id
@@ -267,8 +270,9 @@ const getId = (job: SchedulerJob): number =>
 /**
  * 刷新主队列，并在 `finally` 中完成状态清理与 post 队列刷新。
  *
- * `finally` 保证即使某任务抛错，剩余任务的 `QUEUED` 标记也会清除；刷新期间新加入的
- * 任务则在尾部继续处理。主队列和 post 队列都清空后才释放 `currentFlushPromise`。
+ * 主队列任务抛错仍会清除剩余主任务的 `QUEUED` 标记并调用 post flush。post flush
+ * 正常返回后先清空 `currentFlushPromise`，再同步递归处理新任务；原 Promise 要等整次
+ * 调用返回才兑现。若 post 回调继续抛错，post 状态及 Promise 的复位会被中断。
  */
 function flushJobs(seen?: CountMap) {
   if (__DEV__) {

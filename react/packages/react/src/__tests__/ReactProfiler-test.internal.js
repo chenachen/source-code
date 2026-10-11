@@ -21,7 +21,9 @@ let waitFor;
 let waitForAll;
 let waitForThrow;
 
-/** 按当前特性开关重新加载 React、测试 renderer 与调度器，隔离模块状态。 */
+/** 在require React/调度器/noop renderer前设置三项Profiler开关，并取得act、日志等待器和计时夹具；模块隔离由调用方jest.resetModules完成。
+ * @param options 三项开关默认true；其他额外字段不读取。
+ * @returns 无返回值，写入本文件的模块与工具变量。 */
 function loadModules({
   enableProfilerTimer = true,
   enableProfilerCommitHooks = true,
@@ -44,17 +46,21 @@ function loadModules({
   waitForAll = InternalTestUtils.waitForAll;
   waitForThrow = InternalTestUtils.waitForThrow;
 
+  /** 按props推进虚拟render时间的class夹具；SCU=false保留旧基准成本，children用于构建嵌套边界。 */
   AdvanceTime = class extends React.Component {
-    /** 提供当前测试场景验证默认属性解析所需的默认值。 */
+    /** 计时夹具默认每次render推进10ms，并允许SCU继续；单例测试可用props覆盖两项。 */
     static defaultProps = {
       byAmount: 10,
       shouldComponentUpdate: true,
     };
-    /** 决定当前测试场景是否继续协调，并让测试验证跳过更新的边界。 */
+    /** 按下一组props直接决定是否跳过此计时组件，不比较children或其他字段。
+     * @param nextProps 下一轮计时输入；shouldComponentUpdate=false跳过render。
+     * @returns 调用方提供的SCU结果。 */
     shouldComponentUpdate(nextProps) {
       return nextProps.shouldComponentUpdate;
     }
-    /** 渲染当前测试场景所需的元素树，使断言能够观察协调与提交结果。 */
+    /** 在render阶段推进byAmount毫秒，再返回children或null；此夹具用可控虚拟成本验证actual/base，不使用真实耗时。
+     * @returns 当前children；假值children折为null。 */
     render() {
       // 渲染组件时推进模拟时钟，让 Profiler 获得确定性耗时。
       Scheduler.unstable_advanceTime(this.props.byAmount);
@@ -64,18 +70,13 @@ function loadModules({
 }
 
 describe(`onRender`, () => {
+  // 每例先resetModules，再开启三项Profiler开关并取新noop根工具，避免前例spy与模块状态串入。
   beforeEach(() => {
     jest.resetModules();
     loadModules();
   });
 
-  /**
-   * Given：已建立该文件所需的 renderer、容器与测试夹具。
-   * When：执行“should handle errors thrown”场景的唯一关键操作。
-   * Then：断言 Profiler 的时长累计、提交回调与错误恢复契约 的可观察结果。
-   *
-   * 验证机制：同时观察返回值、渲染输出或诊断信息，证明结果来自目标分支。
-   */
+  /** 内层 Profiler 的 onRender 按 id 抛出 expected，外层回调与祖先 componentDidMount 仍执行；act 拒绝且回调共两次，验证提交错误不会跳过这两个后续任务。 */
   it('should handle errors thrown', async () => {
     const callback = jest.fn(id => {
       if (id === 'throw') {
@@ -84,13 +85,14 @@ describe(`onRender`, () => {
     });
 
     let didMount = false;
-    /** 作为“should handle errors thrown”场景的组件夹具，隔离待验证的 React 行为。 */
+    /** 包住两层Profiler，借didMount标志确认内层onRender抛错后祖先布局生命周期仍执行。 */
     class ClassComponent extends React.Component {
-      /** 记录“should handle errors thrown”场景的挂载提交，并执行仅在挂载后有效的观测。 */
+      /** 提交布局阶段置didMount=true，供act拒绝后的断言观察。 */
       componentDidMount() {
         didMount = true;
       }
-      /** 渲染“should handle errors thrown”场景所需的元素树，使断言能够观察协调与提交结果。 */
+      /** 透传props.children建立祖先生命周期与Profiler回调的提交顺序。
+       * @returns 两层Profiler子树。 */
       render() {
         return this.props.children;
       }
@@ -114,14 +116,13 @@ describe(`onRender`, () => {
     expect(callback).toHaveBeenCalledTimes(2);
   });
 
-  /**
-   * 场景：“is not invoked until the commit phase”。
-   * 机制：验证Profiler 的时长累计、提交回调与错误恢复契约，锁定可观察结果与失败边界。
-   */
+  /** transition 挂载 first、last 两个日志组件；只推进到 first 时回调零次，完成 last 并提交后一次，区分可中断 render 与提交回调。 */
   it('is not invoked until the commit phase', async () => {
     const callback = jest.fn();
 
-    /** 作为“is not invoked until the commit phase”场景的函数夹具，返回待协调内容或触发目标行为。 */
+    /** 记录value并返回null；waitFor用首个日志作为暂停点，不推进模拟时钟。
+     * @param props value为本轮调度日志。
+     * @returns null，不产生宿主节点。 */
     const Yield = ({value}) => {
       Scheduler.log(value);
       return null;
@@ -136,7 +137,7 @@ describe(`onRender`, () => {
       );
     });
 
-    // render 提交前持续累计计时读取；提交后才固定本轮测量值。
+    // 只完成第一个子节点时尚未提交，onRender 不调用；整棵树完成并提交后才回调一次。
     await waitFor(['first']);
     expect(callback).toHaveBeenCalledTimes(0);
     await waitForAll(['last']);
@@ -144,10 +145,7 @@ describe(`onRender`, () => {
   });
 
   // @gate !__DEV__
-  /**
-   * 场景：“does not record times for components outside of Profiler tree”。
-   * 机制：验证Profiler 的时长累计、提交回调与错误恢复契约，锁定可观察结果与失败边界。
-   */
+  /** 生产配置下替换 Scheduler.unstable_now 为记录器，清空初始化日志后挂载五个未包在 Profiler 内的计时组件；performance track 开时仍读取16次，关时11次，断言具体读钟日志而非所有计时调用为零。 */
   it('does not record times for components outside of Profiler tree', async () => {
     // mock Scheduler，以记录 React 读取当前时间的次数。
     jest.mock('scheduler', obj => {
@@ -155,7 +153,10 @@ describe(`onRender`, () => {
       return {
         ...ActualScheduler,
         /** 记录 React 读取当前时间的次数，再转发到真实 mock Scheduler 时钟。 */
-        unstable_now: function mockUnstableNow() {
+        unstable_now:
+          /** 记录一次读钟日志，再返回Scheduler mock的当前时间；不主动推进时间。
+           * @returns mock时钟毫秒。 */
+          function mockUnstableNow() {
           ActualScheduler.log('read current time');
           return ActualScheduler.unstable_now();
         },
@@ -220,14 +221,13 @@ describe(`onRender`, () => {
     }
   });
 
-  /**
-   * 场景：“does not report work done on a sibling”。
-   * 机制：验证Profiler 的时长累计、提交回调与错误恢复契约，锁定可观察结果与失败边界。
-   */
+  /** Profiler 内 memo 子组件首次耗时10ms且比较器始终跳过后续 render；重新渲染 App 时按测试 gate 分别断言无回调或 actual=0/base=10，随后仅更新外部兄弟的 Hook 状态始终无回调，验证边界外工作不归入此 Profiler。 */
   it('does not report work done on a sibling', async () => {
     const callback = jest.fn();
 
     const DoesNotUpdate = React.memo(
+      /** 首次render耗10ms并返回null；外部恒真memo比较器令后续父更新复用这份基准。
+       * @returns null。 */
       function DoesNotUpdateInner() {
         Scheduler.unstable_advanceTime(10);
         return null;
@@ -237,14 +237,17 @@ describe(`onRender`, () => {
 
     let updateProfilerSibling;
 
-    /** 实现“does not report work done on a sibling”场景所需的“ProfilerSibling”测试夹具行为。 */
+    /** 将count+1的更新闭包暴露到外部变量；自身位于Profiler外，用它隔离兄弟状态更新的计时归属。
+     * @returns null。 */
     function ProfilerSibling() {
       const [count, setCount] = React.useState(0);
+      /** 用本轮闭包的count排兄弟状态更新，作为仅影响Profiler外分支的触发入口。 */
       updateProfilerSibling = () => setCount(count + 1);
       return null;
     }
 
-    /** 作为“does not report work done on a sibling”场景的函数夹具，返回待协调内容或触发目标行为。 */
+    /** 并排放置含恒定memo比较器的Profiler子树和可更新的兄弟；重建App元素与仅更新兄弟形成两个触发路径。
+     * @returns 这两个兄弟元素。 */
     function App() {
       return (
         <React.Fragment>
@@ -282,11 +285,10 @@ describe(`onRender`, () => {
     });
 
     if (gate(flags => flags.enableUseJSStackToTrackPassiveDurations)) {
-      // App 在进入 Profiler 前已 bailout，Profiler 子树没有任何渲染工作，故 `onRender` 不应调用。
+      // 此gate分支断言本轮无回调；内层memo跳过render。该flag在当前实现无定义，不能由此推断App先bailout。
       expect(callback).not.toHaveBeenCalled();
     } else {
-      // 更新父节点仍会报告一次重渲染，因为 React 在 Profiler 与 bailout 子树之间执行了少量工作。
-      // 这并非最优行为，但它锁定旧 reconciler fork 的现有语义。
+      // 未启用该特性时，本轮仍进入 Profiler 的提交路径；actualDuration 为 0，baseDuration 保留 10ms。
       expect(callback).toHaveBeenCalledTimes(1);
 
       call = callback.mock.calls[0];
@@ -304,16 +306,13 @@ describe(`onRender`, () => {
 
     Scheduler.unstable_advanceTime(20); // 30 -> 50
 
-      // 更新 Profiler 的兄弟节点不经过其子树，因此不能报告重渲染。
+    // 更新 Profiler 的兄弟节点不经过其子树，因此不能报告重渲染。
     await act(() => updateProfilerSibling());
 
     expect(callback).not.toHaveBeenCalled();
   });
 
-  /**
-   * 场景：“logs render times for both mount and update”。
-   * 机制：验证Profiler 的时长累计、提交回调与错误恢复契约，锁定可观察结果与失败边界。
-   */
+  /** 时钟从5开始，挂载耗时10ms，空闲20ms后更新仍10ms，再空闲20ms后更新4ms；逐次核对 mount/update、actual/base 和5→15、35→45、65→69的起止时间。 */
   it('logs render times for both mount and update', async () => {
     const callback = jest.fn();
 
@@ -389,10 +388,7 @@ describe(`onRender`, () => {
     expect(call[5]).toBe(69); // 提交时间（commit time）
   });
 
-  /**
-   * 场景：“includes render times of nested Profilers in their parent times”。
-   * 机制：验证Profiler 的时长累计、提交回调与错误恢复契约，锁定可观察结果与失败边界。
-   */
+  /** 外层组件耗时10ms，内层20ms，从5开始挂载；内层先回调且计20，外层计30，两者共享commitTime=35，验证嵌套 render 时间向父边界累加。 */
   it('includes render times of nested Profilers in their parent times', async () => {
     const callback = jest.fn();
 
@@ -431,10 +427,7 @@ describe(`onRender`, () => {
     expect(parentCall[5]).toBe(35); // 提交时间（commit time）
   });
 
-  /**
-   * 场景：“traces sibling Profilers separately”。
-   * 机制：验证Profiler 的时长累计、提交回调与错误恢复契约，锁定可观察结果与失败边界。
-   */
+  /** 两个兄弟 Profiler 分别耗时20和5ms，从5开始挂载；各自 actual/base 为20、5，startTime 为5、25，共享commitTime=30，验证兄弟计时互不相加。 */
   it('traces sibling Profilers separately', async () => {
     const callback = jest.fn();
 
@@ -460,7 +453,7 @@ describe(`onRender`, () => {
     expect(firstCall[0]).toBe('first');
     expect(secondCall[0]).toBe('second');
 
-    // 父 Profiler 的耗时必须包含其子 Profiler 的工作量。
+    // 两个 Profiler 互为兄弟，分别记录各自的 20ms/5ms 工作；它们共享同一次提交时刻。
     expect(firstCall[2]).toBe(20); // 实际渲染耗时（actual time）
     expect(firstCall[3]).toBe(20); // 基准渲染耗时（base time）
     expect(firstCall[4]).toBe(5); // 渲染开始时间（start time）
@@ -471,10 +464,7 @@ describe(`onRender`, () => {
     expect(secondCall[5]).toBe(30); // 提交时间（commit time）
   });
 
-  /**
-   * 场景：“does not include time spent outside of profile root”。
-   * 机制：验证Profiler 的时长累计、提交回调与错误恢复契约，锁定可观察结果与失败边界。
-   */
+  /** Profiler 前后各有20ms组件，内部仅5ms；从5开始挂载，回调 actual/base=5、start=25、commit=50，边界外工作影响全局时间但不计入内部 duration。 */
   it('does not include time spent outside of profile root', async () => {
     const callback = jest.fn();
 
@@ -503,19 +493,17 @@ describe(`onRender`, () => {
     expect(call[5]).toBe(50); // 提交时间（commit time）
   });
 
-  /**
-   * 场景：“is not called when blocked by sCU false”。
-   * 机制：验证Profiler 的时长累计、提交回调与错误恢复契约，锁定可观察结果与失败边界。
-   */
+  /** Updater 初次返回固定 props.children，随后仅更新自身 state；外层回调次数从挂载后一次变成两次，内层仍一次。此夹具未实现 shouldComponentUpdate，实际验证相同 children 元素复用时内层没有新增回调。 */
   it('is not called when blocked by sCU false', async () => {
     const callback = jest.fn();
 
     let instance;
-    /** 作为“is not called when blocked by sCU false”场景的组件夹具，隔离待验证的 React 行为。 */
+    /** 接收固定children元素，暴露实例以仅改state；render透传同一children，从而观测内层Profiler是否重新报告。此类没有SCU。 */
     class Updater extends React.Component {
-      /** 保存“is not called when blocked by sCU false”场景用于驱动更新或错误回退的组件状态。 */
+      /** 空初始state，后续count更新仅用来触发Updater自身render。 */
       state = {};
-      /** 渲染“is not called when blocked by sCU false”场景所需的元素树，使断言能够观察协调与提交结果。 */
+      /** 捕获本实例并返回相同props.children，避免为内层树创建新元素。
+       * @returns 从父层接收的原children引用。 */
       render() {
         instance = this;
         return this.props.children;
@@ -551,10 +539,7 @@ describe(`onRender`, () => {
     expect(callback.mock.calls[0][0]).toBe('outer');
   });
 
-  /**
-   * 场景：“decreases actual time but not base time when sCU prevents an update”。
-   * 机制：验证Profiler 的时长累计、提交回调与错误恢复契约，锁定可观察结果与失败边界。
-   */
+  /** 挂载父10ms、子13ms，随后父更新为4ms且子 SCU=false；更新 actual=4，base=17仍含子的旧13ms，核对 start=58、commit=62，区分跳过 render 与保留基准成本。 */
   it('decreases actual time but not base time when sCU prevents an update', async () => {
     const callback = jest.fn();
 
@@ -602,26 +587,26 @@ describe(`onRender`, () => {
     expect(updateCall[5]).toBe(62); // 提交时间（commit time）
   });
 
-  /**
-   * 场景：“includes time spent in render phase lifecycles”。
-   * 机制：验证Profiler 的时长累计、提交回调与错误恢复契约，锁定可观察结果与失败边界。
-   */
+  /** 静态派生状态耗3ms、SCU耗7ms、render耗5ms；挂载不走SCU而计8ms，更新计15ms，断言两个阶段的 actual/base 与起止时间。 */
   it('includes time spent in render phase lifecycles', async () => {
-    /** 作为“includes time spent in render phase lifecycles”场景的组件夹具，隔离待验证的 React 行为。 */
+    /** 以派生状态、SCU、render的3/7/5ms分开验证render阶段生命周期计入Profiler；挂载不执行SCU。 */
     class WithLifecycles extends React.Component {
-      /** 保存“includes time spent in render phase lifecycles”场景用于驱动更新或错误回退的组件状态。 */
+      /** 空状态使静态派生状态方法可以正常参与挂载和更新。 */
       state = {};
-      /** 根据新属性派生“includes time spent in render phase lifecycles”场景的状态，用于验证静态生命周期语义。 */
+      /** 每次调用推进3ms而返回null，不修改state；只贡献派生生命周期成本。
+       * @returns null，保留状态。 */
       static getDerivedStateFromProps() {
         Scheduler.unstable_advanceTime(3);
         return null;
       }
-      /** 决定“includes time spent in render phase lifecycles”场景是否继续协调，并让测试验证跳过更新的边界。 */
+      /** 推进7ms并允许更新，确保本轮render继续耗5ms。
+       * @returns true。 */
       shouldComponentUpdate() {
         Scheduler.unstable_advanceTime(7);
         return true;
       }
-      /** 渲染“includes time spent in render phase lifecycles”场景所需的元素树，使断言能够观察协调与提交结果。 */
+      /** 推进5ms并返回null，构成最终render成本。
+       * @returns null。 */
       render() {
         Scheduler.unstable_advanceTime(5);
         return null;
@@ -668,15 +653,13 @@ describe(`onRender`, () => {
     expect(updateCall[5]).toBe(43); // 提交时间（commit time）
   });
 
-  /**
-   * 场景：“should clear nested-update flag when multiple cascading renders are scheduled”。
-   * 机制：验证Profiler 的时长累计、提交回调与错误恢复契约，锁定可观察结果与失败边界。
-   */
+  /** 初次 layout effect 将 didMount 置真，后续 passive effect 再更新另一标志；日志 false:false、true:false、true:true 对应 mount、nested-update、update，验证布局级联标记不延续到被动更新。 */
   it('should clear nested-update flag when multiple cascading renders are scheduled', async () => {
     jest.resetModules();
     loadModules();
 
-    /** 作为“should clear nested-update flag when multiple cascading renders are scheduled”场景的函数夹具，返回待协调内容或触发目标行为。 */
+    /** 通过layout首次setDidMount与passive后续setDidMountAndUpdate制造两种级联；每轮记录两个状态，供phase与日志一一对应。
+     * @returns null；只产生Hook和调度日志。 */
     function Component() {
       const [didMount, setDidMount] = React.useState(false);
       const [didMountAndUpdate, setDidMountAndUpdate] = React.useState(false);
@@ -713,15 +696,13 @@ describe(`onRender`, () => {
     expect(onRender.mock.calls[2][1]).toBe('update');
   });
 
-  /**
-   * 场景：“is properly distinguish updates and nested-updates when there is more than sync remaining work”。
-   * 机制：验证Profiler 的时长累计、提交回调与错误恢复契约，锁定可观察结果与失败边界。
-   */
+  /** 先排 transition 挂载，再 flushSync 同一 Profiler 树；layout effect 立即更新状态，日志 false、true 对应 mount 和 nested-update，共两次回调，剩余低优先级工作不改变本次同步级联分类。 */
   it('is properly distinguish updates and nested-updates when there is more than sync remaining work', () => {
     jest.resetModules();
     loadModules();
 
-    /** 触发含剩余同步工作的嵌套更新，供 Profiler 区分提交类型。 */
+    /** 首次layout置didMount=true并记录每轮布尔状态；同步挂载和紧接的布局级联对应两次Profiler phase。
+     * @returns didMount布尔值。 */
     function Component() {
       const [didMount, setDidMount] = React.useState(false);
 
@@ -760,14 +741,13 @@ describe(`onRender`, () => {
   });
 
   describe('with regard to interruptions', () => {
-    /**
-     * 场景：“should accumulate actual time after a scheduling interruptions”。
-     * 机制：验证Profiler 的时长累计、提交回调与错误恢复契约，锁定可观察结果与失败边界。
-     */
+    /** transition 下两个 Yield 分别耗2、3ms；暂停在第一个日志时无回调，恢复并提交后 actual/base=5、start=5、commit=10，验证一次渲染的分段工作累加。 */
     it('should accumulate actual time after a scheduling interruptions', async () => {
       const callback = jest.fn();
 
-      /** 作为“should accumulate actual time after a scheduling interruptions”场景的函数夹具，返回待协调内容或触发目标行为。 */
+      /** 推进renderTime并记录Yield日志；分段等待后累计2+3ms成本。
+       * @param props renderTime为虚拟毫秒，也作为Yield日志的数值。
+       * @returns null。 */
       const Yield = ({renderTime}) => {
         Scheduler.unstable_advanceTime(renderTime);
         Scheduler.log('Yield:' + renderTime);
@@ -802,14 +782,13 @@ describe(`onRender`, () => {
       expect(call[5]).toBe(10); // 提交时间（commit time）
     });
 
-    /**
-     * 场景：“should not include time between frames”。
-     * 机制：验证Profiler 的时长累计、提交回调与错误恢复契约，锁定可观察结果与失败边界。
-     */
+    /** 外层5、10ms与内层17ms分段渲染，在首段后额外推进50ms空闲；提交时内层17ms、外层32ms，commit=87，空闲只改变时间戳而不进入 duration。 */
     it('should not include time between frames', async () => {
       const callback = jest.fn();
 
-      /** 作为“should not include time between frames”场景的函数夹具，返回待协调内容或触发目标行为。 */
+      /** 推进renderTime再记录Yield日志，配合外部空闲推进验证等待时间不计入actual/base。
+       * @param props renderTime为render成本和分段日志数值。
+       * @returns null。 */
       const Yield = ({renderTime}) => {
         Scheduler.unstable_advanceTime(renderTime);
         Scheduler.log('Yield:' + renderTime);
@@ -838,7 +817,7 @@ describe(`onRender`, () => {
     // 在帧暂停期间推进时钟；该空闲时间不应计入渲染耗时。
       Scheduler.unstable_advanceTime(50); // 10 -> 60
 
-    // flush 剩余工作，并额外消耗 10ms 模拟渲染时间。
+    // 完成剩余10ms外层与17ms内层工作，总钟从60推进到87。
       await waitForAll(['Yield:10', 'Yield:17']);
       expect(callback).toHaveBeenCalledTimes(2);
 
@@ -857,14 +836,13 @@ describe(`onRender`, () => {
       expect(outerCall[5]).toBe(87); // 提交时间（commit time）
     });
 
-    /**
-     * 场景：“should report the expected times when a high-pri update replaces a mount in-progress”。
-     * 机制：验证Profiler 的时长累计、提交回调与错误恢复契约，锁定可观察结果与失败边界。
-     */
+    /** 低优先级挂载在10ms首段后暂停，空闲100ms，再以同步5ms新树替换；唯一 mount 回调 actual/base=5、start=115、commit=120，废弃的旧10ms不进入最终树成本。 */
     it('should report the expected times when a high-pri update replaces a mount in-progress', async () => {
       const callback = jest.fn();
 
-      /** 作为“should report the expected times when a high-pri update replaces a mount in-progress”场景的函数夹具，返回待协调内容或触发目标行为。 */
+      /** 推进renderTime并记录Yield日志，用高优先级新树替换尚未完成的低优先级挂载。
+       * @param props renderTime为虚拟成本和日志数值。
+       * @returns null。 */
       const Yield = ({renderTime}) => {
         Scheduler.unstable_advanceTime(renderTime);
         Scheduler.log('Yield:' + renderTime);
@@ -915,14 +893,13 @@ describe(`onRender`, () => {
       expect(callback).toHaveBeenCalledTimes(0);
     });
 
-    /**
-     * 场景：“should report the expected times when a high-priority update replaces a low-priority update”。
-     * 机制：验证Profiler 的时长累计、提交回调与错误恢复契约，锁定可观察结果与失败边界。
-     */
+    /** 初始6+15ms挂载后，低优先级3、5、9ms更新分两次暂停并各空闲100ms；同步11ms树替换后仅新增一次 update，actual/base=11、start=264、commit=275，余下旧工作不再回调。 */
     it('should report the expected times when a high-priority update replaces a low-priority update', async () => {
       const callback = jest.fn();
 
-      /** 构造高优先级更新替换低优先级更新的计时夹具。 */
+      /** 推进renderTime并记Yield日志，区分废弃的3/5ms低优先级片段与最终11ms替代树。
+       * @param props renderTime为虚拟render成本。
+       * @returns null。 */
       const Yield = ({renderTime}) => {
         Scheduler.unstable_advanceTime(renderTime);
         Scheduler.log('Yield:' + renderTime);
@@ -938,7 +915,7 @@ describe(`onRender`, () => {
         </React.Profiler>,
       );
 
-    // 首次完整渲染消耗 21 秒，actual 与 base time 均以此为基线。
+      // 首次完整渲染消耗 21ms，actual 与 base time 均以此为基线。
       await waitForAll(['Yield:6', 'Yield:15']);
       expect(callback).toHaveBeenCalledTimes(1);
       let call = callback.mock.calls[0];
@@ -999,14 +976,13 @@ describe(`onRender`, () => {
       expect(callback).toHaveBeenCalledTimes(1);
     });
 
-    /**
-     * 场景：“should report the expected times when a high-priority update interrupts a low-priority update”。
-     * 机制：验证Profiler 的时长累计、提交回调与错误恢复契约，锁定可观察结果与失败边界。
-     */
+    /** 两分支初始成本5与9ms，低优先级把第一分支改为14ms并暂停；同步第二分支改为37ms，先报actual=37/base=42，之后续跑第一分支报actual=14/base=51，验证恢复工作与已提交兄弟的基准成本合并。 */
     it('should report the expected times when a high-priority update interrupts a low-priority update', async () => {
       const callback = jest.fn();
 
-      /** 构造高优先级更新打断低优先级更新的计时夹具。 */
+      /** 推进renderTime并记Yield日志，分别给两个独立state分支增加4/7ms叶子成本。
+       * @param props renderTime为叶子虚拟render成本。
+       * @returns null。 */
       const Yield = ({renderTime}) => {
         Scheduler.unstable_advanceTime(renderTime);
         Scheduler.log('Yield:' + renderTime);
@@ -1014,11 +990,12 @@ describe(`onRender`, () => {
       };
 
       let first;
-      /** 作为“should report the expected times when a high-priority update interrupts a low-priority upd”场景的组件夹具，隔离待验证的 React 行为。 */
+      /** 第一分支保留可单独更新的renderTime；低优先级更新后可被另一分支同步更新中断，再恢复。 */
       class FirstComponent extends React.Component {
-        /** 保存“should report the expected times when a high-priority update interrupts a low-priority upd”场景用于驱动更新或错误回退的组件状态。 */
+        /** 初次render成本1ms；测试后续将其改为10ms。 */
         state = {renderTime: 1};
-        /** 渲染首次子树，保存可与中断后耗时组合的 base time。 */
+        /** 捕获first实例，按state.renderTime推进并记日志，再返回固定4ms叶子；恢复后基准替换成最新10+4。
+         * @returns 4ms的Yield叶子。 */
         render() {
           first = this;
           Scheduler.unstable_advanceTime(this.state.renderTime);
@@ -1027,11 +1004,12 @@ describe(`onRender`, () => {
         }
       }
       let second;
-      /** 作为“should report the expected times when a high-priority update interrupts a low-priority upd”场景的组件夹具，隔离待验证的 React 行为。 */
+      /** 第二分支有独立renderTime与setState入口；同步更新将成本从2改30ms，用来中断第一分支。 */
       class SecondComponent extends React.Component {
-        /** 保存“should report the expected times when a high-priority update interrupts a low-priority upd”场景用于驱动更新或错误回退的组件状态。 */
+        /** 初次render成本2ms，与固定7ms叶子共同形成9ms基准。 */
         state = {renderTime: 2};
-        /** 渲染可被高优先级工作替换的第二棵子树。 */
+        /** 捕获second实例，按state.renderTime推进并记日志，再返回7ms叶子；同步setState后成本为30+7。
+         * @returns 7ms的Yield叶子。 */
         render() {
           second = this;
           Scheduler.unstable_advanceTime(this.state.renderTime);
@@ -1098,7 +1076,7 @@ describe(`onRender`, () => {
       Scheduler.unstable_advanceTime(100); // 266 -> 366
 
     // 用 rebase 后的状态恢复原低优先级更新，本轮 actual time 为 14ms，
-    // 不包含最初被打断的 10ms；树的 base time 为 42ms，反映各子树最近且更长的耗时。
+    // 不重复累加最初被打断的10ms；base为第一分支14+已提交第二分支37=51ms。
     // TODO：Scheduler 支持真正续跑后，actual time 应再减少 10ms。
       await waitForAll(['FirstComponent:10', 'Yield:4']);
       expect(callback).toHaveBeenCalledTimes(1);
@@ -1109,28 +1087,28 @@ describe(`onRender`, () => {
       expect(call[5]).toBe(380); // 提交时间（commit time）
     });
 
-    /**
-     * 场景：“should accumulate actual time after an error handled by componentDidCatch()”。
-     * 机制：验证Profiler 的时长累计、提交回调与错误恢复契约，锁定可观察结果与失败边界。
-     */
+    /** 子树9ms后在3ms组件中抛错，边界render耗2ms并在didCatch中setState；mount回调actual=14/base=2、start=19/commit=33，随后22ms回退以nested-update提交到55，区分失败尝试与提交级联。 */
     it('should accumulate actual time after an error handled by componentDidCatch()', async () => {
       const callback = jest.fn();
 
-      /** 作为“should accumulate actual time after an error handled by componentDidCatch()”场景的函数夹具，返回待协调内容或触发目标行为。 */
+      /** 推进3ms后抛expected，给didCatch恢复路径提供确定的失败render成本。
+       * @throws expected错误；不返回UI。 */
       const ThrowsError = ({unused}) => {
         Scheduler.unstable_advanceTime(3);
         throw Error('expected error');
       };
 
-      /** 作为“should accumulate actual time after an error handled by componentDidCatch()”场景的组件夹具，隔离待验证的 React 行为。 */
+      /** 失败render先提交didCatch，再用setState触发22ms回退的布局级联；用于区分mount与nested-update成本。 */
       class ErrorBoundary extends React.Component {
-        /** 保存“should accumulate actual time after an error handled by componentDidCatch()”场景用于驱动更新或错误回退的组件状态。 */
+        /** error初值null保留正常children，didCatch写入错误后选择回退。 */
         state = {error: null};
-        /** 记录“should accumulate actual time after an error handled by componentDidCatch()”场景捕获的渲染错误与组件栈。 */
+        /** 把提交阶段收到的错误存入state，触发回退的下一次提交。
+         * @param error 捕获的expected错误。 */
         componentDidCatch(error) {
           this.setState({error});
         }
-        /** 渲染“should accumulate actual time after an error handled by componentDidCatch()”场景所需的元素树，使断言能够观察协调与提交结果。 */
+        /** 自身每次耗2ms；无错返回原children，有错返回20ms计时组件。
+         * @returns 正常子树或可量化成本的回退。 */
         render() {
           Scheduler.unstable_advanceTime(2);
           return this.state.error === null ? (
@@ -1157,7 +1135,7 @@ describe(`onRender`, () => {
 
       expect(callback).toHaveBeenCalledTimes(2);
 
-    // Profiler 回调按冒泡方向从内到外逆序执行。
+    // 此处是同一Profiler的提交回调，按本例实际提交顺序读取。
       const [mountCall, updateCall] = callback.mock.calls;
 
     // 首次提交树只包含耗时 2ms 的 ErrorBoundary，但 actual time 还包括失败子树的渲染工作。
@@ -1167,9 +1145,9 @@ describe(`onRender`, () => {
     // 初次提交的子树为空，因此 base time 只包含 ErrorBoundary 的 2ms。
       expect(mountCall[3]).toBe(2);
 
-    // start time = 初始 5ms + 14ms 工作；若重放失败单元，再加 ThrowsError 的 3ms。
+    // 本例mount回调记录重试起点19ms，即初始5+此前14ms尝试。
       expect(mountCall[4]).toBe(19);
-    // commit time = 初始 19ms + 14ms 工作；若重放失败单元，再加两次 ThrowsError 的 6ms。
+    // mount提交时间为重试起点19+本轮14=33ms。
       expect(mountCall[5]).toBe(33);
 
     // 后续更新提交 ErrorBoundary 与其回退子节点。
@@ -1180,32 +1158,33 @@ describe(`onRender`, () => {
       expect(updateCall[3]).toBe(22);
     // 断言本次回退更新的开始时间。
       expect(updateCall[4]).toBe(33);
-    // commit time = 19（startTime）+ 2（ErrorBoundary）+ 20（AdvanceTime）；若重放失败工作再加 3ms。
+    // 回退从33开始，边界2+回退20ms后提交到55。
       expect(updateCall[5]).toBe(55);
     });
 
-    /**
-     * 场景：“should accumulate actual time after an error handled by getDerivedStateFromError()”。
-     * 机制：验证Profiler 的时长累计、提交回调与错误恢复契约，锁定可观察结果与失败边界。
-     */
+    /** 子树5ms后在10ms组件中抛错，边界派生错误状态并改渲染20ms回退；一次mount回调actual=39/base=22、start=44/commit=83，实际成本含失败子树而最终基准只含边界2ms与回退20ms。 */
     it('should accumulate actual time after an error handled by getDerivedStateFromError()', async () => {
       const callback = jest.fn();
 
-      /** 作为“should accumulate actual time after an error handled by getDerivedStateFromError()”场景的函数夹具，返回待协调内容或触发目标行为。 */
+      /** 推进10ms后抛expected，为派生错误状态恢复提供失败子树成本。
+       * @throws expected错误。 */
       const ThrowsError = ({unused}) => {
         Scheduler.unstable_advanceTime(10);
         throw Error('expected error');
       };
 
-      /** 作为“should accumulate actual time after an error handled by getDerivedStateFromError()”场景的组件夹具，隔离待验证的 React 行为。 */
+      /** 用静态派生错误状态在render路径选择20ms回退，不依赖didCatch再排提交更新。 */
       class ErrorBoundary extends React.Component {
-        /** 保存“should accumulate actual time after an error handled by getDerivedStateFromError()”场景用于驱动更新或错误回退的组件状态。 */
+        /** error初值null，派生错误状态将它置为捕获的异常。 */
         state = {error: null};
-        /** 把渲染错误转换为“should accumulate actual time after an error handled by getDerivedStateFromError()”场景的回退状态。 */
+        /** 返回error补丁使下一次render选择回退。
+         * @param error render子树抛出的错误。
+         * @returns 合并进state的error字段。 */
         static getDerivedStateFromError(error) {
           return {error};
         }
-        /** 渲染错误边界状态对应的正常子树或回退子树。 */
+        /** 自身推进2ms，再按error选择原children或20ms回退；最终base成本为2+20。
+         * @returns 正常子树或计时回退。 */
         render() {
           Scheduler.unstable_advanceTime(2);
           return this.state.error === null ? (
@@ -1232,7 +1211,7 @@ describe(`onRender`, () => {
 
       expect(callback).toHaveBeenCalledTimes(1);
 
-    // Profiler 回调按冒泡方向从内到外逆序执行。
+    // 此处是同一Profiler的提交回调，按本例实际提交顺序读取。
       const [mountCall] = callback.mock.calls;
 
     // 首次挂载提交 ErrorBoundary 的错误状态，但 actual time 还包含未进入最终树的失败 UI 工作。
@@ -1248,10 +1227,7 @@ describe(`onRender`, () => {
       expect(mountCall[5]).toBe(83);
     });
 
-    /**
-     * 场景：“当前测试”。
-     * 机制：验证Profiler 的时长累计、提交回调与错误恢复契约，锁定可观察结果与失败边界。
-     */
+    /** 连续两次渲染会令noop宿主在complete阶段抛错的树，均等待到错误；第三次有效span渲染可以完成且无日志，验证错误后栈可恢复。loadModules的useNoopRenderer额外字段未被读取，本文件一直使用noop。 */
     it('should reset the fiber stack correct after a "complete" phase error', async () => {
       jest.resetModules();
 
@@ -1287,10 +1263,7 @@ describe(`onRender`, () => {
     });
   });
 
-  /**
-   * 场景：“reflects the most recently rendered id value”。
-   * 机制：验证Profiler 的时长累计、提交回调与错误恢复契约，锁定可观察结果与失败边界。
-   */
+  /** 同一Profiler先以one挂载2ms子树，再以two更新1ms子树；回调分别使用最新id、mount/update和2/1ms成本，验证id无需卸载重建即可更新。 */
   it('reflects the most recently rendered id value', async () => {
     const callback = jest.fn();
 
@@ -1334,10 +1307,7 @@ describe(`onRender`, () => {
     expect(updateCall[4]).toBe(27); // 渲染开始时间（start time）
   });
 
-  /**
-   * 场景：“should not be called until after mutations”。
-   * 机制：验证Profiler 的时长累计、提交回调与错误恢复契约，锁定可观察结果与失败边界。
-   */
+  /** ClassComponent render耗2ms、didMount耗5ms并置标志；onRender中已能观察didMount=true，但commitTime仍为布局任务前捕获的2，验证回调可见提交结果与时间戳含义。 */
   it('should not be called until after mutations', async () => {
     let classComponentMounted = false;
     const callback = jest.fn(
@@ -1349,14 +1319,15 @@ describe(`onRender`, () => {
       },
     );
 
-    /** 作为“should not be called until after mutations”场景的组件夹具，隔离待验证的 React 行为。 */
+    /** render耗2ms、didMount耗5ms并置标志，用于对比提交开始时间和回调观察到的布局结果。 */
     class ClassComponent extends React.Component {
-      /** 记录“should not be called until after mutations”场景的挂载提交，并执行仅在挂载后有效的观测。 */
+      /** 推进5ms后置classComponentMounted=true，onRender回调需已看到此结果。 */
       componentDidMount() {
         Scheduler.unstable_advanceTime(5);
         classComponentMounted = true;
       }
-      /** 渲染“should not be called until after mutations”场景所需的元素树，使断言能够观察协调与提交结果。 */
+      /** 推进2ms并返回null；commitTime在后续didMount耗时之前捕获。
+       * @returns null。 */
       render() {
         Scheduler.unstable_advanceTime(2);
         return null;
@@ -1376,20 +1347,19 @@ describe(`onRender`, () => {
 });
 
 describe(`onCommit`, () => {
+  // 每例先resetModules，再开启三项Profiler开关并取新noop根工具，避免前例spy与模块状态串入。
   beforeEach(() => {
     jest.resetModules();
 
     loadModules();
   });
 
-  /**
-   * 场景：“should report time spent in layout effects and commit lifecycles”。
-   * 机制：验证Profiler 的时长累计、提交回调与错误恢复契约，锁定可观察结果与失败边界。
-   */
+  /** 挂载两个layout setup与class didMount共101010ms，更新每轮layout cleanup/setup与didUpdate共1011000ms，移除子树cleanup共10100ms；逐次核对onCommit，passive的5/7ms只推进全局钟而不进入这些duration。 */
   it('should report time spent in layout effects and commit lifecycles', async () => {
     const callback = jest.fn();
 
-    /** 作为“should report time spent in layout effects and commit lifecycles”场景的函数夹具，返回待协调内容或触发目标行为。 */
+    /** 安装10ms的一次性layout和1000ms每轮layout，以及5ms每轮passive；对应cleanup分别100、10000、7ms，供onCommit排除passive成本。
+     * @returns null。 */
     const ComponentWithEffects = () => {
       React.useLayoutEffect(() => {
         Scheduler.unstable_advanceTime(10);
@@ -1413,17 +1383,18 @@ describe(`onCommit`, () => {
       return null;
     };
 
-    /** 作为“should report time spent in layout effects and commit lifecycles”场景的组件夹具，隔离待验证的 React 行为。 */
+    /** 通过didMount/didUpdate的100000/1000000ms验证class布局生命周期进入onCommit，render无额外成本。 */
     class ComponentWithCommitHooks extends React.Component {
-      /** 记录“should report time spent in layout effects and commit lifecycles”场景的挂载提交，并执行仅在挂载后有效的观测。 */
+      /** 首次提交推进100000ms，作为挂载布局成本。 */
       componentDidMount() {
         Scheduler.unstable_advanceTime(100000);
       }
-      /** 记录“should report time spent in layout effects and commit lifecycles”场景的更新提交，供生命周期顺序断言使用。 */
+      /** 每次更新推进1000000ms，供更新onCommit累加。 */
       componentDidUpdate() {
         Scheduler.unstable_advanceTime(1000000);
       }
-      /** 渲染“should report time spent in layout effects and commit lifecycles”场景所需的元素树，使断言能够观察协调与提交结果。 */
+      /** 返回null，只让提交生命周期贡献此夹具的虚拟成本。
+       * @returns null。 */
       render() {
         return null;
       }
@@ -1488,14 +1459,13 @@ describe(`onCommit`, () => {
     expect(call[3]).toBe(1112030); // 提交开始时间（mutation 与 effect 之前）
   });
 
-  /**
-   * 场景：“should report time spent in layout effects and commit lifecycles with cascading renders”。
-   * 机制：验证Profiler 的时长累计、提交回调与错误恢复契约，锁定可观察结果与失败边界。
-   */
+  /** 函数layout先触发一次Hook级联，随后一次根更新令class didUpdate再触发级联；四次onCommit按mount/nested-update/update/nested-update报告1010、130、10130、10000ms，巨大的render耗时只影响commit起点。 */
   it('should report time spent in layout effects and commit lifecycles with cascading renders', async () => {
     const callback = jest.fn();
 
-    /** 作为“should report time spent in layout effects and commit lifecycles with cascading renders”场景的函数夹具，返回待协调内容或触发目标行为。 */
+    /** 每次render耗100000000ms；layout按didCascade耗10或30ms并返回100ms cleanup，首次shouldCascade可触发一次Hook更新。
+     * @param props shouldCascade决定layout是否排一次setState。
+     * @returns null。 */
     const ComponentWithEffects = ({shouldCascade}) => {
       const [didCascade, setDidCascade] = React.useState(false);
       Scheduler.unstable_advanceTime(100000000);
@@ -1511,24 +1481,25 @@ describe(`onCommit`, () => {
       return null;
     };
 
-    /** 作为“should report time spent in layout effects and commit lifecycles with cascading renders”场景的组件夹具，隔离待验证的 React 行为。 */
+    /** 每轮render耗1000000000ms；didMount耗1000ms、didUpdate耗10000ms且可级联一次setState，隔离render与提交成本。 */
     class ComponentWithCommitHooks extends React.Component {
-      /** 保存“should report time spent in layout effects and commit lifecycles with cascading renders”场景用于驱动更新或错误回退的组件状态。 */
+      /** didCascade初值false，阻止didUpdate在shouldCascade=true时重复排更新。 */
       state = {
         didCascade: false,
       };
-      /** 记录“should report time spent in layout effects and commit lifecycles with cascading renders”场景的挂载提交，并执行仅在挂载后有效的观测。 */
+      /** 推进1000ms，不触发class级联更新。 */
       componentDidMount() {
         Scheduler.unstable_advanceTime(1000);
       }
-      /** 记录“should report time spent in layout effects and commit lifecycles with cascading renders”场景的更新提交，供生命周期顺序断言使用。 */
+      /** 推进10000ms；仅当shouldCascade且尚未级联时置didCascade=true，形成一次nested-update。 */
       componentDidUpdate() {
         Scheduler.unstable_advanceTime(10000);
         if (this.props.shouldCascade && !this.state.didCascade) {
           this.setState({didCascade: true});
         }
       }
-      /** 渲染含提交生命周期与级联更新的计时子树。 */
+      /** 每次render推进1000000000ms并返回null；这项成本仅推进提交起点，layout duration由生命周期单独贡献。
+       * @returns null。 */
       render() {
         Scheduler.unstable_advanceTime(1000000000);
         return null;
@@ -1594,14 +1565,12 @@ describe(`onCommit`, () => {
     expect(call[3]).toBe(3300011272); // 提交开始时间（mutation 与 effect 之前）
   });
 
-  /**
-   * 场景：“should include time spent in ref callbacks”。
-   * 机制：验证Profiler 的时长累计、提交回调与错误恢复契约，锁定可观察结果与失败边界。
-   */
+  /** 函数render耗1000ms，class ref挂载耗10ms、置空耗100ms；Profiler挂载回调duration=10，移除class但保留Profiler时phase=update且duration=100，验证ref任务归入提交计时。 */
   it('should include time spent in ref callbacks', async () => {
     const callback = jest.fn();
 
-    /** 实现“should include time spent in ref callbacks”场景所需的“refSetter”测试夹具行为。 */
+    /** 非空class实例传入时推进10ms，解绑时null推进100ms；用于测ref附加/清理的提交成本。
+     * @param ref 当前class实例或解绑标记null。 */
     const refSetter = ref => {
       if (ref !== null) {
         Scheduler.unstable_advanceTime(10);
@@ -1610,15 +1579,17 @@ describe(`onCommit`, () => {
       }
     };
 
-    /** 作为“should include time spent in ref callbacks”场景的组件夹具，隔离待验证的 React 行为。 */
+    /** 无UI的class ref目标，让ref回调收到实例而非宿主节点。 */
     class ClassComponent extends React.Component {
-      /** 渲染“should include time spent in ref callbacks”场景所需的元素树，使断言能够观察协调与提交结果。 */
+      /** 返回null，class本身不贡献render时间。
+       * @returns null。 */
       render() {
         return null;
       }
     }
 
-    /** 作为“should include time spent in ref callbacks”场景的函数夹具，返回待协调内容或触发目标行为。 */
+    /** render推进1000ms后返回带refSetter的class；render成本影响commitTime，ref成本才进入onCommit duration。
+     * @returns class ref目标。 */
     const Component = () => {
       Scheduler.unstable_advanceTime(1000);
       return <ClassComponent ref={refSetter} />;
@@ -1662,14 +1633,13 @@ describe(`onCommit`, () => {
     expect(call[3]).toBe(1011); // 提交开始时间（mutation 与 effect 之前）
   });
 
-  /**
-   * 场景：“should bubble time spent in layout effects to higher profilers”。
-   * 机制：验证Profiler 的时长累计、提交回调与错误恢复契约，锁定可观察结果与失败边界。
-   */
+  /** a/b内层无回调，layout setup分别10/1000ms、cleanup为100/10000；外层先计1010，单独更新a计110，最后重排为一个未带key的b槽位计11100，验证更新和删除的布局成本向外层汇总。 */
   it('should bubble time spent in layout effects to higher profilers', async () => {
     const callback = jest.fn();
 
-    /** 作为“should bubble time spent in layout effects to higher profilers”场景的函数夹具，返回待协调内容或触发目标行为。 */
+    /** 将Hook setter存入可选ref，render耗1ms，layout每轮setup/cleanup按props推进时间；支持只更新其中一分支及删除兄弟。
+     * @param props duration为setup毫秒、cleanupDuration为清理毫秒，setCountRef用于暴露更新入口。
+     * @returns null。 */
     const ComponentWithEffects = ({cleanupDuration, duration, setCountRef}) => {
       const setCount = React.useState(0)[1];
       if (setCountRef != null) {
@@ -1748,22 +1718,22 @@ describe(`onCommit`, () => {
     expect(call[3]).toBe(1124); // 提交开始时间（mutation 与 effect 之前）
   });
 
-  /**
-   * 场景：“should properly report time in layout effects even when there are errors”。
-   * 机制：验证Profiler 的时长累计、提交回调与错误恢复契约，锁定可观察结果与失败边界。
-   */
+  /** 首个layout setup耗100ms后抛错，其兄弟仍耗100000ms；外层mount计100100，错误边界级联回退setup计100000000且phase=nested-update，抛错setup没有返回cleanup。 */
   it('should properly report time in layout effects even when there are errors', async () => {
     const callback = jest.fn();
 
-    /** 作为“should properly report time in layout effects even when there are errors”场景的组件夹具，隔离待验证的 React 行为。 */
+    /** 捕获layout setup错误后保存error，并用props.fallback替换正常children；计时断言观察回退提交。 */
     class ErrorBoundary extends React.Component {
-      /** 保存“should properly report time in layout effects even when there are errors”场景用于驱动更新或错误回退的组件状态。 */
+      /** error初值null选择正常子树，派生错误状态改变后选择回退。 */
       state = {error: null};
-      /** 把渲染错误转换为“should properly report time in layout effects even when there are errors”场景的回退状态。 */
+      /** 把layout setup捕获的错误转换为状态补丁。
+       * @param error 捕获的expected异常。
+       * @returns error字段补丁。 */
       static getDerivedStateFromError(error) {
         return {error};
       }
-      /** 渲染“should properly report time in layout effects even when there are errors”场景所需的元素树，使断言能够观察协调与提交结果。 */
+      /** 按error是否为null返回children或fallback；自身不推进模拟时钟。
+       * @returns 正常子树或调用方指定的回退组件。 */
       render() {
         return this.state.error === null
           ? this.props.children
@@ -1771,7 +1741,9 @@ describe(`onCommit`, () => {
       }
     }
 
-    /** 作为“should properly report time in layout effects even when there are errors”场景的函数夹具，返回待协调内容或触发目标行为。 */
+    /** render推进duration，layout setup推进effectDuration后可抛错；仅成功setup返回推进cleanupDuration的清理。
+     * @param props 三项毫秒成本与shouldThrow错误开关。
+     * @returns null；layout错误在提交后发生。 */
     const ComponentWithEffects = ({
       cleanupDuration,
       duration,
@@ -1844,22 +1816,22 @@ describe(`onCommit`, () => {
     expect(call[3]).toBe(10110111); // 提交开始时间（mutation 与 effect 之前）
   });
 
-  /**
-   * 场景：“should properly report time in layout effect cleanup functions even when there are errors”。
-   * 机制：验证Profiler 的时长累计、提交回调与错误恢复契约，锁定可观察结果与失败边界。
-   */
+  /** 先挂载成功setup，旧cleanup保留shouldThrow=true；更新时该旧cleanup耗1000ms并抛错，兄弟cleanup/setup仍运行，首回调计1101100；边界回退又清理更新后的1000ms并安装100000000ms effect，nested-update计100001000。 */
   it('should properly report time in layout effect cleanup functions even when there are errors', async () => {
     const callback = jest.fn();
 
-    /** 作为“should properly report time in layout effect cleanup functions even when there are errors”场景的组件夹具，隔离待验证的 React 行为。 */
+    /** 捕获layout cleanup错误后保存error，并用props.fallback替换正常children；计时断言观察回退提交。 */
     class ErrorBoundary extends React.Component {
-      /** 保存“should properly report time in layout effect cleanup functions even when there are errors”场景用于驱动更新或错误回退的组件状态。 */
+      /** error初值null选择正常子树，派生错误状态改变后选择回退。 */
       state = {error: null};
-      /** 把渲染错误转换为“should properly report time in layout effect cleanup functions even when there are errors”场景的回退状态。 */
+      /** 把layout cleanup捕获的错误转换为状态补丁。
+       * @param error 捕获的expected异常。
+       * @returns error字段补丁。 */
       static getDerivedStateFromError(error) {
         return {error};
       }
-      /** 渲染会在 layout effect cleanup 抛错的子树。 */
+      /** 按error是否为null透传children或选择fallback，自身不计时；错误来自子组件旧layout cleanup。
+       * @returns 正常子树或回退。 */
       render() {
         return this.state.error === null
           ? this.props.children
@@ -1867,7 +1839,9 @@ describe(`onCommit`, () => {
       }
     }
 
-    /** 用错误边界承接 layout effect cleanup 错误并提交回退 UI。 */
+    /** render推进duration，layout setup推进effectDuration并返回cleanup；cleanup推进cleanupDuration后按创建时shouldThrow决定抛错。
+     * @param props 三项毫秒成本，shouldThrow默认false并由旧cleanup闭包保留。
+     * @returns null。 */
     const ComponentWithEffects = ({
       cleanupDuration,
       duration,
@@ -1982,23 +1956,22 @@ describe(`onCommit`, () => {
 });
 
 describe(`onPostCommit`, () => {
+  // 每例先resetModules，再开启三项Profiler开关并取新noop根工具，避免前例spy与模块状态串入。
   beforeEach(() => {
     jest.resetModules();
 
     loadModules();
   });
 
-  /**
-   * 场景：“should report time spent in passive effects”。
-   * 机制：验证Profiler 的时长累计、提交回调与错误恢复契约，锁定可观察结果与失败边界。
-   */
+  /** 两个passive setup分别10/1000ms，首个仅挂载、另一个每轮执行；onPostCommit挂载计1010，更新计10000+1000，移除子树计100+10000，layout的5/7ms不进入passive duration但影响后续commitTime。 */
   it('should report time spent in passive effects', async () => {
     const callback = jest.fn();
 
-    /** 作为“should report time spent in passive effects”场景的函数夹具，返回待协调内容或触发目标行为。 */
+    /** 安装两个passive effect：10ms仅挂载、1000ms每轮；cleanup为100和10000ms，同时安装5/7ms layout作为被动计时的排除项。
+     * @returns null。 */
     const ComponentWithEffects = () => {
       React.useLayoutEffect(() => {
-        // 此 layout effect 用于证明 effect 耗时不会计入 render duration。
+        // 这组5/7ms布局成本是passive计时的排除项；本例未注册onRender回调。
         Scheduler.unstable_advanceTime(5);
         return () => {
           Scheduler.unstable_advanceTime(7);
@@ -2080,14 +2053,12 @@ describe(`onPostCommit`, () => {
     expect(call[3]).toBe(12030); // 提交开始时间（mutation 与 effect 之前）
   });
 
-  /**
-   * 场景：“should report time spent in passive effects with cascading renders”。
-   * 机制：验证Profiler 的时长累计、提交回调与错误恢复契约，锁定可观察结果与失败边界。
-   */
+  /** 组件render每次耗1000ms，首次passive setup耗10ms并setState，下一轮cleanup100+setup30；onPostCommit两次分别mount/10与update/130，commit起点1001和2011，passive级联不标成nested-update。 */
   it('should report time spent in passive effects with cascading renders', async () => {
     const callback = jest.fn();
 
-    /** 作为“should report time spent in passive effects with cascading renders”场景的函数夹具，返回待协调内容或触发目标行为。 */
+    /** render耗1000ms；首次passive耗10ms并置didMount，后续清理100ms、setup30ms，制造一次被动级联。
+     * @returns null。 */
     const ComponentWithEffects = () => {
       const [didMount, setDidMount] = React.useState(false);
       Scheduler.unstable_advanceTime(1000);
@@ -2133,14 +2104,13 @@ describe(`onPostCommit`, () => {
     expect(call[3]).toBe(2011); // 提交开始时间（mutation 与 effect 之前）
   });
 
-  /**
-   * 场景：“should bubble time spent in effects to higher profilers”。
-   * 机制：验证Profiler 的时长累计、提交回调与错误恢复契约，锁定可观察结果与失败边界。
-   */
+  /** 内层a/b的passive setup为10/1000、cleanup为100/10000；外层初次1010，单独更新a计110，缩成一个无key子槽位后计11100，验证被动更新与删除清理向祖先汇总。 */
   it('should bubble time spent in effects to higher profilers', async () => {
     const callback = jest.fn();
 
-    /** 作为“should bubble time spent in effects to higher profilers”场景的函数夹具，返回待协调内容或触发目标行为。 */
+    /** 暴露可选Hook setter，render耗1ms，passive每轮按duration与cleanupDuration推进时钟，用于向外层汇总更新与删除成本。
+     * @param props setup/cleanup虚拟毫秒与可选setCountRef。
+     * @returns null。 */
     const ComponentWithEffects = ({cleanupDuration, duration, setCountRef}) => {
       const setCount = React.useState(0)[1];
       if (setCountRef != null) {
@@ -2219,22 +2189,22 @@ describe(`onPostCommit`, () => {
     expect(call[3]).toBe(1124); // 提交开始时间（mutation 与 effect 之前）
   });
 
-  /**
-   * 场景：“should properly report time in passive effects even when there are errors”。
-   * 机制：验证Profiler 的时长累计、提交回调与错误恢复契约，锁定可观察结果与失败边界。
-   */
+  /** passive setup先耗100ms抛错，兄弟仍耗100000ms；onPostCommit先以mount报告100100，边界回退随后以update报告100000000，不把被动阶段触发的更新标成nested-update。 */
   it('should properly report time in passive effects even when there are errors', async () => {
     const callback = jest.fn();
 
-    /** 作为“should properly report time in passive effects even when there are errors”场景的组件夹具，隔离待验证的 React 行为。 */
+    /** 捕获passive setup错误后保存error，并用props.fallback替换正常children；计时断言观察回退提交。 */
     class ErrorBoundary extends React.Component {
-      /** 保存“should properly report time in passive effects even when there are errors”场景用于驱动更新或错误回退的组件状态。 */
+      /** error初值null选择正常子树，派生错误状态改变后选择回退。 */
       state = {error: null};
-      /** 把渲染错误转换为“should properly report time in passive effects even when there are errors”场景的回退状态。 */
+      /** 把passive setup捕获的错误转换为状态补丁。
+       * @param error 捕获的expected异常。
+       * @returns error字段补丁。 */
       static getDerivedStateFromError(error) {
         return {error};
       }
-      /** 渲染“should properly report time in passive effects even when there are errors”场景所需的元素树，使断言能够观察协调与提交结果。 */
+      /** 按error是否为null返回children或fallback；自身不推进模拟时钟。
+       * @returns 正常子树或调用方指定的回退组件。 */
       render() {
         return this.state.error === null
           ? this.props.children
@@ -2242,7 +2212,9 @@ describe(`onPostCommit`, () => {
       }
     }
 
-    /** 作为“should properly report time in passive effects even when there are errors”场景的函数夹具，返回待协调内容或触发目标行为。 */
+    /** render推进duration，passive setup推进effectDuration后可抛错；抛错路径没有返回cleanup，成功路径返回cleanupDuration计时清理。
+     * @param props render/setup/cleanup三项毫秒成本和shouldThrow开关。
+     * @returns null。 */
     const ComponentWithEffects = ({
       cleanupDuration,
       duration,
@@ -2314,22 +2286,22 @@ describe(`onPostCommit`, () => {
     expect(call[3]).toBe(10110111); // 提交开始时间（mutation 与 effect 之前）
   });
 
-  /**
-   * 场景：“should properly report time in passive effect cleanup functions even when there are errors”。
-   * 机制：验证Profiler 的时长累计、提交回调与错误恢复契约，锁定可观察结果与失败边界。
-   */
+  /** 先建立含shouldThrow=true闭包的passive cleanup，再以false新props更新；旧cleanup耗1000ms后抛错，余下任务仍执行而首回调计1101100，回退提交清理新effect并安装回退计100001000，两次phase都为update。 */
   it('should properly report time in passive effect cleanup functions even when there are errors', async () => {
     const callback = jest.fn();
 
-    /** 作为“should properly report time in passive effect cleanup functions even when there are errors”场景的组件夹具，隔离待验证的 React 行为。 */
+    /** 捕获passive cleanup错误后保存error，并用props.fallback替换正常children；计时断言观察回退提交。 */
     class ErrorBoundary extends React.Component {
-      /** 保存“should properly report time in passive effect cleanup functions even when there are errors”场景用于驱动更新或错误回退的组件状态。 */
+      /** error初值null选择正常子树，派生错误状态改变后选择回退。 */
       state = {error: null};
-      /** 把渲染错误转换为“should properly report time in passive effect cleanup functions even when there are errors”场景的回退状态。 */
+      /** 把passive cleanup捕获的错误转换为状态补丁。
+       * @param error 捕获的expected异常。
+       * @returns error字段补丁。 */
       static getDerivedStateFromError(error) {
         return {error};
       }
-      /** 渲染会在 passive effect cleanup 抛错的子树。 */
+      /** 无错透传children，有错改为fallback；被动cleanup错误由后续阶段传入派生状态。
+       * @returns 正常子树或回退。 */
       render() {
         return this.state.error === null
           ? this.props.children
@@ -2337,7 +2309,9 @@ describe(`onPostCommit`, () => {
       }
     }
 
-    /** 用错误边界承接 passive effect cleanup 错误并提交回退 UI。 */
+    /** render推进duration，passive setup推进effectDuration并返回cleanup；cleanup按旧shouldThrow闭包决定是否在计时后抛错。
+     * @param props 三项毫秒成本和shouldThrow开关；解构的id未读取。
+     * @returns null。 */
     const ComponentWithEffects = ({
       cleanupDuration,
       duration,

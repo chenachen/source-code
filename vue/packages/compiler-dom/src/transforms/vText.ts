@@ -11,8 +11,9 @@ import { DOMErrorCodes, createDOMCompilerError } from '../errors'
 /**
  * 将 `v-text="exp"` 转换为 `textContent` 属性。
  *
- * textContent 会覆盖原 children，因此混用时报告错误并清空子树。非常量值通过
- * `toDisplayString` 统一处理 null、对象等展示语义；可证明的常量则直接输出以减少代码。
+ * textContent 会覆盖原 children，因此混用时报告错误并清空子树。getConstantType 为
+ * NOT_CONSTANT 时通过 `toDisplayString` 处理展示语义，其他等级直接保留表达式；这些等级
+ * 也包括运行时稳定的 setup const，并不都能在编译期求值。
  */
 export const transformVText: DirectiveTransform = (dir, node, context) => {
   const { exp, loc } = dir

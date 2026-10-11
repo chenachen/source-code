@@ -42,7 +42,7 @@ export interface ConfigImportRef {
   line: number
   /** 说明符起点从 0 开始的列号。 */
   column: number
-  /** 是否显式携带 JSON import attribute。 */
+  /** 静态声明是否含 type:'json'；动态 import 只要存在 options 就置为 true，以跳过 attribute 告警。 */
   hasTypeJsonAttribute: boolean
 }
 
@@ -56,8 +56,8 @@ const lastSegmentOf = (specifier: string) =>
   specifier.slice(specifier.lastIndexOf('/') + 1)
 
 /**
- * 已显式携带 JS/TS 扩展名的说明符会被原生加载器按原样解析，不可能再属于
- * “省略扩展名”或“隐式目录 index”问题，因此分类前不必额外调用解析器。
+ * 检查器将显式携带 JS/TS 扩展名的说明符排除在扩展名和目录 index 检查外，
+ * 因此这类引用不再调用解析器补充 resolvedId。
  */
 const specifierHasJsExtension = (specifier: string) =>
   jsTsExtRE.test(lastSegmentOf(specifier))
@@ -65,9 +65,8 @@ const specifierHasJsExtension = (specifier: string) =>
 /**
  * 将一个配置文件路径引用归类为原生加载器不兼容项。
  *
- * JSON 先检查 import attribute；其余引用结合插件容器的解析结果，区分“目录
- * 自动落到 index”与“文件扩展名被省略”。无法解析时不武断告警，因为问题也
- * 可能属于缺包或用户自定义解析规则。
+ * JSON 先检查 import attribute；其余引用结合 Rolldown 插件上下文的解析结果，区分
+ * “目录自动落到 index”与“文件扩展名被省略”。无解析结果时跳过这两种分类。
  */
 export function classifyImportRef(
   ref: ConfigImportRef,
@@ -194,7 +193,7 @@ export function analyzeConfigModuleReferences(
   return { globals, imports }
 }
 
-/** CommonJS 原生加载阶段会立即产生语法错误的顶层 ESM 声明。 */
+/** CommonJS 配置检查识别为 ESM 语法的顶层 AST 节点类型。 */
 const esmStatementTypes = new Set([
   'ImportDeclaration',
   'ExportNamedDeclaration',
@@ -293,8 +292,8 @@ export function createNativeConfigCompatPlugin(
           return null
         }
 
-        // Node 会把此文件当 CommonJS 加载。`__dirname` 与 CJS 解析规则在这里合法，
-        // 但任何顶层 ESM 声明都会被原生加载器直接拒绝。
+        // Vite 按扩展名和最近 package.type 将此文件归到 CommonJS 路径，先只检查
+        // 顶层 ESM 声明。此分类不执行 Node 对无显式 package type 的源码语法检测。
         if (!isESM) {
           const finding = findEsmSyntaxInCjs(code, program, id)
           if (finding) collector.push(finding)

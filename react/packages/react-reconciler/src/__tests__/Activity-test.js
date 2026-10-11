@@ -307,26 +307,26 @@ describe('Activity', () => {
   });
 
   /**
-   * Given 嵌套 Activity 以多种内外 visible/hidden 组合更新；When 同步切换内层可见性；
-   * Then 类实例只断开可见 effects，不调用真正删除语义的 componentWillUnmount。验证嵌套 Offscreen unwind 边界。
+   * Given 嵌套 Activity 以多种内外 visible/hidden 组合更新；When 普通根更新切换内层可见性；
+   * Then 类组件始终处于至少一层 hidden Activity 下，未连接 componentDidMount，也不应调用对应的 componentWillUnmount。
    */
   it('nested offscreen does not call componentWillUnmount when hidden', async () => {
     // 该问题来自 <Activity /> 生产验证期间发现的回归。
     // 场景涉及嵌套 Offscreen：内层 Offscreen 在同步更新中
     // 从 visible 切到 hidden。
-    /** 记录真实 mount/unmount 生命周期，防止嵌套 Activity 隐藏被误当成删除。 */
+    /** 记录类布局生命周期；本例切换内层模式时，外层或内层始终隐藏，实例从未可见挂载。 */
     class ClassComponent extends React.Component {
       /** 输出稳定 child，隔离生命周期观察。 */
       render() {
         return <Text text="child" />;
       }
 
-      /** 真实删除时记录；单纯 hidden 切换不应调用。 */
+      /** 记录布局生命周期断连；本例没有先前可见挂载，因此不应调用。 */
       componentWillUnmount() {
         Scheduler.log('componentWillUnmount');
       }
 
-      /** 首次可见提交时记录真实 mount。 */
+      /** 可见挂载或隐藏后重连时记录；本例全程没有可见挂载。 */
       componentDidMount() {
         Scheduler.log('componentDidMount');
       }
@@ -658,8 +658,8 @@ describe('Activity', () => {
     // 该边界要求只提升可安全独立处理的隐藏更新。
     // 外部纠缠更新仍应留在原 lane 中。
     //
-    // 本例覆盖隐藏树内多个更新共享同一 lane，
-    // 却因调度时点不同而分批处理的场景。
+    // 本例先用普通更新写入1，再用 transition 写入2；
+    // 揭示时检查隐藏更新不能越过已提交的外部版本。
     // 关键是揭示时不能越过已提交 outer 版本。
 
     // 此辅助函数检查输出中的 outer/inner state
@@ -759,7 +759,7 @@ describe('Activity', () => {
         'Outer: 1',
 
         // Inner 有两个 pending 更新，但这里只处理第一个；
-        // 即使它们共享同一 lane，也不能越过 outer 的已提交版本。若误处理第二个，
+        // 第一组是普通更新，第二组是 transition；不能越过 outer 的已提交版本。若误处理第二个，
         // Inner 将与 Outer 不一致，
         // 造成 tearing。
         'Inner: 1',
@@ -1682,19 +1682,19 @@ describe('Activity', () => {
       root.render(<App show={true} step={2} />);
     });
     // 更新已预渲染且 insertion effect 已执行，
-    // 揭示时无需任何工作。
+    // 内部无需重新 render 或重跑 insertion effect，但仍提交 Activity 可见性。
     assertLog([]);
     expect(root).toMatchRenderedOutput(<span prop={2} />);
   });
 
   /**
    * Given 带 snapshot/update 生命周期的类组件位于 Activity；When hide、hidden setState、再 reveal；
-   * Then hidden 与重现路径不应读取 snapshot，而只按 mount 语义恢复。验证 before-mutation visibility 门控。
+   * Then enableViewTransition 时 hidden/重现均无 snapshot；关闭时仍记录三次 snapshot。两组都只在揭示调用 didMount，不调用 didUpdate；验证当前 before-mutation 门控的 flag 差异。
    */
   it('getSnapshotBeforeUpdate does not run in hidden trees', async () => {
     let setState;
 
-    /** 记录 snapshot、update、mount、unmount 的类组件，用于 hidden before-mutation 门控。 */
+    /** 记录 snapshot/update/mount/unmount；当前 enableViewTransition 决定 hidden 是否跳过 snapshot，reappear 均用 didMount。 */
     class Child extends React.Component {
       /** 根据前后 value 构造 snapshot，并记录调用。 */
       getSnapshotBeforeUpdate(prevProps) {
@@ -1747,7 +1747,7 @@ describe('Activity', () => {
     assertLog([
       'componentWillUnmount',
       'render: 1',
-      // 回归保护：hidden 树无需读取 snapshot。
+      // enableViewTransition 分支跳过 snapshot；关闭分支仍读取，按实际日志保留差异。
       ...(gate('enableViewTransition')
         ? []
         : ['getSnapshotBeforeUpdate: snapshot-1-to-1']),
@@ -1764,7 +1764,7 @@ describe('Activity', () => {
         : ['getSnapshotBeforeUpdate: snapshot-1-to-2']),
     ]);
 
-    // 重新出现按新 mount 处理，因此同样不应读取 snapshot。
+    // 重新出现按 mount 调用 didMount；snapshot 是否跳过仍由 enableViewTransition 决定。
     await act(() => {
       root.render(<Wrapper show={true} />);
     });

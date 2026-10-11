@@ -1,0 +1,119 @@
+{
+  "schema": "react-comment-audit-v1",
+  "completedAt": "2026-10-11T05:46:14.507552+00:00",
+  "packages": [
+    "shared",
+    "scheduler",
+    "react",
+    "react-reconciler",
+    "react-dom-bindings",
+    "react-dom"
+  ],
+  "files": 650,
+  "languageFiles": {
+    "JavaScript": 643,
+    "TypeScript": 6,
+    "CoffeeScript": 1
+  },
+  "modifiedFiles": 394,
+  "declarations": {
+    "total": 16007,
+    "JavaScriptPrimary": 15329,
+    "TypeScriptPrimary": 135,
+    "extraAssignmentsAndNamedExpressions": 442,
+    "CoffeeScriptManual": 101,
+    "classificationCounts": {
+      "已翻译扩写": 1432,
+      "已有且充分": 7534,
+      "新补充": 7041
+    },
+    "unclassified": 0,
+    "missingChineseTSDoc": 0,
+    "exempt": 0
+  },
+  "testRecords": {
+    "total": 4457,
+    "directOrHarnessDefinitions": 4099,
+    "CoffeeDefinitions": 27,
+    "wrapperFixtureInvocations": 327,
+    "harnessDelegations": 4,
+    "suiteVariantsRecordedSeparately": 11,
+    "additionalInlineFixturesRecordedSeparately": 6,
+    "classificationCounts": {
+      "已有且充分": 670,
+      "已翻译扩写": 625,
+      "新补充": 3162
+    },
+    "missingChineseScenario": 0,
+    "directExplicitSkippedOrTodo": 23,
+    "parameterizedDirectDefinitions": 8,
+    "countMeaning": "源码定义、封装fixture调用及4个harness委托记录；不代表运行数量。loop/each/shared harness/gate可能展开更多、复用或不注册，未执行Jest。"
+  },
+  "semanticEquivalence": {
+    "JavaScript": {
+      "files": 643,
+      "currentFiles": 643,
+      "baselineFiles": 643,
+      "equal": 643,
+      "astEqual": 643,
+      "tokenEqual": 643,
+      "directiveEqual": 643,
+      "tokenCount": 1317694,
+      "directiveCount": 2218,
+      "mismatches": 0,
+      "aggregateAstSha256": "7bd0b7b951ca9f9dfa0ee97df460da5f35c0a9cf75a35a20fdc29f6bc04c5694",
+      "aggregateTokenSha256": "1df86719d305634dcba5b35e9e9dd3057d6f73916541c8389d6f3b8f780d46c3"
+    },
+    "TypeScriptFiles": 6,
+    "TypeScriptRealNonCommentTokens": 3550,
+    "CoffeeScriptFiles": 1,
+    "CoffeeCompiledRealNonCommentTokens": 4854,
+    "CoffeeRawLexerDifference": "仅128个HERECOMMENT引入的TERMINATOR布局token插入；显著lexer token、编译后的AST与真实非注释token相同。",
+    "directiveTargetAndLicenseDifferences": 0
+  },
+  "ordinaryEnglishExplanationsRemaining": 0,
+  "ordinaryEnglishCommentsTranslatedAtFinalPass": 15,
+  "exclusions": [
+    {
+      "file": "react/packages/scheduler/npm/umd/scheduler.development.js",
+      "reason": "legacy UMD 预构建产物"
+    },
+    {
+      "file": "react/packages/scheduler/npm/umd/scheduler.production.min.js",
+      "reason": "legacy UMD 预构建产物"
+    },
+    {
+      "file": "react/packages/scheduler/npm/umd/scheduler.profiling.min.js",
+      "reason": "legacy UMD 预构建产物"
+    },
+    {
+      "file": "react/packages/react-dom-bindings/src/server/fizz-instruction-set/ReactDOMFizzInstructionSetInlineCodeStrings.js",
+      "reason": "Fizz 生成的内联代码字符串"
+    },
+    {
+      "file": "react/packages/react/src/__tests__/__snapshots__/ReactProfilerComponent-test.internal.js.snap",
+      "reason": "Jest 生成快照"
+    },
+    {
+      "file": "react/packages/react-reconciler/src/__tests__/__snapshots__/ReactHooks-test.internal.js.snap",
+      "reason": "Jest 生成快照"
+    }
+  ],
+  "verification": {
+    "declarationAndTestIDs": "与冻结清单逐ID一致；所有权无重复/遗漏；完整正文复读与具体中文文档另由各分片账本复核，结构覆盖不代替质量判断。",
+    "baseline": "本轮起始工作区冻结快照，已包含更早阶段/其它会话的修改；不是Git HEAD。每文件baseline/current hash保留。",
+    "Jest": "未运行",
+    "diffCheck": "通过",
+    "articles": "22个分享文章hash均与本轮基线相同",
+    "git": "未提交、推送、切分支或创建PR；最终分支main，HEAD未变。"
+  },
+  "records": {
+    "files": "files.json",
+    "declarations": "declarations.json",
+    "tests": "tests.json",
+    "semantics": "semantics.json",
+    "englishComments": "english-comments.json",
+    "independentIntegrity": "integrity.json",
+    "scope": "scope.json"
+  }
+}

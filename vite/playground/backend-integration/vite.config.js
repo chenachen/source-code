@@ -4,11 +4,13 @@ import { defineConfig, normalizePath } from 'vite'
 import tailwind from '@tailwindcss/vite'
 
 /**
+ * 创建后端集成配置插件：从 frontend/entrypoints 收集入口并生成可由后端消费的 manifest。
  * @returns {import('vite').Plugin}
  */
 function BackendIntegrationExample() {
   return {
     name: 'backend-integration',
+    /** 收集真实文件入口并补入包入口和 root 外 CSS，返回 root、别名、固定端口及相对 outDir 配置。 */
     config() {
       const projectRoot = import.meta.dirname
       const sourceCodeDir = path.join(projectRoot, 'frontend')
@@ -31,7 +33,7 @@ function BackendIntegrationExample() {
       return {
         input: Object.fromEntries(entrypoints),
         server: {
-          // same port in playground/test-utils.ts
+          // 与 playground/test-utils.ts 的端口分配一致。
           port: 5009,
           strictPort: true,
           origin: 'http://localhost:5009',

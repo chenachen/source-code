@@ -23,6 +23,7 @@ let UserBlockingPriority;
 // API 的事件顺序和时机没有统一到足以覆盖全部边界。本套件用确定性 runtime 固定 `setImmediate`
 // 分支，只显式触发 host callback，从而验证 Scheduler 自身状态而非某个浏览器的偶然时序。
 describe('SchedulerDOMSetImmediate', () => {
+  // 先安装 setImmediate 单槽宿主，再 require，以重新选择本例的驱动与虚拟时钟。
   beforeEach(() => {
     jest.resetModules();
     runtime = installMockBrowserRuntime();
@@ -71,16 +72,19 @@ describe('SchedulerDOMSetImmediate', () => {
     };
 
     // 这里只记录 fallback timer 请求；`setImmediate` 可用时不应依赖 timer 执行工作。
+    /** 只记录 fallback timer 并返回 id，不执行 cb/delay；用于发现意外选择 timer 的路径。 */
     global.setTimeout = (cb, delay) => {
       const id = timerIDCounter++;
       log(`Set Timer`);
       return id;
     };
+    /** 接受 timer 取消 id 的空替身；本套件不保存或执行 timer callback。 */
     global.clearTimeout = id => {
       // TODO：若未来执行 fallback timer，需按 id 取消；当前套件只验证 `setImmediate` 分支，不触发 timer。
     };
 
     // 若 Scheduler 错误选择 `MessageChannel`，立即抛错；正确路径应优先使用 `setImmediate`。
+    /** 构造一调用 postMessage 就失败的通道替身，用于验证 setImmediate 选择优先级。 */
     global.MessageChannel = function () {
       return {
         port1: {},
@@ -165,6 +169,7 @@ describe('SchedulerDOMSetImmediate', () => {
    * 对应源码：`Scheduler.js` 模块级 `localSetImmediate` 捕获及 `schedulePerformWorkUntilDeadline()`。
    */
   it('does not use setImmediate override', () => {
+    /** 覆盖模块初始化后的全局 API；被调用即抛错，证明调度器使用先前捕获的函数引用。 */
     global.setImmediate = () => {
       throw new Error('Should not throw');
     };
@@ -177,7 +182,7 @@ describe('SchedulerDOMSetImmediate', () => {
     runtime.assertLog(['setImmediate Callback', 'Task']);
   });
 
-  /** 场景：未耗尽时间片的单个任务应在一次 `setImmediate` host 事件内完成，不安排续事件。 */
+  /** 安排不推进时间的 Normal Task 后 fireSetImmediate，日志要求单轮 callback/Task 且没有续事件，验证 ready 队列正常排空。 */
   it('task that finishes before deadline', () => {
     scheduleCallback(NormalPriority, () => {
       runtime.log('Task');
@@ -220,7 +225,7 @@ describe('SchedulerDOMSetImmediate', () => {
     runtime.assertLog(['setImmediate Callback', 'Continuation']);
   });
 
-  /** 场景：两个同优先级任务共享时间片；`enableAlwaysYieldScheduler` 开启时每轮只执行一个任务。 */
+  /** 安排 Normal A/B 后 fireSetImmediate，日志按 A/B FIFO；always-yield 分两轮，验证同过期键的稳定顺序及单轮处理策略。 */
   it('multiple tasks', () => {
     scheduleCallback(NormalPriority, () => {
       runtime.log('A');
@@ -239,7 +244,7 @@ describe('SchedulerDOMSetImmediate', () => {
     }
   });
 
-  /** 场景：UserBlocking 与 Normal 任务同时就绪时，高优先级任务先执行；同样覆盖强制逐任务 yield 配置。 */
+  /** 同时安排 Normal A 和 UserBlocking B 后 fireSetImmediate，日志要求 B/A；always-yield 分两轮，验证过期键优先于入队顺序。 */
   it('multiple tasks at different priority', () => {
     scheduleCallback(NormalPriority, () => {
       runtime.log('A');
@@ -284,7 +289,7 @@ describe('SchedulerDOMSetImmediate', () => {
     runtime.assertLog(['setImmediate Callback', 'B']);
   });
 
-  /** 场景：取消 ready task 会将 callback 置空；尚未触发的 host 事件可保留，但任务副作用不得出现。 */
+  /** 取消唯一 ready task 不新增 host 操作；本用例未触发已有 setImmediate，仅检查取消时日志为空。 */
   it('cancels tasks', () => {
     const task = scheduleCallback(NormalPriority, () => {
       runtime.log('Task');
@@ -325,7 +330,7 @@ describe('SchedulerDOMSetImmediate', () => {
     }
   });
 
-  /** 场景：ready queue 正常排空后再次安排任务，Scheduler 必须重新请求 host callback。 */
+  /** 先 fireSetImmediate 完成 A，再安排/触发 B，日志要求第二次 Set Immediate 并执行 B，验证正常排空后的 host 循环状态恢复。 */
   it('schedule new task after queue has emptied', () => {
     scheduleCallback(NormalPriority, () => {
       runtime.log('A');
@@ -343,7 +348,7 @@ describe('SchedulerDOMSetImmediate', () => {
     runtime.assertLog(['setImmediate Callback', 'B']);
   });
 
-  /** 场景：取消队列唯一任务并消费空 host 事件后，新任务仍能重新唤醒 Scheduler。 */
+  /** 取消唯一 A 并触发空 setImmediate 后再安排 B，日志要求重新唤醒且只执行 B，验证取消节点清理后的 host 循环状态恢复。 */
   it('schedule new task after a cancellation', () => {
     const handle = scheduleCallback(NormalPriority, () => {
       runtime.log('A');

@@ -69,9 +69,9 @@ const createPreviewServerWithPlugin = async (plugin: Plugin) => {
     plugins: [
       {
         name: 'mock-preview',
-        /** 替换预览 HTTP Server 的 listen，并同步触发 listening 监听器而不占用端口。 */
+        /** 替换预览 HTTP Server 的 listen，并同步调用最后一个已注册的 listening 监听器而不占用端口。 */
         configurePreviewServer({ httpServer }) {
-          // 把 listen 替换为空操作但仍触发 listening，使测试不占用真实端口。
+          /** 跳过真实端口绑定，仅调用最后一个 listening 监听器，完成 preview 启动等待。 */
           httpServer.listen = () => {
             const lastListener = httpServer.listeners('listening').at(-1)!
             lastListener.call(httpServer)
@@ -101,8 +101,8 @@ const buildWithPlugin = async (plugin: Plugin) => {
 
 describe('supports plugin context', () => {
   /**
-   * 场景：最早期 config 钩子在 watchMode 和 Environment 尚未建立时执行。
-   * 验证目标：提供日志方法及 Rolldown/Vite 版本，但类型和运行时都不暴露 watchMode。
+   * 最早期 config 钩子在 watchMode 和 Environment 尚未建立时执行。
+   * 提供日志方法及 Rolldown/Vite 版本，但类型和运行时都不暴露 watchMode。
    */
   test('config hook', async () => {
     expect.assertions(4)
@@ -127,8 +127,8 @@ describe('supports plugin context', () => {
   })
 
   /**
-   * 场景：configEnvironment 对 client 的局部配置执行。
-   * 验证目标：与 config 同属解析早期上下文，具有日志/meta，但仍无 watchMode。
+   * configEnvironment 对 client 的局部配置执行。
+   * 与 config 同属解析早期上下文，具有日志/meta，但仍无 watchMode。
    */
   test('configEnvironment hook', async () => {
     expect.assertions(4)
@@ -155,8 +155,8 @@ describe('supports plugin context', () => {
   })
 
   /**
-   * 场景：serve 的配置已完成解析，调用全局 configResolved。
-   * 验证目标：上下文补齐 watchMode=true 和双版本信息，但仍不需要当前 Environment。
+   * serve 的配置已完成解析，调用全局 configResolved。
+   * 上下文补齐 watchMode=true 和双版本信息，但仍不需要当前 Environment。
    */
   test('configResolved hook', async () => {
     expect.assertions(4)
@@ -180,8 +180,8 @@ describe('supports plugin context', () => {
   })
 
   /**
-   * 场景：开发服务器创建期间运行 configureServer。
-   * 验证目标：全局服务器钩子获得标准日志/meta，且 serve 的 watchMode 为 true。
+   * 开发服务器创建期间运行 configureServer。
+   * 全局服务器钩子获得标准日志/meta，且 serve 的 watchMode 为 true。
    */
   test('configureServer hook', async () => {
     expect.assertions(4)
@@ -205,8 +205,8 @@ describe('supports plugin context', () => {
   })
 
   /**
-   * 场景：产物预览服务器运行 configurePreviewServer。
-   * 验证目标：预览不监听源码构建变化，因此 watchMode 必须是 false。
+   * 产物预览服务器运行 configurePreviewServer。
+   * 预览不监听源码构建变化，因此 watchMode 必须是 false。
    */
   test('configurePreviewServer hook', async () => {
     expect.assertions(4)
@@ -230,8 +230,8 @@ describe('supports plugin context', () => {
   })
 
   /**
-   * 场景：开发服务器转换 HTML。
-   * 验证目标：transformIndexHtml 使用标准上下文，serve 时 watchMode=true。
+   * 开发服务器转换 HTML。
+   * transformIndexHtml 使用标准上下文，serve 时 watchMode=true。
    */
   test('transformIndexHtml hook in dev', async () => {
     expect.assertions(4)
@@ -256,8 +256,8 @@ describe('supports plugin context', () => {
   })
 
   /**
-   * 场景：生产构建转换 HTML。
-   * 验证目标：同一钩子可跨 serve/build 复用，但 build 的 watchMode=false。
+   * 生产构建转换 HTML。
+   * 同一钩子可跨 serve/build 复用，但 build 的 watchMode=false。
    */
   test('transformIndexHtml hook in build', async () => {
     expect.assertions(4)
@@ -281,8 +281,8 @@ describe('supports plugin context', () => {
   })
 
   /**
-   * 场景：文件变化触发旧应用级 handleHotUpdate。
-   * 验证目标：它取得全局最小上下文和 watchMode=true，不要求 Environment 字段。
+   * 文件变化触发旧应用级 handleHotUpdate。
+   * 它取得全局最小上下文和 watchMode=true，不要求 Environment 字段。
    */
   test('handleHotUpdate hook', async () => {
     expect.assertions(4)
@@ -314,8 +314,8 @@ describe('supports plugin context', () => {
   })
 
   /**
-   * 场景：同一文件变化触发新 Environment 级 hotUpdate。
-   * 验证目标：除标准日志/meta 外，`this.environment` 指向当前 client 环境。
+   * 同一文件变化触发新 Environment 级 hotUpdate。
+   * 除标准日志/meta 外，`this.environment` 指向当前 client 环境。
    */
   test('hotUpdate hook', async () => {
     expect.assertions(4)
@@ -350,8 +350,8 @@ describe('supports plugin context', () => {
   })
 
   /**
-   * 场景：Dev PluginContainer 对虚拟入口运行 transform。
-   * 验证目标：模块级钩子获得标准上下文，开发环境 watchMode=true。
+   * Dev PluginContainer 对虚拟入口运行 transform。
+   * 模块级钩子获得标准上下文，开发环境 watchMode=true。
    */
   test('transform hook in dev', async () => {
     expect.assertions(4)
@@ -378,8 +378,8 @@ describe('supports plugin context', () => {
   })
 
   /**
-   * 场景：Rolldown 生产构建运行同一个 transform 钩子。
-   * 验证目标：上下文形状跨开发/构建一致，但非 watch 构建的 watchMode=false。
+   * Rolldown 生产构建运行同一个 transform 钩子。
+   * 上下文形状跨开发/构建一致，但非 watch 构建的 watchMode=false。
    */
   test('transform hook in build', async () => {
     expect.assertions(4)
@@ -404,8 +404,8 @@ describe('supports plugin context', () => {
   })
 
   /**
-   * 场景：开发态 resolveId 访问 Rolldown 风格的 `this.fs`。
-   * 验证目标：PluginContainer 提供文件系统能力，普通 Rolldown 插件可在 dev 复用。
+   * 开发态 resolveId 访问 Rolldown 风格的 `this.fs`。
+   * PluginContainer 提供文件系统能力，普通 Rolldown 插件可在 dev 复用。
    */
   test('this.fs is supported in dev', async () => {
     expect.hasAssertions()
@@ -425,8 +425,8 @@ describe('supports plugin context', () => {
 
 describe('watcher add/unlink error handling', () => {
   /**
-   * 场景：watcher `add` 触发的异步 watchChange 被拒绝。
-   * 验证目标：事件回调接住 Promise rejection 并交给 Logger，不能形成未处理拒绝。
+   * watcher `add` 触发的异步 watchChange 被拒绝。
+   * 事件回调接住 Promise rejection 并交给 Logger，不能形成未处理拒绝。
    */
   test("'add' event logs error when watchChange throws", async () => {
     const { promise, resolve } = promiseWithResolvers<void>()
@@ -434,6 +434,7 @@ describe('watcher add/unlink error handling', () => {
 
     const logError = vi.fn()
     const logger = createLogger('error')
+    /** 先保留原错误输出，再解除本例等待，用于确认 watcher 钩子异常已交给 logger。 */
     logger.error = (...args) => {
       logError(...args)
       resolve()
@@ -461,8 +462,8 @@ describe('watcher add/unlink error handling', () => {
   })
 
   /**
-   * 场景：watcher `change` 触发的异步 watchChange 被拒绝。
-   * 验证目标：普通内容变化同样统一记录错误。
+   * watcher `change` 触发的异步 watchChange 被拒绝。
+   * 普通内容变化同样统一记录错误。
    */
   test("'change' event logs error when watchChange throws", async () => {
     const { promise, resolve } = promiseWithResolvers<void>()
@@ -470,6 +471,7 @@ describe('watcher add/unlink error handling', () => {
 
     const logError = vi.fn()
     const logger = createLogger('error')
+    /** 先保留原错误输出，再解除本例等待，用于确认 watcher 钩子异常已交给 logger。 */
     logger.error = (...args) => {
       logError(...args)
       resolve()
@@ -497,8 +499,8 @@ describe('watcher add/unlink error handling', () => {
   })
 
   /**
-   * 场景：watcher `unlink` 触发的异步 watchChange 被拒绝。
-   * 验证目标：删除事件也不能泄漏未处理 rejection。
+   * watcher `unlink` 触发的异步 watchChange 被拒绝。
+   * 删除事件也不能泄漏未处理 rejection。
    */
   test("'unlink' event logs error when watchChange throws", async () => {
     const { promise, resolve } = promiseWithResolvers<void>()
@@ -506,6 +508,7 @@ describe('watcher add/unlink error handling', () => {
 
     const logError = vi.fn()
     const logger = createLogger('error')
+    /** 先保留原错误输出，再解除本例等待，用于确认 watcher 钩子异常已交给 logger。 */
     logger.error = (...args) => {
       logError(...args)
       resolve()

@@ -39,7 +39,8 @@ export type HydrationDiffNode = {
   /** 此 Fiber 下实际记录到不匹配的后代节点。 */
   children: Array<HydrationDiffNode>,
   /**
-   * 匹配到的服务端属性或文本；`null` 表示没有对应服务端节点，`undefined` 表示本节点
+   * 宿主差异检测返回的服务端不匹配属性子集或文本；不是服务端全部 props。
+   * `null` 表示没有对应服务端节点，`undefined` 表示本节点
    * 只用于提供路径上下文。
    */
   serverProps:
@@ -387,7 +388,10 @@ function describeExpandedElement(
   }
 }
 
-/** 逐键输出两个普通对象的 `+` 客户端值与 `-` 服务端值。 */
+/**
+ * 展开已经被判定不匹配的普通对象属性：客户端自有键逐一显示，双方都有的键输出
+ * 两行，服务端剩余键输出删除行。这里不再比较每个键的值是否相等，保留完整对象上下文。
+ */
 function describePropertiesDiff(
   clientObject: {
     /** 客户端嵌套对象属性名和值。 */
@@ -433,6 +437,10 @@ function describePropertiesDiff(
 /**
  * 对同类型宿主元素的客户端/服务端属性生成 JSX 风格差异。
  * 属性名按小写匹配以容忍宿主大小写正规化；大型普通对象会进一步逐键 diff。
+ * @param clientProps Fiber 的完整 pendingProps，含供诊断展示的相等属性。
+ * @param serverProps HostConfig 已筛出的服务端不匹配属性；没有对应项的客户端属性
+ * 在这里按相等上下文显示，不等同于客户端新增属性。
+ * @param indent 逻辑层级，每级两字符；maxRowLength 是展示预算，极小预算仍会输出省略标记。
  */
 function describeElementDiff(
   type: string,
@@ -604,6 +612,8 @@ function describeSiblingFiber(fiber: Fiber, indent: number): string {
  * 递归把 HydrationDiffNode 格式化为带缩进的 `+/-` 树。
  * 输出会合并 Server Component 调试路径、当前 Fiber、匹配子节点、客户端 sibling 与
  * 服务端残留 tail，并折叠过长的无差异祖先链。
+ * node.children 按同层客户端 sibling 顺序排列，用引用相等对齐；最后一个差异后的
+ * 未记录 sibling 用省略号截断。pendingProps 允许尚未 complete 的失败工作也生成诊断。
  */
 function describeNode(node: HydrationDiffNode, indent: number): string {
   const skipToNode = findNotableNode(node, indent);

@@ -154,6 +154,7 @@ describe('getNodeAssetAttributes', () => {
       const attrs = getNodeAssetAttributes(node, {
         'my-component': {
           srcAttributes: ['asset'],
+          /** 只接纳兄弟 type 属性为 image 的自定义 asset。 */
           filter: ({ attributes }) => attributes.type === 'image',
         },
       })
@@ -163,6 +164,7 @@ describe('getNodeAssetAttributes', () => {
       const attrs2 = getNodeAssetAttributes(node2, {
         'my-component': {
           srcAttributes: ['asset'],
+          /** 只接纳兄弟 type 属性为 image 的自定义 asset。 */
           filter: ({ attributes }) => attributes.type === 'image',
         },
       })
@@ -177,6 +179,7 @@ describe('getNodeAssetAttributes', () => {
       const attrs = getNodeAssetAttributes(node, {
         meta: {
           srcAttributes: ['data-fallback'],
+          /** 只接纳新增 data-fallback；默认 content 的规则另行执行。 */
           filter: ({ key }) => key === 'data-fallback',
         },
       })
@@ -187,7 +190,7 @@ describe('getNodeAssetAttributes', () => {
       expect(attrs[1]).toHaveProperty('value', 'fallback.jpg')
     })
 
-    /** 场景：用户 filter 对 meta.content 返回 true；验证目标：仍不能绕过默认 meta 白名单或处理未声明属性。 */
+    /** 额外规则只声明不存在的 data-custom 属性，因此 filter=true 仍不处理默认规则跳过的 content。 */
     test('additional filter does not affect default filter behavior', () => {
       const node = getNode('<meta name="unknown" content="image.jpg">')
       const defaultAttrs = getNodeAssetAttributes(node)
@@ -196,6 +199,7 @@ describe('getNodeAssetAttributes', () => {
       const attrs = getNodeAssetAttributes(node, {
         meta: {
           srcAttributes: ['data-custom'],
+          /** 允许扩展规则声明的属性；该元素缺少 data-custom，仍不会产生动作。 */
           filter: () => true,
         },
       })

@@ -8,13 +8,13 @@ export type ModuleNamespace = Record<string, any> & {
 
 /**
  * 每个模块的 `import.meta.hot` 协议。模块重执行时 context 会重建，但 data 在 dispose 与下一代之间保留；
- * prune 表示模块已经脱离当前图，需清除长期副作用。
+ * prune 用于清理不再被当前导入关系引用的模块副作用，服务端图节点仍可保留。
  */
 export interface ViteHotContext {
   /** 跨当前模块相邻两代实例保留的可变数据对象。 */
   readonly data: any
 
-  /** 声明模块自接受；无 callback 时只阻止更新继续向 importer 冒泡。 */
+  /** 声明模块自接受，无需额外回调；更新仍会重新导入本模块。 */
   accept(): void
   /** 声明模块自接受，并在新一代模块命名空间加载后执行回调。 */
   accept(cb: (mod: ModuleNamespace | undefined) => void): void
@@ -34,7 +34,7 @@ export interface ViteHotContext {
 
   /** 新一代模块重新导入前执行，可通过 data 保存临时状态并清除旧副作用。 */
   dispose(cb: (data: any) => void): void
-  /** 模块脱离图时执行，用于最终清理；完成后 data 也会被删除。 */
+  /** prune 阶段执行清理；dispose 成功后才执行 prune，finally 删除 data，即使回调失败。 */
   prune(cb: (data: any) => void): void
   /** 当前边界无法安全接管更新时，请求服务端从 importer 继续传播。 */
   invalidate(message?: string): void

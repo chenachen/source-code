@@ -54,16 +54,18 @@ import type { ResolvedConfig, ResolvedEnvironmentOptions } from '../config'
 
 /** 依赖版本查询注入时必须排除的 Vite client/env 运行时入口。 */
 const normalizedClientEntry = normalizePath(CLIENT_ENTRY)
-/** 保存规范化后的环境入口路径，确保跨平台 ID 比较一致。 */
+/** 版本查询注入时排除的规范化 Vite env 运行时入口。 */
 const normalizedEnvEntry = normalizePath(ENV_ENTRY)
 
 /** 包入口字段存在但无法落到真实文件时的稳定错误码。 */
 const ERR_RESOLVE_PACKAGE_ENTRY_FAIL = 'ERR_RESOLVE_PACKAGE_ENTRY_FAIL'
 
-// package.json browser:false 映射使用的虚拟占位模块。
-// https://github.com/defunctzombie/package-browser-field-spec#ignore-a-module
+/**
+ * package.json browser:false 映射的虚拟占位模块。
+ * @see https://github.com/defunctzombie/package-browser-field-spec#ignore-a-module
+ */
 export const browserExternalId = '__vite-browser-external'
-// 缺失 optional peer dependency 使用的虚拟占位模块；真正执行 import 时才给出可读错误。
+/** 缺失 optional peer dependency 的虚拟模块前缀，交给加载阶段生成兼容占位或运行时诊断。 */
 export const optionalPeerDepId = '__vite-optional-peer-dep'
 
 /** package.json `imports` 子路径映射的保留前缀。 */
@@ -86,7 +88,7 @@ export interface EnvironmentResolveOptions {
    * @default ['browser', 'module', 'jsnext:main', 'jsnext']
    */
   mainFields?: string[]
-  /** package exports/imports 的条件列表；特殊 `development|production` 会按 mode 展开。 */
+  /** package exports/imports 的条件列表；特殊 `development|production` 按 isProduction 展开。 */
   conditions?: string[]
   /** 外部化包在目标运行时使用的独立 exports 条件列表。 */
   externalConditions?: string[]
@@ -99,7 +101,7 @@ export interface EnvironmentResolveOptions {
   dedupe?: string[]
   // TODO：抽象成也适用于 client Environment 的通用 bundle 控制。
   /**
-   * 阻止匹配依赖外部化，使其在构建时进入 bundle。目前只对 server Environment 生效，
+   * 阻止匹配依赖外部化，使其由 Vite 加载转换或在 bundled 模式进入 bundle。只对 server 生效，
    * 旧名称为 `ssr.noExternal`。
    * @experimental
    */
@@ -236,7 +238,7 @@ const perEnvironmentOrWorkerPlugin = (
     getEnvironmentPlugin,
     {
       name,
-      /** 仅在配置启用 Oxc resolver 的环境挂载原生解析插件。 */
+      /** 为当前 Environment 派生原生 resolver；配置与运行状态按环境分别读取。 */
       applyToEnvironment(environment) {
         return f(environment, createGetEnvironment(environment.name))
       },
@@ -267,7 +269,7 @@ export function oxcResolvePlugin(
           !resolveOptions.isBuild &&
           !partialEnv.config.isBundled &&
           !isDepOptimizationDisabled(partialEnv.config.optimizeDeps)
-        /** 取得当前环境的依赖优化器；扫描关闭或环境未初始化时返回空值。 */
+        /** 在优化器回调执行时取得完整 dev Environment；缺少优化器属于内部配置错误。 */
         const getDepsOptimizer = () => {
           const env = getEnv()
           if (env.mode !== 'dev')
@@ -319,6 +321,7 @@ export function oxcResolvePlugin(
             // eslint-disable-next-line eqeqeq
             partialEnv.config.server.watch === null,
           legacyInconsistentCjsInterop: options.legacyInconsistentCjsInterop,
+          /** 裸包已解析后决定注册优化入口或仅加缓存版本；优化器只在普通开发环境启用。 */
           finalizeBareSpecifier: !depsOptimizerEnabled
             ? undefined
             : (resolvedId, rawId, importer) => {
@@ -363,6 +366,7 @@ export function oxcResolvePlugin(
                 }
                 return newId
               },
+          /** 为直接指向 node_modules 的可优化文件补版本；无改动时返回 undefined 保留原生结果。 */
           finalizeOtherSpecifiers: !depsOptimizerEnabled
             ? undefined
             : (resolvedId, rawId) => {
@@ -425,7 +429,7 @@ function optimizerResolvePlugin(
 
   return {
     name: 'vite:resolve-dev',
-    /** 优化器解析插件只在当前环境确实存在依赖优化器时启用。 */
+    /** 普通开发打包模型且未禁用优化时启用，实际优化器实例在 resolve 钩子内取得。 */
     applyToEnvironment(environment) {
       return (
         !environment.config.isBundled &&
@@ -444,7 +448,7 @@ function optimizerResolvePlugin(
           ],
         },
       },
-      /** 只解析已优化依赖与其浏览器哈希请求，并拒绝过期缓存结果。 */
+      /** 从 URL、磁盘 ID 或 metadata 恢复优化路径和当前版本；过期版本在加载阶段检查。 */
       async handler(id, importer, resolveOpts) {
         // createIdResolver 不应隐式使用优化器，所以仍要求调用场景显式开启 optimizeDeps。
         const depsOptimizer =
@@ -988,7 +992,7 @@ export function resolvePackageEntry(
       )
     }
 
-    // 未声明/未命中 exports 时，按 Environment 的 mainFields 顺序选择。
+    // exports 未返回入口才查 mainFields；exports 解析抛错会进入外层 catch，不走字段回退。
     if (!entryPoint) {
       for (const field of options.mainFields) {
         if (typeof data[field] === 'string') {
@@ -1021,7 +1025,7 @@ export function resolvePackageEntry(
         entry = ''
         skipPackageJson = true
       } else {
-        // browser 对象可把选中的相对入口再次映射到浏览器版本或 false。
+        // 根入口这里只采用 browser 字符串映射；false 经 `|| entry` 保留原入口。
         const { browser: browserField } = data
         if (options.mainFields.includes('browser') && isObject(browserField)) {
           entry = mapWithBrowserField(entry, browserField) || entry
@@ -1062,7 +1066,7 @@ function packageEntryFailure(id: string, details?: string) {
   throw err
 }
 
-/** 展开 development|production 占位条件，并追加互斥的 import/require 条件。 */
+/** 展开 development|production 占位条件，再按本次解析方式追加 import 或 require。 */
 function getConditions(
   conditions: string[],
   isProduction: boolean,
@@ -1231,9 +1235,9 @@ function tryResolveRealFileOrType(
   file: string,
   preserveSymlinks?: boolean,
 ):
-  {
+  | {
       /** 目标为文件时返回遵循 preserveSymlinks 配置的规范路径。 */
-      path?: string;
+      path?: string
       /** 区分调用方应继续查找目录入口还是直接使用文件。 */
       type: 'directory' | 'file'
     }

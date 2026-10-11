@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="Vue Compiler 演进史与设计驱动力：本地 Git 里程碑、架构取舍和 issue 模式"
+      content="Vue Compiler 演进史与设计驱动力：Vue 上游提交、架构取舍和 issue 模式"
     />
     <title>演进与设计 · Vue Compiler 指南</title>
     <link rel="stylesheet" href="assets/styles.css" />
@@ -51,7 +51,7 @@
           ><a href="#tradeoffs">关键取舍</a
           ><a href="#history-reading">如何读历史</a>
         </nav>
-        <p class="rail-note">证据来源<br />当前仓库<br />本地 Git 历史</p>
+        <p class="rail-note">阅读依据<br />当前源码<br />Vue 上游提交</p>
       </aside>
 
       <main id="content">
@@ -66,9 +66,8 @@
             hydration。历史最值得看的，是每类问题如何迫使阶段协议变得更明确。
           </p>
           <div class="hero-meta">
-            <span>时间范围：2018–2026</span
-            ><span>基线：本地 Vue 3.5.41 Git</span
-            ><span>日期与 commit 可在仓库核对</span>
+            <span>时间范围：2018–2026</span><span>源码基线：Vue 3.5.41</span
+            ><span>历史节点：vuejs/core 上游提交</span>
           </div>
         </div>
 
@@ -88,7 +87,12 @@
                 <p>
                   建立各 package，为后续 compiler/runtime 分层提供工程边界。
                 </p>
-                <span class="commit">d1bc6ee8d · setup all packages</span>
+                <span class="commit"
+                  ><a href="https://github.com/vuejs/core/commit/d1bc6ee8d"
+                    >d1bc6ee8d</a
+                  >
+                  · setup all packages</span
+                >
               </div>
             </div>
             <div class="timeline-item">
@@ -99,7 +103,19 @@
                   parser 移植、DOM 包脚手架、文件重组与平台选项迁移，确立 core +
                   platform 的方向。
                 </p>
-                <span class="commit">86ae92303 · 1c8f5b612 · 6c14b409c</span>
+                <span class="commit"
+                  ><a href="https://github.com/vuejs/core/commit/86ae92303"
+                    >86ae92303</a
+                  >
+                  ·
+                  <a href="https://github.com/vuejs/core/commit/1c8f5b612"
+                    >1c8f5b612</a
+                  >
+                  ·
+                  <a href="https://github.com/vuejs/core/commit/6c14b409c"
+                    >6c14b409c</a
+                  ></span
+                >
               </div>
             </div>
             <div class="timeline-item">
@@ -110,7 +126,15 @@
                   SFC 编译器开始承担模块级语法变换、bindings
                   与模板组件解析协作。
                 </p>
-                <span class="commit">1ad3f975e · 4c43d4e5b</span>
+                <span class="commit"
+                  ><a href="https://github.com/vuejs/core/commit/1ad3f975e"
+                    >1ad3f975e</a
+                  >
+                  ·
+                  <a href="https://github.com/vuejs/core/commit/4c43d4e5b"
+                    >4c43d4e5b</a
+                  ></span
+                >
               </div>
             </div>
             <div class="timeline-item">
@@ -121,7 +145,11 @@
                   三段编译管线、block tree、PatchFlags 与 runtime helper
                   协议进入稳定主线。
                 </p>
-                <span class="commit">d8c1536ea</span>
+                <span class="commit"
+                  ><a href="https://github.com/vuejs/core/commit/d8c1536ea"
+                    >d8c1536ea</a
+                  ></span
+                >
               </div>
             </div>
             <div class="timeline-item">
@@ -131,7 +159,11 @@
                 <p>
                   早期实验快速重写，说明语法便利性必须建立在稳定的编译期作用域与组件封装语义上。
                 </p>
-                <span class="commit">556560fae</span>
+                <span class="commit"
+                  ><a href="https://github.com/vuejs/core/commit/556560fae"
+                    >556560fae</a
+                  ></span
+                >
               </div>
             </div>
             <div class="timeline-item">
@@ -142,7 +174,11 @@
                   SFC 编译能力成熟，script setup
                   成为正式开发模型之一，compiler-sfc 的桥接责任显著增加。
                 </p>
-                <span class="commit">5a7a43cc3</span>
+                <span class="commit"
+                  ><a href="https://github.com/vuejs/core/commit/5a7a43cc3"
+                    >5a7a43cc3</a
+                  ></span
+                >
               </div>
             </div>
             <div class="timeline-item">
@@ -152,7 +188,11 @@
                 <p>
                   对象默认值、作用域与运行时 props 语义开始成为独立复杂领域。
                 </p>
-                <span class="commit">7dfe14609</span>
+                <span class="commit"
+                  ><a href="https://github.com/vuejs/core/commit/7dfe14609"
+                    >7dfe14609</a
+                  ></span
+                >
               </div>
             </div>
             <div class="timeline-item">
@@ -163,7 +203,11 @@
                   v-model 的 prop + emit 协议提升为 SFC 宏，并与 runtime
                   useModel helper 建立新契约。
                 </p>
-                <span class="commit">14f3d747a</span>
+                <span class="commit"
+                  ><a href="https://github.com/vuejs/core/commit/14f3d747a"
+                    >14f3d747a</a
+                  ></span
+                >
               </div>
             </div>
             <div class="timeline-item">
@@ -174,7 +218,15 @@
                   SFC 类型、泛型与宏能力扩展；同一时期响应式解构与 defineModel
                   经历实验开关和警告调整。
                 </p>
-                <span class="commit">483a4e7e3 · d40d4a338</span>
+                <span class="commit"
+                  ><a href="https://github.com/vuejs/core/commit/483a4e7e3"
+                    >483a4e7e3</a
+                  >
+                  ·
+                  <a href="https://github.com/vuejs/core/commit/d40d4a338"
+                    >d40d4a338</a
+                  ></span
+                >
               </div>
             </div>
             <div class="timeline-item">
@@ -184,7 +236,11 @@
                 <p>
                   更多指令边界进入有限状态机，降低后续字符串切分，同时提高编辑态容错测试的重要性。
                 </p>
-                <span class="commit">08038a938</span>
+                <span class="commit"
+                  ><a href="https://github.com/vuejs/core/commit/08038a938"
+                    >08038a938</a
+                  ></span
+                >
               </div>
             </div>
             <div class="timeline-item">
@@ -195,7 +251,19 @@
                   宏加入本地更新、修饰符与 transformer 等能力，类型和 runtime
                   行为同步收敛。
                 </p>
-                <span class="commit">ef688ba92 · a772031ea · d702b6648</span>
+                <span class="commit"
+                  ><a href="https://github.com/vuejs/core/commit/ef688ba92"
+                    >ef688ba92</a
+                  >
+                  ·
+                  <a href="https://github.com/vuejs/core/commit/a772031ea"
+                    >a772031ea</a
+                  >
+                  ·
+                  <a href="https://github.com/vuejs/core/commit/d702b6648"
+                    >d702b6648</a
+                  ></span
+                >
               </div>
             </div>
             <div class="timeline-item">
@@ -206,7 +274,11 @@
                   编译器需要像小型作用域分析器一样处理函数、catch、for、var
                   提升、默认值和写入限制。
                 </p>
-                <span class="commit">d2dac0e35</span>
+                <span class="commit"
+                  ><a href="https://github.com/vuejs/core/commit/d2dac0e35"
+                    >d2dac0e35</a
+                  ></span
+                >
               </div>
             </div>
             <div class="timeline-item">
@@ -217,7 +289,11 @@
                   响应式解构等能力正式进入版本，compiler-sfc
                   的静态语义成为日常开发体验的一部分。
                 </p>
-                <span class="commit">6402b9840</span>
+                <span class="commit"
+                  ><a href="https://github.com/vuejs/core/commit/6402b9840"
+                    >6402b9840</a
+                  ></span
+                >
               </div>
             </div>
             <div class="timeline-item">
@@ -228,7 +304,19 @@
                   持续修复作用域、缓存顺序、defineModel
                   推导、工厂默认值与跨编译上下文问题。
                 </p>
-                <span class="commit">8e3435779 · 48ad452dd · 0516c4328</span>
+                <span class="commit"
+                  ><a href="https://github.com/vuejs/core/commit/8e3435779"
+                    >8e3435779</a
+                  >
+                  ·
+                  <a href="https://github.com/vuejs/core/commit/48ad452dd"
+                    >48ad452dd</a
+                  >
+                  ·
+                  <a href="https://github.com/vuejs/core/commit/0516c4328"
+                    >0516c4328</a
+                  ></span
+                >
               </div>
             </div>
             <div class="timeline-item">
@@ -236,7 +324,12 @@
               <div class="timeline-copy">
                 <strong>当前阅读基线：3.5.41</strong>
                 <p>本专题注释、测试与页面均基于当前 checkout。</p>
-                <span class="commit">d2c458be2 · release v3.5.41</span>
+                <span class="commit"
+                  ><a href="https://github.com/vuejs/core/commit/d2c458be2"
+                    >d2c458be2</a
+                  >
+                  · release v3.5.41</span
+                >
               </div>
             </div>
           </div>
@@ -689,7 +782,14 @@ if ((parent as WIPSlotEntry).type === WIP_SLOT) {
               </p>
             </div>
           </div>
-          <pre><code># 示例：沿路径看最早提交
+          <p>
+            下列命令在
+            <a href="https://github.com/vuejs/core">vuejs/core</a>
+            的完整克隆根目录执行；本项目中的 <code>vue/</code> 是源码快照，
+            不包含这条上游 Git 历史。
+          </p>
+          <pre><code># 在 vuejs/core 的完整克隆根目录执行
+# 沿路径看最早提交
 git log --reverse --date=short --format='%h %ad %s' \
   -- packages/compiler-core
 
@@ -700,9 +800,9 @@ git log --all --grep='defineModel' -i
 # 示例：看某行为何存在
 git blame packages/compiler-sfc/src/script/resolveType.ts</code></pre>
           <div class="callout">
-            <strong>历史证据边界：</strong>本页只使用当前仓库本地 Git
-            可核对的信息。不同分支、backport 与尚未发布提交可能让时间线与其他
-            checkout 不同。
+            <strong>历史节点：</strong>时间线中的 hash 链接到 vuejs/core
+            的上游提交，可直接查看当时的修改。当前行为由本项目的 Vue 3.5.41
+            源码说明。
           </div>
         </section>
 

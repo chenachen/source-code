@@ -66,7 +66,8 @@ declare global {
  * 保存初始化时捕获的原生宿主对象、原型方法及全局沙箱计数。
  *
  * @remarks
- * 后续补丁与释放流程始终从此对象取原始引用，避免从已改写的原型继续嵌套包装。
+ * 后续补丁与释放流程从此对象取初始化时的引用，不在每次 start/stop 中重新读取原型。
+ * 此记录属于当前 bundle；activeSandbox 由两种沙箱共用，隐藏 keep-alive 不递减计数。
  */
 const globalEnv: Record<string, any> = {
   // 当前处于启动状态的沙箱数量；首个启动时安装全局补丁，归零时释放。
@@ -74,10 +75,12 @@ const globalEnv: Record<string, any> = {
 }
 
 /**
- * 捕获浏览器原生全局对象和方法，并安装一次基座级样式。
+ * 捕获浏览器原生全局对象和方法，并注入基座级结构样式。
  *
  * @remarks
- * `MicroApp.start()` 在定义自定义元素前调用本函数。这里保存的必须是原型方法或唯一原生值；若缓存已代理对象，后续补丁可能形成循环嵌套。
+ * `MicroApp.start()` 在定义自定义元素前调用本函数；优先使用上层暴露的 rawWindow/rawDocument，
+ * 让嵌套应用绕过代理 window 的读取。DOM/History/EventTarget 方法按此刻原型取值保存，
+ * 本函数本身不安装/释放原型补丁，也不重置已有 activeSandbox 计数。
  * 非浏览器环境直接跳过初始化。
  */
 export function initGlobalEnv (): void {
@@ -200,7 +203,7 @@ export function initGlobalEnv (): void {
       // iframe 沙箱也复用以上宿主原生引用。
     })
 
-    // 注入一次全局结构样式，确保 micro-app 容器具备预期显示方式。
+    // 为当前标签名注入结构样式，使 micro-app-head 隐藏、容器和 body 按块展示。
     rejectMicroAppStyle()
   }
 }

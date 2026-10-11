@@ -356,7 +356,10 @@ if (__DEV__) {
   };
 }
 
-/** 按是否存在 current 选择 mount/update child reconciler，生成下一层 work-in-progress child 链。 */
+/**
+ * 按父 Fiber 是否有 current 选择 mount/update child reconciler，写入 workInProgress.child。
+ * nextChildren 是组件本轮返回的节点集合，renderLanes 是本轮允许处理的 lane 集合。新父的子链不逐项标 Placement，已存在父则记录插入/删除；宿主变化留给 commit。
+ */
 export function reconcileChildren(
   current: Fiber | null,
   workInProgress: Fiber,
@@ -364,8 +367,8 @@ export function reconcileChildren(
   renderLanes: Lanes,
 ) {
   if (current === null) {
-    // 首次渲染无需以最小副作用更新既有 child 集合；所有子节点都会在渲染前加入，
-    // 因而本轮协调可走不跟踪副作用的挂载路径。
+    // 新建父 Fiber 没有 current child 可对比；后代宿主节点会随上层 Placement 插入，
+    // 因而这里可走不记录逐个 Placement/删除的 mountChildFibers。
     workInProgress.child = mountChildFibers(
       workInProgress,
       null,
@@ -384,7 +387,10 @@ export function reconcileChildren(
   }
 }
 
-/** 先删除全部 current child、再以空 current 挂载新 child，强制同 key/type 也重新挂载。 */
+/**
+ * 类错误恢复时先用 null children 把 current 子链全列入删除，再以 null current 子链协调 nextChildren。
+ * 第二遍仍用带副作用 reconciler，因父已存在，新子需 Placement；相同 key/type 也不保留实例，删除/插入实际在 commit 执行。
+ */
 function forceUnmountCurrentAndReconcile(
   current: Fiber,
   workInProgress: Fiber,
@@ -408,7 +414,10 @@ function forceUnmountCurrentAndReconcile(
   );
 }
 
-/** 执行 ForwardRef renderWithHooks，剥离 props.ref 后协调 children，并处理 bailout/调试标志。 */
+/**
+ * 调用 ForwardRef.render 的 Hooks 路径：传入去掉 ref 的 props，并以 secondArg 单独传 ref。
+ * 先建立 context 依赖再求值；已挂载且 didReceiveUpdate 仍为 false 时恢复 Hook 副作用并走子树 bailout。只有采纳返回 children 才设 PerformedWork；hydration 中 useId 会物化 tree ID。
+ */
 function updateForwardRef(
   current: Fiber | null,
   workInProgress: Fiber,
@@ -482,7 +491,10 @@ function updateForwardRef(
   return workInProgress.child;
 }
 
-/** 按自定义/浅比较决定 Memo 外壳 bailout，或创建/更新其内层组件 Fiber。 */
+/**
+ * 处理 React.memo 外壳：首次简单函数且 compare=null 可升级 SimpleMemo，否则建立一个内层 child Fiber。
+ * 更新先检查外壳自己的本轮 lanes/context 依赖，再以内层 currentChild.memoizedProps 和 nextProps 做 compare，ref 必须也相同。外壳 bailout 仍可沿 childLanes 进入持有 Hook 队列的内层组件。
+ */
 function updateMemoComponent(
   current: Fiber | null,
   workInProgress: Fiber,
@@ -549,7 +561,10 @@ function updateMemoComponent(
   return newChild;
 }
 
-/** 对 SimpleMemoComponent 做浅 props/ref/实现比较，复用 props 与 lanes 后快速 bailout。 */
+/**
+ * 对自身持有 Hooks 的 SimpleMemo 做浅 props 比较、ref 比较与 DEV 实现 identity 比较。
+ * 相等时复用旧 props 对象并清 didReceiveUpdate；自身还有本轮 state/context 工作则继续函数求值。若提前退出，必须从 current 恢复 lanes，因为 beginWork 已清过它们而此路径不处理队列。
+ */
 function updateSimpleMemoComponent(
   current: Fiber | null,
   workInProgress: Fiber,
@@ -601,7 +616,10 @@ function updateSimpleMemoComponent(
   );
 }
 
-/** 按 hidden/visible、OffscreenLane 与缓存池状态决定延后、恢复或渲染 Offscreen 子树。 */
+/**
+ * 决定 Offscreen 是否渲染、延后或恢复，并保持 transition/cache、hidden 与 suspense handler 栈配对。
+ * memoizedState 非 null 表示隐藏，baseLanes 保存被跳过的原始更新 lanes，OffscreenLane 是恢复入口而非原 updater 的 lane。隐藏树捕获挂起时恢复 current 子链并排除已尝试 lanes；并发非 Offscreen 轮次延后，Legacy 非并发轮次直接渲染。揭示/恢复会把保留 baseLanes 压入 hidden context。
+ */
 function updateOffscreenComponent(
   current: Fiber | null,
   workInProgress: Fiber,
@@ -779,7 +797,10 @@ function updateOffscreenComponent(
   return workInProgress.child;
 }
 
-/** Offscreen 无本优先级工作时维持栈对称并跳过子树。 */
+/**
+ * 直接跳过 primary Offscreen 并返回它的 sibling（通常是 Suspense fallback）。
+ * 若重置后的新 Fiber 缺少实例则补建 _visibility 等宿主状态；此辅助函数不 push/pop context 栈，所需 handler/hidden 栈由外层 Suspense/Activity 路径维护。
+ */
 function bailoutOffscreenComponent(
   current: Fiber | null,
   workInProgress: Fiber,
@@ -800,7 +821,10 @@ function bailoutOffscreenComponent(
   return workInProgress.sibling;
 }
 
-/** 保存隐藏树 baseLanes/cache，并把其余工作改调度到 OffscreenLane 后退出本轮。 */
+/**
+ * 保存隐藏树的 nextBaseLanes/cachePool，并以 remainingChildLanes 覆盖本轮保留的子工作后返回 null。
+ * nextBaseLanes 是需在恢复时一并处理的原 lanes，remainingChildLanes 由调用者计算（常规延后为 OffscreenLane，捕获挂起时为排除已尝试工作的集合）。先传播父 context 再覆盖 childLanes，避免传播把本轮暂不处理的 lanes 又带回来；本函数不统一改写自身 lanes。
+ */
 function deferHiddenOffscreenComponent(
   current: Fiber | null,
   workInProgress: Fiber,
@@ -896,7 +920,10 @@ function mountActivityChildren(
   return primaryChildFragment;
 }
 
-/** Activity hydration 失败后删除 dehydrated child，改建客户端 Offscreen 树并记录可恢复错误。 */
+/**
+ * 放弃 Activity hydration：登记旧 dehydrated child 删除，创建新的客户端 primary Offscreen 并设 Placement，清除 Activity.memoizedState。
+ * 弹出自身 dehydrated handler，使客户端尝试的后续挂起向祖先冒泡；可恢复错误由失败捕获路径记录，本辅助函数没有自行 queueHydrationError。
+ */
 function retryActivityComponentWithoutHydrating(
   current: Fiber,
   workInProgress: Fiber,
@@ -1159,7 +1186,10 @@ function updateActivityComponent(
   }
 }
 
-/** 读取/刷新 CacheComponent 的 update queue，向子树提供稳定 CacheContext 后协调 children。 */
+/**
+ * 读取父 CacheContext 并处理 CacheComponent refresh 队列，再将选中的 cache 压栈给后代。
+ * 首挂从 renderLanes 对应池取得 cache；更新仅在自身 lanes 相交时克隆/处理队列。父 cache 变化覆盖本层 refresh 结果，剩余 lanes 为零才同步队列 baseState；父未变而本层 cache 变化时主动传播 CacheContext。retain/release 与旧 cache 清理在 commit 路径执行。
+ */
 function updateCacheComponent(
   current: Fiber | null,
   workInProgress: Fiber,
@@ -1223,8 +1253,11 @@ function updateCacheComponent(
   return workInProgress.child;
 }
 
-// 仅应在 marker 首次创建或名称变化时调用。
-/** 创建或复用 TransitionTracing marker 实例，并把 marker/transition 集合压入子树上下文。 */
+// 此入口可处理普通 Marker 更新；实例只在首次挂载且有 transitions 时创建，名称变化不重建。
+/**
+ * 首次挂载且存在当前具名 transitions 时创建 Marker 实例并设 Passive；未在转换中首次挂载的 Marker 此处不补建实例。
+ * 已挂载实例保留原名称和 transitions；DEV 名称变化仅警告，不按新名称重建。将非 null 实例压入后代 marker 栈，进度/完成回调的收集和调用在 passive/post-paint 路径完成。
+ */
 function updateTracingMarkerComponent(
   current: Fiber | null,
   workInProgress: Fiber,
@@ -1250,7 +1283,7 @@ function updateTracingMarkerComponent(
       };
       workInProgress.stateNode = markerInstance;
 
-      // 所有子 Suspense 边界解决后，在 Offscreen commit 阶段调用 marker complete。
+      // 子 Suspense 等待集合清空后，提交的 passive 路径收集 marker complete；用户回调稍后统一处理。
       // 若没有子边界，仍需安排 passive effect 以保证回调触发。
       workInProgress.flags |= Passive;
     }
@@ -1299,7 +1332,10 @@ function updateMode(
   return workInProgress.child;
 }
 
-/** 初始化 Profiler 计时/回调标志并协调其 children。 */
+/**
+ * 进入 Profiler 正常更新路径时设 Update，以便 layout commit 调用 onRender；此处不要求后代先实际重渲染。
+ * enableProfilerCommitHooks 另外设 Passive 并清 effect/passiveEffect duration，供之后提交计量和 onPostCommit。输入未变的早期 bailout 有单独的 childLanes 判断，不能把该规则套用到本函数。
+ */
 function updateProfiler(
   current: Fiber | null,
   workInProgress: Fiber,
@@ -1367,7 +1403,10 @@ function mountIncompleteFunctionComponent(
   );
 }
 
-/** 准备 Context、执行 renderWithHooks、判断 hook/context 更新并协调函数组件 children。 */
+/**
+ * 先准备现代 context 依赖，按配置提供 legacy masked context 作为 secondArg，再执行 renderWithHooks。
+ * current 非 null 且求值后 didReceiveUpdate 仍为 false 时不采纳新 children，恢复 Hook effects 并从子工作 bailout；state/context 真实变化会置该标记。hydration 的 useId 需物化 tree ID，采纳子树时才设 PerformedWork。
+ */
 function updateFunctionComponent(
   current: null | Fiber,
   workInProgress: Fiber,
@@ -1479,7 +1518,10 @@ function updateFunctionComponent(
   return workInProgress.child;
 }
 
-/** Suspense/错误恢复时用 renderWithHooksAgain 重放函数组件，并重新协调 children。 */
+/**
+ * 数据挂起后复用未完成 Hook 链，调用 replaySuspendedComponentWithHooks 重放函数组件。
+ * Component/nextProps/secondArg 沿用挂起求值的输入，renderLanes 用于依赖准备、bailout 和子协调；此处不创建新的 mount Hook 链，也不是错误边界 fallback 的通用入口。
+ */
 export function replayFunctionComponent(
   current: Fiber | null,
   workInProgress: Fiber,
@@ -1522,7 +1564,10 @@ export function replayFunctionComponent(
   return workInProgress.child;
 }
 
-/** 构造/恢复/更新 Class 实例与 update queue，随后进入 finishClassComponent。 */
+/**
+ * 先压入 legacy Provider 栈并准备现代 context，再根据 stateNode/current 选择构造、恢复未提交挂载或更新既有实例。
+ * ClassComponent 分派已解析 defaultProps/ref 输入；类队列与 SCU 的结果交给 finishClassComponent，实例字段同步不等于宿主已提交。DEV shouldError 可模拟捕获更新或用临时构造状态退出模拟错误。
+ */
 function updateClassComponent(
   current: Fiber | null,
   workInProgress: Fiber,
@@ -1634,7 +1679,10 @@ function updateClassComponent(
   return nextUnitOfWork;
 }
 
-/** 根据 shouldUpdate/捕获错误决定调用 render、强制卸载旧 child 或 bailout，并标记 ref。 */
+/**
+ * 先独立检查 ref，再依据 shouldUpdate 和 DidCapture 选择 class render 或 bailout。
+ * 无派生错误状态的旧边界先返回 null，commit 中 componentDidCatch 可再入队 fallback；有 current 的捕获恢复强制重挂子链。DEV StrictMode 的第二次 render 用于检查、返回值丢弃；最后回读 instance.state 并使 legacy child context 失效重算。
+ */
 function finishClassComponent(
   current: Fiber | null,
   workInProgress: Fiber,
@@ -1741,7 +1789,10 @@ function pushHostRootContext(workInProgress: Fiber) {
   pushHostContainer(workInProgress, root.containerInfo);
 }
 
-/** 处理 HostRoot update queue、缓存与 hydration，得到 element 后协调根 children。 */
+/**
+ * 克隆并按 renderLanes 处理 HostRoot 更新队列，以 nextState.element 决定根子树。
+ * HostRoot 始终有 current，即使首次客户端挂载；先压 root transition/cache 栈，再可能因 entangled async action 挂起，保证 unwind 配对。dehydrated shell 若收到不同 element 则排可恢复错误并切客户端；相同 element 开始认领 DOM，未 dehydrated 且 element 引用相同仍检查子 lanes/context 后 bailout。
+ */
 function updateHostRoot(
   current: null | Fiber,
   workInProgress: Fiber,
@@ -1851,7 +1902,10 @@ function updateHostRoot(
   return workInProgress.child;
 }
 
-/** 根 hydration 放弃后重置状态，强制客户端协调 element 并标记 Placement。 */
+/**
+ * 根 shell 放弃 hydration 后重置游标并标 ForceClientRender，再协调 nextChildren。
+ * 此处不直接设 Placement；当前根已有 current，新增 child 的插入由 reconcileChildFibers 记录，ForceClientRender 供提交路径清理服务端内容。
+ */
 function mountHostRootWithoutHydrating(
   current: Fiber,
   workInProgress: Fiber,
@@ -1922,7 +1976,10 @@ function updateHostComponent(
   return workInProgress.child;
 }
 
-/** 在支持资源提升的宿主中更新 Hoistable，设置 context/ref 后协调其 children。 */
+/**
+ * 在 supportsResources 宿主中更新 Hoistable：标 ref，通过 getResource 选择资源，非资源首挂且非 hydration 时创建实例。
+ * memoizedState 保存资源或 null；本分支始终返回 null，不协调 children，也没有 pushHostContext。资源内容由 HostConfig 处理，资源取得/提交和释放另有 commit 路径。
+ */
 function updateHostHoistable(
   current: null | Fiber,
   workInProgress: Fiber,
@@ -1987,7 +2044,10 @@ function updateHostSingleton(
   return workInProgress.child;
 }
 
-/** HostText 在 begin 阶段无 child 工作；hydration mount 时仅确保宿主 context 就绪。 */
+/**
+ * HostText 是无子节点的终止 Fiber：首次 begin 尝试认领可 hydration 文本，然后返回 null 转 complete。
+ * 宿主 context 已由祖先建立，本函数没有压入它；文本实例创建/比较在 complete、实际更新在 commit。
+ */
 function updateHostText(current: null | Fiber, workInProgress: Fiber) {
   if (current === null) {
     tryToClaimNextHydratableTextInstance(workInProgress);
@@ -2130,7 +2190,10 @@ function mountIncompleteClassComponent(
   );
 }
 
-/** 开发期检查函数组件误用 class 专属 API、contextTypes 或返回 class 实例。 */
+/**
+ * DEV 检查函数组件误用 childContextTypes、getDerivedStateFromProps 或 contextType；后两项按组件名去重。
+ * workInProgress 参数此函数未消费；这里不检查函数返回 class 实例，也不负责普通 contextTypes 的弃用警告。
+ */
 function validateFunctionComponentInDev(workInProgress: Fiber, Component: any) {
   if (__DEV__) {
     if (Component && Component.childContextTypes) {
@@ -2586,7 +2649,10 @@ function mountSuspenseFallbackChildren(
   return fallbackChildFragment;
 }
 
-/** 按给定 props/state/lanes 创建并挂接新的 Offscreen Fiber。 */
+/**
+ * 以 offscreenProps/mode 创建 Offscreen Fiber；内部固定传 NoLanes，renderLanes 参数未消费。
+ * 该包装只收窄 props 类型，不设置 memoizedState、return/sibling 或父 child 指针，这些由 Suspense/Activity 调用者补上。
+ */
 function mountWorkInProgressOffscreenFiber(
   offscreenProps: OffscreenProps,
   mode: TypeOfMode,
@@ -2596,7 +2662,10 @@ function mountWorkInProgressOffscreenFiber(
   return createFiberFromOffscreen(offscreenProps, mode, NoLanes, null);
 }
 
-/** 从 current Offscreen 创建 work-in-progress，并覆盖 pendingProps/state。 */
+/**
+ * 用 createWorkInProgress 克隆/复用 current Offscreen alternate，并传入新的 offscreenProps。
+ * pendingProps 更新，memoizedState 等当前状态由 createWorkInProgress 复制；本包装没有另行覆盖隐藏状态或设置链表指针。
+ */
 function updateWorkInProgressOffscreenFiber(
   current: Fiber,
   offscreenProps: OffscreenProps,
@@ -2643,7 +2712,10 @@ function updateSuspensePrimaryChildren(
   return primaryChildFragment;
 }
 
-/** 更新为继续显示 fallback，复用 primary Offscreen 与 fallback sibling，维护 baseLanes。 */
+/**
+ * 更新为显示 fallback，复用/创建隐藏 primary Offscreen 与 fallback Fragment，并接成 sibling 链。
+ * 已存在 fallback 复用 alternate，新 fallback 设 Placement；Legacy 第二遍可保留已推进的 primary 并取消第一遍对 fallback 的删除，其余路径仅保留 primary 静态 flags。baseLanes/cachePool/childLanes 由 updateSuspenseComponent 调用者设置。
+ */
 function updateSuspenseFallbackChildren(
   current: Fiber,
   workInProgress: Fiber,
@@ -2748,7 +2820,10 @@ function retrySuspenseComponentWithoutHydrating(
   return primaryChildFragment;
 }
 
-/** 客户端 hydration 重试再次挂起时，在已建 primary 后追加 fallback sibling。 */
+/**
+ * 放弃 hydration 后再次挂起时，重建 primary Offscreen 与 fallback Fragment 的两节点链。
+ * fallback 是新插入，设 Placement；primary 的 props 此处为 visible，后续调用者写挂起 memoizedState 并跳过它。并发路径需重新登记 dehydrated current child 删除，不是直接在原 primary 后追加。
+ */
 function mountSuspenseFallbackAfterRetryWithoutHydrating(
   current: Fiber,
   workInProgress: Fiber,
@@ -2937,7 +3012,7 @@ function updateDehydratedSuspenseComponent(
     } else if (isSuspenseInstancePending(suspenseInstance)) {
       // 组件仍等待服务端数据，无法 hydration。按自身挂起处理；立即客户端渲染会做大量无效工作，
       // 且往往仍因缺数据挂起。服务端还可能比客户端先渲染更多内容，贸然接管会制造更多 fallback。
-      // 服务端超时或报错会把边界更新为永久 fallback。这里同时标记已捕获与需要重试。
+      // 服务端超时/报错后可转客户端；当前仍 pending 时只标捕获与 Callback，保留 dehydrated child 等待服务端完成。
       workInProgress.flags |= DidCapture | Callback;
       // 保留现有 dehydrated fragment child。
       workInProgress.child = current.child;
@@ -3012,7 +3087,10 @@ function updateDehydratedSuspenseComponent(
   }
 }
 
-/** 给 Suspense Fiber/alternate 合并指定 lanes，并把 child work 冒泡到根。 */
+/**
+ * 给目标 Fiber 与 alternate 合并 renderLanes，并沿 return 路径更新祖先 childLanes，止于 propagationRoot。
+ * 此辅助用于 SuspenseList 的强制 fallback 上下文传播，不新建 state updater，也不自行 schedule root callback。
+ */
 function scheduleSuspenseWorkOnFiber(
   fiber: Fiber,
   renderLanes: Lanes,
@@ -3148,7 +3226,10 @@ function validateRevealOrder(revealOrder: SuspenseListRevealOrder) {
   }
 }
 
-/** 开发期校验 SuspenseList tail 只与 forwards/backwards 配合且值为 collapsed/hidden。 */
+/**
+ * DEV 校验 tail 为 visible/collapsed/hidden，null/undefined 采用默认 hidden。
+ * 显式 revealOrder 除 forwards/backwards/unstable_legacy-backwards 外会警告；省略 revealOrder 合法。警告按 tail 值缓存，避免重复报告。
+ */
 function validateTailOptions(
   tailMode: SuspenseListTailMode,
   revealOrder: SuspenseListRevealOrder,
@@ -3220,7 +3301,10 @@ function initSuspenseListRenderState(
   }
 }
 
-/** 原地反转 Fiber.child sibling 链，并修正每个 child.return。 */
+/**
+ * 原地反转 fiber.child 的 sibling 链，替换 child 指向新链头；不修改各 row.return 或 index。
+ * backwards 更新临时反转 current 链以按新 children 匹配，协调后再反转恢复；这不是创建新 Fiber 或安排宿主重排的辅助函数。
+ */
 function reverseChildren(fiber: Fiber): void {
   let row = fiber.child;
   fiber.child = null;
@@ -3405,7 +3489,10 @@ function updateSuspenseListComponent(
   return workInProgress.child;
 }
 
-/** 创建/复用 ViewTransitionState，登记显式名称/自动 ID、标记 ref，并协调边界 children。 */
+/**
+ * 创建/复用 ViewTransitionState，显式 name 非 auto 时标记 NamedMount/NamedStatic 供提交配对。
+ * 自动名称只在 hydration 时物化 tree ID，此处不生成 autoName；名称变化会标 Ref/RefStatic 以重建暴露实例，即使 ref 引用本身未变。宿主名字和动画事件在 commit 路径安排。
+ */
 function updateViewTransition(
   current: Fiber | null,
   workInProgress: Fiber,
@@ -3491,7 +3578,7 @@ function updatePortalComponent(
 
 let hasWarnedAboutUsingNoValuePropOnContextProvider = false;
 
-/** 将 Provider 新 value 压栈；值变化时传播 context，再协调 Provider children。 */
+/** 将 Provider 新 value 压栈并协调 children；普通 Context 变化由后代 bailout/延迟树路径惰性收集和传播。 */
 function updateContextProvider(
   current: Fiber | null,
   workInProgress: Fiber,
@@ -3715,7 +3802,10 @@ function remountFiber(
   }
 }
 
-/** 检查 current.lanes 或惰性传播的 Context 是否要求本轮进入 begin 阶段。 */
+/**
+ * 判断 current 自身 lanes 是否与 renderLanes 相交，或已有 context 依赖的值是否发生变化。
+ * 不检查 childLanes，也不在这里遍历祖先传播；用于 props 引用相同的早期 bailout 与 memo 比较门禁，子树工作由 bailoutOnAlreadyFinishedWork 继续判断。
+ */
 function checkScheduledUpdateOrContext(
   current: Fiber,
   renderLanes: Lanes,
@@ -3998,7 +4088,7 @@ function beginWork(
       // 热更新改变实现时强制重渲染。
       (__DEV__ ? workInProgress.type !== current.type : false)
     ) {
-      // props 或 context 变化时先标记已执行工作；若 memo 后续判定 props 相等可再清除。
+      // props/context/实现输入变化时先标记收到更新；尚不表示已经执行组件，memo 浅相等可再清除。
       didReceiveUpdate = true;
     } else {
       // props 与 legacy context 均未变，再检查 pending 更新或现代 context 变化。

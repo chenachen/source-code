@@ -14,13 +14,7 @@
 // 此用例只约束构建产物的版本值。
 // TODO：实验构建的运行时版本与 package.json 不同，因为 DevTools 用它检测特性；
 // 应考虑改用其他特性检测机制。
-/**
- * Given：已建立该文件所需的 renderer、容器与测试夹具。
- * When：执行“ReactVersion matches package.json”场景的唯一关键操作。
- * Then：断言 发布产物与 package.json 的版本一致性 的可观察结果。
- *
- * 验证机制：同时观察返回值、渲染输出或诊断信息，证明结果来自目标分支。
- */
+/** 仅 build/stable/非 WWW 条件成立时 require React 与 package.json，断言公开版本与包版本相同；其余配置测试体跳过断言，验证稳定构建元数据一致性。 */
 test('ReactVersion matches package.json', () => {
   if (gate(flags => flags.build && flags.stable && !flags.www)) {
     const React = require('react');

@@ -118,6 +118,9 @@ type MixinToOptionTypes<T> =
     : never
 
 // 用映射类型间接提取 mixin，避免条件类型直接递归引用自身。
+/**
+ * 通过映射槽位间接提取 mixin 的各类选项，避免条件类型直接递归引用自身。
+ */
 type ExtractMixin<T> = {
   Mixin: MixinToOptionTypes<T>
 }[T extends ComponentOptionsMixin ? 'Mixin' : never]
@@ -150,6 +153,9 @@ export type ComponentPublicInstanceConstructor<
   __isFragment?: never
   __isTeleport?: never
   __isSuspense?: never
+  /**
+   * 虚拟组件构造签名，供 TS/JSX 从组件定义推导实例类型 T；不意味着运行时 new 该组件。
+   */
   new (...args: any[]): T
 }
 
@@ -308,22 +314,67 @@ export type ComponentPublicInstance<
   TypeRefs extends Data = {},
   TypeEl = any,
 > = {
+  /**
+   * 允许高级 API 取得内部实例。
+   */
   $: ComponentInternalInstance
+  /**
+   * Options API data 返回的响应式状态类型。
+   */
   $data: D
+  /**
+   * 公开调用侧 props 类型；MakeDefaultsOptional 开启时，有默认值字段可省略。
+   */
   $props: MakeDefaultsOptional extends true
     ? Partial<Defaults> & Omit<Prettify<P> & PublicProps, keyof Defaults>
     : Prettify<P> & PublicProps
+  /**
+   * 未声明输入的 attrs 类型，包含允许的自定义 attrs 扩展。
+   */
   $attrs: Attrs
+  /**
+   * 模板引用集合与 language-tools 提供的具体 ref 类型交叉。
+   */
   $refs: Data & TypeRefs
+  /**
+   * 把声明 slots 解包为按名调用的函数表。
+   */
   $slots: UnwrapSlotsType<S>
+  /**
+   * 根有状态组件的公开实例，无公开根时为空。
+   */
   $root: ComponentPublicInstance | null
+  /**
+   * 最近有状态父组件公开实例；运行时跳过函数式内部父节点。
+   */
   $parent: ComponentPublicInstance | null
+  /**
+   * 自定义元素宿主的公开类型声明。
+   */
   $host: Element | null
+  /**
+   * 按当前组件 emits 声明约束事件名和参数。
+   */
   $emit: EmitFn<E>
+  /**
+   * 根宿主节点类型，由 TypeEl 泛型携带。
+   */
   $el: TypeEl
+  /**
+   * 组件原始选项类型与合并后生命周期数组形态交叉。
+   */
   $options: Options & MergedComponentOptionsOverride
+  /**
+   * 请求显式组件更新的缓存函数。
+   */
   $forceUpdate: () => void
+  /**
+   * 绑定到公共实例的刷新后回调入口。
+   */
   $nextTick: typeof nextTick
+  /**
+   * 公开实例 watcher 签名：字符串 source 支持字段/点路径，函数 source 推导回调值类型；返回可停止的 WatchStopHandle。
+   */
   $watch<T extends string | ((...args: any) => any)>(
     source: T,
     cb: T extends (...args: any) => infer R
@@ -368,24 +419,70 @@ const getPublicInstance = (
 export const publicPropertiesMap: PublicPropertiesMap =
   // PURE 标记单独换行，避免编译器因前面的类型注解丢弃它。
   /*@__PURE__*/ extend(Object.create(null), {
+    /**
+     * 返回内部实例，供高级内部 API 使用。
+     */
     $: i => i,
+    /**
+     * 读取组件 VNode 当前宿主节点；HOC 根变化会由 renderer 同步更新此引用。
+     */
     $el: i => i.vnode.el,
+    /**
+     * 返回 Options API 响应式 data 对象。
+     */
     $data: i => i.data,
+    /**
+     * 开发返回浅只读 props，生产直接返回内部映射；不改变嵌套对象身份。
+     */
     $props: i => (__DEV__ ? shallowReadonly(i.props) : i.props),
+    /**
+     * 开发返回浅只读 attrs，生产复用内部映射；整组变化追踪由公开代理 get 分支完成。
+     */
     $attrs: i => (__DEV__ ? shallowReadonly(i.attrs) : i.attrs),
+    /**
+     * 开发返回浅只读插槽映射，生产直接返回标准化函数表。
+     */
     $slots: i => (__DEV__ ? shallowReadonly(i.slots) : i.slots),
+    /**
+     * 开发返回浅只读模板引用集合，生产直接返回实例 refs。
+     */
     $refs: i => (__DEV__ ? shallowReadonly(i.refs) : i.refs),
+    /**
+     * 沿 parent 链跳过无公共代理的函数式组件，返回最近有状态父级的公开/暴露代理。
+     */
     $parent: i => getPublicInstance(i.parent),
+    /**
+     * 取得根内部实例对应的公开代理；函数式根向上回退后可能没有公开实例。
+     */
     $root: i => getPublicInstance(i.root),
+    /**
+     * 返回自定义元素宿主 VueElement；普通组件没有 ce，结果为 undefined。
+     */
     $host: i => i.ce,
+    /**
+     * 返回已绑定本实例的 emit 函数，事件从当前组件 VNode props 分发。
+     */
     $emit: i => i.emit,
+    /**
+     * Options API 构建返回缓存的合并选项，否则直接返回组件定义。
+     */
     $options: i => (__FEATURE_OPTIONS_API__ ? resolveMergedOptions(i) : i.type),
+    /**
+     * 首次读取创建并缓存强制更新闭包，后续读取复用 i.f，执行时把直接 effect 更新入口排队。
+     */
     $forceUpdate: i =>
       i.f ||
+      /** 缓存的 forceUpdate 闭包把 instance.update 加入主队列；update 使用 effect.run，显式请求不依赖 runIfDirty 的判定。 */
       (i.f = () => {
         queueJob(i.update)
       }),
+    /**
+     * 首次读取将 nextTick 绑定到公共代理并缓存 i.n，让用户回调获得该 this。
+     */
     $nextTick: i => i.n || (i.n = nextTick.bind(i.proxy!)),
+    /**
+     * Options API 构建将 instanceWatch 绑定内部实例，否则返回 NOOP；watcher 因而归属被调用组件。
+     */
     $watch: i => (__FEATURE_OPTIONS_API__ ? instanceWatch.bind(i) : NOOP),
   } as PublicPropertiesMap)
 
@@ -410,6 +507,9 @@ enum AccessTypes {
 /** 公开代理 target；`_` 保存实际内部实例，其余开发字段仅便于控制台查看。 */
 export interface ComponentRenderContext {
   [key: string]: any
+  /**
+   * 公开代理 trap 用于回到内部实例的链接，开发环境定义为非枚举 getter。
+   */
   _: ComponentInternalInstance
 }
 
@@ -427,6 +527,9 @@ const hasSetupBinding = (state: Data, key: string) =>
  * Modules、globalProperties 再单独处理。set 允许写 setup/data/ctx，但拒绝 props 和公共键。
  */
 export const PublicInstanceProxyHandlers: ProxyHandler<any> = {
+  /**
+   * 普通键按 setup/data/props/ctx 优先级解析并缓存来源，再查询内置 $ 属性、CSS Modules 和 globalProperties。OTHER 只跳过普通来源重查，仍可读取随后新增的 ctx/globalProperties；开发环境渲染中缺失键会警告。
+   */
   get({ _: instance }: ComponentRenderContext, key: string) {
     if (key === ReactiveFlags.SKIP) {
       return true
@@ -539,6 +642,9 @@ export const PublicInstanceProxyHandlers: ProxyHandler<any> = {
     }
   },
 
+  /**
+   * 优先写 setup/data，再拒绝 prop、script setup binding 与内部公共属性；其他字段落到 ctx。覆盖全局属性时定义实例自有可配置字段，保持应用 globalProperties 不变。返回布尔值决定严格模式赋值结果。
+   */
   set(
     { _: instance }: ComponentRenderContext,
     key: string,
@@ -587,6 +693,9 @@ export const PublicInstanceProxyHandlers: ProxyHandler<any> = {
     return true
   },
 
+  /**
+   * 检查缓存和各成员分区是否声明该键，不执行 computed getter；OTHER 值为 0，不会让曾读取的缺失键误报存在。CSS Modules 与全局属性也参与。
+   */
   has(
     {
       _: { data, setupState, accessCache, ctx, appContext, props, type },
@@ -609,6 +718,9 @@ export const PublicInstanceProxyHandlers: ProxyHandler<any> = {
     )
   },
 
+  /**
+   * 新 getter 使旧来源缓存失效，值描述符先按 set 分派写入状态，再由 Reflect 写入 ctx 描述符；支持测试 spy 和用户重定义代理字段。
+   */
   defineProperty(
     target: ComponentRenderContext,
     key: string,
@@ -625,6 +737,9 @@ export const PublicInstanceProxyHandlers: ProxyHandler<any> = {
 }
 
 if (__DEV__ && !__TEST__) {
+  /**
+   * 开发且非测试构建枚举公开实例时警告不要依赖此键集合，再返回 ctx 自有键；生产 ctx 不提供相同调试枚举内容。
+   */
   PublicInstanceProxyHandlers.ownKeys = (target: ComponentRenderContext) => {
     warn(
       `Avoid app logic that relies on enumerating keys on a component instance. ` +
@@ -640,6 +755,9 @@ if (__DEV__ && !__TEST__) {
  */
 export const RuntimeCompiledPublicInstanceProxyHandlers: ProxyHandler<any> =
   /*@__PURE__*/ extend({}, PublicInstanceProxyHandlers, {
+    /**
+     * with 模板读取 Symbol.unscopables 时返回 undefined，其他键委托普通公开代理，保留正常的状态来源与诊断。
+     */
     get(target: ComponentRenderContext, key: string) {
       // `with` 会读取 Symbol.unscopables，直接返回避免进入通用查找与警告。
       if ((key as any) === Symbol.unscopables) {
@@ -647,6 +765,9 @@ export const RuntimeCompiledPublicInstanceProxyHandlers: ProxyHandler<any> =
       }
       return PublicInstanceProxyHandlers.get!(target, key, target)
     },
+    /**
+     * with 模板对非下划线且不在全局白名单的名称返回 true，使标识符留在实例作用域；白名单全局变量返回 false 继续向外查找。
+     */
     has(_: ComponentRenderContext, key: string) {
       const has = key[0] !== '_' && !isGloballyAllowed(key)
       if (__DEV__ && !has && PublicInstanceProxyHandlers.has!(_, key)) {
@@ -671,6 +792,9 @@ export function createDevRenderContext(instance: ComponentInternalInstance) {
   Object.defineProperty(target, `_`, {
     configurable: true,
     enumerable: false,
+    /**
+     * ctx 的非枚举内部 _ getter 返回该组件实例，供所有公开代理 trap 定位运行时状态。
+     */
     get: () => instance,
   })
 
@@ -679,6 +803,9 @@ export function createDevRenderContext(instance: ComponentInternalInstance) {
     Object.defineProperty(target, key, {
       configurable: true,
       enumerable: false,
+      /**
+       * 开发 ctx 的公共属性 getter 通过 publicPropertiesMap 回读实例，方便控制台检查并保持实际公共值来源一致。
+       */
       get: () => publicPropertiesMap[key](instance),
       // setter 无需实现，但存在可避免严格模式在进入 proxy 前抛描述符写错误。
       set: NOOP,
@@ -701,6 +828,9 @@ export function exposePropsOnRenderContext(
       Object.defineProperty(ctx, key, {
         enumerable: true,
         configurable: true,
+        /**
+         * 开发 ctx 的 prop getter 回读 instance.props，父级更新同一 props 映射后调试视图仍显示最新值。
+         */
         get: () => instance.props[key],
         set: NOOP,
       })
@@ -727,6 +857,9 @@ export function exposeSetupStateOnRenderContext(
       Object.defineProperty(ctx, key, {
         enumerable: true,
         configurable: true,
+        /**
+         * 开发 ctx 的普通 setup getter 回读 proxyRefs 后的 setupState，调试视图与公开代理的解包结果一致。
+         */
         get: () => setupState[key],
         set: NOOP,
       })

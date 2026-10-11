@@ -53,9 +53,11 @@ export function installLegacyConfigWarnings(config: AppConfig): void {
     let val = (config as any)[key]
     Object.defineProperty(config, key, {
       enumerable: true,
+      /** 读取复制或用户写入的旧配置值；读取本身不发弃用警告。 */
       get() {
         return val
       },
+      /** 用户写入旧字段时警告并保存新值；全局配置复制阶段只保存，避免误报。 */
       set(newVal) {
         if (!isCopyingConfig) {
           warnDeprecation(legacyConfigOptions[key], null)
@@ -73,6 +75,7 @@ export function installLegacyConfigWarnings(config: AppConfig): void {
  */
 export function installLegacyOptionMergeStrats(config: AppConfig): void {
   config.optionMergeStrategies = new Proxy({} as any, {
+    /** 优先读取用户策略，未定义时仅在兼容开关允许后暴露 Vue 内部合并策略。 */
     get(target, key) {
       if (key in target) {
         return target[key]

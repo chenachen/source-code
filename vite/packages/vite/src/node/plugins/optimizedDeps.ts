@@ -19,7 +19,7 @@ import { ERR_OUTDATED_OPTIMIZED_DEP } from '../../shared/constants'
 const debug = createDebugger('vite:optimize-deps')
 
 /**
- * 优化产物的 resolve/load 边界：验证 browserHash，等待入口所属 processing 批次提交，再直接从
+ * 优化产物的 resolve/load 边界：验证 browserHash，等待入口所属 processing 批次结束，再校验版本并从
  * cache 读 code/map；把过期、处理失败和真实缺文件映射为不同错误码供 HTTP 中间件处理。
  */
 export function optimizedDepsPlugin(): Plugin {
@@ -45,7 +45,7 @@ export function optimizedDepsPlugin(): Plugin {
     // PluginContainer 不支持 `this.load({id})` 形式；Import Analysis/depInfo.processing 负责登记并
     // 等待尚未落盘的入口。
 
-    /** 读取优化依赖文件，校验浏览器哈希，并在过期时触发重新请求。 */
+    /** 等待优化批次并校验版本；过期时抛稳定错误码，由 transform 中间件返回 504。 */
     async load(id) {
       const environment = this.environment as DevEnvironment
       const depsOptimizer = environment.depsOptimizer
@@ -71,7 +71,7 @@ export function optimizedDepsPlugin(): Plugin {
             // discovered 入口的最终路径已知，但文件可能尚未打包/提交。
             await info.processing
           } catch {
-            // processing 异常表示预期 reload/重跑未正常完成，转成 504 终止旧请求。
+            // 等待 Promise 若拒绝则转成处理错误 504；自动优化器的构建失败实际会 resolve 批次后继续校验。
             throwProcessingError(id)
           }
           const newMetadata = depsOptimizer.metadata
@@ -86,8 +86,8 @@ export function optimizedDepsPlugin(): Plugin {
           }
         }
         debug?.(`load ${colors.cyan(file)}`)
-        // processing resolve 后文件已原子提交，直接读 cache 而不再经过其他 load hooks，避免插件
-        // 与换代目录的竞态；map 缺失不影响代码响应。
+        // 批次放行后直接读正式 cache；正常提交已有完整产物，失败/关闭则可能落入下方读文件错误。
+        // 目录换代由两次 rename 完成，读文件仍可能与后续换代交错；map 缺失不影响 code 响应。
         try {
           const [code, map] = await Promise.all([
             fsp.readFile(file, 'utf-8'),

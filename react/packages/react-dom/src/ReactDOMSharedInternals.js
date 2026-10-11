@@ -41,7 +41,7 @@ function requestFormReset(element: HTMLFormElement) {
   );
 }
 
-/** 同构加载阶段的无副作用 dispatcher；renderer 挂载后会替换各槽。 */
+/** 同构加载阶段的默认 dispatcher：资源与 flush 槽为空，表单重置抛错；客户端 renderer 安装时替换这些槽。 */
 const DefaultDispatcher: HostDispatcher = {
   f /* flushSyncWork */: noop,
   r /* requestFormReset */: requestFormReset,

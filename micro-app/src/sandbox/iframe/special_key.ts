@@ -3,7 +3,7 @@ export const UN_PROXY_INSTANCEOF_KEYS = [
   'Array'
 ]
 
-/** 必须直接取自基座 window 并绑定回宿主的 API。 */
+/** 直接取自基座 window 的 API；普通函数绑定宿主，构造器和非函数保持原引用。 */
 export const escape2RawWindowKeys = [
   'getComputedStyle',
   // 修复 DOMParser realm 冲突：https://github.com/jd-opensource/micro-app/issues/1292
@@ -14,7 +14,7 @@ export const escape2RawWindowKeys = [
   'IntersectionObserver',
 ]
 
-/** 按名称匹配需要逃逸到基座 window 的布局、观察器与视口相关属性。 */
+/** 匹配 iframe 自有名称且 parent 存在的布局等属性；patchWindowProperty 从当前基座取值或建立访问器桥接。 */
 export const escape2RawWindowRegExpKeys = [
   /animationFrame$/i,
   /mutationObserver$/i,
@@ -53,7 +53,7 @@ export const hijackInstanceOfWindowRegExpKeys = [
   /^DataTransfer/
 ]
 
-/** 优先从 ShadowRoot、当前实现暂从基座 document 读取的结构属性。 */
+/** 当前统一从基座 document 读取的结构属性；名称为后续 ShadowRoot 分流保留。 */
 export const proxy2RawDocOrShadowKeys = [
   'childElementCount',
   'children',
@@ -67,7 +67,7 @@ export const proxy2RawDocOrShadowKeys = [
   'styleSheets', // 仅适用于 document/ShadowRoot，不属于普通 Element。
 ]
 
-/** 优先绑定到 ShadowRoot、当前实现暂绑定到基座 document 的结构方法。 */
+/** 当前统一绑定基座 document 的结构方法；名称为后续 ShadowRoot 分流保留。 */
 export const proxy2RawDocOrShadowMethods = [
   'append',
   'contains',

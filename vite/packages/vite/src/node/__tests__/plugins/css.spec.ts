@@ -423,7 +423,7 @@ require("other-module");`
 
 /** 对外 preprocessCSS API 应复用 PostCSS/Lightning CSS 主链，并保留 external URL 中 `$` 字面量。 */
 describe('preprocessCSS', () => {
-  /** 场景：默认 PostCSS 管线处理含本地 url() 的 CSS；验证目标：返回格式化代码并保留可继续解析的相对 URL。 */
+  /** 默认 preprocessCSS 未传 URL resolver 时保留这份 CSS 原文及相对 URL。 */
   test('works', async () => {
     const resolvedConfig = await resolveConfig({ configFile: false }, 'serve')
     const result = await preprocessCSS(
@@ -575,7 +575,7 @@ describe('resolveLibCssFilename', () => {
  * sourcemap 区域标记。
  */
 describe('injectInlinedCSS', () => {
-  /** 构建指定 CSS 模块并返回入口 chunk 中生成的样式注入代码。 */
+  /** 对给定的输出代码调用真实 CSS 注入器，返回改写后的文本；这里没有执行模块构建。 */
   function getInlinedCSSInjectedCode(
     code: string,
     format: InternalModuleFormat,
@@ -584,7 +584,7 @@ describe('injectInlinedCSS', () => {
     injectInlinedCSS(
       s,
       {
-        /** 把构建错误重新抛出，确保辅助函数不会把 CSS 编译失败静默降级。 */
+        /** 抛出注入器报告的错误，供调用方断言或直接失败。 */
         error(e) {
           throw e
         },
@@ -884,7 +884,7 @@ exports.foo = foo;
     `)
   })
 
-  /** 场景：IIFE 源码包含多个 Rolldown helper 相关结构；验证目标：CSS helper 只插一次且位置仍在 strict 后。 */
+  /** IIFE 中含 async 函数与对象展开时，CSS helper 仍只插在 use strict 后一次。 */
   test('should inject multiple helpers', async () => {
     const result = getInlinedCSSInjectedCode(
       `(function() {

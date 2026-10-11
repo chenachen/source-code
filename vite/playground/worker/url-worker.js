@@ -8,5 +8,5 @@ self.postMessage(
   ].join(' '),
 )
 
-// for sourcemap
+// 为 source map 检查保留可定位的日志语句。
 console.log('url-worker.js')

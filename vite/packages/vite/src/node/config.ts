@@ -177,7 +177,7 @@ export interface ConfigEnv {
 /**
  * 应用的 HTML 处理模型。
  *
- * - `spa`：启用 SPA fallback；preview 中静态服务器使用 `single: true`。
+ * - `spa`：开发和预览服务器通过 HTML fallback 中间件回退到 `index.html`。
  * - `mpa`：保留 HTML 中间件，但不把未知路径回退到 `index.html`。
  * - `custom`：不注册 Vite HTML 中间件，供 SSR 框架等自行处理 HTML。
  */
@@ -288,7 +288,7 @@ export interface DevEnvironmentOptions {
 
   /**
    * 是否把模块转换成 Module Runner 可执行格式。
-   * client 默认 `false`，非 client 环境默认 `true`；也是已移除
+   * client consumer 默认 `false`，server consumer 默认 `true`；也是已移除
    * `experimental.skipSsrTransform` 配置的替代项。
    */
   moduleRunnerTransform?: boolean
@@ -366,7 +366,8 @@ export interface SharedEnvironmentOptions {
   consumer?: 'client' | 'server'
   /**
    * 是否保留源码中的 `process.env`，交给运行时求值。
-   * 关闭时会静态替换为空对象，避免浏览器代码意外依赖 Node.js 全局变量。
+   * client consumer 默认关闭，server consumer 默认开启；旧 `ssr.target: 'webworker'`
+   * 默认关闭。关闭时启用 define 插件的默认 process.env 替换，库构建仍不提供这组默认值。
    */
   keepProcessEnv?: boolean
   /** 当前环境的依赖发现与预构建配置。 */
@@ -437,7 +438,7 @@ export type DefaultEnvironmentOptions = Omit<
 /** `vite.config.*` 可声明的顶层用户配置。 */
 export interface UserConfig extends DefaultEnvironmentOptions {
   /**
-   * 项目根目录。可以是绝对路径，也可以是相对于配置文件位置的路径。
+   * 项目根目录。可以是绝对路径，也可以是相对于当前工作目录的路径。
    * @default process.cwd()
    */
   root?: string
@@ -475,7 +476,8 @@ export interface UserConfig extends DefaultEnvironmentOptions {
   /** JSON 模块加载选项。 */
   json?: JsonOptions
   /**
-   * 传给 esbuild 的转换选项；设为 `false` 可禁用。
+   * 旧 esbuild 转换选项；兼容层会尽量映射到 Oxc。`false` 仅关闭旧兼容路径，
+   * 要关闭默认源码转换还需设置 `oxc: false`。
    *
    * @deprecated 请改用 `oxc`。
    */
@@ -506,7 +508,7 @@ export interface UserConfig extends DefaultEnvironmentOptions {
    */
   experimental?: ExperimentalOptions
   /**
-   * 提前启用未来版本行为，或设为 `'warn'` 只报告将受影响的用法。
+   * 报告未来将移除的兼容 API 用法；设为 `'warn'` 可同时启用全部迁移告警。
    */
   future?: FutureOptions | 'warn'
   /**
@@ -538,7 +540,7 @@ export interface UserConfig extends DefaultEnvironmentOptions {
    * @default 'VITE_'
    */
   envPrefix?: string | string[]
-  /** Web Worker 构建选项。每个 Worker 会执行独立的 Rolldown 构建。 */
+  /** Worker 打包选项；bundled 模式下每个入口单独子构建，普通开发模式通过 URL 加载。 */
   worker?: {
     /**
      * Worker 产物格式。
@@ -569,8 +571,8 @@ export interface UserConfig extends DefaultEnvironmentOptions {
   /** 顶层 client 环境的依赖优化兼容配置。 */
   optimizeDeps?: DepOptimizationOptions
   /**
-   * SSR 专属配置。
-   * external/noExternal 尚未抽象为通用 Environment 能力，所以暂时保留独立入口。
+   * SSR 兼容配置。解析时把 resolve、external/noExternal 和 optimizeDeps 合入
+   * `environments.ssr`，再将最终环境值回填到此入口，供旧插件读取。
    */
   ssr?: SSROptions
   /** 按名称声明 client、ssr 或框架自定义 Environment 的覆盖配置。 */
@@ -755,8 +757,8 @@ export interface InlineConfig extends UserConfig {
 /**
  * `resolveConfig()` 的最终结果，也是开发服务器、构建器和插件读取的统一配置快照。
  *
- * 顶层字段只读；用户输入中的可选值已经过路径规范化、默认值填充、插件钩子处理及
- * Environment 展开。不要把它与仍可继续合并的 {@link UserConfig} 混用。
+ * 顶层字段在类型上只读，运行时对象未被冻结，部分嵌套对象仍由生态插件修改。
+ * 用户输入已经过路径规范化、默认值填充、插件钩子处理及 Environment 展开。
  */
 export interface ResolvedConfig extends Readonly<
   Omit<
@@ -780,7 +782,7 @@ export interface ResolvedConfig extends Readonly<
     configFile: string | undefined
     /** 配置文件打包/执行期间发现的依赖，用于监听配置依赖变化并触发重启。 */
     configFileDependencies: string[]
-    /** CLI 或 Node API 最初传入、优先级最高的内联配置。 */
+    /** CLI 或 Node API 最初传入的配置；文件合并时优先，后续插件钩子仍可覆盖。 */
     inlineConfig: InlineConfig
     /** 规范化后的绝对项目根目录。 */
     root: string
@@ -792,7 +794,7 @@ export interface ResolvedConfig extends Readonly<
      */
     decodedBase: string
     /**
-     * 用户输入的原始 base，保留空字符串和相对路径等语义。
+     * 经过相对路径与 URL 规则解析、尚未补末尾斜杠的 base；不是用户原始输入。
      * @internal
      */
     rawBase: string
@@ -839,11 +841,11 @@ export interface ResolvedConfig extends Readonly<
     oxc: OxcOptions | false
     /** 已解析的开发服务器配置。 */
     server: ResolvedServerOptions
-    /** 顶层 client 开发环境配置。 */
+    /** 顶层开发兼容配置；环境工厂和 consumer 默认值由各 Environment 另行解析。 */
     dev: ResolvedDevEnvironmentOptions
     /** 已解析的多环境 Builder 配置。 @experimental */
     builder: ResolvedBuilderOptions | undefined
-    /** 顶层 client 构建配置。 */
+    /** 顶层构建兼容配置；legacyBuilder 会在构建前镜像当前 Environment 的 build 值。 */
     build: ResolvedBuildOptions
     /** DevTools 的标准化配置及启用状态。 */
     devtools: ResolvedDevToolsConfig
@@ -860,7 +862,7 @@ export interface ResolvedConfig extends Readonly<
     /**
      * 创建供依赖优化器、CSS `@import` 等特殊流程使用的内部 resolver。
      *
-     * 此 API 只支持 client 和 ssr 环境，`aliasOnly` 参数也已失效。插件应改为基于
+     * 此 API 只支持 client 和 ssr 环境；`aliasOnly` 为 true 时仅执行 alias 解析。插件应基于
      * `environment.config` 调用 `createIdResolver()`，避免解析时丢失当前环境信息。
      *
      * @deprecated 请改用 Vite 导出的 `createIdResolver`。
@@ -869,7 +871,7 @@ export interface ResolvedConfig extends Readonly<
     /** 顶层 client 环境的依赖优化兼容配置。 */
     optimizeDeps: DepOptimizationOptions
     /**
-     * package.json 解析缓存，由所有 resolver 和 Environment 共用。
+     * 顶层 resolver 与其 Environment 共用的 package.json 缓存；优化器可另建独立缓存。
      * @internal
      */
     packageCache: PackageCache
@@ -893,8 +895,7 @@ export interface ResolvedConfig extends Readonly<
     /**
      * 浏览器连接 HMR WebSocket 时使用的随机 token。
      *
-     * 应优先使用 `import.meta.hot`，不要自行连接内部 WebSocket 协议；后者缺少稳定性
-     * 承诺，也容易绕过 Vite 提供的安全与兼容处理。
+     * 客户端注入此值，服务器在 WebSocket 握手时校验连接来源。
      *
      * @deprecated 仅供 Vite 内部客户端注入。
      */
@@ -996,7 +997,7 @@ const configDefaults = Object.freeze({
     alias: [],
   },
 
-  // root：根据配置文件位置或 process.cwd() 推断。
+  // root：相对 process.cwd() 解析；缺省时直接使用 process.cwd()。
   base: '/',
   publicDir: 'public',
   // cacheDir：根据最近 package 目录推断。
@@ -1045,6 +1046,7 @@ const configDefaults = Object.freeze({
   envPrefix: 'VITE_',
   worker: {
     format: 'iife',
+    /** 默认不为 Worker 子构建追加用户插件；每次调用返回新的空数组。 */
     plugins: (): never[] => [],
     // rolldownOptions：默认空对象，在 Worker 配置阶段合并。
   },
@@ -1122,8 +1124,9 @@ function unescapeGlobCharacters(value: string): string {
 /**
  * 补齐单个 Environment 的开发阶段默认值。
  *
- * 默认值依赖环境名称和 consumer：client 使用浏览器 DevEnvironment、允许重启恢复并
- * 预转换依赖；server consumer 使用 RunnableDevEnvironment 和 Module Runner 转换。
+ * 环境名称决定默认工厂：名为 client 的环境使用浏览器 DevEnvironment，其他名称使用
+ * RunnableDevEnvironment。consumer 决定预转换、重启恢复和 Module Runner 转换默认值；
+ * 自定义 client consumer 因而可使用不同工厂并保留浏览器侧转换策略。
  *
  * @param dev - 用户的环境级开发配置。
  * @param environmentName - 当前环境名称；顶层兼容解析时可能为空。
@@ -1154,6 +1157,7 @@ export function resolveDevEnvironmentOptions(
   )
   return {
     ...resolved,
+    /** 将 false 规范化为始终不忽略的判定函数，其他配置保留用户函数或 node_modules 默认判定。 */
     sourcemapIgnoreList:
       resolved.sourcemapIgnoreList === false
         ? () => false
@@ -1281,7 +1285,7 @@ export function getDefaultEnvironmentOptions(
 
 /** 已解析插件列表提供的高频钩子排序查询工具。 */
 export interface PluginHookUtils {
-  /** 获取声明了指定钩子的插件，并按 enforce/order 排序。 */
+  /** 在顶层插件既定顺序上，按当前钩子的 order 分组并筛选声明了该钩子的插件。 */
   getSortedPlugins: <K extends keyof Plugin>(
     hookName: K,
   ) => PluginWithRequiredHook<K>[]
@@ -1296,7 +1300,7 @@ export interface PluginHookUtils {
  *
  * @param id - 要解析的模块 ID。
  * @param importer - 发起导入的模块 ID。
- * @param aliasOnly - 历史参数，当前不再生效。
+ * @param aliasOnly - 为 true 时只执行 alias，不进入普通模块解析。
  * @param ssr - 是否使用 SSR 环境解析。
  * @returns 解析成功的 ID，无法解析时为 `undefined`。
  */
@@ -1373,7 +1377,7 @@ function resolveEnvironmentResolveOptions(
   logger: Logger,
   /** 解析顶层兼容 resolve 时为 undefined。 */
   consumer: 'client' | 'server' | undefined,
-  // 兼容旧 `ssr.target: 'webworker'`：它使用浏览器字段，但不具备 Node 内置模块。
+  // 兼容旧 `ssr.target: 'webworker'`：使用浏览器入口条件；仅 noExternal=true 时默认清空 builtins。
   isSsrTargetWebworkerEnvironment?: boolean,
 ): ResolvedAllResolveOptions {
   const resolvedResolve: ResolvedAllResolveOptions = mergeWithDefaults(
@@ -1667,7 +1671,7 @@ async function setOptimizeDepsPluginNames(resolvedConfig: ResolvedConfig) {
 }
 
 /**
- * 把仍在 `optimizeDeps.esbuildOptions.plugins` 中的旧 esbuild 插件转换并追加到
+ * 把顶层 client `optimizeDeps.esbuildOptions.plugins` 中的旧 esbuild 插件转换并追加到
  * Rolldown 插件列表。转换器只提供兼容桥，不保证所有 esbuild 插件语义完全等价。
  */
 function applyDepOptimizationOptionCompat(resolvedConfig: ResolvedConfig) {
@@ -1706,8 +1710,8 @@ export function isResolvedConfig(
  *
  * 1. 建立旧字段兼容代理，确定初始 mode/NODE_ENV，并加载配置文件；
  * 2. 过滤、排序插件，依次运行 `config` 钩子；
- * 3. 建立 client/ssr Environment，运行 `configEnvironment` 并解析环境级配置；
- * 4. 加载 `.env`，解析 root/base/cacheDir/server/build 等派生配置；
+ * 3. 规范化 root，继承 Environment 配置，运行 `configEnvironment` 并解析环境选项；
+ * 4. 加载 `.env`，解析 base/cacheDir/server/build 等派生配置；
  * 5. 组装 ResolvedConfig，创建 Worker 工厂和 Vite 内部插件；
  * 6. 运行 `configResolved`，回填环境插件、兼容字段并执行最终校验。
  *
@@ -1715,7 +1719,7 @@ export function isResolvedConfig(
  * 先继承顶层默认值，再由 `environments[name]` 覆盖。函数会设置 `process.env.NODE_ENV`，
  * 因而并非纯函数。
  *
- * @param inlineConfig - CLI 或 Node API 传入的最高优先级配置。
+ * @param inlineConfig - CLI 或 Node API 传入的配置；加载文件后先用它覆盖文件值。
  * @param command - 当前是开发/预览服务器流程还是构建流程。
  * @param defaultMode - 命令未显式提供 mode 时的默认值。
  * @param defaultNodeEnv - 宿主进程尚未设置 NODE_ENV 时的临时默认值。
@@ -1817,14 +1821,14 @@ export async function resolveConfig(
   const userPlugins = [...prePlugins, ...normalPlugins, ...postPlugins]
   config = await runConfigHook(config, userPlugins, configEnv)
 
-  // 确保默认 client/ssr Environment 存在，并固定顺序为 { client, ssr, ...custom }。
+  // 补齐所需的默认 Environment；缺失项前置插入，已有环境的声明顺序保持不变。
   config.environments ??= {}
   if (
     !config.environments.ssr &&
     (!isBuild || config.ssr || config.build?.ssr)
   ) {
-    // 开发时始终准备 ssr 环境；只有调用 ssrLoadModule 才初始化优化器，因此没有常驻成本。
-    // 构建时仅当旧顶层 SSR 选项或 environments.ssr 明确启用它时，才创建 SSR 构建环境。
+    // 开发时默认准备 ssr 配置；优化器的扫描/预构建由环境的实际使用触发。
+    // 构建时只有旧顶层 ssr/build.ssr 启用 SSR 才自动补此项；显式 environments.ssr 已在上游保留。
     config.environments = { ssr: {}, ...config.environments }
   }
   if (!config.environments.client) {
@@ -2096,6 +2100,7 @@ export async function resolveConfig(
   }
   cacheDir = normalizePath(cacheDir)
 
+  /** 匹配用户额外声明的资源类型；未配置或空数组时关闭这部分匹配，内置资源规则另行判断。 */
   const assetsFilter =
     config.assetsInclude &&
     (!Array.isArray(config.assetsInclude) || config.assetsInclude.length)
@@ -2149,7 +2154,7 @@ export async function resolveConfig(
   }
 
   /**
-   * 为一次 Worker 子构建创建独立插件实例和 ResolvedConfig。
+   * 为一次 Worker 子构建创建独立插件实例与专属的顶层 ResolvedConfig 对象。
    *
    * Worker 构建不能复用主构建插件实例：插件可能缓存上下文，也可能只适合最终产物后处理；
    * 复用会让额外的嵌套 Rolldown 调用污染插件状态。因此这里重新执行插件工厂、config 与
@@ -2161,12 +2166,13 @@ export async function resolveConfig(
       await asyncFlatten(createUserWorkerPlugins?.() || [])
     ).filter(filterPlugin)
 
-    // Worker 从主配置的浅副本起步，再应用 Worker 专属插件配置。
+    // mergeConfig({}, config) 创建新顶层对象；未发生递归合并的嵌套值仍可能共享引用。
+    // 然后执行 Worker 专属插件的 config 钩子。
     let workerConfig = mergeConfig({}, config)
     const [workerPrePlugins, workerNormalPlugins, workerPostPlugins] =
       sortUserPlugins(rawWorkerUserPlugins)
 
-    // Worker 插件也拥有完整 config 生命周期。
+    // Worker 插件同样按顺序运行 config 钩子；此处不重跑主配置的整套环境/默认值解析。
     const workerUserPlugins = [
       ...workerPrePlugins,
       ...workerNormalPlugins,
@@ -2178,6 +2184,7 @@ export async function resolveConfig(
       configEnv,
     )
 
+    // 主 resolved 覆盖已解析字段；Worker 的专属标志最后写入。未复制的嵌套配置沿用主对象。
     const workerResolved: ResolvedConfig = {
       ...workerConfig,
       ...resolved,
@@ -2442,7 +2449,8 @@ export async function resolveConfig(
   // TODO：弃用 config.getSortedPlugins 和 config.getSortedPluginHooks。
   Object.assign(resolved, createPluginHookUtils(resolved.plugins))
 
-  // configResolved 可并行执行；此时顶层内部插件列表已经最终确定。
+  // 顶层内部插件已装配完成。configResolved 统一并发启动，不串行合并返回值；
+  // 钩子仍可修改共享配置，所以 Environment 插件解析需等全部钩子完成。
   await Promise.all(
     resolved
       .getSortedPluginHooks('configResolved')
@@ -2641,8 +2649,8 @@ export function sortUserPlugins(
  * - `bundle`：默认路径。先用 Rolldown 打包本地配置依赖，再交给 Node 执行；TS/CJS/ESM
  *   兼容性最好，并能指出将来切换 native loader 时的不兼容语法（#22850）。
  * - `runner`：通过 Vite Module Runner 执行并跟踪依赖，适合实验性运行时（#18637）。
- * - `native`：直接交给当前运行时导入，不转换 TypeScript/模块语义；启动开销最低，依赖
- *   跟踪由 freshImport 提供（#19178、#22602）。
+ * - `native`：直接交给当前运行时导入，不经 Vite 转换 TypeScript/模块语义；跳过配置
+ *   bundle。freshImport 可用时跟踪依赖，否则只给入口添加时间戳并返回空依赖列表。
  *
  * 函数式默认导出会收到 {@link ConfigEnv}，且允许异步返回。最终结果必须是对象。
  *
@@ -2738,9 +2746,7 @@ export async function loadConfigFromFile(
  * Vite Task 提供 freshImport 时可同时绕过缓存并跟踪传递依赖；普通运行时退化为时间戳
  * query 动态导入，只能报告空依赖列表。
  */
-async function nativeImportConfigFile(
-  resolvedPath: string,
-): Promise<{
+async function nativeImportConfigFile(resolvedPath: string): Promise<{
   /** 配置模块的默认导出值。 */
   configExport: any
   /** freshImport 记录的传递依赖；普通 import 时为空。 */
@@ -2757,8 +2763,7 @@ async function nativeImportConfigFile(
           /** 配置模块默认导出。 */
           default: any
         }
-      )
-        .default,
+      ).default,
       dependencies,
     }
   }
@@ -2834,7 +2839,7 @@ async function bundleConfigFile(
   code: string
   /** bundle 中纳入监听的本地模块绝对路径。 */
   dependencies: string[]
-  /** 切换 native loader 时会失败的已确认语法位置。 */
+  /** 根据模块格式、全局引用与路径解析结果分类得到的 native 迁移提示。 */
   nativeIncompatibilities: NativeConfigIncompatibility[]
 }> {
   let importMetaResolverRegistered = false
@@ -2869,7 +2874,7 @@ async function bundleConfigFile(
     },
     // 关闭 tree-shaking，确保无副作用模块仍出现在 moduleIds 中并进入依赖监听列表。
     treeshake: false,
-    // 配置加载不读取项目 tsconfig：否则路径/语法选项会让三种 loader 行为不一致。
+    // 配置 bundle 不读取项目 tsconfig，不应用其 paths 或项目源码转换设置。
     tsconfig: false,
     plugins: [
       !process.env.VITE_CONFIG_NATIVE_IGNORE_WARNING &&
@@ -3106,6 +3111,7 @@ async function loadConfigFromBundledFile(
     const realFileName = await promisifiedRealpath(fileName)
     const loaderExt = extension in _require.extensions ? extension : '.js'
     const defaultLoader = _require.extensions[loaderExt]!
+    /** 仅为真实配置路径编译打包代码，其他同扩展名文件仍交给原 loader；成功 require 后恢复原 loader。 */
     _require.extensions[loaderExt] = (module: NodeModule, filename: string) => {
       if (filename === realFileName) {
         ;(module as NodeModuleWithCompile)._compile(bundledCode, filename)
@@ -3173,8 +3179,8 @@ async function runConfigHook(
 
 /**
  * 对解析开始时已经存在的每个 Environment 串行运行插件 `configEnvironment` 钩子。
- * 每个钩子的返回值只合并到当前环境；环境对象不会跨名称共享，防止一个环境的原地修改
- * 泄漏到其他环境。
+ * 每个钩子的返回值立即合入当前环境，后一插件能读取它。非 client 环境的顶层继承值
+ * 已在调用前分别深克隆；这里继续使用对应环境对象，保留钩子的原地修改。
  */
 async function runConfigEnvironmentHook(
   environments: Record<string, EnvironmentOptions>,

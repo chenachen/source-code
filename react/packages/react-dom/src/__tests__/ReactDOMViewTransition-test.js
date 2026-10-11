@@ -46,7 +46,7 @@ describe('ReactDOMViewTransition', () => {
     document.body.removeChild(container);
   });
 
-  /** `resolveText`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 按 text 查缓存；未读过的项直接预置 resolved，pending 项改写状态/值并同步广播已有 pings，其他终态不变。 */
   function resolveText(text) {
     const record = textCache.get(text);
     if (record === undefined) {
@@ -63,7 +63,7 @@ describe('ReactDOMViewTransition', () => {
     }
   }
 
-  /** `readText`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 读取 text 记录：resolved 返回值，pending 抛 wakeable，rejected 抛错误；未命中时创建 pending 记录后抛出，供 Suspense 控制恢复时机。 */
   function readText(text) {
     const record = textCache.get(text);
     if (record !== undefined) {
@@ -80,7 +80,7 @@ describe('ReactDOMViewTransition', () => {
       Scheduler.log(`Suspend! [${text}]`);
       const thenable = {
         pings: [],
-        /** `readText.then`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /** pending 时收集传入的 resolve 回调；已结束时用微任务通知缓存值，让晚订阅者也获得可重试信号。 */
         then(resolve) {
           if (newRecord.status === 'pending') {
             thenable.pings.push(resolve);
@@ -100,30 +100,23 @@ describe('ReactDOMViewTransition', () => {
     }
   }
 
-  /** `Text`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 记录 text 到 Scheduler 并直接返回字符串，作为同步 skeleton/内容的提交观测 fixture。 */
   function Text({text}) {
     Scheduler.log(text);
     return text;
   }
 
-  /** `AsyncText`：封装当前用例复用的操作、回调或断言步骤。 */
+  /** 先 readText 检查资源，未就绪时抛出；就绪后记录并返回 text，供 Card 与 Suspense reveal 断言。 */
   function AsyncText({text}) {
     readText(text);
     Scheduler.log(text);
     return text;
   }
 
+  /** SuspenseList(revealOrder=together) 中三个 ViewTransition 各包一张未就绪 Card；先断言挂起与 Skeleton 的两轮日志，再同时 resolve 三项并断言 Card 日志及容器包含三张卡，验证组合树恢复时共同揭示内容。 */
   // @gate enableSuspenseList
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「handles ViewTransition wrapping Suspense inside SuspenseList」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言连接 ReactDOM 公开入口、ReactDOMRoot 根生命周期及 DOM 提交结果。
-   */
   it('handles ViewTransition wrapping Suspense inside SuspenseList', async () => {
-    /** `Card`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 接收卡片 id，返回 div 包裹 Card id 对应的 AsyncText，供三卡共同揭示场景。 */
     function Card({id}) {
       return (
         <div>
@@ -132,12 +125,12 @@ describe('ReactDOMViewTransition', () => {
       );
     }
 
-    /** `CardSkeleton`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 接收 skeleton 编号 n，返回同步 Text，区分三条 Suspense fallback 的日志。 */
     function CardSkeleton({n}) {
       return <Text text={`Skeleton ${n}`} />;
     }
 
-    /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 返回 together 的 SuspenseList，三张 Card 分别由 ViewTransition/Suspense 包裹，构造组级恢复 fixture。 */
     function App() {
       return (
         <div>
@@ -211,10 +204,11 @@ describe('ReactDOMViewTransition', () => {
       // 模拟 CSS.escape 如果它不存在。
       if (typeof CSS === 'undefined') {
         global.CSS = {
-          /** 测试环境使用恒等转义，避免缺失 CSS.escape 阻断选择器路径。 */
+          /** 接收 str 并原样返回；CSS 全局缺失时提供选择器路径所需的 escape 接口，此替身不执行真实 CSS 转义。 */
           escape: str => str
         };
       } else if (!CSS.escape) {
+        /** CSS.escape 缺失时安装恒等字符串转发，满足选择器代码所需接口；此替身不执行真实 CSS 转义。 */
         CSS.escape = str => str;
       }
 
@@ -227,19 +221,23 @@ describe('ReactDOMViewTransition', () => {
       }
 
       // 模拟 Element.prototype 的 getAnimations 方法（Web Animations API)
+      /** 返回空 Animation 数组，固定无已有动画的测试输入，避免依赖 jsdom 缺失的 Web Animations API。 */
       Element.prototype.getAnimations = function () {
         return [];
       };
 
       // 模拟动画在 Element.prototype (Web Animations API) 上
+      /** 返回带空 cancel 和已兑现 finished 的 Animation 替身，不创建真实动画，供过渡完成协议继续执行。 */
       Element.prototype.animate = function () {
         return {
           /** 模拟取消当前 Web Animation。 */
+          /** 取消方法为空操作；Animation 替身没有真实播放状态或待取消的资源。 */
           cancel() {}, finished: Promise.resolve()
         };
       };
 
       // 模拟 getBoundingClientRect 方法以返回基于内容长度的尺寸，以便在文本更改时检测更新。
+      /** 以 this.textContent 长度计算宽度 length×10+10、固定高度20，并返回 DOMRect；使文本长短变化可触发尺寸差异路径。 */
       Element.prototype.getBoundingClientRect = function () {
         const text = this.textContent || '';
         const width = text.length * 10 + 10;
@@ -248,12 +246,13 @@ describe('ReactDOMViewTransition', () => {
       };
 
       // 模拟 document.startViewTransition
+      /** 接收含 update 的选项，立即同步执行 update，再返回已兑现 ready/finished 与空 skipTransition，模拟平台过渡协议而不执行浏览器动画。 */
       document.startViewTransition = function ({update}) {
         update();
         return {
           ready: Promise.resolve(),
           finished: Promise.resolve(),
-          /** `skipTransition`：实现测试夹具的生命周期、渲染或交互步骤。 */
+          /** 空操作的平台 skipTransition 替身；此 fixture 的 Promise 已兑现，无真实过渡可取消。 */
           skipTransition() {},
         };
       };
@@ -270,14 +269,14 @@ describe('ReactDOMViewTransition', () => {
       }
     });
 
+    /** 在同步 mock 的 startViewTransition 协议下先渲染 show=false，断言无 enter/平台调用；startTransition 中切为 true 后平台被调用且 onEnter 一次，验证新边界入场回调。 */
     // @gate enableViewTransition
-    /** 测试场景：验证「fires onEnter when a ViewTransition mounts」描述的渲染、交互或错误处理结果。 */
     it('fires onEnter when a ViewTransition mounts', async () => {
       const onEnter = jest.fn();
       const startViewTransitionSpy = jest.fn(document.startViewTransition);
       document.startViewTransition = startViewTransitionSpy;
 
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** show=false 返回 null；true 返回带 onEnter 的 Hello 边界，供首次过渡入场观测。 */
       function App({show}) {
         if (!show) {
           return null;
@@ -298,7 +297,7 @@ describe('ReactDOMViewTransition', () => {
       expect(onEnter).not.toHaveBeenCalled();
       expect(startViewTransitionSpy).not.toHaveBeenCalled();
 
-      // 挂载 ViewTransition 在 startTransition 之前
+      // 在 startTransition 回调中挂载 ViewTransition。
       await act(() => {
         startTransition(() => {
           root.render(<App show={true} />);
@@ -309,12 +308,12 @@ describe('ReactDOMViewTransition', () => {
       expect(onEnter).toHaveBeenCalledTimes(1);
     });
 
+    /** 先在 startTransition 中挂载带 onExit 的边界，确认尚未 exit；再把 show 改为 false，断言 onExit 一次，验证边界删除的退出回调。 */
     // @gate enableViewTransition
-    /** 测试场景：验证「fires onExit when a ViewTransition unmounts」描述的渲染、交互或错误处理结果。 */
     it('fires onExit when a ViewTransition unmounts', async () => {
       const onExit = jest.fn();
 
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** show 控制带 onExit 的 Goodbye 边界存在与否，供 Transition 删除场景。 */
       function App({show}) {
         if (!show) {
           return null;
@@ -336,7 +335,7 @@ describe('ReactDOMViewTransition', () => {
       });
       expect(onExit).not.toHaveBeenCalled();
 
-      // 卸载启动转换内部的 ViewTransition
+      // 在 startTransition 回调中卸载 ViewTransition。
       await act(() => {
         startTransition(() => {
           root.render(<App show={false} />);
@@ -346,13 +345,13 @@ describe('ReactDOMViewTransition', () => {
       expect(onExit).toHaveBeenCalledTimes(1);
     });
 
+    /** 先 Transition 提交 Short，再改为更长文本使尺寸 mock 变化；onUpdate 一次、清空后的 onEnter 不调用，验证边界内容更新与初次入场的回调分流。 */
     // @gate enableViewTransition
-    /** 测试场景：验证「fires onUpdate when content inside a ViewTransition changes」描述的渲染、交互或错误处理结果。 */
     it('fires onUpdate when content inside a ViewTransition changes', async () => {
       const onUpdate = jest.fn();
       const onEnter = jest.fn();
 
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** text 改变 div 内容并通过尺寸替身改变测量值，边界同时记录 enter/update 回调。 */
       function App({text}) {
         return (
           <ViewTransition onUpdate={onUpdate} onEnter={onEnter}>
@@ -386,15 +385,15 @@ describe('ReactDOMViewTransition', () => {
       expect(onEnter).not.toHaveBeenCalled();
     });
 
+    /** 先显示 key=a/name=hero，再 Transition 换为 key=b 的同名边界；清掉初始记录后只断言退出侧 onShareA 一次、onExitA/onEnterB 不调用，验证命名配对优先 share；未断言 onShareB 次数。 */
     // @gate enableViewTransition
-    /** 测试场景：验证「fires onShare for paired named transitions instead of onEnter/onExit」描述的渲染、交互或错误处理结果。 */
     it('fires onShare for paired named transitions instead of onEnter/onExit', async () => {
       const onShareA = jest.fn();
       const onExitA = jest.fn();
       const onShareB = jest.fn();
       const onEnterB = jest.fn();
 
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** page=a/b 返回不同 key 的同名 hero 边界，分别布置退出与进入回调，供命名配对优先级断言。 */
       function App({page}) {
         if (page === 'a') {
           return (
@@ -433,7 +432,7 @@ describe('ReactDOMViewTransition', () => {
       onShareB.mockClear();
       onEnterB.mockClear();
 
-      // 从页 A 转到页 B 在 start转换
+      // 在 startTransition 回调中从页面 A 切到页面 B。
       await act(() => {
         startTransition(() => {
           root.render(<App page="b" />);
@@ -448,12 +447,12 @@ describe('ReactDOMViewTransition', () => {
       expect(onEnterB).not.toHaveBeenCalled();
     });
 
+    /** ViewTransition 包住首次 pending 的 Loaded Suspense；resolve 后日志与容器为 Loaded，断言 fallback 前后合计 onEnter 至少一次，验证恢复内容正常显示；合计断言不单独证明 reveal 又触发一次 enter。 */
     // @gate enableViewTransition
-    /** 测试场景：验证「fires onEnter when Suspense content resolves」描述的渲染、交互或错误处理结果。 */
     it('fires onEnter when Suspense content resolves', async () => {
       const onEnter = jest.fn();
 
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 固定的 ViewTransition 包裹 Loaded 的异步 Suspense 与 Loading fallback，资源状态决定可见内容。 */
       function App() {
         return (
           <ViewTransition onEnter={onEnter}>
@@ -476,7 +475,7 @@ describe('ReactDOMViewTransition', () => {
       });
 
       assertLog(['Suspend! [Loaded]', 'Suspend! [Loaded]']);
-      // fallback 出现时会触发 onEnter。
+      // 保存 fallback 阶段的实际 enter 次数，最终断言将它与 reveal 阶段次数合计。
       const enterCallsAfterFallback = onEnter.mock.calls.length;
       onEnter.mockClear();
 
@@ -487,21 +486,21 @@ describe('ReactDOMViewTransition', () => {
       assertLog(['Loaded']);
 
       expect(container.textContent).toBe('Loaded');
-      // 已解析内容的显示应触发 enter（也可能已在初始 fallback 挂载时触发）。
+      // 仅要求 fallback/reveal 两阶段合计至少一次 enter，不单独要求 reveal 新增调用。
       expect(
         onEnter.mock.calls.length + enterCallsAfterFallback,
       ).toBeGreaterThanOrEqual(1);
     });
 
+    /** 两层边界随 show 整组 false→true→false；分别断言外层 enter/exit 一次、内层自身 enter/exit 不调用，验证整组入场/退场由外层边界负责。 */
     // @gate enableViewTransition
-    /** 测试场景：验证「does not fire onExit/onEnter on nested ViewTransition when the subtree is removed as one unit」描述的渲染、交互或错误处理结果。 */
     it('does not fire onExit/onEnter on nested ViewTransition when the subtree is removed as one unit', async () => {
       const onParentExit = jest.fn();
       const onParentEnter = jest.fn();
       const onNestedExit = jest.fn();
       const onNestedEnter = jest.fn();
 
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** show 控制整个父/嵌套 ViewTransition 树，父子各注册自身 enter/exit，供整组移动的回调归属断言。 */
       function App({show}) {
         if (!show) {
           return null;
@@ -558,14 +557,14 @@ describe('ReactDOMViewTransition', () => {
       expect(onNestedExit).not.toHaveBeenCalled();
     });
 
+    /** 启用 parentEnterExit 后整组删除两层边界；断言外层 onExit 与内层 onParentExit 各一次、内层 onExit 不调用，验证祖先退出通知与自身退出分开。 */
     // @gate enableViewTransition && enableViewTransitionParentEnterExit
-    /** 测试场景：验证「fires onParentExit when ancestor ViewTransition exits」描述的渲染、交互或错误处理结果。 */
     it('fires onParentExit when ancestor ViewTransition exits', async () => {
       const onParentExit = jest.fn();
       const onNestedExit = jest.fn();
       const onParentExitNested = jest.fn();
 
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** show 控制带父 exit 类及内层自身 exit/parentExit 的树，供祖先退出回调分类。 */
       function App({show}) {
         if (!show) {
           return null;
@@ -608,14 +607,14 @@ describe('ReactDOMViewTransition', () => {
       expect(onParentExitNested).toHaveBeenCalledTimes(1);
     });
 
+    /** 启用 parentEnterExit 后从 null 整组挂载两层边界；外层 onEnter 与内层 onParentEnter 各一次、内层 onEnter 不调用，验证祖先入场回调。 */
     // @gate enableViewTransition && enableViewTransitionParentEnterExit
-    /** 测试场景：验证「fires onParentEnter when ancestor ViewTransition enters」描述的渲染、交互或错误处理结果。 */
     it('fires onParentEnter when ancestor ViewTransition enters', async () => {
       const onParentEnter = jest.fn();
       const onNestedEnter = jest.fn();
       const onParentEnterNested = jest.fn();
 
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** show 控制外层入场与内层自身 enter/parentEnter 的树，供祖先入场回调分类。 */
       function App({show}) {
         if (!show) {
           return null;
@@ -658,13 +657,13 @@ describe('ReactDOMViewTransition', () => {
       expect(onParentEnterNested).toHaveBeenCalledTimes(1);
     });
 
+    /** 退出树的深层分支中有未声明 parentExit 的中间边界，浅分支声明 parentExit；整体卸载后深回调不调用、浅回调一次，验证该中间边界截断 relay。 */
     // @gate enableViewTransition && enableViewTransitionParentEnterExit
-    /** 测试场景：验证「breaks parentExit chain when intermediate ViewTransition lacks parentExit」描述的渲染、交互或错误处理结果。 */
     it('breaks parentExit chain when intermediate ViewTransition lacks parentExit', async () => {
       const onParentExit1 = jest.fn();
       const onParentExit2 = jest.fn();
 
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 构造深层断链与浅层可 relay 的 parentExit 分支；show 删除整组，提供同一次退出的对照。 */
       function App({show}) {
         if (!show) {
           return null;
@@ -716,13 +715,13 @@ describe('ReactDOMViewTransition', () => {
       expect(onParentExit2).toHaveBeenCalledTimes(1);
     });
 
+    /** 中间边界 parentExit=none、同层另一分支可接收 parentExit；整体退出后深回调不调用、兄弟回调一次，验证 none 截断该分支的退出传递。 */
     // @gate enableViewTransition && enableViewTransitionParentEnterExit
-    /** 测试场景：验证「stops the parentExit relay when an intermediate class is "none"」描述的渲染、交互或错误处理结果。 */
     it('stops the parentExit relay when an intermediate class is "none"', async () => {
       const onParentExitDeep = jest.fn();
       const onParentExitSibling = jest.fn();
 
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 深层分支的中间 parentExit=none，兄弟分支可 relay；show 控制整组退出。 */
       function App({show}) {
         if (!show) {
           return null;
@@ -766,19 +765,19 @@ describe('ReactDOMViewTransition', () => {
         });
       });
 
-      // `none` 类会截断传递，因此其下层的嵌套激活永远不会触发。
+      // 本次祖先 enter/exit 的 relay 在 none 处截断，下层回调本次不触发。
       expect(onParentExitDeep).not.toHaveBeenCalled();
       // 不位于 `none` 边界之后的 sibling 仍会继续传递。
       expect(onParentExitSibling).toHaveBeenCalledTimes(1);
     });
 
+    /** 中间边界 parentEnter=none、同层兄弟可接收 parentEnter；整体进入后深回调不调用、兄弟回调一次，验证 none 截断该分支的入场传递。 */
     // @gate enableViewTransition && enableViewTransitionParentEnterExit
-    /** 测试场景：验证「stops the parentEnter relay when an intermediate class is "none"」描述的渲染、交互或错误处理结果。 */
     it('stops the parentEnter relay when an intermediate class is "none"', async () => {
       const onParentEnterDeep = jest.fn();
       const onParentEnterSibling = jest.fn();
 
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 深层中间 parentEnter=none，兄弟可 relay；show 控制整组入场以比较两个分支。 */
       function App({show}) {
         if (!show) {
           return null;
@@ -819,17 +818,17 @@ describe('ReactDOMViewTransition', () => {
         });
       });
 
-      // `none` 类会截断传递，因此其下层的嵌套激活永远不会触发。
+      // 本次祖先 enter/exit 的 relay 在 none 处截断，下层回调本次不触发。
       expect(onParentEnterDeep).not.toHaveBeenCalled();
       // 不位于 `none` 边界之后的 sibling 仍会继续传递。
       expect(onParentEnterSibling).toHaveBeenCalledTimes(1);
     });
 
-    /** 测试场景：验证「does not fire onParentEnter when ancestor exits」描述的渲染、交互或错误处理结果。 */
+    /** 已挂载的祖先执行 exit，深层只注册 onParentEnter；卸载后该回调不调用，验证退出传递不会作为入场通知。 */
     it('does not fire onParentEnter when ancestor exits', async () => {
       const onParentEnter = jest.fn();
 
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 祖先具 exit/relay-exit，深层只具 parentEnter 回调，供退出不误发入场通知的对照。 */
       function App({show}) {
         if (!show) {
           return null;
@@ -868,13 +867,13 @@ describe('ReactDOMViewTransition', () => {
       expect(onParentEnter).not.toHaveBeenCalled();
     });
 
+    /** 同名 hero 的不同 key 配对换页，子边界注册 onParentExit；断言祖先 onShare 一次而子 parentExit 不调用，验证 share 不走祖先退出传递。 */
     // @gate enableViewTransition
-    /** 测试场景：验证「does not fire onParentExit when ancestor shares instead of exiting」描述的渲染、交互或错误处理结果。 */
     it('does not fire onParentExit when ancestor shares instead of exiting', async () => {
       const onShare = jest.fn();
       const onParentExit = jest.fn();
 
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** page 选择不同 key 的同名 hero，子边界各注册 parentExit，供 share 路径与退出 relay 区分。 */
       function App({page}) {
         if (page === 'a') {
           return (
@@ -919,13 +918,13 @@ describe('ReactDOMViewTransition', () => {
       expect(onParentExit).not.toHaveBeenCalled();
     });
 
+    /** 同名 hero 配对换页，子边界注册 onParentEnter；断言祖先 onShare 一次、子回调不调用，验证配对 share 不走祖先入场传递。 */
     // @gate enableViewTransition
-    /** 测试场景：验证「does not fire onParentEnter when ancestor shares instead of entering」描述的渲染、交互或错误处理结果。 */
     it('does not fire onParentEnter when ancestor shares instead of entering', async () => {
       const onShare = jest.fn();
       const onParentEnter = jest.fn();
 
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** page 选择不同 key 的 hero 配对，子边界注册 parentEnter，供 share 不触发入场 relay 的对照。 */
       function App({page}) {
         if (page === 'a') {
           return (
@@ -970,11 +969,11 @@ describe('ReactDOMViewTransition', () => {
       expect(onParentEnter).not.toHaveBeenCalled();
     });
 
-    /** 测试场景：验证「does not fire onParentExit when ancestor exit is none」描述的渲染、交互或错误处理结果。 */
+    /** 祖先 exit=none，子边界声明 parentExit 回调；从已挂载改为 null后无调用，验证禁用祖先退出会阻止该通知。 */
     it('does not fire onParentExit when ancestor exit is none', async () => {
       const onParentExit = jest.fn();
 
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** show 控制 exit=none 的祖先和带 parentExit 的后代，供禁用退出条件。 */
       function App({show}) {
         if (!show) {
           return null;
@@ -1009,11 +1008,11 @@ describe('ReactDOMViewTransition', () => {
       expect(onParentExit).not.toHaveBeenCalled();
     });
 
-    /** 测试场景：验证「does not fire onParentEnter when ancestor enter is none」描述的渲染、交互或错误处理结果。 */
+    /** 祖先 enter=none，子边界声明 parentEnter 回调；从 null 挂载后无调用，验证禁用祖先入场会阻止该通知。 */
     it('does not fire onParentEnter when ancestor enter is none', async () => {
       const onParentEnter = jest.fn();
 
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** show 控制 enter=none 的祖先和带 parentEnter 的后代，供禁用入场条件。 */
       function App({show}) {
         if (!show) {
           return null;
@@ -1048,12 +1047,12 @@ describe('ReactDOMViewTransition', () => {
       expect(onParentEnter).not.toHaveBeenCalled();
     });
 
+    /** 祖先带 exit 类、中间 parentExit=auto、后代带退出回调；整体卸载后后代调用一次，验证未指定自定义样式的 auto relay 仍继续传递。 */
     // @gate enableViewTransition && enableViewTransitionParentEnterExit
-    /** 测试场景：验证「relays parentExit chain through unstyled parentExit」描述的渲染、交互或错误处理结果。 */
     it('relays parentExit chain through unstyled parentExit', async () => {
       const onParentExit = jest.fn();
 
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** show 控制自定义 exit 祖先、parentExit=auto 的中间边界和命名 parentExit 后代，供 auto relay 断言。 */
       function App({show}) {
         if (!show) {
           return null;
@@ -1092,14 +1091,14 @@ describe('ReactDOMViewTransition', () => {
       expect(onParentExit).toHaveBeenCalledTimes(1);
     });
 
+    /** 祖先与两层后代只声明 onExit/onParentExit、不提供类名；整体卸载后三级回调各一次，验证 handler-only 的祖先退出与 relay。 */
     // @gate enableViewTransition && enableViewTransitionParentEnterExit
-    /** 测试场景：验证「fires onParentExit when ancestor ViewTransition exits with handler only」描述的渲染、交互或错误处理结果。 */
     it('fires onParentExit when ancestor ViewTransition exits with handler only', async () => {
       const onParentExit = jest.fn();
       const onRelayParentExit = jest.fn();
       const onParentExitDeep = jest.fn();
 
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 返回只有 onExit/onParentExit 回调而无显式类名的三层边界，供 handler-only 退出 relay。 */
       function App({show}) {
         if (!show) {
           return null;
@@ -1140,14 +1139,14 @@ describe('ReactDOMViewTransition', () => {
       expect(onParentExitDeep).toHaveBeenCalledTimes(1);
     });
 
+    /** 祖先与两层后代只声明 onEnter/onParentEnter；从 null 挂载后三级回调各一次，验证 handler-only 的入场 relay。 */
     // @gate enableViewTransition && enableViewTransitionParentEnterExit
-    /** 测试场景：验证「fires onParentEnter when ancestor ViewTransition enters with handler only」描述的渲染、交互或错误处理结果。 */
     it('fires onParentEnter when ancestor ViewTransition enters with handler only', async () => {
       const onParentEnter = jest.fn();
       const onRelayParentEnter = jest.fn();
       const onParentEnterDeep = jest.fn();
 
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 返回只有 onEnter/onParentEnter 的三层边界，由 show 控制整体入场，供 handler-only relay。 */
       function App({show}) {
         if (!show) {
           return null;
@@ -1188,11 +1187,11 @@ describe('ReactDOMViewTransition', () => {
       expect(onParentEnterDeep).toHaveBeenCalledTimes(1);
     });
 
-    /** 测试场景：验证「does not fire onParentEnter when ancestor enter is none with handler only」描述的渲染、交互或错误处理结果。 */
+    /** 祖先 enter=none、子边界只有 onParentEnter；从 null 挂载后子回调不调用，验证 handler-only 仍受祖先 none 条件限制。 */
     it('does not fire onParentEnter when ancestor enter is none with handler only', async () => {
       const onParentEnter = jest.fn();
 
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 返回 enter=none 的祖先和只有 onParentEnter 的子边界，供禁用条件优先于 handler-only 的验证。 */
       function App({show}) {
         if (!show) {
           return null;
@@ -1225,13 +1224,13 @@ describe('ReactDOMViewTransition', () => {
       expect(onParentEnter).not.toHaveBeenCalled();
     });
 
+    /** 祖先 onEnter 与后代 onParentEnter 之间穿过两个普通 div；整体挂载后二者各一次，验证宿主包装不会截断边界 relay。 */
     // @gate enableViewTransition && enableViewTransitionParentEnterExit
-    /** 测试场景：验证「relays parentEnter chain to handler-only child through intermediate divs」描述的渲染、交互或错误处理结果。 */
     it('relays parentEnter chain to handler-only child through intermediate divs', async () => {
       const onParentEnter = jest.fn();
       const onParentEnterNested = jest.fn();
 
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 在外层 onEnter 与内层 onParentEnter 之间插两个 div，供宿主包装不截断 relay 的验证。 */
       function App({show}) {
         if (!show) {
           return null;
@@ -1270,13 +1269,13 @@ describe('ReactDOMViewTransition', () => {
       expect(onParentEnterNested).toHaveBeenCalledTimes(1);
     });
 
+    /** 无 props 的 ViewTransition 初始不渲染，再 Transition 挂载；断言 startViewTransition 由未调用变为调用，验证无回调边界也能请求平台过渡；没有事件 handler 次数断言。 */
     // @gate enableViewTransition
-    /** 测试场景：验证「enters without props and does not fire handlers」描述的渲染、交互或错误处理结果。 */
     it('enters without props and does not fire handlers', async () => {
       const startViewTransitionSpy = jest.fn(document.startViewTransition);
       document.startViewTransition = startViewTransitionSpy;
 
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** show=true 时返回无 props 的 Hello 边界，否则 null，供默认入场平台请求。 */
       function App({show}) {
         if (!show) {
           return null;
@@ -1304,13 +1303,13 @@ describe('ReactDOMViewTransition', () => {
       expect(startViewTransitionSpy).toHaveBeenCalled();
     });
 
+    /** 先挂载无 props 边界并清掉平台 spy，再 Transition 删除；断言 startViewTransition 被调用，验证无 props 边界的退出平台请求。 */
     // @gate enableViewTransition
-    /** 测试场景：验证「exits without props and does not fire handlers」描述的渲染、交互或错误处理结果。 */
     it('exits without props and does not fire handlers', async () => {
       const startViewTransitionSpy = jest.fn(document.startViewTransition);
       document.startViewTransition = startViewTransitionSpy;
 
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** show=true 返回无 props 的 Goodbye 边界，否则 null，供默认退出平台请求。 */
       function App({show}) {
         if (!show) {
           return null;
@@ -1340,12 +1339,12 @@ describe('ReactDOMViewTransition', () => {
       expect(startViewTransitionSpy).toHaveBeenCalled();
     });
 
+    /** 祖先无 props、后代有 onParentEnter；从 null Transition 挂载后后代回调一次，验证默认祖先入场可激活后代通知。 */
     // @gate enableViewTransition && enableViewTransitionParentEnterExit
-    /** 测试场景：验证「fires onParentEnter when ancestor ViewTransition has no props」描述的渲染、交互或错误处理结果。 */
     it('fires onParentEnter when ancestor ViewTransition has no props', async () => {
       const onParentEnterNested = jest.fn();
 
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** show 控制无 props 祖先与带 onParentEnter 的后代，供默认入场 relay。 */
       function App({show}) {
         if (!show) {
           return null;
@@ -1380,12 +1379,12 @@ describe('ReactDOMViewTransition', () => {
       expect(onParentEnterNested).toHaveBeenCalledTimes(1);
     });
 
+    /** 祖先无 props、后代有 onParentExit；从已挂载 Transition 删除后后代回调一次，验证默认祖先退出可激活后代通知。 */
     // @gate enableViewTransition && enableViewTransitionParentEnterExit
-    /** 测试场景：验证「fires onParentExit when ancestor ViewTransition has no props」描述的渲染、交互或错误处理结果。 */
     it('fires onParentExit when ancestor ViewTransition has no props', async () => {
       const onParentExitNested = jest.fn();
 
-      /** `App`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** show 控制无 props 祖先与带 onParentExit 的后代，供默认退出 relay。 */
       function App({show}) {
         if (!show) {
           return null;

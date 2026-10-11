@@ -29,7 +29,7 @@ function withDOMPurify(fn) {
 }
 
 /**
- * 确定性攻击与边界种子；和随机字符串混合，保证低概率结构也能稳定进入语料。
+ * 固定的攻击与边界种子；生成器从中随机抽取，也会生成任意字符串。
  *
  * 覆盖普通 HTML、事件处理器、SVG/MathML、mXSS、命名属性和 URI 混淆。
  */
@@ -96,7 +96,7 @@ const objectDirtyArb = fc.oneof(
   )
 );
 
-/** 属性 1/3 的完整 dirty 输入生成器：确定性安全语料加任意 JS 值。 */
+/** 属性 1/3 的 dirty 输入生成器：固定载荷、原始值、数组和字典。 */
 const dirtyArb = fc.oneof(
   fc.constantFrom(...seedPayloads),
   primitiveDirtyArb,
@@ -110,9 +110,11 @@ const dirtyForInvariantArb = fc.oneof(
 );
 
 /**
- * 生成类型正确但字段可缺失的公开配置对象。
+ * 生成包含下列字段、且字段值类型正确的公开配置对象。
  *
  * RETURN_DOM 系列也被纳入，用于“正常返回或抛标准异常”属性；幂等属性使用更窄生成器。
+ * 当前 fast-check 4.8 的 record 使用 requiredKeys 控制可选键；这里的 withDeletedKeys
+ * 不参与生成，因此本生成器及下方另外两个 record 都保留各自列出的全部键。
  */
 const configObjectArb = fc.record(
   {
@@ -260,7 +262,7 @@ console.log(
 /**
  * Given：任意 dirty 值与任意形状配置。
  * When：在隔离 realm 中调用一次 `sanitize()`。
- * Then：要么正常返回，要么只抛出 Error/DOMException，不得抛 primitive 或使进程崩溃。
+ * Then：正常返回的样本通过；抛错的样本必须抛出 Error 或 DOMException。
  *
  * 验证机制：fast-check 负责生成和缩减；catch 分支限定可接受异常类型。
  * 对应源码：`sanitize()` 输入字符串化及 `_parseConfig()` 配置防御入口。
@@ -293,7 +295,7 @@ console.log(
  * When：把第一次清洗结果用同一配置再次清洗。
  * Then：两次结果均为字符串且完全相等。
  *
- * 验证机制：显式排除改变返回所有权/类型的配置，确保相等失败只指向清洗不幂等。
+ * 验证机制：限制两次调用都返回 fragment 字符串，再比较序列化结果是否保持不变。
  * 对应源码：`sanitize()` 的 DOM 解析、遍历和字符串序列化主链。
  */
 fc.assert(
@@ -318,9 +320,9 @@ console.log(
 /**
  * Given：真实配置键承载 null、数值、容器、RegExp 等异常类型。
  * When：以任意 dirty 输入调用 `sanitize()`。
- * Then：调用正常返回或抛标准异常，不能产生不可控抛值或进程级崩溃。
+ * Then：正常返回的样本通过；抛错的样本必须抛出 Error 或 DOMException。
  *
- * 验证机制：键名真实、值类型系统变化，直接覆盖各配置分支的类型检查。
+ * 验证机制：随机给已知配置键分配不同类型的值，检查配置解析和后续使用时的异常形态。
  * 对应源码：`_parseConfig()` 和各 `_resolveSetOption()` 配置解析分支。
  */
 fc.assert(
@@ -344,15 +346,14 @@ fc.assert(
 );
 
 /**
- * 默认配置输出中不得出现的可执行语法标记。
+ * 在默认配置的字符串输出中检查的六种语法模式。
  *
- * 正则只匹配原始输出语法：实际 `<script>`、`on*` 事件属性，以及属性位置中的
- * javascript:/vbscript:/data:text/html URL。它们不会命中 `&lt;script` 等实体编码文本，
- * 也不会把文本节点中的普通“javascript:”字样当成可执行属性。
+ * 检查 script 开闭标签形式、空白后的 on*=，以及等号后的
+ * javascript:/vbscript:/data:text/html。`&lt;script` 或独立的 `javascript:` 不匹配，
+ * 但这些正则没有解析 DOM；文本或普通属性值中出现同样的字符模式也可能匹配。
  *
- * 此不变量故意只用于默认安全配置（2026 年 4 月审查的 Option A）。ADD_TAGS/ADD_ATTR
- * 等合法配置可以显式放行这些标记；若为任意配置另写安全分类器，分类器本身也会成为
- * 需要持续证明正确的新安全逻辑。
+ * 检查使用默认配置；ADD_TAGS/ADD_ATTR 可以显式放行相应标签或属性。
+ * 下方负对照用 ADD_ATTR 放行 onerror，确认其中的事件属性模式会触发断言。
  */
 const XSS_INVARIANTS = [
   { name: 'script-open-tag', re: /<script[\s>\/]/i },
@@ -385,9 +386,9 @@ console.log(
 /**
  * Given：确定性攻击种子或任意字符串，且使用默认配置。
  * When：清洗后运行所有原始语法不变量。
- * Then：输出不含 script 标签、事件属性或脚本型 URL 属性。
+ * Then：输出不匹配 XSS_INVARIANTS 中的六种模式。
  *
- * 验证机制：正则检查序列化结果的可执行语法；下方负对照证明检查器能命中已知危险输出。
+ * 验证机制：检查序列化字符串；下方负对照确认 onerror 输出能触发事件属性断言。
  * 对应源码：默认 allowlist、`_sanitizeElements()` 与 `_sanitizeAttributes()`。
  */
 fc.assert(
@@ -403,18 +404,17 @@ fc.assert(
   }
 );
 
-// 属性 5 使用更丰富语料验证幂等性。属性 2 的随机生成器很少产出带 id/name 的 HTML，
-// 难以稳定覆盖 SANITIZE_NAMED_PROPS 等属性转换。本属性改用包含 id/name/保留名称的
-// 扩展种子并显式启用该配置，让转换路径的回归成为确定性样本。
+// 属性 5 仅从固定种子中随机抽样，并显式启用 SANITIZE_NAMED_PROPS。
+// 相比属性 2 与任意字符串混合抽样，这提高了带 id/name 的 HTML 被检查的机会。
 console.log(
   `Property 5: idempotence holds with SANITIZE_NAMED_PROPS enabled on id/name-bearing inputs.`
 );
 /**
- * Given：每条确定性种子和启用 SANITIZE_NAMED_PROPS 的配置。
+ * Given：随机选中的固定种子和启用 SANITIZE_NAMED_PROPS 的配置。
  * When：连续清洗两次。
  * Then：第一次返回字符串，第二次与第一次严格相等。
  *
- * 验证机制：id/name 种子稳定触发前缀转换，二次相等证明不会重复追加前缀。
+ * 验证机制：抽中带 id/name 的种子时检查前缀转换，二次相等可检测重复追加前缀。
  * 对应源码：`_sanitizeAttributes()` 的 SANITIZE_NAMED_PROPS 分支。
  */
 fc.assert(
@@ -437,14 +437,13 @@ fc.assert(
   }
 );
 
-// 负对照证明 XSS 不变量确实会触发。这里故意用不安全配置放行已知可执行标记，并要求
-// 检查器抛出 AssertionError。若它不再抛错，要么正则被削弱，要么输出编码方式已使检查失真；
-// 两种情况都表示属性 4 已失去信号，而非 sanitizer 安全性得到证明。
+// 负对照用 ADD_ATTR 放行 onerror，并要求检查器抛出 AssertionError。
+// 若输出仍带 onerror 却没有抛错，事件属性正则就没有检测到这条已知样本。
 console.log(
   `Negative Control: XSS invariant must detect a deliberately-unsafe output.`
 );
 /**
- * 运行 XSS 不变量的负对照，防止属性检查器静默失效。
+ * 检查显式放行的 onerror 输出能触发事件属性断言。
  *
  * Given：显式放行 `onerror` 的不安全配置。
  * When：清洗已知危险 `<img>` 并执行 `assertXssInvariants()`。

@@ -9,27 +9,20 @@
 
 'use strict';
 
-/** `React`：保存当前测试场景复用的夹具、状态或回调。 */
+/** 构造根销毁与传错容器诊断需要的宿主 JSX 树。 */
 const React = require('react');
-/** `ReactDOM`：保存当前测试场景复用的夹具、状态或回调。 */
+/** 提供 legacy render/unmountComponentAtNode，用于区分根容器、首层根节点和内部节点的 DEV 消息。 */
 const ReactDOM = require('react-dom');
-/** `ReactDOMClient`：保存当前测试场景复用的夹具、状态或回调。 */
+/** 提供两个独立并发根与 root.unmount，检查销毁仅清空所属容器。 */
 const ReactDOMClient = require('react-dom/client');
-/** `act`：保存当前测试场景复用的夹具、状态或回调。 */
+/** 等待独立根挂载及卸载提交，随后检查容器中的宿主节点。 */
 const act = require('internal-test-utils').act;
-/** `assertConsoleErrorDev`：保存当前测试场景复用的夹具、状态或回调。 */
+/** 匹配 legacy 卸载的专门 DEV 消息，生产构建不要求该诊断。 */
 const assertConsoleErrorDev =
   require('internal-test-utils').assertConsoleErrorDev;
 
 describe('ReactMount', () => {
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「should destroy a react root upon request」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言连接 ReactDOM 公开入口、ReactDOMRoot 根生命周期及 DOM 提交结果。
-   */
+  /** 在同一外层元素内建立两个独立并发根，分别提交不同 className；两根内容应独立，卸载第一根后其容器为空，再卸载第二根应完成，验证 root.unmount 清理所属树。 */
   it('should destroy a react root upon request', async () => {
     const mainContainerDiv = document.createElement('div');
     document.body.appendChild(mainContainerDiv);
@@ -65,7 +58,7 @@ describe('ReactMount', () => {
   });
 
   // @gate !disableLegacyMode
-  /** 测试场景：验证「should warn when unmounting a non-container root node」描述的渲染、交互或错误处理结果。 */
+  /** legacy render 后把返回的首层宿主 div 当作 unmount 容器；DEV 应建议传真正根容器，验证根节点与容器混淆时的专门诊断。 */
   it('should warn when unmounting a non-container root node', () => {
     const mainContainerDiv = document.createElement('div');
 
@@ -74,7 +67,7 @@ describe('ReactMount', () => {
         <div />
       </div>
     );
-    // 无法迁移到创建Root,直到我们删除unmountComponentAtNode i.e. 取消这个测试.
+    // 此用例专门测试 legacy unmountComponentAtNode 的容器诊断，因此保留 legacy render 入口。
     ReactDOM.render(component, mainContainerDiv);
 
     // 测试在根节点卸载时提供有用的警告
@@ -89,7 +82,7 @@ describe('ReactMount', () => {
   });
 
   // @gate !disableLegacyMode
-  /** 测试场景：验证「should warn when unmounting a non-container, non-root node」描述的渲染、交互或错误处理结果。 */
+  /** legacy render 三层 div 后把中间内部 div 当作 unmount 容器；DEV 应建议由父组件更新删除它，验证普通内部节点与首层根节点得到不同诊断。 */
   it('should warn when unmounting a non-container, non-root node', () => {
     const mainContainerDiv = document.createElement('div');
 
@@ -100,7 +93,7 @@ describe('ReactMount', () => {
         </div>
       </div>
     );
-    // 无法迁移到创建Root,直到我们删除unmountComponentAtNode i.e. 取消这个测试.
+    // 此用例专门测试 legacy unmountComponentAtNode 的容器诊断，因此保留 legacy render 入口。
     ReactDOM.render(component, mainContainerDiv);
 
     // 测试在非根节点卸载时显示不同的警告

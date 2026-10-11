@@ -9,8 +9,9 @@ import { DeprecationTypes, warnDeprecation } from './compatConfig'
 
 /**
  * 为 Vue 2 prop 默认值工厂模拟 `this`。
- * Vue 3 默认值函数不再绑定组件实例；兼容 Proxy 仅按需暴露 `$options`、原始 props 和
- * inject，访问任何字段时发出弃用警告，避免为了兼容而创建完整公共实例。
+ * Vue 3 默认值函数不再绑定组件实例；兼容 Proxy 仅按需暴露 `$options`、当前 props
+ * 对象和组件自身声明的 inject，开发环境访问字段时发出弃用警告。
+ * 传入的 props 已规范化键名，部分值可能已经完成默认值/Boolean 转换，并非 VNode rawProps。
  */
 export function createPropsDefaultThis(
   instance: ComponentInternalInstance,
@@ -20,6 +21,7 @@ export function createPropsDefaultThis(
   return new Proxy(
     {},
     {
+      /** 按 $options、当前已写入 props、组件自身 inject 的顺序模拟默认值工厂 this；未知键返回 undefined。 */
       get(_, key: string) {
         __DEV__ &&
           warnDeprecation(DeprecationTypes.PROPS_DEFAULT_THIS, null, propKey)
@@ -27,7 +29,7 @@ export function createPropsDefaultThis(
         if (key === '$options') {
           return resolveMergedOptions(instance)
         }
-        // 允许读取同一组件的其他原始 props。
+        // 读取此时已写入 props 对象的值，初始化时部分键可能仍待转换。
         if (key in rawProps) {
           return rawProps[key]
         }

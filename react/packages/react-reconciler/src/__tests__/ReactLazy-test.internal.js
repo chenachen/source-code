@@ -188,7 +188,7 @@ describe('ReactLazy', () => {
    */
   it('can resolve synchronously without suspending', async () => {
     const LazyText = lazy(() => ({
-      /** then 实现本场景的同步 fulfilled/rejected thenable 协议，用于“同步 fulfilled thenable 不经过 Suspense fallback”。 */
+      /** then 实现本场景的同步 fulfilled/rejected thenable 协议。 */
       then(cb) {
         cb({default: Text});
       },
@@ -218,21 +218,21 @@ describe('ReactLazy', () => {
    */
   it('can reject synchronously without suspending', async () => {
     const LazyText = lazy(() => ({
-      /** then 实现本场景的同步 fulfilled/rejected thenable 协议，用于“同步 rejected thenable 直接抛给 ErrorBoundary”。 */
+      /** then 实现本场景的同步 fulfilled/rejected thenable 协议。 */
       then(resolve, reject) {
         reject(new Error('oh no'));
       },
     }));
 
-    /** 定义 ErrorBoundary 类 fixture，暴露实例身份、defaultProps、错误边界或生命周期，用于“同步 rejected thenable 直接抛给 ErrorBoundary”。 */
+    /** 捕获 lazy thenable 同步 rejection 的类边界，让错误输出与 Suspense fallback 区分。 */
     class ErrorBoundary extends React.Component {
-      /** ErrorBoundary.state 保存实例或错误边界状态，区分 Lazy retry、普通更新与 bailout。 */
+      /** 初始无 message；派生错误状态写入 rejection 的 message。 */
       state = {};
       /** ErrorBoundary.getDerivedStateFromError 把 Lazy initializer 的同步 rejection 转成可渲染错误状态。 */
       static getDerivedStateFromError(error) {
         return {message: error.message};
       }
-      /** ErrorBoundary.render 渲染当前 props/state 并暴露日志或宿主输出，用于“同步 rejected thenable 直接抛给 ErrorBoundary”。 */
+      /** 错误 message 存在时输出 Error 文本，否则渲染受保护的 lazy 子树。 */
       render() {
         return this.state.message
           ? `Error: ${this.state.message}`
@@ -264,12 +264,12 @@ describe('ReactLazy', () => {
    * 对应源码：`packages/react/src/ReactLazy.js` 的 `lazyInitializer()` 与 `packages/react-reconciler/src/ReactFiberBeginWork.js` 的 `mountLazyComponent()` 与 `ReactFiberBeginWork.js` 的 Suspense primary/fallback 路径。
    */
   it('multiple lazy components', async () => {
-    /** Foo 作为可解析 module 的真实组件，提供独立日志、类型或 ref 行为，用于“同一边界等待多个独立 Lazy payload 全部完成”。 */
+    /** Foo 作为可解析 module 的真实组件，提供独立日志、类型或 ref 行为。 */
     function Foo() {
       return <Text text="Foo" />;
     }
 
-    /** Bar 作为可解析 module 的真实组件，提供独立日志、类型或 ref 行为，用于“同一边界等待多个独立 Lazy payload 全部完成”。 */
+    /** Bar 作为可解析 module 的真实组件，提供独立日志、类型或 ref 行为。 */
     function Bar() {
       return <Text text="Bar" />;
     }
@@ -315,7 +315,7 @@ describe('ReactLazy', () => {
       unstable_isConcurrent: true,
     });
 
-    /** App 组织 Lazy、Suspense 与错误捕获层级，用于“React.lazy 只接受动态 import 风格 module object”。 */
+    /** App 组织 Lazy、Suspense 与错误捕获层级。 */
     function App() {
       return (
         <Suspense fallback={<Text text="Loading..." />}>
@@ -401,9 +401,9 @@ describe('ReactLazy', () => {
    * 对应源码：`packages/react/src/ReactLazy.js` 的 `lazyInitializer()` 与 `packages/react-reconciler/src/ReactFiberBeginWork.js` 的 `mountLazyComponent()` 与 `ReactChildFiber.js` 的 keyed reconciliation。
    */
   it('mount and reorder', async () => {
-    /** 定义 Child 类 fixture，暴露实例身份、defaultProps、错误边界或生命周期，用于“共享 module 的多个 Lazy payload 初始化后按 key 重排并保留实例”。 */
+    /** 共享真实类类型的 keyed A/B 探针，通过 mount/update 日志区别列表重排与初次挂载。 */
     class Child extends React.Component {
-      /** Child.componentDidMount 记录首次提交及实例 label/defaultProps，用于“共享 module 的多个 Lazy payload 初始化后按 key 重排并保留实例”。 */
+      /** Child.componentDidMount 记录首次提交时的 label。 */
       componentDidMount() {
         Scheduler.log('Did mount: ' + this.props.label);
       }
@@ -411,7 +411,7 @@ describe('ReactLazy', () => {
       componentDidUpdate() {
         Scheduler.log('Did update: ' + this.props.label);
       }
-      /** Child.render 渲染当前 props/state 并暴露日志或宿主输出，用于“共享 module 的多个 Lazy payload 初始化后按 key 重排并保留实例”。 */
+      /** 把当前 label 交给 Text，使 key 重排后的 B/A 顺序可观察。 */
       render() {
         return <Text text={this.props.label} />;
       }
@@ -458,9 +458,7 @@ describe('ReactLazy', () => {
     await act(async () => {
       await resolveFakeImport(Child);
 
-      // 即使 B 与 A 共享同一 import，B 的独立 Lazy payload 仍会先进入挂起路径。
-      // TODO：React.lazy 应实现 `status` 与 `value` 字段，
-      // 使已加载结果可像 `use` 一样被同步解包。
+      // 预热已经初始化 B 的独立 payload；本次 module 解决后可同时推进 A/B。
       await waitFor([
         'A',
         // 预热阶段已初始化 LazyChildB；因此上方 resolveFakeImport
@@ -486,9 +484,9 @@ describe('ReactLazy', () => {
    * 对应源码：`packages/react/src/ReactLazy.js` 的 `lazyInitializer()` 与 `packages/react-reconciler/src/ReactFiberBeginWork.js` 的 `mountLazyComponent()` 与 `ReactFiberClassComponent.js` 的 `resolveClassComponentProps()`。
    */
   it('resolves defaultProps, on mount and update', async () => {
-    /** 定义 T 类 fixture，暴露实例身份、defaultProps、错误边界或生命周期，用于“Lazy class 在挂载和更新时解析真实类型的 defaultProps”。 */
+    /** 具有可变 defaultProps.text 的真实类类型，检验 lazy 挂载和更新均读取当前默认值。 */
     class T extends React.Component {
-      /** T.render 渲染当前 props/state 并暴露日志或宿主输出，用于“Lazy class 在挂载和更新时解析真实类型的 defaultProps”。 */
+      /** 原样传递已解析 props 给 Text，输出 Hi 或修改后的 Hi again。 */
       render() {
         return <Text {...this.props} />;
       }
@@ -532,9 +530,9 @@ describe('ReactLazy', () => {
    * 对应源码：`packages/react/src/ReactLazy.js` 的 `lazyInitializer()` 与 `packages/react-reconciler/src/ReactFiberBeginWork.js` 的 `mountLazyComponent()` 与 `ReactFiberBeginWork.js` 的 lazy component bailout。
    */
   it('resolves defaultProps without breaking memoization', async () => {
-    /** 定义 LazyImpl 类 fixture，暴露实例身份、defaultProps、错误边界或生命周期，用于“defaultProps 解析不破坏 Lazy 父组件对子更新的 memoization”。 */
+    /** 默认 siblingText=Sibling 的真实 lazy 类，日志验证后代 state 更新不会重跑外层。 */
     class LazyImpl extends React.Component {
-      /** LazyImpl.render 渲染当前 props/state 并暴露日志或宿主输出，用于“defaultProps 解析不破坏 Lazy 父组件对子更新的 memoization”。 */
+      /** 记录 Lazy 并渲染默认 sibling 与原 children，区分外层执行和仅后代更新。 */
       render() {
         Scheduler.log('Lazy');
         return (
@@ -548,11 +546,11 @@ describe('ReactLazy', () => {
     LazyImpl.defaultProps = {siblingText: 'Sibling'};
     const Lazy = lazy(() => fakeImport(LazyImpl));
 
-    /** 定义 Stateful 类 fixture，暴露实例身份、defaultProps、错误边界或生命周期，用于“defaultProps 解析不破坏 Lazy 父组件对子更新的 memoization”。 */
+    /** 位于 lazy 默认 props 类下的独立 state 更新目标，A→B 不应触发祖先重新 render。 */
     class Stateful extends React.Component {
-      /** Stateful.state 保存实例或错误边界状态，区分 Lazy retry、普通更新与 bailout。 */
+      /** 文本初值 A；setState 为 B 驱动唯一消费子树的更新。 */
       state = {text: 'A'};
-      /** Stateful.render 渲染当前 props/state 并暴露日志或宿主输出，用于“defaultProps 解析不破坏 Lazy 父组件对子更新的 memoization”。 */
+      /** 仅把本地 text 交给 Text，日志 B 与稳定 Sibling 共同验证祖先 bailout。 */
       render() {
         return <Text text={this.state.text} />;
       }
@@ -593,12 +591,12 @@ describe('ReactLazy', () => {
    * 对应源码：`ReactFiberClassComponent.js` 的 `resolveClassComponentProps()`、`checkShouldComponentUpdate()` 与 lazy mount 路径。
    */
   it('resolves defaultProps without breaking bailout due to unchanged props and state, #17151', async () => {
-    /** 定义 LazyImpl 类 fixture，暴露实例身份、defaultProps、错误边界或生命周期，用于“Lazy class 的 defaultProps 不破坏 props/state 不变时的 bailout”。 */
+    /** 直接与 lazy 两种挂载共享的真实类，实现 defaultProps 后以 setState(null) 检查无变化 bailout。 */
     class LazyImpl extends React.Component {
       /** LazyImpl.defaultProps 声明缺省 props，验证 Lazy 解包后由真实组件类型负责补值。 */
       static defaultProps = {value: 0};
 
-      /** LazyImpl.render 渲染当前 props/state 并暴露日志或宿主输出，用于“Lazy class 的 defaultProps 不破坏 props/state 不变时的 bailout”。 */
+      /** 输出 label 与解析后 value，区分直接 Not lazy:0 和包装 Lazy:0。 */
       render() {
         const text = `${this.props.label}: ${this.props.value}`;
         return <Text text={text} />;
@@ -648,14 +646,14 @@ describe('ReactLazy', () => {
    * 对应源码：`ReactFiberClassComponent.js` 的 defaultProps 解析与 PureComponent shallow compare。
    */
   it('resolves defaultProps without breaking bailout in PureComponent, #17151', async () => {
-    /** 定义 LazyImpl 类 fixture，暴露实例身份、defaultProps、错误边界或生命周期，用于“Lazy PureComponent 的 defaultProps 不破坏浅比较 bailout”。 */
+    /** 直接与 lazy 两种挂载共享的 PureComponent，用浅相等空 state 更新验证 bailout。 */
     class LazyImpl extends React.PureComponent {
       /** LazyImpl.defaultProps 声明缺省 props，验证 Lazy 解包后由真实组件类型负责补值。 */
       static defaultProps = {value: 0};
-      /** LazyImpl.state 保存实例或错误边界状态，区分 Lazy retry、普通更新与 bailout。 */
+      /** 初始空对象；setState({}) 产生不同对象但浅比较相等。 */
       state = {};
 
-      /** LazyImpl.render 渲染当前 props/state 并暴露日志或宿主输出，用于“Lazy PureComponent 的 defaultProps 不破坏浅比较 bailout”。 */
+      /** 输出 label/value，任何额外 Text 日志都表示 PureComponent bailout 被破坏。 */
       render() {
         const text = `${this.props.label}: ${this.props.value}`;
         return <Text text={text} />;
@@ -705,11 +703,11 @@ describe('ReactLazy', () => {
    * 对应源码：`ReactFiberClassComponent.js` 的 `constructClassInstance()`、`updateClassInstance()` 与 defaultProps 解析。
    */
   it('sets defaultProps for modern lifecycles', async () => {
-    /** 定义 C 类 fixture，暴露实例身份、defaultProps、错误边界或生命周期，用于“Lazy class 的现代生命周期收到完整 defaultProps”。 */
+    /** 组合现代类生命周期的 defaultProps 探针，逐阶段记录默认 text 与 num 更新。 */
     class C extends React.Component {
       /** C.defaultProps 声明缺省 props，验证 Lazy 解包后由真实组件类型负责补值。 */
       static defaultProps = {text: 'A'};
-      /** C.state 保存实例或错误边界状态，区分 Lazy retry、普通更新与 bailout。 */
+      /** 空 state 使 getDerivedStateFromProps 返回 null 时保持无状态变化，更新由 num prop 驱动。 */
       state = {};
 
       /** C.getDerivedStateFromProps 记录 render 前收到的 defaultProps，验证现代生命周期输入。 */
@@ -724,7 +722,7 @@ describe('ReactLazy', () => {
         Scheduler.log(`constructor: ${this.props.text}`);
       }
 
-      /** C.componentDidMount 记录首次提交及实例 label/defaultProps，用于“Lazy class 的现代生命周期收到完整 defaultProps”。 */
+      /** C.componentDidMount 记录首次提交时解析后的 text。 */
       componentDidMount() {
         Scheduler.log(`componentDidMount: ${this.props.text}`);
       }
@@ -757,7 +755,7 @@ describe('ReactLazy', () => {
         return null;
       }
 
-      /** C.render 渲染当前 props/state 并暴露日志或宿主输出，用于“Lazy class 的现代生命周期收到完整 defaultProps”。 */
+      /** 拼接默认 text=A 与受控 num，生命周期日志围绕 A1/A2/A3 的渲染。 */
       render() {
         return <Text text={this.props.text + this.props.num} />;
       }
@@ -823,11 +821,11 @@ describe('ReactLazy', () => {
    * 对应源码：`ReactFiberClassComponent.js` 的 legacy lifecycle 调用与 defaultProps 解析。
    */
   it('sets defaultProps for legacy lifecycles', async () => {
-    /** 定义 C 类 fixture，暴露实例身份、defaultProps、错误边界或生命周期，用于“Lazy class 的 legacy 生命周期收到完整 defaultProps”。 */
+    /** 组合 UNSAFE 旧生命周期的真实 lazy 类，验证 retry 与后续 props 更新的默认值准备。 */
     class C extends React.Component {
       /** C.defaultProps 声明缺省 props，验证 Lazy 解包后由真实组件类型负责补值。 */
       static defaultProps = {text: 'A'};
-      /** C.state 保存实例或错误边界状态，区分 Lazy retry、普通更新与 bailout。 */
+      /** 空 state；旧生命周期不提交 state，渲染变化完全来自 num prop。 */
       state = {};
 
       /** C.UNSAFE_componentWillMount 验证 legacy mount lifecycle 收到解析后的 defaultProps。 */
@@ -849,7 +847,7 @@ describe('ReactLazy', () => {
         );
       }
 
-      /** C.render 渲染当前 props/state 并暴露日志或宿主输出，用于“Lazy class 的 legacy 生命周期收到完整 defaultProps”。 */
+      /** 输出默认 text 与 num，配合旧生命周期日志验证 A2/A3 更新。 */
       render() {
         return <Text text={this.props.text + this.props.num} />;
       }
@@ -903,12 +901,12 @@ describe('ReactLazy', () => {
   });
 
   /**
-   * Given：lazy initializer 最终把 module.default 解析为 invalid type，该值不是此 Lazy 路径允许的 class/function 类型。
+   * Given：lazy initializer 最终把 module.default 解析为 invalid type，该值不属于 mountLazyComponent 支持的解析结果。
    * When：先提交 fallback，再解决 fakeImport 并触发一次更新。
-   * Then：lazy payload 可以 Resolved，但 Fiber 类型创建拒绝 invalid type，并报告包含可读类型名的错误。
+   * Then：lazy payload 可以 Resolved，但 mountLazyComponent 的类型分派拒绝 invalid type，并报告包含可读类型名的错误。
    *
-   * 验证机制：waitForThrow 精确匹配 resolved value 描述与“必须解析为 class/function”边界。
-   * 对应源码：`packages/react/src/ReactLazy.js` 的 `lazyInitializer()` 与 `packages/react-reconciler/src/ReactFiberBeginWork.js` 的 `mountLazyComponent()`、`ReactFiber.js` 的 `createFiberFromTypeAndProps()` 与类型命名 helper。
+   * 验证机制：waitForThrow 匹配解析结果的可读名称和 Lazy 类型错误消息。
+   * 对应源码：`packages/react/src/ReactLazy.js` 的 `lazyInitializer()` 与 `packages/react-reconciler/src/ReactFiberBeginWork.js` 的 `mountLazyComponent()` 的最终无效类型分支与类型命名 helper。
    */
   it('throws with a useful error when wrapping invalid type with lazy()', async () => {
     const BadLazy = lazy(() => fakeImport(42));
@@ -937,12 +935,12 @@ describe('ReactLazy', () => {
   });
 
   /**
-   * Given：lazy initializer 最终把 module.default 解析为 Fragment，该值不是此 Lazy 路径允许的 class/function 类型。
+   * Given：lazy initializer 最终把 module.default 解析为 Fragment，该值不属于 mountLazyComponent 支持的解析结果。
    * When：先提交 fallback，再解决 fakeImport 并触发一次更新。
-   * Then：lazy payload 可以 Resolved，但 Fiber 类型创建拒绝 Fragment，并报告包含可读类型名的错误。
+   * Then：lazy payload 可以 Resolved，但 mountLazyComponent 的类型分派拒绝 Fragment，并报告包含可读类型名的错误。
    *
-   * 验证机制：waitForThrow 精确匹配 resolved value 描述与“必须解析为 class/function”边界。
-   * 对应源码：`packages/react/src/ReactLazy.js` 的 `lazyInitializer()` 与 `packages/react-reconciler/src/ReactFiberBeginWork.js` 的 `mountLazyComponent()`、`ReactFiber.js` 的 `createFiberFromTypeAndProps()` 与类型命名 helper。
+   * 验证机制：waitForThrow 匹配解析结果的可读名称和 Lazy 类型错误消息。
+   * 对应源码：`packages/react/src/ReactLazy.js` 的 `lazyInitializer()` 与 `packages/react-reconciler/src/ReactFiberBeginWork.js` 的 `mountLazyComponent()` 的最终无效类型分支与类型命名 helper。
    */
   it('throws with a useful error when wrapping Fragment with lazy()', async () => {
     const BadLazy = lazy(() => fakeImport(React.Fragment));
@@ -971,12 +969,12 @@ describe('ReactLazy', () => {
   });
 
   /**
-   * Given：lazy initializer 最终把 module.default 解析为 createPortal，该值不是此 Lazy 路径允许的 class/function 类型。
+   * Given：lazy initializer 最终把 module.default 解析为 Portal 对象，该值不属于 mountLazyComponent 支持的解析结果。
    * When：先提交 fallback，再解决 fakeImport 并触发一次更新。
-   * Then：lazy payload 可以 Resolved，但 Fiber 类型创建拒绝 createPortal，并报告包含可读类型名的错误。
+   * Then：lazy payload 可以 Resolved，但 mountLazyComponent 的类型分派拒绝 Portal 对象，并报告包含可读类型名的错误。
    *
-   * 验证机制：waitForThrow 精确匹配 resolved value 描述与“必须解析为 class/function”边界。
-   * 对应源码：`packages/react/src/ReactLazy.js` 的 `lazyInitializer()` 与 `packages/react-reconciler/src/ReactFiberBeginWork.js` 的 `mountLazyComponent()`、`ReactFiber.js` 的 `createFiberFromTypeAndProps()` 与类型命名 helper。
+   * 验证机制：waitForThrow 匹配解析结果的可读名称和 Lazy 类型错误消息。
+   * 对应源码：`packages/react/src/ReactLazy.js` 的 `lazyInitializer()` 与 `packages/react-reconciler/src/ReactFiberBeginWork.js` 的 `mountLazyComponent()` 的最终无效类型分支与类型命名 helper。
    */
   // @gate !fb
   it('throws with a useful error when wrapping createPortal with lazy()', async () => {
@@ -1009,12 +1007,12 @@ describe('ReactLazy', () => {
   });
 
   /**
-   * Given：lazy initializer 最终把 module.default 解析为 Profiler，该值不是此 Lazy 路径允许的 class/function 类型。
+   * Given：lazy initializer 最终把 module.default 解析为 Profiler，该值不属于 mountLazyComponent 支持的解析结果。
    * When：先提交 fallback，再解决 fakeImport 并触发一次更新。
-   * Then：lazy payload 可以 Resolved，但 Fiber 类型创建拒绝 Profiler，并报告包含可读类型名的错误。
+   * Then：lazy payload 可以 Resolved，但 mountLazyComponent 的类型分派拒绝 Profiler，并报告包含可读类型名的错误。
    *
-   * 验证机制：waitForThrow 精确匹配 resolved value 描述与“必须解析为 class/function”边界。
-   * 对应源码：`packages/react/src/ReactLazy.js` 的 `lazyInitializer()` 与 `packages/react-reconciler/src/ReactFiberBeginWork.js` 的 `mountLazyComponent()`、`ReactFiber.js` 的 `createFiberFromTypeAndProps()` 与类型命名 helper。
+   * 验证机制：waitForThrow 匹配解析结果的可读名称和 Lazy 类型错误消息。
+   * 对应源码：`packages/react/src/ReactLazy.js` 的 `lazyInitializer()` 与 `packages/react-reconciler/src/ReactFiberBeginWork.js` 的 `mountLazyComponent()` 的最终无效类型分支与类型命名 helper。
    */
   it('throws with a useful error when wrapping Profiler with lazy()', async () => {
     const BadLazy = lazy(() => fakeImport(React.Profiler));
@@ -1043,12 +1041,12 @@ describe('ReactLazy', () => {
   });
 
   /**
-   * Given：lazy initializer 最终把 module.default 解析为 StrictMode，该值不是此 Lazy 路径允许的 class/function 类型。
+   * Given：lazy initializer 最终把 module.default 解析为 StrictMode，该值不属于 mountLazyComponent 支持的解析结果。
    * When：先提交 fallback，再解决 fakeImport 并触发一次更新。
-   * Then：lazy payload 可以 Resolved，但 Fiber 类型创建拒绝 StrictMode，并报告包含可读类型名的错误。
+   * Then：lazy payload 可以 Resolved，但 mountLazyComponent 的类型分派拒绝 StrictMode，并报告包含可读类型名的错误。
    *
-   * 验证机制：waitForThrow 精确匹配 resolved value 描述与“必须解析为 class/function”边界。
-   * 对应源码：`packages/react/src/ReactLazy.js` 的 `lazyInitializer()` 与 `packages/react-reconciler/src/ReactFiberBeginWork.js` 的 `mountLazyComponent()`、`ReactFiber.js` 的 `createFiberFromTypeAndProps()` 与类型命名 helper。
+   * 验证机制：waitForThrow 匹配解析结果的可读名称和 Lazy 类型错误消息。
+   * 对应源码：`packages/react/src/ReactLazy.js` 的 `lazyInitializer()` 与 `packages/react-reconciler/src/ReactFiberBeginWork.js` 的 `mountLazyComponent()` 的最终无效类型分支与类型命名 helper。
    */
   it('throws with a useful error when wrapping StrictMode with lazy()', async () => {
     const BadLazy = lazy(() => fakeImport(React.StrictMode));
@@ -1077,12 +1075,12 @@ describe('ReactLazy', () => {
   });
 
   /**
-   * Given：lazy initializer 最终把 module.default 解析为 Suspense，该值不是此 Lazy 路径允许的 class/function 类型。
+   * Given：lazy initializer 最终把 module.default 解析为 Suspense，该值不属于 mountLazyComponent 支持的解析结果。
    * When：先提交 fallback，再解决 fakeImport 并触发一次更新。
-   * Then：lazy payload 可以 Resolved，但 Fiber 类型创建拒绝 Suspense，并报告包含可读类型名的错误。
+   * Then：lazy payload 可以 Resolved，但 mountLazyComponent 的类型分派拒绝 Suspense，并报告包含可读类型名的错误。
    *
-   * 验证机制：waitForThrow 精确匹配 resolved value 描述与“必须解析为 class/function”边界。
-   * 对应源码：`packages/react/src/ReactLazy.js` 的 `lazyInitializer()` 与 `packages/react-reconciler/src/ReactFiberBeginWork.js` 的 `mountLazyComponent()`、`ReactFiber.js` 的 `createFiberFromTypeAndProps()` 与类型命名 helper。
+   * 验证机制：waitForThrow 匹配解析结果的可读名称和 Lazy 类型错误消息。
+   * 对应源码：`packages/react/src/ReactLazy.js` 的 `lazyInitializer()` 与 `packages/react-reconciler/src/ReactFiberBeginWork.js` 的 `mountLazyComponent()` 的最终无效类型分支与类型命名 helper。
    */
   it('throws with a useful error when wrapping Suspense with lazy()', async () => {
     const BadLazy = lazy(() => fakeImport(React.Suspense));
@@ -1119,7 +1117,7 @@ describe('ReactLazy', () => {
    * 对应源码：`packages/react/src/ReactLazy.js` 的 `lazyInitializer()` 与 `packages/react-reconciler/src/ReactFiberBeginWork.js` 的 `mountLazyComponent()` 与 `ReactFiberBeginWork.js` 的 `updateContextProvider()`。
    */
   it('renders a lazy context provider without value prop', async () => {
-    // Context Provider 被 lazy() 包装后仍应正常工作。
+    // 历史标题保留；本体实际显式传 value="provided"，检查的是 lazy Context Provider 的正常读取。
     const Context = React.createContext('default');
     const LazyProvider = lazy(() => fakeImport(Context));
 
@@ -1147,12 +1145,12 @@ describe('ReactLazy', () => {
   });
 
   /**
-   * Given：lazy initializer 最终把 module.default 解析为 Context.Consumer，该值不是此 Lazy 路径允许的 class/function 类型。
+   * Given：lazy initializer 最终把 module.default 解析为 Context.Consumer，该值不属于 mountLazyComponent 支持的解析结果。
    * When：先提交 fallback，再解决 fakeImport 并触发一次更新。
-   * Then：lazy payload 可以 Resolved，但 Fiber 类型创建拒绝 Context.Consumer，并报告包含可读类型名的错误。
+   * Then：lazy payload 可以 Resolved，但 mountLazyComponent 的类型分派拒绝 Context.Consumer，并报告包含可读类型名的错误。
    *
-   * 验证机制：waitForThrow 精确匹配 resolved value 描述与“必须解析为 class/function”边界。
-   * 对应源码：`packages/react/src/ReactLazy.js` 的 `lazyInitializer()` 与 `packages/react-reconciler/src/ReactFiberBeginWork.js` 的 `mountLazyComponent()`、`ReactFiber.js` 的 `createFiberFromTypeAndProps()` 与类型命名 helper。
+   * 验证机制：waitForThrow 匹配解析结果的可读名称和 Lazy 类型错误消息。
+   * 对应源码：`packages/react/src/ReactLazy.js` 的 `lazyInitializer()` 与 `packages/react-reconciler/src/ReactFiberBeginWork.js` 的 `mountLazyComponent()` 的最终无效类型分支与类型命名 helper。
    */
   it('throws with a useful error when wrapping Context.Consumer with lazy()', async () => {
     const Context = React.createContext(null);
@@ -1182,12 +1180,12 @@ describe('ReactLazy', () => {
   });
 
   /**
-   * Given：lazy initializer 最终把 module.default 解析为 SuspenseList，该值不是此 Lazy 路径允许的 class/function 类型。
+   * Given：lazy initializer 最终把 module.default 解析为 SuspenseList，该值不属于 mountLazyComponent 支持的解析结果。
    * When：先提交 fallback，再解决 fakeImport 并触发一次更新。
-   * Then：lazy payload 可以 Resolved，但 Fiber 类型创建拒绝 SuspenseList，并报告包含可读类型名的错误。
+   * Then：lazy payload 可以 Resolved，但 mountLazyComponent 的类型分派拒绝 SuspenseList，并报告包含可读类型名的错误。
    *
-   * 验证机制：waitForThrow 精确匹配 resolved value 描述与“必须解析为 class/function”边界。
-   * 对应源码：`packages/react/src/ReactLazy.js` 的 `lazyInitializer()` 与 `packages/react-reconciler/src/ReactFiberBeginWork.js` 的 `mountLazyComponent()`、`ReactFiber.js` 的 `createFiberFromTypeAndProps()` 与类型命名 helper。
+   * 验证机制：waitForThrow 匹配解析结果的可读名称和 Lazy 类型错误消息。
+   * 对应源码：`packages/react/src/ReactLazy.js` 的 `lazyInitializer()` 与 `packages/react-reconciler/src/ReactFiberBeginWork.js` 的 `mountLazyComponent()` 的最终无效类型分支与类型命名 helper。
    */
   // @gate enableSuspenseList
   it('throws with a useful error when wrapping SuspenseList with lazy()', async () => {
@@ -1217,12 +1215,12 @@ describe('ReactLazy', () => {
   });
 
   /**
-   * Given：lazy initializer 最终把 module.default 解析为 ViewTransition，该值不是此 Lazy 路径允许的 class/function 类型。
+   * Given：lazy initializer 最终把 module.default 解析为 ViewTransition，该值不属于 mountLazyComponent 支持的解析结果。
    * When：先提交 fallback，再解决 fakeImport 并触发一次更新。
-   * Then：lazy payload 可以 Resolved，但 Fiber 类型创建拒绝 ViewTransition，并报告包含可读类型名的错误。
+   * Then：lazy payload 可以 Resolved，但 mountLazyComponent 的类型分派拒绝 ViewTransition，并报告包含可读类型名的错误。
    *
-   * 验证机制：waitForThrow 精确匹配 resolved value 描述与“必须解析为 class/function”边界。
-   * 对应源码：`packages/react/src/ReactLazy.js` 的 `lazyInitializer()` 与 `packages/react-reconciler/src/ReactFiberBeginWork.js` 的 `mountLazyComponent()`、`ReactFiber.js` 的 `createFiberFromTypeAndProps()` 与类型命名 helper。
+   * 验证机制：waitForThrow 匹配解析结果的可读名称和 Lazy 类型错误消息。
+   * 对应源码：`packages/react/src/ReactLazy.js` 的 `lazyInitializer()` 与 `packages/react-reconciler/src/ReactFiberBeginWork.js` 的 `mountLazyComponent()` 的最终无效类型分支与类型命名 helper。
    */
   // @gate enableViewTransition
   it('throws with a useful error when wrapping ViewTransition with lazy()', async () => {
@@ -1252,12 +1250,12 @@ describe('ReactLazy', () => {
   });
 
   /**
-   * Given：lazy initializer 最终把 module.default 解析为 Activity，该值不是此 Lazy 路径允许的 class/function 类型。
+   * Given：lazy initializer 最终把 module.default 解析为 Activity，该值不属于 mountLazyComponent 支持的解析结果。
    * When：先提交 fallback，再解决 fakeImport 并触发一次更新。
-   * Then：lazy payload 可以 Resolved，但 Fiber 类型创建拒绝 Activity，并报告包含可读类型名的错误。
+   * Then：lazy payload 可以 Resolved，但 mountLazyComponent 的类型分派拒绝 Activity，并报告包含可读类型名的错误。
    *
-   * 验证机制：waitForThrow 精确匹配 resolved value 描述与“必须解析为 class/function”边界。
-   * 对应源码：`packages/react/src/ReactLazy.js` 的 `lazyInitializer()` 与 `packages/react-reconciler/src/ReactFiberBeginWork.js` 的 `mountLazyComponent()`、`ReactFiber.js` 的 `createFiberFromTypeAndProps()` 与类型命名 helper。
+   * 验证机制：waitForThrow 匹配解析结果的可读名称和 Lazy 类型错误消息。
+   * 对应源码：`packages/react/src/ReactLazy.js` 的 `lazyInitializer()` 与 `packages/react-reconciler/src/ReactFiberBeginWork.js` 的 `mountLazyComponent()` 的最终无效类型分支与类型命名 helper。
    */
   it('throws with a useful error when wrapping Activity with lazy()', async () => {
     const BadLazy = lazy(() => fakeImport(React.Activity));
@@ -1286,12 +1284,12 @@ describe('ReactLazy', () => {
   });
 
   /**
-   * Given：lazy initializer 最终把 module.default 解析为 TracingMarker，该值不是此 Lazy 路径允许的 class/function 类型。
+   * Given：lazy initializer 最终把 module.default 解析为 TracingMarker，该值不属于 mountLazyComponent 支持的解析结果。
    * When：先提交 fallback，再解决 fakeImport 并触发一次更新。
-   * Then：lazy payload 可以 Resolved，但 Fiber 类型创建拒绝 TracingMarker，并报告包含可读类型名的错误。
+   * Then：lazy payload 可以 Resolved，但 mountLazyComponent 的类型分派拒绝 TracingMarker，并报告包含可读类型名的错误。
    *
-   * 验证机制：waitForThrow 精确匹配 resolved value 描述与“必须解析为 class/function”边界。
-   * 对应源码：`packages/react/src/ReactLazy.js` 的 `lazyInitializer()` 与 `packages/react-reconciler/src/ReactFiberBeginWork.js` 的 `mountLazyComponent()`、`ReactFiber.js` 的 `createFiberFromTypeAndProps()` 与类型命名 helper。
+   * 验证机制：waitForThrow 匹配解析结果的可读名称和 Lazy 类型错误消息。
+   * 对应源码：`packages/react/src/ReactLazy.js` 的 `lazyInitializer()` 与 `packages/react-reconciler/src/ReactFiberBeginWork.js` 的 `mountLazyComponent()` 的最终无效类型分支与类型命名 helper。
    */
   // @gate enableTransitionTracing
   it('throws with a useful error when wrapping TracingMarker with lazy()', async () => {
@@ -1321,12 +1319,12 @@ describe('ReactLazy', () => {
   });
 
   /**
-   * Given：lazy initializer 最终把 module.default 解析为 不受支持类型，该值不是此 Lazy 路径允许的 class/function 类型。
+   * Given：lazy initializer 最终把 module.default 解析为另一个 Lazy 对象，该值不属于 mountLazyComponent 支持的解析结果。
    * When：先提交 fallback，再解决 fakeImport 并触发一次更新。
-   * Then：lazy payload 可以 Resolved，但 Fiber 类型创建拒绝 不受支持类型，并报告包含可读类型名的错误。
+   * Then：lazy payload 可以 Resolved，但 mountLazyComponent 的类型分派拒绝嵌套 Lazy 对象，并报告包含可读类型名的错误。
    *
-   * 验证机制：waitForThrow 精确匹配 resolved value 描述与“必须解析为 class/function”边界。
-   * 对应源码：`packages/react/src/ReactLazy.js` 的 `lazyInitializer()` 与 `packages/react-reconciler/src/ReactFiberBeginWork.js` 的 `mountLazyComponent()`、`ReactFiber.js` 的 `createFiberFromTypeAndProps()` 与类型命名 helper。
+   * 验证机制：waitForThrow 匹配解析结果的可读名称和 Lazy 类型错误消息。
+   * 对应源码：`packages/react/src/ReactLazy.js` 的 `lazyInitializer()` 与 `packages/react-reconciler/src/ReactFiberBeginWork.js` 的 `mountLazyComponent()` 的最终无效类型分支与类型命名 helper。
    */
   it('throws with a useful error when wrapping lazy() multiple times', async () => {
     const Lazy1 = lazy(() => fakeImport(Text));
@@ -1364,7 +1362,7 @@ describe('ReactLazy', () => {
    * When：解决 module 完成挂载，再更新同一 LazyAdd。
    * Then：lazy 解包后按 function 的真实类型解析 props；显式 false 不被默认值或 wrapper 丢弃。
    *
-   * 验证机制：宿主输出从 22 变为 0；带 defaultProps 用例另断言仅缺失字段补为 42。
+   * 验证机制：宿主输出从 22 变为 0。
    * 对应源码：`packages/react/src/ReactLazy.js` 的 `lazyInitializer()` 与 `packages/react-reconciler/src/ReactFiberBeginWork.js` 的 `mountLazyComponent()` 与 `ReactFiberBeginWork.js` 的 lazy tag/props 解析。
    */
   it('resolves props for function component without defaultProps', async () => {
@@ -1405,13 +1403,13 @@ describe('ReactLazy', () => {
    * When：解决 module 完成挂载，再更新同一 LazyAdd。
    * Then：lazy 解包后按 带 defaultProps 的 class 的真实类型解析 props；显式 false 不被默认值或 wrapper 丢弃。
    *
-   * 验证机制：宿主输出从 22 变为 0；带 defaultProps 用例另断言仅缺失字段补为 42。
+   * 验证机制：输出从 22 变为 0，render 内同时断言缺失的 innerWithDefault 被补为 42。
    * 对应源码：`packages/react/src/ReactLazy.js` 的 `lazyInitializer()` 与 `packages/react-reconciler/src/ReactFiberBeginWork.js` 的 `mountLazyComponent()` 与 `ReactFiberBeginWork.js` 的 lazy tag/props 解析。
    */
   it('resolves props for class component with defaultProps', async () => {
-    /** 定义 Add 类 fixture，暴露实例身份、defaultProps、错误边界或生命周期，用于“带 defaultProps 的 class 经 Lazy 解包后的 props 与 defaultProps 语义”。 */
+    /** 有 innerWithDefault=42 的真实类加法组件，经 lazy 解析后验证缺省值与显式 false 保真。 */
     class Add extends React.Component {
-      /** Add.render 渲染当前 props/state 并暴露日志或宿主输出，用于“带 defaultProps 的 class 经 Lazy 解包后的 props 与 defaultProps 语义”。 */
+      /** 先断言缺失字段补为42，再相加 inner/outer：字符串得到22，两个false得到0。 */
       render() {
         expect(this.props.innerWithDefault).toBe(42);
         return this.props.inner + this.props.outer;
@@ -1449,17 +1447,17 @@ describe('ReactLazy', () => {
   });
 
   /**
-   * Given：带 defaultProps 的 class Add 经 Lazy 包装，首次 props 为字符串 2/2，更新 props 为显式 false/false。
+   * Given：无 defaultProps 的 class Add 经 Lazy 包装，首次 props 为字符串 2/2，更新 props 为显式 false/false。
    * When：解决 module 完成挂载，再更新同一 LazyAdd。
-   * Then：lazy 解包后按 带 defaultProps 的 class 的真实类型解析 props；显式 false 不被默认值或 wrapper 丢弃。
+   * Then：lazy 解包后按 无 defaultProps 的 class 的真实类型解析 props；显式 false 不被默认值或 wrapper 丢弃。
    *
-   * 验证机制：宿主输出从 22 变为 0；带 defaultProps 用例另断言仅缺失字段补为 42。
+   * 验证机制：宿主输出从 22 变为 0。
    * 对应源码：`packages/react/src/ReactLazy.js` 的 `lazyInitializer()` 与 `packages/react-reconciler/src/ReactFiberBeginWork.js` 的 `mountLazyComponent()` 与 `ReactFiberBeginWork.js` 的 lazy tag/props 解析。
    */
   it('resolves props for class component without defaultProps', async () => {
-    /** 定义 Add 类 fixture，暴露实例身份、defaultProps、错误边界或生命周期，用于“带 defaultProps 的 class 经 Lazy 解包后的 props 与 defaultProps 语义”。 */
+    /** 不声明 defaultProps 的真实类加法组件，作为 lazy props 解析的普通类对照。 */
     class Add extends React.Component {
-      /** Add.render 渲染当前 props/state 并暴露日志或宿主输出，用于“带 defaultProps 的 class 经 Lazy 解包后的 props 与 defaultProps 语义”。 */
+      /** 直接相加 inner/outer，验证2字符串拼接与false数值相加均不被包装修改。 */
       render() {
         return this.props.inner + this.props.outer;
       }
@@ -1497,7 +1495,7 @@ describe('ReactLazy', () => {
    * When：解决 module 完成挂载，再更新同一 LazyAdd。
    * Then：lazy 解包后按 forwardRef 的真实类型解析 props；显式 false 不被默认值或 wrapper 丢弃。
    *
-   * 验证机制：宿主输出从 22 变为 0；带 defaultProps 用例另断言仅缺失字段补为 42。
+   * 验证机制：宿主输出从 22 变为 0。
    * 对应源码：`packages/react/src/ReactLazy.js` 的 `lazyInitializer()` 与 `packages/react-reconciler/src/ReactFiberBeginWork.js` 的 `mountLazyComponent()` 与 `ReactFiberBeginWork.js` 的 lazy tag/props 解析。
    */
   it('resolves props for forwardRef component without defaultProps', async () => {
@@ -1539,11 +1537,11 @@ describe('ReactLazy', () => {
    * When：解决 module 完成挂载，再更新同一 LazyAdd。
    * Then：lazy 解包后按 外层 memo 的真实类型解析 props；显式 false 不被默认值或 wrapper 丢弃。
    *
-   * 验证机制：宿主输出从 22 变为 0；带 defaultProps 用例另断言仅缺失字段补为 42。
+   * 验证机制：宿主输出从 22 变为 0。
    * 对应源码：`packages/react/src/ReactLazy.js` 的 `lazyInitializer()` 与 `packages/react-reconciler/src/ReactFiberBeginWork.js` 的 `mountLazyComponent()` 与 `ReactFiberBeginWork.js` 的 lazy tag/props 解析。
    */
   it('resolves props for outer memo component without defaultProps', async () => {
-    /** Add 以函数变量形式提供 resolved component，并暴露 props/告警栈行为，用于“外层 memo 经 Lazy 解包后的 props 与 defaultProps 语义”。 */
+    /** Add 以函数变量形式提供 resolved component，并暴露 props/告警栈行为。 */
     let Add = props => {
       return props.inner + props.outer;
     };
@@ -1577,15 +1575,15 @@ describe('ReactLazy', () => {
   });
 
   /**
-   * Given：内部实现 Add 经 Lazy 包装，首次 props 为字符串 2/2，更新 props 为显式 false/false。
+   * Given：普通函数 Add 设置 displayName 后经 Lazy 包装；本体没有调用 React.memo，虽沿用 inner memo 历史标题。
    * When：解决 module 完成挂载，再更新同一 LazyAdd。
-   * Then：lazy 解包后按 内部实现 的真实类型解析 props；显式 false 不被默认值或 wrapper 丢弃。
+   * Then：普通函数收到原 props，输出从字符串 22 变为数值 0；本用例不单独验证 memo 内层分派。
    *
-   * 验证机制：宿主输出从 22 变为 0；带 defaultProps 用例另断言仅缺失字段补为 42。
+   * 验证机制：宿主输出从 22 变为 0。
    * 对应源码：`packages/react/src/ReactLazy.js` 的 `lazyInitializer()` 与 `packages/react-reconciler/src/ReactFiberBeginWork.js` 的 `mountLazyComponent()` 与 `ReactFiberBeginWork.js` 的 lazy tag/props 解析。
    */
   it('resolves props for inner memo component without defaultProps', async () => {
-    /** Add 以函数变量形式提供 resolved component，并暴露 props/告警栈行为，用于“内部实现 经 Lazy 解包后的 props 与 defaultProps 语义”。 */
+    /** Add 以函数变量形式提供 resolved component，并暴露 props/告警栈行为。 */
     const Add = props => {
       return props.inner + props.outer;
     };
@@ -1627,7 +1625,7 @@ describe('ReactLazy', () => {
    * 对应源码：`ReactLazy.js` 的解析、`getComponentNameFromType()` 与 Fiber component stack 生成。
    */
   it('includes lazy-loaded component in warning stack', async () => {
-    /** Foo 以函数变量形式提供 resolved component，并暴露 props/告警栈行为，用于“Lazy 已解析组件在开发态 warning stack 中显示真实名称”。 */
+    /** Foo 以函数变量形式提供 resolved component，并暴露 props/告警栈行为。 */
     const Foo = props => <div>{[<Text text="A" />, <Text text="B" />]}</div>;
     const LazyFoo = lazy(() => {
       Scheduler.log('Started loading');
@@ -1667,9 +1665,9 @@ describe('ReactLazy', () => {
    * 对应源码：`ReactFiber.js` 的 `resolveLazyComponentTag()` 与 `ReactFiberBeginWork.js` 的 lazy/forwardRef 分发。
    */
   it('supports class and forwardRef components', async () => {
-    /** 定义 Foo 类 fixture，暴露实例身份、defaultProps、错误边界或生命周期，用于“Lazy 支持 class 与 forwardRef 解析结果并保持 ref”。 */
+    /** 被 lazy 加载的普通类，输出 Foo，作为 forwardRef 与类类型分派的对照。 */
     class Foo extends React.Component {
-      /** Foo.render 渲染当前 props/state 并暴露日志或宿主输出，用于“Lazy 支持 class 与 forwardRef 解析结果并保持 ref”。 */
+      /** 渲染固定 Foo 文本，记录 class module 解决后的主树访问。 */
       render() {
         return <Text text="Foo" />;
       }
@@ -1678,9 +1676,9 @@ describe('ReactLazy', () => {
       return fakeImport(Foo);
     });
 
-    /** 定义 Bar 类 fixture，暴露实例身份、defaultProps、错误边界或生命周期，用于“Lazy 支持 class 与 forwardRef 解析结果并保持 ref”。 */
+    /** 由 lazy forwardRef 包装并接收真实 ref 的类实例，用于检验 ref 最终落在内部类。 */
     class Bar extends React.Component {
-      /** Bar.render 渲染当前 props/state 并暴露日志或宿主输出，用于“Lazy 支持 class 与 forwardRef 解析结果并保持 ref”。 */
+      /** 渲染固定 Bar 文本，与 forwardRef 日志一起说明 wrapper 到实例的调用顺序。 */
       render() {
         return <Text text="Bar" />;
       }
@@ -1735,9 +1733,9 @@ describe('ReactLazy', () => {
     }
     const LazyText = lazy(() => fakeImport(ResolvedText));
 
-    /** 定义 ErrorBoundary 类 fixture，暴露实例身份、defaultProps、错误边界或生命周期，用于“已解析 Lazy 错误栈使用真实组件名”。 */
+    /** 捕获解析后 ResolvedText 的 render 错误并保存组件栈，验证真实类型名称已生效。 */
     class ErrorBoundary extends React.Component {
-      /** ErrorBoundary.state 保存实例或错误边界状态，区分 Lazy retry、普通更新与 bailout。 */
+      /** 初始 error=null；componentDidCatch 保存错误后删除故障子树。 */
       state = {error: null};
 
       /** ErrorBoundary.componentDidCatch 捕获 resolved/unresolved Lazy 抛错并保存规范化 componentStack。 */
@@ -1748,7 +1746,7 @@ describe('ReactLazy', () => {
         });
       }
 
-      /** ErrorBoundary.render 渲染当前 props/state 并暴露日志或宿主输出，用于“已解析 Lazy 错误栈使用真实组件名”。 */
+      /** 捕获后返回null，否则渲染lazy子树，组件栈由componentDidCatch另行保存。 */
       render() {
         return this.state.error ? null : this.props.children;
       }
@@ -1783,15 +1781,15 @@ describe('ReactLazy', () => {
     let componentStackMessage;
 
     const LazyText = lazy(() => ({
-      /** then 实现本场景的同步 fulfilled/rejected thenable 协议，用于“未解析 Lazy 错误栈保留 Lazy 占位名”。 */
+      /** then 实现本场景的同步 fulfilled/rejected thenable 协议。 */
       then(resolve, reject) {
         reject(new Error('oh no'));
       },
     }));
 
-    /** 定义 ErrorBoundary 类 fixture，暴露实例身份、defaultProps、错误边界或生命周期，用于“未解析 Lazy 错误栈保留 Lazy 占位名”。 */
+    /** 捕获未解析 lazy 的同步 rejection，保存仍命名 Lazy 的组件栈。 */
     class ErrorBoundary extends React.Component {
-      /** ErrorBoundary.state 保存实例或错误边界状态，区分 Lazy retry、普通更新与 bailout。 */
+      /** 初始 error=null；捕获 initializer 错误后切换为空输出。 */
       state = {error: null};
 
       /** ErrorBoundary.componentDidCatch 捕获 resolved/unresolved Lazy 抛错并保存规范化 componentStack。 */
@@ -1802,7 +1800,7 @@ describe('ReactLazy', () => {
         });
       }
 
-      /** ErrorBoundary.render 渲染当前 props/state 并暴露日志或宿主输出，用于“未解析 Lazy 错误栈保留 Lazy 占位名”。 */
+      /** 有错误时删除lazy子树；输出不参与类型命名断言，保存的组件栈才是证据。 */
       render() {
         return this.state.error ? null : this.props.children;
       }
@@ -1827,19 +1825,20 @@ describe('ReactLazy', () => {
   /**
    * Given：并发 root 初始使用 LazyChildA/B 类型和稳定 key，交换后改用新的 LazyChildB2/A2 类型。
    * When：依次解决初始 modules 并提交 AB，再交换顺序和 lazy type，按用例节奏解决或冲刷第二组。
-   * Then：key 相同但 element type 改变会替换旧实例；新类型完成后按 BA 顺序提交，并呈现对应 mount/update 边界。
+   * Then：B2 的新 Promise 先使已显示主树切到 Loading，再恢复为 ba；日志出现旧布局卸载与恢复时的挂载。
+   * 两组 lazy 解析到同一 ChildA/B 实现，包装对象不同本身不证明实例替换；这些生命周期也由 Suspense 布局断开/重连触发。
    *
    * 验证机制：Init、fallback、unmount/mount 或 update 日志与 AB→ba 输出锁定 reconcile 决策。
    * 对应源码：`ReactChildFiber.js` 的 lazy type 解析与 keyed element type 比较，以及 `ReactLazy.js`。
    */
   it('mount and reorder lazy types', async () => {
-    /** 定义 Child 类 fixture，暴露实例身份、defaultProps、错误边界或生命周期，用于“并发模式下 Lazy type 更换与 keyed 重排”。 */
+    /** 并发lazy类型重排中的真实叶类，日志记录Suspense消失/重现期间的布局生命周期。 */
     class Child extends React.Component {
       /** Child.componentWillUnmount 记录旧 Lazy type 被替换时的卸载边界。 */
       componentWillUnmount() {
         Scheduler.log('Did unmount: ' + this.props.label);
       }
-      /** Child.componentDidMount 记录首次提交及实例 label/defaultProps，用于“并发模式下 Lazy type 更换与 keyed 重排”。 */
+      /** Child.componentDidMount 记录首次提交时的 label。 */
       componentDidMount() {
         Scheduler.log('Did mount: ' + this.props.label);
       }
@@ -1847,7 +1846,7 @@ describe('ReactLazy', () => {
       componentDidUpdate() {
         Scheduler.log('Did update: ' + this.props.label);
       }
-      /** Child.render 渲染当前 props/state 并暴露日志或宿主输出，用于“并发模式下 Lazy type 更换与 keyed 重排”。 */
+      /** 输出当前大/小写label，区分AB、fallback以及恢复后的ba。 */
       render() {
         return <Text text={this.props.label} />;
       }
@@ -1945,9 +1944,9 @@ describe('ReactLazy', () => {
    * 对应源码：`ReactChildFiber.js` 的 `resolveLazy()`/children reconciliation 与 `ReactLazy.js`。
    */
   it('mount and reorder lazy elements', async () => {
-    /** 定义 Child 类 fixture，暴露实例身份、defaultProps、错误边界或生命周期，用于“并发模式下 Lazy element 解析、key 复用与重排”。 */
+    /** lazy对象作为children解析后产生的keyed类叶子，mount/update日志检验元素身份复用。 */
     class Child extends React.Component {
-      /** Child.componentDidMount 记录首次提交及实例 label/defaultProps，用于“并发模式下 Lazy element 解析、key 复用与重排”。 */
+      /** Child.componentDidMount 记录首次提交时的 label。 */
       componentDidMount() {
         Scheduler.log('Did mount: ' + this.props.label);
       }
@@ -1955,7 +1954,7 @@ describe('ReactLazy', () => {
       componentDidUpdate() {
         Scheduler.log('Did update: ' + this.props.label);
       }
-      /** Child.render 渲染当前 props/state 并暴露日志或宿主输出，用于“并发模式下 Lazy element 解析、key 复用与重排”。 */
+      /** 输出解析后的element label，交换A/B为b/a仍应调用update生命周期。 */
       render() {
         return <Text text={this.props.label} />;
       }
@@ -2030,9 +2029,9 @@ describe('ReactLazy', () => {
      */
     // @gate !disableLegacyMode
     it('mount and reorder lazy elements (legacy mode)', async () => {
-      /** 定义 Child 类 fixture，暴露实例身份、defaultProps、错误边界或生命周期，用于“legacy模式下 Lazy element 解析、key 复用与重排”。 */
+      /** legacy lazy元素重排的keyed真实类，更新日志验证同key元素复用。 */
       class Child extends React.Component {
-        /** Child.componentDidMount 记录首次提交及实例 label/defaultProps，用于“legacy模式下 Lazy element 解析、key 复用与重排”。 */
+        /** Child.componentDidMount 记录首次提交时的 label。 */
         componentDidMount() {
           Scheduler.log('Did mount: ' + this.props.label);
         }
@@ -2040,7 +2039,7 @@ describe('ReactLazy', () => {
         componentDidUpdate() {
           Scheduler.log('Did update: ' + this.props.label);
         }
-        /** Child.render 渲染当前 props/state 并暴露日志或宿主输出，用于“legacy模式下 Lazy element 解析、key 复用与重排”。 */
+        /** 输出当前label，legacy分阶段解决模块后从AB更新为ba。 */
         render() {
           return <Text text={this.props.label} />;
         }
@@ -2106,16 +2105,16 @@ describe('ReactLazy', () => {
     /**
      * Given：legacy root 初始使用 LazyChildA/B 类型和稳定 key，交换后改用新的 LazyChildB2/A2 类型。
      * When：依次解决初始 modules 并提交 AB，再交换顺序和 lazy type，按用例节奏解决或冲刷第二组。
-     * Then：key 相同但 element type 改变会替换旧实例；新类型完成后按 BA 顺序提交，并呈现对应 mount/update 边界。
+     * Then：新 lazy 包装解析到已加载的同一 ChildA/B 实现，协调器复用真实类型；最终 ba 伴随 Did update:b/a，未重新挂载。
      *
      * 验证机制：Init、fallback、unmount/mount 或 update 日志与 AB→ba 输出锁定 reconcile 决策。
      * 对应源码：`ReactChildFiber.js` 的 lazy type 解析与 keyed element type 比较，以及 `ReactLazy.js`。
      */
     // @gate !disableLegacyMode
     it('mount and reorder lazy types (legacy mode)', async () => {
-      /** 定义 Child 类 fixture，暴露实例身份、defaultProps、错误边界或生命周期，用于“legacy模式下 Lazy type 更换与 keyed 重排”。 */
+      /** legacy lazy包装更换后的真实类叶子，两个包装解析到同一ChildA/B类型时保留更新路径。 */
       class Child extends React.Component {
-        /** Child.componentDidMount 记录首次提交及实例 label/defaultProps，用于“legacy模式下 Lazy type 更换与 keyed 重排”。 */
+        /** Child.componentDidMount 记录首次提交时的 label。 */
         componentDidMount() {
           Scheduler.log('Did mount: ' + this.props.label);
         }
@@ -2123,7 +2122,7 @@ describe('ReactLazy', () => {
         componentDidUpdate() {
           Scheduler.log('Did update: ' + this.props.label);
         }
-        /** Child.render 渲染当前 props/state 并暴露日志或宿主输出，用于“legacy模式下 Lazy type 更换与 keyed 重排”。 */
+        /** 输出当前label，Did update:b/a与ba证明此场景没有重新触发Did mount。 */
         render() {
           return <Text text={this.props.label} />;
         }

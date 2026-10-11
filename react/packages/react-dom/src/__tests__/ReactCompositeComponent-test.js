@@ -24,8 +24,7 @@ describe('ReactCompositeComponent', () => {
   const hasOwnProperty = Object.prototype.hasOwnProperty;
 
   /**
-   * 通过迭代对象的键并返回 false 来比较两个对象，当任何键的值不严格相等时。 当所有键的值都严格相
-   * 等时返回 true。
+   * 以 Object.is 比较 objA/objB identity，非空对象再逐个比较可枚举字符串键及对应字段；缺失键或不同引用返回 false，不递归深入数组/对象，也不比较 symbol 键。供 class SCU 模拟浅比较策略。
    */
   function shallowEqual(objA: mixed, objB: mixed): boolean {
     if (Object.is(objA, objB)) {
@@ -55,7 +54,9 @@ describe('ReactCompositeComponent', () => {
     return true;
   }
 
-  /** `shallowCompare`：封装当前用例复用的操作、回调或断言步骤。 */
+  /**
+   * 比较 instance 当前 props/state 与 nextProps/nextState；任一浅比较不同即返回 true，供 shouldComponentUpdate 决定是否进入该 fixture render。
+   */
   function shallowCompare(instance, nextProps, nextState) {
     return (
       !shallowEqual(instance.props, nextProps) ||
@@ -80,23 +81,36 @@ describe('ReactCompositeComponent', () => {
     let childInstance;
 
     beforeEach(() => {
+      /**
+       * 在 a/b 两种宿主类型间切换的 class fixture；共享对象 ref 观察节点替换，事件和外部方法都可切换 activated。
+       */
       MorphingComponent = class extends React.Component {
-        /** `state`：记录测试夹具在当前场景中的状态。 */
+        /**
+         * activated=false 先输出 a，toggle 反转后输出 b；状态控制类型而非单个 DOM 属性更新。
+         */
         state = {activated: false};
-        /** `xRef`：记录测试夹具在当前场景中的状态。 */
+        /**
+         * 跨宿主类型共用的对象 ref；提交删除旧节点再指向新节点，断言读取当前 tagName。
+         */
         xRef = React.createRef();
 
-        /** `componentDidMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /**
+         * 把已提交组件实例保存给测试，后续可调用 toggle；不在 render 阶段暴露未提交实例。
+         */
         componentDidMount() {
           instance = this;
         }
 
-        /** `_toggleActivatedState`：封装当前用例复用的操作、回调或断言步骤。 */
+        /**
+         * 用当前 activated 的反值 setState，供 DOM click 和测试直接调用；无返回值，act 负责等待更新提交。
+         */
         _toggleActivatedState = () => {
           this.setState({activated: !this.state.activated});
         };
 
-        /** `render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /**
+         * activated 决定返回 a 或 b，两者使用同一 xRef 和 toggle handler；替换必须同时更新 ref 与事件目标。
+         */
         render() {
           const toggleActivatedState = this._toggleActivatedState;
           return !this.state.activated ? (
@@ -108,23 +122,31 @@ describe('ReactCompositeComponent', () => {
       };
 
       /**
-       * 我们将使用此功能以确保当它再次分配时，旧版本不会被缓存。
+       * 反复删除重建 a 的 fixture；renderAnchor 控制 a/b 类型，anchorClassOn 仅改变 a 的 class。
        */
       ChildUpdates = class extends React.Component {
-        /** `anchorRef`：记录测试夹具在当前场景中的状态。 */
+        /**
+         * 保存 a 的对象 ref；换成 b 时解绑，重新生成 a 后应指向新节点。
+         */
         anchorRef = React.createRef();
 
-        /** `componentDidMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /**
+         * 把已提交实例保存为 childInstance，让用例在多次根更新后读取当前 anchor。
+         */
         componentDidMount() {
           childInstance = this;
         }
 
-        /** `getAnchor`：封装当前用例复用的操作、回调或断言步骤。 */
+        /**
+         * 返回 anchorRef.current，暴露当前已提交 a 而非缓存之前 DOM；a 不存在时可为 null。
+         */
         getAnchor = () => {
           return this.anchorRef.current;
         };
 
-        /** `render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /**
+         * renderAnchor 为真返回带 ref/className 的 a，否则返回无该 ref 的 b；重新挂载 a 时 className 从当前 prop 计算。
+         */
         render() {
           const className = this.props.anchorClassOn ? 'anchorClass' : '';
           return this.props.renderAnchor ? (
@@ -136,12 +158,7 @@ describe('ReactCompositeComponent', () => {
       };
     });
     /**
-     * 代表场景（Given–When–Then）：
-     * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-     * When 执行「should support rendering to different child types over time」描述的渲染或交互；
-     * Then 通过本用例的 DOM、日志或调度断言确认行为。
-     *
-     * 验证机制：断言连接 ReactDOM 公开入口、ReactDOMRoot 根生命周期及 DOM 提交结果。
+     * MorphingComponent 初始 activated=false 返回 a，连续调用 toggle 两次；ref.tagName 为 A→B→A，证明 class 状态更新可替换宿主类型并指向当前节点。
      */
     it('should support rendering to different child types over time', async () => {
       const root = ReactDOMClient.createRoot(document.createElement('div'));
@@ -161,7 +178,9 @@ describe('ReactCompositeComponent', () => {
       expect(instance.xRef.current.tagName).toBe('A');
     });
 
-    /** 测试场景：验证「should react to state changes from callbacks」描述的渲染、交互或错误处理结果。 */
+    /**
+     * 容器加入 document 后挂载 a，点击其真实 DOM；handler 切换状态后 ref 指向 B，finally 移除容器并卸载根，验证事件回调能驱动类型替换。
+     */
     it('should react to state changes from callbacks', async () => {
       const container = document.createElement('div');
       document.body.appendChild(container);
@@ -181,7 +200,9 @@ describe('ReactCompositeComponent', () => {
       }
     });
 
-    /** 测试场景：验证「should rewire refs when rendering to different child types」描述的渲染、交互或错误处理结果。 */
+    /**
+     * 同一对象 ref 跨 a/b/a 类型切换；每次 act 后 tagName 正确，验证旧宿主 ref 解绑与新节点挂接，而非保留已删除 DOM。
+     */
     it('should rewire refs when rendering to different child types', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -201,7 +222,9 @@ describe('ReactCompositeComponent', () => {
       expect(instance.xRef.current.tagName).toBe('A');
     });
 
-    /** 测试场景：验证「should not cache old DOM nodes when switching constructors」描述的渲染、交互或错误处理结果。 */
+    /**
+     * ChildUpdates 先 a 无 class、给旧 a 加 class、换 b、再生成新 a 无 class；最终 getAnchor().className 为空，证明新类型挂载不复用旧宿主属性缓存。
+     */
     it('should not cache old DOM nodes when switching constructors', async () => {
       const container = document.createElement('div');
       const root = ReactDOMClient.createRoot(container);
@@ -210,13 +233,13 @@ describe('ReactCompositeComponent', () => {
       });
       await act(() => {
         root.render(
-          // 热任何缓存
+          // 先更新现有锚点的 class，再测试移除后的节点替换。
           <ChildUpdates renderAnchor={true} anchorClassOn={true} />,
         );
       });
       await act(() => {
         root.render(
-          // 清除.
+          // 移除锚点。
           <ChildUpdates renderAnchor={false} anchorClassOn={true} />,
         );
       });
@@ -230,12 +253,18 @@ describe('ReactCompositeComponent', () => {
     });
   });
 
-  /** 测试场景：验证「should not support module pattern components」描述的渲染、交互或错误处理结果。 */
+  /**
+   * Child 函数返回带 render 方法的普通对象；act 拒绝 object with keys render，容器文本为空，证明函数返回值按 React child 校验而不采用 module pattern。
+   */
   it('should not support module pattern components', async () => {
-    /** `Child`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * 接收 test 却返回带 render 方法的普通对象，故意制造已不支持的 module pattern；React 应按 invalid child 拒绝对象。
+     */
     function Child({test}) {
       return {
-        /** `Child.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+        /**
+         * 对象中的 render 若被调用会返回 test div，但本测试要求 React 不采用该协议；实际函数返回值会在调用此方法前被拒绝。
+         */
         render() {
           return <div>{test}</div>;
         },
@@ -255,30 +284,44 @@ describe('ReactCompositeComponent', () => {
     expect(el.textContent).toBe('');
   });
 
-  /** 测试场景：验证「should use default values for undefined props」描述的渲染、交互或错误处理结果。 */
+  /**
+   * class defaultProps.prop=testKey，依次省略、传 undefined、传 null；实例 props 为默认、默认、null，验证仅 undefined 使用默认值。
+   */
   it('should use default values for undefined props', async () => {
-    /** `Component`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /**
+     * 使用静态默认 prop 的 class fixture；不同 ref 暴露 resolved props 以比较省略/undefined/null。
+     */
     class Component extends React.Component {
-      /** `Component.defaultProps`：记录测试夹具在当前场景中的状态。 */
+      /**
+       * 默认 prop=testKey，仅对应 undefined 输入；显式 null 必须保留。
+       */
       static defaultProps = {prop: 'testKey'};
 
-      /** `Component.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 返回空 span，输出不读取 prop；实际断言通过实例 props 验证默认值解析。
+       */
       render() {
         return <span />;
       }
     }
 
-    /** `refFn1`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * 保存首轮 class ref 到 instance1，供省略 prop 的 resolved props 断言；解绑 null 也会覆盖变量。
+     */
     function refFn1(ref) {
       instance1 = ref;
     }
 
-    /** `refFn2`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * 保存第二轮 ref 到 instance2，用来读取 undefined 输入采用默认值后的 props。
+     */
     function refFn2(ref) {
       instance2 = ref;
     }
 
-    /** `refFn3`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * 保存第三轮 ref 到 instance3，检查显式 null 未被默认值替换。
+     */
     function refFn3(ref) {
       instance3 = ref;
     }
@@ -303,14 +346,22 @@ describe('ReactCompositeComponent', () => {
     expect(instance3.props).toEqual({prop: null});
   });
 
-  /** 测试场景：验证「should not mutate passed-in props object」描述的渲染、交互或错误处理结果。 */
+  /**
+   * 把空 inputProps 展开传给含 defaultProps 的 class；实例 prop=testKey，而 inputProps.prop 仍未定义，证明补默认值不回写调用方对象。
+   */
   it('should not mutate passed-in props object', async () => {
-    /** `Component`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /**
+     * 静态默认 prop 的 class fixture；用展开的空 inputProps 验证默认值只补到元素/实例 props。
+     */
     class Component extends React.Component {
-      /** `Component.defaultProps`：记录测试夹具在当前场景中的状态。 */
+      /**
+       * 默认 prop=testKey，让实例得到值同时输入对象仍不含该字段。
+       */
       static defaultProps = {prop: 'testKey'};
 
-      /** `Component.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 返回不依赖 props 的 span，避免 DOM 行为干扰输入对象未被回写的断言。
+       */
       render() {
         return <span />;
       }
@@ -324,20 +375,28 @@ describe('ReactCompositeComponent', () => {
     });
     expect(instance1.props.prop).toBe('testKey');
 
-    // 我们不对输入进行修改。 为了在使用它来实例化组件后，让调用者做一些事情。
+    // defaultProps 补到元素的 props 中，不会回写调用者传入的 inputProps。
     expect(inputProps.prop).not.toBeDefined();
   });
 
-  /** 测试场景：验证「should warn about `forceUpdate` on not-yet-mounted components」描述的渲染、交互或错误处理结果。 */
+  /**
+   * 构造器内 forceUpdate 在实例挂载前发生；首次 flushSync 断言 DEV no-op 警告，再挂同类到第二根并得到 foo，验证警告去重且正常输出不受影响。
+   */
   it('should warn about `forceUpdate` on not-yet-mounted components', async () => {
-    /** `MyComponent`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /**
+     * 构造器提前 forceUpdate 的警告 fixture；第二根重复挂载验证提示去重而正常输出可用。
+     */
     class MyComponent extends React.Component {
-      /** `MyComponent.constructor`：初始化测试夹具实例及其状态。 */
+      /**
+       * super(props) 后立即 forceUpdate，此时还使用未挂载 updater；制造 no-op DEV 提示，不返回替代实例。
+       */
       constructor(props) {
         super(props);
         this.forceUpdate();
       }
-      /** `MyComponent.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 返回 foo div，使构造器误用 updater 后仍可验证普通挂载成功。
+       */
       render() {
         return <div>foo</div>;
       }
@@ -365,16 +424,24 @@ describe('ReactCompositeComponent', () => {
     expect(container2.firstChild.textContent).toBe('foo');
   });
 
-  /** 测试场景：验证「should warn about `setState` on not-yet-mounted components」描述的渲染、交互或错误处理结果。 */
+  /**
+   * 构造器内无参数 setState 发生在挂载前；首次断言 DEV no-op 提示，再挂第二根输出 foo，覆盖同类警告去重与成功挂载。
+   */
   it('should warn about `setState` on not-yet-mounted components', async () => {
-    /** `MyComponent`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /**
+     * 构造器提前 setState 的 no-op 警告 fixture。
+     */
     class MyComponent extends React.Component {
-      /** `MyComponent.constructor`：初始化测试夹具实例及其状态。 */
+      /**
+       * super(props) 后调用无参数 setState；实例未挂载，不能以此驱动合法更新。
+       */
       constructor(props) {
         super(props);
         this.setState();
       }
-      /** `MyComponent.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 返回 foo div，让重复挂载证明提示不会阻止正常 UI。
+       */
       render() {
         return <div>foo</div>;
       }
@@ -403,20 +470,28 @@ describe('ReactCompositeComponent', () => {
     expect(container2.firstChild.textContent).toBe('foo');
   });
 
-  /** 测试场景：验证「should not warn about `forceUpdate` on unmounted components」描述的渲染、交互或错误处理结果。 */
+  /**
+   * 先确认 element 对象本身没有 forceUpdate，再取得已挂载实例并更新，卸载后连续调用两次 forceUpdate；正文只观察调用完成，无显式 DOM 或 console 次数断言。
+   */
   it('should not warn about `forceUpdate` on unmounted components', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
 
     let instance;
-    /** `Component`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /**
+     * 保存已提交实例供卸载后 forceUpdate 调用的 class fixture。
+     */
     class Component extends React.Component {
-      /** `Component.componentDidMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * didMount 时保存 this；测试随后在实例已删除后继续使用该引用。
+       */
       componentDidMount() {
         instance = this;
       }
 
-      /** `Component.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 返回空 div，DOM 内容不参与卸载后 forceUpdate 的断言。
+       */
       render() {
         return <div />;
       }
@@ -437,17 +512,25 @@ describe('ReactCompositeComponent', () => {
     instance.forceUpdate();
   });
 
-  /** 测试场景：验证「should not warn about `setState` on unmounted components」描述的渲染、交互或错误处理结果。 */
+  /**
+   * 实例初始 render0，setState(1) 产生 render1；根更新删除该实例后再 setState(2)，日志为空，证明保留实例引用不让卸载组件重新 render。
+   */
   it('should not warn about `setState` on unmounted components', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
 
-    /** `Component`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /**
+     * value 状态只用于 render 日志，便于识别已卸载实例的后续 setState 是否误重渲染。
+     */
     class Component extends React.Component {
-      /** `Component.state`：记录测试夹具在当前场景中的状态。 */
+      /**
+       * value=0 建立初挂日志，已提交更新到1后删除，再请求2应不产生 render。
+       */
       state = {value: 0};
 
-      /** `Component.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 记录 state.value 并返回 div，日志用作挂载/更新与卸载后空操作的唯一渲染观测。
+       */
       render() {
         Scheduler.log('render ' + this.state.value);
         return <div />;
@@ -484,18 +567,26 @@ describe('ReactCompositeComponent', () => {
     assertLog([]);
   });
 
-  /** 测试场景：验证「should silently allow `setState`, not call cb on unmounting components」描述的渲染、交互或错误处理结果。 */
+  /**
+   * 组件 willUnmount 内 setState(2,callback)；断言调用不抛且卸载后 callback flag=false，证明删除中的更新不会提交 callback。
+   */
   it('should silently allow `setState`, not call cb on unmounting components', async () => {
     let cbCalled = false;
     const container = document.createElement('div');
     document.body.appendChild(container);
 
-    /** `Component`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /**
+     * willUnmount 内排队状态及 callback 的 fixture，验证删除中的更新不会提交回调。
+     */
     class Component extends React.Component {
-      /** `Component.state`：记录测试夹具在当前场景中的状态。 */
+      /**
+       * value=0 为正常挂载状态，后续1是已挂载更新，卸载时请求2仅用于测试空操作。
+       */
       state = {value: 0};
 
-      /** `Component.componentWillUnmount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 在清理钩子内 setState(value2,callback)，断言调用不抛；callback 若被执行会置 flag，根卸载后必须仍 false。
+       */
       componentWillUnmount() {
         expect(() => {
           this.setState({value: 2}, function () {
@@ -504,7 +595,9 @@ describe('ReactCompositeComponent', () => {
         }).not.toThrow();
       }
 
-      /** `Component.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 返回 div，值不出现在 DOM，实际结果由卸载 callback flag 判断。
+       */
       render() {
         return <div />;
       }
@@ -523,12 +616,18 @@ describe('ReactCompositeComponent', () => {
     expect(cbCalled).toBe(false);
   });
 
-  /** 测试场景：验证「should warn when rendering a class with a render method that does not extend React.Component」描述的渲染、交互或错误处理结果。 */
+  /**
+   * 普通 ES class 有 render 却未 extends React.Component；act 拒绝 TypeError 并提示继承要求，第二次 render 同样拒绝而不要求重复警告，覆盖错误与诊断去重。
+   */
   it('should warn when rendering a class with a render method that does not extend React.Component', async () => {
     const container = document.createElement('div');
-    /** `ClassWithRenderNotExtended`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /**
+     * 有 render 但不继承 React.Component 的普通 ES class，作为分类与诊断校验的非法输入。
+     */
     class ClassWithRenderNotExtended {
-      /** `ClassWithRenderNotExtended.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 若合法实例化会返回 div，但本例应以函数组件调用失败并提示继承要求。
+       */
       render() {
         return <div />;
       }
@@ -554,16 +653,24 @@ describe('ReactCompositeComponent', () => {
     }).rejects.toThrow(TypeError);
   });
 
-  /** 测试场景：验证「should warn about `setState` in render」描述的渲染、交互或错误处理结果。 */
+  /**
+   * Component render0 内 setState(1)；flushSync 后 DEV 纯 render 警告、日志 render0/render1、实例 state=1；再改根 prop 仅 render1，证明警告不意味着更新被丢弃。
+   */
   it('should warn about `setState` in render', async () => {
     const container = document.createElement('div');
 
-    /** `Component`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /**
+     * render 内更新自身的 class fixture；只在 value0 时安排一次补丁，避免无限循环掩盖警告路径。
+     */
     class Component extends React.Component {
-      /** `Component.state`：记录测试夹具在当前场景中的状态。 */
+      /**
+       * value=0 触发 render 阶段 setState，补丁1使下一 render 停止继续排队。
+       */
       state = {value: 0};
 
-      /** `Component.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 先记 value 日志，value0 时 setState(1)，再返回当前值 div；这次非法副作用产生警告，后续 render 仍应用更新。
+       */
       render() {
         Scheduler.log('render ' + this.state.value);
         if (this.state.value === 0) {
@@ -584,26 +691,31 @@ describe('ReactCompositeComponent', () => {
         '    in Component (at **)',
     ]);
 
-    // 设置状态调用是排队,然后作为第二次传递执行. 这种行为是undefined 虽然所以我们可以自由地改变它,
-    // 以适应实现细节.
+    // render 中的 setState 触发警告，并排入同一组件的后续渲染；本用例观察到 render 0 后紧接 render 1。
     assertLog(['render 0', 'render 1']);
     expect(instance.state.value).toBe(1);
 
-    // 强制任何地方重渲染都会导致更新发生。
+    // 再从根传入新的 prop，验证组件用已更新的 state 渲染。
     await act(() => {
       root.render(<Component prop={123} />);
     });
     assertLog(['render 1']);
   });
 
-  /** 测试场景：验证「should cleanup even if render() fatals」描述的渲染、交互或错误处理结果。 */
+  /**
+   * BadComponent 保存 ReactSharedInternals.A 后 render 抛错；act 拒绝，前后 A 均 null；DEV stashedDispatcher.getOwner() 为 null、生产无此方法，验证异常退出恢复 async dispatcher 与 owner 状态。
+   */
   it('should cleanup even if render() fatals', async () => {
     const ownerEnabled = __DEV__;
 
     let stashedDispatcher;
-    /** `BadComponent`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /**
+     * render 失败后全局 AsyncDispatcher 清理 probe；把当时 A 保存给测试检查 owner 槽也复位。
+     */
     class BadComponent extends React.Component {
-      /** `BadComponent.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 保存 ReactSharedInternals.A 后抛 Error，不返回 UI；不能把 A 当成 Hooks 的 H dispatcher，测试检查异常后的 A/owner 恢复。
+       */
       render() {
     // 保存渲染期间可用的 dispatcher，以便检查其内部状态也已重置。
         stashedDispatcher = ReactSharedInternals.A;
@@ -629,14 +741,20 @@ describe('ReactCompositeComponent', () => {
     }
   });
 
-  /** 测试场景：验证「should call componentWillUnmount before unmounting」描述的渲染、交互或错误处理结果。 */
+  /**
+   * 父组件有 Inner 及文本，挂载后卸载根；Inner.willUnmount 置 flag=true，断言 flag，验证复合组件删除遍历确实执行子清理钩子。
+   */
   it('should call componentWillUnmount before unmounting', async () => {
     const container = document.createElement('div');
     let innerUnmounted = false;
 
-    /** `Component`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /**
+     * 包含 Inner 与文本的父 fixture，供根卸载遍历到子清理。
+     */
     class Component extends React.Component {
-      /** `Component.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 返回 div(Inner,Text)，既有复合子节点也有 HostText，使删除路径不能只处理宿主节点。
+       */
       render() {
         return (
           <div>
@@ -647,14 +765,20 @@ describe('ReactCompositeComponent', () => {
       }
     }
 
-    /** `Inner`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /**
+     * 卸载 flag probe 组件，确认 class 子实例清理被访问。
+     */
     class Inner extends React.Component {
-      /** `Inner.componentWillUnmount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 把 innerUnmounted=true，不排队更新；作为删除遍历执行证据。
+       */
       componentWillUnmount() {
         innerUnmounted = true;
       }
 
-      /** `Inner.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 返回 div，正常挂载后才有可执行 willUnmount 的实例。
+       */
       render() {
         return <div />;
       }
@@ -668,19 +792,29 @@ describe('ReactCompositeComponent', () => {
     expect(innerUnmounted).toBe(true);
   });
 
-  /** 测试场景：验证「should warn when shouldComponentUpdate() returns undefined」描述的渲染、交互或错误处理结果。 */
+  /**
+   * ClassComponent.shouldComponentUpdate 返回 undefined；首次正常挂载后 setState(bogus=true)，断言 DEV 要求返回 boolean 的提示，覆盖更新判定方法返回值校验。
+   */
   it('should warn when shouldComponentUpdate() returns undefined', async () => {
-    /** `ClassComponent`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /**
+     * shouldComponentUpdate 故意返回 undefined 的校验 fixture；通过状态更新触发而非首挂调用。
+     */
     class ClassComponent extends React.Component {
-      /** `ClassComponent.state`：记录测试夹具在当前场景中的状态。 */
+      /**
+       * bogus=false 初始状态，改true用于进入更新判定分支。
+       */
       state = {bogus: false};
 
-      /** `ClassComponent.shouldComponentUpdate`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 返回 undefined 触发要求 boolean 的 DEV 警告，不提供真实 bailout 策略。
+       */
       shouldComponentUpdate() {
         return undefined;
       }
 
-      /** `ClassComponent.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 返回空 div，SCU返回值警告是此例观察重点。
+       */
       render() {
         return <div />;
       }
@@ -701,14 +835,22 @@ describe('ReactCompositeComponent', () => {
     ]);
   });
 
-  /** 测试场景：验证「should warn when componentDidUnmount method is defined」描述的渲染、交互或错误处理结果。 */
+  /**
+   * 定义不存在的 componentDidUnmount 方法再挂载；DEV 提示应使用 componentWillUnmount，此例不执行错误命名方法。
+   */
   it('should warn when componentDidUnmount method is defined', async () => {
-    /** `Component`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /**
+     * 故意误命名卸载方法的 fixture，验证 React 开发校验而非清理功能。
+     */
     class Component extends React.Component {
-      /** `Component.componentDidUnmount`：封装当前用例复用的操作、回调或断言步骤。 */
+      /**
+       * 空 componentDidUnmount 函数属性；此名字没有生命周期语义，挂载时应给出 componentWillUnmount 提示。
+       */
       componentDidUnmount = () => {};
 
-      /** `Component.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 返回空 div 以触发 class 实例校验。
+       */
       render() {
         return <div />;
       }
@@ -726,14 +868,22 @@ describe('ReactCompositeComponent', () => {
     ]);
   });
 
-  /** 测试场景：验证「should warn when componentDidReceiveProps method is defined」描述的渲染、交互或错误处理结果。 */
+  /**
+   * 定义不存在的 componentDidReceiveProps 方法再挂载；DEV 提示旧 props/提交更新生命周期的适用场景，不把该方法当真实生命周期调用。
+   */
   it('should warn when componentDidReceiveProps method is defined', () => {
-    /** `Component`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /**
+     * 误命名接收 props 方法的 fixture，用于 DEV API 名称提示。
+     */
     class Component extends React.Component {
-      /** `Component.componentDidReceiveProps`：封装当前用例复用的操作、回调或断言步骤。 */
+      /**
+       * 空 componentDidReceiveProps 属性；React 不把它作为真实生命周期，验证开发警告。
+       */
       componentDidReceiveProps = () => {};
 
-      /** `Component.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 返回 div，使实例进入正常挂载校验。
+       */
       render() {
         return <div />;
       }
@@ -754,17 +904,25 @@ describe('ReactCompositeComponent', () => {
     ]);
   });
 
-  /** 测试场景：验证「should warn when defaultProps was defined as an instance property」描述的渲染、交互或错误处理结果。 */
+  /**
+   * 构造器把 defaultProps 写在实例上；挂载后 DEV 提示该写法忽略、应使用静态属性，验证默认值声明位置校验。
+   */
   it('should warn when defaultProps was defined as an instance property', () => {
-    /** `Component`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /**
+     * 把默认值误写为实例属性的 fixture，用来对照正确静态 defaultProps。
+     */
     class Component extends React.Component {
-      /** `Component.constructor`：初始化测试夹具实例及其状态。 */
+      /**
+       * super(props) 后设置 this.defaultProps{name:Abhay}；故意使默认值不在构造函数静态位置，触发忽略提示。
+       */
       constructor(props) {
         super(props);
         this.defaultProps = {name: 'Abhay'};
       }
 
-      /** `Component.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 返回 div，不用该实例默认值修改 UI；本例只断言声明位置警告。
+       */
       render() {
         return <div />;
       }
@@ -781,19 +939,29 @@ describe('ReactCompositeComponent', () => {
     ]);
   });
 
-  /** 测试场景：验证「should skip update when rerendering element in container」描述的渲染、交互或错误处理结果。 */
+  /**
+   * 两轮都新建 Parent element，但 children 重用同一个 Child element；首次 Child render 后第二轮空日志，证明无待处理子更新时稳定元素 identity 允许复用 child。
+   */
   it('should skip update when rerendering element in container', async () => {
-    /** `Parent`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /**
+     * 反复接收相同 Child element 的父 fixture，父 element 可重建但 child identity 保持。
+     */
     class Parent extends React.Component {
-      /** `Parent.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 把 children 放入 div，不复制 Child element，用于 child 无待处理更新时的 identity bailout。
+       */
       render() {
         return <div>{this.props.children}</div>;
       }
     }
 
-    /** `Child`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /**
+     * render 计数日志 fixture，检测稳定 child element 第二次是否被重渲染。
+     */
     class Child extends React.Component {
-      /** `Child.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 只记 Child render 并返回 div；第二轮空日志表明该子节点复用。
+       */
       render() {
         Scheduler.log('Child render');
         return <div />;
@@ -814,20 +982,30 @@ describe('ReactCompositeComponent', () => {
     assertLog([]);
   });
 
-  /** 测试场景：验证「should disallow nested render calls」描述的渲染、交互或错误处理结果。 */
+  /**
+   * Outer.render 内对同一个 root 调用 render(Inner)；flushSync 断言 render 必须纯且不可嵌套根更新的 DEV 警告，正文未断言最终 DOM 选择。
+   */
   it('should disallow nested render calls', () => {
     const root = ReactDOMClient.createRoot(document.createElement('div'));
-    /** `Inner`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /**
+     * 被嵌套 root.render 指定的 class fixture，本身 render 没有更新副作用。
+     */
     class Inner extends React.Component {
-      /** `Inner.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 返回空 div，供 Outer render 内的非法根更新请求使用。
+       */
       render() {
         return <div />;
       }
     }
 
-    /** `Outer`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /**
+     * render 中向同 root 再提交 Inner 的 fixture，制造嵌套组件更新 DEV 警告。
+     */
     class Outer extends React.Component {
-      /** `Outer.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 先 root.render(Inner) 再返回 div，故更新发生在当前 render 内而非提交回调。
+       */
       render() {
         root.render(<Inner />);
         return <div />;
@@ -846,16 +1024,24 @@ describe('ReactCompositeComponent', () => {
     ]);
   });
 
-  /** 测试场景：验证「only renders once if updated in componentWillReceiveProps」描述的渲染、交互或错误处理结果。 */
+  /**
+   * 初挂 update=0 且 updated=false，再以 update=1 更新；willReceiveProps 内 setState(updated=true) 当下不增加 render 次数，更新后总 renders=2、state=true，证明补丁并入这轮处理。
+   */
   it('only renders once if updated in componentWillReceiveProps', async () => {
     let renders = 0;
 
-    /** `Component`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /**
+     * 接收新 props 时 setState 的 fixture，renders 计数检验补丁并入本轮而不重入 render。
+     */
     class Component extends React.Component {
-      /** `Component.state`：记录测试夹具在当前场景中的状态。 */
+      /**
+       * updated=false 为初始基准，willReceiveProps 新输入到来时改true。
+       */
       state = {updated: false};
 
-      /** `Component.UNSAFE_componentWillReceiveProps`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 验证新 props.update=1 与此前 render次数1，再 setState(updated=true)；立即仍次数1，返回后队列在这轮更新处理。
+       */
       UNSAFE_componentWillReceiveProps(props) {
         expect(props.update).toBe(1);
         expect(renders).toBe(1);
@@ -863,7 +1049,9 @@ describe('ReactCompositeComponent', () => {
         expect(renders).toBe(1);
       }
 
-      /** `Component.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 递增 renders 并返回 div，最终总次数2证明初挂+一次更新。
+       */
       render() {
         renders++;
         return <div />;
@@ -887,16 +1075,24 @@ describe('ReactCompositeComponent', () => {
     expect(instance.state.updated).toBe(true);
   });
 
-  /** 测试场景：验证「only renders once if updated in componentWillReceiveProps when batching」描述的渲染、交互或错误处理结果。 */
+  /**
+   * 标题含 batching，正文与前例一样使用两次 act render，没有单独 batchedUpdates；断言 willReceiveProps 中不重入 render，最终总次数2、updated=true，验证实际调用范围。
+   */
   it('only renders once if updated in componentWillReceiveProps when batching', async () => {
     let renders = 0;
 
-    /** `Component`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /**
+     * 同前例的 act 批处理 fixture；正文没有另加 unstable_batchedUpdates 调用。
+     */
     class Component extends React.Component {
-      /** `Component.state`：记录测试夹具在当前场景中的状态。 */
+      /**
+       * updated=false 让用例验证接收新props后真实合并状态。
+       */
       state = {updated: false};
 
-      /** `Component.UNSAFE_componentWillReceiveProps`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 接收 update1 时检查 render 尚未重入，再排队 updated=true 并保持当下 renders1。
+       */
       UNSAFE_componentWillReceiveProps(props) {
         expect(props.update).toBe(1);
         expect(renders).toBe(1);
@@ -904,7 +1100,9 @@ describe('ReactCompositeComponent', () => {
         expect(renders).toBe(1);
       }
 
-      /** `Component.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 每次 render 递增计数，返回 div，供最后总次数2断言。
+       */
       render() {
         renders++;
         return <div />;
@@ -926,19 +1124,27 @@ describe('ReactCompositeComponent', () => {
     expect(instance.state.updated).toBe(true);
   });
 
-  /** 测试场景：验证「should warn when mutated props are passed」描述的渲染、交互或错误处理结果。 */
+  /**
+   * Foo 构造器接收 idx=qwe，却构造 idx=qwe! 的新对象传 super；DEV 提示必须传收到的同一 props，验证构造实例 props 所有权约束，并非对输入对象原地修改。
+   */
   it('should warn when mutated props are passed', async () => {
     const container = document.createElement('div');
 
-    /** `Foo`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /**
+     * 把收到 props 改成新对象再传 super 的故障 fixture；不直接修改外部原对象。
+     */
     class Foo extends React.Component {
-      /** `Foo.constructor`：初始化测试夹具实例及其状态。 */
+      /**
+       * 由 props.idx 构造加感叹号的新 _props 并传 super；故意违反保留构造器输入 props 的约定，触发 DEV 提示。
+       */
       constructor(props) {
         const _props = {idx: props.idx + '!'};
         super(_props);
       }
 
-      /** `Foo.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 返回 span，构造器身份校验是本例重点。
+       */
       render() {
         return <span />;
       }
@@ -955,14 +1161,20 @@ describe('ReactCompositeComponent', () => {
     ]);
   });
 
-  /** 测试场景：验证「should only call componentWillUnmount once」描述的渲染、交互或错误处理结果。 */
+  /**
+   * App stage1 先挂载故障子，stage2 删除；子 willUnmount 给 App setState、计数并抛错；act 拒绝但 count=1，证明提交错误恢复不会再次调用同一已删除实例卸载。
+   */
   it('should only call componentWillUnmount once', async () => {
     let app;
     let count = 0;
 
-    /** `App`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /**
+     * stage 控制故障子组件是否保留的父 fixture，并把实例保留给子卸载时排队父更新。
+     */
     class App extends React.Component {
-      /** `App.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * stage1 返回 UnunmountableComponent，其余返回null，第二轮明确触发子删除。
+       */
       render() {
         if (this.props.stage === 1) {
           return <UnunmountableComponent />;
@@ -972,16 +1184,22 @@ describe('ReactCompositeComponent', () => {
       }
     }
 
-    /** `UnunmountableComponent`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /**
+     * 卸载时更新父、计数并抛错的 fixture，用来验证删除失败不会重入同一清理方法。
+     */
     class UnunmountableComponent extends React.Component {
-      /** `UnunmountableComponent.componentWillUnmount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 先 app.setState({})，再 count++，最后抛 always fails；无返回值，提交恢复仍必须把这枚实例视为已处理删除。
+       */
       componentWillUnmount() {
         app.setState({});
         count++;
         throw Error('always fails');
       }
 
-      /** `UnunmountableComponent.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 返回 Hello/name div，先正常提交后才能在stage2测试 willUnmount。
+       */
       render() {
         return <div>Hello {this.props.name}</div>;
       }
@@ -989,7 +1207,9 @@ describe('ReactCompositeComponent', () => {
 
     const container = document.createElement('div');
 
-    /** `setRef`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * 仅非空 ref 更新 app，保留卸载中的父引用；null 时不清空，保证子清理能调用父 setState。
+     */
     const setRef = ref => {
       if (ref) {
         app = ref;
@@ -1008,32 +1228,48 @@ describe('ReactCompositeComponent', () => {
     expect(count).toBe(1);
   });
 
-  /** 测试场景：验证「prepares new child before unmounting old」描述的渲染、交互或错误处理结果。 */
+  /**
+   * Wrapper 用 name 作 Spy key，A→B；日志 B willMount/render 在 A willUnmount 前，B didMount 在后，证明新候选在 render 准备、旧清理与新挂载在 commit 顺序执行。
+   */
   it('prepares new child before unmounting old', async () => {
-    /** `Spy`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /**
+     * 记录 render/挂载/清理阶段的 keyed fixture，比较换 key 时新候选准备与旧实例删除顺序。
+     */
     class Spy extends React.Component {
-      /** `Spy.UNSAFE_componentWillMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 记录 name 的 willMount，属于候选render前而非真实提交挂载。
+       */
       UNSAFE_componentWillMount() {
         Scheduler.log(this.props.name + ' componentWillMount');
       }
-      /** `Spy.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 记录 name render 并返回 div；新B此日志可先于旧A卸载。
+       */
       render() {
         Scheduler.log(this.props.name + ' render');
         return <div />;
       }
-      /** `Spy.componentDidMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 记录 name didMount，必须在旧节点删除与新宿主提交之后。
+       */
       componentDidMount() {
         Scheduler.log(this.props.name + ' componentDidMount');
       }
-      /** `Spy.componentWillUnmount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 记录 name willUnmount，作为旧A在mutation删除阶段的观测。
+       */
       componentWillUnmount() {
         Scheduler.log(this.props.name + ' componentWillUnmount');
       }
     }
 
-    /** `Wrapper`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /**
+     * 以name同时作为Spy key与日志标签的父包装，强制A→B身份替换而非prop更新。
+     */
     class Wrapper extends React.Component {
-      /** `Wrapper.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 返回 keyed Spy，key改变让协调器创建新实例并删除旧实例。
+       */
       render() {
         return <Spy key={this.props.name} name={this.props.name} />;
       }
@@ -1058,11 +1294,17 @@ describe('ReactCompositeComponent', () => {
     ]);
   });
 
-  /** 测试场景：验证「respects a shallow shouldComponentUpdate implementation」描述的渲染、交互或错误处理结果。 */
+  /**
+   * Apple 以 shallowCompare 控制更新：父 color green 不新增子 render，red 会；cut 改状态触发 render，重复 cut 空日志，eatSlice 触发 red/true/9，验证 props/state 字段级 Object.is 判定。
+   */
   it('respects a shallow shouldComponentUpdate implementation', async () => {
-    /** `PlasticWrap`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /**
+     * 通过自身color状态驱动Apple props的父夹具；appleRef允许测试单独更新子状态。
+     */
     class PlasticWrap extends React.Component {
-      /** `PlasticWrap.constructor`：初始化测试夹具实例及其状态。 */
+      /**
+       * 保存props/context，初始化color=green及子对象ref；构造状态基准，随后测试有变化/无变化的浅比较。
+       */
       constructor(props, context) {
         super(props, context);
         this.state = {
@@ -1071,26 +1313,36 @@ describe('ReactCompositeComponent', () => {
         this.appleRef = React.createRef();
       }
 
-      /** `PlasticWrap.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 返回Apple(color,appleRef)，父更新本身无日志，观测的是子SCU是否允许render。
+       */
       render() {
         return <Apple color={this.state.color} ref={this.appleRef} />;
       }
     }
 
-    /** `Apple`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /**
+     * 使用字段级浅比较的classfixture，分别响应color prop与cut/slices状态变化。
+     */
     class Apple extends React.Component {
-      /** `Apple.state`：记录测试夹具在当前场景中的状态。 */
+      /**
+       * cut=false、slices=1，切片方法第一次改为true/10，重复相同补丁应被SCU挡住。
+       */
       state = {
         cut: false,
         slices: 1,
       };
 
-      /** `Apple.shouldComponentUpdate`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 把当前实例与nextProps/nextState交给shallowCompare，返回是否有顶层字段差异；不是深比较。
+       */
       shouldComponentUpdate(nextProps, nextState) {
         return shallowCompare(this, nextProps, nextState);
       }
 
-      /** `Apple.cut`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 设置cut=true和slices=10；重复调用在浅比较相等时仍处理状态补丁但不重render。
+       */
       cut() {
         this.setState({
           cut: true,
@@ -1098,14 +1350,18 @@ describe('ReactCompositeComponent', () => {
         });
       }
 
-      /** `Apple.eatSlice`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 把slices减1排队更新；此例在单个act内调用，不模拟多个并发累计操作。
+       */
       eatSlice() {
         this.setState({
           slices: this.state.slices - 1,
         });
       }
 
-      /** `Apple.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 读取color/cut/slices并写日志，返回div；日志直接显示允许render的最新props/state组合。
+       */
       render() {
         const {color} = this.props;
         const {cut, slices} = this.state;
@@ -1154,9 +1410,13 @@ describe('ReactCompositeComponent', () => {
     assertLog(['red true 9']);
   });
 
-  /** 测试场景：验证「does not do a deep comparison for a shallow shouldComponentUpdate implementation」描述的渲染、交互或错误处理结果。 */
+  /**
+   * Component state 含数组/对象；用相同字段引用补丁无 render，换成内容相同新数组或新对象均有 render，证明浅比较不递归比较集合内容。
+   */
   it('does not do a deep comparison for a shallow shouldComponentUpdate implementation', async () => {
-    /** `getInitialState`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * 每次创建内容相同但引用新鲜的foo数组/bar对象，返回初始状态；用于区别深内容相等与浅引用不等。
+     */
     function getInitialState() {
       return {
         foo: [1, 2, 3],
@@ -1166,17 +1426,25 @@ describe('ReactCompositeComponent', () => {
 
     const initialSettings = getInitialState();
 
-    /** `Component`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /**
+     * 嵌套集合state的浅比较fixture；render日志文本相同也可能源于不同字段引用。
+     */
     class Component extends React.Component {
-      /** `Component.state`：记录测试夹具在当前场景中的状态。 */
+      /**
+       * 先使用initialSettings对象，后续setState浅合并其字段；测试替换foo引用，而非要求state根对象identity固定。
+       */
       state = initialSettings;
 
-      /** `Component.shouldComponentUpdate`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 返回shallowCompare结果，仅比较props/state顶层字段identity。
+       */
       shouldComponentUpdate(nextProps, nextState) {
         return shallowCompare(this, nextProps, nextState);
       }
 
-      /** `Component.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 把foo/bar内容格式化记日志并返回div；日志只能证明render发生，不作为深比较依据。
+       */
       render() {
         const {foo, bar} = this.state;
         Scheduler.log(`{foo:[${foo}],bar:{a:${bar.a},b:${bar.b},c:${bar.c}}`);
@@ -1216,16 +1484,24 @@ describe('ReactCompositeComponent', () => {
     assertLog(['{foo:[1,2,3],bar:{a:4,b:5,c:6}']);
   });
 
-  /** 测试场景：验证「should call setState callback with no arguments」描述的渲染、交互或错误处理结果。 */
+  /**
+   * didMount 内 setState({},restCallback) 保存实参；act 后 mockArgs.length=0，验证提交 setState callback 不接收 state/props 参数。
+   */
   it('should call setState callback with no arguments', async () => {
     let mockArgs;
-    /** `Component`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /**
+     * didMount触发setState提交callback的fixture，用rest参数探测callback实参。
+     */
     class Component extends React.Component {
-      /** `Component.componentDidMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 挂载后setState空补丁，回调保存args；act等待该提交，预期args为空数组。
+       */
       componentDidMount() {
         this.setState({}, (...args) => (mockArgs = args));
       }
-      /** `Component.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 返回false，不创建宿主节点；callback协议不要求非空DOM输出。
+       */
       render() {
         return false;
       }
@@ -1238,14 +1514,20 @@ describe('ReactCompositeComponent', () => {
     expect(mockArgs.length).toEqual(0);
   });
 
-  /** 测试场景：验证「this.state should be updated on setState callback inside componentWillMount」描述的渲染、交互或错误处理结果。 */
+  /**
+   * 初始 hasUpdatedState=false，在 willMount setState(true,callback)；callback 读取 this.state 后 flag=true，证明回调运行时挂载状态补丁已应用。
+   */
   it('this.state should be updated on setState callback inside componentWillMount', async () => {
     const div = document.createElement('div');
     let stateSuccessfullyUpdated = false;
 
-    /** `Component`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /**
+     * willMount排队状态及读取回调的fixture，确认callback看到应用后的挂载状态。
+     */
     class Component extends React.Component {
-      /** `Component.constructor`：初始化测试夹具实例及其状态。 */
+      /**
+       * 保存props/context并初始化hasUpdatedState=false，使willMount补丁true有明确基准。
+       */
       constructor(props, context) {
         super(props, context);
         this.state = {
@@ -1253,7 +1535,9 @@ describe('ReactCompositeComponent', () => {
         };
       }
 
-      /** `Component.UNSAFE_componentWillMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 排队hasUpdatedState=true，callback读取this.state再保存flag；callback应在补丁已应用的提交阶段运行。
+       */
       UNSAFE_componentWillMount() {
         this.setState(
           {hasUpdatedState: true},
@@ -1261,7 +1545,9 @@ describe('ReactCompositeComponent', () => {
         );
       }
 
-      /** `Component.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 返回包children的div，状态结果通过callbackflag而非DOM文本验证。
+       */
       render() {
         return <div>{this.props.children}</div>;
       }
@@ -1275,14 +1561,20 @@ describe('ReactCompositeComponent', () => {
     expect(stateSuccessfullyUpdated).toBe(true);
   });
 
-  /** 测试场景：验证「should call the setState callback even if shouldComponentUpdate = false」描述的渲染、交互或错误处理结果。 */
+  /**
+   * shouldComponentUpdate mock=false，初挂不调用该方法；后续 setState(true,callback) 时 mock 已调用、实例 state 已true、callback仍记录，证明 render bailout 不丢提交回调。
+   */
   it('should call the setState callback even if shouldComponentUpdate = false', async () => {
     const mockFn = jest.fn().mockReturnValue(false);
     const div = document.createElement('div');
 
-    /** `Component`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /**
+     * SCU=false但仍要求setState callback提交的fixture，区分render bailout与回调消费。
+     */
     class Component extends React.Component {
-      /** `Component.constructor`：初始化测试夹具实例及其状态。 */
+      /**
+       * 保存props/context并初始化hasUpdatedState=false。
+       */
       constructor(props, context) {
         super(props, context);
         this.state = {
@@ -1290,17 +1582,23 @@ describe('ReactCompositeComponent', () => {
         };
       }
 
-      /** `Component.UNSAFE_componentWillMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * willMount保存实例引用；首次挂载不调用SCU，之后才由测试对该实例更新。
+       */
       UNSAFE_componentWillMount() {
         instance = this;
       }
 
-      /** `Component.shouldComponentUpdate`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 调用mockFn并返回false，挡住更新render但不丢掉state补丁或callback。
+       */
       shouldComponentUpdate() {
         return mockFn();
       }
 
-      /** `Component.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 返回state布尔children的div；布尔值不生成文本，最终结果通过实例state与callback日志验证。
+       */
       render() {
         return <div>{this.state.hasUpdatedState}</div>;
       }
@@ -1326,17 +1624,25 @@ describe('ReactCompositeComponent', () => {
     assertLog(['setState callback called']);
   });
 
-  /** 测试场景：验证「should return a meaningful warning when constructor is returned」描述的渲染、交互或错误处理结果。 */
+  /**
+   * 派生构造器返回 {something:false} 替换实例；act 拒绝且两轮 render 尝试均提示未找到 render，帮助定位 constructor 返回普通对象导致实例方法丢失。
+   */
   it('should return a meaningful warning when constructor is returned', async () => {
-    /** `RenderTextInvalidConstructor`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /**
+     * 构造器返回普通对象替换this的非法fixture，触发缺少render方法的诊断。
+     */
     class RenderTextInvalidConstructor extends React.Component {
-      /** `RenderTextInvalidConstructor.constructor`：初始化测试夹具实例及其状态。 */
+      /**
+       * super(props)后返回{something:false}；返回对象替代class实例，因此原型render不再可用。
+       */
       constructor(props) {
         super(props);
         return {something: false};
       }
 
-      /** `RenderTextInvalidConstructor.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 原型render返回div，但非法构造返回值使该方法不会成为实际实例的render。
+       */
       render() {
         return <div />;
       }
@@ -1358,15 +1664,25 @@ describe('ReactCompositeComponent', () => {
     ]);
   });
 
-  /** 测试场景：验证「should warn about reassigning this.props while rendering」描述的渲染、交互或错误处理结果。 */
+  /**
+   * Bad.render 重新赋 this.props 的浅复制并返回 null；DEV 提示不支持重分配，空 didMount/didUpdate 只是正常提交钩子，没有额外断言。
+   */
   it('should warn about reassigning this.props while rendering', () => {
-    /** `Bad`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /**
+     * render内重分配自身props的故障fixture，空提交钩子不产生其他副作用。
+     */
     class Bad extends React.Component {
-      /** `Bad.componentDidMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 空挂载钩子，确保props误赋值诊断与正常layout方法存在无关。
+       */
       componentDidMount() {}
-      /** `Bad.componentDidUpdate`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 空更新钩子，不改状态或props；本例仅挂载读取DEV提示。
+       */
       componentDidUpdate() {}
-      /** `Bad.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 把props浅复制后写回this.props并返回null，故意破坏React拥有实例props的约定。
+       */
       render() {
         this.props = {...this.props};
         return null;
@@ -1385,9 +1701,13 @@ describe('ReactCompositeComponent', () => {
     ]);
   });
 
-  /** 测试场景：验证「should return error if render is not defined」描述的渲染、交互或错误处理结果。 */
+  /**
+   * 组件继承 React.Component 但完全没有 render；act 拒绝并记录两次诊断，覆盖失败 render 的重试而非静默输出空 UI。
+   */
   it('should return error if render is not defined', async () => {
-    /** `RenderTestUndefinedRender`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /**
+     * 继承React.Component却未声明render的非法输入，测试应拒绝并给出缺失方法诊断。
+     */
     class RenderTestUndefinedRender extends React.Component {}
 
     const root = ReactDOMClient.createRoot(document.createElement('div'));
@@ -1407,13 +1727,21 @@ describe('ReactCompositeComponent', () => {
   });
 
   // 回归测试，用于检测意外的破坏性更改 https://github.com/facebook/react/issues/13580
-  /** 测试场景：验证「should support classes shadowing isReactComponent」描述的渲染、交互或错误处理结果。 */
+  /**
+   * issue13580 的 Shadow 以实例方法覆盖 isReactComponent；挂载成功且首子 DIV，证明 class 判定只需原型标记存在而不要求标记仍是原对象。
+   */
   it('should support classes shadowing isReactComponent', async () => {
-    /** `Shadow`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /**
+     * 实例方法覆盖isReactComponent标记的fixture，验证class检测不要求标记值是特定对象。
+     */
     class Shadow extends React.Component {
-      /** `Shadow.isReactComponent`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 空同名方法只用于遮蔽继承标记；测试不调用该方法，关键是原型属性仍存在。
+       */
       isReactComponent() {}
-      /** `Shadow.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 返回div，让成功挂载成为class身份识别的DOM证据。
+       */
       render() {
         return <div />;
       }
@@ -1426,28 +1754,40 @@ describe('ReactCompositeComponent', () => {
     expect(container.firstChild.tagName).toBe('DIV');
   });
 
-  /** 测试场景：验证「should not warn on updating function component from componentWillMount」描述的渲染、交互或错误处理结果。 */
+  /**
+   * A 先暴露 Hook setter，B willMount 调用 setState(1)；act 后 A DOM 为1，覆盖旧挂载生命周期更新另一函数组件；正文无显式 console 次数断言。
+   */
   it('should not warn on updating function component from componentWillMount', async () => {
     let setState;
     let ref;
-    /** `A`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * useState初始null，把setter暴露给后续B，返回挂ref的状态div；外部断言通过DOM读取跨组件更新结果。
+     */
     function A() {
       const [state, _setState] = React.useState(null);
       setState = _setState;
       return <div ref={r => (ref = r)}>{state}</div>;
     }
-    /** `B`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /**
+     * 无宿主输出的classfixture，在旧式willMount调用已由A暴露的Hook setter，以区分生命周期阶段与render内非法更新。
+     */
     class B extends React.Component {
-      /** `B.UNSAFE_componentWillMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 在挂载前调用A的setState(1)，不修改自身状态或返回UI；本例由act冲刷A更新。
+       */
       UNSAFE_componentWillMount() {
         setState(1);
       }
-      /** `B.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 返回null，B不生成DOM，唯一行为在对应旧生命周期更新A。
+       */
       render() {
         return null;
       }
     }
-    /** `Parent`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * 按A先B顺序返回同级children；A先暴露setter，使B随后能调用它，父div不改变跨组件更新目标。
+     */
     function Parent() {
       return (
         <div>
@@ -1465,28 +1805,40 @@ describe('ReactCompositeComponent', () => {
     expect(ref.textContent).toBe('1');
   });
 
-  /** 测试场景：验证「should not warn on updating function component from componentWillUpdate」描述的渲染、交互或错误处理结果。 */
+  /**
+   * A/B 首挂后重渲染，B willUpdate 调 A setter(1)；A DOM 为1，覆盖更新前旧生命周期中的跨组件更新。
+   */
   it('should not warn on updating function component from componentWillUpdate', async () => {
     let setState;
     let ref;
-    /** `A`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * useState初始undefined，把setter暴露给后续B，返回挂ref的状态div；外部断言通过DOM读取跨组件更新结果。
+     */
     function A() {
       const [state, _setState] = React.useState();
       setState = _setState;
       return <div ref={r => (ref = r)}>{state}</div>;
     }
-    /** `B`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /**
+     * 无宿主输出的classfixture，在旧式willUpdate调用已由A暴露的Hook setter，以区分生命周期阶段与render内非法更新。
+     */
     class B extends React.Component {
-      /** `B.UNSAFE_componentWillUpdate`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 在更新前调用A的setState(1)，不修改自身状态或返回UI；本例由act冲刷A更新。
+       */
       UNSAFE_componentWillUpdate() {
         setState(1);
       }
-      /** `B.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 返回null，B不生成DOM，唯一行为在对应旧生命周期更新A。
+       */
       render() {
         return null;
       }
     }
-    /** `Parent`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * 按A先B顺序返回同级children；A先暴露setter，使B随后能调用它，父div不改变跨组件更新目标。
+     */
     function Parent() {
       return (
         <div>
@@ -1507,29 +1859,41 @@ describe('ReactCompositeComponent', () => {
     expect(ref.textContent).toBe('1');
   });
 
-  /** 测试场景：验证「should not warn on updating function component from componentWillReceiveProps」描述的渲染、交互或错误处理结果。 */
+  /**
+   * A/B 首挂后重渲染，B willReceiveProps 调 A setter(1)；A DOM 为1，验证该旧生命周期更新进入正确队列。
+   */
   it('should not warn on updating function component from componentWillReceiveProps', async () => {
     let setState;
     let ref;
-    /** `A`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * useState初始undefined，把setter暴露给后续B，返回挂ref的状态div；外部断言通过DOM读取跨组件更新结果。
+     */
     function A() {
       const [state, _setState] = React.useState();
       setState = _setState;
       return <div ref={r => (ref = r)}>{state}</div>;
     }
 
-    /** `B`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /**
+     * 无宿主输出的classfixture，在旧式willReceiveProps调用已由A暴露的Hook setter，以区分生命周期阶段与render内非法更新。
+     */
     class B extends React.Component {
-      /** `B.UNSAFE_componentWillReceiveProps`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 在接收新props调用A的setState(1)，不修改自身状态或返回UI；本例由act冲刷A更新。
+       */
       UNSAFE_componentWillReceiveProps() {
         setState(1);
       }
-      /** `B.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 返回null，B不生成DOM，唯一行为在对应旧生命周期更新A。
+       */
       render() {
         return null;
       }
     }
-    /** `Parent`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * 按A先B顺序返回同级children；A先暴露setter，使B随后能调用它，父div不改变跨组件更新目标。
+     */
     function Parent() {
       return (
         <div>
@@ -1550,26 +1914,36 @@ describe('ReactCompositeComponent', () => {
     expect(ref.textContent).toBe('1');
   });
 
-  /** 测试场景：验证「should warn on updating function component from render」描述的渲染、交互或错误处理结果。 */
+  /**
+   * B.render 调 A 函数 updater(c+1)；首次 flushSync DEV 跨组件 render 更新警告但 DOM1，再重渲染 DOM2，验证诊断去重且每轮更新仍应用。
+   */
   it('should warn on updating function component from render', () => {
     let setState;
     let ref;
-    /** `A`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * useState初始0，把setter暴露给后续B，返回挂ref的状态div；外部断言通过DOM读取跨组件更新结果。
+     */
     function A() {
       const [state, _setState] = React.useState(0);
       setState = _setState;
       return <div ref={r => (ref = r)}>{state}</div>;
     }
 
-    /** `B`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /**
+     * 在render内更新兄弟A的classfixture；专门用于跨组件render更新DEV警告与去重。
+     */
     class B extends React.Component {
-      /** `B.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /**
+       * 调用A函数updater(c=>c+1)后返回null；候选render的跨组件副作用会警告，但测试仍验证每轮加1提交。
+       */
       render() {
         setState(c => c + 1);
         return null;
       }
     }
-    /** `Parent`：封装当前用例复用的操作、回调或断言步骤。 */
+    /**
+     * 按A先B顺序返回同级children；A先暴露setter，使B随后能调用它，父div不改变跨组件更新目标。
+     */
     function Parent() {
       return (
         <div>
@@ -1590,7 +1964,7 @@ describe('ReactCompositeComponent', () => {
         '    in Parent (at **)',
     ]);
 
-    // 我们错误了,但仍然更新了状态.
+    // 开发环境记录了跨组件 render 阶段更新的警告，但该 state 更新仍会生效。
     expect(ref.textContent).toBe('1');
 
     // 去重。
@@ -1598,7 +1972,7 @@ describe('ReactCompositeComponent', () => {
       root.render(<Parent />);
     });
 
-    // 我们错误了,但仍然更新了状态.
+    // 开发环境记录了跨组件 render 阶段更新的警告，但该 state 更新仍会生效。
     expect(ref.textContent).toBe('2');
   });
 });

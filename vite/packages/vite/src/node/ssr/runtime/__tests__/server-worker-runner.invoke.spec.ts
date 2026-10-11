@@ -63,6 +63,7 @@ describe('running module runner inside a worker and using the ModuleRunnerTransp
       environments: {
         worker: {
           dev: {
+            /** 构造无 WebSocket 的 worker 环境，invoke 请求由主线程 RPC 转交它处理。 */
             createEnvironment: (name, config) => {
               return new DevEnvironment(name, config, {
                 hot: false,
@@ -76,10 +77,13 @@ describe('running module runner inside a worker and using the ModuleRunnerTransp
       server.environments.worker.hot.handleInvoke(data)
     rpc = createBirpc(
       {
+        /** 调用可被各测试替换的 handler，覆盖成功、Error 与未知错误值三种 RPC 结果。 */
         invoke: (data: any) => handleInvoke(data),
       },
       {
+        /** 把 birpc 请求发送到真实 worker 的 message 端口。 */
         post: (data) => worker.postMessage(data),
+        /** 监听 worker 返回消息，交由 birpc 匹配请求与响应。 */
         on: (data) => worker.on('message', data),
       },
     )
@@ -94,6 +98,7 @@ describe('running module runner inside a worker and using the ModuleRunnerTransp
   async function run(id: string) {
     const channel = new BroadcastChannel('vite-worker:invoke')
     return new Promise<any>((resolve, reject) => {
+      /** 收到 worker 导入结果时兑现 run 的等待；由调用用例核对成功值或序列化错误。 */
       channel.onmessage = (event) => {
         try {
           resolve(event.data)
@@ -140,7 +145,8 @@ describe('running module runner inside a worker and using the ModuleRunnerTransp
 
   /**
    * 场景：worker 入口导入 Node builtin，并把非 builtin 请求转给 Environment hot channel。
-   * 验证目标：builtin 在 worker 本地解析出 `baz.txt`，响应无 error，不发生服务端模块获取往返。
+   * 验证目标：builtin 在 worker 中可用并返回 `baz.txt`，响应无 error。
+   * 机制：getModuleInformation 在 builtin 分支跳过 fetchModule RPC，首次请求仍会初始化 builtins 规则。
    */
   it('resolves builtin module without server round-trip', async () => {
     handleInvoke = (data: any) =>

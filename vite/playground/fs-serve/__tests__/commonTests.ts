@@ -17,7 +17,9 @@ import testJSON from '../safe.json'
 import { getWindows83ShortNameForDotEnv as getWindows83ShortNameForDotEnv } from '../root/windows83Filename'
 import { browser, isServe, page, viteServer, viteTestUrl } from '~utils'
 
-/** 延迟读取测试服务器 URL，并补齐指向 `src/` 页面入口所需的单个斜杠。 */
+/** 调用时读取 harness 赋值后的服务器 URL，补齐斜杠并指向 src/ 页面入口。
+ * @returns 当前 fixture 的 src/ 入口地址。
+ */
 const getViteTestIndexHtmlUrl = () => {
   const srcPrefix = viteTestUrl.endsWith('/') ? '' : '/'
   // viteTestUrl 由 playground 启动流程惰性赋值，不能在模块求值时提前缓存完整 URL。
@@ -38,37 +40,24 @@ beforeAll(async () => {
 
 describe.runIf(isServe)('normal', () => {
   /**
-   * 这组场景先证明正常模块能力仍成立：JSON 默认/命名导出、嵌套入口与虚拟模块不会被
-   * fs 安全层误拦。安全测试必须同时证明“该放行的仍能工作”，不能只覆盖拒绝路径。
+   * dev 页面先加载受允许的 JSON、嵌套入口和虚拟模块；各 DOM 断言验证正常模块路径仍可用。
    */
-  /**
-   * 场景：在 “'normal'” 中，加载用例 fixture 并观察 “page.textContent('.full')”。
-   * 验证目标：“page.textContent('.full')” 应等于 “stringified”，从而确认静态文件响应的状态、内容、header 与 SPA fallback 符合配置。
-   */
+  /** JSON 默认导入在页面得到完整对象，序列化结果与磁盘 fixture 对应；验证受信任模块仍可转换。 */
   test('default import', async () => {
     await expect.poll(() => page.textContent('.full')).toBe(stringified)
   })
 
-  /**
-   * 场景：在 “'normal'” 中，加载用例 fixture 并观察 “page.textContent('.named')”。
-   * 验证目标：“page.textContent('.named')” 应等于 “testJSON.msg”，从而确认静态文件响应的状态、内容、header 与 SPA fallback 符合配置。
-   */
+  /** JSON 命名导入读到 msg 字段，验证安全检查放行后仍保留 JSON 插件的命名导出。 */
   test('named import', async () => {
     await expect.poll(() => page.textContent('.named')).toBe(testJSON.msg)
   })
 
-  /**
-   * 场景：在 “'normal'” 中，加载用例 fixture 并观察 “page.textContent('.nested-entry')”。
-   * 验证目标：“page.textContent('.nested-entry')” 应等于 “'foobar'”，从而确认静态文件响应的状态、内容、header 与 SPA fallback 符合配置。
-   */
+  /** 页面从嵌套入口导入模块并显示 foobar，验证配置入口与其依赖可沿模块管线加载。 */
   test('nested entry', async () => {
     await expect.poll(() => page.textContent('.nested-entry')).toBe('foobar')
   })
 
-  /**
-   * 场景：在 “'normal'” 中，加载用例 fixture 并观察 “page.textContent('.virtual-svg')”。
-   * 验证目标：“page.textContent('.virtual-svg')” 应匹配 “'<svg'”，从而确认静态文件响应的状态、内容、header 与 SPA fallback 符合配置。
-   */
+  /** 插件提供以空字节开头的虚拟 SVG 模块，页面得到 SVG 字符串；该 ID 无需读取宿主 SVG 文件。 */
   test('virtual svg module', async () => {
     await expect.poll(() => page.textContent('.virtual-svg')).toMatch('<svg')
   })
@@ -331,8 +320,9 @@ describe.runIf(isServe)('matrix', () => {
       }
 
       /**
-       * 场景：把每个安全/拒绝案例分别通过普通 URL、`/@fs/`、`?raw` 等 variant 请求，并轮询对应 `status`、`content` DOM 槽位。
-       * 验证目标：普通 SPA fallback 场景返回 200 与矩阵摘要，其余组合必须匹配案例声明的 `status` 和 `content`，确认 allow/deny 对所有加载入口采用同一安全边界。
+       * 场景：把每个安全/拒绝案例分别通过普通 URL 与 `/@fs/` 两个 variant（各案例自行携带资源查询） 请求，并轮询对应 `status`、`content` DOM 槽位。
+       * 验证目标：安全文件各行返回 200 和原文，受限文件与查询伪装各行返回 403；不可解析字符行返回 404；大小写及 NTFS 行允许 403/404。
+       * disableVariants 排除不适用的入口，8.3 未启用时该行 skip；普通 relative-path-after-query 行走 SPA fallback 返回 200 与摘要，其他组合核对自身 status/content。
        */
       test.concurrent(
         `${name} (${variantName})`,
@@ -373,11 +363,7 @@ describe.runIf(isServe)('matrix', () => {
 })
 
 describe('fetch', () => {
-  /** 场景/目标：直接静态响应也必须附加用户配置的 server.headers。 */
-  /**
-   * 场景：在 “'fetch'” 中，请求 “fetch(viteTestUrl + '/src/')”。
-   * 验证目标：“res.headers.get('x-served-by')” 应等于 “'vite'”，从而确认静态文件响应的状态、内容、header 与 SPA fallback 符合配置。
-   */
+  /** 请求 src/ 的 HTML 响应，验证 dev 与 preview 都附加各自配置中的 x-served-by header。 */
   test('serve with configured headers', async () => {
     const res = await fetch(viteTestUrl + '/src/')
     expect(res.headers.get('x-served-by')).toBe('vite')
@@ -385,7 +371,11 @@ describe('fetch', () => {
 })
 
 describe('cross origin', () => {
-  /** 在指定页面 origin 内发起 Fetch，网络/CORS 拒绝统一映射为 -1。 */
+  /** 在指定页面 origin 内发起 Fetch，网络/CORS 拒绝统一映射为 -1。
+   * @param page 发起浏览器请求的页面。
+   * @param url 请求地址。
+   * @returns 响应状态码，或 Fetch 拒绝时的 -1。
+   */
   const fetchStatusFromPage = async (page: Page, url: string) => {
     return await page.evaluate(async (url: string) => {
       try {
@@ -397,7 +387,11 @@ describe('cross origin', () => {
     }, url)
   }
 
-  /** 从浏览器页面创建 Vite HMR WebSocket，返回握手是否成功。 */
+  /** 从浏览器页面创建 vite-hmr WebSocket，等 open 或 error 后关闭成功连接。
+   * @param page 提供握手 Origin 的页面。
+   * @param url 含可选 token 的连接地址。
+   * @returns open 为 true，连接错误为 false。
+   */
   const connectWebSocketFromPage = async (page: Page, url: string) => {
     return await page.evaluate(async (url: string) => {
       try {
@@ -418,7 +412,12 @@ describe('cross origin', () => {
     }, url)
   }
 
-  /** 从 Node 客户端显式控制 Host/Origin，覆盖浏览器不允许伪造的安全边界。 */
+  /** 从 Node 客户端显式控制 Host/Origin，等 open 或 error 后返回握手结果。
+   * @param url 含可选 token 的连接地址。
+   * @param host 发送给服务器的 Host。
+   * @param origin 可选 Origin；undefined 时不发送该 header。
+   * @returns open 为 true，连接错误为 false。
+   */
   const connectWebSocketFromServer = async (
     url: string,
     host: string,
@@ -452,19 +451,13 @@ describe('cross origin', () => {
       await page.goto(getViteTestIndexHtmlUrl())
     })
 
-    /**
-     * 场景：在 “'cross origin'” / “'allowed for same origin'” 中，加载用例 fixture 并观察 “status”。
-     * 验证目标：“status” 应等于 “200”，从而确认静态文件响应的状态、内容、header 与 SPA fallback 符合配置。
-     */
+    /** 已打开同源页面再次 Fetch HTML，预期 200，验证正常页面请求仍可读取。 */
     test('fetch HTML file', async () => {
       const status = await fetchStatusFromPage(page, viteTestUrl + '/src/')
       expect(status).toBe(200)
     })
 
-    /**
-     * 场景：在 “'cross origin'” / “'allowed for same origin'” 中，加载用例 fixture 并观察 “status”。
-     * 验证目标：“status” 应等于 “200”，从而确认静态文件响应的状态、内容、header 与 SPA fallback 符合配置。
-     */
+    /** 同源页面 Fetch src/code.js，预期 200，验证开发模块响应可被同源脚本读取。 */
     test.runIf(isServe)('fetch JS file', async () => {
       const status = await fetchStatusFromPage(
         page,
@@ -473,10 +466,7 @@ describe('cross origin', () => {
       expect(status).toBe(200)
     })
 
-    /**
-     * 场景：在 “'cross origin'” / “'allowed for same origin'” 中，加载用例 fixture 并观察 “result”。
-     * 验证目标：“result” 应等于 “true”，从而确认Host/Origin/token 校验在 WebSocket 升级前执行。
-     */
+    /** 浏览器 WebSocket 自动携带 Origin；URL 带当前配置 token 时 HMR 握手成功。 */
     test.runIf(isServe)('connect WebSocket with valid token', async () => {
       const token = viteServer.config.webSocketToken
       const result = await connectWebSocketFromPage(
@@ -486,10 +476,7 @@ describe('cross origin', () => {
       expect(result).toBe(true)
     })
 
-    /**
-     * 场景：在 “'cross origin'” / “'allowed for same origin'” 中，请求 “fetch(viteTestUrl + '/src/index.html', { headers: { Host: viteTestUrlUrl.host }, })”。
-     * 验证目标：“res.status” 应等于 “200”，从而确认Host allowlist 拦截 DNS rebinding 而不影响显式允许主机。
-     */
+    /** Node Fetch 显式使用测试服务器 Host，预期 200，验证该地址被 Host 校验放行。 */
     test('fetch with allowed hosts', async () => {
       const viteTestUrlUrl = new URL(viteTestUrl)
       const res = await fetch(viteTestUrl + '/src/index.html', {
@@ -498,10 +485,7 @@ describe('cross origin', () => {
       expect(res.status).toBe(200)
     })
 
-    /**
-     * 场景：在 “'cross origin'” / “'allowed for same origin'” 中，加载用例 fixture 并观察 “result”。
-     * 验证目标：“result” 应等于 “true”，从而确认Host/Origin/token 校验在 WebSocket 升级前执行。
-     */
+    /** Node WebSocket 显式携带允许的 Host、Origin 和当前 token，预期握手成功。 */
     test.runIf(isServe)(
       'connect WebSocket with valid token with allowed hosts',
       async () => {
@@ -516,10 +500,7 @@ describe('cross origin', () => {
       },
     )
 
-    /**
-     * 场景：在 “'cross origin'” / “'allowed for same origin'” 中，加载用例 fixture 并观察 “result”。
-     * 验证目标：“result” 应等于 “true”，从而确认Host/Origin/token 校验在 WebSocket 升级前执行。
-     */
+    /** Node WebSocket 使用允许的 Host、不发送 Origin 且不带 token，预期成功；覆盖非浏览器兼容分支。 */
     test.runIf(isServe)(
       'connect WebSocket without a token without the origin header',
       async () => {
@@ -552,19 +533,13 @@ describe('cross origin', () => {
       await page2.close()
     })
 
-    /**
-     * 场景：在 “'cross origin'” / “'denied for different origin'” 中，加载用例 fixture 并观察 “status”。
-     * 验证目标：“status” 不应等于 “200”，从而确认静态文件响应的状态、内容、header 与 SPA fallback 符合配置。
-     */
+    /** 从 vite.dev 页面 Fetch 测试服务器 HTML，浏览器不能读取 200 响应；辅助函数把 CORS/网络失败映射为 -1。 */
     test('fetch HTML file', async () => {
       const status = await fetchStatusFromPage(page2, viteTestUrl + '/src/')
       expect(status).not.toBe(200)
     })
 
-    /**
-     * 场景：在 “'cross origin'” / “'denied for different origin'” 中，加载用例 fixture 并观察 “status”。
-     * 验证目标：“status” 不应等于 “200”，从而确认静态文件响应的状态、内容、header 与 SPA fallback 符合配置。
-     */
+    /** 从 vite.dev 页面 Fetch 开发模块，浏览器不能读取 200 响应，覆盖模块响应的跨源读取限制。 */
     test.runIf(isServe)('fetch JS file', async () => {
       const status = await fetchStatusFromPage(
         page2,
@@ -573,10 +548,7 @@ describe('cross origin', () => {
       expect(status).not.toBe(200)
     })
 
-    /**
-     * 场景：在 “'cross origin'” / “'denied for different origin'” 中，加载用例 fixture 并观察 “result”。
-     * 验证目标：“result” 应等于 “false”；“result2” 应等于 “false”，从而确认Host/Origin/token 校验在 WebSocket 升级前执行。
-     */
+    /** 浏览器从同源 page 建立 HMR 连接，但 URL 缺 token 或 token 为空；两次握手均失败，证明同源也不豁免 token。 */
     test.runIf(isServe)('connect WebSocket without token', async () => {
       const result = await connectWebSocketFromPage(page, viteTestUrl)
       expect(result).toBe(false)
@@ -588,10 +560,7 @@ describe('cross origin', () => {
       expect(result2).toBe(false)
     })
 
-    /**
-     * 场景：在 “'cross origin'” / “'denied for different origin'” 中，加载用例 fixture 并观察 “result”。
-     * 验证目标：“result” 应等于 “false”；“result2” 应等于 “false”，从而确认Host/Origin/token 校验在 WebSocket 升级前执行。
-     */
+    /** 浏览器分别携带等长错误 token 和多一个字符的错误 token，两次握手均失败；覆盖内容错误与长度错误分支。 */
     test.runIf(isServe)('connect WebSocket with invalid token', async () => {
       const token = viteServer.config.webSocketToken
       const result = await connectWebSocketFromPage(
@@ -602,16 +571,13 @@ describe('cross origin', () => {
 
       const result2 = await connectWebSocketFromPage(
         page,
-        // 长度不同也必须走常量时间 token 比较的失败路径。
+        // 长度不同先拒绝，避免对不同长度 Buffer 调用 timingSafeEqual。
         `${viteTestUrl}?token=${'t'.repeat(token.length)}t`,
       )
       expect(result2).toBe(false)
     })
 
-    /**
-     * 场景：在 “'cross origin'” / “'denied for different origin'” 中，加载用例 fixture 并观察 “res.statusCode”。
-     * 验证目标：“res.statusCode” 应等于 “403”，从而确认Host allowlist 拦截 DNS rebinding 而不影响显式允许主机。
-     */
+    /** Node HTTP 使用正常连接地址却手工发送 Host: vite.dev，预期 403；此请求不受浏览器 CORS 约束。 */
     test('fetch with non-allowed hosts', async () => {
       // fetch 会自动写入正确 Host，必须用 Node http 手工构造恶意 Host header。
       const res = await new Promise<http.IncomingMessage>((resolve, reject) => {
@@ -634,10 +600,7 @@ describe('cross origin', () => {
       expect(res.statusCode).toBe(403)
     })
 
-    /**
-     * 场景：在 “'cross origin'” / “'denied for different origin'” 中，加载用例 fixture 并观察 “result”。
-     * 验证目标：“result” 应等于 “false”；“result2” 应等于 “false”，从而确认Host/Origin/token 校验在 WebSocket 升级前执行。
-     */
+    /** Node WebSocket 使用不允许的 Host，分别携带 Origin 与省略 Origin；即使 token 正确，两次握手仍失败。 */
     test.runIf(isServe)(
       'connect WebSocket with valid token with non-allowed hosts',
       async () => {
@@ -671,7 +634,10 @@ describe.runIf(isServe)('fetchModule via WebSocket', () => {
     '..',
   )
 
-  /** 通过真实 HMR 协议发送 fetchModule invoke，并等待匹配 response id。 */
+  /** 连接带 token 的 HMR 通道，发送 fetchModule invoke 并等待 response:1，最终关闭连接。
+   * @param filePath 相对临时 fixture 根目录的文件路径，可带 raw 查询。
+   * @returns invoke data；连接错误或十秒无响应时拒绝。
+   */
   const fetchModuleViaWebSocket = async (filePath: string) => {
     const resolvedPath = path.resolve(root, filePath)
     const token = viteServer.config.webSocketToken
@@ -719,20 +685,14 @@ describe.runIf(isServe)('fetchModule via WebSocket', () => {
     }
   }
 
-  /**
-   * 场景：在 “'fetchModule via WebSocket'” 中，加载用例 fixture 并观察 “result.result”。
-   * 验证目标：“result.result” 应为 undefined；“result.error” 应为真，从而确认Host/Origin/token 校验在 WebSocket 升级前执行。
-   */
+  /** 使用已能连接的 HMR 通道请求 allow 内的 safe.txt?raw，收到 invoke error 且没有 result；client Environment 禁用 fetchModule。 */
   test('should not read files inside allowed directories as fetchModule is disabled', async () => {
     const result = await fetchModuleViaWebSocket('root/src/safe.txt?raw')
     expect(result.result).toBeUndefined()
     expect(result.error).toBeTruthy()
   })
 
-  /**
-   * 场景：在 “'fetchModule via WebSocket'” 中，加载用例 fixture 并观察 “result.result”。
-   * 验证目标：“result.result” 应为 undefined；“result.error” 应为真，从而确认Host/Origin/token 校验在 WebSocket 升级前执行。
-   */
+  /** 通过同一 HMR invoke 协议请求 allow 外的 unsafe.txt?raw，同样收到 error 且没有文件结果；该入口不能提供文件读取能力。 */
   test('should not read files outside allowed directories', async () => {
     const result = await fetchModuleViaWebSocket('root/unsafe.txt?raw')
     expect(result.result).toBeUndefined()
@@ -741,11 +701,7 @@ describe.runIf(isServe)('fetchModule via WebSocket', () => {
 })
 
 describe.runIf(!isServe)('preview HTML', () => {
-  /** 场景/目标：preview 不应像 dev transform 一样向 root 外 HTML 返回带详情的 403 页面。 */
-  /**
-   * 场景：在 “'preview HTML'” 中，加载用例 fixture 并观察 “page.textContent('.fetch-unsafe-html-status')”。
-   * 验证目标：“page.textContent('.fetch-unsafe-html-status')” 应等于 “'404'”；“page.textContent('.fetch-unsafe-html-content')” 应等于 “''”，从而确认server.fs allow/deny 与 fetchModule 边界防止越权文件读取。
-   */
+  /** preview 请求不存在于构建输出中的 unsafe HTML，预期空 404；预览层只服务产物目录。 */
   test('unsafe HTML fetch', async () => {
     await expect
       .poll(() => page.textContent('.fetch-unsafe-html-status'))

@@ -30,7 +30,7 @@ describe('ReactCompositeComponent-state', () => {
     const InternalTestUtils = require('internal-test-utils');
     assertLog = InternalTestUtils.assertLog;
 
-    /** `LogAfterCommit`：封装当前用例复用的操作、回调或断言步骤。 */
+    /** 透传children并在每次passive effect记commit color，区分render/layout callback与提交后日志。 */
     function LogAfterCommit({children, color}) {
       React.useEffect(() => {
         Scheduler.log(`commit ${color}`);
@@ -38,8 +38,10 @@ describe('ReactCompositeComponent-state', () => {
       return children;
     }
 
+    /** 用完整类生命周期/更新器日志观察state队列，颜色变化与回调顺序均由case逐段断言。 */
     TestComponent = class extends React.Component {
-      /** `constructor`：初始化测试夹具实例及其状态。 */
+
+      /** 在给state赋red前记录getInitialState标签并保存实例，标签沿用旧命名而非调用getInitialState方法。 */
       constructor(props) {
         super(props);
         this.peekAtState('getInitialState', undefined, props);
@@ -47,17 +49,17 @@ describe('ReactCompositeComponent-state', () => {
         testComponentInstance = this;
       }
 
-      /** `peekAtState`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 记录来源与给定或当前state.color；props参数保留签名但本实现未使用。 */
       peekAtState = (from, state = this.state, props = this.props) => {
         Scheduler.log(`${from} ${state && state.color}`);
       };
 
-      /** `peekAtCallback`：封装当前用例复用的操作、回调或断言步骤。 */
+      /** 返回提交回调，执行时读取当时this.state而非排队时state，比较最终颜色。 */
       peekAtCallback = from => {
         return () => this.peekAtState(from);
       };
 
-      /** `setFavoriteColor`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 排对象color更新及有名称的提交回调，验证外部方法setState。 */
       setFavoriteColor(nextColor) {
         this.setState(
           {color: nextColor},
@@ -65,7 +67,7 @@ describe('ReactCompositeComponent-state', () => {
         );
       }
 
-      /** `render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 记录render当前color并包LogAfterCommit，DOM/passive日志对应该次状态。 */
       render() {
         this.peekAtState('render');
         return (
@@ -75,7 +77,7 @@ describe('ReactCompositeComponent-state', () => {
         );
       }
 
-      /** `UNSAFE_componentWillMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 依次插入只观察的函数更新、sunrise与orange对象更新及回调；生命周期内this.state仍red，处理队列时观察更新器间的中间值。 */
       UNSAFE_componentWillMount() {
         this.peekAtState('componentWillMount-start');
         this.setState(function (state) {
@@ -99,7 +101,7 @@ describe('ReactCompositeComponent-state', () => {
         this.peekAtState('componentWillMount-end');
       }
 
-      /** `componentDidMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 挂载后排yellow并记前后仍orange；yellow下一提交处理，不能回写当前提交回调观察值。 */
       componentDidMount() {
         this.peekAtState('componentDidMount-start');
         this.setState(
@@ -109,7 +111,7 @@ describe('ReactCompositeComponent-state', () => {
         this.peekAtState('componentDidMount-end');
       }
 
-      /** `UNSAFE_componentWillReceiveProps`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 收到nextColor时排函数更新、内部replaceState(color undefined)、再次函数更新及回调；观察替换与后续浅合并的顺序。 */
       UNSAFE_componentWillReceiveProps(newProps) {
         this.peekAtState('componentWillReceiveProps-start');
         if (newProps.nextColor) {
@@ -130,40 +132,33 @@ describe('ReactCompositeComponent-state', () => {
         this.peekAtState('componentWillReceiveProps-end');
       }
 
-      /** `shouldComponentUpdate`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 记录旧this.state与已计算nextState后返回true，验证SCU尚未替换实例状态。 */
       shouldComponentUpdate(nextProps, nextState) {
         this.peekAtState('shouldComponentUpdate-currentState');
         this.peekAtState('shouldComponentUpdate-nextState', nextState);
         return true;
       }
 
-      /** `UNSAFE_componentWillUpdate`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 更新前同时记录旧/新状态，不另发更新。 */
       UNSAFE_componentWillUpdate(nextProps, nextState) {
         this.peekAtState('componentWillUpdate-currentState');
         this.peekAtState('componentWillUpdate-nextState', nextState);
       }
 
-      /** `componentDidUpdate`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 提交后记录新this.state及prevState，证明实例状态此时已更新。 */
       componentDidUpdate(prevProps, prevState) {
         this.peekAtState('componentDidUpdate-currentState');
         this.peekAtState('componentDidUpdate-prevState', prevState);
       }
 
-      /** `componentWillUnmount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 卸载前读最后state颜色，验证删除生命周期仍可访问实例状态。 */
       componentWillUnmount() {
         this.peekAtState('componentWillUnmount');
       }
     };
   });
 
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「should support setting state」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言连接 ReactDOM 公开入口、ReactDOMRoot 根生命周期及 DOM 提交结果。
-   */
+  /** 类初red，willMount排sunrise/orange，didMount再yellow，随后props green含replaceState、方法blue、forceUpdate再卸载；逐段日志验证队列读取旧this.state、更新器顺序、提交回调读取最终状态及force跳过SCU。 */
   it('should support setting state', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -174,7 +169,7 @@ describe('ReactCompositeComponent-state', () => {
     });
 
     assertLog([
-      // 当 getInitialState() 被调用时，没有状态。
+      // 构造器在赋初始red前使用getInitialState日志标签，此时state尚未初始化。
       'getInitialState undefined',
       'componentWillMount-start red',
       // setState() 只会把待处理状态入队。
@@ -188,7 +183,7 @@ describe('ReactCompositeComponent-state', () => {
       'render orange',
       'componentDidMount-start orange',
       // setState-sunrise 与 setState-orange 应在这里触发；这是修复 #1740 后的顺序。
-      // componentDidMount() 调用的 setState({color: 'yellow'}) 是异步更新，要到下一次冲刷才会生效。
+      // componentDidMount() 的 yellow 更新先入队；当前提交回调完成后再同步处理下一次提交。
       'componentDidMount-end orange',
       'setState-sunrise orange',
       'setState-orange orange',
@@ -212,7 +207,7 @@ describe('ReactCompositeComponent-state', () => {
       'componentWillReceiveProps-start yellow',
       // setState({color:'green'}) 只会把待处理状态入队。
       'componentWillReceiveProps-end yellow',
-      // 待定状态排队处理 我们将更新在排队中支持 replaceState(prevState => newState).
+      // 处理函数更新后执行enqueueReplaceState的对象替换；下一个更新器先看到color undefined。
       'before-setState-receiveProps yellow',
       'before-setState-again-receiveProps undefined',
       'after-setState-receiveProps green',
@@ -268,26 +263,30 @@ describe('ReactCompositeComponent-state', () => {
     ]);
   });
 
-  /** 测试场景：验证「should call componentDidUpdate of children first」描述的渲染、交互或错误处理结果。 */
+  /** Parent/Child同batch更新state，初Intermediate允许render、后令其SCU=false仍独立Child更新；两轮日志child did update在parent前，验证子提交先于父且祖先bailout不吞子更新。 */
   it('should call componentDidUpdate of children first', async () => {
     const container = document.createElement('div');
 
     let child = null;
     let parent = null;
 
-    /** `Child`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 独立有state更新的子类，通过didUpdate日志比较父子提交顺序。 */
     class Child extends React.Component {
-      /** `Child.state`：记录测试夹具在当前场景中的状态。 */
+
+      /** 初bar=false，测试两次独立子更新true/false。 */
       state = {bar: false};
-      /** `Child.componentDidMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 保存child实例供batch显式setState。 */
       componentDidMount() {
         child = this;
       }
-      /** `Child.componentDidUpdate`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 记录child did update，应该先于parent did update。 */
       componentDidUpdate() {
         Scheduler.log('child did update');
       }
-      /** `Child.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 固定div输出，状态内容与DOM变化无关，只测生命周期。 */
       render() {
         return <div />;
       }
@@ -295,31 +294,37 @@ describe('ReactCompositeComponent-state', () => {
 
     let shouldUpdate = true;
 
-    /** `Intermediate`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 返回Child但SCU由外部shouldUpdate控制，构造祖先bailout。 */
     class Intermediate extends React.Component {
-      /** `Intermediate.shouldComponentUpdate`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 返回case设置的shouldUpdate，false时仍允许已排Child更新继续。 */
       shouldComponentUpdate() {
         return shouldUpdate;
       }
-      /** `Intermediate.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 返回Child，为父/子之间添加可跳过复合层。 */
       render() {
         return <Child />;
       }
     }
 
-    /** `Parent`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 持有foo的父类，与子bar同batch更新。 */
     class Parent extends React.Component {
-      /** `Parent.state`：记录测试夹具在当前场景中的状态。 */
+
+      /** 初foo=false，两轮切true/false。 */
       state = {foo: false};
-      /** `Parent.componentDidMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 保存parent实例让case直接排更新。 */
       componentDidMount() {
         parent = this;
       }
-      /** `Parent.componentDidUpdate`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 记录父didUpdate，应在子之后。 */
       componentDidUpdate() {
         Scheduler.log('parent did update');
       }
-      /** `Parent.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 返回Intermediate，父更新与中间SCU路径关联。 */
       render() {
         return <Intermediate />;
       }
@@ -349,33 +354,37 @@ describe('ReactCompositeComponent-state', () => {
     assertLog(['child did update', 'parent did update']);
   });
 
-  /** 测试场景：验证「should batch unmounts」描述的渲染、交互或错误处理结果。 */
+  /** Outer正卸载时Inner.componentWillUnmount设父showInner=false；root.unmount不抛错，验证删除子树期间的父更新不会重新进入已卸载树。本例不是forceUpdate。 */
   it('should batch unmounts', async () => {
     let outer;
-    /** `Inner`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+
+    /** 正被删除的Inner，其卸载钩子再次给Outer排状态更新。 */
     class Inner extends React.Component {
-      /** `Inner.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 固定div宿主，保持删除路径简单。 */
       render() {
         return <div />;
       }
 
-      /** `Inner.componentWillUnmount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 卸载期间设置outer.showInner=false，父也正在根卸载，不应重渲染已删除实例。 */
       componentWillUnmount() {
-        // 这次调用应被静默忽略（也可能发出警告），但不能破坏 React。
+        // Inner卸载时给也在删除中的Outer排setState，根卸载应完成而不重新进入该树。
         outer.setState({showInner: false});
       }
     }
 
-    /** `Outer`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 拥有条件Inner的父类，保存实例供Inner卸载更新。 */
     class Outer extends React.Component {
-      /** `Outer.state`：记录测试夹具在当前场景中的状态。 */
+
+      /** 初showInner=true，确保有子删除钩子。 */
       state = {showInner: true};
-      /** `Outer.componentDidMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 保存outer引用供Inner使用。 */
       componentDidMount() {
         outer = this;
       }
 
-      /** `Outer.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 按showInner输出Inner，但本case通过根卸载删除整个父树。 */
       render() {
         return <div>{this.state.showInner && <Inner />}</div>;
       }
@@ -392,22 +401,27 @@ describe('ReactCompositeComponent-state', () => {
     }).not.toThrow();
   });
 
-  /** 测试场景：验证「should update state when called from child cWRP」描述的渲染、交互或错误处理结果。 */
+  /** Parent初value=one，再同类型render触发Child.cWRP设父two；本轮Child仍one，随后父/子render two，验证子旧生命周期排父更新不即时改当前props，updated标记防循环。 */
   it('should update state when called from child cWRP', async () => {
-    /** `Parent`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+
+    /** 持有one/two的父类，把自身实例和value传Child。 */
     class Parent extends React.Component {
-      /** `Parent.state`：记录测试夹具在当前场景中的状态。 */
+
+      /** 初value=one，在Child.cWRP中被设two。 */
       state = {value: 'one'};
-      /** `Parent.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 记录当前父值并传parent=this，制造子旧生命周期更新父的链。 */
       render() {
         Scheduler.log('parent render ' + this.state.value);
         return <Child parent={this} value={this.state.value} />;
       }
     }
     let updated = false;
-    /** `Child`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+
+    /** cWRP仅首次排父two的子类，updated外部标记防重复。 */
     class Child extends React.Component {
-      /** `Child.UNSAFE_componentWillReceiveProps`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 第一次记录旧this.props.value并排父two，当前Child render仍one，父随后再更新。 */
       UNSAFE_componentWillReceiveProps() {
         if (updated) {
           return;
@@ -419,7 +433,8 @@ describe('ReactCompositeComponent-state', () => {
         );
         updated = true;
       }
-      /** `Child.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 记录并输出this.props.value，比较旧轮与追加父更新轮。 */
       render() {
         Scheduler.log('child render ' + this.props.value);
         return <div>{this.props.value}</div>;
@@ -446,23 +461,27 @@ describe('ReactCompositeComponent-state', () => {
     ]);
   });
 
-  /** 测试场景：验证「should merge state when sCU returns false」描述的渲染、交互或错误处理结果。 */
+  /** Test初state a，SCU始终false，连续setState b/c；SCU日志当前键a→a,b再a,b→a,b,c，验证跳过render仍提交浅合并状态。 */
   it('should merge state when sCU returns false', async () => {
     let test;
-    /** `Test`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+
+    /** SCU始终false的类，验证状态浅合并不依赖render执行。 */
     class Test extends React.Component {
-      /** `Test.state`：记录测试夹具在当前场景中的状态。 */
+
+      /** 初只有键a，后续加入b/c应保留旧键。 */
       state = {a: 0};
-      /** `Test.componentDidMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 保存test实例，供case更新状态。 */
       componentDidMount() {
         test = this;
       }
 
-      /** `Test.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 空输出，不用DOM变化判state，SCU日志检查状态键。 */
       render() {
         return null;
       }
-      /** `Test.shouldComponentUpdate`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 记录this.state/nextState键再false，下一次this.state仍应包含前次合并。 */
       shouldComponentUpdate(nextProps, nextState) {
         Scheduler.log(
           'scu from ' +
@@ -490,13 +509,16 @@ describe('ReactCompositeComponent-state', () => {
     assertLog(['scu from a,b to a,b,c']);
   });
 
-  /** 测试场景：验证「should treat assigning to this.state inside cWRP as a replaceState, with a warning」描述的渲染、交互或错误处理结果。 */
+  /** cWRP先setState step2带callback再直接赋state step3；DEV弃用警告，render与callback均step3且extra被删，再重复更新不警告，验证直接赋值按replace而回调保留。 */
   it('should treat assigning to this.state inside cWRP as a replaceState, with a warning', async () => {
-    /** `Test`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+
+    /** 在cWRP先setState再直接赋state的类，测试替换与回调。 */
     class Test extends React.Component {
-      /** `Test.state`：记录测试夹具在当前场景中的状态。 */
+
+      /** 初step1/extra=true，直接替换step3应删除extra。 */
       state = {step: 1, extra: true};
-      /** `Test.UNSAFE_componentWillReceiveProps`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 排step2及提交回调后直接赋step3，renderer将赋值视作replaceState而不丢已有回调。 */
       UNSAFE_componentWillReceiveProps() {
         this.setState({step: 2}, () => {
           // 测试早期的 setState 回调不会被丢弃
@@ -508,7 +530,8 @@ describe('ReactCompositeComponent-state', () => {
         // 像 replaceState
         this.state = {step: 3};
       }
-      /** `Test.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 记录最终step与extra布尔后返回null，比较替换状态。 */
       render() {
         Scheduler.log(
           `render -- step: ${this.state.step}, extra: ${!!this.state.extra}`,
@@ -548,13 +571,16 @@ describe('ReactCompositeComponent-state', () => {
     }).not.toThrow();
   });
 
-  /** 测试场景：验证「should treat assigning to this.state inside cWM as a replaceState, with a warning」描述的渲染、交互或错误处理结果。 */
+  /** cWM初step1/extra，先排step2 callback再直接赋step3；flushSync警告，断言两轮render/callback均step3/extra false，验证挂载直接赋值替换旧字段且不丢前回调。 */
   it('should treat assigning to this.state inside cWM as a replaceState, with a warning', () => {
-    /** `Test`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+
+    /** 在cWM直接赋state的挂载fixture，与接收props路径对照。 */
     class Test extends React.Component {
-      /** `Test.state`：记录测试夹具在当前场景中的状态。 */
+
+      /** 初step1/extra=true，赋step3后extra不应保留。 */
       state = {step: 1, extra: true};
-      /** `Test.UNSAFE_componentWillMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 先排step2回调再赋step3，DEV诊断且提交回调读取最终替换结果。 */
       UNSAFE_componentWillMount() {
         this.setState({step: 2}, () => {
           // 测试早期的 setState 回调不会被丢弃
@@ -566,7 +592,8 @@ describe('ReactCompositeComponent-state', () => {
         // 像 replaceState
         this.state = {step: 3};
       }
-      /** `Test.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 记录step/extra，断言包含两轮相同结果，不增加DOM。 */
       render() {
         Scheduler.log(
           `render -- step: ${this.state.step}, extra: ${!!this.state.extra}`,
@@ -598,30 +625,37 @@ describe('ReactCompositeComponent-state', () => {
     ]);
   });
 
-  /** 测试场景：验证「should not support setState in componentWillUnmount」描述的渲染、交互或错误处理结果。 */
+  /** 现代根由A换B，B willMount安装subscription更新自身，A卸载调用它；DEV提示B尚未挂载的state更新，验证删除旧兄弟时不能把新树的未挂实例当已挂载；未断言最终文字。 */
   it('should not support setState in componentWillUnmount', async () => {
     let subscription;
-    /** `A`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+
+    /** 现代根先挂A，替换为B时A卸载触发安装好的subscription。 */
     class A extends React.Component {
-      /** `A.componentWillUnmount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 调用B在willMount提供的更新函数，新B尚未完成挂载而应诊断。 */
       componentWillUnmount() {
         subscription();
       }
-      /** `A.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 返回A文字，确认替换起点。 */
       render() {
         return 'A';
       }
     }
 
-    /** `B`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 现代根新挂B，旧A卸载时试图更新此实例。 */
     class B extends React.Component {
-      /** `B.state`：记录测试夹具在当前场景中的状态。 */
+
+      /** 初siblingUnmounted=false，非法时点更新不应当正常已挂状态处理。 */
       state = {siblingUnmounted: false};
-      /** `B.UNSAFE_componentWillMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 把更新自身状态的subscription放到外部，供A删除钩子调用。 */
       UNSAFE_componentWillMount() {
+        /** 设置B.siblingUnmounted=true，但现代case触发时B尚未挂载，作为诊断输入。 */
         subscription = () => this.setState({siblingUnmounted: true});
       }
-      /** `B.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 输出B及条件No Sibling，现代case主要断言警告而非最终文字。 */
       render() {
         return 'B' + (this.state.siblingUnmounted ? ' No Sibling' : '');
       }
@@ -647,30 +681,38 @@ describe('ReactCompositeComponent-state', () => {
   });
 
   // @gate !disableLegacyMode
-  /** 测试场景：验证「Legacy mode should support setState in componentWillUnmount (#18851)」描述的渲染、交互或错误处理结果。 */
+
+  /** legacy开启时同A→B替换与subscription；最终B No Sibling，验证legacy删除阶段允许该挂载路径状态更新生效。 */
   it('Legacy mode should support setState in componentWillUnmount (#18851)', () => {
     let subscription;
-    /** `A`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+
+    /** legacy根的旧A，替换删除时也调用subscription。 */
     class A extends React.Component {
-      /** `A.componentWillUnmount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 调用新B的状态更新函数，legacy挂载路径允许其生效。 */
       componentWillUnmount() {
         subscription();
       }
-      /** `A.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 输出A确认legacy初始内容。 */
       render() {
         return 'A';
       }
     }
 
-    /** `B`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** legacy新B由旧A卸载触发状态更新，最终应带No Sibling。 */
     class B extends React.Component {
-      /** `B.state`：记录测试夹具在当前场景中的状态。 */
+
+      /** 初siblingUnmounted=false，随后状态队列设true。 */
       state = {siblingUnmounted: false};
-      /** `B.UNSAFE_componentWillMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 在legacy挂载前暴露更新函数供旧A卸载使用。 */
       UNSAFE_componentWillMount() {
+        /** 把B.siblingUnmounted设true，legacy模式最终读取该合并状态。 */
         subscription = () => this.setState({siblingUnmounted: true});
       }
-      /** `B.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 按状态输出B No Sibling，验证legacy行为与现代诊断区别。 */
       render() {
         return 'B' + (this.state.siblingUnmounted ? ' No Sibling' : '');
       }

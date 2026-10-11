@@ -37,8 +37,8 @@ import type { StringFilter } from './plugins/pluginFilter'
  * 能力。有效的 Vite 插件也是有效的打包器插件；反向则不一定成立，因为未打包的开发
  * 服务器没有 output 阶段。只要插件不强耦合 bundle 与 output 钩子，通常可直接复用。
  *
- * 默认插件同时用于 serve 和 build。serve 只运行非 output 钩子，可以类比为只执行
- * `rolldown()`，从不调用 `bundle.generate()`。
+ * 默认插件同时用于 serve 和 build。非打包开发容器执行模块与初始化钩子，关闭时也执行
+ * closeBundle，但没有 generateBundle/writeBundle 等产物阶段。bundled dev 则使用 Rolldown。
  *
  * 插件可在工厂参数或 `apply`/`config` 的 {@link ConfigEnv.command} 中区分 serve/build。
  * 全局钩子（config、configResolved、configureServer 等）没有当前 Environment；模块级
@@ -75,7 +75,7 @@ export interface MinimalPluginContextWithoutEnvironment extends Omit<
   'environment'
 > {}
 
-// 通过模块扩充让所有 Rolldown 上下文类型认识 Vite 的 environment 与版本字段。
+/** 扩充 Rolldown 上下文类型，声明 Vite 在运行时注入的 environment 与 viteVersion 字段。 */
 declare module 'rolldown' {
   /** Vite 扩充后的最小插件上下文。 */
   export interface MinimalPluginContext extends PluginContextExtension {}
@@ -88,9 +88,9 @@ declare module 'rolldown' {
  *
  * 插件分为应用级插件与 Environment 插件。应用级插件参与 config、server 等全局生命
  * 周期；`applyToEnvironment` 可以为每个已解析 Environment 保留当前插件，或返回一组
- * 新插件实例。后者在服务器/Builder 已建立后创建，更接近普通 Rolldown 插件，也更容易
- * 管理环境专属配置和缓存，但不应再声明 config、configResolved、configureServer 等
- * 应用级钩子。
+ * 新插件实例。配置解析在 configResolved 后用 PartialEnvironment 派生这些实例，此时可
+ * 读取环境配置，开发服务器/Builder 的运行时实例尚未建立。派生插件用于模块生命周期，
+ * 不应再声明已经执行过或由顶层列表调度的 config、configResolved、configureServer 等钩子。
  */
 export interface Plugin<A = any> extends RolldownPlugin<A> {
   /**
@@ -191,19 +191,18 @@ export interface Plugin<A = any> extends RolldownPlugin<A> {
    * 在 `vite build --app` 时允许多个 Environment 共享同一插件实例。
    *
    * 为兼容旧行为，默认仍为每个环境重建插件；也可用 `builder.sharedPlugins` 全局开启。
-   * 未来主版本计划改为默认共享。
    * @experimental
    */
   sharedDuringBuild?: boolean
   /**
-   * 开发阶段为每个 Environment 分别运行 buildStart/buildEnd。
-   * 兼容默认只在 client 调用一次；开启后与多环境构建生命周期一致。
+   * 当前插件在非打包开发阶段也参与非 client Environment 的 buildStart/buildEnd。
+   * 默认只参与 client；其他环境启动或关闭自身容器时才触发，不会在此处主动启动它们。
    * @experimental
    */
   perEnvironmentStartEndDuringDev?: boolean
   /**
-   * 开发阶段为每个 Environment 分别运行 watchChange。
-   * 兼容默认只在 client 调用一次；开启后与多环境构建监听行为一致。
+   * 当前插件在开发阶段也接收非 client Environment 的 watchChange。
+   * 默认只参与 client；服务器把文件事件分发到各容器，由容器检查此标志。
    * @experimental
    */
   perEnvironmentWatchChangeDuringDev?: boolean
@@ -283,7 +282,8 @@ export interface Plugin<A = any> extends RolldownPlugin<A> {
   /**
    * 配置产物预览服务器。钩子收到 {@link PreviewServer}，可保存引用供其他钩子使用。
    *
-   * 各插件在其他中间件注册前串行执行；返回的 post hook 会在中间件注册后执行。
+   * CORS/Host 校验先挂载，插件钩子随后串行执行；返回的 post hook 在代理、静态服务和
+   * HTML fallback 之后执行，早于最终 HTML/404 中间件。
    */
   configurePreviewServer?: ObjectHook<PreviewServerHook>
   /**

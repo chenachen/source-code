@@ -6,7 +6,7 @@ import * as prng from 'lib0/prng'
 import { compareIdSets, createRandomIdSet, ID } from './testHelper.js'
 
 /**
- * 用紧凑三元组 fixture 构造 IdSet。
+ * 按 `[client, clock, len]` 构造 IdSet。
  *
  * @param {Array<[number, number, number]>} ops
  */
@@ -19,11 +19,8 @@ const simpleConstructIdSet = ops => {
 }
 
 /**
- * Given：零长、相邻与重叠的手工 ID 区间。
- * When：比较触发 `IdRanges.getIds()` 规范化。
- * Then：零长段消失，相邻/重叠段合成最大连续范围，空洞保持分离。
- *
- * 验证机制：逐个边界比较规范化集合，覆盖原地双指针归并。
+ * 比较手工构造的 IdSet 与预期区间：零长度输入在 `IdSet.add()` 时即被忽略；
+ * 比较时触发 `IdRanges.getIds()`，相邻/重叠段合并，空洞保持分离。
  *
  * @param {t.TestCase} _tc
  */
@@ -73,11 +70,8 @@ export const testIdsetMerge = _tc => {
 }
 
 /**
- * Given：源范围与排除范围的分离、包含、左右重叠及跨多段组合。
- * When：计算 `diffIdSet(source, exclude)`。
- * Then：结果只保留源集合未被排除的精确子区间。
- *
- * 验证机制：手工期望覆盖 `_diffSet()` 的每种游标/裁剪分支。
+ * 用手工期望检查 `diffIdSet(source, exclude)` 的区间边界，覆盖分离、包含、
+ * 左右重叠以及一个排除范围跨越多段的组合。
  *
  * @param {t.TestCase} _tc
  */
@@ -159,6 +153,8 @@ export const testDiffing = _tc => {
 /**
  * 随机验证 `A \ B` 等于 `(A ∪ B) \ B`。
  *
+ * 初始：PRNG 生成四个 client、clock 范围 100 的两个集合。触发：分别求 A\B 与 (A∪B)\B。预期：逐 client 的规范区间边界相同；重复轮次由测试运行器的 Repeat 规则控制。
+ *
  * @param {t.TestCase} tc
  */
 export const testRepeatRandomDiffing = tc => {
@@ -176,6 +172,8 @@ export const testRepeatRandomDiffing = tc => {
  * 随机验证原地 `delete()` 与纯函数 `diffIdSet()` 结果一致。
  *
  * 删除长度允许越过生成范围，覆盖尾端裁剪与客户端键移除。
+ *
+ * 初始：一个 client 的随机集合与可越过尾端的随机删除范围。触发：先计算纯差集，再原地 delete。预期：删除区间逐 clock 查询均为 false，且完整结果与差集一致。
  *
  * @param {t.TestCase} tc
  */
@@ -198,6 +196,8 @@ export const testRepeatRandomDeletes = tc => {
 
 /**
  * 随机验证多个 IdSet 合并与输入顺序无关，并等价于逐 ID 并集重建。
+ *
+ * 初始：四 client 的三个随机集合。触发：正序、反序合并，并扫描 clock 0..141 重建逐 ID 并集。预期：两种合并及重建结果边界相同；检查范围包含生成区间之外的空尾部。
  *
  * @param {t.TestCase} tc
  */
@@ -231,6 +231,8 @@ export const testRepeatMergingMultipleIdsets = tc => {
 /**
  * 随机验证“先合并再排除”等于“分别排除再合并”。
  *
+ * 初始：同一四 client/100 clock 空间的 A、B、排除集合 E。触发：比较 (A∪B)\E 与 (A\E)∪(B\E)。预期：规范区间完全一致。
+ *
  * @param {t.TestCase} tc
  */
 export const testRepeatRandomDiffing2 = tc => {
@@ -249,6 +251,8 @@ export const testRepeatRandomDiffing2 = tc => {
 
 /**
  * 随机逐 ID 验证交集只包含双方共同覆盖，并验证差集排除交集等价于排除右集合。
+ *
+ * 初始：四 client/100 clock 的两个随机集合。触发：求交集后在该空间逐 ID 检查，并计算两个差集。预期：交集覆盖恰为双方同时 has，A\B 等于 A\(A∩B)。
  *
  * @param {t.TestCase} tc
  */
@@ -269,11 +273,11 @@ export const testRepeatRandomIntersects = tc => {
 }
 
 /**
- * Given：随机 IdSet 与可能越过生成边界的随机查询范围。
- * When：调用无分配 `covers()` / `coveredLength()`。
- * Then：结果分别等于逐 ID `has()` 扫描与分配式 `slice()` 求和。
+ * 对随机查询范围比较 `covers()`、`coveredLength()` 与逐 ID `has()` 扫描，
+ * 再比较 `coveredLength()` 与 `slice()` 中存在段的长度之和。查询允许越过
+ * 生成边界，检查尾端裁剪。
  *
- * 验证机制：三个独立实现交叉校验二分首范围和跨范围累加边界。
+ * 初始：四 client/100 clock 随机集合。触发：同一调用内做 300 次正长度范围查询，允许末端越界。预期：covers 与 coveredLength 同逐 ID 参考扫描一致，长度也等于 slice 存在段之和。
  *
  * @param {t.TestCase} tc
  */
@@ -313,12 +317,9 @@ const structAt = (doc, clock) => {
 }
 
 /**
- * Given：`gc:false` 文档中保留载荷的已删除数组元素。
- * When：用存储删除集调用 `gcIdSet()`。
- * Then：可见数组不变；可回收墓碑变为 `ContentDeleted`；全量更新仍与新副本收敛。
- *
- * 验证机制：同时断言 API 状态、内部内容类型与跨文档同步，证明回收只丢载荷、不
- * 改删除语义或因果编码。
+ * 在 `gc:false` 文档中删除数组元素，再用存储删除集调用 `gcIdSet()`。检查墓碑
+ * 载荷变为 `ContentDeleted`、可见数组保持不变，并把回收后的全量更新应用到
+ * 新副本，比较双方数组。
  *
  * @param {t.TestCase} _tc
  */
@@ -349,11 +350,8 @@ export const testGcIdSetBasic = _tc => {
 }
 
 /**
- * Given：一个保留载荷的连续删除结构，只选择其中间时钟范围。
- * When：调用 `gcIdSet()`。
- * Then：仅命中中段变为 `ContentDeleted`，两侧删除载荷仍保留。
- *
- * 验证机制：分别按边界内外时钟检查内容类型，证明预切分精确限定 GC 范围。
+ * 仅回收连续墓碑的中间时钟范围；检查中段变为 `ContentDeleted`，两侧仍保留
+ * `ContentAny`。该输入需要先切分墓碑，才能把回收限定在选中的区间。
  *
  * @param {t.TestCase} _tc
  */
@@ -379,6 +377,8 @@ export const testGcIdSetPartialRange = _tc => {
 /**
  * 验证 `gcIdSet()` 跳过 IdSet 中仍存活的内容，只回收已删除 Item。
  *
+ * 初始：关闭自动 GC，插入 a/b/c 后只删除 b。触发：以包括存活项的全部 ID 集手动 gcIdSet。预期：可见 a/c 不变且保留 ContentAny，b 的载荷变为 ContentDeleted。
+ *
  * @param {t.TestCase} _tc
  */
 export const testGcIdSetSkipsLiveContent = _tc => {
@@ -399,6 +399,8 @@ export const testGcIdSetSkipsLiveContent = _tc => {
 /**
  * 验证重复调用 `gcIdSet()` 幂等：第二次不改变可见值或编码状态。
  *
+ * 初始：关闭自动 GC，删除 a/b 留下 c。触发：用同一个删除集调用 gcIdSet 两次。预期：第二次后可见数组与第一次编码字节完全不变。
+ *
  * @param {t.TestCase} _tc
  */
 export const testGcIdSetIdempotent = _tc => {
@@ -416,6 +418,8 @@ export const testGcIdSetIdempotent = _tc => {
 
 /**
  * 验证带 `keep` 位（例如受 UndoManager 保护）的删除 Item 不被回收。
+ *
+ * 初始：关闭自动 GC，删除 b 后手工置 keep=true。触发：按完整删除集手动回收。预期：b 保持 deleted 且仍保留 ContentAny；此例未创建 UndoManager。
  *
  * @param {t.TestCase} _tc
  */

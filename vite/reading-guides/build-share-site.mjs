@@ -58,7 +58,7 @@ const groups = [
         nav: 'CLI 与启动',
         lede: 'CLI 负责尽早处理进程参数、把命令转成 InlineConfig，再把控制权交给 Node API。',
         boundary:
-          '这里解释命令分派，不把 CLI 当成配置解析器或 HTTP Server 本体。',
+          'CLI 整理 InlineConfig；配置解析、组件创建和端口监听由 Node API 接续完成。',
       },
       {
         code: '02A',
@@ -66,7 +66,7 @@ const groups = [
         nav: '环境文件加载',
         lede: '四类 env 文件按顺序合并、展开，再由 process.env 覆盖；envPrefix 决定客户端暴露边界。',
         boundary:
-          '只解释环境变量来源与暴露，不替代完整配置合并和 define 替换语义。',
+          'envPrefix 筛选公开变量；NODE_ENV、配置解析和 define 分别在相应阶段消费它们。',
       },
       {
         code: '02B',
@@ -74,15 +74,15 @@ const groups = [
         nav: '配置加载与解析',
         lede: '配置解析是文件加载、合并、串行 config hook、Environment 派生与插件最终排序组成的多阶段过程。',
         boundary:
-          '页面按阶段解释 resolveConfig；单个初始化片段不被扩大为全部六阶段的唯一证据。',
+          'config hook 在解析期间串行修改用户配置，configResolved 接收最终解析结果。',
       },
       {
         code: '02C',
         slug: '02c-define-client-injection-and-json',
         nav: 'Define、注入与 JSON',
-        lede: 'define 的语义在构建、SSR dev、client dev 中一致，但替换时机不同；JSON 又有独立模块语义。',
+        lede: '构建和 SSR 在转换阶段处理 define，client dev 注入运行时值；原生 JSON 插件按内容和配置生成导出。',
         boundary:
-          'Define、client injection 与 JSON 是三条相邻但不同的执行路径，证据不能互相代替。',
+          'JSON 对象的 namedExports 优先于 stringify；数组与基础值走另一条生成分支。',
       },
     ],
   },
@@ -96,15 +96,15 @@ const groups = [
         nav: '插件体系',
         lede: '插件先按应用范围与 Environment 选择，再按插件层和 hook 层排序；开发态容器模拟 bundler context。',
         boundary:
-          'Hook 排序只证明调度顺序；resolve、load、transform 的停止与串联规则分别核对。',
+          'resolve/load 取首个有效结果，transform 串联前一结果；hook order 与插件 enforce 分别排序。',
       },
       {
         code: '04',
         slug: '04-dev-server-lifecycle',
         nav: 'Dev Server 生命周期',
-        lede: '构造、监听、关闭、重启是四个状态阶段；重启迁移公开对象，关闭等待全部资源。',
+        lede: '构造、监听、关闭、重启各有状态；重启迁移公开对象，关闭并行等待各组件收尾。',
         boundary:
-          'createServer 只完成装配，listen 才占端口；关闭与重启不能由构造片段推导。',
+          '普通模式在 listen 初始化环境，middleware mode 在构造时初始化；关闭和重启各有等待门闩。',
       },
       {
         code: '05',
@@ -112,7 +112,7 @@ const groups = [
         nav: 'Environment API',
         lede: '每个 DevEnvironment 隔离配置视图、插件容器和模块图；依赖优化器与运行时 transport 只在相应类型和配置下存在。',
         boundary:
-          'Build、Scan、Unknown 等 Environment 能力不同；类继承层级不等于运行时所有权层级。',
+          'DevEnvironment 持有模块图与插件容器；Build、Scan、Unknown Environment 提供各自阶段的能力。',
       },
       {
         code: '06',
@@ -120,7 +120,7 @@ const groups = [
         nav: '中间件与请求入口',
         lede: 'Connect 注册顺序就是请求语义：校验、代理、public、transform、static、HTML 与 error。',
         boundary:
-          'Host、CORS、server.fs 和 WebSocket token 是不同安全边界，不能压成一个开关。',
+          'Host、CORS、server.fs 与 WebSocket token 分别检查请求主机、来源、文件访问和热通道连接。',
       },
       {
         code: '07',
@@ -128,7 +128,7 @@ const groups = [
         nav: '模块解析',
         lede: 'Resolve 是按 Environment 配置的多插件决策树；package 条件、缓存与 external 共同决定结果。',
         boundary:
-          'URL、resolved ID、磁盘 file 是不同身份；basedir 片段只证明其中一个决策。',
+          'URL 用于请求，resolved ID 标识模块，file 用于文件监听；query 与虚拟 ID 保留独立身份。',
       },
       {
         code: '08',
@@ -136,7 +136,7 @@ const groups = [
         nav: 'Transform 与模块图',
         lede: 'pending 合并当前并发，ModuleNode 保存长期结果；URL、ID、file 三种索引共同维持增量状态。',
         boundary:
-          '短期 Promise 不是长期缓存；缓存是否可用还要结合失效时间和软硬失效。',
+          'pending 只合并未过期的在途请求；长期缓存由节点保存，并按软硬失效决定复用或重算。',
       },
     ],
   },
@@ -150,15 +150,15 @@ const groups = [
         nav: 'HTML 转换',
         lede: 'HTML 同时是开发 HTTP 入口和构建图入口：内联代码经 proxy 入图，产物再由 chunk 图还原。',
         boundary:
-          '开发态代理与构建态 generateBundle 是两段流程，不能共享一套时序结论。',
+          '开发入口由 indexHtml 中间件处理；构建 HTML 在 generateBundle 读取最终 chunk 和资源依赖。',
       },
       {
         code: '10',
         slug: '10-import-analysis',
         nav: 'Import Analysis',
-        lede: 'Glob 和变量 import 先展开，主 Import Analysis 再改写 URL、注入 runtime、写依赖和 HMR 边。',
+        lede: '变量 import 先生成 glob，Glob 插件随后展开；Import Analysis 再改写 URL、注入 runtime 并写依赖和 HMR 边。',
         boundary:
-          '插件入口只证明启用条件；URL 规范化与 ModuleGraph 写入由后续决定性分支证明。',
+          '客户端依赖追加 base 与资源 import query；服务端 external/builtin 留给运行时，内部依赖仍规范化 URL 并入图。',
       },
       {
         code: '11',
@@ -174,7 +174,7 @@ const groups = [
         nav: 'HMR',
         lede: 'HMR 从 watcher 经插件与图传播生成 update 或 reload，再由客户端执行 dispose、import、accept。',
         boundary:
-          'WebSocket 只是 transport；找到接受边界也不保证循环、死端或执行错误绝不 reload。',
+          '图传播遇到死端时 reload；无死端且有接受边界时发送 update，客户端依次 dispose、导入并调用旧 callback。',
       },
       {
         code: '12B',
@@ -182,7 +182,7 @@ const groups = [
         nav: 'Bundled Dev',
         lede: '实验性 bundled dev 用 Rolldown 维护增量整包与内存输出，再由浏览器真实执行图决定 HMR 边界。',
         boundary:
-          '它不是普通 transformRequest 的缓存优化；依赖优化、模块身份、HMR 边界与 reload 时序都采用另一套状态协议。',
+          'Rolldown 管构建图，浏览器管实际执行图；reload 请求等最新内存产物发布后再触发导航。',
       },
     ],
   },
@@ -196,7 +196,7 @@ const groups = [
         nav: 'CSS 管线',
         lede: '三段 CSS 插件把预处理、用户变换、开发注入与构建抽取分层，并管理 worker 和构建轮次缓存。',
         boundary:
-          '普通 CSS、CSS Modules、HTML proxy 有不同身份；不能概括为全部 CSS 都 self-accept。',
+          '普通 CSS 可生成注入模块，CSS Modules 导出类名映射，direct/inline 与 HTML proxy 各走专门分支。',
       },
       {
         code: '13B',
@@ -204,7 +204,7 @@ const groups = [
         nav: 'Asset、Worker、Wasm',
         lede: 'Asset、Worker、Wasm 通过 URL、占位符、独立子构建和 runtime 胶水进入 JavaScript 图。',
         boundary:
-          'Worker 不是复制文件；Asset 的 resolve 证据也不能替代 Worker 与 Wasm 的决定性分支。',
+          'Worker 进入独立子构建；Asset URL 和 Wasm glue 通过资源占位符接入主产物。',
       },
     ],
   },
@@ -218,7 +218,7 @@ const groups = [
         nav: '生产构建编排',
         lede: '传统 build 是单 Environment 兼容层；真正编排由 createBuilder、BuildEnvironment 与 Rolldown 完成。',
         boundary:
-          '此版本主构建器是 Rolldown；不要把 esbuild 的转译和压缩阶段说成主图构建。',
+          '此版本主构建器是 Rolldown，默认转译与压缩使用 Oxc；esbuild 用于显式兼容路径。',
       },
       {
         code: '14B',
@@ -254,15 +254,15 @@ const groups = [
   },
   {
     name: '公共边界',
-    description: '稳定出口、诊断和兼容类型。',
+    description: '公共入口、诊断和兼容类型。',
     pages: [
       {
         code: '16',
         slug: '16-public-api-diagnostics-and-types',
         nav: '公共 API 与类型',
-        lede: '公共 export 是兼容承诺边界；诊断、常量和内联上游类型服务维护，不是新的运行主链。',
+        lede: 'Node 公共出口汇集运行入口、配置和工具；日志、协议常量与类型声明把这些能力接到调用方。',
         boundary:
-          'src/node 中可导入的 helper 不自动等于稳定公共 API；DTS 测试锁定的是类型契约。',
+          '公共出口按普通、兼容和 experimental API 区分；DTS 用编译期断言检查类型关系。',
       },
     ],
   },
@@ -357,7 +357,7 @@ function renderFlowDiagram(source, pageCode) {
       '<span class="lane-arrow">→</span><span class="lane-choice">旧入口 hash / fileHash / interop 变化？</span></div>',
       '<div class="lane-split"><span><b>否</b> → 可无感合并并保留旧 browserHash</span>',
       '<span><b>是且又有 missing</b> → 丢弃重批；否则提交并 full reload</span></div></section>',
-      '<section class="flow-lane"><h4 class="lane-label">目录换代（非可回滚事务）</h4>',
+      '<section class="flow-lane"><h4 class="lane-label">目录换代</h4>',
       '<div class="lane-path"><span class="lane-step">写 _metadata.json</span>',
       '<span class="lane-arrow">→</span><span class="lane-step">正式目录 → backup</span>',
       '<span class="lane-arrow">→</span><span class="lane-step">processing → 正式目录</span>',
@@ -369,9 +369,9 @@ function renderFlowDiagram(source, pageCode) {
       '<span class="lane-arrow">→</span><span class="lane-step">再验 metadata</span>',
       '<span class="lane-arrow">→</span><span class="lane-step">读 code / map</span></div></section>',
       '<section class="flow-lane"><h4 class="lane-label">失败与关闭</h4>',
-      '<div class="lane-split three"><span>旧 hash / processing 异常 → 504</span>',
-      '<span>确认优化目录缺文件 → 404</span>',
-      '<span>commit 中途 I/O 失败无回滚；close 取消后台任务并保留已提交 cache</span></div></section>',
+      '<div class="lane-split three"><span>过期版本 / processing 自身拒绝 → 504；构建失败与关闭也会放行批次，再查版本和文件</span>',
+      '<span>读文件失败：带 hash 且不忽略过期请求 → 504；否则 → 404</span>',
+      '<span>commit 中途 I/O 失败无回滚；close 标记取消并等准备/扫描，已开始的 write 可继续</span></div></section>',
       '</div>',
     ].join('')
   } else if (pageCode === '12') {
@@ -386,7 +386,7 @@ function renderFlowDiagram(source, pageCode) {
       '<div class="lane-path"><span class="lane-step">self-accept → update(child → child)</span>',
       '<span class="lane-arrow">→</span><span class="lane-step">payload 进入串行 handler</span>',
       '<span class="lane-arrow">→</span><span class="lane-step">冻结旧 callback + dispose + import 新 child</span>',
-      '<span class="lane-arrow">→</span><span class="lane-step">旧 callback 发送 vite:invalidate</span></div>',
+      '<span class="lane-arrow">→</span><span class="lane-step">同步调用旧 callback → vite:invalidate；不等返回的 Promise</span></div>',
       '<div class="lane-split"><span><b>成功</b> → 新一代 callback 已登记</span>',
       '<span><b>import 失败</b> → warnFailedUpdate；没有通用回滚</span></div></section>',
       '<section class="flow-lane"><h4 class="lane-label">第二轮：从 importer 继续</h4>',
@@ -401,7 +401,7 @@ function renderFlowDiagram(source, pageCode) {
       '<span class="lane-arrow">→</span><span class="lane-step">import parent → 读取新 child → 更新 DOM</span></div></section>',
       '<section class="flow-lane"><h4 class="lane-label">测试证据与清理</h4>',
       '<div class="lane-split three"><span>主页面日志证明两轮先后；串行保证来自源码</span>',
-      '<span>第二页构造多标签场景，但测试不单独断言 WS 握手时刻</span>',
+      '<span>第二个页面同时参与更新；主页面断言日志顺序</span>',
       '<span>page2 创建成功后 finally 关闭；fixture 由全局 teardown 回收</span></div></section>',
       '</div>',
     ].join('')
@@ -413,21 +413,21 @@ function renderFlowDiagram(source, pageCode) {
       '<span class="lane-arrow">→</span><span class="lane-step">分别解析 client / SSR Environment</span>',
       '<span class="lane-arrow">→</span><span class="lane-choice">独立或共享插件实例？</span>',
       '<span class="lane-arrow">→</span><span class="lane-step">setupEnvironment；isBuilt=false</span></div></section>',
-      '<section class="flow-lane"><h4 class="lane-label">进入 Rolldown</h4>',
+      '<section class="flow-lane"><h4 class="lane-label">准备 Rolldown 选项</h4>',
       '<div class="lane-path"><span class="lane-step">buildApp → builder.build(environment)</span>',
       '<span class="lane-arrow">→</span><span class="lane-step">resolveRolldownOptions</span>',
       '<span class="lane-arrow">→</span><span class="lane-step">Environment + ChunkMetadataMap hook wrappers</span>',
-      '<span class="lane-arrow">→</span><span class="lane-step">创建一个 RolldownBuild</span></div></section>',
+      '<span class="lane-arrow">→</span><span class="lane-step">整理 input / output / 日志选项</span></div></section>',
       '<section class="flow-lane"><h4 class="lane-label">输出分支</h4>',
       '<div class="lane-path"><span class="lane-choice">watch？</span></div>',
-      '<div class="lane-split"><span><b>是</b> → 返回 watcher；调用方负责关闭</span>',
-      '<span><b>否</b> → 串行 generate / write 每个 output → 统一回填 metadata</span></div></section>',
+      '<div class="lane-split"><span><b>是</b> → 创建 watcher 后 isBuilt=true；返回 watcher，由调用方关闭</span>',
+      '<span><b>否</b> → 创建 RolldownBuild → 串行 generate / write 每个 output → 回填 metadata</span></div></section>',
       '<section class="flow-lane"><h4 class="lane-label">失败、关闭与提交点</h4>',
       '<div class="lane-path"><span class="lane-step">任一 output 失败则停止后序；不回滚已写文件</span>',
       '<span class="lane-arrow">→</span><span class="lane-step">finally bundle.close</span>',
       '<span class="lane-arrow">→</span><span class="lane-choice">构建与 close 均成功？</span></div>',
       '<div class="lane-split"><span><b>是</b> → 返回结果；builder 再置 isBuilt=true</span>',
-      '<span><b>否</b> → 拒绝；isBuilt 保持 false</span></div></section>',
+      '<span><b>否</b> → 拒绝；isBuilt 保留本次调用前的值</span></div></section>',
       '<section class="flow-lane"><h4 class="lane-label">交给 14B 的状态</h4>',
       '<div class="lane-path"><span class="lane-step">output chunks / CSS / assets</span>',
       '<span class="lane-arrow">→</span><span class="lane-step">viteMetadata</span>',
@@ -476,14 +476,15 @@ function renderFlowDiagram(source, pageCode) {
       '<section class="flow-lane"><h4 class="lane-label">Worker</h4>',
       '<div class="lane-path"><span class="lane-step">new Worker(new URL(...)) / ?worker</span>',
       '<span class="lane-arrow">→</span><span class="lane-step">识别入口与 type</span>',
-      '<span class="lane-arrow">→</span><span class="lane-step">bundleWorkerEntry</span>',
-      '<span class="lane-arrow">→</span><span class="lane-choice">worker placeholder ↘</span></div></section>',
+      '<span class="lane-arrow">→</span><span class="lane-choice">普通 dev 还是 bundled？</span></div>',
+      '<div class="lane-split"><span><b>普通 dev</b> → worker 开发 URL；请求时转换</span>',
+      '<span><b>bundled</b> → bundleWorkerEntry 子构建 → worker placeholder ↘</span></div></section>',
       '<section class="flow-lane"><h4 class="lane-label">Wasm</h4>',
       '<div class="lane-path"><span class="lane-step">.wasm?init / 直接 .wasm</span>',
-      '<span class="lane-arrow">→</span><span class="lane-step">wasm helper + ESM glue</span>',
-      '<span class="lane-arrow">→</span><span class="lane-choice">fileToBuiltUrl ↘</span></div></section>',
+      '<span class="lane-arrow">→</span><span class="lane-step">?init 函数 / 顶层 await glue + wasm helper</span>',
+      '<span class="lane-arrow">→</span><span class="lane-choice">fileToUrl：按模式选择开发 URL 或构建 marker ↘</span></div></section>',
       '<div class="merge-output"><b>构建分支共同汇入</b>',
-      '<span>renderChunk → 最终文件名、base、相对路径或运行时表达式</span></div></div>',
+      '<span>renderChunk → 最终文件名、base、相对路径或运行时表达式；SSR Wasm 使用专用 marker</span></div></div>',
     ].join('')
   } else if (pageCode === '12B') {
     visual = [
@@ -510,8 +511,8 @@ function renderFlowDiagram(source, pageCode) {
       '<section class="flow-lane"><h4 class="lane-label">最新输出门闩</h4>',
       '<div class="lane-path"><span class="lane-step">服务端记录 clientId</span>',
       '<span class="lane-arrow">→</span><span class="lane-step">ensureLatestBuildOutput</span>',
-      '<span class="lane-arrow">→</span><span class="lane-choice">onOutput？</span></div>',
-      '<div class="lane-split"><span><b>成功</b> → 先更新 MemoryFiles，再定向 full-reload；一次导航命中新 bundle</span>',
+      '<span class="lane-arrow">→</span><span class="lane-choice">成功 onOutput 或确认最新输出已可用？</span></div>',
+      '<div class="lane-split"><span><b>成功</b> → MemoryFiles 已更新，再定向 full-reload；一次导航命中新 bundle</span>',
       '<span><b>失败</b> → 保留当前页面与 overlay，不导航</span></div></section>',
       '<section class="flow-lane"><h4 class="lane-label">测试断言与关闭</h4>',
       '<div class="lane-path"><span class="lane-step">documentLoads = 1；未经过 fallback</span>',
@@ -536,19 +537,19 @@ function renderFlowDiagram(source, pageCode) {
       '<div class="lane-path"><span class="lane-step">浏览器模块请求</span>',
       '<span class="lane-arrow">→</span><span class="lane-choice">非 CSS 缓存 ETag 命中？</span>',
       '<span class="lane-arrow">→</span><span class="lane-step">transformMiddleware</span>',
-      '<span class="lane-arrow">→</span><span class="lane-choice">CSS direct ETag 命中？</span></div>',
+      '<span class="lane-arrow">→</span><span class="lane-choice">CSS 对应身份的 ETag 命中？</span></div>',
       '<div class="lane-split"><span><b>任一命中</b> → 304 + end</span>',
       '<span><b>均未命中</b> → environment.transformRequest</span></div></section>',
       '<section class="flow-lane"><h4 class="lane-label">并发与缓存</h4>',
-      '<div class="lane-path"><span class="lane-choice">pending 存在？</span>',
+      '<div class="lane-path"><span class="lane-choice">pending 存在且未过期？</span>',
       '<span class="lane-arrow">→</span><span class="lane-choice">ModuleGraph 缓存有效？</span></div>',
-      '<div class="lane-split"><span><b>pending 是</b> → 等待并复用 Promise 后返回；<b>否</b> → 登记 Promise</span>',
+      '<div class="lane-split"><span><b>pending 有效</b> → 复用 Promise；<b>不存在或已过期</b> → 释放旧槽位并登记新请求</span>',
       '<span><b>cache 是</b> → 返回结果；<b>否</b> → 进入插件链</span></div></section>',
       '<section class="flow-lane"><h4 class="lane-label">核心转换</h4>',
-      '<div class="lane-path"><span class="lane-step">resolveId</span><span class="lane-arrow">→</span>',
+      '<div class="lane-path"><span class="lane-step">无 URL 节点时 resolveId；再查 ID 缓存</span><span class="lane-arrow">→</span>',
       '<span class="lane-step">load</span><span class="lane-arrow">→</span>',
       '<span class="lane-step">transform</span><span class="lane-arrow">→</span>',
-      '<span class="lane-step">写回 ModuleNode / meta / 依赖边</span><span class="lane-arrow">→</span>',
+      '<span class="lane-step">更新 meta / 依赖边；未过期时缓存结果</span><span class="lane-arrow">→</span>',
       '<span class="lane-step">finally 删除 pending</span><span class="lane-arrow">→</span>',
       '<span class="lane-step">send code + ETag + map</span></div></section>',
       '<section class="flow-lane"><h4 class="lane-label">错误</h4>',
@@ -560,7 +561,7 @@ function renderFlowDiagram(source, pageCode) {
       '<section class="flow-lane"><h4 class="lane-label">失效与 HMR</h4>',
       '<div class="lane-path"><span class="lane-choice">文件变化？</span><span class="lane-arrow">→</span>',
       '<span class="lane-step">失效节点并向 importer 传播</span><span class="lane-arrow">→</span>',
-      '<span class="lane-choice">找到接受边界？</span></div>',
+      '<span class="lane-choice">无死端且有接受边界？</span></div>',
       '<div class="lane-split"><span><b>是</b> → update payload</span>',
       '<span><b>否</b> → full-reload；无变化则缓存等待</span></div></section>',
       '<section class="flow-lane"><h4 class="lane-label">关闭</h4>',
@@ -588,6 +589,99 @@ const md = new MarkdownIt({
   linkify: true,
   typographer: false,
 })
+
+function isEngineeringDiagram(token) {
+  return (
+    token.type === 'image' &&
+    /^diagrams\/[a-z0-9-]+\.svg$/.test(token.attrGet('src') ?? '')
+  )
+}
+
+function renderEngineeringDiagram(token, env) {
+  const source = token.attrGet('src')
+  const title = token.content
+  const stem = path.basename(source, '.svg')
+  const id = uniqueSlug(env, 'diagram-' + stem)
+  let svg = fs
+    .readFileSync(path.join(guidesDir, source), 'utf8')
+    .replace(/<\?xml[^>]*\?>\s*/g, '')
+  const width =
+    Number(svg.match(/viewBox="[^\"]*?\s([\d.]+)\s[\d.]+"/)?.[1]) || 1100
+  const ids = new Map(
+    Array.from(svg.matchAll(/\bid="([^\"]+)"/g), (match) => [
+      match[1],
+      id + '-' + match[1],
+    ]),
+  )
+  svg = svg
+    .replace(/\bid="([^\"]+)"/g, (_, value) => 'id="' + ids.get(value) + '"')
+    .replace(
+      /url\(#([^)]+)\)/g,
+      (_, value) => 'url(#' + (ids.get(value) ?? value) + ')',
+    )
+    .replace(/\b(?:href|xlink:href)="#([^\"]+)"/g, (match, value) =>
+      match.replace('#' + value, '#' + (ids.get(value) ?? value)),
+    )
+    .replace(
+      /\b(aria-labelledby|aria-describedby)="([^\"]+)"/g,
+      (_, attribute, value) =>
+        attribute +
+        '="' +
+        value
+          .split(/\s+/)
+          .map((part) => ids.get(part) ?? part)
+          .join(' ') +
+        '"',
+    )
+
+  return [
+    '<figure class="engineering-diagram" data-diagram-width="',
+    width,
+    '" aria-labelledby="',
+    id,
+    '-caption"><figcaption id="',
+    id,
+    '-caption">',
+    escapeHtml(title),
+    '</figcaption><div class="diagram-toolbar" role="group" aria-label="图示查看">',
+    '<button type="button" data-diagram-action="out" aria-label="缩小图示">−</button>',
+    '<output class="diagram-scale" aria-live="polite">100%</output>',
+    '<button type="button" data-diagram-action="in" aria-label="放大图示">＋</button>',
+    '<button type="button" data-diagram-action="fit">适应宽度</button>',
+    '<button type="button" data-diagram-action="reset">原尺寸</button>',
+    '<button type="button" data-diagram-action="expand" aria-expanded="false">展开图示</button>',
+    '<a href="',
+    source,
+    '" target="_blank" rel="noopener">独立 SVG</a></div>',
+    '<div class="diagram-viewport" tabindex="0" role="region" aria-label="',
+    escapeHtml(title),
+    '，可滚动图示"><div class="diagram-canvas" style="width:',
+    width,
+    'px">',
+    svg,
+    '</div></div><p class="diagram-hint">可横向滚动；适应宽度看全图，原尺寸读节点。</p></figure>',
+  ].join('')
+}
+
+md.core.ruler.after('inline', 'engineering_diagrams', (state) => {
+  for (const [index, token] of state.tokens.entries()) {
+    if (
+      token.type === 'inline' &&
+      token.children?.length === 1 &&
+      isEngineeringDiagram(token.children[0]) &&
+      state.tokens[index - 1]?.type === 'paragraph_open'
+    ) {
+      state.tokens[index - 1].hidden = true
+      state.tokens[index + 1].hidden = true
+    }
+  }
+})
+
+const defaultImage = md.renderer.rules.image
+md.renderer.rules.image = (tokens, index, options, env, self) =>
+  isEngineeringDiagram(tokens[index])
+    ? renderEngineeringDiagram(tokens[index], env)
+    : defaultImage(tokens, index, options, env, self)
 
 const defaultLinkOpen =
   md.renderer.rules.link_open ??
@@ -855,14 +949,9 @@ function renderPage(page, pageIndex) {
     source: page.slug + '.md',
   })
   const notes = [
-    '<section class="focus-card" aria-label="阅读重点与边界">',
-    '<div><h2>本页重点</h2><p>',
-    escapeHtml(page.lede),
-    '</p></div><div class="boundary"><h3>推导边界</h3><p>',
+    '<aside class="boundary-note" aria-label="阅读范围"><p>',
     escapeHtml(page.boundary),
-    '</p></div></section>',
-    '<aside class="evidence-note"><h3>证据口径</h3>',
-    '<p>正文保留目标版本中的真实源码、状态说明与代表性测试映射。测试源码用于锁定设计契约；本轮没有执行测试命令。</p></aside>',
+    '</p></aside>',
   ].join('')
   const content = [
     hero,
@@ -891,7 +980,7 @@ function renderIndex() {
   const mechanismCount = pages.length
   const totalPageCount = mechanismCount + 1
   const indexHeadings = [
-    { id: '深挖进展', title: '深挖进展', depth: 2 },
+    { id: '重点链路', title: '重点链路', depth: 2 },
     { id: '核心结论', title: '核心结论', depth: 2 },
     { id: '对象所有权', title: '对象所有权', depth: 2 },
     { id: '推荐路线', title: '推荐路线', depth: 2 },
@@ -900,16 +989,16 @@ function renderIndex() {
       title: group.name,
       depth: 2,
     })),
-    { id: '证据边界', title: '证据边界', depth: 2 },
+    { id: '版本与运行模式', title: '版本与运行模式', depth: 2 },
   ]
 
   const deepDives = [
-    '<section id="深挖进展"><div class="module-group-heading"><h2>深挖进展</h2><p>不再只列文件：按同一场景闭合源码、状态、异常与测试</p></div>',
+    '<section id="重点链路"><div class="module-group-heading"><h2>重点链路</h2><p>用一组输入追踪源码、状态变化和测试断言</p></div>',
     '<div class="track-grid">',
-    '<a class="track-card" href="11-dependency-pre-bundling.html"><span class="nav-code">事务 01</span><h3>依赖优化器的并发批次</h3><p>从 scanner 与真实 crawl 走到 hash 判定、候选丢弃、目录换代、504/404 与关闭。</p><span class="track-path">决定性源码 · 完整测试 · 证据边界 · 批次流程图</span></a>',
-    '<a class="track-card" href="12-hmr.html"><span class="nav-code">事务 02</span><h3>普通 HMR 的跨端闭环</h3><p>从 watcher、模块图传播与失效，走到浏览器 dispose、重新导入、accept、prune 或 reload。</p><span class="track-path">真实源码 · 完整测试 · GWTMS · 端到端图</span></a>',
-    '<a class="track-card" href="12b-bundled-dev.html"><span class="nav-code">事务 03</span><h3>Bundled Dev 的执行图</h3><p>区分 Rolldown 构建图、内存输出与浏览器真实执行图，解释 lazy ack 和 reload 门闩。</p><span class="track-path">决定性源码 · 完整测试 · 状态与失败边界</span></a>',
-    '<a class="track-card" href="14a-build-orchestration.html"><span class="nav-code">事务 04</span><h3>生产构建的产物提交</h3><p>把 Builder、Environment、Rolldown hooks、chunk/CSS/asset、preload 与写盘串成一次构建。</p><span class="track-path">14A 编排 → 14B 产物 · 完整测试 · 产物图</span></a>',
+    '<a class="track-card" href="11-dependency-pre-bundling.html"><span class="nav-code">11</span><h3>依赖优化器的并发批次</h3><p>从 scanner 与真实 crawl 走到 hash 判定、候选丢弃、目录换代、504/404 与关闭。</p><span class="track-path">批次状态 · 测试场景 · 流程图</span></a>',
+    '<a class="track-card" href="12-hmr.html"><span class="nav-code">12</span><h3>普通 HMR 的两轮更新</h3><p>从 watcher、模块图传播与失效，走到浏览器 dispose、重新导入、accept、prune 或 reload。</p><span class="track-path">传播与回调 · 测试场景 · 端到端图</span></a>',
+    '<a class="track-card" href="12b-bundled-dev.html"><span class="nav-code">12B</span><h3>Bundled Dev 的执行图</h3><p>区分 Rolldown 构建图、内存输出与浏览器真实执行图，解释 lazy ack 和 reload 门闩。</p><span class="track-path">执行图 · 测试场景 · 状态与失败处理</span></a>',
+    '<a class="track-card" href="14a-build-orchestration.html"><span class="nav-code">14A / 14B</span><h3>生产构建与产物输出</h3><p>把 Builder、Environment、Rolldown hooks、chunk/CSS/asset、preload 与写盘串成一次构建。</p><span class="track-path">14A 编排 → 14B 产物 · 测试场景 · 产物图</span></a>',
     '</div></section>',
   ].join('')
 
@@ -927,7 +1016,7 @@ function renderIndex() {
     '<div class="ownership-flow" aria-label="Vite 核心对象所有权">',
     '<span>InlineConfig</span><b>→</b><span>ResolvedConfig</span><b>→</b>',
     '<span>ViteDevServer</span><b>→</b><span>DevEnvironment × N</span><b>→</b>',
-    '<span>PluginContainer + ModuleGraph</span><b>→</b><span>ModuleNode</span>',
+    '<span>PluginContainer + ModuleGraph</span><b>→</b><span>EnvironmentModuleNode</span>',
     '</div></section>',
   ].join('')
 
@@ -974,12 +1063,12 @@ function renderIndex() {
     .join('')
 
   const boundary = [
-    '<section id="证据边界"><div class="module-group-heading"><h2>证据边界</h2><p>分享不等于省略版本条件</p></div>',
+    '<section id="版本与运行模式"><div class="module-group-heading"><h2>版本与运行模式</h2></div>',
     '<aside class="boundary-note"><p>全站限定 Vite ',
     version,
     '（commit ',
     commit,
-    '）。源码片段来自该版本，测试只作为静态证据阅读，本轮未执行。11、12、12B、14A/14B 已补成同一 Demo 的事务闭环；其余页面仍按机制级阅读交付，不宣称全仓库已经逐条闭环。普通 unbundled dev、bundled dev、生产构建和 SSR 的状态边界分别说明，不互相套用。</p></aside></section>',
+    '）。普通开发、bundled dev、生产构建与 SSR 分别维护请求、构建和求值状态；各章在对应入口解释条件与执行顺序。</p></aside></section>',
   ].join('')
 
   const hero = [
@@ -1020,6 +1109,18 @@ function renderIndex() {
 }
 
 fs.mkdirSync(outputDir, { recursive: true })
+const diagramDir = path.join(guidesDir, 'diagrams')
+if (fs.existsSync(diagramDir)) {
+  fs.mkdirSync(path.join(outputDir, 'diagrams'), { recursive: true })
+  for (const file of fs
+    .readdirSync(diagramDir)
+    .filter((file) => file.endsWith('.svg'))) {
+    fs.copyFileSync(
+      path.join(diagramDir, file),
+      path.join(outputDir, 'diagrams', file),
+    )
+  }
+}
 fs.writeFileSync(path.join(outputDir, 'index.html'), renderIndex())
 
 for (const [index, page] of pages.entries()) {

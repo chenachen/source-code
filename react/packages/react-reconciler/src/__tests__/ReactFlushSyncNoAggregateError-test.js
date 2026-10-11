@@ -10,22 +10,22 @@ let flushFakeMicrotasks;
 
 // TODO：把相关测试统一迁移到 React DOM，不再依赖 React Noop。
 
-/** 验证缺少 AggregateError 时 flushSync 仍耗尽所有同步根，并把剩余错误延迟到 microtask 重抛。 */
+/** 验证缺少 AggregateError 时三个同步根仍完成各自提交，内部 act 最终返回收集到的首个错误。 */
 describe('ReactFlushSync (AggregateError not available)', () => {
   /**
    * 每例移除 AggregateError、安装可控 queueMicrotask，并重建 DOM roots 依赖。
-   * 清理边界由 Jest 环境负责；fake queue 仅在 overrideQueueMicrotask 为 true 时接管任务。
+   * fake queue 仅在 overrideQueueMicrotask 为 true 时接管任务，供场景结束后耗尽剩余调度微任务。
    */
   beforeEach(() => {
     jest.resetModules();
 
     global.AggregateError = undefined;
 
-    // AggregateError 不可用时，React 会在 microtask 中重抛其余错误。
-    // 这是实现细节，但本例需要精确观察，因此替换全局 queueMicrotask。
+    // 保留旧场景的可控微任务夹具；当前 internalAct.aggregateErrors 在没有 AggregateError 时返回 errors[0]。
     const originalQueueMicrotask = queueMicrotask;
     overrideQueueMicrotask = false;
     const fakeMicrotaskQueue = [];
+    /** 接管开关开启时暂存 cb，关闭时委托原始微任务入口，以保持挂载阶段的正常调度。 */
     global.queueMicrotask = cb => {
       if (overrideQueueMicrotask) {
         fakeMicrotaskQueue.push(cb);
@@ -33,7 +33,7 @@ describe('ReactFlushSync (AggregateError not available)', () => {
         originalQueueMicrotask(cb);
       }
     };
-    // 顺序耗尽 fake queue；回调可继续排入任务，因此每轮重新检查长度。
+    /** 按 FIFO 耗尽 fake queue；回调中新排入的微任务也在本轮执行，抛错则直接中断。 */
     flushFakeMicrotasks = () => {
       while (fakeMicrotaskQueue.length > 0) {
         const cb = fakeMicrotaskQueue.shift();
@@ -105,8 +105,9 @@ describe('ReactFlushSync (AggregateError not available)', () => {
 
   /**
    * Given 三个已提交 DOM roots 且环境没有 AggregateError；When 同一次 flushSync 中前两根抛错、第三根更新成功；
-   * Then 同步队列仍提交第三根、卸载失败根，并先抛首个错误，再通过 microtask 处理剩余错误。
-   * 验证机制：Scheduler 日志、可见 DOM 投影与捕获错误身份；对应 ReactFiberWorkLoop 的同步根队列和错误聚合降级路径。
+   * Then 第三根输出 aww，前两根输出为空，内部 act 抛出的值为 aahh。
+   * 验证机制：Scheduler 日志、可见 DOM 投影与错误身份；RootScheduler 跨根冲刷继续工作，
+   * ErrorLogger 把未捕获错误交给全局通道，internalAct 收集错误并在无 AggregateError 时返回首项。
    */
   it('completely exhausts synchronous work queue even if something throws', async () => {
     /** 在 render 阶段抛出调用方提供的错误，用不同实例标记多根失败顺序。 */
@@ -131,7 +132,7 @@ describe('ReactFlushSync (AggregateError not available)', () => {
     const aahh = new Error('AAHH!');
     const nooo = new Error('Noooooooooo!');
 
-    // 开始接管全局 queueMicrotask，以观察剩余错误的延迟重抛行为。
+    // 开始接管全局 queueMicrotask，保留同步错误处理后的剩余调度任务供末尾冲刷。
     overrideQueueMicrotask = true;
     let error;
     try {
@@ -153,8 +154,7 @@ describe('ReactFlushSync (AggregateError not available)', () => {
     expect(getVisibleChildren(container2)).toEqual(undefined);
     expect(getVisibleChildren(container3)).toEqual('aww');
 
-    // 现代环境会抛 AggregateError；当前环境缺少它，因此 React 先抛首个错误，
-    // 再在独立任务中重抛其余错误。
+    // 当前内部 act 的无 AggregateError 分支直接返回第一个收集值，断言其身份仍为 aahh。
     expect(error).toBe(aahh);
     await flushFakeMicrotasks();
   });

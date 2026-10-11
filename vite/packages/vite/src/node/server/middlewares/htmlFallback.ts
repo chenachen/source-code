@@ -20,7 +20,7 @@ export function htmlFallbackMiddleware(
 ): Connect.NextHandleFunction {
   const memoryFiles = clientEnvironment?.bundledDev?.memoryFiles
 
-  /** 同时检查完整打包开发模式的内存文件和磁盘文件。 */
+  /** 完整打包模式只查 memoryFiles；没有内存文件表时才查磁盘。 */
   function checkFileExists(relativePath: string) {
     return (
       memoryFiles?.has(
@@ -30,7 +30,7 @@ export function htmlFallbackMiddleware(
     )
   }
 
-  // 保留命名函数；`DEBUG=connect:dispatcher` 会把名称显示在调度日志中。
+  /** 筛选HTML导航请求，按文件存在性改写无query路径，SPA最终改写到/index.html后继续管线。 */
   return function viteHtmlFallbackMiddleware(req, _res, next) {
     if (
       // 只处理不会改变服务器状态的页面 GET/HEAD。

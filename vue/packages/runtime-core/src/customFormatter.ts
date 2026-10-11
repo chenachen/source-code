@@ -36,6 +36,7 @@ export function initCustomFormatter(): void {
   // https://www.mattzeunert.com/2016/02/19/custom-chrome-devtools-object-formatters.html
   const formatter = {
     __vue_custom_formatter: true,
+    /** 返回 Vue 实例/响应式值的 JSONML 摘要；非 Vue 对象返回 null，ref 读取期间暂停跟踪。 */
     header(obj: unknown) {
       // TODO：未来也可单独格式化 ComponentPublicInstance 及 setup 中 ctx.slots/attrs。
       if (!isObject(obj)) {
@@ -79,9 +80,11 @@ export function initCustomFormatter(): void {
       }
       return null
     },
+    /** 只有 Vue 公共实例需要可展开的字段分组；ref/代理的摘要本身已包含值。 */
     hasBody(obj: unknown) {
       return obj && (obj as any).__isVue
     },
+    /** 从公开实例的 $ 内部实例生成分组正文，不修改应用状态。 */
     body(obj: unknown) {
       if (obj && (obj as any).__isVue) {
         return [

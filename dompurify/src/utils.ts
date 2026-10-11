@@ -2,9 +2,9 @@
  * 缓存后续净化流程依赖的 `Object` 原生函数。
  *
  * @remarks
- * `entries` 枚举自有可枚举项；`setPrototypeOf` 构造无原型查询表；`isFrozen` 保护共享
- * 预设；`getPrototypeOf` 与 `getOwnPropertyDescriptor` 供描述符级安全查找。提前捕获可
- * 避免运行期间同名属性被覆盖后改变行为。
+ * `entries` 枚举自有可枚举项；`setPrototypeOf` 把查询表原型设为 `null`；`isFrozen` 检查
+ * 数组是否已冻结，以决定是否尝试回写；`getPrototypeOf` 与 `getOwnPropertyDescriptor` 用于描述符查找。
+ * 提前捕获这些函数，后续替换 `Object` 上的同名属性不会改动已经保存的引用。
  */
 const {
   entries,
@@ -23,8 +23,8 @@ const {
  */
 let { freeze, seal, create } = Object; // eslint-disable-line import/no-mutable-exports
 /**
- * 缓存 `Reflect.apply` 与 `Reflect.construct`；旧环境缺失时写入兼容调用路径。
- * 可变绑定只在模块初始化期间选择一次实现，之后供所有无绑定包装器复用。
+ * 缓存 `Reflect.apply` 与 `Reflect.construct`；缺失时选择下方回退函数。
+ * 选择只发生在模块初始化期间。回退函数按剩余参数收集实参，与 Reflect 的参数列表签名不同。
  */
 let { apply, construct } = typeof Reflect !== 'undefined' && Reflect;
 
@@ -43,7 +43,10 @@ if (!seal) {
 }
 
 if (!apply) {
-  /** 旧环境缺少 `Reflect.apply` 时通过目标函数的 `.apply()` 路径完成调用。 */
+  /**
+   * 通过目标函数的 `.apply()` 调用；当前包装器把参数列表作为一个实参传入，
+   * 因而此回退会让目标函数收到一个数组实参。
+   */
   apply = function <T>(
     func: (thisArg: any, ...args: any[]) => T,
     thisArg: any,
@@ -54,7 +57,7 @@ if (!apply) {
 }
 
 if (!construct) {
-  /** 旧环境缺少 `Reflect.construct` 时使用 `new` 调用目标构造器。 */
+  /** 缺少 `Reflect.construct` 时使用 `new`；当前包装器传入的参数列表在此成为一个数组实参。 */
   construct = function <T>(Func: new (...args: any[]) => T, ...args: any[]): T {
     return new Func(...args);
   };
@@ -106,7 +109,7 @@ const objectHasOwnProperty = unapply(Object.prototype.hasOwnProperty);
 /** 捕获通用对象品牌字符串转换，作为安全字符串化的最终回退。 */
 const objectToString = unapply(Object.prototype.toString);
 
-/** 无绑定调用捕获的正则测试；包装层会先把正则 `lastIndex` 归零。 */
+/** 无绑定调用捕获的正则测试；当前 realm 的 RegExp 接收者会先把 `lastIndex` 归零。 */
 const regExpTest = unapply(RegExp.prototype.test);
 
 /** 无绑定构造 `TypeError`，使错误创建不依赖可被替换的全局调用方式。 */
@@ -116,11 +119,12 @@ const typeErrorCreate = unconstruct(TypeError);
  * 把捕获的原型方法转换为显式接收 `thisArg` 的无绑定调用函数。
  *
  * @remarks
- * 正则实例是有状态对象；每次调用前必须把 `lastIndex` 归零，才能安全复用带全局标志的
- * 模块级表达式。其余调用统一经模块初始化时选定的 `apply` 实现分派。
+ * 当接收者通过当前 realm 的 `instanceof RegExp` 时，先把 `lastIndex` 归零，使模块级
+ * 全局正则可重复使用；跨 realm 正则不满足该条件，不会在此重置游标。调用统一交给
+ * 初始化时选定的 `apply` 实现，现代环境通过 `Reflect.apply` 展开参数列表。
  *
  * @param func - 启动时捕获、需要解除接收者绑定的原生函数。
- * @returns 首个参数为接收者、其余参数原样转发的调用函数。
+ * @returns 首个参数为接收者、其余参数交给选定 `apply` 实现的调用函数。
  */
 function unapply<T>(
   func: (thisArg: any, ...args: any[]) => T
@@ -199,14 +203,14 @@ function addToSet(
 }
 
 /**
- * 用自有 `null` 值填满稀疏数组的空槽，抵御客户端原型污染（CSPP）。
+ * 对稀疏数组中缺少自有索引的槽写入 `null`，避免把继承的索引值当作集合配置。
  *
  * @remarks
- * 若保留空槽，按索引读取可能落到 `Array.prototype` 上的污染值。函数原位修改数组，
- * 已有自有元素保持不变。
+ * 若保留空槽，按索引读取可能落到 `Array.prototype` 上的污染值。函数原位修改可写数组，
+ * 已有自有元素保持不变；配置克隆随后继续复用这个数组引用。
  *
- * @param array - 需要消除空槽的数组。
- * @returns 同一数组；原空槽已成为值为 `null` 的自有元素。
+ * @param array - 需要填洞的可写数组。
+ * @returns 同一数组；缺少自有索引的位置已执行 `null` 赋值。
  */
 function cleanArray<T>(array: T[]): Array<T | null> {
   for (let index = 0; index < array.length; index++) {
@@ -224,9 +228,9 @@ function cleanArray<T>(array: T[]): Array<T | null> {
  * 把配置对象复制到无原型对象，并递归处理普通对象成员。
  *
  * @remarks
- * 这不是纯浅拷贝：普通 `Object` 成员会递归复制；数组不会复制，只会经 `cleanArray()`
- * 原位填洞后复用引用；DOM、RegExp、函数等其他值也复用引用。只复制源对象的自有可
- * 枚举属性，从而隔离配置对象原型。
+ * 自有可枚举成员中，`constructor === Object` 的对象递归复制；数组原位填洞后复用引用。
+ * DOM、RegExp、函数、无原型对象及其他构造器的对象不递归复制。源对象的继承属性不进入
+ * 新对象；读取自有可枚举 getter 仍会触发 getter，调用方数组也仍可观察到填洞与后续名称回写。
  *
  * @param object - 待复制的配置或嵌套普通对象。
  * @returns 具有空原型的新对象。
@@ -259,9 +263,9 @@ function clone<T extends Record<string, any>>(object: T): T {
  * 不依赖输入值直接属性访问地将非节点输入转换为字符串。
  *
  * @remarks
- * 基本类型使用启动时捕获的品牌转换；对象和函数通过描述符查找 `toString` getter 或
- * 方法并以原对象为接收者调用。自定义转换未返回字符串时，使用捕获的
- * `Object.prototype.toString` 处理结果。转换过程抛出的异常由调用方处理。
+ * 基本类型使用启动时捕获的转换函数；对象和函数通过描述符查找并直接调用 `toString`
+ * getter 或函数值。getter 返回的方法不会再次执行。结果不是字符串时，使用捕获的
+ * `Object.prototype.toString` 处理该结果；转换异常向调用方传播。
  *
  * @param value - `sanitize()` 在转入 DOM 解析前收到的非节点值。
  * @returns 输入的字符串表示。
@@ -359,9 +363,11 @@ function lookupGetter<T extends Record<string, any>>(
 }
 
 /**
- * 通过捕获的 `RegExp.prototype.test` 执行内部槽品牌检查。
+ * 尝试用捕获的 `RegExp.prototype.test` 测试空串，将调用异常转换为 `false`。
  *
- * @remarks `instanceof` 会受 realm 边界影响；不兼容接收者抛出的异常在此转换为 `false`。
+ * @remarks
+ * 不依赖 `instanceof` 判断 realm，但 `test` 会读取并调用接收者的自定义 `exec`；
+ * 只要调用没有抛错就返回 `true`，不要求测试命中，也不等同于只检查 RegExp 内部槽。
  */
 function isRegex(value: unknown): value is RegExp {
   try {

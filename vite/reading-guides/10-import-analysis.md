@@ -4,8 +4,8 @@
 
 ## 阅读边界
 
-本章研究插件初步转换完成后，Vite 怎样理解源码中的 import 语义：先展开
-`import.meta.glob`/变量动态 import，再由开发态 Import Analysis 解析 specifier、改写浏览器 URL、
+本章研究插件初步转换完成后，Vite 怎样理解源码中的 import 语义：先把变量动态 import 转成
+`import.meta.glob`，再展开 glob，最后由开发态 Import Analysis 解析 specifier、改写浏览器 URL、
 注入 env/HMR runtime，并把依赖边写入 ModuleGraph。
 
 普通 resolve 算法见第 07 章，ModuleGraph/软失效见第 08 章，HMR 更新传播见第 12 章。本章只解释
@@ -26,7 +26,7 @@
 
 ## 推荐阅读顺序
 
-1. `plugins/index.ts`：确认 `importGlobPlugin`、`dynamicImportVarsPlugin`、`importAnalysisPlugin` 顺序。
+1. `plugins/index.ts`：确认 `dynamicImportVarsPlugin`、`importGlobPlugin`、`importAnalysisPlugin` 顺序。
 2. `importMetaGlob.ts` 的 `parseImportGlob()` 与 `transformGlobImport()`。
 3. `dynamicImportVars.ts` 的 `transformDynamicImport()` 与运行时 helper。
 4. `importAnalysis.ts` 文件头的 URL helper 和插件总注释。
@@ -40,10 +40,10 @@
 
 ```text
 上游语言/用户插件 transform
-→ vite:import-glob
-   └─ import.meta.glob('./pages/*.ts') → 对象 + 静态/动态 imports
 → vite:dynamic-import-vars
-   └─ import(`./pages/${name}.ts`) → glob 对象 + runtime lookup helper
+   └─ import(`./pages/${name}.ts`) → import.meta.glob 调用 + runtime lookup helper
+→ vite:import-glob
+   └─ 原有/新生成的 import.meta.glob('./pages/*.ts') → 对象 + 静态/动态 imports
 → vite:import-analysis（仅 unbundled dev）
    ├─ es-module-lexer 扫描 import/export/import.meta
    ├─ resolve + URL 规范化
@@ -51,8 +51,9 @@
    └─ updateModuleInfo
 ```
 
-前两步把可枚举的动态语法变成普通 imports，主分析器才能把每个候选模块写入图。无法枚举的表达式
-保留到运行时，并由主分析器选择警告/`?import` helper。
+变量插件必须在 glob 插件前执行：它生成的仍是 `import.meta.glob()` 调用，后者才把候选文件变成
+普通 imports，主分析器才能把每个候选模块写入图。无法枚举的表达式保留到运行时，
+由主分析器决定是否警告、是否需要 `?import` helper。
 
 bundled Environment 中 glob 与变量 import 委托 Rolldown 原生插件；unbundled Environment 使用
 TypeScript 实现以支持开发态 HMR 文件 matcher。两边目标语义相同，但不要误以为主
@@ -110,7 +111,7 @@ imports resolver。resolver 返回路径中的 `[`、`(` 等 glob 字符必须�
 要保留，所以 `globSafeResolvedPath()` 从末尾找共同后缀，只转义静态前缀。含括号路径的变量 import
 相关修复见 [PR #17940](https://github.com/vitejs/vite/pull/17940)。
 
-虚拟模块没有可靠磁盘 dirname，因此相对 glob 无法定义，必须用 root 绝对 pattern 或显式 base。
+虚拟模块没有可靠磁盘 dirname，因此 `./`、`../` glob 要使用显式 base，否则改用 root 绝对 pattern。
 即使 pattern 当前零命中也必须报错，不能因结果 `{}` 而隐藏非法语义；见
 [PR #22497](https://github.com/vitejs/vite/pull/22497)。
 
@@ -129,7 +130,8 @@ imports resolver。resolver 返回路径中的 `[`、`(` 等 glob 字符必须�
 字符串；`importGlobRestoreExtension` 可为 query 补 `lang.<ext>`，让下游插件恢复原扩展名语义。
 
 `Object.keys(import.meta.glob(...))` 不观察 value，因此只生成 key/0 对象，不生成真实 imports；
-`Object.values` 则省略 key。这个优化减少扫描与 bundle 体积，同时保持调用结果。
+`Object.values` 则把内部 glob 调用换成 value 数组，省略对象 key。两者仍枚举文件；keys 形式省去
+实际 imports，values 形式省去对象键，减少生成代码并保持调用结果。
 
 ### glob HMR matcher
 
@@ -167,9 +169,12 @@ __variableDynamicImportRuntimeHelper(
 先 resolve，再相对 importer 生成 glob 与 raw runtime path。raw/url/worker query 作为 glob option
 传递，确保候选模块仍走对应资源插件。
 
-helper 按完整 runtime path 查对象：lazy value 调函数，eager value 包 `Promise.resolve`；未命中在
-microtask 中 reject，保持 `import()` 异步失败语义。变量只能表示一层文件名，跨目录未命中时错误
-会给出这个限制提示（[PR #16519](https://github.com/vitejs/vite/pull/16519)）。
+raw/url/worker query 指定 `import:'*'`，保留动态 import 返回 namespace 的语义；例如 `?url` 的 URL
+仍在返回对象的 `default` 属性中。query 不属于 runtime 查表 key，`rawPattern` 会移除它。
+
+helper 按完整 runtime path 查对象：lazy value 调函数，eager value 包 `Promise.resolve`；未命中用
+queueMicrotask（缺少时用 setTimeout）异步 reject，保持 `import()` 失败语义。变量只能表示一层
+文件名，跨目录未命中时错误会给出这个限制提示（[PR #16519](https://github.com/vitejs/vite/pull/16519)）。
 
 只有模板字面量进入此插件。普通字面量留给主分析器；普通变量/函数表达式无法枚举，继续保留。
 `@vite-ignore` 则明确跳过 glob 转换。
@@ -197,7 +202,7 @@ map、json 和 direct CSS 可跳过。无 import 的模块仍必须用空集合�
 resolved.id 在 root 内
   → /src/main.ts
 
-优化依赖或 root 外真实文件
+不在 root 内的优化依赖，或 root 外真实文件
   → /@fs/absolute/path.js
 
 虚拟/非浏览器 specifier
@@ -207,14 +212,15 @@ external URL / data URI
   → 原样交给浏览器
 ```
 
+root 内检查先执行，所以 root 中的 `.vite/deps` 产物仍可使用 root URL，不会一律变成 `/@fs/`。
 transform 中间件收到 `/@id/` 后会 unwrap，再把原 ID 交给插件。`/@fs/` 则让浏览器可表达绝对路径，
 同时仍受 server.fs 控制。
 
 client 还要做：
 
-1. 非 JS/CSS 资源加 `?import`；
-2. 相对 JS/CSS 和同文件虚拟子模块继承 optimizer version；
-3. 已 HMR 更新的依赖加 `?t=`；
+1. 先以已解析 ID 入图，已 HMR 更新的依赖加 `?t=`；
+2. 非 JS/CSS 资源加 `?import`；
+3. 相对 JS/CSS 和同文件虚拟子模块继承 optimizer version；
 4. 最后补公开 base。
 
 `?import` 是“把资源作为模块处理”的协议，不是任意 cache buster。CSS import 不加它，因为 CSS
@@ -234,8 +240,8 @@ orderedAcceptedUrls[index]
 orderedAcceptedExports[index]
 ```
 
-最后再按数组顺序 filter/merge。若直接在异步任务完成时 push，网络/文件系统时序会改变集合顺序，
-导致调试输出、HMR 边与结果不稳定。顺序修复见
+最后再按数组顺序 filter/merge。若直接在异步任务完成时 push，依赖集合的遍历顺序就会随解析
+耗时变化；按源码槽位收集保留原有顺序。顺序修复见
 [PR #14465](https://github.com/vitejs/vite/pull/14465)，并行优化见
 [PR #12754](https://github.com/vitejs/vite/pull/12754)。
 
@@ -269,8 +275,9 @@ import(getPath())
 
 只有 lexer 实际看到 `.env`/`.hot` 才注入 runtime，避免所有模块膨胀。
 
-`import.meta.env` 在开发态变成当前 Environment 的对象赋值；client/SSR 仅 `SSR` 布尔值不同，用户
-`define['import.meta.env.*']` 合并进去。classic worker 不是 ESM，不能注入。
+`import.meta.env` 在开发态变成对象赋值：基础值来自插件创建时的 `config.env`，再合并
+`config.define['import.meta.env.*']`。插件缓存两份代码，按当前 consumer 选择 `SSR:true/false`；
+用户 define 若显式提供 SSR，也会覆盖默认值。classic worker 不是 ESM，跳过这段注入。
 
 `import.meta.hot` 会 prepend：
 
@@ -281,7 +288,7 @@ import.meta.hot = createHotContext(normalizedModuleUrl)
 
 词法 helper 同时提取：
 
-- `accept()` 无参数 → self accepting；
+- `accept()` 无参数，或 `accept(callback)` → self accepting；
 - `accept('./dep')` → acceptedHmrDeps；
 - `acceptExports(['foo'])` → acceptedHmrExports；
 - 接受全部实际 exports → 实践上升级为 self accepting。
@@ -289,8 +296,9 @@ import.meta.hot = createHotContext(normalizedModuleUrl)
 accept URL 必须再走与 import 相同的 resolve，并改写成 ModuleGraph 中节点的规范 URL。解析失败时
 不能用历史 fallback 猜路径；相关简化见 [PR #21382](https://github.com/vitejs/vite/pull/21382)。
 
-实验性 partial accept 还记录每个依赖使用的 binding。namespace、dynamic import 与 import.meta 记
-为 `*`；named/default 静态 import 可精确记录。第 12 章会解释它如何缩小更新传播。
+实验性 partial accept 还记录每个依赖使用的 binding。namespace、dynamic import 记为 `*`；
+named/default 静态 import 可精确记录。`import.meta` 在前面的专用分支返回，不创建依赖 binding。
+第 12 章会解释它如何缩小更新传播。
 
 ## 写回 ModuleGraph 与 prune
 
@@ -332,7 +340,9 @@ import __vite__cjsImport0_react from '/node_modules/.vite/deps/react.js'
 const useState = __vite__cjsImport0_react['useState']
 ```
 
-Node mode 与 Web mode 的 default 选择不同。生成赋值插到 shebang/directive 后的安全文件起点，
+Node mode 与 Web mode 的 default 选择不同：静态 import 根据 importer 的文件格式/最近
+package.json 判断；动态 import 根据格式是否显式声明判断；legacy 开关强制旧的 Web mode。
+这不是 consumer 是否为 SSR 的判断。生成赋值插到 hashbang 行之后；没有 hashbang 就插到文件起点，
 多条同 ID import 用 importIndex 避免变量冲突。改写补回原换行数，维持 Source Map 行号。
 
 `export * from CJS` 无法静态枚举且不支持动态重赋值，只能警告并保留 URL 改写；named re-export
@@ -349,8 +359,10 @@ Node mode 与 Web mode 的 default 选择不同。生成赋值插到 shebang/dir
 | `plugins/import.spec.ts`         | CJS import/export 两种 interop mode           | `transformCjsImport()`     |
 | dynamic-import playground        | 浏览器执行、ignore、CSS、嵌套、tree-shaking   | 三段插件链 + 构建          |
 
-playground 的 `@vite-ignore` 用例同时检查“功能运行”和“没有误警告”；nested CSS 用例证明外层动态
-import 的副作用不会被内层 import 分析覆盖；生成资产检查则验证无法分析 URL 不会被错误 preload。
+playground 中忽略 HTTPS import 的用例在 `.catch()` 写入 hello，证明请求失败仍能继续执行且没有
+误报 browser external，不能作为远程模块加载成功的证据。`qux` 用例则实际加载模块；生产构建
+由 fixture 的 writeBundle 插件另行复制运行时文件。nested CSS 用例检查内外两层模块的样式，
+生成资产检查确认无法分析 URL 保留原始运行时 import。
 
 ## 关键源码证据
 
@@ -377,7 +389,7 @@ return {
 ```
 
 插件先以 Environment 能力边界排除 bundled 模式，再按模块 ID 快速退出；真正重写时同时持有
-consumer 类型与模块图。因此 URL 改写、SSR 分支和依赖边更新属于同一次 transform 事务。
+consumer 类型与模块图。因此 URL 改写、SSR 分支和依赖边更新在同一次 transform 中完成。
 
 ## 建议断点
 
@@ -390,9 +402,6 @@ consumer 类型与模块图。因此 URL 改写、SSR 分支和依赖边更新�
 7. 并行循环结束后比较 orderedImportedUrls 和 importedUrls。
 8. `updateModuleInfo`：删除最后一个 import，观察 prunedImports。
 9. `transformCjsImport`：对 named/default/namespace/re-export 比较生成代码。
-
-纯注释任务不需要运行测试。以后若修改异步收集算法，可用两个故意延迟不同时间的 resolve hook
-验证最终 importedUrls 仍按源码顺序；这是对“并行执行、索引归位”思路的最小实验。
 
 ## 复盘题
 

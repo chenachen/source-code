@@ -8,8 +8,8 @@
 /**
  * @rollup/plugin-commonjs 的内联配置类型快照。
  *
- * Vite 将它暴露为 build.commonjsOptions，但转换行为仍由底层插件实现；保留上游
- * 字段与文档可确保用户无需直接安装该插件即可获得准确类型。
+ * Vite 保留 build.commonjsOptions 的历史配置类型。当前构建使用 Rolldown 内置 CJS
+ * 转换，未把这些字段传入 @rollup/plugin-commonjs；下面描述的是旧插件选项语义。
  */
 export interface RollupCommonJSOptions {
   /**

@@ -3,13 +3,16 @@ import path from 'node:path'
 import express from 'express'
 import sirv from 'sirv'
 
+/** 读取 Vitest 标记；测试由 harness 启动服务，手动运行时才在文件末尾监听默认端口。 */
 const isTest = process.env.VITEST
 
+/** 创建 Express SSR 服务：开发时接入 Vite middleware、转换 HTML 并 ssrLoadModule，生产时读取 dist 模板和服务端入口；把条件导出渲染结果填入占位符，开发错误经 ssrFixStacktrace 后作为 500 响应返回。 */
 export async function createServer(
   root = process.cwd(),
   isProd = process.env.NODE_ENV === 'production',
   hmrPort,
 ) {
+  /** 以当前服务脚本的目录为基准解析模板路径；不随调用者传入的 Vite root 改变。 */
   const resolve = (p) => path.resolve(import.meta.dirname, p)
 
   const indexProd = isProd
@@ -31,8 +34,7 @@ export async function createServer(
       server: {
         middlewareMode: true,
         watch: {
-          // During tests we edit the files too fast and sometimes chokidar
-          // misses change events, so enforce polling for consistency
+          // 测试快速修改文件时 chokidar 可能漏掉变化，改用轮询检测。
           usePolling: true,
           interval: 100,
         },

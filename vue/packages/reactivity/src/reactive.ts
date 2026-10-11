@@ -22,10 +22,15 @@ import { warn } from './warning'
  * `markRaw()` 会在原始对象上真正定义 `SKIP`。
  */
 export interface Target {
+  /** 原对象上的跳过标记；get 陷阱直接转发，createReactiveObject 据此不创建代理。 */
   [ReactiveFlags.SKIP]?: boolean
+  /** 可变代理身份；readonly(reactive(raw)) 的递归判断通过 RAW 继续检查内层。 */
   [ReactiveFlags.IS_REACTIVE]?: boolean
+  /** 当前访问层禁止写入；readonly 代理和只读 getter/computed 可提供此标记。 */
   [ReactiveFlags.IS_READONLY]?: boolean
+  /** 当前值采用浅层转换；存在该字段不代表嵌套对象也已被转换。 */
   [ReactiveFlags.IS_SHALLOW]?: boolean
+  /** 本层代理的直接 target；多层 readonly/reactive 由 toRaw 递归还原。 */
   [ReactiveFlags.RAW]?: any
 }
 
@@ -36,9 +41,9 @@ export const shallowReactiveMap: WeakMap<Target, any> = new WeakMap<
   Target,
   any
 >()
-/** 深层只读代理缓存：原始对象 → `readonly()` 返回的唯一代理。 */
+/** 深层只读代理缓存：输入目标 → 只读代理；目标可以是 raw，也可以是内层可变代理。 */
 export const readonlyMap: WeakMap<Target, any> = new WeakMap<Target, any>()
-/** 浅层只读代理缓存：原始对象 → `shallowReadonly()` 返回的唯一代理。 */
+/** 浅层只读代理缓存：输入目标 → 浅只读代理；目标可以是 raw，也可以是内层可变代理。 */
 export const shallowReadonlyMap: WeakMap<Target, any> = new WeakMap<
   Target,
   any
@@ -85,6 +90,7 @@ declare const ReactiveMarkerSymbol: unique symbol
 
 /** 响应式类型品牌接口，用于避免数组类型被某些解包规则错误处理。 */
 export interface ReactiveMarker {
+  /** 数组专用类型品牌；只影响类型解包，不在用户数组上写入 Symbol 属性。 */
   [ReactiveMarkerSymbol]?: void
 }
 
@@ -108,6 +114,7 @@ export type Reactive<T> = UnwrapNestedRefs<T> &
  */
 export function reactive<T extends object>(target: T): Reactive<T>
 /*@__NO_SIDE_EFFECTS__*/
+/** 深层可变转换的实现入口；只读输入保持原代理，其余按目标类型和缓存复用。 */
 export function reactive(target: object) {
   // 只读约束不能被 reactive() 降级；传入只读代理时原样返回。
   if (isReadonly(target)) {
@@ -122,9 +129,12 @@ export function reactive(target: object) {
   )
 }
 
-// 使用带私有字段的 class 品牌，而非普通标记属性：既让 `UnwrapRef` 能区分浅层响应式
-// 类型，又不会把品牌泄漏进 `keyof`/索引访问，也不要求普通对象赋值时真的提供该字段。
+/**
+ * 浅层响应式的名义类型品牌，使用私有 class 字段区分深层解包路径。
+ * 品牌不会泄漏进 keyof/索引访问，也不要求普通对象赋值时提供实际字段；声明被擦除。
+ */
 declare class ShallowReactiveBrandClass {
+  /** 私有可选字段仅用于阻断结构类型混同；无运行时存储、无业务值。 */
   private __shallowReactiveBrand?: never
 }
 
@@ -134,6 +144,7 @@ export type ShallowReactiveBrand = ShallowReactiveBrandClass
 /** `shallowReactive()` 的返回类型；只加品牌，不递归改写属性类型。 */
 export type ShallowReactive<T> = T & ShallowReactiveBrand
 
+/*@__NO_SIDE_EFFECTS__*/
 /**
  * {@link reactive} 的浅层版本。
  *
@@ -162,7 +173,6 @@ export type ShallowReactive<T> = T & ShallowReactiveBrand
  * @param target 要转换的原始对象。
  * @see {@link https://vuejs.org/api/reactivity-advanced.html#shallowreactive}
  */
-/*@__NO_SIDE_EFFECTS__*/
 export function shallowReactive<T extends object>(
   target: T,
 ): ShallowReactive<T> {
@@ -207,6 +217,7 @@ export type DeepReadonly<T> = T extends Builtin
                     ? { readonly [K in keyof T]: DeepReadonly<T[K]> }
                     : Readonly<T>
 
+/*@__NO_SIDE_EFFECTS__*/
 /**
  * 接收普通对象、响应式对象或 Ref，返回指向原对象的深层只读代理。
  *
@@ -234,7 +245,6 @@ export type DeepReadonly<T> = T extends Builtin
  * @param target 要转换的源对象。
  * @see {@link https://vuejs.org/api/reactivity-core.html#readonly}
  */
-/*@__NO_SIDE_EFFECTS__*/
 export function readonly<T extends object>(
   target: T,
 ): DeepReadonly<UnwrapNestedRefs<T>> {
@@ -247,6 +257,7 @@ export function readonly<T extends object>(
   )
 }
 
+/*@__NO_SIDE_EFFECTS__*/
 /**
  * {@link readonly} 的浅层版本。
  *
@@ -275,7 +286,6 @@ export function readonly<T extends object>(
  * @param target 要转换的源对象。
  * @see {@link https://vuejs.org/api/reactivity-advanced.html#shallowreadonly}
  */
-/*@__NO_SIDE_EFFECTS__*/
 export function shallowReadonly<T extends object>(target: T): Readonly<T> {
   return createReactiveObject(
     target,
@@ -298,6 +308,8 @@ export function shallowReadonly<T extends object>(target: T): Readonly<T> {
  * @param baseHandlers 普通对象和数组的代理陷阱。
  * @param collectionHandlers 集合类型的代理陷阱。
  * @param proxyMap 当前转换模式对应的代理缓存。
+ * @returns 新建／缓存的代理，或因类型、SKIP、不可扩展、已有代理而原样保留的输入。
+ * 缓存以本次 target 身份为键；只读包裹可变代理时 target 是该内层代理，不是最内层 raw。
  */
 function createReactiveObject(
   target: Target,
@@ -316,8 +328,8 @@ function createReactiveObject(
     }
     return target
   }
-  // 已是同类代理就复用。唯一例外：readonly(reactiveObj) 需要再包一层只读代理，
-  // 这样读取仍沿内层响应式代理收集依赖，而对外禁止写入。
+  // 已有代理通常原样返回，不因本次 API 的深浅模式而重建。只读 API 包装可变代理时，
+  // 才继续创建外层只读代理，使读取沿内层收集依赖，同时禁止从外层写入。
   if (
     target[ReactiveFlags.RAW] &&
     !(isReadonly && target[ReactiveFlags.IS_REACTIVE])
@@ -328,7 +340,7 @@ function createReactiveObject(
   if (target[ReactiveFlags.SKIP] || !Object.isExtensible(target)) {
     return target
   }
-  // 同一原始对象、同一模式只创建一个代理，避免 `reactive(raw) !== reactive(raw)`。
+  // 同一输入目标、同一模式复用缓存；readonly(reactive(raw)) 的目标是内层代理。
   const existingProxy = proxyMap.get(target)
   if (existingProxy) {
     return existingProxy
@@ -345,6 +357,7 @@ function createReactiveObject(
   return proxy
 }
 
+/*@__NO_SIDE_EFFECTS__*/
 /**
  * 检查值是否为 {@link reactive} / {@link shallowReactive} 创建的可变响应式代理
  *（某些 Ref 解包后的值也可能是响应式代理）。
@@ -366,7 +379,6 @@ function createReactiveObject(
  * @param value 待检查的值。
  * @see {@link https://vuejs.org/api/reactivity-utilities.html#isreactive}
  */
-/*@__NO_SIDE_EFFECTS__*/
 export function isReactive(value: unknown): boolean {
   if (isReadonly(value)) {
     return isReactive((value as Target)[ReactiveFlags.RAW])
@@ -374,6 +386,7 @@ export function isReactive(value: unknown): boolean {
   return !!(value && (value as Target)[ReactiveFlags.IS_REACTIVE])
 }
 
+/*@__NO_SIDE_EFFECTS__*/
 /**
  * 检查传入值是否只读。底层原对象仍可能从其他入口变化，但不能经当前值直接赋值。
  *
@@ -383,7 +396,6 @@ export function isReactive(value: unknown): boolean {
  * @param value 待检查的值。
  * @see {@link https://vuejs.org/api/reactivity-utilities.html#isreadonly}
  */
-/*@__NO_SIDE_EFFECTS__*/
 export function isReadonly(value: unknown): boolean {
   return !!(value && (value as Target)[ReactiveFlags.IS_READONLY])
 }
@@ -398,6 +410,7 @@ export function isShallow(value: unknown): boolean {
   return !!(value && (value as Target)[ReactiveFlags.IS_SHALLOW])
 }
 
+/*@__NO_SIDE_EFFECTS__*/
 /**
  * 检查对象是否由 {@link reactive}、{@link readonly}、{@link shallowReactive}
  * 或 {@link shallowReadonly} 创建。
@@ -405,11 +418,11 @@ export function isShallow(value: unknown): boolean {
  * @param value 待检查的值。
  * @see {@link https://vuejs.org/api/reactivity-utilities.html#isproxy}
  */
-/*@__NO_SIDE_EFFECTS__*/
 export function isProxy(value: any): boolean {
   return value ? !!value[ReactiveFlags.RAW] : false
 }
 
+/*@__NO_SIDE_EFFECTS__*/
 /**
  * 返回 Vue 代理背后的最内层原始对象。
  *
@@ -430,14 +443,16 @@ export function isProxy(value: any): boolean {
  * @param observed 需要取回原始值的对象。
  * @see {@link https://vuejs.org/api/reactivity-advanced.html#toraw}
  */
-/*@__NO_SIDE_EFFECTS__*/
 export function toRaw<T>(observed: T): T {
   const raw = observed && (observed as Target)[ReactiveFlags.RAW]
   return raw ? toRaw(raw) : observed
 }
 
 /** 类型层面标记不会再被深层代理转换的值。 */
-export type Raw<T> = T & { [RawSymbol]?: true }
+export type Raw<T> = T & {
+  /** markRaw 的类型证据；UnwrapRefSimple 遇到该品牌时保留整个值。 */
+  [RawSymbol]?: true
+}
 
 /**
  * 标记对象永远不转换为代理，并返回对象本身。

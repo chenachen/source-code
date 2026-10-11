@@ -32,26 +32,21 @@ describe('ReactLegacyCompositeComponent', () => {
   });
 
   // @gate !disableLegacyMode
-  /**
-   * 代表场景（Given–When–Then）：
-   * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-   * When 执行「should warn about `setState` in render in legacy mode」描述的渲染或交互；
-   * Then 通过本用例的 DOM、日志或调度断言确认行为。
-   *
-   * 验证机制：断言连接 ReactDOM 公开入口、ReactDOMRoot 根生命周期及 DOM 提交结果。
-   */
+
+  /** legacy类render在state=0时排setState(1)，开发报纯render警告；两次render得到1，后续根更新复用实例，卸载重挂验证警告去重。 */
   it('should warn about `setState` in render in legacy mode', () => {
     const container = document.createElement('div');
 
     let renderedState = -1;
     let renderPasses = 0;
 
-    /** `Component`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 在legacy render内排state更新并计数，验证警告和实例复用。 */
     class Component extends React.Component {
-      /** `Component.state`：记录测试夹具在当前场景中的状态。 */
+
+      /** 初始value=0，只在首次render排到1。 */
       state = {value: 0};
 
-      /** `Component.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 每次记录state，0时setState(1)；第二轮应稳定为1。 */
       render() {
         renderPasses++;
         renderedState = this.state.value;
@@ -68,13 +63,12 @@ describe('ReactLegacyCompositeComponent', () => {
         '    in Component (at **)',
     ]);
 
-    // 设置状态调用是排队,然后作为第二次传递执行. 这种行为是undefined 虽然所以我们可以自由地改变它,
-    // 以适应实现细节.
+    // 本例在 render 中排队 setState，随后第二次 render 得到 1；DEV 同时诊断 render 内更新。
     expect(renderPasses).toBe(2);
     expect(renderedState).toBe(1);
     expect(instance.state.value).toBe(1);
 
-    // 强制任何地方重渲染都会导致更新发生。
+    // 同一 root 再渲染该组件时复用实例，并保留已经得到的 state=1。
     const instance2 = ReactDOM.render(<Component prop={123} />, container);
     expect(instance).toBe(instance2);
     expect(renderedState).toBe(1);
@@ -86,11 +80,14 @@ describe('ReactLegacyCompositeComponent', () => {
   });
 
   // @gate !disableLegacyContext
-  /** 测试场景：验证「should pass context to children when not owner」描述的渲染、交互或错误处理结果。 */
+
+  /** Parent创建Grandchild元素交给Child，Child提供旧context foo=bar但不是其owner；Grandchild仍显示bar并报旧API警告，验证context按渲染祖先传递。 */
   it('should pass context to children when not owner', async () => {
-    /** `Parent`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+
+    /** 创建Grandchild元素并交Child渲染，区分owner与context祖先。 */
     class Parent extends React.Component {
-      /** `Parent.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 返回Child包住预创建Grandchild，Child不是该元素owner。 */
       render() {
         return (
           <Child>
@@ -100,34 +97,36 @@ describe('ReactLegacyCompositeComponent', () => {
       }
     }
 
-    /** `Child`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 向渲染子树提供旧foo上下文的包装组件。 */
     class Child extends React.Component {
-      /** `Child.childContextTypes`：记录测试夹具在当前场景中的状态。 */
+
+      /** 声明允许提供foo字符串，启用旧child context协议。 */
       static childContextTypes = {
         foo: PropTypes.string,
       };
 
-      /** `Child.getChildContext`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 为后代提供foo=bar。 */
       getChildContext() {
         return {
           foo: 'bar',
         };
       }
 
-      /** `Child.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 只返回唯一传入child，让非owner祖先的context生效。 */
       render() {
         return React.Children.only(this.props.children);
       }
     }
 
-    /** `Grandchild`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 声明消费foo并把它输出为DOM的类。 */
     class Grandchild extends React.Component {
-      /** `Grandchild.contextTypes`：记录测试夹具在当前场景中的状态。 */
+
+      /** 只订阅foo键，其他旧context不会暴露给本实例。 */
       static contextTypes = {
         foo: PropTypes.string,
       };
 
-      /** `Grandchild.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 输出this.context.foo，供findDOMNode文本验证。 */
       render() {
         return <div>{this.context.foo}</div>;
       }
@@ -150,25 +149,27 @@ describe('ReactLegacyCompositeComponent', () => {
   });
 
   // @gate !disableLegacyContext
-  /** 测试场景：验证「should pass context when re-rendered for static child」描述的渲染、交互或错误处理结果。 */
+
+  /** Parent旧context flag从false改true，Middle透传静态Child元素；Child.context随更新变化，验证元素引用稳定仍接收上下文变化。 */
   it('should pass context when re-rendered for static child', async () => {
     let parentInstance = null;
     let childInstance = null;
 
-    /** `Parent`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 由自身flag驱动旧上下文，但透传稳定children的提供者。 */
     class Parent extends React.Component {
-      /** `Parent.childContextTypes`：记录测试夹具在当前场景中的状态。 */
+
+      /** 声明提供foo与flag，验证类型掩码与合并。 */
       static childContextTypes = {
         foo: PropTypes.string,
         flag: PropTypes.bool,
       };
 
-      /** `Parent.state`：记录测试夹具在当前场景中的状态。 */
+      /** 初始flag=false，后续独立setState改true。 */
       state = {
         flag: false,
       };
 
-      /** `Parent.getChildContext`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 固定foo=bar并从当前state提供flag。 */
       getChildContext() {
         return {
           foo: 'bar',
@@ -176,29 +177,31 @@ describe('ReactLegacyCompositeComponent', () => {
         };
       }
 
-      /** `Parent.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 返回同一props.children元素，不主动重建Child。 */
       render() {
         return React.Children.only(this.props.children);
       }
     }
 
-    /** `Middle`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 不订阅旧context的透传中间组件。 */
     class Middle extends React.Component {
-      /** `Middle.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 返回传入children，保留静态元素引用。 */
       render() {
         return this.props.children;
       }
     }
 
-    /** `Child`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 读取foo/flag并暴露实例的消费者。 */
     class Child extends React.Component {
-      /** `Child.contextTypes`：记录测试夹具在当前场景中的状态。 */
+
+      /** 声明订阅foo与flag。 */
       static contextTypes = {
         foo: PropTypes.string,
         flag: PropTypes.bool,
       };
 
-      /** `Child.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 保存当前实例，DOM固定Child以直接检查context对象。 */
       render() {
         childInstance = this;
         return <span>Child</span>;
@@ -238,54 +241,60 @@ describe('ReactLegacyCompositeComponent', () => {
   });
 
   // @gate !disableLegacyContext
-  /** 测试场景：验证「should pass context when re-rendered for static child within a composite component」描述的渲染、交互或错误处理结果。 */
+
+  /** Wrapper持稳定Parent/Child ref，Parent独立state从true改false而Wrapper未更新；Child.context仍改变，验证复合包装中的静态child传播。 */
   it('should pass context when re-rendered for static child within a composite component', async () => {
-    /** `Parent`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+
+    /** 在Wrapper内部独立改变flag的旧context提供者。 */
     class Parent extends React.Component {
-      /** `Parent.childContextTypes`：记录测试夹具在当前场景中的状态。 */
+
+      /** 声明只提供flag。 */
       static childContextTypes = {
         flag: PropTypes.bool,
       };
 
-      /** `Parent.state`：记录测试夹具在当前场景中的状态。 */
+      /** 初始flag=true，更新false用于传播。 */
       state = {
         flag: true,
       };
 
-      /** `Parent.getChildContext`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 将当前flag state送入旧context。 */
       getChildContext() {
         return {
           flag: this.state.flag,
         };
       }
 
-      /** `Parent.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 把静态children包进div，不按flag重新创建子元素。 */
       render() {
         return <div>{this.props.children}</div>;
       }
     }
 
-    /** `Child`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 声明消费flag的静态Child。 */
     class Child extends React.Component {
-      /** `Child.contextTypes`：记录测试夹具在当前场景中的状态。 */
+
+      /** 订阅flag键。 */
       static contextTypes = {
         flag: PropTypes.bool,
       };
 
-      /** `Child.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 输出固定div，让测试通过ref检查context变化。 */
       render() {
         return <div />;
       }
     }
 
-    /** `Wrapper`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 保持Parent与Child对象ref的外层包装。 */
     class Wrapper extends React.Component {
-      /** `Wrapper.parentRef`：记录测试夹具在当前场景中的状态。 */
+
+      /** 保存Parent实例供测试触发其独立setState。 */
       parentRef = React.createRef();
-      /** `Wrapper.childRef`：记录测试夹具在当前场景中的状态。 */
+
+      /** 保存Child实例供读取context。 */
       childRef = React.createRef();
 
-      /** `Wrapper.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 创建Parent/Child并连接稳定对象ref。 */
       render() {
         return (
           <Parent ref={this.parentRef}>
@@ -324,20 +333,22 @@ describe('ReactLegacyCompositeComponent', () => {
   });
 
   // @gate !disableLegacyContext
-  /** 测试场景：验证「should pass context transitively」描述的渲染、交互或错误处理结果。 */
+
+  /** Parent提供foo/depth=0，Child消费并只提供depth+1，Grandchild接foo与depth=1；验证旧context合并继承而非完全替换。 */
   it('should pass context transitively', async () => {
     let childInstance = null;
     let grandchildInstance = null;
 
-    /** `Parent`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 提供foo与初始depth的祖先。 */
     class Parent extends React.Component {
-      /** `Parent.childContextTypes`：记录测试夹具在当前场景中的状态。 */
+
+      /** 声明提供foo和depth键。 */
       static childContextTypes = {
         foo: PropTypes.string,
         depth: PropTypes.number,
       };
 
-      /** `Parent.getChildContext`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 固定提供foo=bar、depth=0。 */
       getChildContext() {
         return {
           foo: 'bar',
@@ -345,48 +356,50 @@ describe('ReactLegacyCompositeComponent', () => {
         };
       }
 
-      /** `Parent.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 返回同时消费与派生context的Child。 */
       render() {
         return <Child />;
       }
     }
 
-    /** `Child`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 消费完整父context但只重提供depth，检验剩余foo继承。 */
     class Child extends React.Component {
-      /** `Child.contextTypes`：记录测试夹具在当前场景中的状态。 */
+
+      /** 声明消费foo/depth。 */
       static contextTypes = {
         foo: PropTypes.string,
         depth: PropTypes.number,
       };
 
-      /** `Child.childContextTypes`：记录测试夹具在当前场景中的状态。 */
+      /** 只声明提供新的depth，不替换父foo。 */
       static childContextTypes = {
         depth: PropTypes.number,
       };
 
-      /** `Child.getChildContext`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 按消费的depth加一，派生后代层数。 */
       getChildContext() {
         return {
           depth: this.context.depth + 1,
         };
       }
 
-      /** `Child.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 保存Child实例并返回Grandchild。 */
       render() {
         childInstance = this;
         return <Grandchild />;
       }
     }
 
-    /** `Grandchild`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 消费合并后foo与depth的最内层组件。 */
     class Grandchild extends React.Component {
-      /** `Grandchild.contextTypes`：记录测试夹具在当前场景中的状态。 */
+
+      /** 声明消费两键，供断言继承和覆盖。 */
       static contextTypes = {
         foo: PropTypes.string,
         depth: PropTypes.number,
       };
 
-      /** `Grandchild.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 保存实例并返回div。 */
       render() {
         grandchildInstance = this;
         return <div />;
@@ -420,25 +433,27 @@ describe('ReactLegacyCompositeComponent', () => {
   });
 
   // @gate !disableLegacyContext
-  /** 测试场景：验证「should pass context when re-rendered」描述的渲染、交互或错误处理结果。 */
+
+  /** Parent初始flag=false只输出主机span，更新true首次挂载Child；新Child接foo/depth且旧API警告在挂载时出现，验证更新引入消费者仍获当前context。 */
   it('should pass context when re-rendered', async () => {
     let parentInstance = null;
     let childInstance = null;
 
-    /** `Parent`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 按flag从主机span切到context消费者，验证更新首次引入子类。 */
     class Parent extends React.Component {
-      /** `Parent.childContextTypes`：记录测试夹具在当前场景中的状态。 */
+
+      /** 声明foo与depth提供协议。 */
       static childContextTypes = {
         foo: PropTypes.string,
         depth: PropTypes.number,
       };
 
-      /** `Parent.state`：记录测试夹具在当前场景中的状态。 */
+      /** 初始flag=false，避免Child首次挂载。 */
       state = {
         flag: false,
       };
 
-      /** `Parent.getChildContext`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 保持foo=bar/depth=0的上下文输出。 */
       getChildContext() {
         return {
           foo: 'bar',
@@ -446,7 +461,7 @@ describe('ReactLegacyCompositeComponent', () => {
         };
       }
 
-      /** `Parent.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** flag=false返回span，true返回Child，因此更新是新挂载消费者。 */
       render() {
         let output = <Child />;
         if (!this.state.flag) {
@@ -456,15 +471,16 @@ describe('ReactLegacyCompositeComponent', () => {
       }
     }
 
-    /** `Child`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 更新才挂载的旧context消费者。 */
     class Child extends React.Component {
-      /** `Child.contextTypes`：记录测试夹具在当前场景中的状态。 */
+
+      /** 订阅foo/depth。 */
       static contextTypes = {
         foo: PropTypes.string,
         depth: PropTypes.number,
       };
 
-      /** `Child.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 保存新实例并输出固定span，供检查当前context。 */
       render() {
         childInstance = this;
         return <span>Child</span>;
@@ -501,66 +517,71 @@ describe('ReactLegacyCompositeComponent', () => {
 
   // @gate !disableLegacyContext
   // @gate !disableLegacyMode
-  /** 测试场景：验证「unmasked context propagates through updates」描述的渲染、交互或错误处理结果。 */
+
+  /** Parent context noise经未声明context的Intermediary到Leaf；更新bar时中间生命周期看不到foo、Leaf看到，文本改bar但手工id仍保留，验证未掩码上下文穿透与消费者掩码。 */
   it('unmasked context propagates through updates', () => {
-    /** `Leaf`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+
+    /** 在两更新生命周期中检查掩码foo并把它输出到DOM。 */
     class Leaf extends React.Component {
-      /** `Leaf.contextTypes`：记录测试夹具在当前场景中的状态。 */
+
+      /** 订阅必需foo，令Leaf的nextContext包含该键。 */
       static contextTypes = {
         foo: PropTypes.string.isRequired,
       };
 
-      /** `Leaf.UNSAFE_componentWillReceiveProps`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 检查即将接收的context含foo。 */
       UNSAFE_componentWillReceiveProps(nextProps, nextContext) {
         expect('foo' in nextContext).toBe(true);
       }
 
-      /** `Leaf.shouldComponentUpdate`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 检查SCU的nextContext含foo并允许更新。 */
       shouldComponentUpdate(nextProps, nextState, nextContext) {
         expect('foo' in nextContext).toBe(true);
         return true;
       }
 
-      /** `Leaf.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 输出当前foo文本，供外部DOM改写后的上下文更新校验。 */
       render() {
         return <span>{this.context.foo}</span>;
       }
     }
 
-    /** `Intermediary`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 未订阅context但仍把完整祖先context向Leaf传播的中间类。 */
     class Intermediary extends React.Component {
-      /** `Intermediary.UNSAFE_componentWillReceiveProps`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 确认未声明contextTypes的自身nextContext不包含foo。 */
       UNSAFE_componentWillReceiveProps(nextProps, nextContext) {
         expect('foo' in nextContext).toBe(false);
       }
 
-      /** `Intermediary.shouldComponentUpdate`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 确认SCU也看不到foo，但允许更新。 */
       shouldComponentUpdate(nextProps, nextState, nextContext) {
         expect('foo' in nextContext).toBe(false);
         return true;
       }
 
-      /** `Intermediary.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 返回订阅foo的Leaf，不屏蔽后代所需完整context。 */
       render() {
         return <Leaf />;
       }
     }
 
-    /** `Parent`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 以cntxt prop作为foo值的提供者。 */
     class Parent extends React.Component {
-      /** `Parent.childContextTypes`：记录测试夹具在当前场景中的状态。 */
+
+      /** 声明提供foo。 */
       static childContextTypes = {
         foo: PropTypes.string,
       };
 
-      /** `Parent.getChildContext`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 从当前cntxt prop读出foo，支持noise到bar更新。 */
       getChildContext() {
         return {
           foo: this.props.cntxt,
         };
       }
 
-      /** `Parent.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 返回未订阅context的Intermediary。 */
       render() {
         return <Intermediary />;
       }
@@ -589,19 +610,21 @@ describe('ReactLegacyCompositeComponent', () => {
 
   // @gate !disableLegacyContext
   // @gate !disableLegacyMode
-  /** 测试场景：验证「should trigger componentWillReceiveProps for context changes」描述的渲染、交互或错误处理结果。 */
+
+  /** Parent state foo从abc改def，静态children包含两个GrandChild和一个有context Child；props引用变化为0、context变化为3，验证仅声明消费者收到receiveProps上下文变动。 */
   it('should trigger componentWillReceiveProps for context changes', () => {
     let contextChanges = 0;
     let propChanges = 0;
 
-    /** `GrandChild`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 订阅foo并分别累计props/context引用变化的叶类。 */
     class GrandChild extends React.Component {
-      /** `GrandChild.contextTypes`：记录测试夹具在当前场景中的状态。 */
+
+      /** 订阅必需foo。 */
       static contextTypes = {
         foo: PropTypes.string.isRequired,
       };
 
-      /** `GrandChild.UNSAFE_componentWillReceiveProps`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 检查nextContext含foo，只有nextProps/nextContext引用改变才分别累加。 */
       UNSAFE_componentWillReceiveProps(nextProps, nextContext) {
         expect('foo' in nextContext).toBe(true);
 
@@ -614,20 +637,21 @@ describe('ReactLegacyCompositeComponent', () => {
         }
       }
 
-      /** `GrandChild.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 返回固定类名span中的静态children。 */
       render() {
         return <span className="grand-child">{this.props.children}</span>;
       }
     }
 
-    /** `ChildWithContext`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 订阅foo的中间包装，参与context更新计数。 */
     class ChildWithContext extends React.Component {
-      /** `ChildWithContext.contextTypes`：记录测试夹具在当前场景中的状态。 */
+
+      /** 订阅必需foo。 */
       static contextTypes = {
         foo: PropTypes.string.isRequired,
       };
 
-      /** `ChildWithContext.UNSAFE_componentWillReceiveProps`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 区分props身份未变与context身份变化，累计两类更新。 */
       UNSAFE_componentWillReceiveProps(nextProps, nextContext) {
         expect('foo' in nextContext).toBe(true);
 
@@ -640,15 +664,16 @@ describe('ReactLegacyCompositeComponent', () => {
         }
       }
 
-      /** `ChildWithContext.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 保留children并输出带类名div。 */
       render() {
         return <div className="child-with">{this.props.children}</div>;
       }
     }
 
-    /** `ChildWithoutContext`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 不订阅context的包装，计数应不包含foo上下文变化。 */
     class ChildWithoutContext extends React.Component {
-      /** `ChildWithoutContext.UNSAFE_componentWillReceiveProps`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 确认foo不在nextContext，并按引用比较累计两种变化。 */
       UNSAFE_componentWillReceiveProps(nextProps, nextContext) {
         expect('foo' in nextContext).toBe(false);
 
@@ -661,32 +686,33 @@ describe('ReactLegacyCompositeComponent', () => {
         }
       }
 
-      /** `ChildWithoutContext.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 透传children到div，让更深的GrandChild仍消费完整context。 */
       render() {
         return <div className="child-without">{this.props.children}</div>;
       }
     }
 
-    /** `Parent`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** state驱动foo提供者，children元素保持原引用。 */
     class Parent extends React.Component {
-      /** `Parent.childContextTypes`：记录测试夹具在当前场景中的状态。 */
+
+      /** 声明foo提供类型。 */
       static childContextTypes = {
         foo: PropTypes.string,
       };
 
-      /** `Parent.state`：记录测试夹具在当前场景中的状态。 */
+      /** 初始foo=abc，随后setState改def。 */
       state = {
         foo: 'abc',
       };
 
-      /** `Parent.getChildContext`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 从当前state提供foo。 */
       getChildContext() {
         return {
           foo: this.state.foo,
         };
       }
 
-      /** `Parent.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 原样输出稳定children，用于将变更来源限制为context。 */
       render() {
         return <div className="parent">{this.props.children}</div>;
       }
@@ -730,16 +756,18 @@ describe('ReactLegacyCompositeComponent', () => {
   });
 
   // @gate !disableLegacyMode
-  /** 测试场景：验证「only renders once if updated in componentWillReceiveProps in legacy mode」描述的渲染、交互或错误处理结果。 */
+
+  /** legacy props.update从0改1，receiveProps内setState(updated=true)；只增加一次render且同轮state生效，验证生命周期更新合并。 */
   it('only renders once if updated in componentWillReceiveProps in legacy mode', () => {
     let renders = 0;
 
-    /** `Component`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 在receiveProps排setState的legacy类，记录总render次数。 */
     class Component extends React.Component {
-      /** `Component.state`：记录测试夹具在当前场景中的状态。 */
+
+      /** 保存updated标记，初始false。 */
       state = {updated: false};
 
-      /** `Component.UNSAFE_componentWillReceiveProps`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 接update=1时检查尚无额外render，排updated=true仍不重入render。 */
       UNSAFE_componentWillReceiveProps(props) {
         expect(props.update).toBe(1);
         expect(renders).toBe(1);
@@ -747,7 +775,7 @@ describe('ReactLegacyCompositeComponent', () => {
         expect(renders).toBe(1);
       }
 
-      /** `Component.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 只增加render计数并输出div。 */
       render() {
         renders++;
         return <div />;
@@ -764,16 +792,18 @@ describe('ReactLegacyCompositeComponent', () => {
   });
 
   // @gate !disableLegacyMode
-  /** 测试场景：验证「only renders once if updated in componentWillReceiveProps when batching in legacy mode」描述的渲染、交互或错误处理结果。 */
+
+  /** 相同props更新放在unstable_batchedUpdates中，receiveProps排state仍只增加一次render；覆盖旧批量入口合并。 */
   it('only renders once if updated in componentWillReceiveProps when batching in legacy mode', () => {
     let renders = 0;
 
-    /** `Component`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 相同fixture置于旧批量入口，检查receiveProps更新合并。 */
     class Component extends React.Component {
-      /** `Component.state`：记录测试夹具在当前场景中的状态。 */
+
+      /** 初始updated=false。 */
       state = {updated: false};
 
-      /** `Component.UNSAFE_componentWillReceiveProps`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 检查更新输入与当前render次数，排state但不立即递归render。 */
       UNSAFE_componentWillReceiveProps(props) {
         expect(props.update).toBe(1);
         expect(renders).toBe(1);
@@ -781,7 +811,7 @@ describe('ReactLegacyCompositeComponent', () => {
         expect(renders).toBe(1);
       }
 
-      /** `Component.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 记录render次数，期望批内props/state合成一轮。 */
       render() {
         renders++;
         return <div />;
@@ -800,29 +830,34 @@ describe('ReactLegacyCompositeComponent', () => {
   });
 
   // @gate !disableLegacyMode
-  /** 测试场景：验证「should update refs if shouldComponentUpdate gives false in legacy mode」描述的渲染、交互或错误处理结果。 */
+
+  /** 两个key=A/B的Static总SCU=false，父flip调换key与对象ref配对；refs对应文本交换但ignored新children未渲染，验证跳过子render仍更新ref身份。 */
   it('should update refs if shouldComponentUpdate gives false in legacy mode', () => {
-    /** `Static`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+
+    /** 永远SCU=false的子类，保留第一次内容但允许外部ref更新。 */
     class Static extends React.Component {
-      /** `Static.shouldComponentUpdate`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 始终拒绝后续render，不拒绝协调器更新ref与位置。 */
       shouldComponentUpdate() {
         return false;
       }
 
-      /** `Static.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 首次输出children，之后被复用时不接收ignored新输出。 */
       render() {
         return <div>{this.props.children}</div>;
       }
     }
 
-    /** `Component`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 用flip调换两个key与ref配对的父类。 */
     class Component extends React.Component {
-      /** `Component.static0Ref`：记录测试夹具在当前场景中的状态。 */
+
+      /** 第一位置ref，flip后应改指key B实例。 */
       static0Ref = React.createRef();
-      /** `Component.static1Ref`：记录测试夹具在当前场景中的状态。 */
+
+      /** 第二位置ref，flip后应改指key A实例。 */
       static1Ref = React.createRef();
 
-      /** `Component.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** key身份保持A/B，flip交换位置及对象ref；给的新children用于证明SCU仍阻止子render。 */
       render() {
         if (this.props.flipped) {
           return (
@@ -862,26 +897,28 @@ describe('ReactLegacyCompositeComponent', () => {
   });
 
   // @gate !disableLegacyMode
-  /** 测试场景：验证「should allow access to findDOMNode in componentWillUnmount in legacy mode」描述的渲染、交互或错误处理结果。 */
+
+  /** legacy挂载和willUnmount都findDOMNode(this)，两次非空且同一节点；验证删除生命周期执行时主机节点仍可查。 */
   it('should allow access to findDOMNode in componentWillUnmount in legacy mode', () => {
     let a = null;
     let b = null;
 
-    /** `Component`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 在挂载与卸载生命周期读取同一主机节点的类。 */
     class Component extends React.Component {
-      /** `Component.componentDidMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 挂载后保存findDOMNode结果并确认非空。 */
       componentDidMount() {
         a = findDOMNode(this);
         expect(a).not.toBe(null);
       }
 
-      /** `Component.componentWillUnmount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 删除生命周期中再次findDOMNode，尚可拿到同一节点。 */
       componentWillUnmount() {
         b = findDOMNode(this);
         expect(b).not.toBe(null);
       }
 
-      /** `Component.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 返回被查询的div。 */
       render() {
         return <div />;
       }
@@ -896,36 +933,40 @@ describe('ReactLegacyCompositeComponent', () => {
 
   // @gate !disableLegacyContext || !__DEV__
   // @gate !disableLegacyMode
-  /** 测试场景：验证「context should be passed down from the parent」描述的渲染、交互或错误处理结果。 */
+
+  /** 旧Parent提供foo=bar、Component声明必需foo，legacy挂载只有旧API警告；当前用例不读取context值，主要覆盖该组合可执行而非值内容断言。 */
   it('context should be passed down from the parent', () => {
-    /** `Parent`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+
+    /** 旧context foo提供者，用于声明必需context的兼容挂载。 */
     class Parent extends React.Component {
-      /** `Parent.childContextTypes`：记录测试夹具在当前场景中的状态。 */
+
+      /** 声明提供字符串foo。 */
       static childContextTypes = {
         foo: PropTypes.string,
       };
 
-      /** `Parent.getChildContext`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 提供固定bar。 */
       getChildContext() {
         return {
           foo: 'bar',
         };
       }
 
-      /** `Parent.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 在div内保留children，使旧context向内传播。 */
       render() {
         return <div>{this.props.children}</div>;
       }
     }
 
-    /** `Component`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 仅声明foo必需类型的消费者，本例不输出或断言其值。 */
     class Component extends React.Component {
-      /** `Component.contextTypes`：记录测试夹具在当前场景中的状态。 */
+
+      /** 订阅必需foo，触发旧context API开发提示。 */
       static contextTypes = {
         foo: PropTypes.string.isRequired,
       };
 
-      /** `Component.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 返回空div，当前验证重点是可挂载与警告。 */
       render() {
         return <div />;
       }
@@ -948,13 +989,16 @@ describe('ReactLegacyCompositeComponent', () => {
     ]);
   });
 
-  /** 测试场景：验证「should replace state in legacy mode」描述的渲染、交互或错误处理结果。 */
+  /** 现代createRoot挂载Moo state{x:1}，通过内部updater enqueueReplaceState替为{y:2}；x消失、y=2，验证替换而非合并，标题legacy指内部旧API并非根模式。 */
   it('should replace state in legacy mode', async () => {
-    /** `Moo`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+
+    /** 现代根类实例，通过内部旧替换状态API检查覆盖语义。 */
     class Moo extends React.Component {
-      /** `Moo.state`：记录测试夹具在当前场景中的状态。 */
+
+      /** 初始{x:1}，后续replace应移除x。 */
       state = {x: 1};
-      /** `Moo.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 返回div，状态结果直接从实例读取。 */
       render() {
         return <div />;
       }
@@ -975,23 +1019,29 @@ describe('ReactLegacyCompositeComponent', () => {
     expect(moo.state.y).toBe(2);
   });
 
-  /** 测试场景：验证「should support objects with prototypes as state in legacy mode」描述的渲染、交互或错误处理结果。 */
+  /** 现代根state使用带原型对象，replaceState保留对象身份/方法，setState浅合并丢原型；混合排队顺序决定最后替换保原型或随后合并丢原型，验证更新类型与顺序。 */
   it('should support objects with prototypes as state in legacy mode', async () => {
-    /** `NotActuallyImmutable`：封装当前用例复用的操作、回调或断言步骤。 */
+
+    /** 把str放在有自定义原型的对象上，区分替换保身份与浅合并成普通对象。 */
     const NotActuallyImmutable = function (str) {
       this.str = str;
     };
+    /** 原型方法返回true，作为state是否保留该原型的检测器。 */
     NotActuallyImmutable.prototype.amIImmutable = function () {
       return true;
     };
-    /** `Moo`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+
+    /** 以带原型state挂载并暴露内部replaceState包装的类。 */
     class Moo extends React.Component {
-      /** `Moo.state`：记录测试夹具在当前场景中的状态。 */
+
+      /** 初始有str及原型方法的对象，后续检查其保留或丢失。 */
       state = new NotActuallyImmutable('first');
       // 不再是一个公开的 API。 但我们可以通过进入更新器来检测它是否内部工作.
-      /** `Moo._replaceState`：封装当前用例复用的操作、回调或断言步骤。 */
+
+      /** 把传入对象直接送内部enqueueReplaceState，不做setState浅合并。 */
       _replaceState = update => this.updater.enqueueReplaceState(this, update);
-      /** `Moo.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 返回空div，所有结果从实例state检查。 */
       render() {
         return <div />;
       }
@@ -1041,32 +1091,35 @@ describe('ReactLegacyCompositeComponent', () => {
   });
 
   // @gate !disableLegacyMode
-  /** 测试场景：验证「should not warn about unmounting during unmounting in legacy mode」描述的渲染、交互或错误处理结果。 */
+
+  /** Component挂载另一个legacy layer根，自己卸载时卸载layer；删除Outer子树流程完成且无额外警告断言，框架console检查约束跨根卸载不报重入警告。 */
   it('should not warn about unmounting during unmounting in legacy mode', () => {
     const container = document.createElement('div');
     const layer = document.createElement('div');
 
-    /** `Component`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 在自己的挂载/卸载生命周期管理另一个layer旧根。 */
     class Component extends React.Component {
-      /** `Component.componentDidMount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 把div挂到独立layer容器。 */
       componentDidMount() {
         ReactDOM.render(<div />, layer);
       }
 
-      /** `Component.componentWillUnmount`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 卸载layer根，验证不同根的卸载可在当前删除生命周期内完成。 */
       componentWillUnmount() {
         ReactDOM.unmountComponentAtNode(layer);
       }
 
-      /** `Component.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+      /** 输出当前主树div。 */
       render() {
         return <div />;
       }
     }
 
-    /** `Outer`：定义测试夹具组件，用来观察渲染与生命周期行为。 */
+    /** 保留或删除Component child的外层类。 */
     class Outer extends React.Component {
-      /** `Outer.render`：实现测试夹具的生命周期、渲染或交互步骤。 */
+
+      /** 透传children到div，更新为空children时触发Component删除。 */
       render() {
         return <div>{this.props.children}</div>;
       }

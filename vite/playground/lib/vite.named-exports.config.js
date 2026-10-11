@@ -4,7 +4,7 @@ import { defineConfig } from 'vite'
 export default defineConfig({
   esbuild: {
     supported: {
-      // Force esbuild inject helpers to test regex
+      // 保留 esbuild 的对象展开兼容选项，用于具名导出库的包装场景。
       'object-rest-spread': false,
     },
   },

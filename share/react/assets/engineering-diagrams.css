@@ -1,0 +1,81 @@
+.engineering-diagram {
+  --d-ink: #183234;
+  --d-edge: #507476;
+  --d-line: #b9cecb;
+  --d-paper: #fbfdfb;
+  margin: 1.4rem 0 1.8rem;
+  border: 1px solid var(--d-line);
+  border-radius: 14px;
+  background: var(--d-paper);
+  overflow: hidden;
+}
+.engineering-diagram .diagram-scroll {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  padding: 12px;
+}
+.engineering-diagram svg {
+  display: block;
+  width: 100%;
+  min-width: var(--diagram-min-width, 860px);
+  height: auto;
+  color: var(--d-ink);
+  font-family: inherit;
+}
+.engineering-diagram svg text {
+  fill: var(--d-ink);
+  font-family: inherit;
+  font-size: 17px;
+}
+.engineering-diagram .d-node {
+  fill: #f1f7f5;
+  stroke: var(--d-line);
+  stroke-width: 1.5;
+}
+.engineering-diagram .d-state {
+  fill: #e5f2eb;
+  stroke: #50836e;
+  stroke-width: 1.5;
+}
+.engineering-diagram .d-condition {
+  fill: #fff3de;
+  stroke: #ad8251;
+  stroke-width: 1.5;
+}
+.engineering-diagram .d-lane {
+  fill: #eef3f5;
+  stroke: #c5d4d9;
+  stroke-width: 1;
+}
+.engineering-diagram .d-edge {
+  fill: none;
+  stroke: var(--d-edge);
+  stroke-width: 2;
+}
+.engineering-diagram .d-async { stroke-dasharray: 7 5; }
+.engineering-diagram .d-label { font-weight: 650; }
+.engineering-diagram svg .d-muted { fill: #486566; font-size: 16px; }
+.engineering-diagram figcaption {
+  margin: 0;
+  padding: 13px 18px 16px;
+  border-top: 1px solid #d8e5e0;
+  color: #365557;
+  font-size: .93rem;
+  line-height: 1.65;
+}
+.engineering-diagram figcaption strong { color: var(--d-ink); }
+@media (max-width: 680px) {
+  .engineering-diagram .diagram-scroll { padding: 8px; }
+  .engineering-diagram figcaption { padding: 12px 14px; }
+  .engineering-diagram figcaption::after {
+    content: "图可横向滚动查看。";
+    display: block;
+    margin-top: 6px;
+    color: #607776;
+    font-size: .83rem;
+  }
+}
+@media print {
+  .engineering-diagram { break-inside: avoid; }
+  .engineering-diagram svg { min-width: 0; }
+}

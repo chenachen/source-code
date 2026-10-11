@@ -6,7 +6,7 @@
   <meta name="description" content="React DOM 19.3 事件与 hydration 深挖：根委托、优先级、target Fiber、插件、capture/bubble、批处理、受控恢复与阻塞事件重放。" />
   <title>15 · 事件与 hydration：从原生输入到可重放因果链</title>
   <link rel="stylesheet" href="assets/guide.css?v=1" />
-</head>
+<link rel="stylesheet" href="assets/engineering-diagrams.css?v=1" /></head>
 <body>
 <header class="topbar"><div class="topbar-inner">
   <a class="brand" href="index.html">React 六包源码指南</a>
@@ -28,14 +28,7 @@
 <span class="pill">真实浏览器事件测试</span></div>
 
 <section id="map"><h2>一条正常链，两条 hydration 分支</h2>
-<div class="chain" aria-label="普通事件主链">
-  <div class="node">root listener<small>原生 capture / bubble</small></div><span class="arrow">→</span>
-  <div class="node">priority wrapper<small>discrete / continuous / default</small></div><span class="arrow">→</span>
-  <div class="node">target Fiber<small>DOM → closest mounted</small></div><span class="arrow">→</span>
-  <div class="node">plugin extract<small>dispatchQueue</small></div><span class="arrow">→</span>
-  <div class="node">capture / bubble<small>SyntheticEvent</small></div><span class="arrow">→</span>
-  <div class="node">batch finally<small>flush + restore</small></div>
-</div>
+<figure class="engineering-diagram" data-diagram="dom-event-hydration-branches" style="--diagram-min-width:820px"><div class="diagram-scroll"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 830" width="820" height="830" role="img" aria-labelledby="dom-event-hydration-branches-title dom-event-hydration-branches-desc"><title id="dom-event-hydration-branches-title">正常事件、阻塞 click 和连续重放的三条路径</title><desc id="dom-event-hydration-branches-desc">根 listener 经优先级 wrapper 查询 blocker。无 blocker 立即进入插件派发；无法加入连续槽的离散 capture 事件尝试同步 hydration，blocker 解除则派发原事件、变化则继续、不变则停止传播。mouseover 等指定连续事件进入最新状态槽，边界提交后解锁并异步复查，克隆后从 DOM 重新传播。</desc><defs><marker id="dom-event-hydration-branches-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#507476" /></marker></defs><text x="20" y="26" class="d-muted" text-anchor="start"><tspan x="20" dy="0">实线：本次调用栈；虚线：稍后的提交通知 / replay callback</tspan></text><rect x="230" y="50" width="360" height="102" rx="12" class="d-node" /><text x="410.0" y="95.0" class="d-label" text-anchor="middle"><tspan x="410.0" dy="0">root listener → priority wrapper</tspan><tspan x="410.0" dy="24">findInstanceBlockingEvent</tspan></text><path d="M 320 152 V 180 H 135 V 220" class="d-edge" marker-end="url(#dom-event-hydration-branches-arrow)" /><path d="M 410 152 V 220" class="d-edge" marker-end="url(#dom-event-hydration-branches-arrow)" /><path d="M 500 152 V 180 H 685 V 220" class="d-edge" marker-end="url(#dom-event-hydration-branches-arrow)" /><text x="135" y="206" class="d-label" text-anchor="middle"><tspan x="135" dy="0">正常通路</tspan></text><text x="410" y="206" class="d-label" text-anchor="middle"><tspan x="410" dy="0">阻塞的 click capture</tspan></text><text x="685" y="206" class="d-label" text-anchor="middle"><tspan x="685" dy="0">阻塞的 mouseover</tspan></text><rect x="20" y="220" width="230" height="125" rx="12" class="d-condition" /><text x="135.0" y="276.5" class="d-label" text-anchor="middle"><tspan x="135.0" dy="0">blockedOn = null</tspan><tspan x="135.0" dy="24">立即进入插件系统</tspan></text><rect x="295" y="220" width="230" height="125" rx="12" class="d-condition" /><text x="410.0" y="240.5" class="d-label" text-anchor="middle"><tspan x="410.0" dy="0">blockedOn ≠ null</tspan><tspan x="410.0" dy="24">capture + 离散</tspan><tspan x="410.0" dy="24">需要 hydration</tspan><tspan x="410.0" dy="24">queueIfContinuousEvent</tspan><tspan x="410.0" dy="24">= false</tspan></text><rect x="570" y="220" width="230" height="125" rx="12" class="d-condition" /><text x="685.0" y="264.5" class="d-label" text-anchor="middle"><tspan x="685.0" dy="0">blockedOn ≠ null</tspan><tspan x="685.0" dy="24">queueIfContinuousEvent</tspan><tspan x="685.0" dy="24">= true（指定进入事件）</tspan></text><path d="M 135 345 V 390" class="d-edge" marker-end="url(#dom-event-hydration-branches-arrow)" /><path d="M 410 345 V 390" class="d-edge" marker-end="url(#dom-event-hydration-branches-arrow)" /><path d="M 685 345 V 390" class="d-edge" marker-end="url(#dom-event-hydration-branches-arrow)" /><rect x="20" y="390" width="230" height="120" rx="12" class="d-node" /><text x="135.0" y="432.0" class="d-label" text-anchor="middle"><tspan x="135.0" dy="0">dispatchEventFor</tspan><tspan x="135.0" dy="24">PluginEventSystem</tspan><tspan x="135.0" dy="24">Root/Portal 匹配 + 插件</tspan></text><rect x="295" y="390" width="230" height="120" rx="12" class="d-node" /><text x="410.0" y="432.0" class="d-label" text-anchor="middle"><tspan x="410.0" dy="0">attemptSynchronous</tspan><tspan x="410.0" dy="24">Hydration(B)</tspan><tspan x="410.0" dy="24">重新查 nextBlockedOn</tspan></text><rect x="570" y="390" width="230" height="120" rx="12" class="d-state" /><text x="685.0" y="420" class="d-label" text-anchor="middle"><tspan x="685.0" dy="0">queuedMouse = 最新 over</tspan><tspan x="685.0" dy="24">同一事件合并容器/flags</tspan><tspan x="685.0" dy="24">安排 B 的 hydration</tspan><tspan x="685.0" dy="24">stopPropagation</tspan></text><path d="M 135 510 V 570" class="d-edge" marker-end="url(#dom-event-hydration-branches-arrow)" /><path d="M 410 510 V 550" class="d-edge" marker-end="url(#dom-event-hydration-branches-arrow)" /><rect x="20" y="570" width="230" height="132" rx="12" class="d-node" /><text x="135.0" y="606.0" class="d-label" text-anchor="middle"><tspan x="135.0" dy="0">按原生阶段派发 handler</tspan><tspan x="135.0" dy="24">结束该次事件 batch</tspan><tspan x="135.0" dy="24">有受控 restore 目标时</tspan><tspan x="135.0" dy="24">flushSyncWork → restore</tspan></text><rect x="295" y="550" width="230" height="153" rx="12" class="d-condition" /><text x="410.0" y="596.5" class="d-label" text-anchor="middle"><tspan x="410.0" dy="0">nextBlockedOn？</tspan><tspan x="410.0" dy="24">null → 左侧立即派发</tspan><tspan x="410.0" dy="24">改变 → 右侧继续同步尝试</tspan><tspan x="410.0" dy="24">不变 → 下方停止传播</tspan></text><path d="M 295 590 H 268 V 450 H 250" class="d-edge" marker-end="url(#dom-event-hydration-branches-arrow)" /><text x="278" y="530" class="d-muted" text-anchor="start"><tspan x="278" dy="0">null</tspan></text><path d="M 525 633 H 547 V 450 H 525" class="d-edge" marker-end="url(#dom-event-hydration-branches-arrow)" /><text x="558" y="542" class="d-muted" text-anchor="start"><tspan x="558" dy="0">改变</tspan></text><path d="M 410 703 V 748" class="d-edge" marker-end="url(#dom-event-hydration-branches-arrow)" /><text x="426" y="733" class="d-muted" text-anchor="start"><tspan x="426" dy="0">不变</tspan></text><rect x="295" y="748" width="230" height="60" rx="12" class="d-node" /><text x="410.0" y="772.0" class="d-label" text-anchor="middle"><tspan x="410.0" dy="0">stopPropagation</tspan><tspan x="410.0" dy="24">本次 click 不进入连续槽</tspan></text><path d="M 685 510 V 570" class="d-edge d-async" marker-end="url(#dom-event-hydration-branches-arrow)" /><text x="685" y="546" class="d-muted" text-anchor="middle"><tspan x="685" dy="0">B 后续提交并解锁</tspan></text><rect x="570" y="570" width="230" height="153" rx="12" class="d-state" /><text x="685.0" y="604.5" class="d-label" text-anchor="middle"><tspan x="685.0" dy="0">retryIfBlockedOn 解锁</tspan><tspan x="685.0" dy="24">再次查 blocker</tspan><tspan x="685.0" dy="24">解除：克隆事件</tspan><tspan x="685.0" dy="24">经 DOM 重新派发</tspan><tspan x="685.0" dy="24">仍阻塞：更新 blocker</tspan></text><path d="M 800 635 H 810 V 91 H 590" class="d-edge d-async" marker-end="url(#dom-event-hydration-branches-arrow)" /><text x="135" y="763" class="d-muted" text-anchor="middle"><tspan x="135" dy="0">原生 capture / bubble listener</tspan><tspan x="135" dy="24">分别进入 batching</tspan></text></svg></div><figcaption><strong>先查 blocker，再由事件种类分支。</strong>click 同步 hydration 成功后派发原事件的当前阶段，浏览器随后继续传播；连续槽解除后克隆事件，经 DOM 回到顶部管线。右侧只代表可进入 replay 槽的指定事件，不等同于全部 ContinuousEventPriority 事件。未进入这三条路径的阻塞事件以空 target 进入插件系统。</figcaption></figure>
 <div class="grid three">
   <article class="card"><span class="number">READY</span><h3>target 已 mounted</h3><p>直接进入插件事件系统；handler 更新共享当前事件优先级并在事件批次边界收口。</p></article>
   <article class="card"><span class="number">DISCRETE BLOCKED</span><h3>click 等离散事件</h3><p>capture listener 循环尝试同步 hydration；成功就立即派发同一个原生事件，仍阻塞则停止传播。</p></article>
@@ -49,7 +42,7 @@
 
 <section id="install"><h2>第 1 步 · 根委托：一次安装覆盖整棵动态子树</h2>
 <p><code>createRoot/hydrateRoot</code> 建根时最终调用 <code>listenToAllSupportedEvents</code>。随机 marker 写在容器上防止重复安装；
-大部分事件各装 capture 与 bubble listener，<code>selectionchange</code> 特殊绑定 document，不冒泡事件在具体节点走 non-delegated 路径。</p>
+大部分事件各装 capture 与 bubble listener，<code>selectionchange</code> 特殊绑定 document；nonDelegatedEvents 内的事件在具体节点监听 bubble，根仍监听 capture。</p>
 <figure class="source"><figcaption><span>删节源码 · DOMPluginEventSystem.js / listenToAllSupportedEvents（仅省略解释注释与 Flow 指令）</span>
 <a href="../../react/packages/react-dom-bindings/src/events/DOMPluginEventSystem.js">打开文件</a></figcaption><pre>export function listenToAllSupportedEvents(rootContainerElement: EventTarget) {
   if (!(rootContainerElement as any)[listeningMarker]) {
@@ -109,9 +102,9 @@
 <div class="table-wrap"><table><thead><tr><th>类别</th><th>当前源码中的代表事件</th><th>进入 dispatch 时</th><th>对 handler 更新的影响</th></tr></thead><tbody>
 <tr><td>Discrete</td><td>click、input、change、keydown、focusin、submit</td><td><code>setCurrentUpdatePriority(DiscreteEventPriority)</code></td><td>setState 请求 lane 时能读取离散事件上下文；通常要求更快完成</td></tr>
 <tr><td>Continuous</td><td>mouseover、mousemove、pointermove、scroll、wheel</td><td>设置 ContinuousEventPriority</td><td>允许连续输入合并，优先级低于离散输入</td></tr>
-<tr><td>Default</td><td>未落入专门 case 的事件</td><td>直接 dispatchEvent</td><td>按默认事件优先级选 lane</td></tr>
+<tr><td>Default</td><td>未落入专门 case 的事件</td><td>直接 dispatchEvent，不覆盖已有 priority</td><td>无显式 priority 时，resolveUpdatePriority 按 window.event 映射；无事件时回退 Default</td></tr>
 </tbody></table></div>
-<p>优先级 wrapper 在 <code>finally</code> 恢复先前 priority 与 Transition 上下文。它不直接调用组件，也不保证每次
+<p>离散与连续 wrapper 在 <code>finally</code> 恢复先前 priority 与 Transition 上下文。它不直接调用组件，也不保证每次
 <code>setState</code> 立刻单独 render；它只是给随后 requestUpdateLane 提供事件上下文，真正调度仍归 reconciler。</p>
 </section>
 
@@ -221,7 +214,7 @@ SimpleEventPlugin 覆盖基础映射；Change、EnterLeave、BeforeInput、Selec
 </section>
 
 <section id="dispatch"><h2>第 5 步 · capture/bubble：沿 Fiber 路径，不是重新依赖 DOM 冒泡</h2>
-<p><code>accumulateTwoPhaseListeners</code> 从 target Fiber 沿 <code>return</code> 到 HostRoot；每到 HostComponent，都通过其 stateNode 上的 latest-props cache 收集
+<p><code>accumulateTwoPhaseListeners</code> 从 target Fiber 沿 <code>return</code> 到 HostRoot；每到 HostComponent、HostHoistable 或 HostSingleton，都通过其 stateNode 上的 latest-props cache 收集
 <code>onChangeCapture/onChange</code>。捕获是 root → target，冒泡是 target → root；SyntheticEvent 的
 <code>target</code> 保持原生 target，<code>currentTarget</code> 每次调用前设为当前宿主节点，调用后清空。</p>
 <figure class="source"><figcaption><span>删节源码 · DOMPluginEventSystem.js / 顺序、stopPropagation 与异常清理（DEV wrapper 折叠）</span>
@@ -295,10 +288,10 @@ export function batchedUpdates(fn, a, b) {
   }
 }</pre></figure>
 <ol class="state-list">
-  <li><strong>全部 handler 共享事件 batch。</strong>嵌套原生事件看到 <code>isInsideEventHandler=true</code>，不会中途恢复一半控件。</li>
+  <li><strong>同一次插件派发共享 batch。</strong>根原生 capture 与 bubble listener 各自进入 batching；本例 Change 插件在 bubble 中一次派发两阶段回调。handler 重入触发原生事件时，<code>isInsideEventHandler=true</code>，恢复延后到最外调用结束。</li>
   <li><strong>先 flush 更新。</strong>handler 若把 value 提交成 <code>tiger</code>，restore 应读取最终 props=tiger，而不是旧 lion。</li>
-  <li><strong>再 restore。</strong>若没有更新，浏览器临时写入的 giraffe 被 committed props=lion 覆盖；checkbox/radio 也恢复 checked 与组状态。</li>
-  <li><strong>最后清队列。</strong><code>restoreTarget/restoreQueue</code> 先转存并清空，再逐节点恢复；恢复过程触发异常也不会让旧目标在下一事件重复消费。</li>
+  <li><strong>清队列并 restore。</strong><code>restoreTarget/restoreQueue</code> 先转存并清空，再逐节点读取最终 props 恢复；无更新时 giraffe 被 lion 覆盖，checkbox/radio 恢复 checked 与组状态。</li>
+  <li><strong>异常后的队列状态。</strong>恢复抛错时旧队列已经移出模块状态，不会在下一事件再次消费；尚未遍历的目标不会继续恢复。</li>
 </ol>
 </section>
 
@@ -319,6 +312,7 @@ findInstanceBlockingEvent(nativeEvent)
 </section>
 
 <section id="hydrate-branch"><h2>Hydration 第 2 步 · 同一个 dispatchEvent 分出排队与同步水合</h2>
+<figure class="engineering-diagram" data-diagram="dom-suspense-b-event-sequence" style="--diagram-min-width:820px"><div class="diagram-scroll"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 950" width="820" height="950" role="img" aria-labelledby="dom-suspense-b-event-sequence-title dom-suspense-b-event-sequence-desc"><title id="dom-suspense-b-event-sequence-title">同一未 hydration 的 B 边界，click 与 mouseover 的时序对比</title><desc id="dom-suspense-b-event-sequence-desc">两个独立场景都从服务端 B 的 DOM 已可见但 Suspense B 仍 dehydrated 开始。click capture 同步 hydration B并复查成功，原 click 继续 bubble，调用最新 onClick。mouseover 则先入 queuedMouse并停止传播，B 后续提交后解锁，NormalPriority callback复查，通过克隆 Event重新从 DOM传播到 onMouseOver。</desc><defs><marker id="dom-suspense-b-event-sequence-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#507476" /></marker></defs><rect x="20" y="15" width="780" height="70" rx="12" class="d-lane" /><text x="410" y="43" class="d-muted" text-anchor="middle"><tspan x="410" dy="0">共同前提：#B 的 server DOM 已可见；Suspense(B).dehydrated = startComment</tspan><tspan x="410" dy="24">click 与 mouseover 是独立输入场景，分别从尚未 hydration 的 B 开始。</tspan></text><path d="M 90 129 V 914" class="d-edge d-async" /><path d="M 300 129 V 914" class="d-edge d-async" /><path d="M 520 129 V 914" class="d-edge d-async" /><path d="M 745 129 V 914" class="d-edge d-async" /><text x="90" y="114" class="d-label" text-anchor="middle"><tspan x="90" dy="0">浏览器 / DOM</tspan></text><text x="300" y="114" class="d-label" text-anchor="middle"><tspan x="300" dy="0">根事件入口</tspan></text><text x="520" y="114" class="d-label" text-anchor="middle"><tspan x="520" dy="0">hydration / replay</tspan></text><text x="745" y="114" class="d-label" text-anchor="middle"><tspan x="745" dy="0">B 的 handler</tspan></text><path d="M 90 168 H 300" class="d-edge" marker-end="url(#dom-suspense-b-event-sequence-arrow)" /><text x="195" y="152" class="d-muted" text-anchor="middle"><tspan x="195" dy="0">click · capture</tspan></text><path d="M 300 229 H 520" class="d-edge" marker-end="url(#dom-suspense-b-event-sequence-arrow)" /><text x="410" y="213" class="d-muted" text-anchor="middle"><tspan x="410" dy="0">同步尝试 hydration(B)</tspan></text><path d="M 520 291 H 300" class="d-edge" marker-end="url(#dom-suspense-b-event-sequence-arrow)" /><text x="410" y="275" class="d-muted" text-anchor="middle"><tspan x="410" dy="0">B 就绪；复查 blocker=null</tspan></text><rect x="160" y="315" width="280" height="55" rx="12" class="d-node" /><text x="300.0" y="336.5" class="d-label" text-anchor="middle"><tspan x="300.0" dy="0">派发本次 capture</tspan><tspan x="300.0" dy="24">原 click 继续传播</tspan></text><path d="M 90 404 H 300" class="d-edge" marker-end="url(#dom-suspense-b-event-sequence-arrow)" /><text x="195" y="388" class="d-muted" text-anchor="middle"><tspan x="195" dy="0">同一 click · bubble</tspan></text><path d="M 300 461 H 745" class="d-edge" marker-end="url(#dom-suspense-b-event-sequence-arrow)" /><text x="527" y="420" class="d-muted" text-anchor="middle"><tspan x="527" dy="0">插件读取最新 onClick</tspan><tspan x="527" dy="24">B 日志：Clicked B</tspan></text><rect x="20" y="490" width="780" height="65" rx="12" class="d-lane" /><text x="410" y="516" class="d-muted" text-anchor="middle"><tspan x="410" dy="0">click：以上同步在原事件调用栈内完成；若 B 仍挂起，则停止传播。</tspan><tspan x="410" dy="23">mouseover：以下独立场景仍从 dehydrated B 开始。</tspan></text><path d="M 90 597 H 300" class="d-edge" marker-end="url(#dom-suspense-b-event-sequence-arrow)" /><text x="195" y="581" class="d-muted" text-anchor="middle"><tspan x="195" dy="0">mouseover · capture</tspan></text><path d="M 300 652 H 520" class="d-edge" marker-end="url(#dom-suspense-b-event-sequence-arrow)" /><text x="410" y="615" class="d-muted" text-anchor="middle"><tspan x="410" dy="0">queuedMouse 保存 over(B)</tspan><tspan x="410" dy="24">尝试 continuous hydration(B)</tspan></text><rect x="170" y="677" width="260" height="48" rx="12" class="d-node" /><text x="300.0" y="707.0" class="d-label" text-anchor="middle"><tspan x="300.0" dy="0">停止本次原生传播</tspan></text><path d="M 20 749 H 800" class="d-edge d-async" /><text x="410" y="742" class="d-label" text-anchor="middle"><tspan x="410" dy="0">异步等待：B 之后提交；本例期间没有 mouseout 清槽</tspan></text><rect x="403" y="772" width="234" height="80" rx="12" class="d-state" /><text x="520.0" y="797" class="d-label" text-anchor="middle"><tspan x="520.0" dy="0">retryIfBlockedOn 解锁</tspan><tspan x="520.0" dy="24">NormalPriority callback</tspan><tspan x="520.0" dy="24">复查 blocker</tspan></text><path d="M 520 861 H 90" class="d-edge d-async" marker-end="url(#dom-suspense-b-event-sequence-arrow)" /><text x="300" y="850" class="d-muted" text-anchor="middle"><tspan x="300" dy="0">blocker=null：clone + DOM dispatch</tspan></text><path d="M 90 898 H 300" class="d-edge" marker-end="url(#dom-suspense-b-event-sequence-arrow)" /><text x="195" y="887" class="d-muted" text-anchor="middle"><tspan x="195" dy="0">克隆事件重新传播</tspan></text><path d="M 300 929 H 745" class="d-edge" marker-end="url(#dom-suspense-b-event-sequence-arrow)" /><text x="530" y="916" class="d-muted" text-anchor="middle"><tspan x="530" dy="0">读取重放时的最新 onMouseOver(B)</tspan></text></svg></div><figcaption><strong>B 边界的两个输入场景。</strong>click 图展示同步 hydration 成功路径：保留同一个原事件，capture 与 bubble 分阶段各自 batching。mouseover 先停止当次传播；本图沿 enableHydrationChangeEvent=false 的重放路径，等边界提交后由 NormalPriority callback 克隆并重新派发；若期间出现 mouseout，queuedMouse 被清空，就不再补发旧进入事件。</figcaption></figure>
 <figure class="source"><figcaption><span>删节源码 · ReactDOMEventListener.js / blocked 分支（仅省略解释注释）</span>
 <a href="../../react/packages/react-dom-bindings/src/events/ReactDOMEventListener.js">打开文件</a></figcaption><pre>let blockedOn = findInstanceBlockingEvent(nativeEvent);
 if (blockedOn === null) {
@@ -432,21 +426,21 @@ if (
   <li><strong>重新验证。</strong>解锁旧边界后，target 可能又受更内层 dehydrated 边界阻塞；因此先重新执行 blocking lookup。</li>
   <li><strong>克隆事件。</strong>不直接复用已经传播过的 Event 对象；新 Event 重新进入浏览器 capture/bubble listener。</li>
   <li><strong>打 replay marker。</strong>避免 legacy click defer 等分支把重放再当首次事件；结束后重置模块状态。</li>
-  <li><strong>处理多容器。</strong>同一 native event 可能被多个 root/portal listener 累积；每成功处理一个 container 就 shift。</li>
+  <li><strong>消费容器记录。</strong>同一 native event 被多个 root/portal listener 观察时会合并容器列表。循环为剩余记录创建克隆，经 DOM 重新传播成功后 shift；实际命中的 listener 与 flags 由新传播决定。</li>
   <li><strong>再次阻塞。</strong>保存新的 <code>blockedOn</code>，提升对应 hydration，等待下一次 commit retry；不丢失剩余容器。</li>
 </ol>
 </section>
 
 <section id="drop"><h2>什么时候会“丢弃”而不是重放</h2>
-<div class="table-wrap"><table><thead><tr><th>场景</th><th>当前实现</th><th>为什么不是事件丢失 bug</th></tr></thead><tbody>
+<div class="table-wrap"><table><thead><tr><th>场景</th><th>当前实现</th><th>行为含义</th></tr></thead><tbody>
 <tr><td>mouseover 排队后先发生 mouseout</td><td><code>clearIfContinuousEvent('mouseout')</code> 清 <code>queuedMouse</code></td><td>指针已离开，补发旧“进入”会制造错误当前状态</td></tr>
 <tr><td>同类连续事件再次到达</td><td>槽更新为新 queued event；相同 native event 的多容器则合并 flags/containers</td><td>连续状态看最新值，不承诺逐个重放历史采样</td></tr>
 <tr><td>离散 click 同步 hydration 仍挂起</td><td>停止传播，不放进连续 replay 槽</td><td>当前版本选择交互优先的同步尝试，不把所有离散事件延后复制</td></tr>
 <tr><td>重放前 target Fiber 已卸载</td><td>blocking lookup 得到 targetInst=null；不会调用旧组件 listener</td><td>已卸载组件不再拥有事件；保留原生事件不等于保留陈旧 Fiber 所有权</td></tr>
-<tr><td>clear/dehydrate 边界改走 client render</td><td>清边界代码也调用 <code>retryIfBlockedOn</code></td><td>解除 blocker 后重新 lookup，按新 client Fiber 决定派发或忽略</td></tr>
+<tr><td>脱水边界被清除，改走 client render</td><td>清边界代码也调用 <code>retryIfBlockedOn</code></td><td>解除 blocker 后重新 lookup，按新 client Fiber 决定派发或忽略</td></tr>
 </tbody></table></div>
 <div class="callout"><p><strong>“重放保持因果”有边界：</strong>React 保留必要交互状态，不承诺逐字节复刻事件发生时 DOM。
-handler 最终读取的是 hydration 后已提交 props/Fiber；连续事件采用合并语义，正是为避免把过期鼠标/焦点状态强行施加到新树。</p></div>
+handler 读取重放时节点的最新 props；连续槽保留当前仍有效的进入状态，同类新事件会覆盖旧槽，退出事件会清槽。</p></div>
 </section>
 
 <section id="test-order"><h2>真实测试 1 · 根到 target 捕获，再从 target 冒泡</h2>
@@ -466,8 +460,7 @@ handler 最终读取的是 hydration 后已提交 props/Fiber；连续事件采�
       - outer parent
     `);</pre></figure>
 <p><strong>Given：</strong>四层 HostComponent 均注册 capture/bubble。<strong>When：</strong>target 派发真实原生事件。
-<strong>Then：</strong>八条日志严格形成 root→target→root。该测试直接证明可观察的 capture/bubble 顺序；它本身不能排除“每个 DOM 节点各装 listener”等替代实现。
-listener 实际沿 Fiber return 链累积、由根委托统一派发，需结合本页 DOMPluginEventSystem/ReactDOMComponentTree 源码证明。</p>
+<strong>Then：</strong>八条日志严格形成 root→target→root。该测试固定了可观察的 capture/bubble 顺序；对应实现由 <code>accumulateSinglePhaseListeners</code> 沿 Fiber.return 收集 handler，再由根 capture/bubble listener 分阶段执行。</p>
 </section>
 
 <section id="test-control"><h2>真实测试 2 · 重入事件也必须在最外批次末恢复两个控件</h2>
@@ -547,7 +540,7 @@ assertLog([
   <li>Root/Portal 匹配选出 ancestorInst；<code>batchedUpdates</code> 包住插件分发。</li>
   <li>ChangeEventPlugin 比较 value tracker，登记 restore target，合成 onChange 并累积两阶段 listeners。</li>
   <li>capture root→target、bubble target→root；每次设置/清空 currentTarget，错误报全局，stopPropagation 截断后续 Fiber。</li>
-  <li>handler 更新在 batch 内调度；finally 先 flushSyncWork，再按最终 props 恢复 DOM；清空 restore 队列。</li>
+  <li>handler 更新在 batch 内调度；finally 先 flushSyncWork，再取出并清空 restore 队列，按最终 props 恢复 DOM。</li>
 </ol>
 <h3>dehydrated Suspense 中的 mouseover</h3>
 <ol class="state-list">

@@ -167,6 +167,9 @@ type ToResolvedProps<Props, Emits extends EmitsOptions> = Readonly<Props> &
  */
 
 // 重载 1：直接传 setup 函数，并使用用户显式声明的 props 接口。
+/**
+ * 直接接收 setup 函数和数组 props 声明的重载；Props 来自用户标注，NoInfer 防止数组反向扩大已声明字段集合。
+ */
 export function defineComponent<
   Props extends Record<string, any>,
   E extends EmitsOptions = {},
@@ -178,11 +181,23 @@ export function defineComponent<
     ctx: SetupContext<E, S>,
   ) => RenderFunction | Promise<RenderFunction>,
   options?: Pick<ComponentOptions, 'name' | 'inheritAttrs'> & {
+    /**
+     * 数组形式运行时 props 名称；NoInfer 使其只校验 Props 的键，不反向推导更宽的 Props。
+     */
     props?: (keyof NoInfer<Props>)[]
+    /**
+     * 该 setup 函数组件的运行时事件声明，事件对象或名称数组均可。
+     */
     emits?: E | EE[]
+    /**
+     * setup 函数组件的纯类型 slots 声明。
+     */
     slots?: S
   },
 ): DefineSetupFnComponent<Props, E, S>
+/**
+ * 直接接收 setup 函数和对象 props 声明的重载；保留用户 Props、emits 和 slots 类型，返回用于公开实例推导的组件构造类型。
+ */
 export function defineComponent<
   Props extends Record<string, any>,
   E extends EmitsOptions = {},
@@ -194,13 +209,25 @@ export function defineComponent<
     ctx: SetupContext<E, S>,
   ) => RenderFunction | Promise<RenderFunction>,
   options?: Pick<ComponentOptions, 'name' | 'inheritAttrs'> & {
+    /**
+     * 对象形式运行时 props 声明，逐键约束为用户标注的 Props 类型。
+     */
     props?: ComponentObjectPropsOptions<Props>
+    /**
+     * 对象 props 重载使用的运行时事件声明。
+     */
     emits?: E | EE[]
+    /**
+     * 对象 props 重载保留的纯类型 slots 声明。
+     */
     slots?: S
   },
 ): DefineSetupFnComponent<Props, E, S>
 
 // 重载 2：传组件选项对象，可从运行时 props/emits 或语言工具注入的纯类型字段推导。
+/**
+ * 对象选项重载：优先采用 language-tools 的纯类型 props/emits，否则从运行时声明推导；ThisType 把合并后的 setup、Options API 和 mixin 成员提供给 this。
+ */
 export function defineComponent<
   // props 的纯类型声明、运行时对象声明和字符串数组声明
   TypeProps,
@@ -240,6 +267,9 @@ export function defineComponent<
   TypeEl = any,
 >(
   options: {
+    /**
+     * 对象选项入口的运行时 props 输入；ThisType<void> 不允许 prop 默认工厂获得组件公共 this。
+     */
     props?: (RuntimePropsOptions & ThisType<void>) | RuntimePropsKeys[]
     /** @private 仅供 Vue language-tools 携带纯类型 props，运行时不会读取。 */
     __typeProps?: TypeProps
@@ -315,6 +345,9 @@ export function defineComponent<
 
 // 运行时实现接近 no-op，复杂逻辑都服务于上面的 TypeScript 重载。
 /*@__NO_SIDE_EFFECTS__*/
+/**
+ * 运行时入口：对象选项原样返回；setup 函数包装成组件选项并合并 extraOptions，最后写入 setup。PURE IIFE 让未引用的组件可被打包器消除。
+ */
 export function defineComponent(
   options: unknown,
   extraOptions?: ComponentOptions,

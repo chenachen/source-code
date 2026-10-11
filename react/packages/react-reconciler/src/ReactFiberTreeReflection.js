@@ -390,6 +390,9 @@ export function traverseFragmentInstancesAndTextInstancesDeeply<A, B, C>(
  *
  * hidden Offscreen 整树跳过；`searchWithinHosts=false` 时宿主节点是叶边界，true 时继续进入其 children。
  * 回调或递归返回 true 会沿调用栈提前结束搜索。
+ * @param child 开始处理的 sibling 链，函数会逐项向后走，不向上寻找其它 sibling 链。
+ * @param fn 只接收 HostComponent/HostSingleton，以及开关开启时的 HostText；HostHoistable 不在回调集合。
+ * @param a 原样传给回调的第一项上下文；b/c 为另外两项，遍历自身不解释它们。
  */
 function traverseVisibleInstancesAndTextInstances<A, B, C>(
   child: Fiber | null,
@@ -492,6 +495,8 @@ export function getFragmentInstanceOrTextInstanceSiblings(
 /**
  * 递归收集 Fragment 前后的宿主 sibling；仅在 enableFragmentRefsTextNodes 开启时把 HostText 纳入。
  * `result[0]` 持续更新为 self 前最后一项，`result[1]` 命中 self 后第一项即提前返回。
+ * 子调用返回 true 时父调用立即退出；若 self 位于嵌套复合组件末尾，会在该层结束，
+ * 不会继续搜索祖先层后续 sibling。foundSelf 按值传递，不是所有递归共享的游标。
  */
 function findFragmentInstanceOrTextInstanceSiblings(
   result: [Fiber | null, Fiber | null],
@@ -616,7 +621,10 @@ export function isFiberContainedByFragment(
   return false;
 }
 
-/** 判断 Fragment 是否位于 otherFiber 对应最近宿主父级之内。 */
+/**
+ * 当前实现查 fragmentFiber 自己的最近宿主父级，再沿同一 return 链确认它。
+ * otherFiber 参数未读取；有宿主父级时通常返回 true，不能据此判断两个指定 Fiber 的包含关系。
+ */
 export function isFragmentContainedByFiber(
   fragmentFiber: Fiber,
   otherFiber: Fiber,
@@ -638,7 +646,11 @@ export function isFragmentContainedByFiber(
   return false;
 }
 
-/** 判断 `fiber` 在可见宿主深度优先顺序中是否位于 `otherFiber` 之前。 */
+/**
+ * 沿最近公共宿主祖先的可见深度优先遍历比较两项。
+ * 当前回调实参是 target=otherFiber、boundary=fiber，先遇到 otherFiber 时返回 true；
+ * 因而实际检查 otherFiber 在 fiber 之前，不能按函数名读成相反方向。
+ */
 export function isFiberPreceding(fiber: Fiber, otherFiber: Fiber): boolean {
   const commonAncestor = getLowestCommonAncestor(
     fiber,
@@ -676,7 +688,10 @@ function isFiberPrecedingCheck(
   return false;
 }
 
-/** 判断 `fiber` 在可见宿主深度优先顺序中是否位于 `otherFiber` 之后。 */
+/**
+ * 当前回调实参是 target=otherFiber、boundary=fiber，只有先见 fiber 再见 otherFiber 才成功。
+ * 实际检查 otherFiber 在 fiber 之后；成功或正常失败后清空模块内临时目标与边界。
+ */
 export function isFiberFollowing(fiber: Fiber, otherFiber: Fiber): boolean {
   const commonAncestor = getLowestCommonAncestor(
     fiber,

@@ -26,11 +26,7 @@ function createBundle(...chunks: OutputChunk[]): OutputBundle {
 }
 
 describe('getCssFilesForChunk', () => {
-  /**
-   * 场景：HTML 生成阶段需给每个入口注入其静态 chunk 子图中的 CSS。
-   * 验证目标：后序顺序稳定、环/菱形依赖去重，且共享子图缓存不能把某入口已见 CSS 状态泄露给另一入口。
-   * 机制：用手工 chunk 图覆盖单链、共享、菱形、环与 #21298 的跨入口缓存回归。
-   */
+  /** 单个入口不含依赖、仅带 style.css；用空缓存收集 CSS，结果应只含自身样式。 */
   test('single chunk with own CSS', () => {
     const chunk = createChunk('entry.js', [], ['style.css'])
     const bundle = createBundle(chunk)

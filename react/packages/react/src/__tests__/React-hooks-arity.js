@@ -13,6 +13,7 @@ let React;
 let ReactNoop;
 
 describe('arity', () => {
+  // 每例重新加载 React 和 Noop renderer，避免上一例的模块级 dispatcher 状态进入下一次挂载。
   beforeEach(() => {
     jest.resetModules();
 
@@ -20,13 +21,7 @@ describe('arity', () => {
     ReactNoop = require('react-noop-renderer');
   });
 
-  /**
-   * Given：已建立该文件所需的 renderer、容器与测试夹具。
-   * When：执行“当前测试”场景的唯一关键操作。
-   * Then：断言 Hooks 返回函数的公开形参数量契约 的可观察结果。
-   *
-   * 验证机制：同时观察返回值、渲染输出或诊断信息，证明结果来自目标分支。
-   */
+  /** 初挂组件调用 useState 后读取 setter.length，期望为 1；检查公开 setter 只声明 action 形参，而非把内部 Fiber/queue 参数暴露出来。 */
   it("ensure useState setter's arity is correct", () => {
     /** 验证 useState setter 的公开形参数量保持为一个。 */
     function Component() {
@@ -39,10 +34,7 @@ describe('arity', () => {
     ReactNoop.render(<Component />);
   });
 
-  /**
-   * 场景：“当前测试”。
-   * 机制：验证Hooks 返回函数的公开形参数量契约，锁定可观察结果与失败边界。
-   */
+  /** 初挂组件取得 useReducer dispatch 后读取 length，期望为 1；验证绑定内部队列后的公开派发函数仍只声明 action 形参。 */
   it("ensure useReducer setter's arity is correct", () => {
     /** 验证 useReducer dispatch 的公开形参数量保持为一个。 */
     function Component() {

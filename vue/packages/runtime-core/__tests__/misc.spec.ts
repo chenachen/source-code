@@ -1,16 +1,17 @@
 /**
- * 测试阅读说明：本文件验证 `runtime-core/misc` 的运行时行为。
- * “测试组”概括共享前置条件，“测试场景”说明当前输入、边界或历史回归目标；具体预期以断言为准。
+ * 在 runtime-test 中挂载组件，验证公共实例传给 reactive 后仍保持原身份且不成为响应式对象。
  */
 import { h, isReactive, nodeOps, reactive, render } from '@vue/runtime-test'
 
 // 测试组：杂项。
 describe('misc', () => {
-  // 测试场景：组件公共实例不应该是可观察的。
+  /** 组件 mounted 保存公共 this，再把该实例传给 reactive；检查实例存在、返回身份相同且 isReactive 为 false，验证公共实例的代理排除标记。 */
   test('component public instance should not be observable', () => {
     let instance: any
     const Comp = {
+      /** 不输出内容，让用例只观察公共实例的响应式排除行为。 */
       render() {},
+      /** 挂载完成后保存公共 this，供 reactive 身份比较。 */
       mounted() {
         instance = this
       },

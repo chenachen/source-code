@@ -58,7 +58,7 @@ export function createCompilerError<T extends number>(
  * compiler-core 的稳定错误码表。
  *
  * 数值会出现在生产构建的错误链接中，因此不要随意重排；上层编译器应从
- * `__EXTEND_POINT__` 之后继续编号，避免 compiler-dom / compiler-ssr 发生碰撞。
+ * `__EXTEND_POINT__` 的值起继续编号；它是 core 的尾部占位，不是实际抛出的 core 错误。
  */
 export enum ErrorCodes {
   /** 空注释以非法形式突然闭合，例如 `<!-->`。 */
@@ -110,7 +110,7 @@ export enum ErrorCodes {
 
   /** 结束标签没有与当前元素栈中的开始标签匹配。 */
   X_INVALID_END_TAG,
-  /** 元素到模板结束仍未找到对应结束标签。 */
+  /** 元素缺少配对结束标签；关闭外层元素或到达末尾时均可能报告。 */
   X_MISSING_END_TAG,
   /** 插值缺少配置的结束定界符，默认是 `}}`。 */
   X_MISSING_INTERPOLATION_END,
@@ -149,7 +149,7 @@ export enum ErrorCodes {
   X_V_MODEL_NO_EXPRESSION,
   /** `v-model` 目标不是可赋值的成员表达式。 */
   X_V_MODEL_MALFORMED_EXPRESSION,
-  /** `v-model` 试图修改 `v-for` / `v-slot` 引入的只读作用域变量。 */
+  /** `v-model` 试图直接替换 v-for/v-slot 的局部别名；这种赋值不能写回其来源。 */
   X_V_MODEL_ON_SCOPE_VARIABLE,
   /** `v-model` 直接绑定到只读 props。 */
   X_V_MODEL_ON_PROPS,

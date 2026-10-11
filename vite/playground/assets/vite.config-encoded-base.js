@@ -1,12 +1,12 @@
 import { defineConfig } from 'vite'
 import baseConfig from './vite.config.js'
 
-/** see `ports` variable in test-utils.ts */
+/** 编码 base 变体的独占端口；与 playground/test-utils.ts 的 ports 分配一致。 */
 const port = 9524
 
 export default defineConfig({
   ...baseConfig,
-  // Vite should auto-encode  this as `/foo%20bar/` internally
+  // 内部 URL 应将空格编码为 /foo%20bar/。
   base: '/foo bar/',
   server: {
     port,

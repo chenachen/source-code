@@ -1,6 +1,6 @@
 import type { ErrorPayload } from '#types/hmrPayload'
 
-// 由 HMR/client injection 插件在响应 `/@vite/client` 时替换。
+/** 服务端注入的公开 base，用于定位 overlay 的 open-in-editor 请求。 */
 declare const __BASE__: string
 /** 配置文件显示名，例如 `vite.config.ts`，用于 overlay 的关闭提示。 */
 declare const __HMR_CONFIG_NAME__: string
@@ -35,7 +35,7 @@ function h(
   return elem
 }
 
-// :host 必须有明确尺寸，既覆盖页面，也让 Playwright 等可见性检测正确识别浮层。
+/** Shadow DOM 的完整浮层样式；:host 显式占满窗口以保证背景覆盖和可见性检测。 */
 const templateStyle = /*css*/ `
 :host {
   position: fixed;
@@ -219,7 +219,7 @@ const fileRE = /(?:file:\/\/)?(?:[a-zA-Z]:\\|\/).*?:\d+:\d+/g
 /** 从错误 message 中识别并剥离 code frame，避免 message 与 frame 区域重复展示。 */
 const codeframeRE = /^(?:>?\s*\d+\s+\|.*|\s+\|\s*\^.*)\r?\n/gm
 
-// Worker/SSR 等环境可能没有 HTMLElement；使用空基类保证模块可求值，但不会注册/实例化元素。
+// Worker/SSR 等环境可能没有 HTMLElement；空基类让类声明可求值；元素注册另由下方 customElements 是否存在决定。
 const { HTMLElement = class {} as typeof globalThis.HTMLElement } = globalThis
 
 /**
@@ -270,6 +270,7 @@ export class ErrorOverlay extends HTMLElement {
       this.close()
     })
 
+    /** 以稳定引用监听 Escape，关闭后可从 document 注销同一个处理器。 */
     this.closeOnEsc = (e: KeyboardEvent) => {
       if (e.key === 'Escape' || e.code === 'Escape') {
         this.close()
@@ -298,6 +299,7 @@ export class ErrorOverlay extends HTMLElement {
         const link = document.createElement('a')
         link.textContent = file
         link.className = 'file-link'
+        /** 把编码后的本地文件位置发给 open-in-editor 中间件，由服务端打开编辑器。 */
         link.onclick = () => {
           fetch(
             new URL(

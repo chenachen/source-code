@@ -12,8 +12,8 @@ import type Stylus from 'stylus'
 
 /* eslint-enable @typescript-eslint/ban-ts-comment */
 
-// 检测可选包缺失后退化出的 any，避免优先采用一个不存在实现的类型（见
-// 证据：https://github.com/type-challenges/type-challenges/issues/29285
+// 检测可选包缺失后退化出的 any，选择仍有类型信息的 Sass 配置声明。
+// https://github.com/type-challenges/type-challenges/issues/29285
 /** 判断类型是否退化为 `any`，用于检测未安装可选预处理器时的忽略导入结果。 */
 type IsAny<T> = boolean extends (T extends never ? true : false) ? true : false
 
@@ -48,6 +48,7 @@ export type StylusPreprocessorBaseOptions = Omit<
   define?: Record<string, any>
 }
 
+/** 为未加载 DOM 标准库的 Node 项目补齐 Less 类型引用的全局接口。 */
 declare global {
   // Less 类型间接引用浏览器 HTMLLinkElement；Vite 的 Node 类型环境需提供空壳兼容。
   /** DOM 库缺席时满足 Less 声明依赖的可合并空壳。 */

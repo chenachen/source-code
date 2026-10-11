@@ -14,7 +14,7 @@ let ReactDOMClient;
 let act;
 let root;
 
-/** `ChildComponent`：封装当前用例复用的操作、回调或断言步骤。 */
+/** 生成有两个叶div的子树，各宿主监听capture/bubble/enter/leave并把currentTarget.id传给共享mock；id前缀区分跨组件祖先。 */
 const ChildComponent = ({id, eventHandler}) => (
   <div
     id={id + '__DIV'}
@@ -39,7 +39,7 @@ const ChildComponent = ({id, eventHandler}) => (
   </div>
 );
 
-/** `ParentComponent`：封装当前用例复用的操作、回调或断言步骤。 */
+/** 生成P、P_P1、两个Child与P_OneOff，所有宿主使用同一记录器，供比较事件传播路径与共同祖先差集。 */
 const ParentComponent = ({eventHandler}) => (
   <div
     id="P"
@@ -102,14 +102,7 @@ describe('ReactTreeTraversal', () => {
   });
 
   describe('Two phase traversal', () => {
-    /**
-     * 代表场景（Given–When–Then）：
-     * Given 当前文件已建立所需 DOM、React 根与测试夹具；
-     * When 执行「should not traverse when target is outside component boundary」描述的渲染或交互；
-     * Then 通过本用例的 DOM、日志或调度断言确认行为。
-     *
-     * 验证机制：断言连接 ReactDOM 公开入口、ReactDOMRoot 根生命周期及 DOM 提交结果。
-     */
+    /** 已挂根树之外outerNode1派冒泡click；共享监听mock零次，验证根容器监听不遍历外部目标。 */
     it('should not traverse when target is outside component boundary', () => {
       outerNode1.dispatchEvent(
         new MouseEvent('click', {bubbles: true, cancelable: true}),
@@ -118,7 +111,7 @@ describe('ReactTreeTraversal', () => {
       expect(mockFn).not.toHaveBeenCalled();
     });
 
-    /** 测试场景：验证「should traverse two phase across component boundary」描述的渲染、交互或错误处理结果。 */
+    /** 最深P_P1_C1__DIV_1派click；顺序应P→P_P1→C1→目标capture，再目标→C1→P_P1→P bubble，验证跨函数组件的宿主祖先两阶段收集。 */
     it('should traverse two phase across component boundary', () => {
       const expectedCalls = [
         ['P', 'captured', 'click'],
@@ -140,7 +133,7 @@ describe('ReactTreeTraversal', () => {
       expect(mockFn.mock.calls).toEqual(expectedCalls);
     });
 
-    /** 测试场景：验证「should traverse two phase at shallowest node」描述的渲染、交互或错误处理结果。 */
+    /** 最浅P自身派click；仅P capture随后P bubble，验证目标同时参与两阶段而无虚构祖先。 */
     it('should traverse two phase at shallowest node', () => {
       const node = document.getElementById('P');
       node.dispatchEvent(
@@ -156,7 +149,7 @@ describe('ReactTreeTraversal', () => {
   });
 
   describe('Enter leave traversal', () => {
-    /** 测试场景：验证「should not traverse when enter/leaving outside DOM」描述的渲染、交互或错误处理结果。 */
+    /** 两个非React外部节点间mouseout；mock零次，验证根外移动不生成树内enter/leave。 */
     it('should not traverse when enter/leaving outside DOM', () => {
       outerNode1.dispatchEvent(
         new MouseEvent('mouseout', {
@@ -169,7 +162,7 @@ describe('ReactTreeTraversal', () => {
       expect(mockFn).not.toHaveBeenCalled();
     });
 
-    /** 测试场景：验证「should not traverse if enter/leave the same node」描述的渲染、交互或错误处理结果。 */
+    /** 同一React节点mouseout且relatedTarget指向自身；mock零次，验证from/to相同直接无差集。 */
     it('should not traverse if enter/leave the same node', () => {
       const leaveNode = document.getElementById('P_P1_C1__DIV_1');
       const enterNode = document.getElementById('P_P1_C1__DIV_1');
@@ -185,7 +178,7 @@ describe('ReactTreeTraversal', () => {
       expect(mockFn).not.toHaveBeenCalled();
     });
 
-    /** 测试场景：验证「should traverse enter/leave to sibling - avoids parent」描述的渲染、交互或错误处理结果。 */
+    /** C1的DIV_1移到兄弟DIV_2；仅旧节点leave、新节点enter，公共父级不触发，验证最小共同祖先排除。 */
     it('should traverse enter/leave to sibling - avoids parent', () => {
       const leaveNode = document.getElementById('P_P1_C1__DIV_1');
       const enterNode = document.getElementById('P_P1_C1__DIV_2');
@@ -207,7 +200,7 @@ describe('ReactTreeTraversal', () => {
       expect(mockFn.mock.calls).toEqual(expectedCalls);
     });
 
-    /** 测试场景：验证「should traverse enter/leave to parent - avoids parent」描述的渲染、交互或错误处理结果。 */
+    /** C1的DIV_1移到自身父DIV；仅子leave，父无enter，验证向共同祖先移动的差集。 */
     it('should traverse enter/leave to parent - avoids parent', () => {
       const leaveNode = document.getElementById('P_P1_C1__DIV_1');
       const enterNode = document.getElementById('P_P1_C1__DIV');
@@ -225,8 +218,8 @@ describe('ReactTreeTraversal', () => {
       expect(mockFn.mock.calls).toEqual(expectedCalls);
     });
 
-    // 现代事件系统把监听器挂在 root 上；下面的事件目标已不再受 React 监听，因此应改为派发 mouseover。
-    /** 测试场景：验证「should enter from the window」描述的渲染、交互或错误处理结果。 */
+    // 外部节点不在根监听范围；用进入目标的mouseover承载事件，relatedTarget仍指向外部节点。
+    /** 从外部节点进入C1父DIV，以目标mouseover承载原生事件；合成enter为P→P_P1→C1，验证从窗口侧进入按外到内遍历。 */
     it('should enter from the window', () => {
       const enterNode = document.getElementById('P_P1_C1__DIV');
 
@@ -247,7 +240,7 @@ describe('ReactTreeTraversal', () => {
       expect(mockFn.mock.calls).toEqual(expectedCalls);
     });
 
-    /** 测试场景：验证「should enter from the window to the shallowest」描述的渲染、交互或错误处理结果。 */
+    /** 外部进入最浅P，派mouseover；仅P enter，验证浅根进入。 */
     it('should enter from the window to the shallowest', () => {
       const enterNode = document.getElementById('P');
 
@@ -264,7 +257,7 @@ describe('ReactTreeTraversal', () => {
       expect(mockFn.mock.calls).toEqual(expectedCalls);
     });
 
-    /** 测试场景：验证「should leave to the window」描述的渲染、交互或错误处理结果。 */
+    /** C1父DIV移到外部节点，派mouseout；leave为C1→P_P1→P，验证离开树按内到外遍历。 */
     it('should leave to the window', () => {
       const leaveNode = document.getElementById('P_P1_C1__DIV');
 
@@ -285,7 +278,7 @@ describe('ReactTreeTraversal', () => {
       expect(mockFn.mock.calls).toEqual(expectedCalls);
     });
 
-    /** 测试场景：验证「should leave to the window from the shallowest」描述的渲染、交互或错误处理结果。 */
+    /** 最浅P移到外部节点；仅P leave，验证浅根离开。 */
     it('should leave to the window from the shallowest', () => {
       const leaveNode = document.getElementById('P');
 

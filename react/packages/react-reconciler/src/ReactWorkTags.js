@@ -79,7 +79,7 @@ export const MemoComponent = 14;
 export const SimpleMemoComponent = 15;
 /** 尚需运行初始化器解析真实类型的 lazy 组件。 */
 export const LazyComponent = 16;
-/** class 构造/恢复尚未完成时使用的临时标签。 */
+/** Legacy Suspense 中首次挂载的 class 挂起后使用的临时标签，恢复时按重新 mount 处理。 */
 export const IncompleteClassComponent = 17;
 /** 对应服务端已存在 DOM、等待 hydration 的不透明片段。 */
 export const DehydratedFragment = 18;
@@ -99,7 +99,7 @@ export const TracingMarkerComponent = 25;
 export const HostHoistable = 26;
 /** renderer 保证每个宿主范围唯一并复用的节点，例如 html/head/body。 */
 export const HostSingleton = 27;
-/** 函数组件因 render 阶段异常而尚未完成分类的临时标签。 */
+/** Legacy Suspense 中首次挂载的函数组件挂起后使用的临时标签，恢复时重新执行 mount。 */
 export const IncompleteFunctionComponent = 28;
 /** 把一个值表示成 Fiber，并在 beginWork 中重新抛出的错误节点。 */
 export const Throw = 29;

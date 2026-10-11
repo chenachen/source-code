@@ -3,7 +3,10 @@ import { init, compare } from './testHelper.js'
 import * as t from 'lib0/testing'
 import * as delta from 'lib0/delta'
 
-/** 验证具名 XML 风格 `Y.Type` 的属性泛型可精确推导已知键与索引签名。 */
+/**
+ * 根属性内集成具名 test 子类型，但子属性尚未写入；用已知键与索引签名读取属性，并赋给显式类型变量。静态检查约束属性类型，运行时只打印 undefined 与空属性对象。
+ * 没有运行时断言。
+ */
 export const testCustomTypings = () => {
   const ydoc = new Y.Doc()
   const ymap = ydoc.get()
@@ -32,7 +35,7 @@ export const testCustomTypings = () => {
 }
 
 /**
- * 验证 XML 属性本地 set/get 后可同步到远端。
+ * 两个空 XML 风格根类型；第一端设置 height=10 后同步。两端 getAttr 均为字符串 10，最终副本收敛。
  *
  * @param {t.TestCase} tc
  */
@@ -46,7 +49,7 @@ export const testSetProperty = tc => {
 }
 
 /**
- * 验证 XML 属性存在性随 set/delete 在本地和远端一致变化。
+ * 两个空 XML 风格根类型；第一端设置 height 并同步，再删除并同步。两端 hasAttr 先为 true、后为 false，最终收敛。
  *
  * @param {t.TestCase} tc
  */
@@ -64,7 +67,7 @@ export const testHasProperty = tc => {
 }
 
 /**
- * 验证匿名文本类型也支持属性事件、读取与批量导出。
+ * 匿名空根类型注册浅层 observer；设置 test=42。事件 attrs.test 是 insert，单键读取为 42，getAttrs 为 `{test:42}`。
  *
  * @param {t.TestCase} _tc
  */
@@ -80,7 +83,8 @@ export const testYtextAttributes = _tc => {
 }
 
 /**
- * 验证嵌套子节点的 `parent` 指向宿主，而根片段没有父级。
+ * 匿名根片段为空；插入一个匿名子类型和一个 p 子类型。首个子类型 parent 指向根，根 parent 为 null。
+ * 没有读取或比较兄弟指针。
  *
  * @param {t.TestCase} _tc
  */
@@ -95,7 +99,8 @@ export const testSiblings = _tc => {
 }
 
 /**
- * 验证 XML 风格共享树克隆后拥有独立 CRDT 身份但相同深层 JSON。
+ * 根片段已有 text、p、p 三个子节点；克隆完整树并把克隆挂入 copyarr。克隆长度为 3，深层 JSON 与原树相同。
+ * 没有断言具体 ID 或修改后两树独立性。
  *
  * @param {t.TestCase} _tc
  */
@@ -114,7 +119,7 @@ export const testClone = _tc => {
 }
 
 /**
- * 验证交叠 `em`/`strong` 格式边界可无损往返 Delta。
+ * 空片段准备 A/C 带 em+strong、B 仅带 em 的 Delta；应用后再读取 toDelta。三段交叠格式与输入 Delta 相等。
  *
  * @param {t.TestCase} _tc
  */
@@ -130,7 +135,7 @@ export const testFormattingBug = _tc => {
 }
 
 /**
- * 验证具名子元素按插入顺序保存在匿名片段中。
+ * 匿名根片段为空；一次插入 text1 与 text2 两个具名子节点。toArray 按原顺序返回同两个对象。
  *
  * @param {t.TestCase} _tc
  */
@@ -144,7 +149,7 @@ export const testElement = _tc => {
 }
 
 /**
- * 验证片段删除/插入子类型时，父子 Renderer 都传播对应 attribution。
+ * 关闭 GC 的已集成片段含 hello 子类型与空子类型；一事务删 hello 子类型并追加 world 子类型，用本轮 ID 集建 Renderer。父层旧/新子分别带 delete/insert，直接渲染旧 hello 内容也带 delete。
  *
  * @param {t.TestCase} _tc
  */
@@ -158,7 +163,7 @@ export const testFragmentAttributedContent = _tc => {
   ydoc.get().insert(0, [yfragment])
   let renderer = /** @type {AbstractRenderer?} */ (null)
   ydoc.on('afterTransaction', tr => {
-    // renderer = new AttributionsRenderer(createIdMapFromIdSet(tr.insertSet, [new Y.Attribution('insertAt', 42), new Y.Attribution('insert', 'kevin')]), createIdMapFromIdSet(tr.deleteSet, [new Y.Attribution('delete', 'kevin')]))
+    // 空属性数组也标记插入/删除归因，只是不提供作者名。
     renderer = new Y.AttributionsRenderer(Y.createContentMap(Y.createIdMapFromIdSet(tr.insertSet, []), Y.createIdMapFromIdSet(tr.deleteSet, [])))
   })
   t.group('insert / delete', () => {
@@ -175,7 +180,7 @@ export const testFragmentAttributedContent = _tc => {
 }
 
 /**
- * 验证具名元素的深层子节点和属性变化均携带插入/删除 attribution。
+ * 关闭 GC 的根键 p 含 hello 与 span 两个 Delta 子节点；一事务删 hello、追加 world 并设 key=42，再深层渲染。旧/新子节点及其文本分别带 delete/insert，key 的正向 setAttr 带 insert 归因。
  *
  * @param {t.TestCase} _tc
  */
@@ -188,7 +193,7 @@ export const testElementAttributedContent = _tc => {
   yelement.insert(0, [elem1, elem2])
   let renderer = /** @type {AbstractRenderer?} */ (null)
   ydoc.on('afterTransaction', tr => {
-    // renderer = new AttributionsRenderer(createIdMapFromIdSet(tr.insertSet, [new Y.Attribution('insertAt', 42), new Y.Attribution('insert', 'kevin')]), createIdMapFromIdSet(tr.deleteSet, [new Y.Attribution('delete', 'kevin')]))
+    // 每次事务用它的插入/删除集合构造当前归因视图。
     renderer = new Y.AttributionsRenderer(Y.createContentMap(Y.createIdMapFromIdSet(tr.insertSet, []), Y.createIdMapFromIdSet(tr.deleteSet, [])))
   })
   t.group('insert / delete', () => {
@@ -210,7 +215,8 @@ export const testElementAttributedContent = _tc => {
 }
 
 /**
- * 验证 DiffRenderer 随两文档演进自动更新深层子树、属性及归因。
+ * 基线键 p 含 hello 和 span，目标文档已复制它；目标删 hello、加 world 与 key=42，再建 DiffRenderer；随后 world 前插 big，最终把目标同步回基线。深层视图随编辑显示 bigworld 的插入归因，两端同步后删除旧子消失且插入/属性归因清除。
+ * 根键 p 是访问名，输出节点 name 仍为 null。
  *
  * @param {t.TestCase} _tc
  */
@@ -220,7 +226,7 @@ export const testElementAttributedContentViaDiffer = _tc => {
   const ydoc = new Y.Doc()
   Y.applyUpdate(ydoc, Y.encodeStateAsUpdate(ydocV1))
   const yelement = ydoc.get('p')
-  const elem2 = yelement.get(1) // new Y.XmlElement('span')
+  const elem2 = yelement.get(1) // 具名 `span` Y.Type 子节点。
   const elem3 = Y.Type.from(delta.create().insert('world'))
   ydoc.transact(() => {
     yelement.delete(0, 1)
@@ -296,19 +302,20 @@ export const testElementAttributedContentViaDiffer = _tc => {
 }
 
 /**
- * 以最小 XML/文本树演示 DiffRenderer 对格式、文本和节点插入的深层输出。
+ * 基线 client0 有 hello world 子文本，client1 分叉已复制它；分叉加 span、给 hello 设 italic、插入后删 deleteme，再加感叹号。打印带格式/插入归因的深层 DiffRenderer 示例。
+ * deleteme 未进入基线而被排除；注释示例展示输出，但用例没有断言。
  *
  * @param {t.TestCase} _tc
  */
 export const testRendererSimpleExample = _tc => {
   const ydoc = new Y.Doc()
   ydoc.clientID = 0
-  // Given：基线文档含一个 `hello world` 文本子节点。
+  // 基线文档含一个 `hello world` 文本子节点。
   ydoc.get().insert(0, [delta.create().insert('hello world')])
   const ydocFork = new Y.Doc()
   ydocFork.clientID = 1
   Y.applyUpdate(ydocFork, Y.encodeStateAsUpdate(ydoc))
-  // When：分叉文档追加 span、格式化 hello、插入后立即删除一段文本并追加感叹号。
+  // 分叉文档追加 span、格式化 hello、插入后删除一段文本并追加感叹号。
   ydocFork.get().insert(1, [new Y.Type('span')])
   const ytext = ydocFork.get().get(0)
   // 给 `hello` 添加 italic。
@@ -316,56 +323,40 @@ export const testRendererSimpleExample = _tc => {
   ytext.insert(11, 'deleteme')
   ytext.delete(11, 8)
   ytext.insert(11, '!')
-  // Then：DiffRenderer 深层输出只高亮真实格式、文本和节点插入。
+  // `deleteme` 只存在于分叉历史中，插入后又删除，不进入可见差异；其余变化渲染如下。
   console.log(JSON.stringify(ydocFork.get().toDeltaDeep({ renderer: Y.createDiffRenderer(ydoc, ydocFork) }), null, 2))
 /* =>
 {
-  "children": {
-    "ops": [
-      {
-        "insert": [
-          {
-            "ops": [
-              {
-                "insert": "hello",
-                "attributes": {
-                  "italic": true
-                },
-                "attribution": {
-                  "attributes": {
-                    "italic": []     -- `italic` 属性发生变化
-                  }
-                }
-              },
-              {
-                "insert": " world"   -- `world` 保持不变
-              },
-              {
-                "insert": "!",
-                "attribution": {
-                  "insert": []       -- `!` 为新增内容
-                }
-              }
-            ]
-          }
-        ]
-      },
-      {
-        "insert": [
-          {
-            "nodeName": "span",
-            "children": {
-              "ops": []
+  "type": "delta",
+  "children": [
+    {
+      "type": "insert",
+      "insert": [
+        {
+          "type": "delta",
+          "children": [
+            {
+              "type": "insert",
+              "insert": "hello",
+              "format": { "italic": true },
+              "attribution": { "format": { "italic": [] } }
             },
-            "attributes": {}
-          }
-        ],
-        "attribution": {
-          "insert": []               -- 新增一个 <span/> 节点
+            { "type": "insert", "insert": " world" },
+            {
+              "type": "insert",
+              "insert": "!",
+              "attribution": { "insert": [] }
+            }
+          ]
         }
-      }
-    ]
-  }
+      ]
+    },
+    {
+      "type": "insert",
+      "insert": [{ "type": "delta", "name": "span" }],
+      "attribution": { "insert": [] }
+    }
+  ]
 }
 */
 }
@@ -373,10 +364,11 @@ export const testRendererSimpleExample = _tc => {
 /**
  * 递归遍历 Delta 属性和子操作，收集构造器名属于禁用集合的 op，并记录可定位的树路径。
  *
- * @param {any} d
+ * @param {any} d - 当前 Delta 节点；属性操作仅检查自身，不递归其 value。
  * @param {Array<string>} forbidden - 不允许出现的构造器名。
- * @param {string} [path]
- * @param {Array<{path:string, opType:string, op:any}>} [acc]
+ * @param {string} [path] - 当前节点路径，默认从 `$` 开始。
+ * @param {Array<{path:string, opType:string, op:any}>} [acc] - 原地追加的共享收集数组。
+ * @return {Array<{path:string, opType:string, op:any}>} 同一收集数组；子列表 insert 数组和值式 modify 会继续递归。
  */
 const collectForbiddenOps = (d, forbidden, path = '$', acc = []) => {
   if (d == null || typeof d !== 'object') return acc
@@ -410,15 +402,8 @@ const collectForbiddenOps = (d, forbidden, path = '$', acc = []) => {
 }
 
 /**
- * 回归 y-prosemirror#247：软删除父节点的深层视图只能输出带归因正向 op。
- *
- * Given：基线片段含具名子元素、属性和文本，分叉文档软删除整个子元素。
- * When：用 DiffRenderer 调用 `parent.toDeltaDeep({ renderer })`。
- * Then：所有层级都不得出现 `DeleteAttrOp`/`DeleteOp`，而应以携带 attribution 的
- * `SetAttrOp`/`InsertOp` 表达仍可见 tombstone。
- *
- * 验证机制：`collectForbiddenOps` 同时遍历 attrs、children、嵌套 insert 与 modify value，覆盖
- * lib0/delta `diff` 和 y-prosemirror 映射器不能接受的原始删除 op。
+ * 关闭 GC 的基线片段含 item 子元素、id=C 属性和 hello 嵌套文本，目标已复制；目标删除整个 item 子元素后以 DiffRenderer 深层渲染。collectForbiddenOps 在本用例遍历路径内未找到 DeleteOp/DeleteAttrOp。
+ * 回归 y-prosemirror#247；只禁止这两种指令，不单独断言旧值、归因或所有操作种类。
  *
  * @param {t.TestCase} _tc
  */
@@ -442,7 +427,7 @@ export const testToDeltaDeepEmitsNoDeleteOpsForSoftDeletedParent = _tc => {
   const renderer = Y.createDiffRenderer(ydocV1, ydoc)
   const rendered = parent.toDeltaDeep({ renderer })
 
-  // 递归检查级联结果只能含带 attribution 的正向 op。
+  // 检查本 fixture 的级联结果没有再次执行删除的指令；不单独比较旧值或 attribution。
   const offenders = collectForbiddenOps(rendered, ['DeleteAttrOp', 'DeleteOp'])
   if (offenders.length > 0) {
     console.log('Forbidden delete ops in toDeltaDeep output:')
@@ -458,10 +443,7 @@ export const testToDeltaDeepEmitsNoDeleteOpsForSoftDeletedParent = _tc => {
 }
 
 /**
- * 验证显式删除属性在 diff 视图中输出旧值 `SetAttrOp` 与 delete attribution。
- *
- * 与上方级联用例互补：无论属性因父节点删除而级联 tombstone，还是直接 `deleteAttr`，DiffRenderer
- * 都必须把旧值渲染为带 `{ delete: [] }` 的正向 `SetAttrOp`，不能输出 `DeleteAttrOp`。
+ * 关闭 GC 的基线 p 有 id=C，目标已复制；目标直接删除 id 后用 DiffRenderer 深层渲染。没有 DeleteOp/DeleteAttrOp，attrs.id 仍是旧值 C 的正向 setAttr 且带 `{delete:[]}`。
  *
  * @param {t.TestCase} _tc
  */

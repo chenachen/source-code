@@ -9,7 +9,7 @@
 
 //下面的代码来源于 dom-accessibility-api
 
-/** `tagToRoleMappings` 保存按宿主标签和属性推导可访问性角色所需的共享索引、配置或模块级状态；生命周期覆盖当前 renderer。 */
+/** HTML 标签到默认 ARIA role 的静态映射；getImplicitRole 另处理 input、select 等分支，表内标签直接返回映射值。 */
 const tagToRoleMappings = {
   ARTICLE: 'article',
   ASIDE: 'complementary',
@@ -22,7 +22,7 @@ const tagToRoleMappings = {
   DT: 'term',
   FIELDSET: 'group',
   FIGURE: 'figure',
-  //警告：仅限具有可访问名称
+  // 规范要求具有可访问名称；当前映射不检查名称
   FORM: 'form',
   FOOTER: 'contentinfo',
   H1: 'heading',
@@ -41,18 +41,18 @@ const tagToRoleMappings = {
   NAV: 'navigation',
   OL: 'list',
   OPTGROUP: 'group',
-  //警告：仅在特定情况下
+  // 此处按标签直接匹配，未细分完整可访问性语境
   OPTION: 'option',
   OUTPUT: 'status',
   PROGRESS: 'progressbar',
-  //警告：仅限具有可访问名称的情况
+  // 规范要求具有可访问名称；当前映射不检查名称的情况
   SECTION: 'region',
   SUMMARY: 'button',
   TABLE: 'table',
   TBODY: 'rowgroup',
   TEXTAREA: 'textbox',
   TFOOT: 'rowgroup',
-  //警告：仅在特定情况下
+  // 此处按标签直接匹配，未细分完整可访问性语境
   TD: 'cell',
   TH: 'columnheader',
   THEAD: 'rowgroup',
@@ -60,7 +60,7 @@ const tagToRoleMappings = {
   UL: 'list',
 };
 
-/** `getImplicitRole` 查询所需宿主值；无匹配时走显式回退；用于按宿主标签和属性推导可访问性角色。 */
+/** 结合标签及 input、a、img 等元素属性推导隐式 role；未识别时返回 null。 */
 function getImplicitRole(element: Element): string | null {
   // $FlowFixMe[invalid-computed-prop]
   const mappedByTag = tagToRoleMappings[element.tagName];
@@ -122,7 +122,7 @@ function getImplicitRole(element: Element): string | null {
   return null;
 }
 
-/** `getExplicitRoles` 查询所需宿主值；无匹配时走显式回退；用于按宿主标签和属性推导可访问性角色。 */
+/** 读取 role attribute，以空格拆成显式 role 列表；未提供时返回 null。 */
 function getExplicitRoles(element: Element): Array<string> | null {
   const role = element.getAttribute('role');
   if (role) {
@@ -133,7 +133,7 @@ function getExplicitRoles(element: Element): Array<string> | null {
 }
 
 //https://w3c.github.io/html-aria/#document-conformance-requirements-for-use-of-aria-attributes-in-html
-/** `hasRole` 判断适用条件并返回只读结果；用于按宿主标签和属性推导可访问性角色。 */
+/** 显式 role 列表命中则返回 true；未命中仍回退隐式 role，此实现不是完整 ARIA 优先级计算。 */
 export function hasRole(element: Element, role: string): boolean {
   const explicitRoles = getExplicitRoles(element);
   if (explicitRoles !== null && explicitRoles.indexOf(role) >= 0) {

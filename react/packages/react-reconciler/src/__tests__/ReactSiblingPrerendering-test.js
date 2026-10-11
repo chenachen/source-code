@@ -313,7 +313,7 @@ describe('ReactSiblingPrerendering', () => {
       // fallback 可见后开始预渲染兄弟，再让出以模拟交错事件。
       await waitFor(['A']);
 
-      // 推进超过一次 JND，避免 Suspense 节流掩盖模式切换行为。
+      // 推进超过重试 fallback 节流间隔（本版 300ms），避免 Suspense 节流掩盖模式切换行为。
       Scheduler.unstable_advanceTime(500);
 
       // 渲染阶段再次访问 B 前完成它：应切回普通模式，但不 unwind 丢弃当前工作。
@@ -354,7 +354,7 @@ describe('ReactSiblingPrerendering', () => {
 
   /**
    * 场景（Given–When–Then）：给定外 fallback 已提交、A 在内边界预渲染开始前完成；当新树
-   * 已可提交但受 JND 节流；那么等待提交而不丢弃已完成工作去预渲染 C。
+   * 已可提交但受 fallback 重试节流；那么等待提交而不丢弃已完成工作去预渲染 C。
    * 对应机制：可提交 work-in-progress 优先于兄弟预热。
    */
   it("don't throw out completed work in order to prerender", async () => {
@@ -386,9 +386,9 @@ describe('ReactSiblingPrerendering', () => {
 
       // 内边界开始预渲染前 A 完成，因此先重试 A。
       await resolveText('A');
-      // 新树已经可显示，但距离外 fallback 提交不足一个 JND，提交阶段仍被节流。
+      // 新树已经可显示，但距离外 fallback 提交不足 fallback 重试节流间隔，提交阶段仍被节流。
       //
-      // 等待 JND 到期并完成提交，而不是丢弃已完成工作去预渲染 C。
+      // 等待 fallback 重试节流到期并完成提交，而不是丢弃已完成工作去预渲染 C。
       await waitForAll([
         'A',
         'Suspend! [B]',

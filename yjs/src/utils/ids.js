@@ -28,8 +28,8 @@ export class IdRange {
   /**
    * 创建起始时钟与长度组成的区间。
    *
-   * @param {number} clock
-   * @param {number} len
+   * @param {number} clock 该客户端的绝对逻辑 clock，区间起点包含在范围内。
+   * @param {number} len 区间占用的逻辑 clock 数，排他末端为 clock+len；不是字节数。
    */
   constructor (clock, len) {
     /**
@@ -49,8 +49,8 @@ export class IdRange {
   /**
    * 复用当前区间类型创建新边界，供通用集合算法保留子区间。
    *
-   * @param {number} clock
-   * @param {number} len
+   * @param {number} clock 该客户端的绝对逻辑 clock，区间起点包含在范围内。
+   * @param {number} len 区间占用的逻辑 clock 数，排他末端为 clock+len；不是字节数。
    */
   copyWith (clock, len) {
     return new IdRange(clock, len)
@@ -71,8 +71,8 @@ export class MaybeIdRange {
   /**
    * 创建带存在性标记的半开区间。
    *
-   * @param {number} clock
-   * @param {number} len
+   * @param {number} clock 该客户端的绝对逻辑 clock，区间起点包含在范围内。
+   * @param {number} len 区间占用的逻辑 clock 数，排他末端为 clock+len；不是字节数。
    * @param {boolean} exists
    */
   constructor (clock, len, exists) {
@@ -100,8 +100,8 @@ export class MaybeIdRange {
 /**
  * 创建切片结果区间。
  *
- * @param {number} clock
- * @param {number} len
+ * @param {number} clock 该客户端的绝对逻辑 clock，区间起点包含在范围内。
+ * @param {number} len 区间占用的逻辑 clock 数，排他末端为 clock+len；不是字节数。
  * @param {boolean} exists
  * @return {MaybeIdRange}
  */
@@ -110,22 +110,27 @@ export const createMaybeIdRange = (clock, len, exists) => new MaybeIdRange(clock
 /**
  * 保存一个客户端的区间列表，并按需排序、归并为最大不重叠区间。
  *
- * 常见追加路径允许原地扩展尾区间；一旦 `getIds()` 暴露数组，下一次尾部扩展会
- * copy-on-write，避免修改调用方已经持有的 `IdRange` 对象。
+ * 常见追加路径允许原地扩展尾区间；`getIds()` 暴露数组后，下一次尾部扩展会替换
+ * 尾对象，避免直接改写已持有的 `IdRange`。返回数组本身仍属于容器，后续追加或
+ * 规范化会改写数组，不能当作集合快照。
  */
 export class IdRanges {
   /**
    * 接管区间数组；调用方随后不应直接改写它。
    *
+   * 传入数组按引用保留；sorted 初始为 false，第一次 getIds 才排序并合并。即使调用方已经有序，也不在这里验证。
+   *
    * @param {Array<IdRange>} ids
    */
   constructor (ids) {
+    /** 是否已按本容器规则完成排序与归并；追加不连续范围后需要重新规范化。 */
     this.sorted = false
     /**
      * 尾区间是否已通过 `getIds()` 或 `copy()` 暴露；为 true 时禁止原地扩长。
      */
     this._lastIsUsed = false
     /**
+     * 内部区间数组，规范化会改写数组元素；getIds 返回的也是此数组。
      * @private
      */
     this._ids = ids
@@ -134,7 +139,8 @@ export class IdRanges {
   /**
    * 浅复制区间容器并保留排序状态。
    *
-   * 原容器尾项被标记已暴露，后续追加必须替换对象，保证副本看到稳定边界。
+   * 区间对象仍共享。这里只把原容器尾项标记为已暴露，使原容器下一次扩长尾项时
+   * 改用新对象；副本的 `_lastIsUsed` 保持初始值，直接扩长其共享尾项仍会改变源对象。
    */
   copy () {
     const cpy = new IdRanges(this._ids.slice())
@@ -146,8 +152,8 @@ export class IdRanges {
   /**
    * 追加一个区间；与尾区间首尾相接时走 O(1) 扩展路径。
    *
-   * @param {number} clock
-   * @param {number} length
+   * @param {number} clock 该客户端的绝对逻辑 clock，区间起点包含在范围内。
+   * @param {number} length 新范围占用的逻辑 clock 数。
    */
   add (clock, length) {
     const last = this._ids[this._ids.length - 1]
@@ -159,7 +165,8 @@ export class IdRanges {
         this._ids[this._ids.length - 1].len += length
       }
     } else {
-      this.sorted = false
+      /** 是否已按本容器规则完成排序与归并；追加不连续范围后需要重新规范化。 */
+    this.sorted = false
       this._ids.push(new IdRange(clock, length))
     }
   }
@@ -168,7 +175,8 @@ export class IdRanges {
    * 返回按时钟排序、重叠或相邻均已归并的最大区间数组。
    *
    * 归并使用读写双指针原地压缩数组；返回后尾区间视为外部可见，后续追加不能
-   * 原地修改它。
+   * 原地修改它。内部数组必须至少有一个范围；尚未追加内容的 new IdRanges([])
+   * 在 sorted=false 时会访问不存在的尾项并抛错，不是返回空数组的分支。
    */
   getIds () {
     const ids = this._ids
@@ -205,7 +213,7 @@ export class IdRanges {
  * 表示多个客户端逻辑时钟区间的集合。
  *
  * 每个客户端独立维护最大不重叠半开区间；集合常用于事务插入集、删除集、缺口集
- * 与更新筛选。所有查询先触发该客户端区间排序归并。
+ * 与更新筛选。范围查询先触发该客户端区间排序归并；`isEmpty()` 只检查客户端键。
  *
  * @implements {traits.EqualityTrait}
  */
@@ -213,6 +221,7 @@ export class IdSet {
   /** 创建空客户端区间映射。 */
   constructor () {
     /**
+     * client 到区间容器的索引；没有覆盖时通常删除整个 client 键。
      * @type {Map<number,IdRanges>}
      */
     this.clients = new Map()
@@ -225,6 +234,8 @@ export class IdSet {
 
   /**
    * 按客户端遍历归并后的每个 ID 区间。
+   *
+   * 每次回调收到一个内部规范 IdRange 及 client；getIds 可能原位排序、合并输入，修改该范围会影响集合。
    *
    * @param {(idrange:IdRange, client:number) => void} f
    */
@@ -249,8 +260,8 @@ export class IdSet {
   /**
    * 判断指定客户端时钟是否属于任一区间。
    *
-   * @param {number} client
-   * @param {number} clock
+   * @param {number} client 写入者 client ID；不同客户端的 clock 空间相互独立。
+   * @param {number} clock 该客户端的绝对逻辑 clock，区间起点包含在范围内。
    */
   has (client, clock) {
     const dr = this.clients.get(client)
@@ -265,9 +276,11 @@ export class IdSet {
    *
    * 先二分首个可能命中的范围，无需构造切片。
    *
-   * @param {number} client
-   * @param {number} clock
-   * @param {number} len
+   * 使用半开区间判定，相邻边界不算重叠；查询应给正长度，函数不单独校验负长度。
+   *
+   * @param {number} client 写入者 client ID；不同客户端的 clock 空间相互独立。
+   * @param {number} clock 该客户端的绝对逻辑 clock，区间起点包含在范围内。
+   * @param {number} len 区间占用的逻辑 clock 数，排他末端为 clock+len；不是字节数。
    * @return {boolean}
    */
   intersects (client, clock, len) {
@@ -286,9 +299,11 @@ export class IdSet {
    * `getIds()` 返回最大归并区间，因此完整覆盖必定位于单个区间内；一次二分即可，
    * 无需分配切片。
    *
-   * @param {number} client
-   * @param {number} clock
-   * @param {number} len
+   * 必须先让查询起点命中范围，再检查末端；零长度在空洞中仍返回 false，并非无条件覆盖。
+   *
+   * @param {number} client 写入者 client ID；不同客户端的 clock 空间相互独立。
+   * @param {number} clock 该客户端的绝对逻辑 clock，区间起点包含在范围内。
+   * @param {number} len 区间占用的逻辑 clock 数，排他末端为 clock+len；不是字节数。
    * @return {boolean}
    */
   covers (client, clock, len) {
@@ -310,9 +325,9 @@ export class IdSet {
    * 二分到首个候选区间后线性扫描重叠段，结果等价于对 `slice()` 中 `exists=true`
    * 的长度求和，但不分配中间对象。
    *
-   * @param {number} client
-   * @param {number} clock
-   * @param {number} len
+   * @param {number} client 写入者 client ID；不同客户端的 clock 空间相互独立。
+   * @param {number} clock 该客户端的绝对逻辑 clock，区间起点包含在范围内。
+   * @param {number} len 区间占用的逻辑 clock 数，排他末端为 clock+len；不是字节数。
    * @return {number}
    */
   coveredLength (client, clock, len) {
@@ -342,9 +357,11 @@ export class IdSet {
    * 返回段严格覆盖 `[clock, clock + len)`，无重叠、无空洞；边界命中源区间内部时
    * 会创建裁剪后的临时范围。
    *
-   * @param {number} client
-   * @param {number} clock
-   * @param {number} len
+   * 结果完整划分请求范围，exists=false 的空洞也会返回；零长度查询仍返回一个零长空洞段。
+   *
+   * @param {number} client 写入者 client ID；不同客户端的 clock 空间相互独立。
+   * @param {number} clock 该客户端的绝对逻辑 clock，区间起点包含在范围内。
+   * @param {number} len 区间占用的逻辑 clock 数，排他末端为 clock+len；不是字节数。
    * @return {Array<MaybeIdRange>}
    */
   slice (client, clock, len) {
@@ -397,9 +414,9 @@ export class IdSet {
    *
    * 新范围允许暂时无序或重叠；查询时由 `IdRanges.getIds()` 规范化。
    *
-   * @param {number} client
-   * @param {number} clock
-   * @param {number} len
+   * @param {number} client 写入者 client ID；不同客户端的 clock 空间相互独立。
+   * @param {number} clock 该客户端的绝对逻辑 clock，区间起点包含在范围内。
+   * @param {number} len 区间占用的逻辑 clock 数，排他末端为 clock+len；不是字节数。
    */
   add (client, clock, len) {
     if (len === 0) return
@@ -414,9 +431,9 @@ export class IdSet {
   /**
    * 从集合删除指定半开区间。
    *
-   * @param {number} client
-   * @param {number} clock
-   * @param {number} len
+   * @param {number} client 写入者 client ID；不同客户端的 clock 空间相互独立。
+   * @param {number} clock 该客户端的绝对逻辑 clock，区间起点包含在范围内。
+   * @param {number} len 区间占用的逻辑 clock 数，排他末端为 clock+len；不是字节数。
    */
   delete (client, clock, len) {
     _deleteRangeFromIdSet(this, client, clock, len)
@@ -462,9 +479,9 @@ export const equalIdSets = (ds1, ds2) => {
  * 客户端最后一个范围被移除，也删除客户端键，保持 `isEmpty()` 语义。
  *
  * @param {IdSet | IdMap<any>} set
- * @param {number} client
- * @param {number} clock
- * @param {number} len
+ * @param {number} client 写入者 client ID；不同客户端的 clock 空间相互独立。
+ * @param {number} clock 该客户端的绝对逻辑 clock，区间起点包含在范围内。
+ * @param {number} len 区间占用的逻辑 clock 数，排他末端为 clock+len；不是字节数。
  */
 export const _deleteRangeFromIdSet = (set, client, clock, len) => {
   const dr = set.clients.get(client)
@@ -493,9 +510,12 @@ export const _deleteRangeFromIdSet = (set, client, clock, len) => {
 }
 
 /**
- * 遍历 IdSet 命中的结构，并在边界处按需切分 Item。
+ * 遍历 IdSet 命中的结构，并在边界处按需切分 Item/GC/Skip。
  *
- * 事务删除与精确 GC 使用此入口；切分副作用会登记到事务合并队列。
+ * 事务删除与精确 GC 使用此入口；切分副作用会登记到事务合并队列。已存在客户端
+ * 的查询起点须落在存储覆盖区间内，超出存储尾端的起点不会自动忽略。
+ *
+ * 未知客户端跳过；已知客户端的查询起点必须位于 store 尾钟内。切分、回调或回收抛错前已经发生的修改不会回滚。
  *
  * @param {Transaction} transaction
  * @param {IdSet} ds
@@ -518,9 +538,11 @@ export const iterateStructsByIdSet = (transaction, ds, f) =>
 /**
  * 仅垃圾回收 IdSet 指定的已删除内容。
  *
- * 用于在 `gc:false` 文档中回收已不再被快照或 UndoManager 引用的历史内容，而不必
- * 全局开启 GC。先在区间边界切分结构，再调用事务 GC；活内容、已回收结构、keep
- * Item 与被 `gcFilter` 拒绝的 Item 都会跳过。
+ * 可在 `gc:false` 文档中按指定区间主动回收历史内容。先在区间边界切分结构，再
+ * 回收并尝试合并。存活内容、GC/Skip、带 keep 的 Item 和被 `gcFilter` 拒绝的 Item
+ * 不回收；函数不检查快照引用，调用方须选取不再需要保留载荷的历史范围。
+ *
+ * 函数通过带切分的遍历把 GC 限定到所选 clock 区间，再按 keep/gcFilter 许可回收；存活项跳过。它不判断快照或外部历史是否仍需原载荷。
  *
  * @param {Doc} doc
  * @param {IdSet} ids
@@ -536,11 +558,12 @@ export const gcIdSet = (doc, ids, gcFilter = doc.gcFilter) =>
 /**
  * 遍历 IdSet 命中的结构片段，但不切分存储内结构。
  *
- * 回调同时获得结构内偏移和命中长度，适合只读分析与更新筛选。
+ * 回调同时获得结构内左偏移和右边界偏移，适合只读分析与更新筛选。第三参数
+ * 虽名为 len，实际命中长度为 `len - offset`；两者都相对结构首钟计算。
  *
  * @param {StructStore} store
  * @param {IdSet} ds
- * @param {(struct: GC|Item|Skip, offset:number, len:number)=>void} f
+ * @param {(struct: GC|Item|Skip, offset:number, len:number)=>void} f 接收结构及其内部半开切片 `[offset, len)`。
  */
 export const iterateStructsByIdSetWithoutSplits = (store, ds, f) =>
   ds.clients.forEach((idRanges, clientid) => {
@@ -564,7 +587,7 @@ export const iterateStructsByIdSetWithoutSplits = (store, ds, f) =>
  * 输入必须已按时钟排序且互不重叠；未命中返回 null。
  *
  * @param {Array<IdRange>} dis
- * @param {number} clock
+ * @param {number} clock 该客户端的绝对逻辑 clock，区间起点包含在范围内。
  * @return {number|null}
  *
  * @private
@@ -596,7 +619,7 @@ export const findIndexInIdRanges = (dis, clock) => {
  * 返回 null。
  *
  * @param {Array<IdRange>} dis
- * @param {number} clock
+ * @param {number} clock 该客户端的绝对逻辑 clock，区间起点包含在范围内。
  * @return {number|null}
  *
  * @private
@@ -627,8 +650,10 @@ export const findRangeStartInIdRanges = (dis, clock) => {
  * 每个客户端只在首次遇到时收集所有后续集合的区间；容器标记为未排序，真正的
  * 排序与重叠归并延迟到查询，避免逐次合并成本。
  *
+ * 只新建客户端容器与数组；未改变边界的 IdRange 对象可能与输入共享，读取输入范围时还会触发其规范化。
+ *
  * @param {Array<IdSet>} idSets
- * @return {IdSet} A fresh IdSet
+ * @return {IdSet} 新集合容器，未改变边界的范围对象可与输入共享。
  */
 export const mergeIdSets = idSets => {
   const merged = new IdSet()
@@ -692,8 +717,9 @@ export const insertIntoIdMap = _insertIntoIdSet
 /**
  * 返回 `set \ exclude`，并保留左操作数的集合种类与属性。
  *
- * 对同客户端两组有序最大区间使用双游标：不重叠时推进相应侧，重叠时按左右边界
- * 裁剪当前源范围。结果是新集合，不修改任一输入。
+ * 对同客户端两组有序区间使用双游标：不重叠时推进相应侧，重叠时按左右边界裁剪
+ * 当前源范围。结果使用新容器并复用未裁剪的区间对象；输入会经 `getIds()` 原地
+ * 规范化，但其覆盖范围和属性含义不变。
  *
  * @todo 重命名为 `excludeIdSet` / `excludeIdMap` 以表达语义。
  *
@@ -773,6 +799,7 @@ export const diffIdSet = _diffSet
  *
  * 每客户端用双游标求半开区间重叠。普通 IdSet 产生 `IdRange`；IdMap 以左范围为
  * 基础并连接两侧属性，因此 `intersectMaps(a,b)` 的范围对称但属性顺序由参数决定。
+ * 这里只连接现有属性引用，不为结果重建属性驻留表。
  *
  * @template {IdSet | IdMap<any>} SetA
  * @template {IdSet | IdMap<any>} SetB
@@ -868,8 +895,9 @@ export const createDeleteSetFromStructStore = ss => {
 /**
  * 把结构数组压缩为插入 ID 区间。
  *
- * `filterDeleted=true` 时删除结构形成空洞；否则所有连续结构合成范围。该函数不
- * 修改输入结构。
+ * 输入须是同客户端首尾连续的结构数组。`filterDeleted=true` 时删除结构形成空洞；
+ * 否则所有结构合成范围。Skip 的 `deleted=false`，两种模式都会计入缺口，因此这里
+ * 得到的是存储覆盖范围，不能直接当作已知真实内容集合。该函数不修改输入结构。
  *
  * @param {Array<GC | Item | Skip>} structs
  * @param {boolean} filterDeleted
@@ -950,6 +978,8 @@ export const writeIdSet = (encoder, idSet) => {
  *
  * 每个客户端开始前重置差分游标；V2 的 readClock/readLen 会共同推进它。
  *
+ * 解码器需位于 ID 集计数字段。返回新的容器，但不校验输入区间是否有序、重叠或为零；后续 getIds 才规范化。
+ *
  * @param {IdSetDecoderV1 | IdSetDecoderV2} decoder
  * @return {IdSet}
  *
@@ -1004,9 +1034,9 @@ export const decodeIdSet = data => readIdSet(new IdSetDecoderV2(decoding.createD
 /**
  * 读取删除集并尽可能应用到当前结构存储。
  *
- * 已到达区间会在删除边界切分 Item 并调用 `Item.delete()`；命中 Skip 或超出本地
- * `nextClock` 的部分加入 `unappliedDS`。若仍有余量，返回“零结构 + 删除集”的 V2
- * 更新供 `StructStore.pendingDs` 后续重试，否则返回 null。
+ * 已到达区间会在删除边界切分 Item 并调用 `Item.delete()`；命中 Skip 或超出存储
+ * 尾端的部分登记进 `unappliedDS`。若仍有余量，返回“零结构 + 删除集”的 V2 更新
+ * 供 `StructStore.pendingDs` 后续重试，否则返回 null。
  *
  * @param {IdSetDecoderV1 | IdSetDecoderV2} decoder
  * @param {Transaction} transaction
@@ -1053,7 +1083,8 @@ export const readAndApplyDeleteSet = (decoder, transaction, store) => {
                   structs.splice(index, 0, /** @type {Item} */ (struct).split(transaction, clockEnd - struct.id.clock))
                 }
                 struct.delete(transaction)
-              } else { // Skip 表示真实结构尚未到达，保留交叠删除待重试。
+              } else { // Skip 表示真实结构尚未到达，登记待重试删除。
+                // 从 Skip 中段开始时，这段余量可能包含后面的已知结构；重试会跳过已删项。
                 const c = math.max(struct.id.clock, clock)
                 unappliedDS.add(client, c, math.min(struct.length, clockEnd - c))
               }
@@ -1085,13 +1116,13 @@ export class AttrRange {
   /**
    * 创建区间与其适用属性。
    *
-   * @param {number} clock
-   * @param {number} len
+   * @param {number} clock 该客户端的绝对逻辑 clock，区间起点包含在范围内。
+   * @param {number} len 区间占用的逻辑 clock 数，排他末端为 clock+len；不是字节数。
    * @param {Array<ContentAttribute<Attrs>>} attrs
    */
   constructor (clock, len, attrs) {
     /**
-     * 区间首时钟，构造后只读。
+     * 区间首时钟，按只读约定使用；@readonly 不会在运行时冻结对象。
      *
      * @readonly
      */
@@ -1103,7 +1134,7 @@ export class AttrRange {
      */
     this.len = len
     /**
-     * 该区间的属性引用数组，构造后只读。
+     * 该区间的属性引用数组，按只读约定使用，未克隆或冻结。
      *
      * @readonly
      */
@@ -1113,8 +1144,8 @@ export class AttrRange {
   /**
    * 保留属性引用并创建新边界的区间。
    *
-   * @param {number} clock
-   * @param {number} len
+   * @param {number} clock 该客户端的绝对逻辑 clock，区间起点包含在范围内。
+   * @param {number} len 区间占用的逻辑 clock 数，排他末端为 clock+len；不是字节数。
    */
   copyWith (clock, len) {
     return new AttrRange(clock, len, this.attrs)
@@ -1131,11 +1162,15 @@ export class ContentAttribute {
   /**
    * 创建属性名和值。
    *
+   * name 与 val 按引用/原值保存；属性加入 IdMap 后依赖其 hash 稳定，不能把驻留对象当可变业务对象更新。
+   *
    * @param {string} name
    * @param {V} val
    */
   constructor (name, val) {
+    /** 属性名称；与 val 一起参与驻留哈希。 */
     this.name = name
+    /** 属性值按原值/引用保存，不执行深拷贝。 */
     this.val = val
   }
 
@@ -1144,6 +1179,8 @@ export class ContentAttribute {
    *
    * IdMap 用该指纹复用值相同但对象不同的属性定义，降低编码重复；哈希命中时
    * 当前实现直接视为同一属性。
+   * Rabin 指纹来自 name 与 lib0 any 编码的 val；IdMap 将同 hash 直接视作等价，未再做值比较。
+   *
    */
   hash () {
     const encoder = encoding.createEncoder()
@@ -1175,8 +1212,8 @@ export const createContentAttribute = (name, val) => new ContentAttribute(name, 
  *
  * @template Attrs
  *
- * @param {number} clock
- * @param {number} len
+ * @param {number} clock 该客户端的绝对逻辑 clock，区间起点包含在范围内。
+ * @param {number} len 区间占用的逻辑 clock 数，排他末端为 clock+len；不是字节数。
  * @param {Array<ContentAttribute<Attrs>>?} attrs
  * @return {MaybeAttrRange<Attrs>}
  */
@@ -1184,6 +1221,8 @@ export const createMaybeAttrRange = (clock, len, attrs) => new AttrRange(clock, 
 
 /**
  * 合并两个属性引用数组，并保持左侧顺序且只追加新引用。
+ *
+ * 仅过滤 b 中已存在于 a 的对象引用；不按属性值比较，也不会消除 b 自身已有的重复引用。
  *
  * @template T
  * @param {Array<T>} a
@@ -1203,11 +1242,15 @@ export class AttrRanges {
   /**
    * 接管尚未规范化的属性区间数组。
    *
+   * 输入数组与 AttrRange 对象按引用保留；sorted=false，第一次 getIds 才切分重叠并合并相邻同属性段。
+   *
    * @param {Array<AttrRange<Attrs>>} ids
    */
   constructor (ids) {
+    /** 是否已按本容器规则完成排序与归并；追加不连续范围后需要重新规范化。 */
     this.sorted = false
     /**
+     * 内部区间数组，规范化会改写数组元素；getIds 返回的也是此数组。
      * @private
      */
     this._ids = ids
@@ -1223,8 +1266,8 @@ export class AttrRanges {
   /**
    * 追加非零属性区间并标记待规范化。
    *
-   * @param {number} clock
-   * @param {number} length
+   * @param {number} clock 该客户端的绝对逻辑 clock，区间起点包含在范围内。
+   * @param {number} length 新范围占用的逻辑 clock 数。
    * @param {Array<ContentAttribute<Attrs>>} attrs
    */
   add (clock, length, attrs) {
@@ -1302,8 +1345,8 @@ export class AttrRanges {
 /**
  * 把多个客户端 ID 区间映射到去重属性集合。
  *
- * `clients` 保存规范化区间；`attrs` 保存规范属性对象；`attrsH` 以稳定哈希复用
- * 等值属性。一个已覆盖区间即使属性数组为空，也仍属于映射。
+ * `clients` 保存待查询时规范化的区间容器；`add()` 经 `attrs`/`attrsH` 复用等值属性。
+ * 一个已覆盖区间即使属性数组为空，也仍属于映射。
  *
  * @template Attrs
  */
@@ -1361,8 +1404,8 @@ export class IdMap {
   /**
    * 判断指定客户端时钟是否存在映射覆盖。
    *
-   * @param {number} client
-   * @param {number} clock
+   * @param {number} client 写入者 client ID；不同客户端的 clock 空间相互独立。
+   * @param {number} clock 该客户端的绝对逻辑 clock，区间起点包含在范围内。
    * @return {boolean}
    */
   has (client, clock) {
@@ -1379,9 +1422,9 @@ export class IdMap {
    * 空属性数组仍表示已覆盖；只有切片结果 `attrs=null` 才是空洞。实现二分后线性
    * 扫描，等价于切片求和但不分配对象。
    *
-   * @param {number} client
-   * @param {number} clock
-   * @param {number} len
+   * @param {number} client 写入者 client ID；不同客户端的 clock 空间相互独立。
+   * @param {number} clock 该客户端的绝对逻辑 clock，区间起点包含在范围内。
+   * @param {number} len 区间占用的逻辑 clock 数，排他末端为 clock+len；不是字节数。
    * @return {number}
    */
   coveredLength (client, clock, len) {
@@ -1409,7 +1452,7 @@ export class IdMap {
    * 按 ID 起点返回指定长度的属性切片。
    *
    * @param {ID} id
-   * @param {number} len
+   * @param {number} len 区间占用的逻辑 clock 数，排他末端为 clock+len；不是字节数。
    * @return {Array<MaybeAttrRange<Attrs>>}
    */
   sliceId (id, len) {
@@ -1422,9 +1465,11 @@ export class IdMap {
    * 返回值严格覆盖完整查询区间；未映射空洞以 `attrs=null` 表示，已映射空属性以
    * `attrs=[]` 表示，两者不可混淆。
    *
-   * @param {number} client
-   * @param {number} clock
-   * @param {number} len
+   * attrs=null 表示未覆盖空洞，attrs=[] 表示已覆盖但没有属性；结果覆盖完整请求区间，保留这种区别。
+   *
+   * @param {number} client 写入者 client ID；不同客户端的 clock 空间相互独立。
+   * @param {number} clock 该客户端的绝对逻辑 clock，区间起点包含在范围内。
+   * @param {number} len 区间占用的逻辑 clock 数，排他末端为 clock+len；不是字节数。
    * @return {Array<MaybeAttrRange<Attrs>>}
    */
   slice (client, clock, len) {
@@ -1477,9 +1522,11 @@ export class IdMap {
    *
    * 属性先经哈希驻留为当前 IdMap 的规范对象，再追加到客户端区间容器。
    *
-   * @param {number} client
-   * @param {number} clock
-   * @param {number} len
+   * 空属性数组仍表示已覆盖的区间；len=0 直接返回。驻留只规范化引用，不在此对 attrs 数组去重。
+   *
+   * @param {number} client 写入者 client ID；不同客户端的 clock 空间相互独立。
+   * @param {number} clock 该客户端的绝对逻辑 clock，区间起点包含在范围内。
+   * @param {number} len 区间占用的逻辑 clock 数，排他末端为 clock+len；不是字节数。
    * @param {Array<ContentAttribute<Attrs>>} attrs
    */
   add (client, clock, len, attrs) {
@@ -1496,9 +1543,9 @@ export class IdMap {
   /**
    * 从映射删除指定半开区间，但保留属性驻留表供其他范围复用。
    *
-   * @param {number} client
-   * @param {number} clock
-   * @param {number} len
+   * @param {number} client 写入者 client ID；不同客户端的 clock 空间相互独立。
+   * @param {number} clock 该客户端的绝对逻辑 clock，区间起点包含在范围内。
+   * @param {number} len 区间占用的逻辑 clock 数，排他末端为 clock+len；不是字节数。
    */
   delete (client, clock, len) {
     _deleteRangeFromIdSet(this, client, clock, len)
@@ -1507,6 +1554,8 @@ export class IdMap {
 
 /**
  * 按对象引用判断属性数组是否包含指定属性。
+ *
+ * 返回找到的属性对象或 undefined，并非严格 boolean；调用方按真值判断。
  *
  * @template T
  * @param {Array<T>} attrs
@@ -1517,6 +1566,8 @@ const idmapAttrsHas = (attrs, attr) => attrs.find(a => a === attr)
 
 /**
  * 比较两个规范属性引用数组是否表示同一无序集合。
+ *
+ * 依赖规范输入没有重复引用：这里只比较长度并单向检查成员，不计算引用出现次数。
  *
  * @template T
  * @param {Array<T>} a
@@ -1615,11 +1666,14 @@ export const createIdSetFromIdMap = idmap => {
 }
 
 /**
- * 确定性编码 IdMap，并对属性名与完整属性定义建立反向引用。
+ * 编码 IdMap，并对属性名与完整属性定义建立反向引用。
  *
  * client ID 升序且以差值编码；每个客户端范围复用 ID 集差分游标。属性第一次出现
- * 时写定义，其中名称也按编号去重；之后只写属性编号。编号由首次遍历顺序决定，
- * 所以规范区间和 client 排序共同保证稳定字节。
+ * 时写定义，其中名称也按编号去重；之后只写属性编号。编号由首次遍历顺序决定。
+ * 属性数组不会排序，两个覆盖范围与属性集合相等的映射仍可能因属性顺序不同
+ * 产生不同字节。
+ *
+ * 调用 getIds 可规范化输入范围；属性引用号跨客户端共享，client 差分基准跨客户端累积，clock 差分基准每客户端重置。
  *
  * @template Attr
  * @param {IdSetEncoderV1 | IdSetEncoderV2} encoder
@@ -1699,6 +1753,8 @@ export const encodeIdMap = idmap => {
  *
  * client ID 由非负差值累积；属性编号首次出现时必须同时解码名称引用与值。所有
  * 区间完成后再为属性计算哈希，恢复 `attrs`/`attrsH` 不变量。
+ *
+ * 新属性/名称编号按出现顺序 push；实现未校验编号恰等于数组末端，假定输入由合法编码器生成。
  *
  * @param {IdSetDecoderV1 | IdSetDecoderV2} decoder
  * @return {IdMap<any>}
@@ -1790,8 +1846,8 @@ export const createIdMap = () => new IdMap()
 /**
  * 返回 IdMap 差集并复用源映射的属性驻留表。
  *
- * 区间容器是新的；属性定义不可变且可安全共享。结果后续新增属性时仍能与源映射
- * 使用相同规范引用。
+ * 区间容器是新的；属性定义按不变约定共享。`attrs` 和 `attrsH` 也复用同一容器，
+ * 向结果新增属性会同时扩展源映射的驻留表，但不会给源映射新增覆盖区间。
  *
  * @todo 重命名为 `excludeIdMap`。
  *
@@ -1814,6 +1870,8 @@ export const intersectMaps = _intersectSets
  * 按属性数组谓词筛选 IdMap 区间。
  *
  * 命中区间复制边界并把其属性重新登记到结果驻留表；未命中客户端不会创建空键。
+ *
+ * 范围和客户端容器新建，属性数组及对象仍复用源引用；predicate 接触内部属性数组，应按只读约定使用。
  *
  * @template Attrs
  * @param {IdMap<Attrs>} idmap

@@ -3,6 +3,7 @@ import { commonStartEffect, releaseAllEffect, ports, setAppName, clearAppName } 
 import { appInstanceMap } from '../../create_app'
 import microApp from '../..'
 
+/** 当前默认 Jest testMatch 未纳入本文件，需显式选择才会发现这些场景。 */
 describe('source patch', () => {
   let appCon: Element
   beforeAll(() => {
@@ -11,12 +12,14 @@ describe('source patch', () => {
       plugins: {
         global: [
           {
+            /** 为动态资源分流提供全局排除条件；后续对应节点未插入，故正文未真正触发此条件。 */
             excludeChecker: (url) => ['link7.css', 'script9.js'].some(item => url.endsWith(item))
           }
         ],
         modules: {
           'test-app1': [
             {
+              /** 给 test-app1 提供应用级排除条件，与全局条件一起组成插件链。 */
               excludeChecker: (url) => ['link8.css', 'script10.js'].some(item => url.endsWith(item))
             }
           ]
@@ -30,7 +33,12 @@ describe('source patch', () => {
     return releaseAllEffect()
   })
 
-  // 子应用中操作元素的行为需要被拦截和处理
+  /**
+   * 挂载含查询标记、静态资源及动态资源的 ssr-render fixture，
+   * 反复切换当前应用名、inline 与 container 状态，执行查询、创建、插入、删除和资源排除。
+   * 分组断言核对查询根、节点归属、head/body 重定向及映射删除；四个只设属性未插入的资源仅验证不在容器，
+   * 不能证明 excludeChecker。旧 console.error 记录断言也不保证空容器删除本身会报错。
+   */
   test('element query', async () => {
     const microAppElement1 = document.createElement('micro-app')
     microAppElement1.setAttribute('name', 'test-app1')
@@ -47,7 +55,7 @@ describe('source patch', () => {
         setAppName('test-app1')
         // 子应用环境中的 getElementsByName 只查询当前容器。
         expect(document.getElementsByName('ssr-html-name')[0] instanceof HTMLDivElement).toBeTruthy()
-        // 覆盖包含特殊字符的 name 查询。
+        // 数字开头的 name 在 isInvalidQuerySelectorKey 中判为非法，回退原生查询。
         expect(document.getElementsByName('1-name')[0]).toBeUndefined()
         clearAppName()
         // 基座 document.getElementsByName 不受子应用作用域限制。
@@ -57,7 +65,7 @@ describe('source patch', () => {
         setAppName('test-app1')
         // 子应用环境中的 getElementsByClassName 只查询当前容器。
         expect(document.getElementsByClassName('ssr-html-class')[0] instanceof HTMLDivElement).toBeTruthy()
-        // 覆盖包含特殊字符的 class 查询。
+        // 数字开头的 class 回退原生 getElementsByClassName。
         expect(document.getElementsByClassName('1-class')[0]).toBeUndefined()
         clearAppName()
         // 基座 document.getElementsByClassName 不受子应用作用域限制。
@@ -67,7 +75,7 @@ describe('source patch', () => {
         setAppName('test-app1')
         // 子应用环境中的 getElementById 只查询当前容器。
         expect(document.getElementById('ssr-html-id') instanceof HTMLDivElement).toBeTruthy()
-        // 覆盖包含特殊字符的 id 查询。
+        // 数字开头的 id 回退原生 getElementById。
         expect(document.getElementById('1-id')).toBeNull()
         clearAppName()
         // 基座 document.getElementById 不受子应用作用域限制。
@@ -119,7 +127,7 @@ describe('source patch', () => {
         document.body.appendChild(microSvg)
         app1.container = null
         try {
-          // 应用卸载之后使用原生方法，microSvg不属于body，所以报错
+          // 容器为空时先从指定 body 删除；rc.32 捕获失败后会改从 microSvg 的实际 parentNode 删除。
           document.body.removeChild(microSvg)
         } catch (error) {
           console.error(error)
@@ -177,7 +185,7 @@ describe('source patch', () => {
           1: 'number key',
         })
 
-        // 验证 commonElementHandler 在容器缺失、应用缺失和非节点参数下安全退化。
+        // 验证 commonElementHandler 在容器或应用缺失时回退原生插入，不再进入应用容器。
         // 模拟app被卸载
         document.body.appendChild(microSvg)
         app1.container = null
@@ -282,22 +290,22 @@ describe('source patch', () => {
         document.head.appendChild(handleNewNodeDom6)
         expect(microAppHead.contains(handleNewNodeDom6)).toBeTruthy()
 
-        // microApp.start global plugin excludeChecker link 链接返回 true，则忽略
+        // 以下四个节点只设置属性、没有插入；contains 为 false 仅说明不在容器内，没有触发资源排除流程。
         const handleNewNodeDom7 = document.createElement('link')
         handleNewNodeDom7.setAttribute('href', '/demo7.css')
         expect(microAppHead.contains(handleNewNodeDom7)).toBeFalsy()
 
-        // microApp.start module plugin excludeChecker link 链接返回 true，则忽略
+        // 只创建并设置 href，仍未经过 handleNewNode。
         const handleNewNodeDom8 = document.createElement('link')
         handleNewNodeDom8.setAttribute('href', '/demo8.css')
         expect(microAppHead.contains(handleNewNodeDom8)).toBeFalsy()
 
-        // microApp.start global plugin excludeChecker script 链接返回 true，则忽略
+        // 此处设置的是 css 属性而非 src，也没有把 script 插入 DOM。
         const handleNewNodeDom9 = document.createElement('script')
         handleNewNodeDom9.setAttribute('css', '/demo9.js')
         expect(microAppHead.contains(handleNewNodeDom9)).toBeFalsy()
 
-        // microApp.start module plugin excludeChecker link 链接返回 true，则忽略
+        // 只设置 script.src，未插入，因此该断言不涉及 excludeChecker。
         const handleNewNodeDom10 = document.createElement('script')
         handleNewNodeDom10.setAttribute('src', '/demo10.js')
         expect(microAppHead.contains(handleNewNodeDom10)).toBeFalsy()
@@ -307,7 +315,11 @@ describe('source patch', () => {
     })
   })
 
-  // 分支覆盖 - document 原型方法的 this 指向
+  /**
+   * 挂载 ssr-render 后保持当前应用名，取出 Document.prototype 查询方法并以另一个新 Document
+   * 为 this 调用。操作应走非 rawDocument 的原生查询旁路；无 expect，
+   * 验证目标是该调用不会进入子应用容器查询或抛错。
+   */
   test('coverage of document this', async () => {
     const microAppElement2 = document.createElement('micro-app')
     microAppElement2.setAttribute('name', 'test-app2')
@@ -331,7 +343,10 @@ describe('source patch', () => {
     })
   })
 
-  // 分支覆盖 - 错误的 querySelector key
+  /**
+   * 挂载 ssr-render 后以含 $ 的名称依次调用 id/class/tag/name 查询。该输入在测试正则中合法，
+   * 可能进入选择器查询后由异常保护处理；本例没有结果或错误断言，只执行这些查询入口，并未穷尽所有非法字符。
+   */
   test('coverage of error querySelector key', async () => {
     const microAppElement3 = document.createElement('micro-app')
     microAppElement3.setAttribute('name', 'test-app3')

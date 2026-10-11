@@ -12,6 +12,10 @@
  *
  * @remarks 缺少参数的占位符会转义为字面量，多余参数按 string/object 补 `%s`/`%o`；
  * 归一化后调用方才能安全地在 format 前后拼接诊断文本。
+ * @param formatString - 原 console 首参数；只识别 O/c/d/f/i/o/s 占位，%% 和未知组合不消费参数。
+ * @param args - 整个 console 参数序列，只读而不改写已有值。
+ * @param firstArg - formatString 后第一个待消费值在 args 中的索引，不是占位符数量。
+ * @returns 占位符与 args[firstArg..] 对齐的格式文本；末尾孤立 % 原样保留。
  */
 export default function normalizeConsoleFormat(
   formatString: string,

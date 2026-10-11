@@ -103,6 +103,7 @@ export interface Renderer<HostElement = RendererElement> {
 
 /** DOM 专用的可水合渲染器；在普通 render/createApp 之外暴露 hydrate。 */
 export interface HydrationRenderer extends Renderer<Element | ShadowRoot> {
+  /** 认领容器中的 SSR DOM；与 render 共用宿主操作和组件挂载能力。 */
   hydrate: RootHydrateFunction
 }
 
@@ -175,8 +176,10 @@ export interface RendererOptions<
   ): [HostNode, HostNode]
 }
 
-// 核心渲染器从不直接操作宿主节点，只把它传回 options 中的宿主函数。因此节点在技术
-// 上可以是任何对象，而不限于 DOM Node；索引签名也容纳 __vnode 等开发内部标记。
+/**
+ * 核心层只持有并转交宿主节点，不要求其继承 DOM Node。
+ * 索引签名容纳容器的 _vnode、开发标记及平台附加状态，实际树操作由 RendererOptions 实现。
+ */
 export interface RendererNode {
   [key: string | symbol]: any
 }
@@ -192,15 +195,25 @@ export interface RendererInternals<
   HostNode = RendererNode,
   HostElement = RendererElement,
 > {
+  /** 任意 VNode 的挂载、更新或类型替换总入口。 */
   p: PatchFn
+  /** 清理 VNode 的生命周期与 effect，可选同时移除宿主范围。 */
   um: UnmountFn
+  /** 仅移除宿主范围并协调 leave；不重复停止组件 effect。 */
   r: RemoveFn
+  /** 搬移完整宿主范围，区分进入、离开与列表重排。 */
   m: MoveFn
+  /** 创建组件实例并建立同步或等待异步 setup 的首次渲染。 */
   mt: MountComponentFn
+  /** 标准化 children 后从给定下标开始挂载。 */
   mc: MountChildrenFn
+  /** 按 children 形态或编译标记选择更新算法。 */
   pc: PatchChildrenFn
+  /** 更新索引对应的 block 动态后代，必要时查询其真实宿主父容器。 */
   pbc: PatchBlockChildrenFn
+  /** 找到整个 VNode 范围之后的插入锚点。 */
   n: NextFn
+  /** 同一渲染器的原始宿主操作；内置节点据此管理额外容器与锚点。 */
   o: RendererOptions<HostNode, HostElement>
 }
 
@@ -375,13 +388,13 @@ export function createHydrationRenderer(
   return baseCreateRenderer(options, createHydrationFunctions)
 }
 
-// 重载 1：任意宿主平台，不包含 hydration。
+/** 任意宿主平台入口；不注入水合工厂，因此只返回 render/createApp。 */
 function baseCreateRenderer<
   HostNode = RendererNode,
   HostElement = RendererElement,
 >(options: RendererOptions<HostNode, HostElement>): Renderer<HostElement>
 
-// 重载 2：DOM 宿主并注入 hydration 函数工厂。
+/** DOM 水合入口；工厂复用该闭包的 internals，额外返回 hydrate。 */
 function baseCreateRenderer(
   options: RendererOptions<Node, Element>,
   createHydrationFns: typeof createHydrationFunctions,
@@ -396,7 +409,7 @@ function baseCreateRenderer(
   options: RendererOptions,
   createHydrationFns?: typeof createHydrationFunctions,
 ): any {
-  // 推迟到实际创建渲染器时初始化特性开关，保持“只导入 runtime-core”无副作用。
+  // 推迟到实际创建渲染器时补齐特性开关默认值。
   if (__ESM_BUNDLER__ && !__TEST__) {
     initFeatureFlags()
   }
@@ -427,6 +440,12 @@ function baseCreateRenderer(
   /**
    * patch 总分派入口：先处理身份替换/优化降级，再按 type 或 shapeFlag 进入专用流程。
    * 完成节点提交后统一维护模板 ref。
+   *
+   * @param n1 - 当前已提交的旧树；null 表示首次挂载。
+   * @param n2 - 本轮描述对象；提交过程中写回 el、component 等实际资源引用。
+   * @param container - 新节点的宿主父容器；替换时先从旧范围取得锚点，再卸载旧树。
+   * @param anchor - 插入位置之后的宿主节点；null 表示追加。
+   * @param optimized - children 已由编译路径标准化；BAIL 会撤销该保证。
    */
   const patch: PatchFn = (
     n1,
@@ -1206,7 +1225,7 @@ function baseCreateRenderer(
           n2.key != null ||
           (parentComponent && n2 === parentComponent.subTree)
         ) {
-          traverseStaticChildren(n1, n2, true /* shallow */)
+          traverseStaticChildren(n1, n2, true /* 仅遍历当前层 */)
         }
       } else {
         // keyed/unkeyed v-for 或手写 Fragment 走通用 children diff。编译 v-for 的每个
@@ -1266,7 +1285,8 @@ function baseCreateRenderer(
 
   /**
    * 创建组件内部实例，解析 setup/props/slots，并建立首次渲染。
-   * async setup 在 Suspense 中先注册依赖并放置注释占位，resolve 后再建立 render effect。
+   * async setup 不在这里立即建立 effect：有父 Suspense 时登记依赖，无已认领 el 时
+   * 插入注释占位。这两个条件独立；后续恢复由异步依赖处理方调用 setupRenderEffect。
    */
   const mountComponent: MountComponentFn = (
     initialVNode,
@@ -1394,6 +1414,11 @@ function baseCreateRenderer(
     namespace: ElementNamespace,
     optimized,
   ) => {
+    /**
+     * ReactiveEffect 的实际执行体；首次提交后切换到以 instance.subTree 为旧树的更新。
+     * 父驱动更新先接收 next/props/slots，自身更新直接复用当前 vnode；两者最终都写回根 el。
+     * 等待未水合异步后代时只更新输入并返回，依赖完成后再排入 post，执行前复查卸载状态。
+     */
     const componentUpdateFn = () => {
       if (!instance.isMounted) {
         let vnodeHook: VNodeHook | null | undefined
@@ -1422,7 +1447,7 @@ function baseCreateRenderer(
         toggleRecurse(instance, true)
 
         if (el && hydrateNode) {
-          // initialVNode 已认领服务端宿主节点，渲染子树后走 hydrate 而非创建新节点。
+          /** 渲染客户端子树并从已认领的 SSR 根 el 开始水合；延迟策略可稍后调用同一闭包。 */
           const hydrateSubTree = () => {
             if (__DEV__) {
               startMeasure(instance, `render`)
@@ -1586,7 +1611,7 @@ function baseCreateRenderer(
         if (bu) {
           invokeArrayFns(bu)
         }
-        // onVnodeBeforeUpdate
+        // 调用 VNode 的 beforeUpdate 钩子
         if ((vnodeHook = next.props && next.props.onVnodeBeforeUpdate)) {
           invokeVNodeHook(vnodeHook, parent, next, vnode)
         }
@@ -1636,7 +1661,7 @@ function baseCreateRenderer(
         if (u) {
           queuePostRenderEffect(u, parentSuspense)
         }
-        // onVnodeUpdated
+        // 排队执行 VNode 的 updated 钩子
         if ((vnodeHook = next.props && next.props.onVnodeUpdated)) {
           queuePostRenderEffect(
             () => invokeVNodeHook(vnodeHook!, parent, next!, vnode),
@@ -1672,6 +1697,7 @@ function baseCreateRenderer(
     const job: SchedulerJob = (instance.job = effect.runIfDirty.bind(effect))
     job.i = instance
     job.id = instance.uid
+    /** 响应式触发只把同一组件 job 入队，由 QUEUED 去重并以 uid 排序，实际 render 等刷新时执行。 */
     effect.scheduler = () => queueJob(job)
 
     // #1801/#2043：组件更新可能触发子 pre watcher，而 watcher 又修改父渲染依赖；允许
@@ -1901,7 +1927,7 @@ function baseCreateRenderer(
     let e1 = c1.length - 1 // 旧 children 末端下标。
     let e2 = l2 - 1 // 新 children 末端下标。
 
-    // 1. 从头同步相同类型节点。
+    // 1. 从头同步 type 和 key 相同的节点。
     // (a b) c
     // (a b) d e
     while (i <= e1 && i <= e2) {
@@ -1927,7 +1953,7 @@ function baseCreateRenderer(
       i++
     }
 
-    // 2. 从尾同步相同类型节点。
+    // 2. 从尾同步 type 和 key 相同的节点。
     // a (b c)
     // d e (b c)
     while (i <= e1 && i <= e2) {
@@ -2047,7 +2073,7 @@ function baseCreateRenderer(
         if (prevChild.key != null) {
           newIndex = keyToNewIndexMap.get(prevChild.key)
         } else {
-          // 无 key 节点只能线性寻找尚未占用、type 相同的新节点。
+          // 无 key 节点线性寻找尚未占用、type 相同且同样无 key 的新节点。
           for (j = s2; j <= e2; j++) {
             if (
               newIndexToOldIndexMap[j - s2] === 0 &&
@@ -2113,7 +2139,8 @@ function baseCreateRenderer(
             optimized,
           )
         } else if (moved) {
-          // 完全逆序可能没有可保留序列；其他情况仅移动不属于 LIS 的节点。
+          // j < 0 表示 LIS 中可保留的位置已处理完；其余不在 LIS 的节点需要移动。
+          // 非空的完全逆序复用序列仍有长度为 1 的 LIS，可保留一个节点。
           if (j < 0 || i !== increasingNewIndexSequence[j]) {
             move(nextChild, container, anchor, MoveType.REORDER)
           } else {
@@ -2184,6 +2211,7 @@ function baseCreateRenderer(
         }
       } else {
         const { leave, delayLeave, afterLeave } = transition!
+        /** 离开完成后搬入缓存容器；若拥有者已卸载，改为删除，避免把陈旧节点放回缓存。 */
         const remove = () => {
           if (vnode.ctx!.isUnmounted) {
             hostRemove(el!)
@@ -2191,12 +2219,13 @@ function baseCreateRenderer(
             hostInsert(el!, container, anchor)
           }
         }
+        /** 先收尾可能进行中的 v-show leave，再按 persisted 状态决定搬移或执行离场。 */
         const performLeave = () => {
           // #13153：v-show leave 未完成时 KeepAlive 可能先移动节点。需取消当前 leave，
           // 让取消回调先把 display 恢复/收尾，再决定缓存移动，避免显示状态卡住。
           const wasLeaving = el!._isLeaving || !!el![leaveCbKey]
           if (el!._isLeaving) {
-            el![leaveCbKey](true /* cancelled */)
+            el![leaveCbKey](true /* 取消离场 */)
           }
           // #14031：没有待处理 leave 时，persisted 过渡跳过指令所属 leave，仅搬移节点。
           if (transition!.persisted && !wasLeaving) {
@@ -2353,7 +2382,8 @@ function baseCreateRenderer(
 
   /**
    * 从宿主树移除 VNode 范围，并协调非 persisted 过渡。
-   * Fragment/Static 可能覆盖多个节点；普通元素在 leave 完成后才真正 hostRemove。
+   * Fragment/Static 可能覆盖多个节点；元素把物理删除交给 leave 的完成回调。
+   * leave 是否延迟由过渡实现决定；BaseTransition 在自身卸载状态下会直接调用删除回调。
    */
   const remove: RemoveFn = vnode => {
     const { type, el, anchor, transition } = vnode
@@ -2383,6 +2413,7 @@ function baseCreateRenderer(
       return
     }
 
+    /** 物理删除完成后通知 afterLeave；persisted 过渡不由渲染器触发该阶段。 */
     const performRemove = () => {
       hostRemove(el!)
       if (transition && !transition.persisted && transition.afterLeave) {
@@ -2396,6 +2427,7 @@ function baseCreateRenderer(
       !transition.persisted
     ) {
       const { leave, delayLeave } = transition
+      /** 把删除动作交给 leave；delayLeave 可持有此闭包以协调 in-out 的先后顺序。 */
       const performLeave = () => leave(el!, performRemove)
       if (delayLeave) {
         delayLeave(vnode.el!, performRemove, performLeave)
@@ -2407,7 +2439,10 @@ function baseCreateRenderer(
     }
   }
 
-  /** 删除 Fragment 两个锚点及其间全部宿主节点。子节点过渡已由上层 unmount 处理。 */
+  /**
+   * 沿 nextSibling 删除 Fragment 起止锚点及其间全部宿主节点；子树逻辑资源已由
+   * unmount 清理。需要逐节点过渡的开发根 Fragment 由 remove 的专用分支处理。
+   */
   const removeFragment = (cur: RendererNode, end: RendererNode) => {
     let next
     while (cur !== end) {
@@ -2449,14 +2484,14 @@ function baseCreateRenderer(
     // 停止 setup/render/watch 等归属于组件 scope 的全部响应式 effect。
     scope.stop()
 
-    // async setup resolve 前组件可能已卸载，此时 render job 尚未创建，也没有 subTree
-    // 需要递归卸载。
+    // 异步 setup 尚未完成时可能没有 render job，subTree 可已是占位 VNode。
+    // 此处分支仅在 job 存在时递归卸载渲染子树。
     if (job) {
       // 即使任务已经入队，DISPOSED 也让调度器跳过。
       job.flags! |= SchedulerJobFlags.DISPOSED
       unmount(subTree, instance, parentSuspense, doRemove)
     }
-    // unmounted 在子树宿主移除和本轮提交完成后执行。
+    // unmounted 排在逻辑卸载后的 post 阶段；若元素 leave 延迟删除，它不等待动画完成。
     if (um) {
       queuePostRenderEffect(um, parentSuspense)
     }
@@ -2669,10 +2704,12 @@ export function traverseStaticChildren(
 }
 
 /**
- * 返回数组中最长严格递增子序列的“下标序列”（忽略值 0）。
+ * 返回最长严格递增子序列的下标，用于选择可保留的复用节点；扫描时跳过值 0。
  *
  * keyed diff 的数组值是旧节点下标 + 1；递增部分代表相对顺序未变、无需移动的最大节点
  * 集合。算法用二分维护候选尾部，复杂度 O(n log n)，`p` 用于最后回溯实际序列。
+ * `result` 初始为 `[0]`，首项为 0 时返回结果可能仍含这一初始位置。调用方先按映射值
+ * 0 挂载新节点，因此不会把这个位置当作可保留的旧节点。
  * 参见 https://en.wikipedia.org/wiki/Longest_increasing_subsequence
  */
 function getSequence(arr: number[]): number[] {

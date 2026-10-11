@@ -46,7 +46,7 @@ export function setMicroState (
   microState?: MicroState,
   targetLocation?: MicroLocation,
 ): MicroState {
-  // TODO：验证 `native` 模式修改 state 时与 Next.js 路由内部 state 的兼容性。
+  // 基座 state 与应用命名空间分别做浅合并；业务 state 不替代宿主其他字段。
   const rawState = globalEnv.rawWindow.history.state
   const additionalState: Record<'__MICRO_APP_STATE__', Record<string, MicroRouterInfoState>> = {
     __MICRO_APP_STATE__: assign({}, rawState?.__MICRO_APP_STATE__, {
@@ -83,7 +83,7 @@ export function removeMicroState (appName: string, rawState: MicroState): MicroS
 }
 
 /**
- * 从宿主当前 `history.state` 读取指定微应用的业务 state，不暴露路由元信息包装层。
+ * 从宿主当前 history.state 读取应用条目内的业务 state；条目缺失或读取值为假值时返回 null。
  */
 export function getMicroState (appName: string): MicroState {
   const rawState = globalEnv.rawWindow.history.state
@@ -142,10 +142,10 @@ function commonDecode (path: string): string {
  * 生成微应用在宿主查询参数中的路由键。
  *
  * @remarks
- * 当前直接使用应用名；保留该集中格式化边界，便于未来引入前缀时让读、写、删路径保持一致。
+ * 当前直接使用应用名，读、写、删除查询参数都经过同一函数。
  */
 function formatQueryAppName (appName: string) {
-  // 曾考虑使用 `app-` 前缀；当前协议必须保持应用名原值以兼容已有 URL。
+  // 查询键就是应用名，不额外添加前缀。
   return appName
 }
 
@@ -157,6 +157,7 @@ function formatQueryAppName (appName: string) {
  * 模式缺少快照时才回退到宿主地址。WHY：部分路由器在 push 前会用旧 `history.state.current` 调用
  * `replaceState`，宿主切页可能因此把子应用新路径覆盖为旧路径；micro-app 自己记录的 `fullPath`
  * 才是可靠恢复源。`pure` 模式也可消费由 location 导航留下的一次性 state。
+ * search 同时含 hash/query 两处同名键时优先取 hash；解析成数组等非字符串值时不作为有效路径返回。
  *
  * @param appName - 待读取路由的微应用名称。
  * @returns 已恢复的完整路径；浏览器没有该应用记录时返回 `null`。
@@ -171,10 +172,6 @@ export function getMicroPathFromURL (appName: string): string | null {
   }
   // `state` 完全依赖该快照；`pure` 可读取一次性快照；原生模式用它抵御第三方路由器回写旧地址。
   // 限制：原生模式不支持同页多个微应用共同占用浏览器路径，此场景应选用 `search` 或 `state`。
-  // if (isRouterModeCustom(appName)) {
-  //   return rawLocation.pathname + rawLocation.search + rawLocation.hash
-  // }
-  // return rawState?.__MICRO_APP_STATE__?.[appName]?.fullPath || null
   return rawState?.__MICRO_APP_STATE__?.[appName]?.fullPath || (isRouterModeCustom(appName) ? rawLocation.pathname + rawLocation.search + rawLocation.hash : null)
 }
 
@@ -199,11 +196,9 @@ export function setMicroPathToURL (appName: string, targetLocation: MicroLocatio
     const queryObject = getQueryObjectFromURL(search, hash)
     const encodedMicroPath = encodeMicroPath(targetFullPath)
 
-    // 这里的“hash 路由”只表示参数写入 hash 查询段，并不证明宿主一定使用某个路由框架。
-    // 判定规则：已有 hash 且没有 search 时附加到 hash，否则写入标准 search。
+    // 已有 hash 且没有 search 时，把应用参数写入 hash 的查询段；其他情况写入标准 search。
     if (hash && !search) {
       isAttach2Hash = true
-      // TODO：与下方 search 分支的查询对象初始化逻辑可抽取复用。
       if (queryObject.hashQuery) {
         queryObject.hashQuery[formatQueryAppName(appName)] = encodedMicroPath
       } else {
@@ -312,18 +307,14 @@ export function getNoHashMicroPathFromURL (appName: string, baseUrl: string): st
  * 判断应用是否仍可参与路由导航与状态同步。
  *
  * @remarks
- * 预加载应用尚未真正展示，因此不得更新浏览器 URL、派发 popstate 或触发 location 导航。当前隐藏的
- * keep-alive 应用仍视为有效：隐藏流程需要先移除其浏览器路由；若过早失效，这一步会被阻断。
+ * 此处只要求实例存在且 isPrefetch 为 false，未检查卸载或隐藏状态。隐藏的 keep-alive 应用仍须通过：
+ * 隐藏流程先改变应用状态，再移除浏览器路由；若在这里排除隐藏状态，清理写入就会被阻断。
  *
  * @param appName - 待检查的微应用名称。
  */
 export function isEffectiveApp (appName: string): boolean {
   const app = appInstanceMap.get(appName)
-  /**
-   * 若改为 `!!(app && !app.isPrefetch && !app.isHidden())`，隐藏的 keep-alive 应用会过早失效：
-   * 1、隐藏后才执行去除浏览器上的微应用的路由信息的操作，导致微应用的路由信息无法去除
-   * 2、若只阻止隐藏应用同步 URL，基于“修改浏览器地址后派发 popstate”的 location 导航也会失去一致边界。
-   */
+  // 公共 router API 与宿主事件监听器另外使用 getActiveApps 过滤；不要把该条件等同于可见/已挂载。
   return !!(app && !app.isPrefetch)
 }
 

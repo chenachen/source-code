@@ -14,7 +14,7 @@ import {canUseDOM} from 'shared/ExecutionEnvironment';
  * @param {string} eventName 对应的标准事件名。
  * @returns {object} 属性名到原生事件名的映射。
  */
-/** makePrefixMap 执行探测动画/过渡事件的浏览器前缀并缓存标准事件名的核心步骤；输入来自原生事件/Fiber，输出保持插件分发与调度边界。 */
+/** 为指定 CSS 属性和事件生成标准/WebKit/Moz 的属性到事件名映射。 */
 function makePrefixMap(styleProp, eventName) {
   const prefixes = {};
 
@@ -28,7 +28,7 @@ function makePrefixMap(styleProp, eventName) {
 /**
  * 事件名到可配置厂商前缀列表的映射。
  */
-/** vendorPrefixes 是探测动画/过渡事件的浏览器前缀并缓存标准事件名使用的稳定常量，避免在热路径重复分配或推导。 */
+/** 各动画/过渡事件对应的 CSS 能力探测表。 */
 const vendorPrefixes = {
   animationend: makePrefixMap('Animation', 'AnimationEnd'),
   animationiteration: makePrefixMap('Animation', 'AnimationIteration'),
@@ -42,7 +42,7 @@ const vendorPrefixes = {
 /**
  * 缓存已经探测并在需要时添加前缀的事件名。
  */
-/** prefixedEventNames 保存探测动画/过渡事件的浏览器前缀并缓存标准事件名所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** 已经完成厂商前缀探测的事件名缓存。 */
 const prefixedEventNames = {};
 
 /**
@@ -78,7 +78,7 @@ if (canUseDOM) {
  * @param {string} eventName 标准事件名。
  * @returns {string} 当前浏览器实际使用的事件名。
  */
-/** getVendorPrefixedEventName 查询并返回探测动画/过渡事件的浏览器前缀并缓存标准事件名所需状态；无匹配时使用 null/默认值而不修改事件队列。 */
+/** 按可用 CSS 属性解析并缓存实际原生事件名；未知名称保持原值。 */
 function getVendorPrefixedEventName(eventName) {
   if (prefixedEventNames[eventName]) {
     return prefixedEventNames[eventName];

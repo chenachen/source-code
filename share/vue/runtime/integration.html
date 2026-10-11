@@ -9,6 +9,7 @@
     />
     <title>按钮计数器的完整调用链 · Vue Runtime 3.5.41</title>
     <link rel="stylesheet" href="assets/styles.css" />
+    <link rel="stylesheet" href="assets/engineering-diagrams.css" />
   </head>
   <body data-current="integration.html">
     <header data-site-header></header>
@@ -59,8 +60,9 @@
             </li>
           </ol>
           <div class="callout">
-            <strong>版本与摘录规则：</strong>本地 <code>vue/package.json</code> 为
-            <code>3.5.41</code>。带 <code>data-source-file</code>
+            <strong>版本与摘录规则：</strong>本地
+            <code>vue/package.json</code> 为 <code>3.5.41</code>。带
+            <code>data-source-file</code>
             的代码块可在对应文件中逐字连续匹配；其余代码块是删节摘录，省略位置用
             <code>// ...</code> 标出。
           </div>
@@ -333,13 +335,17 @@ import { render as domRender } from 'vue'</code></pre>
                   <td>
                     <a href="../../../vue/packages/runtime-dom/src/index.ts"
                       >runtime-dom/index.ts · rendererOptions/ensureRenderer</a
-                    >；<a href="../../../vue/packages/runtime-core/src/renderer.ts"
+                    >；<a
+                      href="../../../vue/packages/runtime-core/src/renderer.ts"
                       >renderer.ts · createRenderer/baseCreateRenderer</a
-                    >；<a href="../../../vue/packages/runtime-core/src/apiCreateApp.ts"
+                    >；<a
+                      href="../../../vue/packages/runtime-core/src/apiCreateApp.ts"
                       >apiCreateApp.ts · createAppAPI</a
                     >
                   </td>
-                  <td>模块复用 renderer；每次 createApp 仍创建独立应用状态。</td>
+                  <td>
+                    模块复用 renderer；每次 createApp 仍创建独立应用状态。
+                  </td>
                 </tr>
                 <tr>
                   <td><strong>RefImpl</strong></td>
@@ -390,146 +396,811 @@ import { render as domRender } from 'vue'</code></pre>
         <section class="article-section prose" id="flowchart">
           <h2>第四步：同一个 Demo 的挂载与点击流程</h2>
           <p>
-            左边解释首次 mount；右边解释一次
-            click。实线是本例正常控制流，红色“退出”
-            是源码真实边界。先完整看图，再按图下阶段逐站读源码。
+            挂载图先标出容器、重复 mount 与异步 setup 的分支；点击图按角色分列，
+            把同步通知与微任务提交分开。两图都沿用上面的
+            Counter，再按图下阶段逐站读源码。
           </p>
-          <div
-            class="trace-board"
-            role="img"
-            aria-label="按钮计数器首次挂载与点击更新的 Vue Runtime 完整流程图"
-          >
-            <ol class="trace-lane mount-lane">
-              <li class="trace-heading">
-                <strong>A · 首次 mount：同步完成</strong
-                ><span>不进入 scheduler 主队列</span>
-              </li>
-              <li>
-                <strong>createApp(App).mount('#app')</strong
-                ><span>runtime-dom 解析容器、清空旧文本</span
-                ><em>无容器 → return</em>
-              </li>
-              <li>
-                <strong>create root VNode → render()</strong
-                ><span>container._vnode 为空</span
-                ><em>重复 mount → warn / 不再挂载</em>
-              </li>
-              <li>
-                <strong>patch(null, rootVNode)</strong
-                ><span>COMPONENT → processComponent</span>
-              </li>
-              <li>
-                <strong>mountComponent()</strong
-                ><span>创建 instance，执行 setup，建立 render effect</span
-                ><em>async setup → Suspense/占位</em>
-              </li>
-              <li>
-                <strong>setupRenderEffect() → update()</strong
-                ><span>首次直接 effect.run；不是 queueJob</span>
-              </li>
-              <li>
-                <strong>renderComponentRoot(instance)</strong
-                ><span
-                  >读取 count.value=0；Dep 记录 render effect；返回 button
-                  VNode</span
-                ><em
-                  >render 抛错 → handleError；错误被接管后才降级 Comment
-                  VNode，未处理 dev 错误可继续抛出</em
+          <figure class="eng-diagram" id="counter-mount-branches">
+            <div
+              class="eng-scroll"
+              tabindex="0"
+              aria-label="Counter 首次挂载分支图，可横向滚动"
+            >
+              <svg
+                class="eng-svg"
+                viewBox="0 0 925 1150"
+                style="--diagram-width: 925px"
+                role="img"
+                aria-labelledby="counter-mount-branches-title counter-mount-branches-desc"
+              >
+                <title id="counter-mount-branches-title">
+                  Counter 首次挂载分支图
+                </title>
+                <desc id="counter-mount-branches-desc">
+                  解析容器后先清空 Element，再进入 core 的重复挂载判断与组件
+                  setup。同步 setup 直接执行 effect；异步 setup 的父 Suspense
+                  登记与占位条件独立判断，然后退出首次组件挂载路径。
+                </desc>
+                <defs>
+                  <marker
+                    id="counter-mount-branches-arrow"
+                    viewBox="0 0 10 10"
+                    refX="9"
+                    refY="5"
+                    markerWidth="7"
+                    markerHeight="7"
+                    orient="auto-start-reverse"
+                  >
+                    <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--brand)" />
+                  </marker>
+                </defs>
+                <text class="eng-heading" x="30" y="30" text-anchor="start">
+                  Counter 首次挂载：容器、重复 mount 与 async setup 的出口
+                </text>
+                <rect
+                  class="eng-node"
+                  x="190"
+                  y="55"
+                  width="450"
+                  height="65"
+                  rx="10"
+                />
+                <text
+                  class="eng-heading"
+                  x="415.0"
+                  y="81.0"
+                  text-anchor="middle"
                 >
-              </li>
-              <li>
-                <strong>patch(null, subTree) → mountElement</strong
-                ><span
-                  >createElement → text → patchProp(id / aria / onClick) →
-                  insert</span
+                  createApp(App).mount(&#x27;#app&#x27;)
+                </text>
+                <text
+                  class="eng-small"
+                  x="415.0"
+                  y="104.0"
+                  text-anchor="middle"
                 >
-              </li>
-              <li>
-                <strong>queuePostRenderEffect(mounted)</strong
-                ><span>根 render 尾部 flushPostFlushCbs</span>
-              </li>
-              <li class="trace-final">
-                <strong>mount 返回</strong
-                ><span>instance.isMounted=true；subTree=“0”；DOM=“0”</span>
-              </li>
-            </ol>
-
-            <ol class="trace-lane update-lane">
-              <li class="trace-heading">
-                <strong>B · 点击更新：同步触发，微任务提交</strong
-                ><span>同一个 ref、instance、button</span>
-              </li>
-              <li>
-                <strong>DOM click → event invoker → increment</strong
-                ><span>callWithAsyncErrorHandling 调业务处理器</span
-                ><em>处理器抛错 → 组件错误管道</em>
-              </li>
-              <li>
-                <strong>count.value++</strong
-                ><span
-                  >JS 先调 getter 读 0，再调 setter 写 1；handler 中 activeSub
-                  为空，getter 不新增订阅；Dep.version: 0 → 1</span
-                ><em>Object.is 相同 → 退出，不通知</em>
-              </li>
-              <li>
-                <strong>Dep.trigger() / notify()</strong
-                ><span
-                  >ReactiveEffect.notify → batch；endBatch 再 trigger
-                  effect</span
+                  runtime-dom 包装入口；仍在同一同步栈
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M415 120 V145"
+                  marker-end="url(#counter-mount-branches-arrow)"
+                />
+                <polygon
+                  class="eng-decision"
+                  points="250,200 415,145 580,200 415,255"
+                />
+                <text class="eng-small" x="415" y="194.5" text-anchor="middle">
+                  解析到了容器？
+                </text>
+                <text class="eng-small" x="415" y="215.5" text-anchor="middle">
+                  normalizeContainer
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M580 200 H670"
+                  marker-end="url(#counter-mount-branches-arrow)"
+                />
+                <text class="eng-small" x="625" y="185" text-anchor="middle">
+                  否
+                </text>
+                <rect
+                  class="eng-note"
+                  x="670"
+                  y="165"
+                  width="225"
+                  height="70"
+                  rx="10"
+                />
+                <text
+                  class="eng-heading"
+                  x="782.5"
+                  y="193.5"
+                  text-anchor="middle"
                 >
-              </li>
-              <li>
-                <strong>effect.scheduler → queueJob(instance.job)</strong
-                ><span>设置 QUEUED；Promise.then(flushJobs)</span
-                ><em>已 QUEUED → 去重退出</em>
-              </li>
-              <li>
-                <strong>同步 handler 结束</strong
-                ><span>响应式值=1；旧 subTree=0；DOM 仍=0</span>
-              </li>
-              <li>
-                <strong>微任务 flushJobs()</strong
-                ><span>取 job；DISPOSED 则跳过；递归超限则报告并跳过</span
-                ><em>job 抛错 → finally 仍清 flags / 刷 post</em>
-              </li>
-              <li>
-                <strong>job = effect.runIfDirty()</strong
-                ><span>isDirty → effect.run → componentUpdateFn</span
-                ><em>不脏 → 不 render</em>
-              </li>
-              <li>
-                <strong>renderComponentRoot(instance)</strong
-                ><span>读 count.value=1；返回新 button VNode</span
-                ><em
-                  >render 抛错 → handleError；只有错误管道未继续抛出时才降级
-                  Comment VNode</em
+                  返回 undefined
+                </text>
+                <text
+                  class="eng-small"
+                  x="782.5"
+                  y="216.5"
+                  text-anchor="middle"
                 >
-              </li>
-              <li>
-                <strong>patch(prevTree, nextTree)</strong
-                ><span>同 type/key → processElement → patchElement</span
-                ><em>不同 type/key → unmount 旧树，再 mount</em>
-              </li>
-              <li>
-                <strong>patchChildren + patchProps</strong
-                ><span
-                  >setElementText“1”；patchProp(aria-label)；id/onClick
-                  相同跳过</span
+                  不调用 core mount
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M415 255 V275"
+                  marker-end="url(#counter-mount-branches-arrow)"
+                />
+                <text class="eng-small" x="438" y="273" text-anchor="middle">
+                  是
+                </text>
+                <rect
+                  class="eng-node"
+                  x="190"
+                  y="275"
+                  width="450"
+                  height="65"
+                  rx="10"
+                />
+                <text
+                  class="eng-heading"
+                  x="415.0"
+                  y="301.0"
+                  text-anchor="middle"
                 >
-              </li>
-              <li>
-                <strong>queuePostRenderEffect(updated)</strong
-                ><span
-                  >flushJobs.finally → flushPostFlushCbs → onUpdated 看见
-                  DOM=1</span
+                  DOM 包装层先清空 Element 容器
+                </text>
+                <text
+                  class="eng-small"
+                  x="415.0"
+                  y="324.0"
+                  text-anchor="middle"
                 >
-              </li>
-              <li class="trace-final">
-                <strong>currentFlushPromise 完成 → nextTick 恢复</strong
-                ><span>回调看见 DOM=1；不代表浏览器已绘制</span>
-              </li>
-            </ol>
-          </div>
+                  container.textContent=&quot;&quot;；再调用 core mount
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M415 340 V385"
+                  marker-end="url(#counter-mount-branches-arrow)"
+                />
+                <g transform="translate(0,110)">
+                  <polygon
+                    class="eng-decision"
+                    points="250,330 415,275 580,330 415,385"
+                  />
+                  <text
+                    class="eng-small"
+                    x="415"
+                    y="324.5"
+                    text-anchor="middle"
+                  >
+                    这个 app 已 mount？
+                  </text>
+                  <text
+                    class="eng-small"
+                    x="415"
+                    y="345.5"
+                    text-anchor="middle"
+                  >
+                    core mount 的 isMounted
+                  </text>
+                  <path
+                    class="eng-arrow"
+                    d="M580 330 H670"
+                    marker-end="url(#counter-mount-branches-arrow)"
+                  />
+                  <text class="eng-small" x="625" y="315" text-anchor="middle">
+                    是
+                  </text>
+                  <rect
+                    class="eng-note"
+                    x="670"
+                    y="295"
+                    width="225"
+                    height="70"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-heading"
+                    x="782.5"
+                    y="323.5"
+                    text-anchor="middle"
+                  >
+                    跳过重复挂载
+                  </text>
+                  <text
+                    class="eng-small"
+                    x="782.5"
+                    y="346.5"
+                    text-anchor="middle"
+                  >
+                    开发态发出警告
+                  </text>
+                  <path
+                    class="eng-arrow"
+                    d="M415 385 V415"
+                    marker-end="url(#counter-mount-branches-arrow)"
+                  />
+                  <text class="eng-small" x="438" y="409" text-anchor="middle">
+                    否
+                  </text>
+                  <rect
+                    class="eng-node"
+                    x="190"
+                    y="415"
+                    width="450"
+                    height="65"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-heading"
+                    x="415.0"
+                    y="441.0"
+                    text-anchor="middle"
+                  >
+                    创建根 VNode → render → patch
+                  </text>
+                  <text
+                    class="eng-small"
+                    x="415.0"
+                    y="464.0"
+                    text-anchor="middle"
+                  >
+                    首次旧树为 null；COMPONENT 分支
+                  </text>
+                  <path
+                    class="eng-arrow"
+                    d="M415 480 V505"
+                    marker-end="url(#counter-mount-branches-arrow)"
+                  />
+                  <rect
+                    class="eng-node"
+                    x="190"
+                    y="505"
+                    width="450"
+                    height="65"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-heading"
+                    x="415.0"
+                    y="531.0"
+                    text-anchor="middle"
+                  >
+                    mountComponent → setupComponent
+                  </text>
+                  <text
+                    class="eng-small"
+                    x="415.0"
+                    y="554.0"
+                    text-anchor="middle"
+                  >
+                    创建 instance；Counter setup 返回 render
+                  </text>
+                  <path
+                    class="eng-arrow"
+                    d="M415 570 V590"
+                    marker-end="url(#counter-mount-branches-arrow)"
+                  />
+                  <polygon
+                    class="eng-decision"
+                    points="250,645 415,590 580,645 415,700"
+                  />
+                  <text
+                    class="eng-small"
+                    x="415"
+                    y="639.5"
+                    text-anchor="middle"
+                  >
+                    instance.asyncDep 存在？
+                  </text>
+                  <text
+                    class="eng-small"
+                    x="415"
+                    y="660.5"
+                    text-anchor="middle"
+                  >
+                    setup 是否返回 Promise
+                  </text>
+                  <path
+                    class="eng-arrow"
+                    d="M580 645 H670"
+                    marker-end="url(#counter-mount-branches-arrow)"
+                  />
+                  <text class="eng-small" x="625" y="630" text-anchor="middle">
+                    是
+                  </text>
+                  <rect
+                    class="eng-note"
+                    x="670"
+                    y="593"
+                    width="225"
+                    height="105"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-heading"
+                    x="782.5"
+                    y="616.0"
+                    text-anchor="middle"
+                  >
+                    等待异步 setup
+                  </text>
+                  <text
+                    class="eng-small"
+                    x="782.5"
+                    y="639.0"
+                    text-anchor="middle"
+                  >
+                    有父 Suspense：登记依赖；
+                  </text>
+                  <text
+                    class="eng-small"
+                    x="782.5"
+                    y="662.0"
+                    text-anchor="middle"
+                  >
+                    无初始 el：挂注释占位；
+                  </text>
+                  <text
+                    class="eng-small"
+                    x="782.5"
+                    y="685.0"
+                    text-anchor="middle"
+                  >
+                    本次 mountComponent 返回
+                  </text>
+                  <path
+                    class="eng-arrow"
+                    d="M415 700 V730"
+                    marker-end="url(#counter-mount-branches-arrow)"
+                  />
+                  <text class="eng-small" x="438" y="724" text-anchor="middle">
+                    否
+                  </text>
+                  <rect
+                    class="eng-node"
+                    x="190"
+                    y="730"
+                    width="450"
+                    height="65"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-heading"
+                    x="415.0"
+                    y="756.0"
+                    text-anchor="middle"
+                  >
+                    setupRenderEffect → update()
+                  </text>
+                  <text
+                    class="eng-small"
+                    x="415.0"
+                    y="779.0"
+                    text-anchor="middle"
+                  >
+                    首次直接 effect.run()；不经过 queueJob
+                  </text>
+                  <path
+                    class="eng-arrow"
+                    d="M415 795 V825"
+                    marker-end="url(#counter-mount-branches-arrow)"
+                  />
+                  <rect
+                    class="eng-node"
+                    x="190"
+                    y="825"
+                    width="450"
+                    height="80"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-heading"
+                    x="415.0"
+                    y="847.0"
+                    text-anchor="middle"
+                  >
+                    renderComponentRoot → patch(null, subTree)
+                  </text>
+                  <text
+                    class="eng-small"
+                    x="415.0"
+                    y="870.0"
+                    text-anchor="middle"
+                  >
+                    读取 count=0 并收集 render 依赖；
+                  </text>
+                  <text
+                    class="eng-small"
+                    x="415.0"
+                    y="893.0"
+                    text-anchor="middle"
+                  >
+                    host 创建 button、文本/属性/事件，插入容器
+                  </text>
+                  <path
+                    class="eng-arrow"
+                    d="M415 905 V935"
+                    marker-end="url(#counter-mount-branches-arrow)"
+                  />
+                  <rect
+                    class="eng-state"
+                    x="190"
+                    y="935"
+                    width="450"
+                    height="80"
+                    rx="10"
+                  />
+                  <text
+                    class="eng-heading"
+                    x="415.0"
+                    y="957.0"
+                    text-anchor="middle"
+                  >
+                    instance.isMounted=true；根 render 收尾
+                  </text>
+                  <text
+                    class="eng-small"
+                    x="415.0"
+                    y="980.0"
+                    text-anchor="middle"
+                  >
+                    container._vnode 保存根 VNode；同步 flush post；
+                  </text>
+                  <text
+                    class="eng-small"
+                    x="415.0"
+                    y="1003.0"
+                    text-anchor="middle"
+                  >
+                    core mount 设 app 的 isMounted=true 后返回
+                  </text>
+                </g>
+              </svg>
+            </div>
+            <figcaption>
+              本例 Counter 的 setup 同步返回 render，所以沿“有容器、尚未
+              mount、无 asyncDep”路径完成首挂。异步 setup 有父 Suspense
+              时由边界登记和恢复，见<a
+                href="component.html#component-counter-flow"
+                >组件生命线</a
+              >。图中的容器是 Demo 的 Element
+              <code>#app</code>；包装层先清空它，core 随后才判断重复
+              mount。源码对应 <code>runtime-dom/index.ts · createApp</code> 与
+              <code>renderer.ts · mountComponent/setupRenderEffect/render</code
+              >。
+            </figcaption>
+          </figure>
+          <figure class="eng-diagram" id="counter-click-sequence">
+            <div
+              class="eng-scroll"
+              tabindex="0"
+              aria-label="Counter 一次点击的跨角色时序图，可横向滚动"
+            >
+              <svg
+                class="eng-svg"
+                viewBox="0 0 1030 1000"
+                style="--diagram-width: 1030px"
+                role="img"
+                aria-labelledby="counter-click-sequence-title counter-click-sequence-desc"
+              >
+                <title id="counter-click-sequence-title">
+                  Counter 一次点击的跨角色时序图
+                </title>
+                <desc id="counter-click-sequence-desc">
+                  从事件处理器同步写入 Ref，到调度微任务运行 render effect
+                  并复用同一个 button，最后 updated 和 nextTick 观察已提交的
+                  DOM。虚线表示 flush Promise 完成后的 await 恢复。
+                </desc>
+                <defs>
+                  <marker
+                    id="counter-click-sequence-arrow"
+                    viewBox="0 0 10 10"
+                    refX="9"
+                    refY="5"
+                    markerWidth="7"
+                    markerHeight="7"
+                    orient="auto-start-reverse"
+                  >
+                    <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--brand)" />
+                  </marker>
+                </defs>
+                <text class="eng-heading" x="25" y="30" text-anchor="start">
+                  同一次 click：响应式通知同步，组件提交进入微任务
+                </text>
+                <rect
+                  class="eng-lane"
+                  x="15"
+                  y="55"
+                  width="190"
+                  height="55"
+                  rx="10"
+                />
+                <text
+                  class="eng-heading"
+                  x="110.0"
+                  y="87.5"
+                  text-anchor="middle"
+                >
+                  事件 / handler
+                </text>
+                <line class="eng-divider" x1="110" y1="110" x2="110" y2="885" />
+                <rect
+                  class="eng-lane"
+                  x="215"
+                  y="55"
+                  width="190"
+                  height="55"
+                  rx="10"
+                />
+                <text
+                  class="eng-heading"
+                  x="310.0"
+                  y="87.5"
+                  text-anchor="middle"
+                >
+                  Ref / render effect
+                </text>
+                <line class="eng-divider" x1="310" y1="110" x2="310" y2="885" />
+                <rect
+                  class="eng-lane"
+                  x="415"
+                  y="55"
+                  width="190"
+                  height="55"
+                  rx="10"
+                />
+                <text
+                  class="eng-heading"
+                  x="510.0"
+                  y="87.5"
+                  text-anchor="middle"
+                >
+                  Scheduler
+                </text>
+                <line class="eng-divider" x1="510" y1="110" x2="510" y2="885" />
+                <rect
+                  class="eng-lane"
+                  x="615"
+                  y="55"
+                  width="190"
+                  height="55"
+                  rx="10"
+                />
+                <text
+                  class="eng-heading"
+                  x="710.0"
+                  y="87.5"
+                  text-anchor="middle"
+                >
+                  Renderer / DOM
+                </text>
+                <line class="eng-divider" x1="710" y1="110" x2="710" y2="885" />
+                <rect
+                  class="eng-lane"
+                  x="815"
+                  y="55"
+                  width="190"
+                  height="55"
+                  rx="10"
+                />
+                <text
+                  class="eng-heading"
+                  x="910.0"
+                  y="87.5"
+                  text-anchor="middle"
+                >
+                  post / nextTick
+                </text>
+                <line class="eng-divider" x1="910" y1="110" x2="910" y2="885" />
+                <path
+                  class="eng-arrow"
+                  d="M110 150 H310"
+                  marker-end="url(#counter-click-sequence-arrow)"
+                />
+                <text class="eng-small" x="210" y="135" text-anchor="middle">
+                  invoker → increment → count.value++
+                </text>
+                <rect
+                  class="eng-note"
+                  x="205"
+                  y="170"
+                  width="210"
+                  height="70"
+                  rx="10"
+                />
+                <text
+                  class="eng-heading"
+                  x="310.0"
+                  y="198.5"
+                  text-anchor="middle"
+                >
+                  count: 0 → 1
+                </text>
+                <text
+                  class="eng-small"
+                  x="310.0"
+                  y="221.5"
+                  text-anchor="middle"
+                >
+                  Dep.notify → batch/endBatch
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M310 270 H510"
+                  marker-end="url(#counter-click-sequence-arrow)"
+                />
+                <text class="eng-small" x="410" y="255" text-anchor="middle">
+                  effect.scheduler → queueJob(job)
+                </text>
+                <rect
+                  class="eng-note"
+                  x="415"
+                  y="290"
+                  width="190"
+                  height="65"
+                  rx="10"
+                />
+                <text
+                  class="eng-heading"
+                  x="510.0"
+                  y="316.0"
+                  text-anchor="middle"
+                >
+                  queue=[job]；QUEUED
+                </text>
+                <text
+                  class="eng-small"
+                  x="510.0"
+                  y="339.0"
+                  text-anchor="middle"
+                >
+                  Promise.then(flushJobs)
+                </text>
+                <line class="eng-divider" x1="20" y1="390" x2="1010" y2="390" />
+                <text class="eng-small" x="25" y="380" text-anchor="start">
+                  同步栈结束：count=1；旧 subTree=0；DOM=0；handler 的 await
+                  尚未恢复
+                </text>
+                <rect
+                  class="eng-note"
+                  x="395"
+                  y="420"
+                  width="230"
+                  height="80"
+                  rx="10"
+                />
+                <text
+                  class="eng-heading"
+                  x="510.0"
+                  y="442.0"
+                  text-anchor="middle"
+                >
+                  微任务 flushJobs
+                </text>
+                <text
+                  class="eng-small"
+                  x="510.0"
+                  y="465.0"
+                  text-anchor="middle"
+                >
+                  DISPOSED：跳过 job；
+                </text>
+                <text
+                  class="eng-small"
+                  x="510.0"
+                  y="488.0"
+                  text-anchor="middle"
+                >
+                  否则调用 job，runIfDirty 检查 dirty
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M510 525 H710"
+                  marker-end="url(#counter-click-sequence-arrow)"
+                />
+                <text class="eng-small" x="610" y="512" text-anchor="middle">
+                  dirty 才 effect.run()
+                </text>
+                <rect
+                  class="eng-node"
+                  x="600"
+                  y="550"
+                  width="220"
+                  height="85"
+                  rx="10"
+                />
+                <text
+                  class="eng-heading"
+                  x="710.0"
+                  y="574.5"
+                  text-anchor="middle"
+                >
+                  render → patch(旧树, 新树)
+                </text>
+                <text
+                  class="eng-small"
+                  x="710.0"
+                  y="597.5"
+                  text-anchor="middle"
+                >
+                  subTree: 0 → 1；同 type/key，
+                </text>
+                <text
+                  class="eng-small"
+                  x="710.0"
+                  y="620.5"
+                  text-anchor="middle"
+                >
+                  复用 button，只写文本与 aria
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M710 660 H910"
+                  marker-end="url(#counter-click-sequence-arrow)"
+                />
+                <text class="eng-small" x="810" y="647" text-anchor="middle">
+                  queuePostRenderEffect(updated)
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M510 710 H910"
+                  marker-end="url(#counter-click-sequence-arrow)"
+                />
+                <text class="eng-small" x="710" y="697" text-anchor="middle">
+                  主队列 finally 清理 → flushPostFlushCbs
+                </text>
+                <rect
+                  class="eng-state"
+                  x="810"
+                  y="730"
+                  width="200"
+                  height="60"
+                  rx="10"
+                />
+                <text
+                  class="eng-heading"
+                  x="910.0"
+                  y="753.5"
+                  text-anchor="middle"
+                >
+                  onUpdated
+                </text>
+                <text
+                  class="eng-small"
+                  x="910.0"
+                  y="776.5"
+                  text-anchor="middle"
+                >
+                  读取 DOM=1
+                </text>
+                <path
+                  class="eng-async"
+                  d="M910 830 H110"
+                  marker-end="url(#counter-click-sequence-arrow)"
+                />
+                <text class="eng-small" x="510" y="817" text-anchor="middle">
+                  post 正常完成且新增任务排空 → flush Promise 兑现 → nextTick
+                  读取 DOM=1
+                </text>
+                <rect
+                  class="eng-note"
+                  x="35"
+                  y="900"
+                  width="955"
+                  height="75"
+                  rx="10"
+                />
+                <text
+                  class="eng-heading"
+                  x="512.5"
+                  y="931.0"
+                  text-anchor="middle"
+                >
+                  关键退出：相同 Ref 值不通知；已 QUEUED 不重复入队；!dirty 不
+                  render
+                </text>
+                <text
+                  class="eng-small"
+                  x="512.5"
+                  y="954.0"
+                  text-anchor="middle"
+                >
+                  主 job 报错仍进入 finally；post
+                  回调若直接抛错，会中断其后复位（见第十三步）。
+                </text>
+              </svg>
+            </div>
+            <figcaption>
+              同一条 Vite Demo 注册了 <code>onUpdated</code>，因此图中 post
+              回调确实执行。横线分隔 click 同步栈与微任务；虚线表示 Promise
+              完成后的恢复。<code>nextTick</code>
+              观察提交结果，浏览器绘制仍由浏览器安排。源码与退出路径见下文第七至十三步。
+            </figcaption>
+          </figure>
 
           <h3>图中三条时间边界</h3>
           <ol>
@@ -705,13 +1376,15 @@ function ensureHydrationRenderer() {
           <p>
             这里缓存的是<strong>包含算法与宿主操作的 renderer</strong>，不是
             app。Demo 的 <code>createApp(App)</code> 每调用一次，后面的
-            <code>createAppAPI</code> 仍会创建新的 app context、插件集合和根实例。
+            <code>createAppAPI</code> 仍会创建新的 app
+            context、插件集合和根实例。
           </p>
 
           <h3>6.2 runtime-core 把宿主操作关进 renderer 闭包</h3>
           <p>
             普通与水合入口最终都进入 <code>baseCreateRenderer</code>。区别只在于
-            是否传入 <code>createHydrationFunctions</code>；patch、组件处理、移动和
+            是否传入
+            <code>createHydrationFunctions</code>；patch、组件处理、移动和
             卸载仍共享同一套闭包。
           </p>
           <pre
@@ -796,9 +1469,11 @@ export function createHydrationRenderer(
   return function createApp(rootComponent, rootProps = null) {</code></pre>
           <p>
             因而 Demo 的真实入口不是“runtime-dom 写了另一套应用系统”，而是
-            <code>runtime-dom.createApp → ensureRenderer().createApp →
-            createAppAPI(render, hydrate)</code>。runtime-dom 只补浏览器入口行为，
-            app 状态和根 VNode 提交仍由 runtime-core 管理。
+            <code
+              >runtime-dom.createApp → ensureRenderer().createApp →
+              createAppAPI(render, hydrate)</code
+            >。runtime-dom 只补浏览器入口行为， app 状态和根 VNode 提交仍由
+            runtime-core 管理。
           </p>
 
           <h3>6.3 同一个 Counter 怎样跨过两个包</h3>
@@ -807,7 +1482,9 @@ export function createHydrationRenderer(
             role="img"
             aria-label="Counter 从 runtime-dom createApp 到 runtime-core renderer，再回到 DOM 宿主操作的跨包调用顺序"
           >
-            <div class="diagram-title">CROSS-PACKAGE SEQUENCE · CREATE → MOUNT → COMMIT</div>
+            <div class="diagram-title">
+              CROSS-PACKAGE SEQUENCE · CREATE → MOUNT → COMMIT
+            </div>
             <div class="flow">
               <div class="flow-step">
                 <span class="flow-index">1</span>
@@ -829,7 +1506,9 @@ export function createHydrationRenderer(
                 <span class="flow-index">3</span>
                 <span class="flow-copy"
                   ><strong>baseCreateRenderer(options)</strong
-                  ><small>捕获 host*，建立 patch / component / unmount 闭包</small></span
+                  ><small
+                    >捕获 host*，建立 patch / component / unmount 闭包</small
+                  ></span
                 ><span class="flow-file">runtime-core/renderer.ts</span>
               </div>
               <div class="flow-join"></div>
@@ -845,7 +1524,9 @@ export function createHydrationRenderer(
                 <span class="flow-index">5</span>
                 <span class="flow-copy"
                   ><strong>app.mount('#app')</strong
-                  ><small>DOM 包装解析并清空容器，再调用 core mount</small></span
+                  ><small
+                    >DOM 包装解析并清空容器，再调用 core mount</small
+                  ></span
                 ><span class="flow-file">runtime-dom/index.ts</span>
               </div>
               <div class="flow-join"></div>
@@ -853,14 +1534,18 @@ export function createHydrationRenderer(
                 <span class="flow-index">6</span>
                 <span class="flow-copy"
                   ><strong>根 VNode → render → patch</strong
-                  ><small>processComponent 创建实例，setupRenderEffect 首次直接 update</small></span
+                  ><small
+                    >processComponent 创建实例，setupRenderEffect 首次直接
+                    update</small
+                  ></span
                 ><span class="flow-file">runtime-core</span>
               </div>
               <div class="flow-join"></div>
               <div class="flow-step">
                 <span class="flow-index">7</span>
                 <span class="flow-copy"
-                  ><strong>hostCreateElement / hostPatchProp / hostInsert</strong
+                  ><strong
+                    >hostCreateElement / hostPatchProp / hostInsert</strong
                   ><small>闭包回调 runtime-dom 注入的浏览器操作</small></span
                 ><span class="flow-file">runtime-core → runtime-dom</span>
               </div>
@@ -869,64 +1554,441 @@ export function createHydrationRenderer(
                 <span class="flow-index">8</span>
                 <span class="flow-copy"
                   ><strong>button 进入 #app</strong
-                  ><small>根 render 冲刷 mounted，app.mount 返回组件代理</small></span
+                  ><small
+                    >根 render 冲刷 mounted，app.mount 返回组件代理</small
+                  ></span
                 ><span class="flow-file">DOM + post flush</span>
               </div>
             </div>
           </div>
 
           <h3>6.4 同一个 Counter 中，谁长期持有谁</h3>
-          <div
-            class="diagram ownership-diagram"
-            role="img"
-            aria-label="Counter 从 runtime-dom 模块缓存到 renderer 闭包、app、组件实例、VNode 和 DOM 的对象所有权与临时引用"
-          >
-            <div class="diagram-title">OWNERSHIP · LONG-LIVED VS TEMPORARY</div>
-            <div class="layer-flow">
-              <div class="layer-node">
-                <strong>runtime-dom 模块</strong
-                ><small>长期缓存 renderer 与 enabledHydration</small>
-              </div>
-              <div class="diagram-arrow">→ 缓存</div>
-              <div class="layer-node">
-                <strong>renderer 闭包</strong
-                ><small>长期捕获 host*，保存 render/patch/unmount 算法</small>
-              </div>
-              <div class="diagram-arrow">→ 创建</div>
-              <div class="layer-node emphasis">
-                <strong>app + 根容器</strong
-                ><small>app 持有 context；容器记录 __vue_app__ 与 _vnode</small>
-              </div>
-              <div class="diagram-arrow">→ mount</div>
-              <div class="layer-node">
-                <strong>组件实例</strong
-                ><small>持有 scope、effect、job、subTree 与 setupState</small>
-              </div>
-              <div class="diagram-arrow">→ 提交</div>
-              <div class="layer-node">
-                <strong>VNode + button</strong
-                ><small>VNode.el 指向 DOM；元素保存事件 invoker</small>
-              </div>
+          <figure class="eng-diagram" id="counter-ownership">
+            <div
+              class="eng-scroll"
+              tabindex="0"
+              aria-label="Counter 从模块缓存到 DOM 的对象引用图，可横向滚动"
+            >
+              <svg
+                class="eng-svg"
+                viewBox="0 0 855 890"
+                style="--diagram-width: 855px"
+                role="img"
+                aria-labelledby="counter-ownership-title counter-ownership-desc"
+              >
+                <title id="counter-ownership-title">
+                  Counter 从模块缓存到 DOM 的对象引用图
+                </title>
+                <desc id="counter-ownership-desc">
+                  runtime-dom 缓存 renderer，renderer 工厂创建 app。app
+                  引用根容器，容器引用根组件 VNode，根 VNode
+                  引用组件实例。实例持有 effect 和 subTree，子树 el 指向同一个
+                  button。队列只暂时持有组件 job。
+                </desc>
+                <defs>
+                  <marker
+                    id="counter-ownership-arrow"
+                    viewBox="0 0 10 10"
+                    refX="9"
+                    refY="5"
+                    markerWidth="7"
+                    markerHeight="7"
+                    orient="auto-start-reverse"
+                  >
+                    <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--brand)" />
+                  </marker>
+                </defs>
+                <text class="eng-heading" x="25" y="30" text-anchor="start">
+                  挂载后的引用关系：实线持有引用，虚线表示工厂创建或短期入队
+                </text>
+                <rect
+                  class="eng-node"
+                  x="25"
+                  y="55"
+                  width="235"
+                  height="85"
+                  rx="10"
+                />
+                <text
+                  class="eng-heading"
+                  x="142.5"
+                  y="91.0"
+                  text-anchor="middle"
+                >
+                  runtime-dom 模块
+                </text>
+                <text
+                  class="eng-small"
+                  x="142.5"
+                  y="114.0"
+                  text-anchor="middle"
+                >
+                  renderer 缓存；rendererOptions
+                </text>
+                <rect
+                  class="eng-node"
+                  x="320"
+                  y="55"
+                  width="235"
+                  height="85"
+                  rx="10"
+                />
+                <text
+                  class="eng-heading"
+                  x="437.5"
+                  y="91.0"
+                  text-anchor="middle"
+                >
+                  renderer 闭包
+                </text>
+                <text
+                  class="eng-small"
+                  x="437.5"
+                  y="114.0"
+                  text-anchor="middle"
+                >
+                  捕获 host*；render / createApp
+                </text>
+                <rect
+                  class="eng-node"
+                  x="615"
+                  y="55"
+                  width="215"
+                  height="85"
+                  rx="10"
+                />
+                <text
+                  class="eng-heading"
+                  x="722.5"
+                  y="91.0"
+                  text-anchor="middle"
+                >
+                  独立 app
+                </text>
+                <text
+                  class="eng-small"
+                  x="722.5"
+                  y="114.0"
+                  text-anchor="middle"
+                >
+                  _context；_container
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M260 98 H320"
+                  marker-end="url(#counter-ownership-arrow)"
+                />
+                <text class="eng-small" x="290" y="85" text-anchor="middle">
+                  缓存
+                </text>
+                <path
+                  class="eng-async"
+                  d="M555 98 H615"
+                  marker-end="url(#counter-ownership-arrow)"
+                />
+                <text class="eng-small" x="585" y="85" text-anchor="middle">
+                  创建
+                </text>
+                <rect
+                  class="eng-node"
+                  x="25"
+                  y="270"
+                  width="235"
+                  height="85"
+                  rx="10"
+                />
+                <text
+                  class="eng-heading"
+                  x="142.5"
+                  y="306.0"
+                  text-anchor="middle"
+                >
+                  根容器 #app
+                </text>
+                <text
+                  class="eng-small"
+                  x="142.5"
+                  y="329.0"
+                  text-anchor="middle"
+                >
+                  _vnode；__vue_app__
+                </text>
+                <rect
+                  class="eng-node"
+                  x="320"
+                  y="270"
+                  width="235"
+                  height="85"
+                  rx="10"
+                />
+                <text
+                  class="eng-heading"
+                  x="437.5"
+                  y="306.0"
+                  text-anchor="middle"
+                >
+                  根组件 VNode
+                </text>
+                <text
+                  class="eng-small"
+                  x="437.5"
+                  y="329.0"
+                  text-anchor="middle"
+                >
+                  component；appContext
+                </text>
+                <rect
+                  class="eng-node"
+                  x="615"
+                  y="270"
+                  width="215"
+                  height="85"
+                  rx="10"
+                />
+                <text
+                  class="eng-heading"
+                  x="722.5"
+                  y="306.0"
+                  text-anchor="middle"
+                >
+                  组件 instance
+                </text>
+                <text
+                  class="eng-small"
+                  x="722.5"
+                  y="329.0"
+                  text-anchor="middle"
+                >
+                  vnode；scope；effect；subTree
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M722 140 V205 H143 V270"
+                  marker-end="url(#counter-ownership-arrow)"
+                />
+                <text class="eng-small" x="435" y="193" text-anchor="middle">
+                  app._container
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M260 312 H320"
+                  marker-end="url(#counter-ownership-arrow)"
+                />
+                <text class="eng-small" x="290" y="260" text-anchor="middle">
+                  _vnode
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M555 312 H615"
+                  marker-end="url(#counter-ownership-arrow)"
+                />
+                <text class="eng-small" x="585" y="260" text-anchor="middle">
+                  component
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M25 290 H12 V170 H800 V140"
+                  marker-end="url(#counter-ownership-arrow)"
+                />
+                <text class="eng-small" x="710" y="159" text-anchor="middle">
+                  __vue_app__
+                </text>
+                <rect
+                  class="eng-node"
+                  x="25"
+                  y="530"
+                  width="235"
+                  height="85"
+                  rx="10"
+                />
+                <text
+                  class="eng-heading"
+                  x="142.5"
+                  y="554.5"
+                  text-anchor="middle"
+                >
+                  ReactiveEffect
+                </text>
+                <text
+                  class="eng-small"
+                  x="142.5"
+                  y="577.5"
+                  text-anchor="middle"
+                >
+                  fn = componentUpdateFn
+                </text>
+                <text
+                  class="eng-small"
+                  x="142.5"
+                  y="600.5"
+                  text-anchor="middle"
+                >
+                  scheduler 捕获 instance.job
+                </text>
+                <rect
+                  class="eng-node"
+                  x="320"
+                  y="530"
+                  width="235"
+                  height="85"
+                  rx="10"
+                />
+                <text
+                  class="eng-heading"
+                  x="437.5"
+                  y="566.0"
+                  text-anchor="middle"
+                >
+                  button 子树 VNode
+                </text>
+                <text
+                  class="eng-small"
+                  x="437.5"
+                  y="589.0"
+                  text-anchor="middle"
+                >
+                  children；props；el
+                </text>
+                <rect
+                  class="eng-node"
+                  x="615"
+                  y="530"
+                  width="215"
+                  height="85"
+                  rx="10"
+                />
+                <text
+                  class="eng-heading"
+                  x="722.5"
+                  y="566.0"
+                  text-anchor="middle"
+                >
+                  同一个 DOM button
+                </text>
+                <text
+                  class="eng-small"
+                  x="722.5"
+                  y="589.0"
+                  text-anchor="middle"
+                >
+                  文字 / aria / [veiKey] invoker
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M615 335 H585 V450 H143 V530"
+                  marker-end="url(#counter-ownership-arrow)"
+                />
+                <text class="eng-small" x="360" y="438" text-anchor="middle">
+                  instance.effect；scope 记录此 effect
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M722 355 V475 H438 V530"
+                  marker-end="url(#counter-ownership-arrow)"
+                />
+                <text class="eng-small" x="695" y="490" text-anchor="middle">
+                  subTree
+                </text>
+                <path
+                  class="eng-arrow"
+                  d="M555 572 H615"
+                  marker-end="url(#counter-ownership-arrow)"
+                />
+                <text class="eng-small" x="585" y="555" text-anchor="middle">
+                  el
+                </text>
+                <rect
+                  class="eng-note"
+                  x="25"
+                  y="760"
+                  width="235"
+                  height="85"
+                  rx="10"
+                />
+                <text
+                  class="eng-heading"
+                  x="142.5"
+                  y="784.5"
+                  text-anchor="middle"
+                >
+                  调度队列 queue
+                </text>
+                <text
+                  class="eng-small"
+                  x="142.5"
+                  y="807.5"
+                  text-anchor="middle"
+                >
+                  等待 flush 时保存 instance.job
+                </text>
+                <text
+                  class="eng-small"
+                  x="142.5"
+                  y="830.5"
+                  text-anchor="middle"
+                >
+                  job = effect.runIfDirty.bind(effect)
+                </text>
+                <path
+                  class="eng-async"
+                  d="M143 615 V760"
+                  marker-end="url(#counter-ownership-arrow)"
+                />
+                <text class="eng-small" x="290" y="690" text-anchor="middle">
+                  scheduler → queueJob(job)
+                </text>
+                <rect
+                  class="eng-note"
+                  x="320"
+                  y="745"
+                  width="510"
+                  height="115"
+                  rx="10"
+                />
+                <text
+                  class="eng-heading"
+                  x="575.0"
+                  y="773.0"
+                  text-anchor="middle"
+                >
+                  点击后的变化落在对象内部与引用槽
+                </text>
+                <text
+                  class="eng-small"
+                  x="575.0"
+                  y="796.0"
+                  text-anchor="middle"
+                >
+                  app / instance / effect / button 保留；
+                </text>
+                <text
+                  class="eng-small"
+                  x="575.0"
+                  y="819.0"
+                  text-anchor="middle"
+                >
+                  新 button VNode 替换 instance.subTree，el 仍指同一个 button。
+                </text>
+                <text
+                  class="eng-small"
+                  x="575.0"
+                  y="842.0"
+                  text-anchor="middle"
+                >
+                  queue 是临时引用：flush 时清队列，卸载时 job 标 DISPOSED。
+                </text>
+              </svg>
             </div>
-            <div class="ownership-branches">
-              <div>
-                <strong>响应式长期边</strong><br /><code>Ref.dep ↔ Link ↔ effect</code
-                >；重新 render 时复用并校验版本。
-              </div>
-              <div>
-                <strong>调度器临时引用</strong><br />队列只在等待 flush
-                时持有同一个 <code>instance.job</code>，执行后清
-                <code>QUEUED</code>。
-              </div>
-              <div>
-                <strong>DOM 私有槽</strong><br />button 的 <code>_vei</code>
-                保存稳定 invoker；节点删除且引用释放后才可回收。
-              </div>
-            </div>
-          </div>
+            <figcaption>
+              连线标的是源码字段与捕获关系。app 与容器有反向引用；组件 effect
+              与宿主 DOM 分别由 scope 停止和 renderer 卸载。响应式订阅的
+              <code>Ref.dep ↔ Link ↔ effect</code>
+              关系见上文对象表；本图聚焦应用到组件和宿主的持有链。
+            </figcaption>
+          </figure>
           <p>
-            点击期间不会新建 app、renderer、组件实例或 button。变化的是
-            Ref 的值、Dep 版本、job 队列状态和 <code>instance.subTree</code>。
+            点击期间不会新建 app、renderer、组件实例或 button。变化的是 Ref
+            的值、Dep 版本、job 队列状态和 <code>instance.subTree</code>。
             卸载时则反向停止 effect、使 job 失效，并清掉容器到应用与根 VNode
             的引用。
           </p>
@@ -977,7 +2039,7 @@ export const createApp = ((...args) =&gt; {
       }
     }
 
-    // 客户端 mount 不复用旧内容，先清空；ShadowRoot 无 textContent 特判需要。
+    // 只清空 Element；保留 ShadowRoot 已有节点，包括 Custom Element 在 mount 前注入的 style。
     if (container.nodeType === 1) {
       container.textContent = ''
     }
@@ -994,9 +2056,8 @@ export const createApp = ((...args) =&gt; {
           <p>
             随后
             <code>packages/runtime-core/src/apiCreateApp.ts · mount</code>
-            创建根 VNode、注入 appContext，再调用
-            renderer。下面只省略 namespace、HMR、容器标记与
-            devtools 细节：
+            创建根 VNode、注入 appContext，再调用 renderer。下面只省略
+            namespace、HMR、容器标记与 devtools 细节：
           </p>
           <pre><code>const vnode = app._ceVNode || createVNode(rootComponent, rootProps)
 vnode.appContext = context
@@ -1209,8 +2270,8 @@ if (nextValue &amp;&amp; existingInvoker) {
             ><code>packages/reactivity/src/ref.ts · RefImpl.value setter</code
             >。<strong>输入：</strong>新值 1。<strong>返回：</strong>setter
             无返回值。<strong>状态：</strong
-            ><code>_rawValue/_value: 0 → 1</code>；相同值则提前结束。getter
-            与 setter 的关键执行段如下：
+            ><code>_rawValue/_value: 0 → 1</code>；相同值则提前结束。getter 与
+            setter 的关键执行段如下：
           </p>
           <pre><code>get value() {
   if (__DEV__) {
@@ -1417,8 +2478,9 @@ function queueFlush() {
           <p>
             <code>flushJobs</code> 逐项调用 job；组件 job 正是
             <code>effect.runIfDirty.bind(effect)</code>，所以此时才执行
-            <code>isDirty → effect.run → componentUpdateFn</code>。下面只省略开发 check
-            的初始化，主 try/finally 与异常清理完整保留：
+            <code>isDirty → effect.run → componentUpdateFn</code
+            >。下面只省略开发 check 的初始化，主 try/finally
+            与异常清理完整保留：
           </p>
           <pre><code>function flushJobs(seen?: CountMap) {
   // ... 省略 __DEV__ seen 与 check 初始化
@@ -1464,9 +2526,12 @@ function queueFlush() {
 }</code></pre>
           <p>
             <code>callWithErrorHandling</code>
-            把组件更新异常送入组件错误管道；无论是否抛错，
-            <code>finally</code> 都清剩余 QUEUED、清主队列、刷 post 队列。post
-            callback 若又入队，函数递归收敛后才让本轮 Promise 完成。
+            把组件更新异常送入组件错误管道；主 job 即使继续外抛，
+            <code>finally</code> 仍清剩余 QUEUED、清主队列并调用 post flush。
+            post flush 正常返回后先释放
+            currentFlushPromise，再递归处理新增任务；原刷新 Promise
+            在递归返回后完成。裸 post 回调若继续外抛，会中断 post 状态与 Promise
+            清理。
           </p>
         </section>
 
@@ -1522,8 +2587,9 @@ if (u) {
             或生产默认处理使错误管道正常返回，随后才把结果降级为 Comment
             VNode；开发环境未处理错误可由
             <code>handleError</code> 继续抛出，此时不会执行后面的 Comment 赋值。
-            下面对应 <code>componentRenderUtils.ts · renderComponentRoot</code>，
-            只省略 dev thisProxy 构造与函数式组件分支。
+            下面对应
+            <code>componentRenderUtils.ts · renderComponentRoot</code>， 只省略
+            dev thisProxy 构造与函数式组件分支。
           </p>
           <pre><code>try {
   if (vnode.shapeFlag &amp; ShapeFlags.STATEFUL_COMPONENT) {
@@ -1560,8 +2626,8 @@ if (u) {
             不是同一对象，但 type 与 key 相同，因此不卸载；<code
               >shapeFlag &amp; ELEMENT</code
             >，进入 <code>processElement → patchElement</code>。下面对应
-            <code>renderer.ts · patch</code>；switch
-            中未走分支用 <code>// ...</code> 标出。
+            <code>renderer.ts · patch</code>；switch 中未走分支用
+            <code>// ...</code> 标出。
           </p>
           <pre><code>if (n1 === n2) {
   return
@@ -1722,9 +2788,9 @@ if (patchFlag &gt; 0) {
           <p>
             Demo 在控制台执行 <code>unmountCounter()</code>，调用的是同一个
             <code>app</code>。卸载不是简单执行
-            <code>container.innerHTML = ''</code>：Vue 要先让组件的响应式工作停下来，
-            使已排队 job 失效，递归清理 VNode 与内置组件协议，最后才删除宿主节点和
-            容器标记。
+            <code>container.innerHTML = ''</code>：Vue
+            要先让组件的响应式工作停下来， 使已排队 job 失效，递归清理 VNode
+            与内置组件协议，最后才删除宿主节点和 容器标记。
           </p>
 
           <h3>12.1 app 先清应用级资源，再把 null 交给根 render</h3>
@@ -1732,7 +2798,8 @@ if (patchFlag &gt; 0) {
             data-source-file="vue/packages/runtime-core/src/apiCreateApp.ts"
           ><code>      unmount() {
         if (isMounted) {
-          // 插件资源应先清理，再卸载组件树；错误走统一处理，单个清理失败不阻止后续项。
+          // 先调用 App 清理函数，再卸载组件树。同步错误若经错误管道重新抛出，会中止
+          // 后续清理与卸载；返回 Promise 的清理函数不会被等待，其 rejection 另行报告。
           callWithAsyncErrorHandling(
             pluginCleanupFns,
             app._instance,
@@ -1785,8 +2852,8 @@ if (patchFlag &gt; 0) {
   }</code></pre>
           <p>
             传入的 <code>vnode</code> 是 null，旧树则来自
-            <code>container._vnode</code>。递归卸载返回后，根 render
-            把 <code>container._vnode</code> 设为 null，并同步冲刷本次卸载登记的
+            <code>container._vnode</code>。递归卸载返回后，根 render 把
+            <code>container._vnode</code> 设为 null，并同步冲刷本次卸载登记的
             post hooks。
           </p>
 
@@ -1851,12 +2918,13 @@ if (patchFlag &gt; 0) {
   }</code></pre>
           <p>
             顺序决定了 Demo 的日志：<code>beforeUnmount</code> 在
-            <code>scope.stop()</code> 和子树删除前同步执行，所以还能读到 button；
-            <code>unmounted</code> 被放进 post 队列，在宿主节点删除后才执行。
+            <code>scope.stop()</code> 和子树删除前同步执行，所以还能读到
+            button； <code>unmounted</code> 被放进 post
+            队列，在宿主节点删除后才执行。
             <code>DISPOSED</code> 则挡住“组件已死、旧 job 稍后又出队”的情况。
           </p>
 
-          <h3>12.4 普通元素立即 hostRemove，Transition 可以推迟</h3>
+          <h3>12.4 整树卸载直接移除；局部离场才可能等待动画</h3>
           <pre
             data-source-file="vue/packages/runtime-core/src/renderer.ts"
           ><code>    const performRemove = () =&gt; {
@@ -1883,87 +2951,107 @@ if (patchFlag &gt; 0) {
     }
   }</code></pre>
           <p>
-            Counter 的 button 没有 transition，直接调用 runtime-dom
-            注入的 <code>nodeOps.remove</code>。若元素带非 persisted Transition，
-            <code>leave</code> 或 <code>delayLeave</code> 可以把真正的
-            <code>hostRemove</code> 推迟到动画完成。
+            Counter 的 button 没有 transition，直接调用 runtime-dom 注入的
+            <code>nodeOps.remove</code>。即使给它包上标准 <code>&lt;Transition&gt;</code>，
+            当 <code>app.unmount()</code> 连同 Transition 一起卸载时，也不会等待离场动画：
+            Transition 的 <code>beforeUnmount</code> 先将 <code>state.isUnmounting</code> 设为 true，
+            随后子树进入 <code>leave</code>，命中直接 <code>remove()</code> 的分支。
           </p>
+          <pre><code>// BaseTransition.ts · useTransitionState（摘录）
+onBeforeUnmount(() =&gt; {
+  state.isUnmounting = true
+})
 
-          <div
-            class="diagram teardown-diagram"
-            role="img"
-            aria-label="Counter 从 app.unmount 到组件 effect 停止、DOM 删除、post hooks 和容器标记清理的反向流程"
-          >
-            <div class="diagram-title">TEARDOWN · REVERSE THE MOUNT PATH</div>
-            <ol class="trace-lane teardown-lane">
-              <li>
-                <strong>app.unmount()</strong
-                ><span>先执行 pluginCleanupFns，再调用 render(null, container)</span>
-              </li>
-              <li>
-                <strong>root render 取 container._vnode</strong
-                ><span>以 doRemove=true 进入 unmount(root VNode)</span>
-              </li>
-              <li>
-                <strong>unmountComponent(instance)</strong
-                ><span>beforeUnmount → scope.stop → job DISPOSED</span>
-              </li>
-              <li>
-                <strong>unmount(instance.subTree)</strong
-                ><span>递归清 ref、指令、子组件与宿主范围</span>
-              </li>
-              <li>
-                <strong>remove(button) → hostRemove</strong
-                ><span>本例同步删除同一个 DOM button</span>
-              </li>
-              <li>
-                <strong>根 render 收尾</strong
-                ><span>container._vnode = null；flushPostFlushCbs 执行 unmounted</span>
-              </li>
-              <li class="trace-final">
-                <strong>回到 app.unmount</strong
-                ><span>删除 container.__vue_app__；Demo 查询 #counter 得到 null</span>
-              </li>
-            </ol>
-            <div class="branch-grid teardown-boundaries">
-              <div class="branch">
-                <strong>KeepAlive</strong
-                ><span
-                  ><code>COMPONENT_SHOULD_KEEP_ALIVE</code> 先交给
-                  <code>deactivate</code> 并返回；切页不等于真正销毁缓存实例。</span
-                >
-              </div>
-              <div class="branch">
-                <strong>Suspense</strong
-                ><span
-                  >边界调用 <code>vnode.suspense.unmount</code>，统一处理 active、pending
-                  与 fallback 分支。</span
-                >
-              </div>
-              <div class="branch">
-                <strong>Teleport</strong
-                ><span
-                  >调用 <code>TeleportImpl.remove</code>，同时照顾主树锚点与远端
-                  target 中的 children。</span
-                >
-              </div>
-              <div class="branch">
-                <strong>Transition</strong
-                ><span
-                  >逻辑卸载先发生；非 persisted leave 可以延迟宿主节点的最终删除。</span
-                >
-              </div>
+// BaseTransition.ts · resolveTransitionHooks 的 leave（删节）
+leave(el, remove) {
+  // 省略：取消尚未完成的 enter
+  if (state.isUnmounting) {
+    return remove()
+  }
+  // 其余分支才执行 beforeLeave、leave，并由完成回调触发 remove
+}</code></pre>
+          <p>
+            延迟删除发生在另一种条件下：Transition 自身仍挂载，只用 <code>v-if</code>
+            等操作移除它的子节点。此时 <code>isUnmounting</code> 为 false，
+            <code>leave</code> 可等动画完成后再调用 <code>performRemove</code>；
+            组件的逻辑卸载与 post 回调不负责等待这个动画。两种场景要分别追踪。
+          </p>
+          <figure class="eng-diagram" id="counter-unmount-branches">
+            <div class="eng-scroll" tabindex="0" aria-label="Counter 整树卸载及局部离场对照，可横向滚动">
+<svg class="eng-svg" viewBox="0 0 950 940" style="--diagram-width:950px" role="img" aria-labelledby="counter-unmount-branches-title counter-unmount-branches-desc">
+<title id="counter-unmount-branches-title">Counter 整树卸载与局部 Transition 离场的区别</title>
+<desc id="counter-unmount-branches-desc">左侧从上向下展示 app.unmount 的同步调用链。标准 Transition 随组件树卸载时，beforeUnmount 先设置 isUnmounting，leave 直接移除元素。右侧独立说明 Transition 仍挂载时的局部子节点离场，不能把这一延迟分支接到左侧整树卸载中。</desc>
+<defs><marker id="counter-unmount-branches-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10z" fill="var(--brand)"/></marker></defs>
+<text class="eng-heading" x="25" y="30">app.unmount：停止组件，再移除宿主，最后执行 post 回调</text>
+<rect class="eng-node" x="25" y="60" width="570" height="90" rx="10"/>
+<text class="eng-heading" x="310" y="85" text-anchor="middle">app.unmount()</text>
+<text class="eng-small" x="310" y="110" text-anchor="middle">已挂载：调用 pluginCleanupFns</text>
+<text class="eng-small" x="310" y="135" text-anchor="middle">cleanup 返回的 Promise 不被等待</text>
+<path class="eng-arrow" d="M310 150 V177" marker-end="url(#counter-unmount-branches-arrow)"/>
+<rect class="eng-node" x="25" y="177" width="570" height="90" rx="10"/>
+<text class="eng-heading" x="310" y="202" text-anchor="middle">render(null, container)</text>
+<text class="eng-small" x="310" y="227" text-anchor="middle">取旧根 VNode；unmount(doRemove=true)</text>
+<text class="eng-small" x="310" y="252" text-anchor="middle">进入组件与子树的递归卸载</text>
+<path class="eng-arrow" d="M310 267 V294" marker-end="url(#counter-unmount-branches-arrow)"/>
+<rect class="eng-node" x="25" y="294" width="570" height="90" rx="10"/>
+<text class="eng-heading" x="310" y="319" text-anchor="middle">beforeUnmount → scope.stop()</text>
+<text class="eng-small" x="310" y="344" text-anchor="middle">job 标记 DISPOSED，再卸载 subTree</text>
+<text class="eng-small" x="310" y="369" text-anchor="middle">Transition 的 beforeUnmount 先置 isUnmounting=true</text>
+<path class="eng-arrow" d="M310 384 V411" marker-end="url(#counter-unmount-branches-arrow)"/>
+<rect class="eng-node" x="25" y="411" width="570" height="90" rx="10"/>
+<text class="eng-heading" x="310" y="436" text-anchor="middle">移除宿主节点</text>
+<text class="eng-small" x="310" y="461" text-anchor="middle">Counter 的 button：直接 hostRemove</text>
+<text class="eng-small" x="310" y="486" text-anchor="middle">标准 Transition 随树卸载：leave 也直接 remove()</text>
+<path class="eng-arrow" d="M310 501 V528" marker-end="url(#counter-unmount-branches-arrow)"/>
+<rect class="eng-node" x="25" y="528" width="570" height="90" rx="10"/>
+<text class="eng-heading" x="310" y="553" text-anchor="middle">组件卸载收尾</text>
+<text class="eng-small" x="310" y="578" text-anchor="middle">排入 unmounted / isUnmounted 的 post 回调</text>
+<text class="eng-small" x="310" y="603" text-anchor="middle">根 render 设置 container._vnode=null</text>
+<path class="eng-arrow" d="M310 618 V645" marker-end="url(#counter-unmount-branches-arrow)"/>
+<rect class="eng-node" x="25" y="645" width="570" height="90" rx="10"/>
+<text class="eng-heading" x="310" y="670" text-anchor="middle">根 render 同步冲刷 post 回调</text>
+<text class="eng-small" x="310" y="695" text-anchor="middle">unmounted 执行；isUnmounted=true</text>
+<text class="eng-small" x="310" y="720" text-anchor="middle">本例 button 已从宿主容器移除</text>
+<path class="eng-arrow" d="M310 735 V762" marker-end="url(#counter-unmount-branches-arrow)"/>
+<rect class="eng-node" x="25" y="762" width="570" height="90" rx="10"/>
+<text class="eng-heading" x="310" y="787" text-anchor="middle">回到 app.unmount()</text>
+<text class="eng-small" x="310" y="812" text-anchor="middle">清理 devtools / app._instance（相应构建）</text>
+<text class="eng-small" x="310" y="837" text-anchor="middle">删除 container.__vue_app__</text>
+<rect class="eng-note" x="625" y="60" width="300" height="150" rx="10"/>
+<text class="eng-small" x="642" y="87">入口与错误分支</text>
+<text class="eng-small" x="642" y="112">未挂载：返回，开发态警告。</text>
+<text class="eng-small" x="642" y="137">同步 cleanup 错误若经错误</text>
+<text class="eng-small" x="642" y="162">管道仍向外抛出，会中断卸载，</text>
+<text class="eng-small" x="642" y="187">不进入后续 render。</text>
+<rect class="eng-note" x="625" y="280" width="300" height="235" rx="10"/>
+<text class="eng-small" x="642" y="308">另一个场景：局部离场</text>
+<text class="eng-small" x="642" y="333">Transition 本身仍挂载，</text>
+<text class="eng-small" x="642" y="358">仅用 v-if 移除内部元素。</text>
+<text class="eng-small" x="642" y="383">此时 isUnmounting=false，</text>
+<text class="eng-small" x="642" y="408">leave 可等待动画 done，</text>
+<text class="eng-small" x="642" y="433">再调用 performRemove。</text>
+<text class="eng-small" x="642" y="458">它不是左侧 app.unmount</text>
+<text class="eng-small" x="642" y="483">的异步分支。</text>
+<text class="eng-small" x="25" y="925">内置节点的专门协议：KeepAlive 停用、Suspense 分支回收、Teleport 容器清理见内置组件章节。</text></svg>
             </div>
-          </div>
+            <figcaption>
+              左侧是 Counter 的 app.unmount 主线：beforeUnmount 能看到 button，hostRemove 后
+              unmounted 查询为 null。标准 Transition 随整树卸载时同样直接删除；右侧的局部离场
+              单独满足“Transition 仍挂载”这个条件。依据
+              <code>apiCreateApp.ts · unmount</code>、<code>renderer.ts · unmountComponent/remove/render</code>
+              与 <a href="../../../vue/packages/runtime-core/src/components/BaseTransition.ts"><code>BaseTransition.ts · useTransitionState/leave</code></a>。
+              内置节点的其他分支见<a href="builtins.html">内置组件</a>。
+            </figcaption>
+          </figure>
 
           <h3>12.5 测试分别锁定应用清理与生命周期时点</h3>
           <p>
-            runtime-core 的应用测试先验证未挂载时会警告，再挂载、卸载，并断言宿主容器
-            已空：
+            runtime-core
+            的应用测试先验证未挂载时会警告，再挂载、卸载，并断言宿主容器 已空：
           </p>
           <pre
             data-source-file="vue/packages/runtime-core/__tests__/apiCreateApp.spec.ts"
-          ><code>  // 测试场景：app.unmount 清理根组件、容器引用和应用级副作用。
+          ><code>  // 未挂载时 unmount 会警告；挂载后 unmount 清空根组件的宿主输出。
   test('unmount', () =&gt; {
     const Comp = defineComponent({
       props: {
@@ -1995,12 +3083,16 @@ if (patchFlag &gt; 0) {
               <code>unmounted</code> 随后读到 null。
             </p>
             <p>
-              <strong>应用契约：</strong><code>apiCreateApp.spec.ts ·
-              test('unmount')</code> 证明 app 卸载后宿主容器为空。
+              <strong>应用契约：</strong
+              ><code>apiCreateApp.spec.ts · test('unmount')</code> 证明 app
+              卸载后宿主容器为空。
             </p>
             <p>
-              <strong>生命周期时点：</strong><code>apiLifecycle.spec.ts ·
-              onBeforeUnmount / onUnmounted / lifecycle call order</code>
+              <strong>生命周期时点：</strong
+              ><code
+                >apiLifecycle.spec.ts · onBeforeUnmount / onUnmounted /
+                lifecycle call order</code
+              >
               分别断言删除前可见、删除后可见，以及父子组件钩子顺序。
             </p>
           </div>
@@ -2042,7 +3134,7 @@ if (patchFlag &gt; 0) {
                 <tr>
                   <td>button DOM</td>
                   <td>在容器内，保存事件 invoker</td>
-                  <td>本例已删除；Transition 分支可能延迟物理删除</td>
+                  <td>本例已删除；标准 Transition 随整树卸载时也直接移除</td>
                 </tr>
               </tbody>
             </table>
@@ -2103,8 +3195,10 @@ if (patchFlag &gt; 0) {
                 <tr>
                   <td><strong>scheduler job 抛错</strong></td>
                   <td><code>callWithErrorHandling + finally</code></td>
-                  <td>剩余 QUEUED 清理；post 仍冲刷</td>
-                  <td>后续更新仍能重新入队</td>
+                  <td>剩余 QUEUED 清理；进入 post flush</td>
+                  <td>
+                    post flush 正常返回后可重新调度；post 持续外抛会中断恢复
+                  </td>
                 </tr>
                 <tr>
                   <td><strong>单轮递归超过 100</strong></td>
@@ -2254,17 +3348,19 @@ if (patchFlag &gt; 0) {
                     >
                   </td>
                   <td>
-                    runtime-test 中点击、等待 nextTick、宿主树从 1 变
-                    2；该文件 48 tests passed。它不经过浏览器 patchEvent，DOM
-                    invoker 由上一行测试补证。
+                    runtime-test 中点击、等待 nextTick、宿主树从 1 变 2；该文件
+                    48 tests passed。它不经过浏览器 patchEvent，DOM invoker
+                    由上一行测试补证。
                   </td>
                 </tr>
                 <tr>
                   <td><strong>卸载与回收</strong></td>
                   <td>
-                    <a href="../../../vue/packages/runtime-core/src/apiCreateApp.ts"
+                    <a
+                      href="../../../vue/packages/runtime-core/src/apiCreateApp.ts"
                       >apiCreateApp.ts · app.unmount</a
-                    >；<a href="../../../vue/packages/runtime-core/src/renderer.ts"
+                    >；<a
+                      href="../../../vue/packages/runtime-core/src/renderer.ts"
                       >renderer.ts · render/unmountComponent/remove</a
                     >；<a
                       href="../../../vue/packages/runtime-core/__tests__/apiCreateApp.spec.ts"
@@ -2289,12 +3385,12 @@ if (patchFlag &gt; 0) {
             mount 建立 render effect 并直接运行：render 读 ref、建立依赖，
             patch(null, subTree) 创建 button，runtime-dom 绑定事件并插入 DOM。
             点击时，RefImpl 同步改值并通过 Dep 通知 render effect；reactivity
-            batch 结束后，effect.scheduler 把
-            runIfDirty job 放入 runtime-core 微任务队列。flushJobs 出队后重新
-            render，patch 复用原 button，修改文字和 aria；updated 在 post flush
-            看见新 DOM，整轮 flush 返回后 nextTick 才恢复。app.unmount 再沿闭包
-            反向进入 render(null)：停止 scope、把 job 标为 DISPOSED、卸载 subTree
-            并删除 button，最后执行 unmounted 并清理容器标记。
+            batch 结束后，effect.scheduler 把 runIfDirty job 放入 runtime-core
+            微任务队列。flushJobs 出队后重新 render，patch 复用原
+            button，修改文字和 aria；updated 在 post flush 看见新 DOM，整轮
+            flush 返回后 nextTick 才恢复。app.unmount 再沿闭包 反向进入
+            render(null)：停止 scope、把 job 标为 DISPOSED、卸载 subTree 并删除
+            button，最后执行 unmounted 并清理容器标记。
           </div>
           <p>
             继续读时按这条主线拆章：
@@ -2337,8 +3433,7 @@ if (patchFlag &gt; 0) {
                     补证根组件与宿主容器挂载契约。
                   </td>
                   <td>
-                    <a href="#flowchart">完整流程图 mount 左栏 9 步</a>；<a
-                      href="#ledger"
+                    <a href="#flowchart">首次挂载分支图</a>；<a href="#ledger"
                       >六时点状态账本中的首挂阶段</a
                     >。
                   </td>
@@ -2362,8 +3457,7 @@ if (patchFlag &gt; 0) {
                     job”是这些测试与源码的联合结论，不由 data 测试单独推出。
                   </td>
                   <td>
-                    <a href="#flowchart">完整流程图 click 右栏 12 步</a>；<a
-                      href="#ledger"
+                    <a href="#flowchart">点击跨角色时序图</a>；<a href="#ledger"
                       >六时点状态账本中的点击与冲刷阶段</a
                     >。
                   </td>
@@ -2380,10 +3474,11 @@ if (patchFlag &gt; 0) {
                   </td>
                   <td>
                     <code>apiCreateApp.spec.ts · test('unmount')</code> 与
-                    <code>apiLifecycle.spec.ts</code> 的 before/unmounted/order 测试。
+                    <code>apiLifecycle.spec.ts</code> 的 before/unmounted/order
+                    测试。
                   </td>
                   <td>
-                    <a href="#unmount-source">卸载反向流程与四类边界图</a>。
+                    <a href="#unmount-source">卸载分支与宿主删除时点图</a>。
                   </td>
                 </tr>
               </tbody>

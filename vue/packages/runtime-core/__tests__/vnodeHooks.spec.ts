@@ -1,7 +1,3 @@
-/**
- * 测试阅读说明：本文件验证 `runtime-core/vnodeHooks` 的运行时行为。
- * “测试组”概括共享前置条件，“测试场景”说明当前输入、边界或历史回归目标；具体预期以断言为准。
- */
 import {
   type TestElement,
   TestNodeTypes,
@@ -12,8 +8,9 @@ import {
   render,
 } from '@vue/runtime-test'
 
-// 测试组：renderer 的 VNode 生命周期钩子。
+// VNode 钩子的执行阶段与新旧 VNode 参数。
 describe('renderer: vnode hooks', () => {
+  /** 依次挂载 vnode1、更新到 vnode2、卸载，检查六种 hooks 的阶段、调用次数和新旧 VNode 实参；本夹具没有过渡动画。 */
   function assertHooks(hooks: VNodeProps, vnode1: VNode, vnode2: VNode) {
     const root = nodeOps.createElement('div')
     render(vnode1, root)
@@ -24,7 +21,7 @@ describe('renderer: vnode hooks', () => {
     expect(hooks.onVnodeBeforeUnmount).not.toHaveBeenCalled()
     expect(hooks.onVnodeUnmounted).not.toHaveBeenCalled()
 
-    // update
+    // 更新到 vnode2
     render(vnode2, root)
     expect(hooks.onVnodeBeforeMount).toHaveBeenCalledTimes(1)
     expect(hooks.onVnodeMounted).toHaveBeenCalledTimes(1)
@@ -33,7 +30,7 @@ describe('renderer: vnode hooks', () => {
     expect(hooks.onVnodeBeforeUnmount).not.toHaveBeenCalled()
     expect(hooks.onVnodeUnmounted).not.toHaveBeenCalled()
 
-    // unmount
+    // 卸载 vnode2
     render(null, root)
     expect(hooks.onVnodeBeforeMount).toHaveBeenCalledTimes(1)
     expect(hooks.onVnodeMounted).toHaveBeenCalledTimes(1)
@@ -43,7 +40,7 @@ describe('renderer: vnode hooks', () => {
     expect(hooks.onVnodeUnmounted).toHaveBeenCalledWith(vnode2, null)
   }
 
-  // 测试场景：应该在元素上工作。
+  // 元素 VNode 的 beforeUpdate 看到旧文本，updated 看到新文本；挂载和卸载钩子只执行对应阶段。
   test('should work on element', () => {
     const hooks: VNodeProps = {
       onVnodeBeforeMount: vi.fn<(vnode: VNode) => void>(),
@@ -67,8 +64,9 @@ describe('renderer: vnode hooks', () => {
     assertHooks(hooks, h('div', hooks, 'foo'), h('div', hooks, 'bar'))
   })
 
-  // 测试场景：VNode 生命周期钩子同样能够作用于组件 VNode。
+  // 组件 VNode 同样触发这些钩子，beforeUpdate 和 updated 分别看到旧、新宿主文本。
   test('should work on component', () => {
+    /** 直接返回 props.msg 文本的函数组件，供比较组件 VNode 钩子的宿主文本。 */
     const Comp = (props: { msg: string }) => props.msg
 
     const hooks: VNodeProps = {

@@ -55,6 +55,7 @@ const COMPONENTS_TRACK = 'Components ⚛';
 /** 按 Lane 优先级组织调度阶段的轨道组名。 */
 const LANES_TRACK_GROUP = 'Scheduler ⚛';
 
+// 当前调度区间写入的轨道；各 start 入口或 setCurrentTrackFromLanes 在后续 phase 日志前设置。
 let currentTrack: string = 'Blocking'; // Lane
 
 /** 根据本轮最高优先级 Lane 选择后续调度标记写入的轨道。 */
@@ -112,7 +113,12 @@ export function markAllLanesInOrder() {
   }
 }
 
-/** 在组件轨道记录 mount/unmount/reconnect/disconnect 触发区间。 */
+/**
+ * 在组件轨道记录 mount/unmount/reconnect/disconnect 的调用方计时区间。
+ * startTime/endTime 均为 Scheduler 相对时间的毫秒数，不是 epoch；函数不自行启动计时。
+ * 复用 detail/options 后同步调用 measure 并立即 clearMeasures，轨道已收到记录但浏览器
+ * PerformanceEntry 缓冲不再持有它；ConsoleTask 只补归因上下文，不异步调度用户工作。
+ */
 function logComponentTrigger(
   fiber: Fiber,
   startTime: number,
@@ -235,7 +241,13 @@ const reusableDeeplyEqualPropsEntry = ['Changed Props', DEEP_EQUALITY_WARNING];
 
 /**
  * 记录一次组件 render；生产模式写轻量 timeStamp，开发模式还计算 self time、props diff、
- * 深相等与级联更新提示，并关联 ConsoleTask 调用栈。
+ * 深相等提示，并关联 ConsoleTask 调用栈；级联更新的等待链由 logBlockingStart 另行记录。
+ * @param fiber 本次完成树中的组件，actualDuration 包含其渲染子树；若 child 链与 alternate
+ * 相同，不减去复用子节点的旧 actualDuration，避免把前轮耗时误当成本轮子耗时。
+ * @param wasHydrated 为 hydration 渲染选不同颜色，不改变时间或 Fiber 状态。
+ * @param committedLanes 用于判断是否组件自身已调度该轮工作，排除不该提示的深相等重渲染。
+ * 深相等提示要求嵌套差异详情、无祖先提示、自身未调度且整棵实际耗时超过 100ms；
+ * 阈值不是深相等检查耗时。这里没有对宿主计时 API 抛错作局部捕获。
  */
 export function logComponentRender(
   fiber: Fiber,
@@ -544,7 +556,7 @@ function logComponentEffectErrored(
   }
 }
 
-/** 按 effect 自耗时着色记录组件 effect；有错误时切换到结构化错误记录。 */
+/** 按 selfTime（毫秒，调用方扣除子组件后的 effect 自耗时）着色记录区间；起止时间仍覆盖调用方整段测量。errors 非 null 时改用错误详情，不在此执行 effect 或捕获新错误。 */
 export function logComponentEffect(
   fiber: Fiber,
   startTime: number,
@@ -597,7 +609,7 @@ export function logComponentEffect(
   }
 }
 
-/** 记录 CPU 阻塞后 React 主动让出执行权的区间，并按阻塞时长着色。 */
+/** 记录 React 让出到恢复之间的等待区间，以 Blocked 标记并按间隔毫秒数着色；不把这段等待计为 React 自身 CPU 执行耗时。短于 3ms 的间隔不记录。 */
 export function logYieldTime(startTime: number, endTime: number): void {
   if (supportsUserTiming) {
     const yieldDuration = endTime - startTime;
@@ -698,6 +710,10 @@ export function logActionYieldTime(
 /**
  * 记录同步/阻塞更新从事件、setState 到 render 的等待链；识别连续事件、Promise ping 与
  * render/effect 内派生的 cascading update，并把后者上报为性能问题。
+ * updateTime 是记录更新入口的时间，eventTime 是宿主事件关联时间，renderStartTime 是根
+ * 开始本轮渲染的时间，均为可比较的相对毫秒数；缺失或逆序值被夹到 event≤update≤render。
+ * eventIsRepeat/isSpawnedUpdate/isPingedUpdate 由计时模块提供，本函数不从区间长度推导来源。
+ * lanes 只选 hydration/offscreen 配色，debugTask 与更新方法/组件名用于 DEV 归因。
  */
 export function logBlockingStart(
   updateTime: number,
@@ -708,7 +724,7 @@ export function logBlockingStart(
   isPingedUpdate: boolean,
   renderStartTime: number,
   lanes: Lanes,
-  debugTask: null | ConsoleTask, // DEV-only
+  debugTask: null | ConsoleTask, // 仅开发环境使用
   updateMethodName: null | string,
   updateComponentName: null | string,
 ): void {
@@ -831,7 +847,7 @@ export function logGestureStart(
   eventIsRepeat: boolean,
   isPingedUpdate: boolean,
   renderStartTime: number,
-  debugTask: null | ConsoleTask, // DEV-only
+  debugTask: null | ConsoleTask, // 仅开发环境使用
   updateMethodName: null | string,
   updateComponentName: null | string,
 ): void {
@@ -933,6 +949,9 @@ export function logGestureStart(
 
 /**
  * 记录 Transition 从输入事件、startTransition、异步 Action、setState 到 render 的完整等待链。
+ * startTime 是 Transition 启动时间，updateTime 是实际更新时间；两者间标 Action 只是
+ * 调用方已记录区间的展示，不在这里等待或解析 Promise。缺失/逆序值夹到
+ * event≤start≤update≤render，原参数是局部数值，不回写根的计时记录。
  */
 export function logTransitionStart(
   startTime: number,
@@ -942,7 +961,7 @@ export function logTransitionStart(
   eventIsRepeat: boolean,
   isPingedUpdate: boolean,
   renderStartTime: number,
-  debugTask: null | ConsoleTask, // DEV-only
+  debugTask: null | ConsoleTask, // 仅开发环境使用
   updateMethodName: null | string,
   updateComponentName: null | string,
 ): void {

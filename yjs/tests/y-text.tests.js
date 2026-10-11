@@ -10,10 +10,11 @@ import { AttributionsRenderer, createSnapshotRenderer } from '../src/utils/Rende
 const { init, compare } = Y
 
 /**
- * 回归 yjs#474：连续删除、插入和块格式替换后，旧表格行格式不会泄漏到后续段落。
+ * 长 Delta 已写入表格换行、单元格格式和表格后的普通段落；在第 12 个位置插入连字符与空格，再删除二者并把目标换行 table-cell-line 改为 list。完整结果与 expectedResult 相等，目标其他键保留，后续段落无表格格式泄漏。
+ * 回归 yjs#474。
  *
  * https://github.com/yjs/yjs/issues/474
- * @todo Remove debug: 127.0.0.1:8080/test.html?filter=\[88/
+ *
  * @param {t.TestCase} _tc
  */
 export const testDeltaBug = _tc => {
@@ -278,7 +279,7 @@ export const testDeltaBug = _tc => {
       rowspan: '1',
       colspan: '1'
     })
-    // 目标换行只保留列表属性，不得残留 `table-cell-line`。
+    // 目标换行把 `table-cell-line` 替换为 `list`，保留 `block-id`、`row` 等其他属性。
     .insert('\n', {
       list: {
         rowspan: '1',
@@ -305,9 +306,11 @@ export const testDeltaBug = _tc => {
 }
 
 /**
- * 回归 yjs#503：大型富文本中删除布局节点并改写块属性后，Delta 只保留目标块的新格式。
+ * 长文档 Delta 含文本、embed、列表、表格和带 layout 的换行；retain 90 后删除 4，再清除下一换行的 layout/layout-width 并更新 block-id。输出 children[40] 是仅带指定 block-id 的换行。
+ * 回归 yjs#503；只比较这个目标 op，不比较整份长文档。
  *
  * https://github.com/yjs/yjs/issues/503
+ *
  * @param {t.TestCase} _tc
  */
 export const testDeltaBug2 = _tc => {
@@ -1230,10 +1233,7 @@ export const testDeltaBug2 = _tc => {
 }
 
 /**
- * 验证两端重叠并发格式化清理后，事件 Delta 可非最小但仍能把编辑器同步到正确状态。
- *
- * 该用例关注格式清理及结果 Delta 是否可应用，不要求操作数最少；把它应用到富文本编辑器后必须得到
- * 与 CRDT 相同的文档。
+ * 两端已同步 abcde；text0 给 abc 加粗，text1 并发给 cd 加粗，随后观察 text1 并同步。text1 恰收到一个非空事件：给 ab 加粗、retain c、取消 d 加粗。
  *
  * @param {t.TestCase} tc
  */
@@ -1258,7 +1258,7 @@ export const testDeltaAfterConcurrentFormatting = tc => {
 }
 
 /**
- * 验证文本插入、头尾删除、事件 Delta，以及同事务插入后删除折叠为空变化。
+ * 两端空文本中 text0 注册事件捕获；先做零长度删除，再插入 abc、分别删除首尾字符，最后同事务插入再删除 1。文本依次为 abc/bc/b，事件对应 insert/delete/retain+delete；最后净变化为空且副本收敛。
  *
  * @param {t.TestCase} tc
  */
@@ -1295,7 +1295,7 @@ export const testBasicInsertAndDelete = tc => {
 }
 
 /**
- * 验证带格式插入、删除、格式清除及等价格式标记不重复写入。
+ * 空文本注册事件捕获；插入加粗 abc、删除两侧、前插同格式 z 和无格式 y，再取消 yz 的加粗。内容及事件 Delta 匹配各阶段分段，内部链位置断言检查同格式插入未多写格式标记。
  *
  * @param {t.TestCase} tc
  */
@@ -1335,7 +1335,7 @@ export const testBasicFormat = tc => {
 }
 
 /**
- * 验证格式值 `false` 是有效值，不会被当作未设置或 `null` 清除。
+ * 空文本注册事件捕获；插入 falsy=false 的 abcde，再改 bcd 为 true、c 改回 false。完整视图保留 false 值，事件分别只对目标范围发格式 retain，最终副本收敛。
  *
  * @param {t.TestCase} tc
  */
@@ -1358,7 +1358,7 @@ export const testFalsyFormats = tc => {
 }
 
 /**
- * 验证跨多行格式化可跳过换行，只作用于各文本段。
+ * 文本已有 Test、Multi-line、Formatting 三行；带 bold 的 retain 覆盖每行文字，无格式 retain 越过两个换行。完整 Delta 中三段文字加粗，两个换行仍无格式。
  *
  * @param {t.TestCase} _tc
  */
@@ -1386,7 +1386,7 @@ export const testMultilineFormat = _tc => {
 }
 
 /**
- * 验证相同格式的空行仍保持独立 Delta 边界。
+ * 空文本准备一个含两处 title 换行的 Delta，中间是无格式换行和 Text；应用后再读取完整 Delta。四个格式区间与输入相同，带 title 的两处换行没有跨普通文本合并。
  *
  * @param {t.TestCase} _tc
  */
@@ -1411,7 +1411,8 @@ export const testNotMergeEmptyLinesFormat = _tc => {
 }
 
 /**
- * 验证删除带格式换行后，把格式迁移到相邻保留换行可维持最终属性。
+ * 文本为 Text、带 title 的换行、普通换行；删除第一个换行并显式给剩余换行设置 title。最终是 Text 加一个带 title 的换行。
+ * 格式迁移由输入 retain(format) 明确要求，并非 delete 自动搬迁。
  *
  * @param {t.TestCase} _tc
  */
@@ -1438,7 +1439,7 @@ export const testPreserveAttributesThroughDelete = _tc => {
 }
 
 /**
- * 验证对象 embed 作为单个子元素往返 Delta。
+ * 单端空文本；应用一个 linebreak 对象的数组 insert。toDelta 返回同一单元素数组 insert。
  *
  * @param {t.TestCase} tc
  */
@@ -1453,7 +1454,7 @@ export const testGetDeltaWithEmbeds = tc => {
 }
 
 /**
- * 验证嵌套 `Y.Type` 作为 embed 深层渲染，并经同步事件携带完整子 Delta。
+ * 两个空文本副本；第一端插入由 key=val Delta 构造的子类型，再同步给已注册 observer 的第二端。两端深层输出含完整子 Delta，远端事件也包含该子状态且确实触发。
  *
  * @param {t.TestCase} tc
  */
@@ -1479,7 +1480,7 @@ export const testTypesAsEmbed = tc => {
 }
 
 /**
- * 验证两个 Snapshot 的完整视图与差异 Renderer 正确标记插入和删除。
+ * 关闭 GC 的文本先写 abcd 并记录 snapshot1，再以 x 替换 b 记录 snapshot2；继续编辑后，用两个 Snapshot Renderer 及其差异视图读取。历史状态仍分别为 abcd、axcd；差异视图把 x 标 insert、b 标 delete，其余 acd 无归因。
  *
  * @param {t.TestCase} tc
  */
@@ -1517,7 +1518,8 @@ export const testSnapshot = tc => {
 }
 
 /**
- * 验证 Snapshot Renderer 隐藏快照之后才插入的内容。
+ * 关闭 GC 的文本已有 abcd 并记录快照；快照后尾插 e，再用旧快照 Renderer 读取。历史视图仍为 abcd，隐藏后来插入的 e。
+ * 此用例未执行删除。
  *
  * @param {t.TestCase} tc
  */
@@ -1540,7 +1542,7 @@ export const testSnapshotDeleteAfter = tc => {
 }
 
 /**
- * 验证格式化文本的 `toDelta()` 与期望 Delta 结构等价。
+ * 单端文本为空；插入加粗 abc 并读取 toDelta。完整结果等于带 bold 的一次 abc insert。
  *
  * @param {t.TestCase} tc
  */
@@ -1551,7 +1553,7 @@ export const testDeltaCompare = tc => {
 }
 
 /**
- * 验证 embed 使用自身格式，左右文本仍恢复原有格式。
+ * 文本已有加粗 ab；在 a 与 b 之间插入带 width=100 的图片对象。图片仅带自身 width，左右 a/b 仍带 bold。
  *
  * @param {t.TestCase} tc
  */
@@ -1571,7 +1573,7 @@ export const testToDeltaEmbedAttributes = tc => {
 }
 
 /**
- * 验证无格式 embed 的 Delta 不产生空 format 字段。
+ * 文本已有加粗 ab；在中间插入无格式图片对象。图片 op 没有 format 字段，左右文字恢复 bold。
  *
  * @param {t.TestCase} tc
  */
@@ -1592,7 +1594,7 @@ export const testToDeltaEmbedNoAttributes = tc => {
 }
 
 /**
- * 验证整段格式化文本删除后，冗余格式边界被清理。
+ * 文本为加粗 ab；删除全部文字并完成默认 GC 及事务清理。getTypeChildren 返回一个 Item：格式与内容墓碑已合并。
  *
  * @param {t.TestCase} tc
  */
@@ -1605,7 +1607,7 @@ export const testFormattingRemoved = tc => {
 }
 
 /**
- * 验证删除中间格式段后只保留必要的左右结构边界。
+ * 普通 1234 中间插入加粗 ab；删除 ab 并完成事务清理。结构链合计三个 Item：左右活文字与中间墓碑。
  *
  * @param {t.TestCase} tc
  */
@@ -1618,7 +1620,8 @@ export const testFormattingRemovedInMidText = tc => {
 }
 
 /**
- * 回归 yjs#344：远端格式覆盖只报告真实变化键，不重发无关段落格式。
+ * 两端已同步带段落/列表格式的换行和后续 abc；text1 只把换行 LIST_STYLES 改为 number 后同步。本地与远端恰有两个非空 Delta，均只 retain 一个换行并修改 LIST_STYLES。
+ * 回归 yjs#344；无关 PARAGRAPH_STYLES 不重发。
  *
  * 问题来源：https://github.com/yjs/yjs/issues/344
  *
@@ -1653,7 +1656,8 @@ export const testFormattingDeltaUnnecessaryAttributeChange = tc => {
 }
 
 /**
- * 以普通字符串语义随机插入删除一万步，压力验证索引与长度维护。
+ * 单端文本先插入五千字符；一万轮按当前长度选择插入或最多删除三字符。所有操作应正常返回，最后只记录存活长度。
+ * 没有独立字符串镜像或最终内容断言。
  *
  * @param {t.TestCase} tc
  */
@@ -1662,8 +1666,7 @@ export const testInsertAndDeleteAtRandomPositions = tc => {
   const { text0 } = init(tc, { users: 1 })
   const gen = tc.prng
 
-  // Given：先建立固定长度的普通字符串作为镜像起点。
-  // let expectedResult = init
+  // 先插入五千字符，再用每一步的当前长度选择后续位置。
   text0.insert(0, prng.word(gen, N / 2, N / 2))
 
   // When：随机执行插入或删除；每步索引都取当前长度范围内。
@@ -1673,19 +1676,17 @@ export const testInsertAndDeleteAtRandomPositions = tc => {
       const len = prng.uint32(gen, 1, 5)
       const word = prng.word(gen, 0, len)
       text0.insert(pos, word)
-      // 可启用普通字符串镜像定位具体随机失败。
     } else {
       const len = prng.uint32(gen, 0, math.min(3, text0.length - pos))
       text0.delete(pos, len)
-      // 可启用普通字符串镜像定位具体随机失败。
     }
   }
-  // 镜像断言默认关闭，此性能用例以全过程不越界和最终长度报告为主。
+  // 这里报告最终长度，不与独立字符串镜像比较。
   t.describe('final length', '' + text0.length)
 }
 
 /**
- * 验证连续一万次尾插后逻辑长度准确。
+ * 单端文本为空；一万次在当前 length 插入 a。最终 length 恰为一万。
  *
  * @param {t.TestCase} tc
  */
@@ -1693,7 +1694,7 @@ export const testAppendChars = tc => {
   const N = 10000
   const { text0 } = init(tc, { users: 1 })
 
-  // 连续尾插覆盖最佳定位路径，最终长度必须等于次数。
+  // 每次都用当前长度作为插入位置，最终长度应等于次数。
   for (let i = 0; i < N; i++) {
     text0.insert(text0.length, 'a')
   }
@@ -1703,13 +1704,14 @@ export const testAppendChars = tc => {
 /** 大文档基准统一使用的 Item/操作数量。 */
 const largeDocumentSize = 100000
 
-/** 基准构造 Item 时复用的固定逻辑 id。 */
+/** 基准构造 Item 链时给 `rightOrigin` 复用的固定 id。 */
 const id = Y.createID(0, 0)
 /** 基准构造 Item 时复用的单字符 Content，避免把内容分配计入结构开销。 */
 const c = new Y.ContentString('a')
 
 /**
- * 基准测试纯 Item 分配与数组复制的理想路径开销。
+ * 预分配十万个槽位，复用单字符 Content 和固定 ID；计时构造未集成 Item 链并按索引复制到新数组。记录分配/复制耗时。
+ * 不校验 CRDT 集成或数据内容；计时标签仍保留历史 two million，实际数量为十万。
  *
  * @param {t.TestCase} _tc
  */
@@ -1751,7 +1753,8 @@ const tryGc = () => {
 }
 
 /**
- * 基准测试十万碎片 Item 的插入、更新编码与另一文档应用。
+ * 两个新文档为空；第一文档单事务头插十万字符，编码一次 V2 完整更新并应用到第二文档。记录插入、编码、更新应用耗时及字节大小。
+ * 没有远端内容断言；应用的是一次更新，不是十万个 update。
  *
  * @param {t.TestCase} _tc
  */
@@ -1785,7 +1788,8 @@ export const testLargeFragmentedDocument = _tc => {
 }
 
 /**
- * 比较十万增量的二进制合并与逐个应用到 YDoc 的开销。
+ * 新文档监听 update 并准备空更新数组；一个外层事务头插十万字符，再分别 mergeUpdates 和应用到新文档。记录单次 update 的合并与应用耗时。
+ * 不比较合并后的字节或重建内容。
  *
  * @param {t.TestCase} _tc
  */
@@ -1823,9 +1827,8 @@ export const testIncrementalUpdatesPerformanceOnLargeFragmentedDocument = _tc =>
 }
 
 /**
- * 回归 yjs#248：在 UTF-16 代理对中间插入、删除或格式化仍能编码并收敛。
- *
- * 拆分 UTF-16 代理对曾可能生成无法编码的文档。
+ * 三组各自建立两端文本并断开第二端，首组写一个代理对、另两组写两个；分别在代理对中间插入、跨半对删除、跨半对格式化。compare 重连后检查编码可应用、两端内容与结构收敛。
+ * ContentString.splice 将被切开的半代理对替换为 U+FFFD，保持 UTF-16 时钟长度；没有单独断言替换字符。
  *
  * https://github.com/yjs/yjs/issues/248
  *
@@ -1834,7 +1837,7 @@ export const testIncrementalUpdatesPerformanceOnLargeFragmentedDocument = _tc =>
 export const testSplitSurrogateCharacter = tc => {
   {
     const { users, text0 } = init(tc, { users: 2 })
-    users[1].disconnect() // 离线会迫使发送端独立编码被拆分结构。
+    users[1].disconnect() // 暂停副本同步，最后由 compare 重连并应用更新。
     text0.insert(0, '👾') // 插入一个代理对字符。
     // 在代理对中间插入不得导致编码失败。
     text0.insert(1, 'hi!')
@@ -1842,7 +1845,7 @@ export const testSplitSurrogateCharacter = tc => {
   }
   {
     const { users, text0 } = init(tc, { users: 2 })
-    users[1].disconnect() // 离线会迫使发送端独立编码被拆分结构。
+    users[1].disconnect() // 暂停副本同步，最后由 compare 重连并应用更新。
     text0.insert(0, '👾👾') // 插入两个代理对字符。
     // 删除范围横跨半个代理对。
     text0.delete(1, 2)
@@ -1850,7 +1853,7 @@ export const testSplitSurrogateCharacter = tc => {
   }
   {
     const { users, text0 } = init(tc, { users: 2 })
-    users[1].disconnect() // 离线会迫使发送端独立编码被拆分结构。
+    users[1].disconnect() // 暂停副本同步，最后由 compare 重连并应用更新。
     text0.insert(0, '👾👾') // 插入两个代理对字符。
     // 格式边界同样会切分代理对所在 ContentString。
     text0.format(1, 2, { bold: true })
@@ -1859,9 +1862,10 @@ export const testSplitSurrogateCharacter = tc => {
 }
 
 /**
- * 回归 yjs#307：重复删除重建文本后搜索标记仍把并发插入定位到正确位置。
+ * 两端空文本，update listener 会在来源端及另一端重放更新；两次构造 a_a 并交错插入 s/d，中间删完整段。两端文本均为 a_sda，最终 compare 检查结构收敛。
+ * 回归 yjs#307；本用例没有直接调用 get/findMarker 或断言缓存条目。
  *
- * 搜索标记回归：https://github.com/yjs/yjs/issues/307
+ * 历史场景来源：https://github.com/yjs/yjs/issues/307
  *
  * @param {t.TestCase} tc
  */
@@ -1899,7 +1903,7 @@ export const testSearchMarkerBug1 = tc => {
 }
 
 /**
- * 验证嵌套格式覆盖同步后，两文档渲染完全相同的分段格式。
+ * 第一文档有三个换行，第二文档为空；整段设 example URL，再把中间换行改为 docs URL，编码同步。第一端三个 URL 区间匹配预期，第二端完整 Delta JSON 与之相同。
  *
  * @param {t.TestCase} _tc
  */
@@ -1923,9 +1927,7 @@ export const testFormattingBug = async _tc => {
 }
 
 /**
- * 验证删除/覆盖格式不会留下影响可见 Delta 的冗余格式 Item。
- *
- * 删除格式后不应留下改变可观察结果的冗余格式 Item。
+ * 两端已同步 Attack ships on fire... 文本；给 on fire 加粗并同步，再仅取消 fire 的加粗并同步。两端都只在 on 加空格的范围保留 bold，其余文本无 bold。
  *
  * @param {t.TestCase} _tc
  */
@@ -1954,7 +1956,7 @@ export const testDeleteFormatting = _tc => {
 }
 
 /**
- * 验证富文本插入、删除、格式化与取消格式在 Renderer 下生成正确 attribution。
+ * 关闭 GC 的文本已有 Hello World!，每次事务后只用本轮 ID 集建 Renderer；首轮给 Hell 加 italic、删除 World、插入 attributions；次轮取消前五字符 italic。首轮显示三类归因及 World 墓碑；次轮仅给原 Hell 标取消格式来源，旧删除不再显示。
  *
  * @param {t.TestCase} _tc
  */
@@ -1965,7 +1967,6 @@ export const testAttributedContent = _tc => {
   let renderer = /** @type {AbstractRenderer?} */ (null)
 
   ydoc.on('afterTransaction', tr => {
-    // renderer = new AttributionsRenderer(createIdMapFromIdSet(tr.insertSet, [new Y.Attribution('insertAt', 42), new Y.Attribution('insert', 'kevin')]), createIdMapFromIdSet(tr.deleteSet, [new Y.Attribution('delete', 'kevin')]))
     renderer = new AttributionsRenderer(Y.createContentMap(createIdMapFromIdSet(tr.insertSet, []), createIdMapFromIdSet(tr.deleteSet, [])))
   })
   t.group('insert / delete / format', () => {
@@ -1985,7 +1986,7 @@ export const testAttributedContent = _tc => {
 }
 
 /**
- * 验证两文档 id 集差异可映射到用户 attribution，并渲染插入、删除和格式来源。
+ * client0 基线为 Hello World!，client1 已复制它且均关闭 GC；client1 格式化 Hell、删除 World 并插入 attributions，再对两文档 ID 集差映射 Bob。输出保留 World 删除内容，并分别为格式、删除、插入标 Bob。
  *
  * @param {t.TestCase} _tc
  */
@@ -2018,26 +2019,24 @@ export const testAttributedDiffing = _tc => {
 }
 
 /**
- * 验证 `renderedContent` 可恢复 tombstone、隐藏活内容，而显式 attribution 始终优先可见。
- *
- * `renderedContent` 将“可见内容”与文档删除态、attribution 解耦：集合内 tombstone 可按普通内容恢复，
- * 集合外活内容可隐藏，而显式 attribution 即使不在集合内也始终渲染。
+ * 关闭 GC 的文本 Hello World! 已删除空格加 World，普通视图为 Hello!；三组分别把全部 ID、部分活 ID、含 delete 归因的 ID 交给 renderedContent 视图。依次恢复 Hello World!、隐藏 ello 得 H!、以 bob 删除归因显示旧 World。
+ * 显式归因片段即使不在 renderedContent 内也继续可见。
  *
  * @param {t.TestCase} _tc
  */
 export const testAttributionsRendererRenderedContent = _tc => {
-  const ydoc = new Y.Doc({ gc: false }) // restore requires gc:false (no rehydration of gc'd content)
+  const ydoc = new Y.Doc({ gc: false }) // 保留删除内容，Renderer 才能恢复原字符串。
   ydoc.clientID = 1
   const ytext = ydoc.get()
   ytext.insert(0, 'Hello World!')
-  ytext.delete(5, 6) // delete ' World' (clock 5..10) → the visible doc is 'Hello!'
-  t.compare(ytext.toDelta().toJSON(), delta.create().insert('Hello!').done().toJSON()) // sanity: default hides the deletion
+  ytext.delete(5, 6) // 删除 ` World`，对应 clock 5..10；默认视图剩下 `Hello!`。
+  t.compare(ytext.toDelta().toJSON(), delta.create().insert('Hello!').done().toJSON())
 
   const emptyAttributions = Y.createContentMap()
   const aliveSet = Y.createInsertSetFromStructStore(ydoc.store, true) // {0..4, 11}
 
   t.group('restore: deleted content in renderedContent renders normally', () => {
-    const renderedContent = Y.createInsertSetFromStructStore(ydoc.store, false) // all content incl. deleted
+    const renderedContent = Y.createInsertSetFromStructStore(ydoc.store, false) // 包含存活内容和墓碑 id。
     const renderer = new AttributionsRenderer(emptyAttributions, { renderedContent })
     const expected = delta.create().insert('Hello World!')
     const rendered = ytext.toDelta({ renderer })
@@ -2046,7 +2045,7 @@ export const testAttributionsRendererRenderedContent = _tc => {
 
   t.group('hide: alive content omitted from renderedContent renders as nothing', () => {
     const hidden = Y.createIdSet()
-    hidden.add(1, 1, 4) // hide 'ello' (clock 1..4)
+    hidden.add(1, 1, 4) // 从正常显示集合中排除 `ello`，对应 clock 1..4。
     const renderer = new AttributionsRenderer(emptyAttributions, { renderedContent: Y.diffIdSet(aliveSet, hidden) })
     const expected = delta.create().insert('H!')
     const rendered = ytext.toDelta({ renderer })
@@ -2107,7 +2106,7 @@ const textChanges = [
 ]
 
 /**
- * 以 5 轮纯文本随机操作验证多副本收敛与格式结构清理。
+ * 随机驱动建立五个空文本副本；交错执行 5 轮纯文本插入/删除及消息投递和连线动作。每步与字符串镜像比较；结束比较副本深层内容，再确认额外格式清理计数为 0。
  *
  * @param {t.TestCase} tc
  */
@@ -2118,7 +2117,7 @@ export const testRepeatGenerateTextChanges5 = tc => {
 }
 
 /**
- * 以 30 轮纯文本随机操作验证多副本收敛与格式结构清理。
+ * 随机驱动建立五个空文本副本；交错执行 30 轮纯文本插入/删除及消息投递和连线动作。每步与字符串镜像比较；结束比较副本深层内容，再确认额外格式清理计数为 0。
  *
  * @param {t.TestCase} tc
  */
@@ -2129,7 +2128,7 @@ export const testRepeatGenerateTextChanges30 = tc => {
 }
 
 /**
- * 以 40 轮纯文本随机操作验证多副本收敛与格式结构清理。
+ * 随机驱动建立五个空文本副本；交错执行 40 轮纯文本插入/删除及消息投递和连线动作。每步与字符串镜像比较；结束比较副本深层内容，再确认额外格式清理计数为 0。
  *
  * @param {t.TestCase} tc
  */
@@ -2140,7 +2139,7 @@ export const testRepeatGenerateTextChanges40 = tc => {
 }
 
 /**
- * 以 50 轮纯文本随机操作验证多副本收敛与格式结构清理。
+ * 随机驱动建立五个空文本副本；交错执行 50 轮纯文本插入/删除及消息投递和连线动作。每步与字符串镜像比较；结束比较副本深层内容，再确认额外格式清理计数为 0。
  *
  * @param {t.TestCase} tc
  */
@@ -2151,7 +2150,7 @@ export const testRepeatGenerateTextChanges50 = tc => {
 }
 
 /**
- * 以 70 轮纯文本随机操作验证多副本收敛与格式结构清理。
+ * 随机驱动建立五个空文本副本；交错执行 70 轮纯文本插入/删除及消息投递和连线动作。每步与字符串镜像比较；结束比较副本深层内容，再确认额外格式清理计数为 0。
  *
  * @param {t.TestCase} tc
  */
@@ -2162,7 +2161,7 @@ export const testRepeatGenerateTextChanges70 = tc => {
 }
 
 /**
- * 以 90 轮纯文本随机操作验证多副本收敛与格式结构清理。
+ * 随机驱动建立五个空文本副本；交错执行 90 轮纯文本插入/删除及消息投递和连线动作。每步与字符串镜像比较；结束比较副本深层内容，再确认额外格式清理计数为 0。
  *
  * @param {t.TestCase} tc
  */
@@ -2173,7 +2172,7 @@ export const testRepeatGenerateTextChanges90 = tc => {
 }
 
 /**
- * 以 300 轮纯文本随机操作验证多副本收敛与格式结构清理。
+ * 随机驱动建立五个空文本副本；交错执行 300 轮纯文本插入/删除及消息投递和连线动作。每步与字符串镜像比较；结束比较副本深层内容，再确认额外格式清理计数为 0。
  *
  * @param {t.TestCase} tc
  */
@@ -2198,6 +2197,7 @@ const marksChoices = [
 
 /**
  * 覆盖文本、embed、格式和复合 Delta 的富文本随机操作集合。
+ * 每个回调从当前用户的文本状态生成合法坐标，应用后不做本地镜像比较；驱动 compare 和 checkResult 检查最终收敛。
  *
  * @type Array<function(any,prng.PRNG):void>
  */
@@ -2308,9 +2308,11 @@ const qChanges = [
 ]
 
 /**
- * 逐对比较所有随机测试副本的深层子 Delta，证明最终可观察状态收敛。
+ * 对随机驱动返回的五个原始副本，逐对比较深层子 Delta，并原样返回 fixture。
+ * 驱动已先执行 compare，包含由合并 update 重建的副本和结构检查；这里补充子 Delta 比较。
  *
- * @param {Y.ApplyRandomTestsResult} result
+ * @param {Y.ApplyRandomTestsResult} result - applyRandomTests 已同步并比较过的 fixture。
+ * @return {Y.ApplyRandomTestsResult} 同一 fixture，供包装用例继续检查格式清理。
  */
 const checkResult = result => {
   for (let i = 1; i < result.testObjects.length; i++) {
@@ -2319,23 +2321,21 @@ const checkResult = result => {
     const p2 = result.users[i].get('text').toDeltaDeep().children
     t.compare(p1, p2)
   }
-  // 排查格式清理问题时可启用下列结构级断言。
-  // const cleanups = Y.cleanupYTextFormatting(result.users[0].getText('text'))
+  // 停用的结构级检查草稿；当前 checkResult 不执行它，显式清理断言只在部分包装用例中运行。
+  // const cleanups = Y.cleanupYTextFormatting(result.users[0].get('text'))
   // t.assert(cleanups === 0)
   return result
 }
 
 /**
- * 基准测试默认无 Renderer 快速路径在含删除碎片文本上的 `toDelta()`。
- *
- * 删除比例越高，Renderer/内容读取器可能跳过越多不可见片段，`toDelta()` 甚至可能快于 `toString()`；
- * 该结果也可能受 JavaScript 引擎优化影响，因此这里只记录基准，不宣称复杂度保证。
+ * 空文档以一万轮随机插入/删除构造带墓碑的文本；分别计时一百次 toString 与默认 toDelta。记录两条路径耗时。
+ * toString 经 toArray/toDelta 再拼接；没有性能阈值或输出等价性断言。
  *
  * @param {t.TestCase} tc
  */
 export const testRendererDefaultPerformance = tc => {
   const N = 10000
-  const MaxDeletionLength = 5 // 25% chance of deletion
+  const MaxDeletionLength = 5 // 非空文本时两个独立 bool 同时为 true 才尝试删除，概率约 25%；长度也可为 0。
   const MaxInsertionLength = 5
   const ydoc = new Y.Doc()
   const ytext = ydoc.get()
@@ -2366,19 +2366,16 @@ export const testRendererDefaultPerformance = tc => {
 }
 
 /**
- * 对比默认快速路径与空 attribution、自定义可见集 Renderer 的恢复路径性能。
- *
- * Renderer 使用空 attribution 与完整 insert set 作为 `renderedContent`。该集合也包含 tombstone id，
- * 因而会无归因地恢复全部删除；活内容仍由集合完整覆盖并走通用快速路径。基准对比默认路径与
- * `hasItem` 恢复分支、`readContent` 自定义可见集、`coveredLength` 长度计算的组合开销。
+ * 关闭 GC 的空文档经过一万轮随机编辑，保留删除字符串；以空归因及完整历史 insertSet 建恢复 Renderer，再各计时十次默认/恢复 toDelta。记录包含额外墓碑输出的恢复路径开销。
+ * 活内容仍走未接管快路径；不声称纯计时只比较包装成本或证明性能门槛。
  *
  * @param {t.TestCase} tc
  */
 export const testRendererAttributionsPerformance = tc => {
   const N = 10000
-  const MaxDeletionLength = 5 // 25% chance of deletion
+  const MaxDeletionLength = 5 // 非空文本时两个独立 bool 同时为 true 才尝试删除，概率约 25%；长度也可为 0。
   const MaxInsertionLength = 5
-  const ydoc = new Y.Doc({ gc: false }) // keep deleted content so the delete set renders real content
+  const ydoc = new Y.Doc({ gc: false }) // 保留删除内容，恢复集合才有原字符串可渲染。
   const ytext = ydoc.get()
   for (let i = 0; i < N; i++) {
     if (prng.bool(tc.prng) && prng.bool(tc.prng) && ytext.length > 0) {
@@ -2411,7 +2408,7 @@ export const testRendererAttributionsPerformance = tc => {
 }
 
 /**
- * 以 1 轮富文本/Quill随机操作验证多副本收敛与格式结构清理。
+ * 随机驱动建立五个空文本副本；交错执行 1 轮文本/embed/格式及复合 Delta 与网络动作。compare 与 checkResult 检查内容、结构和深层子 Delta 收敛，并断言额外格式清理计数为 0。
  *
  * @param {t.TestCase} tc
  */
@@ -2422,7 +2419,7 @@ export const testRepeatGenerateQuillChanges1 = tc => {
 }
 
 /**
- * 以 2 轮富文本/Quill随机操作验证多副本收敛与格式结构清理。
+ * 随机驱动建立五个空文本副本；交错执行 2 轮文本/embed/格式及复合 Delta 与网络动作。compare 与 checkResult 检查内容、结构和深层子 Delta 收敛，并断言额外格式清理计数为 0。
  *
  * @param {t.TestCase} tc
  */
@@ -2433,7 +2430,7 @@ export const testRepeatGenerateQuillChanges2 = tc => {
 }
 
 /**
- * 重复一千次两步富文本/Quill 随机操作，放大短序列格式清理回归。
+ * 每轮重新建立五个空文本副本，连续使用测试 PRNG；重复一千轮，每轮执行两步富文本操作与随机网络交错。各轮内容和结构收敛，并且额外格式清理计数都为 0。
  *
  * @param {t.TestCase} tc
  */
@@ -2446,7 +2443,8 @@ export const testRepeatGenerateQuillChanges2Repeat = tc => {
 }
 
 /**
- * 以 3 轮富文本/Quill随机操作验证多副本收敛与格式结构清理。
+ * 随机驱动建立五个空文本副本；交错执行 3 轮文本/embed/格式及复合 Delta 与网络动作。compare 与 checkResult 检查内容、结构和深层子 Delta 收敛。
+ * 没有在此包装函数启用额外格式清理断言。
  *
  * @param {t.TestCase} tc
  */
@@ -2455,7 +2453,8 @@ export const testRepeatGenerateQuillChanges3 = tc => {
 }
 
 /**
- * 以 30 轮富文本/Quill随机操作验证多副本收敛与格式结构清理。
+ * 随机驱动建立五个空文本副本；交错执行 30 轮文本/embed/格式及复合 Delta 与网络动作。compare 与 checkResult 检查内容、结构和深层子 Delta 收敛。
+ * 没有在此包装函数启用额外格式清理断言。
  *
  * @param {t.TestCase} tc
  */
@@ -2464,7 +2463,8 @@ export const testRepeatGenerateQuillChanges30 = tc => {
 }
 
 /**
- * 以 40 轮富文本/Quill随机操作验证多副本收敛与格式结构清理。
+ * 随机驱动建立五个空文本副本；交错执行 40 轮文本/embed/格式及复合 Delta 与网络动作。compare 与 checkResult 检查内容、结构和深层子 Delta 收敛。
+ * 没有在此包装函数启用额外格式清理断言。
  *
  * @param {t.TestCase} tc
  */
@@ -2473,7 +2473,8 @@ export const testRepeatGenerateQuillChanges40 = tc => {
 }
 
 /**
- * 以 70 轮富文本/Quill随机操作验证多副本收敛与格式结构清理。
+ * 随机驱动建立五个空文本副本；交错执行 70 轮文本/embed/格式及复合 Delta 与网络动作。compare 与 checkResult 检查内容、结构和深层子 Delta 收敛。
+ * 没有在此包装函数启用额外格式清理断言。
  *
  * @param {t.TestCase} tc
  */
@@ -2482,7 +2483,8 @@ export const testRepeatGenerateQuillChanges70 = tc => {
 }
 
 /**
- * 以 100 轮富文本/Quill随机操作验证多副本收敛与格式结构清理。
+ * 随机驱动建立五个空文本副本；交错执行 100 轮文本/embed/格式及复合 Delta 与网络动作。compare 与 checkResult 检查内容、结构和深层子 Delta 收敛。
+ * 没有在此包装函数启用额外格式清理断言。
  *
  * @param {t.TestCase} tc
  */
@@ -2491,7 +2493,8 @@ export const testRepeatGenerateQuillChanges100 = tc => {
 }
 
 /**
- * 以 300 轮富文本/Quill随机操作验证多副本收敛与格式结构清理。
+ * 随机驱动建立五个空文本副本；交错执行 300 轮文本/embed/格式及复合 Delta 与网络动作。compare 与 checkResult 检查内容、结构和深层子 Delta 收敛。
+ * 没有在此包装函数启用额外格式清理断言。
  *
  * @param {t.TestCase} tc
  */

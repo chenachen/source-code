@@ -10,16 +10,16 @@
 
 两者最重要的差别不是“有没有 bundle”，而是**谁拥有运行时事实**：
 
-| 问题 | 普通 unbundled dev | Bundled Dev |
-|---|---|---|
-| 模块何时转换 | 浏览器请求 URL 时 | Rolldown DevEngine 构建/增量构建时 |
-| 长期图状态 | 服务端 `EnvironmentModuleGraph` | Rolldown 构建图 + 浏览器 `DevRuntime` 执行图 |
-| HMR 边界由谁算 | 服务端 `server/hmr.ts` | 浏览器 `BundledDevHMRClient` |
-| 未执行分支的 accept | 静态分析后可能进入服务端图 | 不形成边界；浏览器知道它没有执行 |
-| 动态入口 | 浏览器请求源码模块 | `/@vite/lazy` 触发按客户端编译入口 |
-| 输出落点 | `transformResult` + HTTP 响应 | `MemoryFiles` |
-| full reload 时机 | 服务端直接发 payload | 必须等最新完整输出已进入内存 |
-| 依赖预构建 | 独立 optimizer | 禁用；完整 bundle 自己处理依赖 |
+| 问题                | 普通 unbundled dev              | Bundled Dev                                  |
+| ------------------- | ------------------------------- | -------------------------------------------- |
+| 模块何时转换        | 浏览器请求 URL 时               | Rolldown DevEngine 构建/增量构建时           |
+| 长期图状态          | 服务端 `EnvironmentModuleGraph` | Rolldown 构建图 + 浏览器 `DevRuntime` 执行图 |
+| HMR 边界由谁算      | 服务端 `server/hmr.ts`          | 浏览器 `BundledDevHMRClient`                 |
+| 未执行分支的 accept | 静态分析后可能进入服务端图      | 不形成边界；浏览器知道它没有执行             |
+| 动态入口            | 浏览器请求源码模块              | `/@vite/lazy` 触发按客户端编译入口           |
+| 输出落点            | `transformResult` + HTTP 响应   | `MemoryFiles`                                |
+| full reload 时机    | 服务端直接发 payload            | 必须等最新完整输出已进入内存                 |
+| 依赖预构建          | 独立 optimizer                  | 禁用；完整 bundle 自己处理依赖               |
 
 因此，不能把第 08、11、12 章的 pending、optimizer、服务端 HMR 边界直接套到本章。Bundled Dev 仍复用
 Vite 配置、插件、HTTP、HotChannel、ErrorOverlay 与客户端 HMR 生命周期，但重新分配了状态所有权。
@@ -40,9 +40,8 @@ Vite 配置、插件、HTTP、HotChannel、ErrorOverlay 与客户端 HMR 生命�
 → server.close() 收口 DevEngine 与内存状态
 ```
 
-不展开 Rolldown `dev()`、`compileEntry()`、`notifyPayloadDelivered()` 的内部算法；它们来自
-`rolldown/experimental`。本文能由 Vite 仓库直接证明的是：Vite 怎样配置并调用这些接口、怎样维护自身
-状态，以及真实 playground 最终观察到什么。
+Rolldown 的 `dev()`、`compileEntry()` 与 `notifyPayloadDelivered()` 提供构建、按需入口与交付登记。
+本章沿 Vite 调用端解释这些接口怎样接入 HTTP/HMR，以及 Vite 自身状态何时改变。
 
 读完应能回答：
 
@@ -50,7 +49,7 @@ Vite 配置、插件、HTTP、HotChannel、ErrorOverlay 与客户端 HMR 生命�
 2. `BundledDev.listen()` 为什么不等待首轮 bundle 完成？
 3. 首次文档请求为何先得到 fallback，而不是挂起 HTTP 请求？
 4. `MemoryFiles` 为什么保存惰性函数，增量输出时又不能整表 `clear()`？
-5. payload “已生成”与“已送达”为什么是两个状态？
+5. payload “已生成”与“响应发送完成”为什么是两个状态？
 6. 为什么 HMR payload 只传 `changedIds + url + seq`？
 7. 未执行模块、self accept、dependency accept、无 importer 根分别怎样传播？
 8. 删除缓存前为什么必须冻结 accept callbacks？
@@ -105,8 +104,8 @@ if (
 这里必须区分“解析后的能力标记”和“完整 server 模式开关”：单独配置
 `environments.client.isBundled: true` 虽会在 constructor 中创建 `BundledDev`，但
 `server/index.ts` 的 watcher、中间件与初始化分支，以及 `server/hmr.ts::handleHMRUpdate()`，仍只检查
-`config.experimental.bundledDev`。结果会把 bundled 对象与普通 serve 管线拼在一起，当前源码和测试均未把
-它证明为受支持的启用方式。因此下文一律假设 `experimental.bundledDev === true`，不把显式 `isBundled`
+`config.experimental.bundledDev`。单独设置 `isBundled` 会创建 bundled 对象，却仍安装普通 serve
+中间件和 HMR 管线，无法启用下文的完整流程。因此下文一律假设 `experimental.bundledDev === true`，不把显式 `isBundled`
 当作等价入口。
 
 对象所有权如下：
@@ -142,26 +141,26 @@ Rolldown DevEngine 自己监听和分类。
 
 ## 核心状态与不变量
 
-| 状态 | 所有者 | 写入点 | 不变量 |
-|---|---|---|---|
-| `_devEngine` | `BundledDev` | `listen()` 调用 `dev()` | 初始化前访问必须抛错，不能伪装成普通 undefined |
-| `initialBuildCompleted` | `BundledDev` | 首轮等待完成 / `close()` | stale 重构建只在首轮稳定后启用 |
-| `memoryFiles` | `BundledDev` | `storeOutputFiles()`、`handleHmrOutput()` | 增量输出不能整表清空，未变化文件可能被复用 |
-| `pendingPayloadFilenames` | `BundledDev` | lazy/HMR payload 生成时 | 只有 HTTP `finish` 后才通知 DevEngine 已交付 |
-| `clients` | `BundledDev` | HotChannel connect/disconnect | connection 与 clientId 必须双向一致 |
-| `lastBuildError` | `BundledDev` | `onOutput` | 新连接客户端也必须看到最近一次完整输出错误 |
-| `fullReloadPending` | `BundledDev` | 服务端判定 FullReload | `onOutput` 成功前不能兑现 reload |
-| `reloadNeededClientIds` | `BundledDev` | 浏览器发 reload-needed | 只刷新实际遇到死端的页面 |
-| `applyQueue` | 浏览器 HMR client | push/invalidate | patch 与 invalidate 不能交叉删同一 runtime 缓存 |
-| `lastSeq` | 浏览器 HMR client | `applyPush()` | 服务端 patch 必须严格连续 |
-| `reloadPending` | 浏览器 HMR client | `requestFullReload()` | 发出 reload-needed 后忽略后续 patch |
+| 状态                      | 所有者            | 写入点                                    | 不变量                                           |
+| ------------------------- | ----------------- | ----------------------------------------- | ------------------------------------------------ |
+| `_devEngine`              | `BundledDev`      | `listen()` 调用 `dev()`                   | 初始化前访问必须抛错，不能伪装成普通 undefined   |
+| `initialBuildCompleted`   | `BundledDev`      | 首轮等待完成 / `close()`                  | stale 重构建只在首轮稳定后启用                   |
+| `memoryFiles`             | `BundledDev`      | `storeOutputFiles()`、`handleHmrOutput()` | 增量输出不能整表清空，未变化文件可能被复用       |
+| `pendingPayloadFilenames` | `BundledDev`      | lazy/HMR payload 生成时                   | 以 HTTP `finish` 作为通知 DevEngine 的交付登记点 |
+| `clients`                 | `BundledDev`      | HotChannel connect/disconnect             | connection 与 clientId 必须双向一致              |
+| `lastBuildError`          | `BundledDev`      | `onOutput`                                | 新连接客户端也必须看到最近一次完整输出错误       |
+| `fullReloadPending`       | `BundledDev`      | 服务端判定 FullReload                     | `onOutput` 成功前不能兑现 reload                 |
+| `reloadNeededClientIds`   | `BundledDev`      | 浏览器发 reload-needed                    | 只刷新实际遇到死端的页面                         |
+| `applyQueue`              | 浏览器 HMR client | push/invalidate                           | patch 与 invalidate 不能交叉删同一 runtime 缓存  |
+| `lastSeq`                 | 浏览器 HMR client | `applyPush()`                             | 服务端 patch 必须严格连续                        |
+| `reloadPending`           | 浏览器 HMR client | `requestFullReload()`                     | 发出 reload-needed 后忽略后续 patch              |
 
 三类“完成”必须分开：
 
 ```text
 构建完成     = Rolldown onOutput 给出最新完整产物
 payload 生成 = compileEntry / HMR 产生一个可请求文件
-payload 送达 = 对应 HTTP response 发出 finish
+payload 交付登记 = 对应 HTTP response 发出 finish
 ```
 
 把它们合并会产生三种错误：刷新后仍读旧 bundle、后续 chunk 省略客户端没收到的模块、连接中断却被当成
@@ -190,9 +189,9 @@ async listen(server: ViteDevServer): Promise<void> {
 4. 调用 `devEngine.run()`，但不 await 整个长期任务；
 5. 载入 bundled 版 HMR runtime，后台等待首轮输出。
 
-派生配置固定：
+派生配置设置：
 
-- `experimental.devMode.lazy = true`；
+- `experimental.devMode.lazy` 默认 `true`，用户已有 devMode 对象中的 `lazy` 可覆盖它；
 - `skipCommonRuntimeInjection = true`，由 Vite 自己注入客户端 runtime；
 - `optimization.inlineConst = false`，规避当前已知正确性问题；
 - 固定 entry/chunk/asset 文件名模板；
@@ -226,8 +225,7 @@ const isDocumentRequest = [
 ].includes(secFetchDest)
 if (
   isDocumentRequest &&
-  ((await fullBundle.triggerBundleRegenerationIfStale()) ||
-    file === undefined)
+  ((await fullBundle.triggerBundleRegenerationIfStale()) || file === undefined)
 ) {
   file = { source: await generateFallbackHtml(server as ViteDevServer) }
 }
@@ -350,8 +348,9 @@ if (file) {
 带 ETag 的普通 build 输出不在 `pendingPayloadFilenames`；lazy code 由专用中间件直接响应，HMR patch
 写入内存时也没有 ETag。因此 304 提前返回不会跳过一个尚待提交的 payload ack。
 
-这里使用 `finish` 而非调用 `res.end()` 后立即确认。`end()` 只表示应用停止写入，底层响应仍可能因连接
-中断而未完成；`finish` 才是 Vite 可以提交“已交付”状态的边界。
+`res.end()` 表示应用不再写入，`finish` 表示响应最后一段已交给操作系统发送；Vite 在后者登记
+交付。这个时点是服务端发送完成，不是浏览器接收或执行确认，提前断开且未触发 `finish` 的响应不会
+登记。参见 [Node.js ServerResponse finish](https://nodejs.org/api/http.html#event-finish_2)。
 
 ## Lazy bundle：动态入口按客户端生成
 
@@ -409,9 +408,9 @@ markPayloadDelivered(filename: string): void {
 `delete()` 同时完成“是否仍 pending”的原子判断。重复 finish、普通静态文件名或已处理 payload 不会重复通知
 DevEngine。源码注释还明确 payload 文件名在所有客户端之间全局唯一，所以这里无需再用 clientId 组成 key。
 
-真实 playground 的 `main.js` 只有点击按钮才执行 `import('./dynamic.js')`。对应测试先点击
-`#load-dynamic`，再等待 `.dynamic === 'loaded'`；它证明 lazy 请求最终可执行，但没有单独断言 URL 或 delivery
-ack。因此“点击后模块可用”是测试证明，“ship map 只在 finish 后推进”来自上述源码，不应把两类证据混写。
+真实 playground 的 `main.js` 只有点击按钮才执行 `import('./dynamic.js')`。对应测试点击
+`#load-dynamic` 后等待 `.dynamic === 'loaded'`，检查按需加载的可见结果；发送侧状态由上面的
+`finish → markPayloadDelivered → notifyPayloadDelivered` 链推进。
 
 ## 客户端身份：一个页面对应一个 runtime client
 
@@ -461,7 +460,7 @@ runtime.hooks = {
 
 `??=` 只复用 Rolldown runtime 的 factory 与模块缓存，**不复用** `BundledDevHMRClient`。客户端入口每执行
 一次，仍会生成新 clientId、新 HMR client 与新的 accept/data/dispose maps，并覆盖全局注册和 runtime
-hooks。因此当前源码不能支持“重复载入入口不会丢全部 HMR 状态”这个结论；它只证明 runtime cache 被保留。
+hooks。重复载入入口会重建 HMR maps，runtime cache 的复用并不保留这些生命周期数据。
 正常情况下每个页面加载一次入口并得到独立 clientId；服务端 `Clients` 使用 connection→id 和
 id→connection 两张 Map 路由 patch。一个连接若后来宣告不同 ID，`setupIfNeeded()` 抛出
 “client ID conflict detected”，避免两个执行图串线。
@@ -483,13 +482,13 @@ case 'bundled-dev-update':
 
 `BundledDev.listen()` 的 `onHmrUpdates` 把结果分成四类：
 
-| DevEngine 结果 | Vite 动作 |
-|---|---|
-| `Error` | 记录 build error，向现有客户端广播 overlay |
-| `changedFiles.length === 0` | 无用户可见变化，返回 |
-| 所有 update 都是 `Noop` | 只写 debug 日志 |
-| `FullReload` | 设置等待标志，不立即刷新 |
-| HMR patch | 写入内存、发送指定 client |
+| DevEngine 结果              | Vite 动作                                  |
+| --------------------------- | ------------------------------------------ |
+| `Error`                     | 记录 build error，向现有客户端广播 overlay |
+| `changedFiles.length === 0` | 无用户可见变化，返回                       |
+| 所有 update 都是 `Noop`     | 只写 debug 日志                            |
+| `FullReload`                | 设置等待标志，不立即刷新                   |
+| HMR patch                   | 写入内存、发送指定 client                  |
 
 同一轮可以含多个 clientId；Vite 逐项查 `Clients`，断开的页面不再接收结果。
 
@@ -498,9 +497,7 @@ case 'bundled-dev-update':
 
 ```ts
 if (hmrOutput.type === 'FullReload') {
-  const reason = hmrOutput.reason
-    ? colors.dim(` (${hmrOutput.reason})`)
-    : ''
+  const reason = hmrOutput.reason ? colors.dim(` (${hmrOutput.reason})`) : ''
   this.environment.logger.info(
     colors.green(`trigger page reload `) + colors.dim(shortFile) + reason,
     { clear: true, timestamp: true },
@@ -523,9 +520,8 @@ client.send({
 
 上面模板字符串中的 `reason` 行为来自原码；摘录只省略 debug、sourcemap 和日志尾部。
 
-patch 末尾强制追加 `export {}` 有实际安全语义：浏览器必须把响应当 ESM 导入，恶意跨源页面不能用 classic
-`<script>` 直接读取/执行本地开发响应。这是响应内容侧的 XSSI 缓解，不替代 Host、Origin/token 等网络
-校验。
+patch 末尾强制追加 `export {}`，让没有其他 export 的 patch 也保留 ESM 语法。Vite 以动态 import
+执行它并注册 factory；classic `<script>` 解析它会报语法错误，缓解依赖脚本执行的 XSSI。
 
 若 patch 另外携带 sourcemap，服务端把它作为单独内存文件登记。若 HMR 新增 asset/Worker 输出，
 `onAdditionalAssets` 调用 `storeOutputFiles()`；不能只等下一次完整 `onOutput`，否则 patch 已执行而新 URL
@@ -589,15 +585,15 @@ return boundaries.length
 
 `bubble()` 的决定顺序：
 
-| 当前状态 | 结果 | 原因 |
-|---|---|---|
-| 已跨路径遍历 | 返回 | 同一祖先不重复处理 |
-| 回到 `firstInvalidatedBy` | full reload | invalidate 传播已绕回发起者 |
-| 当前模块 self accept | `[id, id]` boundary | 当前模块能重建自己 |
-| 没有已执行 importer | full reload | 到达运行时根仍无边界 |
-| parent 接受当前 id | `[parent, id]` boundary | callback 属于 parent |
-| 单条路径回到已有 parent | full reload | 无明确边界的 import 环执行顺序不安全 |
-| 其他 | 递归 parent | 继续寻找边界 |
+| 当前状态                  | 结果                    | 原因                                 |
+| ------------------------- | ----------------------- | ------------------------------------ |
+| 已跨路径遍历              | 返回                    | 同一祖先不重复处理                   |
+| 回到 `firstInvalidatedBy` | full reload             | invalidate 传播已绕回发起者          |
+| 当前模块 self accept      | `[id, id]` boundary     | 当前模块能重建自己                   |
+| 没有已执行 importer       | full reload             | 到达运行时根仍无边界                 |
+| parent 接受当前 id        | `[parent, id]` boundary | callback 属于 parent                 |
+| 单条路径回到已有 parent   | full reload             | 无明确边界的 import 环执行顺序不安全 |
+| 其他                      | 递归 parent             | 继续寻找边界                         |
 
 目标版本源码摘录，来源：同文件 `BundledDevHMRClient.bubble()`：
 
@@ -663,7 +659,7 @@ boundaries = [[hmr.js, hmr.js]]
 `applyPush()` 固定顺序：
 
 1. `reloadPending` 时忽略；
-2. 校验 `seq === lastSeq + 1`；
+2. 校验 `seq === lastSeq + 1`，并立即更新 lastSeq；即使随后为 noop 也消费序号；
 3. 计算边界；
 4. 通知 `vite:beforeUpdate` 并清 overlay；
 5. 动态 import patch，注册新 factory；
@@ -705,11 +701,7 @@ for (const { boundary, acceptedVia, callbacks } of applies) {
   try {
     this.currentFirstInvalidatedBy = firstInvalidatedBy
     for (const { deps, fn } of callbacks) {
-      fn(
-        deps.map((dep) =>
-          dep === acceptedVia ? (fresh as any) : undefined,
-        ),
-      )
+      fn(deps.map((dep) => (dep === acceptedVia ? (fresh as any) : undefined)))
     }
   } finally {
     this.currentFirstInvalidatedBy = undefined
@@ -717,9 +709,12 @@ for (const { boundary, acceptedVia, callbacks } of applies) {
 }
 ```
 
-先校验全部 factory，防止删完旧缓存才发现 patch 不完整。删除缓存会通过 runtime hook 同步执行 dispose，
-dispose 又可能改变 hot context；所以 callback 必须在删除前冻结。`acceptedVia` 初始化完成后再读取 exports，
-callback 才拿到新 namespace。`finally` 则保证用户 callback 抛错也不会把 invalidate 发起者泄漏到下一轮。
+先校验 `updateSet` 每个模块都有 factory，防止删完旧缓存才发现无法重执行。`hasFactory()` 检查
+存在性，已有 factory 也可用于本地 invalidate，它不检查每个 factory 是否来自本次 patch。删除缓存
+会通过 runtime hook 同步调用 dispose，dispose 又可能改变 hot context；所以 callback 必须提前冻结。`acceptedVia` 初始化完成后再读取 exports，
+callback 才拿到新 namespace。`finally` 在同步 callback 调用返回或抛错后清空当前来源。dispose 和 accept callback 返回的 Promise
+都未被这条实现等待；若同步 dispose、initModule 或 callback 抛错，已删缓存不会回滚，外层队列
+记录失败后继续接收后续任务。因此这里的“事务”指队列中一组操作按序执行，不是原子回滚。
 
 ## `hot.data` 与本地 invalidate
 
@@ -735,8 +730,10 @@ disposed: 0 → 1 → 2
 
 Bundled 版 `hot.invalidate()` 不回服务端模块图。`BundledDevHMRContext.invalidate()` 把模块加入同一个客户端
 队列，`applyInvalidate()` 从它的**已执行 importers** 开始重新计算边界，不下载新 patch，使用 runtime
-现有 factory。`firstInvalidatedBy` 沿嵌套 callback 传播；若图最终绕回发起者，升级为 full reload，防止无限
-自触发。
+现有 factory。`applyInvalidate()` 执行时才读取 `currentFirstInvalidatedBy ?? id`，并在这一轮传播中检测回到该来源。
+`invalidateLocally()` 只把 id 排队，前轮 callback 的 `finally` 会在队列任务开始前清空来源，所以
+嵌套 invalidate 通常以各次调用模块重新作为来源，不能据此保证整条链都保留最初模块。相应循环
+用例目前因 Rolldown #10340 被 skip。
 
 真实 fixture `invalidation-child.js` self accept 后立即 invalidate，`invalidation-parent.js` self accept。
 测试修改 child 后看到 parent DOM 更新，并检查浏览器日志包含 invalidate；这证明第二轮传播在客户端完成。
@@ -745,10 +742,10 @@ Bundled 版 `hot.invalidate()` 不回服务端模块图。`BundledDevHMRContext.
 
 Bundled Dev 有两个 reload 来源：
 
-| 来源 | 服务端状态 | 影响范围 |
-|---|---|---|
-| DevEngine 直接返回 `FullReload` | `fullReloadPending = true` | 当前实现通过 HotChannel 广播全部客户端 |
-| 浏览器运行时图发现死端 | `reloadNeededClientIds.add(clientId)` | 只刷新该执行图对应页面 |
+| 来源                            | 服务端状态                            | 影响范围                               |
+| ------------------------------- | ------------------------------------- | -------------------------------------- |
+| DevEngine 直接返回 `FullReload` | `fullReloadPending = true`            | 当前实现通过 HotChannel 广播全部客户端 |
+| 浏览器运行时图发现死端          | `reloadNeededClientIds.add(clientId)` | 只刷新该执行图对应页面                 |
 
 浏览器发现死端时不直接导航，只发送自定义事件。
 
@@ -769,8 +766,9 @@ private requestFullReload(reason: string): void {
 }
 ```
 
-服务端收到事件后记录 clientId，并调用 `ensureLatestBuildOutput()`。只有 `onOutput` 成功把最新产物写入
-`memoryFiles`，才兑现两类 reload：
+服务端收到事件后记录 clientId，并调用 `ensureLatestBuildOutput()`。需要再构建时，成功 `onOutput`
+先把产物写入 `memoryFiles`，再安排刷新；完整输出已经最新时，ensure 完成回调也会安排定向刷新。
+两条出口都要求最新输出就绪，定向 flush 还会检查 `lastBuildError`：
 
 目标版本源码摘录（删节：保留成功提交），来源：
 `packages/vite/src/node/server/bundledDev.ts`，`BundledDev.listen()` 的 `onOutput`：
@@ -790,22 +788,23 @@ if (this.reloadNeededClientIds.size) {
 ```
 
 顺序不能交换。若先发 reload，新的 document 请求可能仍读旧 bundle，或再次进入 fallback 后二次导航。
-20ms trailing-edge debounce 只合并同一波通知；正确性门禁来自 `onOutput`，不是 debounce。
+20ms trailing-edge debounce 合并同一波通知；输出就绪来自成功 `onOutput` 或
+`ensureLatestBuildOutput()` 完成，计时器本身不判断产物版本。
 
 ## 错误路径与自愈
 
-| 触发条件 | 状态变化 | 用户可见结果 | 恢复 |
-|---|---|---|---|
-| 非 client Environment 构造 `BundledDev` | 无实例 | 明确抛错 | 改回 client 或 unbundled |
-| output options 多于一组 | DevEngine 不创建 | `listen()` 抛错 | 使用单 output |
-| `onHmrUpdates(Error)` | 不提交 patch | 现有客户端 overlay | 修复文件，下一轮 HMR |
-| `onOutput(Error)` | `lastBuildError = error`，清 `fullReloadPending` | 广播 overlay，新连接也重放 | 后续成功 `onOutput` 清错误 |
-| HMR stage 失败后访问 document | bundle state 标记失败 | fallback/旧页面等待 | `triggerFullBuild()` 强制完整输出 |
-| patch `seq` 缺号 | `reloadPending = true` | 请求 full reload | 最新 bundle 就绪后导航 |
-| patch 动态 import 失败 | 不删旧缓存 | 请求 full reload | 同上 |
-| `updateSet` 缺 factory | 不进入缓存删除 | 请求 full reload | 同上 |
-| 无 importer 根/无边界环 | 不做局部更新 | 请求 full reload | 同上 |
-| clientId 冲突 | 双向索引不改成冲突值 | 抛“restart dev server”错误 | 重启连接/server |
+| 触发条件                                | 状态变化                                         | 用户可见结果               | 恢复                              |
+| --------------------------------------- | ------------------------------------------------ | -------------------------- | --------------------------------- |
+| 非 client Environment 构造 `BundledDev` | 无实例                                           | 明确抛错                   | 改回 client 或 unbundled          |
+| output options 多于一组                 | DevEngine 不创建                                 | `listen()` 抛错            | 使用单 output                     |
+| `onHmrUpdates(Error)`                   | 不提交 patch                                     | 现有客户端 overlay         | 修复文件，下一轮 HMR              |
+| `onOutput(Error)`                       | `lastBuildError = error`，清 `fullReloadPending` | 广播 overlay，新连接也重放 | 后续成功 `onOutput` 清错误        |
+| HMR stage 失败后访问 document           | bundle state 标记失败                            | fallback/旧页面等待        | `triggerFullBuild()` 强制完整输出 |
+| patch `seq` 缺号                        | `reloadPending = true`                           | 请求 full reload           | 最新 bundle 就绪后导航            |
+| patch 动态 import 失败                  | 不删旧缓存                                       | 请求 full reload           | 同上                              |
+| `updateSet` 缺 factory                  | 不进入缓存删除                                   | 请求 full reload           | 同上                              |
+| 无 importer 根/无边界环                 | 不做局部更新                                     | 请求 full reload           | 同上                              |
+| clientId 冲突                           | 双向索引不改成冲突值                             | 抛“restart dev server”错误 | 重启连接/server                   |
 
 `onOutput(Error)` 保存 `lastBuildError` 很重要：错误可能发生在页面建立 HotChannel 连接之前。新页面连接时，
 服务端重放同一 prepared error；否则用户只看到空白 fallback，却不知道构建为什么无法完成。
@@ -835,9 +834,7 @@ await Promise.allSettled([
   (async () => {
     while (this._pendingRequests.size > 0) {
       await Promise.allSettled(
-        [...this._pendingRequests.values()].map(
-          (pending) => pending.request,
-        ),
+        [...this._pendingRequests.values()].map((pending) => pending.request),
       )
     }
   })(),
@@ -855,9 +852,11 @@ async close(): Promise<void> {
 }
 ```
 
-`_closed` 让首轮异步等待在每个 await 后提前退出，避免 server 已关闭却迟到发送 fallback reload。
+首轮等待在入口、`ensureCurrentBuildFinish()` 与重试等待后检查 `_closed`；`getBundleState()` 后
+没有立即检查，但外层回调发送 fallback reload 前还会检查一次，拦截关闭后的刷新。
 `memoryFiles.clear()` 释放 chunk、asset、map 与 runtime 引用；`devEngine.close()` 停止 Rolldown watcher 和插件
-构建生命周期；首轮标记复位，不把旧输出状态带到潜在的新实例。
+构建生命周期；首轮标记在 engine close 成功后复位。此方法没有清空 `clients`、pending payload、reload 集合，
+也没有取消 debounce timer；HotChannel 断连事件另行移除已登记客户端。
 
 `Promise.allSettled()` 保证 bundled engine、HotChannel 与在途 transform 中任一清理失败，都不跳过其他项。
 虽然 bundled 模式不走普通 transform 主线，Environment 仍保持统一的关闭契约。
@@ -868,41 +867,41 @@ build hooks”这条资源所有权约束。
 
 ## 明确能力边界
 
-| 边界 | 目标版本事实 |
-|---|---|
-| 稳定性 | `experimental.bundledDev`，高度实验性 |
-| Environment | `BundledDev` 仅接受 client |
-| 多 output | `listen()` 明确拒绝多组 output |
-| optimizeDeps | constructor 禁用 |
-| `renderBuiltUrl` | serve + bundled 时配置解析主动清空 |
-| warmup | `DevEnvironment.warmupRequest()` 直接返回 |
-| Vite HMR plugin hooks | `server/hmr.ts` 留 TODO 后直接返回 |
-| 常规 transform middleware | 不安装，改用 lazy/memory 中间件 |
-| invalidate | 完全在客户端 runtime 图处理 |
-| 未执行 accept | 不构成边界 |
-| 循环 invalidate | playground 有因 Rolldown #10340 跳过的用例，不能宣称全部解决 |
+| 边界                      | 目标版本事实                                                         |
+| ------------------------- | -------------------------------------------------------------------- |
+| 稳定性                    | `experimental.bundledDev`，高度实验性                                |
+| Environment               | `BundledDev` 仅接受 client                                           |
+| 多 output                 | `listen()` 明确拒绝多组 output                                       |
+| optimizeDeps              | constructor 禁用                                                     |
+| `renderBuiltUrl`          | serve + bundled 时配置解析主动清空                                   |
+| warmup                    | `DevEnvironment.warmupRequest()` 直接返回                            |
+| Vite HMR plugin hooks     | `server/hmr.ts` 留 TODO 后直接返回                                   |
+| 常规 transform middleware | 不安装，改用 lazy/memory 中间件                                      |
+| invalidate                | 完全在客户端 runtime 图处理                                          |
+| 未执行 accept             | 不构成边界                                                           |
+| 循环 invalidate           | 链式循环用例因 Rolldown #10340 跳过；队列只保存 id，每轮重建传播来源 |
 
-这些是版本边界，不应改写成 Bundled Dev 的永久设计承诺。尤其不能因为普通 HMR 支持
-`hotUpdate/handleHotUpdate`，便推断 bundled 模式也执行相同插件钩子。
+普通 HMR 的 `hotUpdate/handleHotUpdate` 在该模式尚未接入；需要这些钩子的插件不能直接沿用
+普通 HMR 流程。
 
 ## 状态转换总表
 
-| 变化前 | 触发动作 | 变化后 | 异常/清理 |
-|---|---|---|---|
+| 变化前                    | 触发动作                       | 变化后                                                          | 异常/清理                                                                 |
+| ------------------------- | ------------------------------ | --------------------------------------------------------------- | ------------------------------------------------------------------------- |
 | client Environment 未创建 | `experimental.bundledDev=true` | client 默认 `isBundled=true`，创建 `BundledDev`，禁用 optimizer | 单独显式 `isBundled` 不会切换完整 server 管线；非 client bundled 直接抛错 |
-| DevEngine 未初始化 | `BundledDev.listen()` | HotChannel handlers、DevEngine、runtime 已装配 | 多 output 抛错，不暴露半初始化 engine |
-| 首轮输出未完成 | 浏览器请求 HTML | 返回带 HMR runtime 的 fallback | 构建错误发 overlay，不盲目 reload |
-| `MemoryFiles` 无应用输出 | `onOutput(success)` | 惰性写入 HTML/chunk/asset/map | 同名覆盖，未变化旧项保留 |
-| 浏览器仍在 fallback | 首轮等待完成 | 收到 `full-reload(ifFallback)` | `_closed` 时不发送迟到消息 |
-| 动态入口未 ship | `/@vite/lazy` | `compileEntry` 生成 code，filename 进入 pending | 参数缺失/URL 畸形继续中间件链 |
-| payload pending | HTTP `finish` | pending 删除，DevEngine 收到 delivered | 连接未 finish 不提交 |
-| 文件稳定 | DevEngine 文件事件 | Error、Noop、FullReload 或 client patch | Error 只进 overlay，不提交输出 |
-| patch 已生成 | `handleHmrOutput()` | 内存保存 patch，client 收到 changedIds/url/seq | patch 强制含 ESM 语法 |
-| client 无在途事务 | `handlePush()` | push 加入 `applyQueue` | seq 缺口转 full reload |
-| 已找到 boundaries | patch import 成功 | factory 注册，缓存统一删除，callback 执行 | 缺 factory/import 失败不删旧缓存，转 reload |
-| client 图有死端 | `requestFullReload()` | `reloadPending=true`，服务端记录 clientId | 后续 patch 忽略 |
-| reload 等最新输出 | `onOutput(success)` | 先更新 MemoryFiles，再发送 full-reload | `onOutput(Error)` 保留页面并显示 overlay |
-| server 活动 | `server.close()` | 内存清空、DevEngine/HotChannel 等并行关闭 | `allSettled` 防止单项失败跳过其他清理 |
+| DevEngine 未初始化        | `BundledDev.listen()`          | HotChannel handlers、DevEngine、runtime 已装配                  | 多 output 抛错，不暴露半初始化 engine                                     |
+| 首轮输出未完成            | 浏览器请求 HTML                | 返回带 HMR runtime 的 fallback                                  | 构建错误发 overlay，不盲目 reload                                         |
+| `MemoryFiles` 无应用输出  | `onOutput(success)`            | 惰性写入 HTML/chunk/asset/map                                   | 同名覆盖，未变化旧项保留                                                  |
+| 浏览器仍在 fallback       | 首轮等待完成                   | 收到 `full-reload(ifFallback)`                                  | `_closed` 时不发送迟到消息                                                |
+| 动态入口未 ship           | `/@vite/lazy`                  | `compileEntry` 生成 code，filename 进入 pending                 | 参数缺失/URL 畸形继续中间件链                                             |
+| payload pending           | HTTP `finish`                  | pending 删除，DevEngine 收到 delivered                          | 连接未 finish 不提交                                                      |
+| 文件稳定                  | DevEngine 文件事件             | Error、Noop、FullReload 或 client patch                         | Error 只进 overlay，不提交输出                                            |
+| patch 已生成              | `handleHmrOutput()`            | 内存保存 patch，client 收到 changedIds/url/seq                  | patch 强制含 ESM 语法                                                     |
+| client 无在途事务         | `handlePush()`                 | push 加入 `applyQueue`                                          | seq 缺口转 full reload                                                    |
+| 已找到 boundaries         | patch import 成功              | factory 注册，缓存统一删除，callback 执行                       | 缺 factory/import 失败不删旧缓存，转 reload                               |
+| client 图有死端           | `requestFullReload()`          | `reloadPending=true`，服务端记录 clientId                       | 后续 patch 忽略                                                           |
+| reload 等最新输出         | `onOutput(success)`            | 先更新 MemoryFiles，再发送 full-reload                          | `onOutput(Error)` 保留页面并显示 overlay                                  |
+| server 活动               | `server.close()`               | 内存清空、DevEngine/HotChannel 等并行关闭                       | `allSettled` 防止单项失败跳过其他清理                                     |
 
 ## 同一 Demo 的完整执行流程图
 
@@ -951,22 +950,14 @@ flowchart TD
 `a full reload navigates once, onto the rebuilt bundle`。fixture `dead-accept.js` 含静态可见但运行时永不执行的
 accept；这是最能区分普通静态图和 bundled 执行图的场景。
 
-下面只保留该用例实际使用的 import，并摘录当前中文注释工作树中的完整 test body；仅省略 `isBuild` 外层、
-同文件其他测试并去掉一层缩进，可执行逻辑、输入、断言和 `onTestFinished` 清理均未改写。需要区分版本层次：这些中文注释
-属于本仓库在 Vite v8.2.1 基线之上补充的解释层；上游 commit 中对应注释为英文且少一条解释性 TSDoc，
-但测试的可执行 token 相同。
+下面摘录该用例使用的 import 和完整 test body，省略 `isBuild` 外层与其他用例；中文解释性注释
+来自本仓库学习层。
 
 ```ts
 import { setTimeout } from 'node:timers/promises'
 import type { Response } from 'playwright-chromium'
 import { expect, test, onTestFinished } from 'vitest'
-import {
-  addFile,
-  editFile,
-  page,
-  readFile,
-  serverLogs,
-} from '~utils'
+import { addFile, editFile, page, readFile, serverLogs } from '~utils'
 
 test('a full reload navigates once, onto the rebuilt bundle', async () => {
   const original = readFile('dead-accept.js')
@@ -1030,8 +1021,8 @@ test('a full reload navigates once, onto the rebuilt bundle', async () => {
 ### Then
 
 1. DOM 最终显示 `dead-accept-reloaded`，证明新完整输出已被页面加载；
-2. server 日志含 `bundling for page reload`，证明服务端处理了某个客户端发来的 reload-needed；测试没有断言
-   日志里的具体 reason，死 accept 是触发原因还需结合 fixture 与 `bubble()` 源码判断；
+2. server 日志含 `bundling for page reload`，对应服务端 reload-needed handler；本例中
+   `dead-accept.js` 已执行但未登记 accept，`bubble()` 继续到无边界的 main.js 根，因此发出该请求；
 3. 额外等待 300ms 后 `documentLoads === 1`；
 4. `sawFallbackPage === false`，证明唯一导航直接落在重建后的 bundle；
 5. `onTestFinished` 恢复 fixture，避免后续测试继承变更。
@@ -1055,39 +1046,35 @@ edit dead-accept.js
 
 ### Source
 
-| 阶段 | 决定性源码 |
-|---|---|
-| patch 服务端出口 | `server/bundledDev.ts::handleHmrOutput()` |
-| 消息分派 | `client/client.ts::handleMessage()` |
-| 真实执行图传播 | `client/bundledDevHmrClient.ts::computeHmrUpdate()/bubble()` |
-| 请求 reload | 同文件 `requestFullReload()` |
-| 等待输出 | `server/bundledDev.ts` 的 reload-needed handler |
-| 输出提交 | 同文件 `onOutput/storeOutputFiles()` |
-| 新 document 响应 | `middlewares/indexHtml.ts::indexHtmlMiddleware()` |
+| 阶段             | 决定性源码                                                   |
+| ---------------- | ------------------------------------------------------------ |
+| patch 服务端出口 | `server/bundledDev.ts::handleHmrOutput()`                    |
+| 消息分派         | `client/client.ts::handleMessage()`                          |
+| 真实执行图传播   | `client/bundledDevHmrClient.ts::computeHmrUpdate()/bubble()` |
+| 请求 reload      | 同文件 `requestFullReload()`                                 |
+| 等待输出         | `server/bundledDev.ts` 的 reload-needed handler              |
+| 输出提交         | 同文件 `onOutput/storeOutputFiles()`                         |
+| 新 document 响应 | `middlewares/indexHtml.ts::indexHtmlMiddleware()`            |
 
-这条测试直接证明的是“该 fixture 最终发生一次客户端请求的 reload，且没有经过 fallback”。它没有直接断言
-`pendingPayloadFilenames` 或 reload reason；payload ack 的精确提交时点只由中间件 `finish` 分支锁定，
-lazy/HMR 成功用例只能提供端到端结果，不能识别 ack 是否发生。
+document 响应计数与 fallback marker 检查把输出就绪的结果落到用户可见行为：这次刷新只导航一次，
+直接加载重建后的页面。
 
 ## 章节—源码—测试证据表
 
-| 章节机制 | 关键源码 | 代表性测试 | 证据结论 |
-|---|---|---|---|
-| 配置与所有权 | `config.ts::resolveEnvironmentOptions`、`server/environment.ts::constructor` | `build-hooks.spec.ts` | bundled client 拥有 DevEngine，optimizer 不并行 |
-| 首轮启动 | `BundledDev.listen()/waitForInitialBuildFinish` | `show bundling in progress` | server 可先响应，正式输出后仅 fallback reload |
-| HTML fallback | `indexHtmlMiddleware()/generateFallbackHtml` | 同上、单次 reload test | fallback 含 runtime，重建后不必二次经过 |
-| 内存输出 | `MemoryFiles`、`storeOutputFiles`、`memoryFilesMiddleware` | 新 asset/worker tests | 源码证明惰性物化与增量保留；测试只证明新产物可经 HTTP 读取 |
-| Lazy payload | `triggerLazyBundlingMiddleware`、`triggerLazyBundling`、`markPayloadDelivered` | `lazy bundling` | 测试证明动态入口最终执行；源码证明按 client 生成并在 finish 后确认交付 |
-| 服务端 patch | `onHmrUpdates/handleHmrOutput` | `generate hmr patch` | patch 按 client 路由并强制 ESM |
-| 浏览器边界 | `computeHmrUpdate/bubble` | self accept、dead accept tests | 边界取决于实际执行图 |
-| Patch 应用 | `applyPush/applyUpdate` | continuous patch、hot.data | seq、队列、callback 冻结、dispose 顺序 |
-| invalidate | `BundledDevHMRContext.invalidate/applyInvalidate` | `invalidate` | 无服务端 rebuild 的客户端二次传播 |
-| reload 门闩 | `requestFullReload`、服务端 reload-needed、`onOutput` | 单次 reload test | 输出写入后才导航 |
-| 错误恢复 | `onHmrUpdates`、`onOutput`、`triggerBundleRegenerationIfStale` | 两个 error tests | 测试证明 overlay 与修复后恢复；错误重放、访问时 full build 由源码分支证明 |
-| 清理 | `DevEnvironment.close/BundledDev.close` | `build-hooks.spec.ts` | DevEngine 只结束一次插件生命周期 |
-
-每个关键机制至少有真实源码摘录；上表没有把一个测试扩大成全部系统保证。比如 lazy 测试只证明动态入口
-最终执行，delivery ack 的精确提交时点仍由 `finish` 分支源码锁定。
+| 章节机制      | 关键源码                                                                       | 代表性测试                     | 证据结论                                                                   |
+| ------------- | ------------------------------------------------------------------------------ | ------------------------------ | -------------------------------------------------------------------------- |
+| 配置与所有权  | `config.ts::resolveEnvironmentOptions`、`server/environment.ts::constructor`   | `build-hooks.spec.ts`          | bundled client 拥有 DevEngine，optimizer 不并行                            |
+| 首轮启动      | `BundledDev.listen()/waitForInitialBuildFinish`                                | `show bundling in progress`    | server 可先响应，正式输出后仅 fallback reload                              |
+| HTML fallback | `indexHtmlMiddleware()/generateFallbackHtml`                                   | 同上、单次 reload test         | fallback 含 runtime，重建后不必二次经过                                    |
+| 内存输出      | `MemoryFiles`、`storeOutputFiles`、`memoryFilesMiddleware`                     | 新 asset/worker tests          | 源码证明惰性物化与增量保留；测试只证明新产物可经 HTTP 读取                 |
+| Lazy payload  | `triggerLazyBundlingMiddleware`、`triggerLazyBundling`、`markPayloadDelivered` | `lazy bundling`                | 测试证明动态入口最终执行；源码证明按 client 生成并在 finish 后登记发送完成 |
+| 服务端 patch  | `onHmrUpdates/handleHmrOutput`                                                 | `generate hmr patch`           | patch 按 client 路由并强制 ESM                                             |
+| 浏览器边界    | `computeHmrUpdate/bubble`                                                      | self accept、dead accept tests | 边界取决于实际执行图                                                       |
+| Patch 应用    | `applyPush/applyUpdate`                                                        | continuous patch、hot.data     | seq、队列、callback 冻结、dispose 顺序                                     |
+| invalidate    | `BundledDevHMRContext.invalidate/applyInvalidate`                              | `invalidate`                   | 无服务端 rebuild 的客户端二次传播                                          |
+| reload 门闩   | `requestFullReload`、服务端 reload-needed、`onOutput`                          | 单次 reload test               | 输出写入后才导航                                                           |
+| 错误恢复      | `onHmrUpdates`、`onOutput`、`triggerBundleRegenerationIfStale`                 | 两个 error tests               | 测试证明 overlay 与修复后恢复；错误重放、访问时 full build 由源码分支证明  |
+| 清理          | `DevEnvironment.close/BundledDev.close`                                        | `build-hooks.spec.ts`          | DevEngine 只结束一次插件生命周期                                           |
 
 同一 playground 另有 bundle/HMR error、新 asset、Worker 与连续 patch 用例；这里只把它们放在对应机制行，
 不再用第二张测试清单重复索引。Worker 构建本体见第 13B 章。
@@ -1133,10 +1120,10 @@ Bundled Dev 把状态所有权分给 Rolldown DevEngine、Vite server 与浏览�
 
 ```text
 没有最新完整输出 → 不 reload
-没有 HTTP finish     → 不确认 payload delivered
+没有 HTTP finish     → 不登记服务端发送完成
 没有实际执行 callback → 不构成 HMR boundary
-没有完整 factory 集  → 不删除旧模块缓存
-没有全部资源清理     → close 不算完成
+更新集缺 factory     → 不删除旧模块缓存
+关闭 engine 与内存表 → 由 Environment 并行等待其他资源关闭
 ```
 
 继续阅读：

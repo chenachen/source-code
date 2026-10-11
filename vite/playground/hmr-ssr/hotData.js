@@ -1,3 +1,4 @@
+/** 初始值一；本实例执行与 dispose 分别把值写到 hot.data，下一实例打印两项旧值并保存自己的新值。 */
 export const value = 1
 
 if (import.meta.hot) {

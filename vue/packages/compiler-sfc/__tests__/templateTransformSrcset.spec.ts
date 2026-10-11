@@ -1,6 +1,6 @@
 /**
- * `srcset` 资产场景：拆分逗号候选与 1x/2x/宽度描述符，逐项转换相对 URL 并重组表达式，
- * 覆盖 data URL 内逗号、转义空白、混合外链和格式不完整输入。
+ * `srcset` 资产场景：覆盖单/多候选与密度描述符、data URL 逗号、混合外链、base/绝对路径、
+ * hash 及非法百分号编码。
  */
 import {
   type TransformOptions,
@@ -58,10 +58,12 @@ const src = `
 `
 
 describe('compiler sfc: transform srcset', () => {
+  // 基础矩阵含空候选、重复 URL、不同顺序/密度、绝对/外链/data 混合；快照核对候选拆分、导入去重和描述符保留。
   test('transform srcset', () => {
     expect(compileWithSrcset(src).code).toMatchSnapshot()
   })
 
+  // 基础矩阵加 base=/foo；点相对候选改为 base 路径，外链与 data 候选不改。
   test('transform srcset w/ base', () => {
     expect(
       compileWithSrcset(src, {
@@ -70,6 +72,7 @@ describe('compiler sfc: transform srcset', () => {
     ).toMatchSnapshot()
   })
 
+  // 基础矩阵加 includeAbsolute:true；本地绝对候选参与导入，外链/data 保持原值。
   test('transform srcset w/ includeAbsolute: true', () => {
     expect(
       compileWithSrcset(src, {
@@ -78,6 +81,7 @@ describe('compiler sfc: transform srcset', () => {
     ).toMatchSnapshot()
   })
 
+  // srcset 仅含空白且允许绝对路径；空候选被跳过，不产生无意义 import。
   test('transform empty srcset w/ includeAbsolute: true', () => {
     expect(
       compileWithSrcset(`<img srcset=" " />`, {
@@ -86,6 +90,7 @@ describe('compiler sfc: transform srcset', () => {
     ).toMatchSnapshot()
   })
 
+  // 把候选矩阵包在 div 并启用 stringifyStatic；生成静态 vnode，同时快照核对资源候选表达式可被字符串化消费。
   test('transform srcset w/ stringify', () => {
     const code = compileWithSrcset(
       `<div>${src}</div>`,
@@ -101,6 +106,7 @@ describe('compiler sfc: transform srcset', () => {
     expect(code).toMatchSnapshot()
   })
 
+  // base 下候选混合 @ alias 与 ./ 相对路径；整组静态直写仅适用于可拼 base 的路径，alias 仍需模块导入。
   test('srcset w/ explicit base option', () => {
     const code = compileWithSrcset(
       `
@@ -113,6 +119,7 @@ describe('compiler sfc: transform srcset', () => {
     expect(code).toMatchSnapshot()
   })
 
+  // srcset 使用两种 # 包子路径，其中一项带 2x；生成各自 import，提升表达式保留密度描述符。
   test('should transform subpath import paths starting with #', () => {
     const code = compileWithSrcset(
       `<img srcset="#src/assets/vue.svg" />` +
@@ -125,6 +132,7 @@ describe('compiler sfc: transform srcset', () => {
     expect(code).toContain(`const _hoisted_2 = _imports_1 + ' 2x'`)
   })
 
+  // 两个候选引用同一 SVG 的不同 fragment；共用基础文件 import，分别拼回 #icon 与 2x。
   test('should preserve svg fragments in srcset URLs', () => {
     const code = compileWithSrcset(
       `<img srcset="./icons.svg#icon-heart" />` +
@@ -138,6 +146,7 @@ describe('compiler sfc: transform srcset', () => {
     )
   })
 
+  // 候选路径含非法百分号并带 2x；不因 URI 解码失败抛错，import 与描述符均保留。
   test('should not throw for malformed percent-encoding in srcset paths', () => {
     const code = compileWithSrcset(`<img srcset="./foo%.png 2x" />`).code
 

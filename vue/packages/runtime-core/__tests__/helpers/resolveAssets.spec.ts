@@ -1,6 +1,6 @@
 /**
- * 测试阅读说明：本文件验证 `runtime-core/helpers/resolveAssets` 的运行时行为。
- * “测试组”概括共享前置条件，“测试场景”说明当前输入、边界或历史回归目标；具体预期以断言为准。
+ * 挂载带局部注册表的 runtime-test 组件，检查名称转换、自引用、mixins 和 extends 的解析。
+ * 动态组件用例另行核对函数或对象类型、空值注释节点以及原生元素回退。
  */
 import {
   Comment,
@@ -17,12 +17,16 @@ import {
   serializeInner,
 } from '@vue/runtime-test'
 
-// 测试组：resolveAssets 按局部、全局和自身引用规则解析组件与指令。
+// resolveAssets 按局部、全局和自身引用规则解析组件与指令。
 describe('resolveAssets', () => {
-  // 测试场景：应该可以。
+  // 局部组件与指令注册兼容原名、camelize、capitalize 及两种转换组合。
   test('should work', () => {
+    /** 返回空内容的局部组件定义，以函数身份比较四种名称解析。 */
     const FooBar = () => null
-    const BarBaz = { mounted: () => null }
+    const BarBaz = {
+      /** 空指令钩子，用对象身份比较局部注册表的名称解析。 */
+      mounted: () => null
+    }
 
     let component1: Component | string
     let component2: Component | string
@@ -40,17 +44,18 @@ describe('resolveAssets', () => {
       directives: {
         BarBaz: BarBaz,
       },
+      /** 返回执行四种组件/指令名称转换查询的 render，把结果分别保存供身份断言。 */
       setup() {
         return () => {
           component1 = resolveComponent('FooBar')!
           directive1 = resolveDirective('BarBaz')!
-          // camelize
+          // 驼峰形式
           component2 = resolveComponent('Foo-bar')!
           directive2 = resolveDirective('Bar-baz')!
-          // capitalize
+          // 首字母大写形式
           component3 = resolveComponent('fooBar')!
           directive3 = resolveDirective('barBaz')!
-          // camelize and capitalize
+          // 先驼峰化，再首字母大写。
           component4 = resolveComponent('foo-bar')!
           directive4 = resolveDirective('bar-baz')!
         }
@@ -71,12 +76,13 @@ describe('resolveAssets', () => {
     expect(directive4!).toBe(BarBaz)
   })
 
-  // 测试场景：maybeSelfReference 开启时，找不到显式注册项可回退到当前组件自身。
+  // 显式组件 name 的自引用优先；其他名称先查注册，缺失时才按 maybeSelfReference 回退。
   test('maybeSelfReference', async () => {
     let component1: Component | string
     let component2: Component | string
     let component3: Component | string
 
+    /** 返回空内容的注册组件，供区分名称命中与自身引用回退。 */
     const Foo = () => null
 
     const Root = {
@@ -85,6 +91,7 @@ describe('resolveAssets', () => {
         Foo,
         Root: Foo,
       },
+      /** 返回查询 Root/Foo/Bar 的渲染函数，分别构造自身名称、注册命中和缺失回退。 */
       setup() {
         return () => {
           component1 = resolveComponent('Root', true)
@@ -98,14 +105,14 @@ describe('resolveAssets', () => {
     const root = nodeOps.createElement('div')
     app.mount(root)
 
-    expect(component1!).toMatchObject(Root) // explicit self name reference
-    expect(component2!).toBe(Foo) // successful resolve take higher priority
-    expect(component3!).toMatchObject(Root) // fallback when resolve fails
+    expect(component1!).toMatchObject(Root) // 显式自身名称优先。
+    expect(component2!).toBe(Foo) // 已注册名称优先于缺失回退。
+    expect(component3!).toMatchObject(Root) // 查找失败后回退到自身。
   })
 
-  // 测试组：资源解析 API 在错误调用位置或解析失败时给出恰当警告。
+  // 资源解析 API 在错误调用位置或解析失败时给出恰当警告。
   describe('warning', () => {
-    // 测试场景：在 render() 或 setup() 外部使用。
+    // render 与 setup 之外调用组件或指令解析函数，会警告缺少可用上下文。
     test('used outside render() or setup()', () => {
       resolveComponent('foo')
       expect(
@@ -118,9 +125,10 @@ describe('resolveAssets', () => {
       ).toHaveBeenWarned()
     })
 
-    // 测试场景：不存在。
+    // 活动实例中找不到组件或指令注册项，会发出 Failed to resolve 警告。
     test('not exist', () => {
       const Root = {
+        /** 在活动 setup 中查询未注册 foo/bar，构造缺失资源警告后返回空渲染。 */
         setup() {
           resolveComponent('foo')
           resolveDirective('bar')
@@ -135,17 +143,23 @@ describe('resolveAssets', () => {
       expect('Failed to resolve directive: bar').toHaveBeenWarned()
     })
 
-    // 测试场景：解决动态组件。
+    // 动态组件解析字符串注册名、函数与对象，空值生成注释 VNode。
     test('resolve dynamic component', () => {
       const dynamicComponents = {
+        /** 返回 foo 文本的函数组件定义，供动态字符串注册名解析。 */
         foo: () => 'foo',
+        /** 返回 bar 文本的函数组件定义，供直接函数动态类型解析。 */
         bar: () => 'bar',
-        baz: { render: () => 'baz' },
+        baz: {
+          /** 返回 baz 文本的对象组件渲染函数，供插槽上下文中的动态对象解析。 */
+          render: () => 'baz'
+        },
       }
-      let foo, bar, baz // dynamic components
+      let foo, bar, baz // 动态组件解析结果。
       let dynamicVNode: VNode
 
       const Child = {
+        /** 调用父级 default 插槽，让动态组件对象解析发生在插槽上下文中。 */
         render(this: any) {
           return this.$slots.default()
         },
@@ -153,13 +167,14 @@ describe('resolveAssets', () => {
 
       const Root = {
         components: { foo: dynamicComponents.foo },
+        /** 返回渲染函数依次解析字符串、函数、null，并在 Child 插槽中解析对象，保存各结果供比较。 */
         setup() {
           return () => {
             foo = resolveDynamicComponent('foo') // <component is="foo"/>
             bar = resolveDynamicComponent(dynamicComponents.bar) // <component :is="bar"/>, function
             dynamicVNode = createVNode(resolveDynamicComponent(null)) // <component :is="null"/>
             return h(Child, () => {
-              // check inside child slots
+              // 在 Child 的插槽上下文中解析对象组件。
               baz = resolveDynamicComponent(dynamicComponents.baz) // <component :is="baz"/>, object
             })
           }
@@ -172,16 +187,18 @@ describe('resolveAssets', () => {
       expect(foo).toBe(dynamicComponents.foo)
       expect(bar).toBe(dynamicComponents.bar)
       expect(baz).toBe(dynamicComponents.baz)
-      // should allow explicit falsy type to remove the component
+      // null 动态类型归一化为 Comment。
       expect(dynamicVNode!.type).toBe(Comment)
     })
 
-    // 测试场景：解决动态组件应该回退到普通元素而不发出警告。
+    // 动态组件字符串查不到注册时回退为元素标签，不发出缺失组件警告。
     test('resolve dynamic component should fallback to plain element without warning', () => {
       const Root = {
+        /** 把未注册字符串 div 当动态类型创建元素，default 插槽返回 hello，构造原生标签回退。 */
         setup() {
           return () => {
             return createVNode(resolveDynamicComponent('div') as string, null, {
+              /** 返回 hello 文本，让原生 div 类型的 default 插槽有可序列化内容。 */
               default: () => 'hello',
             })
           }
@@ -195,10 +212,14 @@ describe('resolveAssets', () => {
     })
   })
 
-  // 测试场景：从混合和扩展中解析。
+  // mixins 与 extends 合并的局部组件或指令表，仍兼容各种名称转换。
   test('resolving from mixins & extends', () => {
+    /** 返回空内容的组件定义，供 extends 合并后资源身份比较。 */
     const FooBar = () => null
-    const BarBaz = { mounted: () => null }
+    const BarBaz = {
+      /** 空指令钩子，用对象身份比较局部注册表的名称解析。 */
+      mounted: () => null
+    }
 
     let component1: Component | string
     let component2: Component | string
@@ -223,17 +244,18 @@ describe('resolveAssets', () => {
     const Root = {
       extends: Base,
       mixins: [Mixin],
+      /** 返回查询四种名称的 render，验证 extends 组件表与 mixin 指令表在实例中可用。 */
       setup() {
         return () => {
           component1 = resolveComponent('FooBar')!
           directive1 = resolveDirective('BarBaz')!
-          // camelize
+          // 驼峰形式
           component2 = resolveComponent('Foo-bar')!
           directive2 = resolveDirective('Bar-baz')!
-          // capitalize
+          // 首字母大写形式
           component3 = resolveComponent('fooBar')!
           directive3 = resolveDirective('barBaz')!
-          // camelize and capitalize
+          // 先驼峰化，再首字母大写。
           component4 = resolveComponent('foo-bar')!
           directive4 = resolveDirective('bar-baz')!
         }

@@ -51,8 +51,9 @@ export const isDevToolsPresent =
 
 /**
  * 把 renderer internals 注册到 DevTools Hook，并保存返回的 rendererID。
- * 返回值只在真实 DevTools（带 checkDCE）时为真；Fast Refresh 注入的轻量 Hook 返回
- * 假。初始化期间的 Hook 异常被吞掉，避免第三方工具阻断 React 启动。
+ * 没有全局 Hook 时返回假；disabled/不支持 Fiber 的已安装 Hook 提前返回真。
+ * 成功尝试注入后以 checkDCE 区分完整 DevTools（真）与 Refresh 轻量 Hook（假）。
+ * hook.inject 抛错在此捕获并在 DEV 报告，不阻断 renderer 初始化。
  */
 export function injectInternals(internals: Object): boolean {
   if (typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ === 'undefined') {
@@ -222,6 +223,7 @@ export function setIsStrictModeForDevtools(newIsStrictMode: boolean) {
 }
 
 // Profiler API Hook：以下函数只有功能开关开启且后端实现对应回调时才转发。
+// 与上面的 DevTools 根/卸载通知不同，这些热路径不单独 catch 后端回调异常。
 
 /** 注入 Scheduling Profiler 后端回调集合。 */
 export function injectProfilingHooks(

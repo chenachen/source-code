@@ -1,6 +1,6 @@
 /**
- * SSR `v-model` 场景：把模型值静态展开为 input/textarea/select 的 checked/value/selected，
- * 处理动态 type 与 checkbox/radio 比较，并诊断服务端无法支持的非法元素。
+ * SSR `v-model` 场景：覆盖 input/textarea/select 初始状态表达式、动态 type、
+ * radio/checkbox 比较、option 遍历与对象 v-bind 合并；模型值在生成代码运行时求值。
  */
 import { compile } from '../src'
 
@@ -10,6 +10,9 @@ function compileWithWrapper(src: string) {
 }
 
 describe('ssr: v-model', () => {
+  /**
+   * 场景：无 type 与静态 email 两种 input 均绑定 bar，快照断言 value 由 ssrRenderAttr 输出而不生成客户端指令/监听器，验证文本类控件只生成初始 HTML 状态。
+   */
   test('<input> (text types)', () => {
     expect(compileWithWrapper(`<input v-model="bar">`).code)
       .toMatchInlineSnapshot(`
@@ -38,6 +41,11 @@ describe('ssr: v-model', () => {
       `)
   })
 
+  /**
+   * 场景：select 下分别放静态 option、直接 for/if option、显式 selected、slot、optgroup 中普通/slot/for/if option，以及 template 的 if→for 与 for→if，共十一份模板。
+   * 快照核对未显式 selected 的 option 都用 Array.isArray(model) 选择 looseContain/looseEqual 条件；已 selected 的 option 保持原样，slot 仅生成出口 helper。
+   * 验证递归穿过 optgroup 与结构节点并修改已完成 option 开始标签；局部循环值不能加 _ctx 前缀。
+   */
   test('<select v-model>', () => {
     expect(
       compileWithWrapper(
@@ -299,6 +307,9 @@ describe('ssr: v-model', () => {
     `)
   })
 
+  /**
+   * 场景：radio 的静态 value=foo 与模型 bar，快照断言 looseEqual(bar,foo) 经布尔 helper 决定 checked，验证单选初始状态的宽松比较表达式。
+   */
   test('<input type="radio">', () => {
     expect(
       compileWithWrapper(`<input type="radio" value="foo" v-model="bar">`).code,
@@ -315,6 +326,11 @@ describe('ssr: v-model', () => {
     `)
   })
 
+  /**
+   * 场景：checkbox 分别无 value、静态 value=foo、动态 true/false-value、静态 true/false-value。
+   * 前两份快照在数组模型时分别比较 null/foo，标量时直接用模型布尔值；后两份改用模型与 true-value 的 looseEqual，true/false-value 本身不输出为 HTML。
+   * 验证 checkbox 的数组/标量/自定义真值分支各生成正确 checked 条件。
+   */
   test('<input type="checkbox">', () => {
     expect(compileWithWrapper(`<input type="checkbox" v-model="bar">`).code)
       .toMatchInlineSnapshot(`
@@ -381,6 +397,9 @@ describe('ssr: v-model', () => {
     `)
   })
 
+  /**
+   * 场景：textarea 绑定 foo 但原内容是 bar，快照内容只调用 ssrInterpolate(foo)，验证模型表达式替换模板 children 并进行文本转义。
+   */
   test('<textarea>', () => {
     expect(compileWithWrapper(`<textarea v-model="foo">bar</textarea>`).code)
       .toMatchInlineSnapshot(`
@@ -396,6 +415,9 @@ describe('ssr: v-model', () => {
       `)
   })
 
+  /**
+   * 场景：动态 :type=x 的 input 分别无 value、静态 value=bar、动态 :value=bar，快照动态 model helper 第三参依次为 null/字符串/前缀表达式，验证类型与比较值在运行时共同分派。
+   */
   test('<input :type="x">', () => {
     expect(compileWithWrapper(`<input :type="x" v-model="foo">`).code)
       .toMatchInlineSnapshot(`
@@ -447,6 +469,9 @@ describe('ssr: v-model', () => {
     `)
   })
 
+  /**
+   * 场景：input 的 type 可能来自对象 v-bind，分别只有对象绑定和前后混合 id/class；快照先用 _temp0 缓存最终 props，再合并 ssrGetDynamicModelProps，验证只求值一次且 helper 读取合并后的 type。
+   */
   test('<input v-bind="obj">', () => {
     expect(compileWithWrapper(`<input v-bind="obj" v-model="foo">`).code)
       .toMatchInlineSnapshot(`

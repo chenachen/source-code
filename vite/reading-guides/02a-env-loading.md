@@ -30,7 +30,7 @@ resolveConfig()
 ```
 
 `loadEnv()` 也作为公开 Node API 导出。直接调用时不会自动读取 `vite.config.*`，调用方
-必须自己传入 mode、envDir 和 prefix。
+需要传入 mode 和 envDir；prefix 未传时使用默认 `VITE_`。
 
 ## 环境文件顺序
 
@@ -68,6 +68,7 @@ production 模式最终两个值都是 `/app/`。如果读取 `.env` 时立即�
 
 `envDir: false` 返回空文件列表，用于完全关闭环境文件读取，也使 Dev Server 不再监听
 `.env` 变化。相关实现：[PR #19503](https://github.com/vitejs/vite/pull/19503)。
+Vite Task 和 `process.env` 的合并仍会执行；关闭的是文件来源。
 
 ## 文件类型判断
 
@@ -130,7 +131,7 @@ expand({ parsed, processEnv })
 示例：
 
 ```bash
-NODE_ENV=production vite build --mode testing
+vite build --mode testing
 ```
 
 ```dotenv
@@ -138,8 +139,13 @@ NODE_ENV=production vite build --mode testing
 NODE_ENV=development
 ```
 
-变量展开可以读取进程中的 production。若 Vite 在展开之后才检查 parsed.NODE_ENV，文件
-里的 development 可能已经丢失。因此必须在 expand 前保存到 `VITE_USER_NODE_ENV`。
+build 入口先临时设置 `NODE_ENV=production`，配置导入期间的依赖就能读取它。
+`loadEnv()` 在展开前把文件中的 development 保存为 `VITE_USER_NODE_ENV`；展开后，
+`resolveConfig()` 发现进程原来没有显式设置 NODE_ENV，便把临时值改成 development。
+最终 mode 仍是 testing，而 `config.isProduction=false`、`import.meta.env.DEV=true`。
+
+如果命令改为 `NODE_ENV=production vite build --mode testing`，进程最初已有显式值，
+`resolveConfig()` 就保留 production。保存文件值与采用文件值是两个不同阶段。
 相关修复：[PR #11309](https://github.com/vitejs/vite/pull/11309)。
 
 mode `local` 被禁止，因为 `.local` 已是“机器本地覆盖文件”后缀；否则 `.env.local` 的
@@ -160,7 +166,7 @@ VITE_PUBLIC_API=/api        # 进入 import.meta.env
 含空白前缀通常无法成为合法环境变量名，只告警并保留配置，见
 [PR #21292](https://github.com/vitejs/vite/pull/21292)。
 
-注意：前缀不是安全脱敏器。任何匹配前缀的值都会成为公开客户端数据。
+匹配前缀的值会成为公开客户端数据。
 
 ## 特殊变量副作用
 
@@ -176,13 +182,13 @@ VITE_PUBLIC_API=/api        # 进入 import.meta.env
 
 ## 测试如何证明行为
 
-`packages/vite/src/node/__tests__/env.spec.ts` 使用六个 fixture 验证：
+`packages/vite/src/node/__tests__/env.spec.ts` 对照环境文件夹具验证：
 
 1. 通用文件与 mode 文件合并。
 2. 自定义 prefix 过滤。
 3. mode 文件覆盖和“合并后再展开”。
 4. `.env` 中 `NODE_ENV` 的保存时机。
-5. 已存在特殊进程变量不被覆盖。
+5. 已存在 `VITE_USER_NODE_ENV` 不被覆盖。
 6. `process.env` 对 `.env` 的最高优先级。
 
 `config.spec.ts` 中 `resolveEnvPrefix` 分组验证默认值、空前缀拒绝、空白告警和合法自定义
@@ -208,7 +214,6 @@ debug?.(`loading env files: %O`, envFiles)
 const parsed = Object.fromEntries(
   envFiles.flatMap((filePath) => {
     const stat = tryStatSync(filePath)
-    // Support FIFOs (named pipes) for apps like 1Password
     if (!stat || (!stat.isFile() && !stat.isFIFO())) return []
 
     const parsedEnv = parseEnv(fs.readFileSync(filePath, 'utf-8'))

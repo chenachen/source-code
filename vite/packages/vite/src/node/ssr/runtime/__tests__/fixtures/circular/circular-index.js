@@ -1,7 +1,7 @@
 export { a } from './circular-a'
 export { b } from './circular-b'
 
-// since there is no .accept, it does full reload
+// 此入口未声明 accept，循环模块更新会退化为整页重载。
 import.meta.hot.on('vite:beforeFullReload', () => {
   console.log('full reload')
 })

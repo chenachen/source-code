@@ -11,8 +11,8 @@ describe('plugin container', () => {
   /** ModuleInfo 只实现开发模块图可支持的字段，重点验证 meta 的跨阶段传播。 */
   describe('getModuleInfo', () => {
     /**
-     * 场景：同一插件在 resolveId、load、transform、buildEnd 连续读写 meta。
-     * 验证目标：解析前未知模块返回 null；每个对象结果的 meta 浅合并，并供后续钩子读取。
+     * 同一插件在 resolveId、load、transform、buildEnd 连续读写 meta。
+     * 解析前未知模块返回 null；每个对象结果的 meta 浅合并，并供后续钩子读取。
      */
     it('can pass metadata between hooks', async () => {
       const entryUrl = '/x.js'
@@ -75,8 +75,8 @@ describe('plugin container', () => {
     })
 
     /**
-     * 场景：插件 p1 在 resolveId 写 meta，插件 p2 在 load 读取。
-     * 验证目标：ModuleInfo 属于模块/Environment，不属于某个插件，元数据可跨插件共享。
+     * 插件 p1 在 resolveId 写 meta，插件 p2 在 load 读取。
+     * ModuleInfo 属于模块/Environment，不属于某个插件，元数据可跨插件共享。
      */
     it('can pass metadata between plugins', async () => {
       const entryUrl = '/x.js'
@@ -114,8 +114,8 @@ describe('plugin container', () => {
     })
 
     /**
-     * 场景：p1 在 resolveId 内调用 `this.resolve()`，传入 importer、custom 和 isEntry。
-     * 验证目标：嵌套解析把自定义选项完整转交给后续 p2，不能在递归入口丢失。
+     * p1 在 resolveId 内调用 `this.resolve()`，传入 importer、custom 和 isEntry。
+     * 嵌套解析把自定义选项完整转交给后续 p2，不能在递归入口丢失。
      */
     it('can pass custom resolve opts between plugins', async () => {
       const entryUrl = '/x.js'
@@ -170,8 +170,8 @@ describe('plugin container', () => {
   /** options 是最早运行的 Rolldown 兼容钩子，使用不含活动模块的 Minimal Context。 */
   describe('options', () => {
     /**
-     * 场景：options 调用惰性 debug 日志。
-     * 验证目标：Minimal Context 实现 debug，且关闭调试输出时不抛错。
+     * options 输出一条字符串 debug 日志。
+     * Minimal Context 实现 debug，且关闭调试输出时不抛错。
      */
     it('should not throw errors when this.debug is called', async () => {
       const plugin: Plugin = {
@@ -189,8 +189,8 @@ describe('plugin container', () => {
     const logFunctions = ['info', 'warn'] as const
     for (const logFunction of logFunctions) {
       /**
-       * 场景：options 分别调用 this.info/this.warn。
-       * 验证目标：两种日志都转发给配置的自定义 Logger，且每次只输出一次。
+       * options 分别调用 this.info/this.warn。
+       * 两种日志都转发给配置的自定义 Logger，且每次只输出一次。
        */
       it(`should support this.${logFunction}`, async () => {
         const logger = createLogger()
@@ -213,8 +213,8 @@ describe('plugin container', () => {
     }
 
     /**
-     * 场景：options 调用 this.error('test')。
-     * 验证目标：字符串被包装成 Error 并中止 Environment 初始化。
+     * options 调用 this.error('test')。
+     * 字符串被包装成 Error 并中止 Environment 初始化。
      */
     it('should support this.error', async () => {
       const plugin: Plugin = {
@@ -235,8 +235,8 @@ describe('plugin container', () => {
   /** 覆盖 load 钩子及 PluginContext.this.load 的递归加载能力。 */
   describe('load', () => {
     /**
-     * 场景：入口 transform 用 this.load 加载 secondary，并读取其 load meta。
-     * 验证目标：辅助模块即使不由浏览器请求，也会建立 ModuleInfo 并返回 meta（#11469）。
+     * 入口 transform 用 this.load 加载 secondary，并读取其 load meta。
+     * 辅助模块即使不由浏览器请求，也会建立 ModuleInfo 并返回 meta（#11469）。
      */
     it('can resolve a secondary module', async () => {
       const entryUrl = '/x.js'
@@ -277,8 +277,8 @@ describe('plugin container', () => {
     })
 
     /**
-     * 场景：this.load 加载 y.js；load 写 meta.code=2，transform 再更新为 3。
-     * 验证目标：this.load 必须执行完整 load+transform，而不是只返回原始加载结果（#14965）。
+     * this.load 加载 y.js；load 写 meta.code=2，transform 再更新为 3。
+     * this.load 必须执行完整 load+transform，而不是只返回原始加载结果（#14965）。
      */
     it('will load and transform the module', async () => {
       const entryUrl = '/x.js'
@@ -319,8 +319,8 @@ describe('plugin container', () => {
     })
 
     /**
-     * 场景：load 用带 pos 的对象调用 this.debug。
-     * 验证目标：未开启 debug 时仍能格式化位置，且不抛异常。
+     * load 用带 pos 的对象调用 this.debug。
+     * 没有活动源码时保留 pos、不生成代码帧，debug 调用不抛异常。
      */
     it('should not throw errors when this.debug is called', async () => {
       const plugin: Plugin = {
@@ -339,8 +339,8 @@ describe('plugin container', () => {
     const logFunctions = ['info', 'warn'] as const
     for (const logFunction of logFunctions) {
       /**
-       * 场景：load 分别输出带 pos 的 info/warn。
-       * 验证目标：日志补齐插件名；没有活动源码时不伪造代码帧。
+       * load 分别输出带 pos 的 info/warn。
+       * 日志补齐插件名；没有活动源码时不伪造代码帧。
        */
       it(`should support this.${logFunction}`, async () => {
         const logger = createLogger()
@@ -368,8 +368,8 @@ describe('plugin container', () => {
     }
 
     /**
-     * 场景：load 抛出带 message/pos 的 RollupLog。
-     * 验证目标：错误附加 plugin=p1 并保留 pos，交由上层错误中间件处理。
+     * load 抛出带 message/pos 的 RollupLog。
+     * 拒绝值附加 plugin=p1 并保留 pos，快照核对调用方得到的错误字段。
      */
     it('should support this.error', async () => {
       const plugin: Plugin = {
@@ -396,8 +396,8 @@ describe('plugin container', () => {
   /** 覆盖 transform 链的 Source Map 修复与组合。 */
   describe('transform', () => {
     /**
-     * 场景：MagicString 未传 filename，生成 `sources: ['']`/`[null]` 的 Map。
-     * 验证目标：容器把空 source 修复为模块 ID，并补入原始源码内容（#13657）。
+     * MagicString 未传 filename，生成 `sources: ['']` 的 Map。
+     * 容器把空 source 修复为模块 ID，并补入原始源码内容（#13657）。
      */
     it('combines a plugin sourcemap with `sources: [""]` (#13657)', async () => {
       const entryUrl = '/zoo.js'
@@ -412,7 +412,7 @@ describe('plugin container', () => {
             ms.append('// add comment')
             return {
               code: ms.toString(),
-              // MagicString 未传 filename 会生成 sources:[''] 或 sources:[null]。
+              // 不给 source/filename，用实际生成的空 source 检查容器修复分支。
               map: ms.generateMap({ hires: true }),
             }
           }
@@ -450,8 +450,8 @@ describe('plugin container', () => {
   describe('resolveId', () => {
     describe('skipSelf', () => {
       /**
-       * 场景：插件处理 /x.js 时用默认 skipSelf 再次解析同一 id/importer。
-       * 验证目标：当前插件不递归调用自身，调用次数保持 1。
+       * 插件处理 /x.js 时显式传 skipSelf: true，再次解析同一 id/importer。
+       * 当前插件不递归调用自身，调用次数保持 1。
        */
       it('should skip the plugin itself when skipSelf is true', async () => {
         let calledCount = 0
@@ -474,8 +474,8 @@ describe('plugin container', () => {
       })
 
       /**
-       * 场景：p2 把 foo 改成 foo/modified 后嵌套解析，p1 能处理新 ID。
-       * 验证目标：skipSelf 只跳过相同 id+importer 调用，不能永久排除整个插件（#18903）。
+       * p2 把 foo 改成 foo/modified 后嵌套解析，p1 能处理新 ID。
+       * skipSelf 只跳过相同 id+importer 调用，不能永久排除整个插件（#18903）。
        */
       it('should skip the plugin only when id and importer is same', async () => {
         const p1: Plugin = {
@@ -505,8 +505,9 @@ describe('plugin container', () => {
       })
 
       /**
-       * 场景：p1→p2→p1 形成 ID 改写后又回到原 ID 的解析链。
-       * 验证目标：第二次相同 p1/id/importer 被跳过，循环安全结束并采用 p1 回退结果。
+       * p1→p2→p1 形成 ID 改写后又回到原 ID 的解析链。
+       * p1 再次委托 foo、p2 再次委托 foo/modified 时各自置 called；下一层都被
+       * 跳过并返回 null，最终采用 p1 的 success 回退结果。
        */
       it('should skip the plugin if it has been called before with the same id and importer (1)', async () => {
         const p1: Plugin = {
@@ -535,8 +536,8 @@ describe('plugin container', () => {
       })
 
       /**
-       * 场景：相同递归链后还有 p3 能解析 modified ID。
-       * 验证目标：跳过已调用的 p1 不会终止整条流水线，后续插件仍能返回 success。
+       * 相同递归链后还有 p3 能解析 modified ID。
+       * p1/p2 的重复委托都置 called 后，下一层跳过二者但继续调用 p3，返回 success。
        */
       it('should skip the plugin if it has been called before with the same id and importer (2)', async () => {
         const p1: Plugin = {
@@ -579,7 +580,7 @@ describe('plugin container', () => {
 
 /**
  * 创建无真实 HTTP 服务器的 client DevEnvironment，并初始化其 PluginContainer。
- * pre-alias 依赖 ViteDevServer 实例，此单元测试没有服务器，故只从测试插件管线移除它。
+ * 夹具不建立 Server 的依赖优化运行时，从管线移除 pre-alias，避免进入其优化器分支。
  */
 async function getDevEnvironment(
   inlineConfig?: UserConfig,
@@ -589,7 +590,7 @@ async function getDevEnvironment(
     'serve',
   )
 
-  // @ts-expect-error pre-alias 需要 ViteDevServer，此夹具只构造 Environment。
+  // @ts-expect-error 测试调整只读插件列表，移除需要依赖优化运行时的 pre-alias。
   config.plugins = config.plugins.filter((p) => !p.name.includes('pre-alias'))
 
   const environment = new DevEnvironment('client', config, { hot: true })

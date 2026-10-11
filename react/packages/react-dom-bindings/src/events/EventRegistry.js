@@ -11,7 +11,7 @@ import type {DOMEventName} from './DOMEventNames';
 
 import {enableCreateEventHandleAPI} from 'shared/ReactFeatureFlags';
 
-/** allNativeEvents 保存维护 registration name、原生依赖与可能事件名的全局注册表所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** 全部已注册插件依赖的原生事件名；根监听按此集合安装。 */
 export const allNativeEvents: Set<DOMEventName> = new Set();
 
 if (enableCreateEventHandleAPI) {
@@ -22,9 +22,9 @@ if (enableCreateEventHandleAPI) {
 /**
  * registration name 到原生事件名的映射。
  */
-/** registrationNameDependencies 保存维护 registration name、原生依赖与可能事件名的全局注册表所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** React on* 名称到原生依赖列表的注册表。 */
 export const registrationNameDependencies: {
-  /** registrationName 描述维护 registration name、原生依赖与可能事件名的全局注册表的数据字段；该字段限定跨插件、队列或原生事件传递的状态边界。 */
+  /** React handler 名，值为该 handler 依赖的原生事件数组。 */
   [registrationName: string]: Array<DOMEventName>,
 } = {};
 
@@ -33,14 +33,14 @@ export const registrationNameDependencies: {
  * 用于在事件 handler 拼写错误时给出警告；仅在 __DEV__ 可用。
  * @type {Object}
  */
-/** possibleRegistrationNames 保存维护 registration name、原生依赖与可能事件名的全局注册表所需的稳定常量、注册表或模块级状态；其身份和值在一次页面生命周期内共享。 */
+/** 开发期小写 handler 名到正确大小写的映射，用于拼写建议。 */
 export const possibleRegistrationNames: {
-  /** lowerCasedName 描述维护 registration name、原生依赖与可能事件名的全局注册表的数据字段；该字段限定跨插件、队列或原生事件传递的状态边界。 */
+  /** 小写 handler 名，值为正确的 React onXxx 拼写。 */
   [lowerCasedName: string]: string,
 } = __DEV__ ? {} : (null as any);
 // 只信任开发者在 __DEV__ 中访问 possibleRegistrationNames。
 
-/** registerTwoPhaseEvent 管理维护 registration name、原生依赖与可能事件名的全局注册表的注册/监听边界；避免同一容器重复安装或遗漏 capture 配置。 */
+/** 为同一组原生依赖登记 onXxx 和 onXxxCapture 两个 React 名称。 */
 export function registerTwoPhaseEvent(
   registrationName: string,
   dependencies: Array<DOMEventName>,
@@ -49,7 +49,7 @@ export function registerTwoPhaseEvent(
   registerDirectEvent(registrationName + 'Capture', dependencies);
 }
 
-/** registerDirectEvent 管理维护 registration name、原生依赖与可能事件名的全局注册表的注册/监听边界；避免同一容器重复安装或遗漏 capture 配置。 */
+/** 登记一个 React 名的原生依赖，并把依赖加入 allNativeEvents；不在 DOM 上安装 listener。 */
 export function registerDirectEvent(
   registrationName: string,
   dependencies: Array<DOMEventName>,

@@ -14,7 +14,7 @@ import {
   jsxDEV as _jsxDEV,
 } from './ReactJSXElement';
 
-/** 服务端自动 JSX 运行时的单子节点入口；开发构建保留校验与 owner 栈。 */
+/** 服务端自动 JSX 运行时的动态 children 入口；开发构建保留校验与 owner 栈。 */
 const jsx: any = __DEV__
   ? jsxProdSignatureRunningInDevWithDynamicChildren
   : jsxProd;

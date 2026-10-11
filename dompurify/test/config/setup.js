@@ -10,9 +10,8 @@ window.alert = function () {
 /**
  * 判断实际输出是否命中期望候选。
  *
- * 审计 caveat：expected 为数组时采用严格候选匹配；expected 为字符串时 indexOf
- * 实际执行子串匹配，且空 actual 会命中任意字符串。因此标量 fixture 的通过不能等同于
- * 完整输出严格相等，安全结论还需由精确断言与真实 DOM sink 用例支撑。
+ * expected 为数组时，用严格相等查找候选；为字符串时，检查 actual 是否为其子串，
+ * 包括空字符串。需要验证完整输出相等的用例使用 assert.strictEqual。
  *
  * @param {*} actual DOMPurify 的实际输出。
  * @param {Array<*> | string} expected 可接受候选数组或历史标量期望。

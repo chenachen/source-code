@@ -9,6 +9,7 @@
 'use strict';
 
 describe('ReactSymbols', () => {
+  // 清空模块缓存，检查当前构建所选标记导出，而非此前测试留下的模块对象。
   beforeEach(() => jest.resetModules());
 
   /** 遍历导出键值，发现两个名称共享同一 Symbol 时立即报告冲突。 */

@@ -153,7 +153,7 @@ const NeedUpgradeToViewTransitions /*     */ = 0b010000000;
 /** ViewTransition 升级指令已经发送。 */
 const SentUpgradeToViewTransitions /*     */ = 0b100000000;
 
-/** 内联内容可共享一个 nonce，也可分别指定 script/style nonce。 */
+/** 字符串仅配置脚本nonce；对象可分别指定script/style，字符串不会给样式设置nonce。 */
 type NonceOption =
   | string
   | {
@@ -164,8 +164,7 @@ type NonceOption =
     };
 
 /**
- * 单次请求全局、与渲染子树上下文无关的工作状态。
- * 它不可恢复，因此只能保存临时状态或 prerender 阶段不会使用的数据。
+ * 单次请求的临时编码与刷新状态，不随postponedState序列化。待输出Chunk、Set及按precedence排序的Map属于本次渲染；跨prerender/resume的资源去重身份由ResumableState保存。resets另记已通过早期响应头发出的提示，以便shell未完成时重置可恢复状态后仍保留这些事实。
  */
 export type RenderState = {
   /** 可从可恢复状态重建的 placeholder id 前缀。 */
@@ -213,7 +212,7 @@ export type RenderState = {
     /** 剩余 UTF-16 码元容量预算。 */
     remainingCapacity: number,
   },
-  /** 每次阶段切换后恢复可恢复资源缓存的快照。 */
+  /** shell未完成而重置ResumableState时，保留已发早期响应头资源的快照；并非每次阶段切换都恢复。 */
   resets: {
     /** 对应 ResumableState.unknownResources["font"]。 */
     font: {
@@ -285,9 +284,9 @@ export type RenderState = {
 
   /** 当前请求内联内容的 CSP nonce。 */
   nonce: {
-    /** script nonce。 */
+    /** 脚本标签的CSP nonce。 */
     script: string | void,
-    /** style nonce。 */
+    /** 样式标签的CSP nonce；字符串nonce配置不会填此字段。 */
     style: string | void,
   },
 
@@ -472,7 +471,7 @@ export type BootstrapScriptDescriptor = {
 };
 /** 外部 Fizz runtime 的地址与预编码输出块。 */
 export type ExternalRuntimeScript = {
-  /** runtime URL。 */
+  /** 外部运行时脚本地址。 */
   src: string,
   /** 完整 script 标签块。 */
   chunks: Array<Chunk | PrecomputedChunk>,
@@ -486,9 +485,7 @@ const importMapScriptStart = stringToPrecomputedChunk(
 const importMapScriptEnd = stringToPrecomputedChunk('</script>');
 
 /**
- * Link 头的默认软容量，以 UTF-16 码元计。字符串存储无法直接按 UTF-8 字节计数；2000
- * 通常明显低于常见服务器 4KB 上限，但极端字符仍可能逼近上限。达到限制前允许完整加入
- * 下一条提示，所以实际值可能略超出该软上限。
+ * Link头的默认容量为2000个UTF-16码元，并非HTTP UTF-8字节数。初始化预算多加2以抵消首条之前并不存在的逗号空格；每次先扣条目长度加2，仅剩余非负时写入。超长条目使预算变负后不回补，后续提示退到HTML资源队列，不能据此推断响应头允许超预算。
  */
 const DEFAULT_HEADERS_CAPACITY_IN_UTF16_CODE_UNITS = 2000;
 
@@ -502,17 +499,16 @@ if (__DEV__) {
 }
 
 /**
- * 创建请求级渲染状态并预编码 nonce、bootstrap、import map 与可选外部 runtime。
- * 状态记录已写资源以便去重；启用外部 runtime 且传入配置时，以 data 属性而非内联脚本发指令。
+ * 从可恢复资源身份构建本次请求的待刷新队列，并预编码nonce、bootstrap、import map和可选外部runtime。字符串nonce只用于script，对象style字段才用于style；内联指令前缀沿用resumableState.idPrefix。只有启用外部runtime且传入配置时才切到data指令格式。onHeaders存在时建立UTF-16容量预算；bootstrap配置未在先前shell刷新时才在本次重建，去重身份仍在resumableState而非这些待输出数组中。
  */
 export function createRenderState(
   resumableState: ResumableState,
   nonce:
     | string
     | {
-        /** script nonce。 */
+        /** 脚本标签的CSP nonce。 */
         script?: string,
-        /** style nonce。 */
+        /** 样式标签的CSP nonce；字符串nonce配置不会填此字段。 */
         style?: string,
       }
     | void,
@@ -786,7 +782,7 @@ export function createRenderState(
   return renderState;
 }
 
-/** 从序列化状态恢复一个不含 preamble/runtime/bootstrap 参数的新请求渲染状态。 */
+/** 用 resumableState 新建本轮 RenderState；不传新 runtime/importMap/headers 配置，bootstrap 从尚未清除的保存字段重建。 */
 export function resumeRenderState(
   resumableState: ResumableState,
   nonce: NonceOption | void,
@@ -850,13 +846,13 @@ export function createResumableState(
 
 /**
  * 根据本轮未完整刷新的 RenderState 快照复位可恢复状态。
- * 当前前提是没有任何输出成功刷新，因此指令和文档骨架也全部归零。
+ * HTML shell 尚未刷新，指令和文档骨架归零；已经发出的早期资源提示由 resets 保留。
  */
 export function resetResumableState(
   resumableState: ResumableState,
   renderState: RenderState,
 ): void {
-  // 用 RenderState 中未完全刷新的部分重建资源缓存；当前假设没有任何内容已刷新。
+  // HTML shell 未刷新时，用 resets 重建资源缓存，保留已发出的早期资源提示。
   resumableState.nextFormID = 0;
   resumableState.hasBody = false;
   resumableState.hasHtml = false;
@@ -985,7 +981,9 @@ export type FormatContext = {
   viewTransition: null | ViewTransitionContext,
 };
 
-/** 组装不可变格式上下文，供各类作用域转换复用。 */
+/**
+ * 创建新的外层格式上下文，供Fizz进入子树时替换、退出时恢复父上下文。对象并未冻结；viewTransition对象可与父级共享，其中nameIdx由宿主属性编码递增，不能把整个上下文视为深层不可变。
+ */
 function createFormatContext(
   insertionMode: InsertionMode,
   selectedValue: null | string | Array<string>,
@@ -1178,8 +1176,7 @@ export function getSuspenseContentFormatContext(
 }
 
 /**
- * 规范化 `<ViewTransition>` 属性，解析父级名称/enter/exit 传播并构造子树作用域。
- * 首个 fallback/content 实例消费 exit/enter；显式 share 或相关动画会请求客户端升级。
+ * 规范化ViewTransition的名称、enter/exit/share并构造子树作用域。父级enter/exit只在本级对应值严格为undefined或none时消费，null不能简单等同该分支。需动画的首个fallback/content宿主会使用共享nameIdx生成名称；share或相关动画要求客户端升级，暂停重试对计数的影响仍由下方TODO描述。
  */
 export function getViewTransitionFormatContext(
   resumableState: ResumableState,
@@ -1444,8 +1441,7 @@ const styleAssign = stringToPrecomputedChunk(':');
 const styleSeparator = stringToPrecomputedChunk(';');
 
 /**
- * 将 React style 对象序列化为单个 HTML style 属性。
- * 过滤 null/boolean/空值，自定义属性直接字符串化，普通数值按 unitless 表决定是否追加 px。
+ * 把style对象的自有可枚举属性序列化为一个HTML style属性。null、布尔及空字符串省略；--自定义属性保留名称并字符串化，其余名称经缓存连字符化，非零且非unitless的number补px，bigint不补px。字符串trim后再转义；转换异常向上抛出，并不在此逐属性恢复。
  */
 function pushStyleAttribute(
   target: Array<Chunk | PrecomputedChunk>,
@@ -1629,8 +1625,7 @@ function validateAdditionalFormFields(formData: void | null | FormData) {
 }
 
 /**
- * 调用函数 action 的 `$$FORM_ACTION` 编码器，取得渐进增强所需元数据。
- * thenable 继续向上抛出以维持 Suspense；其他编码失败在开发期报告并降级客户端重放。
+ * 调用函数action的$$FORM_ACTION编码器，取得action、method、encType与字符串FormData。先分配表单前缀，失败不回滚计数；编码器若抛出非空对象thenable则向上重抛以挂起，其它错误在DEV报告后返回null，由调用者写客户端提交重放协议。File/Blob字段不能成为隐藏input，会在校验时降级。
  */
 function getCustomFormFields(
   resumableState: ResumableState,
@@ -1755,8 +1750,7 @@ function pushFormActionAttribute(
 let blobCache: null | WeakMap<Blob, Thenable<string>> = null;
 
 /**
- * 把 Blob srcObject 异步读取为 data URL，并用抛 thenable 的方式接入 Fizz Suspense。
- * fulfilled 后写为 src；rejected 则重新抛出原因。
+ * 以Blob身份在进程级WeakMap复用readAsDataURL的thenable，让同一对象的Suspense重试只启动一次读取。完成回调写status/value或reason；未完成抛该thenable，失败重抛缓存原因，成功把data URL作为src属性转义输出。请求结束或abort不会在此取消读取或清理该弱缓存。
  */
 function pushSrcObjectAttribute(
   target: Array<Chunk | PrecomputedChunk>,
@@ -1771,10 +1765,12 @@ function pushSrcObjectAttribute(
   if (thenable === undefined) {
     thenable = readAsDataURL(blob) as any as Thenable<string>;
     thenable.then(
+      /** 保存data URL与完成状态；挂起segment重试时读取同一thenable的value。 */
       result => {
         (thenable as any).status = 'fulfilled';
         (thenable as any).value = result;
       },
+      /** 保存失败原因，后续同Blob重试直接抛该原因，不重新发起读取。 */
       error => {
         (thenable as any).status = 'rejected';
         (thenable as any).reason = error;
@@ -1798,7 +1794,7 @@ function pushSrcObjectAttribute(
 }
 
 /**
- * 按 React DOM 属性语义序列化单个 prop：处理别名、URL 安全、布尔/枚举/数值约束与忽略项。
+ * 将非空prop编码到HTML Chunk，按名称处理别名、src/href URL净化、Blob src读取及布尔/枚举/数值约束。通用分支过滤事件前缀、函数和symbol，布尔值仅为data-/aria-保留；专用form与自定义元素有独立编码器，不能把这里的过滤规则推广到那些路径。字符串转换或Blob读取可向上抛错/挂起。
  */
 function pushAttribute(
   target: Array<Chunk | PrecomputedChunk>,
@@ -2316,7 +2312,9 @@ function pushStartObject(
   return children;
 }
 
-/** 序列化 `<select>`，把 value/defaultValue 留在 FormatContext 供嵌套 option 判定。 */
+/**
+ * 编码select起始标签而不写value/defaultValue属性；Fizz随后依据同一props创建子FormatContext，把非null受控值优先于默认值传给option判定。此函数返回尚需遍历的children，自己不修改formatContext。
+ */
 function pushStartSelect(
   target: Array<Chunk | PrecomputedChunk>,
   props: Object,
@@ -2380,10 +2378,12 @@ function pushStartSelect(
   return children;
 }
 
-/** 把 option children 扁平为可比较字符串，并对复杂节点发出一次警告。 */
+/**
+ * 用Children.forEach扁平遍历option原始children，再以content += child做JavaScript字符串转换。布尔/null由Children视为空值，普通对象可在遍历时被拒绝；React元素在这里不会执行组件，复杂节点只发一次DEV诊断，因此需显式value才能可靠比较选择值。
+ */
 function flattenOptionChildren(children: mixed): string {
   let content = '';
-  // 扁平化 children；非字符串/数值类型只警告，转换结果由 React.Children 遍历决定。
+  // Children决定遍历/空值规则；每个有效项再由下方+=进行JavaScript字符串转换，不执行React元素。
   Children.forEach(children as any, function (child) {
     if (child == null) {
       return;
@@ -2411,7 +2411,7 @@ function flattenOptionChildren(children: mixed): string {
 const selectedMarkerAttribute = stringToPrecomputedChunk(' selected=""');
 
 /**
- * 序列化 `<option>`，依据父 select 的选中值或兼容 selected prop 写出 selected 标记。
+ * 编码option并比较父select的非nullselectedValue；数组按字符串化后的每个值匹配，单值直接比较。未显式option.value时才扁平化原始children作候选值；有父选择值时覆盖selected prop，无父值时仍兼容selected。返回children供实际内容渲染，推断值不等于执行复杂子树得到的文本。
  */
 function pushStartOption(
   target: Array<Chunk | PrecomputedChunk>,
@@ -2578,7 +2578,7 @@ export function pushFormStateMarkerIsNotMatching(
 }
 
 /**
- * 序列化 `<form>`，收集 action 相关属性后统一处理函数 action 的渐进增强与重放协议。
+ * 先收集form属性，再统一处理action，避免属性枚举顺序影响函数action的协议。成功的$$FORM_ACTION元数据覆盖原method/encType/target等并在普通children前输出隐藏字段；不可编码时写占位action及重放脚本。返回原children，隐藏字段不是由后续子树遍历补写。
  */
 function pushStartForm(
   target: Array<Chunk | PrecomputedChunk>,
@@ -2712,7 +2712,7 @@ function pushStartForm(
 }
 
 /**
- * 序列化自闭合 `<input>`，实现受控 value/checked 选择及 submit/image formAction 协议。
+ * 编码自闭合input，value/checked优先选非null受控值，再选defaultValue/defaultChecked，false与0仍是有效受控值。收集submit/image的formAction后统一应用编码器元数据；隐藏字段在input标签之后输出。children或dangerouslySetInnerHTML非法，字段转换/编码失败遵循对应校验和重放路径。
  */
 function pushInput(
   target: Array<Chunk | PrecomputedChunk>,
@@ -2955,7 +2955,7 @@ function pushStartButton(
 }
 
 /**
- * 序列化 `<textarea>` 的受控/默认值或兼容 children，并补首换行以抵消 HTML parser 吞行规则。
+ * 把非nullvalue、defaultValue或兼容children编码为textarea文本，value不成为HTML attribute；children数组最多一项，rawHTML被拒绝。只有选中值本身是以换行开头的string才额外补一个换行，以抵消HTML parser吞首行；对象转换后得到的换行不在该补偿条件内。返回null，因为文本已写入target。
  */
 function pushStartTextArea(
   target: Array<Chunk | PrecomputedChunk>,
@@ -3134,8 +3134,7 @@ function pushMeta(
 }
 
 /**
- * 处理 `<link>` 的原位输出、提升与 stylesheet Resource 去重。
- * precedence 样式表进入 StyleQueue；fallback 资源省略，带事件处理器的 link 保持原位。
+ * 按rel、href、precedence和作用域选择link原位输出或资源登记。有效stylesheet且有字符串precedence、无disabled/onLoad/onError时进入稳定StyleQueue，即使位于fallback也登记；既有preload可提供缺失凭据并被清空避免重复。其它可提升link在fallback省略；SVG/noscript/itemProp或不满足资源条件的link走原位编码。
  */
 function pushLink(
   target: Array<Chunk | PrecomputedChunk>,
@@ -3182,7 +3181,7 @@ function pushLink(
       props.onLoad ||
       props.onError
     ) {
-      // 样式表未选择 Resource 语义或有冲突属性，不能提升；仍可建立 preload 加速客户端加载。
+      // 未选择Resource语义或存在冲突属性时只走原位link编码，此分支本身不建立preload。
       if (__DEV__) {
         if (typeof precedence === 'string') {
           if (props.disabled != null) {
@@ -3329,8 +3328,7 @@ function pushLinkImpl(
 }
 
 /**
- * 处理 `<style>` 的原位输出或按 href/precedence 合并为可提升 StyleQueue。
- * nonce 必须与渲染选项一致；fallback/特殊作用域或无资源语义时原位输出。
+ * 把有效href/precedence的style加入对应StyleQueue，fallback中同样登记；SVG/noscript/itemProp或无有效资源标识时原位输出。先标记资源EXISTS再处理规则；仅当配置style nonce为真值时要求标签nonce匹配，失配规则被省略且该href仍去重。未配置真值style nonce时不把标签自己的nonce带到提升后的合并标签。
  */
 function pushStyle(
   target: Array<Chunk | PrecomputedChunk>,
@@ -3480,7 +3478,9 @@ const styleReplacer = (
   suffix: string,
 ) => `${prefix}${s === 's' ? '\\73 ' : '\\53 '}${suffix}`;
 
-/** 原位序列化普通 `<style>` 标签及其文本/innerHTML 内容。 */
+/**
+ * 原位编码style标签和内容：dangerouslySetInnerHTML按原文写入；普通children只取非数组或少于两项数组的单值，再字符串化并转义可能提前闭合style的前缀。这里不遍历React子树，布尔值也可能成为字符串。
+ */
 function pushStyleImpl(
   target: Array<Chunk | PrecomputedChunk>,
   props: Object,
@@ -3530,7 +3530,9 @@ function pushStyleImpl(
   return null;
 }
 
-/** 仅序列化 `<style>` 的文本或 innerHTML 内容，不写入标签外壳。 */
+/**
+ * 仅编码合并style的内容，不写标签。rawHTML原样输出；children只接受非数组或少于两项数组的单值，过滤null/function/symbol后字符串化并处理style闭合前缀；多项数组不在此逐项遍历。
+ */
 function pushStyleContents(
   target: Array<Chunk | PrecomputedChunk>,
   props: Object,
@@ -3572,10 +3574,7 @@ function pushStyleContents(
 }
 
 /**
- * 序列化 `<img>`，并在满足浏览器与优先级约束时登记图片预加载资源。
- *
- * 数据 URI、懒加载、低优先级及 picture/noscript 作用域会跳过预加载；
- * 可用的响应头容量优先承载高价值 preload，其余资源进入元素刷新队列。
+ * 输出img并在非data URI、非lazy/low、非picture/noscript且URL有效时登记图片preload。响应式键含srcSet/sizes，普通键为src；fetchPriority=high或高优先级队列不足10项可进入高队列，已有bulk条目通过清空Chunk后提升。Link头对typeof srcSet===string均跳过，包括空字符串；高图片头长度500只是选择启发，最终仍必须满足总UTF-16预算。APPEARING_SCOPE内满足条件的图片另记为揭示依赖，普通图片不都阻塞边界。
  */
 function pushImg(
   target: Array<Chunk | PrecomputedChunk>,
@@ -3657,7 +3656,7 @@ function pushImg(
         // 浏览器目前不支持通过 Link 响应头预加载响应式图片；存在 srcSet 时退回元素形式。
         typeof props.srcSet !== 'string' &&
         // 与元素 preload 默认上限 10 类似，这里用累计字符串长度 500 作为启发式阈值，
-        // 但显式 fetchPriority="high" 可越过限制。长度近似响应头字节成本：长 URL 会更早耗尽配额。
+        // 但显式 fetchPriority="high" 可越过限制。长度按UTF-16码元估计提示规模；最终是否写入还受总预算扣减结果约束。
         // 响应头通常早于正文发送，与元素队列并不直接竞争，因此暂时分别计数。
         (props.fetchPriority === 'high' ||
           headers.highImagePreloads.length < 500) &&
@@ -3863,7 +3862,9 @@ function pushTitle(
   }
 }
 
-/** 在指定目标中原位序列化 `<title>` 及其文本内容。 */
+/**
+ * 原位输出title并把单个可转换children转义为文字；少于两项的数组取首项，多项数组不遍历，null/function/symbol省略，其余可字符串化值包含布尔。内容已在此写入，返回空值阻止Fizz再次遍历。
+ */
 function pushTitleImpl(
   target: Array<Chunk | PrecomputedChunk>,
   props: Object,
@@ -4106,7 +4107,9 @@ function pushScript(
   return null;
 }
 
-/** 在指定目标中原位序列化 `<script>` 及其安全转义后的内联内容。 */
+/**
+ * 原位编码script：dangerouslySetInnerHTML原文写入，普通children仅string会经内联脚本闭合前缀转义后输出，数字或数组不会变成脚本文本。async/src等仍经属性编码；这个文本转义不会改写用户显式rawHTML。
+ */
 function pushScriptImpl(
   target: Array<Chunk | PrecomputedChunk>,
   props: Object,
@@ -4246,7 +4249,7 @@ function pushStartGenericElement(
 }
 
 /**
- * 序列化自定义元素，保留安全的自定义属性并过滤 React 专用 props 与不可序列化值。
+ * 编码自定义元素的专用属性协议：className映射class、style走专用编码，React专用props忽略；通用安全属性名过滤对象/function/symbol，false省略、true写空属性。它不调用普通pushAttribute的URL净化或on前缀过滤；返回children让Fizz继续遍历而不走普通标签的字符串快路。
  */
 function pushStartCustomElement(
   target: Array<Chunk | PrecomputedChunk>,
@@ -4324,7 +4327,7 @@ function pushStartCustomElement(
 const leadingNewline = stringToPrecomputedChunk('\n');
 
 /**
- * 序列化 textarea/listing/pre 起始标签，并补偿 text/html 解析器吞掉首个换行的规则。
+ * 编码listing/pre起始标签，并补偿text/html吞首换行的规则。字面string children或字面string rawHTML以换行开头时补一行；后者随后原文写入，前者返回给Fizz继续遍历。由组件或数组最终产生的首换行不在此识别；textarea使用自己的编码器。
  */
 function pushStartPreformattedElement(
   target: Array<Chunk | PrecomputedChunk>,
@@ -4430,8 +4433,7 @@ export const doctypeChunk: PrecomputedChunk =
 import {doctypeChunk as DOCTYPE} from 'react-server/src/ReactFizzConfig';
 
 /**
- * DOM 主机实例序列化入口：校验 props，并按标签类别分派专用、无闭合或通用编码路径。
- * 返回值是尚需由 Fizz 遍历的 children；已完全处理内容的标签返回 null。
+ * Fizz的宿主起始标签入口，读取父FormatContext后按标签分派；进入子上下文由后续getChildFormatContext处理。普通元素写target，资源类可改写请求级提升队列而无原位标签。返回尚需遍历的children；内容已处理或资源已登记时返回null/undefined等空值，不能假定每个分支都返回null。
  */
 export function pushStartInstance(
   target: Array<Chunk | PrecomputedChunk>,
@@ -5280,7 +5282,7 @@ const completeBoundaryData3a = stringToPrecomputedChunk('" data-sty="');
 const completeBoundaryDataEnd = dataElementQuotedEnd;
 
 /**
- * 写入完成 Suspense 边界的运行时指令，并按需附带样式依赖与 View Transition 升级代码。
+ * 写入已完成Suspense边界的script或data指令，id采用同一十六进制编号配boundary/segment前缀。读取并先清空renderState.stylesToHoist；需要样式时编码该边界依赖并选择RR协议，否则选择RC，按位首次补对应运行时代码及可选ViewTransition升级。一个指令批次仍完整写出，返回bootstrap与末次写入的可继续信号，不在内部逐Chunk暂停。
  */
 export function writeCompletedBoundaryInstruction(
   destination: Destination,
@@ -5443,7 +5445,7 @@ const clientRenderData5 = stringToPrecomputedChunk('" data-cstck="');
 const clientRenderDataEnd = dataElementQuotedEnd;
 
 /**
- * 指示客户端接管指定 Suspense 边界，并按脚本/data 格式附带可选错误诊断信息。
+ * 写客户端接管指定Suspense边界的RX脚本或data模板。errorDigest/message/stack是否提供由调用者决定，本函数不以DEV开关统一过滤诊断字段；分别按JavaScript字面量或HTML属性上下文转义，末次写入结果作为背压信号。
  */
 export function writeClientRenderBoundaryInstruction(
   destination: Destination,
@@ -5698,7 +5700,7 @@ function hasStylesToHoist(stylesheet: StylesheetResource): boolean {
 }
 
 /**
- * 刷新完成边界依赖的延迟 style，并判断 stylesheet 是否需要随揭示指令提升。
+ * 在输出完成边界指令前刷新其延迟style，清空每个队列的rules/hrefs；stylesheet若非PREAMBLE则把请求级stylesToHoist设为true，供下一条揭示指令消费。临时全局保存当前renderState供Set回调，正常返回时清除；write结果反映最后一次延迟样式写入，未逐项因背压中断或累积全部write结果。
  */
 export function writeHoistablesForBoundary(
   destination: Destination,
@@ -5894,8 +5896,7 @@ function pushCompletedShellIdAttribute(
 // 当前假设 preamble 一次性全部刷新，因此不返回背压；若要支持背压，
 // 需要对 Fizz 刷新状态机做更大范围重构。
 /**
- * 单次写入文档前导区的开始部分：单例开标签、高优先级资源、样式与阻塞渲染指令。
- * 每个请求必须且只能调用一次。
+ * 一次写完整文档前导区：html/head单例、charset、连接提示、viewport、字体/高图片、precedence样式、配置import map、bootstrap preload、脚本、bulk preload和其它提升内容。输出后清空Chunk/Set中的待发内容，styles Map保留precedence顺序；此批次不因单次write背压拆开或回滚。每请求只调用一次，resume要求这些前导块已完成。
  */
 export function writePreambleStart(
   destination: Destination,
@@ -6001,7 +6002,7 @@ export function writePreambleStart(
 }
 
 // 当前假设 preamble 一次性全部刷新，因此不返回背压；支持背压需重构 Fizz 刷新状态机。
-/** 闭合隐式 head，并写入文档 body 单例的前导 Chunk。 */
+/** 若存在html或head前导块，闭合显式或隐式head，然后写body单例的前导Chunk；并非仅负责隐式head。 */
 export function writePreambleEnd(
   destination: Destination,
   renderState: RenderState,
@@ -6023,7 +6024,9 @@ export function writePreambleEnd(
 }
 
 // 当前假设该批 hoistable 一次性全部刷新，因此不返回背压；支持背压需重构刷新状态机。
-/** 在 shell 之后刷新新发现的高优先级资源、脚本、preload 与内嵌 hoistable。 */
+/**
+ * shell之后刷新新发现的连接/字体/图片、配置import map、脚本、样式preload、bulk preload及普通提升块。仅createRenderState配置的import map有专用优先队列，树中原位importmap仍受发现顺序影响；late stylesheet先建立preload，随后清空临时preload Map，但可恢复资源身份继续去重。
+ */
 export function writeHoistables(
   destination: Destination,
   resumableState: ResumableState,
@@ -6053,7 +6056,7 @@ export function writeHoistables(
   // stylesheet 会随随后的渲染指令正式输出；先发 preload 尽早启动网络请求。
   renderState.styles.forEach(preloadLateStyles, destination);
 
-  // 仅提升通过 createResponse 配置、保证在 preamble 刷新的 import map。
+  // 仅提升通过 createRenderState 配置、保证在 preamble 刷新的 import map。
   // 用户直接渲染的 importmap 标签会被当作普通内联脚本，在其他 hoistable 后刷新，顺序可能有问题。
 
   // bootstrap script 优先级高于普通 script，但只能在 preamble 刷新；此处省略分支以减少成本。
@@ -6096,7 +6099,9 @@ const arrayCloseBracket = stringToPrecomputedChunk(']');
 
 // 写入可嵌入 JavaScript 的二维字符串数组，例如：
 //  [["JS_escaped_string1", "JS_escaped_string2"]]
-/** 将边界 stylesheet 依赖编码为 JavaScript 二维数组字面量。 */
+/**
+ * 把边界stylesheet依赖写为JavaScript二维数组字面量。PREAMBLE资源已在head输出而跳过；LATE资源只写href，其它状态首次写[href,precedence,属性名,值,...]后标记LATE。这些状态描述服务器已写哪类协议，不代表浏览器加载完成；完整描述净化URL，已缓存的href简写按既有身份使用。
+ */
 function writeStyleResourceDependenciesInJS(
   destination: Destination,
   hoistableState: HoistableState,
@@ -6287,7 +6292,9 @@ function writeStyleResourceAttributeInJS(
 
 // 写入嵌入 HTML 属性值、由 ReactDOMServerExternalRuntime.js 用 JSON.parse 读取的二维数组，例如：
 //  [[&quot;JSON_escaped_string1&quot;, &quot;JSON_escaped_string2&quot;]]
-/** 将边界 stylesheet 依赖编码为 HTML 属性内的 JSON 二维数组。 */
+/**
+ * 以HTML属性内JSON数组编码边界stylesheet依赖：PREAMBLE跳过、LATE只写href，其它状态写完整扁平描述后改为LATE。先满足JSON结构再做HTML属性转义；属性过滤与普通pushAttribute不同，不能把LATE理解为客户端CSS已加载。
+ */
 function writeStyleResourceDependenciesInAttr(
   destination: Destination,
   hoistableState: HoistableState,
@@ -6566,7 +6573,7 @@ type StylesheetProps = {
   crossOrigin?: ?CrossOriginEnum,
   /** 子资源完整性摘要。 */
   integrity?: ?string,
-  /** CSP nonce。 */
+  /** 内容安全策略的nonce值。 */
   nonce?: ?string,
   /** MIME 类型提示。 */
   type?: ?string,
@@ -6637,12 +6644,14 @@ function getImageResourceKey(
   return href;
 }
 
-/** 登记 DNS 预取，优先写 Link 响应头，容量不足时退回 `<link>` 资源。 */
+/**
+ * 当前请求首次出现href时先写资源去重身份，再尝试扣减Link头预算，足够才追加header，否则登记link Chunk并请求资源刷新。无请求时转交previousDispatcher；本层只对有请求的非空string href编码。
+ */
 function prefetchDNS(href: string) {
   const request = resolveRequest();
   if (!request) {
     // 异步上下文通常可从 AsyncLocalStorage 解析请求，非异步上下文还可尝试调用栈。
-    // 两条路径都失败时转交上一层 dispatcher 并保持静默：渲染外调用可能是有意预热数据，不宜警告。
+    // 两条路径都失败时转交上一层dispatcher，由该实现决定后续行为：渲染外调用可能是有意预热数据，不宜警告。
     previousDispatcher.D(/* prefetchDNS */ href);
     return;
   }
@@ -6683,12 +6692,14 @@ function prefetchDNS(href: string) {
   }
 }
 
-/** 登记跨源预连接，按凭据桶去重，优先响应头、容量不足时退回 `<link>`。 */
+/**
+ * 按未指定、anonymous或use-credentials桶为当前请求去重连接提示，再以Link头预算选择header或link资源。无请求时转交previousDispatcher；新资源调用flushResources安排刷新，重复键直接返回而不再次刷新。
+ */
 function preconnect(href: string, crossOrigin: ?CrossOriginEnum) {
   const request = resolveRequest();
   if (!request) {
     // 异步上下文通常可从 AsyncLocalStorage 解析请求，非异步上下文还可尝试调用栈。
-    // 两条路径都失败时转交上一层 dispatcher 并保持静默，允许渲染外有意预热。
+    // 两条路径都失败时转交上一层dispatcher，由该实现决定后续行为，允许渲染外有意预热。
     previousDispatcher.C(/* preconnect */ href, crossOrigin);
     return;
   }
@@ -6739,12 +6750,12 @@ function preconnect(href: string, crossOrigin: ?CrossOriginEnum) {
 }
 
 /**
- * 登记普通 preload；图片按优先级与响应式约束选择响应头或元素，其他类型进入对应资源队列。
+ * 在当前请求登记普通preload，按as拆分资源表，图片键另含srcSet/sizes，style/script保留可被正式资源继承的凭据。依赖公开API先做类型筛选，此处请求路径主要检查href/as真值；图片可选高队列或Link头，font优先header，其它资源入各自Set/Map。首次登记后flushResources安排输出，重复身份返回；无请求交上一层dispatcher。
  */
 function preload(href: string, as: string, options?: ?PreloadImplOptions) {
   const request = resolveRequest();
   if (!request) {
-    // 无法从 AsyncLocalStorage 或调用栈解析请求时，转交上一层 dispatcher 并保持静默；
+    // 无法从 AsyncLocalStorage 或调用栈解析请求时，转交上一层dispatcher，由该实现决定后续行为；
     // 渲染外 preload 可能是有意的数据预热。
     previousDispatcher.L(/* preload */ href, as, options);
     return;
@@ -6921,14 +6932,16 @@ function preload(href: string, as: string, options?: ?PreloadImplOptions) {
   }
 }
 
-/** 登记 modulepreload，并按 as 类型在模块脚本或未知模块资源表中去重。 */
+/**
+ * 在当前请求按模块script与其它as分别去重modulepreload，缺少字符串as时用script。它不写Link响应头，编码后进入bulk preload队列并调用flushResources；无请求交上一层dispatcher，重复键不重复编码。
+ */
 function preloadModule(
   href: string,
   options?: ?PreloadModuleImplOptions,
 ): void {
   const request = resolveRequest();
   if (!request) {
-    // 无法从 AsyncLocalStorage 或调用栈解析请求时，转交上一层 dispatcher 并保持静默；
+    // 无法从 AsyncLocalStorage 或调用栈解析请求时，转交上一层dispatcher，由该实现决定后续行为；
     // 渲染外调用可能是有意预热。
     previousDispatcher.m(/* preloadModule */ href, options);
     return;
@@ -6993,7 +7006,7 @@ function preloadModule(
 }
 
 /**
- * 把 stylesheet 初始化为按 precedence 排序的正式资源，吸收既有 preload 并触发刷新。
+ * 按href将正式stylesheet标记EXISTS并加入稳定precedence队列，默认precedence为default。若先前preload保存两项凭据则仅填目标缺失项；本次未发preload清空避免重复，先前已发则标PRELOADED。这里仅登记和安排flush，不等浏览器CSS加载；无请求交previousDispatcher。
  */
 function preinitStyle(
   href: string,
@@ -7002,7 +7015,7 @@ function preinitStyle(
 ): void {
   const request = resolveRequest();
   if (!request) {
-    // 无法从 AsyncLocalStorage 或调用栈解析请求时，转交上一层 dispatcher 并保持静默。
+    // 无法从 AsyncLocalStorage 或调用栈解析请求时，转交上一层dispatcher，由该实现决定后续行为。
     previousDispatcher.S(/* preinitStyle */ href, precedence, options);
     return;
   }
@@ -7073,11 +7086,13 @@ function preinitStyle(
   }
 }
 
-/** 初始化异步经典脚本资源，吸收既有 preload 并加入脚本刷新队列。 */
+/**
+ * 按src去重异步经典script，先标EXISTS阻止重入，再继承先前preload的缺失凭据并清空尚未发的preload Chunk。编码正式脚本入scripts Set后flushResources安排输出；无请求交previousDispatcher，不启动或等待网络加载。
+ */
 function preinitScript(src: string, options?: ?PreinitScriptOptions): void {
   const request = resolveRequest();
   if (!request) {
-    // 无法从 AsyncLocalStorage 或调用栈解析请求时，转交上一层 dispatcher 并保持静默。
+    // 无法从 AsyncLocalStorage 或调用栈解析请求时，转交上一层dispatcher，由该实现决定后续行为。
     previousDispatcher.X(/* preinitScript */ src, options);
     return;
   }
@@ -7128,14 +7143,16 @@ function preinitScript(src: string, options?: ?PreinitScriptOptions): void {
   }
 }
 
-/** 初始化异步模块脚本资源，吸收既有 modulepreload 并加入脚本刷新队列。 */
+/**
+ * 按模块资源表为src去重async type=module脚本，吸收modulepreload凭据并清空本次重复Chunk。与经典script使用独立身份表，但输出都进入scripts Set；flushResources仅安排服务器输出，无请求交previousDispatcher。
+ */
 function preinitModuleScript(
   src: string,
   options?: ?PreinitModuleScriptOptions,
 ): void {
   const request = resolveRequest();
   if (!request) {
-    // 无法从 AsyncLocalStorage 或调用栈解析请求时，转交上一层 dispatcher 并保持静默。
+    // 无法从 AsyncLocalStorage 或调用栈解析请求时，转交上一层dispatcher，由该实现决定后续行为。
     previousDispatcher.M(/* preinitModuleScript */ src, options);
     return;
   }
@@ -7457,7 +7474,7 @@ export function hasSuspenseyContent(
 // shellComplete 决定响应头后是否马上有包含 stylesheet 的刷新：预渲染在 shell 内 postpone 时为 false；
 // 常规渲染若 shell 中有任意挂起、并在 shell 完成前调用，也会是 false。
 /**
- * 一次性汇总并回调早期 Link 响应头；shell 未完成时尽量把 stylesheet preload 填入余量。
+ * 汇总连接、字体、高图片的Link片段，并在shellComplete=false时按precedence尝试补stylesheet preload。每条先扣UTF-16预算，超出即停止且不回补；成功stylesheet的凭据另写resets，避免postpone重置后重复提示。先把renderState.headers置null再调用onHeaders，故回调抛错也不重入；没有片段仍调用空对象作为该次header收集结束。
  */
 export function emitEarlyPreloads(
   renderState: RenderState,

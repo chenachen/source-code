@@ -97,13 +97,15 @@ HtmlTagDescriptor[]            只注入结构化标签
 transform 阶段：内置 pre import-map / nonce → 用户 pre → env
 → HTML 编译成入口 JS并保存中间 HTML
 
-generateBundle 阶段：注入 chunk/script/preload/CSS，替换资源占位符
+generateBundle 阶段：注入 chunk/script/preload/CSS，替换内联 CSS 占位符
 → 用户 normal → 用户 post → nonce → import-map 收尾
+→ 替换 asset/public 占位符
 → emit HTML asset
 ```
 
-构建 normal/post hooks 需要 `bundle` 和 `chunk` 才能决策，所以必须等 generateBundle。这个阶段差异
-是两条链不能完全写成同一函数的核心原因。
+构建 normal/post hooks 在 generateBundle 执行，能读取 `bundle`、`chunk` 和已经注入的产物标签。
+此时内联 CSS 已写回 HTML，普通 asset/public URL 仍可能是占位符；Vite 在这些 hooks 结束后才把
+占位符替换为最终文件名和 base。这既处理前序转换产生的占位符，也处理 hook 新增的占位符。
 
 ## 开发态：HTML 中的代码进入模块图
 
@@ -192,8 +194,8 @@ tile image、Open Graph image/audio/video 等明确 URL 类型才进入资源管
 - `srcsetAttributes`：候选列表；
 - `filter({ key, value, attributes })`：结合兄弟属性决定是否启用。
 
-扩展规则追加到默认规则，不会替换默认表；默认 filter 与用户 filter 也独立执行。用户不能通过
-`filter: () => true` 放宽 meta 默认白名单，除非明确声明另一个扩展属性。该 API 见
+扩展规则追加到默认规则，不会替换默认表；默认 filter 与用户 filter 独立执行。如果默认规则
+跳过某个 meta.content，用户为它显式增加的规则仍可按自己的 filter 接受该属性。该 API 见
 [PR #21412](https://github.com/vitejs/vite/pull/21412)。
 
 扫描结果不只含 key/value，还保存元素全部属性与 parse5 精确 location。HTML transform 因而能让 filter
@@ -210,16 +212,17 @@ srcset、filter 独立性与未配置时的向后兼容。
 `processNodeUrl()` 同时处理 script、link、src/href、srcset 与额外资源属性：
 
 ```text
-1. root URL / 相对 URL补 config.base
-2. SPA fallback 时按 originalUrl 修正相对目录
+1. root URL 补 config.base；根 index.html 的嵌套 SPA fallback 也把相对 URL 锚定到 base
+2. 对非 public JS/CSS 计算预热用的绝对 URL；普通嵌套页以实际 HTML 目录为基准
 3. 去 base 后查 client ModuleGraph
-4. 模块发生过 HMR → 追加 ?t=lastHMRTimestamp
-5. 非 public JS/CSS → warmupRequest
+4. 模块发生过 HMR → 给返回的 URL 追加 ?t=lastHMRTimestamp
+5. 对预热 URL 解码并调用 warmupRequest
 ```
 
 SPA 示例：浏览器导航 `/a/b`，实际返回根 `/index.html`。若保留 `./main.js`，浏览器会请求
-`/a/main.js`；Vite 要根据 originalUrl/base 把它改到正确入口。含协议或 Windows drive 的 `:` URL
-不参与相对拼接。
+`/a/main.js`；Vite 看到 originalUrl 表示嵌套导航而 htmlPath 是 `/index.html`，把 `./main.js` 改为
+`/main.js`（base 为 `/ui/` 时是 `/ui/main.js`），使资源仍以根入口目录为基准。普通
+`/nested/index.html` 中的 `./main.js` 保留相对写法。含 `:` 的裸 URL 不参与相对拼接。
 
 模块图按 transform 中间件去 base 后的 URL 建索引。HTML 若拿 `/ui/src/main.ts` 直接查图，就找
 不到 `/src/main.ts` 的 HMR timestamp，可能让带/不带 timestamp 的同一入口执行两次。修复见
@@ -269,8 +272,9 @@ import、保留原 link，让部署环境在运行时解释。
 
 两者都
   → 收集 chunk 子图 CSS
-  → 替换 asset/public/inline CSS 占位符
+  → 替换 inline CSS 占位符
   → 执行 normal/post HTML hooks
+  → 替换 asset/public 占位符
   → emit HTML asset
 ```
 
@@ -288,15 +292,19 @@ side-effect import，避免一条大正则在长/特殊代码上指数回溯，�
 ```text
 seenChunks   当前入口遍历防环
 seenCss      当前入口输出去重
-cache        每个 chunk 子图的完整 CSS 列表
+cache        每个 chunk 在本次遍历中收集、未受 seenCss 过滤的 CSS 列表
 ```
 
 关键是 cache 不能保存当前 `seenCss` 过滤后的结果。设 entryA 先从 chunk1 看到 shared.css，再遍历
 chunk2；chunk2 返回时会过滤 shared.css。若把这个子集缓存，entryB 单独依赖 chunk2 时就永远拿
 不到 shared.css。Vite 因此用 allFiles 写缓存，用 filteredFiles 返回本入口。
 
-这个跨入口缺样式问题由 [PR #22017](https://github.com/vitejs/vite/pull/22017) 修复。单元测试还
-覆盖深层“脏叶子”、菱形依赖和循环，帮助区分遍历去重与缓存完整性两个概念。
+这个跨入口缺样式问题由 [PR #22017](https://github.com/vitejs/vite/pull/22017) 修复。单元测试覆盖
+深层共享叶子与菱形依赖：这些无环子图的缓存不会因当前入口已经见过某份 CSS 而缺项。
+
+环由 `seenChunks` 切断：A→B→A 第一次从 A 遍历时，B 的回边直接返回空数组，B 缓存仅记录
+b.css，A 返回 b.css、a.css。后续入口若直接复用 B 缓存，会只得到 b.css。因此现有循环用例
+验证了单次遍历终止与去重，缓存不能被描述成任意环图的完整可达 CSS 集。
 
 ## import map、nonce 与 head 顺序
 
@@ -304,9 +312,10 @@ chunk2；chunk2 返回时会过滤 shared.css。若把这个子集缓存，entry
 警告用户的错误顺序，后置 hook 再把 map 移到首个模块资源之前。匹配不能只认自闭合 preload，
 普通 `<link ...>` 同样会触发加载（[PR #21409](https://github.com/vitejs/vite/pull/21409)）。
 
-启用 Rolldown chunk import map 时，Vite 从 bundle 读取生成的 map 并插在用户 map 前，使 chunk
-占位映射优先生效；功能入口见 [PR #21580](https://github.com/vitejs/vite/pull/21580)。多份 map
-在 Firefox/旧浏览器兼容性有限，因此同时存在用户 map 时给出警告。
+启用 Rolldown chunk import map 时，Vite 从 bundle 读取生成的 map 并插到首个模块资源前。用户
+map 先被移动到该资源前，再插入生成 map，所以同时存在时的顺序是“用户 map → 生成 map →
+模块资源”，不是生成 map 覆盖用户 map。功能入口见
+[PR #21580](https://github.com/vitejs/vite/pull/21580)。源码会对多份 map 输出兼容性警告。
 
 CSP nonce 分两层：
 
@@ -321,9 +330,13 @@ CSP nonce 分两层：
 HTML 片段并不一定有完整 head/body。注入函数遵循确定回退：
 
 ```text
-head-prepend / head
-  → <head> 内
-  → 无 head：<body> 前
+head-prepend
+  → <head> 后
+  → <html> 后 / doctype 后 / 文档起点
+
+head
+  → </head> 前
+  → 无 </head>：<body> 前
   → <html> 后 / doctype 后 / 文档起点
 
 body-prepend
@@ -340,7 +353,7 @@ body
 序列化器继承现有缩进，link/meta/base 使用 void tag 形式；属性值经 `escape-html`，布尔 true 只
 输出属性名，false 不输出。这避免插件返回的动态属性突破 HTML 边界。
 
-## parse5 的宽松与严格边界
+## parse5 的容错与警告
 
 Vite 需要源码位置做 MagicString 精确编辑，因此不能只用正则解析 HTML。parse5 以
 `scriptingEnabled:false` 解析 noscript 内容，并报告错误。Vite接受浏览器/生态常见的：
@@ -351,24 +364,25 @@ Vite 需要源码位置做 MagicString 精确编辑，因此不能只用正则�
 - 非 void 元素自闭合；
 - `<?xml>` 与 lit 生成的 `<?>`。
 
-其余错误按错误码去重，附文件位置和 code frame。开发态错误中间件再把它显示为 overlay。宽松
-不代表忽略所有语法错误，而是与浏览器实际容错边界对齐。
+其余错误按错误码去重，附文件位置和 code frame，最后交给 logger.warn；解析仍继续并遍历
+parse5 容错后的树。这份实现不会仅因这些 parse5 诊断返回 500 或发送 overlay 错误。
 
 ## 用例怎样映射源码
 
-| 用例层级                      | 场景/目标                              | 对应机制                     |
-| ----------------------------- | -------------------------------------- | ---------------------------- |
-| `node/__tests__/html.spec.ts` | CSS 链、共享、菱形、环与跨入口缓存     | `getCssFilesForChunk()`      |
-| `indexHtml.spec.ts`           | root 与 `/@fs/` 内联代理均可 load      | proxy path/cache key         |
-| `indexHtml.spec.ts`           | non-root base 下入口得到 HMR timestamp | `stripBase()` 后查图         |
-| playground hook 组            | string/tags/combined 与四个注入位置    | `applyHtmlTransforms()`      |
-| playground build 组           | async/defer、零 JS、入口消去与执行顺序 | `generateBundle()`           |
-| playground invalid 组         | parse error、overlay、修复 reload      | parse5 + HMR                 |
-| playground serve behavior     | file/dir/fallback 优先级               | HTML fallback + index 中间件 |
-| playground reload             | 代理 URL 不变时仍拿新内联代码          | 代理节点失效                 |
+| 用例层级                      | 场景/目标                                              | 对应机制                       |
+| ----------------------------- | ------------------------------------------------------ | ------------------------------ |
+| `node/__tests__/html.spec.ts` | CSS 链、共享、菱形、环与跨入口缓存                     | `getCssFilesForChunk()`        |
+| `indexHtml.spec.ts`           | root 与 `/@fs/` 内联代理均可 load                      | proxy path/cache key           |
+| `indexHtml.spec.ts`           | non-root base 下入口得到 HMR timestamp                 | `stripBase()` 后查图           |
+| playground hook 组            | string/tags/combined 与四个注入位置                    | `applyHtmlTransforms()`        |
+| playground build 组           | async/defer、零 JS、入口消去与执行顺序                 | `generateBundle()`             |
+| playground invalid 组         | 仍保留旧的 500/overlay 断言，与当前 warning 实现不一致 | 旧诊断契约，不能作当前行为证据 |
+| playground serve behavior     | file/dir/fallback 优先级                               | HTML fallback + index 中间件   |
+| playground reload             | 代理 URL 不变时仍拿新内联代码                          | 代理节点失效                   |
 
-单元测试适合推演纯图算法；中间件测试验证 URL/缓存身份；浏览器 playground 验证 script 执行、
-CSS 生效和 import map 时机。三层各自回答不同问题。
+单元测试推演 CSS 图算法；中间件测试核对 URL/缓存身份；浏览器 playground 的执行顺序、CSS
+生效和 import map 用例观察最终页面。invalid 组的旧断言需要单独更新，当前诊断以
+`traverseHtml()` 的 warning 路径为准。
 
 ## 关键源码证据
 
@@ -407,9 +421,6 @@ for (const plugin of plugins) {
 6. `buildHtmlPlugin.transform`：观察 HTML 怎样累积 `js` 入口和资源占位符。
 7. `generateBundle`：查看入口 chunk 能否消去、imports 后序与 CSS 收集结果。
 8. `postImportMapHook`：观察用户 map、chunk map 与 module script 最终顺序。
-
-纯注释任务无需运行测试。若以后修改算法，可选一个最小场景验证：两个 HTML 入口共享 CSS chunk，
-先构建 A 再构建 B，确认 B 仍含共享 CSS；这正好验证“缓存完整集、返回过滤集”的思路。
 
 ## 复盘题
 

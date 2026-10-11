@@ -119,6 +119,8 @@
       color: var(--muted);
       background: var(--surface);
       font-weight: 650;
+      max-width: 100%;
+      overflow-wrap: anywhere;
       white-space: normal;
     }
     .layout {
@@ -146,7 +148,7 @@
     .toc li { margin: .28rem 0; color: var(--muted); font-size: .88rem; }
     .toc a { color: inherit; text-decoration: none; }
     .toc a:hover { color: var(--accent); }
-    main { min-width: 0; }
+    main { min-width: 0; overflow-wrap: anywhere; }
     section { scroll-margin-top: 18px; }
     .callout, .card, .module, .algorithm-step {
       border: 1px solid var(--line);
@@ -175,6 +177,7 @@
       margin: 16px 0;
       padding: 22px;
     }
+    .module > * { min-width: 0; }
     .module h3 { margin: 0; }
     .module dl { display: grid; grid-template-columns: 6em 1fr; gap: 6px 12px; margin: 0; }
     dt { color: var(--muted); font-weight: 800; }
@@ -284,7 +287,7 @@
       .hero { padding: 48px 18px 34px; }
       .layout { padding: 18px 14px 56px; gap: 20px; }
       .toc ol { columns: 1; }
-      .grid.two, .grid.three, .module, .manual { grid-template-columns: 1fr; }
+      .grid.two, .grid.three, .module, .manual { grid-template-columns: minmax(0, 1fr); }
       .module dl { grid-template-columns: 1fr; gap: 2px; }
       .module dd { margin-bottom: 9px; }
       h2 { margin-top: 2.8rem; }
@@ -299,6 +302,91 @@
       .card, .module, .callout, .diagram { box-shadow: none; break-inside: avoid; }
       a { color: inherit; }
     }
+        .engineering-diagram.diagram { padding: 0; overflow: hidden; }
+  </style>
+  <style id="engineering-diagram-styles">
+.engineering-diagram {
+  --d-ink: #183234;
+  --d-edge: #507476;
+  --d-line: #b9cecb;
+  --d-paper: #fbfdfb;
+  margin: 1.4rem 0 1.8rem;
+  border: 1px solid var(--d-line);
+  border-radius: 14px;
+  background: var(--d-paper);
+  overflow: hidden;
+}
+.engineering-diagram .diagram-scroll {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  padding: 12px;
+}
+.engineering-diagram svg {
+  display: block;
+  width: 100%;
+  min-width: var(--diagram-min-width, 860px);
+  height: auto;
+  color: var(--d-ink);
+  font-family: inherit;
+}
+.engineering-diagram svg text {
+  fill: var(--d-ink);
+  font-family: inherit;
+  font-size: 17px;
+}
+.engineering-diagram .d-node {
+  fill: #f1f7f5;
+  stroke: var(--d-line);
+  stroke-width: 1.5;
+}
+.engineering-diagram .d-state {
+  fill: #e5f2eb;
+  stroke: #50836e;
+  stroke-width: 1.5;
+}
+.engineering-diagram .d-condition {
+  fill: #fff3de;
+  stroke: #ad8251;
+  stroke-width: 1.5;
+}
+.engineering-diagram .d-lane {
+  fill: #eef3f5;
+  stroke: #c5d4d9;
+  stroke-width: 1;
+}
+.engineering-diagram .d-edge {
+  fill: none;
+  stroke: var(--d-edge);
+  stroke-width: 2;
+}
+.engineering-diagram .d-async { stroke-dasharray: 7 5; }
+.engineering-diagram .d-label { font-weight: 650; }
+.engineering-diagram svg .d-muted { fill: #486566; font-size: 16px; }
+.engineering-diagram figcaption {
+  margin: 0;
+  padding: 13px 18px 16px;
+  border-top: 1px solid #d8e5e0;
+  color: #365557;
+  font-size: .93rem;
+  line-height: 1.65;
+}
+.engineering-diagram figcaption strong { color: var(--d-ink); }
+@media (max-width: 680px) {
+  .engineering-diagram .diagram-scroll { padding: 8px; }
+  .engineering-diagram figcaption { padding: 12px 14px; }
+  .engineering-diagram figcaption::after {
+    content: "图可横向滚动查看。";
+    display: block;
+    margin-top: 6px;
+    color: #607776;
+    font-size: .83rem;
+  }
+}
+@media print {
+  .engineering-diagram { break-inside: avoid; }
+  .engineering-diagram svg { min-width: 0; }
+}
+
   </style>
 </head>
 <body>
@@ -311,7 +399,6 @@
       <span class="pill">React / react-dom 19.3.0</span>
       <span class="pill">react-reconciler 0.34.0</span>
       <span class="pill">scheduler 0.28.0</span>
-      <span class="pill">commit 2042572329425f9ebf35ae6287ea5bab72b2c497</span>
       <span class="pill">现代浏览器 · createRoot</span>
     </div>
   </header>
@@ -351,8 +438,8 @@
             <p><span class="evidence fact">源码事实</span>lane 决定 React 选哪批工作；Root Scheduler 决定走 microtask 同步冲刷还是创建 Scheduler task；Scheduler 再管理 host task、超时与 continuation。</p>
           </article>
           <article class="card conclusion">
-            <div class="stat">Render 可弃，Commit 原子</div>
-            <p><span class="evidence fact">源码事实</span><code>current</code> 在 render 中保持旧树；mutation 完成后才令 <code>root.current = finishedWork</code>。layout 随后同步执行，passive 另行调度。</p>
+            <div class="stat">Render 可弃，Mutation 连续提交</div>
+            <p><span class="evidence fact">源码事实</span><code>current</code> 在 render 中保持旧树；mutation 完成后才令 <code>root.current = finishedWork</code>；mutation 内的 cleanup/ref 回调可观察已部分变化的 DOM，提交错误不会回滚已有操作。layout 随后同步执行；passive 可由 Scheduler 回调冲刷，现代根的 SyncLane 提交则在本任务内冲刷。</p>
           </article>
         </div>
 
@@ -368,7 +455,7 @@
           <article class="card">
             <h3>精确范围</h3>
             <p>现代浏览器中，<code>createRoot</code> + 函数组件 + Hooks 的纯客户端首次挂载，以及一次 <code>click</code> 触发两次 <code>useState</code> 更新：计数 <code>0 → 1</code>，列表 <code>[A,B,C] → [C,A,B]</code>。</p>
-            <p>commit 只概述 mutation、layout、passive 三类阶段；数组协调只深挖 key、map、<code>lastPlacedIndex</code>、Placement 与 Deletion。</p>
+            <p>commit 只概述 mutation、layout、passive 三类阶段；数组协调只深挖 key、map、<code>lastPlacedIndex</code>、Placement、父级 ChildDeletion 与 deletions。</p>
           </article>
           <article class="card">
             <h3>明确排除</h3>
@@ -378,7 +465,7 @@
         </div>
         <div class="callout warning">
           <p><strong>验证状态：</strong>仓库测试<strong>未运行</strong>；测试章节来自逐测试体只读，不能解读成已在本地成功执行。教程 Demo 也<strong>未执行</strong>。仅最终 HTML 接受解析、锚点、内部链接、代码转义、离线资源与窄屏布局验证。</p>
-          <p><span class="evidence fact">源码事实</span>版本由 <code>ReactVersions.js</code>、四个 <code>packages/*/package.json</code> 与 <code>packages/shared/ReactVersion.js</code> 交叉确认。commit 标识采用任务指定基线；当前源码快照没有独立 <code>.git</code> 元数据，故本地不能从对象数据库二次验证该哈希。</p>
+          <p><span class="evidence fact">源码事实</span>版本由 <code>ReactVersions.js</code>、四个 <code>packages/*/package.json</code> 与 <code>packages/shared/ReactVersion.js</code> 交叉确认。本项目保留了源码快照，但没有 React 上游 Git 元数据；包内版本可以核对，上游 tag/commit 未记录。</p>
         </div>
         <div class="legend" aria-label="证据标签说明">
           <span><span class="evidence fact">源码事实</span>当前版本实现或源码注释直接支持</span>
@@ -455,7 +542,7 @@
             <dt>不负责</dt><dd>队列本身不决定 host task，也不实施 DOM mutation。</dd>
             <dt>输入 → 输出</dt><dd>element/state action + lane → staged concurrent update、Fiber lanes 与可调度 root；render 前转入 queue.pending 环。</dd>
             <dt>对象与状态</dt><dd>FiberNode、FiberRootNode、HostRoot UpdateQueue、Hook/Hook UpdateQueue、全局 <code>concurrentQueues</code> 暂存区。</dd>
-            <dt>不变量</dt><dd>一个已更新节点至多有 current/alternate 两份；<code>root.current</code> 只指已提交树；Hook 顺序决定链表槽位；pending 尾节点的 <code>next</code> 指首节点。</dd>
+            <dt>不变量</dt><dd>一个节点通常由 current/alternate 两份 Fiber 交替承载；<code>root.current</code> 只指已提交树；Hook 顺序决定链表槽位；pending 尾节点的 <code>next</code> 指首节点。</dd>
             <dt>证据</dt><dd><span class="source">ReactFiber.createWorkInProgress</span> <span class="source">ReactFiberRoot.createFiberRoot</span> <span class="source">ReactFiberConcurrentUpdates.finishQueueingConcurrentUpdates</span>；Hooks mount/update 测试。</dd>
           </dl>
         </article>
@@ -500,7 +587,7 @@
           </div>
           <dl>
             <dt>负责</dt><dd>按 flags 遍历 mutation effects；插入/移动/删除 DOM；更新属性；mutation 后切换 <code>root.current</code>；再运行 layout，并安排 passive。</dd>
-            <dt>不负责</dt><dd>commit 不重新协调元素，也不做 time-slicing。</dd>
+            <dt>不负责</dt><dd>commit 不重新协调元素；本 Demo 的 mutation/layout 连续执行。</dd>
             <dt>输入 → 输出</dt><dd><code>finishedWork + lanes + flags</code> → 可见 DOM、已切换 current、待运行 passive effects。</dd>
             <dt>对象与状态</dt><dd><code>pendingFinishedWork</code>、pendingEffects* 模块状态、Host Fiber <code>stateNode</code>、真实 DOM。</dd>
             <dt>不变量</dt><dd>旧树在 mutation 中仍是 current；新树在 layout 前成为 current；<code>subtreeFlags</code> 只用于跳过无 effect 子树。</dd>
@@ -519,17 +606,17 @@
             <dt>不负责</dt><dd>不会给每个 <code>onClick</code> 单独注册 native listener；handler 调用本身不直接改 DOM。</dd>
             <dt>输入 → 输出</dt><dd>native click → SyntheticEvent dispatch queue → <code>onClick</code> → 两个 Hook Update + SyncLane 根调度。</dd>
             <dt>对象与状态</dt><dd>root listening marker、DOM 上的 Fiber/props cache、DispatchQueue、current update priority、Hook pending ring。</dd>
-            <dt>不变量</dt><dd>capture 根→目标，bubble 目标→根；priority 在 wrapper finally 中恢复；当前 props cache 决定所调 handler；同一事件中的更新在 microtask 前聚合。</dd>
+            <dt>不变量</dt><dd>capture 根→目标，bubble 目标→根；priority 在 wrapper finally 中恢复；当前 props cache 决定所调 handler；同一同步 handler 中的更新在 root microtask 前聚合。</dd>
             <dt>证据</dt><dd><span class="source">DOMPluginEventSystem.listenToAllSupportedEvents / processDispatchQueue</span> <span class="source">ReactDOMEventListener.dispatchDiscreteEvent</span> <span class="source">ReactFiberHooks.dispatchSetState</span>；离散事件批处理测试。</dd>
           </dl>
         </article>
       </section>
 
       <section id="system-map">
-        <h2>模块依赖图与核心对象关系</h2>
-        <figure class="diagram">
-          <svg viewBox="0 0 1120 520" role="img" aria-labelledby="dep-title dep-desc">
-            <title id="dep-title">React 客户端渲染模块依赖图</title>
+        <h2>模块协作与核心对象关系</h2>
+        <figure class="diagram engineering-diagram" data-diagram="engineering-client-control-branches" style="--diagram-min-width:1120px">
+          <div class="diagram-scroll"><svg viewBox="0 0 1120 520" role="img" aria-labelledby="dep-title dep-desc">
+            <title id="dep-title">React 客户端渲染控制环</title>
             <desc id="dep-desc">JSX 描述进入 DOM Root 与 Reconciler；lane 和两个 scheduler 决定 render；commit 调用 DOM host config；根事件再进入 Hook dispatch。</desc>
             <defs>
               <marker id="arrow-dep" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
@@ -537,8 +624,9 @@
               </marker>
             </defs>
             <rect class="box hot" x="30" y="55" width="205" height="82"/>
-            <text x="132" y="86" text-anchor="middle" font-size="16" font-weight="800">JSX runtime / ReactElement</text>
-            <text x="132" y="112" text-anchor="middle" font-size="13">type · key · props · owner</text>
+            <text x="132" y="78" text-anchor="middle" font-size="14" font-weight="800">JSX / ReactElement</text>
+            <text x="132" y="102" text-anchor="middle" font-size="13">type · key · props</text>
+            <text x="132" y="122" text-anchor="middle" font-size="12">DEV: _owner</text>
 
             <rect class="box hot" x="298" y="55" width="205" height="82"/>
             <text x="400" y="86" text-anchor="middle" font-size="16" font-weight="800">ReactDOMRoot</text>
@@ -550,15 +638,15 @@
 
             <rect class="box" x="850" y="55" width="235" height="82"/>
             <text x="967" y="86" text-anchor="middle" font-size="16" font-weight="800">Lane / Root Scheduler</text>
-            <text x="967" y="112" text-anchor="middle" font-size="13">microtask · nextLanes · callback</text>
+            <text x="967" y="112" text-anchor="middle" font-size="13">微任务 / nextLanes / callback</text>
 
             <rect class="box" x="850" y="220" width="235" height="82"/>
             <text x="967" y="250" text-anchor="middle" font-size="16" font-weight="800">Scheduler</text>
-            <text x="967" y="276" text-anchor="middle" font-size="13">taskQueue · timerQueue · yield</text>
+            <text x="967" y="276" text-anchor="middle" font-size="13">双堆 / yield / continuation</text>
 
             <rect class="box hot" x="566" y="220" width="220" height="82"/>
             <text x="676" y="250" text-anchor="middle" font-size="16" font-weight="800">Render / Reconciliation</text>
-            <text x="676" y="276" text-anchor="middle" font-size="13">begin · child diff · complete</text>
+            <text x="676" y="276" text-anchor="middle" font-size="13">begin / child diff / complete</text>
 
             <rect class="box hot" x="298" y="220" width="205" height="82"/>
             <text x="400" y="250" text-anchor="middle" font-size="16" font-weight="800">Commit / Host Config</text>
@@ -566,7 +654,7 @@
 
             <rect class="box event" x="30" y="375" width="205" height="82"/>
             <text x="132" y="405" text-anchor="middle" font-size="16" font-weight="800">Root native listener</text>
-            <text x="132" y="431" text-anchor="middle" font-size="13">capture / bubble delegation</text>
+            <text x="132" y="431" text-anchor="middle" font-size="13">capture / bubble 根委托</text>
 
             <rect class="box event" x="298" y="375" width="205" height="82"/>
             <text x="400" y="405" text-anchor="middle" font-size="16" font-weight="800">Plugin dispatch</text>
@@ -574,7 +662,7 @@
 
             <rect class="box event" x="566" y="375" width="220" height="82"/>
             <text x="676" y="405" text-anchor="middle" font-size="16" font-weight="800">Hook dispatchSetState</text>
-            <text x="676" y="431" text-anchor="middle" font-size="13">action · SyncLane · pending ring</text>
+            <text x="676" y="431" text-anchor="middle" font-size="13">action / SyncLane / 暂存</text>
 
             <path class="edge" marker-end="url(#arrow-dep)" d="M235 96 H298"/>
             <path class="edge" marker-end="url(#arrow-dep)" d="M503 96 H566"/>
@@ -586,82 +674,38 @@
             <path class="edge" marker-end="url(#arrow-dep)" d="M235 416 H298"/>
             <path class="edge" marker-end="url(#arrow-dep)" d="M503 416 H566"/>
             <path class="edge" marker-end="url(#arrow-dep)" d="M786 416 H812 Q835 416 835 385 V155 Q835 115 850 115"/>
-          </svg>
-          <figcaption>控制环：描述进入 Fiber；lane/调度推动 render；commit 写 DOM；DOM 事件经根委托回到 Hook update，再进入同一调度入口。</figcaption>
+          <path class="edge" marker-end="url(#arrow-dep)" stroke-dasharray="7 5" d="M940 137 V170 H676 V220"/><text x="470" y="194">Sync：微任务直接 flush</text><text x="981" y="190">非 Sync task</text><text x="40" y="335">随后用户 click</text></svg></div>
+          <figcaption>控制环（示意角色与调度分支）：createRoot 已注册根监听器；随后用户 click 进入事件路径。Sync 微任务直接冲刷，非 Sync 才安排 Scheduler render task。描述进入 Fiber；lane/调度推动 render；commit 写 DOM；DOM 事件经根委托回到 Hook update，再进入同一调度入口。</figcaption>
         </figure>
 
-        <figure class="diagram">
-          <svg viewBox="0 0 1120 525" role="img" aria-labelledby="obj-title obj-desc">
-            <title id="obj-title">FiberRoot、Fiber、Hook queue 与 DOM 对象关系</title>
-            <desc id="obj-desc">容器持有根标记，FiberRoot current 指 HostRoot current，current 与 alternate 互指，函数组件 Fiber 持 Hook 链，Host Fiber stateNode 指真实 DOM。</desc>
-            <defs>
-              <marker id="arrow-obj" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-                <path d="M0,0 L8,4 L0,8 Z" fill="#5b6579"/>
-              </marker>
-            </defs>
-            <rect class="box hot" x="35" y="55" width="190" height="96"/>
-            <text x="130" y="84" text-anchor="middle" font-size="16" font-weight="800">DOM container</text>
-            <text x="130" y="110" text-anchor="middle" font-size="13">internalContainerInstanceKey</text>
-            <text x="130" y="132" text-anchor="middle" font-size="13">listeningMarker</text>
+        <figure class="diagram engineering-diagram" data-diagram="engineering-client-root-objects" style="--diagram-min-width:1100px">
+          <div class="diagram-scroll"><svg viewBox="0 0 1100 800" role="img" aria-labelledby="obj-title obj-desc">
+<title id="obj-title">首次提交后，容器标记、current 与 alternate 分别指谁？</title>
+<desc id="obj-desc">初始化的HostRoot A仍由DOM容器根标记持有。首轮提交后FiberRoot.current指B；B和A互为alternate，stateNode回指FiberRoot。B的后代持有Hook链和真实宿主DOM。</desc>
+<defs><marker id="arrow-obj" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="#507476"/></marker></defs>
+<rect class="d-state" x="30" y="70" width="240" height="105" rx="9"/><text x="150" y="100" text-anchor="middle" class="d-label">DOM container</text><text x="150" y="125" text-anchor="middle">根标记持有初始 A</text><text x="150" y="150" text-anchor="middle">事件监听标记</text>
+<rect class="d-state" x="340" y="70" width="260" height="130" rx="9"/><text x="470" y="100" text-anchor="middle" class="d-label">唯一 FiberRoot</text><text x="470" y="125" text-anchor="middle">current / containerInfo</text><text x="470" y="150" text-anchor="middle">根级 lanes / callbackNode</text>
+<rect class="d-node" x="690" y="70" width="260" height="130" rx="9"/><text x="820" y="100" text-anchor="middle" class="d-label">HostRoot B · current</text><text x="820" y="125" text-anchor="middle">首轮已提交树</text><text x="820" y="150" text-anchor="middle">stateNode → FiberRoot</text>
+<rect class="d-node" x="690" y="290" width="260" height="90" rx="9"/><text x="820" y="320" text-anchor="middle" class="d-label">HostRoot A · alternate</text><text x="820" y="345" text-anchor="middle">初始化创建的 Fiber</text><text x="820" y="370" text-anchor="middle">下一轮可复用</text>
+<rect class="d-node" x="370" y="455" width="260" height="115" rx="9"/><text x="500" y="485" text-anchor="middle" class="d-label">App · Function Fiber</text><text x="500" y="510" text-anchor="middle">memoizedState → 首 Hook</text><text x="500" y="535" text-anchor="middle">child / sibling / return</text>
+<rect class="d-node" x="30" y="455" width="270" height="115" rx="9"/><text x="165" y="485" text-anchor="middle" class="d-label">HostComponent Fiber</text><text x="165" y="510" text-anchor="middle">stateNode → DOM Element</text><text x="165" y="535" text-anchor="middle">props / Update flag</text>
+<rect class="d-node" x="730" y="460" width="270" height="90" rx="9"/><text x="865" y="490" text-anchor="middle" class="d-label">Hook count</text><text x="865" y="515" text-anchor="middle">memoizedState / queue</text>
+<rect class="d-node" x="730" y="640" width="270" height="90" rx="9"/><text x="865" y="670" text-anchor="middle" class="d-label">Hook items</text><text x="865" y="695" text-anchor="middle">memoizedState / queue</text>
+<rect class="d-state" x="30" y="655" width="270" height="90" rx="9"/><text x="165" y="685" text-anchor="middle" class="d-label">真实 DOM Element</text><text x="165" y="710" text-anchor="middle">Fiber 与 props 缓存</text>
+<path class="d-edge" d="M150 70V25H1040V345H950" marker-end="url(#arrow-obj)"/><text x="520" y="19" text-anchor="middle">根标记引用初始化 A，此后不随 current 切换</text>
+<path class="d-edge" d="M420 200V250H150V175" marker-end="url(#arrow-obj)"/><text x="230" y="239">containerInfo</text>
+<path class="d-edge" d="M600 115H690" marker-end="url(#arrow-obj)"/><text x="645" y="96" text-anchor="middle">current</text>
+<path class="d-edge" d="M690 180H600" marker-end="url(#arrow-obj)"/><text x="644" y="223" text-anchor="middle">stateNode</text>
+<path class="d-edge" d="M795 200V290" marker-end="url(#arrow-obj)"/><path class="d-edge" d="M875 290V200" marker-end="url(#arrow-obj)"/><text x="840" y="270" text-anchor="middle">alternate</text>
+<path class="d-edge" d="M950 130H1010V420H500V455" marker-end="url(#arrow-obj)"/><text x="820" y="408" text-anchor="middle">child / …（中间祖先省略）</text>
+<path class="d-edge" d="M370 512H300" marker-end="url(#arrow-obj)"/><text x="335" y="493" text-anchor="middle">child</text>
+<path class="d-edge" d="M630 510H730" marker-end="url(#arrow-obj)"/><text x="680" y="443" text-anchor="middle">memoizedState</text>
+<path class="d-edge" d="M865 550V640" marker-end="url(#arrow-obj)"/><text x="881" y="601">next</text>
+<path class="d-edge" d="M165 570V655" marker-end="url(#arrow-obj)"/><text x="185" y="618">stateNode</text>
+<text x="500" y="778" text-anchor="middle" class="d-muted">Function Fiber.stateNode 通常为 null；Hook 状态通过 memoizedState 链保存。</text>
+</svg></div>
 
-            <rect class="box hot" x="290" y="38" width="230" height="132"/>
-            <text x="405" y="69" text-anchor="middle" font-size="16" font-weight="800">FiberRootNode</text>
-            <text x="405" y="96" text-anchor="middle" font-size="13">containerInfo · current</text>
-            <text x="405" y="119" text-anchor="middle" font-size="13">pending/suspended/expiredLanes</text>
-            <text x="405" y="142" text-anchor="middle" font-size="13">callbackNode · next</text>
-
-            <rect class="box" x="585" y="35" width="210" height="138"/>
-            <text x="690" y="66" text-anchor="middle" font-size="16" font-weight="800">HostRoot current</text>
-            <text x="690" y="92" text-anchor="middle" font-size="13">stateNode → FiberRoot</text>
-            <text x="690" y="115" text-anchor="middle" font-size="13">memoizedState.element</text>
-            <text x="690" y="138" text-anchor="middle" font-size="13">updateQueue</text>
-
-            <rect class="box" x="870" y="35" width="210" height="138"/>
-            <text x="975" y="66" text-anchor="middle" font-size="16" font-weight="800">HostRoot alternate</text>
-            <text x="975" y="92" text-anchor="middle" font-size="13">work-in-progress / reusable</text>
-            <text x="975" y="115" text-anchor="middle" font-size="13">finishedWork when complete</text>
-            <text x="975" y="138" text-anchor="middle" font-size="13">flags · subtreeFlags</text>
-
-            <rect class="box" x="585" y="270" width="210" height="122"/>
-            <text x="690" y="301" text-anchor="middle" font-size="16" font-weight="800">FunctionComponent Fiber</text>
-            <text x="690" y="328" text-anchor="middle" font-size="13">memoizedState → Hook #1</text>
-            <text x="690" y="351" text-anchor="middle" font-size="13">sibling / child / return</text>
-            <text x="690" y="374" text-anchor="middle" font-size="13">lanes · flags</text>
-
-            <rect class="box event" x="870" y="245" width="210" height="172"/>
-            <text x="975" y="276" text-anchor="middle" font-size="16" font-weight="800">Hook #1 · useState</text>
-            <text x="975" y="303" text-anchor="middle" font-size="13">memoizedState · baseState</text>
-            <text x="975" y="326" text-anchor="middle" font-size="13">baseQueue · next</text>
-            <text x="975" y="349" text-anchor="middle" font-size="13">queue.pending ↻</text>
-            <text x="975" y="372" text-anchor="middle" font-size="13">queue.dispatch</text>
-            <text x="975" y="395" text-anchor="middle" font-size="13">lastRenderedState/reducer</text>
-
-            <rect class="box" x="290" y="285" width="230" height="108"/>
-            <text x="405" y="316" text-anchor="middle" font-size="16" font-weight="800">HostComponent Fiber</text>
-            <text x="405" y="343" text-anchor="middle" font-size="13">stateNode → Element</text>
-            <text x="405" y="366" text-anchor="middle" font-size="13">memoizedProps · Update flag</text>
-
-            <rect class="box hot" x="35" y="296" width="190" height="86"/>
-            <text x="130" y="327" text-anchor="middle" font-size="16" font-weight="800">真实 DOM Element</text>
-            <text x="130" y="354" text-anchor="middle" font-size="13">internalInstanceKey / propsKey</text>
-
-            <path class="edge" marker-end="url(#arrow-obj)" d="M225 101 H290"/>
-            <text x="255" y="91" text-anchor="middle" font-size="12">标记</text>
-            <path class="edge" marker-end="url(#arrow-obj)" d="M520 101 H585"/>
-            <text x="551" y="91" text-anchor="middle" font-size="12">current</text>
-            <path class="edge" marker-end="url(#arrow-obj)" d="M795 84 H870"/>
-            <path class="edge" marker-end="url(#arrow-obj)" d="M870 126 H795"/>
-            <text x="833" y="107" text-anchor="middle" font-size="12">alternate</text>
-            <path class="edge" marker-end="url(#arrow-obj)" d="M690 173 V270"/>
-            <text x="710" y="226" font-size="12">child</text>
-            <path class="edge" marker-end="url(#arrow-obj)" d="M795 331 H870"/>
-            <text x="832" y="320" text-anchor="middle" font-size="12">memoizedState</text>
-            <path class="edge" marker-end="url(#arrow-obj)" d="M585 339 H520"/>
-            <text x="551" y="328" text-anchor="middle" font-size="12">child</text>
-            <path class="edge" marker-end="url(#arrow-obj)" d="M290 339 H225"/>
-            <text x="257" y="328" text-anchor="middle" font-size="12">stateNode</text>
-          </svg>
-          <figcaption><span class="evidence fact">源码事实</span>当前版本没有 <code>root.finishedWork</code> 字段。render 完成树先以局部 <code>finishedWork = root.current.alternate</code> 传递，再存入模块级 <code>pendingFinishedWork</code>；mutation 后才切换 <code>root.current</code>。</figcaption>
+          <figcaption>首次提交后的引用快照。容器的 <code>internalContainerInstanceKey</code> 保存初始化 HostRoot A；<code>root.current</code> 已切换到 B。根标记不会随提交改写，查找当前 Fiber 需沿根与 alternate 解析；<code>containerInfo</code> 从唯一 FiberRoot 指回容器。</figcaption>
         </figure>
       </section>
 
@@ -669,8 +713,8 @@
         <h2>链 A：首次客户端挂载，从描述到容器 DOM</h2>
         <p><span class="evidence fact">源码事实</span>根创建与 UI 描述是两条先后发生的支线：<code>createRoot(container)</code> 先建立 FiberRoot、HostRoot、容器标记和事件委托；JSX 产生 ReactElement；随后 <code>root.render(element)</code> 才把描述入队。把 JSX 作为 <code>createRoot</code> 第二参数是错误用法，DEV 源码会给出警告。</p>
 
-        <figure class="diagram">
-          <svg viewBox="0 0 1180 690" role="img" aria-labelledby="mount-title mount-desc">
+        <figure class="diagram engineering-diagram" data-diagram="engineering-client-mount-boundaries" style="--diagram-min-width:1180px">
+          <div class="diagram-scroll"><svg viewBox="0 0 1180 690" role="img" aria-labelledby="mount-title mount-desc">
             <title id="mount-title">首次客户端挂载端到端流程</title>
             <desc id="mount-desc">普通模块代码中 root.render 得到 DefaultLane，经微任务建立 Normal Scheduler task，任务内同步 render，complete 创建脱离 DOM，commit 插入容器。</desc>
             <defs>
@@ -689,66 +733,66 @@
 
             <rect class="box hot" x="18" y="164" width="244" height="68"/>
             <text x="140" y="191" text-anchor="middle" font-size="15" font-weight="800">createRoot(container)</text>
-            <text x="140" y="214" text-anchor="middle" font-size="12">createContainer → createFiberRoot</text>
+            <text x="140" y="214" text-anchor="middle" font-size="12">构造根与空 HostRoot</text>
 
             <rect class="box" x="312" y="164" width="244" height="68"/>
-            <text x="434" y="191" text-anchor="middle" font-size="15" font-weight="800">FiberRoot + HostRoot current</text>
-            <text x="434" y="214" text-anchor="middle" font-size="12">mark root · install delegated events</text>
+            <text x="434" y="191" text-anchor="middle" font-size="15" font-weight="800">FiberRoot / 空 HostRoot</text>
+            <text x="434" y="214" text-anchor="middle" font-size="12">根标记 / 委托监听器</text>
 
             <rect class="box hot" x="18" y="270" width="244" height="74"/>
             <text x="140" y="297" text-anchor="middle" font-size="15" font-weight="800">root.render(element)</text>
-            <text x="140" y="321" text-anchor="middle" font-size="12">updateContainerImpl · payload {element}</text>
+            <text x="140" y="321" text-anchor="middle" font-size="12">enqueue payload {element}</text>
 
             <rect class="box" x="312" y="270" width="244" height="74"/>
             <text x="434" y="297" text-anchor="middle" font-size="15" font-weight="800">DefaultLane 入队</text>
-            <text x="434" y="321" text-anchor="middle" font-size="12">pendingLanes |= Default · root schedule</text>
+            <text x="434" y="321" text-anchor="middle" font-size="12">pending |= Default / 根入链</text>
 
             <rect class="box" x="605" y="270" width="244" height="74"/>
             <text x="727" y="297" text-anchor="middle" font-size="15" font-weight="800">root microtask</text>
-            <text x="727" y="321" text-anchor="middle" font-size="12">nextLanes → Normal Scheduler task</text>
+            <text x="727" y="321" text-anchor="middle" font-size="12">选 lanes / 安排 Normal task</text>
 
             <rect class="box hot" x="605" y="390" width="244" height="84"/>
             <text x="727" y="418" text-anchor="middle" font-size="15" font-weight="800">performWorkOnRoot</text>
-            <text x="727" y="442" text-anchor="middle" font-size="12">Default is blocking → renderRootSync</text>
-            <text x="727" y="461" text-anchor="middle" font-size="12">beginWork ↓ · completeWork ↑</text>
+            <text x="727" y="442" text-anchor="middle" font-size="12">Default blocking / sync render</text>
+            <text x="727" y="461" text-anchor="middle" font-size="12">begin 下钻 / complete 回溯</text>
 
             <rect class="box" x="312" y="390" width="244" height="84"/>
             <text x="434" y="418" text-anchor="middle" font-size="15" font-weight="800">current ↔ alternate</text>
-            <text x="434" y="442" text-anchor="middle" font-size="12">process queue · reconcile children</text>
-            <text x="434" y="461" text-anchor="middle" font-size="12">flags / subtreeFlags bubble</text>
+            <text x="434" y="442" text-anchor="middle" font-size="12">队列处理 / 协调 children</text>
+            <text x="434" y="461" text-anchor="middle" font-size="12">flags / 子树标志冒泡</text>
 
             <rect class="box hot" x="900" y="390" width="244" height="84"/>
             <text x="1022" y="418" text-anchor="middle" font-size="15" font-weight="800">Host Config complete</text>
-            <text x="1022" y="442" text-anchor="middle" font-size="12">createInstance · setInitialProperties</text>
-            <text x="1022" y="461" text-anchor="middle" font-size="12">appendInitialChild（脱离容器）</text>
+            <text x="1022" y="442" text-anchor="middle" font-size="12">构造未挂载宿主子树</text>
+            <text x="1022" y="461" text-anchor="middle" font-size="12">初始 props / 完成标志</text>
 
             <rect class="box hot" x="900" y="526" width="244" height="92"/>
             <text x="1022" y="555" text-anchor="middle" font-size="15" font-weight="800">commit mutation</text>
-            <text x="1022" y="579" text-anchor="middle" font-size="12">clear container · commitPlacement</text>
+            <text x="1022" y="579" text-anchor="middle" font-size="12">清空容器 / Placement</text>
             <text x="1022" y="599" text-anchor="middle" font-size="12">appendChildToContainer</text>
 
             <rect class="box event" x="605" y="526" width="244" height="92"/>
             <text x="727" y="555" text-anchor="middle" font-size="15" font-weight="800">切换 current</text>
             <text x="727" y="579" text-anchor="middle" font-size="12">root.current = finishedWork</text>
-            <text x="727" y="599" text-anchor="middle" font-size="12">layout 同步 · passive 后续</text>
+            <text x="727" y="599" text-anchor="middle" font-size="12">layout（本例无 passive）</text>
 
-            <path class="edge" marker-end="url(#arrow-mount)" d="M140 130 V270"/>
+            <path class="edge" marker-end="url(#arrow-mount)" d="M140 130 H8 V307 H18"/>
             <path class="edge" marker-end="url(#arrow-mount)" d="M262 198 H312"/>
             <path class="edge" marker-end="url(#arrow-mount)" d="M262 307 H312"/>
-            <path class="edge" marker-end="url(#arrow-mount)" d="M556 307 H605"/>
-            <path class="edge" marker-end="url(#arrow-mount)" d="M727 344 V390"/>
+            <path class="edge" marker-end="url(#arrow-mount)" stroke-dasharray="7 5" d="M556 307 H605"/>
+            <path class="edge" marker-end="url(#arrow-mount)" stroke-dasharray="7 5" d="M727 344 V390"/>
             <path class="edge" marker-end="url(#arrow-mount)" d="M605 432 H556"/>
             <path class="edge" marker-end="url(#arrow-mount)" d="M849 432 H900"/>
             <path class="edge" marker-end="url(#arrow-mount)" d="M1022 474 V526"/>
             <path class="edge" marker-end="url(#arrow-mount)" d="M900 572 H849"/>
-          </svg>
-          <figcaption>异步边界在 <code>root.render</code> 返回之后：microtask 选择 lane 并建立 Scheduler task；task 内本例 render 不 time-slice；commit 紧接 render 完成，live DOM 只在 commit 中变化。</figcaption>
+          <path class="edge" marker-end="url(#arrow-mount)" d="M140 232 V270"/><text x="153" y="254">root handle</text><text x="743" y="375">后续 host task</text></svg></div>
+          <figcaption>JSX element 绕过 createRoot，和 createRoot 返回的 handle 在 root.render 汇合。虚线为异步交接。异步边界在 <code>root.render</code> 返回之后：microtask 选择 lane 并建立 Scheduler task；task 内本例 render 不 time-slice；commit 紧接 render 完成，live DOM 只在 commit 中变化。</figcaption>
         </figure>
 
         <div class="timeline">
           <article>
             <h4><span class="phase">描述</span>1. JSX runtime 建立 ReactElement</h4>
-            <p><code>packages/react/jsx-runtime.js</code> 暴露 <code>jsx/jsxs</code>；生产分支的 <code>jsxProd</code> 把 key 从 config 分离，得到 props，调用 <code>ReactElement</code>。owner 只记录创建者上下文，不参与本主链的匹配。</p>
+            <p><code>packages/react/jsx-runtime.js</code> 暴露 <code>jsx/jsxs</code>；生产分支的 <code>jsxProd</code> 把 key 从 config 分离，得到 props，调用 <code>ReactElement</code>。DEV 的 owner 记录创建者上下文，不参与 key/type 匹配；生产元素不带 <code>_owner</code>。</p>
           </article>
           <article>
             <h4><span class="phase">建根</span>2. createRoot 建立循环所有权</h4>
@@ -776,7 +820,7 @@
           </article>
           <article>
             <h4><span class="phase">Render</span>8. DefaultLane 进入 renderRootSync</h4>
-            <p><code>performWorkOnRoot</code> 同时检查 <code>forceSync</code>、blocking 和 expired。当前 <code>includesBlockingLane</code> 包含 DefaultLane，因此本例调用 <code>renderRootSync</code>。只有非 blocking、未过期 lane 才进入可让出的 <code>renderRootConcurrent</code>。</p>
+            <p><code>performWorkOnRoot</code> 同时检查 <code>forceSync</code>、blocking 和 expired。当前 <code>includesBlockingLane</code> 包含 DefaultLane，因此本例调用 <code>renderRootSync</code>。本例中非 blocking、未过期且未强制同步的工作才走 <code>renderRootConcurrent</code>；prerender 是另一个可进入并发循环的条件。</p>
           </article>
           <article>
             <h4><span class="phase">双缓冲</span>9. prepareFreshStack 建 WIP HostRoot</h4>
@@ -792,7 +836,7 @@
           </article>
           <article>
             <h4><span class="phase">Complete</span>12. 自底向上组装脱离 DOM</h4>
-            <p>HostText/HostComponent 的 <code>completeWork</code> 调 DOM host config 建节点、设初始属性，并由 <code>appendAllChildren → appendInitialChild</code> 在脱离容器的 parent 上组树。<code>bubbleProperties</code> 聚合 children 的 lanes 与 flags。</p>
+            <p>HostText/HostComponent 的 <code>completeWork</code> 调 DOM host config 建节点；HostComponent 先由 <code>appendAllChildren → appendInitialChild</code> 在脱离容器的 parent 上组树，再由 <code>finalizeInitialChildren</code> 设置初始属性。<code>bubbleProperties</code> 聚合 children 的 lanes 与 flags。</p>
           </article>
           <article>
             <h4><span class="phase">Commit</span>13. before-mutation 与 mutation</h4>
@@ -800,11 +844,11 @@
           </article>
           <article>
             <h4><span class="phase">发布</span>14. finishedWork 成为 current</h4>
-            <p><code>finishedWork</code> 先保存到模块级 <code>pendingFinishedWork</code>。mutation 完成后才执行 <code>root.current=finishedWork</code>；layout 在新 current 上同步运行；passive 如存在则由后续调度处理。容器至此显示 App。</p>
+            <p><code>finishedWork</code> 先保存到模块级 <code>pendingFinishedWork</code>。mutation 完成后才执行 <code>root.current=finishedWork</code>；layout 在新 current 上同步运行；passive 若存在，按提交 lanes 在本任务内或后续 Scheduler 回调中冲刷。容器至此显示 App。</p>
           </article>
         </div>
 
-        <div class="code-label"><span>仓库源码摘录 · ReactJSXElement.js</span><span>ReactElement / jsxProd（DEV 对象骨架；删去 warning/debug 细节）</span></div>
+        <div class="code-label"><span>教程伪代码（不可执行）· ReactJSXElement.js</span><span>ReactElement / jsxProd（DEV 对象骨架；删去 warning/debug 细节）</span></div>
         <pre><code>function ReactElement(type, key, props, owner, debugStack, debugTask) {
   // ...
   element = {
@@ -822,7 +866,7 @@ export function jsxProd(type, config, maybeKey) {
   return ReactElement(type, key, props, getOwner(), undefined, undefined);
 }</code></pre>
 
-        <div class="code-label"><span>仓库源码摘录 · ReactFiberReconciler.js</span><span>updateContainerImpl</span></div>
+        <div class="code-label"><span>教程伪代码（不可执行）· ReactFiberReconciler.js</span><span>updateContainerImpl</span></div>
         <pre><code>const update = createUpdate(lane);
 update.payload = {element};
 
@@ -832,7 +876,7 @@ if (root !== null) {
   entangleTransitions(root, rootFiber, lane);
 }</code></pre>
 
-        <div class="code-label"><span>仓库源码摘录 · ReactFiberWorkLoop.js</span><span>performUnitOfWork（最小控制骨架）</span></div>
+        <div class="code-label"><span>教程伪代码（不可执行）· ReactFiberWorkLoop.js</span><span>performUnitOfWork（最小控制骨架）</span></div>
         <pre><code>const current = unitOfWork.alternate;
 next = beginWork(current, unitOfWork, entangledRenderLanes);
 unitOfWork.memoizedProps = unitOfWork.pendingProps;
@@ -852,8 +896,8 @@ if (next === null) {
         <h2>链 B：一次 click 如何回到 Hook，再更新 DOM</h2>
         <p>Demo 点击同时执行 <code>setCount(c =&gt; c + 1)</code> 与 <code>setItems(["C","A","B"])</code>。两次 dispatch 位于同一离散事件 wrapper，均选择 SyncLane；root microtask 到来前它们已经进入同一 Fiber 的两个 Hook queue。</p>
 
-        <figure class="diagram">
-          <svg viewBox="0 0 1180 690" role="img" aria-labelledby="click-title click-desc">
+        <figure class="diagram engineering-diagram" data-diagram="engineering-client-click-boundaries" style="--diagram-min-width:1180px">
+          <div class="diagram-scroll"><svg viewBox="0 0 1180 690" role="img" aria-labelledby="click-title click-desc">
             <title id="click-title">点击触发 useState 更新端到端流程</title>
             <desc id="click-desc">根容器 native listener 调用离散事件 wrapper，插件提取 onClick，两个 Hook 更新进入 SyncLane，微任务同步 render，keyed 协调标记移动，commit 更新 DOM。</desc>
             <defs>
@@ -863,11 +907,11 @@ if (next === null) {
             </defs>
             <rect class="box event" x="25" y="52" width="250" height="82"/>
             <text x="150" y="80" text-anchor="middle" font-size="15" font-weight="800">root native click listener</text>
-            <text x="150" y="105" text-anchor="middle" font-size="12">createEventListenerWrapperWithPriority</text>
+            <text x="150" y="105" text-anchor="middle" font-size="12">native wrapper / click</text>
 
             <rect class="box event" x="320" y="52" width="250" height="82"/>
             <text x="445" y="80" text-anchor="middle" font-size="15" font-weight="800">dispatchDiscreteEvent</text>
-            <text x="445" y="105" text-anchor="middle" font-size="12">currentUpdatePriority = Sync</text>
+            <text x="445" y="105" text-anchor="middle" font-size="12">事件优先级 = Sync</text>
 
             <rect class="box event" x="615" y="52" width="250" height="82"/>
             <text x="740" y="80" text-anchor="middle" font-size="15" font-weight="800">Plugin event system</text>
@@ -879,33 +923,33 @@ if (next === null) {
 
             <rect class="box hot" x="910" y="205" width="245" height="94"/>
             <text x="1032" y="233" text-anchor="middle" font-size="15" font-weight="800">dispatchSetState × 2</text>
-            <text x="1032" y="257" text-anchor="middle" font-size="12">requestUpdateLane → SyncLane</text>
-            <text x="1032" y="279" text-anchor="middle" font-size="12">enqueueConcurrentHookUpdate</text>
+            <text x="1032" y="257" text-anchor="middle" font-size="12">选择 SyncLane</text>
+            <text x="1032" y="279" text-anchor="middle" font-size="12">暂存 Update / 根入链</text>
 
             <rect class="box" x="615" y="205" width="250" height="94"/>
             <text x="740" y="233" text-anchor="middle" font-size="15" font-weight="800">Hook queues</text>
-            <text x="740" y="257" text-anchor="middle" font-size="12">count pending ↻ · items pending ↻</text>
-            <text x="740" y="279" text-anchor="middle" font-size="12">fiber/alternate.lanes |= Sync</text>
+            <text x="740" y="257" text-anchor="middle" font-size="12">暂存两条 Hook Update</text>
+            <text x="740" y="279" text-anchor="middle" font-size="12">两面 lanes |= Sync</text>
 
             <rect class="box hot" x="320" y="205" width="250" height="94"/>
             <text x="445" y="233" text-anchor="middle" font-size="15" font-weight="800">root microtask</text>
             <text x="445" y="257" text-anchor="middle" font-size="12">Sync: callbackNode = null</text>
-            <text x="445" y="279" text-anchor="middle" font-size="12">flushSyncWorkAcrossRoots_impl</text>
+            <text x="445" y="279" text-anchor="middle" font-size="12">跨根同步冲刷</text>
 
             <rect class="box hot" x="25" y="205" width="250" height="94"/>
             <text x="150" y="233" text-anchor="middle" font-size="15" font-weight="800">renderRootSync</text>
-            <text x="150" y="257" text-anchor="middle" font-size="12">updateState → basicStateReducer</text>
+            <text x="150" y="257" text-anchor="middle" font-size="12">updateState · eager / reducer</text>
             <text x="150" y="279" text-anchor="middle" font-size="12">0→1 · ABC→CAB</text>
 
             <rect class="box" x="25" y="384" width="250" height="104"/>
             <text x="150" y="412" text-anchor="middle" font-size="15" font-weight="800">keyed reconcile</text>
-            <text x="150" y="436" text-anchor="middle" font-size="12">C keep · A Placement · B Placement</text>
-            <text x="150" y="460" text-anchor="middle" font-size="12">button HostComponent Update</text>
+            <text x="150" y="436" text-anchor="middle" font-size="12">C 保留；A/B Placement</text>
+            <text x="150" y="460" text-anchor="middle" font-size="12">HostText + button Update</text>
 
             <rect class="box hot" x="320" y="384" width="250" height="104"/>
             <text x="445" y="412" text-anchor="middle" font-size="15" font-weight="800">commit mutation</text>
-            <text x="445" y="436" text-anchor="middle" font-size="12">commitUpdate → updateProperties</text>
-            <text x="445" y="460" text-anchor="middle" font-size="12">commitPlacement → append existing nodes</text>
+            <text x="445" y="436" text-anchor="middle" font-size="12">更新 HostText.nodeValue</text>
+            <text x="445" y="460" text-anchor="middle" font-size="12">移动复用的 DOM 节点</text>
 
             <rect class="box event" x="615" y="384" width="250" height="104"/>
             <text x="740" y="412" text-anchor="middle" font-size="15" font-weight="800">live DOM</text>
@@ -913,23 +957,23 @@ if (next === null) {
             <text x="740" y="460" text-anchor="middle" font-size="12">key 对应节点身份保留</text>
 
             <rect class="box" x="910" y="384" width="245" height="104"/>
-            <text x="1032" y="412" text-anchor="middle" font-size="15" font-weight="800">finally / cleanup</text>
-            <text x="1032" y="436" text-anchor="middle" font-size="12">恢复 event priority</text>
-            <text x="1032" y="460" text-anchor="middle" font-size="12">root.current = finishedWork</text>
+            <text x="1032" y="412" text-anchor="middle" font-size="15" font-weight="800">发布 current / layout</text>
+            <text x="1032" y="436" text-anchor="middle" font-size="12">root.current = finishedWork</text>
+            <text x="1032" y="460" text-anchor="middle" font-size="12">layout；本例无 effect/ref</text>
 
             <path class="edge" marker-end="url(#arrow-click)" d="M275 93 H320"/>
             <path class="edge" marker-end="url(#arrow-click)" d="M570 93 H615"/>
             <path class="edge" marker-end="url(#arrow-click)" d="M865 93 H910"/>
             <path class="edge" marker-end="url(#arrow-click)" d="M1032 134 V205"/>
             <path class="edge" marker-end="url(#arrow-click)" d="M910 252 H865"/>
-            <path class="edge" marker-end="url(#arrow-click)" d="M615 252 H570"/>
+            <path class="edge" marker-end="url(#arrow-click)" stroke-dasharray="7 5" d="M615 252 H570"/>
             <path class="edge" marker-end="url(#arrow-click)" d="M320 252 H275"/>
             <path class="edge" marker-end="url(#arrow-click)" d="M150 299 V384"/>
             <path class="edge" marker-end="url(#arrow-click)" d="M275 436 H320"/>
             <path class="edge" marker-end="url(#arrow-click)" d="M570 436 H615"/>
             <path class="edge" marker-end="url(#arrow-click)" d="M865 436 H910"/>
-          </svg>
-          <figcaption>批处理边界包住插件提取与 handler 调用。当前 OSS 配置中 reconciler 的 <code>batchedUpdates</code> 本身是 no-op；同一事件自动聚合主要来自 root microtask 去重与 lane 合并。</figcaption>
+          <text x="600" y="180" text-anchor="middle">handler 返回后的微任务</text></svg></div>
+          <figcaption>批处理边界包住插件提取与 handler 调用。当前 OSS 配置中 reconciler 的 <code>batchedUpdates</code> 本身是 no-op；同一同步 handler 的更新聚合主要来自 root microtask 去重与 lane 合并；根的原生 capture/bubble listener 分别进入这一外壳。</figcaption>
         </figure>
 
         <div class="timeline">
@@ -955,15 +999,15 @@ if (next === null) {
           </article>
           <article>
             <h4><span class="phase">入队</span>6. dispatchSetState 构造 Hook Update</h4>
-            <p>update 含 <code>lane/revertLane/action/hasEagerState/eagerState/next</code>。队列空且 Fiber 无 lane 时可先用 <code>lastRenderedReducer</code> 求 eager state；若 <code>Object.is</code> 相等则入队但不调度。本 Demo 状态确实改变，继续调度。</p>
+            <p>update 含 <code>lane/revertLane/action/hasEagerState/eagerState/next</code>。当前 Fiber 及 alternate 均无待处理 lane 时，可用 <code>lastRenderedReducer</code> 求 eager state；若 <code>Object.is</code> 相等则入队但不调度。本 Demo 状态确实改变，继续调度。</p>
           </article>
           <article>
             <h4><span class="phase">传播</span>7. concurrent staging 标记 Fiber 与 root</h4>
             <p><code>enqueueConcurrentHookUpdate</code> 先把两个 update 分别暂存，立即 OR 到 App current/alternate 的 lanes，并沿 return 找 FiberRoot；<code>scheduleUpdateOnFiber</code> 再 OR 到 root.pendingLanes、去重 root 与 microtask。</p>
           </article>
           <article>
-            <h4><span class="phase">同步入口</span>8. SyncLane 不建 Scheduler task</h4>
-            <p>root microtask 中 <code>scheduleTaskForRootDuringMicrotask</code> 发现 <code>includesSyncLane</code>，取消旧 callback、置 <code>callbackNode=null</code>，返回 SyncLane。遍历完所有 roots 后，<code>flushSyncWorkAcrossRoots_impl</code> 直接调用 <code>performSyncWorkOnRoot(forceSync=true)</code>。</p>
+            <h4><span class="phase">同步入口</span>8. 事件返回后，SyncLane 在根微任务冲刷</h4>
+            <p>事件 wrapper 的 finally 先恢复优先级与 transition。随后 root microtask 中 <code>scheduleTaskForRootDuringMicrotask</code> 发现 <code>includesSyncLane</code>，取消旧 callback、置 <code>callbackNode=null</code>，返回 SyncLane。遍历完所有 roots 后，<code>flushSyncWorkAcrossRoots_impl</code> 直接调用 <code>performSyncWorkOnRoot(forceSync=true)</code>。</p>
           </article>
           <article>
             <h4><span class="phase">Reducer</span>9. updateState 处理两个 pending 环</h4>
@@ -971,19 +1015,19 @@ if (next === null) {
           </article>
           <article>
             <h4><span class="phase">协调</span>10. button 更新，keyed children 重排</h4>
-            <p>新 button props 与旧 props 不同，HostComponent 在 complete 标 Update；列表前缀首项 key 不匹配，转入 key map。C 复用且不标移动，A/B 复用并各标 Placement；没有剩余 map 项，所以无 Deletion。</p>
+            <p>本 Demo 的 button children 是 <code>["count: ", count]</code>，因此有两个 HostText Fiber；数字文本从 0 变 1，complete 为该 HostText 标 Update。button 的 onClick 闭包也已改变，所以 HostComponent 另有 Update，用于刷新 props cache。列表首项 key 失配后转入 Map：C 保留位置，A/B 各标 Placement；Map 最终为空，没有 ChildDeletion。</p>
           </article>
           <article>
             <h4><span class="phase">DOM</span>11. commitUpdate 与 commitPlacement</h4>
-            <p>button 的 <code>commitUpdate</code> 调 <code>updateProperties</code> 更新文本/属性，再用 <code>updateFiberProps</code> 刷新事件 props cache。A/B 的 Placement 对已存在 DOM 节点执行 append/move，最终次序成为 C,A,B。</p>
+            <p>数字 HostText 的 <code>commitTextUpdate</code> 写入 <code>nodeValue="1"</code>。button 的 <code>commitUpdate</code> 比较属性并通过 <code>updateFiberProps</code> 刷新 handler；数组 children 不在 <code>updateProperties</code> 中直接设置 textContent。A/B 的 Placement 把已有 li 移到末尾，最终次序为 C,A,B。</p>
           </article>
           <article>
             <h4><span class="phase">收尾</span>12. current 与优先级恢复</h4>
-            <p>mutation 完成后切换 root.current；layout 随后同步。native wrapper 的 finally 恢复旧 current update priority 与 transition。下一事件不会继承本次 Sync 优先级。</p>
+            <p>事件 wrapper 在 handler 返回时就已恢复旧优先级与 transition，随后 root microtask 才执行本次 render/commit。mutation 完成后切换 root.current，layout 随后同步执行。</p>
           </article>
         </div>
 
-        <div class="code-label"><span>仓库源码摘录 · ReactHooks.js / ReactFiberHooks.js</span><span>公共委托与内部 dispatch</span></div>
+        <div class="code-label"><span>教程伪代码（不可执行）· ReactHooks.js / ReactFiberHooks.js</span><span>公共委托与内部 dispatch</span></div>
         <pre><code>export function useState(initialState) {
   const dispatcher = resolveDispatcher();
   return dispatcher.useState(initialState);
@@ -996,7 +1040,7 @@ function dispatchSetState(fiber, queue, action) {
   // ...
 }</code></pre>
 
-        <div class="code-label"><span>仓库源码摘录 · ReactFiberRootScheduler.js</span><span>SyncLane 的真实出口</span></div>
+        <div class="code-label"><span>教程伪代码（不可执行）· ReactFiberRootScheduler.js</span><span>SyncLane 的真实出口</span></div>
         <pre><code>if (
   includesSyncLane(nextLanes) &amp;&amp;
   !checkIfRootIsPrerendering(root, nextLanes)
@@ -1055,21 +1099,78 @@ flushSyncWorkAcrossRoots_impl(syncTransitionLanes, false);</code></pre>
         <div class="grid two">
           <article class="card">
             <h4>Hook 链：调用顺序就是地址</h4>
-            <div class="node-row" aria-label="Hook 单链">
-              <span class="node">Hook count</span><span aria-hidden="true">→</span>
-              <span class="node">Hook items</span><span aria-hidden="true">→ null</span>
-            </div>
             <p><span class="evidence fact">源码事实</span>首 Hook 写入 <code>fiber.memoizedState</code>，后续写前一 Hook 的 <code>next</code>。update 按同样顺序从 current Hook 克隆；多出 Hook 抛错，少调用会触发 Hook 数不一致诊断。</p>
           </article>
           <article class="card">
             <h4>每个 useState 自有环形 pending queue</h4>
-            <div class="node-row" aria-label="Hook 更新环">
-              <span class="node">U1</span><span aria-hidden="true">→</span>
-              <span class="node">U2 tail</span><span aria-hidden="true">↻ U1</span>
-            </div>
             <p><code>queue.pending</code> 指尾；首更新为 <code>pending.next</code>。插入只需改两个 next，O(1)；render 把 pending 环与 baseQueue 合并，随后 <code>queue.pending=null</code>。</p>
           </article>
         </div>
+        <figure class="engineering-diagram" data-diagram="engineering-client-hook-queues" style="--diagram-min-width:1120px">
+          <div class="diagram-scroll"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 1260" role="img" aria-labelledby="client-hook-queues-title client-hook-queues-desc">
+            <title id="client-hook-queues-title">一次点击的两条独立 Hook pending 环与 current/WIP queue 共享关系</title>
+            <desc id="client-hook-queues-desc">上半图为消费前快照。handler 对 count 和 items 分别派发 Update，经 concurrentQueues 四元组暂存后，由 finishQueueingConcurrentUpdates 分别接入两个 queue.pending。每个 pending 指单条 Update 尾节点，它的 next 回到自身。下半图为更新 render 完成、尚未提交的快照。current 和 WIP 各自有 count next items 的独立 Hook 链；同一个 Hook 的两面共享相同 queue，pending 已清空。current 状态仍为0和ABC，WIP状态为1和CAB。</desc>
+            <defs><marker id="client-hook-queues-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="currentColor"/></marker></defs>
+            <text class="d-label" x="560" y="31" text-anchor="middle"><tspan x="560" dy="0">两条 Update、两个 queue、两棵独立 Hook 链</tspan></text>
+            <text class="d-label" x="30" y="72" text-anchor="start"><tspan x="30" dy="0">① 同一 handler：暂存后，由 finishQueueingConcurrentUpdates 分别接环</tspan></text>
+            <rect class="d-node" x="30" y="105" width="270" height="122" rx="10"/><text class="d-label" x="165" y="148" text-anchor="middle"><tspan x="165" dy="0">handleClick</tspan><tspan x="165" dy="24">setCount(c =&gt; c + 1)</tspan><tspan x="165" dy="24">setItems(ROTATED_ITEMS)</tspan></text>
+            <rect class="d-lane" x="400" y="105" width="660" height="132" rx="10"/>
+            <text class="d-label" x="730" y="138" text-anchor="middle"><tspan x="730" dy="0">concurrentQueues：暂存四元组</tspan></text>
+            <rect class="d-node" x="415" y="160" width="300" height="60" rx="10"/><text class="d-label" x="565" y="184" text-anchor="middle"><tspan x="565" dy="0">App / Q_count</tspan><tspan x="565" dy="24">U_count / SyncLane</tspan></text>
+            <rect class="d-node" x="735" y="160" width="300" height="60" rx="10"/><text class="d-label" x="885" y="184" text-anchor="middle"><tspan x="885" dy="0">App / Q_items</tspan><tspan x="885" dy="24">U_items / SyncLane</tspan></text>
+            <path class="d-edge" d="M300 166 H400" marker-end="url(#client-hook-queues-arrow)"/>
+            <path class="d-edge d-async" d="M565 220 V275 H280 V350" marker-end="url(#client-hook-queues-arrow)"/>
+            <path class="d-edge d-async" d="M885 220 V275 H840 V350" marker-end="url(#client-hook-queues-arrow)"/>
+            <text class="d-muted" x="560" y="309" text-anchor="middle"><tspan x="560" dy="0">finishQueueingConcurrentUpdates</tspan></text>
+            <rect class="d-state" x="100" y="350" width="360" height="90" rx="10"/><text class="d-label" x="280" y="389" text-anchor="middle"><tspan x="280" dy="0">Q_count</tspan><tspan x="280" dy="24">pending = U_count（tail）</tspan></text>
+            <rect class="d-state" x="660" y="350" width="360" height="90" rx="10"/><text class="d-label" x="840" y="389" text-anchor="middle"><tspan x="840" dy="0">Q_items</tspan><tspan x="840" dy="24">pending = U_items（tail）</tspan></text>
+            <rect class="d-node" x="135" y="500" width="290" height="94" rx="10"/><text class="d-label" x="280" y="529" text-anchor="middle"><tspan x="280" dy="0">U_count</tspan><tspan x="280" dy="24">action: c =&gt; c + 1</tspan><tspan x="280" dy="24">lane = SyncLane</tspan></text>
+            <rect class="d-node" x="695" y="500" width="290" height="94" rx="10"/><text class="d-label" x="840" y="529" text-anchor="middle"><tspan x="840" dy="0">U_items</tspan><tspan x="840" dy="24">action = [&quot;C&quot;,&quot;A&quot;,&quot;B&quot;]</tspan><tspan x="840" dy="24">lane = SyncLane</tspan></text>
+            <path class="d-edge" d="M280 440 V500" marker-end="url(#client-hook-queues-arrow)"/>
+            <text class="d-muted" x="300" y="480" text-anchor="start"><tspan x="300" dy="0">pending / tail</tspan></text>
+            <path class="d-edge" d="M840 440 V500" marker-end="url(#client-hook-queues-arrow)"/>
+            <text class="d-muted" x="860" y="480" text-anchor="start"><tspan x="860" dy="0">pending / tail</tspan></text>
+            <path class="d-edge" d="M425 547 H490 V648 H95 V547 H135" marker-end="url(#client-hook-queues-arrow)"/>
+            <path class="d-edge" d="M985 547 H1050 V648 H655 V547 H695" marker-end="url(#client-hook-queues-arrow)"/>
+            <text class="d-muted" x="280" y="623" text-anchor="middle"><tspan x="280" dy="0">U_count.next = U_count</tspan></text>
+            <text class="d-muted" x="840" y="623" text-anchor="middle"><tspan x="840" dy="0">U_items.next = U_items</tspan></text>
+            <text class="d-muted" x="560" y="682" text-anchor="middle"><tspan x="560" dy="0">消费前：每个环只有一条 Update；tail.next 回到它自己，两条环互不相连。</tspan></text>
+            <line x1="20" y1="704" x2="1100" y2="704" stroke="#b9cecb"/>
+            <text class="d-label" x="30" y="741" text-anchor="start"><tspan x="30" dy="0">② update render 后：Hook 节点独立，同一 Hook 的两面共享 queue</tspan></text>
+            <rect class="d-state" x="35" y="775" width="175" height="90" rx="10"/><text class="d-label" x="122.5" y="814" text-anchor="middle"><tspan x="122.5" dy="0">App current</tspan><tspan x="122.5" dy="24">memoizedState</tspan></text>
+            <rect class="d-state" x="280" y="775" width="270" height="94" rx="10"/><text class="d-label" x="415" y="804" text-anchor="middle"><tspan x="415" dy="0">Hook count · current</tspan><tspan x="415" dy="24">memoizedState = 0</tspan><tspan x="415" dy="24">queue → Q_count</tspan></text>
+            <rect class="d-state" x="725" y="775" width="270" height="94" rx="10"/><text class="d-label" x="860" y="804" text-anchor="middle"><tspan x="860" dy="0">Hook items · current</tspan><tspan x="860" dy="24">memoizedState = [A,B,C]</tspan><tspan x="860" dy="24">queue → Q_items</tspan></text>
+            <path class="d-edge" d="M210 822 H280" marker-end="url(#client-hook-queues-arrow)"/>
+            <text class="d-muted" x="245" y="804" text-anchor="middle"><tspan x="245" dy="0">首 Hook</tspan></text>
+            <path class="d-edge" d="M550 822 H725" marker-end="url(#client-hook-queues-arrow)"/>
+            <text class="d-muted" x="637" y="804" text-anchor="middle"><tspan x="637" dy="0">next</tspan></text>
+            <path class="d-edge" d="M995 822 H1045" marker-end="url(#client-hook-queues-arrow)"/>
+            <text class="d-muted" x="1070" y="828" text-anchor="middle"><tspan x="1070" dy="0">null</tspan></text>
+            <rect class="d-state" x="310" y="935" width="210" height="70" rx="10"/><text class="d-label" x="415" y="964" text-anchor="middle"><tspan x="415" dy="0">共享 Q_count</tspan><tspan x="415" dy="24">pending = null</tspan></text>
+            <rect class="d-state" x="755" y="935" width="210" height="70" rx="10"/><text class="d-label" x="860" y="964" text-anchor="middle"><tspan x="860" dy="0">共享 Q_items</tspan><tspan x="860" dy="24">pending = null</tspan></text>
+            <rect class="d-node" x="35" y="1052" width="175" height="94" rx="10"/><text class="d-label" x="122.5" y="1093" text-anchor="middle"><tspan x="122.5" dy="0">App WIP</tspan><tspan x="122.5" dy="24">memoizedState</tspan></text>
+            <rect class="d-node" x="280" y="1052" width="270" height="94" rx="10"/><text class="d-label" x="415" y="1081" text-anchor="middle"><tspan x="415" dy="0">Hook count · WIP</tspan><tspan x="415" dy="24">memoizedState = 1</tspan><tspan x="415" dy="24">queue → Q_count</tspan></text>
+            <rect class="d-node" x="725" y="1052" width="270" height="94" rx="10"/><text class="d-label" x="860" y="1081" text-anchor="middle"><tspan x="860" dy="0">Hook items · WIP</tspan><tspan x="860" dy="24">memoizedState = [C,A,B]</tspan><tspan x="860" dy="24">queue → Q_items</tspan></text>
+            <path class="d-edge" d="M210 1099 H280" marker-end="url(#client-hook-queues-arrow)"/>
+            <text class="d-muted" x="245" y="1081" text-anchor="middle"><tspan x="245" dy="0">首 Hook</tspan></text>
+            <path class="d-edge" d="M550 1099 H725" marker-end="url(#client-hook-queues-arrow)"/>
+            <text class="d-muted" x="637" y="1081" text-anchor="middle"><tspan x="637" dy="0">next</tspan></text>
+            <path class="d-edge" d="M995 1099 H1045" marker-end="url(#client-hook-queues-arrow)"/>
+            <text class="d-muted" x="1070" y="1105" text-anchor="middle"><tspan x="1070" dy="0">null</tspan></text>
+            <path class="d-edge" d="M415 869 V935" marker-end="url(#client-hook-queues-arrow)"/>
+            <text class="d-muted" x="435" y="916" text-anchor="start"><tspan x="435" dy="0">queue</tspan></text>
+            <path class="d-edge" d="M415 1052 V1005" marker-end="url(#client-hook-queues-arrow)"/>
+            <text class="d-muted" x="435" y="1035" text-anchor="start"><tspan x="435" dy="0">queue</tspan></text>
+            <path class="d-edge" d="M860 869 V935" marker-end="url(#client-hook-queues-arrow)"/>
+            <text class="d-muted" x="880" y="916" text-anchor="start"><tspan x="880" dy="0">queue</tspan></text>
+            <path class="d-edge" d="M860 1052 V1005" marker-end="url(#client-hook-queues-arrow)"/>
+            <text class="d-muted" x="880" y="1035" text-anchor="start"><tspan x="880" dy="0">queue</tspan></text>
+            <path class="d-edge" d="M122 865 V1052" marker-start="url(#client-hook-queues-arrow)" marker-end="url(#client-hook-queues-arrow)"/>
+            <text class="d-muted" x="148" y="961" text-anchor="start"><tspan x="148" dy="0">alternate</tspan></text>
+            <text class="d-muted" x="560" y="1201" text-anchor="middle"><tspan x="560" dy="0">本轮 SyncLane 全部处理：pending 清空，WIP 得到 1 / [C,A,B]。</tspan><tspan x="560" dy="24">随后 commit 切换 root.current；Hook 节点随所属 Fiber 改变角色。</tspan></text>
+          </svg></div>
+          <figcaption>对象图分开两个快照：上半图的 <code>queue.pending</code> 指各自 tail，<code>pending.next</code> 是各环首条；本次每环仅一条，因此 next 自环。虚线表示暂存转入对应 queue。下半图中，两棵 Hook 链的节点已分开，<code>queue: currentHook.queue</code> 仍共享对象；本轮处理完成后 pending 清空。count 的函数 action 得到 1，items 的数组 action 得到 [C,A,B]。</figcaption>
+        </figure>
         <div class="table-wrap">
           <table>
             <thead><tr><th>Hook 字段</th><th>mount</th><th>点击 enqueue</th><th>update render 后</th></tr></thead>
@@ -1106,15 +1207,15 @@ flushSyncWorkAcrossRoots_impl(syncTransitionLanes, false);</code></pre>
             <tbody>
               <tr><td>Placement</td><td>child reconciliation 的 <code>placeSingleChild/placeChild</code></td><td><code>commitReconciliationEffects → commitHostPlacement</code></td><td>首挂顶层 App 插入；重排时 A/B 移动。</td></tr>
               <tr><td>ChildDeletion + deletions</td><td><code>deleteChild/deleteRemainingChildren</code></td><td>mutation 删除遍历</td><td>ABC→CAB 没有删除；缺失 key 才进入。</td></tr>
-              <tr><td>Update</td><td>Host complete 比较 props / 初挂特殊 host 行为</td><td><code>commitHostUpdate → commitUpdate</code></td><td>button 文本与事件 props cache 更新。</td></tr>
+              <tr><td>Update</td><td>Host complete 比较 props / 初挂特殊 host 行为</td><td><code>commitHostTextUpdate / commitHostUpdate</code></td><td>数字 HostText 写 nodeValue；button 刷新 props cache。</td></tr>
               <tr><td>Snapshot</td><td>首次纯客户端 HostRoot complete</td><td>before-mutation 的 HostRoot 分支</td><td>先清理容器既有 children。</td></tr>
-              <tr><td>Layout / Passive 类 flags</td><td>Hooks 或 class lifecycle render 记录</td><td>layout 同步；passive 后续 callback</td><td>Demo 没有 effect；只解释阶段边界。</td></tr>
+              <tr><td>Layout / Passive 类 flags</td><td>Hooks 或 class lifecycle render 记录</td><td>layout 同步；passive 按提交 lanes 冲刷</td><td>Demo 没有 effect；只解释阶段边界。</td></tr>
               <tr><td>subtreeFlags</td><td><code>bubbleProperties</code> OR 子 <code>flags/subtreeFlags</code></td><td>各 commit pass 用 mask 跳过无关子树</td><td>让根知道后代存在 Placement/Update。</td></tr>
             </tbody>
           </table>
         </div>
 
-        <div class="code-label"><span>仓库源码摘录 · ReactFiberWorkLoop.js</span><span>发布 finished tree 的准确时点</span></div>
+        <div class="code-label"><span>教程伪代码（不可执行）· ReactFiberWorkLoop.js</span><span>发布 finished tree 的准确时点</span></div>
         <pre><code>// mutation phase
 commitMutationEffects(root, finishedWork, lanes);
 
@@ -1148,7 +1249,7 @@ pendingEffectsStatus = PENDING_LAYOUT_PHASE;</code></pre>
         <h3>第 1 层：requestUpdateLane</h3>
         <div class="manual">
           <article class="algorithm-step"><strong>1 · 特殊模式</strong><p>legacy 非 Concurrent → Sync；render-phase update → 当前 render lanes 中任取。二者都不是本 Demo 主分支。</p></article>
-          <article class="algorithm-step"><strong>2 · Transition</strong><p>存在 current transition → 轮转分配 transition lane。Transition 是并发能力示例，不由本 Demo 触发。</p></article>
+          <article class="algorithm-step"><strong>2 · Transition</strong><p>存在 current transition → requestTransitionLane；根调度微任务周期内复用已选 lane，首次请求才轮转分配。Transition 不由本 Demo 触发。</p></article>
           <article class="algorithm-step"><strong>3 · 事件优先级</strong><p>普通路径取 <code>resolveUpdatePriority</code>。无事件 → Default；click wrapper 已显式设 Discrete → Sync。</p></article>
         </div>
 
@@ -1161,7 +1262,7 @@ pendingEffectsStatus = PENDING_LAYOUT_PHASE;</code></pre>
           <article><h4>5. 同优先级分组</h4><p><code>getHighestPriorityLanes</code> 不总是只返回一个 bit。当前版本先返回所有 pending <code>SyncUpdateLanes</code>；transition update/deferred 也各按组返回。</p></article>
         </div>
 
-        <div class="code-label"><span>仓库源码摘录 · ReactFiberLane.js</span><span>当前版本的 SyncUpdateLanes 分组</span></div>
+        <div class="code-label"><span>教程伪代码（不可执行）· ReactFiberLane.js</span><span>当前版本的 SyncUpdateLanes 分组</span></div>
         <pre><code>function getHighestPriorityLanes(lanes) {
   const pendingSyncLanes = lanes &amp; SyncUpdateLanes;
   if (pendingSyncLanes !== 0) {
@@ -1235,7 +1336,7 @@ export function getHighestPriorityLane(lanes) {
           </article>
         </div>
         <div class="callout">
-          <p><span class="evidence fact">源码事实</span>Scheduler 是<strong>协作式</strong>而非线程抢占：只有 callback 主动返回、React 在 Fiber unit 边界检查 <code>shouldYieldToHost</code>，或 callback 返回 continuation，浏览器才重新获得控制。continuation 写回同一 Task 节点，强制结束当前 host work loop，下一次 MessageChannel task 再继续。</p>
+          <p><span class="evidence fact">源码事实</span>Scheduler 是协作式调度：React 在 Fiber unit 边界检查 <code>shouldYield</code>，需要让出时保存 WIP 并返回 continuation。Scheduler 将 continuation 写回同一 Task，结束本次 host loop，再安排下一次 host task；现代浏览器通常用 MessageChannel，其他宿主也可用 setImmediate 或 setTimeout。</p>
         </div>
 
         <h3>复杂度、退出与重新调度</h3>
@@ -1252,7 +1353,7 @@ export function getHighestPriorityLane(lanes) {
         <div class="grid two">
           <article class="card">
             <h3>目标与输入</h3>
-            <p>在同一 parent Fiber 下，用新 ReactElement 数组与旧 sibling Fiber 链对齐；尽量复用身份与 DOM，输出新 sibling 链及 Placement/Deletion flags。</p>
+            <p>在同一 parent Fiber 下，用新 ReactElement 数组与旧 sibling Fiber 链对齐；尽量复用身份与 DOM，输出新 sibling 链及 Placement 与父级 ChildDeletion/deletions。</p>
             <p>本输入假设 A/B/C 的 element type 相同、key 各自稳定、当前是 update，因此 <code>shouldTrackSideEffects=true</code>。</p>
           </article>
           <article class="card">
@@ -1262,7 +1363,7 @@ export function getHighestPriorityLane(lanes) {
           </article>
         </div>
 
-        <div class="code-label"><span>仓库源码摘录 · ReactChildFiber.js</span><span>placeChild</span></div>
+        <div class="code-label"><span>教程伪代码（不可执行）· ReactChildFiber.js</span><span>placeChild</span></div>
         <pre><code>function placeChild(newFiber, lastPlacedIndex, newIndex) {
   newFiber.index = newIndex;
   const current = newFiber.alternate;
@@ -1309,6 +1410,49 @@ export function getHighestPriorityLane(lanes) {
         </div>
         <p>每次成功复用都从 Map 删除旧 Fiber；最终 Map 为空，所以 <code>existingChildren.forEach(deleteChild)</code> 无事可做。若 Map 仍有项，parent 记录 <code>ChildDeletion</code> 和 deletions 数组。</p>
 
+        <figure class="engineering-diagram" data-diagram="client-keyed-cab-structure" style="--diagram-min-width:820px">
+          <div class="diagram-scroll"><svg viewBox="0 0 820 895" role="img" aria-labelledby="client-keyed-cab-structure-title client-keyed-cab-structure-desc" xmlns="http://www.w3.org/2000/svg">
+            <title id="client-keyed-cab-structure-title">C、A、B 重排中的 sibling、alternate 与 Map 消费</title>
+            <desc id="client-keyed-cab-structure-desc">旧 sibling 链是 A、B、C。图按 key 对齐 current 和候选 Fiber，两版通过 alternate 配对；候选 sibling 链沿箭头是 C prime、A prime、B prime。Map 先移除 C，lastPlacedIndex 从 0 升到 2；再移除 A、B，旧索引都小于 2，故标 Placement。Map 为空，没有旧节点删除，三者都保持 state 与宿主实例身份。</desc>
+            <defs><marker id="client-keyed-cab-structure-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#507476"/></marker></defs>
+            <rect class="d-state" x="40" y="30" width="210" height="60" rx="12"/><text text-anchor="middle" x="145" y="53.5"><tspan x="145" dy="0">current parent</tspan><tspan x="145" dy="25">child → A</tspan></text>
+            <text class="d-label" text-anchor="middle" x="523" y="66"><tspan x="523" dy="0">current sibling：A → B → C</tspan></text>
+            <path class="d-edge" d="M145 90 V130" marker-end="url(#client-keyed-cab-structure-arrow)"/>
+            <rect class="d-state" x="80" y="130" width="160" height="75" rx="12"/><text text-anchor="middle" x="160" y="161"><tspan x="160" dy="0">A</tspan><tspan x="160" dy="25">old index = 0</tspan></text>
+            <rect class="d-state" x="320" y="130" width="160" height="75" rx="12"/><text text-anchor="middle" x="400" y="161"><tspan x="400" dy="0">B</tspan><tspan x="400" dy="25">old index = 1</tspan></text>
+            <rect class="d-state" x="560" y="130" width="160" height="75" rx="12"/><text text-anchor="middle" x="640" y="161"><tspan x="640" dy="0">C</tspan><tspan x="640" dy="25">old index = 2</tspan></text>
+            <path class="d-edge" d="M240 167 H320" marker-end="url(#client-keyed-cab-structure-arrow)"/>
+            <path class="d-edge" d="M480 167 H560" marker-end="url(#client-keyed-cab-structure-arrow)"/>
+            <path class="d-edge" d="M720 167 H760" marker-end="url(#client-keyed-cab-structure-arrow)"/>
+            <text class="d-muted" text-anchor="middle" x="783" y="174"><tspan x="783" dy="0">null</tspan></text>
+            <path class="d-edge d-async" d="M160 205 V330" marker-start="url(#client-keyed-cab-structure-arrow)" marker-end="url(#client-keyed-cab-structure-arrow)"/>
+            <text class="d-muted" text-anchor="start" x="176" y="266"><tspan x="176" dy="0">alternate</tspan></text>
+            <path class="d-edge d-async" d="M400 205 V330" marker-start="url(#client-keyed-cab-structure-arrow)" marker-end="url(#client-keyed-cab-structure-arrow)"/>
+            <text class="d-muted" text-anchor="start" x="416" y="266"><tspan x="416" dy="0">alternate</tspan></text>
+            <path class="d-edge d-async" d="M640 205 V330" marker-start="url(#client-keyed-cab-structure-arrow)" marker-end="url(#client-keyed-cab-structure-arrow)"/>
+            <text class="d-muted" text-anchor="start" x="656" y="266"><tspan x="656" dy="0">alternate</tspan></text>
+            <text class="d-label" text-anchor="start" x="40" y="515"><tspan x="40" dy="0">WIP sibling：C′ → A′ → B′（列按 key 对齐）</tspan></text>
+            <rect class="d-condition" x="80" y="330" width="160" height="90" rx="12"/><text text-anchor="middle" x="160" y="368.5"><tspan x="160" dy="0">A′ · new index 1</tspan><tspan x="160" dy="25">Placement</tspan></text>
+            <rect class="d-condition" x="320" y="330" width="160" height="90" rx="12"/><text text-anchor="middle" x="400" y="368.5"><tspan x="400" dy="0">B′ · new index 2</tspan><tspan x="400" dy="25">Placement</tspan></text>
+            <rect class="d-state" x="560" y="330" width="160" height="90" rx="12"/><text text-anchor="middle" x="640" y="368.5"><tspan x="640" dy="0">C′ · new index 0</tspan><tspan x="640" dy="25">无 Placement</tspan></text>
+            <path class="d-edge" d="M240 375 H320" marker-end="url(#client-keyed-cab-structure-arrow)"/>
+            <path class="d-edge" d="M480 375 H512" marker-end="url(#client-keyed-cab-structure-arrow)"/>
+            <text class="d-muted" text-anchor="middle" x="523" y="363"><tspan x="523" dy="0">null</tspan></text>
+            <path class="d-edge" d="M560 394 H535 V455 H160 V420" marker-end="url(#client-keyed-cab-structure-arrow)"/>
+            <rect class="d-state" x="580" y="480" width="200" height="60" rx="12"/><text text-anchor="middle" x="680" y="503.5"><tspan x="680" dy="0">WIP parent</tspan><tspan x="680" dy="25">child → C′</tspan></text>
+            <path class="d-edge" d="M640 480 V420" marker-end="url(#client-keyed-cab-structure-arrow)"/>
+            <text class="d-label" text-anchor="start" x="40" y="555"><tspan x="40" dy="0">首槽 A ≠ C：快扫停止 → Map 缓存剩余旧 Fiber</tspan></text>
+            <rect class="d-state" x="40" y="590" width="160" height="115" rx="12"/><text text-anchor="middle" x="120" y="628.5"><tspan x="120" dy="0">Map {A,B,C}</tspan><tspan x="120" dy="25">lastPlacedIndex</tspan><tspan x="120" dy="25">0</tspan></text>
+            <rect class="d-state" x="240" y="590" width="160" height="115" rx="12"/><text text-anchor="middle" x="320" y="616"><tspan x="320" dy="0">取 C：old 2</tspan><tspan x="320" dy="25">Map {A,B}</tspan><tspan x="320" dy="25">last 0 → 2</tspan><tspan x="320" dy="25">无 Placement</tspan></text>
+            <rect class="d-condition" x="440" y="590" width="160" height="115" rx="12"/><text text-anchor="middle" x="520" y="616"><tspan x="520" dy="0">取 A：old 0</tspan><tspan x="520" dy="25">Map {B}</tspan><tspan x="520" dy="25">last 2 → 2</tspan><tspan x="520" dy="25">Placement</tspan></text>
+            <rect class="d-condition" x="640" y="590" width="160" height="115" rx="12"/><text text-anchor="middle" x="720" y="616"><tspan x="720" dy="0">取 B：old 1</tspan><tspan x="720" dy="25">Map {}</tspan><tspan x="720" dy="25">last 2 → 2</tspan><tspan x="720" dy="25">Placement</tspan></text>
+            <path class="d-edge" d="M200 647 H240" marker-end="url(#client-keyed-cab-structure-arrow)"/>
+            <path class="d-edge" d="M400 647 H440" marker-end="url(#client-keyed-cab-structure-arrow)"/>
+            <path class="d-edge" d="M600 647 H640" marker-end="url(#client-keyed-cab-structure-arrow)"/>
+            <rect class="d-state" x="40" y="757" width="740" height="105" rx="12"/><text text-anchor="middle" x="410" y="790.5"><tspan x="410" dy="0">三个 alternate 都非空：state / stateNode 身份复用</tspan><tspan x="410" dy="25">Map 已空：不记录旧节点删除</tspan><tspan x="410" dy="25">Placement 记录 A / B 后续要移动，不是立即改 DOM</tspan></text>
+          </svg></div>
+          <figcaption><strong>同一手推例的对象快照。</strong>列按 key 对齐，所以 alternate 竖直连接；新树顺序由 sibling 箭头与 WIP parent.child 指针决定，而非横向列序。虚线在此表示配对关系，不是异步边界。每次复用后才从 Map 删除 key；C 的旧 index=2 抬高 lastPlacedIndex，A/B 因旧 index 小于 2 标 Placement。协调全过程仍在 render 内同步执行，宿主移动留给下面的 commit 两步；对应 <a href="../../../react/packages/react-reconciler/src/ReactChildFiber.js">updateFromMap / placeChild</a>。</figcaption>
+        </figure>
         <h3>Commit 如何得到最终 DOM</h3>
         <div class="manual">
           <article class="algorithm-step"><strong>初始</strong><div class="node-row"><span class="node">A</span><span class="node">B</span><span class="node keep">C</span></div><p>C 没有 Placement；A/B 带 Placement。</p></article>
@@ -1496,7 +1640,7 @@ await main();</code></pre>
               <tr><td><code>dispatchEvent(click)</code></td><td>B 1–4</td><td>native target → Host Fiber → SyntheticEvent queue</td><td>同步调用 onClick</td></tr>
               <tr><td>两个 setState</td><td>B 5–9</td><td>两个 Hook pending 环、SyncLane、root microtask</td><td>microtask render 得新 state</td></tr>
               <tr><td>ABC → CAB</td><td>B 10</td><td>C 复用无 flag；A/B 复用带 Placement</td><td>两次移动，DOM 次序 CAB</td></tr>
-              <tr><td>count 0 → 1</td><td>B 10–11</td><td>button Host Fiber Update</td><td>updateProperties 更新文本/props cache</td></tr>
+              <tr><td>count 0 → 1</td><td>B 10–11</td><td>数字 HostText 与 button 各有 Update</td><td>commitTextUpdate 写文本；commitUpdate 刷新 props cache</td></tr>
               <tr><td><code>root.unmount()</code></td><td>清理</td><td>SyncLane 根更新 element=null</td><td>同步删除 React DOM；随后移除空容器</td></tr>
             </tbody>
           </table>
@@ -1506,12 +1650,12 @@ await main();</code></pre>
       <section id="test-evidence">
         <h2>测试证据矩阵</h2>
         <div class="callout warning">
-          <p><strong>以下 10 个测试均已逐测试体阅读，但未执行。</strong>“Then”只复述实际断言；“Mechanism”只连接该断言可支持的实现，不把单个 renderer、单个优先级或测试工具行为扩大成全局保证。</p>
+          <p>以下 10 个测试已对照测试体核对，未执行。输入、操作和断言各列说明对应场景；机制列连接到决定结果的实现。</p>
         </div>
         <div class="table-wrap">
           <table style="min-width: 1540px">
             <thead>
-              <tr><th># / 测试</th><th>Given</th><th>When</th><th>Then</th><th>Mechanism</th><th>Source</th><th>不证明</th></tr>
+              <tr><th># / 测试</th><th>Given</th><th>When</th><th>Then</th><th>Mechanism</th><th>Source</th></tr>
             </thead>
             <tbody>
               <tr>
@@ -1520,17 +1664,17 @@ await main();</code></pre>
                 <td>把 <code>App.toString()</code> 作为编译产物观察点。</td>
                 <td>DEV 含 <code>jsxDEV(</code>，生产含 <code>jsx(</code>；都不含 <code>React.createElement</code>。</td>
                 <td><span class="evidence test">测试证明</span>该测试环境使用 automatic JSX runtime。</td>
-                <td>test: 42–52；<code>ReactJSX.js</code> 导出 <code>jsx/jsxs</code></td>
-                <td>不证明所有用户构建配置都使用 automatic runtime。</td>
+                <td><code>ReactJSX.js</code> 导出 <code>jsx/jsxs</code></td>
+
               </tr>
               <tr>
                 <td><strong>2</strong><br><code>ReactJSXTransformIntegration-test.js</code><br>extracts key</td>
                 <td><code>&lt;Component key="12" foo="56" /&gt;</code></td>
                 <td>JSX runtime 创建 element。</td>
-                <td><code>type===Component</code>、<code>key==="12"</code>、<code>props==={foo:"56"}</code>。</td>
+                <td><code>type===Component</code>、<code>key==="12"</code>、<code>props</code> 深等于 <code>{foo:"56"}</code>。</td>
                 <td><span class="evidence test">测试证明</span>key 进入 ReactElement 保留字段，不留在普通 props。</td>
-                <td>test: 103–109；<code>ReactJSXElement.jsxProd / ReactElement</code></td>
-                <td>不证明 key 如何参与 Fiber 协调，也不证明 owner/DOM。</td>
+                <td><code>ReactJSXElement.jsxProd / ReactElement</code></td>
+
               </tr>
               <tr>
                 <td><strong>3</strong><br><code>ReactDOMRoot-test.js</code><br>renders children</td>
@@ -1538,8 +1682,8 @@ await main();</code></pre>
                 <td><code>root.render(&lt;div&gt;Hi&lt;/div&gt;)</code>，等待调度清空。</td>
                 <td><code>container.textContent === "Hi"</code>。</td>
                 <td><span class="evidence test">测试证明</span>createRoot 的 queued render 最终把 child 提交到容器。</td>
-                <td>test: 44–49；<code>ReactDOMRoot.render</code> → commit/Host Config</td>
-                <td>不单独证明中间 lane、task 或每个 commit API。</td>
+                <td><code>ReactDOMRoot.render</code> → commit/Host Config</td>
+
               </tr>
               <tr>
                 <td><strong>4</strong><br><code>ReactDOMRoot-test.js</code><br>key changes remount</td>
@@ -1547,8 +1691,8 @@ await main();</code></pre>
                 <td>根依次 render key A/orange、key B/green、key B/blue。</td>
                 <td>A→B 记录 Unmount+Mount；B→B 无生命周期日志；DOM 文本按输入更新。</td>
                 <td><span class="evidence test">测试证明</span>该单子组件场景中 key 改变重挂，同 key/type 复用。</td>
-                <td>test: 271–305；<code>ReactChildFiber.reconcileSingleElement</code></td>
-                <td>不单独证明任意内部状态、跨 parent 或重复 key 行为。</td>
+                <td><code>ReactChildFiber.reconcileSingleElement</code></td>
+
               </tr>
               <tr>
                 <td><strong>5</strong><br><code>ReactHooksWithNoopRenderer-test.js</code><br>useState simple mount/update</td>
@@ -1556,17 +1700,17 @@ await main();</code></pre>
                 <td>先 dispatch 值 1，再 dispatch 函数 <code>count =&gt; count + 10</code>。</td>
                 <td>输出依次 Count:0、Count:1、Count:11。</td>
                 <td><span class="evidence test">测试证明</span>mount 保存初值；basicStateReducer 对值替换、对函数传入前态。</td>
-                <td>test: 250–269；<code>mountState/updateState/basicStateReducer</code></td>
-                <td>Noop renderer 测试不证明 DOM event priority 或 Host Config。</td>
+                <td><code>mountState/updateState/basicStateReducer</code></td>
+
               </tr>
               <tr>
                 <td><strong>6</strong><br><code>ReactDOMEventListener-test.js</code><br>batch across roots (discrete)</td>
                 <td>物理嵌套两个独立 root；Child/Parent click handler 都更新 Child 并读取其 DOM。</td>
                 <td>测试工具模拟一次浏览器 click。</td>
                 <td>Child handler 读旧 Child；下个 root handler 读 1；事件完成后 DOM 为 2；两个 handler 都调用。</td>
-                <td><span class="evidence test">测试证明</span>独立 root listener 与离散更新的批/flush 边界；测试工具允许原生 listener 间 microtask。</td>
-                <td>test: 157–229；事件委托链；Root Scheduler Sync microtask</td>
-                <td>不能推广成普通同步 <code>node.dispatchEvent</code> 必在每个 listener 间 flush。</td>
+                <td><span class="evidence test">测试证明</span>独立 root listener 与离散更新的批/flush 边界；测试工具允许原生 listener 间 microtask；同步 <code>node.dispatchEvent</code> 在整个调用栈结束后才运行微任务。</td>
+                <td>事件委托链；Root Scheduler Sync microtask</td>
+
               </tr>
               <tr>
                 <td><strong>7</strong><br><code>ReactMultiChildReconcile-test.js</code><br>cycle order correctly</td>
@@ -1574,8 +1718,8 @@ await main();</code></pre>
                 <td>连续循环 child 顺序，最终回原序；helper 也对数组分支执行。</td>
                 <td>每步 props 正确、仍存活 key 的 state id 保留、DOM 顺序与逻辑顺序一致。</td>
                 <td><span class="evidence test">测试证明</span>keyed 复用在重排中保留实例 state，并让 DOM 跟随新次序。</td>
-                <td>test: 650–695；helpers: 149–304；<code>reconcileChildrenArray</code></td>
-                <td>不证明具体 Placement 数或最少 DOM 移动次数。</td>
+                <td><code>reconcileChildrenArray</code></td>
+
               </tr>
               <tr>
                 <td><strong>8</strong><br><code>ReactIncrementalUpdates-test.js</code><br>updates in priority order</td>
@@ -1583,8 +1727,8 @@ await main();</code></pre>
                 <td>先等待首次 commit，再等待所有工作。</td>
                 <td>先只见 <code>{a}</code>，之后见 <code>{a,b,c}</code>。</td>
                 <td><span class="evidence test">测试证明</span>高优先更新先提交，低优先更新保留并重放。</td>
-                <td>test: 46–72；<code>ReactFiberClassUpdateQueue.processUpdateQueue</code></td>
-                <td>使用 class queue，不直接证明 Hook queue 的字段实现。</td>
+                <td><code>ReactFiberClassUpdateQueue.processUpdateQueue</code></td>
+
               </tr>
               <tr>
                 <td><strong>9</strong><br><code>ReactSchedulerIntegration-test.js</code><br>expired partial tree</td>
@@ -1592,8 +1736,8 @@ await main();</code></pre>
                 <td>再排一次 update 触发 starvation 检查并继续 render。</td>
                 <td>只记录 B、C；没有再次记录 shouldYield。</td>
                 <td><span class="evidence test">测试证明</span>该回归场景过期后以非 yielding work loop 完成剩余树。</td>
-                <td>test: 272–320；mock: 191–223；<code>performWorkOnRoot</code></td>
-                <td>不证明所有过期/错误/Suspense 分支。</td>
+                <td><code>performWorkOnRoot</code></td>
+
               </tr>
               <tr>
                 <td><strong>10</strong><br><code>Scheduler-test.js</code><br>task with continuation</td>
@@ -1601,8 +1745,8 @@ await main();</code></pre>
                 <td>依次触发两个 host message event。</td>
                 <td>第一次执行 Task/Yield 并安排下一消息；第二次才执行 Continuation。</td>
                 <td><span class="evidence test">测试证明</span>返回函数写回同一 task，结束当前 host loop，下一 host task 续跑。</td>
-                <td>test: 185–213；<code>Scheduler.workLoop</code></td>
-                <td>不证明任意 React render 一定 yield；那由 lanes 与 work loop 决定。</td>
+                <td><code>Scheduler.workLoop</code></td>
+
               </tr>
             </tbody>
           </table>
@@ -1616,7 +1760,7 @@ await main();</code></pre>
         <div class="grid three">
           <article class="card">
             <h4>Mutation</h4>
-            <p><span class="evidence fact">源码事实</span>消费 Placement/Update/Deletion 等 host 副作用，修改 live DOM。旧 current 在此阶段保持，以支持 unmount 语义；完成后切换 root.current。</p>
+            <p><span class="evidence fact">源码事实</span>消费 Placement/Update/ChildDeletion 等 host 副作用，修改 live DOM。旧 current 在此阶段保持，以支持 unmount 语义；完成后切换 root.current。</p>
           </article>
           <article class="card">
             <h4>Layout</h4>
@@ -1624,7 +1768,7 @@ await main();</code></pre>
           </article>
           <article class="card">
             <h4>Passive</h4>
-            <p><span class="evidence fact">源码事实</span>若 PassiveMask 存在，通常以 Normal Scheduler callback 后续 flush；在下一次根工作前也可能先被冲刷并改变待选 lanes。</p>
+            <p><span class="evidence fact">源码事实</span>若 PassiveMask 存在，会安排 Normal Scheduler callback 冲刷；现代根的 pendingEffectsLanes 包含 SyncLane 时，flushSpawnedWork 会在同一任务内先冲刷。下一次根工作开始前也会清理已有 passive，可能改变待选 lanes。requestPaint 只请求绘制机会，因此这些路径均不能推出 passive 必在绘制之后。</p>
           </article>
         </div>
 
@@ -1636,7 +1780,7 @@ await main();</code></pre>
               <tr><td>ReactElement 与 Fiber 分离</td><td>描述对象保持轻量；renderer 可按需实例化和复用工作单元。</td><td>必须经过 reconciliation 才能产生实例与副作用。</td><td><span class="evidence infer">当前实现推断</span>字段与入口边界</td></tr>
               <tr><td>current/alternate 双缓冲</td><td>render 可在另一棵树准备；mutation 后一次指针切换发布。</td><td>维护两份 Fiber 与复制/reset 规则；alternate 角色会轮换。</td><td><span class="evidence fact">源码事实</span><code>createWorkInProgress</code> 注释与 commit 顺序</td></tr>
               <tr><td>31-bit lanes</td><td>合并、相交、选择与传播是快速位运算；多更新可作为集合批处理。</td><td>lane 语义依赖固定 bit 分组；读者不能把“最低 bit”当成所有选择的完整规则。</td><td><span class="evidence fact">源码事实</span><code>TotalLanes/getHighestPriorityLanes</code></td></tr>
-              <tr><td>root microtask 汇总</td><td>同一 browser task 中多 root/multi update 先聚合，再统一决定 sync 或 callback。</td><td>“何时可见”跨越 microtask；受控恢复、act、Safari 防护有特殊出口。</td><td><span class="evidence fact">源码事实</span>Root Scheduler 注释与分支</td></tr>
+              <tr><td>root microtask 汇总</td><td>同一同步调用栈中的多 root/multi update 先聚合，再由根微任务统一决定 sync 或 callback。</td><td>“何时可见”跨越 microtask；受控恢复、act、Safari 防护有特殊出口。</td><td><span class="evidence fact">源码事实</span>Root Scheduler 注释与分支</td></tr>
               <tr><td>协作式 Scheduler</td><td>未过期并发工作可在 Fiber unit 间让浏览器处理输入/paint。</td><td>不能抢占正在执行的任意 JS；blocking/expired lanes 不检查 yield。</td><td><span class="evidence fact">源码事实</span><code>workLoop/shouldYieldToHost</code></td></tr>
               <tr><td>flags + subtreeFlags</td><td>render 一次记录 effect，commit 用 mask 跳过无副作用子树。</td><td>必须精确 bubble/reset；flag 不表示更新优先级。</td><td><span class="evidence fact">源码事实</span><code>bubbleProperties</code></td></tr>
               <tr><td>前向 child scan + Map</td><td>共同前缀快，失配后平均 O(n)，适合无 backpointer 的 sibling 链。</td><td>reversal 不做双端最优；本例两次 move 而非一次。</td><td><span class="evidence fact">源码事实</span>算法注释与手推</td></tr>
@@ -1652,7 +1796,7 @@ await main();</code></pre>
             <ul class="clean">
               <li><code>createRoot</code> 收到非 DOM container：抛 <code>Target container is not a DOM element.</code></li>
               <li>public root 已 unmount 再 render：抛 <code>Cannot update an unmounted root.</code></li>
-              <li>render 窗口外调用 Hook：dispatcher 为空，DEV 报 Invalid hook call。</li>
+              <li>render 窗口外调用 Hook：dispatcher 可能为空，也可能为只允许读取 Context 的 dispatcher；useState 都会进入非法 Hook 调用的错误路径。</li>
               <li>update 时条件调用导致 queue 缺失或 Hook 数变化：抛内部一致性错误/DEV Hook 顺序诊断。</li>
               <li><code>setState</code> eager state 与 current 相同：环形入队保留 rebase 可能，但不安排 render。</li>
             </ul>
@@ -1660,7 +1804,7 @@ await main();</code></pre>
           <article class="card">
             <h4>协调 / DOM</h4>
             <ul class="clean">
-              <li>key 改变、type 不兼容或旧 child 未被 Map 消费：Deletion + 新建，组件 state 重置。</li>
+              <li>key 改变或 type 不兼容时，新建 Fiber，并在父 Fiber 的 deletions 中记录旧项、标 ChildDeletion；仅从列表删除旧项时，不会另建对应 Fiber。</li>
               <li>重复 key：DEV 警告，身份结果不受支持。</li>
               <li>外部手工删掉 React 管理 DOM 后再 unmount：Root 测试预期 removeChild 错误；React 不为任意外部 mutation 修复所有不变量。</li>
               <li>事件 target 不属于该 root 或跨 portal：边界校正可能重定向或退出；hydration 阻塞/replay 不在本教程展开。</li>
@@ -1687,7 +1831,7 @@ await main();</code></pre>
         </div>
 
         <div class="callout">
-          <p><strong>历史与动机纪律：</strong>当前源码快照无 Git 历史元数据，本文没有虚构设计演进。双缓冲、child 算法、root microtask、Scheduler yield 等“为什么”仅引用当前源码注释；其余架构收益明确标为“从当前实现推断”。</p>
+          <p><strong>机制与分析：</strong>双缓冲、child 算法、root microtask 与 Scheduler yield 的机制可沿当前源码核对；表中架构收益属于对该实现的分析。</p>
         </div>
 
         <h3>范围边界</h3>
@@ -1696,71 +1840,71 @@ await main();</code></pre>
 
       <section id="source-index">
         <h2>关键源码与测试索引</h2>
-        <p>行号对应任务给定源码快照；符号名是更稳定的继续阅读入口。</p>
+        <p>以下按文件与符号定位；注释修订会改变行号。</p>
         <div class="table-wrap">
           <table style="min-width: 1040px">
-            <thead><tr><th>职责</th><th>文件</th><th>关键符号 / 当前行</th><th>阅读问题</th></tr></thead>
+            <thead><tr><th>职责</th><th>文件</th><th>关键符号</th><th>阅读问题</th></tr></thead>
             <tbody>
               <tr><td rowspan="6">公共入口</td><td><code>packages/react/index.js</code></td><td>exports</td><td>React 主包向客户端暴露什么？</td></tr>
               <tr><td><code>packages/react/jsx-runtime.js</code></td><td>jsx / jsxs</td><td>automatic runtime 从何进入？</td></tr>
               <tr><td><code>packages/react/src/ReactClient.js</code></td><td>createElement / Hooks exports</td><td>公共实现如何汇总？</td></tr>
               <tr><td><code>packages/react/src/jsx/ReactJSX.js</code></td><td>jsx / jsxs branch</td><td>DEV/生产如何选择 element factory？</td></tr>
-              <tr><td><code>packages/react/src/jsx/ReactJSXElement.js</code></td><td><code>ReactElement</code> 170；<code>jsxProd</code> 291；<code>createElement</code> 610</td><td>type/key/props/owner 怎样形成？</td></tr>
-              <tr><td><code>packages/react/src/ReactHooks.js</code></td><td><code>resolveDispatcher</code> 24；<code>useState</code> 66</td><td>公共 Hook 为什么必须在 render 内？</td></tr>
+              <tr><td><code>packages/react/src/jsx/ReactJSXElement.js</code></td><td><code>ReactElement</code>；<code>jsxProd</code>；<code>createElement</code></td><td>type/key/props/owner 怎样形成？</td></tr>
+              <tr><td><code>packages/react/src/ReactHooks.js</code></td><td><code>resolveDispatcher</code>；<code>useState</code></td><td>公共 Hook 为什么必须在 render 内？</td></tr>
 
               <tr><td rowspan="3">DOM Root</td><td><code>packages/react-dom/client.js</code></td><td>public client entry</td><td>包导出如何路由？</td></tr>
               <tr><td><code>packages/react-dom/src/client/ReactDOMClient.js</code></td><td>createRoot export</td><td>客户端接口边界在哪里？</td></tr>
-              <tr><td><code>packages/react-dom/src/client/ReactDOMRoot.js</code></td><td><code>render</code> 107；<code>createRoot</code> 171</td><td>根、容器 marker、事件监听如何建立？</td></tr>
+              <tr><td><code>packages/react-dom/src/client/ReactDOMRoot.js</code></td><td><code>render</code>；<code>createRoot</code></td><td>根、容器 marker、事件监听如何建立？</td></tr>
 
-              <tr><td rowspan="6">Fiber / Queue</td><td><code>packages/react-reconciler/src/ReactFiberRoot.js</code></td><td><code>FiberRootNode</code> 50；<code>createFiberRoot</code> 157</td><td>根持有哪些 lane/callback 状态？</td></tr>
-              <tr><td><code>packages/react-reconciler/src/ReactFiber.js</code></td><td><code>FiberNode</code> 134；<code>createWorkInProgress</code> 323</td><td>双缓冲复制/重置哪些字段？</td></tr>
-              <tr><td><code>packages/react-reconciler/src/ReactFiberReconciler.js</code></td><td><code>createContainer</code> 235；<code>updateContainerImpl</code> 393</td><td>public render 如何成为 root Update？</td></tr>
-              <tr><td><code>packages/react-reconciler/src/ReactFiberClassUpdateQueue.js</code></td><td><code>initializeUpdateQueue</code> 176；<code>processUpdateQueue</code> 487</td><td>HostRoot payload 如何写入 RootState？</td></tr>
-              <tr><td><code>packages/react-reconciler/src/ReactFiberHooks.js</code></td><td><code>renderWithHooks</code> 505；<code>mountState</code> 1948；<code>dispatchSetState</code> 3626</td><td>Hook 链、queue 与 dispatcher 如何协作？</td></tr>
-              <tr><td><code>packages/react-reconciler/src/ReactFiberConcurrentUpdates.js</code></td><td><code>finishQueueingConcurrentUpdates</code> 50；<code>enqueueConcurrentHookUpdate</code> 115</td><td>为什么先 staging 再接环？</td></tr>
+              <tr><td rowspan="6">Fiber / Queue</td><td><code>packages/react-reconciler/src/ReactFiberRoot.js</code></td><td><code>FiberRootNode</code>；<code>createFiberRoot</code></td><td>根持有哪些 lane/callback 状态？</td></tr>
+              <tr><td><code>packages/react-reconciler/src/ReactFiber.js</code></td><td><code>FiberNode</code>；<code>createWorkInProgress</code></td><td>双缓冲复制/重置哪些字段？</td></tr>
+              <tr><td><code>packages/react-reconciler/src/ReactFiberReconciler.js</code></td><td><code>createContainer</code>；<code>updateContainerImpl</code></td><td>public render 如何成为 root Update？</td></tr>
+              <tr><td><code>packages/react-reconciler/src/ReactFiberClassUpdateQueue.js</code></td><td><code>initializeUpdateQueue</code>；<code>processUpdateQueue</code></td><td>HostRoot payload 如何写入 RootState？</td></tr>
+              <tr><td><code>packages/react-reconciler/src/ReactFiberHooks.js</code></td><td><code>renderWithHooks</code>；<code>mountState</code>；<code>dispatchSetState</code></td><td>Hook 链、queue 与 dispatcher 如何协作？</td></tr>
+              <tr><td><code>packages/react-reconciler/src/ReactFiberConcurrentUpdates.js</code></td><td><code>finishQueueingConcurrentUpdates</code>；<code>enqueueConcurrentHookUpdate</code></td><td>为什么先 staging 再接环？</td></tr>
 
-              <tr><td rowspan="6">Lane / 调度</td><td><code>packages/react-reconciler/src/ReactFiberLane.js</code></td><td>lane constants 41；<code>getNextLanes</code> 249；<code>markRootFinished</code> 894</td><td>位集怎样选批次、过期与清理？</td></tr>
-              <tr><td><code>packages/react-reconciler/src/ReactEventPriorities.js</code></td><td>priority constants 22；<code>lanesToEventPriority</code> 55</td><td>事件 lane 与 Scheduler priority 怎样映射？</td></tr>
-              <tr><td><code>packages/react-reconciler/src/ReactFiberWorkLoop.js</code></td><td><code>requestUpdateLane</code> 812；<code>performWorkOnRoot</code> 1137</td><td>何时 concurrent，何时 sync？</td></tr>
-              <tr><td><code>packages/react-reconciler/src/ReactFiberRootScheduler.js</code></td><td><code>ensureRootIsScheduled</code> 116；<code>scheduleTaskForRootDuringMicrotask</code> 384</td><td>root microtask 怎样选择 callback？</td></tr>
-              <tr><td><code>packages/scheduler/src/forks/Scheduler.js</code></td><td><code>workLoop</code> 193；<code>unstable_scheduleCallback</code> 335；<code>shouldYieldToHost</code> 459</td><td>task timeout、continuation、yield 如何工作？</td></tr>
+              <tr><td rowspan="6">Lane / 调度</td><td><code>packages/react-reconciler/src/ReactFiberLane.js</code></td><td>lane constants 41；<code>getNextLanes</code>；<code>markRootFinished</code></td><td>位集怎样选批次、过期与清理？</td></tr>
+              <tr><td><code>packages/react-reconciler/src/ReactEventPriorities.js</code></td><td>priority constants 22；<code>lanesToEventPriority</code></td><td>事件 lane 与 Scheduler priority 怎样映射？</td></tr>
+              <tr><td><code>packages/react-reconciler/src/ReactFiberWorkLoop.js</code></td><td><code>requestUpdateLane</code>；<code>performWorkOnRoot</code></td><td>何时 concurrent，何时 sync？</td></tr>
+              <tr><td><code>packages/react-reconciler/src/ReactFiberRootScheduler.js</code></td><td><code>ensureRootIsScheduled</code>；<code>scheduleTaskForRootDuringMicrotask</code></td><td>root microtask 怎样选择 callback？</td></tr>
+              <tr><td><code>packages/scheduler/src/forks/Scheduler.js</code></td><td><code>workLoop</code>；<code>unstable_scheduleCallback</code>；<code>shouldYieldToHost</code></td><td>task timeout、continuation、yield 如何工作？</td></tr>
               <tr><td><code>packages/scheduler/src/SchedulerMinHeap.js</code></td><td>push / peek / pop / compare</td><td>两个 queue 的排序不变量是什么？</td></tr>
 
-              <tr><td rowspan="3">Render / 协调</td><td><code>packages/react-reconciler/src/ReactFiberBeginWork.js</code></td><td><code>reconcileChildren</code> 339；<code>beginWork</code> 4308</td><td>tag 怎样路由到 HostRoot/Function/Host？</td></tr>
-              <tr><td><code>packages/react-reconciler/src/ReactChildFiber.js</code></td><td><code>placeChild</code> 511；<code>updateSlot</code> 842；<code>reconcileChildrenArray</code> 1177</td><td>key、Map、Placement/Deletion 怎样产生？</td></tr>
-              <tr><td><code>packages/react-reconciler/src/ReactFiberCompleteWork.js</code></td><td><code>bubbleProperties</code> 793；<code>completeWork</code> 1082</td><td>脱离 DOM 与 subtreeFlags 怎样完成？</td></tr>
+              <tr><td rowspan="3">Render / 协调</td><td><code>packages/react-reconciler/src/ReactFiberBeginWork.js</code></td><td><code>reconcileChildren</code>；<code>beginWork</code></td><td>tag 怎样路由到 HostRoot/Function/Host？</td></tr>
+              <tr><td><code>packages/react-reconciler/src/ReactChildFiber.js</code></td><td><code>placeChild</code>；<code>updateSlot</code>；<code>reconcileChildrenArray</code></td><td>key、Map、Placement/ChildDeletion 怎样产生？</td></tr>
+              <tr><td><code>packages/react-reconciler/src/ReactFiberCompleteWork.js</code></td><td><code>bubbleProperties</code>；<code>completeWork</code></td><td>脱离 DOM 与 subtreeFlags 怎样完成？</td></tr>
 
-              <tr><td rowspan="4">Commit / DOM</td><td><code>packages/react-reconciler/src/ReactFiberCommitWork.js</code></td><td><code>commitMutationEffects</code> 2014；<code>commitReconciliationEffects</code> 2787</td><td>MutationMask 如何遍历与消费？</td></tr>
-              <tr><td><code>packages/react-reconciler/src/ReactFiberCommitHostEffects.js</code></td><td><code>commitPlacement</code> 523；<code>commitHostPlacement</code> 669</td><td>怎样找 host parent / stable sibling？</td></tr>
-              <tr><td><code>packages/react-dom-bindings/src/client/ReactFiberConfigDOM.js</code></td><td><code>createInstance</code> 533；<code>appendInitialChild</code> 694；<code>commitUpdate</code> 998</td><td>抽象 host 操作怎样变真实 DOM API？</td></tr>
-              <tr><td><code>packages/react-dom-bindings/src/client/ReactDOMComponent.js</code></td><td><code>updateProperties</code> 1518</td><td>props diff 如何改属性、style 与文本？</td></tr>
+              <tr><td rowspan="4">Commit / DOM</td><td><code>packages/react-reconciler/src/ReactFiberCommitWork.js</code></td><td><code>commitMutationEffects</code>；<code>commitReconciliationEffects</code></td><td>MutationMask 如何遍历与消费？</td></tr>
+              <tr><td><code>packages/react-reconciler/src/ReactFiberCommitHostEffects.js</code></td><td><code>commitPlacement</code>；<code>commitHostPlacement</code></td><td>怎样找 host parent / stable sibling？</td></tr>
+              <tr><td><code>packages/react-dom-bindings/src/client/ReactFiberConfigDOM.js</code></td><td><code>createInstance</code>；<code>appendInitialChild</code>；<code>commitUpdate</code></td><td>抽象 host 操作怎样变真实 DOM API？</td></tr>
+              <tr><td><code>packages/react-dom-bindings/src/client/ReactDOMComponent.js</code></td><td><code>updateProperties</code></td><td>props diff 如何改属性、style 与文本？</td></tr>
 
-              <tr><td rowspan="5">DOM 事件</td><td><code>packages/react-dom-bindings/src/events/DOMPluginEventSystem.js</code></td><td><code>processDispatchQueue</code> 313；<code>listenToAllSupportedEvents</code> 432；<code>dispatchEventForPluginEventSystem</code> 589</td><td>根委托、listener 队列与 root 边界怎样工作？</td></tr>
-              <tr><td><code>packages/react-dom-bindings/src/events/ReactDOMEventListener.js</code></td><td><code>createEventListenerWrapperWithPriority</code> 94；<code>dispatchEvent</code> 157；<code>getEventPriority</code> 312</td><td>native event 怎样设 lane priority？</td></tr>
-              <tr><td><code>packages/react-dom-bindings/src/events/ReactDOMUpdateBatching.js</code></td><td><code>batchedUpdates</code> 46</td><td>事件外壳与受控恢复边界是什么？</td></tr>
-              <tr><td><code>packages/react-dom-bindings/src/events/plugins/SimpleEventPlugin.js</code></td><td><code>extractEvents</code> 57</td><td>click 怎样变 SyntheticMouseEvent/onClick？</td></tr>
-              <tr><td><code>packages/react-dom-bindings/src/client/ReactDOMComponentTree.js</code></td><td><code>precacheFiberNode</code> 94；<code>getClosestInstanceFromNode</code> 136</td><td>DOM/Fiber/最新 props 怎样互查？</td></tr>
+              <tr><td rowspan="5">DOM 事件</td><td><code>packages/react-dom-bindings/src/events/DOMPluginEventSystem.js</code></td><td><code>processDispatchQueue</code>；<code>listenToAllSupportedEvents</code>；<code>dispatchEventForPluginEventSystem</code></td><td>根委托、listener 队列与 root 边界怎样工作？</td></tr>
+              <tr><td><code>packages/react-dom-bindings/src/events/ReactDOMEventListener.js</code></td><td><code>createEventListenerWrapperWithPriority</code>；<code>dispatchEvent</code>；<code>getEventPriority</code></td><td>native event 怎样设 lane priority？</td></tr>
+              <tr><td><code>packages/react-dom-bindings/src/events/ReactDOMUpdateBatching.js</code></td><td><code>batchedUpdates</code></td><td>事件外壳与受控恢复边界是什么？</td></tr>
+              <tr><td><code>packages/react-dom-bindings/src/events/plugins/SimpleEventPlugin.js</code></td><td><code>extractEvents</code></td><td>click 怎样变 SyntheticMouseEvent/onClick？</td></tr>
+              <tr><td><code>packages/react-dom-bindings/src/client/ReactDOMComponentTree.js</code></td><td><code>precacheFiberNode</code>；<code>getClosestInstanceFromNode</code></td><td>DOM/Fiber/最新 props 怎样互查？</td></tr>
             </tbody>
           </table>
         </div>
 
         <h3>已精读测试体</h3>
         <ul class="clean">
-          <li><code>packages/react/src/__tests__/ReactJSXTransformIntegration-test.js</code>：42–52、103–109</li>
-          <li><code>packages/react-dom/src/__tests__/ReactDOMRoot-test.js</code>：44–49、271–305</li>
-          <li><code>packages/react-reconciler/src/__tests__/ReactHooksWithNoopRenderer-test.js</code>：250–269</li>
-          <li><code>packages/react-dom/src/__tests__/ReactDOMEventListener-test.js</code>：157–229</li>
-          <li><code>packages/react-dom/src/__tests__/ReactMultiChildReconcile-test.js</code>：29–304、650–695</li>
-          <li><code>packages/react-reconciler/src/__tests__/ReactIncrementalUpdates-test.js</code>：46–72</li>
-          <li><code>packages/react-reconciler/src/__tests__/ReactSchedulerIntegration-test.js</code>：191–223、272–320</li>
-          <li><code>packages/scheduler/src/__tests__/Scheduler-test.js</code>：185–213</li>
+          <li><code>packages/react/src/__tests__/ReactJSXTransformIntegration-test.js</code></li>
+          <li><code>packages/react-dom/src/__tests__/ReactDOMRoot-test.js</code></li>
+          <li><code>packages/react-reconciler/src/__tests__/ReactHooksWithNoopRenderer-test.js</code></li>
+          <li><code>packages/react-dom/src/__tests__/ReactDOMEventListener-test.js</code></li>
+          <li><code>packages/react-dom/src/__tests__/ReactMultiChildReconcile-test.js</code></li>
+          <li><code>packages/react-reconciler/src/__tests__/ReactIncrementalUpdates-test.js</code></li>
+          <li><code>packages/react-reconciler/src/__tests__/ReactSchedulerIntegration-test.js</code></li>
+          <li><code>packages/scheduler/src/__tests__/Scheduler-test.js</code></li>
         </ul>
       </section>
 
       <section id="next">
         <h2>结论与继续阅读</h2>
         <div class="callout">
-          <p><strong>一句话复述：</strong>JSX 给出不可执行描述；HostRoot/Hook queues 保存逻辑更新；lane 与 Root Scheduler 决定批次和入口；Scheduler 只承接非 Sync host task；begin/complete 在 alternate 上准备 Fiber 与 host objects；flags 把准备结果传给 commit；mutation 写 DOM 后一次切换 current；根级事件再把下一次 click 送回 Hook dispatch。</p>
+          <p><strong>一句话复述：</strong>JSX 给出不可执行描述；HostRoot/Hook queues 保存逻辑更新；lane 与 Root Scheduler 决定批次和入口；Scheduler 只承接非 Sync host task；begin/complete 在 WIP 上准备 Fiber 与 host objects；flags 把准备结果传给 commit；mutation 写 DOM 后一次切换 current；根级事件再把下一次 click 送回 Hook dispatch。</p>
         </div>
 
         <div class="grid three">
@@ -1791,7 +1935,7 @@ await main();</code></pre>
         </div>
 
         <div class="footer">
-          <p>证据快照：React/react-dom 19.3.0 · react-reconciler 0.34.0 · scheduler 0.28.0 · 任务基线 commit 2042572329425f9ebf35ae6287ea5bab72b2c497。</p>
+          <p>证据快照：React/react-dom 19.3.0 · react-reconciler 0.34.0 · scheduler 0.28.0。</p>
           <p>测试未运行；Demo 未运行。文档为单文件离线教程，无 CDN、字体、图片或网络脚本依赖。</p>
         </div>
       </section>

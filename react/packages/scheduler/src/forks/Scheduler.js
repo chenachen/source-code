@@ -57,35 +57,37 @@ export type Callback = boolean => ?Callback;
  * 不变量：同一时刻最多位于一个堆；取消通过把 `callback` 置空实现，节点随后从堆顶惰性删除。
  */
 export opaque type Task = {
-  // 单调递增编号；`sortIndex` 相同时维持 FIFO 顺序。
+  /** 单调递增编号；`sortIndex` 相同时维持 FIFO 顺序。 */
   id: number,
-  // 待执行回调；`null` 是已取消或当前正在执行的状态标记。
+  /** 待执行回调；执行前先置空，取消、完成或抛错后也保持 `null`，直到节点被移除。 */
   callback: Callback | null,
-  // 创建任务时确定的 Scheduler 优先级。
+  /** 创建任务时确定的 Scheduler 优先级。 */
   priorityLevel: PriorityLevel,
-  // 任务最早可执行的绝对时间，单位为毫秒。
+  /** 任务最早可执行的绝对时间，单位为毫秒。 */
   startTime: number,
-  // 任务必须视为超时的绝对时间，等于 `startTime + priority timeout`。
+  /** 任务必须视为超时的绝对时间，等于 `startTime + priority timeout`。 */
   expirationTime: number,
-  // 所在堆的排序键：timer queue 用 `startTime`，task queue 用 `expirationTime`。
+  /** 所在堆的排序键：timer queue 用 `startTime`，task queue 用 `expirationTime`。 */
   sortIndex: number,
-  // 仅 profiling 构建使用，表示任务是否已被记录为进入 ready queue。
+  /** 仅 profiling 构建使用，表示任务是否已被记录为进入 ready queue。 */
   isQueued?: boolean,
 };
 
-/** 返回 Scheduler 单调时间；优先采用高精度 `performance.now()`。 */
+/** 优先读取单调的 `performance.now()`；缺失时返回相对模块初始化时刻的 `Date.now()`，会受系统时钟调整影响。 */
 let getCurrentTime: () => number | DOMHighResTimeStamp;
-// 当前 host 是否提供高精度、单调递增的 Performance 时间源。
+/** 当前 host 是否提供高精度、单调递增的 Performance 时间源。 */
 const hasPerformanceNow =
   // $FlowFixMe[method-unbinding]
   typeof performance === 'object' && typeof performance.now === 'function';
 
 if (hasPerformanceNow) {
   const localPerformance = performance;
+  /** 读取捕获的 Performance 毫秒时钟，供开始时间、过期时间及本轮预算使用同一基准。 */
   getCurrentTime = () => localPerformance.now();
 } else {
   const localDate = Date;
   const initialTime = localDate.now();
+  /** 以模块初始化墙钟为零点返回毫秒差；后续系统时钟调整会改变差值。 */
   getCurrentTime = () => localDate.now() - initialTime;
 }
 
@@ -112,19 +114,19 @@ var isPerformingWork = false;
 
 // 已请求但尚未执行的 host callback 标记，避免重复发送消息。
 var isHostCallbackScheduled = false;
-// 已请求但尚未触发的 host timeout 标记，只追踪最早 delayed timer。
+// scheduleCallback 登记最早 delayed timer 时置为 true；timeout 触发或 flush 接管时清除。
 var isHostTimeoutScheduled = false;
 
-// renderer 请求绘制后置为 true；下一次 host deadline 检查可因此提前 yield。
+// renderer 请求绘制后置为 true；非 always-yield 模式可因此提前 yield，下一 host task 开始时清除。
 var needsPaint = false;
 
-// 模块初始化时捕获原生 API，避免之后安装的 polyfill 或 fake timer 改变调度语义。
-// host timeout 的本地引用；处理 delayed timer 和最低级 fallback。
+// 模块初始化时捕获当时的 host API；之后替换全局函数不会改变这里保存的引用。
+/** host timeout 的本地引用；处理 delayed timer 和最低级 fallback。 */
 const localSetTimeout = typeof setTimeout === 'function' ? setTimeout : null;
-// 与 `localSetTimeout` 成对，用于取消已失效的最早 delayed timer。
+/** 与 `localSetTimeout` 成对，用于取消已失效的最早 delayed timer。 */
 const localClearTimeout =
   typeof clearTimeout === 'function' ? clearTimeout : null;
-// Node.js、旧 IE 与 jsdom 优先使用的 host task API。
+/** Node.js、旧 IE 与 jsdom 优先使用的 host task API。 */
 const localSetImmediate =
   typeof setImmediate !== 'undefined' ? setImmediate : null; // IE、Node.js 与 jsdom
 
@@ -132,6 +134,9 @@ const localSetImmediate =
  * 把已到开始时间的 delayed timer 迁移到 ready task queue，并清理已取消 timer。
  *
  * 状态：迁移时将 `sortIndex` 从开始时间改为过期时间；遇到首个未来 timer 即停止。
+ * @param currentTime - 与 Task.startTime 同基准的 Scheduler 毫秒值，不是 Unix 时间戳。
+ * @remarks workLoop 和 handleTimeout 调用；不直接执行 callback，搬入后仍由 ready 堆
+ * 决定顺序。取消节点只在堆顶被回收，不扫描未来堆中的所有空 callback。
  */
 function advanceTimers(currentTime: number) {
   // timer queue 已排序，只需连续检查堆顶，无需扫描其余未来任务。
@@ -162,6 +167,10 @@ function advanceTimers(currentTime: number) {
  * 处理最早 delayed timer 的 host timeout。
  *
  * 搬运到期任务后优先唤醒 work loop；若仍无 ready task，则只为新的最早 timer 设 timeout。
+ * @param currentTime - requestHostTimeout 真正触发时读取的时钟值，可能晚于计划开始时间。
+ * @remarks 清除 isHostTimeoutScheduled 后检查 ready 堆；若 host callback 已登记，则让
+ * 该回调接管工作。继续等待未来 timer 的分支只调用 requestHostTimeout，不把该标记
+ * 再设为 true；该标记并非所有在途 timeout 的完整计数。
  */
 function handleTimeout(currentTime: number) {
   isHostTimeoutScheduled = false;
@@ -184,6 +193,10 @@ function handleTimeout(currentTime: number) {
  * 建立一次不可重入的 Scheduler flush，并在退出时恢复动态优先级和 profiling 状态。
  *
  * 错误边界：profiling 构建额外记录当前任务错误，但始终把原错误继续抛给 host。
+ * @param initialTime - performWorkUntilDeadline 的本轮开始时钟；workLoop 随 callback 完成更新它。
+ * @returns workLoop 是否仍有 ready 工作；未来 timer 单独登记，不要求继续消息循环。
+ * @remarks 进入时消费 host callback 标记并取消已标记的旧 timeout；退出的 finally
+ * 恢复当前任务/优先级/执行标记。原 callback 已先被置空，因此抛错任务下一轮可惰性移除。
  */
 function flushWork(initialTime: number) {
   // $FlowFixMe[constant-condition]
@@ -238,6 +251,10 @@ function flushWork(initialTime: number) {
  *
  * 状态：callback 执行前置空；返回函数时把 continuation 写回同一任务并强制结束本轮 slice。
  * @returns `true` 表示仍有 ready 工作，需要再安排 host callback。
+ * @param initialTime - 本轮 Scheduler 毫秒时钟，先用它迁移已到开始时间的 timer。
+ * @remarks callback 可能同步插入更早过期的任务；完成时只有自己仍为堆顶才 pop，
+ * 避免误删新插入的高优先级节点。返回 continuation 仍保留原 id/start/expiration；
+ * 只换 callback，不重新给予超时预算。Scheduler 无法中断正在运行的用户函数。
  */
 function workLoop(initialTime: number) {
   let currentTime = initialTime;
@@ -296,7 +313,7 @@ function workLoop(initialTime: number) {
     currentTask = peek(taskQueue);
     if (enableAlwaysYieldScheduler) {
       if (currentTask === null || currentTask.expirationTime > currentTime) {
-        // always-yield 模式只连续清空当前过期批次；下一个未过期任务留给新的 browser task。
+        // always-yield 模式已处理一个堆顶节点；后续已过期节点可连续处理，未过期节点留给下一 host task。
         break;
       }
     }
@@ -404,12 +421,16 @@ function unstable_wrapCallback<T: (...Array<mixed>) => mixed>(callback: T): T {
  * @param priorityLevel - 决定任务超时预算的 Scheduler 优先级。
  * @param callback - 实际工作；可返回 continuation 继续同一任务。
  * @param options - 可选延迟配置。
+ * @returns 用于 cancelCallback 的 Task 身份；入队后由 Scheduler 管理排序字段，调用方不应改写。
+ * @remarks 正数数字 delay 从当前时钟延后开始；超时预算从 startTime 再计算，因此
+ * delay 不消耗 priority timeout。未知 priority 仅使用 Normal 的 timeout，任务记录
+ * 仍保留原值，与 runWithPriority 的值归一化不同。此函数不调用 callback 或等待 Promise。
  */
 function unstable_scheduleCallback(
   priorityLevel: PriorityLevel,
   callback: Callback,
   options?: {
-    // 从当前时间起延迟多久进入 ready queue，单位为毫秒；非正数按立即任务处理。
+    /** 从当前时间起延迟多久进入 ready queue，单位为毫秒；非正数按立即任务处理。 */
     delay: number
   },
 ): Task {
@@ -431,7 +452,7 @@ function unstable_scheduleCallback(
   var timeout;
   switch (priorityLevel) {
     case ImmediatePriority:
-      // 负预算让任务在创建时立即视为过期，不受时间片 yield 限制。
+      // 负预算让任务一进入 ready queue 就已过期；设置 delay 时仍须先等到 startTime。
       timeout = -1;
       break;
     case UserBlockingPriority:
@@ -505,6 +526,10 @@ function unstable_scheduleCallback(
  * 取消任务并保留堆结构，节点到达堆顶时再惰性移除。
  *
  * WHY：数组最小堆只能高效移除根节点；把 callback 置空可让取消保持 O(1)。
+ * @param task - scheduleCallback 返回的原任务 handle，包括已保存 continuation 的任务。
+ * @remarks 不取消已 post 的 host 消息，也不强制中断当前调用栈。若运行中的 callback
+ * 同步取消自己却随后返回函数，workLoop 会把该函数重新写入 callback；取消保证针对
+ * 尚待执行的 callback，而非阻止正在执行的回调产生后续返回值。
  */
 function unstable_cancelCallback(task: Task) {
   // $FlowFixMe[constant-condition]
@@ -538,9 +563,10 @@ let frameInterval: number = frameYieldMs;
 let startTime = -1;
 
 /**
- * 判断当前未过期任务是否应把执行权交还 host。
+ * 判断本轮 Scheduler 是否已到时间片或绘制让出门限。
  *
- * paint 请求优先；否则比较本轮已占用时间与时间片。过期任务由 work loop 绕过此检查。
+ * 非 always-yield 模式且 paint flag 开启时，paint 请求优先；否则比较本轮耗时与时间片。
+ * 普通 work loop 不用此检查阻止已过期任务；callback 内部仍可主动查询并返回 continuation。
  */
 function shouldYieldToHost(): boolean {
   if (!enableAlwaysYieldScheduler && enableRequestPaint && needsPaint) {
@@ -556,7 +582,7 @@ function shouldYieldToHost(): boolean {
   return true;
 }
 
-/** 标记 renderer 需要绘制，使下一次 yield 检查尽快结束当前时间片。 */
+/** 开启 paint flag 时记录绘制请求；非 always-yield 模式的下一次检查可提前结束当前时间片。 */
 function requestPaint() {
   // $FlowFixMe[constant-condition]
   if (enableRequestPaint) {
@@ -567,7 +593,7 @@ function requestPaint() {
 /**
  * 用目标帧率换算 Scheduler 时间片；传入 0 恢复构建默认值。
  *
- * 边界：只接受 0 到 125，避免极短时间片造成调度震荡。
+ * 正数换算为 `floor(1000 / fps)` 毫秒；小于 0 或大于 125 时记录错误并保留原预算。
  */
 function forceFrameRate(fps: number) {
   if (fps < 0 || fps > 125) {
@@ -625,6 +651,7 @@ if (typeof localSetImmediate === 'function') {
   // 即使这是 DOM fork，Node.js 15+、MessageChannel 与 jsdom 混用时仍可能进入这里。
   // https://github.com/facebook/react/issues/20756
   // setImmediate 也更早运行，更符合调度语义；若浏览器实现它同样优先，但仍不如原生调度 API。
+  /** 用模块捕获的 setImmediate 异步投递统一 host 入口，不重新读取全局 API。 */
   schedulePerformWorkUntilDeadline = () => {
     localSetImmediate(performWorkUntilDeadline);
   };
@@ -633,11 +660,13 @@ if (typeof localSetImmediate === 'function') {
   const channel = new MessageChannel();
   const port = channel.port2;
   channel.port1.onmessage = performWorkUntilDeadline;
+  /** 向复用通道发送唤醒消息；port1 收到后执行新一轮时间片，消息本身不携带任务。 */
   schedulePerformWorkUntilDeadline = () => {
     port.postMessage(null);
   };
 } else {
-  // 仅无 setImmediate/MessageChannel 的非浏览器环境回退到 setTimeout。
+  // 没有 setImmediate/MessageChannel 时回退到 setTimeout，浏览器和非浏览器都可能进入此分支。
+  /** 用零延迟 timer 投递 host 入口；缺少 setTimeout 时导入可成功，实际安排工作才失败。 */
   schedulePerformWorkUntilDeadline = () => {
     // $FlowFixMe[not-a-function] nullable value
     localSetTimeout(performWorkUntilDeadline, 0);
@@ -688,7 +717,7 @@ export {
   forceFrameRate as unstable_forceFrameRate,
 };
 
-// profiling 开启时暴露会话控制器；关闭时固定为 null，让构建器消除记录路径。
+/** profiling 开启时暴露会话控制器；关闭时固定为 null，让构建器消除记录路径。 */
 export const unstable_Profiling: {
   /** 启动新的二进制事件记录会话。 */
   startLoggingProfilingEvents(): void,

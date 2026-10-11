@@ -39,7 +39,7 @@ import {isAlreadyRendering} from './ReactFiberWorkLoop';
 // 刻意不使用命名导入；否则 Rollup 会为 CommonJS 互操作生成动态分派。
 import * as Scheduler from 'scheduler';
 
-/** Scheduler 的单调时钟，用于所有 render/commit 性能区间。 */
+/** Scheduler 的相对毫秒时钟，用于 render/commit 性能区间；优先 performance.now，缺失时用 Date.now 回退。 */
 const {unstable_now: now} = Scheduler;
 
 /** DEV ConsoleTask 工厂；宿主不支持时返回 null，生产构建消除 console 路径。 */
@@ -502,12 +502,12 @@ export function pushComponentEffectDuration(): number {
   return prevEffectDuration;
 }
 
-/** 离开子组件作用域；父级已有统计时恢复父值，否则让子耗时继续上冒。 */
+/** 离开子组件作用域；保存值非负（包括零）时恢复它，负哨兵值时才保留当前子耗时。 */
 export function popComponentEffectDuration(prevEffectDuration: number): void {
   if (!enableProfilerTimer || !enableProfilerCommitHooks) {
     return;
   }
-  // 父组件没有既有统计时，让当前子级耗时继续上冒。
+  // 负值是保留当前子耗时的哨兵；零也属于需要恢复的父作用域值。
   if (prevEffectDuration >= 0) {
     // 否则恢复父组件原耗时。
     componentEffectDuration = prevEffectDuration;
@@ -642,7 +642,8 @@ export function stopProfilerTimerIfRunning(fiber: Fiber): void {
 }
 
 /**
- * 停止计时并把本段耗时累加到 actualDuration，同时以其作为本轮 selfBaseDuration。
+ * 停止计时并把本段耗时累加到 actualDuration，同时以本段值覆盖 selfBaseDuration。
+ * 分段 actualDuration 可包含重试工作；selfBaseDuration 不累加各段，作为最新完成段的基准。
  */
 export function stopProfilerTimerIfRunningAndRecordDuration(
   fiber: Fiber,

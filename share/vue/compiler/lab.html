@@ -77,15 +77,18 @@
             <p>整个 compiler 测试很快，但单文件/单标题更适合反复观察。</p>
           </div>
           <div class="callout">
-            <strong>运行前提：</strong>先进入 Vue 仓库根目录（能看到
-            <code>pnpm-workspace.yaml</code>），使用 Node.js 20
-            或更高版本、仓库锁定的 pnpm，并已执行
-            <code>pnpm install</code>。下面路径都从仓库根计算；若在
-            <code>share/vue/compiler</code>
-            目录直接运行，会找不到测试与配置。
+            <strong>运行前提：</strong>从
+            <code>source-code-analysis</code> 项目根执行一次
+            <code>cd vue</code>，进入能看到
+            <code>pnpm-workspace.yaml</code> 的目录。使用 Node.js 20.x（至少
+            20.19）或 22.12 及以上版本，以及仓库锁定的 pnpm，并先执行
+            <code>pnpm install</code>。后续命令与路径均从这个目录计算。
           </div>
-          <pre><code># 在 Vue 仓库根确认环境
-node --version        # 期望 v20+
+          <pre><code># 从 source-code-analysis 项目根进入 Vue 源码目录，仅执行一次
+cd vue
+
+# 后续命令均在这个目录执行
+node --version        # Node 20.x 至少 20.19，或 22.12+
 pnpm --version
 test -d node_modules  # 失败则先 pnpm install
 
@@ -166,13 +169,11 @@ node node_modules/vitest/vitest.mjs run \
 
           <h3>第 0 步：确认你站在正确目录</h3>
           <p>
-            下面命令必须从 Vue 仓库根运行，也就是本专题目录向上三级的
-            <code>vue/</code>。先让测试自己打印当前 3.5.41 的真实 render
-            产物，不手抄预期。
+            完成上面的准备后，继续在 <code>source-code-analysis/vue/</code>
+            目录执行，无需再次切换目录。先让测试自己打印当前 3.5.41 的真实
+            render 产物，不手抄预期。
           </p>
-          <pre><code>cd vue
-
-# Node 必须是 20+；低版本可能在启动 Vitest 前就失败。
+          <pre><code># Node 20.x 至少 20.19，或 22.12+。
 node --version
 
 VUE_COMPILER_TUTORIAL_TRACE=1 \
@@ -548,7 +549,7 @@ const result = compile('&lt;div :id="user +"&gt;&lt;/div&gt;', {
                 <li>
                   启动时报 <code>node:util</code> 没有
                   <code>styleText</code>：Node 版本低于当前工具链要求，先切换
-                  Node 20+。
+                  Node 20.x（至少 20.19）或 22.12 及以上版本。
                 </li>
                 <li>
                   报找不到测试文件：确认当前目录是 <code>vue/</code>，不是
@@ -904,8 +905,11 @@ const { color = 'red' } = defineProps&lt;{
               </p>
             </div>
             <div class="step">
-              <h3>再看 git blame/log</h3>
-              <p>确认修复为何位于该层，并检查后续是否有同类回归。</p>
+              <h3>再看上游 git blame/log</h3>
+              <p>
+                在 vuejs/core
+                的完整克隆中查看该处历史，确认修复为何位于该层，并检查后续是否有同类回归。
+              </p>
             </div>
           </div>
           <div class="grid-3">
@@ -1141,8 +1145,9 @@ const { color = 'red' } = defineProps&lt;{
             <article class="card">
               <h3>Template AST</h3>
               <p>
-                parser 产出的模板语义树，包含
-                Element/Directive/If/For/Interpolation 与 location。
+                parser 产出元素、属性/指令、文本、插值等原始模板节点及
+                location；transform 再把结构指令改为 IfNode/ForNode，并追加
+                codegenNode。
               </p>
             </article>
             <article class="card">

@@ -32,7 +32,8 @@ function eventHandler (event: Event, element: HTMLLinkElement | HTMLScriptElemen
 /**
  * 向 link/script 元素发送加载成功通知。
  *
- * 属性处理器存在时直接调用，避免再经事件系统重复触发；否则使用标准事件分发路径。
+ * 属性处理器存在时直接调用，否则使用标准事件分发路径。两者是二选一：同一元素同时注册
+ * onload 与 addEventListener('load') 时这里只调用 onload，不再通知事件监听器。
  */
 export function dispatchOnLoadEvent (element: HTMLLinkElement | HTMLScriptElement): void {
   const event = new CustomEvent('load')

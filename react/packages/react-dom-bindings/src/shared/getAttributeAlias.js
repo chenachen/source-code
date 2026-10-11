@@ -14,7 +14,7 @@ const aliases = new Map([
   ['httpEquiv', 'http-equiv'],
   // HTML 与 SVG 均支持该属性，但 SVG 属性名区分大小写。
   ['crossOrigin', 'crossorigin'],
-  // 以下列出所有需要特殊改写的 SVG 属性；其余普通属性直接接受字符串。
+  // 以下 SVG 属性需要特殊拼写；未列入映射的名称由 getAttributeAlias 原样返回。
   ['accentHeight', 'accent-height'],
   ['alignmentBaseline', 'alignment-baseline'],
   ['arabicForm', 'arabic-form'],

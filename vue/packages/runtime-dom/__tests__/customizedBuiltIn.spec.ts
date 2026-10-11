@@ -1,18 +1,14 @@
-/**
- * 测试阅读说明：本文件验证 `runtime-dom/customizedBuiltIn` 的运行时行为。
- * “测试组”概括共享前置条件，“测试场景”说明当前输入、边界或历史回归目标；具体预期以断言为准。
- */
 import type { MockInstance } from 'vitest'
 import { h, render } from '@vue/runtime-dom'
 
-// 测试组：自定义内置元素支持。
+// 测试组：监视document.createElement，再render带is选项的button；核对创建参数与最终is attribute。
 describe('customized built-in elements support', () => {
   let createElement: MockInstance
   afterEach(() => {
     createElement.mockRestore()
   })
 
-  // 测试场景：应该使用 is 选项创建元素。
+  /** 测试场景：渲染button并传is=plastic-button，createElement第二参数含同一is，DOM还保留is attribute；核对创建与prop修补协作。 */
   test('should created element with is option', () => {
     const root = document.createElement('div')
     createElement = vi.spyOn(document, 'createElement')
@@ -21,7 +17,7 @@ describe('customized built-in elements support', () => {
       'button',
       { is: 'plastic-button' },
     ])
-    // should also render the attribute
+    // 同时检查原生 is attribute 写入。
     expect(root.innerHTML).toBe(`<button is="plastic-button"></button>`)
   })
 })

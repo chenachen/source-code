@@ -8,6 +8,9 @@ import { compile } from '../src'
 const scopeId = 'data-v-xxxxxxx'
 
 describe('ssr: scopeId', () => {
+  /**
+   * 场景：module 模式指定 data-v-xxxxxxx，div/span 两层元素快照都带该静态 scope 属性，验证本组件 scopeId 逐元素输出。
+   */
   test('basic', () => {
     expect(
       compile(`<div><span>hello</span></div>`, {
@@ -23,6 +26,9 @@ describe('ssr: scopeId', () => {
     `)
   })
 
+  /**
+   * 场景：作用域组件的 foo 默认插槽仅有文本，快照断言文本 SSR 分支无额外 scope 拼接、VNode fallback 仍返回文本节点，验证 scope 属性仅作用于元素。
+   */
   test('inside slots (only text)', () => {
     // 插槽函数内部不应因 scopeId 注入产生额外条件分支。
     expect(
@@ -53,6 +59,9 @@ describe('ssr: scopeId', () => {
     `)
   })
 
+  /**
+   * 场景：foo 插槽含 span，快照断言 SSR 开始标签同时带本组件静态 scopeId 与入参 _scopeId，验证声明方 scoped 与消费方 slotted 可叠加。
+   */
   test('inside slots (with elements)', () => {
     expect(
       compile(`<foo><span>hello</span></foo>`, {
@@ -82,6 +91,9 @@ describe('ssr: scopeId', () => {
     `)
   })
 
+  /**
+   * 场景：foo 插槽内还嵌套 bar 插槽，快照断言 bar 调用继续传 _scopeId、两层 span 都输出作用域，验证嵌套 slot 的参数传播和 VNode fallback 作用域。
+   */
   test('nested slots', () => {
     expect(
       compile(`<foo><span>hello</span><bar><span/></bar></foo>`, {
@@ -131,6 +143,9 @@ describe('ssr: scopeId', () => {
   })
 
   // #7554：带 tag 的 TransitionGroup 外壳也必须接收当前 SFC scopeId，不能只给内部 children。
+  /**
+   * 场景：带 class 的 TransitionGroup 分别使用静态 div 与动态 :tag，module 快照断言外壳和 span 都带 scopeId，验证外壳专用输出不会遗漏本组件作用域。
+   */
   test('scopeId is correctly transform to scope attribute of transition-group ', () => {
     expect(
       compile(
