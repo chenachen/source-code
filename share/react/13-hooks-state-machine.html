@@ -33,153 +33,6 @@
         </div>
       </section>
 
-      <section id="exact-anchors"><h2>逐字连续原码核验锚点</h2>
-        <p>以下连续片段展示 dispatcher、队列和 Effect 的关键状态写入；后文再展开调用条件与执行过程。</p>
-        <figure class="source"><figcaption><span>连续原码 · renderWithHooks 选择 mount / update dispatcher</span><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">ReactFiberHooks.js</a></figcaption><pre>  // 只有至少使用一个有状态 Hook 时，memoizedState 才能区分挂载与更新。
-  // context 等无状态 Hook 不进入 memoizedState，因此挂载和更新时它都可能为 null。
-  if (__DEV__) {
-    if (current !== null &amp;&amp; current.memoizedState !== null) {
-      ReactSharedInternals.H = HooksDispatcherOnUpdateInDEV;
-    } else if (hookTypesDev !== null) {
-      // 处理“组件正在更新但未使用有状态 Hook”的边界：行为与生产环境的 Mount dispatcher 一致，
-      // 同时额外执行 DEV Hook 顺序验证。
-      ReactSharedInternals.H = HooksDispatcherOnMountWithHookTypesInDEV;
-    } else {
-      ReactSharedInternals.H = HooksDispatcherOnMountInDEV;
-    }
-  } else {
-    ReactSharedInternals.H =
-      current === null || current.memoizedState === null
-        ? HooksDispatcherOnMount
-        : HooksDispatcherOnUpdate;
-  }</pre></figure>
-        <figure class="source"><figcaption><span>连续原码 · mount Hook 追加到 Fiber.memoizedState 链</span><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">ReactFiberHooks.js</a></figcaption><pre>  if (workInProgressHook === null) {
-    // 首个 Hook 同时成为 Fiber.memoizedState 与 workInProgressHook。
-    currentlyRenderingFiber.memoizedState = workInProgressHook = hook;
-  } else {
-    // 追加到 Hook 链表尾部。
-    workInProgressHook = workInProgressHook.next = hook;
-  }
-  return workInProgressHook;</pre></figure>
-        <figure class="source"><figcaption><span>连续原码 · mountState 初始化 state 与共享 UpdateQueue</span><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">ReactFiberHooks.js</a></figcaption><pre>  hook.memoizedState = hook.baseState = initialState;
-  const queue: UpdateQueue&lt;S, BasicStateAction&lt;S&gt;&gt; = {
-    pending: null,
-    lanes: NoLanes,
-    dispatch: null,
-    lastRenderedReducer: basicStateReducer,
-    lastRenderedState: initialState as any,
-  };
-  hook.queue = queue;
-  return hook;</pre></figure>
-        <figure class="source"><figcaption><span>连续原码 · dispatchSetState eager 相等快路径</span><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">ReactFiberHooks.js</a></figcaption><pre>          const currentState: S = queue.lastRenderedState as any;
-          const eagerState = lastRenderedReducer(currentState, action);
-          // 保存 eager 结果；updateReducerImpl 处理到该更新时直接复用，不再调用 reducer。
-          update.hasEagerState = true;
-          update.eagerState = eagerState;
-          if (is(eagerState, currentState)) {
-            // 状态相等时不安排这次渲染，但仍保留更新。若之后有更高优先级工作插队，
-            // 该更新可能进入 baseQueue，后续重放必须保留它在原序列中的位置。
-            // TODO：此情况下是否仍需纠缠 transition？
-            enqueueConcurrentHookUpdateAndEagerlyBailout(fiber, queue, update);
-            return false;
-          }</pre></figure>
-        <figure class="source"><figcaption><span>连续原码 · updateReducerImpl 克隆被 Lane 跳过的 Update</span><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">ReactFiberHooks.js</a></figcaption><pre>      if (shouldSkipUpdate) {
-        // 优先级不足，跳过此更新。若它是首个被跳过项，之前所得状态成为新的 baseState。
-        const clone: Update&lt;S, A&gt; = {
-          lane: updateLane,
-          revertLane: update.revertLane,
-          gesture: update.gesture,
-          action: update.action,
-          hasEagerState: update.hasEagerState,
-          eagerState: update.eagerState,
-          next: null as any,
-        };
-        if (newBaseQueueLast === null) {
-          newBaseQueueFirst = newBaseQueueLast = clone;
-          newBaseState = newState;
-        } else {
-          newBaseQueueLast = newBaseQueueLast.next = clone;
-        }
-        // 记录队列剩余优先级。
-        // TODO：无需累积；可从原 lanes 中移除 renderLanes。
-        currentlyRenderingFiber.lanes = mergeLanes(
-          currentlyRenderingFiber.lanes,
-          updateLane,
-        );
-        markSkippedUpdateLanes(updateLane);</pre></figure>
-        <figure class="source"><figcaption><span>连续原码 · render-phase Update 环与重渲染标志</span><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">ReactFiberHooks.js</a></figcaption><pre>  // 渲染阶段更新暂存在 queue 对应的循环链表；当前 pass 结束后从头开始，
-  // 在 work-in-progress Hook 状态之上应用它们。
-  didScheduleRenderPhaseUpdateDuringThisPass =
-    didScheduleRenderPhaseUpdate = true;
-  const pending = queue.pending;
-  if (pending === null) {
-    // 首个更新自指，创建循环链表。
-    update.next = update;
-  } else {
-    update.next = pending.next;
-    pending.next = update;
-  }
-  queue.pending = update;
-}</pre></figure>
-        <figure class="source"><figcaption><span>连续原码 · Effect 以 O(1) 追加到循环链</span><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">ReactFiberHooks.js</a></figcaption><pre>  const lastEffect = componentUpdateQueue.lastEffect;
-  if (lastEffect === null) {
-    componentUpdateQueue.lastEffect = effect.next = effect;
-  } else {
-    const firstEffect = lastEffect.next;
-    lastEffect.next = effect;
-    effect.next = firstEffect;
-    componentUpdateQueue.lastEffect = effect;
-  }
-  return effect;</pre></figure>
-        <figure class="source"><figcaption><span>连续原码 · deps 相等不加 HookHasEffect，变化则写 flags</span><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">ReactFiberHooks.js</a></figcaption><pre>  // 初次挂载因渲染阶段更新或 Strict Mode 进入重渲染时，currentHook 可能为 null。
-  if (currentHook !== null) {
-    if (nextDeps !== null) {
-      const prevEffect: Effect = currentHook.memoizedState;
-      const prevDeps = prevEffect.deps;
-      // $FlowFixMe[incompatible-type] (@poteto)
-      if (areHookInputsEqual(nextDeps, prevDeps)) {
-        hook.memoizedState = pushSimpleEffect(
-          hookFlags,
-          inst,
-          create,
-          nextDeps,
-        );
-        return;
-      }
-    }
-  }
-
-  currentlyRenderingFiber.flags |= fiberFlags;
-
-  hook.memoizedState = pushSimpleEffect(
-    HookHasEffect | hookFlags,
-    inst,
-    create,
-    nextDeps,
-  );
-}</pre></figure>
-        <figure class="source"><figcaption><span>连续原码 · commit cleanup 先清槽再安全调用 destroy</span><a href="../../react/packages/react-reconciler/src/ReactFiberCommitEffects.js">ReactFiberCommitEffects.js</a></figcaption><pre>          // 卸载 effect。
-          const inst = effect.inst;
-          const destroy = inst.destroy;
-          if (destroy !== undefined) {
-            inst.destroy = undefined;
-            if (enableSchedulingProfiler) {
-              if ((flags &amp; HookPassive) !== NoHookEffect) {
-                markComponentPassiveEffectUnmountStarted(finishedWork);
-              } else if ((flags &amp; HookLayout) !== NoHookEffect) {
-                markComponentLayoutEffectUnmountStarted(finishedWork);
-              }
-            }
-
-            if (__DEV__) {
-              if ((flags &amp; HookInsertion) !== NoHookEffect) {
-                setIsRunningInsertionEffect(true);
-              }
-            }
-            safelyCallDestroy(finishedWork, nearestMountedAncestor, destroy);
-            if (__DEV__) {</pre></figure>
-      </section>
-
       <section id="objects"><h2>先分清四条“链”</h2>
         <div class="table-wrap"><table><thead><tr><th>容器</th><th>挂在哪里</th><th>节点</th><th>职责</th><th>是否跨 current/WIP 共享</th></tr></thead><tbody>
           <tr><td>Hook 位置链</td><td><code>FunctionComponent Fiber.memoizedState</code></td><td><code>Hook.next</code></td><td>第 1、2、3…次位置型 Hook 调用的状态槽</td><td>节点会克隆；字段以 current 为基线</td></tr>
@@ -198,6 +51,119 @@
         <p><span class="pill">TEACHING TRACE</span> 组件 <code>Counter</code> 依次调用 <code>useState → useRef → useEffect</code> 时，Fiber 上是 <code>Hook#1(state) → Hook#2(ref) → Hook#3(effect)</code>。源码没有靠变量名 <code>count</code> 寻址；第几次调用就是地址。</p>
       </section>
 
+      <section id="context"><h2>Context：props 没变，memo 消费者为什么还会更新？</h2>
+<p>先固定输入：Provider 先提供对象 A，再提供对象 B；memo 包裹的 Consumer 没有变化的 props，也没有内部 state 更新。我们要追的是“谁记住 Consumer 读过什么”，而不是把 Context 当成另一条 useState 队列。</p>
+<h3>1. 公开入口到当前值：同一 Context 身份，嵌套 Provider 值栈</h3>
+<p><a href="../../react/packages/react/src/ReactContext.js">createContext</a> 建立 Context 对象、默认值槽和 Provider 自引用；它不广播更新。公开 useContext 转发到当前 dispatcher；本快照 mount/update/rerender dispatcher 的 useContext 都指向 <code>readContext</code>（DEV 包装还校验调用顺序）。</p>
+<figure class="source"><figcaption><span>连续原码 · useContext 公开门面</span><a href="../../react/packages/react/src/ReactHooks.js">ReactHooks.js</a></figcaption><pre>export function useContext&lt;T&gt;(Context: ReactContext&lt;T&gt;): T {
+  const dispatcher = resolveDispatcher();
+  if (__DEV__) {
+    if (Context.$$typeof === REACT_CONSUMER_TYPE) {
+      console.error(
+        'Calling useContext(Context.Consumer) is not supported and will cause bugs. ' +
+          'Did you mean to call useContext(Context) instead?',
+      );
+    }
+  }
+  return dispatcher.useContext(Context);
+}</pre></figure>
+<p><a href="../../react/packages/react-reconciler/src/ReactFiberBeginWork.js">updateContextProvider</a> 调用 pushProvider 后协调 children。DOM renderer 使用主槽；push 保存外层旧值，再让子树读到当前 Provider 的 value。它不是永久写入全局默认值，也没有在此处无条件遍历所有消费者。</p><figure class="source"><figcaption><span>连续原码 · pushProvider 主 renderer 值栈</span><a href="../../react/packages/react-reconciler/src/ReactFiberNewContext.js">ReactFiberNewContext.js</a></figcaption><pre>    push(valueCursor, context._currentValue, providerFiber);
+
+    context._currentValue = nextValue;</pre></figure>
+<h3>2. 读取即登记：Fiber.dependencies，不是普通 Hook 位置槽</h3>
+<p><code>prepareToReadContext</code> 先清空 WIP 的依赖头；<code>readContext → readContextForConsumer</code> 为本轮每次读取创建依赖节点。这个记录保存 Context 身份与读到的引用，并追加到 <code>dependencies.firstContext</code>；它不调用 mountWorkInProgressHook，所以只用 useContext 时 Fiber.memoizedState 仍可为空。</p><figure class="source"><figcaption><span>连续原码 · readContextForConsumer 读取与快照</span><a href="../../react/packages/react-reconciler/src/ReactFiberNewContext.js">ReactFiberNewContext.js</a></figcaption><pre>  const value = isPrimaryRenderer
+    ? context._currentValue
+    : context._currentValue2;
+
+  const contextItem = {
+    context: context as any as ReactContext&lt;mixed&gt;,
+    memoizedValue: value,
+    next: null,
+  };</pre></figure>
+<figure class="source"><figcaption><span>连续原码 · 首依赖保存到消费者并标记传播需求</span><a href="../../react/packages/react-reconciler/src/ReactFiberNewContext.js">ReactFiberNewContext.js</a></figcaption><pre>    lastContextDependency = contextItem;
+    consumer.dependencies = __DEV__
+      ? // $FlowFixMe[incompatible-type]
+        {
+          lanes: NoLanes,
+          firstContext: contextItem,
+          _debugThenableState: null,
+        }
+      : // $FlowFixMe[incompatible-type]
+        {
+          lanes: NoLanes,
+          firstContext: contextItem,
+        };
+    consumer.flags |= NeedsPropagation;</pre></figure>
+<p>后续读取通过 <code>lastContextDependency.next = contextItem</code> 追加；重渲染按实际读取重建。没有正在 render 的消费者时会抛错；离开 render/yield 时 <code>resetContextDependencies</code> 清理模块游标，不能在普通事件回调里直接读 useContext。</p>
+<h3>3. Provider 变化如何越过没有新 props 的中间层？</h3>
+<p>这是惰性传播：<code>bailoutOnAlreadyFinishedWork</code> 在跳过整个子树前调用 <code>lazilyPropagateParentContextChanges</code>，后者沿祖先 Provider 比较上轮 memoizedProps.value 与本轮 pendingProps.value。<code>is</code> 来自 shared/objectIs，比较的是 Object.is 语义。</p><figure class="source"><figcaption><span>连续原码 · propagateParentContextChanges 收集变化的 Context</span><a href="../../react/packages/react-reconciler/src/ReactFiberNewContext.js">ReactFiberNewContext.js</a></figcaption><pre>        const newValue = newProps.value;
+
+        const oldValue = oldProps.value;
+
+        if (!is(newValue, oldValue)) {
+          if (contexts !== null) {
+            contexts.push(context);
+          } else {
+            contexts = [context];
+          }
+        }</pre></figure>
+<p>变化列表交给 <code>propagateContextChanges</code>：扫描后代的 firstContext 链，按 Context 对象身份匹配，给消费者及 alternate 标记本轮 renderLanes，再沿父路径写 childLanes。这样中间层自己不必重算，也不能把仍需更新的消费者一起跳过。懒传播命中后可把其 children 留给 render，deferred tree 则有强制全树路径；不要把它概括成 Provider 每次立即全树广播。</p><figure class="source"><figcaption><span>连续原码 · 命中依赖后的消费者与父路径标记</span><a href="../../react/packages/react-reconciler/src/ReactFiberNewContext.js">ReactFiberNewContext.js</a></figcaption><pre>            consumer.lanes = mergeLanes(consumer.lanes, renderLanes);
+            const alternate = consumer.alternate;
+            if (alternate !== null) {
+              alternate.lanes = mergeLanes(alternate.lanes, renderLanes);
+            }
+            scheduleContextWorkOnParentPath(
+              consumer.return,
+              renderLanes,
+              workInProgress,
+            );</pre></figure>
+<figure class="source"><figcaption><span>连续原码 · scheduleContextWorkOnParentPath 同步 childLanes</span><a href="../../react/packages/react-reconciler/src/ReactFiberNewContext.js">ReactFiberNewContext.js</a></figcaption><pre>    if (!isSubsetOfLanes(node.childLanes, renderLanes)) {
+      node.childLanes = mergeLanes(node.childLanes, renderLanes);
+      if (alternate !== null) {
+        alternate.childLanes = mergeLanes(alternate.childLanes, renderLanes);
+      }</pre></figure>
+<h3>4. memo 比较 props 通过，还要过 Context 门禁</h3>
+<p><code>updateSimpleMemoComponent</code> 仅在 <code>!checkScheduledUpdateOrContext(current, renderLanes)</code> 时允许提前返回。此门禁先看消费者 lanes，若没有本轮 lane 仍检查 Context 快照。两条检查互补，不要求每一次更新都先执行同一条全树传播路径。</p><figure class="source"><figcaption><span>连续原码 · memo/early bailout 的更新与 Context 门禁</span><a href="../../react/packages/react-reconciler/src/ReactFiberBeginWork.js">ReactFiberBeginWork.js</a></figcaption><pre>function checkScheduledUpdateOrContext(
+  current: Fiber,
+  renderLanes: Lanes,
+): boolean {
+  // 提前 bailout 前必须检查 pending 更新或 context 变化。
+  const updateLanes = current.lanes;
+  if (includesSomeLane(updateLanes, renderLanes)) {
+    return true;
+  }
+  // 没有 pending 更新，但 context 惰性传播，bailout 前仍需检查依赖是否变化。
+  const dependencies = current.dependencies;
+  if (dependencies !== null &amp;&amp; checkIfContextChanged(dependencies)) {
+    return true;
+  }
+  return false;
+}</pre></figure>
+<figure class="source"><figcaption><span>连续原码 · checkIfContextChanged 值比较</span><a href="../../react/packages/react-reconciler/src/ReactFiberNewContext.js">ReactFiberNewContext.js</a></figcaption><pre>    const newValue = isPrimaryRenderer
+      ? context._currentValue
+      : context._currentValue2;
+    const oldValue = dependency.memoizedValue;
+    if (!is(newValue, oldValue)) {
+      return true;
+    }
+    dependency = dependency.next;</pre></figure>
+<div class="table-wrap"><table><thead><tr><th>输入</th><th>依赖状态</th><th>本例结果</th></tr></thead><tbody>
+<tr><td>首次 value=A</td><td>firstContext.memoizedValue=A</td><td>Consumer 执行，显示 A.label</td></tr>
+<tr><td>再次 value=A（同一引用）</td><td>Object.is(A,A)=true</td><td>无其他更新且 props 稳定时，memo 可跳过 Consumer</td></tr>
+<tr><td>value=B，B !== A，字段可以相同</td><td>Object.is(B,A)=false</td><td>Context 阻止 bailout，Consumer 再执行，依赖更新为 B</td></tr>
+</tbody></table></div>
+<p>因此“同值不传播”不等于组件永远不渲染：props、state、父层组织和其他 Context 仍可使它执行。也不要原地改 A.label 来测试传播；引用没变不会产生 Context 变化通知，其他更新却可能让它偶然读到被改的字段。</p>
+<h3>5. 完成、异常与测试证据</h3>
+<p>正常完成在 <a href="../../react/packages/react-reconciler/src/ReactFiberCompleteWork.js">completeWork 的 ContextProvider 分支</a> popProvider；抛出/挂起的 unwind 与中断退出也恢复值栈，不能把 B 泄漏到 Provider 外的后续兄弟。以下是 unwindWork 的真实出口：</p><figure class="source"><figcaption><span>连续原码 · 异常 unwind 恢复 Provider 值栈</span><a href="../../react/packages/react-reconciler/src/ReactFiberUnwindWork.js">ReactFiberUnwindWork.js</a></figcaption><pre>    case ContextProvider:
+      const context: ReactContext&lt;any&gt; = workInProgress.type;
+      popProvider(context, workInProgress);
+      return null;</pre></figure>
+<p><a href="../../react/packages/react-reconciler/src/__tests__/ReactNewContext-test.js">ReactNewContext-test.js</a> 的 sharedContextTests 同时运行 Consumer、普通 useContext、forwardRef、memo useContext 与 class 读取入口。<code>propagates through shouldComponentUpdate false</code> 用两层拒绝 props 更新的中间组件，Provider 2→3 后仍断言消费者输出 3；同文件 <code>consumers bail out if context value is the same</code> 再传 2，日志仅剩 App/Provider，消费者不再执行。</p><figure class="source"><figcaption><span>连续原码 · 测试更新穿过 props bailout 的日志与输出</span><a href="../../react/packages/react-reconciler/src/__tests__/ReactNewContext-test.js">ReactNewContext-test.js</a></figcaption><pre>        ReactNoop.render(&lt;App value={3} /&gt;);
+        await waitForAll(['App', 'Provider', 'Consumer render prop']);
+        expect(ReactNoop).toMatchRenderedOutput(&lt;span prop="Result: 3" /&gt;);</pre></figure>
+<p>这是现有测试体证据，不代表本轮跑了整组 Jest。对象 A/B 与 memo 的可执行对照见<a href="../../react/fixtures/source-learning-demo/README.md">源码学习 Demo</a>，与无 act 的计数/列表主例分开验证。</p>
+<p><strong>沿同一个输入复述：</strong>value A→B → Provider push B → bailout 前收集 Context 变化 → 依赖匹配给消费者 lanes/祖先 childLanes → memo 门禁比较 B 与旧 A → readContext 返回 B 并重建依赖 → 后续协调/commit 更新宿主 → complete 或 unwind 恢复外层值。本节只覆盖普通客户端 Context，未展开 Cache/HostTransition Context、dehydrated Suspense 与多 renderer 冲突分支。</p>
+</section>
       <section id="dispatcher"><h2>dispatcher：同一个 useState，三种阶段实现</h2>
         <p><a href="03-react.html#hooks">react 包页面</a>已经说明公开 API 从 <code>ReactSharedInternals.H</code> 取 dispatcher。本页从 reconciler 接手：<code>renderWithHooks</code> 先清空 WIP 的旧链与组件级更新队列，再根据 current 形状安装 mount/update dispatcher。</p>
         <figure class="source"><figcaption><span>删节源码 · renderWithHooks 的 dispatcher 选择（省略入口准备注释）</span><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">打开完整函数</a></figcaption><pre>workInProgress.memoizedState = null;
@@ -301,7 +267,7 @@ useState: rerenderState,</pre></figure>
       </section>
 
       <section id="mount-state"><h2>mount：一次 useState 建立 Hook、共享 queue 与稳定 dispatch</h2>
-        <figure class="source"><figcaption><span>删节源码 · mountStateImpl / mountState（Flow 标注与注释简化）</span><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">打开完整文件</a></figcaption><pre><span class="kw">function</span> <span class="fn">mountStateImpl</span>&lt;S&gt;(initialState: (() =&gt; S) | S): Hook {
+        <figure class="source"><figcaption><span>教程代码 · 按源码简化的 mountStateImpl / mountState（Flow 标注与注释简化）</span><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">打开完整文件</a></figcaption><pre><span class="kw">function</span> <span class="fn">mountStateImpl</span>&lt;S&gt;(initialState: (() =&gt; S) | S): Hook {
   const hook = mountWorkInProgressHook();
   if (typeof initialState === <span class="str">'function'</span>) {
     const initialStateInitializer = initialState;
@@ -363,7 +329,7 @@ useState: rerenderState,</pre></figure>
     if (lane !== NoLane) {
       markUpdateLaneFromFiberToRoot(fiber, update, lane);
     }</pre></figure>
-        <figure class="source"><figcaption><span>删节源码 · dispatchSetStateInternal 主路径（DEV dispatcher 保护简化）</span><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">打开完整函数</a></figcaption><pre>const update: Update&lt;S, A&gt; = {
+        <figure class="source"><figcaption><span>教程代码 · 按源码简化的 dispatchSetStateInternal 主路径（DEV dispatcher 保护简化）</span><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">打开完整函数</a></figcaption><pre>const update: Update&lt;S, A&gt; = {
   lane,
   revertLane: NoLane,
   gesture: null,
@@ -633,7 +599,7 @@ return children;</pre></figure>
           <tr><td>失败边界</td><td>若每次无条件 setState，另一个真实测试断言 Too many re-renders</td><td>RE_RENDER_LIMIT = 25 防止无限循环</td></tr>
         </tbody></table></div>
         <figure class="source"><figcaption><span>连续测试原码 · render-phase 更新重复到状态收敛</span><a href="../../react/packages/react-reconciler/src/__tests__/ReactHooksWithNoopRenderer-test.js">ReactHooksWithNoopRenderer-test.js</a></figcaption><pre>    it('keeps restarting until there are no more new updates', async () =&gt; {
-      /** 维护计数状态，并记录渲染或 Effect。 */
+      /** count小于3时render内加1，逐pass记录count；row形参不参与逻辑。 */
       function Counter({row: newRow}) {
         const [count, setCount] = useState(0);
         if (count &lt; 3) {
@@ -651,7 +617,7 @@ return children;</pre></figure>
 
       <section id="effects"><h2>Effect：render 建环，commit 才 create / destroy</h2>
         <p>Effect Hook 节点的 <code>memoizedState</code> 指向 Effect；所有 Effect 还被 O(1) 追加到 <code>FunctionComponentUpdateQueue.lastEffect</code> 环。mount 总是带 <code>HookHasEffect</code>；update 的 deps 按 <code>Object.is</code> 逐项相等时仍登记 Effect 节点，但不带 HookHasEffect，因此普通更新 commit 不执行该节点的 create/cleanup；Offscreen 重连与 DEV Strict Effects 可另走挂载路径。</p>
-        <figure class="source"><figcaption><span>删节源码 · pushEffectImpl（Flow 标注与注释简化）</span><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">打开完整文件</a></figcaption><pre><span class="kw">function</span> <span class="fn">pushEffectImpl</span>(effect: Effect): Effect {
+        <figure class="source"><figcaption><span>教程代码 · 按源码简化的 pushEffectImpl（Flow 标注与注释简化）</span><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">打开完整文件</a></figcaption><pre><span class="kw">function</span> <span class="fn">pushEffectImpl</span>(effect: Effect): Effect {
   let componentUpdateQueue = currentlyRenderingFiber.updateQueue;
   if (componentUpdateQueue === null) {
     componentUpdateQueue = createFunctionComponentUpdateQueue();
@@ -852,6 +818,153 @@ commit:
         <li>组件删除时，child deletion 怎样最终触发 EffectInstance.destroy？</li>
       </ul></section>
 
+      <section id="exact-anchors"><h2>核验附录</h2><details><summary>展开逐字连续原码（复习与版本核验）</summary>
+        <p>正文已按对象与动作解释这些分支；需要逐字核对时，再展开这里的连续片段。</p>
+        <figure class="source"><figcaption><span>连续原码 · renderWithHooks 选择 mount / update dispatcher</span><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">ReactFiberHooks.js</a></figcaption><pre>  // 只有至少使用一个有状态 Hook 时，memoizedState 才能区分挂载与更新。
+  // context 等无状态 Hook 不进入 memoizedState，因此挂载和更新时它都可能为 null。
+  if (__DEV__) {
+    if (current !== null &amp;&amp; current.memoizedState !== null) {
+      ReactSharedInternals.H = HooksDispatcherOnUpdateInDEV;
+    } else if (hookTypesDev !== null) {
+      // 处理“组件正在更新但未使用有状态 Hook”的边界：行为与生产环境的 Mount dispatcher 一致，
+      // 同时额外执行 DEV Hook 顺序验证。
+      ReactSharedInternals.H = HooksDispatcherOnMountWithHookTypesInDEV;
+    } else {
+      ReactSharedInternals.H = HooksDispatcherOnMountInDEV;
+    }
+  } else {
+    ReactSharedInternals.H =
+      current === null || current.memoizedState === null
+        ? HooksDispatcherOnMount
+        : HooksDispatcherOnUpdate;
+  }</pre></figure>
+        <figure class="source"><figcaption><span>连续原码 · mount Hook 追加到 Fiber.memoizedState 链</span><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">ReactFiberHooks.js</a></figcaption><pre>  if (workInProgressHook === null) {
+    // 首个 Hook 同时成为 Fiber.memoizedState 与 workInProgressHook。
+    currentlyRenderingFiber.memoizedState = workInProgressHook = hook;
+  } else {
+    // 追加到 Hook 链表尾部。
+    workInProgressHook = workInProgressHook.next = hook;
+  }
+  return workInProgressHook;</pre></figure>
+        <figure class="source"><figcaption><span>连续原码 · mountState 初始化 state 与共享 UpdateQueue</span><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">ReactFiberHooks.js</a></figcaption><pre>  hook.memoizedState = hook.baseState = initialState;
+  const queue: UpdateQueue&lt;S, BasicStateAction&lt;S&gt;&gt; = {
+    pending: null,
+    lanes: NoLanes,
+    dispatch: null,
+    lastRenderedReducer: basicStateReducer,
+    lastRenderedState: initialState as any,
+  };
+  hook.queue = queue;
+  return hook;</pre></figure>
+        <figure class="source"><figcaption><span>连续原码 · dispatchSetState eager 相等快路径</span><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">ReactFiberHooks.js</a></figcaption><pre>          const currentState: S = queue.lastRenderedState as any;
+          const eagerState = lastRenderedReducer(currentState, action);
+          // 保存 eager 结果；updateReducerImpl 处理到该更新时直接复用，不再调用 reducer。
+          update.hasEagerState = true;
+          update.eagerState = eagerState;
+          if (is(eagerState, currentState)) {
+            // 状态相等时不安排这次渲染，但仍保留更新。若之后有更高优先级工作插队，
+            // 该更新可能进入 baseQueue，后续重放必须保留它在原序列中的位置。
+            // TODO：此情况下是否仍需纠缠 transition？
+            enqueueConcurrentHookUpdateAndEagerlyBailout(fiber, queue, update);
+            return false;
+          }</pre></figure>
+        <figure class="source"><figcaption><span>连续原码 · updateReducerImpl 克隆被 Lane 跳过的 Update</span><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">ReactFiberHooks.js</a></figcaption><pre>      if (shouldSkipUpdate) {
+        // 优先级不足，跳过此更新。若它是首个被跳过项，之前所得状态成为新的 baseState。
+        const clone: Update&lt;S, A&gt; = {
+          lane: updateLane,
+          revertLane: update.revertLane,
+          gesture: update.gesture,
+          action: update.action,
+          hasEagerState: update.hasEagerState,
+          eagerState: update.eagerState,
+          next: null as any,
+        };
+        if (newBaseQueueLast === null) {
+          newBaseQueueFirst = newBaseQueueLast = clone;
+          newBaseState = newState;
+        } else {
+          newBaseQueueLast = newBaseQueueLast.next = clone;
+        }
+        // 记录队列剩余优先级。
+        // TODO：无需累积；可从原 lanes 中移除 renderLanes。
+        currentlyRenderingFiber.lanes = mergeLanes(
+          currentlyRenderingFiber.lanes,
+          updateLane,
+        );
+        markSkippedUpdateLanes(updateLane);</pre></figure>
+        <figure class="source"><figcaption><span>连续原码 · render-phase Update 环与重渲染标志</span><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">ReactFiberHooks.js</a></figcaption><pre>  // 渲染阶段更新暂存在 queue 对应的循环链表；当前 pass 结束后从头开始，
+  // 在 work-in-progress Hook 状态之上应用它们。
+  didScheduleRenderPhaseUpdateDuringThisPass =
+    didScheduleRenderPhaseUpdate = true;
+  const pending = queue.pending;
+  if (pending === null) {
+    // 首个更新自指，创建循环链表。
+    update.next = update;
+  } else {
+    update.next = pending.next;
+    pending.next = update;
+  }
+  queue.pending = update;
+}</pre></figure>
+        <figure class="source"><figcaption><span>连续原码 · Effect 以 O(1) 追加到循环链</span><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">ReactFiberHooks.js</a></figcaption><pre>  const lastEffect = componentUpdateQueue.lastEffect;
+  if (lastEffect === null) {
+    componentUpdateQueue.lastEffect = effect.next = effect;
+  } else {
+    const firstEffect = lastEffect.next;
+    lastEffect.next = effect;
+    effect.next = firstEffect;
+    componentUpdateQueue.lastEffect = effect;
+  }
+  return effect;</pre></figure>
+        <figure class="source"><figcaption><span>连续原码 · deps 相等不加 HookHasEffect，变化则写 flags</span><a href="../../react/packages/react-reconciler/src/ReactFiberHooks.js">ReactFiberHooks.js</a></figcaption><pre>  // 初次挂载因渲染阶段更新或 Strict Mode 进入重渲染时，currentHook 可能为 null。
+  if (currentHook !== null) {
+    if (nextDeps !== null) {
+      const prevEffect: Effect = currentHook.memoizedState;
+      const prevDeps = prevEffect.deps;
+      // $FlowFixMe[incompatible-type] (@poteto)
+      if (areHookInputsEqual(nextDeps, prevDeps)) {
+        hook.memoizedState = pushSimpleEffect(
+          hookFlags,
+          inst,
+          create,
+          nextDeps,
+        );
+        return;
+      }
+    }
+  }
+
+  currentlyRenderingFiber.flags |= fiberFlags;
+
+  hook.memoizedState = pushSimpleEffect(
+    HookHasEffect | hookFlags,
+    inst,
+    create,
+    nextDeps,
+  );
+}</pre></figure>
+        <figure class="source"><figcaption><span>连续原码 · commit cleanup 先清槽再安全调用 destroy</span><a href="../../react/packages/react-reconciler/src/ReactFiberCommitEffects.js">ReactFiberCommitEffects.js</a></figcaption><pre>          // 卸载 effect。
+          const inst = effect.inst;
+          const destroy = inst.destroy;
+          if (destroy !== undefined) {
+            inst.destroy = undefined;
+            if (enableSchedulingProfiler) {
+              if ((flags &amp; HookPassive) !== NoHookEffect) {
+                markComponentPassiveEffectUnmountStarted(finishedWork);
+              } else if ((flags &amp; HookLayout) !== NoHookEffect) {
+                markComponentLayoutEffectUnmountStarted(finishedWork);
+              }
+            }
+
+            if (__DEV__) {
+              if ((flags &amp; HookInsertion) !== NoHookEffect) {
+                setIsRunningInsertionEffect(true);
+              }
+            }
+            safelyCallDestroy(finishedWork, nearestMountedAncestor, destroy);
+            if (__DEV__) {</pre></figure>
+      </details></section>
+
       <section id="continue"><h2>回到主线阅读</h2>
         <div class="grid three">
           <article class="card"><span class="number">PUBLIC FACADE</span><h3><a href="03-react.html#hooks">03 · React Hooks 门面</a></h3><p>回看公开 <code>useState</code> 怎样通过 SharedInternals.H 跨 renderer 转发。</p></article>
@@ -865,11 +978,11 @@ commit:
     </main>
 
     <aside class="toc" aria-label="本页目录"><strong>Hooks 状态机</strong>
-      <a href="#contract">证据边界</a><a href="#exact-anchors">连续原码</a><a href="#objects">四条链</a><a href="#dispatcher">dispatcher</a>
+      <a href="#contract">证据边界</a><a href="#objects">四条链</a><a href="#context">Context 与 memo</a><a href="#dispatcher">dispatcher</a>
       <a href="#position">位置不变量</a><a href="#mount-state">mount state</a><a href="#dispatch">dispatch / eager</a>
       <a href="#base-queue">baseQueue</a><a href="#lane-trace">Lane 手推 + GWT</a><a href="#render-phase">render-phase</a>
       <a href="#effects">Effect 环</a><a href="#effect-test">cleanup GWT</a><a href="#full-flow">完整链</a>
-      <a href="#boundaries">边界</a><a href="#pseudocode">伪代码</a><a href="#evidence">证据表</a><a href="#continue">继续阅读</a>
+      <a href="#boundaries">边界</a><a href="#pseudocode">伪代码</a><a href="#evidence">证据表</a><a href="#exact-anchors">核验附录</a><a href="#continue">继续阅读</a>
     </aside>
   </div>
 </body>

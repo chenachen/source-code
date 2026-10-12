@@ -1,0 +1,14 @@
+UTC: 2026-10-12T01:35:08Z
+Node: v24.19.0
+npm: npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+11.9.0
+Repository baseline: 87d515d9dfc8a31b9496b36556dbd2409a6c781d
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> react-source-learning-demo@1.0.0 test
+> node run.cjs
+
+PASS guide #demo: initial count 0; A,B,C -> C,A,B; count 1; button and A/B/C DOM identities retained; root/container cleanup
+PASS Context: frozen A initial renders=1; same A renders=1; equal-field new B renders=2; DOM stays A
+PASS provenance: 197 local source modules; no npm React/ReactDOM/reconciler/scheduler
+Configuration: DEV=true EXPERIMENTAL=false PROFILE=false; default ReactFeatureFlags; DOM host config; real Scheduler; jsdom (not a browser)

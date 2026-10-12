@@ -21,8 +21,7 @@
   <div class="layout"><main>
     <p class="eyebrow">10 · reconciler deep dive / object model</p>
     <h1>Fiber 不是虚拟 DOM 节点，而是一份可恢复的工作记录</h1>
-    <p class="lede">同一个逻辑组件通常有 current 与 work-in-progress 两枚 Fiber。current 是已提交事实，WIP 是可暂停、重启或丢弃的候选；
-      <code>alternate</code> 把两者配对，<code>root.current</code> 则在 commit 中决定哪一面是新的事实。</p>
+    <p class="lede">页面上的 Counter 现在显示 0。React 准备把它改成 1 时，用另一枚 Fiber 计算候选结果；旧的一面叫 current，正在计算的一面叫 work-in-progress（WIP），<code>alternate</code> 把它们配对。计算若被放弃，页面仍显示 0；mutation 完成后，<code>root.current</code> 再指向新的一面。下次更新时，两枚 Fiber 可以交换角色继续使用；下方对象图沿用这组 0→1 输入。</p>
     <div class="meta"><span class="pill">react-reconciler 0.34.0</span><span class="pill">React 19.3.0 源码快照</span>
       <span class="pill">双缓冲</span><span class="pill">单链树</span><span class="pill">连续原码 + 真实测试</span></div>
 

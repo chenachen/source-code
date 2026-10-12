@@ -362,9 +362,9 @@
   <a class="skip-link" href="#content">跳到正文</a>
   <header class="hero">
     <p class="eyebrow">End-to-end companion · source evidence</p>
-    <h1>micro-app：从 start 到清理</h1>
+    <h1>micro-app 案例附录：从 start 到清理</h1>
     <p class="lead">
-      配套“源码全景”的端到端附录。围绕一个普通 <code>&lt;micro-app&gt;</code> 首次渲染，串起资源屏障、
+      依赖“源码全景”规则说明的 catalog 案例附录，不是第二份独立完整源码指南。围绕一个普通 <code>&lt;micro-app&gt;</code> 首次渲染，串起资源屏障、
       CSS/JS 处理、默认 With 沙箱、动态 DOM、挂载、双向通信与三类卸载分叉。
     </p>
     <div class="meta" aria-label="证据基线">
@@ -392,7 +392,7 @@
         <li><a href="#communication">通信</a></li>
         <li><a href="#unmount">卸载、复用与清理</a></li>
         <li><a href="#chains">四条真实调用链</a></li>
-        <li><a href="#demo">同一 Demo 完整用例</a></li>
+        <li><a href="#demo">catalog 教学应用示例</a></li>
         <li><a href="#tests">测试证据索引</a></li>
         <li><a href="#tradeoffs">权衡、失败路径与边界</a></li>
         <li><a href="#reading">继续阅读索引</a></li>
@@ -445,7 +445,7 @@
         <p>
           主线只分析普通 <code>&lt;micro-app name url&gt;</code> 首次渲染，再扩展动态资源、通信和卸载。
           prefetch/prerender 只说明如何复用 <code>CreateApp/sourceCenter</code>；router 只说明 mount/unmount
-          状态交接；IframeSandbox 只说明共同接口、独立 realm、初始化与销毁。命令式 API、五种路由、
+          状态交接；IframeSandbox 只说明共同接口、独立 realm（拥有自己的全局对象和内建原型）、初始化与销毁。命令式 API、五种路由、
           request/effect 与嵌套应用的完整机制见<a href="./micro-app-src-guide.html">源码全景主稿</a>。
         </p>
       </section>
@@ -575,13 +575,14 @@ export default microApp</code></pre>
         <p>
           <code>globalEnv</code> 保存 <code>Node.prototype.appendChild</code>、<code>Document.prototype.createElement</code>、
           <code>window.setTimeout</code>、<code>EventTarget.prototype.addEventListener</code> 等原始引用。
-          后续全局补丁必须能绕回原生实现并在最后一个沙箱停止时恢复。注释明确警告同一基座不能反复执行
+          后续全局补丁必须能绕回原生实现；最后一个沙箱停止时只执行已实现的释放清单，未覆盖所有原型方法。注释明确警告同一基座不能反复执行
           <code>initGlobalEnv</code>，否则“原始方法”可能实际指向已补丁方法，形成递归。
         </p>
         <span class="source">src/libs/global_env.ts · initGlobalEnv；src/micro_app.ts · MicroApp.start 内注释</span>
       </section>
 
       <section id="element">
+        <p class="source">规则与源码依据：<a href="./micro-app-src-guide.html#entry">Custom Element 入口、复用分支与源码</a>；本节保留 catalog 场景下的推演。</p>
         <h2>4. Custom Element 与应用实例</h2>
         <h3>4.1 只观察 name 和 url</h3>
         <p>
@@ -660,7 +661,7 @@ export default microApp</code></pre>
         <h3>5.1 主链</h3>
         <div class="state-line" aria-label="资源加载调用链">
           <span>HTMLLoader.run</span><i>→</i><span>fetchSource</span><i>→</i><span>formatHTML</span><i>→</i>
-          <span>extractSourceDom</span><i>→</i><span>CSS lane</span><i>+</i><span>JS lane</span><i>→</i><span>CreateApp.onLoad × 2</span>
+          <span>extractSourceDom</span><i>→</i><span>样式准备链</span><i>+</i><span>脚本准备链</span><i>→</i><span>CreateApp.onLoad × 2</span>
         </div>
         <p>
           <code>CreateApp.loadSourceCode</code> 先设 <code>LOADING</code>，再调用单例
@@ -698,42 +699,29 @@ public onLoad ({ html }): void {
             <thead><tr><th>值</th><th>含义</th><th>触发者</th></tr></thead>
             <tbody>
               <tr><td>0</td><td>尚未收到任一资源通道的完成信号；HTML 或两条通道都可能仍在加载</td><td>构造初值</td></tr>
-              <tr><td>1</td><td>CSS lane 或 JS lane 任一完成；先后不固定</td><td>第一次 <code>app.onLoad</code></td></tr>
+              <tr><td>1</td><td>样式准备链 或 脚本准备链 任一完成；先后不固定</td><td>第一次 <code>app.onLoad</code></td></tr>
               <tr><td>2</td><td>两条通道都完成；保存模板并允许 mount</td><td>第二次 <code>app.onLoad</code></td></tr>
               <tr><td>-1</td><td>HTMLLoader 的 Promise 链进入 catch</td><td><code>onLoadError</code></td></tr>
             </tbody>
           </table>
         </div>
         <p>
-          CSS 无外链且没有 fiber style 任务时立即完成；有 fiber 任务则等待它们处理完。JS 无登记脚本时立即完成。CSS 有外链时所有请求 settle 后完成，
-          即便某个失败；JS lane 在首次阶段只等待没有 defer/async 标记的普通脚本预取，
+          CSS 无外链且没有 fiber style 任务时立即完成；有 fiber 任务则等待它们处理完。JS 无登记脚本时立即完成。CSS 有外链时所有请求 settle（成功或失败都结束等待）后完成，
+          即便某个失败；脚本准备链 在首次阶段只等待没有 defer/async 标记的普通脚本预取，
           defer、async、module 的执行及外链补取留到 mount。因此 level 2 表示挂载准备完成，脚本尚未执行。
         </p>
         <span class="source">src/source/index.ts · extractSourceDom；src/source/links.ts · fetchLinksFromHtml；src/source/scripts.ts · fetchScriptsFromHtml</span>
 
         <h3>5.4 sourceCenter 的共享边界</h3>
-        <p>
-          <code>sourceCenter</code> 内部是 link Map 与 script Map，key 是补全后的绝对地址。
-          外链代码全局共享；每项的 <code>appSpace[appName]</code> 再保存该 app 的属性、CSS 解析结果或
-          JS 解析函数。HTML/动态 DOM 提取的外链默认都进入这里，<code>global</code> 属性并不是共享开关。
-        </p>
-        <p>
-          HTML 本身不进入 sourceCenter；动态 inline script 也不进入。静态 inline script 用随机
-          <code>inline-*</code> key 登记，destroy 时只删除这些 inline 项。外链 CSS/JS 没有 destroy 删除调用。
-        </p>
-        <ul>
-          <li><strong>不缓存请求中 Promise：</strong>并发应用看到同 URL 项的 <code>code === ''</code> 时会各自 fetch；缓存只复用已经完成的文本。</li>
-          <li><strong>Set 会折叠重复静态地址：</strong>同一应用重复远程 src/href 只调度一次；远程 script 不按重复标签多次执行。静态 inline 每个标签都有独立 nonce；动态 script 每次插入都调度，但同名同地址仍复用第一次登记的执行属性。</li>
-          <li><strong>destroy 留下 appSpace：</strong>同名同 URL 新实例会沿用第一次登记的 attrs、async/defer/module/inline/pure 及 parsed metadata；当前实现用 <code>appSpace[name] ||= newData</code>，没有应用级失效。</li>
-        </ul>
-        <span class="source">src/source/source_center.ts · createSourceCenter/deleteInlineInfo；src/source/links.ts · extractLinkFromHtml；src/source/scripts.ts · extractScriptElement；src/create_app.ts · actionsForCompletelyDestroy</span>
+        <p>catalog 的 theme.css 首次插入无代码缓存，需要 fetch；后续同地址插入可复用已经取回的文本，但仍建立本次替代 style。bootstrap 静态地址由 Set 去重，动态 feature 每次插入仍会调度执行。destroy 只删本实例静态 inline 项，远程缓存及 appSpace（该应用在共享资源项中的专属记录）保留。</p>
+        <p>共享 Map、请求不去重和同名 appSpace 失效边界统一见<a href="./micro-app-src-guide.html#source">主稿：资源缓存与执行分派</a>，不从一次命中推广到所有请求。</p>
 
         <h3>5.5 加载失败的实际语义</h3>
         <ul>
           <li>HTMLLoader 链 reject：抓取拒绝、<code>processHtml</code> 抛错或同步资源抽取抛错都会进入 catch，写 <code>loadSourceLevel = -1</code>；实例尚未卸载时发 error，随后设 <code>LOAD_FAILED</code>，已卸载时只写 level。</li>
           <li>HTML 空字符串：发 error 并返回，但不调用 <code>onLoadError</code>；内部状态仍为 <code>LOADING</code>、level 仍为 0，子应用却先收到 detail=LOAD_FAILED 的 statechange。</li>
           <li>缺 head/body：同样出现“对外 LOAD_FAILED、内部 LOADING/0”的分裂。</li>
-          <li>静态 CSS 或由框架 <code>fetchSource</code> 管理的 JS reject：记录错误，但对应 lane/批次仍完成，应用可缺资源继续 mount；原生外链 module 例外见 6.3。</li>
+          <li>静态 CSS 或由框架 <code>fetchSource</code> 管理的 JS reject：记录错误，但对应准备链/批次仍完成，应用可缺资源继续 mount；原生外链 module 例外见 6.3。</li>
           <li><code>fetchSource</code> 直接调用 <code>res.text()</code>，没有显式检查 <code>res.ok</code>；HTTP 错误是否变成失败取决于自定义 fetch 或返回正文的后续解析。</li>
         </ul>
         <div class="callout bad">
@@ -744,6 +732,7 @@ public onLoad ({ html }): void {
       </section>
 
       <section id="assets">
+        <p class="source">规则与源码依据：<a href="./micro-app-src-guide.html#source">资源提取、脚本分派与缓存源码</a>；本节保留 catalog 场景下的推演。</p>
         <h2>6. HTML、CSS 与 JS 处理</h2>
         <h3>6.1 静态 DOM 的替换规则</h3>
         <div class="table-wrap">
@@ -811,6 +800,7 @@ public onLoad ({ html }): void {
       </section>
 
       <section id="css">
+        <p class="source">规则与源码依据：<a href="./micro-app-src-guide.html#algorithms">CSS 选择器与 URL 双门禁源码</a>；本节保留 catalog 场景下的推演。</p>
         <h2>7. CSSParser / scopedCSS：算法与手工推演</h2>
         <h3>7.1 目标与算法</h3>
         <p>
@@ -891,6 +881,7 @@ public onLoad ({ html }): void {
       </section>
 
       <section id="sandbox">
+        <p class="source">规则与源码依据：<a href="./micro-app-src-guide.html#sandbox">沙箱启动、引用计数与释放边界</a>；本节保留 catalog 场景下的推演。</p>
         <h2>8. 默认 With 沙箱与动态 DOM</h2>
         <h3>8.1 proxyWindow：隔离写入，兼容读取</h3>
         <p>
@@ -958,9 +949,9 @@ public onLoad ({ html }): void {
         <h3>8.5 全局补丁引用计数</h3>
         <p>
           每个沙箱从 inactive 变 active 时递增 <code>globalEnv.activeSandbox</code>；从 0 到 1 才补丁 DOM/history。
-          stop 时递减；从 1 到 0 才恢复原生方法。keep-alive 隐藏不调用 stop，计数不变。
+          stop 时递减；从 1 到 0 才执行释放清单。keep-alive 隐藏不调用 stop，计数不变。<code>Document.createComment</code>、<code>DocumentFragment.append/prepend</code>、<code>Element.insertAdjacentElement</code> 未恢复，计数为零不等于所有 API 都是原生。
         </p>
-        <div class="state-line"><span>0：原生 API</span><i>→ start</i><span>1：安装补丁</span><i>→ 更多 start/stop</i><span>N：共享补丁</span><i>→ 最后 stop</i><span>0：恢复原生</span></div>
+        <div class="state-line"><span>0：尚未安装</span><i>→ start</i><span>1：安装补丁</span><i>→ 更多 start/stop</i><span>N：共享补丁</span><i>→ 最后 stop</i><span>0：执行释放清单</span></div>
         <span class="source">src/sandbox/with/index.ts · start/stop；src/sandbox/iframe/index.ts · start/stop；src/source/patch.ts · patchElementAndDocument/releasePatchElementAndDocument</span>
 
         <h3>8.6 IframeSandbox 的共同接口</h3>
@@ -975,6 +966,7 @@ public onLoad ({ html }): void {
       </section>
 
       <section id="mount">
+        <p class="source">规则与源码依据：<a href="./micro-app-src-guide.html#flows">挂载/卸载决定性源码与状态交接</a>；本节保留 catalog 场景下的推演。</p>
         <h2>9. mount 与执行完成</h2>
         <div class="callout warn">
           <strong>挂载顺序：</strong><code>sandboxReady → nextAction → cloneContainer → sandbox.start → actionsBeforeExecScripts → execScripts</code>。
@@ -1023,7 +1015,7 @@ public onLoad ({ html }): void {
               <tr><td><code>keepAliveState</code></td><td>null → HIDDEN → SHOW；普通 unmount → null</td><td>隐藏时 appStates 通常仍是 MOUNTED</td></tr>
               <tr><td><code>umdMode</code></td><td>false → 识别成对 hooks → true</td><td>同一实例不回退；destroy 删除实例</td></tr>
               <tr><td><code>sandbox.active</code></td><td>false → start → true → stop → false</td><td>keep-alive 隐藏只 release effect，不 stop</td></tr>
-              <tr><td><code>globalEnv.activeSandbox</code></td><td>0 ↔ N</td><td>只在 0/1 边界安装或恢复全局补丁</td></tr>
+              <tr><td><code>globalEnv.activeSandbox</code></td><td>0 ↔ N</td><td>只在 0/1 边界安装或按清单释放补丁</td></tr>
             </tbody>
           </table>
         </div>
@@ -1058,39 +1050,8 @@ public onLoad ({ html }): void {
         <span class="source">src/interact/index.ts · createEventName/EventCenterForBaseApp/EventCenterForMicroApp/EventCenterForGlobal</span>
 
         <h3>10.2 微任务批处理与浅去重</h3>
-        <div class="code-title">通信控制流简写 · src/interact/event_center.ts · 已有通道的正常分发</div>
-        <pre><code>eventInfo.tempData = assign(
-  {},
-  eventInfo.tempData || eventInfo.data,
-  data,
-)
-enqueue(name, nextStep, dispatchDataEvent)
-
-// 下一微任务
-if (force || !isEqual(eventInfo.data, tempData)) {
-  eventInfo.data = tempData || eventInfo.data
-  callbacks.forEach(cb =&gt; cb(eventInfo.data))
-  dispatchDataEvent?.()
-}</code></pre>
-        <ol>
-          <li>数据必须是 plain object。首次创建通道直接写入 <code>data</code>，同步 <code>getData</code> 已可读取，并强制安排通知；已有通道的后续对象浅合并到 <code>tempData</code>，等待 process 才提交。</li>
-          <li>全局 queue 第一次入队时用 <code>defer</code> 安排一次 process；同 name 只占一个队列位置。</li>
-          <li>process 比较旧 data 与合并结果：<code>Object.keys</code> 的字符串键数量相同，且旧对象每个自有键对应的顶层值严格相等，才判定相同。</li>
-          <li>相同数据不调用 listener、<code>nextStep</code> 或 datachange；force 绕过浅比较。</li>
-          <li>监听器先执行，其次发 datachange，最后按 dispatch 顺序执行每个 <code>nextStep</code>；nextStep 接收监听器的真值返回结果数组，无真值结果时为 undefined。</li>
-          <li>autoTrigger 只回放非空缓存；当前待调度 queue 含该通道，且 tempData 与 data 浅比较不等时，跳过同步回放，等待该批通知。process 已换走的旧队列不参与此判断。</li>
-        </ol>
-        <p>
-          例如连续调用 <code>setData('catalog', { currency: 'CNY' })</code> 和
-          <code>setData('catalog', { locale: 'zh-CN' })</code>，本批 listener 只收到一次合并结果。
-          嵌套对象只比引用；合并是顶层覆盖，不做 deep merge。force 一旦为真会保持到本批处理完。
-        </p>
-        <p>
-          process 先交换队列和后续回调表，再清当前通道的 tempData/force，然后通知监听器。
-          同通道在监听器中再次 dispatch 会进入下一批。若 A/B 都在本批队列中，A 监听器更新尚未处理的 B，
-          新数据可能被本批 B 提前消费，下一批 B 又因 tempData 已清空而再次通知；队列拆分没有给每个通道复制待提交数据。
-        </p>
-        <span class="source">src/interact/event_center.ts · enqueue/process/isEqual/on/dispatch</span>
+        <p>catalog 连续 setData(currency) 与 setData(locale)，在已有通道的 tempData 中浅合并，下一次 process 只通知一次。bootstrap 中 dispatch({ ready: true }) 只排队；普通静态脚本返回后先 mounted，再由微任务通知基座。data 与 tempData、首次创建例外、浅比较和跨通道重入的完整规则与源码统一见<a href="./micro-app-src-guide.html#interact">主稿：通信批处理</a>。</p>
+        <div class="callout warn"><strong>同步抛错边界：</strong>同批队列为 A/B 时，若 A 的第一个 listener 抛错，A 的其余 listener、datachange、nextStep 和旧批次 B 都不再执行。process 已交换旧 queue/recordStep，没有自动重试旧批次；已提交的 A.data 也不回滚。可预期错误应由业务监听器自行捕获。详见<a href="./micro-app-src-guide.html#event-errors">主稿失败例与验证入口</a>。</div>
 
         <h3>10.3 datachange 与卸载语义</h3>
         <p>
@@ -1105,6 +1066,7 @@ if (force || !isEqual(eventInfo.data, tempData)) {
       </section>
 
       <section id="unmount">
+        <p class="source">规则与源码依据：<a href="./micro-app-src-guide.html#flows">UMD 异常出口、清理与缓存保留源码</a>；本节保留 catalog 场景下的推演。</p>
         <h2>11. 卸载、复用与精确清理</h2>
         <h3>11.1 普通卸载主链</h3>
         <div class="state-line">
@@ -1249,7 +1211,7 @@ if (force || !isEqual(eventInfo.data, tempData)) {
           <li><b>全局初始化：</b><code>initGlobalEnv → rejectMicroAppStyle → defineElement</code>。</li>
           <li><b>DOM 连接：</b><code>connectedCallback → defer → handleConnected → handleCreateApp</code>。</li>
           <li><b>实例与 I/O：</b><code>new CreateApp → appInstanceMap.set → loadSourceCode → HTMLLoader.run → fetchSource</code>。</li>
-          <li><b>资源屏障：</b><code>formatHTML → extractSourceDom → CSS lane + JS lane → onLoad × 2</code>。</li>
+          <li><b>资源屏障：</b><code>formatHTML → extractSourceDom → 样式准备链 + 脚本准备链 → onLoad × 2</code>。</li>
           <li><b>挂载：</b><code>MicroAppElement.mount → CreateApp.mount → sandboxReady → cloneContainer → sandbox.start</code>。</li>
           <li><b>执行：</b><code>actionsBeforeExecScripts → execScripts → runScript → bindScope</code>。</li>
           <li><b>完成：</b><code>handleMounted → actionsAfterMounted → MOUNTED → child hooks/events → base mounted</code>。</li>
@@ -1286,7 +1248,7 @@ if (force || !isEqual(eventInfo.data, tempData)) {
       </section>
 
       <section id="demo">
-        <h2>13. 同一 Demo：端到端流程图与完整用例</h2>
+        <h2>13. 同一 catalog：端到端流程图与教学应用示例</h2>
         <h3>13.1 端到端流程图</h3>
 
         <figure class="engineering-figure" id="catalog-first-mount">
@@ -1382,7 +1344,7 @@ if (force || !isEqual(eventInfo.data, tempData)) {
               <path class="diagram-edge micro" d="M 560 325 V 390 H 742 V 610 H 560 V 640" marker-end="url(#catalog-bootstrap-time-arrow-micro)"/>
               <path class="diagram-edge micro" d="M 335 580 H 372 V 680 H 410" marker-end="url(#catalog-bootstrap-time-arrow-micro)"/>
               <text class="diagram-edge-label" x="373" y="627">同步栈退出</text>
-              <g class="diagram-node good"><rect x="785" y="535" width="300" height="90" rx="9"/><text><tspan x="935.0" y="561.0" class="node-title">theme / feature 完成</tspan><tspan x="935.0" y="586.0">填充 style 或执行动态脚本</tspan><tspan x="935.0" y="611.0">转发原节点 load / error</tspan></text></g>
+              <g class="diagram-node good"><rect x="785" y="535" width="300" height="90" rx="9"/><text><tspan x="935.0" y="561.0" class="node-title">theme / feature 完成</tspan><tspan x="935.0" y="586.0">填充 style 或执行动态脚本</tspan><tspan x="935.0" y="611.0">通知依脚本分支，见正文</tspan></text></g>
               <path class="diagram-edge micro" d="M 850 470 V 495 H 880 V 535" marker-end="url(#catalog-bootstrap-time-arrow-micro)"/>
               <text class="diagram-edge-label" x="828" y="520">缓存微任务</text>
               <path class="diagram-edge io" d="M 1020 470 V 495 H 990 V 535" marker-end="url(#catalog-bootstrap-time-arrow-io)"/>
@@ -1407,22 +1369,30 @@ if (force || !isEqual(eventInfo.data, tempData)) {
         <h3>13.3 基座入口</h3>
         <p>基座 main.js 由支持 npm 导入的打包器处理。子应用资源按下列目录部署到可访问的 HTTP 服务，并将 <code>https://child.example/app/</code> 换成实际入口；该地址用于展示路径推导。</p>
         <div class="code-title">教程示例 · base/main.js</div>
-        <pre><code>import microApp from '@micro-zoe/micro-app'
+        <pre><code>import microApp, { getActiveApps } from '@micro-zoe/micro-app'
 
 const host = document.querySelector('#micro-host')
-
-microApp.addDataListener('catalog', (data) =&gt; {
+let mounted = false
+let unmounted = false
+let failure = ''
+let childData = {}
+const receive = (data) =&gt; {
+  childData = data
+  if (data.resourceError) failure = data.resourceError
   console.log('child → base', data)
-})
+}
+microApp.addDataListener('catalog', receive)
 
 microApp.start({
   lifeCycles: {
     mounted (event, appName) {
       if (appName === 'catalog') {
+        mounted = true
         console.log('base mounted', event.detail.container)
       }
     },
     unmount (_event, appName) {
+      if (appName === 'catalog') unmounted = true
       console.log('base unmount', appName)
     },
   },
@@ -1434,6 +1404,7 @@ element.setAttribute('url', 'https://child.example/app/')
 element.addEventListener('datachange', (event) =&gt; {
   console.log('host datachange', event.detail.data)
 })
+element.addEventListener('error', () =&gt; { failure = 'lifecycle error' })
 host.appendChild(element)
 
 // 可早于子应用绑定；EventCenter 缓存，child 使用 autoTrigger 取得。
@@ -1494,12 +1465,15 @@ if (window.microApp) {
 const theme = document.createElement('link')
 theme.rel = 'stylesheet'
 theme.href = './css/theme.css'
-theme.onload = () =&gt; console.log('theme ready')
+theme.onload = () =&gt; window.microApp.dispatch({ themeReady: true })
+theme.onerror = () =&gt; window.microApp.dispatch({ resourceError: 'theme failed' })
 document.head.appendChild(theme)
 
 // 动态 script：框架主动获取并在 catalog 的沙箱域执行。
 const feature = document.createElement('script')
 feature.src = './feature.js'
+feature.onload = () =&gt; window.microApp.dispatch({ featureReady: true })
+feature.onerror = () =&gt; window.microApp.dispatch({ resourceError: 'feature failed' })
 document.body.appendChild(feature)
 
 heartbeat = window.setInterval(() =&gt; {
@@ -1521,11 +1495,55 @@ window.onunmount = () =&gt; {
 badge.textContent = 'feature loaded'
 document.querySelector('#catalog-root').appendChild(badge)</code></pre>
 
-        <h3>13.5 示例与框架完成时机</h3>
+        <h3 id="catalog-check">13.5 加上可失败的断言闭环</h3>
+        <p>下面与 13.3 的 main.js 合用，限定新页面、默认 With、无 fiber、一个普通静态 bootstrap，以及上面给出的子应用文件。先注册数据/资源事件，再插入；资源成功上报是浅合并字段，因此可同时检查 ready、themeReady 与 featureReady。此组合浏览器例本轮未运行，不能把隔离脚本的 PASS 当作它的结果。</p>
+        <pre><code>// 接在 base/main.js 末尾。每次等待都有限时；包括没有 error 转发的失败分支。
+function check(condition, message) {
+  if (!condition) throw new Error(message)
+}
+function waitFor(predicate, label, checkFailure = true) {
+  return new Promise((resolve, reject) =&gt; {
+    const started = Date.now()
+    const timer = setInterval(() =&gt; {
+      try {
+        if (checkFailure &amp;&amp; failure) throw new Error(failure)
+        if (predicate()) { clearInterval(timer); resolve(); return }
+        if (Date.now() - started &gt; 5000) throw new Error(label + ' timeout')
+      } catch (error) { clearInterval(timer); reject(error) }
+    }, 20)
+  })
+}
+async function verifyCatalog() {
+  try {
+    await waitFor(() =&gt; mounted &amp;&amp; childData.ready, 'mounted + ready')
+    check(getActiveApps().includes('catalog'), 'catalog must be active')
+    check(element.querySelector('.catalog-card')?.textContent.includes('CNY'), 'currency DOM')
+    await waitFor(() =&gt; childData.themeReady &amp;&amp; childData.featureReady, 'dynamic resources')
+    check(element.querySelector('small')?.textContent === 'feature loaded', 'feature DOM')
+    check([...element.querySelectorAll('style')].some(style =&gt;
+      style.textContent.includes('border-radius: 8px')), 'theme CSS text')
+    console.log('PASS: catalog data, DOM and dynamic resource assertions')
+  } finally {
+    try {
+      disposeCatalog()
+      await waitFor(() =&gt; unmounted, 'unmount', false)
+      check(!getActiveApps().includes('catalog'), 'catalog must be inactive')
+      check(element.innerHTML === '', 'default unmount clears live DOM')
+    } finally {
+      microApp.removeDataListener('catalog', receive)
+    }
+  }
+}
+verifyCatalog().catch(error =&gt; console.error('FAIL: catalog verification', error))</code></pre>
+        <p>运行需要基座打包器解析 <code>@micro-zoe/micro-app</code>，并明确指向本地 rc.32 构建产物，不能使用未固定的最新版包；子应用 HTTP 服务需允许基座跨域抓取且提供所列资源与 paper.png。用真实地址替换示例域名后启动基座页面。预期局部顺序：child onmount → base mounted → child → base ready → host datachange；theme/feature 谁先完成没有保证。看到 PASS 后还须无清理 FAIL；超时将拒绝并进入 finally。样式断言只证明 CSS 文本插入，不证明图片可见或布局正确。</p>
+        <p>需要不依赖浏览器的可立即复现入口时，先运行<a href="./micro-app-src-guide.html#boundary-check">主稿的隔离学习验证</a>；原 Jest 生命周期例的发现配置见<a href="./micro-app-src-guide.html#test">教程化生命周期用例</a>。</p>
+
+        <h3>13.6 示例与框架完成时机</h3>
         <ul>
-          <li><strong>首次 mounted：</strong>等待入口登记的静态脚本调度结束，不等待 bootstrap 创建的 theme.css 或 feature.js；动态资源完成应分别观察原 link/script 的 load/error。</li>
+          <li><strong>首次 mounted：</strong>等待入口登记的静态脚本调度结束，不等待 bootstrap 创建的 theme.css 或 feature.js；link 可观察原节点 load/error；普通 script 未命中缓存时的 fetch/Function 异常才由该 Promise 链转 error。缓存命中执行异常和原生外链 module 失败没有对应原节点 error 转发，等待必须设超时，不能只等 error。</li>
           <li><strong>路径：</strong>main.css、theme.css、bootstrap.js 和 feature.js 都基于 app 目录补全；main.css 内的 paper.png 基于 CSS 文件目录，解析为 <code>https://child.example/app/img/paper.png</code>，部署时需提供该图片。</li>
-          <li><strong>清理：</strong>本例 <code>window.onunmount</code> 由沙箱代理窗口读取；关闭沙箱时框架不调用宿主 window.onunmount，也不兜底清业务 timer，应改由基座 unmount 生命周期安排业务清理。</li>
+          <li><strong>本例清理：</strong>本例没有成对的 <code>window.mount/unmount</code>，属于普通默认 With 模式。框架先从代理窗口读取并调用子应用 <code>window.onunmount</code>，本例在其中主动清 heartbeat；随后 stop 的 <code>releaseGlobalEffect</code> 还会清除沙箱账本中其余已记录的 interval/timeout。UMD 软卸载、keep-alive 隐藏和预渲染保留这些 timer；destroy 则清除。</li>
+          <li><strong>禁用沙箱是另一条件：</strong>框架不调用宿主 <code>window.onunmount</code>，也没有 With timer 账本兜底；业务需要自己安排资源清理，不能把这个限制套到上面的默认 With 示例。决定分支见 <code>create_app.ts · handleUnmounted</code>、<code>with/index.ts · releaseGlobalEffect</code>、<code>with/window.ts · release</code>。</li>
         </ul>
         <span class="source">README.zh-cn.md · “如何使用”；src/__tests__/demos/common/index.html；src/__tests__/demos/common/script1.js；src/__tests__/main.test.ts · main process；src/interact/index.ts · 通信 API</span>
       </section>
@@ -1697,7 +1715,7 @@ document.querySelector('#catalog-root').appendChild(badge)</code></pre>
               <tr><td>非法 name/url 或运行中同名</td><td>元素记录错误</td><td>不创建/替换实例</td></tr>
               <tr><td>HTMLLoader Promise 链 catch</td><td>level -1；未卸载时发 child statechange/base error，再写 LOAD_FAILED</td><td>停止渲染；LOAD_FAILED 实例 unmount 强制 destroy</td></tr>
               <tr><td>HTML 空或缺 head/body</td><td>子应用收到 detail=LOAD_FAILED；内部仍 LOADING/level 0</td><td>不走 onLoadError，挂载停滞</td></tr>
-              <tr><td>静态 CSS fetch reject</td><td>错误日志；该 style 缺失</td><td>CSS lane 完成，允许 mount</td></tr>
+              <tr><td>静态 CSS fetch reject</td><td>错误日志；该 style 缺失</td><td>样式准备链 完成，允许 mount</td></tr>
               <tr><td>普通静态 JS fetch reject</td><td>错误日志；缓存 code 仍可能为空串</td><td>框架抓取链完成，空代码路径不阻塞</td></tr>
               <tr><td>原生外链 module 加载失败</td><td>真实 script 只有 onload、没有 onerror</td><td>moduleCount 可能不归零，挂载停滞</td></tr>
               <tr><td>defer/async fetch reject</td><td>errorCount 增加</td><td>settle 后继续；module 完成条件另计</td></tr>

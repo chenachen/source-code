@@ -156,7 +156,7 @@ fileToModulesMap → 一个文件的 ?raw/?url/普通模块等全部变体
 | 状态                             | 行为                                 |
 | -------------------------------- | ------------------------------------ |
 | evaluated=true 且 promise 存在   | 直接等待/返回缓存                    |
-| promise 存在，且与当前调用栈成环 | 返回已提前创建的 exports             |
+| promise 和 exports 存在，且与当前调用栈成环 | 返回已提前创建的 exports             |
 | promise 存在，不成环             | 等待同一个 in-flight Promise         |
 | 没有 promise                     | 调用 directRequest，立即登记 Promise |
 
@@ -184,10 +184,124 @@ import { dep1 } from './index.js'
 export const dep2 = { ok: dep1.ok }
 ```
 
-Runner 在执行模块正文前先创建 `exports` namespace。若 `cachedRequest()` 发现目标 id 已在 callstack，或
-沿 in-flight imports 图能回到当前栈，就直接返回这份部分 namespace。这个输入中，dep2 导回 index 时，
-index 的 getter 已注册，dep1 也已完成，因此 dep2 能经 getter 读到 `dep1.ok === true`。若这时继续等待
-Pindex，index 又正在等待 dep2，两份 Promise 就会互相等待。
+现在暂停在 dep2 导入 index 的那一步。index 还没执行完，因为它正等 dep2；如果 dep2 再等 index，
+两边就无法继续。Runner 发现回边后，不再等 index 的 Promise，而是先交出已经建立的导出对象。
+
+这次能成功，是因为 index 已执行完 dep1，并登记了读取 dep1 的 getter，所以 dep2 此时读取
+`dep1.ok` 得到 true。dep2 结束后，index 才继续完成。这不保证所有循环都成功：回头读取尚未初始化
+的导出可能得到 undefined，再访问属性会报错。只有 exports 已存在且检测到环，才走提前返回分支；
+普通并发请求仍等待同一个 Promise。
+
+### 直接回边与间接回边怎样判定
+
+源码摘录：`packages/vite/src/module-runner/runner.ts::isCircularRequest`，保留完整搜索算法：
+
+```ts
+  private isCircularRequest(
+    mod: EvaluatedModuleNode,
+    callstack: string[],
+    visited = new Set<string>(),
+  ): boolean {
+    if (visited.has(mod.id)) {
+      return false
+    }
+    visited.add(mod.id)
+
+    for (const importedModuleId of mod.imports) {
+      if (callstack.includes(importedModuleId)) {
+        return true
+      }
+
+      const importedModule =
+        this.evaluatedModules.getModuleById(importedModuleId)
+      if (
+        importedModule?.promise &&
+        !importedModule.evaluated &&
+        this.isCircularRequest(importedModule, callstack, visited)
+      ) {
+        return true
+      }
+    }
+
+    return false
+  }
+```
+
+visited 避免在图中重复递归；沿某条 imports 边到达 callstack 就发现间接环。需要继续向下搜索时，
+只递归进入有 promise 且尚未 evaluated 的节点，已经完成的依赖不会再造成互等。
+
+`cachedRequest` 的决定性分支如下（保留原代码，省略前面的参数与 importer 登记，以及后面的首次求值）：
+
+```ts
+    // 已完成模块不可能再与当前栈互锁，直接复用结果。
+    if (mod.evaluated && mod.promise) {
+      return this.processImport(await mod.promise, meta, metadata)
+    }
+
+    if (mod.promise) {
+      if (
+        mod.exports &&
+        (callstack.includes(moduleId) || this.isCircularRequest(mod, callstack))
+      ) {
+        return this.processImport(mod.exports, meta, metadata)
+      }
+      return this.processImport(await mod.promise, meta, metadata)
+    }
+```
+
+在当前 test1 输入中，dep2 的 callstack 已含 index，直接命中 `callstack.includes(moduleId)`；
+所以这个用例证明直接循环能继续完成，**不单独证明** `isCircularRequest` 的间接图搜索分支。
+搜索在最多 V 个访问节点和 E 条扫描边上工作，但 `callstack.includes` 每次线性检查栈长度 D，
+因此单次搜索可按 O(V + E·D) 上界理解，另有 O(V) visited 与递归栈；不能笼统写成常数开销。
+
+### 同一 fixture 的最终断言与清理
+
+测试源码摘录：`node/ssr/runtime/__tests__/server-runtime.spec.ts`，完整参数化循环用例。
+第一行正是本章一路追踪的 test1，其余三行验证另外三种 import/export 排布：
+
+```ts
+  it.for([
+    '/fixtures/cyclic2/test1/index.js',
+    '/fixtures/cyclic2/test2/index.js',
+    '/fixtures/cyclic2/test3/index.js',
+    '/fixtures/cyclic2/test4/index.js',
+  ] as const)(`cyclic %s`, async (entry, { runner }) => {
+    const mod = await runner.import(entry)
+    expect({ ...mod }).toEqual({
+      dep1: {
+        ok: true,
+      },
+      dep2: {
+        ok: true,
+      },
+    })
+  })
+```
+
+这里的 `it` 由 `createModuleRunnerTester()` 创建。其 `beforeEach` 以该测试目录为 root 创建
+middleware server（watch:null、ws:false、关闭依赖发现），再调用 `createServerModuleRunner`，关闭
+HMR 日志与 sourcemapInterceptor。`utils.ts` 的清理源码是：
+
+```ts
+  afterEach<TestClient>(async (t) => {
+    await t.runner.close()
+    await t.server.close()
+  })
+```
+
+Given 是上述三个模块；When 是 `runner.import(entry)`；Then 同时检查 dep1 与 dep2 都为
+`{ ok: true }`，而不是只检查 Promise 没超时。循环造成的部分 namespace 只用于中途解锁，最后交付的
+两个导出必须完整。错误复用测试在后面的失败路径单列，不能替代这条成功链的断言。
+
+按 [07](./07-module-resolution.md) 的 Node/pnpm 与锁文件前提，在 `vite/` 运行已有用例：
+
+```sh
+pnpm exec vitest run packages/vite/src/node/ssr/runtime/__tests__/server-runtime.spec.ts -t 'cyclic /fixtures/cyclic2/test1/index.js'
+```
+
+本次修订未运行该集成测试。另将原 `isCircularRequest`、`cachedRequest`、`processImport`
+方法提取到隔离对象，用人工节点验证直接/间接环、已完成依赖、无环等待、已完成结果和拒绝对象复用，
+均通过。它没有 transport、真实模块转换与 evaluator，不能冒充上述 cyclic2 集成用例的通过记录。
 
 ![cyclic2/test1 的真实循环，以及元信息请求、求值 Promise 与失效之间的状态迁移](diagrams/15-runner-cache-cycle.svg)
 

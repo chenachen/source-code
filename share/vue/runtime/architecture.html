@@ -569,14 +569,18 @@ import { patchProp } from './patchProp'
 import { serializeInner } from './serialize'
 import { extend } from '@vue/shared'
 
+/** 以 nodeOps 与 patchProp 建立测试 renderer；后续 render/createApp 共享该渲染器。 */
 const { render: baseRender, createApp: baseCreateApp } = createRenderer(
   extend({ patchProp }, nodeOps),
 )
 
+/** 把 core 的根 render 绑定到 TestElement 宿主签名，复用原函数身份。 */
 export const render = baseRender as RootRenderFunction&lt;TestElement&gt;
+/** 把 core 的应用工厂绑定到 TestElement 容器签名。 */
 export const createApp = baseCreateApp as CreateAppFunction&lt;TestElement&gt;
 
-// convenience for one-off render validations
+// 一次性客户端渲染验证入口；仅序列化测试宿主树。
+/** 为一次 VNode 验证创建临时根容器，完成客户端 render 后返回其 children 序列化字符串；不是 server-renderer。 */
 export function renderToString(vnode: VNode): string {
   const root = nodeOps.createElement('div')
   render(vnode, root)
@@ -1337,31 +1341,31 @@ function _createVNode(
                 data-source-file="vue/packages/runtime-core/__tests__/vnode.spec.ts"
               ><code>  // normalizeVNode 将空值和布尔值转成 Comment、数组转成 Fragment、原始值转成 Text；已挂载 VNode 先克隆。
   test('normalizeVNode', () =&gt; {
-    // null / undefined -&gt; Comment
+    // null/undefined 归一化为 Comment。
     expect(normalizeVNode(null)).toMatchObject({ type: Comment })
     expect(normalizeVNode(undefined)).toMatchObject({ type: Comment })
 
-    // boolean -&gt; Comment
-    // this is for usage like `someBoolean &amp;&amp; h('div')` and behavior consistency
-    // with 2.x (#574)
+    // 布尔值归一化为 Comment。
+    // 支持 someBoolean &amp;&amp; h(...) 条件写法。
+    // 布尔占位行为与 Vue 2 一致（#574）。
     expect(normalizeVNode(true)).toMatchObject({ type: Comment })
     expect(normalizeVNode(false)).toMatchObject({ type: Comment })
 
-    // array -&gt; Fragment
+    // 数组归一化为 Fragment。
     expect(normalizeVNode(['foo'])).toMatchObject({ type: Fragment })
 
-    // VNode -&gt; VNode
+    // 未使用 VNode 保留原引用。
     const vnode = createVNode('div')
     expect(normalizeVNode(vnode)).toBe(vnode)
 
-    // mounted VNode -&gt; cloned VNode
+    // 已挂载 VNode 先克隆。
     const mounted = createVNode('div')
     mounted.el = {}
     const normalized = normalizeVNode(mounted)
     expect(normalized).not.toBe(mounted)
     expect(normalized).toEqual(mounted)
 
-    // primitive types
+    // 原始字符串/数字转换为 Text。
     expect(normalizeVNode('foo')).toMatchObject({ type: Text, children: `foo` })
     expect(normalizeVNode(1)).toMatchObject({ type: Text, children: `1` })
   })

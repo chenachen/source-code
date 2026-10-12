@@ -1460,20 +1460,22 @@ describe('Suspense', () =&gt; {
     resetSuspenseId()
   })
 
-  // a simple async factory for testing purposes only.
+  // 测试专用 async setup 工厂。
+  /** 测试专用工厂：delay毫秒后让async setup Promise返回渲染给定comp的函数，透传props/slots；把多一微任务的等待项放deps，便于逐层驱动依赖完成。不同于公共异步加载器。 */
   function defineAsyncComponent&lt;T extends ComponentOptions&gt;(
     comp: T,
     delay: number = 0,
   ) {
     return {
+      /** 执行deps.push(p.then(() =&gt; Promise.resolve()))。setup返回p。 */
       setup(props: any, { slots }: any) {
         const p = new Promise(resolve =&gt; {
           setTimeout(() =&gt; {
             resolve(() =&gt; h(comp, props, slots))
           }, delay)
         })
-        // in Node 12, due to timer/nextTick mechanism change, we have to wait
-        // an extra tick to avoid race conditions
+        // Node 12 的定时器/nextTick 顺序发生变化，
+        // 额外等待一轮微任务，让 setup 恢复后再断言。
         deps.push(p.then(() =&gt; Promise.resolve()))
         return p
       },
@@ -1483,12 +1485,14 @@ describe('Suspense', () =&gt; {
             data-source-file="vue/packages/runtime-core/__tests__/components/Suspense.spec.ts"
           ><code>  test('fallback content', async () =&gt; {
     const Async = defineAsyncComponent({
+      /** 渲染'div'节点（'async'）。 */
       render() {
         return h('div', 'async')
       },
     })
 
     const Comp = {
+      /** setup返回渲染函数：Suspense节点（null；插槽{default: h(Async)，fallback: h('div', 'fallback')}）。 */
       setup() {
         return () =&gt;
           h(Suspense, null, {
@@ -1500,11 +1504,11 @@ describe('Suspense', () =&gt; {
 
     const root = nodeOps.createElement('div')
     render(h(Comp), root)
-    expect(serializeInner(root)).toBe(&#96;&lt;div&gt;fallback&lt;/div&gt;&#96;)
+    expect(serializeInner(root)).toBe(`&lt;div&gt;fallback&lt;/div&gt;`)
 
     await Promise.all(deps)
     await nextTick()
-    expect(serializeInner(root)).toBe(&#96;&lt;div&gt;async&lt;/div&gt;&#96;)
+    expect(serializeInner(root)).toBe(`&lt;div&gt;async&lt;/div&gt;`)
   })</code></pre>
           <pre
             data-source-file="vue/packages/runtime-core/src/components/Suspense.ts"
@@ -1638,7 +1642,9 @@ describe('KeepAlive', () =&gt; {
     root = nodeOps.createElement('div')
     one = {
       name: 'one',
+      /** 初始化组件状态为{msg: 'one'}，供本例渲染和事件更新读取。 */
       data: () =&gt; ({ msg: 'one' }),
+      /** 渲染'div'节点（this.msg）。 */
       render(this: any) {
         return h('div', this.msg)
       },
@@ -1650,7 +1656,9 @@ describe('KeepAlive', () =&gt; {
     }
     oneTest = {
       name: 'oneTest',
+      /** 初始化组件状态为{msg: 'oneTest'}，供本例渲染和事件更新读取。 */
       data: () =&gt; ({ msg: 'oneTest' }),
+      /** 渲染'div'节点（this.msg）。 */
       render(this: any) {
         return h('div', this.msg)
       },
@@ -1662,7 +1670,9 @@ describe('KeepAlive', () =&gt; {
     }
     two = {
       name: 'two',
+      /** 初始化组件状态为{msg: 'two'}，供本例渲染和事件更新读取。 */
       data: () =&gt; ({ msg: 'two' }),
+      /** 渲染'div'节点（this.msg）。 */
       render(this: any) {
         return h('div', this.msg)
       },
@@ -1684,23 +1694,25 @@ describe('KeepAlive', () =&gt; {
     const viewRef = ref('one')
     const instanceRef = ref&lt;any&gt;(null)
     const App = {
+      /** 渲染KeepAlive节点（null；插槽{default回调}）。 */
       render() {
         return h(KeepAlive, null, {
+          /** 提供default插槽：views[viewRef.value]节点（属性{ref: instanceRef}）。 */
           default: () =&gt; h(views[viewRef.value], { ref: instanceRef }),
         })
       },
     }
     render(h(App), root)
-    expect(serializeInner(root)).toBe(&#96;&lt;div&gt;one&lt;/div&gt;&#96;)
+    expect(serializeInner(root)).toBe(`&lt;div&gt;one&lt;/div&gt;`)
     instanceRef.value.msg = 'changed'
     await nextTick()
-    expect(serializeInner(root)).toBe(&#96;&lt;div&gt;changed&lt;/div&gt;&#96;)
+    expect(serializeInner(root)).toBe(`&lt;div&gt;changed&lt;/div&gt;`)
     viewRef.value = 'two'
     await nextTick()
-    expect(serializeInner(root)).toBe(&#96;&lt;div&gt;two&lt;/div&gt;&#96;)
+    expect(serializeInner(root)).toBe(`&lt;div&gt;two&lt;/div&gt;`)
     viewRef.value = 'one'
     await nextTick()
-    expect(serializeInner(root)).toBe(&#96;&lt;div&gt;changed&lt;/div&gt;&#96;)
+    expect(serializeInner(root)).toBe(`&lt;div&gt;changed&lt;/div&gt;`)
   })</code></pre>
           <pre
             data-source-file="vue/packages/runtime-core/src/components/KeepAlive.ts"
@@ -1987,8 +1999,10 @@ function mount(
 ) {
   const root = nodeOps.createElement('div')
   const show = ref(true)
+  /** 将mount fixture的show设false，让下一轮渲染移除整个BaseTransition子树；返回赋值后的false。 */
   const unmount = () =&gt; (show.value = false)
   const App = {
+    /** 渲染show.value决定BaseTransition节点（props；渲染函数：withKeepAlive决定KeepAlive节点（null；slot()）或slot()）或null。 */
     render() {
       return show.value
         ? h(BaseTransition, props, () =&gt; {
@@ -2012,7 +2026,9 @@ function mockProps(
   withKeepAlive = false,
 ) {
   const cbs: {
+    /** 按元素序列化结果保存入场/首次入场done，由测试显式决定完成时刻。 */
     doneEnter: Record&lt;string, () =&gt; void&gt;
+    /** 按元素序列化结果保存离场done，由测试显式决定移除时刻。 */
     doneLeave: Record&lt;string, () =&gt; void&gt;
   } = {
     doneEnter: {},
@@ -2059,12 +2075,12 @@ function mockProps(
     expect(props.onAppear).toHaveBeenCalledTimes(1)
     expect(props.onAfterAppear).not.toHaveBeenCalled()
 
-    // enter should not be called
+    // 首次挂载走 appear，普通 enter 钩子未调用。
     expect(props.onBeforeEnter).not.toHaveBeenCalled()
     expect(props.onEnter).not.toHaveBeenCalled()
     expect(props.onAfterEnter).not.toHaveBeenCalled()
 
-    cbs.doneEnter[&#96;&lt;div&gt;&lt;/div&gt;&#96;]()
+    cbs.doneEnter[`&lt;div&gt;&lt;/div&gt;`]()
     expect(props.onAfterAppear).toHaveBeenCalledTimes(1)
     expect(props.onAfterEnter).not.toHaveBeenCalled()
   })</code></pre>
@@ -2088,6 +2104,7 @@ function mockProps(
       }
       let called = false
       // 将幂等完成器挂在元素上，使 leave/v-show 能中断尚未完成的 enter。
+      /** 幂等入场完成器：区分自然/取消回调，启动 in-out 延迟离场，最后释放元素回调。 */
       el[enterCbKey] = (cancelled?) =&gt; {
         if (called) return
         called = true
@@ -2189,6 +2206,7 @@ function mockProps(
           <pre
             data-source-file="vue/packages/runtime-core/src/components/Teleport.ts"
           ><code>    const queuePendingMount = (vnode: TeleportVNode) =&gt; {
+      /** 执行当前 VNode 仍持有的挂载 job，先删除 pending 记录；disabled 从主锚点的现父重新找容器，随后解析/建立远端锚点，避免使用 Suspense 移动前的旧位置。 */
       const mountJob: SchedulerJob = () =&gt; {
         if (pendingMounts.get(vnode) !== mountJob) return
         pendingMounts.delete(vnode)
@@ -2457,29 +2475,31 @@ function mockProps(
           </p>
           <pre
             data-source-file="vue/packages/runtime-core/__tests__/components/Suspense.spec.ts"
-          ><code>  test(&#x27;should mount after suspense is resolved&#x27;, async () =&gt; {
-    const target = nodeOps.createElement(&#x27;div&#x27;)
+          ><code>  test('should mount after suspense is resolved', async () =&gt; {
+    const target = nodeOps.createElement('div')
 
     const Async = defineAsyncComponent({
+      /** 渲染'div'节点（'async'）。 */
       render() {
-        return h(&#x27;div&#x27;, &#x27;async&#x27;)
+        return h('div', 'async')
       },
     })
 
     const Comp = {
+      /** setup返回渲染函数：Suspense节点（null；插槽{default: h('div', null, [ h(Async), h(Teleport, { to: target }, h('div', 'teleported')), ])，fallback: h('div', 'fallback')}）。 */
       setup() {
         return () =&gt;
           h(Suspense, null, {
-            default: h(&#x27;div&#x27;, null, [
+            default: h('div', null, [
               h(Async),
-              h(Teleport, { to: target }, h(&#x27;div&#x27;, &#x27;teleported&#x27;)),
+              h(Teleport, { to: target }, h('div', 'teleported')),
             ]),
-            fallback: h(&#x27;div&#x27;, &#x27;fallback&#x27;),
+            fallback: h('div', 'fallback'),
           })
       },
     }
 
-    const root = nodeOps.createElement(&#x27;div&#x27;)
+    const root = nodeOps.createElement('div')
     render(h(Comp), root)
     expect(serializeInner(root)).toBe(`&lt;div&gt;fallback&lt;/div&gt;`)
     expect(serializeInner(target)).toBe(``)

@@ -237,7 +237,7 @@ export default class WithSandBox extends BaseSandbox implements WithSandBoxInter
    *
    * @param umdMode 是否处于 UMD 复用模式。
    * @param keepRouteState 是否保留内部 microLocation；浏览器中的应用路径与 state 仍会移除。
-   * @param destroy 是否彻底销毁并删除缓存资源。
+   * @param destroy 是否按 destroy 分支释放沙箱；实例及静态内联缓存由 CreateApp 清理，共享外链缓存保留。
    * @param clearData 是否清除主、子应用间的数据。
    */
   public stop ({

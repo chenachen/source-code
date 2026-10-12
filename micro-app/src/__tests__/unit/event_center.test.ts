@@ -9,7 +9,6 @@ import { MOCK_EVENT_NAME, MOCK_EVENT_DATA } from './mocks/event'
  * 这类异步错误并不会被眼前的 getData 或未调用断言捕获；非法数据例在校验时退出，不入队。
  * 当前批处理、数据方向和监听器清理的测试入口是 ../interact/index.test.ts。
  */
-/** 当前默认 Jest testMatch 未纳入本文件，需显式选择才会发现这些场景。 */
 describe('EventCenter', () => {
   beforeAll(() => {
     console.error = jest.fn()

@@ -206,6 +206,7 @@ const inner = (c: TestElement) =&gt; serializeInner(c)</code></pre>
           ><code>describe('renderer: keyed children', () =&gt; {
   let root: TestElement
   let elm: TestElement
+  /** 把数字列表转为同 key 的 span 并渲染到本例 root，返回 div 宿主方便检查 children。 */
   const renderChildren = (arr: number[]) =&gt; {
     render(h('div', arr.map(toSpan)), root)
     return root.children[0] as TestElement
@@ -2657,8 +2658,13 @@ const inner = (c: TestElement) =&gt; serializeInner(c)</code></pre>
           <details>
             <summary>7. “算法追求理论最小编辑距离”</summary>
             <p>
-              Vue 选择线性扫描、Map 与 LIS 的工程折中，重点是稳定 O(n log n)
-              行为、最少 DOM move 和可维护的组件语义。
+              对于稳定、唯一 key 的列表，匹配与重排通常为 O(n log n)；无 key
+            的回退匹配仍可能嵌套扫描。LIS 减少已匹配节点的 VNode 重排次数，
+            一次 move 的宿主成本随节点类型而异，不能保证实际 DOM 操作或耗时最少。
+              例如旧 [A,B,C] → 新 [B,C,A]，A 为包含 100 个单元素子节点的 keyed Fragment，
+              B/C 为单元素：LIS 保留 B/C，只对 A 调一次 move，却需搬动 100 个子节点和两个锚点。
+              保留 A、移动 B/C 则只需两次 hostInsert。此为 renderer.ts 的 Fragment 分支静态推演，
+              不是浏览器性能实测；既有 rendererChildren.spec.ts 的顺序断言也不证明加权宿主成本最优。
             </p>
           </details>
         </section>

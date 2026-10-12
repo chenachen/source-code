@@ -39,10 +39,11 @@
   <span class="kw">return</span> lane;
 }</pre></figure>
       <ol class="state-list"><li><strong>选择。</strong>离散输入、transition、render-phase 或默认更新得到不同 Lane 来源。</li>
-        <li><strong>入队。</strong>并发队列先暂存更新，统一收口时把环形 pending 链并入目标 queue。</li>
-        <li><strong>向上。</strong>从 source Fiber 沿 return 标记 childLanes，定位 FiberRoot。</li>
+        <li><strong>暂存。</strong>普通并发更新先进入 concurrentQueues 四元组缓冲，只立即标记源 Fiber 与 alternate 的 lanes。</li>
+        <li><strong>找根。</strong>getRootForUpdatedFiber 沿 return 找到 FiberRoot，此时不修改祖先 childLanes。</li>
         <li><strong>标根。</strong><code>markRootUpdated</code> 合并 pendingLanes，并清理与本次更新冲突的 suspended/pinged 状态。</li>
-        <li><strong>调度。</strong>root 进入全局 scheduled-root 链并请求微任务；微任务统一选 Lane，同步工作在末尾 flush，其他工作安排 Scheduler callback。</li></ol>
+        <li><strong>调度。</strong>root 进入全局 scheduled-root 链并请求微任务；微任务统一选 Lane，同步工作在末尾 flush，其他工作安排 Scheduler callback。</li>
+        <li><strong>后续收口。</strong>finishQueueingConcurrentUpdates 才把更新接入各自 pending 环，并通过 markUpdateLaneFromFiberToRoot 传播祖先 childLanes；入口找根与这次写入不是同一阶段。详见<a href="11-update-queues-lanes.html#whole-chain">暂存与拼环</a>。</li></ol>
     </section>
 
     <section id="lanes"><h2>Lane 是集合代数，不是单个数字优先级</h2>

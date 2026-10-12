@@ -464,7 +464,7 @@
           </article>
         </div>
         <div class="callout warning">
-          <p><strong>验证状态：</strong>仓库测试<strong>未运行</strong>；测试章节来自逐测试体只读，不能解读成已在本地成功执行。教程 Demo 也<strong>未执行</strong>。仅最终 HTML 接受解析、锚点、内部链接、代码转义、离线资源与窄屏布局验证。</p>
+          <p><strong>验证状态：</strong>仓库测试<strong>未运行</strong>；测试章节来自逐测试体只读，不能解读成已在本地成功执行。教程 Demo 已在 2026-10-12 用本地源码与 jsdom 独立执行，计数、列表顺序、DOM 身份与清理断言通过；不是浏览器绘制或 lane/flags 探针。具体依赖、入口与限制见<a href="../../../react/fixtures/source-learning-demo/README.md">复跑说明</a>。HTML 的历史视觉验证记录不代表本次再次验证。</p>
           <p><span class="evidence fact">源码事实</span>版本由 <code>ReactVersions.js</code>、四个 <code>packages/*/package.json</code> 与 <code>packages/shared/ReactVersion.js</code> 交叉确认。本项目保留了源码快照，但没有 React 上游 Git 元数据；包内版本可以核对，上游 tag/commit 未记录。</p>
         </div>
         <div class="legend" aria-label="证据标签说明">
@@ -1310,6 +1310,7 @@ export function getHighestPriorityLane(lanes) {
         <p><span class="evidence infer">当前实现推断</span>这解释了“API 返回异步”与“render 是否可中断”并非一回事：首次 root.render 不在当前调用栈完成，但它启动后仍可能是一口气完成的 sync work loop。</p>
 
         <h3>完整手推 B：Default callback 尚未运行时 click 到达</h3>
+        <p>另设一个已经挂载好的 Counter：先在普通脚本排入一次 Default 更新，再在这次 callback 执行前点击旧界面的按钮。这不是 A 中尚未完成的首次挂载；首次挂载前还没有按钮或 useState dispatch。</p>
         <div class="callout">
           <p><strong>输入：</strong><code>pending = Default | Sync = 0b100010</code>。<code>SyncUpdateLanes = Sync | InputContinuous | Default = 0b101010</code>。</p>
           <p><strong>选择：</strong><code>pending &amp; SyncUpdateLanes = 0b100010</code>，所以 <code>getHighestPriorityLanes</code> 返回 <strong>Sync 与 Default 两条 lane</strong>。它不是只返回最低 bit。</p>
@@ -1484,9 +1485,10 @@ export function getHighestPriorityLane(lanes) {
       <section id="demo">
         <h2>贯穿全文的完整 Demo</h2>
         <div class="callout">
-          <p><strong>教程示例，未运行。</strong>下面是一个完整 JSX 模块，适用于能解析 bare imports 与 JSX 的 bundler。它包含 import、初始化、一次真实冒泡 click、预期状态断言、key 对应 DOM 身份断言与清理；没有使用 test-only <code>act</code> 或 <code>flushSync</code>，因此保留本文分析的 Default 首挂与 Sync click 分支。</p>
+          <p><strong>已运行的教程示例（本地源码 + jsdom）。</strong>下面是一个完整 JSX 模块；配套 harness 直接读取此代码框，用 Hermes/Babel 转换 JSX 与模块，并将 bare imports 解析到本仓 packages，不使用 npm React。它包含 import、初始化、一次真实冒泡 click、预期状态断言、key 对应 DOM 身份断言与清理；没有使用 test-only <code>act</code> 或 <code>flushSync</code>，因此保留本文分析的 Default 首挂与 Sync click 分支。</p>
         </div>
 
+        <p>复跑：进入 <code>react/fixtures/source-learning-demo</code>，执行 <code>npm ci --ignore-scripts --workspaces=false --no-audit --no-fund --cache /tmp/react-source-demo-npm-cache</code>，再执行 <code>npm test</code>。已验证 Node 24.19.0 / npm 11.9.0；依赖锁、fork 映射、顶层 await 适配和环境边界见<a href="../../../react/fixtures/source-learning-demo/README.md">完整说明</a>。<a href="../../../react/fixtures/source-learning-demo/verification.txt">实际运行记录</a>确认 A,B,C → C,A,B、count 0→1、全部节点身份复用与清理通过；该结果不证明浏览器渲染性能或内部 lane 数值。</p>
         <div class="code-label"><span>教程示例 · demo.jsx</span><span>完整示例</span></div>
         <pre><code>import {useState} from "react";
 import {createRoot} from "react-dom/client";

@@ -951,6 +951,7 @@ patch(null, vnode, container, next, ...)</code></pre>
       const wasConnected = el.isConnected
       let patched = false
       ;(instance.bu || (instance.bu = [])).push(() =&gt; (patched = true))
+      /** 策略触发后的最终水合闸门；等待期间已 patch 或节点脱离则跳过旧 SSR DOM，否则执行传入 hydrate。 */
       const performHydrate = () =&gt; {
         // 组件已在延迟期间更新，说明客户端渲染已接管，跳过过期水合。
         if (patched) {
@@ -1111,8 +1112,11 @@ import * as runtimeDom from '@vue/runtime-dom'</code></pre>
           <pre
             data-source-file="vue/packages/runtime-core/__tests__/hydration.spec.ts"
           ><code>/**
- * 用给定的服务端 HTML 和客户端 render 函数完成一次水合挂载。
- * 返回根 VNode 与容器，方便同时断言节点复用和最终 DOM 内容。
+ * 以给定 SSR HTML 预填一个脱离文档的 div，再用 createSSRApp 的根 render 水合该 DOM。
+ *
+ * @param html 由测试手写或 server-renderer 产生的初始标记
+ * @param render 客户端预期 VNode 内容，既用于水合也用于后续响应式更新
+ * @returns 根组件 subTree VNode 与容器；调用方可比较 el/anchor 的 DOM 身份、认领内容和后续变更。
  */
 function mountWithHydration(html: string, render: () =&gt; any) {
   const container = document.createElement('div')
@@ -1136,13 +1140,13 @@ describe('SSR hydration', () =&gt; {
   })</code></pre>
           <pre
             data-source-file="vue/packages/runtime-core/__tests__/hydration.spec.ts"
-          ><code>    // 测试场景：元素文本内容。
+          ><code>    // SSR div 文本 foo 与客户端 bar 失配，水合后为 bar 并报告 text content mismatch。
     test('element text content', () =&gt; {
-      const { container } = mountWithHydration(&#96;&lt;div&gt;foo&lt;/div&gt;&#96;, () =&gt;
+      const { container } = mountWithHydration(`&lt;div&gt;foo&lt;/div&gt;`, () =&gt;
         h('div', 'bar'),
       )
       expect(container.innerHTML).toBe('&lt;div&gt;bar&lt;/div&gt;')
-      expect(&#96;Hydration text content mismatch&#96;).toHaveBeenWarned()
+      expect(`Hydration text content mismatch`).toHaveBeenWarned()
     })</code></pre>
           <div class="test-proof">
             <p>

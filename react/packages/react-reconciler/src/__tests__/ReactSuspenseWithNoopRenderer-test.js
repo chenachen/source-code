@@ -114,7 +114,7 @@ describe('ReactSuspenseWithNoopRenderer', () => {
 
       const thenable = {
         pings: [],
-        /** readText.同步调用resolve(B)，故注册ping的当前render内便收到通知；不排微任务。 */
+        /** readText.then 在 pending 时登记 ping；若资源已结束，改用微任务通知订阅者。 */
         then(resolve) {
           if (newRecord.status === 'pending') {
             thenable.pings.push(resolve);

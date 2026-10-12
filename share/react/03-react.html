@@ -151,7 +151,7 @@
       <section id="types">
         <h2>Context、memo 与 lazy：给 reconciler 的分派提示</h2>
         <div class="grid three">
-          <article class="card"><span class="number">CONTEXT</span><h3>双 renderer 值槽</h3><p><code>createContext</code> 用默认值初始化两套槽；renderer 按 <code>isPrimaryRenderer</code> 选一套。<code>Provider</code> 指向 Context 自身，<code>Consumer._context</code> 也指回它；值栈与传播由 reconciler 完成。</p></article>
+          <article class="card"><span class="number">CONTEXT</span><h3>双 renderer 值槽</h3><p><code>createContext</code> 用默认值初始化两套槽；renderer 按 <code>isPrimaryRenderer</code> 选一套。<code>Provider</code> 指向 Context 自身，<code>Consumer._context</code> 也指回它；值栈与传播由 reconciler 完成；<a href="13-hooks-state-machine.html#context">Context 到 memo 消费者的真实链路</a>继续追踪。</p></article>
           <article class="card"><span class="number">MEMO</span><h3>比较策略包装</h3><p><code>memo(type, compare)</code> 保存目标与可选比较器。是否 bailout 还取决于 ref、context、Lane 与内部状态，不是单独一次浅比较。</p></article>
           <article class="card"><span class="number">LAZY</span><h3>有状态模块 payload</h3><p>首次解析时调用加载器。订阅后尚未落定才进入 Pending；同步兑现或拒绝可直接进入终态。Pending 抛 thenable 以挂起，Rejected 抛原因交给错误处理，Resolved 返回模块默认导出。</p></article>
         </div>

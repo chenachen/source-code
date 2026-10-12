@@ -86,7 +86,8 @@ HMR 可以拆成三个相对独立的层次：
 | `lastHMRTimestamp`   | 模块图 invalidate/prune            | 给重新获取的 URL 加 `?t=`      |
 
 `isSelfAccepting === undefined` 很重要：它表示该模块还没经过 Import Analysis，通常也没在浏览器加载。
-传播此时停止且不 reload，不能把“未分析”当成“明确不接受”。这个边界来自
+传播此时停止且不 reload，不能把“未分析”当成“明确不接受”。`propagateUpdate()` 返回 `false` 只表示未遇死端，
+不保证收集到更新；`updateModules()` 遇到空 updates 只记日志并返回，不发送 update。这个边界来自
 [Issue #7561](https://github.com/vitejs/vite/issues/7561)。
 
 ## 文件事件总入口
@@ -741,73 +742,16 @@ transformResult 没有内联 map 时，再从预构建依赖产物末尾读取�
 `playground/forward-console` 验证普通 error、Promise rejection、console 格式符与依赖外置 map。依赖报错
 在该 fixture 中保留 node_modules 帧，并为第一个符合条件的项目调用点展示 code frame。
 
-## Bundled-dev：边界算法移到浏览器
+## Bundled-dev：只对比三个责任边界
 
-本节只建立普通 HMR 与 bundled-dev 的对照坐标。Rolldown 后台整包、首屏 fallback、内存文件、lazy
-payload 响应发送完成登记、浏览器执行图、单次 reload 门闩与关闭链，见独立章节
-[12B：Bundled Dev](./12b-bundled-dev.md)。
+| 问题 | 普通 HMR | Bundled Dev |
+| --- | --- | --- |
+| 谁计算接受边界？ | 服务端 `propagateUpdate`，依据 ModuleGraph 分析结果 | 浏览器 `computeHmrUpdate`，依据已执行 factory 的运行时图 |
+| 服务端推送什么？ | `update` 的 path/acceptedPath 等边界信息，或 full-reload | changedIds、patch URL、单调 seq，由客户端计算边界 |
+| 谁发起、谁批准刷新？ | 服务端死端可直接发 full-reload；客户端导入循环更新失败也可触发刷新 | 客户端报告 reload-needed，服务端确认最新完整输出可服务后再发 full-reload |
 
-普通 HMR 的服务端 ModuleGraph 知道每个 URL 的 importer 和 accept；bundled-dev 真正执行的是 Rolldown
-runtime 中的模块 factory，浏览器才知道哪些模块已执行。因此服务端只推送：
-
-```text
-changedIds + patch URL + 单调 seq
-```
-
-`BundledDevHMRClient.computeHmrUpdate()` 在 runtime 图中从 changed id 向已执行 importer 冒泡：
-
-```text
-未执行模块       → noop
-回到本轮 invalidate 来源 → full reload
-self accept       → [id, id] boundary
-parent accept dep → [parent, id] boundary
-无 importer 根    → full reload
-无边界 import 环  → full reload
-```
-
-每轮同时收集 `updateSet`：从 changed module 到 boundary 之间的全部模块都要清缓存。应用顺序不能交换：
-
-1. 确认 updateSet 的 factory 全部存在；
-2. 在删缓存前冻结 accept callbacks；
-3. 清除 updateSet 缓存，runtime hook 同步执行 dispose；
-4. 初始化 acceptedVia 并读取新 exports；
-5. 调用 boundary callback，最后发送 afterUpdate。
-
-push 与模块主动 `hot.invalidate()` 共用 `applyQueue` 串行执行。push 先校验 seq，缺号说明某个 patch 已
-丢失，只能 reload；invalidate 没有服务端 rebuild，因此从当前 importers 开始，用 runtime 已有 factory
-重新计算边界。
-
-客户端决定需要 full reload 时不直接调用 `location.reload()`，只发
-`vite:bundled-dev:reload-needed`。服务端等最新完整 bundle 可服务后再发 full-reload，页面因此不会先加载
-fallback 再二次导航；见 [PR #23106](https://github.com/vitejs/vite/pull/23106)。浏览器侧 HMR 主体由
-[PR #22961](https://github.com/vitejs/vite/pull/22961) 引入。
-
-服务端 `BundledDev` 同时维护四类状态：
-
-| 状态                      | 用途                                                |
-| ------------------------- | --------------------------------------------------- |
-| `memoryFiles`             | 当前完整输出、HMR patch、sourcemap 与客户端 runtime |
-| `pendingPayloadFilenames` | 已生成但 HTTP 响应尚未完成发送的 payload            |
-| `fullReloadPending`       | 所有客户端等待最新完整输出后 reload                 |
-| `reloadNeededClientIds`   | 只有计算出死端的特定客户端等待 reload               |
-
-Rolldown 回调的时序是关键：`onHmrUpdates` 决定 patch 或刷新意图，`onOutput` 才表示新完整 bundle 已经写入
-内存。等待全局重建的刷新在成功 `onOutput` 时发出；定向客户端刷新也可在 `ensureLatestBuildOutput()`
-确认最新输出已经可用时发出。若 HMR 生成阶段失败，下一次页面访问会强制 full build。
-新连接客户端会收到最近一次完整输出构建错误；HMR 生成错误只广播给当时已登记的客户端。
-
-`MemoryFiles` 支持惰性值：构建回调先保存读取函数，浏览器首次请求时才提取 code/source 并计算 ETag。
-增量构建不能清空整个 Map，因为未变化文件会被 Rolldown 复用。内存文件中间件处理 304、MIME 与自定义
-header；响应 `finish` 后调用 `markPayloadDelivered()`，表示该响应已交给操作系统发送，再登记 Rolldown
-的 per-client ship map，让后续 chunk 可以省略其中模块。这不是浏览器接收或执行确认，见
-[Node.js finish 事件](https://nodejs.org/api/http.html#event-finish_2)。
-
-HMR patch 末尾追加 `export {}`：模块没有其他 export 时也保留 ESM 语法，作为 classic script 执行会报
-语法错误，避免跨源页面按普通 script 执行 patch。
-
-`playground/hmr-full-bundle-mode` 用页面全局标记区分“patch 原地更新”和“整页刷新”，并覆盖新增 asset、
-`?worker`、`new URL` worker、nested worker、hot.data 与 invalidate。patch 必须包含 ESM 语法，避免被
-跨源页面当普通 script 执行。
+逐分支算法、applyQueue、MemoryFiles、HTTP finish、patch 安全后缀和测试均集中在
+[12B：Bundled Dev](./12b-bundled-dev.md)。这里只用责任分工校准普通 HMR 的心智模型。
 
 ## 测试怎样映射源码机制
 
@@ -844,13 +788,7 @@ vite:afterUpdate
 
 只验证最终 DOM 会漏掉重复执行、旧 callback 残留或生命周期交错；因此用例同时断言日志序列。
 
-### `playground/hmr-full-bundle-mode`
-
-按状态机读顶部场景注释：先验证 INITIAL/BUNDLING/BUNDLED，再看完整 bundle 重建与局部 patch 的分界，
-最后看 worker、hot.data、invalidate 和 full reload。尤其关注两个“负证据”：
-
-- 页面全局标记仍存在，证明发生的是 patch 而非 reload；
-- document 只加载一次且从未出现 fallback，证明 reload 由服务端在 bundle 就绪后发出。
+Bundled-dev 的测试与普通 HMR 使用不同协议，见 [12B 的完整案例与断言](./12b-bundled-dev.md)。
 
 ## 历史演进线索
 

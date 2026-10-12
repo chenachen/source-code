@@ -125,7 +125,7 @@ export function defineElement (tagName: string): void {
      * callback 由实际卸载/隐藏路径调用；若当前实例不存在、已经卸载或隐藏，handleDisconnected
      * 会直接返回而不续接连接，本 Promise 也没有 error 生命周期的失败结算分支。
      *
-     * @param destroy - 是否在重载前彻底销毁旧实例与缓存。
+     * @param destroy - 是否在重载前销毁旧实例，并清除该实例登记的静态内联脚本缓存；共享外链缓存保留。
      * @returns 新实例挂载或旧 keep-alive 实例恢复显示后为 `true`。
      */
     public reload (destroy?: boolean): Promise<boolean> {

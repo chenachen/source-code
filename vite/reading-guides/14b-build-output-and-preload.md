@@ -180,7 +180,7 @@ modulePreload=false → 只保留 CSS
 ## 压缩依赖表
 
 直接为每个 import 重复写字符串数组会放大 bundle。插件为当前 chunk 建立唯一 `fileDeps`，marker 只写
-`__vite__mapDeps([0, 1])` 一类索引；真实生成源码见后文证据 B3。
+`__vite__mapDeps([0, 1])` 一类索引；真实生成源码见后文“marker 如何变成索引”。
 
 依赖表惰性挂到函数属性，只有动态 import 真正执行时才求值；优化见
 [PR #17602](https://github.com/vitejs/vite/pull/17602)。没有任何依赖时不注入映射器，见
@@ -364,7 +364,7 @@ manifest key 优先使用相对 root 的 facadeModuleId；虚拟 null byte 被�
 当用户显式把 `build.rolldownOptions.output` 配成数组时，每个 output 都会触发 generateBundle。
 `perEnvironmentState` 累计 manifest 与 outputCount：中间 output 删除 manifest asset；当兼容 manifest 的
 `generateBundle` hook 计数达到配置长度时，才输出合并 JSON 并 reset。默认 library formats 自动展开的
-ES+UMD 不会被这里的原始 `output` 长度识别为 2，不能拿它作为本分支的例子。失败边界见证据 B4。
+ES+UMD 不会被这里的原始 `output` 长度识别为 2，不能拿它作为本分支的例子。失败边界见后文“多个 output 的 manifest 何时才算收集完整”。
 
 standalone CSS assets 字段见
 [PR #21015](https://github.com/vitejs/vite/pull/21015)，同 basename CSS entry 隔离见
@@ -446,7 +446,7 @@ Vite `viteMetadata.importedCss/importedAssets` 表示打包器原生图之外的
 
 下面四段锁定 CSS 交付边、依赖递归、marker 压缩和 manifest 聚合。
 
-### 证据 B1：CSS 发射后立刻登记到所属 chunk
+### lazy chunk 如何记住自己的 CSS？
 
 来源：`packages/vite/src/node/plugins/css.ts`，CSS post plugin 的 `renderChunk`。
 
@@ -471,7 +471,7 @@ chunk.viteMetadata!.importedCss.add(this.getFileName(referenceId))
 若 CSS 是被删除的纯 CSS proxy，插件会把 metadata 转移给 importer 或放入 `removedPureCssFilesCache`，
 因此“删空 JS chunk”不等于“删交付边”。
 
-### 证据 B2：从动态入口递归合并 JS 图与 CSS 边
+### preload 如何把 JS 与 CSS 依赖合到一起？
 
 来源：`packages/vite/src/node/plugins/importAnalysisBuild.ts`，`generateBundle()` 内部 `addDeps()`。
 
@@ -511,7 +511,7 @@ addDeps(normalizedFile)
 本案例从 lazy chunk 递归静态 JS 边后追加 `lazy-*.css`；若目标是已删纯 CSS chunk，则保留 CSS，并把
 失效 import 改成 `Promise.resolve({})`。算法模型已在“递归收集依赖”和“纯 CSS 动态入口”说明。
 
-### 证据 B3：marker 变索引，文件表只注入一次
+### marker 如何变成索引，为什么只需一份文件表？
 
 来源：`packages/vite/src/node/plugins/importAnalysisBuild.ts`，marker 重写与依赖表注入。
 
@@ -550,7 +550,7 @@ if (fileDeps.length > 0) {
 开启 chunkImportMap 后，依赖文件名先经 reverse mapping 变 specifier；仓库测试正是从 `importmap.json` 找到
 CSS specifier，再断言 entry 代码含该 specifier，直接卡住这条数据链。
 
-### 证据 B4：多 output manifest 延迟到最后一次发射
+### 多个 output 的 manifest 何时才算收集完整？
 
 来源：`packages/vite/src/node/plugins/manifest.ts`，`native:manifest-compatible.generateBundle()`。
 
@@ -686,7 +686,7 @@ test('chunkImportMap per environment with shared plugins', async () => {
 })
 ```
 
-### GWTMS 拆解
+### 这个构建用例究竟证明了什么？
 
 - **Given**：真实 `entry → lazy → lazy.css` 图；client 开 chunkImportMap，SSR 关；两环境
   `sharedPlugins=true`，均使用内存输出。

@@ -18,6 +18,7 @@
 <p>来源：<a href="../../react/packages/react-dom/src/__tests__/ReactTestUtilsActUnmockedScheduler-test.js">ReactTestUtilsActUnmockedScheduler-test.js · flushes effects on every call</a>。
 下面是从 <code>test(...)</code> 到最终断言的连续原码；<code>afterEach</code> 恢复 act 全局标志并移除 container。此用例没有调用 root.unmount，后文另解释公开卸载入口。</p>
 <figure class="source"><figcaption><span>连续原码 · ReactTestUtilsActUnmockedScheduler-test.js</span><a href="../../react/packages/react-dom/src/__tests__/ReactTestUtilsActUnmockedScheduler-test.js">打开测试</a></figcaption><pre><code>test('flushes effects on every call', async () =&gt; {
+  /** 用计数按钮安排函数式增量，并在每次提交的 effect 记录最终计数，区分单次批处理和多轮 act。 */
   function App() {
     const [ctr, setCtr] = React.useState(0);
     React.useEffect(() =&gt; {

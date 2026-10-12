@@ -2190,6 +2190,7 @@ Renderer 已知道最终顺序；LIS 只用于决定哪些节点可以不 move�
       return
     }
 
+    /** 物理删除完成后通知 afterLeave；persisted 过渡不由渲染器触发该阶段。 */
     const performRemove = () =&gt; {
       hostRemove(el!)
       if (transition &amp;&amp; !transition.persisted &amp;&amp; transition.afterLeave) {
@@ -2203,6 +2204,7 @@ Renderer 已知道最终顺序；LIS 只用于决定哪些节点可以不 move�
       !transition.persisted
     ) {
       const { leave, delayLeave } = transition
+      /** 把删除动作交给 leave；delayLeave 可持有此闭包以协调 in-out 的先后顺序。 */
       const performLeave = () =&gt; leave(el!, performRemove)
       if (delayLeave) {
         delayLeave(vnode.el!, performRemove, performLeave)

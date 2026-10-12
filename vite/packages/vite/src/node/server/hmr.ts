@@ -747,7 +747,7 @@ export async function handleHMRUpdate(
   await hotUpdateEnvironments(server, hmr)
 }
 
-/** HMR 传播结果：false 表示可局部更新，true/字符串表示需 reload 及可选原因。 */
+/** 传播是否遇到必须整页刷新的死端；false 表示未遇死端，仍可能没有可发送的更新；true/字符串表示必须刷新及可选原因。 */
 type HasDeadEnd = string | boolean
 
 /**

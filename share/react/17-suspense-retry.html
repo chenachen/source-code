@@ -113,7 +113,7 @@
 
       const thenable = {
         pings: [],
-        /** readText.then 实现 thenable 订阅：pending 时登记 ping，已结束时用微任务通知。 */
+        /** readText.then 在 pending 时登记 ping；若资源已结束，改用微任务通知订阅者。 */
         then(resolve) {
           if (newRecord.status === 'pending') {
             thenable.pings.push(resolve);
@@ -143,13 +143,13 @@
   <section id="use-thenable">
     <h2>use 与 lazy：先交给工作循环，再决定重放或退栈</h2>
     <p><code>use(promise)</code> 经 <code>useThenable → trackUsedThenable</code>，按本次跟踪状态中的调用索引保存对象。若同一索引收到新 Promise，React 继续读旧对象并给新对象挂空监听器，避免组件重放时不断换成新的 pending 依赖。<code>fulfilled</code> 直接返回 <code>value</code>；<code>rejected</code> 抛 <code>reason</code>；未就绪时先把真实 thenable 写入模块槽，再抛 <code>SuspenseException</code>。<code>resolveLazy</code> 捕获 lazy 初始化抛出的 thenable 后，也进入同一个旁路。</p>
-    <figure class="source"><figcaption><span>连续原码 · getSuspendedThenable 取走并清空旁路槽</span><a href="../../react/packages/react-reconciler/src/ReactFiberThenable.js">ReactFiberThenable.js</a></figcaption><pre>  const thenable = suspendedThenable;
+    <figure class="source"><figcaption><span>连续原码 · getSuspendedThenable 取走并清空旁路槽</span><a href="../../react/packages/react-reconciler/src/ReactFiberThenable.js">ReactFiberThenable.js</a></figcaption><pre><code>  const thenable = suspendedThenable;
   suspendedThenable = null;
   if (__DEV__) {
     needsToResetSuspendedThenableDEV = false;
   }
   return thenable;
-}</pre></figure>
+}</code></pre></figure>
     <p><code>handleThrow</code> 识别内部异常，取回真实 thenable，并把当前挂起原因设为 <code>SuspendedOnImmediate</code>。并发工作循环先让出一次，给微任务中的资源结算机会；恢复时若插桩状态已 fulfilled/rejected，直接 <code>replaySuspendedUnitOfWork</code>，保留当前栈而不进入 fallback 捕获。若仍 pending，才走 <code>throwAndUnwindWorkLoop → throwException</code>。直接抛 thenable 的旧资源协议则标记为 <code>SuspendedOnDeprecatedThrowPromise</code>，始终退栈；同步工作循环也不会等待这次并发让出。</p>
     <p>重放函数组件会进入 <code>replaySuspendedComponentWithHooks</code>：沿挂起时的 WIP Hook 链重跑，并重建组件提交队列。<code>useThenable</code> 走完已经创建的 Hook 后会切回 mount/update dispatcher，使挂起点之后此前未执行的 Hook 可以继续建立。完成组件或放弃本轮退栈时，Hook 游标才彻底清理。</p>
   </section>
@@ -382,7 +382,7 @@ export function markRootPinged(root: FiberRoot, pingedLanes: Lanes) {
 ) {
   const pingCache = root.pingCache;
   if (pingCache !== null) {
-    // wakeable 已 resolve，不会再被抛出，无需继续记忆。
+    // wakeable 已结算，清除旧订阅缓存；之后若再次参与尝试，可重新登记。
     pingCache.delete(wakeable);
   }
 

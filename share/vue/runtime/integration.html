@@ -1411,7 +1411,7 @@ export function createHydrationRenderer(
   options: RendererOptions,
   createHydrationFns?: typeof createHydrationFunctions,
 ): any {
-  // 推迟到实际创建渲染器时初始化特性开关，保持“只导入 runtime-core”无副作用。
+  // 推迟到实际创建渲染器时补齐特性开关默认值。
   if (__ESM_BUNDLER__ &amp;&amp; !__TEST__) {
     initFeatureFlags()
   }
@@ -1466,7 +1466,10 @@ export function createHydrationRenderer(
   render: RootRenderFunction&lt;HostElement&gt;,
   hydrate?: RootHydrateFunction,
 ): CreateAppFunction&lt;HostElement&gt; {
-  return function createApp(rootComponent, rootProps = null) {</code></pre>
+  return /** 为一次 createApp 调用分配独立 context、插件去重集合与清理队列；对象根组件浅克隆，非法根 props 改为 null。返回供平台包装的 App 对象。 */ function createApp(
+    rootComponent,
+    rootProps = null
+  ) {</code></pre>
           <p>
             因而 Demo 的真实入口不是“runtime-dom 写了另一套应用系统”，而是
             <code
@@ -2015,6 +2018,7 @@ export const createApp = ((...args) =&gt; {
   }
 
   const { mount } = app
+  /** 解析客户端 mount 容器；缺 render/template 时读取可信 in-DOM 模板，只清空 Element，保留 ShadowRoot 样式，再调用 core mount 并更新 v-cloak/data-v-app。 */
   app.mount = (containerOrSelector: Element | ShadowRoot | string): any =&gt; {
     const container = normalizeContainer(containerOrSelector)
     if (!container) return
@@ -2888,14 +2892,14 @@ if (patchFlag &gt; 0) {
     // 停止 setup/render/watch 等归属于组件 scope 的全部响应式 effect。
     scope.stop()
 
-    // async setup resolve 前组件可能已卸载，此时 render job 尚未创建，也没有 subTree
-    // 需要递归卸载。
+    // 异步 setup 尚未完成时可能没有 render job，subTree 可已是占位 VNode。
+    // 此处分支仅在 job 存在时递归卸载渲染子树。
     if (job) {
       // 即使任务已经入队，DISPOSED 也让调度器跳过。
       job.flags! |= SchedulerJobFlags.DISPOSED
       unmount(subTree, instance, parentSuspense, doRemove)
     }
-    // unmounted 在子树宿主移除和本轮提交完成后执行。
+    // unmounted 排在逻辑卸载后的 post 阶段；若元素 leave 延迟删除，它不等待动画完成。
     if (um) {
       queuePostRenderEffect(um, parentSuspense)
     }
@@ -2940,6 +2944,7 @@ if (patchFlag &gt; 0) {
       !transition.persisted
     ) {
       const { leave, delayLeave } = transition
+      /** 把删除动作交给 leave；delayLeave 可持有此闭包以协调 in-out 的先后顺序。 */
       const performLeave = () =&gt; leave(el!, performRemove)
       if (delayLeave) {
         delayLeave(vnode.el!, performRemove, performLeave)
@@ -3059,6 +3064,9 @@ leave(el, remove) {
           default: 0,
         },
       },
+      /**
+       * 返回渲染闭包，执行时产出 `props.count`。
+       */
       setup(props) {
         return () =&gt; props.count
       },
@@ -3067,7 +3075,7 @@ leave(el, remove) {
     const root = nodeOps.createElement('div')
     const app = createApp(Comp)
 
-    // warning
+    // 尚未挂载，卸载调用应给出警告。
     app.unmount()
     expect(`that is not mounted`).toHaveBeenWarned()
 

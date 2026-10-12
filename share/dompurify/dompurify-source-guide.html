@@ -707,6 +707,7 @@
       <nav class="toc" aria-label="文章目录">
         <strong>目录</strong>
         <a href="#verdict">01 · 先说结论</a>
+        <a href="#example">先跑一个用例（原 09）</a>
         <a href="#scope">02 · 版本与范围</a>
         <a href="#map">03 · 模块地图</a>
         <a href="#evolution">04 · 设计约束</a>
@@ -714,7 +715,7 @@
         <a href="#modules">06 · 分模块机制</a>
         <a href="#pipeline">07 · 完整调用链</a>
         <a href="#algorithms">08 · 算法深挖</a>
-        <a href="#example">09 · 完整用例</a>
+        <a href="#example-snapshots">09 · 用例 DOM 快照</a>
         <a href="#flow">10 · 执行流程图</a>
         <a href="#tests">11 · 测试证据</a>
         <a href="#build">12 · 构建与类型</a>
@@ -745,6 +746,56 @@
               都是受信任扩展点。</strong
             >
             它们能扩大允许集合、保留属性或改写输出；使用这些能力时，调用者要负责其规则。
+          </p>
+        </section>
+
+        <section id="example">
+          <p class="kicker">09 · Example</p>
+          <h2>用 Node 跑完解析、清理和返回</h2>
+          <p>
+            下面使用仓库真实 CJS 产物和 jsdom；与
+            <code>test/jsdom-node.js</code> 的初始化方式一致。
+            本例的 jsdom 29.1.1 要求 <code>^20.19.0 || ^22.13.0 || &gt;=24.0.0</code>；这比项目笼统的 Node 20+ 开发提示更严格，不等于 DOMPurify 的浏览器运行要求。
+            在 <code>dompurify/</code> 执行 <code>npm ci --ignore-scripts</code>，然后 <code>node examples/sanitize.cjs</code>，使用本仓已跟踪的 CJS 产物。
+            如需从 TypeScript 重新生成产物，先执行 <code>npm run build</code>；本轮未重新构建，未把产物与源码逐字等价作为结论。
+            <a href="../../dompurify/examples/README.md">环境与精确验证范围</a>。
+          </p>
+          <div class="source">
+            <div class="source-label">
+              <span
+                >教程可运行示例 · dompurify/examples/sanitize.cjs，在 dompurify
+                目录执行 node examples/sanitize.cjs</span
+              >
+              <button class="copy" type="button">复制</button>
+            </div>
+            <pre><code>const assert = require(&#x27;node:assert/strict&#x27;);
+const { JSDOM } = require(&#x27;jsdom&#x27;);
+const createDOMPurify = require(&#x27;../dist/purify.cjs.js&#x27;);
+
+const window = new JSDOM(&#x27;&lt;!doctype html&gt;&lt;body&gt;&lt;/body&gt;&#x27;).window;
+try {
+  const DOMPurify = createDOMPurify(window);
+  const dirty =
+    &#x27;&lt;form id=&quot;location&quot;&gt;&#x27; +
+    &#x27;&lt;a href=&quot;javascript:alert(1)&quot; onclick=&quot;alert(2)&quot;&gt;go&lt;/a&gt;&#x27; +
+    &#x27;&lt;svg&gt;&lt;circle pointer-events=&quot;all&quot; onload=&quot;alert(3)&quot; /&gt;&lt;/svg&gt;&#x27; +
+    &#x27;&lt;script&gt;alert(4)&lt;/script&gt;&#x27; +
+    &#x27;&lt;/form&gt;&#x27;;
+  const clean = DOMPurify.sanitize(dirty);
+  assert.equal(clean, &#x27;&lt;form&gt;&lt;a&gt;go&lt;/a&gt;&lt;svg&gt;&lt;circle pointer-events=&quot;all&quot;&gt;&lt;/circle&gt;&lt;/svg&gt;&lt;/form&gt;&#x27;);
+  assert.equal(DOMPurify.removed.length, 5);
+  console.log(clean);
+  console.log(&#x27;PASS: exact output; removed.length = 5&#x27;);
+} finally {
+  window.close();
+}</code></pre>
+          </div>
+          <p class="muted">
+            历史记录使用 Node.js 24.5.0；2026-10-12 用 Node.js 24.19.0、锁定 jsdom 29.1.1 运行配套 <code>examples/sanitize.cjs</code>，精确输出与删除计数断言通过：输出为
+            <code
+              >&lt;form&gt;&lt;a&gt;go&lt;/a&gt;&lt;svg&gt;&lt;circle
+              pointer-events="all"&gt;&lt;/circle&gt;&lt;/svg&gt;&lt;/form&gt;</code
+            >， <code>removed.length = 5</code>。
           </p>
         </section>
 
@@ -942,9 +993,10 @@
             策略数据与缓存原语供运行时使用；types/config 提供 TypeScript 契约，
             类型导入在构建后消失。底部测试箭头表示对主实现的观察与断言。
           </p>
+          <p>第一次读：先看前面的<a href="#example">输入、输出与断言</a>，只追 script、onclick 与 href；再沿<a href="#pipeline">主调用链</a>看解析和过滤。下面的契约、策略、hooks、namespace、shadow 与 Trusted Types 适合第二遍按问题查阅。章节编号保留，方便已有引用继续定位。</p>
           <div class="cards">
             <article class="card">
-              <h3>先读契约</h3>
+              <h3>查契约</h3>
               <p>
                 <code>package.json</code> 与
                 <code>types.ts</code> 定义消费者看到的形状和返回类型。
@@ -3460,11 +3512,9 @@ if (element.namespaceURI === HTML_NAMESPACE) {
 
           <h3>8.2 Hook allowlist：暴露共享集合前再检查一次</h3>
           <p>
-            sanitize 开始时只要已有 upon hook 就 clone。但 before hook 可以在
-            walk 中才安装 upon hook；所以元素/属性真正暴露 allowlist 前还要调用
-            <code>_forkSharedAllowlist</code>。仅当当前引用仍指向默认或
-            setConfig 基线时 clone， 已是 call-local
-            时保持原引用，既防污染又允许同调用内多节点共享 hook 修改。
+            进入 sanitize 时，如果已经注册了 upon hook，就先复制允许名单，免得这次修改污染下次调用。
+            但 before hook 也可能临时注册 upon hook，所以真正把名单交给回调前，<code>_forkSharedAllowlist</code> 还要再检查一次：仍用着默认名单或 setConfig 保存的名单，就复制；已经是本次调用的副本，就继续共用。
+            这样，同次清理中的后续节点能看到修改，下次清理仍从原始规则开始。
           </p>
 
           <figure class="engineering-figure" id="hook-call-lanes">
@@ -4751,58 +4801,10 @@ if (element.namespaceURI === HTML_NAMESPACE) {
           </div>
         </section>
 
-        <section id="example">
-          <p class="kicker">09 · Example</p>
-          <h2>用 Node 跑完解析、清理和返回</h2>
-          <p>
-            下面使用仓库真实 CJS 产物和 jsdom；与
-            <code>test/jsdom-node.js</code> 的初始化方式一致。
-            前提：使用项目要求的 Node.js 20+，已在本项目
-            <code>dompurify</code> 目录运行
-            build，且依赖已安装。示例同时验证元素、URI 属性、事件属性和
-            <code>DOMPurify.removed</code>。
-          </p>
-          <div class="source">
-            <div class="source-label">
-              <span
-                >教程可运行示例 · 保存到 dompurify/demo.cjs，在 dompurify
-                目录执行 node demo.cjs</span
-              >
-              <button class="copy" type="button">复制</button>
-            </div>
-            <pre><code>const assert = require('node:assert/strict');
-const { JSDOM } = require('jsdom');
-const createDOMPurify = require('./dist/purify.cjs.js');
-
-const jsdomWindow = new JSDOM('&lt;!doctype html&gt;&lt;body&gt;&lt;/body&gt;').window;
-const DOMPurify = createDOMPurify(jsdomWindow);
-
-const dirty =
-  '&lt;form id="location"&gt;' +
-  '&lt;a href="javascript:alert(1)" onclick="alert(2)"&gt;go&lt;/a&gt;' +
-  '&lt;svg&gt;&lt;circle pointer-events="all" onload="alert(3)" /&gt;&lt;/svg&gt;' +
-  '&lt;script&gt;alert(4)&lt;/script&gt;' +
-  '&lt;/form&gt;';
-
-const clean = DOMPurify.sanitize(dirty);
-
-assert.equal(clean.includes('&lt;script'), false);
-assert.equal(clean.includes('onclick'), false);
-assert.equal(clean.includes('onload'), false);
-assert.equal(clean.includes('javascript:'), false);
-assert.equal(clean.includes('pointer-events="all"'), true);
-assert.ok(DOMPurify.removed.length &gt;= 4);
-
-jsdomWindow.close();
-console.log(clean);</code></pre>
-          </div>
-          <p class="muted">
-            已用 Node.js 24.5.0 对当前仓库产物运行：输出为
-            <code
-              >&lt;form&gt;&lt;a&gt;go&lt;/a&gt;&lt;svg&gt;&lt;circle
-              pointer-events="all"&gt;&lt;/circle&gt;&lt;/svg&gt;&lt;/form&gt;</code
-            >， <code>removed.length = 5</code>。
-          </p>
+        <section id="example-snapshots">
+          <p class="kicker">09 · DOM snapshots</p>
+          <h2>回看同一个用例的解析树与清洗结果</h2>
+          <p>输入、运行命令与断言已移到开头的<a href="#example">最小用例</a>。下面保留详细图示，按需核对解析器和清理器分别改变了什么。</p>
           <figure class="engineering-figure" id="dom-tree-snapshots">
             <figcaption>
               同一输入的 DOM 前后快照：删掉什么，保留什么？

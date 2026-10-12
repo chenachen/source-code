@@ -1,0 +1,215 @@
+{
+  "root": "/workspace/shared/source-code-review-20261011",
+  "scanPaths": [
+    "react/fixtures/source-learning-demo"
+  ],
+  "summary": {
+    "files": 2,
+    "declarations": 19,
+    "unresolved": 0,
+    "byStatus": {
+      "documented": 19,
+      "exempt": 0,
+      "missing": 0,
+      "needs-tsdoc": 0
+    },
+    "byKind": {
+      "constant": 17,
+      "function": 2
+    }
+  },
+  "diagnostics": [],
+  "unusedExemptions": [],
+  "records": [
+    {
+      "file": "react/fixtures/source-learning-demo/context-example.cjs",
+      "line": 3,
+      "column": 7,
+      "kind": "constant",
+      "name": "assert",
+      "comment": "tsdoc",
+      "id": "react/fixtures/source-learning-demo/context-example.cjs#constant#assert",
+      "status": "documented"
+    },
+    {
+      "file": "react/fixtures/source-learning-demo/run.cjs",
+      "line": 5,
+      "column": 7,
+      "kind": "constant",
+      "name": "fs",
+      "comment": "tsdoc",
+      "id": "react/fixtures/source-learning-demo/run.cjs#constant#fs",
+      "status": "documented"
+    },
+    {
+      "file": "react/fixtures/source-learning-demo/run.cjs",
+      "line": 7,
+      "column": 7,
+      "kind": "constant",
+      "name": "path",
+      "comment": "tsdoc",
+      "id": "react/fixtures/source-learning-demo/run.cjs#constant#path",
+      "status": "documented"
+    },
+    {
+      "file": "react/fixtures/source-learning-demo/run.cjs",
+      "line": 9,
+      "column": 7,
+      "kind": "constant",
+      "name": "Module",
+      "comment": "tsdoc",
+      "id": "react/fixtures/source-learning-demo/run.cjs#constant#Module",
+      "status": "documented"
+    },
+    {
+      "file": "react/fixtures/source-learning-demo/run.cjs",
+      "line": 11,
+      "column": 7,
+      "kind": "constant",
+      "name": "assert",
+      "comment": "tsdoc",
+      "id": "react/fixtures/source-learning-demo/run.cjs#constant#assert",
+      "status": "documented"
+    },
+    {
+      "file": "react/fixtures/source-learning-demo/run.cjs",
+      "line": 13,
+      "column": 7,
+      "kind": "constant",
+      "name": "babel",
+      "comment": "tsdoc",
+      "id": "react/fixtures/source-learning-demo/run.cjs#constant#babel",
+      "status": "documented"
+    },
+    {
+      "file": "react/fixtures/source-learning-demo/run.cjs",
+      "line": 15,
+      "column": 7,
+      "kind": "constant",
+      "name": "hermes",
+      "comment": "tsdoc",
+      "id": "react/fixtures/source-learning-demo/run.cjs#constant#hermes",
+      "status": "documented"
+    },
+    {
+      "file": "react/fixtures/source-learning-demo/run.cjs",
+      "line": 17,
+      "column": 7,
+      "kind": "constant",
+      "name": "{JSDOM}",
+      "comment": "tsdoc",
+      "id": "react/fixtures/source-learning-demo/run.cjs#constant#{JSDOM}",
+      "status": "documented"
+    },
+    {
+      "file": "react/fixtures/source-learning-demo/run.cjs",
+      "line": 19,
+      "column": 7,
+      "kind": "constant",
+      "name": "sourceRoot",
+      "comment": "tsdoc",
+      "id": "react/fixtures/source-learning-demo/run.cjs#constant#sourceRoot",
+      "status": "documented"
+    },
+    {
+      "file": "react/fixtures/source-learning-demo/run.cjs",
+      "line": 21,
+      "column": 7,
+      "kind": "constant",
+      "name": "repositoryRoot",
+      "comment": "tsdoc",
+      "id": "react/fixtures/source-learning-demo/run.cjs#constant#repositoryRoot",
+      "status": "documented"
+    },
+    {
+      "file": "react/fixtures/source-learning-demo/run.cjs",
+      "line": 23,
+      "column": 7,
+      "kind": "constant",
+      "name": "loadedSources",
+      "comment": "tsdoc",
+      "id": "react/fixtures/source-learning-demo/run.cjs#constant#loadedSources",
+      "status": "documented"
+    },
+    {
+      "file": "react/fixtures/source-learning-demo/run.cjs",
+      "line": 25,
+      "column": 7,
+      "kind": "constant",
+      "name": "aliases",
+      "comment": "tsdoc",
+      "id": "react/fixtures/source-learning-demo/run.cjs#constant#aliases",
+      "status": "documented"
+    },
+    {
+      "file": "react/fixtures/source-learning-demo/run.cjs",
+      "line": 32,
+      "column": 7,
+      "kind": "constant",
+      "name": "sourcePackages",
+      "comment": "tsdoc",
+      "id": "react/fixtures/source-learning-demo/run.cjs#constant#sourcePackages",
+      "status": "documented"
+    },
+    {
+      "file": "react/fixtures/source-learning-demo/run.cjs",
+      "line": 34,
+      "column": 7,
+      "kind": "constant",
+      "name": "originalResolve",
+      "comment": "tsdoc",
+      "id": "react/fixtures/source-learning-demo/run.cjs#constant#originalResolve",
+      "status": "documented"
+    },
+    {
+      "file": "react/fixtures/source-learning-demo/run.cjs",
+      "line": 36,
+      "column": 7,
+      "kind": "constant",
+      "name": "originalJS",
+      "comment": "tsdoc",
+      "id": "react/fixtures/source-learning-demo/run.cjs#constant#originalJS",
+      "status": "documented"
+    },
+    {
+      "file": "react/fixtures/source-learning-demo/run.cjs",
+      "line": 38,
+      "column": 7,
+      "kind": "constant",
+      "name": "globals",
+      "comment": "tsdoc",
+      "id": "react/fixtures/source-learning-demo/run.cjs#constant#globals",
+      "status": "documented"
+    },
+    {
+      "file": "react/fixtures/source-learning-demo/run.cjs",
+      "line": 58,
+      "column": 1,
+      "kind": "function",
+      "name": "transform",
+      "comment": "tsdoc",
+      "id": "react/fixtures/source-learning-demo/run.cjs#function#transform",
+      "status": "documented"
+    },
+    {
+      "file": "react/fixtures/source-learning-demo/run.cjs",
+      "line": 77,
+      "column": 7,
+      "kind": "constant",
+      "name": "dom",
+      "comment": "tsdoc",
+      "id": "react/fixtures/source-learning-demo/run.cjs#constant#dom",
+      "status": "documented"
+    },
+    {
+      "file": "react/fixtures/source-learning-demo/run.cjs",
+      "line": 86,
+      "column": 1,
+      "kind": "function",
+      "name": "run",
+      "comment": "tsdoc",
+      "id": "react/fixtures/source-learning-demo/run.cjs#function#run",
+      "status": "documented"
+    }
+  ]
+}

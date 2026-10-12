@@ -3218,6 +3218,12 @@ forNode.codegenNode = createVNodeCall(
           </div>
           <div class="source-result">
             <strong>从模板到 patch 协议</strong>
+            <p>本例按 compiler-dom 的 <code>mode: 'module', prefixIdentifiers: true,
+              cacheHandlers: false</code> 编译，以下为产物字段摘要，不是连续源码。
+              开启安全的 handler 缓存时，onClick 会成为缓存表达式并退出 dynamicProps；
+              <a href="lab.html">实践页</a> 使用 <code>cacheHandlers: true</code>，
+              因而只保留 disabled。依据：vOn transform、transformElement 的
+              JS_CACHE_EXPRESSION 分支，以及 vOn.spec.ts 的成员处理器缓存用例。</p>
             <pre><code>&lt;button class="save" :disabled="busy" @click="save"&gt;{{ label }}&lt;/button&gt;
 
 props           = { class: "save", disabled: _ctx.busy, onClick: _ctx.save }

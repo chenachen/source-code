@@ -3290,7 +3290,10 @@ class RefImpl&lt;T = any&gt; {
   /** 当前 Ref 是否只追踪根值替换。 */
   public readonly [ReactiveFlags.IS_SHALLOW]: boolean = false
 
-  /** @param value 初始值。 @param isShallow 是否按原样保存内部值。 */
+  /** 建立独立 Dep，并按深浅规则分别保存比较值与公开值；构造时不登记订阅者。
+   * @param value 初始业务值。
+   * @param isShallow true 时保留原身份；false 时比较 raw、公开 reactive 值。
+   */
   constructor(value: T, isShallow: boolean) {
     this._rawValue = isShallow ? value : toRaw(value)
     this._value = isShallow ? value : toReactive(value)
@@ -3582,7 +3585,9 @@ class RefImpl&lt;T = any&gt; {
             <pre
               data-source-file="vue/packages/reactivity/__tests__/computed.spec.ts"
             >
-  // 场景：计算链上游变化但中间派生值未变；验证下游 computed 避免无意义重算。
+  /**
+   * 以 src = 0 建立奇偶计算链，依次写入 2、4、6；上游 getter 共执行四次，下游 getter 和 effect 各只一次，验证上游重算但结果不变时保留下游缓存。
+   */
   test('chained computed avoid re-compute', () =&gt; {
     const effectSpy = vi.fn()
     const c1Spy = vi.fn()
@@ -3607,9 +3612,9 @@ class RefImpl&lt;T = any&gt; {
     src.value = 4
     src.value = 6
     expect(c1Spy).toHaveBeenCalledTimes(4)
-    // c2 should not have to re-compute because c1 did not change.
+    // c1 的结果未变，c2 的 getter 不需要重算。
     expect(c2Spy).toHaveBeenCalledTimes(1)
-    // effect should not trigger because c2 did not change.
+    // c2 的结果未变，末端 effect 不需要重跑。
     expect(effectSpy).toHaveBeenCalledTimes(1)
   })</pre>
             <div class="codebox-note">
@@ -5282,8 +5287,7 @@ import {
           <div class="article-note">
             <b>最深处的读取</b>
             <p>
-              本例 <code>src.value</code> 返回 0；此刻
-              <code>activeSub === c1</code>，因此收集 c1→src.dep。完整实现见
+              本例 <code>src.value</code> 返回 0。完整实现见
               <a href="#source-ref-impl">第 02 章 RefImpl</a>。
             </p>
           </div>
@@ -5424,7 +5428,8 @@ import {
    *
    * 计算属性脏传播使用 `notify()`：其自身 Dep 的值尚未重新计算，不能提前递增版本，
    * 只需继续把“可能变化”传给下游。用 `finally` 配对批处理，调试钩子或通知抛错时
-   * 也能正确冲刷/恢复批深度。
+   * 也会结束本层 batch。外层 trigger() 自己的 batch 不在此 finally 管理范围内。
+   * onTrigger 在正式通知前同步调用，NOTIFIED 用来避免本批重复的调试通知。
    */
   notify(debugInfo?: DebuggerEventExtraInfo): void {
     startBatch()
@@ -5556,6 +5561,13 @@ import {
             </p>
           </div>
 
+          <div class="article-note">
+            <b>本地实现的错误边界</b>
+            <p>endBatch 会继续冲刷其余 effect，但只保留并最终重抛第一个真值错误。
+              仅抛出 0、false、undefined 等假值时，最后的 if (error) 不会抛出；
+              先假值后真值时，后者会覆盖前者。这不是任意 JavaScript thrown value 的重抛保证。</p>
+          </div>
+
           <article class="codebox">
             <div class="codebox-head">
               <span
@@ -5589,7 +5601,8 @@ export function startBatch(): void {
  *
  * 先清空计算属性的入队标记，再执行普通 effect；执行期间新产生的 effect 会形成新一段
  * 链表，由外层 `while` 继续冲刷。某个 effect 抛错不会阻止其余 effect 执行，最终抛出
- * 捕获到的第一个错误。
+ * 捕获到的第一个真值错误。当前实现用 if (!error) 保存、if (error) 抛出；
+ * 抛出的 0、false、undefined 等假值不会作为最终错误保留。此函数同步冲刷，不建立微任务。
  *
  * @internal
  */
@@ -5736,7 +5749,12 @@ function isDirty(sub: Subscriber): boolean {
  * 按需刷新计算属性的缓存。
  *
  * 快速路径从便宜到昂贵依次为：仍在追踪且未标脏、全局版本没有任何变化、逐依赖版本
- * 检查后确认结果不可能变化；只有这些判断都失败才真正执行 getter。
+ * 检查后确认当前依赖版本仍匹配；只有这些判断都失败才真正执行 getter。
+ *
+ * 上游通知只设置 DIRTY，不先发布结果版本；此处 getter 结果变化或首次发布才递增
+ * computed.dep.version，让下游区分“可能变化”和“结果已变”。第三条快路之前已保存
+ * globalVersion、清 DIRTY；isDirty 中嵌套刷新若抛错，本层尚未进入 try/finally。
+ * SSR 跳过逐依赖／无依赖快路，但仍保留全局版本快路；try 中异常递增版本而不回滚缓存。
  *
  * @returns 当前实现只返回 `undefined`；调用方通过计算属性 `dep.version` 判断值是否变化。
  * @internal
@@ -7237,42 +7255,14 @@ const r2 = effect(() =&gt; obj.run)
             </div>
           </div>
 
-          <article class="codebox">
-            <div class="codebox-head">
-              <span>解释性删节 · Dep.track 主分支 · 非连续源码</span
-              ><span class="dots"><i></i><i></i><i></i></span>
-            </div>
-            <pre><span class="fn">track</span>(debugInfo?: <span class="ty">DebuggerEventExtraInfo</span>): Link | undefined {
-  <span class="kw">if</span> (!activeSub || !shouldTrack || activeSub === <span class="kw">this</span>.computed) {
-    <span class="kw">return</span>
-  }
-
-  <span class="kw">let</span> link = <span class="kw">this</span>.activeLink
-  <span class="kw">if</span> (link === undefined || link.sub !== activeSub) {
-    link = <span class="kw">this</span>.activeLink = <span class="kw">new</span> <span class="ty">Link</span>(activeSub, <span class="kw">this</span>)
-
-    <span class="kw">if</span> (!activeSub.deps) {
-      activeSub.deps = activeSub.depsTail = link
-    } <span class="kw">else</span> {
-      link.prevDep = activeSub.depsTail
-      activeSub.depsTail!.nextDep = link
-      activeSub.depsTail = link
-    }
-    <span class="cm">// 登记 sc；仅 TRACKING 订阅者才把 Link 接入 Dep.subs。</span>
-    <span class="fn">addSub</span>(link)
-  } <span class="kw">else if</span> (link.version === -1) {
-    link.version = <span class="kw">this</span>.version
-    <span class="cm">// 随后把复用 Link 移到本轮访问顺序的尾部。</span>
-  }
-  <span class="kw">return</span> link
-}</pre>
-            <div class="codebox-note">
-              <strong>读法：</strong>三个早退条件决定能否追踪；新 Link 先进入
-              Subscriber.deps，addSub 再按 TRACKING 决定是否接入
-              Dep.subs。旧关系把 -1 恢复为当前版本；删节处负责链尾重排与开发期
-              onTrack。
-            </div>
-          </article>
+          <div class="article-note">
+            <b>Dep.track 分支回看</b>
+            <p>无 activeSub、暂停追踪或读取自身 computed 时早退；没有当前关系时新建 Link，
+              接到 Subscriber.deps，并由 addSub 按 TRACKING 决定是否接入 Dep.subs。
+              旧关系的 -1 版本恢复为当前版本，再按本轮访问顺序移到链尾。</p>
+            <p>逐行依据只维护一份：<a href="#source-dep-track-main">第 03 章 Dep.track 完整方法</a>，
+              包含重排与开发期 onTrack 分支。</p>
+          </div>
 
           <div class="stack" style="margin-top: 18px">
             <article class="codebox" id="source-link-class">
@@ -7303,6 +7293,8 @@ export class Link {
   prevActiveLink?: Link
 
   /**
+   * 初始化一条订阅关系及版本快照；此处只建立对象身份，两侧链表由调用方接入。
+   *
    * @param sub 订阅当前依赖的 effect 或 computed。
    * @param dep 被订阅的依赖源。
    */
@@ -10110,45 +10102,14 @@ function cleanupDeps(sub: Subscriber) {
                 </article>
               </div>
 
-              <article class="codebox">
-                <div class="codebox-head">
-                  <span
-                    >解释性删节骨架 · effect.ts · refreshComputed ·
-                    非连续源码</span
-                  ><span class="dots"><i></i><i></i><i></i></span>
-                </div>
-                <pre><span class="kw">export function</span> <span class="fn">refreshComputed</span>(computed: <span class="ty">ComputedRefImpl</span>): undefined {
-  <span class="kw">if</span> (
-    computed.flags &amp; EffectFlags.TRACKING &amp;&amp;
-    !(computed.flags &amp; EffectFlags.DIRTY)
-  ) <span class="kw">return</span>
-  computed.flags &amp;= ~EffectFlags.DIRTY
-
-  <span class="kw">if</span> (computed.globalVersion === globalVersion) <span class="kw">return</span>
-  computed.globalVersion = globalVersion
-
-  <span class="kw">if</span> (
-    !computed.isSSR &amp;&amp;
-    computed.flags &amp; EffectFlags.EVALUATED &amp;&amp;
-    ((!computed.deps &amp;&amp; !(computed <span class="kw">as</span> any)._dirty) || !<span class="fn">isDirty</span>(computed))
-  ) <span class="kw">return</span>
-
-  <span class="cm">// 省略 activeSub 保存、prepareDeps 与异常处理。</span>
-  <span class="kw">const</span> value = computed.<span class="fn">fn</span>(computed._value)
-  <span class="kw">if</span> (computed.dep.version === 0 || <span class="fn">hasChanged</span>(value, computed._value)) {
-    computed.flags |= EffectFlags.EVALUATED
-    computed._value = value
-    computed.dep.version++
-  }
-}</pre>
-                <div class="codebox-note">
-                  <strong>读法：</strong
-                  >这是四个缓存决策的删节骨架；上下文保存、依赖准备和 finally
-                  清理见 <a href="#source-is-dirty">第 03 章完整函数</a>。本例
-                  c1 的输入版本变化而重算，结果相同；c2 检查 c1
-                  输出版本后复用缓存。
-                </div>
-              </article>
+              <div class="article-note">
+                <b>refreshComputed 分支回看</b>
+                <p>按上方四层判断依次尝试缓存；都未命中才运行 getter。
+                  首次发布或结果变化更新缓存与输出版本，try 内异常也递增版本，finally 恢复追踪上下文。
+                  isDirty 中的嵌套刷新在该 try 之前，异常边界不能混为一谈。</p>
+                <p>唯一代码依据：<a href="#source-is-dirty">第 03 章 isDirty / refreshComputed 完整函数</a>。
+                  本例 c1 重算但结果相同，c2 比较 c1 输出版本后继续复用缓存。</p>
+              </div>
 
               <div class="insight">
                 <b>常量 computed 为什么只计算一次？</b>
@@ -10411,7 +10372,9 @@ function cleanupDeps(sub: Subscriber) {
 
   /**
    * 执行当前 watcher 的全部清理并删除记录；下一轮注册时会创建新数组。
-   * 同一函数也挂到 `effect.onStop`，因此重跑与永久停止共享完全相同的清理语义。
+   * 同一函数也挂到 effect.onStop，因此重跑与永久停止共用此入口。
+   * cleanupMap.delete 在用户清理之后：无 call 注入时，某个清理抛错会中断后续清理
+   * 和删除记录，不保证全部执行。call 注入时，逐项错误处理与是否吞错由宿主决定。
    */
   cleanup = effect.onStop = () =&gt; {
     const cleanups = cleanupMap.get(effect)
@@ -11547,7 +11510,8 @@ function noTracking(
           },
           /**
            * 设置 Map/WeakMap 键值。已有 key 优先沿用其当前身份；找不到才尝试 raw key。
-           * 新键触发 ADD，已有键且值实际变化触发 SET。
+           * 新键触发 ADD，已有键且值按 Object.is 实际变化触发 SET。深层写入普通代理
+           * value 存 raw，浅层／只读 value 则保留；key 身份判断与 value 转换彼此独立。
            */
           set(this: MapTypes, key: unknown, value: unknown) {
             if (!shallow &amp;&amp; !isShallow(value) &amp;&amp; !isReadonly(value)) {

@@ -297,7 +297,7 @@ disposer 失败不会阻止其余资源释放。外部 URL 与兼容 runner 引�
 | ModuleGraph 无 URL 节点 | `resolveId()`           | URL 映射到规范 ID/ModuleNode              | 无插件解析时回退原 URL，后续 load 仍可能失败                                           |
 | 节点无结果              | `load → transform`      | `transformResult`、依赖边与 meta 写回节点 | 插件错误补充 plugin/id/代码帧后抛给中间件                                              |
 | HTTP 尚未结束           | `send()`                | code、ETag、map 与缓存头写入响应          | 优化器换代/处理中映射为 504；访问拒绝映射为 403                                        |
-| 文件未变化              | watcher event           | 节点失效并向 importer 传播                | 无 HMR 接受边界时 full reload                                                          |
+| 文件未变化              | watcher event           | 节点失效并向 importer 传播                | 传播遇到死端才 full reload；无死端但无更新时不发消息                                                          |
 | server 活动             | `server.close()`        | watcher、WS、Environment、插件资源释放    | close 设计为可重复等待，避免并发关闭遗漏资源                                           |
 
 ## 完整执行流程图
@@ -341,9 +341,10 @@ flowchart TD
   S --> T{"文件随后变化?"}
   T -- "否" --> U["缓存等待下一请求"]
   T -- "是" --> V["失效节点并传播 HMR"]
-  V --> W{"传播未遇死端且找到接受边界?"}
-  W -- "是" --> W1["发送 update payload"]
-  W -- "否" --> W2["发送 full-reload"]
+  V --> W{"传播遇到死端?"}
+  W -- "是" --> W2["发送 full-reload"]
+  W -- "否，存在更新" --> W1["发送 update payload"]
+  W -- "否，updates 为空" --> U
   U --> Z["server.close() 时释放全部资源"]
   W1 --> Z
   W2 --> Z

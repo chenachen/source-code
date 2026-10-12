@@ -886,7 +886,7 @@ describe('api: watch', () => {
 
     const Comp = {
       /**
-       * 调用 `watch(() => b.value, val => { calls.push('watcher child'); }, { flush: 'pre' })` 完成本例的初始化登记或读取；返回渲染闭包，执行时执行 `calls.push('render child')`。
+       * 子组件的 pre watcher 和 render 都读取 b，并分别记日志，检查同一次更新中子 watcher 先于子 render。
        */
       setup() {
         watch(
@@ -906,7 +906,7 @@ describe('api: watch', () => {
     const Parent = {
       props: ['a'],
       /**
-       * 调用 `watch(() => b.value, val => { calls.push('watcher parent'); }, { flush: 'pre' })` 完成本例的初始化登记或读取；返回渲染闭包，执行时产出 `h(Comp)`。
+       * 父组件同样监听并渲染 b，再返回子组件；让父子任务一起入队，检查父 pre/render 先于子 pre/render。
        */
       setup() {
         watch(
@@ -926,7 +926,7 @@ describe('api: watch', () => {
 
     const App = {
       /**
-       * 渲染结果为 `h(Parent, { a: b.value, })`。
+       * 把 b 作为父组件 prop 传入，使外层更新也参与本例的父子调度顺序验证。
        */
       render() {
         return h(Parent, {

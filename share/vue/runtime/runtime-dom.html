@@ -245,6 +245,7 @@ function ensureHydrationRenderer() {
               <pre
                 data-source-file="vue/packages/runtime-dom/src/index.ts"
               ><code>  const { mount } = app
+  /** 解析客户端 mount 容器；缺 render/template 时读取可信 in-DOM 模板，只清空 Element，保留 ShadowRoot 样式，再调用 core mount 并更新 v-cloak/data-v-app。 */
   app.mount = (containerOrSelector: Element | ShadowRoot | string): any =&gt; {
     const container = normalizeContainer(containerOrSelector)
     if (!container) return
@@ -1663,6 +1664,7 @@ existingInvoker.value = nextHandler</code></pre>
   HTMLInputElement | HTMLTextAreaElement,
   'trim' | 'number' | 'lazy'
 &gt; = {
+  /** 初始化文本输入监听与水合初值；lazy 监听 change，其余监听 input/组合输入；事件读取元素上最新 assigner。 */
   created(el, { modifiers: { lazy, trim, number } }, vnode) {
     // 水合 created 面对已在 DOM 的元素。保存 SSR/defaultValue 规范化结果，mounted 时可
     // 判断用户是否在 JS 加载前已经输入；若已输入，应写回 model 而非覆盖用户内容。
@@ -1696,6 +1698,7 @@ existingInvoker.value = nextHandler</code></pre>
     }
   },
   // mounted 才设 value，保证 range 的 min/max 等 props 已先写入。
+  /** 待 type/min/max 等 props 已写入后设置 value。水合前用户已编辑文本时，把现值按修饰符回写 model 并删除初值缓存，避免覆盖输入。 */
   mounted(el, { value, modifiers: { trim, number } }) {
     const newValue = value == null ? '' : value
     const initialValue = el[initialValueKey]
@@ -1710,6 +1713,7 @@ existingInvoker.value = nextHandler</code></pre>
       el.value = newValue
     }
   },
+  /** 更新 assigner，组合输入中直接返回；等价值或焦点下 lazy/trim 的等价变化不重写 value，减少光标跳动。 */
   beforeUpdate(
     el,
     { value, oldValue, modifiers: { lazy, trim, number } },
@@ -1767,14 +1771,17 @@ existingInvoker.value = nextHandler</code></pre>
               ><code>  it('should work with text input', async () =&gt; {
     const manualListener = vi.fn()
     const component = defineComponent({
+      /** 初始化组件状态为{value: null}，供本例渲染和事件更新读取。 */
       data() {
         return { value: null }
       },
+      /** 渲染根数组[withVModel( h('input', { 'onUpdate:modelValue': setValue.bind(this), onInput: () =&gt; { manualListener(data.value) }, }), this.value, )]。 */
       render() {
         return [
           withVModel(
             h('input', {
               'onUpdate:modelValue': setValue.bind(this),
+              /** 读取更新后的data.value传给manualListener，检查v-model赋值先于用户input监听器。 */
               onInput: () =&gt; {
                 manualListener(data.value)
               },
@@ -1890,9 +1897,13 @@ existingInvoker.value = nextHandler</code></pre>
             <div>
               <pre
                 data-source-file="vue/packages/runtime-dom/src/directives/vShow.ts"
-              ><code>export const vShow: ObjectDirective&lt;VShowElement&gt; &amp; { name: 'show' } = {
+              ><code>export const vShow: ObjectDirective&lt;VShowElement&gt; &amp; {
+  /** 水合诊断识别 v-show 的内部字面量标记。 */
+  name: 'show'
+} = {
   // 水合 style mismatch 检查用内部 name 识别 v-show 应产生 display:none。
   name: 'show',
+  /** 保存非 none 的原 display；有显示入场过渡时先 beforeEnter，否则直接设置显示/隐藏。 */
   beforeMount(el, { value }, { transition }) {
     el[vShowOriginalDisplay] =
       el.style.display === 'none' ? '' : el.style.display
@@ -1902,11 +1913,13 @@ existingInvoker.value = nextHandler</code></pre>
       setDisplay(el, value)
     }
   },
+  /** 首次 value 为真且有 transition 时启动 enter；显示状态已在 beforeMount 准备。 */
   mounted(el, { value }, { transition }) {
     if (transition &amp;&amp; value) {
       transition.enter(el)
     }
   },
+  /** 只处理布尔可见性变化；显示先恢复 display 再 enter，隐藏在 leave 完成回调才置 none。 */
   updated(el, { value, oldValue }, { transition }) {
     if (!value === !oldValue) return
     if (transition) {
@@ -1923,6 +1936,7 @@ existingInvoker.value = nextHandler</code></pre>
       setDisplay(el, value)
     }
   },
+  /** 卸载前按当前 value 恢复 display 与隐藏标记，不等待新过渡。 */
   beforeUnmount(el, { value }) {
     setDisplay(el, value)
   },
@@ -3050,6 +3064,7 @@ const tt =
 if (tt) {
   try {
     policy = /*@__PURE__*/ tt.createPolicy('vue', {
+      /** Trusted Types policy 的透明转换函数；只包装类型，不做 HTML 清洗。 */
       createHTML: val =&gt; val,
     })
   } catch (e: unknown) {
@@ -3137,7 +3152,7 @@ export const unsafeToTrustedHTML: (value: string) =&gt; TrustedHTML | string =
 const timeout = () =&gt; new Promise(r =&gt; setTimeout(r))</code></pre>
           <pre
             data-source-file="vue/packages/runtime-dom/__tests__/patchEvents.spec.ts"
-          ><code>  // 测试场景：应该更新事件处理程序。
+          ><code>  /** 测试场景：先绑定 prevFn 并触发，再把同事件更新 nextFn；旧函数仅一次，新函数后续两次，核对稳定代理替换 value。 */
   it('should update event handler', async () =&gt; {
     const el = document.createElement('div')
     const prevFn = vi.fn()
@@ -3155,7 +3170,7 @@ const timeout = () =&gt; new Promise(r =&gt; setTimeout(r))</code></pre>
   })</code></pre>
           <pre
             data-source-file="vue/packages/runtime-dom/__tests__/patchEvents.spec.ts"
-          ><code>  // 测试场景：应该取消分配事件处理程序。
+          ><code>  /** 测试场景：绑定 onClick 后更新 null，再派发 click；处理器不调用，核对同一 invoker 解绑。 */
   it('should unassign event handler', async () =&gt; {
     const el = document.createElement('div')
     const fn = vi.fn()
@@ -3200,7 +3215,10 @@ const timeout = () =&gt; new Promise(r =&gt; setTimeout(r))</code></pre>
           <pre
             data-source-file="vue/packages/runtime-dom/src/modules/events.ts"
           ><code>export function patchEvent(
-  el: Element &amp; { [veiKey]?: Record&lt;string, Invoker | undefined&gt; },
+  el: Element &amp; {
+    /** 元素上的事件代理表，以含 Once/Passive/Capture 的原始 prop 名为键。 */
+    [veiKey]?: Record&lt;string, Invoker | undefined&gt;
+  },
   rawName: string,
   prevValue: EventValue | null,
   nextValue: EventValue | unknown,

@@ -145,16 +145,17 @@
 
       <section id="reading">
         <h2>推荐阅读路线</h2>
+        <p><strong>第一次学，先看到输入和结果：</strong><a href="client-rendering-19.3.0/index.html#demo">计数与列表 Demo</a> → <a href="10-fiber-object-model.html">10 对象</a> → <a href="13-hooks-state-machine.html">13 Hook</a> → <a href="11-update-queues-lanes.html">11 queue / lane</a> → <a href="12-child-reconciliation.html">12 keyed</a> → <a href="14-commit-effects.html">14 commit</a> → <a href="15-events-hydration.html">15 事件</a> → <a href="16-end-to-end-source.html">16 act 与生产差异</a> → <a href="17-suspense-retry.html">17 Suspense</a>。这是学习顺序，不是运行调用顺序；基础章节按需回查。</p>
         <div class="grid">
           <article class="card">
             <span class="number">FOUNDATION → ENGINE</span>
-            <h3>第一次完整阅读</h3>
+            <h3>按包依赖查阅</h3>
             <p>按 shared → scheduler → react → reconciler render → reconciler commit → DOM bindings → react-dom → 端到端主线。术语只定义一次，后页直接沿用。</p>
           </article>
           <article class="card">
             <span class="number">SYMPTOM → OWNER</span>
             <h3>按问题定位</h3>
-            <p>“为什么重渲染”从 Lane/update queue 查；“为什么属性或事件异常”从 DOM bindings 查；“为什么入口报错”先查 react-dom，再沿 HostConfig 进入引擎。</p>
+            <p>“为什么重渲染”从 Lane/update queue 与 <a href="13-hooks-state-machine.html#context">Context 依赖传播</a>查；“为什么属性或事件异常”从 DOM bindings 查；“为什么入口报错”先查 react-dom，再沿 HostConfig 进入引擎。</p>
           </article>
         </div>
       </section>

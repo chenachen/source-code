@@ -732,9 +732,11 @@ describe('runtime course: Counter', () =&gt; {
             data-source-file="vue/packages/runtime-core/__tests__/scheduler.spec.ts"
           ><code>    it('should dedupe queued jobs', async () =&gt; {
       const calls: string[] = []
+      /** 将 job1 写入 calls，供本例比较执行顺序；函数身份同时用于队列去重。 */
       const job1 = () =&gt; {
         calls.push('job1')
       }
+      /** 将 job2 写入 calls，供本例比较执行顺序；函数身份同时用于队列去重。 */
       const job2 = () =&gt; {
         calls.push('job2')
       }
@@ -803,7 +805,7 @@ describe('runtime course: Counter', () =&gt; {
       `Unhandled error during execution of scheduler flush`,
     ).toHaveBeenWarned()
 
-    // this one should no longer error
+    // 前一批错误已清理，新的 nextTick 应兑现。
     await nextTick()
   })</code></pre>
             </div>
@@ -2120,7 +2122,7 @@ count.value++</code></pre>
               <thead>
                 <tr>
                   <th>配置</th>
-                  <th>调度方式</th>
+                  <th>依赖变化后的调度方式</th>
                   <th>能观察到的 DOM</th>
                   <th>适用场景</th>
                 </tr>
@@ -2147,6 +2149,46 @@ count.value++</code></pre>
               </tbody>
             </table>
           </div>
+          <h3>首次执行单独判断（客户端）</h3>
+          <details>
+            <summary>源码证据：先决定首跑，再决定后续队列</summary>
+            <p>连续原文 · reactivity/src/watch.ts · watch 的首次运行分支</p>
+            <pre data-source-file="vue/packages/reactivity/src/watch.ts"><code>  // 首次运行：watch 根据 immediate 决定只建立旧值还是执行回调；有 scheduler 的
+  // watchEffect 由调度器决定首次时机，无 scheduler 则同步执行。
+  if (cb) {
+    if (immediate) {
+      job(true)
+    } else {
+      oldValue = effect.run()
+    }
+  } else if (scheduler) {
+    scheduler(job.bind(null, true), true)
+  } else {
+    effect.run()
+  }</code></pre>
+            <p>连续原文 · runtime-core/src/apiWatch.ts · pre scheduler</p>
+            <pre data-source-file="vue/packages/runtime-core/src/apiWatch.ts"><code>    baseWatchOptions.scheduler = (job, isFirstRun) =&gt; {
+      if (isFirstRun) {
+        job()
+      } else {
+        queueJob(job)
+      }
+    }</code></pre>
+          </details>
+          <ul>
+            <li><code>watch(source, cb)</code>：创建时同步求旧值，不调用 cb。</li>
+            <li><code>watch(source, cb, { immediate: true })</code>：首次直接同步调用 cb，
+              即使 <code>flush: 'post'</code> 也不经过 post 队列。</li>
+            <li><code>watchEffect</code>：pre/sync 首跑同步；post 首跑交给
+              <code>queuePostRenderEffect</code>，后续依赖变化再按上表调度。</li>
+          </ul>
+          <p>因此，<code>immediate + post</code> 不能保证首次回调中的模板 ref 已挂载。
+            SSR 另有执行限制，不能用 SSR 的 immediate 测试推导客户端 DOM 时序。</p>
+          <p>依据：<code>reactivity/src/watch.ts · 首次运行分支</code> 的
+            <code>job(true) / effect.run() / scheduler(..., true)</code>；
+            <code>runtime-core/src/apiWatch.ts · doWatch</code> 的 isFirstRun 分支。
+            <code>runtime-core/__tests__/apiWatch.spec.ts · flush timing: pre</code>
+            验证默认 watchEffect 首次 DOM 为空，后续两次修改合并为一次执行。</p>
           <p>
             有 Suspense 时，post effect 不一定立即进入全局 post
             队列。若当前分支仍 pending，它先缓存在 Suspense.effects，等分支

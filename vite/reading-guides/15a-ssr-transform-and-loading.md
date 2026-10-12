@@ -162,6 +162,139 @@ getter 是 live binding 的关键：导出方后续修改本地值，导入方�
 - class 静态属性名与 import 同名时，只有 computed key 才是值引用，见
   [PR #22199](https://github.com/vitejs/vite/pull/22199)。
 
+### 为什么要等整棵树走完：同名引用的证据
+
+源码摘录：`packages/vite/src/node/ssr/ssrTransform.ts::walk`。以下保留决定延迟判断的
+各段，省略其他语法分类分支；它们在同一次 walk 中共享 scopeMap 与 identifiers，不是独立函数。
+
+```ts
+  const parentStack: ESTree.Node[] = []
+  const varKindStack: ESTree.VariableDeclaration['kind'][] = []
+  const scopeMap = new WeakMap<ESTree.Node, Set<string>>()
+  const identifiers: [id: any, stack: ESTree.Node[]][] = []
+
+  /** 把绑定名登记到创建它的函数或块节点上。 */
+  const setScope = (node: ESTree.Node, name: string) => {
+    let scopeIds = scopeMap.get(node)
+    if (scopeIds && scopeIds.has(name)) {
+      return
+    }
+    if (!scopeIds) {
+      scopeIds = new Set()
+      scopeMap.set(node, scopeIds)
+    }
+    scopeIds.add(name)
+  }
+
+  /** 沿当前父节点栈判断名称是否被任一局部作用域声明。 */
+  function isInScope(name: string, parents: ESTree.Node[]) {
+    return parents.some((node) => scopeMap.get(node)?.has(name))
+  }
+// ...handlePattern 等辅助函数省略；以下是 eswalk.enter 内的候选收集分支
+      if (node.type === 'Identifier') {
+        if (
+          !isInScope(node.name, parentStack) &&
+          isRefIdentifier(node, parent!, parentStack)
+        ) {
+          // DFS 阶段只记录候选；作用域全部建立后再按记录顺序发出。
+          identifiers.push([node, parentStack.slice(0)])
+        }
+      }
+// ...以下仍在 enter 中：函数声明名登记到父作用域
+        if (node.type === 'FunctionDeclaration') {
+          const parentScope = findParentScope(parentStack)
+          if (parentScope) {
+            setScope(parentScope, node.id!.name)
+          }
+        }
+// ...变量声明分支中，根据 kind 选择函数或块作用域
+        const parentFunction = findParentScope(
+          parentStack,
+          varKindStack[0] === 'var',
+        )
+        if (parentFunction) {
+          handlePattern(node.id, parentFunction)
+        }
+// ...leave 恢复父栈与声明 kind 栈后，eswalk 才结束
+  // 所有提升声明已入 scopeMap 后再发出 identifier，避免先遇到引用就误替换。
+  identifiers.forEach(([node, stack]) => {
+    if (!isInScope(node.name, stack)) onIdentifier(node, stack[0], stack)
+  })
+```
+
+`setScope` 的集合属于声明所在的节点；保存父栈副本意味着之后退出函数不会丢掉这个引用的作用域。
+当后方声明补进集合，最终 `isInScope` 会筛掉早先收集的同名候选。只有未被遮蔽的值引用才交给
+`onIdentifier`，它再用 `idToImportMap.get(id.name)` 决定 namespace 替换。
+
+用真实测试 `ssrTransform.spec.ts::declare scope` 看先后顺序（下面是完整输入，直接取自该测试）：
+
+```js
+import { aaa, bbb, ccc, ddd } from 'vue'
+
+function foobar() {
+  ddd()
+
+  const aaa = () => {
+    bbb(ccc)
+    ddd()
+  }
+  const bbb = () => {
+    console.log('hi')
+  }
+  const ccc = 1
+  function ddd() {}
+
+  aaa()
+  bbb()
+  ccc()
+}
+
+aaa()
+bbb()
+```
+
+- Given：四个 import 名称，又在 foobar 内声明四个局部同名绑定；首次 ddd 调用在声明前。
+- When：`ssrTransformSimpleCode` 把同一文本作为 code/originalCode，调用 `ssrTransform(code, null, '', code)`。
+- Then：该测试的 `toMatchInlineSnapshot` 保留函数内所有局部调用；顶层最后两行变成
+  `(0,__vite_ssr_import_0__.aaa)()` 与 `(0,__vite_ssr_import_0__.bbb)()`。
+- Mechanism：先遇到 ddd 引用不等于它来自 import。DFS 最后已登记函数声明，延迟检查把它排除。
+  bbb/ccc 在嵌套箭头中引用时，同样根据完整父栈看到外层局部绑定。
+
+它是转换快照测试，不会执行 `ccc()`，也不证明这段输入可作为业务代码正常运行。
+对照更小的真实测试，`ref` 没有局部声明会改写，而函数内局部 `fn` 与对象简写不会：
+
+```ts
+test('do not rewrite when variable is in scope', async () => {
+  const result = await ssrTransformSimple(
+    `import { fn } from 'vue';function A(){ const fn = () => {}; return { fn }; }`,
+  )
+  expect(result?.code).toMatchInlineSnapshot(
+    `
+    "const __vite_ssr_import_0__ = await __vite_ssr_import__("vue", {"importedNames":["fn"]});
+    function A(){ const fn = () => {}; return { fn }; }"
+  `,
+  )
+  expect(result?.deps).toEqual(['vue'])
+})
+
+// #5472：对象解构产生局部绑定后，不能再改写为同名 import。
+```
+
+这里的辅助函数是 `const ssrTransformSimple = async (code: string, url = '') =>
+ssrTransform(code, null, url, code)`；测试文件从 vitest 导入 test/expect，从 `../ssrTransform`
+导入目标函数。后文的 `named import` 快照给出未遮蔽的 ref 对照。
+
+复现使用已有文件，不需要真实安装 vue：这些用例只转换字符串。按仓库锁文件准备 Vite 开发依赖后，
+在 `vite/` 运行（Node/pnpm 前提同 [07](./07-module-resolution.md)）：
+
+```sh
+pnpm exec vitest run packages/vite/src/node/ssr/__tests__/ssrTransform.spec.ts -t 'declare scope|do not rewrite when variable is in scope|named import'
+```
+
+本次核对源码与既有快照，并把原 `walk` 与辅助函数单独提取，以 Acorn 8.15.0 生成上述输入的
+ESTree，确认仅顶层 aaa/bbb 留作 import 引用候选。这是局部算法验证，解析器并非生产使用的 Rolldown，
+未运行上述 Vitest 或完整 ssrTransform 测试；不要扩张成所有 JavaScript 语法均已验证。
+
 ## 调用语义与 `(0, fn)`
 
 若直接生成 `namespace.fn()`，JavaScript 会把 namespace 绑定为 `this`；原始 ESM 的

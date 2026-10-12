@@ -18,12 +18,17 @@
 <section id="coverage"><h2>模块审查清单</h2><div class="table-wrap"><table><thead><tr><th>模块</th><th>手写语言文件</th><th>对应文章</th></tr></thead><tbody>
 <tr><td>shared</td><td>54</td><td>01 · symbols、类型、flags 与内部桥</td></tr>
 <tr><td>scheduler</td><td>25</td><td>02 · 堆、host loop、continuation 与 fork</td></tr>
-<tr><td>react</td><td>83</td><td>03 · 元素、Children、公开 Hooks、transition、cache 与 act</td></tr>
+<tr><td>react</td><td>83</td><td>03 · 元素、Children、公开 Hooks、transition 与 Context API；Context 内核见 13，act 案例见 16；未展开 cache 机制</td></tr>
 <tr><td>react-reconciler</td><td>172</td><td>04、05、10–14、17 · Fiber、queue、Lane、render、协调、Hooks、commit 与 Suspense</td></tr>
 <tr><td>react-dom-bindings</td><td>92</td><td>06、15 · HostConfig、属性、表单、事件、hydration 与服务端 DOM 编码</td></tr>
 <tr><td>react-dom</td><td>224</td><td>07 · root、portal、flush 与服务端流/静态适配</td></tr>
 <tr><th>合计</th><th>650</th><td>首页、08、09、16 与单文件教程补齐跨包串联</td></tr>
 </tbody></table></div><p>650 文件包括 643 个 JS/Flow、6 个 TS/d.ts 与 1 个 CoffeeScript 文件。本轮审查全部现有解释，不以局部样本代替整模块；删除仅复述测试名的模板，并修正与测试体不符的说明。旧声明覆盖统计记录的是原注释任务，保存在 Git 历史；本轮以内容是否准确、必要和自洽验收。</p></section>
+<section id="review-20261012"><h2>2026-10-12 定点修订与本次验证</h2>
+<p>固定学习仓库基线为 <code>87d515d9dfc8a31b9496b36556dbd2409a6c781d</code>。本次修正入口找根/收口传播时序、Context 到 memo 的证据链、首次阅读路线、代码身份标签及首挂手推前提；合并五组 act 测试重复摘要，另纠正一处 thenable 订阅注释。没有修改上游生产逻辑。</p>
+<p><a href="../../react/fixtures/source-learning-demo/README.md">源码 Demo</a> 已在 Node 24.19.0 与锁定依赖下执行：主例不使用 act/flushSync，计数/排序/key 身份/unmount 均通过；独立 Context 例中相同 A 引用不重渲染，新引用同字段 B 重渲染。加载 197 个本地源码模块，无 npm React。jsdom 不是浏览器，未把这些结果升级为绘制、lane/flags 数值或完整 Jest 证明。</p>
+<p>本次源码摘录门禁：18 个多页 HTML、161 个代码框；65 段连续原码全部匹配（54 段源码类标签、11 段测试类标签），77 段明确删节、19 段教学代码/命令。递归 HTML5 解析、链接/锚点与重复 id 检查覆盖全部 19 页，无错误；两个改注释的测试文件去注释 AST 与工具指令均未变。React 全套 Jest 与浏览器宽/窄屏未在本次重跑。</p>
+<p><strong>历史记录边界：</strong>下面各节原有的 650 文件、643 AST、150 代码框、38 次浏览器布局等统计属于此前注释/补图阶段，保留作历史记录，不是 2026-10-12 的重新验证结果。</p></section>
 <section id="method"><h2>实现与注释怎样核对</h2><p>从公开入口追踪真实调用者、分支条件和状态写入；异步机制分别核对注册、触发、执行与清理时机。测试按实际初始化、关键操作和断言阅读。代码框同步到修订后的源码，正文、图示和示例使用同一版本的术语与路径。</p></section>
 <section id="quality"><h2>主要修正</h2><ul class="qa">
 <li><strong>对象与身份：</strong>纠正 Symbol 注册表的共享范围、owner stack 配额和 current/alternate 的职责；将删除标记准确归到父 Fiber 的 ChildDeletion 与 deletions。</li>
@@ -33,7 +38,7 @@
 <li><strong>表达：</strong>删除无具体输入与断言的测试模板、重复免责列和无效 Git 标识；保留会改变行为的版本、lane、事件及环境条件。</li>
 </ul></section>
 <section id="semantic"><h2>运行语义检查</h2><p>源码修订只改注释。验证已将当前文件与本轮编辑前 HEAD 对比：JS/Flow 使用 Hermes 0.36.1 比较去注释 AST、非注释 token 及工具指令；发生改动的非 JS 文件另按对应语言检查。<code>@gate</code>、Flow、ESLint 等会被工具消费的注释同样保留。</p><p id="semantic-result">643 个 JS/Flow 文件全部解析成功，去注释 AST、1,317,694 个非注释 token 与 2,218 条工具指令均与编辑前一致，差异为 0。改动的 1 个 TS 文件经 TypeScript 5.9.3 检查，AST、1,837 个 token 与工具指令一致，解析错误为 0；其余 5 个 d.ts 与 1 个 CoffeeScript 文件字节未变。最终 diff whitespace 检查通过。本轮实际修订 381 个源码文件的既有注释。</p></section>
-<section id="tests"><h2>测试与示例</h2><p>本轮阅读测试体作为机制证据，未运行 React Jest 套件，也未运行单文件教程的 JSX Demo。文章中的预期结果对应测试断言或已展开的源码推演；框架实现和测试输入、断言均不改动。</p>
+<section id="tests"><h2>测试与示例</h2><p>此前阶段阅读测试体作为机制证据，未运行 React Jest 套件，也未运行单文件教程的 JSX Demo；2026-10-12 的最小源码 Demo 新验证见上节。文章中的预期结果对应测试断言或已展开的源码推演；框架实现和测试输入、断言均不改动。</p>
 <p>例如 <a href="16-end-to-end-source.html#real-test">三次 click 的真实测试</a> 在同一 act 内先入队三个 action，冲刷后 effect 观察到 3；后续两个独立 act 分别观察到 4、5。<a href="client-rendering-19.3.0/index.html">单文件教程</a> 的 click 示例同时更新计数和列表，其数字文本由 HostText 提交，重排由 Placement 提交。</p></section>
 <section id="crosswalk"><h2>教程章节到源码与测试的交叉索引</h2><div class="table-wrap"><table><thead><tr><th>主题页</th><th>决定性源码</th><th>代表测试证据</th><th>异常/清理出口</th></tr></thead><tbody>
 <tr><td><a href="01-shared.html">shared</a></td><td>ReactSymbols、ReactTypes、FeatureFlags、CheckStringCoercion</td><td>ReactSymbols / coercion tests</td><td>身份碰撞、类型 coercion 原错误</td></tr>
@@ -47,13 +52,13 @@
 <tr><td><a href="10-fiber-object-model.html">Fiber 对象模型</a></td><td>ReactFiberRoot、ReactFiber、WorkLoop</td><td>HooksWithNoopRenderer / Incremental interruption</td><td>放弃候选树、两阶段 deletion detach</td></tr>
 <tr><td><a href="11-update-queues-lanes.html">Queue / Lane</a></td><td>Hooks、ConcurrentUpdates、Lane、RootScheduler</td><td>IncrementalUpdates / SchedulerIntegration / Transition</td><td>跳过后 rebase、suspended/pinged 根</td></tr>
 <tr><td><a href="12-child-reconciliation.html">keyed children</a></td><td>ReactChildFiber 的 slot、Map、placeChild、deleteChild</td><td>StrictEffectsMode / ReactIdentity</td><td>重复 key、同 key 异 type、删除与 state 失效</td></tr>
-<tr><td><a href="13-hooks-state-machine.html">Hooks 状态机</a></td><td>renderWithHooks、Hook queue、dispatcher、Effect ring</td><td>ReactHooks / HooksWithNoopRenderer</td><td>多/少 Hook、render-phase 上限、cleanup</td></tr>
+<tr><td><a href="13-hooks-state-machine.html">Hooks 状态机</a></td><td>renderWithHooks、Hook queue、dispatcher、Effect ring、ReactFiberNewContext</td><td>ReactHooks / HooksWithNoopRenderer / ReactNewContext / 源码 Context Demo</td><td>多/少 Hook、render-phase 上限、cleanup</td></tr>
 <tr><td><a href="14-commit-effects.html">commit 深挖</a></td><td>CompleteWork、WorkLoop、CommitWork、CommitEffects</td><td>FiberRefs / SuspenseEffectsSemantics</td><td>ref detach、effect destroy、deletion、commit error</td></tr>
 <tr><td><a href="15-events-hydration.html">事件 / hydration</a></td><td>EventListener、PluginEventSystem、EventReplaying、UpdateBatching</td><td>EventPropagation / Input / SelectiveHydration</td><td>blocked event、replay、controlled restore、listener error</td></tr>
 <tr><td><a href="16-end-to-end-source.html">真实更新主线</a></td><td>ReactDOMRoot → Reconciler → Hooks → WorkLoop → ConfigDOM</td><td>ReactTestUtilsActUnmockedScheduler</td><td>unmounted handle、render/commit error、root cleanup</td></tr>
 <tr><td><a href="17-suspense-retry.html">Suspense retry</a></td><td>FiberThrow、UnwindWork、BeginWork、Lane、WorkLoop</td><td>SuspenseWithNoopRenderer</td><td>thenable reject、过期 ping、边界/根错误出口</td></tr>
 <tr><td><a href="client-rendering-19.3.0/index.html">客户端单文件教程</a></td><td>同一 createRoot、click、queue、Lane、children、commit 主线</td><td>JSX、DOMRoot、Hooks、事件、Scheduler 等 10 个测试体</td><td>错误入口、提前退出与 unmount</td></tr></tbody></table></div></section>
-<section id="guide-evidence"><h2>代码框与引用</h2><p>连续原码必须逐字匹配链接文件；删节源码注明省略内容；改写了类型、参数、局部变量或分支的控制骨架标为教程伪代码。教程示例、命令与结构示意另作标识。</p>
+<section id="guide-evidence"><h2>代码框与引用</h2><p>连续原码必须逐字匹配链接文件；删节源码注明省略内容；改写了类型、参数、局部变量或分支的控制骨架标为教程代码（按源码简化）或教程伪代码（不可执行）。教程示例、命令与结构示意另作标识。</p>
 <p>现有 <a href="../../react/scripts/source-code-analysis/audit-guide-source-snippets.mjs">源码摘录审计器</a> 检查多页面教程的代码框身份与连续匹配；<a href="../../react/scripts/source-code-analysis/audit-guide-html.mjs">HTML 审计器</a> 检查结构、链接与锚点。单文件教程同时接受本轮递归页面检查。</p><p id="snippet-result">18 页共 150 个代码框均有明确身份：54 段连续原码全部匹配（43 段生产源码、11 段测试），81 段标明删节，15 段为教程代码或命令；错误为 0。单文件教程的 8 处精简控制骨架已标为教程伪代码，其 Demo 区域 3 个代码框与编辑前一致。</p></section>
 <section id="docs"><h2>页面与离线资源</h2><p>现有形式保持不变：18 个页面共享本地 CSS，另有 1 个自包含客户端教程。全部页面从首页可达，源码链接、锚点、代码转义和窄屏布局逐项检查。浏览器截图用于复核阅读布局。</p><p id="html-result">递归检查全部 19 页：867 处本地 href/src、279 个锚点引用全部有效，19 页均从首页可达；HTML5 解析与重复 id 检查无错误。1440px 与 390px 各检查 19 页，共 38 次布局检查，无整页横向溢出、失效图片或脚本错误；28 张工程图在两种宽度下共 56 次检查通过，文字均在画布与所属节点内，最小实际字号 16px，并复核了关键页面及图示截图。</p></section>
 <section id="engineering-diagrams"><h2>工程图补充 · 2026-10-11</h2>

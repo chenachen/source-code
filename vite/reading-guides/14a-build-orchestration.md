@@ -449,7 +449,7 @@ export const lazy = true
 
 下面四段分别锁定所有权、动态分派、metadata 同步和资源释放。
 
-### 证据 A1：Environment 默认独立解析，随后并行初始化
+### 两个 Environment 如何各用各的配置？
 
 来源：`packages/vite/src/node/build.ts`，`createBuilder()`。
 
@@ -501,7 +501,7 @@ environment build 选项镜像到旧插件仍会读取的顶层 `config.build`�
 插件替换为首次解析实例。最后才并行执行 `createEnvironment → init → environments[name] = environment`。
 因此配置解析是所有权决策，Environment 初始化是登记阶段。
 
-### 证据 A2：当前 Environment 在 Rolldown 边界变成 hook wrapper
+### Rolldown 调用插件时，当前 Environment 从哪里来？
 
 来源：`packages/vite/src/node/build.ts`，`resolveRolldownOptions()`。
 
@@ -514,7 +514,7 @@ const plugins = environment.plugins.map((p) =>
 入口优先级已在前文完整列出；这里的新增事实是 Rolldown 收到的不是裸插件，而是绑定当前 Environment 与
 本轮 metadata map 的 wrapper；随后同名变量写入 `rolldownOptions.plugins`。
 
-### 证据 A3：输出 hook 调用前恢复共享 metadata
+### 共享插件如何拿到本次构建的 metadata？
 
 来源：`packages/vite/src/node/build.ts`，`wrapEnvironmentHook()`。
 
@@ -544,7 +544,7 @@ const handler: Plugin[HookName] = function (
 于是 CSS 插件在前一 hook 写入的 `importedCss`，manifest/preload 插件能在后一 hook 读取。
 顺序反过来会让插件看到未注入或上一轮的 metadata。
 
-### 证据 A4：一个 bundle 串行处理全部 output，失败也关闭
+### 多个 output 如何排队，失败后谁来关闭 bundle？
 
 来源：`packages/vite/src/node/build.ts`，`buildEnvironment()` 一次性分支。
 

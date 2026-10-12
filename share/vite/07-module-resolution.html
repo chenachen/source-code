@@ -1482,31 +1482,10 @@ body.diagram-is-expanded::after {
     break-inside: avoid;
   }
 }
-</style><script>(function(){try{var t=localStorage.getItem("vite-guide-theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(_){}})();</script></head><body><a class="skip-link" href="#article-start">跳到正文</a><div class="reading-progress" aria-hidden="true"><span data-reading-progress></span></div><header class="topbar"><div class="topbar-inner"><button class="icon-button nav-toggle" type="button" data-nav-toggle aria-expanded="false" aria-label="打开模块导航">☰</button><a class="brand" href="index.html"><span class="brand-mark">V</span><span class="brand-text">Vite 源码解剖</span></a><span class="topbar-path">开发服务器核心 / 07 模块解析</span><div class="topbar-actions"><button class="icon-button" type="button" data-theme-toggle aria-label="切换主题">◐</button></div></div></header><div class="page-grid"><nav class="site-nav" aria-label="模块导航"><a class="nav-home" href="index.html"><span>⌂</span><span>阅读总览</span></a><section class="nav-group"><h2 class="nav-group-title">全景</h2><ul class="nav-list"><li><a href="00-system-map-and-end-to-end.html"><span class="nav-code">00</span><span>系统全景与请求链</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">启动与配置</h2><ul class="nav-list"><li><a href="01-cli-and-startup.html"><span class="nav-code">01</span><span>CLI 与启动</span></a></li><li><a href="02a-env-loading.html"><span class="nav-code">02A</span><span>环境文件加载</span></a></li><li><a href="02b-config-resolution.html"><span class="nav-code">02B</span><span>配置加载与解析</span></a></li><li><a href="02c-define-client-injection-and-json.html"><span class="nav-code">02C</span><span>Define、注入与 JSON</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">开发服务器核心</h2><ul class="nav-list"><li><a href="03-plugin-system.html"><span class="nav-code">03</span><span>插件体系</span></a></li><li><a href="04-dev-server-lifecycle.html"><span class="nav-code">04</span><span>Dev Server 生命周期</span></a></li><li><a href="05-environment-api.html"><span class="nav-code">05</span><span>Environment API</span></a></li><li><a href="06-middleware-request-pipeline.html"><span class="nav-code">06</span><span>中间件与请求入口</span></a></li><li><a href="07-module-resolution.html" aria-current="page"><span class="nav-code">07</span><span>模块解析</span></a></li><li><a href="08-transform-and-module-graph.html"><span class="nav-code">08</span><span>Transform 与模块图</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">转换与增量更新</h2><ul class="nav-list"><li><a href="09-html-transform.html"><span class="nav-code">09</span><span>HTML 转换</span></a></li><li><a href="10-import-analysis.html"><span class="nav-code">10</span><span>Import Analysis</span></a></li><li><a href="11-dependency-pre-bundling.html"><span class="nav-code">11</span><span>依赖预构建</span></a></li><li><a href="12-hmr.html"><span class="nav-code">12</span><span>HMR</span></a></li><li><a href="12b-bundled-dev.html"><span class="nav-code">12B</span><span>Bundled Dev</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">资源管线</h2><ul class="nav-list"><li><a href="13a-css-pipeline.html"><span class="nav-code">13A</span><span>CSS 管线</span></a></li><li><a href="13b-asset-worker-wasm.html"><span class="nav-code">13B</span><span>Asset、Worker、Wasm</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">生产构建</h2><ul class="nav-list"><li><a href="14a-build-orchestration.html"><span class="nav-code">14A</span><span>生产构建编排</span></a></li><li><a href="14b-build-output-and-preload.html"><span class="nav-code">14B</span><span>Preload 与构建输出</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">SSR 与运行时</h2><ul class="nav-list"><li><a href="15a-ssr-transform-and-loading.html"><span class="nav-code">15A</span><span>SSR 变换与加载</span></a></li><li><a href="15b-module-runner.html"><span class="nav-code">15B</span><span>Module Runner</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">公共边界</h2><ul class="nav-list"><li><a href="16-public-api-diagnostics-and-types.html"><span class="nav-code">16</span><span>公共 API 与类型</span></a></li></ul></section></nav><main class="article" id="article-start"><header class="article-hero"><div class="eyebrow"><span class="pill">07</span><span>开发服务器核心</span></div><h1>07. 模块解析</h1><p class="lede">Resolve 是按 Environment 配置的多插件决策树；package 条件、缓存与 external 共同决定结果。</p><div class="hero-meta"><span>证据基线：v8.2.1</span><span>commit <code>421615865dad</code></span><span>约 13 分钟</span><a href="../../vite/reading-guides/07-module-resolution.md">查看 Markdown 原稿</a></div></header><aside class="boundary-note" aria-label="阅读范围"><p>URL 用于请求，resolved ID 标识模块，file 用于文件监听；query 与虚拟 ID 保留独立身份。</p></aside><article class="prose"><h2 id="阅读边界"><a class="heading-anchor" href="#%E9%98%85%E8%AF%BB%E8%BE%B9%E7%95%8C" aria-label="链接到本节">#</a>阅读边界</h2>
+</style><script>(function(){try{var t=localStorage.getItem("vite-guide-theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(_){}})();</script></head><body><a class="skip-link" href="#article-start">跳到正文</a><div class="reading-progress" aria-hidden="true"><span data-reading-progress></span></div><header class="topbar"><div class="topbar-inner"><button class="icon-button nav-toggle" type="button" data-nav-toggle aria-expanded="false" aria-label="打开模块导航">☰</button><a class="brand" href="index.html"><span class="brand-mark">V</span><span class="brand-text">Vite 源码解剖</span></a><span class="topbar-path">开发服务器核心 / 07 模块解析</span><div class="topbar-actions"><button class="icon-button" type="button" data-theme-toggle aria-label="切换主题">◐</button></div></div></header><div class="page-grid"><nav class="site-nav" aria-label="模块导航"><a class="nav-home" href="index.html"><span>⌂</span><span>阅读总览</span></a><section class="nav-group"><h2 class="nav-group-title">全景</h2><ul class="nav-list"><li><a href="00-system-map-and-end-to-end.html"><span class="nav-code">00</span><span>系统全景与请求链</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">启动与配置</h2><ul class="nav-list"><li><a href="01-cli-and-startup.html"><span class="nav-code">01</span><span>CLI 与启动</span></a></li><li><a href="02a-env-loading.html"><span class="nav-code">02A</span><span>环境文件加载</span></a></li><li><a href="02b-config-resolution.html"><span class="nav-code">02B</span><span>配置加载与解析</span></a></li><li><a href="02c-define-client-injection-and-json.html"><span class="nav-code">02C</span><span>Define、注入与 JSON</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">开发服务器核心</h2><ul class="nav-list"><li><a href="03-plugin-system.html"><span class="nav-code">03</span><span>插件体系</span></a></li><li><a href="04-dev-server-lifecycle.html"><span class="nav-code">04</span><span>Dev Server 生命周期</span></a></li><li><a href="05-environment-api.html"><span class="nav-code">05</span><span>Environment API</span></a></li><li><a href="06-middleware-request-pipeline.html"><span class="nav-code">06</span><span>中间件与请求入口</span></a></li><li><a href="07-module-resolution.html" aria-current="page"><span class="nav-code">07</span><span>模块解析</span></a></li><li><a href="08-transform-and-module-graph.html"><span class="nav-code">08</span><span>Transform 与模块图</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">转换与增量更新</h2><ul class="nav-list"><li><a href="09-html-transform.html"><span class="nav-code">09</span><span>HTML 转换</span></a></li><li><a href="10-import-analysis.html"><span class="nav-code">10</span><span>Import Analysis</span></a></li><li><a href="11-dependency-pre-bundling.html"><span class="nav-code">11</span><span>依赖预构建</span></a></li><li><a href="12-hmr.html"><span class="nav-code">12</span><span>HMR</span></a></li><li><a href="12b-bundled-dev.html"><span class="nav-code">12B</span><span>Bundled Dev</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">资源管线</h2><ul class="nav-list"><li><a href="13a-css-pipeline.html"><span class="nav-code">13A</span><span>CSS 管线</span></a></li><li><a href="13b-asset-worker-wasm.html"><span class="nav-code">13B</span><span>Asset、Worker、Wasm</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">生产构建</h2><ul class="nav-list"><li><a href="14a-build-orchestration.html"><span class="nav-code">14A</span><span>生产构建编排</span></a></li><li><a href="14b-build-output-and-preload.html"><span class="nav-code">14B</span><span>Preload 与构建输出</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">SSR 与运行时</h2><ul class="nav-list"><li><a href="15a-ssr-transform-and-loading.html"><span class="nav-code">15A</span><span>SSR 变换与加载</span></a></li><li><a href="15b-module-runner.html"><span class="nav-code">15B</span><span>Module Runner</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">公共边界</h2><ul class="nav-list"><li><a href="16-public-api-diagnostics-and-types.html"><span class="nav-code">16</span><span>公共 API 与类型</span></a></li></ul></section></nav><main class="article" id="article-start"><header class="article-hero"><div class="eyebrow"><span class="pill">07</span><span>开发服务器核心</span></div><h1>07. 模块解析</h1><p class="lede">Resolve 是按 Environment 配置的多插件决策树；package 条件、缓存与 external 共同决定结果。</p><div class="hero-meta"><span>证据基线：v8.2.1</span><span>commit <code>421615865dad</code></span><span>约 18 分钟</span><a href="../../vite/reading-guides/07-module-resolution.md">查看 Markdown 原稿</a></div></header><aside class="boundary-note" aria-label="阅读范围"><p>URL 用于请求，resolved ID 标识模块，file 用于文件监听；query 与虚拟 ID 保留独立身份。</p></aside><article class="prose"><h2 id="阅读边界"><a class="heading-anchor" href="#%E9%98%85%E8%AF%BB%E8%BE%B9%E7%95%8C" aria-label="链接到本节">#</a>阅读边界</h2>
 <p>本节研究一个 import specifier 怎样变成文件 ID、外部模块或 Vite 虚拟 ID。依赖预构建只解释
 resolver 与 optimizer 的交接点，完整扫描/打包流程留到第 11 章；模块 ID 得到后怎样 load 和
 transform 留到第 08 章。</p>
-<p>读完应能回答：</p>
-<ol>
-<li>为什么 alias 先于通用 resolve，用户 pre 插件又能在两者之间接管解析？</li>
-<li>文件路径解析为什么要保留 query/hash，且对 node_modules 中的 <code>#</code> 特判？</li>
-<li><code>exports</code>、<code>imports</code>、mainFields、main、browser 和 index 的优先级是什么？</li>
-<li>conditions、externalConditions、import/require 怎样共同选择 package export？</li>
-<li>dedupe、preserveSymlinks 和 package self-reference 分别解决什么？</li>
-<li>external、noExternal、builtin 和 linked package 如何合成最终 external 判定？</li>
-<li>PackageCache 为什么不能只用包名或路径做 key？</li>
-</ol>
-<h2 id="推荐阅读顺序"><a class="heading-anchor" href="#%E6%8E%A8%E8%8D%90%E9%98%85%E8%AF%BB%E9%A1%BA%E5%BA%8F" aria-label="链接到本节">#</a>推荐阅读顺序</h2>
-<ol>
-<li><code>plugins/index.ts</code> 中 alias/preAlias/resolve 的装配位置。</li>
-<li><code>plugins/resolve.ts</code> 的 <code>EnvironmentResolveOptions</code> 和 <code>oxcResolvePlugin()</code>。</li>
-<li>同文件的 <code>tryFsResolve()</code>：先掌握文件路径。</li>
-<li><code>tryNodeResolve()</code>、<code>resolvePackageEntry()</code>、<code>resolveDeepImport()</code>：再掌握包。</li>
-<li><code>packages.ts</code>：理解 package.json 定位、sideEffects 与缓存。</li>
-<li><code>external.ts</code>：理解 server Environment 为什么有时保留运行时 import。</li>
-<li><code>idResolver.ts</code>、<code>nodeResolve.ts</code>：看特殊调用方如何复用精简解析。</li>
-<li><code>resolve.spec.ts</code>、<code>external.spec.ts</code>：从调用顺序、file URL、builtin 和 linked package 复盘。</li>
-</ol>
 <h2 id="解析不是单个函数"><a class="heading-anchor" href="#%E8%A7%A3%E6%9E%90%E4%B8%8D%E6%98%AF%E5%8D%95%E4%B8%AA%E5%87%BD%E6%95%B0" aria-label="链接到本节">#</a>解析不是单个函数</h2>
 <p>开发态常见的 resolveId 管线是：</p>
 <figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">preAlias（优化依赖存在时避免过早展开 alias）
@@ -1525,9 +1504,12 @@ transform 留到第 08 章。</p>
    ├─ 依赖优化产物 ID
    ├─ browserHash 查询
    └─ warning/debug
-</code></pre></figure><p>Vite 8 把主解析器交给 Rolldown 的原生 <code>viteResolvePlugin</code>，但 Vite 仍负责 Environment 配置、
-package 数据、依赖优化器、日志和结果收尾。阅读时不要把 <code>plugins/resolve.ts</code> 误认为从头手写了
-所有 resolveId；它既是适配器，也保留一套供特殊场景直接调用的文件/包算法。</p>
+</code></pre></figure><p>先分清两条路。普通 import 进入插件容器后，主要由 Rolldown 的原生 resolver 找到文件。Vite 在
+调用前传入当前环境的解析规则，调用后再决定要不要换成预构建文件、加版本号或打印警告。</p>
+<p>同一个 <code>resolve.ts</code> 里还有 <code>tryNodeResolve</code>、<code>tryFsResolve</code> 等 TypeScript 工具，但它们不是普通
+import 必经的下一站。例如 SSR 在把裸依赖交给 Node 执行前直接调用 <code>tryNodeResolve</code>，
+<code>nodeResolveWithVite</code> 也复用它。本章不展开原生依赖内部的文件搜索算法；下面的 TS 规则只用于其
+实际调用方，不能当作原生 resolver 的调用栈。</p>
 <p>alias 先把用户 specifier 映射成目标 specifier，再通过插件容器继续解析目标。用户 pre 插件可以
 在通用 resolver 之前接管虚拟模块或自定义路径；未接管的目标才交给原生 resolver。alias 与
 resolve 因而有先后关系，但无需相邻。Environment 的 alias 配置可以不同，解析使用当前环境的配置。</p>
@@ -1547,29 +1529,206 @@ logger，不能调用 <code>getEnvironment()</code>；这个边界由
 <figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">environment.config.resolve
 → resolve plugin 的场景参数
 → createResolver/CSS/scanner 的显式 ResolveOptions 覆盖
-</code></pre></figure><p>所以主请求、CSS <code>@import</code>、依赖扫描和 Node 便捷 resolver 可以复用同一算法，却选择不同的
-<code>asSrc</code>、<code>scan</code>、<code>tryIndex</code>、<code>tryPrefix</code>、<code>idOnly</code> 等行为。</p>
-<h2 id="一棵实用的-specifier-决策树"><a class="heading-anchor" href="#%E4%B8%80%E6%A3%B5%E5%AE%9E%E7%94%A8%E7%9A%84-specifier-%E5%86%B3%E7%AD%96%E6%A0%91" aria-label="链接到本节">#</a>一棵实用的 specifier 决策树</h2>
-<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">specifier
-├─ \0virtual / Vite internal
-│  └─ 对应插件处理，普通文件/包解析跳过
-├─ data: / http(s):
-│  └─ 保持协议语义或 external
-├─ file:
-│  └─ 转成文件路径，保留 search/hash
-├─ /absolute-or-root-url
-│  └─ 源码模式按 root/文件协议解析
-├─ ./relative / ../relative
-│  └─ 相对 importer 目录 → tryFsResolve
-├─ #package-import
-│  └─ 最近 package.json imports → 再进入主解析
-├─ bare package / package/subpath
-│  └─ tryNodeResolve
-└─ builtin
-   └─ 按 Environment builtins 映射为 external 或 browserExternalId
-</code></pre></figure><p>实际原生插件还处理 tsconfig paths、browser external 等，但先用这棵树定位大分支，再追细节，
-比从 1200 行文件头读到尾有效。</p>
-<h2 id="文件路径解析"><a class="heading-anchor" href="#%E6%96%87%E4%BB%B6%E8%B7%AF%E5%BE%84%E8%A7%A3%E6%9E%90" aria-label="链接到本节">#</a>文件路径解析</h2>
+</code></pre></figure><p>主请求、CSS <code>@import</code> 与依赖扫描可复用原生插件适配器，按场景选择不同的
+<code>asSrc</code>、<code>scan</code>、<code>tryIndex</code>、<code>tryPrefix</code>、<code>idOnly</code> 等行为。Node 便捷入口直接走 TS 工具，另见下图。</p>
+<h2 id="两张图-先选入口-再看算法"><a class="heading-anchor" href="#%E4%B8%A4%E5%BC%A0%E5%9B%BE-%E5%85%88%E9%80%89%E5%85%A5%E5%8F%A3-%E5%86%8D%E7%9C%8B%E7%AE%97%E6%B3%95" aria-label="链接到本节">#</a>两张图：先选入口，再看算法</h2>
+<p>普通 import 的主插件路径（原生内部不在当前仓库展开）：</p>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">pluginContainer.resolveId(specifier, importer)
+→ alias / 用户插件（可提前返回）
+→ oxcResolvePlugin：传入当前 Environment 解析选项
+→ Rolldown viteResolvePlugin（处理文件、包、builtin 等；内部算法未展开）
+→ 若启用 depsOptimizer：Vite finalizeBareSpecifier / finalizeOtherSpecifiers
+→ 最终文件 ID / 优化产物 ID / external 或虚拟 ID
+</code></pre></figure><p>辅助路径各有真实调用者，并不是上图的下一层：</p>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">nodeResolveWithVite                         → tryNodeResolve
+fetchModule（带 importer 的裸依赖）         → tryNodeResolve → externalize file URL
+external.ts 的 isExternalizable             → tryNodeResolve → 可外部化判定
+assetImportMetaUrl / workerImportMetaUrl     → tryFsResolve → 资源 URL 后续处理
+</code></pre></figure><p>证据在 <code>node/nodeResolve.ts</code>、<code>node/ssr/fetchModule.ts</code>、<code>node/external.ts</code> 及两个
+<code>*ImportMetaUrl.ts</code> 插件。<code>#imports</code>、tsconfig paths、builtin 的规则仍要按入口区分；不要因为
+specifier 长得一样，就在普通 import 调试时期待命中 TS <code>tryNodeResolve</code> 断点。</p>
+<h2 id="同一个包-两条路线-交换顺序仍不串线"><a class="heading-anchor" href="#%E5%90%8C%E4%B8%80%E4%B8%AA%E5%8C%85-%E4%B8%A4%E6%9D%A1%E8%B7%AF%E7%BA%BF-%E4%BA%A4%E6%8D%A2%E9%A1%BA%E5%BA%8F%E4%BB%8D%E4%B8%8D%E4%B8%B2%E7%BA%BF" aria-label="链接到本节">#</a>同一个包，两条路线，交换顺序仍不串线</h2>
+<p>先追仓库里已经存在的 <code>resolve.spec.ts</code>，不另造一个省掉环境的 Demo。
+Given：middleware server 关闭依赖发现，包的同一子路径声明 <code>module</code> 和 <code>default</code> 两个出口。
+When：分别运行 Runner import 和 SSR 插件容器 resolveId，并在第二个测试中交换先后。
+Then：Runner 执行 default 文件，插件容器返回 module 文件路径；两种顺序断言相同。
+这里比较的是“执行后的字符串”与“解析后的 ID”，不是两次执行结果。</p>
+<p>真实 fixture：<code>packages/vite/src/node/__tests__/fixtures/test-dep-conditions/package.json</code>：</p>
+<figure class="code-card"><figcaption><span>json</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-json">{
+  &quot;name&quot;: &quot;@vitejs/test-dep-conditions&quot;,
+  &quot;private&quot;: true,
+  &quot;type&quot;: &quot;module&quot;,
+  &quot;exports&quot;: {
+    &quot;.&quot;: {
+      &quot;style&quot;: &quot;./index.css&quot;,
+      &quot;custom1&quot;: &quot;./index.custom1.js&quot;,
+      &quot;worker&quot;: &quot;./index.worker.js&quot;,
+      &quot;browser&quot;: &quot;./index.browser.js&quot;,
+      &quot;default&quot;: &quot;./index.default.js&quot;
+    },
+    &quot;./with-module&quot;: {
+      &quot;module&quot;: &quot;./dir/index.module.js&quot;,
+      &quot;default&quot;: &quot;./dir/index.default.js&quot;
+    }
+  }
+}
+</code></pre></figure><figure class="code-card"><figcaption><span>js</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-js">// fixtures/test-dep-conditions-app/entry-with-module.js
+import dep from &#039;@vitejs/test-dep-conditions/with-module&#039;
+export default dep
+// fixtures/test-dep-conditions/dir/index.default.js
+export default &#039;dir/index.default.js&#039;
+// fixtures/test-dep-conditions/dir/index.module.js
+export default &#039;dir/index.module.js&#039;
+</code></pre></figure><p>这些是三个独立文件的源码摘录，不要合并成一个模块。包由 <code>pnpm-workspace.yaml</code> 的
+<code>packages/**/__tests__/**</code> 规则纳入工作区，按锁文件安装后才能按包名解析。</p>
+<p>测试源码摘录：<code>packages/vite/src/node/__tests__/resolve.spec.ts</code> 的 imports 和完整
+<code>import and resolveId</code> 组；含初始化、两个次序的断言，以及 <code>onTestFinished</code> 关闭 server。</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">import { join } from &#039;node:path&#039;
+import { describe, expect, onTestFinished, test, vi } from &#039;vitest&#039;
+import { createServer } from &#039;../server&#039;
+import { createServerModuleRunner } from &#039;../ssr/runtime/serverModuleRunner&#039;
+import type { EnvironmentOptions, InlineConfig } from &#039;../config&#039;
+import { build } from &#039;../build&#039;
+
+describe(&#039;import and resolveId&#039;, () =&gt; {
+  /** 创建关闭依赖发现的 middleware Server，并返回默认 SSR ModuleRunner。 */
+  async function createTestServer() {
+    const server = await createServer({
+      configFile: false,
+      root: import.meta.dirname,
+      logLevel: &#039;error&#039;,
+      // 否则 scanner 会遍历 __tests__ 下所有 HTML fixture，给解析顺序测试引入无关工作。
+      optimizeDeps: {
+        noDiscovery: true,
+        include: [],
+      },
+      server: {
+        middlewareMode: true,
+        ws: false,
+      },
+    })
+    onTestFinished(() =&gt; server.close())
+    const runner = createServerModuleRunner(server.environments.ssr, {
+      hmr: {
+        logger: false,
+      },
+      sourcemapInterceptor: false,
+    })
+    return { server, runner }
+  }
+
+  /**
+   * 场景：先由 SSR Runner 按 externalConditions 执行包，再用插件容器按普通 conditions 解析。
+   * 验证目标：Runner 命中 default，内部 resolve 命中 module；两组结果不能因共享 PackageCache 而
+   * 互相污染，且调用顺序不改变语义（#18302、#18332）。
+   */
+  test(&#039;import first&#039;, async () =&gt; {
+    const { server, runner } = await createTestServer()
+    const mod = await runner.import(
+      &#039;/fixtures/test-dep-conditions-app/entry-with-module&#039;,
+    )
+    const resolved = await server.environments.ssr.pluginContainer.resolveId(
+      &#039;@vitejs/test-dep-conditions/with-module&#039;,
+    )
+    expect([mod.default, resolved?.id]).toEqual([
+      &#039;dir/index.default.js&#039;,
+      expect.stringContaining(&#039;dir/index.module.js&#039;),
+    ])
+  })
+
+  /**
+   * 场景：与上例相同，但先执行内部 resolve，再由 Runner import。
+   * 验证目标：反向顺序仍分别命中 module/default，验证内部与运行时条件选择不因先后顺序互相污染。
+   */
+  test(&#039;resolveId first&#039;, async () =&gt; {
+    const { server, runner } = await createTestServer()
+    const resolved = await server.environments.ssr.pluginContainer.resolveId(
+      &#039;@vitejs/test-dep-conditions/with-module&#039;,
+    )
+    const mod = await runner.import(
+      &#039;/fixtures/test-dep-conditions-app/entry-with-module&#039;,
+    )
+    expect([mod.default, resolved?.id]).toEqual([
+      &#039;dir/index.default.js&#039;,
+      expect.stringContaining(&#039;dir/index.module.js&#039;),
+    ])
+  })
+})
+</code></pre></figure><h3 id="结果在哪个分支分开"><a class="heading-anchor" href="#%E7%BB%93%E6%9E%9C%E5%9C%A8%E5%93%AA%E4%B8%AA%E5%88%86%E6%94%AF%E5%88%86%E5%BC%80" aria-label="链接到本节">#</a>结果在哪个分支分开</h3>
+<p>第一条：entry 先 internalize 并转换；它请求裸依赖时已有 importer。
+<code>ssr/fetchModule.ts::fetchModule</code> 的以下完整分支用 <code>externalConditions</code> 解析，成功后交给宿主执行；
+找不到包则抛带 <code>ERR_MODULE_NOT_FOUND</code> 的错误。</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">  // 无 importer 表示入口，入口始终 internalize；依赖的裸导入才尝试交给 Node externalize。
+  if (!isFileUrl &amp;&amp; importer &amp;&amp; url[0] !== &#039;.&#039; &amp;&amp; url[0] !== &#039;/&#039;) {
+    const { isProduction, root } = environment.config
+    const { externalConditions, dedupe, preserveSymlinks } =
+      environment.config.resolve
+
+    const resolved = tryNodeResolve(url, importer, {
+      mainFields: [&#039;main&#039;],
+      conditions: externalConditions,
+      externalConditions,
+      external: [],
+      noExternal: [],
+      extensions: [&#039;.js&#039;, &#039;.cjs&#039;, &#039;.json&#039;],
+      dedupe,
+      preserveSymlinks,
+      tsconfigPaths: false,
+      isBuild: false,
+      isProduction,
+      root,
+      packageCache: environment.config.packageCache,
+      builtins: environment.config.resolve.builtins,
+    })
+    if (!resolved) {
+      const err: any = new Error(
+        `Cannot find module &#039;${url}&#039; imported from &#039;${importer}&#039;`,
+      )
+      err.code = &#039;ERR_MODULE_NOT_FOUND&#039;
+      throw err
+    }
+    const file = pathToFileURL(resolved.id).toString()
+    const type = isFilePathESM(resolved.id, environment.config.packageCache)
+      ? &#039;module&#039;
+      : &#039;commonjs&#039;
+    return { externalize: file, type }
+  }
+
+</code></pre></figure><p>第二条：<code>ssr.pluginContainer.resolveId</code> 进入原生插件适配器。下面是
+<code>plugins/resolve.ts::oxcResolvePlugin</code> 的配置摘录（省略无关字段，以注释标出；不是独立可运行代码）：</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">const options: InternalResolveOptions = {
+  ...partialEnv.config.resolve,
+  ...resolveOptions,
+}
+// ...noExternal 归一化等准备代码省略
+const plugin = viteResolvePlugin({
+  resolveOptions: {
+    // ...其余解析字段省略
+    conditions: options.conditions,
+    externalConditions: options.externalConditions,
+    extensions: options.extensions,
+  },
+  environmentConsumer: partialEnv.config.consumer,
+  environmentName: partialEnv.name,
+  // ...其余配置及 finalize 回调省略
+})
+</code></pre></figure><p>本例内部条件含 <code>module</code>，external 条件不含它，因而分别命中 module/default。
+原生已解析出文件后，<code>finalizeBareSpecifier</code> 才可能把结果交给优化器；它不再调用 TS
+<code>tryNodeResolve</code>。本例关闭发现，测试重点也不是预构建。缓存行为的可观察结论仅是这两个测试
+得到相同结果，不能由此断言两路共用某份缓存或原生实现采用 TS 缓存键。</p>
+<figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">创建 server + runner
+├─ import first：entry → 裸依赖 fetchModule → TS 条件解析 → default 文件执行
+│                然后 resolveId → 原生条件解析 → module 文件 ID
+└─ resolveId first：原生条件解析 → module 文件 ID
+                   然后 entry → fetchModule → default 文件执行
+两组均断言 [default 字符串, module 路径]
+→ onTestFinished → server.close（失败断言也触发测试清理）
+</code></pre></figure><p>复现环境：仓库 <code>vite/package.json</code> 要求 Node <code>^20.19.0 || &gt;=22.12.0</code>、pnpm <code>10.34.5</code>。
+在 <code>vite/</code> 按锁文件安装并准备工作区构建后，运行已有测试：</p>
+<figure class="code-card"><figcaption><span>sh</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-sh">pnpm exec vitest run packages/vite/src/node/__tests__/resolve.spec.ts -t &#039;import and resolveId&#039;
+</code></pre></figure><p>本次修订静态核对了源码、夹具与断言；当前环境缺少 Vite 工作区依赖，未执行这个集成测试。
+安装/构建不是这段命令自动完成的，不能用文档生成通过替代 resolver 用例通过。</p>
+<h2 id="ts-辅助路径-文件路径解析"><a class="heading-anchor" href="#ts-%E8%BE%85%E5%8A%A9%E8%B7%AF%E5%BE%84-%E6%96%87%E4%BB%B6%E8%B7%AF%E5%BE%84%E8%A7%A3%E6%9E%90" aria-label="链接到本节">#</a>TS 辅助路径：文件路径解析</h2>
 <h3 id="query-hash-必须与磁盘路径分开"><a class="heading-anchor" href="#query-hash-%E5%BF%85%E9%A1%BB%E4%B8%8E%E7%A3%81%E7%9B%98%E8%B7%AF%E5%BE%84%E5%88%86%E5%BC%80" aria-label="链接到本节">#</a>query/hash 必须与磁盘路径分开</h3>
 <p>Vite 模块身份包含查询：</p>
 <figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">/src/data.js
@@ -1670,7 +1829,7 @@ importer 的 specifier；若 <code>path.relative()</code> 给出普通单词开�
 → 追加 import 或 require
 </code></pre></figure><p>内部打包/转换使用 <code>conditions</code>；外部化后由目标运行时加载的包使用 <code>externalConditions</code>。二者
 可以不同。例如 Vite 内部 resolver 偏好 module，而 Node 运行时 external 可能命中 default。</p>
-<p>PackageCache 的入口键必须包含：</p>
+<p>以下是 TS <code>getResolveCacheKey()</code> 所维护的入口缓存维度，不是在说明原生缓存内部结构：</p>
 <ul>
 <li>import/require；</li>
 <li>conditions；</li>
@@ -1679,7 +1838,7 @@ importer 的 specifier；若 <code>path.relative()</code> 给出普通单词开�
 <li>deep import key。</li>
 </ul>
 <p>否则先发生的解析会污染后续条件。<code>resolve.spec.ts</code> 先后交换 Runner import 与
-pluginContainer.resolveId，仍分别得到 default/module，验证两条解析路径没有相互污染。这对应
+pluginContainer.resolveId，仍分别得到 default/module，验证这组条件与输入在两种调用顺序下没有相互污染；测试并不能揭示原生内部缓存算法。这对应
 <a href="https://github.com/vitejs/vite/pull/18302" target="_blank" rel="noreferrer noopener">PR #18302</a> 与
 <a href="https://github.com/vitejs/vite/pull/18332" target="_blank" rel="noreferrer noopener">PR #18332</a> 的顺序无关验证。</p>
 <h2 id="packagecache-如何减少文件系统读取"><a class="heading-anchor" href="#packagecache-%E5%A6%82%E4%BD%95%E5%87%8F%E5%B0%91%E6%96%87%E4%BB%B6%E7%B3%BB%E7%BB%9F%E8%AF%BB%E5%8F%96" aria-label="链接到本节">#</a>PackageCache 如何减少文件系统读取</h2>
@@ -1791,10 +1950,32 @@ if (dedupe.includes(pkgId)) {
 }
 </code></pre></figure><p>包 ID 先与 deep import 后缀分离；<code>dedupe</code> 强制从 root 查找，否则优先以真实 importer 目录为
 起点。这个 <code>basedir</code> 决定后续 package data、exports 与文件入口解析的搜索空间。</p>
+<h2 id="进阶阅读地图"><a class="heading-anchor" href="#%E8%BF%9B%E9%98%B6%E9%98%85%E8%AF%BB%E5%9C%B0%E5%9B%BE" aria-label="链接到本节">#</a>进阶阅读地图</h2>
+<p>读完应能回答：</p>
+<ol>
+<li>为什么 alias 先于通用 resolve，用户 pre 插件又能在两者之间接管解析？</li>
+<li>文件路径解析为什么要保留 query/hash，且对 node_modules 中的 <code>#</code> 特判？</li>
+<li><code>exports</code>、<code>imports</code>、mainFields、main、browser 和 index 的优先级是什么？</li>
+<li>conditions、externalConditions、import/require 怎样共同选择 package export？</li>
+<li>dedupe、preserveSymlinks 和 package self-reference 分别解决什么？</li>
+<li>external、noExternal、builtin 和 linked package 如何合成最终 external 判定？</li>
+<li>PackageCache 为什么不能只用包名或路径做 key？</li>
+</ol>
+<h2 id="推荐阅读顺序"><a class="heading-anchor" href="#%E6%8E%A8%E8%8D%90%E9%98%85%E8%AF%BB%E9%A1%BA%E5%BA%8F" aria-label="链接到本节">#</a>推荐阅读顺序</h2>
+<ol>
+<li><code>plugins/index.ts</code> 中 alias/preAlias/resolve 的装配位置。</li>
+<li><code>plugins/resolve.ts</code> 的 <code>EnvironmentResolveOptions</code> 和 <code>oxcResolvePlugin()</code>。</li>
+<li>同文件的 <code>tryFsResolve()</code>：先掌握文件路径。</li>
+<li><code>tryNodeResolve()</code>、<code>resolvePackageEntry()</code>、<code>resolveDeepImport()</code>：再掌握包。</li>
+<li><code>packages.ts</code>：理解 package.json 定位、sideEffects 与缓存。</li>
+<li><code>external.ts</code>：理解 server Environment 为什么有时保留运行时 import。</li>
+<li><code>idResolver.ts</code>、<code>nodeResolve.ts</code>：看特殊调用方如何复用精简解析。</li>
+<li><code>resolve.spec.ts</code>、<code>external.spec.ts</code>：从调用顺序、file URL、builtin 和 linked package 复盘。</li>
+</ol>
 <h2 id="建议断点"><a class="heading-anchor" href="#%E5%BB%BA%E8%AE%AE%E6%96%AD%E7%82%B9" aria-label="链接到本节">#</a>建议断点</h2>
 <ol>
 <li>原生 resolver 的 finalizeBareSpecifier：观察依赖为何优化、跳过或加版本查询。</li>
-<li><code>tryFsResolve()</code>：用 <code>/file.js?raw</code> 和 node_modules 中带 <code>#</code> 的路径比较 file/postfix。</li>
+<li>TS 辅助路径的 <code>tryFsResolve()</code>（不是普通 import 必经断点）：用 <code>/file.js?raw</code> 和 node_modules 中带 <code>#</code> 的路径比较 file/postfix。</li>
 <li><code>tryCleanFsResolve()</code>：从 <code>.js</code> specifier 单步命中 <code>.ts/.tsx</code>。</li>
 <li><code>tryNodeResolve()</code> basedir 选择：比较 dedupe、普通 importer、无 importer。</li>
 <li><code>resolvePackageEntry()</code>：改变 conditions/mainFields，观察 exports 与 fallback。</li>
@@ -1812,7 +1993,7 @@ if (dedupe.includes(pkgId)) {
 <li>精确 external、包名 external 和 external:true 对 CSS 子路径的检查有何不同？</li>
 <li>optimizer 产物未落盘时，resolver 如何仍给浏览器稳定 ID？</li>
 </ol>
-</article><nav class="article-pager" aria-label="前后篇"><a class="pager-link previous" href="06-middleware-request-pipeline.html"><span class="pager-label">上一篇 · 06</span><span class="pager-title">中间件与请求入口</span></a><a class="pager-link next" href="08-transform-and-module-graph.html"><span class="pager-label">下一篇 · 08</span><span class="pager-title">Transform 与模块图</span></a></nav><footer class="site-footer">Vite v8.2.1 源码阅读站 · 所有机制结论限定于 commit 421615865dad3ed39137d17281814fc78a41246c。</footer></main><aside class="page-toc" aria-label="页内目录"><h2 class="toc-title">本页目录</h2><ol class="toc-list"><li class="depth-2"><a href="#%E9%98%85%E8%AF%BB%E8%BE%B9%E7%95%8C">阅读边界</a></li><li class="depth-2"><a href="#%E6%8E%A8%E8%8D%90%E9%98%85%E8%AF%BB%E9%A1%BA%E5%BA%8F">推荐阅读顺序</a></li><li class="depth-2"><a href="#%E8%A7%A3%E6%9E%90%E4%B8%8D%E6%98%AF%E5%8D%95%E4%B8%AA%E5%87%BD%E6%95%B0">解析不是单个函数</a></li><li class="depth-2"><a href="#%E6%8C%89-environment-%E5%88%9B%E5%BB%BA%E5%8E%9F%E7%94%9F-resolver">按 Environment 创建原生 resolver</a></li><li class="depth-3"><a href="#%E9%85%8D%E7%BD%AE%E8%A6%86%E7%9B%96%E9%A1%BA%E5%BA%8F">配置覆盖顺序</a></li><li class="depth-2"><a href="#%E4%B8%80%E6%A3%B5%E5%AE%9E%E7%94%A8%E7%9A%84-specifier-%E5%86%B3%E7%AD%96%E6%A0%91">一棵实用的 specifier 决策树</a></li><li class="depth-2"><a href="#%E6%96%87%E4%BB%B6%E8%B7%AF%E5%BE%84%E8%A7%A3%E6%9E%90">文件路径解析</a></li><li class="depth-3"><a href="#query-hash-%E5%BF%85%E9%A1%BB%E4%B8%8E%E7%A3%81%E7%9B%98%E8%B7%AF%E5%BE%84%E5%88%86%E5%BC%80">query/hash 必须与磁盘路径分开</a></li><li class="depth-3"><a href="#trycleanfsresolve-%E9%A1%BA%E5%BA%8F">tryCleanFsResolve() 顺序</a></li><li class="depth-2"><a href="#package-%E5%AE%9A%E4%BD%8D%E4%B8%8E-basedir">package 定位与 basedir</a></li><li class="depth-3"><a href="#package-self-reference">package self-reference</a></li><li class="depth-3"><a href="#optional-peer-dependency">optional peer dependency</a></li><li class="depth-2"><a href="#package-%E5%85%A5%E5%8F%A3%E4%BC%98%E5%85%88%E7%BA%A7">package 入口优先级</a></li><li class="depth-3"><a href="#%E5%8C%85%E6%A0%B9%E5%85%A5%E5%8F%A3">包根入口</a></li><li class="depth-3"><a href="#deep-import">deep import</a></li><li class="depth-3"><a href="#package-imports">package imports</a></li><li class="depth-2"><a href="#conditions-%E5%90%8C%E4%B8%80%E4%B8%AA%E5%8C%85%E4%B8%BA%E4%BD%95%E8%A7%A3%E6%9E%90%E5%88%B0%E4%B8%8D%E5%90%8C%E6%96%87%E4%BB%B6">conditions：同一个包为何解析到不同文件</a></li><li class="depth-2"><a href="#packagecache-%E5%A6%82%E4%BD%95%E5%87%8F%E5%B0%91%E6%96%87%E4%BB%B6%E7%B3%BB%E7%BB%9F%E8%AF%BB%E5%8F%96">PackageCache 如何减少文件系统读取</a></li><li class="depth-2"><a href="#builtin-%E4%B8%8E-browser-external">builtin 与 browser external</a></li><li class="depth-2"><a href="#external-noexternal-%E5%88%A4%E5%AE%9A">external/noExternal 判定</a></li><li class="depth-2"><a href="#%E4%B8%8E%E4%BE%9D%E8%B5%96%E4%BC%98%E5%8C%96%E5%99%A8%E7%9A%84%E4%BA%A4%E7%95%8C">与依赖优化器的交界</a></li><li class="depth-2"><a href="#%E7%89%B9%E6%AE%8A-resolver">特殊 resolver</a></li><li class="depth-3"><a href="#createidresolver">createIdResolver()</a></li><li class="depth-3"><a href="#noderesolvewithvite">nodeResolveWithVite()</a></li><li class="depth-2"><a href="#%E5%85%B3%E9%94%AE%E6%BA%90%E7%A0%81%E8%AF%81%E6%8D%AE">关键源码证据</a></li><li class="depth-2"><a href="#%E5%BB%BA%E8%AE%AE%E6%96%AD%E7%82%B9">建议断点</a></li><li class="depth-2"><a href="#%E5%A4%8D%E7%9B%98%E9%A2%98">复盘题</a></li></ol></aside></div><script>;(function () {
+</article><nav class="article-pager" aria-label="前后篇"><a class="pager-link previous" href="06-middleware-request-pipeline.html"><span class="pager-label">上一篇 · 06</span><span class="pager-title">中间件与请求入口</span></a><a class="pager-link next" href="08-transform-and-module-graph.html"><span class="pager-label">下一篇 · 08</span><span class="pager-title">Transform 与模块图</span></a></nav><footer class="site-footer">Vite v8.2.1 源码阅读站 · 所有机制结论限定于 commit 421615865dad3ed39137d17281814fc78a41246c。</footer></main><aside class="page-toc" aria-label="页内目录"><h2 class="toc-title">本页目录</h2><ol class="toc-list"><li class="depth-2"><a href="#%E9%98%85%E8%AF%BB%E8%BE%B9%E7%95%8C">阅读边界</a></li><li class="depth-2"><a href="#%E8%A7%A3%E6%9E%90%E4%B8%8D%E6%98%AF%E5%8D%95%E4%B8%AA%E5%87%BD%E6%95%B0">解析不是单个函数</a></li><li class="depth-2"><a href="#%E6%8C%89-environment-%E5%88%9B%E5%BB%BA%E5%8E%9F%E7%94%9F-resolver">按 Environment 创建原生 resolver</a></li><li class="depth-3"><a href="#%E9%85%8D%E7%BD%AE%E8%A6%86%E7%9B%96%E9%A1%BA%E5%BA%8F">配置覆盖顺序</a></li><li class="depth-2"><a href="#%E4%B8%A4%E5%BC%A0%E5%9B%BE-%E5%85%88%E9%80%89%E5%85%A5%E5%8F%A3-%E5%86%8D%E7%9C%8B%E7%AE%97%E6%B3%95">两张图：先选入口，再看算法</a></li><li class="depth-2"><a href="#%E5%90%8C%E4%B8%80%E4%B8%AA%E5%8C%85-%E4%B8%A4%E6%9D%A1%E8%B7%AF%E7%BA%BF-%E4%BA%A4%E6%8D%A2%E9%A1%BA%E5%BA%8F%E4%BB%8D%E4%B8%8D%E4%B8%B2%E7%BA%BF">同一个包，两条路线，交换顺序仍不串线</a></li><li class="depth-3"><a href="#%E7%BB%93%E6%9E%9C%E5%9C%A8%E5%93%AA%E4%B8%AA%E5%88%86%E6%94%AF%E5%88%86%E5%BC%80">结果在哪个分支分开</a></li><li class="depth-2"><a href="#ts-%E8%BE%85%E5%8A%A9%E8%B7%AF%E5%BE%84-%E6%96%87%E4%BB%B6%E8%B7%AF%E5%BE%84%E8%A7%A3%E6%9E%90">TS 辅助路径：文件路径解析</a></li><li class="depth-3"><a href="#query-hash-%E5%BF%85%E9%A1%BB%E4%B8%8E%E7%A3%81%E7%9B%98%E8%B7%AF%E5%BE%84%E5%88%86%E5%BC%80">query/hash 必须与磁盘路径分开</a></li><li class="depth-3"><a href="#trycleanfsresolve-%E9%A1%BA%E5%BA%8F">tryCleanFsResolve() 顺序</a></li><li class="depth-2"><a href="#package-%E5%AE%9A%E4%BD%8D%E4%B8%8E-basedir">package 定位与 basedir</a></li><li class="depth-3"><a href="#package-self-reference">package self-reference</a></li><li class="depth-3"><a href="#optional-peer-dependency">optional peer dependency</a></li><li class="depth-2"><a href="#package-%E5%85%A5%E5%8F%A3%E4%BC%98%E5%85%88%E7%BA%A7">package 入口优先级</a></li><li class="depth-3"><a href="#%E5%8C%85%E6%A0%B9%E5%85%A5%E5%8F%A3">包根入口</a></li><li class="depth-3"><a href="#deep-import">deep import</a></li><li class="depth-3"><a href="#package-imports">package imports</a></li><li class="depth-2"><a href="#conditions-%E5%90%8C%E4%B8%80%E4%B8%AA%E5%8C%85%E4%B8%BA%E4%BD%95%E8%A7%A3%E6%9E%90%E5%88%B0%E4%B8%8D%E5%90%8C%E6%96%87%E4%BB%B6">conditions：同一个包为何解析到不同文件</a></li><li class="depth-2"><a href="#packagecache-%E5%A6%82%E4%BD%95%E5%87%8F%E5%B0%91%E6%96%87%E4%BB%B6%E7%B3%BB%E7%BB%9F%E8%AF%BB%E5%8F%96">PackageCache 如何减少文件系统读取</a></li><li class="depth-2"><a href="#builtin-%E4%B8%8E-browser-external">builtin 与 browser external</a></li><li class="depth-2"><a href="#external-noexternal-%E5%88%A4%E5%AE%9A">external/noExternal 判定</a></li><li class="depth-2"><a href="#%E4%B8%8E%E4%BE%9D%E8%B5%96%E4%BC%98%E5%8C%96%E5%99%A8%E7%9A%84%E4%BA%A4%E7%95%8C">与依赖优化器的交界</a></li><li class="depth-2"><a href="#%E7%89%B9%E6%AE%8A-resolver">特殊 resolver</a></li><li class="depth-3"><a href="#createidresolver">createIdResolver()</a></li><li class="depth-3"><a href="#noderesolvewithvite">nodeResolveWithVite()</a></li><li class="depth-2"><a href="#%E5%85%B3%E9%94%AE%E6%BA%90%E7%A0%81%E8%AF%81%E6%8D%AE">关键源码证据</a></li><li class="depth-2"><a href="#%E8%BF%9B%E9%98%B6%E9%98%85%E8%AF%BB%E5%9C%B0%E5%9B%BE">进阶阅读地图</a></li><li class="depth-2"><a href="#%E6%8E%A8%E8%8D%90%E9%98%85%E8%AF%BB%E9%A1%BA%E5%BA%8F">推荐阅读顺序</a></li><li class="depth-2"><a href="#%E5%BB%BA%E8%AE%AE%E6%96%AD%E7%82%B9">建议断点</a></li><li class="depth-2"><a href="#%E5%A4%8D%E7%9B%98%E9%A2%98">复盘题</a></li></ol></aside></div><script>;(function () {
   'use strict'
 
   var root = document.documentElement

@@ -337,6 +337,7 @@ const inner = (c: TestElement) =&gt; serializeInner(c)</code></pre>
 describe('renderer: keyed children', () =&gt; {
   let root: TestElement
   let elm: TestElement
+  /** 把数字列表转为同 key 的 span 并渲染到本例 root，返回 div 宿主方便检查 children。 */
   const renderChildren = (arr: number[]) =&gt; {
     render(h('div', arr.map(toSpan)), root)
     return root.children[0] as TestElement

@@ -1482,7 +1482,7 @@ body.diagram-is-expanded::after {
     break-inside: avoid;
   }
 }
-</style><script>(function(){try{var t=localStorage.getItem("vite-guide-theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(_){}})();</script></head><body><a class="skip-link" href="#article-start">跳到正文</a><div class="reading-progress" aria-hidden="true"><span data-reading-progress></span></div><header class="topbar"><div class="topbar-inner"><button class="icon-button nav-toggle" type="button" data-nav-toggle aria-expanded="false" aria-label="打开模块导航">☰</button><a class="brand" href="index.html"><span class="brand-mark">V</span><span class="brand-text">Vite 源码解剖</span></a><span class="topbar-path">SSR 与运行时 / 15B Module Runner</span><div class="topbar-actions"><button class="icon-button" type="button" data-theme-toggle aria-label="切换主题">◐</button></div></div></header><div class="page-grid"><nav class="site-nav" aria-label="模块导航"><a class="nav-home" href="index.html"><span>⌂</span><span>阅读总览</span></a><section class="nav-group"><h2 class="nav-group-title">全景</h2><ul class="nav-list"><li><a href="00-system-map-and-end-to-end.html"><span class="nav-code">00</span><span>系统全景与请求链</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">启动与配置</h2><ul class="nav-list"><li><a href="01-cli-and-startup.html"><span class="nav-code">01</span><span>CLI 与启动</span></a></li><li><a href="02a-env-loading.html"><span class="nav-code">02A</span><span>环境文件加载</span></a></li><li><a href="02b-config-resolution.html"><span class="nav-code">02B</span><span>配置加载与解析</span></a></li><li><a href="02c-define-client-injection-and-json.html"><span class="nav-code">02C</span><span>Define、注入与 JSON</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">开发服务器核心</h2><ul class="nav-list"><li><a href="03-plugin-system.html"><span class="nav-code">03</span><span>插件体系</span></a></li><li><a href="04-dev-server-lifecycle.html"><span class="nav-code">04</span><span>Dev Server 生命周期</span></a></li><li><a href="05-environment-api.html"><span class="nav-code">05</span><span>Environment API</span></a></li><li><a href="06-middleware-request-pipeline.html"><span class="nav-code">06</span><span>中间件与请求入口</span></a></li><li><a href="07-module-resolution.html"><span class="nav-code">07</span><span>模块解析</span></a></li><li><a href="08-transform-and-module-graph.html"><span class="nav-code">08</span><span>Transform 与模块图</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">转换与增量更新</h2><ul class="nav-list"><li><a href="09-html-transform.html"><span class="nav-code">09</span><span>HTML 转换</span></a></li><li><a href="10-import-analysis.html"><span class="nav-code">10</span><span>Import Analysis</span></a></li><li><a href="11-dependency-pre-bundling.html"><span class="nav-code">11</span><span>依赖预构建</span></a></li><li><a href="12-hmr.html"><span class="nav-code">12</span><span>HMR</span></a></li><li><a href="12b-bundled-dev.html"><span class="nav-code">12B</span><span>Bundled Dev</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">资源管线</h2><ul class="nav-list"><li><a href="13a-css-pipeline.html"><span class="nav-code">13A</span><span>CSS 管线</span></a></li><li><a href="13b-asset-worker-wasm.html"><span class="nav-code">13B</span><span>Asset、Worker、Wasm</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">生产构建</h2><ul class="nav-list"><li><a href="14a-build-orchestration.html"><span class="nav-code">14A</span><span>生产构建编排</span></a></li><li><a href="14b-build-output-and-preload.html"><span class="nav-code">14B</span><span>Preload 与构建输出</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">SSR 与运行时</h2><ul class="nav-list"><li><a href="15a-ssr-transform-and-loading.html"><span class="nav-code">15A</span><span>SSR 变换与加载</span></a></li><li><a href="15b-module-runner.html" aria-current="page"><span class="nav-code">15B</span><span>Module Runner</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">公共边界</h2><ul class="nav-list"><li><a href="16-public-api-diagnostics-and-types.html"><span class="nav-code">16</span><span>公共 API 与类型</span></a></li></ul></section></nav><main class="article" id="article-start"><header class="article-hero"><div class="eyebrow"><span class="pill">15B</span><span>SSR 与运行时</span></div><h1>15B. Module Runner：求值、缓存、HMR 与 Sourcemap</h1><p class="lede">Runner 是可移植求值客户端；模块身份、两层 Promise、循环 exports 与 HMR 各有独立状态。</p><div class="hero-meta"><span>证据基线：v8.2.1</span><span>commit <code>421615865dad</code></span><span>约 15 分钟</span><a href="../../vite/reading-guides/15b-module-runner.md">查看 Markdown 原稿</a></div></header><aside class="boundary-note" aria-label="阅读范围"><p>Fetch 去重与 evaluation 去重不能合并；循环依赖需要暴露部分 exports 避免 Promise 死锁。</p></aside><article class="prose"><h2 id="阅读边界"><a class="heading-anchor" href="#%E9%98%85%E8%AF%BB%E8%BE%B9%E7%95%8C" aria-label="链接到本节">#</a>阅读边界</h2>
+</style><script>(function(){try{var t=localStorage.getItem("vite-guide-theme");if(t)document.documentElement.setAttribute("data-theme",t)}catch(_){}})();</script></head><body><a class="skip-link" href="#article-start">跳到正文</a><div class="reading-progress" aria-hidden="true"><span data-reading-progress></span></div><header class="topbar"><div class="topbar-inner"><button class="icon-button nav-toggle" type="button" data-nav-toggle aria-expanded="false" aria-label="打开模块导航">☰</button><a class="brand" href="index.html"><span class="brand-mark">V</span><span class="brand-text">Vite 源码解剖</span></a><span class="topbar-path">SSR 与运行时 / 15B Module Runner</span><div class="topbar-actions"><button class="icon-button" type="button" data-theme-toggle aria-label="切换主题">◐</button></div></div></header><div class="page-grid"><nav class="site-nav" aria-label="模块导航"><a class="nav-home" href="index.html"><span>⌂</span><span>阅读总览</span></a><section class="nav-group"><h2 class="nav-group-title">全景</h2><ul class="nav-list"><li><a href="00-system-map-and-end-to-end.html"><span class="nav-code">00</span><span>系统全景与请求链</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">启动与配置</h2><ul class="nav-list"><li><a href="01-cli-and-startup.html"><span class="nav-code">01</span><span>CLI 与启动</span></a></li><li><a href="02a-env-loading.html"><span class="nav-code">02A</span><span>环境文件加载</span></a></li><li><a href="02b-config-resolution.html"><span class="nav-code">02B</span><span>配置加载与解析</span></a></li><li><a href="02c-define-client-injection-and-json.html"><span class="nav-code">02C</span><span>Define、注入与 JSON</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">开发服务器核心</h2><ul class="nav-list"><li><a href="03-plugin-system.html"><span class="nav-code">03</span><span>插件体系</span></a></li><li><a href="04-dev-server-lifecycle.html"><span class="nav-code">04</span><span>Dev Server 生命周期</span></a></li><li><a href="05-environment-api.html"><span class="nav-code">05</span><span>Environment API</span></a></li><li><a href="06-middleware-request-pipeline.html"><span class="nav-code">06</span><span>中间件与请求入口</span></a></li><li><a href="07-module-resolution.html"><span class="nav-code">07</span><span>模块解析</span></a></li><li><a href="08-transform-and-module-graph.html"><span class="nav-code">08</span><span>Transform 与模块图</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">转换与增量更新</h2><ul class="nav-list"><li><a href="09-html-transform.html"><span class="nav-code">09</span><span>HTML 转换</span></a></li><li><a href="10-import-analysis.html"><span class="nav-code">10</span><span>Import Analysis</span></a></li><li><a href="11-dependency-pre-bundling.html"><span class="nav-code">11</span><span>依赖预构建</span></a></li><li><a href="12-hmr.html"><span class="nav-code">12</span><span>HMR</span></a></li><li><a href="12b-bundled-dev.html"><span class="nav-code">12B</span><span>Bundled Dev</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">资源管线</h2><ul class="nav-list"><li><a href="13a-css-pipeline.html"><span class="nav-code">13A</span><span>CSS 管线</span></a></li><li><a href="13b-asset-worker-wasm.html"><span class="nav-code">13B</span><span>Asset、Worker、Wasm</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">生产构建</h2><ul class="nav-list"><li><a href="14a-build-orchestration.html"><span class="nav-code">14A</span><span>生产构建编排</span></a></li><li><a href="14b-build-output-and-preload.html"><span class="nav-code">14B</span><span>Preload 与构建输出</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">SSR 与运行时</h2><ul class="nav-list"><li><a href="15a-ssr-transform-and-loading.html"><span class="nav-code">15A</span><span>SSR 变换与加载</span></a></li><li><a href="15b-module-runner.html" aria-current="page"><span class="nav-code">15B</span><span>Module Runner</span></a></li></ul></section><section class="nav-group"><h2 class="nav-group-title">公共边界</h2><ul class="nav-list"><li><a href="16-public-api-diagnostics-and-types.html"><span class="nav-code">16</span><span>公共 API 与类型</span></a></li></ul></section></nav><main class="article" id="article-start"><header class="article-hero"><div class="eyebrow"><span class="pill">15B</span><span>SSR 与运行时</span></div><h1>15B. Module Runner：求值、缓存、HMR 与 Sourcemap</h1><p class="lede">Runner 是可移植求值客户端；模块身份、两层 Promise、循环 exports 与 HMR 各有独立状态。</p><div class="hero-meta"><span>证据基线：v8.2.1</span><span>commit <code>421615865dad</code></span><span>约 18 分钟</span><a href="../../vite/reading-guides/15b-module-runner.md">查看 Markdown 原稿</a></div></header><aside class="boundary-note" aria-label="阅读范围"><p>Fetch 去重与 evaluation 去重不能合并；循环依赖需要暴露部分 exports 避免 Promise 死锁。</p></aside><article class="prose"><h2 id="阅读边界"><a class="heading-anchor" href="#%E9%98%85%E8%AF%BB%E8%BE%B9%E7%95%8C" aria-label="链接到本节">#</a>阅读边界</h2>
 <p>本章研究 <code>vite/module-runner</code> 怎样消费 15A 产生的协议代码：</p>
 <figure class="code-card"><figcaption><span>text</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-text">runner.import(url)
 → cachedModule(url)
@@ -1670,7 +1670,7 @@ fileToModulesMap → 一个文件的 ?raw/?url/普通模块等全部变体
 <td>直接等待/返回缓存</td>
 </tr>
 <tr>
-<td>promise 存在，且与当前调用栈成环</td>
+<td>promise 和 exports 存在，且与当前调用栈成环</td>
 <td>返回已提前创建的 exports</td>
 </tr>
 <tr>
@@ -1701,10 +1701,97 @@ export const dep1 = { ok: true }
 // dep2.js
 import { dep1 } from &#039;./index.js&#039;
 export const dep2 = { ok: dep1.ok }
-</code></pre></figure><p>Runner 在执行模块正文前先创建 <code>exports</code> namespace。若 <code>cachedRequest()</code> 发现目标 id 已在 callstack，或
-沿 in-flight imports 图能回到当前栈，就直接返回这份部分 namespace。这个输入中，dep2 导回 index 时，
-index 的 getter 已注册，dep1 也已完成，因此 dep2 能经 getter 读到 <code>dep1.ok === true</code>。若这时继续等待
-Pindex，index 又正在等待 dep2，两份 Promise 就会互相等待。</p>
+</code></pre></figure><p>现在暂停在 dep2 导入 index 的那一步。index 还没执行完，因为它正等 dep2；如果 dep2 再等 index，
+两边就无法继续。Runner 发现回边后，不再等 index 的 Promise，而是先交出已经建立的导出对象。</p>
+<p>这次能成功，是因为 index 已执行完 dep1，并登记了读取 dep1 的 getter，所以 dep2 此时读取
+<code>dep1.ok</code> 得到 true。dep2 结束后，index 才继续完成。这不保证所有循环都成功：回头读取尚未初始化
+的导出可能得到 undefined，再访问属性会报错。只有 exports 已存在且检测到环，才走提前返回分支；
+普通并发请求仍等待同一个 Promise。</p>
+<h3 id="直接回边与间接回边怎样判定"><a class="heading-anchor" href="#%E7%9B%B4%E6%8E%A5%E5%9B%9E%E8%BE%B9%E4%B8%8E%E9%97%B4%E6%8E%A5%E5%9B%9E%E8%BE%B9%E6%80%8E%E6%A0%B7%E5%88%A4%E5%AE%9A" aria-label="链接到本节">#</a>直接回边与间接回边怎样判定</h3>
+<p>源码摘录：<code>packages/vite/src/module-runner/runner.ts::isCircularRequest</code>，保留完整搜索算法：</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">  private isCircularRequest(
+    mod: EvaluatedModuleNode,
+    callstack: string[],
+    visited = new Set&lt;string&gt;(),
+  ): boolean {
+    if (visited.has(mod.id)) {
+      return false
+    }
+    visited.add(mod.id)
+
+    for (const importedModuleId of mod.imports) {
+      if (callstack.includes(importedModuleId)) {
+        return true
+      }
+
+      const importedModule =
+        this.evaluatedModules.getModuleById(importedModuleId)
+      if (
+        importedModule?.promise &amp;&amp;
+        !importedModule.evaluated &amp;&amp;
+        this.isCircularRequest(importedModule, callstack, visited)
+      ) {
+        return true
+      }
+    }
+
+    return false
+  }
+</code></pre></figure><p>visited 避免在图中重复递归；沿某条 imports 边到达 callstack 就发现间接环。需要继续向下搜索时，
+只递归进入有 promise 且尚未 evaluated 的节点，已经完成的依赖不会再造成互等。</p>
+<p><code>cachedRequest</code> 的决定性分支如下（保留原代码，省略前面的参数与 importer 登记，以及后面的首次求值）：</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">    // 已完成模块不可能再与当前栈互锁，直接复用结果。
+    if (mod.evaluated &amp;&amp; mod.promise) {
+      return this.processImport(await mod.promise, meta, metadata)
+    }
+
+    if (mod.promise) {
+      if (
+        mod.exports &amp;&amp;
+        (callstack.includes(moduleId) || this.isCircularRequest(mod, callstack))
+      ) {
+        return this.processImport(mod.exports, meta, metadata)
+      }
+      return this.processImport(await mod.promise, meta, metadata)
+    }
+</code></pre></figure><p>在当前 test1 输入中，dep2 的 callstack 已含 index，直接命中 <code>callstack.includes(moduleId)</code>；
+所以这个用例证明直接循环能继续完成，<strong>不单独证明</strong> <code>isCircularRequest</code> 的间接图搜索分支。
+搜索在最多 V 个访问节点和 E 条扫描边上工作，但 <code>callstack.includes</code> 每次线性检查栈长度 D，
+因此单次搜索可按 O(V + E·D) 上界理解，另有 O(V) visited 与递归栈；不能笼统写成常数开销。</p>
+<h3 id="同一-fixture-的最终断言与清理"><a class="heading-anchor" href="#%E5%90%8C%E4%B8%80-fixture-%E7%9A%84%E6%9C%80%E7%BB%88%E6%96%AD%E8%A8%80%E4%B8%8E%E6%B8%85%E7%90%86" aria-label="链接到本节">#</a>同一 fixture 的最终断言与清理</h3>
+<p>测试源码摘录：<code>node/ssr/runtime/__tests__/server-runtime.spec.ts</code>，完整参数化循环用例。
+第一行正是本章一路追踪的 test1，其余三行验证另外三种 import/export 排布：</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">  it.for([
+    &#039;/fixtures/cyclic2/test1/index.js&#039;,
+    &#039;/fixtures/cyclic2/test2/index.js&#039;,
+    &#039;/fixtures/cyclic2/test3/index.js&#039;,
+    &#039;/fixtures/cyclic2/test4/index.js&#039;,
+  ] as const)(`cyclic %s`, async (entry, { runner }) =&gt; {
+    const mod = await runner.import(entry)
+    expect({ ...mod }).toEqual({
+      dep1: {
+        ok: true,
+      },
+      dep2: {
+        ok: true,
+      },
+    })
+  })
+</code></pre></figure><p>这里的 <code>it</code> 由 <code>createModuleRunnerTester()</code> 创建。其 <code>beforeEach</code> 以该测试目录为 root 创建
+middleware server（watch:null、ws:false、关闭依赖发现），再调用 <code>createServerModuleRunner</code>，关闭
+HMR 日志与 sourcemapInterceptor。<code>utils.ts</code> 的清理源码是：</p>
+<figure class="code-card"><figcaption><span>ts</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-ts">  afterEach&lt;TestClient&gt;(async (t) =&gt; {
+    await t.runner.close()
+    await t.server.close()
+  })
+</code></pre></figure><p>Given 是上述三个模块；When 是 <code>runner.import(entry)</code>；Then 同时检查 dep1 与 dep2 都为
+<code>{ ok: true }</code>，而不是只检查 Promise 没超时。循环造成的部分 namespace 只用于中途解锁，最后交付的
+两个导出必须完整。错误复用测试在后面的失败路径单列，不能替代这条成功链的断言。</p>
+<p>按 <a href="07-module-resolution.html">07</a> 的 Node/pnpm 与锁文件前提，在 <code>vite/</code> 运行已有用例：</p>
+<figure class="code-card"><figcaption><span>sh</span><button class="copy-code" type="button">复制</button></figcaption><pre><code class="language-sh">pnpm exec vitest run packages/vite/src/node/ssr/runtime/__tests__/server-runtime.spec.ts -t &#039;cyclic /fixtures/cyclic2/test1/index.js&#039;
+</code></pre></figure><p>本次修订未运行该集成测试。另将原 <code>isCircularRequest</code>、<code>cachedRequest</code>、<code>processImport</code>
+方法提取到隔离对象，用人工节点验证直接/间接环、已完成依赖、无环等待、已完成结果和拒绝对象复用，
+均通过。它没有 transport、真实模块转换与 evaluator，不能冒充上述 cyclic2 集成用例的通过记录。</p>
 <figure class="engineering-diagram" data-diagram-width="1160" aria-labelledby="diagram-15-runner-cache-cycle-caption"><figcaption id="diagram-15-runner-cache-cycle-caption">cyclic2/test1 的真实循环，以及元信息请求、求值 Promise 与失效之间的状态迁移</figcaption><div class="diagram-toolbar" role="group" aria-label="图示查看"><button type="button" data-diagram-action="out" aria-label="缩小图示">−</button><output class="diagram-scale" aria-live="polite">100%</output><button type="button" data-diagram-action="in" aria-label="放大图示">＋</button><button type="button" data-diagram-action="fit">适应宽度</button><button type="button" data-diagram-action="reset">原尺寸</button><button type="button" data-diagram-action="expand" aria-expanded="false">展开图示</button><a href="diagrams/15-runner-cache-cycle.svg" target="_blank" rel="noopener">独立 SVG</a></div><div class="diagram-viewport" tabindex="0" role="region" aria-label="cyclic2/test1 的真实循环，以及元信息请求、求值 Promise 与失效之间的状态迁移，可滚动图示"><div class="diagram-canvas" style="width:1160px"><svg xmlns="http://www.w3.org/2000/svg" width="1160" height="2000" viewBox="0 0 1160 2000" role="img" aria-labelledby="diagram-15-runner-cache-cycle-rc-title diagram-15-runner-cache-cycle-rc-desc">
 <title id="diagram-15-runner-cache-cycle-rc-title">循环导入与 Module Runner 缓存状态</title>
 <desc id="diagram-15-runner-cache-cycle-rc-desc">同一 cyclic2/test1 夹具的对象依赖图和状态迁移。index 先导入已完成的 dep1，再导入 dep2；dep2 导回正在求值的 index，拿到已建 getter 的部分 namespace 后读取 dep1.ok。临时元信息 Promise 按 URL 去重并删除；求值 Promise 按 id 持久保存。成功与失败都将 evaluated 置 true。后续导入先握手：cache:true 复用原求值 Promise；invalidate:true 先清状态，再写本次响应 meta 并启动新 Promise。HMR 本地失效后，下次导入回到元信息请求入口。</desc>
@@ -2236,7 +2323,7 @@ if (options.hmr !== false) {
 <li>多个 Runner 为什么不能各自覆盖 <code>Error.prepareStackTrace</code>？</li>
 <li>Node 原生 sourcemap 已存在时，什么场景仍可能选择自定义拦截器？</li>
 </ol>
-</article><nav class="article-pager" aria-label="前后篇"><a class="pager-link previous" href="15a-ssr-transform-and-loading.html"><span class="pager-label">上一篇 · 15A</span><span class="pager-title">SSR 变换与加载</span></a><a class="pager-link next" href="16-public-api-diagnostics-and-types.html"><span class="pager-label">下一篇 · 16</span><span class="pager-title">公共 API 与类型</span></a></nav><footer class="site-footer">Vite v8.2.1 源码阅读站 · 所有机制结论限定于 commit 421615865dad3ed39137d17281814fc78a41246c。</footer></main><aside class="page-toc" aria-label="页内目录"><h2 class="toc-title">本页目录</h2><ol class="toc-list"><li class="depth-2"><a href="#%E9%98%85%E8%AF%BB%E8%BE%B9%E7%95%8C">阅读边界</a></li><li class="depth-2"><a href="#%E6%8E%A8%E8%8D%90%E9%98%85%E8%AF%BB%E9%A1%BA%E5%BA%8F">推荐阅读顺序</a></li><li class="depth-2"><a href="#%E5%85%B1%E4%BA%AB%E5%8D%8F%E8%AE%AE%E5%B1%82">共享协议层</a></li><li class="depth-2"><a href="#runner-%E6%98%AF%E5%8F%AF%E7%A7%BB%E6%A4%8D%E5%AE%A2%E6%88%B7%E7%AB%AF-%E4%B8%8D%E6%98%AF-ssr-server">Runner 是可移植客户端，不是 SSR Server</a></li><li class="depth-2"><a href="#%E6%9E%84%E9%80%A0%E9%98%B6%E6%AE%B5">构造阶段</a></li><li class="depth-2"><a href="#evaluatedmodules-%E4%B8%89%E7%A7%8D%E8%BA%AB%E4%BB%BD-%E4%B8%80%E4%B8%AA%E8%8A%82%E7%82%B9">EvaluatedModules：三种身份，一个节点</a></li><li class="depth-2"><a href="#%E4%B8%A4%E5%B1%82%E5%B9%B6%E5%8F%91%E5%8E%BB%E9%87%8D">两层并发去重</a></li><li class="depth-3"><a href="#cachedmodule-%E5%90%88%E5%B9%B6%E5%85%83%E4%BF%A1%E6%81%AF%E8%AF%B7%E6%B1%82">cachedModule()：合并元信息请求</a></li><li class="depth-3"><a href="#cachedrequest-%E5%90%88%E5%B9%B6%E6%B1%82%E5%80%BC">cachedRequest()：合并求值</a></li><li class="depth-2"><a href="#%E5%BE%AA%E7%8E%AF%E4%BE%9D%E8%B5%96-%E9%81%BF%E5%85%8D-promise-%E6%AD%BB%E9%94%81">循环依赖：避免 Promise 死锁</a></li><li class="depth-2"><a href="#directrequest-%E7%9C%9F%E6%AD%A3%E6%89%A7%E8%A1%8C%E6%A8%A1%E5%9D%97">directRequest()：真正执行模块</a></li><li class="depth-3"><a href="#external">external</a></li><li class="depth-3"><a href="#internal">internal</a></li><li class="depth-2"><a href="#export-namespace">Export namespace</a></li><li class="depth-2"><a href="#import-meta">import.meta</a></li><li class="depth-3"><a href="#%E9%BB%98%E8%AE%A4%E5%AF%B9%E8%B1%A1">默认对象</a></li><li class="depth-3"><a href="#resolve-hook">resolve hook</a></li><li class="depth-2"><a href="#hmr-%E4%B8%8E-full-reload">HMR 与 full reload</a></li><li class="depth-2"><a href="#sourcemap-%E6%94%AF%E6%8C%81">Sourcemap 支持</a></li><li class="depth-3"><a href="#%E4%B8%A4%E7%A7%8D%E6%A8%A1%E5%BC%8F">两种模式</a></li><li class="depth-3"><a href="#%E6%8B%A6%E6%88%AA%E5%99%A8%E4%B8%BB%E6%B5%81%E7%A8%8B">拦截器主流程</a></li><li class="depth-2"><a href="#%E7%94%A8%E4%BE%8B%E5%AF%BC%E8%88%AA">用例导航</a></li><li class="depth-2"><a href="#%E5%85%B3%E9%94%AE%E6%BA%90%E7%A0%81%E8%AF%81%E6%8D%AE">关键源码证据</a></li><li class="depth-2"><a href="#%E5%BB%BA%E8%AE%AE%E6%96%AD%E7%82%B9">建议断点</a></li><li class="depth-2"><a href="#%E5%A4%8D%E7%9B%98%E9%A2%98">复盘题</a></li></ol></aside></div><script>;(function () {
+</article><nav class="article-pager" aria-label="前后篇"><a class="pager-link previous" href="15a-ssr-transform-and-loading.html"><span class="pager-label">上一篇 · 15A</span><span class="pager-title">SSR 变换与加载</span></a><a class="pager-link next" href="16-public-api-diagnostics-and-types.html"><span class="pager-label">下一篇 · 16</span><span class="pager-title">公共 API 与类型</span></a></nav><footer class="site-footer">Vite v8.2.1 源码阅读站 · 所有机制结论限定于 commit 421615865dad3ed39137d17281814fc78a41246c。</footer></main><aside class="page-toc" aria-label="页内目录"><h2 class="toc-title">本页目录</h2><ol class="toc-list"><li class="depth-2"><a href="#%E9%98%85%E8%AF%BB%E8%BE%B9%E7%95%8C">阅读边界</a></li><li class="depth-2"><a href="#%E6%8E%A8%E8%8D%90%E9%98%85%E8%AF%BB%E9%A1%BA%E5%BA%8F">推荐阅读顺序</a></li><li class="depth-2"><a href="#%E5%85%B1%E4%BA%AB%E5%8D%8F%E8%AE%AE%E5%B1%82">共享协议层</a></li><li class="depth-2"><a href="#runner-%E6%98%AF%E5%8F%AF%E7%A7%BB%E6%A4%8D%E5%AE%A2%E6%88%B7%E7%AB%AF-%E4%B8%8D%E6%98%AF-ssr-server">Runner 是可移植客户端，不是 SSR Server</a></li><li class="depth-2"><a href="#%E6%9E%84%E9%80%A0%E9%98%B6%E6%AE%B5">构造阶段</a></li><li class="depth-2"><a href="#evaluatedmodules-%E4%B8%89%E7%A7%8D%E8%BA%AB%E4%BB%BD-%E4%B8%80%E4%B8%AA%E8%8A%82%E7%82%B9">EvaluatedModules：三种身份，一个节点</a></li><li class="depth-2"><a href="#%E4%B8%A4%E5%B1%82%E5%B9%B6%E5%8F%91%E5%8E%BB%E9%87%8D">两层并发去重</a></li><li class="depth-3"><a href="#cachedmodule-%E5%90%88%E5%B9%B6%E5%85%83%E4%BF%A1%E6%81%AF%E8%AF%B7%E6%B1%82">cachedModule()：合并元信息请求</a></li><li class="depth-3"><a href="#cachedrequest-%E5%90%88%E5%B9%B6%E6%B1%82%E5%80%BC">cachedRequest()：合并求值</a></li><li class="depth-2"><a href="#%E5%BE%AA%E7%8E%AF%E4%BE%9D%E8%B5%96-%E9%81%BF%E5%85%8D-promise-%E6%AD%BB%E9%94%81">循环依赖：避免 Promise 死锁</a></li><li class="depth-3"><a href="#%E7%9B%B4%E6%8E%A5%E5%9B%9E%E8%BE%B9%E4%B8%8E%E9%97%B4%E6%8E%A5%E5%9B%9E%E8%BE%B9%E6%80%8E%E6%A0%B7%E5%88%A4%E5%AE%9A">直接回边与间接回边怎样判定</a></li><li class="depth-3"><a href="#%E5%90%8C%E4%B8%80-fixture-%E7%9A%84%E6%9C%80%E7%BB%88%E6%96%AD%E8%A8%80%E4%B8%8E%E6%B8%85%E7%90%86">同一 fixture 的最终断言与清理</a></li><li class="depth-2"><a href="#directrequest-%E7%9C%9F%E6%AD%A3%E6%89%A7%E8%A1%8C%E6%A8%A1%E5%9D%97">directRequest()：真正执行模块</a></li><li class="depth-3"><a href="#external">external</a></li><li class="depth-3"><a href="#internal">internal</a></li><li class="depth-2"><a href="#export-namespace">Export namespace</a></li><li class="depth-2"><a href="#import-meta">import.meta</a></li><li class="depth-3"><a href="#%E9%BB%98%E8%AE%A4%E5%AF%B9%E8%B1%A1">默认对象</a></li><li class="depth-3"><a href="#resolve-hook">resolve hook</a></li><li class="depth-2"><a href="#hmr-%E4%B8%8E-full-reload">HMR 与 full reload</a></li><li class="depth-2"><a href="#sourcemap-%E6%94%AF%E6%8C%81">Sourcemap 支持</a></li><li class="depth-3"><a href="#%E4%B8%A4%E7%A7%8D%E6%A8%A1%E5%BC%8F">两种模式</a></li><li class="depth-3"><a href="#%E6%8B%A6%E6%88%AA%E5%99%A8%E4%B8%BB%E6%B5%81%E7%A8%8B">拦截器主流程</a></li><li class="depth-2"><a href="#%E7%94%A8%E4%BE%8B%E5%AF%BC%E8%88%AA">用例导航</a></li><li class="depth-2"><a href="#%E5%85%B3%E9%94%AE%E6%BA%90%E7%A0%81%E8%AF%81%E6%8D%AE">关键源码证据</a></li><li class="depth-2"><a href="#%E5%BB%BA%E8%AE%AE%E6%96%AD%E7%82%B9">建议断点</a></li><li class="depth-2"><a href="#%E5%A4%8D%E7%9B%98%E9%A2%98">复盘题</a></li></ol></aside></div><script>;(function () {
   'use strict'
 
   var root = document.documentElement

@@ -856,6 +856,12 @@ this.left = left</code></pre>
 
       <section id="updates">
         <h2>8. 更新协议：乱序、重复与缺依赖如何处理</h2>
+        <div class="callout danger" id="known-overlap-boundary">
+          <p><strong>当前快照的已知合并限制：</strong>同一 client 的 GC 区间 <code>[0,2)</code> 与 <code>[1,5)</code>，并集应为 <code>[0,5)</code>；本地 <code>BlockSet.insertInto</code> 却把“剩余长度”传给要求“左侧偏移”的 <code>sliceStruct</code>，得到 <code>GC[0,2), Skip[2,4), GC[4,5)</code>。</p>
+          <p>2026-10-12 在 Node 24.19.0、锁文件依赖下运行 <a href="../../yjs/examples/known-overlap-boundary.mjs">特征回归示例</a>：真实 V1 编码 → <code>mergeUpdates</code> → <code>applyUpdate</code> 后，状态向量停在 2；逐包直接应用则到 5。这证明该 GC 输入的端到端差异，不代表已穷举 Item、V2 或 provider 场景，也不是对所有 Yjs 版本的结论。本次未修改库算法。</p>
+          <p>依据：<a href="../../yjs/src/utils/BlockSet.js">BlockSet.js · applyLeft/applyRight</a>、<a href="../../yjs/src/utils/updates.js">updates.js · sliceStruct</a>、<a href="../../yjs/src/utils/encoding.js">encoding.js · mergeUpdatesV2</a>。示例断言当前缺陷的特征，不能当成正确合并的通过证明；修库时应改为断言无 Skip 的并集，并扩展 V1/V2 与真实编辑场景。</p>
+        </div>
+
         <p>
           V1/V2 只是二进制布局不同，语义主线相同：读取 struct block，排除本地已知 ID，
           按因果依赖集成可用 struct；再读取删除 ID 集。状态向量是 <code>client → nextClock</code>：
@@ -1557,6 +1563,7 @@ for (let i = itemsToDelete.length - 1; i &gt;= 0; i--) {
 
       <section id="walkthrough">
         <h2>11. 完整执行链：A 写入，B 应用差分</h2>
+        <p>环境：Node ≥22（本轮为 24.19.0）。在 <code>yjs/</code> 执行 <code>npm ci --ignore-scripts</code>，再执行 <code>node examples/state-vector-diff.mjs</code>。依赖采用现有锁文件，源码直接来自 <code>src/index.js</code>；不需要安装另一个同名发行版。<a href="../../yjs/examples/README.md">示例说明与验证边界</a>。</p>
         <p>
           下面是可在 <code>yjs/</code> 目录运行的最小 ESM 示例，可保存为 <code>.mjs</code> 文件或交给
           <code>node --input-type=module</code> 的标准输入。它从真实测试
@@ -1593,6 +1600,7 @@ try {
   docB.destroy()
 }</code></pre>
 
+        <details><summary>复习卡：单元素流程概览（完整时序见下方）</summary>
         <figure class="diagram engineering">
           <p class="diagram-hint">宽图可横向滚动；聚焦图后可用方向键移动。</p>
           <div class="diagram-scroll" tabindex="0" role="region" aria-labelledby="flow-title">
@@ -1656,6 +1664,7 @@ try {
           </div>
           <figcaption>本地与远端都先进入事务，再集成 Item。内容在集成时已经可读，observer 在清理阶段才收到通知。此图概览单元素示例；<a href="#yjs-pending-flow">缺依赖的栈、暂存与重试</a>见第 8 节。</figcaption>
         </figure>
+        </details>
 
         <h3>谁调用谁，什么时候拿到结果</h3>
 <p>
@@ -1800,6 +1809,19 @@ try {
             由后续 update 重试；连接、重传与消息大小控制由 provider 或应用处理。
           </p>
         </div>
+        <h3 id="existing-history-diff">B 已有历史：第二包还必须携带删除</h3>
+        <p>承接上例，在两个 Doc 销毁前执行下面这段。B 已经知道 A 的结构；现在 A 追加 B 并删除 A，第二包只补未知结构，删除集仍要传递。state vector 记录结构时钟，不记录哪些内容已被删除。</p>
+        <div class="code-label"><span>教程代码 · 接在上例 try 内、finally 之前</span><span>完整可执行版本：examples/state-vector-diff.mjs</span></div>
+        <pre><code>const oldVectorB = Y.encodeStateVector(docB)
+listA.insert(1, ['B'])
+listA.delete(0, 1)
+const second = Y.encodeStateAsUpdate(docA, oldVectorB)
+Y.applyUpdate(docB, second)
+assert.deepEqual(docB.get('items').toArray(), ['B'])
+assert.deepEqual(Y.encodeStateVector(docB), Y.encodeStateVector(docA))
+Y.applyUpdate(docB, second)
+assert.deepEqual(docB.get('items').toArray(), ['B'])</code></pre>
+        <p>2026-10-12 实际运行<a href="../../yjs/examples/state-vector-diff.mjs">配套文件</a>通过：首次同步、已有历史的差分与删除、重复包均满足断言。不是整个 Yjs 测试套件的结果。</p>
       </section>
 
       <section id="algorithm">
@@ -1970,7 +1992,7 @@ try {
         <div class="grid three">
           <article class="card">
             <h3>时间</h3>
-            <p>一次冲突扫描最多遍历当前冲突区间的 <code>k</code> 个 Item，扫描成本为 O(k)；按 client-clock 找 struct 使用二分定位。</p>
+            <p>一轮最多检查 <code>k</code> 个候选 Item。同 origin 的简单分支主要是线性扫描；一般分支还在循环中按 client-clock 查询 struct。计入二分定位，可按 O(k log n) 上界理解，<code>n</code> 是被查询 client 的结构数。这里只分析冲突定位，不含内容切分、存储插入与事务清理。</p>
           </article>
           <article class="card">
             <h3>空间</h3>
@@ -2065,7 +2087,7 @@ users.map(user =&gt; user.destroy())</code></pre>
                 <td>至少四个 update，分别覆盖有删除与无删除场景</td>
                 <td>按五种组合 merge，包括大量重复</td>
                 <td>可见内容与 state vector 一致；V2 路径还核对 diff 的插入 ID，并单独处理完整删除集</td>
-                <td>更新合并的重复消除与差分语义；<code>encoding.js</code> 的 BlockSet 合并及 V1/V2 codec</td>
+                <td>这些固定排列的重复消除与差分语义，不能推广为任意重叠输入；另见<a href="#known-overlap-boundary">当前合并限制</a>。对应 <code>encoding.js</code> 的 BlockSet 合并及 V1/V2 codec</td>
               </tr>
               <tr>
                 <td><code>testLengthIssue</code> (#297)</td>
@@ -2124,6 +2146,7 @@ users.map(user =&gt; user.destroy())</code></pre>
 
       <section id="boundaries">
         <h2>14. 使用条件与继续阅读</h2>
+        <p><strong>合并边界：</strong>使用当前快照前先读<a href="#known-overlap-boundary">非对称重叠的已知 Skip 问题与复现</a>；正常用例和固定排列的通过不消除该限制。</p>
 
         <div class="grid two">
           <article class="card">

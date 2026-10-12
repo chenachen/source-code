@@ -625,8 +625,19 @@ if (overwritingProp &amp;&amp; hasContentChildren(vnode.children)) {
 
     // 组件上的 innerHTML 是普通 prop，不触发元素内容覆盖警告。
     test('no warning for component vnodes', () =&gt; {
-      const Comp = { props: ['innerHTML'], render: () =&gt; null }
-      createVNode(Comp, { innerHTML: '&lt;span/&gt;' }, { default: () =&gt; 'slot' })
+      const Comp = {
+        props: ['innerHTML'],
+        /** 返回 null 的组件 render，供组件 innerHTML prop 不产生元素覆盖警告。 */
+        render: () =&gt; null
+      }
+      createVNode(
+        Comp,
+        { innerHTML: '&lt;span/&gt;' },
+        {
+          /** 返回 slot 文本，作为组件对象 children 的有效输入。 */
+          default: () =&gt; 'slot'
+        }
+      )
       expect(`will override its children`).not.toHaveBeenWarned()
     })
   })</code></pre>

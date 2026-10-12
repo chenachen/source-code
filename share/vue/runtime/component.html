@@ -585,6 +585,7 @@ describe('runtime course: Counter', () =&gt; {
     const job: SchedulerJob = (instance.job = effect.runIfDirty.bind(effect))
     job.i = instance
     job.id = instance.uid
+    /** 响应式触发只把同一组件 job 入队，由 QUEUED 去重并以 uid 排序，实际 render 等刷新时执行。 */
     effect.scheduler = () =&gt; queueJob(job)
 
     // #1801/#2043：组件更新可能触发子 pre watcher，而 watcher 又修改父渲染依赖；允许
@@ -1303,14 +1304,14 @@ describe('runtime course: Counter', () =&gt; {
     // 停止 setup/render/watch 等归属于组件 scope 的全部响应式 effect。
     scope.stop()
 
-    // async setup resolve 前组件可能已卸载，此时 render job 尚未创建，也没有 subTree
-    // 需要递归卸载。
+    // 异步 setup 尚未完成时可能没有 render job，subTree 可已是占位 VNode。
+    // 此处分支仅在 job 存在时递归卸载渲染子树。
     if (job) {
       // 即使任务已经入队，DISPOSED 也让调度器跳过。
       job.flags! |= SchedulerJobFlags.DISPOSED
       unmount(subTree, instance, parentSuspense, doRemove)
     }
-    // unmounted 在子树宿主移除和本轮提交完成后执行。
+    // unmounted 排在逻辑卸载后的 post 阶段；若元素 leave 延迟删除，它不等待动画完成。
     if (um) {
       queuePostRenderEffect(um, parentSuspense)
     }
@@ -1340,17 +1341,23 @@ describe('runtime course: Counter', () =&gt; {
     const toggle = ref(true)
     const root = nodeOps.createElement('div')
     const fn = vi.fn(() =&gt; {
-      // should be called after inner div is removed
+      // 卸载后钩子执行时 div 已由空分支占位替代。
       expect(serializeInner(root)).toBe(`&lt;!----&gt;`)
     })
 
     const Comp = {
+      /**
+       * 返回渲染闭包，执行时产出 `(toggle.value ? h(Child) : null)`。
+       */
       setup() {
         return () =&gt; (toggle.value ? h(Child) : null)
       },
     }
 
     const Child = {
+      /**
+       * 调用 `onUnmounted(fn)` 完成本例的初始化登记或读取；返回渲染闭包，执行时产出 `h('div')`。
+       */
       setup() {
         onUnmounted(fn)
         return () =&gt; h('div')

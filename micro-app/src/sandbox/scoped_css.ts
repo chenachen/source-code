@@ -213,7 +213,7 @@ class CSSParser {
   /**
    * 匹配一对花括号包裹的声明块，并把内部声明完整写入结果。
    *
-   * @returns 声明块完整时为 `true`，缺少边界花括号时为空并上报错误。
+   * @returns 声明块完整时为 `true`，缺少边界花括号时为空；剩余输入非空时上报错误，输入已耗尽则可能不抛错。
    * @see https://developer.mozilla.org/en-US/docs/Web/API/CSSStyleDeclaration
    */
   private styleDeclarations (): boolean | void {

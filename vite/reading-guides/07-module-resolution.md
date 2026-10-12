@@ -8,27 +8,6 @@
 resolver 与 optimizer 的交接点，完整扫描/打包流程留到第 11 章；模块 ID 得到后怎样 load 和
 transform 留到第 08 章。
 
-读完应能回答：
-
-1. 为什么 alias 先于通用 resolve，用户 pre 插件又能在两者之间接管解析？
-2. 文件路径解析为什么要保留 query/hash，且对 node_modules 中的 `#` 特判？
-3. `exports`、`imports`、mainFields、main、browser 和 index 的优先级是什么？
-4. conditions、externalConditions、import/require 怎样共同选择 package export？
-5. dedupe、preserveSymlinks 和 package self-reference 分别解决什么？
-6. external、noExternal、builtin 和 linked package 如何合成最终 external 判定？
-7. PackageCache 为什么不能只用包名或路径做 key？
-
-## 推荐阅读顺序
-
-1. `plugins/index.ts` 中 alias/preAlias/resolve 的装配位置。
-2. `plugins/resolve.ts` 的 `EnvironmentResolveOptions` 和 `oxcResolvePlugin()`。
-3. 同文件的 `tryFsResolve()`：先掌握文件路径。
-4. `tryNodeResolve()`、`resolvePackageEntry()`、`resolveDeepImport()`：再掌握包。
-5. `packages.ts`：理解 package.json 定位、sideEffects 与缓存。
-6. `external.ts`：理解 server Environment 为什么有时保留运行时 import。
-7. `idResolver.ts`、`nodeResolve.ts`：看特殊调用方如何复用精简解析。
-8. `resolve.spec.ts`、`external.spec.ts`：从调用顺序、file URL、builtin 和 linked package 复盘。
-
 ## 解析不是单个函数
 
 开发态常见的 resolveId 管线是：
@@ -52,9 +31,13 @@ preAlias（优化依赖存在时避免过早展开 alias）
    └─ warning/debug
 ```
 
-Vite 8 把主解析器交给 Rolldown 的原生 `viteResolvePlugin`，但 Vite 仍负责 Environment 配置、
-package 数据、依赖优化器、日志和结果收尾。阅读时不要把 `plugins/resolve.ts` 误认为从头手写了
-所有 resolveId；它既是适配器，也保留一套供特殊场景直接调用的文件/包算法。
+先分清两条路。普通 import 进入插件容器后，主要由 Rolldown 的原生 resolver 找到文件。Vite 在
+调用前传入当前环境的解析规则，调用后再决定要不要换成预构建文件、加版本号或打印警告。
+
+同一个 `resolve.ts` 里还有 `tryNodeResolve`、`tryFsResolve` 等 TypeScript 工具，但它们不是普通
+import 必经的下一站。例如 SSR 在把裸依赖交给 Node 执行前直接调用 `tryNodeResolve`，
+`nodeResolveWithVite` 也复用它。本章不展开原生依赖内部的文件搜索算法；下面的 TS 规则只用于其
+实际调用方，不能当作原生 resolver 的调用栈。
 
 alias 先把用户 specifier 映射成目标 specifier，再通过插件容器继续解析目标。用户 pre 插件可以
 在通用 resolver 之前接管虚拟模块或自定义路径；未接管的目标才交给原生 resolver。alias 与
@@ -83,35 +66,249 @@ environment.config.resolve
 → createResolver/CSS/scanner 的显式 ResolveOptions 覆盖
 ```
 
-所以主请求、CSS `@import`、依赖扫描和 Node 便捷 resolver 可以复用同一算法，却选择不同的
-`asSrc`、`scan`、`tryIndex`、`tryPrefix`、`idOnly` 等行为。
+主请求、CSS `@import` 与依赖扫描可复用原生插件适配器，按场景选择不同的
+`asSrc`、`scan`、`tryIndex`、`tryPrefix`、`idOnly` 等行为。Node 便捷入口直接走 TS 工具，另见下图。
 
-## 一棵实用的 specifier 决策树
+## 两张图：先选入口，再看算法
+
+普通 import 的主插件路径（原生内部不在当前仓库展开）：
 
 ```text
-specifier
-├─ \0virtual / Vite internal
-│  └─ 对应插件处理，普通文件/包解析跳过
-├─ data: / http(s):
-│  └─ 保持协议语义或 external
-├─ file:
-│  └─ 转成文件路径，保留 search/hash
-├─ /absolute-or-root-url
-│  └─ 源码模式按 root/文件协议解析
-├─ ./relative / ../relative
-│  └─ 相对 importer 目录 → tryFsResolve
-├─ #package-import
-│  └─ 最近 package.json imports → 再进入主解析
-├─ bare package / package/subpath
-│  └─ tryNodeResolve
-└─ builtin
-   └─ 按 Environment builtins 映射为 external 或 browserExternalId
+pluginContainer.resolveId(specifier, importer)
+→ alias / 用户插件（可提前返回）
+→ oxcResolvePlugin：传入当前 Environment 解析选项
+→ Rolldown viteResolvePlugin（处理文件、包、builtin 等；内部算法未展开）
+→ 若启用 depsOptimizer：Vite finalizeBareSpecifier / finalizeOtherSpecifiers
+→ 最终文件 ID / 优化产物 ID / external 或虚拟 ID
 ```
 
-实际原生插件还处理 tsconfig paths、browser external 等，但先用这棵树定位大分支，再追细节，
-比从 1200 行文件头读到尾有效。
+辅助路径各有真实调用者，并不是上图的下一层：
 
-## 文件路径解析
+```text
+nodeResolveWithVite                         → tryNodeResolve
+fetchModule（带 importer 的裸依赖）         → tryNodeResolve → externalize file URL
+external.ts 的 isExternalizable             → tryNodeResolve → 可外部化判定
+assetImportMetaUrl / workerImportMetaUrl     → tryFsResolve → 资源 URL 后续处理
+```
+
+证据在 `node/nodeResolve.ts`、`node/ssr/fetchModule.ts`、`node/external.ts` 及两个
+`*ImportMetaUrl.ts` 插件。`#imports`、tsconfig paths、builtin 的规则仍要按入口区分；不要因为
+specifier 长得一样，就在普通 import 调试时期待命中 TS `tryNodeResolve` 断点。
+
+## 同一个包，两条路线，交换顺序仍不串线
+
+先追仓库里已经存在的 `resolve.spec.ts`，不另造一个省掉环境的 Demo。
+Given：middleware server 关闭依赖发现，包的同一子路径声明 `module` 和 `default` 两个出口。
+When：分别运行 Runner import 和 SSR 插件容器 resolveId，并在第二个测试中交换先后。
+Then：Runner 执行 default 文件，插件容器返回 module 文件路径；两种顺序断言相同。
+这里比较的是“执行后的字符串”与“解析后的 ID”，不是两次执行结果。
+
+真实 fixture：`packages/vite/src/node/__tests__/fixtures/test-dep-conditions/package.json`：
+
+```json
+{
+  "name": "@vitejs/test-dep-conditions",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "style": "./index.css",
+      "custom1": "./index.custom1.js",
+      "worker": "./index.worker.js",
+      "browser": "./index.browser.js",
+      "default": "./index.default.js"
+    },
+    "./with-module": {
+      "module": "./dir/index.module.js",
+      "default": "./dir/index.default.js"
+    }
+  }
+}
+```
+
+```js
+// fixtures/test-dep-conditions-app/entry-with-module.js
+import dep from '@vitejs/test-dep-conditions/with-module'
+export default dep
+// fixtures/test-dep-conditions/dir/index.default.js
+export default 'dir/index.default.js'
+// fixtures/test-dep-conditions/dir/index.module.js
+export default 'dir/index.module.js'
+```
+
+这些是三个独立文件的源码摘录，不要合并成一个模块。包由 `pnpm-workspace.yaml` 的
+`packages/**/__tests__/**` 规则纳入工作区，按锁文件安装后才能按包名解析。
+
+测试源码摘录：`packages/vite/src/node/__tests__/resolve.spec.ts` 的 imports 和完整
+`import and resolveId` 组；含初始化、两个次序的断言，以及 `onTestFinished` 关闭 server。
+
+```ts
+import { join } from 'node:path'
+import { describe, expect, onTestFinished, test, vi } from 'vitest'
+import { createServer } from '../server'
+import { createServerModuleRunner } from '../ssr/runtime/serverModuleRunner'
+import type { EnvironmentOptions, InlineConfig } from '../config'
+import { build } from '../build'
+
+describe('import and resolveId', () => {
+  /** 创建关闭依赖发现的 middleware Server，并返回默认 SSR ModuleRunner。 */
+  async function createTestServer() {
+    const server = await createServer({
+      configFile: false,
+      root: import.meta.dirname,
+      logLevel: 'error',
+      // 否则 scanner 会遍历 __tests__ 下所有 HTML fixture，给解析顺序测试引入无关工作。
+      optimizeDeps: {
+        noDiscovery: true,
+        include: [],
+      },
+      server: {
+        middlewareMode: true,
+        ws: false,
+      },
+    })
+    onTestFinished(() => server.close())
+    const runner = createServerModuleRunner(server.environments.ssr, {
+      hmr: {
+        logger: false,
+      },
+      sourcemapInterceptor: false,
+    })
+    return { server, runner }
+  }
+
+  /**
+   * 场景：先由 SSR Runner 按 externalConditions 执行包，再用插件容器按普通 conditions 解析。
+   * 验证目标：Runner 命中 default，内部 resolve 命中 module；两组结果不能因共享 PackageCache 而
+   * 互相污染，且调用顺序不改变语义（#18302、#18332）。
+   */
+  test('import first', async () => {
+    const { server, runner } = await createTestServer()
+    const mod = await runner.import(
+      '/fixtures/test-dep-conditions-app/entry-with-module',
+    )
+    const resolved = await server.environments.ssr.pluginContainer.resolveId(
+      '@vitejs/test-dep-conditions/with-module',
+    )
+    expect([mod.default, resolved?.id]).toEqual([
+      'dir/index.default.js',
+      expect.stringContaining('dir/index.module.js'),
+    ])
+  })
+
+  /**
+   * 场景：与上例相同，但先执行内部 resolve，再由 Runner import。
+   * 验证目标：反向顺序仍分别命中 module/default，验证内部与运行时条件选择不因先后顺序互相污染。
+   */
+  test('resolveId first', async () => {
+    const { server, runner } = await createTestServer()
+    const resolved = await server.environments.ssr.pluginContainer.resolveId(
+      '@vitejs/test-dep-conditions/with-module',
+    )
+    const mod = await runner.import(
+      '/fixtures/test-dep-conditions-app/entry-with-module',
+    )
+    expect([mod.default, resolved?.id]).toEqual([
+      'dir/index.default.js',
+      expect.stringContaining('dir/index.module.js'),
+    ])
+  })
+})
+```
+
+### 结果在哪个分支分开
+
+第一条：entry 先 internalize 并转换；它请求裸依赖时已有 importer。
+`ssr/fetchModule.ts::fetchModule` 的以下完整分支用 `externalConditions` 解析，成功后交给宿主执行；
+找不到包则抛带 `ERR_MODULE_NOT_FOUND` 的错误。
+
+```ts
+  // 无 importer 表示入口，入口始终 internalize；依赖的裸导入才尝试交给 Node externalize。
+  if (!isFileUrl && importer && url[0] !== '.' && url[0] !== '/') {
+    const { isProduction, root } = environment.config
+    const { externalConditions, dedupe, preserveSymlinks } =
+      environment.config.resolve
+
+    const resolved = tryNodeResolve(url, importer, {
+      mainFields: ['main'],
+      conditions: externalConditions,
+      externalConditions,
+      external: [],
+      noExternal: [],
+      extensions: ['.js', '.cjs', '.json'],
+      dedupe,
+      preserveSymlinks,
+      tsconfigPaths: false,
+      isBuild: false,
+      isProduction,
+      root,
+      packageCache: environment.config.packageCache,
+      builtins: environment.config.resolve.builtins,
+    })
+    if (!resolved) {
+      const err: any = new Error(
+        `Cannot find module '${url}' imported from '${importer}'`,
+      )
+      err.code = 'ERR_MODULE_NOT_FOUND'
+      throw err
+    }
+    const file = pathToFileURL(resolved.id).toString()
+    const type = isFilePathESM(resolved.id, environment.config.packageCache)
+      ? 'module'
+      : 'commonjs'
+    return { externalize: file, type }
+  }
+
+```
+
+第二条：`ssr.pluginContainer.resolveId` 进入原生插件适配器。下面是
+`plugins/resolve.ts::oxcResolvePlugin` 的配置摘录（省略无关字段，以注释标出；不是独立可运行代码）：
+
+```ts
+const options: InternalResolveOptions = {
+  ...partialEnv.config.resolve,
+  ...resolveOptions,
+}
+// ...noExternal 归一化等准备代码省略
+const plugin = viteResolvePlugin({
+  resolveOptions: {
+    // ...其余解析字段省略
+    conditions: options.conditions,
+    externalConditions: options.externalConditions,
+    extensions: options.extensions,
+  },
+  environmentConsumer: partialEnv.config.consumer,
+  environmentName: partialEnv.name,
+  // ...其余配置及 finalize 回调省略
+})
+```
+
+本例内部条件含 `module`，external 条件不含它，因而分别命中 module/default。
+原生已解析出文件后，`finalizeBareSpecifier` 才可能把结果交给优化器；它不再调用 TS
+`tryNodeResolve`。本例关闭发现，测试重点也不是预构建。缓存行为的可观察结论仅是这两个测试
+得到相同结果，不能由此断言两路共用某份缓存或原生实现采用 TS 缓存键。
+
+```text
+创建 server + runner
+├─ import first：entry → 裸依赖 fetchModule → TS 条件解析 → default 文件执行
+│                然后 resolveId → 原生条件解析 → module 文件 ID
+└─ resolveId first：原生条件解析 → module 文件 ID
+                   然后 entry → fetchModule → default 文件执行
+两组均断言 [default 字符串, module 路径]
+→ onTestFinished → server.close（失败断言也触发测试清理）
+```
+
+复现环境：仓库 `vite/package.json` 要求 Node `^20.19.0 || >=22.12.0`、pnpm `10.34.5`。
+在 `vite/` 按锁文件安装并准备工作区构建后，运行已有测试：
+
+```sh
+pnpm exec vitest run packages/vite/src/node/__tests__/resolve.spec.ts -t 'import and resolveId'
+```
+
+本次修订静态核对了源码、夹具与断言；当前环境缺少 Vite 工作区依赖，未执行这个集成测试。
+安装/构建不是这段命令自动完成的，不能用文档生成通过替代 resolver 用例通过。
+
+## TS 辅助路径：文件路径解析
 
 ### query/hash 必须与磁盘路径分开
 
@@ -263,7 +460,7 @@ importer 的 specifier；若 `path.relative()` 给出普通单词开头，还要
 内部打包/转换使用 `conditions`；外部化后由目标运行时加载的包使用 `externalConditions`。二者
 可以不同。例如 Vite 内部 resolver 偏好 module，而 Node 运行时 external 可能命中 default。
 
-PackageCache 的入口键必须包含：
+以下是 TS `getResolveCacheKey()` 所维护的入口缓存维度，不是在说明原生缓存内部结构：
 
 - import/require；
 - conditions；
@@ -272,7 +469,7 @@ PackageCache 的入口键必须包含：
 - deep import key。
 
 否则先发生的解析会污染后续条件。`resolve.spec.ts` 先后交换 Runner import 与
-pluginContainer.resolveId，仍分别得到 default/module，验证两条解析路径没有相互污染。这对应
+pluginContainer.resolveId，仍分别得到 default/module，验证这组条件与输入在两种调用顺序下没有相互污染；测试并不能揭示原生内部缓存算法。这对应
 [PR #18302](https://github.com/vitejs/vite/pull/18302) 与
 [PR #18332](https://github.com/vitejs/vite/pull/18332) 的顺序无关验证。
 
@@ -427,10 +624,33 @@ if (dedupe.includes(pkgId)) {
 包 ID 先与 deep import 后缀分离；`dedupe` 强制从 root 查找，否则优先以真实 importer 目录为
 起点。这个 `basedir` 决定后续 package data、exports 与文件入口解析的搜索空间。
 
+## 进阶阅读地图
+
+读完应能回答：
+
+1. 为什么 alias 先于通用 resolve，用户 pre 插件又能在两者之间接管解析？
+2. 文件路径解析为什么要保留 query/hash，且对 node_modules 中的 `#` 特判？
+3. `exports`、`imports`、mainFields、main、browser 和 index 的优先级是什么？
+4. conditions、externalConditions、import/require 怎样共同选择 package export？
+5. dedupe、preserveSymlinks 和 package self-reference 分别解决什么？
+6. external、noExternal、builtin 和 linked package 如何合成最终 external 判定？
+7. PackageCache 为什么不能只用包名或路径做 key？
+
+## 推荐阅读顺序
+
+1. `plugins/index.ts` 中 alias/preAlias/resolve 的装配位置。
+2. `plugins/resolve.ts` 的 `EnvironmentResolveOptions` 和 `oxcResolvePlugin()`。
+3. 同文件的 `tryFsResolve()`：先掌握文件路径。
+4. `tryNodeResolve()`、`resolvePackageEntry()`、`resolveDeepImport()`：再掌握包。
+5. `packages.ts`：理解 package.json 定位、sideEffects 与缓存。
+6. `external.ts`：理解 server Environment 为什么有时保留运行时 import。
+7. `idResolver.ts`、`nodeResolve.ts`：看特殊调用方如何复用精简解析。
+8. `resolve.spec.ts`、`external.spec.ts`：从调用顺序、file URL、builtin 和 linked package 复盘。
+
 ## 建议断点
 
 1. 原生 resolver 的 finalizeBareSpecifier：观察依赖为何优化、跳过或加版本查询。
-2. `tryFsResolve()`：用 `/file.js?raw` 和 node_modules 中带 `#` 的路径比较 file/postfix。
+2. TS 辅助路径的 `tryFsResolve()`（不是普通 import 必经断点）：用 `/file.js?raw` 和 node_modules 中带 `#` 的路径比较 file/postfix。
 3. `tryCleanFsResolve()`：从 `.js` specifier 单步命中 `.ts/.tsx`。
 4. `tryNodeResolve()` basedir 选择：比较 dedupe、普通 importer、无 importer。
 5. `resolvePackageEntry()`：改变 conditions/mainFields，观察 exports 与 fallback。
